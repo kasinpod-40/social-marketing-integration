@@ -1,7 +1,33 @@
 # 00 — Current State
 
 ## Status
-Ready to begin Phase 0: Project Setup + Data Model + Lark Foundation + Repo Skeleton.
+Phase 0 Lark Base Foundation is completed.
+
+Phase 1A TikTok For Creator normalization foundation has started.
+
+## Completed in Lark
+- Created Lark Base: `Social MKT Data Hub`.
+- Imported main `MKT_*` tables.
+- Imported `RAW_*` native integration tables.
+- Organized sidebar folders:
+  - `📊 Dashboards`
+  - `🧩 Master Data`
+  - `📱 Organic Social`
+  - `💰 Paid Ads`
+  - `🤖 AI Reports`
+  - `⚙️ Sync & System`
+  - `🧪 Raw Integration Tables`
+- Added table icons.
+- Fixed primary fields for main MKT tables.
+- Configured core field types.
+- Configured select options.
+- Created base views with icons.
+
+## Completed in code
+- Added TikTok Creator native adapter.
+- Added TikTok Creator normalization use case.
+- Added tests for TikTok Creator field mapping and snapshot output.
+- Added POC checklist: `docs/poc/tiktok-for-creator-poc.md`.
 
 ## Confirmed decisions
 - Main language: JavaScript.
@@ -12,12 +38,18 @@ Ready to begin Phase 0: Project Setup + Data Model + Lark Foundation + Repo Skel
 - External dashboard: not included in phase 1.
 - Connect UI: lightweight OAuth/connect/reconnect pages only.
 - Architecture: Clean Architecture + Monorepo + Modular Monolith.
+- Base name: `Social MKT Data Hub`.
+- TikTok Organic uses Lark TikTok For Creator native integration first.
 
 ## Current phase
-Pre-implementation foundation. Do not start full connector implementation until the Lark table/field design is imported and verified.
+The project moved from pure Lark foundation into TikTok For Creator POC support.
+
+Do not start full connector implementation until the first Native Integration POC confirms actual fields and sync behavior.
 
 ## Current priority
-1. Lark Base table/field import.
-2. Native Integration POC.
-3. Monorepo skeleton validation.
-4. Core sync/logging implementation.
+1. Run live TikTok For Creator POC in Lark.
+2. Sync test data into `RAW_TikTok_Creator_Videos` or the native-created Lark table.
+3. Validate exact fields, sync behavior, historical range, duplicate/update behavior, and schedule options.
+4. Compare real field names with adapter aliases.
+5. Update Project Brain with POC result.
+6. Wire Lark read/write adapter only after live table behavior is confirmed.
