@@ -1,0 +1,32 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "social-mkt-api-worker",
+  "main": "apps/api-worker/src/index.js",
+  "compatibility_date": "2026-07-01",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "social_mkt",
+      "database_id": "replace-with-client-owned-d1-id"
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "queue": "social-mkt-sync-jobs",
+        "binding": "SYNC_QUEUE"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "social-mkt-lark-writes",
+        "max_batch_size": 25,
+        "max_batch_timeout": 30
+      }
+    ]
+  },
+  "vars": {
+    "APP_ENV": "staging",
+    "DEFAULT_TIMEZONE": "Asia/Bangkok"
+  }
+}
