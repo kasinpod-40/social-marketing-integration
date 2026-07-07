@@ -3,7 +3,7 @@
 ## Status
 Phase 0 Lark Base Foundation is completed.
 
-Phase 1A TikTok For Creator normalization foundation has started.
+Phase 1A TikTok For Creator POC is live and passed for MVP usage.
 
 ## Completed in Lark
 - Created Lark Base: `Social MKT Data Hub`.
@@ -23,11 +23,21 @@ Phase 1A TikTok For Creator normalization foundation has started.
 - Configured select options.
 - Created base views with icons.
 
+## Completed TikTok For Creator POC
+- Connected TikTok For Creator through Lark Native Integration.
+- Lark created a sync-managed table automatically.
+- The table was renamed to `RAW_TikTok_Creator_Videos` and moved into `🧪 Raw Integration Tables`.
+- Rename/move did not break sync.
+- Manual sync updates existing rows and does not create duplicate rows.
+- Initial sync returned 20 records.
+- The TikTok account has 21 videos; the missing item is a video with removed audio, so the gap is likely video eligibility/content availability rather than a confirmed native connector pagination limit.
+
 ## Completed in code
 - Added TikTok Creator native adapter.
-- Added TikTok Creator normalization use case.
-- Added tests for TikTok Creator field mapping and snapshot output.
-- Added POC checklist: `docs/poc/tiktok-for-creator-poc.md`.
+- Added TikTok Creator single-row normalization use case.
+- Added TikTok Creator batch normalization use case with O(n) dedupe and skipped-row collection.
+- Added tests for TikTok Creator field mapping, exact observed Lark labels, snapshot output, batch dedupe, and invalid row isolation.
+- Added POC checklist/result: `docs/poc/tiktok-for-creator-poc.md`.
 
 ## Confirmed decisions
 - Main language: JavaScript.
@@ -40,16 +50,13 @@ Phase 1A TikTok For Creator normalization foundation has started.
 - Architecture: Clean Architecture + Monorepo + Modular Monolith.
 - Base name: `Social MKT Data Hub`.
 - TikTok Organic uses Lark TikTok For Creator native integration first.
+- `RAW_TikTok_Creator_Videos` is the official raw source for TikTok Organic video analytics.
 
 ## Current phase
-The project moved from pure Lark foundation into TikTok For Creator POC support.
-
-Do not start full connector implementation until the first Native Integration POC confirms actual fields and sync behavior.
+The project is ready to move from TikTok Creator live POC into the Lark read/write adapter and real mapping flow.
 
 ## Current priority
-1. Run live TikTok For Creator POC in Lark.
-2. Sync test data into `RAW_TikTok_Creator_Videos` or the native-created Lark table.
-3. Validate exact fields, sync behavior, historical range, duplicate/update behavior, and schedule options.
-4. Compare real field names with adapter aliases.
-5. Update Project Brain with POC result.
-6. Wire Lark read/write adapter only after live table behavior is confirmed.
+1. Commit/tag the TikTok Creator POC confirmation update.
+2. Implement Lark read/write adapter for reading `RAW_TikTok_Creator_Videos` and upserting into `MKT_Content` / `MKT_Content_Daily`.
+3. Preserve snapshot-first reporting; dashboards must not use raw table metrics directly.
+4. Record sync and mapping runs into `MKT_Sync_Log`.

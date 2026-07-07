@@ -12,26 +12,29 @@
 - Base views with icons created.
 - Git baseline committed and pushed.
 
-## Completed Phase 1A code actions
+## Completed Phase 1A actions
 - Added TikTok Creator native row mapper.
-- Added TikTok Creator normalization use case.
-- Added tests for mapping, null metric behavior, invalid numeric rejection, and daily snapshot output.
-- Added POC checklist at `docs/poc/tiktok-for-creator-poc.md`.
+- Added TikTok Creator single-row normalization use case.
+- Added TikTok Creator batch normalization use case.
+- Added tests for mapping, null metric behavior, invalid numeric rejection, daily snapshot output, batch dedupe, and skipped invalid rows.
+- Added POC checklist/result at `docs/poc/tiktok-for-creator-poc.md`.
+- Completed live Lark TikTok For Creator POC:
+  - Native table created automatically.
+  - Native table renamed to `RAW_TikTok_Creator_Videos`.
+  - Native table moved into `🧪 Raw Integration Tables`.
+  - Sync remained connected after rename/move.
+  - Manual sync updated existing rows without duplicates.
+  - 20/21 account videos synced; missing video has removed audio.
 
 ## Immediate next actions
-1. Run live TikTok For Creator Native Integration POC in Lark.
-2. Connect TikTok account through Lark Native Integration.
-3. Select TikTok Account Video Data.
-4. Sync into `RAW_TikTok_Creator_Videos` if possible. If Lark creates its own table, keep it as the native raw source and document the actual table name.
-5. Capture exact fields returned by the connector.
-6. Check whether sync updates existing rows or creates new rows.
-7. Check how many historical videos are pulled and whether more than 20 records are supported.
-8. Check automatic sync schedule options.
-9. Compare real field names against aliases in `creator-native.adapter.js`.
-10. Record POC result in Project Brain.
-11. Wire Lark read/write adapter after real table behavior is confirmed.
+1. Commit/tag this POC confirmation update.
+2. Implement Lark read adapter for `RAW_TikTok_Creator_Videos`.
+3. Implement Lark batch upsert adapter for `MKT_Content` and `MKT_Content_Daily`.
+4. Implement a sync use case that reads raw TikTok Creator rows, normalizes them, upserts content/snapshots, and writes `MKT_Sync_Log`.
+5. Run a real mapping test with the 20 synced records.
+6. Verify that raw metrics become stable report rows in `MKT_Content` and `MKT_Content_Daily`.
 
-## After TikTok For Creator POC
+## After TikTok For Creator mapping
 1. Run TikTok For Business POC for Campaign / Ad Group / Ads master data.
 2. Run Google Ads Native POC confirmation for Campaign List and Customer List.
 3. Start core implementation: D1 schema, queue contracts, sync log writer, and Lark writer.

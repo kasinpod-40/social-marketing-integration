@@ -1,6 +1,6 @@
 {
   "name": "social-marketing-integration",
-  "version": "0.1.0-tiktok-creator-poc",
+  "version": "0.1.1-tiktok-creator-poc-confirmed",
   "private": true,
   "type": "module",
   "workspaces": [

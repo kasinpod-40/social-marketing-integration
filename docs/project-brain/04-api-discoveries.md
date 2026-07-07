@@ -2,27 +2,55 @@
 
 ## TikTok For Creator — Lark Native Integration
 
-Status: POC support started, live sync still pending.
+Status: Live POC passed for MVP usage.
 
-Confirmed from previous manual inspection:
+Confirmed live behavior:
 - Lark TikTok For Creator can request TikTok profile, public videos, user analytics, and video analytics permissions.
-- Observed video analytics fields include views, likes, comments, shares, average play duration, total play duration, percentage watched completely, unique viewers, traffic sources, and audience country/region breakdown.
-- This is richer than the public/basic TikTok Display API assumption and should be used native-first for TikTok Organic.
+- Lark creates a sync-managed table automatically.
+- The sync-managed table can be renamed to `RAW_TikTok_Creator_Videos` and moved into `🧪 Raw Integration Tables` without breaking sync.
+- The table still exposes `Sync Data`, `Edit Configuration`, and `Remove Sync` after rename/move.
+- Manual sync updates existing rows instead of creating duplicates.
+- Initial sync returned 20 records.
+- The TikTok account has 21 videos; the missing video has removed audio. This suggests video eligibility/content availability is the likely cause of the missing record, not a confirmed pagination limit.
 
-Current implementation assumptions:
-- `RAW_TikTok_Creator_Videos` is the staging table.
-- Raw fields are mapped into `MKT_Content` and `MKT_Content_Daily`.
+Confirmed video analytics fields:
+- Unique identifier of the video
+- Date and time the video was published
+- Total number of times the video was shared
+- Total number of comments the video received
+- Total number of likes the video received
+- Video duration in seconds, rounded to three decimal places
+- Total video views
+- Video description
+- Embeddable link for this TikTok video
+- Shareable URL for this TikTok video
+- Temporary URL for video content thumbnail
+- Average video play duration based on all views
+- Total video play duration based on all views
+- Percentage of video watched completely
+- Total number of viewers who watched the video (deduplicated)
+- Different sources of video exposure, arranged by exposure percentage
+- Breakdown percentage data of audience country/region
+
+Decision:
+- Use `RAW_TikTok_Creator_Videos` as the official raw source for TikTok Organic video analytics.
+- Use Lark Native Integration as primary source for TikTok Organic in the MVP.
+- Continue to normalize raw rows into `MKT_Content` and `MKT_Content_Daily`.
+- Do not use raw/native tables directly for dashboards.
+- Treat videos with removed audio/restricted availability/unavailable analytics as possible native omissions.
+
+Current implementation:
+- `creator-native.adapter.js` maps observed Lark field labels into canonical fields.
+- `normalize-tiktok-creator-video.js` converts one raw row into `MKT_Content` and `MKT_Content_Daily` rows.
+- `normalize-tiktok-creator-video-batch.js` converts batches in O(n), dedupes by upsert key, and isolates bad rows as skipped rows.
 - Completion rate is normalized to decimal ratio.
 - Missing unsupported fields stay null.
 - Unique viewers must not be renamed as reach.
 
-Live POC checks still required:
-1. Exact field names returned after sync.
-2. Whether Lark writes into the prepared raw table or creates its own native table.
-3. Whether sync updates existing rows or creates duplicates.
-4. Whether more than 20 videos can be synced.
-5. Automatic sync schedule options.
-6. Sync logs, retry behavior, and historical range.
+Remaining checks:
+1. Observe the next automatic scheduled sync cycle.
+2. Confirm whether newly posted valid videos appear in the raw table.
+3. Confirm whether removed-audio/restricted videos remain omitted.
 
 ## TikTok For Business — Lark Native Integration
 

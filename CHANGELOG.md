@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.1-tiktok-creator-poc-confirmed
+- Recorded live TikTok For Creator POC result: native table creation, rename/move safety, sync-managed source, update-in-place behavior, and 20/21 video eligibility finding.
+- Confirmed `RAW_TikTok_Creator_Videos` as the official TikTok Creator raw source.
+- Expanded observed Lark field aliases for TikTok Creator native rows.
+- Added O(n) batch normalization use case with upsert-key dedupe and skipped-row collection.
+- Added tests for exact observed Lark labels, batch dedupe, and invalid row isolation.
+- Updated Project Brain, API discoveries, POC notes, and next actions.
+
 ## 0.1.0-tiktok-creator-poc-foundation
 - Started Phase 1A TikTok For Creator native integration support.
 - Added robust TikTok Creator native row mapper with alias handling for observed Lark field names.
