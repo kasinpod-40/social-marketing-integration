@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.1.3-canva-report-data-model-support
+- Added latest Lark table IDs for the Canva-ready Base structure.
+- Added deterministic course/content/funnel classification for `MKT_Content` fields.
+- Added `MKT_Metric_Definitions` seed rows and idempotent seed use case.
+- Added `MKT_Report_Snapshots` row builder for weekly/monthly/YoY Canva-style report payloads.
+- Wired sync-worker queue job type `metric.definitions.seed`.
+- Updated TikTok Creator normalization to write course/theme/funnel/CTA classification fields.
+- Added tests for classification, metric definitions, report snapshots, and updated TikTok normalization.
+
+## 0.1.2-tiktok-creator-lark-upsert
+- Added Lark Bitable client for token retrieval, paginated record reads, key search, batch create, and batch update.
+- Added Lark record repository with O(n) key dedupe, bounded-concurrency lookups, and create/update split.
+- Added TikTok Creator read/write sync use case from `RAW_TikTok_Creator_Videos` to `MKT_Content` and `MKT_Content_Daily`.
+- Wired `sync-worker` queue job type `tiktok.creator.native.sync` to the TikTok Creator Lark upsert flow.
+- Added tests for Lark upsert behavior and TikTok Creator Lark sync orchestration.
+- Updated README, Wrangler example vars, Project Brain, and next actions.
+
 ## 0.1.1-tiktok-creator-poc-confirmed
 - Recorded live TikTok For Creator POC result: native table creation, rename/move safety, sync-managed source, update-in-place behavior, and 20/21 video eligibility finding.
 - Confirmed `RAW_TikTok_Creator_Videos` as the official TikTok Creator raw source.

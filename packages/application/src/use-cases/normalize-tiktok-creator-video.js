@@ -1,5 +1,6 @@
 import { createContentKey, createDailySnapshotKey } from './create-daily-snapshot.js';
 import { mapTikTokCreatorVideoRow } from '../../../connectors/src/tiktok/creator-native.adapter.js';
+import { classifyMarketingContent } from '../services/content-classifier.js';
 
 /**
  * Converts one RAW_TikTok_Creator_Videos row into the two report tables:
@@ -17,6 +18,10 @@ export function normalizeTikTokCreatorVideo(input) {
   const mapped = mapTikTokCreatorVideoRow(input?.rawRow);
   const externalContentId = requireText(mapped.externalContentId, 'externalContentId');
   const contentUrl = mapped.shareableUrl ?? mapped.embedUrl;
+  const classification = classifyMarketingContent({
+    caption: mapped.description,
+    url: contentUrl,
+  });
 
   return Object.freeze({
     content: Object.freeze({
@@ -41,6 +46,18 @@ export function normalizeTikTokCreatorVideo(input) {
       latest_unique_viewers: mapped.metrics.uniqueViewers,
       avg_watch_time_seconds: mapped.metrics.averagePlayDurationSeconds,
       completion_rate: mapped.metrics.completionRate,
+      course_name: classification.course_name,
+      course_level: classification.course_level,
+      course_type: classification.course_type,
+      content_theme: classification.content_theme,
+      funnel_stage: classification.funnel_stage,
+      cta_type: classification.cta_type,
+      cta_destination: classification.cta_destination,
+      promotion_type: classification.promotion_type,
+      urgency_level: classification.urgency_level,
+      classification_source: classification.classification_source,
+      classification_confidence: classification.classification_confidence,
+      manual_tag_note: classification.manual_tag_note,
     }),
     dailySnapshot: Object.freeze({
       content_daily_key: createDailySnapshotKey({

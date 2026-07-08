@@ -1,18 +1,9 @@
-# 07 — Data Model
+# Data Model
 
 ## Lark Base
 Base name: `Social MKT Data Hub`
 
-## Sidebar groups
-- `📊 Dashboards`
-- `🧩 Master Data`
-- `📱 Organic Social`
-- `💰 Paid Ads`
-- `🤖 AI Reports`
-- `⚙️ Sync & System`
-- `🧪 Raw Integration Tables`
-
-## Required main tables
+## Main reporting tables
 - `MKT_Accounts`
 - `MKT_Content`
 - `MKT_Content_Daily`
@@ -26,81 +17,64 @@ Base name: `Social MKT Data Hub`
 - `MKT_AI_Report_Runs`
 - `MKT_Report_Settings`
 
-## Required raw/native tables
-- `RAW_TikTok_Creator_Videos`
+## Raw integration tables
+- `RAW_TikTok_Creator_Videos` — official TikTok For Creator native sync table.
 - `RAW_TikTok_Business_Campaigns`
 - `RAW_TikTok_Business_AdGroups`
 - `RAW_TikTok_Business_Ads`
 - `RAW_Google_Campaigns`
 - `RAW_Google_Customer_Lists`
 
-## Table groups
-### Master Data
-- `MKT_Accounts`
-- `MKT_Ads_Accounts`
+## TikTok Creator keys
+- `content_key = platform::account_id::external_content_id`
+- `content_daily_key = platform::account_id::external_content_id::metric_date`
 
-### Organic Social
-- `MKT_Content`
-- `MKT_Content_Daily`
+## TikTok Creator read/write flow
+```text
+RAW_TikTok_Creator_Videos
+        ↓
+normalizeTikTokCreatorVideoBatch
+        ↓
+MKT_Content upsert by content_key
+MKT_Content_Daily upsert by content_daily_key
+```
 
-### Paid Ads
-- `MKT_Ads_Campaigns`
-- `MKT_Ads_AdGroups`
-- `MKT_Ads_Creatives`
-- `MKT_Ads_Daily`
+## Rules
+- Raw tables are staging/landing sources only.
+- Dashboards and AI summaries must use `MKT_*` tables.
+- Daily reporting must use snapshot tables, not latest values only.
+- Missing unsupported metrics are `null`.
+- Target ROAS is not Actual ROAS.
+- Unique viewers is not automatically Reach.
 
-### AI Reports
-- `MKT_AI_Report_Runs`
-- `MKT_Report_Settings`
 
-### Sync & System
-- `MKT_Sync_Log`
-- `MKT_System_Alerts`
+## Canva-style report additions
 
-### Raw Integration Tables
-- All `RAW_*` tables.
+### Added main tables
+- `MKT_Metric_Definitions` — metric semantics by platform. Primary key: `metric_key`.
+- `MKT_Report_Snapshots` — computed weekly/monthly/YoY report payloads before AI summary. Primary key: `report_id`.
 
-## Primary fields
-Main table primary fields are fixed as follows:
+### Added `MKT_Content` classification fields
+- `course_name`
+- `course_level`
+- `course_type`
+- `content_theme`
+- `funnel_stage`
+- `cta_type`
+- `cta_destination`
+- `promotion_type`
+- `urgency_level`
+- `classification_source`
+- `classification_confidence`
+- `manual_tag_note`
 
-- `MKT_Accounts` → `account_key`
-- `MKT_Ads_Accounts` → `ads_account_key`
-- `MKT_Content` → `content_key`
-- `MKT_Content_Daily` → `content_daily_key`
-- `MKT_Ads_Campaigns` → `campaign_key`
-- `MKT_Ads_AdGroups` → `ad_group_key`
-- `MKT_Ads_Creatives` → `creative_key`
-- `MKT_Ads_Daily` → `ads_daily_key`
-- `MKT_AI_Report_Runs` → `report_id`
-- `MKT_Report_Settings` → `report_name`
-- `MKT_Sync_Log` → `sync_id`
-- `MKT_System_Alerts` → `alert_id`
+### Ads reporting dimensions
+Ads tables use `platform` for API/source family and `ad_channel` for the channel shown in client reports.
 
-Raw table primary fields:
-- `RAW_TikTok_Creator_Videos` → `video_id`
-- `RAW_TikTok_Business_Campaigns` → `campaign_id`
-- `RAW_TikTok_Business_AdGroups` → `ad_group_id`
-- `RAW_TikTok_Business_Ads` → `ad_id`
-- `RAW_Google_Campaigns` → `campaign_id`
-- `RAW_Google_Customer_Lists` → `customer_list_id`
+Examples:
+- `platform = google_ads`, `ad_channel = youtube_ads`
+- `platform = meta_ads`, `ad_channel = facebook_ads`
+- `platform = meta_ads`, `ad_channel = instagram_ads`
 
-## Snapshot keys
-- `MKT_Accounts`: `platform + account_id`
-- `MKT_Content`: `platform + account_id + external_content_id`
-- `MKT_Content_Daily`: `platform + account_id + external_content_id + metric_date`
-- `MKT_Ads_Campaigns`: `platform + ads_account_id + campaign_id`
-- `MKT_Ads_AdGroups`: `platform + ads_account_id + ad_group_id`
-- `MKT_Ads_Creatives`: `platform + ads_account_id + ad_id`
-- `MKT_Ads_Daily`: `platform + ads_account_id + campaign_id + ad_group_id + ad_id + metric_date`
-
-## View baseline completed
-Views with emoji prefixes have been created for the main tables, including connected/issue views for accounts, platform views for content and ads, latest/failed views for sync logs, alert views, and report period views.
-
-## Raw table rule
-`RAW_*` tables are landing/staging tables for native integration and mapping only. They must not be used as the final reporting source.
-
-## Reporting source rule
-Dashboards and AI summaries must use normalized `MKT_*` tables and daily snapshots, not raw native tables directly.
-
-## Null rule
-Unsupported metrics must be null/N/A, not zero.
+### Metric-definition rule
+Cross-platform dashboards must use `MKT_Metric_Definitions` before comparing metrics. For example, TikTok `unique_viewers` is not automatically the same as Facebook/Instagram `reach`.

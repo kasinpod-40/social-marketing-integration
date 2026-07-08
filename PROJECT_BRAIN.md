@@ -4,7 +4,7 @@
 This project connects social organic and paid ads data into Lark Base for reporting, daily snapshots, monitoring, and AI summaries. The implementation target is a lean MVP using Cloudflare Workers, Cloudflare D1, Cloudflare Queues, Lark Base, Lark Native Integrations where useful, and JavaScript.
 
 ## Current project status
-**Phase 1A — TikTok For Creator live POC passed for MVP usage.**
+**Phase 1B — Canva report data model support implemented.**
 
 Completed in Lark:
 - Created Lark Base: `Social MKT Data Hub`.
@@ -30,7 +30,16 @@ Completed in code:
 - Added robust TikTok For Creator native row mapper.
 - Added TikTok Creator normalization use case from `RAW_TikTok_Creator_Videos` to `MKT_Content` and `MKT_Content_Daily`.
 - Added TikTok Creator batch normalization use case with O(n) dedupe and skipped-row collection.
-- Added tests for TikTok metric parsing, null handling, invalid numeric rejection, exact observed Lark labels, batch dedupe, and snapshot key generation.
+- Added Lark Bitable client and Lark record repository.
+- Added TikTok Creator read/write use case from `RAW_TikTok_Creator_Videos` to `MKT_Content` and `MKT_Content_Daily`.
+- Wired sync-worker queue job type `tiktok.creator.native.sync` to the Lark upsert flow.
+- Added tests for TikTok metric parsing, null handling, invalid numeric rejection, exact observed Lark labels, batch dedupe, snapshot key generation, Lark upsert behavior, and TikTok Creator sync orchestration.
+- Added Canva-ready Lark table IDs to config.
+- Added deterministic rule-based course/content/funnel classification for `MKT_Content`.
+- Added `MKT_Metric_Definitions` seed rows and idempotent seed use case.
+- Added `MKT_Report_Snapshots` row builder for weekly/monthly/YoY report payloads.
+- Added sync-worker queue job type `metric.definitions.seed`.
+- Added tests for content classification, metric seed, and report snapshot payloads.
 - Added TikTok For Creator POC result in `docs/poc/tiktok-for-creator-poc.md`.
 
 ## Phase 0 objective
@@ -113,11 +122,29 @@ Current mapping rules:
 - `packages/` — clean architecture modules.
 - `tests/` — baseline tests for pure domain and mapping logic.
 
-## Next action
-Implement the Lark read/write mapping flow for TikTok Creator:
+## Current Canva-ready Lark table IDs
+```text
+MKT_Accounts = tblDcT7CVveNlNpP
+MKT_Ads_Accounts = tbl3yPcXdQzZQvBc
+MKT_Content = tbllvswTYP1dQGf3
+MKT_Content_Daily = tbl5n2rbZU7NO07w
+MKT_Ads_Campaigns = tblR7FwJ2tasEKPy
+MKT_Ads_AdGroups = tblsFufuixpig0Tf
+MKT_Ads_Creatives = tblmWi81dZ98v4dc
+MKT_Ads_Daily = tblPTMsC9J32gukX
+MKT_Metric_Definitions = tblk2Ho99sXqLLE2
+MKT_Report_Snapshots = tbl81gHrMESpDolN
+MKT_AI_Report_Runs = tblCX8IMtOiahI1x
+RAW_TikTok_Creator_Videos = tblMdO6XCti94EwH
+```
 
-1. Read rows from `RAW_TikTok_Creator_Videos`.
-2. Normalize rows into `MKT_Content` and `MKT_Content_Daily`.
-3. Upsert by stable key.
-4. Write sync result into `MKT_Sync_Log`.
-5. Validate with the 20 live synced rows.
+## Next action
+Validate the Lark read/write mapping flow with live Lark table IDs:
+
+1. Fill Lark table IDs in Cloudflare env or local config.
+2. Run queue job `tiktok.creator.native.sync` for the synced TikTok account.
+3. Confirm `MKT_Content` receives one row per eligible TikTok video.
+4. Confirm `MKT_Content_Daily` receives one snapshot per eligible TikTok video per metric date.
+5. Confirm a second run updates existing rows instead of creating duplicates.
+6. Seed `MKT_Metric_Definitions` with queue job `metric.definitions.seed`.
+7. Add `MKT_Sync_Log` write after live read/write validation.

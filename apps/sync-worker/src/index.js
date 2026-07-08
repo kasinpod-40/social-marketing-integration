@@ -1,4 +1,14 @@
 import { createSyncLogEntry } from '../../../packages/domain/src/entities/sync-log.js';
+import { syncTikTokCreatorNativeToLark } from '../../../packages/application/src/use-cases/sync-tiktok-creator-native-to-lark.js';
+import { createLarkBitableClientFromEnv } from '../../../packages/connectors/src/lark/lark-bitable.client.js';
+import { LarkRecordRepository } from '../../../packages/connectors/src/lark/lark-record-repository.js';
+import { seedMetricDefinitions } from '../../../packages/application/src/use-cases/seed-metric-definitions.js';
+import { readLarkTableIdsFromEnv } from '../../../packages/config/src/lark-table-config.js';
+
+const JOB_TYPES = Object.freeze({
+  TIKTOK_CREATOR_NATIVE_SYNC: 'tiktok.creator.native.sync',
+  METRIC_DEFINITIONS_SEED: 'metric.definitions.seed',
+});
 
 export default {
   async scheduled(event, env, ctx) {
@@ -18,12 +28,18 @@ export default {
 
   async queue(batch, env, ctx) {
     const jobs = batch.messages.map((message) => normalizeQueueMessage(message));
-    const results = await Promise.allSettled(jobs.map((job) => processJob(job)));
+    const repository = createRepository(env);
+    const results = await Promise.allSettled(jobs.map((job) => processJob({ job, env, repository })));
 
     results.forEach((result, index) => {
       if (result.status === 'fulfilled') {
         batch.messages[index].ack();
       } else {
+        console.error(JSON.stringify({
+          ok: false,
+          messageId: batch.messages[index].id,
+          error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+        }));
         batch.messages[index].retry();
       }
     });
@@ -38,10 +54,55 @@ function normalizeQueueMessage(message) {
   };
 }
 
-async function processJob(job) {
-  if (!job.body?.type) {
-    throw new Error(`Invalid sync job without type: ${job.id}`);
+async function processJob(input) {
+  const job = input.job;
+  const type = requireText(job?.body?.type, `job.type:${job?.id ?? 'unknown'}`);
+
+  const tableIds = readLarkTableIdsFromEnv(input.env);
+
+  if (type === JOB_TYPES.TIKTOK_CREATOR_NATIVE_SYNC) {
+    return syncTikTokCreatorNativeToLark({
+      repository: input.repository,
+      accountId: requireText(job.body?.accountId ?? input.env?.TIKTOK_CREATOR_ACCOUNT_ID, 'TIKTOK_CREATOR_ACCOUNT_ID'),
+      metricDate: requireText(job.body?.metricDate ?? todayInBangkok(), 'metricDate'),
+      tables: {
+        rawTikTokCreatorVideos: tableIds.rawTikTokCreatorVideos,
+        mktContent: tableIds.mktContent,
+        mktContentDaily: tableIds.mktContentDaily,
+      },
+    });
   }
 
-  return { ok: true, jobId: job.id, type: job.body.type };
+  if (type === JOB_TYPES.METRIC_DEFINITIONS_SEED) {
+    return seedMetricDefinitions({
+      repository: input.repository,
+      tableId: tableIds.mktMetricDefinitions,
+    });
+  }
+
+  throw new Error(`Unsupported sync job type: ${type}`);
+}
+
+function createRepository(env) {
+  const client = createLarkBitableClientFromEnv(env);
+  return new LarkRecordRepository({ client });
+}
+
+function todayInBangkok() {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Bangkok',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+
+  return formatter.format(new Date());
+}
+
+function requireText(value, fieldName) {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new Error(`Sync worker requires ${fieldName}`);
+  }
+
+  return value.trim();
 }
