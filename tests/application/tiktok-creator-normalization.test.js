@@ -46,14 +46,14 @@ test('normalizes a TikTok Creator raw row into MKT content and daily snapshot ro
     course_level: [],
     course_type: null,
     content_theme: null,
-    funnel_stage: 'awareness',
-    cta_type: 'website',
+    funnel_stage: null,
+    cta_type: 'none',
     cta_destination: 'https://www.tiktok.com/@brand/video/video_1',
     promotion_type: 'none',
     urgency_level: 'none',
     classification_source: 'rule',
-    classification_confidence: 0.53,
-    manual_tag_note: null,
+    classification_confidence: 0.2,
+    manual_tag_note: 'manual_review: no enabled dictionary rule matched',
   });
 
   assert.equal(normalized.dailySnapshot.content_daily_key, 'tiktok::tt_account_1::video_1::2026-07-06');

@@ -1,4 +1,5 @@
 import { normalizeTikTokCreatorVideoBatch } from './normalize-tiktok-creator-video-batch.js';
+import { loadClassificationDictionary } from './load-classification-dictionary.js';
 
 /**
  * Reads the Lark native TikTok Creator raw table, normalizes records, and upserts
@@ -10,6 +11,7 @@ import { normalizeTikTokCreatorVideoBatch } from './normalize-tiktok-creator-vid
  * @param {string} input.tables.rawTikTokCreatorVideos
  * @param {string} input.tables.mktContent
  * @param {string} input.tables.mktContentDaily
+ * @param {string} input.tables.mktClassificationDictionary
  * @param {string} input.accountId
  * @param {string} input.metricDate YYYY-MM-DD
  */
@@ -19,9 +21,21 @@ export async function syncTikTokCreatorNativeToLark(input) {
   const accountId = requireText(input?.accountId, 'accountId');
   const metricDate = requireDate(input?.metricDate, 'metricDate');
 
-  const rawRecords = await repository.listAll(tables.rawTikTokCreatorVideos);
+  const [rawRecords, dictionaryRules] = await Promise.all([
+    repository.listAll(tables.rawTikTokCreatorVideos),
+    loadClassificationDictionary({
+      repository,
+      tableId: tables.mktClassificationDictionary,
+    }),
+  ]);
+
   const rawRows = rawRecords.map((record) => record?.fields ?? {});
-  const normalized = normalizeTikTokCreatorVideoBatch({ rawRows, accountId, metricDate });
+  const normalized = normalizeTikTokCreatorVideoBatch({
+    rawRows,
+    accountId,
+    metricDate,
+    dictionaryRules,
+  });
 
   const [contentResult, dailyResult] = await Promise.all([
     repository.upsertByKey({
@@ -42,6 +56,7 @@ export async function syncTikTokCreatorNativeToLark(input) {
     rawRecords: rawRows.length,
     content: contentResult,
     dailySnapshots: dailyResult,
+    classificationRules: dictionaryRules.length,
     skippedRows: normalized.skippedRows,
   });
 }
@@ -55,7 +70,7 @@ function requireRepository(repository) {
 }
 
 function requireTables(tables) {
-  const required = ['rawTikTokCreatorVideos', 'mktContent', 'mktContentDaily'];
+  const required = ['rawTikTokCreatorVideos', 'mktContent', 'mktContentDaily', 'mktClassificationDictionary'];
   const result = {};
 
   for (const key of required) {

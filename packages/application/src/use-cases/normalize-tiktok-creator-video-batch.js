@@ -8,12 +8,14 @@ import { normalizeTikTokCreatorVideo } from './normalize-tiktok-creator-video.js
  * @param {Array<Record<string, unknown>>} input.rawRows
  * @param {string} input.accountId
  * @param {string} input.metricDate YYYY-MM-DD in the reporting timezone.
+ * @param {Array<Object>} [input.dictionaryRules]
  * @returns {{contentRows: Object[], dailySnapshotRows: Object[], skippedRows: Object[]}}
  */
 export function normalizeTikTokCreatorVideoBatch(input) {
   const rawRows = requireArray(input?.rawRows, 'rawRows');
   const accountId = requireText(input?.accountId, 'accountId');
   const metricDate = requireText(input?.metricDate, 'metricDate');
+  const dictionaryRules = Array.isArray(input?.dictionaryRules) ? input.dictionaryRules : [];
   const seenContentKeys = new Set();
   const seenDailyKeys = new Set();
   const contentRows = [];
@@ -26,6 +28,7 @@ export function normalizeTikTokCreatorVideoBatch(input) {
         accountId,
         metricDate,
         rawRow: rawRows[index],
+        dictionaryRules,
       });
 
       if (!seenContentKeys.has(normalized.content.content_key)) {

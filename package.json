@@ -1,6 +1,6 @@
 {
   "name": "social-marketing-integration",
-  "version": "0.1.3-canva-report-data-model-support",
+  "version": "0.1.4-env-config-lark-dictionary",
   "private": true,
   "type": "module",
   "workspaces": [

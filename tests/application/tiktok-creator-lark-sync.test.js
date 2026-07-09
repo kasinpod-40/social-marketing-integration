@@ -6,6 +6,26 @@ test('reads RAW TikTok Creator rows and upserts content plus daily snapshots', a
   const upserts = [];
   const repository = {
     async listAll(tableId) {
+      if (tableId === 'tbl_dictionary') {
+        return [
+          {
+            recordId: 'dict_1',
+            fields: {
+              rule_key: 'theme_demo',
+              target_field: 'content_theme',
+              output_value: 'สรุปเนื้อหา',
+              aliases: 'demo',
+              match_type: 'contains',
+              platform: ['tiktok'],
+              applies_to: ['organic'],
+              priority: 50,
+              confidence: 80,
+              enabled: true,
+            },
+          },
+        ];
+      }
+
       assert.equal(tableId, 'tbl_raw_tiktok_creator');
       return [
         {
@@ -44,15 +64,18 @@ test('reads RAW TikTok Creator rows and upserts content plus daily snapshots', a
       rawTikTokCreatorVideos: 'tbl_raw_tiktok_creator',
       mktContent: 'tbl_mkt_content',
       mktContentDaily: 'tbl_mkt_content_daily',
+      mktClassificationDictionary: 'tbl_dictionary',
     },
   });
 
   assert.equal(result.rawRecords, 2);
+  assert.equal(result.classificationRules, 1);
   assert.equal(result.skippedRows.length, 1);
   assert.equal(upserts.length, 2);
   assert.equal(upserts[0].tableId, 'tbl_mkt_content');
   assert.equal(upserts[0].keyField, 'content_key');
   assert.equal(upserts[0].rows[0].content_key, 'tiktok::tt_account_1::video_1');
+  assert.equal(upserts[0].rows[0].content_theme, 'สรุปเนื้อหา');
   assert.equal(upserts[1].tableId, 'tbl_mkt_content_daily');
   assert.equal(upserts[1].keyField, 'content_daily_key');
   assert.equal(upserts[1].rows[0].completion_rate, 0.5);

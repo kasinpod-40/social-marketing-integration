@@ -13,6 +13,7 @@ import { classifyMarketingContent } from '../services/content-classifier.js';
  * @returns {{content: Object, dailySnapshot: Object}}
  */
 export function normalizeTikTokCreatorVideo(input) {
+  const dictionaryRules = Array.isArray(input?.dictionaryRules) ? input.dictionaryRules : [];
   const accountId = requireText(input?.accountId, 'accountId');
   const metricDate = requireDate(input?.metricDate, 'metricDate');
   const mapped = mapTikTokCreatorVideoRow(input?.rawRow);
@@ -21,6 +22,9 @@ export function normalizeTikTokCreatorVideo(input) {
   const classification = classifyMarketingContent({
     caption: mapped.description,
     url: contentUrl,
+    platform: mapped.platform,
+    appliesTo: 'organic',
+    dictionaryRules,
   });
 
   return Object.freeze({

@@ -1,51 +1,56 @@
-export const LARK_TABLE_IDS = Object.freeze({
-  mktAccounts: 'tblDcT7CVveNlNpP',
-  mktAdsAccounts: 'tbl3yPcXdQzZQvBc',
-  mktContent: 'tbllvswTYP1dQGf3',
-  mktContentDaily: 'tbl5n2rbZU7NO07w',
-  mktAdsCampaigns: 'tblR7FwJ2tasEKPy',
-  mktAdsAdGroups: 'tblsFufuixpig0Tf',
-  mktAdsCreatives: 'tblmWi81dZ98v4dc',
-  mktAdsDaily: 'tblPTMsC9J32gukX',
-  mktMetricDefinitions: 'tblk2Ho99sXqLLE2',
-  mktReportSnapshots: 'tbl81gHrMESpDolN',
-  mktAiReportRuns: 'tblCX8IMtOiahI1x',
-  mktReportSettings: 'tblYzXA6m9G0PvIs',
-  mktSyncLog: 'tblpgnHODi8MIcso',
-  mktSystemAlerts: 'tbl5Cq9iVkWTFdA4',
-  rawTikTokCreatorVideos: 'tblMdO6XCti94EwH',
-  rawTikTokBusinessCampaigns: 'tblaHQOIAR1Yolk5',
-  rawTikTokBusinessAdGroups: 'tbluOIJPRMgHHmyx',
-  rawTikTokBusinessAds: 'tblgxZSqOFMpkykU',
-  rawGoogleCampaigns: 'tblsxhuZJCDtk4wg',
-  rawGoogleCustomerLists: 'tblS5Rki3QS7Wg1H',
-});
-
 export const LARK_TABLE_ENV = Object.freeze({
-  rawTikTokCreatorVideos: 'LARK_TABLE_RAW_TIKTOK_CREATOR_VIDEOS',
+  mktAccounts: 'LARK_TABLE_MKT_ACCOUNTS',
+  mktAdsAccounts: 'LARK_TABLE_MKT_ADS_ACCOUNTS',
   mktContent: 'LARK_TABLE_MKT_CONTENT',
   mktContentDaily: 'LARK_TABLE_MKT_CONTENT_DAILY',
+  mktAdsCampaigns: 'LARK_TABLE_MKT_ADS_CAMPAIGNS',
+  mktAdsAdGroups: 'LARK_TABLE_MKT_ADS_ADGROUPS',
+  mktAdsCreatives: 'LARK_TABLE_MKT_ADS_CREATIVES',
+  mktAdsDaily: 'LARK_TABLE_MKT_ADS_DAILY',
   mktMetricDefinitions: 'LARK_TABLE_MKT_METRIC_DEFINITIONS',
   mktReportSnapshots: 'LARK_TABLE_MKT_REPORT_SNAPSHOTS',
   mktAiReportRuns: 'LARK_TABLE_MKT_AI_REPORT_RUNS',
+  mktReportSettings: 'LARK_TABLE_MKT_REPORT_SETTINGS',
+  mktSyncLog: 'LARK_TABLE_MKT_SYNC_LOG',
+  mktSystemAlerts: 'LARK_TABLE_MKT_SYSTEM_ALERTS',
+  mktClassificationDictionary: 'LARK_TABLE_MKT_CLASSIFICATION_DICTIONARY',
+  rawTikTokCreatorVideos: 'LARK_TABLE_RAW_TIKTOK_CREATOR_VIDEOS',
+  rawTikTokBusinessCampaigns: 'LARK_TABLE_RAW_TIKTOK_BUSINESS_CAMPAIGNS',
+  rawTikTokBusinessAdGroups: 'LARK_TABLE_RAW_TIKTOK_BUSINESS_ADGROUPS',
+  rawTikTokBusinessAds: 'LARK_TABLE_RAW_TIKTOK_BUSINESS_ADS',
+  rawGoogleCampaigns: 'LARK_TABLE_RAW_GOOGLE_CAMPAIGNS',
+  rawGoogleCustomerLists: 'LARK_TABLE_RAW_GOOGLE_CUSTOMER_LISTS',
 });
 
-export function readLarkTableIdsFromEnv(env) {
-  return Object.freeze({
-    rawTikTokCreatorVideos: readTableId(env, 'rawTikTokCreatorVideos'),
-    mktContent: readTableId(env, 'mktContent'),
-    mktContentDaily: readTableId(env, 'mktContentDaily'),
-    mktMetricDefinitions: readTableId(env, 'mktMetricDefinitions'),
-    mktReportSnapshots: readTableId(env, 'mktReportSnapshots'),
-    mktAiReportRuns: readTableId(env, 'mktAiReportRuns'),
-  });
+export const LARK_TABLE_KEYS = Object.freeze(Object.keys(LARK_TABLE_ENV));
+
+/**
+ * Resolves Lark table IDs from environment variables only.
+ * Real table IDs must not be hardcoded in source code so the same codebase can
+ * be deployed to each client's own Cloudflare Worker and Lark Base.
+ *
+ * @param {Record<string, unknown>} env
+ * @param {string[]} [requiredKeys]
+ * @returns {Readonly<Record<string, string>>}
+ */
+export function readLarkTableIdsFromEnv(env, requiredKeys = LARK_TABLE_KEYS) {
+  const result = {};
+  for (const tableKey of requiredKeys) {
+    result[tableKey] = readTableId(env, tableKey);
+  }
+
+  return Object.freeze(result);
 }
 
-function readTableId(env, tableKey) {
+export function readTableId(env, tableKey) {
   const envName = LARK_TABLE_ENV[tableKey];
-  const value = env?.[envName] ?? LARK_TABLE_IDS[tableKey];
+  if (!envName) {
+    throw new Error(`Unknown Lark table key: ${tableKey}`);
+  }
+
+  const value = env?.[envName];
   if (typeof value !== 'string' || value.trim() === '') {
-    throw new Error(`Missing Lark table id for ${tableKey}`);
+    throw new Error(`Missing required env ${envName} for Lark table ${tableKey}`);
   }
 
   return value.trim();

@@ -1,7 +1,7 @@
 # Current State
 
 ## Baseline
-`v0.1.2-tiktok-creator-lark-upsert`
+`v0.1.4-env-config-lark-dictionary`
 
 ## Completed
 - Lark Base `Social MKT Data Hub` is created.
@@ -46,3 +46,14 @@ The TikTok Creator flow is ready for live read/write validation with real Lark t
 - Added metric-definition seed rows for organic and ads metrics.
 - Added report snapshot row builder for computed Canva-style payloads.
 - Tests and syntax checks pass.
+
+
+## 2026-07-09 — v0.1.4 env-driven config + Lark classification dictionary
+- Added `📚 MKT_Classification_Dictionary` in Lark Base and confirmed table ID `tblatpDOU6Qqh7Dv`.
+- Moved Lark table ID resolution to env-only config; no real table IDs remain hardcoded in source code.
+- Added `LARK_TABLE_MKT_CLASSIFICATION_DICTIONARY` env key.
+- TikTok Creator sync now reads dictionary rules from Lark before normalizing rows.
+- Removed Chemistry K-specific hardcoded course rules from the core classifier.
+- Classification now uses client-editable dictionary rows and falls back to `manual_review` note with low confidence when no rule matches.
+- Local tests pass: 25 tests.
+- Syntax check passes for apps/packages/tests.

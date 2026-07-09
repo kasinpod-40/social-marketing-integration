@@ -18,20 +18,21 @@ connectors/infrastructure implement application ports
 ```
 
 ## Current baseline
-`v0.1.3-canva-report-data-model-support`
+`v0.1.4-env-config-lark-dictionary`
 
-This baseline upgrades the TikTok Creator read/write flow so it fits the client's Canva-style reports:
+This baseline makes the codebase client-neutral:
 
 ```text
-RAW_TikTok_Creator_Videos
+client Cloudflare env
         ↓
-normalize / validate / classify / dedupe
+resolve Lark Base table IDs
         ↓
-MKT_Content
-MKT_Content_Daily
+load MKT_Classification_Dictionary from Lark
+        ↓
+normalize / classify / upsert report rows
 ```
 
-It also adds metric-definition seed support and a report snapshot structure for weekly/monthly/YoY payloads before AI summary generation.
+No real Lark table IDs are hardcoded in source code. Each client deploys the same code to their own Cloudflare project and provides their own Lark Base table IDs through environment variables.
 
 ## Local validation
 This skeleton has no external dependencies for included tests.
@@ -43,23 +44,31 @@ npm run check
 
 ## Required Lark environment variables
 
+Global Lark app/base secrets:
+
 ```text
 LARK_APP_ID
 LARK_APP_SECRET
 LARK_APP_TOKEN
-LARK_TABLE_RAW_TIKTOK_CREATOR_VIDEOS
-LARK_TABLE_MKT_CONTENT
-LARK_TABLE_MKT_CONTENT_DAILY
-LARK_TABLE_MKT_METRIC_DEFINITIONS
 TIKTOK_CREATOR_ACCOUNT_ID
 ```
 
-The latest Canva-ready table IDs are in:
+Required for TikTok Creator sync:
 
 ```text
-packages/config/src/lark-table-config.js
-wrangler.example.jsonc
+LARK_TABLE_RAW_TIKTOK_CREATOR_VIDEOS
+LARK_TABLE_MKT_CONTENT
+LARK_TABLE_MKT_CONTENT_DAILY
+LARK_TABLE_MKT_CLASSIFICATION_DICTIONARY
 ```
+
+Required for metric seed:
+
+```text
+LARK_TABLE_MKT_METRIC_DEFINITIONS
+```
+
+Other table IDs are kept in `wrangler.example.jsonc` / `.dev.vars.example` for future flows, but they are not required by every job.
 
 ## Queue jobs
 
@@ -81,28 +90,34 @@ Metric definition seed:
 }
 ```
 
-## Canva-style report support added in v0.1.3
+## Lark classification dictionary
 
-`MKT_Content` now receives rule-based fields:
+`📚 MKT_Classification_Dictionary` is the source of truth for business-specific mapping such as course names, course levels, content themes, funnel stages, CTAs, promotions, and urgency.
+
+The code reads these columns:
 
 ```text
-course_name
-course_level
-course_type
-content_theme
-funnel_stage
-cta_type
-cta_destination
-promotion_type
-urgency_level
-classification_source
-classification_confidence
-manual_tag_note
+rule_key
+target_field
+output_value
+aliases
+match_type
+platform
+applies_to
+priority
+confidence
+enabled
+note
 ```
 
-`MKT_Metric_Definitions` seed rows protect dashboard semantics such as Reach vs Unique Viewers and Target ROAS vs Actual ROAS.
+If no enabled dictionary rule matches a content row, the mapper leaves business fields empty and writes:
 
-`MKT_Report_Snapshots` rows store computed metric/top-content/top-ads payloads as JSON before AI summaries are generated.
+```text
+manual_tag_note = manual_review: no enabled dictionary rule matched
+classification_confidence = 0.2
+```
+
+This prevents the system from guessing Chemistry K-specific values for other clients.
 
 ## Definition of Done
 Code is not complete unless tests/regression pass and the Project Brain is updated.

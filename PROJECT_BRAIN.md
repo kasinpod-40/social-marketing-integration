@@ -148,3 +148,13 @@ Validate the Lark read/write mapping flow with live Lark table IDs:
 5. Confirm a second run updates existing rows instead of creating duplicates.
 6. Seed `MKT_Metric_Definitions` with queue job `metric.definitions.seed`.
 7. Add `MKT_Sync_Log` write after live read/write validation.
+
+
+## 2026-07-09 — v0.1.4 env-driven config + Lark classification dictionary
+- Baseline: `v0.1.4-env-config-lark-dictionary`.
+- Lark table IDs are now resolved from env only; source code is client-neutral.
+- Added `LARK_TABLE_MKT_CLASSIFICATION_DICTIONARY` and dictionary loading from Lark.
+- `MKT_Classification_Dictionary` is now the source of truth for course/content/funnel/CTA/promotion/urgency mapping.
+- Removed Chemistry K-specific hardcoded classification rules from core code.
+- Unmatched content now goes to manual review via low confidence and `manual_tag_note` instead of guessed fields.
+- Validation: `npm test` passed 25 tests; `npm run check` passed.

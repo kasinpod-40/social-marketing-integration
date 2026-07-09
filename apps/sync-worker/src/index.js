@@ -58,9 +58,13 @@ async function processJob(input) {
   const job = input.job;
   const type = requireText(job?.body?.type, `job.type:${job?.id ?? 'unknown'}`);
 
-  const tableIds = readLarkTableIdsFromEnv(input.env);
-
   if (type === JOB_TYPES.TIKTOK_CREATOR_NATIVE_SYNC) {
+    const tableIds = readLarkTableIdsFromEnv(input.env, [
+      'rawTikTokCreatorVideos',
+      'mktContent',
+      'mktContentDaily',
+      'mktClassificationDictionary',
+    ]);
     return syncTikTokCreatorNativeToLark({
       repository: input.repository,
       accountId: requireText(job.body?.accountId ?? input.env?.TIKTOK_CREATOR_ACCOUNT_ID, 'TIKTOK_CREATOR_ACCOUNT_ID'),
@@ -69,11 +73,13 @@ async function processJob(input) {
         rawTikTokCreatorVideos: tableIds.rawTikTokCreatorVideos,
         mktContent: tableIds.mktContent,
         mktContentDaily: tableIds.mktContentDaily,
+        mktClassificationDictionary: tableIds.mktClassificationDictionary,
       },
     });
   }
 
   if (type === JOB_TYPES.METRIC_DEFINITIONS_SEED) {
+    const tableIds = readLarkTableIdsFromEnv(input.env, ['mktMetricDefinitions']);
     return seedMetricDefinitions({
       repository: input.repository,
       tableId: tableIds.mktMetricDefinitions,

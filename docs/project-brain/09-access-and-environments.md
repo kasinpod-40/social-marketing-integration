@@ -18,3 +18,9 @@ The developer is a freelancer without a registered company. Use client-owned pro
 - No password sharing.
 - Use roles, IAM, partners, collaborators, and OAuth.
 - Tokens must be encrypted and never stored in Lark.
+
+## v0.1.4 environment model
+- One client should deploy one Cloudflare project/Worker with its own env vars.
+- Source code must stay client-neutral and must not hardcode real Lark table IDs.
+- Table IDs are configured through `.dev.vars` locally and Cloudflare Variables/Secrets in production.
+- `LARK_TABLE_MKT_CLASSIFICATION_DICTIONARY` is required for dictionary-based classification.

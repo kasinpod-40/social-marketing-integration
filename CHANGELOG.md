@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.4-env-config-lark-dictionary
+- Removed real Lark table IDs from source code and made table mapping env-driven.
+- Added `LARK_TABLE_MKT_CLASSIFICATION_DICTIONARY` support.
+- Added Lark classification dictionary mapper that handles text, select-like, and multi-select-like field shapes.
+- Updated TikTok Creator sync to load dictionary rules from Lark before normalization.
+- Replaced hardcoded Chemistry K course/content rules in core classifier with client-editable dictionary rules.
+- Added manual-review fallback for unmatched content instead of guessing business-specific fields.
+- Added tests for env-driven table config, dictionary mapping, dictionary-based classification, and TikTok sync orchestration.
+
+
 ## 0.1.3-canva-report-data-model-support
 - Added latest Lark table IDs for the Canva-ready Base structure.
 - Added deterministic course/content/funnel classification for `MKT_Content` fields.
