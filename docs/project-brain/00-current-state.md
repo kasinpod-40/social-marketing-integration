@@ -62,3 +62,10 @@ The TikTok Creator flow is ready for live read/write validation with real Lark t
 ### v0.1.5-lark-live-sync-validation
 
 Added a dry-run validation queue job before the first real Lark write. Use `tiktok.creator.native.validate` to confirm env/table mapping, dictionary rules, normalization output, skipped rows, and sample keys before running `tiktok.creator.native.sync`.
+
+### v0.1.6-local-lark-run-tools
+- Added local Node runner scripts that read `.dev.vars` so the first real Lark validation/write can be run without Cloudflare queue setup.
+- Added `npm run validate:tiktok` for non-mutating validation against real Lark tables.
+- Added write-guarded commands: `CONFIRM_WRITE=YES npm run sync:tiktok` and `CONFIRM_WRITE=YES npm run seed:metrics`.
+- Expanded `.dev.vars.example` to list all current table mappings and clarified that `TIKTOK_CREATOR_ACCOUNT_ID` is an internal account key.
+- Test/check status: 30 tests passed; syntax check includes apps, packages, tests, and scripts.

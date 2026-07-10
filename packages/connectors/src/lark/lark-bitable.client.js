@@ -190,7 +190,7 @@ export function createLarkBitableClientFromEnv(env) {
   return new LarkBitableClient({
     appId: env?.LARK_APP_ID,
     appSecret: env?.LARK_APP_SECRET,
-    appToken: env?.LARK_APP_TOKEN,
+    appToken: env?.LARK_APP_TOKEN ?? env?.LARK_BASE_APP_TOKEN,
   });
 }
 

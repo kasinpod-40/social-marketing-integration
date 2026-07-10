@@ -68,3 +68,11 @@
 - Added D1 schema draft.
 - Added baseline tests for metric calculations.
 - Added platform decision notes for TikTok and Google Ads strategy.
+
+## v0.1.6-local-lark-run-tools
+
+- Added local `.dev.vars` runner utilities for Lark live validation and write sync.
+- Added `npm run validate:tiktok` for safe dry-run validation against the real Lark Base.
+- Added guarded write commands: `CONFIRM_WRITE=YES npm run sync:tiktok` and `CONFIRM_WRITE=YES npm run seed:metrics`.
+- Added `.dev.vars.example` with full table mapping placeholders and clarified that `TIKTOK_CREATOR_ACCOUNT_ID` is an internal account key.
+- Added `.dev.vars` parser tests and kept write commands protected from accidental execution.

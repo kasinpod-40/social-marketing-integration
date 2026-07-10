@@ -18,7 +18,7 @@ connectors/infrastructure implement application ports
 ```
 
 ## Current baseline
-`v0.1.5-lark-live-sync-validation`
+`v0.1.6-local-lark-run-tools`
 
 This baseline makes the codebase client-neutral:
 
@@ -41,6 +41,42 @@ This skeleton has no external dependencies for included tests.
 npm test
 npm run check
 ```
+
+
+## Local Lark live run tools
+
+Create a local secret file from the example and fill real Lark values:
+
+```bash
+cp .dev.vars.example .dev.vars
+```
+
+Validate real Lark data without writing to report tables:
+
+```bash
+npm run validate:tiktok
+```
+
+Write TikTok Creator rows into `MKT_Content` and `MKT_Content_Daily` only after validation looks correct:
+
+```bash
+CONFIRM_WRITE=YES npm run sync:tiktok
+```
+
+Seed metric definitions into `MKT_Metric_Definitions`:
+
+```bash
+CONFIRM_WRITE=YES npm run seed:metrics
+```
+
+Optional runtime inputs:
+
+```bash
+METRIC_DATE=2026-07-10 SAMPLE_LIMIT=10 npm run validate:tiktok
+METRIC_DATE=2026-07-10 CONFIRM_WRITE=YES npm run sync:tiktok
+```
+
+`.dev.vars` must never be committed. It contains client secrets and table IDs.
 
 ## Required Lark environment variables
 

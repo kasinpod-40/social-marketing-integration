@@ -42,3 +42,11 @@
 ### v0.1.5-lark-live-sync-validation
 
 Added a dry-run validation queue job before the first real Lark write. Use `tiktok.creator.native.validate` to confirm env/table mapping, dictionary rules, normalization output, skipped rows, and sample keys before running `tiktok.creator.native.sync`.
+
+## After v0.1.6
+
+1. Fill `.dev.vars` with real Lark app credentials and table IDs.
+2. Run `npm run validate:tiktok` and inspect rawRecords, dictionaryRules, contentRows, dailySnapshotRows, skippedRows, and warnings.
+3. If validation is clean, run `CONFIRM_WRITE=YES npm run sync:tiktok`.
+4. Verify `MKT_Content` and `MKT_Content_Daily` in Lark manually.
+5. Seed metric definitions using `CONFIRM_WRITE=YES npm run seed:metrics` after table field validation.
