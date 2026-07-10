@@ -1,3 +1,5 @@
+const IDENTITY_KEY_SEPARATOR = ':';
+
 export function createContentKey({ platform, accountId, externalContentId }) {
   return joinRequiredParts('Content key', [platform, accountId, externalContentId]);
 }
@@ -7,9 +9,15 @@ export function createDailySnapshotKey({ platform, accountId, entityId, metricDa
 }
 
 function joinRequiredParts(label, parts) {
-  if (parts.some((part) => part === null || part === undefined || part === '')) {
+  return parts
+    .map((part) => normalizeIdentityPart(label, part))
+    .join(IDENTITY_KEY_SEPARATOR);
+}
+
+function normalizeIdentityPart(label, part) {
+  if (typeof part !== 'string' || part.trim() === '') {
     throw new Error(`${label} requires all identity fields`);
   }
 
-  return parts.join('::');
+  return part.trim();
 }

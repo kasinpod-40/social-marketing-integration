@@ -35,7 +35,7 @@ test('normalizes TikTok Creator rows as an O(n) batch with dedupe by upsert key'
   assert.equal(result.contentRows.length, 2);
   assert.equal(result.dailySnapshotRows.length, 2);
   assert.equal(result.skippedRows.length, 0);
-  assert.equal(result.contentRows[0].content_key, 'tiktok::tt_account_1::video_1');
+  assert.equal(result.contentRows[0].content_key, 'tiktok:tt_account_1:video_1');
   assert.equal(result.dailySnapshotRows[0].completion_rate, 0.4);
   assert.equal(result.dailySnapshotRows[0].unique_viewers, 180);
 });

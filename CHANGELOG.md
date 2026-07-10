@@ -76,3 +76,13 @@
 - Added guarded write commands: `CONFIRM_WRITE=YES npm run sync:tiktok` and `CONFIRM_WRITE=YES npm run seed:metrics`.
 - Added `.dev.vars.example` with full table mapping placeholders and clarified that `TIKTOK_CREATOR_ACCOUNT_ID` is an internal account key.
 - Added `.dev.vars` parser tests and kept write commands protected from accidental execution.
+- Added mandatory full-codebase review policy before every new feature, fix, connector, refactor, or release.
+
+## 0.1.7-tiktok-canonical-keys — 2026-07-10
+- Changed TikTok `content_key` from `tiktok::account_id::video_id` to the canonical `tiktok:account_id:video_id` format.
+- Changed TikTok `content_daily_key` to `tiktok:account_id:video_id:metric_date`.
+- Kept report snapshot IDs on their existing `::` format because they are a separate key contract.
+- Centralized key formatting in the existing identity-key builder and normalized surrounding whitespace.
+- Updated unit, batch, Lark sync, snapshot, documentation, and PROJECT_BRAIN expectations.
+- Rechecked the complete codebase before implementation; no duplicate TikTok identity-key builder was found.
+- Packaging validation passed 31 tests and syntax checks; live Lark validation remains pending because the packaging environment could not resolve `open.larksuite.com`.

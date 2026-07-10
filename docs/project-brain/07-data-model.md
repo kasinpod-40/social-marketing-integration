@@ -26,8 +26,8 @@ Base name: `Social MKT Data Hub`
 - `RAW_Google_Customer_Lists`
 
 ## TikTok Creator keys
-- `content_key = platform::account_id::external_content_id`
-- `content_daily_key = platform::account_id::external_content_id::metric_date`
+- `content_key = platform:account_id:external_content_id`
+- `content_daily_key = platform:account_id:external_content_id:metric_date`
 
 ## TikTok Creator read/write flow
 ```text

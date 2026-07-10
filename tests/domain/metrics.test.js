@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { calculateCpa, calculateRate, calculateRoas, nullableNumber } from '../../packages/domain/src/value-objects/metric-value.js';
-import { createDailySnapshotKey } from '../../packages/application/src/use-cases/create-daily-snapshot.js';
+import { createContentKey, createDailySnapshotKey } from '../../packages/application/src/use-cases/create-daily-snapshot.js';
 
 test('nullableNumber keeps 0 as a valid metric value', () => {
   assert.equal(nullableNumber(0), 0);
@@ -31,8 +31,24 @@ test('daily snapshot key requires all identity fields', () => {
       entityId: 'video_1',
       metricDate: '2026-07-05',
     }),
-    'tiktok::acc_1::video_1::2026-07-05',
+    'tiktok:acc_1:video_1:2026-07-05',
   );
 
   assert.throws(() => createDailySnapshotKey({ platform: 'tiktok', accountId: '', entityId: 'x', metricDate: '2026-07-05' }));
+});
+
+test('content and daily keys use the canonical single-colon format and trim identity parts', () => {
+  assert.equal(
+    createContentKey({ platform: ' tiktok ', accountId: ' chemistry_k ', externalContentId: ' video_1 ' }),
+    'tiktok:chemistry_k:video_1',
+  );
+  assert.equal(
+    createDailySnapshotKey({
+      platform: ' tiktok ',
+      accountId: ' chemistry_k ',
+      entityId: ' video_1 ',
+      metricDate: ' 2026-07-10 ',
+    }),
+    'tiktok:chemistry_k:video_1:2026-07-10',
+  );
 });

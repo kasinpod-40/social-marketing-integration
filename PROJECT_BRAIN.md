@@ -105,8 +105,8 @@ Output tables:
 
 Current mapping rules:
 - `video_id` becomes `external_content_id`.
-- `content_key` is generated from `platform::account_id::external_content_id`.
-- `content_daily_key` is generated from `platform::account_id::external_content_id::metric_date`.
+- `content_key` is generated from `platform:account_id:external_content_id`.
+- `content_daily_key` is generated from `platform:account_id:external_content_id:metric_date`.
 - Missing unsupported metrics remain `null`, never `0`.
 - Completion rate is normalized to decimal ratio, for example `45%` becomes `0.45`.
 - Unique viewers stays `unique_viewers`; do not rename it as reach.
@@ -176,3 +176,139 @@ Added commands:
 - `CONFIRM_WRITE=YES npm run seed:metrics`: writes metric definition seed rows.
 
 Safety: write scripts refuse to run unless `CONFIRM_WRITE=YES` is set. `.dev.vars` is intentionally local-only and must not be committed. `.dev.vars.example` is included for setup.
+
+
+---
+
+# Update: MKT Architecture (2026-07)
+
+## Customer
+- Chemistry K
+- Online chemistry courses
+- WooCommerce commerce
+- Chatwoot conversations
+
+## Integration Scope
+### Social
+- TikTok
+- Facebook
+- Instagram
+- YouTube
+
+### Chatwoot
+- Conversations
+- Messages
+- Contacts
+- Agents
+- Inbox
+- Labels
+
+### WooCommerce
+- Orders
+- Order Items
+- Products
+- Customers
+- Coupons
+- Refunds
+
+## Flow
+Social + Chatwoot + WooCommerce
+→ Connectors
+→ Raw Data
+→ Normalization
+→ Master Tables
+→ Daily Snapshot
+→ Dashboard
+→ AI Analysis
+→ Lark Group Notification
+
+## AI
+MKT:
+- Collect
+- Normalize
+- Calculate metrics
+- Daily Snapshot
+- Rule alerts
+
+Lark AI:
+- Summary
+- Insight
+- Recommendation
+- Alert explanation
+
+Lark Bot:
+- Notify Lark Group
+- Log notification
+
+---
+
+## Codebase Review Policy
+
+Before starting any new feature, bug fix, connector, refactor, or release, the complete current codebase must be reviewed first.
+
+The review must check for:
+
+- Duplicate business logic, duplicated helpers, and duplicated API mapping
+- Dead code, unused imports, unused files, obsolete scripts, and stale configuration
+- Code that should be moved into shared helpers, services, adapters, or domain modules
+- Poor architecture, excessive coupling, hardcoded values, and fragile implementation patterns
+- Performance issues, unnecessary loops, repeated API calls, avoidable database or Lark requests, and inefficient memory usage
+- Idempotency, retry, pagination, rate-limit handling, logging, error handling, and recovery behavior
+- Regression risks across TikTok, Facebook, Instagram, YouTube, Chatwoot, WooCommerce, Lark Base, AI analysis, dashboards, snapshots, and notifications
+- Test quality, missing edge cases, validation coverage, and whether the current implementation remains production-ready
+
+Rules:
+
+1. Do not blindly add new code on top of existing code.
+2. Reuse existing production-quality logic where appropriate.
+3. Refactor shared behavior instead of creating parallel or duplicated implementations.
+4. Remove code waste and obsolete code when it is safe to do so.
+5. If existing code is weak, unsafe, slow, or difficult to maintain, improve it before or together with the new work.
+6. Avoid unnecessary large refactors that increase risk without clear value.
+7. After changes, run relevant validation, unit tests, regression tests, static checks, and production build or dry-run checks.
+8. Update PROJECT_BRAIN and CHANGELOG whenever architecture, flow, contracts, or development rules change.
+
+Standard workflow:
+
+Codebase audit
+→ Architecture and code-health assessment
+→ Reuse / refactor / cleanup plan
+→ Implementation
+→ Validation and regression checks
+→ Performance and reliability re-check
+→ PROJECT_BRAIN and CHANGELOG update
+
+---
+
+## 2026-07-10 — v0.1.7 TikTok canonical keys and current Lark Base baseline
+
+TikTok identity keys now use a single colon delimiter:
+
+- `content_key = platform:account_id:external_content_id`
+- `content_daily_key = platform:account_id:external_content_id:metric_date`
+
+For Chemistry K, examples are:
+
+- `tiktok:chemistry_k:video_id`
+- `tiktok:chemistry_k:video_id:2026-07-10`
+
+The key format is owned by the shared builder in `create-daily-snapshot.js`; connectors and tests must not rebuild this contract independently. Report IDs retain their existing double-colon delimiter because they are a separate contract.
+
+Current Lark Base source of truth supplied by the customer:
+
+- Base name: `Social MKT Data Hub`
+- Base revision: `9`
+- Timezone: `Asia/Bangkok`
+- Current tables: 21
+- Current domains: social organic, ads, reports, AI report runs, classification dictionary, sync logs, and system alerts
+- Chatwoot and WooCommerce tables are approved scope but have not yet been added to the current Base schema.
+
+Before the next connector is implemented, code, PROJECT_BRAIN, and the latest exported Lark Base must be checked together.
+
+### Validation status for v0.1.7
+
+- Full automated test suite: passed, 31/31 tests.
+- JavaScript syntax/static check: passed.
+- Repository-wide search confirmed no remaining old TikTok content-key expectations; remaining `::` usage belongs only to the separate report ID contract and migration note.
+- Live `validate:tiktok` and real Lark sync were not completed in the packaging environment because outbound DNS/network access to `open.larksuite.com` was unavailable.
+- Next action on a network-enabled development machine: run `npm run validate:tiktok`, inspect sample keys, then run `CONFIRM_WRITE=YES npm run sync:tiktok` and verify idempotent second-run updates in Lark Base.

@@ -75,7 +75,7 @@ test('reads RAW TikTok Creator rows and upserts content plus daily snapshots', a
   assert.equal(upserts.length, 2);
   assert.equal(upserts[0].tableId, 'tbl_mkt_content');
   assert.equal(upserts[0].keyField, 'content_key');
-  assert.equal(upserts[0].rows[0].content_key, 'tiktok::tt_account_1::video_1');
+  assert.equal(upserts[0].rows[0].content_key, 'tiktok:tt_account_1:video_1');
   assert.equal(upserts[0].rows[0].content_theme, 'สรุปเนื้อหา');
   assert.equal(upserts[1].tableId, 'tbl_mkt_content_daily');
   assert.equal(upserts[1].keyField, 'content_daily_key');

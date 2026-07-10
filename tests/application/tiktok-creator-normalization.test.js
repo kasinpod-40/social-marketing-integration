@@ -25,7 +25,7 @@ test('normalizes a TikTok Creator raw row into MKT content and daily snapshot ro
   });
 
   assert.deepEqual(normalized.content, {
-    content_key: 'tiktok::tt_account_1::video_1',
+    content_key: 'tiktok:tt_account_1:video_1',
     platform: 'tiktok',
     account_id: 'tt_account_1',
     external_content_id: 'video_1',
@@ -56,7 +56,7 @@ test('normalizes a TikTok Creator raw row into MKT content and daily snapshot ro
     manual_tag_note: 'manual_review: no enabled dictionary rule matched',
   });
 
-  assert.equal(normalized.dailySnapshot.content_daily_key, 'tiktok::tt_account_1::video_1::2026-07-06');
+  assert.equal(normalized.dailySnapshot.content_daily_key, 'tiktok:tt_account_1:video_1:2026-07-06');
   assert.equal(normalized.dailySnapshot.total_watch_time_seconds, 8500);
   assert.equal(normalized.dailySnapshot.traffic_sources, 'For You 80%, Search 20%');
 });

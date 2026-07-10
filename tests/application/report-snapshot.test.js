@@ -13,7 +13,7 @@ test('builds a stable Canva-style report snapshot row', () => {
     platforms: ['tiktok', 'facebook', 'tiktok'],
     courseName: 'M.4/1',
     metricPayload: { views: { current: 1000, previous: 800 } },
-    topContent: [{ content_key: 'tiktok::a::v1', views: 1000 }],
+    topContent: [{ content_key: 'tiktok:a:v1', views: 1000 }],
     topAds: [],
     generatedAt: '2026-07-08T10:00:00.000Z',
   });
@@ -21,7 +21,7 @@ test('builds a stable Canva-style report snapshot row', () => {
   assert.equal(row.report_id, 'weekly_organic_report::2026-07-01::2026-07-07::year_over_year::2025-07-01::2025-07-07::facebook+tiktok::M.4/1');
   assert.deepEqual(row.platform, ['facebook', 'tiktok']);
   assert.equal(row.metric_payload_json, '{"views":{"current":1000,"previous":800}}');
-  assert.equal(row.top_content_json, '[{"content_key":"tiktok::a::v1","views":1000}]');
+  assert.equal(row.top_content_json, '[{"content_key":"tiktok:a:v1","views":1000}]');
 });
 
 test('requires comparison dates when comparison mode is active', () => {
