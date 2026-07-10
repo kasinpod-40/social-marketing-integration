@@ -1,3 +1,12 @@
+
+## v0.1.5-lark-live-sync-validation
+
+- Added a non-mutating `tiktok.creator.native.validate` queue job for first Lark live-sync validation.
+- Added `validateLarkLiveSync` to read real RAW TikTok Creator + Classification Dictionary rows and normalize them without writes.
+- Added dry-run support to `syncTikTokCreatorNativeToLark`.
+- Added tests for validation, dry-run behavior, and queue job routing.
+- Updated README and Project Brain for the live validation workflow.
+
 # Changelog
 
 ## 0.1.4-env-config-lark-dictionary

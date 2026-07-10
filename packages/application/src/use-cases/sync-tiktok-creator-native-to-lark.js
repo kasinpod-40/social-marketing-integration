@@ -14,6 +14,7 @@ import { loadClassificationDictionary } from './load-classification-dictionary.j
  * @param {string} input.tables.mktClassificationDictionary
  * @param {string} input.accountId
  * @param {string} input.metricDate YYYY-MM-DD
+ * @param {boolean} [input.dryRun] when true, validates rows without writing to Lark
  */
 export async function syncTikTokCreatorNativeToLark(input) {
   const repository = requireRepository(input?.repository);
@@ -37,6 +38,19 @@ export async function syncTikTokCreatorNativeToLark(input) {
     dictionaryRules,
   });
 
+  if (input?.dryRun === true) {
+    return Object.freeze({
+      platform: 'tiktok',
+      source: 'lark_native_tiktok_for_creator',
+      mode: 'dry_run',
+      rawRecords: rawRows.length,
+      content: Object.freeze({ created: 0, updated: 0, skipped: 0, rowsReady: normalized.contentRows.length }),
+      dailySnapshots: Object.freeze({ created: 0, updated: 0, skipped: 0, rowsReady: normalized.dailySnapshotRows.length }),
+      classificationRules: dictionaryRules.length,
+      skippedRows: normalized.skippedRows,
+    });
+  }
+
   const [contentResult, dailyResult] = await Promise.all([
     repository.upsertByKey({
       tableId: tables.mktContent,
@@ -53,6 +67,7 @@ export async function syncTikTokCreatorNativeToLark(input) {
   return Object.freeze({
     platform: 'tiktok',
     source: 'lark_native_tiktok_for_creator',
+    mode: 'write',
     rawRecords: rawRows.length,
     content: contentResult,
     dailySnapshots: dailyResult,

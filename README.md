@@ -18,7 +18,7 @@ connectors/infrastructure implement application ports
 ```
 
 ## Current baseline
-`v0.1.4-env-config-lark-dictionary`
+`v0.1.5-lark-live-sync-validation`
 
 This baseline makes the codebase client-neutral:
 
@@ -121,3 +121,27 @@ This prevents the system from guessing Chemistry K-specific values for other cli
 
 ## Definition of Done
 Code is not complete unless tests/regression pass and the Project Brain is updated.
+
+
+## v0.1.5 Live sync validation
+
+New queue job for non-mutating Lark validation before the first write:
+
+```json
+{
+  "type": "tiktok.creator.native.validate",
+  "metricDate": "2026-07-09",
+  "sampleLimit": 5
+}
+```
+
+This job reads the real `RAW_TikTok_Creator_Videos` and `MKT_Classification_Dictionary` tables, normalizes rows in memory, and logs a dry-run summary. It does not write to `MKT_Content` or `MKT_Content_Daily`. Use it before running the write job:
+
+```json
+{
+  "type": "tiktok.creator.native.sync",
+  "metricDate": "2026-07-09"
+}
+```
+
+The actual sync use case also supports `dryRun: true` for tests or manual validation code paths.

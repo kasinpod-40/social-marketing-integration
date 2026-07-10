@@ -57,3 +57,8 @@ The TikTok Creator flow is ready for live read/write validation with real Lark t
 - Classification now uses client-editable dictionary rows and falls back to `manual_review` note with low confidence when no rule matches.
 - Local tests pass: 25 tests.
 - Syntax check passes for apps/packages/tests.
+
+
+### v0.1.5-lark-live-sync-validation
+
+Added a dry-run validation queue job before the first real Lark write. Use `tiktok.creator.native.validate` to confirm env/table mapping, dictionary rules, normalization output, skipped rows, and sample keys before running `tiktok.creator.native.sync`.

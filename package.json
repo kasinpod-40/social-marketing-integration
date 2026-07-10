@@ -1,6 +1,6 @@
 {
   "name": "social-marketing-integration",
-  "version": "0.1.4-env-config-lark-dictionary",
+  "version": "0.1.5-lark-live-sync-validation",
   "private": true,
   "type": "module",
   "workspaces": [

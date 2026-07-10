@@ -68,6 +68,7 @@ test('reads RAW TikTok Creator rows and upserts content plus daily snapshots', a
     },
   });
 
+  assert.equal(result.mode, 'write');
   assert.equal(result.rawRecords, 2);
   assert.equal(result.classificationRules, 1);
   assert.equal(result.skippedRows.length, 1);

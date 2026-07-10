@@ -4,10 +4,12 @@ import { createLarkBitableClientFromEnv } from '../../../packages/connectors/src
 import { LarkRecordRepository } from '../../../packages/connectors/src/lark/lark-record-repository.js';
 import { seedMetricDefinitions } from '../../../packages/application/src/use-cases/seed-metric-definitions.js';
 import { readLarkTableIdsFromEnv } from '../../../packages/config/src/lark-table-config.js';
+import { validateLarkLiveSync } from '../../../packages/application/src/use-cases/validate-lark-live-sync.js';
 
 const JOB_TYPES = Object.freeze({
   TIKTOK_CREATOR_NATIVE_SYNC: 'tiktok.creator.native.sync',
   METRIC_DEFINITIONS_SEED: 'metric.definitions.seed',
+  TIKTOK_CREATOR_NATIVE_VALIDATE: 'tiktok.creator.native.validate',
 });
 
 export default {
@@ -76,6 +78,25 @@ async function processJob(input) {
         mktClassificationDictionary: tableIds.mktClassificationDictionary,
       },
     });
+  }
+
+  if (type === JOB_TYPES.TIKTOK_CREATOR_NATIVE_VALIDATE) {
+    const tableIds = readLarkTableIdsFromEnv(input.env, [
+      'rawTikTokCreatorVideos',
+      'mktClassificationDictionary',
+    ]);
+    const result = await validateLarkLiveSync({
+      repository: input.repository,
+      accountId: requireText(job.body?.accountId ?? input.env?.TIKTOK_CREATOR_ACCOUNT_ID, 'TIKTOK_CREATOR_ACCOUNT_ID'),
+      metricDate: requireText(job.body?.metricDate ?? todayInBangkok(), 'metricDate'),
+      sampleLimit: job.body?.sampleLimit,
+      tables: {
+        rawTikTokCreatorVideos: tableIds.rawTikTokCreatorVideos,
+        mktClassificationDictionary: tableIds.mktClassificationDictionary,
+      },
+    });
+    console.log(JSON.stringify(result));
+    return result;
   }
 
   if (type === JOB_TYPES.METRIC_DEFINITIONS_SEED) {

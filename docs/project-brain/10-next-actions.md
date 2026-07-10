@@ -37,3 +37,8 @@
 3. Add live report aggregation that reads `MKT_Content_Daily` and writes `MKT_Report_Snapshots`.
 4. Add AI summary generation from `MKT_Report_Snapshots` into `MKT_AI_Report_Runs`.
 5. Add WordPress/WooCommerce sales/order connector after confirming the client's order source.
+
+
+### v0.1.5-lark-live-sync-validation
+
+Added a dry-run validation queue job before the first real Lark write. Use `tiktok.creator.native.validate` to confirm env/table mapping, dictionary rules, normalization output, skipped rows, and sample keys before running `tiktok.creator.native.sync`.

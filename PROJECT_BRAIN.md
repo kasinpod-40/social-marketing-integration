@@ -158,3 +158,10 @@ Validate the Lark read/write mapping flow with live Lark table IDs:
 - Removed Chemistry K-specific hardcoded classification rules from core code.
 - Unmatched content now goes to manual review via low confidence and `manual_tag_note` instead of guessed fields.
 - Validation: `npm test` passed 25 tests; `npm run check` passed.
+
+
+## v0.1.5 — Lark live sync validation
+
+The next release adds a safe pre-write validation path for the first real Lark integration test. The new `tiktok.creator.native.validate` queue job reads real Lark tables, loads `MKT_Classification_Dictionary`, normalizes TikTok Creator rows in memory, and logs row counts, skipped rows, sample keys, and warnings without writing to `MKT_Content` or `MKT_Content_Daily`. The actual sync use case also supports `dryRun: true`.
+
+This keeps the first live test safe: validate field/table/env mapping first, then run the write job only after the dry-run result is clean.
