@@ -51,18 +51,17 @@ export async function syncTikTokCreatorNativeToLark(input) {
     });
   }
 
-  const [contentResult, dailyResult] = await Promise.all([
-    repository.upsertByKey({
-      tableId: tables.mktContent,
-      keyField: 'content_key',
-      rows: normalized.contentRows,
-    }),
-    repository.upsertByKey({
-      tableId: tables.mktContentDaily,
-      keyField: 'content_daily_key',
-      rows: normalized.dailySnapshotRows,
-    }),
-  ]);
+  // Sync tables sequentially to avoid bursts against the same Lark Base app.
+  const contentResult = await repository.upsertByKey({
+    tableId: tables.mktContent,
+    keyField: 'content_key',
+    rows: normalized.contentRows,
+  });
+  const dailyResult = await repository.upsertByKey({
+    tableId: tables.mktContentDaily,
+    keyField: 'content_daily_key',
+    rows: normalized.dailySnapshotRows,
+  });
 
   return Object.freeze({
     platform: 'tiktok',

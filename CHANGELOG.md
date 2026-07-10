@@ -86,3 +86,13 @@
 - Updated unit, batch, Lark sync, snapshot, documentation, and PROJECT_BRAIN expectations.
 - Rechecked the complete codebase before implementation; no duplicate TikTok identity-key builder was found.
 - Packaging validation passed 31 tests and syntax checks; live Lark validation remains pending because the packaging environment could not resolve `open.larksuite.com`.
+## 0.1.8-lark-rate-limit-resilience
+
+- Fixed Lark Base `1254290 TooManyRequest` during TikTok write sync.
+- Replaced per-row concurrent record searches with one paginated destination-table read and an in-memory key index.
+- Made content and daily snapshot table sync sequential to avoid request bursts.
+- Added exponential backoff with jitter for Lark `1254290`, HTTP 429, and temporary 5xx failures.
+- Added tenant access-token caching and shared in-flight token requests.
+- Added regression tests for retry behavior, token caching, local upsert indexing, and canonical TikTok keys.
+- All 33 tests and static syntax checks pass.
+

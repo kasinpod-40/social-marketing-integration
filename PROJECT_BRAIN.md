@@ -312,3 +312,14 @@ Before the next connector is implemented, code, PROJECT_BRAIN, and the latest ex
 - Repository-wide search confirmed no remaining old TikTok content-key expectations; remaining `::` usage belongs only to the separate report ID contract and migration note.
 - Live `validate:tiktok` and real Lark sync were not completed in the packaging environment because outbound DNS/network access to `open.larksuite.com` was unavailable.
 - Next action on a network-enabled development machine: run `npm run validate:tiktok`, inspect sample keys, then run `CONFIRM_WRITE=YES npm run sync:tiktok` and verify idempotent second-run updates in Lark Base.
+
+---
+
+## Lark API Rate-Limit Policy (v0.1.8)
+
+The production Lark Base adapter must not issue one search request per row during an upsert. It must read the destination table once, build a local stable-key index, and then use batch create/update operations. Connector table writes should run sequentially unless concurrency has been proven safe.
+
+The Lark client must cache the tenant access token and retry transient failures with bounded exponential backoff and jitter. Retryable failures currently include Lark error `1254290 TooManyRequest`, HTTP 429, and temporary HTTP 5xx responses.
+
+The TikTok sync sequence is: read raw/dictionary data concurrently, normalize locally, upsert `MKT_Content`, then upsert `MKT_Content_Daily`. This avoids concurrent search/write bursts against the same Base app.
+

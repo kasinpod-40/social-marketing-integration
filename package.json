@@ -1,6 +1,6 @@
 {
   "name": "social-marketing-integration",
-  "version": "0.1.7-tiktok-canonical-keys",
+  "version": "0.1.8-lark-rate-limit-resilience",
   "private": true,
   "type": "module",
   "workspaces": [

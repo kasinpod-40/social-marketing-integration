@@ -1,6 +1,9 @@
 const LARK_OPEN_API_BASE_URL = 'https://open.larksuite.com';
 const DEFAULT_PAGE_SIZE = 500;
 const DEFAULT_BATCH_SIZE = 100;
+const DEFAULT_MAX_ATTEMPTS = 5;
+const DEFAULT_RETRY_BASE_DELAY_MS = 300;
+const TOKEN_SAFETY_WINDOW_MS = 60_000;
 
 /**
  * Minimal Lark Base client for server-side Workers usage.
@@ -21,19 +24,39 @@ export class LarkBitableClient {
     this.appToken = requireText(config?.appToken, 'appToken');
     this.fetchImpl = config?.fetchImpl ?? fetch;
     this.baseUrl = config?.baseUrl ?? LARK_OPEN_API_BASE_URL;
+    this.maxAttempts = positiveInteger(config?.maxAttempts ?? DEFAULT_MAX_ATTEMPTS, 'maxAttempts');
+    this.retryBaseDelayMs = positiveInteger(config?.retryBaseDelayMs ?? DEFAULT_RETRY_BASE_DELAY_MS, 'retryBaseDelayMs');
+    this.sleep = config?.sleepImpl ?? sleep;
+    this.random = config?.randomImpl ?? Math.random;
+    this.tokenCache = null;
+    this.tokenRequest = null;
   }
 
   async getTenantAccessToken() {
-    const response = await this.requestJson('/open-apis/auth/v3/tenant_access_token/internal', {
-      method: 'POST',
-      body: {
-        app_id: this.appId,
-        app_secret: this.appSecret,
-      },
-      auth: false,
-    });
+    if (this.tokenCache && Date.now() < this.tokenCache.expiresAt) {
+      return this.tokenCache.token;
+    }
 
-    return requireText(response?.tenant_access_token, 'tenant_access_token');
+    if (!this.tokenRequest) {
+      this.tokenRequest = this.requestJson('/open-apis/auth/v3/tenant_access_token/internal', {
+        method: 'POST',
+        body: {
+          app_id: this.appId,
+          app_secret: this.appSecret,
+        },
+        auth: false,
+      }).then((response) => {
+        const token = requireText(response?.tenant_access_token, 'tenant_access_token');
+        const expiresInSeconds = Number(response?.expire ?? 7200);
+        const ttlMs = Math.max(60_000, expiresInSeconds * 1000 - TOKEN_SAFETY_WINDOW_MS);
+        this.tokenCache = { token, expiresAt: Date.now() + ttlMs };
+        return token;
+      }).finally(() => {
+        this.tokenRequest = null;
+      });
+    }
+
+    return this.tokenRequest;
   }
 
   async listRecords(input) {
@@ -160,29 +183,64 @@ export class LarkBitableClient {
   }
 
   async requestJson(path, options) {
-    const headers = new Headers({ 'Content-Type': 'application/json; charset=utf-8' });
-    if (options?.token) {
-      headers.set('Authorization', `Bearer ${options.token}`);
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= this.maxAttempts; attempt += 1) {
+      const headers = new Headers({ 'Content-Type': 'application/json; charset=utf-8' });
+      if (options?.token) {
+        headers.set('Authorization', `Bearer ${options.token}`);
+      }
+
+      try {
+        const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
+          method: options?.method ?? 'GET',
+          headers,
+          body: options?.body === undefined ? undefined : JSON.stringify(options.body),
+        });
+
+        const text = await response.text();
+        const payload = text ? JSON.parse(text) : {};
+        const retryable = response.status === 429 || response.status >= 500 || payload?.code === 1254290;
+
+        if (!response.ok || payload?.code !== 0) {
+          const message = !response.ok
+            ? `Lark HTTP ${response.status}: ${payload?.msg ?? text}`
+            : `Lark API error ${payload?.code}: ${payload?.msg ?? 'Unknown error'}`;
+          const error = new Error(message);
+          error.status = response.status;
+          error.code = payload?.code;
+
+          if (!retryable || attempt === this.maxAttempts) {
+            throw error;
+          }
+
+          lastError = error;
+          await this.sleep(retryDelayMs({
+            attempt,
+            baseDelayMs: this.retryBaseDelayMs,
+            retryAfter: response.headers.get('retry-after'),
+            random: this.random,
+          }));
+          continue;
+        }
+
+        return payload;
+      } catch (error) {
+        const retryableNetworkError = error?.status === undefined && error?.code === undefined;
+        if (!retryableNetworkError || attempt === this.maxAttempts) {
+          throw error;
+        }
+
+        lastError = error;
+        await this.sleep(retryDelayMs({
+          attempt,
+          baseDelayMs: this.retryBaseDelayMs,
+          random: this.random,
+        }));
+      }
     }
 
-    const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
-      method: options?.method ?? 'GET',
-      headers,
-      body: options?.body === undefined ? undefined : JSON.stringify(options.body),
-    });
-
-    const text = await response.text();
-    const payload = text ? JSON.parse(text) : {};
-
-    if (!response.ok) {
-      throw new Error(`Lark HTTP ${response.status}: ${payload?.msg ?? text}`);
-    }
-
-    if (payload?.code !== 0) {
-      throw new Error(`Lark API error ${payload?.code}: ${payload?.msg ?? 'Unknown error'}`);
-    }
-
-    return payload;
+    throw lastError ?? new Error('Lark request failed');
   }
 }
 
@@ -229,6 +287,30 @@ function requireArray(value, fieldName) {
 function requireObject(value, fieldName) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     throw new TypeError(`Lark Bitable client requires object ${fieldName}`);
+  }
+
+  return value;
+}
+
+
+function retryDelayMs(input) {
+  const retryAfterSeconds = Number(input?.retryAfter);
+  if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+    return Math.ceil(retryAfterSeconds * 1000);
+  }
+
+  const exponential = input.baseDelayMs * (2 ** (input.attempt - 1));
+  const jitter = Math.floor(exponential * 0.25 * input.random());
+  return exponential + jitter;
+}
+
+function sleep(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function positiveInteger(value, fieldName) {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new TypeError(`Lark Bitable client requires positive integer ${fieldName}`);
   }
 
   return value;

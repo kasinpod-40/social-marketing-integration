@@ -1,13 +1,11 @@
-const DEFAULT_CONCURRENCY = 4;
-
 /**
  * Repository adapter that provides upsert by a stable key field.
- * It searches keys with bounded concurrency, then batch creates and updates.
+ * It loads the destination table once, indexes stable keys locally, then batch creates and updates.
  */
 export class LarkRecordRepository {
   /**
    * @param {Object} input
-   * @param {{ searchRecordsByField: Function, batchCreateRecords: Function, batchUpdateRecords: Function, listRecords: Function }} input.client
+   * @param {{ batchCreateRecords: Function, batchUpdateRecords: Function, listRecords: Function }} input.client
    */
   constructor(input) {
     this.client = requireClient(input?.client);
@@ -26,27 +24,36 @@ export class LarkRecordRepository {
       return Object.freeze({ created: 0, updated: 0, skipped: 0 });
     }
 
-    const lookupResults = await mapWithConcurrency(rows, DEFAULT_CONCURRENCY, async (row) => {
-      const keyValue = requireText(row?.[keyField], keyField);
-      const matches = await this.client.searchRecordsByField({ tableId, fieldName: keyField, fieldValue: keyValue });
-      return { row, match: matches[0] ?? null };
-    });
+    // Read the destination table once and build a local index. This avoids one
+    // Lark search request per row, which is both slower and prone to 1254290
+    // TooManyRequest errors during concurrent connector syncs.
+    const existingRecords = await this.client.listRecords({ tableId });
+    const existingByKey = new Map();
+
+    for (const record of existingRecords) {
+      const keyValue = optionalText(record?.fields?.[keyField]);
+      if (keyValue && !existingByKey.has(keyValue)) {
+        existingByKey.set(keyValue, record);
+      }
+    }
 
     const createRows = [];
     const updateRows = [];
 
-    for (const result of lookupResults) {
-      if (result.match?.recordId) {
-        updateRows.push({ recordId: result.match.recordId, fields: result.row });
+    for (const row of rows) {
+      const keyValue = requireText(row?.[keyField], keyField);
+      const match = existingByKey.get(keyValue);
+      if (match?.recordId) {
+        updateRows.push({ recordId: match.recordId, fields: row });
       } else {
-        createRows.push(result.row);
+        createRows.push(row);
       }
     }
 
-    const [createResult, updateResult] = await Promise.all([
-      this.client.batchCreateRecords({ tableId, records: createRows }),
-      this.client.batchUpdateRecords({ tableId, records: updateRows }),
-    ]);
+    // Keep writes sequential. Lark Base can return write-conflict/rate-limit
+    // errors when the same table/app is modified concurrently.
+    const createResult = await this.client.batchCreateRecords({ tableId, records: createRows });
+    const updateResult = await this.client.batchUpdateRecords({ tableId, records: updateRows });
 
     return Object.freeze({
       created: createResult.created,
@@ -68,25 +75,8 @@ export function dedupeRowsByKey(rows, keyField) {
   return [...byKey.values()];
 }
 
-async function mapWithConcurrency(items, concurrency, mapper) {
-  const results = new Array(items.length);
-  let cursor = 0;
-
-  async function worker() {
-    while (cursor < items.length) {
-      const currentIndex = cursor;
-      cursor += 1;
-      results[currentIndex] = await mapper(items[currentIndex], currentIndex);
-    }
-  }
-
-  const workerCount = Math.min(concurrency, items.length);
-  await Promise.all(Array.from({ length: workerCount }, () => worker()));
-  return results;
-}
-
 function requireClient(client) {
-  const requiredMethods = ['searchRecordsByField', 'batchCreateRecords', 'batchUpdateRecords', 'listRecords'];
+  const requiredMethods = ['batchCreateRecords', 'batchUpdateRecords', 'listRecords'];
   for (const method of requiredMethods) {
     if (typeof client?.[method] !== 'function') {
       throw new TypeError(`LarkRecordRepository requires client.${method}`);
@@ -102,6 +92,15 @@ function requireArray(value, fieldName) {
   }
 
   return value;
+}
+
+function optionalText(value) {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const text = value.trim();
+  return text === '' ? null : text;
 }
 
 function requireText(value, fieldName) {
