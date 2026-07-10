@@ -2,6 +2,7 @@ import { createSyncLogEntry } from '../../../packages/domain/src/entities/sync-l
 import { syncTikTokCreatorNativeToLark } from '../../../packages/application/src/use-cases/sync-tiktok-creator-native-to-lark.js';
 import { createLarkBitableClientFromEnv } from '../../../packages/connectors/src/lark/lark-bitable.client.js';
 import { LarkRecordRepository } from '../../../packages/connectors/src/lark/lark-record-repository.js';
+import { TableSyncEngine } from '../../../packages/sync-engine/src/table-sync-engine.js';
 import { seedMetricDefinitions } from '../../../packages/application/src/use-cases/seed-metric-definitions.js';
 import { readLarkTableIdsFromEnv } from '../../../packages/config/src/lark-table-config.js';
 import { validateLarkLiveSync } from '../../../packages/application/src/use-cases/validate-lark-live-sync.js';
@@ -30,8 +31,15 @@ export default {
 
   async queue(batch, env, ctx) {
     const jobs = batch.messages.map((message) => normalizeQueueMessage(message));
-    const repository = createRepository(env);
-    const results = await Promise.allSettled(jobs.map((job) => processJob({ job, env, repository })));
+    const runtime = createRuntime(env);
+    const results = [];
+    for (const job of jobs) {
+      try {
+        results.push({ status: 'fulfilled', value: await processJob({ job, env, ...runtime }) });
+      } catch (reason) {
+        results.push({ status: 'rejected', reason });
+      }
+    }
 
     results.forEach((result, index) => {
       if (result.status === 'fulfilled') {
@@ -69,6 +77,7 @@ async function processJob(input) {
     ]);
     return syncTikTokCreatorNativeToLark({
       repository: input.repository,
+      syncEngine: input.syncEngine,
       accountId: requireText(job.body?.accountId ?? input.env?.TIKTOK_CREATOR_ACCOUNT_ID, 'TIKTOK_CREATOR_ACCOUNT_ID'),
       metricDate: requireText(job.body?.metricDate ?? todayInBangkok(), 'metricDate'),
       tables: {
@@ -87,6 +96,7 @@ async function processJob(input) {
     ]);
     const result = await validateLarkLiveSync({
       repository: input.repository,
+      syncEngine: input.syncEngine,
       accountId: requireText(job.body?.accountId ?? input.env?.TIKTOK_CREATOR_ACCOUNT_ID, 'TIKTOK_CREATOR_ACCOUNT_ID'),
       metricDate: requireText(job.body?.metricDate ?? todayInBangkok(), 'metricDate'),
       sampleLimit: job.body?.sampleLimit,
@@ -103,6 +113,7 @@ async function processJob(input) {
     const tableIds = readLarkTableIdsFromEnv(input.env, ['mktMetricDefinitions']);
     return seedMetricDefinitions({
       repository: input.repository,
+      syncEngine: input.syncEngine,
       tableId: tableIds.mktMetricDefinitions,
     });
   }
@@ -110,9 +121,12 @@ async function processJob(input) {
   throw new Error(`Unsupported sync job type: ${type}`);
 }
 
-function createRepository(env) {
+function createRuntime(env) {
   const client = createLarkBitableClientFromEnv(env);
-  return new LarkRecordRepository({ client });
+  return Object.freeze({
+    repository: new LarkRecordRepository({ client }),
+    syncEngine: new TableSyncEngine(),
+  });
 }
 
 function todayInBangkok() {

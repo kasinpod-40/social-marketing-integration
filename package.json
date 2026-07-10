@@ -1,6 +1,6 @@
 {
   "name": "social-marketing-integration",
-  "version": "0.1.8-lark-rate-limit-resilience",
+  "version": "0.2.0-core-sync-engine",
   "private": true,
   "type": "module",
   "workspaces": [

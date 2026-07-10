@@ -14,6 +14,7 @@ const runtime = await createLocalLarkRuntime([
 
 const result = await syncTikTokCreatorNativeToLark({
   repository: runtime.repository,
+  syncEngine: runtime.syncEngine,
   accountId: readAccountId(runtime.env),
   metricDate: readMetricDate(runtime.env),
   tables: {

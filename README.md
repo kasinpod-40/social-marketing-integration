@@ -181,3 +181,7 @@ This job reads the real `RAW_TikTok_Creator_Videos` and `MKT_Classification_Dict
 ```
 
 The actual sync use case also supports `dryRun: true` for tests or manual validation code paths.
+## Core synchronization architecture
+
+All connectors must normalize rows and pass them to `TableSyncEngine`. The engine reads each destination table once, indexes stable keys in memory, skips unchanged rows, and performs sequential batch create/update operations through a thin storage repository. Lark authentication, pagination, request pacing, and bounded retry live in `LarkBitableClient`.
+

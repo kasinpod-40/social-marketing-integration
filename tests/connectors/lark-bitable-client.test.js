@@ -10,6 +10,7 @@ test('retries Lark 1254290 with backoff and then succeeds', async () => {
     appSecret: 'app-secret',
     appToken: 'app-token',
     maxAttempts: 3,
+    minRequestIntervalMs: 0,
     retryBaseDelayMs: 10,
     randomImpl: () => 0,
     sleepImpl: async (delay) => delays.push(delay),
@@ -34,6 +35,7 @@ test('caches and shares the tenant access token request', async () => {
     appId: 'app-id',
     appSecret: 'app-secret',
     appToken: 'app-token',
+    minRequestIntervalMs: 0,
     fetchImpl: async () => {
       calls += 1;
       return new Response(JSON.stringify({

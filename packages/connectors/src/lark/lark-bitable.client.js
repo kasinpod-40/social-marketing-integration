@@ -3,6 +3,7 @@ const DEFAULT_PAGE_SIZE = 500;
 const DEFAULT_BATCH_SIZE = 100;
 const DEFAULT_MAX_ATTEMPTS = 5;
 const DEFAULT_RETRY_BASE_DELAY_MS = 300;
+const DEFAULT_MIN_REQUEST_INTERVAL_MS = 150;
 const TOKEN_SAFETY_WINDOW_MS = 60_000;
 
 /**
@@ -26,10 +27,13 @@ export class LarkBitableClient {
     this.baseUrl = config?.baseUrl ?? LARK_OPEN_API_BASE_URL;
     this.maxAttempts = positiveInteger(config?.maxAttempts ?? DEFAULT_MAX_ATTEMPTS, 'maxAttempts');
     this.retryBaseDelayMs = positiveInteger(config?.retryBaseDelayMs ?? DEFAULT_RETRY_BASE_DELAY_MS, 'retryBaseDelayMs');
+    this.minRequestIntervalMs = nonNegativeInteger(config?.minRequestIntervalMs ?? DEFAULT_MIN_REQUEST_INTERVAL_MS, 'minRequestIntervalMs');
     this.sleep = config?.sleepImpl ?? sleep;
     this.random = config?.randomImpl ?? Math.random;
     this.tokenCache = null;
     this.tokenRequest = null;
+    this.requestQueue = Promise.resolve();
+    this.lastRequestStartedAt = 0;
   }
 
   async getTenantAccessToken() {
@@ -87,40 +91,6 @@ export class LarkBitableClient {
     } while (pageToken);
 
     return records;
-  }
-
-  async searchRecordsByField(input) {
-    const tableId = requireText(input?.tableId, 'tableId');
-    const fieldName = requireText(input?.fieldName, 'fieldName');
-    const fieldValue = requireText(input?.fieldValue, 'fieldValue');
-    const token = await this.getTenantAccessToken();
-    const response = await this.requestJson(
-      `/open-apis/bitable/v1/apps/${encodeURIComponent(this.appToken)}/tables/${encodeURIComponent(tableId)}/records/search`,
-      {
-        method: 'POST',
-        token,
-        body: {
-          page_size: 20,
-          filter: {
-            conjunction: 'and',
-            conditions: [
-              {
-                field_name: fieldName,
-                operator: 'is',
-                value: [fieldValue],
-              },
-            ],
-          },
-        },
-      },
-    );
-
-    const records = response?.data?.items ?? [];
-    if (!Array.isArray(records)) {
-      throw new Error(`Lark searchRecordsByField returned invalid items for table ${tableId}`);
-    }
-
-    return records.map(toRecordShape);
   }
 
   async batchCreateRecords(input) {
@@ -182,6 +152,24 @@ export class LarkBitableClient {
     return { updated };
   }
 
+  async scheduleRequest(operation) {
+    if (typeof operation !== 'function') {
+      throw new TypeError('Lark Bitable client requires request operation');
+    }
+
+    const scheduled = this.requestQueue.then(async () => {
+      const elapsed = Date.now() - this.lastRequestStartedAt;
+      const waitMs = Math.max(0, this.minRequestIntervalMs - elapsed);
+      if (waitMs > 0) await this.sleep(waitMs);
+      this.lastRequestStartedAt = Date.now();
+      return operation();
+    });
+
+    // Keep the queue alive after a failed request so later calls are not blocked.
+    this.requestQueue = scheduled.catch(() => undefined);
+    return scheduled;
+  }
+
   async requestJson(path, options) {
     let lastError = null;
 
@@ -192,11 +180,11 @@ export class LarkBitableClient {
       }
 
       try {
-        const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
+        const response = await this.scheduleRequest(() => this.fetchImpl(`${this.baseUrl}${path}`, {
           method: options?.method ?? 'GET',
           headers,
           body: options?.body === undefined ? undefined : JSON.stringify(options.body),
-        });
+        }));
 
         const text = await response.text();
         const payload = text ? JSON.parse(text) : {};
@@ -311,6 +299,14 @@ function sleep(milliseconds) {
 function positiveInteger(value, fieldName) {
   if (!Number.isInteger(value) || value <= 0) {
     throw new TypeError(`Lark Bitable client requires positive integer ${fieldName}`);
+  }
+
+  return value;
+}
+
+function nonNegativeInteger(value, fieldName) {
+  if (!Number.isInteger(value) || value < 0) {
+    throw new TypeError(`Lark Bitable client requires non-negative integer ${fieldName}`);
   }
 
   return value;

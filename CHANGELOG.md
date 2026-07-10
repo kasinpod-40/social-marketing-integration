@@ -96,3 +96,14 @@
 - Added regression tests for retry behavior, token caching, local upsert indexing, and canonical TikTok keys.
 - All 33 tests and static syntax checks pass.
 
+
+## 0.2.0-core-sync-engine — 2026-07-10
+- Replaced connector-owned Lark upsert behavior with a storage-neutral universal `TableSyncEngine`.
+- Made `LarkRecordRepository` a thin I/O adapter with only list/create/update operations.
+- Removed the unused per-row Lark record-search path.
+- Added one-read in-memory indexing, input dedupe, destination duplicate detection, changed-field diffing, batch create/update, and unchanged-row skipping.
+- Added global Lark request pacing in addition to bounded retry/backoff and tenant-token caching.
+- Changed sync-worker queue processing from concurrent jobs to sequential jobs against one runtime to prevent cross-job API bursts.
+- Migrated TikTok content sync and metric-definition seeding to the shared engine.
+- Added architecture audit documentation and universal sync-engine regression tests.
+- All 36 tests and syntax checks pass.

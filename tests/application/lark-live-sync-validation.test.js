@@ -101,6 +101,7 @@ test('TikTok sync dryRun normalizes but does not upsert', async () => {
 
   const result = await syncTikTokCreatorNativeToLark({
     repository,
+    syncEngine: { async syncByKey() { throw new Error('dryRun must not sync'); } },
     accountId: 'tt_account_1',
     metricDate: '2026-07-09',
     dryRun: true,
@@ -125,10 +126,8 @@ function createRepository(input) {
       if (tableId === 'tbl_dictionary') return input.dictionaryRecords;
       throw new Error(`Unexpected table ${tableId}`);
     },
-    async upsertByKey() {
-      input.onWrite?.();
-      return { created: 0, updated: 0, skipped: 0 };
-    },
+    async createMany() { input.onWrite?.(); return { created: 0 }; },
+    async updateMany() { input.onWrite?.(); return { updated: 0 }; },
   };
 }
 

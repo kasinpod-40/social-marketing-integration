@@ -8,6 +8,7 @@ if (process.env.CONFIRM_WRITE !== 'YES') {
 const runtime = await createLocalLarkRuntime(['mktMetricDefinitions']);
 const result = await seedMetricDefinitions({
   repository: runtime.repository,
+  syncEngine: runtime.syncEngine,
   tableId: runtime.tables.mktMetricDefinitions,
 });
 

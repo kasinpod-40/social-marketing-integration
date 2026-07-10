@@ -4,7 +4,7 @@
 This project connects social organic and paid ads data into Lark Base for reporting, daily snapshots, monitoring, and AI summaries. The implementation target is a lean MVP using Cloudflare Workers, Cloudflare D1, Cloudflare Queues, Lark Base, Lark Native Integrations where useful, and JavaScript.
 
 ## Current project status
-**Phase 1B — Canva report data model support implemented.**
+**v0.2.0 — Core Sync Engine implemented; live TikTok write verification pending.**
 
 Completed in Lark:
 - Created Lark Base: `Social MKT Data Hub`.
@@ -30,7 +30,7 @@ Completed in code:
 - Added robust TikTok For Creator native row mapper.
 - Added TikTok Creator normalization use case from `RAW_TikTok_Creator_Videos` to `MKT_Content` and `MKT_Content_Daily`.
 - Added TikTok Creator batch normalization use case with O(n) dedupe and skipped-row collection.
-- Added Lark Bitable client and Lark record repository.
+- Added Lark Bitable client, thin Lark repository adapter, and storage-neutral universal TableSyncEngine.
 - Added TikTok Creator read/write use case from `RAW_TikTok_Creator_Videos` to `MKT_Content` and `MKT_Content_Daily`.
 - Wired sync-worker queue job type `tiktok.creator.native.sync` to the Lark upsert flow.
 - Added tests for TikTok metric parsing, null handling, invalid numeric rejection, exact observed Lark labels, batch dedupe, snapshot key generation, Lark upsert behavior, and TikTok Creator sync orchestration.
@@ -323,3 +323,57 @@ The Lark client must cache the tenant access token and retry transient failures 
 
 The TikTok sync sequence is: read raw/dictionary data concurrently, normalize locally, upsert `MKT_Content`, then upsert `MKT_Content_Daily`. This avoids concurrent search/write bursts against the same Base app.
 
+
+---
+
+## v0.2.0 — Core Sync Engine baseline
+
+The project now follows **Core First, Feature Second**. Connector-specific code must fetch and normalize only; synchronization policy is owned by the shared core.
+
+### Mandatory architecture
+
+```text
+Source Connector
+  → Raw/Normalized Rows
+  → TableSyncEngine
+  → Storage Repository
+  → Lark Bitable Client
+```
+
+Responsibilities:
+
+- Connector adapter: fetch and source-field mapping.
+- Application use case: orchestration and domain normalization.
+- `TableSyncEngine`: stable-key dedupe, destination indexing, diff, unchanged skip, create/update plan, and duplicate-key integrity checks.
+- `LarkRecordRepository`: thin list/create/update I/O adapter only.
+- `LarkBitableClient`: auth token cache, request pacing, pagination, batch transport, retry/backoff, and HTTP/API error handling.
+
+### Hard rules
+
+1. No connector may implement its own upsert, retry, rate-limit, batch-write, or destination lookup logic.
+2. No per-row destination API lookup is allowed for normal table sync.
+3. A table sync must read once, index locally, diff locally, and batch writes.
+4. Unchanged rows must be skipped and must not be rewritten.
+5. Duplicate stable keys already present in a destination table are treated as a data-integrity error and must stop the write.
+6. Queue jobs sharing the same Lark app runtime run sequentially unless measured evidence proves a higher concurrency safe.
+7. Retry is a resilience layer, not a substitute for reducing request volume.
+8. New Facebook, Instagram, YouTube, Chatwoot, and WooCommerce connectors must use this same engine.
+
+### v0.2.0 audit result
+
+- Removed the per-row Lark search path.
+- Separated synchronization policy from Lark storage I/O.
+- Added request pacing, changed-field diffing, duplicate detection, and unchanged-row skipping.
+- Migrated TikTok and metric seeding to the shared engine.
+- Automated validation: 36/36 tests passed and syntax checks passed.
+- Full audit report: `docs/architecture-audit-v0.2.0.md`.
+
+### Next action
+
+Return to TikTok validation only after installing this baseline:
+
+1. `npm install`
+2. `npm run validate:tiktok`
+3. `CONFIRM_WRITE=YES npm run sync:tiktok`
+4. Run the same write command a second time.
+5. Confirm the second run reports unchanged rows as `skipped`, with no duplicate records and no `1254290`.

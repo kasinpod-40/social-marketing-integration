@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { syncTikTokCreatorNativeToLark } from '../../packages/application/src/use-cases/sync-tiktok-creator-native-to-lark.js';
 
 test('reads RAW TikTok Creator rows and upserts content plus daily snapshots', async () => {
-  const upserts = [];
+  const syncCalls = [];
   const repository = {
     async listAll(tableId) {
       if (tableId === 'tbl_dictionary') {
@@ -50,14 +50,20 @@ test('reads RAW TikTok Creator rows and upserts content plus daily snapshots', a
         },
       ];
     },
-    async upsertByKey(input) {
-      upserts.push(input);
-      return { created: input.rows.length, updated: 0, skipped: 0 };
+    async createMany() { return { created: 0 }; },
+    async updateMany() { return { updated: 0 }; },
+  };
+
+  const syncEngine = {
+    async syncByKey(input) {
+      syncCalls.push(input);
+      return { created: input.rows.length, updated: 0, skipped: 0, duplicateInputRows: 0 };
     },
   };
 
   const result = await syncTikTokCreatorNativeToLark({
     repository,
+    syncEngine,
     accountId: 'tt_account_1',
     metricDate: '2026-07-07',
     tables: {
@@ -72,12 +78,12 @@ test('reads RAW TikTok Creator rows and upserts content plus daily snapshots', a
   assert.equal(result.rawRecords, 2);
   assert.equal(result.classificationRules, 1);
   assert.equal(result.skippedRows.length, 1);
-  assert.equal(upserts.length, 2);
-  assert.equal(upserts[0].tableId, 'tbl_mkt_content');
-  assert.equal(upserts[0].keyField, 'content_key');
-  assert.equal(upserts[0].rows[0].content_key, 'tiktok:tt_account_1:video_1');
-  assert.equal(upserts[0].rows[0].content_theme, 'สรุปเนื้อหา');
-  assert.equal(upserts[1].tableId, 'tbl_mkt_content_daily');
-  assert.equal(upserts[1].keyField, 'content_daily_key');
-  assert.equal(upserts[1].rows[0].completion_rate, 0.5);
+  assert.equal(syncCalls.length, 2);
+  assert.equal(syncCalls[0].tableId, 'tbl_mkt_content');
+  assert.equal(syncCalls[0].keyField, 'content_key');
+  assert.equal(syncCalls[0].rows[0].content_key, 'tiktok:tt_account_1:video_1');
+  assert.equal(syncCalls[0].rows[0].content_theme, 'สรุปเนื้อหา');
+  assert.equal(syncCalls[1].tableId, 'tbl_mkt_content_daily');
+  assert.equal(syncCalls[1].keyField, 'content_daily_key');
+  assert.equal(syncCalls[1].rows[0].completion_rate, 0.5);
 });

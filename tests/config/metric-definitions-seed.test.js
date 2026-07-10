@@ -19,19 +19,23 @@ test('metric definition seed uses stable unique keys and includes organic plus a
   assert.ok(METRIC_DEFINITION_ROWS.find((row) => row.metric_key === 'google_ads:actual_roas'));
 });
 
-test('seedMetricDefinitions upserts by metric_key', async () => {
-  const calls = [];
+test('seedMetricDefinitions uses universal sync engine by metric_key', async () => {
+  let call;
   const repository = {
-    async upsertByKey(input) {
-      calls.push(input);
-      return { created: input.rows.length, updated: 0, skipped: 0 };
+    async listAll() { return []; },
+    async createMany() { return { created: 0 }; },
+    async updateMany() { return { updated: 0 }; },
+  };
+  const syncEngine = {
+    async syncByKey(input) {
+      call = input;
+      return { created: input.rows.length, updated: 0, skipped: 0, duplicateInputRows: 0 };
     },
   };
 
-  const result = await seedMetricDefinitions({ repository, tableId: 'tbl_metric_definitions' });
-
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].tableId, 'tbl_metric_definitions');
-  assert.equal(calls[0].keyField, 'metric_key');
-  assert.equal(result.created, METRIC_DEFINITION_ROWS.length);
+  const result = await seedMetricDefinitions({ repository, syncEngine, tableId: 'tbl_metrics', rows: [{ metric_key: 'views' }] });
+  assert.equal(call.repository, repository);
+  assert.equal(call.tableId, 'tbl_metrics');
+  assert.equal(call.keyField, 'metric_key');
+  assert.deepEqual(result, { created: 1, updated: 0, skipped: 0, duplicateInputRows: 0 });
 });
