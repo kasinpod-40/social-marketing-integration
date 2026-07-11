@@ -117,3 +117,9 @@
 - Added preflight rejection for missing destination fields, malformed URLs, invalid numbers, and invalid date values with table/key/field context.
 - Updated the universal sync engine to compare and write the same serialized representation.
 - Added regression coverage for URL serialization, schema caching, field metadata loading, and preflight failures.
+
+
+## v0.2.2 Lark sync observability and timeout
+- Added per-request timeout with AbortController so stalled Lark requests cannot hang forever.
+- Added stage progress logs for TikTok sync.
+- Timeout errors include the Lark API path and configured timeout.

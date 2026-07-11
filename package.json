@@ -1,6 +1,6 @@
 {
   "name": "social-marketing-integration",
-  "version": "0.2.1-lark-schema-preflight",
+  "version": "0.2.2-lark-sync-observability",
   "private": true,
   "type": "module",
   "workspaces": [

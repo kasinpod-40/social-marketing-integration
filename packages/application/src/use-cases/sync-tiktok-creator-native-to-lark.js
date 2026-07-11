@@ -11,13 +11,16 @@ export async function syncTikTokCreatorNativeToLark(input) {
   const tables = requireTables(input?.tables);
   const accountId = requireText(input?.accountId, 'accountId');
   const metricDate = requireDate(input?.metricDate, 'metricDate');
+  const progress = typeof input?.onProgress === 'function' ? input.onProgress : () => undefined;
 
+  progress({ stage: 'loading_source_data' });
   const [rawRecords, dictionaryRules] = await Promise.all([
     repository.listAll(tables.rawTikTokCreatorVideos),
     loadClassificationDictionary({ repository, tableId: tables.mktClassificationDictionary }),
   ]);
 
   const rawRows = rawRecords.map((record) => record?.fields ?? {});
+  progress({ stage: 'normalizing', rawRecords: rawRows.length, classificationRules: dictionaryRules.length });
   const normalized = normalizeTikTokCreatorVideoBatch({
     rawRows,
     accountId,
@@ -38,18 +41,23 @@ export async function syncTikTokCreatorNativeToLark(input) {
     });
   }
 
+  progress({ stage: 'syncing_content', rows: normalized.contentRows.length });
   const contentResult = await syncEngine.syncByKey({
     repository,
     tableId: tables.mktContent,
     keyField: 'content_key',
     rows: normalized.contentRows,
   });
+  progress({ stage: 'content_synced', result: contentResult });
+  progress({ stage: 'syncing_daily_snapshots', rows: normalized.dailySnapshotRows.length });
   const dailyResult = await syncEngine.syncByKey({
     repository,
     tableId: tables.mktContentDaily,
     keyField: 'content_daily_key',
     rows: normalized.dailySnapshotRows,
   });
+
+  progress({ stage: 'daily_snapshots_synced', result: dailyResult });
 
   return Object.freeze({
     platform: 'tiktok',

@@ -78,3 +78,23 @@ test('lists and normalizes Lark table field metadata', async () => {
     fieldId: 'fld1', fieldName: 'content_url', type: 15, property: {},
   }]);
 });
+
+
+test('aborts a stalled Lark request after the configured timeout', async () => {
+  const client = new LarkBitableClient({
+    appId: 'app-id',
+    appSecret: 'app-secret',
+    appToken: 'app-token',
+    maxAttempts: 1,
+    minRequestIntervalMs: 0,
+    requestTimeoutMs: 10,
+    fetchImpl: async (_url, options) => new Promise((_resolve, reject) => {
+      options.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+    }),
+  });
+
+  await assert.rejects(
+    client.requestJson('/stalled', { method: 'GET', token: 'token' }),
+    /Lark request timed out after 10ms: \/stalled/,
+  );
+});

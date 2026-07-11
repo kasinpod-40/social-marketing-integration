@@ -12,11 +12,13 @@ const runtime = await createLocalLarkRuntime([
   'mktClassificationDictionary',
 ]);
 
+console.error(`[${new Date().toISOString()}] TikTok sync started`);
 const result = await syncTikTokCreatorNativeToLark({
   repository: runtime.repository,
   syncEngine: runtime.syncEngine,
   accountId: readAccountId(runtime.env),
   metricDate: readMetricDate(runtime.env),
+  onProgress: (event) => console.error(`[${new Date().toISOString()}] ${JSON.stringify(event)}`),
   tables: {
     rawTikTokCreatorVideos: runtime.tables.rawTikTokCreatorVideos,
     mktContent: runtime.tables.mktContent,
@@ -25,4 +27,5 @@ const result = await syncTikTokCreatorNativeToLark({
   },
 });
 
+console.error(`[${new Date().toISOString()}] TikTok sync completed`);
 printJson(result);

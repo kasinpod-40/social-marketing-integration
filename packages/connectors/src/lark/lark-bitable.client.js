@@ -4,6 +4,7 @@ const DEFAULT_BATCH_SIZE = 100;
 const DEFAULT_MAX_ATTEMPTS = 5;
 const DEFAULT_RETRY_BASE_DELAY_MS = 300;
 const DEFAULT_MIN_REQUEST_INTERVAL_MS = 150;
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const TOKEN_SAFETY_WINDOW_MS = 60_000;
 
 /**
@@ -28,6 +29,7 @@ export class LarkBitableClient {
     this.maxAttempts = positiveInteger(config?.maxAttempts ?? DEFAULT_MAX_ATTEMPTS, 'maxAttempts');
     this.retryBaseDelayMs = positiveInteger(config?.retryBaseDelayMs ?? DEFAULT_RETRY_BASE_DELAY_MS, 'retryBaseDelayMs');
     this.minRequestIntervalMs = nonNegativeInteger(config?.minRequestIntervalMs ?? DEFAULT_MIN_REQUEST_INTERVAL_MS, 'minRequestIntervalMs');
+    this.requestTimeoutMs = positiveInteger(config?.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS, 'requestTimeoutMs');
     this.sleep = config?.sleepImpl ?? sleep;
     this.random = config?.randomImpl ?? Math.random;
     this.tokenCache = null;
@@ -207,11 +209,28 @@ export class LarkBitableClient {
       }
 
       try {
-        const response = await this.scheduleRequest(() => this.fetchImpl(`${this.baseUrl}${path}`, {
-          method: options?.method ?? 'GET',
-          headers,
-          body: options?.body === undefined ? undefined : JSON.stringify(options.body),
-        }));
+        const response = await this.scheduleRequest(async () => {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), this.requestTimeoutMs);
+          try {
+            return await this.fetchImpl(`${this.baseUrl}${path}`, {
+              method: options?.method ?? 'GET',
+              headers,
+              body: options?.body === undefined ? undefined : JSON.stringify(options.body),
+              signal: controller.signal,
+            });
+          } catch (error) {
+            if (controller.signal.aborted) {
+              const timeoutError = new Error(`Lark request timed out after ${this.requestTimeoutMs}ms: ${path}`);
+              timeoutError.name = 'LarkRequestTimeoutError';
+              timeoutError.cause = error;
+              throw timeoutError;
+            }
+            throw error;
+          } finally {
+            clearTimeout(timeout);
+          }
+        });
 
         const text = await response.text();
         const payload = text ? JSON.parse(text) : {};

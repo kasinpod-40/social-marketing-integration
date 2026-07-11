@@ -405,3 +405,9 @@ Rules:
 8. Lark schema changes require updated tests and PROJECT_BRAIN review before sync.
 
 This policy applies to TikTok, Facebook, Instagram, YouTube, Chatwoot, WooCommerce, and every future connector.
+
+
+## v0.2.2 Lark sync observability and timeout
+- Added per-request timeout with AbortController so stalled Lark requests cannot hang forever.
+- Added stage progress logs for TikTok sync.
+- Timeout errors include the Lark API path and configured timeout.
