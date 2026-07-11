@@ -413,3 +413,27 @@ This policy applies to TikTok, Facebook, Instagram, YouTube, Chatwoot, WooCommer
 - Timeout errors include the Lark API path and configured timeout.
 ## Lark Sync Observability Rule
 Every production sync must expose progress from use case → sync engine → repository/client. Logs must identify scope, table, operation, page/chunk, attempt, elapsed time, retry delay, and Lark status/code without exposing tokens or secrets. Silent network waits are not acceptable.
+
+---
+
+## Lark Pagination Contract (v0.2.4)
+
+Every Lark collection read must use the shared guarded paginator. This applies to table fields, records, and any future paginated Lark collection endpoint.
+
+Mandatory behavior:
+
+1. Continue only when the response explicitly contains `has_more: true`.
+2. Ignore `page_token` when `has_more` is false; Lark may return a stale token on the terminal page.
+3. When `has_more` is true, require a non-empty next `page_token`.
+4. Detect a repeated page token and stop before an unbounded request loop can continue.
+5. Enforce a configurable maximum page count as a final safety boundary.
+6. Empty pages are allowed only when `has_more` is true and the next token advances.
+7. Fields and records must use the same shared pagination implementation; connector-specific pagination loops are prohibited.
+8. Pagination logs must report resource, table, page, row count, total row count, completion, and guarded failure without exposing secrets.
+
+Incident learned from TikTok production validation:
+
+- Lark returned 29 fields on page 1, `has_more: false`, and a stale `page_token`.
+- The previous implementation followed the token alone and repeatedly requested the same empty page hundreds of times.
+- The defect caused unnecessary API traffic and could trigger rate limiting even though no write had started.
+- The fixed contract treats `has_more` as authoritative and uses token checks only when another page is explicitly declared.

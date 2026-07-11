@@ -124,3 +124,12 @@
 - Added stage progress logs for TikTok sync.
 - Timeout errors include the Lark API path and configured timeout.
 - v0.2.3: Added end-to-end sync tracing for schema loading, destination pagination, sync planning, batch writes, request attempts, retries, elapsed time, and timeout diagnosis.
+
+## 0.2.4-lark-pagination-guards — 2026-07-11
+- Fixed the production infinite-pagination defect in Lark field and record reads.
+- Pagination now continues only when Lark explicitly returns `has_more: true`; a stale `page_token` is ignored when `has_more` is false.
+- Centralized field and record pagination in one guarded paginator instead of maintaining duplicate loops.
+- Added fail-fast protection for missing next tokens, repeated tokens, and excessive page counts.
+- Added pagination completion/failure tracing without exposing credentials.
+- Added real-contract regression tests for single-page, multi-page, stale-token, repeated-token, missing-token, empty-intermediate-page, records, and maximum-page behavior.
+- Full test suite passes 50/50 and static JavaScript syntax checks pass.

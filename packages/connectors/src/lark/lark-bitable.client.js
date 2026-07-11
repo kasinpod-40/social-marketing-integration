@@ -5,11 +5,12 @@ const DEFAULT_MAX_ATTEMPTS = 5;
 const DEFAULT_RETRY_BASE_DELAY_MS = 300;
 const DEFAULT_MIN_REQUEST_INTERVAL_MS = 150;
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+const DEFAULT_MAX_PAGES = 1_000;
 const TOKEN_SAFETY_WINDOW_MS = 60_000;
 
 /**
  * Minimal Lark Base client for server-side Workers usage.
- * The client is intentionally small: token fetch, paginated read, search by field, and batch create/update.
+ * The client is intentionally small: token fetch, guarded paginated reads, and batch create/update.
  */
 export class LarkBitableClient {
   /**
@@ -30,6 +31,7 @@ export class LarkBitableClient {
     this.retryBaseDelayMs = positiveInteger(config?.retryBaseDelayMs ?? DEFAULT_RETRY_BASE_DELAY_MS, 'retryBaseDelayMs');
     this.minRequestIntervalMs = nonNegativeInteger(config?.minRequestIntervalMs ?? DEFAULT_MIN_REQUEST_INTERVAL_MS, 'minRequestIntervalMs');
     this.requestTimeoutMs = positiveInteger(config?.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS, 'requestTimeoutMs');
+    this.maxPages = positiveInteger(config?.maxPages ?? DEFAULT_MAX_PAGES, 'maxPages');
     this.sleep = config?.sleepImpl ?? sleep;
     this.random = config?.randomImpl ?? Math.random;
     this.tokenCache = null;
@@ -69,64 +71,94 @@ export class LarkBitableClient {
   async listFields(input) {
     const tableId = requireText(input?.tableId, 'tableId');
     const token = await this.getTenantAccessToken();
-    const fields = [];
-    let pageToken = null;
 
-    let page = 0;
-    do {
-      page += 1;
-      const params = new URLSearchParams({ page_size: String(DEFAULT_PAGE_SIZE) });
-      if (pageToken) params.set('page_token', pageToken);
-      const response = await this.requestJson(
-        `/open-apis/bitable/v1/apps/${encodeURIComponent(this.appToken)}/tables/${encodeURIComponent(tableId)}/fields?${params.toString()}`,
-        { method: 'GET', token },
-      );
-      const pageFields = response?.data?.items ?? [];
-      if (!Array.isArray(pageFields)) throw new Error(`Lark listFields returned invalid items for table ${tableId}`);
-      this.onRequest({ stage: 'lark_page_loaded', resource: 'fields', tableId, page, rows: pageFields.length });
-      fields.push(...pageFields.map((field) => Object.freeze({
+    return this.paginateCollection({
+      resource: 'fields',
+      tableId,
+      token,
+      pageSize: DEFAULT_PAGE_SIZE,
+      buildPath: (params) => `/open-apis/bitable/v1/apps/${encodeURIComponent(this.appToken)}/tables/${encodeURIComponent(tableId)}/fields?${params.toString()}`,
+      normalizeItem: (field) => Object.freeze({
         fieldId: field?.field_id ?? field?.fieldId ?? null,
         fieldName: field?.field_name ?? field?.fieldName ?? field?.name ?? null,
         type: field?.type,
         property: field?.property ?? null,
-      })));
-      pageToken = response?.data?.page_token ?? null;
-    } while (pageToken);
-
-    return fields;
+      }),
+    });
   }
 
   async listRecords(input) {
     const tableId = requireText(input?.tableId, 'tableId');
-    const pageSize = input?.pageSize ?? DEFAULT_PAGE_SIZE;
+    const pageSize = positiveInteger(input?.pageSize ?? DEFAULT_PAGE_SIZE, 'pageSize');
     const token = await this.getTenantAccessToken();
-    const records = [];
+
+    return this.paginateCollection({
+      resource: 'records',
+      tableId,
+      token,
+      pageSize,
+      buildPath: (params) => `/open-apis/bitable/v1/apps/${encodeURIComponent(this.appToken)}/tables/${encodeURIComponent(tableId)}/records?${params.toString()}`,
+      normalizeItem: toRecordShape,
+    });
+  }
+
+  async paginateCollection(input) {
+    const resource = requireText(input?.resource, 'resource');
+    const tableId = requireText(input?.tableId, 'tableId');
+    const token = requireText(input?.token, 'token');
+    const pageSize = positiveInteger(input?.pageSize, 'pageSize');
+    if (typeof input?.buildPath !== 'function') throw new TypeError('Lark paginator requires buildPath');
+    if (typeof input?.normalizeItem !== 'function') throw new TypeError('Lark paginator requires normalizeItem');
+
+    const items = [];
+    const seenPageTokens = new Set();
     let pageToken = null;
 
-    let page = 0;
-    do {
-      page += 1;
+    for (let page = 1; page <= this.maxPages; page += 1) {
       const params = new URLSearchParams({ page_size: String(pageSize) });
-      if (pageToken) {
-        params.set('page_token', pageToken);
+      if (pageToken) params.set('page_token', pageToken);
+
+      const response = await this.requestJson(input.buildPath(params), { method: 'GET', token });
+      const pageItems = response?.data?.items ?? [];
+      if (!Array.isArray(pageItems)) {
+        throw new Error(`Lark ${resource} pagination returned invalid items for table ${tableId} on page ${page}`);
       }
 
-      const response = await this.requestJson(
-        `/open-apis/bitable/v1/apps/${encodeURIComponent(this.appToken)}/tables/${encodeURIComponent(tableId)}/records?${params.toString()}`,
-        { method: 'GET', token },
-      );
+      items.push(...pageItems.map(input.normalizeItem));
+      const hasMore = response?.data?.has_more === true;
+      const nextPageToken = normalizeOptionalText(response?.data?.page_token);
+      this.onRequest({
+        stage: 'lark_page_loaded',
+        resource,
+        tableId,
+        page,
+        rows: pageItems.length,
+        totalRows: items.length,
+        hasMore,
+      });
 
-      const pageRecords = response?.data?.items ?? [];
-      if (!Array.isArray(pageRecords)) {
-        throw new Error(`Lark listRecords returned invalid items for table ${tableId}`);
+      if (!hasMore) {
+        this.onRequest({ stage: 'lark_pagination_complete', resource, tableId, pages: page, totalRows: items.length });
+        return items;
+      }
+      if (!nextPageToken) {
+        const error = new Error(`Lark ${resource} pagination returned has_more=true without page_token for table ${tableId} on page ${page}`);
+        this.onRequest({ stage: 'lark_pagination_failed', resource, tableId, page, totalRows: items.length, error: error.message });
+        throw error;
+      }
+      if (nextPageToken === pageToken || seenPageTokens.has(nextPageToken)) {
+        const error = new Error(`Lark ${resource} pagination repeated page_token for table ${tableId} on page ${page}: ${nextPageToken}`);
+        this.onRequest({ stage: 'lark_pagination_failed', resource, tableId, page, totalRows: items.length, error: error.message });
+        throw error;
       }
 
-      this.onRequest({ stage: 'lark_page_loaded', resource: 'records', tableId, page, rows: pageRecords.length, totalRows: records.length + pageRecords.length });
-      records.push(...pageRecords.map(toRecordShape));
-      pageToken = response?.data?.page_token ?? null;
-    } while (pageToken);
+      seenPageTokens.add(nextPageToken);
+      pageToken = nextPageToken;
+    }
 
-    return records;
+    const error = new Error(`Lark ${resource} pagination exceeded ${this.maxPages} pages for table ${tableId}`);
+    this.onRequest({ stage: 'lark_pagination_failed', resource, tableId, page: this.maxPages, totalRows: items.length, error: error.message });
+    throw error;
   }
 
   async batchCreateRecords(input) {
@@ -334,6 +366,10 @@ function requireText(value, fieldName) {
   }
 
   return value.trim();
+}
+
+function normalizeOptionalText(value) {
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
 }
 
 function requireArray(value, fieldName) {

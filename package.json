@@ -1,6 +1,6 @@
 {
   "name": "social-marketing-integration",
-  "version": "0.2.3-lark-sync-tracing",
+  "version": "0.2.4-lark-pagination-guards",
   "private": true,
   "type": "module",
   "workspaces": [

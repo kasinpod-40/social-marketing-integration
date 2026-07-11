@@ -189,3 +189,7 @@ All connectors must normalize rows and pass them to `TableSyncEngine`. The engin
 ### Lark write safety
 
 The Lark repository discovers the live destination table schema before writing. Normalized rows are serialized and validated by field type, then passed to the universal sync engine. URL fields use Lark's `{ link, text }` payload format, and invalid mappings fail before batch writes with table/key/field context.
+
+### Lark pagination safety
+
+Lark collection reads use one guarded paginator. It follows `has_more`, rejects missing or repeated next tokens, and enforces a maximum page count. A terminal response may still contain a stale `page_token`; that token is intentionally ignored when `has_more` is false.
