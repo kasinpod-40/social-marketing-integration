@@ -29,7 +29,7 @@ test('classifies content by client-editable Lark dictionary rules', () => {
   assert.equal(result.content_theme, 'สรุปเนื้อหา');
   assert.equal(result.funnel_stage, 'awareness');
   assert.equal(result.cta_type, 'website');
-  assert.equal(result.cta_destination, 'chemistryk.com');
+  assert.equal(result.cta_destination, 'https://chemistryk.com/');
   assert.equal(result.classification_source, 'rule');
   assert.ok(result.classification_confidence >= 0.85);
   assert.equal(result.manual_tag_note, null);
@@ -63,6 +63,7 @@ test('unmatched content is flagged for manual review instead of guessing Chemist
   assert.equal(result.course_name, null);
   assert.equal(result.content_theme, null);
   assert.equal(result.classification_confidence, 0.2);
+  assert.equal(result.classification_source, 'manual');
   assert.match(result.manual_tag_note, /manual_review/);
 });
 
@@ -82,3 +83,42 @@ function row(ruleKey, targetField, outputValue, aliases, matchType, platform, ap
     },
   };
 }
+
+
+test('normalizes bare and www CTA domains into absolute URLs and trims punctuation', () => {
+  const bare = classifyMarketingContent({
+    caption: 'สมัครที่ chemistryk.com/course.',
+    platform: 'tiktok',
+    dictionaryRules: DICTIONARY_RULES,
+  });
+  const www = classifyMarketingContent({
+    caption: 'รายละเอียด www.chemistryk.com/register!',
+    platform: 'facebook',
+    dictionaryRules: DICTIONARY_RULES,
+  });
+
+  assert.equal(bare.cta_destination, 'https://chemistryk.com/course');
+  assert.equal(www.cta_destination, 'https://www.chemistryk.com/register');
+});
+
+
+test('ignores dictionary targets that the content schema does not write', () => {
+  const unsupportedRule = mapClassificationDictionaryRecords([{
+    fields: {
+      rule_key: 'campaign_only',
+      target_field: 'campaign_theme',
+      output_value: 'launch',
+      aliases: 'เปิดตัว',
+      enabled: true,
+    },
+  }]);
+
+  const result = classifyMarketingContent({
+    caption: 'เปิดตัวคอร์สใหม่',
+    platform: 'tiktok',
+    dictionaryRules: unsupportedRule,
+  });
+
+  assert.equal(result.classification_source, 'manual');
+  assert.match(result.manual_tag_note, /manual_review/);
+});

@@ -52,7 +52,7 @@ test('normalizes a TikTok Creator raw row into MKT content and daily snapshot ro
     cta_destination: null,
     promotion_type: 'none',
     urgency_level: 'none',
-    classification_source: 'rule',
+    classification_source: 'manual',
     classification_confidence: 0.2,
     manual_tag_note: 'manual_review: no enabled dictionary rule matched',
   });
@@ -90,4 +90,20 @@ test('normalizes Lark URL objects into canonical URL strings before Lark destina
     normalized.content.content_url,
     'https://www.tiktok.com/@chemistry_k/video/7599997064940064021',
   );
+});
+
+test('writes the verified TikTok video URL instead of an unrelated shareable URL', () => {
+  const result = normalizeTikTokCreatorVideo({
+    accountId: 'verified_brand',
+    metricDate: '2026-07-11',
+    dictionaryRules: [],
+    rawRow: {
+      video_id: 'video_verified_url',
+      shareable_url: 'https://example.com/not-tiktok',
+      embed_url: 'https://www.tiktok.com/@verified.brand/video/video_verified_url',
+    },
+  });
+
+  assert.equal(result.content.content_url, 'https://www.tiktok.com/@verified.brand/video/video_verified_url');
+  assert.equal(result.sourceHandle, 'verified.brand');
 });

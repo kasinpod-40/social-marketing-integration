@@ -1,3 +1,5 @@
+import { permanentError } from '../../shared/src/errors/runtime-error.js';
+
 /**
  * โปรไฟล์ลูกค้าและสภาพแวดล้อมที่ไม่เป็นความลับ
  *
@@ -57,12 +59,19 @@ export function loadCustomerRuntimeConfig(env) {
   const profile = CUSTOMER_PROFILES[profileKey];
 
   if (!profile) {
-    throw new Error(`Unknown MKT_CUSTOMER_PROFILE=${profileKey}. Supported profiles: ${Object.keys(CUSTOMER_PROFILES).join(', ')}`);
+    throw permanentError(`Unknown MKT_CUSTOMER_PROFILE=${profileKey}. Supported profiles: ${Object.keys(CUSTOMER_PROFILES).join(', ')}`, {
+      code: 'MKT_RUNTIME_CONFIG_INVALID',
+      details: { fieldName: 'MKT_CUSTOMER_PROFILE', profileKey },
+    });
   }
 
   if (profile.environment !== environment) {
-    throw new Error(
+    throw permanentError(
       `Invalid runtime pairing: MKT_ENV=${environment} cannot use MKT_CUSTOMER_PROFILE=${profileKey}; expected MKT_ENV=${profile.environment}`,
+      {
+        code: 'MKT_RUNTIME_CONFIG_INVALID',
+        details: { environment, profileKey, expectedEnvironment: profile.environment },
+      },
     );
   }
 
@@ -78,21 +87,30 @@ export function loadCustomerRuntimeConfig(env) {
   });
 }
 
+/** คืนรายชื่อ Profile ที่เตรียมใน Source code สำหรับหน้า Admin/Test โดยไม่เปิดเผย Secret */
 export function listCustomerProfiles() {
   return Object.freeze(Object.keys(CUSTOMER_PROFILES));
 }
 
+/** บังคับค่าให้เป็นหนึ่งในตัวเลือกที่รองรับ */
 function requireChoice(value, fieldName, choices) {
   const text = requireText(value, fieldName);
   if (!choices.includes(text)) {
-    throw new Error(`${fieldName} must be one of: ${choices.join(', ')}`);
+    throw permanentError(`${fieldName} must be one of: ${choices.join(', ')}`, {
+      code: 'MKT_RUNTIME_CONFIG_INVALID',
+      details: { fieldName },
+    });
   }
   return text;
 }
 
+/** บังคับข้อความ Config ที่ไม่ว่างและตัดช่องว่างหัวท้าย */
 function requireText(value, fieldName) {
   if (typeof value !== 'string' || value.trim() === '') {
-    throw new Error(`Missing ${fieldName}`);
+    throw permanentError(`Missing ${fieldName}`, {
+      code: 'MKT_RUNTIME_CONFIG_INVALID',
+      details: { fieldName },
+    });
   }
   return value.trim();
 }

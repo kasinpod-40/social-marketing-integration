@@ -93,3 +93,75 @@ test('sync engine emits detailed progress stages', async () => {
     'sync_updated',
   ]);
 });
+
+test('sync engine prefers filtered stable-key lookup when repository supports it', async () => {
+  const calls = [];
+  const repository = {
+    async prepareRows(_tableId, rows) { return rows; },
+    async listByFieldValues(tableId, fieldName, values) {
+      calls.push(['filtered', tableId, fieldName, values]);
+      return [];
+    },
+    async listAll() { throw new Error('full scan must not be used'); },
+    async createMany(_tableId, rows) { return { created: rows.length }; },
+    async updateMany() { return { updated: 0 }; },
+  };
+
+  const result = await new TableSyncEngine().syncByKey({
+    repository,
+    tableId: 'tbl_content',
+    keyField: 'content_key',
+    rows: [{ content_key: 'key-1' }, { content_key: 'key-2' }],
+  });
+
+  assert.equal(result.created, 2);
+  assert.deepEqual(calls, [[
+    'filtered',
+    'tbl_content',
+    'content_key',
+    ['key-1', 'key-2'],
+  ]]);
+});
+
+test('sync plan cannot be executed twice', async () => {
+  let creates = 0;
+  const repository = {
+    async prepareRows(_tableId, rows) { return rows; },
+    async listByFieldValues() { return []; },
+    async createMany(_tableId, rows) { creates += rows.length; return { created: rows.length }; },
+    async updateMany() { return { updated: 0 }; },
+  };
+  const engine = new TableSyncEngine();
+  const plan = await engine.planByKey({
+    repository,
+    tableId: 'tbl_content',
+    keyField: 'content_key',
+    rows: [{ content_key: 'key-1' }],
+  });
+
+  await engine.executePlan(plan);
+  await assert.rejects(() => engine.executePlan(plan), /already been executed/);
+  assert.equal(creates, 1);
+});
+
+test('fails when a repository reports fewer writes than the prepared plan', async () => {
+  const repository = {
+    async prepareRows(_tableId, rows) { return rows; },
+    async listByFieldValues() { return []; },
+    async prepareExistingRecords(_tableId, rows) { return rows; },
+    async createMany() { return { created: 0 }; },
+    async updateMany() { return { updated: 0 }; },
+  };
+  const engine = new TableSyncEngine();
+  const plan = await engine.planByKey({
+    repository,
+    tableId: 'tbl_items',
+    keyField: 'key',
+    rows: [{ key: 'a', value: 1 }],
+  });
+
+  await assert.rejects(
+    () => engine.executePlan(plan),
+    /created count mismatch/,
+  );
+});

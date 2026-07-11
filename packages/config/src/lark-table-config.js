@@ -1,3 +1,9 @@
+import { permanentError } from '../../shared/src/errors/runtime-error.js';
+
+/**
+ * Mapping ระหว่างชื่อ Table เชิงธุรกิจกับชื่อ Environment variable
+ * เก็บเฉพาะชื่อ Mapping ใน Source code ส่วน Table ID จริงต้องอยู่ใน Environment ของเจ้าของ Base
+ */
 export const LARK_TABLE_ENV = Object.freeze({
   mktAccounts: 'LARK_TABLE_MKT_ACCOUNTS',
   mktAdsAccounts: 'LARK_TABLE_MKT_ADS_ACCOUNTS',
@@ -22,36 +28,65 @@ export const LARK_TABLE_ENV = Object.freeze({
   rawGoogleCustomerLists: 'LARK_TABLE_RAW_GOOGLE_CUSTOMER_LISTS',
 });
 
+// รายชื่อ Logical table key ทั้งหมด ใช้เป็นค่าเริ่มต้นเมื่อผู้เรียกต้องการตรวจ Environment ครบทุกตาราง
 export const LARK_TABLE_KEYS = Object.freeze(Object.keys(LARK_TABLE_ENV));
 
 /**
- * Resolves Lark table IDs from environment variables only.
- * Real table IDs must not be hardcoded in source code so the same codebase can
- * be deployed to each client's own Cloudflare Worker and Lark Base.
- *
- * @param {Record<string, unknown>} env
- * @param {string[]} [requiredKeys]
- * @returns {Readonly<Record<string, string>>}
+ * อ่าน Table ID จาก Environment ตามรายการ Logical key ที่ Use case ต้องใช้จริง
+ * การรับ requiredKeys ช่วยไม่บังคับ Job เล็ก ๆ ให้ตั้งค่าตารางที่ไม่เกี่ยวข้องทั้งหมด
  */
 export function readLarkTableIdsFromEnv(env, requiredKeys = LARK_TABLE_KEYS) {
-  const result = {};
-  for (const tableKey of requiredKeys) {
-    result[tableKey] = readTableId(env, tableKey);
+  if (!Array.isArray(requiredKeys)) {
+    throw new TypeError('requiredKeys must be an array');
   }
 
+  const result = {};
+  const logicalKeys = new Set();
+  const ownerByTableId = new Map();
+
+  for (const tableKey of requiredKeys) {
+    if (logicalKeys.has(tableKey)) {
+      throw permanentError(`Duplicate Lark logical table key: ${tableKey}`, {
+        code: 'LARK_TABLE_CONFIG_INVALID',
+        details: { tableKey },
+      });
+    }
+    logicalKeys.add(tableKey);
+
+    const tableId = readTableId(env, tableKey);
+    const existingOwner = ownerByTableId.get(tableId);
+    if (existingOwner) {
+      throw permanentError(
+        `Lark table ID ${tableId} is assigned to both ${existingOwner} and ${tableKey}`,
+        {
+          code: 'LARK_TABLE_CONFIG_INVALID',
+          details: { tableId, tableKeys: [existingOwner, tableKey] },
+        },
+      );
+    }
+
+    ownerByTableId.set(tableId, tableKey);
+    result[tableKey] = tableId;
+  }
   return Object.freeze(result);
 }
 
+/** อ่าน Table ID หนึ่งค่าและแจ้งชื่อ Environment ที่ขาดอย่างชัดเจน */
 export function readTableId(env, tableKey) {
   const envName = LARK_TABLE_ENV[tableKey];
   if (!envName) {
-    throw new Error(`Unknown Lark table key: ${tableKey}`);
+    throw permanentError(`Unknown Lark table key: ${tableKey}`, {
+      code: 'LARK_TABLE_CONFIG_INVALID',
+      details: { tableKey },
+    });
   }
 
   const value = env?.[envName];
   if (typeof value !== 'string' || value.trim() === '') {
-    throw new Error(`Missing required env ${envName} for Lark table ${tableKey}`);
+    throw permanentError(`Missing required env ${envName} for Lark table ${tableKey}`, {
+      code: 'LARK_TABLE_CONFIG_INVALID',
+      details: { envName, tableKey },
+    });
   }
-
   return value.trim();
 }

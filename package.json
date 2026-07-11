@@ -1,6 +1,6 @@
 {
   "name": "social-marketing-integration",
-  "version": "0.2.8-runtime-customer-profiles",
+  "version": "0.3.1-codebase-audit-hardening",
   "private": true,
   "type": "module",
   "workspaces": [
@@ -9,9 +9,10 @@
   ],
   "scripts": {
     "test": "node --test tests/**/*.test.js",
-    "check": "find apps packages tests scripts -name '*.js' -o -name '*.mjs' | xargs -n1 node --check",
+    "check": "find apps packages tests scripts -type f \\( -name '*.js' -o -name '*.mjs' \\) -print0 | xargs -0 -n1 node --check && node scripts/audit-architecture.mjs",
     "validate:tiktok": "node scripts/validate-tiktok-creator.mjs",
     "sync:tiktok": "node scripts/sync-tiktok-creator.mjs",
-    "seed:metrics": "node scripts/seed-metric-definitions.mjs"
+    "seed:metrics": "node scripts/seed-metric-definitions.mjs",
+    "audit:architecture": "node scripts/audit-architecture.mjs"
   }
 }

@@ -1,71 +1,51 @@
-# Current State
+# 00 — Current State
 
 ## Baseline
-`v0.1.4-env-config-lark-dictionary`
 
-## Completed
-- Lark Base `Social MKT Data Hub` is created.
-- Main `MKT_*` tables are imported.
-- Raw `RAW_*` native integration tables are imported.
-- Sidebar folders, table icons, primary fields, field types, select options, and views with icons are configured.
-- Git baseline for Lark foundation is pushed.
-- TikTok For Creator native POC is confirmed for MVP usage.
-- Lark Native Integration creates a sync-managed table and can be renamed/moved to `RAW_TikTok_Creator_Videos` without breaking sync.
-- TikTok For Creator native sync updates existing records and does not create duplicates.
-- Initial POC synced 20/21 TikTok videos; the missing video had removed audio, so the omission is treated as eligibility/content availability rather than a confirmed pagination limit.
+`v0.3.1-codebase-audit-hardening` — 2026-07-11
 
-## Completed in code
-- TikTok Creator native row mapper.
-- TikTok Creator single-row normalization to `MKT_Content` and `MKT_Content_Daily`.
-- TikTok Creator batch normalization with O(n) dedupe and skipped-row isolation.
-- Lark Bitable client for tenant token, paginated record read, key search, batch create, and batch update.
-- Lark record repository with stable-key upsert, O(n) input dedupe, bounded-concurrency search, and create/update split.
-- TikTok Creator Lark sync use case:
-  - read `RAW_TikTok_Creator_Videos`
-  - normalize rows
-  - upsert `MKT_Content`
-  - upsert `MKT_Content_Daily`
-- `sync-worker` queue job type `tiktok.creator.native.sync` wired to the use case.
-- Tests cover metric parsing, Lark field aliases, invalid row isolation, batch dedupe, Lark repository upsert behavior, and TikTok Creator sync orchestration.
+## Environment ปัจจุบัน
 
-## Current status
-The TikTok Creator flow is ready for live read/write validation with real Lark table IDs.
+- DEV Base เป็นของผู้พัฒนา
+- TikTok source คือ `@ft.pumkin`
+- `MKT_ENV=development`
+- `MKT_CUSTOMER_PROFILE=dev_ft_pumkin`
+- Production profile `chemistry_k` มีใน Source code แต่ยังไม่เปิดใช้งาน
+- Production จริงต้องสร้างใน Lark/Cloud/Social accounts ของลูกค้า
 
-## Next
-1. Fill Lark table IDs and TikTok account ID in environment variables.
-2. Trigger `tiktok.creator.native.sync`.
-3. Confirm rows in `MKT_Content` and `MKT_Content_Daily`.
-4. Run the job twice to confirm update-in-place behavior for normalized tables.
-5. Add `MKT_Sync_Log` write after live validation.
+## Verified ก่อน Release นี้
 
+Baseline v0.2.8 เคยผ่าน Live DEV sync:
 
-## 2026-07-08 — v0.1.3 Canva report model support
-- Lark Base Canva-ready table structure was confirmed.
-- Added latest Lark table IDs into code config.
-- Added rule-based content classification fields for course/theme/funnel/CTA reporting.
-- Added metric-definition seed rows for organic and ads metrics.
-- Added report snapshot row builder for computed Canva-style payloads.
-- Tests and syntax checks pass.
+- RAW TikTok: 20 rows
+- `MKT_Content`: created 20
+- `MKT_Content_Daily`: created 20
+- Key ที่ถูกต้อง: `tiktok:ft_pumkin:*`
+- ข้อมูลเก่า `tiktok:chemistry_k:*` ใน DEV Base ถูกลบแล้ว
 
+## Verified ใน Package v0.3.1
 
-## 2026-07-09 — v0.1.4 env-driven config + Lark classification dictionary
-- Added `📚 MKT_Classification_Dictionary` in Lark Base and confirmed table ID `tblatpDOU6Qqh7Dv`.
-- Moved Lark table ID resolution to env-only config; no real table IDs remain hardcoded in source code.
-- Added `LARK_TABLE_MKT_CLASSIFICATION_DICTIONARY` env key.
-- TikTok Creator sync now reads dictionary rules from Lark before normalizing rows.
-- Removed Chemistry K-specific hardcoded course rules from the core classifier.
-- Classification now uses client-editable dictionary rows and falls back to `manual_review` note with low confidence when no rule matches.
-- Local tests pass: 25 tests.
-- Syntax check passes for apps/packages/tests.
+- Tests: 140/140 ผ่าน
+- Syntax checks: ผ่าน
+- Architecture audit: 38 Source files, 67 Local dependencies, 0 cycles
+- Secret/package scan: ไม่พบ Secret/Build artifact และ ZIP extraction test ผ่าน
+- Live DEV validation ของ v0.3.1: ยังไม่รันจาก Packaging environment
 
+## Next gate
 
-### v0.1.5-lark-live-sync-validation
+1. ติดตั้ง ZIP ใหม่โดยรักษา `.dev.vars` เดิมไว้
+2. `npm test`
+3. `npm run check`
+4. `npm run validate:tiktok`
+5. Sync จริงสองรอบ
+6. รอบที่สองต้อง `created=0`
+7. ตรวจ Content/Daily count ใน Lark ไม่เพิ่มจาก Stable Key เดิม
 
-Added a dry-run validation queue job before the first real Lark write. Use `tiktok.creator.native.validate` to confirm env/table mapping, dictionary rules, normalization output, skipped rows, and sample keys before running `tiktok.creator.native.sync`.
+## Known residual risks
 
-### v0.1.6-local-lark-run-tools
-- Added local Node runner scripts that read `.dev.vars` so the first real Lark validation/write can be run without Cloudflare queue setup.
-- Added `npm run validate:tiktok` for non-mutating validation against real Lark tables.
-- Added write-guarded commands: `CONFIRM_WRITE=YES npm run sync:tiktok` and `CONFIRM_WRITE=YES npm run seed:metrics`.
-- Expanded `.dev.vars.example` to list all current table mappings and clarified that `MKT_CUSTOMER_PROFILE` is an internal account key.
-- Test/check status: 30 tests passed; syntax check includes apps, packages, tests, and scripts.
+- ไม่มี Transaction ข้าม Lark tables
+- Queue ถูกจำกัด `max_concurrency=1` แต่ยังไม่มี Distributed lock สำหรับ Writer หลาย Runtime
+- RAW/Dictionary ยังเป็น Full-source read
+- ยังไม่มี Persisted `MKT_Sync_Log`/DLQ alert flow
+- Classification field ที่กลายเป็นค่าว่างยังไม่ล้างค่าเก่าใน Lark จนกว่าจะยืนยัน Cell-clear contract
+- Chemistry K Production ยังไม่ผ่าน Live customer-owned deployment

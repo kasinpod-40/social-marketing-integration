@@ -1,52 +1,45 @@
-# Next Actions
+# 10 — Next Actions
 
-## Immediate
-1. Add these env vars in local `.dev.vars` / Cloudflare Variables:
-   ```text
-   LARK_APP_ID
-   LARK_APP_SECRET
-   LARK_APP_TOKEN
-   MKT_CUSTOMER_PROFILE
-   LARK_TABLE_RAW_TIKTOK_CREATOR_VIDEOS
-   LARK_TABLE_MKT_CONTENT
-   LARK_TABLE_MKT_CONTENT_DAILY
-   LARK_TABLE_MKT_CLASSIFICATION_DICTIONARY
-   LARK_TABLE_MKT_METRIC_DEFINITIONS
-   ```
-2. Seed metric definitions by queueing:
-   ```json
-   {
-     "type": "metric.definitions.seed"
-   }
-   ```
-3. Trigger TikTok Creator sync:
-   ```json
-   {
-     "type": "tiktok.creator.native.sync",
-     "metricDate": "2026-07-07"
-   }
-   ```
-4. Validate that `MKT_Content` receives one row per eligible TikTok video with dictionary-based classification fields.
-5. Validate unmatched content gets `manual_tag_note = manual_review: no enabled dictionary rule matched` rather than guessed values.
-6. Validate that `MKT_Content_Daily` receives one row per eligible video for the selected metric date.
-7. Run the sync job twice and confirm rows are updated, not duplicated.
+## Gate ทันทีหลังติดตั้ง v0.3.1
 
-## After live read/write validation
-1. Add `MKT_Sync_Log` writes for TikTok Creator sync and metric seed results.
-2. Add manual API route to enqueue sync/seed jobs from a secured admin endpoint.
-3. Add live report aggregation that reads `MKT_Content_Daily` and writes `MKT_Report_Snapshots`.
-4. Add AI summary generation from `MKT_Report_Snapshots` into `MKT_AI_Report_Runs`.
-5. Add WordPress/WooCommerce sales/order connector after confirming the client's order source.
+```bash
+npm install
+npm test
+npm run check
+npm run validate:tiktok
+```
 
+Dry run ต้องยืนยัน:
 
-### v0.1.5-lark-live-sync-validation
+- `sourceIdentity.ok=true`
+- Expected/detected handle เป็น `ft.pumkin`
+- ไม่มี skipped rows, issues หรือ destination identity conflict
+- Content/Daily schema preflight ผ่านทุกแถว
+- Plan ใช้ `existingReadStrategy=filtered_keys`
 
-Added a dry-run validation queue job before the first real Lark write. Use `tiktok.creator.native.validate` to confirm env/table mapping, dictionary rules, normalization output, skipped rows, and sample keys before running `tiktok.creator.native.sync`.
+เมื่อผ่านแล้ว:
 
-## After v0.1.6
+```bash
+CONFIRM_WRITE=YES npm run sync:tiktok
+CONFIRM_WRITE=YES npm run sync:tiktok
+```
 
-1. Fill `.dev.vars` with real Lark app credentials and table IDs.
-2. Run `npm run validate:tiktok` and inspect rawRecords, dictionaryRules, contentRows, dailySnapshotRows, skippedRows, and warnings.
-3. If validation is clean, run `CONFIRM_WRITE=YES npm run sync:tiktok`.
-4. Verify `MKT_Content` and `MKT_Content_Daily` in Lark manually.
-5. Seed metric definitions using `CONFIRM_WRITE=YES npm run seed:metrics` after table field validation.
+รอบที่สองต้อง `created=0` และจำนวน Record เดิมไม่เพิ่ม
+
+## Reliability ถัดไป
+
+1. เขียน `MKT_Sync_Log` ต่อหนึ่ง Sync run พร้อม `sync_run_id`
+2. เพิ่ม Distributed lock/Unique reservation ก่อนเปิด Queue concurrency มากกว่า 1 หรืออนุญาต Writer หลาย Runtime
+3. เพิ่ม DLQ/System Alert สำหรับ Queue ที่ Retry หมด
+4. เพิ่ม Reconciliation summary หลัง Partial write/retry
+5. เพิ่ม Incremental cursor/window เมื่อ RAW source โตระดับหลักหมื่น
+6. ยืนยัน Lark Cell-clear contract แล้วเพิ่มการล้าง Classification field ที่ไม่ Match อีกต่อไป
+7. เพิ่ม Secured admin enqueue endpoint เมื่อ Authentication/Authorization พร้อม
+
+## Product flow ถัดไปหลัง TikTok core เสถียร
+
+1. Report aggregation จาก `MKT_Content_Daily`
+2. `MKT_Report_Snapshots`
+3. Lark AI summary/insight/recommendation
+4. Lark Bot/Automation ส่งกลุ่มและเก็บ delivery status
+5. WooCommerce/Chatwoot connector ตาม Data Model ที่ออกแบบเสร็จก่อน Implementation

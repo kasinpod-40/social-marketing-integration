@@ -22,6 +22,7 @@ test('metric definition seed uses stable unique keys and includes organic plus a
 test('seedMetricDefinitions uses universal sync engine by metric_key', async () => {
   let call;
   const repository = {
+    async prepareRows(_tableId, rows) { return rows; },
     async listAll() { return []; },
     async createMany() { return { created: 0 }; },
     async updateMany() { return { updated: 0 }; },

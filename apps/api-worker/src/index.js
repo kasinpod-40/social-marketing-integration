@@ -1,11 +1,14 @@
+import { BUILD_VERSION } from '../../../packages/config/src/build-info.js';
 import { json } from '../../../packages/shared/src/http/response.js';
 
+/** Map Route แบบคงที่เพื่อไม่ต้องสร้าง Router dependency ใน MVP */
 const ROUTES = new Map([
   ['GET /health', handleHealth],
-  ['GET /project-brain', handleProjectBrainStatus],
 ]);
 
+/** Cloudflare API Worker สำหรับ Endpoint สาธารณะของระบบ */
 export default {
+  /** Route Request และแปลง Error เป็น JSON response ที่ไม่เปิดเผย Secret */
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const routeKey = `${request.method} ${url.pathname}`;
@@ -18,11 +21,17 @@ export default {
     try {
       return await handler({ request, env, ctx, url });
     } catch (error) {
+      console.error(JSON.stringify({
+        timestamp: new Date().toISOString(),
+        scope: 'api_worker',
+        route: routeKey,
+        error: error instanceof Error ? error.message : String(error),
+      }));
+
       return json(
         {
           ok: false,
           error: 'Unhandled API error',
-          message: error instanceof Error ? error.message : 'Unknown error',
         },
         { status: 500 },
       );
@@ -30,20 +39,13 @@ export default {
   },
 };
 
+/** Health check แสดงเฉพาะ Environment และ Timezone ที่ไม่เป็นความลับ */
 async function handleHealth({ env }) {
   return json({
     ok: true,
     service: 'social-mkt-api-worker',
-    env: env?.APP_ENV ?? 'unknown',
+    environment: env?.MKT_ENV ?? 'unknown',
     timezone: env?.DEFAULT_TIMEZONE ?? 'Asia/Bangkok',
-  });
-}
-
-async function handleProjectBrainStatus() {
-  return json({
-    ok: true,
-    projectBrainRequired: true,
-    currentPhase: 'phase0-foundation',
-    rules: ['native-first', 'snapshot-first', 'metric-definition-strictness', 'monitoring-from-day-one'],
+    version: BUILD_VERSION,
   });
 }

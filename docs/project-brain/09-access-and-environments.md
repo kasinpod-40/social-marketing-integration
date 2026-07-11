@@ -1,26 +1,53 @@
 # 09 — Access and Environments
 
-## Default ownership model
-The client should own production resources whenever business verification or official production assets are required.
+## Ownership model ที่ใช้จริง
+
+### DEV
+
+- Lark Base, Lark App, Cloud/runtime และบัญชี TikTok ทดสอบเป็นทรัพยากรของผู้พัฒนา
+- Runtime profile: `dev_ft_pumkin`
+- TikTok source: `@ft.pumkin`
+- ใช้เพื่อพัฒนา, Dry run, Regression และ UAT ก่อนติดตั้งลูกค้า
+
+### Production — Chemistry K
+
+- ลูกค้าต้องเป็นเจ้าของ Lark Base, Lark App, Cloudflare/runtime, Secrets และ Platform assets ทั้งหมด
+- ผู้พัฒนาได้รับเชิญด้วย Role/IAM ที่เหมาะสม ห้ามแชร์ Password
+- Runtime profile `chemistry_k` เตรียมไว้ใน Source codeแล้ว
+- Table IDs และ Secret จริงต้องตั้งใน Environment ของลูกค้า ไม่แก้ Source codeตอน Deploy
+
+## Runtime selector
+
+```env
+# DEV
+MKT_ENV=development
+MKT_CUSTOMER_PROFILE=dev_ft_pumkin
+
+# Production
+MKT_ENV=production
+MKT_CUSTOMER_PROFILE=chemistry_k
+```
+
+ระบบต้องหยุดทันทีเมื่อ Environment/Profile จับคู่ไม่ถูกต้อง
+
+## Source code กับ Secret
+
+เก็บใน Source codeได้:
+
+- Customer/profile key
+- Stable account key
+- Connector/feature mapping
+- Field/table env mapping
+- ค่า default ที่ไม่เป็นความลับ
+- คอมเมนต์ภาษาไทย
+
+ห้ามเก็บใน Source code/Git/ZIP/Log:
+
+- App secret, Access token, API key
+- Password, Webhook secret
+- OAuth refresh token
+- Database credentials
 
 ## Freelancer constraint
-The developer is a freelancer without a registered company. Use client-owned production apps/resources by default, or use provider-owned native integrations when possible.
 
-## Required resource types
-- Cloudflare account / Workers / D1 / Queues / Secrets
-- Lark tenant / Lark Base / Lark Custom App if needed
-- Meta developer/business assets
-- TikTok Business Center / Developer App if custom API is needed
-- Google Cloud / Google Ads access
-- YouTube channel permissions and OAuth consent
-
-## Security
-- No password sharing.
-- Use roles, IAM, partners, collaborators, and OAuth.
-- Tokens must be encrypted and never stored in Lark.
-
-## v0.1.4 environment model
-- One client should deploy one Cloudflare project/Worker with its own env vars.
-- Source code must stay client-neutral and must not hardcode real Lark table IDs.
-- Table IDs are configured through `.dev.vars` locally and Cloudflare Variables/Secrets in production.
-- `LARK_TABLE_MKT_CLASSIFICATION_DICTIONARY` is required for dictionary-based classification.
+ผู้พัฒนาไม่มีบริษัทจดทะเบียน จึงใช้ Client-owned Production resources เป็นค่าเริ่มต้นสำหรับ Business verification, Developer app review และสิทธิ์ Platform ทางการ

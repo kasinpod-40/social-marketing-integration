@@ -1,125 +1,99 @@
-import { normalizeTikTokCreatorVideoBatch } from './normalize-tiktok-creator-video-batch.js';
-import { loadClassificationDictionary } from './load-classification-dictionary.js';
+import {
+  assertTikTokSyncReady,
+  prepareTikTokCreatorLarkSync,
+} from './prepare-tiktok-creator-lark-sync.js';
 
 /**
- * Reads the Lark native TikTok Creator raw table, normalizes records, and uses
- * the storage-neutral sync engine to persist report-ready rows.
+ * Sync RAW TikTok Creator ไปยัง MKT_Content และ MKT_Content_Daily
+ *
+ * ลำดับที่ปลอดภัย:
+ * 1. อ่าน RAW + Dictionary
+ * 2. Normalize และตรวจ Source identity
+ * 3. Preflight Schema และวาง Plan ของทั้งสองตาราง
+ * 4. ตรวจ Account identity conflict
+ * 5. เมื่อทุกอย่างผ่านจึง Execute Content แล้ว Daily Snapshot
+ *
+ * การแยก Plan ออกจาก Execute ทำให้ Error ด้าน Field/URL/Date/Select ของตารางหลัง
+ * ถูกพบก่อนตารางแรกเริ่มเขียน ลด Partial write จาก Validation error
  */
 export async function syncTikTokCreatorNativeToLark(input) {
-  const repository = requireReadRepository(input?.repository);
-  const syncEngine = requireSyncEngine(input?.syncEngine);
-  const tables = requireTables(input?.tables);
-  const accountId = requireText(input?.accountId, 'accountId');
-  const sourceHandle = normalizeHandle(requireText(input?.sourceHandle, 'sourceHandle'));
-  const metricDate = requireDate(input?.metricDate, 'metricDate');
   const progress = typeof input?.onProgress === 'function' ? input.onProgress : () => undefined;
-
-  progress({ stage: 'loading_source_data' });
-  const [rawRecords, dictionaryRules] = await Promise.all([
-    repository.listAll(tables.rawTikTokCreatorVideos),
-    loadClassificationDictionary({ repository, tableId: tables.mktClassificationDictionary }),
-  ]);
-
-  const rawRows = rawRecords.map((record) => record?.fields ?? {});
-  progress({ stage: 'normalizing', rawRecords: rawRows.length, classificationRules: dictionaryRules.length });
-  const normalized = normalizeTikTokCreatorVideoBatch({
-    rawRows,
-    accountId,
-    metricDate,
-    dictionaryRules,
+  const prepared = await prepareTikTokCreatorLarkSync({
+    repository: input?.repository,
+    syncEngine: input?.syncEngine,
+    tables: input?.tables,
+    accountId: input?.accountId,
+    sourceHandle: input?.sourceHandle,
+    metricDate: input?.metricDate,
+    onProgress: progress,
   });
-
-  assertSourceIdentity(sourceHandle, normalized.sourceHandles);
 
   if (input?.dryRun === true) {
     return Object.freeze({
-      platform: 'tiktok',
-      source: 'lark_native_tiktok_for_creator',
+      platform: prepared.platform,
+      source: prepared.source,
       mode: 'dry_run',
-      rawRecords: rawRows.length,
-      content: Object.freeze({ created: 0, updated: 0, skipped: 0, duplicateInputRows: 0, rowsReady: normalized.contentRows.length }),
-      dailySnapshots: Object.freeze({ created: 0, updated: 0, skipped: 0, duplicateInputRows: 0, rowsReady: normalized.dailySnapshotRows.length }),
-      classificationRules: dictionaryRules.length,
-      skippedRows: normalized.skippedRows,
+      readyToWrite: prepared.readyToWrite,
+      rawRecords: prepared.rawRecords,
+      classificationRules: prepared.classificationRules,
+      classificationDictionary: prepared.classificationDictionary,
+      content: planSummary(prepared.plans.content),
+      dailySnapshots: planSummary(prepared.plans.dailySnapshots),
+      skippedRows: prepared.normalized.skippedRows,
+      sourceIdentity: prepared.sourceIdentity,
+      accountConflicts: prepared.accountConflicts,
+      issues: prepared.issues,
+      warnings: prepared.warnings,
     });
   }
 
-  progress({ stage: 'syncing_content', rows: normalized.contentRows.length });
-  const contentResult = await syncEngine.syncByKey({
-    repository,
-    tableId: tables.mktContent,
-    keyField: 'content_key',
-    rows: normalized.contentRows,
+  assertTikTokSyncReady(prepared);
+
+  progress({
+    stage: 'executing_content_plan',
+    createRows: prepared.plans.content.createRows.length,
+    updateRows: prepared.plans.content.updateRows.length,
+  });
+  const contentResult = await input.syncEngine.executePlan(prepared.plans.content, {
     onProgress: (event) => progress({ scope: 'content', ...event }),
   });
   progress({ stage: 'content_synced', result: contentResult });
-  progress({ stage: 'syncing_daily_snapshots', rows: normalized.dailySnapshotRows.length });
-  const dailyResult = await syncEngine.syncByKey({
-    repository,
-    tableId: tables.mktContentDaily,
-    keyField: 'content_daily_key',
-    rows: normalized.dailySnapshotRows,
+
+  progress({
+    stage: 'executing_daily_snapshot_plan',
+    createRows: prepared.plans.dailySnapshots.createRows.length,
+    updateRows: prepared.plans.dailySnapshots.updateRows.length,
+  });
+  const dailyResult = await input.syncEngine.executePlan(prepared.plans.dailySnapshots, {
     onProgress: (event) => progress({ scope: 'daily_snapshots', ...event }),
   });
-
   progress({ stage: 'daily_snapshots_synced', result: dailyResult });
 
   return Object.freeze({
-    platform: 'tiktok',
-    source: 'lark_native_tiktok_for_creator',
+    platform: prepared.platform,
+    source: prepared.source,
     mode: 'write',
-    rawRecords: rawRows.length,
+    rawRecords: prepared.rawRecords,
     content: contentResult,
     dailySnapshots: dailyResult,
-    classificationRules: dictionaryRules.length,
-    skippedRows: normalized.skippedRows,
+    classificationRules: prepared.classificationRules,
+    classificationDictionary: prepared.classificationDictionary,
+    skippedRows: prepared.normalized.skippedRows,
+    sourceIdentity: prepared.sourceIdentity,
+    accountConflicts: prepared.accountConflicts,
+    warnings: prepared.warnings,
   });
 }
 
-function requireReadRepository(repository) {
-  for (const method of ['listAll', 'createMany', 'updateMany']) {
-    if (typeof repository?.[method] !== 'function') {
-      throw new TypeError(`syncTikTokCreatorNativeToLark requires repository.${method}`);
-    }
-  }
-  return repository;
-}
-
-function requireSyncEngine(syncEngine) {
-  if (typeof syncEngine?.syncByKey !== 'function') {
-    throw new TypeError('syncTikTokCreatorNativeToLark requires syncEngine.syncByKey');
-  }
-  return syncEngine;
-}
-
-function requireTables(tables) {
-  const required = ['rawTikTokCreatorVideos', 'mktContent', 'mktContentDaily', 'mktClassificationDictionary'];
-  return Object.freeze(Object.fromEntries(required.map((key) => [key, requireText(tables?.[key], `tables.${key}`)])));
-}
-
-function requireText(value, fieldName) {
-  if (typeof value !== 'string' || value.trim() === '') throw new Error(`TikTok Creator sync requires ${fieldName}`);
-  return value.trim();
-}
-
-function requireDate(value, fieldName) {
-  const text = requireText(value, fieldName);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) throw new Error(`${fieldName} must be YYYY-MM-DD`);
-  return text;
-}
-
-
-function assertSourceIdentity(expectedSourceHandle, sourceHandles) {
-  if (!Array.isArray(sourceHandles) || sourceHandles.length === 0) return;
-  if (sourceHandles.length > 1) {
-    throw new Error(`RAW TikTok source contains multiple account handles: ${sourceHandles.join(', ')}`);
-  }
-  const expected = normalizeHandle(expectedSourceHandle);
-  if (sourceHandles[0] !== expected) {
-    throw new Error(`RAW TikTok source handle @${sourceHandles[0]} does not match configured sourceHandle=@${expected}`);
-  }
-}
-
-function normalizeHandle(value) {
-  return value.replace(/^@/u, '').trim().toLowerCase();
+/** สรุป Plan สำหรับ Dry run โดยไม่เปิดเผย Repository ภายใน */
+function planSummary(plan) {
+  return Object.freeze({
+    rowsReady: plan.inputRows,
+    createRows: plan.createRows.length,
+    updateRows: plan.updateRows.length,
+    skipped: plan.skipped,
+    duplicateInputRows: plan.duplicateInputRows,
+    existingRecordsRead: plan.existingRecordsRead,
+    existingReadStrategy: plan.existingReadStrategy,
+  });
 }

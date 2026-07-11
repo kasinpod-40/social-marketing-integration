@@ -1,17 +1,21 @@
 import { readFile } from 'node:fs/promises';
 
 /**
- * Reads a Cloudflare .dev.vars style file into a plain object.
- * Supports comments, blank lines, optional export prefix, and simple quoted values.
+ * อ่านไฟล์ .dev.vars ของ Cloudflare เป็น Plain object
+ * รองรับบรรทัดว่าง, Comment, คำว่า export, ค่า quoted และ Inline comment หลัง quote
  */
 export async function readDevVars(filePath = '.dev.vars') {
   const text = await readFile(filePath, 'utf8');
   return parseDevVars(text);
 }
 
+/**
+ * Parse เนื้อหา .dev.vars โดยให้ค่าบรรทัดหลังสุดชนะเมื่อ Key ซ้ำ
+ * Parser นี้ไม่ Expand ตัวแปรและไม่ Execute shell เพื่อป้องกัน Code injection จากไฟล์ Config
+ */
 export function parseDevVars(text) {
   const env = {};
-  const lines = String(text ?? '').split(/\r?\n/);
+  const lines = String(text ?? '').split(/\r?\n/u);
 
   for (const line of lines) {
     const parsed = parseLine(line);
@@ -22,35 +26,69 @@ export function parseDevVars(text) {
   return Object.freeze(env);
 }
 
+/** Parse หนึ่งบรรทัดและคืน null เมื่อเป็น Comment หรือรูปแบบไม่ถูกต้อง */
 function parseLine(line) {
   const trimmed = String(line ?? '').trim();
   if (trimmed === '' || trimmed.startsWith('#')) return null;
 
-  const normalized = trimmed.startsWith('export ') ? trimmed.slice('export '.length).trim() : trimmed;
+  const normalized = trimmed.startsWith('export ')
+    ? trimmed.slice('export '.length).trim()
+    : trimmed;
   const equalsIndex = normalized.indexOf('=');
   if (equalsIndex <= 0) return null;
 
   const key = normalized.slice(0, equalsIndex).trim();
-  if (!/^[A-Z0-9_]+$/.test(key)) return null;
+  if (!/^[A-Z_][A-Z0-9_]*$/u.test(key)) return null;
 
   const rawValue = normalized.slice(equalsIndex + 1).trim();
-  return Object.freeze({ key, value: unquote(stripInlineComment(rawValue)) });
+  return Object.freeze({ key, value: parseValue(rawValue) });
 }
 
-function stripInlineComment(value) {
-  if (value.startsWith('"') || value.startsWith("'")) return value;
-  const hashIndex = value.indexOf(' #');
-  return hashIndex === -1 ? value : value.slice(0, hashIndex).trim();
-}
+/**
+ * อ่านค่าหลังเครื่องหมาย = โดยรองรับ quote และ Inline comment
+ * Backslash escape รองรับเฉพาะ quote/backslash เพื่อรักษาความหมายของ Secret โดยไม่แปลง \n เป็นบรรทัดใหม่
+ */
+function parseValue(value) {
+  if (value === '') return '';
 
-function unquote(value) {
-  if (value.length >= 2) {
-    const first = value[0];
-    const last = value[value.length - 1];
-    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
-      return value.slice(1, -1);
+  const quote = value[0];
+  if (quote === '"' || quote === "'") {
+    let output = '';
+    let escaped = false;
+
+    for (let index = 1; index < value.length; index += 1) {
+      const character = value[index];
+      if (escaped) {
+        // ตัด Backslash เฉพาะเมื่อ Escape quote ชนิดเดียวกับที่เปิดค่า หรือ Escape Backslash
+        // กรณีอื่น เช่น \n หรือ \t ต้องคง Backslash ไว้ตามตัวอักษรจริงของ Secret
+        output += character === quote || character === '\\'
+          ? character
+          : `\\${character}`;
+        escaped = false;
+        continue;
+      }
+      if (character === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (character === quote) {
+        const remainder = value.slice(index + 1).trim();
+        if (remainder !== '' && !remainder.startsWith('#')) {
+          throw new TypeError('Invalid .dev.vars value after closing quote');
+        }
+        return output;
+      }
+      output += character;
     }
+
+    throw new TypeError('Unclosed quote in .dev.vars value');
   }
 
-  return value;
+  return stripInlineComment(value);
+}
+
+/** ตัด Inline comment ที่มีช่องว่างนำหน้า เพื่อไม่ตัด # ซึ่งเป็นส่วนหนึ่งของ Secret */
+function stripInlineComment(value) {
+  const match = /\s+#/u.exec(value);
+  return match ? value.slice(0, match.index).trim() : value.trim();
 }

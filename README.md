@@ -1,137 +1,177 @@
 # Social Marketing Data Integration
 
-A Cloudflare + Lark Base data integration project for social organic and ads reporting.
+ระบบรวมข้อมูล Social Marketing เข้าสู่ Lark Base สำหรับ Daily Snapshot, Dashboard, AI Summary และ Alert โดยใช้ JavaScript ES Modules, Cloudflare Workers/Queues และ Lark Open API
 
-## Stack
-- JavaScript ES Modules
-- Cloudflare Workers
-- Cloudflare D1
-- Cloudflare Queues
-- Lark Base / Lark OpenAPI / Lark Native Integrations
+## Baseline ปัจจุบัน
 
-## Architecture
-Clean Architecture + Monorepo + Modular Monolith.
+`v0.3.1-codebase-audit-hardening`
 
-```text
-apps -> application -> domain
-connectors/infrastructure implement application ports
-```
+สถานะปัจจุบัน:
 
-## Current baseline
-`v0.1.6-local-lark-run-tools`
+- DEV ใช้ Lark Base ของผู้พัฒนาและ TikTok `@ft.pumkin`
+- Production profile `chemistry_k` เตรียมไว้ใน Source code แต่ Production จริงต้องใช้ Lark Base, App, Cloud และบัญชี Social ที่ลูกค้าเป็นเจ้าของ
+- TikTok DEV Sync จริงผ่าน 20 Content + 20 Daily Snapshot แล้วก่อน Audit รอบนี้
+- หลังเปลี่ยนเป็น v0.3.1 ต้องรัน Dry run และ Idempotency test กับ DEV Base อีกครั้ง
 
-This baseline makes the codebase client-neutral:
+## โครงสร้างระบบ
 
 ```text
-client Cloudflare env
-        ↓
-resolve Lark Base table IDs
-        ↓
-load MKT_Classification_Dictionary from Lark
-        ↓
-normalize / classify / upsert report rows
+apps
+  ├─ api-worker       HTTP health/status
+  └─ sync-worker      Scheduled/Queue jobs
+
+packages
+  ├─ domain           Entity และ Value object ที่ไม่พึ่ง Infrastructure
+  ├─ application      Use case และ Business flow
+  ├─ sync-engine      Plan/Diff/Execute แบบ Storage-neutral
+  ├─ connectors       Lark และ TikTok adapters
+  ├─ config           Customer profile, table mapping และ build info
+  └─ shared           Date, Error และ HTTP utilities กลาง
 ```
 
-No real Lark table IDs are hardcoded in source code. Each client deploys the same code to their own Cloudflare project and provides their own Lark Base table IDs through environment variables.
+Dependency direction หลัก:
 
-## Local validation
-This skeleton has no external dependencies for included tests.
+```text
+apps -> application/domain/config
+application -> domain/shared + connector ports/adapters ที่ประกอบจาก Runtime
+connectors -> shared
+sync-engine -> repository contract
+```
+
+## Dev และ Production
+
+เลือก Environment ผ่านค่า Runtime โดยไม่แก้ Source code
+
+DEV:
+
+```env
+MKT_ENV=development
+MKT_CUSTOMER_PROFILE=dev_ft_pumkin
+```
+
+Production ของ Chemistry K:
+
+```env
+MKT_ENV=production
+MKT_CUSTOMER_PROFILE=chemistry_k
+```
+
+ข้อมูลที่ไม่เป็นความลับ เช่น Customer key, Stable account key, Feature mapping และคำอธิบายภาษาไทยเก็บใน `packages/config/src/customer-profiles.js`
+
+Secret ทั้งหมดต้องอยู่ใน `.dev.vars`, Cloudflare Secret หรือ Secret Manager ของลูกค้า:
+
+```text
+LARK_APP_ID
+LARK_APP_SECRET
+LARK_APP_TOKEN
+API keys / access tokens / webhook secrets / passwords
+```
+
+## ตั้งค่า Local DEV
+
+```bash
+cp .dev.vars.example .dev.vars
+```
+
+กำหนดค่าอย่างน้อย:
+
+```env
+MKT_ENV=development
+MKT_CUSTOMER_PROFILE=dev_ft_pumkin
+
+LARK_APP_ID=...
+LARK_APP_SECRET=...
+LARK_APP_TOKEN=...
+
+LARK_TABLE_RAW_TIKTOK_CREATOR_VIDEOS=...
+LARK_TABLE_MKT_CONTENT=...
+LARK_TABLE_MKT_CONTENT_DAILY=...
+LARK_TABLE_MKT_CLASSIFICATION_DICTIONARY=...
+```
+
+`.dev.vars` ต้องไม่ Commit และไม่รวมใน ZIP Release
+
+## คำสั่งตรวจและ Sync
+
+ตรวจ Code:
 
 ```bash
 npm test
 npm run check
 ```
 
-
-## Local Lark live run tools
-
-Create a local secret file from the example and fill real Lark values:
-
-```bash
-cp .dev.vars.example .dev.vars
-```
-
-Validate real Lark data without writing to report tables:
+Dry run ด้วยเส้นทางเดียวกับ Production write path:
 
 ```bash
 npm run validate:tiktok
 ```
 
-Write TikTok Creator rows into `MKT_Content` and `MKT_Content_Daily` only after validation looks correct:
+Write จริงหลัง Dry run ผ่าน:
 
 ```bash
 CONFIRM_WRITE=YES npm run sync:tiktok
 ```
 
-Seed metric definitions into `MKT_Metric_Definitions`:
+Seed Metric definitions:
 
 ```bash
 CONFIRM_WRITE=YES npm run seed:metrics
 ```
 
-Optional runtime inputs:
+กำหนด Snapshot date เฉพาะรอบ:
 
 ```bash
-METRIC_DATE=2026-07-10 SAMPLE_LIMIT=10 npm run validate:tiktok
-METRIC_DATE=2026-07-10 CONFIRM_WRITE=YES npm run sync:tiktok
+METRIC_DATE=2026-07-11 npm run validate:tiktok
+METRIC_DATE=2026-07-11 CONFIRM_WRITE=YES npm run sync:tiktok
 ```
 
-`.dev.vars` must never be committed. It contains client secrets and table IDs.
+## Safety ของ TikTok Sync
 
-## Required Lark environment variables
+ก่อนเริ่มเขียน ระบบจะทำตามลำดับ:
 
-Global Lark app/base secrets:
+1. อ่าน RAW TikTok และ Classification Dictionary
+2. Normalize ทุกแถวและตรวจ Metric/URL/Date/Video ID แบบไม่เสีย precision
+3. ตรวจ Source handle ให้ตรง Customer profile
+4. ตรวจ Destination identity conflict ทั้ง Account และ Stable key เก่าจาก `platform + external_content_id`
+5. โหลด Schema จริงของ Content และ Daily
+6. Serialize/Preflight ทั้งสองตาราง
+7. ค้น Existing record ด้วย Stable Key และสร้าง Create/Update/Skip plan
+8. เมื่อทุกขั้นผ่านจึง Execute Content และ Daily
+
+Stable keys:
 
 ```text
-LARK_APP_ID
-LARK_APP_SECRET
-LARK_APP_TOKEN
-MKT_ENV
-MKT_CUSTOMER_PROFILE
+MKT_Content       tiktok:<account_key>:<video_id>
+MKT_Content_Daily tiktok:<account_key>:<video_id>:<YYYY-MM-DD>
 ```
 
-Required for TikTok Creator sync:
+DEV:
 
 ```text
-LARK_TABLE_RAW_TIKTOK_CREATOR_VIDEOS
-LARK_TABLE_MKT_CONTENT
-LARK_TABLE_MKT_CONTENT_DAILY
-LARK_TABLE_MKT_CLASSIFICATION_DICTIONARY
+tiktok:ft_pumkin:<video_id>
 ```
 
-Required for metric seed:
+Production Chemistry K:
 
 ```text
-LARK_TABLE_MKT_METRIC_DEFINITIONS
+tiktok:chemistry_k:<video_id>
 ```
 
-Other table IDs are kept in `wrangler.example.jsonc` / `.dev.vars.example` for future flows, but they are not required by every job.
+## Retry และ Idempotency
 
-## Queue jobs
+- Read/Update requests Retry เฉพาะ Error ชั่วคราว
+- Batch Create Retry ภายใน Request เฉพาะ Rate limit ที่ Lark ตอบกลับชัดเจน
+- Timeout/Network/5xx ที่ผล Create อาจกำกวมจะส่งกลับให้ Queue เริ่ม Job ใหม่
+- Job ใหม่ต้อง Re-plan จาก Stable Key ก่อนเขียน จึงลดความเสี่ยงสร้างข้อมูลซ้ำ
+- Permanent error เช่น Schema, Config, Source mismatch และ Invalid job จะไม่ Retry วน
 
-TikTok Creator sync:
+Lark ไม่มี Transaction ข้าม `MKT_Content` และ `MKT_Content_Daily` ดังนั้น Network failure หลังตารางแรกสำเร็จยังอาจเกิด Partial write ได้ การรัน Job เดิมซ้ำจะ Reconcile ด้วย Stable Key และเติมเฉพาะส่วนที่ขาด
 
-```json
-{
-  "type": "tiktok.creator.native.sync",
-  "accountId": "tiktok-account-id",
-  "metricDate": "2026-07-07"
-}
-```
+## Lark Classification Dictionary
 
-Metric definition seed:
+`MKT_Classification_Dictionary` เป็น Source of truth ของคำธุรกิจ เช่น Course, Level, Theme, Funnel, CTA, Promotion และ Urgency
 
-```json
-{
-  "type": "metric.definitions.seed"
-}
-```
-
-## Lark classification dictionary
-
-`📚 MKT_Classification_Dictionary` is the source of truth for business-specific mapping such as course names, course levels, content themes, funnel stages, CTAs, promotions, and urgency.
-
-The code reads these columns:
+Field ที่อ่าน:
 
 ```text
 rule_key
@@ -147,68 +187,22 @@ enabled
 note
 ```
 
-If no enabled dictionary rule matches a content row, the mapper leaves business fields empty and writes:
+เมื่อไม่มี Rule Match ระบบไม่เดาค่า แต่กำหนด:
 
 ```text
 manual_tag_note = manual_review: no enabled dictionary rule matched
 classification_confidence = 0.2
 ```
 
-This prevents the system from guessing Chemistry K-specific values for other clients.
+## Deployment
+
+- API Worker example: `wrangler.example.jsonc`
+- Sync Worker example: `deploy/wrangler.sync.example.jsonc`
+- Deployment notes: `deploy/README.md`
+- Full audit: `docs/full-codebase-audit-v0.3.1.md`
+- Production checklist: `docs/PRODUCTION_CHECKLIST.md`
+- Source of truth: `PROJECT_BRAIN.md`
 
 ## Definition of Done
-Code is not complete unless tests/regression pass and the Project Brain is updated.
 
-
-## v0.1.5 Live sync validation
-
-New queue job for non-mutating Lark validation before the first write:
-
-```json
-{
-  "type": "tiktok.creator.native.validate",
-  "metricDate": "2026-07-09",
-  "sampleLimit": 5
-}
-```
-
-This job reads the real `RAW_TikTok_Creator_Videos` and `MKT_Classification_Dictionary` tables, normalizes rows in memory, and logs a dry-run summary. It does not write to `MKT_Content` or `MKT_Content_Daily`. Use it before running the write job:
-
-```json
-{
-  "type": "tiktok.creator.native.sync",
-  "metricDate": "2026-07-09"
-}
-```
-
-The actual sync use case also supports `dryRun: true` for tests or manual validation code paths.
-## Core synchronization architecture
-
-All connectors must normalize rows and pass them to `TableSyncEngine`. The engine reads each destination table once, indexes stable keys in memory, skips unchanged rows, and performs sequential batch create/update operations through a thin storage repository. Lark authentication, pagination, request pacing, and bounded retry live in `LarkBitableClient`.
-
-
-### Lark write safety
-
-The Lark repository discovers the live destination table schema before writing. Normalized rows are serialized and validated by field type, then passed to the universal sync engine. URL fields use Lark's `{ link, text }` payload format, and invalid mappings fail before batch writes with table/key/field context.
-
-### Lark pagination safety
-
-Lark collection reads use one guarded paginator. It follows `has_more`, rejects missing or repeated next tokens, and enforces a maximum page count. A terminal response may still contain a stale `page_token`; that token is intentionally ignored when `has_more` is false.
-
-## Runtime Environment และ Customer Profile
-
-เลือก Dev/Production ผ่าน Environment Variable โดยไม่แก้ source code:
-
-```env
-# Dev: ใช้ Lark Base และ TikTok @ft.pumkin ของผู้พัฒนา
-MKT_ENV=development
-MKT_CUSTOMER_PROFILE=dev_ft_pumkin
-```
-
-```env
-# Production: ใช้ทรัพยากรในองค์กรของลูกค้า Chemistry K
-MKT_ENV=production
-MKT_CUSTOMER_PROFILE=chemistry_k
-```
-
-ข้อมูลลับยังคงตั้งผ่าน `.dev.vars`, Cloudflare secrets หรือ Secret Manager ของลูกค้า ห้าม commit ลง Git
+Release จะยังไม่ถือว่าเสร็จจนกว่า Test, Syntax check, Secret scan, ZIP extraction test, DEV Dry run, Idempotency rerun และเอกสารหลักจะผ่านครบ

@@ -1,3 +1,4 @@
+/** Metric แบบจำนวนที่ Organic platform หลักรองรับร่วมกัน */
 const ORGANIC_COUNT_METRICS = Object.freeze([
   ['views', 'Views', 'count', true],
   ['likes', 'Likes', 'count', true],
@@ -6,10 +7,13 @@ const ORGANIC_COUNT_METRICS = Object.freeze([
   ['engagement', 'Engagement', 'count', true],
 ]);
 
+/** Platform Organic ที่ใช้ชุด Metric count มาตรฐาน */
 const ORGANIC_PLATFORMS = Object.freeze(['facebook', 'instagram', 'tiktok', 'youtube']);
 
+/** Platform โฆษณาที่ใช้ Metric reporting กลาง */
 const ADS_PLATFORMS = Object.freeze(['meta_ads', 'tiktok_ads', 'google_ads']);
 
+/** นิยาม Metric โฆษณาพร้อมหน่วยและสิทธิ์เปรียบเทียบข้าม Platform */
 const ADS_METRICS = Object.freeze([
   ['spend', 'Spend', 'currency', true],
   ['impressions', 'Impressions', 'count', true],
@@ -23,6 +27,10 @@ const ADS_METRICS = Object.freeze([
   ['actual_roas', 'Actual ROAS', 'ratio', true],
 ]);
 
+/**
+ * Seed rows ที่สร้างแบบ Deterministic และใช้ metric_key เป็น Stable Key
+ * ข้อความใน metric_note เป็น Metadata สำหรับผู้ใช้ Lark จึงเก็บเป็นภาษาอังกฤษตามชื่อ Metric สากล
+ */
 export const METRIC_DEFINITION_ROWS = Object.freeze([
   ...ORGANIC_PLATFORMS.flatMap((platform) => ORGANIC_COUNT_METRICS.map(([metric, displayName, unit, canCompare]) => createMetricRow({
     platform,
@@ -94,6 +102,7 @@ export const METRIC_DEFINITION_ROWS = Object.freeze([
   }))),
 ]);
 
+/** สร้างหนึ่งแถว Metric definition และตรวจ Field สำคัญก่อน Freeze */
 function createMetricRow(input) {
   const platform = requireText(input.platform, 'platform');
   const metric = requireText(input.metric, 'metric');
@@ -111,6 +120,7 @@ function createMetricRow(input) {
   });
 }
 
+/** บังคับข้อความที่ไม่ว่างเพื่อป้องกัน Seed key หรือ Mapping ที่ไม่สมบูรณ์ */
 function requireText(value, fieldName) {
   if (typeof value !== 'string' || value.trim() === '') {
     throw new Error(`Metric definition seed requires ${fieldName}`);

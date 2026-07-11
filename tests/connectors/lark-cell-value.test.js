@@ -12,3 +12,12 @@ test('never coerces malformed objects into text or URLs', () => {
   assert.equal(readLarkText([{ unknown: 'value' }]), null);
   assert.throws(() => readLarkUrl([{ type: 'url', text: 'not-a-url' }]), /absolute http\/https URL/);
 });
+
+test('falls through blank structured candidates instead of hiding a valid fallback value', () => {
+  assert.equal(readLarkText({ text: '   ', name: 'fallback text' }), 'fallback text');
+  assert.equal(
+    readLarkUrl({ link: '   ', url: 'https://example.com/fallback' }),
+    'https://example.com/fallback',
+  );
+  assert.equal(readLarkNumber({ value: '', text: '1,250' }), 1250);
+});

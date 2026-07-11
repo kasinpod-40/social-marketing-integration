@@ -249,3 +249,338 @@ test('fails safely when pagination exceeds the configured maximum pages', async 
   await assert.rejects(client.listRecords({ tableId: 'tbl' }), /exceeded 2 pages/);
   assert.equal(collectionCalls, 2);
 });
+
+test('searches existing records by stable-key values instead of scanning the full table', async () => {
+  const requests = [];
+  const client = new LarkBitableClient({
+    appId: 'app-id',
+    appSecret: 'app-secret',
+    appToken: 'app-token',
+    minRequestIntervalMs: 0,
+    fetchImpl: async (url, options) => {
+      if (String(url).includes('tenant_access_token')) {
+        return new Response(JSON.stringify({ code: 0, tenant_access_token: 'token', expire: 7200 }), { status: 200 });
+      }
+      requests.push({ url: String(url), body: JSON.parse(options.body) });
+      return new Response(JSON.stringify({
+        code: 0,
+        data: { items: [{ record_id: 'rec1', fields: { content_key: 'key-1' } }], has_more: false },
+      }), { status: 200 });
+    },
+  });
+
+  const records = await client.searchRecordsByFieldValues({
+    tableId: 'tbl',
+    fieldName: 'content_key',
+    values: ['key-1', 'key-2'],
+  });
+
+  assert.equal(records.length, 1);
+  assert.match(requests[0].url, /records\/search/);
+  assert.deepEqual(requests[0].body.filter, {
+    conjunction: 'or',
+    conditions: [
+      { field_name: 'content_key', operator: 'is', value: ['key-1'] },
+      { field_name: 'content_key', operator: 'is', value: ['key-2'] },
+    ],
+  });
+});
+
+test('does not retry ambiguous batch-create network failures inside the same request', async () => {
+  let createCalls = 0;
+  const client = new LarkBitableClient({
+    appId: 'app-id',
+    appSecret: 'app-secret',
+    appToken: 'app-token',
+    maxAttempts: 3,
+    minRequestIntervalMs: 0,
+    sleepImpl: async () => undefined,
+    fetchImpl: async (url) => {
+      if (String(url).includes('tenant_access_token')) {
+        return new Response(JSON.stringify({ code: 0, tenant_access_token: 'token', expire: 7200 }), { status: 200 });
+      }
+      createCalls += 1;
+      throw new TypeError('socket disconnected after request body was sent');
+    },
+  });
+
+  await assert.rejects(
+    client.batchCreateRecords({ tableId: 'tbl', records: [{ content_key: 'key-1' }] }),
+    /Lark network request failed/,
+  );
+  assert.equal(createCalls, 1);
+});
+
+test('still retries explicit Lark rate limits for batch create', async () => {
+  let createCalls = 0;
+  const client = new LarkBitableClient({
+    appId: 'app-id',
+    appSecret: 'app-secret',
+    appToken: 'app-token',
+    maxAttempts: 3,
+    minRequestIntervalMs: 0,
+    retryBaseDelayMs: 1,
+    randomImpl: () => 0,
+    sleepImpl: async () => undefined,
+    fetchImpl: async (url) => {
+      if (String(url).includes('tenant_access_token')) {
+        return new Response(JSON.stringify({ code: 0, tenant_access_token: 'token', expire: 7200 }), { status: 200 });
+      }
+      createCalls += 1;
+      if (createCalls === 1) {
+        return new Response(JSON.stringify({ code: 1254290, msg: 'TooManyRequest' }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ code: 0, data: { records: [{ record_id: 'rec1' }] } }), { status: 200 });
+    },
+  });
+
+  assert.deepEqual(
+    await client.batchCreateRecords({ tableId: 'tbl', records: [{ content_key: 'key-1' }] }),
+    { created: 1 },
+  );
+  assert.equal(createCalls, 2);
+});
+
+test('does not retry invalid JSON from a permanent 400 response', async () => {
+  let calls = 0;
+  const client = new LarkBitableClient({
+    appId: 'app-id', appSecret: 'app-secret', appToken: 'app-token',
+    maxAttempts: 3, minRequestIntervalMs: 0,
+    fetchImpl: async () => {
+      calls += 1;
+      return new Response('<html>bad request</html>', { status: 400 });
+    },
+  });
+
+  await assert.rejects(client.requestJson('/bad-json', { method: 'GET' }), /invalid JSON/);
+  assert.equal(calls, 1);
+});
+
+test('timeout also aborts a stalled response body after headers were received', async () => {
+  const client = new LarkBitableClient({
+    appId: 'app-id',
+    appSecret: 'app-secret',
+    appToken: 'app-token',
+    maxAttempts: 1,
+    minRequestIntervalMs: 0,
+    requestTimeoutMs: 10,
+    fetchImpl: async (_url, options) => ({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      text: async () => new Promise((_resolve, reject) => {
+        options.signal.addEventListener('abort', () => reject(new Error('body aborted')), { once: true });
+      }),
+    }),
+  });
+
+  await assert.rejects(
+    client.requestJson('/stalled-body', { method: 'GET', token: 'token' }),
+    /Lark request timed out after 10ms: \/stalled-body/,
+  );
+});
+
+test('never exposes the Lark app token in timeout or network error messages', async () => {
+  const secretAppToken = 'bascn_secret_token_value';
+  const timeoutClient = new LarkBitableClient({
+    appId: 'app_id',
+    appSecret: 'app_secret',
+    appToken: secretAppToken,
+    requestTimeoutMs: 5,
+    maxAttempts: 1,
+    minRequestIntervalMs: 0,
+    fetchImpl: async (url, options) => {
+      if (String(url).includes('/tenant_access_token/internal')) {
+        return new Response(JSON.stringify({ code: 0, tenant_access_token: 'token', expire: 7200 }));
+      }
+      return new Promise((_resolve, reject) => {
+        options.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
+      });
+    },
+  });
+
+  await assert.rejects(
+    () => timeoutClient.listFields({ tableId: 'tbl_fields' }),
+    (error) => !error.message.includes(secretAppToken) && error.message.includes('/apps/***/tables/'),
+  );
+
+  const networkClient = new LarkBitableClient({
+    appId: 'app_id',
+    appSecret: 'app_secret',
+    appToken: secretAppToken,
+    maxAttempts: 1,
+    minRequestIntervalMs: 0,
+    fetchImpl: async (url) => {
+      if (String(url).includes('/tenant_access_token/internal')) {
+        return new Response(JSON.stringify({ code: 0, tenant_access_token: 'token', expire: 7200 }));
+      }
+      throw new TypeError(`network failed for ${url}`);
+    },
+  });
+
+  await assert.rejects(
+    () => networkClient.listFields({ tableId: 'tbl_fields' }),
+    (error) => !error.message.includes(secretAppToken) && error.message.includes('/apps/***/tables/'),
+  );
+});
+
+test('caps oversized remote API error messages before they reach logs', async () => {
+  const client = new LarkBitableClient({
+    appId: 'app_id',
+    appSecret: 'app_secret',
+    appToken: 'app_token',
+    maxAttempts: 1,
+    minRequestIntervalMs: 0,
+    fetchImpl: async () => new Response(JSON.stringify({ code: 123, msg: 'x'.repeat(5000) }), { status: 400 }),
+  });
+
+  await assert.rejects(
+    () => client.getTenantAccessToken(),
+    (error) => error.message.length < 600,
+  );
+});
+
+test('rejects page sizes and filter chunks above the documented client safety limits', async () => {
+  assert.throws(
+    () => new LarkBitableClient({
+      appId: 'app_id', appSecret: 'app_secret', appToken: 'app_token', maxFilterConditions: 51,
+    }),
+    /maxFilterConditions <= 50/,
+  );
+
+  const client = new LarkBitableClient({
+    appId: 'app_id',
+    appSecret: 'app_secret',
+    appToken: 'app_token',
+    minRequestIntervalMs: 0,
+    fetchImpl: async () => new Response(JSON.stringify({ code: 0, tenant_access_token: 'token', expire: 7200 })),
+  });
+
+  await assert.rejects(
+    () => client.listRecords({ tableId: 'tbl_records', pageSize: 501 }),
+    /pageSize <= 500/,
+  );
+});
+
+test('refreshes an invalid cached tenant token once and retries the Bitable request', async () => {
+  let tokenCalls = 0;
+  let bitableCalls = 0;
+  const authorizationHeaders = [];
+  const events = [];
+  const client = new LarkBitableClient({
+    appId: 'app-id',
+    appSecret: 'app-secret',
+    appToken: 'app-token',
+    maxAttempts: 1,
+    minRequestIntervalMs: 0,
+    onRequest: (event) => events.push(event),
+    fetchImpl: async (url, options) => {
+      if (String(url).includes('/tenant_access_token/internal')) {
+        tokenCalls += 1;
+        return new Response(JSON.stringify({
+          code: 0,
+          tenant_access_token: `tenant-token-${tokenCalls}`,
+          expire: 7200,
+        }), { status: 200 });
+      }
+
+      bitableCalls += 1;
+      authorizationHeaders.push(options.headers.get('Authorization'));
+      if (authorizationHeaders.at(-1) === 'Bearer tenant-token-1') {
+        return new Response(JSON.stringify({ code: 99991663, msg: 'tenant access token invalid' }), { status: 200 });
+      }
+
+      return new Response(JSON.stringify({
+        code: 0,
+        data: { items: [{ field_id: 'fld1', field_name: 'name', type: 1 }], has_more: false },
+      }), { status: 200 });
+    },
+  });
+
+  const fields = await client.listFields({ tableId: 'tbl_fields' });
+
+  assert.equal(fields.length, 1);
+  assert.equal(tokenCalls, 2);
+  assert.equal(bitableCalls, 2);
+  assert.deepEqual(authorizationHeaders, ['Bearer tenant-token-1', 'Bearer tenant-token-2']);
+  assert.equal(events.filter((event) => event.stage === 'lark_token_invalidated').length, 1);
+});
+
+test('does not loop forever when the refreshed tenant token is also rejected', async () => {
+  let tokenCalls = 0;
+  let bitableCalls = 0;
+  const client = new LarkBitableClient({
+    appId: 'app-id',
+    appSecret: 'app-secret',
+    appToken: 'app-token',
+    maxAttempts: 1,
+    minRequestIntervalMs: 0,
+    fetchImpl: async (url) => {
+      if (String(url).includes('/tenant_access_token/internal')) {
+        tokenCalls += 1;
+        return new Response(JSON.stringify({
+          code: 0,
+          tenant_access_token: `tenant-token-${tokenCalls}`,
+          expire: 7200,
+        }), { status: 200 });
+      }
+
+      bitableCalls += 1;
+      return new Response(JSON.stringify({ code: 99991663, msg: 'tenant access token invalid' }), { status: 200 });
+    },
+  });
+
+  await assert.rejects(
+    () => client.listFields({ tableId: 'tbl_fields' }),
+    (error) => error.details?.larkCode === 99991663,
+  );
+  assert.equal(tokenCalls, 2);
+  assert.equal(bitableCalls, 2);
+});
+
+test('shares one refreshed tenant token across concurrent Bitable requests', async () => {
+  let tokenCalls = 0;
+  const client = new LarkBitableClient({
+    appId: 'app-id',
+    appSecret: 'app-secret',
+    appToken: 'app-token',
+    maxAttempts: 1,
+    minRequestIntervalMs: 0,
+    fetchImpl: async (url, options) => {
+      if (String(url).includes('/tenant_access_token/internal')) {
+        tokenCalls += 1;
+        return new Response(JSON.stringify({
+          code: 0,
+          tenant_access_token: `tenant-token-${tokenCalls}`,
+          expire: 7200,
+        }), { status: 200 });
+      }
+
+      if (options.headers.get('Authorization') === 'Bearer tenant-token-1') {
+        return new Response(JSON.stringify({ code: 99991663, msg: 'tenant access token invalid' }), { status: 200 });
+      }
+
+      if (String(url).includes('/fields?')) {
+        return new Response(JSON.stringify({
+          code: 0,
+          data: { items: [{ field_id: 'fld1', field_name: 'name', type: 1 }], has_more: false },
+        }), { status: 200 });
+      }
+
+      return new Response(JSON.stringify({
+        code: 0,
+        data: { items: [{ record_id: 'rec1', fields: { key: 'value' } }], has_more: false },
+      }), { status: 200 });
+    },
+  });
+
+  await client.getTenantAccessToken();
+  const [fields, records] = await Promise.all([
+    client.listFields({ tableId: 'tbl_fields' }),
+    client.listRecords({ tableId: 'tbl_records' }),
+  ]);
+
+  assert.equal(fields.length, 1);
+  assert.equal(records.length, 1);
+  assert.equal(tokenCalls, 2);
+});

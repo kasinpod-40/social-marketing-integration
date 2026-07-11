@@ -4,7 +4,11 @@
 This project connects social organic and paid ads data into Lark Base for reporting, daily snapshots, monitoring, and AI summaries. The implementation target is a lean MVP using Cloudflare Workers, Cloudflare D1, Cloudflare Queues, Lark Base, Lark Native Integrations where useful, and JavaScript.
 
 ## Current project status
-**v0.2.0 — Core Sync Engine implemented; live TikTok write verification pending.**
+Current audited release: `v0.3.1-codebase-audit-hardening`
+
+Package verification: 140/140 tests, syntax checks ผ่าน, architecture audit 38 source files / 67 local dependencies / 0 cycles. Live DEV validation/write ของ Release นี้ต้องรันบนเครื่องผู้พัฒนาที่มี `.dev.vars` จริง
+
+**v0.3.1-codebase-audit-hardening — Full codebase audit และ TikTok/Lark reliability hardening เสร็จใน Package; รอ Live DEV gate ของ Release นี้.**
 
 Completed in Lark:
 - Created Lark Base: `Social MKT Data Hub`.
@@ -516,3 +520,16 @@ MKT_CUSTOMER_PROFILE=chemistry_k
 - เก็บใน code ได้เฉพาะ non-secret profile, mapping, feature flags และ stable identifiers
 - Token, Secret, API Key, Password และ credentials ต้องอยู่ใน Environment/Secret Manager เท่านั้น
 - Customer profile ต้องมีคอมเมนต์ภาษาไทยอธิบาย ownership และ field สำคัญ
+
+
+---
+
+## Full Codebase Audit Baseline (v0.3.1)
+
+- TikTok/Lark validation และ write ใช้ Prepare/Plan path เดียวกัน; Content และ Daily ต้องผ่าน Preflight ก่อน Write แรก
+- Destination lookup ใช้ Filtered stable-key search; Paginator ตรวจ `has_more`, missing/repeated token และ max pages
+- Batch Create ไม่ Retry เมื่อ Timeout/Network/5xx ให้ Job ใหม่ Re-plan จาก Stable Key เพื่อเลี่ยง Duplicate
+- Source handle, account mismatch, legacy stable key, TikTok URL handle/video ID และ unsafe numeric ID ถูกตรวจแบบ Fail-fast
+- DEV ใช้ Base/TikTok ของผู้พัฒนา (`dev_ft_pumkin`, `@ft.pumkin`); Production `chemistry_k` ใช้ทรัพยากรที่ลูกค้าเป็นเจ้าของ
+- Residual risks: ไม่มี cross-table transaction/distributed lock, RAW/Dictionary ยัง full read, ยังไม่มี persisted sync run/DLQ และยังไม่เปิด Classification field clearing จนกว่าจะยืนยัน Lark Cell-clear contract
+- รายงานเต็ม: `docs/full-codebase-audit-v0.3.1.md`
