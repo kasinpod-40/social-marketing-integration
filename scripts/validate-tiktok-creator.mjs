@@ -1,7 +1,7 @@
 import { validateLarkLiveSync } from '../packages/application/src/use-cases/validate-lark-live-sync.js';
 import { createLocalLarkRuntime, printJson, readAccountId, readMetricDate } from './lib/lark-runtime.js';
 
-const runtime = await createLocalLarkRuntime(['rawTikTokCreatorVideos', 'mktClassificationDictionary']);
+const runtime = await createLocalLarkRuntime(['rawTikTokCreatorVideos', 'mktClassificationDictionary', 'mktContent', 'mktContentDaily']);
 const result = await validateLarkLiveSync({
   repository: runtime.repository,
   accountId: readAccountId(runtime.env),
@@ -10,6 +10,8 @@ const result = await validateLarkLiveSync({
   tables: {
     rawTikTokCreatorVideos: runtime.tables.rawTikTokCreatorVideos,
     mktClassificationDictionary: runtime.tables.mktClassificationDictionary,
+    mktContent: runtime.tables.mktContent,
+    mktContentDaily: runtime.tables.mktContentDaily,
   },
 });
 

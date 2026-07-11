@@ -88,3 +88,30 @@ test('reads RAW TikTok Creator rows and upserts content plus daily snapshots', a
   assert.equal(syncCalls[1].keyField, 'content_daily_key');
   assert.equal(syncCalls[1].rows[0].completion_rate, 0.5);
 });
+
+test('refuses to write TikTok rows from a different source account', async () => {
+  const repository = {
+    async listAll(tableId) {
+      if (tableId === 'raw') return [{ fields: {
+        'Unique identifier of the video': [{ type: 'text', text: 'v1' }],
+        'Shareable URL for this TikTok video': [{ type: 'url', link: 'https://www.tiktok.com/@wrong/video/v1', text: 'open' }],
+      } }];
+      if (tableId === 'dict') return [];
+      return [];
+    },
+    async createMany() { throw new Error('must not write'); },
+    async updateMany() { throw new Error('must not write'); },
+  };
+  const syncEngine = { async syncByKey() { throw new Error('must not sync'); } };
+
+  await assert.rejects(
+    () => syncTikTokCreatorNativeToLark({
+      repository,
+      syncEngine,
+      accountId: 'chemistry_k',
+      metricDate: '2026-07-11',
+      tables: { rawTikTokCreatorVideos: 'raw', mktClassificationDictionary: 'dict', mktContent: 'content', mktContentDaily: 'daily' },
+    }),
+    /does not match TIKTOK_CREATOR_ACCOUNT_ID/,
+  );
+});

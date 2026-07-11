@@ -48,7 +48,7 @@ test('normalizes a TikTok Creator raw row into MKT content and daily snapshot ro
     content_theme: null,
     funnel_stage: null,
     cta_type: 'none',
-    cta_destination: 'https://www.tiktok.com/@brand/video/video_1',
+    cta_destination: null,
     promotion_type: 'none',
     urgency_level: 'none',
     classification_source: 'rule',
@@ -57,6 +57,7 @@ test('normalizes a TikTok Creator raw row into MKT content and daily snapshot ro
   });
 
   assert.equal(normalized.dailySnapshot.content_daily_key, 'tiktok:tt_account_1:video_1:2026-07-06');
+  assert.equal(normalized.dailySnapshot.metric_date, Date.parse('2026-07-06T00:00:00+07:00'));
   assert.equal(normalized.dailySnapshot.total_watch_time_seconds, 8500);
   assert.equal(normalized.dailySnapshot.traffic_sources, 'For You 80%, Search 20%');
 });
@@ -65,5 +66,26 @@ test('requires a metric date to avoid non-repeatable snapshots', () => {
   assert.throws(
     () => normalizeTikTokCreatorVideo({ accountId: 'tt_account_1', metricDate: '20260706', rawRow: { video_id: 'video_1' } }),
     /metricDate must be YYYY-MM-DD/,
+  );
+});
+
+
+test('normalizes Lark URL objects into canonical URL strings before Lark destination serialization', () => {
+  const normalized = normalizeTikTokCreatorVideo({
+    accountId: 'chemistry_k',
+    metricDate: '2026-07-11',
+    rawRow: {
+      video_id: '7599997064940064021',
+      shareable_url: [{
+        link: 'https://www.tiktok.com/@chemistry_k/video/7599997064940064021',
+        text: 'TikTok video',
+        type: 'url',
+      }],
+    },
+  });
+
+  assert.equal(
+    normalized.content.content_url,
+    'https://www.tiktok.com/@chemistry_k/video/7599997064940064021',
   );
 });

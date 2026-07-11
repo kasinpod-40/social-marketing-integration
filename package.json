@@ -1,6 +1,6 @@
 {
   "name": "social-marketing-integration",
-  "version": "0.2.5-canonical-datetime",
+  "version": "0.2.7-live-contract-preflight",
   "private": true,
   "type": "module",
   "workspaces": [

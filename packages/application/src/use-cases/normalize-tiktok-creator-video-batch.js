@@ -21,6 +21,7 @@ export function normalizeTikTokCreatorVideoBatch(input) {
   const contentRows = [];
   const dailySnapshotRows = [];
   const skippedRows = [];
+  const sourceHandles = new Set();
 
   for (let index = 0; index < rawRows.length; index += 1) {
     try {
@@ -30,6 +31,8 @@ export function normalizeTikTokCreatorVideoBatch(input) {
         rawRow: rawRows[index],
         dictionaryRules,
       });
+
+      if (normalized.sourceHandle) sourceHandles.add(normalized.sourceHandle);
 
       if (!seenContentKeys.has(normalized.content.content_key)) {
         seenContentKeys.add(normalized.content.content_key);
@@ -52,6 +55,7 @@ export function normalizeTikTokCreatorVideoBatch(input) {
     contentRows: Object.freeze(contentRows),
     dailySnapshotRows: Object.freeze(dailySnapshotRows),
     skippedRows: Object.freeze(skippedRows),
+    sourceHandles: Object.freeze([...sourceHandles].sort()),
   });
 }
 

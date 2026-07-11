@@ -32,6 +32,8 @@ test('validates live Lark sync without writing rows', async () => {
     tables: {
       rawTikTokCreatorVideos: 'tbl_raw',
       mktClassificationDictionary: 'tbl_dictionary',
+      mktContent: 'tbl_content',
+      mktContentDaily: 'tbl_content_daily',
     },
   });
 
@@ -68,6 +70,8 @@ test('validation reports warnings for empty or skipped data', async () => {
     tables: {
       rawTikTokCreatorVideos: 'tbl_raw',
       mktClassificationDictionary: 'tbl_dictionary',
+      mktContent: 'tbl_content',
+      mktContentDaily: 'tbl_content_daily',
     },
   });
 
@@ -126,6 +130,7 @@ function createRepository(input) {
       if (tableId === 'tbl_dictionary') return input.dictionaryRecords;
       throw new Error(`Unexpected table ${tableId}`);
     },
+    async prepareRows(_tableId, rows) { return rows; },
     async createMany() { input.onWrite?.(); return { created: 0 }; },
     async updateMany() { input.onWrite?.(); return { updated: 0 }; },
   };
@@ -148,3 +153,32 @@ function dictionaryRow(ruleKey, targetField, outputValue, aliases, priority, con
     },
   };
 }
+
+test('validation blocks writes when RAW TikTok handle does not match configured account', async () => {
+  const repository = createRepository({
+    rawRecords: [{
+      recordId: 'raw_wrong_account',
+      fields: {
+        'Unique identifier of the video': [{ type: 'text', text: 'v1' }],
+        'Shareable URL for this TikTok video': [{ type: 'url', link: 'https://www.tiktok.com/@other_brand/video/v1', text: 'open' }],
+      },
+    }],
+    dictionaryRecords: [dictionaryRow('theme_summary', 'content_theme', 'สรุปเนื้อหา', 'สรุป', 80, 85)],
+  });
+
+  const result = await validateLarkLiveSync({
+    repository,
+    accountId: 'chemistry_k',
+    metricDate: '2026-07-11',
+    tables: {
+      rawTikTokCreatorVideos: 'tbl_raw',
+      mktClassificationDictionary: 'tbl_dictionary',
+      mktContent: 'tbl_content',
+      mktContentDaily: 'tbl_content_daily',
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.sourceIdentity.detectedHandles, ['other_brand']);
+  assert.match(result.warnings.join('\n'), /handle mismatch/i);
+});

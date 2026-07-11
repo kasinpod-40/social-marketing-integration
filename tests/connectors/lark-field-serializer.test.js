@@ -71,3 +71,18 @@ test('rejects ambiguous timezone-less date strings before writes', () => {
     /must include an explicit timezone/,
   );
 });
+
+
+test('validates single-select and multi-select values against live schema options', () => {
+  const fields = [
+    { fieldName: 'platform', type: 3, property: { options: [{ name: 'tiktok' }] } },
+    { fieldName: 'course_level', type: 4, property: { options: [{ name: 'ม.4' }] } },
+  ];
+  assert.deepEqual(serializeRowsForLark([{ platform: 'tiktok', course_level: ['ม.4'] }], fields), [
+    { platform: 'tiktok', course_level: ['ม.4'] },
+  ]);
+  assert.throws(
+    () => serializeRowsForLark([{ platform: 'youtube', course_level: ['DEK73'] }], fields),
+    /not configured in destination select options/,
+  );
+});

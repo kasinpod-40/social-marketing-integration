@@ -70,3 +70,13 @@ function normalizeEpochNumber(value, label) {
 function hasExplicitTimezone(value) {
   return /(?:Z|[+-]\d{2}:?\d{2})$/i.test(value);
 }
+
+
+/** Converts YYYY-MM-DD in Asia/Bangkok to epoch milliseconds at local midnight. */
+export function bangkokDateToEpochMilliseconds(value, options = {}) {
+  const label = options.label ?? 'Bangkok date';
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new TypeError(`${label} must be YYYY-MM-DD`);
+  }
+  return toEpochMilliseconds(`${value}T00:00:00+07:00`, { label });
+}

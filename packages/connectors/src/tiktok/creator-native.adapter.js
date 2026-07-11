@@ -1,4 +1,5 @@
 import { toEpochMilliseconds } from '../shared/date-time.js';
+import { readLarkNumber, readLarkText, readLarkUrl } from '../shared/lark-cell-value.js';
 
 const FIELD_ALIASES = Object.freeze({
   videoId: [
@@ -96,6 +97,7 @@ const FIELD_ALIASES = Object.freeze({
     'Different Sources of Video Exposure',
     'Different sources of video exposure',
     'Different sources of video exposure, arranged by exposure percentage',
+    'Different sources of video exposure, arranged by exposure percentage from high to low',
   ],
   countryRegionBreakdown: [
     'country_region_breakdown',
@@ -114,15 +116,17 @@ const FIELD_ALIASES = Object.freeze({
  */
 export function mapTikTokCreatorVideoRow(row) {
   assertObject(row, 'TikTok creator row');
+  const shareableUrl = readLarkUrl(firstPresent(row, FIELD_ALIASES.shareableUrl), { label: 'TikTok shareable URL' });
 
   return Object.freeze({
     platform: 'tiktok',
-    externalContentId: toNullableText(firstPresent(row, FIELD_ALIASES.videoId)),
+    externalContentId: readLarkText(firstPresent(row, FIELD_ALIASES.videoId), { label: 'TikTok video ID' }),
     publishedAt: toEpochMilliseconds(firstPresent(row, FIELD_ALIASES.publishedAt), { allowNull: true, label: 'TikTok published_at' }),
-    description: toNullableText(firstPresent(row, FIELD_ALIASES.description)),
-    shareableUrl: toNullableText(firstPresent(row, FIELD_ALIASES.shareableUrl)),
-    embedUrl: toNullableText(firstPresent(row, FIELD_ALIASES.embedUrl)),
-    thumbnailUrl: toNullableText(firstPresent(row, FIELD_ALIASES.thumbnailUrl)),
+    description: readLarkText(firstPresent(row, FIELD_ALIASES.description), { label: 'TikTok description' }),
+    shareableUrl,
+    embedUrl: readLarkUrl(firstPresent(row, FIELD_ALIASES.embedUrl), { label: 'TikTok embed URL' }),
+    thumbnailUrl: readLarkUrl(firstPresent(row, FIELD_ALIASES.thumbnailUrl), { label: 'TikTok thumbnail URL' }),
+    sourceHandle: extractTikTokHandle(shareableUrl),
     durationSeconds: toNullableSeconds(firstPresent(row, FIELD_ALIASES.durationSeconds)),
     metrics: Object.freeze({
       views: toNullableNumber(firstPresent(row, FIELD_ALIASES.views)),
@@ -133,10 +137,22 @@ export function mapTikTokCreatorVideoRow(row) {
       totalPlayDurationSeconds: toNullableSeconds(firstPresent(row, FIELD_ALIASES.totalPlayDuration)),
       completionRate: toNullableRatio(firstPresent(row, FIELD_ALIASES.completionRate)),
       uniqueViewers: toNullableNumber(firstPresent(row, FIELD_ALIASES.uniqueViewers)),
-      trafficSources: toNullableText(firstPresent(row, FIELD_ALIASES.trafficSources)),
-      countryRegionBreakdown: toNullableText(firstPresent(row, FIELD_ALIASES.countryRegionBreakdown)),
+      trafficSources: readLarkText(firstPresent(row, FIELD_ALIASES.trafficSources), { label: 'TikTok traffic sources' }),
+      countryRegionBreakdown: readLarkText(firstPresent(row, FIELD_ALIASES.countryRegionBreakdown), { label: 'TikTok country/region breakdown' }),
     }),
   });
+}
+
+
+export function extractTikTokHandle(value) {
+  if (typeof value !== 'string' || value.trim() === '') return null;
+  try {
+    const url = new URL(value);
+    const match = url.pathname.match(/^\/@([^/]+)\/video\//u);
+    return match?.[1]?.trim().toLowerCase() ?? null;
+  } catch {
+    return null;
+  }
 }
 
 function firstPresent(row, aliases) {
@@ -156,32 +172,12 @@ function assertObject(value, label) {
   }
 }
 
-function toNullableText(value) {
-  if (value === null || value === undefined || value === '') {
-    return null;
-  }
-
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : null;
-  }
-
-  return String(value);
-}
-
 function toNullableNumber(value) {
   if (value === null || value === undefined || value === '') {
     return null;
   }
 
-  const normalized = typeof value === 'string' ? value.replace(/,/g, '').trim() : value;
-  const numericValue = Number(normalized);
-
-  if (!Number.isFinite(numericValue)) {
-    throw new TypeError(`Invalid TikTok numeric metric value: ${value}`);
-  }
-
-  return numericValue;
+  return readLarkNumber(value, { label: 'TikTok numeric metric' });
 }
 
 function toNullableRatio(value) {

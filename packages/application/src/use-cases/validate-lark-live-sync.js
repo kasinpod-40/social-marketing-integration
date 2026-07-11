@@ -10,10 +10,12 @@ const DEFAULT_SAMPLE_LIMIT = 5;
  * perform the actual upsert into MKT_Content and MKT_Content_Daily.
  *
  * @param {Object} input
- * @param {{ listAll: Function }} input.repository
+ * @param {{ listAll: Function, prepareRows: Function }} input.repository
  * @param {Object} input.tables
  * @param {string} input.tables.rawTikTokCreatorVideos
  * @param {string} input.tables.mktClassificationDictionary
+ * @param {string} input.tables.mktContent
+ * @param {string} input.tables.mktContentDaily
  * @param {string} input.accountId
  * @param {string} input.metricDate YYYY-MM-DD
  * @param {number} [input.sampleLimit]
@@ -44,7 +46,16 @@ export async function validateLarkLiveSync(input) {
 
   const contentRows = normalized.contentRows;
   const dailyRows = normalized.dailySnapshotRows;
-  const readyToWrite = rawRows.length > 0
+
+  // Production-like preflight: load the real destination schemas and serialize
+  // every row exactly as the write path would, without creating or updating.
+  const [preparedContentRows, preparedDailyRows] = await Promise.all([
+    repository.prepareRows(tables.mktContent, contentRows, { keyField: 'content_key' }),
+    repository.prepareRows(tables.mktContentDaily, dailyRows, { keyField: 'content_daily_key' }),
+  ]);
+  const sourceIdentity = evaluateSourceIdentity(accountId, normalized.sourceHandles);
+  const readyToWrite = sourceIdentity.ok
+    && rawRows.length > 0
     && dictionaryRules.length > 0
     && contentRows.length > 0
     && dailyRows.length > 0;
@@ -60,6 +71,11 @@ export async function validateLarkLiveSync(input) {
     classificationRules: dictionaryRules.length,
     contentRows: contentRows.length,
     dailySnapshotRows: dailyRows.length,
+    sourceIdentity,
+    schemaPreflight: Object.freeze({
+      contentRows: preparedContentRows.length,
+      dailySnapshotRows: preparedDailyRows.length,
+    }),
     skippedRows: normalized.skippedRows,
     sample: Object.freeze({
       contentKeys: Object.freeze(contentRows.slice(0, sampleLimit).map((row) => row.content_key)),
@@ -73,12 +89,21 @@ export async function validateLarkLiveSync(input) {
       contentRows,
       dailyRows,
       skippedRows: normalized.skippedRows,
+      sourceIdentity,
     })),
   });
 }
 
 function countRowsWithRuleMatches(contentRows) {
   return contentRows.filter((row) => Number(row.classification_confidence ?? 0) > 0.2).length;
+}
+
+function evaluateSourceIdentity(accountId, sourceHandles) {
+  const handles = Array.isArray(sourceHandles) ? sourceHandles : [];
+  const expected = accountId.replace(/^@/u, '').trim().toLowerCase();
+  if (handles.length === 0) return Object.freeze({ ok: true, expectedHandle: expected, detectedHandles: Object.freeze([]) });
+  const ok = handles.length === 1 && handles[0] === expected;
+  return Object.freeze({ ok, expectedHandle: expected, detectedHandles: Object.freeze([...handles]) });
 }
 
 function buildWarnings(input) {
@@ -95,6 +120,9 @@ function buildWarnings(input) {
   if (input.dailyRows.length === 0 && input.rawCount > 0) {
     warnings.push('No valid MKT_Content_Daily rows were produced from raw rows.');
   }
+  if (!input.sourceIdentity.ok) {
+    warnings.push(`RAW TikTok source handle mismatch: expected @${input.sourceIdentity.expectedHandle}, detected ${input.sourceIdentity.detectedHandles.map((value) => `@${value}`).join(', ') || 'none'}.`);
+  }
   if (input.skippedRows.length > 0) {
     warnings.push(`${input.skippedRows.length} raw row(s) were skipped during normalization.`);
   }
@@ -102,15 +130,17 @@ function buildWarnings(input) {
 }
 
 function requireRepository(repository) {
-  if (typeof repository?.listAll !== 'function') {
-    throw new TypeError('validateLarkLiveSync requires repository with listAll');
+  for (const method of ['listAll', 'prepareRows']) {
+    if (typeof repository?.[method] !== 'function') {
+      throw new TypeError(`validateLarkLiveSync requires repository.${method}`);
+    }
   }
 
   return repository;
 }
 
 function requireTables(tables) {
-  const required = ['rawTikTokCreatorVideos', 'mktClassificationDictionary'];
+  const required = ['rawTikTokCreatorVideos', 'mktClassificationDictionary', 'mktContent', 'mktContentDaily'];
   const result = {};
 
   for (const key of required) {

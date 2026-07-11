@@ -443,3 +443,31 @@ Incident learned from TikTok production validation:
 - Source adapters must convert epoch seconds, epoch milliseconds, numeric epoch strings, Date objects, and explicit-timezone ISO strings through the shared date-time parser.
 - Ambiguous timezone-less strings are rejected rather than interpreted using the host machine timezone.
 - Lark date fields are serialized from the same shared parser, so connectors may not implement their own date conversion logic.
+
+## 0.2.6 - Lark URL source contract
+- Fixed TikTok native source mapping for Lark Bitable URL fields returned as `{ link, text }`.
+- URL source values are now validated and extracted before domain normalization; arbitrary objects are never coerced to `"[object Object]"`.
+- Added regression coverage using the real structured Lark URL response shape.
+
+
+---
+
+## Live Contract Audit Rule (v0.2.7)
+
+Before any connector is allowed to write, validation must exercise the same field serialization path as production using the live Lark destination schema. A normalization-only dry run is not sufficient.
+
+Required checks:
+
+- Decode actual Lark source cell shapes (rich text arrays, URL arrays, primitive numbers and epoch dates).
+- Serialize every destination row against live field metadata.
+- Validate URL, date, number, single-select and multi-select contracts.
+- Validate that the source social account matches the configured account identity.
+- Stop before writes when the source account is inconsistent, destination fields are missing, or select values are not configured.
+- Reporting date values are stored as Asia/Bangkok midnight epoch milliseconds; identity keys continue to use `YYYY-MM-DD`.
+- The original content URL is not a CTA destination. `cta_destination` may only come from an explicit URL in human-authored caption/title/campaign text.
+
+Current Base audit observations (2026-07-11):
+
+- RAW TikTok URL and text cells are returned as arrays of rich segments, not plain strings.
+- The current RAW TikTok table contains URLs for handle `@ft.pumkin`; this must not be synced with `TIKTOK_CREATOR_ACCOUNT_ID=chemistry_k`.
+- The Classification Dictionary contains `course_level` outputs `DEK73` and `ม.3`, while the current `MKT_Content.course_level` select options do not include those values. Add the options or disable/change the affected rules before content matching those rules is synced.

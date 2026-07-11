@@ -139,3 +139,21 @@
 - Added one shared canonical date-time parser for adapters and Lark field serialization.
 - Epoch seconds are normalized to milliseconds; ambiguous timezone-less strings now fail before writes.
 - Added range validation and regression tests for real Lark/TikTok date shapes.
+
+## 0.2.6 - Lark URL source contract
+- Fixed TikTok native source mapping for Lark Bitable URL fields returned as `{ link, text }`.
+- URL source values are now validated and extracted before domain normalization; arbitrary objects are never coerced to `"[object Object]"`.
+- Added regression coverage using the real structured Lark URL response shape.
+
+
+## 0.2.7-live-contract-preflight
+
+- Added shared Lark source-cell decoders for rich-text arrays, URL arrays, and numeric cells.
+- Updated TikTok Creator mapping to match the real Lark Base cell shapes found in the current exported Base.
+- Added the full native TikTok traffic-source field name used by the current Base.
+- Converted `metric_date` to Asia/Bangkok midnight epoch milliseconds before Lark serialization.
+- Prevented TikTok content URLs from being incorrectly copied into `cta_destination`.
+- Added destination select-option validation before writes.
+- Upgraded `validate:tiktok` to load the live destination schemas and serialize every Content and Daily row without writing.
+- Added source-account integrity checks so RAW TikTok rows cannot be written under a different configured account key.
+- Added regression coverage for real Lark rich-cell shapes, select options, schema preflight, and source-account mismatch.

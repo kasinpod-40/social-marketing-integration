@@ -28,6 +28,8 @@ export async function syncTikTokCreatorNativeToLark(input) {
     dictionaryRules,
   });
 
+  assertSourceIdentity(accountId, normalized.sourceHandles);
+
   if (input?.dryRun === true) {
     return Object.freeze({
       platform: 'tiktok',
@@ -103,4 +105,16 @@ function requireDate(value, fieldName) {
   const text = requireText(value, fieldName);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) throw new Error(`${fieldName} must be YYYY-MM-DD`);
   return text;
+}
+
+
+function assertSourceIdentity(accountId, sourceHandles) {
+  if (!Array.isArray(sourceHandles) || sourceHandles.length === 0) return;
+  if (sourceHandles.length > 1) {
+    throw new Error(`RAW TikTok source contains multiple account handles: ${sourceHandles.join(', ')}`);
+  }
+  const expected = accountId.replace(/^@/u, '').trim().toLowerCase();
+  if (sourceHandles[0] !== expected) {
+    throw new Error(`RAW TikTok source handle @${sourceHandles[0]} does not match TIKTOK_CREATOR_ACCOUNT_ID=${accountId}`);
+  }
 }

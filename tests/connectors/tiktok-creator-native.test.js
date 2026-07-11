@@ -41,6 +41,47 @@ test('keeps unsupported or missing TikTok metrics as null', () => {
 test('rejects invalid numeric TikTok metrics instead of silently converting to zero', () => {
   assert.throws(
     () => mapTikTokCreatorVideoRow({ video_id: 'v1', 'Total video views': 'not-a-number' }),
-    /Invalid TikTok numeric metric value/,
+    /TikTok numeric metric must be finite/,
   );
+});
+
+
+test('extracts URL links from real Lark Bitable URL field objects', () => {
+  const mapped = mapTikTokCreatorVideoRow({
+    video_id: 'v1',
+    'Shareable URL': [{
+      link: 'https://www.tiktok.com/@chemistry_k/video/7599997064940064021',
+      text: 'เปิดวิดีโอ',
+      type: 'url',
+    }],
+    'Temporary Thumbnail URL': [{
+      link: 'https://example.com/thumb.jpg',
+      text: 'thumbnail',
+      type: 'url',
+    }],
+  });
+
+  assert.equal(mapped.shareableUrl, 'https://www.tiktok.com/@chemistry_k/video/7599997064940064021');
+  assert.equal(mapped.thumbnailUrl, 'https://example.com/thumb.jpg');
+});
+
+test('rejects malformed structured URL fields instead of coercing objects to text', () => {
+  assert.throws(
+    () => mapTikTokCreatorVideoRow({ video_id: 'v1', 'Shareable URL': [{ type: 'url', text: 'not-a-url' }] }),
+    /TikTok shareable URL must be an absolute http\/https URL/,
+  );
+});
+
+
+test('decodes real Lark rich-text arrays for text and JSON fields', () => {
+  const mapped = mapTikTokCreatorVideoRow({
+    'Unique identifier of the video': [{ type: 'text', text: '7599997064940064021' }],
+    'Video description': [{ type: 'text', text: 'สรุปเคมี A-Level' }],
+    'Different sources of video exposure, arranged by exposure percentage from high to low': [
+      { type: 'text', text: '[{"impression_source":"For You","percentage":0.9}]' },
+    ],
+  });
+  assert.equal(mapped.externalContentId, '7599997064940064021');
+  assert.equal(mapped.description, 'สรุปเคมี A-Level');
+  assert.equal(mapped.metrics.trafficSources, '[{"impression_source":"For You","percentage":0.9}]');
 });

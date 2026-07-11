@@ -55,5 +55,5 @@ test('collects invalid TikTok Creator rows without failing the entire batch', ()
   assert.equal(result.dailySnapshotRows.length, 1);
   assert.equal(result.skippedRows.length, 2);
   assert.match(result.skippedRows[0].reason, /externalContentId/);
-  assert.match(result.skippedRows[1].reason, /Invalid TikTok numeric metric value/);
+  assert.match(result.skippedRows[1].reason, /TikTok numeric metric must be finite/);
 });

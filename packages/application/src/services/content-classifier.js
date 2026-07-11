@@ -20,12 +20,12 @@ const DEFAULT_NONE_FIELDS = Object.freeze({
  * @param {{caption?: unknown, title?: unknown, campaignName?: unknown, url?: unknown, platform?: unknown, appliesTo?: unknown, dictionaryRules?: unknown[]}} input
  */
 export function classifyMarketingContent(input = {}) {
-  const text = normalizeText([
-    input?.caption,
-    input?.title,
-    input?.campaignName,
-    input?.url,
-  ].filter((value) => value !== null && value !== undefined).join(' '));
+  const humanText = [input?.caption, input?.title, input?.campaignName]
+    .filter((value) => value !== null && value !== undefined)
+    .join(' ');
+  const text = normalizeText([humanText, input?.url]
+    .filter((value) => value !== null && value !== undefined)
+    .join(' '));
 
   const dictionaryRules = Array.isArray(input?.dictionaryRules) ? input.dictionaryRules : [];
   const context = {
@@ -48,7 +48,7 @@ export function classifyMarketingContent(input = {}) {
     content_theme: firstValue(values.content_theme),
     funnel_stage: firstValue(values.funnel_stage),
     cta_type: firstValue(values.cta_type) ?? DEFAULT_NONE_FIELDS.cta_type,
-    cta_destination: extractFirstUrl(text),
+    cta_destination: extractFirstUrl(normalizeText(humanText)),
     promotion_type: firstValue(values.promotion_type) ?? DEFAULT_NONE_FIELDS.promotion_type,
     urgency_level: firstValue(values.urgency_level) ?? DEFAULT_NONE_FIELDS.urgency_level,
     classification_source: 'rule',

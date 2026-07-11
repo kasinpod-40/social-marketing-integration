@@ -69,9 +69,10 @@ function serializeValue(value, field, context) {
     case LARK_FIELD_TYPES.CHECKBOX:
       return Boolean(value);
     case LARK_FIELD_TYPES.MULTI_SELECT:
-      return serializeMultiSelect(value, field.fieldName, context);
-    case LARK_FIELD_TYPES.TEXT:
+      return serializeMultiSelect(value, field, context);
     case LARK_FIELD_TYPES.SINGLE_SELECT:
+      return serializeSingleSelect(value, field, context);
+    case LARK_FIELD_TYPES.TEXT:
       return serializeText(value, field.fieldName, context);
     default:
       // Preserve already-structured values for field types not yet transformed
@@ -105,9 +106,26 @@ function serializeDateTime(value, fieldName, context) {
   }
 }
 
-function serializeMultiSelect(value, fieldName, context) {
-  if (!Array.isArray(value)) throw fieldError(context, fieldName, `expected an array`);
-  return value.map((item) => serializeText(item, fieldName, context));
+function serializeSingleSelect(value, field, context) {
+  const text = serializeText(value, field.fieldName, context);
+  validateSelectOption(text, field, context);
+  return text;
+}
+
+function serializeMultiSelect(value, field, context) {
+  if (!Array.isArray(value)) throw fieldError(context, field.fieldName, `expected an array`);
+  const items = value.map((item) => serializeText(item, field.fieldName, context));
+  for (const item of items) validateSelectOption(item, field, context);
+  return items;
+}
+
+function validateSelectOption(value, field, context) {
+  const options = Array.isArray(field?.property?.options) ? field.property.options : [];
+  if (options.length === 0) return;
+  const allowed = new Set(options.map((option) => option?.name).filter((name) => typeof name === 'string'));
+  if (!allowed.has(value)) {
+    throw fieldError(context, field.fieldName, `value ${JSON.stringify(value)} is not configured in destination select options`);
+  }
 }
 
 function serializeText(value, fieldName, context) {

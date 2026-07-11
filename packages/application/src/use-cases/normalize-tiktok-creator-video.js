@@ -1,6 +1,7 @@
 import { createContentKey, createDailySnapshotKey } from './create-daily-snapshot.js';
 import { mapTikTokCreatorVideoRow } from '../../../connectors/src/tiktok/creator-native.adapter.js';
 import { classifyMarketingContent } from '../services/content-classifier.js';
+import { bangkokDateToEpochMilliseconds } from '../../../connectors/src/shared/date-time.js';
 
 /**
  * Converts one RAW_TikTok_Creator_Videos row into the two report tables:
@@ -28,6 +29,7 @@ export function normalizeTikTokCreatorVideo(input) {
   });
 
   return Object.freeze({
+    sourceHandle: mapped.sourceHandle,
     content: Object.freeze({
       content_key: createContentKey({
         platform: mapped.platform,
@@ -70,7 +72,7 @@ export function normalizeTikTokCreatorVideo(input) {
         entityId: externalContentId,
         metricDate,
       }),
-      metric_date: metricDate,
+      metric_date: bangkokDateToEpochMilliseconds(metricDate, { label: 'metricDate' }),
       platform: mapped.platform,
       account_id: accountId,
       external_content_id: externalContentId,
