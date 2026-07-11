@@ -84,11 +84,18 @@ test('refuses the whole write when any raw row fails normalization', async () =>
   assert.equal(writeCalls, 0);
 });
 
-test('refuses to write TikTok rows from a different source account', async () => {
+test('refuses a different source account before any destination schema or lookup request', async () => {
+  let destinationCalls = 0;
   const repository = createRepository({
     rawRecords: [rawVideo('wrong', 'v1')],
     dictionaryRecords: [dictionaryRow()],
+    async prepareRows() { destinationCalls += 1; return []; },
   });
+  const originalListByFieldValues = repository.listByFieldValues;
+  repository.listByFieldValues = async (...args) => {
+    destinationCalls += 1;
+    return originalListByFieldValues(...args);
+  };
 
   await assert.rejects(
     () => syncTikTokCreatorNativeToLark({
@@ -101,6 +108,7 @@ test('refuses to write TikTok rows from a different source account', async () =>
     }),
     /source handle mismatch/i,
   );
+  assert.equal(destinationCalls, 0);
 });
 
 function createRepository(input) {

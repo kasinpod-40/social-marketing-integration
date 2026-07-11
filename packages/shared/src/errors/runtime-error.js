@@ -1,20 +1,7 @@
 /**
  * ข้อผิดพลาดมาตรฐานของระบบที่ระบุได้ชัดว่าควร Retry หรือไม่
- *
- * หลักการ:
- * - retryable=true ใช้เฉพาะเหตุการณ์ชั่วคราว เช่น Network, Timeout, 429 หรือ 5xx
- * - retryable=false ใช้กับข้อมูล/Config/Schema/Business rule ที่ Retry แล้วไม่หายเอง
- * - code เป็นรหัสคงที่สำหรับ Log, Alert และการทดสอบ โดยไม่ต้องจับจากข้อความ
  */
 export class RuntimeError extends Error {
-  /**
-   * @param {string} message ข้อความที่อธิบายสาเหตุให้ผู้พัฒนาอ่านได้
-   * @param {Object} [options] ตัวเลือกประกอบข้อผิดพลาด
-   * @param {string} [options.code] รหัสคงที่สำหรับการจัดกลุ่มข้อผิดพลาด
-   * @param {boolean} [options.retryable] ระบุว่าการ Retry ภายหลังมีโอกาสสำเร็จหรือไม่
-   * @param {unknown} [options.cause] ข้อผิดพลาดต้นทางตามมาตรฐาน Error.cause
-   * @param {Record<string, unknown>} [options.details] รายละเอียดที่ปลอดภัยต่อการเขียน Log
-   */
   constructor(message, options = {}) {
     super(requireMessage(message), { cause: options.cause });
     this.name = 'RuntimeError';
@@ -25,55 +12,64 @@ export class RuntimeError extends Error {
 }
 
 /**
- * ข้อผิดพลาดสำหรับกรณีที่ตารางแรกเขียนสำเร็จแล้ว แต่ขั้นถัดไปล้มเหลว
- *
- * Error ชนิดนี้ Retry ได้ เพราะ Stable key และ Reconciliation จะเติมเฉพาะส่วนที่ขาด
- * โดยเก็บ partialResult ไว้ให้ Reliability layer บันทึกสถานะ partial_success ได้ถูกต้อง
+ * Error จาก Batch write ที่รู้จำนวนแถวซึ่งยืนยันว่าเขียนสำเร็จแล้ว หรือผลลัพธ์กำกวม
+ * ใช้เป็นข้อมูลกลางระหว่าง Storage adapter, Sync engine และ Reliability layer
+ */
+export class WriteProgressError extends RuntimeError {
+  constructor(message, options = {}) {
+    super(message, {
+      ...options,
+      code: options.code ?? 'WRITE_PROGRESS_INCOMPLETE',
+      retryable: options.retryable === true,
+    });
+    this.name = 'WriteProgressError';
+    this.writeProgress = freezeWriteProgress(options.writeProgress);
+  }
+}
+
+/**
+ * ข้อผิดพลาดเมื่อมีการเขียนบางส่วนหรือผลการเขียนกำกวมจนต้อง Reconcile
  */
 export class PartialSyncError extends RuntimeError {
   constructor(message, options = {}) {
     super(message, {
       ...options,
       code: options.code ?? 'SYNC_PARTIAL_WRITE',
-      retryable: true,
+      retryable: options.retryable !== false,
     });
     this.name = 'PartialSyncError';
     this.partialResult = freezeOptionalObject(options.partialResult);
   }
 }
 
-/** สร้างข้อผิดพลาดถาวรสำหรับปัญหาที่ต้องแก้ข้อมูลหรือ Config ก่อนจึงจะรันใหม่ได้ */
 export function permanentError(message, options = {}) {
-  return new RuntimeError(message, {
-    ...options,
-    retryable: false,
-  });
+  return new RuntimeError(message, { ...options, retryable: false });
 }
 
-/** สร้างข้อผิดพลาดชั่วคราวสำหรับปัญหาที่ระบบ Queue สามารถ Retry ภายหลังได้ */
 export function transientError(message, options = {}) {
-  return new RuntimeError(message, {
-    ...options,
-    retryable: true,
-  });
+  return new RuntimeError(message, { ...options, retryable: true });
 }
 
-/** สร้างข้อผิดพลาด Partial write พร้อมผลของขั้นที่สำเร็จไปแล้ว */
+export function writeProgressError(message, options = {}) {
+  return new WriteProgressError(message, options);
+}
+
 export function partialSyncError(message, options = {}) {
   return new PartialSyncError(message, options);
 }
 
-/** ตรวจว่าข้อผิดพลาดถูกประกาศอย่างชัดเจนว่า Retry ได้หรือไม่ */
 export function isRetryableError(error) {
   return error?.retryable === true;
 }
 
-/** ตรวจว่า Error คือ Partial write ที่ Reconciliation ควรรับช่วงต่อ */
+export function isWriteProgressError(error) {
+  return error instanceof WriteProgressError || error?.writeProgress?.writeOutcome;
+}
+
 export function isPartialSyncError(error) {
   return error instanceof PartialSyncError || error?.code === 'SYNC_PARTIAL_WRITE';
 }
 
-/** ทำเครื่องหมายว่า Reliability layer บันทึก Log/Alert ของ Error นี้แล้ว */
 export function markReliabilityHandled(error, syncRunId) {
   if (error && typeof error === 'object') {
     Object.defineProperty(error, 'reliabilityHandled', {
@@ -92,7 +88,6 @@ export function markReliabilityHandled(error, syncRunId) {
   return error;
 }
 
-/** แปลงข้อความว่างหรือค่าที่ไม่ใช่ข้อความให้เป็นข้อผิดพลาดตั้งแต่ต้นทาง */
 function requireMessage(value) {
   if (typeof value !== 'string' || value.trim() === '') {
     throw new TypeError('RuntimeError requires a non-empty message');
@@ -100,13 +95,11 @@ function requireMessage(value) {
   return value.trim();
 }
 
-/** ทำให้รหัสข้อผิดพลาดอยู่ในรูปแบบตัวพิมพ์ใหญ่ที่ค้นหาใน Log ได้ง่าย */
 function normalizeCode(value) {
   const code = typeof value === 'string' ? value.trim().toUpperCase() : '';
   return code || 'RUNTIME_ERROR';
 }
 
-/** ป้องกันผู้เรียกแก้ไขรายละเอียดข้อผิดพลาดหลังจากส่งเข้า Log แล้ว */
 function freezeDetails(value) {
   if (value === null || value === undefined) return Object.freeze({});
   if (typeof value !== 'object' || Array.isArray(value)) {
@@ -115,11 +108,50 @@ function freezeDetails(value) {
   return Object.freeze({ ...value });
 }
 
-/** Freeze Object ที่เป็น Optional โดยคืน null เมื่อไม่มีค่า */
 function freezeOptionalObject(value) {
   if (value === null || value === undefined) return null;
   if (typeof value !== 'object' || Array.isArray(value)) {
     throw new TypeError('PartialSyncError partialResult must be an object');
   }
   return Object.freeze({ ...value });
+}
+
+function freezeWriteProgress(value) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError('WriteProgressError requires writeProgress');
+  }
+
+  const writeOutcome = value.writeOutcome;
+  if (!new Set(['partial', 'unknown']).has(writeOutcome)) {
+    throw new TypeError('writeProgress.writeOutcome must be partial or unknown');
+  }
+
+  return Object.freeze({
+    operation: requireText(value.operation, 'writeProgress.operation'),
+    tableId: requireText(value.tableId, 'writeProgress.tableId'),
+    writeOutcome,
+    confirmedRows: nonNegativeInteger(value.confirmedRows ?? 0, 'writeProgress.confirmedRows'),
+    completedChunks: nonNegativeInteger(value.completedChunks ?? 0, 'writeProgress.completedChunks'),
+    failedChunk: positiveInteger(value.failedChunk, 'writeProgress.failedChunk'),
+    totalChunks: positiveInteger(value.totalChunks, 'writeProgress.totalChunks'),
+    totalRows: nonNegativeInteger(value.totalRows ?? 0, 'writeProgress.totalRows'),
+    remainingRows: nonNegativeInteger(value.remainingRows ?? 0, 'writeProgress.remainingRows'),
+  });
+}
+
+function requireText(value, fieldName) {
+  if (typeof value !== 'string' || value.trim() === '') throw new TypeError(`${fieldName} is required`);
+  return value.trim();
+}
+
+function nonNegativeInteger(value, fieldName) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number < 0) throw new TypeError(`${fieldName} must be a non-negative integer`);
+  return number;
+}
+
+function positiveInteger(value, fieldName) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number <= 0) throw new TypeError(`${fieldName} must be a positive integer`);
+  return number;
 }

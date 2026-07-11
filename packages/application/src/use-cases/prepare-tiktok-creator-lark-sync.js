@@ -45,6 +45,51 @@ export async function prepareTikTokCreatorLarkSync(input) {
   });
   const sourceIdentity = evaluateSourceIdentity(expectedSourceHandle, normalized.sourceHandles);
 
+  // Source identity เป็น Guard ราคาถูกและสำคัญที่สุด จึงหยุดก่อนโหลด Schema/ค้นปลายทาง
+  if (!sourceIdentity.ok) {
+    const issues = buildReadinessIssues({
+      rawCount: rawRows.length,
+      dictionaryRuleCount: dictionaryRules.length,
+      normalized,
+      sourceIdentity,
+      accountConflicts: [],
+      invalidDictionaryRows: dictionaryAnalysis.invalidRows,
+    });
+    const warnings = buildWarnings({ normalized });
+    progress({
+      stage: 'source_identity_rejected',
+      readyToWrite: false,
+      issues: issues.length,
+      expectedHandle: sourceIdentity.expectedHandle,
+      detectedHandles: sourceIdentity.detectedHandles,
+    });
+
+    return Object.freeze({
+      platform: 'tiktok',
+      source: 'lark_native_tiktok_for_creator',
+      accountId,
+      metricDate,
+      rawRecords: rawRows.length,
+      classificationRules: dictionaryRules.length,
+      classificationDictionary: Object.freeze({
+        totalRows: dictionaryAnalysis.totalRows,
+        disabledRows: dictionaryAnalysis.disabledRows,
+        invalidRows: dictionaryAnalysis.invalidRows,
+      }),
+      normalized,
+      sourceIdentity,
+      accountConflicts: Object.freeze([]),
+      issues: Object.freeze(issues),
+      warnings: Object.freeze(warnings),
+      reconciliation: emptyReconciliation(),
+      readyToWrite: false,
+      plans: Object.freeze({
+        content: blockedPlan(normalized.contentRows.length),
+        dailySnapshots: blockedPlan(normalized.dailySnapshotRows.length),
+      }),
+    });
+  }
+
   progress({
     stage: 'preparing_destination_plans',
     contentRows: normalized.contentRows.length,
@@ -123,6 +168,29 @@ export async function prepareTikTokCreatorLarkSync(input) {
     reconciliation,
     readyToWrite,
     plans: Object.freeze({ content: contentPlan, dailySnapshots: dailyPlan }),
+  });
+}
+
+function blockedPlan(inputRows) {
+  return Object.freeze({
+    inputRows,
+    createRows: Object.freeze([]),
+    updateRows: Object.freeze([]),
+    skipped: 0,
+    duplicateInputRows: 0,
+    existingRecordsRead: 0,
+    existingReadStrategy: 'not_evaluated_source_identity_failed',
+  });
+}
+
+function emptyReconciliation() {
+  return Object.freeze({
+    required: false,
+    status: 'not_evaluated',
+    missingContentRows: 0,
+    missingDailySnapshotRows: 0,
+    missingContentIds: Object.freeze([]),
+    missingDailySnapshotIds: Object.freeze([]),
   });
 }
 

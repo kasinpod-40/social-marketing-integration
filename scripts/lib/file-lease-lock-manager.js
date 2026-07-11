@@ -1,4 +1,4 @@
-import { mkdir, open, readFile, rm } from 'node:fs/promises';
+import { mkdir, open, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { transientError } from '../../packages/shared/src/errors/runtime-error.js';
@@ -47,6 +47,36 @@ export class FileLeaseLockManager {
     }
 
     return Object.freeze({ acquired: false, lockKey, ownerId, expiresAt: 0, filePath });
+  }
+
+  async renew(input) {
+    const lockKey = requireText(input?.lockKey, 'lockKey');
+    const ownerId = requireText(input?.ownerId, 'ownerId');
+    const leaseMs = positiveInteger(input?.leaseMs, 'leaseMs');
+    const filePath = this.#path(lockKey);
+    const existing = await readLock(filePath);
+    const now = this.now();
+    if (!existing || existing.ownerId !== ownerId || existing.expiresAt <= now) {
+      return Object.freeze({ renewed: false, lockKey, ownerId, expiresAt: null, filePath });
+    }
+
+    const expiresAt = now + leaseMs;
+    const temporaryPath = `${filePath}.${ownerId}.renew`;
+    const payload = JSON.stringify({
+      lockKey,
+      ownerId,
+      acquiredAt: existing.acquiredAt ?? now,
+      expiresAt,
+    });
+    try {
+      await writeFile(temporaryPath, payload, { encoding: 'utf8', mode: 0o600 });
+      // Rename บน filesystem เดียวกันเป็น atomic replacement เพื่อลดช่วงไฟล์ว่างระหว่างต่ออายุ
+      await rename(temporaryPath, filePath);
+      return Object.freeze({ renewed: true, lockKey, ownerId, expiresAt, filePath });
+    } catch (error) {
+      await rm(temporaryPath, { force: true }).catch(() => undefined);
+      throw lockError('renew', error, lockKey);
+    }
   }
 
   async release(input) {

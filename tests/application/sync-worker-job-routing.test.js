@@ -4,7 +4,7 @@ import syncWorker from '../../apps/sync-worker/src/index.js';
 
 test('sync worker acknowledges unsupported job types as permanent failures', async () => {
   const message = createMessage({ type: 'unknown.job' });
-  await syncWorker.queue({ messages: [message] }, minimalEnv());
+  await syncWorker.queue({ queue: 'sync-main', messages: [message] }, minimalEnv());
 
   assert.equal(message.acked, true);
   assert.equal(message.retried, false);
@@ -22,12 +22,17 @@ function createMessage(body) {
 }
 
 function minimalEnv() {
-  return {};
+  return {
+    MKT_MAIN_QUEUE_NAME: 'sync-main',
+    MKT_DLQ_QUEUE_NAME: 'sync-dlq',
+    MKT_STATE_DB: createFakeD1(),
+  };
 }
 
 test('all supported queue jobs require a valid runtime customer profile before infrastructure starts', async () => {
   const message = createMessage({ type: 'metric.definitions.seed' });
-  await syncWorker.queue({ messages: [message] }, {
+  await syncWorker.queue({ queue: 'sync-main', messages: [message] }, {
+    ...minimalEnv(),
     LARK_APP_ID: 'would-not-be-used',
     LARK_APP_SECRET: 'would-not-be-used',
     LARK_APP_TOKEN: 'would-not-be-used',
@@ -39,7 +44,7 @@ test('all supported queue jobs require a valid runtime customer profile before i
 
 test('sync worker parses JSON string bodies and still acknowledges unsupported jobs', async () => {
   const message = createMessage(JSON.stringify({ type: 'unknown.job' }));
-  await syncWorker.queue({ messages: [message] }, minimalEnv());
+  await syncWorker.queue({ queue: 'sync-main', messages: [message] }, minimalEnv());
 
   assert.equal(message.acked, true);
   assert.equal(message.retried, false);
@@ -51,7 +56,7 @@ test('sync worker acknowledges malformed queue bodies as permanent failures with
   const next = createMessage({ type: 'unknown.job' });
   next.id = 'next';
 
-  await syncWorker.queue({ messages: [malformed, next] }, minimalEnv());
+  await syncWorker.queue({ queue: 'sync-main', messages: [malformed, next] }, minimalEnv());
 
   assert.equal(malformed.acked, true);
   assert.equal(malformed.retried, false);
@@ -60,7 +65,7 @@ test('sync worker acknowledges malformed queue bodies as permanent failures with
 
 test('known but unfinished connector jobs are acknowledged before runtime configuration is loaded', async () => {
   const message = createMessage({ type: 'facebook.page.organic.sync' });
-  await syncWorker.queue({ messages: [message] }, minimalEnv());
+  await syncWorker.queue({ queue: 'sync-main', messages: [message] }, minimalEnv());
 
   assert.equal(message.acked, true);
   assert.equal(message.retried, false);
@@ -68,7 +73,8 @@ test('known but unfinished connector jobs are acknowledged before runtime config
 
 test('disabled active connector jobs are acknowledged before Lark credentials are required', async () => {
   const message = createMessage({ type: 'tiktok.creator.native.sync' });
-  await syncWorker.queue({ messages: [message] }, {
+  await syncWorker.queue({ queue: 'sync-main', messages: [message] }, {
+    ...minimalEnv(),
     MKT_ENV: 'development',
     MKT_CUSTOMER_PROFILE: 'dev_ft_pumkin',
     MKT_CONNECTOR_TIKTOK_ENABLED: 'false',
@@ -82,7 +88,7 @@ test('unsupported queue schema versions are permanent failures and do not abort 
   const unsupported = createMessage({ schemaVersion: 99, type: 'metric.definitions.seed' });
   const next = createMessage({ type: 'unknown.job' });
 
-  await syncWorker.queue({ messages: [unsupported, next] }, minimalEnv());
+  await syncWorker.queue({ queue: 'sync-main', messages: [unsupported, next] }, minimalEnv());
 
   assert.equal(unsupported.acked, true);
   assert.equal(unsupported.retried, false);
@@ -97,7 +103,7 @@ test('dead-letter consumer persists the message and acknowledges it even when La
   const db = createFakeD1();
 
   await syncWorker.queue({ queue: 'sync-dlq', messages: [message] }, {
-    MKT_DLQ_QUEUE_NAME: 'sync-dlq',
+    ...minimalEnv(),
     MKT_STATE_DB: db,
   });
 
@@ -113,7 +119,7 @@ test('dead-letter persistence failure retries with a safe default when retry del
   const db = createFakeD1({ fail: true });
 
   await syncWorker.queue({ queue: 'sync-dlq', messages: [message] }, {
-    MKT_DLQ_QUEUE_NAME: 'sync-dlq',
+    ...minimalEnv(),
     MKT_QUEUE_RETRY_DELAY_SECONDS: 'not-a-number',
     MKT_STATE_DB: db,
   });
@@ -140,3 +146,16 @@ function createFakeD1(input = {}) {
     },
   };
 }
+
+test('permanent failure is retried instead of acknowledged when D1 source of truth is unavailable', async () => {
+  const message = createMessage({ type: 'unknown.job' });
+
+  await syncWorker.queue({ queue: 'sync-main', messages: [message] }, {
+    ...minimalEnv(),
+    MKT_STATE_DB: createFakeD1({ fail: true }),
+  });
+
+  assert.equal(message.acked, false);
+  assert.equal(message.retried, true);
+  assert.deepEqual(message.retryOptions, { delaySeconds: 30 });
+});

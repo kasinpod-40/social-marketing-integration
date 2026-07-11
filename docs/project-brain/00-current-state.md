@@ -2,7 +2,7 @@
 
 ## Baseline
 
-`v0.5.0-reliability-layer` — 2026-07-11
+`v0.5.2-portable-npm-lockfile` — 2026-07-11
 
 ## Environment ปัจจุบัน
 
@@ -24,19 +24,20 @@ Baseline v0.4.0 ผ่าน Live DEV idempotency gate:
 - Account conflicts: 0
 - Warnings: 0
 
-## เพิ่มใน v0.5.0
+## เพิ่ม/แก้ใน v0.5.1
 
 - `sync_run_id` ต่อหนึ่งรอบ Sync
 - Lifecycle `running`, `success`, `partial_success`, `failed`, `skipped`
 - Mirror ไป `MKT_Sync_Log` ด้วย Schema ที่มีอยู่แล้ว
 - Mirror Alert ไป `MKT_System_Alerts`
-- D1 operational tables: `sync_runs`, `sync_locks`, `dead_letter_jobs`, `system_alerts`
-- D1 atomic lease lock สำหรับ Cloudflare Worker หลาย invocation
+- D1 operational tables: `sync_runs`, `sync_locks`, `dead_letter_jobs`, `system_alerts` และ D1 เป็น Primary ที่ต้องสำเร็จก่อน Ack
+- D1 atomic lease lock พร้อม owner-scoped renewal heartbeat สำหรับ Cloudflare Worker หลาย invocation
 - Local file lease lock สำหรับหลาย Terminal/Process บนเครื่องเดียวกัน
 - Automatic reconciliation ระหว่าง `MKT_Content` และ `MKT_Content_Daily`
-- Retryable `SYNC_PARTIAL_WRITE` พร้อมผล Content ที่เขียนสำเร็จแล้ว
-- Cloudflare Dead Letter Queue consumer ที่ Persist โดยไม่ Execute งานเดิมซ้ำ
+- Chunk-aware `SYNC_PARTIAL_WRITE` พร้อมจำนวนแถว/Chunk ที่ยืนยันว่าเขียนสำเร็จแล้ว
+- Main Queue/DLQ exact-name whitelist; DLQ persist อย่างเดียวและ Unknown Queue ถูก quarantine
 - Secret-like key redaction ก่อนเก็บ payload/details ใน D1
+- Root Wrangler config, Scheduled Queue producer, Workers-runtime tests และ CI dry-run
 
 ## Package gate
 
@@ -46,15 +47,13 @@ Baseline v0.4.0 ผ่าน Live DEV idempotency gate:
 - Migration SQL ต้อง parse/apply ได้
 - ZIP ต้องไม่มี `.dev.vars`, Secret, `.mkt-locks`, `node_modules` หรือ build artifact
 
-## Live DEV gate สำหรับ v0.5.0
+## Live DEV gate ที่ผ่านแล้ว
 
-1. เพิ่ม Table IDs ใน `.dev.vars`
-2. `npm run validate:tiktok`
-3. `CONFIRM_WRITE=YES npm run sync:tiktok`
-4. ตรวจ `MKT_Sync_Log` มีสถานะ `running` แล้วเปลี่ยนเป็น `success`
-5. รันซ้ำและยืนยัน Content/Daily ยังไม่สร้างหรือ Update ซ้ำ
-6. ทดสอบ Local lock ด้วยการรัน Write สอง Terminal พร้อมกัน: หนึ่งรอบทำงาน อีกหนึ่งรอบต้อง `SYNC_LOCK_BUSY`
-7. ทดสอบ Error แบบปลอดภัยใน DEV และตรวจ `MKT_System_Alerts`
+- Sync Log lifecycle ผ่าน
+- Idempotency ผ่าน
+- Recovery Daily ที่หาย 1 แถวผ่าน
+- Local concurrent lock ผ่าน
+- Source identity failure + System Alert ผ่าน
 
 ## Connector status
 
@@ -70,9 +69,14 @@ Baseline v0.4.0 ผ่าน Live DEV idempotency gate:
 ## Known residual risks
 
 - Lark ไม่มี Transaction ข้ามตาราง แต่ Partial write ตรวจพบ/Alert/Recovery ได้แล้ว
-- D1 lease ยังไม่มี renewal heartbeat ต้องตั้ง Lease ยาวกว่าระยะ Sync สูงสุด
+- Lease renewal มีแล้ว แต่ยังต้อง UAT กับ D1/Queue resource จริงบน Cloudflare DEV
 - Local file lock ไม่ครอบ Cloudflare ต้องห้าม Local write เมื่อ Cloud Cron ใช้ Base เดียวกัน
 - RAW/Dictionary ยังเป็น Full-source read
 - Classification field ที่กลายเป็นค่าว่างยังไม่ล้างค่าเก่าใน Larkจนกว่าจะยืนยัน Cell-clear contract
 - Connector ที่เป็น `planned` ยังไม่มี API/Source contract/Blueprint และห้ามเปิดใช้
 - Chemistry K Production ยังไม่ผ่าน customer-owned Cloudflare/Lark deployment
+
+
+## เพิ่ม/แก้ใน v0.5.2
+- `package-lock.json` ใช้ `registry.npmjs.org` แทน Internal Artifactory ของสภาพแวดล้อมสร้างแพ็กเกจ
+- Repository hygiene จะปฏิเสธ non-portable HTTPS registry host ใน lockfile

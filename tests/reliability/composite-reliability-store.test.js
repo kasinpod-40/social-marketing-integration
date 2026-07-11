@@ -2,41 +2,44 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CompositeReliabilityStore } from '../../packages/reliability/src/composite-reliability-store.js';
 
-test('composite store succeeds when the primary store works and reports a mirror failure', async () => {
+test('primary success is required and mirror failure is reported without masking it', async () => {
   const errors = [];
-  const primary = { async saveSystemAlert() { return true; } };
+  const primary = { async saveSystemAlert() { return 'd1-ok'; } };
   const mirrorFailure = new Error('Lark unavailable');
   const mirror = { async saveSystemAlert() { throw mirrorFailure; } };
   const store = new CompositeReliabilityStore({
-    stores: [primary, mirror],
+    primary,
+    mirrors: [mirror],
     onStoreError: (event) => errors.push(event),
   });
 
   const result = await store.saveSystemAlert({ alertId: 'a-1' });
 
-  assert.deepEqual(result, { successCount: 1, failureCount: 1 });
+  assert.equal(result.primarySucceeded, true);
+  assert.equal(result.primaryResult, 'd1-ok');
+  assert.equal(result.mirrorSuccessCount, 0);
+  assert.equal(result.mirrorFailureCount, 1);
   assert.equal(errors.length, 1);
-  assert.equal(errors[0].method, 'saveSystemAlert');
+  assert.equal(errors[0].role, 'mirror');
   assert.equal(errors[0].error, mirrorFailure);
 });
 
-test('composite store fails when every implementation fails', async () => {
-  const first = new Error('D1 unavailable');
-  const second = new Error('Lark unavailable');
+test('primary failure is fatal even when a mirror would succeed', async () => {
+  const primaryFailure = new Error('D1 unavailable');
+  let mirrorCalled = false;
   const store = new CompositeReliabilityStore({
-    stores: [
-      { async saveSyncRun() { throw first; } },
-      { async saveSyncRun() { throw second; } },
-    ],
+    primary: { async saveSyncRun() { throw primaryFailure; } },
+    mirrors: [{ async saveSyncRun() { mirrorCalled = true; } }],
   });
 
-  await assert.rejects(() => store.saveSyncRun({ syncId: 'run-1' }), first);
+  await assert.rejects(() => store.saveSyncRun({ syncId: 'run-1' }), primaryFailure);
+  assert.equal(mirrorCalled, false);
 });
 
-test('composite store rejects a method not implemented by any target', async () => {
-  const store = new CompositeReliabilityStore({ stores: [{}] });
+test('primary must implement the requested method', async () => {
+  const store = new CompositeReliabilityStore({ primary: {}, mirrors: [] });
   await assert.rejects(
     () => store.saveDeadLetter({ dlqId: 'dlq-1' }),
-    /No reliability store implements saveDeadLetter/,
+    /Primary reliability store does not implement saveDeadLetter/,
   );
 });

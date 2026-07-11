@@ -10,97 +10,104 @@ import {
   readTikTokRuntime,
 } from './lib/lark-runtime.js';
 
-/** Write guard ต้องมาจาก Shell เท่านั้น ไม่อ่านจาก .dev.vars */
-if (process.env.CONFIRM_WRITE !== 'YES') {
-  throw new Error('Refusing to write to Lark. Run with CONFIRM_WRITE=YES npm run sync:tiktok');
-}
-
-const logEvent = (event) => console.error(
-  `[${new Date().toISOString()}] ${JSON.stringify(event)}`,
-);
-
-/**
- * เพิ่มตาราง Sync Log และ System Alerts เป็น Required table ของ Write path
- * เพื่อให้ทุกการเขียนมี Operational record ก่อนเริ่มแตะตารางธุรกิจ
- */
-const runtime = await createLocalLarkRuntime([
-  'rawTikTokCreatorVideos',
-  'mktContent',
-  'mktContentDaily',
-  'mktClassificationDictionary',
-  'mktSyncLog',
-  'mktSystemAlerts',
-], {
-  onRequest: (event) => logEvent({ scope: 'lark', ...event }),
-});
-const tiktok = readTikTokRuntime(runtime.runtimeConfig);
-
-const larkReliabilityStore = new LarkReliabilityStore({
-  repository: runtime.repository,
-  syncEngine: runtime.syncEngine,
-  tables: {
-    syncLog: runtime.tables.mktSyncLog,
-    systemAlerts: runtime.tables.mktSystemAlerts,
-  },
-});
-const reliabilityStore = new CompositeReliabilityStore({
-  stores: [larkReliabilityStore],
-  onStoreError: ({ method, store, error }) => logEvent({
-    scope: 'reliability_store',
-    stage: 'store_error',
-    method,
-    store,
-    error: error instanceof Error ? error.message : String(error),
-  }),
-});
-const lockManager = new FileLeaseLockManager({
-  directory: runtime.env.MKT_LOCAL_LOCK_DIR || '.mkt-locks',
+await main().catch((error) => {
+  const payload = {
+    ok: false,
+    status: error?.code === 'SYNC_LOCK_BUSY' ? 'skipped' : 'failed',
+    code: error?.code ?? 'UNHANDLED_SYNC_ERROR',
+    retryable: error?.retryable === true,
+    syncRunId: error?.syncRunId ?? null,
+    message: error instanceof Error ? error.message : String(error),
+  };
+  printJson(payload);
+  process.exitCode = error?.code === 'SYNC_LOCK_BUSY' ? 0 : 1;
 });
 
-logEvent({
-  stage: 'tiktok_sync_started',
-  environment: runtime.runtimeConfig.environment,
-  profile: runtime.runtimeConfig.profileKey,
-  accountKey: tiktok.accountKey,
-  sourceHandle: tiktok.sourceHandle,
-});
+async function main() {
+  if (process.env.CONFIRM_WRITE !== 'YES') {
+    throw new Error('Refusing to write to Lark. Run with CONFIRM_WRITE=YES npm run sync:tiktok');
+  }
 
-const result = await runReliableSync({
-  store: reliabilityStore,
-  lockManager,
-  customerProfile: runtime.runtimeConfig.profileKey,
-  accountKey: tiktok.accountKey,
-  platform: 'tiktok',
-  source: 'lark_native_tiktok_for_creator',
-  syncType: 'native_import',
-  leaseMs: readPositiveInteger(runtime.env.MKT_SYNC_LOCK_LEASE_MS, 600_000),
-  alertOnRetryableFailure: true,
-  onReliabilityError: (event) => logEvent({ scope: 'reliability', ...event }),
-  execute: ({ syncRunId }) => syncTikTokCreatorNativeToLark({
-    syncRunId,
+  const logEvent = (event) => console.error(
+    `[${new Date().toISOString()}] ${JSON.stringify(event)}`,
+  );
+
+  const runtime = await createLocalLarkRuntime([
+    'rawTikTokCreatorVideos',
+    'mktContent',
+    'mktContentDaily',
+    'mktClassificationDictionary',
+    'mktSyncLog',
+    'mktSystemAlerts',
+  ], {
+    onRequest: (event) => logEvent({ scope: 'lark', ...event }),
+  });
+  const tiktok = readTikTokRuntime(runtime.runtimeConfig);
+
+  const larkReliabilityStore = new LarkReliabilityStore({
     repository: runtime.repository,
     syncEngine: runtime.syncEngine,
-    accountId: tiktok.accountKey,
-    sourceHandle: tiktok.sourceHandle,
-    metricDate: readMetricDate(runtime.env),
-    onProgress: logEvent,
     tables: {
-      rawTikTokCreatorVideos: runtime.tables.rawTikTokCreatorVideos,
-      mktContent: runtime.tables.mktContent,
-      mktContentDaily: runtime.tables.mktContentDaily,
-      mktClassificationDictionary: runtime.tables.mktClassificationDictionary,
+      syncLog: runtime.tables.mktSyncLog,
+      systemAlerts: runtime.tables.mktSystemAlerts,
     },
-  }),
-});
+  });
+  // Local ไม่มี D1 จึงใช้ Lark เป็น Primary; Cloudflare ใช้ D1 Primary และ Lark Mirror
+  const reliabilityStore = new CompositeReliabilityStore({
+    primary: larkReliabilityStore,
+    mirrors: [],
+  });
+  const lockManager = new FileLeaseLockManager({
+    directory: runtime.env.MKT_LOCAL_LOCK_DIR || '.mkt-locks',
+  });
 
-logEvent({ stage: 'tiktok_sync_completed', syncRunId: result.syncRunId });
-printJson(result);
+  logEvent({
+    stage: 'tiktok_sync_started',
+    environment: runtime.runtimeConfig.environment,
+    profile: runtime.runtimeConfig.profileKey,
+    accountKey: tiktok.accountKey,
+    sourceHandle: tiktok.sourceHandle,
+  });
+
+  const result = await runReliableSync({
+    store: reliabilityStore,
+    lockManager,
+    customerProfile: runtime.runtimeConfig.profileKey,
+    accountKey: tiktok.accountKey,
+    platform: 'tiktok',
+    source: 'lark_native_tiktok_for_creator',
+    syncType: 'native_import',
+    leaseMs: readPositiveInteger(runtime.env.MKT_SYNC_LOCK_LEASE_MS, 600_000),
+    renewIntervalMs: readPositiveInteger(runtime.env.MKT_SYNC_LOCK_RENEW_INTERVAL_MS, 120_000),
+    alertOnRetryableFailure: true,
+    onReliabilityError: (event) => logEvent({ scope: 'reliability', ...event }),
+    execute: ({ syncRunId, assertLockActive }) => syncTikTokCreatorNativeToLark({
+      syncRunId,
+      assertLockActive,
+      repository: runtime.repository,
+      syncEngine: runtime.syncEngine,
+      accountId: tiktok.accountKey,
+      sourceHandle: tiktok.sourceHandle,
+      metricDate: readMetricDate(runtime.env),
+      onProgress: logEvent,
+      tables: {
+        rawTikTokCreatorVideos: runtime.tables.rawTikTokCreatorVideos,
+        mktContent: runtime.tables.mktContent,
+        mktContentDaily: runtime.tables.mktContentDaily,
+        mktClassificationDictionary: runtime.tables.mktClassificationDictionary,
+      },
+    }),
+  });
+
+  logEvent({ stage: 'tiktok_sync_completed', syncRunId: result.syncRunId });
+  printJson(result);
+}
 
 function readPositiveInteger(value, fallback) {
   if (value === null || value === undefined || value === '') return fallback;
   const number = Number(value);
   if (!Number.isSafeInteger(number) || number <= 0) {
-    throw new TypeError('MKT_SYNC_LOCK_LEASE_MS must be a positive integer');
+    throw new TypeError('Reliability duration must be a positive integer');
   }
   return number;
 }

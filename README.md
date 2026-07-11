@@ -4,7 +4,7 @@
 
 ## Baseline ปัจจุบัน
 
-`v0.5.0-reliability-layer`
+`v0.5.2-portable-npm-lockfile`
 
 สถานะปัจจุบัน:
 
@@ -12,7 +12,23 @@
 - Production profile `chemistry_k` เตรียมไว้ใน Source code แต่ Production จริงต้องใช้ Lark Base, App, Cloud และบัญชี Social ที่ลูกค้าเป็นเจ้าของ
 - TikTok DEV Sync จริงผ่าน 20 Content + 20 Daily Snapshot แล้วก่อน Audit รอบนี้
 - v0.4.0 ผ่าน Live DEV gate แล้ว: รันซ้ำได้ `created=0`, `updated=0`, `skipped=20` ทั้ง Content และ Daily
-- v0.5.0 เพิ่ม Sync run, Lark Sync Log/System Alerts, automatic reconciliation, D1 lease lock และ Cloudflare DLQ
+- v0.5.2 แก้ `package-lock.json` ให้ใช้ public npm registry แบบ portable และเพิ่ม hygiene guard; v0.5.1 แก้ Cloudflare deploy blockers: root Wrangler config, D1 primary/Lark mirror, chunk-aware partial writes, strict Queue/DLQ routing, lease renewal, scheduled producer และ Workers-runtime tests
+
+
+## Cloudflare DEV/Staging deployment gate
+
+ก่อน Deploy จริงให้คัดลอก `wrangler.sync.example.jsonc` เป็นไฟล์ local ที่ไม่ Commit แล้วแทน D1 ID, Queue names และ Table IDs ของ DEV:
+
+```bash
+cp wrangler.sync.example.jsonc wrangler.sync.jsonc
+chmod 600 .dev.vars
+npm ci
+npm test
+npm run check
+npm run deploy:dry-run
+```
+
+จากนั้นสร้าง D1/Queues, apply migration และใส่ Secrets ผ่าน Wrangler โดยไม่เก็บ Secret ใน Source code รายละเอียดอยู่ใน `deploy/README.md` และ `docs/cloudflare-deploy-hardening-v0.5.1.md`
 
 ## โครงสร้างระบบ
 
@@ -181,7 +197,7 @@ Automatic reconciliation ใช้ Stable key ตรวจว่าฝั่ง 
 
 Cloudflare Queue ต้องกำหนด Dead Letter Queue ชื่อเดียวกับ `MKT_DLQ_QUEUE_NAME` Message ที่ Retry ครบจะถูกเก็บใน D1 `dead_letter_jobs` และสร้าง Critical alert โดย DLQ consumer จะไม่ Execute งานเดิมซ้ำ
 
-รายละเอียด: `docs/reliability-layer-v0.5.0.md`
+รายละเอียด: `docs/cloudflare-deploy-hardening-v0.5.1.md`
 
 ## Multi-channel Foundation
 
@@ -285,7 +301,7 @@ classification_confidence = 0.2
 ## Deployment
 
 - API Worker example: `wrangler.example.jsonc`
-- Sync Worker example: `deploy/wrangler.sync.example.jsonc`
+- Sync Worker example: `wrangler.sync.example.jsonc` (อยู่ root เพื่อให้ path ของ entrypoint/migrations ตรงกัน)
 - Deployment notes: `deploy/README.md`
 - Full audit baseline: `docs/full-codebase-audit-v0.3.1.md`
 - Multi-channel foundation: `docs/multi-channel-foundation-v0.4.0.md`

@@ -38,3 +38,21 @@ test('local file lease replaces an expired lock', async () => {
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test('local file lease renewal extends only the current owner lease', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'mkt-lock-'));
+  let now = 1_000;
+  try {
+    const manager = new FileLeaseLockManager({ directory, now: () => now });
+    await manager.acquire({ lockKey: 'dev:tiktok:ft:native', ownerId: 'run-1', leaseMs: 1_000 });
+    now = 1_500;
+    const renewed = await manager.renew({ lockKey: 'dev:tiktok:ft:native', ownerId: 'run-1', leaseMs: 2_000 });
+    const wrongOwner = await manager.renew({ lockKey: 'dev:tiktok:ft:native', ownerId: 'run-2', leaseMs: 2_000 });
+
+    assert.equal(renewed.renewed, true);
+    assert.equal(renewed.expiresAt, 3_500);
+    assert.equal(wrongOwner.renewed, false);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

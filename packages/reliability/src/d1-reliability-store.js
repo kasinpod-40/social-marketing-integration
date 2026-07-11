@@ -191,6 +191,27 @@ export class D1ReliabilityStore {
     }
   }
 
+  /** ต่ออายุ Lease เฉพาะ Owner เดิม และคืน false เมื่อ Ownership ถูกเปลี่ยนหรือ Lock หาย */
+  async renew(input) {
+    const lockKey = requireText(input?.lockKey, 'lockKey');
+    const ownerId = requireText(input?.ownerId, 'ownerId');
+    const leaseMs = positiveInteger(input?.leaseMs, 'leaseMs');
+    const now = this.now();
+    const expiresAt = now + leaseMs;
+
+    try {
+      const result = await this.db.prepare(`
+        UPDATE sync_locks
+        SET expires_at = ?, updated_at = ?
+        WHERE lock_key = ? AND owner_id = ? AND expires_at > ?
+      `).bind(expiresAt, now, lockKey, ownerId, now).run();
+      const renewed = readChanges(result) > 0;
+      return Object.freeze({ renewed, lockKey, ownerId, expiresAt: renewed ? expiresAt : null });
+    } catch (cause) {
+      throw d1Error('Failed to renew distributed sync lock', 'D1_SYNC_LOCK_RENEW_FAILED', cause);
+    }
+  }
+
   /** ปล่อย Lock เฉพาะ Owner เดิม เพื่อไม่ลบ Lease ของ Invocation อื่น */
   async release(input) {
     const lockKey = requireText(input?.lockKey, 'lockKey');

@@ -27,7 +27,8 @@ export function createCloudflareReliabilityRuntime(input = {}) {
   });
 
   const store = new CompositeReliabilityStore({
-    stores: [d1Store, larkStore],
+    primary: d1Store,
+    mirrors: [larkStore],
     onStoreError: input.onStoreError,
   });
 

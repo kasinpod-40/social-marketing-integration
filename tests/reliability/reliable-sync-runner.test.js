@@ -148,3 +148,79 @@ function sequenceNow(values) {
   let index = 0;
   return () => values[Math.min(index++, values.length - 1)];
 }
+
+test('reliable runner exposes lease renewal and completes while ownership remains valid', async () => {
+  const store = createStore();
+  let renewCalls = 0;
+  const lockManager = {
+    async acquire({ lockKey, ownerId, leaseMs }) {
+      return { acquired: true, lockKey, ownerId, expiresAt: 1_000 + leaseMs };
+    },
+    async renew({ lockKey, ownerId, leaseMs }) {
+      renewCalls += 1;
+      return { renewed: true, lockKey, ownerId, expiresAt: 2_000 + leaseMs };
+    },
+    async release() { return true; },
+  };
+
+  const result = await runReliableSync({
+    store,
+    lockManager,
+    syncRunId: 'run-renew',
+    customerProfile: 'dev_ft_pumkin',
+    accountKey: 'ft_pumkin',
+    platform: 'tiktok',
+    source: 'source',
+    syncType: 'native_import',
+    leaseMs: 60_000,
+    renewIntervalMs: 10_000,
+    execute: async ({ renewLease, assertLockActive }) => {
+      await renewLease();
+      await assertLockActive();
+      return {
+        rawRecords: 0,
+        content: { created: 0, updated: 0, skipped: 0 },
+        dailySnapshots: { created: 0, updated: 0, skipped: 0 },
+      };
+    },
+  });
+
+  assert.equal(result.syncRunId, 'run-renew');
+  assert.equal(renewCalls, 1);
+  assert.equal(store.syncRuns.at(-1).status, 'success');
+});
+
+test('lost lease ownership fails the sync and creates an alert', async () => {
+  const store = createStore();
+  const lockManager = {
+    async acquire({ lockKey, ownerId, leaseMs }) {
+      return { acquired: true, lockKey, ownerId, expiresAt: 1_000 + leaseMs };
+    },
+    async renew() { return { renewed: false, expiresAt: null }; },
+    async release() { return true; },
+  };
+
+  await assert.rejects(
+    () => runReliableSync({
+      store,
+      lockManager,
+      syncRunId: 'run-lost-lock',
+      customerProfile: 'dev_ft_pumkin',
+      accountKey: 'ft_pumkin',
+      platform: 'tiktok',
+      source: 'source',
+      syncType: 'native_import',
+      leaseMs: 60_000,
+      renewIntervalMs: 10_000,
+      alertOnRetryableFailure: true,
+      execute: async ({ renewLease }) => {
+        await renewLease();
+      },
+    }),
+    (error) => error.code === 'SYNC_LOCK_LOST' && error.reliabilityHandled === true,
+  );
+
+  assert.equal(store.syncRuns.at(-1).status, 'failed');
+  assert.equal(store.syncRuns.at(-1).errorCode, 'SYNC_LOCK_LOST');
+  assert.equal(store.alerts.at(-1).alertType, 'sync_failed');
+});

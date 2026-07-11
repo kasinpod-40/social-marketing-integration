@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.5.2-portable-npm-lockfile — 2026-07-11
+
+### Fixed
+- Replaced internal build-environment Artifactory URLs in `package-lock.json` with portable `https://registry.npmjs.org/` tarball URLs so `npm ci` works on developer and customer machines.
+- Added a repository hygiene gate that rejects non-public HTTPS registry hosts in `package-lock.json`, preventing internal registry leakage from future release packages.
+
+### Verification target
+- `npm ci` from a clean extracted ZIP using the public npm registry.
+- Existing Node tests, Workers-runtime tests, repository checks, migrations, and Wrangler dry-run remain unchanged from v0.5.1.
+
+## 0.5.1-cloudflare-deploy-hardening — 2026-07-11
+
+### Fixed
+- Moved the Sync Worker Wrangler example to the repository root so Worker entrypoint and D1 migration paths resolve correctly; `wrangler 4.110.0 deploy --dry-run` now passes.
+- Made D1 the mandatory operational primary store and Lark a best-effort mirror; D1 failures now prevent Queue acknowledgement.
+- Added chunk-aware Lark write progress and whole-sync `partial_success` accounting for later-chunk failures and ambiguous writes.
+- Changed Queue routing to a strict whitelist for the Main Queue and DLQ; unknown queues are quarantined and never execute normal jobs.
+- Added owner-scoped D1/local lease renewal, heartbeat guards before write chunks, and lost-lock detection.
+- Moved TikTok source identity rejection before destination schema/search requests.
+- Changed the local CLI to structured skipped/failed output instead of uncaught stack traces for expected operational errors.
+- Removed the non-functional npm workspaces declaration and added repository hygiene checks for `.dev.vars` permissions and `.DS_Store`.
+
+### Added
+- Added a real scheduled Queue producer binding and hourly Cron example.
+- Added Workers-runtime tests using `@cloudflare/vitest-pool-workers` for Main Queue, DLQ, unknown Queue, and scheduled producer paths.
+- Added CI gates for unit tests, Workers-runtime tests, repository checks, and Wrangler dry-run.
+- Added regression tests for later-chunk partial writes, D1 renewal, valid renewal, lost ownership, and fail-fast source identity.
+
+### Verification target
+- 199 Node unit tests and 5 Workers-runtime tests.
+- Wrangler 4.110.0 dry-run, syntax checks, architecture audit, repository hygiene, SQL migration replay, and extracted ZIP retest.
+
 ## 0.5.0-reliability-layer — 2026-07-11
 
 ### Added

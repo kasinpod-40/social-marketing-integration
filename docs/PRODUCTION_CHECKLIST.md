@@ -2,7 +2,7 @@
 
 Release จะยังไม่ถือว่า Production-ready จนกว่าจะตรวจครบทุก Gate
 
-## สถานะ Package v0.5.0
+## สถานะ Package v0.5.1
 
 ### Architecture และ Code quality
 
@@ -47,17 +47,17 @@ Release จะยังไม่ถือว่า Production-ready จนกว
 - [x] Input/Destination duplicate และ Destination identity conflict มี Guard
 - [x] Empty Multi-select/URL shape ไม่สร้าง False update
 - [x] Plan เดิม Execute ซ้ำไม่ได้
-- [ ] Benchmark/Load test เมื่อข้อมูลเพิ่ม 10x และ 100x
-- [ ] Incremental RAW source cursor/window
-- [x] Distributed lease lock บน D1 ก่อนเพิ่ม Queue concurrency หรือเปิด Cloud Writer หลาย Invocation
+- [ ] Benchmark/Load test เมื่อข้อมูลเพิ่ม 10x และ 100x (ไม่ Block DEV/Staging deploy รอบแรก)
+- [ ] Incremental RAW source cursor/window (ทำหลัง Scheduled Sync เสถียร)
+- [x] Distributed lease lock บน D1 พร้อม owner-scoped renewal/heartbeat ก่อนเพิ่ม Queue concurrency
 - [x] Persisted `MKT_Sync_Log`, `sync_run_id`, DLQ alert และ Reconciliation summary
 - [ ] ยืนยัน Lark Cell-clear contract และเพิ่ม Classification field clearing โดยไม่ลบค่าผิด Field
 
 ### Test และ Release package
 
-- [x] Unit/Integration/Regression tests 191/191 ผ่านก่อน Packaging
+- [x] Node Unit/Integration/Regression tests 199/199 และ Workers-runtime tests 5/5 ผ่านก่อน Packaging
 - [x] Syntax check ผ่านก่อน Packaging
-- [x] Architecture audit ผ่านก่อน Packaging
+- [x] Architecture audit, repository hygiene และ Wrangler 4.110.0 dry-run ผ่านก่อน Packaging
 - [x] สร้าง ZIP โดยไม่มี `.dev.vars`, Secret, `node_modules`, Log หรือไฟล์ขยะ
 - [x] แตก ZIP ใหม่แล้ว Test/Check ผ่านซ้ำ
 - [x] บันทึก SHA-256 ของ ZIP ไว้นอก Archive หลังสร้าง Release ขั้นสุดท้าย
@@ -74,15 +74,21 @@ Release จะยังไม่ถือว่า Production-ready จนกว
 - [x] Baseline v0.4.0 จำนวน Content/Daily ไม่เพิ่มจาก Stable Key เดิม
 
 
-### Live DEV reliability gate ของ v0.5.0
+### Live DEV reliability gate ของ v0.5.0/v0.5.1
 
-- [ ] เพิ่ม `LARK_TABLE_MKT_SYNC_LOG` และ `LARK_TABLE_MKT_SYSTEM_ALERTS` ใน `.dev.vars`
-- [ ] Local write สร้าง `sync_run_id` และ Upsert `MKT_Sync_Log` จาก `running` เป็น `success`
-- [ ] รันซ้ำแล้ว Content/Daily ไม่ Create หรือ Update ซ้ำ
-- [ ] เปิดสอง Terminal พร้อมกันแล้วรอบที่ชน Lock ได้ `SYNC_LOCK_BUSY` โดยไม่เขียนข้อมูลธุรกิจ
-- [ ] จำลอง Error แบบปลอดภัยและตรวจว่า `MKT_System_Alerts` ได้ Alert พร้อม `sync_run_id`
-- [ ] Apply `0002_reliability.sql` กับ D1 DEV สำเร็จ
+- [x] เพิ่ม `LARK_TABLE_MKT_SYNC_LOG` และ `LARK_TABLE_MKT_SYSTEM_ALERTS` ใน `.dev.vars`
+- [x] Local write สร้าง `sync_run_id` และ Upsert `MKT_Sync_Log` จาก `running` เป็น `success`
+- [x] รันซ้ำแล้ว Content/Daily ไม่ Create หรือ Update ซ้ำ
+- [x] เปิดสอง Terminal พร้อมกันแล้วรอบที่ชน Lock ได้ `SYNC_LOCK_BUSY` โดยไม่เขียนข้อมูลธุรกิจ
+- [x] จำลอง Source identity error แบบปลอดภัยและตรวจว่า `MKT_System_Alerts` ได้ Alert พร้อม `sync_run_id`
+- [ ] Apply `0002_reliability.sql` กับ D1 DEV resource จริงสำเร็จ (SQL replay ใน Package ผ่านแล้ว)
 - [ ] Queue Retry, DLQ persistence และ D1 lease lock ผ่าน Cloudflare DEV/Staging UAT
+
+- [x] Wrangler config อยู่ root และ `npm run deploy:dry-run` ผ่าน
+- [x] D1 เป็น Primary ส่วน Lark เป็น best-effort mirror
+- [x] Chunk-level partial write, strict Queue/DLQ routing และ lease renewal มี Regression tests
+- [x] Scheduled handler enqueue งานเข้า Queue producer จริง
+- [x] Workers-runtime tests ครอบ Main Queue, DLQ, Unknown Queue, Active routing และ Scheduled producer
 
 ### Customer-owned Production gate
 

@@ -27,3 +27,7 @@ TestResults.xml
 .env
 .env.*
 !.env.example
+
+# Dependency directories
+node_modules/
+jspm_packages/

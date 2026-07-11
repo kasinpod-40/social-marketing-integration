@@ -130,3 +130,21 @@ function createFailingD1(error) {
     },
   };
 }
+
+test('D1 renew extends the lease only for the current owner', async () => {
+  const db = createFakeD1([1, 0]);
+  const store = new D1ReliabilityStore({ db, now: () => 2_000 });
+
+  const renewed = await store.renew({ lockKey: 'profile:tiktok:account:native', ownerId: 'run-1', leaseMs: 5_000 });
+  const lost = await store.renew({ lockKey: 'profile:tiktok:account:native', ownerId: 'run-2', leaseMs: 5_000 });
+
+  assert.deepEqual(renewed, {
+    renewed: true,
+    lockKey: 'profile:tiktok:account:native',
+    ownerId: 'run-1',
+    expiresAt: 7_000,
+  });
+  assert.equal(lost.renewed, false);
+  assert.match(db.calls[0].sql, /UPDATE sync_locks/);
+  assert.match(db.calls[0].sql, /owner_id = \?/);
+});

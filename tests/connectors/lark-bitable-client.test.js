@@ -584,3 +584,44 @@ test('shares one refreshed tenant token across concurrent Bitable requests', asy
   assert.equal(records.length, 1);
   assert.equal(tokenCalls, 2);
 });
+
+test('reports confirmed progress when a later create chunk fails', async () => {
+  let batchCalls = 0;
+  const client = new LarkBitableClient({
+    appId: 'app-id',
+    appSecret: 'app-secret',
+    appToken: 'app-token',
+    maxAttempts: 1,
+    minRequestIntervalMs: 0,
+    fetchImpl: async (url) => {
+      if (String(url).includes('tenant_access_token')) {
+        return new Response(JSON.stringify({ code: 0, tenant_access_token: 'token', expire: 7200 }), { status: 200 });
+      }
+      batchCalls += 1;
+      if (batchCalls === 1) {
+        return new Response(JSON.stringify({
+          code: 0,
+          data: { records: Array.from({ length: 100 }, (_, index) => ({ record_id: `rec-${index}` })) },
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ code: 999999, msg: 'server failed after first chunk' }), { status: 500 });
+    },
+  });
+
+  await assert.rejects(
+    () => client.batchCreateRecords({
+      tableId: 'tbl_items',
+      records: Array.from({ length: 101 }, (_, index) => ({ key: `key-${index}` })),
+    }),
+    (error) => {
+      assert.equal(error.code, 'LARK_BATCH_PARTIAL_WRITE');
+      assert.equal(error.writeProgress.writeOutcome, 'partial');
+      assert.equal(error.writeProgress.confirmedRows, 100);
+      assert.equal(error.writeProgress.completedChunks, 1);
+      assert.equal(error.writeProgress.failedChunk, 2);
+      assert.equal(error.writeProgress.totalChunks, 2);
+      assert.equal(error.writeProgress.remainingRows, 1);
+      return true;
+    },
+  );
+});

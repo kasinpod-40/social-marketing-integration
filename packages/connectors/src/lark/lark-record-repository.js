@@ -72,18 +72,20 @@ export class LarkRecordRepository {
   }
 
   /** ส่ง Batch Create โดยไม่ทำ Business logic ซ้ำกับ Sync Engine */
-  async createMany(tableId, rows) {
+  async createMany(tableId, rows, options = {}) {
     return this.client.batchCreateRecords({
       tableId: requireText(tableId, 'tableId'),
       records: requireArray(rows, 'rows'),
+      beforeChunk: options?.beforeChunk,
     });
   }
 
   /** ส่ง Batch Update โดยไม่ทำ Diff ซ้ำกับ Sync Engine */
-  async updateMany(tableId, records) {
+  async updateMany(tableId, records, options = {}) {
     return this.client.batchUpdateRecords({
       tableId: requireText(tableId, 'tableId'),
       records: requireArray(records, 'records'),
+      beforeChunk: options?.beforeChunk,
     });
   }
 

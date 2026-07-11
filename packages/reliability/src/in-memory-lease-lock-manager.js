@@ -26,6 +26,20 @@ export class InMemoryLeaseLockManager {
     return lock;
   }
 
+  async renew(input) {
+    const lockKey = requireText(input?.lockKey, 'lockKey');
+    const ownerId = requireText(input?.ownerId, 'ownerId');
+    const leaseMs = positiveInteger(input?.leaseMs, 'leaseMs');
+    const now = this.now();
+    const existing = this.locks.get(lockKey);
+    if (!existing || existing.ownerId !== ownerId || existing.expiresAt <= now) {
+      return Object.freeze({ renewed: false, lockKey, ownerId, expiresAt: null });
+    }
+    const renewed = Object.freeze({ acquired: true, lockKey, ownerId, expiresAt: now + leaseMs });
+    this.locks.set(lockKey, renewed);
+    return Object.freeze({ renewed: true, lockKey, ownerId, expiresAt: renewed.expiresAt });
+  }
+
   async release(input) {
     const lockKey = requireText(input?.lockKey, 'lockKey');
     const ownerId = requireText(input?.ownerId, 'ownerId');

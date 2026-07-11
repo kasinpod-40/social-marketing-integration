@@ -1,14 +1,15 @@
 /**
- * เขียน Operational state ไปหลายปลายทางพร้อมกัน เช่น D1 + Lark Base
+ * Reliability store แบบ Primary + Mirrors
  *
- * หลักการ:
- * - สำเร็จอย่างน้อยหนึ่ง Store ถือว่าบันทึกได้ เพื่อไม่ให้ Lark mirror ล่มแล้วหยุดงานที่ D1 เก็บครบ
- * - ถ้าทุก Store ล้มเหลวจึงโยน Error
- * - Error ของ Store รองถูกส่งเข้า onStoreError สำหรับ Structured log โดยไม่กลบผลหลัก
+ * กฎสำคัญ:
+ * - Primary ต้องสำเร็จเสมอ ไม่เช่นนั้น Operation ล้มเหลวทันที
+ * - Mirror เป็น best effort และห้ามกลบผลของ Primary
+ * - ใช้ D1 เป็น Primary บน Cloudflare และ Lark เป็น Mirror สำหรับมนุษย์
  */
 export class CompositeReliabilityStore {
   constructor(input = {}) {
-    this.stores = requireStores(input.stores);
+    this.primary = requireStore(input.primary, 'primary');
+    this.mirrors = requireMirrors(input.mirrors ?? []);
     this.onStoreError = typeof input.onStoreError === 'function' ? input.onStoreError : () => undefined;
   }
 
@@ -25,36 +26,48 @@ export class CompositeReliabilityStore {
   }
 
   async #invoke(methodName, payload) {
-    const targets = this.stores.filter((store) => typeof store?.[methodName] === 'function');
-    if (targets.length === 0) {
-      throw new TypeError(`No reliability store implements ${methodName}`);
+    if (typeof this.primary?.[methodName] !== 'function') {
+      throw new TypeError(`Primary reliability store does not implement ${methodName}`);
     }
 
+    // Primary เป็น source of truth จึงต้อง Await และปล่อย Error ขึ้นทันที
+    const primaryResult = await this.primary[methodName](payload);
+    const targets = this.mirrors.filter((store) => typeof store?.[methodName] === 'function');
     const settled = await Promise.allSettled(targets.map((store) => store[methodName](payload)));
-    const failures = [];
-    let successCount = 0;
+    let mirrorSuccessCount = 0;
+    const mirrorFailures = [];
 
     settled.forEach((result, index) => {
       if (result.status === 'fulfilled') {
-        successCount += 1;
+        mirrorSuccessCount += 1;
         return;
       }
-      failures.push(result.reason);
+      mirrorFailures.push(result.reason);
       this.onStoreError({
         method: methodName,
+        role: 'mirror',
         store: targets[index]?.constructor?.name ?? 'unknown',
         error: result.reason,
       });
     });
 
-    if (successCount === 0) throw failures[0] ?? new Error(`${methodName} failed in every store`);
-    return Object.freeze({ successCount, failureCount: failures.length });
+    return Object.freeze({
+      primarySucceeded: true,
+      primaryResult,
+      mirrorSuccessCount,
+      mirrorFailureCount: mirrorFailures.length,
+    });
   }
 }
 
-function requireStores(value) {
-  if (!Array.isArray(value) || value.length === 0) {
-    throw new TypeError('CompositeReliabilityStore requires at least one store');
+function requireStore(value, fieldName) {
+  if (!value || typeof value !== 'object') {
+    throw new TypeError(`CompositeReliabilityStore requires ${fieldName}`);
   }
-  return Object.freeze([...value]);
+  return value;
+}
+
+function requireMirrors(value) {
+  if (!Array.isArray(value)) throw new TypeError('CompositeReliabilityStore mirrors must be an array');
+  return Object.freeze(value.map((store, index) => requireStore(store, `mirrors[${index}]`)));
 }

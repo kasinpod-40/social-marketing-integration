@@ -1,18 +1,25 @@
 {
   "name": "social-marketing-integration",
-  "version": "0.5.0-reliability-layer",
+  "version": "0.5.2-portable-npm-lockfile",
   "private": true,
   "type": "module",
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "scripts": {
-    "test": "node --test tests/**/*.test.js",
-    "check": "find apps packages tests scripts -type f \\( -name '*.js' -o -name '*.mjs' \\) -print0 | xargs -0 -n1 node --check && node scripts/audit-architecture.mjs",
+    "test": "npm run test:unit && npm run test:worker",
+    "test:unit": "find tests -type f -name '*.test.js' ! -path 'tests/worker-runtime/*' -print0 | xargs -0 node --test",
+    "test:worker": "vitest run --config vitest.worker.config.js",
+    "check": "find apps packages tests scripts -type f \\( -name '*.js' -o -name '*.mjs' \\) -print0 | xargs -0 -n1 node --check && node scripts/audit-architecture.mjs && node scripts/check-repository-hygiene.mjs",
     "validate:tiktok": "node scripts/validate-tiktok-creator.mjs",
     "sync:tiktok": "node scripts/sync-tiktok-creator.mjs",
     "seed:metrics": "node scripts/seed-metric-definitions.mjs",
-    "audit:architecture": "node scripts/audit-architecture.mjs"
+    "audit:architecture": "node scripts/audit-architecture.mjs",
+    "deploy:dry-run": "wrangler deploy --dry-run --config wrangler.sync.example.jsonc"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "0.18.4",
+    "vitest": "4.1.10",
+    "wrangler": "4.110.0"
   }
 }

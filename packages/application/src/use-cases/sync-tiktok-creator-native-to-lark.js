@@ -2,16 +2,19 @@ import {
   assertTikTokSyncReady,
   prepareTikTokCreatorLarkSync,
 } from './prepare-tiktok-creator-lark-sync.js';
-import { partialSyncError } from '../../../shared/src/errors/runtime-error.js';
+import {
+  isPartialSyncError,
+  partialSyncError,
+} from '../../../shared/src/errors/runtime-error.js';
 
 /**
  * Sync RAW TikTok Creator ไปยัง MKT_Content และ MKT_Content_Daily
- *
- * Flow แยก Prepare/Execute และส่ง syncRunId ลงผลลัพธ์ เพื่อให้ Reliability layer
- * เชื่อม Log, Alert และ Recovery ของรอบเดียวกันได้ครบ
  */
 export async function syncTikTokCreatorNativeToLark(input) {
   const progress = typeof input?.onProgress === 'function' ? input.onProgress : () => undefined;
+  const assertLockActive = typeof input?.assertLockActive === 'function'
+    ? input.assertLockActive
+    : async () => undefined;
   const syncRunId = optionalText(input?.syncRunId);
   const prepared = await prepareTikTokCreatorLarkSync({
     repository: input?.repository,
@@ -45,6 +48,7 @@ export async function syncTikTokCreatorNativeToLark(input) {
   }
 
   assertTikTokSyncReady(prepared);
+  await assertLockActive();
 
   progress({
     stage: 'executing_content_plan',
@@ -52,11 +56,27 @@ export async function syncTikTokCreatorNativeToLark(input) {
     createRows: prepared.plans.content.createRows.length,
     updateRows: prepared.plans.content.updateRows.length,
   });
-  const contentResult = await input.syncEngine.executePlan(prepared.plans.content, {
-    onProgress: (event) => progress({ scope: 'content', syncRunId, ...event }),
-  });
+
+  let contentResult;
+  try {
+    contentResult = await input.syncEngine.executePlan(prepared.plans.content, {
+      beforeWriteChunk: assertLockActive,
+      onProgress: (event) => progress({ scope: 'content', syncRunId, ...event }),
+    });
+  } catch (cause) {
+    if (!isPartialSyncError(cause)) throw cause;
+    throw buildWholeSyncPartialError({
+      cause,
+      syncRunId,
+      prepared,
+      failedPhase: 'content',
+      contentResult: normalizeTablePartialResult(cause.partialResult, prepared.plans.content),
+      dailyResult: plannedOnlyResult(prepared.plans.dailySnapshots),
+    });
+  }
   progress({ stage: 'content_synced', syncRunId, result: contentResult });
 
+  await assertLockActive();
   progress({
     stage: 'executing_daily_snapshot_plan',
     syncRunId,
@@ -67,45 +87,99 @@ export async function syncTikTokCreatorNativeToLark(input) {
   let dailyResult;
   try {
     dailyResult = await input.syncEngine.executePlan(prepared.plans.dailySnapshots, {
+      beforeWriteChunk: assertLockActive,
       onProgress: (event) => progress({ scope: 'daily_snapshots', syncRunId, ...event }),
     });
   } catch (cause) {
-    const partialResult = buildResult({
+    const normalizedDaily = isPartialSyncError(cause)
+      ? normalizeTablePartialResult(cause.partialResult, prepared.plans.dailySnapshots)
+      : unknownWriteResult(prepared.plans.dailySnapshots);
+
+    throw buildWholeSyncPartialError({
+      cause,
       syncRunId,
       prepared,
+      failedPhase: 'daily_snapshots',
       contentResult,
-      dailyResult: {
-        created: 0,
-        updated: 0,
-        skipped: prepared.plans.dailySnapshots.skipped,
-        duplicateInputRows: prepared.plans.dailySnapshots.duplicateInputRows,
-        writeOutcome: 'unknown',
-      },
-      reconciliationStatus: 'partial_write_detected',
-    });
-
-    throw partialSyncError('TikTok content sync succeeded but daily snapshot sync failed', {
-      cause,
-      partialResult,
-      details: {
-        syncRunId,
-        failedPhase: 'daily_snapshots',
-        contentCreated: contentResult.created,
-        contentUpdated: contentResult.updated,
-        dailyCreatePlanned: prepared.plans.dailySnapshots.createRows.length,
-        dailyUpdatePlanned: prepared.plans.dailySnapshots.updateRows.length,
-        causeMessage: cause instanceof Error ? cause.message : String(cause),
-      },
+      dailyResult: normalizedDaily,
     });
   }
 
   progress({ stage: 'daily_snapshots_synced', syncRunId, result: dailyResult });
+  await assertLockActive();
+
   return buildResult({
     syncRunId,
     prepared,
     contentResult,
     dailyResult,
     reconciliationStatus: prepared.reconciliation.required ? 'recovered' : 'not_required',
+  });
+}
+
+function buildWholeSyncPartialError(input) {
+  const partialResult = buildResult({
+    syncRunId: input.syncRunId,
+    prepared: input.prepared,
+    contentResult: input.contentResult,
+    dailyResult: input.dailyResult,
+    reconciliationStatus: 'partial_write_detected',
+  });
+
+  return partialSyncError(`TikTok sync partially completed during ${input.failedPhase}`, {
+    retryable: input.cause?.retryable !== false,
+    cause: input.cause,
+    partialResult,
+    details: {
+      syncRunId: input.syncRunId,
+      failedPhase: input.failedPhase,
+      contentCreated: input.contentResult?.created ?? 0,
+      contentUpdated: input.contentResult?.updated ?? 0,
+      dailyCreated: input.dailyResult?.created ?? 0,
+      dailyUpdated: input.dailyResult?.updated ?? 0,
+      contentWriteOutcome: input.contentResult?.writeOutcome ?? null,
+      dailyWriteOutcome: input.dailyResult?.writeOutcome ?? null,
+      causeCode: input.cause?.code ?? null,
+      causeMessage: input.cause instanceof Error ? input.cause.message : String(input.cause),
+    },
+  });
+}
+
+function normalizeTablePartialResult(result, plan) {
+  return Object.freeze({
+    created: nonNegative(result?.created),
+    updated: nonNegative(result?.updated),
+    skipped: nonNegative(result?.skipped ?? plan.skipped),
+    duplicateInputRows: nonNegative(result?.duplicateInputRows ?? plan.duplicateInputRows),
+    writeOutcome: result?.writeOutcome ?? 'partial',
+    failedPhase: result?.failedPhase ?? null,
+    plannedCreate: nonNegative(result?.plannedCreate ?? plan.createRows.length),
+    plannedUpdate: nonNegative(result?.plannedUpdate ?? plan.updateRows.length),
+    writeProgress: result?.writeProgress ?? null,
+  });
+}
+
+function plannedOnlyResult(plan) {
+  return Object.freeze({
+    created: 0,
+    updated: 0,
+    skipped: plan.skipped,
+    duplicateInputRows: plan.duplicateInputRows,
+    writeOutcome: 'not_started',
+    plannedCreate: plan.createRows.length,
+    plannedUpdate: plan.updateRows.length,
+  });
+}
+
+function unknownWriteResult(plan) {
+  return Object.freeze({
+    created: 0,
+    updated: 0,
+    skipped: plan.skipped,
+    duplicateInputRows: plan.duplicateInputRows,
+    writeOutcome: 'unknown',
+    plannedCreate: plan.createRows.length,
+    plannedUpdate: plan.updateRows.length,
   });
 }
 
@@ -132,7 +206,6 @@ function buildResult(input) {
   });
 }
 
-/** สรุป Plan สำหรับ Dry run โดยไม่เปิดเผย Repository ภายใน */
 function planSummary(plan) {
   return Object.freeze({
     rowsReady: plan.inputRows,
@@ -151,4 +224,9 @@ function optionalText(value) {
     throw new TypeError('syncRunId must be a non-empty string');
   }
   return value.trim();
+}
+
+function nonNegative(value) {
+  const number = Number(value ?? 0);
+  return Number.isSafeInteger(number) && number >= 0 ? number : 0;
 }

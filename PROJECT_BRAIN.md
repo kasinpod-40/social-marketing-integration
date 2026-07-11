@@ -4,11 +4,11 @@
 This project connects social organic and paid ads data into Lark Base for reporting, daily snapshots, monitoring, and AI summaries. The implementation target is a lean MVP using Cloudflare Workers, Cloudflare D1, Cloudflare Queues, Lark Base, Lark Native Integrations where useful, and JavaScript.
 
 ## Current project status
-Current audited release: `v0.5.0-reliability-layer`
+Current audited release: `v0.5.2-portable-npm-lockfile`
 
-Package verification: 191 tests หลังเพิ่ม Reliability, D1, DLQ, Local lock และ Reconciliation regression suite; syntax checks และ architecture audit ต้องผ่านก่อน Packaging. v0.4.0 ผ่าน Live DEV idempotency gate แล้ว (`created=0`, `updated=0`, `skipped=20` รอบที่สองทั้ง Content/Daily). v0.5.0 ต้องทดสอบ Live DEV เพิ่มเฉพาะ MKT_Sync_Log, MKT_System_Alerts และ Local lease lock.
+Package verification target: 199 Node unit tests + 5 Workers-runtime tests, Wrangler 4.110.0 dry-run, syntax/architecture/repository hygiene, migrations และ extracted ZIP retest. v0.5.0 ผ่าน Live DEV สำหรับ Sync Log, Recovery, Local lock และ Failure Alert แล้ว; v0.5.1 ปิด Cloudflare deployment blockers ก่อนสร้าง resource จริง.
 
-**v0.5.0-reliability-layer — เพิ่ม sync_run_id, persisted Sync Log, automatic reconciliation, D1 distributed lease lock, retry/DLQ และ System Alerts โดยไม่เปลี่ยน Lark Content/Daily schema.**
+**v0.5.2-portable-npm-lockfile — package-lock ใช้ public npm registry แบบ portable และมี hygiene guard; ต่อจาก v0.5.1 ที่ บังคับ D1 เป็น operational source of truth, Lark เป็น mirror, รองรับ chunk-level partial write, strict Queue routing, lease heartbeat, scheduled producer, Worker-runtime tests และ Wrangler dry-run.**
 
 Completed in Lark:
 - Created Lark Base: `Social MKT Data Hub`.
@@ -567,3 +567,15 @@ MKT_CUSTOMER_PROFILE=chemistry_k
 - Local and Cloud resources remain separate: Local file lock protects one machine only; Cloudflare D1 lock protects Worker invocations. Do not run Local write against the same Base while Cloud scheduled sync is enabled.
 - Known residual risk: D1 lease has no renewal heartbeat yet; configure lease longer than the maximum expected sync duration.
 - Full contract: `docs/reliability-layer-v0.5.0.md`.
+
+## 2026-07-11 — v0.5.1 Cloudflare Deploy Hardening
+
+- Wrangler Sync config ต้องอยู่ repository root หรืออ้าง path ตามตำแหน่ง config; baseline นี้ใช้ `wrangler.sync.example.jsonc` ที่ root.
+- D1 เป็น operational primary: `saveSyncRun`, `saveSystemAlert`, `saveDeadLetter` ต้องสำเร็จก่อน Ack; Lark เป็น best-effort human-readable mirror เท่านั้น.
+- Main Queue และ DLQ ใช้ exact-name whitelist; Queue ที่ไม่รู้จักต้อง quarantine และห้าม execute งาน.
+- Scheduled handler เป็น Producer ส่ง `tiktok.creator.native.sync` เข้า Main Queue ไม่ทำ Sync ตรงใน Cron.
+- Lease lock ต้อง renew ก่อนหมดอายุและ Use case ต้องตรวจ ownership ก่อนทุก write chunk; lost ownership เป็น retryable failure.
+- Lark batch adapter ต้องรายงาน confirmed rows/chunks เมื่อเกิด partial/unknown write และ Reliability status ต้องเป็น `partial_success` พร้อม Critical alert.
+- Source identity mismatch ต้อง fail fast ก่อน Destination schema/search.
+- CI/Release gate บังคับ Node unit tests, Workers-runtime tests, `npm run check`, `npm run deploy:dry-run`, migration replay และ extracted ZIP retest.
+- Production secrets ห้ามอยู่ใน code/config example; DEV ใช้ทรัพยากรผู้พัฒนา ส่วน Production ใช้ Lark/Cloudflare/App/Credentials ที่ลูกค้าเป็นเจ้าของ.

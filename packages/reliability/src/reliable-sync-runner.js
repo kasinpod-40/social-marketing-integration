@@ -7,9 +7,10 @@ import {
 } from '../../shared/src/errors/runtime-error.js';
 
 const DEFAULT_LEASE_MS = 10 * 60 * 1000;
+const DEFAULT_RENEW_ATTEMPTS = 3;
 
 /**
- * ครอบ Use case Sync ด้วย Run ID, Persisted log, Lease lock, Recovery metadata และ Alert
+ * ครอบ Use case Sync ด้วย Run ID, Persisted log, Lease lock, Renewal, Recovery metadata และ Alert
  */
 export async function runReliableSync(input = {}) {
   const store = requireStore(input.store);
@@ -19,6 +20,7 @@ export async function runReliableSync(input = {}) {
   const syncRunId = normalizeId(input.syncRunId);
   const lockKey = createSyncLockKey(input);
   const leaseMs = positiveInteger(input.leaseMs ?? DEFAULT_LEASE_MS, 'leaseMs');
+  const renewIntervalMs = resolveRenewInterval(input.renewIntervalMs, leaseMs);
   const startedAt = now();
 
   const lock = await lockManager.acquire({ lockKey, ownerId: syncRunId, leaseMs });
@@ -45,6 +47,19 @@ export async function runReliableSync(input = {}) {
     throw markReliabilityHandled(busyError, syncRunId);
   }
 
+  const heartbeat = createLeaseHeartbeat({
+    lockManager,
+    lockKey,
+    ownerId: syncRunId,
+    leaseMs,
+    renewIntervalMs,
+    initialExpiresAt: lock.expiresAt,
+    now,
+    sleep: input.sleep,
+    renewAttempts: input.renewAttempts,
+    onReliabilityError: input.onReliabilityError,
+  });
+
   let completedResult = null;
   let primaryError = null;
 
@@ -59,9 +74,18 @@ export async function runReliableSync(input = {}) {
       status: 'running',
       startedAt,
       retryCount: input.retryCount ?? 0,
+      details: { lockKey, leaseMs, renewIntervalMs },
     }));
 
-    const result = await execute({ syncRunId, lockKey });
+    await heartbeat.assertActive();
+    const result = await execute({
+      syncRunId,
+      lockKey,
+      assertLockActive: heartbeat.assertActive,
+      renewLease: heartbeat.renewNow,
+    });
+    await heartbeat.assertActive();
+
     const counts = summarizeSyncResult(result);
     const finishedAt = now();
 
@@ -80,6 +104,7 @@ export async function runReliableSync(input = {}) {
       details: {
         reconciliation: result?.reconciliation ?? null,
         warningCount: Array.isArray(result?.warnings) ? result.warnings.length : 0,
+        writeOutcomes: readWriteOutcomes(result),
       },
     }));
 
@@ -109,6 +134,7 @@ export async function runReliableSync(input = {}) {
       details: {
         retryable: error?.retryable === true,
         reconciliation: sourceResult?.reconciliation ?? null,
+        writeOutcomes: readWriteOutcomes(sourceResult),
         errorDetails: error?.details ?? {},
       },
     }));
@@ -129,14 +155,22 @@ export async function runReliableSync(input = {}) {
           accountKey: input.accountKey ?? null,
           retryable: error?.retryable === true,
           partial,
+          writeOutcomes: readWriteOutcomes(sourceResult),
         },
       }));
     }
 
     throw markReliabilityHandled(error, syncRunId);
   } finally {
+    await heartbeat.stop();
     try {
-      await lockManager.release({ lockKey, ownerId: syncRunId });
+      const released = await lockManager.release({ lockKey, ownerId: syncRunId });
+      if (released === false) {
+        throw transientError(`Sync lock was not owned during release: ${lockKey}`, {
+          code: 'SYNC_LOCK_RELEASE_NOT_OWNED',
+          details: { lockKey },
+        });
+      }
     } catch (releaseError) {
       const alert = createSystemAlert({
         syncRunId,
@@ -167,7 +201,7 @@ export function createSyncLockKey(input = {}) {
   ].map(escapePart).join(':');
 }
 
-/** รวม Count จากผล Sync หลายตารางโดยไม่เดาค่าที่ไม่มี */
+/** รวม Count ที่ยืนยันได้จริง โดยค่า Unknown write จะอยู่ใน details ไม่ถูกเดาเป็นจำนวนสำเร็จ */
 export function summarizeSyncResult(result) {
   const content = result?.content ?? {};
   const daily = result?.dailySnapshots ?? {};
@@ -184,14 +218,122 @@ export function summarizeSyncResult(result) {
   });
 }
 
+/** สร้าง Heartbeat ที่ต่ออายุ Lease และเปิด Guard ให้ Use case ตรวจ Ownership ก่อนทุก Chunk */
+export function createLeaseHeartbeat(input = {}) {
+  const lockManager = requireLockManager(input.lockManager);
+  const lockKey = requireText(input.lockKey, 'lockKey');
+  const ownerId = requireText(input.ownerId, 'ownerId');
+  const leaseMs = positiveInteger(input.leaseMs, 'leaseMs');
+  const intervalMs = resolveRenewInterval(input.renewIntervalMs, leaseMs);
+  const renewAttempts = positiveInteger(input.renewAttempts ?? DEFAULT_RENEW_ATTEMPTS, 'renewAttempts');
+  const now = typeof input.now === 'function' ? input.now : () => Date.now();
+  const sleep = typeof input.sleep === 'function' ? input.sleep : defaultSleep;
+  let expiresAt = Number(input.initialExpiresAt ?? now() + leaseMs);
+  let stopped = false;
+  let timer = null;
+  let inFlight = null;
+  let terminalError = null;
+
+  const setTerminalError = (error) => {
+    if (!terminalError) terminalError = error;
+    input.onReliabilityError?.({ stage: 'lock_heartbeat_failed', error: terminalError, lockKey });
+  };
+
+  const renewNow = async () => {
+    if (stopped) return false;
+    if (terminalError) throw terminalError;
+
+    let lastError = null;
+    for (let attempt = 1; attempt <= renewAttempts; attempt += 1) {
+      try {
+        const result = await lockManager.renew({ lockKey, ownerId, leaseMs });
+        if (!result?.renewed) {
+          const lost = transientError(`Sync lock ownership was lost: ${lockKey}`, {
+            code: 'SYNC_LOCK_LOST',
+            details: { lockKey, ownerId, attempt },
+          });
+          setTerminalError(lost);
+          throw lost;
+        }
+        expiresAt = Number(result.expiresAt ?? now() + leaseMs);
+        return true;
+      } catch (error) {
+        lastError = error;
+        if (error?.code === 'SYNC_LOCK_LOST') throw error;
+        if (attempt < renewAttempts) await sleep(Math.min(1_000, 200 * attempt));
+      }
+    }
+
+    const failure = transientError(`Sync lock renewal failed: ${lockKey}`, {
+      code: 'SYNC_LOCK_RENEW_FAILED',
+      cause: lastError,
+      details: {
+        lockKey,
+        ownerId,
+        attempts: renewAttempts,
+        causeCode: lastError?.code ?? null,
+        causeMessage: lastError instanceof Error ? lastError.message : String(lastError),
+      },
+    });
+    setTerminalError(failure);
+    throw failure;
+  };
+
+  const assertActive = async () => {
+    if (terminalError) throw terminalError;
+    return true;
+  };
+
+  const schedule = () => {
+    if (stopped || terminalError) return;
+    timer = setTimeout(() => {
+      inFlight = renewNow()
+        .catch(() => undefined)
+        .finally(() => {
+          inFlight = null;
+          schedule();
+        });
+    }, intervalMs);
+    timer?.unref?.();
+  };
+
+  const stop = async () => {
+    stopped = true;
+    if (timer !== null) clearTimeout(timer);
+    if (inFlight) await inFlight;
+  };
+
+  schedule();
+  return Object.freeze({ assertActive, renewNow, stop, intervalMs });
+}
+
+function readWriteOutcomes(result) {
+  if (!result || typeof result !== 'object') return null;
+  return Object.freeze({
+    content: result.content?.writeOutcome ?? null,
+    dailySnapshots: result.dailySnapshots?.writeOutcome ?? null,
+  });
+}
+
 function buildAlertMessage(error, context) {
   const message = error instanceof Error ? error.message : String(error);
   return [
-    context.partial ? 'เกิด Partial write และระบบจะ Reconcile ในรอบถัดไป' : 'รอบ Sync ล้มเหลว',
+    context.partial ? 'เกิด Partial/Unknown write และระบบจะ Reconcile ในรอบถัดไป' : 'รอบ Sync ล้มเหลว',
     `sync_run_id=${context.syncRunId}`,
     `lock_key=${context.lockKey}`,
     `error=${message}`,
   ].join('\n');
+}
+
+function resolveRenewInterval(value, leaseMs) {
+  const fallback = Math.max(1_000, Math.floor(leaseMs / 3));
+  const interval = value === null || value === undefined || value === ''
+    ? fallback
+    : positiveInteger(value, 'renewIntervalMs');
+  if (interval >= leaseMs) {
+    throw new TypeError('runReliableSync renewIntervalMs must be lower than leaseMs');
+  }
+  return interval;
 }
 
 function escapePart(value) {
@@ -216,7 +358,7 @@ function requireStore(value) {
 }
 
 function requireLockManager(value) {
-  for (const method of ['acquire', 'release']) {
+  for (const method of ['acquire', 'renew', 'release']) {
     if (typeof value?.[method] !== 'function') throw new TypeError(`runReliableSync requires lockManager.${method}`);
   }
   return value;
@@ -240,4 +382,8 @@ function positiveInteger(value, fieldName) {
     throw new TypeError(`runReliableSync ${fieldName} must be a positive integer`);
   }
   return number;
+}
+
+function defaultSleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

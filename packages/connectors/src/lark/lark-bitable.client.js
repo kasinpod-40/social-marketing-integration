@@ -1,4 +1,9 @@
-import { permanentError, RuntimeError, transientError } from '../../../shared/src/errors/runtime-error.js';
+import {
+  permanentError,
+  RuntimeError,
+  transientError,
+  writeProgressError,
+} from '../../../shared/src/errors/runtime-error.js';
 
 const LARK_OPEN_API_BASE_URL = 'https://open.larksuite.com';
 const DEFAULT_PAGE_SIZE = 500;
@@ -348,10 +353,11 @@ export class LarkBitableClient {
     return error;
   }
 
-  /** Batch Create แบบเรียง Chunk และตรวจจำนวน Record ที่ Lark ยืนยันกลับ */
+  /** Batch Create แบบเรียง Chunk และรายงานจำนวนที่ยืนยันได้เมื่อเกิด Partial/Unknown write */
   async batchCreateRecords(input) {
     const tableId = requireText(input?.tableId, 'tableId');
     const records = requireArray(input?.records, 'records');
+    const beforeChunk = typeof input?.beforeChunk === 'function' ? input.beforeChunk : async () => undefined;
     if (records.length === 0) return Object.freeze({ created: 0 });
 
     let created = 0;
@@ -359,45 +365,45 @@ export class LarkBitableClient {
 
     for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex += 1) {
       const chunk = chunks[chunkIndex];
+      await beforeChunk({ operation: 'create', tableId, chunk: chunkIndex + 1, chunks: chunks.length, rows: chunk.length });
       this.onRequest({
-        stage: 'lark_batch_start',
-        operation: 'create',
-        tableId,
-        chunk: chunkIndex + 1,
-        chunks: chunks.length,
-        rows: chunk.length,
+        stage: 'lark_batch_start', operation: 'create', tableId,
+        chunk: chunkIndex + 1, chunks: chunks.length, rows: chunk.length,
       });
 
-      const response = await this.requestBitableJson(
-        `/open-apis/bitable/v1/apps/${encodeURIComponent(this.appToken)}/tables/${encodeURIComponent(tableId)}/records/batch_create`,
-        {
-          method: 'POST',
-          body: { records: chunk.map((fields) => ({ fields: requireObject(fields, 'fields') })) },
-          // Batch Create ไม่ Retry ทันทีเมื่อผลลัพธ์กำกวม เช่น Timeout/Network/5xx
-          // เพราะ Request แรกอาจสร้าง Record สำเร็จแล้ว การ Retry เดิมทันทีเสี่ยงสร้างข้อมูลซ้ำ
-          // Error จะถูกส่งขึ้น Queue เพื่อให้ Job รอบใหม่ Re-plan จาก Stable Key ก่อนเขียนอีกครั้ง
-          retryMode: 'rate_limit_only',
-        },
-      );
+      try {
+        const response = await this.requestBitableJson(
+          `/open-apis/bitable/v1/apps/${encodeURIComponent(this.appToken)}/tables/${encodeURIComponent(tableId)}/records/batch_create`,
+          {
+            method: 'POST',
+            body: { records: chunk.map((fields) => ({ fields: requireObject(fields, 'fields') })) },
+            retryMode: 'rate_limit_only',
+          },
+        );
+        created += readBatchResponseCount(response, chunk.length, 'create', tableId);
+      } catch (cause) {
+        const ambiguousCurrentChunk = isAmbiguousWriteError(cause);
+        if (created === 0 && !ambiguousCurrentChunk) throw cause;
+        throw buildBatchWriteProgressError({
+          cause, operation: 'create', tableId, completedRows: created,
+          chunkIndex, chunks, ambiguousCurrentChunk,
+        });
+      }
 
-      created += readBatchResponseCount(response, chunk.length, 'create', tableId);
       this.onRequest({
-        stage: 'lark_batch_complete',
-        operation: 'create',
-        tableId,
-        chunk: chunkIndex + 1,
-        chunks: chunks.length,
-        rows: chunk.length,
+        stage: 'lark_batch_complete', operation: 'create', tableId,
+        chunk: chunkIndex + 1, chunks: chunks.length, rows: chunk.length,
       });
     }
 
     return Object.freeze({ created });
   }
 
-  /** Batch Update แบบเรียง Chunk และบังคับ record_id ทุกแถว */
+  /** Batch Update แบบเรียง Chunk พร้อม Progress metadata เมื่อบาง Chunk สำเร็จแล้ว */
   async batchUpdateRecords(input) {
     const tableId = requireText(input?.tableId, 'tableId');
     const records = requireArray(input?.records, 'records');
+    const beforeChunk = typeof input?.beforeChunk === 'function' ? input.beforeChunk : async () => undefined;
     if (records.length === 0) return Object.freeze({ updated: 0 });
 
     let updated = 0;
@@ -405,36 +411,38 @@ export class LarkBitableClient {
 
     for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex += 1) {
       const chunk = chunks[chunkIndex];
+      await beforeChunk({ operation: 'update', tableId, chunk: chunkIndex + 1, chunks: chunks.length, rows: chunk.length });
       this.onRequest({
-        stage: 'lark_batch_start',
-        operation: 'update',
-        tableId,
-        chunk: chunkIndex + 1,
-        chunks: chunks.length,
-        rows: chunk.length,
+        stage: 'lark_batch_start', operation: 'update', tableId,
+        chunk: chunkIndex + 1, chunks: chunks.length, rows: chunk.length,
       });
 
-      const response = await this.requestBitableJson(
-        `/open-apis/bitable/v1/apps/${encodeURIComponent(this.appToken)}/tables/${encodeURIComponent(tableId)}/records/batch_update`,
-        {
-          method: 'POST',
-          body: {
-            records: chunk.map((record) => ({
-              record_id: requireText(record?.recordId, 'recordId'),
-              fields: requireObject(record?.fields, 'fields'),
-            })),
+      try {
+        const response = await this.requestBitableJson(
+          `/open-apis/bitable/v1/apps/${encodeURIComponent(this.appToken)}/tables/${encodeURIComponent(tableId)}/records/batch_update`,
+          {
+            method: 'POST',
+            body: {
+              records: chunk.map((record) => ({
+                record_id: requireText(record?.recordId, 'recordId'),
+                fields: requireObject(record?.fields, 'fields'),
+              })),
+            },
           },
-        },
-      );
+        );
+        updated += readBatchResponseCount(response, chunk.length, 'update', tableId);
+      } catch (cause) {
+        const ambiguousCurrentChunk = isAmbiguousWriteError(cause);
+        if (updated === 0 && !ambiguousCurrentChunk) throw cause;
+        throw buildBatchWriteProgressError({
+          cause, operation: 'update', tableId, completedRows: updated,
+          chunkIndex, chunks, ambiguousCurrentChunk,
+        });
+      }
 
-      updated += readBatchResponseCount(response, chunk.length, 'update', tableId);
       this.onRequest({
-        stage: 'lark_batch_complete',
-        operation: 'update',
-        tableId,
-        chunk: chunkIndex + 1,
-        chunks: chunks.length,
-        rows: chunk.length,
+        stage: 'lark_batch_complete', operation: 'update', tableId,
+        chunk: chunkIndex + 1, chunks: chunks.length, rows: chunk.length,
       });
     }
 
@@ -755,6 +763,46 @@ function parseRetryAfter(value) {
 }
 
 /** แบ่ง Array เป็น Chunk ขนาดคงที่ */
+function buildBatchWriteProgressError(input) {
+  const totalRows = input.chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const writeOutcome = input.completedRows > 0 ? 'partial' : 'unknown';
+  const causeMessage = input.cause instanceof Error ? input.cause.message : String(input.cause);
+  return writeProgressError(
+    input.completedRows > 0
+      ? `Lark batch ${input.operation} partially completed for table ${input.tableId}: ${causeMessage}`
+      : `Lark batch ${input.operation} outcome is unknown for table ${input.tableId}: ${causeMessage}`,
+    {
+      code: input.completedRows > 0 ? 'LARK_BATCH_PARTIAL_WRITE' : 'LARK_BATCH_WRITE_UNKNOWN',
+      retryable: input.cause?.retryable === true,
+      cause: input.cause,
+      details: {
+        causeCode: input.cause?.code ?? null,
+        causeMessage: input.cause instanceof Error ? input.cause.message : String(input.cause),
+        currentChunkMayHaveWritten: input.ambiguousCurrentChunk === true,
+      },
+      writeProgress: {
+        operation: input.operation,
+        tableId: input.tableId,
+        writeOutcome,
+        confirmedRows: input.completedRows,
+        completedChunks: input.chunkIndex,
+        failedChunk: input.chunkIndex + 1,
+        totalChunks: input.chunks.length,
+        totalRows,
+        remainingRows: Math.max(0, totalRows - input.completedRows),
+      },
+    },
+  );
+}
+
+function isAmbiguousWriteError(error) {
+  if (!error || typeof error !== 'object') return false;
+  if (error.code === 'LARK_TOO_MANY_REQUESTS') return false;
+  const status = Number(error.details?.status);
+  if (Number.isInteger(status) && status >= 400 && status < 500) return false;
+  return error.retryable === true;
+}
+
 function chunkArray(items, size) {
   const chunks = [];
   for (let index = 0; index < items.length; index += size) {

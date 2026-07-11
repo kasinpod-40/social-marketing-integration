@@ -1,3 +1,5 @@
+import { isWriteProgressError, partialSyncError } from '../../shared/src/errors/runtime-error.js';
+
 const PLAN_MARKER = Symbol('table-sync-plan');
 
 /**
@@ -143,27 +145,46 @@ export class TableSyncEngine {
   async executePlan(plan, options = {}) {
     const normalizedPlan = requirePlan(plan);
     const progress = readProgress(options.onProgress);
+    const beforeWriteChunk = typeof options.beforeWriteChunk === 'function'
+      ? options.beforeWriteChunk
+      : async () => undefined;
 
     if (this.executedPlans.has(normalizedPlan)) {
       throw new Error(`Sync plan for table ${normalizedPlan.tableId} has already been executed`);
     }
     this.executedPlans.add(normalizedPlan);
 
+    let created = 0;
+    let updated = 0;
+
     progress({
       stage: 'sync_creating',
       tableId: normalizedPlan.tableId,
       rows: normalizedPlan.createRows.length,
     });
-    const created = normalizedPlan.createRows.length === 0
-      ? 0
-      : readResultCount(
-        (await normalizedPlan.repository.createMany(
-          normalizedPlan.tableId,
-          normalizedPlan.createRows,
-        ))?.created,
-        'created',
-      );
-    assertExpectedWriteCount(created, normalizedPlan.createRows.length, 'created', normalizedPlan.tableId);
+
+    try {
+      created = normalizedPlan.createRows.length === 0
+        ? 0
+        : readResultCount(
+          (await normalizedPlan.repository.createMany(
+            normalizedPlan.tableId,
+            normalizedPlan.createRows,
+            { beforeChunk: beforeWriteChunk },
+          ))?.created,
+          'created',
+        );
+      assertExpectedWriteCount(created, normalizedPlan.createRows.length, 'created', normalizedPlan.tableId);
+    } catch (cause) {
+      if (!isWriteProgressError(cause) && created === 0) throw cause;
+      throw buildTablePartialError({
+        cause,
+        plan: normalizedPlan,
+        phase: 'create',
+        created,
+        updated,
+      });
+    }
     progress({ stage: 'sync_created', tableId: normalizedPlan.tableId, created });
 
     progress({
@@ -171,16 +192,32 @@ export class TableSyncEngine {
       tableId: normalizedPlan.tableId,
       rows: normalizedPlan.updateRows.length,
     });
-    const updated = normalizedPlan.updateRows.length === 0
-      ? 0
-      : readResultCount(
-        (await normalizedPlan.repository.updateMany(
-          normalizedPlan.tableId,
-          normalizedPlan.updateRows,
-        ))?.updated,
-        'updated',
-      );
-    assertExpectedWriteCount(updated, normalizedPlan.updateRows.length, 'updated', normalizedPlan.tableId);
+
+    try {
+      updated = normalizedPlan.updateRows.length === 0
+        ? 0
+        : readResultCount(
+          (await normalizedPlan.repository.updateMany(
+            normalizedPlan.tableId,
+            normalizedPlan.updateRows,
+            { beforeChunk: beforeWriteChunk },
+          ))?.updated,
+          'updated',
+        );
+      assertExpectedWriteCount(updated, normalizedPlan.updateRows.length, 'updated', normalizedPlan.tableId);
+    } catch (cause) {
+      // ถ้ามี Create สำเร็จไปแล้ว แม้ Update จะล้มตั้งแต่ Chunk แรกก็ถือเป็น Partial write
+      if (created > 0 || isWriteProgressError(cause)) {
+        throw buildTablePartialError({
+          cause,
+          plan: normalizedPlan,
+          phase: 'update',
+          created,
+          updated,
+        });
+      }
+      throw cause;
+    }
     progress({ stage: 'sync_updated', tableId: normalizedPlan.tableId, updated });
 
     return freezeResult({
@@ -190,6 +227,46 @@ export class TableSyncEngine {
       duplicateInputRows: normalizedPlan.duplicateInputRows,
     });
   }
+}
+
+function buildTablePartialError(input) {
+  const progress = isWriteProgressError(input.cause) ? input.cause.writeProgress : null;
+  const confirmedInFailedPhase = progress?.confirmedRows ?? 0;
+  const created = input.phase === 'create'
+    ? confirmedInFailedPhase
+    : input.created;
+  const updated = input.phase === 'update'
+    ? confirmedInFailedPhase
+    : input.updated;
+  const writeOutcome = progress?.writeOutcome ?? (created + updated > 0 ? 'partial' : 'unknown');
+
+  const partialResult = freezeResult({
+    created,
+    updated,
+    skipped: input.plan.skipped,
+    duplicateInputRows: input.plan.duplicateInputRows,
+    writeOutcome,
+    failedPhase: input.phase,
+    plannedCreate: input.plan.createRows.length,
+    plannedUpdate: input.plan.updateRows.length,
+    writeProgress: progress,
+  });
+
+  return partialSyncError(`Table sync partially completed for ${input.plan.tableId}`, {
+    code: 'TABLE_SYNC_PARTIAL_WRITE',
+    retryable: input.cause?.retryable !== false,
+    cause: input.cause,
+    partialResult,
+    details: {
+      tableId: input.plan.tableId,
+      failedPhase: input.phase,
+      created,
+      updated,
+      writeOutcome,
+      causeCode: input.cause?.code ?? null,
+      causeMessage: input.cause instanceof Error ? input.cause.message : String(input.cause),
+    },
+  });
 }
 
 /**

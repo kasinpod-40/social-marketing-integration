@@ -1,6 +1,6 @@
 # 10 — Next Actions
 
-## Gate ทันทีหลังติดตั้ง v0.5.0
+## Package gate ของ v0.5.1
 
 รักษา Feature flag เดิมของ DEV และเพิ่ม Table IDs ที่ Reliability layer ใช้:
 
@@ -16,6 +16,7 @@ TIKTOK_SOURCE_HANDLE=ft.pumkin
 LARK_TABLE_MKT_SYNC_LOG=tblpgnHODi8MIcso
 LARK_TABLE_MKT_SYSTEM_ALERTS=tbl5Cq9iVkWTFdA4
 MKT_SYNC_LOCK_LEASE_MS=600000
+MKT_SYNC_LOCK_RENEW_INTERVAL_MS=120000
 MKT_LOCAL_LOCK_DIR=.mkt-locks
 ```
 
@@ -42,15 +43,15 @@ CONFIRM_WRITE=YES npm run sync:tiktok
 ## Cloudflare DEV/Staging ถัดไป
 
 1. สร้าง D1 ของผู้พัฒนาและ Apply `migrations/0001_initial.sql` + `0002_reliability.sql`
-2. สร้าง Queue หลักและ Dead Letter Queue ตาม `deploy/wrangler.sync.example.jsonc`
+2. สร้าง Queue หลักและ Dead Letter Queue ตาม `wrangler.sync.example.jsonc` ที่ repository root
 3. ตั้ง `MKT_STATE_DB`, Lark secrets, Table IDs และ DEV customer profile ใน Cloudflare ของผู้พัฒนา
 4. Deploy Sync Worker
 5. ทดสอบ Queue retry เฉพาะ Transient error
 6. ทดสอบ D1 lease lock ด้วย Job ซ้ำพร้อมกัน
 7. ทดสอบ Retry exhaustion แล้วตรวจ `dead_letter_jobs`, `system_alerts` และ Lark `MKT_System_Alerts`
-8. เปิด Scheduled TikTok sync หลัง Reliability UAT ผ่าน
-9. เพิ่ม Incremental cursor/window เมื่อ RAW source โตระดับหลักหมื่น
-10. เพิ่ม lock renewal heartbeat ก่อนงานหนึ่งรอบมีโอกาสยาวเกิน Lease
+8. ตรวจ Scheduled producer ส่ง Job เข้า Main Queue แล้วเปิด Cron หลัง Reliability UAT ผ่าน
+9. ทดสอบ heartbeat renewal/lost-lock บน D1 จริง
+10. เพิ่ม Incremental cursor/window เมื่อ RAW source โตระดับหลักหมื่น
 
 ## งานที่ทำคู่ขนานได้
 
