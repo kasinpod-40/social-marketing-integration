@@ -28,6 +28,7 @@ test('validates live Lark sync without writing rows', async () => {
   const result = await validateLarkLiveSync({
     repository,
     accountId: 'tt_account_1',
+    sourceHandle: 'tt_account_1',
     metricDate: '2026-07-09',
     tables: {
       rawTikTokCreatorVideos: 'tbl_raw',
@@ -66,6 +67,7 @@ test('validation reports warnings for empty or skipped data', async () => {
   const result = await validateLarkLiveSync({
     repository,
     accountId: 'tt_account_1',
+    sourceHandle: 'tt_account_1',
     metricDate: '2026-07-09',
     tables: {
       rawTikTokCreatorVideos: 'tbl_raw',
@@ -107,6 +109,7 @@ test('TikTok sync dryRun normalizes but does not upsert', async () => {
     repository,
     syncEngine: { async syncByKey() { throw new Error('dryRun must not sync'); } },
     accountId: 'tt_account_1',
+    sourceHandle: 'tt_account_1',
     metricDate: '2026-07-09',
     dryRun: true,
     tables: {
@@ -169,6 +172,7 @@ test('validation blocks writes when RAW TikTok handle does not match configured 
   const result = await validateLarkLiveSync({
     repository,
     accountId: 'chemistry_k',
+      sourceHandle: 'chemistry_k',
     metricDate: '2026-07-11',
     tables: {
       rawTikTokCreatorVideos: 'tbl_raw',

@@ -5,6 +5,7 @@ import { normalizeTikTokCreatorVideoBatch } from '../../packages/application/src
 test('normalizes TikTok Creator rows as an O(n) batch with dedupe by upsert key', () => {
   const result = normalizeTikTokCreatorVideoBatch({
     accountId: 'tt_account_1',
+    sourceHandle: 'tt_account_1',
     metricDate: '2026-07-07',
     rawRows: [
       {
@@ -43,6 +44,7 @@ test('normalizes TikTok Creator rows as an O(n) batch with dedupe by upsert key'
 test('collects invalid TikTok Creator rows without failing the entire batch', () => {
   const result = normalizeTikTokCreatorVideoBatch({
     accountId: 'tt_account_1',
+    sourceHandle: 'tt_account_1',
     metricDate: '2026-07-07',
     rawRows: [
       { video_id: 'video_1', views: 100 },

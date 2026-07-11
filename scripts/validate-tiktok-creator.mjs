@@ -1,10 +1,12 @@
 import { validateLarkLiveSync } from '../packages/application/src/use-cases/validate-lark-live-sync.js';
-import { createLocalLarkRuntime, printJson, readAccountId, readMetricDate } from './lib/lark-runtime.js';
+import { createLocalLarkRuntime, printJson, readTikTokRuntime, readMetricDate } from './lib/lark-runtime.js';
 
 const runtime = await createLocalLarkRuntime(['rawTikTokCreatorVideos', 'mktClassificationDictionary', 'mktContent', 'mktContentDaily']);
+const tiktok = readTikTokRuntime(runtime.runtimeConfig);
 const result = await validateLarkLiveSync({
   repository: runtime.repository,
-  accountId: readAccountId(runtime.env),
+  accountId: tiktok.accountKey,
+  sourceHandle: tiktok.sourceHandle,
   metricDate: readMetricDate(runtime.env),
   sampleLimit: Number(process.env.SAMPLE_LIMIT ?? runtime.env.SAMPLE_LIMIT ?? 5),
   tables: {

@@ -5,6 +5,7 @@ import { normalizeTikTokCreatorVideo } from '../../packages/application/src/use-
 test('normalizes a TikTok Creator raw row into MKT content and daily snapshot rows', () => {
   const normalized = normalizeTikTokCreatorVideo({
     accountId: 'tt_account_1',
+    sourceHandle: 'tt_account_1',
     metricDate: '2026-07-06',
     rawRow: {
       video_id: 'video_1',
@@ -73,6 +74,7 @@ test('requires a metric date to avoid non-repeatable snapshots', () => {
 test('normalizes Lark URL objects into canonical URL strings before Lark destination serialization', () => {
   const normalized = normalizeTikTokCreatorVideo({
     accountId: 'chemistry_k',
+      sourceHandle: 'chemistry_k',
     metricDate: '2026-07-11',
     rawRow: {
       video_id: '7599997064940064021',

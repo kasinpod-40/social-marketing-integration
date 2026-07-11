@@ -10,6 +10,7 @@ export async function syncTikTokCreatorNativeToLark(input) {
   const syncEngine = requireSyncEngine(input?.syncEngine);
   const tables = requireTables(input?.tables);
   const accountId = requireText(input?.accountId, 'accountId');
+  const sourceHandle = normalizeHandle(requireText(input?.sourceHandle, 'sourceHandle'));
   const metricDate = requireDate(input?.metricDate, 'metricDate');
   const progress = typeof input?.onProgress === 'function' ? input.onProgress : () => undefined;
 
@@ -28,7 +29,7 @@ export async function syncTikTokCreatorNativeToLark(input) {
     dictionaryRules,
   });
 
-  assertSourceIdentity(accountId, normalized.sourceHandles);
+  assertSourceIdentity(sourceHandle, normalized.sourceHandles);
 
   if (input?.dryRun === true) {
     return Object.freeze({
@@ -108,13 +109,17 @@ function requireDate(value, fieldName) {
 }
 
 
-function assertSourceIdentity(accountId, sourceHandles) {
+function assertSourceIdentity(expectedSourceHandle, sourceHandles) {
   if (!Array.isArray(sourceHandles) || sourceHandles.length === 0) return;
   if (sourceHandles.length > 1) {
     throw new Error(`RAW TikTok source contains multiple account handles: ${sourceHandles.join(', ')}`);
   }
-  const expected = accountId.replace(/^@/u, '').trim().toLowerCase();
+  const expected = normalizeHandle(expectedSourceHandle);
   if (sourceHandles[0] !== expected) {
-    throw new Error(`RAW TikTok source handle @${sourceHandles[0]} does not match TIKTOK_CREATOR_ACCOUNT_ID=${accountId}`);
+    throw new Error(`RAW TikTok source handle @${sourceHandles[0]} does not match configured sourceHandle=@${expected}`);
   }
+}
+
+function normalizeHandle(value) {
+  return value.replace(/^@/u, '').trim().toLowerCase();
 }

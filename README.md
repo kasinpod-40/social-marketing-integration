@@ -86,7 +86,8 @@ Global Lark app/base secrets:
 LARK_APP_ID
 LARK_APP_SECRET
 LARK_APP_TOKEN
-TIKTOK_CREATOR_ACCOUNT_ID
+MKT_ENV
+MKT_CUSTOMER_PROFILE
 ```
 
 Required for TikTok Creator sync:
@@ -193,3 +194,21 @@ The Lark repository discovers the live destination table schema before writing. 
 ### Lark pagination safety
 
 Lark collection reads use one guarded paginator. It follows `has_more`, rejects missing or repeated next tokens, and enforces a maximum page count. A terminal response may still contain a stale `page_token`; that token is intentionally ignored when `has_more` is false.
+
+## Runtime Environment และ Customer Profile
+
+เลือก Dev/Production ผ่าน Environment Variable โดยไม่แก้ source code:
+
+```env
+# Dev: ใช้ Lark Base และ TikTok @ft.pumkin ของผู้พัฒนา
+MKT_ENV=development
+MKT_CUSTOMER_PROFILE=dev_ft_pumkin
+```
+
+```env
+# Production: ใช้ทรัพยากรในองค์กรของลูกค้า Chemistry K
+MKT_ENV=production
+MKT_CUSTOMER_PROFILE=chemistry_k
+```
+
+ข้อมูลลับยังคงตั้งผ่าน `.dev.vars`, Cloudflare secrets หรือ Secret Manager ของลูกค้า ห้าม commit ลง Git

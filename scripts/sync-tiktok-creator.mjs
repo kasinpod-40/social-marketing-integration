@@ -1,5 +1,5 @@
 import { syncTikTokCreatorNativeToLark } from '../packages/application/src/use-cases/sync-tiktok-creator-native-to-lark.js';
-import { createLocalLarkRuntime, printJson, readAccountId, readMetricDate } from './lib/lark-runtime.js';
+import { createLocalLarkRuntime, printJson, readTikTokRuntime, readMetricDate } from './lib/lark-runtime.js';
 
 if (process.env.CONFIRM_WRITE !== 'YES') {
   throw new Error('Refusing to write to Lark. Run with CONFIRM_WRITE=YES npm run sync:tiktok');
@@ -13,12 +13,14 @@ const runtime = await createLocalLarkRuntime([
   'mktContentDaily',
   'mktClassificationDictionary',
 ], { onRequest: (event) => logEvent({ scope: 'lark', ...event }) });
+const tiktok = readTikTokRuntime(runtime.runtimeConfig);
 
 console.error(`[${new Date().toISOString()}] TikTok sync started`);
 const result = await syncTikTokCreatorNativeToLark({
   repository: runtime.repository,
   syncEngine: runtime.syncEngine,
-  accountId: readAccountId(runtime.env),
+  accountId: tiktok.accountKey,
+  sourceHandle: tiktok.sourceHandle,
   metricDate: readMetricDate(runtime.env),
   onProgress: logEvent,
   tables: {

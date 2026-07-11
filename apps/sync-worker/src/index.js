@@ -6,6 +6,7 @@ import { TableSyncEngine } from '../../../packages/sync-engine/src/table-sync-en
 import { seedMetricDefinitions } from '../../../packages/application/src/use-cases/seed-metric-definitions.js';
 import { readLarkTableIdsFromEnv } from '../../../packages/config/src/lark-table-config.js';
 import { validateLarkLiveSync } from '../../../packages/application/src/use-cases/validate-lark-live-sync.js';
+import { loadCustomerRuntimeConfig } from '../../../packages/config/src/customer-profiles.js';
 
 const JOB_TYPES = Object.freeze({
   TIKTOK_CREATOR_NATIVE_SYNC: 'tiktok.creator.native.sync',
@@ -69,6 +70,7 @@ async function processJob(input) {
   const type = requireText(job?.body?.type, `job.type:${job?.id ?? 'unknown'}`);
 
   if (type === JOB_TYPES.TIKTOK_CREATOR_NATIVE_SYNC) {
+    const runtimeConfig = loadCustomerRuntimeConfig(input.env);
     const tableIds = readLarkTableIdsFromEnv(input.env, [
       'rawTikTokCreatorVideos',
       'mktContent',
@@ -78,7 +80,8 @@ async function processJob(input) {
     return syncTikTokCreatorNativeToLark({
       repository: input.repository,
       syncEngine: input.syncEngine,
-      accountId: requireText(job.body?.accountId ?? input.env?.TIKTOK_CREATOR_ACCOUNT_ID, 'TIKTOK_CREATOR_ACCOUNT_ID'),
+      accountId: runtimeConfig.tiktok.accountKey,
+      sourceHandle: runtimeConfig.tiktok.sourceHandle,
       metricDate: requireText(job.body?.metricDate ?? todayInBangkok(), 'metricDate'),
       tables: {
         rawTikTokCreatorVideos: tableIds.rawTikTokCreatorVideos,
@@ -90,19 +93,25 @@ async function processJob(input) {
   }
 
   if (type === JOB_TYPES.TIKTOK_CREATOR_NATIVE_VALIDATE) {
+    const runtimeConfig = loadCustomerRuntimeConfig(input.env);
     const tableIds = readLarkTableIdsFromEnv(input.env, [
       'rawTikTokCreatorVideos',
       'mktClassificationDictionary',
+      'mktContent',
+      'mktContentDaily',
     ]);
     const result = await validateLarkLiveSync({
       repository: input.repository,
       syncEngine: input.syncEngine,
-      accountId: requireText(job.body?.accountId ?? input.env?.TIKTOK_CREATOR_ACCOUNT_ID, 'TIKTOK_CREATOR_ACCOUNT_ID'),
+      accountId: runtimeConfig.tiktok.accountKey,
+      sourceHandle: runtimeConfig.tiktok.sourceHandle,
       metricDate: requireText(job.body?.metricDate ?? todayInBangkok(), 'metricDate'),
       sampleLimit: job.body?.sampleLimit,
       tables: {
         rawTikTokCreatorVideos: tableIds.rawTikTokCreatorVideos,
         mktClassificationDictionary: tableIds.mktClassificationDictionary,
+        mktContent: tableIds.mktContent,
+        mktContentDaily: tableIds.mktContentDaily,
       },
     });
     console.log(JSON.stringify(result));

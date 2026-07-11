@@ -16,7 +16,8 @@ const DEFAULT_SAMPLE_LIMIT = 5;
  * @param {string} input.tables.mktClassificationDictionary
  * @param {string} input.tables.mktContent
  * @param {string} input.tables.mktContentDaily
- * @param {string} input.accountId
+ * @param {string} input.accountId Stable account key used in canonical keys
+ * @param {string} input.sourceHandle Expected source handle from the RAW connector
  * @param {string} input.metricDate YYYY-MM-DD
  * @param {number} [input.sampleLimit]
  */
@@ -24,6 +25,7 @@ export async function validateLarkLiveSync(input) {
   const repository = requireRepository(input?.repository);
   const tables = requireTables(input?.tables);
   const accountId = requireText(input?.accountId, 'accountId');
+  const sourceHandle = requireText(input?.sourceHandle, 'sourceHandle');
   const metricDate = requireDate(input?.metricDate, 'metricDate');
   const sampleLimit = readSafeLimit(input?.sampleLimit ?? DEFAULT_SAMPLE_LIMIT);
 
@@ -53,7 +55,7 @@ export async function validateLarkLiveSync(input) {
     repository.prepareRows(tables.mktContent, contentRows, { keyField: 'content_key' }),
     repository.prepareRows(tables.mktContentDaily, dailyRows, { keyField: 'content_daily_key' }),
   ]);
-  const sourceIdentity = evaluateSourceIdentity(accountId, normalized.sourceHandles);
+  const sourceIdentity = evaluateSourceIdentity(sourceHandle, normalized.sourceHandles);
   const readyToWrite = sourceIdentity.ok
     && rawRows.length > 0
     && dictionaryRules.length > 0
@@ -98,9 +100,9 @@ function countRowsWithRuleMatches(contentRows) {
   return contentRows.filter((row) => Number(row.classification_confidence ?? 0) > 0.2).length;
 }
 
-function evaluateSourceIdentity(accountId, sourceHandles) {
+function evaluateSourceIdentity(sourceHandle, sourceHandles) {
   const handles = Array.isArray(sourceHandles) ? sourceHandles : [];
-  const expected = accountId.replace(/^@/u, '').trim().toLowerCase();
+  const expected = sourceHandle.replace(/^@/u, '').trim().toLowerCase();
   if (handles.length === 0) return Object.freeze({ ok: true, expectedHandle: expected, detectedHandles: Object.freeze([]) });
   const ok = handles.length === 1 && handles[0] === expected;
   return Object.freeze({ ok, expectedHandle: expected, detectedHandles: Object.freeze([...handles]) });

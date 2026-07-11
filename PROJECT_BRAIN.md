@@ -469,5 +469,50 @@ Required checks:
 Current Base audit observations (2026-07-11):
 
 - RAW TikTok URL and text cells are returned as arrays of rich segments, not plain strings.
-- The current RAW TikTok table contains URLs for handle `@ft.pumkin`; this must not be synced with `TIKTOK_CREATOR_ACCOUNT_ID=chemistry_k`.
+- The current RAW TikTok table contains URLs for handle `@ft.pumkin`; this must not be synced with `MKT_CUSTOMER_PROFILE=chemistry_k`.
 - The Classification Dictionary contains `course_level` outputs `DEK73` and `ม.3`, while the current `MKT_Content.course_level` select options do not include those values. Add the options or disable/change the affected rules before content matching those rules is synced.
+
+---
+
+## Runtime Environment and Customer Profiles (v0.2.8)
+
+### Ownership model
+
+- `Social MKT Data Hub` ที่ใช้อยู่ปัจจุบันเป็น Lark Base สำหรับพัฒนาและทดสอบของผู้พัฒนา
+- Development ใช้ทรัพยากรของผู้พัฒนา เช่น TikTok `@ft.pumkin`
+- Production ของ Chemistry K ต้องติดตั้งในทรัพยากรที่ลูกค้าเป็นเจ้าของ ได้แก่ Lark Base, Lark App/Bot, API credentials, Cloud/Runtime, Chatwoot, WooCommerce และ Social assets
+- ใช้ codebase เดียวกัน แต่เลือก environment/profile ผ่าน Environment Variables โดยไม่แก้ source code
+
+### Runtime selector
+
+Development:
+
+```env
+MKT_ENV=development
+MKT_CUSTOMER_PROFILE=dev_ft_pumkin
+```
+
+Production:
+
+```env
+MKT_ENV=production
+MKT_CUSTOMER_PROFILE=chemistry_k
+```
+
+ระบบต้อง fail-fast หาก environment และ profile ไม่ตรงคู่กัน
+
+### TikTok identity contract
+
+- `accountKey` ใช้สร้าง stable canonical key
+- `sourceHandle` ใช้ตรวจว่าข้อมูล RAW มาจากบัญชีจริงที่ถูกต้อง
+- Development: `accountKey=ft_pumkin`, `sourceHandle=ft.pumkin`
+- Production Chemistry K: `accountKey=chemistry_k`, `sourceHandle=chemistry_k`
+- ห้ามนำข้อมูลจาก `@ft.pumkin` ไปสร้าง key ภายใต้ `chemistry_k`
+
+### Configuration rule
+
+- Business logic และ Connector ห้ามอ่าน `process.env` โดยตรง
+- Environment ถูกแปลงเป็น RuntimeConfig กลางก่อนส่งเข้า use case
+- เก็บใน code ได้เฉพาะ non-secret profile, mapping, feature flags และ stable identifiers
+- Token, Secret, API Key, Password และ credentials ต้องอยู่ใน Environment/Secret Manager เท่านั้น
+- Customer profile ต้องมีคอมเมนต์ภาษาไทยอธิบาย ownership และ field สำคัญ

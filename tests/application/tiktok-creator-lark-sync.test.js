@@ -66,6 +66,7 @@ test('reads RAW TikTok Creator rows and upserts content plus daily snapshots', a
     repository,
     syncEngine,
     accountId: 'tt_account_1',
+    sourceHandle: 'tt_account_1',
     metricDate: '2026-07-07',
     tables: {
       rawTikTokCreatorVideos: 'tbl_raw_tiktok_creator',
@@ -109,9 +110,10 @@ test('refuses to write TikTok rows from a different source account', async () =>
       repository,
       syncEngine,
       accountId: 'chemistry_k',
+      sourceHandle: 'chemistry_k',
       metricDate: '2026-07-11',
       tables: { rawTikTokCreatorVideos: 'raw', mktClassificationDictionary: 'dict', mktContent: 'content', mktContentDaily: 'daily' },
     }),
-    /does not match TIKTOK_CREATOR_ACCOUNT_ID/,
+    /does not match configured sourceHandle/,
   );
 });

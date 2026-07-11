@@ -1,6 +1,6 @@
 {
   "name": "social-marketing-integration",
-  "version": "0.2.7-live-contract-preflight",
+  "version": "0.2.8-runtime-customer-profiles",
   "private": true,
   "type": "module",
   "workspaces": [

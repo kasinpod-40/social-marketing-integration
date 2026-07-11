@@ -157,3 +157,12 @@
 - Upgraded `validate:tiktok` to load the live destination schemas and serialize every Content and Daily row without writing.
 - Added source-account integrity checks so RAW TikTok rows cannot be written under a different configured account key.
 - Added regression coverage for real Lark rich-cell shapes, select options, schema preflight, and source-account mismatch.
+
+## 0.2.8-runtime-customer-profiles
+- Added central runtime environment and customer-profile selection.
+- Added a developer-owned `dev_ft_pumkin` profile and customer-owned `chemistry_k` production profile.
+- Separated TikTok stable account key from the detected source handle.
+- Removed direct TikTok account identity reads from scripts and worker business flow.
+- Added Thai comments for customer configuration and production deployment behavior.
+- Added fail-fast validation for invalid development/production profile pairings.
+- Added production readiness checklist and runtime configuration regression tests.

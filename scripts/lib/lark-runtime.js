@@ -3,15 +3,18 @@ import { createLarkBitableClientFromEnv } from '../../packages/connectors/src/la
 import { LarkRecordRepository } from '../../packages/connectors/src/lark/lark-record-repository.js';
 import { TableSyncEngine } from '../../packages/sync-engine/src/table-sync-engine.js';
 import { readLarkTableIdsFromEnv } from '../../packages/config/src/lark-table-config.js';
+import { loadCustomerRuntimeConfig } from '../../packages/config/src/customer-profiles.js';
 
 export async function createLocalLarkRuntime(requiredTableKeys, options = {}) {
   const env = await readDevVars(process.env.DEV_VARS_FILE ?? '.dev.vars');
-  const normalizedEnv = normalizeEnvAliases(env);
+  // ค่า Environment ที่ส่งตอนรันมีสิทธิ์ทับ .dev.vars เพื่อสลับ profile โดยไม่แก้ไฟล์
+  const normalizedEnv = normalizeEnvAliases({ ...env, ...process.env });
   const client = createLarkBitableClientFromEnv(normalizedEnv, { onRequest: options?.onRequest });
   const repository = new LarkRecordRepository({ client });
   const syncEngine = new TableSyncEngine();
   const tables = readLarkTableIdsFromEnv(normalizedEnv, requiredTableKeys);
-  return Object.freeze({ env: normalizedEnv, client, repository, syncEngine, tables });
+  const runtimeConfig = loadCustomerRuntimeConfig(normalizedEnv);
+  return Object.freeze({ env: normalizedEnv, runtimeConfig, client, repository, syncEngine, tables });
 }
 
 function normalizeEnvAliases(env) {
@@ -30,10 +33,11 @@ export function readMetricDate(env) {
   return process.env.METRIC_DATE ?? env.METRIC_DATE ?? todayInBangkok();
 }
 
-export function readAccountId(env) {
-  const value = process.env.TIKTOK_CREATOR_ACCOUNT_ID ?? env.TIKTOK_CREATOR_ACCOUNT_ID;
-  if (typeof value !== 'string' || value.trim() === '') throw new Error('Missing TIKTOK_CREATOR_ACCOUNT_ID in .dev.vars or process env');
-  return value.trim();
+export function readTikTokRuntime(runtimeConfig) {
+  if (!runtimeConfig?.tiktok?.accountKey || !runtimeConfig?.tiktok?.sourceHandle) {
+    throw new Error('Runtime customer profile is missing TikTok accountKey/sourceHandle');
+  }
+  return runtimeConfig.tiktok;
 }
 
 export function printJson(payload) {
