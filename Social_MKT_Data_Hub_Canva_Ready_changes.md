@@ -39,3 +39,11 @@ Output: `Social_MKT_Data_Hub_Canva_Ready.base`
 
 Decoded output base successfully. Table count: 20.
 
+
+## v0.4.0 code foundation note
+
+Release `v0.4.0-multi-channel-foundation` ไม่มีการเพิ่ม/ลบ/เปลี่ยน Field ใน Lark Base
+
+- เพิ่มเฉพาะ Connector Catalog, Runtime feature flags, Queue job catalog/schema และ Customer profile ใน Source code
+- Facebook, Instagram, YouTube, WooCommerce และ Chatwoot ยังเป็น `planned` และไม่เขียนข้อมูลลง Base
+- ก่อน Implement Connector ใหม่ ต้องออกแบบ Table/Field/Key/Metric definition/Relation/Formula/Lookup และทำ Blueprint แยกก่อน

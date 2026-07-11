@@ -9,7 +9,18 @@
     // โปรไฟล์ลูกค้าที่เตรียมไว้ในโค้ด
     "MKT_CUSTOMER_PROFILE": "chemistry_k",
     // Timezone กลางของรายงานและ Daily Snapshot
-    "DEFAULT_TIMEZONE": "Asia/Bangkok"
+    "DEFAULT_TIMEZONE": "Asia/Bangkok",
+
+    // Feature flags ของ Connector: ช่องทางที่ยังไม่มี Implementation จริงต้องคง false
+    "MKT_CONNECTOR_TIKTOK_ENABLED": "true",
+    "MKT_CONNECTOR_FACEBOOK_ENABLED": "false",
+    "MKT_CONNECTOR_INSTAGRAM_ENABLED": "false",
+    "MKT_CONNECTOR_YOUTUBE_ENABLED": "false",
+    "MKT_CONNECTOR_WOOCOMMERCE_ENABLED": "false",
+    "MKT_CONNECTOR_CHATWOOT_ENABLED": "false",
+
+    // Handle จริงของบัญชีลูกค้าเปลี่ยนผ่าน Environment ได้โดยไม่แก้ Source code
+    "TIKTOK_SOURCE_HANDLE": "chemistry_k"
   },
   "queues": {
     "producers": [

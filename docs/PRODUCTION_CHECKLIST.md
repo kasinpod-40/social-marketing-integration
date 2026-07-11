@@ -2,7 +2,7 @@
 
 Release จะยังไม่ถือว่า Production-ready จนกว่าจะตรวจครบทุก Gate
 
-## สถานะ Package v0.3.1
+## สถานะ Package v0.4.0
 
 ### Architecture และ Code quality
 
@@ -29,6 +29,9 @@ Release จะยังไม่ถือว่า Production-ready จนกว
 - [x] Production profile ใช้ `chemistry_k`
 - [x] `MKT_ENV` และ `MKT_CUSTOMER_PROFILE` จับคู่แบบ Fail-fast
 - [x] Customer-owned Production rule บันทึกใน PROJECT_BRAIN
+- [x] Connector Catalog/Feature flags แยก TikTok, Facebook, Instagram, YouTube, WooCommerce และ Chatwoot
+- [x] Connector ที่ยังเป็น planned เปิดใช้งานไม่ได้และไม่คืน Fake success
+- [x] TikTok source handle Override ผ่าน Environment ได้โดยไม่แก้ Stable account key
 - [x] Secret ไม่อยู่ใน Source code/ZIP working tree
 
 ### Reliability และ Performance
@@ -52,7 +55,7 @@ Release จะยังไม่ถือว่า Production-ready จนกว
 
 ### Test และ Release package
 
-- [x] Unit/Integration/Regression tests 140/140 ผ่านก่อน Packaging
+- [x] Unit/Integration/Regression tests 170/170 ผ่านก่อน Packaging
 - [x] Syntax check ผ่านก่อน Packaging
 - [x] Architecture audit ผ่านก่อน Packaging
 - [x] สร้าง ZIP โดยไม่มี `.dev.vars`, Secret, `node_modules`, Log หรือไฟล์ขยะ
@@ -60,6 +63,8 @@ Release จะยังไม่ถือว่า Production-ready จนกว
 - [x] บันทึก SHA-256 ของ ZIP ไว้นอก Archive หลังสร้าง Release ขั้นสุดท้าย
 
 ### Live DEV gate หลังติดตั้ง ZIP
+
+- [ ] TikTok flag เป็น true และ Connector ที่ยัง planned เป็น false ทั้งหมด
 
 - [ ] `npm run validate:tiktok` ผ่านกับ DEV Base จริง
 - [ ] Source identity เป็น `ft.pumkin`

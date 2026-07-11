@@ -1,5 +1,7 @@
 import { BUILD_VERSION } from '../../../packages/config/src/build-info.js';
 import { json } from '../../../packages/shared/src/http/response.js';
+import { loadCustomerRuntimeConfig } from '../../../packages/config/src/customer-profiles.js';
+import { listConnectorReadiness } from '../../../packages/application/src/connectors/connector-registry.js';
 
 /** Map Route แบบคงที่เพื่อไม่ต้องสร้าง Router dependency ใน MVP */
 const ROUTES = new Map([
@@ -39,13 +41,24 @@ export default {
   },
 };
 
-/** Health check แสดงเฉพาะ Environment และ Timezone ที่ไม่เป็นความลับ */
+/**
+ * Health check ตรวจ Runtime profile และสรุป Readiness ของ Connector โดยไม่เปิดเผย Secret/Account identity
+ */
 async function handleHealth({ env }) {
+  const runtimeConfig = loadCustomerRuntimeConfig(env);
+  const connectors = listConnectorReadiness(runtimeConfig).map((connector) => ({
+    key: connector.key,
+    implementationStatus: connector.implementationStatus,
+    enabled: connector.enabled,
+    runnable: connector.runnable,
+  }));
+
   return json({
     ok: true,
     service: 'social-mkt-api-worker',
-    environment: env?.MKT_ENV ?? 'unknown',
+    environment: runtimeConfig.environment,
     timezone: env?.DEFAULT_TIMEZONE ?? 'Asia/Bangkok',
     version: BUILD_VERSION,
+    connectors,
   });
 }

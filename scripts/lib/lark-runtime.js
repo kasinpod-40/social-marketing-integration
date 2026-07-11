@@ -6,6 +6,7 @@ import { readLarkTableIdsFromEnv } from '../../packages/config/src/lark-table-co
 import { loadCustomerRuntimeConfig } from '../../packages/config/src/customer-profiles.js';
 import { todayInTimeZone } from '../../packages/shared/src/date/date-only.js';
 import { DEFAULT_REPORT_TIMEZONE, resolveMetricDate } from '../../packages/config/src/metric-date-config.js';
+import { assertConnectorRunnable } from '../../packages/application/src/connectors/connector-registry.js';
 
 /**
  * สร้าง Runtime สำหรับ Script บนเครื่องผู้พัฒนา
@@ -62,12 +63,12 @@ export function readMetricDate(env) {
   return resolveMetricDate({ env });
 }
 
-/** ดึง TikTok config จาก Customer profile และตรวจค่าที่จำเป็น */
+/**
+ * ดึง TikTok config ผ่าน Connector registry
+ * เพื่อให้ Local script ใช้ Feature flag และ Readiness guard ชุดเดียวกับ Cloudflare Worker
+ */
 export function readTikTokRuntime(runtimeConfig) {
-  if (!runtimeConfig?.tiktok?.accountKey || !runtimeConfig?.tiktok?.sourceHandle) {
-    throw new Error('Runtime customer profile is missing TikTok accountKey/sourceHandle');
-  }
-  return runtimeConfig.tiktok;
+  return assertConnectorRunnable(runtimeConfig, 'tiktok');
 }
 
 /** พิมพ์ JSON แบบอ่านง่ายสำหรับผล Validate/Sync ใน Terminal */

@@ -17,3 +17,15 @@ test('sync queue consumer is pinned to one concurrent invocation until a distrib
   // วาง Plan จาก Stable key เดียวกันพร้อมกันและ Batch Create ข้อมูลซ้ำได้
   assert.match(configText, /"max_concurrency"\s*:\s*1\b/);
 });
+
+test('deployment examples enable only the implemented TikTok connector', async () => {
+  const syncConfigText = await readSyncWranglerExample();
+  const apiConfigText = await readFile(new URL('../../wrangler.example.jsonc', import.meta.url), 'utf8');
+
+  for (const configText of [syncConfigText, apiConfigText]) {
+    assert.match(configText, /"MKT_CONNECTOR_TIKTOK_ENABLED"\s*:\s*"true"/);
+    for (const connector of ['FACEBOOK', 'INSTAGRAM', 'YOUTUBE', 'WOOCOMMERCE', 'CHATWOOT']) {
+      assert.match(configText, new RegExp(`"MKT_CONNECTOR_${connector}_ENABLED"\\s*:\\s*"false"`));
+    }
+  }
+});

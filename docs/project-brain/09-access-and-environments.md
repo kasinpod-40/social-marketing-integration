@@ -30,13 +30,35 @@ MKT_CUSTOMER_PROFILE=chemistry_k
 
 ระบบต้องหยุดทันทีเมื่อ Environment/Profile จับคู่ไม่ถูกต้อง
 
+## Connector feature flags
+
+```env
+MKT_CONNECTOR_TIKTOK_ENABLED=true
+MKT_CONNECTOR_FACEBOOK_ENABLED=false
+MKT_CONNECTOR_INSTAGRAM_ENABLED=false
+MKT_CONNECTOR_YOUTUBE_ENABLED=false
+MKT_CONNECTOR_WOOCOMMERCE_ENABLED=false
+MKT_CONNECTOR_CHATWOOT_ENABLED=false
+```
+
+Connector ที่ยังเป็น `planned` ห้ามเปิดเป็น `true` ระบบจะ Fail ตอนโหลด Runtime config
+
+Identity ที่ขึ้นกับบัญชีจริงเปลี่ยนผ่าน Environment ได้ เช่น:
+
+```env
+TIKTOK_SOURCE_HANDLE=ft.pumkin
+```
+
+`accountKey` สำหรับ Stable key ยังอยู่ใน Customer profile และห้ามเปลี่ยนหลังเริ่มใช้งานจริง
+
 ## Source code กับ Secret
 
 เก็บใน Source codeได้:
 
 - Customer/profile key
 - Stable account key
-- Connector/feature mapping
+- Connector catalog และ Feature mapping
+- Display name ของลูกค้า
 - Field/table env mapping
 - ค่า default ที่ไม่เป็นความลับ
 - คอมเมนต์ภาษาไทย

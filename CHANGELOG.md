@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.4.0-multi-channel-foundation — 2026-07-11
+
+- Added a central Connector Catalog for TikTok, Facebook, Instagram, YouTube, WooCommerce, and Chatwoot.
+- Added strict per-connector runtime feature flags with `active`/`planned` implementation states.
+- Kept TikTok active while all unfinished connectors remain disabled and cannot be enabled accidentally.
+- Added customer-specific connector profiles for developer-owned DEV resources and customer-owned Chemistry K Production resources.
+- Added `TIKTOK_SOURCE_HANDLE` runtime override so the real account handle can change at deployment without editing source code, while the stable account key remains profile-owned.
+- Added an Application-layer Connector Registry and safe readiness summary for Health/Admin use without exposing account identities or secrets.
+- Centralized Queue job types and introduced Queue schema version 1 with backward compatibility for existing jobs.
+- Registered future connector/report/reconciliation/notification jobs as planned; they now fail permanently before loading Lark infrastructure instead of returning fake success.
+- Split Queue validation from Lark infrastructure creation so unknown, planned, or disabled jobs do not touch credentials or initialize clients.
+- Updated DEV/Cloudflare examples, README, Project Brain, deployment rules, and multi-channel foundation documentation.
+- Package verification target: 170/170 tests, 43 source files, 82 local dependencies, 0 cycles, and coverage 93.99% lines / 84.37% branches / 93.30% functions.
+- No Facebook, Instagram, YouTube, WooCommerce, or Chatwoot API client/mapping is included in this release; those remain blocked until each Data Model/Lark Blueprint and source contract is approved.
+
 ## 0.3.1-codebase-audit-hardening — 2026-07-11
 
 - Continued the full codebase audit with correctness, reliability, and performance prioritized before exhaustive line-by-line comments.

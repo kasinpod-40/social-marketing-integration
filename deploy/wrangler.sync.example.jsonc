@@ -25,6 +25,17 @@
     "MKT_CUSTOMER_PROFILE": "chemistry_k",
     "DEFAULT_TIMEZONE": "Asia/Bangkok",
 
+    // เปิดเฉพาะ TikTok ที่มี Implementation จริงแล้ว
+    "MKT_CONNECTOR_TIKTOK_ENABLED": "true",
+    "MKT_CONNECTOR_FACEBOOK_ENABLED": "false",
+    "MKT_CONNECTOR_INSTAGRAM_ENABLED": "false",
+    "MKT_CONNECTOR_YOUTUBE_ENABLED": "false",
+    "MKT_CONNECTOR_WOOCOMMERCE_ENABLED": "false",
+    "MKT_CONNECTOR_CHATWOOT_ENABLED": "false",
+
+    // Handle จริงของบัญชีลูกค้าเปลี่ยนผ่าน Environment ได้โดยไม่แก้ Source code
+    "TIKTOK_SOURCE_HANDLE": "chemistry_k",
+
     // App Token และ Table IDs ไม่ใช่ Secret แต่ต้องเป็นค่าจาก Base ของลูกค้า
     "LARK_APP_TOKEN": "replace-with-customer-owned-lark-base-app-token",
     "LARK_TABLE_RAW_TIKTOK_CREATOR_VIDEOS": "replace-with-table-id",

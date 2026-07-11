@@ -4,11 +4,11 @@
 This project connects social organic and paid ads data into Lark Base for reporting, daily snapshots, monitoring, and AI summaries. The implementation target is a lean MVP using Cloudflare Workers, Cloudflare D1, Cloudflare Queues, Lark Base, Lark Native Integrations where useful, and JavaScript.
 
 ## Current project status
-Current audited release: `v0.3.1-codebase-audit-hardening`
+Current audited release: `v0.4.0-multi-channel-foundation`
 
-Package verification: 140/140 tests, syntax checks ผ่าน, architecture audit 38 source files / 67 local dependencies / 0 cycles. Live DEV validation/write ของ Release นี้ต้องรันบนเครื่องผู้พัฒนาที่มี `.dev.vars` จริง
+Package verification: 170/170 tests, syntax checks ผ่าน, architecture audit 43 source files / 82 local dependencies / 0 cycles, coverage 93.99% lines / 84.37% branches / 93.30% functions. Live DEV validation/write ของ Release นี้ต้องรันบนเครื่องผู้พัฒนาที่มี `.dev.vars` จริง
 
-**v0.3.1-codebase-audit-hardening — Full codebase audit และ TikTok/Lark reliability hardening เสร็จใน Package; รอ Live DEV gate ของ Release นี้.**
+**v0.4.0-multi-channel-foundation — Multi-channel control plane, Connector feature flags และ Queue job contract เสร็จใน Package; TikTok behavior เดิมคงอยู่และรอ Live DEV gate ของ Release นี้.**
 
 Completed in Lark:
 - Created Lark Base: `Social MKT Data Hub`.
@@ -31,6 +31,13 @@ Completed TikTok For Creator POC:
 - The TikTok account has 21 videos; the missing video has removed audio, so the omission is likely video eligibility/content availability rather than a confirmed pagination limit.
 
 Completed in code:
+- Added central Connector Catalog for TikTok, Facebook, Instagram, YouTube, WooCommerce, and Chatwoot.
+- Added strict connector runtime flags and blocked all planned connectors from accidental activation.
+- Added Customer-profile connector config for DEV and Chemistry K Production without storing secrets.
+- Added Connector Registry and Queue Job Catalog/Schema version 1.
+- Registered future connector/report/reconciliation/notification jobs as planned permanent failures, never fake success.
+- Split Queue validation from Lark infrastructure creation so unsupported/disabled work does not touch credentials.
+- Added `TIKTOK_SOURCE_HANDLE` environment override while keeping stable account keys in source-controlled profiles.
 - Added robust TikTok For Creator native row mapper.
 - Added TikTok Creator normalization use case from `RAW_TikTok_Creator_Videos` to `MKT_Content` and `MKT_Content_Daily`.
 - Added TikTok Creator batch normalization use case with O(n) dedupe and skipped-row collection.
@@ -121,6 +128,7 @@ Current mapping rules:
 - `PROJECT_BRAIN.md` — current truth and handoff summary.
 - `docs/project-brain/` — project history, rules, decisions, and next actions.
 - `docs/poc/tiktok-for-creator-poc.md` — TikTok For Creator POC result.
+- `docs/multi-channel-foundation-v0.4.0.md` — Connector/Queue foundation and activation rules.
 - `migrations/` — D1 schema draft.
 - `apps/` — Cloudflare Worker entry points.
 - `packages/` — clean architecture modules.

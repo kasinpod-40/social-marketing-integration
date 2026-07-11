@@ -1,56 +1,107 @@
+import { resolveConnectorRuntimeConfig } from './connector-runtime-config.js';
 import { permanentError } from '../../shared/src/errors/runtime-error.js';
 
 /**
  * โปรไฟล์ลูกค้าและสภาพแวดล้อมที่ไม่เป็นความลับ
  *
- * หมายเหตุสำคัญ:
- * - เก็บเฉพาะชื่อ, key, mapping และค่าเริ่มต้นที่ไม่ใช่ความลับไว้ในโค้ด
- * - Token, Secret, API Key และรหัสผ่านต้องมาจาก Environment/Secret Manager เท่านั้น
- * - accountKey เป็นส่วนหนึ่งของ Stable Key ห้ามเปลี่ยนหลังเริ่มใช้งานจริง
+ * หลักถาวรของโปรเจกต์:
+ * - Dev ใช้ Lark Base, Cloudflare และบัญชีทดสอบของผู้พัฒนา
+ * - Production ใช้ทรัพยากรที่ลูกค้าเป็นเจ้าของและเชิญผู้พัฒนาเข้าไปดูแล
+ * - เก็บเฉพาะชื่อ, Stable key, Mapping และค่าเริ่มต้นที่ไม่เป็นความลับไว้ในโค้ด
+ * - Token, Secret, API key, Password และ Platform account ID จริงต้องมาจาก Environment/Secret Manager
+ * - accountKey เป็นส่วนหนึ่งของ Canonical key ห้ามเปลี่ยนหลังเริ่มเขียนข้อมูลจริง
  */
 const CUSTOMER_PROFILES = Object.freeze({
-  dev_ft_pumkin: Object.freeze({
+  dev_ft_pumkin: freezeProfile({
     profileKey: 'dev_ft_pumkin',
     environment: 'development',
     customerKey: 'dev_ft_pumkin',
     customerName: 'Development - FT Pumkin',
     resourceOwner: 'developer',
-    tiktok: Object.freeze({
-      // Stable account key สำหรับข้อมูลทดสอบของผู้พัฒนา
-      accountKey: 'ft_pumkin',
-      // Handle จริงที่ Lark Native Connector ดึงมาใน Base สำหรับพัฒนา
-      sourceHandle: 'ft.pumkin',
-    }),
+    businessType: 'development_sandbox',
+    connectors: {
+      tiktok: {
+        enabledByDefault: true,
+        accountKey: 'ft_pumkin',
+        sourceHandle: 'ft.pumkin',
+        displayLabel: 'TikTok Dev - FT Pumkin',
+      },
+      facebook: {
+        enabledByDefault: false,
+        accountKey: 'dev_ft_pumkin',
+        displayLabel: 'Facebook Dev - FT Pumkin',
+      },
+      instagram: {
+        enabledByDefault: false,
+        accountKey: 'dev_ft_pumkin',
+        displayLabel: 'Instagram Dev - FT Pumkin',
+      },
+      youtube: {
+        enabledByDefault: false,
+        accountKey: 'dev_ft_pumkin',
+        displayLabel: 'YouTube Dev - FT Pumkin',
+      },
+      woocommerce: {
+        enabledByDefault: false,
+        accountKey: 'dev_ft_pumkin',
+        displayLabel: 'WooCommerce Dev - FT Pumkin',
+      },
+      chatwoot: {
+        enabledByDefault: false,
+        accountKey: 'dev_ft_pumkin',
+        displayLabel: 'Chatwoot Dev - FT Pumkin',
+      },
+    },
   }),
 
-  chemistry_k: Object.freeze({
+  chemistry_k: freezeProfile({
     profileKey: 'chemistry_k',
     environment: 'production',
     customerKey: 'chemistry_k',
     customerName: 'Chemistry K',
     resourceOwner: 'customer',
     businessType: 'online_chemistry_course',
-    tiktok: Object.freeze({
-      // Stable account key ของลูกค้า ใช้สร้าง canonical key ตอน Production
-      accountKey: 'chemistry_k',
-      // Handle Production ที่คาดหวัง เตรียมไว้ล่วงหน้าและไม่ต้องแก้ source code ตอน Deploy
-      sourceHandle: 'chemistry_k',
-    }),
-    connectors: Object.freeze({
-      facebook: true,
-      instagram: true,
-      youtube: true,
-      chatwoot: true,
-      woocommerce: true,
-    }),
+    connectors: {
+      tiktok: {
+        enabledByDefault: true,
+        accountKey: 'chemistry_k',
+        sourceHandle: 'chemistry_k',
+        displayLabel: 'TikTok - Chemistry K',
+      },
+      facebook: {
+        enabledByDefault: false,
+        accountKey: 'chemistry_k',
+        displayLabel: 'Facebook - Chemistry K',
+      },
+      instagram: {
+        enabledByDefault: false,
+        accountKey: 'chemistry_k',
+        displayLabel: 'Instagram - Chemistry K',
+      },
+      youtube: {
+        enabledByDefault: false,
+        accountKey: 'chemistry_k',
+        displayLabel: 'YouTube - Chemistry K',
+      },
+      woocommerce: {
+        enabledByDefault: false,
+        accountKey: 'chemistry_k',
+        displayLabel: 'WooCommerce - Chemistry K',
+      },
+      chatwoot: {
+        enabledByDefault: false,
+        accountKey: 'chemistry_k',
+        displayLabel: 'Chatwoot - Chemistry K',
+      },
+    },
   }),
 });
 
 const SUPPORTED_ENVIRONMENTS = Object.freeze(['development', 'production']);
 
 /**
- * โหลด Runtime Profile จาก Environment โดยตรวจว่าคู่ environment/profile ถูกต้อง
- * เพื่อป้องกันการใช้ทรัพยากร Dev ปนกับ Production
+ * โหลด Runtime Profile จาก Environment โดยตรวจคู่ environment/profile และ Feature flags
+ * เพื่อป้องกันทรัพยากร Dev ปนกับ Production และป้องกัน Connector ที่ยังไม่พร้อมถูกเปิดใช้
  */
 export function loadCustomerRuntimeConfig(env) {
   const source = env ?? {};
@@ -75,6 +126,8 @@ export function loadCustomerRuntimeConfig(env) {
     );
   }
 
+  const connectors = resolveConnectorRuntimeConfig(profile.connectors, source);
+
   return Object.freeze({
     environment,
     profileKey,
@@ -82,8 +135,11 @@ export function loadCustomerRuntimeConfig(env) {
     customerName: profile.customerName,
     resourceOwner: profile.resourceOwner,
     businessType: profile.businessType ?? null,
-    tiktok: Object.freeze({ ...profile.tiktok }),
-    connectors: Object.freeze({ ...(profile.connectors ?? {}) }),
+    connectors,
+
+    // Alias ชั่วคราวเพื่อรักษา Compatibility กับ TikTok use case เดิม
+    // โค้ดใหม่ควรอ่านผ่าน runtimeConfig.connectors.tiktok
+    tiktok: connectors.tiktok,
   });
 }
 
@@ -113,4 +169,14 @@ function requireText(value, fieldName) {
     });
   }
   return value.trim();
+}
+
+/** Freeze Profile และ Connector config ทุกชั้นเพื่อป้องกัน Runtime/Test แก้ค่ากลาง */
+function freezeProfile(profile) {
+  return Object.freeze({
+    ...profile,
+    connectors: Object.freeze(Object.fromEntries(
+      Object.entries(profile.connectors ?? {}).map(([key, value]) => [key, Object.freeze({ ...value })]),
+    )),
+  });
 }

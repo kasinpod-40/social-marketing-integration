@@ -57,3 +57,34 @@ test('sync worker acknowledges malformed queue bodies as permanent failures with
   assert.equal(malformed.retried, false);
   assert.equal(next.acked, true);
 });
+
+test('known but unfinished connector jobs are acknowledged before runtime configuration is loaded', async () => {
+  const message = createMessage({ type: 'facebook.page.organic.sync' });
+  await syncWorker.queue({ messages: [message] }, minimalEnv());
+
+  assert.equal(message.acked, true);
+  assert.equal(message.retried, false);
+});
+
+test('disabled active connector jobs are acknowledged before Lark credentials are required', async () => {
+  const message = createMessage({ type: 'tiktok.creator.native.sync' });
+  await syncWorker.queue({ messages: [message] }, {
+    MKT_ENV: 'development',
+    MKT_CUSTOMER_PROFILE: 'dev_ft_pumkin',
+    MKT_CONNECTOR_TIKTOK_ENABLED: 'false',
+  });
+
+  assert.equal(message.acked, true);
+  assert.equal(message.retried, false);
+});
+
+test('unsupported queue schema versions are permanent failures and do not abort the batch', async () => {
+  const unsupported = createMessage({ schemaVersion: 99, type: 'metric.definitions.seed' });
+  const next = createMessage({ type: 'unknown.job' });
+
+  await syncWorker.queue({ messages: [unsupported, next] }, minimalEnv());
+
+  assert.equal(unsupported.acked, true);
+  assert.equal(unsupported.retried, false);
+  assert.equal(next.acked, true);
+});

@@ -1,6 +1,20 @@
 # 10 — Next Actions
 
-## Gate ทันทีหลังติดตั้ง v0.3.1
+## Gate ทันทีหลังติดตั้ง v0.4.0
+
+ใน `.dev.vars` ให้ TikTok เปิดและช่องทางที่ยังไม่ Implement ปิดทั้งหมด:
+
+```env
+MKT_CONNECTOR_TIKTOK_ENABLED=true
+MKT_CONNECTOR_FACEBOOK_ENABLED=false
+MKT_CONNECTOR_INSTAGRAM_ENABLED=false
+MKT_CONNECTOR_YOUTUBE_ENABLED=false
+MKT_CONNECTOR_WOOCOMMERCE_ENABLED=false
+MKT_CONNECTOR_CHATWOOT_ENABLED=false
+TIKTOK_SOURCE_HANDLE=ft.pumkin
+```
+
+จากนั้นรัน:
 
 ```bash
 npm install
@@ -29,17 +43,34 @@ CONFIRM_WRITE=YES npm run sync:tiktok
 ## Reliability ถัดไป
 
 1. เขียน `MKT_Sync_Log` ต่อหนึ่ง Sync run พร้อม `sync_run_id`
-2. เพิ่ม Distributed lock/Unique reservation ก่อนเปิด Queue concurrency มากกว่า 1 หรืออนุญาต Writer หลาย Runtime
-3. เพิ่ม DLQ/System Alert สำหรับ Queue ที่ Retry หมด
-4. เพิ่ม Reconciliation summary หลัง Partial write/retry
-5. เพิ่ม Incremental cursor/window เมื่อ RAW source โตระดับหลักหมื่น
-6. ยืนยัน Lark Cell-clear contract แล้วเพิ่มการล้าง Classification field ที่ไม่ Match อีกต่อไป
-7. เพิ่ม Secured admin enqueue endpoint เมื่อ Authentication/Authorization พร้อม
+2. เพิ่ม Reconciliation summary หลัง Partial write/retry
+3. เพิ่ม Distributed lock/Unique reservation ก่อนอนุญาต Writer หลาย Runtime
+4. เพิ่ม DLQ และ `MKT_System_Alerts` เมื่อ Queue Retry หมด
+5. Deploy ขึ้น Cloudflare DEV/Staging ของผู้พัฒนา
+6. เปิด Scheduled TikTok sync และทดสอบหลายรอบ
+7. เพิ่ม Incremental cursor/window เมื่อ RAW source โตระดับหลักหมื่น
+8. ยืนยัน Lark Cell-clear contract แล้วเพิ่มการล้าง Classification field ที่ไม่ Match อีกต่อไป
 
-## Product flow ถัดไปหลัง TikTok core เสถียร
+## งานที่ทำคู่ขนานได้หลัง Foundation นี้
 
-1. Report aggregation จาก `MKT_Content_Daily`
-2. `MKT_Report_Snapshots`
-3. Lark AI summary/insight/recommendation
-4. Lark Bot/Automation ส่งกลุ่มและเก็บ delivery status
-5. WooCommerce/Chatwoot connector ตาม Data Model ที่ออกแบบเสร็จก่อน Implementation
+- ออกแบบ Data Model/Lark Blueprint ของ Facebook + Instagram
+- ออกแบบ Data Model/Lark Blueprint ของ YouTube
+- ออกแบบ Data Model/Lark Blueprint ของ WooCommerce
+- ออกแบบ Data Model/Lark Blueprint ของ Chatwoot
+- กำหนด Source contract, Stable key, Metric definition และ Sample payload จริง
+- เพิ่ม Test fixture หลังมี Payload/เอกสารจริงแล้ว
+
+ห้ามเปิด Feature flag หรือเขียน API integration ก่อน Blueprint ของช่องทางนั้นผ่าน
+
+## Product flow หลัง Connector core เสถียร
+
+1. Facebook + Instagram
+2. YouTube
+3. WooCommerce
+4. Chatwoot
+5. Unified master/daily snapshots
+6. Report aggregation
+7. Lark AI summary/insight/recommendation
+8. Lark Bot/Automation ส่งกลุ่มและเก็บ delivery status
+9. UAT รวมบน DEV/Staging
+10. Deploy Production ในทรัพยากรของ Chemistry K

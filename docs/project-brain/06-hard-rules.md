@@ -39,3 +39,13 @@ Work as a Senior Software Architect and Principal Engineer focused on clean code
 - Monitoring from day one.
 - Project Brain required.
 - Test/regression required.
+
+## Connector และ Queue rules
+
+- Connector ใหม่ต้องผ่าน Data Model/Lark Blueprint, Source contract, Stable key และ Metric definition ก่อน Implementation
+- Connector ที่ยังไม่มี Integration จริงต้องเป็น `planned` และ Feature flag ต้องเป็น `false`
+- ห้ามคืน Fake success, Dummy data หรือ Placeholder write จาก Job/Connector ที่ยังไม่เสร็จ
+- Job type ทุกตัวต้องประกาศใน Job Catalog กลาง ห้ามกระจาย String literal ซ้ำใน Worker/Producer
+- Queue job ต้องใช้ Schema version ที่ระบบรองรับและ Job ที่ไม่รู้จักต้องเป็น Permanent error
+- Stable account key อยู่ใน Customer profile; Identity ที่เปลี่ยนตามบัญชีจริงให้ Override ผ่าน Environment
+- Health/Admin ห้ามเปิดเผย Account ID, Handle, Token, Secret หรือ Customer profile ที่ไม่จำเป็น

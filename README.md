@@ -4,14 +4,14 @@
 
 ## Baseline ปัจจุบัน
 
-`v0.3.1-codebase-audit-hardening`
+`v0.4.0-multi-channel-foundation`
 
 สถานะปัจจุบัน:
 
 - DEV ใช้ Lark Base ของผู้พัฒนาและ TikTok `@ft.pumkin`
 - Production profile `chemistry_k` เตรียมไว้ใน Source code แต่ Production จริงต้องใช้ Lark Base, App, Cloud และบัญชี Social ที่ลูกค้าเป็นเจ้าของ
 - TikTok DEV Sync จริงผ่าน 20 Content + 20 Daily Snapshot แล้วก่อน Audit รอบนี้
-- หลังเปลี่ยนเป็น v0.3.1 ต้องรัน Dry run และ Idempotency test กับ DEV Base อีกครั้ง
+- v0.4.0 เพิ่ม Connector/Queue foundation โดยไม่เปิดช่องทางที่ยังไม่ Implement และต้องรัน Dry run/Idempotency กับ DEV Base อีกครั้ง
 
 ## โครงสร้างระบบ
 
@@ -22,7 +22,7 @@ apps
 
 packages
   ├─ domain           Entity และ Value object ที่ไม่พึ่ง Infrastructure
-  ├─ application      Use case และ Business flow
+  ├─ application      Use case, Connector registry และ Queue job contract
   ├─ sync-engine      Plan/Diff/Execute แบบ Storage-neutral
   ├─ connectors       Lark และ TikTok adapters
   ├─ config           Customer profile, table mapping และ build info
@@ -56,6 +56,25 @@ MKT_ENV=production
 MKT_CUSTOMER_PROFILE=chemistry_k
 ```
 
+Connector feature flags:
+
+```env
+MKT_CONNECTOR_TIKTOK_ENABLED=true
+MKT_CONNECTOR_FACEBOOK_ENABLED=false
+MKT_CONNECTOR_INSTAGRAM_ENABLED=false
+MKT_CONNECTOR_YOUTUBE_ENABLED=false
+MKT_CONNECTOR_WOOCOMMERCE_ENABLED=false
+MKT_CONNECTOR_CHATWOOT_ENABLED=false
+```
+
+Connector ที่ยังเป็น `planned` เปิดไม่ได้แม้ตั้งค่า `true` เพื่อป้องกันโค้ดโครงรอถูกใช้งานเป็น Production โดยไม่ตั้งใจ
+
+TikTok handle จริงเปลี่ยนผ่าน Environment ได้โดยไม่แก้ Source code:
+
+```env
+TIKTOK_SOURCE_HANDLE=ft.pumkin
+```
+
 ข้อมูลที่ไม่เป็นความลับ เช่น Customer key, Stable account key, Feature mapping และคำอธิบายภาษาไทยเก็บใน `packages/config/src/customer-profiles.js`
 
 Secret ทั้งหมดต้องอยู่ใน `.dev.vars`, Cloudflare Secret หรือ Secret Manager ของลูกค้า:
@@ -78,6 +97,13 @@ cp .dev.vars.example .dev.vars
 ```env
 MKT_ENV=development
 MKT_CUSTOMER_PROFILE=dev_ft_pumkin
+MKT_CONNECTOR_TIKTOK_ENABLED=true
+MKT_CONNECTOR_FACEBOOK_ENABLED=false
+MKT_CONNECTOR_INSTAGRAM_ENABLED=false
+MKT_CONNECTOR_YOUTUBE_ENABLED=false
+MKT_CONNECTOR_WOOCOMMERCE_ENABLED=false
+MKT_CONNECTOR_CHATWOOT_ENABLED=false
+TIKTOK_SOURCE_HANDLE=ft.pumkin
 
 LARK_APP_ID=...
 LARK_APP_SECRET=...
@@ -124,6 +150,34 @@ CONFIRM_WRITE=YES npm run seed:metrics
 METRIC_DATE=2026-07-11 npm run validate:tiktok
 METRIC_DATE=2026-07-11 CONFIRM_WRITE=YES npm run sync:tiktok
 ```
+
+
+## Multi-channel Foundation
+
+Connector ที่ลงทะเบียนใน Catalog กลาง:
+
+| Connector | Implementation | Default |
+|---|---|---|
+| TikTok | active | enabled |
+| Facebook Page | planned | disabled |
+| Instagram Business | planned | disabled |
+| YouTube | planned | disabled |
+| WooCommerce | planned | disabled |
+| Chatwoot | planned | disabled |
+
+ไฟล์หลัก:
+
+```text
+packages/config/src/connector-catalog.js
+packages/config/src/connector-runtime-config.js
+packages/application/src/connectors/connector-registry.js
+packages/application/src/jobs/job-catalog.js
+packages/application/src/jobs/queue-job.js
+```
+
+Queue schema ปัจจุบันคือ version `1` และ Job เดิมที่ไม่มี `schemaVersion` ยังรองรับโดย Normalize เป็น version `1` อัตโนมัติ Job ที่รู้จักแต่ยังไม่ Implement จะหยุดด้วย Permanent error ก่อนโหลด Lark credentials และจะไม่คืน Fake success
+
+Health endpoint แสดงเฉพาะ `implementationStatus`, `enabled` และ `runnable` ของแต่ละ Connector โดยไม่เปิดเผย Account key, Handle, Customer profile หรือ Secret
 
 ## Safety ของ TikTok Sync
 
@@ -199,7 +253,8 @@ classification_confidence = 0.2
 - API Worker example: `wrangler.example.jsonc`
 - Sync Worker example: `deploy/wrangler.sync.example.jsonc`
 - Deployment notes: `deploy/README.md`
-- Full audit: `docs/full-codebase-audit-v0.3.1.md`
+- Full audit baseline: `docs/full-codebase-audit-v0.3.1.md`
+- Multi-channel foundation: `docs/multi-channel-foundation-v0.4.0.md`
 - Production checklist: `docs/PRODUCTION_CHECKLIST.md`
 - Source of truth: `PROJECT_BRAIN.md`
 
