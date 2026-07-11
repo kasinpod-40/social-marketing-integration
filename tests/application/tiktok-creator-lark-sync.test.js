@@ -33,7 +33,7 @@ test('reads RAW TikTok Creator rows and upserts content plus daily snapshots', a
           recordId: 'rec_1',
           fields: {
             'Unique identifier of the video': 'video_1',
-            'Date and time the video was published': '2026-07-01 08:30',
+            'Date and time the video was published': 1782873000000,
             'Video Description': 'Demo video',
             'Shareable URL': 'https://example.com/video_1',
             'Video duration in seconds, rounded to three decimal places': 15,

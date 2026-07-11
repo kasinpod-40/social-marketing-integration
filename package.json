@@ -1,6 +1,6 @@
 {
   "name": "social-marketing-integration",
-  "version": "0.2.4-lark-pagination-guards",
+  "version": "0.2.5-canonical-datetime",
   "private": true,
   "type": "module",
   "workspaces": [

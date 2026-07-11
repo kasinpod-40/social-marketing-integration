@@ -9,7 +9,7 @@ test('normalizes TikTok Creator rows as an O(n) batch with dedupe by upsert key'
     rawRows: [
       {
         'Unique identifier of the video': 'video_1',
-        'Date and time the video was published': '2026-01-27 18:10',
+        'Date and time the video was published': 1769512200000,
         'Total video views': 203,
         'Total number of likes the video received': 22,
         'Total number of comments the video received': 0,

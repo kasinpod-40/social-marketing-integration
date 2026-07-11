@@ -1,3 +1,5 @@
+import { toEpochMilliseconds } from '../shared/date-time.js';
+
 const FIELD_ALIASES = Object.freeze({
   videoId: [
     'video_id',
@@ -116,7 +118,7 @@ export function mapTikTokCreatorVideoRow(row) {
   return Object.freeze({
     platform: 'tiktok',
     externalContentId: toNullableText(firstPresent(row, FIELD_ALIASES.videoId)),
-    publishedAt: toNullableText(firstPresent(row, FIELD_ALIASES.publishedAt)),
+    publishedAt: toEpochMilliseconds(firstPresent(row, FIELD_ALIASES.publishedAt), { allowNull: true, label: 'TikTok published_at' }),
     description: toNullableText(firstPresent(row, FIELD_ALIASES.description)),
     shareableUrl: toNullableText(firstPresent(row, FIELD_ALIASES.shareableUrl)),
     embedUrl: toNullableText(firstPresent(row, FIELD_ALIASES.embedUrl)),

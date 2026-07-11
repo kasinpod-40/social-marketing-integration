@@ -5,7 +5,7 @@ import { mapTikTokCreatorVideoRow } from '../../packages/connectors/src/tiktok/c
 test('maps TikTok Creator native fields to canonical video metrics', () => {
   const mapped = mapTikTokCreatorVideoRow({
     'Unique identifier of the video': '735000001',
-    'Date and time the video was published': '2026-07-06 12:00:00',
+    'Date and time the video was published': 1783328400000,
     'Video description': 'New product video',
     'Shareable URL for this TikTok video': 'https://www.tiktok.com/@brand/video/735000001',
     'Video Duration': '00:00:15',
@@ -22,6 +22,7 @@ test('maps TikTok Creator native fields to canonical video metrics', () => {
   });
 
   assert.equal(mapped.externalContentId, '735000001');
+  assert.equal(mapped.publishedAt, 1783328400000);
   assert.equal(mapped.durationSeconds, 15);
   assert.equal(mapped.metrics.views, 1200);
   assert.equal(mapped.metrics.completionRate, 0.45);

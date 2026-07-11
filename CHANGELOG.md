@@ -133,3 +133,9 @@
 - Added pagination completion/failure tracing without exposing credentials.
 - Added real-contract regression tests for single-page, multi-page, stale-token, repeated-token, missing-token, empty-intermediate-page, records, and maximum-page behavior.
 - Full test suite passes 50/50 and static JavaScript syntax checks pass.
+
+## 0.2.5-canonical-datetime
+- Fixed TikTok `published_at` handling when Lark returns epoch milliseconds or numeric epoch strings.
+- Added one shared canonical date-time parser for adapters and Lark field serialization.
+- Epoch seconds are normalized to milliseconds; ambiguous timezone-less strings now fail before writes.
+- Added range validation and regression tests for real Lark/TikTok date shapes.

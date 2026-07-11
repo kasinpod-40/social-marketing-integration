@@ -437,3 +437,9 @@ Incident learned from TikTok production validation:
 - The previous implementation followed the token alone and repeatedly requested the same empty page hundreds of times.
 - The defect caused unnecessary API traffic and could trigger rate limiting even though no write had started.
 - The fixed contract treats `has_more` as authoritative and uses token checks only when another page is explicitly declared.
+
+## Canonical date-time contract (v0.2.5)
+- Normalized domain date-time values must be epoch milliseconds.
+- Source adapters must convert epoch seconds, epoch milliseconds, numeric epoch strings, Date objects, and explicit-timezone ISO strings through the shared date-time parser.
+- Ambiguous timezone-less strings are rejected rather than interpreted using the host machine timezone.
+- Lark date fields are serialized from the same shared parser, so connectors may not implement their own date conversion logic.

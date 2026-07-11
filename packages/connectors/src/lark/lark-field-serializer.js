@@ -1,3 +1,5 @@
+import { toEpochMilliseconds } from '../shared/date-time.js';
+
 const LARK_FIELD_TYPES = Object.freeze({
   TEXT: 1,
   NUMBER: 2,
@@ -96,13 +98,11 @@ function serializeNumber(value, fieldName, context) {
 }
 
 function serializeDateTime(value, fieldName, context) {
-  if (typeof value === 'number' && Number.isFinite(value)) return Math.trunc(value);
-  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.getTime();
-  if (typeof value === 'string') {
-    const parsed = Date.parse(value);
-    if (!Number.isNaN(parsed)) return parsed;
+  try {
+    return toEpochMilliseconds(value, { label: `Lark field ${fieldName}` });
+  } catch (error) {
+    throw fieldError(context, fieldName, error instanceof Error ? error.message : 'invalid date-time value');
   }
-  throw fieldError(context, fieldName, `expected epoch milliseconds, Date, or ISO date string`);
 }
 
 function serializeMultiSelect(value, fieldName, context) {

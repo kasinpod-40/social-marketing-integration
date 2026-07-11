@@ -46,3 +46,28 @@ test('fails before writes when mapping includes a field missing from Lark', () =
     /field=unknown_field: field does not exist/,
   );
 });
+
+test('serializes numeric epoch strings and epoch seconds into milliseconds', () => {
+  const [numericString] = serializeRowsForLark([{
+    content_key: 'tiktok:chemistry_k:2',
+    published_at: '1783328400000',
+  }], fields, { tableId: 'tbl_content', keyField: 'content_key' });
+
+  const [seconds] = serializeRowsForLark([{
+    content_key: 'tiktok:chemistry_k:3',
+    published_at: 1783328400,
+  }], fields, { tableId: 'tbl_content', keyField: 'content_key' });
+
+  assert.equal(numericString.published_at, 1783328400000);
+  assert.equal(seconds.published_at, 1783328400000);
+});
+
+test('rejects ambiguous timezone-less date strings before writes', () => {
+  assert.throws(
+    () => serializeRowsForLark([{
+      content_key: 'tiktok:chemistry_k:4',
+      published_at: '2026-07-10 12:00:00',
+    }], fields, { tableId: 'tbl_content', keyField: 'content_key' }),
+    /must include an explicit timezone/,
+  );
+});
