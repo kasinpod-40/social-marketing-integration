@@ -411,3 +411,5 @@ This policy applies to TikTok, Facebook, Instagram, YouTube, Chatwoot, WooCommer
 - Added per-request timeout with AbortController so stalled Lark requests cannot hang forever.
 - Added stage progress logs for TikTok sync.
 - Timeout errors include the Lark API path and configured timeout.
+## Lark Sync Observability Rule
+Every production sync must expose progress from use case → sync engine → repository/client. Logs must identify scope, table, operation, page/chunk, attempt, elapsed time, retry delay, and Lark status/code without exposing tokens or secrets. Silent network waits are not acceptable.

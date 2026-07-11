@@ -47,6 +47,7 @@ export async function syncTikTokCreatorNativeToLark(input) {
     tableId: tables.mktContent,
     keyField: 'content_key',
     rows: normalized.contentRows,
+    onProgress: (event) => progress({ scope: 'content', ...event }),
   });
   progress({ stage: 'content_synced', result: contentResult });
   progress({ stage: 'syncing_daily_snapshots', rows: normalized.dailySnapshotRows.length });
@@ -55,6 +56,7 @@ export async function syncTikTokCreatorNativeToLark(input) {
     tableId: tables.mktContentDaily,
     keyField: 'content_daily_key',
     rows: normalized.dailySnapshotRows,
+    onProgress: (event) => progress({ scope: 'daily_snapshots', ...event }),
   });
 
   progress({ stage: 'daily_snapshots_synced', result: dailyResult });

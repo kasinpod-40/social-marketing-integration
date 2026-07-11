@@ -123,3 +123,4 @@
 - Added per-request timeout with AbortController so stalled Lark requests cannot hang forever.
 - Added stage progress logs for TikTok sync.
 - Timeout errors include the Lark API path and configured timeout.
+- v0.2.3: Added end-to-end sync tracing for schema loading, destination pagination, sync planning, batch writes, request attempts, retries, elapsed time, and timeout diagnosis.

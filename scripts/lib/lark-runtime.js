@@ -4,10 +4,10 @@ import { LarkRecordRepository } from '../../packages/connectors/src/lark/lark-re
 import { TableSyncEngine } from '../../packages/sync-engine/src/table-sync-engine.js';
 import { readLarkTableIdsFromEnv } from '../../packages/config/src/lark-table-config.js';
 
-export async function createLocalLarkRuntime(requiredTableKeys) {
+export async function createLocalLarkRuntime(requiredTableKeys, options = {}) {
   const env = await readDevVars(process.env.DEV_VARS_FILE ?? '.dev.vars');
   const normalizedEnv = normalizeEnvAliases(env);
-  const client = createLarkBitableClientFromEnv(normalizedEnv);
+  const client = createLarkBitableClientFromEnv(normalizedEnv, { onRequest: options?.onRequest });
   const repository = new LarkRecordRepository({ client });
   const syncEngine = new TableSyncEngine();
   const tables = readLarkTableIdsFromEnv(normalizedEnv, requiredTableKeys);

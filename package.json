@@ -1,6 +1,6 @@
 {
   "name": "social-marketing-integration",
-  "version": "0.2.2-lark-sync-observability",
+  "version": "0.2.3-lark-sync-tracing",
   "private": true,
   "type": "module",
   "workspaces": [

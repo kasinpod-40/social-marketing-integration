@@ -5,12 +5,14 @@ if (process.env.CONFIRM_WRITE !== 'YES') {
   throw new Error('Refusing to write to Lark. Run with CONFIRM_WRITE=YES npm run sync:tiktok');
 }
 
+const logEvent = (event) => console.error(`[${new Date().toISOString()}] ${JSON.stringify(event)}`);
+
 const runtime = await createLocalLarkRuntime([
   'rawTikTokCreatorVideos',
   'mktContent',
   'mktContentDaily',
   'mktClassificationDictionary',
-]);
+], { onRequest: (event) => logEvent({ scope: 'lark', ...event }) });
 
 console.error(`[${new Date().toISOString()}] TikTok sync started`);
 const result = await syncTikTokCreatorNativeToLark({
@@ -18,7 +20,7 @@ const result = await syncTikTokCreatorNativeToLark({
   syncEngine: runtime.syncEngine,
   accountId: readAccountId(runtime.env),
   metricDate: readMetricDate(runtime.env),
-  onProgress: (event) => console.error(`[${new Date().toISOString()}] ${JSON.stringify(event)}`),
+  onProgress: logEvent,
   tables: {
     rawTikTokCreatorVideos: runtime.tables.rawTikTokCreatorVideos,
     mktContent: runtime.tables.mktContent,

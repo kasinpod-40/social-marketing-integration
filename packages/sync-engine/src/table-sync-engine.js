@@ -32,15 +32,23 @@ export class TableSyncEngine {
     const repository = requireRepository(input?.repository);
     const tableId = requireText(input?.tableId, 'tableId');
     const keyField = requireText(input?.keyField, 'keyField');
+    const progress = typeof input?.onProgress === 'function' ? input.onProgress : () => undefined;
+    progress({ stage: 'sync_deduplicating', tableId, rows: input?.rows?.length ?? 0 });
     const deduplicated = deduplicateRowsByKey(requireArray(input?.rows, 'rows'), keyField);
+    progress({ stage: 'sync_deduplicated', tableId, rows: deduplicated.rows.length, duplicateInputRows: deduplicated.duplicateCount });
 
     if (deduplicated.rows.length === 0) {
       return freezeResult({ created: 0, updated: 0, skipped: 0, duplicateInputRows: 0 });
     }
 
+    progress({ stage: 'sync_loading_schema', tableId });
     const preparedRows = await repository.prepareRows(tableId, deduplicated.rows, { keyField });
+    progress({ stage: 'sync_schema_loaded', tableId, rows: preparedRows.length });
+    progress({ stage: 'sync_loading_existing_records', tableId });
     const existingRecords = await repository.listAll(tableId);
+    progress({ stage: 'sync_existing_records_loaded', tableId, rows: existingRecords.length });
     const existingIndex = buildExistingIndex(existingRecords, keyField, this.existingDuplicatePolicy);
+    progress({ stage: 'sync_planning', tableId });
     const createRows = [];
     const updateRows = [];
     let skipped = 0;
@@ -65,10 +73,16 @@ export class TableSyncEngine {
       }
     }
 
+    progress({ stage: 'sync_plan_ready', tableId, createRows: createRows.length, updateRows: updateRows.length, skipped });
+
     // Writes remain sequential by design. Storage adapters may batch each call,
     // while the engine avoids concurrent mutations against the same table/app.
+    progress({ stage: 'sync_creating', tableId, rows: createRows.length });
     const createResult = await repository.createMany(tableId, createRows);
+    progress({ stage: 'sync_created', tableId, created: Number(createResult?.created ?? 0) });
+    progress({ stage: 'sync_updating', tableId, rows: updateRows.length });
     const updateResult = await repository.updateMany(tableId, updateRows);
+    progress({ stage: 'sync_updated', tableId, updated: Number(updateResult?.updated ?? 0) });
 
     return freezeResult({
       created: Number(createResult?.created ?? 0),

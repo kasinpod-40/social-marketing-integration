@@ -98,3 +98,19 @@ test('aborts a stalled Lark request after the configured timeout', async () => {
     /Lark request timed out after 10ms: \/stalled/,
   );
 });
+
+
+test('request tracing masks app token and reports completion', async () => {
+  const events = [];
+  const client = new LarkBitableClient({
+    appId: 'app-id',
+    appSecret: 'app-secret',
+    appToken: 'sensitive-app-token',
+    minRequestIntervalMs: 0,
+    onRequest: (event) => events.push(event),
+    fetchImpl: async () => new Response(JSON.stringify({ code: 0, data: { items: [] } }), { status: 200 }),
+  });
+  await client.requestJson('/open-apis/bitable/v1/apps/sensitive-app-token/tables/tbl/records', { method: 'GET', token: 'tenant' });
+  assert.equal(events.some((event) => String(event.path).includes('sensitive-app-token')), false);
+  assert.equal(events.some((event) => event.stage === 'lark_request_success'), true);
+});

@@ -36,6 +36,7 @@ export class LarkBitableClient {
     this.tokenRequest = null;
     this.requestQueue = Promise.resolve();
     this.lastRequestStartedAt = 0;
+    this.onRequest = typeof config?.onRequest === 'function' ? config.onRequest : () => undefined;
   }
 
   async getTenantAccessToken() {
@@ -71,7 +72,9 @@ export class LarkBitableClient {
     const fields = [];
     let pageToken = null;
 
+    let page = 0;
     do {
+      page += 1;
       const params = new URLSearchParams({ page_size: String(DEFAULT_PAGE_SIZE) });
       if (pageToken) params.set('page_token', pageToken);
       const response = await this.requestJson(
@@ -80,6 +83,7 @@ export class LarkBitableClient {
       );
       const pageFields = response?.data?.items ?? [];
       if (!Array.isArray(pageFields)) throw new Error(`Lark listFields returned invalid items for table ${tableId}`);
+      this.onRequest({ stage: 'lark_page_loaded', resource: 'fields', tableId, page, rows: pageFields.length });
       fields.push(...pageFields.map((field) => Object.freeze({
         fieldId: field?.field_id ?? field?.fieldId ?? null,
         fieldName: field?.field_name ?? field?.fieldName ?? field?.name ?? null,
@@ -99,7 +103,9 @@ export class LarkBitableClient {
     const records = [];
     let pageToken = null;
 
+    let page = 0;
     do {
+      page += 1;
       const params = new URLSearchParams({ page_size: String(pageSize) });
       if (pageToken) {
         params.set('page_token', pageToken);
@@ -115,6 +121,7 @@ export class LarkBitableClient {
         throw new Error(`Lark listRecords returned invalid items for table ${tableId}`);
       }
 
+      this.onRequest({ stage: 'lark_page_loaded', resource: 'records', tableId, page, rows: pageRecords.length, totalRows: records.length + pageRecords.length });
       records.push(...pageRecords.map(toRecordShape));
       pageToken = response?.data?.page_token ?? null;
     } while (pageToken);
@@ -132,7 +139,10 @@ export class LarkBitableClient {
     const token = await this.getTenantAccessToken();
     let created = 0;
 
-    for (const chunk of chunkArray(records, DEFAULT_BATCH_SIZE)) {
+    const chunks = chunkArray(records, DEFAULT_BATCH_SIZE);
+    for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex += 1) {
+      const chunk = chunks[chunkIndex];
+      this.onRequest({ stage: 'lark_batch_start', operation: 'create', tableId, chunk: chunkIndex + 1, chunks: chunks.length, rows: chunk.length });
       const response = await this.requestJson(
         `/open-apis/bitable/v1/apps/${encodeURIComponent(this.appToken)}/tables/${encodeURIComponent(tableId)}/records/batch_create`,
         {
@@ -145,6 +155,7 @@ export class LarkBitableClient {
       );
 
       created += response?.data?.records?.length ?? chunk.length;
+      this.onRequest({ stage: 'lark_batch_complete', operation: 'create', tableId, chunk: chunkIndex + 1, chunks: chunks.length, rows: chunk.length });
     }
 
     return { created };
@@ -160,7 +171,10 @@ export class LarkBitableClient {
     const token = await this.getTenantAccessToken();
     let updated = 0;
 
-    for (const chunk of chunkArray(records, DEFAULT_BATCH_SIZE)) {
+    const chunks = chunkArray(records, DEFAULT_BATCH_SIZE);
+    for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex += 1) {
+      const chunk = chunks[chunkIndex];
+      this.onRequest({ stage: 'lark_batch_start', operation: 'update', tableId, chunk: chunkIndex + 1, chunks: chunks.length, rows: chunk.length });
       const response = await this.requestJson(
         `/open-apis/bitable/v1/apps/${encodeURIComponent(this.appToken)}/tables/${encodeURIComponent(tableId)}/records/batch_update`,
         {
@@ -176,6 +190,7 @@ export class LarkBitableClient {
       );
 
       updated += response?.data?.records?.length ?? chunk.length;
+      this.onRequest({ stage: 'lark_batch_complete', operation: 'update', tableId, chunk: chunkIndex + 1, chunks: chunks.length, rows: chunk.length });
     }
 
     return { updated };
@@ -203,6 +218,8 @@ export class LarkBitableClient {
     let lastError = null;
 
     for (let attempt = 1; attempt <= this.maxAttempts; attempt += 1) {
+      const attemptStartedAt = Date.now();
+      this.onRequest({ stage: 'lark_request_start', method: options?.method ?? 'GET', path: sanitizeLarkPath(path), attempt, maxAttempts: this.maxAttempts });
       const headers = new Headers({ 'Content-Type': 'application/json; charset=utf-8' });
       if (options?.token) {
         headers.set('Authorization', `Bearer ${options.token}`);
@@ -233,6 +250,7 @@ export class LarkBitableClient {
         });
 
         const text = await response.text();
+        this.onRequest({ stage: 'lark_request_response', method: options?.method ?? 'GET', path: sanitizeLarkPath(path), attempt, status: response.status, elapsedMs: Date.now() - attemptStartedAt });
         const payload = text ? JSON.parse(text) : {};
         const retryable = response.status === 429 || response.status >= 500 || payload?.code === 1254290;
 
@@ -245,32 +263,39 @@ export class LarkBitableClient {
           error.code = payload?.code;
 
           if (!retryable || attempt === this.maxAttempts) {
+            this.onRequest({ stage: 'lark_request_failed', method: options?.method ?? 'GET', path: sanitizeLarkPath(path), attempt, status: response.status, code: payload?.code, elapsedMs: Date.now() - attemptStartedAt, error: message });
             throw error;
           }
 
           lastError = error;
-          await this.sleep(retryDelayMs({
+          const delayMs = retryDelayMs({
             attempt,
             baseDelayMs: this.retryBaseDelayMs,
             retryAfter: response.headers.get('retry-after'),
             random: this.random,
-          }));
+          });
+          this.onRequest({ stage: 'lark_request_retry', method: options?.method ?? 'GET', path: sanitizeLarkPath(path), attempt, status: response.status, code: payload?.code, delayMs, error: message });
+          await this.sleep(delayMs);
           continue;
         }
 
+        this.onRequest({ stage: 'lark_request_success', method: options?.method ?? 'GET', path: sanitizeLarkPath(path), attempt, status: response.status, elapsedMs: Date.now() - attemptStartedAt });
         return payload;
       } catch (error) {
         const retryableNetworkError = error?.status === undefined && error?.code === undefined;
         if (!retryableNetworkError || attempt === this.maxAttempts) {
+          this.onRequest({ stage: 'lark_request_failed', method: options?.method ?? 'GET', path: sanitizeLarkPath(path), attempt, elapsedMs: Date.now() - attemptStartedAt, error: error?.message ?? String(error) });
           throw error;
         }
 
         lastError = error;
-        await this.sleep(retryDelayMs({
+        const delayMs = retryDelayMs({
           attempt,
           baseDelayMs: this.retryBaseDelayMs,
           random: this.random,
-        }));
+        });
+        this.onRequest({ stage: 'lark_request_retry', method: options?.method ?? 'GET', path: sanitizeLarkPath(path), attempt, delayMs, error: error?.message ?? String(error), elapsedMs: Date.now() - attemptStartedAt });
+        await this.sleep(delayMs);
       }
     }
 
@@ -278,11 +303,12 @@ export class LarkBitableClient {
   }
 }
 
-export function createLarkBitableClientFromEnv(env) {
+export function createLarkBitableClientFromEnv(env, options = {}) {
   return new LarkBitableClient({
     appId: env?.LARK_APP_ID,
     appSecret: env?.LARK_APP_SECRET,
     appToken: env?.LARK_APP_TOKEN ?? env?.LARK_BASE_APP_TOKEN,
+    onRequest: options?.onRequest,
   });
 }
 
@@ -326,6 +352,11 @@ function requireObject(value, fieldName) {
   return value;
 }
 
+
+
+function sanitizeLarkPath(path) {
+  return String(path).replace(/(\/apps\/)[^/]+(\/tables\/)/, '$1***$2');
+}
 
 function retryDelayMs(input) {
   const retryAfterSeconds = Number(input?.retryAfter);

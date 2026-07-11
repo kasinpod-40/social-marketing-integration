@@ -61,3 +61,35 @@ test('row dedupe uses last row and field comparison ignores destination-only fie
   assert.equal(result.rows[0].value, 2);
   assert.equal(hasChangedFields({ key: 'a', value: 2, destination_only: true }, { key: 'a', value: 2 }), false);
 });
+
+
+test('sync engine emits detailed progress stages', async () => {
+  const events = [];
+  const repository = {
+    async prepareRows(_tableId, rows) { return rows; },
+    async listAll() { return []; },
+    async createMany(_tableId, rows) { return { created: rows.length }; },
+    async updateMany() { return { updated: 0 }; },
+  };
+  await new TableSyncEngine().syncByKey({
+    repository,
+    tableId: 'tbl_content',
+    keyField: 'content_key',
+    rows: [{ content_key: 'one', views: 1 }],
+    onProgress: (event) => events.push(event),
+  });
+  assert.deepEqual(events.map((event) => event.stage), [
+    'sync_deduplicating',
+    'sync_deduplicated',
+    'sync_loading_schema',
+    'sync_schema_loaded',
+    'sync_loading_existing_records',
+    'sync_existing_records_loaded',
+    'sync_planning',
+    'sync_plan_ready',
+    'sync_creating',
+    'sync_created',
+    'sync_updating',
+    'sync_updated',
+  ]);
+});
