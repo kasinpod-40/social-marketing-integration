@@ -1,6 +1,6 @@
 {
   "name": "social-marketing-integration",
-  "version": "0.2.0-core-sync-engine",
+  "version": "0.2.1-lark-schema-preflight",
   "private": true,
   "type": "module",
   "workspaces": [

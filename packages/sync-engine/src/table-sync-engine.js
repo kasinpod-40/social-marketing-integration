@@ -38,13 +38,14 @@ export class TableSyncEngine {
       return freezeResult({ created: 0, updated: 0, skipped: 0, duplicateInputRows: 0 });
     }
 
+    const preparedRows = await repository.prepareRows(tableId, deduplicated.rows, { keyField });
     const existingRecords = await repository.listAll(tableId);
     const existingIndex = buildExistingIndex(existingRecords, keyField, this.existingDuplicatePolicy);
     const createRows = [];
     const updateRows = [];
     let skipped = 0;
 
-    for (const row of deduplicated.rows) {
+    for (const row of preparedRows) {
       const keyValue = requireText(row?.[keyField], keyField);
       const existing = existingIndex.get(keyValue);
 
@@ -165,7 +166,7 @@ function deepEqual(left, right) {
 }
 
 function requireRepository(repository) {
-  for (const method of ['listAll', 'createMany', 'updateMany']) {
+  for (const method of ['prepareRows', 'listAll', 'createMany', 'updateMany']) {
     if (typeof repository?.[method] !== 'function') {
       throw new TypeError(`TableSyncEngine requires repository.${method}`);
     }

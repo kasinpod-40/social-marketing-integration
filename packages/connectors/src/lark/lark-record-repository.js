@@ -1,20 +1,26 @@
+import { serializeRowsForLark } from './lark-field-serializer.js';
+
 /**
- * Thin Lark Base storage adapter.
- *
- * It intentionally contains no dedupe, diff, retry, or upsert business logic.
- * Those concerns belong to TableSyncEngine and LarkBitableClient respectively.
+ * Lark Base storage adapter. It owns destination-schema discovery and typed
+ * field serialization; dedupe/diff policy remains in TableSyncEngine.
  */
 export class LarkRecordRepository {
-  /**
-   * @param {Object} input
-   * @param {{batchCreateRecords: Function, batchUpdateRecords: Function, listRecords: Function}} input.client
-   */
   constructor(input) {
     this.client = requireClient(input?.client);
+    this.schemaCache = new Map();
   }
 
   async listAll(tableId) {
     return this.client.listRecords({ tableId: requireText(tableId, 'tableId') });
+  }
+
+  async prepareRows(tableId, rows, context = {}) {
+    const normalizedTableId = requireText(tableId, 'tableId');
+    const fields = await this.getTableFields(normalizedTableId);
+    return serializeRowsForLark(requireArray(rows, 'rows'), fields, {
+      tableId: normalizedTableId,
+      keyField: context?.keyField,
+    });
   }
 
   async createMany(tableId, rows) {
@@ -30,13 +36,24 @@ export class LarkRecordRepository {
       records: requireArray(records, 'records'),
     });
   }
+
+  async getTableFields(tableId) {
+    const normalizedTableId = requireText(tableId, 'tableId');
+    if (!this.schemaCache.has(normalizedTableId)) {
+      this.schemaCache.set(normalizedTableId, Promise.resolve(
+        this.client.listFields({ tableId: normalizedTableId }),
+      ).catch((error) => {
+        this.schemaCache.delete(normalizedTableId);
+        throw error;
+      }));
+    }
+    return this.schemaCache.get(normalizedTableId);
+  }
 }
 
 function requireClient(client) {
-  for (const method of ['batchCreateRecords', 'batchUpdateRecords', 'listRecords']) {
-    if (typeof client?.[method] !== 'function') {
-      throw new TypeError(`LarkRecordRepository requires client.${method}`);
-    }
+  for (const method of ['batchCreateRecords', 'batchUpdateRecords', 'listRecords', 'listFields']) {
+    if (typeof client?.[method] !== 'function') throw new TypeError(`LarkRecordRepository requires client.${method}`);
   }
   return client;
 }
@@ -47,8 +64,6 @@ function requireArray(value, fieldName) {
 }
 
 function requireText(value, fieldName) {
-  if (typeof value !== 'string' || value.trim() === '') {
-    throw new Error(`LarkRecordRepository requires ${fieldName}`);
-  }
+  if (typeof value !== 'string' || value.trim() === '') throw new Error(`LarkRecordRepository requires ${fieldName}`);
   return value.trim();
 }

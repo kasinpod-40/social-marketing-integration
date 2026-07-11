@@ -63,6 +63,33 @@ export class LarkBitableClient {
     return this.tokenRequest;
   }
 
+  async listFields(input) {
+    const tableId = requireText(input?.tableId, 'tableId');
+    const token = await this.getTenantAccessToken();
+    const fields = [];
+    let pageToken = null;
+
+    do {
+      const params = new URLSearchParams({ page_size: String(DEFAULT_PAGE_SIZE) });
+      if (pageToken) params.set('page_token', pageToken);
+      const response = await this.requestJson(
+        `/open-apis/bitable/v1/apps/${encodeURIComponent(this.appToken)}/tables/${encodeURIComponent(tableId)}/fields?${params.toString()}`,
+        { method: 'GET', token },
+      );
+      const pageFields = response?.data?.items ?? [];
+      if (!Array.isArray(pageFields)) throw new Error(`Lark listFields returned invalid items for table ${tableId}`);
+      fields.push(...pageFields.map((field) => Object.freeze({
+        fieldId: field?.field_id ?? field?.fieldId ?? null,
+        fieldName: field?.field_name ?? field?.fieldName ?? field?.name ?? null,
+        type: field?.type,
+        property: field?.property ?? null,
+      })));
+      pageToken = response?.data?.page_token ?? null;
+    } while (pageToken);
+
+    return fields;
+  }
+
   async listRecords(input) {
     const tableId = requireText(input?.tableId, 'tableId');
     const pageSize = input?.pageSize ?? DEFAULT_PAGE_SIZE;

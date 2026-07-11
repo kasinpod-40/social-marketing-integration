@@ -5,6 +5,7 @@ import { TableSyncEngine, deduplicateRowsByKey, hasChangedFields } from '../../p
 test('sync engine reads once, creates missing, updates changed, and skips unchanged', async () => {
   const calls = [];
   const repository = {
+    async prepareRows(_tableId, rows) { return rows; },
     async listAll(tableId) {
       calls.push(['list', tableId]);
       return [
@@ -32,6 +33,7 @@ test('sync engine reads once, creates missing, updates changed, and skips unchan
 
 test('sync engine fails fast when destination contains duplicate stable keys', async () => {
   const repository = {
+    async prepareRows(_tableId, rows) { return rows; },
     async listAll() { return [{ recordId: 'one', fields: { key: 'duplicate' } }, { recordId: 'two', fields: { key: 'duplicate' } }]; },
     async createMany() { return { created: 0 }; },
     async updateMany() { return { updated: 0 }; },
@@ -44,6 +46,7 @@ test('sync engine fails fast when destination contains duplicate stable keys', a
 
 test('sync engine does not read or write for an empty row set', async () => {
   const repository = {
+    async prepareRows() { throw new Error('should not prepare'); },
     async listAll() { throw new Error('should not list'); },
     async createMany() { throw new Error('should not create'); },
     async updateMany() { throw new Error('should not update'); },

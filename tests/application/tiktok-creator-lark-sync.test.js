@@ -5,6 +5,7 @@ import { syncTikTokCreatorNativeToLark } from '../../packages/application/src/us
 test('reads RAW TikTok Creator rows and upserts content plus daily snapshots', async () => {
   const syncCalls = [];
   const repository = {
+    async prepareRows(_tableId, rows) { return rows; },
     async listAll(tableId) {
       if (tableId === 'tbl_dictionary') {
         return [

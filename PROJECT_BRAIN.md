@@ -377,3 +377,31 @@ Return to TikTok validation only after installing this baseline:
 3. `CONFIRM_WRITE=YES npm run sync:tiktok`
 4. Run the same write command a second time.
 5. Confirm the second run reports unchanged rows as `skipped`, with no duplicate records and no `1254290`.
+
+---
+
+## Lark Schema-Aware Write Contract (v0.2.1)
+
+All writes to Lark Base must pass through the shared destination-schema preflight layer.
+
+Required flow:
+
+Connector normalized rows
+→ Lark table field metadata
+→ Shared typed field serializer
+→ Preflight validation
+→ Universal TableSyncEngine diff
+→ Batch create/update
+
+Rules:
+
+1. Connectors must not format Lark-specific field payloads themselves.
+2. The repository loads `/fields` metadata and caches it per table for the process lifetime.
+3. URL fields are serialized as `{ link, text }`; raw URL strings must never be sent directly to a Lark URL field.
+4. Empty optional values are omitted from write payloads.
+5. Unknown destination fields and invalid typed values must fail before any write request.
+6. Preflight errors must identify destination table, stable row key, and field name.
+7. Diff comparison must use the same serialized representation that will be written to Lark.
+8. Lark schema changes require updated tests and PROJECT_BRAIN review before sync.
+
+This policy applies to TikTok, Facebook, Instagram, YouTube, Chatwoot, WooCommerce, and every future connector.

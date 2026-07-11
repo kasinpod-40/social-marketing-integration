@@ -185,3 +185,7 @@ The actual sync use case also supports `dryRun: true` for tests or manual valida
 
 All connectors must normalize rows and pass them to `TableSyncEngine`. The engine reads each destination table once, indexes stable keys in memory, skips unchanged rows, and performs sequential batch create/update operations through a thin storage repository. Lark authentication, pagination, request pacing, and bounded retry live in `LarkBitableClient`.
 
+
+### Lark write safety
+
+The Lark repository discovers the live destination table schema before writing. Normalized rows are serialized and validated by field type, then passed to the universal sync engine. URL fields use Lark's `{ link, text }` payload format, and invalid mappings fail before batch writes with table/key/field context.

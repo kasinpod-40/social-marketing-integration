@@ -57,3 +57,24 @@ test('caches and shares the tenant access token request', async () => {
   assert.equal(third, 'tenant-token');
   assert.equal(calls, 1);
 });
+
+test('lists and normalizes Lark table field metadata', async () => {
+  const client = new LarkBitableClient({
+    appId: 'app-id',
+    appSecret: 'app-secret',
+    appToken: 'app-token',
+    minRequestIntervalMs: 0,
+    fetchImpl: async (url) => {
+      if (String(url).includes('tenant_access_token')) {
+        return new Response(JSON.stringify({ code: 0, tenant_access_token: 'token', expire: 7200 }), { status: 200 });
+      }
+      return new Response(JSON.stringify({
+        code: 0,
+        data: { items: [{ field_id: 'fld1', field_name: 'content_url', type: 15, property: {} }] },
+      }), { status: 200 });
+    },
+  });
+  assert.deepEqual(await client.listFields({ tableId: 'tbl' }), [{
+    fieldId: 'fld1', fieldName: 'content_url', type: 15, property: {},
+  }]);
+});

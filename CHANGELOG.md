@@ -107,3 +107,13 @@
 - Migrated TikTok content sync and metric-definition seeding to the shared engine.
 - Added architecture audit documentation and universal sync-engine regression tests.
 - All 36 tests and syntax checks pass.
+
+## 0.2.1-lark-schema-preflight
+
+- Added Lark table-field metadata loading and per-table schema caching.
+- Added a shared typed field serializer before all Lark writes.
+- URL fields are now written as Lark URL objects (`{ link, text }`) instead of raw strings.
+- Empty optional fields are omitted rather than sent as invalid values.
+- Added preflight rejection for missing destination fields, malformed URLs, invalid numbers, and invalid date values with table/key/field context.
+- Updated the universal sync engine to compare and write the same serialized representation.
+- Added regression coverage for URL serialization, schema caching, field metadata loading, and preflight failures.
