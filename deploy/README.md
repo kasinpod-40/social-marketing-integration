@@ -45,8 +45,45 @@ Stable `accountKey` ยังมาจาก Customer profile และห้า
 - Job ที่ลงทะเบียนไว้แต่ยังไม่ Implement เป็น `SYNC_JOB_NOT_IMPLEMENTED`
 - Unknown/Planned/Disabled job จะหยุดก่อนสร้าง Lark client และไม่แตะ Credential
 
+## D1 และ Reliability binding
+
+Sync Worker ต้องมี D1 binding ชื่อ:
+
+```text
+MKT_STATE_DB
+```
+
+ก่อน Deploy ให้สร้าง D1 และ Apply migrations:
+
+```bash
+npx wrangler d1 create social-mkt-state-chemistry-k
+npx wrangler d1 migrations apply social-mkt-state-chemistry-k --remote
+```
+
+D1 เก็บ Sync runs, Distributed lease locks, Dead letters และ System alerts รายละเอียดเต็ม ส่วน Lark Base เป็น mirror สำหรับผู้ใช้
+
 ## Queue concurrency safety
 
-`deploy/wrangler.sync.example.jsonc` กำหนด `max_concurrency=1` เพื่อไม่ให้ Cloudflare เปิด Sync consumer หลาย invocation เขียน Stable key เดียวกันพร้อมกัน ขณะนี้ระบบยังไม่มี Distributed lock/Unique reservation กลาง จึงห้ามเพิ่มค่านี้และห้ามรัน Local write พร้อม Production Queue
+`deploy/wrangler.sync.example.jsonc` กำหนด `max_concurrency=1` เป็นค่าเริ่มต้นสำหรับ UAT แม้มี D1 distributed lease lock แล้ว ห้ามเพิ่ม concurrency จนกว่าจะผ่าน Load/Failure test
+
+Lock key แยกตาม `customer_profile + platform + account_key + sync_type` และหมดอายุตาม `MKT_SYNC_LOCK_LEASE_MS`
+
+Local file lock ป้องกันได้เฉพาะ Process บนเครื่องเดียวกัน จึงยังห้ามรัน Local write กับ Base เดียวกันระหว่างเปิด Cloud scheduled sync
+
+## Dead Letter Queue
+
+Queue หลักต้องกำหนด:
+
+```jsonc
+"dead_letter_queue": "social-mkt-sync-dlq"
+```
+
+และ Worker เดียวกันต้องเป็น Consumer ของ DLQ ด้วย โดยตั้ง:
+
+```env
+MKT_DLQ_QUEUE_NAME=social-mkt-sync-dlq
+```
+
+DLQ consumer จะ Persist Message ลง D1 และสร้าง Critical alert โดยไม่ Execute งานเดิมซ้ำ
 
 ภายในหนึ่ง Queue batch ตัว Workerยังประมวลผล Message ตามลำดับ และแชร์ Tenant token/Schema cache เพื่อลดคำขอ Lark ซ้ำ

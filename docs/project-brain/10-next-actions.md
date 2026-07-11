@@ -1,8 +1,8 @@
 # 10 — Next Actions
 
-## Gate ทันทีหลังติดตั้ง v0.4.0
+## Gate ทันทีหลังติดตั้ง v0.5.0
 
-ใน `.dev.vars` ให้ TikTok เปิดและช่องทางที่ยังไม่ Implement ปิดทั้งหมด:
+รักษา Feature flag เดิมของ DEV และเพิ่ม Table IDs ที่ Reliability layer ใช้:
 
 ```env
 MKT_CONNECTOR_TIKTOK_ENABLED=true
@@ -12,6 +12,11 @@ MKT_CONNECTOR_YOUTUBE_ENABLED=false
 MKT_CONNECTOR_WOOCOMMERCE_ENABLED=false
 MKT_CONNECTOR_CHATWOOT_ENABLED=false
 TIKTOK_SOURCE_HANDLE=ft.pumkin
+
+LARK_TABLE_MKT_SYNC_LOG=tblpgnHODi8MIcso
+LARK_TABLE_MKT_SYSTEM_ALERTS=tbl5Cq9iVkWTFdA4
+MKT_SYNC_LOCK_LEASE_MS=600000
+MKT_LOCAL_LOCK_DIR=.mkt-locks
 ```
 
 จากนั้นรัน:
@@ -21,37 +26,33 @@ npm install
 npm test
 npm run check
 npm run validate:tiktok
-```
-
-Dry run ต้องยืนยัน:
-
-- `sourceIdentity.ok=true`
-- Expected/detected handle เป็น `ft.pumkin`
-- ไม่มี skipped rows, issues หรือ destination identity conflict
-- Content/Daily schema preflight ผ่านทุกแถว
-- Plan ใช้ `existingReadStrategy=filtered_keys`
-
-เมื่อผ่านแล้ว:
-
-```bash
 CONFIRM_WRITE=YES npm run sync:tiktok
 CONFIRM_WRITE=YES npm run sync:tiktok
 ```
 
-รอบที่สองต้อง `created=0` และจำนวน Record เดิมไม่เพิ่ม
+ต้องยืนยัน:
 
-## Reliability ถัดไป
+- `MKT_Sync_Log` มี `sync_id` ใหม่ต่อหนึ่งรอบ และสถานะสุดท้ายเป็น `success`
+- Content/Daily รอบที่สอง `created=0`, `updated=0`
+- Source identity เป็น `ft.pumkin` และไม่มี Account conflict
+- ผลลัพธ์มี `syncRunId` และ `reconciliation`
 
-1. เขียน `MKT_Sync_Log` ต่อหนึ่ง Sync run พร้อม `sync_run_id`
-2. เพิ่ม Reconciliation summary หลัง Partial write/retry
-3. เพิ่ม Distributed lock/Unique reservation ก่อนอนุญาต Writer หลาย Runtime
-4. เพิ่ม DLQ และ `MKT_System_Alerts` เมื่อ Queue Retry หมด
-5. Deploy ขึ้น Cloudflare DEV/Staging ของผู้พัฒนา
-6. เปิด Scheduled TikTok sync และทดสอบหลายรอบ
-7. เพิ่ม Incremental cursor/window เมื่อ RAW source โตระดับหลักหมื่น
-8. ยืนยัน Lark Cell-clear contract แล้วเพิ่มการล้าง Classification field ที่ไม่ Match อีกต่อไป
+ทดสอบ Local lock ด้วยการเริ่ม Write สอง Terminal ใกล้กัน หนึ่งรอบต้องทำงาน อีกหนึ่งรอบต้องหยุดด้วย `SYNC_LOCK_BUSY` โดยไม่เขียน Content/Daily
 
-## งานที่ทำคู่ขนานได้หลัง Foundation นี้
+## Cloudflare DEV/Staging ถัดไป
+
+1. สร้าง D1 ของผู้พัฒนาและ Apply `migrations/0001_initial.sql` + `0002_reliability.sql`
+2. สร้าง Queue หลักและ Dead Letter Queue ตาม `deploy/wrangler.sync.example.jsonc`
+3. ตั้ง `MKT_STATE_DB`, Lark secrets, Table IDs และ DEV customer profile ใน Cloudflare ของผู้พัฒนา
+4. Deploy Sync Worker
+5. ทดสอบ Queue retry เฉพาะ Transient error
+6. ทดสอบ D1 lease lock ด้วย Job ซ้ำพร้อมกัน
+7. ทดสอบ Retry exhaustion แล้วตรวจ `dead_letter_jobs`, `system_alerts` และ Lark `MKT_System_Alerts`
+8. เปิด Scheduled TikTok sync หลัง Reliability UAT ผ่าน
+9. เพิ่ม Incremental cursor/window เมื่อ RAW source โตระดับหลักหมื่น
+10. เพิ่ม lock renewal heartbeat ก่อนงานหนึ่งรอบมีโอกาสยาวเกิน Lease
+
+## งานที่ทำคู่ขนานได้
 
 - ออกแบบ Data Model/Lark Blueprint ของ Facebook + Instagram
 - ออกแบบ Data Model/Lark Blueprint ของ YouTube

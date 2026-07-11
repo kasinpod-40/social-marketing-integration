@@ -4,11 +4,11 @@
 This project connects social organic and paid ads data into Lark Base for reporting, daily snapshots, monitoring, and AI summaries. The implementation target is a lean MVP using Cloudflare Workers, Cloudflare D1, Cloudflare Queues, Lark Base, Lark Native Integrations where useful, and JavaScript.
 
 ## Current project status
-Current audited release: `v0.4.0-multi-channel-foundation`
+Current audited release: `v0.5.0-reliability-layer`
 
-Package verification: 170/170 tests, syntax checks ผ่าน, architecture audit 43 source files / 82 local dependencies / 0 cycles, coverage 93.99% lines / 84.37% branches / 93.30% functions. Live DEV validation/write ของ Release นี้ต้องรันบนเครื่องผู้พัฒนาที่มี `.dev.vars` จริง
+Package verification: 191 tests หลังเพิ่ม Reliability, D1, DLQ, Local lock และ Reconciliation regression suite; syntax checks และ architecture audit ต้องผ่านก่อน Packaging. v0.4.0 ผ่าน Live DEV idempotency gate แล้ว (`created=0`, `updated=0`, `skipped=20` รอบที่สองทั้ง Content/Daily). v0.5.0 ต้องทดสอบ Live DEV เพิ่มเฉพาะ MKT_Sync_Log, MKT_System_Alerts และ Local lease lock.
 
-**v0.4.0-multi-channel-foundation — Multi-channel control plane, Connector feature flags และ Queue job contract เสร็จใน Package; TikTok behavior เดิมคงอยู่และรอ Live DEV gate ของ Release นี้.**
+**v0.5.0-reliability-layer — เพิ่ม sync_run_id, persisted Sync Log, automatic reconciliation, D1 distributed lease lock, retry/DLQ และ System Alerts โดยไม่เปลี่ยน Lark Content/Daily schema.**
 
 Completed in Lark:
 - Created Lark Base: `Social MKT Data Hub`.
@@ -29,6 +29,17 @@ Completed TikTok For Creator POC:
 - Manual sync updates existing rows and does not create duplicates.
 - Initial sync returned 20 records.
 - The TikTok account has 21 videos; the missing video has removed audio, so the omission is likely video eligibility/content availability rather than a confirmed pagination limit.
+
+Completed Reliability layer:
+- ทุก TikTok write run มี `sync_run_id` และ lifecycle `running -> success|partial_success|failed|skipped`.
+- `MKT_Sync_Log` และ `MKT_System_Alerts` ใช้ Schema จริงของ Dev Base โดยไม่เพิ่ม Field.
+- D1 migration `0002_reliability.sql` เพิ่ม `sync_runs`, `sync_locks`, `dead_letter_jobs`, `system_alerts`.
+- Cloudflare write job บังคับ D1 binding `MKT_STATE_DB`; Local ใช้ file lease lock ใน `.mkt-locks/`.
+- Lock key = `customer_profile:platform:account_key:sync_type`; release ได้เฉพาะ owner เดิม.
+- Prepare path ตรวจความไม่ครบคู่ของ Content/Daily และรอบถัดไปเติมเฉพาะ Stable key ที่ขาด.
+- Daily write failure หลัง Content สำเร็จกลายเป็น retryable `SYNC_PARTIAL_WRITE`, บันทึก `partial_success` และ Critical alert.
+- Queue หลักรองรับ `dead_letter_queue`; DLQ consumer Persist ลง D1, Mirror Alert ไป Lark เมื่อ config พร้อม และไม่ Execute งานเดิมซ้ำ.
+- Permanent queue failure ถูกเก็บใน D1 และ Mirror Alert ไป Lark แบบ Best effort เมื่อ config พร้อม; secret-like keys ใน payload/details ถูก redact.
 
 Completed in code:
 - Added central Connector Catalog for TikTok, Facebook, Instagram, YouTube, WooCommerce, and Chatwoot.
@@ -147,6 +158,8 @@ MKT_Ads_Daily = tblPTMsC9J32gukX
 MKT_Metric_Definitions = tblk2Ho99sXqLLE2
 MKT_Report_Snapshots = tbl81gHrMESpDolN
 MKT_AI_Report_Runs = tblCX8IMtOiahI1x
+MKT_Sync_Log = tblpgnHODi8MIcso
+MKT_System_Alerts = tbl5Cq9iVkWTFdA4
 RAW_TikTok_Creator_Videos = tblMdO6XCti94EwH
 ```
 
@@ -159,7 +172,9 @@ Validate the Lark read/write mapping flow with live Lark table IDs:
 4. Confirm `MKT_Content_Daily` receives one snapshot per eligible TikTok video per metric date.
 5. Confirm a second run updates existing rows instead of creating duplicates.
 6. Seed `MKT_Metric_Definitions` with queue job `metric.definitions.seed`.
-7. Add `MKT_Sync_Log` write after live read/write validation.
+7. `MKT_Sync_Log` + `MKT_System_Alerts` write implemented in v0.5.0; verify with live DEV Base.
+8. Apply D1 migration `0002_reliability.sql` before Cloudflare deploy.
+9. Deploy Cloudflare DEV/Staging and verify Queue retry + DLQ + D1 lock.
 
 
 ## 2026-07-09 — v0.1.4 env-driven config + Lark classification dictionary
@@ -541,3 +556,14 @@ MKT_CUSTOMER_PROFILE=chemistry_k
 - DEV ใช้ Base/TikTok ของผู้พัฒนา (`dev_ft_pumkin`, `@ft.pumkin`); Production `chemistry_k` ใช้ทรัพยากรที่ลูกค้าเป็นเจ้าของ
 - Residual risks: ไม่มี cross-table transaction/distributed lock, RAW/Dictionary ยัง full read, ยังไม่มี persisted sync run/DLQ และยังไม่เปิด Classification field clearing จนกว่าจะยืนยัน Lark Cell-clear contract
 - รายงานเต็ม: `docs/full-codebase-audit-v0.3.1.md`
+
+
+## 2026-07-11 — v0.5.0 Reliability Layer
+
+- Baseline: `v0.5.0-reliability-layer`.
+- No Lark Content/Daily schema changes. Existing `MKT_Sync_Log` 7 fields and `MKT_System_Alerts` 5 fields are used as user-facing mirrors.
+- D1 is the operational source of truth for timestamps, detailed counts, retry metadata, lock leases, DLQ payloads and alert details.
+- Automatic reconciliation is part of the normal TikTok sync path; a separate fake reconcile success is not used.
+- Local and Cloud resources remain separate: Local file lock protects one machine only; Cloudflare D1 lock protects Worker invocations. Do not run Local write against the same Base while Cloud scheduled sync is enabled.
+- Known residual risk: D1 lease has no renewal heartbeat yet; configure lease longer than the maximum expected sync duration.
+- Full contract: `docs/reliability-layer-v0.5.0.md`.

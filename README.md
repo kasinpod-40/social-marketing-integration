@@ -4,14 +4,15 @@
 
 ## Baseline ปัจจุบัน
 
-`v0.4.0-multi-channel-foundation`
+`v0.5.0-reliability-layer`
 
 สถานะปัจจุบัน:
 
 - DEV ใช้ Lark Base ของผู้พัฒนาและ TikTok `@ft.pumkin`
 - Production profile `chemistry_k` เตรียมไว้ใน Source code แต่ Production จริงต้องใช้ Lark Base, App, Cloud และบัญชี Social ที่ลูกค้าเป็นเจ้าของ
 - TikTok DEV Sync จริงผ่าน 20 Content + 20 Daily Snapshot แล้วก่อน Audit รอบนี้
-- v0.4.0 เพิ่ม Connector/Queue foundation โดยไม่เปิดช่องทางที่ยังไม่ Implement และต้องรัน Dry run/Idempotency กับ DEV Base อีกครั้ง
+- v0.4.0 ผ่าน Live DEV gate แล้ว: รันซ้ำได้ `created=0`, `updated=0`, `skipped=20` ทั้ง Content และ Daily
+- v0.5.0 เพิ่ม Sync run, Lark Sync Log/System Alerts, automatic reconciliation, D1 lease lock และ Cloudflare DLQ
 
 ## โครงสร้างระบบ
 
@@ -26,6 +27,7 @@ packages
   ├─ sync-engine      Plan/Diff/Execute แบบ Storage-neutral
   ├─ connectors       Lark และ TikTok adapters
   ├─ config           Customer profile, table mapping และ build info
+  ├─ reliability      Sync run, D1/Lark stores, lease lock และ recovery orchestration
   └─ shared           Date, Error และ HTTP utilities กลาง
 ```
 
@@ -113,6 +115,11 @@ LARK_TABLE_RAW_TIKTOK_CREATOR_VIDEOS=...
 LARK_TABLE_MKT_CONTENT=...
 LARK_TABLE_MKT_CONTENT_DAILY=...
 LARK_TABLE_MKT_CLASSIFICATION_DICTIONARY=...
+LARK_TABLE_MKT_SYNC_LOG=...
+LARK_TABLE_MKT_SYSTEM_ALERTS=...
+
+MKT_SYNC_LOCK_LEASE_MS=600000
+MKT_LOCAL_LOCK_DIR=.mkt-locks
 ```
 
 `.dev.vars` ต้องไม่ Commit และไม่รวมใน ZIP Release
@@ -151,6 +158,30 @@ METRIC_DATE=2026-07-11 npm run validate:tiktok
 METRIC_DATE=2026-07-11 CONFIRM_WRITE=YES npm run sync:tiktok
 ```
 
+
+
+## Reliability Layer
+
+ทุก Write sync ถูกครอบด้วยวงจรเดียวกัน:
+
+```text
+sync_run_id
+→ lease lock
+→ MKT_Sync_Log=running
+→ Prepare/Preflight
+→ Execute Content + Daily
+→ success / partial_success / failed
+→ MKT_System_Alerts เมื่อจำเป็น
+→ release lock
+```
+
+Local ใช้ file lock กันหลาย Process บนเครื่องเดียวกัน ส่วน Cloudflare ใช้ D1 binding `MKT_STATE_DB` เป็น Distributed lease lock และ operational state store
+
+Automatic reconciliation ใช้ Stable key ตรวจว่าฝั่ง Content หรือ Daily ขาด แล้วสร้างเฉพาะส่วนที่ขาด รอบที่เกิด Partial write จะถูกบันทึกเป็น `partial_success` และ Retry ได้โดยไม่สร้างฝั่งที่สำเร็จแล้วซ้ำ
+
+Cloudflare Queue ต้องกำหนด Dead Letter Queue ชื่อเดียวกับ `MKT_DLQ_QUEUE_NAME` Message ที่ Retry ครบจะถูกเก็บใน D1 `dead_letter_jobs` และสร้าง Critical alert โดย DLQ consumer จะไม่ Execute งานเดิมซ้ำ
+
+รายละเอียด: `docs/reliability-layer-v0.5.0.md`
 
 ## Multi-channel Foundation
 
@@ -216,8 +247,11 @@ tiktok:chemistry_k:<video_id>
 - Read/Update requests Retry เฉพาะ Error ชั่วคราว
 - Batch Create Retry ภายใน Request เฉพาะ Rate limit ที่ Lark ตอบกลับชัดเจน
 - Timeout/Network/5xx ที่ผล Create อาจกำกวมจะส่งกลับให้ Queue เริ่ม Job ใหม่
-- Job ใหม่ต้อง Re-plan จาก Stable Key ก่อนเขียน จึงลดความเสี่ยงสร้างข้อมูลซ้ำ
+- Job ใหม่ต้อง Re-plan จาก Stable Key ก่อนเขียน จึงเติมเฉพาะส่วนที่ขาดและลดความเสี่ยงสร้างข้อมูลซ้ำ
+- Partial write ถูกบันทึกเป็น `partial_success` พร้อม `sync_run_id` และ Critical alert
+- Cloudflare ใช้ D1 lease lock ป้องกันหลาย Invocation เขียน Account เดียวกันพร้อมกัน
 - Permanent error เช่น Schema, Config, Source mismatch และ Invalid job จะไม่ Retry วน
+- Transient error ที่ Retry ครบจะเข้าสู่ DLQ และถูกเก็บใน D1
 
 Lark ไม่มี Transaction ข้าม `MKT_Content` และ `MKT_Content_Daily` ดังนั้น Network failure หลังตารางแรกสำเร็จยังอาจเกิด Partial write ได้ การรัน Job เดิมซ้ำจะ Reconcile ด้วย Stable Key และเติมเฉพาะส่วนที่ขาด
 

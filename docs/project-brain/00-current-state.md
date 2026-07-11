@@ -2,7 +2,7 @@
 
 ## Baseline
 
-`v0.4.0-multi-channel-foundation` — 2026-07-11
+`v0.5.0-reliability-layer` — 2026-07-11
 
 ## Environment ปัจจุบัน
 
@@ -13,35 +13,48 @@
 - Production profile `chemistry_k` อยู่ใน Source codeแล้ว แต่ Production จริงยังไม่เปิดใช้งาน
 - Production ต้องสร้างใน Lark, Cloudflare และบัญชี Platform ที่ลูกค้าเป็นเจ้าของ
 
-## Verified ก่อน Release นี้
+## Verified Live DEV ก่อน Release นี้
 
-Baseline v0.2.8 เคยผ่าน Live DEV sync:
+Baseline v0.4.0 ผ่าน Live DEV idempotency gate:
 
 - RAW TikTok: 20 rows
-- `MKT_Content`: created 20
-- `MKT_Content_Daily`: created 20
-- Key ที่ถูกต้อง: `tiktok:ft_pumkin:*`
-- ข้อมูลเก่า `tiktok:chemistry_k:*` ใน DEV Base ถูกลบแล้ว
+- รอบแรกหลัง Upgrade: Content/Daily update 20
+- รอบที่สอง: Content/Daily `created=0`, `updated=0`, `skipped=20`
+- Source identity: `@ft.pumkin`
+- Account conflicts: 0
+- Warnings: 0
 
-## เพิ่มใน v0.4.0
+## เพิ่มใน v0.5.0
 
-- Connector Catalog กลางสำหรับ TikTok, Facebook, Instagram, YouTube, WooCommerce และ Chatwoot
-- Runtime feature flags แยกแต่ละ Connector
-- Customer profile ของ DEV และ Chemistry K มี Config ทุกช่องทางโดยใช้ชื่อของลูกค้าเมื่อใช้ได้
-- Connector Registry ตรวจ `active + enabled` ก่อนสร้าง Infrastructure
-- Queue Job Catalog กลางและ Queue schema version 1
-- Job ที่วางชื่อรอแต่ยังไม่ Implement จะ Fail แบบ Permanent โดยไม่คืน Fake success
-- TikTok handle เปลี่ยนผ่าน `TIKTOK_SOURCE_HANDLE` ได้โดยไม่แก้ Source code
-- Health endpoint แสดงเฉพาะ Connector readiness ที่ไม่เปิดเผย Account identity หรือ Secret
-- TikTok behavior เดิมยังคงใช้ Sync/Validation path เดิม
+- `sync_run_id` ต่อหนึ่งรอบ Sync
+- Lifecycle `running`, `success`, `partial_success`, `failed`, `skipped`
+- Mirror ไป `MKT_Sync_Log` ด้วย Schema ที่มีอยู่แล้ว
+- Mirror Alert ไป `MKT_System_Alerts`
+- D1 operational tables: `sync_runs`, `sync_locks`, `dead_letter_jobs`, `system_alerts`
+- D1 atomic lease lock สำหรับ Cloudflare Worker หลาย invocation
+- Local file lease lock สำหรับหลาย Terminal/Process บนเครื่องเดียวกัน
+- Automatic reconciliation ระหว่าง `MKT_Content` และ `MKT_Content_Daily`
+- Retryable `SYNC_PARTIAL_WRITE` พร้อมผล Content ที่เขียนสำเร็จแล้ว
+- Cloudflare Dead Letter Queue consumer ที่ Persist โดยไม่ Execute งานเดิมซ้ำ
+- Secret-like key redaction ก่อนเก็บ payload/details ใน D1
 
-## Verified in Package v0.4.0
+## Package gate
 
-- Tests: 170/170 ผ่าน
-- Syntax checks: ผ่าน
-- Architecture audit: 43 source files, 82 local dependencies, 0 cycles
-- Coverage: 93.99% lines, 84.37% branches, 93.30% functions
-- Live DEV validation/write: ต้องรันบนเครื่องผู้พัฒนาที่มี `.dev.vars` และ Lark Base จริง
+- Tests ต้องผ่านทั้งหมด
+- Syntax checks ต้องผ่าน
+- Architecture audit ต้องมี 0 cycles
+- Migration SQL ต้อง parse/apply ได้
+- ZIP ต้องไม่มี `.dev.vars`, Secret, `.mkt-locks`, `node_modules` หรือ build artifact
+
+## Live DEV gate สำหรับ v0.5.0
+
+1. เพิ่ม Table IDs ใน `.dev.vars`
+2. `npm run validate:tiktok`
+3. `CONFIRM_WRITE=YES npm run sync:tiktok`
+4. ตรวจ `MKT_Sync_Log` มีสถานะ `running` แล้วเปลี่ยนเป็น `success`
+5. รันซ้ำและยืนยัน Content/Daily ยังไม่สร้างหรือ Update ซ้ำ
+6. ทดสอบ Local lock ด้วยการรัน Write สอง Terminal พร้อมกัน: หนึ่งรอบทำงาน อีกหนึ่งรอบต้อง `SYNC_LOCK_BUSY`
+7. ทดสอบ Error แบบปลอดภัยใน DEV และตรวจ `MKT_System_Alerts`
 
 ## Connector status
 
@@ -54,22 +67,12 @@ Baseline v0.2.8 เคยผ่าน Live DEV sync:
 | WooCommerce | planned | disabled |
 | Chatwoot | planned | disabled |
 
-## Gate หลังติดตั้ง Release นี้
-
-1. รักษา `.dev.vars` เดิมไว้
-2. เพิ่ม Connector flags ตาม `.dev.vars.example`
-3. `npm test`
-4. `npm run check`
-5. `npm run validate:tiktok`
-6. Sync จริงสองรอบ
-7. รอบที่สองต้อง `created=0`
-
 ## Known residual risks
 
-- ไม่มี Transaction ข้าม Lark tables
-- Queue ยังจำกัด `max_concurrency=1` เพราะไม่มี Distributed lock สำหรับ Writer หลาย Runtime
+- Lark ไม่มี Transaction ข้ามตาราง แต่ Partial write ตรวจพบ/Alert/Recovery ได้แล้ว
+- D1 lease ยังไม่มี renewal heartbeat ต้องตั้ง Lease ยาวกว่าระยะ Sync สูงสุด
+- Local file lock ไม่ครอบ Cloudflare ต้องห้าม Local write เมื่อ Cloud Cron ใช้ Base เดียวกัน
 - RAW/Dictionary ยังเป็น Full-source read
-- ยังไม่มี Persisted `MKT_Sync_Log`, DLQ alert และ Reconciliation summary แบบครบวงจร
-- Classification field ที่กลายเป็นค่าว่างยังไม่ล้างค่าเก่าใน Lark จนกว่าจะยืนยัน Cell-clear contract
+- Classification field ที่กลายเป็นค่าว่างยังไม่ล้างค่าเก่าใน Larkจนกว่าจะยืนยัน Cell-clear contract
 - Connector ที่เป็น `planned` ยังไม่มี API/Source contract/Blueprint และห้ามเปิดใช้
-- Chemistry K Production ยังไม่ผ่าน Live customer-owned deployment
+- Chemistry K Production ยังไม่ผ่าน customer-owned Cloudflare/Lark deployment

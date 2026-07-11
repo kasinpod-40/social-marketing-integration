@@ -83,6 +83,7 @@ export async function prepareTikTokCreatorLarkSync(input) {
     }),
   ]);
   const accountConflicts = Object.freeze([...contentConflicts, ...dailyConflicts]);
+  const reconciliation = analyzeDestinationConsistency(contentPlan, dailyPlan);
 
   const issues = buildReadinessIssues({
     rawCount: rawRows.length,
@@ -119,9 +120,43 @@ export async function prepareTikTokCreatorLarkSync(input) {
     accountConflicts: Object.freeze(accountConflicts),
     issues: Object.freeze(issues),
     warnings: Object.freeze(warnings),
+    reconciliation,
     readyToWrite,
     plans: Object.freeze({ content: contentPlan, dailySnapshots: dailyPlan }),
   });
+}
+
+/**
+ * ตรวจความสอดคล้องระหว่าง Master content และ Daily snapshot จาก Plan ก่อนเขียน
+ * Stable key ทำให้รอบถัดไปสามารถเติมเฉพาะฝั่งที่ขาดได้โดยไม่สร้างข้อมูลซ้ำ
+ */
+function analyzeDestinationConsistency(contentPlan, dailyPlan) {
+  const contentCreateIds = new Set(contentPlan.createRows.map(readExternalContentId));
+  const dailyCreateIds = new Set(dailyPlan.createRows.map(readExternalContentId));
+  const allIds = new Set([...contentCreateIds, ...dailyCreateIds]);
+  const missingContentIds = [];
+  const missingDailySnapshotIds = [];
+
+  for (const externalContentId of allIds) {
+    const contentMissing = contentCreateIds.has(externalContentId);
+    const dailyMissing = dailyCreateIds.has(externalContentId);
+    if (contentMissing && !dailyMissing) missingContentIds.push(externalContentId);
+    if (!contentMissing && dailyMissing) missingDailySnapshotIds.push(externalContentId);
+  }
+
+  const required = missingContentIds.length > 0 || missingDailySnapshotIds.length > 0;
+  return Object.freeze({
+    required,
+    status: required ? 'recovery_required' : 'consistent',
+    missingContentRows: missingContentIds.length,
+    missingDailySnapshotRows: missingDailySnapshotIds.length,
+    missingContentIds: Object.freeze(missingContentIds.slice(0, 20)),
+    missingDailySnapshotIds: Object.freeze(missingDailySnapshotIds.slice(0, 20)),
+  });
+}
+
+function readExternalContentId(row) {
+  return requireText(row?.external_content_id, 'external_content_id');
 }
 
 /**

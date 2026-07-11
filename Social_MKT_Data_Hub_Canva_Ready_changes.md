@@ -47,3 +47,13 @@ Release `v0.4.0-multi-channel-foundation` ไม่มีการเพิ่�
 - เพิ่มเฉพาะ Connector Catalog, Runtime feature flags, Queue job catalog/schema และ Customer profile ใน Source code
 - Facebook, Instagram, YouTube, WooCommerce และ Chatwoot ยังเป็น `planned` และไม่เขียนข้อมูลลง Base
 - ก่อน Implement Connector ใหม่ ต้องออกแบบ Table/Field/Key/Metric definition/Relation/Formula/Lookup และทำ Blueprint แยกก่อน
+
+
+## v0.5.0 reliability layer note
+
+Release `v0.5.0-reliability-layer` ไม่เพิ่ม/ลบ/เปลี่ยน Field ใน Lark Base และใช้ตารางเดิมดังนี้:
+
+- `MKT_Sync_Log` — Upsert ด้วย `sync_id`; ใช้ `platform`, `sync_type`, `status`, `records_pulled`, `records_written`, `error_message`
+- `MKT_System_Alerts` — Upsert ด้วย `alert_id`; ใช้ `severity`, `platform`, `alert_message`, `status`
+
+รายละเอียด Operational ที่ Base ไม่มี Field เช่น created/updated/skipped แยกกัน, retry count, lock, DLQ payload และ reconciliation metadata จะเก็บใน Cloudflare D1 ผ่าน `migrations/0002_reliability.sql` จึงไม่ต้องแก้ Base ของผู้พัฒนาหรือ Blueprint ลูกค้ารอบนี้

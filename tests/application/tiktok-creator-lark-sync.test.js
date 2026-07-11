@@ -167,3 +167,82 @@ function tableIds() {
     mktClassificationDictionary: 'tbl_dictionary',
   };
 }
+
+test('detects missing daily snapshots and reconciles them on the normal rerun path', async () => {
+  const existingContent = {
+    recordId: 'content_1',
+    fields: {
+      content_key: 'tiktok:tt_account_1:video_1',
+      platform: 'tiktok',
+      account_id: 'tt_account_1',
+      external_content_id: 'video_1',
+    },
+  };
+  const recordsByTable = {
+    tbl_mkt_content: [existingContent],
+    tbl_mkt_content_daily: [],
+  };
+  const writes = [];
+  const repository = {
+    async listAll(tableId) {
+      if (tableId === 'tbl_raw_tiktok_creator') return [rawVideo('tt_account_1', 'video_1')];
+      if (tableId === 'tbl_dictionary') return [dictionaryRow()];
+      return recordsByTable[tableId] ?? [];
+    },
+    async listByFieldValues(tableId, fieldName, values) {
+      const allowed = new Set(values.map(String));
+      return (recordsByTable[tableId] ?? []).filter((record) => allowed.has(String(record.fields?.[fieldName] ?? '')));
+    },
+    async prepareRows(_tableId, rows) { return rows; },
+    async createMany(tableId, rows) { writes.push({ operation: 'create', tableId, rows }); return { created: rows.length }; },
+    async updateMany(tableId, rows) { writes.push({ operation: 'update', tableId, rows }); return { updated: rows.length }; },
+  };
+
+  const result = await syncTikTokCreatorNativeToLark({
+    syncRunId: 'run-reconcile',
+    repository,
+    syncEngine: new TableSyncEngine(),
+    accountId: 'tt_account_1',
+    sourceHandle: 'tt_account_1',
+    metricDate: '2026-07-07',
+    tables: tableIds(),
+  });
+
+  assert.equal(result.syncRunId, 'run-reconcile');
+  assert.equal(result.reconciliation.required, true);
+  assert.equal(result.reconciliation.missingDailySnapshotRows, 1);
+  assert.equal(result.reconciliation.status, 'recovered');
+  assert.equal(result.dailySnapshots.created, 1);
+  assert.ok(writes.some((write) => write.tableId === 'tbl_mkt_content_daily' && write.operation === 'create'));
+});
+
+test('wraps a daily write failure as retryable partial sync with the completed content result', async () => {
+  const repository = createRepository({
+    rawRecords: [rawVideo('tt_account_1', 'video_1')],
+    dictionaryRecords: [dictionaryRow()],
+    async createMany(tableId, rows) {
+      if (tableId === 'tbl_mkt_content_daily') throw new Error('daily network timeout');
+      return { created: rows.length };
+    },
+  });
+
+  await assert.rejects(
+    () => syncTikTokCreatorNativeToLark({
+      syncRunId: 'run-partial',
+      repository,
+      syncEngine: new TableSyncEngine(),
+      accountId: 'tt_account_1',
+      sourceHandle: 'tt_account_1',
+      metricDate: '2026-07-07',
+      tables: tableIds(),
+    }),
+    (error) => {
+      assert.equal(error.code, 'SYNC_PARTIAL_WRITE');
+      assert.equal(error.retryable, true);
+      assert.equal(error.partialResult.syncRunId, 'run-partial');
+      assert.equal(error.partialResult.content.created, 1);
+      assert.equal(error.partialResult.dailySnapshots.writeOutcome, 'unknown');
+      return true;
+    },
+  );
+});

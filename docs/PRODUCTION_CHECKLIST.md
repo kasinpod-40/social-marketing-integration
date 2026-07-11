@@ -2,7 +2,7 @@
 
 Release จะยังไม่ถือว่า Production-ready จนกว่าจะตรวจครบทุก Gate
 
-## สถานะ Package v0.4.0
+## สถานะ Package v0.5.0
 
 ### Architecture และ Code quality
 
@@ -49,13 +49,13 @@ Release จะยังไม่ถือว่า Production-ready จนกว
 - [x] Plan เดิม Execute ซ้ำไม่ได้
 - [ ] Benchmark/Load test เมื่อข้อมูลเพิ่ม 10x และ 100x
 - [ ] Incremental RAW source cursor/window
-- [ ] Distributed lock/Unique reservation ก่อนเพิ่ม Queue concurrency หรือเปิด Writer หลาย Runtime
-- [ ] Persisted `MKT_Sync_Log`, `sync_run_id`, DLQ alert และ Reconciliation summary
+- [x] Distributed lease lock บน D1 ก่อนเพิ่ม Queue concurrency หรือเปิด Cloud Writer หลาย Invocation
+- [x] Persisted `MKT_Sync_Log`, `sync_run_id`, DLQ alert และ Reconciliation summary
 - [ ] ยืนยัน Lark Cell-clear contract และเพิ่ม Classification field clearing โดยไม่ลบค่าผิด Field
 
 ### Test และ Release package
 
-- [x] Unit/Integration/Regression tests 170/170 ผ่านก่อน Packaging
+- [x] Unit/Integration/Regression tests 191/191 ผ่านก่อน Packaging
 - [x] Syntax check ผ่านก่อน Packaging
 - [x] Architecture audit ผ่านก่อน Packaging
 - [x] สร้าง ZIP โดยไม่มี `.dev.vars`, Secret, `node_modules`, Log หรือไฟล์ขยะ
@@ -64,14 +64,25 @@ Release จะยังไม่ถือว่า Production-ready จนกว
 
 ### Live DEV gate หลังติดตั้ง ZIP
 
-- [ ] TikTok flag เป็น true และ Connector ที่ยัง planned เป็น false ทั้งหมด
+- [x] Baseline v0.4.0 ยืนยัน TikTok=true และ Connector ที่ยัง planned=false ทั้งหมด
 
-- [ ] `npm run validate:tiktok` ผ่านกับ DEV Base จริง
-- [ ] Source identity เป็น `ft.pumkin`
-- [ ] ไม่มี skipped rows/issues/destination identity conflicts
-- [ ] Sync จริงรอบแรกผ่าน
-- [ ] Sync รอบสอง `created=0`
-- [ ] จำนวน Content/Daily ไม่เพิ่มจาก Stable Key เดิม
+- [x] Baseline v0.4.0 `npm run validate:tiktok` ผ่านกับ DEV Base จริง
+- [x] Baseline v0.4.0 Source identity เป็น `ft.pumkin`
+- [x] Baseline v0.4.0 ไม่มี skipped rows/issues/destination identity conflicts
+- [x] Baseline v0.4.0 Sync จริงรอบแรกผ่าน
+- [x] Baseline v0.4.0 Sync รอบสอง `created=0`, `updated=0`, `skipped=20`
+- [x] Baseline v0.4.0 จำนวน Content/Daily ไม่เพิ่มจาก Stable Key เดิม
+
+
+### Live DEV reliability gate ของ v0.5.0
+
+- [ ] เพิ่ม `LARK_TABLE_MKT_SYNC_LOG` และ `LARK_TABLE_MKT_SYSTEM_ALERTS` ใน `.dev.vars`
+- [ ] Local write สร้าง `sync_run_id` และ Upsert `MKT_Sync_Log` จาก `running` เป็น `success`
+- [ ] รันซ้ำแล้ว Content/Daily ไม่ Create หรือ Update ซ้ำ
+- [ ] เปิดสอง Terminal พร้อมกันแล้วรอบที่ชน Lock ได้ `SYNC_LOCK_BUSY` โดยไม่เขียนข้อมูลธุรกิจ
+- [ ] จำลอง Error แบบปลอดภัยและตรวจว่า `MKT_System_Alerts` ได้ Alert พร้อม `sync_run_id`
+- [ ] Apply `0002_reliability.sql` กับ D1 DEV สำเร็จ
+- [ ] Queue Retry, DLQ persistence และ D1 lease lock ผ่าน Cloudflare DEV/Staging UAT
 
 ### Customer-owned Production gate
 

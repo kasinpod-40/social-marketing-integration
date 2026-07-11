@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.5.0-reliability-layer — 2026-07-11
+
+### Added
+- Added `sync_run_id` lifecycle and persisted `MKT_Sync_Log` mirror for every TikTok write run.
+- Added `MKT_System_Alerts` mirror with critical/warning alerts for partial, permanent, lock-release, and DLQ failures.
+- Added D1 migration `0002_reliability.sql` with `sync_runs`, `sync_locks`, `dead_letter_jobs`, and `system_alerts`.
+- Added atomic D1 lease lock keyed by customer profile, platform, account key, and sync type.
+- Added local file lease lock to prevent two Terminal processes writing the same DEV Base concurrently.
+- Added automatic Content/Daily consistency analysis and reconciliation metadata.
+- Added retryable `SYNC_PARTIAL_WRITE` with the completed content result when Daily write fails.
+- Added Cloudflare Dead Letter Queue consumer that persists failed messages, mirrors alerts to Lark when configuration is available, and never executes the dead-lettered job again.
+- Added D1/Lark composite reliability store and secret-like key redaction for stored JSON payloads.
+- Added reliability, D1/DLQ, composite-store, local-lock, Lark-mirror, partial-write, and reconciliation regression tests (191 total tests).
+
+### Changed
+- TikTok local write now requires `LARK_TABLE_MKT_SYNC_LOG` and `LARK_TABLE_MKT_SYSTEM_ALERTS`.
+- Cloudflare TikTok write job now requires D1 binding `MKT_STATE_DB`.
+- Queue retries include bounded delay and terminal permanent failures are persisted to D1 when available.
+- Package/build version updated to `0.5.0-reliability-layer`.
+
+### Safety
+- Lark Content/Daily schema remains unchanged.
+- Lark Base still has no cross-table transaction; partial writes are now detected, logged, alerted, and reconciled on rerun instead of being reported as silent success.
+- D1 lease currently has no renewal heartbeat; lease duration must exceed the maximum expected sync duration.
+
 ## 0.4.0-multi-channel-foundation — 2026-07-11
 
 - Added a central Connector Catalog for TikTok, Facebook, Instagram, YouTube, WooCommerce, and Chatwoot.

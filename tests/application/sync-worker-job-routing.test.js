@@ -17,7 +17,7 @@ function createMessage(body) {
     acked: false,
     retried: false,
     ack() { this.acked = true; },
-    retry() { this.retried = true; },
+    retry(options) { this.retried = true; this.retryOptions = options ?? null; },
   };
 }
 
@@ -88,3 +88,55 @@ test('unsupported queue schema versions are permanent failures and do not abort 
   assert.equal(unsupported.retried, false);
   assert.equal(next.acked, true);
 });
+
+
+test('dead-letter consumer persists the message and acknowledges it even when Lark mirror config is absent', async () => {
+  const message = createMessage({ type: 'tiktok.creator.native.sync' });
+  message.id = 'dlq-message';
+  message.attempts = 6;
+  const db = createFakeD1();
+
+  await syncWorker.queue({ queue: 'sync-dlq', messages: [message] }, {
+    MKT_DLQ_QUEUE_NAME: 'sync-dlq',
+    MKT_STATE_DB: db,
+  });
+
+  assert.equal(message.acked, true);
+  assert.equal(message.retried, false);
+  assert.equal(db.calls.length, 2);
+  assert.match(db.calls[0].sql, /INSERT INTO dead_letter_jobs/);
+  assert.match(db.calls[1].sql, /INSERT INTO system_alerts/);
+});
+
+test('dead-letter persistence failure retries with a safe default when retry delay config is invalid', async () => {
+  const message = createMessage({ type: 'tiktok.creator.native.sync' });
+  const db = createFakeD1({ fail: true });
+
+  await syncWorker.queue({ queue: 'sync-dlq', messages: [message] }, {
+    MKT_DLQ_QUEUE_NAME: 'sync-dlq',
+    MKT_QUEUE_RETRY_DELAY_SECONDS: 'not-a-number',
+    MKT_STATE_DB: db,
+  });
+
+  assert.equal(message.acked, false);
+  assert.equal(message.retried, true);
+  assert.deepEqual(message.retryOptions, { delaySeconds: 30 });
+});
+
+function createFakeD1(input = {}) {
+  const calls = [];
+  return {
+    calls,
+    prepare(sql) {
+      const call = { sql: String(sql), bindings: [] };
+      calls.push(call);
+      return {
+        bind(...values) { call.bindings = values; return this; },
+        async run() {
+          if (input.fail) throw new Error('D1 unavailable');
+          return { meta: { changes: 1 } };
+        },
+      };
+    },
+  };
+}

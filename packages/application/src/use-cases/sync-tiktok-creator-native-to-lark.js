@@ -2,22 +2,17 @@ import {
   assertTikTokSyncReady,
   prepareTikTokCreatorLarkSync,
 } from './prepare-tiktok-creator-lark-sync.js';
+import { partialSyncError } from '../../../shared/src/errors/runtime-error.js';
 
 /**
  * Sync RAW TikTok Creator ไปยัง MKT_Content และ MKT_Content_Daily
  *
- * ลำดับที่ปลอดภัย:
- * 1. อ่าน RAW + Dictionary
- * 2. Normalize และตรวจ Source identity
- * 3. Preflight Schema และวาง Plan ของทั้งสองตาราง
- * 4. ตรวจ Account identity conflict
- * 5. เมื่อทุกอย่างผ่านจึง Execute Content แล้ว Daily Snapshot
- *
- * การแยก Plan ออกจาก Execute ทำให้ Error ด้าน Field/URL/Date/Select ของตารางหลัง
- * ถูกพบก่อนตารางแรกเริ่มเขียน ลด Partial write จาก Validation error
+ * Flow แยก Prepare/Execute และส่ง syncRunId ลงผลลัพธ์ เพื่อให้ Reliability layer
+ * เชื่อม Log, Alert และ Recovery ของรอบเดียวกันได้ครบ
  */
 export async function syncTikTokCreatorNativeToLark(input) {
   const progress = typeof input?.onProgress === 'function' ? input.onProgress : () => undefined;
+  const syncRunId = optionalText(input?.syncRunId);
   const prepared = await prepareTikTokCreatorLarkSync({
     repository: input?.repository,
     syncEngine: input?.syncEngine,
@@ -30,6 +25,7 @@ export async function syncTikTokCreatorNativeToLark(input) {
 
   if (input?.dryRun === true) {
     return Object.freeze({
+      syncRunId,
       platform: prepared.platform,
       source: prepared.source,
       mode: 'dry_run',
@@ -39,6 +35,7 @@ export async function syncTikTokCreatorNativeToLark(input) {
       classificationDictionary: prepared.classificationDictionary,
       content: planSummary(prepared.plans.content),
       dailySnapshots: planSummary(prepared.plans.dailySnapshots),
+      reconciliation: prepared.reconciliation,
       skippedRows: prepared.normalized.skippedRows,
       sourceIdentity: prepared.sourceIdentity,
       accountConflicts: prepared.accountConflicts,
@@ -51,37 +48,87 @@ export async function syncTikTokCreatorNativeToLark(input) {
 
   progress({
     stage: 'executing_content_plan',
+    syncRunId,
     createRows: prepared.plans.content.createRows.length,
     updateRows: prepared.plans.content.updateRows.length,
   });
   const contentResult = await input.syncEngine.executePlan(prepared.plans.content, {
-    onProgress: (event) => progress({ scope: 'content', ...event }),
+    onProgress: (event) => progress({ scope: 'content', syncRunId, ...event }),
   });
-  progress({ stage: 'content_synced', result: contentResult });
+  progress({ stage: 'content_synced', syncRunId, result: contentResult });
 
   progress({
     stage: 'executing_daily_snapshot_plan',
+    syncRunId,
     createRows: prepared.plans.dailySnapshots.createRows.length,
     updateRows: prepared.plans.dailySnapshots.updateRows.length,
   });
-  const dailyResult = await input.syncEngine.executePlan(prepared.plans.dailySnapshots, {
-    onProgress: (event) => progress({ scope: 'daily_snapshots', ...event }),
-  });
-  progress({ stage: 'daily_snapshots_synced', result: dailyResult });
 
+  let dailyResult;
+  try {
+    dailyResult = await input.syncEngine.executePlan(prepared.plans.dailySnapshots, {
+      onProgress: (event) => progress({ scope: 'daily_snapshots', syncRunId, ...event }),
+    });
+  } catch (cause) {
+    const partialResult = buildResult({
+      syncRunId,
+      prepared,
+      contentResult,
+      dailyResult: {
+        created: 0,
+        updated: 0,
+        skipped: prepared.plans.dailySnapshots.skipped,
+        duplicateInputRows: prepared.plans.dailySnapshots.duplicateInputRows,
+        writeOutcome: 'unknown',
+      },
+      reconciliationStatus: 'partial_write_detected',
+    });
+
+    throw partialSyncError('TikTok content sync succeeded but daily snapshot sync failed', {
+      cause,
+      partialResult,
+      details: {
+        syncRunId,
+        failedPhase: 'daily_snapshots',
+        contentCreated: contentResult.created,
+        contentUpdated: contentResult.updated,
+        dailyCreatePlanned: prepared.plans.dailySnapshots.createRows.length,
+        dailyUpdatePlanned: prepared.plans.dailySnapshots.updateRows.length,
+        causeMessage: cause instanceof Error ? cause.message : String(cause),
+      },
+    });
+  }
+
+  progress({ stage: 'daily_snapshots_synced', syncRunId, result: dailyResult });
+  return buildResult({
+    syncRunId,
+    prepared,
+    contentResult,
+    dailyResult,
+    reconciliationStatus: prepared.reconciliation.required ? 'recovered' : 'not_required',
+  });
+}
+
+function buildResult(input) {
   return Object.freeze({
-    platform: prepared.platform,
-    source: prepared.source,
+    syncRunId: input.syncRunId,
+    platform: input.prepared.platform,
+    source: input.prepared.source,
     mode: 'write',
-    rawRecords: prepared.rawRecords,
-    content: contentResult,
-    dailySnapshots: dailyResult,
-    classificationRules: prepared.classificationRules,
-    classificationDictionary: prepared.classificationDictionary,
-    skippedRows: prepared.normalized.skippedRows,
-    sourceIdentity: prepared.sourceIdentity,
-    accountConflicts: prepared.accountConflicts,
-    warnings: prepared.warnings,
+    rawRecords: input.prepared.rawRecords,
+    content: Object.freeze({ ...input.contentResult }),
+    dailySnapshots: Object.freeze({ ...input.dailyResult }),
+    reconciliation: Object.freeze({
+      ...input.prepared.reconciliation,
+      status: input.reconciliationStatus,
+      recovered: input.reconciliationStatus === 'recovered',
+    }),
+    classificationRules: input.prepared.classificationRules,
+    classificationDictionary: input.prepared.classificationDictionary,
+    skippedRows: input.prepared.normalized.skippedRows,
+    sourceIdentity: input.prepared.sourceIdentity,
+    accountConflicts: input.prepared.accountConflicts,
+    warnings: input.prepared.warnings,
   });
 }
 
@@ -96,4 +143,12 @@ function planSummary(plan) {
     existingRecordsRead: plan.existingRecordsRead,
     existingReadStrategy: plan.existingReadStrategy,
   });
+}
+
+function optionalText(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new TypeError('syncRunId must be a non-empty string');
+  }
+  return value.trim();
 }
