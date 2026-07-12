@@ -1,6 +1,6 @@
 {
   "name": "social-marketing-integration",
-  "version": "0.6.0-tiktok-incremental-sync",
+  "version": "0.7.1-report-reliability-hardening",
   "private": true,
   "type": "module",
   "engines": {
@@ -15,7 +15,8 @@
     "sync:tiktok": "node scripts/sync-tiktok-creator.mjs",
     "seed:metrics": "node scripts/seed-metric-definitions.mjs",
     "audit:architecture": "node scripts/audit-architecture.mjs",
-    "deploy:dry-run": "wrangler deploy --dry-run --config wrangler.sync.example.jsonc"
+    "deploy:dry-run": "wrangler deploy --dry-run --config wrangler.sync.example.jsonc",
+    "seed:report-settings": "node scripts/seed-report-settings.mjs"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.18.4",

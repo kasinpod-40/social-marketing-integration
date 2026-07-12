@@ -6,6 +6,7 @@ export const JOB_TYPES = Object.freeze({
   TIKTOK_CREATOR_NATIVE_SYNC: 'tiktok.creator.native.sync',
   TIKTOK_CREATOR_NATIVE_VALIDATE: 'tiktok.creator.native.validate',
   METRIC_DEFINITIONS_SEED: 'metric.definitions.seed',
+  REPORT_SETTINGS_SEED: 'report.settings.seed',
 
   FACEBOOK_ORGANIC_SYNC: 'facebook.page.organic.sync',
   INSTAGRAM_ORGANIC_SYNC: 'instagram.business.organic.sync',
@@ -37,6 +38,11 @@ const JOB_CATALOG = Object.freeze({
   }),
   [JOB_TYPES.METRIC_DEFINITIONS_SEED]: freezeJob({
     type: JOB_TYPES.METRIC_DEFINITIONS_SEED,
+    implementationStatus: JOB_IMPLEMENTATION_STATUS.ACTIVE,
+    connectorKey: null,
+  }),
+  [JOB_TYPES.REPORT_SETTINGS_SEED]: freezeJob({
+    type: JOB_TYPES.REPORT_SETTINGS_SEED,
     implementationStatus: JOB_IMPLEMENTATION_STATUS.ACTIVE,
     connectorKey: null,
   }),
@@ -74,13 +80,13 @@ const JOB_CATALOG = Object.freeze({
   }),
   [JOB_TYPES.DAILY_REPORT_GENERATE]: freezeJob({
     type: JOB_TYPES.DAILY_REPORT_GENERATE,
-    implementationStatus: JOB_IMPLEMENTATION_STATUS.PLANNED,
-    connectorKey: null,
+    implementationStatus: JOB_IMPLEMENTATION_STATUS.ACTIVE,
+    connectorKey: CONNECTOR_KEYS.TIKTOK,
   }),
   [JOB_TYPES.WEEKLY_REPORT_GENERATE]: freezeJob({
     type: JOB_TYPES.WEEKLY_REPORT_GENERATE,
-    implementationStatus: JOB_IMPLEMENTATION_STATUS.PLANNED,
-    connectorKey: null,
+    implementationStatus: JOB_IMPLEMENTATION_STATUS.ACTIVE,
+    connectorKey: CONNECTOR_KEYS.TIKTOK,
   }),
   [JOB_TYPES.LARK_NOTIFICATION_SEND]: freezeJob({
     type: JOB_TYPES.LARK_NOTIFICATION_SEND,

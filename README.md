@@ -4,7 +4,7 @@
 
 ## Baseline ปัจจุบัน
 
-`v0.6.0-tiktok-incremental-sync`
+`v0.7.1-report-reliability-hardening`
 
 สถานะปัจจุบัน:
 
@@ -14,20 +14,44 @@
 - v0.4.0 ผ่าน Live DEV gate แล้ว: รันซ้ำได้ `created=0`, `updated=0`, `skipped=20` ทั้ง Content และ Daily
 - v0.6.0 เพิ่ม D1 checkpoint/fingerprint สำหรับ TikTok Incremental Sync: รอบปกติส่งเฉพาะ RAW records ที่เปลี่ยนเข้าสู่ Destination plan/write และบังคับ Full reconciliation ทุก 24 ชั่วโมง
 - Live Cloudflare DEV ผ่าน Sync Log, Reconciliation, Distributed Lock, Retry/DLQ/System Alert และ Scheduled Sync ต่อเนื่อง 3 รอบแล้ว
+- v0.7.1 ซ่อม Report/Lock reliability: แยก failed กับ partial_success ตาม write progress จริง, ผูก metricDate/periodEnd กับ scheduledTime, ทำ Top Content limit ให้สอดคล้องและล้างอันดับเก่า, ตรวจ lease expiry, รักษา partial progress ระหว่าง chunk, จำแนก Lark 1254290 ถูกต้อง และป้องกัน Local lock renewal race
+- Report schedule ยังปิดจนกว่าจะปรับ Lark schema/seed/UAT ตาม Blueprint
 
+
+## TikTok Organic Report v0.7.1
+
+Report Engine อ่าน cumulative snapshots จาก `MKT_Content_Daily` แล้วคำนวณ Delta ของช่วงเวลา; ห้ามนำยอดสะสมแต่ละวันมาบวกกันตรง ๆ. ลูกค้าใช้ Client Views จาก `MKT_Report_Metric_Values` และ `MKT_Report_Top_Content` ส่วน RAW/Daily/Sync/System tables เป็นหลังบ้าน.
+
+ก่อนเปิด Report schedule ต้องอ่าน `docs/report-reliability-hardening-v0.7.1.md` และทำตาม `docs/tiktok-organic-report-blueprint-v0.7.0.md` และ Excel Blueprint ที่แนบมากับ Release:
+
+1. เพิ่ม Field ของตาราง Report เดิมและสร้าง 2 ตารางใหม่
+2. ใส่ Table IDs ใหม่ใน Runtime config
+3. Seed Metric definitions และ Report settings
+4. Manual Queue UAT Daily/Weekly และ rerun idempotency
+5. จึงเปลี่ยน `MKT_SCHEDULE_DAILY_REPORT_ENABLED` / `MKT_SCHEDULE_WEEKLY_REPORT_ENABLED` เป็น `true`
+
+คำสั่ง Seed หลัง Schema พร้อม:
+
+```bash
+CONFIRM_WRITE=YES npm run seed:metrics
+MKT_CUSTOMER_PROFILE=dev_ft_pumkin CONFIRM_WRITE=YES npm run seed:report-settings
+```
 
 ## Cloudflare DEV/Staging deployment gate
 
-ก่อน Deploy จริงให้คัดลอก `wrangler.sync.example.jsonc` เป็นไฟล์ local ที่ไม่ Commit แล้วแทน D1 ID, Queue names และ Table IDs ของ DEV:
+ก่อน Deploy จริงให้คัดลอก `wrangler.sync.example.jsonc` เป็นไฟล์ local ที่ไม่ Commit แล้วแทน D1 ID, Queue names และ Table IDs ของ DEV. หาก Repository เดิมเคย Track ไฟล์นี้ ต้องเอาออกจาก Git index หนึ่งครั้งโดยไม่ลบไฟล์ในเครื่อง:
 
 ```bash
-cp wrangler.sync.example.jsonc wrangler.sync.jsonc
+git rm --cached wrangler.sync.jsonc
+cp -n wrangler.sync.example.jsonc wrangler.sync.jsonc
 chmod 600 .dev.vars
 npm ci
-npm test
 npm run check
+npm test
 npm run deploy:dry-run
 ```
+
+`wrangler.sync.example.jsonc` เปิด Workers Logs/Traces สำหรับ DEV observability แล้ว ส่วน `wrangler.sync.jsonc` เป็น local-only และจะถูก Repository hygiene gate ปฏิเสธหากยังถูก Track.
 
 จากนั้นสร้าง D1/Queues, apply migrations และใส่ Secrets ผ่าน Wrangler โดยไม่เก็บ Secret ใน Source code รายละเอียดอยู่ใน `deploy/README.md`, `docs/cloudflare-deploy-hardening-v0.5.1.md` และ `docs/tiktok-incremental-sync-v0.6.0.md`
 

@@ -57,3 +57,12 @@ Release `v0.5.0-reliability-layer` ไม่เพิ่ม/ลบ/เปลี�
 - `MKT_System_Alerts` — Upsert ด้วย `alert_id`; ใช้ `severity`, `platform`, `alert_message`, `status`
 
 รายละเอียด Operational ที่ Base ไม่มี Field เช่น created/updated/skipped แยกกัน, retry count, lock, DLQ payload และ reconciliation metadata จะเก็บใน Cloudflare D1 ผ่าน `migrations/0002_reliability.sql` จึงไม่ต้องแก้ Base ของผู้พัฒนาหรือ Blueprint ลูกค้ารอบนี้
+
+## v0.7.1 Report Reliability Hardening
+
+- Corrected report `failed` vs `partial_success` classification.
+- Bound scheduled snapshot/report dates to the original scheduled event.
+- Unified and bounded Top Content limit and neutralized stale ranks.
+- Hardened distributed/local lease handling and Lark batch failure classification.
+- Added DEV Workers Logs/Traces example configuration.
+- Report schedule remains disabled pending Lark schema and Live DEV UAT.

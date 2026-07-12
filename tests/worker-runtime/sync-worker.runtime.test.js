@@ -152,6 +152,38 @@ describe('Sync Worker ใน Workers runtime จริง', () => {
       trigger: 'scheduled',
       syncMode: 'auto',
       requestedAt: '2026-07-11T01:00:00.000Z',
+      metricDate: '2026-07-11',
     });
   });
+
+  it('Scheduled handler enqueue Daily report หลัง TikTok sync เมื่อถึงเวลา Bangkok', async () => {
+    const send = vi.fn(async () => undefined);
+    const worker = createSyncWorker();
+    const controller = createScheduledController({
+      scheduledTime: Date.parse('2026-07-13T01:10:00.000Z'),
+      cron: '*/5 * * * *',
+    });
+
+    await worker.scheduled(controller, {
+      MKT_ENV: 'development',
+      MKT_CUSTOMER_PROFILE: 'dev_ft_pumkin',
+      MKT_CONNECTOR_TIKTOK_ENABLED: 'true',
+      DEFAULT_TIMEZONE: 'Asia/Bangkok',
+      MKT_SCHEDULE_TIKTOK_ENABLED: 'true',
+      MKT_SCHEDULE_DAILY_REPORT_ENABLED: 'true',
+      MKT_DAILY_REPORT_TIME: '08:10',
+      MKT_DAILY_REPORT_SETTING_KEY: 'dev_ft_pumkin:tiktok:daily',
+      MKT_SCHEDULE_WEEKLY_REPORT_ENABLED: 'false',
+      MKT_SYNC_QUEUE: { send },
+    });
+
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(send.mock.calls.map(([job]) => job.type)).toEqual([
+      'tiktok.creator.native.sync',
+      'report.daily.generate',
+    ]);
+    expect(send.mock.calls[0][0].metricDate).toBe('2026-07-13');
+    expect(send.mock.calls[1][0].periodEnd).toBe('2026-07-13');
+  });
+
 });

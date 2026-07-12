@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { LarkBitableClient } from '../../packages/connectors/src/lark/lark-bitable.client.js';
+import { transientError } from '../../packages/shared/src/errors/runtime-error.js';
 
 test('retries Lark 1254290 with backoff and then succeeds', async () => {
   let calls = 0;
@@ -687,4 +688,116 @@ test('reports confirmed progress when a later create chunk fails', async () => {
       return true;
     },
   );
+});
+
+
+test('exhausted Lark 1254290 remains an explicit rate-limit error instead of unknown write', async () => {
+  let createCalls = 0;
+  const client = new LarkBitableClient({
+    appId: 'app-id', appSecret: 'app-secret', appToken: 'app-token',
+    maxAttempts: 2, minRequestIntervalMs: 0, retryBaseDelayMs: 1,
+    randomImpl: () => 0, sleepImpl: async () => undefined,
+    fetchImpl: async (url) => {
+      if (String(url).includes('tenant_access_token')) {
+        return new Response(JSON.stringify({ code: 0, tenant_access_token: 'token', expire: 7200 }), { status: 200 });
+      }
+      createCalls += 1;
+      return new Response(JSON.stringify({ code: 1254290, msg: 'TooManyRequest' }), { status: 200 });
+    },
+  });
+
+  await assert.rejects(
+    () => client.batchCreateRecords({ tableId: 'tbl', records: [{ content_key: 'key-1' }] }),
+    (error) => error.code === 'LARK_TRANSIENT_API_ERROR'
+      && error.details.larkCode === 1254290
+      && error.code !== 'LARK_BATCH_WRITE_UNKNOWN',
+  );
+  assert.equal(createCalls, 2);
+});
+
+test('beforeChunk failure after a confirmed create chunk preserves partial progress', async () => {
+  let createCalls = 0;
+  let guardCalls = 0;
+  const client = new LarkBitableClient({
+    appId: 'app-id', appSecret: 'app-secret', appToken: 'app-token',
+    maxAttempts: 1, minRequestIntervalMs: 0,
+    fetchImpl: async (url, options) => {
+      if (String(url).includes('tenant_access_token')) {
+        return new Response(JSON.stringify({ code: 0, tenant_access_token: 'token', expire: 7200 }), { status: 200 });
+      }
+      createCalls += 1;
+      const body = JSON.parse(options.body);
+      return new Response(JSON.stringify({
+        code: 0,
+        data: { records: body.records.map((_, index) => ({ record_id: `rec-${index}` })) },
+      }), { status: 200 });
+    },
+  });
+  const records = Array.from({ length: 101 }, (_, index) => ({ content_key: `key-${index}` }));
+
+  await assert.rejects(
+    () => client.batchCreateRecords({
+      tableId: 'tbl',
+      records,
+      beforeChunk: async () => {
+        guardCalls += 1;
+        if (guardCalls === 2) {
+          throw transientError('lease expired before second chunk', {
+            code: 'SYNC_LOCK_LEASE_EXPIRED',
+          });
+        }
+      },
+    }),
+    (error) => error.code === 'LARK_BATCH_PARTIAL_WRITE'
+      && error.writeProgress.confirmedRows === 100
+      && error.writeProgress.completedChunks === 1
+      && error.details.currentChunkMayHaveWritten === false
+      && error.details.causeCode === 'SYNC_LOCK_LEASE_EXPIRED',
+  );
+  assert.equal(createCalls, 1);
+  assert.equal(guardCalls, 2);
+});
+
+test('beforeChunk failure after a confirmed update chunk preserves partial progress', async () => {
+  let updateCalls = 0;
+  let guardCalls = 0;
+  const client = new LarkBitableClient({
+    appId: 'app-id', appSecret: 'app-secret', appToken: 'app-token',
+    maxAttempts: 1, minRequestIntervalMs: 0,
+    fetchImpl: async (url, options) => {
+      if (String(url).includes('tenant_access_token')) {
+        return new Response(JSON.stringify({ code: 0, tenant_access_token: 'token', expire: 7200 }), { status: 200 });
+      }
+      updateCalls += 1;
+      const body = JSON.parse(options.body);
+      return new Response(JSON.stringify({
+        code: 0,
+        data: { records: body.records.map((row) => ({ record_id: row.record_id })) },
+      }), { status: 200 });
+    },
+  });
+  const records = Array.from({ length: 101 }, (_, index) => ({
+    recordId: `rec-${index}`,
+    fields: { content_key: `key-${index}` },
+  }));
+
+  await assert.rejects(
+    () => client.batchUpdateRecords({
+      tableId: 'tbl',
+      records,
+      beforeChunk: async () => {
+        guardCalls += 1;
+        if (guardCalls === 2) {
+          throw transientError('lease expired before second chunk', {
+            code: 'SYNC_LOCK_LEASE_EXPIRED',
+          });
+        }
+      },
+    }),
+    (error) => error.code === 'LARK_BATCH_PARTIAL_WRITE'
+      && error.writeProgress.confirmedRows === 100
+      && error.details.currentChunkMayHaveWritten === false,
+  );
+  assert.equal(updateCalls, 1);
+  assert.equal(guardCalls, 2);
 });

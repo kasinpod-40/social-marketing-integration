@@ -4,11 +4,11 @@
 This project connects social organic and paid ads data into Lark Base for reporting, daily snapshots, monitoring, and AI summaries. The implementation target is a lean MVP using Cloudflare Workers, Cloudflare D1, Cloudflare Queues, Lark Base, Lark Native Integrations where useful, and JavaScript.
 
 ## Current project status
-Current audited release: `v0.6.0-tiktok-incremental-sync`
+Current audited release candidate: `v0.7.1-report-reliability-hardening`
 
-Package verification target: Node unit/integration tests + 5 Workers-runtime tests, Wrangler 4.110.0 dry-run, syntax/architecture/repository hygiene, migration replay และ extracted ZIP retest. Live Cloudflare DEV ผ่าน Queue, Reconciliation, Distributed Lock, Retry/DLQ/System Alerts และ Scheduled Sync แล้ว.
+Package verification target: 258 Node unit/integration tests + 6 Workers-runtime tests, Wrangler 4.110.0 dry-run, syntax/architecture/repository hygiene, npm audit, tracked-local-config guard และ extracted ZIP retest. Live Cloudflare DEV ผ่าน Queue, Reconciliation, Distributed Lock, Retry/DLQ/System Alerts และ Scheduled Sync แล้ว.
 
-**v0.6.0-tiktok-incremental-sync — เพิ่ม D1 cursor/fingerprint, changed-record destination processing และ Full reconciliation 24 ชั่วโมง; ต้อง Apply migration `0003_incremental_sync.sql` ก่อน Deploy โดยเปิด Incremental.**
+**v0.7.1-report-reliability-hardening — ซ่อม deterministic schedule, report failure classification, Top Content consistency/stale-rank cleanup และ lock/write failure paths; Report schedule ยังต้องคงปิดจนกว่า Lark schema/seed/Live UAT จะผ่าน.**
 
 Completed in Lark:
 - Created Lark Base: `Social MKT Data Hub`.
@@ -35,6 +35,22 @@ Completed Live Cloudflare DEV reliability UAT:
 - D1 Distributed Lock collision/retry/cleanup ผ่าน
 - Retry exhaustion -> DLQ -> D1/Lark System Alert ผ่าน
 - Scheduled TikTok Sync ผ่านต่อเนื่อง 3 รอบโดยไม่เขียนซ้ำ
+
+Completed in v0.7.1 reliability hardening code:
+- First-write rejection remains `failed`; `partial_success` is used only when confirmed/unknown write progress exists.
+- Scheduled TikTok and report jobs persist deterministic `metricDate` / `periodEnd` from `scheduledTime`.
+- Top Content resolves one bounded limit (1–100) for JSON and normalized rows and neutralizes stale ranks with `no_data`.
+- Lease expiry fails closed, chunk guard failures preserve prior confirmed progress, and exhausted Lark 1254290 remains a retryable rejection instead of unknown write.
+- Local file-lock mutation is serialized by an exclusive guard; tracked local deployment config now fails repository hygiene.
+- DEV Wrangler example enables persisted Workers Logs/Traces; production sampling remains customer/environment configuration.
+
+
+Completed in v0.7.0 report foundation code (retained in v0.7.1):
+- Reviewed the latest `.base` export before implementation and documented the report schema contract.
+- Added cumulative-delta Daily/Weekly TikTok report calculations, previous-period comparison, weighted watch/completion metrics, partial-baseline quality status, and negative correction handling.
+- Added normalized Metric Values and fixed-rank Top Content outputs for client-facing views.
+- Added customer-scoped report-setting seed, metric metadata seed, active report Queue jobs, reliability accounting, and timezone-aware schedule producers.
+- Daily/Weekly schedule flags remain `false` until Lark fields/tables are created and Live DEV UAT passes.
 
 Completed TikTok Incremental layer in v0.6.0:
 - D1 `sync_cursors` และ `source_record_states` จาก migration `0003_incremental_sync.sql`
@@ -177,15 +193,13 @@ RAW_TikTok_Creator_Videos = tblMdO6XCti94EwH
 ```
 
 ## Next action
-Deploy/UAT v0.6.0 Incremental Sync:
-
-1. Apply remote D1 migration `0003_incremental_sync.sql`.
-2. Deploy with Schedule + Incremental enabled and Full interval 24h.
-3. Confirm first run `full/initial_checkpoint`.
-4. Confirm unchanged rerun `incremental/no_source_changes/selectedRecords=0`.
-5. Change one safe DEV RAW metric and confirm only that record is planned/updated.
-6. After the Incremental gate passes, start TikTok Metrics + Report, then Lark AI + Group Notification.
-
+Apply and UAT TikTok Organic Report v0.7.0:
+1. Import/update the Lark Report schema from the release Blueprint.
+2. Configure IDs for `MKT_Report_Metric_Values` and `MKT_Report_Top_Content`.
+3. Run metric/report-setting seed and validate idempotent rerun.
+4. Send manual Daily and Weekly report jobs; verify snapshots, normalized metrics, Top Content, Sync Log, lock/retry behavior, and client views.
+5. Enable report schedules only after Live DEV gate passes.
+6. Then start Lark AI + Group Notification; Organic Facebook/Instagram/YouTube and Ads remain later roadmap items.
 
 ## 2026-07-09 — v0.1.4 env-driven config + Lark classification dictionary
 - Baseline: `v0.1.4-env-config-lark-dictionary`.

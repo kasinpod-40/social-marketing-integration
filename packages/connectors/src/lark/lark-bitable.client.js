@@ -375,13 +375,19 @@ export class LarkBitableClient {
 
     for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex += 1) {
       const chunk = chunks[chunkIndex];
-      await beforeChunk({ operation: 'create', tableId, chunk: chunkIndex + 1, chunks: chunks.length, rows: chunk.length });
-      this.onRequest({
-        stage: 'lark_batch_start', operation: 'create', tableId,
-        chunk: chunkIndex + 1, chunks: chunks.length, rows: chunk.length,
-      });
+      let requestStarted = false;
 
       try {
+        // Guard อยู่ใน Failure boundary เพื่อรักษา Progress ของ Chunk ก่อนหน้าเมื่อ Lease หลุด
+        await beforeChunk({
+          operation: 'create', tableId,
+          chunk: chunkIndex + 1, chunks: chunks.length, rows: chunk.length,
+        });
+        this.onRequest({
+          stage: 'lark_batch_start', operation: 'create', tableId,
+          chunk: chunkIndex + 1, chunks: chunks.length, rows: chunk.length,
+        });
+        requestStarted = true;
         const response = await this.requestBitableJson(
           `/open-apis/bitable/v1/apps/${encodeURIComponent(this.appToken)}/tables/${encodeURIComponent(tableId)}/records/batch_create`,
           {
@@ -392,7 +398,7 @@ export class LarkBitableClient {
         );
         created += readBatchResponseCount(response, chunk.length, 'create', tableId);
       } catch (cause) {
-        const ambiguousCurrentChunk = isAmbiguousWriteError(cause);
+        const ambiguousCurrentChunk = requestStarted && isAmbiguousWriteError(cause);
         if (created === 0 && !ambiguousCurrentChunk) throw cause;
         throw buildBatchWriteProgressError({
           cause, operation: 'create', tableId, completedRows: created,
@@ -421,13 +427,18 @@ export class LarkBitableClient {
 
     for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex += 1) {
       const chunk = chunks[chunkIndex];
-      await beforeChunk({ operation: 'update', tableId, chunk: chunkIndex + 1, chunks: chunks.length, rows: chunk.length });
-      this.onRequest({
-        stage: 'lark_batch_start', operation: 'update', tableId,
-        chunk: chunkIndex + 1, chunks: chunks.length, rows: chunk.length,
-      });
+      let requestStarted = false;
 
       try {
+        await beforeChunk({
+          operation: 'update', tableId,
+          chunk: chunkIndex + 1, chunks: chunks.length, rows: chunk.length,
+        });
+        this.onRequest({
+          stage: 'lark_batch_start', operation: 'update', tableId,
+          chunk: chunkIndex + 1, chunks: chunks.length, rows: chunk.length,
+        });
+        requestStarted = true;
         const response = await this.requestBitableJson(
           `/open-apis/bitable/v1/apps/${encodeURIComponent(this.appToken)}/tables/${encodeURIComponent(tableId)}/records/batch_update`,
           {
@@ -442,7 +453,7 @@ export class LarkBitableClient {
         );
         updated += readBatchResponseCount(response, chunk.length, 'update', tableId);
       } catch (cause) {
-        const ambiguousCurrentChunk = isAmbiguousWriteError(cause);
+        const ambiguousCurrentChunk = requestStarted && isAmbiguousWriteError(cause);
         if (updated === 0 && !ambiguousCurrentChunk) throw cause;
         throw buildBatchWriteProgressError({
           cause, operation: 'update', tableId, completedRows: updated,
@@ -830,8 +841,10 @@ function buildBatchWriteProgressError(input) {
 
 function isAmbiguousWriteError(error) {
   if (!error || typeof error !== 'object') return false;
-  if (error.code === 'LARK_TOO_MANY_REQUESTS') return false;
   const status = Number(error.details?.status);
+  const larkCode = Number(error.details?.larkCode);
+  // 429 และ Lark 1254290 เป็น Explicit rate-limit rejection จึงยืนยันได้ว่า Chunk ยังไม่ถูกเขียน
+  if (status === 429 || larkCode === 1254290) return false;
   if (Number.isInteger(status) && status >= 400 && status < 500) return false;
   return error.retryable === true;
 }

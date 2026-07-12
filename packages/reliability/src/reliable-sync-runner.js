@@ -205,11 +205,16 @@ export function createSyncLockKey(input = {}) {
 
 /** รวม Count ที่ยืนยันได้จริง โดยค่า Unknown write จะอยู่ใน details ไม่ถูกเดาเป็นจำนวนสำเร็จ */
 export function summarizeSyncResult(result) {
-  const content = result?.content ?? {};
-  const daily = result?.dailySnapshots ?? {};
-  const recordsCreated = count(content.created) + count(daily.created);
-  const recordsUpdated = count(content.updated) + count(daily.updated);
-  const recordsSkipped = count(content.skipped) + count(daily.skipped);
+  const outputs = [
+    result?.content,
+    result?.dailySnapshots,
+    result?.reportSnapshot,
+    result?.reportMetricValues,
+    result?.reportTopContent,
+  ].filter((value) => value && typeof value === 'object');
+  const recordsCreated = outputs.reduce((sum, output) => sum + count(output.created), 0);
+  const recordsUpdated = outputs.reduce((sum, output) => sum + count(output.updated), 0);
+  const recordsSkipped = outputs.reduce((sum, output) => sum + count(output.skipped), 0);
 
   return Object.freeze({
     recordsPulled: count(result?.rawRecords),
@@ -230,7 +235,7 @@ export function createLeaseHeartbeat(input = {}) {
   const renewAttempts = positiveInteger(input.renewAttempts ?? DEFAULT_RENEW_ATTEMPTS, 'renewAttempts');
   const now = typeof input.now === 'function' ? input.now : () => Date.now();
   const sleep = typeof input.sleep === 'function' ? input.sleep : defaultSleep;
-  let expiresAt = Number(input.initialExpiresAt ?? now() + leaseMs);
+  let expiresAt = normalizeLeaseExpiry(input.initialExpiresAt, now() + leaseMs);
   let stopped = false;
   let timer = null;
   let inFlight = null;
@@ -257,11 +262,19 @@ export function createLeaseHeartbeat(input = {}) {
           setTerminalError(lost);
           throw lost;
         }
-        expiresAt = Number(result.expiresAt ?? now() + leaseMs);
+        expiresAt = normalizeLeaseExpiry(result.expiresAt, now() + leaseMs);
+        if (now() >= expiresAt) {
+          const expired = transientError(`Renewed sync lock is already expired: ${lockKey}`, {
+            code: 'SYNC_LOCK_LEASE_EXPIRED',
+            details: { lockKey, ownerId, expiresAt },
+          });
+          setTerminalError(expired);
+          throw expired;
+        }
         return true;
       } catch (error) {
         lastError = error;
-        if (error?.code === 'SYNC_LOCK_LOST') throw error;
+        if (new Set(['SYNC_LOCK_LOST', 'SYNC_LOCK_LEASE_EXPIRED']).has(error?.code)) throw error;
         if (attempt < renewAttempts) await sleep(Math.min(1_000, 200 * attempt));
       }
     }
@@ -283,6 +296,15 @@ export function createLeaseHeartbeat(input = {}) {
 
   const assertActive = async () => {
     if (terminalError) throw terminalError;
+    const checkedAt = now();
+    if (checkedAt >= expiresAt) {
+      const expired = transientError(`Sync lock lease expired: ${lockKey}`, {
+        code: 'SYNC_LOCK_LEASE_EXPIRED',
+        details: { lockKey, ownerId, expiresAt, checkedAt },
+      });
+      setTerminalError(expired);
+      throw expired;
+    }
     return true;
   };
 
@@ -309,11 +331,21 @@ export function createLeaseHeartbeat(input = {}) {
   return Object.freeze({ assertActive, renewNow, stop, intervalMs });
 }
 
+
+function normalizeLeaseExpiry(value, fallback) {
+  const number = Number(value);
+  if (Number.isFinite(number) && number > 0) return Math.trunc(number);
+  return Math.trunc(fallback);
+}
+
 function readWriteOutcomes(result) {
   if (!result || typeof result !== 'object') return null;
   return Object.freeze({
     content: result.content?.writeOutcome ?? null,
     dailySnapshots: result.dailySnapshots?.writeOutcome ?? null,
+    reportSnapshot: result.reportSnapshot?.writeOutcome ?? null,
+    reportMetricValues: result.reportMetricValues?.writeOutcome ?? null,
+    reportTopContent: result.reportTopContent?.writeOutcome ?? null,
   });
 }
 

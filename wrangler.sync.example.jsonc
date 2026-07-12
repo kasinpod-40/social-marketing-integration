@@ -4,9 +4,26 @@
   "main": "./apps/sync-worker/src/index.js",
   "compatibility_date": "2026-07-01",
 
+  // DEV เก็บ Logs/Traces 100% เพื่อให้ Reliability UAT ตรวจย้อนหลังได้
+  // Production ที่ Traffic สูงควรลด head_sampling_rate ตามงบและปริมาณงาน
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "invocation_logs": true,
+      "persist": true,
+      "head_sampling_rate": 1
+    },
+    "traces": {
+      "enabled": true,
+      "persist": true,
+      "head_sampling_rate": 1
+    }
+  },
+
   "triggers": {
-    // ตัวอย่าง Cron รายชั่วโมง สามารถเปลี่ยนภายหลังตามรอบข้อมูลจริงของลูกค้า
-    "crons": ["0 * * * *"]
+    // Cron ทุก 5 นาทีรองรับ Incremental Sync และตรวจรอบ Daily/Weekly report จาก Timezone
+    "crons": ["*/5 * * * *"]
   },
 
   "d1_databases": [
@@ -60,6 +77,14 @@
     "MKT_CONNECTOR_CHATWOOT_ENABLED": "false",
 
     "MKT_SCHEDULE_TIKTOK_ENABLED": "true",
+    // Report schedule ปิดไว้จนกว่า Lark Report schema/seed/UAT จะเสร็จ
+    "MKT_SCHEDULE_DAILY_REPORT_ENABLED": "false",
+    "MKT_SCHEDULE_WEEKLY_REPORT_ENABLED": "false",
+    "MKT_DAILY_REPORT_TIME": "08:10",
+    "MKT_WEEKLY_REPORT_TIME": "08:15",
+    "MKT_WEEKLY_REPORT_WEEKDAY": "monday",
+    "MKT_DAILY_REPORT_SETTING_KEY": "dev_ft_pumkin:tiktok:daily",
+    "MKT_WEEKLY_REPORT_SETTING_KEY": "dev_ft_pumkin:tiktok:weekly",
     "MKT_MAIN_QUEUE_NAME": "social-mkt-sync-jobs",
     "MKT_DLQ_QUEUE_NAME": "social-mkt-sync-dlq",
     "MKT_QUEUE_RETRY_DELAY_SECONDS": "30",
@@ -81,6 +106,10 @@
     "LARK_TABLE_MKT_CONTENT_DAILY": "replace-with-table-id",
     "LARK_TABLE_MKT_CLASSIFICATION_DICTIONARY": "replace-with-table-id",
     "LARK_TABLE_MKT_METRIC_DEFINITIONS": "replace-with-table-id",
+    "LARK_TABLE_MKT_REPORT_SETTINGS": "replace-with-table-id",
+    "LARK_TABLE_MKT_REPORT_SNAPSHOTS": "replace-with-table-id",
+    "LARK_TABLE_MKT_REPORT_METRIC_VALUES": "replace-with-table-id",
+    "LARK_TABLE_MKT_REPORT_TOP_CONTENT": "replace-with-table-id",
     "LARK_TABLE_MKT_SYNC_LOG": "replace-with-table-id",
     "LARK_TABLE_MKT_SYSTEM_ALERTS": "replace-with-table-id",
 

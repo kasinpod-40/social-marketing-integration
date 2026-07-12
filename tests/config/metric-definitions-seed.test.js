@@ -17,6 +17,28 @@ test('metric definition seed uses stable unique keys and includes organic plus a
   assert.ok(platforms.has('google_ads'));
   assert.ok(METRIC_DEFINITION_ROWS.find((row) => row.metric_key === 'tiktok:unique_viewers'));
   assert.ok(METRIC_DEFINITION_ROWS.find((row) => row.metric_key === 'google_ads:actual_roas'));
+  const reportMetric = METRIC_DEFINITION_ROWS.find((row) => row.metric_key === 'tiktok:period_views');
+  assert.deepEqual(reportMetric, {
+    metric_key: 'tiktok:period_views',
+    platform: 'tiktok',
+    raw_field_name: 'period_views',
+    display_name: 'Views เพิ่มในช่วง',
+    formula: null,
+    unit: 'count',
+    can_compare_cross_platform: false,
+    fallback_metric: null,
+    metric_note: 'Computed by TikTok Organic Report Engine from cumulative daily content snapshots.',
+    enabled: true,
+    metric_scope: 'account_period',
+    source_table: 'derived',
+    aggregation_method: 'sum_delta',
+    null_policy: 'preserve_null',
+    higher_is_better: true,
+    decimal_places: 0,
+    formula_version: 'tiktok-organic-v1',
+    client_visible: true,
+    sort_order: 10,
+  });
 });
 
 test('seedMetricDefinitions uses universal sync engine by metric_key', async () => {

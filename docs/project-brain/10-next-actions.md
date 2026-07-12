@@ -1,43 +1,27 @@
 # 10 — Next Actions
 
-## Deploy/UAT v0.6.0 TikTok Incremental Sync
+## Current gate: TikTok Organic Report v0.7.1
 
-1. Apply D1 migration `0003_incremental_sync.sql` กับ Remote DEV:
+Steps 1–6 of the original roadmap are complete in Live DEV. v0.7.1 closes the code-level report/reliability blockers found in the v0.7.0 review. The next gate is Step 7 Lark schema + Live DEV UAT, and Report schedule must remain disabled until all items below pass.
 
-```bash
-npx wrangler d1 migrations apply MKT_STATE_DB --remote --config wrangler.sync.jsonc
-```
+1. Untrack local config once with `git rm --cached wrangler.sync.jsonc`, then confirm `npm run check`, full tests, and Wrangler dry-run pass.
+2. Apply the Lark schema changes from `docs/tiktok-organic-report-blueprint-v0.7.0.md` and the release Excel Blueprint.
+3. Create `MKT_Report_Metric_Values` and `MKT_Report_Top_Content`; set their stable-key fields as Primary.
+4. Extend `MKT_Metric_Definitions`, `MKT_Report_Settings`, and `MKT_Report_Snapshots` exactly as specified.
+5. Configure the two new Lark Table IDs in `wrangler.sync.jsonc`.
+6. Run `CONFIRM_WRITE=YES npm run seed:metrics` and rerun to prove idempotency.
+7. Run `MKT_CUSTOMER_PROFILE=dev_ft_pumkin CONFIRM_WRITE=YES npm run seed:report-settings` and rerun.
+8. Send a manual `report.daily.generate` Queue job and validate all three output tables plus `MKT_Sync_Log`.
+9. Rerun the same period and confirm all output rows are skipped/updated without duplicates.
+10. Send `report.weekly.generate`; validate cumulative delta, previous-period comparison, partial-baseline flag, and Top Content ranking.
+11. Create client-facing Lark views and hide RAW/Daily/Sync/System views from client roles.
+12. Enable Daily/Weekly report schedules only after Live DEV UAT passes.
 
-2. ตรวจว่ามี `sync_cursors` และ `source_record_states`
-3. Deploy `v0.6.0-tiktok-incremental-sync` โดยเปิด:
+## After Step 7
 
-```env
-MKT_SCHEDULE_TIKTOK_ENABLED=true
-MKT_TIKTOK_INCREMENTAL_ENABLED=true
-MKT_TIKTOK_FULL_RECONCILIATION_INTERVAL_MS=86400000
-```
-
-4. รอบแรกหลัง migration ต้องเป็น `mode=full`, `reason=initial_checkpoint`, `checkpointSaved=true`
-5. รอบถัดไปวันเดียวกันและ RAW ไม่เปลี่ยนต้องเป็น `mode=incremental`, `reason=no_source_changes`, `selectedRecords=0`, Content/Daily เขียน 0
-6. แก้ Metric ของ RAW DEV หนึ่งรายการอย่างปลอดภัย แล้วตรวจว่ารอบถัดไปเลือก/อัปเดตเฉพาะรายการนั้น
-7. ตรวจ D1 cursor/record states และยืนยันว่าไม่มี Lock ค้างหรือ Alert ใหม่
-8. ปล่อย Scheduled Sync อย่างน้อย 3 รอบหลัง Incremental UAT
-
-## งานหลักหลังข้อ 6 เสร็จ
-
-1. TikTok Metrics + Report: seed metric definitions, aggregation, daily/weekly report snapshots
-2. Lark AI Summary/Insight/Recommendation + Group Notification และ delivery status
-3. ออกแบบ Data Model/Lark Blueprint ของ Facebook + Instagram ก่อนเขียน Connector
-4. YouTube Blueprint/Connector
-5. WooCommerce Blueprint/Connector
-6. Chatwoot Blueprint/Connector
-7. UAT รวมบน DEV/Staging
-8. Production setup ใน Lark/Cloud/Platform assets ที่ Chemistry K เป็นเจ้าของ
-
-## งานเสริมที่ยังค้าง
-
-- Benchmark 10x/100x และประเมิน Lark API rate limit
-- ยืนยัน Lark Cell-clear contract สำหรับ Classification field clearing
-- เพิ่ม server-side modified-time filter เมื่อ Source contract ของ Lark Native table รองรับแบบที่ตรวจสอบได้
-
-ห้ามเปิด Feature flag ของ Connector ที่ยังเป็น `planned` ก่อน Data Model, Source contract, Stable key, Metric definition และ Test fixture ผ่าน
+1. Lark AI summary + Lark group notification.
+2. Facebook / Instagram / YouTube Organic.
+3. Meta Ads / TikTok Ads / Google Ads as a separate Ads workstream.
+4. WooCommerce.
+5. Chatwoot.
+6. Production setup using customer-owned Lark, Cloudflare, apps, credentials, and platform assets.

@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.7.1-report-reliability-hardening — 2026-07-12
+
+### Fixed
+- Kept first-table report rejection as `failed`; `partial_success` now requires actual confirmed or unknown write progress.
+- Bound scheduled TikTok `metricDate` and report `periodEnd` to the original `scheduledTime` for deterministic retries.
+- Unified Queue/setting Top Content limit, bounded it to 1–100, and neutralized stale ranks with `data_status=no_data`.
+- Made expired lease assertions fail closed and validated renewed lease expiry.
+- Preserved prior confirmed Lark chunk progress when `beforeChunk` fails.
+- Kept exhausted HTTP 429 / Lark `1254290` as retryable rejection instead of `LARK_BATCH_WRITE_UNKNOWN`.
+- Serialized local file-lock mutation with an exclusive guard to prevent owner renewal/takeover races.
+- Added repository hygiene rejection for tracked `.dev.vars` and `wrangler.sync.jsonc`.
+
+### Operations
+- Added persisted DEV Workers Logs/Traces to `wrangler.sync.example.jsonc`; customer Production sampling remains environment-owned configuration.
+- Report schedules remain disabled pending Lark schema, seed, and Live DEV UAT.
+- Added targeted regression tests and `docs/report-reliability-hardening-v0.7.1.md`.
+
+### Verification target
+- 258 Node unit/integration tests and 6 Workers-runtime tests.
+- 65 source files, 138 local dependencies, 0 cycles, repository hygiene, npm audit, Wrangler dry-run, clean extracted ZIP retest.
+
+## 0.7.0-tiktok-organic-report-foundation — 2026-07-12
+
+### Added
+- Added the reviewed TikTok Organic Report data-model blueprint before implementation.
+- Added customer-scoped Daily/Weekly report settings seed with stable `report_setting_key`.
+- Added TikTok report metric definitions with aggregation/null/formula metadata.
+- Added cumulative-snapshot report calculation with previous-period comparison, new-content baseline, partial-baseline status, negative platform corrections, and weighted watch/completion metrics.
+- Added normalized `MKT_Report_Metric_Values` and fixed-rank `MKT_Report_Top_Content` output contracts for client-facing Lark views.
+- Added idempotent Daily/Weekly report jobs with plan-all-tables-before-write, reliability lock/log/DLQ integration, and timezone-aware scheduled producers.
+- Added `seed:report-settings` and report schedule/table configuration examples.
+- Added report calculation, schema loader, output, idempotency, scheduling, and Workers-runtime regression tests.
+
+### Safety
+- Daily/Weekly report schedules remain disabled until the Lark Report schema is updated, new Table IDs are configured, seed jobs pass, and Live DEV UAT is complete.
+- `MKT_Content_Daily` remains a system cumulative snapshot table; client-facing users should use the normalized report views instead of raw/system tables.
+- Fixed-rank Top Content rows use explicit no-data replacement values so Lark does not retain stale values when null cells are omitted.
+
+### Verification target
+- 245 Node unit/integration tests and 6 Workers-runtime tests.
+- Syntax, architecture, repository hygiene, Wrangler dry-run, clean extracted ZIP retest, and npm audit.
+
 ## 0.6.0-tiktok-incremental-sync — 2026-07-12
 
 ### Added

@@ -1,12 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { runReliableSync } from '../../packages/reliability/src/reliable-sync-runner.js';
+import {
+  createLeaseHeartbeat,
+  runReliableSync,
+} from '../../packages/reliability/src/reliable-sync-runner.js';
 import { InMemoryLeaseLockManager } from '../../packages/reliability/src/in-memory-lease-lock-manager.js';
 import { partialSyncError, transientError } from '../../packages/shared/src/errors/runtime-error.js';
 
 test('reliable runner writes running and success logs, returns syncRunId, and releases the lock', async () => {
   const store = createStore();
-  const lockManager = new InMemoryLeaseLockManager({ now: sequenceNow([1000, 1000, 2000]) });
+  const lockManager = new InMemoryLeaseLockManager();
 
   const result = await runReliableSync({
     store,
@@ -74,7 +77,7 @@ test('reliable runner skips execution when the lease lock is busy', async () => 
 
 test('partial write is persisted as partial_success and creates a critical alert', async () => {
   const store = createStore();
-  const lockManager = new InMemoryLeaseLockManager({ now: sequenceNow([1000, 1000, 2000]) });
+  const lockManager = new InMemoryLeaseLockManager();
 
   await assert.rejects(
     () => runReliableSync({
@@ -110,7 +113,7 @@ test('partial write is persisted as partial_success and creates a critical alert
 
 test('retryable failure can be logged without creating noisy alerts before retry exhaustion', async () => {
   const store = createStore();
-  const lockManager = new InMemoryLeaseLockManager({ now: sequenceNow([1000, 1000, 2000]) });
+  const lockManager = new InMemoryLeaseLockManager();
 
   await assert.rejects(
     () => runReliableSync({
@@ -154,11 +157,11 @@ test('reliable runner exposes lease renewal and completes while ownership remain
   let renewCalls = 0;
   const lockManager = {
     async acquire({ lockKey, ownerId, leaseMs }) {
-      return { acquired: true, lockKey, ownerId, expiresAt: 1_000 + leaseMs };
+      return { acquired: true, lockKey, ownerId, expiresAt: Date.now() + leaseMs };
     },
     async renew({ lockKey, ownerId, leaseMs }) {
       renewCalls += 1;
-      return { renewed: true, lockKey, ownerId, expiresAt: 2_000 + leaseMs };
+      return { renewed: true, lockKey, ownerId, expiresAt: Date.now() + leaseMs };
     },
     async release() { return true; },
   };
@@ -194,7 +197,7 @@ test('lost lease ownership fails the sync and creates an alert', async () => {
   const store = createStore();
   const lockManager = {
     async acquire({ lockKey, ownerId, leaseMs }) {
-      return { acquired: true, lockKey, ownerId, expiresAt: 1_000 + leaseMs };
+      return { acquired: true, lockKey, ownerId, expiresAt: Date.now() + leaseMs };
     },
     async renew() { return { renewed: false, expiresAt: null }; },
     async release() { return true; },
@@ -223,4 +226,69 @@ test('lost lease ownership fails the sync and creates an alert', async () => {
   assert.equal(store.syncRuns.at(-1).status, 'failed');
   assert.equal(store.syncRuns.at(-1).errorCode, 'SYNC_LOCK_LOST');
   assert.equal(store.alerts.at(-1).alertType, 'sync_failed');
+});
+
+
+test('reliable runner summarizes report output rows without relying on content sync fields', async () => {
+  const store = createStore();
+  const lockManager = new InMemoryLeaseLockManager();
+
+  await runReliableSync({
+    store,
+    lockManager,
+    syncRunId: 'run-report',
+    customerProfile: 'dev_ft_pumkin',
+    accountKey: 'ft_pumkin',
+    platform: 'tiktok',
+    source: 'mkt_content_daily',
+    syncType: 'daily_organic_report',
+    leaseMs: 60_000,
+    execute: async () => ({
+      rawRecords: 60,
+      reportSnapshot: { created: 1, updated: 0, skipped: 0, writeOutcome: 'confirmed' },
+      reportMetricValues: { created: 13, updated: 0, skipped: 0, writeOutcome: 'confirmed' },
+      reportTopContent: { created: 5, updated: 0, skipped: 0, writeOutcome: 'confirmed' },
+    }),
+  });
+
+  const completed = store.syncRuns.at(-1);
+  assert.equal(completed.recordsPulled, 60);
+  assert.equal(completed.recordsCreated, 19);
+  assert.equal(completed.recordsWritten, 19);
+  assert.equal(completed.details.writeOutcomes.reportMetricValues, 'confirmed');
+});
+
+
+test('lease heartbeat assertActive fails closed after the local lease expiry', async () => {
+  let now = 1_000;
+  const heartbeat = createLeaseHeartbeat({
+    lockManager: {
+      async acquire() { return { acquired: true }; },
+      async renew() { return { renewed: true, expiresAt: 4_000 }; },
+      async release() { return true; },
+    },
+    lockKey: 'dev:tiktok:ft:native',
+    ownerId: 'run-expired',
+    leaseMs: 3_000,
+    renewIntervalMs: 1_000,
+    initialExpiresAt: 1_500,
+    now: () => now,
+  });
+
+  try {
+    assert.equal(await heartbeat.assertActive(), true);
+    now = 1_500;
+    await assert.rejects(
+      () => heartbeat.assertActive(),
+      (error) => error.code === 'SYNC_LOCK_LEASE_EXPIRED'
+        && error.details.expiresAt === 1_500
+        && error.details.checkedAt === 1_500,
+    );
+    await assert.rejects(
+      () => heartbeat.assertActive(),
+      (error) => error.code === 'SYNC_LOCK_LEASE_EXPIRED',
+    );
+  } finally {
+    await heartbeat.stop();
+  }
 });

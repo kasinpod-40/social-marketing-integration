@@ -107,3 +107,18 @@ Release จะยังไม่ถือว่า Production-ready จนกว
 - [ ] ตรวจ Field/Table mapping กับ Base ลูกค้าจริง
 - [ ] Dry run ผ่านใน Production
 - [ ] UAT/Approval จากลูกค้าก่อนเปิด Schedule/Queue จริง
+
+## v0.7.1 Report & Runtime Reliability Gate
+
+- [x] First report-table rejection is `failed`, not `partial_success`
+- [x] Scheduled job payload binds `metricDate` / `periodEnd` to original `scheduledTime`
+- [x] Top Content limit is shared, bounded 1–100, and stale ranks become `no_data`
+- [x] Lease expiry fails closed before additional writes
+- [x] Chunk guard failure preserves confirmed write progress
+- [x] Exhausted Lark 1254290 remains retryable rejection, not ambiguous write
+- [x] Local lock mutations use an exclusive guard to prevent renewal/takeover race
+- [x] Repository hygiene rejects tracked `.dev.vars` and `wrangler.sync.jsonc`
+- [x] Wrangler example enables persisted DEV Logs and Traces
+- [ ] Apply observability block and appropriate sampling to customer-owned Production config
+- [ ] Lark report schema, seed, manual Daily/Weekly UAT, and idempotent rerun pass
+- [ ] Report schedules remain `false` until all Report UAT items pass

@@ -23,7 +23,7 @@ test('deployment config defines producer, main queue, DLQ, and scheduled cron', 
   assert.match(configText, /"binding"\s*:\s*"MKT_SYNC_QUEUE"/);
   assert.match(configText, /"MKT_MAIN_QUEUE_NAME"\s*:\s*"social-mkt-sync-jobs"/);
   assert.match(configText, /"MKT_DLQ_QUEUE_NAME"\s*:\s*"social-mkt-sync-dlq"/);
-  assert.match(configText, /"crons"\s*:\s*\["0 \* \* \* \*"\]/);
+  assert.match(configText, /"crons"\s*:\s*\["\*\/5 \* \* \* \*"\]/);
 });
 
 test('deployment examples enable only the implemented TikTok connector', async () => {
@@ -43,4 +43,25 @@ test('sync deployment enables TikTok incremental checkpoints with a daily full r
   const configText = await readSyncWranglerExample();
   assert.match(configText, /"MKT_TIKTOK_INCREMENTAL_ENABLED"\s*:\s*"true"/);
   assert.match(configText, /"MKT_TIKTOK_FULL_RECONCILIATION_INTERVAL_MS"\s*:\s*"86400000"/);
+});
+
+
+test('report schedules stay disabled until Lark report schema and seed UAT are complete', async () => {
+  const configText = await readSyncWranglerExample();
+  assert.match(configText, /"MKT_SCHEDULE_DAILY_REPORT_ENABLED"\s*:\s*"false"/);
+  assert.match(configText, /"MKT_SCHEDULE_WEEKLY_REPORT_ENABLED"\s*:\s*"false"/);
+  assert.match(configText, /"MKT_DAILY_REPORT_TIME"\s*:\s*"08:10"/);
+  assert.match(configText, /"MKT_WEEKLY_REPORT_TIME"\s*:\s*"08:15"/);
+  assert.match(configText, /"LARK_TABLE_MKT_REPORT_METRIC_VALUES"/);
+  assert.match(configText, /"LARK_TABLE_MKT_REPORT_TOP_CONTENT"/);
+});
+
+test('sync deployment example enables persisted Workers logs and traces for DEV observability', async () => {
+  const configText = await readSyncWranglerExample();
+  assert.match(configText, /"observability"\s*:\s*\{/);
+  assert.match(configText, /"logs"\s*:\s*\{/);
+  assert.match(configText, /"traces"\s*:\s*\{/);
+  assert.match(configText, /"persist"\s*:\s*true/);
+  const samplingMatches = configText.match(/"head_sampling_rate"\s*:\s*1\b/g) ?? [];
+  assert.equal(samplingMatches.length, 2);
 });

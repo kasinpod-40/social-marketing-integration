@@ -1,108 +1,41 @@
 # 00 — Current State
 
-## Baseline
+## Current release candidate
 
-`v0.6.0-tiktok-incremental-sync` — 2026-07-12
+`v0.7.1-report-reliability-hardening` — 2026-07-12
 
-## Environment ปัจจุบัน
+## Live-complete scope
 
-- DEV Base เป็นของผู้พัฒนา
-- TikTok source คือ `@ft.pumkin`
-- `MKT_ENV=development`
-- `MKT_CUSTOMER_PROFILE=dev_ft_pumkin`
-- Production profile `chemistry_k` อยู่ใน Source codeแล้ว แต่ Production จริงยังไม่เปิดใช้งาน
-- Production ต้องสร้างใน Lark, Cloudflare และบัญชี Platform ที่ลูกค้าเป็นเจ้าของ
+- TikTok Creator Organic ingestion to `MKT_Content` and cumulative `MKT_Content_Daily`.
+- Live DEV gate, canonical keys, idempotency, reconciliation, Sync Log, D1 distributed lock, retry/DLQ/System Alerts.
+- Scheduled + incremental TikTok sync with D1 cursor/fingerprint and 24-hour full reconciliation.
 
-## Verified Live DEV
+## v0.7.1 reliability gate completed in code
 
-Baseline v0.4.0 ผ่าน Live DEV idempotency gate:
+- Report first-write failures are `failed`; partial status requires actual confirmed/unknown write progress.
+- Scheduler binds TikTok `metricDate` and report `periodEnd` to the original scheduled time.
+- Top Content uses one bounded limit and neutralizes stale ranks after a limit reduction.
+- Expired leases fail closed; chunk guard failures preserve prior progress; Lark 1254290 stays a retryable rejection.
+- Local lock mutations are guarded; local Wrangler config must not be tracked.
+- DEV example enables persisted Worker logs and traces.
 
-- RAW TikTok: 20 rows
-- รอบแรกหลัง Upgrade: Content/Daily update 20
-- รอบที่สอง: Content/Daily `created=0`, `updated=0`, `skipped=20`
-- Source identity: `@ft.pumkin`
-- Account conflicts: 0
-- Warnings: 0
+## Implemented in code, pending Lark schema and Live UAT
 
-## เพิ่ม/แก้ใน v0.5.1
+- TikTok Daily/Weekly Organic Report Engine.
+- Cumulative-period delta and previous-period comparison.
+- New-content zero baseline, partial-baseline quality state, negative platform correction preservation.
+- Weighted average watch time and completion rate.
+- Idempotent `MKT_Report_Snapshots`, normalized `MKT_Report_Metric_Values`, and fixed-rank `MKT_Report_Top_Content` writes.
+- Metric/report-setting seed jobs.
+- Timezone-aware Daily/Weekly scheduled report producers.
+- Report reliability accounting through the same D1 lock/log/retry/DLQ layer.
 
-- `sync_run_id` ต่อหนึ่งรอบ Sync
-- Lifecycle `running`, `success`, `partial_success`, `failed`, `skipped`
-- Mirror ไป `MKT_Sync_Log` ด้วย Schema ที่มีอยู่แล้ว
-- Mirror Alert ไป `MKT_System_Alerts`
-- D1 operational tables: `sync_runs`, `sync_locks`, `dead_letter_jobs`, `system_alerts` และ D1 เป็น Primary ที่ต้องสำเร็จก่อน Ack
-- D1 atomic lease lock พร้อม owner-scoped renewal heartbeat สำหรับ Cloudflare Worker หลาย invocation
-- Local file lease lock สำหรับหลาย Terminal/Process บนเครื่องเดียวกัน
-- Automatic reconciliation ระหว่าง `MKT_Content` และ `MKT_Content_Daily`
-- Chunk-aware `SYNC_PARTIAL_WRITE` พร้อมจำนวนแถว/Chunk ที่ยืนยันว่าเขียนสำเร็จแล้ว
-- Main Queue/DLQ exact-name whitelist; DLQ persist อย่างเดียวและ Unknown Queue ถูก quarantine
-- Secret-like key redaction ก่อนเก็บ payload/details ใน D1
-- Root Wrangler config, Scheduled Queue producer, Workers-runtime tests และ CI dry-run
+Daily and Weekly report schedule flags remain disabled until the latest Lark Base is changed according to the v0.7.0 Blueprint and Live DEV UAT passes.
 
-## Package gate
+## Client-facing rule
 
-- Tests ต้องผ่านทั้งหมด
-- Syntax checks ต้องผ่าน
-- Architecture audit ต้องมี 0 cycles
-- Migration SQL ต้อง parse/apply ได้
-- ZIP ต้องไม่มี `.dev.vars`, Secret, `.mkt-locks`, `node_modules` หรือ build artifact
+Clients should not use RAW tables, `MKT_Content_Daily`, Sync Log, System Alerts, cursor, lock, or technical IDs as normal working views. These are system/audit data. Client roles should use the Report Metric and Top Content views produced by Step 7.
 
-## Live DEV gate ที่ผ่านแล้ว
+## Next gate
 
-- Sync Log lifecycle ผ่าน
-- Idempotency ผ่าน
-- Recovery Daily ที่หาย 1 แถวผ่าน
-- Local concurrent lock ผ่าน
-- Source identity failure + System Alert ผ่าน
-
-## Live Cloudflare DEV gate ที่ผ่านแล้ว
-
-- Main Queue และ Lark outbound request ผ่านหลังแก้ Fetch context
-- Sync Log lifecycle และ `sync_run_id` ผ่าน
-- Reconciliation กู้ Daily Snapshot ที่หายและรอบถัดไป Idempotent
-- Distributed D1 lock: collision, retry หลังปล่อย lock และ cleanup ผ่าน
-- Retry exhaustion, DLQ, D1 `dead_letter_jobs`, D1/Lark `MKT_System_Alerts` ผ่าน
-- Scheduled TikTok Sync ผ่านต่อเนื่อง 3 รอบโดยเขียนซ้ำ 0 แถว
-
-## เพิ่มใน v0.6.0
-
-- Migration `0003_incremental_sync.sql`: `sync_cursors`, `source_record_states`
-- SHA-256 fingerprint ของ RAW records และ Classification Dictionary
-- Full/Incremental planner พร้อม safe fallback: initial, วันใหม่, Dictionary เปลี่ยน, Source record หาย และรอบ Full 24 ชั่วโมง
-- Commit checkpoint หลัง Lark business writes สำเร็จ; เขียน record states เป็น chunk และ commit cursor สุดท้าย
-- รอบไม่มีการเปลี่ยนแปลงจะไม่ทำ Destination schema/search/write
-- Lark record metadata รองรับ `createdTime`, `lastModifiedTime`, `lastModifiedBy`
-
-## Connector status
-
-| Connector | Code status | Default runtime |
-|---|---|---|
-| TikTok | active | enabled |
-| Facebook Page | planned | disabled |
-| Instagram Business | planned | disabled |
-| YouTube | planned | disabled |
-| WooCommerce | planned | disabled |
-| Chatwoot | planned | disabled |
-
-## Known residual risks
-
-- Lark ไม่มี Transaction ข้ามตาราง แต่ Partial write ตรวจพบ/Alert/Recovery ได้แล้ว
-- Local file lock ไม่ครอบ Cloudflare ต้องห้าม Local write เมื่อ Cloud Cron ใช้ Base เดียวกัน
-- RAW/Dictionary ยังอ่านครบทุกหน้าเพื่อ Safety/Deletion detection; Destination planning/write เป็น Incremental ตาม fingerprint
-- Classification field ที่กลายเป็นค่าว่างยังไม่ล้างค่าเก่าใน Larkจนกว่าจะยืนยัน Cell-clear contract
-- Connector ที่เป็น `planned` ยังไม่มี API/Source contract/Blueprint และห้ามเปิดใช้
-- Chemistry K Production ยังไม่ผ่าน customer-owned Cloudflare/Lark deployment
-
-
-## เพิ่ม/แก้ใน v0.5.2
-- `package-lock.json` ใช้ `registry.npmjs.org` แทน Internal Artifactory ของสภาพแวดล้อมสร้างแพ็กเกจ
-- Repository hygiene จะปฏิเสธ non-portable HTTPS registry host ใน lockfile
-
-
-## เพิ่ม/แก้ใน v0.5.3
-- Live Cloudflare Main Queue รับ `tiktok.creator.native.sync` และสร้าง `sync_run_id` ได้จริง
-- Retry classification ทำงานจริงเมื่อ Lark request ล้มเหลวแบบชั่วคราว
-- แก้ `LarkBitableClient` ไม่ให้เก็บ Global Fetch แล้วเรียกเป็น Method ของ Client ซึ่งทำให้ Runtime context ผิดบน Cloudflare Workers
-- เพิ่ม regression test ตรวจว่า Default Global Fetch ถูก Bind กับ `globalThis`
-- เพิ่ม `.dev.vars.example`, `.gitignore` และล้าง macOS metadata จาก Release package
-- Distributed Lock concurrent UAT และ Retry-to-DLQ UAT ยังไม่ปิดจนกว่า Deploy รุ่นนี้และทดสอบ Live รอบใหม่
+See `10-next-actions.md` and `../tiktok-organic-report-blueprint-v0.7.0.md`.

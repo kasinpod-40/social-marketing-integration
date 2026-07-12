@@ -3,15 +3,27 @@ import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { transientError } from '../../packages/shared/src/errors/runtime-error.js';
 
+const DEFAULT_GUARD_MAX_ATTEMPTS = 100;
+const DEFAULT_GUARD_RETRY_DELAY_MS = 10;
+
 /**
  * Lease lock สำหรับ Local scripts บนเครื่องเดียวกัน
- * ใช้การสร้างไฟล์แบบ exclusive เพื่อกัน Terminal/Process สองตัว Sync พร้อมกัน
+ * ใช้ไฟล์ Lock หลักร่วมกับ Mutation guard แบบ exclusive เพื่อให้ Acquire/Renew/Release เป็นลำดับเดียวกัน
  * ไม่ครอบ Local กับ Cloudflare พร้อมกัน จึงยังห้ามรัน Local write ระหว่างเปิด Cloud Cron
  */
 export class FileLeaseLockManager {
   constructor(input = {}) {
     this.directory = input.directory ?? '.mkt-locks';
     this.now = typeof input.now === 'function' ? input.now : () => Date.now();
+    this.sleep = typeof input.sleep === 'function' ? input.sleep : defaultSleep;
+    this.guardMaxAttempts = positiveInteger(
+      input.guardMaxAttempts ?? DEFAULT_GUARD_MAX_ATTEMPTS,
+      'guardMaxAttempts',
+    );
+    this.guardRetryDelayMs = nonNegativeInteger(
+      input.guardRetryDelayMs ?? DEFAULT_GUARD_RETRY_DELAY_MS,
+      'guardRetryDelayMs',
+    );
   }
 
   async acquire(input) {
@@ -21,83 +33,135 @@ export class FileLeaseLockManager {
     await mkdir(this.directory, { recursive: true });
     const filePath = this.#path(lockKey);
 
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      const now = this.now();
-      const payload = JSON.stringify({ lockKey, ownerId, acquiredAt: now, expiresAt: now + leaseMs });
-      try {
-        const handle = await open(filePath, 'wx', 0o600);
-        await handle.writeFile(payload, 'utf8');
-        await handle.close();
-        return Object.freeze({ acquired: true, lockKey, ownerId, expiresAt: now + leaseMs, filePath });
-      } catch (error) {
-        if (error?.code !== 'EEXIST') throw lockError('create', error, lockKey);
-        const existing = await readLock(filePath);
-        if (existing?.expiresAt <= now) {
-          await rm(filePath, { force: true });
-          continue;
+    return this.#withMutationGuard(filePath, async () => {
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const now = this.now();
+        const payload = JSON.stringify({ lockKey, ownerId, acquiredAt: now, expiresAt: now + leaseMs });
+        try {
+          await writeExclusive(filePath, payload);
+          return Object.freeze({ acquired: true, lockKey, ownerId, expiresAt: now + leaseMs, filePath });
+        } catch (error) {
+          if (error?.code !== 'EEXIST') throw lockError('create', error, lockKey);
+          const existing = await readLock(filePath);
+          if (existing?.expiresAt <= now) {
+            await rm(filePath, { force: true });
+            continue;
+          }
+          return Object.freeze({
+            acquired: false,
+            lockKey,
+            ownerId,
+            expiresAt: Number(existing?.expiresAt ?? 0),
+            filePath,
+          });
         }
-        return Object.freeze({
-          acquired: false,
-          lockKey,
-          ownerId,
-          expiresAt: Number(existing?.expiresAt ?? 0),
-          filePath,
-        });
       }
-    }
 
-    return Object.freeze({ acquired: false, lockKey, ownerId, expiresAt: 0, filePath });
+      return Object.freeze({ acquired: false, lockKey, ownerId, expiresAt: 0, filePath });
+    });
   }
 
   async renew(input) {
     const lockKey = requireText(input?.lockKey, 'lockKey');
     const ownerId = requireText(input?.ownerId, 'ownerId');
     const leaseMs = positiveInteger(input?.leaseMs, 'leaseMs');
+    await mkdir(this.directory, { recursive: true });
     const filePath = this.#path(lockKey);
-    const existing = await readLock(filePath);
-    const now = this.now();
-    if (!existing || existing.ownerId !== ownerId || existing.expiresAt <= now) {
-      return Object.freeze({ renewed: false, lockKey, ownerId, expiresAt: null, filePath });
-    }
 
-    const expiresAt = now + leaseMs;
-    const temporaryPath = `${filePath}.${ownerId}.renew`;
-    const payload = JSON.stringify({
-      lockKey,
-      ownerId,
-      acquiredAt: existing.acquiredAt ?? now,
-      expiresAt,
+    return this.#withMutationGuard(filePath, async () => {
+      const existing = await readLock(filePath);
+      const now = this.now();
+      if (!existing || existing.ownerId !== ownerId || existing.expiresAt <= now) {
+        return Object.freeze({ renewed: false, lockKey, ownerId, expiresAt: null, filePath });
+      }
+
+      const expiresAt = now + leaseMs;
+      const temporaryPath = `${filePath}.${ownerId}.renew`;
+      const payload = JSON.stringify({
+        lockKey,
+        ownerId,
+        acquiredAt: existing.acquiredAt ?? now,
+        expiresAt,
+      });
+      try {
+        await writeFile(temporaryPath, payload, { encoding: 'utf8', mode: 0o600 });
+        // Mutation guard ทำให้ไม่มี Owner ใหม่เข้ามาระหว่างตรวจ Owner กับ Atomic rename
+        await rename(temporaryPath, filePath);
+        return Object.freeze({ renewed: true, lockKey, ownerId, expiresAt, filePath });
+      } catch (error) {
+        await rm(temporaryPath, { force: true }).catch(() => undefined);
+        throw lockError('renew', error, lockKey);
+      }
     });
-    try {
-      await writeFile(temporaryPath, payload, { encoding: 'utf8', mode: 0o600 });
-      // Rename บน filesystem เดียวกันเป็น atomic replacement เพื่อลดช่วงไฟล์ว่างระหว่างต่ออายุ
-      await rename(temporaryPath, filePath);
-      return Object.freeze({ renewed: true, lockKey, ownerId, expiresAt, filePath });
-    } catch (error) {
-      await rm(temporaryPath, { force: true }).catch(() => undefined);
-      throw lockError('renew', error, lockKey);
-    }
   }
 
   async release(input) {
     const lockKey = requireText(input?.lockKey, 'lockKey');
     const ownerId = requireText(input?.ownerId, 'ownerId');
+    await mkdir(this.directory, { recursive: true });
     const filePath = this.#path(lockKey);
-    const existing = await readLock(filePath);
-    if (!existing) return false;
-    if (existing.ownerId !== ownerId) {
-      throw transientError(`Local sync lock owner mismatch for ${lockKey}`, {
-        code: 'LOCAL_SYNC_LOCK_OWNER_MISMATCH',
-        details: { lockKey },
-      });
+
+    return this.#withMutationGuard(filePath, async () => {
+      const existing = await readLock(filePath);
+      if (!existing) return false;
+      if (existing.ownerId !== ownerId) {
+        throw transientError(`Local sync lock owner mismatch for ${lockKey}`, {
+          code: 'LOCAL_SYNC_LOCK_OWNER_MISMATCH',
+          details: { lockKey },
+        });
+      }
+      await rm(filePath, { force: true });
+      return true;
+    });
+  }
+
+  async #withMutationGuard(filePath, operation) {
+    const guardPath = `${filePath}.guard`;
+    let acquired = false;
+
+    for (let attempt = 1; attempt <= this.guardMaxAttempts; attempt += 1) {
+      try {
+        await writeExclusive(guardPath, JSON.stringify({
+          pid: process.pid,
+          createdAt: this.now(),
+        }));
+        acquired = true;
+        break;
+      } catch (error) {
+        if (error?.code !== 'EEXIST') throw lockError('guard', error, filePath);
+        if (attempt === this.guardMaxAttempts) {
+          throw transientError('Local sync lock mutation guard is busy', {
+            code: 'LOCAL_SYNC_LOCK_GUARD_BUSY',
+            details: {
+              guardPath,
+              attempts: this.guardMaxAttempts,
+              remediation: 'Confirm no local sync is running, then remove the orphan .guard file.',
+            },
+          });
+        }
+        await this.sleep(this.guardRetryDelayMs);
+      }
     }
-    await rm(filePath, { force: true });
-    return true;
+
+    try {
+      return await operation();
+    } finally {
+      if (acquired) await rm(guardPath, { force: true });
+    }
   }
 
   #path(lockKey) {
     const digest = createHash('sha256').update(lockKey).digest('hex');
     return join(this.directory, `${digest}.lock`);
+  }
+}
+
+async function writeExclusive(filePath, payload) {
+  const handle = await open(filePath, 'wx', 0o600);
+  try {
+    await handle.writeFile(payload, 'utf8');
+  } finally {
+    await handle.close();
   }
 }
 
@@ -108,7 +172,7 @@ async function readLock(filePath) {
     return value && typeof value === 'object' ? value : null;
   } catch (error) {
     if (error?.code === 'ENOENT') return null;
-    // ไฟล์เสียถือว่า Stale และลบได้ในรอบ acquire ถัดไป
+    // ไฟล์เสียถือว่า Stale และลบได้ในรอบ acquire ถัดไปภายใต้ Mutation guard
     if (error instanceof SyntaxError) return { ownerId: null, expiresAt: 0 };
     throw error;
   }
@@ -135,4 +199,16 @@ function positiveInteger(value, fieldName) {
     throw new TypeError(`FileLeaseLockManager ${fieldName} must be a positive integer`);
   }
   return number;
+}
+
+function nonNegativeInteger(value, fieldName) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number < 0) {
+    throw new TypeError(`FileLeaseLockManager ${fieldName} must be a non-negative integer`);
+  }
+  return number;
+}
+
+function defaultSleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

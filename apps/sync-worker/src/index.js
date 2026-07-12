@@ -4,6 +4,8 @@ import { createLarkBitableClientFromEnv } from '../../../packages/connectors/src
 import { LarkRecordRepository } from '../../../packages/connectors/src/lark/lark-record-repository.js';
 import { TableSyncEngine } from '../../../packages/sync-engine/src/table-sync-engine.js';
 import { seedMetricDefinitions } from '../../../packages/application/src/use-cases/seed-metric-definitions.js';
+import { seedReportSettings } from '../../../packages/application/src/use-cases/seed-report-settings.js';
+import { generateTikTokOrganicReport } from '../../../packages/application/src/use-cases/generate-tiktok-organic-report.js';
 import { readLarkTableIdsFromEnv } from '../../../packages/config/src/lark-table-config.js';
 import { validateLarkLiveSync } from '../../../packages/application/src/use-cases/validate-lark-live-sync.js';
 import { loadCustomerRuntimeConfig } from '../../../packages/config/src/customer-profiles.js';
@@ -31,6 +33,10 @@ const DEFAULT_LOCK_LEASE_MS = 10 * 60 * 1000;
 const DEFAULT_LOCK_RENEW_INTERVAL_MS = 2 * 60 * 1000;
 const DEFAULT_RETRY_DELAY_SECONDS = 30;
 const DEFAULT_TIKTOK_FULL_RECONCILIATION_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_DAILY_REPORT_TIME = '08:10';
+const DEFAULT_WEEKLY_REPORT_TIME = '08:15';
+const DEFAULT_WEEKLY_REPORT_WEEKDAY = 'monday';
+const SCHEDULE_WEEKDAYS = new Set(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']);
 
 export const QUEUE_ROLES = Object.freeze({
   MAIN: 'main',
@@ -47,8 +53,17 @@ export function createSyncWorker(dependencies = {}) {
   return Object.freeze({
     /** Cron ทำหน้าที่เป็น Producer เท่านั้น เพื่อให้ Retry/Lock/DLQ อยู่ใน Queue flow เดียวกัน */
     async scheduled(event, env) {
-      if (!readBoolean(env?.MKT_SCHEDULE_TIKTOK_ENABLED, false)) {
-        logQueueResult({ ok: true, scope: 'scheduler', status: 'skipped', reason: 'tiktok_schedule_disabled' });
+      const scheduledAt = new Date(event.scheduledTime).toISOString();
+      const jobs = buildScheduledJobs({ event, env, scheduledAt });
+
+      if (jobs.length === 0) {
+        logQueueResult({
+          ok: true,
+          scope: 'scheduler',
+          status: 'skipped',
+          reason: 'no_scheduled_jobs_due',
+          requestedAt: scheduledAt,
+        });
         return;
       }
 
@@ -61,22 +76,19 @@ export function createSyncWorker(dependencies = {}) {
         });
       }
 
-      const scheduledAt = new Date(event.scheduledTime).toISOString();
-      const job = Object.freeze({
-        schemaVersion: 1,
-        type: JOB_TYPES.TIKTOK_CREATOR_NATIVE_SYNC,
-        requestedAt: scheduledAt,
-        trigger: 'scheduled',
-        syncMode: 'auto',
-      });
-      await queue.send(job);
-      logQueueResult({
-        ok: true,
-        scope: 'scheduler',
-        status: 'enqueued',
-        type: job.type,
-        requestedAt: scheduledAt,
-      });
+      for (const job of jobs) {
+        await queue.send(job);
+        logQueueResult({
+          ok: true,
+          scope: 'scheduler',
+          status: 'enqueued',
+          type: job.type,
+          requestedAt: scheduledAt,
+          reportSettingKey: job.reportSettingKey ?? null,
+          metricDate: job.metricDate ?? null,
+          periodEnd: job.periodEnd ?? null,
+        });
+      }
     },
 
     /** Queue routing เป็น whitelist และ fail-closed: Main, DLQ หรือ Unknown เท่านั้น */
@@ -270,6 +282,85 @@ export async function processJob(input) {
       repository: infrastructure.repository,
       syncEngine: infrastructure.syncEngine,
       tableId: tableIds.mktMetricDefinitions,
+    });
+  }
+
+  if (definition.type === JOB_TYPES.REPORT_SETTINGS_SEED) {
+    const tableIds = readLarkTableIdsFromEnv(input.env, ['mktReportSettings']);
+    return seedReportSettings({
+      repository: infrastructure.repository,
+      syncEngine: infrastructure.syncEngine,
+      tableId: tableIds.mktReportSettings,
+      profileKey: runtimeConfig.profileKey,
+    });
+  }
+
+  if (definition.type === JOB_TYPES.DAILY_REPORT_GENERATE
+    || definition.type === JOB_TYPES.WEEKLY_REPORT_GENERATE) {
+    const tableIds = readLarkTableIdsFromEnv(input.env, [
+      'mktContent',
+      'mktContentDaily',
+      'mktMetricDefinitions',
+      'mktReportSettings',
+      'mktReportSnapshots',
+      'mktReportMetricValues',
+      'mktReportTopContent',
+      'mktSyncLog',
+      'mktSystemAlerts',
+    ]);
+    const reliability = infrastructure.getReliability(tableIds);
+    const reportType = definition.type === JOB_TYPES.DAILY_REPORT_GENERATE
+      ? 'daily_organic_report'
+      : 'weekly_organic_report';
+    const defaultSettingKey = definition.type === JOB_TYPES.DAILY_REPORT_GENERATE
+      ? input.env?.MKT_DAILY_REPORT_SETTING_KEY
+      : input.env?.MKT_WEEKLY_REPORT_SETTING_KEY;
+    const reportSettingKey = requireJobText(
+      input.job.body?.reportSettingKey ?? defaultSettingKey,
+      'reportSettingKey',
+    );
+
+    return runReliableSync({
+      store: reliability.store,
+      lockManager: reliability.lockManager,
+      customerProfile: runtimeConfig.profileKey,
+      accountKey: connectorConfig.accountKey,
+      platform: 'tiktok',
+      source: 'mkt_content_daily',
+      syncType: reportType,
+      retryCount: Math.max(0, readAttempts(input.message) - 1),
+      leaseMs: readPositiveInteger(input.env?.MKT_SYNC_LOCK_LEASE_MS, DEFAULT_LOCK_LEASE_MS),
+      renewIntervalMs: readPositiveInteger(
+        input.env?.MKT_SYNC_LOCK_RENEW_INTERVAL_MS,
+        DEFAULT_LOCK_RENEW_INTERVAL_MS,
+      ),
+      alertOnRetryableFailure: false,
+      onReliabilityError: (event) => logQueueResult({
+        ok: false,
+        scope: 'reliability',
+        ...sanitizeReliabilityEvent(event),
+      }),
+      execute: ({ assertLockActive }) => generateTikTokOrganicReport({
+        assertLockActive,
+        repository: infrastructure.repository,
+        syncEngine: infrastructure.syncEngine,
+        customerProfile: runtimeConfig.profileKey,
+        accountId: connectorConfig.accountKey,
+        reportType,
+        reportSettingKey,
+        periodEnd: input.job.body?.periodEnd,
+        comparisonMode: input.job.body?.comparisonMode,
+        topContentLimit: input.job.body?.topContentLimit,
+        tables: {
+          mktContent: tableIds.mktContent,
+          mktContentDaily: tableIds.mktContentDaily,
+          mktMetricDefinitions: tableIds.mktMetricDefinitions,
+          mktReportSettings: tableIds.mktReportSettings,
+          mktReportSnapshots: tableIds.mktReportSnapshots,
+          mktReportMetricValues: tableIds.mktReportMetricValues,
+          mktReportTopContent: tableIds.mktReportTopContent,
+        },
+      }),
     });
   }
 
@@ -480,8 +571,140 @@ export function createOperationalStore(env) {
 
 function platformFromJobType(type) {
   if (typeof type !== 'string') return 'system';
+  if (type.startsWith('report.')) return 'tiktok';
   const prefix = type.split('.')[0];
   return new Set(['facebook', 'instagram', 'tiktok', 'youtube']).has(prefix) ? prefix : 'system';
+}
+
+/** สร้างรายการ Job ที่ถึงรอบตามเวลาท้องถิ่น โดย Sync มาก่อน Report เพื่อให้รายงานอ่าน Snapshot ล่าสุด */
+export function buildScheduledJobs(input = {}) {
+  const env = input.env ?? {};
+  const requestedAt = normalizeScheduledAt(input.scheduledAt ?? input.event?.scheduledTime);
+  const tiktokEnabled = readBoolean(env.MKT_SCHEDULE_TIKTOK_ENABLED, false);
+  const dailyEnabled = readBoolean(env.MKT_SCHEDULE_DAILY_REPORT_ENABLED, false);
+  const weeklyEnabled = readBoolean(env.MKT_SCHEDULE_WEEKLY_REPORT_ENABLED, false);
+  if (!tiktokEnabled && !dailyEnabled && !weeklyEnabled) return Object.freeze([]);
+
+  const timeZone = requireJobText(env.DEFAULT_TIMEZONE ?? 'Asia/Bangkok', 'DEFAULT_TIMEZONE');
+  const local = readZonedScheduleParts(requestedAt, timeZone);
+  const jobs = [];
+
+  if (tiktokEnabled) {
+    jobs.push(Object.freeze({
+      schemaVersion: 1,
+      type: JOB_TYPES.TIKTOK_CREATOR_NATIVE_SYNC,
+      trigger: 'scheduled',
+      syncMode: 'auto',
+      requestedAt,
+      // ล็อกวันที่จาก scheduledTime เพื่อให้ Queue delay/retry ข้ามวันยังเขียน Snapshot วันเดิม
+      metricDate: local.date,
+    }));
+  }
+
+  if (dailyEnabled) {
+    const dailyTime = readScheduleTime(env.MKT_DAILY_REPORT_TIME ?? DEFAULT_DAILY_REPORT_TIME, 'MKT_DAILY_REPORT_TIME');
+    if (local.time === dailyTime) {
+      jobs.push(Object.freeze({
+        schemaVersion: 1,
+        type: JOB_TYPES.DAILY_REPORT_GENERATE,
+        trigger: 'scheduled',
+        requestedAt,
+        // ล็อก Period identity ตั้งแต่ Producer ไม่ให้เวลาที่ Consumer execute เปลี่ยนรายงาน
+        periodEnd: local.date,
+        reportSettingKey: requireJobText(env.MKT_DAILY_REPORT_SETTING_KEY, 'MKT_DAILY_REPORT_SETTING_KEY'),
+      }));
+    }
+  }
+
+  if (weeklyEnabled) {
+    const weeklyTime = readScheduleTime(env.MKT_WEEKLY_REPORT_TIME ?? DEFAULT_WEEKLY_REPORT_TIME, 'MKT_WEEKLY_REPORT_TIME');
+    const weeklyWeekday = readScheduleWeekday(
+      env.MKT_WEEKLY_REPORT_WEEKDAY ?? DEFAULT_WEEKLY_REPORT_WEEKDAY,
+      'MKT_WEEKLY_REPORT_WEEKDAY',
+    );
+    if (local.time === weeklyTime && local.weekday === weeklyWeekday) {
+      jobs.push(Object.freeze({
+        schemaVersion: 1,
+        type: JOB_TYPES.WEEKLY_REPORT_GENERATE,
+        trigger: 'scheduled',
+        requestedAt,
+        periodEnd: local.date,
+        reportSettingKey: requireJobText(env.MKT_WEEKLY_REPORT_SETTING_KEY, 'MKT_WEEKLY_REPORT_SETTING_KEY'),
+      }));
+    }
+  }
+
+  return Object.freeze(jobs);
+}
+
+/** อ่านเวลาและวันตาม Timezone จาก scheduledTime ของ Cloudflare โดยไม่พึ่ง Timezone เครื่อง */
+export function readZonedScheduleParts(value, timeZone) {
+  const requestedAt = normalizeScheduledAt(value);
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: requireJobText(timeZone, 'timeZone'),
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    weekday: 'long',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(new Date(requestedAt));
+  const byType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return Object.freeze({
+    date: [
+      requireJobText(byType.year, 'scheduled year'),
+      requireJobText(byType.month, 'scheduled month'),
+      requireJobText(byType.day, 'scheduled day'),
+    ].join('-'),
+    weekday: requireJobText(byType.weekday, 'scheduled weekday').toLowerCase(),
+    time: `${requireJobText(byType.hour, 'scheduled hour')}:${requireJobText(byType.minute, 'scheduled minute')}`,
+  });
+}
+
+function normalizeScheduledAt(value) {
+  const date = value instanceof Date
+    ? value
+    : new Date(typeof value === 'number' ? value : requireJobText(value, 'scheduledAt'));
+  if (Number.isNaN(date.getTime())) {
+    throw permanentError('Scheduled time must be a valid instant', {
+      code: 'MKT_SCHEDULE_CONFIG_INVALID',
+    });
+  }
+  return date.toISOString();
+}
+
+function readScheduleTime(value, fieldName) {
+  const text = requireJobText(value, fieldName);
+  const match = /^(?:[01]\d|2[0-3]):([0-5]\d)$/u.exec(text);
+  if (!match || Number(match[1]) % 5 !== 0) {
+    throw permanentError(`${fieldName} must use HH:mm and a 5-minute boundary`, {
+      code: 'MKT_SCHEDULE_CONFIG_INVALID',
+      details: { fieldName, value: text },
+    });
+  }
+  return text;
+}
+
+function readScheduleWeekday(value, fieldName) {
+  const text = requireJobText(value, fieldName).toLowerCase();
+  if (!SCHEDULE_WEEKDAYS.has(text)) {
+    throw permanentError(`${fieldName} must be an English weekday`, {
+      code: 'MKT_SCHEDULE_CONFIG_INVALID',
+      details: { fieldName, value: text },
+    });
+  }
+  return text;
+}
+
+function requireJobText(value, fieldName) {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw permanentError(`Missing required job/config value ${fieldName}`, {
+      code: 'MKT_RUNTIME_CONFIG_INVALID',
+      details: { fieldName },
+    });
+  }
+  return value.trim();
 }
 
 function readMetricDate(jobValue, env) {
@@ -564,6 +787,21 @@ function summarizeJobResult(result) {
       : 0,
     content: summarizeWriteResult(result.content ?? result.syncPlan?.content),
     dailySnapshots: summarizeWriteResult(result.dailySnapshots ?? result.syncPlan?.dailySnapshots),
+    reportType: result.reportType ?? null,
+    reportSettingKey: result.reportSettingKey ?? null,
+    reportId: result.reportId ?? null,
+    period: result.period ?? null,
+    dataStatus: result.dataStatus ?? null,
+    baselineCoverageRate: result.baselineCoverageRate ?? null,
+    sourceSnapshotCount: result.sourceSnapshotCount ?? null,
+    trackedContentCount: result.trackedContentCount ?? null,
+    metricCount: result.metricCount ?? null,
+    topContentLimit: result.topContentLimit ?? null,
+    topContentSlotCount: result.topContentSlotCount ?? null,
+    topContentCount: result.topContentCount ?? null,
+    reportSnapshot: summarizeWriteResult(result.reportSnapshot),
+    reportMetricValues: summarizeWriteResult(result.reportMetricValues),
+    reportTopContent: summarizeWriteResult(result.reportTopContent),
     reconciliation: result.reconciliation ?? null,
     issueCount: Array.isArray(result.issues) ? result.issues.length : 0,
     warningCount: Array.isArray(result.warnings) ? result.warnings.length : 0,

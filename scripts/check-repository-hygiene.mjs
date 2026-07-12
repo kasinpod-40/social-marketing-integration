@@ -9,6 +9,7 @@ const issues = [];
 await requireFile('.dev.vars.example');
 await scanForDsStore(root);
 checkTrackedDsStore();
+checkTrackedLocalOnlyFiles();
 await checkDevVarsPermission();
 await checkPortablePackageLock();
 
@@ -46,6 +47,18 @@ function checkTrackedDsStore() {
   if (result.status !== 0) return;
   const tracked = result.stdout.split(/\r?\n/u).filter((path) => /(^|\/)\.DS_Store$/u.test(path));
   for (const path of tracked) issues.push(`Tracked .DS_Store: ${path}`);
+}
+
+
+function checkTrackedLocalOnlyFiles() {
+  const result = spawnSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' });
+  if (result.status !== 0) return;
+  const tracked = new Set(result.stdout.split(/\r?\n/u).filter(Boolean));
+  for (const path of ['.dev.vars', 'wrangler.sync.jsonc']) {
+    if (tracked.has(path)) {
+      issues.push(`Tracked local-only file: ${path}; run git rm --cached ${path}`);
+    }
+  }
 }
 
 async function checkDevVarsPermission() {
