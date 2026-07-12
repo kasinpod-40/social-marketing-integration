@@ -58,3 +58,8 @@ source_record_states
 ```
 
 รายละเอียด UAT อยู่ใน `docs/tiktok-incremental-sync-v0.6.0.md`
+
+
+## Local file-lock mutation guard
+
+หาก Local script แจ้ง `LOCAL_SYNC_LOCK_GUARD_BUSY` ห้ามลบ `.guard` ทันที ให้หยุด Local write และทำตาม `docs/local-file-lock-guard-runbook-v0.7.2.md` หลังยืนยันว่าไม่มี Process ใช้งาน Lock อยู่.

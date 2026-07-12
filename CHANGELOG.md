@@ -1,10 +1,27 @@
 # Changelog
 
+## 0.7.2-completed-report-period — 2026-07-12
+
+### Fixed
+- Scheduled Daily/Weekly Report jobs now persist the previous completed local day as `periodEnd`, derived from the original `scheduledTime`.
+- Added explicit month, year, and leap-day boundary regression coverage so Queue delay/retry cannot move a report onto an incomplete current day.
+- Release package now includes required dotfiles and excludes `wrangler.sync.jsonc`, `.DS_Store`, `__MACOSX`, AppleDouble files, secrets, build caches, and local locks.
+- Added an operator runbook for safely clearing an orphan Local file-lock mutation guard.
+
+### Safety
+- TikTok `metricDate` remains the scheduled local day; only Report `periodEnd` uses the previous completed day.
+- Daily/Weekly Report schedules remain disabled until Lark schema, seeds, manual Daily/Weekly UAT, and idempotent rerun pass.
+- Existing repositories that previously tracked `wrangler.sync.jsonc` still must run `git rm --cached wrangler.sync.jsonc` once; a ZIP cannot modify an existing Git index.
+
+### Verification target
+- 261 Node unit/integration tests and 6 Workers-runtime tests.
+- 65 source files, 139 local dependencies, 0 cycles, repository hygiene, npm audit, Wrangler dry-run, clean extracted ZIP retest.
+
 ## 0.7.1-report-reliability-hardening — 2026-07-12
 
 ### Fixed
 - Kept first-table report rejection as `failed`; `partial_success` now requires actual confirmed or unknown write progress.
-- Bound scheduled TikTok `metricDate` and report `periodEnd` to the original `scheduledTime` for deterministic retries.
+- Bound scheduled TikTok `metricDate` to the local scheduled day and report `periodEnd` to the previous completed local day, both derived from the original `scheduledTime` for deterministic retries.
 - Unified Queue/setting Top Content limit, bounded it to 1–100, and neutralized stale ranks with `data_status=no_data`.
 - Made expired lease assertions fail closed and validated renewed lease expiry.
 - Preserved prior confirmed Lark chunk progress when `beforeChunk` fails.

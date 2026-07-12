@@ -183,7 +183,7 @@ describe('Sync Worker ใน Workers runtime จริง', () => {
       'report.daily.generate',
     ]);
     expect(send.mock.calls[0][0].metricDate).toBe('2026-07-13');
-    expect(send.mock.calls[1][0].periodEnd).toBe('2026-07-13');
+    expect(send.mock.calls[1][0].periodEnd).toBe('2026-07-12');
   });
 
 });

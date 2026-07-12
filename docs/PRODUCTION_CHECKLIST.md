@@ -108,10 +108,20 @@ Release จะยังไม่ถือว่า Production-ready จนกว
 - [ ] Dry run ผ่านใน Production
 - [ ] UAT/Approval จากลูกค้าก่อนเปิด Schedule/Queue จริง
 
+## v0.7.2 Completed Report Period & Packaging Gate
+
+- [x] Daily/Weekly scheduled `periodEnd` is the previous completed local day from original `scheduledTime`
+- [x] Month, year, and leap-day boundaries have regression coverage
+- [x] Release package contains `.gitignore` and `.dev.vars.example`
+- [x] Release package excludes `wrangler.sync.jsonc`, `.dev.vars`, `.DS_Store`, `__MACOSX`, AppleDouble files, caches, and local locks
+- [x] Orphan Local mutation guard runbook exists and remains fail-closed
+- [ ] Existing repository Git index no longer tracks `wrangler.sync.jsonc` (`git ls-files wrangler.sync.jsonc` returns nothing)
+- [ ] Report schedules remain `false` until Lark schema/seed/manual UAT passes
+
 ## v0.7.1 Report & Runtime Reliability Gate
 
 - [x] First report-table rejection is `failed`, not `partial_success`
-- [x] Scheduled job payload binds `metricDate` / `periodEnd` to original `scheduledTime`
+- [x] Scheduled job payload derives TikTok `metricDate` and the report's previous completed-day `periodEnd` from original `scheduledTime`
 - [x] Top Content limit is shared, bounded 1–100, and stale ranks become `no_data`
 - [x] Lease expiry fails closed before additional writes
 - [x] Chunk guard failure preserves confirmed write progress

@@ -20,7 +20,7 @@ test('scheduler queues TikTok sync first and daily report at Bangkok 08:10', () 
     'report.daily.generate',
   ]);
   assert.equal(jobs[0].metricDate, '2026-07-13');
-  assert.equal(jobs[1].periodEnd, '2026-07-13');
+  assert.equal(jobs[1].periodEnd, '2026-07-12');
   assert.equal(jobs[1].reportSettingKey, 'dev_ft_pumkin:tiktok:daily');
 });
 
@@ -37,7 +37,7 @@ test('weekly report is due only on configured Bangkok weekday and time', () => {
 
   const weeklyJobs = buildScheduledJobs({ scheduledAt: '2026-07-13T01:15:00Z', env });
   assert.deepEqual(weeklyJobs.map((job) => job.type), ['report.weekly.generate']);
-  assert.equal(weeklyJobs[0].periodEnd, '2026-07-13');
+  assert.equal(weeklyJobs[0].periodEnd, '2026-07-12');
   assert.equal(buildScheduledJobs({ scheduledAt: '2026-07-14T01:15:00Z', env }).length, 0);
 });
 
@@ -84,4 +84,52 @@ test('scheduled date identity stays bound to scheduledTime even when consumption
 
   assert.equal(jobs[0].requestedAt, '2026-07-12T16:59:59.000Z');
   assert.equal(jobs[0].metricDate, '2026-07-12');
+});
+
+test('scheduled report period uses the last completed local day across a year boundary', () => {
+  const jobs = buildScheduledJobs({
+    scheduledAt: '2026-01-01T01:10:00.000Z',
+    env: {
+      DEFAULT_TIMEZONE: 'Asia/Bangkok',
+      MKT_SCHEDULE_TIKTOK_ENABLED: 'false',
+      MKT_SCHEDULE_DAILY_REPORT_ENABLED: 'true',
+      MKT_DAILY_REPORT_TIME: '08:10',
+      MKT_DAILY_REPORT_SETTING_KEY: 'dev_ft_pumkin:tiktok:daily',
+      MKT_SCHEDULE_WEEKLY_REPORT_ENABLED: 'false',
+    },
+  });
+
+  assert.equal(jobs[0].periodEnd, '2025-12-31');
+});
+
+test('scheduled report period uses the last completed local day across a month boundary', () => {
+  const jobs = buildScheduledJobs({
+    scheduledAt: '2026-08-01T01:10:00.000Z',
+    env: {
+      DEFAULT_TIMEZONE: 'Asia/Bangkok',
+      MKT_SCHEDULE_TIKTOK_ENABLED: 'false',
+      MKT_SCHEDULE_DAILY_REPORT_ENABLED: 'true',
+      MKT_DAILY_REPORT_TIME: '08:10',
+      MKT_DAILY_REPORT_SETTING_KEY: 'dev_ft_pumkin:tiktok:daily',
+      MKT_SCHEDULE_WEEKLY_REPORT_ENABLED: 'false',
+    },
+  });
+
+  assert.equal(jobs[0].periodEnd, '2026-07-31');
+});
+
+test('scheduled report period uses leap day as the last completed local day', () => {
+  const jobs = buildScheduledJobs({
+    scheduledAt: '2028-03-01T01:10:00.000Z',
+    env: {
+      DEFAULT_TIMEZONE: 'Asia/Bangkok',
+      MKT_SCHEDULE_TIKTOK_ENABLED: 'false',
+      MKT_SCHEDULE_DAILY_REPORT_ENABLED: 'true',
+      MKT_DAILY_REPORT_TIME: '08:10',
+      MKT_DAILY_REPORT_SETTING_KEY: 'dev_ft_pumkin:tiktok:daily',
+      MKT_SCHEDULE_WEEKLY_REPORT_ENABLED: 'false',
+    },
+  });
+
+  assert.equal(jobs[0].periodEnd, '2028-02-29');
 });

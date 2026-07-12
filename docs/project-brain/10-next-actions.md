@@ -1,8 +1,8 @@
 # 10 — Next Actions
 
-## Current gate: TikTok Organic Report v0.7.1
+## Current gate: TikTok Organic Report v0.7.2
 
-Steps 1–6 of the original roadmap are complete in Live DEV. v0.7.1 closes the code-level report/reliability blockers found in the v0.7.0 review. The next gate is Step 7 Lark schema + Live DEV UAT, and Report schedule must remain disabled until all items below pass.
+Steps 1–6 of the original roadmap are complete in Live DEV. v0.7.2 also fixes the scheduled completed-day semantics and release packaging identified in the follow-up review. The next gate is Step 7 Lark schema + Live DEV UAT, and Report schedule must remain disabled until all items below pass.
 
 1. Untrack local config once with `git rm --cached wrangler.sync.jsonc`, then confirm `npm run check`, full tests, and Wrangler dry-run pass.
 2. Apply the Lark schema changes from `docs/tiktok-organic-report-blueprint-v0.7.0.md` and the release Excel Blueprint.

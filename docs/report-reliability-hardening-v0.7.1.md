@@ -7,7 +7,7 @@
 ## Correctness ที่แก้
 
 1. **Report failure status** — Error ก่อนเขียนแถวแรกโยน Cause เดิมและจบเป็น `failed`; สร้าง `PartialSyncError` เฉพาะเมื่อมี confirmed/unknown write progress จริง
-2. **Deterministic scheduled dates** — Scheduler ใส่ `metricDate` สำหรับ TikTok Sync และ `periodEnd` สำหรับ Daily/Weekly Report จาก `scheduledTime` ตาม Timezone ตั้งแต่ Producer เพื่อให้ Retry/Queue delay ข้ามวันไม่เปลี่ยน identity
+2. **Deterministic scheduled dates** — Scheduler ใส่ `metricDate` เป็นวันท้องถิ่นของ TikTok Sync และ `periodEnd` เป็นวันสมบูรณ์ก่อนหน้าสำหรับ Daily/Weekly Report โดยคำนวณจาก `scheduledTime` ตั้งแต่ Producer เพื่อให้ Retry/Queue delay ข้ามวันไม่เปลี่ยน identity
 3. **Top Content consistency** — Resolve `effectiveTopContentLimit` ครั้งเดียว, จำกัด 1–100 และใช้ค่าเดียวกับ JSON snapshot กับ normalized table
 4. **Stale rank cleanup** — เมื่อ Limit ลดลง ระบบอ่าน Rank เดิมและเขียน Rank ส่วนเกินเป็น `data_status=no_data`; Client View ต้องกรอง `data_status != no_data`
 

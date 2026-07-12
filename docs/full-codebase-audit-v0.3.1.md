@@ -1,6 +1,6 @@
 # Full Codebase Audit — v0.3.1-codebase-audit-hardening
 
-วันที่ตรวจ: 2026-07-11  
+วันที่ตรวจ: 2026-07-11
 Baseline ก่อน Audit: `v0.2.8-runtime-customer-profiles`
 
 ## ขอบเขตการตรวจ

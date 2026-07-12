@@ -6,6 +6,7 @@ import { TableSyncEngine } from '../../../packages/sync-engine/src/table-sync-en
 import { seedMetricDefinitions } from '../../../packages/application/src/use-cases/seed-metric-definitions.js';
 import { seedReportSettings } from '../../../packages/application/src/use-cases/seed-report-settings.js';
 import { generateTikTokOrganicReport } from '../../../packages/application/src/use-cases/generate-tiktok-organic-report.js';
+import { addDaysDateOnly } from '../../../packages/application/src/reports/report-period.js';
 import { readLarkTableIdsFromEnv } from '../../../packages/config/src/lark-table-config.js';
 import { validateLarkLiveSync } from '../../../packages/application/src/use-cases/validate-lark-live-sync.js';
 import { loadCustomerRuntimeConfig } from '../../../packages/config/src/customer-profiles.js';
@@ -587,6 +588,7 @@ export function buildScheduledJobs(input = {}) {
 
   const timeZone = requireJobText(env.DEFAULT_TIMEZONE ?? 'Asia/Bangkok', 'DEFAULT_TIMEZONE');
   const local = readZonedScheduleParts(requestedAt, timeZone);
+  const completedPeriodEnd = addDaysDateOnly(local.date, -1);
   const jobs = [];
 
   if (tiktokEnabled) {
@@ -609,8 +611,8 @@ export function buildScheduledJobs(input = {}) {
         type: JOB_TYPES.DAILY_REPORT_GENERATE,
         trigger: 'scheduled',
         requestedAt,
-        // ล็อก Period identity ตั้งแต่ Producer ไม่ให้เวลาที่ Consumer execute เปลี่ยนรายงาน
-        periodEnd: local.date,
+        // รายงานใช้วันสมบูรณ์ล่าสุด และล็อก Identity ตั้งแต่ Producer ไม่ให้ Queue delay เปลี่ยนช่วง
+        periodEnd: completedPeriodEnd,
         reportSettingKey: requireJobText(env.MKT_DAILY_REPORT_SETTING_KEY, 'MKT_DAILY_REPORT_SETTING_KEY'),
       }));
     }
@@ -628,7 +630,7 @@ export function buildScheduledJobs(input = {}) {
         type: JOB_TYPES.WEEKLY_REPORT_GENERATE,
         trigger: 'scheduled',
         requestedAt,
-        periodEnd: local.date,
+        periodEnd: completedPeriodEnd,
         reportSettingKey: requireJobText(env.MKT_WEEKLY_REPORT_SETTING_KEY, 'MKT_WEEKLY_REPORT_SETTING_KEY'),
       }));
     }

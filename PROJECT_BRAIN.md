@@ -4,11 +4,11 @@
 This project connects social organic and paid ads data into Lark Base for reporting, daily snapshots, monitoring, and AI summaries. The implementation target is a lean MVP using Cloudflare Workers, Cloudflare D1, Cloudflare Queues, Lark Base, Lark Native Integrations where useful, and JavaScript.
 
 ## Current project status
-Current audited release candidate: `v0.7.1-report-reliability-hardening`
+Current audited release candidate: `v0.7.2-completed-report-period`
 
-Package verification target: 258 Node unit/integration tests + 6 Workers-runtime tests, Wrangler 4.110.0 dry-run, syntax/architecture/repository hygiene, npm audit, tracked-local-config guard และ extracted ZIP retest. Live Cloudflare DEV ผ่าน Queue, Reconciliation, Distributed Lock, Retry/DLQ/System Alerts และ Scheduled Sync แล้ว.
+Package verification target: 261 Node unit/integration tests + 6 Workers-runtime tests, Wrangler 4.110.0 dry-run, syntax/architecture/repository hygiene, npm audit, tracked-local-config guard และ extracted ZIP retest. Live Cloudflare DEV ผ่าน Queue, Reconciliation, Distributed Lock, Retry/DLQ/System Alerts และ Scheduled Sync แล้ว.
 
-**v0.7.1-report-reliability-hardening — ซ่อม deterministic schedule, report failure classification, Top Content consistency/stale-rank cleanup และ lock/write failure paths; Report schedule ยังต้องคงปิดจนกว่า Lark schema/seed/Live UAT จะผ่าน.**
+**v0.7.2-completed-report-period — Scheduled Report ใช้วันสมบูรณ์ล่าสุดจาก scheduledTime, เพิ่ม boundary regression tests และจัดแพ็กเกจ local-config-safe; Report schedule ยังต้องคงปิดจนกว่า Lark schema/seed/Live UAT จะผ่าน.**
 
 Completed in Lark:
 - Created Lark Base: `Social MKT Data Hub`.
@@ -36,16 +36,22 @@ Completed Live Cloudflare DEV reliability UAT:
 - Retry exhaustion -> DLQ -> D1/Lark System Alert ผ่าน
 - Scheduled TikTok Sync ผ่านต่อเนื่อง 3 รอบโดยไม่เขียนซ้ำ
 
+Completed in v0.7.2 release correction:
+- Daily/Weekly report `periodEnd` = previous completed local day derived at the scheduler producer.
+- Month/year/leap-day boundaries are covered by regression tests.
+- Clean release package excludes local Wrangler config and macOS metadata while retaining `.gitignore` / `.dev.vars.example`.
+- Orphan Local mutation guard remediation is documented in `docs/local-file-lock-guard-runbook-v0.7.2.md`.
+
 Completed in v0.7.1 reliability hardening code:
 - First-write rejection remains `failed`; `partial_success` is used only when confirmed/unknown write progress exists.
-- Scheduled TikTok and report jobs persist deterministic `metricDate` / `periodEnd` from `scheduledTime`.
+- Scheduled TikTok jobs persist the local `metricDate`; report jobs persist the previous completed local day as `periodEnd`, both derived from `scheduledTime` for deterministic retries.
 - Top Content resolves one bounded limit (1–100) for JSON and normalized rows and neutralizes stale ranks with `no_data`.
 - Lease expiry fails closed, chunk guard failures preserve prior confirmed progress, and exhausted Lark 1254290 remains a retryable rejection instead of unknown write.
 - Local file-lock mutation is serialized by an exclusive guard; tracked local deployment config now fails repository hygiene.
 - DEV Wrangler example enables persisted Workers Logs/Traces; production sampling remains customer/environment configuration.
 
 
-Completed in v0.7.0 report foundation code (retained in v0.7.1):
+Completed in v0.7.0 report foundation code (retained in v0.7.2):
 - Reviewed the latest `.base` export before implementation and documented the report schema contract.
 - Added cumulative-delta Daily/Weekly TikTok report calculations, previous-period comparison, weighted watch/completion metrics, partial-baseline quality status, and negative correction handling.
 - Added normalized Metric Values and fixed-rank Top Content outputs for client-facing views.

@@ -1,6 +1,6 @@
 {
   "name": "social-marketing-integration",
-  "version": "0.7.1-report-reliability-hardening",
+  "version": "0.7.2-completed-report-period",
   "private": true,
   "type": "module",
   "engines": {

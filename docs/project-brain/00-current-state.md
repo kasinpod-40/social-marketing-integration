@@ -2,7 +2,7 @@
 
 ## Current release candidate
 
-`v0.7.1-report-reliability-hardening` — 2026-07-12
+`v0.7.2-completed-report-period` — 2026-07-12
 
 ## Live-complete scope
 
@@ -10,13 +10,14 @@
 - Live DEV gate, canonical keys, idempotency, reconciliation, Sync Log, D1 distributed lock, retry/DLQ/System Alerts.
 - Scheduled + incremental TikTok sync with D1 cursor/fingerprint and 24-hour full reconciliation.
 
-## v0.7.1 reliability gate completed in code
+## v0.7.2 completed-period release gate
 
+- Daily/Weekly report jobs use the previous completed local day from the original `scheduledTime`; month/year/leap-day boundaries are regression-tested.
 - Report first-write failures are `failed`; partial status requires actual confirmed/unknown write progress.
-- Scheduler binds TikTok `metricDate` and report `periodEnd` to the original scheduled time.
+- Scheduler derives TikTok `metricDate` from the local scheduled day and report `periodEnd` from the previous completed local day, preserving both across retries.
 - Top Content uses one bounded limit and neutralizes stale ranks after a limit reduction.
 - Expired leases fail closed; chunk guard failures preserve prior progress; Lark 1254290 stays a retryable rejection.
-- Local lock mutations are guarded; local Wrangler config must not be tracked.
+- Local lock mutations are guarded; orphan guard cleanup follows `../local-file-lock-guard-runbook-v0.7.2.md`; local Wrangler config must not be tracked.
 - DEV example enables persisted Worker logs and traces.
 
 ## Implemented in code, pending Lark schema and Live UAT

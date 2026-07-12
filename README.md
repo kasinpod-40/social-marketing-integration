@@ -4,7 +4,7 @@
 
 ## Baseline ปัจจุบัน
 
-`v0.7.1-report-reliability-hardening`
+`v0.7.2-completed-report-period`
 
 สถานะปัจจุบัน:
 
@@ -14,15 +14,16 @@
 - v0.4.0 ผ่าน Live DEV gate แล้ว: รันซ้ำได้ `created=0`, `updated=0`, `skipped=20` ทั้ง Content และ Daily
 - v0.6.0 เพิ่ม D1 checkpoint/fingerprint สำหรับ TikTok Incremental Sync: รอบปกติส่งเฉพาะ RAW records ที่เปลี่ยนเข้าสู่ Destination plan/write และบังคับ Full reconciliation ทุก 24 ชั่วโมง
 - Live Cloudflare DEV ผ่าน Sync Log, Reconciliation, Distributed Lock, Retry/DLQ/System Alert และ Scheduled Sync ต่อเนื่อง 3 รอบแล้ว
-- v0.7.1 ซ่อม Report/Lock reliability: แยก failed กับ partial_success ตาม write progress จริง, ผูก metricDate/periodEnd กับ scheduledTime, ทำ Top Content limit ให้สอดคล้องและล้างอันดับเก่า, ตรวจ lease expiry, รักษา partial progress ระหว่าง chunk, จำแนก Lark 1254290 ถูกต้อง และป้องกัน Local lock renewal race
+- v0.7.1 ซ่อม Report/Lock reliability: แยก failed กับ partial_success ตาม write progressจริง, ทำ Top Content limit ให้สอดคล้องและล้างอันดับเก่า, ตรวจ lease expiry, รักษา partial progress ระหว่าง chunk, จำแนก Lark 1254290 ถูกต้อง และป้องกัน Local lock renewal race
+- v0.7.2 ล็อก Scheduled Report ให้ใช้ “วันสมบูรณ์ล่าสุด” จาก `scheduledTime` ตาม Timezone พร้อม regression tests สำหรับข้ามเดือน/ปี/ปีอธิกสุรทิน และจัด Release package ให้ไม่มี Local Wrangler config หรือ macOS metadata
 - Report schedule ยังปิดจนกว่าจะปรับ Lark schema/seed/UAT ตาม Blueprint
 
 
-## TikTok Organic Report v0.7.1
+## TikTok Organic Report v0.7.2
 
 Report Engine อ่าน cumulative snapshots จาก `MKT_Content_Daily` แล้วคำนวณ Delta ของช่วงเวลา; ห้ามนำยอดสะสมแต่ละวันมาบวกกันตรง ๆ. ลูกค้าใช้ Client Views จาก `MKT_Report_Metric_Values` และ `MKT_Report_Top_Content` ส่วน RAW/Daily/Sync/System tables เป็นหลังบ้าน.
 
-ก่อนเปิด Report schedule ต้องอ่าน `docs/report-reliability-hardening-v0.7.1.md` และทำตาม `docs/tiktok-organic-report-blueprint-v0.7.0.md` และ Excel Blueprint ที่แนบมากับ Release:
+ก่อนเปิด Report schedule ต้องอ่าน `docs/completed-report-period-v0.7.2.md`, `docs/report-reliability-hardening-v0.7.1.md` และทำตาม `docs/tiktok-organic-report-blueprint-v0.7.0.md` และ Excel Blueprint ที่แนบมากับ Release:
 
 1. เพิ่ม Field ของตาราง Report เดิมและสร้าง 2 ตารางใหม่
 2. ใส่ Table IDs ใหม่ใน Runtime config
@@ -51,7 +52,7 @@ npm test
 npm run deploy:dry-run
 ```
 
-`wrangler.sync.example.jsonc` เปิด Workers Logs/Traces สำหรับ DEV observability แล้ว ส่วน `wrangler.sync.jsonc` เป็น local-only และจะถูก Repository hygiene gate ปฏิเสธหากยังถูก Track.
+`wrangler.sync.example.jsonc` เปิด Workers Logs/Traces สำหรับ DEV observability แล้ว ส่วน `wrangler.sync.jsonc` เป็น local-only และจะถูก Repository hygiene gate ปฏิเสธหากยังถูก Track. การแก้ `.guard` ค้างของ Local file lock ต้องทำตาม `docs/local-file-lock-guard-runbook-v0.7.2.md` เท่านั้น.
 
 จากนั้นสร้าง D1/Queues, apply migrations และใส่ Secrets ผ่าน Wrangler โดยไม่เก็บ Secret ใน Source code รายละเอียดอยู่ใน `deploy/README.md`, `docs/cloudflare-deploy-hardening-v0.5.1.md` และ `docs/tiktok-incremental-sync-v0.6.0.md`
 
