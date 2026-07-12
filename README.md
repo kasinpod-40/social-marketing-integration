@@ -4,7 +4,7 @@
 
 ## Baseline ปัจจุบัน
 
-`v0.5.3-cloudflare-fetch-context-fix`
+`v0.6.0-tiktok-incremental-sync`
 
 สถานะปัจจุบัน:
 
@@ -12,7 +12,8 @@
 - Production profile `chemistry_k` เตรียมไว้ใน Source code แต่ Production จริงต้องใช้ Lark Base, App, Cloud และบัญชี Social ที่ลูกค้าเป็นเจ้าของ
 - TikTok DEV Sync จริงผ่าน 20 Content + 20 Daily Snapshot แล้วก่อน Audit รอบนี้
 - v0.4.0 ผ่าน Live DEV gate แล้ว: รันซ้ำได้ `created=0`, `updated=0`, `skipped=20` ทั้ง Content และ Daily
-- v0.5.3 แก้ Cloudflare Worker outbound `fetch` ให้รักษา Runtime context ที่ถูกต้อง พร้อม regression test; v0.5.2 แก้ `package-lock.json` ให้ใช้ public npm registry แบบ portable และเพิ่ม hygiene guard
+- v0.6.0 เพิ่ม D1 checkpoint/fingerprint สำหรับ TikTok Incremental Sync: รอบปกติส่งเฉพาะ RAW records ที่เปลี่ยนเข้าสู่ Destination plan/write และบังคับ Full reconciliation ทุก 24 ชั่วโมง
+- Live Cloudflare DEV ผ่าน Sync Log, Reconciliation, Distributed Lock, Retry/DLQ/System Alert และ Scheduled Sync ต่อเนื่อง 3 รอบแล้ว
 
 
 ## Cloudflare DEV/Staging deployment gate
@@ -28,7 +29,7 @@ npm run check
 npm run deploy:dry-run
 ```
 
-จากนั้นสร้าง D1/Queues, apply migration และใส่ Secrets ผ่าน Wrangler โดยไม่เก็บ Secret ใน Source code รายละเอียดอยู่ใน `deploy/README.md` และ `docs/cloudflare-deploy-hardening-v0.5.1.md`
+จากนั้นสร้าง D1/Queues, apply migrations และใส่ Secrets ผ่าน Wrangler โดยไม่เก็บ Secret ใน Source code รายละเอียดอยู่ใน `deploy/README.md`, `docs/cloudflare-deploy-hardening-v0.5.1.md` และ `docs/tiktok-incremental-sync-v0.6.0.md`
 
 ## โครงสร้างระบบ
 
@@ -197,7 +198,26 @@ Automatic reconciliation ใช้ Stable key ตรวจว่าฝั่ง 
 
 Cloudflare Queue ต้องกำหนด Dead Letter Queue ชื่อเดียวกับ `MKT_DLQ_QUEUE_NAME` Message ที่ Retry ครบจะถูกเก็บใน D1 `dead_letter_jobs` และสร้าง Critical alert โดย DLQ consumer จะไม่ Execute งานเดิมซ้ำ
 
-รายละเอียด: `docs/cloudflare-deploy-hardening-v0.5.1.md`
+### TikTok Incremental Sync
+
+เปิดผ่าน Wrangler vars:
+
+```env
+MKT_TIKTOK_INCREMENTAL_ENABLED=true
+MKT_TIKTOK_FULL_RECONCILIATION_INTERVAL_MS=86400000
+```
+
+D1 เก็บ Cursor และ SHA-256 fingerprint ใน `sync_cursors`/`source_record_states` หลัง Content และ Daily เขียนสำเร็จเท่านั้น รอบปกติที่ข้อมูลไม่เปลี่ยนจะไม่โหลด Schema, ค้น Destination หรือเขียน Content/Daily ส่วนวันใหม่, Dictionary เปลี่ยน, Source record หาย หรือครบ 24 ชั่วโมงจะบังคับ Full reconciliation อัตโนมัติ
+
+ข้อจำกัดที่ตั้งใจไว้: Lark Native RAW table ยังถูกอ่านครบทุกหน้าเพื่อยืนยัน Source identity และตรวจ Record ที่ถูกลบ แต่ Destination workload เป็น Incremental จริง โดยประมวลผลเฉพาะ Record fingerprint ที่เปลี่ยน
+
+ก่อน Deploy v0.6.0 ให้ Apply migration:
+
+```bash
+npx wrangler d1 migrations apply MKT_STATE_DB --remote --config wrangler.sync.jsonc
+```
+
+รายละเอียด: `docs/cloudflare-deploy-hardening-v0.5.1.md` และ `docs/tiktok-incremental-sync-v0.6.0.md`
 
 ## Multi-channel Foundation
 

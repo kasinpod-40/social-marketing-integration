@@ -2,7 +2,7 @@
 
 Release จะยังไม่ถือว่า Production-ready จนกว่าจะตรวจครบทุก Gate
 
-## สถานะ Package v0.5.1
+## สถานะ Package v0.6.0
 
 ### Architecture และ Code quality
 
@@ -48,14 +48,14 @@ Release จะยังไม่ถือว่า Production-ready จนกว
 - [x] Empty Multi-select/URL shape ไม่สร้าง False update
 - [x] Plan เดิม Execute ซ้ำไม่ได้
 - [ ] Benchmark/Load test เมื่อข้อมูลเพิ่ม 10x และ 100x (ไม่ Block DEV/Staging deploy รอบแรก)
-- [ ] Incremental RAW source cursor/window (ทำหลัง Scheduled Sync เสถียร)
+- [x] D1 cursor/fingerprint Incremental processing พร้อม Full reconciliation 24 ชั่วโมง (RAW traversal ยัง Full เพื่อ Safety)
 - [x] Distributed lease lock บน D1 พร้อม owner-scoped renewal/heartbeat ก่อนเพิ่ม Queue concurrency
 - [x] Persisted `MKT_Sync_Log`, `sync_run_id`, DLQ alert และ Reconciliation summary
 - [ ] ยืนยัน Lark Cell-clear contract และเพิ่ม Classification field clearing โดยไม่ลบค่าผิด Field
 
 ### Test และ Release package
 
-- [x] Node Unit/Integration/Regression tests 199/199 และ Workers-runtime tests 5/5 ผ่านก่อน Packaging
+- [x] Node Unit/Integration/Regression tests และ Workers-runtime tests ผ่านก่อน Packaging
 - [x] Syntax check ผ่านก่อน Packaging
 - [x] Architecture audit, repository hygiene และ Wrangler 4.110.0 dry-run ผ่านก่อน Packaging
 - [x] สร้าง ZIP โดยไม่มี `.dev.vars`, Secret, `node_modules`, Log หรือไฟล์ขยะ
@@ -81,14 +81,24 @@ Release จะยังไม่ถือว่า Production-ready จนกว
 - [x] รันซ้ำแล้ว Content/Daily ไม่ Create หรือ Update ซ้ำ
 - [x] เปิดสอง Terminal พร้อมกันแล้วรอบที่ชน Lock ได้ `SYNC_LOCK_BUSY` โดยไม่เขียนข้อมูลธุรกิจ
 - [x] จำลอง Source identity error แบบปลอดภัยและตรวจว่า `MKT_System_Alerts` ได้ Alert พร้อม `sync_run_id`
-- [ ] Apply `0002_reliability.sql` กับ D1 DEV resource จริงสำเร็จ (SQL replay ใน Package ผ่านแล้ว)
-- [ ] Queue Retry, DLQ persistence และ D1 lease lock ผ่าน Cloudflare DEV/Staging UAT
+- [x] Apply `0002_reliability.sql` กับ D1 DEV resource จริงสำเร็จ
+- [x] Queue Retry, DLQ persistence, D1/Lark Alerts และ D1 lease lock ผ่าน Cloudflare DEV UAT
 
 - [x] Wrangler config อยู่ root และ `npm run deploy:dry-run` ผ่าน
 - [x] D1 เป็น Primary ส่วน Lark เป็น best-effort mirror
 - [x] Chunk-level partial write, strict Queue/DLQ routing และ lease renewal มี Regression tests
 - [x] Scheduled handler enqueue งานเข้า Queue producer จริง
 - [x] Workers-runtime tests ครอบ Main Queue, DLQ, Unknown Queue, Active routing และ Scheduled producer
+
+
+### Live DEV incremental gate ของ v0.6.0
+
+- [ ] Apply `0003_incremental_sync.sql` กับ D1 DEV resource จริง
+- [ ] รอบแรกสร้าง Full checkpoint (`initial_checkpoint`) สำเร็จ
+- [ ] รอบไม่มีการเปลี่ยนแปลงเลือก 0 records และไม่ทำ Destination I/O
+- [ ] แก้ RAW หนึ่งรายการแล้วเลือก/อัปเดตเฉพาะรายการนั้น
+- [ ] Scheduled Incremental Sync ผ่านต่อเนื่องอย่างน้อย 3 รอบ
+- [ ] ตรวจ `sync_cursors`, `source_record_states`, `sync_locks` และไม่มี Alert ผิดปกติ
 
 ### Customer-owned Production gate
 

@@ -181,12 +181,14 @@ export class LarkBitableClient {
   async listRecords(input) {
     const tableId = requireText(input?.tableId, 'tableId');
     const pageSize = boundedPositiveInteger(input?.pageSize ?? DEFAULT_PAGE_SIZE, 'pageSize', DEFAULT_PAGE_SIZE);
+    const includeRecordMetadata = input?.includeRecordMetadata !== false;
     return this.paginateCollection({
       resource: 'records',
       tableId,
       pageSize,
       requestPage: ({ pageToken, pageSize: currentPageSize }) => {
         const params = buildPageParams(pageToken, currentPageSize);
+        if (includeRecordMetadata) params.set('last_modified_time', 'true');
         return this.requestBitableJson(
           `/open-apis/bitable/v1/apps/${encodeURIComponent(this.appToken)}/tables/${encodeURIComponent(tableId)}/records?${params.toString()}`,
           { method: 'GET' },
@@ -657,12 +659,35 @@ function normalizeField(field) {
   });
 }
 
-/** Normalize Record จาก Lark ให้เป็น {recordId, fields} */
+/** Normalize Record จาก Lark พร้อม Metadata ที่ใช้ทำ Incremental checkpoint */
 function toRecordShape(record) {
   return Object.freeze({
     recordId: record?.record_id ?? record?.recordId ?? null,
     fields: Object.freeze(record?.fields ?? {}),
+    createdTime: normalizeRecordTimestamp(record?.created_time ?? record?.createdTime),
+    lastModifiedTime: normalizeRecordTimestamp(
+      record?.last_modified_time ?? record?.lastModifiedTime,
+    ),
+    lastModifiedBy: record?.last_modified_by ?? record?.lastModifiedBy ?? null,
   });
+}
+
+/** รองรับ Epoch seconds/milliseconds และ ISO date จาก Lark โดยคืน Epoch milliseconds */
+function normalizeRecordTimestamp(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const numeric = typeof value === 'number'
+    ? value
+    : (typeof value === 'string' && /^-?\d+(?:\.\d+)?$/u.test(value.trim())
+      ? Number(value.trim())
+      : Number.NaN);
+
+  if (Number.isFinite(numeric)) {
+    const milliseconds = Math.abs(numeric) < 1e12 ? numeric * 1000 : numeric;
+    return Number.isSafeInteger(Math.trunc(milliseconds)) ? Math.trunc(milliseconds) : null;
+  }
+
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 /** สร้าง Query parameter สำหรับ Pagination */

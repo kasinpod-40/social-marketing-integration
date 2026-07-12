@@ -238,8 +238,43 @@ test('applies the shared pagination contract to records', async () => {
     },
   });
 
-  assert.deepEqual(await client.listRecords({ tableId: 'tbl' }), [{ recordId: 'rec1', fields: { key: 'value' } }]);
+  assert.deepEqual(await client.listRecords({ tableId: 'tbl' }), [{
+    recordId: 'rec1',
+    fields: { key: 'value' },
+    createdTime: null,
+    lastModifiedTime: null,
+    lastModifiedBy: null,
+  }]);
   assert.equal(collectionCalls, 1);
+});
+
+test('requests and normalizes record modification metadata for incremental checkpoints', async () => {
+  let recordsUrl = null;
+  const client = new LarkBitableClient({
+    appId: 'app-id', appSecret: 'app-secret', appToken: 'app-token', minRequestIntervalMs: 0,
+    fetchImpl: async (url) => {
+      if (String(url).includes('tenant_access_token')) {
+        return new Response(JSON.stringify({ code: 0, tenant_access_token: 'token', expire: 7200 }), { status: 200 });
+      }
+      recordsUrl = String(url);
+      return new Response(JSON.stringify({
+        code: 0,
+        data: {
+          items: [{
+            record_id: 'rec1', fields: {}, created_time: '1783530467',
+            last_modified_time: '1783786062', last_modified_by: { id: 'user-1' },
+          }],
+          has_more: false,
+        },
+      }), { status: 200 });
+    },
+  });
+
+  const [record] = await client.listRecords({ tableId: 'tbl' });
+  assert.match(recordsUrl, /last_modified_time=true/);
+  assert.equal(record.createdTime, 1_783_530_467_000);
+  assert.equal(record.lastModifiedTime, 1_783_786_062_000);
+  assert.deepEqual(record.lastModifiedBy, { id: 'user-1' });
 });
 
 test('allows an empty intermediate page when has_more is true and the token advances', async () => {

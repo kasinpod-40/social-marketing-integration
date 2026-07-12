@@ -4,11 +4,11 @@
 This project connects social organic and paid ads data into Lark Base for reporting, daily snapshots, monitoring, and AI summaries. The implementation target is a lean MVP using Cloudflare Workers, Cloudflare D1, Cloudflare Queues, Lark Base, Lark Native Integrations where useful, and JavaScript.
 
 ## Current project status
-Current audited release: `v0.5.3-cloudflare-fetch-context-fix`
+Current audited release: `v0.6.0-tiktok-incremental-sync`
 
-Package verification target: 200 Node unit tests + 5 Workers-runtime tests, Wrangler 4.110.0 dry-run, syntax/architecture/repository hygiene และ extracted ZIP retest. Live Cloudflare Queue routing/retry ทำงานแล้ว และ v0.5.3 แก้ Runtime Fetch context ก่อนทำ Distributed Lock/DLQ UAT ต่อ.
+Package verification target: Node unit/integration tests + 5 Workers-runtime tests, Wrangler 4.110.0 dry-run, syntax/architecture/repository hygiene, migration replay และ extracted ZIP retest. Live Cloudflare DEV ผ่าน Queue, Reconciliation, Distributed Lock, Retry/DLQ/System Alerts และ Scheduled Sync แล้ว.
 
-**v0.5.3-cloudflare-fetch-context-fix — แก้ Lark Client ให้เรียก Cloudflare `globalThis.fetch` ด้วย Runtime context ที่ถูกต้อง พร้อม regression test; Main Queue และ Retry path ผ่าน Live DEV แล้ว แต่ Distributed Lock/DLQ UAT ยังต้องทำต่อหลัง Deploy รุ่นนี้.**
+**v0.6.0-tiktok-incremental-sync — เพิ่ม D1 cursor/fingerprint, changed-record destination processing และ Full reconciliation 24 ชั่วโมง; ต้อง Apply migration `0003_incremental_sync.sql` ก่อน Deploy โดยเปิด Incremental.**
 
 Completed in Lark:
 - Created Lark Base: `Social MKT Data Hub`.
@@ -29,6 +29,19 @@ Completed TikTok For Creator POC:
 - Manual sync updates existing rows and does not create duplicates.
 - Initial sync returned 20 records.
 - The TikTok account has 21 videos; the missing video has removed audio, so the omission is likely video eligibility/content availability rather than a confirmed pagination limit.
+
+Completed Live Cloudflare DEV reliability UAT:
+- Main Queue/Lark sync, idempotency และ Reconciliation ผ่าน
+- D1 Distributed Lock collision/retry/cleanup ผ่าน
+- Retry exhaustion -> DLQ -> D1/Lark System Alert ผ่าน
+- Scheduled TikTok Sync ผ่านต่อเนื่อง 3 รอบโดยไม่เขียนซ้ำ
+
+Completed TikTok Incremental layer in v0.6.0:
+- D1 `sync_cursors` และ `source_record_states` จาก migration `0003_incremental_sync.sql`
+- Fingerprint RAW/Dictionary และเลือกเฉพาะ changed records เข้าสู่ Destination plan/write
+- Safe Full fallback สำหรับ initial checkpoint, วันใหม่, Dictionary เปลี่ยน, Source deletion และรอบ 24 ชั่วโมง
+- Checkpoint commit หลัง business writes สำเร็จ; cursor commit สุดท้ายเพื่อรองรับ Queue retry
+- RAW traversal/normalization ยังครบทุกแถวเพื่อ Source identity และ deletion safety
 
 Completed Reliability layer:
 - ทุก TikTok write run มี `sync_run_id` และ lifecycle `running -> success|partial_success|failed|skipped`.
@@ -164,17 +177,14 @@ RAW_TikTok_Creator_Videos = tblMdO6XCti94EwH
 ```
 
 ## Next action
-Validate the Lark read/write mapping flow with live Lark table IDs:
+Deploy/UAT v0.6.0 Incremental Sync:
 
-1. Fill Lark table IDs in Cloudflare env or local config.
-2. Run queue job `tiktok.creator.native.sync` for the synced TikTok account.
-3. Confirm `MKT_Content` receives one row per eligible TikTok video.
-4. Confirm `MKT_Content_Daily` receives one snapshot per eligible TikTok video per metric date.
-5. Confirm a second run updates existing rows instead of creating duplicates.
-6. Seed `MKT_Metric_Definitions` with queue job `metric.definitions.seed`.
-7. `MKT_Sync_Log` + `MKT_System_Alerts` write implemented in v0.5.0; verify with live DEV Base.
-8. Apply D1 migration `0002_reliability.sql` before Cloudflare deploy.
-9. Deploy Cloudflare DEV/Staging and verify Queue retry + DLQ + D1 lock.
+1. Apply remote D1 migration `0003_incremental_sync.sql`.
+2. Deploy with Schedule + Incremental enabled and Full interval 24h.
+3. Confirm first run `full/initial_checkpoint`.
+4. Confirm unchanged rerun `incremental/no_source_changes/selectedRecords=0`.
+5. Change one safe DEV RAW metric and confirm only that record is planned/updated.
+6. After the Incremental gate passes, start TikTok Metrics + Report, then Lark AI + Group Notification.
 
 
 ## 2026-07-09 — v0.1.4 env-driven config + Lark classification dictionary

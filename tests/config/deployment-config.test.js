@@ -37,3 +37,10 @@ test('deployment examples enable only the implemented TikTok connector', async (
     }
   }
 });
+
+
+test('sync deployment enables TikTok incremental checkpoints with a daily full reconciliation', async () => {
+  const configText = await readSyncWranglerExample();
+  assert.match(configText, /"MKT_TIKTOK_INCREMENTAL_ENABLED"\s*:\s*"true"/);
+  assert.match(configText, /"MKT_TIKTOK_FULL_RECONCILIATION_INTERVAL_MS"\s*:\s*"86400000"/);
+});

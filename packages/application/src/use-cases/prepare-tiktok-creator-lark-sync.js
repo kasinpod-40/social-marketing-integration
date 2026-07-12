@@ -22,11 +22,15 @@ export async function prepareTikTokCreatorLarkSync(input) {
 
   progress({ stage: 'loading_source_data' });
   const [rawRecords, dictionaryAnalysis] = await Promise.all([
-    repository.listAll(tables.rawTikTokCreatorVideos),
-    loadClassificationDictionaryAnalysis({
-      repository,
-      tableId: tables.mktClassificationDictionary,
-    }),
+    input?.rawRecords
+      ? Promise.resolve(requireArray(input.rawRecords, 'rawRecords'))
+      : repository.listAll(tables.rawTikTokCreatorVideos),
+    input?.dictionaryAnalysis
+      ? Promise.resolve(requireDictionaryAnalysis(input.dictionaryAnalysis))
+      : loadClassificationDictionaryAnalysis({
+        repository,
+        tableId: tables.mktClassificationDictionary,
+      }),
   ]);
 
   const dictionaryRules = dictionaryAnalysis.rules;
@@ -44,6 +48,7 @@ export async function prepareTikTokCreatorLarkSync(input) {
     dictionaryRules,
   });
   const sourceIdentity = evaluateSourceIdentity(expectedSourceHandle, normalized.sourceHandles);
+  const selectedRows = selectNormalizedRows(normalized, input?.selectedExternalContentIds);
 
   // Source identity เป็น Guard ราคาถูกและสำคัญที่สุด จึงหยุดก่อนโหลด Schema/ค้นปลายทาง
   if (!sourceIdentity.ok) {
@@ -70,6 +75,8 @@ export async function prepareTikTokCreatorLarkSync(input) {
       accountId,
       metricDate,
       rawRecords: rawRows.length,
+      processedRawRecords: readProcessedRawRecords(input?.incrementalPlan, selectedRows),
+      incremental: input?.incrementalPlan ?? null,
       classificationRules: dictionaryRules.length,
       classificationDictionary: Object.freeze({
         totalRows: dictionaryAnalysis.totalRows,
@@ -84,16 +91,16 @@ export async function prepareTikTokCreatorLarkSync(input) {
       reconciliation: emptyReconciliation(),
       readyToWrite: false,
       plans: Object.freeze({
-        content: blockedPlan(normalized.contentRows.length),
-        dailySnapshots: blockedPlan(normalized.dailySnapshotRows.length),
+        content: blockedPlan(selectedRows.contentRows.length),
+        dailySnapshots: blockedPlan(selectedRows.dailySnapshotRows.length),
       }),
     });
   }
 
   progress({
     stage: 'preparing_destination_plans',
-    contentRows: normalized.contentRows.length,
-    dailySnapshotRows: normalized.dailySnapshotRows.length,
+    contentRows: selectedRows.contentRows.length,
+    dailySnapshotRows: selectedRows.dailySnapshotRows.length,
   });
 
   const [contentPlan, dailyPlan, contentConflicts, dailyConflicts] = await Promise.all([
@@ -101,14 +108,14 @@ export async function prepareTikTokCreatorLarkSync(input) {
       repository,
       tableId: tables.mktContent,
       keyField: 'content_key',
-      rows: normalized.contentRows,
+      rows: selectedRows.contentRows,
       onProgress: (event) => progress({ scope: 'content', ...event }),
     }),
     syncEngine.planByKey({
       repository,
       tableId: tables.mktContentDaily,
       keyField: 'content_daily_key',
-      rows: normalized.dailySnapshotRows,
+      rows: selectedRows.dailySnapshotRows,
       onProgress: (event) => progress({ scope: 'daily_snapshots', ...event }),
     }),
     findAccountIdentityConflicts({
@@ -116,7 +123,7 @@ export async function prepareTikTokCreatorLarkSync(input) {
       tableId: tables.mktContent,
       tableRole: 'content',
       stableKeyField: 'content_key',
-      rows: normalized.contentRows,
+      rows: selectedRows.contentRows,
     }),
     findAccountIdentityConflicts({
       repository,
@@ -124,7 +131,7 @@ export async function prepareTikTokCreatorLarkSync(input) {
       tableRole: 'daily_snapshot',
       stableKeyField: 'content_daily_key',
       metricDateField: 'metric_date',
-      rows: normalized.dailySnapshotRows,
+      rows: selectedRows.dailySnapshotRows,
     }),
   ]);
   const accountConflicts = Object.freeze([...contentConflicts, ...dailyConflicts]);
@@ -154,6 +161,8 @@ export async function prepareTikTokCreatorLarkSync(input) {
     accountId,
     metricDate,
     rawRecords: rawRows.length,
+    processedRawRecords: readProcessedRawRecords(input?.incrementalPlan, selectedRows),
+    incremental: input?.incrementalPlan ?? null,
     classificationRules: dictionaryRules.length,
     classificationDictionary: Object.freeze({
       totalRows: dictionaryAnalysis.totalRows,
@@ -169,6 +178,49 @@ export async function prepareTikTokCreatorLarkSync(input) {
     readyToWrite,
     plans: Object.freeze({ content: contentPlan, dailySnapshots: dailyPlan }),
   });
+}
+
+function readProcessedRawRecords(incrementalPlan, selectedRows) {
+  if (incrementalPlan?.enabled === true) {
+    const selected = Number(incrementalPlan.selectedRecords);
+    if (Number.isSafeInteger(selected) && selected >= 0) return selected;
+  }
+  return selectedRows.contentRows.length;
+}
+
+function selectNormalizedRows(normalized, selectedExternalContentIds) {
+  if (selectedExternalContentIds === null || selectedExternalContentIds === undefined) {
+    return Object.freeze({
+      contentRows: normalized.contentRows,
+      dailySnapshotRows: normalized.dailySnapshotRows,
+    });
+  }
+  const ids = new Set(requireArray(selectedExternalContentIds, 'selectedExternalContentIds').map(
+    (value) => requireText(value, 'selectedExternalContentId'),
+  ));
+  return Object.freeze({
+    contentRows: Object.freeze(
+      normalized.contentRows.filter((row) => ids.has(row.external_content_id)),
+    ),
+    dailySnapshotRows: Object.freeze(
+      normalized.dailySnapshotRows.filter((row) => ids.has(row.external_content_id)),
+    ),
+  });
+}
+
+function requireDictionaryAnalysis(value) {
+  if (!value || typeof value !== 'object' || !Array.isArray(value.rules)
+    || !Array.isArray(value.invalidRows)) {
+    throw new TypeError('prepareTikTokCreatorLarkSync requires dictionaryAnalysis');
+  }
+  return value;
+}
+
+function requireArray(value, fieldName) {
+  if (!Array.isArray(value)) {
+    throw new TypeError(`prepareTikTokCreatorLarkSync requires ${fieldName}`);
+  }
+  return value;
 }
 
 function blockedPlan(inputRows) {

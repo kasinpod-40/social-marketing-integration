@@ -1,6 +1,6 @@
 {
   "name": "social-marketing-integration",
-  "version": "0.5.3-cloudflare-fetch-context-fix",
+  "version": "0.6.0-tiktok-incremental-sync",
   "private": true,
   "type": "module",
   "engines": {

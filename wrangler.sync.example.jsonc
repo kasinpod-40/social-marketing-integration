@@ -64,6 +64,11 @@
     "MKT_DLQ_QUEUE_NAME": "social-mkt-sync-dlq",
     "MKT_QUEUE_RETRY_DELAY_SECONDS": "30",
 
+    // เปิด Checkpoint/Fingerprint ใน D1 เพื่อประมวลผลปลายทางเฉพาะ RAW records ที่เปลี่ยน
+    "MKT_TIKTOK_INCREMENTAL_ENABLED": "true",
+    // บังคับ Full reconciliation อย่างน้อยวันละครั้ง แม้ไม่มี Fingerprint เปลี่ยน
+    "MKT_TIKTOK_FULL_RECONCILIATION_INTERVAL_MS": "86400000",
+
     "TIKTOK_SOURCE_HANDLE": "ft.pumkin",
 
     // Lease 10 นาที และต่ออายุทุก 2 นาที เพื่อลดความเสี่ยง Lock หมดกลางงาน

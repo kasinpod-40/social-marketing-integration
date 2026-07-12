@@ -6,6 +6,11 @@ import {
   isPartialSyncError,
   partialSyncError,
 } from '../../../shared/src/errors/runtime-error.js';
+import { analyzeClassificationDictionaryRecords } from '../services/classification-dictionary.js';
+import {
+  buildTikTokIncrementalCheckpoint,
+  planTikTokIncrementalSource,
+} from './plan-tiktok-incremental-source.js';
 
 /**
  * Sync RAW TikTok Creator ไปยัง MKT_Content และ MKT_Content_Daily
@@ -16,6 +21,7 @@ export async function syncTikTokCreatorNativeToLark(input) {
     ? input.assertLockActive
     : async () => undefined;
   const syncRunId = optionalText(input?.syncRunId);
+  const incrementalContext = await loadIncrementalContext(input, progress);
   const prepared = await prepareTikTokCreatorLarkSync({
     repository: input?.repository,
     syncEngine: input?.syncEngine,
@@ -23,6 +29,10 @@ export async function syncTikTokCreatorNativeToLark(input) {
     accountId: input?.accountId,
     sourceHandle: input?.sourceHandle,
     metricDate: input?.metricDate,
+    rawRecords: incrementalContext?.rawRecords,
+    dictionaryAnalysis: incrementalContext?.dictionaryAnalysis,
+    selectedExternalContentIds: incrementalContext?.plan.selectedExternalContentIds,
+    incrementalPlan: incrementalContext?.plan ?? null,
     onProgress: progress,
   });
 
@@ -34,10 +44,12 @@ export async function syncTikTokCreatorNativeToLark(input) {
       mode: 'dry_run',
       readyToWrite: prepared.readyToWrite,
       rawRecords: prepared.rawRecords,
+      processedRawRecords: prepared.processedRawRecords,
+      incremental: summarizeIncremental(prepared.incremental, false),
       classificationRules: prepared.classificationRules,
       classificationDictionary: prepared.classificationDictionary,
-      content: planSummary(prepared.plans.content),
-      dailySnapshots: planSummary(prepared.plans.dailySnapshots),
+      content: planSummary(prepared.plans.content, prepared.incremental),
+      dailySnapshots: planSummary(prepared.plans.dailySnapshots, prepared.incremental),
       reconciliation: prepared.reconciliation,
       skippedRows: prepared.normalized.skippedRows,
       sourceIdentity: prepared.sourceIdentity,
@@ -108,13 +120,36 @@ export async function syncTikTokCreatorNativeToLark(input) {
   progress({ stage: 'daily_snapshots_synced', syncRunId, result: dailyResult });
   await assertLockActive();
 
-  return buildResult({
+  let result = buildResult({
     syncRunId,
     prepared,
     contentResult,
     dailyResult,
     reconciliationStatus: prepared.reconciliation.required ? 'recovered' : 'not_required',
+    checkpointSaved: false,
   });
+
+  if (incrementalContext) {
+    await assertLockActive();
+    const completedAt = incrementalContext.now();
+    const checkpoint = buildTikTokIncrementalCheckpoint({
+      plan: incrementalContext.plan,
+      cursorKey: incrementalContext.cursorKey,
+      syncRunId,
+      customerProfile: incrementalContext.customerProfile,
+      accountKey: input?.accountId,
+      metricDate: input?.metricDate,
+      completedAt,
+    });
+    await incrementalContext.stateStore.saveCheckpoint(checkpoint);
+    await assertLockActive();
+    result = Object.freeze({
+      ...result,
+      incremental: summarizeIncremental(incrementalContext.plan, true),
+    });
+  }
+
+  return result;
 }
 
 function buildWholeSyncPartialError(input) {
@@ -190,8 +225,10 @@ function buildResult(input) {
     source: input.prepared.source,
     mode: 'write',
     rawRecords: input.prepared.rawRecords,
-    content: Object.freeze({ ...input.contentResult }),
-    dailySnapshots: Object.freeze({ ...input.dailyResult }),
+    processedRawRecords: input.prepared.processedRawRecords,
+    incremental: summarizeIncremental(input.prepared.incremental, input.checkpointSaved === true),
+    content: withIncrementalSkips(input.contentResult, input.prepared.incremental),
+    dailySnapshots: withIncrementalSkips(input.dailyResult, input.prepared.incremental),
     reconciliation: Object.freeze({
       ...input.prepared.reconciliation,
       status: input.reconciliationStatus,
@@ -206,16 +243,108 @@ function buildResult(input) {
   });
 }
 
-function planSummary(plan) {
+function planSummary(plan, incremental) {
   return Object.freeze({
     rowsReady: plan.inputRows,
     createRows: plan.createRows.length,
     updateRows: plan.updateRows.length,
-    skipped: plan.skipped,
+    skipped: plan.skipped + readIncrementalSourceSkips(incremental),
     duplicateInputRows: plan.duplicateInputRows,
     existingRecordsRead: plan.existingRecordsRead,
     existingReadStrategy: plan.existingReadStrategy,
   });
+}
+
+async function loadIncrementalContext(input, progress) {
+  if (input?.incrementalEnabled !== true) return null;
+  const stateStore = requireIncrementalStateStore(input?.incrementalStateStore);
+  const cursorKey = requireText(input?.cursorKey, 'cursorKey');
+  const customerProfile = requireText(input?.customerProfile, 'customerProfile');
+  const tables = input?.tables ?? {};
+  const repository = input?.repository;
+  const now = typeof input?.now === 'function' ? input.now : () => Date.now();
+
+  progress({ stage: 'loading_incremental_checkpoint', cursorKey });
+  const [rawRecords, dictionaryRecords, checkpoint] = await Promise.all([
+    repository.listAll(requireText(tables.rawTikTokCreatorVideos, 'tables.rawTikTokCreatorVideos')),
+    repository.listAll(requireText(
+      tables.mktClassificationDictionary,
+      'tables.mktClassificationDictionary',
+    )),
+    stateStore.loadCheckpoint(cursorKey),
+  ]);
+  const dictionaryAnalysis = analyzeClassificationDictionaryRecords(dictionaryRecords);
+  const plan = await planTikTokIncrementalSource({
+    rawRecords,
+    dictionaryRecords,
+    checkpoint,
+    metricDate: input?.metricDate,
+    syncMode: input?.syncMode,
+    now: now(),
+    fullSyncIntervalMs: input?.fullSyncIntervalMs,
+  });
+  progress({
+    stage: 'incremental_plan_ready',
+    mode: plan.mode,
+    reason: plan.reason,
+    sourceRecords: plan.sourceRecords,
+    selectedRecords: plan.selectedRecords,
+    changedRecords: plan.changedRecords,
+  });
+
+  return Object.freeze({
+    stateStore,
+    cursorKey,
+    customerProfile,
+    now,
+    rawRecords,
+    dictionaryAnalysis,
+    plan,
+  });
+}
+
+function withIncrementalSkips(result, incremental) {
+  return Object.freeze({
+    ...result,
+    skipped: nonNegative(result?.skipped) + readIncrementalSourceSkips(incremental),
+  });
+}
+
+function readIncrementalSourceSkips(incremental) {
+  return incremental?.enabled === true ? nonNegative(incremental.sourceSkippedPerTable) : 0;
+}
+
+function summarizeIncremental(value, checkpointSaved) {
+  if (!value || value.enabled !== true) return null;
+  return Object.freeze({
+    enabled: true,
+    mode: value.mode,
+    reason: value.reason,
+    requestedMode: value.requestedMode,
+    sourceRecords: value.sourceRecords,
+    selectedRecords: value.selectedRecords,
+    changedRecords: value.changedRecords,
+    unchangedRecords: value.unchangedRecords,
+    removedRecords: value.removedRecords,
+    dictionaryChanged: value.dictionaryChanged,
+    metricDateChanged: value.metricDateChanged,
+    fullSnapshot: value.fullSnapshot,
+    checkpointSaved: checkpointSaved === true,
+  });
+}
+
+function requireIncrementalStateStore(value) {
+  if (typeof value?.loadCheckpoint !== 'function' || typeof value?.saveCheckpoint !== 'function') {
+    throw new TypeError('TikTok incremental sync requires incrementalStateStore');
+  }
+  return value;
+}
+
+function requireText(value, fieldName) {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new TypeError(`TikTok sync requires ${fieldName}`);
+  }
+  return value.trim();
 }
 
 function optionalText(value) {

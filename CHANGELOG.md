@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.6.0-tiktok-incremental-sync — 2026-07-12
+
+### Added
+- Added D1 migration `0003_incremental_sync.sql` with `sync_cursors` and `source_record_states`.
+- Added deterministic SHA-256 fingerprints for RAW TikTok records and the Lark classification dictionary.
+- Added automatic Full/Incremental planning with safe Full fallback for the first run, a new metric date, dictionary changes, source-record removal, and periodic reconciliation.
+- Added checkpoint persistence after successful Lark business writes only; record states are chunked and the cursor is committed last so Queue retry remains idempotent.
+- Added Lark record metadata (`createdTime`, `lastModifiedTime`, `lastModifiedBy`) and requests `last_modified_time=true`.
+- Added integration tests for initial checkpoint creation, no-change destination-I/O avoidance, changed-record-only updates, and retryable checkpoint failure.
+
+### Changed
+- Scheduled TikTok jobs explicitly request `syncMode=auto`.
+- DEV Sync config enables `MKT_TIKTOK_INCREMENTAL_ENABLED=true` and performs a forced Full reconciliation every 24 hours.
+- Incremental runs still validate every RAW row and the entire dictionary for safety, but only changed records enter destination schema lookup, diff, and write planning.
+- Package/build version updated to `0.6.0-tiktok-incremental-sync`.
+
+### Live prerequisite
+- Apply `0003_incremental_sync.sql` to the remote DEV D1 before deploying this release with incremental mode enabled.
+- The first run after migration is intentionally Full and creates the checkpoint; later same-day unchanged runs should report `selectedRecords=0` and write nothing.
+
+### Verification target
+- 216+ Node unit/integration tests and 5 Workers-runtime tests.
+- Syntax, architecture, repository hygiene, migration replay, Wrangler dry-run, clean extracted ZIP retest, and npm audit.
+
 ## 0.5.3-cloudflare-fetch-context-fix — 2026-07-12
 
 ### Fixed

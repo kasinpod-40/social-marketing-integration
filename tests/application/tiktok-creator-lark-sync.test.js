@@ -254,3 +254,246 @@ test('wraps a daily write failure as retryable partial sync with the completed c
     },
   );
 });
+
+test('incremental first run saves a full checkpoint and unchanged rerun skips destination I/O', async () => {
+  const repository = createStatefulRepository({
+    rawRecords: [rawVideo('tt_account_1', 'video_1')],
+    dictionaryRecords: [dictionaryRow()],
+  });
+  const stateStore = createIncrementalStateStore();
+
+  const first = await syncTikTokCreatorNativeToLark({
+    syncRunId: 'run-incremental-1',
+    repository,
+    syncEngine: new TableSyncEngine(),
+    accountId: 'tt_account_1',
+    sourceHandle: 'tt_account_1',
+    metricDate: '2026-07-12',
+    tables: tableIds(),
+    incrementalEnabled: true,
+    incrementalStateStore: stateStore,
+    cursorKey: 'profile:tiktok:tt_account_1:native_import',
+    customerProfile: 'profile',
+    syncMode: 'auto',
+    fullSyncIntervalMs: 86_400_000,
+    now: () => 1_000,
+  });
+
+  assert.equal(first.incremental.mode, 'full');
+  assert.equal(first.incremental.reason, 'initial_checkpoint');
+  assert.equal(first.incremental.checkpointSaved, true);
+  assert.equal(first.processedRawRecords, 1);
+  assert.equal(stateStore.saveCalls.length, 1);
+  assert.equal(stateStore.saveCalls[0].fullSnapshot, true);
+  assert.equal(stateStore.saveCalls[0].records.length, 1);
+
+  const destinationCallsBefore = repository.destinationReadCalls.length;
+  const writesBefore = repository.writeCalls.length;
+  const second = await syncTikTokCreatorNativeToLark({
+    syncRunId: 'run-incremental-2',
+    repository,
+    syncEngine: new TableSyncEngine(),
+    accountId: 'tt_account_1',
+    sourceHandle: 'tt_account_1',
+    metricDate: '2026-07-12',
+    tables: tableIds(),
+    incrementalEnabled: true,
+    incrementalStateStore: stateStore,
+    cursorKey: 'profile:tiktok:tt_account_1:native_import',
+    customerProfile: 'profile',
+    syncMode: 'auto',
+    fullSyncIntervalMs: 86_400_000,
+    now: () => 2_000,
+  });
+
+  assert.equal(second.incremental.mode, 'incremental');
+  assert.equal(second.incremental.reason, 'no_source_changes');
+  assert.equal(second.incremental.selectedRecords, 0);
+  assert.equal(second.incremental.checkpointSaved, true);
+  assert.equal(second.processedRawRecords, 0);
+  assert.equal(second.content.skipped, 1);
+  assert.equal(second.dailySnapshots.skipped, 1);
+  assert.equal(repository.destinationReadCalls.length, destinationCallsBefore);
+  assert.equal(repository.writeCalls.length, writesBefore);
+  assert.equal(stateStore.saveCalls.length, 2);
+  assert.equal(stateStore.saveCalls[1].records.length, 0);
+  assert.equal(stateStore.saveCalls[1].fullSnapshot, false);
+});
+
+test('same-day incremental run reads and updates only the changed TikTok record', async () => {
+  const firstVideo = rawVideo('tt_account_1', 'video_1');
+  const secondVideo = rawVideo('tt_account_1', 'video_2');
+  const repository = createStatefulRepository({
+    rawRecords: [firstVideo, secondVideo],
+    dictionaryRecords: [dictionaryRow()],
+  });
+  const stateStore = createIncrementalStateStore();
+  const common = {
+    repository,
+    accountId: 'tt_account_1',
+    sourceHandle: 'tt_account_1',
+    metricDate: '2026-07-12',
+    tables: tableIds(),
+    incrementalEnabled: true,
+    incrementalStateStore: stateStore,
+    cursorKey: 'profile:tiktok:tt_account_1:native_import',
+    customerProfile: 'profile',
+    syncMode: 'auto',
+    fullSyncIntervalMs: 86_400_000,
+  };
+
+  await syncTikTokCreatorNativeToLark({
+    ...common,
+    syncRunId: 'run-changed-1',
+    syncEngine: new TableSyncEngine(),
+    now: () => 1_000,
+  });
+
+  repository.rawRecords = [
+    firstVideo,
+    {
+      ...secondVideo,
+      fields: {
+        ...secondVideo.fields,
+        'Total video views': 999,
+      },
+    },
+  ];
+  repository.destinationReadCalls.length = 0;
+  repository.writeCalls.length = 0;
+
+  const result = await syncTikTokCreatorNativeToLark({
+    ...common,
+    syncRunId: 'run-changed-2',
+    syncEngine: new TableSyncEngine(),
+    now: () => 2_000,
+  });
+
+  assert.equal(result.incremental.mode, 'incremental');
+  assert.equal(result.incremental.reason, 'source_records_changed');
+  assert.equal(result.incremental.selectedRecords, 1);
+  assert.equal(result.processedRawRecords, 1);
+  assert.equal(result.content.updated, 1);
+  assert.equal(result.content.skipped, 1);
+  assert.equal(result.dailySnapshots.updated, 1);
+  assert.equal(result.dailySnapshots.skipped, 1);
+  assert.ok(repository.destinationReadCalls.length > 0);
+  for (const call of repository.destinationReadCalls) {
+    assert.ok(call.values.every((value) => String(value).includes('video_2')));
+  }
+  assert.equal(stateStore.saveCalls.at(-1).records.length, 1);
+  assert.equal(stateStore.saveCalls.at(-1).records[0].externalContentId, 'video_2');
+});
+
+test('checkpoint write failure happens after Lark writes and remains retryable', async () => {
+  const repository = createStatefulRepository({
+    rawRecords: [rawVideo('tt_account_1', 'video_1')],
+    dictionaryRecords: [dictionaryRow()],
+  });
+  const error = Object.assign(new Error('D1 checkpoint unavailable'), {
+    code: 'D1_INCREMENTAL_CHECKPOINT_WRITE_FAILED',
+    retryable: true,
+  });
+  const stateStore = {
+    async loadCheckpoint() { return { cursor: null, recordStates: [] }; },
+    async saveCheckpoint() { throw error; },
+  };
+
+  await assert.rejects(
+    () => syncTikTokCreatorNativeToLark({
+      syncRunId: 'run-checkpoint-failure',
+      repository,
+      syncEngine: new TableSyncEngine(),
+      accountId: 'tt_account_1',
+      sourceHandle: 'tt_account_1',
+      metricDate: '2026-07-12',
+      tables: tableIds(),
+      incrementalEnabled: true,
+      incrementalStateStore: stateStore,
+      cursorKey: 'profile:tiktok:tt_account_1:native_import',
+      customerProfile: 'profile',
+      syncMode: 'auto',
+      fullSyncIntervalMs: 86_400_000,
+      now: () => 1_000,
+    }),
+    (cause) => cause === error && cause.retryable === true,
+  );
+
+  assert.equal(repository.writeCalls.length, 2);
+});
+
+function createIncrementalStateStore() {
+  let checkpoint = { cursor: null, recordStates: [] };
+  const saveCalls = [];
+  return {
+    saveCalls,
+    async loadCheckpoint() {
+      return {
+        cursor: checkpoint.cursor,
+        recordStates: checkpoint.recordStates.map((record) => ({ ...record })),
+      };
+    },
+    async saveCheckpoint(value) {
+      saveCalls.push(value);
+      const states = value.fullSnapshot
+        ? new Map()
+        : new Map(checkpoint.recordStates.map((record) => [record.sourceRecordId, record]));
+      for (const record of value.records) {
+        states.set(record.sourceRecordId, {
+          ...record,
+          lastSeenSyncRunId: value.cursor.lastSyncRunId,
+          lastSeenAt: value.cursor.lastSuccessfulSyncAt,
+        });
+      }
+      checkpoint = {
+        cursor: { ...value.cursor },
+        recordStates: [...states.values()],
+      };
+      return { cursorKey: value.cursor.cursorKey, recordsSaved: value.records.length };
+    },
+  };
+}
+
+function createStatefulRepository(input) {
+  const recordsByTable = {
+    tbl_mkt_content: [],
+    tbl_mkt_content_daily: [],
+  };
+  let nextRecordId = 1;
+  const repository = {
+    rawRecords: input.rawRecords,
+    dictionaryRecords: input.dictionaryRecords,
+    destinationReadCalls: [],
+    writeCalls: [],
+    async listAll(tableId) {
+      if (tableId === 'tbl_raw_tiktok_creator') return repository.rawRecords;
+      if (tableId === 'tbl_dictionary') return repository.dictionaryRecords;
+      return recordsByTable[tableId] ?? [];
+    },
+    async listByFieldValues(tableId, fieldName, values) {
+      repository.destinationReadCalls.push({ tableId, fieldName, values: [...values] });
+      const allowed = new Set(values.map(String));
+      return (recordsByTable[tableId] ?? []).filter(
+        (record) => allowed.has(String(record.fields?.[fieldName] ?? '')),
+      );
+    },
+    async prepareRows(_tableId, rows) { return rows; },
+    async createMany(tableId, rows) {
+      repository.writeCalls.push({ operation: 'create', tableId, rows });
+      for (const fields of rows) {
+        recordsByTable[tableId].push({ recordId: `record-${nextRecordId++}`, fields: { ...fields } });
+      }
+      return { created: rows.length };
+    },
+    async updateMany(tableId, rows) {
+      repository.writeCalls.push({ operation: 'update', tableId, rows });
+      for (const update of rows) {
+        const record = recordsByTable[tableId].find((item) => item.recordId === update.recordId);
+        if (!record) throw new Error(`Missing destination record ${update.recordId}`);
+        record.fields = { ...update.fields };
+      }
+      return { updated: rows.length };
+    },
+  };
+  return repository;
+}

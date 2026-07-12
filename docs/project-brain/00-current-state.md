@@ -2,7 +2,7 @@
 
 ## Baseline
 
-`v0.5.3-cloudflare-fetch-context-fix` — 2026-07-12
+`v0.6.0-tiktok-incremental-sync` — 2026-07-12
 
 ## Environment ปัจจุบัน
 
@@ -13,7 +13,7 @@
 - Production profile `chemistry_k` อยู่ใน Source codeแล้ว แต่ Production จริงยังไม่เปิดใช้งาน
 - Production ต้องสร้างใน Lark, Cloudflare และบัญชี Platform ที่ลูกค้าเป็นเจ้าของ
 
-## Verified Live DEV ก่อน Release นี้
+## Verified Live DEV
 
 Baseline v0.4.0 ผ่าน Live DEV idempotency gate:
 
@@ -55,6 +55,24 @@ Baseline v0.4.0 ผ่าน Live DEV idempotency gate:
 - Local concurrent lock ผ่าน
 - Source identity failure + System Alert ผ่าน
 
+## Live Cloudflare DEV gate ที่ผ่านแล้ว
+
+- Main Queue และ Lark outbound request ผ่านหลังแก้ Fetch context
+- Sync Log lifecycle และ `sync_run_id` ผ่าน
+- Reconciliation กู้ Daily Snapshot ที่หายและรอบถัดไป Idempotent
+- Distributed D1 lock: collision, retry หลังปล่อย lock และ cleanup ผ่าน
+- Retry exhaustion, DLQ, D1 `dead_letter_jobs`, D1/Lark `MKT_System_Alerts` ผ่าน
+- Scheduled TikTok Sync ผ่านต่อเนื่อง 3 รอบโดยเขียนซ้ำ 0 แถว
+
+## เพิ่มใน v0.6.0
+
+- Migration `0003_incremental_sync.sql`: `sync_cursors`, `source_record_states`
+- SHA-256 fingerprint ของ RAW records และ Classification Dictionary
+- Full/Incremental planner พร้อม safe fallback: initial, วันใหม่, Dictionary เปลี่ยน, Source record หาย และรอบ Full 24 ชั่วโมง
+- Commit checkpoint หลัง Lark business writes สำเร็จ; เขียน record states เป็น chunk และ commit cursor สุดท้าย
+- รอบไม่มีการเปลี่ยนแปลงจะไม่ทำ Destination schema/search/write
+- Lark record metadata รองรับ `createdTime`, `lastModifiedTime`, `lastModifiedBy`
+
 ## Connector status
 
 | Connector | Code status | Default runtime |
@@ -69,9 +87,8 @@ Baseline v0.4.0 ผ่าน Live DEV idempotency gate:
 ## Known residual risks
 
 - Lark ไม่มี Transaction ข้ามตาราง แต่ Partial write ตรวจพบ/Alert/Recovery ได้แล้ว
-- Lease renewal มีแล้ว แต่ยังต้อง UAT กับ D1/Queue resource จริงบน Cloudflare DEV
 - Local file lock ไม่ครอบ Cloudflare ต้องห้าม Local write เมื่อ Cloud Cron ใช้ Base เดียวกัน
-- RAW/Dictionary ยังเป็น Full-source read
+- RAW/Dictionary ยังอ่านครบทุกหน้าเพื่อ Safety/Deletion detection; Destination planning/write เป็น Incremental ตาม fingerprint
 - Classification field ที่กลายเป็นค่าว่างยังไม่ล้างค่าเก่าใน Larkจนกว่าจะยืนยัน Cell-clear contract
 - Connector ที่เป็น `planned` ยังไม่มี API/Source contract/Blueprint และห้ามเปิดใช้
 - Chemistry K Production ยังไม่ผ่าน customer-owned Cloudflare/Lark deployment

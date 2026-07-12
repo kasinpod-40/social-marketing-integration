@@ -25,10 +25,12 @@ import { createCloudflareReliabilityRuntime } from '../../../packages/reliabilit
 import { D1ReliabilityStore } from '../../../packages/reliability/src/d1-reliability-store.js';
 import { CompositeReliabilityStore } from '../../../packages/reliability/src/composite-reliability-store.js';
 import { LarkReliabilityStore } from '../../../packages/reliability/src/lark-reliability-store.js';
+import { D1IncrementalStateStore } from '../../../packages/sync-engine/src/d1-incremental-state-store.js';
 
 const DEFAULT_LOCK_LEASE_MS = 10 * 60 * 1000;
 const DEFAULT_LOCK_RENEW_INTERVAL_MS = 2 * 60 * 1000;
 const DEFAULT_RETRY_DELAY_SECONDS = 30;
+const DEFAULT_TIKTOK_FULL_RECONCILIATION_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 export const QUEUE_ROLES = Object.freeze({
   MAIN: 'main',
@@ -65,6 +67,7 @@ export function createSyncWorker(dependencies = {}) {
         type: JOB_TYPES.TIKTOK_CREATOR_NATIVE_SYNC,
         requestedAt: scheduledAt,
         trigger: 'scheduled',
+        syncMode: 'auto',
       });
       await queue.send(job);
       logQueueResult({
@@ -187,6 +190,8 @@ export async function processJob(input) {
     ]);
     const reliability = infrastructure.getReliability(tableIds);
 
+    const incrementalEnabled = readBoolean(input.env?.MKT_TIKTOK_INCREMENTAL_ENABLED, false);
+
     return runReliableSync({
       store: reliability.store,
       lockManager: reliability.lockManager,
@@ -207,7 +212,7 @@ export async function processJob(input) {
         scope: 'reliability',
         ...sanitizeReliabilityEvent(event),
       }),
-      execute: ({ syncRunId, assertLockActive }) => syncTikTokCreatorNativeToLark({
+      execute: ({ syncRunId, lockKey, assertLockActive }) => syncTikTokCreatorNativeToLark({
         syncRunId,
         assertLockActive,
         repository: infrastructure.repository,
@@ -215,6 +220,17 @@ export async function processJob(input) {
         accountId: connectorConfig.accountKey,
         sourceHandle: connectorConfig.sourceHandle,
         metricDate: readMetricDate(input.job.body?.metricDate, input.env),
+        customerProfile: runtimeConfig.profileKey,
+        cursorKey: lockKey,
+        syncMode: input.job.body?.syncMode,
+        incrementalEnabled,
+        incrementalStateStore: incrementalEnabled
+          ? infrastructure.getIncrementalStateStore()
+          : null,
+        fullSyncIntervalMs: readPositiveInteger(
+          input.env?.MKT_TIKTOK_FULL_RECONCILIATION_INTERVAL_MS,
+          DEFAULT_TIKTOK_FULL_RECONCILIATION_INTERVAL_MS,
+        ),
         tables: {
           rawTikTokCreatorVideos: tableIds.rawTikTokCreatorVideos,
           mktContent: tableIds.mktContent,
@@ -269,10 +285,15 @@ export function createInfrastructure(env) {
   const repository = new LarkRecordRepository({ client });
   const syncEngine = new TableSyncEngine();
   let reliability = null;
+  let incrementalStateStore = null;
 
   return Object.freeze({
     repository,
     syncEngine,
+    getIncrementalStateStore() {
+      incrementalStateStore ??= new D1IncrementalStateStore({ db: env?.MKT_STATE_DB });
+      return incrementalStateStore;
+    },
     getReliability(tableIds) {
       reliability ??= createCloudflareReliabilityRuntime({
         env,
@@ -535,6 +556,8 @@ function summarizeJobResult(result) {
     mode: result.mode ?? null,
     readyToWrite: result.readyToWrite ?? result.ok ?? null,
     rawRecords: result.rawRecords ?? null,
+    processedRawRecords: result.processedRawRecords ?? null,
+    incremental: result.incremental ?? null,
     classificationRules: result.classificationRules ?? null,
     invalidClassificationRuleCount: Array.isArray(result.classificationDictionary?.invalidRows)
       ? result.classificationDictionary.invalidRows.length

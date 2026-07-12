@@ -150,6 +150,7 @@ describe('Sync Worker ใน Workers runtime จริง', () => {
       schemaVersion: 1,
       type: 'tiktok.creator.native.sync',
       trigger: 'scheduled',
+      syncMode: 'auto',
       requestedAt: '2026-07-11T01:00:00.000Z',
     });
   });
