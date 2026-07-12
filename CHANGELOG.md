@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.8.1-lark-schema-installer-safety-fix — 2026-07-13
+
+### Fixed
+- Plain `npm run setup:report-schema` is now read-only even when `CONFIRM_WRITE=YES` remains exported in the shell.
+- Apply now requires the explicit `setup:report-schema:apply` command together with `CONFIRM_WRITE=YES`.
+- Removed Checkbox/UI-only field properties from Lark Create/Update payloads; Checkbox fields no longer send `styleId` or any `property` object.
+- Canonicalized Lark field mutations to official OpenAPI keys such as `date_formatter` and `auto_fill`, while dropping unsupported keys such as `optionsType`, `timeFormat`, and `extractExternalUrl`.
+- Added `ui_type` and field descriptions to mutation payloads when defined by the schema contract.
+- Schema action failures now include the failed table/field action and the number of actions already applied, making partial installer progress recoverable and auditable.
+- The installer remains idempotent, so a v0.8.0 run that stopped part-way can be resumed safely after a fresh Preview.
+
+### Verification target
+- `281` Node unit/integration tests and `6` Workers-runtime tests.
+- `70` source files, `151` local dependencies, 0 cycles, repository hygiene, npm audit, Wrangler dry-run, and clean extracted ZIP retest.
+
+## 0.8.0-lark-report-schema-installer — 2026-07-12
+
+- Added `npm run setup:report-schema` with read-only Preview by default and guarded Apply via `CONFIRM_WRITE=YES`.
+- Added the versioned five-table Report Schema contract (110 fields) for existing and new customer-owned Lark Bases.
+- Added Lark OpenAPI adapters for listing/creating tables and creating/updating fields.
+- Installer is idempotent, preserves existing Select option IDs/options, never deletes schema, and fails closed on type conflicts or unresolved configured Table IDs.
+- New report tables are created with their stable key first; existing Primary-field mismatches are surfaced as explicit manual review actions.
+- Added regression tests for Preview safety, alias/ID resolution, placeholder handling, option merging, type-conflict blocking, apply verification, and Lark request contracts.
+- Report schedules remain disabled pending Schema Apply, Seed, and Live DEV Daily/Weekly UAT.
+
+### Verification target
+- 274 Node unit/integration tests and 6 Workers-runtime tests.
+- 68 source files, 146 local dependencies, 0 cycles, repository hygiene, npm audit, Wrangler dry-run, and clean extracted ZIP retest.
+
 ## 0.7.2-completed-report-period — 2026-07-12
 
 ### Fixed

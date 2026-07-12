@@ -4,11 +4,11 @@
 This project connects social organic and paid ads data into Lark Base for reporting, daily snapshots, monitoring, and AI summaries. The implementation target is a lean MVP using Cloudflare Workers, Cloudflare D1, Cloudflare Queues, Lark Base, Lark Native Integrations where useful, and JavaScript.
 
 ## Current project status
-Current audited release candidate: `v0.7.2-completed-report-period`
+Current audited release candidate: `v0.8.1-lark-schema-installer-safety-fix`
 
-Package verification target: 261 Node unit/integration tests + 6 Workers-runtime tests, Wrangler 4.110.0 dry-run, syntax/architecture/repository hygiene, npm audit, tracked-local-config guard และ extracted ZIP retest. Live Cloudflare DEV ผ่าน Queue, Reconciliation, Distributed Lock, Retry/DLQ/System Alerts และ Scheduled Sync แล้ว.
+Package verification target: `281` Node unit/integration tests + `6` Workers-runtime tests, Wrangler 4.110.0 dry-run, syntax/architecture/repository hygiene, npm audit, tracked-local-config guard และ extracted ZIP retest. Live Cloudflare DEV ผ่าน Queue, Reconciliation, Distributed Lock, Retry/DLQ/System Alerts และ Scheduled Sync แล้ว.
 
-**v0.7.2-completed-report-period — Scheduled Report ใช้วันสมบูรณ์ล่าสุดจาก scheduledTime, เพิ่ม boundary regression tests และจัดแพ็กเกจ local-config-safe; Report schedule ยังต้องคงปิดจนกว่า Lark schema/seed/Live UAT จะผ่าน.**
+**v0.8.1-lark-schema-installer-safety-fix — แก้ Preview/Apply safety และ Lark Field payload contract โดย Preview ไม่เขียนแม้มี ambient confirmation และ Checkbox/URL/Text ไม่ส่ง property ที่ OpenAPI ไม่รองรับ; Report schedule ยังต้องคงปิดจนกว่า Apply, Seed และ Live UAT จะผ่าน.**
 
 Completed in Lark:
 - Created Lark Base: `Social MKT Data Hub`.
@@ -35,6 +35,21 @@ Completed Live Cloudflare DEV reliability UAT:
 - D1 Distributed Lock collision/retry/cleanup ผ่าน
 - Retry exhaustion -> DLQ -> D1/Lark System Alert ผ่าน
 - Scheduled TikTok Sync ผ่านต่อเนื่อง 3 รอบโดยไม่เขียนซ้ำ
+
+Completed in v0.8.1 schema installer safety fix:
+
+- `npm run setup:report-schema` is always read-only; Apply requires the separate `CONFIRM_WRITE=YES npm run setup:report-schema:apply` command.
+- Lark Field payloads use canonical OpenAPI property keys; Checkbox and other propertyless field types omit `property` entirely.
+- Unsupported UI-only keys are filtered before Create/Update and schema failures expose the exact failed action plus prior applied-action count.
+- A partially completed v0.8.0 installer run is resumed idempotently after Preview.
+
+Completed in v0.8.0 schema installer:
+
+- Five Report tables use one versioned 110-field contract.
+- Missing tables/fields/options are created incrementally; existing schema is never deleted.
+- Type conflicts and unresolved configured Table IDs fail closed.
+- Created table IDs are returned as `environmentUpdates` for local Wrangler config.
+- Existing Primary mismatches remain an explicit Lark UI review step.
 
 Completed in v0.7.2 release correction:
 - Daily/Weekly report `periodEnd` = previous completed local day derived at the scheduler producer.

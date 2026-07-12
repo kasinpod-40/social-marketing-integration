@@ -104,7 +104,8 @@ test('lists and normalizes Lark table field metadata', async () => {
     },
   });
   assert.deepEqual(await client.listFields({ tableId: 'tbl' }), [{
-    fieldId: 'fld1', fieldName: 'content_url', type: 15, property: {},
+    fieldId: 'fld1', fieldName: 'content_url', type: 15, uiType: null,
+    isPrimary: false, property: null,
   }]);
 });
 
@@ -800,4 +801,185 @@ test('beforeChunk failure after a confirmed update chunk preserves partial progr
   );
   assert.equal(updateCalls, 1);
   assert.equal(guardCalls, 2);
+});
+
+test('lists and normalizes tables in the configured Base', async () => {
+  const client = new LarkBitableClient({
+    appId: 'app-id', appSecret: 'app-secret', appToken: 'app-token', minRequestIntervalMs: 0,
+    fetchImpl: async (url) => {
+      if (String(url).includes('tenant_access_token')) {
+        return new Response(JSON.stringify({ code: 0, tenant_access_token: 'token', expire: 7200 }), { status: 200 });
+      }
+      return new Response(JSON.stringify({
+        code: 0,
+        data: { items: [{ table_id: 'tbl1', name: 'MKT_Table', revision: 7 }], has_more: false },
+      }), { status: 200 });
+    },
+  });
+  assert.deepEqual(await client.listTables(), [{ tableId: 'tbl1', name: 'MKT_Table', revision: 7 }]);
+});
+
+test('creates a table with the primary field first and returns its table ID', async () => {
+  let request = null;
+  const client = new LarkBitableClient({
+    appId: 'app-id', appSecret: 'app-secret', appToken: 'app-token', minRequestIntervalMs: 0,
+    fetchImpl: async (url, options) => {
+      if (String(url).includes('tenant_access_token')) {
+        return new Response(JSON.stringify({ code: 0, tenant_access_token: 'token', expire: 7200 }), { status: 200 });
+      }
+      request = { url: String(url), options, body: JSON.parse(options.body) };
+      return new Response(JSON.stringify({ code: 0, data: { table_id: 'tblNew', default_view_id: 'vew1', field_id_list: ['fld1', 'fld2'] } }), { status: 200 });
+    },
+  });
+  const result = await client.createTable({
+    name: 'New Table',
+    defaultViewName: 'All',
+    fields: [
+      { fieldName: 'key', type: 1, uiType: 'Text' },
+      { fieldName: 'enabled', type: 7, uiType: 'Checkbox', property: { styleId: '0' } },
+    ],
+  });
+  assert.equal(result.tableId, 'tblNew');
+  assert.match(request.url, /\/apps\/app-token\/tables$/);
+  assert.equal(request.options.method, 'POST');
+  assert.deepEqual(request.body, {
+    table: {
+      name: 'New Table',
+      default_view_name: 'All',
+      fields: [
+        { field_name: 'key', type: 1, ui_type: 'Text' },
+        { field_name: 'enabled', type: 7, ui_type: 'Checkbox' },
+      ],
+    },
+  });
+});
+
+test('omits property for Checkbox fields even when UI metadata contains styleId', async () => {
+  const requests = [];
+  const client = new LarkBitableClient({
+    appId: 'app-id', appSecret: 'app-secret', appToken: 'app-token', minRequestIntervalMs: 0,
+    fetchImpl: async (url, options) => {
+      if (String(url).includes('tenant_access_token')) {
+        return new Response(JSON.stringify({ code: 0, tenant_access_token: 'token', expire: 7200 }), { status: 200 });
+      }
+      requests.push({ method: options.method, body: JSON.parse(options.body) });
+      return new Response(JSON.stringify({
+        code: 0,
+        data: { field: { field_id: 'fldCheck', field_name: 'enabled', type: 7, property: null } },
+      }), { status: 200 });
+    },
+  });
+  const checkbox = {
+    fieldName: 'enabled', type: 7, uiType: 'Checkbox', property: { styleId: '0' },
+  };
+  await client.createField({ tableId: 'tbl1', field: checkbox });
+  await client.updateField({ tableId: 'tbl1', fieldId: 'fldCheck', field: checkbox });
+  assert.deepEqual(requests.map((request) => request.body), [
+    { field_name: 'enabled', type: 7, ui_type: 'Checkbox' },
+    { field_name: 'enabled', type: 7, ui_type: 'Checkbox' },
+  ]);
+});
+
+test('creates and updates fields with the official field mutation shape', async () => {
+  const requests = [];
+  const client = new LarkBitableClient({
+    appId: 'app-id', appSecret: 'app-secret', appToken: 'app-token', minRequestIntervalMs: 0,
+    fetchImpl: async (url, options) => {
+      if (String(url).includes('tenant_access_token')) {
+        return new Response(JSON.stringify({ code: 0, tenant_access_token: 'token', expire: 7200 }), { status: 200 });
+      }
+      requests.push({ url: String(url), method: options.method, body: JSON.parse(options.body) });
+      return new Response(JSON.stringify({
+        code: 0,
+        data: { field: { field_id: 'fld1', field_name: 'status', type: 3, is_primary: false, property: { options: [] } } },
+      }), { status: 200 });
+    },
+  });
+  const field = {
+    fieldName: 'status', type: 3, uiType: 'SingleSelect',
+    property: { optionsType: 0, options: [{ name: 'active', color: 0 }] },
+  };
+  await client.createField({ tableId: 'tbl1', field });
+  await client.updateField({ tableId: 'tbl1', fieldId: 'fld1', field });
+  assert.equal(requests[0].method, 'POST');
+  assert.match(requests[0].url, /\/tables\/tbl1\/fields$/);
+  assert.equal(requests[1].method, 'PUT');
+  assert.match(requests[1].url, /\/tables\/tbl1\/fields\/fld1$/);
+  assert.deepEqual(requests[0].body, {
+    field_name: 'status', type: 3, ui_type: 'SingleSelect',
+    property: { options: [{ name: 'active', color: 0 }] },
+  });
+  assert.deepEqual(requests[1].body, requests[0].body);
+});
+
+test('serializes DateTime aliases into official snake_case property keys', async () => {
+  const requests = [];
+  const client = new LarkBitableClient({
+    appId: 'app-id', appSecret: 'app-secret', appToken: 'app-token', minRequestIntervalMs: 0,
+    fetchImpl: async (url, options) => {
+      if (String(url).includes('tenant_access_token')) {
+        return new Response(JSON.stringify({ code: 0, tenant_access_token: 'token', expire: 7200 }), { status: 200 });
+      }
+      requests.push(JSON.parse(options.body));
+      return new Response(JSON.stringify({
+        code: 0,
+        data: { field: { field_id: 'fldDate', field_name: 'period_end', type: 5 } },
+      }), { status: 200 });
+    },
+  });
+  await client.createField({
+    tableId: 'tbl1',
+    field: {
+      fieldName: 'period_end',
+      type: 5,
+      uiType: 'DateTime',
+      description: 'วันสิ้นสุดรายงาน',
+      property: {
+        dateFormat: 'yyyy/MM/dd',
+        timeFormat: 'HH:mm',
+        autoFill: false,
+      },
+    },
+  });
+  assert.deepEqual(requests[0], {
+    field_name: 'period_end',
+    type: 5,
+    ui_type: 'DateTime',
+    description: { text: 'วันสิ้นสุดรายงาน' },
+    property: {
+      date_formatter: 'yyyy/MM/dd',
+      auto_fill: false,
+    },
+  });
+});
+
+test('omits unsupported UI-only URL property metadata', async () => {
+  const requests = [];
+  const client = new LarkBitableClient({
+    appId: 'app-id', appSecret: 'app-secret', appToken: 'app-token', minRequestIntervalMs: 0,
+    fetchImpl: async (url, options) => {
+      if (String(url).includes('tenant_access_token')) {
+        return new Response(JSON.stringify({ code: 0, tenant_access_token: 'token', expire: 7200 }), { status: 200 });
+      }
+      requests.push(JSON.parse(options.body));
+      return new Response(JSON.stringify({
+        code: 0,
+        data: { field: { field_id: 'fldUrl', field_name: 'content_url', type: 15 } },
+      }), { status: 200 });
+    },
+  });
+  await client.createField({
+    tableId: 'tbl1',
+    field: {
+      fieldName: 'content_url',
+      type: 15,
+      uiType: 'Url',
+      property: { extractExternalUrl: true },
+    },
+  });
+  assert.deepEqual(requests[0], {
+    field_name: 'content_url',
+    type: 15,
+    ui_type: 'Url',
+  });
 });

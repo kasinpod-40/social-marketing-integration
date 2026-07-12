@@ -2,7 +2,7 @@
 
 Release จะยังไม่ถือว่า Production-ready จนกว่าจะตรวจครบทุก Gate
 
-## สถานะ Package v0.6.0
+## สถานะ Release Candidate v0.8.1
 
 ### Architecture และ Code quality
 
@@ -132,3 +132,18 @@ Release จะยังไม่ถือว่า Production-ready จนกว
 - [ ] Apply observability block and appropriate sampling to customer-owned Production config
 - [ ] Lark report schema, seed, manual Daily/Weekly UAT, and idempotent rerun pass
 - [ ] Report schedules remain `false` until all Report UAT items pass
+
+
+## v0.8.1 Lark Report Schema Installer Gate
+
+- [x] Plain Preview ignores ambient `CONFIRM_WRITE=YES` and remains read-only.
+- [x] Checkbox/propertyless fields omit `property` from Create/Update payloads.
+- [x] Field payload uses canonical OpenAPI keys and strips unsupported UI-only keys.
+- [ ] `npm run setup:report-schema` Preview returns `readyToApply=true`.
+- [ ] Preview has no type conflicts, ambiguous tables, or unresolved configured Table IDs.
+- [ ] `CONFIRM_WRITE=YES npm run setup:report-schema:apply` completes successfully.
+- [ ] Preview rerun has zero write actions.
+- [ ] `environmentUpdates` are copied to local/customer-owned deployment config only.
+- [ ] Primary-field manual actions are reviewed in Lark UI.
+- [ ] Metric and Report Settings seeds are rerun idempotently.
+- [ ] Report schedules remain disabled until Manual Daily/Weekly UAT passes.

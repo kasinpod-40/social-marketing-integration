@@ -1,21 +1,23 @@
 # 10 — Next Actions
 
-## Current gate: TikTok Organic Report v0.7.2
+## Current gate: Lark Report Schema Installer v0.8.1
 
-Steps 1–6 of the original roadmap are complete in Live DEV. v0.7.2 also fixes the scheduled completed-day semantics and release packaging identified in the follow-up review. The next gate is Step 7 Lark schema + Live DEV UAT, and Report schedule must remain disabled until all items below pass.
+Steps 1–6 are complete in Live DEV. v0.8.1 fixes Preview/Apply safety and the Lark Field mutation contract. Report schedule must remain disabled until every gate below passes.
 
-1. Untrack local config once with `git rm --cached wrangler.sync.jsonc`, then confirm `npm run check`, full tests, and Wrangler dry-run pass.
-2. Apply the Lark schema changes from `docs/tiktok-organic-report-blueprint-v0.7.0.md` and the release Excel Blueprint.
-3. Create `MKT_Report_Metric_Values` and `MKT_Report_Top_Content`; set their stable-key fields as Primary.
-4. Extend `MKT_Metric_Definitions`, `MKT_Report_Settings`, and `MKT_Report_Snapshots` exactly as specified.
-5. Configure the two new Lark Table IDs in `wrangler.sync.jsonc`.
-6. Run `CONFIRM_WRITE=YES npm run seed:metrics` and rerun to prove idempotency.
-7. Run `MKT_CUSTOMER_PROFILE=dev_ft_pumkin CONFIRM_WRITE=YES npm run seed:report-settings` and rerun.
-8. Send a manual `report.daily.generate` Queue job and validate all three output tables plus `MKT_Sync_Log`.
-9. Rerun the same period and confirm all output rows are skipped/updated without duplicates.
-10. Send `report.weekly.generate`; validate cumulative delta, previous-period comparison, partial-baseline flag, and Top Content ranking.
-11. Create client-facing Lark views and hide RAW/Daily/Sync/System views from client roles.
-12. Enable Daily/Weekly report schedules only after Live DEV UAT passes.
+1. Run `npm run setup:report-schema` in Preview mode.
+2. Review `readyToApply`, `conflicts`, `warnings`, `manualActions`, and `environmentUpdates`.
+3. Resolve every type conflict, ambiguous table, or missing configured Table ID before writing.
+4. Run `CONFIRM_WRITE=YES npm run setup:report-schema:apply` only when Preview is ready.
+5. Copy returned Table IDs into local `wrangler.sync.jsonc`; never commit that file.
+6. Run Preview again; it must show zero write actions and zero conflicts.
+7. Review any `PRIMARY_FIELD_REVIEW_REQUIRED` items in Lark UI.
+8. Run `CONFIRM_WRITE=YES npm run seed:metrics` twice to prove idempotency.
+9. Run `MKT_CUSTOMER_PROFILE=dev_ft_pumkin CONFIRM_WRITE=YES npm run seed:report-settings` twice.
+10. Send manual `report.daily.generate`; validate Snapshots, Metric Values, Top Content, and Sync Log.
+11. Rerun the same period and confirm no duplicate rows.
+12. Send manual `report.weekly.generate`; validate cumulative delta, comparison, baseline coverage, and ranking.
+13. Create client-facing Views/Permissions; hide RAW/Daily/Sync/System tables from client roles.
+14. Enable Daily/Weekly schedules only after Live DEV UAT passes.
 
 ## After Step 7
 

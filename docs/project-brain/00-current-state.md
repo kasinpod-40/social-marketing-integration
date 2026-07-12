@@ -2,13 +2,28 @@
 
 ## Current release candidate
 
-`v0.7.2-completed-report-period` — 2026-07-12
+`v0.8.1-lark-schema-installer-safety-fix` — 2026-07-13
 
 ## Live-complete scope
 
 - TikTok Creator Organic ingestion to `MKT_Content` and cumulative `MKT_Content_Daily`.
 - Live DEV gate, canonical keys, idempotency, reconciliation, Sync Log, D1 distributed lock, retry/DLQ/System Alerts.
 - Scheduled + incremental TikTok sync with D1 cursor/fingerprint and 24-hour full reconciliation.
+
+
+## v0.8.1 Lark Report Schema Installer Safety Fix
+
+- Plain Preview is read-only even if `CONFIRM_WRITE=YES` exists in the shell.
+- Apply requires `CONFIRM_WRITE=YES npm run setup:report-schema:apply`.
+- Checkbox and other propertyless fields omit `property`; Date/Select payloads use canonical OpenAPI keys.
+- Installer failures include the failed action and prior applied-action count; rerunning Preview resumes any partially completed v0.8.0 run safely.
+
+## v0.8.0 Lark Report Schema Installer
+
+- Installer covers 5 Report tables and 110 fields, resolves by local Table ID or alias, and is safe to rerun.
+- Missing Table/Field/Select options are added without deleting existing schema.
+- Type mismatch and unresolved configured IDs block writes.
+- Report schedules remain disabled pending Live Schema/Seed/UAT.
 
 ## v0.7.2 completed-period release gate
 

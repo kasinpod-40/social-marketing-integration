@@ -4,6 +4,7 @@ import {
   transientError,
   writeProgressError,
 } from '../../../shared/src/errors/runtime-error.js';
+import { normalizeLarkFieldProperty, serializeLarkFieldProperty } from '../../../shared/src/lark/lark-field-contract.js';
 
 const LARK_OPEN_API_BASE_URL = 'https://open.larksuite.com';
 const DEFAULT_PAGE_SIZE = 500;
@@ -18,6 +19,7 @@ const DEFAULT_MAX_FILTER_CONDITIONS = 50;
 const TOKEN_SAFETY_WINDOW_MS = 60_000;
 const MAX_REMOTE_ERROR_MESSAGE_LENGTH = 500;
 const INVALID_TENANT_ACCESS_TOKEN_CODE = 99991663;
+
 
 /**
  * Client สำหรับ Lark Base ฝั่ง Server/Worker
@@ -154,6 +156,76 @@ export class LarkBitableClient {
       const refreshedToken = await this.getTenantAccessToken();
       return this.requestJson(path, { ...options, token: refreshedToken });
     }
+  }
+
+  /** อ่านรายการ Table ทั้ง Base ด้วย Pagination guard กลาง */
+  async listTables() {
+    return this.paginateCollection({
+      resource: 'tables',
+      tableId: this.appToken,
+      pageSize: DEFAULT_PAGE_SIZE,
+      requestPage: ({ pageToken, pageSize }) => {
+        const params = buildPageParams(pageToken, pageSize);
+        return this.requestBitableJson(
+          `/open-apis/bitable/v1/apps/${encodeURIComponent(this.appToken)}/tables?${params.toString()}`,
+          { method: 'GET' },
+        );
+      },
+      normalizeItem: normalizeTable,
+    });
+  }
+
+  /** สร้าง Table ใหม่พร้อม Field contract โดยวาง Primary field เป็น Field แรก */
+  async createTable(input) {
+    const name = requireText(input?.name, 'name');
+    const fields = requireArray(input?.fields, 'fields');
+    if (fields.length === 0) throw new TypeError('Lark table creation requires at least one field');
+    const defaultViewName = normalizeOptionalText(input?.defaultViewName) ?? 'Grid';
+    const response = await this.requestBitableJson(
+      `/open-apis/bitable/v1/apps/${encodeURIComponent(this.appToken)}/tables`,
+      {
+        method: 'POST',
+        retryMode: 'rate_limit_only',
+        body: {
+          table: {
+            name,
+            default_view_name: defaultViewName,
+            fields: fields.map(serializeFieldMutation),
+          },
+        },
+      },
+    );
+    return normalizeTable(response?.data?.table ?? response?.data);
+  }
+
+  /** สร้าง Field ที่ขาดใน Table เดิม */
+  async createField(input) {
+    const tableId = requireText(input?.tableId, 'tableId');
+    const field = serializeFieldMutation(input?.field);
+    const response = await this.requestBitableJson(
+      `/open-apis/bitable/v1/apps/${encodeURIComponent(this.appToken)}/tables/${encodeURIComponent(tableId)}/fields`,
+      {
+        method: 'POST',
+        retryMode: 'rate_limit_only',
+        body: field,
+      },
+    );
+    return normalizeField(response?.data?.field ?? response?.data);
+  }
+
+  /** อัปเดต Field แบบ Idempotent ใช้สำหรับเติม Select options หรือ Property ที่ขาด */
+  async updateField(input) {
+    const tableId = requireText(input?.tableId, 'tableId');
+    const fieldId = requireText(input?.fieldId, 'fieldId');
+    const field = serializeFieldMutation(input?.field);
+    const response = await this.requestBitableJson(
+      `/open-apis/bitable/v1/apps/${encodeURIComponent(this.appToken)}/tables/${encodeURIComponent(tableId)}/fields/${encodeURIComponent(fieldId)}`,
+      {
+        method: 'PUT',
+        body: field,
+      },
+    );
+    return normalizeField(response?.data?.field ?? response?.data);
   }
 
   /** อ่าน Field metadata ทั้งตารางด้วย Pagination guard กลาง */
@@ -661,13 +733,41 @@ function shouldRetryWithinRequest(error, retryMode) {
 }
 
 /** Normalize Field metadata ให้ใช้ชื่อ Property เดียวทั้งระบบ */
+function normalizeTable(table) {
+  return Object.freeze({
+    tableId: table?.table_id ?? table?.tableId ?? table?.id ?? null,
+    name: table?.name ?? null,
+    revision: table?.revision ?? table?.rev ?? null,
+  });
+}
+
 function normalizeField(field) {
+  const type = field?.type;
   return Object.freeze({
     fieldId: field?.field_id ?? field?.fieldId ?? null,
     fieldName: field?.field_name ?? field?.fieldName ?? field?.name ?? null,
-    type: field?.type,
-    property: field?.property ?? null,
+    type,
+    uiType: field?.ui_type ?? field?.uiType ?? null,
+    isPrimary: field?.is_primary === true || field?.isPrimary === true,
+    property: normalizeLarkFieldProperty(type, field?.property),
   });
+}
+
+/** แปลง Field contract ภายในเป็น Request body ของ Lark OpenAPI */
+function serializeFieldMutation(field) {
+  const normalized = requireObject(field, 'field');
+  const fieldName = requireText(normalized.fieldName ?? normalized.field_name, 'field.fieldName');
+  const type = positiveInteger(normalized.type, 'field.type');
+  const result = { field_name: fieldName, type };
+  const uiType = normalizeOptionalText(normalized.uiType ?? normalized.ui_type);
+  if (uiType) result.ui_type = uiType;
+
+  const description = normalizeOptionalText(normalized.description);
+  if (description) result.description = { text: description };
+
+  const property = serializeLarkFieldProperty(type, normalized.property);
+  if (property) result.property = property;
+  return result;
 }
 
 /** Normalize Record จาก Lark พร้อม Metadata ที่ใช้ทำ Incremental checkpoint */

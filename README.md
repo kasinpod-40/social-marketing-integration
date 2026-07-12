@@ -4,7 +4,7 @@
 
 ## Baseline ปัจจุบัน
 
-`v0.7.2-completed-report-period`
+`v0.8.1-lark-schema-installer-safety-fix`
 
 สถานะปัจจุบัน:
 
@@ -16,8 +16,29 @@
 - Live Cloudflare DEV ผ่าน Sync Log, Reconciliation, Distributed Lock, Retry/DLQ/System Alert และ Scheduled Sync ต่อเนื่อง 3 รอบแล้ว
 - v0.7.1 ซ่อม Report/Lock reliability: แยก failed กับ partial_success ตาม write progressจริง, ทำ Top Content limit ให้สอดคล้องและล้างอันดับเก่า, ตรวจ lease expiry, รักษา partial progress ระหว่าง chunk, จำแนก Lark 1254290 ถูกต้อง และป้องกัน Local lock renewal race
 - v0.7.2 ล็อก Scheduled Report ให้ใช้ “วันสมบูรณ์ล่าสุด” จาก `scheduledTime` ตาม Timezone พร้อม regression tests สำหรับข้ามเดือน/ปี/ปีอธิกสุรทิน และจัด Release package ให้ไม่มี Local Wrangler config หรือ macOS metadata
+- v0.8.0 เพิ่ม Lark Report Schema Installer แบบ Preview/Apply, Idempotent, ไม่ลบ Schema เดิม, Fail-closed เมื่อชน Field type และสร้าง 2 ตาราง Report output ผ่าน OpenAPI
+- v0.8.1 แก้ `CheckboxFieldPropertyError`: Preview เป็น Read-only เสมอแม้ Shell มี `CONFIRM_WRITE=YES`, Apply ต้องใช้คำสั่งแยก, และ Field payload ใช้เฉพาะ OpenAPI property keys ที่รองรับ
 - Report schedule ยังปิดจนกว่าจะปรับ Lark schema/seed/UAT ตาม Blueprint
 
+
+
+## Lark Report Schema Installer v0.8.1
+
+อ่านรายละเอียดที่ `docs/lark-report-schema-installer-v0.8.1.md`
+
+Preview แบบ Read-only:
+
+```bash
+npm run setup:report-schema
+```
+
+Apply หลัง Preview มี `readyToApply: true`:
+
+```bash
+CONFIRM_WRITE=YES npm run setup:report-schema:apply
+```
+
+Installer ครอบคลุม 5 ตาราง Report, สร้างเฉพาะส่วนที่ขาด, เติม Select options โดยไม่ลบของเดิม และคืน Table IDs ผ่าน `environmentUpdates`. Preview command ไม่เขียนข้อมูลแม้ Environment มี `CONFIRM_WRITE=YES`; การ Apply ต้องระบุทั้ง `setup:report-schema:apply` และ `CONFIRM_WRITE=YES`. หาก v0.8.0 เขียนไปบางส่วนก่อนพบ Error ให้รัน Preview ใหม่แล้ว Installer จะวางแผนเฉพาะส่วนที่เหลือ. Report schedules ต้องคง `false` จน Schema/Seed/Manual UAT ผ่าน.
 
 ## TikTok Organic Report v0.7.2
 

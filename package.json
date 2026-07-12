@@ -1,6 +1,6 @@
 {
   "name": "social-marketing-integration",
-  "version": "0.7.2-completed-report-period",
+  "version": "0.8.1-lark-schema-installer-safety-fix",
   "private": true,
   "type": "module",
   "engines": {
@@ -16,7 +16,9 @@
     "seed:metrics": "node scripts/seed-metric-definitions.mjs",
     "audit:architecture": "node scripts/audit-architecture.mjs",
     "deploy:dry-run": "wrangler deploy --dry-run --config wrangler.sync.example.jsonc",
-    "seed:report-settings": "node scripts/seed-report-settings.mjs"
+    "seed:report-settings": "node scripts/seed-report-settings.mjs",
+    "setup:report-schema": "node scripts/setup-report-schema.mjs",
+    "setup:report-schema:apply": "node scripts/setup-report-schema.mjs --apply"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.18.4",
