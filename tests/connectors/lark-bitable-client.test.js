@@ -29,6 +29,34 @@ test('retries Lark 1254290 with backoff and then succeeds', async () => {
   assert.deepEqual(delays, [10]);
 });
 
+test('preserves the Cloudflare global fetch context instead of binding it to the client instance', async () => {
+  const originalFetch = globalThis.fetch;
+  let observedThis = null;
+
+  try {
+    globalThis.fetch = async function runtimeFetch() {
+      observedThis = this;
+      return new Response(JSON.stringify({
+        code: 0,
+        tenant_access_token: 'tenant-token',
+        expire: 7200,
+      }), { status: 200 });
+    };
+
+    const client = new LarkBitableClient({
+      appId: 'app-id',
+      appSecret: 'app-secret',
+      appToken: 'app-token',
+      minRequestIntervalMs: 0,
+    });
+
+    assert.equal(await client.getTenantAccessToken(), 'tenant-token');
+    assert.equal(observedThis, globalThis);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('caches and shares the tenant access token request', async () => {
   let calls = 0;
   const client = new LarkBitableClient({

@@ -4,11 +4,11 @@
 This project connects social organic and paid ads data into Lark Base for reporting, daily snapshots, monitoring, and AI summaries. The implementation target is a lean MVP using Cloudflare Workers, Cloudflare D1, Cloudflare Queues, Lark Base, Lark Native Integrations where useful, and JavaScript.
 
 ## Current project status
-Current audited release: `v0.5.2-portable-npm-lockfile`
+Current audited release: `v0.5.3-cloudflare-fetch-context-fix`
 
-Package verification target: 199 Node unit tests + 5 Workers-runtime tests, Wrangler 4.110.0 dry-run, syntax/architecture/repository hygiene, migrations และ extracted ZIP retest. v0.5.0 ผ่าน Live DEV สำหรับ Sync Log, Recovery, Local lock และ Failure Alert แล้ว; v0.5.1 ปิด Cloudflare deployment blockers ก่อนสร้าง resource จริง.
+Package verification target: 200 Node unit tests + 5 Workers-runtime tests, Wrangler 4.110.0 dry-run, syntax/architecture/repository hygiene และ extracted ZIP retest. Live Cloudflare Queue routing/retry ทำงานแล้ว และ v0.5.3 แก้ Runtime Fetch context ก่อนทำ Distributed Lock/DLQ UAT ต่อ.
 
-**v0.5.2-portable-npm-lockfile — package-lock ใช้ public npm registry แบบ portable และมี hygiene guard; ต่อจาก v0.5.1 ที่ บังคับ D1 เป็น operational source of truth, Lark เป็น mirror, รองรับ chunk-level partial write, strict Queue routing, lease heartbeat, scheduled producer, Worker-runtime tests และ Wrangler dry-run.**
+**v0.5.3-cloudflare-fetch-context-fix — แก้ Lark Client ให้เรียก Cloudflare `globalThis.fetch` ด้วย Runtime context ที่ถูกต้อง พร้อม regression test; Main Queue และ Retry path ผ่าน Live DEV แล้ว แต่ Distributed Lock/DLQ UAT ยังต้องทำต่อหลัง Deploy รุ่นนี้.**
 
 Completed in Lark:
 - Created Lark Base: `Social MKT Data Hub`.

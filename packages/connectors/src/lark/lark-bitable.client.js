@@ -43,7 +43,15 @@ export class LarkBitableClient {
     this.appId = requireText(config?.appId, 'appId');
     this.appSecret = requireText(config?.appSecret, 'appSecret');
     this.appToken = requireText(config?.appToken, 'appToken');
-    this.fetchImpl = config?.fetchImpl ?? fetch;
+
+    // Global fetch ของ Cloudflare Workers ต้องถูกเรียกด้วย Runtime context ที่ถูกต้อง
+    // ส่วน Fetch ที่ Inject เพื่อทดสอบต้องถูกเรียกเป็นฟังก์ชันปกติ ไม่รับ Client instance เป็น this
+    const fetchImpl = config?.fetchImpl ?? globalThis.fetch?.bind(globalThis);
+    if (typeof fetchImpl !== 'function') {
+      throw new TypeError('Lark Bitable client requires a Fetch implementation');
+    }
+    this.fetchImpl = (...args) => fetchImpl(...args);
+
     this.baseUrl = normalizeBaseUrl(config?.baseUrl ?? LARK_OPEN_API_BASE_URL);
     this.maxAttempts = positiveInteger(config?.maxAttempts ?? DEFAULT_MAX_ATTEMPTS, 'maxAttempts');
     this.retryBaseDelayMs = positiveInteger(

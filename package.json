@@ -1,6 +1,6 @@
 {
   "name": "social-marketing-integration",
-  "version": "0.5.2-portable-npm-lockfile",
+  "version": "0.5.3-cloudflare-fetch-context-fix",
   "private": true,
   "type": "module",
   "engines": {

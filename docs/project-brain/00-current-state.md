@@ -2,7 +2,7 @@
 
 ## Baseline
 
-`v0.5.2-portable-npm-lockfile` — 2026-07-11
+`v0.5.3-cloudflare-fetch-context-fix` — 2026-07-12
 
 ## Environment ปัจจุบัน
 
@@ -80,3 +80,12 @@ Baseline v0.4.0 ผ่าน Live DEV idempotency gate:
 ## เพิ่ม/แก้ใน v0.5.2
 - `package-lock.json` ใช้ `registry.npmjs.org` แทน Internal Artifactory ของสภาพแวดล้อมสร้างแพ็กเกจ
 - Repository hygiene จะปฏิเสธ non-portable HTTPS registry host ใน lockfile
+
+
+## เพิ่ม/แก้ใน v0.5.3
+- Live Cloudflare Main Queue รับ `tiktok.creator.native.sync` และสร้าง `sync_run_id` ได้จริง
+- Retry classification ทำงานจริงเมื่อ Lark request ล้มเหลวแบบชั่วคราว
+- แก้ `LarkBitableClient` ไม่ให้เก็บ Global Fetch แล้วเรียกเป็น Method ของ Client ซึ่งทำให้ Runtime context ผิดบน Cloudflare Workers
+- เพิ่ม regression test ตรวจว่า Default Global Fetch ถูก Bind กับ `globalThis`
+- เพิ่ม `.dev.vars.example`, `.gitignore` และล้าง macOS metadata จาก Release package
+- Distributed Lock concurrent UAT และ Retry-to-DLQ UAT ยังไม่ปิดจนกว่า Deploy รุ่นนี้และทดสอบ Live รอบใหม่

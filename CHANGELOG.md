@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.5.3-cloudflare-fetch-context-fix — 2026-07-12
+
+### Fixed
+- Wrapped the default Cloudflare Workers `globalThis.fetch` with the correct runtime binding before storing it on `LarkBitableClient`.
+- Prevented injected Fetch implementations from being called with the `LarkBitableClient` instance as their accidental `this` value.
+- Added a regression test that reproduces the incorrect Fetch invocation context observed during Live Queue UAT.
+- Added the required `.dev.vars.example`, repository `.gitignore`, and removed macOS metadata from the release package.
+
+### Live UAT context
+- Main Queue routing and retry classification worked on Cloudflare DEV.
+- The first live Queue request failed before receiving an HTTP response from Lark with `LARK_NETWORK_ERROR`; this release addresses the runtime Fetch invocation defect before continuing Distributed Lock and DLQ UAT.
+
+### Verification target
+- 200 Node unit tests and 5 Workers-runtime tests.
+- Syntax, architecture, repository hygiene, public-registry lockfile, Wrangler dry-run, clean extracted ZIP retest.
+
 ## 0.5.2-portable-npm-lockfile — 2026-07-11
 
 ### Fixed

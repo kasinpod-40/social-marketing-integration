@@ -4,7 +4,7 @@
 
 ## Baseline ปัจจุบัน
 
-`v0.5.2-portable-npm-lockfile`
+`v0.5.3-cloudflare-fetch-context-fix`
 
 สถานะปัจจุบัน:
 
@@ -12,7 +12,7 @@
 - Production profile `chemistry_k` เตรียมไว้ใน Source code แต่ Production จริงต้องใช้ Lark Base, App, Cloud และบัญชี Social ที่ลูกค้าเป็นเจ้าของ
 - TikTok DEV Sync จริงผ่าน 20 Content + 20 Daily Snapshot แล้วก่อน Audit รอบนี้
 - v0.4.0 ผ่าน Live DEV gate แล้ว: รันซ้ำได้ `created=0`, `updated=0`, `skipped=20` ทั้ง Content และ Daily
-- v0.5.2 แก้ `package-lock.json` ให้ใช้ public npm registry แบบ portable และเพิ่ม hygiene guard; v0.5.1 แก้ Cloudflare deploy blockers: root Wrangler config, D1 primary/Lark mirror, chunk-aware partial writes, strict Queue/DLQ routing, lease renewal, scheduled producer และ Workers-runtime tests
+- v0.5.3 แก้ Cloudflare Worker outbound `fetch` ให้รักษา Runtime context ที่ถูกต้อง พร้อม regression test; v0.5.2 แก้ `package-lock.json` ให้ใช้ public npm registry แบบ portable และเพิ่ม hygiene guard
 
 
 ## Cloudflare DEV/Staging deployment gate
