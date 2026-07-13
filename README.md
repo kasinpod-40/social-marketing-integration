@@ -4,7 +4,7 @@
 
 ## Baseline ปัจจุบัน
 
-`v0.8.1-lark-schema-installer-safety-fix`
+`v0.8.2-lark-number-formatter-fix`
 
 สถานะปัจจุบัน:
 
@@ -17,14 +17,15 @@
 - v0.7.1 ซ่อม Report/Lock reliability: แยก failed กับ partial_success ตาม write progressจริง, ทำ Top Content limit ให้สอดคล้องและล้างอันดับเก่า, ตรวจ lease expiry, รักษา partial progress ระหว่าง chunk, จำแนก Lark 1254290 ถูกต้อง และป้องกัน Local lock renewal race
 - v0.7.2 ล็อก Scheduled Report ให้ใช้ “วันสมบูรณ์ล่าสุด” จาก `scheduledTime` ตาม Timezone พร้อม regression tests สำหรับข้ามเดือน/ปี/ปีอธิกสุรทิน และจัด Release package ให้ไม่มี Local Wrangler config หรือ macOS metadata
 - v0.8.0 เพิ่ม Lark Report Schema Installer แบบ Preview/Apply, Idempotent, ไม่ลบ Schema เดิม, Fail-closed เมื่อชน Field type และสร้าง 2 ตาราง Report output ผ่าน OpenAPI
+- v0.8.2 แก้ `WrongRequestBody` ของ Number field: Schema ใช้ Lark OpenAPI formatter enum (`1,000`, `0.0000`) และ Contract กลางแปลง legacy formatter ก่อน Create/Update
 - v0.8.1 แก้ `CheckboxFieldPropertyError`: Preview เป็น Read-only เสมอแม้ Shell มี `CONFIRM_WRITE=YES`, Apply ต้องใช้คำสั่งแยก, และ Field payload ใช้เฉพาะ OpenAPI property keys ที่รองรับ
 - Report schedule ยังปิดจนกว่าจะปรับ Lark schema/seed/UAT ตาม Blueprint
 
 
 
-## Lark Report Schema Installer v0.8.1
+## Lark Report Schema Installer v0.8.2
 
-อ่านรายละเอียดที่ `docs/lark-report-schema-installer-v0.8.1.md`
+อ่านรายละเอียดที่ `docs/lark-report-schema-installer-v0.8.2.md`
 
 Preview แบบ Read-only:
 

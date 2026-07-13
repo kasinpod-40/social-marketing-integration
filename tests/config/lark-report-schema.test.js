@@ -31,3 +31,14 @@ test('contains report output fields required by runtime contracts', () => {
   assert.equal(metricValues.fields.some((field) => field.fieldName === 'change_percent'), true);
   assert.equal(topContent.fields.some((field) => field.fieldName === 'performance_status'), true);
 });
+
+
+test('uses only Lark OpenAPI-compatible Number formatter enums', () => {
+  const allowed = new Set(['0', '0.0', '0.00', '0.000', '0.0000', '1,000', '1,000.00', '%', '0.00%']);
+  const numberFields = LARK_REPORT_SCHEMA.flatMap((table) => table.fields)
+    .filter((field) => field.type === 2 && field.property?.formatter);
+  assert.ok(numberFields.length > 0);
+  for (const field of numberFields) {
+    assert.equal(allowed.has(field.property.formatter), true, `${field.fieldName}: ${field.property.formatter}`);
+  }
+});

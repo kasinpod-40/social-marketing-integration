@@ -1,8 +1,8 @@
 # 10 — Next Actions
 
-## Current gate: Lark Report Schema Installer v0.8.1
+## Current gate: Lark Report Schema Installer v0.8.2
 
-Steps 1–6 are complete in Live DEV. v0.8.1 fixes Preview/Apply safety and the Lark Field mutation contract. Report schedule must remain disabled until every gate below passes.
+Steps 1–6 are complete in Live DEV. v0.8.2 fixes Number formatter request bodies after v0.8.1 Apply failed before the first action. Report schedule must remain disabled until every gate below passes.
 
 1. Run `npm run setup:report-schema` in Preview mode.
 2. Review `readyToApply`, `conflicts`, `warnings`, `manualActions`, and `environmentUpdates`.

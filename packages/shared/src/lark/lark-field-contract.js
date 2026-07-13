@@ -20,6 +20,23 @@ const PROPERTY_KEY_ALIASES = Object.freeze({
   filterInfo: 'filter_info',
 });
 
+
+const NUMBER_FORMATTER_ALIASES = Object.freeze({
+  '#,##0': '1,000',
+  '#,##0.00': '1,000.00',
+  '#,##0.0000': '0.0000',
+});
+
+/**
+ * แปลงรูปแบบ Number formatter จากรูปแบบ Spreadsheet/UI ให้เป็น enum ของ Lark OpenAPI
+ * Lark ไม่รับ pattern เช่น #,##0 ใน Field Create/Update API
+ */
+export function normalizeLarkNumberFormatter(value) {
+  if (typeof value !== 'string') return value;
+  const normalized = value.trim();
+  return NUMBER_FORMATTER_ALIASES[normalized] ?? normalized;
+}
+
 const OFFICIAL_PROPERTY_KEYS = new Set([
   'options',
   'formatter',
@@ -58,7 +75,10 @@ export function normalizeLarkFieldProperty(type, property) {
   for (const [rawKey, rawValue] of Object.entries(property)) {
     const key = PROPERTY_KEY_ALIASES[rawKey] ?? rawKey;
     if (!OFFICIAL_PROPERTY_KEYS.has(key) || rawValue === undefined) continue;
-    result[key] = structuredClone(rawValue);
+    const normalizedValue = key === 'formatter'
+      ? normalizeLarkNumberFormatter(rawValue)
+      : rawValue;
+    result[key] = structuredClone(normalizedValue);
   }
   return Object.keys(result).length > 0 ? Object.freeze(result) : null;
 }

@@ -275,7 +275,7 @@ export const LARK_REPORT_SCHEMA = deepFreeze([
         "primary": false,
         "description": "จำนวนทศนิยมที่แสดง",
         "property": {
-          "formatter": "#,##0"
+          "formatter": "1,000"
         }
       },
       {
@@ -299,7 +299,7 @@ export const LARK_REPORT_SCHEMA = deepFreeze([
         "primary": false,
         "description": "ลำดับ Metric",
         "property": {
-          "formatter": "#,##0"
+          "formatter": "1,000"
         }
       }
     ]
@@ -535,7 +535,7 @@ export const LARK_REPORT_SCHEMA = deepFreeze([
         "primary": false,
         "description": "จำนวนอันดับ",
         "property": {
-          "formatter": "#,##0"
+          "formatter": "1,000"
         }
       },
       {
@@ -833,7 +833,7 @@ export const LARK_REPORT_SCHEMA = deepFreeze([
         "primary": false,
         "description": "จำนวน Snapshot ที่ใช้",
         "property": {
-          "formatter": "#,##0"
+          "formatter": "1,000"
         }
       },
       {
@@ -843,7 +843,7 @@ export const LARK_REPORT_SCHEMA = deepFreeze([
         "primary": false,
         "description": "อัตราความครบ Baseline",
         "property": {
-          "formatter": "#,##0.0000"
+          "formatter": "0.0000"
         }
       }
     ]
@@ -961,7 +961,7 @@ export const LARK_REPORT_SCHEMA = deepFreeze([
         "primary": false,
         "description": "ค่าช่วงปัจจุบัน",
         "property": {
-          "formatter": "#,##0.0000"
+          "formatter": "0.0000"
         }
       },
       {
@@ -971,7 +971,7 @@ export const LARK_REPORT_SCHEMA = deepFreeze([
         "primary": false,
         "description": "ค่าช่วงเทียบ",
         "property": {
-          "formatter": "#,##0.0000"
+          "formatter": "0.0000"
         }
       },
       {
@@ -981,7 +981,7 @@ export const LARK_REPORT_SCHEMA = deepFreeze([
         "primary": false,
         "description": "ผลต่าง",
         "property": {
-          "formatter": "#,##0.0000"
+          "formatter": "0.0000"
         }
       },
       {
@@ -991,7 +991,7 @@ export const LARK_REPORT_SCHEMA = deepFreeze([
         "primary": false,
         "description": "สัดส่วนเปลี่ยน",
         "property": {
-          "formatter": "#,##0.0000"
+          "formatter": "0.0000"
         }
       },
       {
@@ -1077,7 +1077,7 @@ export const LARK_REPORT_SCHEMA = deepFreeze([
         "primary": false,
         "description": "ลำดับแสดง",
         "property": {
-          "formatter": "#,##0"
+          "formatter": "1,000"
         }
       },
       {
@@ -1149,7 +1149,7 @@ export const LARK_REPORT_SCHEMA = deepFreeze([
         "primary": false,
         "description": "จำนวน Snapshot",
         "property": {
-          "formatter": "#,##0"
+          "formatter": "1,000"
         }
       },
       {
@@ -1248,7 +1248,7 @@ export const LARK_REPORT_SCHEMA = deepFreeze([
         "primary": false,
         "description": "อันดับ",
         "property": {
-          "formatter": "#,##0"
+          "formatter": "1,000"
         }
       },
       {
@@ -1304,7 +1304,7 @@ export const LARK_REPORT_SCHEMA = deepFreeze([
         "primary": false,
         "description": "Views เพิ่ม",
         "property": {
-          "formatter": "#,##0"
+          "formatter": "1,000"
         }
       },
       {
@@ -1314,7 +1314,7 @@ export const LARK_REPORT_SCHEMA = deepFreeze([
         "primary": false,
         "description": "Likes เพิ่ม",
         "property": {
-          "formatter": "#,##0"
+          "formatter": "1,000"
         }
       },
       {
@@ -1324,7 +1324,7 @@ export const LARK_REPORT_SCHEMA = deepFreeze([
         "primary": false,
         "description": "Comments เพิ่ม",
         "property": {
-          "formatter": "#,##0"
+          "formatter": "1,000"
         }
       },
       {
@@ -1334,7 +1334,7 @@ export const LARK_REPORT_SCHEMA = deepFreeze([
         "primary": false,
         "description": "Shares เพิ่ม",
         "property": {
-          "formatter": "#,##0"
+          "formatter": "1,000"
         }
       },
       {
@@ -1344,7 +1344,7 @@ export const LARK_REPORT_SCHEMA = deepFreeze([
         "primary": false,
         "description": "Engagement เพิ่ม",
         "property": {
-          "formatter": "#,##0"
+          "formatter": "1,000"
         }
       },
       {
@@ -1354,7 +1354,7 @@ export const LARK_REPORT_SCHEMA = deepFreeze([
         "primary": false,
         "description": "Engagement rate",
         "property": {
-          "formatter": "#,##0.0000"
+          "formatter": "0.0000"
         }
       },
       {
@@ -1364,7 +1364,7 @@ export const LARK_REPORT_SCHEMA = deepFreeze([
         "primary": false,
         "description": "ยอดสะสมล่าสุด",
         "property": {
-          "formatter": "#,##0"
+          "formatter": "1,000"
         }
       },
       {

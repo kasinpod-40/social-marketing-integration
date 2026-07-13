@@ -953,6 +953,59 @@ test('serializes DateTime aliases into official snake_case property keys', async
   });
 });
 
+
+test('serializes Number formatter aliases into Lark OpenAPI enum values', async () => {
+  const requests = [];
+  const client = new LarkBitableClient({
+    appId: 'app-id', appSecret: 'app-secret', appToken: 'app-token', minRequestIntervalMs: 0,
+    fetchImpl: async (url, options) => {
+      if (String(url).includes('tenant_access_token')) {
+        return new Response(JSON.stringify({ code: 0, tenant_access_token: 'token', expire: 7200 }), { status: 200 });
+      }
+      requests.push(JSON.parse(options.body));
+      return new Response(JSON.stringify({
+        code: 0,
+        data: { field: { field_id: 'fldNumber', field_name: 'decimal_places', type: 2 } },
+      }), { status: 200 });
+    },
+  });
+
+  await client.createField({
+    tableId: 'tbl1',
+    field: {
+      fieldName: 'decimal_places',
+      type: 2,
+      uiType: 'Number',
+      property: { formatter: '#,##0' },
+    },
+  });
+  await client.updateField({
+    tableId: 'tbl1',
+    fieldId: 'fldNumber',
+    field: {
+      fieldName: 'ratio_value',
+      type: 2,
+      uiType: 'Number',
+      property: { formatter: '#,##0.0000' },
+    },
+  });
+
+  assert.deepEqual(requests, [
+    {
+      field_name: 'decimal_places',
+      type: 2,
+      ui_type: 'Number',
+      property: { formatter: '1,000' },
+    },
+    {
+      field_name: 'ratio_value',
+      type: 2,
+      ui_type: 'Number',
+      property: { formatter: '0.0000' },
+    },
+  ]);
+});
+
 test('omits unsupported UI-only URL property metadata', async () => {
   const requests = [];
   const client = new LarkBitableClient({

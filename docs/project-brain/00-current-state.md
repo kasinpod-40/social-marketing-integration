@@ -2,7 +2,7 @@
 
 ## Current release candidate
 
-`v0.8.1-lark-schema-installer-safety-fix` — 2026-07-13
+`v0.8.2-lark-number-formatter-fix` — 2026-07-13
 
 ## Live-complete scope
 
@@ -10,6 +10,13 @@
 - Live DEV gate, canonical keys, idempotency, reconciliation, Sync Log, D1 distributed lock, retry/DLQ/System Alerts.
 - Scheduled + incremental TikTok sync with D1 cursor/fingerprint and 24-hour full reconciliation.
 
+
+## v0.8.2 Lark Number Formatter Fix
+
+- Number field formatter ใช้ OpenAPI enum `1,000` และ `0.0000`
+- Legacy aliases `#,##0` / `#,##0.0000` ถูก normalize ที่ Shared contract ก่อนส่ง API
+- Apply รอบ v0.8.1 ล้มที่ Action แรก (`appliedActionCount=0`) จึงไม่ต้อง rollback
+- Report schedules ยังคงปิดจน Schema Apply, Seed และ Manual UAT ผ่าน
 
 ## v0.8.1 Lark Report Schema Installer Safety Fix
 

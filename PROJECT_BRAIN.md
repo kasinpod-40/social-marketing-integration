@@ -4,11 +4,11 @@
 This project connects social organic and paid ads data into Lark Base for reporting, daily snapshots, monitoring, and AI summaries. The implementation target is a lean MVP using Cloudflare Workers, Cloudflare D1, Cloudflare Queues, Lark Base, Lark Native Integrations where useful, and JavaScript.
 
 ## Current project status
-Current audited release candidate: `v0.8.1-lark-schema-installer-safety-fix`
+Current audited release candidate: `v0.8.2-lark-number-formatter-fix`
 
-Package verification target: `281` Node unit/integration tests + `6` Workers-runtime tests, Wrangler 4.110.0 dry-run, syntax/architecture/repository hygiene, npm audit, tracked-local-config guard และ extracted ZIP retest. Live Cloudflare DEV ผ่าน Queue, Reconciliation, Distributed Lock, Retry/DLQ/System Alerts และ Scheduled Sync แล้ว.
+Package verification target: `285` Node unit/integration tests + `6` Workers-runtime tests, Wrangler 4.110.0 dry-run, syntax/architecture/repository hygiene, npm audit, tracked-local-config guard และ extracted ZIP retest. Live Cloudflare DEV ผ่าน Queue, Reconciliation, Distributed Lock, Retry/DLQ/System Alerts และ Scheduled Sync แล้ว.
 
-**v0.8.1-lark-schema-installer-safety-fix — แก้ Preview/Apply safety และ Lark Field payload contract โดย Preview ไม่เขียนแม้มี ambient confirmation และ Checkbox/URL/Text ไม่ส่ง property ที่ OpenAPI ไม่รองรับ; Report schedule ยังต้องคงปิดจนกว่า Apply, Seed และ Live UAT จะผ่าน.**
+**v0.8.2-lark-number-formatter-fix — แก้ Number Field Create/Update ให้ใช้ formatter enum ของ Lark OpenAPI (`1,000`, `0.0000`) แทน spreadsheet pattern ที่ทำให้ `WrongRequestBody`; Report schedule ยังต้องคงปิดจนกว่า Apply, Seed และ Live UAT จะผ่าน.**
 
 Completed in Lark:
 - Created Lark Base: `Social MKT Data Hub`.
@@ -35,6 +35,13 @@ Completed Live Cloudflare DEV reliability UAT:
 - D1 Distributed Lock collision/retry/cleanup ผ่าน
 - Retry exhaustion -> DLQ -> D1/Lark System Alert ผ่าน
 - Scheduled TikTok Sync ผ่านต่อเนื่อง 3 รอบโดยไม่เขียนซ้ำ
+
+Completed in v0.8.2 Number formatter fix:
+
+- Report Schema Number fields use official Lark formatter enums instead of spreadsheet patterns.
+- Shared Field contract normalizes legacy `#,##0` / `#,##0.0000` values before Create/Update.
+- Every Number formatter in the five-table schema is regression-tested against an allowlist.
+- The observed v0.8.1 Apply failed before any action (`appliedActionCount=0`), so v0.8.2 can be applied without rollback.
 
 Completed in v0.8.1 schema installer safety fix:
 

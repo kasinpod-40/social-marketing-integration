@@ -2,4 +2,4 @@
  * เวอร์ชัน Baseline ปัจจุบันของ Source code
  * ใช้จุดเดียวใน Runtime response และมี Test ตรวจว่าตรงกับ package.json
  */
-export const BUILD_VERSION = '0.8.1-lark-schema-installer-safety-fix';
+export const BUILD_VERSION = '0.8.2-lark-number-formatter-fix';

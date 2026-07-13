@@ -33,3 +33,11 @@ Production access and app review are not included in the 14-day dev estimate. Us
 
 ## Known risk: partial platform failures
 One platform failure must not block other platforms. Mitigation: platform-scoped jobs, retry, DLQ, and sync logs.
+
+
+## Lark Number field `WrongRequestBody` (v0.8.1 Apply)
+
+- Symptom: `1254001 WrongRequestBody` on `decimal_places` with `appliedActionCount=0`.
+- Root cause: Report Schema used spreadsheet patterns (`#,##0`, `#,##0.0000`) instead of Lark OpenAPI formatter enums.
+- Fix in v0.8.2: use `1,000` for grouped integers and `0.0000` for four decimal places; normalize legacy aliases in the shared Field contract.
+- Recovery: upgrade, Preview, then Apply again. No rollback is required when applied action count is zero.

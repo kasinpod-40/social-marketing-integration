@@ -1,6 +1,6 @@
 {
   "name": "social-marketing-integration",
-  "version": "0.8.1-lark-schema-installer-safety-fix",
+  "version": "0.8.2-lark-number-formatter-fix",
   "private": true,
   "type": "module",
   "engines": {

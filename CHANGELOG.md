@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.8.2-lark-number-formatter-fix — 2026-07-13
+
+### Fixed
+- Replaced spreadsheet-style Number formatter patterns (`#,##0`, `#,##0.0000`) with Lark OpenAPI formatter enums (`1,000`, `0.0000`) across the versioned Report Schema.
+- Added a shared Number-formatter compatibility layer so legacy aliases are normalized before Field Create/Update requests.
+- Added regression coverage for every Number field in the five-table Report Schema and for the exact Lark mutation request body.
+- A failed v0.8.1 Apply with `appliedActionCount=0` can be retried safely after upgrading; no rollback is required.
+
+### Verification target
+- `285` Node unit/integration tests and `6` Workers-runtime tests.
+- `70` source files, `151` local dependencies, 0 cycles, repository hygiene, npm audit, Wrangler dry-run, and clean extracted ZIP retest.
+
 ## 0.8.1-lark-schema-installer-safety-fix — 2026-07-13
 
 ### Fixed
