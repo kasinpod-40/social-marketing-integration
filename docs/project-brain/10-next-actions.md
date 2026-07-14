@@ -20,7 +20,7 @@ CONFIRM_WRITE=YES npm run setup:report-views:apply
 npm run setup:report-views
 ```
 
-Final Preview on 2026-07-14 showed zero create/update actions and zero conflicts. Follow each `VIEW_HIDDEN_FIELDS_REVIEW_REQUIRED` manual action and set `rank` ascending for:
+Final Preview on 2026-07-14 showed zero create/update actions and zero conflicts. Filter and Hidden fields are installed. Set `rank` ascending for:
 
 - `📊 Client Metrics` (safe combined default)
 - `📊 Daily Metrics`
@@ -29,7 +29,7 @@ Final Preview on 2026-07-14 showed zero create/update actions and zero conflicts
 - `🏆 Daily Top Content`
 - `🏅 Weekly Top Content`
 
-### 2. Enable and deploy scheduled reports
+### 2. Enable and deploy scheduled reports — completed
 
 ```bash
 npm run enable:tiktok-report-schedules
@@ -37,10 +37,11 @@ CONFIRM_WRITE=YES npm run enable:tiktok-report-schedules:apply
 npx wrangler deploy --config wrangler.sync.jsonc
 ```
 
-Confirm local config has both flags `true`, remains untracked, and Worker deploy succeeds.
+Both flags are `true`; Worker version `ba6f3968-628c-4c61-b7eb-62647b38f547` deployed successfully on 2026-07-14.
 
 ### 3. Operational observation
 
+- First post-deploy cron passed at 22:01 Asia/Bangkok with `status=success`, `skipped=40`, and no error.
 - Observe a scheduled Daily report at 08:10 Asia/Bangkok.
 - Observe a scheduled Weekly report on Monday at 08:15 Asia/Bangkok.
 - No manual failure injection is required; deterministic tests cover first-write failure and partial-write/retry safety.

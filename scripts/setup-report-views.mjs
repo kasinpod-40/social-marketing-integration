@@ -63,7 +63,7 @@ async function main() {
   const result = await applyLarkReportViews({ client, env });
   printJson({
     ...result,
-    note: 'View API สร้าง View และติดตั้ง Filter แล้ว; Hidden fields, Sort rank และ Advanced Permission ให้ทำตาม manualActions ใน Lark UI',
+    note: 'View API ติดตั้ง Filter และ Hidden fields แล้ว; Sort rank และ Advanced Permission ให้ทำตาม manualActions ใน Lark UI',
   });
 }
 

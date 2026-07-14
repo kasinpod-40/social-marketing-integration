@@ -25,8 +25,8 @@ Detailed evidence: `../tiktok-organic-dev-closeout-v0.9.0.md`
 - Focused Report reliability: 51/51
 - Architecture: 77 source files / 168 local dependencies / 0 cycles
 - Repository hygiene and npm audit 0 passed
-- Wrangler 4.110.0 dry-run: 362.96 KiB / gzip 74.63 KiB
-- Clean extracted-ZIP retest remains the final package gate
+- Wrangler 4.110.0 dry-run/deploy: 363.52 KiB / gzip 74.69 KiB; Worker startup 1 ms
+- Clean extracted-ZIP retest passed: `npm ci`, check/hygiene, unit 312/312, Workers 6/6, and Report reliability 51/51
 
 ## v0.9.5 closeout tooling
 
@@ -34,19 +34,18 @@ Detailed evidence: `../tiktok-organic-dev-closeout-v0.9.0.md`
 - Live v0.9.0–v0.9.4 attempts failed with generic `1254001`; earlier root-cause claims were hypotheses, not confirmed facts.
 - v0.9.5 sends only request fields (`field_id`, `operator`, `value`) and preserves Checkbox values as JSON booleans such as `[true]`.
 - The verifier hydrates each managed View through Get View because this tenant's List Views response omits `property`.
-- Existing View updates omit `view_name` and `hidden_fields`; missing Views are created first, then filtered separately.
-- Hidden fields and `rank` sort are manual Lark UI actions. The installer reports exact field names per View.
-- Preview compares only Filter state, remains read-only, never deletes Views/records, and safely resumes if Create succeeds before Filter PATCH fails.
+- Existing View updates omit `view_name`; Filter and Hidden fields are applied in separate requests.
+- Preview compares Filter and Hidden-field state, remains read-only, never deletes Views/records, and safely resumes if Create succeeds before a later mutation fails.
+- `rank` sort and Advanced Permission remain Lark UI actions because View OpenAPI has no Sort mutation contract.
 - `enable:tiktok-report-schedules` validates and atomically enables Daily/Weekly report flags in local `wrangler.sync.jsonc`.
 - Both tools require explicit Apply command plus `CONFIRM_WRITE=YES` for mutation.
 
 ## Live activation status
 
-Client View Apply is complete: all six Views exist, Get View confirms their Filters, and Final Preview reports zero actions/conflicts. Remaining operational activation is:
+Client View Apply is complete: all six Views exist, Get View confirms their Filters/Hidden fields, and Final Preview reports zero actions/conflicts. Schedule flags are enabled and Worker version `ba6f3968-628c-4c61-b7eb-62647b38f547` is deployed. Remaining operational activation is:
 
-1. Hide the fields listed by `VIEW_HIDDEN_FIELDS_REVIEW_REQUIRED` and set rank ascending in the six managed Views.
-2. Enable report schedule flags through the guarded activator.
-3. Deploy `wrangler.sync.jsonc` and observe scheduled Daily/Weekly producers.
+1. Set rank ascending in the six managed Views and review Advanced Permission.
+2. The first post-deploy cron completed `success` at 22:01 Asia/Bangkok (`skipped=40`, no error). Observe the naturally due Daily/Weekly outputs at their configured times as ongoing operations.
 
 These are deployment/observation steps, not unfinished connector logic.
 

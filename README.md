@@ -23,7 +23,8 @@
 - v0.9.0 เพิ่ม Client View installer และ guarded local schedule activator เพื่อปิดงานโดยไม่แก้ Lark/Config ด้วยมือเกินจำเป็น
 - v0.9.1–v0.9.3 เป็นการแก้ตามสมมติฐานทีละจุด แต่ Live tenant ยังปฏิเสธ combined View PATCH ด้วย `1254001`; จึงไม่ถือว่าสาเหตุใดได้รับการยืนยันจาก Live Apply
 - v0.9.5 แก้ View PATCH ตาม request contract จริง: ไม่ส่ง response-only `field_type`/`condition_omitted`, ส่ง Checkbox เป็น `[true]`, และใช้ Get View ตรวจ Filter เพราะ List Views ของ tenant ไม่คืน `property`
-- Live Apply สร้าง/อัปเดต Client Views ครบ 6 รายการแล้ว และ Final Preview เป็น `create=0`, `update=0`, `conflicts=0`
+- Live Apply สร้าง/อัปเดต Client Views ครบ 6 รายการ ติดตั้ง Filter และ Hidden fields แล้ว และ Final Preview เป็น `create=0`, `update=0`, `conflicts=0`
+- Daily/Weekly schedules เปิดและ deploy ไปยัง `social-mkt-sync-worker` แล้วเมื่อ 2026-07-14
 - Customer Production setup ยังไม่รวมใน Release นี้และต้องใช้ทรัพยากรของลูกค้า
 
 
@@ -48,7 +49,7 @@ CONFIRM_WRITE=YES npm run enable:tiktok-report-schedules:apply
 npx wrangler deploy --config wrangler.sync.jsonc
 ```
 
-Preview ทั้งสองคำสั่งเป็น Read-only เสมอ. View installer สร้างชื่อ/ชนิด View และ PATCH เฉพาะ Filter; Hidden fields กับ `rank` ascending ของทั้ง 6 Views ให้ทำตาม `manualActions` ใน Lark UI. Production permissions เป็นขั้นตอน customer-owned deployment.
+Preview ทั้งสองคำสั่งเป็น Read-only เสมอ. View installer สร้างชื่อ/ชนิด View แล้ว PATCH Filter กับ Hidden fields แยก request; `rank` ascending ของทั้ง 6 Views และ Production permissions ยังเป็นงานใน Lark UI.
 
 Focused Report gate:
 

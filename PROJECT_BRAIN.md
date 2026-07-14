@@ -6,17 +6,17 @@ This project connects social organic and paid ads data into Lark Base for report
 ## Current project status
 Current audited release candidate: `v0.9.5-lark-view-live-verified`
 
-TikTok Organic DEV ingestion/report logic ผ่าน Live Queue UAT และ Reliability UAT แล้ว. Client Views ทั้ง 6 รายการสร้างและติดตั้ง Filter สำเร็จใน Live Lark Base โดย Final Preview เป็นศูนย์ actions/conflicts; เหลือตั้ง Hidden fields/Sort ใน Lark UI และเปิด Report schedules ใน Local config ก่อน Deploy. ตัวเลข package verification ล่าสุดให้ยึดผลจาก release gate ของ working tree ปัจจุบัน.
+TikTok Organic DEV ingestion/report logic ผ่าน Live Queue UAT และ Reliability UAT แล้ว. Client Views ทั้ง 6 รายการติดตั้ง Filter/Hidden fields สำเร็จและ Final Preview เป็นศูนย์ actions/conflicts. Daily/Weekly schedules เปิดและ deploy ไปยัง Cloudflare DEV แล้ว; เหลือ Sort และ Advanced Permission ใน Lark UI พร้อม operational observation ของรอบ schedule.
 
 **v0.9.5-lark-view-live-verified — Root cause ที่ยืนยันแล้วคือ request ส่ง response-only fields และ encode Checkbox ผิดชนิด. PATCH ปัจจุบันส่งเฉพาะ `field_id`/`operator`/`value`, Checkbox เป็น `[true]`, และ verifier ใช้ Get View เพราะ List Views ไม่คืน Filter property. Live View ทั้ง 6 รายการตรง Contract แล้ว.**
 
 **v0.9.0-tiktok-organic-dev-complete — ปิด TikTok Organic DEV logic และ Live UAT: Daily/Weekly reports, idempotency, partial baseline, stale-rank cleanup/restore และ report lock retry ผ่านแล้ว; เพิ่ม Client View installer, guarded schedule activator และ closeout runbook.**
 
 Final operational activation on the developer machine:
-- `npm run setup:report-views` → guarded Apply → zero-action Preview
-- hide technical fields from `manualActions` and set rank ascending in six managed Lark client views
-- `npm run enable:tiktok-report-schedules` → guarded Apply → deploy local Wrangler config
-- observe the next scheduled Daily/Weekly producer
+- completed: guarded Client View Apply → Filter/Hidden fields → zero-action Preview
+- completed: guarded schedule activation and Cloudflare deployment
+- remaining UI: set rank ascending in six managed Lark client views and review Advanced Permission
+- remaining observation: confirm scheduled producer results
 
 Failure/partial-write semantics are covered by deterministic regression tests rather than destructive live corruption. Weekly complete baseline is an operational observation after enough snapshots accumulate, not a code-release blocker.
 

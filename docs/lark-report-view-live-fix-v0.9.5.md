@@ -25,6 +25,7 @@ This tenant's List Views endpoint returns View identity but omits `property`. Th
 - Updated `📊 Client Metrics` and `🏆 Top Content`.
 - Created and filtered `📊 Daily Metrics`, `📈 Weekly Metrics`, `🏆 Daily Top Content`, and `🏅 Weekly Top Content`.
 - Get View confirmed all Checkbox and SingleSelect Filters.
+- Filter and Hidden fields are applied in separate PATCH requests and verified idempotently.
 - Final Preview: `createViews=0`, `updateViews=0`, `conflicts=0`, `warnings=0`.
 
-Hidden fields, `rank` ascending Sort, and customer Production permissions remain explicit Lark UI actions reported by `manualActions`.
+`rank` ascending Sort and customer Production permissions remain explicit Lark UI actions reported by `manualActions`.
