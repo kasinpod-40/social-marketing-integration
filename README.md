@@ -4,7 +4,7 @@
 
 ## Baseline ปัจจุบัน
 
-`v0.8.2-lark-number-formatter-fix`
+`v0.9.5-lark-view-live-verified`
 
 สถานะปัจจุบัน:
 
@@ -19,9 +19,42 @@
 - v0.8.0 เพิ่ม Lark Report Schema Installer แบบ Preview/Apply, Idempotent, ไม่ลบ Schema เดิม, Fail-closed เมื่อชน Field type และสร้าง 2 ตาราง Report output ผ่าน OpenAPI
 - v0.8.2 แก้ `WrongRequestBody` ของ Number field: Schema ใช้ Lark OpenAPI formatter enum (`1,000`, `0.0000`) และ Contract กลางแปลง legacy formatter ก่อน Create/Update
 - v0.8.1 แก้ `CheckboxFieldPropertyError`: Preview เป็น Read-only เสมอแม้ Shell มี `CONFIRM_WRITE=YES`, Apply ต้องใช้คำสั่งแยก, และ Field payload ใช้เฉพาะ OpenAPI property keys ที่รองรับ
-- Report schedule ยังปิดจนกว่าจะปรับ Lark schema/seed/UAT ตาม Blueprint
+- TikTok Organic DEV Daily/Weekly Report ผ่าน Live UAT, idempotency, partial-baseline, stale-rank cleanup/restore และ report lock retry แล้ว
+- v0.9.0 เพิ่ม Client View installer และ guarded local schedule activator เพื่อปิดงานโดยไม่แก้ Lark/Config ด้วยมือเกินจำเป็น
+- v0.9.1–v0.9.3 เป็นการแก้ตามสมมติฐานทีละจุด แต่ Live tenant ยังปฏิเสธ combined View PATCH ด้วย `1254001`; จึงไม่ถือว่าสาเหตุใดได้รับการยืนยันจาก Live Apply
+- v0.9.5 แก้ View PATCH ตาม request contract จริง: ไม่ส่ง response-only `field_type`/`condition_omitted`, ส่ง Checkbox เป็น `[true]`, และใช้ Get View ตรวจ Filter เพราะ List Views ของ tenant ไม่คืน `property`
+- Live Apply สร้าง/อัปเดต Client Views ครบ 6 รายการแล้ว และ Final Preview เป็น `create=0`, `update=0`, `conflicts=0`
+- Customer Production setup ยังไม่รวมใน Release นี้และต้องใช้ทรัพยากรของลูกค้า
 
 
+
+## TikTok Organic DEV Closeout v0.9.5
+
+หลักฐาน Live UAT อยู่ที่ `docs/tiktok-organic-dev-closeout-v0.9.0.md` และรายละเอียด View PATCH ที่ยืนยันกับ Live tenant อยู่ที่ `docs/lark-report-view-live-fix-v0.9.5.md`; เอกสาร v0.9.1–v0.9.4 เก็บไว้เป็นประวัติของสมมติฐานก่อนยืนยันสาเหตุจริง.
+
+ติดตั้ง/ตรวจ Client Views:
+
+```bash
+npm run setup:report-views
+CONFIRM_WRITE=YES npm run setup:report-views:apply
+npm run setup:report-views
+```
+
+เปิด Daily/Weekly report schedules ใน local config หลัง View ผ่าน:
+
+```bash
+npm run enable:tiktok-report-schedules
+CONFIRM_WRITE=YES npm run enable:tiktok-report-schedules:apply
+npx wrangler deploy --config wrangler.sync.jsonc
+```
+
+Preview ทั้งสองคำสั่งเป็น Read-only เสมอ. View installer สร้างชื่อ/ชนิด View และ PATCH เฉพาะ Filter; Hidden fields กับ `rank` ascending ของทั้ง 6 Views ให้ทำตาม `manualActions` ใน Lark UI. Production permissions เป็นขั้นตอน customer-owned deployment.
+
+Focused Report gate:
+
+```bash
+npm run test:report-reliability
+```
 
 ## Lark Report Schema Installer v0.8.2
 

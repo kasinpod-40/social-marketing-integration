@@ -1,5 +1,107 @@
 # Changelog
 
+## 0.9.5-lark-view-live-verified — 2026-07-14
+
+### Fixed
+- Matched the official Update View request contract: filter conditions now send only `field_id`, `operator`, and `value`; response-only `field_type` and `condition_omitted` are never echoed into PATCH.
+- Preserved Checkbox values as JSON booleans, so the encoded filter value is `[true]` instead of `["true"]`.
+- Added `getView()` hydration because this Lark tenant's List Views endpoint omits `property`; idempotent verification now reads the full Filter state from Get View.
+- Kept Filter mutation isolated from manual Hidden-field, Sort, and Production permission work.
+
+### Live verification
+- Updated the two existing combined Views and created the four Daily/Weekly Views in the developer Lark Base.
+- Get View confirmed all six Filters, including Checkbox and SingleSelect option-ID conditions.
+- Final read-only Preview: `createViews=0`, `updateViews=0`, `conflicts=0`, `warnings=0`.
+- Verification: Node unit/integration 312/312, Workers runtime 6/6, focused View 55/55, Report reliability 51/51, syntax pass, and Architecture 77 source files / 168 local dependencies / 0 cycles.
+- Idempotent live Apply rerun completed with `ok=true`, `plannedActions=0`, and zero remaining actions/conflicts.
+
+## 0.9.4-lark-view-filter-only-patch — 2026-07-14
+
+### Fixed
+- Historical failed hypothesis: serialized `field_type` and `condition_omitted` into the request. Live v0.9.4 still failed with `1254001`; v0.9.5 removed these response-only fields.
+- Replaced the combined View PATCH with a minimal filter-only PATCH. Existing View updates no longer send `view_name` or `hidden_fields`; missing Views are created first, then filtered in a separate request.
+- Delegated Hidden fields and Sort to explicit `manualActions`, preventing presentation settings from blocking report filtering.
+- Preview idempotency now compares only the managed Filter contract, so manual Hidden-field choices do not produce endless update plans.
+- Added partial-create diagnostics (`viewCreatedBeforeFailure`, `createdViewId`, `viewMutationStage`) so a Create-success/PATCH-failure can resume safely on the next run.
+- Corrected prior release notes: v0.9.1–v0.9.3 were hypotheses tested against a generic `1254001`; none was confirmed because the live tenant continued rejecting the first combined View PATCH.
+
+### Verification
+- Focused View/client tests cover string `field_type`, `condition_omitted`, filter-only mutation, manual Hidden-field actions, idempotency, and partial-create recovery.
+- 310 Node unit/integration tests, 6 Workers-runtime tests, and focused Report reliability 51/51.
+- Architecture audit: 77 source files / 168 local dependencies / 0 cycles; repository hygiene and npm audit 0 passed.
+- Wrangler 4.110.0 dry-run passed; Worker bundle 362.96 KiB / gzip 74.63 KiB.
+- Clean extracted-ZIP retest is part of the release gate.
+
+## 0.9.3-lark-view-primary-field-fix — 2026-07-14
+
+### Fixed
+- Attempted to remove each table's Primary/Index field from `property.hidden_fields`; the live tenant still rejected the first combined PATCH, so this was not the complete root cause.
+- Removed both Primary fields from the managed Client View hidden-field contract.
+- Added a runtime safety guard that detects any Primary field requested for hiding, excludes it from the PATCH body, and emits `VIEW_PRIMARY_FIELD_CANNOT_BE_HIDDEN` instead of sending an invalid mutation.
+- Kept the official View PATCH shape from v0.9.2: `view_name`, `property.filter_info`, JSON-array filter values, and non-primary `hidden_fields` only.
+- The failed v0.9.2 Apply reported `appliedActionCount=0`, so no View was changed and no rollback is required.
+
+### Verification
+- Added regression coverage proving Primary fields never reach `hidden_fields`.
+- 308 Node unit/integration tests, 6 Workers-runtime tests, and focused Report reliability 51/51.
+- Architecture audit: 77 source files / 168 local dependencies / 0 cycles; repository hygiene, npm audit 0, and Wrangler dry-run passed.
+- Worker dry-run bundle: 362.69 KiB / gzip 74.56 KiB.
+- Clean extracted ZIP retest is part of the release gate.
+
+## 0.9.2-lark-view-patch-request-fix — 2026-07-13
+
+### Fixed
+- Attempted to remove numeric `field_type` from View PATCH conditions. Live Apply still failed, and v0.9.4 later aligned the field with the generated SDK schema as a string.
+- Preserved numeric field type internally for filter validation, Checkbox/SingleSelect value resolution, response normalization, and idempotent Preview comparison.
+- Kept filter values as JSON-array strings (`["true"]`, `["opt..."]`) and kept live SingleSelect option-ID resolution from v0.9.1.
+- Added safe `viewMutationBody` diagnostics to View PATCH errors so any future contract mismatch exposes the exact non-secret request body.
+- A failed v0.9.1 Apply with `appliedActionCount=0` changed no View and requires no rollback.
+
+### Verification
+- 307 Node unit/integration tests and 6 Workers-runtime tests.
+- Focused Report reliability suite 51/51.
+- 77 source files, 168 local dependencies, 0 cycles, repository hygiene, npm audit 0, Wrangler dry-run.
+- Worker dry-run bundle: 362.69 KiB / gzip 74.56 KiB.
+- Clean extracted ZIP retest is part of the release gate.
+
+## 0.9.1-lark-report-view-filter-fix — 2026-07-13
+
+### Fixed
+- Attempted to add numeric `field_type`; the generated SDK model later showed the field is represented as a string, and the combined mutation still failed live.
+- Encoded each View filter `value` as a JSON-array string instead of sending a raw scalar.
+- Resolved SingleSelect contract names to the live Lark option IDs before mutation; missing or duplicate options now fail closed during Preview.
+- Canonicalized Checkbox values and live View responses so Preview after Apply is idempotent across string/boolean response shapes.
+- Included the managed View name in PATCH mutations and preserved the existing no-delete, explicit Preview/Apply safety model.
+- A failed v0.9.0 View Apply with `appliedActionCount=0` changed no View and can be retried safely after upgrading.
+
+### Verification target
+- 305 Node unit/integration tests and 6 Workers-runtime tests.
+- Focused Report reliability suite 51/51.
+- 77 source files, 168 local dependencies, 0 cycles, repository hygiene, npm audit 0, Wrangler dry-run, and clean extracted ZIP retest.
+
+## 0.9.0-tiktok-organic-dev-complete — 2026-07-13
+
+### Added
+- Added idempotent Lark Report Client View installer for Daily/Weekly Metrics and Top Content.
+- Added Lark View API adapters for list/create/patch with pagination, filter, and hidden-field contracts.
+- Added guarded local Report Schedule activator that validates DEV prerequisites and atomically enables Daily/Weekly flags.
+- Added focused `test:report-reliability` suite and TikTok Organic DEV closeout evidence/runbook.
+
+### Verified
+- Live Daily/Weekly creation and idempotent reruns.
+- Expected partial weekly baseline, fixed-rank stale cleanup/restore, and report lock collision/retry without duplicates.
+- Deterministic tests distinguish first-table failure from later partial writes and preserve retry idempotency.
+
+### Operations
+- Client View sort and customer-role permissions remain explicit Lark UI/Production setup actions because they are outside the current View API mutation contract.
+- Example report schedule flags remain disabled by default; the guarded activator changes only local `wrangler.sync.jsonc`.
+- Customer Production deployment remains out of this DEV release scope.
+
+### Verification target
+- 303 Node unit/integration tests and 6 Workers-runtime tests.
+- Focused Report reliability suite 51/51.
+- 77 source files, 168 local dependencies, 0 cycles, repository hygiene, npm audit 0, Wrangler dry-run, and clean extracted ZIP retest.
+
 ## 0.8.2-lark-number-formatter-fix — 2026-07-13
 
 ### Fixed

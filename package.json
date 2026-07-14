@@ -1,6 +1,6 @@
 {
   "name": "social-marketing-integration",
-  "version": "0.8.2-lark-number-formatter-fix",
+  "version": "0.9.5-lark-view-live-verified",
   "private": true,
   "type": "module",
   "engines": {
@@ -18,7 +18,12 @@
     "deploy:dry-run": "wrangler deploy --dry-run --config wrangler.sync.example.jsonc",
     "seed:report-settings": "node scripts/seed-report-settings.mjs",
     "setup:report-schema": "node scripts/setup-report-schema.mjs",
-    "setup:report-schema:apply": "node scripts/setup-report-schema.mjs --apply"
+    "setup:report-schema:apply": "node scripts/setup-report-schema.mjs --apply",
+    "test:report-reliability": "node --test tests/application/calculate-tiktok-organic-report.test.js tests/application/generate-tiktok-organic-report.test.js tests/application/queue-job.test.js tests/application/report-config-loaders.test.js tests/application/report-output-rows.test.js tests/application/report-period.test.js tests/application/report-snapshot.test.js tests/application/tiktok-organic-report-source.test.js tests/reliability/reliable-sync-runner.test.js tests/application/scheduled-jobs.test.js",
+    "setup:report-views": "node scripts/setup-report-views.mjs",
+    "setup:report-views:apply": "node scripts/setup-report-views.mjs --apply",
+    "enable:tiktok-report-schedules": "node scripts/enable-tiktok-report-schedules.mjs",
+    "enable:tiktok-report-schedules:apply": "node scripts/enable-tiktok-report-schedules.mjs --apply"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.18.4",

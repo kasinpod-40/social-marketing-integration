@@ -41,3 +41,14 @@ One platform failure must not block other platforms. Mitigation: platform-scoped
 - Root cause: Report Schema used spreadsheet patterns (`#,##0`, `#,##0.0000`) instead of Lark OpenAPI formatter enums.
 - Fix in v0.8.2: use `1,000` for grouped integers and `0.0000` for four decimal places; normalize legacy aliases in the shared Field contract.
 - Recovery: upgrade, Preview, then Apply again. No rollback is required when applied action count is zero.
+
+
+## Lark View PATCH `WrongRequestBody` (v0.9.0–v0.9.4)
+
+- Symptom: every live Apply failed on the first existing View with Lark `1254001 WrongRequestBody`; `appliedActionCount=0` each time.
+- v0.9.1–v0.9.3 changed value encoding, `field_type`, and Primary hidden-field handling one hypothesis at a time. Because the tenant continued rejecting the first combined PATCH, none of those hypotheses is considered a confirmed standalone root cause.
+- Safe evidence: `details.viewMutationBody` exposes the exact non-secret outgoing body.
+- Confirmed root cause in v0.9.5: `field_type` and `condition_omitted` are response-only and must not be echoed into Update View; Checkbox must be encoded as boolean `[true]`, not string `["true"]`.
+- Verification fix: this tenant's List Views response omits `property`, so the installer uses Get View before comparing Filter state.
+- Live recovery completed: two existing Views were updated, four missing Views were created, and Final Preview reports zero actions/conflicts.
+- Limitation: Hidden-field/API behavior may vary by tenant; presentation settings are intentionally kept outside the blocking automation path.

@@ -77,7 +77,7 @@
     "MKT_CONNECTOR_CHATWOOT_ENABLED": "false",
 
     "MKT_SCHEDULE_TIKTOK_ENABLED": "true",
-    // Report schedule ปิดไว้จนกว่า Lark Report schema/seed/UAT จะเสร็จ
+    // Safe default: ปิดไว้สำหรับการติดตั้งใหม่; หลัง Schema/Seed/UAT ผ่านให้ใช้ npm run enable:tiktok-report-schedules
     "MKT_SCHEDULE_DAILY_REPORT_ENABLED": "false",
     "MKT_SCHEDULE_WEEKLY_REPORT_ENABLED": "false",
     "MKT_DAILY_REPORT_TIME": "08:10",

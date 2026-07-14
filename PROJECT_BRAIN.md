@@ -4,9 +4,21 @@
 This project connects social organic and paid ads data into Lark Base for reporting, daily snapshots, monitoring, and AI summaries. The implementation target is a lean MVP using Cloudflare Workers, Cloudflare D1, Cloudflare Queues, Lark Base, Lark Native Integrations where useful, and JavaScript.
 
 ## Current project status
-Current audited release candidate: `v0.8.2-lark-number-formatter-fix`
+Current audited release candidate: `v0.9.5-lark-view-live-verified`
 
-Package verification target: `285` Node unit/integration tests + `6` Workers-runtime tests, Wrangler 4.110.0 dry-run, syntax/architecture/repository hygiene, npm audit, tracked-local-config guard และ extracted ZIP retest. Live Cloudflare DEV ผ่าน Queue, Reconciliation, Distributed Lock, Retry/DLQ/System Alerts และ Scheduled Sync แล้ว.
+TikTok Organic DEV ingestion/report logic ผ่าน Live Queue UAT และ Reliability UAT แล้ว. Client Views ทั้ง 6 รายการสร้างและติดตั้ง Filter สำเร็จใน Live Lark Base โดย Final Preview เป็นศูนย์ actions/conflicts; เหลือตั้ง Hidden fields/Sort ใน Lark UI และเปิด Report schedules ใน Local config ก่อน Deploy. ตัวเลข package verification ล่าสุดให้ยึดผลจาก release gate ของ working tree ปัจจุบัน.
+
+**v0.9.5-lark-view-live-verified — Root cause ที่ยืนยันแล้วคือ request ส่ง response-only fields และ encode Checkbox ผิดชนิด. PATCH ปัจจุบันส่งเฉพาะ `field_id`/`operator`/`value`, Checkbox เป็น `[true]`, และ verifier ใช้ Get View เพราะ List Views ไม่คืน Filter property. Live View ทั้ง 6 รายการตรง Contract แล้ว.**
+
+**v0.9.0-tiktok-organic-dev-complete — ปิด TikTok Organic DEV logic และ Live UAT: Daily/Weekly reports, idempotency, partial baseline, stale-rank cleanup/restore และ report lock retry ผ่านแล้ว; เพิ่ม Client View installer, guarded schedule activator และ closeout runbook.**
+
+Final operational activation on the developer machine:
+- `npm run setup:report-views` → guarded Apply → zero-action Preview
+- hide technical fields from `manualActions` and set rank ascending in six managed Lark client views
+- `npm run enable:tiktok-report-schedules` → guarded Apply → deploy local Wrangler config
+- observe the next scheduled Daily/Weekly producer
+
+Failure/partial-write semantics are covered by deterministic regression tests rather than destructive live corruption. Weekly complete baseline is an operational observation after enough snapshots accumulate, not a code-release blocker.
 
 **v0.8.2-lark-number-formatter-fix — แก้ Number Field Create/Update ให้ใช้ formatter enum ของ Lark OpenAPI (`1,000`, `0.0000`) แทน spreadsheet pattern ที่ทำให้ `WrongRequestBody`; Report schedule ยังต้องคงปิดจนกว่า Apply, Seed และ Live UAT จะผ่าน.**
 
@@ -35,6 +47,22 @@ Completed Live Cloudflare DEV reliability UAT:
 - D1 Distributed Lock collision/retry/cleanup ผ่าน
 - Retry exhaustion -> DLQ -> D1/Lark System Alert ผ่าน
 - Scheduled TikTok Sync ผ่านต่อเนื่อง 3 รอบโดยไม่เขียนซ้ำ
+
+Completed TikTok Organic Report Live DEV UAT:
+- Report schema clean rerun: zero create/update actions and zero conflicts.
+- Metric seed: 68 created, rerun skipped 68; Report settings: 2 created, rerun skipped 2.
+- Daily report: created 1 Snapshot / 13 Metrics / 5 Top Content; rerun created 0 and updated the same stable rows.
+- Weekly report: same row counts; correctly marked `partial` because the comparison week predates available snapshots; rerun idempotent.
+- Top Content limit 5 → 3 neutralized ranks 4–5 to `no_data`; restoring 5 repopulated them without duplicates.
+- Manual report lock returned retryable `SYNC_LOCK_BUSY`; the same Queue message succeeded after lock release with created=0.
+- See `docs/tiktok-organic-dev-closeout-v0.9.0.md`.
+
+Completed in v0.9.0 closeout tooling:
+- Lark View API list/create/patch adapters with pagination and request-contract tests.
+- Idempotent Client Views for Daily/Weekly Metrics and Daily/Weekly Top Content.
+- Read-only Preview and double-confirmed Apply safety shared across schema/view/schedule tools.
+- Atomic local Wrangler config activation after validating DEV profile, setting keys/times and real report table IDs.
+- `npm run test:report-reliability` focused regression gate.
 
 Completed in v0.8.2 Number formatter fix:
 

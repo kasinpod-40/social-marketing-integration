@@ -8,6 +8,7 @@ import { normalizeLarkFieldProperty, serializeLarkFieldProperty } from '../../..
 
 const LARK_OPEN_API_BASE_URL = 'https://open.larksuite.com';
 const DEFAULT_PAGE_SIZE = 500;
+const DEFAULT_VIEW_PAGE_SIZE = 100;
 const DEFAULT_BATCH_SIZE = 100;
 const DEFAULT_MAX_ATTEMPTS = 5;
 const DEFAULT_RETRY_BASE_DELAY_MS = 300;
@@ -19,6 +20,7 @@ const DEFAULT_MAX_FILTER_CONDITIONS = 50;
 const TOKEN_SAFETY_WINDOW_MS = 60_000;
 const MAX_REMOTE_ERROR_MESSAGE_LENGTH = 500;
 const INVALID_TENANT_ACCESS_TOKEN_CODE = 99991663;
+const VALUELESS_VIEW_FILTER_OPERATORS = new Set(['isEmpty', 'isNotEmpty']);
 
 
 /**
@@ -244,6 +246,74 @@ export class LarkBitableClient {
       },
       normalizeItem: normalizeField,
     });
+  }
+
+
+  /** อ่าน View ทั้งตารางเพื่อใช้ทำ Client-view installer แบบ Idempotent */
+  async listViews(input) {
+    const tableId = requireText(input?.tableId, 'tableId');
+    return this.paginateCollection({
+      resource: 'views',
+      tableId,
+      pageSize: DEFAULT_VIEW_PAGE_SIZE,
+      requestPage: ({ pageToken, pageSize }) => {
+        const params = buildPageParams(pageToken, pageSize);
+        return this.requestBitableJson(
+          `/open-apis/bitable/v1/apps/${encodeURIComponent(this.appToken)}/tables/${encodeURIComponent(tableId)}/views?${params.toString()}`,
+          { method: 'GET' },
+        );
+      },
+      normalizeItem: normalizeView,
+    });
+  }
+
+  /** อ่าน View เดี่ยวเพื่อรับ property เต็ม; บาง Lark tenant ไม่คืน property จาก List Views */
+  async getView(input) {
+    const tableId = requireText(input?.tableId, 'tableId');
+    const viewId = requireText(input?.viewId, 'viewId');
+    const response = await this.requestBitableJson(
+      `/open-apis/bitable/v1/apps/${encodeURIComponent(this.appToken)}/tables/${encodeURIComponent(tableId)}/views/${encodeURIComponent(viewId)}`,
+      { method: 'GET' },
+    );
+    return normalizeView(response?.data?.view ?? response?.data);
+  }
+
+  /** สร้าง View ใหม่; Create ไม่ Retry เมื่อผลลัพธ์กำกวมเพื่อให้รอบถัดไปค้นจากชื่อก่อน */
+  async createView(input) {
+    const tableId = requireText(input?.tableId, 'tableId');
+    const viewName = requireText(input?.viewName, 'viewName');
+    const viewType = normalizeViewType(input?.viewType ?? 'grid');
+    const response = await this.requestBitableJson(
+      `/open-apis/bitable/v1/apps/${encodeURIComponent(this.appToken)}/tables/${encodeURIComponent(tableId)}/views`,
+      {
+        method: 'POST',
+        retryMode: 'rate_limit_only',
+        body: {
+          view_name: viewName,
+          view_type: viewType,
+        },
+      },
+    );
+    return normalizeView(response?.data?.view ?? response?.data);
+  }
+
+  /** อัปเดตเฉพาะ Filter/Hidden fields/ชื่อ View โดยไม่ลบ View หรือแก้ Record */
+  async updateView(input) {
+    const tableId = requireText(input?.tableId, 'tableId');
+    const viewId = requireText(input?.viewId, 'viewId');
+    const body = serializeViewMutation(input);
+    try {
+      const response = await this.requestBitableJson(
+        `/open-apis/bitable/v1/apps/${encodeURIComponent(this.appToken)}/tables/${encodeURIComponent(tableId)}/views/${encodeURIComponent(viewId)}`,
+        {
+          method: 'PATCH',
+          body,
+        },
+      );
+      return normalizeView(response?.data?.view ?? response?.data);
+    } catch (error) {
+      throw withSafeViewMutationDetails(error, body);
+    }
   }
 
   /**
@@ -753,6 +823,142 @@ function normalizeField(field) {
   });
 }
 
+
+/** Normalize View metadata ให้ชื่อ Property เดียวทั้งระบบ */
+function normalizeView(view) {
+  const property = view?.property ?? {};
+  const filterInfo = property?.filter_info ?? property?.filterInfo ?? null;
+  return Object.freeze({
+    viewId: view?.view_id ?? view?.viewId ?? null,
+    viewName: view?.view_name ?? view?.viewName ?? null,
+    viewType: view?.view_type ?? view?.viewType ?? null,
+    property: Object.freeze({
+      hiddenFields: Object.freeze(normalizeUniqueTextArray(
+        property?.hidden_fields ?? property?.hiddenFields ?? [],
+      )),
+      filterInfo: normalizeViewFilterInfo(filterInfo),
+    }),
+    publicLevel: view?.view_public_level ?? view?.viewPublicLevel ?? null,
+  });
+}
+
+/** แปลง Contract ภายในเป็น PATCH body ของ View OpenAPI */
+function serializeViewMutation(input) {
+  const result = {};
+  const viewName = normalizeOptionalText(input?.viewName);
+  if (viewName) result.view_name = viewName;
+
+  const property = {};
+  if (input?.hiddenFields !== undefined) {
+    property.hidden_fields = normalizeUniqueTextArray(input.hiddenFields);
+  }
+  if (input?.filterInfo !== undefined && input.filterInfo !== null) {
+    property.filter_info = serializeViewFilterInfo(input.filterInfo);
+  }
+  if (Object.keys(property).length > 0) result.property = property;
+  if (Object.keys(result).length === 0) {
+    throw new TypeError('Lark Bitable client updateView requires at least one mutation');
+  }
+  return result;
+}
+
+function serializeViewFilterInfo(value) {
+  const source = requireObject(value, 'filterInfo');
+  const conjunction = source.conjunction === 'or' ? 'or' : 'and';
+  const conditions = requireArray(source.conditions, 'filterInfo.conditions').map((condition) => {
+    const normalized = requireObject(condition, 'filter condition');
+    const operator = normalizeViewFilterOperator(normalized.operator);
+    // เก็บ Field type ไว้ตรวจ Contract ภายในเท่านั้น ห้ามส่งกลับใน PATCH request:
+    // Lark สร้าง field_type ใน response แต่ official Update View request ไม่รับ Field นี้.
+    const fieldType = normalizeOptionalPositiveInteger(normalized.fieldType ?? normalized.field_type);
+    if (!fieldType) {
+      throw new TypeError('Lark Bitable view filter condition requires fieldType');
+    }
+    const result = {
+      field_id: requireText(normalized.fieldId ?? normalized.field_id, 'filter condition fieldId'),
+      operator,
+    };
+    if (!VALUELESS_VIEW_FILTER_OPERATORS.has(operator)) {
+      result.value = serializeViewFilterValue(normalized.value);
+    }
+    return result;
+  });
+  // condition_omitted เป็น response metadata เช่นเดียวกัน จึงไม่อยู่ใน request body.
+  return { conjunction, conditions };
+}
+
+/** View OpenAPI รับ value เป็น string ที่ภายในเป็น JSON array ไม่ใช่ scalar ตรง ๆ */
+function serializeViewFilterValue(value) {
+  if (value === undefined || value === null) {
+    throw new TypeError('Lark Bitable view filter condition requires value');
+  }
+  if (Array.isArray(value)) return JSON.stringify(value.map(normalizeViewFilterScalar));
+  const text = String(value).trim();
+  if (text === '') throw new TypeError('Lark Bitable view filter condition value cannot be empty');
+  try {
+    const parsed = JSON.parse(text);
+    const values = Array.isArray(parsed) ? parsed : [parsed];
+    return JSON.stringify(values.map(normalizeViewFilterScalar));
+  } catch {
+    return JSON.stringify([text]);
+  }
+}
+
+function normalizeViewFilterInfo(value) {
+  if (value === null || value === undefined) return null;
+  const source = requireObject(value, 'view.filterInfo');
+  const conditions = Array.isArray(source.conditions) ? source.conditions : [];
+  return Object.freeze({
+    conjunction: source.conjunction === 'or' ? 'or' : 'and',
+    conditions: Object.freeze(conditions.map((condition) => Object.freeze({
+      fieldId: condition?.field_id ?? condition?.fieldId ?? null,
+      fieldType: normalizeOptionalPositiveInteger(condition?.field_type ?? condition?.fieldType),
+      operator: condition?.operator ?? null,
+      value: condition?.value === undefined || condition?.value === null
+        ? null
+        : serializeViewFilterValue(condition.value),
+    }))),
+  });
+}
+
+function normalizeViewFilterScalar(value) {
+  if (typeof value === 'string') return value;
+  // Lark Checkbox filters require JSON booleans (for example `[true]`), while
+  // Select filters use strings. Preserve that distinction during serialization.
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return String(value);
+  throw new TypeError('Lark Bitable view filter value must contain scalar items');
+}
+
+function normalizeOptionalPositiveInteger(value) {
+  const number = Number(value);
+  return Number.isInteger(number) && number > 0 ? number : null;
+}
+
+function normalizeViewType(value) {
+  const normalized = requireText(value, 'viewType').toLowerCase();
+  if (!new Set(['grid', 'kanban', 'gallery', 'gantt', 'form']).has(normalized)) {
+    throw new TypeError(`Unsupported Lark viewType: ${normalized}`);
+  }
+  return normalized;
+}
+
+function normalizeViewFilterOperator(value) {
+  const normalized = requireText(value, 'filter condition operator');
+  const supported = new Set([
+    'is', 'isNot', 'contains', 'doesNotContain', 'isEmpty', 'isNotEmpty',
+    'isGreater', 'isGreaterEqual', 'isLess', 'isLessEqual',
+  ]);
+  if (!supported.has(normalized)) {
+    throw new TypeError(`Unsupported Lark view filter operator: ${normalized}`);
+  }
+  return normalized;
+}
+
+function normalizeUniqueTextArray(value) {
+  return [...new Set(requireArray(value, 'text array').map((item) => requireText(item, 'text array item')))];
+}
+
 /** แปลง Field contract ภายในเป็น Request body ของ Lark OpenAPI */
 function serializeFieldMutation(field) {
   const normalized = requireObject(field, 'field');
@@ -825,6 +1031,23 @@ function parseJsonPayload(text, status, path) {
 }
 
 /** สร้าง Error จาก HTTP status หรือ Lark API code */
+/** แนบ PATCH body ของ View ที่ไม่มี Secret/Record data เพื่อวิเคราะห์ WrongRequestBody ได้ตรงจุด */
+function withSafeViewMutationDetails(error, body) {
+  const safeBody = structuredClone(body);
+  if (error instanceof RuntimeError) {
+    return new RuntimeError(error.message, {
+      code: error.code,
+      retryable: error.retryable,
+      cause: error.cause,
+      details: {
+        ...(error.details ?? {}),
+        viewMutationBody: safeBody,
+      },
+    });
+  }
+  return error;
+}
+
 function createLarkResponseError(input) {
   const status = input.response.status;
   const larkCode = input.payload?.code;

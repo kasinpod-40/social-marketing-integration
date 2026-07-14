@@ -1,28 +1,11 @@
-import { permanentError } from '../../packages/shared/src/errors/runtime-error.js';
+import { resolveConfirmedApplyMode } from './confirmed-apply-mode.js';
 
-/**
- * Preview command ต้องอ่านอย่างเดียวเสมอ แม้ Shell จะมี CONFIRM_WRITE=YES ค้างอยู่
- * Apply ต้องระบุทั้ง --apply และ CONFIRM_WRITE=YES เพื่อป้องกันการเขียนโดยไม่ตั้งใจ
- */
+/** Wrapper คง API เดิมของ Schema installer แต่ใช้ Safety guard กลางร่วมกับ Installer อื่น */
 export function resolveReportSchemaInstallerMode(input = {}) {
-  const argv = Array.isArray(input.argv) ? input.argv : [];
-  const env = input.env ?? {};
-  const applyRequested = argv.includes('--apply');
-  const confirmed = env.CONFIRM_WRITE === 'YES';
-
-  if (applyRequested && !confirmed) {
-    throw permanentError('Report schema apply requires CONFIRM_WRITE=YES', {
-      code: 'REPORT_SCHEMA_WRITE_CONFIRMATION_REQUIRED',
-      details: {
-        command: 'CONFIRM_WRITE=YES npm run setup:report-schema:apply',
-      },
-    });
-  }
-
-  return Object.freeze({
-    apply: applyRequested && confirmed,
-    applyRequested,
-    confirmed,
-    ignoredAmbientConfirmation: !applyRequested && confirmed,
+  return resolveConfirmedApplyMode({
+    ...input,
+    operationName: 'Report schema apply',
+    confirmationErrorCode: 'REPORT_SCHEMA_WRITE_CONFIRMATION_REQUIRED',
+    applyCommand: 'CONFIRM_WRITE=YES npm run setup:report-schema:apply',
   });
 }

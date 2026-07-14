@@ -1036,3 +1036,213 @@ test('omits unsupported UI-only URL property metadata', async () => {
     ui_type: 'Url',
   });
 });
+
+test('lists and normalizes Lark views with shared pagination guards', async () => {
+  const urls = [];
+  const client = new LarkBitableClient({
+    appId: 'app-id', appSecret: 'app-secret', appToken: 'app-token', minRequestIntervalMs: 0,
+    fetchImpl: async (url) => {
+      if (String(url).includes('tenant_access_token')) {
+        return new Response(JSON.stringify({ code: 0, tenant_access_token: 'token', expire: 7200 }), { status: 200 });
+      }
+      urls.push(String(url));
+      const secondPage = String(url).includes('page_token=next-view');
+      return new Response(JSON.stringify(secondPage
+        ? {
+            code: 0,
+            data: {
+              items: [{
+                view_id: 'vew2', view_name: 'Weekly', view_type: 'grid',
+                property: { hidden_fields: ['fld2'], filter_info: null },
+              }],
+              has_more: false,
+            },
+          }
+        : {
+            code: 0,
+            data: {
+              items: [{
+                view_id: 'vew1', view_name: 'Daily', view_type: 'grid',
+                property: {
+                  hidden_fields: ['fld1', 'fld1'],
+                  filter_info: {
+                    conjunction: 'and',
+                    conditions: [{ field_id: 'fldType', field_type: 3, operator: 'is', value: '["optDaily"]' }],
+                  },
+                },
+                view_public_level: 'Public',
+              }],
+              has_more: true,
+              page_token: 'next-view',
+            },
+          }), { status: 200 });
+    },
+  });
+
+  const views = await client.listViews({ tableId: 'tblViews' });
+  assert.equal(urls.length, 2);
+  assert.deepEqual(views, [
+    {
+      viewId: 'vew1', viewName: 'Daily', viewType: 'grid', publicLevel: 'Public',
+      property: {
+        hiddenFields: ['fld1'],
+        filterInfo: {
+          conjunction: 'and',
+          conditions: [{ fieldId: 'fldType', fieldType: 3, operator: 'is', value: '["optDaily"]' }],
+        },
+      },
+    },
+    {
+      viewId: 'vew2', viewName: 'Weekly', viewType: 'grid', publicLevel: null,
+      property: { hiddenFields: ['fld2'], filterInfo: null },
+    },
+  ]);
+});
+
+test('gets one Lark view with the full filter property', async () => {
+  let request = null;
+  const client = new LarkBitableClient({
+    appId: 'app-id', appSecret: 'app-secret', appToken: 'app-token', minRequestIntervalMs: 0,
+    fetchImpl: async (url, options) => {
+      if (String(url).includes('tenant_access_token')) {
+        return new Response(JSON.stringify({ code: 0, tenant_access_token: 'token', expire: 7200 }), { status: 200 });
+      }
+      request = { url: String(url), method: options.method };
+      return new Response(JSON.stringify({
+        code: 0,
+        data: {
+          view: {
+            view_id: 'vew1', view_name: 'Daily', view_type: 'grid',
+            property: {
+              hidden_fields: [],
+              filter_info: {
+                conjunction: 'and',
+                conditions: [{ field_id: 'fldVisible', field_type: 7, operator: 'is', value: '[true]' }],
+              },
+            },
+          },
+        },
+      }), { status: 200 });
+    },
+  });
+
+  const view = await client.getView({ tableId: 'tblViews', viewId: 'vew1' });
+  assert.match(request.url, /tables\/tblViews\/views\/vew1$/u);
+  assert.equal(request.method, 'GET');
+  assert.deepEqual(view.property.filterInfo.conditions, [
+    { fieldId: 'fldVisible', fieldType: 7, operator: 'is', value: '[true]' },
+  ]);
+});
+
+test('creates a grid view with the official create payload', async () => {
+  let request = null;
+  const client = new LarkBitableClient({
+    appId: 'app-id', appSecret: 'app-secret', appToken: 'app-token', minRequestIntervalMs: 0,
+    fetchImpl: async (url, options) => {
+      if (String(url).includes('tenant_access_token')) {
+        return new Response(JSON.stringify({ code: 0, tenant_access_token: 'token', expire: 7200 }), { status: 200 });
+      }
+      request = { url: String(url), method: options.method, body: JSON.parse(options.body) };
+      return new Response(JSON.stringify({
+        code: 0,
+        data: { view: { view_id: 'vewCreated', view_name: 'Daily', view_type: 'grid', property: {} } },
+      }), { status: 200 });
+    },
+  });
+
+  const view = await client.createView({ tableId: 'tblViews', viewName: 'Daily', viewType: 'grid' });
+  assert.match(request.url, /tables\/tblViews\/views$/u);
+  assert.equal(request.method, 'POST');
+  assert.deepEqual(request.body, { view_name: 'Daily', view_type: 'grid' });
+  assert.equal(view.viewId, 'vewCreated');
+});
+
+test('patches Lark view with request-only condition fields and JSON-array values', async () => {
+  let request = null;
+  const client = new LarkBitableClient({
+    appId: 'app-id', appSecret: 'app-secret', appToken: 'app-token', minRequestIntervalMs: 0,
+    fetchImpl: async (url, options) => {
+      if (String(url).includes('tenant_access_token')) {
+        return new Response(JSON.stringify({ code: 0, tenant_access_token: 'token', expire: 7200 }), { status: 200 });
+      }
+      request = { url: String(url), method: options.method, body: JSON.parse(options.body) };
+      return new Response(JSON.stringify({
+        code: 0,
+        data: { view: { view_id: 'vew1', view_name: 'Daily', view_type: 'grid', property: request?.body?.property } },
+      }), { status: 200 });
+    },
+  });
+
+  await client.updateView({
+    tableId: 'tblViews',
+    viewId: 'vew1',
+    hiddenFields: ['fldHidden', 'fldHidden'],
+    filterInfo: {
+      conjunction: 'and',
+      conditions: [
+        { fieldId: 'fldType', fieldType: 3, operator: 'is', value: '["optDaily"]' },
+        { fieldId: 'fldStatus', fieldType: 3, operator: 'isNot', value: ['optNoData'] },
+        { fieldId: 'fldVisible', fieldType: 7, operator: 'is', value: '[true]' },
+      ],
+    },
+  });
+
+  assert.match(request.url, /tables\/tblViews\/views\/vew1$/u);
+  assert.equal(request.method, 'PATCH');
+  assert.deepEqual(request.body, {
+    property: {
+      hidden_fields: ['fldHidden'],
+      filter_info: {
+        conjunction: 'and',
+        conditions: [
+          { field_id: 'fldType', operator: 'is', value: '["optDaily"]' },
+          { field_id: 'fldStatus', operator: 'isNot', value: '["optNoData"]' },
+          { field_id: 'fldVisible', operator: 'is', value: '[true]' },
+        ],
+      },
+    },
+  });
+});
+
+test('view PATCH error includes the exact request-only safe body', async () => {
+  const client = new LarkBitableClient({
+    appId: 'app-id', appSecret: 'app-secret', appToken: 'app-token', minRequestIntervalMs: 0,
+    fetchImpl: async (url) => {
+      if (String(url).includes('tenant_access_token')) {
+        return new Response(JSON.stringify({ code: 0, tenant_access_token: 'token', expire: 7200 }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ code: 1254001, msg: 'WrongRequestBody' }), { status: 200 });
+    },
+  });
+
+  await assert.rejects(
+    client.updateView({
+      tableId: 'tblViews',
+      viewId: 'vew1',
+      hiddenFields: ['fldHidden'],
+      filterInfo: {
+        conjunction: 'and',
+        conditions: [
+          { fieldId: 'fldVisible', fieldType: 7, operator: 'is', value: '[true]' },
+        ],
+      },
+    }),
+    (error) => {
+      assert.equal(error.code, 'LARK_PERMANENT_API_ERROR');
+      assert.deepEqual(error.details.viewMutationBody, {
+        property: {
+          hidden_fields: ['fldHidden'],
+          filter_info: {
+            conjunction: 'and',
+            conditions: [
+              { field_id: 'fldVisible', operator: 'is', value: '[true]' },
+            ],
+          },
+        },
+      });
+      assert.equal('field_type' in error.details.viewMutationBody.property.filter_info.conditions[0], false);
+      assert.equal('condition_omitted' in error.details.viewMutationBody.property.filter_info, false);
+      return true;
+    },
+  );
+});

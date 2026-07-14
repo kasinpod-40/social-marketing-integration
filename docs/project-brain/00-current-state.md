@@ -2,63 +2,58 @@
 
 ## Current release candidate
 
-`v0.8.2-lark-number-formatter-fix` — 2026-07-13
+`v0.9.5-lark-view-live-verified` — 2026-07-14
 
-## Live-complete scope
+## TikTok Organic DEV status
 
-- TikTok Creator Organic ingestion to `MKT_Content` and cumulative `MKT_Content_Daily`.
-- Live DEV gate, canonical keys, idempotency, reconciliation, Sync Log, D1 distributed lock, retry/DLQ/System Alerts.
-- Scheduled + incremental TikTok sync with D1 cursor/fingerprint and 24-hour full reconciliation.
+The TikTok Organic DEV pipeline and Report Engine are feature-complete and live-UAT proven:
 
+- TikTok Creator ingestion → `MKT_Content` + cumulative `MKT_Content_Daily`
+- Canonical keys, idempotency, reconciliation, D1 lock, retry/DLQ/System Alerts
+- Scheduled + incremental sync and 24-hour full reconciliation
+- Five-table Report schema, 68 metric definitions, 2 report settings
+- Daily/Weekly report generation, fixed-rank Top Content, data-quality status, deterministic completed-period dates
+- Daily/Weekly idempotency, partial-baseline behavior, stale-rank cleanup/restore, and report lock collision/retry
+- First-write failure versus partial-write behavior covered by deterministic regression tests
 
-## v0.8.2 Lark Number Formatter Fix
+Detailed evidence: `../tiktok-organic-dev-closeout-v0.9.0.md`
 
-- Number field formatter ใช้ OpenAPI enum `1,000` และ `0.0000`
-- Legacy aliases `#,##0` / `#,##0.0000` ถูก normalize ที่ Shared contract ก่อนส่ง API
-- Apply รอบ v0.8.1 ล้มที่ Action แรก (`appliedActionCount=0`) จึงไม่ต้อง rollback
-- Report schedules ยังคงปิดจน Schema Apply, Seed และ Manual UAT ผ่าน
+## Verification
 
-## v0.8.1 Lark Report Schema Installer Safety Fix
+- Node unit/integration: 312/312
+- Workers runtime: 6/6
+- Focused Report reliability: 51/51
+- Architecture: 77 source files / 168 local dependencies / 0 cycles
+- Repository hygiene and npm audit 0 passed
+- Wrangler 4.110.0 dry-run: 362.96 KiB / gzip 74.63 KiB
+- Clean extracted-ZIP retest remains the final package gate
 
-- Plain Preview is read-only even if `CONFIRM_WRITE=YES` exists in the shell.
-- Apply requires `CONFIRM_WRITE=YES npm run setup:report-schema:apply`.
-- Checkbox and other propertyless fields omit `property`; Date/Select payloads use canonical OpenAPI keys.
-- Installer failures include the failed action and prior applied-action count; rerunning Preview resumes any partially completed v0.8.0 run safely.
+## v0.9.5 closeout tooling
 
-## v0.8.0 Lark Report Schema Installer
+- `setup:report-views` installs six managed client-facing Views.
+- Live v0.9.0–v0.9.4 attempts failed with generic `1254001`; earlier root-cause claims were hypotheses, not confirmed facts.
+- v0.9.5 sends only request fields (`field_id`, `operator`, `value`) and preserves Checkbox values as JSON booleans such as `[true]`.
+- The verifier hydrates each managed View through Get View because this tenant's List Views response omits `property`.
+- Existing View updates omit `view_name` and `hidden_fields`; missing Views are created first, then filtered separately.
+- Hidden fields and `rank` sort are manual Lark UI actions. The installer reports exact field names per View.
+- Preview compares only Filter state, remains read-only, never deletes Views/records, and safely resumes if Create succeeds before Filter PATCH fails.
+- `enable:tiktok-report-schedules` validates and atomically enables Daily/Weekly report flags in local `wrangler.sync.jsonc`.
+- Both tools require explicit Apply command plus `CONFIRM_WRITE=YES` for mutation.
 
-- Installer covers 5 Report tables and 110 fields, resolves by local Table ID or alias, and is safe to rerun.
-- Missing Table/Field/Select options are added without deleting existing schema.
-- Type mismatch and unresolved configured IDs block writes.
-- Report schedules remain disabled pending Live Schema/Seed/UAT.
+## Live activation status
 
-## v0.7.2 completed-period release gate
+Client View Apply is complete: all six Views exist, Get View confirms their Filters, and Final Preview reports zero actions/conflicts. Remaining operational activation is:
 
-- Daily/Weekly report jobs use the previous completed local day from the original `scheduledTime`; month/year/leap-day boundaries are regression-tested.
-- Report first-write failures are `failed`; partial status requires actual confirmed/unknown write progress.
-- Scheduler derives TikTok `metricDate` from the local scheduled day and report `periodEnd` from the previous completed local day, preserving both across retries.
-- Top Content uses one bounded limit and neutralizes stale ranks after a limit reduction.
-- Expired leases fail closed; chunk guard failures preserve prior progress; Lark 1254290 stays a retryable rejection.
-- Local lock mutations are guarded; orphan guard cleanup follows `../local-file-lock-guard-runbook-v0.7.2.md`; local Wrangler config must not be tracked.
-- DEV example enables persisted Worker logs and traces.
+1. Hide the fields listed by `VIEW_HIDDEN_FIELDS_REVIEW_REQUIRED` and set rank ascending in the six managed Views.
+2. Enable report schedule flags through the guarded activator.
+3. Deploy `wrangler.sync.jsonc` and observe scheduled Daily/Weekly producers.
 
-## Implemented in code, pending Lark schema and Live UAT
-
-- TikTok Daily/Weekly Organic Report Engine.
-- Cumulative-period delta and previous-period comparison.
-- New-content zero baseline, partial-baseline quality state, negative platform correction preservation.
-- Weighted average watch time and completion rate.
-- Idempotent `MKT_Report_Snapshots`, normalized `MKT_Report_Metric_Values`, and fixed-rank `MKT_Report_Top_Content` writes.
-- Metric/report-setting seed jobs.
-- Timezone-aware Daily/Weekly scheduled report producers.
-- Report reliability accounting through the same D1 lock/log/retry/DLQ layer.
-
-Daily and Weekly report schedule flags remain disabled until the latest Lark Base is changed according to the v0.7.0 Blueprint and Live DEV UAT passes.
+These are deployment/observation steps, not unfinished connector logic.
 
 ## Client-facing rule
 
-Clients should not use RAW tables, `MKT_Content_Daily`, Sync Log, System Alerts, cursor, lock, or technical IDs as normal working views. These are system/audit data. Client roles should use the Report Metric and Top Content views produced by Step 7.
+Clients should not use RAW tables, `MKT_Content_Daily`, Sync Log, System Alerts, cursor, lock, or technical IDs as normal working views. Client roles use the six managed Report Views. Production permissions belong to the customer's Lark organization.
 
-## Next gate
+## Next implementation workstream
 
-See `10-next-actions.md` and `../tiktok-organic-report-blueprint-v0.7.0.md`.
+After activation, proceed to Lark AI Summary + Group Notification, then start connector access/preflight and implementation for YouTube, Meta (Facebook/Instagram), WooCommerce, Chatwoot, and Ads. See `10-next-actions.md`.
