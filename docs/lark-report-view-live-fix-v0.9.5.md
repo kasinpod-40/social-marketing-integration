@@ -26,6 +26,8 @@ This tenant's List Views endpoint returns View identity but omits `property`. Th
 - Created and filtered `📊 Daily Metrics`, `📈 Weekly Metrics`, `🏆 Daily Top Content`, and `🏅 Weekly Top Content`.
 - Get View confirmed all Checkbox and SingleSelect Filters.
 - Filter and Hidden fields are applied in separate PATCH requests and verified idempotently.
+- Lark UI saved and verified `rank` ascending (`0 → 9`) with Automatic sorting for all six managed Views.
+- Advanced Permissions was enabled and a `Client` role was saved. Report Metric/Top Content outputs are View only; Daily, AI technical, Sync/System, and RAW tables are No access. No DEV member is assigned to the role.
 - Final Preview: `createViews=0`, `updateViews=0`, `conflicts=0`, `warnings=0`.
 
-`rank` ascending Sort and customer Production permissions remain explicit Lark UI actions reported by `manualActions`.
+The installer still reports Sort and permission `manualActions` because the available View OpenAPI cannot inspect those UI-only states. Customer Production still needs real member assignment in the customer's Lark organization.

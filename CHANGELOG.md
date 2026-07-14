@@ -15,6 +15,8 @@
 - Verification: Node unit/integration 312/312, Workers runtime 6/6, focused View 55/55, Report reliability 51/51, syntax pass, and Architecture 77 source files / 168 local dependencies / 0 cycles.
 - Idempotent live Apply rerun completed with `ok=true`, `plannedActions=0`, and zero remaining actions/conflicts.
 - Hidden fields applied and verified across all six managed Views; Daily/Weekly schedules enabled and Cloudflare Worker version `ba6f3968-628c-4c61-b7eb-62647b38f547` deployed.
+- Lark UI saved and verified `rank` ascending with Automatic sorting across all six managed Views.
+- Enabled Advanced Permissions and saved a `Client` role: Report Metric/Top Content outputs are View only; Daily, AI technical, Sync/System, and RAW tables are No access. DEV member assignment remains intentionally empty.
 - Final gates: unit 312/312, Workers runtime 6/6, Report reliability 51/51, repository hygiene pass, npm audit 0, dry-run 363.52 KiB / gzip 74.69 KiB.
 - Clean extracted-package retest passed all gates; first cron after deploy completed `success` at 22:01 Asia/Bangkok with 40 idempotent skips and no error.
 

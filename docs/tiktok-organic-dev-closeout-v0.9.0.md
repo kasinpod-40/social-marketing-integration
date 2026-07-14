@@ -81,10 +81,11 @@ Installer-managed views:
 - `🏆 Daily Top Content`
 - `🏅 Weekly Top Content`
 
-The installer creates View names/types and applies Filter-only PATCH requests. Hidden fields, sort, column width, and role permissions are manual Lark UI actions; therefore:
+The installer creates View names/types and applies Filter/Hidden-field PATCH requests. Sort and role permissions remain Lark UI actions because the available View OpenAPI does not expose those states; on 2026-07-14:
 
-- Sort `rank` ascending in the six managed views in Lark UI
-- Production client-role permissions are configured in the customer's Lark Advanced Permission setup
+- Sort `rank` ascending was saved and verified in all six managed views
+- Advanced Permissions was enabled and a least-privilege `Client` role was saved in DEV without assigning a member
+- Customer Production still requires real client-member assignment in the customer's Lark organization
 - DEV does not expose client credentials and is not a customer production environment
 
 Commands:

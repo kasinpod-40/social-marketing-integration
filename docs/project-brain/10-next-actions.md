@@ -20,7 +20,7 @@ CONFIRM_WRITE=YES npm run setup:report-views:apply
 npm run setup:report-views
 ```
 
-Final Preview on 2026-07-14 showed zero create/update actions and zero conflicts. Filter and Hidden fields are installed. Set `rank` ascending for:
+Final Preview on 2026-07-14 showed zero create/update actions and zero conflicts. Filter and Hidden fields are installed. Lark UI Sort `rank` ascending with Automatic sorting is saved and verified for:
 
 - `📊 Client Metrics` (safe combined default)
 - `📊 Daily Metrics`
@@ -28,6 +28,8 @@ Final Preview on 2026-07-14 showed zero create/update actions and zero conflicts
 - `🏆 Top Content` (safe combined default)
 - `🏆 Daily Top Content`
 - `🏅 Weekly Top Content`
+
+Advanced Permissions is enabled and the saved `Client` role uses View only for `MKT_Report_Metric_Values`/`MKT_Report_Top_Content`, with No access for Daily, AI technical, Sync/System, and all RAW tables. No DEV member is assigned; customer Production must map real client members.
 
 ### 2. Enable and deploy scheduled reports — completed
 
