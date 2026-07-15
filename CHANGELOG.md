@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.9.6-tiktok-organic-dev-complete — 2026-07-14
+
+### Release closeout
+- Promoted the live-verified TikTok Organic DEV implementation to the clean handoff baseline after all ingestion, reliability, report, View, permission, and schedule activation work passed.
+- Preserved the confirmed v0.9.5 Lark View fix: request-only filter fields, Checkbox Boolean `[true]`, Get View hydration, and separate Filter/Hidden-field PATCH operations.
+- Recorded the deployed DEV Worker version `ba6f3968-628c-4c61-b7eb-62647b38f547`, six live Client Views, `Client` least-privilege role, enabled Daily/Weekly report schedules, and the successful first post-deploy cron.
+- Added `docs/tiktok-organic-dev-complete-v0.9.6.md` as the canonical closeout and handoff record.
+
+### Package hygiene
+- Restored `.gitignore` and `.dev.vars.example` to the source package.
+- Excluded `.dev.vars`, local `wrangler.sync.jsonc`, `.git`, `.wrangler`, `node_modules`, `.DS_Store`, `__MACOSX`, and AppleDouble metadata from the release archive.
+- Kept `wrangler.sync.example.jsonc` safe by leaving report schedule flags disabled by default; activation remains an explicit local operation.
+
+### Verification
+- Clean-tree gates passed: Node unit/integration 312/312, Workers runtime 6/6, focused Report reliability 51/51, focused View/client 53/53, Architecture 77 source files / 168 local dependencies / 0 cycles, repository hygiene, and offline npm audit 0.
+- Wrangler 4.110.0 dry-run passed at 363.52 KiB / gzip 74.69 KiB; the final archive is extracted and retested before handoff.
+- No production/customer credentials or customer-owned resources are included. Customer Production setup remains a separate phase.
+
 ## 0.9.5-lark-view-live-verified — 2026-07-14
 
 ### Fixed

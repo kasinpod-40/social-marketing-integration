@@ -4,7 +4,7 @@
 
 ## Baseline ปัจจุบัน
 
-`v0.9.5-lark-view-live-verified`
+`v0.9.6-tiktok-organic-dev-complete`
 
 สถานะปัจจุบัน:
 
@@ -27,13 +27,14 @@
 - Lark UI บันทึก Sort `rank` แบบ `0 → 9` พร้อม Automatic sorting ครบทั้ง 6 Views แล้ว
 - เปิด Advanced Permissions และสร้าง `Client` role แล้ว: ตาราง Report outputs เป็น View only; Daily/AI technical/Sync/System/RAW tables เป็น No access. DEV ยังไม่ Assign สมาชิกให้ role นี้
 - Daily/Weekly schedules เปิดและ deploy ไปยัง `social-mkt-sync-worker` แล้วเมื่อ 2026-07-14
+- v0.9.6 เป็น Clean handoff baseline: ไม่มี Local Wrangler config, Secret, macOS metadata หรือ build artifacts ใน Release ZIP
 - Customer Production setup ยังไม่รวมใน Release นี้และต้องใช้ทรัพยากรของลูกค้า
 
 
 
-## TikTok Organic DEV Closeout v0.9.5
+## TikTok Organic DEV Closeout v0.9.6
 
-หลักฐาน Live UAT อยู่ที่ `docs/tiktok-organic-dev-closeout-v0.9.0.md` และรายละเอียด View PATCH ที่ยืนยันกับ Live tenant อยู่ที่ `docs/lark-report-view-live-fix-v0.9.5.md`; เอกสาร v0.9.1–v0.9.4 เก็บไว้เป็นประวัติของสมมติฐานก่อนยืนยันสาเหตุจริง.
+เอกสารปิดงานหลักอยู่ที่ `docs/tiktok-organic-dev-complete-v0.9.6.md`; หลักฐาน Live UAT เดิมอยู่ที่ `docs/tiktok-organic-dev-closeout-v0.9.0.md` และรายละเอียด View PATCH ที่ยืนยันกับ Live tenant อยู่ที่ `docs/lark-report-view-live-fix-v0.9.5.md`. เอกสาร v0.9.1–v0.9.4 เก็บไว้เป็นประวัติของสมมติฐานก่อนยืนยันสาเหตุจริง.
 
 ติดตั้ง/ตรวจ Client Views:
 

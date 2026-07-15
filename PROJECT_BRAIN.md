@@ -4,9 +4,11 @@
 This project connects social organic and paid ads data into Lark Base for reporting, daily snapshots, monitoring, and AI summaries. The implementation target is a lean MVP using Cloudflare Workers, Cloudflare D1, Cloudflare Queues, Lark Base, Lark Native Integrations where useful, and JavaScript.
 
 ## Current project status
-Current audited release candidate: `v0.9.5-lark-view-live-verified`
+Current audited release candidate: `v0.9.6-tiktok-organic-dev-complete`
 
 TikTok Organic DEV ingestion/report logic ผ่าน Live Queue UAT และ Reliability UAT แล้ว. Client Views ทั้ง 6 รายการติดตั้ง Filter/Hidden fields และ Sort `rank` ascending สำเร็จ; Advanced Permissions เปิดแล้วพร้อม `Client` role แบบ least privilege และ Final Preview เป็นศูนย์ actions/conflicts. Daily/Weekly schedules เปิดและ deploy ไปยัง Cloudflare DEV แล้ว; เหลือ operational observation ของรอบ schedule.
+
+**v0.9.6-tiktok-organic-dev-complete — Clean handoff baseline หลัง TikTok Organic DEV implementation, Live UAT, Client Views, least-privilege permission, report schedules และ Cloudflare deployment ผ่านแล้ว. Release package ไม่มี Secret, local Wrangler config, macOS metadata หรือ build artifacts; operational observation ของรอบ Daily/Weekly ตามเวลาจริงไม่บล็อกช่องทางถัดไป.**
 
 **v0.9.5-lark-view-live-verified — Root cause ที่ยืนยันแล้วคือ request ส่ง response-only fields และ encode Checkbox ผิดชนิด. PATCH ปัจจุบันส่งเฉพาะ `field_id`/`operator`/`value`, Checkbox เป็น `[true]`, และ verifier ใช้ Get View เพราะ List Views ไม่คืน Filter property. Live View ทั้ง 6 รายการตรง Contract แล้ว.**
 
@@ -16,7 +18,7 @@ Final operational activation on the developer machine:
 - completed: guarded Client View Apply → Filter/Hidden fields → zero-action Preview
 - completed: Lark UI Sort `rank` ascending ทั้ง 6 Views และ Advanced Permissions/Client role
 - completed: guarded schedule activation and Cloudflare deployment
-- remaining observation: confirm scheduled producer results
+- ongoing observation: confirm naturally due Daily/Weekly report outputs; this is not a release blocker
 
 Failure/partial-write semantics are covered by deterministic regression tests rather than destructive live corruption. Weekly complete baseline is an operational observation after enough snapshots accumulate, not a code-release blocker.
 

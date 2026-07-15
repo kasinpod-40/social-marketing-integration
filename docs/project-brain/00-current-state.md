@@ -2,7 +2,7 @@
 
 ## Current release candidate
 
-`v0.9.5-lark-view-live-verified` — 2026-07-14
+`v0.9.6-tiktok-organic-dev-complete` — 2026-07-14
 
 ## TikTok Organic DEV status
 
@@ -16,7 +16,7 @@ The TikTok Organic DEV pipeline and Report Engine are feature-complete and live-
 - Daily/Weekly idempotency, partial-baseline behavior, stale-rank cleanup/restore, and report lock collision/retry
 - First-write failure versus partial-write behavior covered by deterministic regression tests
 
-Detailed evidence: `../tiktok-organic-dev-closeout-v0.9.0.md`
+Canonical closeout: `../tiktok-organic-dev-complete-v0.9.6.md`; detailed earlier UAT evidence: `../tiktok-organic-dev-closeout-v0.9.0.md`
 
 ## Verification
 
@@ -26,10 +26,11 @@ Detailed evidence: `../tiktok-organic-dev-closeout-v0.9.0.md`
 - Architecture: 77 source files / 168 local dependencies / 0 cycles
 - Repository hygiene and npm audit 0 passed
 - Wrangler 4.110.0 dry-run/deploy: 363.52 KiB / gzip 74.69 KiB; Worker startup 1 ms
-- Clean extracted-ZIP retest passed: `npm ci`, check/hygiene, unit 312/312, Workers 6/6, and Report reliability 51/51
+- v0.9.6 clean-tree gate: `npm ci`, check/hygiene, unit 312/312, Workers 6/6, Report reliability 51/51, focused View/client 53/53, offline npm audit 0, and Wrangler dry-run 363.52 KiB / gzip 74.69 KiB. The final extracted-ZIP retest is recorded at release handoff.
 
-## v0.9.5 closeout tooling
+## v0.9.6 closeout baseline
 
+- v0.9.6 packages the live-verified implementation as the clean handoff baseline; it contains no local Wrangler config, secrets, macOS metadata, dependencies, or build artifacts.
 - `setup:report-views` installs six managed client-facing Views.
 - Live v0.9.0–v0.9.4 attempts failed with generic `1254001`; earlier root-cause claims were hypotheses, not confirmed facts.
 - v0.9.5 sends only request fields (`field_id`, `operator`, `value`) and preserves Checkbox values as JSON booleans such as `[true]`.

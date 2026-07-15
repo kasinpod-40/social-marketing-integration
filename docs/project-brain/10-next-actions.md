@@ -1,8 +1,8 @@
 # 10 — Next Actions
 
-## Immediate closeout commands for v0.9.5
+## Clean baseline verification for v0.9.6
 
-Preserve local `.dev.vars` and `wrangler.sync.jsonc`, then run:
+The clean release intentionally excludes local `.dev.vars` and `wrangler.sync.jsonc`. Preserve those files on the developer machine, then verify the source tree with:
 
 ```bash
 npm ci
@@ -48,6 +48,13 @@ Both flags are `true`; Worker version `ba6f3968-628c-4c61-b7eb-62647b38f547` dep
 - Observe a scheduled Weekly report on Monday at 08:15 Asia/Bangkok.
 - No manual failure injection is required; deterministic tests cover first-write failure and partial-write/retry safety.
 - Weekly complete-baseline observation follows naturally after enough prior-period snapshots exist.
+
+## Remaining TikTok operations
+
+- Observe the naturally due Daily report at 08:10 Asia/Bangkok.
+- Observe the naturally due Weekly report on Monday at 08:15 Asia/Bangkok.
+- Confirm Weekly changes from `partial` to `complete` after enough comparison-period snapshots accumulate.
+- These are operational observations and do not block the next connector workstream.
 
 ## Next workstream after TikTok closeout
 
