@@ -4,7 +4,7 @@
 
 ChatGPT Work and Codex share `docs/current-task.md`. The six-part Multi-channel foundation is implemented and recorded there; all unverified connectors remain fail-closed.
 
-## Baseline verification for v0.10.0
+## Baseline verification for v0.10.1
 
 Preserve local `.dev.vars` and `wrangler.sync.jsonc`, then verify the source tree with:
 
@@ -60,15 +60,15 @@ Both flags are `true`; Worker version `ba6f3968-628c-4c61-b7eb-62647b38f547` dep
 - Confirm Weekly changes from `partial` to `complete` after enough comparison-period snapshots accumulate.
 - These are operational observations and do not block the next connector workstream.
 
-## Next workstream after v0.10.0 foundation
+## Next workstream after v0.10.1 reviewed foundation
 
 1. Supply an authorized DEV YouTube Channel ID and API/OAuth credential outside source control.
 2. Run YouTube identity/source preflight and compare real payloads with `youtube-organic-v1`.
-3. Review and Apply the three YouTube RAW tables, then add real Table IDs to local config.
+3. Review `Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.1.xlsx` and Apply the three YouTube RAW tables, then add real Table IDs to local config.
 4. Complete Manual YouTube sync, rerun idempotency, reconciliation and reliability UAT before changing `uat_pending` to `active`.
 5. Open Meta App/Page/Instagram permissions in parallel; then add separate Facebook and Instagram business adapters over the shared transport.
 6. Connect WooCommerce and Chatwoot only after their sanitized fixtures are validated against authorized DEV payloads.
-7. Build Meta/TikTok/Google Ads adapters over the Canonical Ads model as sandbox/test access becomes available.
+7. Validate Ad/Creative and money-micros mappings with sandbox payloads before building Meta/TikTok/Google Ads adapters over Canonical Ads v2.
 8. Add Lark AI Summary + Lark Group Notification after at least two organic sources are Live-verified.
 9. Run final cross-channel DEV regression and documentation.
 10. Customer Production setup later using customer-owned Lark, Cloudflare, apps, credentials, and platform assets.

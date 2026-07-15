@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.10.1-multi-channel-foundation-reviewed — 2026-07-15
+
+### Fixed
+- Removed unsupported `maxResults` from `videos.list` requests filtered by `id`, while retaining 50-ID batching.
+- Classified YouTube `quotaExceeded` as terminal `YOUTUBE_QUOTA_EXHAUSTED` instead of a short retry; rate limits and backend failures retain bounded retry behavior.
+- Made `docs/current-task.md` use one honest status: `review_complete_pending_live_uat`.
+
+### Data model
+- Upgraded Canonical Ads to v2 with separate `Ad` and reusable `Creative` entities and added `MKT_Ads_Ads` plus its environment mapping.
+- Made `spend_micros` and `conversion_value_micros` integer source-of-truth fields; report currency amounts and rates are derived from micros.
+- Added strict decimal-string-to-micros parsing without JavaScript floating-point input.
+
+### Blueprint
+- Added `Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.1.xlsx` with 9 tables, 101 fields, keys/metrics/null contracts, Select options, source traceability, and blocking UAT checklist.
+- Rendered and visually verified all 8 workbook sheets; formula-error scan returned no matches.
+
+### Safety
+- YouTube remains `uat_pending`; Meta, WooCommerce, Chatwoot, and Ads remain `planned` and fail-closed.
+- No Live API, Lark, D1, Cloudflare, Queue, or customer resource was mutated.
+
+### Verification
+- Clean `npm ci`, Node unit/integration 340/340, Workers-runtime 6/6, Report reliability 51/51, Architecture 94/189/0, repository hygiene, offline npm audit 0, workbook integrity/visual/formula verification, and Wrangler dry-run 373.74 KiB / gzip 76.31 KiB passed.
+
 ## 0.10.0-multi-channel-foundation — 2026-07-15
 
 ### Added

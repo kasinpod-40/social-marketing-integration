@@ -9,6 +9,7 @@ const issues = [];
 await requireFile('.dev.vars.example');
 await requireFile('AGENTS.md');
 await requireFile('docs/current-task.md');
+await requireFile('docs/Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.1.xlsx');
 await scanForDsStore(root);
 checkTrackedDsStore();
 checkTrackedLocalOnlyFiles();

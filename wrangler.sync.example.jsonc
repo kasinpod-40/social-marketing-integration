@@ -109,6 +109,13 @@
     "LARK_TABLE_RAW_YOUTUBE_ANALYTICS_DAILY": "replace-with-table-id",
     "LARK_TABLE_MKT_CONTENT": "replace-with-table-id",
     "LARK_TABLE_MKT_CONTENT_DAILY": "replace-with-table-id",
+    // Ads tables ยังเป็น planned; ตั้งค่าเมื่อ Blueprint ผ่าน Review และ Sandbox UAT เท่านั้น
+    "LARK_TABLE_MKT_ADS_ACCOUNTS": "replace-with-table-id",
+    "LARK_TABLE_MKT_ADS_CAMPAIGNS": "replace-with-table-id",
+    "LARK_TABLE_MKT_ADS_ADGROUPS": "replace-with-table-id",
+    "LARK_TABLE_MKT_ADS_ADS": "replace-with-table-id",
+    "LARK_TABLE_MKT_ADS_CREATIVES": "replace-with-table-id",
+    "LARK_TABLE_MKT_ADS_DAILY": "replace-with-table-id",
     "LARK_TABLE_MKT_CLASSIFICATION_DICTIONARY": "replace-with-table-id",
     "LARK_TABLE_MKT_METRIC_DEFINITIONS": "replace-with-table-id",
     "LARK_TABLE_MKT_REPORT_SETTINGS": "replace-with-table-id",

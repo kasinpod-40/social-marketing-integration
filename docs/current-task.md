@@ -2,8 +2,8 @@
 
 ## Task metadata
 
-- **Status:** `implementation_complete`
-- **Baseline:** `v0.10.0-multi-channel-foundation`
+- **Status:** `review_complete_pending_live_uat`
+- **Baseline:** `v0.10.1-multi-channel-foundation-reviewed`
 - **Last updated:** `2026-07-15`
 - **Owners:** ChatGPT Work (analysis/acceptance/release) + Codex (repository implementation)
 - **Current implementation:** ผู้ใช้อนุมัติให้ทำ Multi-channel foundation ทั้ง 6 ส่วนเมื่อ 2026-07-15
@@ -29,7 +29,7 @@ TikTok Organic DEV implementation ปิดแล้วที่ baseline v0.9.6
 3. แยก Generic Organic Sync Pipeline เฉพาะส่วนที่พิสูจน์ร่วมกันได้จาก TikTok และ YouTube
 4. สร้าง Meta Graph shared client foundation สำหรับ Facebook Page และ Instagram Business โดยยังไม่เปิดใช้งาน
 5. เพิ่ม WooCommerce/Chatwoot source contracts, sanitized test fixtures และ contract validators
-6. ออกแบบ Canonical Ads model กลางสำหรับ Account/Campaign/Ad Group/Creative/Daily metrics พร้อม Stable keys และ Tests
+6. ออกแบบ Canonical Ads model กลางสำหรับ Account/Campaign/Ad Group/Ad/Creative/Daily metrics พร้อม Stable keys และ Tests
 7. กำหนด Auth, pagination, quota/rate-limit, token lifecycle, null semantics, identity mismatch, idempotency และ UAT plan ของแต่ละส่วน
 8. อัปเดต Connector/Job status ให้สะท้อน `uat_pending` หรือ `planned` อย่างซื่อสัตย์ ไม่มี fake success
 
@@ -98,17 +98,17 @@ TikTok Organic DEV implementation ปิดแล้วที่ baseline v0.9.6
 
 ## Implementation result
 
-- **Status:** `complete_pending_live_uat`
-- **Files changed:** เพิ่ม Canonical Organic domain/use cases, YouTube client/adapter/normalizer/Blueprint, Meta shared client, WooCommerce/Chatwoot sanitized contracts+fixtures, Canonical Ads model, config examples และ status guards
-- **Tests added/updated:** เพิ่ม Domain/Application/Connector/Config regressions; รวม Node unit/integration 336 tests และ Workers-runtime 6 tests
-- **Commands run:** `npm run check`, `npm test`, `npm run test:report-reliability`, `npm run deploy:dry-run`, `npm audit --offline`
+- **Status:** `review_complete_pending_live_uat`
+- **Files changed:** เพิ่ม Canonical Organic domain/use cases, YouTube client/adapter/normalizer/Blueprint, Meta shared client, WooCommerce/Chatwoot sanitized contracts+fixtures, Canonical Ads v2 ที่แยก Ad/Creative, integer-micros money contract, Excel/Lark review Blueprint, config examples และ status guards
+- **Tests added/updated:** เพิ่ม Domain/Application/Connector/Config regressions รวมกรณี `videos.list(id)` ไม่มี `maxResults`, quota exhaustion ไม่ Short retry, Ad/Creative keys, money micros และการบังคับ currency; Node unit/integration 340/340, Workers-runtime 6/6 และ Report reliability 51/51 ผ่าน
+- **Commands run:** `npm ci`, `npm run check`, `npm run test:unit`, `npm run test:worker`, `npm run test:report-reliability`, `npm run deploy:dry-run`, `npm audit --offline`
 - **Live/Sandbox UAT:** ยังไม่รันตาม Scope; ไม่มี Credentials และไม่มีการเขียน Lark/D1/Cloudflare จริงในงานนี้
 - **Remaining risks:** YouTube/Meta/WooCommerce/Chatwoot/Ads ยังไม่ Live-verified; API permissions, quota, token lifecycle, Source payload จริง และ Lark RAW schema Apply ต้องยืนยันก่อน Activation
-- **Recommended commit:** `feat: add multi-channel connector foundations`
+- **Recommended commit:** `fix: review multi-channel foundation contracts`
 
 ## Work review result
 
 - **Business acceptance:** foundation accepted by user; Live metric semantics remain subject to Source/UAT evidence
-- **Architecture acceptance:** passed — Canonical Organic core preserves TikTok behavior and keeps platform adapters separate
-- **Release decision:** code-ready foundation; all unverified routes remain fail-closed
-- **Project Brain update:** completed in v0.10.0
+- **Architecture acceptance:** passed — 94 source files / 189 local dependencies / 0 cycles; Canonical Organic core preserves TikTok behavior and keeps platform adapters separate
+- **Release decision:** reviewed code/data foundation; all unverified routes remain fail-closed; Wrangler dry-run 373.74 KiB / gzip 76.31 KiB
+- **Project Brain update:** completed in v0.10.1

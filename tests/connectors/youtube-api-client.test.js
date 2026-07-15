@@ -35,7 +35,9 @@ test('YouTube client follows bounded pageToken and chunks videos at 50 IDs', asy
   assert.deepEqual(await client.listUploadVideoIds({ uploadsPlaylistId: 'UU1' }), ['v1', 'v2']);
   const videos = await client.listVideos({ videoIds: Array.from({ length: 51 }, (_, index) => `v${index}`) });
   assert.equal(videos.length, 51);
-  assert.equal(calls.filter((url) => url.pathname.endsWith('/videos')).length, 2);
+  const videoCalls = calls.filter((url) => url.pathname.endsWith('/videos'));
+  assert.equal(videoCalls.length, 2);
+  assert.equal(videoCalls.every((url) => !url.searchParams.has('maxResults')), true);
 });
 
 test('YouTube Analytics requires OAuth and classifies server failures as retryable', async () => {
@@ -51,6 +53,32 @@ test('YouTube Analytics requires OAuth and classifies server failures as retryab
   });
   await assert.rejects(
     failing.getChannel({ channelId: 'c' }),
+    (error) => error?.code === 'YOUTUBE_TRANSIENT_API_ERROR' && error.retryable === true,
+  );
+});
+
+test('YouTube quota exhaustion is terminal while short rate limits remain retryable', async () => {
+  const quotaExceeded = new YouTubeApiClient({
+    apiKey: 'test-key',
+    fetchImpl: async () => Response.json({
+      error: { code: 403, errors: [{ reason: 'quotaExceeded' }] },
+    }, { status: 403 }),
+  });
+  await assert.rejects(
+    quotaExceeded.getChannel({ channelId: 'c' }),
+    (error) => error?.code === 'YOUTUBE_QUOTA_EXHAUSTED'
+      && error.retryable === false
+      && error.details?.recovery === 'wait_for_quota_reset_or_request_additional_quota',
+  );
+
+  const rateLimited = new YouTubeApiClient({
+    apiKey: 'test-key',
+    fetchImpl: async () => Response.json({
+      error: { code: 403, errors: [{ reason: 'rateLimitExceeded' }] },
+    }, { status: 403 }),
+  });
+  await assert.rejects(
+    rateLimited.getChannel({ channelId: 'c' }),
     (error) => error?.code === 'YOUTUBE_TRANSIENT_API_ERROR' && error.retryable === true,
   );
 });

@@ -10,6 +10,7 @@ Base name: `Social MKT Data Hub`
 - `MKT_Ads_Accounts`
 - `MKT_Ads_Campaigns`
 - `MKT_Ads_AdGroups`
+- `MKT_Ads_Ads`
 - `MKT_Ads_Creatives`
 - `MKT_Ads_Daily`
 - `MKT_Sync_Log`
@@ -42,8 +43,10 @@ Base name: `Social MKT Data Hub`
 
 - `entity_key = platform:account_id:entity_type:external_entity_id`
 - `ads_daily_key = entity_key:metric_date`
-- Hierarchy: Account → Campaign → Ad group/Ad set → Creative/Ad → Daily metrics.
-- Raw metrics: spend, impressions, reach, clicks, conversions, conversion value.
+- Delivery hierarchy: Account → Campaign → Ad group/Ad set → Ad → Daily metrics.
+- Creative เป็น reusable asset ที่ Ad อ้างถึงและไม่ใช้แทน Ad ID.
+- Raw money source of truth: `spend_micros`, `conversion_value_micros` เป็น non-negative safe integers; `spend`/`conversion_value` เป็น derived display fields.
+- Other raw metrics: impressions, reach, clicks และ conversions.
 - Derived metrics are calculated centrally; zero denominator or missing components return `null`.
 - `target_roas` is never treated as `actual_roas`; `platform` and client-facing `ad_channel` are separate dimensions.
 

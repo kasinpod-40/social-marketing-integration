@@ -5,6 +5,8 @@
 Status: Code-ready contract; Live DEV UAT pending.
 
 - Data API channel lookup uses `channels.list`; uploads enumeration uses `playlistItems.list`; video details use `videos.list` in batches of at most 50 IDs.
+- `videos.list` requests filtered by `id` do not send `maxResults`; the official method contract does not support that parameter combination.
+- `quotaExceeded` is terminal for the current job and creates an operational alert; only short rate limits/backend failures use bounded retry.
 - Public data supports API key or OAuth. Owner Analytics `reports.query` requires OAuth.
 - Data API statistics are cumulative snapshots. Analytics rows are period metrics and must be stored separately.
 - Hidden subscriber count and unsupported metrics stay `null`; explicit zero remains zero.

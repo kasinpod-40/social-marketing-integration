@@ -104,7 +104,6 @@ export class YouTubeApiClient {
         query: {
           part: 'snippet,contentDetails,statistics,status',
           id: chunk.join(','),
-          maxResults: String(chunk.length),
         },
       });
       videos.push(...requireArray(payload.items, 'YouTube videos.items'));
@@ -182,7 +181,20 @@ function createYouTubeApiError({ response, payload, path }) {
   const reasons = Array.isArray(payload?.error?.errors)
     ? payload.error.errors.map((item) => optionalText(item?.reason)).filter(Boolean)
     : [];
-  const retryableReasons = new Set(['quotaExceeded', 'rateLimitExceeded', 'userRateLimitExceeded', 'backendError']);
+  if (reasons.includes('quotaExceeded')) {
+    return permanentError(`YouTube API quota is exhausted: ${path}`, {
+      code: 'YOUTUBE_QUOTA_EXHAUSTED',
+      details: {
+        path,
+        status: response.status,
+        apiCode: payload?.error?.code ?? null,
+        reasons,
+        recovery: 'wait_for_quota_reset_or_request_additional_quota',
+      },
+    });
+  }
+
+  const retryableReasons = new Set(['rateLimitExceeded', 'userRateLimitExceeded', 'backendError']);
   const retryable = response.status === 429 || response.status >= 500
     || reasons.some((reason) => retryableReasons.has(reason));
   const factory = retryable ? transientError : permanentError;

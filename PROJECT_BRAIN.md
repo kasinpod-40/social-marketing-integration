@@ -4,15 +4,17 @@
 This project connects social organic and paid ads data into Lark Base for reporting, daily snapshots, monitoring, and AI summaries. The implementation target is a lean MVP using Cloudflare Workers, Cloudflare D1, Cloudflare Queues, Lark Base, Lark Native Integrations where useful, and JavaScript.
 
 ## Current project status
-Current audited release candidate: `v0.10.0-multi-channel-foundation`
+Current audited release candidate: `v0.10.1-multi-channel-foundation-reviewed`
 
 TikTok Organic DEV ingestion/report logic ผ่าน Live Queue UAT และ Reliability UAT แล้ว. Client Views ทั้ง 6 รายการติดตั้ง Filter/Hidden fields และ Sort `rank` ascending สำเร็จ; Advanced Permissions เปิดแล้วพร้อม `Client` role แบบ least privilege และ Final Preview เป็นศูนย์ actions/conflicts. Daily/Weekly schedules เปิดและ deploy ไปยัง Cloudflare DEV แล้ว; เหลือ operational observation ของรอบ schedule.
 
 Multi-channel foundation ทั้ง 6 ส่วนถูกเพิ่มใน Code แล้ว: YouTube Organic source/Lark contract และ code-ready adapter, Canonical Organic core ที่ TikTok ใช้ร่วมโดย Regression ผ่าน, Meta Graph transport, WooCommerce/Chatwoot sanitized contracts, และ Canonical Ads model. YouTube ยังเป็น `uat_pending`; ส่วนที่เหลือยัง `planned`. ไม่มีการเปิด route/schedule หรือเรียก Live API ใน release นี้.
 
-**v0.10.0-multi-channel-foundation — เตรียม Code/Contract ก่อนเชื่อม External platforms โดย fail closed; เพิ่ม Source/Test/Fixture artifacts สำหรับทั้ง 6 workstreams และรักษา TikTok behavior. Activation ต้องผ่าน Identity, RAW schema, Live payload, idempotency, reliability และ metric gates ตาม `docs/multi-channel-foundation-v0.10.0.md`.**
+**v0.10.1-multi-channel-foundation-reviewed — ตรวจทาน Foundation ก่อน Live UAT: `videos.list(id)` ไม่ส่ง `maxResults`, quota exhaustion ไม่ Short retry, Ads แยก Ad/Creative, Money ใช้ integer micros และมี Excel/Lark Blueprint ที่ตรวจภาพแล้ว. Activation gates อยู่ใน `docs/multi-channel-foundation-v0.10.1.md`.**
 
 v0.10.0 verification: Node unit/integration 336/336, Workers runtime 6/6, focused Report reliability 51/51, Architecture 94 source files / 189 local dependencies / 0 cycles, repository hygiene, offline npm audit 0, and Wrangler dry-run 373.71 KiB / gzip 76.31 KiB.
+
+v0.10.1 verification after clean `npm ci`: Node unit/integration 340/340, Workers runtime 6/6, focused Report reliability 51/51, Architecture 94 source files / 189 local dependencies / 0 cycles, repository hygiene, offline npm audit 0, Excel Blueprint integrity + 8-sheet visual/formula verification, and Wrangler dry-run 373.74 KiB / gzip 76.31 KiB.
 
 
 
@@ -200,6 +202,7 @@ Main tables:
 - `MKT_Ads_Accounts`
 - `MKT_Ads_Campaigns`
 - `MKT_Ads_AdGroups`
+- `MKT_Ads_Ads` — planned; ยังไม่มี Live Table ID จนกว่า Blueprint Apply
 - `MKT_Ads_Creatives`
 - `MKT_Ads_Daily`
 - `MKT_Sync_Log`
@@ -253,6 +256,7 @@ MKT_Content = tbllvswTYP1dQGf3
 MKT_Content_Daily = tbl5n2rbZU7NO07w
 MKT_Ads_Campaigns = tblR7FwJ2tasEKPy
 MKT_Ads_AdGroups = tblsFufuixpig0Tf
+MKT_Ads_Ads = pending Blueprint Apply
 MKT_Ads_Creatives = tblmWi81dZ98v4dc
 MKT_Ads_Daily = tblPTMsC9J32gukX
 MKT_Metric_Definitions = tblk2Ho99sXqLLE2

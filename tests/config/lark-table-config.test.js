@@ -14,6 +14,12 @@ test('resolves required Lark table ids from env only', () => {
   });
 });
 
+test('resolves the separate Ads Ad table mapping', () => {
+  assert.deepEqual(readLarkTableIdsFromEnv({
+    LARK_TABLE_MKT_ADS_ADS: 'tbl_ads',
+  }, ['mktAdsAds']), { mktAdsAds: 'tbl_ads' });
+});
+
 test('fails clearly when a required Lark table id env is missing', () => {
   assert.throws(
     () => readLarkTableIdsFromEnv({}, ['mktContent']),

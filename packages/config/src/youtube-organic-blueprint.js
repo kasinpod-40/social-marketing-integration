@@ -15,6 +15,16 @@ export const YOUTUBE_ORGANIC_SOURCE_CONTRACT = deepFreeze({
     videoParts: ['snippet', 'contentDetails', 'statistics', 'status'],
     maxPlaylistPageSize: 50,
     maxVideoBatchSize: 50,
+    videosListWithIds: {
+      parameters: ['part', 'id'],
+      maxResultsSupported: false,
+    },
+    quotaPolicy: {
+      quotaExceeded: 'terminal_alert_wait_for_reset_or_quota_increase',
+      rateLimitExceeded: 'bounded_retry_with_backoff',
+      userRateLimitExceeded: 'bounded_retry_with_backoff',
+      backendError: 'bounded_retry_with_backoff',
+    },
   },
   analyticsApi: {
     storageMode: 'separate_period_metrics',
