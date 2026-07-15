@@ -4,9 +4,11 @@
 This project connects social organic and paid ads data into Lark Base for reporting, daily snapshots, monitoring, and AI summaries. The implementation target is a lean MVP using Cloudflare Workers, Cloudflare D1, Cloudflare Queues, Lark Base, Lark Native Integrations where useful, and JavaScript.
 
 ## Current project status
-Official clean baseline: `v0.9.7-agent-workflow-foundation`
+Official clean baseline: `v0.10.2-multi-channel-foundation-approved`
 
-Current clean candidate: `v0.10.2-rc.1` — pending user Blueprint approval
+Current clean candidate: `v0.11.0-rc.1` — YouTube Manual DEV UAT implementation complete in Source, pending external access and Live UAT
+
+Current YouTube design artifact: `docs/Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.2.xlsx` — Technical review approved. v0.11.0-rc.1 implements guarded Schema Preview/Apply, access preflight, RAW/Canonical/Account writes, Manual Queue, checkpoint/reconciliation and Reliability reuse. No Live credential, Schema Apply, API call, Queue mutation, deployment or Schedule activation occurred.
 
 TikTok Organic DEV ingestion/report logic ผ่าน Live Queue UAT และ Reliability UAT แล้ว. Client Views ทั้ง 6 รายการติดตั้ง Filter/Hidden fields และ Sort `rank` ascending สำเร็จ; Advanced Permissions เปิดแล้วพร้อม `Client` role แบบ least privilege และ Final Preview เป็นศูนย์ actions/conflicts. Daily/Weekly schedules เปิดและ deploy ไปยัง Cloudflare DEV แล้ว; เหลือ operational observation ของรอบ schedule.
 
@@ -14,13 +16,19 @@ Multi-channel foundation ทั้ง 6 ส่วนถูกเพิ่มใ�
 
 **v0.10.1-multi-channel-foundation-reviewed — ตรวจทาน Foundation ก่อน Live UAT: `videos.list(id)` ไม่ส่ง `maxResults`, quota exhaustion ไม่ Short retry, Ads แยก Ad/Creative, Money ใช้ integer micros และมี Excel/Lark Blueprint ที่ตรวจภาพแล้ว. Activation gates อยู่ใน `docs/multi-channel-foundation-v0.10.1.md`.**
 
-**v0.10.2-rc.1 — Clean release/configuration candidate: Example config ปิด Connector/Schedule ทั้งหมด, YouTube required-table preflight รวม `MKT_Accounts`, Release tooling ตรวจ Blocklist/Allowlist, Secret, DEV resource IDs, duplicate artifacts, Manifest และ SHA-256. ยังไม่ใช่ Approved baseline และไม่มี Live mutation.**
+**v0.10.2-multi-channel-foundation-approved — Blueprint/Source foundation ผ่าน Technical review และเลื่อนเป็น Official clean baseline; Example config ปิด Connector/Schedule ทั้งหมดและ Release tooling ตรวจ Blocklist/Allowlist, Secret, DEV IDs, duplicate artifacts, Manifest และ SHA-256.**
+
+**v0.11.0-rc.1 — YouTube Manual DEV UAT implementation: guarded three-table Schema installer, Public/OAuth preflight, RAW/Canonical/Account write flow, Manual Queue-only route, D1 incremental checkpoint, non-destructive reconciliation และ Sync Log/Lock/Retry/DLQ/System Alert reuse. Connector ยัง `uat_pending`; Schedule/Production ปิด.**
 
 v0.10.0 verification: Node unit/integration 336/336, Workers runtime 6/6, focused Report reliability 51/51, Architecture 94 source files / 189 local dependencies / 0 cycles, repository hygiene, offline npm audit 0, and Wrangler dry-run 373.71 KiB / gzip 76.31 KiB.
 
 v0.10.1 verification after clean `npm ci`: Node unit/integration 340/340, Workers runtime 6/6, focused Report reliability 51/51, Architecture 94 source files / 189 local dependencies / 0 cycles, repository hygiene, offline npm audit 0, Excel Blueprint integrity + 8-sheet visual/formula verification, and Wrangler dry-run 373.74 KiB / gzip 76.31 KiB.
 
-v0.10.2-rc.1 clean-source verification: Node unit/integration 347/347, Workers runtime 6/6, Report reliability 51/51, Architecture 99 source files / 195 local dependencies / 0 cycles, repository hygiene, online/offline npm audit 0, and Wrangler dry-run 373.74 KiB / gzip 76.31 KiB. Clean archive verification adds required-path, blocked-path, Secret/DEV-ID, duplicate-artifact, Manifest and SHA-256 gates.
+v0.10.2-rc.2 source verification: Node unit/integration 351/351, Workers runtime 6/6, Report reliability 51/51, Architecture 99 source files / 195 local dependencies / 0 cycles, repository hygiene passed, offline npm audit 0, Workbook/source parity and 10-sheet visual/formula QA passed, and Wrangler dry-run 373.74 KiB / gzip 76.31 KiB. Clean archive verification adds required-path, blocked-path, Secret/DEV-ID, duplicate-artifact, Manifest and SHA-256 gates.
+
+YouTube Blueprint v0.10.2 rc.2 verification is included in the 351/351 source gate: all 42 fields, explicit sort/missing-row semantics and every canonical destination field are checked against the Workbook.
+
+v0.11.0-rc.1 source verification: Node unit/integration 368/368, Workers runtime 6/6, focused Report reliability 52/52, Architecture 109 source files / 227 local dependencies / 0 cycles, repository hygiene passed, offline npm audit 0, and Wrangler dry-run 434.55 KiB / gzip 89.06 KiB. Clean extracted-archive retest passed: 368/368 Unit, 6/6 Workers, 52/52 reliability, Architecture 109/227/0, audit 0, Wrangler 434.55/89.06 KiB, and archive findings all 0 across blocked/missing/sensitive/duplicate gates.
 
 
 
@@ -258,14 +266,14 @@ Current mapping rules:
 
 DEV Table IDs ถูกย้ายออกจาก Source/Release documentation แล้วและเก็บเฉพาะใน `wrangler.sync.jsonc`
 ของเครื่องผู้พัฒนา ตารางเดิมยังมีสถานะตาม Live UAT evidence ส่วน `MKT_Ads_Ads` และ YouTube RAW
-tables ยังรอ Blueprint approval/Apply. Production ต้องตั้งค่า Table IDs ของลูกค้าเองผ่าน Local/Environment config.
+tables ยังรอ guarded Preview/Apply ใน DEV เพราะ Source artifact ไม่มี Live credential. Production ต้องตั้งค่า Table IDs ของลูกค้าเองผ่าน Local/Environment config.
 
 ## Next action
-1. Review and approve `docs/Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.1.xlsx`.
-2. Apply YouTube RAW tables only after approval and store real Table IDs in Local config.
-3. Run authorized YouTube identity/source preflight and Manual DEV UAT before activation.
-5. Enable report schedules only after Live DEV gate passes.
-6. Then start Lark AI + Group Notification; Organic Facebook/Instagram/YouTube and Ads remain later roadmap items.
+1. Supply authorized DEV YouTube Channel ID/API key and optional owner OAuth outside Source control.
+2. Run `npm run preflight:youtube` and verify identity/uploads playlist/sample payload.
+3. Preview and guarded-apply the three YouTube RAW tables, then store returned Table IDs in ignored Local config.
+4. Deploy DEV with UAT flag only and run Manual Queue UAT: first sync, idempotency, incremental, reconciliation, quota/rate-limit, lock/retry/DLQ.
+5. Keep YouTube `uat_pending` and Schedule disabled until Live DEV evidence passes; Meta and other connectors remain separate tasks.
 
 ## 2026-07-09 — v0.1.4 env-driven config + Lark classification dictionary
 - Baseline: `v0.1.4-env-config-lark-dictionary`.

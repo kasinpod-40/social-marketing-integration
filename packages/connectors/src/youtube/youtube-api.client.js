@@ -13,8 +13,12 @@ export class YouTubeApiClient {
   constructor(config = {}) {
     this.apiKey = optionalText(config.apiKey);
     this.accessToken = optionalText(config.accessToken);
-    if (!this.apiKey && !this.accessToken) {
-      throw new TypeError('YouTubeApiClient requires apiKey or accessToken');
+    this.accessTokenProvider = config.accessTokenProvider ?? null;
+    if (this.accessTokenProvider && typeof this.accessTokenProvider.getAccessToken !== 'function') {
+      throw new TypeError('YouTubeApiClient accessTokenProvider requires getAccessToken');
+    }
+    if (!this.apiKey && !this.accessToken && !this.accessTokenProvider) {
+      throw new TypeError('YouTubeApiClient requires apiKey, accessToken, or accessTokenProvider');
     }
 
     const fetchImpl = config.fetchImpl ?? globalThis.fetch?.bind(globalThis);
@@ -33,7 +37,7 @@ export class YouTubeApiClient {
     if ((channelId ? 1 : 0) + (mine ? 1 : 0) !== 1) {
       throw new TypeError('YouTube getChannel requires exactly one of channelId or mine=true');
     }
-    if (mine && !this.accessToken) {
+    if (mine && !this.accessToken && !this.accessTokenProvider) {
       throw permanentError('YouTube mine=true requires OAuth access token', {
         code: 'YOUTUBE_OAUTH_REQUIRED',
       });
@@ -62,6 +66,9 @@ export class YouTubeApiClient {
     const playlistId = requireText(input.uploadsPlaylistId, 'uploadsPlaylistId');
     const ids = [];
     const seen = new Set();
+    const maxItems = input.maxItems === null || input.maxItems === undefined
+      ? null
+      : positiveInteger(input.maxItems, 'maxItems');
     let pageToken = null;
 
     for (let page = 1; page <= this.maxPages; page += 1) {
@@ -80,6 +87,7 @@ export class YouTubeApiClient {
         if (videoId && !seen.has(videoId)) {
           seen.add(videoId);
           ids.push(videoId);
+          if (maxItems && ids.length >= maxItems) return Object.freeze(ids);
         }
       }
       pageToken = optionalText(payload.nextPageToken);
@@ -113,7 +121,7 @@ export class YouTubeApiClient {
 
   /** อ่าน Owner Analytics ซึ่งต้องใช้ OAuth และเก็บผลแยกจาก cumulative Data API snapshots */
   async queryAnalytics(input = {}) {
-    if (!this.accessToken) {
+    if (!this.accessToken && !this.accessTokenProvider) {
       throw permanentError('YouTube Analytics requires OAuth access token', {
         code: 'YOUTUBE_ANALYTICS_OAUTH_REQUIRED',
       });
@@ -138,6 +146,14 @@ export class YouTubeApiClient {
     return Object.freeze(payload);
   }
 
+
+
+  /** Resolve OAuth token แบบ Lazy และไม่เปิดเผยค่าใน Error details */
+  async resolveAccessToken() {
+    if (this.accessTokenProvider) return requireText(await this.accessTokenProvider.getAccessToken(), 'accessToken');
+    return this.accessToken;
+  }
+
   async requestJson(input) {
     const url = new URL(`${input.baseUrl}${input.path}`);
     for (const [key, value] of Object.entries(input.query ?? {})) {
@@ -146,7 +162,8 @@ export class YouTubeApiClient {
     if (this.apiKey && input.authMode !== 'oauth') url.searchParams.set('key', this.apiKey);
 
     const headers = new Headers({ accept: 'application/json' });
-    if (this.accessToken) headers.set('authorization', `Bearer ${this.accessToken}`);
+    const accessToken = await this.resolveAccessToken();
+    if (accessToken) headers.set('authorization', `Bearer ${accessToken}`);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
     let response;

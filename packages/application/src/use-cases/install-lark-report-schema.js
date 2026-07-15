@@ -24,11 +24,13 @@ const PLACEHOLDER_TABLE_ID_PATTERNS = Object.freeze([
  * - Type mismatch จะ Fail closed เพื่อป้องกันข้อมูลเดิมเสียหาย
  * - Primary field ของ Table เดิมเป็น Manual action เพราะ Lark Field API ไม่ควรถูกใช้เปลี่ยนแบบทำลายข้อมูล
  */
-export async function planLarkReportSchema(input) {
+export async function planLarkSchema(input) {
   const client = requireClient(input?.client);
   const env = input?.env ?? {};
   const schema = input?.schema ?? LARK_REPORT_SCHEMA;
-  validateReportSchemaDefinition(schema);
+  const schemaVersion = input?.schemaVersion ?? LARK_REPORT_SCHEMA_VERSION;
+  const validateSchema = input?.validateSchema ?? validateReportSchemaDefinition;
+  validateSchema(schema);
 
   const liveTables = await client.listTables();
   const tableIndex = buildTableIndex(liveTables);
@@ -91,7 +93,7 @@ export async function planLarkReportSchema(input) {
   const summary = summarizePlan({ actions, conflicts, warnings, manualActions, resolvedTables });
   return deepFreeze({
     mode: 'preview',
-    schemaVersion: LARK_REPORT_SCHEMA_VERSION,
+    schemaVersion,
     readyToApply: conflicts.length === 0,
     summary,
     resolvedTables,
@@ -107,12 +109,14 @@ export async function planLarkReportSchema(input) {
  * Apply แผนติดตั้งจริงหลังผู้เรียกยืนยัน CONFIRM_WRITE=YES แล้วเท่านั้น
  * ฟังก์ชันนี้ไม่อ่าน process.env เอง เพื่อให้ Tests และ Script guard แยกความรับผิดชอบชัดเจน
  */
-export async function applyLarkReportSchema(input) {
+export async function applyLarkSchema(input) {
   const client = requireClient(input?.client);
   const env = input?.env ?? {};
   const schema = input?.schema ?? LARK_REPORT_SCHEMA;
+  const schemaVersion = input?.schemaVersion ?? LARK_REPORT_SCHEMA_VERSION;
+  const validateSchema = input?.validateSchema ?? validateReportSchemaDefinition;
   const onProgress = typeof input?.onProgress === 'function' ? input.onProgress : () => undefined;
-  const preview = await planLarkReportSchema({ client, env, schema });
+  const preview = await planLarkSchema({ client, env, schema, schemaVersion, validateSchema });
 
   if (!preview.readyToApply) {
     throw permanentError('Lark report schema contains conflicts and cannot be applied safely', {
@@ -177,10 +181,12 @@ export async function applyLarkReportSchema(input) {
     if (tableId) postApplyEnv[table.envName] = tableId;
   }
 
-  const verification = await planLarkReportSchema({
+  const verification = await planLarkSchema({
     client,
     env: postApplyEnv,
     schema,
+    schemaVersion,
+    validateSchema,
   });
 
   const remainingWriteActions = verification.actions.length;
@@ -196,7 +202,7 @@ export async function applyLarkReportSchema(input) {
 
   return deepFreeze({
     mode: 'apply',
-    schemaVersion: LARK_REPORT_SCHEMA_VERSION,
+    schemaVersion,
     ok: true,
     summary: {
       plannedActions: preview.actions.length,
@@ -217,6 +223,26 @@ export function isPlaceholderTableId(value) {
   if (typeof value !== 'string' || value.trim() === '') return true;
   const normalized = value.trim();
   return PLACEHOLDER_TABLE_ID_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
+/** Compatibility wrapper สำหรับ Report schema เดิม */
+export function planLarkReportSchema(input = {}) {
+  return planLarkSchema({
+    ...input,
+    schema: input.schema ?? LARK_REPORT_SCHEMA,
+    schemaVersion: input.schemaVersion ?? LARK_REPORT_SCHEMA_VERSION,
+    validateSchema: input.validateSchema ?? validateReportSchemaDefinition,
+  });
+}
+
+/** Compatibility wrapper สำหรับ Report schema เดิม */
+export function applyLarkReportSchema(input = {}) {
+  return applyLarkSchema({
+    ...input,
+    schema: input.schema ?? LARK_REPORT_SCHEMA,
+    schemaVersion: input.schemaVersion ?? LARK_REPORT_SCHEMA_VERSION,
+    validateSchema: input.validateSchema ?? validateReportSchemaDefinition,
+  });
 }
 
 function planExistingTableFields(input) {

@@ -1,5 +1,56 @@
 # Changelog
 
+## 0.11.0-rc.1 — YouTube Organic Manual DEV UAT implementation — 2026-07-15
+
+### Added
+- Added guarded YouTube RAW schema Preview/Apply derived from the approved v0.10.2 Blueprint.
+- Added Public Data and optional Owner Analytics access preflight with channel-owner identity validation.
+- Added API-key, short-lived OAuth, and refresh-token clients with placeholder rejection before External requests.
+- Added RAW Channel/Video/Analytics writes, field-grain validation, Canonical Content/Daily mapping, and Account write-last behavior.
+- Added Manual Queue routing, D1 checkpoint, recent-window incremental mode, periodic full reconciliation, Sync Log/Lock/Retry/DLQ reuse, and reconciliation warning alerts.
+
+### Safety
+- YouTube remains `uat_pending`; Manual UAT requires a separate flag while the normal connector flag remains false.
+- No YouTube Scheduler producer, Live API call, Lark Schema Apply, Queue mutation, deployment, Meta work, or Production activation occurred in the source build.
+- Official foundation baseline is `v0.10.2-multi-channel-foundation-approved`.
+
+### Verification
+- Clean extracted archive passed: Unit 368/368, Workers 6/6, reliability 52/52, Architecture 109/227/0, audit 0, Wrangler dry-run 434.55/89.06 KiB, and blocked/missing/sensitive/duplicate findings all 0.
+
+## 0.10.2-rc.2 — YouTube Blueprint and clean artifact corrections — 2026-07-15
+
+### Fixed
+- Added deterministic YouTube Analytics `sort=day,video` before bounded pagination.
+- Standardized cumulative daily stable keys and mapping on `metric_date`.
+- Split never-observed Video×Day gaps from previously observed rows missing on re-fetch; no fabricated zero or noisy Cartesian warnings.
+- Expanded YouTube canonical mapping to destination-field granularity and source metadata to all 42 fields.
+- Added Workbook/source parity regression tests.
+- Restored safe `.gitignore` and `.dev.vars.example`, corrected release required paths, and removed duplicate D1 sensitive scanning.
+- Archived the deprecated Canva-ready schema note and excluded local config/output artifacts from releases.
+
+### Safety
+- No Lark Schema Apply, YouTube API call, route/schedule activation, deployment, or Meta implementation.
+- Official baseline remains `v0.9.7-agent-workflow-foundation`; user Blueprint approval remains pending.
+
+
+## Unreleased — YouTube Organic Blueprint v0.10.2
+
+### Contract revision
+- Revised the YouTube Channel RAW grain to one latest-state row per Channel and added an activation gate for a missing uploads playlist.
+- Added `subscriber_count_hidden` plus explicit hidden/rounded subscriber-count semantics.
+- Added `last_seen_at`, `source_availability_status`, and `missing_since` with retain/warn/no-delete/no-zero reconciliation rules.
+- Fixed Phase 1 canonical classification at `content_type=video`; Shorts classification remains deferred.
+- Defined Owner Analytics by exact Pacific `source_metric_date`, bounded `day,video` query/pagination rules, latest-available-date behavior, and explicit metric units.
+- Kept Owner Analytics RAW-only in Phase 1 so period metrics cannot overwrite cumulative `MKT_Content_Daily` snapshots.
+- Added explicit canonical mappings for `MKT_Accounts`, `MKT_Content`, and cumulative `MKT_Content_Daily`.
+
+### Blueprint and safety
+- Added the visually verified 10-sheet `Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.2.xlsx` with 9 tables, 105 fields, a YouTube mapping sheet, and an approval sheet.
+- Upgraded the repository contract to `youtube-organic-v2` and added focused regression coverage for fields, query/date/unit semantics, reconciliation, and canonical isolation.
+- This revision does not Apply Lark Schema, call Live APIs, enable routes/schedules, deploy Workers, or expand into Meta implementation.
+- User approval and authorized DEV preflight remain blocking gates.
+- Verification passed: Unit/Integration 348/348, Workers-runtime 6/6, Report reliability 51/51, Architecture 99/195/0, repository hygiene, offline audit 0, and Wrangler dry-run 373.74 KiB / gzip 76.31 KiB.
+
 ## 0.10.2-rc.1 — 2026-07-15
 
 ### Configuration safety

@@ -53,6 +53,7 @@ export function mapYouTubeChannelResource(channel, expectedChannelId = null) {
       channel?.contentDetails?.relatedPlaylists?.uploads,
       'channel.contentDetails.relatedPlaylists.uploads',
     ),
+    subscriberCountHidden: channel?.statistics?.hiddenSubscriberCount === true,
     metrics: Object.freeze({
       views: readNullableCount(channel?.statistics?.viewCount, 'YouTube channel viewCount'),
       subscribers: channel?.statistics?.hiddenSubscriberCount === true

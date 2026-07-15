@@ -5,6 +5,7 @@ import {
   readLarkTableIdsFromEnv,
 } from '../../packages/config/src/lark-table-config.js';
 import {
+  readYouTubeChannelIdFromEnv,
   readYouTubeLarkTableIdsFromEnv,
   YOUTUBE_REQUIRED_LARK_TABLE_KEYS,
 } from '../../packages/config/src/youtube-organic-runtime-config.js';
@@ -43,11 +44,35 @@ test('YouTube activation preflight requires Account, RAW, Content and Daily tabl
   ]));
   assert.equal(readYouTubeLarkTableIdsFromEnv(complete).mktAccounts, 'tbl_youtube_0');
 
+
+
+  const placeholders = Object.fromEntries(YOUTUBE_REQUIRED_LARK_TABLE_KEYS.map((tableKey, index) => [
+    LARK_TABLE_ENV[tableKey],
+    `replace-with-table-id-${index}`,
+  ]));
+  assert.throws(
+    () => readYouTubeLarkTableIdsFromEnv(placeholders),
+    (error) => error?.code === 'YOUTUBE_TABLE_CONFIG_NOT_APPLIED',
+  );
+
   delete complete.LARK_TABLE_MKT_ACCOUNTS;
   assert.throws(
     () => readYouTubeLarkTableIdsFromEnv(complete),
     (error) => error?.code === 'LARK_TABLE_CONFIG_INVALID'
       && error.details?.envName === 'LARK_TABLE_MKT_ACCOUNTS',
+  );
+});
+
+
+test('YouTube channel allowlist rejects missing and placeholder values before API calls', () => {
+  assert.equal(readYouTubeChannelIdFromEnv({ YOUTUBE_CHANNEL_ID: ' channel_A ' }), 'channel_A');
+  assert.throws(
+    () => readYouTubeChannelIdFromEnv({ YOUTUBE_CHANNEL_ID: 'replace-with-youtube-channel-id' }),
+    (error) => error?.code === 'YOUTUBE_CHANNEL_CONFIG_INVALID',
+  );
+  assert.throws(
+    () => readYouTubeChannelIdFromEnv({}),
+    (error) => error?.code === 'YOUTUBE_CHANNEL_CONFIG_INVALID',
   );
 });
 

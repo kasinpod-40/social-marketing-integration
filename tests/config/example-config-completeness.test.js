@@ -40,5 +40,9 @@ test('release examples keep every connector and schedule fail-closed', async () 
     assert.match(devVars, new RegExp(`^${flag}=false$`, 'mu'));
     assert.match(wrangler, new RegExp(`"${flag}"\\s*:\\s*"false"`, 'u'));
   }
-  assert.doesNotMatch(wrangler, /dev_ft_pumkin|ft\.pumkin/u);
+  for (const content of [devVars, wrangler]) {
+    assert.doesNotMatch(content, /dev_ft_pumkin|ft\.pumkin/u);
+    assert.match(content, /MKT_CUSTOMER_PROFILE(?:=|"\s*:\s*")replace-with-customer-profile/u);
+    assert.match(content, /TIKTOK_SOURCE_HANDLE(?:=|"\s*:\s*")replace-with-tiktok-handle/u);
+  }
 });

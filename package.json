@@ -1,6 +1,6 @@
 {
   "name": "social-marketing-integration",
-  "version": "0.10.2-rc.1",
+  "version": "0.11.0-rc.1",
   "private": true,
   "type": "module",
   "engines": {
@@ -25,7 +25,11 @@
     "enable:tiktok-report-schedules": "node scripts/enable-tiktok-report-schedules.mjs",
     "enable:tiktok-report-schedules:apply": "node scripts/enable-tiktok-report-schedules.mjs --apply",
     "release:package": "node scripts/package-clean-release.mjs",
-    "release:verify": "node scripts/verify-release-archive.mjs"
+    "release:verify": "node scripts/verify-release-archive.mjs",
+    "setup:youtube-schema": "node scripts/setup-youtube-schema.mjs",
+    "setup:youtube-schema:apply": "node scripts/setup-youtube-schema.mjs --apply",
+    "preflight:youtube": "node scripts/preflight-youtube-dev-access.mjs",
+    "job:youtube-uat": "node scripts/print-youtube-uat-job.mjs"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.18.4",

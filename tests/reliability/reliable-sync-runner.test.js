@@ -292,3 +292,33 @@ test('lease heartbeat assertActive fails closed after the local lease expiry', a
     await heartbeat.stop();
   }
 });
+
+test('successful sync can persist one warning alert for reconciliation without failing the run', async () => {
+  const store = createStore();
+  const lockManager = new InMemoryLeaseLockManager();
+
+  await runReliableSync({
+    store,
+    lockManager,
+    syncRunId: 'run-warning',
+    customerProfile: 'dev_ft_pumkin',
+    accountKey: 'youtube_dev',
+    platform: 'youtube',
+    source: 'youtube_data_api',
+    syncType: 'organic_manual_uat',
+    leaseMs: 60_000,
+    alertOnResultWarnings: true,
+    execute: async () => ({
+      rawRecords: 1,
+      rawVideos: { created: 0, updated: 1, skipped: 0 },
+      warnings: [{ code: 'YOUTUBE_VIDEO_RECONCILIATION_REQUIRED', videoId: 'video_gone' }],
+      reconciliation: { required: true, missingVideoIds: ['video_gone'] },
+    }),
+  });
+
+  assert.equal(store.syncRuns.at(-1).status, 'success');
+  assert.equal(store.syncRuns.at(-1).details.warningCount, 1);
+  assert.equal(store.alerts.length, 1);
+  assert.equal(store.alerts[0].alertType, 'sync_completed_with_warnings');
+  assert.equal(store.alerts[0].severity, 'warning');
+});

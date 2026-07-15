@@ -1,0 +1,67 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  mapMissingYouTubeVideoRawRow,
+  mapYouTubeAnalyticsResponse,
+  mapYouTubeChannelRawRow,
+  mapYouTubeVideoRawRow,
+} from '../../packages/connectors/src/youtube/youtube-raw.adapter.js';
+
+const CHANNEL = {
+  id: 'channel_A',
+  snippet: { title: 'Channel A' },
+  contentDetails: { relatedPlaylists: { uploads: 'UU_A' } },
+  statistics: { viewCount: '100', hiddenSubscriberCount: true, videoCount: '2' },
+};
+const VIDEO = {
+  id: 'video_A', etag: 'etag-A',
+  snippet: { channelId: 'channel_A', title: 'Video A', publishedAt: '2026-07-14T00:00:00Z' },
+  contentDetails: { duration: 'PT1M' },
+  statistics: { viewCount: '10', likeCount: '2', commentCount: '1' },
+  status: { privacyStatus: 'public' },
+};
+
+test('maps YouTube Channel and Video RAW rows with hidden subscriber and availability semantics', () => {
+  const channel = mapYouTubeChannelRawRow(CHANNEL, { expectedChannelId: 'channel_A', fetchedAt: 1000 });
+  const video = mapYouTubeVideoRawRow(VIDEO, { expectedChannelId: 'channel_A', fetchedAt: 1000 });
+  assert.equal(channel.raw_channel_key, 'youtube:channel_A');
+  assert.equal(channel.subscriber_count, null);
+  assert.equal(channel.subscriber_count_hidden, true);
+  assert.equal(video.raw_video_key, 'youtube:channel_A:video_A');
+  assert.equal(video.source_availability_status, 'available');
+  assert.equal(video.missing_since, null);
+});
+
+test('maps missing video as a partial reconciliation patch without zero metrics', () => {
+  const row = mapMissingYouTubeVideoRawRow({ channelId: 'channel_A', videoId: 'gone', fetchedAt: 2000 });
+  assert.deepEqual(row, {
+    raw_video_key: 'youtube:channel_A:gone',
+    channel_id: 'channel_A',
+    video_id: 'gone',
+    last_seen_at: 2000,
+    source_availability_status: 'missing',
+    missing_since: 2000,
+    fetched_at: 2000,
+    source_payload_json: JSON.stringify({
+      reconciliation_status: 'missing',
+      observed_in_uploads_playlist: false,
+    }),
+  });
+  assert.equal(Object.hasOwn(row, 'view_count'), false);
+});
+
+test('validates Analytics headers and preserves Pacific source day as text', () => {
+  const rows = mapYouTubeAnalyticsResponse({
+    columnHeaders: [
+      'day', 'video', 'views', 'likes', 'comments', 'shares',
+      'estimatedMinutesWatched', 'averageViewDuration', 'averageViewPercentage',
+    ].map((name) => ({ name })),
+    rows: [['2026-07-14', 'video_A', 10, 2, 1, 1, 5.5, 30, 50]],
+  }, { channelId: 'channel_A', fetchedAt: 3000 });
+  assert.equal(rows[0].raw_analytics_daily_key, 'youtube:channel_A:video_A:2026-07-14');
+  assert.equal(rows[0].source_metric_date, '2026-07-14');
+  assert.equal(rows[0].average_view_percentage, 50);
+  assert.throws(() => mapYouTubeAnalyticsResponse({ columnHeaders: [{ name: 'day' }], rows: [] }, {
+    channelId: 'channel_A', fetchedAt: 3000,
+  }), (error) => error?.code === 'YOUTUBE_ANALYTICS_GRAIN_MISMATCH');
+});

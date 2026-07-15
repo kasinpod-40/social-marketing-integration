@@ -124,6 +124,24 @@ export function assertJobImplemented(definition) {
   return definition;
 }
 
+
+/** อนุญาต Job uat_pending เฉพาะ manual_uat; Job planned ยังถูกปฏิเสธเสมอ */
+export function assertJobManualUatImplemented(definition, trigger) {
+  if (definition?.implementationStatus !== JOB_IMPLEMENTATION_STATUS.UAT_PENDING) {
+    throw permanentError(`Sync job is not eligible for manual UAT: ${definition?.type ?? 'unknown'}`, {
+      code: 'SYNC_JOB_UAT_MODE_INVALID',
+      details: { type: definition?.type ?? null },
+    });
+  }
+  if (trigger !== 'manual_uat') {
+    throw permanentError(`Sync job requires trigger=manual_uat: ${definition.type}`, {
+      code: 'SYNC_JOB_UAT_TRIGGER_REQUIRED',
+      details: { type: definition.type },
+    });
+  }
+  return definition;
+}
+
 /** คืน Job catalog ทั้งหมดสำหรับ Test/เอกสาร/หน้า Admin โดยไม่เปิดให้แก้ Registry */
 export function listJobDefinitions() {
   return Object.freeze(Object.values(JOB_CATALOG));

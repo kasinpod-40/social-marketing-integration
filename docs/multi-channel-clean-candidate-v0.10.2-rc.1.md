@@ -3,8 +3,12 @@
 ## Status
 
 `v0.10.2-rc.1` เป็น Clean candidate ระหว่างรอผู้ใช้อนุมัติ
-`docs/Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.1.xlsx` เท่านั้น ไม่ใช่ Official baseline
+`docs/Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.2.xlsx` เท่านั้น ไม่ใช่ Official baseline
 และไม่อนุญาตให้ Apply Schema, เรียก Live API, Deploy หรือเปิด Connector/Schedule ใหม่
+
+Blueprint v0.10.2 แก้ Channel/Video latest-state grain, hidden subscriber semantics,
+non-destructive reconciliation, Pacific-day Owner Analytics query/units และ Canonical mapping แล้ว.
+Owner Analytics ยังคง RAW-only ใน Phase 1 และ Artifact ยังรอ User approval.
 
 ## Configuration completion
 

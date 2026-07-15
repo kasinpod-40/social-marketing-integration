@@ -2,9 +2,9 @@
 
 ## Current release candidate
 
-Official baseline: `v0.9.7-agent-workflow-foundation`
+Official baseline: `v0.10.2-multi-channel-foundation-approved`
 
-Clean candidate: `v0.10.2-rc.1` — 2026-07-15, pending user Blueprint approval
+Clean candidate: `v0.11.0-rc.1` — 2026-07-15, implementation complete pending authorized DEV access and Live UAT
 
 ## Multi-channel foundation
 
@@ -12,9 +12,10 @@ Clean candidate: `v0.10.2-rc.1` — 2026-07-15, pending user Blueprint approval
 - TikTok and YouTube now share Canonical Organic identities/rows/batch/destination planning while platform parsing and identity contracts remain separate.
 - Meta Graph transport, WooCommerce/Chatwoot sanitized contracts and Canonical Ads v2 are present as `planned` foundations without Worker routes.
 - v0.10.1 removes unsupported `maxResults` from `videos.list(id)`, treats quota exhaustion as terminal alert, separates Ad from reusable Creative and makes integer micros the Ads money source of truth.
-- The reviewed Excel/Lark model is `../Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.1.xlsx`.
+- The Excel/Lark model `../Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.2.xlsx` passed Technical review and is the approved implementation contract.
+- YouTube contract `youtube-organic-v2` uses latest-state Channel/Video RAW rows, non-destructive Video reconciliation, exact Pacific `source_metric_date`, and RAW-only Owner Analytics in Phase 1.
 - No external API, Lark, D1 or Cloudflare resource was mutated. Activation gates are documented in `../multi-channel-foundation-v0.10.1.md`.
-- v0.10.2-rc.1 adds fail-closed examples, YouTube Account/RAW/Content/Daily configuration preflight and verified Clean archive tooling; it does not add the Account write path or activate YouTube.
+- v0.11.0-rc.1 adds guarded YouTube Schema Preview/Apply, access preflight, Account/RAW/Content/Daily write path, Manual Queue route, checkpoint/reconciliation and Reliability reuse; it does not activate Schedule or Production.
 
 ## Shared Work/Codex handoff
 
@@ -49,7 +50,9 @@ Canonical closeout: `../tiktok-organic-dev-complete-v0.9.6.md`; detailed earlier
 - v0.9.7 workflow gate: unit 312/312, Workers 6/6, Report reliability 51/51, focused View/Lark/build 56/56, Architecture 77/168/0, hygiene pass, npm audit 0, and the same Wrangler bundle because runtime behavior is unchanged.
 - v0.10.0 foundation gate: unit 336/336, Workers 6/6, Report reliability 51/51, Architecture 94/189/0, hygiene pass, offline npm audit 0, and Wrangler dry-run 373.71 KiB / gzip 76.31 KiB.
 - v0.10.1 reviewed gate after clean `npm ci`: unit 340/340, Workers 6/6, Report reliability 51/51, Architecture 94/189/0, hygiene pass, offline npm audit 0, workbook 8-sheet visual/formula/integrity verification, and Wrangler dry-run 373.74 KiB / gzip 76.31 KiB.
-- v0.10.2-rc.1 clean-source gate: unit 347/347, Workers 6/6, Report reliability 51/51, Architecture 99/195/0, hygiene pass, online/offline npm audit 0, Wrangler dry-run 373.74 KiB / gzip 76.31 KiB, and Clean archive policy pass.
+- v0.10.2-rc.2 source gate: unit 351/351, Workers 6/6, Report reliability 51/51, Architecture 99/195/0, hygiene pass, offline npm audit 0, Workbook/source parity + 10-sheet visual/formula QA, and Wrangler dry-run 373.74 KiB / gzip 76.31 KiB.
+- v0.11.0-rc.1 source gate: unit 368/368, Workers 6/6, Report reliability 52/52, Architecture 109/227/0, hygiene pass, offline npm audit 0, and Wrangler dry-run 434.55 KiB / gzip 89.06 KiB.
+- YouTube Blueprint rc.2 parity is part of the 351/351 gate and verifies all 42 field metadata rows, query/date/missing semantics and field-by-field mapping.
 
 ## v0.9.6 closeout baseline
 
@@ -78,4 +81,4 @@ Clients should not use RAW tables, `MKT_Content_Daily`, Sync Log, System Alerts,
 
 ## Next implementation workstream
 
-Run YouTube DEV access/identity preflight, review/apply its RAW schema, and perform Manual Live UAT before activating its route. Open Meta/WooCommerce/Chatwoot access in parallel. See `10-next-actions.md`.
+Provide authorized DEV access, run YouTube identity/source preflight, guarded-apply the RAW schema and perform Manual Live UAT. The route remains Manual-only and `uat_pending`; Meta/WooCommerce/Chatwoot remain outside this revision. See `10-next-actions.md`.

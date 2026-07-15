@@ -1,0 +1,17 @@
+{
+  "ok": true,
+  "version": "0.11.0-rc.1",
+  "sourceCommit": "236ca964f427b2eb61581256efefa788d3ce7298",
+  "sourceTreeDirty": false,
+  "archivePath": "/mnt/data/mkt_v0103_work/outputs/releases/social-marketing-integration-v0.11.0-rc.1.zip",
+  "checksumPath": "/mnt/data/mkt_v0103_work/outputs/releases/social-marketing-integration-v0.11.0-rc.1.zip.sha256",
+  "manifestPath": "/mnt/data/mkt_v0103_work/outputs/releases/social-marketing-integration-v0.11.0-rc.1.manifest.txt",
+  "verificationPath": "/mnt/data/mkt_v0103_work/outputs/releases/social-marketing-integration-v0.11.0-rc.1.verification.json",
+  "sha256": "44c7f1dae62a9702fe6b88a17354696c8805033bb2cc90e496d416d4d61b34e6",
+  "fileCount": 250,
+  "blockedPathCount": 0,
+  "missingPathCount": 0,
+  "sensitiveFindingCount": 0,
+  "duplicateArtifactCount": 0,
+  "manifestEntryCount": 251
+}

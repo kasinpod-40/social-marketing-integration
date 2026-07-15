@@ -1,5 +1,6 @@
 import { createSystemAlert } from '../../../packages/domain/src/entities/system-alert.js';
 import { syncTikTokCreatorNativeToLark } from '../../../packages/application/src/use-cases/sync-tiktok-creator-native-to-lark.js';
+import { syncYouTubeOrganicToLark } from '../../../packages/application/src/use-cases/sync-youtube-organic-to-lark.js';
 import { createLarkBitableClientFromEnv } from '../../../packages/connectors/src/lark/lark-bitable.client.js';
 import { LarkRecordRepository } from '../../../packages/connectors/src/lark/lark-record-repository.js';
 import { TableSyncEngine } from '../../../packages/sync-engine/src/table-sync-engine.js';
@@ -8,14 +9,22 @@ import { seedReportSettings } from '../../../packages/application/src/use-cases/
 import { generateTikTokOrganicReport } from '../../../packages/application/src/use-cases/generate-tiktok-organic-report.js';
 import { addDaysDateOnly } from '../../../packages/application/src/reports/report-period.js';
 import { readLarkTableIdsFromEnv } from '../../../packages/config/src/lark-table-config.js';
+import {
+  readYouTubeChannelIdFromEnv,
+  readYouTubeLarkTableIdsFromEnv,
+} from '../../../packages/config/src/youtube-organic-runtime-config.js';
 import { validateLarkLiveSync } from '../../../packages/application/src/use-cases/validate-lark-live-sync.js';
 import { loadCustomerRuntimeConfig } from '../../../packages/config/src/customer-profiles.js';
 import { resolveMetricDate } from '../../../packages/config/src/metric-date-config.js';
 import { CONNECTOR_KEYS } from '../../../packages/config/src/connector-catalog.js';
-import { assertConnectorRunnable } from '../../../packages/application/src/connectors/connector-registry.js';
+import {
+  assertConnectorManualUatRunnable,
+  assertConnectorRunnable,
+} from '../../../packages/application/src/connectors/connector-registry.js';
 import {
   JOB_TYPES,
   assertJobImplemented,
+  assertJobManualUatImplemented,
   getJobDefinition,
 } from '../../../packages/application/src/jobs/job-catalog.js';
 import { normalizeQueueJobMessage } from '../../../packages/application/src/jobs/queue-job.js';
@@ -29,6 +38,7 @@ import { D1ReliabilityStore } from '../../../packages/reliability/src/d1-reliabi
 import { CompositeReliabilityStore } from '../../../packages/reliability/src/composite-reliability-store.js';
 import { LarkReliabilityStore } from '../../../packages/reliability/src/lark-reliability-store.js';
 import { D1IncrementalStateStore } from '../../../packages/sync-engine/src/d1-incremental-state-store.js';
+import { createYouTubeClientsFromEnv } from '../../../packages/connectors/src/youtube/youtube-runtime-factory.js';
 
 const DEFAULT_LOCK_LEASE_MS = 10 * 60 * 1000;
 const DEFAULT_LOCK_RENEW_INTERVAL_MS = 2 * 60 * 1000;
@@ -185,12 +195,91 @@ export default syncWorker;
 
 /** Route Job type ไปยัง Use case จริง โดยตรวจ Implementation/Profile/Feature flag ตามลำดับ */
 export async function processJob(input) {
-  const definition = assertJobImplemented(getJobDefinition(input.job?.body?.type));
+  const registeredDefinition = getJobDefinition(input.job?.body?.type);
+  const isYouTubeManualUat = registeredDefinition.type === JOB_TYPES.YOUTUBE_ORGANIC_SYNC
+    && input.job?.body?.trigger === 'manual_uat';
+  const definition = isYouTubeManualUat
+    ? assertJobManualUatImplemented(registeredDefinition, input.job.body.trigger)
+    : assertJobImplemented(registeredDefinition);
   const runtimeConfig = input.getRuntimeConfig();
   const connectorConfig = definition.connectorKey
-    ? assertConnectorRunnable(runtimeConfig, definition.connectorKey)
+    ? (isYouTubeManualUat
+      ? assertConnectorManualUatRunnable(runtimeConfig, definition.connectorKey, {
+        trigger: input.job.body.trigger,
+        uatEnabled: readBoolean(input.env?.MKT_CONNECTOR_YOUTUBE_UAT_ENABLED, false),
+        featureFlagEnv: 'MKT_CONNECTOR_YOUTUBE_UAT_ENABLED',
+      })
+      : assertConnectorRunnable(runtimeConfig, definition.connectorKey))
     : null;
   const infrastructure = input.getInfrastructure();
+
+  if (definition.type === JOB_TYPES.YOUTUBE_ORGANIC_SYNC) {
+    // ต้องตรวจ Schema/Table IDs ก่อนสร้าง YouTube client เพื่อไม่เสีย Quota โดยไม่จำเป็น
+    const youtubeTableIds = readYouTubeLarkTableIdsFromEnv(input.env);
+    const operationalTableIds = readLarkTableIdsFromEnv(input.env, ['mktSyncLog', 'mktSystemAlerts']);
+    const tableIds = Object.freeze({ ...youtubeTableIds, ...operationalTableIds });
+    const reliability = infrastructure.getReliability(tableIds);
+    const clients = createYouTubeClientsFromEnv(input.env);
+    const analyticsEnabled = readBoolean(input.env?.MKT_YOUTUBE_ANALYTICS_ENABLED, false);
+    const channelId = readYouTubeChannelIdFromEnv(input.env);
+
+    return runReliableSync({
+      store: reliability.store,
+      lockManager: reliability.lockManager,
+      customerProfile: runtimeConfig.profileKey,
+      accountKey: connectorConfig.accountKey,
+      platform: 'youtube',
+      source: 'youtube_data_api',
+      syncType: 'organic_manual_uat',
+      retryCount: Math.max(0, readAttempts(input.message) - 1),
+      leaseMs: readPositiveInteger(input.env?.MKT_SYNC_LOCK_LEASE_MS, DEFAULT_LOCK_LEASE_MS),
+      renewIntervalMs: readPositiveInteger(
+        input.env?.MKT_SYNC_LOCK_RENEW_INTERVAL_MS,
+        DEFAULT_LOCK_RENEW_INTERVAL_MS,
+      ),
+      alertOnRetryableFailure: false,
+      alertOnResultWarnings: true,
+      onReliabilityError: (event) => logQueueResult({
+        ok: false,
+        scope: 'reliability',
+        ...sanitizeReliabilityEvent(event),
+      }),
+      execute: ({ syncRunId, lockKey, assertLockActive }) => syncYouTubeOrganicToLark({
+        syncRunId,
+        assertLockActive,
+        repository: infrastructure.repository,
+        syncEngine: infrastructure.syncEngine,
+        incrementalStateStore: infrastructure.getIncrementalStateStore(),
+        publicClient: clients.publicClient,
+        ownerClient: clients.ownerClient,
+        channelId,
+        accountKey: connectorConfig.accountKey,
+        customerProfile: runtimeConfig.profileKey,
+        cursorKey: lockKey,
+        metricDate: readMetricDate(input.job.body?.metricDate, input.env),
+        reportingTimezone: input.env?.DEFAULT_TIMEZONE ?? 'Asia/Bangkok',
+        syncMode: input.job.body?.syncMode,
+        recentVideoLimit: readPositiveInteger(input.env?.MKT_YOUTUBE_RECENT_VIDEO_LIMIT, 100),
+        fullSyncIntervalMs: readPositiveInteger(
+          input.env?.MKT_YOUTUBE_FULL_RECONCILIATION_INTERVAL_MS,
+          DEFAULT_TIKTOK_FULL_RECONCILIATION_INTERVAL_MS,
+        ),
+        analyticsEnabled,
+        analyticsStartDate: input.job.body?.analyticsStartDate,
+        analyticsEndDate: input.job.body?.analyticsEndDate,
+        analyticsMaxPages: readPositiveInteger(input.env?.MKT_YOUTUBE_ANALYTICS_MAX_PAGES, 1000),
+        dryRun: input.job.body?.dryRun === true,
+        tables: {
+          mktAccounts: tableIds.mktAccounts,
+          rawYouTubeChannels: tableIds.rawYouTubeChannels,
+          rawYouTubeVideos: tableIds.rawYouTubeVideos,
+          rawYouTubeAnalyticsDaily: tableIds.rawYouTubeAnalyticsDaily,
+          mktContent: tableIds.mktContent,
+          mktContentDaily: tableIds.mktContentDaily,
+        },
+      }),
+    });
+  }
 
   if (definition.type === JOB_TYPES.TIKTOK_CREATOR_NATIVE_SYNC) {
     const tableIds = readLarkTableIdsFromEnv(input.env, [
@@ -787,8 +876,14 @@ function summarizeJobResult(result) {
     invalidClassificationRuleCount: Array.isArray(result.classificationDictionary?.invalidRows)
       ? result.classificationDictionary.invalidRows.length
       : 0,
+    rawChannels: summarizeWriteResult(result.rawChannels),
+    rawVideos: summarizeWriteResult(result.rawVideos),
+    rawAnalytics: summarizeWriteResult(result.rawAnalytics),
     content: summarizeWriteResult(result.content ?? result.syncPlan?.content),
     dailySnapshots: summarizeWriteResult(result.dailySnapshots ?? result.syncPlan?.dailySnapshots),
+    accounts: summarizeWriteResult(result.accounts),
+    sourceSummary: result.sourceSummary ?? null,
+    checkpointSaved: result.checkpointSaved ?? null,
     reportType: result.reportType ?? null,
     reportSettingKey: result.reportSettingKey ?? null,
     reportId: result.reportId ?? null,

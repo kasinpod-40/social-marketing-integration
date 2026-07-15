@@ -74,6 +74,9 @@
     "MKT_CONNECTOR_FACEBOOK_ENABLED": "false",
     "MKT_CONNECTOR_INSTAGRAM_ENABLED": "false",
     "MKT_CONNECTOR_YOUTUBE_ENABLED": "false",
+    // Manual UAT gate แยกจาก Active connector; ไม่มี YouTube schedule producer
+    "MKT_CONNECTOR_YOUTUBE_UAT_ENABLED": "false",
+    "MKT_YOUTUBE_ANALYTICS_ENABLED": "false",
     "MKT_CONNECTOR_WOOCOMMERCE_ENABLED": "false",
     "MKT_CONNECTOR_CHATWOOT_ENABLED": "false",
 
@@ -94,8 +97,15 @@
     "MKT_TIKTOK_INCREMENTAL_ENABLED": "false",
     // บังคับ Full reconciliation อย่างน้อยวันละครั้ง แม้ไม่มี Fingerprint เปลี่ยน
     "MKT_TIKTOK_FULL_RECONCILIATION_INTERVAL_MS": "86400000",
+    "MKT_YOUTUBE_RECENT_VIDEO_LIMIT": "100",
+    "MKT_YOUTUBE_FULL_RECONCILIATION_INTERVAL_MS": "86400000",
+    "MKT_YOUTUBE_ANALYTICS_MAX_PAGES": "1000",
+    "YOUTUBE_API_TIMEOUT_MS": "30000",
+    "YOUTUBE_MAX_PAGES": "100",
 
     "TIKTOK_SOURCE_HANDLE": "replace-with-tiktok-handle",
+    // YouTube Channel ID ไม่ใช่ Secret; API key/OAuth ต้องตั้งผ่าน Secrets/.dev.vars เท่านั้น
+    "YOUTUBE_CHANNEL_ID": "replace-with-youtube-channel-id",
 
     // Lease 10 นาที และต่ออายุทุก 2 นาที เพื่อลดความเสี่ยง Lock หมดกลางงาน
     "MKT_SYNC_LOCK_LEASE_MS": "600000",

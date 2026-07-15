@@ -41,6 +41,44 @@ export function assertConnectorRunnable(runtimeConfig, connectorKey) {
   return connector;
 }
 
+
+/** เปิด Connector ที่ยัง uat_pending เฉพาะ Manual UAT ที่มี Flag แยกและห้ามตั้ง active flag */
+export function assertConnectorManualUatRunnable(runtimeConfig, connectorKey, input = {}) {
+  const definition = getConnectorCatalogEntry(connectorKey);
+  if (definition.implementationStatus !== CONNECTOR_IMPLEMENTATION_STATUS.UAT_PENDING) {
+    throw permanentError(`${definition.displayName} connector is not in UAT-pending state`, {
+      code: 'MKT_CONNECTOR_UAT_MODE_INVALID',
+      details: { connectorKey: definition.key, implementationStatus: definition.implementationStatus },
+    });
+  }
+  if (input.trigger !== 'manual_uat') {
+    throw permanentError(`${definition.displayName} UAT route requires trigger=manual_uat`, {
+      code: 'MKT_CONNECTOR_UAT_TRIGGER_REQUIRED',
+      details: { connectorKey: definition.key },
+    });
+  }
+  if (input.uatEnabled !== true) {
+    throw permanentError(`${definition.displayName} manual UAT is disabled`, {
+      code: 'MKT_CONNECTOR_UAT_DISABLED',
+      details: { connectorKey: definition.key, featureFlagEnv: input.featureFlagEnv ?? null },
+    });
+  }
+  const connector = runtimeConfig?.connectors?.[definition.key];
+  if (!connector) {
+    throw permanentError(`Runtime profile does not contain connector ${definition.key}`, {
+      code: 'MKT_RUNTIME_CONFIG_INVALID',
+      details: { connectorKey: definition.key },
+    });
+  }
+  if (connector.enabled === true) {
+    throw permanentError(`${definition.displayName} active flag must remain false during manual UAT`, {
+      code: 'MKT_CONNECTOR_UAT_ACTIVE_FLAG_CONFLICT',
+      details: { connectorKey: definition.key, activeFeatureFlagEnv: definition.featureFlagEnv },
+    });
+  }
+  return connector;
+}
+
 /** คืน Readiness summary ที่ปลอดภัยต่อการแสดงใน Health/Admin โดยไม่มี Secret */
 export function listConnectorReadiness(runtimeConfig) {
   return Object.freeze(listConnectorCatalog().map((definition) => {

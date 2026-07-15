@@ -20,9 +20,9 @@ Base name: `Social MKT Data Hub`
 
 ## Raw integration tables
 - `RAW_TikTok_Creator_Videos` — official TikTok For Creator native sync table.
-- `RAW_YouTube_Channels` — YouTube channel identity and cumulative public statistics; Blueprint only until Apply/UAT.
-- `RAW_YouTube_Videos` — YouTube video metadata and cumulative public statistics; Blueprint only until Apply/UAT.
-- `RAW_YouTube_Analytics_Daily` — OAuth owner-analytics period metrics; never overwrites cumulative snapshots.
+- `RAW_YouTube_Channels` — latest-state Channel identity/cumulative statistics; includes `subscriber_count_hidden`; a missing uploads playlist blocks activation but may remain null in RAW.
+- `RAW_YouTube_Videos` — latest-state Video metadata/cumulative statistics plus `last_seen_at`, `source_availability_status`, and `missing_since`; missing rows are retained and never zero-filled.
+- `RAW_YouTube_Analytics_Daily` — OAuth Owner Analytics period metrics keyed by exact Pacific `source_metric_date`; RAW-only in Phase 1 and never overwrites cumulative snapshots.
 - `RAW_TikTok_Business_Campaigns`
 - `RAW_TikTok_Business_AdGroups`
 - `RAW_TikTok_Business_Ads`
@@ -38,6 +38,8 @@ Base name: `Social MKT Data Hub`
 - `content_key = platform:account_id:external_content_id`
 - `content_daily_key = platform:account_id:external_content_id:metric_date`
 - TikTok and YouTube reuse this identity/row contract; each adapter retains its own source parsing and account-identity guard.
+- YouTube Phase 1 maps every canonical item as `content_type=video`; Shorts classification requires a separately approved contract.
+- YouTube `MKT_Content_Daily` remains a cumulative Data API snapshot. Owner Analytics period rows have no canonical destination in Phase 1.
 
 ## Canonical Ads keys and metrics
 

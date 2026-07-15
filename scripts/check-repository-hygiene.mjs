@@ -10,7 +10,7 @@ const issues = [];
 await requireFile('.dev.vars.example');
 await requireFile('AGENTS.md');
 await requireFile('docs/current-task.md');
-await requireFile('docs/Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.1.xlsx');
+await requireFile('docs/Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.2.xlsx');
 await requireFile('scripts/package-clean-release.mjs');
 await requireFile('scripts/verify-release-archive.mjs');
 await scanForMacMetadata(root);

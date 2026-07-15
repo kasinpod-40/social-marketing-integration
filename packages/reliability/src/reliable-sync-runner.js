@@ -109,6 +109,38 @@ export async function runReliableSync(input = {}) {
       },
     }));
 
+    const resultWarnings = Array.isArray(result?.warnings) ? result.warnings : [];
+    if (input.alertOnResultWarnings === true && resultWarnings.length > 0) {
+      try {
+        await store.saveSystemAlert(createSystemAlert({
+          syncRunId,
+          alertType: 'sync_completed_with_warnings',
+          severity: 'warning',
+          platform: input.platform,
+          status: 'open',
+          errorCode: resultWarnings[0]?.code ?? 'SYNC_RESULT_WARNING',
+          message: [
+            'รอบ Sync สำเร็จแต่ต้องตรวจ Reconciliation warning',
+            `sync_run_id=${syncRunId}`,
+            `warning_count=${resultWarnings.length}`,
+          ].join('\n'),
+          createdAt: finishedAt,
+          details: {
+            customerProfile: input.customerProfile ?? null,
+            accountKey: input.accountKey ?? null,
+            warnings: resultWarnings,
+            reconciliation: result?.reconciliation ?? null,
+          },
+        }));
+      } catch (warningAlertError) {
+        input.onReliabilityError?.({
+          stage: 'result_warning_alert_failed',
+          error: warningAlertError,
+          syncRunId,
+        });
+      }
+    }
+
     completedResult = Object.freeze({ ...result, syncRunId });
     return completedResult;
   } catch (error) {
@@ -206,8 +238,12 @@ export function createSyncLockKey(input = {}) {
 /** รวม Count ที่ยืนยันได้จริง โดยค่า Unknown write จะอยู่ใน details ไม่ถูกเดาเป็นจำนวนสำเร็จ */
 export function summarizeSyncResult(result) {
   const outputs = [
+    result?.rawChannels,
+    result?.rawVideos,
+    result?.rawAnalytics,
     result?.content,
     result?.dailySnapshots,
+    result?.accounts,
     result?.reportSnapshot,
     result?.reportMetricValues,
     result?.reportTopContent,
@@ -341,11 +377,15 @@ function normalizeLeaseExpiry(value, fallback) {
 function readWriteOutcomes(result) {
   if (!result || typeof result !== 'object') return null;
   return Object.freeze({
+    rawChannels: result.rawChannels?.writeOutcome ?? null,
+    rawVideos: result.rawVideos?.writeOutcome ?? null,
+    rawAnalytics: result.rawAnalytics?.writeOutcome ?? null,
     content: result.content?.writeOutcome ?? null,
     dailySnapshots: result.dailySnapshots?.writeOutcome ?? null,
     reportSnapshot: result.reportSnapshot?.writeOutcome ?? null,
     reportMetricValues: result.reportMetricValues?.writeOutcome ?? null,
     reportTopContent: result.reportTopContent?.writeOutcome ?? null,
+    accounts: result.accounts?.writeOutcome ?? null,
   });
 }
 
