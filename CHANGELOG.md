@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.9.7-agent-workflow-foundation — 2026-07-15
+
+### Added
+- Added repository-wide `AGENTS.md` as the shared operating contract for ChatGPT Work, Codex, and developers.
+- Added `docs/current-task.md` as the single active handoff for status, scope, contracts, acceptance criteria, implementation evidence, and Work review.
+- Seeded the next proposed workstream as YouTube Organic Data Model/Access Preflight while explicitly blocking connector coding until user approval and Blueprint completion.
+
+### Changed
+- Repository hygiene now requires `AGENTS.md` and `docs/current-task.md` so clean releases cannot lose agent context.
+- Updated Project Brain, README, and Next Actions with the shared reading order and Work/Codex responsibilities.
+- Bumped package/build metadata without changing deployed TikTok runtime behavior.
+
+### Verification
+- Node unit/integration 312/312, Workers runtime 6/6, focused Report reliability 51/51, and focused View/Lark/build 56/56 passed.
+- Architecture passed at 77 source files / 168 local dependencies / 0 cycles; repository hygiene and npm audit reported no issues.
+- Wrangler dry-run remained 363.52 KiB / gzip 74.69 KiB because deployed TikTok runtime behavior is unchanged.
+
 ## 0.9.6-tiktok-organic-dev-complete — 2026-07-14
 
 ### Release closeout

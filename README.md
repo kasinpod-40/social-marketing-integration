@@ -4,7 +4,7 @@
 
 ## Baseline ปัจจุบัน
 
-`v0.9.6-tiktok-organic-dev-complete`
+`v0.9.7-agent-workflow-foundation`
 
 สถานะปัจจุบัน:
 
@@ -28,9 +28,24 @@
 - เปิด Advanced Permissions และสร้าง `Client` role แล้ว: ตาราง Report outputs เป็น View only; Daily/AI technical/Sync/System/RAW tables เป็น No access. DEV ยังไม่ Assign สมาชิกให้ role นี้
 - Daily/Weekly schedules เปิดและ deploy ไปยัง `social-mkt-sync-worker` แล้วเมื่อ 2026-07-14
 - v0.9.6 เป็น Clean handoff baseline: ไม่มี Local Wrangler config, Secret, macOS metadata หรือ build artifacts ใน Release ZIP
+- v0.9.7 เพิ่ม Shared Work/Codex workflow ผ่าน `AGENTS.md` และ `docs/current-task.md`; Repository hygiene บังคับไม่ให้สองไฟล์นี้หายจาก Release
 - Customer Production setup ยังไม่รวมใน Release นี้และต้องใช้ทรัพยากรของลูกค้า
 
+## Shared workflow ระหว่าง ChatGPT Work และ Codex
 
+ก่อนเริ่มงานใหม่ให้อ่านตามลำดับ:
+
+```text
+AGENTS.md
+→ docs/current-task.md
+→ PROJECT_BRAIN.md
+→ docs/project-brain/* ที่เกี่ยวข้อง
+→ Source code และ Tests
+```
+
+- `AGENTS.md` เก็บกฎถาวร, Definition of Done, Data-model-first, Secret/Environment และ Live API verification rules
+- `docs/current-task.md` เก็บ Scope/Contract/Acceptance criteria ของงานปัจจุบัน และเป็นจุดที่ Codex บันทึก Files changed, Tests, Commands, UAT และ Remaining risks กลับมาให้ Work ตรวจ
+- งาน Connector ห้ามเริ่ม Coding จน Current task ระบุ `approved_for_implementation` และ Blueprint/Source contract ผ่านการยืนยัน
 
 ## TikTok Organic DEV Closeout v0.9.6
 

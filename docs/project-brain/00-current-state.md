@@ -2,7 +2,14 @@
 
 ## Current release candidate
 
-`v0.9.6-tiktok-organic-dev-complete` — 2026-07-14
+`v0.9.7-agent-workflow-foundation` — 2026-07-15
+
+## Shared Work/Codex handoff
+
+- `AGENTS.md` is the repository-wide operating contract for ChatGPT Work, Codex, and developers.
+- `docs/current-task.md` is the single active task handoff with status, scope, contracts, acceptance criteria, implementation result, and Work review.
+- Repository hygiene now requires both files, so a release cannot silently lose shared context.
+- The proposed next workstream is YouTube Organic Data Model/Access Preflight; connector coding remains blocked until the task status is explicitly changed to `approved_for_implementation`.
 
 ## TikTok Organic DEV status
 
@@ -26,7 +33,8 @@ Canonical closeout: `../tiktok-organic-dev-complete-v0.9.6.md`; detailed earlier
 - Architecture: 77 source files / 168 local dependencies / 0 cycles
 - Repository hygiene and npm audit 0 passed
 - Wrangler 4.110.0 dry-run/deploy: 363.52 KiB / gzip 74.69 KiB; Worker startup 1 ms
-- v0.9.6 clean-tree gate: `npm ci`, check/hygiene, unit 312/312, Workers 6/6, Report reliability 51/51, focused View/client 53/53, offline npm audit 0, and Wrangler dry-run 363.52 KiB / gzip 74.69 KiB. The final extracted-ZIP retest is recorded at release handoff.
+- v0.9.6 clean-tree gate: `npm ci`, check/hygiene, unit 312/312, Workers 6/6, Report reliability 51/51, focused View/client 53/53, offline npm audit 0, and Wrangler dry-run 363.52 KiB / gzip 74.69 KiB.
+- v0.9.7 workflow gate: unit 312/312, Workers 6/6, Report reliability 51/51, focused View/Lark/build 56/56, Architecture 77/168/0, hygiene pass, npm audit 0, and the same Wrangler bundle because runtime behavior is unchanged.
 
 ## v0.9.6 closeout baseline
 
@@ -55,4 +63,4 @@ Clients should not use RAW tables, `MKT_Content_Daily`, Sync Log, System Alerts,
 
 ## Next implementation workstream
 
-After activation, proceed to Lark AI Summary + Group Notification, then start connector access/preflight and implementation for YouTube, Meta (Facebook/Instagram), WooCommerce, Chatwoot, and Ads. See `10-next-actions.md`.
+Confirm `docs/current-task.md`, then complete YouTube Organic Data Model/DEV access preflight before connector implementation. Open other platform access work in parallel; add Lark AI Summary + Group Notification after at least two organic sources are available. See `10-next-actions.md`.

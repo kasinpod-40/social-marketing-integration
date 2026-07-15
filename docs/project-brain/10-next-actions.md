@@ -1,8 +1,12 @@
 # 10 — Next Actions
 
-## Clean baseline verification for v0.9.6
+## Shared task workflow
 
-The clean release intentionally excludes local `.dev.vars` and `wrangler.sync.jsonc`. Preserve those files on the developer machine, then verify the source tree with:
+Before starting the next feature, ChatGPT Work must update `docs/current-task.md` with approved scope and contracts. Codex must read `AGENTS.md` and record implementation results back into the same task file. The current proposal is YouTube Organic Data Model/Access Preflight; no connector code is authorized while its status remains `ready_for_planning`.
+
+## Clean baseline verification for v0.9.7
+
+The v0.9.7 clean release intentionally excludes local `.dev.vars` and `wrangler.sync.jsonc`. Preserve those files on the developer machine, then verify the source tree with:
 
 ```bash
 npm ci
@@ -58,11 +62,13 @@ Both flags are `true`; Worker version `ba6f3968-628c-4c61-b7eb-62647b38f547` dep
 
 ## Next workstream after TikTok closeout
 
-1. Lark AI Summary + Lark Group Notification.
-2. Open DEV access/preflight for YouTube, Meta, Google Ads, TikTok Ads, WooCommerce, and Chatwoot in parallel.
-3. YouTube Organic connector.
-4. Facebook + Instagram Organic through a shared Meta connector/auth layer.
-5. WooCommerce and Chatwoot.
-6. Ads data model/connectors.
-7. Final cross-channel DEV regression and documentation.
-8. Customer Production setup later using customer-owned Lark, Cloudflare, apps, credentials, and platform assets.
+1. Confirm and approve `docs/current-task.md`.
+2. YouTube Organic Data Model + DEV access/source-contract preflight.
+3. YouTube Organic connector after Blueprint approval.
+4. Open Meta, Google Ads, TikTok Ads, WooCommerce, and Chatwoot DEV access/preflight in parallel.
+5. Facebook + Instagram Organic through a shared Meta connector/auth layer.
+6. WooCommerce and Chatwoot.
+7. Lark AI Summary + Lark Group Notification after at least two organic sources are available.
+8. Ads data model/connectors.
+9. Final cross-channel DEV regression and documentation.
+10. Customer Production setup later using customer-owned Lark, Cloudflare, apps, credentials, and platform assets.

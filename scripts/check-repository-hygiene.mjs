@@ -7,6 +7,8 @@ const root = process.cwd();
 const issues = [];
 
 await requireFile('.dev.vars.example');
+await requireFile('AGENTS.md');
+await requireFile('docs/current-task.md');
 await scanForDsStore(root);
 checkTrackedDsStore();
 checkTrackedLocalOnlyFiles();

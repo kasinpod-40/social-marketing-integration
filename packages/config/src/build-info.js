@@ -2,4 +2,4 @@
  * เวอร์ชัน Baseline ปัจจุบันของ Source code
  * ใช้จุดเดียวใน Runtime response และมี Test ตรวจว่าตรงกับ package.json
  */
-export const BUILD_VERSION = '0.9.6-tiktok-organic-dev-complete';
+export const BUILD_VERSION = '0.9.7-agent-workflow-foundation';
