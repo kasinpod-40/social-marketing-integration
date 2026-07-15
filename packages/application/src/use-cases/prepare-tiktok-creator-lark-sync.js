@@ -4,6 +4,7 @@ import { readLarkText } from '../../../connectors/src/shared/lark-cell-value.js'
 import { requireDateOnly } from '../../../shared/src/date/date-only.js';
 import { toEpochMilliseconds } from '../../../shared/src/date/date-time.js';
 import { permanentError } from '../../../shared/src/errors/runtime-error.js';
+import { planOrganicContentDestination } from './plan-organic-content-destination.js';
 
 /**
  * เตรียมข้อมูลและ Sync Plan ของ TikTok Creator โดยยังไม่เขียน Lark
@@ -103,20 +104,14 @@ export async function prepareTikTokCreatorLarkSync(input) {
     dailySnapshotRows: selectedRows.dailySnapshotRows.length,
   });
 
-  const [contentPlan, dailyPlan, contentConflicts, dailyConflicts] = await Promise.all([
-    syncEngine.planByKey({
+  const [destination, contentConflicts, dailyConflicts] = await Promise.all([
+    planOrganicContentDestination({
       repository,
-      tableId: tables.mktContent,
-      keyField: 'content_key',
-      rows: selectedRows.contentRows,
-      onProgress: (event) => progress({ scope: 'content', ...event }),
-    }),
-    syncEngine.planByKey({
-      repository,
-      tableId: tables.mktContentDaily,
-      keyField: 'content_daily_key',
-      rows: selectedRows.dailySnapshotRows,
-      onProgress: (event) => progress({ scope: 'daily_snapshots', ...event }),
+      syncEngine,
+      tables,
+      contentRows: selectedRows.contentRows,
+      dailySnapshotRows: selectedRows.dailySnapshotRows,
+      onProgress: progress,
     }),
     findAccountIdentityConflicts({
       repository,
@@ -134,8 +129,10 @@ export async function prepareTikTokCreatorLarkSync(input) {
       rows: selectedRows.dailySnapshotRows,
     }),
   ]);
+  const contentPlan = destination.plans.content;
+  const dailyPlan = destination.plans.dailySnapshots;
   const accountConflicts = Object.freeze([...contentConflicts, ...dailyConflicts]);
-  const reconciliation = analyzeDestinationConsistency(contentPlan, dailyPlan);
+  const reconciliation = destination.reconciliation;
 
   const issues = buildReadinessIssues({
     rawCount: rawRows.length,
@@ -244,39 +241,6 @@ function emptyReconciliation() {
     missingContentIds: Object.freeze([]),
     missingDailySnapshotIds: Object.freeze([]),
   });
-}
-
-/**
- * ตรวจความสอดคล้องระหว่าง Master content และ Daily snapshot จาก Plan ก่อนเขียน
- * Stable key ทำให้รอบถัดไปสามารถเติมเฉพาะฝั่งที่ขาดได้โดยไม่สร้างข้อมูลซ้ำ
- */
-function analyzeDestinationConsistency(contentPlan, dailyPlan) {
-  const contentCreateIds = new Set(contentPlan.createRows.map(readExternalContentId));
-  const dailyCreateIds = new Set(dailyPlan.createRows.map(readExternalContentId));
-  const allIds = new Set([...contentCreateIds, ...dailyCreateIds]);
-  const missingContentIds = [];
-  const missingDailySnapshotIds = [];
-
-  for (const externalContentId of allIds) {
-    const contentMissing = contentCreateIds.has(externalContentId);
-    const dailyMissing = dailyCreateIds.has(externalContentId);
-    if (contentMissing && !dailyMissing) missingContentIds.push(externalContentId);
-    if (!contentMissing && dailyMissing) missingDailySnapshotIds.push(externalContentId);
-  }
-
-  const required = missingContentIds.length > 0 || missingDailySnapshotIds.length > 0;
-  return Object.freeze({
-    required,
-    status: required ? 'recovery_required' : 'consistent',
-    missingContentRows: missingContentIds.length,
-    missingDailySnapshotRows: missingDailySnapshotIds.length,
-    missingContentIds: Object.freeze(missingContentIds.slice(0, 20)),
-    missingDailySnapshotIds: Object.freeze(missingDailySnapshotIds.slice(0, 20)),
-  });
-}
-
-function readExternalContentId(row) {
-  return requireText(row?.external_content_id, 'external_content_id');
 }
 
 /**

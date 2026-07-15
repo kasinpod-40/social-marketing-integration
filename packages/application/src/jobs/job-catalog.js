@@ -22,6 +22,7 @@ export const JOB_TYPES = Object.freeze({
 
 export const JOB_IMPLEMENTATION_STATUS = Object.freeze({
   ACTIVE: 'active',
+  UAT_PENDING: 'uat_pending',
   PLANNED: 'planned',
 });
 
@@ -59,7 +60,7 @@ const JOB_CATALOG = Object.freeze({
   }),
   [JOB_TYPES.YOUTUBE_ORGANIC_SYNC]: freezeJob({
     type: JOB_TYPES.YOUTUBE_ORGANIC_SYNC,
-    implementationStatus: JOB_IMPLEMENTATION_STATUS.PLANNED,
+    implementationStatus: JOB_IMPLEMENTATION_STATUS.UAT_PENDING,
     connectorKey: CONNECTOR_KEYS.YOUTUBE,
   }),
   [JOB_TYPES.WOOCOMMERCE_COMMERCE_SYNC]: freezeJob({
@@ -111,8 +112,9 @@ export function getJobDefinition(type) {
 /** ป้องกัน Job ที่เตรียมชื่อไว้แต่ Use case จริงยังไม่พร้อมถูก Route เข้า Runtime */
 export function assertJobImplemented(definition) {
   if (definition?.implementationStatus !== JOB_IMPLEMENTATION_STATUS.ACTIVE) {
-    throw permanentError(`Sync job is registered but not implemented: ${definition?.type ?? 'unknown'}`, {
-      code: 'SYNC_JOB_NOT_IMPLEMENTED',
+    const uatPending = definition?.implementationStatus === JOB_IMPLEMENTATION_STATUS.UAT_PENDING;
+    throw permanentError(`Sync job is registered but ${uatPending ? 'Live DEV UAT is pending' : 'not implemented'}: ${definition?.type ?? 'unknown'}`, {
+      code: uatPending ? 'SYNC_JOB_UAT_PENDING' : 'SYNC_JOB_NOT_IMPLEMENTED',
       details: {
         type: definition?.type ?? null,
         connectorKey: definition?.connectorKey ?? null,

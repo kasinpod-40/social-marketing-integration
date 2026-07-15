@@ -2,11 +2,11 @@
 
 ## Task metadata
 
-- **Status:** `ready_for_planning`
-- **Baseline:** `v0.9.7-agent-workflow-foundation`
+- **Status:** `implementation_complete`
+- **Baseline:** `v0.10.0-multi-channel-foundation`
 - **Last updated:** `2026-07-15`
 - **Owners:** ChatGPT Work (analysis/acceptance/release) + Codex (repository implementation)
-- **Current implementation:** none; do not start connector code until this task is updated and approved
+- **Current implementation:** ผู้ใช้อนุมัติให้ทำ Multi-channel foundation ทั้ง 6 ส่วนเมื่อ 2026-07-15
 
 ## Objective
 
@@ -14,43 +14,50 @@
 
 TikTok Organic DEV implementation ปิดแล้วที่ baseline v0.9.6. งาน Operational ที่ยังเฝ้าดูคือ Scheduled Daily/Weekly report และ Weekly complete baseline ซึ่งไม่บล็อกงานถัดไป
 
-## Proposed next workstream
+## Approved workstream
 
-`YouTube Organic Connector — Data Model and Access Preflight`
+`Multi-channel Foundation — YouTube, Organic Core, Meta, Commerce Fixtures, and Ads Model`
 
-สถานะยังเป็น **เสนอเพื่อวางแผน** ไม่ใช่คำสั่งให้เริ่ม Coding โดยอัตโนมัติ ก่อน Implementation ต้องให้ผู้ใช้ยืนยัน Scope และทำ Data Model/Lark Blueprint ตามกฎใน `AGENTS.md`
+ผู้ใช้อนุมัติให้ดำเนินงานทั้ง 6 ส่วนแล้ว โดยยังไม่เปิด Connector ที่ไม่มี Credentials หรือ Live UAT และห้ามรายงาน Planned/UAT-pending connector ว่าสำเร็จ
 
 ## Planning scope
 
 ### In scope
 
-- ตรวจ Access/Credential ที่ใช้ใน DEV สำหรับ YouTube Data API และ YouTube Analytics API
-- ระบุ Source entities: Channel, Video, Video statistics/analytics และ account identity
-- ออกแบบ Raw/Master/Daily Snapshot/Sync Log/Alert mapping ที่ reuse ระบบกลาง
-- กำหนด Stable keys, cursor/checkpoint, historical window, pagination, quota และ token lifecycle
-- กำหนด Metric definitions และ null semantics ก่อนสร้าง Report integration
-- ตรวจว่าส่วนใด reuse จาก TikTok และส่วนใดต้องเป็น YouTube adapter ใหม่
-- จัดทำ Blueprint/Contract และ UAT plan ก่อน Implementation
+1. จัดทำ YouTube Organic source contract และ Lark Blueprint ก่อนเขียน Connector
+2. สร้าง YouTube adapter/client/normalization foundation พร้อม Tests และ Feature flag ปิดโดยค่าเริ่มต้น
+3. แยก Generic Organic Sync Pipeline เฉพาะส่วนที่พิสูจน์ร่วมกันได้จาก TikTok และ YouTube
+4. สร้าง Meta Graph shared client foundation สำหรับ Facebook Page และ Instagram Business โดยยังไม่เปิดใช้งาน
+5. เพิ่ม WooCommerce/Chatwoot source contracts, sanitized test fixtures และ contract validators
+6. ออกแบบ Canonical Ads model กลางสำหรับ Account/Campaign/Ad Group/Creative/Daily metrics พร้อม Stable keys และ Tests
+7. กำหนด Auth, pagination, quota/rate-limit, token lifecycle, null semantics, identity mismatch, idempotency และ UAT plan ของแต่ละส่วน
+8. อัปเดต Connector/Job status ให้สะท้อน `uat_pending` หรือ `planned` อย่างซื่อสัตย์ ไม่มี fake success
 
 ### Out of scope
 
 - Customer Production setup หรือ Business verification ของลูกค้า
-- Ads connector
+- Live activation, OAuth consent หรือ App Review ของแพลตฟอร์มภายนอก
+- Ads API adapters และ Live Ads sync
 - Cross-channel attribution
 - External dashboard
 - การแก้ TikTok logic ที่ผ่าน Live แล้วโดยไม่มี Regression evidence
 
-## Required inputs before implementation
+## Required inputs before Live UAT/activation
 
 - DEV YouTube channel/account ที่ได้รับอนุญาตให้ใช้ทดสอบ
 - Google Cloud project/OAuth client หรือ API credential สำหรับ DEV
 - Channel ID และประเภทข้อมูลย้อนหลังที่ต้องการ
-- รายการ Metrics ที่ผู้ใช้ต้องการแสดงต่อ Client
-- ข้อสรุปว่าจะดึง Public Data, Owner Analytics หรือทั้งสองแบบ
+- YouTube public-data credential และ Owner Analytics OAuth หากต้องใช้ private metrics
+- Meta App/Page/Instagram test assets และ permissions
+- WooCommerce REST credentials กับ DEV store
+- Chatwoot DEV account/token
+- Ads sandbox/test-account credentials ของแต่ละแพลตฟอร์ม
+
+ข้อมูลเหล่านี้ไม่บล็อกการสร้าง Contract, Code foundation, Fixtures และ Tests แต่บล็อกการประกาศ Connector เป็น `active` หรือ Live-verified
 
 ## Required design artifacts
 
-ก่อนเปลี่ยน `Status` เป็น `approved_for_implementation` ต้องมี:
+ต้องสร้างและตรวจในงานนี้ก่อนเปิด Connector ใด:
 
 1. Source/API contract พร้อม Auth และ quota constraints
 2. Lark table/field blueprint
@@ -60,8 +67,11 @@ TikTok Organic DEV implementation ปิดแล้วที่ baseline v0.9.6
 6. Queue job catalog และ scheduling plan
 7. UAT/Failure/Retry/Reconciliation plan
 8. Impact review ต่อ Report Engine และ Client Views
+9. Meta shared-client contract
+10. WooCommerce/Chatwoot fixture contracts
+11. Canonical Ads entity and daily-metric contract
 
-## Acceptance criteria for planning
+## Acceptance criteria
 
 - ไม่มี Field/Metric ที่ความหมายกำกวม
 - Missing values มี null semantics ชัดเจน
@@ -69,10 +79,15 @@ TikTok Organic DEV implementation ปิดแล้วที่ baseline v0.9.6
 - Multi-account และ identity mismatch behavior ชัดเจน
 - Reuse/refactor plan ไม่สร้าง TikTok-specific duplicate logic
 - Blueprint ผ่านการตรวจจากผู้ใช้ก่อนเริ่ม Coding
+- YouTube code ไม่ถูก route เป็น Active จนกว่า Live DEV UAT ผ่าน
+- Meta client ไม่ผูก Facebook/Instagram business mapping เข้าด้วยกันผิดชั้น
+- Fixtures ไม่มีข้อมูลส่วนบุคคลหรือ Secret จริง
+- Ads model ไม่ผูกชื่อ Entity กับแพลตฟอร์มเดียวและมี Stable key ที่ deterministic
+- TikTok regression tests และ Full Gates ผ่านครบ
 
 ## Implementation instructions for Codex
 
-เมื่อ Status เปลี่ยนเป็น `approved_for_implementation`:
+เมื่อ Status เป็น `approved_for_implementation`:
 
 1. อ่าน `AGENTS.md` และ Project Brain ทั้งหมดที่เกี่ยวข้อง
 2. ตรวจทั้ง Codebase ก่อนแก้
@@ -83,17 +98,17 @@ TikTok Organic DEV implementation ปิดแล้วที่ baseline v0.9.6
 
 ## Implementation result
 
-- **Status:** `not_started`
-- **Files changed:** none
-- **Tests added/updated:** none
-- **Commands run:** none
-- **Live/Sandbox UAT:** not started
-- **Remaining risks:** Waiting for next-workstream confirmation and required DEV access
-- **Recommended commit:** none
+- **Status:** `complete_pending_live_uat`
+- **Files changed:** เพิ่ม Canonical Organic domain/use cases, YouTube client/adapter/normalizer/Blueprint, Meta shared client, WooCommerce/Chatwoot sanitized contracts+fixtures, Canonical Ads model, config examples และ status guards
+- **Tests added/updated:** เพิ่ม Domain/Application/Connector/Config regressions; รวม Node unit/integration 336 tests และ Workers-runtime 6 tests
+- **Commands run:** `npm run check`, `npm test`, `npm run test:report-reliability`, `npm run deploy:dry-run`, `npm audit --offline`
+- **Live/Sandbox UAT:** ยังไม่รันตาม Scope; ไม่มี Credentials และไม่มีการเขียน Lark/D1/Cloudflare จริงในงานนี้
+- **Remaining risks:** YouTube/Meta/WooCommerce/Chatwoot/Ads ยังไม่ Live-verified; API permissions, quota, token lifecycle, Source payload จริง และ Lark RAW schema Apply ต้องยืนยันก่อน Activation
+- **Recommended commit:** `feat: add multi-channel connector foundations`
 
 ## Work review result
 
-- **Business acceptance:** pending
-- **Architecture acceptance:** pending
-- **Release decision:** pending
-- **Project Brain update:** pending next implementation
+- **Business acceptance:** foundation accepted by user; Live metric semantics remain subject to Source/UAT evidence
+- **Architecture acceptance:** passed — Canonical Organic core preserves TikTok behavior and keeps platform adapters separate
+- **Release decision:** code-ready foundation; all unverified routes remain fail-closed
+- **Project Brain update:** completed in v0.10.0

@@ -2,14 +2,21 @@
 
 ## Current release candidate
 
-`v0.9.7-agent-workflow-foundation` — 2026-07-15
+`v0.10.0-multi-channel-foundation` — 2026-07-15
+
+## Multi-channel foundation
+
+- YouTube Organic source contract, RAW Lark Blueprint, client, adapter, normalization and destination preflight are code-ready but remain `uat_pending`.
+- TikTok and YouTube now share Canonical Organic identities/rows/batch/destination planning while platform parsing and identity contracts remain separate.
+- Meta Graph transport, WooCommerce/Chatwoot sanitized contracts and Canonical Ads model are present as `planned` foundations without Worker routes.
+- No external API, Lark, D1 or Cloudflare resource was mutated. Activation gates are documented in `../multi-channel-foundation-v0.10.0.md`.
 
 ## Shared Work/Codex handoff
 
 - `AGENTS.md` is the repository-wide operating contract for ChatGPT Work, Codex, and developers.
 - `docs/current-task.md` is the single active task handoff with status, scope, contracts, acceptance criteria, implementation result, and Work review.
 - Repository hygiene now requires both files, so a release cannot silently lose shared context.
-- The proposed next workstream is YouTube Organic Data Model/Access Preflight; connector coding remains blocked until the task status is explicitly changed to `approved_for_implementation`.
+- The approved six-part foundation is implemented; `docs/current-task.md` records the results and the remaining Live UAT blockers.
 
 ## TikTok Organic DEV status
 
@@ -35,6 +42,7 @@ Canonical closeout: `../tiktok-organic-dev-complete-v0.9.6.md`; detailed earlier
 - Wrangler 4.110.0 dry-run/deploy: 363.52 KiB / gzip 74.69 KiB; Worker startup 1 ms
 - v0.9.6 clean-tree gate: `npm ci`, check/hygiene, unit 312/312, Workers 6/6, Report reliability 51/51, focused View/client 53/53, offline npm audit 0, and Wrangler dry-run 363.52 KiB / gzip 74.69 KiB.
 - v0.9.7 workflow gate: unit 312/312, Workers 6/6, Report reliability 51/51, focused View/Lark/build 56/56, Architecture 77/168/0, hygiene pass, npm audit 0, and the same Wrangler bundle because runtime behavior is unchanged.
+- v0.10.0 foundation gate: unit 336/336, Workers 6/6, Report reliability 51/51, Architecture 94/189/0, hygiene pass, offline npm audit 0, and Wrangler dry-run 373.71 KiB / gzip 76.31 KiB.
 
 ## v0.9.6 closeout baseline
 
@@ -63,4 +71,4 @@ Clients should not use RAW tables, `MKT_Content_Daily`, Sync Log, System Alerts,
 
 ## Next implementation workstream
 
-Confirm `docs/current-task.md`, then complete YouTube Organic Data Model/DEV access preflight before connector implementation. Open other platform access work in parallel; add Lark AI Summary + Group Notification after at least two organic sources are available. See `10-next-actions.md`.
+Run YouTube DEV access/identity preflight, review/apply its RAW schema, and perform Manual Live UAT before activating its route. Open Meta/WooCommerce/Chatwoot access in parallel. See `10-next-actions.md`.

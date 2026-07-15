@@ -1,0 +1,56 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { YouTubeApiClient } from '../../packages/connectors/src/youtube/youtube-api.client.js';
+
+test('YouTube client loads channel identity and keeps credential out of error details', async () => {
+  let requestUrl;
+  const client = new YouTubeApiClient({
+    apiKey: 'test-key',
+    fetchImpl: async (url) => {
+      requestUrl = new URL(url);
+      return Response.json({ items: [{ id: 'channel_A' }] });
+    },
+  });
+  const channel = await client.getChannel({ channelId: 'channel_A' });
+  assert.equal(channel.id, 'channel_A');
+  assert.equal(requestUrl.pathname, '/youtube/v3/channels');
+  assert.equal(requestUrl.searchParams.get('key'), 'test-key');
+});
+
+test('YouTube client follows bounded pageToken and chunks videos at 50 IDs', async () => {
+  const calls = [];
+  const client = new YouTubeApiClient({
+    apiKey: 'test-key',
+    fetchImpl: async (url) => {
+      const parsed = new URL(url);
+      calls.push(parsed);
+      if (parsed.pathname.endsWith('/playlistItems')) {
+        return Response.json(parsed.searchParams.get('pageToken')
+          ? { items: [{ contentDetails: { videoId: 'v2' } }] }
+          : { items: [{ contentDetails: { videoId: 'v1' } }], nextPageToken: 'next' });
+      }
+      return Response.json({ items: parsed.searchParams.get('id').split(',').map((id) => ({ id })) });
+    },
+  });
+  assert.deepEqual(await client.listUploadVideoIds({ uploadsPlaylistId: 'UU1' }), ['v1', 'v2']);
+  const videos = await client.listVideos({ videoIds: Array.from({ length: 51 }, (_, index) => `v${index}`) });
+  assert.equal(videos.length, 51);
+  assert.equal(calls.filter((url) => url.pathname.endsWith('/videos')).length, 2);
+});
+
+test('YouTube Analytics requires OAuth and classifies server failures as retryable', async () => {
+  const apiKeyClient = new YouTubeApiClient({ apiKey: 'test-key', fetchImpl: async () => Response.json({}) });
+  await assert.rejects(
+    apiKeyClient.queryAnalytics({ channelId: 'c', startDate: '2026-07-14', endDate: '2026-07-14', metrics: 'views' }),
+    (error) => error?.code === 'YOUTUBE_ANALYTICS_OAUTH_REQUIRED',
+  );
+
+  const failing = new YouTubeApiClient({
+    apiKey: 'test-key',
+    fetchImpl: async () => Response.json({ error: { code: 503 } }, { status: 503 }),
+  });
+  await assert.rejects(
+    failing.getChannel({ channelId: 'c' }),
+    (error) => error?.code === 'YOUTUBE_TRANSIENT_API_ERROR' && error.retryable === true,
+  );
+});

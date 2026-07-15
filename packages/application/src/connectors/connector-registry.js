@@ -15,8 +15,9 @@ import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 export function assertConnectorRunnable(runtimeConfig, connectorKey) {
   const definition = getConnectorCatalogEntry(connectorKey);
   if (definition.implementationStatus !== CONNECTOR_IMPLEMENTATION_STATUS.ACTIVE) {
-    throw permanentError(`${definition.displayName} connector is not implemented`, {
-      code: 'MKT_CONNECTOR_NOT_IMPLEMENTED',
+    const uatPending = definition.implementationStatus === CONNECTOR_IMPLEMENTATION_STATUS.UAT_PENDING;
+    throw permanentError(`${definition.displayName} connector is ${uatPending ? 'waiting for Live DEV UAT' : 'not implemented'}`, {
+      code: uatPending ? 'MKT_CONNECTOR_UAT_PENDING' : 'MKT_CONNECTOR_NOT_IMPLEMENTED',
       details: { connectorKey: definition.key },
     });
   }

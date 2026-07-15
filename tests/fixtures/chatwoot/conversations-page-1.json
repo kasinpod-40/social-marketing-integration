@@ -1,0 +1,24 @@
+{
+  "data": {
+    "meta": {
+      "all_count": 1
+    },
+    "payload": [
+      {
+        "id": 71001,
+        "account_id": 81001,
+        "inbox_id": 91001,
+        "status": "resolved",
+        "created_at": 1783995000,
+        "updated_at": 1783998600,
+        "messages": [],
+        "meta": {
+          "assignee": {
+            "id": 101001
+          },
+          "team": null
+        }
+      }
+    ]
+  }
+}

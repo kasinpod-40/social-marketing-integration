@@ -4,9 +4,15 @@
 This project connects social organic and paid ads data into Lark Base for reporting, daily snapshots, monitoring, and AI summaries. The implementation target is a lean MVP using Cloudflare Workers, Cloudflare D1, Cloudflare Queues, Lark Base, Lark Native Integrations where useful, and JavaScript.
 
 ## Current project status
-Current audited release candidate: `v0.9.7-agent-workflow-foundation`
+Current audited release candidate: `v0.10.0-multi-channel-foundation`
 
 TikTok Organic DEV ingestion/report logic ผ่าน Live Queue UAT และ Reliability UAT แล้ว. Client Views ทั้ง 6 รายการติดตั้ง Filter/Hidden fields และ Sort `rank` ascending สำเร็จ; Advanced Permissions เปิดแล้วพร้อม `Client` role แบบ least privilege และ Final Preview เป็นศูนย์ actions/conflicts. Daily/Weekly schedules เปิดและ deploy ไปยัง Cloudflare DEV แล้ว; เหลือ operational observation ของรอบ schedule.
+
+Multi-channel foundation ทั้ง 6 ส่วนถูกเพิ่มใน Code แล้ว: YouTube Organic source/Lark contract และ code-ready adapter, Canonical Organic core ที่ TikTok ใช้ร่วมโดย Regression ผ่าน, Meta Graph transport, WooCommerce/Chatwoot sanitized contracts, และ Canonical Ads model. YouTube ยังเป็น `uat_pending`; ส่วนที่เหลือยัง `planned`. ไม่มีการเปิด route/schedule หรือเรียก Live API ใน release นี้.
+
+**v0.10.0-multi-channel-foundation — เตรียม Code/Contract ก่อนเชื่อม External platforms โดย fail closed; เพิ่ม Source/Test/Fixture artifacts สำหรับทั้ง 6 workstreams และรักษา TikTok behavior. Activation ต้องผ่าน Identity, RAW schema, Live payload, idempotency, reliability และ metric gates ตาม `docs/multi-channel-foundation-v0.10.0.md`.**
+
+v0.10.0 verification: Node unit/integration 336/336, Workers runtime 6/6, focused Report reliability 51/51, Architecture 94 source files / 189 local dependencies / 0 cycles, repository hygiene, offline npm audit 0, and Wrangler dry-run 373.71 KiB / gzip 76.31 KiB.
 
 
 
@@ -203,6 +209,9 @@ Main tables:
 
 Raw tables:
 - `RAW_TikTok_Creator_Videos` — official native sync-managed TikTok Creator raw source
+- `RAW_YouTube_Channels` — planned/API-managed YouTube channel source
+- `RAW_YouTube_Videos` — planned/API-managed YouTube video source
+- `RAW_YouTube_Analytics_Daily` — planned OAuth owner-analytics period metrics
 - `RAW_TikTok_Business_Campaigns`
 - `RAW_TikTok_Business_AdGroups`
 - `RAW_TikTok_Business_Ads`

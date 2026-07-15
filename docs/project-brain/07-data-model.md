@@ -19,6 +19,9 @@ Base name: `Social MKT Data Hub`
 
 ## Raw integration tables
 - `RAW_TikTok_Creator_Videos` — official TikTok For Creator native sync table.
+- `RAW_YouTube_Channels` — YouTube channel identity and cumulative public statistics; Blueprint only until Apply/UAT.
+- `RAW_YouTube_Videos` — YouTube video metadata and cumulative public statistics; Blueprint only until Apply/UAT.
+- `RAW_YouTube_Analytics_Daily` — OAuth owner-analytics period metrics; never overwrites cumulative snapshots.
 - `RAW_TikTok_Business_Campaigns`
 - `RAW_TikTok_Business_AdGroups`
 - `RAW_TikTok_Business_Ads`
@@ -28,6 +31,21 @@ Base name: `Social MKT Data Hub`
 ## TikTok Creator keys
 - `content_key = platform:account_id:external_content_id`
 - `content_daily_key = platform:account_id:external_content_id:metric_date`
+
+## Canonical Organic keys
+
+- `content_key = platform:account_id:external_content_id`
+- `content_daily_key = platform:account_id:external_content_id:metric_date`
+- TikTok and YouTube reuse this identity/row contract; each adapter retains its own source parsing and account-identity guard.
+
+## Canonical Ads keys and metrics
+
+- `entity_key = platform:account_id:entity_type:external_entity_id`
+- `ads_daily_key = entity_key:metric_date`
+- Hierarchy: Account → Campaign → Ad group/Ad set → Creative/Ad → Daily metrics.
+- Raw metrics: spend, impressions, reach, clicks, conversions, conversion value.
+- Derived metrics are calculated centrally; zero denominator or missing components return `null`.
+- `target_roas` is never treated as `actual_roas`; `platform` and client-facing `ad_channel` are separate dimensions.
 
 ## TikTok Creator read/write flow
 ```text

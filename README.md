@@ -4,7 +4,7 @@
 
 ## Baseline ปัจจุบัน
 
-`v0.9.7-agent-workflow-foundation`
+`v0.10.0-multi-channel-foundation`
 
 สถานะปัจจุบัน:
 
@@ -29,7 +29,11 @@
 - Daily/Weekly schedules เปิดและ deploy ไปยัง `social-mkt-sync-worker` แล้วเมื่อ 2026-07-14
 - v0.9.6 เป็น Clean handoff baseline: ไม่มี Local Wrangler config, Secret, macOS metadata หรือ build artifacts ใน Release ZIP
 - v0.9.7 เพิ่ม Shared Work/Codex workflow ผ่าน `AGENTS.md` และ `docs/current-task.md`; Repository hygiene บังคับไม่ให้สองไฟล์นี้หายจาก Release
+- v0.10.0 เพิ่ม Multi-channel foundation ทั้ง 6 ส่วน: YouTube Organic Blueprint/client/normalization, Canonical Organic core, Meta Graph transport, WooCommerce/Chatwoot sanitized contracts และ Canonical Ads model
+- Connector ใหม่ยังไม่ถูกเปิด: YouTube เป็น `uat_pending`; Meta/WooCommerce/Chatwoot/Ads เป็น `planned` จนกว่า Credentials, Schema Apply และ Live DEV UAT ผ่าน
 - Customer Production setup ยังไม่รวมใน Release นี้และต้องใช้ทรัพยากรของลูกค้า
+
+รายละเอียด Contract และ Activation gates: `docs/multi-channel-foundation-v0.10.0.md`
 
 ## Shared workflow ระหว่าง ChatGPT Work และ Codex
 
@@ -141,7 +145,7 @@ packages
   ├─ domain           Entity และ Value object ที่ไม่พึ่ง Infrastructure
   ├─ application      Use case, Connector registry และ Queue job contract
   ├─ sync-engine      Plan/Diff/Execute แบบ Storage-neutral
-  ├─ connectors       Lark และ TikTok adapters
+  ├─ connectors       Lark, TikTok, YouTube foundation, Meta transport และ source contracts
   ├─ config           Customer profile, table mapping และ build info
   ├─ reliability      Sync run, D1/Lark stores, lease lock และ recovery orchestration
   └─ shared           Date, Error และ HTTP utilities กลาง

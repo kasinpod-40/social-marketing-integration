@@ -1,5 +1,30 @@
 # API / Native Integration Discoveries
 
+## YouTube Data API / Analytics API
+
+Status: Code-ready contract; Live DEV UAT pending.
+
+- Data API channel lookup uses `channels.list`; uploads enumeration uses `playlistItems.list`; video details use `videos.list` in batches of at most 50 IDs.
+- Public data supports API key or OAuth. Owner Analytics `reports.query` requires OAuth.
+- Data API statistics are cumulative snapshots. Analytics rows are period metrics and must be stored separately.
+- Hidden subscriber count and unsupported metrics stay `null`; explicit zero remains zero.
+- Channel identity mismatch blocks writes.
+
+## Meta Graph API
+
+Status: Shared transport only; Facebook/Instagram business adapters remain planned.
+
+- Require an explicit Graph API version and bearer token.
+- Cursor pagination replays the original edge with the returned `after` cursor; code does not fetch arbitrary `paging.next` URLs.
+- Facebook Page and Instagram Business mappings remain separate from transport because identities, permissions and metric semantics differ.
+
+## WooCommerce / Chatwoot
+
+Status: Sanitized contracts and fixtures only.
+
+- WooCommerce monetary values remain decimal strings at the source boundary; no customer PII is required by the order contract.
+- Chatwoot contract keeps operational conversation/inbox/agent/status timestamps and excludes message bodies, email and phone.
+
 ## TikTok For Creator — Lark Native Integration
 
 Status: Confirmed for MVP usage.

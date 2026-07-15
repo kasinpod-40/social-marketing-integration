@@ -25,10 +25,11 @@ export function resolveConnectorRuntimeConfig(profileConnectors, env = {}) {
     const enabled = enabledOverride ?? (profile.enabledByDefault === true);
 
     if (enabled && definition.implementationStatus !== CONNECTOR_IMPLEMENTATION_STATUS.ACTIVE) {
+      const uatPending = definition.implementationStatus === CONNECTOR_IMPLEMENTATION_STATUS.UAT_PENDING;
       throw permanentError(
-        `${definition.displayName} connector is enabled but its implementation is not ready`,
+        `${definition.displayName} connector is enabled but ${uatPending ? 'Live DEV UAT is pending' : 'its implementation is not ready'}`,
         {
-          code: 'MKT_CONNECTOR_NOT_IMPLEMENTED',
+          code: uatPending ? 'MKT_CONNECTOR_UAT_PENDING' : 'MKT_CONNECTOR_NOT_IMPLEMENTED',
           details: {
             connectorKey: definition.key,
             implementationStatus: definition.implementationStatus,

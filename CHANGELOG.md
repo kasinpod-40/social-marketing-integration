@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.10.0-multi-channel-foundation — 2026-07-15
+
+### Added
+- Added a YouTube Organic source contract, three-table Lark RAW Blueprint, bounded Data/Analytics API client, channel/video adapter, normalization batch, and destination preflight.
+- Added Canonical Organic identities, normalized rows, batch isolation/dedupe, and two-table destination planning shared by TikTok and YouTube.
+- Added a versioned Meta Graph transport client with bearer auth, bounded cursor pagination, safe URL handling, and transient/permanent error classification.
+- Added sanitized WooCommerce order and Chatwoot conversation contracts, fixtures, and validators without customer PII or credentials.
+- Added a platform-neutral Ads Account/Campaign/Ad group/Creative/Daily contract with account-scoped stable keys and centrally calculated CTR/CPC/CPM/actual ROAS.
+
+### Safety
+- YouTube is explicitly `uat_pending`; Meta, WooCommerce, Chatwoot and Ads remain `planned`. No unverified Worker route or schedule was activated.
+- Added placeholder-only config examples and raw YouTube table mappings; no Secret, token, customer data, D1 mutation, Lark mutation, deployment, or Live API call is included.
+- Updated the Cloudflare example to compatibility date `2026-07-15` with `nodejs_compat` while retaining Wrangler 4.110.0-compatible schema.
+
+### Verification
+- Node unit/integration 336/336 and Workers-runtime 6/6 passed.
+- Architecture passed at 94 source files / 189 local dependencies / 0 cycles; repository hygiene passed.
+- Focused report reliability 51/51, offline npm audit 0, and Wrangler dry-run 373.71 KiB / gzip 76.31 KiB passed; see `docs/multi-channel-foundation-v0.10.0.md`.
+
 ## 0.9.7-agent-workflow-foundation — 2026-07-15
 
 ### Added

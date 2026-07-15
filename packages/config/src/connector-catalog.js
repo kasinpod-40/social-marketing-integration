@@ -6,6 +6,7 @@ import { permanentError } from '../../shared/src/errors/runtime-error.js';
  * กฎสำคัญ:
  * - key ต้องคงที่เพราะถูกใช้ใน Config, Queue job, Log และ Feature flag
  * - implementationStatus='active' หมายถึงมี Write/Validation path จริงพร้อม Test แล้ว
+ * - implementationStatus='uat_pending' หมายถึงมี Code/Contract แต่ยังห้าม Runtime ทำงานก่อน Live DEV UAT
  * - implementationStatus='planned' หมายถึงเตรียม Contract ไว้เท่านั้นและห้าม Runtime ทำงานจริง
  */
 export const CONNECTOR_KEYS = Object.freeze({
@@ -19,6 +20,7 @@ export const CONNECTOR_KEYS = Object.freeze({
 
 export const CONNECTOR_IMPLEMENTATION_STATUS = Object.freeze({
   ACTIVE: 'active',
+  UAT_PENDING: 'uat_pending',
   PLANNED: 'planned',
 });
 
@@ -52,7 +54,7 @@ const CONNECTOR_CATALOG = Object.freeze({
     key: CONNECTOR_KEYS.YOUTUBE,
     displayName: 'YouTube',
     capability: 'organic_content',
-    implementationStatus: CONNECTOR_IMPLEMENTATION_STATUS.PLANNED,
+    implementationStatus: CONNECTOR_IMPLEMENTATION_STATUS.UAT_PENDING,
     featureFlagEnv: 'MKT_CONNECTOR_YOUTUBE_ENABLED',
     requiredRuntimeFields: ['accountKey'],
   }),

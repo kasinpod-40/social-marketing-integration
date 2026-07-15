@@ -2,7 +2,8 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "social-mkt-sync-worker",
   "main": "./apps/sync-worker/src/index.js",
-  "compatibility_date": "2026-07-01",
+  "compatibility_date": "2026-07-15",
+  "compatibility_flags": ["nodejs_compat"],
 
   // DEV เก็บ Logs/Traces 100% เพื่อให้ Reliability UAT ตรวจย้อนหลังได้
   // Production ที่ Traffic สูงควรลด head_sampling_rate ตามงบและปริมาณงาน
@@ -102,6 +103,10 @@
 
     // Table IDs ของ DEV Base ของผู้พัฒนา ตัวอย่างนี้ต้องแทนค่าก่อน Deploy จริง
     "LARK_TABLE_RAW_TIKTOK_CREATOR_VIDEOS": "replace-with-table-id",
+    // YouTube tables ใช้เมื่อ Blueprint ถูก Apply และ Live DEV UAT ได้รับอนุมัติเท่านั้น
+    "LARK_TABLE_RAW_YOUTUBE_CHANNELS": "replace-with-table-id",
+    "LARK_TABLE_RAW_YOUTUBE_VIDEOS": "replace-with-table-id",
+    "LARK_TABLE_RAW_YOUTUBE_ANALYTICS_DAILY": "replace-with-table-id",
     "LARK_TABLE_MKT_CONTENT": "replace-with-table-id",
     "LARK_TABLE_MKT_CONTENT_DAILY": "replace-with-table-id",
     "LARK_TABLE_MKT_CLASSIFICATION_DICTIONARY": "replace-with-table-id",
