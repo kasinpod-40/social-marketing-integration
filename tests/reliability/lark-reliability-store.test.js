@@ -61,3 +61,36 @@ test('Lark reliability store maps system alert and embeds syncRunId in the messa
   assert.match(calls[0].rows[0].alert_message, /sync_run_id=run-1/);
   assert.match(calls[0].rows[0].alert_message, /เกิดข้อผิดพลาด/);
 });
+
+test('Lark reliability mirror never writes external channel identity into error or alert text', async () => {
+  const calls = [];
+  const store = new LarkReliabilityStore({
+    repository: {},
+    syncEngine: { async syncByKey(input) { calls.push(input); return { created: 1 }; } },
+    tables: { syncLog: 'tbl_sync', systemAlerts: 'tbl_alerts' },
+  });
+  const unsafeMessage = 'YouTube channel identity mismatch: expected=channel_A, actual=channel_B';
+
+  await store.saveSyncRun(createSyncLogEntry({
+    syncId: 'run-identity',
+    platform: 'youtube',
+    syncType: 'organic_manual_uat',
+    status: 'failed',
+    errorCode: 'YOUTUBE_CHANNEL_IDENTITY_MISMATCH',
+    errorMessage: unsafeMessage,
+  }));
+  await store.saveSystemAlert(createSystemAlert({
+    alertId: 'alert-identity',
+    syncRunId: 'run-identity',
+    alertType: 'sync_failed',
+    severity: 'critical',
+    platform: 'youtube',
+    status: 'open',
+    errorCode: 'YOUTUBE_CHANNEL_IDENTITY_MISMATCH',
+    message: unsafeMessage,
+  }));
+
+  const serialized = JSON.stringify(calls.map((call) => call.rows));
+  assert.match(serialized, /Source identity validation failed/u);
+  assert.doesNotMatch(serialized, /channel_A|channel_B/u);
+});

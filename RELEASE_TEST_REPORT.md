@@ -18,8 +18,10 @@ YouTube schedule: `disabled`
 - D1 incremental checkpoint and periodic full reconciliation.
 - Non-destructive missing/private/deleted-video handling.
 - Existing Sync Log, distributed lock, bounded retry, DLQ and System Alert reuse.
-- Successful-sync reconciliation warnings without unnecessary Queue retry.
-- Updated approved-for-DEV Workbook and Workbook/source parity coverage.
+- Successful-sync reconciliation warnings; D1 primary-alert persistence failure remains retryable and prevents Queue acknowledgement.
+- Previously observed Analytics missing-key reconciliation with retain/warn semantics and no fabricated Video×Day gaps.
+- Central operational identity redaction for Worker logs, D1 and the Lark reliability mirror.
+- Canonical approved Workbook and Workbook/source parity coverage without a byte-identical duplicate.
 
 ## Intentionally not executed
 
@@ -39,46 +41,36 @@ All commands below were run from a fresh extraction of the final ZIP, not from t
 
 | Gate | Result |
 |---|---:|
-| Unit / Integration | 368 / 368 passed |
+| Unit / Integration | 376 / 376 passed |
 | Workers runtime | 6 / 6 passed |
-| Focused report reliability | 52 / 52 passed |
-| Architecture | 109 source files / 227 local dependencies / 0 cycles |
+| Focused report reliability | 53 / 53 passed |
+| Focused YouTube/Reliability/Redaction | 37 / 37 passed |
+| Architecture | 109 source files / 230 local dependencies / 0 cycles |
 | Repository hygiene | Passed |
 | npm audit --offline | 0 vulnerabilities |
 | Wrangler dry-run | Passed |
-| Bundle size | 434.55 KiB |
-| Gzip size | 89.06 KiB |
-| Release files | 250 |
+| Bundle size | 443.78 KiB |
+| Gzip size | 90.89 KiB |
+| Release files | 256 |
 | Blocked paths | 0 |
 | Missing required paths | 0 |
 | Sensitive findings | 0 |
 | Duplicate artifacts | 0 |
-| Manifest entries | 251 |
+| Manifest entries | 256 |
 
 ## Archive identity
 
-SHA-256:
-
-```text
-44c7f1dae62a9702fe6b88a17354696c8805033bb2cc90e496d416d4d61b34e6
-```
-
-Packaging workspace commit:
-
-```text
-236ca964f427b2eb61581256efefa788d3ce7298
-```
-
-The commit above belongs to the isolated packaging workspace used for verification. Apply the source changes in the real repository and create the project commit there before pushing.
+Packaging writes the exact SHA-256 beside the local ZIP at
+`outputs/releases/social-marketing-integration-v0.11.0-rc.1.zip.sha256` and the machine-readable result at the matching `.verification.json` path. These generated values stay outside Source so the archive never embeds a stale or self-referential checksum.
 
 ## Verification commands
 
 ```bash
-npm ci --ignore-scripts
+npm ci
 npm run check
 npm test
 npm run test:report-reliability
-npm audit --offline --audit-level=high
+npm audit --offline
 npm run deploy:dry-run
 npm run release:verify -- /path/to/social-marketing-integration-v0.11.0-rc.1.zip
 ```
@@ -102,13 +94,13 @@ Store all values outside Source control:
 5. Save returned Table IDs only in ignored local configuration.
 6. Deploy to DEV with the UAT flag only; keep normal YouTube and Schedule flags false.
 7. Generate the Manual UAT payload with `npm run job:youtube-uat` and enqueue it deliberately.
-8. Verify first sync, idempotent rerun, incremental sync, full reconciliation, identity mismatch, quota/rate-limit, lock/retry/DLQ and Lark records.
+8. Verify first sync, idempotent rerun, incremental sync, full Video/Analytics reconciliation, identity redaction, quota/rate-limit, D1 alert failure, lock/retry/DLQ and Lark records.
 9. Promote to `active` and design a Schedule only after all Live DEV UAT evidence passes.
 
 ## Suggested Git handoff
 
 ```bash
 git add .
-git commit -m "feat: add YouTube organic manual UAT flow"
+git commit -m "fix: harden YouTube reconciliation and reliability"
 git push
 ```

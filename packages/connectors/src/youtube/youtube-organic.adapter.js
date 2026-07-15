@@ -7,7 +7,7 @@ export function mapYouTubeVideoResource(video, input = {}) {
   const channelId = requireText(video?.snippet?.channelId, 'video.snippet.channelId');
   const expectedChannelId = optionalText(input.expectedChannelId);
   if (expectedChannelId && channelId !== expectedChannelId) {
-    throw new TypeError(`YouTube channel identity mismatch: expected=${expectedChannelId}, actual=${channelId}`);
+    throw new TypeError('YouTube channel identity mismatch');
   }
 
   return Object.freeze({
@@ -44,7 +44,7 @@ export function mapYouTubeChannelResource(channel, expectedChannelId = null) {
   requireObject(channel, 'YouTube channel resource');
   const channelId = requireText(channel.id, 'channel.id');
   if (expectedChannelId && channelId !== requireText(expectedChannelId, 'expectedChannelId')) {
-    throw new TypeError(`YouTube channel identity mismatch: expected=${expectedChannelId}, actual=${channelId}`);
+    throw new TypeError('YouTube channel identity mismatch');
   }
   return Object.freeze({
     channelId,

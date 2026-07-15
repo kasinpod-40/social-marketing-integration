@@ -3,6 +3,8 @@ import { createSystemAlert } from '../../domain/src/entities/system-alert.js';
 import {
   isPartialSyncError,
   markReliabilityHandled,
+  sanitizeOperationalError,
+  sanitizeOperationalValue,
   transientError,
 } from '../../shared/src/errors/runtime-error.js';
 
@@ -29,6 +31,7 @@ export async function runReliableSync(input = {}) {
       code: 'SYNC_LOCK_BUSY',
       details: { lockKey, expiresAt: lock?.expiresAt ?? null },
     });
+    const operationalError = sanitizeOperationalError(busyError);
     await store.saveSyncRun(createSyncLogEntry({
       syncId: syncRunId,
       customerProfile: input.customerProfile,
@@ -40,9 +43,9 @@ export async function runReliableSync(input = {}) {
       startedAt,
       finishedAt: now(),
       retryCount: input.retryCount ?? 0,
-      errorCode: busyError.code,
-      errorMessage: busyError.message,
-      details: busyError.details,
+      errorCode: operationalError.code,
+      errorMessage: operationalError.message,
+      details: operationalError.details,
     }));
     throw markReliabilityHandled(busyError, syncRunId);
   }
@@ -102,7 +105,7 @@ export async function runReliableSync(input = {}) {
       retryCount: input.retryCount ?? 0,
       ...counts,
       details: {
-        reconciliation: result?.reconciliation ?? null,
+        reconciliation: sanitizeOperationalValue(result?.reconciliation ?? null),
         incremental: result?.incremental ?? null,
         warningCount: Array.isArray(result?.warnings) ? result.warnings.length : 0,
         writeOutcomes: readWriteOutcomes(result),
@@ -128,8 +131,8 @@ export async function runReliableSync(input = {}) {
           details: {
             customerProfile: input.customerProfile ?? null,
             accountKey: input.accountKey ?? null,
-            warnings: resultWarnings,
-            reconciliation: result?.reconciliation ?? null,
+            warnings: sanitizeOperationalValue(resultWarnings),
+            reconciliation: sanitizeOperationalValue(result?.reconciliation ?? null),
           },
         }));
       } catch (warningAlertError) {
@@ -138,6 +141,15 @@ export async function runReliableSync(input = {}) {
           error: warningAlertError,
           syncRunId,
         });
+        // D1 เป็น Primary; เมื่อ Persist warning ไม่สำเร็จต้องปล่อย Error ให้ Queue retry
+        // เพื่อ Re-plan จาก Stable keys เดิมแทนการ Ack แล้วทำ Alert สูญหายถาวร
+        throw warningAlertError?.retryable === true
+          ? warningAlertError
+          : transientError('Failed to persist sync reconciliation warning alert', {
+            code: warningAlertError?.code ?? 'SYNC_WARNING_ALERT_WRITE_FAILED',
+            cause: warningAlertError,
+            details: { causeCode: warningAlertError?.code ?? null },
+          });
       }
     }
 
@@ -145,6 +157,7 @@ export async function runReliableSync(input = {}) {
     return completedResult;
   } catch (error) {
     primaryError = error;
+    const operationalError = sanitizeOperationalError(error);
     const partial = isPartialSyncError(error);
     const sourceResult = partial ? error.partialResult : null;
     const counts = summarizeSyncResult(sourceResult);
@@ -162,14 +175,14 @@ export async function runReliableSync(input = {}) {
       finishedAt,
       retryCount: input.retryCount ?? 0,
       ...counts,
-      errorCode: error?.code ?? 'UNHANDLED_SYNC_ERROR',
-      errorMessage: error instanceof Error ? error.message : String(error),
+      errorCode: operationalError.code ?? 'UNHANDLED_SYNC_ERROR',
+      errorMessage: operationalError.message,
       details: {
         retryable: error?.retryable === true,
-        reconciliation: sourceResult?.reconciliation ?? null,
+        reconciliation: sanitizeOperationalValue(sourceResult?.reconciliation ?? null),
         incremental: sourceResult?.incremental ?? null,
         writeOutcomes: readWriteOutcomes(sourceResult),
-        errorDetails: error?.details ?? {},
+        errorDetails: operationalError.details,
       },
     }));
 
@@ -181,8 +194,8 @@ export async function runReliableSync(input = {}) {
         severity: partial ? 'critical' : (error?.retryable === true ? 'warning' : 'critical'),
         platform: input.platform,
         status: 'open',
-        errorCode: error?.code ?? 'UNHANDLED_SYNC_ERROR',
-        message: buildAlertMessage(error, { syncRunId, lockKey, partial }),
+        errorCode: operationalError.code ?? 'UNHANDLED_SYNC_ERROR',
+        message: buildAlertMessage(error, { syncRunId, partial }),
         createdAt: finishedAt,
         details: {
           customerProfile: input.customerProfile ?? null,
@@ -212,8 +225,12 @@ export async function runReliableSync(input = {}) {
         severity: 'critical',
         platform: input.platform,
         errorCode: releaseError?.code ?? 'SYNC_LOCK_RELEASE_FAILED',
-        message: `ปล่อย Lock ไม่สำเร็จ: ${releaseError instanceof Error ? releaseError.message : String(releaseError)}`,
-        details: { lockKey, operationCompleted: completedResult !== null, primaryError: primaryError?.message ?? null },
+        message: `ปล่อย Lock ไม่สำเร็จ: ${sanitizeOperationalError(releaseError).message}`,
+        details: sanitizeOperationalValue({
+          lockKey,
+          operationCompleted: completedResult !== null,
+          primaryError: primaryError ? sanitizeOperationalError(primaryError).message : null,
+        }),
       });
       try {
         await store.saveSystemAlert(alert);
@@ -390,11 +407,10 @@ function readWriteOutcomes(result) {
 }
 
 function buildAlertMessage(error, context) {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = sanitizeOperationalError(error).message;
   return [
     context.partial ? 'เกิด Partial/Unknown write และระบบจะ Reconcile ในรอบถัดไป' : 'รอบ Sync ล้มเหลว',
     `sync_run_id=${context.syncRunId}`,
-    `lock_key=${context.lockKey}`,
     `error=${message}`,
   ].join('\n');
 }

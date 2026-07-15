@@ -9,13 +9,20 @@
 - Added RAW Channel/Video/Analytics writes, field-grain validation, Canonical Content/Daily mapping, and Account write-last behavior.
 - Added Manual Queue routing, D1 checkpoint, recent-window incremental mode, periodic full reconciliation, Sync Log/Lock/Retry/DLQ reuse, and reconciliation warning alerts.
 
+### Fixed
+- Reconciled only previously observed Owner Analytics stable keys inside the exact re-fetch Video/date scope; disappeared rows are retained and emit one deterministic warning without fabricating never-observed gaps.
+- Made D1 warning-alert persistence a real Queue acknowledgement gate; primary failure is retryable and cannot be swallowed after business writes succeed.
+- Centralized operational redaction across Workers logs, D1 error/details/payloads, and the Lark reliability mirror while preserving safe counts and error codes.
+- Restored placeholder-only release examples, removed local macOS metadata and the byte-identical Blueprint copy, and corrected the handoff link to the canonical workbook.
+- Made packaging reflect deliberate working-tree deletions and reject duplicate Manifest entries; stale generated Manifest/verification files are no longer kept in Source.
+
 ### Safety
 - YouTube remains `uat_pending`; Manual UAT requires a separate flag while the normal connector flag remains false.
 - No YouTube Scheduler producer, Live API call, Lark Schema Apply, Queue mutation, deployment, Meta work, or Production activation occurred in the source build.
 - Official foundation baseline is `v0.10.2-multi-channel-foundation-approved`.
 
 ### Verification
-- Clean extracted archive passed: Unit 368/368, Workers 6/6, reliability 52/52, Architecture 109/227/0, audit 0, Wrangler dry-run 434.55/89.06 KiB, and blocked/missing/sensitive/duplicate findings all 0.
+- Hardened source and fresh-archive gates passed: Unit 376/376, Workers 6/6, reliability 53/53, Architecture 109/230/0, audit 0, and Wrangler dry-run 443.78/90.89 KiB. Archive verification found zero blocked, missing, sensitive, or duplicate artifacts.
 
 ## 0.10.2-rc.2 — YouTube Blueprint and clean artifact corrections — 2026-07-15
 
@@ -142,6 +149,7 @@
 ### Package hygiene
 - Restored `.gitignore` and `.dev.vars.example` to the source package.
 - Excluded `.dev.vars`, local `wrangler.sync.jsonc`, `.git`, `.wrangler`, `node_modules`, `.DS_Store`, `__MACOSX`, and AppleDouble metadata from the release archive.
+- Removed the byte-identical `approved-for-dev` Blueprint duplicate, corrected the handoff link to the canonical workbook, and made release packaging ignore tracked files deliberately deleted from the working tree.
 - Kept `wrangler.sync.example.jsonc` safe by leaving report schedule flags disabled by default; activation remains an explicit local operation.
 
 ### Verification

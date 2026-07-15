@@ -322,3 +322,49 @@ test('successful sync can persist one warning alert for reconciliation without f
   assert.equal(store.alerts[0].alertType, 'sync_completed_with_warnings');
   assert.equal(store.alerts[0].severity, 'warning');
 });
+
+test('warning alert primary persistence failure is retryable and prevents a successful acknowledgement', async () => {
+  const syncRuns = [];
+  const reliabilityEvents = [];
+  const store = {
+    async saveSyncRun(entry) { syncRuns.push(entry); },
+    async saveSystemAlert() {
+      throw transientError('D1 unavailable', { code: 'D1_SYSTEM_ALERT_WRITE_FAILED' });
+    },
+  };
+
+  await assert.rejects(
+    () => runReliableSync({
+      store,
+      lockManager: new InMemoryLeaseLockManager(),
+      syncRunId: 'run-warning-alert-failed',
+      customerProfile: 'dev_ft_pumkin',
+      accountKey: 'youtube_dev',
+      platform: 'youtube',
+      source: 'youtube_data_api',
+      syncType: 'organic_manual_uat',
+      leaseMs: 60_000,
+      alertOnResultWarnings: true,
+      onReliabilityError: (event) => reliabilityEvents.push(event),
+      execute: async () => ({
+        rawRecords: 1,
+        rawAnalytics: { created: 0, updated: 0, skipped: 1 },
+        warnings: [{
+          code: 'YOUTUBE_ANALYTICS_RECONCILIATION_REQUIRED',
+          missingStableKeys: ['youtube:channel_A:video_A:2026-07-14'],
+        }],
+        reconciliation: {
+          required: true,
+          missingAnalyticsStableKeys: ['youtube:channel_A:video_A:2026-07-14'],
+        },
+      }),
+    }),
+    (error) => error.code === 'D1_SYSTEM_ALERT_WRITE_FAILED'
+      && error.retryable === true
+      && error.reliabilityHandled === true,
+  );
+
+  assert.deepEqual(syncRuns.map((entry) => entry.status), ['running', 'success', 'failed']);
+  assert.equal(syncRuns.at(-1).errorCode, 'D1_SYSTEM_ALERT_WRITE_FAILED');
+  assert.equal(reliabilityEvents[0].stage, 'result_warning_alert_failed');
+});

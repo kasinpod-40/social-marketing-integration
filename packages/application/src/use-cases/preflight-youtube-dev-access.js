@@ -22,7 +22,7 @@ export async function preflightYouTubeDevAccess(input = {}) {
   if (mismatchedVideos.length > 0) {
     throw permanentError('YouTube sample videos do not belong to the allowed channel', {
       code: 'YOUTUBE_CHANNEL_IDENTITY_MISMATCH',
-      details: { channelId, mismatchedVideos },
+      details: { mismatchedVideoCount: mismatchedVideos.length },
     });
   }
 

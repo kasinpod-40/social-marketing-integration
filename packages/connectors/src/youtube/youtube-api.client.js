@@ -55,7 +55,7 @@ export class YouTubeApiClient {
     if (items.length !== 1) {
       throw permanentError(`YouTube channel lookup returned ${items.length} records`, {
         code: 'YOUTUBE_CHANNEL_IDENTITY_MISMATCH',
-        details: { requestedChannelId: channelId, resultCount: items.length },
+        details: { resultCount: items.length },
       });
     }
     return Object.freeze(items[0]);

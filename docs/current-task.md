@@ -44,6 +44,10 @@
 12. Reconciliation warning หลังรอบสำเร็จเมื่อ Video resource หาย โดยไม่ทำให้ Queue retry ซ้ำ
 13. Dry-run/manual payload helper `npm run job:youtube-uat`
 14. No YouTube Scheduler producer
+15. Analytics reconciliation ตรวจเฉพาะ Stable keys ที่เคยพบใน Video/ช่วงวันที่ที่ re-fetch จริง; แถวที่หายถูก retain และสร้าง `YOUTUBE_ANALYTICS_RECONCILIATION_REQUIRED`
+16. D1 warning alert เป็น Primary gate จริง: Persist ไม่สำเร็จกลายเป็น Retryable failure และ Queue ห้าม Ack
+17. Operational redaction กลางสำหรับ Worker logs, D1 payload/error และ Lark reliability mirror โดยไม่เปิดเผย Channel/Video/Handle/Lock identity
+18. Release examples ใช้ Placeholder เท่านั้นและ Repository hygiene ไม่มี macOS metadata
 
 ## External actions intentionally not executed
 
@@ -71,24 +75,35 @@
 5. ใส่ Table IDs ที่คืนมาใน ignored `wrangler.sync.jsonc`
 6. Deploy DEV Worker โดย UAT flag เท่านั้น; normal YouTube flag และ Schedule คง false
 7. Enqueue Manual UAT job จาก `npm run job:youtube-uat`
-8. ทดสอบ First sync, idempotent rerun, incremental, full reconciliation, identity mismatch, quota/rate-limit, lock/retry/DLQ และข้อมูลใน Lark
+8. ทดสอบ First sync, idempotent rerun, incremental, full reconciliation, Analytics missing-key, identity mismatch, quota/rate-limit, D1 alert failure, lock/retry/DLQ และข้อมูลใน Lark
 9. เปลี่ยน Connector เป็น `active` และออกแบบ Schedule เฉพาะหลัง Live DEV UAT ผ่าน
 
 ## Acceptance and verification
 
-- Unit/Integration: 368/368 passed
+- Unit/Integration: 376/376 passed
 - Workers runtime: 6/6 passed
-- Focused Report reliability: 52/52 passed
-- Architecture: 109 source files / 227 local dependencies / 0 cycles
+- Focused Report reliability: 53/53 passed
+- Focused YouTube/Reliability/Redaction: 37/37 passed
+- Architecture: 109 source files / 230 local dependencies / 0 cycles
 - Repository hygiene: passed
 - npm audit: 0 vulnerabilities
-- Wrangler dry-run: 434.55 KiB / gzip 89.06 KiB passed
-- Clean archive extraction retest: passed — 250 files; blocked/missing/sensitive/duplicate findings all 0
+- Wrangler dry-run: 443.78 KiB / gzip 90.89 KiB passed
+- Clean archive extraction retest: `npm ci`, check, Unit 376/376, Workers 6/6, reliability 53/53, audit 0 และ dry-run ผ่าน; Archive verifier พบ blocked/missing/sensitive/duplicate = 0
 - Live DEV UAT: `not_started_missing_external_access`
+
+## Implementation result
+
+- **Implementation:** แก้ Release example/hygiene และ packager, เติม previously-observed Analytics reconciliation, บังคับ D1 warning alert failure ให้ Retry และเพิ่ม Operational identity redaction กลาง
+- **Files changed:** YouTube sync/adapters/preflight, Reliability runner/D1/Lark stores, API/Sync Workers, safe environment example, Release tooling, focused tests และเอกสาร handoff; ลบ Blueprint สำเนาซ้ำที่เนื้อหาเหมือน canonical file
+- **Commands run:** `npm ci`, `npm run check`, `npm run test:unit`, `npm run test:worker`, `npm run test:report-reliability`, `npm audit --offline`, `npm run deploy:dry-run`, focused Node tests, `npm run release:package` และ `npm run release:verify -- ...zip`; ทำ gates ซ้ำจาก fresh ZIP extraction
+- **Tests:** Source และ extracted-archive gates ด้านบนผ่านทั้งหมด; Workers runtime ต้องรันนอก filesystem/network sandbox เพราะ Miniflare เปิด loopback listener
+- **Live UAT:** ไม่ได้เรียก YouTube/Lark API, ไม่ Apply Schema, ไม่ส่ง Queue จริง และไม่ Deploy
+- **Remaining risks:** ต้องยืนยัน Analytics missing-key/re-fetch กับ Live payload, D1 retry/Alert ใน DEV Worker และตรวจข้อมูล retain จริงใน Lark ก่อน Activation
+- **Recommended commit:** `fix: harden YouTube reconciliation and reliability`
 
 ## Work review
 
 - **Technical architecture:** approved for Manual DEV UAT
 - **Data model:** approved — Blueprint v0.10.2
 - **Release decision:** package as `v0.11.0-rc.1`; do not promote YouTube to active
-- **Recommended commit:** `feat: add YouTube organic manual UAT flow`
+- **Recommended commit:** `fix: harden YouTube reconciliation and reliability`

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import syncWorker from '../../apps/sync-worker/src/index.js';
+import syncWorker, { createSyncWorker } from '../../apps/sync-worker/src/index.js';
+import { permanentError } from '../../packages/shared/src/errors/runtime-error.js';
 
 test('sync worker acknowledges unsupported job types as permanent failures', async () => {
   const message = createMessage({ type: 'unknown.job' });
@@ -158,4 +159,68 @@ test('permanent failure is retried instead of acknowledged when D1 source of tru
   assert.equal(message.acked, false);
   assert.equal(message.retried, true);
   assert.deepEqual(message.retryOptions, { delaySeconds: 30 });
+});
+
+test('sync worker structured logs redact external identity from failures', async () => {
+  const message = createMessage({ type: 'youtube.channel.organic.sync' });
+  const logs = [];
+  const originalLog = console.log;
+  const worker = createSyncWorker({
+    processJob: async () => {
+      throw permanentError(
+        'YouTube channel identity mismatch: expected=channel_A, actual=channel_B',
+        {
+          code: 'YOUTUBE_CHANNEL_IDENTITY_MISMATCH',
+          details: { requestedChannelId: 'channel_A', mismatchedVideos: ['video_A'] },
+        },
+      );
+    },
+    createOperationalStore: () => ({
+      async saveDeadLetter() { return true; },
+      async saveSystemAlert() { return true; },
+    }),
+  });
+
+  console.log = (value) => logs.push(String(value));
+  try {
+    await worker.queue({ queue: 'sync-main', messages: [message] }, minimalEnv());
+  } finally {
+    console.log = originalLog;
+  }
+
+  const output = logs.join('\n');
+  assert.equal(message.acked, true);
+  assert.match(output, /Source identity validation failed/u);
+  assert.doesNotMatch(output, /channel_A|channel_B|video_A/u);
+});
+
+test('sync worker structured success logs keep counts but redact reconciliation identities', async () => {
+  const message = createMessage({ type: 'youtube.channel.organic.sync' });
+  const logs = [];
+  const originalLog = console.log;
+  const worker = createSyncWorker({
+    processJob: async () => ({
+      platform: 'youtube',
+      source: 'youtube_data_api',
+      reconciliation: {
+        required: true,
+        missingVideoIds: ['video_A'],
+        missingAnalyticsStableKeys: ['youtube:channel_A:video_A:2026-07-14'],
+      },
+      sourceSummary: { playlistVideoIds: 1, missingVideos: 1, missingAnalyticsRows: 1 },
+    }),
+  });
+
+  console.log = (value) => logs.push(String(value));
+  try {
+    await worker.queue({ queue: 'sync-main', messages: [message] }, minimalEnv());
+  } finally {
+    console.log = originalLog;
+  }
+
+  const output = logs.join('\n');
+  assert.equal(message.acked, true);
+  assert.match(output, /\[REDACTED\]/u);
+  assert.match(output, /"playlistVideoIds":1/u);
+  assert.doesNotMatch(output, /channel_A|video_A/u);
 });

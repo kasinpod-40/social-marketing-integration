@@ -13,11 +13,7 @@
 
 `social-marketing-integration-v0.11.0-rc.1.zip`
 
-SHA-256:
-
-```text
-44c7f1dae62a9702fe6b88a17354696c8805033bb2cc90e496d416d4d61b34e6
-```
+SHA-256 ใช้ค่าจาก `social-marketing-integration-v0.11.0-rc.1.zip.sha256` ที่สร้างพร้อม ZIP; ไม่ฝังค่าเก่าไว้ใน Source
 
 Verify on macOS:
 
@@ -47,20 +43,21 @@ npx wrangler deploy --dry-run --config wrangler.sync.example.jsonc
 
 Expected release evidence:
 
-- Unit / Integration: `368/368`
+- Unit / Integration: `376/376`
 - Workers runtime: `6/6`
-- Report reliability: `52/52`
-- Architecture: `109 files / 227 dependencies / 0 cycles`
+- Report reliability: `53/53`
+- YouTube/Reliability/Redaction focused: `37/37`
+- Architecture: `109 files / 230 dependencies / 0 cycles`
 - npm audit: `0 vulnerabilities`
 - Wrangler dry-run: passed
-- Bundle / Gzip: `434.55 KiB / 89.06 KiB`
+- Bundle / Gzip: `443.78 KiB / 90.89 KiB`
 
 ## Git commands
 
 ```bash
 git status
 git add .
-git commit -m "Add YouTube organic DEV UAT flow"
+git commit -m "fix: harden YouTube reconciliation and reliability"
 git tag v0.11.0-rc.1
 git push origin main
 git push origin v0.11.0-rc.1
@@ -69,7 +66,7 @@ git push origin v0.11.0-rc.1
 Commit message:
 
 ```text
-Add YouTube organic DEV UAT flow
+fix: harden YouTube reconciliation and reliability
 ```
 
 Release tag:

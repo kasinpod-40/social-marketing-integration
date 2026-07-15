@@ -29,7 +29,7 @@ test('D1 sync run persistence redacts secret-like keys in details JSON', async (
     accountKey: 'ft_pumkin',
     source: 'source',
     syncType: 'native_import',
-    status: 'success',
+    status: 'failed',
     startedAt: 1,
     finishedAt: 2,
     recordsPulled: 20,
@@ -38,12 +38,20 @@ test('D1 sync run persistence redacts secret-like keys in details JSON', async (
     recordsSkipped: 17,
     recordsWritten: 3,
     retryCount: 0,
-    details: { apiToken: 'should-not-leak', safe: 'ok' },
+    errorCode: 'YOUTUBE_CHANNEL_IDENTITY_MISMATCH',
+    errorMessage: 'YouTube channel identity mismatch: expected=channel_A, actual=channel_B',
+    details: {
+      apiToken: 'should-not-leak',
+      missingVideoIds: ['video_A'],
+      safe: 'ok',
+    },
   });
 
+  assert.equal(db.calls[0].bindings[16], 'Source identity validation failed');
   const detailsJson = db.calls[0].bindings[17];
   assert.match(detailsJson, /\[REDACTED\]/);
   assert.doesNotMatch(detailsJson, /should-not-leak/);
+  assert.doesNotMatch(detailsJson, /video_A|channel_A|channel_B/u);
   assert.match(detailsJson, /"safe":"ok"/);
 });
 
@@ -59,9 +67,9 @@ test('D1 persists system alerts and dead letters with redacted structured payloa
     severity: 'critical',
     platform: 'tiktok',
     status: 'open',
-    message: 'failed',
-    errorCode: 'FAIL',
-    details: { authorization: 'Bearer private', safe: true },
+    message: 'YouTube channel identity mismatch: expected=channel_A, actual=channel_B',
+    errorCode: 'YOUTUBE_CHANNEL_IDENTITY_MISMATCH',
+    details: { authorization: 'Bearer private', requestedChannelId: 'channel_A', safe: true },
     createdAt: 900,
   });
   await store.saveDeadLetter({
@@ -70,18 +78,22 @@ test('D1 persists system alerts and dead letters with redacted structured payloa
     queueName: 'sync-dlq',
     jobType: 'tiktok.creator.native.sync',
     schemaVersion: 1,
-    payload: { consumerSecret: 'private', metricDate: '2026-07-11' },
-    errorCode: 'QUEUE_RETRY_EXHAUSTED',
-    errorMessage: 'retry exhausted',
+    payload: { consumerSecret: 'private', channelId: 'channel_A', metricDate: '2026-07-11' },
+    errorCode: 'YOUTUBE_CHANNEL_IDENTITY_MISMATCH',
+    errorMessage: 'YouTube channel identity mismatch: expected=channel_A, actual=channel_B',
     retryCount: 5,
     status: 'open',
   });
 
   assert.match(db.calls[0].sql, /INSERT INTO system_alerts/);
+  assert.equal(db.calls[0].bindings[6], 'Source identity validation failed');
   assert.doesNotMatch(db.calls[0].bindings[8], /Bearer private/);
+  assert.doesNotMatch(db.calls[0].bindings[8], /channel_A|channel_B/u);
   assert.match(db.calls[1].sql, /INSERT INTO dead_letter_jobs/);
   assert.doesNotMatch(db.calls[1].bindings[5], /private/);
+  assert.doesNotMatch(db.calls[1].bindings[5], /channel_A/u);
   assert.match(db.calls[1].bindings[5], /2026-07-11/);
+  assert.equal(db.calls[1].bindings[7], 'Source identity validation failed');
 });
 
 test('D1 wraps database failures as retryable operational errors', async () => {

@@ -57,12 +57,14 @@ UAT order:
 5. Manual/periodic Full reconciliation
 6. Video ID returned by Playlist but absent from `videos.list`
 7. Previously observed Video disappears
-8. Channel identity mismatch
-9. Quota exhaustion versus rate-limit/server retry
-10. Distributed lock collision/renewal
-11. Retry exhaustion → DLQ/System Alert
-12. Verify RAW, Canonical, Account, Sync Log and warning rows in Lark
-13. Enable Owner Analytics separately and test a small Pacific-date range
+8. Enable Owner Analytics separately and test a small Pacific-date range
+9. Previously observed Analytics Stable key disappears on exact re-fetch while never-observed gaps remain silent
+10. Channel identity mismatch without Channel/Video identity in Worker/D1/Lark operational output
+11. Quota exhaustion versus rate-limit/server retry
+12. D1 warning-alert persistence failure → Retry and no Queue Ack
+13. Distributed lock collision/renewal
+14. Retry exhaustion → DLQ/System Alert
+15. Verify RAW, Canonical, Account, Sync Log and warning rows in Lark
 
 ## Activation gate
 

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { TableSyncEngine } from '../../packages/sync-engine/src/table-sync-engine.js';
 import { syncYouTubeOrganicToLark } from '../../packages/application/src/use-cases/sync-youtube-organic-to-lark.js';
+import { YOUTUBE_ANALYTICS_COLUMNS } from '../../packages/connectors/src/youtube/youtube-raw.adapter.js';
 
 const TABLES = Object.freeze({
   mktAccounts: 'accounts', rawYouTubeChannels: 'channels', rawYouTubeVideos: 'videos',
@@ -113,6 +114,91 @@ test('creates a complete reconciliation RAW row when playlist id has no videos.l
   assert.equal(record.fields.missing_since, 3000);
   assert.equal(record.fields.source_availability_status, 'missing');
   assert.equal(Object.hasOwn(record.fields, 'view_count'), false);
+});
+
+test('retains a previously observed Analytics key that disappears on re-fetch and warns once', async () => {
+  const missingStableKey = 'youtube:channel_A:video_A:2026-07-14';
+  const repository = createRepository({
+    analytics: [
+      {
+        raw_analytics_daily_key: missingStableKey,
+        source_metric_date: '2026-07-14', channel_id: 'channel_A', video_id: 'video_A',
+        views: 99, fetched_at: 500,
+      },
+      {
+        raw_analytics_daily_key: 'youtube:channel_A:video_A:2026-07-13',
+        source_metric_date: '2026-07-13', channel_id: 'channel_A', video_id: 'video_A', views: 88,
+      },
+      {
+        raw_analytics_daily_key: 'youtube:other_channel:video_A:2026-07-14',
+        source_metric_date: '2026-07-14', channel_id: 'other_channel', video_id: 'video_A', views: 77,
+      },
+      {
+        raw_analytics_daily_key: 'youtube:channel_A:video_unqueried:2026-07-14',
+        source_metric_date: '2026-07-14', channel_id: 'channel_A', video_id: 'video_unqueried', views: 66,
+      },
+    ],
+  });
+  const analyticsRows = [
+    ['2026-07-14', 'video_B', 11, 2, 1, 0, 5, 30, 50],
+    ['2026-07-15', 'video_A', 12, 3, 1, 0, 6, 31, 51],
+  ];
+  const stateStore = createStateStore();
+  const input = {
+    repository,
+    syncEngine: new TableSyncEngine(),
+    incrementalStateStore: stateStore,
+    publicClient: {
+      async getChannel() { return CHANNEL; },
+      async listUploadVideoIds() { return videos.map((video) => video.id); },
+      async listVideos() { return videos; },
+    },
+    ownerClient: {
+      async getChannel() { return CHANNEL; },
+      async queryAnalytics() {
+        return {
+          columnHeaders: YOUTUBE_ANALYTICS_COLUMNS.map((name) => ({ name })),
+          rows: analyticsRows,
+        };
+      },
+    },
+    syncRunId: 'run-analytics-reconciliation',
+    channelId: 'channel_A',
+    accountKey: 'youtube_dev',
+    customerProfile: 'dev_ft_pumkin',
+    cursorKey: 'youtube-lock',
+    metricDate: '2026-07-15',
+    syncMode: 'full',
+    analyticsEnabled: true,
+    analyticsStartDate: '2026-07-14',
+    analyticsEndDate: '2026-07-15',
+    now: () => 4000,
+    tables: TABLES,
+  };
+  const result = await syncYouTubeOrganicToLark(input);
+
+  const retained = repository.read('analytics', 'raw_analytics_daily_key', missingStableKey);
+  assert.equal(retained.fields.views, 99);
+  assert.equal(retained.fields.fetched_at, 500);
+  assert.equal(result.tables.rawAnalytics.result.created, 2);
+  assert.equal(result.sourceSummary.missingAnalyticsRows, 1);
+  assert.deepEqual(result.reconciliation.missingAnalyticsStableKeys, [missingStableKey]);
+  assert.equal(result.reconciliation.analytics.previouslyObservedStableKeys, 1);
+  assert.equal(result.reconciliation.analytics.observedStableKeys, 2);
+  assert.deepEqual(
+    result.warnings.map((warning) => warning.code),
+    ['YOUTUBE_ANALYTICS_RECONCILIATION_REQUIRED'],
+  );
+  assert.equal(result.warnings[0].missingCount, 1);
+
+  const rerun = await syncYouTubeOrganicToLark({
+    ...input,
+    syncRunId: 'run-analytics-reconciliation-rerun',
+    syncEngine: new TableSyncEngine(),
+  });
+  assert.equal(rerun.tables.rawAnalytics.result.skipped, 2);
+  assert.deepEqual(rerun.reconciliation.missingAnalyticsStableKeys, [missingStableKey]);
+  assert.equal(rerun.warnings[0].code, 'YOUTUBE_ANALYTICS_RECONCILIATION_REQUIRED');
 });
 
 function createStateStore(checkpoint = null) {

@@ -19,7 +19,7 @@ npx wrangler deploy --dry-run --config wrangler.sync.example.jsonc
 4. ดูคำสั่ง Git ที่พร้อมใช้ใน `GIT_HANDOFF.md`
 5. ดูผลตรวจใน `RELEASE_TEST_REPORT.md`
 6. ดู Blueprint ที่อนุมัติทางเทคนิคแล้วใน:
-   `docs/Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.2_approved-for-dev.xlsx`
+   `docs/Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.2.xlsx`
 
 ## สถานะ
 

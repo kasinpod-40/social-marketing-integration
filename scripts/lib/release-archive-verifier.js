@@ -52,6 +52,7 @@ export async function verifyReleaseArchive(input = {}) {
     const sensitiveFindings = scanReleaseTextFiles(textFiles);
     const manifest = await readFile(join(extractionRoot, RELEASE_MANIFEST_PATH), 'utf8');
     const manifestPaths = parseManifestFilePaths(manifest);
+    const duplicateManifestPaths = findDuplicateValues(manifestPaths);
     const manifestMismatch = comparePathSets(filePaths, manifestPaths);
     const issues = [
       ...duplicateEntryPaths.map((path) => `Duplicate ZIP entry: ${path}`),
@@ -59,6 +60,7 @@ export async function verifyReleaseArchive(input = {}) {
       ...missingPaths.map((path) => `Missing required release path: ${path}`),
       ...duplicateArtifacts.map((entry) => `Duplicate artifact ${entry.sha256}: ${entry.paths.join(', ')}`),
       ...sensitiveFindings.map((entry) => `${entry.code} in ${entry.path}: ${entry.message}`),
+      ...duplicateManifestPaths.map((path) => `Duplicate manifest entry: ${path}`),
       ...manifestMismatch.map((message) => `Manifest mismatch: ${message}`),
     ];
     if (issues.length > 0) {

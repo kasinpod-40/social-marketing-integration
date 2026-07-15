@@ -1,6 +1,9 @@
-import { transientError } from '../../shared/src/errors/runtime-error.js';
+import {
+  sanitizeOperationalText,
+  sanitizeOperationalValue,
+  transientError,
+} from '../../shared/src/errors/runtime-error.js';
 
-const SECRET_KEY_PATTERN = /(secret|token|password|authorization|api[_-]?key|consumer[_-]?secret)/iu;
 const MAX_JSON_LENGTH = 50_000;
 
 /**
@@ -61,7 +64,7 @@ export class D1ReliabilityStore {
         nonNegativeInteger(entry?.recordsWritten ?? 0, 'recordsWritten'),
         nonNegativeInteger(entry?.retryCount ?? 0, 'retryCount'),
         nullableText(entry?.errorCode),
-        nullableText(entry?.errorMessage),
+        nullableOperationalText(entry?.errorMessage, entry?.errorCode),
         safeJson(entry?.details ?? {}),
         this.now(),
         this.now(),
@@ -97,7 +100,7 @@ export class D1ReliabilityStore {
         requireText(alert?.severity, 'severity'),
         requireText(alert?.platform, 'platform'),
         requireText(alert?.status, 'status'),
-        requireText(alert?.message, 'message'),
+        requireText(sanitizeOperationalText(alert?.message, { code: alert?.errorCode }), 'message'),
         nullableText(alert?.errorCode),
         safeJson(alert?.details ?? {}),
         nullableInteger(alert?.createdAt) ?? this.now(),
@@ -136,7 +139,7 @@ export class D1ReliabilityStore {
         nullableInteger(deadLetter?.schemaVersion),
         safeJson(deadLetter?.payload ?? {}),
         nullableText(deadLetter?.errorCode),
-        nullableText(deadLetter?.errorMessage),
+        nullableOperationalText(deadLetter?.errorMessage, deadLetter?.errorCode),
         nonNegativeInteger(deadLetter?.retryCount ?? 0, 'retryCount'),
         requireText(deadLetter?.status ?? 'open', 'status'),
         nullableInteger(deadLetter?.createdAt) ?? this.now(),
@@ -238,26 +241,21 @@ function d1Error(message, code, cause) {
   return transientError(message, {
     code,
     cause,
-    details: { causeMessage: cause instanceof Error ? cause.message : String(cause) },
+    details: { causeMessage: sanitizeOperationalText(cause instanceof Error ? cause.message : String(cause)) },
   });
 }
 
 function safeJson(value) {
-  const seen = new WeakSet();
-  const text = JSON.stringify(value, (key, nested) => {
-    if (SECRET_KEY_PATTERN.test(key)) return '[REDACTED]';
-    if (nested && typeof nested === 'object') {
-      if (seen.has(nested)) return '[CIRCULAR]';
-      seen.add(nested);
-    }
-    if (typeof nested === 'bigint') return nested.toString();
-    if (typeof nested === 'function' || typeof nested === 'symbol' || nested === undefined) return null;
-    return nested;
-  });
+  const text = JSON.stringify(sanitizeOperationalValue(value));
   const normalized = text ?? '{}';
   return normalized.length <= MAX_JSON_LENGTH
     ? normalized
     : JSON.stringify({ truncated: true, preview: normalized.slice(0, MAX_JSON_LENGTH - 100) });
+}
+
+function nullableOperationalText(value, code) {
+  if (value === null || value === undefined || value === '') return null;
+  return nullableText(sanitizeOperationalText(value, { code }));
 }
 
 function requireD1(value) {

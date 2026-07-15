@@ -8,6 +8,7 @@ import { mapYouTubeChannelResource } from '../../../connectors/src/youtube/youtu
 import { normalizeYouTubeVideoBatch } from './normalize-youtube-video-batch.js';
 import { createStableFingerprint } from '../../../shared/src/hash/stable-fingerprint.js';
 import { permanentError } from '../../../shared/src/errors/runtime-error.js';
+import { requireDateOnly } from '../../../shared/src/date/date-only.js';
 
 const ANALYTICS_METRICS = 'views,likes,comments,shares,estimatedMinutesWatched,averageViewDuration,averageViewPercentage';
 const ANALYTICS_DIMENSIONS = 'day,video';
@@ -34,7 +35,7 @@ export async function syncYouTubeOrganicToLark(input = {}) {
   const accountKey = requireText(input.accountKey, 'accountKey');
   const customerProfile = requireText(input.customerProfile, 'customerProfile');
   const cursorKey = requireText(input.cursorKey, 'cursorKey');
-  const metricDate = requireDateOnly(input.metricDate, 'metricDate');
+  const metricDate = requireDateOnly(input.metricDate, { label: 'metricDate' });
   const tables = requireTables(input.tables);
   const analyticsEnabled = input.analyticsEnabled === true;
 
@@ -72,7 +73,16 @@ export async function syncYouTubeOrganicToLark(input = {}) {
   const existingMissingRecords = missingKeys.length === 0
     ? []
     : await repository.listByFieldValues(tables.rawYouTubeVideos, 'raw_video_key', missingKeys);
-  const existingMissingByKey = new Map(existingMissingRecords.map((record) => [record?.fields?.raw_video_key, record?.fields ?? {}]));
+  const normalizedMissingRecords = await normalizeExistingRecords({
+    repository,
+    tableId: tables.rawYouTubeVideos,
+    records: existingMissingRecords,
+    fieldNames: ['raw_video_key', 'last_seen_at', 'missing_since'],
+  });
+  const existingMissingByKey = new Map(normalizedMissingRecords.map((record) => [
+    record?.fields?.raw_video_key,
+    record?.fields ?? {},
+  ]));
   const requestedUnavailableSet = new Set(requestedButUnavailable);
   const priorStateById = new Map(priorStates.map((state) => [state.externalContentId, state]));
   const missingRows = missingIds.map((videoId) => {
@@ -108,18 +118,38 @@ export async function syncYouTubeOrganicToLark(input = {}) {
     });
   }
 
-  const analyticsRows = analyticsEnabled
+  const analyticsRange = analyticsEnabled
+    ? Object.freeze({
+      startDate: requireDateOnly(input.analyticsStartDate, { label: 'analyticsStartDate' }),
+      endDate: requireDateOnly(input.analyticsEndDate, { label: 'analyticsEndDate' }),
+    })
+    : null;
+  const analyticsVideoIds = videoResources.map((video) => requireText(video.id, 'video.id'));
+  const analyticsRows = analyticsRange
     ? await loadAnalyticsRows({
       ownerClient,
       channelId,
-      videoIds: videoResources.map((video) => video.id),
-      startDate: requireDateOnly(input.analyticsStartDate, 'analyticsStartDate'),
-      endDate: requireDateOnly(input.analyticsEndDate, 'analyticsEndDate'),
+      videoIds: analyticsVideoIds,
+      startDate: analyticsRange.startDate,
+      endDate: analyticsRange.endDate,
       fetchedAt,
       assertLockActive,
       maxPages: positiveInteger(input.analyticsMaxPages ?? 1000, 'analyticsMaxPages'),
     })
     : [];
+  const analyticsReconciliation = analyticsRange
+    ? await reconcileAnalyticsRows({
+      repository,
+      tableId: tables.rawYouTubeAnalyticsDaily,
+      channelId,
+      videoIds: analyticsVideoIds,
+      startDate: analyticsRange.startDate,
+      endDate: analyticsRange.endDate,
+      analyticsRows,
+      assertLockActive,
+      onProgress,
+    })
+    : emptyAnalyticsReconciliation();
 
   const accountRows = [Object.freeze({
     account_key: `youtube:${accountKey}`,
@@ -150,7 +180,7 @@ export async function syncYouTubeOrganicToLark(input = {}) {
   if (input.dryRun === true) {
     return buildResult({
       mode: 'dry_run', syncRunId, syncMode, videoIds, videoResources, missingIds,
-      analyticsRows, plans, checkpointSaved: false,
+      analyticsRows, analyticsReconciliation, plans, checkpointSaved: false,
     });
   }
 
@@ -191,7 +221,78 @@ export async function syncYouTubeOrganicToLark(input = {}) {
 
   return buildResult({
     mode: 'write', syncRunId, syncMode, videoIds, videoResources, missingIds,
-    analyticsRows, plans, results, checkpointSaved: true,
+    analyticsRows, analyticsReconciliation, plans, results, checkpointSaved: true,
+  });
+}
+
+/**
+ * ตรวจเฉพาะ Stable key ที่เคยมีอยู่ในช่วงวันที่/Video ที่รอบนี้ query จริง
+ * แถวที่หายจะไม่ถูกเขียนทับหรือลบ และถูกส่งเป็น Warning เพื่อให้ตรวจ Reconciliation
+ */
+async function reconcileAnalyticsRows(input) {
+  const sourceMetricDates = enumerateDateOnlyRange(input.startDate, input.endDate);
+  const videoIds = new Set(input.videoIds);
+  const observedStableKeys = new Set(input.analyticsRows.map((row) => requireText(
+    row.raw_analytics_daily_key,
+    'raw_analytics_daily_key',
+  )));
+  if (videoIds.size === 0) {
+    return createAnalyticsReconciliation({
+      startDate: input.startDate,
+      endDate: input.endDate,
+      observedStableKeys: observedStableKeys.size,
+    });
+  }
+
+  await input.assertLockActive();
+  input.onProgress({
+    stage: 'youtube_analytics_reconciliation_loading',
+    sourceMetricDates: sourceMetricDates.length,
+    videos: videoIds.size,
+  });
+  const existingRecords = await input.repository.listByFieldValues(
+    input.tableId,
+    'source_metric_date',
+    sourceMetricDates,
+  );
+  const normalizedRecords = await normalizeExistingRecords({
+    repository: input.repository,
+    tableId: input.tableId,
+    records: existingRecords,
+    fieldNames: ['raw_analytics_daily_key', 'source_metric_date', 'channel_id', 'video_id'],
+  });
+  const requestedDates = new Set(sourceMetricDates);
+  const previouslyObservedStableKeys = new Set();
+  for (const record of normalizedRecords) {
+    const fields = record?.fields ?? {};
+    const stableKey = optionalText(fields.raw_analytics_daily_key);
+    const sourceMetricDate = optionalText(fields.source_metric_date);
+    const sourceChannelId = optionalText(fields.channel_id);
+    const videoId = optionalText(fields.video_id);
+    if (!stableKey
+      || sourceChannelId !== input.channelId
+      || !videoIds.has(videoId)
+      || !requestedDates.has(sourceMetricDate)) {
+      continue;
+    }
+    previouslyObservedStableKeys.add(stableKey);
+  }
+
+  const missingStableKeys = [...previouslyObservedStableKeys]
+    .filter((stableKey) => !observedStableKeys.has(stableKey))
+    .sort();
+  input.onProgress({
+    stage: 'youtube_analytics_reconciliation_complete',
+    previouslyObserved: previouslyObservedStableKeys.size,
+    observed: observedStableKeys.size,
+    missing: missingStableKeys.length,
+  });
+  return createAnalyticsReconciliation({
+    startDate: input.startDate,
+    endDate: input.endDate,
+    observedStableKeys: observedStableKeys.size,
+    previouslyObservedStableKeys: previouslyObservedStableKeys.size,
+    missingStableKeys,
   });
 }
 
@@ -316,6 +417,19 @@ function buildResult(input) {
     skipped: input.plans[name].skipped,
     writeOutcome: input.mode === 'dry_run' ? 'not_started' : null,
   });
+  const videoWarnings = input.missingIds.map((videoId) => Object.freeze({
+    code: 'YOUTUBE_VIDEO_RECONCILIATION_REQUIRED',
+    videoId,
+    message: 'Retained prior RAW video metrics because the current traversal could not return the video resource.',
+  }));
+  const analyticsWarnings = input.analyticsReconciliation.missingStableKeys.length > 0
+    ? [Object.freeze({
+      code: 'YOUTUBE_ANALYTICS_RECONCILIATION_REQUIRED',
+      missingStableKeys: input.analyticsReconciliation.missingStableKeys,
+      missingCount: input.analyticsReconciliation.missingStableKeys.length,
+      message: 'Retained previously observed RAW Analytics rows that disappeared from the current re-fetch.',
+    })]
+    : [];
   return Object.freeze({
     syncRunId: input.syncRunId,
     platform: 'youtube',
@@ -323,14 +437,13 @@ function buildResult(input) {
     mode: input.mode,
     incremental: input.syncMode,
     rawRecords: 1 + input.videoResources.length + input.analyticsRows.length,
-    warnings: Object.freeze(input.missingIds.map((videoId) => Object.freeze({
-      code: 'YOUTUBE_VIDEO_RECONCILIATION_REQUIRED',
-      videoId,
-      message: 'Retained prior RAW video metrics because the current traversal could not return the video resource.',
-    }))),
+    warnings: Object.freeze([...videoWarnings, ...analyticsWarnings]),
     reconciliation: Object.freeze({
-      required: input.missingIds.length > 0,
+      required: input.missingIds.length > 0
+        || input.analyticsReconciliation.missingStableKeys.length > 0,
       missingVideoIds: Object.freeze([...input.missingIds]),
+      missingAnalyticsStableKeys: input.analyticsReconciliation.missingStableKeys,
+      analytics: input.analyticsReconciliation,
       policy: 'retain_prior_metrics_never_delete_or_zero_fill',
     }),
     sourceSummary: Object.freeze({
@@ -338,6 +451,7 @@ function buildResult(input) {
       videoResources: input.videoResources.length,
       missingVideos: input.missingIds.length,
       analyticsRows: input.analyticsRows.length,
+      missingAnalyticsRows: input.analyticsReconciliation.missingStableKeys.length,
     }),
     rawChannels: output('rawChannels'),
     rawVideos: output('rawVideos'),
@@ -347,6 +461,52 @@ function buildResult(input) {
     accounts: output('accounts'),
     tables: Object.freeze(summaries),
     checkpointSaved: input.checkpointSaved,
+  });
+}
+
+function createAnalyticsReconciliation(input = {}) {
+  return Object.freeze({
+    enabled: true,
+    startDate: input.startDate ?? null,
+    endDate: input.endDate ?? null,
+    observedStableKeys: Number(input.observedStableKeys ?? 0),
+    previouslyObservedStableKeys: Number(input.previouslyObservedStableKeys ?? 0),
+    missingStableKeys: Object.freeze([...(input.missingStableKeys ?? [])]),
+    policy: 'retain_prior_row_emit_reconciliation_warning',
+  });
+}
+
+function emptyAnalyticsReconciliation() {
+  return Object.freeze({
+    enabled: false,
+    startDate: null,
+    endDate: null,
+    observedStableKeys: 0,
+    previouslyObservedStableKeys: 0,
+    missingStableKeys: Object.freeze([]),
+    policy: 'not_enabled',
+  });
+}
+
+function enumerateDateOnlyRange(startDate, endDate) {
+  const start = requireDateOnly(startDate, { label: 'analyticsStartDate' });
+  const end = requireDateOnly(endDate, { label: 'analyticsEndDate' });
+  const startMs = Date.parse(`${start}T00:00:00Z`);
+  const endMs = Date.parse(`${end}T00:00:00Z`);
+  if (endMs < startMs) throw new RangeError('analyticsEndDate must not be before analyticsStartDate');
+  const dates = [];
+  for (let instant = startMs; instant <= endMs; instant += 86_400_000) {
+    dates.push(new Date(instant).toISOString().slice(0, 10));
+  }
+  return Object.freeze(dates);
+}
+
+async function normalizeExistingRecords(input) {
+  if (input.records.length === 0 || typeof input.repository.prepareExistingRecords !== 'function') {
+    return input.records;
+  }
+  return input.repository.prepareExistingRecords(input.tableId, input.records, {
+    incomingFieldNames: input.fieldNames,
   });
 }
 
@@ -381,11 +541,6 @@ function requireText(value, fieldName) {
 }
 function optionalText(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
-}
-function requireDateOnly(value, fieldName) {
-  const text = requireText(value, fieldName);
-  if (!/^\d{4}-\d{2}-\d{2}$/u.test(text)) throw new TypeError(`${fieldName} must be YYYY-MM-DD`);
-  return text;
 }
 function safeTimestamp(value) {
   const number = Number(value);

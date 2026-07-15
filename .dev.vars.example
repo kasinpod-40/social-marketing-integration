@@ -6,7 +6,7 @@
 
 # สภาพแวดล้อมและ Customer Profile
 MKT_ENV=development
-MKT_CUSTOMER_PROFILE=dev_ft_pumkin
+MKT_CUSTOMER_PROFILE=replace-with-customer-profile
 DEFAULT_TIMEZONE=Asia/Bangkok
 
 # เปิดเฉพาะ Connector ที่ Implement และอนุญาตให้ใช้แล้ว
@@ -31,7 +31,7 @@ MKT_DLQ_QUEUE_NAME=social-mkt-sync-dlq
 MKT_QUEUE_RETRY_DELAY_SECONDS=30
 
 # TikTok Creator DEV
-TIKTOK_SOURCE_HANDLE=ft.pumkin
+TIKTOK_SOURCE_HANDLE=replace-with-tiktok-handle
 
 # YouTube DEV — Connector ยัง UAT pending และ Feature flag ต้องคง false จน Live UAT ผ่าน
 YOUTUBE_CHANNEL_ID=replace-with-youtube-channel-id

@@ -2,6 +2,10 @@ import { BUILD_VERSION } from '../../../packages/config/src/build-info.js';
 import { json } from '../../../packages/shared/src/http/response.js';
 import { loadCustomerRuntimeConfig } from '../../../packages/config/src/customer-profiles.js';
 import { listConnectorReadiness } from '../../../packages/application/src/connectors/connector-registry.js';
+import {
+  sanitizeOperationalError,
+  sanitizeOperationalValue,
+} from '../../../packages/shared/src/errors/runtime-error.js';
 
 /** Map Route แบบคงที่เพื่อไม่ต้องสร้าง Router dependency ใน MVP */
 const ROUTES = new Map([
@@ -23,12 +27,14 @@ export default {
     try {
       return await handler({ request, env, ctx, url });
     } catch (error) {
-      console.error(JSON.stringify({
+      const operationalError = sanitizeOperationalError(error);
+      console.error(JSON.stringify(sanitizeOperationalValue({
         timestamp: new Date().toISOString(),
         scope: 'api_worker',
         route: routeKey,
-        error: error instanceof Error ? error.message : String(error),
-      }));
+        error: operationalError.message,
+        code: operationalError.code,
+      })));
 
       return json(
         {

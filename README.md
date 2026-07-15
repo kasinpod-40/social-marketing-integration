@@ -36,9 +36,11 @@ Official clean baseline: `v0.10.2-multi-channel-foundation-approved`
 - v0.10.2-rc.2 ปิด Blueprint/Release review gaps: YouTube preflight บังคับ `MKT_Accounts` และ RAW/Content/Daily tables, Example config fail-closed และ Clean ZIP มี Allowlist/Blocklist + Secret/DEV ID/Duplicate verification
 - YouTube Blueprint v0.10.2 rc.2 แก้ latest-state Channel/Video, hidden subscriber, non-destructive reconciliation, Pacific-day Analytics, explicit `sort=day,video`, missing-row semantics และ field-by-field Canonical mapping; Owner Analytics คง RAW-only ใน Phase 1
 - v0.11.0-rc.1 เพิ่ม YouTube guarded Schema installer, DEV access preflight, RAW/Canonical/Account writes, Manual Queue route, D1 checkpoint, reconciliation และ Reliability reuse; YouTube ยังคง `uat_pending` และไม่มี Schedule
+- v0.11.0-rc.1 hardening เติม Analytics missing-key reconciliation แบบ retain/warn, บังคับ D1 warning alert failure ให้ Queue retry, Redact external identity จาก operational logs/stores และคืน safe examples เป็น Placeholder-only
 - Connector อื่นยังไม่ถูกเปิด: Meta/WooCommerce/Chatwoot/Ads เป็น `planned` จนกว่า Blueprint/Access/Live UAT ของแต่ละช่องทางผ่าน
 - Customer Production setup ยังไม่รวมใน Release นี้และต้องใช้ทรัพยากรของลูกค้า
-- v0.11.0-rc.1 source gate ผ่าน Unit/Integration 368/368, Workers runtime 6/6, Report reliability 52/52, Architecture 109/227/0, hygiene, audit 0 และ Wrangler dry-run 434.55 KiB / gzip 89.06 KiB
+- v0.11.0-rc.1 hardened source gate ผ่าน Unit/Integration 376/376, Workers runtime 6/6, Report reliability 53/53, Architecture 109/230/0, hygiene, audit 0 และ Wrangler dry-run 443.78 KiB / gzip 90.89 KiB
+- Fresh ZIP extraction ผ่าน gates ชุดเดียวกัน และ Archive verifier ไม่พบ blocked path, missing required path, sensitive finding หรือ duplicate artifact
 
 รายละเอียด Contract และ Activation gates: `docs/multi-channel-foundation-v0.10.1.md`
 

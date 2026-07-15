@@ -1,4 +1,5 @@
 import { createSystemAlert } from '../../domain/src/entities/system-alert.js';
+import { sanitizeOperationalText } from '../../shared/src/errors/runtime-error.js';
 
 const MAX_LARK_MESSAGE_LENGTH = 5_000;
 
@@ -83,7 +84,9 @@ function mapAlertPlatform(value) {
 function buildSyncErrorMessage(entry) {
   const parts = [
     entry.errorCode ? `[${String(entry.errorCode).toUpperCase()}]` : null,
-    entry.errorMessage ? String(entry.errorMessage) : null,
+    entry.errorMessage
+      ? sanitizeOperationalText(entry.errorMessage, { code: entry.errorCode })
+      : null,
     entry.syncId ? `sync_run_id=${entry.syncId}` : null,
   ].filter(Boolean);
   return truncate(parts.join(' | '), MAX_LARK_MESSAGE_LENGTH);
@@ -95,7 +98,8 @@ function buildAlertMessage(alert) {
     alert.syncRunId ? `sync_run_id=${alert.syncRunId}` : null,
     alert.alertType ? `type=${alert.alertType}` : null,
   ].filter(Boolean).join(' ');
-  return prefix ? `${prefix}\n${alert.message}` : alert.message;
+  const message = sanitizeOperationalText(alert.message, { code: alert.errorCode });
+  return prefix ? `${prefix}\n${message}` : message;
 }
 
 function truncate(value, maxLength) {

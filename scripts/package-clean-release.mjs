@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
-import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -45,7 +45,7 @@ try {
 
   const commit = (await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: root })).stdout.trim();
   const dirty = (await execFileAsync('git', ['status', '--porcelain'], { cwd: root })).stdout.trim() !== '';
-  const archiveFiles = [...files, RELEASE_MANIFEST_PATH].sort();
+  const archiveFiles = [...new Set([...files, RELEASE_MANIFEST_PATH])].sort();
   const manifest = buildManifest({ version, commit, dirty, files: archiveFiles });
   await writeFile(join(stageRoot, RELEASE_MANIFEST_PATH), manifest, 'utf8');
 
@@ -85,11 +85,22 @@ async function listSourceFiles() {
     ['ls-files', '--cached', '--others', '--exclude-standard', '-z'],
     { cwd: root, encoding: 'buffer', maxBuffer: 20 * 1024 * 1024 },
   );
-  return Object.freeze(stdout.toString('utf8')
+  const candidates = stdout.toString('utf8')
     .split('\0')
     .filter(Boolean)
     .map(normalizeReleasePath)
-    .sort());
+    .sort();
+  const files = [];
+  for (const path of candidates) {
+    try {
+      await access(join(root, path));
+      files.push(path);
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
+      // Package the current working tree even before a deliberate deletion is staged.
+    }
+  }
+  return Object.freeze(files);
 }
 
 function buildManifest(input) {

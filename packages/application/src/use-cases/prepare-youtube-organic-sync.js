@@ -69,7 +69,7 @@ function buildIssues({ channelId, normalized }) {
     issues.push('Duplicate YouTube video identity rows require source cleanup');
   }
   if (normalized.sourceChannelIds.length !== 1 || normalized.sourceChannelIds[0] !== channelId) {
-    issues.push(`YouTube channel identity mismatch: expected ${channelId}`);
+    issues.push('YouTube channel identity mismatch');
   }
   return issues;
 }

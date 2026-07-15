@@ -1,6 +1,11 @@
 /**
  * ข้อผิดพลาดมาตรฐานของระบบที่ระบุได้ชัดว่าควร Retry หรือไม่
  */
+const OPERATIONAL_REDACTION = '[REDACTED]';
+const OPERATIONAL_SENSITIVE_KEY_PATTERN = /(?:secret|token|password|authorization|api[_-]?key|consumer[_-]?secret|lock[_-]?key|cursor[_-]?key|(?:channel|video|content)[_-]?ids?|(?:source|expected|actual|detected)[_-]?(?:channel|video|content)?[_-]?(?:ids?|handles?)|uploads[_-]?playlist[_-]?id|mismatched[_-]?videos?|stable[_-]?keys?)/iu;
+const IDENTITY_ERROR_CODE_PATTERN = /(?:IDENTITY|SOURCE_HANDLE)_MISMATCH/u;
+const IDENTITY_MESSAGE_PATTERN = /(?:identity|source handle)\s+mismatch/iu;
+
 export class RuntimeError extends Error {
   constructor(message, options = {}) {
     super(requireMessage(message), { cause: options.cause });
@@ -86,6 +91,72 @@ export function markReliabilityHandled(error, syncRunId) {
     });
   }
   return error;
+}
+
+/**
+ * คืนข้อความที่ปลอดภัยสำหรับ Log/Sync Log/System Alert โดยคง Error code เป็นตัววินิจฉัยหลัก
+ * และตัด External identity/Lock scope ที่อาจชี้กลับไปยังลูกค้าหรือบัญชีจริง
+ */
+export function sanitizeOperationalText(value, options = {}) {
+  const text = value instanceof Error ? value.message : String(value ?? '');
+  const code = typeof options.code === 'string' ? options.code.trim().toUpperCase() : '';
+  if (IDENTITY_ERROR_CODE_PATTERN.test(code) || IDENTITY_MESSAGE_PATTERN.test(text)) {
+    return 'Source identity validation failed';
+  }
+  if (code.startsWith('SYNC_LOCK_')) return 'Sync lock operation failed';
+
+  return text
+    .replace(/(\b(?:expected|actual|detected)\s*(?:=|:)\s*)[^\s,|]+/giu, `$1${OPERATIONAL_REDACTION}`)
+    .replace(/(\b(?:expected|detected)\s+)@[A-Za-z0-9._-]+/giu, `$1${OPERATIONAL_REDACTION}`)
+    .replace(/(\b(?:channel|video|content)[_-]?ids?\s*(?:=|:)\s*)[^\s,|]+/giu, `$1${OPERATIONAL_REDACTION}`);
+}
+
+/** ทำสำเนา JSON-safe พร้อม Redact key/value ที่ห้ามออก Operational logs */
+export function sanitizeOperationalValue(value) {
+  return sanitizeValue(value, new WeakSet());
+}
+
+/** สรุป Error สำหรับ Boundary ที่ Persist/Log โดยไม่แก้ Error เดิมซึ่งยังใช้ Retry classification */
+export function sanitizeOperationalError(error) {
+  const code = typeof error?.code === 'string' && error.code.trim()
+    ? error.code.trim().toUpperCase()
+    : null;
+  return Object.freeze({
+    code,
+    message: sanitizeOperationalText(error instanceof Error ? error.message : String(error), { code }),
+    details: sanitizeOperationalValue(error?.details ?? {}),
+  });
+}
+
+function sanitizeValue(value, seen) {
+  if (typeof value === 'string') return sanitizeOperationalText(value);
+  if (typeof value === 'bigint') return value.toString();
+  if (typeof value === 'function' || typeof value === 'symbol' || value === undefined) return null;
+  if (value === null || typeof value !== 'object') return value;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  if (seen.has(value)) return '[CIRCULAR]';
+  seen.add(value);
+
+  if (value instanceof Error) {
+    const sanitized = sanitizeOperationalError(value);
+    return {
+      name: value.name,
+      code: sanitized.code,
+      message: sanitized.message,
+      details: sanitized.details,
+    };
+  }
+  if (Array.isArray(value)) return value.map((nested) => sanitizeValue(nested, seen));
+
+  return Object.fromEntries(Object.entries(value).map(([key, nested]) => [
+    key,
+    OPERATIONAL_SENSITIVE_KEY_PATTERN.test(key)
+      && typeof nested !== 'number'
+      && typeof nested !== 'boolean'
+      && nested !== null
+      ? OPERATIONAL_REDACTION
+      : sanitizeValue(nested, seen),
+  ]));
 }
 
 function requireMessage(value) {

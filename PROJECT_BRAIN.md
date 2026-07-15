@@ -8,7 +8,7 @@ Official clean baseline: `v0.10.2-multi-channel-foundation-approved`
 
 Current clean candidate: `v0.11.0-rc.1` — YouTube Manual DEV UAT implementation complete in Source, pending external access and Live UAT
 
-Current YouTube design artifact: `docs/Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.2.xlsx` — Technical review approved. v0.11.0-rc.1 implements guarded Schema Preview/Apply, access preflight, RAW/Canonical/Account writes, Manual Queue, checkpoint/reconciliation and Reliability reuse. No Live credential, Schema Apply, API call, Queue mutation, deployment or Schedule activation occurred.
+Current YouTube design artifact: `docs/Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.2.xlsx` — Technical review approved. v0.11.0-rc.1 implements guarded Schema Preview/Apply, access preflight, RAW/Canonical/Account writes, Manual Queue, checkpoint/reconciliation and Reliability reuse. The hardened candidate also detects previously observed Analytics keys missing from the exact re-fetch scope, retries when the D1 warning alert cannot persist, and redacts external identity from operational logs/stores. No Live credential, Schema Apply, API call, Queue mutation, deployment or Schedule activation occurred.
 
 TikTok Organic DEV ingestion/report logic ผ่าน Live Queue UAT และ Reliability UAT แล้ว. Client Views ทั้ง 6 รายการติดตั้ง Filter/Hidden fields และ Sort `rank` ascending สำเร็จ; Advanced Permissions เปิดแล้วพร้อม `Client` role แบบ least privilege และ Final Preview เป็นศูนย์ actions/conflicts. Daily/Weekly schedules เปิดและ deploy ไปยัง Cloudflare DEV แล้ว; เหลือ operational observation ของรอบ schedule.
 
@@ -18,7 +18,7 @@ Multi-channel foundation ทั้ง 6 ส่วนถูกเพิ่มใ�
 
 **v0.10.2-multi-channel-foundation-approved — Blueprint/Source foundation ผ่าน Technical review และเลื่อนเป็น Official clean baseline; Example config ปิด Connector/Schedule ทั้งหมดและ Release tooling ตรวจ Blocklist/Allowlist, Secret, DEV IDs, duplicate artifacts, Manifest และ SHA-256.**
 
-**v0.11.0-rc.1 — YouTube Manual DEV UAT implementation: guarded three-table Schema installer, Public/OAuth preflight, RAW/Canonical/Account write flow, Manual Queue-only route, D1 incremental checkpoint, non-destructive reconciliation และ Sync Log/Lock/Retry/DLQ/System Alert reuse. Connector ยัง `uat_pending`; Schedule/Production ปิด.**
+**v0.11.0-rc.1 — YouTube Manual DEV UAT implementation: guarded three-table Schema installer, Public/OAuth preflight, RAW/Canonical/Account write flow, Manual Queue-only route, D1 incremental checkpoint, non-destructive Video/Analytics reconciliation, D1-primary Alert gate, operational identity redaction และ Sync Log/Lock/Retry/DLQ/System Alert reuse. Connector ยัง `uat_pending`; Schedule/Production ปิด.**
 
 v0.10.0 verification: Node unit/integration 336/336, Workers runtime 6/6, focused Report reliability 51/51, Architecture 94 source files / 189 local dependencies / 0 cycles, repository hygiene, offline npm audit 0, and Wrangler dry-run 373.71 KiB / gzip 76.31 KiB.
 
@@ -28,7 +28,7 @@ v0.10.2-rc.2 source verification: Node unit/integration 351/351, Workers runtime
 
 YouTube Blueprint v0.10.2 rc.2 verification is included in the 351/351 source gate: all 42 fields, explicit sort/missing-row semantics and every canonical destination field are checked against the Workbook.
 
-v0.11.0-rc.1 source verification: Node unit/integration 368/368, Workers runtime 6/6, focused Report reliability 52/52, Architecture 109 source files / 227 local dependencies / 0 cycles, repository hygiene passed, offline npm audit 0, and Wrangler dry-run 434.55 KiB / gzip 89.06 KiB. Clean extracted-archive retest passed: 368/368 Unit, 6/6 Workers, 52/52 reliability, Architecture 109/227/0, audit 0, Wrangler 434.55/89.06 KiB, and archive findings all 0 across blocked/missing/sensitive/duplicate gates.
+v0.11.0-rc.1 hardened source and fresh-archive verification: Node unit/integration 376/376, Workers runtime 6/6, focused Report reliability 53/53, focused YouTube/Reliability/Redaction 37/37, Architecture 109 source files / 230 local dependencies / 0 cycles, repository hygiene passed, offline npm audit 0, and Wrangler dry-run 443.78 KiB / gzip 90.89 KiB. Archive verification found zero blocked, missing, sensitive, or duplicate artifacts.
 
 
 

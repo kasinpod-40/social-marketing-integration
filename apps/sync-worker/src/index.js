@@ -31,6 +31,8 @@ import { normalizeQueueJobMessage } from '../../../packages/application/src/jobs
 import {
   isRetryableError,
   permanentError,
+  sanitizeOperationalText,
+  sanitizeOperationalValue,
 } from '../../../packages/shared/src/errors/runtime-error.js';
 import { runReliableSync } from '../../../packages/reliability/src/reliable-sync-runner.js';
 import { createCloudflareReliabilityRuntime } from '../../../packages/reliability/src/runtime-factory.js';
@@ -854,11 +856,15 @@ function sanitizeReliabilityEvent(event) {
 }
 
 function logQueueResult(payload) {
-  console.log(JSON.stringify({
+  const normalized = {
     timestamp: new Date().toISOString(),
     scope: payload.scope ?? 'sync_worker_queue',
     ...payload,
-  }));
+  };
+  if (Object.hasOwn(normalized, 'error')) {
+    normalized.error = sanitizeOperationalText(normalized.error, { code: normalized.code });
+  }
+  console.log(JSON.stringify(sanitizeOperationalValue(normalized)));
 }
 
 function summarizeJobResult(result) {
