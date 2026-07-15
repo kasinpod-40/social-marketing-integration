@@ -31,7 +31,7 @@
     {
       // D1 เป็น operational source of truth สำหรับ Sync runs, Locks, DLQ และ Alerts
       "binding": "MKT_STATE_DB",
-      "database_name": "social-mkt-state-dev",
+      "database_name": "replace-with-d1-database-name",
       "database_id": "00000000-0000-0000-0000-000000000000",
       "migrations_dir": "./migrations"
     }
@@ -67,35 +67,35 @@
 
   "vars": {
     "MKT_ENV": "development",
-    "MKT_CUSTOMER_PROFILE": "dev_ft_pumkin",
+    "MKT_CUSTOMER_PROFILE": "replace-with-customer-profile",
     "DEFAULT_TIMEZONE": "Asia/Bangkok",
 
-    "MKT_CONNECTOR_TIKTOK_ENABLED": "true",
+    "MKT_CONNECTOR_TIKTOK_ENABLED": "false",
     "MKT_CONNECTOR_FACEBOOK_ENABLED": "false",
     "MKT_CONNECTOR_INSTAGRAM_ENABLED": "false",
     "MKT_CONNECTOR_YOUTUBE_ENABLED": "false",
     "MKT_CONNECTOR_WOOCOMMERCE_ENABLED": "false",
     "MKT_CONNECTOR_CHATWOOT_ENABLED": "false",
 
-    "MKT_SCHEDULE_TIKTOK_ENABLED": "true",
+    "MKT_SCHEDULE_TIKTOK_ENABLED": "false",
     // Safe default: ปิดไว้สำหรับการติดตั้งใหม่; หลัง Schema/Seed/UAT ผ่านให้ใช้ npm run enable:tiktok-report-schedules
     "MKT_SCHEDULE_DAILY_REPORT_ENABLED": "false",
     "MKT_SCHEDULE_WEEKLY_REPORT_ENABLED": "false",
     "MKT_DAILY_REPORT_TIME": "08:10",
     "MKT_WEEKLY_REPORT_TIME": "08:15",
     "MKT_WEEKLY_REPORT_WEEKDAY": "monday",
-    "MKT_DAILY_REPORT_SETTING_KEY": "dev_ft_pumkin:tiktok:daily",
-    "MKT_WEEKLY_REPORT_SETTING_KEY": "dev_ft_pumkin:tiktok:weekly",
+    "MKT_DAILY_REPORT_SETTING_KEY": "replace-with-daily-report-setting-key",
+    "MKT_WEEKLY_REPORT_SETTING_KEY": "replace-with-weekly-report-setting-key",
     "MKT_MAIN_QUEUE_NAME": "social-mkt-sync-jobs",
     "MKT_DLQ_QUEUE_NAME": "social-mkt-sync-dlq",
     "MKT_QUEUE_RETRY_DELAY_SECONDS": "30",
 
     // เปิด Checkpoint/Fingerprint ใน D1 เพื่อประมวลผลปลายทางเฉพาะ RAW records ที่เปลี่ยน
-    "MKT_TIKTOK_INCREMENTAL_ENABLED": "true",
+    "MKT_TIKTOK_INCREMENTAL_ENABLED": "false",
     // บังคับ Full reconciliation อย่างน้อยวันละครั้ง แม้ไม่มี Fingerprint เปลี่ยน
     "MKT_TIKTOK_FULL_RECONCILIATION_INTERVAL_MS": "86400000",
 
-    "TIKTOK_SOURCE_HANDLE": "ft.pumkin",
+    "TIKTOK_SOURCE_HANDLE": "replace-with-tiktok-handle",
 
     // Lease 10 นาที และต่ออายุทุก 2 นาที เพื่อลดความเสี่ยง Lock หมดกลางงาน
     "MKT_SYNC_LOCK_LEASE_MS": "600000",
@@ -107,6 +107,8 @@
     "LARK_TABLE_RAW_YOUTUBE_CHANNELS": "replace-with-table-id",
     "LARK_TABLE_RAW_YOUTUBE_VIDEOS": "replace-with-table-id",
     "LARK_TABLE_RAW_YOUTUBE_ANALYTICS_DAILY": "replace-with-table-id",
+    // YouTube Channel identity ต้อง Preflight ตาราง Account ก่อนเรียก Source API ในรอบ Activation
+    "LARK_TABLE_MKT_ACCOUNTS": "replace-with-table-id",
     "LARK_TABLE_MKT_CONTENT": "replace-with-table-id",
     "LARK_TABLE_MKT_CONTENT_DAILY": "replace-with-table-id",
     // Ads tables ยังเป็น planned; ตั้งค่าเมื่อ Blueprint ผ่าน Review และ Sandbox UAT เท่านั้น

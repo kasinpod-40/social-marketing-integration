@@ -2,6 +2,7 @@ import { access, lstat, readFile, readdir } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { join, relative } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { findBlockedReleasePaths } from './lib/release-archive-policy.js';
 
 const root = process.cwd();
 const issues = [];
@@ -10,8 +11,9 @@ await requireFile('.dev.vars.example');
 await requireFile('AGENTS.md');
 await requireFile('docs/current-task.md');
 await requireFile('docs/Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.1.xlsx');
-await scanForDsStore(root);
-checkTrackedDsStore();
+await requireFile('scripts/package-clean-release.mjs');
+await requireFile('scripts/verify-release-archive.mjs');
+await scanForMacMetadata(root);
 checkTrackedLocalOnlyFiles();
 await checkDevVarsPermission();
 await checkPortablePackageLock();
@@ -32,35 +34,35 @@ async function requireFile(path) {
   }
 }
 
-async function scanForDsStore(directory) {
+async function scanForMacMetadata(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
   for (const entry of entries) {
-    if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === '.wrangler') continue;
+    if (['node_modules', '.git', '.wrangler', 'outputs', 'coverage', 'dist', 'tmp', 'temp'].includes(entry.name)) {
+      continue;
+    }
     const fullPath = join(directory, entry.name);
     if (entry.isDirectory()) {
-      await scanForDsStore(fullPath);
-    } else if (entry.name === '.DS_Store') {
-      issues.push(`Unexpected .DS_Store: ${relative(root, fullPath)}`);
+      if (entry.name === '__MACOSX') issues.push(`Unexpected __MACOSX: ${relative(root, fullPath)}`);
+      else await scanForMacMetadata(fullPath);
+    } else if (entry.name === '.DS_Store' || entry.name.startsWith('._')) {
+      issues.push(`Unexpected macOS metadata: ${relative(root, fullPath)}`);
     }
   }
-}
-
-function checkTrackedDsStore() {
-  const result = spawnSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' });
-  if (result.status !== 0) return;
-  const tracked = result.stdout.split(/\r?\n/u).filter((path) => /(^|\/)\.DS_Store$/u.test(path));
-  for (const path of tracked) issues.push(`Tracked .DS_Store: ${path}`);
 }
 
 
 function checkTrackedLocalOnlyFiles() {
   const result = spawnSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' });
   if (result.status !== 0) return;
-  const tracked = new Set(result.stdout.split(/\r?\n/u).filter(Boolean));
+  const trackedPaths = result.stdout.split(/\r?\n/u).filter(Boolean);
+  const tracked = new Set(trackedPaths);
   for (const path of ['.dev.vars', 'wrangler.sync.jsonc']) {
     if (tracked.has(path)) {
       issues.push(`Tracked local-only file: ${path}; run git rm --cached ${path}`);
     }
+  }
+  for (const path of findBlockedReleasePaths(trackedPaths)) {
+    issues.push(`Tracked release-blocked path: ${path}`);
   }
 }
 

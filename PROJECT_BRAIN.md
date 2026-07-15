@@ -4,7 +4,9 @@
 This project connects social organic and paid ads data into Lark Base for reporting, daily snapshots, monitoring, and AI summaries. The implementation target is a lean MVP using Cloudflare Workers, Cloudflare D1, Cloudflare Queues, Lark Base, Lark Native Integrations where useful, and JavaScript.
 
 ## Current project status
-Current audited release candidate: `v0.10.1-multi-channel-foundation-reviewed`
+Official clean baseline: `v0.9.7-agent-workflow-foundation`
+
+Current clean candidate: `v0.10.2-rc.1` — pending user Blueprint approval
 
 TikTok Organic DEV ingestion/report logic ผ่าน Live Queue UAT และ Reliability UAT แล้ว. Client Views ทั้ง 6 รายการติดตั้ง Filter/Hidden fields และ Sort `rank` ascending สำเร็จ; Advanced Permissions เปิดแล้วพร้อม `Client` role แบบ least privilege และ Final Preview เป็นศูนย์ actions/conflicts. Daily/Weekly schedules เปิดและ deploy ไปยัง Cloudflare DEV แล้ว; เหลือ operational observation ของรอบ schedule.
 
@@ -12,9 +14,13 @@ Multi-channel foundation ทั้ง 6 ส่วนถูกเพิ่มใ�
 
 **v0.10.1-multi-channel-foundation-reviewed — ตรวจทาน Foundation ก่อน Live UAT: `videos.list(id)` ไม่ส่ง `maxResults`, quota exhaustion ไม่ Short retry, Ads แยก Ad/Creative, Money ใช้ integer micros และมี Excel/Lark Blueprint ที่ตรวจภาพแล้ว. Activation gates อยู่ใน `docs/multi-channel-foundation-v0.10.1.md`.**
 
+**v0.10.2-rc.1 — Clean release/configuration candidate: Example config ปิด Connector/Schedule ทั้งหมด, YouTube required-table preflight รวม `MKT_Accounts`, Release tooling ตรวจ Blocklist/Allowlist, Secret, DEV resource IDs, duplicate artifacts, Manifest และ SHA-256. ยังไม่ใช่ Approved baseline และไม่มี Live mutation.**
+
 v0.10.0 verification: Node unit/integration 336/336, Workers runtime 6/6, focused Report reliability 51/51, Architecture 94 source files / 189 local dependencies / 0 cycles, repository hygiene, offline npm audit 0, and Wrangler dry-run 373.71 KiB / gzip 76.31 KiB.
 
 v0.10.1 verification after clean `npm ci`: Node unit/integration 340/340, Workers runtime 6/6, focused Report reliability 51/51, Architecture 94 source files / 189 local dependencies / 0 cycles, repository hygiene, offline npm audit 0, Excel Blueprint integrity + 8-sheet visual/formula verification, and Wrangler dry-run 373.74 KiB / gzip 76.31 KiB.
+
+v0.10.2-rc.1 clean-source verification: Node unit/integration 347/347, Workers runtime 6/6, Report reliability 51/51, Architecture 99 source files / 195 local dependencies / 0 cycles, repository hygiene, online/offline npm audit 0, and Wrangler dry-run 373.74 KiB / gzip 76.31 KiB. Clean archive verification adds required-path, blocked-path, Secret/DEV-ID, duplicate-artifact, Manifest and SHA-256 gates.
 
 
 
@@ -248,31 +254,16 @@ Current mapping rules:
 - `packages/` — clean architecture modules.
 - `tests/` — baseline tests for pure domain and mapping logic.
 
-## Current Canva-ready Lark table IDs
-```text
-MKT_Accounts = tblDcT7CVveNlNpP
-MKT_Ads_Accounts = tbl3yPcXdQzZQvBc
-MKT_Content = tbllvswTYP1dQGf3
-MKT_Content_Daily = tbl5n2rbZU7NO07w
-MKT_Ads_Campaigns = tblR7FwJ2tasEKPy
-MKT_Ads_AdGroups = tblsFufuixpig0Tf
-MKT_Ads_Ads = pending Blueprint Apply
-MKT_Ads_Creatives = tblmWi81dZ98v4dc
-MKT_Ads_Daily = tblPTMsC9J32gukX
-MKT_Metric_Definitions = tblk2Ho99sXqLLE2
-MKT_Report_Snapshots = tbl81gHrMESpDolN
-MKT_AI_Report_Runs = tblCX8IMtOiahI1x
-MKT_Sync_Log = tblpgnHODi8MIcso
-MKT_System_Alerts = tbl5Cq9iVkWTFdA4
-RAW_TikTok_Creator_Videos = tblMdO6XCti94EwH
-```
+## Local-only Lark resource mapping
+
+DEV Table IDs ถูกย้ายออกจาก Source/Release documentation แล้วและเก็บเฉพาะใน `wrangler.sync.jsonc`
+ของเครื่องผู้พัฒนา ตารางเดิมยังมีสถานะตาม Live UAT evidence ส่วน `MKT_Ads_Ads` และ YouTube RAW
+tables ยังรอ Blueprint approval/Apply. Production ต้องตั้งค่า Table IDs ของลูกค้าเองผ่าน Local/Environment config.
 
 ## Next action
-Apply and UAT TikTok Organic Report v0.7.0:
-1. Import/update the Lark Report schema from the release Blueprint.
-2. Configure IDs for `MKT_Report_Metric_Values` and `MKT_Report_Top_Content`.
-3. Run metric/report-setting seed and validate idempotent rerun.
-4. Send manual Daily and Weekly report jobs; verify snapshots, normalized metrics, Top Content, Sync Log, lock/retry behavior, and client views.
+1. Review and approve `docs/Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.1.xlsx`.
+2. Apply YouTube RAW tables only after approval and store real Table IDs in Local config.
+3. Run authorized YouTube identity/source preflight and Manual DEV UAT before activation.
 5. Enable report schedules only after Live DEV gate passes.
 6. Then start Lark AI + Group Notification; Organic Facebook/Instagram/YouTube and Ads remain later roadmap items.
 

@@ -116,14 +116,14 @@ The activator validates DEV profile, TikTok sync flags, report setting keys/time
 - Observe one real scheduled Weekly producer on Monday 08:15 Asia/Bangkok
 - Weekly `complete` baseline will occur naturally after enough prior-period snapshots are retained; the expected `partial` path is already live-tested
 
-## Final DEV table IDs
+## Final DEV table mapping
 
 ```text
-LARK_TABLE_MKT_METRIC_DEFINITIONS=tblk2Ho99sXqLLE2
-LARK_TABLE_MKT_REPORT_SETTINGS=tblYzXA6m9G0PvIs
-LARK_TABLE_MKT_REPORT_SNAPSHOTS=tbl81gHrMESpDolN
-LARK_TABLE_MKT_REPORT_METRIC_VALUES=tbl7rJypEU2ryAcr
-LARK_TABLE_MKT_REPORT_TOP_CONTENT=tblQMqeYT6cCWrla
+LARK_TABLE_MKT_METRIC_DEFINITIONS=<stored-in-local-config>
+LARK_TABLE_MKT_REPORT_SETTINGS=<stored-in-local-config>
+LARK_TABLE_MKT_REPORT_SNAPSHOTS=<stored-in-local-config>
+LARK_TABLE_MKT_REPORT_METRIC_VALUES=<stored-in-local-config>
+LARK_TABLE_MKT_REPORT_TOP_CONTENT=<stored-in-local-config>
 ```
 
-These IDs belong to the developer-owned DEV Base. Customer Production must use customer-owned Lark/Cloud/app credentials and its own table IDs.
+Actual DEV IDs are intentionally excluded from Source releases. Customer Production must use customer-owned Lark/Cloud/app credentials and its own table IDs.

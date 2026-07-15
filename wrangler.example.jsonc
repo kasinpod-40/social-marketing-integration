@@ -5,22 +5,22 @@
   "compatibility_date": "2026-07-01",
   "vars": {
     // Environment หลักของระบบ: development หรือ production
-    "MKT_ENV": "production",
+    "MKT_ENV": "development",
     // โปรไฟล์ลูกค้าที่เตรียมไว้ในโค้ด
-    "MKT_CUSTOMER_PROFILE": "chemistry_k",
+    "MKT_CUSTOMER_PROFILE": "replace-with-customer-profile",
     // Timezone กลางของรายงานและ Daily Snapshot
     "DEFAULT_TIMEZONE": "Asia/Bangkok",
 
     // Feature flags ของ Connector: ช่องทางที่ยังไม่มี Implementation จริงต้องคง false
-    "MKT_CONNECTOR_TIKTOK_ENABLED": "true",
+    "MKT_CONNECTOR_TIKTOK_ENABLED": "false",
     "MKT_CONNECTOR_FACEBOOK_ENABLED": "false",
     "MKT_CONNECTOR_INSTAGRAM_ENABLED": "false",
     "MKT_CONNECTOR_YOUTUBE_ENABLED": "false",
     "MKT_CONNECTOR_WOOCOMMERCE_ENABLED": "false",
     "MKT_CONNECTOR_CHATWOOT_ENABLED": "false",
 
-    // Handle จริงของบัญชีลูกค้าเปลี่ยนผ่าน Environment ได้โดยไม่แก้ Source code
-    "TIKTOK_SOURCE_HANDLE": "chemistry_k"
+    // Handle จริงต้องอยู่ใน Local/Environment config และเปิด Connector หลัง UAT เท่านั้น
+    "TIKTOK_SOURCE_HANDLE": "replace-with-tiktok-handle"
   },
   "queues": {
     "producers": [

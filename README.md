@@ -4,7 +4,9 @@
 
 ## Baseline ปัจจุบัน
 
-`v0.10.1-multi-channel-foundation-reviewed`
+Clean candidate: `v0.10.2-rc.1`
+
+Official clean baseline ยังคงเป็น `v0.9.7-agent-workflow-foundation` จนกว่าผู้ใช้จะอนุมัติ Blueprint
 
 สถานะปัจจุบัน:
 
@@ -31,12 +33,22 @@
 - v0.9.7 เพิ่ม Shared Work/Codex workflow ผ่าน `AGENTS.md` และ `docs/current-task.md`; Repository hygiene บังคับไม่ให้สองไฟล์นี้หายจาก Release
 - v0.10.0 เพิ่ม Multi-channel foundation ทั้ง 6 ส่วน: YouTube Organic Blueprint/client/normalization, Canonical Organic core, Meta Graph transport, WooCommerce/Chatwoot sanitized contracts และ Canonical Ads model
 - v0.10.1 ตรวจทาน Foundation: ถอด `maxResults` จาก `videos.list(id)`, แยก `quotaExceeded` ออกจาก Short retry, แยก Ads `Ad`/`Creative`, ใช้ integer micros เป็น Money source of truth และเพิ่ม Excel/Lark Blueprint ที่ตรวจภาพครบ
+- v0.10.2-rc.1 ปิด Release hygiene/config gap: YouTube preflight บังคับ `MKT_Accounts` และ RAW/Content/Daily tables, Example config fail-closed และ Clean ZIP มี Allowlist/Blocklist + Secret/DEV ID/Duplicate verification
 - Connector ใหม่ยังไม่ถูกเปิด: YouTube เป็น `uat_pending`; Meta/WooCommerce/Chatwoot/Ads เป็น `planned` จนกว่า Credentials, Schema Apply และ Live DEV UAT ผ่าน
 - Customer Production setup ยังไม่รวมใน Release นี้และต้องใช้ทรัพยากรของลูกค้า
 
 รายละเอียด Contract และ Activation gates: `docs/multi-channel-foundation-v0.10.1.md`
 
 Excel/Lark review Blueprint: `docs/Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.1.xlsx`
+
+สร้างและตรวจ Clean candidate:
+
+```bash
+npm run release:package
+npm run release:verify -- outputs/releases/social-marketing-integration-v0.10.2-rc.1.zip
+```
+
+Archive/Manifest/SHA-256/Verification report ถูกสร้างใน `outputs/releases/` ซึ่งเป็น Local artifact และไม่ Commit
 
 ## Shared workflow ระหว่าง ChatGPT Work และ Codex
 

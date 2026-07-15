@@ -26,22 +26,22 @@ test('deployment config defines producer, main queue, DLQ, and scheduled cron', 
   assert.match(configText, /"crons"\s*:\s*\["\*\/5 \* \* \* \*"\]/);
 });
 
-test('deployment examples enable only the implemented TikTok connector', async () => {
+test('deployment examples keep every connector disabled until environment UAT', async () => {
   const syncConfigText = await readSyncWranglerExample();
   const apiConfigText = await readFile(new URL('../../wrangler.example.jsonc', import.meta.url), 'utf8');
 
   for (const configText of [syncConfigText, apiConfigText]) {
-    assert.match(configText, /"MKT_CONNECTOR_TIKTOK_ENABLED"\s*:\s*"true"/);
-    for (const connector of ['FACEBOOK', 'INSTAGRAM', 'YOUTUBE', 'WOOCOMMERCE', 'CHATWOOT']) {
+    for (const connector of ['TIKTOK', 'FACEBOOK', 'INSTAGRAM', 'YOUTUBE', 'WOOCOMMERCE', 'CHATWOOT']) {
       assert.match(configText, new RegExp(`"MKT_CONNECTOR_${connector}_ENABLED"\\s*:\\s*"false"`));
     }
+    assert.doesNotMatch(configText, /dev_ft_pumkin|ft\.pumkin|chemistry_k/u);
   }
 });
 
 
-test('sync deployment enables TikTok incremental checkpoints with a daily full reconciliation', async () => {
+test('sync deployment declares TikTok incremental controls but keeps them disabled by default', async () => {
   const configText = await readSyncWranglerExample();
-  assert.match(configText, /"MKT_TIKTOK_INCREMENTAL_ENABLED"\s*:\s*"true"/);
+  assert.match(configText, /"MKT_TIKTOK_INCREMENTAL_ENABLED"\s*:\s*"false"/);
   assert.match(configText, /"MKT_TIKTOK_FULL_RECONCILIATION_INTERVAL_MS"\s*:\s*"86400000"/);
 });
 

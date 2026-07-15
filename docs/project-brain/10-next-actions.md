@@ -4,7 +4,7 @@
 
 ChatGPT Work and Codex share `docs/current-task.md`. The six-part Multi-channel foundation is implemented and recorded there; all unverified connectors remain fail-closed.
 
-## Baseline verification for v0.10.1
+## Clean candidate verification for v0.10.2-rc.1
 
 Preserve local `.dev.vars` and `wrangler.sync.jsonc`, then verify the source tree with:
 
@@ -14,6 +14,9 @@ npm run check
 npm test
 npm run test:report-reliability
 npm run deploy:dry-run
+npm audit --offline
+npm run release:package
+npm run release:verify -- outputs/releases/social-marketing-integration-v0.10.2-rc.1.zip
 ```
 
 ### 1. Client Views — completed and live-verified
@@ -60,7 +63,7 @@ Both flags are `true`; Worker version `ba6f3968-628c-4c61-b7eb-62647b38f547` dep
 - Confirm Weekly changes from `partial` to `complete` after enough comparison-period snapshots accumulate.
 - These are operational observations and do not block the next connector workstream.
 
-## Next workstream after v0.10.1 reviewed foundation
+## Next workstream after v0.10.2-rc.1
 
 1. Supply an authorized DEV YouTube Channel ID and API/OAuth credential outside source control.
 2. Run YouTube identity/source preflight and compare real payloads with `youtube-organic-v1`.

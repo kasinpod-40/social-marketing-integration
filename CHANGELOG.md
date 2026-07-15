@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.10.2-rc.1 — 2026-07-15
+
+### Configuration safety
+- Added `LARK_TABLE_MKT_ACCOUNTS` to both safe examples and a shared YouTube required-table preflight covering Account, three RAW tables, Content, and Daily.
+- Disabled every connector and schedule in release examples; customer profile, handle, D1 name, report-setting keys, and Table IDs remain placeholders.
+- Kept `wrangler.sync.jsonc` local-only and did not mutate Lark, D1, Cloudflare, Queues, or external APIs.
+
+### Release hygiene
+- Added deterministic Clean ZIP packaging plus independent Allowlist/Blocklist, Secret/DEV ID, duplicate-artifact, Manifest, and SHA-256 verification.
+- Expanded Repository hygiene for AppleDouble/macOS metadata and release-blocked tracked paths.
+- Removed the ignored duplicate Blueprint under `outputs/v0.10.1/` and retained only the canonical workbook under `docs/`.
+- Removed actual DEV Lark Table IDs from release documentation; mappings now live only in Local configuration.
+
+### Status
+- This is `clean_candidate_pending_user_blueprint_approval`, not an approved baseline.
+- YouTube Account destination write, Worker routing, Schema Apply, OAuth, Live UAT, and schedules remain out of scope and fail-closed.
+
+### Verification
+- Clean `npm ci`, Unit/Integration 347/347, Workers-runtime 6/6, Report reliability 51/51, Architecture 99/195/0, repository hygiene, online/offline npm audit 0, and Wrangler dry-run 373.74 KiB / gzip 76.31 KiB passed.
+- TypeScript, separate lint, and production-build commands are N/A because this JavaScript repository has no such scripts; syntax/architecture/hygiene and Wrangler bundle are the applicable gates.
+
 ## 0.10.1-multi-channel-foundation-reviewed — 2026-07-15
 
 ### Fixed

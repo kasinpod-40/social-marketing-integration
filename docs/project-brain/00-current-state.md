@@ -2,7 +2,9 @@
 
 ## Current release candidate
 
-`v0.10.1-multi-channel-foundation-reviewed` — 2026-07-15
+Official baseline: `v0.9.7-agent-workflow-foundation`
+
+Clean candidate: `v0.10.2-rc.1` — 2026-07-15, pending user Blueprint approval
 
 ## Multi-channel foundation
 
@@ -12,6 +14,7 @@
 - v0.10.1 removes unsupported `maxResults` from `videos.list(id)`, treats quota exhaustion as terminal alert, separates Ad from reusable Creative and makes integer micros the Ads money source of truth.
 - The reviewed Excel/Lark model is `../Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.1.xlsx`.
 - No external API, Lark, D1 or Cloudflare resource was mutated. Activation gates are documented in `../multi-channel-foundation-v0.10.1.md`.
+- v0.10.2-rc.1 adds fail-closed examples, YouTube Account/RAW/Content/Daily configuration preflight and verified Clean archive tooling; it does not add the Account write path or activate YouTube.
 
 ## Shared Work/Codex handoff
 
@@ -46,6 +49,7 @@ Canonical closeout: `../tiktok-organic-dev-complete-v0.9.6.md`; detailed earlier
 - v0.9.7 workflow gate: unit 312/312, Workers 6/6, Report reliability 51/51, focused View/Lark/build 56/56, Architecture 77/168/0, hygiene pass, npm audit 0, and the same Wrangler bundle because runtime behavior is unchanged.
 - v0.10.0 foundation gate: unit 336/336, Workers 6/6, Report reliability 51/51, Architecture 94/189/0, hygiene pass, offline npm audit 0, and Wrangler dry-run 373.71 KiB / gzip 76.31 KiB.
 - v0.10.1 reviewed gate after clean `npm ci`: unit 340/340, Workers 6/6, Report reliability 51/51, Architecture 94/189/0, hygiene pass, offline npm audit 0, workbook 8-sheet visual/formula/integrity verification, and Wrangler dry-run 373.74 KiB / gzip 76.31 KiB.
+- v0.10.2-rc.1 clean-source gate: unit 347/347, Workers 6/6, Report reliability 51/51, Architecture 99/195/0, hygiene pass, online/offline npm audit 0, Wrangler dry-run 373.74 KiB / gzip 76.31 KiB, and Clean archive policy pass.
 
 ## v0.9.6 closeout baseline
 

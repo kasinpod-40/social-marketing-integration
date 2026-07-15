@@ -33,8 +33,17 @@ node_modules/
 jspm_packages/
 
 .DS_Store
+._*
 __MACOSX/
+/.idea/
 wrangler.sync.jsonc
+/.wrangler/
+/coverage/
+*.log
+/tmp/
+/temp/
+/dist/
+/release/
 
 # Generated artifact workspace และ inspection sidecars ไม่ใช่ Release source
 outputs/
