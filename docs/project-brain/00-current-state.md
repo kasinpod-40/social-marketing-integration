@@ -4,7 +4,7 @@
 
 Official baseline: `v0.10.2-multi-channel-foundation-approved`
 
-Clean candidate: `v0.11.0-rc.1` — 2026-07-15, implementation complete pending authorized DEV access and Live UAT
+Clean candidate: `v0.11.0-rc.1` — DEV access preflight and Lark Schema Apply passed; Manual Queue Live UAT pending
 
 ## Multi-channel foundation
 
@@ -14,7 +14,7 @@ Clean candidate: `v0.11.0-rc.1` — 2026-07-15, implementation complete pending 
 - v0.10.1 removes unsupported `maxResults` from `videos.list(id)`, treats quota exhaustion as terminal alert, separates Ad from reusable Creative and makes integer micros the Ads money source of truth.
 - The Excel/Lark model `../Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.2.xlsx` passed Technical review and is the approved implementation contract.
 - YouTube contract `youtube-organic-v2` uses latest-state Channel/Video RAW rows, non-destructive Video reconciliation, exact Pacific `source_metric_date`, and RAW-only Owner Analytics in Phase 1.
-- No external API, Lark, D1 or Cloudflare resource was mutated. Activation gates are documented in `../multi-channel-foundation-v0.10.1.md`.
+- Public/Owner YouTube preflight passed and the three YouTube RAW tables were applied in the DEV Lark Base on 2026-07-17; live presentation now uses `📺`/`🎬`/`📊` table names under `🧪 Raw Integration Tables` with Thai Field info for all 42 fields; no Queue, D1, Worker deployment, Schedule or Production activation occurred.
 - v0.11.0-rc.1 adds guarded YouTube Schema Preview/Apply, access preflight, Account/RAW/Content/Daily write path, Manual Queue route, checkpoint/reconciliation and Reliability reuse. Hardening now retains/warns previously observed Analytics keys missing from the exact re-fetch scope, retries D1 warning-alert failures before Ack, and redacts external identity from operational logs/stores; it does not activate Schedule or Production.
 
 ## Shared Work/Codex handoff
@@ -52,6 +52,7 @@ Canonical closeout: `../tiktok-organic-dev-complete-v0.9.6.md`; detailed earlier
 - v0.10.1 reviewed gate after clean `npm ci`: unit 340/340, Workers 6/6, Report reliability 51/51, Architecture 94/189/0, hygiene pass, offline npm audit 0, workbook 8-sheet visual/formula/integrity verification, and Wrangler dry-run 373.74 KiB / gzip 76.31 KiB.
 - v0.10.2-rc.2 source gate: unit 351/351, Workers 6/6, Report reliability 51/51, Architecture 99/195/0, hygiene pass, offline npm audit 0, Workbook/source parity + 10-sheet visual/formula QA, and Wrangler dry-run 373.74 KiB / gzip 76.31 KiB.
 - v0.11.0-rc.1 hardened source gate: unit 376/376, Workers 6/6, Report reliability 53/53, focused YouTube/Reliability/Redaction 37/37, Architecture 109/230/0, hygiene pass, offline npm audit 0, and Wrangler dry-run 443.78 KiB / gzip 90.89 KiB.
+- YouTube Lark presentation correction gate: focused schema/installer/client 53/53, full unit 377/377, Workers 6/6, Report reliability 53/53, Architecture 109/230/0, hygiene pass, offline audit 0, Wrangler dry-run 444.06 KiB / gzip 90.94 KiB, and Live Preview zero drift.
 - Fresh release extraction repeated `npm ci`, check, Unit 376/376, Workers 6/6, Report reliability 53/53, audit 0 and dry-run; the archive verifier found zero blocked, missing, sensitive or duplicate artifacts.
 - YouTube Blueprint rc.2 parity is part of the 351/351 gate and verifies all 42 field metadata rows, query/date/missing semantics and field-by-field mapping.
 
@@ -82,4 +83,4 @@ Clients should not use RAW tables, `MKT_Content_Daily`, Sync Log, System Alerts,
 
 ## Next implementation workstream
 
-Provide authorized DEV access, run YouTube identity/source preflight, guarded-apply the RAW schema and perform Manual Live UAT. The route remains Manual-only and `uat_pending`; Meta/WooCommerce/Chatwoot remain outside this revision. See `10-next-actions.md`.
+Deploy the DEV Worker with the UAT-only gate and perform Manual Queue Live UAT. Access preflight and guarded RAW Schema Apply are complete. The route remains Manual-only and `uat_pending`; Meta/WooCommerce/Chatwoot remain outside this revision. See `10-next-actions.md`.

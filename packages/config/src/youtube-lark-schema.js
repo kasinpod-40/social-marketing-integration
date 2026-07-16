@@ -6,20 +6,73 @@ export const YOUTUBE_LARK_SCHEMA_VERSION = 'youtube-organic-lark-schema-v1';
 
 const TABLE_PRESENTATION = Object.freeze({
   rawYouTubeChannels: Object.freeze({
-    createName: 'RAW_YouTube_Channels',
-    aliases: Object.freeze(['RAW_YouTube_Channels', '🧪 RAW_YouTube_Channels']),
+    createName: '📺 RAW_YouTube_Channels',
+    aliases: Object.freeze(['RAW_YouTube_Channels', '📺 RAW_YouTube_Channels', '🧪 RAW_YouTube_Channels']),
     defaultViewName: '📋 All Channels',
   }),
   rawYouTubeVideos: Object.freeze({
-    createName: 'RAW_YouTube_Videos',
-    aliases: Object.freeze(['RAW_YouTube_Videos', '🧪 RAW_YouTube_Videos']),
+    createName: '🎬 RAW_YouTube_Videos',
+    aliases: Object.freeze(['RAW_YouTube_Videos', '🎬 RAW_YouTube_Videos', '🧪 RAW_YouTube_Videos']),
     defaultViewName: '📋 All Videos',
   }),
   rawYouTubeAnalyticsDaily: Object.freeze({
-    createName: 'RAW_YouTube_Analytics_Daily',
-    aliases: Object.freeze(['RAW_YouTube_Analytics_Daily', '🧪 RAW_YouTube_Analytics_Daily']),
+    createName: '📊 RAW_YouTube_Analytics_Daily',
+    aliases: Object.freeze(['RAW_YouTube_Analytics_Daily', '📊 RAW_YouTube_Analytics_Daily', '🧪 RAW_YouTube_Analytics_Daily']),
     defaultViewName: '📋 All Analytics',
   }),
+});
+
+// Presentation contract ภาษาไทยสำหรับ Field info ใน Lark UI แยกจาก Source semantics ใน Blueprint
+// เพื่อให้เอกสารต้นทางคงศัพท์ API ที่ตรวจทานแล้ว แต่ผู้ใช้งาน Base อ่านคำอธิบายได้ทันที
+const FIELD_DESCRIPTIONS_TH = deepFreeze({
+  rawYouTubeChannels: {
+    raw_channel_key: 'คีย์คงที่ของข้อมูลช่องแบบสถานะล่าสุด ใช้ Upsert และไม่เพิ่มแถวตาม fetched_at',
+    channel_id: 'รหัสช่อง YouTube ภายนอก ใช้ตรวจสอบตัวตนก่อนเขียนข้อมูล',
+    title: 'ชื่อช่องล่าสุดที่ได้รับจาก YouTube',
+    uploads_playlist_id: 'รหัสเพลย์ลิสต์ Uploads หากไม่มีต้องหยุดก่อนเริ่ม Sync',
+    view_count: 'ยอดดูสะสมของช่อง หาก Source ไม่ส่งค่าให้เก็บเป็นค่าว่าง',
+    subscriber_count: 'จำนวนผู้ติดตามที่ Source เปิดเผย หากซ่อนหรือไม่ส่งค่าให้เก็บเป็นค่าว่าง',
+    subscriber_count_hidden: 'ระบุว่า Source ซ่อนจำนวนผู้ติดตามของช่องหรือไม่',
+    video_count: 'จำนวนวิดีโอสะสมของช่อง หาก Source ไม่ส่งค่าให้เก็บเป็นค่าว่าง',
+    fetched_at: 'เวลาที่ดึงข้อมูลจาก API ในรูปแบบ UTC',
+    source_payload_json: 'Payload สำหรับตรวจสอบย้อนหลัง หลังตัด Credential และข้อมูลลับออกแล้ว',
+  },
+  rawYouTubeVideos: {
+    raw_video_key: 'คีย์คงที่ของวิดีโอแบบสถานะล่าสุด ใช้ Upsert และไม่เพิ่มแถวตาม fetched_at',
+    channel_id: 'รหัสช่องเจ้าของวิดีโอ ต้องตรงกับช่องที่ตั้งค่าไว้',
+    video_id: 'รหัสวิดีโอ YouTube ภายนอก ต้องเก็บเป็นข้อความและห้ามแปลงเป็นตัวเลข',
+    published_at: 'วันและเวลาเผยแพร่วิดีโอในรูปแบบ UTC',
+    title: 'ชื่อวิดีโอจาก Source ใช้ร่วมกับคำอธิบายเพื่อสร้าง Caption กลาง',
+    description: 'คำอธิบายวิดีโอจาก Source อนุญาตให้เป็นค่าว่าง',
+    video_url: 'ลิงก์หน้ารับชมวิดีโอ YouTube แบบมาตรฐาน',
+    thumbnail_url: 'ลิงก์ภาพตัวอย่างที่มีคุณภาพดีที่สุดจาก Source',
+    duration_seconds: 'ความยาววิดีโอเป็นวินาที ต้องไม่ติดลบ',
+    view_count: 'ยอดดูสะสมของวิดีโอ หาก Source ไม่ส่งค่าให้เก็บเป็นค่าว่าง',
+    like_count: 'ยอดถูกใจสะสมของวิดีโอ หาก Source ไม่ส่งค่าให้เก็บเป็นค่าว่าง',
+    comment_count: 'ยอดความคิดเห็นสะสมของวิดีโอ หาก Source ไม่ส่งค่าให้เก็บเป็นค่าว่าง',
+    privacy_status: 'สถานะ public, unlisted หรือ private เฉพาะเมื่อ Source ส่งค่าชัดเจน',
+    etag: 'ค่า Fingerprint จาก Source สำหรับช่วยตรวจการเปลี่ยนแปลง ไม่ใช่คีย์คงที่',
+    last_seen_at: 'เวลาล่าสุดที่พบวิดีโอจาก Source ห้ามเลื่อนเวลาเมื่อวิดีโอหายไป',
+    source_availability_status: 'สถานะ available, missing, private, deleted หรือ unknown โดยการไม่พบเพียงอย่างเดียวให้เป็น missing',
+    missing_since: 'เวลาที่เริ่มไม่พบวิดีโอครั้งแรก ต้องเก็บ Metrics เดิมและห้ามแทนด้วยศูนย์',
+    fetched_at: 'เวลาที่ดึงข้อมูลจาก API ในรูปแบบ UTC',
+    source_payload_json: 'Payload สำหรับตรวจสอบย้อนหลัง หลังตัด Credential และข้อมูลลับออกแล้ว',
+  },
+  rawYouTubeAnalyticsDaily: {
+    raw_analytics_daily_key: 'คีย์คงที่ของ Metrics รายวัน ใช้วันที่จาก Source ตามจริง',
+    source_metric_date: 'วันที่ YYYY-MM-DD ตามเขตเวลา Pacific เก็บเป็นข้อความเพื่อป้องกันวันที่เลื่อน',
+    channel_id: 'รหัสช่อง YouTube ภายนอก ต้องผ่านการตรวจสอบตัวตนก่อนเขียนข้อมูล',
+    video_id: 'รหัสวิดีโอ YouTube ภายนอก ต้องเก็บเป็นข้อความและห้ามแปลงเป็นตัวเลข',
+    views: 'ยอดดูที่เกิดขึ้นในวันของ Source ค่านี้ไม่ใช่ยอดสะสม',
+    likes: 'ยอดถูกใจที่เกิดขึ้นในวันของ Source หากไม่มีให้เก็บเป็นค่าว่าง',
+    comments: 'ยอดความคิดเห็นที่เกิดขึ้นในวันของ Source หากไม่มีให้เก็บเป็นค่าว่าง',
+    shares: 'ยอดแชร์ที่เกิดขึ้นในวันของ Source หากไม่มีให้เก็บเป็นค่าว่าง',
+    estimated_minutes_watched: 'เวลาในการรับชมรวม หน่วยเป็นนาที หากแปลงเป็นวินาทีให้คูณ 60',
+    average_view_duration_seconds: 'ระยะเวลารับชมเฉลี่ย หน่วยจาก Source เป็นวินาทีอยู่แล้ว',
+    average_view_percentage: 'เปอร์เซ็นต์การรับชมเฉลี่ย ค่าอยู่ระหว่าง 0–100',
+    fetched_at: 'เวลาที่ดึงข้อมูลจาก API ในรูปแบบ UTC',
+    source_payload_json: 'Payload สำหรับตรวจสอบย้อนหลัง หลังตัด Credential และข้อมูลลับออกแล้ว ใช้เฉพาะ RAW ใน Phase 1',
+  },
 });
 
 /** Contract สำหรับ Preview/Apply สาม YouTube RAW tables โดย derive จาก Blueprint ชุดเดียว */
@@ -48,7 +101,7 @@ export const YOUTUBE_LARK_SCHEMA = deepFreeze(YOUTUBE_LARK_BLUEPRINT.map((table)
     logicalName: table.tableName,
     fields: [...table.fields]
       .sort((left, right) => left.order - right.order)
-      .map(toInstallerField),
+      .map((field) => toInstallerField(table.key, field)),
   };
 }));
 
@@ -80,22 +133,30 @@ export function validateYouTubeLarkSchema(schema = YOUTUBE_LARK_SCHEMA) {
   return true;
 }
 
-function toInstallerField(field) {
+function toInstallerField(tableKey, field) {
   const property = field.type === 3
     ? { options: field.options.map((name, index) => ({ name, color: index % 8 })) }
     : undefined;
+  const description = FIELD_DESCRIPTIONS_TH[tableKey]?.[field.fieldName];
+  if (!description) {
+    throw permanentError(`Missing Thai YouTube field description: ${tableKey}.${field.fieldName}`, {
+      code: 'YOUTUBE_LARK_SCHEMA_INVALID',
+      details: { tableKey, fieldName: field.fieldName },
+    });
+  }
   return {
     fieldName: field.fieldName,
     type: field.type,
     uiType: readUiType(field.type),
     primary: field.primary === true,
-    description: [field.semantics, field.importNote].filter(Boolean).join(' — '),
+    description,
+    manageDescription: true,
     ...(property ? { property } : {}),
   };
 }
 
 function readUiType(type) {
-  return ({ 1: 'Text', 2: 'Number', 3: 'SingleSelect', 5: 'DateTime', 7: 'Checkbox', 15: 'URL' })[type]
+  return ({ 1: 'Text', 2: 'Number', 3: 'SingleSelect', 5: 'DateTime', 7: 'Checkbox', 15: 'Url' })[type]
     ?? `LarkType${type}`;
 }
 

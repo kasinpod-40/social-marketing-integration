@@ -10,6 +10,19 @@ import { planLarkSchema } from '../../packages/application/src/use-cases/install
 test('derives three installable YouTube RAW tables from the approved Blueprint', async () => {
   assert.equal(validateYouTubeLarkSchema(), true);
   assert.equal(YOUTUBE_LARK_SCHEMA.length, 3);
+  assert.deepEqual(YOUTUBE_LARK_SCHEMA.map((table) => table.createName), [
+    '📺 RAW_YouTube_Channels',
+    '🎬 RAW_YouTube_Videos',
+    '📊 RAW_YouTube_Analytics_Daily',
+  ]);
+  const allFields = YOUTUBE_LARK_SCHEMA.flatMap((table) => table.fields);
+  assert.equal(allFields.length, 42);
+  assert.ok(allFields.every((field) => field.manageDescription === true));
+  assert.ok(allFields.every((field) => /[ก-๙]/u.test(field.description)));
+  const urlFields = YOUTUBE_LARK_SCHEMA.flatMap((table) => table.fields)
+    .filter((field) => field.type === 15);
+  assert.ok(urlFields.length > 0);
+  assert.ok(urlFields.every((field) => field.uiType === 'Url'));
   const client = {
     async listTables() { return []; },
     async listFields() { throw new Error('not expected'); },

@@ -99,13 +99,18 @@ test('lists and normalizes Lark table field metadata', async () => {
       }
       return new Response(JSON.stringify({
         code: 0,
-        data: { items: [{ field_id: 'fld1', field_name: 'content_url', type: 15, property: {} }] },
+        data: {
+          items: [{
+            field_id: 'fld1', field_name: 'content_url', type: 15,
+            description: { text: 'ลิงก์เนื้อหา' }, property: {},
+          }],
+        },
       }), { status: 200 });
     },
   });
   assert.deepEqual(await client.listFields({ tableId: 'tbl' }), [{
     fieldId: 'fld1', fieldName: 'content_url', type: 15, uiType: null,
-    isPrimary: false, property: null,
+    description: 'ลิงก์เนื้อหา', isPrimary: false, property: null,
   }]);
 });
 

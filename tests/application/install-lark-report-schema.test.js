@@ -113,6 +113,39 @@ test('plans missing fields and appends select options without deleting existing 
   ]);
 });
 
+test('plans managed Thai descriptions and preserves existing Select option IDs on full field update', async () => {
+  const schema = structuredClone(SIMPLE_SCHEMA);
+  schema[0].fields[1].description = 'สถานะการใช้งาน';
+  schema[0].fields[1].manageDescription = true;
+  const client = fakeClient({
+    tables: [{ tableId: 'tblExisting', name: 'MKT_Example' }],
+    fieldsByTable: {
+      tblExisting: [
+        { fieldId: 'fldKey', fieldName: 'example_key', type: 1, isPrimary: true, description: '', property: null },
+        {
+          fieldId: 'fldStatus', fieldName: 'status', type: 3, isPrimary: false,
+          description: 'Status',
+          property: {
+            options: [
+              { id: 'opt1', name: 'active', color: 9 },
+              { id: 'opt2', name: 'disabled', color: 8 },
+            ],
+          },
+        },
+      ],
+    },
+  });
+
+  const result = await planLarkReportSchema({ client, env: {}, schema });
+  assert.equal(result.summary.updateFields, 1);
+  assert.equal(result.actions[0].reason, 'align_description');
+  assert.equal(result.actions[0].field.description, 'สถานะการใช้งาน');
+  assert.deepEqual(result.actions[0].field.property.options, [
+    { id: 'opt1', name: 'active', color: 9 },
+    { id: 'opt2', name: 'disabled', color: 8 },
+  ]);
+});
+
 test('fails closed on field type conflicts instead of converting existing data', async () => {
   const client = fakeClient({
     tables: [{ tableId: 'tblExisting', name: 'MKT_Example' }],

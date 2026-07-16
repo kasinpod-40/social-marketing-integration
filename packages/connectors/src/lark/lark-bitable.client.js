@@ -818,9 +818,15 @@ function normalizeField(field) {
     fieldName: field?.field_name ?? field?.fieldName ?? field?.name ?? null,
     type,
     uiType: field?.ui_type ?? field?.uiType ?? null,
+    description: normalizeFieldDescription(field?.description),
     isPrimary: field?.is_primary === true || field?.isPrimary === true,
     property: normalizeLarkFieldProperty(type, field?.property),
   });
+}
+
+function normalizeFieldDescription(value) {
+  const text = typeof value === 'string' ? value : value?.text;
+  return typeof text === 'string' ? text.trim() : '';
 }
 
 

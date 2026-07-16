@@ -2,13 +2,13 @@
 
 ## Task metadata
 
-- **Status:** `implementation_complete_pending_external_dev_access_and_live_uat`
+- **Status:** `schema_applied_pending_manual_queue_uat`
 - **Official clean baseline:** `v0.10.2-multi-channel-foundation-approved`
 - **Working candidate:** `v0.11.0-rc.1`
 - **Blueprint:** `Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.2.xlsx`
 - **Connector status:** `uat_pending`
 - **Schedule:** `disabled`
-- **Last updated:** `2026-07-15`
+- **Last updated:** `2026-07-17`
 - **Owners:** ChatGPT Work (technical review/release) + developer (DEV credentials and guarded live execution)
 
 ## Objective
@@ -49,10 +49,13 @@
 17. Operational redaction กลางสำหรับ Worker logs, D1 payload/error และ Lark reliability mirror โดยไม่เปิดเผย Channel/Video/Handle/Lock identity
 18. Release examples ใช้ Placeholder เท่านั้นและ Repository hygiene ไม่มี macOS metadata
 
-## External actions intentionally not executed
+## Live DEV progress and remaining external actions
 
-- ไม่ Apply/แก้ Lark DEV Base เพราะไม่มี authorized Lark credential/local Table IDs ใน Source artifact
-- ไม่เรียก YouTube API เพราะยังไม่มี authorized DEV Channel ID/API key/OAuth ใน Session
+- Public Data preflight และ Owner Analytics preflight ผ่านแล้ว; Analytics คืน 0 rows ซึ่งเป็น valid no-data result
+- เพิ่ม `Social MKT Sync` ใน DEV Base และยกระดับเป็น `Can manage` แล้ว
+- Apply `RAW_YouTube_Channels`, `RAW_YouTube_Videos`, `RAW_YouTube_Analytics_Daily` สำเร็จ; Final Preview เหลือ 0 actions/conflicts/warnings/manual actions
+- ปรับ Presentation ของตารางจริงแล้ว: ใส่ไอคอน `📺`/`🎬`/`📊`, ย้ายทั้ง 3 ตารางเข้า `🧪 Raw Integration Tables` และเปลี่ยน Field info ทั้ง 42 ฟิลด์เป็นภาษาไทย
+- บันทึก Table IDs เฉพาะใน ignored local `wrangler.sync.jsonc`; ไม่มี Live ID ถูกเพิ่มใน Source/Git
 - ไม่ Deploy Cloudflare Worker
 - ไม่ส่ง Queue message จริง
 - ไม่เปลี่ยน YouTube จาก `uat_pending` เป็น `active`
@@ -80,30 +83,55 @@
 
 ## Acceptance and verification
 
-- Unit/Integration: 376/376 passed
+- Unit/Integration: 377/377 passed
 - Workers runtime: 6/6 passed
 - Focused Report reliability: 53/53 passed
 - Focused YouTube/Reliability/Redaction: 37/37 passed
 - Architecture: 109 source files / 230 local dependencies / 0 cycles
 - Repository hygiene: passed
 - npm audit: 0 vulnerabilities
-- Wrangler dry-run: 443.78 KiB / gzip 90.89 KiB passed
+- Wrangler dry-run: 444.06 KiB / gzip 90.94 KiB passed
 - Clean archive extraction retest: `npm ci`, check, Unit 376/376, Workers 6/6, reliability 53/53, audit 0 และ dry-run ผ่าน; Archive verifier พบ blocked/missing/sensitive/duplicate = 0
-- Live DEV UAT: `not_started_missing_external_access`
+- Live DEV UAT: `access_preflight_passed_schema_applied_manual_queue_uat_not_started`
 
 ## Implementation result
+
+### Source build handoff — 2026-07-15
 
 - **Implementation:** แก้ Release example/hygiene และ packager, เติม previously-observed Analytics reconciliation, บังคับ D1 warning alert failure ให้ Retry และเพิ่ม Operational identity redaction กลาง
 - **Files changed:** YouTube sync/adapters/preflight, Reliability runner/D1/Lark stores, API/Sync Workers, safe environment example, Release tooling, focused tests และเอกสาร handoff; ลบ Blueprint สำเนาซ้ำที่เนื้อหาเหมือน canonical file
 - **Commands run:** `npm ci`, `npm run check`, `npm run test:unit`, `npm run test:worker`, `npm run test:report-reliability`, `npm audit --offline`, `npm run deploy:dry-run`, focused Node tests, `npm run release:package` และ `npm run release:verify -- ...zip`; ทำ gates ซ้ำจาก fresh ZIP extraction
 - **Tests:** Source และ extracted-archive gates ด้านบนผ่านทั้งหมด; Workers runtime ต้องรันนอก filesystem/network sandbox เพราะ Miniflare เปิด loopback listener
-- **Live UAT:** ไม่ได้เรียก YouTube/Lark API, ไม่ Apply Schema, ไม่ส่ง Queue จริง และไม่ Deploy
+- **Live UAT ณ วันส่ง Source:** ไม่ได้เรียก YouTube/Lark API, ไม่ Apply Schema, ไม่ส่ง Queue จริง และไม่ Deploy
 - **Remaining risks:** ต้องยืนยัน Analytics missing-key/re-fetch กับ Live payload, D1 retry/Alert ใน DEV Worker และตรวจข้อมูล retain จริงใน Lark ก่อน Activation
 - **Recommended commit:** `fix: harden YouTube reconciliation and reliability`
+
+### Live schema execution update — 2026-07-17
+
+- **Lark permission:** `Social MKT Sync` เปลี่ยนจาก `Can edit` เป็น `Can manage`
+- **Partial apply:** รอบแรกสร้าง Channels สำเร็จแล้วหยุดที่ Videos ด้วย `99992402 field validation failed`; `appliedActionCount=1`
+- **Confirmed root cause:** Hyperlink field ส่ง `ui_type=URL` แทน Lark OpenAPI enum `Url`; แก้ใน Source จริงและเพิ่ม Regression test
+- **Recovery:** Apply ซ้ำแบบ Idempotent สร้าง Videos และ Analytics สำเร็จ จากนั้น Final Preview ยืนยัน 0 actions/conflicts/warnings/manual actions
+- **Focused verification:** YouTube schema + Lark client tests 42/42 ผ่าน
+- **Regression gates:** Unit 376/376, Workers runtime 6/6, Report reliability 53/53, Architecture 109/230/0, Repository hygiene, audit 0 และ Wrangler dry-run 443.78/90.89 KiB ผ่าน
+- **Local config:** เพิ่ม Table mappings ใน ignored `wrangler.sync.jsonc`; ไม่ Commit Live IDs
+- **Remaining Live UAT:** Deploy DEV UAT-only Worker, Manual Queue UAT และ Reliability/Reconciliation cases ตามลำดับเดิม; Schedule และ normal connector flag คงปิด
+- **Recommended commit:** `fix: use official Lark Url ui type`
+
+### Live Lark presentation correction — 2026-07-17
+
+- **Issue confirmed from UI:** ตาราง YouTube ใหม่ไม่มีไอคอน, อยู่นอกโฟลเดอร์ RAW และ Field info ยังเป็นภาษาอังกฤษต่างจากตารางเดิม
+- **Live correction:** เปลี่ยนชื่อเป็น `📺 RAW_YouTube_Channels`, `🎬 RAW_YouTube_Videos`, `📊 RAW_YouTube_Analytics_Daily` และย้ายเข้าหมวด `🧪 Raw Integration Tables` ครบ
+- **Field info:** Apply คำอธิบายภาษาไทยครบ 42 ฟิลด์; ตรวจ tooltip ภาษาไทยจากหน้าจอจริงแล้ว
+- **Source contract:** Schema ใหม่กำหนดชื่อพร้อมไอคอน, รองรับ alias ของชื่อเดิม และจัดการ description drift แบบ Idempotent โดยรักษา Lark Field property/Select option IDs เดิมระหว่าง Full Update
+- **Live verification:** Apply 42 updates สำเร็จ; Final Preview หลัง Rename/Move ยืนยัน 0 actions/conflicts/warnings/manual actions
+- **Focused verification:** YouTube schema + installer + Lark client tests 53/53 ผ่าน
+- **Regression gates:** Unit/Integration 377/377, Workers runtime 6/6, Report reliability 53/53, Architecture 109/230/0, Repository hygiene, audit 0 และ Wrangler dry-run 444.06/90.94 KiB ผ่าน
+- **Remaining Live UAT:** Deploy DEV UAT-only Worker และ Manual Queue UAT; normal connector flag กับ Schedule คงปิด
 
 ## Work review
 
 - **Technical architecture:** approved for Manual DEV UAT
 - **Data model:** approved — Blueprint v0.10.2
 - **Release decision:** package as `v0.11.0-rc.1`; do not promote YouTube to active
-- **Recommended commit:** `fix: harden YouTube reconciliation and reliability`
+- **Recommended commit for current delta:** `fix: localize YouTube Lark schema presentation`

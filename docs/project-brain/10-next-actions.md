@@ -19,9 +19,9 @@ npm run release:verify -- outputs/releases/social-marketing-integration-v0.11.0-
 
 ## YouTube DEV access and schema
 
-1. Put authorized `YOUTUBE_CHANNEL_ID`, Public API key and optional Owner Analytics OAuth only in `.dev.vars`/Cloudflare Secrets.
-2. Keep `MKT_CONNECTOR_YOUTUBE_ENABLED=false` and all YouTube schedules absent/disabled.
-3. Run:
+Status 2026-07-17: Public/Owner preflight and the three-table Lark Schema Apply passed. Local Table IDs are stored only in ignored `wrangler.sync.jsonc`.
+
+Completed setup reference:
 
 ```bash
 npm run preflight:youtube
@@ -29,8 +29,7 @@ npm run setup:youtube-schema
 CONFIRM_WRITE=YES npm run setup:youtube-schema:apply
 ```
 
-4. Copy returned three RAW Table IDs into ignored local `wrangler.sync.jsonc`.
-5. Verify `MKT_Accounts`, `MKT_Content`, `MKT_Content_Daily`, Sync Log and System Alerts IDs are real and unique.
+Before Manual Queue UAT, verify `MKT_Accounts`, `MKT_Content`, `MKT_Content_Daily`, Sync Log and System Alerts IDs are real and unique. Keep `MKT_CONNECTOR_YOUTUBE_ENABLED=false` and all YouTube schedules absent/disabled.
 
 ## Manual DEV UAT
 

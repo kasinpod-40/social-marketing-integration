@@ -6,9 +6,9 @@ This project connects social organic and paid ads data into Lark Base for report
 ## Current project status
 Official clean baseline: `v0.10.2-multi-channel-foundation-approved`
 
-Current clean candidate: `v0.11.0-rc.1` — YouTube Manual DEV UAT implementation complete in Source, pending external access and Live UAT
+Current clean candidate: `v0.11.0-rc.1` — YouTube access preflight and three-table Lark Schema Apply passed, pending Manual Queue Live UAT
 
-Current YouTube design artifact: `docs/Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.2.xlsx` — Technical review approved. v0.11.0-rc.1 implements guarded Schema Preview/Apply, access preflight, RAW/Canonical/Account writes, Manual Queue, checkpoint/reconciliation and Reliability reuse. The hardened candidate also detects previously observed Analytics keys missing from the exact re-fetch scope, retries when the D1 warning alert cannot persist, and redacts external identity from operational logs/stores. No Live credential, Schema Apply, API call, Queue mutation, deployment or Schedule activation occurred.
+Current YouTube design artifact: `docs/Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.2.xlsx` — Technical review approved. v0.11.0-rc.1 implements guarded Schema Preview/Apply, access preflight, RAW/Canonical/Account writes, Manual Queue, checkpoint/reconciliation and Reliability reuse. Public/Owner preflight passed and the three YouTube RAW tables were applied on 2026-07-17. A live `99992402` failure confirmed that Hyperlink fields require `ui_type=Url`, not `URL`; Source and regression coverage were corrected. Live presentation now also matches the existing Base convention: emoji-prefixed tables are grouped under `🧪 Raw Integration Tables`, and all 42 Field info descriptions are Thai. Queue mutation, deployment, Schedule activation and Production remain pending/disabled.
 
 TikTok Organic DEV ingestion/report logic ผ่าน Live Queue UAT และ Reliability UAT แล้ว. Client Views ทั้ง 6 รายการติดตั้ง Filter/Hidden fields และ Sort `rank` ascending สำเร็จ; Advanced Permissions เปิดแล้วพร้อม `Client` role แบบ least privilege และ Final Preview เป็นศูนย์ actions/conflicts. Daily/Weekly schedules เปิดและ deploy ไปยัง Cloudflare DEV แล้ว; เหลือ operational observation ของรอบ schedule.
 
@@ -29,6 +29,8 @@ v0.10.2-rc.2 source verification: Node unit/integration 351/351, Workers runtime
 YouTube Blueprint v0.10.2 rc.2 verification is included in the 351/351 source gate: all 42 fields, explicit sort/missing-row semantics and every canonical destination field are checked against the Workbook.
 
 v0.11.0-rc.1 hardened source and fresh-archive verification: Node unit/integration 376/376, Workers runtime 6/6, focused Report reliability 53/53, focused YouTube/Reliability/Redaction 37/37, Architecture 109 source files / 230 local dependencies / 0 cycles, repository hygiene passed, offline npm audit 0, and Wrangler dry-run 443.78 KiB / gzip 90.89 KiB. Archive verification found zero blocked, missing, sensitive, or duplicate artifacts.
+
+YouTube Lark presentation correction verification on 2026-07-17: managed Thai descriptions for all 42 fields, emoji-prefixed aliases and full-update property preservation passed focused tests 53/53 and full Unit/Integration 377/377; Workers 6/6, Report reliability 53/53, Architecture 109/230/0, hygiene, audit 0, and Wrangler dry-run 444.06 KiB / gzip 90.94 KiB also passed. Live final Preview after rename/move returned zero drift.
 
 
 

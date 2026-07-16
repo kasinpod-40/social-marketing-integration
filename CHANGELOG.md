@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased — YouTube Lark Schema live apply — 2026-07-17
+
+### Fixed
+- Corrected YouTube Hyperlink fields from `ui_type=URL` to the official case-sensitive Lark enum `Url` and added regression coverage.
+- Added managed Thai Field info for all 42 YouTube RAW fields while preserving existing Lark field properties and Select option IDs during full updates.
+- Added emoji-prefixed create names and backward-compatible aliases for the three YouTube RAW tables.
+
+### Live DEV verification
+- Granted the `Social MKT Sync` application `Can manage` access in the developer Base.
+- Recovered safely from a partial Apply that had created Channels before Lark rejected the first Hyperlink-bearing table.
+- Created all three YouTube RAW tables and confirmed the final read-only Preview has zero actions, conflicts, warnings, or manual actions.
+- Renamed the live tables with `📺`/`🎬`/`📊`, moved them under `🧪 Raw Integration Tables`, applied Thai Field info to all 42 fields, and verified a Thai tooltip in the Lark UI.
+- Re-ran Preview after the presentation changes; all emoji-prefixed names resolved with zero schema drift.
+- Stored returned Table IDs only in ignored local configuration; no Live IDs or secrets were added to Source.
+- Manual Queue UAT, Worker deployment, normal connector activation, and YouTube Schedule remain pending/disabled.
+
 ## 0.11.0-rc.1 — YouTube Organic Manual DEV UAT implementation — 2026-07-15
 
 ### Added

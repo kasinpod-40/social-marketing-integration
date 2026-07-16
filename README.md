@@ -36,17 +36,19 @@ Official clean baseline: `v0.10.2-multi-channel-foundation-approved`
 - v0.10.2-rc.2 ปิด Blueprint/Release review gaps: YouTube preflight บังคับ `MKT_Accounts` และ RAW/Content/Daily tables, Example config fail-closed และ Clean ZIP มี Allowlist/Blocklist + Secret/DEV ID/Duplicate verification
 - YouTube Blueprint v0.10.2 rc.2 แก้ latest-state Channel/Video, hidden subscriber, non-destructive reconciliation, Pacific-day Analytics, explicit `sort=day,video`, missing-row semantics และ field-by-field Canonical mapping; Owner Analytics คง RAW-only ใน Phase 1
 - v0.11.0-rc.1 เพิ่ม YouTube guarded Schema installer, DEV access preflight, RAW/Canonical/Account writes, Manual Queue route, D1 checkpoint, reconciliation และ Reliability reuse; YouTube ยังคง `uat_pending` และไม่มี Schedule
+- DEV Public/Owner preflight และ Lark Schema Apply สำหรับ YouTube RAW 3 ตารางผ่านแล้วเมื่อ 2026-07-17; ตารางจริงมีไอคอนและอยู่ในหมวด RAW พร้อม Field info ภาษาไทยครบ 42 ฟิลด์; Manual Queue UAT, Deployment และ Schedule ยังไม่เริ่ม
 - v0.11.0-rc.1 hardening เติม Analytics missing-key reconciliation แบบ retain/warn, บังคับ D1 warning alert failure ให้ Queue retry, Redact external identity จาก operational logs/stores และคืน safe examples เป็น Placeholder-only
 - Connector อื่นยังไม่ถูกเปิด: Meta/WooCommerce/Chatwoot/Ads เป็น `planned` จนกว่า Blueprint/Access/Live UAT ของแต่ละช่องทางผ่าน
 - Customer Production setup ยังไม่รวมใน Release นี้และต้องใช้ทรัพยากรของลูกค้า
 - v0.11.0-rc.1 hardened source gate ผ่าน Unit/Integration 376/376, Workers runtime 6/6, Report reliability 53/53, Architecture 109/230/0, hygiene, audit 0 และ Wrangler dry-run 443.78 KiB / gzip 90.89 KiB
+- YouTube Lark presentation correction ผ่าน focused 53/53 และ full Unit/Integration 377/377; Workers 6/6, Reliability 53/53, Architecture/Hygiene/Audit และ Wrangler dry-run 444.06/90.94 KiB ผ่าน พร้อม Final Live Preview เป็นศูนย์ drift
 - Fresh ZIP extraction ผ่าน gates ชุดเดียวกัน และ Archive verifier ไม่พบ blocked path, missing required path, sensitive finding หรือ duplicate artifact
 
 รายละเอียด Contract และ Activation gates: `docs/multi-channel-foundation-v0.10.1.md`
 
 Excel/Lark review Blueprint: `docs/Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.2.xlsx`
 
-Blueprint v0.10.2 ผ่าน Technical review และเป็น Foundation baseline แล้ว. Source v0.11.0-rc.1 พร้อมสำหรับ DEV access preflight, guarded Schema Apply และ Manual Live UAT เมื่อมี Channel ID/Credentials จริง; Schedule และ Production ยังคงปิด
+Blueprint v0.10.2 ผ่าน Technical review และเป็น Foundation baseline แล้ว. DEV access preflight และ guarded Schema Apply ผ่านแล้ว; Source v0.11.0-rc.1 รอ Deploy แบบ UAT-only และ Manual Queue Live UAT โดย Schedule และ Production ยังคงปิด
 
 สร้างและตรวจ Clean candidate:
 

@@ -312,7 +312,7 @@ function planExistingTableFields(input) {
         tableName: input.table.name,
         fieldId: live.fieldId,
         field: desiredMutation,
-        reason: explainPropertyUpdate(live, desired),
+        reason: explainFieldUpdate(live, desired),
       }));
     }
   }
@@ -421,48 +421,65 @@ function wrapSchemaActionError(error, action, appliedActions) {
 }
 
 function buildFieldMutation(live, desired) {
+  const descriptionChanged = desired.manageDescription === true
+    && normalizeDescription(live.description) !== normalizeDescription(desired.description);
+  const desiredProperty = desired.property;
+  const liveProperty = isPlainObject(live.property) ? live.property : {};
+  let nextProperty = null;
+  let propertyChanged = false;
+
   // ไม่พยายาม Align UI-internal metadata ของ Field ที่ OpenAPI ระบุว่า property ต้องเป็น null
   // เช่น Checkbox list/UI อาจมี styleId แต่ Update Field API ปฏิเสธ Property ดังกล่าว
-  if (!larkFieldTypeAllowsProperty(desired.type)) return null;
-
-  const desiredProperty = desired.property;
-  if (!desiredProperty || Object.keys(desiredProperty).length === 0) return null;
-  const liveProperty = isPlainObject(live.property) ? live.property : {};
-
-  if (desired.type === 3 || desired.type === 4) {
-    const existingOptions = Array.isArray(liveProperty.options) ? liveProperty.options : [];
-    const existingNames = new Set(existingOptions.map((option) => normalizeName(option?.name)).filter(Boolean));
-    const missingOptions = (desiredProperty.options ?? [])
-      .filter((option) => !existingNames.has(normalizeName(option?.name)))
-      .map((option) => ({ name: option.name, color: option.color }));
-    if (missingOptions.length === 0) return null;
-    return Object.freeze({
-      ...desired,
-      property: {
-        options: [...existingOptions, ...missingOptions],
-      },
-    });
+  if (larkFieldTypeAllowsProperty(desired.type) && desiredProperty && Object.keys(desiredProperty).length > 0) {
+    if (desired.type === 3 || desired.type === 4) {
+      const existingOptions = Array.isArray(liveProperty.options) ? liveProperty.options : [];
+      const existingNames = new Set(existingOptions.map((option) => normalizeName(option?.name)).filter(Boolean));
+      const missingOptions = (desiredProperty.options ?? [])
+        .filter((option) => !existingNames.has(normalizeName(option?.name)))
+        .map((option) => ({ name: option.name, color: option.color }));
+      propertyChanged = missingOptions.length > 0;
+      nextProperty = propertyChanged
+        ? { options: [...existingOptions, ...missingOptions] }
+        : liveProperty;
+    } else {
+      const normalizedLiveProperty = normalizeLarkFieldProperty(desired.type, liveProperty) ?? {};
+      const relevantKeys = Object.keys(desiredProperty);
+      propertyChanged = relevantKeys.some((key) => !sameScalar(normalizedLiveProperty[key], desiredProperty[key]));
+      nextProperty = propertyChanged
+        ? { ...liveProperty, ...desiredProperty }
+        : liveProperty;
+    }
+  } else if (larkFieldTypeAllowsProperty(desired.type) && Object.keys(liveProperty).length > 0) {
+    // Update Field เป็น Full update จึงต้องคง Property เดิมเมื่อเปลี่ยนเฉพาะ Description
+    nextProperty = liveProperty;
   }
 
-  const normalizedLiveProperty = normalizeLarkFieldProperty(desired.type, liveProperty) ?? {};
-  const relevantKeys = Object.keys(desiredProperty);
-  const mismatch = relevantKeys.some((key) => !sameScalar(normalizedLiveProperty[key], desiredProperty[key]));
-  if (!mismatch) return null;
+  if (!descriptionChanged && !propertyChanged) return null;
   return Object.freeze({
     ...desired,
-    property: { ...liveProperty, ...desiredProperty },
+    ...(nextProperty && Object.keys(nextProperty).length > 0 ? { property: nextProperty } : {}),
   });
 }
 
-function explainPropertyUpdate(live, desired) {
+function explainFieldUpdate(live, desired) {
+  const reasons = [];
   if (desired.type === 3 || desired.type === 4) {
     const existingNames = new Set((live.property?.options ?? []).map((option) => normalizeName(option?.name)));
     const missing = (desired.property?.options ?? [])
       .map((option) => option.name)
       .filter((name) => !existingNames.has(normalizeName(name)));
-    return missing.length > 0 ? `add_select_options:${missing.join(',')}` : 'align_select_property';
+    if (missing.length > 0) reasons.push(`add_select_options:${missing.join(',')}`);
+  } else if (desired.property && Object.keys(desired.property).length > 0) {
+    const normalizedLiveProperty = normalizeLarkFieldProperty(desired.type, live.property) ?? {};
+    if (Object.keys(desired.property).some((key) => !sameScalar(normalizedLiveProperty[key], desired.property[key]))) {
+      reasons.push('align_field_property');
+    }
   }
-  return 'align_field_property';
+  if (desired.manageDescription === true
+    && normalizeDescription(live.description) !== normalizeDescription(desired.description)) {
+    reasons.push('align_description');
+  }
+  return reasons.join('+') || 'align_field_metadata';
 }
 
 function buildPrimaryManualAction(input, desired, live) {
@@ -510,6 +527,10 @@ function canonicalTableName(value) {
 
 function normalizeName(value) {
   return normalizeOptionalText(value)?.toLocaleLowerCase('en-US') ?? '';
+}
+
+function normalizeDescription(value) {
+  return typeof value === 'string' ? value.trim() : '';
 }
 
 function normalizeOptionalText(value) {

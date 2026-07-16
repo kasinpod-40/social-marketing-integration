@@ -52,3 +52,17 @@ One platform failure must not block other platforms. Mitigation: platform-scoped
 - Verification fix: this tenant's List Views response omits `property`, so the installer uses Get View before comparing Filter state.
 - Live recovery completed: two existing Views were updated, four missing Views were created, and Final Preview reports zero actions/conflicts.
 - Limitation: Hidden-field/API behavior may vary by tenant; presentation settings are intentionally kept outside the blocking automation path.
+
+## Fixed: YouTube Hyperlink `field validation failed` during Schema Apply
+
+- Symptom: Live Apply created `RAW_YouTube_Channels` then failed creating `RAW_YouTube_Videos` with Lark `99992402 field validation failed`; `appliedActionCount=1`.
+- Confirmed root cause: the derived YouTube schema used `ui_type=URL`, while Lark OpenAPI requires the case-sensitive enum `Url` for type 15 Hyperlink fields.
+- Fix: map type 15 to `Url` and cover every derived YouTube Hyperlink field with a regression assertion.
+- Recovery: idempotent Apply resolved the existing Channels table, created Videos and Analytics, and Final Preview returned zero actions/conflicts/warnings/manual actions.
+
+## Fixed: YouTube RAW table presentation differed from the existing Base convention
+
+- Symptom: the three newly applied tables had no emoji prefix, appeared outside `🧪 Raw Integration Tables`, and their Field info was English while the existing Base uses Thai descriptions.
+- Fix: use emoji-prefixed create names with backward-compatible aliases, maintain Thai presentation descriptions separately from the English Blueprint semantics, and detect description drift in Preview/Apply.
+- Update safety: Lark Field update is a full update, so the installer retains existing field properties and Select option IDs while changing managed descriptions.
+- Live verification: 42 Field updates applied successfully, all three tables were renamed/moved in the UI, a Thai tooltip was visually verified, and the final read-only Preview returned zero actions/conflicts/warnings/manual actions.
