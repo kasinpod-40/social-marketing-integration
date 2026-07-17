@@ -6,9 +6,9 @@ This project connects social organic and paid ads data into Lark Base for report
 ## Current project status
 Official clean baseline: `v0.10.2-multi-channel-foundation-approved`
 
-Current clean candidate: `v0.11.0-rc.1` — YouTube access preflight and three-table Lark Schema Apply passed, pending Manual Queue Live UAT
+Current clean candidate: `v0.11.0-rc.1` — YouTube access, three-table Lark Apply และ Manual Queue core happy path passed; Reliability fault cases pending
 
-Current YouTube design artifact: `docs/Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.2.xlsx` — Technical review approved. v0.11.0-rc.1 implements guarded Schema Preview/Apply, access preflight, RAW/Canonical/Account writes, Manual Queue, checkpoint/reconciliation and Reliability reuse. Public/Owner preflight passed and the three YouTube RAW tables were applied on 2026-07-17. A live `99992402` failure confirmed that Hyperlink fields require `ui_type=Url`, not `URL`; Source and regression coverage were corrected. Live presentation now also matches the existing Base convention: emoji-prefixed tables are grouped under `🧪 Raw Integration Tables`, and all 42 Field info descriptions are Thai. Queue mutation, deployment, Schedule activation and Production remain pending/disabled.
+Current YouTube design artifact: `docs/Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.2.xlsx` — Technical review approved. v0.11.0-rc.1 implements guarded Schema Preview/Apply, access preflight, RAW/Canonical/Account writes, Manual Queue, checkpoint/reconciliation and Reliability reuse. Public/Owner preflight, Lark Apply และ Manual Queue core UAT ผ่านเมื่อ 2026-07-17: First Full, idempotent rerun, checkpoint-driven incremental และ Owner Analytics valid no-data. A live `99992402` failure confirmed that Hyperlink fields require `ui_type=Url`, not `URL`; Source and regression coverage were corrected. Live presentation matches the existing Base convention: emoji-prefixed tables are grouped under `🧪 Raw Integration Tables`, and all 42 Field info descriptions are Thai. Final DEV deployment uses UAT-only gate; normal connector, Analytics after UAT, YouTube Schedule and Production remain disabled.
 
 TikTok Organic DEV ingestion/report logic ผ่าน Live Queue UAT และ Reliability UAT แล้ว. Client Views ทั้ง 6 รายการติดตั้ง Filter/Hidden fields และ Sort `rank` ascending สำเร็จ; Advanced Permissions เปิดแล้วพร้อม `Client` role แบบ least privilege และ Final Preview เป็นศูนย์ actions/conflicts. Daily/Weekly schedules เปิดและ deploy ไปยัง Cloudflare DEV แล้ว; เหลือ operational observation ของรอบ schedule.
 
@@ -31,6 +31,8 @@ YouTube Blueprint v0.10.2 rc.2 verification is included in the 351/351 source ga
 v0.11.0-rc.1 hardened source and fresh-archive verification: Node unit/integration 376/376, Workers runtime 6/6, focused Report reliability 53/53, focused YouTube/Reliability/Redaction 37/37, Architecture 109 source files / 230 local dependencies / 0 cycles, repository hygiene passed, offline npm audit 0, and Wrangler dry-run 443.78 KiB / gzip 90.89 KiB. Archive verification found zero blocked, missing, sensitive, or duplicate artifacts.
 
 YouTube Lark presentation correction verification on 2026-07-17: managed Thai descriptions for all 42 fields, emoji-prefixed aliases and full-update property preservation passed focused tests 53/53 and full Unit/Integration 377/377; Workers 6/6, Report reliability 53/53, Architecture 109/230/0, hygiene, audit 0, and Wrangler dry-run 444.06 KiB / gzip 90.94 KiB also passed. Live final Preview after rename/move returned zero drift.
+
+YouTube Manual Queue core UAT on 2026-07-17: First Full pulled 3 and created 8; repeated Full and incremental created 0; Owner Analytics returned valid no-data; Lark retained Channel 1, Video 2, Analytics 0, Account 1, Content 2 and Daily 2. D1/Lark recorded 5 successful sync runs with zero failed/partial/alerts. Final UAT-only Worker version is `820fbe7d-1db8-48a9-8494-d6e047c62846`.
 
 
 
@@ -267,15 +269,15 @@ Current mapping rules:
 ## Local-only Lark resource mapping
 
 DEV Table IDs ถูกย้ายออกจาก Source/Release documentation แล้วและเก็บเฉพาะใน `wrangler.sync.jsonc`
-ของเครื่องผู้พัฒนา ตารางเดิมยังมีสถานะตาม Live UAT evidence ส่วน `MKT_Ads_Ads` และ YouTube RAW
-tables ยังรอ guarded Preview/Apply ใน DEV เพราะ Source artifact ไม่มี Live credential. Production ต้องตั้งค่า Table IDs ของลูกค้าเองผ่าน Local/Environment config.
+ของเครื่องผู้พัฒนา ตารางเดิมและ YouTube RAW มีสถานะตาม Live UAT evidence ส่วน `MKT_Ads_Ads`
+ยังรอ guarded Preview/Apply ใน DEV เพราะ Source artifact ไม่มี Live credential. Production ต้องตั้งค่า Table IDs ของลูกค้าเองผ่าน Local/Environment config.
 
 ## Next action
-1. Supply authorized DEV YouTube Channel ID/API key and optional owner OAuth outside Source control.
-2. Run `npm run preflight:youtube` and verify identity/uploads playlist/sample payload.
-3. Preview and guarded-apply the three YouTube RAW tables, then store returned Table IDs in ignored Local config.
-4. Deploy DEV with UAT flag only and run Manual Queue UAT: first sync, idempotency, incremental, reconciliation, quota/rate-limit, lock/retry/DLQ.
-5. Keep YouTube `uat_pending` and Schedule disabled until Live DEV evidence passes; Meta and other connectors remain separate tasks.
+1. Run missing/private/deleted Video reconciliation cases.
+2. Run Analytics missing-key exact re-fetch and identity mismatch/redaction cases.
+3. Run quota/rate-limit, D1 alert-write, lock/renewal และ retry exhaustion → DLQ/System Alert cases.
+4. Keep YouTube `uat_pending`, normal flag/Analytics flag/Schedule disabled until every Reliability fault case passes.
+5. Review activation and Analytics date policy separately; Meta and other connectors remain separate tasks.
 
 ## 2026-07-09 — v0.1.4 env-driven config + Lark classification dictionary
 - Baseline: `v0.1.4-env-config-lark-dictionary`.

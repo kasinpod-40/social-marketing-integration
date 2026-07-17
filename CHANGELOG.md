@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — YouTube Lark Schema live apply — 2026-07-17
+## Unreleased — YouTube Lark Schema and core Queue UAT — 2026-07-17
 
 ### Fixed
 - Corrected YouTube Hyperlink fields from `ui_type=URL` to the official case-sensitive Lark enum `Url` and added regression coverage.
@@ -14,7 +14,9 @@
 - Renamed the live tables with `📺`/`🎬`/`📊`, moved them under `🧪 Raw Integration Tables`, applied Thai Field info to all 42 fields, and verified a Thai tooltip in the Lark UI.
 - Re-ran Preview after the presentation changes; all emoji-prefixed names resolved with zero schema drift.
 - Stored returned Table IDs only in ignored local configuration; no Live IDs or secrets were added to Source.
-- Manual Queue UAT, Worker deployment, normal connector activation, and YouTube Schedule remain pending/disabled.
+- Deployed the DEV Worker behind the separate YouTube UAT gate and completed First Full, idempotent Full rerun, checkpoint-driven incremental, and Owner Analytics valid no-data runs.
+- Verified five successful D1/Lark Sync Log rows, zero failed/partial/alerts, and stable Lark counts after reruns: Channel 1, Video 2, Analytics 0, Account 1, Content 2, and Daily 2.
+- Restored the final safe deployment with normal YouTube, Owner Analytics, and YouTube Schedule disabled; Reliability fault cases and activation remain pending.
 
 ## 0.11.0-rc.1 — YouTube Organic Manual DEV UAT implementation — 2026-07-15
 

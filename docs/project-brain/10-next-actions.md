@@ -19,7 +19,7 @@ npm run release:verify -- outputs/releases/social-marketing-integration-v0.11.0-
 
 ## YouTube DEV access and schema
 
-Status 2026-07-17: Public/Owner preflight and the three-table Lark Schema Apply passed. Local Table IDs are stored only in ignored `wrangler.sync.jsonc`.
+Status 2026-07-17: Public/Owner preflight, three-table Lark Schema Apply และ Manual Queue core happy path passed. Local Table IDs are stored only in ignored `wrangler.sync.jsonc`.
 
 Completed setup reference:
 
@@ -29,7 +29,7 @@ npm run setup:youtube-schema
 CONFIRM_WRITE=YES npm run setup:youtube-schema:apply
 ```
 
-Before Manual Queue UAT, verify `MKT_Accounts`, `MKT_Content`, `MKT_Content_Daily`, Sync Log and System Alerts IDs are real and unique. Keep `MKT_CONNECTOR_YOUTUBE_ENABLED=false` and all YouTube schedules absent/disabled.
+Destination/Sync Log/System Alert mappings ถูกตรวจว่าเป็นค่าจริงและไม่ซ้ำแล้ว. Keep `MKT_CONNECTOR_YOUTUBE_ENABLED=false` and all YouTube schedules absent/disabled.
 
 ## Manual DEV UAT
 
@@ -47,23 +47,26 @@ Generate the Manual job body:
 npm run job:youtube-uat
 ```
 
-UAT order:
+Core UAT ที่ผ่านแล้ว:
 
-1. Public Channel/uploads/video preflight
+1. Public Channel/uploads/video และ Owner OAuth preflight
 2. First Full sync
-3. Idempotent rerun
-4. Recent-window incremental update
-5. Manual/periodic Full reconciliation
-6. Video ID returned by Playlist but absent from `videos.list`
-7. Previously observed Video disappears
-8. Enable Owner Analytics separately and test a small Pacific-date range
-9. Previously observed Analytics Stable key disappears on exact re-fetch while never-observed gaps remain silent
-10. Channel identity mismatch without Channel/Video identity in Worker/D1/Lark operational output
-11. Quota exhaustion versus rate-limit/server retry
-12. D1 warning-alert persistence failure → Retry and no Queue Ack
-13. Distributed lock collision/renewal
-14. Retry exhaustion → DLQ/System Alert
-15. Verify RAW, Canonical, Account, Sync Log and warning rows in Lark
+3. Idempotent Full rerun
+4. Checkpoint-driven recent-window incremental update
+5. Manual Full reconciliation ในสภาพไม่มี missing resource
+6. Owner Analytics small Pacific-date range แบบ valid no-data
+7. Verify RAW, Canonical, Account, Sync Log และ System Alert counts ใน Lark
+
+Reliability fault cases ที่ยังต้องทำ:
+
+1. Video ID returned by Playlist but absent from `videos.list`
+2. Previously observed Video disappears
+3. Previously observed Analytics Stable key disappears on exact re-fetch while never-observed gaps remain silent
+4. Channel identity mismatch without Channel/Video identity in Worker/D1/Lark operational output
+5. Quota exhaustion versus rate-limit/server retry
+6. D1 warning-alert persistence failure → Retry and no Queue Ack
+7. Distributed lock collision/renewal
+8. Retry exhaustion → DLQ/System Alert
 
 ## Activation gate
 

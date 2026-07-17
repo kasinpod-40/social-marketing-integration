@@ -2,7 +2,7 @@
 
 ## Task metadata
 
-- **Status:** `schema_applied_pending_manual_queue_uat`
+- **Status:** `manual_queue_core_uat_passed_reliability_fault_cases_pending`
 - **Official clean baseline:** `v0.10.2-multi-channel-foundation-approved`
 - **Working candidate:** `v0.11.0-rc.1`
 - **Blueprint:** `Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.2.xlsx`
@@ -56,8 +56,10 @@
 - Apply `RAW_YouTube_Channels`, `RAW_YouTube_Videos`, `RAW_YouTube_Analytics_Daily` สำเร็จ; Final Preview เหลือ 0 actions/conflicts/warnings/manual actions
 - ปรับ Presentation ของตารางจริงแล้ว: ใส่ไอคอน `📺`/`🎬`/`📊`, ย้ายทั้ง 3 ตารางเข้า `🧪 Raw Integration Tables` และเปลี่ยน Field info ทั้ง 42 ฟิลด์เป็นภาษาไทย
 - บันทึก Table IDs เฉพาะใน ignored local `wrangler.sync.jsonc`; ไม่มี Live ID ถูกเพิ่มใน Source/Git
-- ไม่ Deploy Cloudflare Worker
-- ไม่ส่ง Queue message จริง
+- Deploy DEV Worker แบบ UAT-only แล้ว; normal YouTube flag, Owner Analytics flag หลังจบ UAT และ YouTube Schedule คงปิด
+- Manual Queue happy path ผ่าน: First Full, Full rerun/idempotency, `auto` → incremental และ Owner Analytics no-data
+- D1 บันทึก YouTube `success` 5 รอบ, failed/partial 0, alert 0; Lark มี Sync Log 5 แถวและ System Alert 0 แถว
+- Lark ตรวจจำนวนจริงหลัง rerun แล้ว: RAW Channel 1, RAW Video 2, RAW Analytics 0, Account 1, Content 2 และ Daily 2 โดยไม่เกิด Duplicate
 - ไม่เปลี่ยน YouTube จาก `uat_pending` เป็น `active`
 - ไม่เปิด Schedule, Meta หรือ Production
 
@@ -92,7 +94,7 @@
 - npm audit: 0 vulnerabilities
 - Wrangler dry-run: 444.06 KiB / gzip 90.94 KiB passed
 - Clean archive extraction retest: `npm ci`, check, Unit 376/376, Workers 6/6, reliability 53/53, audit 0 และ dry-run ผ่าน; Archive verifier พบ blocked/missing/sensitive/duplicate = 0
-- Live DEV UAT: `access_preflight_passed_schema_applied_manual_queue_uat_not_started`
+- Live DEV UAT: `core_happy_path_passed_reliability_fault_cases_pending`
 
 ## Implementation result
 
@@ -127,7 +129,21 @@
 - **Live verification:** Apply 42 updates สำเร็จ; Final Preview หลัง Rename/Move ยืนยัน 0 actions/conflicts/warnings/manual actions
 - **Focused verification:** YouTube schema + installer + Lark client tests 53/53 ผ่าน
 - **Regression gates:** Unit/Integration 377/377, Workers runtime 6/6, Report reliability 53/53, Architecture 109/230/0, Repository hygiene, audit 0 และ Wrangler dry-run 444.06/90.94 KiB ผ่าน
-- **Remaining Live UAT:** Deploy DEV UAT-only Worker และ Manual Queue UAT; normal connector flag กับ Schedule คงปิด
+- **Remaining Live UAT ณ ตอนแก้ Presentation:** ต้อง Deploy DEV UAT-only Worker และทำ Manual Queue UAT; สถานะล่าสุดอัปเดตในหัวข้อถัดไป
+
+### Live Manual Queue core UAT — 2026-07-17
+
+- **Cloudflare readiness:** Main Queue/DLQ และ D1 พร้อม, migrations ไม่มีรายการค้าง, YouTube API/OAuth secrets ถูกเก็บใน Worker Secret store และ deploy ผ่าน Wrangler dry-run 444.06/90.94 KiB
+- **First Full sync:** `success`; pulled 3, created/written 8, retry 0, warning 0 และ error ไม่มี
+- **Idempotency:** Full rerun ไม่สร้างแถวใหม่ (`created=0`); อัปเดตเฉพาะข้อมูล latest-state/timestamp 4 แถวและข้าม 4 แถว จำนวน Record ใน Lark คงเดิม
+- **Incremental:** payload `syncMode=auto` เลือก `incremental` ด้วยเหตุผล `recent_upload_window`; `created=0`, reconciliation ไม่จำเป็น, checkpoint `incremental_run_count=1`
+- **Owner Analytics:** เปิด flag ชั่วคราวเฉพาะ UAT, owner preflight ผ่าน และ Queue run สำเร็จโดย API คืน 0 rows ซึ่งเป็น valid no-data; RAW Analytics ยังคง 0 และไม่มีการสร้างศูนย์ปลอม
+- **Observability:** D1 มี YouTube success 5 รอบ, failed/partial 0, alert 0, cursor 1 และ source state 2; Lark มี YouTube Sync Log 5 แถวและ System Alert 0
+- **Final safe state:** Worker version `820fbe7d-1db8-48a9-8494-d6e047c62846` ใช้ UAT gate เท่านั้น; `MKT_CONNECTOR_YOUTUBE_ENABLED=false`, `MKT_YOUTUBE_ANALYTICS_ENABLED=false` และไม่มี YouTube Scheduler producer
+- **Files changed:** เอกสารสถานะเท่านั้น; Live IDs/credentials อยู่ใน ignored local config และ Secret store ไม่ถูกเพิ่มใน Source
+- **Regression gates:** Unit/Integration 377/377, Workers runtime 6/6, Report reliability 53/53, Architecture 109/230/0, Repository hygiene, audit 0 และ Wrangler dry-run 444.06/90.94 KiB ผ่าน; ลบ `.DS_Store` ที่ไม่ได้ Track 2 ไฟล์ก่อนรัน hygiene ซ้ำ
+- **Remaining Live UAT:** Missing/private/deleted Video reconciliation, Analytics missing-key re-fetch, identity mismatch/redaction, quota/rate-limit, D1 alert-write failure, lock collision/renewal และ retry exhaustion → DLQ/System Alert
+- **Recommended commit:** `docs: record YouTube core queue UAT`
 
 ## Work review
 
