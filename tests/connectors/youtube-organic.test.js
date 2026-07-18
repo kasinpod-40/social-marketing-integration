@@ -52,6 +52,10 @@ test('normalizes YouTube video through shared organic entity contract', () => {
 test('rejects video resources from a different channel before destination planning', () => {
   assert.throws(
     () => mapYouTubeVideoResource(VIDEO, { expectedChannelId: 'channel_B' }),
-    /channel identity mismatch/,
+    (error) => (
+      error?.code === 'YOUTUBE_CHANNEL_IDENTITY_MISMATCH'
+      && error.retryable === false
+      && /channel identity mismatch/u.test(error.message)
+    ),
   );
 });

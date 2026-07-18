@@ -4,7 +4,7 @@
 
 Official baseline: `v0.10.2-multi-channel-foundation-approved`
 
-Clean candidate: `v0.11.0-rc.1` — DEV access, Lark Schema Apply และ Manual Queue core happy path passed; Reliability fault cases pending
+Clean candidate: `v0.11.0-rc.1` — DEV access, Lark Schema Apply, core Queue และ safe Reliability fault UAT passed; Activation review pending
 
 ## Multi-channel foundation
 
@@ -15,7 +15,10 @@ Clean candidate: `v0.11.0-rc.1` — DEV access, Lark Schema Apply และ Manu
 - The Excel/Lark model `../Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.2.xlsx` passed Technical review and is the approved implementation contract.
 - YouTube contract `youtube-organic-v2` uses latest-state Channel/Video RAW rows, non-destructive Video reconciliation, exact Pacific `source_metric_date`, and RAW-only Owner Analytics in Phase 1.
 - Public/Owner YouTube preflight, three-table Lark Apply และ Manual Queue core UAT ผ่านใน DEV เมื่อ 2026-07-17. First Full สร้าง 8 แถวจาก 3 source records; Full rerun และ incremental สร้าง 0 แถวใหม่; Owner Analytics คืน valid no-data. Lark มี Channel 1, Video 2, Analytics 0, Account 1, Content 2 และ Daily 2 โดยไม่เกิด Duplicate.
-- DEV Worker version `820fbe7d-1db8-48a9-8494-d6e047c62846` คง UAT-only gate; normal YouTube flag, Analytics หลังจบ UAT และ YouTube Schedule ปิด. D1/Lark Sync Log ยืนยัน 5 successful runs, failed/partial/alerts เป็น 0.
+- DateTime audit fields ทั้ง 6 แสดง `yyyy/MM/dd HH:mm`; Final Schema Preview เป็น zero drift และ Advanced Permissions role `Client` เป็น `No access` สำหรับ YouTube RAW ทั้ง 3 ตาราง
+- Reliability live fault ผ่าน lock collision → retry → success และ controlled timeout → retry exhaustion → DLQ → D1/Lark Critical Alert; หลัง Restore healthy run สำเร็จ retry 0, lock ค้าง 0 และ Test incident ถูกเก็บเป็น `resolved`
+- Live OAuth read-only identity fault พบและแก้ missing Operational classification เป็น Permanent `YOUTUBE_CHANNEL_IDENTITY_MISMATCH`; missing/quota/rate-limit/lease/persistence contracts ผ่าน deterministic production-path tests
+- DEV Worker version `538ed8a6-7e43-49d1-ad87-5791a6ed37d9` คง UAT-only gate; normal YouTube flag, Analytics หลังจบ UAT และ YouTube Schedule ปิด
 - v0.11.0-rc.1 adds guarded YouTube Schema Preview/Apply, access preflight, Account/RAW/Content/Daily write path, Manual Queue route, checkpoint/reconciliation and Reliability reuse. Hardening now retains/warns previously observed Analytics keys missing from the exact re-fetch scope, retries D1 warning-alert failures before Ack, and redacts external identity from operational logs/stores; it does not activate Schedule or Production.
 
 ## Shared Work/Codex handoff
@@ -23,7 +26,7 @@ Clean candidate: `v0.11.0-rc.1` — DEV access, Lark Schema Apply และ Manu
 - `AGENTS.md` is the repository-wide operating contract for ChatGPT Work, Codex, and developers.
 - `docs/current-task.md` is the single active task handoff with status, scope, contracts, acceptance criteria, implementation result, and Work review.
 - Repository hygiene now requires both files, so a release cannot silently lose shared context.
-- The approved six-part foundation is implemented; `docs/current-task.md` records the results and the remaining Live UAT blockers.
+- The approved six-part foundation is implemented; `docs/current-task.md` records the results, Activation review และ non-destructive operational monitoring ที่เหลือ.
 
 ## TikTok Organic DEV status
 
@@ -55,6 +58,7 @@ Canonical closeout: `../tiktok-organic-dev-complete-v0.9.6.md`; detailed earlier
 - v0.11.0-rc.1 hardened source gate: unit 376/376, Workers 6/6, Report reliability 53/53, focused YouTube/Reliability/Redaction 37/37, Architecture 109/230/0, hygiene pass, offline npm audit 0, and Wrangler dry-run 443.78 KiB / gzip 90.89 KiB.
 - YouTube Lark presentation correction gate: focused schema/installer/client 53/53, full unit 377/377, Workers 6/6, Report reliability 53/53, Architecture 109/230/0, hygiene pass, offline audit 0, Wrangler dry-run 444.06 KiB / gzip 90.94 KiB, and Live Preview zero drift.
 - YouTube Manual Queue core UAT: First Full, idempotent Full rerun, checkpoint-driven incremental และ Owner Analytics no-data ผ่าน; Lark record counts คงที่หลัง rerun, D1 cursor/source state พร้อม และไม่มี failed/partial/alert.
+- YouTube Reliability continuation: DateTime/permission/live lock/DLQ/Alert/identity tests ผ่าน; focused non-destructive fault suite 34/34, Unit 377/377, Workers 6/6, Report reliability 53/53, Architecture 109/231/0, hygiene, audit 0 และ dry-run 444.25/90.99 KiB ผ่าน
 - Fresh release extraction repeated `npm ci`, check, Unit 376/376, Workers 6/6, Report reliability 53/53, audit 0 and dry-run; the archive verifier found zero blocked, missing, sensitive or duplicate artifacts.
 - YouTube Blueprint rc.2 parity is part of the 351/351 gate and verifies all 42 field metadata rows, query/date/missing semantics and field-by-field mapping.
 
@@ -85,4 +89,4 @@ Clients should not use RAW tables, `MKT_Content_Daily`, Sync Log, System Alerts,
 
 ## Next implementation workstream
 
-ทดสอบ Reliability fault cases ที่เหลือของ YouTube: missing/private/deleted Video, Analytics missing-key, identity mismatch/redaction, quota/rate-limit, D1 alert-write failure, lock collision/renewal และ retry exhaustion → DLQ/System Alert. Core Queue happy path ผ่านแล้ว แต่ route ยัง Manual-only และ `uat_pending`; Meta/WooCommerce/Chatwoot ยังอยู่นอก revision นี้. See `10-next-actions.md`.
+ให้ ChatGPT Work ตรวจหลักฐาน Reliability continuation และข้อมูลรอบสุดท้ายก่อนตัดสินใจ Activation. Actual Provider missing/private/deleted, quota/429 และ D1 outage ไม่ถูกบังคับแบบทำลายระบบ; ให้เฝ้าดูเมื่อเกิดตามธรรมชาติ. Route ยัง Manual-only และ `uat_pending`; Meta/WooCommerce/Chatwoot ยังอยู่นอก revision นี้. See `10-next-actions.md`.

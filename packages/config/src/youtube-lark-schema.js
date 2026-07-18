@@ -22,6 +22,13 @@ const TABLE_PRESENTATION = Object.freeze({
   }),
 });
 
+// Live tenant ยืนยันว่า formatter นี้แสดงทั้งวันและเวลา และเป็นค่าเดียวกับ
+// MKT_Content.published_at ที่ใช้งานจริงอยู่แล้ว เหมาะกับ Audit/Sync timestamps
+const AUDIT_DATETIME_PROPERTY = Object.freeze({
+  date_formatter: 'yyyy/MM/dd HH:mm',
+  auto_fill: false,
+});
+
 // Presentation contract ภาษาไทยสำหรับ Field info ใน Lark UI แยกจาก Source semantics ใน Blueprint
 // เพื่อให้เอกสารต้นทางคงศัพท์ API ที่ตรวจทานแล้ว แต่ผู้ใช้งาน Base อ่านคำอธิบายได้ทันที
 const FIELD_DESCRIPTIONS_TH = deepFreeze({
@@ -136,7 +143,9 @@ export function validateYouTubeLarkSchema(schema = YOUTUBE_LARK_SCHEMA) {
 function toInstallerField(tableKey, field) {
   const property = field.type === 3
     ? { options: field.options.map((name, index) => ({ name, color: index % 8 })) }
-    : undefined;
+    : field.type === 5
+      ? AUDIT_DATETIME_PROPERTY
+      : undefined;
   const description = FIELD_DESCRIPTIONS_TH[tableKey]?.[field.fieldName];
   if (!description) {
     throw permanentError(`Missing Thai YouTube field description: ${tableKey}.${field.fieldName}`, {

@@ -39,6 +39,10 @@ test('preflight rejects OAuth identity from a different channel', async () => {
   const ownerClient = { async getChannel() { return channel('channel_B'); } };
   await assert.rejects(
     preflightYouTubeDevAccess({ publicClient, ownerClient, channelId: 'channel_A', analyticsEnabled: true }),
-    /identity mismatch/u,
+    (error) => (
+      error?.code === 'YOUTUBE_CHANNEL_IDENTITY_MISMATCH'
+      && error.retryable === false
+      && /identity mismatch/u.test(error.message)
+    ),
   );
 });

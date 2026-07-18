@@ -2,18 +2,36 @@
 
 ## Task metadata
 
-- **Status:** `manual_queue_core_uat_passed_reliability_fault_cases_pending`
+- **Status:** `reliability_fault_uat_passed_activation_review_pending`
 - **Official clean baseline:** `v0.10.2-multi-channel-foundation-approved`
 - **Working candidate:** `v0.11.0-rc.1`
 - **Blueprint:** `Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.2.xlsx`
 - **Connector status:** `uat_pending`
 - **Schedule:** `disabled`
-- **Last updated:** `2026-07-17`
+- **Last updated:** `2026-07-18`
 - **Owners:** ChatGPT Work (technical review/release) + developer (DEV credentials and guarded live execution)
 
 ## Objective
 
 ทำ YouTube Organic DEV implementation ตาม Blueprint ที่ผ่าน Technical review โดยเพิ่มเส้นทาง Manual UAT ที่ Fail-closed, ใช้ Reliability layer เดิม และยังไม่เปิด Scheduled/Production traffic.
+
+## Authorized continuation scope — 2026-07-17
+
+ผู้ใช้อนุมัติให้ปิดช่องว่างหลัง Core Queue UAT ตามลำดับนี้:
+
+1. เปลี่ยน DateTime presentation ของ `fetched_at`, `published_at`, `last_seen_at` และ `missing_since` ให้แสดงวันและเวลา โดยใช้ formatter ที่ยืนยันจาก Live tenant
+2. Preview/Apply Schema แบบ Idempotent และตรวจ Property จาก Lark OpenAPI หลัง Apply
+3. เพิ่ม YouTube RAW ทั้ง 3 ตารางใน Advanced Permission role `Client` เป็น `No access` และตรวจจาก Lark UI
+4. ทำ Reliability fault UAT: Missing Video, identity mismatch, quota/rate-limit, lock collision/renewal, retry exhaustion, DLQ และ alert persistence
+5. คง normal connector, Owner Analytics หลัง UAT และ YouTube Schedule เป็น `false` จนทุก Gate ผ่าน
+
+Acceptance criteria ของ continuation:
+
+- Source contract และ Regression tests บังคับ DateTime audit fields เป็น `yyyy/MM/dd HH:mm` พร้อม `auto_fill=false`
+- Final Schema Preview หลัง Apply เป็น zero drift
+- Client role มองไม่เห็น YouTube RAW ทั้ง 3 ตาราง
+- Fault UAT มีหลักฐาน safe counts/status/error classification โดยไม่เปิดเผย External identity หรือ Secret
+- ทุกครั้งที่จำลอง Error ต้องคืนค่า DEV Worker/Queue/D1/Lark สู่ safe state และห้ามเปิด YouTube Schedule
 
 ## Approved contracts
 
@@ -55,10 +73,15 @@
 - เพิ่ม `Social MKT Sync` ใน DEV Base และยกระดับเป็น `Can manage` แล้ว
 - Apply `RAW_YouTube_Channels`, `RAW_YouTube_Videos`, `RAW_YouTube_Analytics_Daily` สำเร็จ; Final Preview เหลือ 0 actions/conflicts/warnings/manual actions
 - ปรับ Presentation ของตารางจริงแล้ว: ใส่ไอคอน `📺`/`🎬`/`📊`, ย้ายทั้ง 3 ตารางเข้า `🧪 Raw Integration Tables` และเปลี่ยน Field info ทั้ง 42 ฟิลด์เป็นภาษาไทย
+- ปรับ DateTime ทั้ง 6 ฟิลด์ใน YouTube RAW ให้แสดง `yyyy/MM/dd HH:mm`; Live UI แสดงเวลาแล้วและ Final Preview เป็น zero drift
+- Advanced Permissions เปิดอยู่และตรวจจาก Lark UI แล้วว่า role `Client` เป็น `No access` สำหรับ YouTube RAW ทั้ง 3 ตาราง โดยสถานะเดิมถูกต้องจึงไม่ต้อง Mutation
 - บันทึก Table IDs เฉพาะใน ignored local `wrangler.sync.jsonc`; ไม่มี Live ID ถูกเพิ่มใน Source/Git
 - Deploy DEV Worker แบบ UAT-only แล้ว; normal YouTube flag, Owner Analytics flag หลังจบ UAT และ YouTube Schedule คงปิด
 - Manual Queue happy path ผ่าน: First Full, Full rerun/idempotency, `auto` → incremental และ Owner Analytics no-data
-- D1 บันทึก YouTube `success` 5 รอบ, failed/partial 0, alert 0; Lark มี Sync Log 5 แถวและ System Alert 0 แถว
+- Reliability live fault ผ่าน: lock collision → bounded retry → success, timeout → retry exhaustion → DLQ → D1/Lark Critical Alert, resolve Test incident และ healthy run หลัง Restore สำเร็จ
+- OAuth identity mismatch แบบ Live read-only ผ่าน Fail-closed พร้อม Permanent code และ Operational redaction; Source แก้ classification gap ที่พบระหว่าง UAT แล้ว
+- Missing Video/Analytics key, quota/rate-limit, lease renewal/loss และ alert-persistence failure ผ่าน deterministic production-path tests; ไม่บังคับลบ Content จริง, เผา Provider quota หรือทำ D1 outage ใน DEV
+- สถานะ D1 หลัง Fault UAT: success 7, controlled skipped 2, controlled failed 2, DLQ 1 resolved และ System Alert 1 resolved; ไม่มี active YouTube lock ค้าง
 - Lark ตรวจจำนวนจริงหลัง rerun แล้ว: RAW Channel 1, RAW Video 2, RAW Analytics 0, Account 1, Content 2 และ Daily 2 โดยไม่เกิด Duplicate
 - ไม่เปลี่ยน YouTube จาก `uat_pending` เป็น `active`
 - ไม่เปิด Schedule, Meta หรือ Production
@@ -88,13 +111,15 @@
 - Unit/Integration: 377/377 passed
 - Workers runtime: 6/6 passed
 - Focused Report reliability: 53/53 passed
-- Focused YouTube/Reliability/Redaction: 37/37 passed
-- Architecture: 109 source files / 230 local dependencies / 0 cycles
+- Focused YouTube safe fault suite: 34/34 passed
+- Focused DateTime/identity regression: 6/6 passed
+- Architecture: 109 source files / 231 local dependencies / 0 cycles
 - Repository hygiene: passed
 - npm audit: 0 vulnerabilities
-- Wrangler dry-run: 444.06 KiB / gzip 90.94 KiB passed
+- Wrangler dry-run: 444.25 KiB / gzip 90.99 KiB passed
 - Clean archive extraction retest: `npm ci`, check, Unit 376/376, Workers 6/6, reliability 53/53, audit 0 และ dry-run ผ่าน; Archive verifier พบ blocked/missing/sensitive/duplicate = 0
-- Live DEV UAT: `core_happy_path_passed_reliability_fault_cases_pending`
+- Live DEV UAT: `core_happy_path_and_safe_reliability_faults_passed`
+- Provider-destructive scenarios: ไม่บังคับสร้าง missing/private/deleted จริง, quota exhaustion/429 จริง หรือ D1 outage จริง; Contract/Classification ผ่าน deterministic tests และต้องเฝ้าดูเมื่อเกิดตามธรรมชาติ
 
 ## Implementation result
 
@@ -145,9 +170,24 @@
 - **Remaining Live UAT:** Missing/private/deleted Video reconciliation, Analytics missing-key re-fetch, identity mismatch/redaction, quota/rate-limit, D1 alert-write failure, lock collision/renewal และ retry exhaustion → DLQ/System Alert
 - **Recommended commit:** `docs: record YouTube core queue UAT`
 
+### DateTime, permissions and Reliability fault UAT — 2026-07-17
+
+- **DateTime Source/Live:** กำหนด DateTime ทั้ง 6 ฟิลด์เป็น `yyyy/MM/dd HH:mm` และ `auto_fill=false`; Apply สำเร็จ 6 updates, UI แสดงวันพร้อมเวลา และ Final Preview ยืนยัน 0 actions/conflicts/warnings/manual actions
+- **Advanced Permissions:** ตรวจ role `Client` จาก Lark UI แล้วว่า `📺 RAW_YouTube_Channels`, `🎬 RAW_YouTube_Videos` และ `📊 RAW_YouTube_Analytics_Daily` เป็น `No access` อยู่แล้ว จึงไม่เกิด Permission mutation
+- **Lock collision:** Queue attempt 0/1 ได้ `SYNC_LOCK_BUSY`; หลังปล่อย lease เดิม attempt 2 สำเร็จแบบ incremental, ไม่มี lock ค้างและไม่สร้าง noisy alert
+- **Retry/DLQ/Alert:** Deploy fault profile ชั่วคราวเฉพาะ DEV, timeout ได้ `YOUTUBE_NETWORK_ERROR` ที่ retry 0/1 แล้วเข้า DLQ ด้วย `QUEUE_RETRY_EXHAUSTED`; D1 และ Lark มี Critical Alert ตรงกัน
+- **Recovery:** คืน Timeout/Retry เป็นค่าปกติ, Deploy safe Worker, ส่ง healthy Queue run สำเร็จที่ retry 0, lock ค้าง 0 และเปลี่ยน Test DLQ/Alert เป็น `resolved` ทั้ง D1/Lark โดยไม่ลบประวัติ
+- **Identity:** Live OAuth read-only fault พบว่า Adapter เดิมโยน TypeError ที่ไม่มี Operational code; แก้เป็น Permanent `YOUTUBE_CHANNEL_IDENTITY_MISMATCH`, เพิ่ม Regression และ Live recheck ผ่านโดยไม่เปิดเผย External identity
+- **Non-destructive fault coverage:** Focused 34/34 ครอบคลุม missing Video retain/no-zero, Analytics missing-key, quota terminal, rate-limit/server retry, lease renewal/loss, retry/DLQ routing และ alert persistence; ไม่จงใจลบ Video จริง, ใช้ quota จนหมด หรือทำ D1 outage
+- **Final safe deployment:** Worker version `538ed8a6-7e43-49d1-ad87-5791a6ed37d9`; normal YouTube `false`, UAT gate `true`, Owner Analytics `false`, Timeout 30 วินาที, Queue max retries 5 และไม่มี YouTube Scheduler producer
+- **Files changed:** YouTube Lark schema contract/test, YouTube identity adapter/preflight regression และเอกสาร handoff; Live IDs/credentials ยังอยู่เฉพาะ ignored config/Secret store
+- **Final gates:** Unit/Integration 377/377, Workers runtime 6/6, Report reliability 53/53, Architecture 109 source files / 231 local dependencies / 0 cycles, hygiene pass, audit 0 และ Wrangler dry-run 444.25 KiB / gzip 90.99 KiB
+- **Remaining review:** ให้ ChatGPT Work ตรวจหลักฐานและข้อมูลรอบสุดท้ายก่อนตัดสินใจ Activation; Schedule, normal connector และ Production ยังคงปิด
+- **Recommended commit:** `fix: complete YouTube reliability UAT safeguards`
+
 ## Work review
 
 - **Technical architecture:** approved for Manual DEV UAT
 - **Data model:** approved — Blueprint v0.10.2
 - **Release decision:** package as `v0.11.0-rc.1`; do not promote YouTube to active
-- **Recommended commit for current delta:** `fix: localize YouTube Lark schema presentation`
+- **Recommended commit for current delta:** `fix: complete YouTube reliability UAT safeguards`

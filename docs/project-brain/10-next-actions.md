@@ -19,7 +19,7 @@ npm run release:verify -- outputs/releases/social-marketing-integration-v0.11.0-
 
 ## YouTube DEV access and schema
 
-Status 2026-07-17: Public/Owner preflight, three-table Lark Schema Apply และ Manual Queue core happy path passed. Local Table IDs are stored only in ignored `wrangler.sync.jsonc`.
+Status 2026-07-17: Public/Owner preflight, three-table Lark Schema Apply, DateTime/Permission verification, Manual Queue core และ safe Reliability fault UAT passed. Local Table IDs are stored only in ignored `wrangler.sync.jsonc`.
 
 Completed setup reference:
 
@@ -57,20 +57,26 @@ Core UAT ที่ผ่านแล้ว:
 6. Owner Analytics small Pacific-date range แบบ valid no-data
 7. Verify RAW, Canonical, Account, Sync Log และ System Alert counts ใน Lark
 
-Reliability fault cases ที่ยังต้องทำ:
+Reliability fault cases ที่ผ่าน Live DEV:
 
-1. Video ID returned by Playlist but absent from `videos.list`
-2. Previously observed Video disappears
-3. Previously observed Analytics Stable key disappears on exact re-fetch while never-observed gaps remain silent
-4. Channel identity mismatch without Channel/Video identity in Worker/D1/Lark operational output
-5. Quota exhaustion versus rate-limit/server retry
-6. D1 warning-alert persistence failure → Retry and no Queue Ack
-7. Distributed lock collision/renewal
-8. Retry exhaustion → DLQ/System Alert
+1. Distributed lock collision → bounded retry → success และ cleanup
+2. Controlled timeout → retry exhaustion → DLQ → D1/Lark Critical Alert
+3. Safe restore → retry-0 healthy run และ Test incident retained as `resolved`
+4. Live OAuth read-only identity mismatch → Permanent classification + redaction
+
+Production-path deterministic cases ที่ผ่าน:
+
+1. Playlist ID absent from `videos.list` และ previously observed Video disappears → retain/no-delete/no-zero
+2. Previously observed Analytics Stable key disappears on exact re-fetch while never-observed gaps remain silent
+3. Quota exhaustion เป็น terminal; rate-limit/server failure เป็น bounded retry
+4. D1 warning-alert persistence failure → Retry and no Queue Ack
+5. Lease renewal/loss, retry routing, DLQ persistence และ Alert mirror/redaction
+
+ไม่จงใจสร้าง actual Provider missing/private/deleted, เผา quota, บังคับ 429 หรือทำ D1 outage. ให้เฝ้าดู scenario เหล่านี้เมื่อเกิดตามธรรมชาติและใช้ Alert/Runbook เดิม.
 
 ## Activation gate
 
-Only after every Live DEV UAT item passes:
+หลัง ChatGPT Work ตรวจหลักฐานและข้อมูลรอบสุดท้ายแล้วจึงพิจารณา:
 
 - change YouTube connector/job from `uat_pending` to `active`
 - design a separately reviewed schedule and incremental Analytics date policy

@@ -1,4 +1,5 @@
 import { toEpochMilliseconds } from '../../../shared/src/date/date-time.js';
+import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 
 /** แปลง YouTube video resource เป็น Canonical Organic source โดยคง Metric ที่ไม่มีเป็น null */
 export function mapYouTubeVideoResource(video, input = {}) {
@@ -7,7 +8,7 @@ export function mapYouTubeVideoResource(video, input = {}) {
   const channelId = requireText(video?.snippet?.channelId, 'video.snippet.channelId');
   const expectedChannelId = optionalText(input.expectedChannelId);
   if (expectedChannelId && channelId !== expectedChannelId) {
-    throw new TypeError('YouTube channel identity mismatch');
+    throw youtubeIdentityMismatchError();
   }
 
   return Object.freeze({
@@ -44,7 +45,7 @@ export function mapYouTubeChannelResource(channel, expectedChannelId = null) {
   requireObject(channel, 'YouTube channel resource');
   const channelId = requireText(channel.id, 'channel.id');
   if (expectedChannelId && channelId !== requireText(expectedChannelId, 'expectedChannelId')) {
-    throw new TypeError('YouTube channel identity mismatch');
+    throw youtubeIdentityMismatchError();
   }
   return Object.freeze({
     channelId,
@@ -116,4 +117,10 @@ function optionalText(value) {
   if (value === null || value === undefined || value === '') return null;
   if (typeof value !== 'string') throw new TypeError('YouTube text value must be a string');
   return value.trim() || null;
+}
+
+function youtubeIdentityMismatchError() {
+  return permanentError('YouTube channel identity mismatch', {
+    code: 'YOUTUBE_CHANNEL_IDENTITY_MISMATCH',
+  });
 }

@@ -23,6 +23,17 @@ test('derives three installable YouTube RAW tables from the approved Blueprint',
     .filter((field) => field.type === 15);
   assert.ok(urlFields.length > 0);
   assert.ok(urlFields.every((field) => field.uiType === 'Url'));
+  const dateTimeFields = allFields.filter((field) => field.type === 5);
+  assert.equal(dateTimeFields.length, 6);
+  assert.deepEqual(
+    dateTimeFields.map((field) => field.fieldName),
+    ['fetched_at', 'published_at', 'last_seen_at', 'missing_since', 'fetched_at', 'fetched_at'],
+  );
+  assert.ok(dateTimeFields.every((field) => field.uiType === 'DateTime'));
+  assert.ok(dateTimeFields.every((field) => (
+    field.property?.date_formatter === 'yyyy/MM/dd HH:mm'
+    && field.property?.auto_fill === false
+  )));
   const client = {
     async listTables() { return []; },
     async listFields() { throw new Error('not expected'); },

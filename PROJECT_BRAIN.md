@@ -6,9 +6,9 @@ This project connects social organic and paid ads data into Lark Base for report
 ## Current project status
 Official clean baseline: `v0.10.2-multi-channel-foundation-approved`
 
-Current clean candidate: `v0.11.0-rc.1` — YouTube access, three-table Lark Apply และ Manual Queue core happy path passed; Reliability fault cases pending
+Current clean candidate: `v0.11.0-rc.1` — YouTube access, Lark Apply, core Queue และ safe Reliability fault UAT passed; Activation review pending
 
-Current YouTube design artifact: `docs/Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.2.xlsx` — Technical review approved. v0.11.0-rc.1 implements guarded Schema Preview/Apply, access preflight, RAW/Canonical/Account writes, Manual Queue, checkpoint/reconciliation and Reliability reuse. Public/Owner preflight, Lark Apply และ Manual Queue core UAT ผ่านเมื่อ 2026-07-17: First Full, idempotent rerun, checkpoint-driven incremental และ Owner Analytics valid no-data. A live `99992402` failure confirmed that Hyperlink fields require `ui_type=Url`, not `URL`; Source and regression coverage were corrected. Live presentation matches the existing Base convention: emoji-prefixed tables are grouped under `🧪 Raw Integration Tables`, and all 42 Field info descriptions are Thai. Final DEV deployment uses UAT-only gate; normal connector, Analytics after UAT, YouTube Schedule and Production remain disabled.
+Current YouTube design artifact: `docs/Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.2.xlsx` — Technical review approved. v0.11.0-rc.1 implements guarded Schema Preview/Apply, access preflight, RAW/Canonical/Account writes, Manual Queue, checkpoint/reconciliation and Reliability reuse. Public/Owner preflight, Lark Apply, core Queue และ safe Reliability fault UAT ผ่านเมื่อ 2026-07-17: lock collision/retry, timeout exhaustion → DLQ → D1/Lark Alert, safe restore/healthy run และ Live read-only identity mismatch. DateTime ทั้ง 6 ฟิลด์แสดงวันพร้อมเวลา; role `Client` เป็น `No access` สำหรับ YouTube RAW ทั้ง 3 ตาราง. Missing/quota/rate-limit/lease/persistence contracts ผ่าน deterministic production-path tests โดยไม่ทำลาย Provider/D1. Final DEV deployment uses UAT-only gate; normal connector, Analytics after UAT, YouTube Schedule and Production remain disabled.
 
 TikTok Organic DEV ingestion/report logic ผ่าน Live Queue UAT และ Reliability UAT แล้ว. Client Views ทั้ง 6 รายการติดตั้ง Filter/Hidden fields และ Sort `rank` ascending สำเร็จ; Advanced Permissions เปิดแล้วพร้อม `Client` role แบบ least privilege และ Final Preview เป็นศูนย์ actions/conflicts. Daily/Weekly schedules เปิดและ deploy ไปยัง Cloudflare DEV แล้ว; เหลือ operational observation ของรอบ schedule.
 
@@ -33,6 +33,8 @@ v0.11.0-rc.1 hardened source and fresh-archive verification: Node unit/integrati
 YouTube Lark presentation correction verification on 2026-07-17: managed Thai descriptions for all 42 fields, emoji-prefixed aliases and full-update property preservation passed focused tests 53/53 and full Unit/Integration 377/377; Workers 6/6, Report reliability 53/53, Architecture 109/230/0, hygiene, audit 0, and Wrangler dry-run 444.06 KiB / gzip 90.94 KiB also passed. Live final Preview after rename/move returned zero drift.
 
 YouTube Manual Queue core UAT on 2026-07-17: First Full pulled 3 and created 8; repeated Full and incremental created 0; Owner Analytics returned valid no-data; Lark retained Channel 1, Video 2, Analytics 0, Account 1, Content 2 and Daily 2. D1/Lark recorded 5 successful sync runs with zero failed/partial/alerts. Final UAT-only Worker version is `820fbe7d-1db8-48a9-8494-d6e047c62846`.
+
+YouTube Reliability continuation on 2026-07-17: DateTime Apply/zero-drift Preview and Client RAW `No access` verification passed. Live lock collision retried to success without noisy alerts; controlled timeout exhausted retries into DLQ and a mirrored D1/Lark Critical Alert, then safe settings were restored and a retry-0 healthy run passed. The Test incident is retained as `resolved`. Live OAuth identity fault exposed and fixed missing `YOUTUBE_CHANNEL_IDENTITY_MISMATCH` classification. Final gates passed at Unit 377/377, Workers 6/6, Report reliability 53/53, Architecture 109/231/0, audit 0 and dry-run 444.25/90.99 KiB. Final UAT-only Worker version is `538ed8a6-7e43-49d1-ad87-5791a6ed37d9`; Activation review remains pending.
 
 
 
@@ -273,11 +275,11 @@ DEV Table IDs ถูกย้ายออกจาก Source/Release documentati
 ยังรอ guarded Preview/Apply ใน DEV เพราะ Source artifact ไม่มี Live credential. Production ต้องตั้งค่า Table IDs ของลูกค้าเองผ่าน Local/Environment config.
 
 ## Next action
-1. Run missing/private/deleted Video reconciliation cases.
-2. Run Analytics missing-key exact re-fetch and identity mismatch/redaction cases.
-3. Run quota/rate-limit, D1 alert-write, lock/renewal และ retry exhaustion → DLQ/System Alert cases.
-4. Keep YouTube `uat_pending`, normal flag/Analytics flag/Schedule disabled until every Reliability fault case passes.
-5. Review activation and Analytics date policy separately; Meta and other connectors remain separate tasks.
+1. ให้ ChatGPT Work ตรวจหลักฐาน Reliability continuation และข้อมูลรอบสุดท้าย
+2. คง YouTube เป็น `uat_pending`; normal flag, Analytics flag และ Schedule ปิดระหว่าง Activation review
+3. เฝ้าดู actual Provider missing/private/deleted, quota/429 และ D1 outage เมื่อเกิดตามธรรมชาติ โดยไม่บังคับทำลายระบบ
+4. หาก Work อนุมัติ จึง Promote connector และออกแบบ Schedule/Analytics date policy เป็นงานแยก
+5. Meta และ Connector อื่นยังเป็นงานแยกและต้องผ่าน Data-model/Access/UAT ของตนเอง
 
 ## 2026-07-09 — v0.1.4 env-driven config + Lark classification dictionary
 - Baseline: `v0.1.4-env-config-lark-dictionary`.

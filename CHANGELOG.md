@@ -6,6 +6,8 @@
 - Corrected YouTube Hyperlink fields from `ui_type=URL` to the official case-sensitive Lark enum `Url` and added regression coverage.
 - Added managed Thai Field info for all 42 YouTube RAW fields while preserving existing Lark field properties and Select option IDs during full updates.
 - Added emoji-prefixed create names and backward-compatible aliases for the three YouTube RAW tables.
+- Set all six YouTube RAW DateTime fields to `yyyy/MM/dd HH:mm` with `auto_fill=false`.
+- Classified Channel/Owner identity mismatches as permanent `YOUTUBE_CHANNEL_IDENTITY_MISMATCH` errors instead of unstructured `TypeError`.
 
 ### Live DEV verification
 - Granted the `Social MKT Sync` application `Can manage` access in the developer Base.
@@ -16,7 +18,13 @@
 - Stored returned Table IDs only in ignored local configuration; no Live IDs or secrets were added to Source.
 - Deployed the DEV Worker behind the separate YouTube UAT gate and completed First Full, idempotent Full rerun, checkpoint-driven incremental, and Owner Analytics valid no-data runs.
 - Verified five successful D1/Lark Sync Log rows, zero failed/partial/alerts, and stable Lark counts after reruns: Channel 1, Video 2, Analytics 0, Account 1, Content 2, and Daily 2.
-- Restored the final safe deployment with normal YouTube, Owner Analytics, and YouTube Schedule disabled; Reliability fault cases and activation remain pending.
+- Verified the Client role already has `No access` for all three YouTube RAW tables.
+- Completed controlled lock collision/retry and timeout exhaustion → DLQ → mirrored D1/Lark Critical Alert; restored safe settings, passed a retry-0 healthy run, and retained the Test incident as `resolved`.
+- Completed Live OAuth read-only identity mismatch classification/redaction and non-destructive production-path fault tests for missing resources, quota/rate-limit, lease renewal/loss and alert persistence.
+- Restored the final safe deployment with normal YouTube, Owner Analytics, and YouTube Schedule disabled; Activation review remains pending.
+
+### Verification
+- Unit/Integration 377/377, Workers runtime 6/6, Report reliability 53/53, focused Reliability faults 34/34, Architecture 109/231/0, repository hygiene, audit 0 and Wrangler dry-run 444.25/90.99 KiB passed.
 
 ## 0.11.0-rc.1 — YouTube Organic Manual DEV UAT implementation — 2026-07-15
 
