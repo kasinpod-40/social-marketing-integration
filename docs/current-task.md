@@ -326,3 +326,15 @@ Shared contract สำหรับ Instagram/Facebook/TikTok งานถัด�
 - **Remaining risks:** Sanitizer เป็น key-name policy จึงต้องเพิ่ม naming variant เมื่อมี Credential contract ใหม่; External gate เดิมยังคงเป็น guarded migration 0005/DEV smoke และ Customer-owned 837-video Live UAT
 - **Rollback:** Revert matcher/test/documentation delta นี้ได้โดยไม่แตะ Migration, D1 rows, Lark rows, Stable keys หรือ Schedule; ไม่แนะนำให้ rollback ในระบบที่รับ payload จาก Boundary ที่ไม่บังคับ Secret เป็น String
 - **Commit suggestion:** `fix: redact scalar secrets in queue payloads`
+
+### Clean archive gate consistency — 2026-07-19
+
+- **Root cause:** Official packaging adds `RELEASE_MANIFEST.txt` to the ZIP by contract, but `check-repository-hygiene.mjs` rejected that generated file in every working directory. The required `npm run check` therefore failed after extracting a valid archive even though the verifier required the same Manifest.
+- **Implementation:** Detect the actual Git worktree root before enforcing the source-root generated-artifact rule. The Git source root still rejects `RELEASE_MANIFEST.txt`; an extracted Release tree can keep its required Manifest and run the full gate.
+- **Files changed:** `scripts/check-repository-hygiene.mjs`, `docs/current-task.md` and `CHANGELOG.md`.
+- **Commands run:** Official Release package/verify, fresh extraction `npm ci`, `npm run check`, `npm test`, `npm run test:report-reliability`, `npm audit --offline`, `npm run deploy:dry-run`, focused Release policy tests and source `npm run check`.
+- **Tests:** Before fix, extracted `npm run check` failed only on the required Manifest. Unit/Integration 426/426, Workers runtime 8/8, Report reliability 64/64, offline audit 0 and dry-run 534.48/106.76 KiB passed. Source-root hygiene and focused Release policy 4/4 remain passed.
+- **Regression results:** Source root continues to reject generated root artifacts; Archive verifier still requires the Manifest and still blocks local config, Secret, dependencies, nested archives and generated outputs.
+- **Remaining risks:** Must create a new clean archive after committing this fix and rerun every extracted-archive gate before Remote D1/Worker mutation.
+- **Rollback:** Revert this narrow checker/documentation change; it has no Worker runtime, D1, Queue, Lark, Secret or Schedule effect.
+- **Commit suggestion:** `fix: align extracted release hygiene gate`

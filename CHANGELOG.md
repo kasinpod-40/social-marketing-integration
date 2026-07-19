@@ -10,6 +10,7 @@
 - Expands both Operational and Queue-replay secret matching to cover `privateKey`, `signingKey`, `credential` and naming variants.
 - Redacts matched Secret fields for string, numeric and boolean values while keeping numeric operational completeness counters such as `missingVideoIds` available.
 - Validates a Dead-letter candidate before reservation and rechecks forbidden types inside D1, preventing recursive redrive from leaving an incident stuck in `redrive_pending`.
+- Allows the generated `RELEASE_MANIFEST.txt` only in an extracted Release tree, while continuing to reject it from the actual Git source root so clean-archive gates and source hygiene enforce the same contract.
 
 ### Migration and rollout safety
 - Makes migration 0005 fail closed before schema mutation when legacy resumable work or an unexpired lock remains.
