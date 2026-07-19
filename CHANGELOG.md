@@ -16,6 +16,7 @@
 ### Migration and rollout safety
 - Makes migration 0005 fail closed before schema mutation when legacy resumable work or an unexpired lock remains.
 - Bootstraps generation fences from `sync_cursors.last_successful_sync_at` so pre-migration retries cannot claim an older generation after rollout.
+- Adds migration 0006 to rebuild `dead_letter_jobs` with `redrive_pending`/`redriven` in its SQLite CHECK constraint while preserving every existing row and both operational indexes.
 - Documents the required quiesce → verify → migrate → deploy → smoke → re-enable sequence in `docs/youtube-resumable-migration-runbook.md`.
 - Restores required safe hidden source files omitted by the uploaded macOS ZIP; no Live config, Secret, `node_modules`, output, or macOS metadata is included in the clean package.
 - Passed Unit/Integration 426/426, Workers runtime 8/8, Report reliability 64/64, scalar sanitizer/D1 focused 12/12, Architecture 113/238/0, hygiene, audit 0, Wrangler dry-run 534.48/106.76 KiB and SQLite migration replay/guard.
