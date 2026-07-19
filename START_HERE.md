@@ -1,11 +1,20 @@
-# Social Marketing Integration v0.11.0
+# Social Marketing Integration v0.11.0 — Corrective Source Candidate
 
-ชุด Source ปัจจุบันเพิ่ม YouTube large-account reliability hardening หลัง Independent review
+ชุด Source นี้ต่อจาก commit `2ef5618` และปิดช่องว่าง Outbox/Redrive/Migration transition ของ YouTube large-account resumable sync
 
-## เริ่มใช้งาน
+## เริ่มตรวจ Source
 
-1. อ่าน `AGENTS.md`, `docs/current-task.md`, `PROJECT_BRAIN.md` และ `docs/project-brain/10-next-actions.md`
-2. ติดตั้งและตรวจ Source:
+อ่านตามลำดับ:
+
+```text
+AGENTS.md
+→ docs/current-task.md
+→ PROJECT_BRAIN.md
+→ docs/project-brain/10-next-actions.md
+→ docs/youtube-resumable-migration-runbook.md
+```
+
+รัน Gate:
 
 ```bash
 npm ci
@@ -17,20 +26,29 @@ npm audit --offline
 npm run deploy:dry-run
 ```
 
-3. ตรวจ Migration `0005_resumable_sync_reliability.sql` ใน DEV ก่อน Deploy
-4. ใช้ `GIT_HANDOFF.md` สำหรับ Commit/Push และ `RELEASE_TEST_REPORT.md` สำหรับหลักฐาน Gate
+ผลล่าสุดอยู่ใน `RELEASE_TEST_REPORT.md`
 
 ## สถานะจริง
 
 - Official foundation: `v0.10.2-multi-channel-foundation-approved`
-- DEV deployment ปัจจุบัน: commit `44377ce`, migration 0004, Worker `2037232c-152a-4e26-95fa-fca044f65bd9`
-- Source patch ใหม่นี้: Source และ clean-archive gates ผ่าน; ยังไม่ Apply migration 0005 หรือ Deploy
-- YouTube DEV schedule: เปิดอยู่ใน deployment เดิม
-- Customer 837-video Live UAT: ยังไม่รันและเป็น Production blocker
+- Active DEV deployment เดิม: commit `44377ce`, migration 0004, Worker `2037232c-152a-4e26-95fa-fca044f65bd9`
+- Corrective Source candidate: ยังไม่ Push, Apply Remote migration 0005 หรือ Deploy
+- Code X follow-up Secret matcher, Source hygiene และ recursive-redrive pre-mutation guard แก้แล้ว; ผล Gate อยู่ใน `RELEASE_TEST_REPORT.md`
+- YouTube DEV schedule ยังทำงานจาก Deployment เดิม; ก่อน Migration ต้อง Quiesce ตาม Runbook
+- Customer-owned 837-video Live UAT ยังไม่รันและเป็น Production blocker
 - Production: ปิด
+
+## สิ่งที่แก้ในชุดนี้
+
+- Pending warning ถูก drain ข้าม Generation และ Completed retry replay ได้แม้มี Fence ใหม่
+- Permanent ทุกเส้นทางมี Dead-letter replay payload ที่รักษา Queue scope แต่ตัด Secret/Token
+- Admin redrive ใช้ Generation ใหม่, Idempotent และปิดด้วย Flag เป็นค่าเริ่มต้น
+- Migration 0005 Fail closed เมื่อยังมี Work/Active lock และ Bootstrap fence จาก Business checkpoint
+- Superseded run เป็น `skipped`; Dry-run ไม่สร้าง Business alert
 
 ## ข้อห้าม
 
-- ห้าม Commit `.dev.vars`, `wrangler.sync.jsonc`, Secret, Live IDs หรือ local runtime files
-- ห้าม Deploy/เปลี่ยน Schedule/Apply Remote migration โดยไม่มี guarded DEV review
-- ห้ามตีความ 837-record fixture หรือ DEV channel 2 videos ว่าเป็น Customer Live UAT
+- ห้าม Commit `.dev.vars`, `wrangler.sync.jsonc`, Secret, Live IDs, DB runtime หรือ output artifacts
+- ห้าม Apply migration 0005 ขณะ Queue/Lock/Work ยังไม่ว่าง
+- ห้ามเปิด `MKT_DLQ_REDRIVE_ENABLED` ค้างไว้
+- ห้ามตีความ fixture 837 หรือ DEV 2-video smoke ว่าเป็น Customer Live UAT

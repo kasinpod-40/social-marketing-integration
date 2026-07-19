@@ -47,6 +47,7 @@ test('YouTube schedule and Analytics policy stay fail-closed in release examples
   assert.match(configText, /"MKT_YOUTUBE_ANALYTICS_ENABLED"\s*:\s*"false"/);
   assert.match(configText, /"MKT_YOUTUBE_ANALYTICS_TIME"\s*:\s*"07:50"/);
   assert.match(configText, /"MKT_YOUTUBE_ANALYTICS_LOOKBACK_DAYS"\s*:\s*"7"/);
+  assert.match(configText, /"MKT_DLQ_REDRIVE_ENABLED"\s*:\s*"false"/);
 });
 
 test('deployment examples keep every connector disabled until environment UAT', async () => {

@@ -2,9 +2,9 @@
 
 ## Task metadata
 
-- **Status:** `source_patch_verified_pending_migration_and_dev_redeploy`
+- **Status:** `source_fix_verified_pending_guarded_migration_and_dev_redeploy`
 - **Official clean baseline:** `v0.10.2-multi-channel-foundation-approved`
-- **Working candidate:** `v0.11.0 + generation-fence/outbox/terminal-lifecycle source patch`
+- **Working candidate:** `v0.11.0 + outbox-dispatch/redrive/quiesced-migration corrective patch`
 - **Blueprint:** `Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.2.xlsx`
 - **Connector status:** `active`
 - **Schedule:** `enabled_in_prior_verified_dev_deployment_source_patch_not_deployed`
@@ -75,32 +75,25 @@ Shared contract สำหรับ Instagram/Facebook/TikTok งานถัด�
 - ต้องมี large-account fixture ตามปริมาณจริงก่อน Activation
 - ใช้ shared `sync_work_*`/Sync Engine contracts; ห้ามสร้าง retry/upsert/pagination state machine ซ้ำในแต่ละ Connector
 
-## Implemented in this candidate
+## Implemented in the current candidate
 
-1. Generic Lark Schema Preview/Apply engine ที่รับ Schema contract ได้หลายชุด โดยรักษา Report compatibility
-2. YouTube RAW three-table installer ที่ derive จาก Blueprint กลาง
-3. Guarded commands:
-   - `npm run setup:youtube-schema`
-   - `CONFIRM_WRITE=YES npm run setup:youtube-schema:apply`
-4. YouTube DEV access preflight สำหรับ Public Data API และ optional Owner Analytics OAuth
-5. API key / OAuth refresh-token runtime clients พร้อม cache และ placeholder rejection
-6. RAW Channel, Video และ Analytics mapping พร้อม response-grain validation
-7. `MKT_Accounts`, `MKT_Content`, `MKT_Content_Daily` destination plans โดย Plan ทุกตารางก่อน Write และเขียน Account เป็นลำดับสุดท้าย
-8. Manual Queue job `youtube.channel.organic.sync` ที่รันได้เฉพาะ `trigger=manual_uat`
-9. Separate UAT gate `MKT_CONNECTOR_YOUTUBE_UAT_ENABLED=true` ขณะที่ normal `MKT_CONNECTOR_YOUTUBE_ENABLED=false`
-10. D1 checkpoint, recent-window incremental mode และ periodic full reconciliation
-11. Reuse Sync Log, distributed lock/renewal, bounded retry, DLQ และ System Alerts
-12. Reconciliation warning หลังรอบสำเร็จเมื่อ Video resource หาย โดยไม่ทำให้ Queue retry ซ้ำ
-13. Dry-run/manual payload helper `npm run job:youtube-uat`
-14. No YouTube Scheduler producer
-15. Analytics reconciliation ตรวจเฉพาะ Stable keys ที่เคยพบใน Video/ช่วงวันที่ที่ re-fetch จริง; แถวที่หายถูก retain และสร้าง `YOUTUBE_ANALYTICS_RECONCILIATION_REQUIRED`
-16. D1 warning alert เป็น Primary gate จริง: Persist ไม่สำเร็จกลายเป็น Retryable failure และ Queue ห้าม Ack
-17. Operational redaction กลางสำหรับ Worker logs, D1 payload/error และ Lark reliability mirror โดยไม่เปิดเผย Channel/Video/Handle/Lock identity
-18. Release examples ใช้ Placeholder เท่านั้นและ Repository hygiene ไม่มี macOS metadata
-19. Promote Connector/Job เป็น `active` และยกเลิก UAT-only runtime gate
-20. Data API schedule แยก Cron ทุก 6 ชั่วโมง โดยไม่ enqueue TikTok/Report ซ้ำ
-21. Owner Analytics วันละครั้งเวลา 07:50 Asia/Bangkok พร้อม bounded 7-day completed-Pacific overlap
-22. Queue payload ลดสิทธิ์ Analytics ได้ แต่ห้ามยกระดับเหนือ Runtime feature flag
+1. YouTube Organic connector/job เป็น `active` และใช้ normal runtime gate `MKT_CONNECTOR_YOUTUBE_ENABLED`; UAT-only gate/route เดิมเป็นประวัติและไม่ใช่ Current contract
+2. Data API schedule ใช้ dedicated Cron ทุก 6 ชั่วโมง; Owner Analytics ทำงานวันละครั้งเวลา 07:50 Asia/Bangkok ด้วย completed-Pacific 7-day overlap
+3. Full backfill เดิน uploads playlist ครบทุกหน้า; Incremental Content จำกัด recent 100 ได้ แต่ Analytics ใช้ tracked inventory ทั้งหมดจาก D1
+4. D1 `sync_work_*` เก็บ Source page/resource chunk/Analytics page แบบ resumable และ exact queried-video completeness
+5. Durable generation fence + per-stage/per-write/pre-checkpoint guard ป้องกัน stale Retry เขียนทับ Job ใหม่; Superseded run บันทึกเป็น `skipped/SYNC_WORK_SUPERSEDED`
+6. Analytics row ทุกแถวตรวจ requested Video, Owner channel และ Date range ก่อน Durable staging
+7. Warning ใช้ deterministic outbox; Completed work replay มาก่อน Generation claim และ Worker drain Pending warning แบบ bounded ก่อน Job ใหม่ จึงไม่สูญหายเมื่อ B ใหม่เข้าก่อน A Retry
+8. Dry-run warning อยู่เฉพาะ Result/Sync Log และไม่สร้าง Business System Alert
+9. Permanent ทั้ง reliability-handled/unhandled และ DLQ เก็บ Terminal audit พร้อม Dead-letter payload; Operational payload ถูก Redact ส่วน `replay_payload_json` รักษา Queue scope แต่ตัด Secret/Token
+10. Admin Redrive ใช้ Job กลาง `system.dead-letter.redrive`, ปิดด้วย `MKT_DLQ_REDRIVE_ENABLED=false` เป็นค่าเริ่มต้น, จอง requestedAt/reference แบบ Durable และส่ง Queue ด้วย Generation ใหม่โดยไม่ Resume terminal staging
+11. Migration 0005 Fail closed เมื่อยังมี Work/Active lock, Bootstrap generation fence จาก Business checkpoint ล่าสุด และเพิ่ม Outbox/Redrive lifecycle แบบ additive
+12. Guarded rollout และ Rollback ใช้ `docs/youtube-resumable-migration-runbook.md`
+13. Release examples ทั้ง `.dev.vars.example` และ `wrangler.sync.example.jsonc` ปิด Connector/Schedule/Redrive เป็นค่าเริ่มต้น และไม่มี Live ID/Secret
+
+### Historical UAT-only path
+
+รายการ `trigger=manual_uat`, `MKT_CONNECTOR_YOUTUBE_UAT_ENABLED`, `npm run job:youtube-uat` และสถานะ “No YouTube Scheduler producer” ใช้เฉพาะก่อน Activation ระหว่างวันที่ 2026-07-15–2026-07-17 และถูกยกเลิกแล้ว ห้ามใช้เป็น Current deployment contract
 
 ## Live DEV progress and remaining external actions
 
@@ -287,10 +280,10 @@ Shared contract สำหรับ Instagram/Facebook/TikTok งานถัด�
 
 ## Work review
 
-- **Technical architecture:** large-account/resumable patch implemented, Source gates passed, D1 migration applied และ DEV patch smoke passed
-- **Data model:** approved — Blueprint v0.10.2
-- **Release decision:** DEV patch active แต่ Customer 837-video Live UAT ยังเป็น Production release blocker; Production remains disabled
-- **Recommended commit for current delta:** `docs: record YouTube large-account DEV rollout`
+- **Technical architecture:** Local corrective patch closes cross-generation warning delivery, exact durable redrive payload, superseded-run semantics and migration quiesce/bootstrap gaps
+- **Data model:** approved — Blueprint v0.10.2; Migration 0005 remains additive and has not been applied remotely
+- **Release decision:** Source package must pass full gates and guarded DEV rollout in `docs/youtube-resumable-migration-runbook.md`; Customer 837-video Live UAT remains the Production blocker
+- **Recommended commit for current delta:** `fix: close YouTube resumable reliability gaps`
 
 ### Independent review reliability hardening — 2026-07-19
 
@@ -305,3 +298,31 @@ Shared contract สำหรับ Instagram/Facebook/TikTok งานถัด�
 - **Remaining risks:** ต้อง review SQL บน target D1, apply additive migration 0005 ก่อน deploy source ใหม่, ทำ controlled DEV stale-generation/outbox/terminal smoke และ Customer-owned 837-video Live UAT. In-memory 837 fixture ไม่แทน Live customer quota/data behavior. Cleanup ทำงานแบบ bounded opportunistic หลัง Reliability runner ปล่อย Lock; หากไม่มีงานนานควรเพิ่ม scheduled maintenance หลังมี operational evidence. Work ที่ยังมี pending warning จะถูกเก็บไว้โดยตั้งใจจน Alert delivery/repair สำเร็จ.
 - **Rollback:** ปิด `MKT_SCHEDULE_YOUTUBE_ENABLED` และ `MKT_YOUTUBE_ANALYTICS_ENABLED`, redeploy prior known-good Worker. Migration 0005 เป็น additive จึงเก็บไว้ได้; prior codeไม่อ่าน columns/tables ใหม่. ห้ามลบ Business checkpoint/Lark rows. Terminal/completed staging ลบได้ภายหลังด้วย guarded cleanup เท่านั้น.
 - **Commit suggestion:** `fix: harden YouTube resumable sync`
+
+### ChatGPT Work corrective patch — 2026-07-19
+
+- **Review gaps closed:** Pending warning can be drained independently of the current Generation; Completed retry replays before fence claim; Permanent reliability-handled failure persists the same durable Dead-letter contract as unhandled failure; Migration rollout is quiesced and bootstrapped from Business checkpoints
+- **Outbox:** Worker drains Pending warning before a new YouTube Generation; deterministic Alert upsert + delivered marker remains idempotent when Alert write or delivered-marker write fails
+- **Redrive:** `dead_letter_jobs` separates operational-redacted `payload_json` from secret-filtered `replay_payload_json`; Application validates the candidate read-only before reservation and D1 rechecks forbidden job types before `redrive_pending`, so recursive/invalid commands cannot mutate an open incident
+- **Migration safety:** 0005 rejects any remaining pre-migration work or unexpired lock before ALTER statements and seeds `sync_generation_fences` from `sync_cursors.last_successful_sync_at`; exact rollout/rollback steps are in `docs/youtube-resumable-migration-runbook.md`
+- **Semantics:** Superseded work is `skipped`, not success; Dry-run warnings do not create Business alerts
+- **Source tests added:** A warning failure → B newer generation → A retry; global bounded Outbox drain; durable Redrive retry after Queue send; `privateKey`/`signingKey`/`credential` filtering in Operational and Replay D1 payloads; read-only recursive-redrive rejection with D1 state remaining `open`; migration guard/bootstrap contract; handled/unhandled Permanent payload persistence
+- **Verification:** Unit/Integration 426/426, Workers runtime 8/8, Report reliability 64/64, focused corrective 74/74, Architecture 113/238/0, repository hygiene, offline audit 0, Wrangler dry-run 534.26/106.71 KiB และ SQLite migration replay/guard ผ่าน
+- **Source handoff archive:** 264 source files; ไม่มี `.DS_Store`, AppleDouble, `RELEASE_MANIFEST.txt`, local config, Secret, dependency หรือ generated output. Official Release archive/manifest ต้องสร้างใหม่หลัง Commit จาก clean Git tree เท่านั้น
+- **Live mutation:** none — no YouTube/Lark API, Remote D1, Queue, deploy, schedule, Secret or Production change
+- **Remaining external gates:** full local/clean-archive gates, guarded DEV migration/deploy smoke, then Customer-owned 837-video Full/Incremental/Analytics UAT
+- **Code X follow-up:** ยืนยันและปิด 3 finding หลัง review: Secret matcher coverage, Source-root hygiene/manifest truthfulness และ recursive redrive state mutation
+- **Commit suggestion:** `fix: close YouTube reliability review gaps`
+
+### Scalar Secret redaction follow-up — 2026-07-19
+
+- **Root cause:** Operational และ Queue-replay sanitizers ข้ามการ Redact เมื่อค่าของ Secret-looking key เป็น Number หรือ Boolean เพื่อรักษา completeness counters ที่เป็นตัวเลข แต่ใช้เงื่อนไขเดียวกันกับ true Secret keys จึงทำให้ค่าอย่าง numeric `password`, `accessToken`, `privateKey` หรือ `credential` สามารถถูก Persist ลง D1 แบบไม่ปกปิด
+- **Implementation:** แยก Operational true-secret matcher ออกจาก Identity/count matcher; true Secret ที่ไม่ใช่ `null` ถูก Redact โดยไม่ขึ้นกับชนิดค่า ขณะที่ numeric operational counters เช่น `missingVideoIds: 2` ยังคงใช้วินิจฉัยได้. Queue replay ใช้ secret allowlist เดิมเพื่อรักษา `channelId`/`pageToken` ที่จำเป็นต่อ Replay แต่ Redact scalar Secret ทุกชนิด
+- **Files changed:** `packages/shared/src/errors/runtime-error.js`, `tests/shared/runtime-error.test.js`, `tests/reliability/d1-reliability-store.test.js`, `docs/current-task.md`, `PROJECT_BRAIN.md`, `README.md`, `CHANGELOG.md` และ `RELEASE_TEST_REPORT.md`
+- **Commands run:** focused Node tests, `npm ci`, `npm run check`, `npm test`, `npm run test:report-reliability`, `npm audit --offline`, `npm run deploy:dry-run`, `git diff --check` และ final repository status/diff inspection
+- **Tests:** Focused sanitizer/D1 persistence 12/12 ครอบคลุม numeric/boolean `password`, `accessToken`, `privateKey`, `signingKey`, `credential` และ `credentials`; ตรวจว่า Operational count ยังอยู่, Replay scope ยังอยู่ และ raw scalar Secret ไม่ปรากฏใน JSON ที่ Persist
+- **Regression results:** Unit/Integration 426/426, Workers runtime 8/8, Report reliability 64/64, Architecture 113/238/0, repository hygiene pass, offline audit 0 และ Wrangler dry-run 534.48/106.76 KiB ผ่าน
+- **Live UAT/Deployment:** ไม่มี — ไม่เรียก YouTube/Lark API, ไม่เขียน Remote D1/Queue, ไม่ Deploy, ไม่เปลี่ยน Schedule/Secret/Production
+- **Remaining risks:** Sanitizer เป็น key-name policy จึงต้องเพิ่ม naming variant เมื่อมี Credential contract ใหม่; External gate เดิมยังคงเป็น guarded migration 0005/DEV smoke และ Customer-owned 837-video Live UAT
+- **Rollback:** Revert matcher/test/documentation delta นี้ได้โดยไม่แตะ Migration, D1 rows, Lark rows, Stable keys หรือ Schedule; ไม่แนะนำให้ rollback ในระบบที่รับ payload จาก Boundary ที่ไม่บังคับ Secret เป็น String
+- **Commit suggestion:** `fix: redact scalar secrets in queue payloads`

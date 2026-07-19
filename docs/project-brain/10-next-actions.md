@@ -2,19 +2,19 @@
 
 ## Shared task workflow
 
-ChatGPT Work and Codex share `docs/current-task.md`. YouTube large-account patch เดิม active ใน DEV และ smoke ผ่านกับช่อง 2 videos; generation-fence/outbox/terminal-lifecycle source patch ใหม่ผ่าน local gates แต่ยังไม่ Apply migration 0005 หรือ Deploy. Customer 837-video Live UAT ยังไม่รัน. All other unverified connectors remain fail-closed.
+ChatGPT Work and Codex share `docs/current-task.md`. Large-account patch `44377ce` ยัง active ใน DEV กับ migration 0004/ช่อง 2 videos. Corrective source candidate ปิด outbox/redrive/migration transition gaps แล้วแต่ยังไม่ Apply migration 0005 หรือ Deploy. Production และ Connector อื่นยัง fail-closed; Customer 837-video Live UAT ยังไม่รัน.
 
 ## Immediate post-review handoff
 
-1. Review/Commit/Push source patch `fix: harden YouTube resumable sync`
-2. Apply additive migration 0005 ใน DEV แล้ว verify fence/outbox/lifecycle/indexes ก่อน deploy
-3. Deploy source patch แบบ guarded; smoke stale-generation no-op, warning replay, terminal/DLQ cleanup และ healthy Full/Incremental/Analytics
-4. Keep Production disabled; ห้ามตีความ DEV 2-video smoke หรือ deterministic 837 fixture เป็น Customer 837-video Live UAT
-5. เตรียม Customer-owned Channel, matching Owner OAuth, Lark Base และ Cloudflare DEV/Staging profile แยกจาก developer resources
-6. รัน Initial Full และยืนยัน tracked inventory 837, 17 playlist pages/17 resource chunks, checkpoint 837 และ no duplicate
-7. รัน Content incremental 100 + Analytics tracked/selected/queried 837 พร้อม failed=0/completeness=`complete`
-8. Observe one natural 07:50 Asia/Bangkok Analytics run ใน environment 837 และยืนยัน counters/alerts
-9. งาน Instagram/Facebook/TikTok ถัดไปต้องสร้าง large-account fixtures และ reuse generation/outbox/terminal `sync_work_*` contracts
+1. ลบ local `.DS_Store`/AppleDouble/`RELEASE_MANIFEST.txt`, Review final diff แล้ว Commit/Push `fix: close YouTube reliability review gaps`
+2. ทำตาม `docs/youtube-resumable-migration-runbook.md`: ปิด YouTube Schedule/Analytics, drain Queue, ยืนยัน work/active lock = 0
+3. Apply migration 0005; verify fence/outbox/lifecycle/redrive columns และ legacy checkpoint bootstrap ก่อน Deploy
+4. Deploy Source โดย Schedule/Analytics/Redrive ยังปิด แล้วทำ healthy sync + stale-generation + cross-generation warning drain + Permanent/DLQ/redrive smoke
+5. เปิด YouTube Schedule/Analytics กลับเมื่อ Smoke ผ่าน; `MKT_DLQ_REDRIVE_ENABLED` ต้องกลับเป็น `false`
+6. Keep Production disabled; ห้ามตีความ DEV 2-video smoke หรือ deterministic 837 fixture เป็น Customer 837-video Live UAT
+7. เตรียม Customer-owned Channel, matching Owner OAuth, Lark Base และ Cloudflare DEV/Staging profile
+8. รัน Initial Full 837, Content incremental 100 + Analytics tracked/selected/queried 837 และ Observe natural 07:50 run
+9. Instagram/Facebook/TikTok งานถัดไปต้อง reuse generation/outbox/terminal/redrive contracts และมี large-account fixture ของตนเอง
 
 ## Clean candidate verification for v0.11.0
 

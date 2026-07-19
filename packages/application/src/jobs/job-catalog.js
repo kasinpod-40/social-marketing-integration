@@ -18,6 +18,7 @@ export const JOB_TYPES = Object.freeze({
   DAILY_REPORT_GENERATE: 'report.daily.generate',
   WEEKLY_REPORT_GENERATE: 'report.weekly.generate',
   LARK_NOTIFICATION_SEND: 'lark.notification.send',
+  DEAD_LETTER_REDRIVE: 'system.dead-letter.redrive',
 });
 
 export const JOB_IMPLEMENTATION_STATUS = Object.freeze({
@@ -92,6 +93,11 @@ const JOB_CATALOG = Object.freeze({
   [JOB_TYPES.LARK_NOTIFICATION_SEND]: freezeJob({
     type: JOB_TYPES.LARK_NOTIFICATION_SEND,
     implementationStatus: JOB_IMPLEMENTATION_STATUS.PLANNED,
+    connectorKey: null,
+  }),
+  [JOB_TYPES.DEAD_LETTER_REDRIVE]: freezeJob({
+    type: JOB_TYPES.DEAD_LETTER_REDRIVE,
+    implementationStatus: JOB_IMPLEMENTATION_STATUS.ACTIVE,
     connectorKey: null,
   }),
 });

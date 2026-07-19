@@ -8,7 +8,7 @@ Official clean baseline: `v0.10.2-multi-channel-foundation-approved`
 
 Current clean candidate: `v0.11.0` — YouTube Organic DEV active, deployed, and smoke-tested
 
-Current working delta: Independent-review source patch เพิ่ม durable generation fence, guarded checkpoint CAS, Analytics row-scope validation, warning outbox/completion replay และ terminal staging lifecycle ผ่าน Source gates แล้ว แต่ยังไม่ Apply migration 0005/Deploy. DEV ยังรัน Worker `2037232c-152a-4e26-95fa-fca044f65bd9` จาก commit `44377ce`; Customer inventory 837-video Live UAT ยังเป็น Production release blocker.
+Current working delta: corrective source patch ปิด cross-generation warning loss ด้วย bounded outbox drain + Completed replay ก่อน fence, ทำ Permanent ทุกเส้นทางมี exact secret-filtered Dead-letter replay payload, เพิ่ม disabled-by-default Admin redrive, บันทึก Superseded เป็น skipped และทำ migration 0005 fail-closed เมื่อยังมี Work/Lock พร้อม bootstrap fence จาก Business checkpoint. ยังไม่ Apply/Deploy; DEV ยังคง Worker `2037232c-152a-4e26-95fa-fca044f65bd9` จาก commit `44377ce`. Customer inventory 837-video Live UAT ยังเป็น Production release blocker.
 
 Current YouTube design artifact: `docs/Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.2.xlsx` — Technical review approved. v0.11.0 implements guarded Schema/Access, RAW/Canonical/Account writes, checkpoint/reconciliation and Reliability reuse. All DEV UAT gates passed. The connector is active in DEV with a six-hour Data API Cron and once-daily Owner Analytics using a bounded seven-day completed-Pacific overlap; Production remains disabled.
 
@@ -28,7 +28,13 @@ Multi-channel foundation ทั้ง 6 ส่วนถูกเพิ่มใ�
 
 **Permanent resumable-sync reliability rule — งานทุก generation ต้องมี durable comparable `requestedAt`, claim fence ก่อนเริ่ม, recheck ก่อน staging/Plan/ทุก write chunk/checkpoint และ checkpoint ต้อง guarded CAS. Warning ที่มีผลทางธุรกิจต้อง persist ใน outbox ก่อนทิ้ง state ที่ใช้สร้าง warning และใช้ deterministic alert ID. Permanent/DLQ work ต้องจบเป็น terminal พร้อม reason/audit/expiry; redrive สร้าง generation/work key ใหม่ และ cleanup ห้ามลบ active, locked หรือ pending-warning work.**
 
+**Corrective outbox/redrive/migration rule — Completed work ที่มี Pending warning ต้อง replay/drain ได้แม้ Fence ถูก Generation ใหม่ยึด; Operational payload กับ Replay payload ต้องแยกกัน โดย Replay เก็บเฉพาะ Queue contract และตัด Secret/Token. Reliability-handled Permanent ต้อง Persist Dead-letter payload เช่นเดียวกับ Unhandled. Migration 0005 ต้อง Quiesce Producer/Queue/Lock ก่อน Apply และ Bootstrap fence จาก Business checkpoint ล่าสุด. Admin redrive ปิดเป็นค่าเริ่มต้นและเปิดเฉพาะ Incident ที่อนุมัติ.**
+
+**Secret/redrive follow-up rule — Secret key matcher ต้องครอบคลุม private/signing key และ credential variants ทั้ง Operational/Replay และต้อง Redact ค่าที่ไม่ใช่ null ทุกชนิดรวม Number/Boolean โดยแยกจากกฎ Identity/count เพื่อรักษา Completeness counters. Redrive ต้อง Validate Candidate แบบ read-only ก่อน reservation และ Storage ต้องตรวจ forbidden job type ซ้ำก่อนเปลี่ยน status. Generated manifest/macOS metadata ห้ามอยู่ใน Source root.**
+
 Unreleased independent-review verification: Unit/Integration 407/407, Workers runtime 8/8, Report reliability 60/60, focused review 46/46, Architecture 111/233/0, repository hygiene, offline audit 0, empty/existing SQLite migration replay และ Wrangler dry-run 512.33/102.41 KiB ผ่าน. Clean archive 261 files และ fresh-extraction gates ผ่าน. ไม่มี Live API, Remote D1, Queue, deployment, schedule, Secret หรือ Production mutation.
+
+Corrective source verification after Code X/scalar-Secret follow-up: Unit/Integration 426/426, Workers runtime 8/8, Report reliability 64/64, scalar sanitizer/D1 focused 12/12, Architecture 113/238/0, repository hygiene, offline audit 0, Wrangler dry-run 534.48/106.76 KiB และ SQLite migration guard/bootstrap ผ่าน. Source handoff 264 files ไม่มี generated manifest/macOS metadata; ยังไม่มี Live API, Remote D1, Queue, deployment, schedule, Secret หรือ Production mutation.
 
 Unreleased large-account source verification: Unit/Integration 397/397, Workers runtime 8/8, Report reliability 60/60, focused YouTube/Scheduler/Queue/Reliability/Resumable-work 69/69, Architecture 111 source files / 232 local dependencies / 0 cycles, repository hygiene, offline npm audit 0, SQLite migration replay และ Wrangler dry-run 480.80 KiB / gzip 97.58 KiB ผ่าน.
 

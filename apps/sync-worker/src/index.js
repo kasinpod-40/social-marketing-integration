@@ -1,6 +1,7 @@
 import { createSystemAlert } from '../../../packages/domain/src/entities/system-alert.js';
 import { syncTikTokCreatorNativeToLark } from '../../../packages/application/src/use-cases/sync-tiktok-creator-native-to-lark.js';
 import { syncYouTubeOrganicToLark } from '../../../packages/application/src/use-cases/sync-youtube-organic-to-lark.js';
+import { redriveDeadLetterJob } from '../../../packages/application/src/use-cases/redrive-dead-letter-job.js';
 import { createLarkBitableClientFromEnv } from '../../../packages/connectors/src/lark/lark-bitable.client.js';
 import { LarkRecordRepository } from '../../../packages/connectors/src/lark/lark-record-repository.js';
 import { TableSyncEngine } from '../../../packages/sync-engine/src/table-sync-engine.js';
@@ -29,7 +30,10 @@ import {
   sanitizeOperationalText,
   sanitizeOperationalValue,
 } from '../../../packages/shared/src/errors/runtime-error.js';
-import { runReliableSync } from '../../../packages/reliability/src/reliable-sync-runner.js';
+import {
+  drainPendingSyncWarnings,
+  runReliableSync,
+} from '../../../packages/reliability/src/reliable-sync-runner.js';
 import { createCloudflareReliabilityRuntime } from '../../../packages/reliability/src/runtime-factory.js';
 import { D1ReliabilityStore } from '../../../packages/reliability/src/d1-reliability-store.js';
 import { CompositeReliabilityStore } from '../../../packages/reliability/src/composite-reliability-store.js';
@@ -176,19 +180,11 @@ export function createSyncWorker(dependencies = {}) {
           }
 
           try {
-            if (error?.reliabilityHandled === true) {
-              await markQueueWorkTerminal({
-                env,
-                message,
-                jobType: job?.body?.type,
-                reason: 'QUEUE_PERMANENT_FAILURE',
-                auditReference: `sync-run:${error?.syncRunId ?? message.id}`,
-              });
-            } else {
-              await recordPermanentQueueFailure({
-                env, batch, message, job, error, operationalStoreFactory,
-              });
-            }
+            // Permanent ทุกเส้นทางต้องมี Dead-letter payload สำหรับ Redrive
+            // แม้ Reliability runner จะบันทึก Sync failure/alert ไปแล้วก็ตาม.
+            await recordPermanentQueueFailure({
+              env, batch, message, job, error, operationalStoreFactory,
+            });
           } catch (persistenceError) {
             logQueueResult({
               ok: false,
@@ -214,6 +210,20 @@ export default syncWorker;
 /** Route Job type ไปยัง Use case จริง โดยตรวจ Implementation/Profile/Feature flag ตามลำดับ */
 export async function processJob(input) {
   const definition = assertJobImplemented(getJobDefinition(input.job?.body?.type));
+
+  if (definition.type === JOB_TYPES.DEAD_LETTER_REDRIVE) {
+    if (!readBoolean(input.env?.MKT_DLQ_REDRIVE_ENABLED, false)) {
+      throw permanentError('Dead-letter redrive is disabled for this environment', {
+        code: 'MKT_DLQ_REDRIVE_DISABLED',
+      });
+    }
+    return redriveDeadLetterJob({
+      store: new D1ReliabilityStore({ db: input.env?.MKT_STATE_DB }),
+      queue: input.env?.MKT_SYNC_QUEUE,
+      dlqId: requireJobText(input.job.body?.dlqId, 'dlqId'),
+    });
+  }
+
   const runtimeConfig = input.getRuntimeConfig();
   const connectorConfig = definition.connectorKey
     ? assertConnectorRunnable(runtimeConfig, definition.connectorKey)
@@ -234,6 +244,20 @@ export async function processJob(input) {
     const channelId = readYouTubeChannelIdFromEnv(input.env);
     const requestedAt = readYouTubeJobGeneration(input.job);
     const resumableWorkStore = infrastructure.getResumableWorkStore();
+
+    // Drain Warning เก่าก่อน Claim generation ใหม่ เพื่อไม่ให้ Completed incident
+    // สูญหายเมื่อ Cron/Manual job ใหม่มาถึงก่อน Retry เดิม.
+    await drainPendingSyncWarnings({
+      store: reliability.store,
+      warningOutboxStore: resumableWorkStore,
+      platform: 'youtube',
+      limit: 25,
+      onReliabilityError: (event) => logQueueResult({
+        ok: false,
+        scope: 'warning_outbox',
+        ...sanitizeReliabilityEvent(event),
+      }),
+    });
 
     const result = await runReliableSync({
       store: reliability.store,
@@ -559,7 +583,7 @@ async function processDeadLetterBatch(batch, env, storeFactory) {
         queueName: batch.queue,
         jobType: job?.body?.type ?? null,
         schemaVersion: job?.schemaVersion ?? null,
-        payload: message.body,
+        payload: job?.body ?? message.body,
         errorCode: 'QUEUE_RETRY_EXHAUSTED',
         errorMessage: 'Cloudflare Queue moved this message to the dead-letter queue after retry exhaustion',
         retryCount: readAttempts(message),
@@ -650,7 +674,7 @@ async function recordPermanentQueueFailure(input) {
     queueName: input.batch?.queue ?? null,
     jobType: input.job?.body?.type ?? null,
     schemaVersion: input.job?.schemaVersion ?? null,
-    payload: input.message.body,
+    payload: input.job?.body ?? input.message.body,
     errorCode: input.error?.code ?? 'PERMANENT_QUEUE_FAILURE',
     errorMessage: input.error instanceof Error ? input.error.message : String(input.error),
     retryCount: Math.max(0, readAttempts(input.message) - 1),

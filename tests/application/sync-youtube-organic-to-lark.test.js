@@ -803,6 +803,112 @@ test('warning outbox survives alert persistence failure and retry delivers one b
   assert.equal(new Set(alerts.map((alert) => alert.alertId)).size, 1);
 });
 
+
+
+test('old completed warning replays after a newer generation claims the cursor', async () => {
+  const repository = createRepository({
+    videos: [{
+      raw_video_key: 'youtube:channel_A:video_gone',
+      channel_id: 'channel_A',
+      video_id: 'video_gone',
+      view_count: 99,
+      source_availability_status: 'available',
+      fetched_at: 500,
+    }],
+  });
+  const stateStore = createStateStore({
+    cursor: null,
+    recordStates: [{
+      sourceRecordId: 'video_gone',
+      externalContentId: 'video_gone',
+      sourceHash: 'old',
+    }],
+  });
+  const resumableWorkStore = new InMemoryResumableWorkStore();
+  let sourceCalls = 0;
+  const publicClient = {
+    async getChannel() { sourceCalls += 1; return CHANNEL; },
+    async listUploadVideoIdsPage() { return { videoIds: [], nextPageToken: null }; },
+    async listVideos() { return []; },
+  };
+  let failOnce = true;
+  const alerts = [];
+  const reliabilityStore = {
+    async saveSyncRun() { return true; },
+    async saveSystemAlert(alert) {
+      if (failOnce && alert.alertType === 'sync_completed_with_warnings') {
+        failOnce = false;
+        throw transientError('Synthetic alert failure', {
+          code: 'D1_SYSTEM_ALERT_WRITE_FAILED',
+        });
+      }
+      alerts.push(alert);
+      return true;
+    },
+  };
+  const executeOld = ({ syncRunId, assertLockActive }) => syncYouTubeOrganicToLark({
+    repository,
+    syncEngine: new TableSyncEngine(),
+    incrementalStateStore: stateStore,
+    resumableWorkStore,
+    publicClient,
+    syncRunId,
+    assertLockActive,
+    workKey: 'youtube:warning-old',
+    generation: 10_000,
+    requestedAt: 10_000,
+    channelId: 'channel_A',
+    accountKey: 'youtube_dev',
+    customerProfile: 'dev_ft_pumkin',
+    cursorKey: 'youtube-lock',
+    metricDate: '2026-07-15',
+    syncMode: 'auto',
+    now: () => 10_000,
+    tables: TABLES,
+  });
+  const runOld = (syncRunId) => runReliableSync({
+    store: reliabilityStore,
+    lockManager: new InMemoryLeaseLockManager(),
+    warningOutboxStore: resumableWorkStore,
+    syncRunId,
+    customerProfile: 'dev_ft_pumkin',
+    accountKey: 'youtube_dev',
+    platform: 'youtube',
+    source: 'youtube_data_api',
+    syncType: 'organic_sync',
+    leaseMs: 60_000,
+    alertOnResultWarnings: true,
+    execute: executeOld,
+  });
+
+  await assert.rejects(
+    runOld('run-warning-old-1'),
+    (error) => error?.code === 'D1_SYSTEM_ALERT_WRITE_FAILED',
+  );
+
+  const newer = await resumableWorkStore.beginWork({
+    workKey: 'youtube:newer-message',
+    cursorKey: 'youtube-lock',
+    workType: 'youtube_organic_sync',
+    operationFingerprint: 'newer-operation',
+    generation: 20_000,
+    requestedAt: 20_000,
+  });
+  assert.equal(newer.superseded, false);
+  await resumableWorkStore.completeWork({
+    workKey: 'youtube:newer-message',
+    completion: { mode: 'write', warnings: [] },
+  });
+
+  await runOld('run-warning-old-2');
+
+  assert.equal(sourceCalls, 1);
+  assert.equal(alerts.length, 1);
+  assert.equal(alerts[0].alertType, 'sync_completed_with_warnings');
+  assert.equal(new Set(alerts.map((alert) => alert.alertId)).size, 1);
+  assert.equal((await resumableWorkStore.listPendingWarnings({ limit: 25 })).length, 0);
+});
+
 function createStateStore(checkpoint = null) {
   return {
     checkpoint,

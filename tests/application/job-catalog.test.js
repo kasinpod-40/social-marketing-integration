@@ -33,6 +33,14 @@ test('YouTube job is active after Live DEV reliability UAT passed', () => {
   assert.equal(assertJobImplemented(definition), definition);
 });
 
+
+test('dead-letter redrive job is active but remains environment-gated', () => {
+  const definition = getJobDefinition(JOB_TYPES.DEAD_LETTER_REDRIVE);
+  assert.equal(definition.connectorKey, null);
+  assert.equal(definition.implementationStatus, 'active');
+  assert.equal(assertJobImplemented(definition), definition);
+});
+
 test('unknown jobs remain unsupported permanent errors', () => {
   assert.throws(
     () => getJobDefinition('unknown.job'),

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   createLeaseHeartbeat,
+  drainPendingSyncWarnings,
   runReliableSync,
 } from '../../packages/reliability/src/reliable-sync-runner.js';
 import { InMemoryLeaseLockManager } from '../../packages/reliability/src/in-memory-lease-lock-manager.js';
@@ -378,4 +379,134 @@ test('warning alert primary persistence failure is retryable and prevents a succ
   assert.deepEqual(syncRuns.map((entry) => entry.status), ['running', 'success', 'failed']);
   assert.equal(syncRuns.at(-1).errorCode, 'D1_SYSTEM_ALERT_WRITE_FAILED');
   assert.equal(reliabilityEvents[0].stage, 'result_warning_alert_failed');
+});
+
+
+test('superseded generation is logged as skipped instead of success', async () => {
+  const store = createStore();
+  await runReliableSync({
+    store,
+    lockManager: new InMemoryLeaseLockManager(),
+    syncRunId: 'run-superseded',
+    customerProfile: 'dev_ft_pumkin',
+    accountKey: 'youtube_dev',
+    platform: 'youtube',
+    source: 'youtube_data_api',
+    syncType: 'organic_sync',
+    leaseMs: 60_000,
+    execute: async () => ({
+      mode: 'superseded',
+      rawRecords: 0,
+      warnings: [],
+    }),
+  });
+
+  const final = store.syncRuns.at(-1);
+  assert.equal(final.status, 'skipped');
+  assert.equal(final.errorCode, 'SYNC_WORK_SUPERSEDED');
+  assert.equal(final.details.completionMode, 'superseded');
+});
+
+test('dry-run reconciliation warnings are returned without creating business alerts', async () => {
+  const store = createStore();
+  const result = await runReliableSync({
+    store,
+    lockManager: new InMemoryLeaseLockManager(),
+    syncRunId: 'run-dry-warning',
+    customerProfile: 'dev_ft_pumkin',
+    accountKey: 'youtube_dev',
+    platform: 'youtube',
+    source: 'youtube_data_api',
+    syncType: 'organic_sync',
+    leaseMs: 60_000,
+    alertOnResultWarnings: true,
+    execute: async () => ({
+      dryRun: true,
+      mode: 'dry_run',
+      rawRecords: 1,
+      warnings: [{ code: 'YOUTUBE_VIDEO_RECONCILIATION_REQUIRED' }],
+    }),
+  });
+
+  assert.equal(result.warnings.length, 1);
+  assert.equal(store.syncRuns.at(-1).status, 'success');
+  assert.equal(store.alerts.length, 0);
+});
+
+test('pending warning drain delivers old completed warnings independently of the current generation', async () => {
+  const store = createStore();
+  const events = [{
+    outboxId: 'sync-warning:old',
+    workKey: 'youtube:old-message',
+    syncRunId: 'run-old',
+    warningType: 'sync_completed_with_warnings',
+    sourceKey: 'cursor-youtube',
+    payload: {
+      context: {
+        customerProfile: 'dev_ft_pumkin',
+        accountKey: 'youtube_dev',
+        platform: 'youtube',
+      },
+      warnings: [{ code: 'YOUTUBE_VIDEO_RECONCILIATION_REQUIRED' }],
+      reconciliation: { required: true },
+    },
+  }];
+  const delivered = [];
+  const failed = [];
+  const outbox = {
+    async listPendingWarnings({ limit }) {
+      assert.equal(limit, 25);
+      return events;
+    },
+    async markWarningDelivered(value) { delivered.push(value); },
+    async markWarningDeliveryFailed(value) { failed.push(value); },
+  };
+
+  const result = await drainPendingSyncWarnings({
+    store,
+    warningOutboxStore: outbox,
+    limit: 25,
+    now: () => Date.parse('2026-07-19T00:00:00.000Z'),
+  });
+
+  assert.deepEqual(result, { scanned: 1, delivered: 1 });
+  assert.equal(store.alerts.length, 1);
+  assert.equal(store.alerts[0].alertId, 'sync-warning:old');
+  assert.equal(store.alerts[0].syncRunId, 'run-old');
+  assert.equal(delivered.length, 1);
+  assert.equal(failed.length, 0);
+});
+
+test('pending warning drain records delivery failure and remains retryable', async () => {
+  const failures = [];
+  const outbox = {
+    async listPendingWarnings() {
+      return [{
+        outboxId: 'sync-warning:failed',
+        workKey: 'youtube:old-message',
+        syncRunId: 'run-old',
+        warningType: 'sync_completed_with_warnings',
+        sourceKey: 'cursor-youtube',
+        payload: { context: { platform: 'youtube' }, warnings: [] },
+      }];
+    },
+    async markWarningDelivered() { throw new Error('should not deliver'); },
+    async markWarningDeliveryFailed(value) { failures.push(value); },
+  };
+  const store = {
+    async saveSystemAlert() {
+      throw transientError('D1 unavailable', { code: 'D1_SYSTEM_ALERT_WRITE_FAILED' });
+    },
+    async saveSyncRun() {},
+  };
+
+  await assert.rejects(
+    drainPendingSyncWarnings({ store, warningOutboxStore: outbox, now: () => Date.parse('2026-07-19T01:00:00.000Z') }),
+    (error) => error?.code === 'D1_SYSTEM_ALERT_WRITE_FAILED' && error.retryable === true,
+  );
+  assert.deepEqual(failures, [{
+    outboxId: 'sync-warning:failed',
+    errorCode: 'D1_SYSTEM_ALERT_WRITE_FAILED',
+    updatedAt: Date.parse('2026-07-19T01:00:00.000Z'),
+  }]);
 });

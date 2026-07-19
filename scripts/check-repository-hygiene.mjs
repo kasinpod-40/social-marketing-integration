@@ -14,6 +14,7 @@ await requireFile('docs/Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.2.xlsx
 await requireFile('scripts/package-clean-release.mjs');
 await requireFile('scripts/verify-release-archive.mjs');
 await scanForMacMetadata(root);
+await checkGeneratedRootArtifacts();
 checkTrackedLocalOnlyFiles();
 await checkDevVarsPermission();
 await checkPortablePackageLock();
@@ -50,6 +51,17 @@ async function scanForMacMetadata(directory) {
   }
 }
 
+
+async function checkGeneratedRootArtifacts() {
+  for (const path of ['RELEASE_MANIFEST.txt']) {
+    try {
+      await access(join(root, path), constants.F_OK);
+      issues.push(`Generated release artifact must not exist in source root: ${path}`);
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
+    }
+  }
+}
 
 function checkTrackedLocalOnlyFiles() {
   const result = spawnSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' });

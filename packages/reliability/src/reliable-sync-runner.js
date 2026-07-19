@@ -92,6 +92,7 @@ export async function runReliableSync(input = {}) {
     const counts = summarizeSyncResult(result);
     const finishedAt = now();
 
+    const completionStatus = result?.mode === 'superseded' ? 'skipped' : 'success';
     await store.saveSyncRun(createSyncLogEntry({
       syncId: syncRunId,
       customerProfile: input.customerProfile,
@@ -99,7 +100,11 @@ export async function runReliableSync(input = {}) {
       platform: input.platform,
       source: input.source ?? result?.source,
       syncType: input.syncType,
-      status: 'success',
+      status: completionStatus,
+      ...(completionStatus === 'skipped' ? {
+        errorCode: 'SYNC_WORK_SUPERSEDED',
+        errorMessage: 'Superseded by a newer sync generation',
+      } : {}),
       startedAt,
       finishedAt,
       retryCount: input.retryCount ?? 0,
@@ -109,12 +114,15 @@ export async function runReliableSync(input = {}) {
         incremental: result?.incremental ?? null,
         sourceSummary: sanitizeOperationalValue(result?.sourceSummary ?? null),
         warningCount: Array.isArray(result?.warnings) ? result.warnings.length : 0,
+        completionMode: result?.mode ?? null,
         writeOutcomes: readWriteOutcomes(result),
       },
     }));
 
     const resultWarnings = Array.isArray(result?.warnings) ? result.warnings : [];
-    if (input.alertOnResultWarnings === true && resultWarnings.length > 0) {
+    if (input.alertOnResultWarnings === true
+      && result?.dryRun !== true
+      && resultWarnings.length > 0) {
       const warningOutboxId = normalizeOptionalId(result?.warningOutbox?.outboxId);
       try {
         await store.saveSystemAlert(createSystemAlert({
@@ -146,6 +154,21 @@ export async function runReliableSync(input = {}) {
           });
         }
       } catch (warningAlertError) {
+        if (warningOutboxId) {
+          try {
+            await input.warningOutboxStore?.markWarningDeliveryFailed?.({
+              outboxId: warningOutboxId,
+              errorCode: warningAlertError?.code ?? 'SYNC_WARNING_ALERT_WRITE_FAILED',
+              updatedAt: finishedAt,
+            });
+          } catch (outboxError) {
+            input.onReliabilityError?.({
+              stage: 'result_warning_outbox_failure_record_failed',
+              error: outboxError,
+              syncRunId,
+            });
+          }
+        }
         input.onReliabilityError?.({
           stage: 'result_warning_alert_failed',
           error: warningAlertError,
@@ -253,9 +276,93 @@ export async function runReliableSync(input = {}) {
   }
 }
 
+/**
+ * ส่ง Pending warning แบบ bounded โดยไม่ผูกกับ Generation ปัจจุบัน
+ * เพื่อให้ Warning ของ Completed work ยังถูกส่งได้แม้ Job ใหม่ Claim cursor ไปแล้ว.
+ */
+export async function drainPendingSyncWarnings(input = {}) {
+  const store = requireStore(input.store);
+  const warningOutboxStore = requireWarningOutboxDrainStore(input.warningOutboxStore);
+  const now = typeof input.now === 'function' ? input.now : () => Date.now();
+  const limit = positiveInteger(input.limit ?? 25, 'warningOutboxLimit');
+  const pending = await warningOutboxStore.listPendingWarnings({ limit });
+  let delivered = 0;
+
+  for (const event of pending) {
+    const deliveredAt = now();
+    const warnings = Array.isArray(event?.payload?.warnings) ? event.payload.warnings : [];
+    const context = event?.payload?.context ?? {};
+    try {
+      await store.saveSystemAlert(createSystemAlert({
+        alertId: normalizeId(event.outboxId),
+        syncRunId: normalizeOptionalId(event.syncRunId),
+        alertType: event.warningType ?? 'sync_completed_with_warnings',
+        severity: 'warning',
+        platform: context.platform ?? input.platform ?? 'system',
+        status: 'open',
+        errorCode: warnings[0]?.code ?? 'SYNC_RESULT_WARNING',
+        message: [
+          'รอบ Sync สำเร็จแต่ต้องตรวจ Reconciliation warning',
+          `sync_run_id=${event.syncRunId ?? 'unknown'}`,
+          `warning_count=${warnings.length}`,
+        ].join('\n'),
+        createdAt: deliveredAt,
+        details: {
+          customerProfile: context.customerProfile ?? null,
+          accountKey: context.accountKey ?? null,
+          warnings: sanitizeOperationalValue(warnings),
+          reconciliation: sanitizeOperationalValue(event?.payload?.reconciliation ?? null),
+        },
+      }));
+      await warningOutboxStore.markWarningDelivered({
+        outboxId: event.outboxId,
+        deliveredAt,
+      });
+      delivered += 1;
+    } catch (error) {
+      try {
+        await warningOutboxStore.markWarningDeliveryFailed({
+          outboxId: event.outboxId,
+          errorCode: error?.code ?? 'SYNC_WARNING_ALERT_WRITE_FAILED',
+          updatedAt: deliveredAt,
+        });
+      } catch (outboxError) {
+        input.onReliabilityError?.({
+          stage: 'warning_outbox_failure_record_failed',
+          error: outboxError,
+          outboxId: event.outboxId,
+        });
+      }
+      input.onReliabilityError?.({
+        stage: 'warning_outbox_delivery_failed',
+        error,
+        outboxId: event.outboxId,
+      });
+      throw error?.retryable === true
+        ? error
+        : transientError('Failed to deliver pending sync warning', {
+          code: error?.code ?? 'SYNC_WARNING_ALERT_WRITE_FAILED',
+          cause: error,
+          details: { outboxId: event.outboxId },
+        });
+    }
+  }
+
+  return Object.freeze({ scanned: pending.length, delivered });
+}
+
 function requireWarningOutboxStore(value) {
   if (typeof value?.markWarningDelivered !== 'function') {
     throw new TypeError('runReliableSync requires warningOutboxStore.markWarningDelivered');
+  }
+  return value;
+}
+
+function requireWarningOutboxDrainStore(value) {
+  if (typeof value?.listPendingWarnings !== 'function'
+    || typeof value?.markWarningDelivered !== 'function'
+    || typeof value?.markWarningDeliveryFailed !== 'function') {
+    throw new TypeError('Pending warning drain requires list/mark warning outbox methods');
   }
   return value;
 }

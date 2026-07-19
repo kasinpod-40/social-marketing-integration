@@ -1,19 +1,20 @@
-# Verification Report — YouTube resumable-sync reliability hardening
+# Verification Report — YouTube reliability review follow-up
 
 Date: 2026-07-19
 
-Candidate: `v0.11.0 source patch`
+Baseline: `2ef561861e293cb6e4817922131602d7c2d081c9`
 
-Base commit: `c1ea139`
+Candidate commit suggestion: `fix: close YouTube reliability review gaps`
 
 Production: disabled
 
-## Findings closed in Source
+## Review findings closed
 
-1. Stale Retry ถูกกันด้วย durable generation fence และ guarded checkpoint CAS
-2. Analytics row นอก requested video/channel/date scope ถูก reject ก่อน staging/write/checkpoint
-3. Reconciliation warning ถูก persist ใน deterministic outbox และ replay จาก durable completion
-4. Permanent/DLQ staging ถูก mark terminal พร้อม reason/audit/expiry และ guarded cleanup
+1. `privateKey`, `signingKey`, `credential` และ naming variants ถูก Redact ทั้ง `sanitizeOperationalValue()` และ `sanitizeQueueReplayValue()` ก่อนเขียน D1 `payload_json`/`replay_payload_json` รวมเมื่อค่าเป็น Number/Boolean
+2. Corrective Source root ไม่มี `.DS_Store`, AppleDouble หรือ generated `RELEASE_MANIFEST.txt`; Repository hygiene ตรวจ Root manifest เพิ่มและ Fail closed หากไฟล์ถูกวางกลับมา
+3. Redrive อ่าน Candidate และ Validate recursion/schema แบบ Read-only ก่อน Reservation; D1 rechecks forbidden job types ก่อน `UPDATE ... redrive_pending`
+4. Regression ตรวจ state จริงว่า recursive redrive โยน `DEAD_LETTER_REDRIVE_RECURSION_BLOCKED`, ไม่มี UPDATE และ Dead-letter คง `open`
+5. Outbox/generation/checkpoint/Analytics/terminal/migration safeguards จาก corrective patch เดิมยังผ่านครบ
 
 ## Verification
 
@@ -21,57 +22,50 @@ Production: disabled
 |---|---:|
 | `npm ci` | Passed |
 | `npm run check` | Passed |
-| Unit / Integration | 407 / 407 passed |
+| Unit / Integration | 426 / 426 passed |
 | Workers runtime | 8 / 8 passed |
-| Report reliability | 60 / 60 passed |
-| Focused review regressions | 46 / 46 passed |
-| Architecture | 111 source files / 233 dependencies / 0 cycles |
+| Report reliability | 64 / 64 passed |
+| Focused corrective suite | 74 / 74 passed |
+| Scalar Secret sanitizer/D1 | 12 / 12 passed |
+| Code X finding regressions | 30 / 30 passed |
+| Architecture | 113 source files / 238 dependencies / 0 cycles |
 | Repository hygiene | Passed |
 | `npm audit --offline` | 0 vulnerabilities |
 | Wrangler dry-run | Passed |
-| Bundle / Gzip | 512.33 KiB / 102.41 KiB |
-| Clean archive | 261 files; blocked/missing/sensitive/duplicate = 0 |
-| Fresh extraction gates | Passed |
+| Bundle / Gzip | 534.48 KiB / 106.76 KiB |
+| Source handoff | 264 files; no generated manifest or macOS metadata |
 
-Focused suite includes:
+## Security evidence
 
-- A(view=100) failure → B(view=200) success → A retry superseded
-- Guarded checkpoint fence
-- 837 videos: Full pagination, incremental Content 100, Analytics 837, retry resume, no duplicate
-- Analytics video/channel/date scope mismatch
-- Warning alert fails once, completion replay delivers one deterministic business alert
-- Permanent handled/unhandled, retry exhaustion/DLQ, terminal mark, TTL cleanup, active/locked exclusion and redrive
-- Release path blocklist for nested ZIP, `.mkt-locks`, SQLite sidecars and macOS metadata
+- Operational and replay regression inputs included numeric values `111111`, `222222`, `123456`, `654321` and Boolean Secret values; none remained in persisted JSON values
+- Replay still preserves approved Business scope such as `channelId`, `metricDate` and pagination `pageToken`
+- Secret matching covers camelCase, snake_case and hyphenated key variants through normalization/regex contracts
+- Non-object or oversized payload remains persistable as an incident but is not eligible for automated replay
 
-## Migration replay
+## Redrive state evidence
 
-- Empty schema: `0001_initial.sql` through `0005_resumable_sync_reliability.sql` passed
-- Existing schema: `0001`–`0004`, inserted legacy work/cursor rows, then `0005` passed
-- Legacy work retained with backfilled generation/requested-at and active lifecycle
-- Legacy cursor retained; new generation fields default safely until a guarded YouTube checkpoint writes them
+- Application performs read-only candidate validation before calling `prepareDeadLetterRedrive()`
+- D1 `prepareDeadLetterRedrive()` accepts `forbiddenJobTypes` and blocks recursion before any state update
+- Regression uses a stateful fake D1 row: initial `status=open`; after rejection remains `open`; no SQL containing `SET status = 'redrive_pending'` was executed
+- Retry after Queue send still reuses persisted `requestedAt` and `redriveReference`
 
-## Release hygiene
+## Hygiene evidence
 
-Blocked from clean archives:
-
-- `.dev.vars`, local `.env`, `wrangler.sync.jsonc`, Secrets and Live IDs
-- `.git`, `.wrangler`, `node_modules`, outputs, coverage and local release directories
-- `__MACOSX`, `.DS_Store`, AppleDouble, logs and `.mkt-locks`
-- nested `.zip`, SQLite DB/WAL/SHM runtime files
+- `npm run check` passed after scanning the complete corrective workspace
+- Source root contains no `.DS_Store`, `._*`, `__MACOSX` or `RELEASE_MANIFEST.txt`
+- Hygiene now treats a root `RELEASE_MANIFEST.txt` as an error because it is generated release output, not source
+- Official `npm run release:package` was intentionally not used for this uncommitted candidate; manifest and SHA must be generated after Commit from a clean Git tree
 
 ## Not executed
 
-- No YouTube/Lark Live API mutation
+- No YouTube/Lark Live API call
 - No Remote D1 migration
-- No Queue message
-- No Cloudflare deployment
-- No DEV schedule or Secret change
+- No Queue message or Redrive
+- No Cloudflare deploy
+- No DEV schedule/Secret change
+- No Git Commit/Push
 - No Production change
 
-## Remaining release gates
+## Remaining external gates
 
-Apply additive migration 0005 in DEV, deploy guarded patch, run controlled generation/outbox/terminal smoke, then run Customer-owned 837-video Live UAT. DEV 2-video smoke and deterministic fixtures do not replace Customer UAT.
-
-## Rollback
-
-Disable YouTube Schedule/Analytics and redeploy the prior known-good Worker. Migration 0005 is additive and may remain applied; do not delete Business checkpoints or Lark records.
+Review the final diff, Commit on a dedicated branch, rerun gates from the clean Git checkout, then follow `docs/youtube-resumable-migration-runbook.md`. Customer-owned 837-video Full/Incremental/Analytics UAT remains required before Production.

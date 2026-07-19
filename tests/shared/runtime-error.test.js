@@ -5,6 +5,7 @@ import {
   sanitizeOperationalError,
   sanitizeOperationalText,
   sanitizeOperationalValue,
+  sanitizeQueueReplayValue,
   transientError,
 } from '../../packages/shared/src/errors/runtime-error.js';
 
@@ -36,6 +37,12 @@ test('structured operational sanitization keeps counts but redacts stable keys, 
     missingAnalyticsStableKeys: ['youtube:channel_A:video_A:2026-07-14'],
     missingVideoIds: 2,
     apiToken: 'private',
+    privateKey: 111111,
+    signingKey: false,
+    credential: 222222,
+    password: 123456,
+    accessToken: 654321,
+    credentials: true,
     safe: 'ok',
   });
 
@@ -44,7 +51,14 @@ test('structured operational sanitization keeps counts but redacts stable keys, 
   assert.equal(sanitized.missingAnalyticsStableKeys, '[REDACTED]');
   assert.equal(sanitized.missingVideoIds, 2);
   assert.equal(sanitized.apiToken, '[REDACTED]');
+  assert.equal(sanitized.privateKey, '[REDACTED]');
+  assert.equal(sanitized.signingKey, '[REDACTED]');
+  assert.equal(sanitized.credential, '[REDACTED]');
+  assert.equal(sanitized.password, '[REDACTED]');
+  assert.equal(sanitized.accessToken, '[REDACTED]');
+  assert.equal(sanitized.credentials, '[REDACTED]');
   assert.equal(sanitized.safe, 'ok');
+  assert.doesNotMatch(JSON.stringify(sanitized), /111111|222222|123456|654321/u);
 });
 
 test('sync lock messages use the error code without exposing the scoped lock key', () => {
@@ -59,5 +73,44 @@ test('sync lock messages use the error code without exposing the scoped lock key
   assert.equal(
     sanitizeOperationalText('RAW TikTok source handle mismatch: expected @customer, detected @other'),
     'Source identity validation failed',
+  );
+});
+
+
+test('queue replay sanitization preserves routing scope while removing all secret material', () => {
+  const sanitized = sanitizeQueueReplayValue({
+    schemaVersion: 1,
+    type: 'youtube.channel.organic.sync',
+    requestedAt: '2026-07-19T00:00:00.000Z',
+    metricDate: '2026-07-18',
+    channelId: 'channel_A',
+    nested: {
+      refreshToken: 'refresh-private',
+      clientSecret: 'client-private',
+      privateKey: 111111,
+      signingKey: false,
+      credential: 222222,
+      password: 123456,
+      accessToken: 654321,
+      credentials: true,
+      safeId: 'video_A',
+      pageToken: 'page-2',
+    },
+  });
+
+  assert.equal(sanitized.channelId, 'channel_A');
+  assert.equal(sanitized.nested.safeId, 'video_A');
+  assert.equal(sanitized.nested.pageToken, 'page-2');
+  assert.equal(sanitized.nested.refreshToken, '[REDACTED]');
+  assert.equal(sanitized.nested.clientSecret, '[REDACTED]');
+  assert.equal(sanitized.nested.privateKey, '[REDACTED]');
+  assert.equal(sanitized.nested.signingKey, '[REDACTED]');
+  assert.equal(sanitized.nested.credential, '[REDACTED]');
+  assert.equal(sanitized.nested.password, '[REDACTED]');
+  assert.equal(sanitized.nested.accessToken, '[REDACTED]');
+  assert.equal(sanitized.nested.credentials, '[REDACTED]');
+  assert.doesNotMatch(
+    JSON.stringify(sanitized),
+    /refresh-private|client-private|111111|222222|123456|654321/u,
   );
 });

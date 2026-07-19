@@ -93,6 +93,8 @@
     "MKT_WEEKLY_REPORT_SETTING_KEY": "replace-with-weekly-report-setting-key",
     "MKT_MAIN_QUEUE_NAME": "social-mkt-sync-jobs",
     "MKT_DLQ_QUEUE_NAME": "social-mkt-sync-dlq",
+    // Redrive เป็น Manual admin action เท่านั้นและปิดทุก Release example
+    "MKT_DLQ_REDRIVE_ENABLED": "false",
     "MKT_QUEUE_RETRY_DELAY_SECONDS": "30",
 
     // เปิด Checkpoint/Fingerprint ใน D1 เพื่อประมวลผลปลายทางเฉพาะ RAW records ที่เปลี่ยน

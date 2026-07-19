@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased — YouTube outbox, redrive and migration transition closure — 2026-07-19
+
+### Fixed
+- Drains deterministic pending warning outbox entries before a newer YouTube generation claims the cursor, while completed retries replay without Source/Lark business writes even after a newer fence exists.
+- Persists Dead-letter records for both reliability-handled and unhandled Permanent failures; operational payload remains identity-redacted while an internal replay payload preserves required Queue scope and removes Secret/Token material.
+- Adds disabled-by-default `system.dead-letter.redrive` with a durable requested-at/reference reservation, new-generation Queue delivery, recursion blocking and idempotent completion.
+- Records superseded work as `skipped/SYNC_WORK_SUPERSEDED`; Dry-run warnings no longer create business System Alerts.
+- Expands both Operational and Queue-replay secret matching to cover `privateKey`, `signingKey`, `credential` and naming variants.
+- Redacts matched Secret fields for string, numeric and boolean values while keeping numeric operational completeness counters such as `missingVideoIds` available.
+- Validates a Dead-letter candidate before reservation and rechecks forbidden types inside D1, preventing recursive redrive from leaving an incident stuck in `redrive_pending`.
+
+### Migration and rollout safety
+- Makes migration 0005 fail closed before schema mutation when legacy resumable work or an unexpired lock remains.
+- Bootstraps generation fences from `sync_cursors.last_successful_sync_at` so pre-migration retries cannot claim an older generation after rollout.
+- Documents the required quiesce → verify → migrate → deploy → smoke → re-enable sequence in `docs/youtube-resumable-migration-runbook.md`.
+- Restores required safe hidden source files omitted by the uploaded macOS ZIP; no Live config, Secret, `node_modules`, output, or macOS metadata is included in the clean package.
+- Passed Unit/Integration 426/426, Workers runtime 8/8, Report reliability 64/64, scalar sanitizer/D1 focused 12/12, Architecture 113/238/0, hygiene, audit 0, Wrangler dry-run 534.48/106.76 KiB and SQLite migration replay/guard.
+- Corrective source handoff contains 264 source files and intentionally excludes generated `RELEASE_MANIFEST.txt`; official Release packaging must run only after Commit from a clean Git tree.
+- No Live API, Remote D1, Queue, deployment, schedule, Secret or Production mutation occurred in this corrective patch.
+
 ## Unreleased — YouTube resumable-sync reliability hardening — 2026-07-19
 
 ### Fixed

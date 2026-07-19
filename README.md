@@ -8,7 +8,7 @@ Working candidate: `v0.11.0`
 
 Official clean baseline: `v0.10.2-multi-channel-foundation-approved`
 
-Large-account patch commit `44377ce`: ข้อมูลจริง 837 videos ใช้ Full pagination, Content incremental 100 แยกจาก Analytics tracked scope 837, durable D1 page/chunk resume และ exact completeness counters. Independent-review source patch ถัดมาเพิ่ม generation fence/CAS, Analytics row-scope validation, warning outbox และ terminal TTL lifecycle; Source gates ผ่านแล้วแต่ migration 0005/DEV redeploy ยังไม่รัน และ Customer 837-video Live UAT ยังเป็น Production release blocker.
+Large-account DEV deployment ปัจจุบันยังอยู่ที่ commit `44377ce`/migration 0004. Working source candidate ปิด Reliability gaps ต่อจาก `2ef5618`: Pending warning ถูก drain ข้าม Generation, Permanent ทุกเส้นทางมี exact secret-filtered Dead-letter replay payload, Admin redrive ใช้ Generation ใหม่และปิดเป็นค่าเริ่มต้น, Superseded run เป็น skipped และ migration 0005 บังคับ Quiesce/Bootstrap แบบ fail-closed. Source นี้ยังไม่ Deploy; Customer 837-video Live UAT ยังเป็น Production release blocker.
 
 สถานะปัจจุบัน:
 
@@ -40,10 +40,13 @@ Large-account patch commit `44377ce`: ข้อมูลจริง 837 videos 
 - v0.11.0 เพิ่ม YouTube guarded Schema installer, DEV access preflight, RAW/Canonical/Account writes, D1 checkpoint, reconciliation, Reliability reuse และ Active scheduled route
 - DEV Public/Owner preflight, Lark Schema Apply และ Manual Queue core UAT สำหรับ YouTube ผ่านแล้วเมื่อ 2026-07-17; First Full, idempotent rerun, incremental และ Owner Analytics valid no-data สำเร็จโดยไม่เกิด Duplicate
 - Final DEV Worker เปิด normal YouTube, Owner Analytics และ YouTube Schedule แล้ว: Data API ทุก 6 ชั่วโมง และ Analytics วันละครั้งด้วย completed Pacific 7-day overlap
-- Post-activation review แก้ Analytics scope สำหรับช่องที่มีวิดีโอเกิน recent limit, fail-closed unsupported Analytics time และ explicit Cron routing แล้ว; ต้อง Commit/Review/Deploy patch ก่อนถือว่าปิด review บน DEV runtime
+- Post-activation review แก้ Analytics scope, supported Analytics time และ explicit Cron routing แล้ว; large-account patch 44377ce ถูก Deploy ใน DEV แต่ corrective source หลัง Independent review ยังไม่ Deploy
 - Large-account hardening ทดสอบ Full 837 videos/17 pages, Analytics 837 IDs/17 chunks, page/chunk retry resume, exact queried-ID guard และ Stable-key rerun; D1 Sync Log details เก็บ completeness counters
 - Large-account DEV rollout ใช้ Worker `2037232c-152a-4e26-95fa-fca044f65bd9`; Full/Incremental/Analytics success/retry 0, Analytics 2/2/2 complete, D1 staging/lock/open alert 0 และ Lark duplicate Stable key 0. DEV channel มี 2 videos จึงยังไม่แทน Customer 837-video Live UAT
-- Independent review hardening ป้องกัน stale Retry เขียนทับ generation ใหม่, reject Analytics row นอก requested scope ก่อน staging, replay warning จาก durable outbox ด้วย deterministic ID และ mark Permanent/DLQ staging เป็น terminal พร้อม guarded TTL cleanup. Patch นี้ยังไม่ Deploy และไม่ได้เปลี่ยน Live schedule/Secret/Production
+- Corrective reliability hardening เพิ่ม global bounded warning drain ก่อน Generation ใหม่, Completed replay ก่อน fence claim, exact secret-filtered Dead-letter replay payload, env-gated Admin redrive, quiesced migration guard/bootstrap, Dry-run no-business-alert และ Superseded=`skipped`. Patch นี้ยังไม่ Deploy และไม่ได้เปลี่ยน Live schedule/Secret/Production
+- Corrective source gates หลัง scalar-Secret follow-up ผ่าน Unit/Integration 426/426, Workers 8/8, Report reliability 64/64, scalar sanitizer/D1 focused 12/12, Architecture 113/238/0, hygiene, audit 0, Wrangler dry-run 534.48/106.76 KiB และ SQLite migration replay/guard
+- Code X follow-up ปิด Secret matcher (`privateKey`/`signingKey`/`credential`) รวมค่าชนิด Number/Boolean โดยยังรักษา operational counters, recursive redrive pre-mutation guard และ Source-root manifest/macOS hygiene แล้ว
+- Corrective source handoff 264 files ไม่มี generated manifest/macOS metadata; official Release archive ต้องสร้างหลัง Commit จาก clean Git tree
 - v0.11.0-rc.1 hardening เติม Analytics missing-key reconciliation แบบ retain/warn, บังคับ D1 warning alert failure ให้ Queue retry, Redact external identity จาก operational logs/stores และคืน safe examples เป็น Placeholder-only
 - Connector อื่นยังไม่ถูกเปิด: Meta/WooCommerce/Chatwoot/Ads เป็น `planned` จนกว่า Blueprint/Access/Live UAT ของแต่ละช่องทางผ่าน
 - Customer Production setup ยังไม่รวมใน Release นี้และต้องใช้ทรัพยากรของลูกค้า
@@ -51,6 +54,10 @@ Large-account patch commit `44377ce`: ข้อมูลจริง 837 videos 
 - YouTube Lark presentation correction ผ่าน focused 53/53 และ full Unit/Integration 377/377; Workers 6/6, Reliability 53/53, Architecture/Hygiene/Audit และ Wrangler dry-run 444.06/90.94 KiB ผ่าน พร้อม Final Live Preview เป็นศูนย์ drift
 - YouTube Reliability continuation ผ่าน Live lock retry, retry exhaustion → DLQ/D1/Lark Alert, safe restore และ Live read-only identity mismatch; final gates ผ่าน Unit 377/377, Workers 6/6, Reliability 53/53, Architecture 109/231/0, audit 0 และ dry-run 444.25/90.99 KiB
 - Fresh ZIP extraction ผ่าน gates ชุดเดียวกัน และ Archive verifier ไม่พบ blocked path, missing required path, sensitive finding หรือ duplicate artifact
+
+
+
+Guarded migration/deployment runbook: `docs/youtube-resumable-migration-runbook.md`
 
 รายละเอียด Contract และ Activation gates: `docs/multi-channel-foundation-v0.10.1.md`
 

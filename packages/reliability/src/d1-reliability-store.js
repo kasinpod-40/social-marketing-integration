@@ -1,10 +1,21 @@
 import {
+  permanentError,
   sanitizeOperationalText,
   sanitizeOperationalValue,
+  sanitizeQueueReplayValue,
   transientError,
 } from '../../shared/src/errors/runtime-error.js';
 
 const MAX_JSON_LENGTH = 50_000;
+const DEAD_LETTER_REDRIVE_SELECT_SQL = `
+  SELECT
+    dlq_id, message_id, queue_name, job_type, schema_version,
+    payload_json, replay_payload_json,
+    error_code, retry_count, status, redrive_requested_at,
+    redrive_reference, redriven_at
+  FROM dead_letter_jobs
+  WHERE dlq_id = ?
+`;
 
 /**
  * Operational store และ Distributed lease lock บน Cloudflare D1
@@ -114,22 +125,34 @@ export class D1ReliabilityStore {
 
   /** เก็บ Message ที่หยุดถาวรหรือมาจาก Cloudflare DLQ */
   async saveDeadLetter(deadLetter) {
+    const operationalPayloadJson = safeJson(deadLetter?.payload ?? {});
+    const replayPayloadJson = safeReplayJson(deadLetter?.payload ?? {});
     try {
       await this.db.prepare(`
         INSERT INTO dead_letter_jobs (
-          dlq_id, message_id, queue_name, job_type, schema_version, payload_json,
+          dlq_id, message_id, queue_name, job_type, schema_version,
+          payload_json, replay_payload_json,
           error_code, error_message, retry_count, status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(dlq_id) DO UPDATE SET
           message_id = excluded.message_id,
           queue_name = excluded.queue_name,
           job_type = excluded.job_type,
           schema_version = excluded.schema_version,
           payload_json = excluded.payload_json,
+          replay_payload_json = CASE
+            WHEN dead_letter_jobs.status IN ('redrive_pending', 'redriven')
+              THEN dead_letter_jobs.replay_payload_json
+            ELSE excluded.replay_payload_json
+          END,
           error_code = excluded.error_code,
           error_message = excluded.error_message,
           retry_count = excluded.retry_count,
-          status = excluded.status,
+          status = CASE
+            WHEN dead_letter_jobs.status IN ('redrive_pending', 'redriven')
+              THEN dead_letter_jobs.status
+            ELSE excluded.status
+          END,
           updated_at = excluded.updated_at
       `).bind(
         requireText(deadLetter?.dlqId, 'dlqId'),
@@ -137,7 +160,8 @@ export class D1ReliabilityStore {
         nullableText(deadLetter?.queueName),
         nullableText(deadLetter?.jobType),
         nullableInteger(deadLetter?.schemaVersion),
-        safeJson(deadLetter?.payload ?? {}),
+        operationalPayloadJson,
+        replayPayloadJson,
         nullableText(deadLetter?.errorCode),
         nullableOperationalText(deadLetter?.errorMessage, deadLetter?.errorCode),
         nonNegativeInteger(deadLetter?.retryCount ?? 0, 'retryCount'),
@@ -148,6 +172,103 @@ export class D1ReliabilityStore {
       return true;
     } catch (cause) {
       throw d1Error('Failed to persist dead letter', 'D1_DEAD_LETTER_WRITE_FAILED', cause);
+    }
+  }
+
+  /** อ่าน Dead-letter แบบไม่เปลี่ยนสถานะ เพื่อให้ Application validate recursion/schema ก่อนจอง Redrive */
+  async readDeadLetterRedriveCandidate(input = {}) {
+    const dlqId = requireText(input.dlqId, 'dlqId');
+    try {
+      const existing = await this.db.prepare(DEAD_LETTER_REDRIVE_SELECT_SQL).bind(dlqId).first();
+      assertDeadLetterRedriveEligibility(existing, dlqId);
+      return freezeDeadLetterRedriveCandidate(existing);
+    } catch (cause) {
+      if ([
+        'DEAD_LETTER_NOT_FOUND',
+        'DEAD_LETTER_NOT_REDRIVABLE',
+        'DEAD_LETTER_REPLAY_PAYLOAD_UNAVAILABLE',
+        'DEAD_LETTER_PAYLOAD_INVALID',
+      ].includes(cause?.code)) throw cause;
+      throw d1Error('Failed to read dead-letter redrive candidate', 'D1_DEAD_LETTER_REDRIVE_READ_FAILED', cause);
+    }
+  }
+
+  /** จอง Redrive generation แบบ Idempotent ก่อนส่ง Queue เพื่อให้ Retry ส่งซ้ำได้อย่างปลอดภัย */
+  async prepareDeadLetterRedrive(input = {}) {
+    const dlqId = requireText(input.dlqId, 'dlqId');
+    const requestedAt = nullableInteger(input.requestedAt) ?? this.now();
+    const redriveReference = requireText(
+      input.redriveReference ?? `redrive:${dlqId}:${requestedAt}`,
+      'redriveReference',
+    );
+    const forbiddenJobTypes = new Set(requireTextList(input.forbiddenJobTypes ?? [], 'forbiddenJobTypes'));
+    try {
+      const existing = await this.db.prepare(DEAD_LETTER_REDRIVE_SELECT_SQL).bind(dlqId).first();
+      assertDeadLetterRedriveEligibility(existing, dlqId);
+      // Legacy rows before migration 0005 ไม่มี exact replay payload และต้อง Fail closed.
+      const replayPayload = parseReplayPayload(existing.replay_payload_json);
+      const persistedJobType = nullableText(existing.job_type);
+      const replayJobType = nullableText(replayPayload.type);
+      if (forbiddenJobTypes.has(persistedJobType) || forbiddenJobTypes.has(replayJobType)) {
+        throw permanentError('A dead-letter redrive command cannot redrive itself', {
+          code: 'DEAD_LETTER_REDRIVE_RECURSION_BLOCKED',
+          details: { dlqId },
+        });
+      }
+      if (existing.status === 'redriven') return freezeDeadLetterRedriveRow(existing);
+
+      await this.db.prepare(`
+        UPDATE dead_letter_jobs
+        SET status = 'redrive_pending',
+            redrive_requested_at = COALESCE(redrive_requested_at, ?),
+            redrive_reference = COALESCE(redrive_reference, ?),
+            updated_at = ?
+        WHERE dlq_id = ? AND status IN ('open', 'redrive_pending')
+      `).bind(requestedAt, redriveReference, this.now(), dlqId).run();
+
+      const prepared = await this.db.prepare(DEAD_LETTER_REDRIVE_SELECT_SQL).bind(dlqId).first();
+      if (!prepared || !['redrive_pending', 'redriven'].includes(prepared.status)) {
+        throw permanentError('Dead-letter job is not eligible for redrive', {
+          code: 'DEAD_LETTER_NOT_REDRIVABLE',
+          details: { dlqId, status: prepared?.status ?? null },
+        });
+      }
+      return freezeDeadLetterRedriveRow(prepared);
+    } catch (cause) {
+      if ([
+        'DEAD_LETTER_NOT_FOUND',
+        'DEAD_LETTER_NOT_REDRIVABLE',
+        'DEAD_LETTER_REPLAY_PAYLOAD_UNAVAILABLE',
+        'DEAD_LETTER_PAYLOAD_INVALID',
+        'DEAD_LETTER_REDRIVE_STATE_INVALID',
+        'DEAD_LETTER_REDRIVE_RECURSION_BLOCKED',
+      ].includes(cause?.code)) throw cause;
+      throw d1Error('Failed to prepare dead-letter redrive', 'D1_DEAD_LETTER_REDRIVE_PREPARE_FAILED', cause);
+    }
+  }
+
+  /** ยืนยันว่า Queue send สำเร็จ; Retry หลัง Mark ล้มใช้ Generation เดิมและถูก fence กันซ้ำ */
+  async markDeadLetterRedriven(input = {}) {
+    const dlqId = requireText(input.dlqId, 'dlqId');
+    const redrivenAt = nullableInteger(input.redrivenAt) ?? this.now();
+    try {
+      const result = await this.db.prepare(`
+        UPDATE dead_letter_jobs
+        SET status = 'redriven',
+            redriven_at = COALESCE(redriven_at, ?),
+            updated_at = ?
+        WHERE dlq_id = ? AND status IN ('redrive_pending', 'redriven')
+      `).bind(redrivenAt, this.now(), dlqId).run();
+      if (readChanges(result) === 0) {
+        throw permanentError('Dead-letter redrive state was not prepared', {
+          code: 'DEAD_LETTER_NOT_REDRIVABLE',
+          details: { dlqId },
+        });
+      }
+      return true;
+    } catch (cause) {
+      if (cause?.code === 'DEAD_LETTER_NOT_REDRIVABLE') throw cause;
+      throw d1Error('Failed to complete dead-letter redrive', 'D1_DEAD_LETTER_REDRIVE_COMPLETE_FAILED', cause);
     }
   }
 
@@ -258,6 +379,95 @@ function nullableOperationalText(value, code) {
   return nullableText(sanitizeOperationalText(value, { code }));
 }
 
+function assertDeadLetterRedriveEligibility(row, dlqId) {
+  if (!row) {
+    throw permanentError('Dead-letter job was not found', {
+      code: 'DEAD_LETTER_NOT_FOUND',
+      details: { dlqId },
+    });
+  }
+  if (!['open', 'redrive_pending', 'redriven'].includes(row.status)) {
+    throw permanentError('Dead-letter job is not eligible for redrive', {
+      code: 'DEAD_LETTER_NOT_REDRIVABLE',
+      details: { dlqId, status: row.status },
+    });
+  }
+}
+
+function freezeDeadLetterRedriveCandidate(row) {
+  return Object.freeze({
+    dlqId: requireText(row.dlq_id, 'dlq_id'),
+    originalMessageId: nullableText(row.message_id),
+    queueName: nullableText(row.queue_name),
+    jobType: nullableText(row.job_type),
+    schemaVersion: row.schema_version === null ? null : nullableInteger(row.schema_version),
+    payload: parseReplayPayload(row.replay_payload_json),
+    errorCode: nullableText(row.error_code),
+    retryCount: nonNegativeInteger(row.retry_count ?? 0, 'retryCount'),
+    status: requireText(row.status, 'status'),
+    redriveRequestedAt: nullableInteger(row.redrive_requested_at),
+    redriveReference: nullableText(row.redrive_reference),
+    redrivenAt: nullableInteger(row.redriven_at),
+  });
+}
+
+function freezeDeadLetterRedriveRow(row) {
+  const redriveRequestedAt = nullableInteger(row.redrive_requested_at);
+  if (redriveRequestedAt === null) {
+    throw permanentError('Dead-letter redrive generation is missing', {
+      code: 'DEAD_LETTER_REDRIVE_STATE_INVALID',
+    });
+  }
+  return Object.freeze({
+    dlqId: requireText(row.dlq_id, 'dlq_id'),
+    originalMessageId: nullableText(row.message_id),
+    queueName: nullableText(row.queue_name),
+    jobType: nullableText(row.job_type),
+    schemaVersion: row.schema_version === null ? null : nullableInteger(row.schema_version),
+    payload: parseReplayPayload(row.replay_payload_json),
+    errorCode: nullableText(row.error_code),
+    retryCount: nonNegativeInteger(row.retry_count ?? 0, 'retryCount'),
+    status: requireText(row.status, 'status'),
+    redriveRequestedAt,
+    redriveReference: requireText(row.redrive_reference, 'redrive_reference'),
+    redrivenAt: nullableInteger(row.redriven_at),
+  });
+}
+
+function safeReplayJson(value) {
+  // Dead-letter persistence ต้องไม่กลายเป็น Poison retry เพราะ Payload ที่ Redrive ไม่ได้.
+  // เก็บ null แล้วให้ Admin redrive fail-closed แทน; Queue job ปกติถูก Normalize เป็น Object ก่อนถึงจุดนี้.
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const text = JSON.stringify(sanitizeQueueReplayValue(value));
+  if (typeof text !== 'string' || text.length > MAX_JSON_LENGTH) return null;
+  return text;
+}
+
+function parseReplayPayload(value) {
+  if (value === null || value === undefined || value === '') {
+    throw permanentError('Dead-letter replay payload is unavailable for this legacy record', {
+      code: 'DEAD_LETTER_REPLAY_PAYLOAD_UNAVAILABLE',
+    });
+  }
+  return parseStoredJson(value, 'replay_payload_json');
+}
+
+function parseStoredJson(value, fieldName) {
+  try {
+    const parsed = JSON.parse(String(value ?? '{}'));
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new TypeError(`${fieldName} must contain an object`);
+    }
+    return Object.freeze(parsed);
+  } catch (cause) {
+    throw permanentError('Dead-letter payload is invalid JSON', {
+      code: 'DEAD_LETTER_PAYLOAD_INVALID',
+      cause,
+      details: { fieldName },
+    });
+  }
+}
+
 function requireD1(value) {
   if (typeof value?.prepare !== 'function') {
     throw new TypeError('D1ReliabilityStore requires a D1 database binding');
@@ -275,6 +485,11 @@ function requireText(value, fieldName) {
 function nullableText(value) {
   if (value === null || value === undefined || value === '') return null;
   return requireText(String(value), 'text');
+}
+
+function requireTextList(value, fieldName) {
+  if (!Array.isArray(value)) throw new TypeError(`D1ReliabilityStore requires ${fieldName} to be an array`);
+  return value.map((entry, index) => requireText(entry, `${fieldName}[${index}]`));
 }
 
 function nullableInteger(value) {

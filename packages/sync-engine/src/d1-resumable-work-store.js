@@ -26,6 +26,49 @@ export class D1ResumableWorkStore {
     const now = safeTimestamp(this.now(), 'now');
     const work = requireWork(input, now);
     try {
+      // ตรวจ Work key เดิมก่อน Claim fence เพื่อให้ Completed warning replay ทำงานได้
+      // แม้มี Generation ใหม่ Claim cursor ไปแล้ว โดยไม่ย้อนเรียก Source หรือ Business write.
+      const existing = await this.db.prepare(`
+        SELECT operation_fingerprint, generation, lifecycle_status, completion_json
+        FROM sync_work_runs
+        WHERE work_key = ?
+      `).bind(work.workKey).first();
+      const existingGeneration = existing && existing.generation === undefined
+        ? work.generation
+        : Number(existing?.generation);
+      const lifecycleStatus = existing && existing.lifecycle_status === undefined
+        ? 'active'
+        : existing?.lifecycle_status;
+
+      if (existing && existingGeneration !== work.generation) {
+        throw permanentError('Resumable work key was reused with a different generation', {
+          code: 'SYNC_WORK_GENERATION_MISMATCH',
+          details: { generation: work.generation },
+        });
+      }
+      if (existing && lifecycleStatus === 'completed') {
+        return Object.freeze({
+          workKey: work.workKey,
+          resumed: true,
+          superseded: false,
+          completed: true,
+          completion: parseNullableJsonObject(existing.completion_json, 'completion_json'),
+        });
+      }
+      if (existing && ['terminal', 'superseded'].includes(lifecycleStatus)) {
+        return Object.freeze({
+          workKey: work.workKey,
+          resumed: false,
+          superseded: true,
+          completed: false,
+        });
+      }
+      if (existing && existing.operation_fingerprint !== work.operationFingerprint) {
+        throw permanentError('Resumable sync operation changed within the same active generation', {
+          code: 'SYNC_WORK_OPERATION_MISMATCH',
+          details: { generation: work.generation },
+        });
+      }
       const claimed = await this.db.prepare(`
         INSERT INTO sync_generation_fences (
           cursor_key, generation, requested_at, work_key, updated_at
@@ -57,55 +100,10 @@ export class D1ResumableWorkStore {
         });
       }
 
-      const existing = await this.db.prepare(`
-        SELECT operation_fingerprint, generation, lifecycle_status, completion_json
-        FROM sync_work_runs
-        WHERE work_key = ?
-      `).bind(work.workKey).first();
-      const existingGeneration = existing && existing.generation === undefined
-        ? work.generation
-        : Number(existing?.generation);
-      const lifecycleStatus = existing && existing.lifecycle_status === undefined
-        ? 'active'
-        : existing?.lifecycle_status;
-      const sameGeneration = existingGeneration === work.generation;
-      if (sameGeneration && lifecycleStatus === 'completed') {
-        return Object.freeze({
-          workKey: work.workKey,
-          resumed: true,
-          superseded: false,
-          completed: true,
-          completion: parseNullableJsonObject(existing.completion_json, 'completion_json'),
-        });
-      }
-      if (sameGeneration && ['terminal', 'superseded'].includes(lifecycleStatus)) {
-        return Object.freeze({
-          workKey: work.workKey,
-          resumed: false,
-          superseded: true,
-          completed: false,
-        });
-      }
-      if (sameGeneration
-        && lifecycleStatus === 'active'
-        && existing.operation_fingerprint !== work.operationFingerprint) {
-        throw permanentError('Resumable sync operation changed within the same generation', {
-          code: 'SYNC_WORK_OPERATION_MISMATCH',
-          details: { generation: work.generation },
-        });
-      }
-
-      const resumed = sameGeneration
+      const resumed = Boolean(existing)
         && lifecycleStatus === 'active'
         && existing.operation_fingerprint === work.operationFingerprint;
-      const statements = [];
-      if (existing && !resumed) {
-        statements.push(
-          this.db.prepare('DELETE FROM sync_work_units WHERE work_key = ?').bind(work.workKey),
-          this.db.prepare('DELETE FROM sync_work_phases WHERE work_key = ?').bind(work.workKey),
-        );
-      }
-      statements.push(this.db.prepare(`
+      await this.db.prepare(`
         INSERT INTO sync_work_runs (
           work_key, cursor_key, work_type, operation_fingerprint, status,
           generation, requested_at, lifecycle_status,
@@ -116,16 +114,10 @@ export class D1ResumableWorkStore {
           cursor_key = excluded.cursor_key,
           work_type = excluded.work_type,
           operation_fingerprint = excluded.operation_fingerprint,
-          generation = excluded.generation,
           requested_at = excluded.requested_at,
-          lifecycle_status = 'active',
-          terminal_reason = NULL,
-          abandoned_at = NULL,
-          completed_at = NULL,
-          expires_at = NULL,
-          audit_reference = NULL,
-          completion_json = NULL,
           updated_at = excluded.updated_at
+        WHERE sync_work_runs.generation = excluded.generation
+          AND sync_work_runs.lifecycle_status = 'active'
       `).bind(
         work.workKey,
         work.cursorKey,
@@ -135,8 +127,7 @@ export class D1ResumableWorkStore {
         work.requestedAt,
         now,
         now,
-      ));
-      await this.db.batch(statements);
+      ).run();
       return Object.freeze({
         workKey: work.workKey,
         resumed,
@@ -144,7 +135,9 @@ export class D1ResumableWorkStore {
         completed: false,
       });
     } catch (cause) {
-      if (cause?.code === 'SYNC_WORK_OPERATION_MISMATCH') throw cause;
+      if (['SYNC_WORK_OPERATION_MISMATCH', 'SYNC_WORK_GENERATION_MISMATCH'].includes(cause?.code)) {
+        throw cause;
+      }
       throw d1Error('Failed to begin resumable sync work', 'D1_SYNC_WORK_BEGIN_FAILED', cause);
     }
   }
@@ -377,16 +370,29 @@ export class D1ResumableWorkStore {
   }
 
   async listPendingWarnings(input = {}) {
-    const workKey = requireText(input.workKey, 'workKey');
+    const workKey = optionalText(input.workKey);
+    const limit = boundedPositiveInteger(input.limit ?? 100, 'limit', 500);
     try {
-      const result = await this.db.prepare(`
-        SELECT
-          outbox_id, work_key, sync_run_id, warning_type, source_key,
-          payload_json, status, delivery_attempts, delivered_at
-        FROM sync_warning_outbox
-        WHERE work_key = ? AND status = 'pending'
-        ORDER BY created_at ASC, outbox_id ASC
-      `).bind(workKey).all();
+      const statement = workKey
+        ? this.db.prepare(`
+          SELECT
+            outbox_id, work_key, sync_run_id, warning_type, source_key,
+            payload_json, status, delivery_attempts, delivered_at
+          FROM sync_warning_outbox
+          WHERE work_key = ? AND status = 'pending'
+          ORDER BY created_at ASC, outbox_id ASC
+          LIMIT ?
+        `).bind(workKey, limit)
+        : this.db.prepare(`
+          SELECT
+            outbox_id, work_key, sync_run_id, warning_type, source_key,
+            payload_json, status, delivery_attempts, delivered_at
+          FROM sync_warning_outbox
+          WHERE status = 'pending'
+          ORDER BY created_at ASC, outbox_id ASC
+          LIMIT ?
+        `).bind(limit);
+      const result = await statement.all();
       return Object.freeze(readRows(result).map((row) => Object.freeze({
         outboxId: requireText(row.outbox_id, 'outbox_id'),
         workKey: requireText(row.work_key, 'work_key'),
@@ -401,6 +407,24 @@ export class D1ResumableWorkStore {
     } catch (cause) {
       if (cause?.code?.startsWith?.('D1_SYNC_WORK_')) throw cause;
       throw d1Error('Failed to read sync warning outbox', 'D1_SYNC_WARNING_OUTBOX_READ_FAILED', cause);
+    }
+  }
+
+  async markWarningDeliveryFailed(input = {}) {
+    const outboxId = requireText(input.outboxId, 'outboxId');
+    const errorCode = optionalText(input.errorCode) ?? 'SYNC_WARNING_ALERT_WRITE_FAILED';
+    const updatedAt = safeTimestamp(input.updatedAt ?? this.now(), 'updatedAt');
+    try {
+      await this.db.prepare(`
+        UPDATE sync_warning_outbox
+        SET delivery_attempts = delivery_attempts + 1,
+            last_error_code = ?,
+            updated_at = ?
+        WHERE outbox_id = ? AND status = 'pending'
+      `).bind(errorCode, updatedAt, outboxId).run();
+      return true;
+    } catch (cause) {
+      throw d1Error('Failed to record sync warning delivery failure', 'D1_SYNC_WARNING_OUTBOX_DELIVERY_FAILED', cause);
     }
   }
 
@@ -466,7 +490,16 @@ export class D1ResumableWorkStore {
             audit_reference = COALESCE(audit_reference, ?),
             updated_at = ?
         WHERE work_key = ?
-          AND lifecycle_status IN ('active', 'completed', 'terminal', 'superseded')
+          AND (
+            lifecycle_status IN ('active', 'terminal', 'superseded')
+            OR (
+              lifecycle_status = 'completed'
+              AND NOT EXISTS (
+                SELECT 1 FROM sync_warning_outbox
+                WHERE work_key = sync_work_runs.work_key AND status = 'pending'
+              )
+            )
+          )
       `).bind(
         reason,
         now,

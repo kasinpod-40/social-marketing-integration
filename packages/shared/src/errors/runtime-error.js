@@ -2,7 +2,8 @@
  * ข้อผิดพลาดมาตรฐานของระบบที่ระบุได้ชัดว่าควร Retry หรือไม่
  */
 const OPERATIONAL_REDACTION = '[REDACTED]';
-const OPERATIONAL_SENSITIVE_KEY_PATTERN = /(?:secret|token|password|authorization|api[_-]?key|consumer[_-]?secret|lock[_-]?key|cursor[_-]?key|(?:channel|video|content)[_-]?ids?|(?:source|expected|actual|detected)[_-]?(?:channel|video|content)?[_-]?(?:ids?|handles?)|uploads[_-]?playlist[_-]?id|mismatched[_-]?videos?|stable[_-]?keys?)/iu;
+const OPERATIONAL_SECRET_KEY_PATTERN = /(?:secret|token|password|authorization|credentials?|(?:private|signing|api)[_-]?key|consumer[_-]?secret)/iu;
+const OPERATIONAL_IDENTITY_KEY_PATTERN = /(?:lock[_-]?key|cursor[_-]?key|(?:channel|video|content)[_-]?ids?|(?:source|expected|actual|detected)[_-]?(?:channel|video|content)?[_-]?(?:ids?|handles?)|uploads[_-]?playlist[_-]?id|mismatched[_-]?videos?|stable[_-]?keys?)/iu;
 const IDENTITY_ERROR_CODE_PATTERN = /(?:IDENTITY|SOURCE_HANDLE)_MISMATCH/u;
 const IDENTITY_MESSAGE_PATTERN = /(?:identity|source handle)\s+mismatch/iu;
 
@@ -116,6 +117,14 @@ export function sanitizeOperationalValue(value) {
   return sanitizeValue(value, new WeakSet());
 }
 
+/**
+ * สำเนา Queue payload สำหรับ Durable redrive ภายใน D1:
+ * รักษา Business routing/scope IDs ที่ต้องใช้ Replay แต่ตัด Secret/Token ทุกชนิดเสมอ.
+ */
+export function sanitizeQueueReplayValue(value) {
+  return sanitizeReplayValue(value, new WeakSet());
+}
+
 /** สรุป Error สำหรับ Boundary ที่ Persist/Log โดยไม่แก้ Error เดิมซึ่งยังใช้ Retry classification */
 export function sanitizeOperationalError(error) {
   const code = typeof error?.code === 'string' && error.code.trim()
@@ -150,13 +159,64 @@ function sanitizeValue(value, seen) {
 
   return Object.fromEntries(Object.entries(value).map(([key, nested]) => [
     key,
-    OPERATIONAL_SENSITIVE_KEY_PATTERN.test(key)
-      && typeof nested !== 'number'
-      && typeof nested !== 'boolean'
-      && nested !== null
+    shouldRedactOperationalValue(key, nested)
       ? OPERATIONAL_REDACTION
       : sanitizeValue(nested, seen),
   ]));
+}
+
+function sanitizeReplayValue(value, seen) {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'bigint') return value.toString();
+  if (typeof value === 'function' || typeof value === 'symbol' || value === undefined) return null;
+  if (value === null || typeof value !== 'object') return value;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  if (seen.has(value)) return '[CIRCULAR]';
+  seen.add(value);
+  if (Array.isArray(value)) return value.map((nested) => sanitizeReplayValue(nested, seen));
+  return Object.fromEntries(Object.entries(value).map(([key, nested]) => [
+    key,
+    isQueueReplaySecretKey(key)
+      && nested !== null
+      ? OPERATIONAL_REDACTION
+      : sanitizeReplayValue(nested, seen),
+  ]));
+}
+
+function shouldRedactOperationalValue(key, value) {
+  if (OPERATIONAL_SECRET_KEY_PATTERN.test(key)) return value !== null;
+  return OPERATIONAL_IDENTITY_KEY_PATTERN.test(key)
+    && typeof value !== 'number'
+    && typeof value !== 'boolean'
+    && value !== null;
+}
+
+function isQueueReplaySecretKey(key) {
+  const normalized = String(key ?? '')
+    .replace(/([a-z0-9])([A-Z])/gu, '$1_$2')
+    .replace(/[^A-Za-z0-9]+/gu, '_')
+    .toLowerCase();
+  if (normalized === 'token' || normalized === 'authorization' || normalized === 'password') {
+    return true;
+  }
+  return [
+    'secret',
+    'api_key',
+    'consumer_key',
+    'consumer_secret',
+    'client_secret',
+    'client_id',
+    'access_token',
+    'refresh_token',
+    'oauth_token',
+    'bearer_token',
+    'tenant_token',
+    'app_token',
+    'private_key',
+    'signing_key',
+    'credential',
+    'credentials',
+  ].some((fragment) => normalized.includes(fragment));
 }
 
 function requireMessage(value) {

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import syncWorker, { createSyncWorker } from '../../apps/sync-worker/src/index.js';
+import syncWorker, { createSyncWorker, processJob } from '../../apps/sync-worker/src/index.js';
 import {
   markReliabilityHandled,
   permanentError,
@@ -173,6 +173,66 @@ test('reliability-handled permanent YouTube failure still marks resumable work t
     /lifecycle_status = 'terminal'/u.test(call.sql)
     && call.bindings.includes('QUEUE_PERMANENT_FAILURE')
   )));
+  const deadLetter = db.calls.find((call) => /INSERT INTO dead_letter_jobs/u.test(call.sql));
+  assert.ok(deadLetter);
+  assert.match(deadLetter.bindings[5], /youtube\.channel\.organic\.sync/u);
+  assert.equal(deadLetter.bindings[7], 'YOUTUBE_ANALYTICS_ROW_SCOPE_MISMATCH');
+});
+
+
+test('redrive admin job executes before customer/Lark runtime loading and uses a new requestedAt generation', async () => {
+  const sent = [];
+  const requestedAt = Date.parse('2026-07-19T00:00:00.000Z');
+  const row = {
+    dlq_id: 'dlq:message-old',
+    message_id: 'message-old',
+    queue_name: 'sync-main',
+    job_type: 'youtube.channel.organic.sync',
+    schema_version: 1,
+    payload_json: JSON.stringify({ type: 'youtube.channel.organic.sync' }),
+    replay_payload_json: JSON.stringify({
+      schemaVersion: 1,
+      type: 'youtube.channel.organic.sync',
+      requestedAt: '2026-07-18T00:00:00.000Z',
+      metricDate: '2026-07-18',
+      syncMode: 'auto',
+    }),
+    error_code: 'YOUTUBE_ANALYTICS_ROW_SCOPE_MISMATCH',
+    retry_count: 0,
+    status: 'redrive_pending',
+    redrive_requested_at: requestedAt,
+    redrive_reference: 'redrive:dlq:message-old:1784419200000',
+    redriven_at: null,
+  };
+  const db = {
+    prepare(sql) {
+      return {
+        bind() { return this; },
+        async run() { return { meta: { changes: 1 } }; },
+        async first() { return row; },
+      };
+    },
+  };
+
+  const result = await processJob({
+    job: {
+      body: { type: 'system.dead-letter.redrive', dlqId: row.dlq_id },
+      schemaVersion: 1,
+    },
+    message: { id: 'redrive-command', attempts: 1 },
+    env: {
+      MKT_DLQ_REDRIVE_ENABLED: 'true',
+      MKT_STATE_DB: db,
+      MKT_SYNC_QUEUE: { async send(body) { sent.push(body); } },
+    },
+    getRuntimeConfig() { throw new Error('must not load customer runtime'); },
+    getInfrastructure() { throw new Error('must not create Lark infrastructure'); },
+  });
+
+  assert.equal(result.status, 'redriven');
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].requestedAt, new Date(requestedAt).toISOString());
+  assert.equal(sent[0].redriveOfDlqId, row.dlq_id);
 });
 
 test('dead-letter persistence failure retries with a safe default when retry delay config is invalid', async () => {

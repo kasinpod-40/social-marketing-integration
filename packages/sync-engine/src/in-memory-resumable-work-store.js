@@ -20,6 +20,32 @@ export class InMemoryResumableWorkStore {
     const operationFingerprint = requireText(input.operationFingerprint, 'operationFingerprint');
     const requestedAt = timestamp(input.requestedAt ?? input.generation ?? this.now(), 'requestedAt');
     const generation = timestamp(input.generation ?? requestedAt, 'generation');
+    const existing = this.works.get(workKey);
+
+    if (existing && existing.generation !== generation) {
+      throw permanentError('Resumable work key was reused with a different generation', {
+        code: 'SYNC_WORK_GENERATION_MISMATCH',
+        details: { generation },
+      });
+    }
+    if (existing?.lifecycleStatus === 'completed') {
+      return Object.freeze({
+        workKey,
+        resumed: true,
+        superseded: false,
+        completed: true,
+        completion: structuredClone(existing.completion),
+      });
+    }
+    if (existing && ['terminal', 'superseded'].includes(existing.lifecycleStatus)) {
+      return Object.freeze({ workKey, resumed: false, superseded: true, completed: false });
+    }
+    if (existing && existing.operationFingerprint !== operationFingerprint) {
+      throw permanentError('Resumable sync operation changed within the same active generation', {
+        code: 'SYNC_WORK_OPERATION_MISMATCH',
+        details: { generation },
+      });
+    }
     const fence = this.generationFences.get(cursorKey);
     if (fence && (generation < fence.generation
       || (generation === fence.generation && fence.workKey !== workKey))) {
@@ -37,26 +63,7 @@ export class InMemoryResumableWorkStore {
     }
     this.generationFences.set(cursorKey, { generation, requestedAt, workKey });
 
-    const existing = this.works.get(workKey);
-    if (existing?.generation === generation && existing.lifecycleStatus === 'completed') {
-      return Object.freeze({
-        workKey,
-        resumed: true,
-        superseded: false,
-        completed: true,
-        completion: structuredClone(existing.completion),
-      });
-    }
-    if (existing?.generation === generation
-      && existing.lifecycleStatus === 'active'
-      && existing.operationFingerprint !== operationFingerprint) {
-      throw permanentError('Resumable sync operation changed within the same generation', {
-        code: 'SYNC_WORK_OPERATION_MISMATCH',
-        details: { generation },
-      });
-    }
-    const resumed = existing?.generation === generation
-      && existing.lifecycleStatus === 'active'
+    const resumed = existing?.lifecycleStatus === 'active'
       && existing.operationFingerprint === operationFingerprint;
     if (!resumed) {
       this.works.set(workKey, {
@@ -142,20 +149,37 @@ export class InMemoryResumableWorkStore {
     if (event.generationGuard) await this.assertCurrentGeneration(event.generationGuard);
     const existing = this.warningOutbox.get(event.outboxId);
     if (!existing) {
+      const createdAt = timestamp(this.now(), 'now');
       this.warningOutbox.set(event.outboxId, {
         ...structuredClone(event),
         status: 'pending',
         deliveryAttempts: 0,
+        createdAt,
+        updatedAt: createdAt,
       });
     }
     return Object.freeze({ outboxId: event.outboxId, status: existing?.status ?? 'pending' });
   }
 
   async listPendingWarnings(input = {}) {
-    const workKey = requireText(input.workKey, 'workKey');
+    const workKey = optionalText(input.workKey);
+    const limit = positiveInteger(input.limit ?? 100, 'limit');
     return Object.freeze([...this.warningOutbox.values()]
-      .filter((event) => event.workKey === workKey && event.status === 'pending')
+      .filter((event) => (!workKey || event.workKey === workKey) && event.status === 'pending')
+      .sort((left, right) => (left.createdAt ?? 0) - (right.createdAt ?? 0)
+        || left.outboxId.localeCompare(right.outboxId))
+      .slice(0, limit)
       .map((event) => Object.freeze(structuredClone(event))));
+  }
+
+  async markWarningDeliveryFailed(input = {}) {
+    const outboxId = requireText(input.outboxId, 'outboxId');
+    const event = this.warningOutbox.get(outboxId);
+    if (!event || event.status !== 'pending') return false;
+    event.deliveryAttempts += 1;
+    event.lastErrorCode = optionalText(input.errorCode) ?? 'SYNC_WARNING_ALERT_WRITE_FAILED';
+    event.updatedAt = timestamp(input.updatedAt ?? this.now(), 'updatedAt');
+    return true;
   }
 
   async markWarningDelivered(input = {}) {
@@ -183,6 +207,11 @@ export class InMemoryResumableWorkStore {
     const workKey = requireText(input.workKey, 'workKey');
     const work = this.works.get(workKey);
     if (!work) return Object.freeze({ terminal: false, found: false });
+    const hasPendingWarning = [...this.warningOutbox.values()]
+      .some((event) => event.workKey === workKey && event.status === 'pending');
+    if (work.lifecycleStatus === 'completed' && hasPendingWarning) {
+      return Object.freeze({ terminal: false, found: true, status: 'completed' });
+    }
     if (!['terminal', 'superseded'].includes(work.lifecycleStatus)) {
       work.lifecycleStatus = input.lifecycleStatus === 'superseded' ? 'superseded' : 'terminal';
       work.terminalReason = requireText(input.reason, 'reason');

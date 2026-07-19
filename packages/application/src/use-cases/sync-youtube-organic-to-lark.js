@@ -284,6 +284,8 @@ export async function syncYouTubeOrganicToLark(input = {}) {
     syncRunId,
     cursorKey,
     generation,
+    customerProfile,
+    accountKey,
     assertCurrentWork,
     result,
   });
@@ -921,6 +923,12 @@ async function persistWarningOutbox(input) {
       workKey: input.workKey,
     },
     payload: {
+      context: {
+        customerProfile: input.customerProfile,
+        accountKey: input.accountKey,
+        platform: 'youtube',
+        source: 'youtube_data_api',
+      },
       warnings: input.result.warnings,
       reconciliation: input.result.reconciliation,
       sourceSummary: input.result.sourceSummary,
@@ -979,6 +987,7 @@ function supersededResult(input) {
     syncRunId: input.syncRunId,
     platform: 'youtube',
     source: 'youtube_data_api',
+    dryRun: false,
     mode: 'superseded',
     rawRecords: 0,
     warnings: Object.freeze([]),
@@ -1024,6 +1033,7 @@ function buildResult(input) {
     syncRunId: input.syncRunId,
     platform: 'youtube',
     source: 'youtube_data_api',
+    dryRun: input.mode === 'dry_run',
     mode: input.mode,
     incremental: input.syncMode,
     rawRecords: 1 + input.videoResources.length + input.analyticsRows.length,

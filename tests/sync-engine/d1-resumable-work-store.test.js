@@ -4,7 +4,10 @@ import { D1ResumableWorkStore } from '../../packages/sync-engine/src/d1-resumabl
 
 test('begins new work and resumes only when the operation fingerprint matches', async () => {
   const db = createFakeD1({
-    firstRows: [null, { operation_fingerprint: 'fingerprint-A' }],
+    firstRows: [
+      null,
+      { operation_fingerprint: 'fingerprint-A', generation: 100, lifecycle_status: 'active' },
+    ],
   });
   const store = new D1ResumableWorkStore({ db, now: () => 100 });
   const input = {
@@ -19,10 +22,8 @@ test('begins new work and resumes only when the operation fingerprint matches', 
 
   assert.equal(first.resumed, false);
   assert.equal(resumed.resumed, true);
-  assert.equal(db.batches.length, 2);
-  assert.equal(db.batches[0].length, 1);
-  assert.match(db.batches[0][0].sql, /INSERT INTO sync_work_runs/);
-  assert.equal(db.batches[1].length, 1);
+  assert.equal(db.batches.length, 0);
+  assert.equal(db.prepared.filter((statement) => /INSERT INTO sync_work_runs/u.test(statement.sql)).length, 2);
 });
 
 test('fails closed when the same generation changes its operation fingerprint', async () => {
@@ -121,7 +122,7 @@ test('pages staged units by sequence and clears phase/work in bounded batches', 
 
 test('D1 resumable work failures stay retryable', async () => {
   const store = new D1ResumableWorkStore({
-    db: createFakeD1({ batchError: new Error('D1 unavailable') }),
+    db: createFakeD1({ runError: new Error('D1 unavailable') }),
   });
 
   await assert.rejects(
@@ -139,16 +140,8 @@ test('D1 resumable work failures stay retryable', async () => {
 
 test('generation fence supersedes older work and keeps completed generation durable', async () => {
   const db = createFakeD1({
-    runChanges: [1, 0, 1],
-    firstRows: [
-      null,
-      { operation_fingerprint: 'fingerprint-new', generation: 2_000, lifecycle_status: 'active' },
-      {
-        work_key: 'message-new',
-        generation: 2_000,
-        requested_at: 2_000,
-      },
-    ],
+    runChanges: [1, 1, 0, 1],
+    firstRows: [null, null],
   });
   const store = new D1ResumableWorkStore({ db, now: () => 3_000 });
 
@@ -177,6 +170,62 @@ test('generation fence supersedes older work and keeps completed generation dura
   assert.equal(stale.superseded, true);
   assert.ok(db.prepared.some((statement) => /sync_generation_fences/u.test(statement.sql)));
   assert.ok(db.prepared.some((statement) => /lifecycle_status = 'completed'/u.test(statement.sql)));
+});
+
+test('completed work replays before generation claim even after a newer fence exists', async () => {
+  const completion = { mode: 'write', warnings: [{ code: 'WARN' }] };
+  const db = createFakeD1({
+    firstRows: [{
+      operation_fingerprint: 'fingerprint-old',
+      generation: 1_000,
+      lifecycle_status: 'completed',
+      completion_json: JSON.stringify(completion),
+    }],
+  });
+  const store = new D1ResumableWorkStore({ db, now: () => 3_000 });
+
+  const replay = await store.beginWork({
+    workKey: 'message-old',
+    cursorKey: 'cursor-1',
+    workType: 'youtube_organic_sync',
+    operationFingerprint: 'fingerprint-old',
+    generation: 1_000,
+    requestedAt: 1_000,
+  });
+
+  assert.equal(replay.completed, true);
+  assert.deepEqual(replay.completion, completion);
+  assert.equal(db.prepared.some((statement) => /INSERT INTO sync_generation_fences/u.test(statement.sql)), false);
+});
+
+test('global warning listing is bounded and delivery failures are recorded durably', async () => {
+  const db = createFakeD1({
+    allRows: [[{
+      outbox_id: 'warning-1',
+      work_key: 'work-1',
+      sync_run_id: 'run-1',
+      warning_type: 'sync_completed_with_warnings',
+      source_key: 'cursor-1',
+      payload_json: '{"warnings":[]}',
+      status: 'pending',
+      delivery_attempts: 0,
+      delivered_at: null,
+    }]],
+  });
+  const store = new D1ResumableWorkStore({ db, now: () => 5_000 });
+
+  const warnings = await store.listPendingWarnings({ limit: 25 });
+  await store.markWarningDeliveryFailed({
+    outboxId: 'warning-1',
+    errorCode: 'D1_SYSTEM_ALERT_WRITE_FAILED',
+  });
+
+  assert.equal(warnings.length, 1);
+  const listStatement = db.prepared.find((statement) => /FROM sync_warning_outbox/u.test(statement.sql));
+  assert.doesNotMatch(listStatement.sql, /work_key = \?/u);
+  assert.deepEqual(listStatement.bindings, [25]);
+  const failureStatement = db.prepared.find((statement) => /last_error_code = \?/u.test(statement.sql));
+  assert.deepEqual(failureStatement.bindings, ['D1_SYSTEM_ALERT_WRITE_FAILED', 5_000, 'warning-1']);
 });
 
 test('terminal lifecycle is idempotent and TTL cleanup excludes active or locked work', async () => {
@@ -266,6 +315,7 @@ function createFakeD1(options = {}) {
         async first() { return firstRows.shift() ?? null; },
         async all() { return { results: allRows.shift() ?? [] }; },
         async run() {
+          if (options.runError) throw options.runError;
           return { meta: { changes: runChanges.shift() ?? 1 } };
         },
       };
