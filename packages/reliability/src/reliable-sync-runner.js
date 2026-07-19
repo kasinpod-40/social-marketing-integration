@@ -115,8 +115,10 @@ export async function runReliableSync(input = {}) {
 
     const resultWarnings = Array.isArray(result?.warnings) ? result.warnings : [];
     if (input.alertOnResultWarnings === true && resultWarnings.length > 0) {
+      const warningOutboxId = normalizeOptionalId(result?.warningOutbox?.outboxId);
       try {
         await store.saveSystemAlert(createSystemAlert({
+          ...(warningOutboxId ? { alertId: warningOutboxId } : {}),
           syncRunId,
           alertType: 'sync_completed_with_warnings',
           severity: 'warning',
@@ -136,6 +138,13 @@ export async function runReliableSync(input = {}) {
             reconciliation: sanitizeOperationalValue(result?.reconciliation ?? null),
           },
         }));
+        if (warningOutboxId) {
+          const warningOutboxStore = requireWarningOutboxStore(input.warningOutboxStore);
+          await warningOutboxStore.markWarningDelivered({
+            outboxId: warningOutboxId,
+            deliveredAt: finishedAt,
+          });
+        }
       } catch (warningAlertError) {
         input.onReliabilityError?.({
           stage: 'result_warning_alert_failed',
@@ -242,6 +251,17 @@ export async function runReliableSync(input = {}) {
       input.onReliabilityError?.({ stage: 'lock_release_failed', error: releaseError });
     }
   }
+}
+
+function requireWarningOutboxStore(value) {
+  if (typeof value?.markWarningDelivered !== 'function') {
+    throw new TypeError('runReliableSync requires warningOutboxStore.markWarningDelivered');
+  }
+  return value;
+}
+
+function normalizeOptionalId(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
 /** สร้าง Lock key ที่แยก Customer, Platform, Account และ Sync type ชัดเจน */

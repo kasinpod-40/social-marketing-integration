@@ -1,4 +1,4 @@
-import { transientError } from '../../shared/src/errors/runtime-error.js';
+import { permanentError, transientError } from '../../shared/src/errors/runtime-error.js';
 
 /**
  * D1 checkpoint store สำหรับ Incremental Sync
@@ -21,6 +21,7 @@ export class D1IncrementalStateStore {
             cursor_key, customer_profile, platform, account_key, source, sync_type,
             last_metric_date, dictionary_hash, last_full_sync_at,
             last_successful_sync_at, incremental_run_count, last_sync_run_id,
+            generation, generation_work_key, requested_at,
             created_at, updated_at
           FROM sync_cursors
           WHERE cursor_key = ?
@@ -52,8 +53,51 @@ export class D1IncrementalStateStore {
     const records = requireRecordStates(input.records ?? []);
     const fullSnapshot = input.fullSnapshot === true;
     const now = this.now();
+    const generationGuard = input.generationGuard
+      ? requireGenerationGuard(input.generationGuard, cursor.cursorKey)
+      : null;
 
-    const recordStatements = records.map((record) => this.db.prepare(`
+    const recordStatements = records.map((record) => generationGuard
+      ? this.db.prepare(`
+      INSERT INTO source_record_states (
+        cursor_key, source_record_id, source_modified_at, source_hash,
+        external_content_id, last_seen_sync_run_id, last_seen_at,
+        created_at, updated_at
+      )
+      SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+      WHERE EXISTS (
+        SELECT 1 FROM sync_generation_fences
+        WHERE cursor_key = ? AND generation = ? AND work_key = ?
+      )
+      ON CONFLICT(cursor_key, source_record_id) DO UPDATE SET
+        source_modified_at = excluded.source_modified_at,
+        source_hash = excluded.source_hash,
+        external_content_id = excluded.external_content_id,
+        last_seen_sync_run_id = excluded.last_seen_sync_run_id,
+        last_seen_at = excluded.last_seen_at,
+        updated_at = excluded.updated_at
+      WHERE EXISTS (
+        SELECT 1 FROM sync_generation_fences
+        WHERE cursor_key = ? AND generation = ? AND work_key = ?
+      )
+    `).bind(
+        cursor.cursorKey,
+        record.sourceRecordId,
+        nullableInteger(record.sourceModifiedAt),
+        record.sourceHash,
+        nullableText(record.externalContentId),
+        cursor.lastSyncRunId,
+        cursor.lastSuccessfulSyncAt,
+        now,
+        now,
+        generationGuard.cursorKey,
+        generationGuard.generation,
+        generationGuard.workKey,
+        generationGuard.cursorKey,
+        generationGuard.generation,
+        generationGuard.workKey,
+      )
+      : this.db.prepare(`
       INSERT INTO source_record_states (
         cursor_key, source_record_id, source_modified_at, source_hash,
         external_content_id, last_seen_sync_run_id, last_seen_at,
@@ -76,9 +120,68 @@ export class D1IncrementalStateStore {
       cursor.lastSuccessfulSyncAt,
       now,
       now,
-    ));
+      ));
 
-    const cursorStatement = this.db.prepare(`
+    const cursorStatement = generationGuard
+      ? this.db.prepare(`
+      INSERT INTO sync_cursors (
+        cursor_key, customer_profile, platform, account_key, source, sync_type,
+        last_metric_date, dictionary_hash, last_full_sync_at,
+        last_successful_sync_at, incremental_run_count, last_sync_run_id,
+        generation, generation_work_key, requested_at, created_at, updated_at
+      )
+      SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+      WHERE EXISTS (
+        SELECT 1 FROM sync_generation_fences
+        WHERE cursor_key = ? AND generation = ? AND work_key = ?
+      )
+      ON CONFLICT(cursor_key) DO UPDATE SET
+        customer_profile = excluded.customer_profile,
+        platform = excluded.platform,
+        account_key = excluded.account_key,
+        source = excluded.source,
+        sync_type = excluded.sync_type,
+        last_metric_date = excluded.last_metric_date,
+        dictionary_hash = excluded.dictionary_hash,
+        last_full_sync_at = excluded.last_full_sync_at,
+        last_successful_sync_at = excluded.last_successful_sync_at,
+        incremental_run_count = excluded.incremental_run_count,
+        last_sync_run_id = excluded.last_sync_run_id,
+        generation = excluded.generation,
+        generation_work_key = excluded.generation_work_key,
+        requested_at = excluded.requested_at,
+        updated_at = excluded.updated_at
+      WHERE excluded.generation >= sync_cursors.generation
+        AND EXISTS (
+          SELECT 1 FROM sync_generation_fences
+          WHERE cursor_key = ? AND generation = ? AND work_key = ?
+        )
+    `).bind(
+        cursor.cursorKey,
+        cursor.customerProfile,
+        cursor.platform,
+        cursor.accountKey,
+        cursor.source,
+        cursor.syncType,
+        nullableText(cursor.lastMetricDate),
+        nullableText(cursor.dictionaryHash),
+        nullableInteger(cursor.lastFullSyncAt),
+        safeInteger(cursor.lastSuccessfulSyncAt, 'lastSuccessfulSyncAt'),
+        nonNegativeInteger(cursor.incrementalRunCount, 'incrementalRunCount'),
+        cursor.lastSyncRunId,
+        generationGuard.generation,
+        generationGuard.workKey,
+        generationGuard.requestedAt,
+        now,
+        now,
+        generationGuard.cursorKey,
+        generationGuard.generation,
+        generationGuard.workKey,
+        generationGuard.cursorKey,
+        generationGuard.generation,
+        generationGuard.workKey,
+      )
+      : this.db.prepare(`
       INSERT INTO sync_cursors (
         cursor_key, customer_profile, platform, account_key, source, sync_type,
         last_metric_date, dictionary_hash, last_full_sync_at,
@@ -113,11 +216,26 @@ export class D1IncrementalStateStore {
       cursor.lastSyncRunId,
       now,
       now,
-    );
+      );
 
     const finalStatements = [cursorStatement];
     if (fullSnapshot) {
-      finalStatements.push(this.db.prepare(`
+      finalStatements.push(generationGuard
+        ? this.db.prepare(`
+        DELETE FROM source_record_states
+        WHERE cursor_key = ? AND last_seen_sync_run_id <> ?
+          AND EXISTS (
+            SELECT 1 FROM sync_generation_fences
+            WHERE cursor_key = ? AND generation = ? AND work_key = ?
+          )
+      `).bind(
+          cursor.cursorKey,
+          cursor.lastSyncRunId,
+          generationGuard.cursorKey,
+          generationGuard.generation,
+          generationGuard.workKey,
+        )
+        : this.db.prepare(`
         DELETE FROM source_record_states
         WHERE cursor_key = ? AND last_seen_sync_run_id <> ?
       `).bind(cursor.cursorKey, cursor.lastSyncRunId));
@@ -127,11 +245,14 @@ export class D1IncrementalStateStore {
     let statementCount = 0;
     try {
       for (const statements of recordBatches) {
+        if (generationGuard) await this.#assertGeneration(generationGuard);
         await this.db.batch(statements);
         statementCount += statements.length;
       }
+      if (generationGuard) await this.#assertGeneration(generationGuard);
       await this.db.batch(finalStatements);
       statementCount += finalStatements.length;
+      if (generationGuard) await this.#assertGeneration(generationGuard);
       return Object.freeze({
         cursorKey: cursor.cursorKey,
         recordsSaved: records.length,
@@ -140,10 +261,24 @@ export class D1IncrementalStateStore {
         statements: statementCount,
       });
     } catch (cause) {
+      if (cause?.code === 'SYNC_WORK_SUPERSEDED') throw cause;
       throw d1Error('Failed to save incremental checkpoint', 'D1_INCREMENTAL_CHECKPOINT_WRITE_FAILED', cause);
     }
   }
 
+  async #assertGeneration(guard) {
+    const row = await this.db.prepare(`
+      SELECT generation, work_key
+      FROM sync_generation_fences
+      WHERE cursor_key = ?
+    `).bind(guard.cursorKey).first();
+    if (Number(row?.generation) !== guard.generation || row?.work_key !== guard.workKey) {
+      throw permanentError('Incremental checkpoint generation was superseded', {
+        code: 'SYNC_WORK_SUPERSEDED',
+        details: { generation: guard.generation },
+      });
+    }
+  }
 }
 
 function freezeCursor(row) {
@@ -160,8 +295,31 @@ function freezeCursor(row) {
     lastSuccessfulSyncAt: toNullableInteger(row.last_successful_sync_at),
     incrementalRunCount: toNonNegativeInteger(row.incremental_run_count),
     lastSyncRunId: row.last_sync_run_id,
+    generation: toNonNegativeInteger(row.generation),
+    generationWorkKey: row.generation_work_key ?? null,
+    requestedAt: toNonNegativeInteger(row.requested_at),
     createdAt: toNullableInteger(row.created_at),
     updatedAt: toNullableInteger(row.updated_at),
+  });
+}
+
+function requireGenerationGuard(value, cursorKey) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError('D1IncrementalStateStore requires generationGuard');
+  }
+  const guardCursorKey = requireText(
+    value.cursorKey ?? cursorKey,
+    'generationGuard.cursorKey',
+  );
+  if (guardCursorKey !== cursorKey) throw new TypeError('generationGuard.cursorKey must match cursor.cursorKey');
+  return Object.freeze({
+    cursorKey: guardCursorKey,
+    generation: nonNegativeInteger(value.generation, 'generationGuard.generation'),
+    workKey: requireText(value.workKey, 'generationGuard.workKey'),
+    requestedAt: nonNegativeInteger(
+      value.requestedAt ?? value.generation,
+      'generationGuard.requestedAt',
+    ),
   });
 }
 

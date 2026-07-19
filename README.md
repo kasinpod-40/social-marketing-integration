@@ -8,7 +8,7 @@ Working candidate: `v0.11.0`
 
 Official clean baseline: `v0.10.2-multi-channel-foundation-approved`
 
-Large-account patch commit `44377ce`: ข้อมูลจริง 837 videos ใช้ Full pagination, Content incremental 100 แยกจาก Analytics tracked scope 837, durable D1 page/chunk resume, exact completeness counters, Analytics time ที่ Dedicated Cron รองรับ และ explicit Cron routing. Source gates, migration 0004, DEV deployment และ 2-video smoke ผ่านแล้ว; Customer 837-video Live UAT ยังเป็น Production release blocker.
+Large-account patch commit `44377ce`: ข้อมูลจริง 837 videos ใช้ Full pagination, Content incremental 100 แยกจาก Analytics tracked scope 837, durable D1 page/chunk resume และ exact completeness counters. Independent-review source patch ถัดมาเพิ่ม generation fence/CAS, Analytics row-scope validation, warning outbox และ terminal TTL lifecycle; Source gates ผ่านแล้วแต่ migration 0005/DEV redeploy ยังไม่รัน และ Customer 837-video Live UAT ยังเป็น Production release blocker.
 
 สถานะปัจจุบัน:
 
@@ -43,6 +43,7 @@ Large-account patch commit `44377ce`: ข้อมูลจริง 837 videos 
 - Post-activation review แก้ Analytics scope สำหรับช่องที่มีวิดีโอเกิน recent limit, fail-closed unsupported Analytics time และ explicit Cron routing แล้ว; ต้อง Commit/Review/Deploy patch ก่อนถือว่าปิด review บน DEV runtime
 - Large-account hardening ทดสอบ Full 837 videos/17 pages, Analytics 837 IDs/17 chunks, page/chunk retry resume, exact queried-ID guard และ Stable-key rerun; D1 Sync Log details เก็บ completeness counters
 - Large-account DEV rollout ใช้ Worker `2037232c-152a-4e26-95fa-fca044f65bd9`; Full/Incremental/Analytics success/retry 0, Analytics 2/2/2 complete, D1 staging/lock/open alert 0 และ Lark duplicate Stable key 0. DEV channel มี 2 videos จึงยังไม่แทน Customer 837-video Live UAT
+- Independent review hardening ป้องกัน stale Retry เขียนทับ generation ใหม่, reject Analytics row นอก requested scope ก่อน staging, replay warning จาก durable outbox ด้วย deterministic ID และ mark Permanent/DLQ staging เป็น terminal พร้อม guarded TTL cleanup. Patch นี้ยังไม่ Deploy และไม่ได้เปลี่ยน Live schedule/Secret/Production
 - v0.11.0-rc.1 hardening เติม Analytics missing-key reconciliation แบบ retain/warn, บังคับ D1 warning alert failure ให้ Queue retry, Redact external identity จาก operational logs/stores และคืน safe examples เป็น Placeholder-only
 - Connector อื่นยังไม่ถูกเปิด: Meta/WooCommerce/Chatwoot/Ads เป็น `planned` จนกว่า Blueprint/Access/Live UAT ของแต่ละช่องทางผ่าน
 - Customer Production setup ยังไม่รวมใน Release นี้และต้องใช้ทรัพยากรของลูกค้า

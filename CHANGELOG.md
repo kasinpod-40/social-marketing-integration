@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased — YouTube resumable-sync reliability hardening — 2026-07-19
+
+### Fixed
+- Added a durable generation/requested-at fence and guarded checkpoint compare-and-set so an older Queue retry cannot overwrite newer Lark data or roll back the cursor.
+- Added fail-closed Analytics row validation for requested video, owner channel, and date scope before durable staging.
+- Added a deterministic warning outbox and completed-work replay so reconciliation alerts survive primary alert-store failure without rerunning Source or creating duplicate business alerts.
+- Added terminal/superseded/completed staging lifecycle, terminal audit/expiry metadata, DLQ/Permanent marking, guarded TTL cleanup, and a new-generation-only redrive contract.
+
+### Data and release safety
+- Added additive migration `0005_resumable_sync_reliability.sql` plus generation/status/expiry indexes without changing existing Business stable keys.
+- Blocked nested ZIPs, `.mkt-locks`, SQLite runtime sidecars, macOS metadata, local config, secrets, outputs, and dependencies from clean releases.
+- Verified stale A(100) → newer B(200) → A retry, 837-video resume/idempotency, row-scope rejection, warning replay, Permanent/DLQ cleanup, TikTok/Core regressions, empty/existing migration replay, audit, architecture, hygiene, and Wrangler dry-run.
+- This source patch did not call Live APIs, apply Remote D1 migration, enqueue jobs, deploy, change schedules, mutate secrets, or touch Production.
+
 ## Unreleased — YouTube large-account resumable sync — 2026-07-19
 
 ### Fixed

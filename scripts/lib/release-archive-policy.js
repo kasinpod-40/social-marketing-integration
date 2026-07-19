@@ -22,6 +22,7 @@ export const REQUIRED_RELEASE_PATHS = Object.freeze([
 const BLOCKED_ANYWHERE_SEGMENTS = new Set([
   '.git',
   '__MACOSX',
+  '.mkt-locks',
   'node_modules',
 ]);
 const BLOCKED_ROOT_SEGMENTS = new Set([
@@ -67,6 +68,8 @@ export function findBlockedReleasePaths(paths) {
       || basename === '.DS_Store'
       || basename.startsWith('._')
       || basename.endsWith('.log')
+      || basename.toLowerCase().endsWith('.zip')
+      || /\.(?:db|sqlite)(?:-(?:shm|wal))?$/iu.test(basename)
       || path === 'wrangler.sync.jsonc'
       || (basename.startsWith('.dev.vars') && basename !== '.dev.vars.example')
       || (basename.startsWith('.env') && basename !== '.env.example')) {

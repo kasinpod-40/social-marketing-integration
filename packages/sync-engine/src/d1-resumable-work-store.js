@@ -1,26 +1,103 @@
-import { transientError } from '../../shared/src/errors/runtime-error.js';
+import {
+  permanentError,
+  sanitizeOperationalValue,
+  transientError,
+} from '../../shared/src/errors/runtime-error.js';
+
+const DEFAULT_RETENTION_MS = 7 * 86_400_000;
 
 /**
- * Durable work staging กลางสำหรับ Connector ที่อ่าน Source แบบ page/chunk
- * แต่ยังต้อง Plan destination ทุกตารางก่อน Business write แรก
+ * Durable work staging กลางสำหรับ page/chunk connector:
+ * generation fence ป้องกัน stale retry, completion/outbox ใช้ replay และ terminal TTL ใช้ cleanup แบบ guarded
  */
 export class D1ResumableWorkStore {
   constructor(input = {}) {
     this.db = requireD1(input.db);
     this.now = typeof input.now === 'function' ? input.now : () => Date.now();
     this.unitPageSize = boundedPositiveInteger(input.unitPageSize ?? 100, 'unitPageSize', 500);
+    this.retentionMs = boundedPositiveInteger(
+      input.retentionMs ?? DEFAULT_RETENTION_MS,
+      'retentionMs',
+      365 * 86_400_000,
+    );
   }
 
   async beginWork(input = {}) {
-    const work = requireWork(input);
     const now = safeTimestamp(this.now(), 'now');
+    const work = requireWork(input, now);
     try {
+      const claimed = await this.db.prepare(`
+        INSERT INTO sync_generation_fences (
+          cursor_key, generation, requested_at, work_key, updated_at
+        ) VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(cursor_key) DO UPDATE SET
+          generation = excluded.generation,
+          requested_at = excluded.requested_at,
+          work_key = excluded.work_key,
+          updated_at = excluded.updated_at
+        WHERE excluded.generation > sync_generation_fences.generation
+           OR (
+             excluded.generation = sync_generation_fences.generation
+             AND excluded.work_key = sync_generation_fences.work_key
+           )
+      `).bind(
+        work.cursorKey,
+        work.generation,
+        work.requestedAt,
+        work.workKey,
+        now,
+      ).run();
+      if (readChanges(claimed) === 0) {
+        await this.#recordSupersededWork(work, now);
+        return Object.freeze({
+          workKey: work.workKey,
+          resumed: false,
+          superseded: true,
+          completed: false,
+        });
+      }
+
       const existing = await this.db.prepare(`
-        SELECT operation_fingerprint
+        SELECT operation_fingerprint, generation, lifecycle_status, completion_json
         FROM sync_work_runs
         WHERE work_key = ?
       `).bind(work.workKey).first();
-      const resumed = existing?.operation_fingerprint === work.operationFingerprint;
+      const existingGeneration = existing && existing.generation === undefined
+        ? work.generation
+        : Number(existing?.generation);
+      const lifecycleStatus = existing && existing.lifecycle_status === undefined
+        ? 'active'
+        : existing?.lifecycle_status;
+      const sameGeneration = existingGeneration === work.generation;
+      if (sameGeneration && lifecycleStatus === 'completed') {
+        return Object.freeze({
+          workKey: work.workKey,
+          resumed: true,
+          superseded: false,
+          completed: true,
+          completion: parseNullableJsonObject(existing.completion_json, 'completion_json'),
+        });
+      }
+      if (sameGeneration && ['terminal', 'superseded'].includes(lifecycleStatus)) {
+        return Object.freeze({
+          workKey: work.workKey,
+          resumed: false,
+          superseded: true,
+          completed: false,
+        });
+      }
+      if (sameGeneration
+        && lifecycleStatus === 'active'
+        && existing.operation_fingerprint !== work.operationFingerprint) {
+        throw permanentError('Resumable sync operation changed within the same generation', {
+          code: 'SYNC_WORK_OPERATION_MISMATCH',
+          details: { generation: work.generation },
+        });
+      }
+
+      const resumed = sameGeneration
+        && lifecycleStatus === 'active'
+        && existing.operation_fingerprint === work.operationFingerprint;
       const statements = [];
       if (existing && !resumed) {
         statements.push(
@@ -30,26 +107,68 @@ export class D1ResumableWorkStore {
       }
       statements.push(this.db.prepare(`
         INSERT INTO sync_work_runs (
-          work_key, cursor_key, work_type, operation_fingerprint, status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, 'active', ?, ?)
+          work_key, cursor_key, work_type, operation_fingerprint, status,
+          generation, requested_at, lifecycle_status,
+          terminal_reason, abandoned_at, completed_at, expires_at,
+          audit_reference, completion_json, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, 'active', ?, ?, 'active', NULL, NULL, NULL, NULL, NULL, NULL, ?, ?)
         ON CONFLICT(work_key) DO UPDATE SET
           cursor_key = excluded.cursor_key,
           work_type = excluded.work_type,
           operation_fingerprint = excluded.operation_fingerprint,
-          status = 'active',
+          generation = excluded.generation,
+          requested_at = excluded.requested_at,
+          lifecycle_status = 'active',
+          terminal_reason = NULL,
+          abandoned_at = NULL,
+          completed_at = NULL,
+          expires_at = NULL,
+          audit_reference = NULL,
+          completion_json = NULL,
           updated_at = excluded.updated_at
       `).bind(
         work.workKey,
         work.cursorKey,
         work.workType,
         work.operationFingerprint,
+        work.generation,
+        work.requestedAt,
         now,
         now,
       ));
       await this.db.batch(statements);
-      return Object.freeze({ workKey: work.workKey, resumed });
+      return Object.freeze({
+        workKey: work.workKey,
+        resumed,
+        superseded: false,
+        completed: false,
+      });
     } catch (cause) {
+      if (cause?.code === 'SYNC_WORK_OPERATION_MISMATCH') throw cause;
       throw d1Error('Failed to begin resumable sync work', 'D1_SYNC_WORK_BEGIN_FAILED', cause);
+    }
+  }
+
+  async assertCurrentGeneration(input = {}) {
+    const workKey = requireText(input.workKey, 'workKey');
+    const cursorKey = requireText(input.cursorKey, 'cursorKey');
+    const generation = safeTimestamp(input.generation, 'generation');
+    try {
+      const row = await this.db.prepare(`
+        SELECT generation, work_key
+        FROM sync_generation_fences
+        WHERE cursor_key = ?
+      `).bind(cursorKey).first();
+      if (Number(row?.generation) !== generation || row?.work_key !== workKey) {
+        throw permanentError('Sync work generation was superseded by a newer job', {
+          code: 'SYNC_WORK_SUPERSEDED',
+          details: { generation },
+        });
+      }
+      return true;
+    } catch (cause) {
+      if (cause?.code === 'SYNC_WORK_SUPERSEDED') throw cause;
+      throw d1Error('Failed to validate sync work generation', 'D1_SYNC_WORK_FENCE_READ_FAILED', cause);
     }
   }
 
@@ -70,10 +189,6 @@ export class D1ResumableWorkStore {
     }
   }
 
-  /**
-   * Unit payload และ Phase progress อยู่ใน D1 batch เดียวกัน
-   * หาก request ล้มก่อน Commit ทั้งคู่จะไม่เลื่อนไปคนละจุด
-   */
   async savePhase(input = {}) {
     const phase = requirePhaseWrite(input);
     const now = safeTimestamp(this.now(), 'now');
@@ -126,7 +241,7 @@ export class D1ResumableWorkStore {
       this.db.prepare(`
         UPDATE sync_work_runs
         SET updated_at = ?
-        WHERE work_key = ?
+        WHERE work_key = ? AND lifecycle_status = 'active'
       `).bind(now, phase.workKey),
     );
     try {
@@ -185,18 +300,300 @@ export class D1ResumableWorkStore {
     }
   }
 
-  async completeWork(workKey) {
-    const key = requireText(workKey, 'workKey');
+  async saveWarningOutbox(input = {}) {
+    const event = requireWarning(input);
+    const now = safeTimestamp(this.now(), 'now');
+    const payload = sanitizeOperationalValue(event.payload);
+    try {
+      const result = event.generationGuard
+        ? await this.db.prepare(`
+        INSERT INTO sync_warning_outbox (
+          outbox_id, work_key, sync_run_id, warning_type, source_key,
+          payload_json, status, delivery_attempts, created_at, updated_at
+        )
+        SELECT ?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?
+        WHERE EXISTS (
+          SELECT 1 FROM sync_generation_fences
+          WHERE cursor_key = ? AND generation = ? AND work_key = ?
+        )
+        ON CONFLICT(outbox_id) DO UPDATE SET
+          payload_json = CASE
+            WHEN sync_warning_outbox.status = 'pending' THEN excluded.payload_json
+            ELSE sync_warning_outbox.payload_json
+          END,
+          updated_at = excluded.updated_at
+        WHERE EXISTS (
+          SELECT 1 FROM sync_generation_fences
+          WHERE cursor_key = ? AND generation = ? AND work_key = ?
+        )
+      `).bind(
+          event.outboxId,
+          event.workKey,
+          event.syncRunId,
+          event.warningType,
+          event.sourceKey,
+          JSON.stringify(payload),
+          now,
+          now,
+          event.generationGuard.cursorKey,
+          event.generationGuard.generation,
+          event.generationGuard.workKey,
+          event.generationGuard.cursorKey,
+          event.generationGuard.generation,
+          event.generationGuard.workKey,
+        ).run()
+        : await this.db.prepare(`
+        INSERT INTO sync_warning_outbox (
+          outbox_id, work_key, sync_run_id, warning_type, source_key,
+          payload_json, status, delivery_attempts, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?)
+        ON CONFLICT(outbox_id) DO UPDATE SET
+          payload_json = CASE
+            WHEN sync_warning_outbox.status = 'pending' THEN excluded.payload_json
+            ELSE sync_warning_outbox.payload_json
+          END,
+          updated_at = excluded.updated_at
+        `).bind(
+          event.outboxId,
+          event.workKey,
+          event.syncRunId,
+          event.warningType,
+          event.sourceKey,
+          JSON.stringify(payload),
+          now,
+          now,
+        ).run();
+      if (event.generationGuard && readChanges(result) === 0) {
+        throw permanentError('Sync warning generation was superseded', {
+          code: 'SYNC_WORK_SUPERSEDED',
+          details: { generation: event.generationGuard.generation },
+        });
+      }
+      return Object.freeze({ outboxId: event.outboxId, status: 'pending' });
+    } catch (cause) {
+      if (cause?.code === 'SYNC_WORK_SUPERSEDED') throw cause;
+      throw d1Error('Failed to persist sync warning outbox', 'D1_SYNC_WARNING_OUTBOX_WRITE_FAILED', cause);
+    }
+  }
+
+  async listPendingWarnings(input = {}) {
+    const workKey = requireText(input.workKey, 'workKey');
+    try {
+      const result = await this.db.prepare(`
+        SELECT
+          outbox_id, work_key, sync_run_id, warning_type, source_key,
+          payload_json, status, delivery_attempts, delivered_at
+        FROM sync_warning_outbox
+        WHERE work_key = ? AND status = 'pending'
+        ORDER BY created_at ASC, outbox_id ASC
+      `).bind(workKey).all();
+      return Object.freeze(readRows(result).map((row) => Object.freeze({
+        outboxId: requireText(row.outbox_id, 'outbox_id'),
+        workKey: requireText(row.work_key, 'work_key'),
+        syncRunId: requireText(row.sync_run_id, 'sync_run_id'),
+        warningType: requireText(row.warning_type, 'warning_type'),
+        sourceKey: requireText(row.source_key, 'source_key'),
+        payload: parseJsonObject(row.payload_json, 'payload_json'),
+        status: row.status,
+        deliveryAttempts: nonNegativeInteger(row.delivery_attempts, 'delivery_attempts'),
+        deliveredAt: row.delivered_at === null ? null : safeTimestamp(row.delivered_at, 'delivered_at'),
+      })));
+    } catch (cause) {
+      if (cause?.code?.startsWith?.('D1_SYNC_WORK_')) throw cause;
+      throw d1Error('Failed to read sync warning outbox', 'D1_SYNC_WARNING_OUTBOX_READ_FAILED', cause);
+    }
+  }
+
+  async markWarningDelivered(input = {}) {
+    const outboxId = requireText(input.outboxId, 'outboxId');
+    const deliveredAt = safeTimestamp(input.deliveredAt ?? this.now(), 'deliveredAt');
+    try {
+      await this.db.prepare(`
+        UPDATE sync_warning_outbox
+        SET status = 'delivered',
+            delivery_attempts = delivery_attempts + 1,
+            last_error_code = NULL,
+            delivered_at = COALESCE(delivered_at, ?),
+            updated_at = ?
+        WHERE outbox_id = ? AND status = 'pending'
+      `).bind(deliveredAt, deliveredAt, outboxId).run();
+      return true;
+    } catch (cause) {
+      throw d1Error('Failed to complete sync warning delivery', 'D1_SYNC_WARNING_OUTBOX_DELIVERY_FAILED', cause);
+    }
+  }
+
+  async completeWork(input) {
+    const value = typeof input === 'string' ? { workKey: input, completion: null } : input;
+    const key = requireText(value?.workKey, 'workKey');
+    const now = safeTimestamp(this.now(), 'now');
+    const completionJson = value?.completion
+      ? JSON.stringify(sanitizeOperationalValue(value.completion))
+      : null;
     try {
       await this.db.batch([
         this.db.prepare('DELETE FROM sync_work_units WHERE work_key = ?').bind(key),
         this.db.prepare('DELETE FROM sync_work_phases WHERE work_key = ?').bind(key),
-        this.db.prepare('DELETE FROM sync_work_runs WHERE work_key = ?').bind(key),
+        this.db.prepare(`
+          UPDATE sync_work_runs
+          SET lifecycle_status = 'completed',
+              completed_at = ?,
+              expires_at = ?,
+              completion_json = ?,
+              updated_at = ?
+          WHERE work_key = ? AND lifecycle_status = 'active'
+        `).bind(now, now + this.retentionMs, completionJson, now, key),
       ]);
       return true;
     } catch (cause) {
       throw d1Error('Failed to complete resumable sync work', 'D1_SYNC_WORK_COMPLETE_FAILED', cause);
     }
+  }
+
+  async abandonWork(input = {}) {
+    const workKey = requireText(input.workKey, 'workKey');
+    const reason = requireText(input.reason, 'reason');
+    const lifecycleStatus = input.lifecycleStatus === 'superseded' ? 'superseded' : 'terminal';
+    const auditReference = optionalText(input.auditReference);
+    const now = safeTimestamp(this.now(), 'now');
+    try {
+      const result = await this.db.prepare(`
+        UPDATE sync_work_runs
+        SET lifecycle_status = '${lifecycleStatus}',
+            terminal_reason = COALESCE(terminal_reason, ?),
+            abandoned_at = COALESCE(abandoned_at, ?),
+            expires_at = COALESCE(expires_at, ?),
+            audit_reference = COALESCE(audit_reference, ?),
+            updated_at = ?
+        WHERE work_key = ?
+          AND lifecycle_status IN ('active', 'completed', 'terminal', 'superseded')
+      `).bind(
+        reason,
+        now,
+        now + this.retentionMs,
+        auditReference,
+        now,
+        workKey,
+      ).run();
+      return Object.freeze({
+        terminal: readChanges(result) > 0,
+        found: readChanges(result) > 0,
+        status: lifecycleStatus,
+      });
+    } catch (cause) {
+      throw d1Error('Failed to mark resumable sync work terminal', 'D1_SYNC_WORK_TERMINAL_FAILED', cause);
+    }
+  }
+
+  async cleanupExpiredWork(input = {}) {
+    const now = safeTimestamp(input.now ?? this.now(), 'now');
+    const limit = boundedPositiveInteger(input.limit ?? 100, 'limit', 500);
+    try {
+      const result = await this.db.prepare(`
+        SELECT work_key
+        FROM sync_work_runs AS work
+        WHERE lifecycle_status IN ('completed', 'terminal', 'superseded')
+          AND expires_at IS NOT NULL
+          AND expires_at <= ?
+          AND NOT EXISTS (
+            SELECT 1 FROM sync_locks AS lock
+            WHERE lock.lock_key = work.cursor_key AND lock.expires_at > ?
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM sync_warning_outbox AS warning
+            WHERE warning.work_key = work.work_key AND warning.status = 'pending'
+          )
+        ORDER BY expires_at ASC
+        LIMIT ?
+      `).bind(now, now, limit).all();
+      const candidates = readRows(result).map((row) => requireText(row.work_key, 'work_key'));
+      for (const workKey of candidates) {
+        await this.db.batch([
+          this.db.prepare(`
+            DELETE FROM sync_work_units
+            WHERE work_key = ? AND EXISTS (
+              SELECT 1 FROM sync_work_runs
+              WHERE work_key = ? AND lifecycle_status IN ('completed', 'terminal', 'superseded')
+                AND expires_at <= ?
+                AND NOT EXISTS (
+                  SELECT 1 FROM sync_locks
+                  WHERE lock_key = sync_work_runs.cursor_key AND expires_at > ?
+                )
+                AND NOT EXISTS (
+                  SELECT 1 FROM sync_warning_outbox
+                  WHERE work_key = sync_work_runs.work_key AND status = 'pending'
+                )
+            )
+          `).bind(workKey, workKey, now, now),
+          this.db.prepare(`
+            DELETE FROM sync_work_phases
+            WHERE work_key = ? AND EXISTS (
+              SELECT 1 FROM sync_work_runs
+              WHERE work_key = ? AND lifecycle_status IN ('completed', 'terminal', 'superseded')
+                AND expires_at <= ?
+                AND NOT EXISTS (
+                  SELECT 1 FROM sync_locks
+                  WHERE lock_key = sync_work_runs.cursor_key AND expires_at > ?
+                )
+                AND NOT EXISTS (
+                  SELECT 1 FROM sync_warning_outbox
+                  WHERE work_key = sync_work_runs.work_key AND status = 'pending'
+                )
+            )
+          `).bind(workKey, workKey, now, now),
+          this.db.prepare(`
+            DELETE FROM sync_warning_outbox
+            WHERE work_key = ? AND status = 'delivered'
+          `).bind(workKey),
+          this.db.prepare(`
+            DELETE FROM sync_work_runs
+            WHERE work_key = ?
+              AND lifecycle_status IN ('completed', 'terminal', 'superseded')
+              AND expires_at <= ?
+              AND NOT EXISTS (
+                SELECT 1 FROM sync_locks
+                WHERE lock_key = sync_work_runs.cursor_key AND expires_at > ?
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM sync_warning_outbox
+                WHERE work_key = sync_work_runs.work_key AND status = 'pending'
+              )
+          `).bind(workKey, now, now),
+        ]);
+      }
+      return Object.freeze({ deleted: candidates.length });
+    } catch (cause) {
+      throw d1Error('Failed to clean expired resumable sync work', 'D1_SYNC_WORK_CLEANUP_FAILED', cause);
+    }
+  }
+
+  async #recordSupersededWork(work, now) {
+    await this.db.prepare(`
+      INSERT INTO sync_work_runs (
+        work_key, cursor_key, work_type, operation_fingerprint, status,
+        generation, requested_at, lifecycle_status, terminal_reason,
+        abandoned_at, expires_at, audit_reference, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, 'active', ?, ?, 'superseded', 'SYNC_WORK_SUPERSEDED', ?, ?, ?, ?, ?)
+      ON CONFLICT(work_key) DO UPDATE SET
+        lifecycle_status = 'superseded',
+        terminal_reason = COALESCE(sync_work_runs.terminal_reason, 'SYNC_WORK_SUPERSEDED'),
+        abandoned_at = COALESCE(sync_work_runs.abandoned_at, excluded.abandoned_at),
+        expires_at = COALESCE(sync_work_runs.expires_at, excluded.expires_at),
+        audit_reference = COALESCE(sync_work_runs.audit_reference, excluded.audit_reference),
+        updated_at = excluded.updated_at
+    `).bind(
+      work.workKey,
+      work.cursorKey,
+      work.workType,
+      work.operationFingerprint,
+      work.generation,
+      work.requestedAt,
+      now,
+      now + this.retentionMs,
+      `generation:${work.generation}`,
+      now,
+      now,
+    ).run();
   }
 }
 
@@ -213,12 +610,18 @@ function freezePhase(row) {
   });
 }
 
-function requireWork(input) {
+function requireWork(input, fallbackTimestamp) {
+  const requestedAt = safeTimestamp(
+    input.requestedAt ?? input.generation ?? fallbackTimestamp,
+    'requestedAt',
+  );
   return Object.freeze({
     workKey: requireText(input.workKey, 'workKey'),
     cursorKey: requireText(input.cursorKey, 'cursorKey'),
     workType: requireText(input.workType, 'workType'),
     operationFingerprint: requireText(input.operationFingerprint, 'operationFingerprint'),
+    generation: safeTimestamp(input.generation ?? requestedAt, 'generation'),
+    requestedAt,
   });
 }
 
@@ -243,14 +646,41 @@ function requirePhaseWrite(input) {
   });
 }
 
+function requireWarning(input) {
+  const generationGuard = input.generationGuard
+    ? Object.freeze({
+      cursorKey: requireText(input.generationGuard.cursorKey, 'generationGuard.cursorKey'),
+      generation: safeTimestamp(input.generationGuard.generation, 'generationGuard.generation'),
+      workKey: requireText(input.generationGuard.workKey, 'generationGuard.workKey'),
+    })
+    : null;
+  return Object.freeze({
+    outboxId: requireText(input.outboxId, 'outboxId'),
+    workKey: requireText(input.workKey, 'workKey'),
+    syncRunId: requireText(input.syncRunId, 'syncRunId'),
+    warningType: requireText(input.warningType, 'warningType'),
+    sourceKey: requireText(input.sourceKey, 'sourceKey'),
+    payload: requireJsonObject(input.payload ?? {}, 'payload'),
+    generationGuard,
+  });
+}
+
+function parseNullableJsonObject(value, fieldName) {
+  if (value === null || value === undefined || value === '') return null;
+  return parseJsonObject(value, fieldName);
+}
 function parseJsonObject(value, fieldName) {
   try {
     return Object.freeze(requireJsonObject(JSON.parse(String(value)), fieldName));
   } catch (cause) {
-    throw d1Error(`Invalid resumable sync ${fieldName}`, 'D1_SYNC_WORK_INVALID_JSON', cause);
+    if (cause?.code === 'D1_SYNC_WORK_INVALID_JSON') throw cause;
+    throw permanentError(`Invalid resumable sync ${fieldName}`, {
+      code: 'D1_SYNC_WORK_INVALID_JSON',
+      cause,
+      details: { fieldName },
+    });
   }
 }
-
 function requireJsonObject(value, fieldName) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new TypeError(`${fieldName} must be an object`);
@@ -258,27 +688,29 @@ function requireJsonObject(value, fieldName) {
   JSON.stringify(value);
   return { ...value };
 }
-
 function requireD1(value) {
   if (typeof value?.prepare !== 'function' || typeof value?.batch !== 'function') {
     throw new TypeError('D1ResumableWorkStore requires D1 prepare() and batch()');
   }
   return value;
 }
-
 function readRows(result) {
   const rows = result?.results ?? result?.rows ?? [];
   if (!Array.isArray(rows)) throw new TypeError('D1 all() result must contain an array');
   return rows;
 }
-
+function readChanges(result) {
+  return Number(result?.meta?.changes ?? result?.changes ?? 0);
+}
 function requireText(value, fieldName) {
   if (typeof value !== 'string' || value.trim() === '') {
     throw new TypeError(`D1ResumableWorkStore requires ${fieldName}`);
   }
   return value.trim();
 }
-
+function optionalText(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
 function safeTimestamp(value, fieldName) {
   const number = Number(value);
   if (!Number.isSafeInteger(number) || number < 0) {
@@ -286,11 +718,9 @@ function safeTimestamp(value, fieldName) {
   }
   return number;
 }
-
 function nonNegativeInteger(value, fieldName) {
   return safeTimestamp(value, fieldName);
 }
-
 function boundedPositiveInteger(value, fieldName, maximum) {
   const number = Number(value);
   if (!Number.isSafeInteger(number) || number <= 0 || number > maximum) {
@@ -298,11 +728,13 @@ function boundedPositiveInteger(value, fieldName, maximum) {
   }
   return number;
 }
-
 function d1Error(message, code, cause) {
   return transientError(message, {
     code,
     cause,
-    details: { causeMessage: cause instanceof Error ? cause.message : String(cause) },
+    details: {
+      causeCode: cause?.code ?? null,
+      causeMessage: cause instanceof Error ? cause.message : String(cause),
+    },
   });
 }

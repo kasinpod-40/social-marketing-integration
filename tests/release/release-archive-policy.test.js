@@ -21,11 +21,17 @@ test('release policy normalizes safe paths and blocks local or generated content
     'node_modules/pkg/index.js',
     'docs/.DS_Store',
     'outputs/release.zip',
+    'docs/nested-release.zip',
+    '.mkt-locks/account.lock',
+    'runtime/local-state.sqlite-wal',
   ]), [
     '.dev.vars',
+    '.mkt-locks/account.lock',
     'docs/.DS_Store',
+    'docs/nested-release.zip',
     'node_modules/pkg/index.js',
     'outputs/release.zip',
+    'runtime/local-state.sqlite-wal',
     'wrangler.sync.jsonc',
   ]);
 });

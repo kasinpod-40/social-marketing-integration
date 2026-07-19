@@ -112,6 +112,57 @@ test('checkpoint failures are retryable and do not masquerade as business succes
   );
 });
 
+test('guarded checkpoint uses the durable generation fence and rejects a superseded writer', async () => {
+  const db = createFakeD1({
+    firstRows: [{
+      generation: 2_000,
+      work_key: 'message-new',
+      last_sync_run_id: 'run-new',
+    }],
+  });
+  const store = new D1IncrementalStateStore({ db, now: () => 3_000 });
+
+  await assert.rejects(
+    store.saveCheckpoint({
+      cursor: {
+        cursorKey: 'cursor-1',
+        customerProfile: 'profile',
+        platform: 'youtube',
+        accountKey: 'account',
+        source: 'youtube_data_api',
+        syncType: 'organic_sync',
+        lastMetricDate: '2026-07-15',
+        dictionaryHash: null,
+        lastFullSyncAt: 1_000,
+        lastSuccessfulSyncAt: 3_000,
+        incrementalRunCount: 0,
+        lastSyncRunId: 'run-old',
+      },
+      records: [{
+        sourceRecordId: 'video-1',
+        sourceModifiedAt: 1_000,
+        sourceHash: 'old-hash',
+        externalContentId: 'video-1',
+      }],
+      fullSnapshot: true,
+      generationGuard: {
+        generation: 1_000,
+        workKey: 'message-old',
+      },
+    }),
+    (error) => error?.code === 'SYNC_WORK_SUPERSEDED' && error.retryable === false,
+  );
+
+  assert.ok(db.prepared.some((statement) => (
+    /sync_generation_fences/u.test(statement.sql)
+    && /source_record_states/u.test(statement.sql)
+  )));
+  assert.ok(db.prepared.some((statement) => (
+    /sync_cursors/u.test(statement.sql)
+    && /generation/u.test(statement.sql)
+  )));
+});
+
 function createFakeD1(options = {}) {
   const prepared = [];
   const firstRows = [...(options.firstRows ?? [])];

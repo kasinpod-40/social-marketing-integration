@@ -44,6 +44,13 @@ wrangler.sync.jsonc
 /temp/
 /dist/
 /release/
+.mkt-locks/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
 
 # Generated artifact workspace และ inspection sidecars ไม่ใช่ Release source
 outputs/

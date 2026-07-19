@@ -1,106 +1,77 @@
-# Social Marketing Integration v0.11.0-rc.1 — Verification Report
+# Verification Report — YouTube resumable-sync reliability hardening
 
-Date: 2026-07-15  
-Candidate: `v0.11.0-rc.1`  
-Foundation baseline: `v0.10.2-multi-channel-foundation-approved`  
-YouTube connector status: `uat_pending`  
-YouTube schedule: `disabled`
+Date: 2026-07-19
 
-## Scope completed
+Candidate: `v0.11.0 source patch`
 
-- Guarded Preview/Apply installer for the three YouTube RAW tables.
-- Public YouTube Data API and optional Owner Analytics OAuth DEV access preflight.
-- RAW Channel, Video and Analytics mappings.
-- Canonical writes to `MKT_Content` and cumulative `MKT_Content_Daily`.
-- `MKT_Accounts` destination write as the final write stage.
-- Manual Queue route for `youtube.channel.organic.sync` with `trigger=manual_uat` only.
-- Separate UAT feature flag; normal connector flag remains disabled.
-- D1 incremental checkpoint and periodic full reconciliation.
-- Non-destructive missing/private/deleted-video handling.
-- Existing Sync Log, distributed lock, bounded retry, DLQ and System Alert reuse.
-- Successful-sync reconciliation warnings; D1 primary-alert persistence failure remains retryable and prevents Queue acknowledgement.
-- Previously observed Analytics missing-key reconciliation with retain/warn semantics and no fabricated Video×Day gaps.
-- Central operational identity redaction for Worker logs, D1 and the Lark reliability mirror.
-- Canonical approved Workbook and Workbook/source parity coverage without a byte-identical duplicate.
+Base commit: `c1ea139`
 
-## Intentionally not executed
+Production: disabled
 
-No live external mutation was performed because authorized DEV access was not available in this session:
+## Findings closed in Source
 
-- No Lark Base schema was applied.
-- No YouTube API request was made.
-- No Cloudflare Worker was deployed.
-- No Queue message was sent.
-- No YouTube schedule was enabled.
-- Connector was not promoted from `uat_pending` to `active`.
-- No Meta or Production work was started.
+1. Stale Retry ถูกกันด้วย durable generation fence และ guarded checkpoint CAS
+2. Analytics row นอก requested video/channel/date scope ถูก reject ก่อน staging/write/checkpoint
+3. Reconciliation warning ถูก persist ใน deterministic outbox และ replay จาก durable completion
+4. Permanent/DLQ staging ถูก mark terminal พร้อม reason/audit/expiry และ guarded cleanup
 
-## Final clean-archive verification
-
-All commands below were run from a fresh extraction of the final ZIP, not from the working directory.
+## Verification
 
 | Gate | Result |
 |---|---:|
-| Unit / Integration | 376 / 376 passed |
-| Workers runtime | 6 / 6 passed |
-| Focused report reliability | 53 / 53 passed |
-| Focused YouTube/Reliability/Redaction | 37 / 37 passed |
-| Architecture | 109 source files / 230 local dependencies / 0 cycles |
+| `npm ci` | Passed |
+| `npm run check` | Passed |
+| Unit / Integration | 407 / 407 passed |
+| Workers runtime | 8 / 8 passed |
+| Report reliability | 60 / 60 passed |
+| Focused review regressions | 46 / 46 passed |
+| Architecture | 111 source files / 233 dependencies / 0 cycles |
 | Repository hygiene | Passed |
-| npm audit --offline | 0 vulnerabilities |
+| `npm audit --offline` | 0 vulnerabilities |
 | Wrangler dry-run | Passed |
-| Bundle size | 443.78 KiB |
-| Gzip size | 90.89 KiB |
-| Release files | 256 |
-| Blocked paths | 0 |
-| Missing required paths | 0 |
-| Sensitive findings | 0 |
-| Duplicate artifacts | 0 |
-| Manifest entries | 256 |
+| Bundle / Gzip | 512.33 KiB / 102.41 KiB |
+| Clean archive | 261 files; blocked/missing/sensitive/duplicate = 0 |
+| Fresh extraction gates | Passed |
 
-## Archive identity
+Focused suite includes:
 
-Packaging writes the exact SHA-256 beside the local ZIP at
-`outputs/releases/social-marketing-integration-v0.11.0-rc.1.zip.sha256` and the machine-readable result at the matching `.verification.json` path. These generated values stay outside Source so the archive never embeds a stale or self-referential checksum.
+- A(view=100) failure → B(view=200) success → A retry superseded
+- Guarded checkpoint fence
+- 837 videos: Full pagination, incremental Content 100, Analytics 837, retry resume, no duplicate
+- Analytics video/channel/date scope mismatch
+- Warning alert fails once, completion replay delivers one deterministic business alert
+- Permanent handled/unhandled, retry exhaustion/DLQ, terminal mark, TTL cleanup, active/locked exclusion and redrive
+- Release path blocklist for nested ZIP, `.mkt-locks`, SQLite sidecars and macOS metadata
 
-## Verification commands
+## Migration replay
 
-```bash
-npm ci
-npm run check
-npm test
-npm run test:report-reliability
-npm audit --offline
-npm run deploy:dry-run
-npm run release:verify -- /path/to/social-marketing-integration-v0.11.0-rc.1.zip
-```
+- Empty schema: `0001_initial.sql` through `0005_resumable_sync_reliability.sql` passed
+- Existing schema: `0001`–`0004`, inserted legacy work/cursor rows, then `0005` passed
+- Legacy work retained with backfilled generation/requested-at and active lifecycle
+- Legacy cursor retained; new generation fields default safely until a guarded YouTube checkpoint writes them
 
-## Required external inputs for the next phase
+## Release hygiene
 
-Store all values outside Source control:
+Blocked from clean archives:
 
-- Authorized `YOUTUBE_CHANNEL_ID`.
-- `YOUTUBE_API_KEY` for Public Data API access.
-- Optional Owner Analytics OAuth client ID, client secret and refresh token.
-- Lark DEV app credentials and app token.
-- Returned YouTube RAW Table IDs after guarded Schema Apply.
+- `.dev.vars`, local `.env`, `wrangler.sync.jsonc`, Secrets and Live IDs
+- `.git`, `.wrangler`, `node_modules`, outputs, coverage and local release directories
+- `__MACOSX`, `.DS_Store`, AppleDouble, logs and `.mkt-locks`
+- nested `.zip`, SQLite DB/WAL/SHM runtime files
 
-## Guarded live execution order
+## Not executed
 
-1. Add authorized credentials and Channel allowlist to ignored local secrets.
-2. Run `npm run preflight:youtube`.
-3. Run `npm run setup:youtube-schema` and review the Preview plan.
-4. Apply with `CONFIRM_WRITE=YES npm run setup:youtube-schema:apply`.
-5. Save returned Table IDs only in ignored local configuration.
-6. Deploy to DEV with the UAT flag only; keep normal YouTube and Schedule flags false.
-7. Generate the Manual UAT payload with `npm run job:youtube-uat` and enqueue it deliberately.
-8. Verify first sync, idempotent rerun, incremental sync, full Video/Analytics reconciliation, identity redaction, quota/rate-limit, D1 alert failure, lock/retry/DLQ and Lark records.
-9. Promote to `active` and design a Schedule only after all Live DEV UAT evidence passes.
+- No YouTube/Lark Live API mutation
+- No Remote D1 migration
+- No Queue message
+- No Cloudflare deployment
+- No DEV schedule or Secret change
+- No Production change
 
-## Suggested Git handoff
+## Remaining release gates
 
-```bash
-git add .
-git commit -m "fix: harden YouTube reconciliation and reliability"
-git push
-```
+Apply additive migration 0005 in DEV, deploy guarded patch, run controlled generation/outbox/terminal smoke, then run Customer-owned 837-video Live UAT. DEV 2-video smoke and deterministic fixtures do not replace Customer UAT.
+
+## Rollback
+
+Disable YouTube Schedule/Analytics and redeploy the prior known-good Worker. Migration 0005 is additive and may remain applied; do not delete Business checkpoints or Lark records.

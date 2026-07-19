@@ -2,12 +2,12 @@
 
 ## Task metadata
 
-- **Status:** `dev_patch_deployed_smoke_passed_pending_customer_837_inventory_uat`
+- **Status:** `source_patch_verified_pending_migration_and_dev_redeploy`
 - **Official clean baseline:** `v0.10.2-multi-channel-foundation-approved`
-- **Working candidate:** `v0.11.0 + large-account/resumable-sync commit 44377ce`
+- **Working candidate:** `v0.11.0 + generation-fence/outbox/terminal-lifecycle source patch`
 - **Blueprint:** `Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.2.xlsx`
 - **Connector status:** `active`
-- **Schedule:** `enabled_in_verified_dev_on_large_account_patch`
+- **Schedule:** `enabled_in_prior_verified_dev_deployment_source_patch_not_deployed`
 - **Last updated:** `2026-07-19`
 - **Owners:** ChatGPT Work (technical review/release) + developer (DEV credentials and guarded live execution)
 
@@ -149,15 +149,15 @@ Shared contract สำหรับ Instagram/Facebook/TikTok งานถัด�
 
 ## Acceptance and verification
 
-- Current post-review source Unit/Integration: 397/397 passed
+- Current post-review source Unit/Integration: 407/407 passed
 - Current Workers runtime: 8/8 passed
 - Current focused Report reliability: 60/60 passed
-- Current focused YouTube/Scheduler/Queue/Reliability/Resumable-work suite: 69/69 passed
+- Current focused Independent-review regression suite: 46/46 passed
 - Focused DateTime/identity regression: 6/6 passed
-- Architecture: 111 source files / 232 local dependencies / 0 cycles
+- Architecture: 111 source files / 233 local dependencies / 0 cycles
 - Repository hygiene: passed
 - npm audit: 0 vulnerabilities
-- Wrangler dry-run: 480.80 KiB / gzip 97.58 KiB passed
+- Wrangler dry-run: 512.33 KiB / gzip 102.41 KiB passed
 - Historical v0.11.0 clean archive extraction retest: `npm ci`, check, Unit 384/384, Workers 7/7, reliability 58/58, audit 0 และ dry-run ผ่าน; Archive verifier พบ blocked/missing/sensitive/duplicate = 0
 - Live DEV UAT: `core_happy_path_and_safe_reliability_faults_passed`
 - Active DEV deployment: Worker `2037232c-152a-4e26-95fa-fca044f65bd9`, commit `44377ce`, both Cron triggers deployed
@@ -291,3 +291,17 @@ Shared contract สำหรับ Instagram/Facebook/TikTok งานถัด�
 - **Data model:** approved — Blueprint v0.10.2
 - **Release decision:** DEV patch active แต่ Customer 837-video Live UAT ยังเป็น Production release blocker; Production remains disabled
 - **Recommended commit for current delta:** `docs: record YouTube large-account DEV rollout`
+
+### Independent review reliability hardening — 2026-07-19
+
+- **Root cause:** (1) Resumable work ผูกกับ Queue `message.id` แต่ไม่มี durable generation fence ทำให้ Retry เก่าสามารถกลับมา Plan/Write/Commit checkpoint หลังงานใหม่กว่า (2) Analytics ตรวจ headers/markers แต่ไม่ตรวจทุก mapped row กับ requested video/channel/date scope ก่อน staging (3) Reconciliation warning ถูกสร้างหลัง Business checkpoint/cleanup และ alert store failure ทำให้ Retry รอบถัดไปหา warning เดิมไม่เจอ (4) `completeWork` เกิดเฉพาะ success ส่วน Permanent/DLQ ไม่มี terminal lifecycle/TTL cleanup จึงทิ้ง staging ค้าง
+- **Implementation:** เพิ่ม D1 generation fence และตรวจก่อน Source staging, ก่อนทุก Destination plan/write chunk และก่อน guarded checkpoint CAS; stale job คืน `superseded` โดยไม่แตะ Source/Lark/checkpoint. เพิ่ม Analytics row-scope validator แบบ typed fail-closed. เพิ่ม deterministic durable warning outbox + completed-work replay และ mark delivered หลัง D1 System Alert upsert. เพิ่ม `active/completed/terminal/superseded` lifecycle, terminal reason/audit/expiry, idempotent DLQ/Permanent marking และ guarded bounded cleanup ที่ไม่ลบ active/locked/pending-warning work. DLQ redrive ต้องสร้าง Queue message/work key และ generation ใหม่ ห้าม implicit resume terminal staging.
+- **Files changed:** Worker Queue routing, YouTube sync use case/RAW adapter, Reliability runner, D1 incremental/resumable stores, in-memory work store, additive migration `0005_resumable_sync_reliability.sql`, release policy/ignore rules, focused regression tests และเอกสาร handoff/Project Brain/README/CHANGELOG.
+- **Commands run:** fail-before focused tests, official Cloudflare/Workers/D1 contract review, `npm ci`, `npm run check`, `npm test`, `npm run test:worker`, `npm run test:report-reliability`, `npm audit --offline`, `npm run deploy:dry-run`, focused regression suites, `git diff --check`, SQLite empty/existing migration replay และ repository status/diff inspection. Workers runtime ใช้ execution นอก sandbox เพราะ Miniflare ต้องเปิด loopback.
+- **Tests:** Regression ครอบคลุม A(view=100) ล้ม → B(view=200) สำเร็จ → A retry ถูก supersede; checkpoint CAS; 837-video Full/Incremental/Analytics resume/idempotency; Analytics video/channel/date นอก scope; warning alert ล้มครั้งแรกแล้ว completion replay ส่ง business alert เดิมหนึ่งรายการโดยไม่เรียก Source ซ้ำ; Permanent ทั้ง reliability-handled/unhandled, retry exhaustion/DLQ, terminal mark, TTL cleanup ซ้ำ, active/locked exclusion และ new-generation redrive.
+- **Regression results:** Unit/Integration `407/407`, Workers runtime `8/8`, Report reliability `60/60`, focused review suite `46/46`, Architecture `111 source files / 233 local dependencies / 0 cycles`, repository hygiene pass, offline audit `0 vulnerabilities`, Wrangler dry-run `512.33 KiB / gzip 102.41 KiB`. Empty D1 replay `0001→0005` ผ่าน; existing schema `0001→0004 + legacy rows → 0005` ผ่านและรักษา legacy work/cursor. Clean archive มี 261 files และ verifier พบ blocked/missing/sensitive/duplicate = 0; gates ผ่านซ้ำจาก fresh extraction.
+- **TikTok/Core impact:** TikTok unguarded checkpoint SQL และ existing Queue/Scheduler/Retry/Lock contracts คงเดิม; additive columns/tables ไม่บังคับ TikTok ใช้ generation ทันที. TikTok Queue/report reliability regressions ผ่าน. Shared work store รองรับ connector ขนาดใหญ่ถัดไปโดยไม่เพิ่ม YouTube-only state machine.
+- **Live UAT/Deployment:** Patch นี้ไม่เรียก YouTube/Lark API, ไม่ Apply Remote D1 migration, ไม่ส่ง Queue, ไม่ Deploy, ไม่เปลี่ยน DEV schedule/Secret/Production. DEV ยังคงรัน commit/deployment ก่อน patch นี้จนกว่าจะผ่าน review และ apply migration 0005.
+- **Remaining risks:** ต้อง review SQL บน target D1, apply additive migration 0005 ก่อน deploy source ใหม่, ทำ controlled DEV stale-generation/outbox/terminal smoke และ Customer-owned 837-video Live UAT. In-memory 837 fixture ไม่แทน Live customer quota/data behavior. Cleanup ทำงานแบบ bounded opportunistic หลัง Reliability runner ปล่อย Lock; หากไม่มีงานนานควรเพิ่ม scheduled maintenance หลังมี operational evidence. Work ที่ยังมี pending warning จะถูกเก็บไว้โดยตั้งใจจน Alert delivery/repair สำเร็จ.
+- **Rollback:** ปิด `MKT_SCHEDULE_YOUTUBE_ENABLED` และ `MKT_YOUTUBE_ANALYTICS_ENABLED`, redeploy prior known-good Worker. Migration 0005 เป็น additive จึงเก็บไว้ได้; prior codeไม่อ่าน columns/tables ใหม่. ห้ามลบ Business checkpoint/Lark rows. Terminal/completed staging ลบได้ภายหลังด้วย guarded cleanup เท่านั้น.
+- **Commit suggestion:** `fix: harden YouTube resumable sync`

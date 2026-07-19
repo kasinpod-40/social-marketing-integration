@@ -175,23 +175,31 @@ export function createSyncWorker(dependencies = {}) {
             continue;
           }
 
-          if (error?.reliabilityHandled !== true) {
-            try {
+          try {
+            if (error?.reliabilityHandled === true) {
+              await markQueueWorkTerminal({
+                env,
+                message,
+                jobType: job?.body?.type,
+                reason: 'QUEUE_PERMANENT_FAILURE',
+                auditReference: `sync-run:${error?.syncRunId ?? message.id}`,
+              });
+            } else {
               await recordPermanentQueueFailure({
                 env, batch, message, job, error, operationalStoreFactory,
               });
-            } catch (persistenceError) {
-              logQueueResult({
-                ok: false,
-                scope: 'terminal_failure_persistence',
-                messageId: message.id,
-                error: persistenceError instanceof Error ? persistenceError.message : String(persistenceError),
-                code: persistenceError?.code ?? null,
-              });
-              // D1 เป็น source of truth จึงห้าม Ack เมื่อบันทึก terminal state ไม่สำเร็จ
-              message.retry({ delaySeconds: readRetryDelaySeconds(env, message) });
-              continue;
             }
+          } catch (persistenceError) {
+            logQueueResult({
+              ok: false,
+              scope: 'terminal_failure_persistence',
+              messageId: message.id,
+              error: persistenceError instanceof Error ? persistenceError.message : String(persistenceError),
+              code: persistenceError?.code ?? null,
+            });
+            // D1 เป็น source of truth จึงห้าม Ack เมื่อบันทึก terminal state ไม่สำเร็จ
+            message.retry({ delaySeconds: readRetryDelaySeconds(env, message) });
+            continue;
           }
           message.ack();
         }
@@ -224,8 +232,10 @@ export async function processJob(input) {
       requested: input.job.body?.analyticsEnabled,
     });
     const channelId = readYouTubeChannelIdFromEnv(input.env);
+    const requestedAt = readYouTubeJobGeneration(input.job);
+    const resumableWorkStore = infrastructure.getResumableWorkStore();
 
-    return runReliableSync({
+    const result = await runReliableSync({
       store: reliability.store,
       lockManager: reliability.lockManager,
       customerProfile: runtimeConfig.profileKey,
@@ -241,6 +251,7 @@ export async function processJob(input) {
       ),
       alertOnRetryableFailure: false,
       alertOnResultWarnings: true,
+      warningOutboxStore: resumableWorkStore,
       onReliabilityError: (event) => logQueueResult({
         ok: false,
         scope: 'reliability',
@@ -252,7 +263,7 @@ export async function processJob(input) {
         repository: infrastructure.repository,
         syncEngine: infrastructure.syncEngine,
         incrementalStateStore: infrastructure.getIncrementalStateStore(),
-        resumableWorkStore: infrastructure.getResumableWorkStore(),
+        resumableWorkStore,
         publicClient: clients.publicClient,
         ownerClient: clients.ownerClient,
         channelId,
@@ -261,6 +272,8 @@ export async function processJob(input) {
         cursorKey: lockKey,
         // Queue retry คง message.id เดิม จึง Resume page/chunk ได้แม้ syncRunId ของแต่ละ attempt เปลี่ยน
         workKey: `youtube:${requireJobText(input.message?.id, 'message.id')}`,
+        requestedAt,
+        generation: requestedAt,
         syncType: 'organic_sync',
         metricDate: readMetricDate(input.job.body?.metricDate, input.env),
         reportingTimezone: input.env?.DEFAULT_TIMEZONE ?? 'Asia/Bangkok',
@@ -286,6 +299,10 @@ export async function processJob(input) {
         },
       }),
     });
+    // Cleanup หลัง Reliability runner ปล่อย distributed lock แล้วเท่านั้น
+    // เพื่อไม่ให้ retention sweep แข่งกับ active/retryable work ของ cursor เดียวกัน
+    await resumableWorkStore.cleanupExpiredWork({ limit: 25 });
+    return result;
   }
 
   if (definition.type === JOB_TYPES.TIKTOK_CREATOR_NATIVE_SYNC) {
@@ -529,6 +546,13 @@ async function processDeadLetterBatch(batch, env, storeFactory) {
     try { job = normalizeQueueJobMessage(message); } catch { /* เก็บ Raw body ต่อได้ */ }
     const dlqId = `dlq:${message.id}`;
     try {
+      await markQueueWorkTerminal({
+        env,
+        message,
+        jobType: job?.body?.type,
+        reason: 'QUEUE_RETRY_EXHAUSTED',
+        auditReference: dlqId,
+      });
       await store.saveDeadLetter({
         dlqId,
         messageId: message.id,
@@ -613,6 +637,13 @@ async function processUnknownQueueBatch(batch, env, storeFactory) {
 async function recordPermanentQueueFailure(input) {
   const store = input.operationalStoreFactory(input.env);
   const dlqId = `terminal:${input.message.id}`;
+  await markQueueWorkTerminal({
+    env: input.env,
+    message: input.message,
+    jobType: input.job?.body?.type,
+    reason: 'QUEUE_PERMANENT_FAILURE',
+    auditReference: dlqId,
+  });
   await store.saveDeadLetter({
     dlqId,
     messageId: input.message.id,
@@ -634,6 +665,22 @@ async function recordPermanentQueueFailure(input) {
     message: `Queue job หยุดแบบ Permanent\nmessage_id=${input.message.id}\njob_type=${input.job?.body?.type ?? 'unknown'}\nerror=${input.error instanceof Error ? input.error.message : String(input.error)}`,
     details: { attempts: readAttempts(input.message) },
   }));
+}
+
+async function markQueueWorkTerminal(input) {
+  const platform = platformFromJobType(input.jobType);
+  if (!new Set(['youtube', 'tiktok']).has(platform)) return false;
+  // Dependency-injected/non-production route อาจไม่มี D1 binding;
+  // Production path ยัง fail-closed ที่ createOperationalStore เมื่อ binding หาย
+  if (!input.env?.MKT_STATE_DB) return false;
+  const workStore = new D1ResumableWorkStore({ db: input.env?.MKT_STATE_DB });
+  const result = await workStore.abandonWork({
+    workKey: `${platform}:${requireJobText(input.message?.id, 'message.id')}`,
+    reason: input.reason,
+    auditReference: input.auditReference,
+  });
+  await workStore.cleanupExpiredWork({ limit: 25 });
+  return result;
 }
 
 /** D1 เป็น Primary เสมอ ส่วน Lark เป็น Mirror เมื่อ Config ครบ */
@@ -934,6 +981,17 @@ function readRetryDelaySeconds(env, message) {
     ? configured
     : DEFAULT_RETRY_DELAY_SECONDS;
   return Math.min(43_200, base * Math.min(readAttempts(message), 10));
+}
+
+function readYouTubeJobGeneration(job) {
+  const instant = Date.parse(job?.requestedAt ?? '');
+  if (!Number.isSafeInteger(instant) || instant < 0) {
+    throw permanentError('YouTube sync job requires a valid requestedAt generation', {
+      code: 'INVALID_SYNC_JOB_GENERATION',
+      details: { fieldName: 'requestedAt' },
+    });
+  }
+  return instant;
 }
 
 function readPositiveInteger(value, fallback) {

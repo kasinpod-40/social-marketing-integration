@@ -1,35 +1,26 @@
-# Git Handoff — Social Marketing Integration v0.11.0-rc.1
+# Git Handoff — YouTube resumable-sync reliability hardening
 
 ## Release status
 
-- Official foundation: `v0.10.2-multi-channel-foundation-approved`
-- Working candidate: `v0.11.0-rc.1`
-- YouTube Organic: `uat_pending`
-- Manual DEV UAT source: ready
-- YouTube schedule: disabled
-- Production: not started
+- Branch: `main`
+- Base: `c1ea139` (`docs: record YouTube large-account DEV rollout`)
+- Target commit: `fix: harden YouTube resumable sync`
+- Source gates: passed
+- Remote D1 migration 0005 / DEV deployment: not executed
+- Production: disabled
 
-## Primary source artifact
+## Included
 
-`social-marketing-integration-v0.11.0-rc.1.zip`
+- Durable generation/requested-at fence and checkpoint CAS
+- Pre-plan, pre-staging, per-write-chunk and pre-checkpoint stale guards
+- Analytics video/channel/date row-scope validation
+- Durable deterministic warning outbox and completion replay
+- Completed/terminal/superseded staging lifecycle, audit metadata and guarded TTL cleanup
+- Permanent/reliability-handled/DLQ terminal marking and new-generation redrive contract
+- Additive migration `migrations/0005_resumable_sync_reliability.sql`
+- Release archive policy for nested ZIP/local runtime/macOS/dependency/secret exclusions
 
-SHA-256 ใช้ค่าจาก `social-marketing-integration-v0.11.0-rc.1.zip.sha256` ที่สร้างพร้อม ZIP; ไม่ฝังค่าเก่าไว้ใน Source
-
-Verify on macOS:
-
-```bash
-shasum -a 256 -c social-marketing-integration-v0.11.0-rc.1.zip.sha256
-```
-
-Verify on Linux:
-
-```bash
-sha256sum -c social-marketing-integration-v0.11.0-rc.1.zip.sha256
-```
-
-## Required checks before commit
-
-Run from the repository root after replacing/updating the source files:
+## Required verification
 
 ```bash
 npm ci
@@ -37,91 +28,41 @@ npm run check
 npm test
 npm run test:worker
 npm run test:report-reliability
-npm audit
-npx wrangler deploy --dry-run --config wrangler.sync.example.jsonc
+npm audit --offline
+npm run deploy:dry-run
 ```
 
-Expected release evidence:
+Expected:
 
-- Unit / Integration: `376/376`
-- Workers runtime: `6/6`
-- Report reliability: `53/53`
-- YouTube/Reliability/Redaction focused: `37/37`
-- Architecture: `109 files / 230 dependencies / 0 cycles`
-- npm audit: `0 vulnerabilities`
-- Wrangler dry-run: passed
-- Bundle / Gzip: `443.78 KiB / 90.89 KiB`
+- Unit/Integration: `407/407`
+- Workers runtime: `8/8`
+- Report reliability: `60/60`
+- Focused review regressions: `46/46`
+- Architecture: `111 files / 233 dependencies / 0 cycles`
+- Audit: `0 vulnerabilities`
+- Dry-run: `512.33 KiB / 102.41 KiB gzip`
+- Clean archive: `261 files`, blocked/missing/sensitive/duplicate = `0`; fresh-extraction gates passed
 
 ## Git commands
 
 ```bash
-git status
-git add .
-git commit -m "fix: harden YouTube reconciliation and reliability"
-git tag v0.11.0-rc.1
+git status --short
+git diff --check
+git add .gitignore START_HERE.md GIT_HANDOFF.md RELEASE_TEST_REPORT.md README.md CHANGELOG.md PROJECT_BRAIN.md docs apps packages migrations scripts tests
+git commit -m "fix: harden YouTube resumable sync"
 git push origin main
-git push origin v0.11.0-rc.1
 ```
 
-Commit message:
+ห้าม Tag หรือสร้าง Release จนกว่า Source commit ถูก review และ Customer/DEV rollout plan ชัดเจน
 
-```text
-fix: harden YouTube reconciliation and reliability
-```
+## หลัง Push
 
-Release tag:
+1. Preview/apply migration 0005 ใน DEV ตาม guarded Cloudflare workflow
+2. Verify `sync_generation_fences`, `sync_warning_outbox`, lifecycle columns และ indexes
+3. Deploy DEV source patch โดยไม่เปลี่ยน Secret/Schedule อื่น
+4. ทำ stale-generation, warning replay, terminal/DLQ cleanup และ healthy sync smoke
+5. จึงทำ Customer-owned 837-video Full/Incremental/Analytics UAT
 
-```text
-v0.11.0-rc.1
-```
+## Rollback
 
-## Files that must stay outside Git
-
-Do not commit or package these local/runtime files:
-
-```text
-.dev.vars
-wrangler.sync.jsonc
-YouTube API keys
-OAuth client secrets
-OAuth refresh/access tokens
-Lark app secrets and tenant tokens
-DEV runtime logs
-.DS_Store
-._*
-__MACOSX/
-node_modules/
-coverage/
-```
-
-Use only placeholders in:
-
-```text
-.dev.vars.example
-wrangler.sync.example.jsonc
-```
-
-## What this release includes
-
-- Approved YouTube Organic Blueprint v0.10.2
-- Guarded YouTube schema preview/apply commands
-- Public Data API and Owner Analytics preflight
-- RAW Channel, Video and Analytics writes
-- Mapping to `MKT_Accounts`, `MKT_Content` and cumulative `MKT_Content_Daily`
-- Manual Queue route with `trigger=manual_uat`
-- Incremental checkpoint and reconciliation
-- Existing Sync Log, Lock, Retry, DLQ and System Alert integration
-- No YouTube scheduler producer
-- No Production activation
-
-## Next operational gate
-
-After the commit/tag handoff, the next work is Live DEV execution only:
-
-1. Add authorized DEV secrets outside Source control.
-2. Run YouTube DEV access preflight.
-3. Preview and guarded-apply the three RAW tables to Lark DEV.
-4. Save the resulting DEV Table IDs in local `wrangler.sync.jsonc`.
-5. Run Manual Queue UAT.
-6. Verify first sync, idempotent rerun, incremental update, identity mismatch, reconciliation, quota/rate limit, lock/retry/DLQ and Lark records.
-7. Keep YouTube schedule disabled until Live DEV UAT passes.
+ปิด YouTube Schedule/Analytics แล้ว redeploy prior known-good Worker. Migration 0005 เป็น additive และเก็บไว้ได้; prior code ไม่อ่านตาราง/คอลัมน์ใหม่ ห้ามลบ Business checkpoint หรือ Lark rows.

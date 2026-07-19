@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import syncWorker, { createSyncWorker } from '../../apps/sync-worker/src/index.js';
-import { permanentError } from '../../packages/shared/src/errors/runtime-error.js';
+import {
+  markReliabilityHandled,
+  permanentError,
+} from '../../packages/shared/src/errors/runtime-error.js';
 
 test('sync worker acknowledges unsupported job types as permanent failures', async () => {
   const message = createMessage({ type: 'unknown.job' });
@@ -110,9 +113,66 @@ test('dead-letter consumer persists the message and acknowledges it even when La
 
   assert.equal(message.acked, true);
   assert.equal(message.retried, false);
-  assert.equal(db.calls.length, 2);
-  assert.match(db.calls[0].sql, /INSERT INTO dead_letter_jobs/);
-  assert.match(db.calls[1].sql, /INSERT INTO system_alerts/);
+  assert.ok(db.calls.some((call) => /lifecycle_status = 'terminal'/u.test(call.sql)));
+  assert.ok(db.calls.some((call) => /INSERT INTO dead_letter_jobs/u.test(call.sql)));
+  assert.ok(db.calls.some((call) => /INSERT INTO system_alerts/u.test(call.sql)));
+});
+
+test('permanent YouTube failure marks resumable work terminal before acknowledgement', async () => {
+  const message = createMessage({
+    type: 'youtube.channel.organic.sync',
+    requestedAt: '2026-07-19T00:00:00.000Z',
+  });
+  message.id = 'youtube-permanent';
+  const db = createFakeD1();
+  const worker = createSyncWorker({
+    processJob: async () => {
+      throw permanentError('Synthetic permanent YouTube failure', {
+        code: 'YOUTUBE_PERMANENT_API_ERROR',
+      });
+    },
+    createOperationalStore: () => ({
+      async saveDeadLetter() { return true; },
+      async saveSystemAlert() { return true; },
+    }),
+  });
+
+  await worker.queue({ queue: 'sync-main', messages: [message] }, {
+    ...minimalEnv(),
+    MKT_STATE_DB: db,
+  });
+
+  assert.equal(message.acked, true);
+  const terminal = db.calls.find((call) => /lifecycle_status = 'terminal'/u.test(call.sql));
+  assert.ok(terminal);
+  assert.ok(terminal.bindings.includes('QUEUE_PERMANENT_FAILURE'));
+});
+
+test('reliability-handled permanent YouTube failure still marks resumable work terminal', async () => {
+  const message = createMessage({
+    type: 'youtube.channel.organic.sync',
+    requestedAt: '2026-07-19T00:00:00.000Z',
+  });
+  message.id = 'youtube-handled-permanent';
+  const db = createFakeD1();
+  const worker = createSyncWorker({
+    processJob: async () => {
+      throw markReliabilityHandled(permanentError('Synthetic handled failure', {
+        code: 'YOUTUBE_ANALYTICS_ROW_SCOPE_MISMATCH',
+      }), 'run-handled');
+    },
+  });
+
+  await worker.queue({ queue: 'sync-main', messages: [message] }, {
+    ...minimalEnv(),
+    MKT_STATE_DB: db,
+  });
+
+  assert.equal(message.acked, true);
+  assert.ok(db.calls.some((call) => (
+    /lifecycle_status = 'terminal'/u.test(call.sql)
+    && call.bindings.includes('QUEUE_PERMANENT_FAILURE')
+  )));
 });
 
 test('dead-letter persistence failure retries with a safe default when retry delay config is invalid', async () => {
@@ -134,6 +194,9 @@ function createFakeD1(input = {}) {
   const calls = [];
   return {
     calls,
+    async batch(statements) {
+      return Promise.all(statements.map((statement) => statement.run()));
+    },
     prepare(sql) {
       const call = { sql: String(sql), bindings: [] };
       calls.push(call);
@@ -142,6 +205,10 @@ function createFakeD1(input = {}) {
         async run() {
           if (input.fail) throw new Error('D1 unavailable');
           return { meta: { changes: 1 } };
+        },
+        async all() {
+          if (input.fail) throw new Error('D1 unavailable');
+          return { results: [] };
         },
       };
     },

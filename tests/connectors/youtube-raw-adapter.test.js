@@ -5,6 +5,7 @@ import {
   mapYouTubeAnalyticsResponse,
   mapYouTubeChannelRawRow,
   mapYouTubeVideoRawRow,
+  validateYouTubeAnalyticsRowsScope,
 } from '../../packages/connectors/src/youtube/youtube-raw.adapter.js';
 
 const CHANNEL = {
@@ -64,4 +65,36 @@ test('validates Analytics headers and preserves Pacific source day as text', () 
   assert.throws(() => mapYouTubeAnalyticsResponse({ columnHeaders: [{ name: 'day' }], rows: [] }, {
     channelId: 'channel_A', fetchedAt: 3000,
   }), (error) => error?.code === 'YOUTUBE_ANALYTICS_GRAIN_MISMATCH');
+});
+
+test('validates every mapped Analytics row against video, channel, and date scope', () => {
+  const base = {
+    raw_analytics_daily_key: 'youtube:channel_A:video_A:2026-07-14',
+    source_metric_date: '2026-07-14',
+    channel_id: 'channel_A',
+    video_id: 'video_A',
+  };
+  assert.deepEqual(validateYouTubeAnalyticsRowsScope([base], {
+    channelId: 'channel_A',
+    videoIds: ['video_A'],
+    startDate: '2026-07-14',
+    endDate: '2026-07-14',
+  }), [base]);
+  for (const [reason, row] of [
+    ['video', { ...base, video_id: 'video_OUTSIDE' }],
+    ['channel', { ...base, channel_id: 'channel_OUTSIDE' }],
+    ['date', { ...base, source_metric_date: '2026-07-13' }],
+  ]) {
+    assert.throws(
+      () => validateYouTubeAnalyticsRowsScope([row], {
+        channelId: 'channel_A',
+        videoIds: ['video_A'],
+        startDate: '2026-07-14',
+        endDate: '2026-07-14',
+      }),
+      (error) => error?.code === 'YOUTUBE_ANALYTICS_ROW_SCOPE_MISMATCH'
+        && error.retryable === false
+        && error.details?.reason === reason,
+    );
+  }
 });

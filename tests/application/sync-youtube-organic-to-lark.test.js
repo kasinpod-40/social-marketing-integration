@@ -5,6 +5,8 @@ import { InMemoryResumableWorkStore } from '../../packages/sync-engine/src/in-me
 import { syncYouTubeOrganicToLark } from '../../packages/application/src/use-cases/sync-youtube-organic-to-lark.js';
 import { YOUTUBE_ANALYTICS_COLUMNS } from '../../packages/connectors/src/youtube/youtube-raw.adapter.js';
 import { transientError } from '../../packages/shared/src/errors/runtime-error.js';
+import { runReliableSync } from '../../packages/reliability/src/reliable-sync-runner.js';
+import { InMemoryLeaseLockManager } from '../../packages/reliability/src/in-memory-lease-lock-manager.js';
 
 const TABLES = Object.freeze({
   mktAccounts: 'accounts', rawYouTubeChannels: 'channels', rawYouTubeVideos: 'videos',
@@ -45,7 +47,8 @@ test('writes RAW, canonical, account-last and checkpoint idempotently', async ()
     publicClient,
     syncRunId: 'run-1', channelId: 'channel_A', accountKey: 'youtube_dev',
     customerProfile: 'dev_ft_pumkin', cursorKey: 'youtube-lock', metricDate: '2026-07-15',
-    reportingTimezone: 'Asia/Bangkok', syncMode: 'full', now: () => 1000, tables: TABLES,
+    reportingTimezone: 'Asia/Bangkok', syncMode: 'full', now: () => 1000,
+    generation: 1000, requestedAt: 1000, tables: TABLES,
   };
   const first = await syncYouTubeOrganicToLark(base);
   assert.equal(first.tables.rawChannels.result.created, 1);
@@ -59,6 +62,7 @@ test('writes RAW, canonical, account-last and checkpoint idempotently', async ()
 
   const second = await syncYouTubeOrganicToLark({
     ...base, syncRunId: 'run-2', syncEngine: new TableSyncEngine(),
+    generation: 2000, requestedAt: 2000,
   });
   assert.equal(second.tables.rawChannels.result.skipped, 1);
   assert.equal(second.tables.rawVideos.result.skipped, 2);
@@ -187,6 +191,8 @@ test('retains a previously observed Analytics key that disappears on re-fetch an
     analyticsStartDate: '2026-07-14',
     analyticsEndDate: '2026-07-15',
     now: () => 4000,
+    generation: 4000,
+    requestedAt: 4000,
     tables: TABLES,
   };
   const result = await syncYouTubeOrganicToLark(input);
@@ -209,6 +215,8 @@ test('retains a previously observed Analytics key that disappears on re-fetch an
     ...input,
     syncRunId: 'run-analytics-reconciliation-rerun',
     syncEngine: new TableSyncEngine(),
+    generation: 5000,
+    requestedAt: 5000,
   });
   assert.equal(rerun.tables.rawAnalytics.result.skipped, 2);
   assert.deepEqual(rerun.reconciliation.missingAnalyticsStableKeys, [missingStableKey]);
@@ -303,6 +311,8 @@ test('incremental Content reads 100 recent videos while Analytics queries all 83
     analyticsStartDate: '2026-07-14',
     analyticsEndDate: '2026-07-14',
     now: () => 5_000,
+    generation: 5_000,
+    requestedAt: 5_000,
     tables: TABLES,
   };
 
@@ -335,6 +345,8 @@ test('incremental Content reads 100 recent videos while Analytics queries all 83
     ...input,
     syncRunId: 'run-incremental-analytics-rerun',
     syncEngine: new TableSyncEngine(),
+    generation: 5_001,
+    requestedAt: 5_001,
   });
   assert.equal(rerun.sourceSummary.analyticsTrackedVideoIds, 837);
   assert.equal(analyticsCalls.length, 17);
@@ -362,6 +374,8 @@ test('initial Full backfill resumes playlist pagination and traverses all 837 vi
     metricDate: '2026-07-15',
     syncMode: 'full',
     now: () => 6_000,
+    generation: 6_000,
+    requestedAt: 6_000,
     tables: TABLES,
   };
 
@@ -394,6 +408,8 @@ test('initial Full backfill resumes playlist pagination and traverses all 837 vi
     workKey: 'youtube-message-full-837-rerun',
     syncRunId: 'run-full-837-rerun',
     syncEngine: new TableSyncEngine(),
+    generation: 6_001,
+    requestedAt: 6_001,
   });
   assert.equal(rerun.tables.rawVideos.result.created, 0);
   assert.equal(rerun.tables.content.result.created, 0);
@@ -460,6 +476,8 @@ test('Analytics retry resumes at the failed chunk and full rerun keeps 837 stabl
     analyticsStartDate: '2026-07-14',
     analyticsEndDate: '2026-07-14',
     now: () => 7_000,
+    generation: 7_000,
+    requestedAt: 7_000,
     tables: TABLES,
   };
 
@@ -495,6 +513,8 @@ test('Analytics retry resumes at the failed chunk and full rerun keeps 837 stabl
     workKey: 'youtube-message-analytics-rerun',
     syncRunId: 'run-analytics-rerun',
     syncEngine: new TableSyncEngine(),
+    generation: 7_001,
+    requestedAt: 7_001,
   });
   assert.equal(rerun.tables.rawAnalytics.result.created, 0);
   assert.equal(rerun.tables.rawAnalytics.result.skipped, 837);
@@ -556,6 +576,231 @@ test('Analytics completeness guard detects a missing queried-video marker before
   assert.equal(repository.count('channels'), 0);
   assert.equal(repository.count('analytics'), 0);
   assert.deepEqual(baseWorkStore.resetEvents.map((event) => event.phase), ['youtube_owner_analytics']);
+});
+
+test('stale retry is superseded after a newer generation commits and cannot roll back Lark or checkpoint data', async () => {
+  const repository = createRepository();
+  const stateStore = createStateStore();
+  const originalSaveCheckpoint = stateStore.saveCheckpoint.bind(stateStore);
+  let failOldCheckpointOnce = true;
+  stateStore.saveCheckpoint = async (value) => {
+    if (failOldCheckpointOnce && value.cursor.lastSyncRunId === 'run-old-attempt-1') {
+      failOldCheckpointOnce = false;
+      throw transientError('Synthetic old-generation checkpoint failure', {
+        code: 'D1_INCREMENTAL_CHECKPOINT_WRITE_FAILED',
+      });
+    }
+    return originalSaveCheckpoint(value);
+  };
+  const resumableWorkStore = new InMemoryResumableWorkStore();
+  const videoAt = (views) => [{
+    ...videos[0],
+    statistics: { ...videos[0].statistics, viewCount: String(views) },
+  }];
+  const clientAt = (views, onCall = () => undefined) => ({
+    async getChannel() { onCall(); return CHANNEL; },
+    async listUploadVideoIdsPage() {
+      onCall();
+      return { videoIds: ['video_A'], nextPageToken: null };
+    },
+    async listVideos() { onCall(); return videoAt(views); },
+  });
+  const common = {
+    repository,
+    incrementalStateStore: stateStore,
+    resumableWorkStore,
+    channelId: 'channel_A',
+    accountKey: 'youtube_dev',
+    customerProfile: 'dev_ft_pumkin',
+    cursorKey: 'youtube-lock',
+    metricDate: '2026-07-15',
+    syncMode: 'full',
+    tables: TABLES,
+  };
+
+  await assert.rejects(
+    syncYouTubeOrganicToLark({
+      ...common,
+      syncEngine: new TableSyncEngine(),
+      publicClient: clientAt(100),
+      workKey: 'youtube:message-old',
+      syncRunId: 'run-old-attempt-1',
+      generation: 1_000,
+      requestedAt: 1_000,
+      now: () => 1_000,
+    }),
+    (error) => error?.code === 'D1_INCREMENTAL_CHECKPOINT_WRITE_FAILED',
+  );
+
+  await syncYouTubeOrganicToLark({
+    ...common,
+    syncEngine: new TableSyncEngine(),
+    publicClient: clientAt(200),
+    workKey: 'youtube:message-new',
+    syncRunId: 'run-new',
+    generation: 2_000,
+    requestedAt: 2_000,
+    now: () => 2_000,
+  });
+
+  let staleSourceCalls = 0;
+  const staleRetry = await syncYouTubeOrganicToLark({
+    ...common,
+    syncEngine: new TableSyncEngine(),
+    publicClient: clientAt(100, () => { staleSourceCalls += 1; }),
+    workKey: 'youtube:message-old',
+    syncRunId: 'run-old-attempt-2',
+    generation: 1_000,
+    requestedAt: 1_000,
+    now: () => 3_000,
+  });
+
+  assert.equal(staleRetry.mode, 'superseded');
+  assert.equal(staleSourceCalls, 0);
+  assert.equal(repository.read('videos', 'raw_video_key', 'youtube:channel_A:video_A').fields.view_count, 200);
+  assert.equal(stateStore.checkpoint.cursor.lastSyncRunId, 'run-new');
+});
+
+test('Analytics rows outside requested video or date scope fail closed before staging or Lark writes', async () => {
+  const cases = [
+    {
+      name: 'video',
+      row: ['2026-07-14', 'video_OUTSIDE', 1, 1, 1, 1, 1, 1, 1],
+    },
+    {
+      name: 'date',
+      row: ['2026-07-13', 'video_A', 1, 1, 1, 1, 1, 1, 1],
+    },
+  ];
+
+  for (const scenario of cases) {
+    const repository = createRepository();
+    const stateStore = createStateStore();
+    await assert.rejects(
+      syncYouTubeOrganicToLark({
+        repository,
+        syncEngine: new TableSyncEngine(),
+        incrementalStateStore: stateStore,
+        resumableWorkStore: new InMemoryResumableWorkStore(),
+        publicClient: createPagedPublicClient([videos[0]]),
+        ownerClient: {
+          async getChannel() { return CHANNEL; },
+          async queryAnalytics() {
+            return {
+              columnHeaders: YOUTUBE_ANALYTICS_COLUMNS.map((name) => ({ name })),
+              rows: [scenario.row],
+            };
+          },
+        },
+        workKey: `youtube:scope-${scenario.name}`,
+        syncRunId: `run-scope-${scenario.name}`,
+        channelId: 'channel_A',
+        accountKey: 'youtube_dev',
+        customerProfile: 'dev_ft_pumkin',
+        cursorKey: 'youtube-lock',
+        metricDate: '2026-07-15',
+        syncMode: 'full',
+        analyticsEnabled: true,
+        analyticsStartDate: '2026-07-14',
+        analyticsEndDate: '2026-07-14',
+        now: () => 9_000,
+        tables: TABLES,
+      }),
+      (error) => error?.code === 'YOUTUBE_ANALYTICS_ROW_SCOPE_MISMATCH'
+        && error.retryable === false
+        && error.details?.reason === scenario.name,
+    );
+    assert.equal(repository.count('analytics'), 0);
+    assert.equal(stateStore.saved.length, 0);
+  }
+});
+
+test('warning outbox survives alert persistence failure and retry delivers one business warning without rerunning Source', async () => {
+  const repository = createRepository({
+    videos: [{
+      raw_video_key: 'youtube:channel_A:video_gone',
+      channel_id: 'channel_A',
+      video_id: 'video_gone',
+      view_count: 99,
+      source_availability_status: 'available',
+      fetched_at: 500,
+    }],
+  });
+  const stateStore = createStateStore({
+    cursor: null,
+    recordStates: [{
+      sourceRecordId: 'video_gone',
+      externalContentId: 'video_gone',
+      sourceHash: 'old',
+    }],
+  });
+  const resumableWorkStore = new InMemoryResumableWorkStore();
+  let sourceCalls = 0;
+  const publicClient = {
+    async getChannel() { sourceCalls += 1; return CHANNEL; },
+    async listUploadVideoIdsPage() { return { videoIds: [], nextPageToken: null }; },
+    async listVideos() { return []; },
+  };
+  let failWarningAlertOnce = true;
+  const alerts = [];
+  const store = {
+    async saveSyncRun() { return true; },
+    async saveSystemAlert(alert) {
+      if (failWarningAlertOnce && alert.alertType === 'sync_completed_with_warnings') {
+        failWarningAlertOnce = false;
+        throw transientError('Synthetic alert store failure', {
+          code: 'D1_SYSTEM_ALERT_WRITE_FAILED',
+        });
+      }
+      alerts.push(alert);
+      return true;
+    },
+  };
+  const execute = ({ syncRunId, assertLockActive }) => syncYouTubeOrganicToLark({
+    repository,
+    syncEngine: new TableSyncEngine(),
+    incrementalStateStore: stateStore,
+    resumableWorkStore,
+    publicClient,
+    syncRunId,
+    assertLockActive,
+    workKey: 'youtube:warning-message',
+    generation: 10_000,
+    requestedAt: 10_000,
+    channelId: 'channel_A',
+    accountKey: 'youtube_dev',
+    customerProfile: 'dev_ft_pumkin',
+    cursorKey: 'youtube-lock',
+    metricDate: '2026-07-15',
+    syncMode: 'auto',
+    now: () => 10_000,
+    tables: TABLES,
+  });
+  const run = (syncRunId) => runReliableSync({
+    store,
+    lockManager: new InMemoryLeaseLockManager(),
+    warningOutboxStore: resumableWorkStore,
+    syncRunId,
+    customerProfile: 'dev_ft_pumkin',
+    accountKey: 'youtube_dev',
+    platform: 'youtube',
+    source: 'youtube_data_api',
+    syncType: 'organic_sync',
+    leaseMs: 60_000,
+    alertOnResultWarnings: true,
+    execute,
+  });
+
+  await assert.rejects(
+    run('run-warning-attempt-1'),
+    (error) => error?.code === 'D1_SYSTEM_ALERT_WRITE_FAILED' && error.retryable === true,
+  );
+  await run('run-warning-attempt-2');
+
+  assert.equal(sourceCalls, 1);
+  assert.equal(alerts.length, 1);
+  assert.equal(alerts[0].alertType, 'sync_completed_with_warnings');
+  assert.equal(new Set(alerts.map((alert) => alert.alertId)).size, 1);
 });
 
 function createStateStore(checkpoint = null) {
@@ -677,9 +922,13 @@ function createCorruptingAnalyticsScopeStore(base) {
   let corrupted = false;
   return {
     beginWork: (...args) => base.beginWork(...args),
+    assertCurrentGeneration: (...args) => base.assertCurrentGeneration(...args),
     loadPhase: (...args) => base.loadPhase(...args),
     savePhase: (...args) => base.savePhase(...args),
     resetPhase: (...args) => base.resetPhase(...args),
+    saveWarningOutbox: (...args) => base.saveWarningOutbox(...args),
+    listPendingWarnings: (...args) => base.listPendingWarnings(...args),
+    cleanupExpiredWork: (...args) => base.cleanupExpiredWork(...args),
     completeWork: (...args) => base.completeWork(...args),
     async listPhaseUnits(input) {
       const result = await base.listPhaseUnits(input);

@@ -3,6 +3,7 @@ import {
   mapYouTubeAnalyticsResponse,
   mapYouTubeChannelRawRow,
   mapYouTubeVideoRawRow,
+  validateYouTubeAnalyticsRowsScope,
 } from '../../../connectors/src/youtube/youtube-raw.adapter.js';
 import { mapYouTubeChannelResource } from '../../../connectors/src/youtube/youtube-organic.adapter.js';
 import { normalizeYouTubeVideoBatch } from './normalize-youtube-video-batch.js';
@@ -43,6 +44,8 @@ export async function syncYouTubeOrganicToLark(input = {}) {
   const customerProfile = requireText(input.customerProfile, 'customerProfile');
   const cursorKey = requireText(input.cursorKey, 'cursorKey');
   const workKey = requireText(input.workKey ?? syncRunId, 'workKey');
+  const requestedAt = safeTimestamp(input.requestedAt ?? input.generation ?? fetchedAt);
+  const generation = safeTimestamp(input.generation ?? requestedAt);
   const syncType = requireText(input.syncType ?? 'organic_sync', 'syncType');
   const metricDate = requireDateOnly(input.metricDate, { label: 'metricDate' });
   const tables = requireTables(input.tables);
@@ -64,11 +67,6 @@ export async function syncYouTubeOrganicToLark(input = {}) {
     fullSyncIntervalMs: positiveInteger(input.fullSyncIntervalMs ?? 86_400_000, 'fullSyncIntervalMs'),
   });
 
-  await assertLockActive();
-  const channelResource = await publicClient.getChannel({ channelId });
-  const channel = mapYouTubeChannelResource(channelResource, channelId);
-  if (analyticsEnabled) await assertOwnerChannel({ ownerClient, channelId });
-
   const recentVideoLimit = positiveInteger(input.recentVideoLimit ?? 100, 'recentVideoLimit');
   const contentMaxPages = positiveInteger(input.contentMaxPages ?? 100, 'contentMaxPages');
   const operationFingerprint = await createStableFingerprint({
@@ -85,7 +83,30 @@ export async function syncYouTubeOrganicToLark(input = {}) {
     cursorKey,
     workType: 'youtube_organic_sync',
     operationFingerprint,
+    generation,
+    requestedAt,
   });
+  if (work.superseded) return supersededResult({ syncRunId, generation });
+  if (work.completed) {
+    return replayCompletedWork({
+      workStore,
+      workKey,
+      syncRunId,
+      completion: work.completion,
+    });
+  }
+  const assertCurrentWork = async () => {
+    await assertLockActive();
+    await workStore.assertCurrentGeneration({ workKey, cursorKey, generation });
+  };
+  await assertCurrentWork();
+
+  const channelResource = await publicClient.getChannel({ channelId });
+  const channel = mapYouTubeChannelResource(channelResource, channelId);
+  if (analyticsEnabled) {
+    await assertCurrentWork();
+    await assertOwnerChannel({ ownerClient, channelId });
+  }
   const inventory = await loadUploadInventory({
     workStore,
     workKey,
@@ -93,7 +114,7 @@ export async function syncYouTubeOrganicToLark(input = {}) {
     uploadsPlaylistId: channel.uploadsPlaylistId,
     maxItems: syncMode.fullSnapshot ? null : recentVideoLimit,
     maxPages: contentMaxPages,
-    assertLockActive,
+    assertLockActive: assertCurrentWork,
     onProgress,
   });
   const videoIds = inventory.videoIds;
@@ -102,7 +123,7 @@ export async function syncYouTubeOrganicToLark(input = {}) {
     workKey,
     publicClient,
     videoIds,
-    assertLockActive,
+    assertLockActive: assertCurrentWork,
     onProgress,
   });
   const videoResources = resourceLoad.videoResources;
@@ -178,7 +199,7 @@ export async function syncYouTubeOrganicToLark(input = {}) {
       startDate: analyticsRange.startDate,
       endDate: analyticsRange.endDate,
       fetchedAt,
-      assertLockActive,
+      assertLockActive: assertCurrentWork,
       maxPages: positiveInteger(input.analyticsMaxPages ?? 1000, 'analyticsMaxPages'),
       onProgress,
     })
@@ -194,7 +215,7 @@ export async function syncYouTubeOrganicToLark(input = {}) {
       endDate: analyticsRange.endDate,
       analyticsRows,
       analyticsCompleteness: analyticsLoad.completeness,
-      assertLockActive,
+      assertLockActive: assertCurrentWork,
       onProgress,
     })
     : emptyAnalyticsReconciliation();
@@ -223,6 +244,7 @@ export async function syncYouTubeOrganicToLark(input = {}) {
       accounts: accountRows,
     },
     onProgress,
+    assertCurrentWork,
   });
 
   if (input.dryRun === true) {
@@ -231,26 +253,41 @@ export async function syncYouTubeOrganicToLark(input = {}) {
       inventory, resourceLoad, analyticsLoad, analyticsVideoIds, analyticsRows,
       analyticsReconciliation, plans, checkpointSaved: false, workResumed: work.resumed,
     });
-    await workStore.completeWork(workKey);
+    await workStore.completeWork({ workKey, completion: result });
     return result;
   }
 
   const results = {};
   for (const [name, plan] of orderedPlans(plans)) {
-    await assertLockActive();
+    await assertCurrentWork();
     results[name] = await syncEngine.executePlan(plan, {
-      beforeWriteChunk: assertLockActive,
+      beforeWriteChunk: assertCurrentWork,
       onProgress: (event) => onProgress({ scope: name, ...event }),
     });
   }
 
-  await assertLockActive();
+  await assertCurrentWork();
   const completedAt = safeTimestamp(now());
   const recordStates = await buildCheckpointStates({
     videoResources,
     missingIds,
     priorStates,
   });
+  const result = buildResult({
+    mode: 'write', syncRunId, syncMode, videoIds, videoResources, missingIds,
+    inventory, resourceLoad, analyticsLoad, analyticsVideoIds, analyticsRows,
+    analyticsReconciliation, plans, results, checkpointSaved: true, workResumed: work.resumed,
+  });
+  const warningOutbox = await persistWarningOutbox({
+    workStore,
+    workKey,
+    syncRunId,
+    cursorKey,
+    generation,
+    assertCurrentWork,
+    result,
+  });
+  await assertCurrentWork();
   await stateStore.saveCheckpoint({
     cursor: {
       cursorKey,
@@ -268,14 +305,15 @@ export async function syncYouTubeOrganicToLark(input = {}) {
     },
     records: recordStates,
     fullSnapshot: syncMode.fullSnapshot,
+    generationGuard: { cursorKey, workKey, generation, requestedAt },
   });
-  await workStore.completeWork(workKey);
+  const completedResult = Object.freeze({
+    ...result,
+    warningOutbox,
+  });
+  await workStore.completeWork({ workKey, completion: completedResult });
 
-  return buildResult({
-    mode: 'write', syncRunId, syncMode, videoIds, videoResources, missingIds,
-    inventory, resourceLoad, analyticsLoad, analyticsVideoIds, analyticsRows,
-    analyticsReconciliation, plans, results, checkpointSaved: true, workResumed: work.resumed,
-  });
+  return completedResult;
 }
 
 async function loadUploadInventory(input) {
@@ -329,6 +367,7 @@ async function loadUploadInventory(input) {
     const expectedItems = complete
       ? processedItems
       : Math.max(processedItems, input.maxItems ?? processedItems);
+    await input.assertLockActive();
     await input.workStore.savePhase({
       workKey: input.workKey,
       phase: WORK_PHASES.CONTENT_INVENTORY,
@@ -403,6 +442,7 @@ async function loadVideoResources(input) {
   const resumedChunks = progress?.chunksProcessed ?? 0;
   const totalChunks = Math.ceil(input.videoIds.length / VIDEO_BATCH_SIZE);
   if (!progress && input.videoIds.length === 0) {
+    await input.assertLockActive();
     await input.workStore.savePhase({
       workKey: input.workKey,
       phase: WORK_PHASES.CONTENT_RESOURCES,
@@ -446,6 +486,7 @@ async function loadVideoResources(input) {
     const processedItems = (progress?.processedItems ?? 0) + selectedIds.length;
     const chunksProcessed = (progress?.chunksProcessed ?? 0) + 1;
     const complete = chunksProcessed >= totalChunks;
+    await input.assertLockActive();
     await input.workStore.savePhase({
       workKey: input.workKey,
       phase: WORK_PHASES.CONTENT_RESOURCES,
@@ -599,6 +640,7 @@ async function loadAnalyticsRows(input) {
   const resumedPages = progress?.pagesProcessed ?? 0;
   const totalChunks = Math.ceil(input.videoIds.length / VIDEO_BATCH_SIZE);
   if (!progress && input.videoIds.length === 0) {
+    await input.assertLockActive();
     await input.workStore.savePhase({
       workKey: input.workKey,
       phase: WORK_PHASES.ANALYTICS,
@@ -657,9 +699,14 @@ async function loadAnalyticsRows(input) {
     } catch (error) {
       throw analyticsProgressError(error, progress, input.videoIds.length, totalChunks);
     }
-    const mapped = mapYouTubeAnalyticsResponse(response, {
+    const mapped = validateYouTubeAnalyticsRowsScope(mapYouTubeAnalyticsResponse(response, {
       channelId: input.channelId,
       fetchedAt: input.fetchedAt,
+    }), {
+      channelId: input.channelId,
+      videoIds,
+      startDate: input.startDate,
+      endDate: input.endDate,
     });
     const chunkComplete = mapped.length < ANALYTICS_PAGE_SIZE;
     const chunksProcessed = (progress?.chunksProcessed ?? 0) + (chunkComplete ? 1 : 0);
@@ -673,6 +720,7 @@ async function loadAnalyticsRows(input) {
         startIndex: startIndex + mapped.length,
         pageInChunk: pageInChunk + 1,
       };
+    await input.assertLockActive();
     await input.workStore.savePhase({
       workKey: input.workKey,
       phase: WORK_PHASES.ANALYTICS,
@@ -785,6 +833,7 @@ async function planAll(input) {
   ];
   const result = {};
   for (const [name, tableId, keyField, rows] of definitions) {
+    await input.assertCurrentWork();
     result[name] = await input.syncEngine.planByKey({
       repository: input.repository,
       tableId,
@@ -846,6 +895,103 @@ function resolveTrackedAnalyticsVideoIds(input) {
   }
   for (const videoId of input.currentVideoIds) trackedIds.push(requireText(videoId, 'videoId'));
   return Object.freeze([...new Set(trackedIds)].sort());
+}
+
+async function persistWarningOutbox(input) {
+  if (!Array.isArray(input.result.warnings) || input.result.warnings.length === 0) return null;
+  const warningTypes = [...new Set(input.result.warnings
+    .map((warning) => requireText(warning.code, 'warning.code')))]
+    .sort();
+  const fingerprint = await createStableFingerprint({
+    workKey: input.workKey,
+    warningTypes,
+    sourceKey: input.cursorKey,
+  });
+  const outboxId = `sync-warning:${fingerprint}`;
+  await input.assertCurrentWork();
+  await input.workStore.saveWarningOutbox({
+    outboxId,
+    workKey: input.workKey,
+    syncRunId: input.syncRunId,
+    warningType: 'sync_completed_with_warnings',
+    sourceKey: input.cursorKey,
+    generationGuard: {
+      cursorKey: input.cursorKey,
+      generation: input.generation,
+      workKey: input.workKey,
+    },
+    payload: {
+      warnings: input.result.warnings,
+      reconciliation: input.result.reconciliation,
+      sourceSummary: input.result.sourceSummary,
+    },
+  });
+  await input.assertCurrentWork();
+  return Object.freeze({ outboxId, status: 'pending' });
+}
+
+async function replayCompletedWork(input) {
+  const pending = await input.workStore.listPendingWarnings({ workKey: input.workKey });
+  const completion = input.completion && typeof input.completion === 'object'
+    ? input.completion
+    : {};
+  if (pending.length === 0) {
+    return Object.freeze({
+      ...completion,
+      syncRunId: input.syncRunId,
+      platform: 'youtube',
+      source: 'youtube_data_api',
+      mode: 'already_completed',
+      warnings: Object.freeze([]),
+      warningOutbox: null,
+      checkpointSaved: true,
+      resumableWork: Object.freeze({
+        resumed: true,
+        complete: true,
+        cleared: true,
+        completionReplay: true,
+      }),
+    });
+  }
+  const event = pending[0];
+  return Object.freeze({
+    ...completion,
+    syncRunId: input.syncRunId,
+    platform: 'youtube',
+    source: 'youtube_data_api',
+    mode: 'completion_replay',
+    warnings: Object.freeze([...(event.payload?.warnings ?? [])]),
+    reconciliation: event.payload?.reconciliation ?? completion.reconciliation ?? null,
+    sourceSummary: event.payload?.sourceSummary ?? completion.sourceSummary ?? null,
+    warningOutbox: Object.freeze({ outboxId: event.outboxId, status: 'pending' }),
+    checkpointSaved: true,
+    resumableWork: Object.freeze({
+      resumed: true,
+      complete: true,
+      cleared: true,
+      completionReplay: true,
+    }),
+  });
+}
+
+function supersededResult(input) {
+  return Object.freeze({
+    syncRunId: input.syncRunId,
+    platform: 'youtube',
+    source: 'youtube_data_api',
+    mode: 'superseded',
+    rawRecords: 0,
+    warnings: Object.freeze([]),
+    warningOutbox: null,
+    checkpointSaved: false,
+    generation: input.generation,
+    resumableWork: Object.freeze({
+      resumed: false,
+      complete: true,
+      cleared: false,
+      superseded: true,
+    }),
+  });
 }
 
 function buildResult(input) {
@@ -1083,7 +1229,18 @@ function requireStateStore(value) {
   return value;
 }
 function requireWorkStore(value) {
-  for (const method of ['beginWork', 'loadPhase', 'savePhase', 'listPhaseUnits', 'resetPhase', 'completeWork']) {
+  for (const method of [
+    'beginWork',
+    'assertCurrentGeneration',
+    'loadPhase',
+    'savePhase',
+    'listPhaseUnits',
+    'resetPhase',
+    'saveWarningOutbox',
+    'listPendingWarnings',
+    'completeWork',
+    'cleanupExpiredWork',
+  ]) {
     if (typeof value?.[method] !== 'function') throw new TypeError(`YouTube sync requires resumableWorkStore.${method}`);
   }
   return value;

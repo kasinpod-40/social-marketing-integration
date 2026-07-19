@@ -117,6 +117,37 @@ export function mapYouTubeAnalyticsResponse(response, input = {}) {
   }));
 }
 
+/** Fail-closed ก่อน Staging: Google response ทุก row ต้องอยู่ใน requested owner scope เท่านั้น */
+export function validateYouTubeAnalyticsRowsScope(rows, input = {}) {
+  if (!Array.isArray(rows)) throw new TypeError('YouTube Analytics rows must be an array');
+  const channelId = requireText(input.channelId, 'channelId');
+  const requestedVideoIds = new Set(
+    (Array.isArray(input.videoIds) ? input.videoIds : [])
+      .map((videoId) => requireText(videoId, 'videoId')),
+  );
+  const startDate = requireDateOnlyText(input.startDate, 'startDate');
+  const endDate = requireDateOnlyText(input.endDate, 'endDate');
+  if (endDate < startDate) throw new RangeError('endDate must not be before startDate');
+
+  for (const [rowIndex, row] of rows.entries()) {
+    let reason = null;
+    if (row?.channel_id !== channelId) reason = 'channel';
+    else if (!requestedVideoIds.has(row?.video_id)) reason = 'video';
+    else if (row?.source_metric_date < startDate || row?.source_metric_date > endDate) reason = 'date';
+    if (reason) {
+      throw permanentError('YouTube Analytics returned a row outside the requested scope', {
+        code: 'YOUTUBE_ANALYTICS_ROW_SCOPE_MISMATCH',
+        details: {
+          reason,
+          rowIndex,
+          requestedVideoCount: requestedVideoIds.size,
+        },
+      });
+    }
+  }
+  return Object.freeze([...rows]);
+}
+
 export const YOUTUBE_ANALYTICS_COLUMNS = ANALYTICS_COLUMNS;
 
 function normalizePrivacyStatus(value) {

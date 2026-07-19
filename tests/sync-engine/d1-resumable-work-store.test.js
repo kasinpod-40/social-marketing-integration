@@ -25,24 +25,23 @@ test('begins new work and resumes only when the operation fingerprint matches', 
   assert.equal(db.batches[1].length, 1);
 });
 
-test('replaces stale units and phases when the same work key has a different fingerprint', async () => {
+test('fails closed when the same generation changes its operation fingerprint', async () => {
   const db = createFakeD1({
     firstRows: [{ operation_fingerprint: 'old-fingerprint' }],
   });
   const store = new D1ResumableWorkStore({ db, now: () => 100 });
 
-  const result = await store.beginWork({
-    workKey: 'message-1',
-    cursorKey: 'cursor-1',
-    workType: 'youtube_organic_sync',
-    operationFingerprint: 'new-fingerprint',
-  });
-
-  assert.equal(result.resumed, false);
-  assert.equal(db.batches[0].length, 3);
-  assert.match(db.batches[0][0].sql, /DELETE FROM sync_work_units/);
-  assert.match(db.batches[0][1].sql, /DELETE FROM sync_work_phases/);
-  assert.match(db.batches[0][2].sql, /INSERT INTO sync_work_runs/);
+  await assert.rejects(
+    store.beginWork({
+      workKey: 'message-1',
+      cursorKey: 'cursor-1',
+      workType: 'youtube_organic_sync',
+      operationFingerprint: 'new-fingerprint',
+    }),
+    (error) => error?.code === 'SYNC_WORK_OPERATION_MISMATCH'
+      && error.retryable === false,
+  );
+  assert.equal(db.batches.length, 0);
 });
 
 test('saves a unit and phase progress atomically and reads typed progress', async () => {
@@ -138,10 +137,123 @@ test('D1 resumable work failures stay retryable', async () => {
   );
 });
 
+test('generation fence supersedes older work and keeps completed generation durable', async () => {
+  const db = createFakeD1({
+    runChanges: [1, 0, 1],
+    firstRows: [
+      null,
+      { operation_fingerprint: 'fingerprint-new', generation: 2_000, lifecycle_status: 'active' },
+      {
+        work_key: 'message-new',
+        generation: 2_000,
+        requested_at: 2_000,
+      },
+    ],
+  });
+  const store = new D1ResumableWorkStore({ db, now: () => 3_000 });
+
+  const newer = await store.beginWork({
+    workKey: 'message-new',
+    cursorKey: 'cursor-1',
+    workType: 'youtube_organic_sync',
+    operationFingerprint: 'fingerprint-new',
+    generation: 2_000,
+    requestedAt: 2_000,
+  });
+  await store.completeWork({
+    workKey: 'message-new',
+    completion: { mode: 'write', warnings: [] },
+  });
+  const stale = await store.beginWork({
+    workKey: 'message-old',
+    cursorKey: 'cursor-1',
+    workType: 'youtube_organic_sync',
+    operationFingerprint: 'fingerprint-old',
+    generation: 1_000,
+    requestedAt: 1_000,
+  });
+
+  assert.equal(newer.superseded, false);
+  assert.equal(stale.superseded, true);
+  assert.ok(db.prepared.some((statement) => /sync_generation_fences/u.test(statement.sql)));
+  assert.ok(db.prepared.some((statement) => /lifecycle_status = 'completed'/u.test(statement.sql)));
+});
+
+test('terminal lifecycle is idempotent and TTL cleanup excludes active or locked work', async () => {
+  const db = createFakeD1({
+    runChanges: [1, 1, 0, 0],
+    allRows: [[
+      { work_key: 'terminal-expired' },
+    ], []],
+  });
+  const store = new D1ResumableWorkStore({ db, now: () => 10_000 });
+
+  const first = await store.abandonWork({
+    workKey: 'terminal-expired',
+    reason: 'QUEUE_RETRY_EXHAUSTED',
+    auditReference: 'dlq:message-1',
+  });
+  const repeated = await store.abandonWork({
+    workKey: 'terminal-expired',
+    reason: 'QUEUE_RETRY_EXHAUSTED',
+    auditReference: 'dlq:message-1',
+  });
+  const cleaned = await store.cleanupExpiredWork({ limit: 25 });
+  const cleanedAgain = await store.cleanupExpiredWork({ limit: 25 });
+
+  assert.equal(first.terminal, true);
+  assert.equal(repeated.terminal, true);
+  assert.equal(cleaned.deleted, 1);
+  assert.equal(cleanedAgain.deleted, 0);
+  const terminalUpdate = db.prepared.find((statement) => /lifecycle_status = 'terminal'/u.test(statement.sql));
+  assert.match(terminalUpdate.sql, /'completed'/u);
+  const cleanupSelection = db.prepared.find((statement) => (
+    /SELECT work_key/u.test(statement.sql) && /lifecycle_status IN/u.test(statement.sql)
+  ));
+  assert.match(cleanupSelection.sql, /NOT EXISTS[\s\S]*sync_locks/u);
+  assert.doesNotMatch(cleanupSelection.sql, /lifecycle_status = 'active'/u);
+});
+
+test('DLQ redrive starts a new generation and never resumes terminal staging implicitly', async () => {
+  const store = new D1ResumableWorkStore({
+    db: createFakeD1({
+      runChanges: [1, 1, 1],
+      firstRows: [null, null],
+    }),
+    now: () => 20_000,
+  });
+
+  await store.beginWork({
+    workKey: 'message-old',
+    cursorKey: 'cursor-1',
+    workType: 'youtube_organic_sync',
+    operationFingerprint: 'fingerprint-old',
+    generation: 1_000,
+    requestedAt: 1_000,
+  });
+  await store.abandonWork({
+    workKey: 'message-old',
+    reason: 'QUEUE_RETRY_EXHAUSTED',
+    auditReference: 'dlq:message-old',
+  });
+  const redrive = await store.beginWork({
+    workKey: 'message-redrive',
+    cursorKey: 'cursor-1',
+    workType: 'youtube_organic_sync',
+    operationFingerprint: 'fingerprint-redrive',
+    generation: 2_000,
+    requestedAt: 2_000,
+  });
+
+  assert.equal(redrive.resumed, false);
+  assert.equal(redrive.superseded, false);
+});
+
 function createFakeD1(options = {}) {
   const prepared = [];
   const firstRows = [...(options.firstRows ?? [])];
   const allRows = [...(options.allRows ?? [])];
+  const runChanges = [...(options.runChanges ?? [])];
   const batches = [];
   return {
     prepared,
@@ -153,6 +265,9 @@ function createFakeD1(options = {}) {
         bind(...values) { this.bindings = values; return this; },
         async first() { return firstRows.shift() ?? null; },
         async all() { return { results: allRows.shift() ?? [] }; },
+        async run() {
+          return { meta: { changes: runChanges.shift() ?? 1 } };
+        },
       };
       prepared.push(statement);
       return statement;
