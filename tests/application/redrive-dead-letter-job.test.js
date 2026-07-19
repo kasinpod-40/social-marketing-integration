@@ -59,7 +59,9 @@ test('redrive reserves one generation, sends the original payload, and marks it 
     redriveReference: 'redrive:dlq:message-old:1784419200000',
   });
   assert.equal(calls[0][0], 'read');
-  assert.deepEqual(calls[1][1].forbiddenJobTypes, ['system.dead-letter.redrive']);
+  assert.ok(calls[1][1].forbiddenJobTypes.includes('system.dead-letter.redrive'));
+  assert.ok(calls[1][1].forbiddenJobTypes.includes('tiktok.creator.native.sync'));
+  assert.equal(calls[1][1].forbiddenJobTypes.includes('youtube.channel.organic.sync'), false);
   assert.equal(calls[2][0], 'mark');
   assert.equal(calls[2][1].dlqId, 'dlq:message-old');
 });
