@@ -1,4 +1,8 @@
 import { permanentError } from '../../shared/src/errors/runtime-error.js';
+import {
+  createLargeAccountReadiness,
+  LARGE_ACCOUNT_STATUS,
+} from './large-account-readiness.js';
 
 /**
  * รายชื่อ Connector กลางของระบบ
@@ -33,6 +37,24 @@ const CONNECTOR_CATALOG = Object.freeze({
     featureFlagEnv: 'MKT_CONNECTOR_TIKTOK_ENABLED',
     sourceHandleEnv: 'TIKTOK_SOURCE_HANDLE',
     requiredRuntimeFields: ['accountKey', 'sourceHandle'],
+    largeAccount: createLargeAccountReadiness({
+      status: LARGE_ACCOUNT_STATUS.FOUNDATION_READY,
+      primaryEntity: 'videos',
+      minimumFixtureItems: 1000,
+      gates: {
+        fullBackfill: true,
+        incrementalSync: true,
+        periodicFullReconciliation: true,
+        boundedPagination: true,
+        durableResume: false,
+        boundedChunking: true,
+        stableKeyIdempotency: true,
+        completenessAccounting: true,
+        rateLimitAwareRetry: true,
+        largeAccountFixture: false,
+        liveAccountUat: false,
+      },
+    }),
   }),
   [CONNECTOR_KEYS.FACEBOOK]: freezeDefinition({
     key: CONNECTOR_KEYS.FACEBOOK,
@@ -41,6 +63,7 @@ const CONNECTOR_CATALOG = Object.freeze({
     implementationStatus: CONNECTOR_IMPLEMENTATION_STATUS.PLANNED,
     featureFlagEnv: 'MKT_CONNECTOR_FACEBOOK_ENABLED',
     requiredRuntimeFields: ['accountKey'],
+    largeAccount: plannedLargeAccount('posts', 5000),
   }),
   [CONNECTOR_KEYS.INSTAGRAM]: freezeDefinition({
     key: CONNECTOR_KEYS.INSTAGRAM,
@@ -49,6 +72,7 @@ const CONNECTOR_CATALOG = Object.freeze({
     implementationStatus: CONNECTOR_IMPLEMENTATION_STATUS.PLANNED,
     featureFlagEnv: 'MKT_CONNECTOR_INSTAGRAM_ENABLED',
     requiredRuntimeFields: ['accountKey'],
+    largeAccount: plannedLargeAccount('posts', 2000),
   }),
   [CONNECTOR_KEYS.YOUTUBE]: freezeDefinition({
     key: CONNECTOR_KEYS.YOUTUBE,
@@ -57,6 +81,24 @@ const CONNECTOR_CATALOG = Object.freeze({
     implementationStatus: CONNECTOR_IMPLEMENTATION_STATUS.ACTIVE,
     featureFlagEnv: 'MKT_CONNECTOR_YOUTUBE_ENABLED',
     requiredRuntimeFields: ['accountKey'],
+    largeAccount: createLargeAccountReadiness({
+      status: LARGE_ACCOUNT_STATUS.DEV_READY,
+      primaryEntity: 'videos',
+      minimumFixtureItems: 1000,
+      gates: {
+        fullBackfill: true,
+        incrementalSync: true,
+        periodicFullReconciliation: true,
+        boundedPagination: true,
+        durableResume: true,
+        boundedChunking: true,
+        stableKeyIdempotency: true,
+        completenessAccounting: true,
+        rateLimitAwareRetry: true,
+        largeAccountFixture: true,
+        liveAccountUat: false,
+      },
+    }),
   }),
   [CONNECTOR_KEYS.WOOCOMMERCE]: freezeDefinition({
     key: CONNECTOR_KEYS.WOOCOMMERCE,
@@ -65,6 +107,7 @@ const CONNECTOR_CATALOG = Object.freeze({
     implementationStatus: CONNECTOR_IMPLEMENTATION_STATUS.PLANNED,
     featureFlagEnv: 'MKT_CONNECTOR_WOOCOMMERCE_ENABLED',
     requiredRuntimeFields: ['accountKey'],
+    largeAccount: plannedLargeAccount('orders', 5000),
   }),
   [CONNECTOR_KEYS.CHATWOOT]: freezeDefinition({
     key: CONNECTOR_KEYS.CHATWOOT,
@@ -73,8 +116,18 @@ const CONNECTOR_CATALOG = Object.freeze({
     implementationStatus: CONNECTOR_IMPLEMENTATION_STATUS.PLANNED,
     featureFlagEnv: 'MKT_CONNECTOR_CHATWOOT_ENABLED',
     requiredRuntimeFields: ['accountKey'],
+    largeAccount: plannedLargeAccount('conversations', 5000),
   }),
 });
+
+function plannedLargeAccount(primaryEntity, minimumFixtureItems) {
+  return createLargeAccountReadiness({
+    status: LARGE_ACCOUNT_STATUS.PLANNED,
+    primaryEntity,
+    minimumFixtureItems,
+    gates: {},
+  });
+}
 
 /** คืน Definition ของ Connector พร้อมปฏิเสธ key ที่ไม่รู้จักแบบถาวร */
 export function getConnectorCatalogEntry(connectorKey) {
