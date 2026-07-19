@@ -2,11 +2,15 @@ import { JOB_TYPES } from '../jobs/job-catalog.js';
 import { normalizeQueueJobMessage } from '../jobs/queue-job.js';
 import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 
+const SUPPORTED_REDRIVE_JOB_TYPES = new Set([
+  JOB_TYPES.YOUTUBE_ORGANIC_SYNC,
+]);
+
 /**
  * Redrive Dead-letter แบบ Idempotent:
  * - D1 จอง requestedAt/redriveReference ก่อน Queue send
  * - Retry หลัง send/mark ล้มใช้ generation เดิม
- * - Queue duplicate ที่ได้ message.id ต่างกันจึงถูก generation fence กันไม่ให้ทำ Business write ซ้ำ
+ * - รุ่นนี้รองรับเฉพาะ YouTube เพราะมี durable generation fence ครบ
  */
 export async function redriveDeadLetterJob(input = {}) {
   const store = requireStore(input.store);
@@ -18,9 +22,9 @@ export async function redriveDeadLetterJob(input = {}) {
     return alreadyRedrivenResult({ dlqId, candidate });
   }
 
-  // ตรวจ Payload แบบ Read-only ก่อนจองสถานะ เพื่อไม่ทิ้ง Poison/recursive command เป็น redrive_pending.
+  // ตรวจ Payload แบบ Read-only ก่อนจองสถานะ เพื่อไม่ทิ้ง Poison/unsupported command เป็น redrive_pending.
   const candidateOriginal = requireObject(candidate.payload, 'deadLetter.payload');
-  assertNotRecursiveRedrive(candidateOriginal, dlqId);
+  assertSupportedRedriveTarget(candidateOriginal, dlqId);
   const candidateRequestedAt = candidate.redriveRequestedAt
     ?? safeTimestamp(now(), 'requestedAt');
   const candidateReference = requireText(
@@ -45,7 +49,7 @@ export async function redriveDeadLetterJob(input = {}) {
     dlqId,
     requestedAt: candidateRequestedAt,
     redriveReference: candidateReference,
-    // Store rechecks this before UPDATE as defense-in-depth against concurrent row changes.
+    // Store rechecks recursion before UPDATE as defense-in-depth against concurrent row changes.
     forbiddenJobTypes: [JOB_TYPES.DEAD_LETTER_REDRIVE],
   });
   if (prepared.status === 'redriven') {
@@ -53,7 +57,8 @@ export async function redriveDeadLetterJob(input = {}) {
   }
 
   const original = requireObject(prepared.payload, 'deadLetter.payload');
-  assertNotRecursiveRedrive(original, dlqId);
+  // ตรวจซ้ำหลัง prepare เผื่อ Incident row ถูกเปลี่ยนระหว่าง read และ reserve.
+  assertSupportedRedriveTarget(original, dlqId);
   const redriveRequestedAt = safeTimestamp(prepared.redriveRequestedAt, 'redriveRequestedAt');
   const body = createRedriveBody({
     original,
@@ -77,11 +82,17 @@ export async function redriveDeadLetterJob(input = {}) {
   });
 }
 
-function assertNotRecursiveRedrive(payload, dlqId) {
+function assertSupportedRedriveTarget(payload, dlqId) {
   if (payload.type === JOB_TYPES.DEAD_LETTER_REDRIVE) {
     throw permanentError('A dead-letter redrive command cannot redrive itself', {
       code: 'DEAD_LETTER_REDRIVE_RECURSION_BLOCKED',
       details: { dlqId },
+    });
+  }
+  if (!SUPPORTED_REDRIVE_JOB_TYPES.has(payload.type)) {
+    throw permanentError('Dead-letter redrive is not supported for this job type', {
+      code: 'DEAD_LETTER_REDRIVE_JOB_TYPE_UNSUPPORTED',
+      details: { dlqId, jobType: payload.type ?? null },
     });
   }
 }
