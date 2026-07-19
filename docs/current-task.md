@@ -338,3 +338,15 @@ Shared contract สำหรับ Instagram/Facebook/TikTok งานถัด�
 - **Remaining risks:** Must create a new clean archive after committing this fix and rerun every extracted-archive gate before Remote D1/Worker mutation.
 - **Rollback:** Revert this narrow checker/documentation change; it has no Worker runtime, D1, Queue, Lark, Secret or Schedule effect.
 - **Commit suggestion:** `fix: align extracted release hygiene gate`
+
+### Migration 0005 guarded DEV rollout — 2026-07-20
+
+- **Root cause found during Live UAT:** A valid YouTube Data API zero-result channel response may omit `items`. `getChannel()` required that field to be an Array before applying its result-count guard, so the controlled missing-channel fault was persisted as `UNHANDLED_SYNC_ERROR` instead of permanent `YOUTUBE_CHANNEL_IDENTITY_MISMATCH`.
+- **Implementation:** Treat only an omitted `channels.items` as an empty result, then reuse the existing exact-one identity guard. Explicit non-array `items` remains malformed and fail-closed.
+- **Files changed:** `packages/connectors/src/youtube/youtube-api.client.js`, `tests/connectors/youtube-api-client.test.js`, `scripts/check-repository-hygiene.mjs`, `docs/current-task.md` and `CHANGELOG.md`.
+- **Commands run:** Clean Release package/verify and all gates from a fresh ZIP extraction; Wrangler version/migration/D1 read-only checks; guarded config-off deploy; D1 export; remote migration 0005 apply/verify; schedule-off source deploy; Manual healthy/stale/Permanent Queue messages through Cloudflare Dashboard; focused YouTube tests and source `npm run check`.
+- **Tests:** Fresh archive passed Unit/Integration 426/426, Workers runtime 8/8, Report reliability 64/64, Architecture 113/238/0, hygiene, audit 0 and dry-run 534.48/106.76 KiB. Focused YouTube/client regression including omitted `items` passed 22/22.
+- **Live regression results so far:** Quiesce work/lock 0; migration 0005 applied 32 commands; lifecycle/cursor/redrive columns complete; fence bootstrap 3/3; healthy incremental succeeded retry 0; stale job was `skipped/SYNC_WORK_SUPERSEDED` with writes 0; controlled Permanent fault created one terminal work, one valid secret-filtered replay payload, two open fault alerts and no active lock. The fault profile was restored to the real ignored DEV config with YouTube Schedule/Analytics/Redrive still disabled.
+- **Remaining risks/gates:** Commit and deploy the zero-result classification patch, rerun Permanent classification, controlled Redrive/healthy recovery, warning-outbox/TTL guard verification, full final gates, then re-enable DEV Schedule/Analytics. Customer-owned 837-video Live UAT remains the Production blocker.
+- **Rollback:** Current migration is additive. Keep Schedule/Analytics disabled and deploy the prior known-good Worker if the patched smoke fails; do not delete Business checkpoints/Lark rows or pending warning entries.
+- **Commit suggestion:** `fix: classify empty YouTube channel lookup`

@@ -17,6 +17,20 @@ test('YouTube client loads channel identity and keeps credential out of error de
   assert.equal(requestUrl.searchParams.get('key'), 'test-key');
 });
 
+test('YouTube channel lookup without items is a permanent identity mismatch', async () => {
+  const client = new YouTubeApiClient({
+    apiKey: 'test-key',
+    fetchImpl: async () => Response.json({ pageInfo: { totalResults: 0 } }),
+  });
+
+  await assert.rejects(
+    client.getChannel({ channelId: 'missing-channel' }),
+    (error) => error?.code === 'YOUTUBE_CHANNEL_IDENTITY_MISMATCH'
+      && error.retryable === false
+      && error.details?.resultCount === 0,
+  );
+});
+
 test('YouTube client follows bounded pageToken and chunks videos at 50 IDs', async () => {
   const calls = [];
   const client = new YouTubeApiClient({

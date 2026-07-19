@@ -11,6 +11,7 @@
 - Redacts matched Secret fields for string, numeric and boolean values while keeping numeric operational completeness counters such as `missingVideoIds` available.
 - Validates a Dead-letter candidate before reservation and rechecks forbidden types inside D1, preventing recursive redrive from leaving an incident stuck in `redrive_pending`.
 - Allows the generated `RELEASE_MANIFEST.txt` only in an extracted Release tree, while continuing to reject it from the actual Git source root so clean-archive gates and source hygiene enforce the same contract.
+- Classifies a successful YouTube channel lookup response that omits `items` as a zero-result permanent `YOUTUBE_CHANNEL_IDENTITY_MISMATCH`, instead of leaking an unclassified TypeError into Sync Log/DLQ handling.
 
 ### Migration and rollout safety
 - Makes migration 0005 fail closed before schema mutation when legacy resumable work or an unexpired lock remains.
