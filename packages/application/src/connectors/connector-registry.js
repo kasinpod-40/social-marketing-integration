@@ -11,6 +11,7 @@ import { permanentError } from '../../../shared/src/errors/runtime-error.js';
  * การมีชื่ออยู่ใน Catalog ไม่ได้แปลว่าใช้งานได้ทันที:
  * - implementationStatus ต้องเป็น active
  * - Customer profile/feature flag ต้องเปิด enabled=true
+ * - Production ต้องผ่าน large-account gate ครบ
  */
 export function assertConnectorRunnable(runtimeConfig, connectorKey) {
   const definition = getConnectorCatalogEntry(connectorKey);
@@ -38,6 +39,18 @@ export function assertConnectorRunnable(runtimeConfig, connectorKey) {
       },
     });
   }
+  if (runtimeConfig?.environment === 'production'
+    && definition.largeAccount?.productionReady !== true) {
+    throw permanentError(`${definition.displayName} connector has not passed the large-account Production gate`, {
+      code: 'MKT_CONNECTOR_LARGE_ACCOUNT_UAT_PENDING',
+      details: {
+        connectorKey: definition.key,
+        largeAccountStatus: definition.largeAccount?.status ?? null,
+        minimumFixtureItems: definition.largeAccount?.minimumFixtureItems ?? null,
+        missingGates: definition.largeAccount?.missingGates ?? [],
+      },
+    });
+  }
   return connector;
 }
 
@@ -45,14 +58,24 @@ export function assertConnectorRunnable(runtimeConfig, connectorKey) {
 export function listConnectorReadiness(runtimeConfig) {
   return Object.freeze(listConnectorCatalog().map((definition) => {
     const runtime = runtimeConfig?.connectors?.[definition.key] ?? null;
+    const implementationRunnable = definition.implementationStatus === CONNECTOR_IMPLEMENTATION_STATUS.ACTIVE
+      && runtime?.enabled === true;
+    const productionRunnable = implementationRunnable
+      && definition.largeAccount.productionReady === true;
     return Object.freeze({
       key: definition.key,
       displayName: definition.displayName,
       capability: definition.capability,
       implementationStatus: definition.implementationStatus,
       enabled: runtime?.enabled === true,
-      runnable: definition.implementationStatus === CONNECTOR_IMPLEMENTATION_STATUS.ACTIVE
-        && runtime?.enabled === true,
+      largeAccountStatus: definition.largeAccount.status,
+      largeAccountPrimaryEntity: definition.largeAccount.primaryEntity,
+      minimumFixtureItems: definition.largeAccount.minimumFixtureItems,
+      missingLargeAccountGates: definition.largeAccount.missingGates,
+      productionReady: definition.largeAccount.productionReady,
+      runnable: implementationRunnable
+        && (runtimeConfig?.environment !== 'production' || productionRunnable),
+      productionRunnable,
     });
   }));
 }
