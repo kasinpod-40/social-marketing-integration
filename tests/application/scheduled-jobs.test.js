@@ -1,6 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildScheduledJobs, readZonedScheduleParts } from '../../apps/sync-worker/src/index.js';
+import {
+  PRIMARY_SCHEDULE_CRON,
+  YOUTUBE_SCHEDULE_CRON,
+  buildScheduledJobs,
+  readZonedScheduleParts,
+  resolveYouTubeAnalyticsEnabled,
+} from '../../apps/sync-worker/src/index.js';
 
 test('scheduler queues TikTok sync first and daily report at Bangkok 08:10', () => {
   const jobs = buildScheduledJobs({
@@ -132,4 +138,99 @@ test('scheduled report period uses leap day as the last completed local day', ()
   });
 
   assert.equal(jobs[0].periodEnd, '2028-02-29');
+});
+
+test('YouTube cron queues an auto sync every 6 hours without duplicating primary jobs', () => {
+  const jobs = buildScheduledJobs({
+    event: {
+      cron: YOUTUBE_SCHEDULE_CRON,
+      scheduledTime: Date.parse('2026-07-19T06:50:00.000Z'),
+    },
+    env: {
+      DEFAULT_TIMEZONE: 'Asia/Bangkok',
+      MKT_CONNECTOR_TIKTOK_ENABLED: 'true',
+      MKT_SCHEDULE_TIKTOK_ENABLED: 'true',
+      MKT_SCHEDULE_YOUTUBE_ENABLED: 'true',
+      MKT_YOUTUBE_ANALYTICS_ENABLED: 'true',
+      MKT_YOUTUBE_ANALYTICS_TIME: '07:50',
+      MKT_YOUTUBE_ANALYTICS_LOOKBACK_DAYS: '7',
+    },
+  });
+
+  assert.deepEqual(jobs, [{
+    schemaVersion: 1,
+    type: 'youtube.channel.organic.sync',
+    trigger: 'scheduled',
+    syncMode: 'auto',
+    requestedAt: '2026-07-19T06:50:00.000Z',
+    metricDate: '2026-07-19',
+    analyticsEnabled: false,
+  }]);
+});
+
+test('YouTube Analytics runs once daily and locks a 7-day completed Pacific range in the job', () => {
+  const jobs = buildScheduledJobs({
+    event: {
+      cron: YOUTUBE_SCHEDULE_CRON,
+      scheduledTime: Date.parse('2026-07-19T00:50:00.000Z'),
+    },
+    env: {
+      DEFAULT_TIMEZONE: 'Asia/Bangkok',
+      MKT_SCHEDULE_YOUTUBE_ENABLED: 'true',
+      MKT_YOUTUBE_ANALYTICS_ENABLED: 'true',
+      MKT_YOUTUBE_ANALYTICS_TIME: '07:50',
+      MKT_YOUTUBE_ANALYTICS_LOOKBACK_DAYS: '7',
+    },
+  });
+
+  assert.equal(jobs.length, 1);
+  assert.equal(jobs[0].analyticsEnabled, true);
+  assert.equal(jobs[0].analyticsStartDate, '2026-07-11');
+  assert.equal(jobs[0].analyticsEndDate, '2026-07-17');
+});
+
+test('primary cron never queues YouTube and YouTube cron never queues TikTok or reports', () => {
+  const env = {
+    DEFAULT_TIMEZONE: 'Asia/Bangkok',
+    MKT_SCHEDULE_TIKTOK_ENABLED: 'true',
+    MKT_SCHEDULE_YOUTUBE_ENABLED: 'true',
+    MKT_SCHEDULE_DAILY_REPORT_ENABLED: 'false',
+    MKT_SCHEDULE_WEEKLY_REPORT_ENABLED: 'false',
+  };
+  const primary = buildScheduledJobs({
+    event: { cron: PRIMARY_SCHEDULE_CRON, scheduledTime: Date.parse('2026-07-19T00:50:00Z') },
+    env,
+  });
+  const youtube = buildScheduledJobs({
+    event: { cron: YOUTUBE_SCHEDULE_CRON, scheduledTime: Date.parse('2026-07-19T00:50:00Z') },
+    env,
+  });
+
+  assert.deepEqual(primary.map((job) => job.type), ['tiktok.creator.native.sync']);
+  assert.deepEqual(youtube.map((job) => job.type), ['youtube.channel.organic.sync']);
+});
+
+test('YouTube Analytics lookback is bounded to protect API quota', () => {
+  assert.throws(() => buildScheduledJobs({
+    event: {
+      cron: YOUTUBE_SCHEDULE_CRON,
+      scheduledTime: Date.parse('2026-07-19T00:50:00.000Z'),
+    },
+    env: {
+      DEFAULT_TIMEZONE: 'Asia/Bangkok',
+      MKT_SCHEDULE_YOUTUBE_ENABLED: 'true',
+      MKT_YOUTUBE_ANALYTICS_ENABLED: 'true',
+      MKT_YOUTUBE_ANALYTICS_TIME: '07:50',
+      MKT_YOUTUBE_ANALYTICS_LOOKBACK_DAYS: '32',
+    },
+  }), (error) => error?.code === 'MKT_SCHEDULE_CONFIG_INVALID');
+});
+
+test('Queue job can reduce but cannot elevate the YouTube Analytics runtime feature', () => {
+  assert.equal(resolveYouTubeAnalyticsEnabled({ configured: 'true', requested: false }), false);
+  assert.equal(resolveYouTubeAnalyticsEnabled({ configured: 'true', requested: true }), true);
+  assert.throws(
+    () => resolveYouTubeAnalyticsEnabled({ configured: 'false', requested: true }),
+    (error) => error?.code === 'YOUTUBE_ANALYTICS_DISABLED',
+  );
 });

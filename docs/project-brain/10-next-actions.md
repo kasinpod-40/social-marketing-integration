@@ -2,9 +2,9 @@
 
 ## Shared task workflow
 
-ChatGPT Work and Codex share `docs/current-task.md`. The YouTube foundation is approved and v0.11.0-rc.1 implements only a guarded Manual DEV UAT path. All unverified connectors remain fail-closed.
+ChatGPT Work and Codex share `docs/current-task.md`. YouTube Organic DEV v0.11.0 is active and deployed; all other unverified connectors remain fail-closed.
 
-## Clean candidate verification for v0.11.0-rc.1
+## Clean candidate verification for v0.11.0
 
 ```bash
 npm ci
@@ -14,12 +14,12 @@ npm run test:report-reliability
 npm audit --offline
 npm run deploy:dry-run
 npm run release:package
-npm run release:verify -- outputs/releases/social-marketing-integration-v0.11.0-rc.1.zip
+npm run release:verify -- outputs/releases/social-marketing-integration-v0.11.0.zip
 ```
 
 ## YouTube DEV access and schema
 
-Status 2026-07-17: Public/Owner preflight, three-table Lark Schema Apply, DateTime/Permission verification, Manual Queue core และ safe Reliability fault UAT passed. Local Table IDs are stored only in ignored `wrangler.sync.jsonc`.
+Status 2026-07-19: Public/Owner preflight, three-table Lark Schema Apply, DateTime/Permission verification, Queue/Reliability UAT, activation deployment and Active smoke test passed. Local Table IDs are stored only in ignored `wrangler.sync.jsonc`.
 
 Completed setup reference:
 
@@ -29,22 +29,24 @@ npm run setup:youtube-schema
 CONFIRM_WRITE=YES npm run setup:youtube-schema:apply
 ```
 
-Destination/Sync Log/System Alert mappings ถูกตรวจว่าเป็นค่าจริงและไม่ซ้ำแล้ว. Keep `MKT_CONNECTOR_YOUTUBE_ENABLED=false` and all YouTube schedules absent/disabled.
+Destination/Sync Log/System Alert mappings ถูกตรวจว่าเป็นค่าจริงและไม่ซ้ำแล้ว. Release examples ยังปิดทุก flag; ignored DEV config เปิดเฉพาะ environment ที่ผ่าน UAT แล้ว.
 
-## Manual DEV UAT
+## Active DEV operations
 
-Enable only the separate UAT gate:
+DEV activation policy:
 
 ```text
-MKT_CONNECTOR_YOUTUBE_UAT_ENABLED=true
-MKT_CONNECTOR_YOUTUBE_ENABLED=false
-MKT_YOUTUBE_ANALYTICS_ENABLED=false   # first Public Data pass
+MKT_CONNECTOR_YOUTUBE_ENABLED=true
+MKT_SCHEDULE_YOUTUBE_ENABLED=true
+MKT_YOUTUBE_ANALYTICS_ENABLED=true
+MKT_YOUTUBE_ANALYTICS_TIME=07:50
+MKT_YOUTUBE_ANALYTICS_LOOKBACK_DAYS=7
 ```
 
-Generate the Manual job body:
+Generate an optional manual active job body:
 
 ```bash
-npm run job:youtube-uat
+npm run job:youtube-sync
 ```
 
 Core UAT ที่ผ่านแล้ว:
@@ -74,22 +76,21 @@ Production-path deterministic cases ที่ผ่าน:
 
 ไม่จงใจสร้าง actual Provider missing/private/deleted, เผา quota, บังคับ 429 หรือทำ D1 outage. ให้เฝ้าดู scenario เหล่านี้เมื่อเกิดตามธรรมชาติและใช้ Alert/Runbook เดิม.
 
-## Activation gate
+## Completed activation
 
-หลัง ChatGPT Work ตรวจหลักฐานและข้อมูลรอบสุดท้ายแล้วจึงพิจารณา:
+- YouTube connector/job เป็น `active`
+- Data API Cron: `50 0,6,12,18 * * *` (ทุก 6 ชั่วโมง)
+- Analytics: วันละครั้ง 07:50 Asia/Bangkok, query 7 completed Pacific dates
+- Worker version: `f46c0c7f-0119-4f78-8e8d-2d37e17823a5`
+- Active Data API และ Owner Analytics smoke tests: success/retry 0; Analytics สร้าง RAW fact 1 แถว, lock 0, open alert 0
 
-- change YouTube connector/job from `uat_pending` to `active`
-- design a separately reviewed schedule and incremental Analytics date policy
-- enable normal YouTube feature flag
-- deploy and observe scheduled runs
-
-Do not start Meta, WooCommerce, Chatwoot, Ads activation or Lark AI notification work inside this UAT task.
+Next work must not silently expand into Meta, WooCommerce, Chatwoot, Ads activation or Lark AI notification.
 
 ## TikTok parallel operations
 
 - Continue observing Daily report at 08:10 Asia/Bangkok.
 - Continue observing Weekly report Monday 08:15 Asia/Bangkok.
-- These observations do not block YouTube Manual DEV UAT.
+- These observations do not block the completed YouTube activation.
 
 ## Production ownership
 

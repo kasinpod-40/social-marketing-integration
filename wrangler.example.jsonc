@@ -2,7 +2,7 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "social-mkt-api-worker",
   "main": "apps/api-worker/src/index.js",
-  "compatibility_date": "2026-07-01",
+  "compatibility_date": "2026-07-15",
   "vars": {
     // Environment หลักของระบบ: development หรือ production
     "MKT_ENV": "development",

@@ -33,6 +33,7 @@ test('release examples keep every connector and schedule fail-closed', async () 
     'MKT_CONNECTOR_WOOCOMMERCE_ENABLED',
     'MKT_CONNECTOR_CHATWOOT_ENABLED',
     'MKT_SCHEDULE_TIKTOK_ENABLED',
+    'MKT_SCHEDULE_YOUTUBE_ENABLED',
     'MKT_SCHEDULE_DAILY_REPORT_ENABLED',
     'MKT_SCHEDULE_WEEKLY_REPORT_ENABLED',
   ];

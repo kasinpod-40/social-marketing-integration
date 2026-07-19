@@ -23,8 +23,8 @@
   },
 
   "triggers": {
-    // Cron ทุก 5 นาทีรองรับ Incremental Sync และตรวจรอบ Daily/Weekly report จาก Timezone
-    "crons": ["*/5 * * * *"]
+    // Primary Cron ตรวจ TikTok/Daily/Weekly; YouTube Cron รันทุก 6 ชั่วโมงที่นาที 50 (UTC)
+    "crons": ["*/5 * * * *", "50 0,6,12,18 * * *"]
   },
 
   "d1_databases": [
@@ -74,13 +74,15 @@
     "MKT_CONNECTOR_FACEBOOK_ENABLED": "false",
     "MKT_CONNECTOR_INSTAGRAM_ENABLED": "false",
     "MKT_CONNECTOR_YOUTUBE_ENABLED": "false",
-    // Manual UAT gate แยกจาก Active connector; ไม่มี YouTube schedule producer
-    "MKT_CONNECTOR_YOUTUBE_UAT_ENABLED": "false",
     "MKT_YOUTUBE_ANALYTICS_ENABLED": "false",
     "MKT_CONNECTOR_WOOCOMMERCE_ENABLED": "false",
     "MKT_CONNECTOR_CHATWOOT_ENABLED": "false",
 
     "MKT_SCHEDULE_TIKTOK_ENABLED": "false",
+    "MKT_SCHEDULE_YOUTUBE_ENABLED": "false",
+    // Owner Analytics รันวันละครั้ง 07:50 Bangkok และ re-fetch 7 Pacific days ที่จบแล้ว
+    "MKT_YOUTUBE_ANALYTICS_TIME": "07:50",
+    "MKT_YOUTUBE_ANALYTICS_LOOKBACK_DAYS": "7",
     // Safe default: ปิดไว้สำหรับการติดตั้งใหม่; หลัง Schema/Seed/UAT ผ่านให้ใช้ npm run enable:tiktok-report-schedules
     "MKT_SCHEDULE_DAILY_REPORT_ENABLED": "false",
     "MKT_SCHEDULE_WEEKLY_REPORT_ENABLED": "false",

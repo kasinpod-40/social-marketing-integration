@@ -1,6 +1,6 @@
 {
   "name": "social-marketing-integration",
-  "version": "0.11.0-rc.1",
+  "version": "0.11.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -29,7 +29,7 @@
     "setup:youtube-schema": "node scripts/setup-youtube-schema.mjs",
     "setup:youtube-schema:apply": "node scripts/setup-youtube-schema.mjs --apply",
     "preflight:youtube": "node scripts/preflight-youtube-dev-access.mjs",
-    "job:youtube-uat": "node scripts/print-youtube-uat-job.mjs"
+    "job:youtube-sync": "node scripts/print-youtube-sync-job.mjs"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.18.4",

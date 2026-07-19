@@ -25,6 +25,17 @@ test('environment feature flag can disable an active connector safely', () => {
   assert.equal(config.connectors.tiktok.enabledSource, 'environment');
 });
 
+test('YouTube connector can be enabled after activation review', () => {
+  const config = loadCustomerRuntimeConfig({
+    MKT_ENV: 'development',
+    MKT_CUSTOMER_PROFILE: 'dev_ft_pumkin',
+    MKT_CONNECTOR_YOUTUBE_ENABLED: 'true',
+  });
+
+  assert.equal(config.connectors.youtube.implementationStatus, 'active');
+  assert.equal(config.connectors.youtube.enabled, true);
+});
+
 test('planned connectors cannot be enabled before a real implementation exists', () => {
   assert.throws(
     () => loadCustomerRuntimeConfig({

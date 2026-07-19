@@ -16,15 +16,10 @@ import {
 import { validateLarkLiveSync } from '../../../packages/application/src/use-cases/validate-lark-live-sync.js';
 import { loadCustomerRuntimeConfig } from '../../../packages/config/src/customer-profiles.js';
 import { resolveMetricDate } from '../../../packages/config/src/metric-date-config.js';
-import { CONNECTOR_KEYS } from '../../../packages/config/src/connector-catalog.js';
-import {
-  assertConnectorManualUatRunnable,
-  assertConnectorRunnable,
-} from '../../../packages/application/src/connectors/connector-registry.js';
+import { assertConnectorRunnable } from '../../../packages/application/src/connectors/connector-registry.js';
 import {
   JOB_TYPES,
   assertJobImplemented,
-  assertJobManualUatImplemented,
   getJobDefinition,
 } from '../../../packages/application/src/jobs/job-catalog.js';
 import { normalizeQueueJobMessage } from '../../../packages/application/src/jobs/queue-job.js';
@@ -49,7 +44,13 @@ const DEFAULT_TIKTOK_FULL_RECONCILIATION_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_DAILY_REPORT_TIME = '08:10';
 const DEFAULT_WEEKLY_REPORT_TIME = '08:15';
 const DEFAULT_WEEKLY_REPORT_WEEKDAY = 'monday';
+const DEFAULT_YOUTUBE_ANALYTICS_TIME = '07:50';
+const DEFAULT_YOUTUBE_ANALYTICS_LOOKBACK_DAYS = 7;
+const YOUTUBE_ANALYTICS_TIMEZONE = 'America/Los_Angeles';
 const SCHEDULE_WEEKDAYS = new Set(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']);
+
+export const PRIMARY_SCHEDULE_CRON = '*/5 * * * *';
+export const YOUTUBE_SCHEDULE_CRON = '50 0,6,12,18 * * *';
 
 export const QUEUE_ROLES = Object.freeze({
   MAIN: 'main',
@@ -81,7 +82,11 @@ export function createSyncWorker(dependencies = {}) {
       }
 
       const runtimeConfig = loadCustomerRuntimeConfig(env);
-      assertConnectorRunnable(runtimeConfig, CONNECTOR_KEYS.TIKTOK);
+      for (const connectorKey of new Set(jobs
+        .map((job) => assertJobImplemented(getJobDefinition(job.type)).connectorKey)
+        .filter(Boolean))) {
+        assertConnectorRunnable(runtimeConfig, connectorKey);
+      }
       const queue = env?.MKT_SYNC_QUEUE;
       if (typeof queue?.send !== 'function') {
         throw permanentError('Missing Queue producer binding MKT_SYNC_QUEUE', {
@@ -197,21 +202,10 @@ export default syncWorker;
 
 /** Route Job type ไปยัง Use case จริง โดยตรวจ Implementation/Profile/Feature flag ตามลำดับ */
 export async function processJob(input) {
-  const registeredDefinition = getJobDefinition(input.job?.body?.type);
-  const isYouTubeManualUat = registeredDefinition.type === JOB_TYPES.YOUTUBE_ORGANIC_SYNC
-    && input.job?.body?.trigger === 'manual_uat';
-  const definition = isYouTubeManualUat
-    ? assertJobManualUatImplemented(registeredDefinition, input.job.body.trigger)
-    : assertJobImplemented(registeredDefinition);
+  const definition = assertJobImplemented(getJobDefinition(input.job?.body?.type));
   const runtimeConfig = input.getRuntimeConfig();
   const connectorConfig = definition.connectorKey
-    ? (isYouTubeManualUat
-      ? assertConnectorManualUatRunnable(runtimeConfig, definition.connectorKey, {
-        trigger: input.job.body.trigger,
-        uatEnabled: readBoolean(input.env?.MKT_CONNECTOR_YOUTUBE_UAT_ENABLED, false),
-        featureFlagEnv: 'MKT_CONNECTOR_YOUTUBE_UAT_ENABLED',
-      })
-      : assertConnectorRunnable(runtimeConfig, definition.connectorKey))
+    ? assertConnectorRunnable(runtimeConfig, definition.connectorKey)
     : null;
   const infrastructure = input.getInfrastructure();
 
@@ -222,7 +216,10 @@ export async function processJob(input) {
     const tableIds = Object.freeze({ ...youtubeTableIds, ...operationalTableIds });
     const reliability = infrastructure.getReliability(tableIds);
     const clients = createYouTubeClientsFromEnv(input.env);
-    const analyticsEnabled = readBoolean(input.env?.MKT_YOUTUBE_ANALYTICS_ENABLED, false);
+    const analyticsEnabled = resolveYouTubeAnalyticsEnabled({
+      configured: input.env?.MKT_YOUTUBE_ANALYTICS_ENABLED,
+      requested: input.job.body?.analyticsEnabled,
+    });
     const channelId = readYouTubeChannelIdFromEnv(input.env);
 
     return runReliableSync({
@@ -232,7 +229,7 @@ export async function processJob(input) {
       accountKey: connectorConfig.accountKey,
       platform: 'youtube',
       source: 'youtube_data_api',
-      syncType: 'organic_manual_uat',
+      syncType: 'organic_sync',
       retryCount: Math.max(0, readAttempts(input.message) - 1),
       leaseMs: readPositiveInteger(input.env?.MKT_SYNC_LOCK_LEASE_MS, DEFAULT_LOCK_LEASE_MS),
       renewIntervalMs: readPositiveInteger(
@@ -258,6 +255,7 @@ export async function processJob(input) {
         accountKey: connectorConfig.accountKey,
         customerProfile: runtimeConfig.profileKey,
         cursorKey: lockKey,
+        syncType: 'organic_sync',
         metricDate: readMetricDate(input.job.body?.metricDate, input.env),
         reportingTimezone: input.env?.DEFAULT_TIMEZONE ?? 'Asia/Bangkok',
         syncMode: input.job.body?.syncMode,
@@ -672,17 +670,24 @@ function platformFromJobType(type) {
 export function buildScheduledJobs(input = {}) {
   const env = input.env ?? {};
   const requestedAt = normalizeScheduledAt(input.scheduledAt ?? input.event?.scheduledTime);
+  const cron = optionalJobText(input.event?.cron);
+  const includePrimaryJobs = cron !== YOUTUBE_SCHEDULE_CRON;
+  const includeYouTubeJobs = cron === null || cron === YOUTUBE_SCHEDULE_CRON;
   const tiktokEnabled = readBoolean(env.MKT_SCHEDULE_TIKTOK_ENABLED, false);
   const dailyEnabled = readBoolean(env.MKT_SCHEDULE_DAILY_REPORT_ENABLED, false);
   const weeklyEnabled = readBoolean(env.MKT_SCHEDULE_WEEKLY_REPORT_ENABLED, false);
-  if (!tiktokEnabled && !dailyEnabled && !weeklyEnabled) return Object.freeze([]);
+  const youtubeEnabled = readBoolean(env.MKT_SCHEDULE_YOUTUBE_ENABLED, false);
+  if ((!includePrimaryJobs || (!tiktokEnabled && !dailyEnabled && !weeklyEnabled))
+    && (!includeYouTubeJobs || !youtubeEnabled)) {
+    return Object.freeze([]);
+  }
 
   const timeZone = requireJobText(env.DEFAULT_TIMEZONE ?? 'Asia/Bangkok', 'DEFAULT_TIMEZONE');
   const local = readZonedScheduleParts(requestedAt, timeZone);
   const completedPeriodEnd = addDaysDateOnly(local.date, -1);
   const jobs = [];
 
-  if (tiktokEnabled) {
+  if (includePrimaryJobs && tiktokEnabled) {
     jobs.push(Object.freeze({
       schemaVersion: 1,
       type: JOB_TYPES.TIKTOK_CREATOR_NATIVE_SYNC,
@@ -694,7 +699,7 @@ export function buildScheduledJobs(input = {}) {
     }));
   }
 
-  if (dailyEnabled) {
+  if (includePrimaryJobs && dailyEnabled) {
     const dailyTime = readScheduleTime(env.MKT_DAILY_REPORT_TIME ?? DEFAULT_DAILY_REPORT_TIME, 'MKT_DAILY_REPORT_TIME');
     if (local.time === dailyTime) {
       jobs.push(Object.freeze({
@@ -709,7 +714,7 @@ export function buildScheduledJobs(input = {}) {
     }
   }
 
-  if (weeklyEnabled) {
+  if (includePrimaryJobs && weeklyEnabled) {
     const weeklyTime = readScheduleTime(env.MKT_WEEKLY_REPORT_TIME ?? DEFAULT_WEEKLY_REPORT_TIME, 'MKT_WEEKLY_REPORT_TIME');
     const weeklyWeekday = readScheduleWeekday(
       env.MKT_WEEKLY_REPORT_WEEKDAY ?? DEFAULT_WEEKLY_REPORT_WEEKDAY,
@@ -725,6 +730,37 @@ export function buildScheduledJobs(input = {}) {
         reportSettingKey: requireJobText(env.MKT_WEEKLY_REPORT_SETTING_KEY, 'MKT_WEEKLY_REPORT_SETTING_KEY'),
       }));
     }
+  }
+
+  if (includeYouTubeJobs && youtubeEnabled) {
+    const analyticsConfigured = readBoolean(env.MKT_YOUTUBE_ANALYTICS_ENABLED, false);
+    const analyticsTime = readScheduleTime(
+      env.MKT_YOUTUBE_ANALYTICS_TIME ?? DEFAULT_YOUTUBE_ANALYTICS_TIME,
+      'MKT_YOUTUBE_ANALYTICS_TIME',
+    );
+    const analyticsEnabled = analyticsConfigured && local.time === analyticsTime;
+    const job = {
+      schemaVersion: 1,
+      type: JOB_TYPES.YOUTUBE_ORGANIC_SYNC,
+      trigger: 'scheduled',
+      syncMode: 'auto',
+      requestedAt,
+      metricDate: local.date,
+      analyticsEnabled,
+    };
+    if (analyticsEnabled) {
+      const sourceLocal = readZonedScheduleParts(requestedAt, YOUTUBE_ANALYTICS_TIMEZONE);
+      const endDate = addDaysDateOnly(sourceLocal.date, -1);
+      const lookbackDays = readBoundedPositiveInteger(
+        env.MKT_YOUTUBE_ANALYTICS_LOOKBACK_DAYS,
+        DEFAULT_YOUTUBE_ANALYTICS_LOOKBACK_DAYS,
+        31,
+        'MKT_YOUTUBE_ANALYTICS_LOOKBACK_DAYS',
+      );
+      job.analyticsStartDate = addDaysDateOnly(endDate, -(lookbackDays - 1));
+      job.analyticsEndDate = endDate;
+    }
+    jobs.push(Object.freeze(job));
   }
 
   return Object.freeze(jobs);
@@ -800,8 +836,36 @@ function requireJobText(value, fieldName) {
   return value.trim();
 }
 
+function optionalJobText(value) {
+  if (value === null || value === undefined || value === '') return null;
+  return requireJobText(value, 'event.cron');
+}
+
+function readBoundedPositiveInteger(value, fallback, maximum, fieldName) {
+  const number = value === null || value === undefined || value === '' ? fallback : Number(value);
+  if (!Number.isSafeInteger(number) || number <= 0 || number > maximum) {
+    throw permanentError(`${fieldName} must be an integer from 1 to ${maximum}`, {
+      code: 'MKT_SCHEDULE_CONFIG_INVALID',
+      details: { fieldName },
+    });
+  }
+  return number;
+}
+
 function readMetricDate(jobValue, env) {
   return resolveMetricDate({ env, override: jobValue });
+}
+
+/** Queue payload ลดสิทธิ์ Analytics ได้ แต่ห้ามยกระดับเหนือ Runtime feature flag */
+export function resolveYouTubeAnalyticsEnabled(input = {}) {
+  const configured = readBoolean(input.configured, false);
+  const requested = readBoolean(input.requested, configured);
+  if (requested && !configured) {
+    throw permanentError('YouTube job cannot enable Analytics while the runtime feature is disabled', {
+      code: 'YOUTUBE_ANALYTICS_DISABLED',
+    });
+  }
+  return configured && requested;
 }
 
 function readAttempts(message) {

@@ -4,7 +4,7 @@
 
 ## Baseline ปัจจุบัน
 
-Working candidate: `v0.11.0-rc.1`
+Working candidate: `v0.11.0`
 
 Official clean baseline: `v0.10.2-multi-channel-foundation-approved`
 
@@ -35,9 +35,9 @@ Official clean baseline: `v0.10.2-multi-channel-foundation-approved`
 - v0.10.1 ตรวจทาน Foundation: ถอด `maxResults` จาก `videos.list(id)`, แยก `quotaExceeded` ออกจาก Short retry, แยก Ads `Ad`/`Creative`, ใช้ integer micros เป็น Money source of truth และเพิ่ม Excel/Lark Blueprint ที่ตรวจภาพครบ
 - v0.10.2-rc.2 ปิด Blueprint/Release review gaps: YouTube preflight บังคับ `MKT_Accounts` และ RAW/Content/Daily tables, Example config fail-closed และ Clean ZIP มี Allowlist/Blocklist + Secret/DEV ID/Duplicate verification
 - YouTube Blueprint v0.10.2 rc.2 แก้ latest-state Channel/Video, hidden subscriber, non-destructive reconciliation, Pacific-day Analytics, explicit `sort=day,video`, missing-row semantics และ field-by-field Canonical mapping; Owner Analytics คง RAW-only ใน Phase 1
-- v0.11.0-rc.1 เพิ่ม YouTube guarded Schema installer, DEV access preflight, RAW/Canonical/Account writes, Manual Queue route, D1 checkpoint, reconciliation และ Reliability reuse; YouTube ยังคง `uat_pending` และไม่มี Schedule
+- v0.11.0 เพิ่ม YouTube guarded Schema installer, DEV access preflight, RAW/Canonical/Account writes, D1 checkpoint, reconciliation, Reliability reuse และ Active scheduled route
 - DEV Public/Owner preflight, Lark Schema Apply และ Manual Queue core UAT สำหรับ YouTube ผ่านแล้วเมื่อ 2026-07-17; First Full, idempotent rerun, incremental และ Owner Analytics valid no-data สำเร็จโดยไม่เกิด Duplicate
-- Final DEV Worker ใช้ UAT-only gate; normal YouTube flag, Analytics หลังจบ UAT และ YouTube Schedule คงปิด โดย safe Reliability fault UAT ผ่านแล้วและรอ Activation review
+- Final DEV Worker เปิด normal YouTube, Owner Analytics และ YouTube Schedule แล้ว: Data API ทุก 6 ชั่วโมง และ Analytics วันละครั้งด้วย completed Pacific 7-day overlap
 - v0.11.0-rc.1 hardening เติม Analytics missing-key reconciliation แบบ retain/warn, บังคับ D1 warning alert failure ให้ Queue retry, Redact external identity จาก operational logs/stores และคืน safe examples เป็น Placeholder-only
 - Connector อื่นยังไม่ถูกเปิด: Meta/WooCommerce/Chatwoot/Ads เป็น `planned` จนกว่า Blueprint/Access/Live UAT ของแต่ละช่องทางผ่าน
 - Customer Production setup ยังไม่รวมใน Release นี้และต้องใช้ทรัพยากรของลูกค้า
@@ -50,13 +50,13 @@ Official clean baseline: `v0.10.2-multi-channel-foundation-approved`
 
 Excel/Lark review Blueprint: `docs/Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.2.xlsx`
 
-Blueprint v0.10.2 ผ่าน Technical review และเป็น Foundation baseline แล้ว. DEV access, guarded Schema Apply, Manual Queue core และ safe Reliability fault UAT ผ่านแล้ว; Source v0.11.0-rc.1 รอ Activation review โดย Schedule และ Production ยังคงปิด
+Blueprint v0.10.2 ผ่าน Technical review และเป็น Foundation baseline แล้ว. YouTube Organic DEV v0.11.0 ผ่าน access, Schema, Queue/Reliability UAT, activation deploy และ Active smoke test แล้ว; Production ยังปิดและต้องใช้ทรัพยากรที่ลูกค้าเป็นเจ้าของ
 
 สร้างและตรวจ Clean candidate:
 
 ```bash
 npm run release:package
-npm run release:verify -- outputs/releases/social-marketing-integration-v0.11.0-rc.1.zip
+npm run release:verify -- outputs/releases/social-marketing-integration-v0.11.0.zip
 ```
 
 Archive/Manifest/SHA-256/Verification report ถูกสร้างใน `outputs/releases/` ซึ่งเป็น Local artifact และไม่ Commit
@@ -357,11 +357,11 @@ Connector ที่ลงทะเบียนใน Catalog กลาง:
 | TikTok | active | enabled |
 | Facebook Page | planned | disabled |
 | Instagram Business | planned | disabled |
-| YouTube | uat_pending | disabled |
+| YouTube | active | disabled in safe examples; enabled in verified DEV |
 | WooCommerce | planned | disabled |
 | Chatwoot | planned | disabled |
 
-YouTube DEV ผ่าน Public/Owner preflight, Lark Apply, core Queue และ safe Reliability fault UAT แล้ว รวม DateTime day+time, Client RAW `No access`, lock retry, retry exhaustion → DLQ/D1/Lark Alert, safe restore และ Live read-only identity mismatch. Connector ยัง `uat_pending`; normal flag, Owner Analytics หลัง UAT, Schedule และ Production คงปิดจน ChatGPT Work ตรวจหลักฐาน/ข้อมูลรอบสุดท้าย.
+YouTube DEV ผ่าน Public/Owner preflight, Lark Apply, core Queue และ safe Reliability fault UAT แล้ว รวม DateTime day+time, Client RAW `No access`, lock retry, retry exhaustion → DLQ/D1/Lark Alert, safe restore และ Live read-only identity mismatch. Connector เป็น `active`; Cloudflare DEV รัน Data API ทุก 6 ชั่วโมงและ Owner Analytics วันละครั้ง ส่วน Production คงปิด.
 
 ไฟล์หลัก:
 

@@ -23,7 +23,15 @@ test('deployment config defines producer, main queue, DLQ, and scheduled cron', 
   assert.match(configText, /"binding"\s*:\s*"MKT_SYNC_QUEUE"/);
   assert.match(configText, /"MKT_MAIN_QUEUE_NAME"\s*:\s*"social-mkt-sync-jobs"/);
   assert.match(configText, /"MKT_DLQ_QUEUE_NAME"\s*:\s*"social-mkt-sync-dlq"/);
-  assert.match(configText, /"crons"\s*:\s*\["\*\/5 \* \* \* \*"\]/);
+  assert.match(configText, /"crons"\s*:\s*\["\*\/5 \* \* \* \*",\s*"50 0,6,12,18 \* \* \*"\]/);
+});
+
+test('YouTube schedule and Analytics policy stay fail-closed in release examples', async () => {
+  const configText = await readSyncWranglerExample();
+  assert.match(configText, /"MKT_SCHEDULE_YOUTUBE_ENABLED"\s*:\s*"false"/);
+  assert.match(configText, /"MKT_YOUTUBE_ANALYTICS_ENABLED"\s*:\s*"false"/);
+  assert.match(configText, /"MKT_YOUTUBE_ANALYTICS_TIME"\s*:\s*"07:50"/);
+  assert.match(configText, /"MKT_YOUTUBE_ANALYTICS_LOOKBACK_DAYS"\s*:\s*"7"/);
 });
 
 test('deployment examples keep every connector disabled until environment UAT', async () => {

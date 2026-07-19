@@ -54,7 +54,7 @@ const CONNECTOR_CATALOG = Object.freeze({
     key: CONNECTOR_KEYS.YOUTUBE,
     displayName: 'YouTube',
     capability: 'organic_content',
-    implementationStatus: CONNECTOR_IMPLEMENTATION_STATUS.UAT_PENDING,
+    implementationStatus: CONNECTOR_IMPLEMENTATION_STATUS.ACTIVE,
     featureFlagEnv: 'MKT_CONNECTOR_YOUTUBE_ENABLED',
     requiredRuntimeFields: ['accountKey'],
   }),

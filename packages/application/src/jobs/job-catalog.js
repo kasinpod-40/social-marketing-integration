@@ -60,7 +60,7 @@ const JOB_CATALOG = Object.freeze({
   }),
   [JOB_TYPES.YOUTUBE_ORGANIC_SYNC]: freezeJob({
     type: JOB_TYPES.YOUTUBE_ORGANIC_SYNC,
-    implementationStatus: JOB_IMPLEMENTATION_STATUS.UAT_PENDING,
+    implementationStatus: JOB_IMPLEMENTATION_STATUS.ACTIVE,
     connectorKey: CONNECTOR_KEYS.YOUTUBE,
   }),
   [JOB_TYPES.WOOCOMMERCE_COMMERCE_SYNC]: freezeJob({
@@ -119,24 +119,6 @@ export function assertJobImplemented(definition) {
         type: definition?.type ?? null,
         connectorKey: definition?.connectorKey ?? null,
       },
-    });
-  }
-  return definition;
-}
-
-
-/** อนุญาต Job uat_pending เฉพาะ manual_uat; Job planned ยังถูกปฏิเสธเสมอ */
-export function assertJobManualUatImplemented(definition, trigger) {
-  if (definition?.implementationStatus !== JOB_IMPLEMENTATION_STATUS.UAT_PENDING) {
-    throw permanentError(`Sync job is not eligible for manual UAT: ${definition?.type ?? 'unknown'}`, {
-      code: 'SYNC_JOB_UAT_MODE_INVALID',
-      details: { type: definition?.type ?? null },
-    });
-  }
-  if (trigger !== 'manual_uat') {
-    throw permanentError(`Sync job requires trigger=manual_uat: ${definition.type}`, {
-      code: 'SYNC_JOB_UAT_TRIGGER_REQUIRED',
-      details: { type: definition.type },
     });
   }
   return definition;

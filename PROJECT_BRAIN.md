@@ -6,19 +6,21 @@ This project connects social organic and paid ads data into Lark Base for report
 ## Current project status
 Official clean baseline: `v0.10.2-multi-channel-foundation-approved`
 
-Current clean candidate: `v0.11.0-rc.1` — YouTube access, Lark Apply, core Queue และ safe Reliability fault UAT passed; Activation review pending
+Current clean candidate: `v0.11.0` — YouTube Organic DEV active, deployed, and smoke-tested
 
-Current YouTube design artifact: `docs/Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.2.xlsx` — Technical review approved. v0.11.0-rc.1 implements guarded Schema Preview/Apply, access preflight, RAW/Canonical/Account writes, Manual Queue, checkpoint/reconciliation and Reliability reuse. Public/Owner preflight, Lark Apply, core Queue และ safe Reliability fault UAT ผ่านเมื่อ 2026-07-17: lock collision/retry, timeout exhaustion → DLQ → D1/Lark Alert, safe restore/healthy run และ Live read-only identity mismatch. DateTime ทั้ง 6 ฟิลด์แสดงวันพร้อมเวลา; role `Client` เป็น `No access` สำหรับ YouTube RAW ทั้ง 3 ตาราง. Missing/quota/rate-limit/lease/persistence contracts ผ่าน deterministic production-path tests โดยไม่ทำลาย Provider/D1. Final DEV deployment uses UAT-only gate; normal connector, Analytics after UAT, YouTube Schedule and Production remain disabled.
+Current YouTube design artifact: `docs/Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.2.xlsx` — Technical review approved. v0.11.0 implements guarded Schema/Access, RAW/Canonical/Account writes, checkpoint/reconciliation and Reliability reuse. All DEV UAT gates passed. The connector is active in DEV with a six-hour Data API Cron and once-daily Owner Analytics using a bounded seven-day completed-Pacific overlap; Production remains disabled.
 
 TikTok Organic DEV ingestion/report logic ผ่าน Live Queue UAT และ Reliability UAT แล้ว. Client Views ทั้ง 6 รายการติดตั้ง Filter/Hidden fields และ Sort `rank` ascending สำเร็จ; Advanced Permissions เปิดแล้วพร้อม `Client` role แบบ least privilege และ Final Preview เป็นศูนย์ actions/conflicts. Daily/Weekly schedules เปิดและ deploy ไปยัง Cloudflare DEV แล้ว; เหลือ operational observation ของรอบ schedule.
 
-Multi-channel foundation ทั้ง 6 ส่วนถูกเพิ่มใน Code แล้ว: YouTube Organic source/Lark contract และ code-ready adapter, Canonical Organic core ที่ TikTok ใช้ร่วมโดย Regression ผ่าน, Meta Graph transport, WooCommerce/Chatwoot sanitized contracts, และ Canonical Ads model. YouTube ยังเป็น `uat_pending`; ส่วนที่เหลือยัง `planned`. ไม่มีการเปิด route/schedule หรือเรียก Live API ใน release นี้.
+Multi-channel foundation ทั้ง 6 ส่วนถูกเพิ่มใน Code แล้ว: YouTube Organic เป็น `active` ใน DEV; Canonical Organic core ใช้ร่วมกับ TikTok โดย Regression ผ่าน. Meta Graph transport, WooCommerce/Chatwoot sanitized contracts และ Canonical Ads model ยังเป็น `planned`.
 
 **v0.10.1-multi-channel-foundation-reviewed — ตรวจทาน Foundation ก่อน Live UAT: `videos.list(id)` ไม่ส่ง `maxResults`, quota exhaustion ไม่ Short retry, Ads แยก Ad/Creative, Money ใช้ integer micros และมี Excel/Lark Blueprint ที่ตรวจภาพแล้ว. Activation gates อยู่ใน `docs/multi-channel-foundation-v0.10.1.md`.**
 
 **v0.10.2-multi-channel-foundation-approved — Blueprint/Source foundation ผ่าน Technical review และเลื่อนเป็น Official clean baseline; Example config ปิด Connector/Schedule ทั้งหมดและ Release tooling ตรวจ Blocklist/Allowlist, Secret, DEV IDs, duplicate artifacts, Manifest และ SHA-256.**
 
 **v0.11.0-rc.1 — YouTube Manual DEV UAT implementation: guarded three-table Schema installer, Public/OAuth preflight, RAW/Canonical/Account write flow, Manual Queue-only route, D1 incremental checkpoint, non-destructive Video/Analytics reconciliation, D1-primary Alert gate, operational identity redaction และ Sync Log/Lock/Retry/DLQ/System Alert reuse. Connector ยัง `uat_pending`; Schedule/Production ปิด.**
+
+**v0.11.0 — YouTube Organic DEV complete: connector/job active, Data API scheduled every six hours, Owner Analytics once daily with a seven-day Pacific overlap, active Data/Analytics smoke tests success, first real RAW Analytics fact created, no active lock/open alert, and Production remains disabled.**
 
 v0.10.0 verification: Node unit/integration 336/336, Workers runtime 6/6, focused Report reliability 51/51, Architecture 94 source files / 189 local dependencies / 0 cycles, repository hygiene, offline npm audit 0, and Wrangler dry-run 373.71 KiB / gzip 76.31 KiB.
 
@@ -275,11 +277,9 @@ DEV Table IDs ถูกย้ายออกจาก Source/Release documentati
 ยังรอ guarded Preview/Apply ใน DEV เพราะ Source artifact ไม่มี Live credential. Production ต้องตั้งค่า Table IDs ของลูกค้าเองผ่าน Local/Environment config.
 
 ## Next action
-1. ให้ ChatGPT Work ตรวจหลักฐาน Reliability continuation และข้อมูลรอบสุดท้าย
-2. คง YouTube เป็น `uat_pending`; normal flag, Analytics flag และ Schedule ปิดระหว่าง Activation review
-3. เฝ้าดู actual Provider missing/private/deleted, quota/429 และ D1 outage เมื่อเกิดตามธรรมชาติ โดยไม่บังคับทำลายระบบ
-4. หาก Work อนุมัติ จึง Promote connector และออกแบบ Schedule/Analytics date policy เป็นงานแยก
-5. Meta และ Connector อื่นยังเป็นงานแยกและต้องผ่าน Data-model/Access/UAT ของตนเอง
+1. เฝ้าดู YouTube scheduled run ตามธรรมชาติรอบถัดไปและ Alert เมื่อ Provider fault เกิดจริง
+2. Production onboarding ต้องใช้ Lark/Cloudflare/Google/YouTube assets ที่ลูกค้าเป็นเจ้าของ
+3. Meta และ Connector อื่นยังเป็นงานแยกและต้องผ่าน Data-model/Access/UAT ของตนเอง
 
 ## 2026-07-09 — v0.1.4 env-driven config + Lark classification dictionary
 - Baseline: `v0.1.4-env-config-lark-dictionary`.

@@ -27,13 +27,10 @@ test('planned jobs fail explicitly instead of returning fake success', () => {
   );
 });
 
-test('code-ready YouTube job remains blocked until Live DEV UAT', () => {
+test('YouTube job is active after Live DEV reliability UAT passed', () => {
   const definition = getJobDefinition(JOB_TYPES.YOUTUBE_ORGANIC_SYNC);
-  assert.equal(definition.implementationStatus, 'uat_pending');
-  assert.throws(
-    () => assertJobImplemented(definition),
-    (error) => error?.code === 'SYNC_JOB_UAT_PENDING',
-  );
+  assert.equal(definition.implementationStatus, 'active');
+  assert.equal(assertJobImplemented(definition), definition);
 });
 
 test('unknown jobs remain unsupported permanent errors', () => {

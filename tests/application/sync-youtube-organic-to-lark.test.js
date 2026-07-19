@@ -24,7 +24,7 @@ const videos = ['A', 'B'].map((suffix, index) => ({
   status: { privacyStatus: 'public' },
 }));
 
-test('writes RAW, canonical, account-last and checkpoint idempotently in manual UAT', async () => {
+test('writes RAW, canonical, account-last and checkpoint idempotently', async () => {
   const repository = createRepository();
   const stateStore = createStateStore();
   const publicClient = {

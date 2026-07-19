@@ -14,10 +14,7 @@ const ANALYTICS_METRICS = 'views,likes,comments,shares,estimatedMinutesWatched,a
 const ANALYTICS_DIMENSIONS = 'day,video';
 const ANALYTICS_SORT = 'day,video';
 
-/**
- * Manual UAT YouTube sync: RAW → Canonical → Account activation row → D1 checkpoint
- * ไม่มี Scheduler producer และไม่เปลี่ยน Connector เป็น active จนกว่า Live DEV UAT จะผ่าน
- */
+/** YouTube Organic sync: RAW → Canonical → Account activation row → D1 checkpoint */
 export async function syncYouTubeOrganicToLark(input = {}) {
   const repository = requireRepository(input.repository);
   const syncEngine = requireSyncEngine(input.syncEngine);
@@ -35,6 +32,7 @@ export async function syncYouTubeOrganicToLark(input = {}) {
   const accountKey = requireText(input.accountKey, 'accountKey');
   const customerProfile = requireText(input.customerProfile, 'customerProfile');
   const cursorKey = requireText(input.cursorKey, 'cursorKey');
+  const syncType = requireText(input.syncType ?? 'organic_sync', 'syncType');
   const metricDate = requireDateOnly(input.metricDate, { label: 'metricDate' });
   const tables = requireTables(input.tables);
   const analyticsEnabled = input.analyticsEnabled === true;
@@ -207,7 +205,7 @@ export async function syncYouTubeOrganicToLark(input = {}) {
       platform: 'youtube',
       accountKey,
       source: 'youtube_data_api',
-      syncType: 'organic_manual_uat',
+      syncType,
       lastMetricDate: metricDate,
       dictionaryHash: null,
       lastFullSyncAt: syncMode.fullSnapshot ? completedAt : (checkpoint?.cursor?.lastFullSyncAt ?? null),

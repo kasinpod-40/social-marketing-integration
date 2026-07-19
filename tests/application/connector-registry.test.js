@@ -47,15 +47,13 @@ test('planned connector is never reported as runnable', () => {
   assert.equal(facebook.runnable, false);
 });
 
-test('YouTube code-ready connector is still not runnable before Live DEV UAT', () => {
+test('YouTube connector is runnable after activation when the normal feature flag is enabled', () => {
   const runtimeConfig = loadCustomerRuntimeConfig({
     MKT_ENV: 'development',
     MKT_CUSTOMER_PROFILE: 'dev_ft_pumkin',
+    MKT_CONNECTOR_YOUTUBE_ENABLED: 'true',
   });
-  assert.throws(
-    () => assertConnectorRunnable(runtimeConfig, 'youtube'),
-    (error) => error?.code === 'MKT_CONNECTOR_UAT_PENDING',
-  );
+  assert.equal(assertConnectorRunnable(runtimeConfig, 'youtube').enabled, true);
 });
 
 test('registry rejects runtime profiles that omit an active connector state', () => {

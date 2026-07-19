@@ -1,19 +1,19 @@
-# Current Task — YouTube Organic DEV Implementation v0.11.0-rc.1
+# Current Task — YouTube Organic DEV Complete v0.11.0
 
 ## Task metadata
 
-- **Status:** `reliability_fault_uat_passed_activation_review_pending`
+- **Status:** `completed_active_dev_deployed`
 - **Official clean baseline:** `v0.10.2-multi-channel-foundation-approved`
-- **Working candidate:** `v0.11.0-rc.1`
+- **Working candidate:** `v0.11.0`
 - **Blueprint:** `Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.2.xlsx`
-- **Connector status:** `uat_pending`
-- **Schedule:** `disabled`
-- **Last updated:** `2026-07-18`
+- **Connector status:** `active`
+- **Schedule:** `enabled_in_verified_dev`
+- **Last updated:** `2026-07-19`
 - **Owners:** ChatGPT Work (technical review/release) + developer (DEV credentials and guarded live execution)
 
 ## Objective
 
-ทำ YouTube Organic DEV implementation ตาม Blueprint ที่ผ่าน Technical review โดยเพิ่มเส้นทาง Manual UAT ที่ Fail-closed, ใช้ Reliability layer เดิม และยังไม่เปิด Scheduled/Production traffic.
+ปิด YouTube Organic DEV ให้ครบตั้งแต่ Schema/Access/Queue/Reliability UAT จนถึง Active connector, scheduled sync, Owner Analytics policy, Cloudflare deployment และ post-deploy smoke test โดยยังไม่เปิด Production.
 
 ## Authorized continuation scope — 2026-07-17
 
@@ -66,6 +66,10 @@ Acceptance criteria ของ continuation:
 16. D1 warning alert เป็น Primary gate จริง: Persist ไม่สำเร็จกลายเป็น Retryable failure และ Queue ห้าม Ack
 17. Operational redaction กลางสำหรับ Worker logs, D1 payload/error และ Lark reliability mirror โดยไม่เปิดเผย Channel/Video/Handle/Lock identity
 18. Release examples ใช้ Placeholder เท่านั้นและ Repository hygiene ไม่มี macOS metadata
+19. Promote Connector/Job เป็น `active` และยกเลิก UAT-only runtime gate
+20. Data API schedule แยก Cron ทุก 6 ชั่วโมง โดยไม่ enqueue TikTok/Report ซ้ำ
+21. Owner Analytics วันละครั้งเวลา 07:50 Asia/Bangkok พร้อม bounded 7-day completed-Pacific overlap
+22. Queue payload ลดสิทธิ์ Analytics ได้ แต่ห้ามยกระดับเหนือ Runtime feature flag
 
 ## Live DEV progress and remaining external actions
 
@@ -76,15 +80,15 @@ Acceptance criteria ของ continuation:
 - ปรับ DateTime ทั้ง 6 ฟิลด์ใน YouTube RAW ให้แสดง `yyyy/MM/dd HH:mm`; Live UI แสดงเวลาแล้วและ Final Preview เป็น zero drift
 - Advanced Permissions เปิดอยู่และตรวจจาก Lark UI แล้วว่า role `Client` เป็น `No access` สำหรับ YouTube RAW ทั้ง 3 ตาราง โดยสถานะเดิมถูกต้องจึงไม่ต้อง Mutation
 - บันทึก Table IDs เฉพาะใน ignored local `wrangler.sync.jsonc`; ไม่มี Live ID ถูกเพิ่มใน Source/Git
-- Deploy DEV Worker แบบ UAT-only แล้ว; normal YouTube flag, Owner Analytics flag หลังจบ UAT และ YouTube Schedule คงปิด
+- Deploy DEV Worker แบบ Active แล้ว; normal YouTube, Owner Analytics และ dedicated YouTube Schedule เปิดใน DEV
 - Manual Queue happy path ผ่าน: First Full, Full rerun/idempotency, `auto` → incremental และ Owner Analytics no-data
 - Reliability live fault ผ่าน: lock collision → bounded retry → success, timeout → retry exhaustion → DLQ → D1/Lark Critical Alert, resolve Test incident และ healthy run หลัง Restore สำเร็จ
 - OAuth identity mismatch แบบ Live read-only ผ่าน Fail-closed พร้อม Permanent code และ Operational redaction; Source แก้ classification gap ที่พบระหว่าง UAT แล้ว
 - Missing Video/Analytics key, quota/rate-limit, lease renewal/loss และ alert-persistence failure ผ่าน deterministic production-path tests; ไม่บังคับลบ Content จริง, เผา Provider quota หรือทำ D1 outage ใน DEV
 - สถานะ D1 หลัง Fault UAT: success 7, controlled skipped 2, controlled failed 2, DLQ 1 resolved และ System Alert 1 resolved; ไม่มี active YouTube lock ค้าง
 - Lark ตรวจจำนวนจริงหลัง rerun แล้ว: RAW Channel 1, RAW Video 2, RAW Analytics 0, Account 1, Content 2 และ Daily 2 โดยไม่เกิด Duplicate
-- ไม่เปลี่ยน YouTube จาก `uat_pending` เป็น `active`
-- ไม่เปิด Schedule, Meta หรือ Production
+- เปลี่ยน YouTube จาก `uat_pending` เป็น `active` แล้ว
+- เปิด YouTube Schedule เฉพาะ DEV; Meta และ Production ยังปิด
 
 ## Required DEV inputs outside Source control
 
@@ -94,7 +98,7 @@ Acceptance criteria ของ continuation:
 - Lark App credential/app token และ Local Table IDs หลัง Schema Apply
 - Secrets ต้องอยู่ใน `.dev.vars`, Cloudflare Secrets หรือ Secret Manager เท่านั้น
 
-## Live execution order
+## Historical UAT execution order
 
 1. เติม Local credentials และ Channel allowlist
 2. `npm run preflight:youtube`
@@ -104,21 +108,24 @@ Acceptance criteria ของ continuation:
 6. Deploy DEV Worker โดย UAT flag เท่านั้น; normal YouTube flag และ Schedule คง false
 7. Enqueue Manual UAT job จาก `npm run job:youtube-uat`
 8. ทดสอบ First sync, idempotent rerun, incremental, full reconciliation, Analytics missing-key, identity mismatch, quota/rate-limit, D1 alert failure, lock/retry/DLQ และข้อมูลใน Lark
-9. เปลี่ยน Connector เป็น `active` และออกแบบ Schedule เฉพาะหลัง Live DEV UAT ผ่าน
+9. เปลี่ยน Connector เป็น `active` และออกแบบ Schedule หลัง Live DEV UAT ผ่าน — completed 2026-07-19
 
 ## Acceptance and verification
 
-- Unit/Integration: 377/377 passed
-- Workers runtime: 6/6 passed
-- Focused Report reliability: 53/53 passed
+- Unit/Integration: 384/384 passed
+- Workers runtime: 7/7 passed
+- Focused Report reliability: 58/58 passed
 - Focused YouTube safe fault suite: 34/34 passed
 - Focused DateTime/identity regression: 6/6 passed
-- Architecture: 109 source files / 231 local dependencies / 0 cycles
+- Architecture: 109 source files / 230 local dependencies / 0 cycles
 - Repository hygiene: passed
 - npm audit: 0 vulnerabilities
-- Wrangler dry-run: 444.25 KiB / gzip 90.99 KiB passed
-- Clean archive extraction retest: `npm ci`, check, Unit 376/376, Workers 6/6, reliability 53/53, audit 0 และ dry-run ผ่าน; Archive verifier พบ blocked/missing/sensitive/duplicate = 0
+- Wrangler dry-run: 444.70 KiB / gzip 91.23 KiB passed
+- Clean archive extraction retest: `npm ci`, check, Unit 384/384, Workers 7/7, reliability 58/58, audit 0 และ dry-run ผ่าน; Archive verifier พบ blocked/missing/sensitive/duplicate = 0
 - Live DEV UAT: `core_happy_path_and_safe_reliability_faults_passed`
+- Active DEV deployment: Worker `f46c0c7f-0119-4f78-8e8d-2d37e17823a5`, both Cron triggers deployed
+- Active Data API smoke: `success`, retry 0, cursor 1, source states 2, active lock 0, open YouTube alert 0
+- Active Owner Analytics smoke: `success`, retry 0, pulled 4 total source records and created 1 real RAW Analytics row
 - Provider-destructive scenarios: ไม่บังคับสร้าง missing/private/deleted จริง, quota exhaustion/429 จริง หรือ D1 outage จริง; Contract/Classification ผ่าน deterministic tests และต้องเฝ้าดูเมื่อเกิดตามธรรมชาติ
 
 ## Implementation result
@@ -185,9 +192,24 @@ Acceptance criteria ของ continuation:
 - **Remaining review:** ให้ ChatGPT Work ตรวจหลักฐานและข้อมูลรอบสุดท้ายก่อนตัดสินใจ Activation; Schedule, normal connector และ Production ยังคงปิด
 - **Recommended commit:** `fix: complete YouTube reliability UAT safeguards`
 
+### YouTube Active DEV closeout — 2026-07-19
+
+- **Implementation:** Promote YouTube connector/job เป็น `active`, เปลี่ยน reliability identity เป็น `organic_sync`, เพิ่ม dedicated 6-hour Cron และ daily Owner Analytics แบบ 7-day completed-Pacific overlap พร้อม least-privilege payload gate
+- **Schedule:** Data API ที่ 01:50/07:50/13:50/19:50 Asia/Bangkok; Analytics เฉพาะ 07:50 โดยยึด `America/Los_Angeles` source day
+- **Config safety:** Release examples คงทุก Connector/Schedule เป็น `false`; เปิดเฉพาะ ignored DEV config ที่ผ่าน UAT
+- **Live preflight:** Public Data/OAuth owner ผ่าน, Analytics sample 0 rows เป็น valid no-data และ Lark Schema Preview เป็น zero drift
+- **Deployment:** Cloudflare DEV Worker `f46c0c7f-0119-4f78-8e8d-2d37e17823a5`; Cron `*/5 * * * *` และ `50 0,6,12,18 * * *` deploy สำเร็จ
+- **Post-deploy smoke:** Active Data API run `success`, pulled 3, created expected 2 daily rows for the new metric date, updated 4, skipped 2, retry 0; cursor 1, source states 2, active lock 0, open alert 0
+- **Owner Analytics smoke:** Active Analytics run `success`, pulled 4 total source records, created 1 RAW Analytics row, updated 4, skipped 4, retry 0 และ error ไม่มี; read-only Lark verification ยืนยัน RAW Analytics count = 1
+- **Commands run:** `npm run check`, `npm run test:unit`, `npm run test:worker`, `npm run test:report-reliability`, YouTube preflight, Lark Schema Preview, Wrangler example/live dry-run, Wrangler deploy, manual Active Queue smoke และ read-only D1 verification
+- **Tests:** Unit 384/384, Workers 7/7, Report reliability 58/58, Architecture 109/230/0, hygiene pass, dry-run 444.70 KiB / gzip 91.23 KiB
+- **Release artifact:** สร้างและตรวจ `social-marketing-integration-v0.11.0.zip` สำเร็จ; 256 files และ blocked/missing/sensitive/duplicate = 0 พร้อมรัน Gate ซ้ำจากไฟล์ ZIP ที่แตกใหม่
+- **Remaining risks:** Scheduled Cron propagation may take up to 15 minutes; naturally occurring Provider missing/quota/rate-limit and long-term Analytics availability remain operational monitoring, not unfinished implementation
+- **Recommended commit:** `feat: activate YouTube organic sync`
+
 ## Work review
 
-- **Technical architecture:** approved for Manual DEV UAT
+- **Technical architecture:** approved and active in DEV
 - **Data model:** approved — Blueprint v0.10.2
-- **Release decision:** package as `v0.11.0-rc.1`; do not promote YouTube to active
-- **Recommended commit for current delta:** `fix: complete YouTube reliability UAT safeguards`
+- **Release decision:** `v0.11.0`; YouTube Organic DEV complete, Production remains disabled
+- **Recommended commit for current delta:** `feat: activate YouTube organic sync`

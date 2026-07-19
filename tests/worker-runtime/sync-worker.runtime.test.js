@@ -186,4 +186,39 @@ describe('Sync Worker ใน Workers runtime จริง', () => {
     expect(send.mock.calls[1][0].periodEnd).toBe('2026-07-12');
   });
 
+  it('YouTube cron enqueue เฉพาะ YouTube job พร้อมช่วง Analytics ที่ล็อกจาก Pacific day', async () => {
+    const send = vi.fn(async () => undefined);
+    const worker = createSyncWorker();
+    const controller = createScheduledController({
+      scheduledTime: Date.parse('2026-07-19T00:50:00.000Z'),
+      cron: '50 0,6,12,18 * * *',
+    });
+
+    await worker.scheduled(controller, {
+      MKT_ENV: 'development',
+      MKT_CUSTOMER_PROFILE: 'dev_ft_pumkin',
+      MKT_CONNECTOR_TIKTOK_ENABLED: 'false',
+      MKT_CONNECTOR_YOUTUBE_ENABLED: 'true',
+      DEFAULT_TIMEZONE: 'Asia/Bangkok',
+      MKT_SCHEDULE_TIKTOK_ENABLED: 'true',
+      MKT_SCHEDULE_YOUTUBE_ENABLED: 'true',
+      MKT_YOUTUBE_ANALYTICS_ENABLED: 'true',
+      MKT_YOUTUBE_ANALYTICS_TIME: '07:50',
+      MKT_YOUTUBE_ANALYTICS_LOOKBACK_DAYS: '7',
+      MKT_SYNC_QUEUE: { send },
+    });
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0][0]).toMatchObject({
+      schemaVersion: 1,
+      type: 'youtube.channel.organic.sync',
+      trigger: 'scheduled',
+      syncMode: 'auto',
+      metricDate: '2026-07-19',
+      analyticsEnabled: true,
+      analyticsStartDate: '2026-07-11',
+      analyticsEndDate: '2026-07-17',
+    });
+  });
+
 });

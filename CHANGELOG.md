@@ -1,6 +1,25 @@
 # Changelog
 
-## Unreleased — YouTube Lark Schema and core Queue UAT — 2026-07-17
+## 0.11.0 — YouTube Organic DEV activation — 2026-07-19
+
+### Added
+- Promoted the YouTube connector and Queue job from `uat_pending` to `active`.
+- Added a dedicated Cloudflare Cron (`50 0,6,12,18 * * *`) for a YouTube Data API sync every six hours without duplicating TikTok/report jobs.
+- Added a once-daily Owner Analytics policy at 07:50 Asia/Bangkok with a bounded seven-day overlap over completed `America/Los_Angeles` source dates.
+- Added Queue-level Analytics least privilege: a job can opt out, but cannot enable Analytics above the runtime feature flag.
+- Replaced the UAT-only payload helper with `npm run job:youtube-sync`.
+
+### Live DEV activation
+- Public/OAuth preflight and final Lark Schema Preview passed; Preview remained zero drift across all three RAW tables.
+- Deployed active connector, Owner Analytics, and both Cron triggers to Cloudflare DEV Worker version `f46c0c7f-0119-4f78-8e8d-2d37e17823a5`.
+- Active Data API smoke test completed `success` with retry 0; it created the expected new daily snapshot rows for the new metric date, left no active lock, and created no open YouTube alert.
+- Active Owner Analytics smoke test completed `success` with retry 0 and created the first real RAW Analytics row from the bounded Pacific-date window; read-only Lark verification confirmed count 1.
+- Release examples remain fail-closed: every connector and schedule flag is still `false` until the target environment passes its own Schema/UAT gates.
+
+### Verification
+- Unit/Integration 384/384, Workers runtime 7/7, Report reliability 58/58, Architecture 109/230/0, repository hygiene and Wrangler dry-run passed.
+
+## 0.11.0-rc.2 — YouTube Lark Schema and core Queue UAT — 2026-07-17
 
 ### Fixed
 - Corrected YouTube Hyperlink fields from `ui_type=URL` to the official case-sensitive Lark enum `Url` and added regression coverage.
