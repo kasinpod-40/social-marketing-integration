@@ -2,12 +2,12 @@
 
 ## Task metadata
 
-- **Status:** `source_gates_passed_pending_work_review_migration_and_dev_redeploy`
+- **Status:** `dev_patch_deployed_smoke_passed_pending_customer_837_inventory_uat`
 - **Official clean baseline:** `v0.10.2-multi-channel-foundation-approved`
-- **Working candidate:** `v0.11.0 + unreleased large-account/resumable-sync patch`
+- **Working candidate:** `v0.11.0 + large-account/resumable-sync commit 44377ce`
 - **Blueprint:** `Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.2.xlsx`
 - **Connector status:** `active`
-- **Schedule:** `enabled_in_verified_dev_on_prior_commit_pending_patch_redeploy`
+- **Schedule:** `enabled_in_verified_dev_on_large_account_patch`
 - **Last updated:** `2026-07-19`
 - **Owners:** ChatGPT Work (technical review/release) + developer (DEV credentials and guarded live execution)
 
@@ -120,6 +120,12 @@ Shared contract สำหรับ Instagram/Facebook/TikTok งานถัด�
 - Lark ตรวจจำนวนจริงหลัง rerun แล้ว: RAW Channel 1, RAW Video 2, RAW Analytics 0, Account 1, Content 2 และ Daily 2 โดยไม่เกิด Duplicate
 - เปลี่ยน YouTube จาก `uat_pending` เป็น `active` แล้ว
 - เปิด YouTube Schedule เฉพาะ DEV; Meta และ Production ยังปิด
+- Commit `44377ce` ถูก Push ไป `origin/main`, Apply D1 migration `0004_resumable_sync_work.sql` สำเร็จ และ Deploy DEV Worker version `2037232c-152a-4e26-95fa-fca044f65bd9` รับ Traffic 100%
+- ตรวจ Remote D1 แล้วมี `sync_work_runs`, `sync_work_phases`, `sync_work_units` ครบ; Cron ยังคงเฉพาะ `*/5 * * * *` และ `50 0,6,12,18 * * *`
+- Post-deploy Full/Incremental/Owner Analytics Queue smoke ผ่าน success/retry 0; Analytics แสดง tracked=selected=queried 2/2/2, failed=0 และ completeness=`complete`
+- Final D1 health: current `organic_sync` tracked 2, work staging 0/0/0, active lock 0, open YouTube alert 0 และสามรอบล่าสุด success ทั้งหมด
+- Read-only Lark verification: Account 1, RAW Channel 1, RAW Video 2, RAW Analytics 1, Content 2, Daily 4 และ duplicate Stable key = 0 ทุกตาราง
+- DEV allowlisted channel ปัจจุบันมีเพียง 2 วิดีโอและ Owner OAuth ตรงกัน; Live UAT กับ inventory ลูกค้า 837 วิดีโอยังไม่รันและห้ามถือว่า fixture 837 แทนหลักฐาน Customer-owned Live UAT
 
 ## Required DEV inputs outside Source control
 
@@ -154,9 +160,9 @@ Shared contract สำหรับ Instagram/Facebook/TikTok งานถัด�
 - Wrangler dry-run: 480.80 KiB / gzip 97.58 KiB passed
 - Historical v0.11.0 clean archive extraction retest: `npm ci`, check, Unit 384/384, Workers 7/7, reliability 58/58, audit 0 และ dry-run ผ่าน; Archive verifier พบ blocked/missing/sensitive/duplicate = 0
 - Live DEV UAT: `core_happy_path_and_safe_reliability_faults_passed`
-- Active DEV deployment: Worker `f46c0c7f-0119-4f78-8e8d-2d37e17823a5`, both Cron triggers deployed
-- Active Data API smoke: `success`, retry 0, cursor 1, source states 2, active lock 0, open YouTube alert 0
-- Active Owner Analytics smoke: `success`, retry 0, pulled 4 total source records and created 1 real RAW Analytics row
+- Active DEV deployment: Worker `2037232c-152a-4e26-95fa-fca044f65bd9`, commit `44377ce`, both Cron triggers deployed
+- Active Data API smoke after patch: Full + incremental `success`, retry 0, current source states 2, active lock 0, open YouTube alert 0
+- Active Owner Analytics smoke after patch: `success`, retry 0, tracked/selected/queried 2/2/2, failed 0, completeness `complete`
 - Provider-destructive scenarios: ไม่บังคับสร้าง missing/private/deleted จริง, quota exhaustion/429 จริง หรือ D1 outage จริง; Contract/Classification ผ่าน deterministic tests และต้องเฝ้าดูเมื่อเกิดตามธรรมชาติ
 
 ## Implementation result
@@ -264,9 +270,24 @@ Shared contract สำหรับ Instagram/Facebook/TikTok งานถัด�
 - **Rollback:** ปิด `MKT_SCHEDULE_YOUTUBE_ENABLED` และ `MKT_YOUTUBE_ANALYTICS_ENABLED`, redeploy prior Worker แล้ว revert patch. Migration ใหม่เป็น additive staging tables ไม่มี Foreign key ไป Business state; เก็บไว้ได้ระหว่าง rollback และลบ orphan work rows ภายหลังด้วย guarded operation โดยไม่แตะ `sync_cursors`, `source_record_states` หรือ Lark rows.
 - **Commit suggestion:** `fix: make YouTube large-account sync resumable`
 
+### Large-account patch DEV rollout — 2026-07-19
+
+- **Git:** Commit `44377ce` (`fix: make YouTube large-account sync resumable`) ถูก Push ไป `origin/main`
+- **D1 migration:** Remote migration list พบ pending เฉพาะ `0004_resumable_sync_work.sql`; Apply สำเร็จ 7 commands และ read-only verification พบ work tables ครบ 3 ตาราง
+- **Deployment:** Actual DEV-config dry-run ผ่าน; Worker version `2037232c-152a-4e26-95fa-fca044f65bd9` ถูก Deploy และรับ Traffic 100%; Cron API ยืนยัน `*/5 * * * *` กับ `50 0,6,12,18 * * *`
+- **Full smoke:** `success`, retry 0, mode `full`, playlist 2, inventory 1 page, resource 1 chunk, created 0, updated 4, skipped 4 และ written 4
+- **Incremental smoke:** `success`, retry 0, request `auto` เลือก mode `incremental`, playlist 2, created 0, updated 4, skipped 4 และ written 4
+- **Analytics smoke:** ใช้ช่วง `2026-07-11`–`2026-07-17` จาก scheduler contract; `success`, retry 0, tracked=2, selected=2, queried=2, skipped=0, failed=0, pages/chunks=1/1 และ completeness=`complete`
+- **D1 final state:** `organic_sync` tracked 2; `sync_work_runs`/`sync_work_phases`/`sync_work_units` = 0/0/0 หลัง checkpoint; active lock 0, open YouTube alert 0, latest three YouTube runs success 3/3
+- **Lark read-only verification:** Account 1, RAW Channel 1, RAW Video 2, RAW Analytics 1, Content 2, Daily 4; duplicate Stable keys = 0 ทุกตาราง
+- **Security/Scope:** Secret values ไม่อยู่ใน Config/Command output; Meta, Instagram, WooCommerce, Chatwoot และ Production ยังคง disabled
+- **Remaining blocker:** DEV channel ปัจจุบันมี 2 วิดีโอ ไม่ใช่ Customer inventory 837. Source regression 837 ผ่านแล้วแต่ยังไม่แทน Live Customer UAT; ต้องใช้ Customer-owned Channel + matching Owner OAuth/Lark/Cloudflare environment แล้วทำ Full/Incremental/Analytics UAT ซ้ำก่อน Production release
+- **Rollback:** หากพบปัญหาให้ปิด YouTube Schedule/Analytics ใน DEV และ rollback ไป Worker `f46c0c7f-0119-4f78-8e8d-2d37e17823a5`; migration 0004 เป็น additive staging และเก็บไว้ได้
+- **Closeout commit suggestion:** `docs: record YouTube large-account DEV rollout`
+
 ## Work review
 
-- **Technical architecture:** large-account/resumable patch implemented and Source gates passed; pending Work review, D1 migration and DEV redeploy
+- **Technical architecture:** large-account/resumable patch implemented, Source gates passed, D1 migration applied และ DEV patch smoke passed
 - **Data model:** approved — Blueprint v0.10.2
-- **Release decision:** `v0.11.0` remains the active DEV release; unreleased patch must be reviewed and redeployed before the scheduler review is closed. Production remains disabled
-- **Recommended commit for current delta:** `fix: make YouTube large-account sync resumable`
+- **Release decision:** DEV patch active แต่ Customer 837-video Live UAT ยังเป็น Production release blocker; Production remains disabled
+- **Recommended commit for current delta:** `docs: record YouTube large-account DEV rollout`

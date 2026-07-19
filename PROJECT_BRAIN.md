@@ -8,7 +8,7 @@ Official clean baseline: `v0.10.2-multi-channel-foundation-approved`
 
 Current clean candidate: `v0.11.0` — YouTube Organic DEV active, deployed, and smoke-tested
 
-Current working delta: unreleased YouTube large-account release-blocker patch — รองรับข้อมูลจริง 837 videos ด้วย Full pagination, Content recent window แยกจาก Analytics tracked inventory, durable D1 page/chunk resume, exact Analytics completeness counters, supported Analytics time และ explicit Cron routing. Source gates ผ่านครบ; ยังไม่ Apply migration/Deploy patch ทับ DEV Worker.
+Current working delta: YouTube large-account patch commit `44377ce` ถูก Push, Apply D1 migration 0004 และ Deploy DEV Worker `2037232c-152a-4e26-95fa-fca044f65bd9` แล้ว. Full/Incremental/Analytics smoke ผ่านกับ DEV channel 2 videos และ exact completeness 2/2/2; Customer inventory 837-video Live UAT ยังเป็น Production release blocker.
 
 Current YouTube design artifact: `docs/Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.2.xlsx` — Technical review approved. v0.11.0 implements guarded Schema/Access, RAW/Canonical/Account writes, checkpoint/reconciliation and Reliability reuse. All DEV UAT gates passed. The connector is active in DEV with a six-hour Data API Cron and once-daily Owner Analytics using a bounded seven-day completed-Pacific overlap; Production remains disabled.
 
@@ -24,9 +24,11 @@ Multi-channel foundation ทั้ง 6 ส่วนถูกเพิ่มใ�
 
 **v0.11.0 — YouTube Organic DEV complete: connector/job active, Data API scheduled every six hours, Owner Analytics once daily with a seven-day Pacific overlap, active Data/Analytics smoke tests success, first real RAW Analytics fact created, no active lock/open alert, and Production remains disabled.**
 
-**Unreleased YouTube large-account fix — ช่อง 837 videos ใช้ Full pagination 17 หน้า, incremental Content 100 แต่ Owner Analytics query tracked scope ครบ 837 IDs/17 chunks, D1 `sync_work_*` resume Source/Analytics unit หลัง Queue retry, exact queried-ID guard ป้องกัน complete success เมื่อ scope ขาด, `MKT_YOUTUBE_ANALYTICS_TIME` fail-closed และ Cron routing เป็น whitelist. Migration/DEV redeploy ยังไม่รัน.**
+**Unreleased YouTube large-account fix — ช่อง 837 videos ใช้ Full pagination 17 หน้า, incremental Content 100 แต่ Owner Analytics query tracked scope ครบ 837 IDs/17 chunks, D1 `sync_work_*` resume Source/Analytics unit หลัง Queue retry, exact queried-ID guard ป้องกัน complete success เมื่อ scope ขาด, `MKT_YOUTUBE_ANALYTICS_TIME` fail-closed และ Cron routing เป็น whitelist. Source/Migration/DEV smoke ผ่าน; Customer 837-video Live UAT ยังไม่รัน.**
 
 Unreleased large-account source verification: Unit/Integration 397/397, Workers runtime 8/8, Report reliability 60/60, focused YouTube/Scheduler/Queue/Reliability/Resumable-work 69/69, Architecture 111 source files / 232 local dependencies / 0 cycles, repository hygiene, offline npm audit 0, SQLite migration replay และ Wrangler dry-run 480.80 KiB / gzip 97.58 KiB ผ่าน.
+
+Unreleased large-account DEV rollout: Remote D1 migration 0004 applied, work tables verified, Worker `2037232c-152a-4e26-95fa-fca044f65bd9` serves 100%, both Cron triggers verified, Full/Incremental/Analytics Queue smoke success/retry 0, Analytics completeness 2/2/2, staging/lock/open alert 0, and Lark Stable-key duplicates 0. DEV channel has only 2 videos, so this does not replace Customer 837-video Live UAT.
 
 v0.10.0 verification: Node unit/integration 336/336, Workers runtime 6/6, focused Report reliability 51/51, Architecture 94 source files / 189 local dependencies / 0 cycles, repository hygiene, offline npm audit 0, and Wrangler dry-run 373.71 KiB / gzip 76.31 KiB.
 

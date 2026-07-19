@@ -20,6 +20,14 @@
 - Passed Unit/Integration 397/397, Workers runtime 8/8, Report reliability 60/60, focused YouTube/Scheduler/Queue/Reliability/Resumable-work 69/69, Architecture 111/232/0, repository hygiene, offline audit 0, SQLite migration replay, and Wrangler dry-run 480.80 KiB / gzip 97.58 KiB.
 - No Live API, Lark, Queue, D1 remote migration, deployment, Secret, or Production mutation occurred in this source patch.
 
+### DEV rollout
+- Pushed commit `44377ce`, applied remote D1 migration `0004_resumable_sync_work.sql`, verified all three work tables, and deployed Worker version `2037232c-152a-4e26-95fa-fca044f65bd9` at 100% traffic.
+- Verified both Cron triggers remain `*/5 * * * *` and `50 0,6,12,18 * * *`; Meta, Instagram, WooCommerce, Chatwoot, and Production remain disabled.
+- Full and incremental Queue smoke runs completed with `success`, retry 0, and no newly created Stable-key rows.
+- Owner Analytics smoke completed with tracked=selected=queried 2/2/2, skipped=0, failed=0, one page/chunk, and completeness `complete`.
+- Final D1 state has no staged work, active lock, or open YouTube alert; read-only Lark verification found zero duplicate Stable keys across Account, RAW, Content, and Daily tables.
+- The allowlisted DEV channel has 2 videos. Deterministic 837 fixtures pass, but Customer-owned 837-video Live UAT is still required before Production release.
+
 ## Unreleased — YouTube scheduler and Analytics review hardening — 2026-07-19
 
 ### Fixed

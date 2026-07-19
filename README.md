@@ -8,7 +8,7 @@ Working candidate: `v0.11.0`
 
 Official clean baseline: `v0.10.2-multi-channel-foundation-approved`
 
-Unreleased release-blocker patch: ข้อมูลจริง 837 videos ใช้ Full pagination, Content incremental 100 แยกจาก Analytics tracked scope 837, durable D1 page/chunk resume, exact completeness counters, Analytics time ที่ Dedicated Cron รองรับ และ explicit Cron routing. Source gates ผ่านครบแล้ว; ยังไม่ Apply migration `0004_resumable_sync_work.sql` หรือ Deploy ทับ DEV Worker.
+Large-account patch commit `44377ce`: ข้อมูลจริง 837 videos ใช้ Full pagination, Content incremental 100 แยกจาก Analytics tracked scope 837, durable D1 page/chunk resume, exact completeness counters, Analytics time ที่ Dedicated Cron รองรับ และ explicit Cron routing. Source gates, migration 0004, DEV deployment และ 2-video smoke ผ่านแล้ว; Customer 837-video Live UAT ยังเป็น Production release blocker.
 
 สถานะปัจจุบัน:
 
@@ -42,6 +42,7 @@ Unreleased release-blocker patch: ข้อมูลจริง 837 videos ใ�
 - Final DEV Worker เปิด normal YouTube, Owner Analytics และ YouTube Schedule แล้ว: Data API ทุก 6 ชั่วโมง และ Analytics วันละครั้งด้วย completed Pacific 7-day overlap
 - Post-activation review แก้ Analytics scope สำหรับช่องที่มีวิดีโอเกิน recent limit, fail-closed unsupported Analytics time และ explicit Cron routing แล้ว; ต้อง Commit/Review/Deploy patch ก่อนถือว่าปิด review บน DEV runtime
 - Large-account hardening ทดสอบ Full 837 videos/17 pages, Analytics 837 IDs/17 chunks, page/chunk retry resume, exact queried-ID guard และ Stable-key rerun; D1 Sync Log details เก็บ completeness counters
+- Large-account DEV rollout ใช้ Worker `2037232c-152a-4e26-95fa-fca044f65bd9`; Full/Incremental/Analytics success/retry 0, Analytics 2/2/2 complete, D1 staging/lock/open alert 0 และ Lark duplicate Stable key 0. DEV channel มี 2 videos จึงยังไม่แทน Customer 837-video Live UAT
 - v0.11.0-rc.1 hardening เติม Analytics missing-key reconciliation แบบ retain/warn, บังคับ D1 warning alert failure ให้ Queue retry, Redact external identity จาก operational logs/stores และคืน safe examples เป็น Placeholder-only
 - Connector อื่นยังไม่ถูกเปิด: Meta/WooCommerce/Chatwoot/Ads เป็น `planned` จนกว่า Blueprint/Access/Live UAT ของแต่ละช่องทางผ่าน
 - Customer Production setup ยังไม่รวมใน Release นี้และต้องใช้ทรัพยากรของลูกค้า

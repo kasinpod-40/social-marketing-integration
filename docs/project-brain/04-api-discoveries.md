@@ -2,7 +2,7 @@
 
 ## YouTube Data API / Analytics API
 
-Status: Code-ready contract; Live DEV UAT pending.
+Status: Source contract and 2-video DEV smoke verified; Customer 837-video Live UAT pending.
 
 - Data API channel lookup uses `channels.list`; uploads enumeration uses `playlistItems.list`; video details use `videos.list` in batches of at most 50 IDs.
 - Customer volume is 837 videos. Full traversal currently requires 17 playlist pages and 17 video-resource chunks; `playlistItems.list` is exposed one page at a time so D1 can commit the next cursor before another External request.

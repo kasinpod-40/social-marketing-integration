@@ -2,17 +2,17 @@
 
 ## Shared task workflow
 
-ChatGPT Work and Codex share `docs/current-task.md`. YouTube Organic DEV v0.11.0 รุ่นเดิม active/deployed แต่ large-account patch สำหรับ 837 videos ยังไม่ Apply D1 migration/DEV UAT/redeploy. All other unverified connectors remain fail-closed.
+ChatGPT Work and Codex share `docs/current-task.md`. YouTube large-account patch active ใน DEV และ smoke ผ่านกับช่อง 2 videos แต่ Customer 837-video Live UAT ยังไม่รัน. All other unverified connectors remain fail-closed.
 
 ## Immediate post-review handoff
 
-1. Review and commit the current patch with `fix: make YouTube large-account sync resumable`
-2. Keep Production disabled และหยุดถือ prior DEV deployment เป็น large-account-ready
-3. Apply `0004_resumable_sync_work.sql` ไป DEV D1 ก่อน Deploy
-4. Deploy patch ด้วย Cron เดิม แล้วทำ Full/Incremental/Analytics Queue UAT กับ tracked inventory จริง
-5. ตรวจ D1 Sync Log ว่า total tracked/selected/queried/skipped/failed/pages/chunks/completeness ตรงกัน
-6. Observe one 07:50 Asia/Bangkok Analytics run and confirm tracked/query counts ครบ
-7. Confirm Unknown Cron/Primary/YouTube routing และ retry/DLQ regressions
+1. Completed: Commit/Push `44377ce`, Apply migration 0004, Deploy DEV patch และ Full/Incremental/Analytics smoke กับ DEV channel 2 videos
+2. Keep Production disabled; ห้ามตีความ DEV 2-video smoke หรือ deterministic 837 fixture เป็น Customer 837-video Live UAT
+3. เตรียม Customer-owned Channel, matching Owner OAuth, Lark Base และ Cloudflare DEV/Staging profile แยกจาก developer resources
+4. รัน Initial Full และยืนยัน tracked inventory 837, 17 playlist pages/17 resource chunks, checkpoint 837 และ no duplicate
+5. รัน Content incremental 100 + Analytics tracked/selected/queried 837 พร้อม failed=0/completeness=`complete`
+6. ทดสอบ Live retry/resume กลาง page/chunk แบบควบคุมได้โดยไม่ทำลาย Provider/Lark data
+7. Observe one natural 07:50 Asia/Bangkok Analytics run ใน environment 837 และยืนยัน counters/alerts
 8. งาน Instagram/Facebook/TikTok ถัดไปต้องสร้าง large-account fixtures และ reuse `sync_work_*`
 
 ## Clean candidate verification for v0.11.0
@@ -92,8 +92,8 @@ Production-path deterministic cases ที่ผ่าน:
 - YouTube connector/job เป็น `active`
 - Data API Cron: `50 0,6,12,18 * * *` (ทุก 6 ชั่วโมง)
 - Analytics: วันละครั้ง 07:50 Asia/Bangkok, query 7 completed Pacific dates
-- Worker version: `f46c0c7f-0119-4f78-8e8d-2d37e17823a5`
-- Active Data API และ Owner Analytics smoke tests: success/retry 0; Analytics สร้าง RAW fact 1 แถว, lock 0, open alert 0
+- Worker version: `2037232c-152a-4e26-95fa-fca044f65bd9`
+- Post-patch Data API และ Owner Analytics smoke: success/retry 0; Analytics tracked/selected/queried 2/2/2 complete, staging/lock/open alert 0 และ Lark duplicates 0
 
 Next work must not silently expand into Meta, WooCommerce, Chatwoot, Ads activation or Lark AI notification.
 

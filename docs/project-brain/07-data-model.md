@@ -77,6 +77,7 @@ MKT_Content_Daily upsert by content_daily_key
 - `sync_work_units`: staged payload ต่อ Source page, resource chunk หรือ Analytics page
 - ตารางเหล่านี้เป็น Temporary operational staging และลบหลัง Business writes + `sync_cursors`/`source_record_states` commit สำเร็จ
 - ห้ามใช้ work staging แทน RAW/Canonical/Daily data model หรือแสดงใน Client dashboard
+- Migration 0004 ถูก Apply ใน DEV แล้ว; post-deploy smoke ยืนยัน work tables กลับเป็น 0/0/0 หลัง checkpoint สำเร็จ
 
 
 ## Canva-style report additions
