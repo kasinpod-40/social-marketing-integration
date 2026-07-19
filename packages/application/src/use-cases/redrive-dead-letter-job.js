@@ -5,6 +5,9 @@ import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 const SUPPORTED_REDRIVE_JOB_TYPES = new Set([
   JOB_TYPES.YOUTUBE_ORGANIC_SYNC,
 ]);
+const FORBIDDEN_REDRIVE_JOB_TYPES = Object.freeze(
+  Object.values(JOB_TYPES).filter((type) => !SUPPORTED_REDRIVE_JOB_TYPES.has(type)),
+);
 
 /**
  * Redrive Dead-letter แบบ Idempotent:
@@ -49,15 +52,15 @@ export async function redriveDeadLetterJob(input = {}) {
     dlqId,
     requestedAt: candidateRequestedAt,
     redriveReference: candidateReference,
-    // Store rechecks recursion before UPDATE as defense-in-depth against concurrent row changes.
-    forbiddenJobTypes: [JOB_TYPES.DEAD_LETTER_REDRIVE],
+    // Store อ่าน Incident ซ้ำและปฏิเสธทุก Job ที่ไม่มี YouTube generation fence ก่อน UPDATE.
+    forbiddenJobTypes: FORBIDDEN_REDRIVE_JOB_TYPES,
   });
   if (prepared.status === 'redriven') {
     return alreadyRedrivenResult({ dlqId, candidate: prepared });
   }
 
   const original = requireObject(prepared.payload, 'deadLetter.payload');
-  // ตรวจซ้ำหลัง prepare เผื่อ Incident row ถูกเปลี่ยนระหว่าง read และ reserve.
+  // ตรวจซ้ำหลัง prepare เป็น defense-in-depth ก่อน Queue send.
   assertSupportedRedriveTarget(original, dlqId);
   const redriveRequestedAt = safeTimestamp(prepared.redriveRequestedAt, 'redriveRequestedAt');
   const body = createRedriveBody({
