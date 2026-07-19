@@ -2,13 +2,13 @@
 
 ## Task metadata
 
-- **Status:** `source_fix_verified_pending_guarded_migration_and_dev_redeploy`
+- **Status:** `dev_rollout_complete_pending_customer_837_video_live_uat`
 - **Official clean baseline:** `v0.10.2-multi-channel-foundation-approved`
 - **Working candidate:** `v0.11.0 + outbox-dispatch/redrive/quiesced-migration corrective patch`
 - **Blueprint:** `Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.2.xlsx`
 - **Connector status:** `active`
-- **Schedule:** `enabled_in_prior_verified_dev_deployment_source_patch_not_deployed`
-- **Last updated:** `2026-07-19`
+- **Schedule:** `enabled_in_dev_after_guarded_migration_and_reliability_uat`
+- **Last updated:** `2026-07-20`
 - **Owners:** ChatGPT Work (technical review/release) + developer (DEV credentials and guarded live execution)
 
 ## Objective
@@ -87,7 +87,7 @@ Shared contract สำหรับ Instagram/Facebook/TikTok งานถัด�
 8. Dry-run warning อยู่เฉพาะ Result/Sync Log และไม่สร้าง Business System Alert
 9. Permanent ทั้ง reliability-handled/unhandled และ DLQ เก็บ Terminal audit พร้อม Dead-letter payload; Operational payload ถูก Redact ส่วน `replay_payload_json` รักษา Queue scope แต่ตัด Secret/Token
 10. Admin Redrive ใช้ Job กลาง `system.dead-letter.redrive`, ปิดด้วย `MKT_DLQ_REDRIVE_ENABLED=false` เป็นค่าเริ่มต้น, จอง requestedAt/reference แบบ Durable และส่ง Queue ด้วย Generation ใหม่โดยไม่ Resume terminal staging
-11. Migration 0005 Fail closed เมื่อยังมี Work/Active lock, Bootstrap generation fence จาก Business checkpoint ล่าสุด และเพิ่ม Outbox/Redrive lifecycle แบบ additive
+11. Migration 0005 Fail closed เมื่อยังมี Work/Active lock, Bootstrap generation fence จาก Business checkpoint ล่าสุด และเพิ่ม Outbox/Redrive lifecycle; migration 0006 rebuild เฉพาะ Dead-letter CHECK constraint ให้รองรับ durable Redrive พร้อม copy-count guard
 12. Guarded rollout และ Rollback ใช้ `docs/youtube-resumable-migration-runbook.md`
 13. Release examples ทั้ง `.dev.vars.example` และ `wrangler.sync.example.jsonc` ปิด Connector/Schedule/Redrive เป็นค่าเริ่มต้น และไม่มี Live ID/Secret
 
@@ -119,6 +119,10 @@ Shared contract สำหรับ Instagram/Facebook/TikTok งานถัด�
 - Final D1 health: current `organic_sync` tracked 2, work staging 0/0/0, active lock 0, open YouTube alert 0 และสามรอบล่าสุด success ทั้งหมด
 - Read-only Lark verification: Account 1, RAW Channel 1, RAW Video 2, RAW Analytics 1, Content 2, Daily 4 และ duplicate Stable key = 0 ทุกตาราง
 - DEV allowlisted channel ปัจจุบันมีเพียง 2 วิดีโอและ Owner OAuth ตรงกัน; Live UAT กับ inventory ลูกค้า 837 วิดีโอยังไม่รันและห้ามถือว่า fixture 837 แทนหลักฐาน Customer-owned Live UAT
+- Guarded rollout 0005–0006 เสร็จแล้ว: สำรอง D1 ก่อนทั้งสองช่วง, Apply remote migrations ครบ, row count ของ Dead-letter คงเดิม 8 รายการระหว่าง migration 0006 และไม่มี migration ค้าง
+- Controlled Redrive ผ่านหลัง migration 0006: incident เปลี่ยน `open` → `redriven` พร้อม requested/reference/completed timestamps; replay จบ `success`, retry 0 และ `created=0`
+- Final DEV D1 health: active work/lock/pending warning/redrive pending = 0/0/0/0; latest YouTube run `success`, retry 0 และ Redrive flag ถูกปิดกลับ
+- YouTube Schedule และ Owner Analytics เปิดกลับเฉพาะ DEV แล้วบน Worker `adc0f825-68e5-4231-847b-4b41a6592204`; Production และ Release examples ยังคงปิด
 
 ## Required DEV inputs outside Source control
 
@@ -142,18 +146,18 @@ Shared contract สำหรับ Instagram/Facebook/TikTok งานถัด�
 
 ## Acceptance and verification
 
-- Current post-review source Unit/Integration: 407/407 passed
+- Current post-review source Unit/Integration: 428/428 passed
 - Current Workers runtime: 8/8 passed
-- Current focused Report reliability: 60/60 passed
+- Current focused Report reliability: 64/64 passed
 - Current focused Independent-review regression suite: 46/46 passed
 - Focused DateTime/identity regression: 6/6 passed
-- Architecture: 111 source files / 233 local dependencies / 0 cycles
+- Architecture: 113 source files / 238 local dependencies / 0 cycles
 - Repository hygiene: passed
 - npm audit: 0 vulnerabilities
-- Wrangler dry-run: 512.33 KiB / gzip 102.41 KiB passed
+- Wrangler dry-run: 534.51 KiB / gzip 106.78 KiB passed
 - Historical v0.11.0 clean archive extraction retest: `npm ci`, check, Unit 384/384, Workers 7/7, reliability 58/58, audit 0 และ dry-run ผ่าน; Archive verifier พบ blocked/missing/sensitive/duplicate = 0
 - Live DEV UAT: `core_happy_path_and_safe_reliability_faults_passed`
-- Active DEV deployment: Worker `2037232c-152a-4e26-95fa-fca044f65bd9`, commit `44377ce`, both Cron triggers deployed
+- Active DEV deployment: Worker `adc0f825-68e5-4231-847b-4b41a6592204`, source commit `3f162dd`, both Cron triggers deployed
 - Active Data API smoke after patch: Full + incremental `success`, retry 0, current source states 2, active lock 0, open YouTube alert 0
 - Active Owner Analytics smoke after patch: `success`, retry 0, tracked/selected/queried 2/2/2, failed 0, completeness `complete`
 - Provider-destructive scenarios: ไม่บังคับสร้าง missing/private/deleted จริง, quota exhaustion/429 จริง หรือ D1 outage จริง; Contract/Classification ผ่าน deterministic tests และต้องเฝ้าดูเมื่อเกิดตามธรรมชาติ
@@ -281,8 +285,8 @@ Shared contract สำหรับ Instagram/Facebook/TikTok งานถัด�
 ## Work review
 
 - **Technical architecture:** Local corrective patch closes cross-generation warning delivery, exact durable redrive payload, superseded-run semantics and migration quiesce/bootstrap gaps
-- **Data model:** approved — Blueprint v0.10.2; Migration 0005 remains additive and has not been applied remotely
-- **Release decision:** Source package must pass full gates and guarded DEV rollout in `docs/youtube-resumable-migration-runbook.md`; Customer 837-video Live UAT remains the Production blocker
+- **Data model:** approved — Blueprint v0.10.2; Remote D1 migrations 0005–0006 applied and verified in DEV
+- **Release decision:** Source gates and guarded DEV rollout in `docs/youtube-resumable-migration-runbook.md` passed; Customer 837-video Live UAT remains the Production blocker
 - **Recommended commit for current delta:** `fix: close YouTube resumable reliability gaps`
 
 ### Independent review reliability hardening — 2026-07-19
@@ -344,9 +348,9 @@ Shared contract สำหรับ Instagram/Facebook/TikTok งานถัด�
 - **Root causes found during Live UAT:** (1) A valid YouTube Data API zero-result channel response may omit `items`; `getChannel()` required an Array too early and emitted `UNHANDLED_SYNC_ERROR`. (2) Migration 0005 added Redrive columns/logic but inherited migration 0002's SQLite CHECK constraint, which did not allow `redrive_pending`/`redriven`; every Admin Redrive attempt therefore failed retryably at prepare.
 - **Implementation:** Treat only omitted `channels.items` as empty before the exact-one identity guard. Add migration 0006 to rebuild `dead_letter_jobs` with both durable Redrive states, a copy-count guard, all existing columns/rows and both indexes preserved.
 - **Files changed:** YouTube API client/test, migration `0006_dead_letter_redrive_status.sql`, migration regression, Release hygiene checker and rollout/Project Brain/CHANGELOG documentation.
-- **Commands run:** Clean Release package/verify and all gates from a fresh ZIP extraction; Wrangler version/migration/D1 read-only checks; guarded config-off deploy; D1 export; remote migration 0005 apply/verify; schedule-off source deploy; Manual healthy/stale/Permanent Queue messages through Cloudflare Dashboard; focused YouTube tests and source `npm run check`.
-- **Tests:** Fresh archive passed Unit/Integration 426/426, Workers runtime 8/8, Report reliability 64/64, Architecture 113/238/0, hygiene, audit 0 and dry-run 534.48/106.76 KiB. Focused YouTube/client regression including omitted `items` passed 22/22.
-- **Live regression results so far:** Quiesce work/lock 0; migration 0005 applied 32 commands; lifecycle/cursor/redrive columns complete; fence bootstrap 3/3; healthy incremental succeeded retry 0; stale job was `skipped/SYNC_WORK_SUPERSEDED` with writes 0. Patched Live identity retest now returns `YOUTUBE_CHANNEL_IDENTITY_MISMATCH`. Permanent handling created terminal work, valid secret-filtered replay payload and alerts with active lock 0. Live tail confirmed Redrive prepare failed specifically with `D1_DEAD_LETTER_REDRIVE_PREPARE_FAILED`; target incident remained `open` and unreserved.
-- **Remaining risks/gates:** Wait for the failed Admin message to drain, apply/verify migration 0006, deploy and rerun controlled Redrive/healthy recovery, warning-outbox/TTL guard verification, full final gates, then re-enable DEV Schedule/Analytics. Customer-owned 837-video Live UAT remains the Production blocker.
-- **Rollback:** Current migration is additive. Keep Schedule/Analytics disabled and deploy the prior known-good Worker if the patched smoke fails; do not delete Business checkpoints/Lark rows or pending warning entries.
-- **Commit suggestion:** `fix: classify empty YouTube channel lookup`
+- **Commands run:** Clean Release package/verify and all gates from a fresh ZIP extraction; Wrangler version/migration/D1 read-only checks; guarded config-off deploy; D1 exports before 0005 and 0006; remote migrations 0005/0006 apply/verify; schedule-off source deploy; Manual healthy/stale/Permanent/Redrive Queue messages through Cloudflare Dashboard; final actual-config dry-run/deploy; D1 health checks; `npm ci`, `npm run check`, Unit/Integration, Workers runtime, `npm run test:report-reliability`, `npm audit --offline` และ `npm run deploy:dry-run`.
+- **Tests:** Final source passed Unit/Integration 428/428, Workers runtime 8/8, Report reliability 64/64, Architecture 113/238/0, hygiene, audit 0 and dry-run 534.51/106.78 KiB. Focused YouTube/client regression including omitted `items` passed 22/22; migration 0006 SQLite replay preserved rows and allowed both Redrive states.
+- **Live regression results:** Quiesce work/lock 0; migration 0005 applied 32 commands; migration 0006 applied 12 commands after a fresh protected D1 export. Dead-letter count remained 8, 16 columns and both indexes were present, and no migrations remained. Healthy incremental succeeded retry 0; stale job was `skipped/SYNC_WORK_SUPERSEDED` with writes 0. Patched identity fault returned `YOUTUBE_CHANNEL_IDENTITY_MISMATCH`; Permanent handling created terminal work, secret-filtered replay payload and alerts. Controlled Redrive then changed the target to `redriven`; its YouTube replay succeeded retry 0 with `created=0`. Final active work/lock/pending warning/redrive pending were 0/0/0/0.
+- **Remaining risks:** Natural scheduled observation after the final deployment remains operational monitoring. Customer-owned 837-video Full/Incremental/Analytics Live UAT remains the Production blocker; DEV's two-video inventory and deterministic 837 fixture do not replace it. Provider-destructive quota exhaustion, real missing/private deletion and D1 outage remain covered by production-path deterministic tests and natural monitoring rather than forced destructive DEV faults.
+- **Rollback:** Disable `MKT_SCHEDULE_YOUTUBE_ENABLED` and `MKT_YOUTUBE_ANALYTICS_ENABLED`, keep Redrive disabled, then redeploy Worker `8439c7fc-cf38-430c-b752-dac58f25855e`. Keep migrations 0005–0006 and all Business checkpoints/Lark rows; do not delete pending warning entries or Dead-letter audit evidence.
+- **Commit suggestion:** `docs: close YouTube guarded DEV rollout`

@@ -129,3 +129,15 @@ MKT_DLQ_REDRIVE_ENABLED=false
 - ห้ามลบ `sync_cursors`, `source_record_states` หรือ Lark Business rows
 - Pending warning ต้องถูกส่ง/ซ่อมก่อน cleanup
 - Redrive record ที่เป็น `redrive_pending` ต้องตรวจ Queue delivery ก่อนทำคำสั่งซ้ำ เพราะระบบตั้งใจ reuse Generation เดิมเพื่อให้ Duplicate ถูก Fence
+
+## DEV execution record — 2026-07-20
+
+- Quiesce ผ่านด้วย active work/lock/pending warning/redrive pending = 0/0/0/0
+- Export D1 แยกก่อน migration 0005 และก่อน migration 0006 สำเร็จ; ไฟล์เก็บเฉพาะ local `/tmp` ด้วย permission `0600`
+- Migration 0005 และ 0006 Apply สำเร็จ; Final migration list ว่าง
+- Migration 0006 รักษา Dead-letter 8 rows, 16 columns และ 2 required indexes
+- Healthy incremental, stale generation และ Permanent identity fault ผ่าน expected classification
+- Controlled Redrive เปลี่ยน incident เป็น `redriven`; replay สำเร็จ retry 0 และไม่สร้าง Stable-key row ใหม่
+- Redrive flag ถูกปิดกลับ; YouTube Schedule/Analytics เปิดกลับเฉพาะ DEV บน Worker `adc0f825-68e5-4231-847b-4b41a6592204`
+- Final D1 active work/lock/pending warning/redrive pending = 0/0/0/0
+- Natural schedule observation และ Customer-owned 837-video Live UAT ยังเป็นงานหลัง rollout; Production ยังคงปิด
