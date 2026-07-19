@@ -9,7 +9,7 @@ import {
 } from '../../apps/sync-worker/src/index.js';
 
 test('scheduler queues TikTok sync first and daily report at Bangkok 08:10', () => {
-  const jobs = buildScheduledJobs({
+  const jobs = buildPrimaryScheduledJobs({
     scheduledAt: '2026-07-13T01:10:00.000Z',
     env: {
       DEFAULT_TIMEZONE: 'Asia/Bangkok',
@@ -41,10 +41,10 @@ test('weekly report is due only on configured Bangkok weekday and time', () => {
     MKT_WEEKLY_REPORT_SETTING_KEY: 'dev_ft_pumkin:tiktok:weekly',
   };
 
-  const weeklyJobs = buildScheduledJobs({ scheduledAt: '2026-07-13T01:15:00Z', env });
+  const weeklyJobs = buildPrimaryScheduledJobs({ scheduledAt: '2026-07-13T01:15:00Z', env });
   assert.deepEqual(weeklyJobs.map((job) => job.type), ['report.weekly.generate']);
   assert.equal(weeklyJobs[0].periodEnd, '2026-07-12');
-  assert.equal(buildScheduledJobs({ scheduledAt: '2026-07-14T01:15:00Z', env }).length, 0);
+  assert.equal(buildPrimaryScheduledJobs({ scheduledAt: '2026-07-14T01:15:00Z', env }).length, 0);
 });
 
 test('timezone schedule parts do not depend on runtime local timezone', () => {
@@ -56,7 +56,7 @@ test('timezone schedule parts do not depend on runtime local timezone', () => {
 });
 
 test('enabled report schedules fail closed when time or setting key is invalid', () => {
-  assert.throws(() => buildScheduledJobs({
+  assert.throws(() => buildPrimaryScheduledJobs({
     scheduledAt: '2026-07-13T01:10:00Z',
     env: {
       DEFAULT_TIMEZONE: 'Asia/Bangkok',
@@ -66,7 +66,7 @@ test('enabled report schedules fail closed when time or setting key is invalid',
     },
   }), (error) => error.code === 'MKT_SCHEDULE_CONFIG_INVALID');
 
-  assert.throws(() => buildScheduledJobs({
+  assert.throws(() => buildPrimaryScheduledJobs({
     scheduledAt: '2026-07-13T01:10:00Z',
     env: {
       DEFAULT_TIMEZONE: 'Asia/Bangkok',
@@ -78,7 +78,7 @@ test('enabled report schedules fail closed when time or setting key is invalid',
 
 
 test('scheduled date identity stays bound to scheduledTime even when consumption is later', () => {
-  const jobs = buildScheduledJobs({
+  const jobs = buildPrimaryScheduledJobs({
     scheduledAt: '2026-07-12T16:59:59.000Z',
     env: {
       DEFAULT_TIMEZONE: 'Asia/Bangkok',
@@ -93,7 +93,7 @@ test('scheduled date identity stays bound to scheduledTime even when consumption
 });
 
 test('scheduled report period uses the last completed local day across a year boundary', () => {
-  const jobs = buildScheduledJobs({
+  const jobs = buildPrimaryScheduledJobs({
     scheduledAt: '2026-01-01T01:10:00.000Z',
     env: {
       DEFAULT_TIMEZONE: 'Asia/Bangkok',
@@ -109,7 +109,7 @@ test('scheduled report period uses the last completed local day across a year bo
 });
 
 test('scheduled report period uses the last completed local day across a month boundary', () => {
-  const jobs = buildScheduledJobs({
+  const jobs = buildPrimaryScheduledJobs({
     scheduledAt: '2026-08-01T01:10:00.000Z',
     env: {
       DEFAULT_TIMEZONE: 'Asia/Bangkok',
@@ -125,7 +125,7 @@ test('scheduled report period uses the last completed local day across a month b
 });
 
 test('scheduled report period uses leap day as the last completed local day', () => {
-  const jobs = buildScheduledJobs({
+  const jobs = buildPrimaryScheduledJobs({
     scheduledAt: '2028-03-01T01:10:00.000Z',
     env: {
       DEFAULT_TIMEZONE: 'Asia/Bangkok',
@@ -210,6 +210,47 @@ test('primary cron never queues YouTube and YouTube cron never queues TikTok or 
   assert.deepEqual(youtube.map((job) => job.type), ['youtube.channel.organic.sync']);
 });
 
+test('unknown cron is ignored and cannot enqueue TikTok, YouTube, or reports', () => {
+  const jobs = buildScheduledJobs({
+    event: { cron: '0 * * * *', scheduledTime: Date.parse('2026-07-19T00:50:00Z') },
+    env: {
+      DEFAULT_TIMEZONE: 'Asia/Bangkok',
+      MKT_SCHEDULE_TIKTOK_ENABLED: 'true',
+      MKT_SCHEDULE_DAILY_REPORT_ENABLED: 'true',
+      MKT_DAILY_REPORT_TIME: '07:50',
+      MKT_DAILY_REPORT_SETTING_KEY: 'daily',
+      MKT_SCHEDULE_WEEKLY_REPORT_ENABLED: 'true',
+      MKT_WEEKLY_REPORT_TIME: '07:50',
+      MKT_WEEKLY_REPORT_WEEKDAY: 'sunday',
+      MKT_WEEKLY_REPORT_SETTING_KEY: 'weekly',
+      MKT_SCHEDULE_YOUTUBE_ENABLED: 'true',
+      MKT_YOUTUBE_ANALYTICS_ENABLED: 'true',
+      MKT_YOUTUBE_ANALYTICS_TIME: '07:50',
+    },
+  });
+
+  assert.deepEqual(jobs, []);
+});
+
+test('YouTube Analytics time fails closed when dedicated cron cannot reach it', () => {
+  assert.throws(() => buildScheduledJobs({
+    event: {
+      cron: YOUTUBE_SCHEDULE_CRON,
+      scheduledTime: Date.parse('2026-07-19T00:50:00.000Z'),
+    },
+    env: {
+      DEFAULT_TIMEZONE: 'Asia/Bangkok',
+      MKT_SCHEDULE_YOUTUBE_ENABLED: 'true',
+      MKT_YOUTUBE_ANALYTICS_ENABLED: 'true',
+      MKT_YOUTUBE_ANALYTICS_TIME: '08:10',
+    },
+  }), (error) => {
+    assert.equal(error?.code, 'MKT_SCHEDULE_CONFIG_INVALID');
+    assert.deepEqual(error?.details?.supportedTimes, ['01:50', '07:50', '13:50', '19:50']);
+    return true;
+  });
+});
+
 test('YouTube Analytics lookback is bounded to protect API quota', () => {
   assert.throws(() => buildScheduledJobs({
     event: {
@@ -234,3 +275,14 @@ test('Queue job can reduce but cannot elevate the YouTube Analytics runtime feat
     (error) => error?.code === 'YOUTUBE_ANALYTICS_DISABLED',
   );
 });
+
+function buildPrimaryScheduledJobs(input) {
+  const { scheduledAt, ...rest } = input;
+  return buildScheduledJobs({
+    ...rest,
+    event: {
+      cron: PRIMARY_SCHEDULE_CRON,
+      scheduledTime: scheduledAt,
+    },
+  });
+}

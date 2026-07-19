@@ -35,6 +35,7 @@ import { D1ReliabilityStore } from '../../../packages/reliability/src/d1-reliabi
 import { CompositeReliabilityStore } from '../../../packages/reliability/src/composite-reliability-store.js';
 import { LarkReliabilityStore } from '../../../packages/reliability/src/lark-reliability-store.js';
 import { D1IncrementalStateStore } from '../../../packages/sync-engine/src/d1-incremental-state-store.js';
+import { D1ResumableWorkStore } from '../../../packages/sync-engine/src/d1-resumable-work-store.js';
 import { createYouTubeClientsFromEnv } from '../../../packages/connectors/src/youtube/youtube-runtime-factory.js';
 
 const DEFAULT_LOCK_LEASE_MS = 10 * 60 * 1000;
@@ -48,9 +49,11 @@ const DEFAULT_YOUTUBE_ANALYTICS_TIME = '07:50';
 const DEFAULT_YOUTUBE_ANALYTICS_LOOKBACK_DAYS = 7;
 const YOUTUBE_ANALYTICS_TIMEZONE = 'America/Los_Angeles';
 const SCHEDULE_WEEKDAYS = new Set(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']);
+const YOUTUBE_SCHEDULE_MINUTE_UTC = 50;
+const YOUTUBE_SCHEDULE_HOURS_UTC = Object.freeze([0, 6, 12, 18]);
 
 export const PRIMARY_SCHEDULE_CRON = '*/5 * * * *';
-export const YOUTUBE_SCHEDULE_CRON = '50 0,6,12,18 * * *';
+export const YOUTUBE_SCHEDULE_CRON = `${YOUTUBE_SCHEDULE_MINUTE_UTC} ${YOUTUBE_SCHEDULE_HOURS_UTC.join(',')} * * *`;
 
 export const QUEUE_ROLES = Object.freeze({
   MAIN: 'main',
@@ -249,17 +252,21 @@ export async function processJob(input) {
         repository: infrastructure.repository,
         syncEngine: infrastructure.syncEngine,
         incrementalStateStore: infrastructure.getIncrementalStateStore(),
+        resumableWorkStore: infrastructure.getResumableWorkStore(),
         publicClient: clients.publicClient,
         ownerClient: clients.ownerClient,
         channelId,
         accountKey: connectorConfig.accountKey,
         customerProfile: runtimeConfig.profileKey,
         cursorKey: lockKey,
+        // Queue retry คง message.id เดิม จึง Resume page/chunk ได้แม้ syncRunId ของแต่ละ attempt เปลี่ยน
+        workKey: `youtube:${requireJobText(input.message?.id, 'message.id')}`,
         syncType: 'organic_sync',
         metricDate: readMetricDate(input.job.body?.metricDate, input.env),
         reportingTimezone: input.env?.DEFAULT_TIMEZONE ?? 'Asia/Bangkok',
         syncMode: input.job.body?.syncMode,
         recentVideoLimit: readPositiveInteger(input.env?.MKT_YOUTUBE_RECENT_VIDEO_LIMIT, 100),
+        contentMaxPages: readPositiveInteger(input.env?.YOUTUBE_MAX_PAGES, 100),
         fullSyncIntervalMs: readPositiveInteger(
           input.env?.MKT_YOUTUBE_FULL_RECONCILIATION_INTERVAL_MS,
           DEFAULT_TIKTOK_FULL_RECONCILIATION_INTERVAL_MS,
@@ -467,6 +474,7 @@ export function createInfrastructure(env) {
   const syncEngine = new TableSyncEngine();
   let reliability = null;
   let incrementalStateStore = null;
+  let resumableWorkStore = null;
 
   return Object.freeze({
     repository,
@@ -474,6 +482,10 @@ export function createInfrastructure(env) {
     getIncrementalStateStore() {
       incrementalStateStore ??= new D1IncrementalStateStore({ db: env?.MKT_STATE_DB });
       return incrementalStateStore;
+    },
+    getResumableWorkStore() {
+      resumableWorkStore ??= new D1ResumableWorkStore({ db: env?.MKT_STATE_DB });
+      return resumableWorkStore;
     },
     getReliability(tableIds) {
       reliability ??= createCloudflareReliabilityRuntime({
@@ -671,12 +683,22 @@ export function buildScheduledJobs(input = {}) {
   const env = input.env ?? {};
   const requestedAt = normalizeScheduledAt(input.scheduledAt ?? input.event?.scheduledTime);
   const cron = optionalJobText(input.event?.cron);
-  const includePrimaryJobs = cron !== YOUTUBE_SCHEDULE_CRON;
-  const includeYouTubeJobs = cron === null || cron === YOUTUBE_SCHEDULE_CRON;
-  const tiktokEnabled = readBoolean(env.MKT_SCHEDULE_TIKTOK_ENABLED, false);
-  const dailyEnabled = readBoolean(env.MKT_SCHEDULE_DAILY_REPORT_ENABLED, false);
-  const weeklyEnabled = readBoolean(env.MKT_SCHEDULE_WEEKLY_REPORT_ENABLED, false);
-  const youtubeEnabled = readBoolean(env.MKT_SCHEDULE_YOUTUBE_ENABLED, false);
+  const includePrimaryJobs = cron === PRIMARY_SCHEDULE_CRON;
+  const includeYouTubeJobs = cron === YOUTUBE_SCHEDULE_CRON;
+  if (!includePrimaryJobs && !includeYouTubeJobs) return Object.freeze([]);
+
+  const tiktokEnabled = includePrimaryJobs
+    ? readBoolean(env.MKT_SCHEDULE_TIKTOK_ENABLED, false)
+    : false;
+  const dailyEnabled = includePrimaryJobs
+    ? readBoolean(env.MKT_SCHEDULE_DAILY_REPORT_ENABLED, false)
+    : false;
+  const weeklyEnabled = includePrimaryJobs
+    ? readBoolean(env.MKT_SCHEDULE_WEEKLY_REPORT_ENABLED, false)
+    : false;
+  const youtubeEnabled = includeYouTubeJobs
+    ? readBoolean(env.MKT_SCHEDULE_YOUTUBE_ENABLED, false)
+    : false;
   if ((!includePrimaryJobs || (!tiktokEnabled && !dailyEnabled && !weeklyEnabled))
     && (!includeYouTubeJobs || !youtubeEnabled)) {
     return Object.freeze([]);
@@ -734,10 +756,13 @@ export function buildScheduledJobs(input = {}) {
 
   if (includeYouTubeJobs && youtubeEnabled) {
     const analyticsConfigured = readBoolean(env.MKT_YOUTUBE_ANALYTICS_ENABLED, false);
-    const analyticsTime = readScheduleTime(
-      env.MKT_YOUTUBE_ANALYTICS_TIME ?? DEFAULT_YOUTUBE_ANALYTICS_TIME,
-      'MKT_YOUTUBE_ANALYTICS_TIME',
-    );
+    const analyticsTime = analyticsConfigured
+      ? readSupportedYouTubeAnalyticsTime({
+        value: env.MKT_YOUTUBE_ANALYTICS_TIME ?? DEFAULT_YOUTUBE_ANALYTICS_TIME,
+        requestedAt,
+        timeZone,
+      })
+      : null;
     const analyticsEnabled = analyticsConfigured && local.time === analyticsTime;
     const job = {
       schemaVersion: 1,
@@ -813,6 +838,36 @@ function readScheduleTime(value, fieldName) {
     });
   }
   return text;
+}
+
+/**
+ * Analytics ใช้เวลา Local แบบคงที่ จึงต้องตรงกับอย่างน้อยหนึ่ง instant ที่ Dedicated YouTube Cron ยิงจริง
+ * การตรวจนี้ทำก่อนสร้าง Job เพื่อไม่ให้ Config ผ่านแต่ Analytics ไม่เคยถูก enqueue.
+ */
+function readSupportedYouTubeAnalyticsTime(input) {
+  const fieldName = 'MKT_YOUTUBE_ANALYTICS_TIME';
+  const configuredTime = readScheduleTime(input.value, fieldName);
+  const supportedTimes = listYouTubeCronLocalTimes(input.requestedAt, input.timeZone);
+  if (!supportedTimes.includes(configuredTime)) {
+    throw permanentError(`${fieldName} must match a local time reached by YOUTUBE_SCHEDULE_CRON`, {
+      code: 'MKT_SCHEDULE_CONFIG_INVALID',
+      details: { fieldName, supportedTimes },
+    });
+  }
+  return configuredTime;
+}
+
+function listYouTubeCronLocalTimes(requestedAt, timeZone) {
+  const anchor = new Date(normalizeScheduledAt(requestedAt));
+  const year = anchor.getUTCFullYear();
+  const month = anchor.getUTCMonth();
+  const day = anchor.getUTCDate();
+  return Object.freeze([...new Set(YOUTUBE_SCHEDULE_HOURS_UTC.map((hour) => (
+    readZonedScheduleParts(
+      new Date(Date.UTC(year, month, day, hour, YOUTUBE_SCHEDULE_MINUTE_UTC)),
+      timeZone,
+    ).time
+  )))].sort());
 }
 
 function readScheduleWeekday(value, fieldName) {

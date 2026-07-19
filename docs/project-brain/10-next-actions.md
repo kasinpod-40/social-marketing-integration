@@ -2,7 +2,18 @@
 
 ## Shared task workflow
 
-ChatGPT Work and Codex share `docs/current-task.md`. YouTube Organic DEV v0.11.0 is active and deployed; all other unverified connectors remain fail-closed.
+ChatGPT Work and Codex share `docs/current-task.md`. YouTube Organic DEV v0.11.0 รุ่นเดิม active/deployed แต่ large-account patch สำหรับ 837 videos ยังไม่ Apply D1 migration/DEV UAT/redeploy. All other unverified connectors remain fail-closed.
+
+## Immediate post-review handoff
+
+1. Review and commit the current patch with `fix: make YouTube large-account sync resumable`
+2. Keep Production disabled และหยุดถือ prior DEV deployment เป็น large-account-ready
+3. Apply `0004_resumable_sync_work.sql` ไป DEV D1 ก่อน Deploy
+4. Deploy patch ด้วย Cron เดิม แล้วทำ Full/Incremental/Analytics Queue UAT กับ tracked inventory จริง
+5. ตรวจ D1 Sync Log ว่า total tracked/selected/queried/skipped/failed/pages/chunks/completeness ตรงกัน
+6. Observe one 07:50 Asia/Bangkok Analytics run and confirm tracked/query counts ครบ
+7. Confirm Unknown Cron/Primary/YouTube routing และ retry/DLQ regressions
+8. งาน Instagram/Facebook/TikTok ถัดไปต้องสร้าง large-account fixtures และ reuse `sync_work_*`
 
 ## Clean candidate verification for v0.11.0
 

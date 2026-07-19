@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import {
+  PRIMARY_SCHEDULE_CRON,
+  YOUTUBE_SCHEDULE_CRON,
+} from '../../apps/sync-worker/src/index.js';
 
 async function readSyncWranglerExample() {
   return readFile(new URL('../../wrangler.sync.example.jsonc', import.meta.url), 'utf8');
@@ -18,12 +22,23 @@ test('sync queue consumers stay at max_concurrency 1 during DEV UAT', async () =
   assert.equal(matches.length, 2);
 });
 
+test('main queue retry exhaustion routes to the configured DLQ', async () => {
+  const configText = await readSyncWranglerExample();
+  assert.match(
+    configText,
+    /"queue"\s*:\s*"social-mkt-sync-jobs"[\s\S]*?"max_retries"\s*:\s*5\b[\s\S]*?"dead_letter_queue"\s*:\s*"social-mkt-sync-dlq"/u,
+  );
+});
+
 test('deployment config defines producer, main queue, DLQ, and scheduled cron', async () => {
   const configText = await readSyncWranglerExample();
   assert.match(configText, /"binding"\s*:\s*"MKT_SYNC_QUEUE"/);
   assert.match(configText, /"MKT_MAIN_QUEUE_NAME"\s*:\s*"social-mkt-sync-jobs"/);
   assert.match(configText, /"MKT_DLQ_QUEUE_NAME"\s*:\s*"social-mkt-sync-dlq"/);
-  assert.match(configText, /"crons"\s*:\s*\["\*\/5 \* \* \* \*",\s*"50 0,6,12,18 \* \* \*"\]/);
+  assert.equal(
+    configText.includes(`"crons": ["${PRIMARY_SCHEDULE_CRON}", "${YOUTUBE_SCHEDULE_CRON}"]`),
+    true,
+  );
 });
 
 test('YouTube schedule and Analytics policy stay fail-closed in release examples', async () => {

@@ -49,3 +49,12 @@ Work as a Senior Software Architect and Principal Engineer focused on clean code
 - Queue job ต้องใช้ Schema version ที่ระบบรองรับและ Job ที่ไม่รู้จักต้องเป็น Permanent error
 - Stable account key อยู่ใน Customer profile; Identity ที่เปลี่ยนตามบัญชีจริงให้ Override ผ่าน Environment
 - Health/Admin ห้ามเปิดเผย Account ID, Handle, Token, Secret หรือ Customer profile ที่ไม่จำเป็น
+
+## Large-account rules
+
+- Initial backfill ต้องเดินทุกหน้าจน terminal cursor; Incremental window ห้ามกลายเป็น Analytics/reconciliation scope โดยปริยาย
+- ทุก page/chunk ต้อง bounded และ resume ได้จาก durable state; safety limit ต้อง fail-closed ห้าม silent truncation
+- Retry/rerun ต้องใช้ Stable key และห้ามสร้าง Duplicate
+- Completeness ต้องเทียบ expected กับ actually queried/processed scope และแสดง counters ใน operational result/log
+- Source page envelopes ต้อง persist/read แบบ bounded pages; ห้ามสะสม page responses ทั้งหมดไว้ก่อนเริ่มประมวลผล
+- Instagram/Facebook/TikTok ต้องมี large-account fixture ก่อน Activation และ reuse shared work/checkpoint/retry contracts

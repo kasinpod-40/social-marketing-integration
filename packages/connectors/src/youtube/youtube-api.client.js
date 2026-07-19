@@ -66,37 +66,67 @@ export class YouTubeApiClient {
     const playlistId = requireText(input.uploadsPlaylistId, 'uploadsPlaylistId');
     const ids = [];
     const seen = new Set();
+    const seenPageTokens = new Set();
     const maxItems = input.maxItems === null || input.maxItems === undefined
       ? null
       : positiveInteger(input.maxItems, 'maxItems');
     let pageToken = null;
 
     for (let page = 1; page <= this.maxPages; page += 1) {
-      const payload = await this.requestJson({
-        baseUrl: this.dataBaseUrl,
-        path: '/playlistItems',
-        query: {
-          part: 'contentDetails',
-          playlistId,
-          maxResults: '50',
-          ...(pageToken ? { pageToken } : {}),
-        },
+      const result = await this.listUploadVideoIdsPage({
+        uploadsPlaylistId: playlistId,
+        pageToken,
       });
-      for (const item of requireArray(payload.items, 'YouTube playlistItems.items')) {
-        const videoId = optionalText(item?.contentDetails?.videoId);
+      for (const videoId of result.videoIds) {
         if (videoId && !seen.has(videoId)) {
           seen.add(videoId);
           ids.push(videoId);
           if (maxItems && ids.length >= maxItems) return Object.freeze(ids);
         }
       }
-      pageToken = optionalText(payload.nextPageToken);
+      pageToken = result.nextPageToken;
       if (!pageToken) return Object.freeze(ids);
+      if (seenPageTokens.has(pageToken)) {
+        throw transientError('YouTube uploads pagination returned a repeated pageToken', {
+          code: 'YOUTUBE_PAGINATION_TOKEN_REPEATED',
+          details: { page, playlistId },
+        });
+      }
+      seenPageTokens.add(pageToken);
     }
 
     throw transientError('YouTube uploads pagination exceeded configured maxPages', {
       code: 'YOUTUBE_PAGINATION_LIMIT',
       details: { maxPages: this.maxPages, playlistId },
+    });
+  }
+
+  /** อ่าน uploads playlist ทีละหน้าเพื่อให้ Application persist cursor ก่อนขอหน้าถัดไป */
+  async listUploadVideoIdsPage(input = {}) {
+    const playlistId = requireText(input.uploadsPlaylistId, 'uploadsPlaylistId');
+    const pageToken = optionalText(input.pageToken);
+    const payload = await this.requestJson({
+      baseUrl: this.dataBaseUrl,
+      path: '/playlistItems',
+      query: {
+        part: 'contentDetails',
+        playlistId,
+        maxResults: '50',
+        ...(pageToken ? { pageToken } : {}),
+      },
+    });
+    const videoIds = [];
+    const seen = new Set();
+    for (const item of requireArray(payload.items, 'YouTube playlistItems.items')) {
+      const videoId = optionalText(item?.contentDetails?.videoId);
+      if (videoId && !seen.has(videoId)) {
+        seen.add(videoId);
+        videoIds.push(videoId);
+      }
+    }
+    return Object.freeze({
+      videoIds: Object.freeze(videoIds),
+      nextPageToken: optionalText(payload.nextPageToken),
     });
   }
 

@@ -107,6 +107,7 @@ export async function runReliableSync(input = {}) {
       details: {
         reconciliation: sanitizeOperationalValue(result?.reconciliation ?? null),
         incremental: result?.incremental ?? null,
+        sourceSummary: sanitizeOperationalValue(result?.sourceSummary ?? null),
         warningCount: Array.isArray(result?.warnings) ? result.warnings.length : 0,
         writeOutcomes: readWriteOutcomes(result),
       },
@@ -181,6 +182,7 @@ export async function runReliableSync(input = {}) {
         retryable: error?.retryable === true,
         reconciliation: sanitizeOperationalValue(sourceResult?.reconciliation ?? null),
         incremental: sourceResult?.incremental ?? null,
+        sourceSummary: sanitizeOperationalValue(sourceResult?.sourceSummary ?? null),
         writeOutcomes: readWriteOutcomes(sourceResult),
         errorDetails: operationalError.details,
       },

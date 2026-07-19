@@ -27,6 +27,14 @@ test('reliable runner writes running and success logs, returns syncRunId, and re
       content: { created: 1, updated: 2, skipped: 17 },
       dailySnapshots: { created: 3, updated: 4, skipped: 13 },
       reconciliation: { required: false },
+      sourceSummary: {
+        analyticsTrackedVideoIds: 837,
+        analyticsSelectedVideos: 837,
+        analyticsSuccessfullyQueriedVideos: 837,
+        analyticsFailedVideos: 0,
+        analyticsChunksProcessed: 17,
+        analyticsCompletenessStatus: 'complete',
+      },
     }),
   });
 
@@ -34,6 +42,9 @@ test('reliable runner writes running and success logs, returns syncRunId, and re
   assert.deepEqual(store.syncRuns.map((entry) => entry.status), ['running', 'success']);
   assert.equal(store.syncRuns[1].recordsPulled, 20);
   assert.equal(store.syncRuns[1].recordsWritten, 10);
+  assert.equal(store.syncRuns[1].details.sourceSummary.analyticsTrackedVideoIds, 837);
+  assert.equal(store.syncRuns[1].details.sourceSummary.analyticsSuccessfullyQueriedVideos, 837);
+  assert.equal(store.syncRuns[1].details.sourceSummary.analyticsCompletenessStatus, 'complete');
   assert.equal(store.alerts.length, 0);
 
   const reacquired = await lockManager.acquire({

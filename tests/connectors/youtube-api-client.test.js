@@ -40,6 +40,34 @@ test('YouTube client follows bounded pageToken and chunks videos at 50 IDs', asy
   assert.equal(videoCalls.every((url) => !url.searchParams.has('maxResults')), true);
 });
 
+test('YouTube client exposes one uploads page for durable application-level resume', async () => {
+  const client = new YouTubeApiClient({
+    apiKey: 'test-key',
+    fetchImpl: async (url) => {
+      const parsed = new URL(url);
+      assert.equal(parsed.searchParams.get('pageToken'), 'resume-token');
+      return Response.json({
+        items: [
+          { contentDetails: { videoId: 'v1' } },
+          { contentDetails: { videoId: 'v1' } },
+          { contentDetails: { videoId: 'v2' } },
+        ],
+        nextPageToken: 'next-token',
+      });
+    },
+  });
+
+  const page = await client.listUploadVideoIdsPage({
+    uploadsPlaylistId: 'UU1',
+    pageToken: 'resume-token',
+  });
+
+  assert.deepEqual(page, {
+    videoIds: ['v1', 'v2'],
+    nextPageToken: 'next-token',
+  });
+});
+
 test('YouTube Analytics requires OAuth and classifies server failures as retryable', async () => {
   const apiKeyClient = new YouTubeApiClient({ apiKey: 'test-key', fetchImpl: async () => Response.json({}) });
   await assert.rejects(

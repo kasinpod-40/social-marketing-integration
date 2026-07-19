@@ -57,3 +57,20 @@ Platform / Native Raw Table
     -> Daily Snapshot
     -> Dashboard / Report / AI Summary
 ```
+
+## Durable large-account work flow
+
+Connector ที่ต้องเดินหลาย page/chunk ใช้ shared `sync_work_runs` / `sync_work_phases` / `sync_work_units` ใน D1:
+
+```text
+External page/chunk
+    -> Atomic staged unit + progress
+    -> Resume unfinished unit after Queue retry
+    -> Read staged units in bounded pages
+    -> Plan every destination table
+    -> Business writes
+    -> Business checkpoint
+    -> Clear work staging
+```
+
+`sync_work_*` ไม่ใช่ Source-of-truth checkpoint. Connector ห้ามเลื่อน `sync_cursors` หรือ `source_record_states` ก่อน Business writes สำเร็จ และห้ามทำ pagination/retry state machine ซ้ำเมื่อ shared work store รองรับอยู่แล้ว.

@@ -8,6 +8,8 @@ Official clean baseline: `v0.10.2-multi-channel-foundation-approved`
 
 Current clean candidate: `v0.11.0` — YouTube Organic DEV active, deployed, and smoke-tested
 
+Current working delta: unreleased YouTube large-account release-blocker patch — รองรับข้อมูลจริง 837 videos ด้วย Full pagination, Content recent window แยกจาก Analytics tracked inventory, durable D1 page/chunk resume, exact Analytics completeness counters, supported Analytics time และ explicit Cron routing. Source gates ผ่านครบ; ยังไม่ Apply migration/Deploy patch ทับ DEV Worker.
+
 Current YouTube design artifact: `docs/Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.2.xlsx` — Technical review approved. v0.11.0 implements guarded Schema/Access, RAW/Canonical/Account writes, checkpoint/reconciliation and Reliability reuse. All DEV UAT gates passed. The connector is active in DEV with a six-hour Data API Cron and once-daily Owner Analytics using a bounded seven-day completed-Pacific overlap; Production remains disabled.
 
 TikTok Organic DEV ingestion/report logic ผ่าน Live Queue UAT และ Reliability UAT แล้ว. Client Views ทั้ง 6 รายการติดตั้ง Filter/Hidden fields และ Sort `rank` ascending สำเร็จ; Advanced Permissions เปิดแล้วพร้อม `Client` role แบบ least privilege และ Final Preview เป็นศูนย์ actions/conflicts. Daily/Weekly schedules เปิดและ deploy ไปยัง Cloudflare DEV แล้ว; เหลือ operational observation ของรอบ schedule.
@@ -21,6 +23,10 @@ Multi-channel foundation ทั้ง 6 ส่วนถูกเพิ่มใ�
 **v0.11.0-rc.1 — YouTube Manual DEV UAT implementation: guarded three-table Schema installer, Public/OAuth preflight, RAW/Canonical/Account write flow, Manual Queue-only route, D1 incremental checkpoint, non-destructive Video/Analytics reconciliation, D1-primary Alert gate, operational identity redaction และ Sync Log/Lock/Retry/DLQ/System Alert reuse. Connector ยัง `uat_pending`; Schedule/Production ปิด.**
 
 **v0.11.0 — YouTube Organic DEV complete: connector/job active, Data API scheduled every six hours, Owner Analytics once daily with a seven-day Pacific overlap, active Data/Analytics smoke tests success, first real RAW Analytics fact created, no active lock/open alert, and Production remains disabled.**
+
+**Unreleased YouTube large-account fix — ช่อง 837 videos ใช้ Full pagination 17 หน้า, incremental Content 100 แต่ Owner Analytics query tracked scope ครบ 837 IDs/17 chunks, D1 `sync_work_*` resume Source/Analytics unit หลัง Queue retry, exact queried-ID guard ป้องกัน complete success เมื่อ scope ขาด, `MKT_YOUTUBE_ANALYTICS_TIME` fail-closed และ Cron routing เป็น whitelist. Migration/DEV redeploy ยังไม่รัน.**
+
+Unreleased large-account source verification: Unit/Integration 397/397, Workers runtime 8/8, Report reliability 60/60, focused YouTube/Scheduler/Queue/Reliability/Resumable-work 69/69, Architecture 111 source files / 232 local dependencies / 0 cycles, repository hygiene, offline npm audit 0, SQLite migration replay และ Wrangler dry-run 480.80 KiB / gzip 97.58 KiB ผ่าน.
 
 v0.10.0 verification: Node unit/integration 336/336, Workers runtime 6/6, focused Report reliability 51/51, Architecture 94 source files / 189 local dependencies / 0 cycles, repository hygiene, offline npm audit 0, and Wrangler dry-run 373.71 KiB / gzip 76.31 KiB.
 
@@ -683,3 +689,31 @@ MKT_CUSTOMER_PROFILE=chemistry_k
 - Source identity mismatch ต้อง fail fast ก่อน Destination schema/search.
 - CI/Release gate บังคับ Node unit tests, Workers-runtime tests, `npm run check`, `npm run deploy:dry-run`, migration replay และ extracted ZIP retest.
 - Production secrets ห้ามอยู่ใน code/config example; DEV ใช้ทรัพยากรผู้พัฒนา ส่วน Production ใช้ Lark/Cloudflare/App/Credentials ที่ลูกค้าเป็นเจ้าของ.
+
+## 2026-07-19 — Large-account sync contract
+
+ปริมาณจริงของลูกค้าเป็น Architecture input ไม่ใช่ Edge case: YouTube 837 videos, Instagram 1,941 posts, TikTok หลายร้อย videos และ Facebook หลายร้อยถึงหลายพัน posts.
+
+YouTube ใช้ shared durable work staging:
+
+```text
+Queue message ID
+→ sync_work_runs
+→ Source page / resource chunk / Analytics page ใน sync_work_units
+→ exact phase counters ใน sync_work_phases
+→ Plan Lark ทุกตาราง
+→ Execute RAW/Canonical แล้ว Account สุดท้าย
+→ Commit source_record_states + sync_cursors
+→ Clear sync_work_*
+```
+
+กฎถาวร:
+
+- `sync_work_*` เป็น retry staging; ห้ามใช้แทน Business checkpoint หรือประกาศ Source complete
+- Source page/chunk payload commit กับ progress ใน D1 batch เดียวกัน
+- Retry resume เฉพาะ unit ที่ยังไม่ complete; stable key rerun ต้องไม่สร้าง Duplicate
+- No-data Analytics เป็น valid ได้ แต่ queried-video markers ต้องครบ exact tracked set
+- Expected/selected/queried/skipped/failed/pages/chunks/completeness ต้องอยู่ใน Sync result และ D1 Sync Log details
+- Safety limit เช่น max pages ต้อง fail-closed พร้อม error/alert; ห้าม truncate ข้อมูลเก่าแล้วรายงาน success
+- อ่าน staged units กลับแบบ bounded pages; หาก normalized plan ของ large fixture เกิน Worker memory budget ต้องขยาย shared persisted-plan execution ก่อน Activation
+- Instagram/Facebook/TikTok งานถัดไปต้อง reuse contract นี้ พร้อม Initial full, persisted cursor, incremental, periodic full reconciliation, rate-limit retry และ large-account fixtures; ห้ามสร้าง connector-specific state machine ซ้ำ

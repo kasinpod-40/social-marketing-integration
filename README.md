@@ -8,6 +8,8 @@ Working candidate: `v0.11.0`
 
 Official clean baseline: `v0.10.2-multi-channel-foundation-approved`
 
+Unreleased release-blocker patch: ข้อมูลจริง 837 videos ใช้ Full pagination, Content incremental 100 แยกจาก Analytics tracked scope 837, durable D1 page/chunk resume, exact completeness counters, Analytics time ที่ Dedicated Cron รองรับ และ explicit Cron routing. Source gates ผ่านครบแล้ว; ยังไม่ Apply migration `0004_resumable_sync_work.sql` หรือ Deploy ทับ DEV Worker.
+
 สถานะปัจจุบัน:
 
 - DEV ใช้ Lark Base ของผู้พัฒนาและ TikTok `@ft.pumkin`
@@ -38,6 +40,8 @@ Official clean baseline: `v0.10.2-multi-channel-foundation-approved`
 - v0.11.0 เพิ่ม YouTube guarded Schema installer, DEV access preflight, RAW/Canonical/Account writes, D1 checkpoint, reconciliation, Reliability reuse และ Active scheduled route
 - DEV Public/Owner preflight, Lark Schema Apply และ Manual Queue core UAT สำหรับ YouTube ผ่านแล้วเมื่อ 2026-07-17; First Full, idempotent rerun, incremental และ Owner Analytics valid no-data สำเร็จโดยไม่เกิด Duplicate
 - Final DEV Worker เปิด normal YouTube, Owner Analytics และ YouTube Schedule แล้ว: Data API ทุก 6 ชั่วโมง และ Analytics วันละครั้งด้วย completed Pacific 7-day overlap
+- Post-activation review แก้ Analytics scope สำหรับช่องที่มีวิดีโอเกิน recent limit, fail-closed unsupported Analytics time และ explicit Cron routing แล้ว; ต้อง Commit/Review/Deploy patch ก่อนถือว่าปิด review บน DEV runtime
+- Large-account hardening ทดสอบ Full 837 videos/17 pages, Analytics 837 IDs/17 chunks, page/chunk retry resume, exact queried-ID guard และ Stable-key rerun; D1 Sync Log details เก็บ completeness counters
 - v0.11.0-rc.1 hardening เติม Analytics missing-key reconciliation แบบ retain/warn, บังคับ D1 warning alert failure ให้ Queue retry, Redact external identity จาก operational logs/stores และคืน safe examples เป็น Placeholder-only
 - Connector อื่นยังไม่ถูกเปิด: Meta/WooCommerce/Chatwoot/Ads เป็น `planned` จนกว่า Blueprint/Access/Live UAT ของแต่ละช่องทางผ่าน
 - Customer Production setup ยังไม่รวมใน Release นี้และต้องใช้ทรัพยากรของลูกค้า
@@ -347,6 +351,20 @@ npx wrangler d1 migrations apply MKT_STATE_DB --remote --config wrangler.sync.js
 ```
 
 รายละเอียด: `docs/cloudflare-deploy-hardening-v0.5.1.md` และ `docs/tiktok-incremental-sync-v0.6.0.md`
+
+### Large-account resumable sync
+
+YouTube ใช้ `sync_work_runs`, `sync_work_phases` และ `sync_work_units` จาก migration `0004_resumable_sync_work.sql` เพื่อ stage Source pages/resource chunks/Analytics pages แบบ durable โดยไม่เลื่อน Business checkpoint ก่อน Lark writes. Queue retry ใช้ message ID เดิม, resume เฉพาะ unit ที่ค้าง และลบ staging หลัง `source_record_states`/`sync_cursors` commit สำเร็จ.
+
+ก่อน Deploy patch นี้:
+
+```bash
+npx wrangler d1 migrations apply MKT_STATE_DB --remote --config wrangler.sync.jsonc
+```
+
+Analytics success ต้องมี exact queried-video scope ครบ tracked inventory; valid no-data วัดจาก query marker ไม่ใช่จำนวน rows. Result/D1 Sync Log แสดง tracked, selected, successfully queried, skipped/failed, pages/chunks และ completeness. Max-page guard เป็น fail-closed error ไม่ truncate แบบ success.
+
+Instagram 1,941 posts, TikTok หลายร้อย และ Facebook หลายร้อยถึงหลายพันเป็น large-account workstream ถัดไป ทุก Connector ต้อง reuse durable work/checkpoint/idempotency/retry contract และมี fixture ตามปริมาณจริงก่อน Activation.
 
 ## Multi-channel Foundation
 

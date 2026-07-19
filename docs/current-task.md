@@ -1,19 +1,19 @@
-# Current Task — YouTube Organic DEV Complete v0.11.0
+# Current Task — YouTube Organic large-account release blocker v0.11.0
 
 ## Task metadata
 
-- **Status:** `completed_active_dev_deployed`
+- **Status:** `source_gates_passed_pending_work_review_migration_and_dev_redeploy`
 - **Official clean baseline:** `v0.10.2-multi-channel-foundation-approved`
-- **Working candidate:** `v0.11.0`
+- **Working candidate:** `v0.11.0 + unreleased large-account/resumable-sync patch`
 - **Blueprint:** `Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.2.xlsx`
 - **Connector status:** `active`
-- **Schedule:** `enabled_in_verified_dev`
+- **Schedule:** `enabled_in_verified_dev_on_prior_commit_pending_patch_redeploy`
 - **Last updated:** `2026-07-19`
 - **Owners:** ChatGPT Work (technical review/release) + developer (DEV credentials and guarded live execution)
 
 ## Objective
 
-ปิด YouTube Organic DEV ให้ครบตั้งแต่ Schema/Access/Queue/Reliability UAT จนถึง Active connector, scheduled sync, Owner Analytics policy, Cloudflare deployment และ post-deploy smoke test โดยยังไม่เปิด Production.
+ปิด YouTube Organic DEV ให้ครบตั้งแต่ Schema/Access/Queue/Reliability UAT จนถึง Active connector, scheduled sync, Owner Analytics policy, Cloudflare deployment และ post-deploy smoke test โดยยังไม่เปิด Production พร้อมแก้ post-activation review ของ commit `324c9d4f6798f0c59b2e8d51f9ccad1050c8cf5b`. ข้อมูลจริงของลูกค้ามี YouTube 837 วิดีโอ จึงยกระดับ Analytics scope, Full backfill, durable page/chunk resume และ completeness accounting เป็น Release blocker ไม่ใช่ Edge case.
 
 ## Authorized continuation scope — 2026-07-17
 
@@ -43,6 +43,37 @@ Acceptance criteria ของ continuation:
 - Stable key/date/null/reconciliation contracts ยึด Blueprint v0.10.2
 - Missing/private/deleted candidate ต้อง retain row/metrics, ไม่ลบและไม่เติมศูนย์
 - Analytics ใช้ exact Pacific `source_metric_date`, `sort=day,video`, bounded batching/pagination
+
+## Large-account contract — Release blocker
+
+ปริมาณจริงที่ใช้ตัดสิน Architecture:
+
+- YouTube: 837 videos
+- Instagram: 1,941 posts
+- TikTok: หลายร้อย videos
+- Facebook: หลายร้อยถึงหลายพัน posts
+
+YouTube ใน Commit นี้ต้องเป็นไปตาม Contract ต่อไปนี้:
+
+1. Initial/Periodic Full เดิน uploads playlist จนจบทุกหน้า; `YOUTUBE_MAX_PAGES` เป็น fail-closed guard ไม่ใช่ silent truncation
+2. Daily Content incremental จำกัด recent window ได้ แต่ Owner Analytics ใช้ tracked inventory จาก D1 checkpoint รวมกับ Content inventory รอบปัจจุบัน
+3. Source page, Video resource chunk และ Analytics page/chunk เก็บ progress ใน D1 `sync_work_*` แบบ durable; Queue retry ใช้ message ID เดิมและ resume โดยไม่ย้อนทำ unit ที่ commit แล้ว
+4. `sync_work_*` เป็น staging เท่านั้นและห้ามแทน Business checkpoint; `source_record_states`/`sync_cursors` ยัง commit หลัง Lark business writes สำเร็จครบ
+5. Analytics เก็บ queried-video markers แยกจากจำนวน rows เพราะ API สามารถคืน valid no-data; ก่อน Plan Lark ต้องเทียบ expected tracked IDs กับ queried IDs แบบ exact set
+6. Missing scope, repeated cursor, max-page overflow, duplicate Analytics stable row หรือ progress mismatch ต้อง fail-closed และห้ามรายงาน complete success
+7. Sync result และ D1 Sync Log details ต้องมี total tracked, selected, successfully queried, skipped/failed, pages/chunks และ completeness status
+8. Stable keys, plan-all-tables-before-write, Account-last, checkpoint-after-write, Lock/Retry/DLQ/System Alert และ Release examples ที่ปิดทุก flag ต้องคงเดิม
+
+Shared contract สำหรับ Instagram/Facebook/TikTok งานถัดไป:
+
+- Initial full backfill แบบ paginated และมี persisted cursor/checkpoint
+- Incremental sync + periodic full reconciliation
+- Bounded page/chunk processing และ durable resume หลัง partial failure
+- Stable-key idempotency, rate-limit-aware retry/backoff และ completeness counters
+- ห้าม silent hard limit; safety limit ต้อง fail-closed พร้อม operational code/count
+- อ่าน staged units แบบ page-by-page และไม่เก็บ Source page envelopes ทุกหน้าใน memory พร้อมกัน
+- ต้องมี large-account fixture ตามปริมาณจริงก่อน Activation
+- ใช้ shared `sync_work_*`/Sync Engine contracts; ห้ามสร้าง retry/upsert/pagination state machine ซ้ำในแต่ละ Connector
 
 ## Implemented in this candidate
 
@@ -112,16 +143,16 @@ Acceptance criteria ของ continuation:
 
 ## Acceptance and verification
 
-- Unit/Integration: 384/384 passed
-- Workers runtime: 7/7 passed
-- Focused Report reliability: 58/58 passed
-- Focused YouTube safe fault suite: 34/34 passed
+- Current post-review source Unit/Integration: 397/397 passed
+- Current Workers runtime: 8/8 passed
+- Current focused Report reliability: 60/60 passed
+- Current focused YouTube/Scheduler/Queue/Reliability/Resumable-work suite: 69/69 passed
 - Focused DateTime/identity regression: 6/6 passed
-- Architecture: 109 source files / 230 local dependencies / 0 cycles
+- Architecture: 111 source files / 232 local dependencies / 0 cycles
 - Repository hygiene: passed
 - npm audit: 0 vulnerabilities
-- Wrangler dry-run: 444.70 KiB / gzip 91.23 KiB passed
-- Clean archive extraction retest: `npm ci`, check, Unit 384/384, Workers 7/7, reliability 58/58, audit 0 และ dry-run ผ่าน; Archive verifier พบ blocked/missing/sensitive/duplicate = 0
+- Wrangler dry-run: 480.80 KiB / gzip 97.58 KiB passed
+- Historical v0.11.0 clean archive extraction retest: `npm ci`, check, Unit 384/384, Workers 7/7, reliability 58/58, audit 0 และ dry-run ผ่าน; Archive verifier พบ blocked/missing/sensitive/duplicate = 0
 - Live DEV UAT: `core_happy_path_and_safe_reliability_faults_passed`
 - Active DEV deployment: Worker `f46c0c7f-0119-4f78-8e8d-2d37e17823a5`, both Cron triggers deployed
 - Active Data API smoke: `success`, retry 0, cursor 1, source states 2, active lock 0, open YouTube alert 0
@@ -207,9 +238,35 @@ Acceptance criteria ของ continuation:
 - **Remaining risks:** Scheduled Cron propagation may take up to 15 minutes; naturally occurring Provider missing/quota/rate-limit and long-term Analytics availability remain operational monitoring, not unfinished implementation
 - **Recommended commit:** `feat: activate YouTube organic sync`
 
+### Post-activation scheduler and Analytics review fix — 2026-07-19
+
+- **Root cause:** (1) Owner Analytics ใช้ `videoResources` ของ Content traversal เดียวกัน จึงถูก `MKT_YOUTUBE_RECENT_VIDEO_LIMIT` ตัดเหลือ 100 IDs ใน incremental mode และ reconciliation ใช้ scope ที่ถูกตัดตามไปด้วย (2) `MKT_YOUTUBE_ANALYTICS_TIME` ตรวจเพียงรูปแบบ `HH:mm`/5 นาที แต่ไม่ตรวจว่า Dedicated YouTube Cron ยิงถึงเวลานั้นจริง (3) Scheduler ใช้ negative routing `cron !== YOUTUBE_SCHEDULE_CRON` ทำให้ Cron ที่ไม่รู้จักถูกตีความเป็น Primary
+- **Implementation:** แยก Analytics tracked-video scope เป็นผลรวมแบบ dedupe/sort ของ D1 checkpoint states ทั้งหมดกับ uploads IDs รอบปัจจุบัน โดย Content traversal ยังใช้ recent limit เดิม; ใช้ scope เดียวกันทั้ง Owner Analytics query และ reconciliation; derive Dedicated Cron string/เวลาที่รองรับจาก minute/hour contract เดียว; validate Analytics local time ก่อน enqueue; route เฉพาะ `PRIMARY_SCHEDULE_CRON` และ `YOUTUBE_SCHEDULE_CRON`, ส่วน Unknown Cron คืน empty plan
+- **Files changed:** `apps/sync-worker/src/index.js`, `packages/application/src/use-cases/sync-youtube-organic-to-lark.js`, `tests/application/scheduled-jobs.test.js`, `tests/application/sync-youtube-organic-to-lark.test.js`, `tests/config/deployment-config.test.js`, `tests/worker-runtime/sync-worker.runtime.test.js`, `docs/current-task.md`, `PROJECT_BRAIN.md`, `docs/project-brain/10-next-actions.md`, `README.md` และ `CHANGELOG.md`
+- **Commands run:** focused Node tests, focused Workers-runtime test, `npm ci`, `npm run check`, `npm test`, `npm run test:report-reliability`, focused YouTube/Scheduler/Reliability suite, `npm audit --offline`, `npm run deploy:dry-run`, `git diff --check` และ repository status/diff inspection
+- **Tests:** Regression ใหม่จำลอง 105 tracked videos ขณะที่ Content incremental จำกัด 100; Analytics query ครบ 105 IDs เป็น 3 batches, วิดีโอเก่าถูกนำเข้า reconciliation และ idempotent incremental rerun ยังคง scope 105; Unsupported `08:10` fail ด้วย `MKT_SCHEDULE_CONFIG_INVALID`; Unknown Cron ไม่ส่ง Queue; Workers-runtime Primary/YouTube/Unknown routing ผ่าน
+- **Regression results:** Full Unit/Integration 388/388, Workers runtime 8/8, focused Report reliability 60/60, focused YouTube/Scheduler/Reliability 60/60, Architecture 109/230/0, repository hygiene pass, offline audit 0 และ Wrangler dry-run 446.77 KiB / gzip 91.73 KiB; lock collision, lease loss, retry behavior, retry exhaustion → DLQ persistence, alert persistence, TikTok Queue routing, YouTube idempotency, plan-before-write, Account-last และ checkpoint-after-business-writes ยังผ่าน
+- **Live UAT/Deployment:** รอบแก้นี้ไม่เรียก YouTube/Lark API, ไม่เขียน D1/Queue, ไม่ Apply Schema และไม่ Deploy; DEV Worker ปัจจุบันยังเป็น prior deployment จนกว่าจะ Commit/Review/Deploy patch นี้
+- **Remaining risks:** Analytics completeness อาศัย D1 checkpoint ที่สร้างจาก First/Periodic Full traversal ตาม contract; หาก checkpoint ถูกลบหรือเสียหาย รอบ `auto` ถัดไปจะเลือก Full เมื่อ cursor หาย แต่ partial external corruption ที่ยังเหลือ cursor ต้องอาศัย periodic Full reconciliation ซ่อม scope. การรองรับเวลาท้องถิ่นคำนวณจาก Dedicated Cron กับ timezone ของวันรัน; DEV `Asia/Bangkok` ไม่มี DST และ `07:50` รองรับชัดเจน
+- **Rollback:** ไม่มี Migration หรือ Stable-key change; หาก patch มีปัญหาให้ปิด `MKT_YOUTUBE_ANALYTICS_ENABLED`/`MKT_SCHEDULE_YOUTUBE_ENABLED`, redeploy prior known-good version แล้ว revert patch commit. Rows/Checkpoint เดิมไม่ต้องลบ
+- **Commit suggestion:** `fix: harden YouTube analytics scheduling`
+
+### YouTube large-account release blocker — 2026-07-19
+
+- **Root cause:** Patch ก่อนหน้าแก้ Analytics scope ให้รวม D1 tracked IDs แล้ว แต่ Source traversal และ Analytics query ยังรันใหม่ตั้งแต่ต้นเมื่อ Queue retry, ไม่มี durable page/chunk progress, ไม่มี exact queried-ID marker และ Sync Log ยังไม่เก็บ completeness counters. สำหรับลูกค้า 837 วิดีโอ ความล้มเหลวกลาง 17 Content/Analytics chunks จึงทำงานซ้ำโดยไม่จำเป็น และระบบไม่มีหลักฐานเชิงโครงสร้างว่าทั้ง 837 IDs ถูกส่งเข้า Analytics ครบจริง.
+- **Implementation:** เพิ่ม shared D1 resumable work contract (`sync_work_runs`, `sync_work_phases`, `sync_work_units`) แยกจาก Business checkpoint; เพิ่ม uploads single-page API, persist Content inventory page, Video resource chunk และ Analytics page แบบ atomic ต่อ unit; Queue retry ใช้ stable message ID; Analytics บันทึก queried-video marker เมื่อจบ chunk และเทียบ exact expected/query set ก่อน Plan Lark; staged units ถูกอ่านกลับแบบ page-by-page; ลบ work staging หลัง Lark writes และ D1 checkpoint สำเร็จเท่านั้น.
+- **Files changed:** YouTube API client/use case/Worker wiring, shared Sync Engine D1/In-memory work stores, D1 migration `0004_resumable_sync_work.sql`, Reliability Sync Log details, large-account/connector/API/D1 tests และเอกสาร Current Task/Project Brain/README/CHANGELOG.
+- **Commands run:** focused Node tests, `npm ci`, `npm run check`, `npm test` (Workers runtime รันนอก sandbox เพราะ Miniflare ต้องเปิด loopback), `npm run test:report-reliability`, `npm audit --offline`, `npm run deploy:dry-run`, SQLite migration replay, `git diff --check` และ repository status/diff inspection.
+- **Tests:** Fixture 837 ยืนยัน Full traversal 17 pages/17 resource chunks, resume จาก page token 450 หลัง page failure, incremental Content 100 ขณะที่ Analytics query 837 ครบ 17 chunks, Analytics retry ต่อจาก chunk ที่ล้ม, exact-scope corruption fail-closed และ Full rerun ไม่เพิ่ม Lark stable rows; D1 work-store atomic/resume/reset/cleanup และ API single-page contract มี regression แยก.
+- **Regression results:** Unit/Integration 397/397, Workers runtime 8/8, Report reliability 60/60 และ focused YouTube/Scheduler/Queue/Reliability/Resumable-work 69/69 ผ่าน; Architecture 111 source files / 232 local dependencies / 0 cycles, repository hygiene ผ่าน, offline audit 0 vulnerabilities, Wrangler dry-run 480.80 KiB / gzip 97.58 KiB และ fresh SQLite migration replay ผ่าน.
+- **Live UAT/Deployment:** รอบนี้ยังไม่ Apply migration ไป Remote D1, ไม่เรียก YouTube/Lark API, ไม่ส่ง Queue, ไม่ Deploy และไม่แก้ Secret/Live IDs. DEV Worker ปัจจุบันยังเป็น prior deployment และยังไม่ถือว่าปิด large-account blocker.
+- **Remaining risks:** ก่อน DEV redeploy ต้อง Apply migration `0004_resumable_sync_work.sql`; จากนั้นทำ Queue UAT ด้วย tracked inventory จริงและตรวจ D1 Sync Log completeness. TableSyncEngine ยัง materialize normalized destination rows ที่จำเป็นต่อ six-table plan ไว้ก่อน write ตาม safety contract แต่ Source page envelopes ถูก persist/read แบบ bounded pages; Connector ปริมาณใหญ่ถัดไปต้อง benchmark memory และขยาย shared persisted-plan execution หาก fixture จริงเกิน Worker memory budget.
+- **Rollback:** ปิด `MKT_SCHEDULE_YOUTUBE_ENABLED` และ `MKT_YOUTUBE_ANALYTICS_ENABLED`, redeploy prior Worker แล้ว revert patch. Migration ใหม่เป็น additive staging tables ไม่มี Foreign key ไป Business state; เก็บไว้ได้ระหว่าง rollback และลบ orphan work rows ภายหลังด้วย guarded operation โดยไม่แตะ `sync_cursors`, `source_record_states` หรือ Lark rows.
+- **Commit suggestion:** `fix: make YouTube large-account sync resumable`
+
 ## Work review
 
-- **Technical architecture:** approved and active in DEV
+- **Technical architecture:** large-account/resumable patch implemented and Source gates passed; pending Work review, D1 migration and DEV redeploy
 - **Data model:** approved — Blueprint v0.10.2
-- **Release decision:** `v0.11.0`; YouTube Organic DEV complete, Production remains disabled
-- **Recommended commit for current delta:** `feat: activate YouTube organic sync`
+- **Release decision:** `v0.11.0` remains the active DEV release; unreleased patch must be reviewed and redeployed before the scheduler review is closed. Production remains disabled
+- **Recommended commit for current delta:** `fix: make YouTube large-account sync resumable`

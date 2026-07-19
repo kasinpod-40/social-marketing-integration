@@ -46,7 +46,7 @@ describe('Sync Worker ใน Workers runtime จริง', () => {
     expect(result.retryMessages).toEqual([]);
   });
 
-  it('DLQ ถูก persist อย่างเดียวและไม่ execute งานเดิมซ้ำ', async () => {
+  it('DLQ หลัง retry exhaustion ถูก persist อย่างเดียวและไม่ execute งานเดิมซ้ำ', async () => {
     const processJob = vi.fn();
     const store = {
       saveDeadLetter: vi.fn(async () => true),
@@ -64,6 +64,10 @@ describe('Sync Worker ใน Workers runtime จริง', () => {
 
     expect(processJob).not.toHaveBeenCalled();
     expect(store.saveDeadLetter).toHaveBeenCalledTimes(1);
+    expect(store.saveDeadLetter.mock.calls[0][0]).toMatchObject({
+      errorCode: 'QUEUE_RETRY_EXHAUSTED',
+      retryCount: 6,
+    });
     expect(store.saveSystemAlert).toHaveBeenCalledTimes(1);
     expect(result.explicitAcks).toEqual(['dlq-1']);
   });
@@ -134,7 +138,7 @@ describe('Sync Worker ใน Workers runtime จริง', () => {
     const worker = createSyncWorker();
     const controller = createScheduledController({
       scheduledTime: Date.parse('2026-07-11T01:00:00.000Z'),
-      cron: '0 * * * *',
+      cron: '*/5 * * * *',
     });
 
     await worker.scheduled(controller, {
@@ -154,6 +158,30 @@ describe('Sync Worker ใน Workers runtime จริง', () => {
       requestedAt: '2026-07-11T01:00:00.000Z',
       metricDate: '2026-07-11',
     });
+  });
+
+  it('Unknown Cron ไม่ enqueue TikTok, YouTube หรือ Report', async () => {
+    const send = vi.fn(async () => undefined);
+    const worker = createSyncWorker();
+    const controller = createScheduledController({
+      scheduledTime: Date.parse('2026-07-19T00:50:00.000Z'),
+      cron: '0 * * * *',
+    });
+
+    await worker.scheduled(controller, {
+      MKT_ENV: 'development',
+      MKT_CUSTOMER_PROFILE: 'dev_ft_pumkin',
+      MKT_CONNECTOR_TIKTOK_ENABLED: 'true',
+      MKT_CONNECTOR_YOUTUBE_ENABLED: 'true',
+      MKT_SCHEDULE_TIKTOK_ENABLED: 'true',
+      MKT_SCHEDULE_DAILY_REPORT_ENABLED: 'true',
+      MKT_SCHEDULE_WEEKLY_REPORT_ENABLED: 'true',
+      MKT_SCHEDULE_YOUTUBE_ENABLED: 'true',
+      MKT_YOUTUBE_ANALYTICS_ENABLED: 'true',
+      MKT_SYNC_QUEUE: { send },
+    });
+
+    expect(send).not.toHaveBeenCalled();
   });
 
   it('Scheduled handler enqueue Daily report หลัง TikTok sync เมื่อถึงเวลา Bangkok', async () => {

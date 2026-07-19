@@ -22,3 +22,12 @@ A task is not done unless:
 - Multi-account behavior documented.
 - Upsert/duplicate behavior documented.
 - Limitations recorded in Project Brain.
+
+## Large-account DoD
+
+- ใช้ fixture เท่าหรือมากกว่าปริมาณลูกค้าจริง
+- Full traversal จบทุกหน้า และ retry ต่อจาก persisted page/chunk
+- Incremental Content และ complete Analytics/reconciliation scope แยกกันชัดเจน
+- Completeness expected/query counts ตรงกัน; scope ขาดต้อง fail/partial พร้อม operational evidence
+- Rerun ไม่เพิ่ม Stable-key rows
+- Memory/API work ถูกแบ่งเป็น bounded units และ safety limit ไม่ truncate แบบ silent success

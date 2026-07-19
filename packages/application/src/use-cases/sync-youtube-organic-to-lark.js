@@ -7,12 +7,21 @@ import {
 import { mapYouTubeChannelResource } from '../../../connectors/src/youtube/youtube-organic.adapter.js';
 import { normalizeYouTubeVideoBatch } from './normalize-youtube-video-batch.js';
 import { createStableFingerprint } from '../../../shared/src/hash/stable-fingerprint.js';
-import { permanentError } from '../../../shared/src/errors/runtime-error.js';
+import { permanentError, transientError } from '../../../shared/src/errors/runtime-error.js';
 import { requireDateOnly } from '../../../shared/src/date/date-only.js';
 
 const ANALYTICS_METRICS = 'views,likes,comments,shares,estimatedMinutesWatched,averageViewDuration,averageViewPercentage';
 const ANALYTICS_DIMENSIONS = 'day,video';
 const ANALYTICS_SORT = 'day,video';
+const VIDEO_BATCH_SIZE = 50;
+const ANALYTICS_PAGE_SIZE = 200;
+const WORK_UNIT_READ_LIMIT = 100;
+const WORK_UNIT_MAX_PAGES = 10_000;
+const WORK_PHASES = Object.freeze({
+  CONTENT_INVENTORY: 'youtube_content_inventory',
+  CONTENT_RESOURCES: 'youtube_content_resources',
+  ANALYTICS: 'youtube_owner_analytics',
+});
 
 /** YouTube Organic sync: RAW → Canonical → Account activation row → D1 checkpoint */
 export async function syncYouTubeOrganicToLark(input = {}) {
@@ -21,6 +30,7 @@ export async function syncYouTubeOrganicToLark(input = {}) {
   const publicClient = requireYouTubeClient(input.publicClient, 'publicClient');
   const ownerClient = input.ownerClient ?? null;
   const stateStore = requireStateStore(input.incrementalStateStore);
+  const workStore = requireWorkStore(input.resumableWorkStore);
   const assertLockActive = typeof input.assertLockActive === 'function'
     ? input.assertLockActive
     : async () => undefined;
@@ -32,13 +42,21 @@ export async function syncYouTubeOrganicToLark(input = {}) {
   const accountKey = requireText(input.accountKey, 'accountKey');
   const customerProfile = requireText(input.customerProfile, 'customerProfile');
   const cursorKey = requireText(input.cursorKey, 'cursorKey');
+  const workKey = requireText(input.workKey ?? syncRunId, 'workKey');
   const syncType = requireText(input.syncType ?? 'organic_sync', 'syncType');
   const metricDate = requireDateOnly(input.metricDate, { label: 'metricDate' });
   const tables = requireTables(input.tables);
   const analyticsEnabled = input.analyticsEnabled === true;
+  const analyticsRange = analyticsEnabled
+    ? Object.freeze({
+      startDate: requireDateOnly(input.analyticsStartDate, { label: 'analyticsStartDate' }),
+      endDate: requireDateOnly(input.analyticsEndDate, { label: 'analyticsEndDate' }),
+    })
+    : null;
 
   onProgress({ stage: 'youtube_checkpoint_loading', cursorKey });
   const checkpoint = await stateStore.loadCheckpoint(cursorKey);
+  const priorStates = Array.isArray(checkpoint?.recordStates) ? checkpoint.recordStates : [];
   const syncMode = decideSyncMode({
     requested: input.syncMode,
     checkpoint,
@@ -52,17 +70,47 @@ export async function syncYouTubeOrganicToLark(input = {}) {
   if (analyticsEnabled) await assertOwnerChannel({ ownerClient, channelId });
 
   const recentVideoLimit = positiveInteger(input.recentVideoLimit ?? 100, 'recentVideoLimit');
-  const videoIds = await publicClient.listUploadVideoIds({
-    uploadsPlaylistId: channel.uploadsPlaylistId,
-    ...(syncMode.fullSnapshot ? {} : { maxItems: recentVideoLimit }),
+  const contentMaxPages = positiveInteger(input.contentMaxPages ?? 100, 'contentMaxPages');
+  const operationFingerprint = await createStableFingerprint({
+    contract: 'youtube-organic-resumable-v1',
+    channelId,
+    metricDate,
+    syncMode: syncMode.mode,
+    fullSnapshot: syncMode.fullSnapshot,
+    recentVideoLimit,
+    analyticsRange,
   });
-  const videoResources = videoIds.length > 0 ? await publicClient.listVideos({ videoIds }) : [];
+  const work = await workStore.beginWork({
+    workKey,
+    cursorKey,
+    workType: 'youtube_organic_sync',
+    operationFingerprint,
+  });
+  const inventory = await loadUploadInventory({
+    workStore,
+    workKey,
+    publicClient,
+    uploadsPlaylistId: channel.uploadsPlaylistId,
+    maxItems: syncMode.fullSnapshot ? null : recentVideoLimit,
+    maxPages: contentMaxPages,
+    assertLockActive,
+    onProgress,
+  });
+  const videoIds = inventory.videoIds;
+  const resourceLoad = await loadVideoResources({
+    workStore,
+    workKey,
+    publicClient,
+    videoIds,
+    assertLockActive,
+    onProgress,
+  });
+  const videoResources = resourceLoad.videoResources;
   const returnedVideoIds = new Set(videoResources.map((video) => requireText(video?.id, 'video.id')));
   const requestedButUnavailable = videoIds.filter((videoId) => !returnedVideoIds.has(videoId));
 
   const rawChannelRows = [mapYouTubeChannelRawRow(channelResource, { expectedChannelId: channelId, fetchedAt })];
   const rawVideoRows = videoResources.map((video) => mapYouTubeVideoRawRow(video, { expectedChannelId: channelId, fetchedAt }));
-  const priorStates = Array.isArray(checkpoint?.recordStates) ? checkpoint.recordStates : [];
   const priorIds = new Set(priorStates.map((state) => state.externalContentId).filter(Boolean));
   const missingIds = syncMode.fullSnapshot
     ? [...new Set([...requestedButUnavailable, ...[...priorIds].filter((videoId) => !videoIds.includes(videoId))])]
@@ -116,15 +164,14 @@ export async function syncYouTubeOrganicToLark(input = {}) {
     });
   }
 
-  const analyticsRange = analyticsEnabled
-    ? Object.freeze({
-      startDate: requireDateOnly(input.analyticsStartDate, { label: 'analyticsStartDate' }),
-      endDate: requireDateOnly(input.analyticsEndDate, { label: 'analyticsEndDate' }),
-    })
-    : null;
-  const analyticsVideoIds = videoResources.map((video) => requireText(video.id, 'video.id'));
-  const analyticsRows = analyticsRange
+  // Content incremental จำกัด recent window ได้ แต่ Owner Analytics ต้อง query tracked scope ทั้งหมดจาก D1 checkpoint.
+  const analyticsVideoIds = analyticsRange
+    ? resolveTrackedAnalyticsVideoIds({ priorStates, currentVideoIds: videoIds })
+    : [];
+  const analyticsLoad = analyticsRange
     ? await loadAnalyticsRows({
+      workStore,
+      workKey,
       ownerClient,
       channelId,
       videoIds: analyticsVideoIds,
@@ -133,8 +180,10 @@ export async function syncYouTubeOrganicToLark(input = {}) {
       fetchedAt,
       assertLockActive,
       maxPages: positiveInteger(input.analyticsMaxPages ?? 1000, 'analyticsMaxPages'),
+      onProgress,
     })
-    : [];
+    : emptyAnalyticsLoad();
+  const analyticsRows = analyticsLoad.rows;
   const analyticsReconciliation = analyticsRange
     ? await reconcileAnalyticsRows({
       repository,
@@ -144,6 +193,7 @@ export async function syncYouTubeOrganicToLark(input = {}) {
       startDate: analyticsRange.startDate,
       endDate: analyticsRange.endDate,
       analyticsRows,
+      analyticsCompleteness: analyticsLoad.completeness,
       assertLockActive,
       onProgress,
     })
@@ -176,10 +226,13 @@ export async function syncYouTubeOrganicToLark(input = {}) {
   });
 
   if (input.dryRun === true) {
-    return buildResult({
+    const result = buildResult({
       mode: 'dry_run', syncRunId, syncMode, videoIds, videoResources, missingIds,
-      analyticsRows, analyticsReconciliation, plans, checkpointSaved: false,
+      inventory, resourceLoad, analyticsLoad, analyticsVideoIds, analyticsRows,
+      analyticsReconciliation, plans, checkpointSaved: false, workResumed: work.resumed,
     });
+    await workStore.completeWork(workKey);
+    return result;
   }
 
   const results = {};
@@ -216,10 +269,246 @@ export async function syncYouTubeOrganicToLark(input = {}) {
     records: recordStates,
     fullSnapshot: syncMode.fullSnapshot,
   });
+  await workStore.completeWork(workKey);
 
   return buildResult({
     mode: 'write', syncRunId, syncMode, videoIds, videoResources, missingIds,
-    analyticsRows, analyticsReconciliation, plans, results, checkpointSaved: true,
+    inventory, resourceLoad, analyticsLoad, analyticsVideoIds, analyticsRows,
+    analyticsReconciliation, plans, results, checkpointSaved: true, workResumed: work.resumed,
+  });
+}
+
+async function loadUploadInventory(input) {
+  let progress = await input.workStore.loadPhase({
+    workKey: input.workKey,
+    phase: WORK_PHASES.CONTENT_INVENTORY,
+  });
+  const resumedPages = progress?.pagesProcessed ?? 0;
+  while (!progress?.complete) {
+    const state = progress?.state ?? { pageToken: null, visitedPageTokens: [] };
+    const pageToken = optionalText(state.pageToken);
+    const visitedPageTokens = new Set(Array.isArray(state.visitedPageTokens)
+      ? state.visitedPageTokens.map((token) => requireText(token, 'visitedPageToken'))
+      : []);
+    if (pageToken && visitedPageTokens.has(pageToken)) {
+      throw transientError('YouTube uploads work cursor repeated a previously processed pageToken', {
+        code: 'YOUTUBE_PAGINATION_TOKEN_REPEATED',
+        details: { pagesProcessed: progress?.pagesProcessed ?? 0 },
+      });
+    }
+    if ((progress?.pagesProcessed ?? 0) >= input.maxPages) {
+      throw transientError('YouTube uploads pagination exceeded configured maxPages', {
+        code: 'YOUTUBE_PAGINATION_LIMIT',
+        details: { maxPages: input.maxPages, pagesProcessed: progress?.pagesProcessed ?? 0 },
+      });
+    }
+
+    await input.assertLockActive();
+    const response = await input.publicClient.listUploadVideoIdsPage({
+      uploadsPlaylistId: input.uploadsPlaylistId,
+      pageToken,
+    });
+    const uniquePageIds = uniqueTextValues(response?.videoIds ?? [], 'videoId');
+    const processedBefore = progress?.processedItems ?? 0;
+    const remaining = input.maxItems === null
+      ? uniquePageIds.length
+      : Math.max(0, input.maxItems - processedBefore);
+    const acceptedIds = uniquePageIds.slice(0, remaining);
+    const processedItems = processedBefore + acceptedIds.length;
+    if (pageToken) visitedPageTokens.add(pageToken);
+    const nextPageToken = optionalText(response?.nextPageToken);
+    if (nextPageToken && visitedPageTokens.has(nextPageToken)) {
+      throw transientError('YouTube uploads pagination returned a repeated pageToken', {
+        code: 'YOUTUBE_PAGINATION_TOKEN_REPEATED',
+        details: { pagesProcessed: (progress?.pagesProcessed ?? 0) + 1 },
+      });
+    }
+    const complete = nextPageToken === null
+      || (input.maxItems !== null && processedItems >= input.maxItems);
+    const pagesProcessed = (progress?.pagesProcessed ?? 0) + 1;
+    const expectedItems = complete
+      ? processedItems
+      : Math.max(processedItems, input.maxItems ?? processedItems);
+    await input.workStore.savePhase({
+      workKey: input.workKey,
+      phase: WORK_PHASES.CONTENT_INVENTORY,
+      state: {
+        pageToken: complete ? null : nextPageToken,
+        visitedPageTokens: [...visitedPageTokens],
+      },
+      expectedItems,
+      processedItems,
+      pagesProcessed,
+      chunksProcessed: 0,
+      complete,
+      unit: {
+        unitKey: `page:${pagesProcessed}`,
+        sequence: pagesProcessed - 1,
+        payload: { videoIds: acceptedIds },
+      },
+    });
+    progress = await input.workStore.loadPhase({
+      workKey: input.workKey,
+      phase: WORK_PHASES.CONTENT_INVENTORY,
+    });
+    input.onProgress({
+      stage: 'youtube_content_inventory_page',
+      page: pagesProcessed,
+      selectedVideos: processedItems,
+      complete,
+    });
+  }
+
+  const videoIds = [];
+  const seenVideoIds = new Set();
+  await visitWorkUnits({
+    workStore: input.workStore,
+    workKey: input.workKey,
+    phase: WORK_PHASES.CONTENT_INVENTORY,
+    visit: (unit) => {
+      for (const videoId of uniqueTextValues(
+        unit.payload.videoIds,
+        'content inventory videoIds',
+      )) {
+        if (!seenVideoIds.has(videoId)) {
+          seenVideoIds.add(videoId);
+          videoIds.push(videoId);
+        }
+      }
+    },
+  });
+  if (videoIds.length !== progress.processedItems) {
+    await input.workStore.resetPhase({ workKey: input.workKey, phase: WORK_PHASES.CONTENT_INVENTORY });
+    throw transientError('YouTube content inventory staging is incomplete', {
+      code: 'YOUTUBE_CONTENT_INVENTORY_INCOMPLETE',
+      details: {
+        expectedVideos: progress.processedItems,
+        stagedVideos: videoIds.length,
+      },
+    });
+  }
+  return Object.freeze({
+    videoIds: Object.freeze(videoIds),
+    pagesProcessed: progress.pagesProcessed,
+    resumedPages,
+    complete: true,
+  });
+}
+
+async function loadVideoResources(input) {
+  let progress = await input.workStore.loadPhase({
+    workKey: input.workKey,
+    phase: WORK_PHASES.CONTENT_RESOURCES,
+  });
+  const resumedChunks = progress?.chunksProcessed ?? 0;
+  const totalChunks = Math.ceil(input.videoIds.length / VIDEO_BATCH_SIZE);
+  if (!progress && input.videoIds.length === 0) {
+    await input.workStore.savePhase({
+      workKey: input.workKey,
+      phase: WORK_PHASES.CONTENT_RESOURCES,
+      state: { chunkIndex: 0 },
+      expectedItems: 0,
+      processedItems: 0,
+      pagesProcessed: 0,
+      chunksProcessed: 0,
+      complete: true,
+    });
+    progress = await input.workStore.loadPhase({
+      workKey: input.workKey,
+      phase: WORK_PHASES.CONTENT_RESOURCES,
+    });
+  }
+
+  while (!progress?.complete) {
+    const chunkIndex = nonNegativeInteger(progress?.state?.chunkIndex ?? 0, 'content chunkIndex');
+    if (chunkIndex >= totalChunks) {
+      throw transientError('YouTube content resource progress exceeded selected chunks', {
+        code: 'YOUTUBE_CONTENT_RESOURCE_SCOPE_INCOMPLETE',
+        details: { chunkIndex, totalChunks },
+      });
+    }
+    const selectedIds = input.videoIds.slice(
+      chunkIndex * VIDEO_BATCH_SIZE,
+      (chunkIndex + 1) * VIDEO_BATCH_SIZE,
+    );
+    await input.assertLockActive();
+    const videos = await input.publicClient.listVideos({ videoIds: selectedIds });
+    const returnedIds = uniqueTextValues(
+      requireArray(videos, 'YouTube video resources').map((video) => requireText(video?.id, 'video.id')),
+      'video.id',
+    );
+    if (returnedIds.some((videoId) => !selectedIds.includes(videoId))) {
+      throw permanentError('YouTube videos.list returned a resource outside the requested chunk', {
+        code: 'YOUTUBE_VIDEO_SCOPE_MISMATCH',
+        details: { selectedVideos: selectedIds.length, returnedVideos: returnedIds.length },
+      });
+    }
+    const processedItems = (progress?.processedItems ?? 0) + selectedIds.length;
+    const chunksProcessed = (progress?.chunksProcessed ?? 0) + 1;
+    const complete = chunksProcessed >= totalChunks;
+    await input.workStore.savePhase({
+      workKey: input.workKey,
+      phase: WORK_PHASES.CONTENT_RESOURCES,
+      state: { chunkIndex: chunkIndex + 1 },
+      expectedItems: input.videoIds.length,
+      processedItems,
+      pagesProcessed: (progress?.pagesProcessed ?? 0) + 1,
+      chunksProcessed,
+      complete,
+      unit: {
+        unitKey: `chunk:${chunkIndex}`,
+        sequence: chunkIndex,
+        payload: { videos },
+      },
+    });
+    progress = await input.workStore.loadPhase({
+      workKey: input.workKey,
+      phase: WORK_PHASES.CONTENT_RESOURCES,
+    });
+    input.onProgress({
+      stage: 'youtube_content_resource_chunk',
+      chunk: chunksProcessed,
+      totalChunks,
+      selectedVideos: processedItems,
+      returnedVideos: videos.length,
+      complete,
+    });
+  }
+
+  const byId = new Map();
+  await visitWorkUnits({
+    workStore: input.workStore,
+    workKey: input.workKey,
+    phase: WORK_PHASES.CONTENT_RESOURCES,
+    visit: (unit) => {
+      for (const video of requireArray(unit.payload.videos, 'content resource videos')) {
+        const videoId = requireText(video?.id, 'video.id');
+        if (byId.has(videoId)) {
+          throw permanentError('YouTube content resource staging contains a duplicate Video ID', {
+            code: 'YOUTUBE_VIDEO_DUPLICATE_RESOURCE',
+            details: { duplicateResources: 1 },
+          });
+        }
+        byId.set(videoId, video);
+      }
+    },
+  });
+  if (progress.processedItems !== input.videoIds.length) {
+    await input.workStore.resetPhase({ workKey: input.workKey, phase: WORK_PHASES.CONTENT_RESOURCES });
+    throw transientError('YouTube content resource scope is incomplete', {
+      code: 'YOUTUBE_CONTENT_RESOURCE_SCOPE_INCOMPLETE',
+      details: {
+        expectedVideos: input.videoIds.length,
+        queriedVideos: progress.processedItems,
+      },
+    });
+  }
+  return Object.freeze({
+    videoResources: Object.freeze([...byId.values()]),
+    pagesProcessed: progress.pagesProcessed,
+    chunksProcessed: progress.chunksProcessed,
+    resumedChunks,
+    complete: true,
   });
 }
 
@@ -239,6 +528,9 @@ async function reconcileAnalyticsRows(input) {
       startDate: input.startDate,
       endDate: input.endDate,
       observedStableKeys: observedStableKeys.size,
+      expectedVideoCount: input.analyticsCompleteness.totalTrackedVideos,
+      queriedVideoCount: input.analyticsCompleteness.successfullyQueriedVideos,
+      scopeComplete: input.analyticsCompleteness.complete,
     });
   }
 
@@ -291,18 +583,67 @@ async function reconcileAnalyticsRows(input) {
     observedStableKeys: observedStableKeys.size,
     previouslyObservedStableKeys: previouslyObservedStableKeys.size,
     missingStableKeys,
+    expectedVideoCount: input.analyticsCompleteness.totalTrackedVideos,
+    queriedVideoCount: input.analyticsCompleteness.successfullyQueriedVideos,
+    scopeComplete: input.analyticsCompleteness.complete,
   });
 }
 
 async function loadAnalyticsRows(input) {
   if (!input.ownerClient) throw permanentError('YouTube Analytics requires OAuth owner client', { code: 'YOUTUBE_ANALYTICS_OAUTH_REQUIRED' });
-  const rows = [];
-  const chunks = chunk(input.videoIds, 50);
-  for (const videoIds of chunks) {
-    let startIndex = 1;
-    for (let page = 1; page <= input.maxPages; page += 1) {
-      await input.assertLockActive();
-      const response = await input.ownerClient.queryAnalytics({
+  let progress = await input.workStore.loadPhase({
+    workKey: input.workKey,
+    phase: WORK_PHASES.ANALYTICS,
+  });
+  const resumedChunks = progress?.chunksProcessed ?? 0;
+  const resumedPages = progress?.pagesProcessed ?? 0;
+  const totalChunks = Math.ceil(input.videoIds.length / VIDEO_BATCH_SIZE);
+  if (!progress && input.videoIds.length === 0) {
+    await input.workStore.savePhase({
+      workKey: input.workKey,
+      phase: WORK_PHASES.ANALYTICS,
+      state: { chunkIndex: 0, startIndex: 1, pageInChunk: 1 },
+      expectedItems: 0,
+      processedItems: 0,
+      pagesProcessed: 0,
+      chunksProcessed: 0,
+      complete: true,
+    });
+    progress = await input.workStore.loadPhase({
+      workKey: input.workKey,
+      phase: WORK_PHASES.ANALYTICS,
+    });
+  }
+
+  while (!progress?.complete) {
+    const chunkIndex = nonNegativeInteger(progress?.state?.chunkIndex ?? 0, 'analytics chunkIndex');
+    const startIndex = positiveInteger(progress?.state?.startIndex ?? 1, 'analytics startIndex');
+    const pageInChunk = positiveInteger(progress?.state?.pageInChunk ?? 1, 'analytics pageInChunk');
+    if (chunkIndex >= totalChunks) {
+      await input.workStore.resetPhase({ workKey: input.workKey, phase: WORK_PHASES.ANALYTICS });
+      throw transientError('YouTube Analytics work scope ended before all tracked videos were queried', {
+        code: 'YOUTUBE_ANALYTICS_SCOPE_INCOMPLETE',
+        details: analyticsFailureDetails(progress, input.videoIds.length, totalChunks),
+      });
+    }
+    if (pageInChunk > input.maxPages) {
+      throw permanentError('YouTube Analytics pagination exceeded maxPages', {
+        code: 'YOUTUBE_ANALYTICS_PAGINATION_LIMIT',
+        details: {
+          maxPages: input.maxPages,
+          ...analyticsFailureDetails(progress, input.videoIds.length, totalChunks),
+        },
+      });
+    }
+
+    const videoIds = input.videoIds.slice(
+      chunkIndex * VIDEO_BATCH_SIZE,
+      (chunkIndex + 1) * VIDEO_BATCH_SIZE,
+    );
+    await input.assertLockActive();
+    let response;
+    try {
+      response = await input.ownerClient.queryAnalytics({
         channelId: input.channelId,
         startDate: input.startDate,
         endDate: input.endDate,
@@ -310,25 +651,120 @@ async function loadAnalyticsRows(input) {
         dimensions: ANALYTICS_DIMENSIONS,
         filters: `video==${videoIds.join(',')}`,
         sort: ANALYTICS_SORT,
-        maxResults: 200,
+        maxResults: ANALYTICS_PAGE_SIZE,
         startIndex,
       });
-      const mapped = mapYouTubeAnalyticsResponse(response, {
-        channelId: input.channelId,
-        fetchedAt: input.fetchedAt,
-      });
-      rows.push(...mapped);
-      if (mapped.length < 200) break;
-      startIndex += mapped.length;
-      if (page === input.maxPages) {
-        throw permanentError('YouTube Analytics pagination exceeded maxPages', {
-          code: 'YOUTUBE_ANALYTICS_PAGINATION_LIMIT',
-          details: { maxPages: input.maxPages },
-        });
-      }
+    } catch (error) {
+      throw analyticsProgressError(error, progress, input.videoIds.length, totalChunks);
     }
+    const mapped = mapYouTubeAnalyticsResponse(response, {
+      channelId: input.channelId,
+      fetchedAt: input.fetchedAt,
+    });
+    const chunkComplete = mapped.length < ANALYTICS_PAGE_SIZE;
+    const chunksProcessed = (progress?.chunksProcessed ?? 0) + (chunkComplete ? 1 : 0);
+    const processedItems = (progress?.processedItems ?? 0) + (chunkComplete ? videoIds.length : 0);
+    const pagesProcessed = (progress?.pagesProcessed ?? 0) + 1;
+    const complete = chunkComplete && chunksProcessed >= totalChunks;
+    const nextState = chunkComplete
+      ? { chunkIndex: chunkIndex + 1, startIndex: 1, pageInChunk: 1 }
+      : {
+        chunkIndex,
+        startIndex: startIndex + mapped.length,
+        pageInChunk: pageInChunk + 1,
+      };
+    await input.workStore.savePhase({
+      workKey: input.workKey,
+      phase: WORK_PHASES.ANALYTICS,
+      state: nextState,
+      expectedItems: input.videoIds.length,
+      processedItems,
+      pagesProcessed,
+      chunksProcessed,
+      complete,
+      unit: {
+        unitKey: `chunk:${chunkIndex}:start:${startIndex}`,
+        sequence: pagesProcessed - 1,
+        payload: {
+          rows: mapped,
+          queriedVideoIds: chunkComplete ? videoIds : [],
+        },
+      },
+    });
+    progress = await input.workStore.loadPhase({
+      workKey: input.workKey,
+      phase: WORK_PHASES.ANALYTICS,
+    });
+    input.onProgress({
+      stage: 'youtube_analytics_page',
+      page: pagesProcessed,
+      chunk: chunksProcessed,
+      totalChunks,
+      successfullyQueriedVideos: processedItems,
+      totalTrackedVideos: input.videoIds.length,
+      complete,
+    });
   }
-  return rows;
+
+  const rows = [];
+  const stableKeys = new Set();
+  const queriedVideoIds = new Set();
+  await visitWorkUnits({
+    workStore: input.workStore,
+    workKey: input.workKey,
+    phase: WORK_PHASES.ANALYTICS,
+    visit: (unit) => {
+      for (const row of requireArray(unit.payload.rows, 'analytics rows')) {
+        const stableKey = requireText(row?.raw_analytics_daily_key, 'raw_analytics_daily_key');
+        if (stableKeys.has(stableKey)) {
+          throw permanentError('YouTube Analytics pagination returned a duplicate stable row', {
+            code: 'YOUTUBE_ANALYTICS_DUPLICATE_ROW',
+            details: { duplicateRows: 1 },
+          });
+        }
+        stableKeys.add(stableKey);
+        rows.push(row);
+      }
+      for (const videoId of requireArray(unit.payload.queriedVideoIds, 'queriedVideoIds')) {
+        queriedVideoIds.add(requireText(videoId, 'queriedVideoId'));
+      }
+    },
+  });
+  const expectedVideoIds = new Set(input.videoIds);
+  const missingVideoCount = input.videoIds.filter((videoId) => !queriedVideoIds.has(videoId)).length;
+  const unexpectedVideoCount = [...queriedVideoIds].filter((videoId) => !expectedVideoIds.has(videoId)).length;
+  const scopeComplete = progress.complete
+    && progress.processedItems === input.videoIds.length
+    && missingVideoCount === 0
+    && unexpectedVideoCount === 0;
+  if (!scopeComplete) {
+    await input.workStore.resetPhase({ workKey: input.workKey, phase: WORK_PHASES.ANALYTICS });
+    throw transientError('YouTube Analytics tracked-video scope is incomplete', {
+      code: 'YOUTUBE_ANALYTICS_SCOPE_INCOMPLETE',
+      details: {
+        ...analyticsFailureDetails(progress, input.videoIds.length, totalChunks),
+        missingVideoCount,
+        unexpectedVideoCount,
+      },
+    });
+  }
+  return Object.freeze({
+    rows: Object.freeze(rows),
+    completeness: Object.freeze({
+      status: 'complete',
+      complete: true,
+      totalTrackedVideos: input.videoIds.length,
+      selectedVideos: input.videoIds.length,
+      successfullyQueriedVideos: queriedVideoIds.size,
+      skippedVideos: 0,
+      failedVideos: 0,
+      pagesProcessed: progress.pagesProcessed,
+      chunksProcessed: progress.chunksProcessed,
+      totalChunks,
+      resumedPages,
+      resumedChunks,
+    }),
+  });
 }
 
 async function assertOwnerChannel({ ownerClient, channelId }) {
@@ -402,6 +838,16 @@ function decideSyncMode(input) {
   return Object.freeze({ requested, mode: 'incremental', reason: 'recent_upload_window', fullSnapshot: false });
 }
 
+function resolveTrackedAnalyticsVideoIds(input) {
+  const trackedIds = [];
+  for (const state of input.priorStates) {
+    const videoId = optionalText(state?.externalContentId);
+    if (videoId) trackedIds.push(videoId);
+  }
+  for (const videoId of input.currentVideoIds) trackedIds.push(requireText(videoId, 'videoId'));
+  return Object.freeze([...new Set(trackedIds)].sort());
+}
+
 function buildResult(input) {
   const summaries = Object.fromEntries(Object.entries(input.plans).map(([name, plan]) => [name, Object.freeze({
     createRows: plan.createRows.length,
@@ -446,8 +892,21 @@ function buildResult(input) {
     }),
     sourceSummary: Object.freeze({
       playlistVideoIds: input.videoIds.length,
+      contentInventoryPages: input.inventory.pagesProcessed,
+      contentInventoryResumedPages: input.inventory.resumedPages,
       videoResources: input.videoResources.length,
+      contentResourceChunks: input.resourceLoad.chunksProcessed,
+      contentResourceResumedChunks: input.resourceLoad.resumedChunks,
       missingVideos: input.missingIds.length,
+      analyticsTrackedVideoIds: input.analyticsVideoIds.length,
+      analyticsSelectedVideos: input.analyticsLoad.completeness.selectedVideos,
+      analyticsSuccessfullyQueriedVideos: input.analyticsLoad.completeness.successfullyQueriedVideos,
+      analyticsSkippedVideos: input.analyticsLoad.completeness.skippedVideos,
+      analyticsFailedVideos: input.analyticsLoad.completeness.failedVideos,
+      analyticsPagesProcessed: input.analyticsLoad.completeness.pagesProcessed,
+      analyticsChunksProcessed: input.analyticsLoad.completeness.chunksProcessed,
+      analyticsTotalChunks: input.analyticsLoad.completeness.totalChunks,
+      analyticsCompletenessStatus: input.analyticsLoad.completeness.status,
       analyticsRows: input.analyticsRows.length,
       missingAnalyticsRows: input.analyticsReconciliation.missingStableKeys.length,
     }),
@@ -459,6 +918,11 @@ function buildResult(input) {
     accounts: output('accounts'),
     tables: Object.freeze(summaries),
     checkpointSaved: input.checkpointSaved,
+    resumableWork: Object.freeze({
+      resumed: input.workResumed,
+      complete: true,
+      cleared: true,
+    }),
   });
 }
 
@@ -469,6 +933,9 @@ function createAnalyticsReconciliation(input = {}) {
     endDate: input.endDate ?? null,
     observedStableKeys: Number(input.observedStableKeys ?? 0),
     previouslyObservedStableKeys: Number(input.previouslyObservedStableKeys ?? 0),
+    expectedVideoCount: Number(input.expectedVideoCount ?? 0),
+    queriedVideoCount: Number(input.queriedVideoCount ?? 0),
+    scopeComplete: input.scopeComplete === true,
     missingStableKeys: Object.freeze([...(input.missingStableKeys ?? [])]),
     policy: 'retain_prior_row_emit_reconciliation_warning',
   });
@@ -481,8 +948,94 @@ function emptyAnalyticsReconciliation() {
     endDate: null,
     observedStableKeys: 0,
     previouslyObservedStableKeys: 0,
+    expectedVideoCount: 0,
+    queriedVideoCount: 0,
+    scopeComplete: true,
     missingStableKeys: Object.freeze([]),
     policy: 'not_enabled',
+  });
+}
+
+function emptyAnalyticsLoad() {
+  return Object.freeze({
+    rows: Object.freeze([]),
+    completeness: Object.freeze({
+      status: 'not_enabled',
+      complete: true,
+      totalTrackedVideos: 0,
+      selectedVideos: 0,
+      successfullyQueriedVideos: 0,
+      skippedVideos: 0,
+      failedVideos: 0,
+      pagesProcessed: 0,
+      chunksProcessed: 0,
+      totalChunks: 0,
+      resumedPages: 0,
+      resumedChunks: 0,
+    }),
+  });
+}
+
+async function visitWorkUnits(input) {
+  const visit = typeof input.visit === 'function' ? input.visit : () => undefined;
+  let afterSequence = 0;
+  for (let page = 1; page <= WORK_UNIT_MAX_PAGES; page += 1) {
+    const result = await input.workStore.listPhaseUnits({
+      workKey: input.workKey,
+      phase: input.phase,
+      afterSequence,
+      limit: WORK_UNIT_READ_LIMIT,
+    });
+    const pageUnits = requireArray(result?.units, 'resumable work units');
+    for (const unit of pageUnits) await visit(unit);
+    if (result?.nextSequence === null || result?.nextSequence === undefined) {
+      return;
+    }
+    const nextSequence = nonNegativeInteger(result.nextSequence, 'nextSequence');
+    if (nextSequence <= afterSequence) {
+      throw transientError('Resumable work unit pagination did not advance', {
+        code: 'D1_SYNC_WORK_PAGINATION_STALLED',
+        details: { phase: input.phase, page },
+      });
+    }
+    afterSequence = nextSequence;
+  }
+  throw transientError('Resumable work unit pagination exceeded max pages', {
+    code: 'D1_SYNC_WORK_PAGINATION_LIMIT',
+    details: { phase: input.phase, maxPages: WORK_UNIT_MAX_PAGES },
+  });
+}
+
+function analyticsFailureDetails(progress, totalTrackedVideos, totalChunks) {
+  const successfullyQueriedVideos = Number(progress?.processedItems ?? 0);
+  return {
+    analyticsCompleteness: {
+      status: 'partial',
+      complete: false,
+      totalTrackedVideos,
+      selectedVideos: totalTrackedVideos,
+      successfullyQueriedVideos,
+      skippedVideos: 0,
+      failedVideos: Math.max(0, totalTrackedVideos - successfullyQueriedVideos),
+      pagesProcessed: Number(progress?.pagesProcessed ?? 0),
+      chunksProcessed: Number(progress?.chunksProcessed ?? 0),
+      totalChunks,
+    },
+  };
+}
+
+function analyticsProgressError(error, progress, totalTrackedVideos, totalChunks) {
+  const factory = error?.retryable === true ? transientError : permanentError;
+  const errorDetails = error?.details && typeof error.details === 'object' && !Array.isArray(error.details)
+    ? error.details
+    : {};
+  return factory(error instanceof Error ? error.message : 'YouTube Analytics query failed', {
+    code: error?.code ?? 'YOUTUBE_ANALYTICS_QUERY_FAILED',
+    cause: error,
+    details: {
+      ...errorDetails,
+      ...analyticsFailureDetails(progress, totalTrackedVideos, totalChunks),
+    },
   });
 }
 
@@ -522,11 +1075,17 @@ function requireSyncEngine(value) {
   return value;
 }
 function requireYouTubeClient(value, fieldName) {
-  for (const method of ['getChannel', 'listUploadVideoIds', 'listVideos']) if (typeof value?.[method] !== 'function') throw new TypeError(`YouTube sync requires ${fieldName}.${method}`);
+  for (const method of ['getChannel', 'listUploadVideoIdsPage', 'listVideos']) if (typeof value?.[method] !== 'function') throw new TypeError(`YouTube sync requires ${fieldName}.${method}`);
   return value;
 }
 function requireStateStore(value) {
   for (const method of ['loadCheckpoint', 'saveCheckpoint']) if (typeof value?.[method] !== 'function') throw new TypeError(`YouTube sync requires incrementalStateStore.${method}`);
+  return value;
+}
+function requireWorkStore(value) {
+  for (const method of ['beginWork', 'loadPhase', 'savePhase', 'listPhaseUnits', 'resetPhase', 'completeWork']) {
+    if (typeof value?.[method] !== 'function') throw new TypeError(`YouTube sync requires resumableWorkStore.${method}`);
+  }
   return value;
 }
 function requireTables(value) {
@@ -550,10 +1109,17 @@ function positiveInteger(value, fieldName) {
   if (!Number.isSafeInteger(number) || number <= 0) throw new TypeError(`${fieldName} must be positive`);
   return number;
 }
-function chunk(values, size) {
-  const result = [];
-  for (let index = 0; index < values.length; index += size) result.push(values.slice(index, index + size));
-  return result;
+function nonNegativeInteger(value, fieldName) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number < 0) throw new TypeError(`${fieldName} must be non-negative`);
+  return number;
+}
+function requireArray(value, fieldName) {
+  if (!Array.isArray(value)) throw new TypeError(`${fieldName} must be an array`);
+  return value;
+}
+function uniqueTextValues(values, fieldName) {
+  return [...new Set(requireArray(values, fieldName).map((value) => requireText(value, fieldName)))];
 }
 function dedupeBy(values, readKey) {
   return [...new Map(values.map((value) => [readKey(value), value])).values()];

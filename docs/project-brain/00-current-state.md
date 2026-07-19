@@ -6,6 +6,8 @@ Official baseline: `v0.10.2-multi-channel-foundation-approved`
 
 Clean candidate: `v0.11.0` — YouTube Organic DEV active, deployed, and smoke-tested
 
+Working delta: YouTube large-account release blocker สำหรับ 837 videos เพิ่ม durable D1 page/chunk resume และ exact Analytics completeness. Source implementation ผ่าน focused large fixture แล้ว แต่ migration `0004_resumable_sync_work.sql` และ DEV redeploy/UAT ยังไม่รัน; prior DEV deployment ยังไม่ถือว่าปิด blocker นี้.
+
 ## Multi-channel foundation
 
 - YouTube Organic source contract, RAW Lark Blueprint, client, adapter, normalization and destination path are active in the verified DEV environment.
@@ -20,6 +22,7 @@ Clean candidate: `v0.11.0` — YouTube Organic DEV active, deployed, and smoke-t
 - Live OAuth read-only identity fault พบและแก้ missing Operational classification เป็น Permanent `YOUTUBE_CHANNEL_IDENTITY_MISMATCH`; missing/quota/rate-limit/lease/persistence contracts ผ่าน deterministic production-path tests
 - DEV Worker version `f46c0c7f-0119-4f78-8e8d-2d37e17823a5` เปิด normal YouTube, Owner Analytics และ dedicated Cron แล้ว; Data API รันทุก 6 ชั่วโมง ส่วน Analytics รันวันละครั้งพร้อม 7-day completed-Pacific overlap.
 - Active Data API และ Owner Analytics smoke tests ใช้ `sync_type=organic_sync` และผ่านแบบ success/retry 0; Analytics สร้าง RAW fact จริง 1 แถว, active cursor 1, source states 2, active lock 0 และ open YouTube alert 0. Production ยังคงปิด.
+- Large-account patch แยก Content recent 100 จาก Analytics tracked 837, เดิน Full 17 pages, query Analytics 17 chunks, resume page/chunk ด้วย `sync_work_*`, ตรวจ exact queried-ID set และเก็บ completeness counters ใน D1 Sync Log details.
 
 ## Shared Work/Codex handoff
 
@@ -90,4 +93,4 @@ Clients should not use RAW tables, `MKT_Content_Daily`, Sync Log, System Alerts,
 
 ## Next implementation workstream
 
-YouTube Organic DEV ปิดงาน logic/UAT/activation แล้ว. เฝ้าดู scheduled run และ Provider faults ตามธรรมชาติเป็นงาน Operations; Meta/WooCommerce/Chatwoot/Ads ยังเป็น workstream ถัดไปและต้องผ่าน Data-model/Access/UAT แยก. See `10-next-actions.md`.
+YouTube Organic DEV รุ่นเดิมผ่าน activation แต่ large-account patch ยังต้อง Apply migration/DEV UAT ก่อนปิด Release blocker. Meta/WooCommerce/Chatwoot/Ads ยังเป็น workstream ถัดไปและต้องผ่าน Data-model/Access/UAT แยก. See `10-next-actions.md`.

@@ -70,6 +70,14 @@ MKT_Content_Daily upsert by content_daily_key
 - Target ROAS is not Actual ROAS.
 - Unique viewers is not automatically Reach.
 
+## D1 operational large-account state
+
+- `sync_work_runs`: identity/fingerprint ของ Queue work ที่ resume ได้
+- `sync_work_phases`: cursor/state และ expected/processed/pages/chunks/completeness ต่อ phase
+- `sync_work_units`: staged payload ต่อ Source page, resource chunk หรือ Analytics page
+- ตารางเหล่านี้เป็น Temporary operational staging และลบหลัง Business writes + `sync_cursors`/`source_record_states` commit สำเร็จ
+- ห้ามใช้ work staging แทน RAW/Canonical/Daily data model หรือแสดงใน Client dashboard
+
 
 ## Canva-style report additions
 

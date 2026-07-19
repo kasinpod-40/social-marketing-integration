@@ -1,8 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { TableSyncEngine } from '../../packages/sync-engine/src/table-sync-engine.js';
+import { InMemoryResumableWorkStore } from '../../packages/sync-engine/src/in-memory-resumable-work-store.js';
 import { syncYouTubeOrganicToLark } from '../../packages/application/src/use-cases/sync-youtube-organic-to-lark.js';
 import { YOUTUBE_ANALYTICS_COLUMNS } from '../../packages/connectors/src/youtube/youtube-raw.adapter.js';
+import { transientError } from '../../packages/shared/src/errors/runtime-error.js';
 
 const TABLES = Object.freeze({
   mktAccounts: 'accounts', rawYouTubeChannels: 'channels', rawYouTubeVideos: 'videos',
@@ -27,15 +29,19 @@ const videos = ['A', 'B'].map((suffix, index) => ({
 test('writes RAW, canonical, account-last and checkpoint idempotently', async () => {
   const repository = createRepository();
   const stateStore = createStateStore();
+  const resumableWorkStore = new InMemoryResumableWorkStore();
   const publicClient = {
     async getChannel() { return CHANNEL; },
-    async listUploadVideoIds() { return videos.map((video) => video.id); },
+    async listUploadVideoIdsPage() {
+      return { videoIds: videos.map((video) => video.id), nextPageToken: null };
+    },
     async listVideos() { return videos; },
   };
   const base = {
     repository,
     syncEngine: new TableSyncEngine(),
     incrementalStateStore: stateStore,
+    resumableWorkStore,
     publicClient,
     syncRunId: 'run-1', channelId: 'channel_A', accountKey: 'youtube_dev',
     customerProfile: 'dev_ft_pumkin', cursorKey: 'youtube-lock', metricDate: '2026-07-15',
@@ -74,9 +80,10 @@ test('full reconciliation marks prior missing videos without zeroing prior metri
   });
   const result = await syncYouTubeOrganicToLark({
     repository, syncEngine: new TableSyncEngine(), incrementalStateStore: stateStore,
+    resumableWorkStore: new InMemoryResumableWorkStore(),
     publicClient: {
       async getChannel() { return CHANNEL; },
-      async listUploadVideoIds() { return []; },
+      async listUploadVideoIdsPage() { return { videoIds: [], nextPageToken: null }; },
       async listVideos() { return []; },
     },
     syncRunId: 'run-missing', channelId: 'channel_A', accountKey: 'youtube_dev',
@@ -97,9 +104,12 @@ test('creates a complete reconciliation RAW row when playlist id has no videos.l
   const repository = createRepository();
   const result = await syncYouTubeOrganicToLark({
     repository, syncEngine: new TableSyncEngine(), incrementalStateStore: createStateStore(),
+    resumableWorkStore: new InMemoryResumableWorkStore(),
     publicClient: {
       async getChannel() { return CHANNEL; },
-      async listUploadVideoIds() { return ['video_unavailable']; },
+      async listUploadVideoIdsPage() {
+        return { videoIds: ['video_unavailable'], nextPageToken: null };
+      },
       async listVideos() { return []; },
     },
     syncRunId: 'run-unavailable', channelId: 'channel_A', accountKey: 'youtube_dev',
@@ -144,13 +154,17 @@ test('retains a previously observed Analytics key that disappears on re-fetch an
     ['2026-07-15', 'video_A', 12, 3, 1, 0, 6, 31, 51],
   ];
   const stateStore = createStateStore();
+  const resumableWorkStore = new InMemoryResumableWorkStore();
   const input = {
     repository,
     syncEngine: new TableSyncEngine(),
     incrementalStateStore: stateStore,
+    resumableWorkStore,
     publicClient: {
       async getChannel() { return CHANNEL; },
-      async listUploadVideoIds() { return videos.map((video) => video.id); },
+      async listUploadVideoIdsPage() {
+        return { videoIds: videos.map((video) => video.id), nextPageToken: null };
+      },
       async listVideos() { return videos; },
     },
     ownerClient: {
@@ -201,6 +215,349 @@ test('retains a previously observed Analytics key that disappears on re-fetch an
   assert.equal(rerun.warnings[0].code, 'YOUTUBE_ANALYTICS_RECONCILIATION_REQUIRED');
 });
 
+test('incremental Content reads 100 recent videos while Analytics queries all 837 tracked videos', async () => {
+  const allVideos = Array.from({ length: 837 }, (_, index) => ({
+    id: `video_${String(index).padStart(3, '0')}`,
+    snippet: {
+      channelId: 'channel_A',
+      title: `Tracked video ${index}`,
+      description: 'Tracked lesson',
+      publishedAt: '2026-07-01T00:00:00Z',
+    },
+    contentDetails: { duration: 'PT1M' },
+    statistics: { viewCount: String(index + 1), likeCount: '2', commentCount: '1' },
+    status: { privacyStatus: 'public' },
+  }));
+  const recentVideos = allVideos.slice(-100);
+  const oldVideoId = allVideos[0].id;
+  const missingStableKey = `youtube:channel_A:${oldVideoId}:2026-07-14`;
+  const repository = createRepository({
+    analytics: [{
+      raw_analytics_daily_key: missingStableKey,
+      source_metric_date: '2026-07-14',
+      channel_id: 'channel_A',
+      video_id: oldVideoId,
+      views: 99,
+      fetched_at: 500,
+    }],
+  });
+  const stateStore = createStateStore({
+    cursor: { lastFullSyncAt: 4_000, incrementalRunCount: 1 },
+    recordStates: allVideos.map((video) => ({
+      sourceRecordId: video.id,
+      externalContentId: video.id,
+      sourceHash: `hash:${video.id}`,
+    })),
+  });
+  const uploadCalls = [];
+  const analyticsCalls = [];
+  const resumableWorkStore = new InMemoryResumableWorkStore();
+  const publicClient = {
+    async getChannel() {
+      return {
+        ...CHANNEL,
+        statistics: { ...CHANNEL.statistics, videoCount: String(allVideos.length) },
+      };
+    },
+    async listUploadVideoIdsPage(input) {
+      uploadCalls.push(input);
+      const offset = input.pageToken ? Number(input.pageToken) : 0;
+      const pageIds = recentVideos.slice(offset, offset + 50).map((video) => video.id);
+      const nextOffset = offset + pageIds.length;
+      return {
+        videoIds: pageIds,
+        nextPageToken: nextOffset < recentVideos.length ? String(nextOffset) : null,
+      };
+    },
+    async listVideos({ videoIds }) {
+      const requested = new Set(videoIds);
+      return recentVideos.filter((video) => requested.has(video.id));
+    },
+  };
+  const ownerClient = {
+    async getChannel() { return CHANNEL; },
+    async queryAnalytics(input) {
+      analyticsCalls.push(input);
+      return {
+        columnHeaders: YOUTUBE_ANALYTICS_COLUMNS.map((name) => ({ name })),
+        rows: [],
+      };
+    },
+  };
+  const input = {
+    repository,
+    syncEngine: new TableSyncEngine(),
+    incrementalStateStore: stateStore,
+    resumableWorkStore,
+    publicClient,
+    ownerClient,
+    syncRunId: 'run-incremental-analytics',
+    channelId: 'channel_A',
+    accountKey: 'youtube_dev',
+    customerProfile: 'dev_ft_pumkin',
+    cursorKey: 'youtube-lock',
+    metricDate: '2026-07-15',
+    syncMode: 'auto',
+    recentVideoLimit: 100,
+    analyticsEnabled: true,
+    analyticsStartDate: '2026-07-14',
+    analyticsEndDate: '2026-07-14',
+    now: () => 5_000,
+    tables: TABLES,
+  };
+
+  const result = await syncYouTubeOrganicToLark(input);
+  const queriedVideoIds = analyticsCalls.flatMap((call) => call.filters
+    .replace(/^video==/u, '')
+    .split(','));
+
+  assert.equal(result.incremental.mode, 'incremental');
+  assert.deepEqual(uploadCalls, [
+    { uploadsPlaylistId: 'UU_A', pageToken: null },
+    { uploadsPlaylistId: 'UU_A', pageToken: '50' },
+  ]);
+  assert.equal(result.sourceSummary.playlistVideoIds, 100);
+  assert.equal(result.sourceSummary.contentInventoryPages, 2);
+  assert.equal(result.sourceSummary.analyticsTrackedVideoIds, 837);
+  assert.equal(result.sourceSummary.analyticsSelectedVideos, 837);
+  assert.equal(result.sourceSummary.analyticsSuccessfullyQueriedVideos, 837);
+  assert.equal(result.sourceSummary.analyticsFailedVideos, 0);
+  assert.equal(result.sourceSummary.analyticsChunksProcessed, 17);
+  assert.equal(result.sourceSummary.analyticsCompletenessStatus, 'complete');
+  assert.equal(analyticsCalls.length, 17);
+  assert.equal(new Set(queriedVideoIds).size, 837);
+  assert.equal(queriedVideoIds.includes(oldVideoId), true);
+  assert.deepEqual(result.reconciliation.missingAnalyticsStableKeys, [missingStableKey]);
+  assert.equal(result.warnings[0].code, 'YOUTUBE_ANALYTICS_RECONCILIATION_REQUIRED');
+
+  analyticsCalls.length = 0;
+  const rerun = await syncYouTubeOrganicToLark({
+    ...input,
+    syncRunId: 'run-incremental-analytics-rerun',
+    syncEngine: new TableSyncEngine(),
+  });
+  assert.equal(rerun.sourceSummary.analyticsTrackedVideoIds, 837);
+  assert.equal(analyticsCalls.length, 17);
+  assert.deepEqual(rerun.reconciliation.missingAnalyticsStableKeys, [missingStableKey]);
+});
+
+test('initial Full backfill resumes playlist pagination and traverses all 837 videos without duplicates', async () => {
+  const allVideos = createYoutubeVideos(837);
+  const repository = createRepository();
+  const stateStore = createStateStore();
+  const resumableWorkStore = new InMemoryResumableWorkStore();
+  const publicClient = createPagedPublicClient(allVideos, { failPageTokenOnce: '450' });
+  const base = {
+    repository,
+    syncEngine: new TableSyncEngine(),
+    incrementalStateStore: stateStore,
+    resumableWorkStore,
+    publicClient,
+    workKey: 'youtube-message-full-837',
+    syncRunId: 'run-full-837-attempt-1',
+    channelId: 'channel_A',
+    accountKey: 'youtube_dev',
+    customerProfile: 'dev_ft_pumkin',
+    cursorKey: 'youtube-lock',
+    metricDate: '2026-07-15',
+    syncMode: 'full',
+    now: () => 6_000,
+    tables: TABLES,
+  };
+
+  await assert.rejects(
+    syncYouTubeOrganicToLark(base),
+    (error) => error?.code === 'YOUTUBE_TRANSIENT_API_ERROR' && error.retryable === true,
+  );
+  assert.equal(repository.count('content'), 0);
+  const callsBeforeRetry = publicClient.uploadCalls.length;
+
+  const result = await syncYouTubeOrganicToLark({
+    ...base,
+    syncRunId: 'run-full-837-attempt-2',
+    syncEngine: new TableSyncEngine(),
+  });
+
+  assert.equal(publicClient.uploadCalls[callsBeforeRetry].pageToken, '450');
+  assert.equal(result.sourceSummary.playlistVideoIds, 837);
+  assert.equal(result.sourceSummary.contentInventoryPages, 17);
+  assert.equal(result.sourceSummary.contentInventoryResumedPages, 9);
+  assert.equal(result.sourceSummary.contentResourceChunks, 17);
+  assert.equal(result.resumableWork.resumed, true);
+  assert.equal(stateStore.saved.at(-1).records.length, 837);
+  assert.equal(repository.count('videos'), 837);
+  assert.equal(repository.count('content'), 837);
+  assert.equal(repository.count('daily'), 837);
+
+  const rerun = await syncYouTubeOrganicToLark({
+    ...base,
+    workKey: 'youtube-message-full-837-rerun',
+    syncRunId: 'run-full-837-rerun',
+    syncEngine: new TableSyncEngine(),
+  });
+  assert.equal(rerun.tables.rawVideos.result.created, 0);
+  assert.equal(rerun.tables.content.result.created, 0);
+  assert.equal(rerun.tables.dailySnapshots.result.created, 0);
+  assert.equal(repository.count('videos'), 837);
+  assert.equal(repository.count('content'), 837);
+  assert.equal(repository.count('daily'), 837);
+});
+
+test('Analytics retry resumes at the failed chunk and full rerun keeps 837 stable rows', async () => {
+  const allVideos = createYoutubeVideos(837);
+  const recentVideos = allVideos.slice(-100);
+  const repository = createRepository();
+  const stateStore = createStateStore({
+    cursor: { lastFullSyncAt: 6_000, incrementalRunCount: 1 },
+    recordStates: allVideos.map((video) => ({
+      sourceRecordId: video.id,
+      externalContentId: video.id,
+      sourceHash: `hash:${video.id}`,
+    })),
+  });
+  const resumableWorkStore = new InMemoryResumableWorkStore();
+  const publicClient = createPagedPublicClient(recentVideos);
+  const successfulFilters = [];
+  let analyticsCallCount = 0;
+  let failOnce = true;
+  const ownerClient = {
+    async getChannel() { return CHANNEL; },
+    async queryAnalytics(input) {
+      analyticsCallCount += 1;
+      if (failOnce && analyticsCallCount === 6) {
+        failOnce = false;
+        throw transientError('Synthetic Analytics chunk failure', {
+          code: 'YOUTUBE_TRANSIENT_API_ERROR',
+        });
+      }
+      const selectedIds = input.filters.replace(/^video==/u, '').split(',');
+      successfulFilters.push(selectedIds);
+      return {
+        columnHeaders: YOUTUBE_ANALYTICS_COLUMNS.map((name) => ({ name })),
+        rows: selectedIds.map((videoId) => [
+          '2026-07-14', videoId, 1, 1, 1, 1, 1, 1, 1,
+        ]),
+      };
+    },
+  };
+  const base = {
+    repository,
+    syncEngine: new TableSyncEngine(),
+    incrementalStateStore: stateStore,
+    resumableWorkStore,
+    publicClient,
+    ownerClient,
+    workKey: 'youtube-message-analytics-retry',
+    syncRunId: 'run-analytics-attempt-1',
+    channelId: 'channel_A',
+    accountKey: 'youtube_dev',
+    customerProfile: 'dev_ft_pumkin',
+    cursorKey: 'youtube-lock',
+    metricDate: '2026-07-15',
+    syncMode: 'auto',
+    recentVideoLimit: 100,
+    analyticsEnabled: true,
+    analyticsStartDate: '2026-07-14',
+    analyticsEndDate: '2026-07-14',
+    now: () => 7_000,
+    tables: TABLES,
+  };
+
+  await assert.rejects(
+    syncYouTubeOrganicToLark(base),
+    (error) => error?.code === 'YOUTUBE_TRANSIENT_API_ERROR'
+      && error.details.analyticsCompleteness.totalTrackedVideos === 837
+      && error.details.analyticsCompleteness.successfullyQueriedVideos === 250
+      && error.details.analyticsCompleteness.failedVideos === 587,
+  );
+  assert.equal(repository.count('analytics'), 0);
+  const uploadCallsBeforeRetry = publicClient.uploadCalls.length;
+  const videoCallsBeforeRetry = publicClient.videoCalls.length;
+
+  const recovered = await syncYouTubeOrganicToLark({
+    ...base,
+    syncRunId: 'run-analytics-attempt-2',
+    syncEngine: new TableSyncEngine(),
+  });
+  assert.equal(publicClient.uploadCalls.length, uploadCallsBeforeRetry);
+  assert.equal(publicClient.videoCalls.length, videoCallsBeforeRetry);
+  assert.equal(analyticsCallCount, 18);
+  assert.equal(new Set(successfulFilters.flat()).size, 837);
+  assert.equal(successfulFilters.flat().length, 837);
+  assert.equal(recovered.sourceSummary.analyticsSuccessfullyQueriedVideos, 837);
+  assert.equal(recovered.sourceSummary.analyticsChunksProcessed, 17);
+  assert.equal(recovered.sourceSummary.analyticsCompletenessStatus, 'complete');
+  assert.equal(recovered.tables.rawAnalytics.result.created, 837);
+  assert.equal(repository.count('analytics'), 837);
+
+  const rerun = await syncYouTubeOrganicToLark({
+    ...base,
+    workKey: 'youtube-message-analytics-rerun',
+    syncRunId: 'run-analytics-rerun',
+    syncEngine: new TableSyncEngine(),
+  });
+  assert.equal(rerun.tables.rawAnalytics.result.created, 0);
+  assert.equal(rerun.tables.rawAnalytics.result.skipped, 837);
+  assert.equal(repository.count('analytics'), 837);
+});
+
+test('Analytics completeness guard detects a missing queried-video marker before Lark writes', async () => {
+  const allVideos = createYoutubeVideos(101);
+  const repository = createRepository();
+  const stateStore = createStateStore({
+    cursor: { lastFullSyncAt: 7_000, incrementalRunCount: 1 },
+    recordStates: allVideos.map((video) => ({
+      sourceRecordId: video.id,
+      externalContentId: video.id,
+      sourceHash: `hash:${video.id}`,
+    })),
+  });
+  const baseWorkStore = new InMemoryResumableWorkStore();
+  const corruptingWorkStore = createCorruptingAnalyticsScopeStore(baseWorkStore);
+  const publicClient = createPagedPublicClient(allVideos.slice(-100));
+  const ownerClient = {
+    async getChannel() { return CHANNEL; },
+    async queryAnalytics() {
+      return {
+        columnHeaders: YOUTUBE_ANALYTICS_COLUMNS.map((name) => ({ name })),
+        rows: [],
+      };
+    },
+  };
+
+  await assert.rejects(
+    syncYouTubeOrganicToLark({
+      repository,
+      syncEngine: new TableSyncEngine(),
+      incrementalStateStore: stateStore,
+      resumableWorkStore: corruptingWorkStore,
+      publicClient,
+      ownerClient,
+      workKey: 'youtube-message-scope-corruption',
+      syncRunId: 'run-scope-corruption',
+      channelId: 'channel_A',
+      accountKey: 'youtube_dev',
+      customerProfile: 'dev_ft_pumkin',
+      cursorKey: 'youtube-lock',
+      metricDate: '2026-07-15',
+      syncMode: 'auto',
+      recentVideoLimit: 100,
+      analyticsEnabled: true,
+      analyticsStartDate: '2026-07-14',
+      analyticsEndDate: '2026-07-14',
+      now: () => 8_000,
+      tables: TABLES,
+    }),
+    (error) => error?.code === 'YOUTUBE_ANALYTICS_SCOPE_INCOMPLETE'
+      && error.retryable === true
+      && error.details.missingVideoCount === 1
+      && error.details.analyticsCompleteness.totalTrackedVideos === 101,
+  );
+  assert.equal(repository.count('channels'), 0);
+  assert.equal(repository.count('analytics'), 0);
+  assert.deepEqual(baseWorkStore.resetEvents.map((event) => event.phase), ['youtube_owner_analytics']);
+});
+
 function createStateStore(checkpoint = null) {
   return {
     checkpoint,
@@ -208,9 +565,19 @@ function createStateStore(checkpoint = null) {
     async loadCheckpoint() { return this.checkpoint; },
     async saveCheckpoint(value) {
       this.saved.push(value);
+      const recordStatesById = new Map((value.fullSnapshot
+        ? []
+        : (this.checkpoint?.recordStates ?? []))
+        .map((record) => [record.sourceRecordId, record]));
+      for (const record of value.records) {
+        recordStatesById.set(record.sourceRecordId, {
+          ...record,
+          lastSeenAt: value.cursor.lastSuccessfulSyncAt,
+        });
+      }
       this.checkpoint = {
         cursor: value.cursor,
-        recordStates: value.records.map((record) => ({ ...record, lastSeenAt: value.cursor.lastSuccessfulSyncAt })),
+        recordStates: [...recordStatesById.values()],
       };
     },
   };
@@ -249,6 +616,80 @@ function createRepository(seed = {}) {
     read(tableId, fieldName, value) {
       return (stores.get(tableId) ?? []).find((record) => record.fields[fieldName] === value);
     },
+    count(tableId) {
+      return (stores.get(tableId) ?? []).length;
+    },
   };
   return api;
+}
+
+function createYoutubeVideos(count) {
+  return Array.from({ length: count }, (_, index) => ({
+    id: `video_${String(index).padStart(4, '0')}`,
+    snippet: {
+      channelId: 'channel_A',
+      title: `Tracked video ${index}`,
+      description: 'Tracked lesson',
+      publishedAt: '2026-07-01T00:00:00Z',
+    },
+    contentDetails: { duration: 'PT1M' },
+    statistics: { viewCount: String(index + 1), likeCount: '2', commentCount: '1' },
+    status: { privacyStatus: 'public' },
+  }));
+}
+
+function createPagedPublicClient(allVideos, options = {}) {
+  const byId = new Map(allVideos.map((video) => [video.id, video]));
+  let failed = false;
+  return {
+    uploadCalls: [],
+    videoCalls: [],
+    async getChannel() {
+      return {
+        ...CHANNEL,
+        statistics: { ...CHANNEL.statistics, videoCount: String(allVideos.length) },
+      };
+    },
+    async listUploadVideoIdsPage(input) {
+      this.uploadCalls.push({ ...input });
+      if (!failed && options.failPageTokenOnce === String(input.pageToken)) {
+        failed = true;
+        throw transientError('Synthetic playlist page failure', {
+          code: 'YOUTUBE_TRANSIENT_API_ERROR',
+        });
+      }
+      const offset = input.pageToken ? Number(input.pageToken) : 0;
+      const videoIds = allVideos.slice(offset, offset + 50).map((video) => video.id);
+      const nextOffset = offset + videoIds.length;
+      return {
+        videoIds,
+        nextPageToken: nextOffset < allVideos.length ? String(nextOffset) : null,
+      };
+    },
+    async listVideos({ videoIds }) {
+      this.videoCalls.push([...videoIds]);
+      return videoIds.map((videoId) => byId.get(videoId)).filter(Boolean);
+    },
+  };
+}
+
+function createCorruptingAnalyticsScopeStore(base) {
+  let corrupted = false;
+  return {
+    beginWork: (...args) => base.beginWork(...args),
+    loadPhase: (...args) => base.loadPhase(...args),
+    savePhase: (...args) => base.savePhase(...args),
+    resetPhase: (...args) => base.resetPhase(...args),
+    completeWork: (...args) => base.completeWork(...args),
+    async listPhaseUnits(input) {
+      const result = await base.listPhaseUnits(input);
+      if (corrupted || input.phase !== 'youtube_owner_analytics') return result;
+      const units = result.units.map((unit) => structuredClone(unit));
+      const target = units.find((unit) => unit.payload.queriedVideoIds?.length > 0);
+      if (!target) return result;
+      target.payload.queriedVideoIds = target.payload.queriedVideoIds.slice(1);
+      corrupted = true;
+      return Object.freeze({ ...result, units: Object.freeze(units) });
+    },
+  };
 }

@@ -1,5 +1,39 @@
 # Changelog
 
+## Unreleased — YouTube large-account resumable sync — 2026-07-19
+
+### Fixed
+- Raised the 837-video Analytics scope issue to a release blocker and kept daily Content traversal at 100 recent videos without narrowing Owner Analytics inventory.
+- Added exact expected-versus-queried video markers so a valid zero-row response remains distinguishable from an incomplete Analytics scope.
+- Added fail-closed completeness validation; an incomplete/corrupt scope cannot be reported as a complete success.
+
+### Added
+- Added additive D1 migration `0004_resumable_sync_work.sql` with generic work/phase/unit staging for durable page/chunk resume.
+- Added a single-page uploads API and resumable Content inventory, Video resource, and Analytics page/chunk orchestration.
+- Added total tracked/selected/queried/skipped/failed/pages/chunks/completeness counters to the sync result and D1 Sync Log details.
+- Added 837-video fixtures for Full traversal, Content-100/Analytics-837 separation, page failure resume, mid-Analytics retry, scope corruption, and Stable-key full rerun.
+
+### Architecture and safety
+- `sync_work_*` remains temporary staging; `source_record_states` and `sync_cursors` still commit only after all Lark business writes succeed.
+- Staged units are read in bounded pages, all destination tables are planned before the first write, and Account remains last.
+- Documented the shared large-account contract for Instagram 1,941 posts, TikTok hundreds, and Facebook hundreds-to-thousands; those connectors remain planned/fail-closed.
+- Passed Unit/Integration 397/397, Workers runtime 8/8, Report reliability 60/60, focused YouTube/Scheduler/Queue/Reliability/Resumable-work 69/69, Architecture 111/232/0, repository hygiene, offline audit 0, SQLite migration replay, and Wrangler dry-run 480.80 KiB / gzip 97.58 KiB.
+- No Live API, Lark, Queue, D1 remote migration, deployment, Secret, or Production mutation occurred in this source patch.
+
+## Unreleased — YouTube scheduler and Analytics review hardening — 2026-07-19
+
+### Fixed
+- Decoupled Owner Analytics tracked-video scope from the Content incremental recent-video limit by combining all D1 checkpoint video IDs with the current uploads traversal.
+- Reused the complete tracked-video scope for Analytics reconciliation so previously observed facts for older videos cannot silently fall outside the re-fetch scope.
+- Rejected enabled `MKT_YOUTUBE_ANALYTICS_TIME` values that the dedicated YouTube Cron cannot reach in the configured timezone.
+- Replaced negative Cron routing with an explicit Primary/YouTube whitelist; unknown Cron values enqueue no TikTok, YouTube, or Report jobs.
+
+### Safety and verification
+- Preserved Data API recent-window traversal, stable keys, idempotency, plan-before-write, Account-last, checkpoint-after-write, lock/retry/DLQ/Alert behavior, and fail-closed release examples.
+- Added a 105-video incremental regression with a 100-video Content limit, old-video Analytics reconciliation, unsupported-time failure, and Unknown/Primary/YouTube Cron routing coverage.
+- Passed Unit/Integration 388/388, Workers runtime 8/8, focused Report reliability 60/60, focused YouTube/Scheduler/Reliability 60/60, Architecture 109/230/0, repository hygiene, offline audit 0, and Wrangler dry-run 446.77 KiB / gzip 91.73 KiB.
+- No Live API, Lark, D1, Queue, Schema, deployment, Secret, or Production mutation occurred in this review fix.
+
 ## 0.11.0 — YouTube Organic DEV activation — 2026-07-19
 
 ### Added
