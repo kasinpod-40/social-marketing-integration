@@ -1,4 +1,4 @@
-import { bangkokDateToEpochMilliseconds } from '../../../shared/src/date/date-time.js';
+import { dateOnlyInTimeZoneToEpochMilliseconds } from '../../../shared/src/date/date-time.js';
 import { requireDateOnly } from '../../../shared/src/date/date-only.js';
 
 const ADS_PLATFORMS = new Set(['meta_ads', 'tiktok_ads', 'google_ads']);
@@ -27,6 +27,7 @@ export function createAdsDailyRow(input = {}) {
   const entityType = requireChoice(input.entityType, 'entityType', ENTITY_TYPES);
   const externalEntityId = requireIdentity(input.externalEntityId, 'externalEntityId');
   const metricDate = requireDateOnly(input.metricDate, { label: 'Ads metricDate' });
+  const sourceTimezone = requireText(input.sourceTimezone, 'sourceTimezone');
   const base = Object.freeze({
     spend_micros: nullableMoneyMicros(input.spendMicros, 'spendMicros'),
     impressions: nullableCount(input.impressions, 'impressions'),
@@ -39,7 +40,9 @@ export function createAdsDailyRow(input = {}) {
 
   return Object.freeze({
     ads_daily_key: createAdsDailyKey({ platform, accountId, entityType, externalEntityId, metricDate }),
-    metric_date: bangkokDateToEpochMilliseconds(metricDate, { label: 'Ads metricDate' }),
+    metric_date: dateOnlyInTimeZoneToEpochMilliseconds(metricDate, sourceTimezone, {
+      label: 'Ads metricDate',
+    }),
     platform,
     ad_channel: requireText(input.adChannel, 'adChannel'),
     account_id: accountId,
