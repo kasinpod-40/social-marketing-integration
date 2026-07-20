@@ -11,7 +11,6 @@ import { permanentError } from '../../../shared/src/errors/runtime-error.js';
  * การมีชื่ออยู่ใน Catalog ไม่ได้แปลว่าใช้งานได้ทันที:
  * - implementationStatus ต้องเป็น active
  * - Customer profile/feature flag ต้องเปิด enabled=true
- * - Production ต้องผ่าน large-account gate ครบ
  */
 export function assertConnectorRunnable(runtimeConfig, connectorKey) {
   const definition = getConnectorCatalogEntry(connectorKey);

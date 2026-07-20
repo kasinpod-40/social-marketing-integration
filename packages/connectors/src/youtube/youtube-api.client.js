@@ -51,11 +51,7 @@ export class YouTubeApiClient {
         ...(channelId ? { id: channelId } : { mine: 'true' }),
       },
     });
-    // Data API อาจละ `items` เมื่อ lookup ไม่พบ Channel; ถือเป็น empty result
-    // เพื่อให้ Boundary แปลงเป็น Permanent identity mismatch แทน TypeError ที่ไร้ code.
-    const items = payload.items === undefined
-      ? []
-      : requireArray(payload.items, 'YouTube channels.items');
+    const items = requireArray(payload.items, 'YouTube channels.items');
     if (items.length !== 1) {
       throw permanentError(`YouTube channel lookup returned ${items.length} records`, {
         code: 'YOUTUBE_CHANNEL_IDENTITY_MISMATCH',

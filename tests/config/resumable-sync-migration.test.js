@@ -3,10 +3,6 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const migrationPath = new URL('../../migrations/0005_resumable_sync_reliability.sql', import.meta.url);
-const redriveStatusMigrationPath = new URL(
-  '../../migrations/0006_dead_letter_redrive_status.sql',
-  import.meta.url,
-);
 
 test('migration 0005 fails closed unless resumable work and active locks are drained', async () => {
   const sql = await readFile(migrationPath, 'utf8');
@@ -40,17 +36,5 @@ test('migration 0005 adds durable warning and exact secret-filtered redrive stat
   assert.match(sql, /ALTER TABLE dead_letter_jobs ADD COLUMN redrive_requested_at INTEGER/u);
   assert.match(sql, /ALTER TABLE dead_letter_jobs ADD COLUMN redrive_reference TEXT/u);
   assert.match(sql, /ALTER TABLE dead_letter_jobs ADD COLUMN redriven_at INTEGER/u);
-  assert.match(sql, /idx_dead_letter_jobs_redrive_status/u);
-});
-
-test('migration 0006 preserves Dead-letter rows and permits durable redrive lifecycle states', async () => {
-  const sql = await readFile(redriveStatusMigrationPath, 'utf8');
-
-  assert.match(sql, /CREATE TABLE _mkt_dead_letter_jobs_0006/u);
-  assert.match(sql, /'redrive_pending', 'redriven'/u);
-  assert.match(sql, /INSERT INTO _mkt_dead_letter_jobs_0006[\s\S]*FROM dead_letter_jobs/u);
-  assert.match(sql, /CHECK \(original_count = copied_count\)/u);
-  assert.match(sql, /ALTER TABLE _mkt_dead_letter_jobs_0006 RENAME TO dead_letter_jobs/u);
-  assert.match(sql, /idx_dead_letter_jobs_status_created/u);
   assert.match(sql, /idx_dead_letter_jobs_redrive_status/u);
 });

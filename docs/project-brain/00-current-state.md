@@ -8,8 +8,6 @@ Clean candidate: `v0.11.0` — YouTube Organic DEV active, deployed, and smoke-t
 
 Working delta: YouTube large-account release blocker สำหรับ 837 videos เพิ่ม durable D1 page/chunk resume และ exact Analytics completeness. Commit `44377ce`, migration 0004, DEV deploy และ smoke ผ่านแล้วกับ DEV channel 2 videos; Customer 837-video Live UAT ยังไม่รันและยังเป็น Production release blocker.
 
-Guarded migration rollout 2026-07-20: remote migration 0005, healthy/stale/Permanent smoke และ patched zero-result identity classification ผ่าน แต่ Live Redrive พบว่า legacy `dead_letter_jobs.status` CHECK ไม่รับ durable Redrive states. Migration 0006 แก้ด้วย guarded table rebuild; ต้อง Apply/verify และ rerun Redrive ก่อนเปิด YouTube Schedule/Analytics กลับ.
-
 ## Multi-channel foundation
 
 - YouTube Organic source contract, RAW Lark Blueprint, client, adapter, normalization and destination path are active in the verified DEV environment.

@@ -2,8 +2,7 @@
  * ข้อผิดพลาดมาตรฐานของระบบที่ระบุได้ชัดว่าควร Retry หรือไม่
  */
 const OPERATIONAL_REDACTION = '[REDACTED]';
-const OPERATIONAL_SECRET_KEY_PATTERN = /(?:secret|token|password|authorization|credentials?|(?:private|signing|api)[_-]?key|consumer[_-]?secret)/iu;
-const OPERATIONAL_IDENTITY_KEY_PATTERN = /(?:lock[_-]?key|cursor[_-]?key|(?:channel|video|content)[_-]?ids?|(?:source|expected|actual|detected)[_-]?(?:channel|video|content)?[_-]?(?:ids?|handles?)|uploads[_-]?playlist[_-]?id|mismatched[_-]?videos?|stable[_-]?keys?)/iu;
+const OPERATIONAL_SENSITIVE_KEY_PATTERN = /(?:secret|token|password|authorization|credentials?|(?:private|signing|api)[_-]?key|consumer[_-]?secret|lock[_-]?key|cursor[_-]?key|(?:channel|video|content)[_-]?ids?|(?:source|expected|actual|detected)[_-]?(?:channel|video|content)?[_-]?(?:ids?|handles?)|uploads[_-]?playlist[_-]?id|mismatched[_-]?videos?|stable[_-]?keys?)/iu;
 const IDENTITY_ERROR_CODE_PATTERN = /(?:IDENTITY|SOURCE_HANDLE)_MISMATCH/u;
 const IDENTITY_MESSAGE_PATTERN = /(?:identity|source handle)\s+mismatch/iu;
 
@@ -159,7 +158,10 @@ function sanitizeValue(value, seen) {
 
   return Object.fromEntries(Object.entries(value).map(([key, nested]) => [
     key,
-    shouldRedactOperationalValue(key, nested)
+    OPERATIONAL_SENSITIVE_KEY_PATTERN.test(key)
+      && typeof nested !== 'number'
+      && typeof nested !== 'boolean'
+      && nested !== null
       ? OPERATIONAL_REDACTION
       : sanitizeValue(nested, seen),
   ]));
@@ -177,18 +179,12 @@ function sanitizeReplayValue(value, seen) {
   return Object.fromEntries(Object.entries(value).map(([key, nested]) => [
     key,
     isQueueReplaySecretKey(key)
+      && typeof nested !== 'number'
+      && typeof nested !== 'boolean'
       && nested !== null
       ? OPERATIONAL_REDACTION
       : sanitizeReplayValue(nested, seen),
   ]));
-}
-
-function shouldRedactOperationalValue(key, value) {
-  if (OPERATIONAL_SECRET_KEY_PATTERN.test(key)) return value !== null;
-  return OPERATIONAL_IDENTITY_KEY_PATTERN.test(key)
-    && typeof value !== 'number'
-    && typeof value !== 'boolean'
-    && value !== null;
 }
 
 function isQueueReplaySecretKey(key) {

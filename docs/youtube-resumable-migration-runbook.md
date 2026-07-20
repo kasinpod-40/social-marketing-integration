@@ -1,8 +1,6 @@
-# YouTube Resumable Sync — Migration 0005–0006 DEV Runbook
+# YouTube Resumable Sync — Migration 0005 DEV Runbook
 
-เอกสารนี้ใช้สำหรับ Apply `migrations/0005_resumable_sync_reliability.sql` และ
-`migrations/0006_dead_letter_redrive_status.sql` ก่อน Deploy Source patch โดยไม่ให้
-Queue รุ่นเก่าหรือ Schedule ทำงานข้ามช่วงเปลี่ยน Contract
+เอกสารนี้ใช้สำหรับ Apply `migrations/0005_resumable_sync_reliability.sql` และ Deploy Source patch หลัง commit `2ef5618` โดยไม่ให้ Queue รุ่นเก่าหรือ Schedule ทำงานข้ามช่วงเปลี่ยน Contract
 
 ## ข้อกำหนดก่อนเริ่ม
 
@@ -48,13 +46,12 @@ SELECT COUNT(*) AS open_dlq_count FROM dead_letter_jobs WHERE status = 'open';
 
 หาก `active_work_count` หรือ `active_lock_count` ไม่เป็นศูนย์ ให้หยุดและตรวจ Queue/Lock ห้ามลบแถวเพื่อบังคับ Migration ผ่าน
 
-## Phase 3 — Apply Migrations 0005–0006
+## Phase 3 — Apply Migration 0005
 
-1. Preview pending migrations ตาม guarded Cloudflare workflow ของ Repository
-2. Apply 0005 ก่อน 0006 ตามลำดับของ Wrangler
-3. Migration 0005 มี SQL guard และจะ Fail closed หากยังมี Work หรือ Active lock
-4. Migration 0006 rebuild เฉพาะ `dead_letter_jobs` เพื่อขยาย CHECK constraint และมี copy-count guard
-5. ห้าม Deploy Source ใหม่หาก Migration ใดล้ม หรือ Schema verification ไม่ครบ
+1. Preview pending migration ตาม guarded Cloudflare workflow ของ Repository
+2. Apply `0005_resumable_sync_reliability.sql`
+3. Migration มี SQL guard และจะ Fail closed หากยังมี Work หรือ Active lock
+4. ห้าม Deploy Source ใหม่หาก Migration ล้ม หรือ Schema verification ไม่ครบ
 
 ## Phase 4 — Verify Schema และ Bootstrap
 
@@ -65,7 +62,6 @@ SELECT COUNT(*) AS open_dlq_count FROM dead_letter_jobs WHERE status = 'open';
 - `sync_work_runs.generation/requested_at/lifecycle_status/...`
 - `sync_cursors.generation/generation_work_key/requested_at`
 - `dead_letter_jobs.replay_payload_json/redrive_requested_at/redrive_reference/redriven_at`
-- `dead_letter_jobs.status` ต้องยอมรับ `redrive_pending` และ `redriven` หลัง 0006
 - Generation fence จาก `sync_cursors.last_successful_sync_at` โดยมี Work key รูปแบบ `legacy-checkpoint:<cursor_key>`
 
 ตัวอย่าง read-only verification:
@@ -125,19 +121,7 @@ MKT_DLQ_REDRIVE_ENABLED=false
 
 - ปิด YouTube Schedule/Analytics
 - Redeploy prior known-good Worker
-- Migration 0005 เป็น additive; migration 0006 rebuild เฉพาะ Dead-letter schema โดยรักษา rows เดิม
+- Migration 0005 เป็น additive และเก็บไว้ได้
 - ห้ามลบ `sync_cursors`, `source_record_states` หรือ Lark Business rows
 - Pending warning ต้องถูกส่ง/ซ่อมก่อน cleanup
 - Redrive record ที่เป็น `redrive_pending` ต้องตรวจ Queue delivery ก่อนทำคำสั่งซ้ำ เพราะระบบตั้งใจ reuse Generation เดิมเพื่อให้ Duplicate ถูก Fence
-
-## DEV execution record — 2026-07-20
-
-- Quiesce ผ่านด้วย active work/lock/pending warning/redrive pending = 0/0/0/0
-- Export D1 แยกก่อน migration 0005 และก่อน migration 0006 สำเร็จ; ไฟล์เก็บเฉพาะ local `/tmp` ด้วย permission `0600`
-- Migration 0005 และ 0006 Apply สำเร็จ; Final migration list ว่าง
-- Migration 0006 รักษา Dead-letter 8 rows, 16 columns และ 2 required indexes
-- Healthy incremental, stale generation และ Permanent identity fault ผ่าน expected classification
-- Controlled Redrive เปลี่ยน incident เป็น `redriven`; replay สำเร็จ retry 0 และไม่สร้าง Stable-key row ใหม่
-- Redrive flag ถูกปิดกลับ; YouTube Schedule/Analytics เปิดกลับเฉพาะ DEV บน Worker `adc0f825-68e5-4231-847b-4b41a6592204`
-- Final D1 active work/lock/pending warning/redrive pending = 0/0/0/0
-- Natural schedule observation และ Customer-owned 837-video Live UAT ยังเป็นงานหลัง rollout; Production ยังคงปิด

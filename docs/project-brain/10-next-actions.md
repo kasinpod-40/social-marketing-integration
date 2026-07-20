@@ -2,14 +2,14 @@
 
 ## Shared task workflow
 
-ChatGPT Work and Codex share `docs/current-task.md`. Migration 0005 และ source patch ถูก Deploy ใน DEV แบบ Schedule off แล้ว; healthy/stale/Permanent smoke ผ่าน. Live Redrive เปิดเผย legacy status CHECK blocker และมี migration 0006 รอ Apply/verify. Production และ Connector อื่นยัง fail-closed; Customer 837-video Live UAT ยังไม่รัน.
+ChatGPT Work and Codex share `docs/current-task.md`. Large-account patch `44377ce` ยัง active ใน DEV กับ migration 0004/ช่อง 2 videos. Corrective source candidate ปิด outbox/redrive/migration transition gaps แล้วแต่ยังไม่ Apply migration 0005 หรือ Deploy. Production และ Connector อื่นยัง fail-closed; Customer 837-video Live UAT ยังไม่รัน.
 
 ## Immediate post-review handoff
 
-1. รอ failed Admin Redrive message drain และยืนยัน work/active lock = 0
-2. Apply/verify migration 0006 โดยตรวจ row count, indexes และ `redrive_pending`/`redriven` CHECK contract
-3. Deploy Source โดย Schedule/Analytics/Redrive ยังปิด แล้ว rerun controlled Redrive + healthy recovery
-4. ตรวจ cross-generation warning drain และ TTL guard โดยห้ามลบ active/locked/pending-warning work
+1. ลบ local `.DS_Store`/AppleDouble/`RELEASE_MANIFEST.txt`, Review final diff แล้ว Commit/Push `fix: close YouTube reliability review gaps`
+2. ทำตาม `docs/youtube-resumable-migration-runbook.md`: ปิด YouTube Schedule/Analytics, drain Queue, ยืนยัน work/active lock = 0
+3. Apply migration 0005; verify fence/outbox/lifecycle/redrive columns และ legacy checkpoint bootstrap ก่อน Deploy
+4. Deploy Source โดย Schedule/Analytics/Redrive ยังปิด แล้วทำ healthy sync + stale-generation + cross-generation warning drain + Permanent/DLQ/redrive smoke
 5. เปิด YouTube Schedule/Analytics กลับเมื่อ Smoke ผ่าน; `MKT_DLQ_REDRIVE_ENABLED` ต้องกลับเป็น `false`
 6. Keep Production disabled; ห้ามตีความ DEV 2-video smoke หรือ deterministic 837 fixture เป็น Customer 837-video Live UAT
 7. เตรียม Customer-owned Channel, matching Owner OAuth, Lark Base และ Cloudflare DEV/Staging profile

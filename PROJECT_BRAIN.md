@@ -8,7 +8,7 @@ Official clean baseline: `v0.10.2-multi-channel-foundation-approved`
 
 Current clean candidate: `v0.11.0` — YouTube Organic DEV active, deployed, and smoke-tested
 
-Current working delta: corrective outbox/generation/terminal/Redrive patch ถูก Apply และ Deploy ใน DEV แล้ว. Remote migrations 0005–0006 ผ่าน guarded rollout, controlled Redrive/replay ผ่านแบบ idempotent, Schedule/Owner Analytics เปิดกลับเฉพาะ DEV และ Redrive ปิด. Active Worker คือ `adc0f825-68e5-4231-847b-4b41a6592204`; Customer inventory 837-video Live UAT ยังเป็น Production release blocker.
+Current working delta: corrective source patch ปิด cross-generation warning loss ด้วย bounded outbox drain + Completed replay ก่อน fence, ทำ Permanent ทุกเส้นทางมี exact secret-filtered Dead-letter replay payload, เพิ่ม disabled-by-default Admin redrive, บันทึก Superseded เป็น skipped และทำ migration 0005 fail-closed เมื่อยังมี Work/Lock พร้อม bootstrap fence จาก Business checkpoint. ยังไม่ Apply/Deploy; DEV ยังคง Worker `2037232c-152a-4e26-95fa-fca044f65bd9` จาก commit `44377ce`. Customer inventory 837-video Live UAT ยังเป็น Production release blocker.
 
 Current YouTube design artifact: `docs/Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.2.xlsx` — Technical review approved. v0.11.0 implements guarded Schema/Access, RAW/Canonical/Account writes, checkpoint/reconciliation and Reliability reuse. All DEV UAT gates passed. The connector is active in DEV with a six-hour Data API Cron and once-daily Owner Analytics using a bounded seven-day completed-Pacific overlap; Production remains disabled.
 
@@ -30,13 +30,11 @@ Multi-channel foundation ทั้ง 6 ส่วนถูกเพิ่มใ�
 
 **Corrective outbox/redrive/migration rule — Completed work ที่มี Pending warning ต้อง replay/drain ได้แม้ Fence ถูก Generation ใหม่ยึด; Operational payload กับ Replay payload ต้องแยกกัน โดย Replay เก็บเฉพาะ Queue contract และตัด Secret/Token. Reliability-handled Permanent ต้อง Persist Dead-letter payload เช่นเดียวกับ Unhandled. Migration 0005 ต้อง Quiesce Producer/Queue/Lock ก่อน Apply และ Bootstrap fence จาก Business checkpoint ล่าสุด. Admin redrive ปิดเป็นค่าเริ่มต้นและเปิดเฉพาะ Incident ที่อนุมัติ.**
 
-**Secret/redrive follow-up rule — Secret key matcher ต้องครอบคลุม private/signing key และ credential variants ทั้ง Operational/Replay และต้อง Redact ค่าที่ไม่ใช่ null ทุกชนิดรวม Number/Boolean โดยแยกจากกฎ Identity/count เพื่อรักษา Completeness counters. Redrive ต้อง Validate Candidate แบบ read-only ก่อน reservation และ Storage ต้องตรวจ forbidden job type ซ้ำก่อนเปลี่ยน status. Generated manifest/macOS metadata ห้ามอยู่ใน Source root.**
+**Secret/redrive follow-up rule — Secret key matcher ต้องครอบคลุม private/signing key และ credential variants ทั้ง Operational/Replay. Redrive ต้อง Validate Candidate แบบ read-only ก่อน reservation และ Storage ต้องตรวจ forbidden job type ซ้ำก่อนเปลี่ยน status. Generated manifest/macOS metadata ห้ามอยู่ใน Source root.**
 
 Unreleased independent-review verification: Unit/Integration 407/407, Workers runtime 8/8, Report reliability 60/60, focused review 46/46, Architecture 111/233/0, repository hygiene, offline audit 0, empty/existing SQLite migration replay และ Wrangler dry-run 512.33/102.41 KiB ผ่าน. Clean archive 261 files และ fresh-extraction gates ผ่าน. ไม่มี Live API, Remote D1, Queue, deployment, schedule, Secret หรือ Production mutation.
 
-Corrective source verification after Code X/scalar-Secret follow-up: Unit/Integration 426/426, Workers runtime 8/8, Report reliability 64/64, scalar sanitizer/D1 focused 12/12, Architecture 113/238/0, repository hygiene, offline audit 0, Wrangler dry-run 534.48/106.76 KiB และ SQLite migration guard/bootstrap ผ่าน. Source handoff 264 files ไม่มี generated manifest/macOS metadata; ยังไม่มี Live API, Remote D1, Queue, deployment, schedule, Secret หรือ Production mutation.
-
-Guarded reliability rollout 2026-07-20: D1 backups were taken before migrations 0005 and 0006; both migrations applied and no pending migration remains. Migration 0006 preserved all 8 Dead-letter rows, 16 columns and both indexes. Controlled Redrive reached `redriven`, replay succeeded retry 0 with zero creates, and final active work/lock/pending warning/redrive pending = 0/0/0/0. Final source gates are Unit/Integration 428/428, Workers 8/8, Report reliability 64/64, Architecture 113/238/0, hygiene, audit 0 and dry-run 534.51/106.78 KiB. Production remains disabled.
+Corrective source verification after Code X follow-up: Unit/Integration 426/426, Workers runtime 8/8, Report reliability 64/64, focused corrective 74/74, Architecture 113/238/0, repository hygiene, offline audit 0, Wrangler dry-run 534.26/106.71 KiB และ SQLite migration guard/bootstrap ผ่าน. Source handoff 264 files ไม่มี generated manifest/macOS metadata; ยังไม่มี Live API, Remote D1, Queue, deployment, schedule, Secret หรือ Production mutation.
 
 Unreleased large-account source verification: Unit/Integration 397/397, Workers runtime 8/8, Report reliability 60/60, focused YouTube/Scheduler/Queue/Reliability/Resumable-work 69/69, Architecture 111 source files / 232 local dependencies / 0 cycles, repository hygiene, offline npm audit 0, SQLite migration replay และ Wrangler dry-run 480.80 KiB / gzip 97.58 KiB ผ่าน.
 
@@ -297,10 +295,9 @@ DEV Table IDs ถูกย้ายออกจาก Source/Release documentati
 ยังรอ guarded Preview/Apply ใน DEV เพราะ Source artifact ไม่มี Live credential. Production ต้องตั้งค่า Table IDs ของลูกค้าเองผ่าน Local/Environment config.
 
 ## Next action
-1. เฝ้าดู YouTube scheduled run ตามธรรมชาติรอบถัดไป โดยเฉพาะ Owner Analytics 07:50 Asia/Bangkok และ Alert เมื่อ Provider fault เกิดจริง
-2. ทำ Customer-owned 837-video Full → incremental → Owner Analytics UAT พร้อม exact completeness/duplicate/queue/retry evidence ก่อน Production
-3. Production onboarding ต้องใช้ Lark/Cloudflare/Google/YouTube assets ที่ลูกค้าเป็นเจ้าของ
-4. Meta และ Connector อื่นยังเป็นงานแยกและต้องผ่าน Data-model/Access/UAT/large-account fixture ของตนเอง
+1. เฝ้าดู YouTube scheduled run ตามธรรมชาติรอบถัดไปและ Alert เมื่อ Provider fault เกิดจริง
+2. Production onboarding ต้องใช้ Lark/Cloudflare/Google/YouTube assets ที่ลูกค้าเป็นเจ้าของ
+3. Meta และ Connector อื่นยังเป็นงานแยกและต้องผ่าน Data-model/Access/UAT ของตนเอง
 
 ## 2026-07-09 — v0.1.4 env-driven config + Lark classification dictionary
 - Baseline: `v0.1.4-env-config-lark-dictionary`.

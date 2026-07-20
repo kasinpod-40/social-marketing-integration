@@ -1,6 +1,6 @@
 import { access, lstat, readFile, readdir } from 'node:fs/promises';
 import { constants } from 'node:fs';
-import { join, relative, resolve } from 'node:path';
+import { join, relative } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { findBlockedReleasePaths } from './lib/release-archive-policy.js';
 
@@ -53,8 +53,6 @@ async function scanForMacMetadata(directory) {
 
 
 async function checkGeneratedRootArtifacts() {
-  if (!isRepositorySourceRoot()) return;
-
   for (const path of ['RELEASE_MANIFEST.txt']) {
     try {
       await access(join(root, path), constants.F_OK);
@@ -63,15 +61,6 @@ async function checkGeneratedRootArtifacts() {
       if (error?.code !== 'ENOENT') throw error;
     }
   }
-}
-
-function isRepositorySourceRoot() {
-  const result = spawnSync('git', ['rev-parse', '--show-toplevel'], {
-    cwd: root,
-    encoding: 'utf8',
-  });
-  if (result.status !== 0) return false;
-  return resolve(result.stdout.trim()) === resolve(root);
 }
 
 function checkTrackedLocalOnlyFiles() {

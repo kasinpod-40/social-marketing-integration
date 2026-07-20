@@ -59,9 +59,7 @@ test('redrive reserves one generation, sends the original payload, and marks it 
     redriveReference: 'redrive:dlq:message-old:1784419200000',
   });
   assert.equal(calls[0][0], 'read');
-  assert.ok(calls[1][1].forbiddenJobTypes.includes('system.dead-letter.redrive'));
-  assert.ok(calls[1][1].forbiddenJobTypes.includes('tiktok.creator.native.sync'));
-  assert.equal(calls[1][1].forbiddenJobTypes.includes('youtube.channel.organic.sync'), false);
+  assert.deepEqual(calls[1][1].forbiddenJobTypes, ['system.dead-letter.redrive']);
   assert.equal(calls[2][0], 'mark');
   assert.equal(calls[2][1].dlqId, 'dlq:message-old');
 });
@@ -101,34 +99,6 @@ test('retry after queue send reuses the persisted generation so duplicate messag
   assert.equal(sent.length, 2);
   assert.equal(sent[0].requestedAt, sent[1].requestedAt);
   assert.equal(sent[0].redriveReference, sent[1].redriveReference);
-});
-
-test('unsupported job types fail before prepare mutation or Queue send', async () => {
-  let prepareCalled = false;
-  let sent = false;
-  await assert.rejects(
-    redriveDeadLetterJob({
-      store: {
-        async readDeadLetterRedriveCandidate() {
-          return {
-            status: 'open',
-            schemaVersion: 1,
-            payload: { schemaVersion: 1, type: 'tiktok.creator.native.sync' },
-            redriveRequestedAt: null,
-            redriveReference: null,
-          };
-        },
-        async prepareDeadLetterRedrive() { prepareCalled = true; },
-        async markDeadLetterRedriven() {},
-      },
-      queue: { async send() { sent = true; } },
-      dlqId: 'dlq:tiktok-old',
-    }),
-    (error) => error?.code === 'DEAD_LETTER_REDRIVE_JOB_TYPE_UNSUPPORTED'
-      && error.retryable === false,
-  );
-  assert.equal(prepareCalled, false);
-  assert.equal(sent, false);
 });
 
 test('already-redriven jobs are no-op and recursive commands fail before prepare mutation', async () => {

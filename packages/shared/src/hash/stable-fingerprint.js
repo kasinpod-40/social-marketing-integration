@@ -5,7 +5,7 @@ import { permanentError } from '../errors/runtime-error.js';
  * ใช้ตรวจว่าข้อมูล Source เปลี่ยนจริงหรือเป็นเพียง metadata refresh จาก Connector
  */
 export async function createStableFingerprint(value, options = {}) {
-  const serialized = stableSerialize(normalizeFingerprintContractInput(value));
+  const serialized = stableSerialize(value);
   const digest = options.digestImpl ?? globalThis.crypto?.subtle?.digest?.bind(globalThis.crypto.subtle);
   if (typeof digest !== 'function') {
     throw permanentError('SHA-256 digest is unavailable in this runtime', {
@@ -60,25 +60,6 @@ export function stableSerialize(value) {
   throw permanentError(`Stable fingerprint rejects unsupported value type: ${typeof value}`, {
     code: 'MKT_FINGERPRINT_INVALID_VALUE',
   });
-}
-
-/**
- * YouTube `syncMode=auto` อาจ resolve จาก full เป็น incremental หลัง Business checkpoint สำเร็จ
- * แต่ก่อน `completeWork` จบใน Queue attempt เดิม. Work identity ต้องยึด Queue request scope
- * ที่ไม่เปลี่ยนระหว่าง Retry จึงไม่นำ derived mode/fullSnapshot มารวมใน fingerprint.
- */
-function normalizeFingerprintContractInput(value) {
-  if (!isPlainObject(value) || value.contract !== 'youtube-organic-resumable-v1') return value;
-  const {
-    syncMode: _derivedSyncMode,
-    fullSnapshot: _derivedFullSnapshot,
-    ...stableRequestScope
-  } = value;
-  return stableRequestScope;
-}
-
-function isPlainObject(value) {
-  return value !== null && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date);
 }
 
 /** แปลง ArrayBuffer/TypedArray เป็น Hex lowercase */

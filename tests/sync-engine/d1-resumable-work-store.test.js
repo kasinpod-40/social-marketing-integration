@@ -60,7 +60,7 @@ test('saves a unit and phase progress atomically and reads typed progress', asyn
   });
   const store = new D1ResumableWorkStore({ db, now: () => 110 });
 
-  await store.savePhase({
+  const saved = await store.savePhase({
     workKey: 'message-1',
     phase: 'youtube_owner_analytics',
     state: { chunkIndex: 1 },
@@ -84,6 +84,16 @@ test('saves a unit and phase progress atomically and reads typed progress', asyn
   assert.match(db.batches[0][0].sql, /INSERT INTO sync_work_units/);
   assert.match(db.batches[0][1].sql, /INSERT INTO sync_work_phases/);
   assert.match(db.batches[0][2].sql, /UPDATE sync_work_runs/);
+  assert.deepEqual(saved, {
+    state: { chunkIndex: 1 },
+    expectedItems: 837,
+    processedItems: 50,
+    pagesProcessed: 1,
+    chunksProcessed: 1,
+    complete: false,
+    createdAt: 110,
+    updatedAt: 110,
+  });
   assert.deepEqual(progress, {
     state: { chunkIndex: 1 },
     expectedItems: 837,
