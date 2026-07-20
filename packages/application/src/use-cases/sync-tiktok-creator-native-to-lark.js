@@ -11,17 +11,56 @@ import {
   buildTikTokIncrementalCheckpoint,
   planTikTokIncrementalSource,
 } from './plan-tiktok-incremental-source.js';
+import {
+  beginTikTokResumableSource,
+  completeTikTokResumableSource,
+  loadTikTokResumableSource,
+  replayTikTokCompletedWork,
+  supersededTikTokResult,
+} from './tiktok-resumable-source.js';
 
 /**
  * Sync RAW TikTok Creator ไปยัง MKT_Content และ MKT_Content_Daily
  */
 export async function syncTikTokCreatorNativeToLark(input) {
   const progress = typeof input?.onProgress === 'function' ? input.onProgress : () => undefined;
-  const assertLockActive = typeof input?.assertLockActive === 'function'
+  const baseAssertLockActive = typeof input?.assertLockActive === 'function'
     ? input.assertLockActive
     : async () => undefined;
   const syncRunId = optionalText(input?.syncRunId);
-  const incrementalContext = await loadIncrementalContext(input, progress);
+  const resumable = await beginTikTokResumableSource({
+    workStore: input?.resumableWorkStore,
+    workKey: input?.workKey,
+    cursorKey: input?.cursorKey,
+    requestedAt: input?.requestedAt,
+    generation: input?.generation,
+    accountId: input?.accountId,
+    sourceHandle: input?.sourceHandle,
+    metricDate: input?.metricDate,
+    syncMode: input?.syncMode,
+    incrementalEnabled: input?.incrementalEnabled,
+    dryRun: input?.dryRun,
+    rawTableId: input?.tables?.rawTikTokCreatorVideos,
+    assertLockActive: baseAssertLockActive,
+  });
+  if (resumable?.work?.superseded) {
+    return supersededTikTokResult(syncRunId, resumable.generation);
+  }
+  if (resumable?.work?.completed) {
+    return replayTikTokCompletedWork(resumable, syncRunId);
+  }
+  const assertWorkActive = resumable?.assertCurrent ?? baseAssertLockActive;
+  const sourceLoad = resumable
+    ? await loadTikTokResumableSource({
+      context: resumable,
+      repository: input?.repository,
+      tableId: input?.tables?.rawTikTokCreatorVideos,
+      pageSize: input?.sourcePageSize,
+      maxPages: input?.sourceMaxPages,
+      onProgress: progress,
+    })
+    : null;
+  const incrementalContext = await loadIncrementalContext(input, progress, sourceLoad?.records);
   const prepared = await prepareTikTokCreatorLarkSync({
     repository: input?.repository,
     syncEngine: input?.syncEngine,
@@ -29,7 +68,7 @@ export async function syncTikTokCreatorNativeToLark(input) {
     accountId: input?.accountId,
     sourceHandle: input?.sourceHandle,
     metricDate: input?.metricDate,
-    rawRecords: incrementalContext?.rawRecords,
+    rawRecords: incrementalContext?.rawRecords ?? sourceLoad?.records,
     dictionaryAnalysis: incrementalContext?.dictionaryAnalysis,
     selectedExternalContentIds: incrementalContext?.plan.selectedExternalContentIds,
     incrementalPlan: incrementalContext?.plan ?? null,
@@ -37,7 +76,7 @@ export async function syncTikTokCreatorNativeToLark(input) {
   });
 
   if (input?.dryRun === true) {
-    return Object.freeze({
+    const result = attachResumableSummary(Object.freeze({
       syncRunId,
       platform: prepared.platform,
       source: prepared.source,
@@ -56,11 +95,13 @@ export async function syncTikTokCreatorNativeToLark(input) {
       accountConflicts: prepared.accountConflicts,
       issues: prepared.issues,
       warnings: prepared.warnings,
-    });
+    }), resumable, sourceLoad, true);
+    await completeTikTokResumableSource(resumable, result);
+    return result;
   }
 
   assertTikTokSyncReady(prepared);
-  await assertLockActive();
+  await assertWorkActive();
 
   progress({
     stage: 'executing_content_plan',
@@ -72,7 +113,7 @@ export async function syncTikTokCreatorNativeToLark(input) {
   let contentResult;
   try {
     contentResult = await input.syncEngine.executePlan(prepared.plans.content, {
-      beforeWriteChunk: assertLockActive,
+      beforeWriteChunk: assertWorkActive,
       onProgress: (event) => progress({ scope: 'content', syncRunId, ...event }),
     });
   } catch (cause) {
@@ -88,7 +129,7 @@ export async function syncTikTokCreatorNativeToLark(input) {
   }
   progress({ stage: 'content_synced', syncRunId, result: contentResult });
 
-  await assertLockActive();
+  await assertWorkActive();
   progress({
     stage: 'executing_daily_snapshot_plan',
     syncRunId,
@@ -99,7 +140,7 @@ export async function syncTikTokCreatorNativeToLark(input) {
   let dailyResult;
   try {
     dailyResult = await input.syncEngine.executePlan(prepared.plans.dailySnapshots, {
-      beforeWriteChunk: assertLockActive,
+      beforeWriteChunk: assertWorkActive,
       onProgress: (event) => progress({ scope: 'daily_snapshots', syncRunId, ...event }),
     });
   } catch (cause) {
@@ -118,7 +159,7 @@ export async function syncTikTokCreatorNativeToLark(input) {
   }
 
   progress({ stage: 'daily_snapshots_synced', syncRunId, result: dailyResult });
-  await assertLockActive();
+  await assertWorkActive();
 
   let result = buildResult({
     syncRunId,
@@ -130,7 +171,7 @@ export async function syncTikTokCreatorNativeToLark(input) {
   });
 
   if (incrementalContext) {
-    await assertLockActive();
+    await assertWorkActive();
     const completedAt = incrementalContext.now();
     const checkpoint = buildTikTokIncrementalCheckpoint({
       plan: incrementalContext.plan,
@@ -142,14 +183,16 @@ export async function syncTikTokCreatorNativeToLark(input) {
       completedAt,
     });
     await incrementalContext.stateStore.saveCheckpoint(checkpoint);
-    await assertLockActive();
+    await assertWorkActive();
     result = Object.freeze({
       ...result,
       incremental: summarizeIncremental(incrementalContext.plan, true),
     });
   }
 
-  return result;
+  const completedResult = attachResumableSummary(result, resumable, sourceLoad, true);
+  await completeTikTokResumableSource(resumable, completedResult);
+  return completedResult;
 }
 
 function buildWholeSyncPartialError(input) {
@@ -255,7 +298,7 @@ function planSummary(plan, incremental) {
   });
 }
 
-async function loadIncrementalContext(input, progress) {
+async function loadIncrementalContext(input, progress, rawRecordsOverride = null) {
   if (input?.incrementalEnabled !== true) return null;
   const stateStore = requireIncrementalStateStore(input?.incrementalStateStore);
   const cursorKey = requireText(input?.cursorKey, 'cursorKey');
@@ -266,7 +309,9 @@ async function loadIncrementalContext(input, progress) {
 
   progress({ stage: 'loading_incremental_checkpoint', cursorKey });
   const [rawRecords, dictionaryRecords, checkpoint] = await Promise.all([
-    repository.listAll(requireText(tables.rawTikTokCreatorVideos, 'tables.rawTikTokCreatorVideos')),
+    rawRecordsOverride === null
+      ? repository.listAll(requireText(tables.rawTikTokCreatorVideos, 'tables.rawTikTokCreatorVideos'))
+      : Promise.resolve(requireArray(rawRecordsOverride, 'rawRecordsOverride')),
     repository.listAll(requireText(
       tables.mktClassificationDictionary,
       'tables.mktClassificationDictionary',
@@ -331,6 +376,25 @@ function summarizeIncremental(value, checkpointSaved) {
     fullSnapshot: value.fullSnapshot,
     checkpointSaved: checkpointSaved === true,
   });
+}
+
+function attachResumableSummary(result, context, sourceLoad, complete) {
+  if (!context) return result;
+  return Object.freeze({
+    ...result,
+    sourcePagination: sourceLoad?.summary ?? null,
+    resumableWork: Object.freeze({
+      resumed: context.work?.resumed === true,
+      complete: complete === true,
+      cleared: complete === true,
+      generation: context.generation,
+    }),
+  });
+}
+
+function requireArray(value, fieldName) {
+  if (!Array.isArray(value)) throw new TypeError(`TikTok sync requires ${fieldName}`);
+  return value;
 }
 
 function requireIncrementalStateStore(value) {

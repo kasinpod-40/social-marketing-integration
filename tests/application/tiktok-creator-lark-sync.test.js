@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { syncTikTokCreatorNativeToLark } from '../../packages/application/src/use-cases/sync-tiktok-creator-native-to-lark.js';
 import { TableSyncEngine } from '../../packages/sync-engine/src/table-sync-engine.js';
+import { InMemoryResumableWorkStore } from '../../packages/sync-engine/src/in-memory-resumable-work-store.js';
 
 test('preflights both tables before writing and then creates content plus daily snapshots', async () => {
   const writes = [];
@@ -460,15 +461,40 @@ function createStatefulRepository(input) {
     tbl_mkt_content_daily: [],
   };
   let nextRecordId = 1;
+  const failedPageTokens = new Set();
   const repository = {
     rawRecords: input.rawRecords,
     dictionaryRecords: input.dictionaryRecords,
     destinationReadCalls: [],
     writeCalls: [],
+    pageCalls: [],
     async listAll(tableId) {
       if (tableId === 'tbl_raw_tiktok_creator') return repository.rawRecords;
       if (tableId === 'tbl_dictionary') return repository.dictionaryRecords;
       return recordsByTable[tableId] ?? [];
+    },
+    async listPage(tableId, options = {}) {
+      if (tableId !== 'tbl_raw_tiktok_creator') throw new Error(`Unexpected paged table ${tableId}`);
+      const pageToken = options.pageToken ?? null;
+      const start = pageToken === null ? 0 : Number(pageToken);
+      const pageSize = Number(options.pageSize ?? 500);
+      repository.pageCalls.push({ pageToken, pageSize });
+      if (String(input.failPageTokenOnce ?? '') === String(pageToken)
+        && !failedPageTokens.has(String(pageToken))) {
+        failedPageTokens.add(String(pageToken));
+        throw Object.assign(new Error('temporary RAW page failure'), {
+          code: 'LARK_TRANSIENT_API_ERROR',
+          retryable: true,
+        });
+      }
+      const records = repository.rawRecords.slice(start, start + pageSize);
+      const nextOffset = start + records.length;
+      const hasMore = nextOffset < repository.rawRecords.length;
+      return {
+        records,
+        hasMore,
+        nextPageToken: hasMore ? String(nextOffset) : null,
+      };
     },
     async listByFieldValues(tableId, fieldName, values) {
       repository.destinationReadCalls.push({ tableId, fieldName, values: [...values] });
@@ -497,3 +523,148 @@ function createStatefulRepository(input) {
   };
   return repository;
 }
+
+test('resumes a 1,000-video RAW backfill from the failed second page without refetching page one', async () => {
+  const rawRecords = Array.from({ length: 1_000 }, (_, index) => (
+    rawVideo('tt_account_1', `video_${String(index + 1).padStart(4, '0')}`)
+  ));
+  const repository = createStatefulRepository({
+    rawRecords,
+    dictionaryRecords: [dictionaryRow()],
+    failPageTokenOnce: '500',
+  });
+  const stateStore = createIncrementalStateStore();
+  const workStore = new InMemoryResumableWorkStore({ now: () => 10_000 });
+  const common = {
+    repository,
+    syncEngine: new TableSyncEngine(),
+    accountId: 'tt_account_1',
+    sourceHandle: 'tt_account_1',
+    metricDate: '2026-07-20',
+    tables: tableIds(),
+    incrementalEnabled: true,
+    incrementalStateStore: stateStore,
+    cursorKey: 'profile:tiktok:tt_account_1:native_import',
+    customerProfile: 'profile',
+    syncMode: 'auto',
+    fullSyncIntervalMs: 86_400_000,
+    resumableWorkStore: workStore,
+    workKey: 'tiktok:message-large-1',
+    requestedAt: 1_000,
+    generation: 1_000,
+    sourcePageSize: 500,
+    sourceMaxPages: 10,
+  };
+
+  await assert.rejects(
+    () => syncTikTokCreatorNativeToLark({ ...common, syncRunId: 'run-large-attempt-1', now: () => 2_000 }),
+    (error) => error?.code === 'LARK_TRANSIENT_API_ERROR' && error.retryable === true,
+  );
+  const staged = await workStore.loadPhase({
+    workKey: common.workKey,
+    phase: 'tiktok_native_source_pages',
+  });
+  assert.equal(staged.pagesProcessed, 1);
+  assert.equal(staged.processedItems, 500);
+
+  const result = await syncTikTokCreatorNativeToLark({
+    ...common,
+    syncRunId: 'run-large-attempt-2',
+    now: () => 3_000,
+  });
+
+  assert.equal(result.rawRecords, 1_000);
+  assert.equal(result.processedRawRecords, 1_000);
+  assert.equal(result.content.created, 1_000);
+  assert.equal(result.dailySnapshots.created, 1_000);
+  assert.deepEqual(result.sourcePagination, {
+    durable: true,
+    complete: true,
+    records: 1_000,
+    pagesProcessed: 2,
+    resumedPages: 1,
+    pageSize: 500,
+    maxPages: 10,
+  });
+  assert.equal(repository.pageCalls.filter((call) => call.pageToken === null).length, 1);
+  assert.equal(repository.pageCalls.filter((call) => call.pageToken === '500').length, 2);
+  assert.equal(stateStore.saveCalls.at(-1).records.length, 1_000);
+  assert.equal(workStore.works.get(common.workKey).lifecycleStatus, 'completed');
+
+  const callsBeforeReplay = repository.pageCalls.length;
+  const replay = await syncTikTokCreatorNativeToLark({
+    ...common,
+    syncRunId: 'run-large-replay',
+    now: () => 4_000,
+  });
+  assert.equal(replay.mode, 'already_completed');
+  assert.equal(replay.resumableWork.completionReplay, true);
+  assert.equal(repository.pageCalls.length, callsBeforeReplay);
+});
+
+test('retry after checkpoint success and transient completeWork failure finishes without duplicate writes', async () => {
+  const repository = createStatefulRepository({
+    rawRecords: [rawVideo('tt_account_1', 'video_1')],
+    dictionaryRecords: [dictionaryRow()],
+  });
+  const stateStore = createIncrementalStateStore();
+  const baseWorkStore = new InMemoryResumableWorkStore({ now: () => 20_000 });
+  let failCompleteOnce = true;
+  const workStore = new Proxy(baseWorkStore, {
+    get(target, property) {
+      if (property === 'completeWork') {
+        return async (input) => {
+          if (failCompleteOnce) {
+            failCompleteOnce = false;
+            throw Object.assign(new Error('D1 complete work unavailable'), {
+              code: 'D1_SYNC_WORK_COMPLETE_FAILED',
+              retryable: true,
+            });
+          }
+          return target.completeWork(input);
+        };
+      }
+      const value = target[property];
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+  const common = {
+    repository,
+    syncEngine: new TableSyncEngine(),
+    accountId: 'tt_account_1',
+    sourceHandle: 'tt_account_1',
+    metricDate: '2026-07-20',
+    tables: tableIds(),
+    incrementalEnabled: true,
+    incrementalStateStore: stateStore,
+    cursorKey: 'profile:tiktok:tt_account_1:native_import',
+    customerProfile: 'profile',
+    syncMode: 'auto',
+    fullSyncIntervalMs: 86_400_000,
+    resumableWorkStore: workStore,
+    workKey: 'tiktok:message-complete-retry',
+    requestedAt: 5_000,
+    generation: 5_000,
+    sourcePageSize: 500,
+    sourceMaxPages: 10,
+  };
+
+  await assert.rejects(
+    () => syncTikTokCreatorNativeToLark({ ...common, syncRunId: 'run-complete-1', now: () => 6_000 }),
+    (error) => error?.code === 'D1_SYNC_WORK_COMPLETE_FAILED' && error.retryable === true,
+  );
+  assert.equal(repository.writeCalls.length, 2);
+  assert.equal(stateStore.saveCalls.length, 1);
+
+  const result = await syncTikTokCreatorNativeToLark({
+    ...common,
+    syncRunId: 'run-complete-2',
+    now: () => 7_000,
+  });
+  assert.equal(result.incremental.mode, 'incremental');
+  assert.equal(result.incremental.reason, 'no_source_changes');
+  assert.equal(result.content.created, 0);
+  assert.equal(result.dailySnapshots.created, 0);
+  assert.equal(repository.writeCalls.length, 2);
+  assert.equal(baseWorkStore.works.get(common.workKey).lifecycleStatus, 'completed');
+});
