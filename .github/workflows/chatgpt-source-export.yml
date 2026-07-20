@@ -1,0 +1,37 @@
+name: ChatGPT Source Export
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Package source
+        shell: bash
+        run: |
+          set -euo pipefail
+          zip -qr social-marketing-integration-source.zip . \
+            -x '.git/*' \
+            -x 'node_modules/*' \
+            -x '.wrangler/*' \
+            -x 'outputs/*' \
+            -x '*.log'
+
+      - name: Upload source archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: chatgpt-source-export
+          path: social-marketing-integration-source.zip
+          if-no-files-found: error
+          retention-days: 1
