@@ -20,6 +20,7 @@ export function normalizeTikTokCreatorVideoBatch(input) {
     normalizeRow: (rawRow) => normalizeTikTokCreatorVideo({
       accountId,
       metricDate,
+      sourceTimezone: input?.sourceTimezone ?? 'Asia/Bangkok',
       rawRow,
       dictionaryRules,
     }),
@@ -33,6 +34,7 @@ export function normalizeTikTokCreatorVideoBatch(input) {
     sourceHandles: normalized.sourceIdentities,
     duplicateContentRows: normalized.duplicateContentRows,
     duplicateDailyRows: normalized.duplicateDailyRows,
+    duplicateResolution: normalized.duplicateResolution,
   });
 }
 
