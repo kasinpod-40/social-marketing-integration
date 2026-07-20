@@ -15,11 +15,24 @@ export class DurableMirrorReliabilityStore {
   }
 
   async saveSyncRun(entry) {
-    return this.#persistAndSchedule('saveSyncRun', entry);
+    const primaryResult = await this.#savePrimary('saveSyncRun', entry);
+    return this.#scheduleMirror({
+      method: 'saveSyncRun',
+      payload: toSyncRunMirrorPayload(entry),
+      primaryResult,
+    });
   }
 
   async saveSystemAlert(alert) {
-    return this.#persistAndSchedule('saveSystemAlert', alert);
+    const primaryResult = await this.#savePrimary('saveSystemAlert', alert);
+    const persisted = typeof this.primary.readSystemAlertForMirror === 'function'
+      ? await this.primary.readSystemAlertForMirror(requireText(alert?.alertId, 'alert.alertId'))
+      : alert;
+    return this.#scheduleMirror({
+      method: 'saveSystemAlert',
+      payload: toSystemAlertMirrorPayload(persisted),
+      primaryResult,
+    });
   }
 
   async saveDeadLetter(deadLetter) {
@@ -30,12 +43,15 @@ export class DurableMirrorReliabilityStore {
     return Object.freeze({ primarySucceeded: true, primaryResult, mirrorScheduled: false });
   }
 
-  async #persistAndSchedule(method, payload) {
+  async #savePrimary(method, payload) {
     if (typeof this.primary?.[method] !== 'function') {
       throw new TypeError(`Primary reliability store does not implement ${method}`);
     }
-    const primaryResult = await this.primary[method](payload);
-    await this.outbox.schedule({ method, payload });
+    return this.primary[method](payload);
+  }
+
+  async #scheduleMirror(input) {
+    await this.outbox.schedule({ method: input.method, payload: input.payload });
     let mirrorScheduled = true;
     try {
       await this.queue.send(Object.freeze({
@@ -45,7 +61,7 @@ export class DurableMirrorReliabilityStore {
       }));
     } catch (error) {
       // Outbox ถูก Persist แล้ว จึงห้ามเปลี่ยน D1 primary success เป็น Sync failure
-      // เพียงเพราะ Wake-up signal ล้ม; รอบถัดไปสามารถส่ง Generic drain ซ้ำได้.
+      // เพียงเพราะ Wake-up signal ล้ม; Scheduled drain จะปลุกงาน pending ซ้ำ.
       mirrorScheduled = false;
       try {
         this.onScheduleError({
@@ -59,10 +75,37 @@ export class DurableMirrorReliabilityStore {
     }
     return Object.freeze({
       primarySucceeded: true,
-      primaryResult,
+      primaryResult: input.primaryResult,
       mirrorScheduled,
     });
   }
+}
+
+function toSyncRunMirrorPayload(value) {
+  return Object.freeze({
+    syncId: requireText(value?.syncId, 'syncRun.syncId'),
+    platform: requireText(value?.platform, 'syncRun.platform'),
+    syncType: requireText(value?.syncType, 'syncRun.syncType'),
+    status: requireText(value?.status, 'syncRun.status'),
+    recordsPulled: nonNegativeInteger(value?.recordsPulled ?? 0, 'syncRun.recordsPulled'),
+    recordsWritten: nonNegativeInteger(value?.recordsWritten ?? 0, 'syncRun.recordsWritten'),
+    errorCode: optionalText(value?.errorCode),
+    errorMessage: optionalText(value?.errorMessage),
+  });
+}
+
+function toSystemAlertMirrorPayload(value) {
+  return Object.freeze({
+    alertId: requireText(value?.alertId, 'alert.alertId'),
+    syncRunId: optionalText(value?.syncRunId),
+    alertType: requireText(value?.alertType, 'alert.alertType'),
+    severity: requireText(value?.severity, 'alert.severity'),
+    platform: requireText(value?.platform, 'alert.platform'),
+    status: requireText(value?.status, 'alert.status'),
+    message: requireText(value?.message, 'alert.message'),
+    errorCode: optionalText(value?.errorCode),
+    createdAt: optionalNonNegativeInteger(value?.createdAt, 'alert.createdAt'),
+  });
 }
 
 function requireStore(value, fieldName) {
@@ -91,4 +134,22 @@ function requireText(value, fieldName) {
     throw new TypeError(`DurableMirrorReliabilityStore requires ${fieldName}`);
   }
   return value.trim();
+}
+
+function optionalText(value) {
+  if (value === null || value === undefined || value === '') return null;
+  return String(value).trim() || null;
+}
+
+function nonNegativeInteger(value, fieldName) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number < 0) {
+    throw new TypeError(`DurableMirrorReliabilityStore ${fieldName} must be a non-negative integer`);
+  }
+  return number;
+}
+
+function optionalNonNegativeInteger(value, fieldName) {
+  if (value === null || value === undefined || value === '') return null;
+  return nonNegativeInteger(value, fieldName);
 }

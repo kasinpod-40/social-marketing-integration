@@ -126,6 +126,52 @@ test('D1 persists system alerts and dead letters with redacted structured payloa
 });
 
 
+
+test('D1 mirror read returns the post-trigger alert status as source of truth', async () => {
+  const calls = [];
+  const db = {
+    prepare(sql) {
+      const call = { sql: String(sql), bindings: [] };
+      calls.push(call);
+      return {
+        bind(...values) { call.bindings = values; return this; },
+        async run() { return { meta: { changes: 1 } }; },
+        async first() {
+          return {
+            alert_id: 'alert-resolved',
+            sync_run_id: 'run-1',
+            alert_type: 'sync_failed',
+            severity: 'critical',
+            platform: 'tiktok',
+            status: 'resolved',
+            message: 'Persisted resolved state',
+            error_code: 'SYNTHETIC',
+            created_at: 900,
+          };
+        },
+      };
+    },
+  };
+  const store = new D1ReliabilityStore({ db, now: () => 1_000 });
+
+  await store.saveSystemAlert({
+    alertId: 'alert-resolved',
+    syncRunId: 'run-1',
+    alertType: 'sync_failed',
+    severity: 'critical',
+    platform: 'tiktok',
+    status: 'open',
+    message: 'Retry tried to reopen',
+    errorCode: 'SYNTHETIC',
+    createdAt: 900,
+  });
+  const persisted = await store.readSystemAlertForMirror('alert-resolved');
+
+  assert.equal(persisted.status, 'resolved');
+  assert.equal(persisted.message, 'Persisted resolved state');
+  assert.match(calls[1].sql, /FROM system_alerts/u);
+});
+
 test('non-object or oversized dead-letter payload remains persistable but is not redrive eligible', async () => {
   const db = createFakeD1([1, 1]);
   const store = new D1ReliabilityStore({ db, now: () => 1_000 });

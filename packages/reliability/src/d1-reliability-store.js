@@ -123,6 +123,36 @@ export class D1ReliabilityStore {
     }
   }
 
+  /** อ่าน System alert หลัง Trigger/constraint ทำงานแล้ว เพื่อ Mirror สถานะจริงจาก D1 */
+  async readSystemAlertForMirror(alertId) {
+    const normalizedAlertId = requireText(alertId, 'alertId');
+    try {
+      const row = await this.db.prepare(`
+        SELECT
+          alert_id, sync_run_id, alert_type, severity, platform, status,
+          message, error_code, created_at
+        FROM system_alerts
+        WHERE alert_id = ?
+      `).bind(normalizedAlertId).first();
+      if (!row) {
+        throw new Error('Persisted system alert was not found after write');
+      }
+      return Object.freeze({
+        alertId: requireText(row.alert_id, 'alert_id'),
+        syncRunId: nullableText(row.sync_run_id),
+        alertType: requireText(row.alert_type, 'alert_type'),
+        severity: requireText(row.severity, 'severity'),
+        platform: requireText(row.platform, 'platform'),
+        status: requireText(row.status, 'status'),
+        message: requireText(row.message, 'message'),
+        errorCode: nullableText(row.error_code),
+        createdAt: nullableInteger(row.created_at),
+      });
+    } catch (cause) {
+      throw d1Error('Failed to read persisted system alert for mirror', 'D1_SYSTEM_ALERT_MIRROR_READ_FAILED', cause);
+    }
+  }
+
   /** เก็บ Message ที่หยุดถาวรหรือมาจาก Cloudflare DLQ */
   async saveDeadLetter(deadLetter) {
     const operationalPayloadJson = safeJson(deadLetter?.payload ?? {});

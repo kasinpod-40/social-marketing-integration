@@ -67,10 +67,12 @@ export async function processJob(input) {
 
   if (definition.type === JOB_TYPES.RELIABILITY_MIRROR_DELIVER) {
     const infrastructure = input.getInfrastructure();
-    const tableIds = readLarkTableIdsFromEnv(input.env, ['mktSyncLog', 'mktSystemAlerts']);
     return deliverReliabilityMirror({
       outbox: infrastructure.getReliabilityMirrorOutbox(),
-      mirror: infrastructure.getLarkReliabilityStore(tableIds),
+      getMirror: () => {
+        const tableIds = readLarkTableIdsFromEnv(input.env, ['mktSyncLog', 'mktSystemAlerts']);
+        return infrastructure.getLarkReliabilityStore(tableIds);
+      },
       limit: readPositiveInteger(input.env?.MKT_RELIABILITY_MIRROR_BATCH_SIZE, 25),
     });
   }

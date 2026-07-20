@@ -24,11 +24,14 @@ export async function produceScheduledJobs(event, env) {
     return;
   }
 
-  const runtimeConfig = loadCustomerRuntimeConfig(env);
-  for (const connectorKey of new Set(jobs
+  const connectorKeys = new Set(jobs
     .map((job) => assertJobImplemented(getJobDefinition(job.type)).connectorKey)
-    .filter(Boolean))) {
-    assertConnectorRunnable(runtimeConfig, connectorKey);
+    .filter(Boolean));
+  if (connectorKeys.size > 0) {
+    const runtimeConfig = loadCustomerRuntimeConfig(env);
+    for (const connectorKey of connectorKeys) {
+      assertConnectorRunnable(runtimeConfig, connectorKey);
+    }
   }
   const queue = env?.MKT_SYNC_QUEUE;
   if (typeof queue?.send !== 'function') {

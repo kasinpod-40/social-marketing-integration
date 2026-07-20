@@ -3,13 +3,18 @@ import assert from 'node:assert/strict';
 import { DurableMirrorReliabilityStore } from '../../packages/reliability/src/durable-mirror-reliability-store.js';
 import { runReliableSync } from '../../packages/reliability/src/reliable-sync-runner.js';
 
-test('durable reliability store persists primary and outbox before sending a generic delivery job', async () => {
+test('durable reliability store persists primary and minimal outbox payload before generic delivery job', async () => {
   const calls = [];
+  const scheduled = [];
   const primary = {
     async saveSyncRun(entry) { calls.push(['primary', entry.syncId]); return 'd1-ok'; },
   };
   const outbox = {
-    async schedule(input) { calls.push(['outbox', input.method, input.payload.syncId]); return { scheduled: true }; },
+    async schedule(input) {
+      calls.push(['outbox', input.method, input.payload.syncId]);
+      scheduled.push(input);
+      return { scheduled: true };
+    },
   };
   const sent = [];
   const store = new DurableMirrorReliabilityStore({
@@ -20,7 +25,12 @@ test('durable reliability store persists primary and outbox before sending a gen
     now: () => Date.parse('2026-07-20T00:00:00.000Z'),
   });
 
-  const result = await store.saveSyncRun({ syncId: 'run-1' });
+  const result = await store.saveSyncRun(syncRun({
+    syncId: 'run-1',
+    customerProfile: 'customer-secret-identity',
+    accountKey: 'account-secret-identity',
+    details: { accessToken: 'must-not-persist' },
+  }));
 
   assert.deepEqual(calls, [
     ['primary', 'run-1'],
@@ -33,8 +43,42 @@ test('durable reliability store persists primary and outbox before sending a gen
     requestedAt: '2026-07-20T00:00:00.000Z',
   });
   assert.equal(JSON.stringify(sent[0]).includes('run-1'), false);
+  assert.deepEqual(Object.keys(scheduled[0].payload).sort(), [
+    'errorCode',
+    'errorMessage',
+    'platform',
+    'recordsPulled',
+    'recordsWritten',
+    'status',
+    'syncId',
+    'syncType',
+  ]);
+  assert.doesNotMatch(JSON.stringify(scheduled[0].payload), /customer-secret|account-secret|accessToken/u);
   assert.equal(result.primarySucceeded, true);
   assert.equal(result.mirrorScheduled, true);
+});
+
+test('system alert mirror uses D1 persisted truth so a resolved incident cannot reopen', async () => {
+  const scheduled = [];
+  const store = new DurableMirrorReliabilityStore({
+    primary: {
+      async saveSystemAlert() { return 'd1-ok'; },
+      async readSystemAlertForMirror(alertId) {
+        assert.equal(alertId, 'alert-1');
+        return systemAlert({ alertId, status: 'resolved', message: 'Persisted resolved state' });
+      },
+    },
+    outbox: { async schedule(input) { scheduled.push(input); } },
+    queue: { async send() {} },
+    deliveryJobType: 'system.reliability-mirror.deliver',
+  });
+
+  await store.saveSystemAlert(systemAlert({ alertId: 'alert-1', status: 'open' }));
+
+  assert.equal(scheduled.length, 1);
+  assert.equal(scheduled[0].payload.status, 'resolved');
+  assert.equal(scheduled[0].payload.message, 'Persisted resolved state');
+  assert.equal(Object.hasOwn(scheduled[0].payload, 'details'), false);
 });
 
 test('queue signal failure leaves durable work pending without changing primary success', async () => {
@@ -49,7 +93,7 @@ test('queue signal failure leaves durable work pending without changing primary 
     onScheduleError: (event) => errors.push(event),
   });
 
-  const result = await store.saveSystemAlert({ alertId: 'alert-1' });
+  const result = await store.saveSystemAlert(systemAlert({ alertId: 'alert-1' }));
   assert.equal(primaryCalls, 1);
   assert.equal(outboxCalls, 1);
   assert.equal(result.primarySucceeded, true);
@@ -86,11 +130,10 @@ test('diagnostic callback failure cannot change a persisted primary result', asy
     onScheduleError() { throw new Error('logger unavailable'); },
   });
 
-  const result = await store.saveSyncRun({ syncId: 'run-logger' });
+  const result = await store.saveSyncRun(syncRun({ syncId: 'run-logger' }));
   assert.equal(result.primarySucceeded, true);
   assert.equal(result.mirrorScheduled, false);
 });
-
 
 test('mirror queue outage cannot relabel a successful reliable sync as failed', async () => {
   const statuses = [];
@@ -125,3 +168,31 @@ test('mirror queue outage cannot relabel a successful reliable sync as failed', 
   assert.equal(result.mode, 'write');
   assert.deepEqual(statuses, ['running', 'success']);
 });
+
+function syncRun(overrides = {}) {
+  return {
+    syncId: 'run-default',
+    platform: 'tiktok',
+    syncType: 'native_import',
+    status: 'running',
+    recordsPulled: 0,
+    recordsWritten: 0,
+    ...overrides,
+  };
+}
+
+function systemAlert(overrides = {}) {
+  return {
+    alertId: 'alert-default',
+    syncRunId: null,
+    alertType: 'sync_failed',
+    severity: 'critical',
+    platform: 'tiktok',
+    status: 'open',
+    message: 'Synthetic alert',
+    errorCode: 'SYNTHETIC',
+    createdAt: 1_000,
+    details: { accessToken: 'must-not-persist' },
+    ...overrides,
+  };
+}

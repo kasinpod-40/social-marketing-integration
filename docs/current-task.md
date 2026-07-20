@@ -2,8 +2,8 @@
 
 ## Status
 
-- **Task status:** `review_pending`
-- **Batch C status:** `implemented_local_gates_passed`
+- **Task status:** `independent_review_fixes_pending_ci`
+- **Batch C status:** `independent_review_blockers_fixed_local_gates_passed`
 - **Accepted code baseline:** `2306509`
 - **Merged review:** `PR #3`
 - **Working branch:** `codex/pre-meta-hardening-batch-c`
@@ -12,7 +12,7 @@
 - **Production ownership:** customer-owned resources only
 - **Last updated:** `2026-07-20`
 
-Atomic batches A and B are implemented, reviewed, CI-verified and squash-merged to `main`. Batch C implementation and local gates are complete on the dedicated feature branch above and now await GitHub CI plus independent review. Batch D remains blocked until Batch C is independently reviewed and merged. No deployment or external-system mutation is authorized.
+Atomic batches A and B are implemented, reviewed, CI-verified and squash-merged to `main`. Batch C implementation completed on the dedicated feature branch. Independent review found three durable-mirror recovery blockers; all three are fixed locally and the complete local gate now passes. The review-fix commit and GitHub merge-ref CI are still required before the merge decision. Batch D remains blocked until Batch C is independently approved and merged. No deployment or external-system mutation is authorized.
 
 ## Security prerequisite
 
@@ -157,7 +157,7 @@ Add focused commands for every new test file. Do not weaken, skip or hide any ex
 
 ## Implementation result
 
-- **Implementation status:** `complete_pending_independent_review`
+- **Implementation status:** `independent_review_blockers_fixed_pending_remote_ci`
 - **Branch:** `codex/pre-meta-hardening-batch-c`
 - **External/Live UAT:** not run and not authorized for Batch C
 
@@ -165,7 +165,7 @@ Add focused commands for every new test file. Do not weaken, skip or hide any ex
 
 - [x] C1 split Worker composition, scheduling, Queue routing, terminal handling, active-job routing and infrastructure into focused modules while preserving the public `index.js` exports and lazy dependency construction.
 - [x] C2 split the staged TikTok orchestrator into contract, phase and state/result modules while preserving persisted phase names, generation fences, plan fingerprint, checkpoint and replay contracts.
-- [x] C3 added a D1-backed durable Lark reliability-mirror outbox and generic Queue drain route. D1 remains the blocking primary; Lark delivery is bounded, idempotent and retryable without relabelling a successful primary write.
+- [x] C3 added a D1-backed durable Lark reliability-mirror outbox and generic Queue drain route. D1 remains the blocking primary; valid Lark delivery failures remain pending/retryable, malformed durable payloads are quarantined, resolved D1 alerts cannot reopen in Lark, and the primary Cron provides a generic recovery wake-up without customer runtime dependencies.
 - [x] C4 added bounded report-source loading with server-side Lark filters when available and a finite page/record-capped compatibility fallback.
 - [x] Removed the temporary source-export workflow and trigger files used only to obtain a local review copy in this tool environment.
 
@@ -204,14 +204,17 @@ Add focused commands for every new test file. Do not weaken, skip or hide any ex
   - `tests/application/deliver-reliability-mirror.test.js`
   - `tests/application/generate-tiktok-organic-report.test.js`
   - `tests/application/load-tiktok-organic-report-source.test.js`
+  - `tests/application/scheduled-jobs.test.js`
   - `tests/application/sync-worker-job-routing.test.js`
   - `tests/application/tiktok-staged-business-sync.test.js`
   - `tests/connectors/lark-bitable-client.test.js`
   - `tests/connectors/lark-record-repository.test.js`
   - `tests/reliability/d1-reliability-mirror-outbox.test.js`
+  - `tests/reliability/d1-reliability-store.test.js`
   - `tests/reliability/durable-mirror-reliability-store.test.js`
   - `tests/reliability/reliability-mirror-outbox-migration.test.js`
   - `tests/reliability/runtime-factory.test.js`
+  - `tests/worker-runtime/sync-worker.runtime.test.js`
 
 The legacy compatibility file `packages/application/src/use-cases/sync-tiktok-creator-native-to-lark-legacy.js` was not modified.
 
@@ -226,17 +229,13 @@ The legacy compatibility file `packages/application/src/use-cases/sync-tiktok-cr
 ```bash
 npm ci
 npm run check
+node --test tests/application/tiktok-staged-business-sync.test.js
 node --test \
   tests/application/deliver-reliability-mirror.test.js \
-  tests/application/load-tiktok-organic-report-source.test.js \
+  tests/application/scheduled-jobs.test.js \
   tests/application/sync-worker-job-routing.test.js \
-  tests/application/tiktok-staged-business-sync.test.js \
-  tests/connectors/lark-bitable-client.test.js \
-  tests/connectors/lark-record-repository.test.js \
-  tests/reliability/d1-reliability-mirror-outbox.test.js \
-  tests/reliability/durable-mirror-reliability-store.test.js \
-  tests/reliability/reliability-mirror-outbox-migration.test.js \
-  tests/reliability/runtime-factory.test.js
+  tests/reliability/d1-reliability-store.test.js \
+  tests/reliability/durable-mirror-reliability-store.test.js
 npm test
 npm run test:report-reliability
 npm audit --audit-level=high
@@ -246,22 +245,25 @@ git diff --check
 
 Results:
 
-- Focused Batch C regression: **107 passed, 0 failed**
-- Node Unit/Integration: **488 passed, 0 failed**
-- Workers runtime: **8 passed, 0 failed**
-- Report reliability: **69 passed, 0 failed**
-- Architecture: **133 source files / 303 local dependencies / 0 cycles**
+- Focused staged TikTok regression: **4 passed, 0 failed**
+- Focused independent-review/C3 regression: **57 passed, 0 failed**
+- Node Unit/Integration: **495 passed, 0 failed**
+- Workers runtime: **9 passed, 0 failed**
+- Report reliability: **70 passed, 0 failed**
+- Architecture: **133 source files / 304 local dependencies / 0 cycles**
 - Repository hygiene: passed
 - Dependency audit: **0 vulnerabilities**
-- Wrangler dry-run: passed at **651.07 KiB / gzip 128.90 KiB**
+- Wrangler dry-run: passed at **656.09 KiB / gzip 129.86 KiB**
 - SQLite migration replay `0001–0008`: passed
 - `git diff --check`: passed
 
 ### Verified failure and replay behavior
 
-- Queue wake-up failure does not change an already successful D1 Sync Run into `failed`; pending outbox work can be signalled again by a later operation.
+- Queue wake-up failure does not change an already successful D1 Sync Run into `failed`; the primary Cron always queues a generic bounded mirror drain so pending work does not depend on a later reliability write.
 - The outbox `revision` fence prevents an older in-flight delivery from marking a newer payload revision as delivered.
-- Retryable Lark mirror failure remains pending; malformed/permanent payload becomes terminal without changing the D1 primary business result.
+- Retryable and permanent Lark delivery failures for valid payloads remain pending and are retried; only malformed durable payloads become terminal.
+- System Alert mirror payload is loaded from post-trigger D1 truth, so migration `0007` resolution protection cannot be bypassed by a stale incoming alert.
+- Mirror-delivery terminal/DLQ handling persists the D1 dead letter but suppresses a recursive mirrored System Alert.
 - Duplicate/replayed mirror delivery uses Lark stable-key upsert and idempotent outbox completion.
 - TikTok failure after Content, failure after checkpoint, completion replay and 1,000-record bounded-unit resume do not repeat completed business writes or refetch staged RAW pages.
 - Report fallback cap and repeated/missing pagination cursor guards fail closed before output planning or writes.
@@ -271,10 +273,10 @@ Results:
 - Migration `0008` and the mirror delivery path have automated/local evidence only; DEV migration, Queue delivery and Lark write remain deliberately unexecuted.
 - Server-side Lark report filters are covered by request-contract tests but still require guarded DEV live verification before rollout.
 - Runtime throughput, Queue wake-up frequency and outbox backlog need DEV observation after an approved rollout.
-- GitHub Actions must pass on the pushed branch and PR merge ref before a merge decision.
+- The independent-review fix commit must be pushed and GitHub Actions must pass on the updated PR merge ref before a merge decision.
 - Batch D cleanup gates, Project Brain/CHANGELOG closeout and guarded DEV rollout plan remain pending.
 
-- **Suggested commit:** `refactor: harden runtime reliability structure`
+- **Review-fix commit:** `fix: close durable mirror recovery gaps`
 
 ## Remaining — Atomic batch D
 

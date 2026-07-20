@@ -39,14 +39,12 @@ export function buildScheduledJobs(input = {}) {
   const youtubeEnabled = includeYouTubeJobs
     ? readBoolean(env.MKT_SCHEDULE_YOUTUBE_ENABLED, false)
     : false;
-  if ((!includePrimaryJobs || (!tiktokEnabled && !dailyEnabled && !weeklyEnabled))
-    && (!includeYouTubeJobs || !youtubeEnabled)) {
-    return Object.freeze([]);
-  }
-
-  const timeZone = requireJobText(env.DEFAULT_TIMEZONE ?? 'Asia/Bangkok', 'DEFAULT_TIMEZONE');
-  const local = readZonedScheduleParts(requestedAt, timeZone);
-  const completedPeriodEnd = addDaysDateOnly(local.date, -1);
+  const needsLocalSchedule = tiktokEnabled || dailyEnabled || weeklyEnabled || youtubeEnabled;
+  const timeZone = needsLocalSchedule
+    ? requireJobText(env.DEFAULT_TIMEZONE ?? 'Asia/Bangkok', 'DEFAULT_TIMEZONE')
+    : null;
+  const local = needsLocalSchedule ? readZonedScheduleParts(requestedAt, timeZone) : null;
+  const completedPeriodEnd = local ? addDaysDateOnly(local.date, -1) : null;
   const jobs = [];
 
   if (includePrimaryJobs && tiktokEnabled) {
@@ -126,6 +124,17 @@ export function buildScheduledJobs(input = {}) {
       job.analyticsEndDate = endDate;
     }
     jobs.push(Object.freeze(job));
+  }
+
+  if (includePrimaryJobs) {
+    // Durable outbox ต้องมี Recovery wake-up ที่ไม่พึ่ง write ครั้งถัดไป
+    // เพื่อให้ Queue send ที่ล้มหลัง D1 primary success ไม่ทำให้งาน Mirror ค้างถาวร.
+    jobs.push(Object.freeze({
+      schemaVersion: 1,
+      type: JOB_TYPES.RELIABILITY_MIRROR_DELIVER,
+      trigger: 'scheduled',
+      requestedAt,
+    }));
   }
 
   return Object.freeze(jobs);

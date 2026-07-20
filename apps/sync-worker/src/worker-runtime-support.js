@@ -176,8 +176,11 @@ function summarizeReliabilityMirror(value) {
     status: value.status ?? null,
     pendingRead: value.pendingRead ?? null,
     delivered: value.delivered ?? null,
+    failedPermanent: value.failedPermanent ?? null,
     superseded: value.superseded ?? null,
     remainingUnknown: value.remainingUnknown === true,
+    deferred: value.deferred === true,
+    errorCode: value.errorCode ?? null,
   });
 }
 

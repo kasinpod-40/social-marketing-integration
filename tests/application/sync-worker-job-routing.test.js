@@ -231,10 +231,63 @@ test('reliability mirror delivery routes before customer runtime and exposes saf
     status: 'drained',
     pendingRead: 1,
     delivered: 1,
+    failedPermanent: 0,
     superseded: 0,
     remainingUnknown: false,
+    deferred: false,
+    errorCode: null,
   });
   assert.equal(JSON.stringify(result).includes('run-1'), false);
+});
+
+
+test('empty reliability mirror drain stays lazy and does not require Lark table configuration', async () => {
+  let larkStoreCalls = 0;
+  const result = await processJob({
+    job: {
+      body: { type: 'system.reliability-mirror.deliver' },
+      schemaVersion: 1,
+    },
+    message: { id: 'mirror-empty', attempts: 1 },
+    env: {},
+    getRuntimeConfig() { throw new Error('must not load customer runtime'); },
+    getInfrastructure() {
+      return {
+        getReliabilityMirrorOutbox() {
+          return {
+            async listPending() { return []; },
+            async markDelivered() {},
+            async markDeliveryFailed() {},
+            async markPermanentFailed() {},
+          };
+        },
+        getLarkReliabilityStore() {
+          larkStoreCalls += 1;
+          throw new Error('must stay lazy');
+        },
+      };
+    },
+  });
+
+  assert.equal(larkStoreCalls, 0);
+  assert.equal(result.status, 'drained');
+  assert.equal(result.pendingRead, 0);
+});
+
+test('mirror delivery reaching DLQ persists D1 dead letter without recursively creating a mirrored alert', async () => {
+  const message = createMessage({ type: 'system.reliability-mirror.deliver' });
+  message.id = 'mirror-dlq';
+  message.attempts = 6;
+  const db = createFakeD1();
+
+  await syncWorker.queue({ queue: 'sync-dlq', messages: [message] }, {
+    ...minimalEnv(),
+    MKT_STATE_DB: db,
+  });
+
+  assert.equal(message.acked, true);
+  assert.ok(db.calls.some((call) => /INSERT INTO dead_letter_jobs/u.test(call.sql)));
+  assert.equal(db.calls.some((call) => /INSERT INTO system_alerts/u.test(call.sql)), false);
 });
 
 test('redrive admin job executes before customer/Lark runtime loading and uses a new requestedAt generation', async () => {
@@ -326,6 +379,26 @@ function createFakeD1(input = {}) {
         async all() {
           if (input.fail) throw new Error('D1 unavailable');
           return { results: [] };
+        },
+        async first() {
+          if (input.fail) throw new Error('D1 unavailable');
+          if (/FROM system_alerts/u.test(call.sql)) {
+            const insert = [...calls].reverse().find((candidate) => /INSERT INTO system_alerts/u.test(candidate.sql));
+            if (!insert) return null;
+            const values = insert.bindings;
+            return {
+              alert_id: values[0],
+              sync_run_id: values[1],
+              alert_type: values[2],
+              severity: values[3],
+              platform: values[4],
+              status: values[5],
+              message: values[6],
+              error_code: values[7],
+              created_at: values[9],
+            };
+          }
+          return null;
         },
       };
     },

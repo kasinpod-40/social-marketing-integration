@@ -1,3 +1,4 @@
+import { JOB_TYPES } from '../../../packages/application/src/jobs/job-catalog.js';
 import { normalizeQueueJobMessage } from '../../../packages/application/src/jobs/queue-job.js';
 import { createSystemAlert } from '../../../packages/domain/src/entities/system-alert.js';
 import {
@@ -156,16 +157,20 @@ async function processDeadLetterBatch(batch, env, storeFactory) {
         retryCount: readAttempts(message),
         status: 'open',
       });
-      await store.saveSystemAlert(createSystemAlert({
-        alertId: `alert:${dlqId}`,
-        alertType: 'queue_dead_letter',
-        severity: 'critical',
-        platform: platformFromJobType(job?.body?.type),
-        status: 'open',
-        errorCode: 'QUEUE_RETRY_EXHAUSTED',
-        message: `Queue job ไปถึง DLQ หลัง Retry ครบ\nmessage_id=${message.id}\njob_type=${job?.body?.type ?? 'unknown'}`,
-        details: { queueName: batch.queue, attempts: readAttempts(message) },
-      }));
+      if (shouldCreateQueueFailureAlert(job?.body?.type)) {
+        await store.saveSystemAlert(createSystemAlert({
+          alertId: `alert:${dlqId}`,
+          alertType: 'queue_dead_letter',
+          severity: 'critical',
+          platform: platformFromJobType(job?.body?.type),
+          status: 'open',
+          errorCode: 'QUEUE_RETRY_EXHAUSTED',
+          message: `Queue job ไปถึง DLQ หลัง Retry ครบ
+message_id=${message.id}
+job_type=${job?.body?.type ?? 'unknown'}`,
+          details: { queueName: batch.queue, attempts: readAttempts(message) },
+        }));
+      }
       logQueueResult({ ok: false, scope: 'dead_letter', messageId: message.id, dlqId, persisted: true });
       message.ack();
     } catch (error) {
@@ -247,15 +252,20 @@ async function recordPermanentQueueFailure(input) {
     retryCount: Math.max(0, readAttempts(input.message) - 1),
     status: 'open',
   });
-  await store.saveSystemAlert(createSystemAlert({
-    alertId: `alert:${dlqId}`,
-    alertType: 'queue_permanent_failure',
-    severity: 'critical',
-    platform: platformFromJobType(input.job?.body?.type),
-    errorCode: input.error?.code ?? 'PERMANENT_QUEUE_FAILURE',
-    message: `Queue job หยุดแบบ Permanent\nmessage_id=${input.message.id}\njob_type=${input.job?.body?.type ?? 'unknown'}\nerror=${input.error instanceof Error ? input.error.message : String(input.error)}`,
-    details: { attempts: readAttempts(input.message) },
-  }));
+  if (shouldCreateQueueFailureAlert(input.job?.body?.type)) {
+    await store.saveSystemAlert(createSystemAlert({
+      alertId: `alert:${dlqId}`,
+      alertType: 'queue_permanent_failure',
+      severity: 'critical',
+      platform: platformFromJobType(input.job?.body?.type),
+      errorCode: input.error?.code ?? 'PERMANENT_QUEUE_FAILURE',
+      message: `Queue job หยุดแบบ Permanent
+message_id=${input.message.id}
+job_type=${input.job?.body?.type ?? 'unknown'}
+error=${input.error instanceof Error ? input.error.message : String(input.error)}`,
+      details: { attempts: readAttempts(input.message) },
+    }));
+  }
 }
 
 async function markQueueWorkTerminal(input) {
@@ -279,4 +289,10 @@ function platformFromJobType(type) {
   if (type.startsWith('report.')) return 'tiktok';
   const prefix = type.split('.')[0];
   return new Set(['facebook', 'instagram', 'tiktok', 'youtube']).has(prefix) ? prefix : 'system';
+}
+
+function shouldCreateQueueFailureAlert(jobType) {
+  // Mirror delivery failure must not create a new mirrored alert, otherwise Lark outage
+  // would recursively enqueue more mirror jobs after every terminal/DLQ event.
+  return jobType !== JOB_TYPES.RELIABILITY_MIRROR_DELIVER;
 }
