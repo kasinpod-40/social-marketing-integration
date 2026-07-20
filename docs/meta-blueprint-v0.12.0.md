@@ -70,6 +70,19 @@ meta_ads_daily_key = {entity_key}:{source_metric_date}
 meta_ads_raw_breakdown_key = {entity_key}:{source_metric_date}:{breakdown_key}
 ```
 
+Canonical Ads primary field names must match `packages/config/src/ads-data-model.js` exactly:
+
+```text
+MKT_Ads_Accounts   → ads_account_key
+MKT_Ads_Campaigns  → ads_campaign_key
+MKT_Ads_AdGroups   → ads_ad_group_key
+MKT_Ads_Ads        → ads_ad_key
+MKT_Ads_Creatives  → ads_creative_key
+MKT_Ads_Daily      → ads_daily_key
+```
+
+Raw Meta Ads tables use the same canonical key names for their normalized stable-key fields. Parent relationship keys may remain RAW-only; Canonical destination tables receive their declared external ID fields such as `external_campaign_id`, `external_ad_group_id` and `external_creative_id`. Ad rows store the external Creative ID and never substitute an Ad ID for a Creative ID.
+
 External IDs ที่ดูเหมือนตัวเลขต้องเก็บเป็น Text เสมอ. Stable key ต้อง account-scoped และห้ามเปลี่ยนตามชื่อ Account/Page/Campaign.
 
 ## Organic snapshot semantics
