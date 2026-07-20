@@ -3,7 +3,40 @@
  */
 const OPERATIONAL_REDACTION = '[REDACTED]';
 const OPERATIONAL_SECRET_KEY_PATTERN = /(?:secret|token|password|authorization|credentials?|(?:private|signing|api)[_-]?key|consumer[_-]?secret)/iu;
-const OPERATIONAL_IDENTITY_KEY_PATTERN = /(?:lock[_-]?key|cursor[_-]?key|(?:channel|video|content)[_-]?ids?|(?:source|expected|actual|detected)[_-]?(?:channel|video|content)?[_-]?(?:ids?|handles?)|uploads[_-]?playlist[_-]?id|mismatched[_-]?videos?|stable[_-]?keys?)/iu;
+const OPERATIONAL_IDENTITY_KEY_PATTERN = /(?:lock[_-]?key|cursor[_-]?key|customer[_-]?profile|account[_-]?(?:key|id)|page[_-]?id|ig[_-]?(?:user|account)?[_-]?id|instagram[_-]?(?:user|account)?[_-]?id|ad[_-]?account[_-]?id|table[_-]?id|report[_-]?setting[_-]?key|identity|handles?|(?:channel|video|content)[_-]?ids?|(?:source|expected|actual|detected)[_-]?(?:channel|video|content)?[_-]?(?:ids?|handles?)|uploads[_-]?playlist[_-]?id|mismatched[_-]?videos?|stable[_-]?keys?)/iu;
+const OPERATIONAL_SAFE_COUNTER_KEYS = new Set([
+  'attempts',
+  'completed_chunks',
+  'confirmed_rows',
+  'content_rows',
+  'daily_snapshot_rows',
+  'expected_items',
+  'failed_chunk',
+  'issue_count',
+  'max_pages',
+  'metric_count',
+  'mismatched_video_count',
+  'missing_count',
+  'missing_video_ids',
+  'page',
+  'page_rows',
+  'pages_processed',
+  'processed_items',
+  'record_count',
+  'records',
+  'remaining_rows',
+  'result_count',
+  'retry_count',
+  'rows',
+  'skipped_rows',
+  'source_snapshot_count',
+  'top_content_count',
+  'total_chunks',
+  'total_rows',
+  'tracked_content_count',
+  'warning_count',
+]);
+const OPERATIONAL_SAFE_COUNTER_SUFFIX_PATTERN = /(?:^|_)(?:count|rows|records|attempts|retries|pages|chunks|items)$/u;
 const IDENTITY_ERROR_CODE_PATTERN = /(?:IDENTITY|SOURCE_HANDLE)_MISMATCH/u;
 const IDENTITY_MESSAGE_PATTERN = /(?:identity|source handle)\s+mismatch/iu;
 
@@ -185,17 +218,27 @@ function sanitizeReplayValue(value, seen) {
 
 function shouldRedactOperationalValue(key, value) {
   if (OPERATIONAL_SECRET_KEY_PATTERN.test(key)) return value !== null;
-  return OPERATIONAL_IDENTITY_KEY_PATTERN.test(key)
-    && typeof value !== 'number'
-    && typeof value !== 'boolean'
-    && value !== null;
+  if (isSafeOperationalCounter(key, value)) return false;
+  return OPERATIONAL_IDENTITY_KEY_PATTERN.test(key) && value !== null;
+}
+
+function isSafeOperationalCounter(key, value) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return false;
+  const normalized = normalizeOperationalKey(key);
+  return OPERATIONAL_SAFE_COUNTER_KEYS.has(normalized)
+    || OPERATIONAL_SAFE_COUNTER_SUFFIX_PATTERN.test(normalized);
+}
+
+function normalizeOperationalKey(key) {
+  return String(key ?? '')
+    .replace(/([a-z0-9])([A-Z])/gu, '$1_$2')
+    .replace(/[^A-Za-z0-9]+/gu, '_')
+    .replace(/^_+|_+$/gu, '')
+    .toLowerCase();
 }
 
 function isQueueReplaySecretKey(key) {
-  const normalized = String(key ?? '')
-    .replace(/([a-z0-9])([A-Z])/gu, '$1_$2')
-    .replace(/[^A-Za-z0-9]+/gu, '_')
-    .toLowerCase();
+  const normalized = normalizeOperationalKey(key);
   if (normalized === 'token' || normalized === 'authorization' || normalized === 'password') {
     return true;
   }
