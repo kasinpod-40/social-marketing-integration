@@ -55,15 +55,52 @@ export async function syncTikTokCreatorNativeToLark(input = {}) {
     maxPages: input.sourceMaxPages,
     onProgress: input.onProgress,
   });
-  const result = await syncTikTokStagedBusinessToLark({
+  const stagedResult = await syncTikTokStagedBusinessToLark({
     ...input,
     context,
     syncRunId,
     sourceSummary: sourceLoad.summary,
   });
+  const result = stagedResult?.stagedBusiness?.completionPhaseReplay === true
+    ? normalizeCompletionRetryResult(stagedResult)
+    : stagedResult;
   const completedResult = attachResumableSummary(result, context, sourceLoad.summary);
   await completeTikTokResumableSource(context, completedResult);
   return completedResult;
+}
+
+/**
+ * Retry หลัง Business + Checkpoint สำเร็จแต่ completeWork ล้ม ต้องไม่เขียนซ้ำ
+ * และคง Output compatibility เดิมว่าเป็น Incremental no-change ใน Attempt ปัจจุบัน
+ */
+function normalizeCompletionRetryResult(result) {
+  if (!result.incremental) return result;
+  const sourceRecords = nonNegativeInteger(result.rawRecords ?? result.incremental.sourceRecords ?? 0);
+  const skippedResult = Object.freeze({
+    created: 0,
+    updated: 0,
+    skipped: sourceRecords,
+    duplicateInputRows: 0,
+  });
+  return Object.freeze({
+    ...result,
+    processedRawRecords: 0,
+    incremental: Object.freeze({
+      ...result.incremental,
+      mode: 'incremental',
+      reason: 'no_source_changes',
+      selectedRecords: 0,
+      changedRecords: 0,
+      unchangedRecords: sourceRecords,
+      removedRecords: 0,
+      dictionaryChanged: false,
+      metricDateChanged: false,
+      fullSnapshot: false,
+      checkpointSaved: true,
+    }),
+    content: skippedResult,
+    dailySnapshots: skippedResult,
+  });
 }
 
 function attachResumableSummary(result, context, sourcePagination) {
@@ -85,4 +122,12 @@ function requireText(value, fieldName) {
     throw new TypeError(`TikTok sync requires ${fieldName}`);
   }
   return value.trim();
+}
+
+function nonNegativeInteger(value) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number < 0) {
+    throw new TypeError('TikTok sync requires a non-negative safe integer');
+  }
+  return number;
 }
