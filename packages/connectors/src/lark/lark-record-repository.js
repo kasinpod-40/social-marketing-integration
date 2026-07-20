@@ -38,6 +38,23 @@ export class LarkRecordRepository {
     });
   }
 
+  /** อ่าน Record ด้วย Filter/Sort ที่ Server รองรับ พร้อมเพดานและ Early stop */
+  async searchRecords(tableId, options = {}) {
+    if (typeof this.client.searchRecords !== 'function') {
+      throw new TypeError('LarkRecordRepository requires client.searchRecords for bounded filtered reads');
+    }
+    return this.client.searchRecords({
+      tableId: requireText(tableId, 'tableId'),
+      filter: options?.filter,
+      sort: options?.sort,
+      fieldNames: options?.fieldNames,
+      pageSize: options?.pageSize,
+      maxPages: options?.maxPages,
+      maxItems: options?.maxItems,
+      stopWhen: options?.stopWhen,
+    });
+  }
+
   /**
    * ค้นหา Record ปลายทางตาม Field เดียวหลายค่า เพื่อลด Full table scan ตอน Upsert
    */

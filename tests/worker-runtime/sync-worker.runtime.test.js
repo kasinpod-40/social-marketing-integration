@@ -149,7 +149,7 @@ describe('Sync Worker ใน Workers runtime จริง', () => {
       MKT_SYNC_QUEUE: { send },
     });
 
-    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledTimes(2);
     expect(send.mock.calls[0][0]).toMatchObject({
       schemaVersion: 1,
       type: 'tiktok.creator.native.sync',
@@ -157,6 +157,34 @@ describe('Sync Worker ใน Workers runtime จริง', () => {
       syncMode: 'auto',
       requestedAt: '2026-07-11T01:00:00.000Z',
       metricDate: '2026-07-11',
+    });
+    expect(send.mock.calls[1][0]).toEqual({
+      schemaVersion: 1,
+      type: 'system.reliability-mirror.deliver',
+      trigger: 'scheduled',
+      requestedAt: '2026-07-11T01:00:00.000Z',
+    });
+  });
+
+
+  it('Primary cron queues mirror recovery even when no customer profile or connector schedule is configured', async () => {
+    const send = vi.fn(async () => undefined);
+    const worker = createSyncWorker();
+    const controller = createScheduledController({
+      scheduledTime: Date.parse('2026-07-19T00:55:00.000Z'),
+      cron: '*/5 * * * *',
+    });
+
+    await worker.scheduled(controller, {
+      MKT_SYNC_QUEUE: { send },
+    });
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0][0]).toEqual({
+      schemaVersion: 1,
+      type: 'system.reliability-mirror.deliver',
+      trigger: 'scheduled',
+      requestedAt: '2026-07-19T00:55:00.000Z',
     });
   });
 
@@ -205,10 +233,11 @@ describe('Sync Worker ใน Workers runtime จริง', () => {
       MKT_SYNC_QUEUE: { send },
     });
 
-    expect(send).toHaveBeenCalledTimes(2);
+    expect(send).toHaveBeenCalledTimes(3);
     expect(send.mock.calls.map(([job]) => job.type)).toEqual([
       'tiktok.creator.native.sync',
       'report.daily.generate',
+      'system.reliability-mirror.deliver',
     ]);
     expect(send.mock.calls[0][0].metricDate).toBe('2026-07-13');
     expect(send.mock.calls[1][0].periodEnd).toBe('2026-07-12');

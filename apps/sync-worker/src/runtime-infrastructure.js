@@ -1,0 +1,96 @@
+import { JOB_TYPES } from '../../../packages/application/src/jobs/job-catalog.js';
+import { createLarkBitableClientFromEnv } from '../../../packages/connectors/src/lark/lark-bitable.client.js';
+import { LarkRecordRepository } from '../../../packages/connectors/src/lark/lark-record-repository.js';
+import { D1ReliabilityMirrorOutbox } from '../../../packages/reliability/src/d1-reliability-mirror-outbox.js';
+import { D1ReliabilityStore } from '../../../packages/reliability/src/d1-reliability-store.js';
+import { DurableMirrorReliabilityStore } from '../../../packages/reliability/src/durable-mirror-reliability-store.js';
+import { LarkReliabilityStore } from '../../../packages/reliability/src/lark-reliability-store.js';
+import { createCloudflareReliabilityRuntime } from '../../../packages/reliability/src/runtime-factory.js';
+import { D1IncrementalStateStore } from '../../../packages/sync-engine/src/d1-incremental-state-store.js';
+import { D1ResumableWorkStore } from '../../../packages/sync-engine/src/d1-resumable-work-store.js';
+import { TableSyncEngine } from '../../../packages/sync-engine/src/table-sync-engine.js';
+import { logQueueResult } from './worker-runtime-support.js';
+
+/** สร้าง Infrastructure หนึ่งชุดต่อ Queue event และสร้าง Dependency เฉพาะ Route ที่เรียกใช้ */
+export function createInfrastructure(env) {
+  let client = null;
+  let repository = null;
+  let syncEngine = null;
+  let reliability = null;
+  let incrementalStateStore = null;
+  let resumableWorkStore = null;
+  let mirrorOutbox = null;
+  const larkReliabilityStores = new Map();
+
+  const getSyncEngine = () => {
+    syncEngine ??= new TableSyncEngine();
+    return syncEngine;
+  };
+  const getRepository = () => {
+    client ??= createLarkBitableClientFromEnv(env);
+    repository ??= new LarkRecordRepository({ client });
+    return repository;
+  };
+
+  return Object.freeze({
+    get repository() { return getRepository(); },
+    get syncEngine() { return getSyncEngine(); },
+    getIncrementalStateStore() {
+      incrementalStateStore ??= new D1IncrementalStateStore({ db: env?.MKT_STATE_DB });
+      return incrementalStateStore;
+    },
+    getResumableWorkStore() {
+      resumableWorkStore ??= new D1ResumableWorkStore({ db: env?.MKT_STATE_DB });
+      return resumableWorkStore;
+    },
+    getReliability() {
+      reliability ??= createCloudflareReliabilityRuntime({
+        env,
+        deliveryJobType: JOB_TYPES.RELIABILITY_MIRROR_DELIVER,
+        onScheduleError: logMirrorSignalError,
+      });
+      return reliability;
+    },
+    getReliabilityMirrorOutbox() {
+      mirrorOutbox ??= new D1ReliabilityMirrorOutbox({ db: env?.MKT_STATE_DB });
+      return mirrorOutbox;
+    },
+    getLarkReliabilityStore(tableIds) {
+      const key = `${tableIds?.mktSyncLog ?? ''}:${tableIds?.mktSystemAlerts ?? ''}`;
+      if (!larkReliabilityStores.has(key)) {
+        larkReliabilityStores.set(key, new LarkReliabilityStore({
+          repository: getRepository(),
+          syncEngine: getSyncEngine(),
+          tables: {
+            syncLog: tableIds?.mktSyncLog,
+            systemAlerts: tableIds?.mktSystemAlerts,
+          },
+        }));
+      }
+      return larkReliabilityStores.get(key);
+    },
+  });
+}
+
+/** D1 เป็น Primary; Lark delivery ถูก Persist ลง Durable outbox ก่อนส่ง Generic Queue signal */
+export function createOperationalStore(env) {
+  const d1Store = new D1ReliabilityStore({ db: env?.MKT_STATE_DB });
+  const outbox = new D1ReliabilityMirrorOutbox({ db: env?.MKT_STATE_DB });
+  return new DurableMirrorReliabilityStore({
+    primary: d1Store,
+    outbox,
+    queue: env?.MKT_SYNC_QUEUE,
+    deliveryJobType: JOB_TYPES.RELIABILITY_MIRROR_DELIVER,
+    onScheduleError: logMirrorSignalError,
+  });
+}
+
+function logMirrorSignalError(event) {
+  logQueueResult({
+    ok: false,
+    scope: 'reliability_mirror_signal',
+    stage: event?.stage ?? null,
+    code: event?.code ?? 'RELIABILITY_MIRROR_QUEUE_SEND_FAILED',
+    error: event?.error instanceof Error ? event.error.message : String(event?.error ?? ''),
+  });
+}

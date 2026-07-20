@@ -24,6 +24,7 @@ test('scheduler queues TikTok sync first and daily report at Bangkok 08:10', () 
   assert.deepEqual(jobs.map((job) => job.type), [
     'tiktok.creator.native.sync',
     'report.daily.generate',
+    'system.reliability-mirror.deliver',
   ]);
   assert.equal(jobs[0].metricDate, '2026-07-13');
   assert.equal(jobs[1].periodEnd, '2026-07-12');
@@ -42,9 +43,15 @@ test('weekly report is due only on configured Bangkok weekday and time', () => {
   };
 
   const weeklyJobs = buildPrimaryScheduledJobs({ scheduledAt: '2026-07-13T01:15:00Z', env });
-  assert.deepEqual(weeklyJobs.map((job) => job.type), ['report.weekly.generate']);
+  assert.deepEqual(weeklyJobs.map((job) => job.type), [
+    'report.weekly.generate',
+    'system.reliability-mirror.deliver',
+  ]);
   assert.equal(weeklyJobs[0].periodEnd, '2026-07-12');
-  assert.equal(buildPrimaryScheduledJobs({ scheduledAt: '2026-07-14T01:15:00Z', env }).length, 0);
+  assert.deepEqual(
+    buildPrimaryScheduledJobs({ scheduledAt: '2026-07-14T01:15:00Z', env }).map((job) => job.type),
+    ['system.reliability-mirror.deliver'],
+  );
 });
 
 test('timezone schedule parts do not depend on runtime local timezone', () => {
@@ -206,8 +213,29 @@ test('primary cron never queues YouTube and YouTube cron never queues TikTok or 
     env,
   });
 
-  assert.deepEqual(primary.map((job) => job.type), ['tiktok.creator.native.sync']);
+  assert.deepEqual(primary.map((job) => job.type), [
+    'tiktok.creator.native.sync',
+    'system.reliability-mirror.deliver',
+  ]);
   assert.deepEqual(youtube.map((job) => job.type), ['youtube.channel.organic.sync']);
+});
+
+
+test('primary cron always queues a generic reliability mirror recovery drain without customer runtime flags', () => {
+  const jobs = buildScheduledJobs({
+    event: {
+      cron: PRIMARY_SCHEDULE_CRON,
+      scheduledTime: Date.parse('2026-07-19T00:55:00.000Z'),
+    },
+    env: {},
+  });
+
+  assert.deepEqual(jobs, [{
+    schemaVersion: 1,
+    type: 'system.reliability-mirror.deliver',
+    trigger: 'scheduled',
+    requestedAt: '2026-07-19T00:55:00.000Z',
+  }]);
 });
 
 test('unknown cron is ignored and cannot enqueue TikTok, YouTube, or reports', () => {

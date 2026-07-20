@@ -14,6 +14,7 @@ test('Lark repository loads schema once and serializes typed rows before sync', 
       ];
     },
     async listRecords(input) { calls.push(['list', input]); return [{ recordId: 'rec', fields: {} }]; },
+    async searchRecords(input) { calls.push(['search', input]); return [{ recordId: 'search-rec', fields: {} }]; },
     async listRecordsPage(input) {
       calls.push(['page', input]);
       return { records: [{ recordId: 'page-rec', fields: {} }], hasMore: false, nextPageToken: null };
@@ -47,6 +48,22 @@ test('Lark repository loads schema once and serializes typed rows before sync', 
     pageToken: 'next',
     pageSize: 100,
     includeRecordMetadata: undefined,
+  });
+  assert.deepEqual(await repository.searchRecords('tbl', {
+    filter: { conjunction: 'and', conditions: [] },
+    sort: [{ fieldName: 'metric_date', desc: true }],
+    maxPages: 2,
+    maxItems: 10,
+  }), [{ recordId: 'search-rec', fields: {} }]);
+  assert.deepEqual(calls.find(([type]) => type === 'search')[1], {
+    tableId: 'tbl',
+    filter: { conjunction: 'and', conditions: [] },
+    sort: [{ fieldName: 'metric_date', desc: true }],
+    fieldNames: undefined,
+    pageSize: undefined,
+    maxPages: 2,
+    maxItems: 10,
+    stopWhen: undefined,
   });
   assert.deepEqual(await repository.createMany('tbl', prepared), { created: 1 });
   assert.deepEqual(await repository.updateMany('tbl', [{ recordId: 'rec', fields: prepared[0] }]), { updated: 1 });
