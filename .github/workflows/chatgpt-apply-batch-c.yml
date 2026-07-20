@@ -45,14 +45,14 @@ jobs:
           ids = []
           for comment in comments:
               body = comment.get('body') or ''
-              match = re.fullmatch(r'BATCHC_PATCH_(\d{2}):(.*)', body, re.S)
+              match = re.fullmatch(r'BATCHC_PATCH_([0-9A-Z]+):(.*)', body, re.S)
               if not match:
                   continue
               parts[match.group(1)] = match.group(2)
               ids.append(str(comment['id']))
 
-          expected = ['00', '01', '02', '03']
-          if sorted(parts) != expected:
+          expected = ['00', '01A', '01B', '01C', '01D', '02', '03']
+          if sorted(parts) != sorted(expected):
               raise SystemExit(f'patch parts mismatch: {sorted(parts)}')
 
           encoded = ''.join(parts[key] for key in expected)
