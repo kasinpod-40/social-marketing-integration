@@ -1,0 +1,70 @@
+name: Branch Verification
+
+on:
+  push:
+    branches:
+      - 'codex/**'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: branch-verification-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Syntax architecture and hygiene
+        run: npm run check
+
+      - name: Focused staged TikTok tests
+        shell: bash
+        run: |
+          set -o pipefail
+          node --test tests/application/tiktok-staged-business-sync.test.js 2>&1 | tee focused-test.log
+
+      - name: Unit and Workers runtime tests
+        shell: bash
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee full-test.log
+
+      - name: Report reliability regression
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run test:report-reliability 2>&1 | tee report-test.log
+
+      - name: Dependency audit
+        run: npm audit --audit-level=high
+
+      - name: Wrangler dry run
+        run: npm run deploy:dry-run
+
+      - name: Upload verification diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: branch-verification-logs
+          path: '*-test.log'
+          if-no-files-found: ignore
+          retention-days: 7

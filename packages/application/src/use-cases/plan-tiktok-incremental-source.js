@@ -9,12 +9,21 @@ export const TIKTOK_SYNC_MODES = Object.freeze({
 });
 
 /**
- * วางแผน Full/Incremental จาก D1 checkpoint และ Fingerprint ของ RAW records
- * Safety rule จะบังคับ Full เมื่อเริ่มครั้งแรก, เปลี่ยนวัน, Dictionary เปลี่ยน,
- * Source record หาย หรือถึงรอบ Reconciliation แม้ผู้เรียกขอ incremental
+ * Compatibility wrapper สำหรับผู้เรียกเดิมที่มี RAW records อยู่ใน Array
  */
 export async function planTikTokIncrementalSource(input = {}) {
-  const rawRecords = requireArray(input.rawRecords, 'rawRecords');
+  return planTikTokIncrementalSourceIterable({
+    ...input,
+    rawRecords: requireArray(input.rawRecords, 'rawRecords'),
+  });
+}
+
+/**
+ * วางแผน Full/Incremental จาก Async/Sync iterable โดยเก็บเฉพาะ Compact source states
+ * ไม่เก็บ RAW payload ทั้งบัญชีซ้ำในหน่วยความจำ
+ */
+export async function planTikTokIncrementalSourceIterable(input = {}) {
+  const rawRecords = requireIterable(input.rawRecords, 'rawRecords');
   const dictionaryRecords = requireArray(input.dictionaryRecords, 'dictionaryRecords');
   const checkpoint = normalizeCheckpoint(input.checkpoint);
   const metricDate = requireText(input.metricDate, 'metricDate');
@@ -24,6 +33,7 @@ export async function planTikTokIncrementalSource(input = {}) {
   const fingerprint = typeof input.fingerprint === 'function'
     ? input.fingerprint
     : createStableFingerprint;
+  const expectedSourceHandle = optionalHandle(input.expectedSourceHandle);
 
   const dictionaryHash = await fingerprint(sortRecordCollection(dictionaryRecords));
   const previousById = new Map(
@@ -31,10 +41,22 @@ export async function planTikTokIncrementalSource(input = {}) {
   );
   const currentStates = [];
   const changedStates = [];
-  const selectedExternalIds = [];
+  const currentIds = new Set();
+  const externalContentIds = new Set();
+  const sourceHandles = new Set();
+  let sourceRecords = 0;
 
-  for (const record of rawRecords) {
+  for await (const record of rawRecords) {
+    sourceRecords += 1;
     const sourceRecordId = requireText(record?.recordId, 'rawRecord.recordId');
+    if (currentIds.has(sourceRecordId)) {
+      throw permanentError('TikTok RAW source contains duplicate record identities', {
+        code: 'TIKTOK_SYNC_NOT_READY',
+        details: { duplicateSourceRecordCount: 1 },
+      });
+    }
+    currentIds.add(sourceRecordId);
+
     let mapped;
     try {
       mapped = mapTikTokCreatorVideoRow(record?.fields ?? {});
@@ -49,12 +71,24 @@ export async function planTikTokIncrementalSource(input = {}) {
       });
     }
 
+    const externalContentId = requireText(mapped.externalContentId, 'externalContentId');
+    if (externalContentIds.has(externalContentId)) {
+      throw permanentError('TikTok RAW source contains duplicate content identities', {
+        code: 'TIKTOK_SYNC_NOT_READY',
+        details: { duplicateContentIdentityCount: 1 },
+      });
+    }
+    externalContentIds.add(externalContentId);
+
+    const sourceHandle = optionalHandle(mapped.sourceHandle);
+    if (sourceHandle) sourceHandles.add(sourceHandle);
+
     const sourceHash = await fingerprint(record?.fields ?? {});
     const state = Object.freeze({
       sourceRecordId,
       sourceModifiedAt: nullableInteger(record?.lastModifiedTime),
       sourceHash,
-      externalContentId: requireText(mapped.externalContentId, 'externalContentId'),
+      externalContentId,
     });
     currentStates.push(state);
 
@@ -62,7 +96,24 @@ export async function planTikTokIncrementalSource(input = {}) {
     if (!previous || previous.sourceHash !== sourceHash) changedStates.push(state);
   }
 
-  const currentIds = new Set(currentStates.map((state) => state.sourceRecordId));
+  const detectedHandles = [...sourceHandles].sort();
+  const sourceIdentity = Object.freeze({
+    ok: expectedSourceHandle
+      ? detectedHandles.length === 1 && detectedHandles[0] === expectedSourceHandle
+      : detectedHandles.length <= 1,
+    expectedHandle: expectedSourceHandle,
+    detectedHandles: Object.freeze(detectedHandles),
+  });
+  if (!sourceIdentity.ok) {
+    throw permanentError('TikTok source identity validation failed', {
+      code: 'TIKTOK_SYNC_NOT_READY',
+      details: {
+        expectedSourceCount: expectedSourceHandle ? 1 : null,
+        detectedSourceCount: detectedHandles.length,
+      },
+    });
+  }
+
   const removedRecordIds = checkpoint.recordStates
     .filter((state) => !currentIds.has(state.sourceRecordId))
     .map((state) => state.sourceRecordId)
@@ -81,9 +132,8 @@ export async function planTikTokIncrementalSource(input = {}) {
   const selectedStates = decision.mode === TIKTOK_SYNC_MODES.FULL
     ? currentStates
     : changedStates;
-  selectedExternalIds.push(...selectedStates.map((state) => state.externalContentId));
-
-  const unchangedRecords = Math.max(0, rawRecords.length - changedStates.length);
+  const selectedExternalIds = selectedStates.map((state) => state.externalContentId);
+  const unchangedRecords = Math.max(0, sourceRecords - changedStates.length);
   const sourceSkippedPerTable = decision.mode === TIKTOK_SYNC_MODES.INCREMENTAL
     ? unchangedRecords
     : 0;
@@ -93,7 +143,7 @@ export async function planTikTokIncrementalSource(input = {}) {
     mode: decision.mode,
     reason: decision.reason,
     requestedMode: syncMode,
-    sourceRecords: rawRecords.length,
+    sourceRecords,
     selectedRecords: selectedStates.length,
     changedRecords: changedStates.length,
     unchangedRecords,
@@ -114,6 +164,7 @@ export async function planTikTokIncrementalSource(input = {}) {
     fullSnapshot: decision.mode === TIKTOK_SYNC_MODES.FULL,
     previousCursor: checkpoint.cursor,
     evaluatedAt: now,
+    sourceIdentity,
   });
 }
 
@@ -214,11 +265,26 @@ function requireArray(value, fieldName) {
   return value;
 }
 
+function requireIterable(value, fieldName) {
+  if (!value || (typeof value[Symbol.asyncIterator] !== 'function'
+    && typeof value[Symbol.iterator] !== 'function')) {
+    throw new TypeError(`TikTok incremental plan requires iterable ${fieldName}`);
+  }
+  return value;
+}
+
 function requireText(value, fieldName) {
   if (typeof value !== 'string' || value.trim() === '') {
     throw new TypeError(`TikTok incremental plan requires ${fieldName}`);
   }
   return value.trim();
+}
+
+function optionalHandle(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value !== 'string') throw new TypeError('TikTok incremental source handle must be a string');
+  const handle = value.replace(/^@/u, '').trim().toLowerCase();
+  return handle || null;
 }
 
 function nullableInteger(value) {

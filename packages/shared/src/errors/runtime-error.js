@@ -5,6 +5,7 @@ const OPERATIONAL_REDACTION = '[REDACTED]';
 const OPERATIONAL_SECRET_KEY_PATTERN = /(?:secret|token|password|authorization|credentials?|(?:private|signing|api)[_-]?key|consumer[_-]?secret)/iu;
 const OPERATIONAL_IDENTITY_KEY_PATTERN = /(?:lock[_-]?key|cursor[_-]?key|customer[_-]?profile|account[_-]?(?:key|id)|page[_-]?id|ig[_-]?(?:user|account)?[_-]?id|instagram[_-]?(?:user|account)?[_-]?id|ad[_-]?account[_-]?id|table[_-]?id|report[_-]?setting[_-]?key|identity|handles?|(?:channel|video|content)[_-]?ids?|(?:source|expected|actual|detected)[_-]?(?:channel|video|content)?[_-]?(?:ids?|handles?)|uploads[_-]?playlist[_-]?id|mismatched[_-]?videos?|stable[_-]?keys?)/iu;
 const OPERATIONAL_SAFE_COUNTER_KEYS = new Set([
+  'analytics_tracked_video_ids',
   'attempts',
   'completed_chunks',
   'confirmed_rows',
@@ -21,19 +22,23 @@ const OPERATIONAL_SAFE_COUNTER_KEYS = new Set([
   'page',
   'page_rows',
   'pages_processed',
+  'playlist_video_ids',
   'processed_items',
+  'queried_video_ids',
   'record_count',
   'records',
   'remaining_rows',
   'result_count',
   'retry_count',
   'rows',
+  'selected_video_ids',
   'skipped_rows',
   'source_snapshot_count',
   'top_content_count',
   'total_chunks',
   'total_rows',
   'tracked_content_count',
+  'tracked_video_ids',
   'warning_count',
 ]);
 const OPERATIONAL_SAFE_COUNTER_SUFFIX_PATTERN = /(?:^|_)(?:count|rows|records|attempts|retries|pages|chunks|items)$/u;

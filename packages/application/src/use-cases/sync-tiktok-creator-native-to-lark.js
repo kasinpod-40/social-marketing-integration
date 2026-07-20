@@ -1,407 +1,298 @@
 import {
-  assertTikTokSyncReady,
-  prepareTikTokCreatorLarkSync,
-} from './prepare-tiktok-creator-lark-sync.js';
+  syncTikTokCreatorNativeToLark as syncTikTokCreatorNativeToLarkLegacy,
+} from './sync-tiktok-creator-native-to-lark-legacy.js';
+import {
+  beginTikTokResumableSource,
+  completeTikTokResumableSource,
+  replayTikTokCompletedWork,
+  stageTikTokResumableSource,
+  supersededTikTokResult,
+} from './tiktok-resumable-source.js';
+import { syncTikTokStagedBusinessToLark } from './sync-tiktok-staged-business-to-lark.js';
 import {
   isPartialSyncError,
   partialSyncError,
 } from '../../../shared/src/errors/runtime-error.js';
-import { analyzeClassificationDictionaryRecords } from '../services/classification-dictionary.js';
-import {
-  buildTikTokIncrementalCheckpoint,
-  planTikTokIncrementalSource,
-} from './plan-tiktok-incremental-source.js';
-import {
-  beginTikTokResumableSource,
-  completeTikTokResumableSource,
-  loadTikTokResumableSource,
-  replayTikTokCompletedWork,
-  supersededTikTokResult,
-} from './tiktok-resumable-source.js';
+
+const BUSINESS_WRITE_PHASE = 'tiktok_native_business_write_v1';
 
 /**
- * Sync RAW TikTok Creator ไปยัง MKT_Content และ MKT_Content_Daily
+ * Entry point กลางของ TikTok Creator sync
+ * - Local/legacy callers ที่ไม่มี Durable work store ใช้ Flow เดิมเพื่อรักษา Compatibility
+ * - Queue production path ที่มี Durable work store ต้อง Stage และประมวลผล Business ทีละ Unit เท่านั้น
  */
-export async function syncTikTokCreatorNativeToLark(input) {
-  const progress = typeof input?.onProgress === 'function' ? input.onProgress : () => undefined;
-  const baseAssertLockActive = typeof input?.assertLockActive === 'function'
+export async function syncTikTokCreatorNativeToLark(input = {}) {
+  if (!input.resumableWorkStore) {
+    return syncTikTokCreatorNativeToLarkLegacy(input);
+  }
+
+  const syncRunId = requireText(input.syncRunId, 'syncRunId');
+  const assertLockActive = typeof input.assertLockActive === 'function'
     ? input.assertLockActive
     : async () => undefined;
-  const syncRunId = optionalText(input?.syncRunId);
-  const resumable = await beginTikTokResumableSource({
-    workStore: input?.resumableWorkStore,
-    workKey: input?.workKey,
-    cursorKey: input?.cursorKey,
-    requestedAt: input?.requestedAt,
-    generation: input?.generation,
-    accountId: input?.accountId,
-    sourceHandle: input?.sourceHandle,
-    metricDate: input?.metricDate,
-    syncMode: input?.syncMode,
-    incrementalEnabled: input?.incrementalEnabled,
-    dryRun: input?.dryRun,
-    rawTableId: input?.tables?.rawTikTokCreatorVideos,
-    assertLockActive: baseAssertLockActive,
-  });
-  if (resumable?.work?.superseded) {
-    return supersededTikTokResult(syncRunId, resumable.generation);
-  }
-  if (resumable?.work?.completed) {
-    return replayTikTokCompletedWork(resumable, syncRunId);
-  }
-  const assertWorkActive = resumable?.assertCurrent ?? baseAssertLockActive;
-  const sourceLoad = resumable
-    ? await loadTikTokResumableSource({
-      context: resumable,
-      repository: input?.repository,
-      tableId: input?.tables?.rawTikTokCreatorVideos,
-      pageSize: input?.sourcePageSize,
-      maxPages: input?.sourceMaxPages,
-      onProgress: progress,
-    })
-    : null;
-  const incrementalContext = await loadIncrementalContext(input, progress, sourceLoad?.records);
-  const prepared = await prepareTikTokCreatorLarkSync({
-    repository: input?.repository,
-    syncEngine: input?.syncEngine,
-    tables: input?.tables,
-    accountId: input?.accountId,
-    sourceHandle: input?.sourceHandle,
-    metricDate: input?.metricDate,
-    rawRecords: incrementalContext?.rawRecords ?? sourceLoad?.records,
-    dictionaryAnalysis: incrementalContext?.dictionaryAnalysis,
-    selectedExternalContentIds: incrementalContext?.plan.selectedExternalContentIds,
-    incrementalPlan: incrementalContext?.plan ?? null,
-    onProgress: progress,
+  const context = await beginTikTokResumableSource({
+    workStore: input.resumableWorkStore,
+    workKey: input.workKey,
+    cursorKey: input.cursorKey,
+    requestedAt: input.requestedAt,
+    generation: input.generation,
+    accountId: input.accountId,
+    sourceHandle: input.sourceHandle,
+    metricDate: input.metricDate,
+    syncMode: input.syncMode,
+    incrementalEnabled: input.incrementalEnabled,
+    dryRun: input.dryRun,
+    rawTableId: input.tables?.rawTikTokCreatorVideos,
+    assertLockActive,
   });
 
-  if (input?.dryRun === true) {
-    const result = attachResumableSummary(Object.freeze({
-      syncRunId,
-      platform: prepared.platform,
-      source: prepared.source,
-      mode: 'dry_run',
-      readyToWrite: prepared.readyToWrite,
-      rawRecords: prepared.rawRecords,
-      processedRawRecords: prepared.processedRawRecords,
-      incremental: summarizeIncremental(prepared.incremental, false),
-      classificationRules: prepared.classificationRules,
-      classificationDictionary: prepared.classificationDictionary,
-      content: planSummary(prepared.plans.content, prepared.incremental),
-      dailySnapshots: planSummary(prepared.plans.dailySnapshots, prepared.incremental),
-      reconciliation: prepared.reconciliation,
-      skippedRows: prepared.normalized.skippedRows,
-      sourceIdentity: prepared.sourceIdentity,
-      accountConflicts: prepared.accountConflicts,
-      issues: prepared.issues,
-      warnings: prepared.warnings,
-    }), resumable, sourceLoad, true);
-    await completeTikTokResumableSource(resumable, result);
-    return result;
+  if (context.work.superseded) {
+    return supersededTikTokResult(syncRunId, context.generation);
+  }
+  if (context.work.completed) {
+    return replayTikTokCompletedWork(context, syncRunId);
   }
 
-  assertTikTokSyncReady(prepared);
-  await assertWorkActive();
-
-  progress({
-    stage: 'executing_content_plan',
-    syncRunId,
-    createRows: prepared.plans.content.createRows.length,
-    updateRows: prepared.plans.content.updateRows.length,
+  const sourceLoad = await stageTikTokResumableSource({
+    context,
+    repository: input.repository,
+    tableId: input.tables?.rawTikTokCreatorVideos,
+    pageSize: input.sourcePageSize,
+    maxPages: input.sourceMaxPages,
+    onProgress: input.onProgress,
   });
+  const writeStateBefore = await loadBusinessWriteState(context);
 
-  let contentResult;
+  let stagedResult;
   try {
-    contentResult = await input.syncEngine.executePlan(prepared.plans.content, {
-      beforeWriteChunk: assertWorkActive,
-      onProgress: (event) => progress({ scope: 'content', syncRunId, ...event }),
-    });
-  } catch (cause) {
-    if (!isPartialSyncError(cause)) throw cause;
-    throw buildWholeSyncPartialError({
-      cause,
+    stagedResult = await syncTikTokStagedBusinessToLark({
+      ...input,
+      context,
       syncRunId,
-      prepared,
-      failedPhase: 'content',
-      contentResult: normalizeTablePartialResult(cause.partialResult, prepared.plans.content),
-      dailyResult: plannedOnlyResult(prepared.plans.dailySnapshots),
+      sourceSummary: sourceLoad.summary,
     });
-  }
-  progress({ stage: 'content_synced', syncRunId, result: contentResult });
-
-  await assertWorkActive();
-  progress({
-    stage: 'executing_daily_snapshot_plan',
-    syncRunId,
-    createRows: prepared.plans.dailySnapshots.createRows.length,
-    updateRows: prepared.plans.dailySnapshots.updateRows.length,
-  });
-
-  let dailyResult;
-  try {
-    dailyResult = await input.syncEngine.executePlan(prepared.plans.dailySnapshots, {
-      beforeWriteChunk: assertWorkActive,
-      onProgress: (event) => progress({ scope: 'daily_snapshots', syncRunId, ...event }),
-    });
-  } catch (cause) {
-    const normalizedDaily = isPartialSyncError(cause)
-      ? normalizeTablePartialResult(cause.partialResult, prepared.plans.dailySnapshots)
-      : unknownWriteResult(prepared.plans.dailySnapshots);
-
-    throw buildWholeSyncPartialError({
-      cause,
-      syncRunId,
-      prepared,
-      failedPhase: 'daily_snapshots',
-      contentResult,
-      dailyResult: normalizedDaily,
-    });
+  } catch (error) {
+    if (!isPartialSyncError(error)) throw error;
+    throw normalizeAttemptPartialError(error, writeStateBefore);
   }
 
-  progress({ stage: 'daily_snapshots_synced', syncRunId, result: dailyResult });
-  await assertWorkActive();
-
-  let result = buildResult({
-    syncRunId,
-    prepared,
-    contentResult,
-    dailyResult,
-    reconciliationStatus: prepared.reconciliation.required ? 'recovered' : 'not_required',
-    checkpointSaved: false,
-  });
-
-  if (incrementalContext) {
-    await assertWorkActive();
-    const completedAt = incrementalContext.now();
-    const checkpoint = buildTikTokIncrementalCheckpoint({
-      plan: incrementalContext.plan,
-      cursorKey: incrementalContext.cursorKey,
-      syncRunId,
-      customerProfile: incrementalContext.customerProfile,
-      accountKey: input?.accountId,
-      metricDate: input?.metricDate,
-      completedAt,
-    });
-    await incrementalContext.stateStore.saveCheckpoint(checkpoint);
-    await assertWorkActive();
-    result = Object.freeze({
-      ...result,
-      incremental: summarizeIncremental(incrementalContext.plan, true),
-    });
-  }
-
-  const completedResult = attachResumableSummary(result, resumable, sourceLoad, true);
-  await completeTikTokResumableSource(resumable, completedResult);
+  const durableReplay = stagedResult?.stagedBusiness?.completionPhaseReplay === true
+    || writeStateBefore?.resultDraft;
+  const writeStateAfter = durableReplay || stagedResult?.mode === 'dry_run'
+    ? null
+    : await loadBusinessWriteState(context);
+  const result = durableReplay
+    ? normalizeDurableReplayResult(stagedResult)
+    : normalizeAttemptWriteResult(stagedResult, writeStateBefore, writeStateAfter);
+  const completedResult = attachResumableSummary(result, context, sourceLoad.summary);
+  await completeTikTokResumableSource(context, completedResult);
   return completedResult;
 }
 
-function buildWholeSyncPartialError(input) {
-  const partialResult = buildResult({
-    syncRunId: input.syncRunId,
-    prepared: input.prepared,
-    contentResult: input.contentResult,
-    dailyResult: input.dailyResult,
-    reconciliationStatus: 'partial_write_detected',
-  });
+/**
+ * Sync Log เป็นราย Attempt จึงต้องหักยอด Durable units ที่สำเร็จใน Attempt ก่อนหน้า
+ * ยอดสะสมทั้ง Work ยังเก็บไว้ใน stagedBusiness.workTotals สำหรับ Reconciliation/Audit
+ */
+function normalizeAttemptWriteResult(result, beforeState, afterState) {
+  if (result?.mode === 'dry_run' || !afterState) return result;
+  const sourceSkips = readSourceSkips(result);
+  const content = addSkipped(
+    subtractTableResult(afterState.contentResult, beforeState?.contentResult),
+    sourceSkips,
+  );
+  const dailySnapshots = addSkipped(
+    subtractTableResult(afterState.dailyResult, beforeState?.dailyResult),
+    sourceSkips,
+  );
 
-  return partialSyncError(`TikTok sync partially completed during ${input.failedPhase}`, {
-    retryable: input.cause?.retryable !== false,
-    cause: input.cause,
-    partialResult,
-    details: {
-      syncRunId: input.syncRunId,
-      failedPhase: input.failedPhase,
-      contentCreated: input.contentResult?.created ?? 0,
-      contentUpdated: input.contentResult?.updated ?? 0,
-      dailyCreated: input.dailyResult?.created ?? 0,
-      dailyUpdated: input.dailyResult?.updated ?? 0,
-      contentWriteOutcome: input.contentResult?.writeOutcome ?? null,
-      dailyWriteOutcome: input.dailyResult?.writeOutcome ?? null,
-      causeCode: input.cause?.code ?? null,
-      causeMessage: input.cause instanceof Error ? input.cause.message : String(input.cause),
-    },
-  });
-}
-
-function normalizeTablePartialResult(result, plan) {
   return Object.freeze({
-    created: nonNegative(result?.created),
-    updated: nonNegative(result?.updated),
-    skipped: nonNegative(result?.skipped ?? plan.skipped),
-    duplicateInputRows: nonNegative(result?.duplicateInputRows ?? plan.duplicateInputRows),
-    writeOutcome: result?.writeOutcome ?? 'partial',
-    failedPhase: result?.failedPhase ?? null,
-    plannedCreate: nonNegative(result?.plannedCreate ?? plan.createRows.length),
-    plannedUpdate: nonNegative(result?.plannedUpdate ?? plan.updateRows.length),
-    writeProgress: result?.writeProgress ?? null,
-  });
-}
-
-function plannedOnlyResult(plan) {
-  return Object.freeze({
-    created: 0,
-    updated: 0,
-    skipped: plan.skipped,
-    duplicateInputRows: plan.duplicateInputRows,
-    writeOutcome: 'not_started',
-    plannedCreate: plan.createRows.length,
-    plannedUpdate: plan.updateRows.length,
-  });
-}
-
-function unknownWriteResult(plan) {
-  return Object.freeze({
-    created: 0,
-    updated: 0,
-    skipped: plan.skipped,
-    duplicateInputRows: plan.duplicateInputRows,
-    writeOutcome: 'unknown',
-    plannedCreate: plan.createRows.length,
-    plannedUpdate: plan.updateRows.length,
-  });
-}
-
-function buildResult(input) {
-  return Object.freeze({
-    syncRunId: input.syncRunId,
-    platform: input.prepared.platform,
-    source: input.prepared.source,
-    mode: 'write',
-    rawRecords: input.prepared.rawRecords,
-    processedRawRecords: input.prepared.processedRawRecords,
-    incremental: summarizeIncremental(input.prepared.incremental, input.checkpointSaved === true),
-    content: withIncrementalSkips(input.contentResult, input.prepared.incremental),
-    dailySnapshots: withIncrementalSkips(input.dailyResult, input.prepared.incremental),
-    reconciliation: Object.freeze({
-      ...input.prepared.reconciliation,
-      status: input.reconciliationStatus,
-      recovered: input.reconciliationStatus === 'recovered',
+    ...result,
+    content,
+    dailySnapshots,
+    stagedBusiness: Object.freeze({
+      ...(result.stagedBusiness ?? {}),
+      attemptUnitsCompleted: subtractCount(
+        afterState.unitsCompleted,
+        beforeState?.unitsCompleted,
+      ),
+      attemptSelectedRecordsCompleted: subtractCount(
+        afterState.selectedRecordsCompleted,
+        beforeState?.selectedRecordsCompleted,
+      ),
+      workTotals: Object.freeze({
+        content: addSkipped(normalizeTableResult(afterState.contentResult), sourceSkips),
+        dailySnapshots: addSkipped(normalizeTableResult(afterState.dailyResult), sourceSkips),
+        unitsCompleted: nonNegativeInteger(afterState.unitsCompleted ?? 0),
+        selectedRecordsCompleted: nonNegativeInteger(
+          afterState.selectedRecordsCompleted ?? 0,
+        ),
+      }),
     }),
-    classificationRules: input.prepared.classificationRules,
-    classificationDictionary: input.prepared.classificationDictionary,
-    skippedRows: input.prepared.normalized.skippedRows,
-    sourceIdentity: input.prepared.sourceIdentity,
-    accountConflicts: input.prepared.accountConflicts,
-    warnings: input.prepared.warnings,
   });
 }
 
-function planSummary(plan, incremental) {
-  return Object.freeze({
-    rowsReady: plan.inputRows,
-    createRows: plan.createRows.length,
-    updateRows: plan.updateRows.length,
-    skipped: plan.skipped + readIncrementalSourceSkips(incremental),
-    duplicateInputRows: plan.duplicateInputRows,
-    existingRecordsRead: plan.existingRecordsRead,
-    existingReadStrategy: plan.existingReadStrategy,
+/** Partial result ต้องรายงานเฉพาะ Write ของ Attempt ปัจจุบันเช่นเดียวกับ Success result */
+function normalizeAttemptPartialError(error, beforeState) {
+  const result = error.partialResult;
+  const sourceSkips = readSourceSkips(result);
+  const contentCumulative = removeSkipped(normalizeTableResult(result?.content), sourceSkips);
+  const dailyCumulative = removeSkipped(
+    normalizeTableResult(result?.dailySnapshots),
+    sourceSkips,
+  );
+  const normalizedResult = Object.freeze({
+    ...result,
+    content: addSkipped(
+      subtractTableResult(contentCumulative, beforeState?.contentResult),
+      sourceSkips,
+    ),
+    dailySnapshots: addSkipped(
+      subtractTableResult(dailyCumulative, beforeState?.dailyResult),
+      sourceSkips,
+    ),
+    stagedBusiness: Object.freeze({
+      ...(result?.stagedBusiness ?? {}),
+      workTotals: Object.freeze({
+        content: addSkipped(contentCumulative, sourceSkips),
+        dailySnapshots: addSkipped(dailyCumulative, sourceSkips),
+      }),
+    }),
+  });
+
+  return partialSyncError(error.message, {
+    code: error.code,
+    retryable: error.retryable !== false,
+    cause: error.cause ?? error,
+    partialResult: normalizedResult,
+    details: error.details ?? {},
   });
 }
 
-async function loadIncrementalContext(input, progress, rawRecordsOverride = null) {
-  if (input?.incrementalEnabled !== true) return null;
-  const stateStore = requireIncrementalStateStore(input?.incrementalStateStore);
-  const cursorKey = requireText(input?.cursorKey, 'cursorKey');
-  const customerProfile = requireText(input?.customerProfile, 'customerProfile');
-  const tables = input?.tables ?? {};
-  const repository = input?.repository;
-  const now = typeof input?.now === 'function' ? input.now : () => Date.now();
-
-  progress({ stage: 'loading_incremental_checkpoint', cursorKey });
-  const [rawRecords, dictionaryRecords, checkpoint] = await Promise.all([
-    rawRecordsOverride === null
-      ? repository.listAll(requireText(tables.rawTikTokCreatorVideos, 'tables.rawTikTokCreatorVideos'))
-      : Promise.resolve(requireArray(rawRecordsOverride, 'rawRecordsOverride')),
-    repository.listAll(requireText(
-      tables.mktClassificationDictionary,
-      'tables.mktClassificationDictionary',
-    )),
-    stateStore.loadCheckpoint(cursorKey),
-  ]);
-  const dictionaryAnalysis = analyzeClassificationDictionaryRecords(dictionaryRecords);
-  const plan = await planTikTokIncrementalSource({
-    rawRecords,
-    dictionaryRecords,
-    checkpoint,
-    metricDate: input?.metricDate,
-    syncMode: input?.syncMode,
-    now: now(),
-    fullSyncIntervalMs: input?.fullSyncIntervalMs,
+/**
+ * Retry หลัง Business/Checkpoint สำเร็จแต่ Phase หรือ completeWork ล้ม ต้องไม่ลง Write ซ้ำ
+ * Attempt ปัจจุบันจึงมี Write count เป็นศูนย์ ส่วนยอดเดิมคงอยู่ใน workTotals
+ */
+function normalizeDurableReplayResult(result) {
+  const sourceRecords = nonNegativeInteger(
+    result?.rawRecords ?? result?.incremental?.sourceRecords ?? 0,
+  );
+  const sourceSkips = result?.incremental ? sourceRecords : 0;
+  const emptyResult = Object.freeze({
+    created: 0,
+    updated: 0,
+    skipped: sourceSkips,
+    duplicateInputRows: 0,
   });
-  progress({
-    stage: 'incremental_plan_ready',
-    mode: plan.mode,
-    reason: plan.reason,
-    sourceRecords: plan.sourceRecords,
-    selectedRecords: plan.selectedRecords,
-    changedRecords: plan.changedRecords,
-  });
+  const normalizedIncremental = result?.incremental
+    ? Object.freeze({
+      ...result.incremental,
+      mode: 'incremental',
+      reason: 'no_source_changes',
+      selectedRecords: 0,
+      changedRecords: 0,
+      unchangedRecords: sourceRecords,
+      removedRecords: 0,
+      dictionaryChanged: false,
+      metricDateChanged: false,
+      fullSnapshot: false,
+      checkpointSaved: true,
+    })
+    : null;
 
-  return Object.freeze({
-    stateStore,
-    cursorKey,
-    customerProfile,
-    now,
-    rawRecords,
-    dictionaryAnalysis,
-    plan,
-  });
-}
-
-function withIncrementalSkips(result, incremental) {
   return Object.freeze({
     ...result,
-    skipped: nonNegative(result?.skipped) + readIncrementalSourceSkips(incremental),
+    processedRawRecords: 0,
+    incremental: normalizedIncremental,
+    content: emptyResult,
+    dailySnapshots: emptyResult,
+    stagedBusiness: Object.freeze({
+      ...(result?.stagedBusiness ?? {}),
+      durableReplay: true,
+      workTotals: Object.freeze({
+        content: normalizeTableResult(result?.content),
+        dailySnapshots: normalizeTableResult(result?.dailySnapshots),
+        unitsCompleted: nonNegativeInteger(result?.stagedBusiness?.unitsCompleted ?? 0),
+        selectedRecordsCompleted: nonNegativeInteger(
+          result?.stagedBusiness?.selectedRecordsCompleted ?? 0,
+        ),
+      }),
+    }),
   });
 }
 
-function readIncrementalSourceSkips(incremental) {
-  return incremental?.enabled === true ? nonNegative(incremental.sourceSkippedPerTable) : 0;
+async function loadBusinessWriteState(context) {
+  await context.assertCurrent();
+  const phase = await context.store.loadPhase({
+    workKey: context.workKey,
+    phase: BUSINESS_WRITE_PHASE,
+  });
+  return phase?.state && typeof phase.state === 'object' ? phase.state : null;
 }
 
-function summarizeIncremental(value, checkpointSaved) {
-  if (!value || value.enabled !== true) return null;
+function subtractTableResult(after, before) {
+  const final = normalizeTableResult(after);
+  const initial = normalizeTableResult(before);
   return Object.freeze({
-    enabled: true,
-    mode: value.mode,
-    reason: value.reason,
-    requestedMode: value.requestedMode,
-    sourceRecords: value.sourceRecords,
-    selectedRecords: value.selectedRecords,
-    changedRecords: value.changedRecords,
-    unchangedRecords: value.unchangedRecords,
-    removedRecords: value.removedRecords,
-    dictionaryChanged: value.dictionaryChanged,
-    metricDateChanged: value.metricDateChanged,
-    fullSnapshot: value.fullSnapshot,
-    checkpointSaved: checkpointSaved === true,
+    created: subtractCount(final.created, initial.created),
+    updated: subtractCount(final.updated, initial.updated),
+    skipped: subtractCount(final.skipped, initial.skipped),
+    duplicateInputRows: subtractCount(
+      final.duplicateInputRows,
+      initial.duplicateInputRows,
+    ),
   });
 }
 
-function attachResumableSummary(result, context, sourceLoad, complete) {
-  if (!context) return result;
+function normalizeTableResult(value) {
+  return Object.freeze({
+    created: nonNegativeInteger(value?.created ?? 0),
+    updated: nonNegativeInteger(value?.updated ?? 0),
+    skipped: nonNegativeInteger(value?.skipped ?? 0),
+    duplicateInputRows: nonNegativeInteger(value?.duplicateInputRows ?? 0),
+  });
+}
+
+function addSkipped(result, sourceSkips) {
   return Object.freeze({
     ...result,
-    sourcePagination: sourceLoad?.summary ?? null,
+    skipped: nonNegativeInteger(result.skipped) + nonNegativeInteger(sourceSkips),
+  });
+}
+
+function removeSkipped(result, sourceSkips) {
+  return Object.freeze({
+    ...result,
+    skipped: subtractCount(result.skipped, sourceSkips),
+  });
+}
+
+function readSourceSkips(result) {
+  return result?.incremental?.mode === 'incremental'
+    ? nonNegativeInteger(result.incremental.unchangedRecords ?? 0)
+    : 0;
+}
+
+function subtractCount(after, before) {
+  const difference = nonNegativeInteger(after ?? 0) - nonNegativeInteger(before ?? 0);
+  if (difference < 0) {
+    throw new TypeError('TikTok durable write counters moved backwards');
+  }
+  return difference;
+}
+
+function attachResumableSummary(result, context, sourcePagination) {
+  return Object.freeze({
+    ...result,
+    sourcePagination,
     resumableWork: Object.freeze({
       resumed: context.work?.resumed === true,
-      complete: complete === true,
-      cleared: complete === true,
+      complete: true,
+      cleared: true,
       generation: context.generation,
+      completionPhaseReplay: result?.stagedBusiness?.completionPhaseReplay === true,
+      durableReplay: result?.stagedBusiness?.durableReplay === true,
     }),
   });
-}
-
-function requireArray(value, fieldName) {
-  if (!Array.isArray(value)) throw new TypeError(`TikTok sync requires ${fieldName}`);
-  return value;
-}
-
-function requireIncrementalStateStore(value) {
-  if (typeof value?.loadCheckpoint !== 'function' || typeof value?.saveCheckpoint !== 'function') {
-    throw new TypeError('TikTok incremental sync requires incrementalStateStore');
-  }
-  return value;
 }
 
 function requireText(value, fieldName) {
@@ -411,15 +302,10 @@ function requireText(value, fieldName) {
   return value.trim();
 }
 
-function optionalText(value) {
-  if (value === null || value === undefined || value === '') return null;
-  if (typeof value !== 'string' || value.trim() === '') {
-    throw new TypeError('syncRunId must be a non-empty string');
+function nonNegativeInteger(value) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number < 0) {
+    throw new TypeError('TikTok sync requires a non-negative safe integer');
   }
-  return value.trim();
-}
-
-function nonNegative(value) {
-  const number = Number(value ?? 0);
-  return Number.isSafeInteger(number) && number >= 0 ? number : 0;
+  return number;
 }
