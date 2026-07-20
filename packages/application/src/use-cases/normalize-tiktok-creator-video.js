@@ -12,6 +12,7 @@ export function normalizeTikTokCreatorVideo(input) {
   const dictionaryRules = Array.isArray(input?.dictionaryRules) ? input.dictionaryRules : [];
   const accountId = requireText(input?.accountId, 'accountId');
   const metricDate = requireDateOnly(input?.metricDate, { label: 'metricDate' });
+  const sourceTimezone = requireText(input?.sourceTimezone ?? 'Asia/Bangkok', 'sourceTimezone');
   const mapped = mapTikTokCreatorVideoRow(input?.rawRow);
   const externalContentId = requireText(mapped.externalContentId, 'externalContentId');
   const contentUrl = mapped.videoUrl;
@@ -28,6 +29,7 @@ export function normalizeTikTokCreatorVideo(input) {
     accountId,
     externalContentId,
     metricDate,
+    sourceTimezone,
     contentType: 'video',
     publishedAt: mapped.publishedAt,
     caption: mapped.description,
