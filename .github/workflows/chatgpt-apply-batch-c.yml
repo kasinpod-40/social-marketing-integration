@@ -1,9 +1,9 @@
 name: ChatGPT Apply Batch C
 
 on:
-  push:
+  pull_request:
     branches:
-      - codex/pre-meta-hardening-batch-c
+      - main
 
 permissions:
   contents: write
@@ -16,6 +16,7 @@ concurrency:
 
 jobs:
   apply:
+    if: github.head_ref == 'codex/pre-meta-hardening-batch-c'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -67,16 +68,16 @@ jobs:
           echo "8fdc3406d341f17209611467a602cedb27816202b0faadcc1338a9a01b2bbd9a  /tmp/batch-c.patch" | sha256sum -c -
           git apply --check /tmp/batch-c.patch
 
-      - name: Apply and publish one implementation commit
+      - name: Apply and publish implementation commit
         shell: bash
         run: |
           set -euo pipefail
           git apply --index /tmp/batch-c.patch
-          git rm -f .github/workflows/chatgpt-apply-batch-c.yml
+          git restore --source=HEAD --staged --worktree -- \
+            .github/workflows/chatgpt-source-export.yml \
+            docs/.chatgpt-source-export-trigger \
+            docs/.chatgpt-source-export-trigger-2
           git diff --cached --check
-          test ! -e .github/workflows/chatgpt-source-export.yml
-          test ! -e docs/.chatgpt-source-export-trigger
-          test ! -e docs/.chatgpt-source-export-trigger-2
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "refactor: harden runtime reliability structure"
