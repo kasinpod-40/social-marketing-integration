@@ -162,7 +162,7 @@ Harden the existing codebase before Facebook, Instagram and Meta Ads implementat
 
 ## Verification status
 
-GitHub Actions `Branch Verification` passed on branch head `5390b77` / draft PR #3:
+GitHub Actions `Branch Verification` run `29735300237` passed on draft PR #3 after the final code-review accounting fix and documentation update:
 
 - `npm ci` — passed
 - `npm run check` — passed
