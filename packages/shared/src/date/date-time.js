@@ -1,9 +1,10 @@
-import { dateOnlyToEpochMilliseconds, requireDateOnly } from './date-only.js';
+import { requireDateOnly } from './date-only.js';
 
 const EPOCH_MILLISECONDS_THRESHOLD = 100_000_000_000;
 const MIN_SUPPORTED_EPOCH_MS = Date.UTC(2000, 0, 1);
 const MAX_SUPPORTED_EPOCH_MS = Date.UTC(2101, 0, 1) - 1;
 const ISO_DATE_TIME_PATTERN = /^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(Z|[+-]\d{2}:?\d{2})$/u;
+const TIMEZONE_CONVERGENCE_ATTEMPTS = 6;
 
 /**
  * แปลงวันที่/เวลาจากระบบภายนอกให้เป็น Epoch Milliseconds มาตรฐานเดียวของระบบ
@@ -33,11 +34,51 @@ export function toEpochMilliseconds(value, options = {}) {
   return validateEpochRange(epochMs, label);
 }
 
-/** แปลงวันที่ประเทศไทยเป็น Epoch Milliseconds เวลา 00:00 น. +07:00 */
+/**
+ * แปลงวันแบบ YYYY-MM-DD ให้เป็น Epoch Milliseconds ของเวลา 00:00:00 ใน IANA timezone ที่กำหนด
+ * ใช้การ Converge จาก Calendar parts แทนการ Hardcode UTC offset เพื่อรองรับ DST และ Offset ที่เปลี่ยนตามวัน
+ * หากวันนั้นไม่มี Local midnight จริง ฟังก์ชันจะ Fail closed แทนการเลื่อนวันโดยเงียบ ๆ
+ */
+export function dateOnlyInTimeZoneToEpochMilliseconds(value, timeZone, options = {}) {
+  const label = normalizeLabel(options.label ?? 'date');
+  const date = requireDateOnly(value, { label });
+  const normalizedTimeZone = requireTimeZone(timeZone, `${label} timeZone`);
+  const [year, month, day] = date.split('-').map(Number);
+  const targetLocalAsUtc = Date.UTC(year, month - 1, day, 0, 0, 0);
+  let candidate = targetLocalAsUtc;
+
+  for (let attempt = 0; attempt < TIMEZONE_CONVERGENCE_ATTEMPTS; attempt += 1) {
+    const parts = readZonedDateTimeParts(candidate, normalizedTimeZone);
+    const observedLocalAsUtc = Date.UTC(
+      parts.year,
+      parts.month - 1,
+      parts.day,
+      parts.hour,
+      parts.minute,
+      parts.second,
+    );
+    const correction = targetLocalAsUtc - observedLocalAsUtc;
+    if (correction === 0) break;
+    candidate += correction;
+  }
+
+  const resolved = readZonedDateTimeParts(candidate, normalizedTimeZone);
+  if (resolved.year !== year
+    || resolved.month !== month
+    || resolved.day !== day
+    || resolved.hour !== 0
+    || resolved.minute !== 0
+    || resolved.second !== 0) {
+    throw new RangeError(`${label} has no resolvable local midnight in ${normalizedTimeZone}`);
+  }
+
+  return validateEpochRange(candidate, label);
+}
+
+/** Compatibility wrapper ของ TikTok/DEV เดิม; Generic domain ต้องเรียกฟังก์ชัน IANA timezone โดยตรง */
 export function bangkokDateToEpochMilliseconds(value, options = {}) {
-  return dateOnlyToEpochMilliseconds(value, {
+  return dateOnlyInTimeZoneToEpochMilliseconds(value, 'Asia/Bangkok', {
     label: options.label ?? 'Bangkok date',
-    utcOffset: '+07:00',
   });
 }
 
@@ -96,6 +137,41 @@ function validateEpochRange(value, label) {
   }
 
   return rounded;
+}
+
+/** อ่าน Calendar parts ของ Instant ใน IANA timezone แบบไม่พึ่ง Locale date string */
+function readZonedDateTimeParts(epochMs, timeZone) {
+  const parts = new Intl.DateTimeFormat('en-US-u-ca-gregory-nu-latn', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(new Date(epochMs));
+  const byType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return Object.freeze({
+    year: Number(byType.year),
+    month: Number(byType.month),
+    day: Number(byType.day),
+    hour: Number(byType.hour),
+    minute: Number(byType.minute),
+    second: Number(byType.second),
+  });
+}
+
+/** ตรวจ IANA timezone โดยให้ Intl เป็นแหล่งความจริงของ Runtime */
+function requireTimeZone(value, label) {
+  if (typeof value !== 'string' || value.trim() === '') throw new TypeError(`${label} is required`);
+  const timeZone = value.trim();
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone }).format(new Date(0));
+  } catch (cause) {
+    throw new TypeError(`${label} must be a valid IANA timezone`, { cause });
+  }
+  return timeZone;
 }
 
 /** Normalize fractional seconds ให้เหลือความละเอียด milliseconds ที่ JavaScript รองรับ */
