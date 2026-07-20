@@ -1,5 +1,7 @@
-import { bangkokDateToEpochMilliseconds } from '../../../shared/src/date/date-time.js';
-import { requireDateOnly } from '../../../shared/src/date/date-only.js';
+import {
+  dateOnlyInTimeZoneToEpochMilliseconds,
+  requireDateOnly,
+} from '../../../shared/src/date/date-only.js';
 
 const ADS_PLATFORMS = new Set(['meta_ads', 'tiktok_ads', 'google_ads']);
 const ENTITY_TYPES = new Set(['account', 'campaign', 'ad_group', 'ad', 'creative']);
@@ -20,13 +22,19 @@ export function createAdsDailyKey(input = {}) {
   return `${createAdsEntityKey(input)}:${metricDate}`;
 }
 
-/** สร้าง Canonical MKT_Ads_Daily row และคำนวณ Rate จากองค์ประกอบ ไม่เชื่อค่า Derived ที่ปะปนจาก Source */
+/**
+ * สร้าง Canonical MKT_Ads_Daily row และคำนวณ Rate จากองค์ประกอบ
+ *
+ * `sourceTimezone` ต้องมาจาก Ad Account/Customer profile ที่ผ่าน Identity preflight
+ * เพื่อไม่ให้ Canonical model เดา Bangkok และเพื่อรองรับ DST/Account timezone จริง
+ */
 export function createAdsDailyRow(input = {}) {
   const platform = requireChoice(input.platform, 'platform', ADS_PLATFORMS);
   const accountId = requireIdentity(input.accountId, 'accountId');
   const entityType = requireChoice(input.entityType, 'entityType', ENTITY_TYPES);
   const externalEntityId = requireIdentity(input.externalEntityId, 'externalEntityId');
   const metricDate = requireDateOnly(input.metricDate, { label: 'Ads metricDate' });
+  const sourceTimezone = requireText(input.sourceTimezone, 'sourceTimezone');
   const base = Object.freeze({
     spend_micros: nullableMoneyMicros(input.spendMicros, 'spendMicros'),
     impressions: nullableCount(input.impressions, 'impressions'),
@@ -39,7 +47,10 @@ export function createAdsDailyRow(input = {}) {
 
   return Object.freeze({
     ads_daily_key: createAdsDailyKey({ platform, accountId, entityType, externalEntityId, metricDate }),
-    metric_date: bangkokDateToEpochMilliseconds(metricDate, { label: 'Ads metricDate' }),
+    metric_date: dateOnlyInTimeZoneToEpochMilliseconds(metricDate, {
+      label: 'Ads metricDate',
+      timeZone: sourceTimezone,
+    }),
     platform,
     ad_channel: requireText(input.adChannel, 'adChannel'),
     account_id: accountId,
