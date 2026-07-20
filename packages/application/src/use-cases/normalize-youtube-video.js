@@ -3,11 +3,22 @@ import { createOrganicContentRows } from '../../../domain/src/entities/organic-c
 import { classifyMarketingContent } from '../services/content-classifier.js';
 import { requireDateOnly } from '../../../shared/src/date/date-only.js';
 
-/** Normalize YouTube Data API video resource ไปยัง MKT_Content และ cumulative daily snapshot */
+const DEFAULT_YOUTUBE_REPORTING_TIMEZONE = 'Asia/Bangkok';
+
+/**
+ * Normalize YouTube Data API video resource ไปยัง MKT_Content และ cumulative daily snapshot
+ *
+ * YouTube Data API ไม่กำหนด account reporting timezone สำหรับ Organic snapshot ของระบบเรา
+ * จึงรับ timezone จาก Customer profile และรักษา Asia/Bangkok เป็น DEV compatibility default เท่านั้น
+ */
 export function normalizeYouTubeVideo(input = {}) {
   const accountId = requireText(input.accountId, 'accountId');
   const channelId = requireText(input.channelId, 'channelId');
   const metricDate = requireDateOnly(input.metricDate, { label: 'metricDate' });
+  const sourceTimezone = requireText(
+    input.sourceTimezone ?? DEFAULT_YOUTUBE_REPORTING_TIMEZONE,
+    'sourceTimezone',
+  );
   const mapped = mapYouTubeVideoResource(input.video, { expectedChannelId: channelId });
   const caption = [mapped.title, mapped.description].filter(Boolean).join('\n').trim() || null;
   const classification = classifyMarketingContent({
@@ -22,6 +33,7 @@ export function normalizeYouTubeVideo(input = {}) {
     accountId,
     externalContentId: mapped.externalContentId,
     metricDate,
+    sourceTimezone,
     contentType: 'video',
     publishedAt: mapped.publishedAt,
     caption,
