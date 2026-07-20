@@ -10,6 +10,7 @@ export function normalizeYouTubeVideoBatch(input = {}) {
       accountId: input.accountId,
       channelId: input.channelId,
       metricDate: input.metricDate,
+      sourceTimezone: input.sourceTimezone ?? 'Asia/Bangkok',
       dictionaryRules: input.dictionaryRules,
     }),
     readSourceIdentity: (result) => result.sourceChannelId,
