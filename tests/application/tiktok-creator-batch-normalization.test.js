@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeTikTokCreatorVideoBatch } from '../../packages/application/src/use-cases/normalize-tiktok-creator-video-batch.js';
 
-test('normalizes TikTok Creator rows as an O(n) batch with dedupe by upsert key', () => {
+test('normalizes TikTok Creator rows as an O(n) batch with deterministic later-sequence dedupe', () => {
   const result = normalizeTikTokCreatorVideoBatch({
     accountId: 'tt_account_1',
     sourceHandle: 'tt_account_1',
@@ -24,7 +24,7 @@ test('normalizes TikTok Creator rows as an O(n) batch with dedupe by upsert key'
       },
       {
         'Unique identifier of the video': 'video_1',
-        'Total video views': 203,
+        'Total video views': 204,
       },
       {
         'Unique identifier of the video': 'video_2',
@@ -37,8 +37,12 @@ test('normalizes TikTok Creator rows as an O(n) batch with dedupe by upsert key'
   assert.equal(result.dailySnapshotRows.length, 2);
   assert.equal(result.skippedRows.length, 0);
   assert.equal(result.contentRows[0].content_key, 'tiktok:tt_account_1:video_1');
-  assert.equal(result.dailySnapshotRows[0].completion_rate, 0.4);
-  assert.equal(result.dailySnapshotRows[0].unique_viewers, 180);
+  assert.equal(result.contentRows[0].latest_views, 204);
+  assert.equal(result.dailySnapshotRows[0].completion_rate, null);
+  assert.equal(result.dailySnapshotRows[0].unique_viewers, null);
+  assert.equal(result.duplicateContentRows, 1);
+  assert.equal(result.duplicateDailyRows, 1);
+  assert.equal(result.duplicateResolution, 'later_sequence_wins');
 });
 
 test('collects invalid TikTok Creator rows without failing the entire batch', () => {
