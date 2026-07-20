@@ -14,12 +14,14 @@ export function normalizeTikTokCreatorVideoBatch(input) {
   const rawRows = requireArray(input?.rawRows, 'rawRows');
   const accountId = requireText(input?.accountId, 'accountId');
   const metricDate = requireDateOnly(input?.metricDate, { label: 'metricDate' });
+  const sourceTimezone = requireText(input?.sourceTimezone, 'sourceTimezone');
   const dictionaryRules = Array.isArray(input?.dictionaryRules) ? input.dictionaryRules : [];
   const normalized = normalizeOrganicContentBatch({
     rawRows,
     normalizeRow: (rawRow) => normalizeTikTokCreatorVideo({
       accountId,
       metricDate,
+      sourceTimezone,
       rawRow,
       dictionaryRules,
     }),
@@ -36,7 +38,6 @@ export function normalizeTikTokCreatorVideoBatch(input) {
   });
 }
 
-/** บังคับ Input เป็น Array */
 function requireArray(value, fieldName) {
   if (!Array.isArray(value)) {
     throw new TypeError(`${fieldName} must be an array`);
@@ -44,7 +45,6 @@ function requireArray(value, fieldName) {
   return value;
 }
 
-/** บังคับ Account ID เป็นข้อความที่ไม่ว่าง */
 function requireText(value, fieldName) {
   if (typeof value !== 'string' || value.trim() === '') {
     throw new Error(`TikTok Creator batch normalization requires ${fieldName}`);
