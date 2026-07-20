@@ -1,138 +1,149 @@
-# Current Task — Meta Organic + Meta Ads Blueprint & DEV Access Preflight v0.12.0
+# Current Task — Pre-Meta Full Codebase Hardening v0.11.1
 
 ## Task metadata
 
-- **Status:** `blueprint_draft_ready_for_review`
-- **Source baseline:** `d7b28c99f3ee435f45cc2d637bbe8fddfaf1179d`
-- **Working release:** `v0.12.0-meta-blueprint-access-preflight`
+- **Status:** `approved_for_implementation`
+- **Source baseline:** `fc796a4`
+- **Working release:** `v0.11.1-pre-meta-hardening`
 - **Environment:** developer-owned DEV profile `dev_ft_pumkin`
 - **Production ownership:** customer-owned resources only
-- **Implementation gate:** `blocked_until_user_approves_blueprint_and_source_contract`
+- **Implementation gate:** `approved_by_user_2026-07-20`
 - **Last updated:** `2026-07-20`
 
 ## Previous task closeout
 
-- TikTok DEV durable resume, guarded deploy, scheduled smoke and final D1 health passed on `d7b28c9`.
-- Final TikTok active work/phase/unit/lock/open DLQ/open alert = `0/0/0/0/0/0`.
+- TikTok DEV durable resume, guarded deployment, scheduled smoke and final D1 health passed on `d7b28c9`.
 - YouTube remains `dev_ready`; customer-owned 837-video Live UAT remains a Production blocker.
+- Meta Blueprint draft exists but is not approved and must be corrected against canonical source contracts.
 - Production remains disabled.
 
 ## Security prerequisite
 
-YouTube API/OAuth credentials visible in a previous screenshot must be rotated before the next external UAT or deploy. Update only local ignored configuration and the Cloudflare secret store. Offline Blueprint work may continue, but do not use the old credentials for external calls.
+YouTube API/OAuth credentials visible in a previous screenshot must be rotated before the next external UAT or deployment. Offline implementation and tests may continue, but old credentials must not be used for external calls.
 
 ## Objective
 
-Design Facebook Organic, Instagram Organic and Meta Ads so a new customer changes only profile values, non-secret IDs, protected credentials, Lark mappings, permissions and schedules. Customer-specific source branches are forbidden. Runtime scope is read-only reporting.
+Harden the existing codebase before Facebook, Instagram and Meta Ads implementation. Remove contradictory contracts, reduce duplicated runtime orchestration, make pagination and processing bounded and resumable, correct timezone/date semantics, strengthen operational redaction, prevent stale alert reopening, and add automated architecture/performance regression gates without breaking existing TikTok or YouTube behavior.
 
-## Delivered draft artifacts
+## In scope
 
-Created and visually/formula checked in the working environment:
+1. Correct Meta Blueprint and canonical Ads field-name parity.
+2. Replace Bangkok-hardcoded canonical date conversion with explicit source-timezone/date contract.
+3. Add a shared single-page source contract suitable for durable staging and bounded processing.
+4. Harden `MetaGraphClient` with single-page cursor reads, repeated-cursor protection, timeout covering body reads, bounded retry/backoff and rate-limit metadata.
+5. Remove end-to-end unbounded TikTok source aggregation; process staged units in bounded batches.
+6. Standardize duplicate resolution semantics.
+7. Expand operational redaction for customer/platform/Lark identifiers while preserving safe counters.
+8. Prevent a resolved alert from reopening under the same incident identity.
+9. Decouple Lark reliability mirror latency from D1-primary business completion through a durable/bounded delivery contract.
+10. Split Worker routing/orchestration into focused modules while preserving Queue schemas and job behavior.
+11. Add date-range-aware report source reads or a bounded fallback contract.
+12. Add unused/duplicate/complexity/large-account/contract-parity gates.
+13. Verify legacy files/tables before deprecation or removal; no destructive D1 migration without evidence.
+14. Update documentation and release handoff from verified evidence only.
 
-- `Social_MKT_Data_Hub_Meta_Blueprint_v0.12.0.xlsx`
-- `Social_MKT_Data_Hub_Meta_Lark_Import_v0.12.0.xlsx`
+## Out of scope
 
-Repository source contract:
+- Facebook, Instagram or Meta Ads connector business implementation
+- Meta token creation, App Review or external API UAT
+- Lark Meta schema Apply or record writes
+- Production deployment or customer-resource mutation
+- Destructive deletion of legacy D1 tables in this release
+- Rotating credentials on behalf of the user
 
-- `docs/meta-blueprint-v0.12.0.md`
+## Required contracts
 
-The Excel files are review/provisioning artifacts and are not committed as binaries by this connector.
+### Backward compatibility
 
-## Table inventory
+- Existing TikTok and YouTube Queue schema/version remain accepted.
+- Existing stable keys remain unchanged unless a migration and compatibility path are explicitly provided.
+- Schedules remain disabled/enabled exactly as configured; this release must not silently change activation.
+- D1 migrations are additive and replay-safe.
 
-### Facebook Organic
+### Memory and pagination
 
-1. `RAW_Meta_Pages`
-2. `RAW_FB_Page_Insights_Daily`
-3. `RAW_FB_Posts`
-4. `RAW_FB_Post_Insights_Daily`
+- Provider clients expose single-page reads.
+- Durable work stores source pages/units with generation fencing.
+- Normalization/planning/writing consumes bounded units and releases memory between chunks.
+- Repeated or missing cursors fail closed.
+- Completeness is checked from persisted counts, not inferred from final in-memory array length.
 
-### Instagram Organic
+### Date and timezone
 
-5. `RAW_IG_Accounts`
-6. `RAW_IG_Account_Insights_Daily`
-7. `RAW_IG_Media`
-8. `RAW_IG_Media_Insights_Daily`
+- Canonical domain factories never assume `Asia/Bangkok` for cross-platform facts.
+- Organic snapshots receive an explicit source timezone or already-resolved epoch.
+- Ads daily facts use the advertising account timezone.
+- Existing TikTok behavior remains Asia/Bangkok through its profile/config adapter, not a generic-domain hardcode.
 
-### Meta Ads
+### Duplicate policy
 
-9. `RAW_Meta_Ad_Accounts`
-10. `RAW_Meta_Campaigns`
-11. `RAW_Meta_Ad_Sets`
-12. `RAW_Meta_Ads`
-13. `RAW_Meta_Ad_Creatives`
-14. `RAW_Meta_Ads_Insights_Daily`
+- Duplicate identity resolution uses one shared deterministic rule.
+- Prefer the latest explicit source update timestamp.
+- Equal timestamps use later page/sequence.
+- Missing ordering evidence must produce a warning or permanent contract error rather than silently selecting inconsistent rows.
 
-### Canonical proposal
+### Security
 
-- `MKT_Accounts_Daily` for cross-platform account/page daily snapshots. It must not be applied before explicit approval.
+- Secrets never enter logs, D1 operational payloads, Lark mirrors or release artifacts.
+- Customer profile, account/page/IG/ad IDs, Lark table IDs, handles and generic identity values are redacted or replaced with safe references in operational output.
+- Numeric identifiers are not exempt merely because they are numbers.
+- Safe counters remain visible through an explicit allowlist.
 
-The Blueprint contains 371 field contracts across the 14 RAW tables.
+### Reliability
 
-## Core draft contracts
+- D1 remains primary source of truth.
+- A slow/unavailable Lark mirror must not invalidate an already committed D1 primary result.
+- Mirror failures remain observable and retryable through a bounded durable contract.
+- Resolved alerts do not reopen under the same incident generation unless an explicit new generation/reopen operation is used.
 
-- External IDs that look numeric remain Text.
-- Organic entity daily key is `{entity_key}:{source_metric_date}`.
-- Ads entity key is `meta_ads:{ad_account_id}:{entity_type}:{external_entity_id}`.
-- Canonical Ads daily key is `{entity_key}:{source_metric_date}`.
-- Raw Ads breakdown key also includes `{breakdown_key}`.
-- Unsupported or empty metrics are `null`, not zero.
-- Post/Media cumulative metrics are stored as snapshots, not fabricated daily deltas.
-- Reconciliation retains missing/private entities and records warning state; it does not destructively delete rows.
-- Meta Ad Set maps to canonical Ad Group.
-- Ad and Creative IDs/keys remain separate.
-- Only aggregate Ads rows map to `MKT_Ads_Daily`; placement/device breakdown rows remain RAW-only.
-- Ads daily date uses the Ad Account timezone.
-- Decimal money values parse directly to integer micros; `1 unit = 1,000,000 micros`.
-- Conversion counts/values use an explicitly approved action type; never sum every action.
-- `target_roas` never maps to `actual_roas`.
+## Acceptance criteria
 
-## Ownership contract
+1. Meta Blueprint field/key names match source canonical contracts.
+2. Generic Organic and Ads date tests cover at least two timezones and a DST timezone.
+3. Meta page client tests cover two-page reads, repeated cursor, missing cursor, body timeout, 429 retry, 5xx retry and max-attempt exhaustion.
+4. TikTok interruption/resume processes a large fixture without rebuilding all source records in one array.
+5. Duplicate resolution has shared tests across normalizer and sync engine.
+6. Redaction tests cover token/secret plus customer profile, account key, Page ID, IG ID, Ad Account ID and Lark Table ID in string and numeric forms.
+7. Alert persistence tests prove resolved incidents remain resolved under duplicate writes.
+8. Lark mirror outage/timeout does not fail or indefinitely delay D1-primary completion.
+9. Worker runtime regression passes for TikTok, YouTube, reporting, DLQ and redrive.
+10. Large-account fixtures pass for at least 10,000 source entities with bounded page/chunk size.
+11. `npm ci`, `npm run check`, `npm test`, focused reliability/large-account tests, `npm audit`, and `npm run deploy:dry-run` pass.
+12. No Secret, local config, generated manifest, macOS metadata or unnecessary build artifact is committed.
+13. No External API, Remote D1, Queue, Lark mutation, deployment, schedule or Production change is claimed without live evidence.
 
-DEV uses developer-owned App, Business assets, Page, Professional Instagram account, test Ad Account, Cloudflare and Lark. Production must use customer-owned resources with the developer invited using least privilege.
+## Implementation plan
 
-## Large-account targets
+### Atomic batch A — contracts, dates and security
 
-- Facebook: at least 5,000 posts
-- Instagram: at least 2,000 media/posts
-- Meta Ads: a large async Insights fixture proving bounded polling/page/chunk resume
+- canonical timezone/date contract
+- duplicate policy
+- operational redaction
+- alert reopen semantics
+- Meta Blueprint parity
 
-Every flow requires full backfill, incremental sync, periodic reconciliation, bounded pagination and memory, durable resume, stable-key idempotency, completeness accounting, typed retry and customer-owned Live UAT.
+### Atomic batch B — bounded source processing
 
-## Out of scope until approval
+- shared page contract
+- Meta Graph transport hardening
+- TikTok staged-unit consumer
+- large fixtures
 
-- Connector implementation
-- Worker routes or Queue producers
-- Lark Apply or record writes
-- Meta token/app-review operations
-- Cloudflare deploy or schedule enablement
-- Production changes
-- Ads write operations
+### Atomic batch C — runtime and reliability structure
 
-## User review gate
+- split Worker handlers/composition
+- non-blocking durable Lark mirror contract
+- report range reads
+- regression tests
 
-The user must approve:
+### Atomic batch D — cleanup and release gates
 
-1. 14 RAW tables and 371 field contracts
-2. `MKT_Accounts_Daily`
-3. Organic daily vs lifetime snapshot semantics
-4. Ads aggregate vs breakdown handling
-5. Integer-micros money handling
-6. Conversion and attribution policy
-7. Config-only customer onboarding
-8. DEV/Production ownership and access checklist
-9. Large-account UAT gates
-
-After approval, change status to `approved_for_implementation`.
-
-## Planned releases after approval
-
-- `v0.12.1` — Meta transport hardening, single-page pagination and identity/access preflight
-- `v0.12.2` — Facebook + Instagram Organic schema/runtime/reconciliation/UAT
-- `v0.12.3` — Meta Ads schema/runtime/attribution/reconciliation/UAT
+- unused/duplicate/complexity audits
+- legacy usage report and deprecation markers
+- full gates, docs and clean release verification
 
 ## Implementation result
 
-`not_started — blueprint/source-contract review only`
+`in_progress`
 
-No connector code, Lark mutation, external Meta API call, Queue job, D1 migration, Worker deploy, schedule change or Production mutation was performed.
+No Meta connector, Lark Apply, external Meta call, Remote D1 migration, Queue mutation, Worker deployment, schedule change or Production mutation has been performed.
