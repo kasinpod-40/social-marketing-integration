@@ -1,5 +1,6 @@
 name: ChatGPT Apply Batch C
 
+# Payload parts 00, 01A-01D, 02 and 03 are required before this workflow runs.
 on:
   pull_request:
     branches:
