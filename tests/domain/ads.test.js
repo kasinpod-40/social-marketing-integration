@@ -59,6 +59,7 @@ test('ads daily row keeps platform and client-facing channel separate', () => {
     externalEntityId: 'campaign_1',
     externalCampaignId: 'campaign_1',
     metricDate: '2026-07-15',
+    sourceTimezone: 'Asia/Bangkok',
     currency: 'thb',
     spendMicros: 100 * ADS_MONEY_SCALE,
     impressions: 1_000,
@@ -68,12 +69,39 @@ test('ads daily row keeps platform and client-facing channel separate', () => {
   });
   assert.equal(row.platform, 'meta_ads');
   assert.equal(row.ad_channel, 'instagram_ads');
+  assert.equal(row.metric_date, Date.parse('2026-07-15T00:00:00+07:00'));
   assert.equal(row.spend, 100);
   assert.equal(row.conversion_value, 250);
   assert.equal(row.actual_roas, 2.5);
 });
 
-test('ads daily row requires an ISO currency even when money metrics are absent', () => {
+test('ads daily date follows the ad account timezone and DST', () => {
+  const winter = createAdsDailyRow({
+    platform: 'meta_ads',
+    adChannel: 'facebook_ads',
+    accountId: 'account_1',
+    entityType: 'account',
+    externalEntityId: 'account_1',
+    metricDate: '2026-01-15',
+    sourceTimezone: 'America/Los_Angeles',
+    currency: 'USD',
+  });
+  const summer = createAdsDailyRow({
+    platform: 'meta_ads',
+    adChannel: 'facebook_ads',
+    accountId: 'account_1',
+    entityType: 'account',
+    externalEntityId: 'account_1',
+    metricDate: '2026-07-15',
+    sourceTimezone: 'America/Los_Angeles',
+    currency: 'USD',
+  });
+
+  assert.equal(winter.metric_date, Date.parse('2026-01-15T00:00:00-08:00'));
+  assert.equal(summer.metric_date, Date.parse('2026-07-15T00:00:00-07:00'));
+});
+
+test('ads daily row requires source timezone and ISO currency even when money metrics are absent', () => {
   assert.throws(() => createAdsDailyRow({
     platform: 'meta_ads',
     adChannel: 'facebook_ads',
@@ -81,5 +109,15 @@ test('ads daily row requires an ISO currency even when money metrics are absent'
     entityType: 'account',
     externalEntityId: 'account_1',
     metricDate: '2026-07-15',
+    currency: 'THB',
+  }), /sourceTimezone/u);
+  assert.throws(() => createAdsDailyRow({
+    platform: 'meta_ads',
+    adChannel: 'facebook_ads',
+    accountId: 'account_1',
+    entityType: 'account',
+    externalEntityId: 'account_1',
+    metricDate: '2026-07-15',
+    sourceTimezone: 'Asia/Bangkok',
   }), /currency/u);
 });
