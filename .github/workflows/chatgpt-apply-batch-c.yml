@@ -32,9 +32,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          set -euo pipefail
-          gh api --paginate "repos/${GITHUB_REPOSITORY}/issues/4/comments" > /tmp/batch-c-comments.json
-          python - <<'PY'
+          set -uo pipefail
+          : > /tmp/batch-c-diagnostic.log
+          (
+            set -euo pipefail
+            gh api --paginate "repos/${GITHUB_REPOSITORY}/issues/4/comments" > /tmp/batch-c-comments.json
+            python - <<'PY'
           import base64
           import hashlib
           import json
@@ -53,21 +56,36 @@ jobs:
               ids.append(str(comment['id']))
 
           expected = ['00', '01A', '01B', '01C', '01D', '02', '03']
+          print('parts=' + json.dumps({key: len(value) for key, value in sorted(parts.items())}))
           if sorted(parts) != sorted(expected):
               raise SystemExit(f'patch parts mismatch: {sorted(parts)}')
 
           encoded = ''.join(parts[key] for key in expected)
+          print(f'encoded_length={len(encoded)}')
           archive = base64.b64decode(encoded, validate=True)
           archive_sha = hashlib.sha256(archive).hexdigest()
+          print(f'archive_length={len(archive)}')
+          print(f'archive_sha={archive_sha}')
           if archive_sha != '372cdbde4fc749ab50114693aab38d333d18d3e8bd16d76decd9cd078a400d29':
               raise SystemExit(f'archive checksum mismatch: {archive_sha}')
 
           Path('/tmp/batch-c.patch.xz').write_bytes(archive)
           Path('/tmp/batch-c-comment-ids').write_text('\n'.join(ids) + '\n')
           PY
-          xz -dc /tmp/batch-c.patch.xz > /tmp/batch-c.patch
-          echo "8fdc3406d341f17209611467a602cedb27816202b0faadcc1338a9a01b2bbd9a  /tmp/batch-c.patch" | sha256sum -c -
-          git apply --check /tmp/batch-c.patch
+            xz -dc /tmp/batch-c.patch.xz > /tmp/batch-c.patch
+            echo "8fdc3406d341f17209611467a602cedb27816202b0faadcc1338a9a01b2bbd9a  /tmp/batch-c.patch" | sha256sum -c -
+            git apply --check /tmp/batch-c.patch
+          ) > /tmp/batch-c-diagnostic.log 2>&1
+          status=$?
+          cat /tmp/batch-c-diagnostic.log
+          if [ "$status" -ne 0 ]; then
+            diagnostic=$(tail -c 2500 /tmp/batch-c-diagnostic.log)
+            gh issue comment 4 --repo "$GITHUB_REPOSITORY" --body "BATCHC_DIAGNOSTIC:
+          \`\`\`
+          ${diagnostic}
+          \`\`\`"
+            exit "$status"
+          fi
 
       - name: Apply and publish implementation commit
         shell: bash
