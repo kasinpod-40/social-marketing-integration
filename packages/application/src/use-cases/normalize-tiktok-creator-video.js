@@ -12,6 +12,7 @@ export function normalizeTikTokCreatorVideo(input) {
   const dictionaryRules = Array.isArray(input?.dictionaryRules) ? input.dictionaryRules : [];
   const accountId = requireText(input?.accountId, 'accountId');
   const metricDate = requireDateOnly(input?.metricDate, { label: 'metricDate' });
+  const sourceTimezone = requireText(input?.sourceTimezone, 'sourceTimezone');
   const mapped = mapTikTokCreatorVideoRow(input?.rawRow);
   const externalContentId = requireText(mapped.externalContentId, 'externalContentId');
   const contentUrl = mapped.videoUrl;
@@ -28,6 +29,7 @@ export function normalizeTikTokCreatorVideo(input) {
     accountId,
     externalContentId,
     metricDate,
+    sourceTimezone,
     contentType: 'video',
     publishedAt: mapped.publishedAt,
     caption: mapped.description,
@@ -52,7 +54,6 @@ export function normalizeTikTokCreatorVideo(input) {
   return Object.freeze({ sourceHandle: mapped.sourceHandle, ...rows });
 }
 
-/** บังคับ Account/External ID เป็นข้อความที่ไม่ว่าง */
 function requireText(value, fieldName) {
   if (typeof value !== 'string' || value.trim() === '') {
     throw new Error(`TikTok Creator normalization requires ${fieldName}`);
