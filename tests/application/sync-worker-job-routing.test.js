@@ -30,6 +30,7 @@ function minimalEnv() {
     MKT_MAIN_QUEUE_NAME: 'sync-main',
     MKT_DLQ_QUEUE_NAME: 'sync-dlq',
     MKT_STATE_DB: createFakeD1(),
+    MKT_SYNC_QUEUE: { async send() {} },
   };
 }
 
@@ -179,6 +180,62 @@ test('reliability-handled permanent YouTube failure still marks resumable work t
   assert.equal(deadLetter.bindings[7], 'YOUTUBE_ANALYTICS_ROW_SCOPE_MISMATCH');
 });
 
+
+
+test('reliability mirror delivery routes before customer runtime and exposes safe counters only', async () => {
+  let runtimeConfigCalls = 0;
+  const delivered = [];
+  const result = await processJob({
+    job: {
+      body: { type: 'system.reliability-mirror.deliver' },
+      schemaVersion: 1,
+    },
+    message: { id: 'mirror-drain', attempts: 1 },
+    env: {
+      LARK_TABLE_MKT_SYNC_LOG: 'tbl-sync',
+      LARK_TABLE_MKT_SYSTEM_ALERTS: 'tbl-alert',
+      MKT_RELIABILITY_MIRROR_BATCH_SIZE: '10',
+    },
+    getRuntimeConfig() { runtimeConfigCalls += 1; throw new Error('must not load customer runtime'); },
+    getInfrastructure() {
+      return {
+        getReliabilityMirrorOutbox() {
+          return {
+            async listPending({ limit }) {
+              assert.equal(limit, 10);
+              return [{ outboxId: 'internal-id', revision: 1, method: 'saveSyncRun', payload: { syncId: 'run-1' } }];
+            },
+            async markDelivered({ outboxId, revision }) {
+              assert.equal(revision, 1);
+              delivered.push(outboxId);
+              return { delivered: true };
+            },
+            async markDeliveryFailed() {},
+            async markPermanentFailed() {},
+          };
+        },
+        getLarkReliabilityStore(tableIds) {
+          assert.deepEqual(tableIds, { mktSyncLog: 'tbl-sync', mktSystemAlerts: 'tbl-alert' });
+          return {
+            async saveSyncRun() {},
+            async saveSystemAlert() {},
+          };
+        },
+      };
+    },
+  });
+
+  assert.equal(runtimeConfigCalls, 0);
+  assert.deepEqual(delivered, ['internal-id']);
+  assert.deepEqual(result, {
+    status: 'drained',
+    pendingRead: 1,
+    delivered: 1,
+    superseded: 0,
+    remainingUnknown: false,
+  });
+  assert.equal(JSON.stringify(result).includes('run-1'), false);
+});
 
 test('redrive admin job executes before customer/Lark runtime loading and uses a new requestedAt generation', async () => {
   const sent = [];

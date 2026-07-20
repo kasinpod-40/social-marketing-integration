@@ -1,0 +1,395 @@
+import { assertConnectorRunnable } from '../../../packages/application/src/connectors/connector-registry.js';
+import {
+  JOB_TYPES,
+  assertJobImplemented,
+  getJobDefinition,
+} from '../../../packages/application/src/jobs/job-catalog.js';
+import { generateTikTokOrganicReport } from '../../../packages/application/src/use-cases/generate-tiktok-organic-report.js';
+import {
+  DEFAULT_REPORT_MAX_CONTENT_RECORDS,
+  DEFAULT_REPORT_MAX_FALLBACK_SCAN_RECORDS,
+  DEFAULT_REPORT_MAX_PAGES_PER_QUERY,
+  DEFAULT_REPORT_MAX_SNAPSHOT_RECORDS,
+  DEFAULT_REPORT_SOURCE_PAGE_SIZE,
+} from '../../../packages/application/src/reports/load-tiktok-organic-report-source.js';
+import { deliverReliabilityMirror } from '../../../packages/application/src/use-cases/deliver-reliability-mirror.js';
+import { redriveDeadLetterJob } from '../../../packages/application/src/use-cases/redrive-dead-letter-job.js';
+import { seedMetricDefinitions } from '../../../packages/application/src/use-cases/seed-metric-definitions.js';
+import { seedReportSettings } from '../../../packages/application/src/use-cases/seed-report-settings.js';
+import { syncTikTokCreatorNativeToLark } from '../../../packages/application/src/use-cases/sync-tiktok-creator-native-to-lark.js';
+import { syncYouTubeOrganicToLark } from '../../../packages/application/src/use-cases/sync-youtube-organic-to-lark.js';
+import { validateLarkLiveSync } from '../../../packages/application/src/use-cases/validate-lark-live-sync.js';
+import { readLarkTableIdsFromEnv } from '../../../packages/config/src/lark-table-config.js';
+import {
+  readYouTubeChannelIdFromEnv,
+  readYouTubeLarkTableIdsFromEnv,
+} from '../../../packages/config/src/youtube-organic-runtime-config.js';
+import { createYouTubeClientsFromEnv } from '../../../packages/connectors/src/youtube/youtube-runtime-factory.js';
+import { D1ReliabilityStore } from '../../../packages/reliability/src/d1-reliability-store.js';
+import {
+  drainPendingSyncWarnings,
+  runReliableSync,
+} from '../../../packages/reliability/src/reliable-sync-runner.js';
+import { permanentError } from '../../../packages/shared/src/errors/runtime-error.js';
+import { resolveYouTubeAnalyticsEnabled } from './scheduled-jobs.js';
+import {
+  DEFAULT_LOCK_LEASE_MS,
+  DEFAULT_LOCK_RENEW_INTERVAL_MS,
+  DEFAULT_TIKTOK_FULL_RECONCILIATION_INTERVAL_MS,
+  DEFAULT_TIKTOK_SOURCE_MAX_PAGES,
+  DEFAULT_TIKTOK_SOURCE_PAGE_SIZE,
+  logQueueResult,
+  readAttempts,
+  readBoolean,
+  readMetricDate,
+  readPositiveInteger,
+  readSyncJobGeneration,
+  requireJobText,
+  sanitizeReliabilityEvent,
+} from './worker-runtime-support.js';
+
+/** Route Job type ไปยัง Use case จริง โดยตรวจ Implementation/Profile/Feature flag ตามลำดับ */
+export async function processJob(input) {
+  const definition = assertJobImplemented(getJobDefinition(input.job?.body?.type));
+
+  if (definition.type === JOB_TYPES.DEAD_LETTER_REDRIVE) {
+    if (!readBoolean(input.env?.MKT_DLQ_REDRIVE_ENABLED, false)) {
+      throw permanentError('Dead-letter redrive is disabled for this environment', {
+        code: 'MKT_DLQ_REDRIVE_DISABLED',
+      });
+    }
+    return redriveDeadLetterJob({
+      store: new D1ReliabilityStore({ db: input.env?.MKT_STATE_DB }),
+      queue: input.env?.MKT_SYNC_QUEUE,
+      dlqId: requireJobText(input.job.body?.dlqId, 'dlqId'),
+    });
+  }
+
+  if (definition.type === JOB_TYPES.RELIABILITY_MIRROR_DELIVER) {
+    const infrastructure = input.getInfrastructure();
+    const tableIds = readLarkTableIdsFromEnv(input.env, ['mktSyncLog', 'mktSystemAlerts']);
+    return deliverReliabilityMirror({
+      outbox: infrastructure.getReliabilityMirrorOutbox(),
+      mirror: infrastructure.getLarkReliabilityStore(tableIds),
+      limit: readPositiveInteger(input.env?.MKT_RELIABILITY_MIRROR_BATCH_SIZE, 25),
+    });
+  }
+
+  const runtimeConfig = input.getRuntimeConfig();
+  const connectorConfig = definition.connectorKey
+    ? assertConnectorRunnable(runtimeConfig, definition.connectorKey)
+    : null;
+  const infrastructure = input.getInfrastructure();
+
+  if (definition.type === JOB_TYPES.YOUTUBE_ORGANIC_SYNC) {
+    // ต้องตรวจ Schema/Table IDs ก่อนสร้าง YouTube client เพื่อไม่เสีย Quota โดยไม่จำเป็น
+    const youtubeTableIds = readYouTubeLarkTableIdsFromEnv(input.env);
+    const operationalTableIds = readLarkTableIdsFromEnv(input.env, ['mktSyncLog', 'mktSystemAlerts']);
+    const tableIds = Object.freeze({ ...youtubeTableIds, ...operationalTableIds });
+    const reliability = infrastructure.getReliability(tableIds);
+    const clients = createYouTubeClientsFromEnv(input.env);
+    const analyticsEnabled = resolveYouTubeAnalyticsEnabled({
+      configured: input.env?.MKT_YOUTUBE_ANALYTICS_ENABLED,
+      requested: input.job.body?.analyticsEnabled,
+    });
+    const channelId = readYouTubeChannelIdFromEnv(input.env);
+    const requestedAt = readSyncJobGeneration(input.job, 'YouTube');
+    const resumableWorkStore = infrastructure.getResumableWorkStore();
+
+    // Drain Warning เก่าก่อน Claim generation ใหม่ เพื่อไม่ให้ Completed incident
+    // สูญหายเมื่อ Cron/Manual job ใหม่มาถึงก่อน Retry เดิม.
+    await drainPendingSyncWarnings({
+      store: reliability.store,
+      warningOutboxStore: resumableWorkStore,
+      platform: 'youtube',
+      limit: 25,
+      onReliabilityError: (event) => logQueueResult({
+        ok: false,
+        scope: 'warning_outbox',
+        ...sanitizeReliabilityEvent(event),
+      }),
+    });
+
+    const result = await runReliableSync({
+      store: reliability.store,
+      lockManager: reliability.lockManager,
+      customerProfile: runtimeConfig.profileKey,
+      accountKey: connectorConfig.accountKey,
+      platform: 'youtube',
+      source: 'youtube_data_api',
+      syncType: 'organic_sync',
+      retryCount: Math.max(0, readAttempts(input.message) - 1),
+      leaseMs: readPositiveInteger(input.env?.MKT_SYNC_LOCK_LEASE_MS, DEFAULT_LOCK_LEASE_MS),
+      renewIntervalMs: readPositiveInteger(
+        input.env?.MKT_SYNC_LOCK_RENEW_INTERVAL_MS,
+        DEFAULT_LOCK_RENEW_INTERVAL_MS,
+      ),
+      alertOnRetryableFailure: false,
+      alertOnResultWarnings: true,
+      warningOutboxStore: resumableWorkStore,
+      onReliabilityError: (event) => logQueueResult({
+        ok: false,
+        scope: 'reliability',
+        ...sanitizeReliabilityEvent(event),
+      }),
+      execute: ({ syncRunId, lockKey, assertLockActive }) => syncYouTubeOrganicToLark({
+        syncRunId,
+        assertLockActive,
+        repository: infrastructure.repository,
+        syncEngine: infrastructure.syncEngine,
+        incrementalStateStore: infrastructure.getIncrementalStateStore(),
+        resumableWorkStore,
+        publicClient: clients.publicClient,
+        ownerClient: clients.ownerClient,
+        channelId,
+        accountKey: connectorConfig.accountKey,
+        customerProfile: runtimeConfig.profileKey,
+        cursorKey: lockKey,
+        // Queue retry คง message.id เดิม จึง Resume page/chunk ได้แม้ syncRunId ของแต่ละ attempt เปลี่ยน
+        workKey: `youtube:${requireJobText(input.message?.id, 'message.id')}`,
+        requestedAt,
+        generation: requestedAt,
+        syncType: 'organic_sync',
+        metricDate: readMetricDate(input.job.body?.metricDate, input.env),
+        reportingTimezone: input.env?.DEFAULT_TIMEZONE ?? 'Asia/Bangkok',
+        syncMode: input.job.body?.syncMode,
+        recentVideoLimit: readPositiveInteger(input.env?.MKT_YOUTUBE_RECENT_VIDEO_LIMIT, 100),
+        contentMaxPages: readPositiveInteger(input.env?.YOUTUBE_MAX_PAGES, 100),
+        fullSyncIntervalMs: readPositiveInteger(
+          input.env?.MKT_YOUTUBE_FULL_RECONCILIATION_INTERVAL_MS,
+          DEFAULT_TIKTOK_FULL_RECONCILIATION_INTERVAL_MS,
+        ),
+        analyticsEnabled,
+        analyticsStartDate: input.job.body?.analyticsStartDate,
+        analyticsEndDate: input.job.body?.analyticsEndDate,
+        analyticsMaxPages: readPositiveInteger(input.env?.MKT_YOUTUBE_ANALYTICS_MAX_PAGES, 1000),
+        dryRun: input.job.body?.dryRun === true,
+        tables: {
+          mktAccounts: tableIds.mktAccounts,
+          rawYouTubeChannels: tableIds.rawYouTubeChannels,
+          rawYouTubeVideos: tableIds.rawYouTubeVideos,
+          rawYouTubeAnalyticsDaily: tableIds.rawYouTubeAnalyticsDaily,
+          mktContent: tableIds.mktContent,
+          mktContentDaily: tableIds.mktContentDaily,
+        },
+      }),
+    });
+    // Cleanup หลัง Reliability runner ปล่อย distributed lock แล้วเท่านั้น
+    // เพื่อไม่ให้ retention sweep แข่งกับ active/retryable work ของ cursor เดียวกัน
+    await resumableWorkStore.cleanupExpiredWork({ limit: 25 });
+    return result;
+  }
+
+  if (definition.type === JOB_TYPES.TIKTOK_CREATOR_NATIVE_SYNC) {
+    const tableIds = readLarkTableIdsFromEnv(input.env, [
+      'rawTikTokCreatorVideos',
+      'mktContent',
+      'mktContentDaily',
+      'mktClassificationDictionary',
+      'mktSyncLog',
+      'mktSystemAlerts',
+    ]);
+    const reliability = infrastructure.getReliability(tableIds);
+    const resumableWorkStore = infrastructure.getResumableWorkStore();
+    const requestedAt = readSyncJobGeneration(input.job, 'TikTok', input.message?.timestamp);
+    const incrementalEnabled = readBoolean(input.env?.MKT_TIKTOK_INCREMENTAL_ENABLED, false);
+
+    const result = await runReliableSync({
+      store: reliability.store,
+      lockManager: reliability.lockManager,
+      customerProfile: runtimeConfig.profileKey,
+      accountKey: connectorConfig.accountKey,
+      platform: 'tiktok',
+      source: 'lark_native_tiktok_for_creator',
+      syncType: 'native_import',
+      retryCount: Math.max(0, readAttempts(input.message) - 1),
+      leaseMs: readPositiveInteger(input.env?.MKT_SYNC_LOCK_LEASE_MS, DEFAULT_LOCK_LEASE_MS),
+      renewIntervalMs: readPositiveInteger(
+        input.env?.MKT_SYNC_LOCK_RENEW_INTERVAL_MS,
+        DEFAULT_LOCK_RENEW_INTERVAL_MS,
+      ),
+      alertOnRetryableFailure: false,
+      onReliabilityError: (event) => logQueueResult({
+        ok: false,
+        scope: 'reliability',
+        ...sanitizeReliabilityEvent(event),
+      }),
+      execute: ({ syncRunId, lockKey, assertLockActive }) => syncTikTokCreatorNativeToLark({
+        syncRunId,
+        assertLockActive,
+        repository: infrastructure.repository,
+        syncEngine: infrastructure.syncEngine,
+        accountId: connectorConfig.accountKey,
+        sourceHandle: connectorConfig.sourceHandle,
+        metricDate: readMetricDate(input.job.body?.metricDate, input.env),
+        customerProfile: runtimeConfig.profileKey,
+        cursorKey: lockKey,
+        workKey: `tiktok:${requireJobText(input.message?.id, 'message.id')}`,
+        requestedAt,
+        generation: requestedAt,
+        resumableWorkStore,
+        sourcePageSize: readPositiveInteger(
+          input.env?.MKT_TIKTOK_SOURCE_PAGE_SIZE,
+          DEFAULT_TIKTOK_SOURCE_PAGE_SIZE,
+        ),
+        sourceMaxPages: readPositiveInteger(
+          input.env?.MKT_TIKTOK_SOURCE_MAX_PAGES ?? input.env?.LARK_MAX_PAGES,
+          DEFAULT_TIKTOK_SOURCE_MAX_PAGES,
+        ),
+        syncMode: input.job.body?.syncMode,
+        incrementalEnabled,
+        incrementalStateStore: incrementalEnabled
+          ? infrastructure.getIncrementalStateStore()
+          : null,
+        fullSyncIntervalMs: readPositiveInteger(
+          input.env?.MKT_TIKTOK_FULL_RECONCILIATION_INTERVAL_MS,
+          DEFAULT_TIKTOK_FULL_RECONCILIATION_INTERVAL_MS,
+        ),
+        tables: {
+          rawTikTokCreatorVideos: tableIds.rawTikTokCreatorVideos,
+          mktContent: tableIds.mktContent,
+          mktContentDaily: tableIds.mktContentDaily,
+          mktClassificationDictionary: tableIds.mktClassificationDictionary,
+        },
+      }),
+    });
+    await resumableWorkStore.cleanupExpiredWork({ limit: 25 });
+    return result;
+  }
+
+  if (definition.type === JOB_TYPES.TIKTOK_CREATOR_NATIVE_VALIDATE) {
+    const tableIds = readLarkTableIdsFromEnv(input.env, [
+      'rawTikTokCreatorVideos',
+      'mktClassificationDictionary',
+      'mktContent',
+      'mktContentDaily',
+    ]);
+    return validateLarkLiveSync({
+      repository: infrastructure.repository,
+      syncEngine: infrastructure.syncEngine,
+      accountId: connectorConfig.accountKey,
+      sourceHandle: connectorConfig.sourceHandle,
+      metricDate: readMetricDate(input.job.body?.metricDate, input.env),
+      sampleLimit: input.job.body?.sampleLimit,
+      tables: {
+        rawTikTokCreatorVideos: tableIds.rawTikTokCreatorVideos,
+        mktClassificationDictionary: tableIds.mktClassificationDictionary,
+        mktContent: tableIds.mktContent,
+        mktContentDaily: tableIds.mktContentDaily,
+      },
+    });
+  }
+
+  if (definition.type === JOB_TYPES.METRIC_DEFINITIONS_SEED) {
+    const tableIds = readLarkTableIdsFromEnv(input.env, ['mktMetricDefinitions']);
+    return seedMetricDefinitions({
+      repository: infrastructure.repository,
+      syncEngine: infrastructure.syncEngine,
+      tableId: tableIds.mktMetricDefinitions,
+    });
+  }
+
+  if (definition.type === JOB_TYPES.REPORT_SETTINGS_SEED) {
+    const tableIds = readLarkTableIdsFromEnv(input.env, ['mktReportSettings']);
+    return seedReportSettings({
+      repository: infrastructure.repository,
+      syncEngine: infrastructure.syncEngine,
+      tableId: tableIds.mktReportSettings,
+      profileKey: runtimeConfig.profileKey,
+    });
+  }
+
+  if (definition.type === JOB_TYPES.DAILY_REPORT_GENERATE
+    || definition.type === JOB_TYPES.WEEKLY_REPORT_GENERATE) {
+    const tableIds = readLarkTableIdsFromEnv(input.env, [
+      'mktContent',
+      'mktContentDaily',
+      'mktMetricDefinitions',
+      'mktReportSettings',
+      'mktReportSnapshots',
+      'mktReportMetricValues',
+      'mktReportTopContent',
+      'mktSyncLog',
+      'mktSystemAlerts',
+    ]);
+    const reliability = infrastructure.getReliability(tableIds);
+    const reportType = definition.type === JOB_TYPES.DAILY_REPORT_GENERATE
+      ? 'daily_organic_report'
+      : 'weekly_organic_report';
+    const defaultSettingKey = definition.type === JOB_TYPES.DAILY_REPORT_GENERATE
+      ? input.env?.MKT_DAILY_REPORT_SETTING_KEY
+      : input.env?.MKT_WEEKLY_REPORT_SETTING_KEY;
+    const reportSettingKey = requireJobText(
+      input.job.body?.reportSettingKey ?? defaultSettingKey,
+      'reportSettingKey',
+    );
+
+    return runReliableSync({
+      store: reliability.store,
+      lockManager: reliability.lockManager,
+      customerProfile: runtimeConfig.profileKey,
+      accountKey: connectorConfig.accountKey,
+      platform: 'tiktok',
+      source: 'mkt_content_daily',
+      syncType: reportType,
+      retryCount: Math.max(0, readAttempts(input.message) - 1),
+      leaseMs: readPositiveInteger(input.env?.MKT_SYNC_LOCK_LEASE_MS, DEFAULT_LOCK_LEASE_MS),
+      renewIntervalMs: readPositiveInteger(
+        input.env?.MKT_SYNC_LOCK_RENEW_INTERVAL_MS,
+        DEFAULT_LOCK_RENEW_INTERVAL_MS,
+      ),
+      alertOnRetryableFailure: false,
+      onReliabilityError: (event) => logQueueResult({
+        ok: false,
+        scope: 'reliability',
+        ...sanitizeReliabilityEvent(event),
+      }),
+      execute: ({ assertLockActive }) => generateTikTokOrganicReport({
+        assertLockActive,
+        repository: infrastructure.repository,
+        syncEngine: infrastructure.syncEngine,
+        customerProfile: runtimeConfig.profileKey,
+        accountId: connectorConfig.accountKey,
+        reportType,
+        reportSettingKey,
+        periodEnd: input.job.body?.periodEnd,
+        comparisonMode: input.job.body?.comparisonMode,
+        topContentLimit: input.job.body?.topContentLimit,
+        maxContentRecords: readPositiveInteger(
+          input.env?.MKT_REPORT_MAX_CONTENT_RECORDS,
+          DEFAULT_REPORT_MAX_CONTENT_RECORDS,
+        ),
+        maxSnapshotRecords: readPositiveInteger(
+          input.env?.MKT_REPORT_MAX_SNAPSHOT_RECORDS,
+          DEFAULT_REPORT_MAX_SNAPSHOT_RECORDS,
+        ),
+        maxFallbackScanRecords: readPositiveInteger(
+          input.env?.MKT_REPORT_MAX_FALLBACK_SCAN_RECORDS,
+          DEFAULT_REPORT_MAX_FALLBACK_SCAN_RECORDS,
+        ),
+        maxPagesPerQuery: readPositiveInteger(
+          input.env?.MKT_REPORT_MAX_PAGES_PER_QUERY,
+          DEFAULT_REPORT_MAX_PAGES_PER_QUERY,
+        ),
+        sourcePageSize: readPositiveInteger(
+          input.env?.MKT_REPORT_SOURCE_PAGE_SIZE,
+          DEFAULT_REPORT_SOURCE_PAGE_SIZE,
+        ),
+        tables: {
+          mktContent: tableIds.mktContent,
+          mktContentDaily: tableIds.mktContentDaily,
+          mktMetricDefinitions: tableIds.mktMetricDefinitions,
+          mktReportSettings: tableIds.mktReportSettings,
+          mktReportSnapshots: tableIds.mktReportSnapshots,
+          mktReportMetricValues: tableIds.mktReportMetricValues,
+          mktReportTopContent: tableIds.mktReportTopContent,
+        },
+      }),
+    });
+  }
+
+  throw permanentError(`Active sync job has no runtime handler: ${definition.type}`, {
+    code: 'SYNC_JOB_HANDLER_MISSING',
+    details: { type: definition.type },
+  });
+}

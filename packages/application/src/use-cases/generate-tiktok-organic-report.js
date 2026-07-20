@@ -10,6 +10,7 @@ import {
 import { loadTikTokReportMetricDefinitions } from '../reports/load-report-metric-definitions.js';
 import { loadReportSetting } from '../reports/load-report-setting.js';
 import { resolveOrganicReportPeriod } from '../reports/report-period.js';
+import { loadTikTokOrganicReportSource } from '../reports/load-tiktok-organic-report-source.js';
 import {
   normalizeTikTokContentRecords,
   normalizeTikTokDailySnapshotRecords,
@@ -71,11 +72,24 @@ export async function generateTikTokOrganicReport(input = {}) {
     periodStart: period.periodStart,
     periodEnd: period.periodEnd,
   });
-  const [contentRecords, dailyRecords] = await Promise.all([
-    repository.listByFieldValues(tables.mktContent, 'account_id', [accountId]),
-    repository.listByFieldValues(tables.mktContentDaily, 'account_id', [accountId]),
-  ]);
+  const source = await loadTikTokOrganicReportSource({
+    repository,
+    tables,
+    accountId,
+    period,
+    utcOffset: setting.utcOffset,
+    maxContentRecords: input.maxContentRecords,
+    maxSnapshotRecords: input.maxSnapshotRecords,
+    maxFallbackScanRecords: input.maxFallbackScanRecords,
+    maxPagesPerQuery: input.maxPagesPerQuery,
+    pageSize: input.sourcePageSize,
+  });
   await assertLockActive();
+  const { contentRecords, dailyRecords } = source;
+  progress({
+    stage: 'report_source_loaded',
+    ...source.readSummary,
+  });
 
   const contents = normalizeTikTokContentRecords(contentRecords, {
     accountId,
@@ -247,6 +261,7 @@ export async function generateTikTokOrganicReport(input = {}) {
     rawRecords: contentRecords.length + dailyRecords.length,
     sourceContentRecords: contentRecords.length,
     sourceDailySnapshotRecords: dailyRecords.length,
+    sourceRead: source.readSummary,
     sourceSnapshotCount: current.sourceSnapshotCount,
     trackedContentCount: current.trackedContentCount,
     metricCount: metricRows.length,

@@ -19,7 +19,7 @@
     "seed:report-settings": "node scripts/seed-report-settings.mjs",
     "setup:report-schema": "node scripts/setup-report-schema.mjs",
     "setup:report-schema:apply": "node scripts/setup-report-schema.mjs --apply",
-    "test:report-reliability": "node --test tests/application/calculate-tiktok-organic-report.test.js tests/application/generate-tiktok-organic-report.test.js tests/application/queue-job.test.js tests/application/report-config-loaders.test.js tests/application/report-output-rows.test.js tests/application/report-period.test.js tests/application/report-snapshot.test.js tests/application/tiktok-organic-report-source.test.js tests/reliability/reliable-sync-runner.test.js tests/application/scheduled-jobs.test.js",
+    "test:report-reliability": "node --test tests/application/calculate-tiktok-organic-report.test.js tests/application/generate-tiktok-organic-report.test.js tests/application/load-tiktok-organic-report-source.test.js tests/application/queue-job.test.js tests/application/report-config-loaders.test.js tests/application/report-output-rows.test.js tests/application/report-period.test.js tests/application/report-snapshot.test.js tests/application/tiktok-organic-report-source.test.js tests/reliability/reliable-sync-runner.test.js tests/application/scheduled-jobs.test.js",
     "setup:report-views": "node scripts/setup-report-views.mjs",
     "setup:report-views:apply": "node scripts/setup-report-views.mjs --apply",
     "enable:tiktok-report-schedules": "node scripts/enable-tiktok-report-schedules.mjs",

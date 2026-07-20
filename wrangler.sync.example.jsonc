@@ -89,6 +89,12 @@
     "MKT_DAILY_REPORT_TIME": "08:10",
     "MKT_WEEKLY_REPORT_TIME": "08:15",
     "MKT_WEEKLY_REPORT_WEEKDAY": "monday",
+    // Report source ใช้ Server-side filter; Compatibility fallback ต้องหยุดเมื่อชนเพดานเหล่านี้
+    "MKT_REPORT_MAX_CONTENT_RECORDS": "800",
+    "MKT_REPORT_MAX_SNAPSHOT_RECORDS": "50000",
+    "MKT_REPORT_MAX_FALLBACK_SCAN_RECORDS": "50000",
+    "MKT_REPORT_MAX_PAGES_PER_QUERY": "100",
+    "MKT_REPORT_SOURCE_PAGE_SIZE": "500",
     "MKT_DAILY_REPORT_SETTING_KEY": "replace-with-daily-report-setting-key",
     "MKT_WEEKLY_REPORT_SETTING_KEY": "replace-with-weekly-report-setting-key",
     "MKT_MAIN_QUEUE_NAME": "social-mkt-sync-jobs",
@@ -96,6 +102,8 @@
     // Redrive เป็น Manual admin action เท่านั้นและปิดทุก Release example
     "MKT_DLQ_REDRIVE_ENABLED": "false",
     "MKT_QUEUE_RETRY_DELAY_SECONDS": "30",
+    // Durable reliability mirror drain อ่านทีละ Batch เพื่อไม่ให้ Lark delivery ครอง Invocation นานเกินไป
+    "MKT_RELIABILITY_MIRROR_BATCH_SIZE": "25",
 
     // เปิด Checkpoint/Fingerprint ใน D1 เพื่อประมวลผลปลายทางเฉพาะ RAW records ที่เปลี่ยน
     "MKT_TIKTOK_INCREMENTAL_ENABLED": "false",

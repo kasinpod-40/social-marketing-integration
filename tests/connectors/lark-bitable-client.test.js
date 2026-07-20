@@ -1281,3 +1281,91 @@ test('reads exactly one records page so the caller can persist and resume the cu
   assert.equal(collectionUrls.length, 2);
   assert.match(collectionUrls[1], /page_token=page-2/u);
 });
+
+test('searches bounded report records with request-only filter/sort fields and early stop', async () => {
+  const requests = [];
+  let page = 0;
+  const client = new LarkBitableClient({
+    appId: 'app-id',
+    appSecret: 'app-secret',
+    appToken: 'app-token',
+    minRequestIntervalMs: 0,
+    maxPages: 5,
+    fetchImpl: async (url, options) => {
+      if (String(url).includes('tenant_access_token')) {
+        return new Response(JSON.stringify({ code: 0, tenant_access_token: 'token', expire: 7200 }), { status: 200 });
+      }
+      page += 1;
+      requests.push({ url: String(url), body: JSON.parse(options.body) });
+      return new Response(JSON.stringify({
+        code: 0,
+        data: {
+          items: [
+            { record_id: `rec-${page}-1`, fields: { metric_date: 200 } },
+            { record_id: `rec-${page}-2`, fields: { metric_date: 100 } },
+          ],
+          has_more: true,
+          page_token: `page-${page + 1}`,
+        },
+      }), { status: 200 });
+    },
+  });
+
+  const records = await client.searchRecords({
+    tableId: 'tbl_daily',
+    pageSize: 50,
+    maxPages: 3,
+    maxItems: 10,
+    fieldNames: ['external_content_id', 'metric_date'],
+    filter: {
+      conjunction: 'and',
+      conditions: [
+        { fieldName: 'account_id', operator: 'is', value: ['ft_pumkin'] },
+        { fieldName: 'metric_date', operator: 'isLessEqual', value: [200] },
+      ],
+    },
+    sort: [{ fieldName: 'metric_date', desc: true }],
+    stopWhen: ({ item }) => Number(item.fields.metric_date) < 150,
+  });
+
+  assert.equal(page, 1);
+  assert.equal(records.length, 2);
+  assert.deepEqual(requests[0].body, {
+    field_names: ['external_content_id', 'metric_date'],
+    sort: [{ field_name: 'metric_date', desc: true }],
+    filter: {
+      conjunction: 'and',
+      conditions: [
+        { field_name: 'account_id', operator: 'is', value: ['ft_pumkin'] },
+        { field_name: 'metric_date', operator: 'isLessEqual', value: ['200'] },
+      ],
+    },
+  });
+  assert.match(requests[0].url, /page_size=50/);
+});
+
+test('fails closed when bounded record search exceeds its item cap', async () => {
+  const client = new LarkBitableClient({
+    appId: 'app-id', appSecret: 'app-secret', appToken: 'app-token', minRequestIntervalMs: 0,
+    fetchImpl: async (url) => {
+      if (String(url).includes('tenant_access_token')) {
+        return new Response(JSON.stringify({ code: 0, tenant_access_token: 'token', expire: 7200 }), { status: 200 });
+      }
+      return new Response(JSON.stringify({
+        code: 0,
+        data: {
+          items: [
+            { record_id: 'rec-1', fields: {} },
+            { record_id: 'rec-2', fields: {} },
+          ],
+          has_more: false,
+        },
+      }), { status: 200 });
+    },
+  });
+
+  await assert.rejects(
+    client.searchRecords({ tableId: 'tbl', maxItems: 1 }),
+    (error) => error.code === 'LARK_BOUNDED_READ_LIMIT_EXCEEDED',
+  );
+});

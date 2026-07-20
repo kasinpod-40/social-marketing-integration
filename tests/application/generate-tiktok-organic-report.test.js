@@ -52,6 +52,18 @@ function buildRepository() {
     async listByFieldValues(tableId, fieldName, values) {
       return (tables.get(tableId) ?? []).filter((record) => values.includes(record.fields[fieldName]));
     },
+    async listPage(tableId, options = {}) {
+      const rows = tables.get(tableId) ?? [];
+      const pageSize = Number(options.pageSize ?? 500);
+      const offset = options.pageToken ? Number(options.pageToken) : 0;
+      const records = rows.slice(offset, offset + pageSize);
+      const nextOffset = offset + records.length;
+      return {
+        records,
+        hasMore: nextOffset < rows.length,
+        nextPageToken: nextOffset < rows.length ? String(nextOffset) : null,
+      };
+    },
     async createMany(tableId, rows) {
       const target = tables.get(tableId);
       for (const fields of rows) target.push({ recordId: `${tableId}-${nextId++}`, fields: structuredClone(fields) });
@@ -304,4 +316,108 @@ test('neutralizes stale ranks when top-content limit is reduced', async () => {
   assert.equal(rows[3].data_status, 'no_data');
   assert.equal(rows[4].data_status, 'no_data');
   assert.equal(JSON.parse(repository.tables.get('snapshots')[0].fields.top_content_json).length, 3);
+});
+
+function enableServerFilteredSearch(repository) {
+  repository.searchRecords = async (tableId, options = {}) => {
+    let rows = [...(repository.tables.get(tableId) ?? [])];
+    const conditions = options.filter?.conditions ?? [];
+    rows = rows.filter((record) => conditions.every((condition) => {
+      const actual = record.fields[condition.fieldName];
+      const expected = condition.value?.[0];
+      if (condition.operator === 'is') return String(actual) === String(expected);
+      if (condition.operator === 'isGreaterEqual') return Number(actual) >= Number(expected);
+      if (condition.operator === 'isLess') return Number(actual) < Number(expected);
+      if (condition.operator === 'isLessEqual') return Number(actual) <= Number(expected);
+      throw new Error(`Unsupported fake filter operator: ${condition.operator}`);
+    }));
+    for (const sort of [...(options.sort ?? [])].reverse()) {
+      rows.sort((left, right) => {
+        const a = left.fields[sort.fieldName];
+        const b = right.fields[sort.fieldName];
+        const compared = typeof a === 'number' && typeof b === 'number'
+          ? a - b
+          : String(a).localeCompare(String(b));
+        return sort.desc ? -compared : compared;
+      });
+    }
+    const selected = [];
+    for (const row of rows.slice(0, options.pageSize ?? rows.length)) {
+      selected.push(row);
+      if (options.stopWhen?.({ item: row }) === true) break;
+    }
+    if (options.maxItems && selected.length > options.maxItems) {
+      throw permanentError('bounded fake search exceeded maxItems', {
+        code: 'LARK_BOUNDED_READ_LIMIT_EXCEEDED',
+      });
+    }
+    return selected;
+  };
+  return repository;
+}
+
+function addHistoricalBaseline(repository, date = '2026-07-09') {
+  repository.tables.get('daily').push({ recordId: `daily-old-${date}`, fields: {
+    content_daily_key: `tiktok:ft_pumkin:1:${date}`,
+    external_content_id: '1', account_id: 'ft_pumkin', platform: 'tiktok',
+    metric_date: Date.parse(`${date}T00:00:00+07:00`),
+    views: 80, likes: 8, comments: 1, shares: 1, avg_watch_time_seconds: 1.5,
+    completion_rate: 0.15,
+  } });
+}
+
+test('server-filtered source produces the same report metrics as bounded full-page compatibility reads', async () => {
+  const fallbackRepository = buildRepository();
+  const filteredRepository = enableServerFilteredSearch(buildRepository());
+  addHistoricalBaseline(fallbackRepository);
+  addHistoricalBaseline(filteredRepository);
+  addHistoricalBaseline(fallbackRepository, '2026-06-01');
+  addHistoricalBaseline(filteredRepository, '2026-06-01');
+
+  const common = {
+    syncEngine: new TableSyncEngine(),
+    customerProfile: 'dev_ft_pumkin',
+    accountId: 'ft_pumkin',
+    reportType: 'daily_organic_report',
+    reportSettingKey: 'dev_ft_pumkin:tiktok:daily',
+    periodEnd: '2026-07-11',
+    now: () => Date.parse('2026-07-12T01:00:00Z'),
+    tables: TABLES,
+  };
+  const fallback = await generateTikTokOrganicReport({ ...common, repository: fallbackRepository });
+  const filtered = await generateTikTokOrganicReport({ ...common, repository: filteredRepository });
+
+  assert.deepEqual(filtered.metricPayload, fallback.metricPayload);
+  assert.equal(filtered.dataStatus, fallback.dataStatus);
+  assert.equal(filtered.baselineCoverageRate, fallback.baselineCoverageRate);
+  assert.equal(filtered.sourceSnapshotCount, fallback.sourceSnapshotCount);
+  assert.equal(filtered.sourceRead.strategy, 'server_filtered_range');
+  assert.equal(fallback.sourceRead.strategy, 'bounded_page_fallback');
+  assert.ok(filtered.sourceDailySnapshotRecords < fallbackRepository.tables.get('daily').length);
+});
+
+test('bounded fallback cap fails before any report output plan or write', async () => {
+  const repository = buildRepository();
+  let planCalls = 0;
+  let executeCalls = 0;
+  const syncEngine = {
+    async planByKey() { planCalls += 1; return {}; },
+    async executePlan() { executeCalls += 1; return {}; },
+  };
+
+  await assert.rejects(() => generateTikTokOrganicReport({
+    repository,
+    syncEngine,
+    customerProfile: 'dev_ft_pumkin',
+    accountId: 'ft_pumkin',
+    reportType: 'daily_organic_report',
+    reportSettingKey: 'dev_ft_pumkin:tiktok:daily',
+    periodEnd: '2026-07-11',
+    maxFallbackScanRecords: 1,
+    now: () => Date.parse('2026-07-12T01:00:00Z'),
+    tables: TABLES,
+  }), (error) => error.code === 'REPORT_SOURCE_FALLBACK_LIMIT_EXCEEDED');
+
+  assert.equal(planCalls, 0);
+  assert.equal(executeCalls, 0);
 });

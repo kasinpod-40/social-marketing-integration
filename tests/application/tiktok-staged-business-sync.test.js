@@ -105,6 +105,98 @@ test('TikTok staged business retry resumes the failed unit without refetching co
   assert.equal(workStore.works.get(common.workKey).lifecycleStatus, 'completed');
 });
 
+
+test('TikTok staged retry after checkpoint persistence finishes completion without business writes', async () => {
+  const repository = createIndexedRepository({
+    rawRecords: Array.from({ length: 200 }, (_, index) => (
+      rawVideo('tt_account_1', `checkpoint_${String(index + 1).padStart(3, '0')}`)
+    )),
+    dictionaryRecords: [dictionaryRow()],
+  });
+  const stateStore = createIncrementalStateStore();
+  const workStore = failCompletionPhaseOnce(new InMemoryResumableWorkStore({ now: () => 30_000 }));
+  const common = stagedSyncInput({
+    repository,
+    stateStore,
+    workStore,
+    workKey: 'tiktok:message-checkpoint-replay',
+    requestedAt: 3_000,
+  });
+
+  await assert.rejects(
+    () => syncTikTokCreatorNativeToLark({
+      ...common,
+      syncRunId: 'run-checkpoint-replay-1',
+      now: () => 4_000,
+    }),
+    /synthetic completion phase interruption/,
+  );
+
+  const writesBeforeRetry = repository.writeCalls.length;
+  assert.equal(repository.count('tbl_mkt_content'), 200);
+  assert.equal(repository.count('tbl_mkt_content_daily'), 200);
+  assert.equal(stateStore.saveCalls.length, 1);
+
+  const result = await syncTikTokCreatorNativeToLark({
+    ...common,
+    syncRunId: 'run-checkpoint-replay-2',
+    now: () => 5_000,
+  });
+
+  assert.equal(repository.writeCalls.length, writesBeforeRetry);
+  assert.equal(stateStore.saveCalls.length, 1);
+  assert.equal(result.content.created, 0);
+  assert.equal(result.dailySnapshots.created, 0);
+  assert.equal(result.stagedBusiness.durableReplay, true);
+  assert.equal(result.stagedBusiness.workTotals.content.created, 200);
+  assert.equal(result.stagedBusiness.workTotals.dailySnapshots.created, 200);
+  assert.equal(workStore.works.get(common.workKey).lifecycleStatus, 'completed');
+});
+
+test('TikTok staged completion-phase replay survives completeWork interruption without business writes', async () => {
+  const repository = createIndexedRepository({
+    rawRecords: Array.from({ length: 200 }, (_, index) => (
+      rawVideo('tt_account_1', `completion_${String(index + 1).padStart(3, '0')}`)
+    )),
+    dictionaryRecords: [dictionaryRow()],
+  });
+  const stateStore = createIncrementalStateStore();
+  const workStore = failCompleteWorkOnce(new InMemoryResumableWorkStore({ now: () => 40_000 }));
+  const common = stagedSyncInput({
+    repository,
+    stateStore,
+    workStore,
+    workKey: 'tiktok:message-completion-replay',
+    requestedAt: 4_000,
+  });
+
+  await assert.rejects(
+    () => syncTikTokCreatorNativeToLark({
+      ...common,
+      syncRunId: 'run-completion-replay-1',
+      now: () => 5_000,
+    }),
+    /synthetic completeWork interruption/,
+  );
+
+  const writesBeforeRetry = repository.writeCalls.length;
+  const result = await syncTikTokCreatorNativeToLark({
+    ...common,
+    syncRunId: 'run-completion-replay-2',
+    now: () => 6_000,
+  });
+
+  assert.equal(repository.writeCalls.length, writesBeforeRetry);
+  assert.equal(stateStore.saveCalls.length, 1);
+  assert.equal(result.content.created, 0);
+  assert.equal(result.dailySnapshots.created, 0);
+  assert.equal(result.stagedBusiness.completionPhaseReplay, true);
+  assert.equal(result.stagedBusiness.durableReplay, true);
+  assert.equal(result.stagedBusiness.workTotals.content.created, 200);
+  assert.equal(result.stagedBusiness.workTotals.dailySnapshots.created, 200);
+  assert.equal(workStore.works.get(common.workKey).lifecycleStatus, 'completed');
+});
+
 test('TikTok staged planner blocks duplicate content identities across different source pages before writes', async () => {
   const repository = createIndexedRepository({
     rawRecords: [
@@ -141,6 +233,56 @@ test('TikTok staged planner blocks duplicate content identities across different
   assert.equal(repository.count('tbl_mkt_content'), 0);
   assert.equal(repository.count('tbl_mkt_content_daily'), 0);
 });
+
+
+function stagedSyncInput(input) {
+  return {
+    repository: input.repository,
+    syncEngine: new TableSyncEngine(),
+    accountId: 'tt_account_1',
+    sourceHandle: 'tt_account_1',
+    metricDate: '2026-07-20',
+    tables: tableIds(),
+    incrementalEnabled: true,
+    incrementalStateStore: input.stateStore,
+    cursorKey: 'profile:tiktok:tt_account_1:native_import',
+    customerProfile: 'profile',
+    syncMode: 'auto',
+    fullSyncIntervalMs: 86_400_000,
+    resumableWorkStore: input.workStore,
+    workKey: input.workKey,
+    requestedAt: input.requestedAt,
+    generation: input.requestedAt,
+    sourcePageSize: 100,
+    sourceMaxPages: 20,
+  };
+}
+
+function failCompletionPhaseOnce(store) {
+  const savePhase = store.savePhase.bind(store);
+  let failed = false;
+  store.savePhase = async (input) => {
+    if (!failed && input.phase === 'tiktok_native_business_completion_v1') {
+      failed = true;
+      throw new Error('synthetic completion phase interruption');
+    }
+    return savePhase(input);
+  };
+  return store;
+}
+
+function failCompleteWorkOnce(store) {
+  const completeWork = store.completeWork.bind(store);
+  let failed = false;
+  store.completeWork = async (input) => {
+    if (!failed) {
+      failed = true;
+      throw new Error('synthetic completeWork interruption');
+    }
+    return completeWork(input);
+  };
+  return store;
+}
 
 function createIndexedRepository(input) {
   const recordsByTable = new Map([

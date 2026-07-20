@@ -9,17 +9,16 @@ test('Cloudflare reliability runtime requires the MKT_STATE_DB binding', () => {
   );
 });
 
-test('Cloudflare reliability runtime composes D1 lock/store with the Lark mirror', () => {
+test('Cloudflare reliability runtime composes D1 lock/store with a durable mirror outbox', () => {
   const db = { prepare() { throw new Error('not executed during construction'); } };
   const runtime = createCloudflareReliabilityRuntime({
-    env: { MKT_STATE_DB: db },
-    repository: {},
-    syncEngine: { async syncByKey() { return {}; } },
-    tables: { mktSyncLog: 'tbl-sync', mktSystemAlerts: 'tbl-alert' },
+    env: { MKT_STATE_DB: db, MKT_SYNC_QUEUE: { async send() {} } },
+    deliveryJobType: 'system.reliability-mirror.deliver',
   });
 
   assert.equal(runtime.lockManager, runtime.d1Store);
   assert.equal(runtime.d1Store.db, db);
-  assert.equal(runtime.larkStore.tables.syncLog, 'tbl-sync');
+  assert.equal(runtime.mirrorOutbox.db, db);
   assert.equal(typeof runtime.store.saveSyncRun, 'function');
+  assert.equal('larkStore' in runtime, false);
 });

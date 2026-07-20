@@ -464,12 +464,60 @@ export class LarkBitableClient {
   }
 
   /**
+   * ค้นหา Record ด้วย Filter/Sort ที่ตรวจ Contract แล้ว พร้อมเพดานและ Early stop
+   * ใช้กับ Read path ที่ต้องคุมจำนวนหน้า/แถว เช่น Report source โดยไม่ Full table scan
+   */
+  async searchRecords(input) {
+    const tableId = requireText(input?.tableId, 'tableId');
+    const pageSize = boundedPositiveInteger(
+      input?.pageSize ?? DEFAULT_PAGE_SIZE,
+      'pageSize',
+      DEFAULT_PAGE_SIZE,
+    );
+    const maxPages = boundedPositiveInteger(
+      input?.maxPages ?? this.maxPages,
+      'maxPages',
+      this.maxPages,
+    );
+    const maxItems = input?.maxItems === null || input?.maxItems === undefined
+      ? null
+      : positiveInteger(input.maxItems, 'maxItems');
+    const body = serializeRecordSearchRequest(input);
+
+    return this.paginateCollection({
+      resource: 'search_records',
+      tableId,
+      pageSize,
+      maxPages,
+      maxItems,
+      stopWhen: input?.stopWhen,
+      requestPage: ({ pageToken, pageSize: currentPageSize }) => {
+        const params = buildPageParams(pageToken, currentPageSize);
+        return this.requestBitableJson(
+          `/open-apis/bitable/v1/apps/${encodeURIComponent(this.appToken)}/tables/${encodeURIComponent(tableId)}/records/search?${params.toString()}`,
+          { method: 'POST', body },
+        );
+      },
+      normalizeItem: toRecordShape,
+    });
+  }
+
+  /**
    * Pagination กลางสำหรับ Fields, List Records และ Search Records
    */
   async paginateCollection(input) {
     const resource = requireText(input?.resource, 'resource');
     const tableId = requireText(input?.tableId, 'tableId');
     const pageSize = positiveInteger(input?.pageSize, 'pageSize');
+    const maxPages = boundedPositiveInteger(
+      input?.maxPages ?? this.maxPages,
+      'maxPages',
+      this.maxPages,
+    );
+    const maxItems = input?.maxItems === null || input?.maxItems === undefined
+      ? null
+      : positiveInteger(input.maxItems, 'maxItems');
+    const stopWhen = typeof input?.stopWhen === 'function' ? input.stopWhen : null;
     if (typeof input?.requestPage !== 'function') throw new TypeError('Lark paginator requires requestPage');
     if (typeof input?.normalizeItem !== 'function') throw new TypeError('Lark paginator requires normalizeItem');
 
@@ -477,7 +525,7 @@ export class LarkBitableClient {
     const seenPageTokens = new Set();
     let pageToken = null;
 
-    for (let page = 1; page <= this.maxPages; page += 1) {
+    for (let page = 1; page <= maxPages; page += 1) {
       const response = await input.requestPage({ pageToken, pageSize });
       const pageItems = response?.data?.items ?? [];
       if (!Array.isArray(pageItems)) {
@@ -487,7 +535,24 @@ export class LarkBitableClient {
         );
       }
 
-      items.push(...pageItems.map(input.normalizeItem));
+      let stoppedEarly = false;
+      for (const rawItem of pageItems) {
+        const item = input.normalizeItem(rawItem);
+        items.push(item);
+        if (maxItems !== null && items.length > maxItems) {
+          throw permanentError(
+            `Lark ${resource} exceeded bounded result limit ${maxItems} for table ${tableId}`,
+            {
+              code: 'LARK_BOUNDED_READ_LIMIT_EXCEEDED',
+              details: { resource, page, maxItems },
+            },
+          );
+        }
+        if (stopWhen?.({ item, page, totalRows: items.length }) === true) {
+          stoppedEarly = true;
+          break;
+        }
+      }
       const hasMore = response?.data?.has_more === true;
       const nextPageToken = normalizeOptionalText(response?.data?.page_token);
 
@@ -501,13 +566,14 @@ export class LarkBitableClient {
         hasMore,
       });
 
-      if (!hasMore) {
+      if (stoppedEarly || !hasMore) {
         this.onRequest({
           stage: 'lark_pagination_complete',
           resource,
           tableId,
           pages: page,
           totalRows: items.length,
+          stoppedEarly,
         });
         return Object.freeze(items);
       }
@@ -539,9 +605,9 @@ export class LarkBitableClient {
     throw this.paginationError({
       resource,
       tableId,
-      page: this.maxPages,
+      page: maxPages,
       totalRows: items.length,
-      message: `Lark ${resource} pagination exceeded ${this.maxPages} pages for table ${tableId}`,
+      message: `Lark ${resource} pagination exceeded ${maxPages} pages for table ${tableId}`,
     });
   }
 
@@ -903,6 +969,58 @@ function normalizeView(view) {
 }
 
 /** แปลง Contract ภายในเป็น PATCH body ของ View OpenAPI */
+function serializeRecordSearchRequest(input) {
+  const result = {};
+  if (input?.fieldNames !== null && input?.fieldNames !== undefined) {
+    result.field_names = normalizeUniqueTextArray(input.fieldNames);
+  }
+  if (input?.sort !== null && input?.sort !== undefined) {
+    result.sort = requireArray(input.sort, 'record search sort').map((entry) => {
+      const source = requireObject(entry, 'record search sort entry');
+      return {
+        field_name: requireText(source.fieldName ?? source.field_name, 'record search sort fieldName'),
+        desc: source.desc === true,
+      };
+    });
+  }
+  if (input?.filter !== null && input?.filter !== undefined) {
+    const source = requireObject(input.filter, 'record search filter');
+    const conjunction = source.conjunction === 'or' ? 'or' : 'and';
+    const conditions = requireArray(source.conditions, 'record search filter conditions').map((condition) => {
+      const normalized = requireObject(condition, 'record search filter condition');
+      const operator = normalizeRecordFilterOperator(normalized.operator);
+      const serialized = {
+        field_name: requireText(
+          normalized.fieldName ?? normalized.field_name,
+          'record search filter fieldName',
+        ),
+        operator,
+      };
+      if (!VALUELESS_VIEW_FILTER_OPERATORS.has(operator)) {
+        serialized.value = normalizeRecordFilterValues(normalized.value);
+      }
+      return serialized;
+    });
+    result.filter = { conjunction, conditions };
+  }
+  return result;
+}
+
+function normalizeRecordFilterOperator(value) {
+  return normalizeViewFilterOperator(value);
+}
+
+function normalizeRecordFilterValues(value) {
+  const values = Array.isArray(value) ? value : [value];
+  if (values.length === 0) throw new TypeError('Lark record search filter requires value');
+  return values.map((item) => {
+    if (typeof item === 'string') return requireText(item, 'record search filter value');
+    if (typeof item === 'number' && Number.isFinite(item)) return String(item);
+    if (typeof item === 'boolean') return String(item);
+    throw new TypeError('Lark record search filter value must be scalar');
+  });
+}
+
 function serializeViewMutation(input) {
   const result = {};
   const viewName = normalizeOptionalText(input?.viewName);

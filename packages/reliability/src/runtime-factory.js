@@ -1,11 +1,11 @@
-import { D1ReliabilityStore } from './d1-reliability-store.js';
-import { LarkReliabilityStore } from './lark-reliability-store.js';
-import { CompositeReliabilityStore } from './composite-reliability-store.js';
 import { permanentError } from '../../shared/src/errors/runtime-error.js';
+import { D1ReliabilityMirrorOutbox } from './d1-reliability-mirror-outbox.js';
+import { D1ReliabilityStore } from './d1-reliability-store.js';
+import { DurableMirrorReliabilityStore } from './durable-mirror-reliability-store.js';
 
 /**
  * สร้าง Reliability runtime สำหรับ Cloudflare Worker
- * บังคับ D1 binding เพื่อให้ Lease lock ใช้งานข้าม invocation ได้จริง
+ * บังคับ D1 binding เพื่อให้ Lease lock และ Durable mirror outbox ใช้งานข้าม invocation ได้จริง
  */
 export function createCloudflareReliabilityRuntime(input = {}) {
   const db = input.env?.MKT_STATE_DB;
@@ -17,25 +17,19 @@ export function createCloudflareReliabilityRuntime(input = {}) {
   }
 
   const d1Store = new D1ReliabilityStore({ db });
-  const larkStore = new LarkReliabilityStore({
-    repository: input.repository,
-    syncEngine: input.syncEngine,
-    tables: {
-      syncLog: input.tables?.mktSyncLog,
-      systemAlerts: input.tables?.mktSystemAlerts,
-    },
-  });
-
-  const store = new CompositeReliabilityStore({
+  const mirrorOutbox = new D1ReliabilityMirrorOutbox({ db });
+  const store = new DurableMirrorReliabilityStore({
     primary: d1Store,
-    mirrors: [larkStore],
-    onStoreError: input.onStoreError,
+    outbox: mirrorOutbox,
+    queue: input.env?.MKT_SYNC_QUEUE,
+    deliveryJobType: input.deliveryJobType,
+    onScheduleError: input.onScheduleError,
   });
 
   return Object.freeze({
     store,
     lockManager: d1Store,
     d1Store,
-    larkStore,
+    mirrorOutbox,
   });
 }
