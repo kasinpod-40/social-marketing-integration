@@ -1,16 +1,22 @@
 import { createContentKey, createDailySnapshotKey } from '../value-objects/content-identity.js';
-import { bangkokDateToEpochMilliseconds } from '../../../shared/src/date/date-time.js';
-import { requireDateOnly } from '../../../shared/src/date/date-only.js';
+import {
+  dateOnlyInTimeZoneToEpochMilliseconds,
+  requireDateOnly,
+} from '../../../shared/src/date/date-only.js';
 
 /**
  * สร้าง MKT_Content และ MKT_Content_Daily จาก Canonical Organic source
- * ใช้ร่วมกันเฉพาะ Field ที่ TikTok และ YouTube มีความหมายตรงกันจริง
+ * ใช้ร่วมกันเฉพาะ Field ที่ทุก Platform มีความหมายตรงกันจริง
+ *
+ * `sourceTimezone` เป็น Contract บังคับจาก Runtime/Adapter เพื่อไม่ให้ Domain กลาง
+ * เดาวันด้วย Asia/Bangkok และเพื่อรองรับ Source timezone/DST ของลูกค้าแต่ละราย
  */
 export function createOrganicContentRows(input = {}) {
   const platform = requireText(input.platform, 'platform');
   const accountId = requireText(input.accountId, 'accountId');
   const externalContentId = requireText(input.externalContentId, 'externalContentId');
   const metricDate = requireDateOnly(input.metricDate, { label: 'metricDate' });
+  const sourceTimezone = requireText(input.sourceTimezone, 'sourceTimezone');
   const metrics = requireObject(input.metrics ?? {}, 'metrics');
   const classification = requireObject(input.classification ?? {}, 'classification');
 
@@ -59,7 +65,10 @@ export function createOrganicContentRows(input = {}) {
         entityId: externalContentId,
         metricDate,
       }),
-      metric_date: bangkokDateToEpochMilliseconds(metricDate, { label: 'metricDate' }),
+      metric_date: dateOnlyInTimeZoneToEpochMilliseconds(metricDate, {
+        label: 'metricDate',
+        timeZone: sourceTimezone,
+      }),
       platform,
       account_id: accountId,
       external_content_id: externalContentId,
