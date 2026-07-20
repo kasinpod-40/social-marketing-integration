@@ -1,17 +1,5 @@
 # Changelog
 
-## 0.11.1 — TikTok durable resume contract fix — 2026-07-20
-
-### Fixed
-- `D1ResumableWorkStore.savePhase()` now returns the same typed progress contract as `loadPhase()` and the in-memory store, including durable cursor state, expected/processed counts, page/chunk counters, and completion state.
-- TikTok RAW pagination can therefore continue to the next page in the same Worker attempt and resume from the persisted page token after Queue retry instead of falling back to page one.
-- Added a D1 regression assertion for the returned phase state and kept the existing 1,000-video interrupted-backfill/resume fixture passing.
-
-### Verification
-- Repository check passed: 115 source files, 243 local dependencies, 0 cycles, hygiene passed.
-- Unit/Integration 436/436, Workers runtime 8/8, Report reliability 64/64, audit 0 vulnerabilities, Wrangler dry-run passed (555.43 KiB / gzip 110.83 KiB).
-- No Live API, Remote D1, Queue, deployment, schedule, Secret, or Production mutation occurred.
-
 ## Unreleased — YouTube outbox, redrive and migration transition closure — 2026-07-19
 
 ### Fixed
@@ -20,16 +8,28 @@
 - Adds disabled-by-default `system.dead-letter.redrive` with a durable requested-at/reference reservation, new-generation Queue delivery, recursion blocking and idempotent completion.
 - Records superseded work as `skipped/SYNC_WORK_SUPERSEDED`; Dry-run warnings no longer create business System Alerts.
 - Expands both Operational and Queue-replay secret matching to cover `privateKey`, `signingKey`, `credential` and naming variants.
+- Redacts matched Secret fields for string, numeric and boolean values while keeping numeric operational completeness counters such as `missingVideoIds` available.
 - Validates a Dead-letter candidate before reservation and rechecks forbidden types inside D1, preventing recursive redrive from leaving an incident stuck in `redrive_pending`.
+- Allows the generated `RELEASE_MANIFEST.txt` only in an extracted Release tree, while continuing to reject it from the actual Git source root so clean-archive gates and source hygiene enforce the same contract.
+- Classifies a successful YouTube channel lookup response that omits `items` as a zero-result permanent `YOUTUBE_CHANNEL_IDENTITY_MISMATCH`, instead of leaking an unclassified TypeError into Sync Log/DLQ handling.
 
 ### Migration and rollout safety
 - Makes migration 0005 fail closed before schema mutation when legacy resumable work or an unexpired lock remains.
 - Bootstraps generation fences from `sync_cursors.last_successful_sync_at` so pre-migration retries cannot claim an older generation after rollout.
+- Adds migration 0006 to rebuild `dead_letter_jobs` with `redrive_pending`/`redriven` in its SQLite CHECK constraint while preserving every existing row and both operational indexes.
 - Documents the required quiesce → verify → migrate → deploy → smoke → re-enable sequence in `docs/youtube-resumable-migration-runbook.md`.
 - Restores required safe hidden source files omitted by the uploaded macOS ZIP; no Live config, Secret, `node_modules`, output, or macOS metadata is included in the clean package.
-- Passed Unit/Integration 426/426, Workers runtime 8/8, Report reliability 64/64, focused corrective 74/74, Architecture 113/238/0, hygiene, audit 0, Wrangler dry-run 534.26/106.71 KiB and SQLite migration replay/guard.
+- Passed final source Unit/Integration 428/428, Workers runtime 8/8, Report reliability 64/64, Architecture 113/238/0, hygiene, audit 0, Wrangler dry-run 534.51/106.78 KiB and SQLite migration replay/guard.
 - Corrective source handoff contains 264 source files and intentionally excludes generated `RELEASE_MANIFEST.txt`; official Release packaging must run only after Commit from a clean Git tree.
-- No Live API, Remote D1, Queue, deployment, schedule, Secret or Production mutation occurred in this corrective patch.
+- The source patch itself made no Live mutation before the guarded rollout below.
+
+### Guarded DEV rollout — 2026-07-20
+- Quiesced YouTube Schedule/Analytics/Redrive, drained active work/lock, and exported protected D1 backups before migrations 0005 and 0006.
+- Applied migration 0005 (32 commands) and migration 0006 (12 commands); preserved all 8 Dead-letter rows, 16 columns and both indexes, with no migration left pending.
+- Verified healthy incremental, stale-generation `skipped/SYNC_WORK_SUPERSEDED`, typed identity mismatch, terminal work, secret-filtered replay payload and persisted alerts.
+- Completed one controlled Admin Redrive: the incident reached `redriven`, replay succeeded with retry 0 and zero creates, and the Redrive flag was immediately disabled again.
+- Final D1 health is active work/lock/pending warning/redrive pending = 0/0/0/0. YouTube Schedule and Owner Analytics are enabled only in DEV on Worker `adc0f825-68e5-4231-847b-4b41a6592204`; Release examples and Production remain disabled.
+- Customer-owned 837-video Full/Incremental/Analytics Live UAT and natural schedule observation remain required before Production.
 
 ## Unreleased — YouTube resumable-sync reliability hardening — 2026-07-19
 

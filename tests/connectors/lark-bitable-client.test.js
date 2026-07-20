@@ -1251,33 +1251,3 @@ test('view PATCH error includes the exact request-only safe body', async () => {
     },
   );
 });
-
-test('reads exactly one records page so the caller can persist and resume the cursor', async () => {
-  const collectionUrls = [];
-  const client = new LarkBitableClient({
-    appId: 'app-id', appSecret: 'app-secret', appToken: 'app-token', minRequestIntervalMs: 0,
-    fetchImpl: async (url) => {
-      if (String(url).includes('tenant_access_token')) {
-        return new Response(JSON.stringify({ code: 0, tenant_access_token: 'token', expire: 7200 }), { status: 200 });
-      }
-      collectionUrls.push(String(url));
-      const second = String(url).includes('page_token=page-2');
-      return new Response(JSON.stringify(second
-        ? { code: 0, data: { items: [{ record_id: 'rec2', fields: { key: 'two' } }], has_more: false } }
-        : { code: 0, data: { items: [{ record_id: 'rec1', fields: { key: 'one' } }], has_more: true, page_token: 'page-2' } }), { status: 200 });
-    },
-  });
-
-  const first = await client.listRecordsPage({ tableId: 'tbl', pageSize: 500 });
-  assert.deepEqual(first.records.map((record) => record.recordId), ['rec1']);
-  assert.equal(first.hasMore, true);
-  assert.equal(first.nextPageToken, 'page-2');
-  assert.equal(collectionUrls.length, 1);
-
-  const second = await client.listRecordsPage({ tableId: 'tbl', pageToken: first.nextPageToken, pageSize: 500 });
-  assert.deepEqual(second.records.map((record) => record.recordId), ['rec2']);
-  assert.equal(second.hasMore, false);
-  assert.equal(second.nextPageToken, null);
-  assert.equal(collectionUrls.length, 2);
-  assert.match(collectionUrls[1], /page_token=page-2/u);
-});

@@ -46,8 +46,6 @@ const DEFAULT_LOCK_LEASE_MS = 10 * 60 * 1000;
 const DEFAULT_LOCK_RENEW_INTERVAL_MS = 2 * 60 * 1000;
 const DEFAULT_RETRY_DELAY_SECONDS = 30;
 const DEFAULT_TIKTOK_FULL_RECONCILIATION_INTERVAL_MS = 24 * 60 * 60 * 1000;
-const DEFAULT_TIKTOK_SOURCE_PAGE_SIZE = 500;
-const DEFAULT_TIKTOK_SOURCE_MAX_PAGES = 1_000;
 const DEFAULT_DAILY_REPORT_TIME = '08:10';
 const DEFAULT_WEEKLY_REPORT_TIME = '08:15';
 const DEFAULT_WEEKLY_REPORT_WEEKDAY = 'monday';
@@ -244,7 +242,7 @@ export async function processJob(input) {
       requested: input.job.body?.analyticsEnabled,
     });
     const channelId = readYouTubeChannelIdFromEnv(input.env);
-    const requestedAt = readSyncJobGeneration(input.job, 'YouTube');
+    const requestedAt = readYouTubeJobGeneration(input.job);
     const resumableWorkStore = infrastructure.getResumableWorkStore();
 
     // Drain Warning เก่าก่อน Claim generation ใหม่ เพื่อไม่ให้ Completed incident
@@ -341,11 +339,10 @@ export async function processJob(input) {
       'mktSystemAlerts',
     ]);
     const reliability = infrastructure.getReliability(tableIds);
-    const resumableWorkStore = infrastructure.getResumableWorkStore();
-    const requestedAt = readSyncJobGeneration(input.job, 'TikTok', input.message?.timestamp);
+
     const incrementalEnabled = readBoolean(input.env?.MKT_TIKTOK_INCREMENTAL_ENABLED, false);
 
-    const result = await runReliableSync({
+    return runReliableSync({
       store: reliability.store,
       lockManager: reliability.lockManager,
       customerProfile: runtimeConfig.profileKey,
@@ -375,18 +372,6 @@ export async function processJob(input) {
         metricDate: readMetricDate(input.job.body?.metricDate, input.env),
         customerProfile: runtimeConfig.profileKey,
         cursorKey: lockKey,
-        workKey: `tiktok:${requireJobText(input.message?.id, 'message.id')}`,
-        requestedAt,
-        generation: requestedAt,
-        resumableWorkStore,
-        sourcePageSize: readPositiveInteger(
-          input.env?.MKT_TIKTOK_SOURCE_PAGE_SIZE,
-          DEFAULT_TIKTOK_SOURCE_PAGE_SIZE,
-        ),
-        sourceMaxPages: readPositiveInteger(
-          input.env?.MKT_TIKTOK_SOURCE_MAX_PAGES ?? input.env?.LARK_MAX_PAGES,
-          DEFAULT_TIKTOK_SOURCE_MAX_PAGES,
-        ),
         syncMode: input.job.body?.syncMode,
         incrementalEnabled,
         incrementalStateStore: incrementalEnabled
@@ -404,8 +389,6 @@ export async function processJob(input) {
         },
       }),
     });
-    await resumableWorkStore.cleanupExpiredWork({ limit: 25 });
-    return result;
   }
 
   if (definition.type === JOB_TYPES.TIKTOK_CREATOR_NATIVE_VALIDATE) {
@@ -1024,17 +1007,12 @@ function readRetryDelaySeconds(env, message) {
   return Math.min(43_200, base * Math.min(readAttempts(message), 10));
 }
 
-function readSyncJobGeneration(job, connectorName, fallbackTimestamp = null) {
-  const value = job?.requestedAt ?? fallbackTimestamp;
-  const instant = value instanceof Date
-    ? value.getTime()
-    : typeof value === 'number'
-      ? value
-      : Date.parse(value ?? '');
+function readYouTubeJobGeneration(job) {
+  const instant = Date.parse(job?.requestedAt ?? '');
   if (!Number.isSafeInteger(instant) || instant < 0) {
-    throw permanentError(`${connectorName} sync job requires a valid requestedAt generation`, {
+    throw permanentError('YouTube sync job requires a valid requestedAt generation', {
       code: 'INVALID_SYNC_JOB_GENERATION',
-      details: { fieldName: 'requestedAt', connectorName },
+      details: { fieldName: 'requestedAt' },
     });
   }
   return instant;

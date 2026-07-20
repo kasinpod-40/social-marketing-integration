@@ -80,10 +80,12 @@ test('D1 persists system alerts and dead letters with redacted structured payloa
     schemaVersion: 1,
     payload: {
       consumerSecret: 'private',
-      privateKey: 'PRIVATE',
-      signingKey: 'SIGNING',
-      credential: 'CREDENTIAL',
-      accessToken: 'ACCESS',
+      privateKey: 111111,
+      signingKey: false,
+      credential: 222222,
+      password: 123456,
+      accessToken: 654321,
+      credentials: true,
       channelId: 'channel_A',
       metricDate: '2026-07-11',
     },
@@ -104,16 +106,22 @@ test('D1 persists system alerts and dead letters with redacted structured payloa
   assert.equal(operationalPayload.privateKey, '[REDACTED]');
   assert.equal(operationalPayload.signingKey, '[REDACTED]');
   assert.equal(operationalPayload.credential, '[REDACTED]');
+  assert.equal(operationalPayload.password, '[REDACTED]');
   assert.equal(operationalPayload.accessToken, '[REDACTED]');
+  assert.equal(operationalPayload.credentials, '[REDACTED]');
   assert.doesNotMatch(db.calls[1].bindings[5], /channel_A/u);
+  assert.doesNotMatch(db.calls[1].bindings[5], /111111|222222|123456|654321/u);
   assert.match(db.calls[1].bindings[5], /2026-07-11/);
   const replayPayload = JSON.parse(db.calls[1].bindings[6]);
   assert.equal(replayPayload.consumerSecret, '[REDACTED]');
   assert.equal(replayPayload.privateKey, '[REDACTED]');
   assert.equal(replayPayload.signingKey, '[REDACTED]');
   assert.equal(replayPayload.credential, '[REDACTED]');
+  assert.equal(replayPayload.password, '[REDACTED]');
   assert.equal(replayPayload.accessToken, '[REDACTED]');
+  assert.equal(replayPayload.credentials, '[REDACTED]');
   assert.match(db.calls[1].bindings[6], /channel_A/u);
+  assert.doesNotMatch(db.calls[1].bindings[6], /111111|222222|123456|654321/u);
   assert.equal(db.calls[1].bindings[8], 'Source identity validation failed');
 });
 

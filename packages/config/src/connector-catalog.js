@@ -38,7 +38,7 @@ const CONNECTOR_CATALOG = Object.freeze({
     sourceHandleEnv: 'TIKTOK_SOURCE_HANDLE',
     requiredRuntimeFields: ['accountKey', 'sourceHandle'],
     largeAccount: createLargeAccountReadiness({
-      status: LARGE_ACCOUNT_STATUS.DEV_READY,
+      status: LARGE_ACCOUNT_STATUS.FOUNDATION_READY,
       primaryEntity: 'videos',
       minimumFixtureItems: 1000,
       gates: {
@@ -46,12 +46,12 @@ const CONNECTOR_CATALOG = Object.freeze({
         incrementalSync: true,
         periodicFullReconciliation: true,
         boundedPagination: true,
-        durableResume: true,
+        durableResume: false,
         boundedChunking: true,
         stableKeyIdempotency: true,
         completenessAccounting: true,
         rateLimitAwareRetry: true,
-        largeAccountFixture: true,
+        largeAccountFixture: false,
         liveAccountUat: false,
       },
     }),

@@ -37,9 +37,12 @@ test('structured operational sanitization keeps counts but redacts stable keys, 
     missingAnalyticsStableKeys: ['youtube:channel_A:video_A:2026-07-14'],
     missingVideoIds: 2,
     apiToken: 'private',
-    privateKey: 'PRIVATE',
-    signingKey: 'SIGNING',
-    credential: 'CREDENTIAL',
+    privateKey: 111111,
+    signingKey: false,
+    credential: 222222,
+    password: 123456,
+    accessToken: 654321,
+    credentials: true,
     safe: 'ok',
   });
 
@@ -51,8 +54,11 @@ test('structured operational sanitization keeps counts but redacts stable keys, 
   assert.equal(sanitized.privateKey, '[REDACTED]');
   assert.equal(sanitized.signingKey, '[REDACTED]');
   assert.equal(sanitized.credential, '[REDACTED]');
+  assert.equal(sanitized.password, '[REDACTED]');
+  assert.equal(sanitized.accessToken, '[REDACTED]');
+  assert.equal(sanitized.credentials, '[REDACTED]');
   assert.equal(sanitized.safe, 'ok');
-  assert.doesNotMatch(JSON.stringify(sanitized), /PRIVATE|SIGNING|CREDENTIAL/u);
+  assert.doesNotMatch(JSON.stringify(sanitized), /111111|222222|123456|654321/u);
 });
 
 test('sync lock messages use the error code without exposing the scoped lock key', () => {
@@ -81,9 +87,12 @@ test('queue replay sanitization preserves routing scope while removing all secre
     nested: {
       refreshToken: 'refresh-private',
       clientSecret: 'client-private',
-      privateKey: 'PRIVATE',
-      signingKey: 'SIGNING',
-      credential: 'CREDENTIAL',
+      privateKey: 111111,
+      signingKey: false,
+      credential: 222222,
+      password: 123456,
+      accessToken: 654321,
+      credentials: true,
       safeId: 'video_A',
       pageToken: 'page-2',
     },
@@ -97,8 +106,11 @@ test('queue replay sanitization preserves routing scope while removing all secre
   assert.equal(sanitized.nested.privateKey, '[REDACTED]');
   assert.equal(sanitized.nested.signingKey, '[REDACTED]');
   assert.equal(sanitized.nested.credential, '[REDACTED]');
+  assert.equal(sanitized.nested.password, '[REDACTED]');
+  assert.equal(sanitized.nested.accessToken, '[REDACTED]');
+  assert.equal(sanitized.nested.credentials, '[REDACTED]');
   assert.doesNotMatch(
     JSON.stringify(sanitized),
-    /refresh-private|client-private|PRIVATE|SIGNING|CREDENTIAL/u,
+    /refresh-private|client-private|111111|222222|123456|654321/u,
   );
 });

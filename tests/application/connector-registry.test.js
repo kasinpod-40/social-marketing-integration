@@ -63,7 +63,6 @@ test('registry rejects runtime profiles that omit an active connector state', ()
   );
 });
 
-
 test('Production rejects active connectors until the large-account Live UAT gate is verified', () => {
   const tiktokProduction = loadCustomerRuntimeConfig({
     MKT_ENV: 'production',
@@ -74,7 +73,7 @@ test('Production rejects active connectors until the large-account Live UAT gate
     () => assertConnectorRunnable(tiktokProduction, 'tiktok'),
     (error) => error?.code === 'MKT_CONNECTOR_LARGE_ACCOUNT_UAT_PENDING'
       && error?.details?.minimumFixtureItems === 1000
-      && error?.details?.missingGates?.includes('liveAccountUat'),
+      && error?.details?.missingGates?.includes('durableResume'),
   );
   const productionReadiness = listConnectorReadiness(tiktokProduction)
     .find((item) => item.key === 'tiktok');

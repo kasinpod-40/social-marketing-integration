@@ -28,7 +28,6 @@ test('connector catalog rejects blank and unknown keys as permanent errors', () 
   );
 });
 
-
 test('every connector declares a frozen large-account activation contract', () => {
   const catalog = listConnectorCatalog();
   for (const connector of catalog) {
@@ -40,7 +39,7 @@ test('every connector declares a frozen large-account activation contract', () =
   }
 });
 
-test('YouTube and TikTok are technical/fixture ready while Production stays blocked until Live UAT', () => {
+test('YouTube is technical/fixture ready while every connector remains blocked from Production until Live UAT', () => {
   const youtube = getConnectorCatalogEntry('youtube');
   const tiktok = getConnectorCatalogEntry('tiktok');
   const instagram = getConnectorCatalogEntry('instagram');
@@ -50,8 +49,9 @@ test('YouTube and TikTok are technical/fixture ready while Production stays bloc
   assert.deepEqual(youtube.largeAccount.missingGates, ['liveAccountUat']);
   assert.equal(youtube.largeAccount.productionReady, false);
 
-  assert.equal(tiktok.largeAccount.status, 'dev_ready');
-  assert.deepEqual(tiktok.largeAccount.missingGates, ['liveAccountUat']);
+  assert.equal(tiktok.largeAccount.status, 'foundation_ready');
+  assert.ok(tiktok.largeAccount.missingGates.includes('durableResume'));
+  assert.ok(tiktok.largeAccount.missingGates.includes('largeAccountFixture'));
 
   assert.equal(instagram.largeAccount.status, 'planned');
   assert.equal(instagram.largeAccount.minimumFixtureItems, 2000);

@@ -239,17 +239,12 @@ export class D1ResumableWorkStore {
     );
     try {
       await this.db.batch(statements);
-      // คืน Contract เดียวกับ loadPhase/InMemory store เพื่อให้ caller เดินต่อด้วย
-      // cursor state ที่เพิ่ง commit ลง D1 ได้ทันที โดยไม่ย้อนกลับไปหน้าแรกในรอบเดียวกัน.
       return Object.freeze({
-        state: structuredClone(phase.state),
-        expectedItems: phase.expectedItems,
+        phase: phase.phase,
+        complete: phase.complete,
         processedItems: phase.processedItems,
         pagesProcessed: phase.pagesProcessed,
         chunksProcessed: phase.chunksProcessed,
-        complete: phase.complete,
-        createdAt: now,
-        updatedAt: now,
       });
     } catch (cause) {
       throw d1Error('Failed to save resumable sync phase', 'D1_SYNC_WORK_WRITE_FAILED', cause);

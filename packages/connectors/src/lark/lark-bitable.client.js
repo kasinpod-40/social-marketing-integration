@@ -316,60 +316,6 @@ export class LarkBitableClient {
     }
   }
 
-  /** อ่าน Record หนึ่งหน้าเพื่อให้ Connector ที่รองรับ Durable resume เป็นผู้ถือ Cursor เอง */
-  async listRecordsPage(input) {
-    const tableId = requireText(input?.tableId, 'tableId');
-    const pageSize = boundedPositiveInteger(input?.pageSize ?? DEFAULT_PAGE_SIZE, 'pageSize', DEFAULT_PAGE_SIZE);
-    const pageToken = normalizeOptionalText(input?.pageToken);
-    const includeRecordMetadata = input?.includeRecordMetadata !== false;
-    const params = buildPageParams(pageToken, pageSize);
-    if (includeRecordMetadata) params.set('last_modified_time', 'true');
-    const response = await this.requestBitableJson(
-      `/open-apis/bitable/v1/apps/${encodeURIComponent(this.appToken)}/tables/${encodeURIComponent(tableId)}/records?${params.toString()}`,
-      { method: 'GET' },
-    );
-    const items = response?.data?.items ?? [];
-    if (!Array.isArray(items)) {
-      throw permanentError(`Lark records pagination returned invalid items for table ${tableId}`, {
-        code: 'LARK_INVALID_PAGINATION',
-      });
-    }
-    const hasMore = response?.data?.has_more === true;
-    const nextPageToken = normalizeOptionalText(response?.data?.page_token);
-    if (hasMore && !nextPageToken) {
-      throw this.paginationError({
-        resource: 'records',
-        tableId,
-        page: 1,
-        totalRows: items.length,
-        message: `Lark records pagination returned has_more=true without page_token for table ${tableId}`,
-      });
-    }
-    if (nextPageToken && nextPageToken === pageToken) {
-      throw this.paginationError({
-        resource: 'records',
-        tableId,
-        page: 1,
-        totalRows: items.length,
-        message: `Lark records pagination repeated page_token for table ${tableId}: ${nextPageToken}`,
-      });
-    }
-    this.onRequest({
-      stage: 'lark_page_loaded',
-      resource: 'records',
-      tableId,
-      page: null,
-      rows: items.length,
-      totalRows: items.length,
-      hasMore,
-    });
-    return Object.freeze({
-      records: Object.freeze(items.map(toRecordShape)),
-      hasMore,
-      nextPageToken,
-    });
-  }
-
   /**
    * อ่าน Record ทั้งตาราง ใช้เฉพาะ Flow ที่จำเป็นต้อง Traverse ทั้งหมด
    * สำหรับ Upsert ด้วย Stable Key ให้ใช้ searchRecordsByFieldValues แทน

@@ -146,8 +146,3 @@ npm run deploy:dry-run
 - เอกสารและคำอธิบายสำหรับผู้ใช้ใช้ภาษาไทยเป็นหลัก
 - Config blocks และจุด Mapping ลูกค้าใช้คอมเมนต์ภาษาไทยที่อธิบายหน้าที่และข้อจำกัด
 - Comments ต้องอธิบายเหตุผล/Contract ไม่ใช่แปลทุกบรรทัดหรือบรรยาย Syntax
-
-## Multi-channel large-account activation gate
-
-Connector ทุกช่องทางต้องประกาศ `largeAccount` contract ใน `packages/config/src/connector-catalog.js` และห้ามเปิด Production จนสถานะเป็น `verified`. Gate ที่บังคับมี Full backfill, Incremental, Periodic reconciliation, bounded pagination/chunking, durable resume, Stable-key idempotency, completeness accounting, rate-limit-aware retry, large-account fixture และ Live account UAT. DEV ใช้ทดสอบสถานะ `foundation_ready`/`dev_ready` ได้ แต่ห้ามตีความว่า Production ready.
-

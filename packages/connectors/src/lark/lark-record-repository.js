@@ -25,19 +25,6 @@ export class LarkRecordRepository {
     return this.client.listRecords({ tableId: requireText(tableId, 'tableId') });
   }
 
-  /** อ่าน Record หนึ่งหน้าเพื่อให้ Use case เก็บ Durable cursor/page staging ได้ */
-  async listPage(tableId, options = {}) {
-    if (typeof this.client.listRecordsPage !== 'function') {
-      throw new TypeError('LarkRecordRepository requires client.listRecordsPage for paged source reads');
-    }
-    return this.client.listRecordsPage({
-      tableId: requireText(tableId, 'tableId'),
-      pageToken: options?.pageToken ?? null,
-      pageSize: options?.pageSize,
-      includeRecordMetadata: options?.includeRecordMetadata,
-    });
-  }
-
   /**
    * ค้นหา Record ปลายทางตาม Field เดียวหลายค่า เพื่อลด Full table scan ตอน Upsert
    */
