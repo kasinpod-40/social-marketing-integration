@@ -29,7 +29,127 @@ test('Meta shared client uses bearer auth and cursor pagination without followin
   assert.equal(calls[0].parsed.searchParams.has('access_token'), false);
 });
 
-test('Meta shared client rejects non-versioned config and classifies transient errors', async () => {
+test('Meta getPage exposes one bounded page for durable staging', async () => {
+  const client = new MetaGraphClient({
+    accessToken: 'x',
+    apiVersion: 'v99.0',
+    fetchImpl: async () => Response.json({
+      data: [{ id: '1' }],
+      paging: { cursors: { after: 'next-1' }, next: 'https://graph.facebook.com/ignored' },
+    }),
+  });
+  const page = await client.getPage('page/posts');
+  assert.deepEqual(page.rows.map((row) => row.id), ['1']);
+  assert.equal(page.hasMore, true);
+  assert.equal(page.nextCursor, 'next-1');
+});
+
+test('Meta pagination rejects missing and repeated cursors', async () => {
+  const missing = new MetaGraphClient({
+    accessToken: 'x',
+    apiVersion: 'v99.0',
+    fetchImpl: async () => Response.json({ data: [], paging: { next: 'https://graph.facebook.com/ignored' } }),
+  });
+  await assert.rejects(
+    missing.getPage('page/posts'),
+    (error) => error?.code === 'META_CURSOR_MISSING' && error.retryable === false,
+  );
+
+  const repeated = new MetaGraphClient({
+    accessToken: 'x',
+    apiVersion: 'v99.0',
+    fetchImpl: async () => Response.json({
+      data: [],
+      paging: { cursors: { after: 'cursor-1' }, next: 'https://graph.facebook.com/ignored' },
+    }),
+  });
+  await assert.rejects(
+    repeated.getPage('page/posts', {}, { after: 'cursor-1' }),
+    (error) => error?.code === 'META_CURSOR_REPEATED' && error.retryable === false,
+  );
+});
+
+test('Meta shared client retries transient responses with bounded backoff', async () => {
+  let calls = 0;
+  const delays = [];
+  const client = new MetaGraphClient({
+    accessToken: 'x',
+    apiVersion: 'v99.0',
+    maxAttempts: 3,
+    retryBaseDelayMs: 10,
+    randomImpl: () => 0,
+    sleepImpl: async (ms) => { delays.push(ms); },
+    fetchImpl: async () => {
+      calls += 1;
+      if (calls < 3) return Response.json({ error: { code: 4, is_transient: true } }, { status: 500 });
+      return Response.json({ id: 'ok' });
+    },
+  });
+  const result = await client.get('me');
+  assert.equal(result.id, 'ok');
+  assert.equal(calls, 3);
+  assert.deepEqual(delays, [10, 20]);
+});
+
+test('Meta 429 honors retry-after and exposes usage metadata to request events', async () => {
+  let calls = 0;
+  const delays = [];
+  const events = [];
+  const client = new MetaGraphClient({
+    accessToken: 'x',
+    apiVersion: 'v99.0',
+    maxAttempts: 2,
+    retryBaseDelayMs: 10,
+    sleepImpl: async (ms) => { delays.push(ms); },
+    onRequest: (event) => events.push(event),
+    fetchImpl: async () => {
+      calls += 1;
+      if (calls === 1) {
+        return Response.json({ error: { code: 4 } }, {
+          status: 429,
+          headers: { 'retry-after': '2' },
+        });
+      }
+      return Response.json({ id: 'ok' }, {
+        headers: { 'x-app-usage': '{"call_count":75}' },
+      });
+    },
+  });
+  await client.get('me');
+  assert.deepEqual(delays, [2_000]);
+  const success = events.find((event) => event.stage === 'meta_request_success');
+  assert.equal(success.usage.appUsage.call_count, 75);
+});
+
+test('Meta timeout covers response body consumption', async () => {
+  const client = new MetaGraphClient({
+    accessToken: 'x',
+    apiVersion: 'v99.0',
+    timeoutMs: 5,
+    maxAttempts: 1,
+    fetchImpl: async (_url, init) => ({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      async text() {
+        await new Promise((resolve, reject) => {
+          const timer = setTimeout(resolve, 50);
+          init.signal.addEventListener('abort', () => {
+            clearTimeout(timer);
+            reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+          }, { once: true });
+        });
+        return '{}';
+      },
+    }),
+  });
+  await assert.rejects(
+    client.get('me'),
+    (error) => error?.code === 'META_REQUEST_TIMEOUT' && error.retryable === true,
+  );
+});
+
+test('Meta shared client rejects non-versioned config and classifies permanent errors', async () => {
   assert.throws(
     () => new MetaGraphClient({ accessToken: 'x', apiVersion: 'latest', fetchImpl: async () => null }),
     /vNN.N/,
@@ -37,10 +157,10 @@ test('Meta shared client rejects non-versioned config and classifies transient e
   const client = new MetaGraphClient({
     accessToken: 'x',
     apiVersion: 'v99.0',
-    fetchImpl: async () => Response.json({ error: { code: 4, is_transient: true } }, { status: 400 }),
+    fetchImpl: async () => Response.json({ error: { code: 100, is_transient: false } }, { status: 400 }),
   });
   await assert.rejects(
     client.get('me'),
-    (error) => error?.code === 'META_TRANSIENT_API_ERROR' && error.retryable === true,
+    (error) => error?.code === 'META_PERMANENT_API_ERROR' && error.retryable === false,
   );
 });
