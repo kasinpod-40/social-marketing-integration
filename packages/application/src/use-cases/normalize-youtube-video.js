@@ -8,6 +8,7 @@ export function normalizeYouTubeVideo(input = {}) {
   const accountId = requireText(input.accountId, 'accountId');
   const channelId = requireText(input.channelId, 'channelId');
   const metricDate = requireDateOnly(input.metricDate, { label: 'metricDate' });
+  const sourceTimezone = requireText(input.sourceTimezone ?? 'Asia/Bangkok', 'sourceTimezone');
   const mapped = mapYouTubeVideoResource(input.video, { expectedChannelId: channelId });
   const caption = [mapped.title, mapped.description].filter(Boolean).join('\n').trim() || null;
   const classification = classifyMarketingContent({
@@ -22,6 +23,7 @@ export function normalizeYouTubeVideo(input = {}) {
     accountId,
     externalContentId: mapped.externalContentId,
     metricDate,
+    sourceTimezone,
     contentType: 'video',
     publishedAt: mapped.publishedAt,
     caption,
