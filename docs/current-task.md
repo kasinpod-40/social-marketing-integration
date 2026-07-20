@@ -2,7 +2,7 @@
 
 ## Task metadata
 
-- **Status:** `approved_for_implementation`
+- **Status:** `implementation_in_progress`
 - **Source baseline:** `fc796a4`
 - **Working release:** `v0.11.1-pre-meta-hardening`
 - **Environment:** developer-owned DEV profile `dev_ft_pumkin`
@@ -14,7 +14,7 @@
 
 - TikTok DEV durable resume, guarded deployment, scheduled smoke and final D1 health passed on `d7b28c9`.
 - YouTube remains `dev_ready`; customer-owned 837-video Live UAT remains a Production blocker.
-- Meta Blueprint draft exists but is not approved and must be corrected against canonical source contracts.
+- Meta Blueprint draft exists but is not approved; canonical Ads key parity has now been corrected in the review artifacts and repository contract.
 - Production remains disabled.
 
 ## Security prerequisite
@@ -73,14 +73,14 @@ Harden the existing codebase before Facebook, Instagram and Meta Ads implementat
 - Canonical domain factories never assume `Asia/Bangkok` for cross-platform facts.
 - Organic snapshots receive an explicit source timezone or already-resolved epoch.
 - Ads daily facts use the advertising account timezone.
-- Existing TikTok behavior remains Asia/Bangkok through its profile/config adapter, not a generic-domain hardcode.
+- Existing TikTok behavior remains Asia/Bangkok through its platform adapter/default, not a generic-domain hardcode.
 
 ### Duplicate policy
 
-- Duplicate identity resolution uses one shared deterministic rule.
-- Prefer the latest explicit source update timestamp.
-- Equal timestamps use later page/sequence.
-- Missing ordering evidence must produce a warning or permanent contract error rather than silently selecting inconsistent rows.
+- Duplicate identity resolution uses one deterministic rule.
+- Prefer the latest explicit source update timestamp when available.
+- Equal or unavailable timestamps use later page/sequence while surfacing duplicate counts for readiness handling.
+- TikTok duplicate RAW identities remain a write-blocking readiness issue until cleaned.
 
 ### Security
 
@@ -102,7 +102,7 @@ Harden the existing codebase before Facebook, Instagram and Meta Ads implementat
 2. Generic Organic and Ads date tests cover at least two timezones and a DST timezone.
 3. Meta page client tests cover two-page reads, repeated cursor, missing cursor, body timeout, 429 retry, 5xx retry and max-attempt exhaustion.
 4. TikTok interruption/resume processes a large fixture without rebuilding all source records in one array.
-5. Duplicate resolution has shared tests across normalizer and sync engine.
+5. Duplicate resolution has deterministic tests across Organic normalization and Sync Engine behavior.
 6. Redaction tests cover token/secret plus customer profile, account key, Page ID, IG ID, Ad Account ID and Lark Table ID in string and numeric forms.
 7. Alert persistence tests prove resolved incidents remain resolved under duplicate writes.
 8. Lark mirror outage/timeout does not fail or indefinitely delay D1-primary completion.
@@ -116,34 +116,52 @@ Harden the existing codebase before Facebook, Instagram and Meta Ads implementat
 
 ### Atomic batch A — contracts, dates and security
 
-- canonical timezone/date contract
-- duplicate policy
-- operational redaction
-- alert reopen semantics
-- Meta Blueprint parity
+- [x] Canonical timezone/date contract implemented with explicit IANA timezone support and DST-focused tests.
+- [x] Organic duplicate behavior aligned with deterministic later-sequence resolution and surfaced duplicate counts.
+- [x] Operational redaction expanded to customer/platform/Lark identifiers, including numeric values, while preserving allowlisted counters.
+- [x] Additive D1 migration added to preserve resolved alert status for the same alert identity.
+- [x] Meta Blueprint and repository contract corrected to canonical Ads key names.
+- [ ] Run focused and full verification gates.
 
 ### Atomic batch B — bounded source processing
 
-- shared page contract
-- Meta Graph transport hardening
-- TikTok staged-unit consumer
-- large fixtures
+- [x] Shared bounded paged-source contract added with missing/repeated/max-page guards.
+- [x] Meta Graph transport hardened for single-page reads, bounded retry, body timeout and usage metadata.
+- [x] TikTok staged-unit async reader and persisted-count completeness check added.
+- [x] 10,000-record bounded page/unit fixtures added.
+- [ ] Switch the live TikTok normalization/plan/write path from compatibility aggregation to the staged-unit consumer.
+- [ ] Add interruption/resume regression through the complete business write path.
 
 ### Atomic batch C — runtime and reliability structure
 
-- split Worker handlers/composition
-- non-blocking durable Lark mirror contract
-- report range reads
-- regression tests
+- [ ] Split Worker handlers/composition.
+- [ ] Add non-blocking durable Lark mirror delivery contract.
+- [ ] Add report date-range reads or bounded fallback.
+- [ ] Run TikTok/YouTube/report/DLQ/redrive regression tests.
 
 ### Atomic batch D — cleanup and release gates
 
-- unused/duplicate/complexity audits
-- legacy usage report and deprecation markers
-- full gates, docs and clean release verification
+- [ ] Add unused/duplicate/complexity audits.
+- [ ] Produce legacy usage report and deprecation markers.
+- [ ] Run full gates, update Project Brain/CHANGELOG and verify clean release package.
+
+## Verification status
+
+The GitHub connector has written source, tests, documentation and an additive local migration. No local command or CI status has verified the changes yet. Required commands remain:
+
+```bash
+npm ci
+npm run check
+npm test
+npm run test:report-reliability
+npm audit
+npm run deploy:dry-run
+```
+
+The new migration has not been applied to Remote D1. No test-pass, deployment or UAT claim may be made before the commands and guarded DEV rollout are completed.
 
 ## Implementation result
 
-`in_progress`
+`in_progress — Atomic batch A source changes complete; Batch B contracts/readers complete but the live TikTok write path still uses the compatibility aggregation flow. Batch C/D remain.`
 
 No Meta connector, Lark Apply, external Meta call, Remote D1 migration, Queue mutation, Worker deployment, schedule change or Production mutation has been performed.
