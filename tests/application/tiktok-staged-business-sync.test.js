@@ -81,10 +81,17 @@ test('TikTok staged business retry resumes the failed unit without refetching co
   assert.equal(result.mode, 'write');
   assert.equal(result.rawRecords, 1_000);
   assert.equal(result.processedRawRecords, 1_000);
-  assert.equal(result.content.created, 900);
+  // Sync Log ของ Attempt ที่สองต้องนับเฉพาะ Write ที่เกิดใน Attempt นี้
+  assert.equal(result.content.created, 600);
   assert.equal(result.content.skipped, 100);
-  assert.equal(result.dailySnapshots.created, 1_000);
+  assert.equal(result.dailySnapshots.created, 700);
   assert.equal(result.dailySnapshots.skipped, 0);
+  // ยอดสะสมทั้ง Durable work แยกไว้สำหรับ Reconciliation/Audit
+  assert.equal(result.stagedBusiness.workTotals.content.created, 900);
+  assert.equal(result.stagedBusiness.workTotals.content.skipped, 100);
+  assert.equal(result.stagedBusiness.workTotals.dailySnapshots.created, 1_000);
+  assert.equal(result.stagedBusiness.attemptUnitsCompleted, 7);
+  assert.equal(result.stagedBusiness.workTotals.unitsCompleted, 10);
   assert.equal(result.stagedBusiness.bounded, true);
   assert.equal(result.stagedBusiness.unitsCompleted, 10);
   assert.equal(result.stagedBusiness.checkpointSaved, true);
