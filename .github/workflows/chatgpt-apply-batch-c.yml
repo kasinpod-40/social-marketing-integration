@@ -1,0 +1,95 @@
+name: ChatGPT Apply Batch C
+
+on:
+  push:
+    branches:
+      - codex/pre-meta-hardening-batch-c
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: read
+
+concurrency:
+  group: chatgpt-apply-batch-c
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: codex/pre-meta-hardening-batch-c
+          fetch-depth: 0
+
+      - name: Reconstruct and verify patch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/issues/4/comments" > /tmp/batch-c-comments.json
+          python - <<'PY'
+          import base64
+          import hashlib
+          import json
+          import re
+          from pathlib import Path
+
+          comments = json.loads(Path('/tmp/batch-c-comments.json').read_text())
+          parts = {}
+          ids = []
+          for comment in comments:
+              body = comment.get('body') or ''
+              match = re.fullmatch(r'BATCHC_PATCH_(\d{2}):(.*)', body, re.S)
+              if not match:
+                  continue
+              parts[match.group(1)] = match.group(2)
+              ids.append(str(comment['id']))
+
+          expected = ['00', '01', '02', '03']
+          if sorted(parts) != expected:
+              raise SystemExit(f'patch parts mismatch: {sorted(parts)}')
+
+          encoded = ''.join(parts[key] for key in expected)
+          archive = base64.b64decode(encoded, validate=True)
+          archive_sha = hashlib.sha256(archive).hexdigest()
+          if archive_sha != '372cdbde4fc749ab50114693aab38d333d18d3e8bd16d76decd9cd078a400d29':
+              raise SystemExit(f'archive checksum mismatch: {archive_sha}')
+
+          Path('/tmp/batch-c.patch.xz').write_bytes(archive)
+          Path('/tmp/batch-c-comment-ids').write_text('\n'.join(ids) + '\n')
+          PY
+          xz -dc /tmp/batch-c.patch.xz > /tmp/batch-c.patch
+          echo "8fdc3406d341f17209611467a602cedb27816202b0faadcc1338a9a01b2bbd9a  /tmp/batch-c.patch" | sha256sum -c -
+          git apply --check /tmp/batch-c.patch
+
+      - name: Apply and publish one implementation commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply --index /tmp/batch-c.patch
+          git rm -f .github/workflows/chatgpt-apply-batch-c.yml
+          git diff --cached --check
+          test ! -e .github/workflows/chatgpt-source-export.yml
+          test ! -e docs/.chatgpt-source-export-trigger
+          test ! -e docs/.chatgpt-source-export-trigger-2
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "refactor: harden runtime reliability structure"
+          git push origin HEAD:codex/pre-meta-hardening-batch-c
+
+      - name: Remove temporary patch comments
+        if: success()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          while IFS= read -r comment_id; do
+            test -n "$comment_id" || continue
+            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/issues/comments/${comment_id}"
+          done < /tmp/batch-c-comment-ids
