@@ -3,16 +3,24 @@ import { classifyMarketingContent } from '../services/content-classifier.js';
 import { createOrganicContentRows } from '../../../domain/src/entities/organic-content.js';
 import { requireDateOnly } from '../../../shared/src/date/date-only.js';
 
+const DEFAULT_TIKTOK_SOURCE_TIMEZONE = 'Asia/Bangkok';
+
 /**
  * แปลง RAW TikTok Creator หนึ่งแถวเป็นสอง Entity สำหรับรายงาน
  * - MKT_Content เก็บข้อมูล Master และ Metric ล่าสุด
  * - MKT_Content_Daily เก็บ Snapshot ประจำวันสำหรับกราฟ/รายงานย้อนหลัง
+ *
+ * ค่าเริ่มต้น Asia/Bangkok อยู่ที่ Platform adapter/use case เท่านั้นเพื่อรักษา DEV contract เดิม;
+ * Domain กลางไม่เดา timezone และ Runtime ใหม่ควรส่ง `sourceTimezone` จาก Customer profile เสมอ
  */
 export function normalizeTikTokCreatorVideo(input) {
   const dictionaryRules = Array.isArray(input?.dictionaryRules) ? input.dictionaryRules : [];
   const accountId = requireText(input?.accountId, 'accountId');
   const metricDate = requireDateOnly(input?.metricDate, { label: 'metricDate' });
-  const sourceTimezone = requireText(input?.sourceTimezone, 'sourceTimezone');
+  const sourceTimezone = requireText(
+    input?.sourceTimezone ?? DEFAULT_TIKTOK_SOURCE_TIMEZONE,
+    'sourceTimezone',
+  );
   const mapped = mapTikTokCreatorVideoRow(input?.rawRow);
   const externalContentId = requireText(mapped.externalContentId, 'externalContentId');
   const contentUrl = mapped.videoUrl;
