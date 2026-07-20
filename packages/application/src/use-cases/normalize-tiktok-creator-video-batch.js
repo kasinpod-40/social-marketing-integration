@@ -2,6 +2,8 @@ import { normalizeTikTokCreatorVideo } from './normalize-tiktok-creator-video.js
 import { normalizeOrganicContentBatch } from './normalize-organic-content-batch.js';
 import { requireDateOnly } from '../../../shared/src/date/date-only.js';
 
+const DEFAULT_TIKTOK_SOURCE_TIMEZONE = 'Asia/Bangkok';
+
 /**
  * แปลง RAW TikTok Creator หลายแถวเป็น MKT_Content และ MKT_Content_Daily แบบ O(n)
  *
@@ -14,7 +16,10 @@ export function normalizeTikTokCreatorVideoBatch(input) {
   const rawRows = requireArray(input?.rawRows, 'rawRows');
   const accountId = requireText(input?.accountId, 'accountId');
   const metricDate = requireDateOnly(input?.metricDate, { label: 'metricDate' });
-  const sourceTimezone = requireText(input?.sourceTimezone, 'sourceTimezone');
+  const sourceTimezone = requireText(
+    input?.sourceTimezone ?? DEFAULT_TIKTOK_SOURCE_TIMEZONE,
+    'sourceTimezone',
+  );
   const dictionaryRules = Array.isArray(input?.dictionaryRules) ? input.dictionaryRules : [];
   const normalized = normalizeOrganicContentBatch({
     rawRows,
