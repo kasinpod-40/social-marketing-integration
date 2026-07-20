@@ -9,6 +9,12 @@ import {
   supersededTikTokResult,
 } from './tiktok-resumable-source.js';
 import { syncTikTokStagedBusinessToLark } from './sync-tiktok-staged-business-to-lark.js';
+import {
+  isPartialSyncError,
+  partialSyncError,
+} from '../../../shared/src/errors/runtime-error.js';
+
+const BUSINESS_WRITE_PHASE = 'tiktok_native_business_write_v1';
 
 /**
  * Entry point กลางของ TikTok Creator sync
@@ -55,37 +61,130 @@ export async function syncTikTokCreatorNativeToLark(input = {}) {
     maxPages: input.sourceMaxPages,
     onProgress: input.onProgress,
   });
-  const stagedResult = await syncTikTokStagedBusinessToLark({
-    ...input,
-    context,
-    syncRunId,
-    sourceSummary: sourceLoad.summary,
-  });
-  const result = stagedResult?.stagedBusiness?.completionPhaseReplay === true
-    ? normalizeCompletionRetryResult(stagedResult)
-    : stagedResult;
+  const writeStateBefore = await loadBusinessWriteState(context);
+
+  let stagedResult;
+  try {
+    stagedResult = await syncTikTokStagedBusinessToLark({
+      ...input,
+      context,
+      syncRunId,
+      sourceSummary: sourceLoad.summary,
+    });
+  } catch (error) {
+    if (!isPartialSyncError(error)) throw error;
+    throw normalizeAttemptPartialError(error, writeStateBefore);
+  }
+
+  const durableReplay = stagedResult?.stagedBusiness?.completionPhaseReplay === true
+    || writeStateBefore?.resultDraft;
+  const writeStateAfter = durableReplay || stagedResult?.mode === 'dry_run'
+    ? null
+    : await loadBusinessWriteState(context);
+  const result = durableReplay
+    ? normalizeDurableReplayResult(stagedResult)
+    : normalizeAttemptWriteResult(stagedResult, writeStateBefore, writeStateAfter);
   const completedResult = attachResumableSummary(result, context, sourceLoad.summary);
   await completeTikTokResumableSource(context, completedResult);
   return completedResult;
 }
 
 /**
- * Retry หลัง Business + Checkpoint สำเร็จแต่ completeWork ล้ม ต้องไม่เขียนซ้ำ
- * และคง Output compatibility เดิมว่าเป็น Incremental no-change ใน Attempt ปัจจุบัน
+ * Sync Log เป็นราย Attempt จึงต้องหักยอด Durable units ที่สำเร็จใน Attempt ก่อนหน้า
+ * ยอดสะสมทั้ง Work ยังเก็บไว้ใน stagedBusiness.workTotals สำหรับ Reconciliation/Audit
  */
-function normalizeCompletionRetryResult(result) {
-  if (!result.incremental) return result;
-  const sourceRecords = nonNegativeInteger(result.rawRecords ?? result.incremental.sourceRecords ?? 0);
-  const skippedResult = Object.freeze({
-    created: 0,
-    updated: 0,
-    skipped: sourceRecords,
-    duplicateInputRows: 0,
-  });
+function normalizeAttemptWriteResult(result, beforeState, afterState) {
+  if (result?.mode === 'dry_run' || !afterState) return result;
+  const sourceSkips = readSourceSkips(result);
+  const content = addSkipped(
+    subtractTableResult(afterState.contentResult, beforeState?.contentResult),
+    sourceSkips,
+  );
+  const dailySnapshots = addSkipped(
+    subtractTableResult(afterState.dailyResult, beforeState?.dailyResult),
+    sourceSkips,
+  );
+
   return Object.freeze({
     ...result,
-    processedRawRecords: 0,
-    incremental: Object.freeze({
+    content,
+    dailySnapshots,
+    stagedBusiness: Object.freeze({
+      ...(result.stagedBusiness ?? {}),
+      attemptUnitsCompleted: subtractCount(
+        afterState.unitsCompleted,
+        beforeState?.unitsCompleted,
+      ),
+      attemptSelectedRecordsCompleted: subtractCount(
+        afterState.selectedRecordsCompleted,
+        beforeState?.selectedRecordsCompleted,
+      ),
+      workTotals: Object.freeze({
+        content: addSkipped(normalizeTableResult(afterState.contentResult), sourceSkips),
+        dailySnapshots: addSkipped(normalizeTableResult(afterState.dailyResult), sourceSkips),
+        unitsCompleted: nonNegativeInteger(afterState.unitsCompleted ?? 0),
+        selectedRecordsCompleted: nonNegativeInteger(
+          afterState.selectedRecordsCompleted ?? 0,
+        ),
+      }),
+    }),
+  });
+}
+
+/** Partial result ต้องรายงานเฉพาะ Write ของ Attempt ปัจจุบันเช่นเดียวกับ Success result */
+function normalizeAttemptPartialError(error, beforeState) {
+  const result = error.partialResult;
+  const sourceSkips = readSourceSkips(result);
+  const contentCumulative = removeSkipped(normalizeTableResult(result?.content), sourceSkips);
+  const dailyCumulative = removeSkipped(
+    normalizeTableResult(result?.dailySnapshots),
+    sourceSkips,
+  );
+  const normalizedResult = Object.freeze({
+    ...result,
+    content: addSkipped(
+      subtractTableResult(contentCumulative, beforeState?.contentResult),
+      sourceSkips,
+    ),
+    dailySnapshots: addSkipped(
+      subtractTableResult(dailyCumulative, beforeState?.dailyResult),
+      sourceSkips,
+    ),
+    stagedBusiness: Object.freeze({
+      ...(result?.stagedBusiness ?? {}),
+      workTotals: Object.freeze({
+        content: addSkipped(contentCumulative, sourceSkips),
+        dailySnapshots: addSkipped(dailyCumulative, sourceSkips),
+      }),
+    }),
+  });
+
+  return partialSyncError(error.message, {
+    code: error.code,
+    retryable: error.retryable !== false,
+    cause: error.cause ?? error,
+    partialResult: normalizedResult,
+    details: error.details ?? {},
+  });
+}
+
+/**
+ * Retry หลัง Business/Checkpoint สำเร็จแต่ Phase หรือ completeWork ล้ม ต้องไม่ลง Write ซ้ำ
+ * Attempt ปัจจุบันจึงมี Write count เป็นศูนย์ ส่วนยอดเดิมคงอยู่ใน workTotals
+ */
+function normalizeDurableReplayResult(result) {
+  const sourceRecords = nonNegativeInteger(
+    result?.rawRecords ?? result?.incremental?.sourceRecords ?? 0,
+  );
+  const sourceSkips = result?.incremental ? sourceRecords : 0;
+  const emptyResult = Object.freeze({
+    created: 0,
+    updated: 0,
+    skipped: sourceSkips,
+    duplicateInputRows: 0,
+  });
+  const normalizedIncremental = result?.incremental
+    ? Object.freeze({
       ...result.incremental,
       mode: 'incremental',
       reason: 'no_source_changes',
@@ -97,10 +196,88 @@ function normalizeCompletionRetryResult(result) {
       metricDateChanged: false,
       fullSnapshot: false,
       checkpointSaved: true,
+    })
+    : null;
+
+  return Object.freeze({
+    ...result,
+    processedRawRecords: 0,
+    incremental: normalizedIncremental,
+    content: emptyResult,
+    dailySnapshots: emptyResult,
+    stagedBusiness: Object.freeze({
+      ...(result?.stagedBusiness ?? {}),
+      durableReplay: true,
+      workTotals: Object.freeze({
+        content: normalizeTableResult(result?.content),
+        dailySnapshots: normalizeTableResult(result?.dailySnapshots),
+        unitsCompleted: nonNegativeInteger(result?.stagedBusiness?.unitsCompleted ?? 0),
+        selectedRecordsCompleted: nonNegativeInteger(
+          result?.stagedBusiness?.selectedRecordsCompleted ?? 0,
+        ),
+      }),
     }),
-    content: skippedResult,
-    dailySnapshots: skippedResult,
   });
+}
+
+async function loadBusinessWriteState(context) {
+  await context.assertCurrent();
+  const phase = await context.store.loadPhase({
+    workKey: context.workKey,
+    phase: BUSINESS_WRITE_PHASE,
+  });
+  return phase?.state && typeof phase.state === 'object' ? phase.state : null;
+}
+
+function subtractTableResult(after, before) {
+  const final = normalizeTableResult(after);
+  const initial = normalizeTableResult(before);
+  return Object.freeze({
+    created: subtractCount(final.created, initial.created),
+    updated: subtractCount(final.updated, initial.updated),
+    skipped: subtractCount(final.skipped, initial.skipped),
+    duplicateInputRows: subtractCount(
+      final.duplicateInputRows,
+      initial.duplicateInputRows,
+    ),
+  });
+}
+
+function normalizeTableResult(value) {
+  return Object.freeze({
+    created: nonNegativeInteger(value?.created ?? 0),
+    updated: nonNegativeInteger(value?.updated ?? 0),
+    skipped: nonNegativeInteger(value?.skipped ?? 0),
+    duplicateInputRows: nonNegativeInteger(value?.duplicateInputRows ?? 0),
+  });
+}
+
+function addSkipped(result, sourceSkips) {
+  return Object.freeze({
+    ...result,
+    skipped: nonNegativeInteger(result.skipped) + nonNegativeInteger(sourceSkips),
+  });
+}
+
+function removeSkipped(result, sourceSkips) {
+  return Object.freeze({
+    ...result,
+    skipped: subtractCount(result.skipped, sourceSkips),
+  });
+}
+
+function readSourceSkips(result) {
+  return result?.incremental?.mode === 'incremental'
+    ? nonNegativeInteger(result.incremental.unchangedRecords ?? 0)
+    : 0;
+}
+
+function subtractCount(after, before) {
+  const difference = nonNegativeInteger(after ?? 0) - nonNegativeInteger(before ?? 0);
+  if (difference < 0) {
+    throw new TypeError('TikTok durable write counters moved backwards');
+  }
+  return difference;
 }
 
 function attachResumableSummary(result, context, sourcePagination) {
@@ -113,6 +290,7 @@ function attachResumableSummary(result, context, sourcePagination) {
       cleared: true,
       generation: context.generation,
       completionPhaseReplay: result?.stagedBusiness?.completionPhaseReplay === true,
+      durableReplay: result?.stagedBusiness?.durableReplay === true,
     }),
   });
 }
