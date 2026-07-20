@@ -54,8 +54,11 @@ export async function beginTikTokResumableSource(input = {}) {
   });
 }
 
-/** Stage Lark RAW source ทีละหน้าและอ่านกลับแบบ Bounded unit pages */
-export async function loadTikTokResumableSource(input = {}) {
+/**
+ * Stage Lark RAW source ทีละหน้าแล้วคืนเฉพาะ Durable summary
+ * Live business path ต้องอ่านกลับผ่าน staged-unit iterator เท่านั้น ห้ามรวม RAW ทั้งบัญชีเป็น Array
+ */
+export async function stageTikTokResumableSource(input = {}) {
   const context = requireContext(input.context);
   const repository = requirePagedRepository(input.repository);
   const tableId = requireText(input.tableId, 'tableId');
@@ -138,9 +141,36 @@ export async function loadTikTokResumableSource(input = {}) {
     });
   }
 
+  if (!progress?.complete) {
+    throw permanentError('TikTok staged source phase did not reach completion', {
+      code: 'TIKTOK_SOURCE_STAGING_INCOMPLETE',
+    });
+  }
+
+  return Object.freeze({
+    summary: Object.freeze({
+      durable: true,
+      complete: true,
+      records: progress.processedItems,
+      pagesProcessed: progress.pagesProcessed,
+      resumedPages,
+      pageSize,
+      maxPages,
+    }),
+  });
+}
+
+/**
+ * Compatibility wrapper สำหรับ Validation/ผู้เรียกเดิมที่ยังต้องการ Array
+ * Production resumable write path ห้ามเรียกฟังก์ชันนี้
+ */
+export async function loadTikTokResumableSource(input = {}) {
+  const context = requireContext(input.context);
+  const staged = await stageTikTokResumableSource(input);
   const records = [];
   let afterSequence = 0;
   let unitPages = 0;
+
   while (afterSequence !== null) {
     unitPages += 1;
     if (unitPages > DEFAULT_MAX_PAGES) {
@@ -160,28 +190,20 @@ export async function loadTikTokResumableSource(input = {}) {
     afterSequence = page.nextSequence;
   }
 
-  if (records.length !== progress.processedItems) {
+  if (records.length !== staged.summary.records) {
     throw permanentError('TikTok staged source completeness check failed', {
       code: 'TIKTOK_SOURCE_STAGING_INCOMPLETE',
       details: {
-        expectedRecords: progress.processedItems,
+        expectedRecords: staged.summary.records,
         stagedRecords: records.length,
-        pagesProcessed: progress.pagesProcessed,
+        pagesProcessed: staged.summary.pagesProcessed,
       },
     });
   }
 
   return Object.freeze({
     records: Object.freeze(records),
-    summary: Object.freeze({
-      durable: true,
-      complete: true,
-      records: records.length,
-      pagesProcessed: progress.pagesProcessed,
-      resumedPages,
-      pageSize,
-      maxPages,
-    }),
+    summary: staged.summary,
   });
 }
 
