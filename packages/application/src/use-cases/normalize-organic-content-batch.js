@@ -1,4 +1,4 @@
-/**
+/*
  * Normalize Organic content batch แบบไม่ผูก Platform
  * Adapter ของแต่ละ Platform รับผิดชอบ Source contract ส่วนฟังก์ชันนี้ดูแล Error isolation และ Stable-key dedupe
  */
@@ -8,12 +8,10 @@ export function normalizeOrganicContentBatch(input = {}) {
   const readSourceIdentity = typeof input.readSourceIdentity === 'function'
     ? input.readSourceIdentity
     : () => null;
-  const contentRows = [];
-  const dailySnapshotRows = [];
+  const contentByKey = new Map();
+  const dailySnapshotByKey = new Map();
   const skippedRows = [];
   const sourceIdentities = new Set();
-  const seenContentKeys = new Set();
-  const seenDailyKeys = new Set();
   let duplicateContentRows = 0;
   let duplicateDailyRows = 0;
 
@@ -23,19 +21,15 @@ export function normalizeOrganicContentBatch(input = {}) {
       const sourceIdentity = normalizeOptionalText(readSourceIdentity(normalized));
       if (sourceIdentity) sourceIdentities.add(sourceIdentity);
 
-      if (seenContentKeys.has(normalized.content.content_key)) {
-        duplicateContentRows += 1;
-      } else {
-        seenContentKeys.add(normalized.content.content_key);
-        contentRows.push(normalized.content);
-      }
+      const contentKey = normalized.content.content_key;
+      if (contentByKey.has(contentKey)) duplicateContentRows += 1;
+      // Policy กลางตรงกับ Sync Engine: เมื่อไม่มี Source update timestamp ให้ลำดับหลังชนะอย่าง deterministic.
+      // Connector readiness ต้องใช้ duplicate count เป็น Contract warning/error แทนการซ่อนความกำกวม.
+      contentByKey.set(contentKey, normalized.content);
 
-      if (seenDailyKeys.has(normalized.dailySnapshot.content_daily_key)) {
-        duplicateDailyRows += 1;
-      } else {
-        seenDailyKeys.add(normalized.dailySnapshot.content_daily_key);
-        dailySnapshotRows.push(normalized.dailySnapshot);
-      }
+      const dailyKey = normalized.dailySnapshot.content_daily_key;
+      if (dailySnapshotByKey.has(dailyKey)) duplicateDailyRows += 1;
+      dailySnapshotByKey.set(dailyKey, normalized.dailySnapshot);
     } catch (error) {
       skippedRows.push(Object.freeze({
         rowIndex,
@@ -45,12 +39,13 @@ export function normalizeOrganicContentBatch(input = {}) {
   }
 
   return Object.freeze({
-    contentRows: Object.freeze(contentRows),
-    dailySnapshotRows: Object.freeze(dailySnapshotRows),
+    contentRows: Object.freeze([...contentByKey.values()]),
+    dailySnapshotRows: Object.freeze([...dailySnapshotByKey.values()]),
     skippedRows: Object.freeze(skippedRows),
     sourceIdentities: Object.freeze([...sourceIdentities].sort()),
     duplicateContentRows,
     duplicateDailyRows,
+    duplicateResolution: 'later_sequence_wins',
   });
 }
 
