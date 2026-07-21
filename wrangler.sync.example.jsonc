@@ -4,20 +4,75 @@
   "main": "./apps/sync-worker/src/index.js",
   "compatibility_date": "2026-07-15",
   "compatibility_flags": ["nodejs_compat"],
-  "observability": { "enabled": true, "logs": { "enabled": true, "invocation_logs": true, "persist": true, "head_sampling_rate": 1 }, "traces": { "enabled": true, "persist": true, "head_sampling_rate": 1 } },
-  "triggers": { "crons": ["*/5 * * * *", "50 0,6,12,18 * * *"] },
-  "d1_databases": [{ "binding": "MKT_STATE_DB", "database_name": "replace-with-environment-specific-d1-name", "database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "./migrations" }],
+
+  // DEV/UAT เก็บ Logs/Traces 100% เพื่อให้ Reliability UAT ตรวจย้อนหลังได้
+  // Production ที่ Traffic สูงควรลด head_sampling_rate ตามงบและปริมาณงาน
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "invocation_logs": true,
+      "persist": true,
+      "head_sampling_rate": 1
+    },
+    "traces": {
+      "enabled": true,
+      "persist": true,
+      "head_sampling_rate": 1
+    }
+  },
+
+  "triggers": {
+    // Primary Cron ตรวจ TikTok/Daily/Weekly; YouTube Cron รันทุก 6 ชั่วโมงที่นาที 50 (UTC)
+    // Connector/Schedule flags ด้านล่างปิดทั้งหมด จึงไม่ทำ Business sync จนกว่าจะผ่าน UAT gate
+    "crons": ["*/5 * * * *", "50 0,6,12,18 * * *"]
+  },
+
+  "d1_databases": [
+    {
+      // D1 เป็น operational source of truth และต้องแยก Database ต่อ DEV/UAT/Production
+      "binding": "MKT_STATE_DB",
+      "database_name": "replace-with-environment-specific-d1-name",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "./migrations"
+    }
+  ],
+
   "queues": {
-    "producers": [{ "binding": "MKT_SYNC_QUEUE", "queue": "social-mkt-sync-jobs" }],
+    "producers": [
+      {
+        // ตัวอย่างนี้รักษา Queue contract ที่ Tests ตรวจ; UAT config จริงต้องเปลี่ยนเป็นชื่อเฉพาะลูกค้า/Environment
+        "binding": "MKT_SYNC_QUEUE",
+        "queue": "social-mkt-sync-jobs"
+      }
+    ],
     "consumers": [
-      { "queue": "social-mkt-sync-jobs", "max_concurrency": 1, "max_batch_size": 10, "max_batch_timeout": 30, "max_retries": 5, "dead_letter_queue": "social-mkt-sync-dlq" },
-      { "queue": "social-mkt-sync-dlq", "max_concurrency": 1, "max_batch_size": 10, "max_batch_timeout": 30, "max_retries": 10 }
+      {
+        "queue": "social-mkt-sync-jobs",
+        "max_concurrency": 1,
+        "max_batch_size": 10,
+        "max_batch_timeout": 30,
+        "max_retries": 5,
+        "dead_letter_queue": "social-mkt-sync-dlq"
+      },
+      {
+        // DLQ มี Consumer แยกและบันทึกอย่างเดียว ห้าม Execute งานเดิมซ้ำ
+        "queue": "social-mkt-sync-dlq",
+        "max_concurrency": 1,
+        "max_batch_size": 10,
+        "max_batch_timeout": 30,
+        "max_retries": 10
+      }
     ]
   },
+
   "vars": {
+    // รองรับ development | uat | production และต้องจับคู่ Profile ให้ตรง Environment
     "MKT_ENV": "development",
     "MKT_CUSTOMER_PROFILE": "replace-with-customer-profile",
     "DEFAULT_TIMEZONE": "Asia/Bangkok",
+
+    // Release example ปิด Connector ทุกตัว; UAT เปิดทีละช่องทางหลัง Exact identity/source-contract preflight
     "MKT_CONNECTOR_TIKTOK_ENABLED": "false",
     "MKT_CONNECTOR_FACEBOOK_ENABLED": "false",
     "MKT_CONNECTOR_INSTAGRAM_ENABLED": "false",
@@ -25,15 +80,19 @@
     "MKT_YOUTUBE_ANALYTICS_ENABLED": "false",
     "MKT_CONNECTOR_WOOCOMMERCE_ENABLED": "false",
     "MKT_CONNECTOR_CHATWOOT_ENABLED": "false",
+
     "MKT_SCHEDULE_TIKTOK_ENABLED": "false",
     "MKT_SCHEDULE_YOUTUBE_ENABLED": "false",
+    // Owner Analytics รันวันละครั้ง 07:50 Bangkok และ re-fetch 7 Pacific days ที่จบแล้ว
     "MKT_YOUTUBE_ANALYTICS_TIME": "07:50",
     "MKT_YOUTUBE_ANALYTICS_LOOKBACK_DAYS": "7",
+    // Safe default: ปิดไว้สำหรับการติดตั้งใหม่; หลัง Schema/Seed/UAT ผ่านให้ใช้ npm run enable:tiktok-report-schedules
     "MKT_SCHEDULE_DAILY_REPORT_ENABLED": "false",
     "MKT_SCHEDULE_WEEKLY_REPORT_ENABLED": "false",
     "MKT_DAILY_REPORT_TIME": "08:10",
     "MKT_WEEKLY_REPORT_TIME": "08:15",
     "MKT_WEEKLY_REPORT_WEEKDAY": "monday",
+    // Report source ใช้ Server-side filter; Compatibility fallback ต้องหยุดเมื่อชนเพดานเหล่านี้
     "MKT_REPORT_MAX_CONTENT_RECORDS": "800",
     "MKT_REPORT_MAX_SNAPSHOT_RECORDS": "50000",
     "MKT_REPORT_MAX_FALLBACK_SCAN_RECORDS": "50000",
@@ -43,10 +102,15 @@
     "MKT_WEEKLY_REPORT_SETTING_KEY": "replace-with-weekly-report-setting-key",
     "MKT_MAIN_QUEUE_NAME": "social-mkt-sync-jobs",
     "MKT_DLQ_QUEUE_NAME": "social-mkt-sync-dlq",
+    // Redrive เป็น Manual admin action เท่านั้นและปิดทุก Release example
     "MKT_DLQ_REDRIVE_ENABLED": "false",
     "MKT_QUEUE_RETRY_DELAY_SECONDS": "30",
+    // Durable reliability mirror drain อ่านทีละ Batch เพื่อไม่ให้ Lark delivery ครอง Invocation นานเกินไป
     "MKT_RELIABILITY_MIRROR_BATCH_SIZE": "25",
+
+    // เปิด Checkpoint/Fingerprint ใน D1 เพื่อประมวลผลปลายทางเฉพาะ RAW records ที่เปลี่ยน
     "MKT_TIKTOK_INCREMENTAL_ENABLED": "false",
+    // บังคับ Full reconciliation อย่างน้อยวันละครั้ง แม้ไม่มี Fingerprint เปลี่ยน
     "MKT_TIKTOK_FULL_RECONCILIATION_INTERVAL_MS": "86400000",
     "MKT_TIKTOK_SOURCE_PAGE_SIZE": "500",
     "MKT_TIKTOK_SOURCE_MAX_PAGES": "1000",
@@ -55,18 +119,28 @@
     "MKT_YOUTUBE_ANALYTICS_MAX_PAGES": "1000",
     "YOUTUBE_API_TIMEOUT_MS": "30000",
     "YOUTUBE_MAX_PAGES": "100",
+
+    // Live identity ห้ามเดา/Commit; UAT ใส่ Handle ที่ตรวจตรงกับ Lark Native connection แล้วเท่านั้น
     "TIKTOK_SOURCE_HANDLE": "replace-with-tiktok-handle",
+    // YouTube Channel ID ไม่ใช่ Secret; API key/OAuth ต้องตั้งผ่าน Secrets/.dev.vars เท่านั้น
     "YOUTUBE_CHANNEL_ID": "replace-with-youtube-channel-id",
+
+    // Lease 10 นาที และต่ออายุทุก 2 นาที เพื่อลดความเสี่ยง Lock หมดกลางงาน
     "MKT_SYNC_LOCK_LEASE_MS": "600000",
     "MKT_SYNC_LOCK_RENEW_INTERVAL_MS": "120000",
+
+    // Table IDs ต้องเป็นของ Base เฉพาะ Environment; ห้ามแชร์ DEV/UAT/Production
     "LARK_TABLE_RAW_TIKTOK_CREATOR_VIDEOS": "replace-with-table-id",
+    // YouTube tables ใช้เมื่อ Blueprint ถูก Apply และ Live UAT ได้รับอนุมัติเท่านั้น
     "LARK_TABLE_RAW_YOUTUBE_CHANNELS": "replace-with-table-id",
     "LARK_TABLE_RAW_YOUTUBE_VIDEOS": "replace-with-table-id",
     "LARK_TABLE_RAW_YOUTUBE_ANALYTICS_DAILY": "replace-with-table-id",
+    // Canonical Organic tables ใช้ร่วมกันทุก Organic Connector ภายใน Environment เดียวกัน
     "LARK_TABLE_MKT_ACCOUNTS": "replace-with-table-id",
     "LARK_TABLE_MKT_CONTENT": "replace-with-table-id",
     "LARK_TABLE_MKT_CONTENT_DAILY": "replace-with-table-id",
     "LARK_TABLE_MKT_ACCOUNT_DAILY": "replace-with-table-id",
+    // Meta DEV schema ใช้เฉพาะหลัง Preview ผ่าน และ Apply ต้องยืนยัน CONFIRM_WRITE=YES
     "LARK_TABLE_RAW_FACEBOOK_PAGES": "replace-with-table-id",
     "LARK_TABLE_RAW_FACEBOOK_POSTS": "replace-with-table-id",
     "LARK_TABLE_RAW_FACEBOOK_POST_INSIGHTS": "replace-with-table-id",
@@ -81,6 +155,7 @@
     "LARK_TABLE_RAW_META_ADS": "replace-with-table-id",
     "LARK_TABLE_RAW_META_CREATIVES": "replace-with-table-id",
     "LARK_TABLE_RAW_META_ADS_INSIGHTS": "replace-with-table-id",
+    // Canonical Ads v2 ใช้ร่วมกับ Meta/TikTok/Google Ads; Connector ยังปิดจนกว่าจะผ่าน Implementation UAT
     "LARK_TABLE_MKT_ADS_ACCOUNTS": "replace-with-table-id",
     "LARK_TABLE_MKT_ADS_CAMPAIGNS": "replace-with-table-id",
     "LARK_TABLE_MKT_ADS_ADGROUPS": "replace-with-table-id",
@@ -95,6 +170,7 @@
     "LARK_TABLE_MKT_REPORT_TOP_CONTENT": "replace-with-table-id",
     "LARK_TABLE_MKT_SYNC_LOG": "replace-with-table-id",
     "LARK_TABLE_MKT_SYSTEM_ALERTS": "replace-with-table-id",
+
     "LARK_MIN_REQUEST_INTERVAL_MS": "150",
     "LARK_REQUEST_TIMEOUT_MS": "30000",
     "LARK_MAX_ATTEMPTS": "5",
