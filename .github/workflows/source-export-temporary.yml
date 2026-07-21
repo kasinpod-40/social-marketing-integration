@@ -1,9 +1,9 @@
 name: Apply Meta DEV Schema Patch
 
 on:
-  push:
+  pull_request:
     branches:
-      - work/meta-dev-schema-foundation
+      - main
   workflow_dispatch:
 
 permissions:
@@ -11,10 +11,12 @@ permissions:
 
 jobs:
   apply:
+    if: github.event.pull_request.head.ref == 'work/meta-dev-schema-foundation'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: work/meta-dev-schema-foundation
           fetch-depth: 0
       - name: Decode and verify patch
         run: |
