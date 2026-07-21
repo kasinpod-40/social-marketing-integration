@@ -6,7 +6,9 @@
 - **Accepted code baseline:** `9c23b56f319c50dbad9e1acc3eb1f339a74c55bc`
 - **Merged review:** `PR #6`
 - **Working branch:** `work/meta-blueprint-approved-v0.12.0`
-- **Approved blueprint:** `docs/Social_MKT_Data_Hub_Meta_Blueprint_v0.12.0.xlsx`
+- **Approved source contract:** `docs/meta-blueprint-v0.12.0/`
+- **Approved workbook handoff:** `Social_MKT_Data_Hub_Meta_Blueprint_v0.12.0_APPROVED.xlsx`
+- **Workbook SHA-256:** `4c49148b84051b221cdf4eca7b16315421e03812e6d058bb6ac4978a531bc02d`
 - **Target profile:** `uat_chemistry_k`
 - **Target environment:** `uat`
 - **Connector implementation:** `blocked_until_schema_apply_verified`
@@ -23,7 +25,7 @@ The user approved Meta Data Model / Lark Blueprint v0.12.0 for guarded applicati
 - Meta Ads Data UAT: `PENDING`
 - Reels, Video, Carousel, Stories and multi-page pagination coverage: `NOT_TESTABLE_YET`
 
-Detailed DEV evidence and observed response shapes are recorded in the approved workbook.
+Detailed DEV evidence and observed response shapes are recorded in the approved workbook. The durable source-controlled field and mapping contract is under `docs/meta-blueprint-v0.12.0/`.
 
 ## Approved Data Model
 
@@ -90,7 +92,7 @@ Meta Ad Set maps to canonical Ads Ad Group. Ad and Creative identities remain se
 
 The schema task may:
 
-- add the approved workbook and approval record to the Repository;
+- use the approved source contract and workbook handoff;
 - inspect the isolated UAT Base before mutation;
 - create missing approved Raw tables;
 - create `MKT_Account_Daily` if absent;
@@ -117,7 +119,7 @@ The schema task may:
 3. All 14 approved Raw tables exist exactly once.
 4. `MKT_Account_Daily` exists exactly once with the approved Account×Date stable key.
 5. Existing Organic and Ads canonical tables are reused with approved compatible additions only.
-6. Actual fields, types, options, relations and notes match the workbook or have an explicit reviewed exception.
+6. Actual fields, types, options, relations and notes match the approved contract or have an explicit reviewed exception.
 7. Stable-key fields are Text and independent of mutable display names.
 8. No fake, sample, DEV, customer or Ads performance rows are inserted.
 9. A second schema apply creates no duplicate tables or fields and makes no destructive change.
