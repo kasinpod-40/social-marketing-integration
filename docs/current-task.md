@@ -2,16 +2,16 @@
 
 ## Status
 
-- **Task status:** `verification_passed_docs_closeout_pending`
+- **Task status:** `independent_review_passed_ready_for_merge`
 - **Accepted code baseline:** `7d0e8e545d2c318e7fe01a18c47ee2fe8941d023`
 - **Merged review:** `PR #5`
 - **Working branch:** `work/customer-real-uat-foundation`
-- **Draft pull request:** `PR #6`
+- **Pull request:** `PR #6`
 - **Target profile:** `uat_chemistry_k`
 - **Target environment:** `uat`
 - **Last updated:** `2026-07-21`
 
-Batch C was independently reviewed, CI-verified and squash-merged to `main` as `7d0e8e5`. This task creates the fail-closed configuration and ownership contract required before connecting customer-real data to the developer-owned UAT infrastructure. No Lark, Cloudflare, Queue, D1, platform API or Production mutation is authorized in this task.
+Batch C was independently reviewed, CI-verified and squash-merged to `main` as `7d0e8e5`. This task adds the fail-closed configuration and ownership contract required before connecting customer-real data to developer-owned UAT infrastructure. No Lark, Cloudflare, Queue, D1, platform API or Production mutation was performed.
 
 ## Security prerequisite
 
@@ -69,9 +69,8 @@ UAT is production-like and contains real customer data. It is not sample, sandbo
 ### C — Documentation and safe configuration
 
 - Added modular Project Brain document `docs/project-brain/customer-real-uat.md`.
-- Updated `AGENTS.md`, `docs/current-task.md` and `wrangler.sync.example.jsonc`.
+- Updated `AGENTS.md`, `docs/current-task.md`, `PROJECT_BRAIN.md`, `README.md`, `CHANGELOG.md` and `wrangler.sync.example.jsonc`.
 - Kept real customer identities, Table IDs, credentials and Cloudflare resource IDs out of Source.
-- Root `PROJECT_BRAIN.md`, `README.md` and `CHANGELOG.md` still require a documentation-only closeout before this PR can be marked complete.
 
 ## Acceptance results
 
@@ -84,11 +83,11 @@ UAT is production-like and contains real customer data. It is not sample, sandbo
 - Disabled connector without `accountKey`: fails closed as required.
 - Planned connectors remain impossible to enable: passed.
 - Existing DEV and Production profile regressions: passed.
-- Root documentation consistency: pending documentation-only closeout.
+- Root documentation consistency: passed.
 
 ## Verification evidence
 
-GitHub Actions Branch Verification run `29800251001` passed on clean head `95d2b44` before the final documentation wording-only commits:
+GitHub Actions Branch Verification run `29801134673` passed on the PR merge ref for pushed head `044a492` after the root documentation closeout:
 
 - Locked dependency install: passed
 - Architecture, syntax and repository hygiene: passed
@@ -99,7 +98,7 @@ GitHub Actions Branch Verification run `29800251001` passed on clean head `95d2b
 - Dependency audit: passed
 - Wrangler dry-run: passed
 
-A final merge-ref CI run is still required after documentation closeout. No existing gate was weakened, skipped or hidden.
+No existing gate was weakened, skipped or hidden. Independent review found no remaining code, configuration or documentation blocker.
 
 ## Out of scope
 
@@ -117,13 +116,13 @@ A final merge-ref CI run is still required after documentation closeout. No exis
 
 ## Implementation result
 
-- **Implementation status:** `source_and_tests_complete_root_docs_pending`
+- **Implementation status:** `PASS_FOR_MERGE`
 - **External/Live UAT:** not run and not authorized
-- **Independent review:** code/config review in progress; merge decision blocked by root documentation closeout and final CI
+- **Independent review:** passed
 
 ## Next live gate after this task
 
-After this source-only foundation is reviewed and merged, the next task begins with a customer-authorized Lark Native TikTok connection and read-only preflight:
+After this source-only foundation is merged, the next task begins with a customer-authorized Lark Native TikTok connection and read-only preflight:
 
 1. Confirm the connected TikTok account identity exactly.
 2. Inspect Raw table fields and historical volume without destination writes.
