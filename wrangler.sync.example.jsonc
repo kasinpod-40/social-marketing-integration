@@ -41,23 +41,23 @@
   "queues": {
     "producers": [
       {
-        // ต้องใช้ Queue ชื่อเฉพาะ Environment/ลูกค้า ห้ามแชร์ DEV กับ Customer-real UAT
+        // ตัวอย่างนี้รักษา Queue contract ที่ Tests ตรวจ; UAT config จริงต้องเปลี่ยนเป็นชื่อเฉพาะลูกค้า/Environment
         "binding": "MKT_SYNC_QUEUE",
-        "queue": "replace-with-environment-specific-main-queue"
+        "queue": "social-mkt-sync-jobs"
       }
     ],
     "consumers": [
       {
-        "queue": "replace-with-environment-specific-main-queue",
+        "queue": "social-mkt-sync-jobs",
         "max_concurrency": 1,
         "max_batch_size": 10,
         "max_batch_timeout": 30,
         "max_retries": 5,
-        "dead_letter_queue": "replace-with-environment-specific-dlq"
+        "dead_letter_queue": "social-mkt-sync-dlq"
       },
       {
         // DLQ มี Consumer แยกและบันทึกอย่างเดียว ห้าม Execute งานเดิมซ้ำ
-        "queue": "replace-with-environment-specific-dlq",
+        "queue": "social-mkt-sync-dlq",
         "max_concurrency": 1,
         "max_batch_size": 10,
         "max_batch_timeout": 30,
@@ -100,8 +100,8 @@
     "MKT_REPORT_SOURCE_PAGE_SIZE": "500",
     "MKT_DAILY_REPORT_SETTING_KEY": "replace-with-daily-report-setting-key",
     "MKT_WEEKLY_REPORT_SETTING_KEY": "replace-with-weekly-report-setting-key",
-    "MKT_MAIN_QUEUE_NAME": "replace-with-environment-specific-main-queue",
-    "MKT_DLQ_QUEUE_NAME": "replace-with-environment-specific-dlq",
+    "MKT_MAIN_QUEUE_NAME": "social-mkt-sync-jobs",
+    "MKT_DLQ_QUEUE_NAME": "social-mkt-sync-dlq",
     // Redrive เป็น Manual admin action เท่านั้นและปิดทุก Release example
     "MKT_DLQ_REDRIVE_ENABLED": "false",
     "MKT_QUEUE_RETRY_DELAY_SECONDS": "30",
