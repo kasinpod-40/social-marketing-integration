@@ -4,11 +4,13 @@
 This project connects social organic and paid ads data into Lark Base for reporting, daily snapshots, monitoring, and AI summaries. The implementation target is a lean MVP using Cloudflare Workers, Cloudflare D1, Cloudflare Queues, Lark Base, Lark Native Integrations where useful, and JavaScript.
 
 ## Current project status
-Official clean baseline: `v0.10.2-multi-channel-foundation-approved`
+Official merged code baseline: `7d0e8e5` — Pre-Meta Batch C runtime/reliability hardening passed independent review and was squash-merged through PR #5. Remote migrations `0007`–`0008` and Batch C live rollout remain unexecuted.
 
-Current clean candidate: `v0.11.0` — YouTube Organic DEV active, deployed, and smoke-tested
+Current working candidate: `v0.11.2-customer-real-uat-foundation`
 
-Current working delta: corrective outbox/generation/terminal/Redrive patch ถูก Apply และ Deploy ใน DEV แล้ว. Remote migrations 0005–0006 ผ่าน guarded rollout, controlled Redrive/replay ผ่านแบบ idempotent, Schedule/Owner Analytics เปิดกลับเฉพาะ DEV และ Redrive ปิด. Active Worker คือ `adc0f825-68e5-4231-847b-4b41a6592204`; Customer inventory 837-video Live UAT ยังเป็น Production release blocker.
+Current UAT contract: customer-real UAT uses customer-owned source accounts/data with temporary developer-owned, customer-isolated Lark Base and Cloudflare resources. Runtime profile is `uat_chemistry_k`, while Canonical `customerKey`/connector `accountKey` stay `chemistry_k` across UAT and Production. Every UAT connector/schedule is disabled by default. Full contract: `docs/project-brain/customer-real-uat.md`.
+
+Prior DEV operational state remains: corrective outbox/generation/terminal/Redrive patch was deployed in DEV; migrations 0005–0006 and controlled Redrive/replay passed; YouTube Schedule/Owner Analytics are enabled only in DEV and Production remains disabled. Customer-scale Live UAT is still required before Production.
 
 Current YouTube design artifact: `docs/Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.2.xlsx` — Technical review approved. v0.11.0 implements guarded Schema/Access, RAW/Canonical/Account writes, checkpoint/reconciliation and Reliability reuse. All DEV UAT gates passed. The connector is active in DEV with a six-hour Data API Cron and once-daily Owner Analytics using a bounded seven-day completed-Pacific overlap; Production remains disabled.
 

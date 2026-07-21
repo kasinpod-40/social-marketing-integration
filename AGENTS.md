@@ -58,7 +58,7 @@
 - Performance, pagination, batching, bounded concurrency และ memory usage
 - Security, permissions, secrets, rate limits, retries, timeout และ partial failure
 - Stable keys, idempotency, reconciliation, sync log และ observability
-- ผลกระทบต่อ DEV/Production profiles และทุก Connector/Job ที่ใช้ Contract กลาง
+- ผลกระทบต่อ DEV/UAT/Production profiles และทุก Connector/Job ที่ใช้ Contract กลาง
 
 ห้ามเพิ่ม Utility หรือ Layer ใหม่เมื่อขยายของเดิมได้อย่างสะอาดกว่า
 
@@ -75,14 +75,20 @@
 
 ห้ามเริ่ม Connector Implementation หาก `docs/current-task.md` ยังระบุว่า Data model หรือ Source contract ยังไม่อนุมัติ
 
-## 6. Environment และ Secret
+## 6. Environment, Ownership และ Secret
 
-- DEV ปัจจุบันใช้ profile `dev_ft_pumkin` และทรัพยากรของผู้พัฒนา
-- Production ของลูกค้าต้องใช้ Lark Base, Cloudflare, App credentials และ Platform assets ที่ลูกค้าเป็นเจ้าของ
+- DEV ปัจจุบันใช้ profile `dev_ft_pumkin` และทรัพยากร/ข้อมูลของผู้พัฒนา
+- Customer-real UAT ใช้ profile `uat_chemistry_k`: บัญชีต้นทางและข้อมูลเป็นของลูกค้า แต่ Lark Base และ Cloudflare UAT เป็นของผู้พัฒนาชั่วคราวและต้องแยกจาก DEV
+- Production ใช้ profile `chemistry_k` และต้องใช้ Lark Base, Cloudflare, App credentials และ Platform assets ที่ลูกค้าเป็นเจ้าของ
+- UAT เป็นข้อมูลจริง ไม่ใช่ Sandbox/Demo; ต้องใช้ Security, Least privilege, Audit, Retention และ Cleanup ระดับ Production
+- `profileKey` อาจต่างกันระหว่าง UAT/Production แต่ `customerKey` และ Connector `accountKey` ต้องคงเดิมเพื่อรักษา Canonical stable keys
+- DEV, UAT และ Production ต้องแยก Worker, D1, Queue, DLQ, Secrets, Checkpoint, Lock, Alert, Schedule และ Lark Base
+- UAT Connector ทุกช่องทางและ Business Schedule ทุกตัวต้องปิดโดย Default จนกว่า Identity/Source-contract preflight ของช่องทางนั้นจะผ่าน; System recovery jobs ที่ไม่เขียน Business data ให้ยึด Runtime reliability contract แยกต่างหาก
 - เก็บเฉพาะ non-secret IDs/mappings ใน Source
-- Token, API key, password, app secret และ credential ต้องอยู่ใน Environment/Secret store เท่านั้น
+- Token, API key, password, app secret, OTP, session cookie และ credential ต้องอยู่ใน Environment/Secret store เท่านั้น
 - ห้าม Commit `.dev.vars` หรือ `wrangler.sync.jsonc`
 - ห้ามเปิดเผย Secret, Token, Customer identity หรือข้อมูลส่วนบุคคลใน Log/Health/Admin response
+- Contract รายละเอียดของ UAT อยู่ที่ `docs/project-brain/customer-real-uat.md`
 
 ## 7. Connector และ Queue contract
 
@@ -117,7 +123,7 @@
 - `npm run check` ผ่าน รวม Architecture และ Repository hygiene
 - `npm audit` ไม่มีช่องโหว่ที่ยอมรับไม่ได้
 - `npm run deploy:dry-run` ผ่าน
-- Live/Sandbox UAT ผ่านเมื่อ Scope ต้องใช้ External API
+- Live/Sandbox/UAT ผ่านเมื่อ Scope ต้องใช้ External API
 - ไม่มี duplicate logic, dead files, local config, Secret หรือ build artifact ใน Release
 - `docs/current-task.md`, Project Brain และ CHANGELOG อัปเดต
 

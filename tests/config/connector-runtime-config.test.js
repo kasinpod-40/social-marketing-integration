@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { loadCustomerRuntimeConfig } from '../../packages/config/src/customer-profiles.js';
+import { resolveConnectorRuntimeConfig } from '../../packages/config/src/connector-runtime-config.js';
 import { listConnectorKeys } from '../../packages/config/src/connector-catalog.js';
 
 test('runtime profile contains every registered connector with a deterministic feature flag', () => {
@@ -23,6 +24,55 @@ test('environment feature flag can disable an active connector safely', () => {
 
   assert.equal(config.connectors.tiktok.enabled, false);
   assert.equal(config.connectors.tiktok.enabledSource, 'environment');
+});
+
+test('disabled UAT connector can omit live identity but enabling it requires an exact environment value', () => {
+  const disabled = loadCustomerRuntimeConfig({
+    MKT_ENV: 'uat',
+    MKT_CUSTOMER_PROFILE: 'uat_chemistry_k',
+  });
+
+  assert.equal(disabled.connectors.tiktok.enabled, false);
+  assert.equal(disabled.connectors.tiktok.accountKey, 'chemistry_k');
+  assert.equal(disabled.connectors.tiktok.sourceHandle, null);
+
+  assert.throws(
+    () => loadCustomerRuntimeConfig({
+      MKT_ENV: 'uat',
+      MKT_CUSTOMER_PROFILE: 'uat_chemistry_k',
+      MKT_CONNECTOR_TIKTOK_ENABLED: 'true',
+    }),
+    /Missing connector runtime field tiktok.sourceHandle/,
+  );
+
+  const enabled = loadCustomerRuntimeConfig({
+    MKT_ENV: 'uat',
+    MKT_CUSTOMER_PROFILE: 'uat_chemistry_k',
+    MKT_CONNECTOR_TIKTOK_ENABLED: 'true',
+    TIKTOK_SOURCE_HANDLE: 'customer.actual.handle',
+  });
+
+  assert.equal(enabled.connectors.tiktok.enabled, true);
+  assert.equal(enabled.connectors.tiktok.accountKey, 'chemistry_k');
+  assert.equal(enabled.connectors.tiktok.sourceHandle, 'customer.actual.handle');
+  assert.equal(enabled.connectors.tiktok.sourceHandleSource, 'environment');
+});
+
+test('disabled connectors still require the canonical account key', () => {
+  const connectors = Object.fromEntries(listConnectorKeys().map((key) => [key, {
+    enabledByDefault: false,
+    accountKey: 'chemistry_k',
+  }]));
+  connectors.tiktok = {
+    enabledByDefault: false,
+    accountKey: null,
+    sourceHandle: null,
+  };
+
+  assert.throws(
+    () => resolveConnectorRuntimeConfig(connectors),
+    /Missing connector runtime field tiktok.accountKey/,
+  );
 });
 
 test('YouTube connector can be enabled after activation review', () => {

@@ -5,11 +5,12 @@ import { permanentError } from '../../shared/src/errors/runtime-error.js';
  * โปรไฟล์ลูกค้าและสภาพแวดล้อมที่ไม่เป็นความลับ
  *
  * หลักถาวรของโปรเจกต์:
- * - Dev ใช้ Lark Base, Cloudflare และบัญชีทดสอบของผู้พัฒนา
- * - Production ใช้ทรัพยากรที่ลูกค้าเป็นเจ้าของและเชิญผู้พัฒนาเข้าไปดูแล
+ * - DEV ใช้ Lark Base, Cloudflare และบัญชีทดสอบของผู้พัฒนา
+ * - UAT ใช้ข้อมูล/บัญชีต้นทางจริงของลูกค้า แต่ Lark Base และ Cloudflare เป็นของผู้พัฒนาชั่วคราว
+ * - Production ใช้ทรัพยากรทุกส่วนที่ลูกค้าเป็นเจ้าของและเชิญผู้พัฒนาเข้าไปดูแล
  * - เก็บเฉพาะชื่อ, Stable key, Mapping และค่าเริ่มต้นที่ไม่เป็นความลับไว้ในโค้ด
  * - Token, Secret, API key, Password และ Platform account ID จริงต้องมาจาก Environment/Secret Manager
- * - accountKey เป็นส่วนหนึ่งของ Canonical key ห้ามเปลี่ยนหลังเริ่มเขียนข้อมูลจริง
+ * - accountKey เป็นส่วนหนึ่งของ Canonical key ห้ามเปลี่ยนระหว่าง UAT และ Production
  */
 const CUSTOMER_PROFILES = Object.freeze({
   dev_ft_pumkin: freezeProfile({
@@ -17,7 +18,12 @@ const CUSTOMER_PROFILES = Object.freeze({
     environment: 'development',
     customerKey: 'dev_ft_pumkin',
     customerName: 'Development - FT Pumkin',
+    // resourceOwner คงไว้เป็น Compatibility alias ของ infrastructureOwner
     resourceOwner: 'developer',
+    infrastructureOwner: 'developer',
+    sourceAssetOwner: 'developer',
+    dataOwner: 'developer',
+    dataMode: 'developer_test',
     businessType: 'development_sandbox',
     connectors: {
       tiktok: {
@@ -54,12 +60,64 @@ const CUSTOMER_PROFILES = Object.freeze({
     },
   }),
 
+  uat_chemistry_k: freezeProfile({
+    profileKey: 'uat_chemistry_k',
+    environment: 'uat',
+    // customerKey/accountKey ต้องตรง Production เพื่อให้ Canonical identity คงเดิมตอน Cutover
+    customerKey: 'chemistry_k',
+    customerName: 'Chemistry K — Customer-real UAT',
+    resourceOwner: 'developer',
+    infrastructureOwner: 'developer',
+    sourceAssetOwner: 'customer',
+    dataOwner: 'customer',
+    dataMode: 'customer_real_uat',
+    businessType: 'online_chemistry_course',
+    connectors: {
+      tiktok: {
+        // ปิดจนกว่า Lark Native connection และ Exact identity preflight จะผ่าน
+        enabledByDefault: false,
+        accountKey: 'chemistry_k',
+        sourceHandle: null,
+        displayLabel: 'TikTok UAT - Chemistry K',
+      },
+      facebook: {
+        enabledByDefault: false,
+        accountKey: 'chemistry_k',
+        displayLabel: 'Facebook UAT - Chemistry K',
+      },
+      instagram: {
+        enabledByDefault: false,
+        accountKey: 'chemistry_k',
+        displayLabel: 'Instagram UAT - Chemistry K',
+      },
+      youtube: {
+        enabledByDefault: false,
+        accountKey: 'chemistry_k',
+        displayLabel: 'YouTube UAT - Chemistry K',
+      },
+      woocommerce: {
+        enabledByDefault: false,
+        accountKey: 'chemistry_k',
+        displayLabel: 'WooCommerce UAT - Chemistry K',
+      },
+      chatwoot: {
+        enabledByDefault: false,
+        accountKey: 'chemistry_k',
+        displayLabel: 'Chatwoot UAT - Chemistry K',
+      },
+    },
+  }),
+
   chemistry_k: freezeProfile({
     profileKey: 'chemistry_k',
     environment: 'production',
     customerKey: 'chemistry_k',
     customerName: 'Chemistry K',
     resourceOwner: 'customer',
+    infrastructureOwner: 'customer',
+    sourceAssetOwner: 'customer',
+    dataOwner: 'customer',
+    dataMode: 'customer_production',
     businessType: 'online_chemistry_course',
     connectors: {
       tiktok: {
@@ -97,11 +155,11 @@ const CUSTOMER_PROFILES = Object.freeze({
   }),
 });
 
-const SUPPORTED_ENVIRONMENTS = Object.freeze(['development', 'production']);
+const SUPPORTED_ENVIRONMENTS = Object.freeze(['development', 'uat', 'production']);
 
 /**
  * โหลด Runtime Profile จาก Environment โดยตรวจคู่ environment/profile และ Feature flags
- * เพื่อป้องกันทรัพยากร Dev ปนกับ Production และป้องกัน Connector ที่ยังไม่พร้อมถูกเปิดใช้
+ * เพื่อป้องกันทรัพยากร DEV/UAT/Production ปะปนกันและป้องกัน Connector ที่ยังไม่พร้อมถูกเปิดใช้
  */
 export function loadCustomerRuntimeConfig(env) {
   const source = env ?? {};
@@ -133,7 +191,12 @@ export function loadCustomerRuntimeConfig(env) {
     profileKey,
     customerKey: profile.customerKey,
     customerName: profile.customerName,
+    // Compatibility alias: โค้ดใหม่ควรใช้ infrastructureOwner/sourceAssetOwner/dataOwner
     resourceOwner: profile.resourceOwner,
+    infrastructureOwner: profile.infrastructureOwner ?? profile.resourceOwner,
+    sourceAssetOwner: profile.sourceAssetOwner ?? profile.resourceOwner,
+    dataOwner: profile.dataOwner ?? profile.resourceOwner,
+    dataMode: profile.dataMode ?? null,
     businessType: profile.businessType ?? null,
     connectors,
 
