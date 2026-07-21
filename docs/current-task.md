@@ -2,7 +2,7 @@
 
 ## Status
 
-- **Task status:** `implementation_complete_local_gates_passed_pending_remote_ci_review`
+- **Task status:** `remote_ci_passed_ready_for_merge_review`
 - **Accepted baseline:** `cbc3da8e40190509ed3985e14a573d6cedbe9c32`
 - **Merged review:** `PR #9`
 - **Working branch:** `work/shared-table-schema-apply`
@@ -130,7 +130,7 @@ npm run setup:shared-table-schema
 
 ## Implementation result
 
-- **Implementation status:** `PASS_LOCAL_GATES_READY_FOR_REMOTE_REVIEW`
+- **Implementation status:** `PASS_FOR_MERGE_REVIEW`
 - **Guarded Apply:** implemented with fresh Preview, exact plan validation and zero-drift post-verification
 - **DEV/profile guard:** implemented
 - **Confirmation guard:** implemented; ambient confirmations cannot make Preview write
@@ -147,6 +147,8 @@ npm run setup:shared-table-schema
 - **Repository hygiene:** passed before final documentation-only edits
 - **Dependency audit:** 0 vulnerabilities
 - **Wrangler dry-run:** passed — 659.26 KiB / gzip 130.46 KiB
+- **Final Branch Verification:** run `29838300095` passed on head `c8d5ff63f0549f34b58245706f7dc1470438ae32`
+- **Temporary upload/workflow files:** removed before Review
 - **Live Lark Apply:** not run
 - **Business Record writes:** none
 - **External source APIs:** none
@@ -155,4 +157,4 @@ npm run setup:shared-table-schema
 
 ## Next gate
 
-Run the final full Repository gates, publish PR #10 for review and wait for explicit Squash Merge approval. After merge, rerun the fresh Read-only plan and request a separate exact authorization before executing the live DEV Apply command.
+Review and Squash Merge PR #10 after explicit approval. After merge, rerun the fresh Read-only plan and request a separate exact authorization before executing the live DEV Apply command.
