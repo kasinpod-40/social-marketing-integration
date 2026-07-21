@@ -46,7 +46,7 @@ export function resolveConnectorRuntimeConfig(profileConnectors, env = {}) {
       accountKey: normalizeOptionalText(profile.accountKey),
       sourceHandle: sourceHandleOverride ?? normalizeOptionalText(profile.sourceHandle),
     };
-    validateRequiredRuntimeFields(definition, runtimeFields);
+    validateRequiredRuntimeFields(definition, runtimeFields, enabled);
 
     return [definition.key, Object.freeze({
       key: definition.key,
@@ -59,7 +59,11 @@ export function resolveConnectorRuntimeConfig(profileConnectors, env = {}) {
       enabledSource: enabledOverride === null ? 'profile' : 'environment',
       accountKey: runtimeFields.accountKey,
       sourceHandle: runtimeFields.sourceHandle,
-      sourceHandleSource: sourceHandleOverride ? 'environment' : 'profile',
+      sourceHandleSource: sourceHandleOverride
+        ? 'environment'
+        : runtimeFields.sourceHandle
+          ? 'profile'
+          : null,
       displayLabel: normalizeOptionalText(profile.displayLabel),
     })];
   });
@@ -81,7 +85,6 @@ function readOptionalBoolean(value, fieldName) {
   throw invalidBoolean(fieldName, value);
 }
 
-
 /** อ่านข้อความ Optional จาก Environment และปฏิเสธชนิดข้อมูลที่ไม่ใช่ String */
 function readOptionalTextEnv(value, fieldName) {
   if (value === null || value === undefined || value === '') return null;
@@ -101,8 +104,12 @@ function readOptionalTextEnv(value, fieldName) {
   return text;
 }
 
-/** ตรวจ Field ที่ Catalog ระบุว่าจำเป็นต่อ Stable identity ของ Connector */
-function validateRequiredRuntimeFields(definition, runtimeFields) {
+/**
+ * ตรวจ Field ที่ Catalog ระบุว่าจำเป็นต่อ Stable identity เฉพาะเมื่อ Connector ถูกเปิด
+ * เพื่อให้ UAT profile เก็บ Live identity ไว้นอก Source และยังโหลดแบบ Fail-closed ได้ก่อน Preflight
+ */
+function validateRequiredRuntimeFields(definition, runtimeFields, enabled) {
+  if (!enabled) return;
   for (const fieldName of definition.requiredRuntimeFields) {
     if (!normalizeOptionalText(runtimeFields[fieldName])) {
       throw permanentError(`Missing connector runtime field ${definition.key}.${fieldName}`, {
