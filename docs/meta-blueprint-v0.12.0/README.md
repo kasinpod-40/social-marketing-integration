@@ -1,5 +1,6 @@
 # Meta Blueprint v0.12.0 — Approved Source Contract
 
+> **Historical physical layout only:** The 14 Raw-table layout was superseded before any live apply by `docs/shared-table-blueprint-v0.12.1/`. Retain this directory for approved metric/identity semantics and audit history; do not use it as an install manifest.
 Approved by the user on `2026-07-21` for Lark UAT schema application only.
 
 This directory is the source-controlled text representation of the approved workbook. It covers table inventory, field dictionaries, Raw-to-Canonical mapping, stable keys and metric contracts, UAT gates, approval decisions and source traceability.

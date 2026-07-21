@@ -4,6 +4,8 @@
 This project connects social organic and paid ads data into Lark Base for reporting, daily snapshots, monitoring, and AI summaries. The implementation target is a lean MVP using Cloudflare Workers, Cloudflare D1, Cloudflare Queues, Lark Base, Lark Native Integrations where useful, and JavaScript.
 
 ## Current project status
+
+**Current architecture revision v0.12.1:** ผู้ใช้ยืนยัน Shared-table + View เป็น Physical model และล็อก `RAW_TikTok_Creator_Videos` เป็น Lark Native protected read-only source. Meta v0.12.0 endpoint-per-table layout ถูก Block ก่อน Apply. Base export ปัจจุบันมี 26 unique tables/4,641 records/352 fields/81 views; Planned Raw ว่าง 5 ตารางจะ Reuse in place และเพิ่มใหม่เฉพาะ `MKT_Account_Daily` กับ `MKT_Ads_Ads`, เป้าหมาย 28 tables. Contract: `docs/project-brain/shared-table-architecture-v0.12.1.md`.
 Official merged code baseline: `7d0e8e5` — Pre-Meta Batch C runtime/reliability hardening passed independent review and was squash-merged through PR #5. Remote migrations `0007`–`0008` and Batch C live rollout remain unexecuted.
 
 Current working candidate: `v0.11.2-customer-real-uat-foundation`

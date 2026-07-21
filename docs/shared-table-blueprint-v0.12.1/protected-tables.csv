@@ -1,0 +1,2 @@
+Table,Owner,Access mode,Allowed operations,Blocked operations,Reason
+RAW_TikTok_Creator_Videos,Lark Native TikTok for Creator,Read-only source,List/read records; normalize to Canonical,Rename; delete; create/update/delete fields; write records,External integration owns schema and source lifecycle

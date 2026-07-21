@@ -1,0 +1,9 @@
+Left,Right,Duplicate,Reason,Decision
+MKT_Content,RAW_TikTok_Creator_Videos,No,Canonical normalized content vs external Native source,Retain both
+MKT_Content,RAW_YouTube_Videos,No,Canonical normalized content vs system Raw source,Retain both
+MKT_Content_Daily,RAW_YouTube_Analytics_Daily,No,Canonical cumulative snapshot vs source-day analytics fact,Retain both
+MKT_Content.latest_*,MKT_Content_Daily,No,Latest-value convenience vs historical date grain,Retain both
+MKT_Report_Snapshots,MKT_Report_Metric_Values,No,Report header vs metric rows,Retain both
+MKT_Report_Snapshots,MKT_Report_Top_Content,No,Report header vs ranked content rows,Retain both
+RAW_TikTok_Business_*,RAW_Google_*,Yes: unused planned slots,All five tables have zero records and no active connector,Reuse/rename into five shared Raw tables
+MKT_Report_Top_Content export block,MKT_Report_Top_Content export block,Export duplicate only,Same Table identity appears twice in .base snapshot,Do not create/delete table

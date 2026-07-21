@@ -14,6 +14,7 @@ Corrective large-account Reliability patch remains deployed only in DEV. Remote 
 
 สถานะปัจจุบัน:
 
+- v0.12.1 กำลังแก้ Physical model กลับเป็น Shared-table + View: Protected `RAW_TikTok_Creator_Videos`, Reuse Planned Raw ว่าง 5 ตาราง, เพิ่มจริงเฉพาะ `MKT_Account_Daily` และ `MKT_Ads_Ads`; Meta v0.12.0 แบบ 14 Raw tables ห้าม Apply
 - DEV ใช้ Lark Base ของผู้พัฒนาและ TikTok `@ft.pumkin`
 - Production profile `chemistry_k` เตรียมไว้ใน Source code แต่ Production จริงต้องใช้ Lark Base, App, Cloud และบัญชี Social ที่ลูกค้าเป็นเจ้าของ
 - TikTok DEV Sync จริงผ่าน 20 Content + 20 Daily Snapshot แล้วก่อน Audit รอบนี้

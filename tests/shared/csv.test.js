@@ -5,15 +5,10 @@ import { parseCsvRecords, parseCsvRows } from '../../packages/shared/src/text/cs
 test('parses quoted commas, escaped quotes and newlines', () => {
   const text = 'name,note\r\nalpha,"one,two"\r\nbeta,"line 1\nline 2"\r\ngamma,"say ""hi"""\r\n';
   assert.deepEqual(parseCsvRows(text), [
-    ['name', 'note'],
-    ['alpha', 'one,two'],
-    ['beta', 'line 1\nline 2'],
-    ['gamma', 'say "hi"'],
+    ['name', 'note'], ['alpha', 'one,two'], ['beta', 'line 1\nline 2'], ['gamma', 'say "hi"'],
   ]);
   assert.deepEqual(parseCsvRecords(text), [
-    { name: 'alpha', note: 'one,two' },
-    { name: 'beta', note: 'line 1\nline 2' },
-    { name: 'gamma', note: 'say "hi"' },
+    { name: 'alpha', note: 'one,two' }, { name: 'beta', note: 'line 1\nline 2' }, { name: 'gamma', note: 'say "hi"' },
   ]);
 });
 

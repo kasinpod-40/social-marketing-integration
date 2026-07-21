@@ -1,78 +1,112 @@
-# Current Task — Meta DEV Schema Foundation v0.12.1
+# Current Task — Shared-table Architecture Revision v0.12.1
 
 ## Status
 
-- **Task status:** `independent_review_passed_ready_for_merge`
+- **Task status:** `local_gates_passed_pending_remote_ci`
 - **Accepted baseline:** `ae13440f52f9647c18bf26a75c4e4e6f4c1f18e9`
 - **Merged review:** `PR #7`
 - **Working branch:** `work/meta-dev-schema-foundation`
-- **Pull request:** `PR #8`
+- **Pull request:** `PR #8` — scope is being replaced before merge
 - **Environment:** developer-owned DEV
 - **Profile:** `dev_ft_pumkin`
-- **Approved Meta Blueprint:** `v0.12.0-meta-data-model-approved`
-- **Live Lark schema apply:** `not_run`
-- **Connector implementation:** `blocked_until_schema_apply_verified`
+- **Live Lark mutation:** `not_authorized_not_run`
+- **Connector implementation:** `blocked_until_revised_schema_verified`
 - **Last updated:** `2026-07-21`
 
-The developer-owned Base remains DEV. No Base conversion, customer-data replacement or customer UAT action is authorized yet. Development continues until Organic and Ads connectors are complete; WooCommerce and Chatwoot live gates wait for customer-owned systems.
+The user rejected endpoint-per-table growth and reconfirmed the original architecture: use shared tables across platforms and separate channel/entity presentation with Lark Views. The user also locked `RAW_TikTok_Creator_Videos` as an externally managed Lark Native TikTok source that our system must never mutate.
 
-## Locked product scope
+## Evidence reviewed
 
-Organic: TikTok, YouTube, Facebook and Instagram.
+The user-provided `Social MKT Data Hub(6).base` export was inspected locally without committing the file or record values:
 
-Paid Ads: Meta Ads, TikTok Ads and Google Ads.
+- 26 unique tables
+- 4,641 records
+- 352 fields
+- 81 views
+- one repeated export block for `MKT_Report_Top_Content`, not a duplicate physical table
+- five unused Planned Raw tables with zero records
 
-Customer-only live sources: WooCommerce and Chatwoot — `ACCESS_PENDING_CUSTOMER`.
+Sanitized schema-only evidence is recorded under `docs/shared-table-blueprint-v0.12.1/`.
 
-## Current atomic objective
+## Locked architecture
 
-Create a guarded, source-controlled Meta schema installer for the existing DEV Lark Base before Meta connector coding begins.
+### Protected external source
 
-### In scope
+`RAW_TikTok_Creator_Videos`:
 
-- derive the installable contract from the approved CSV files under `docs/meta-blueprint-v0.12.0/`;
-- cover exactly 14 Raw tables plus new `MKT_Account_Daily`;
-- add all non-secret Lark Table environment mappings;
-- provide `setup:meta-schema` Preview and `setup:meta-schema:apply` Apply commands;
-- require both `--apply` and `CONFIRM_WRITE=YES` for writes;
-- fail closed unless `MKT_ENV=development` and `MKT_CUSTOMER_PROFILE=dev_ft_pumkin`;
-- use the existing non-destructive/idempotent schema planner and post-apply verification;
-- preserve approved field order, field type, Primary key, Select options, date format, descriptions and reference metadata;
-- update safe environment examples without real IDs or secrets;
-- add focused tests and run full repository regression gates.
+- owned and written by Lark Native TikTok for Creator;
+- read-only to our connector;
+- no rename/delete/field mutation/record write from our installer or Worker;
+- normalized downstream into shared Canonical tables only.
 
-### Out of scope
+### Shared Raw tables
 
-- live Lark mutation during code review;
-- Facebook, Instagram or Marketing API calls;
-- Meta connector implementation or activation;
-- source or destination business-data writes;
+Meta Organic uses three tables:
+
+1. `RAW_Meta_Organic_Accounts`
+2. `RAW_Meta_Organic_Content`
+3. `RAW_Meta_Organic_Metrics`
+
+All paid platforms use two tables:
+
+4. `RAW_Ads_Entities`
+5. `RAW_Ads_Daily`
+
+`platform`, `entity_type`, `ad_channel` and Views separate Facebook, Instagram, Meta Ads, TikTok Ads and Google Ads.
+
+### In-place reuse
+
+Five current zero-record Planned Raw tables are renamed/reused in place, preserving their Table IDs. This adds no Raw table.
+
+### New tables allowed
+
+Only two new tables have distinct missing grains:
+
+1. `MKT_Account_Daily` — Account×Date
+2. `MKT_Ads_Ads` — Ad identity separate from Creative
+
+Expected final unique table count: **28**, not 41.
+
+## In scope
+
+- supersede the v0.12.0 physical layout before it is applied;
+- create the revised Shared-table source contract, fields, migration map and View plan;
+- record a sanitized inventory/duplicate review from the current Base export;
+- replace stale planned Raw environment mappings with five shared logical mappings;
+- add fail-closed protected-table governance to the generic schema planner;
+- add a schema-only `.base` analyzer that excludes record values and redacts Table IDs by default;
+- update Project Brain, README and Changelog;
+- run full Repository gates and remote PR merge-ref CI.
+
+## Out of scope
+
+- live Lark table rename, create, field change or record write;
+- Meta/Facebook/Instagram/TikTok Ads/Google Ads connector implementation;
+- source API calls;
+- Cloudflare deploy, D1 migration, Queue message or schedule changes;
 - advertisement creation, activation or spend;
-- TikTok Ads or Google Ads Blueprint/implementation in this atomic batch;
-- WooCommerce or Chatwoot live access;
-- Cloudflare deployment, remote D1 migration, Queue messages or schedule changes;
+- WooCommerce/Chatwoot live access;
 - customer UAT or Production mutation.
 
 ## Acceptance criteria
 
-1. Schema is derived from the approved CSV contract rather than a second hand-maintained field list.
-2. Exactly 15 tables and 229 fields are in scope.
-3. Every table has exactly one Primary Text field as its first field.
-4. Lark field types, Select options and date format match the approved contract.
-5. Environment mappings exist for every new table and examples contain placeholders only.
-6. Preview performs no write and produces a conflict-free create plan against an empty Base.
-7. Apply remains impossible without explicit confirmation and exact DEV environment/profile pairing.
-8. Existing schema installer behavior, TikTok, YouTube, Ads canonical contracts and Core regressions remain unchanged.
-9. Temporary source-export workflow is removed before Review.
-10. No live external-system mutation is performed by this implementation task.
+1. `RAW_TikTok_Creator_Videos` is enforced as protected before any schema planner live read/write.
+2. The old 14-table Meta physical layout cannot be considered approved for apply.
+3. Exactly five existing zero-record Planned Raw tables are designated for In-place reuse.
+4. The revised Raw model contains three Meta Organic tables and two cross-platform Ads tables.
+5. Only `MKT_Account_Daily` and `MKT_Ads_Ads` increase the table count.
+6. Current Base inventory totals remain 26/4,641/352/81 in the sanitized contract.
+7. Duplicate review distinguishes Raw/Canonical/Report grain from true duplication.
+8. Existing TikTok Native and YouTube operational tables are retained without schema mutation.
+9. Safe config examples contain shared logical mappings only and no live IDs/secrets.
+10. Full tests, architecture, hygiene, audit and Wrangler dry-run pass.
 
 ## Required gates
 
 ```bash
 npm ci
 npm run check
-node --test tests/shared/csv.test.js tests/config/meta-lark-schema.test.js
-npm run test:unit
+node --test tests/shared/csv.test.js tests/shared/lark-base-export.test.js tests/config/lark-table-governance.test.js tests/config/shared-table-blueprint.test.js
 npm test
 npm run test:report-reliability
 npm audit --audit-level=high
@@ -81,25 +115,25 @@ npm run deploy:dry-run
 
 ## Implementation result
 
-- **Implementation status:** `PASS_FOR_MERGE`
-- **Schema contract:** 15 tables / 229 fields derived directly from approved CSV files
-- **Focused Meta schema/parser tests:** 10 passed, 0 failed locally and included in the remote Node suite
-- **Final Branch Verification:** run `29814322283` passed on head `2ceaeb3a60b3bb9f94b4eb2d15086123cd4055c1`
-- **Focused staged TikTok regression:** 4 passed, 0 failed
-- **Node Unit/Integration:** 508 passed, 0 failed
+- **Implementation status:** `local_gates_passed_pending_remote_ci`
+- **Architecture contract:** revised Shared-table contract complete
+- **Protected-table enforcement:** complete; planner rejects protected targets before the first Lark client call
+- **Base export analyzer:** complete; schema-only, record values excluded, Table IDs redacted by default
+- **Focused Shared-table/CSV/Base/protection tests:** 12 passed, 0 failed
+- **Node Unit/Integration:** 510 passed, 0 failed
 - **Workers runtime:** 9 passed, 0 failed
 - **Report reliability:** 70 passed, 0 failed
-- **Architecture:** 137 source files, 316 local dependencies, 0 cycles
+- **Architecture:** 137 source files, 307 local dependencies, 0 cycles
 - **Repository hygiene:** passed
 - **Dependency audit:** 0 vulnerabilities
-- **Wrangler dry-run:** passed
-- **Apply safety smoke:** UAT target rejected with `META_SCHEMA_DEV_TARGET_REQUIRED`; DEV Apply without confirmation rejected with `META_SCHEMA_WRITE_CONFIRMATION_REQUIRED`
-- **Independent review:** passed after restoring the existing Wrangler example guidance and confirming no temporary workflow/patch file remains
-- **Live DEV schema:** not applied
-- **External API calls:** none
-- **Customer data:** none
+- **Wrangler dry-run:** passed — 658.68 KiB / gzip 130.35 KiB
+- **Current Base schema evidence:** 26 tables / 4,641 records / 352 fields / 81 views
+- **Revised table plan:** reuse 5 empty Planned Raw tables, create 2 new Canonical tables, expected final total 28
+- **Live DEV schema:** not changed
+- **External APIs:** not called
+- **Customer data values:** not inspected or committed
 - **Production mutation:** none
 
 ## Next gate
 
-After merge, run the read-only Meta schema Preview against the existing DEV Base. Apply only after the Preview has no conflict, then run Preview again to prove idempotency before starting Facebook Organic connector implementation.
+After source and CI review, perform a read-only live inventory only. A separate explicit authorization is required before renaming the five empty tables or creating the two new Canonical tables.

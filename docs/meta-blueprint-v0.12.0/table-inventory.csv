@@ -12,14 +12,14 @@ RAW_Meta_Campaigns,Raw,Meta Ads,Campaign,Upsert latest,raw_meta_campaign_key,Req
 RAW_Meta_Ad_Sets,Raw,Meta Ads,Ad Set,Upsert latest,raw_meta_ad_set_key,Required,DEV/UAT,Ad Set inventory,New
 RAW_Meta_Ads,Raw,Meta Ads,Ad,Upsert latest,raw_meta_ad_key,Required,DEV/UAT,Delivery Ad inventory,New
 RAW_Meta_Creatives,Raw,Meta Ads,Creative,Upsert latest,raw_meta_creative_key,Required,DEV/UAT,Reusable creative/object-story linkage,New
-RAW_Meta_Ads_Insights,Raw,Meta Ads,Entity×Date×Placement,Upsert,raw_meta_ads_insight_key,Required,DEV/UAT,"Raw performance, actions and breakdowns",New
+RAW_Meta_Ads_Insights,Raw,Meta Ads,Entity×Date×Placement,Upsert,raw_meta_ads_insight_key,Required,UAT,"Raw performance, actions and breakdowns",New
 MKT_Accounts,Canonical,Organic,Account,Upsert,account_key,Existing,DEV/UAT/PROD,Facebook Page and Instagram account master,Extend mapping
 MKT_Account_Daily,Canonical,Organic,Account×Date,Upsert,account_daily_key,Required,DEV/UAT/PROD,Daily Page/Account metrics,New
 MKT_Content,Canonical,Organic,Content,Upsert,content_key,Existing,DEV/UAT/PROD,Facebook Post and Instagram Media master,Extend mapping
 MKT_Content_Daily,Canonical,Organic,Content×Snapshot date,Upsert,content_daily_key,Existing,DEV/UAT/PROD,Cumulative/lifetime content snapshots,Extend mapping
-MKT_Ads_Accounts,Canonical,Meta Ads,Ad Account,Upsert,ads_account_key,Existing v2,DEV/UAT/PROD,Ad account master,Existing canonical
-MKT_Ads_Campaigns,Canonical,Meta Ads,Campaign,Upsert,ads_campaign_key,Existing v2,DEV/UAT/PROD,Campaign master,Existing canonical
-MKT_Ads_AdGroups,Canonical,Meta Ads,Ad Set,Upsert,ads_ad_group_key,Existing v2,DEV/UAT/PROD,Cross-platform canonical Ad Group,Meta source=Ad Set
-MKT_Ads_Ads,Canonical,Meta Ads,Ad,Upsert,ads_ad_key,Existing v2,DEV/UAT/PROD,Delivery Ad master,Existing canonical
-MKT_Ads_Creatives,Canonical,Meta Ads,Creative,Upsert,ads_creative_key,Existing v2,DEV/UAT/PROD,Reusable creative master,Existing canonical
-MKT_Ads_Daily,Canonical,Meta Ads,Entity×Date×Channel,Upsert,ads_daily_key,Existing v2,DEV/UAT/PROD,Daily performance at approved grain,Extend Meta mapping
+MKT_Ads_Accounts,Canonical,Meta Ads,Ad Account,Upsert,ads_account_key,Existing v2,UAT/PROD,Ad account master,Existing canonical
+MKT_Ads_Campaigns,Canonical,Meta Ads,Campaign,Upsert,ads_campaign_key,Existing v2,UAT/PROD,Campaign master,Existing canonical
+MKT_Ads_AdGroups,Canonical,Meta Ads,Ad Set,Upsert,ads_ad_group_key,Existing v2,UAT/PROD,Cross-platform canonical Ad Group,Meta source=Ad Set
+MKT_Ads_Ads,Canonical,Meta Ads,Ad,Upsert,ads_ad_key,Existing v2,UAT/PROD,Delivery Ad master,Existing canonical
+MKT_Ads_Creatives,Canonical,Meta Ads,Creative,Upsert,ads_creative_key,Existing v2,UAT/PROD,Reusable creative master,Existing canonical
+MKT_Ads_Daily,Canonical,Meta Ads,Entity×Date×Channel,Upsert,ads_daily_key,Existing v2,UAT/PROD,Daily performance at approved grain,Extend Meta mapping

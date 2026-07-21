@@ -1,4 +1,6 @@
-# Meta Data Model v0.12.0 — Approved Contract
+# Meta Data Model v0.12.0 — Historical Approved Contract
+
+> **Superseded physical layout — 2026-07-21:** หลังตรวจ Base export ปัจจุบันและคำสั่งล่าสุดของผู้ใช้ Physical table layout แบบ 14 Meta Raw tables ถูกแทนด้วย Shared-table Architecture v0.12.1. ห้าม Apply v0.12.0 schema. Identity, timestamp, timezone, zero/null, `valid_no_data`, money-micros และ Ad/Creative semantics ยังคงมีผล. ดู `docs/project-brain/shared-table-architecture-v0.12.1.md`.
 
 ## Approval
 
@@ -90,4 +92,4 @@ The source-controlled CSV contracts are the durable field-level authority for ta
 
 ## Next gate
 
-Apply and verify the approved schema in the isolated UAT Base. Connector implementation remains blocked until live schema parity and idempotent re-apply pass independent review.
+Do not apply this physical layout. Continue with the revised Shared-table v0.12.1 contract; connector implementation remains blocked until the revised live schema passes parity and idempotent verification.

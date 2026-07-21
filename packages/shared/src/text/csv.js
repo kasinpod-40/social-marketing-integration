@@ -14,9 +14,7 @@ export function parseCsvRecords(text) {
         throw new TypeError(`CSV row ${rowIndex + 2} contains more columns than the header`);
       }
       const record = {};
-      for (let index = 0; index < headers.length; index += 1) {
-        record[headers[index]] = row[index] ?? '';
-      }
+      for (let index = 0; index < headers.length; index += 1) record[headers[index]] = row[index] ?? '';
       return Object.freeze(record);
     }));
 }

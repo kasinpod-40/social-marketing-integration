@@ -31,8 +31,7 @@
     "preflight:youtube": "node scripts/preflight-youtube-dev-access.mjs",
     "job:youtube-sync": "node scripts/print-youtube-sync-job.mjs",
     "job:redrive-dead-letter": "node scripts/print-dead-letter-redrive-job.mjs",
-    "setup:meta-schema": "node scripts/setup-meta-schema.mjs",
-    "setup:meta-schema:apply": "node scripts/setup-meta-schema.mjs --apply"
+    "analyze:lark-base-export": "node scripts/analyze-lark-base-export.mjs"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.18.4",
