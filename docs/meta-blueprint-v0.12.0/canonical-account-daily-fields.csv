@@ -1,0 +1,15 @@
+Table,Order,Field,Lark Type,Required,Nullable,Key role,Source path / metric,Definition,Time / zero / null semantics,Example,Relation / Options,Import note
+MKT_Account_Daily,1,account_daily_key,Text,Yes,No,Primary + Stable,{account_key}:{metric_date},One account snapshot row per date,Never null,facebook:chemistry_k:2026-07-20,,Primary field
+MKT_Account_Daily,2,account_key,Text,Yes,No,Identity,MKT_Accounts.account_key,Canonical account identity,Stable across UAT/Production,,MKT_Accounts,
+MKT_Account_Daily,3,metric_date,Date,Yes,No,Date grain,derived Bangkok/source day,Completed reporting date,Date only,2026-07-20,,
+MKT_Account_Daily,4,platform,SingleSelect,Yes,No,Classification,adapter constant,facebook or instagram,Never null,instagram,facebook|instagram,
+MKT_Account_Daily,5,views,Number,No,Yes,Metric,FB page_media_view / IG views,Daily account views,0 real; null unsupported,11,,
+MKT_Account_Daily,6,unique_views_or_reach,Number,No,Yes,Metric,FB unique media view / IG reach,Platform-specific unique exposure,0 real; preserve source metric name in provenance,5,,
+MKT_Account_Daily,7,follows,Number,No,Yes,Metric,page_daily_follows_unique,New follows for day,0 real; IG null if unsupported,0,,
+MKT_Account_Daily,8,unfollows,Number,No,Yes,Metric,page_daily_unfollows_unique,Unfollows for day,0 real; IG null if unsupported,0,,
+MKT_Account_Daily,9,accounts_engaged,Number,No,Yes,Metric,IG accounts_engaged,Accounts engaged,0 real; FB null if unsupported,4,,
+MKT_Account_Daily,10,total_interactions,Number,No,Yes,Metric,IG total_interactions,Account interactions,0 real; FB null if unsupported,4,,
+MKT_Account_Daily,11,source_end_time_raw,Text,No,Yes,Provenance,raw end_time,Exact source end time,Keep raw,,,
+MKT_Account_Daily,12,source_metric_names_json,LongText,Yes,No,Provenance,mapping set,Metrics contributing to row,Never null,"[""views"",""reach""]",,JSON
+MKT_Account_Daily,13,formula_version,Text,Yes,No,Contract,adapter constant,Mapping/formula version,Never null,meta-organic-v1,,
+MKT_Account_Daily,14,sync_run_id,Text,Yes,No,Audit,runtime,Sync correlation,Never null,,MKT_Sync_Log,

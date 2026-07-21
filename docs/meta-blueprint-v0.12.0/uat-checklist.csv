@@ -1,0 +1,28 @@
+Phase,Check,Expected evidence,Gate,Status,Owner,Notes
+Blueprint,Review table inventory and field contracts,14 RAW tables + Organic/Ads canonical mapping approved,Blocking,Passed,,
+Blueprint,Approve new MKT_Account_Daily table,Page/IG account daily metrics have a canonical home,Blocking,Passed,,
+Blueprint,Approve stable keys and identity rules,No UAT prefix in canonical identity; IG /me ID authoritative,Blocking,Passed,,
+Facebook DEV,Page identity and token preflight,ThanakirinFarm / FACEBOOK_PAGE_ID,Evidence,Passed,User,DEV asset
+Facebook DEV,Post and Post Insights payload,6 posts; tested metrics and zero/null semantics,Evidence,Passed,User,
+Facebook DEV,Page daily insights payload,4 metrics × 7 rows,Evidence,Passed,User,
+Instagram DEV,Canonical /me identity,INSTAGRAM_USER_ID,Evidence,Passed,User,Alias INSTAGRAM_INSIGHT_ALIAS audit only
+Instagram DEV,Media and lifetime insights,IMAGE/FEED + tested metrics,Evidence,Passed,User,
+Instagram DEV,Account time-series/aggregate shapes,values/end_time and total_value verified,Evidence,Passed,User,
+Instagram DEV,Token refresh lifecycle,Refreshed token returns same /me ID,Evidence,Passed,User,Secret only
+Instagram Coverage,Reels/Video/Carousel/Stories,Real source evidence,Blocking before production coverage claim,NOT_TESTABLE_YET,,Use customer UAT
+Meta Ads DEV,Ad account access,act_META_AD_ACCOUNT_ID visible; ads_read works,Evidence,Passed,User,
+Meta Ads DEV,Campaign/Insights empty response,data: [] accepted as valid,Evidence,valid_no_data,User,
+Meta Ads UAT,Create draft/paused inventory,Campaign/Ad Set/Ad/Creative readable without spend,Blocking Ads inventory,Not Started,,Requires explicit approval before mutation
+Meta Ads UAT,Low-budget live delivery,Spend/impressions/reach/clicks/actions and placement breakdown,Blocking Ads performance,Not Started,,Do not spend without explicit approval
+Customer UAT,Facebook exact identity preflight,Customer Page ID/name match approved mapping,Blocking,Not Started,,
+Customer UAT,Instagram exact identity preflight,Customer /me ID/username match approved mapping,Blocking,Not Started,,
+Customer UAT,Meta Ad Account exact identity preflight,Customer act_ ID/name/currency/timezone match,Blocking,Not Started,,
+Customer UAT,Pagination and realistic volume,"Multiple pages, cursor guards, duplicates",Blocking,Not Started,,
+Customer UAT,Organic media-type coverage,Reels/video/carousel/stories where available,Blocking coverage,Not Started,,
+Lark Schema,Apply approved Meta RAW + MKT_Account_Daily tables,Table IDs recorded outside secrets,Blocking,Ready,,Authorized after Blueprint approval; still requires guarded Lark schema task
+Implementation,Connector flags remain planned/disabled,No Meta business sync before implementation review,Blocking,Not Started,,
+Reliability,"Manual sync, idempotent rerun, reconciliation",No duplicate stable keys; 0/null preserved,Blocking,Not Started,,
+Reliability,Retry/lock/DLQ/alerts,Bounded behavior with safe diagnostics,Blocking,Not Started,,
+Regression,TikTok/YouTube/Core full gates,All existing tests pass,Blocking,Not Started,,
+Security,Tokens absent from source/log/workbook,Secret scan and review,Blocking,Ready,,
+Approval,User approves Blueprint,Status changed to approved_for_schema_apply,Blocking,Passed,User,Approved 2026-07-21; next status is approved_for_schema_apply

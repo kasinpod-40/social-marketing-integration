@@ -1,0 +1,60 @@
+Table,Order,Field,Lark Type,Required,Nullable,Key role,Source path / metric,Definition,Time / zero / null semantics,Example,Relation / Options,Import note
+RAW_Instagram_Accounts,1,raw_ig_account_key,Text,Yes,No,Primary + Stable,instagram:{canonical_ig_user_id},Stable raw IG account key,Never null,instagram:INSTAGRAM_USER_ID,,Primary field
+RAW_Instagram_Accounts,2,canonical_ig_user_id,Text,Yes,No,Identity,/me.id,Canonical account ID only from /me,Never overwrite from insights id,INSTAGRAM_USER_ID,,
+RAW_Instagram_Accounts,3,insight_resource_alias,Text,No,Yes,Audit alias,insights[].id prefix,Raw resource alias for diagnostics,Must not become canonical ID,INSTAGRAM_INSIGHT_ALIAS,,
+RAW_Instagram_Accounts,4,username,Text,Yes,No,Not a key,username,IG username,Latest value,thanakirinfarm,,
+RAW_Instagram_Accounts,5,account_type,SingleSelect,Yes,No,Classification,account_type,Professional account type,Exact supported value,MEDIA_CREATOR,BUSINESS|MEDIA_CREATOR,
+RAW_Instagram_Accounts,6,media_count,Number,No,Yes,Metric,media_count,Current media count,0 is valid,1,,
+RAW_Instagram_Accounts,7,followers_count,Number,No,Yes,Metric,followers_count,Current followers,0 is valid,4,,
+RAW_Instagram_Accounts,8,follows_count,Number,No,Yes,Metric,follows_count,Current follows,0 is valid,7,,
+RAW_Instagram_Accounts,9,fetched_at,DateTime,Yes,No,Audit,connector clock,Fetch instant,UTC,,,
+RAW_Instagram_Accounts,10,source_payload_json,LongText,Yes,No,Audit,/me object,Redacted raw payload,No token,,,JSON
+RAW_Instagram_Accounts,11,sync_run_id,Text,Yes,No,Audit,runtime,Sync correlation,Never null,,MKT_Sync_Log,
+RAW_Instagram_Media,1,raw_ig_media_key,Text,Yes,No,Primary + Stable,instagram:{canonical_ig_user_id}:{source_media_id},Stable raw media key,Never null,instagram:2786:INSTAGRAM_MEDIA_ID,,Primary field
+RAW_Instagram_Media,2,canonical_ig_user_id,Text,Yes,No,Identity,configured /me id,Parent canonical account,Never null,INSTAGRAM_USER_ID,RAW_Instagram_Accounts,
+RAW_Instagram_Media,3,source_media_id,Text,Yes,No,Identity,id,Instagram Media ID,Text,INSTAGRAM_MEDIA_ID,,
+RAW_Instagram_Media,4,media_type,SingleSelect,Yes,No,Classification,media_type,Media object type,Exact source value,IMAGE,IMAGE|VIDEO|CAROUSEL_ALBUM,
+RAW_Instagram_Media,5,media_product_type,SingleSelect,No,Yes,Classification,media_product_type,Placement/product type,Null/unknown preserved,FEED,FEED|REELS|STORY|AD|UNKNOWN,
+RAW_Instagram_Media,6,caption,LongText,No,Yes,Not a key,caption,Media caption,Null valid,,,
+RAW_Instagram_Media,7,permalink,URL,No,Yes,Not a key,permalink,Public media link,Null valid,,,
+RAW_Instagram_Media,8,media_url,URL,No,Yes,Raw transient,media_url,Source media URL,May expire; not identity,,,Do not rely for idempotency
+RAW_Instagram_Media,9,thumbnail_url,URL,No,Yes,Raw transient,thumbnail_url,Thumbnail for video,May expire,,,
+RAW_Instagram_Media,10,timestamp,DateTime,Yes,No,Source time,timestamp,Publish timestamp,Store exact source instant,46219.307858796295,,
+RAW_Instagram_Media,11,like_count,Number,No,Yes,Metric,like_count,Current lifetime likes,0 is valid,4,,
+RAW_Instagram_Media,12,comments_count,Number,No,Yes,Metric,comments_count,Current lifetime comments,0 is valid,0,,
+RAW_Instagram_Media,13,children_count,Number,No,Yes,Metric,children.data length,Carousel child count,Null if not fetched/unsupported,,,
+RAW_Instagram_Media,14,fetched_at,DateTime,Yes,No,Audit,connector clock,Fetch instant UTC,Exact instant,,,
+RAW_Instagram_Media,15,source_payload_json,LongText,Yes,No,Audit,media object,Redacted raw payload,No token,,,JSON
+RAW_Instagram_Media,16,sync_run_id,Text,Yes,No,Audit,runtime,Sync correlation,Never null,,MKT_Sync_Log,
+RAW_Instagram_Media_Insights,1,raw_ig_media_insight_key,Text,Yes,No,Primary + Stable,instagram:{canonical_ig_user_id}:{source_media_id_or_account}:{metric_name}:{period_or_timeframe}:{source_end_time_or_request_window},Stable metric/source-window key,Never null,,,Primary field
+RAW_Instagram_Media_Insights,2,canonical_ig_user_id,Text,Yes,No,Identity,/me.id,Canonical IG account ID,Never use insights prefix,INSTAGRAM_USER_ID,RAW_Instagram_Accounts,
+RAW_Instagram_Media_Insights,3,source_media_id,Text,Yes,No,Identity,media id or account sentinel,Media ID; account rows may use canonical ID,Text,,,
+RAW_Instagram_Media_Insights,4,metric_name,Text,Yes,No,Identity,name,Exact metric name,Do not rename in RAW,reach,,
+RAW_Instagram_Media_Insights,5,period,Text,No,Yes,Query contract,period,Requested/returned period,Null valid for lifetime metrics,,,
+RAW_Instagram_Media_Insights,6,timeframe,Text,No,Yes,Query contract,timeframe,Requested timeframe when supported,Null valid,,,
+RAW_Instagram_Media_Insights,7,response_shape,SingleSelect,Yes,No,Contract,adapter,Observed response shape,Never assume uniform shape,total_value,values|total_value|other,
+RAW_Instagram_Media_Insights,8,value_number,Number,No,Yes,Metric,values[].value or total_value.value,Numeric metric value,0 is real; null only missing/unsupported,0,,
+RAW_Instagram_Media_Insights,9,value_json,LongText,No,Yes,Metric raw,non-scalar value,Preserve structured metric,Null valid,,,JSON
+RAW_Instagram_Media_Insights,10,end_time_raw,Text,No,Yes,Source time,values[].end_time,Exact Meta source end_time,Keep raw before timezone derive,2026-07-17T07:00:00+0000,,
+RAW_Instagram_Media_Insights,11,request_since,Text,No,Yes,Query window,since,Exact request lower bound,Audit only,2026-07-16,,
+RAW_Instagram_Media_Insights,12,request_until,Text,No,Yes,Query window,until,Exact request upper bound,Audit only,2026-07-21,,
+RAW_Instagram_Media_Insights,13,snapshot_date,Date,Yes,No,Derived date,end_time/fetched_at in Asia/Bangkok,Canonical reporting date,Bangkok date; 0 rows retained,2026-07-17,,
+RAW_Instagram_Media_Insights,14,fetched_at,DateTime,Yes,No,Audit,connector clock,Fetch instant UTC,Exact instant,,,
+RAW_Instagram_Media_Insights,15,source_payload_json,LongText,Yes,No,Audit,metric object,Redacted raw metric payload,No token,,,JSON
+RAW_Instagram_Media_Insights,16,sync_run_id,Text,Yes,No,Audit,runtime,Sync correlation,Never null,,MKT_Sync_Log,
+RAW_Instagram_Account_Insights,1,raw_ig_account_insight_key,Text,Yes,No,Primary + Stable,instagram:{canonical_ig_user_id}:{source_account_id_or_account}:{metric_name}:{period_or_timeframe}:{source_end_time_or_request_window},Stable metric/source-window key,Never null,,,Primary field
+RAW_Instagram_Account_Insights,2,canonical_ig_user_id,Text,Yes,No,Identity,/me.id,Canonical IG account ID,Never use insights prefix,INSTAGRAM_USER_ID,RAW_Instagram_Accounts,
+RAW_Instagram_Account_Insights,3,source_account_id,Text,No,Yes,Identity,media id or account sentinel,Media ID; account rows may use canonical ID,Text,,,
+RAW_Instagram_Account_Insights,4,metric_name,Text,Yes,No,Identity,name,Exact metric name,Do not rename in RAW,reach,,
+RAW_Instagram_Account_Insights,5,period,Text,No,Yes,Query contract,period,Requested/returned period,Null valid for lifetime metrics,,,
+RAW_Instagram_Account_Insights,6,timeframe,Text,No,Yes,Query contract,timeframe,Requested timeframe when supported,Null valid,,,
+RAW_Instagram_Account_Insights,7,response_shape,SingleSelect,Yes,No,Contract,adapter,Observed response shape,Never assume uniform shape,total_value,values|total_value|other,
+RAW_Instagram_Account_Insights,8,value_number,Number,No,Yes,Metric,values[].value or total_value.value,Numeric metric value,0 is real; null only missing/unsupported,0,,
+RAW_Instagram_Account_Insights,9,value_json,LongText,No,Yes,Metric raw,non-scalar value,Preserve structured metric,Null valid,,,JSON
+RAW_Instagram_Account_Insights,10,end_time_raw,Text,No,Yes,Source time,values[].end_time,Exact Meta source end_time,Keep raw before timezone derive,2026-07-17T07:00:00+0000,,
+RAW_Instagram_Account_Insights,11,request_since,Text,No,Yes,Query window,since,Exact request lower bound,Audit only,2026-07-16,,
+RAW_Instagram_Account_Insights,12,request_until,Text,No,Yes,Query window,until,Exact request upper bound,Audit only,2026-07-21,,
+RAW_Instagram_Account_Insights,13,snapshot_date,Date,Yes,No,Derived date,end_time/fetched_at in Asia/Bangkok,Canonical reporting date,Bangkok date; 0 rows retained,2026-07-17,,
+RAW_Instagram_Account_Insights,14,fetched_at,DateTime,Yes,No,Audit,connector clock,Fetch instant UTC,Exact instant,,,
+RAW_Instagram_Account_Insights,15,source_payload_json,LongText,Yes,No,Audit,metric object,Redacted raw metric payload,No token,,,JSON
+RAW_Instagram_Account_Insights,16,sync_run_id,Text,Yes,No,Audit,runtime,Sync correlation,Never null,,MKT_Sync_Log,

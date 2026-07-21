@@ -1,0 +1,51 @@
+Source entity,Source field / metric,Destination field,Transform,Null/zero/date rule,Review note
+Facebook Page,RAW_Facebook_Pages.source_page_id,MKT_Accounts.external_account_id,Direct,Text ID,Canonical Page ID
+Facebook Page,facebook:{customer accountKey},MKT_Accounts.account_key,Formula,Stable across UAT/Production,Do not use source Page ID as customer accountKey
+Facebook Page,page_name,MKT_Accounts.account_name,Direct,Latest value,
+Facebook Post,RAW_Facebook_Posts.source_post_id,MKT_Content.external_content_id,Direct,Text,Composite Meta ID preserved
+Facebook Post,facebook:{accountKey}:{source_post_id},MKT_Content.content_key,Formula,Stable key,
+Facebook Post,message,MKT_Content.title_or_caption,Direct,Null valid,
+Facebook Post,created_time,MKT_Content.published_at,Direct,Exact source timestamp,
+Facebook Post,permalink_url,MKT_Content.content_url,Direct,Null valid,
+Facebook Post insight,post_media_view,MKT_Content_Daily.views,Direct snapshot,0 real,Lifetime/cumulative snapshot at Bangkok snapshot_date
+Facebook Post insight,post_total_media_view_unique,MKT_Content_Daily.reach,Direct snapshot,0 real,
+Facebook Post insight,reactions_count,MKT_Content_Daily.likes_or_reactions,Direct snapshot,0 real,Preserve source metric provenance
+Facebook Post insight,comments_count,MKT_Content_Daily.comments,Direct snapshot,0 real,
+Facebook Post insight,shares_count,MKT_Content_Daily.shares,Direct snapshot,0 real,
+Facebook Page insight,page_media_view,MKT_Account_Daily.views,Direct daily,0 real,Source day/end_time retained
+Facebook Page insight,page_total_media_view_unique,MKT_Account_Daily.unique_views_or_reach,Direct daily,0 real,
+Facebook Page insight,page_daily_follows_unique,MKT_Account_Daily.follows,Direct daily,0 real,
+Facebook Page insight,page_daily_unfollows_unique,MKT_Account_Daily.unfollows,Direct daily,0 real,
+Instagram Account,/me.id,MKT_Accounts.external_account_id,Direct,Canonical only,Never replace with insights resource prefix
+Instagram Account,instagram:{accountKey},MKT_Accounts.account_key,Formula,Stable across UAT/Production,
+Instagram Media,source_media_id,MKT_Content.external_content_id,Direct,Text,
+Instagram Media,instagram:{accountKey}:{media_id},MKT_Content.content_key,Formula,Stable key,
+Instagram Media,caption,MKT_Content.title_or_caption,Direct,Null valid,
+Instagram Media,timestamp,MKT_Content.published_at,Direct,Exact source timestamp,
+Instagram Media,media_type + media_product_type,MKT_Content.content_type,Rule,IMAGE/VIDEO/CAROUSEL/REEL/STORY,Unknown stays other/null per approved options
+Instagram Media insight,reach,MKT_Content_Daily.reach,Direct snapshot,0 real,Lifetime aggregate may use fetched_at Bangkok date
+Instagram Media insight,likes or like_count,MKT_Content_Daily.likes,Coalesce approved sources,0 real,Avoid double-counting; detail count and insight should reconcile
+Instagram Media insight,comments or comments_count,MKT_Content_Daily.comments,Coalesce approved sources,0 real,
+Instagram Media insight,saved,MKT_Content_Daily.saves,Direct snapshot,0 real,
+Instagram Media insight,shares,MKT_Content_Daily.shares,Direct snapshot,0 real,
+Instagram Media insight,total_interactions,MKT_Content_Daily.total_interactions,Direct snapshot,0 real,
+Instagram Account insight,views,MKT_Account_Daily.views,Aggregate/daily mapping,0 real,Shape may be total_value or values
+Instagram Account insight,reach,MKT_Account_Daily.unique_views_or_reach,Daily time series,0 real,Use values[].end_time
+Instagram Account insight,accounts_engaged,MKT_Account_Daily.accounts_engaged,Aggregate mapping,0 real,Window semantics retained
+Instagram Account insight,total_interactions,MKT_Account_Daily.total_interactions,Aggregate mapping,0 real,Window semantics retained
+Meta Ad Account,source_ad_account_id,MKT_Ads_Accounts.external_account_id,Direct,Text,Canonical model platform=meta_ads
+Meta Ad Account,meta_ads:{source_ad_account_id},MKT_Ads_Accounts.ads_account_key,Formula,Stable,Source account ID is account-scoped
+Meta Campaign,source_campaign_id,MKT_Ads_Campaigns.external_campaign_id,Direct,Text,
+Meta Campaign,meta_ads:{account_id}:campaign:{campaign_id},MKT_Ads_Campaigns.ads_campaign_key,Formula,Stable,
+Meta Ad Set,source_ad_set_id,MKT_Ads_AdGroups.external_ad_group_id,Direct,Text,Canonical AdGroup maps Meta Ad Set
+Meta Ad Set,meta_ads:{account_id}:ad_group:{ad_set_id},MKT_Ads_AdGroups.ads_ad_group_key,Formula,Stable,Canonical entity_type uses ad_group
+Meta Ad,source_ad_id,MKT_Ads_Ads.external_ad_id,Direct,Text,
+Meta Creative,source_creative_id,MKT_Ads_Creatives.external_creative_id,Direct,Text,Ad and Creative remain distinct
+Meta Ads insight,date_start,MKT_Ads_Daily.metric_date,Direct,Account timezone day,time_increment=1 required for daily
+Meta Ads insight,publisher_platform,MKT_Ads_Daily.ad_channel,Rule,facebook→facebook_ads; instagram→instagram_ads,No separate Ads connectors
+Meta Ads insight,spend_decimal_raw,MKT_Ads_Daily.spend_micros,"Safe decimal×1,000,000",0 real; null missing,Reject unsafe/negative/overflow
+Meta Ads insight,impressions,MKT_Ads_Daily.impressions,Direct,0 real,
+Meta Ads insight,reach,MKT_Ads_Daily.reach,Direct,0 real; null unsupported,
+Meta Ads insight,clicks,MKT_Ads_Daily.clicks,Direct,0 real,Definition recorded
+Meta Ads insight,approved action_type,MKT_Ads_Daily.conversions,Filtered sum,Null until action mapping approved,Do not sum all actions
+Meta Ads insight,approved action value,MKT_Ads_Daily.conversion_value_micros,Filtered safe decimal,Null until action mapping approved,Same currency

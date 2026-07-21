@@ -1,0 +1,2 @@
+approved_for_schema_apply: 2026-07-21
+connector_implementation: pending_schema_verification

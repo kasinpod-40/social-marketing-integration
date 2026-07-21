@@ -1,0 +1,23 @@
+Contract type,Name,Formula / Pattern,Source of truth,Null policy,Guard / Note,Example
+Organic Key,facebook account_key,facebook:{configured_accountKey},Customer profile,Never null,Configured customer key; source Page ID remains external ID,facebook:chemistry_k
+Organic Key,facebook content_key,facebook:{configured_accountKey}:{post_id},Canonical Organic,Never null,Post ID kept as Text,facebook:chemistry_k:1144_999
+Organic Key,instagram account_key,instagram:{configured_accountKey},Customer profile,Never null,Canonical /me ID stored separately,instagram:chemistry_k
+Organic Key,instagram content_key,instagram:{configured_accountKey}:{media_id},Canonical Organic,Never null,Media ID kept as Text,instagram:chemistry_k:1793
+Organic Key,account_daily_key,{account_key}:{metric_date},Canonical account daily,Never null,One row/account/day,instagram:chemistry_k:2026-07-20
+Organic Key,content_daily_key,{content_key}:{snapshot_date},Canonical content daily,Never null,Lifetime snapshot date derives from Bangkok fetched/end time,
+Identity,Instagram canonical ID,/me.id only,Instagram /me,Never null,insights[].id prefix is alias only,INSTAGRAM_USER_ID
+Time,Meta raw end_time,Store exact source string,Meta response,Null for aggregate/lifetime,Derive Bangkok date only in separate field,2026-07-17T07:00:00+0000
+Time,Organic snapshot_date,Asia/Bangkok date from source end_time or fetched_at,Adapter,Never null in canonical daily,Do not overwrite raw source time,2026-07-17
+Zero/null,Numeric zero,Persist 0,Meta response,0 is valid,Never convert zero to null,0
+Zero/null,Unsupported/missing metric,Persist null/no row per contract,Meta response,Null,Do not fabricate zero,
+Response,Instagram time-series,values[].value + values[].end_time,Metric response,Rows may contain 0,Multi-metric response shapes can differ,
+Response,Instagram aggregate,total_value.value,Metric response,0 valid,No end_time unless response provides it,
+Status,NOT_TESTABLE_YET,Coverage unavailable due source inventory,UAT evidence,N/A,Not a failure; must remain explicit,Reels
+Status,valid_no_data,Authorized endpoint returns data: [],Meta Ads preflight,N/A,Valid empty source; no fake success data,Meta Ads
+Ads Key,entity_key,{platform}:{account_id}:{entity_type}:{external_entity_id},Canonical Ads v2,Never null,Meta Ad Set maps canonical ad_group,
+Ads Key,ads_daily_key,{entity_key}:{metric_date}:{ad_channel?},Canonical Ads v2,Never null,Include breakdown identity when multiple placement rows retained,
+Money,spend_micros,"Exact decimal string × 1,000,000",Safe decimal parser,Null missing; 0 valid,No JS float source parsing,100.25→100250000
+Derived,ctr,clicks / impressions,Canonical components,Null denominator 0/missing,Ratio 0–1,
+Derived,cpc,"spend_micros / clicks / 1,000,000",Canonical components,Null denominator 0/missing,Currency unit,
+Derived,cpm,"spend_micros / impressions ×1000 /1,000,000",Canonical components,Null denominator 0/missing,"Currency per 1,000",
+Derived,actual_roas,conversion_value_micros / spend_micros,Approved conversion mapping,Null spend 0/missing,Never map target ROAS,
