@@ -27,7 +27,8 @@ jobs:
           cat .github/shared-preview.patch.part00 \
               .github/shared-preview.patch.part01 \
               .github/shared-preview.patch.part02 \
-              .github/shared-preview.patch.part03 > /tmp/shared-preview.patch
+              .github/shared-preview.patch.part03 \
+              .github/shared-preview.patch.part04 > /tmp/shared-preview.patch
           sha256sum /tmp/shared-preview.patch
           cp .github/workflows/apply-shared-preview.yml /tmp/apply-shared-preview.yml
 
