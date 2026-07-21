@@ -2,10 +2,11 @@
 
 ## Status
 
-- **Task status:** `local_gates_passed_pending_remote_ci`
+- **Task status:** `remote_ci_passed_ready_for_review`
 - **Accepted baseline:** `ff74c373b57e5d4dc9e2088cdbbd5d2e4d68d194`
 - **Merged review:** `PR #8`
 - **Working branch:** `work/shared-table-dev-schema-preview`
+- **Pull request:** `PR #9`
 - **Environment:** developer-owned DEV
 - **Profile:** `dev_ft_pumkin`
 - **Live Lark mutation:** `not_authorized_not_run`
@@ -13,7 +14,7 @@
 - **Connector implementation:** `blocked_until_schema_preview_and_apply_verified`
 - **Last updated:** `2026-07-21`
 
-PR #8 locked the Shared-table + View architecture and protected `RAW_TikTok_Creator_Videos`. This task implements the next gate as a Preview-only schema planner. It may inspect live DEV schema and at most one record metadata item per reuse candidate to prove emptiness, but it cannot rename, create or update any Lark resource.
+PR #8 locked the Shared-table + View architecture and protected `RAW_TikTok_Creator_Videos`. This task implements the next gate as a Preview-only schema planner. It may inspect live DEV schema and at most one record item per reuse candidate to prove emptiness, but it cannot rename, create or update any Lark resource.
 
 ## Objective
 
@@ -98,7 +99,7 @@ npm run preview:shared-table-schema -- --base-export /path/to/export.base
 
 ## Implementation result
 
-- **Implementation status:** `local_gates_passed_pending_remote_ci`
+- **Implementation status:** `PASS_FOR_REVIEW`
 - **Schema contract:** 7 tables / 128 fields derived from approved CSV files
 - **View contract:** 17 Views derived from approved CSV
 - **Preview safety:** Apply command absent; `--apply` and `CONFIRM_WRITE=YES` rejected
@@ -113,6 +114,8 @@ npm run preview:shared-table-schema -- --base-export /path/to/export.base
 - **Repository hygiene:** passed
 - **Dependency audit:** 0 vulnerabilities
 - **Wrangler dry-run:** passed — 658.68 KiB / gzip 130.35 KiB
+- **Implementation Branch Verification:** run `29827416638` passed on head `d5844c524862d02b2f719c0e4ab2290be1c5ca55`
+- **Temporary patch/workflow files:** removed before Review
 - **Live DEV preview:** not run because local credentials are not present in this environment
 - **Live DEV mutation:** none
 - **External APIs:** none
