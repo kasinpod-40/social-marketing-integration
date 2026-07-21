@@ -1,0 +1,107 @@
+Table,Order,Field,Lark Type,Required,Nullable,Key role,Source path / metric,Definition,Time / zero / null semantics,Example,Relation / Options,Import note
+RAW_Meta_Ad_Accounts,1,raw_meta_ad_account_key,Text,Yes,No,Primary + Stable,meta_ads:{source_ad_account_id},Stable raw Ad Account key,Never null,meta_ads:META_AD_ACCOUNT_ID,,Primary field
+RAW_Meta_Ad_Accounts,2,source_ad_account_id,Text,Yes,No,Identity,id without/with act_ normalized,Canonical numeric account ID as text,Store no act_ in canonical field,META_AD_ACCOUNT_ID,,
+RAW_Meta_Ad_Accounts,3,source_ad_account_ref,Text,Yes,No,Audit identity,request edge,API request form,Exact ref,act_META_AD_ACCOUNT_ID,,
+RAW_Meta_Ad_Accounts,4,account_name,Text,No,Yes,Not a key,name,Ad account name,Null valid,Thanakirin,,
+RAW_Meta_Ad_Accounts,5,currency,Text,Yes,No,Money contract,currency,ISO 4217 account currency,Never mix currencies,THB,,
+RAW_Meta_Ad_Accounts,6,timezone_name,Text,Yes,No,Date contract,timezone_name,Ad account reporting timezone,Use for Ads metric_date,Asia/Bangkok,,
+RAW_Meta_Ad_Accounts,7,timezone_offset_hours_utc,Number,No,Yes,Audit,timezone_offset_hours_utc,Source offset snapshot,DST-sensitive; name is authority,7,,
+RAW_Meta_Ad_Accounts,8,account_status,Text,No,Yes,State,account_status,Source account status/code,Preserve raw,,,
+RAW_Meta_Ad_Accounts,9,amount_spent_raw,Text,No,Yes,Raw money,amount_spent,Source amount string/minor-unit per API contract,Do not infer until live verified,,,
+RAW_Meta_Ad_Accounts,10,fetched_at,DateTime,Yes,No,Audit,connector clock,Fetch instant,UTC,,,
+RAW_Meta_Ad_Accounts,11,source_payload_json,LongText,Yes,No,Audit,account object,Redacted raw payload,No token,,,JSON
+RAW_Meta_Ad_Accounts,12,sync_run_id,Text,Yes,No,Audit,runtime,Sync correlation,Never null,,MKT_Sync_Log,
+RAW_Meta_Campaigns,1,raw_meta_campaign_key,Text,Yes,No,Primary + Stable,meta_ads:{account_id}:campaign:{campaign_id},Stable campaign key,Never null,,,Primary field
+RAW_Meta_Campaigns,2,source_ad_account_id,Text,Yes,No,Identity,account_id,Parent account,Text,,RAW_Meta_Ad_Accounts,
+RAW_Meta_Campaigns,3,source_campaign_id,Text,Yes,No,Identity,id,Campaign ID,Text,,,
+RAW_Meta_Campaigns,4,campaign_name,Text,No,Yes,Not a key,name,Campaign name,Null valid,,,
+RAW_Meta_Campaigns,5,objective,Text,No,Yes,Classification,objective,Campaign objective,Preserve exact source value,,,
+RAW_Meta_Campaigns,6,status,Text,No,Yes,State,status,Configured status,Preserve raw,,,
+RAW_Meta_Campaigns,7,effective_status,Text,No,Yes,State,effective_status,Effective delivery status,Preserve raw,,,
+RAW_Meta_Campaigns,8,buying_type,Text,No,Yes,Classification,buying_type,Buying type,Null valid,,,
+RAW_Meta_Campaigns,9,special_ad_categories_json,LongText,No,Yes,Raw,special_ad_categories,Special categories,JSON array,,,JSON
+RAW_Meta_Campaigns,10,start_time,DateTime,No,Yes,Source time,start_time,Campaign start,Exact source,,,
+RAW_Meta_Campaigns,11,stop_time,DateTime,No,Yes,Source time,stop_time,Campaign stop,Null valid,,,
+RAW_Meta_Campaigns,12,created_time,DateTime,No,Yes,Source time,created_time,Created instant,Exact source,,,
+RAW_Meta_Campaigns,13,updated_time,DateTime,No,Yes,Source time,updated_time,Updated instant,Exact source,,,
+RAW_Meta_Campaigns,14,fetched_at,DateTime,Yes,No,Audit,connector clock,Fetch instant,UTC,,,
+RAW_Meta_Campaigns,15,source_payload_json,LongText,Yes,No,Audit,campaign object,Redacted raw payload,No token,,,JSON
+RAW_Meta_Campaigns,16,sync_run_id,Text,Yes,No,Audit,runtime,Sync correlation,Never null,,MKT_Sync_Log,
+RAW_Meta_Ad_Sets,1,raw_meta_ad_set_key,Text,Yes,No,Primary + Stable,meta_ads:{account_id}:adset:{ad_set_id},Stable Ad Set key,Never null,,,Primary field
+RAW_Meta_Ad_Sets,2,source_ad_account_id,Text,Yes,No,Identity,account_id,Parent account,Text,,RAW_Meta_Ad_Accounts,
+RAW_Meta_Ad_Sets,3,source_campaign_id,Text,Yes,No,Identity,campaign_id,Parent campaign,Text,,RAW_Meta_Campaigns,
+RAW_Meta_Ad_Sets,4,source_ad_set_id,Text,Yes,No,Identity,id,Meta Ad Set ID,Text,,,
+RAW_Meta_Ad_Sets,5,ad_set_name,Text,No,Yes,Not a key,name,Ad Set name,Null valid,,,
+RAW_Meta_Ad_Sets,6,status,Text,No,Yes,State,status,Configured status,Preserve raw,,,
+RAW_Meta_Ad_Sets,7,effective_status,Text,No,Yes,State,effective_status,Effective delivery status,Preserve raw,,,
+RAW_Meta_Ad_Sets,8,optimization_goal,Text,No,Yes,Classification,optimization_goal,Optimization goal,Preserve raw,,,
+RAW_Meta_Ad_Sets,9,billing_event,Text,No,Yes,Classification,billing_event,Billing event,Preserve raw,,,
+RAW_Meta_Ad_Sets,10,daily_budget_raw,Text,No,Yes,Raw money,daily_budget,Source budget representation,Convert only after account contract verified,,,
+RAW_Meta_Ad_Sets,11,lifetime_budget_raw,Text,No,Yes,Raw money,lifetime_budget,Source budget representation,Null valid,,,
+RAW_Meta_Ad_Sets,12,bid_strategy,Text,No,Yes,Classification,bid_strategy,Bid strategy,Preserve raw,,,
+RAW_Meta_Ad_Sets,13,targeting_json,LongText,No,Yes,Raw,targeting,Targeting specification,Sensitive business config; access-restricted,,,JSON
+RAW_Meta_Ad_Sets,14,promoted_object_json,LongText,No,Yes,Raw,promoted_object,Promoted object,JSON,,,JSON
+RAW_Meta_Ad_Sets,15,start_time,DateTime,No,Yes,Source time,start_time,Ad Set start,Exact source,,,
+RAW_Meta_Ad_Sets,16,end_time,DateTime,No,Yes,Source time,end_time,Ad Set end,Null valid,,,
+RAW_Meta_Ad_Sets,17,created_time,DateTime,No,Yes,Source time,created_time,Created instant,Exact source,,,
+RAW_Meta_Ad_Sets,18,updated_time,DateTime,No,Yes,Source time,updated_time,Updated instant,Exact source,,,
+RAW_Meta_Ad_Sets,19,fetched_at,DateTime,Yes,No,Audit,connector clock,Fetch instant,UTC,,,
+RAW_Meta_Ad_Sets,20,source_payload_json,LongText,Yes,No,Audit,ad set object,Redacted raw payload,No token,,,JSON
+RAW_Meta_Ad_Sets,21,sync_run_id,Text,Yes,No,Audit,runtime,Sync correlation,Never null,,MKT_Sync_Log,
+RAW_Meta_Ads,1,raw_meta_ad_key,Text,Yes,No,Primary + Stable,meta_ads:{account_id}:ad:{ad_id},Stable Ad key,Never null,,,Primary field
+RAW_Meta_Ads,2,source_ad_account_id,Text,Yes,No,Identity,account_id,Parent account,Text,,RAW_Meta_Ad_Accounts,
+RAW_Meta_Ads,3,source_campaign_id,Text,Yes,No,Identity,campaign_id,Parent campaign,Text,,RAW_Meta_Campaigns,
+RAW_Meta_Ads,4,source_ad_set_id,Text,Yes,No,Identity,adset_id,Parent Ad Set,Text,,RAW_Meta_Ad_Sets,
+RAW_Meta_Ads,5,source_ad_id,Text,Yes,No,Identity,id,Meta Ad ID,Text,,,
+RAW_Meta_Ads,6,source_creative_id,Text,No,Yes,Identity,creative.id,Referenced Creative ID,Null valid,,RAW_Meta_Creatives,
+RAW_Meta_Ads,7,ad_name,Text,No,Yes,Not a key,name,Ad name,Null valid,,,
+RAW_Meta_Ads,8,status,Text,No,Yes,State,status,Configured status,Preserve raw,,,
+RAW_Meta_Ads,9,effective_status,Text,No,Yes,State,effective_status,Effective delivery status,Preserve raw,,,
+RAW_Meta_Ads,10,created_time,DateTime,No,Yes,Source time,created_time,Created instant,Exact source,,,
+RAW_Meta_Ads,11,updated_time,DateTime,No,Yes,Source time,updated_time,Updated instant,Exact source,,,
+RAW_Meta_Ads,12,fetched_at,DateTime,Yes,No,Audit,connector clock,Fetch instant,UTC,,,
+RAW_Meta_Ads,13,source_payload_json,LongText,Yes,No,Audit,ad object,Redacted raw payload,No token,,,JSON
+RAW_Meta_Ads,14,sync_run_id,Text,Yes,No,Audit,runtime,Sync correlation,Never null,,MKT_Sync_Log,
+RAW_Meta_Creatives,1,raw_meta_creative_key,Text,Yes,No,Primary + Stable,meta_ads:{account_id}:creative:{creative_id},Stable Creative key,Never null,,,Primary field
+RAW_Meta_Creatives,2,source_ad_account_id,Text,Yes,No,Identity,account_id/request context,Parent account,Text,,RAW_Meta_Ad_Accounts,
+RAW_Meta_Creatives,3,source_creative_id,Text,Yes,No,Identity,id,Meta Creative ID,Text,,,
+RAW_Meta_Creatives,4,creative_name,Text,No,Yes,Not a key,name,Creative name,Null valid,,,
+RAW_Meta_Creatives,5,object_story_id,Text,No,Yes,Source linkage,object_story_id,Page story/post linkage,Null for some dark/dynamic creatives,,,
+RAW_Meta_Creatives,6,effective_object_story_id,Text,No,Yes,Source linkage,effective_object_story_id,Effective story linkage,Null valid,,,
+RAW_Meta_Creatives,7,effective_instagram_media_id,Text,No,Yes,Source linkage,effective_instagram_media_id,Effective IG media linkage,Null valid,,,
+RAW_Meta_Creatives,8,thumbnail_url,URL,No,Yes,Raw transient,thumbnail_url,Preview thumbnail,May expire,,,
+RAW_Meta_Creatives,9,image_url,URL,No,Yes,Raw transient,image_url,Creative image URL,May expire,,,
+RAW_Meta_Creatives,10,video_id,Text,No,Yes,Source linkage,video_id/object_story_spec,Video asset ID,Text,,,
+RAW_Meta_Creatives,11,object_story_spec_json,LongText,No,Yes,Raw,object_story_spec,Creative story specification,JSON; access-restricted,,,JSON
+RAW_Meta_Creatives,12,asset_feed_spec_json,LongText,No,Yes,Raw,asset_feed_spec,Dynamic creative assets,JSON; may be large,,,JSON
+RAW_Meta_Creatives,13,url_tags,LongText,No,Yes,Raw,url_tags,Tracking tags,Sensitive business config,,,
+RAW_Meta_Creatives,14,status,Text,No,Yes,State,status,Creative status if returned,Null valid,,,
+RAW_Meta_Creatives,15,fetched_at,DateTime,Yes,No,Audit,connector clock,Fetch instant,UTC,,,
+RAW_Meta_Creatives,16,source_payload_json,LongText,Yes,No,Audit,creative object,Redacted raw payload,No token,,,JSON
+RAW_Meta_Creatives,17,sync_run_id,Text,Yes,No,Audit,runtime,Sync correlation,Never null,,MKT_Sync_Log,
+RAW_Meta_Ads_Insights,1,raw_meta_ads_insight_key,Text,Yes,No,Primary + Stable,meta_ads:{account_id}:{level}:{entity_id}:{date_start}:{publisher_platform}:{platform_position}:{device_platform},One row per entity/date/breakdown,Never null,,,Primary field
+RAW_Meta_Ads_Insights,2,source_ad_account_id,Text,Yes,No,Identity,account_id,Ad account ID,Text,,RAW_Meta_Ad_Accounts,
+RAW_Meta_Ads_Insights,3,insight_level,SingleSelect,Yes,No,Identity,request level,Reporting grain,Approved values only,ad,account|campaign|adset|ad,
+RAW_Meta_Ads_Insights,4,source_entity_id,Text,Yes,No,Identity,id for selected level,Entity at reporting grain,Text,,,
+RAW_Meta_Ads_Insights,5,source_campaign_id,Text,No,Yes,Identity,campaign_id,Campaign ID,Null at account level,,RAW_Meta_Campaigns,
+RAW_Meta_Ads_Insights,6,source_ad_set_id,Text,No,Yes,Identity,adset_id,Ad Set ID,Null above adset level,,RAW_Meta_Ad_Sets,
+RAW_Meta_Ads_Insights,7,source_ad_id,Text,No,Yes,Identity,ad_id,Ad ID,Null above ad level,,RAW_Meta_Ads,
+RAW_Meta_Ads_Insights,8,date_start,Date,Yes,No,Source date,date_start,Meta reporting day start,Use account timezone,2026-07-20,,
+RAW_Meta_Ads_Insights,9,date_stop,Date,Yes,No,Source date,date_stop,Meta reporting day stop,For time_increment=1 normally same day,2026-07-20,,
+RAW_Meta_Ads_Insights,10,publisher_platform,Text,No,Yes,Breakdown,publisher_platform,Facebook/Instagram/etc. placement family,Null when no breakdown,,,
+RAW_Meta_Ads_Insights,11,platform_position,Text,No,Yes,Breakdown,platform_position,Placement position,Preserve unknown values,,,
+RAW_Meta_Ads_Insights,12,device_platform,Text,No,Yes,Breakdown,device_platform,Device platform,Null valid,,,
+RAW_Meta_Ads_Insights,13,currency,Text,Yes,No,Money contract,account currency,ISO currency,Never mix currencies,THB,,
+RAW_Meta_Ads_Insights,14,spend_decimal_raw,Text,No,Yes,Raw money,spend,Exact decimal string from API,0 is valid; convert safely to micros,0.00,,
+RAW_Meta_Ads_Insights,15,impressions,Number,No,Yes,Metric,impressions,Delivered impressions,0 is valid,0,,
+RAW_Meta_Ads_Insights,16,reach,Number,No,Yes,Metric,reach,Unique reach,0 is valid; null unsupported,0,,
+RAW_Meta_Ads_Insights,17,clicks,Number,No,Yes,Metric,clicks,Meta clicks definition,0 is valid,0,,
+RAW_Meta_Ads_Insights,18,inline_link_clicks,Number,No,Yes,Metric,inline_link_clicks,Inline link clicks,0 is valid,0,,
+RAW_Meta_Ads_Insights,19,actions_json,LongText,No,Yes,Raw metric,actions,Action list by action_type,Empty/absent differs from 0,,,JSON
+RAW_Meta_Ads_Insights,20,action_values_json,LongText,No,Yes,Raw metric,action_values,Action value list,Currency semantics require approval,,,JSON
+RAW_Meta_Ads_Insights,21,conversions_json,LongText,No,Yes,Raw metric,conversions,Conversion list when requested,Do not collapse before approved mapping,,,JSON
+RAW_Meta_Ads_Insights,22,conversion_values_json,LongText,No,Yes,Raw metric,conversion_values,Conversion value list,Do not collapse before approved mapping,,,JSON
+RAW_Meta_Ads_Insights,23,attribution_setting,Text,No,Yes,Query/result context,attribution_setting/use_account_attribution_setting,Attribution contract,Audit exact setting,,,
+RAW_Meta_Ads_Insights,24,fetched_at,DateTime,Yes,No,Audit,connector clock,Fetch instant UTC,Exact instant,,,
+RAW_Meta_Ads_Insights,25,source_payload_json,LongText,Yes,No,Audit,insight row,Redacted full raw row,No token,,,JSON
+RAW_Meta_Ads_Insights,26,sync_run_id,Text,Yes,No,Audit,runtime,Sync correlation,Never null,,MKT_Sync_Log,
