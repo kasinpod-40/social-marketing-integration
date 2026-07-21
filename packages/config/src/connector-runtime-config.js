@@ -105,12 +105,12 @@ function readOptionalTextEnv(value, fieldName) {
 }
 
 /**
- * ตรวจ Field ที่ Catalog ระบุว่าจำเป็นต่อ Stable identity เฉพาะเมื่อ Connector ถูกเปิด
- * เพื่อให้ UAT profile เก็บ Live identity ไว้นอก Source และยังโหลดแบบ Fail-closed ได้ก่อน Preflight
+ * accountKey เป็น Canonical identity จึงต้องมีเสมอแม้ Connector ปิดอยู่
+ * ส่วน Live identity อื่น เช่น sourceHandle อาจเว้นได้ขณะปิด แต่ต้องมีทันทีเมื่อเปิด Connector
  */
 function validateRequiredRuntimeFields(definition, runtimeFields, enabled) {
-  if (!enabled) return;
   for (const fieldName of definition.requiredRuntimeFields) {
+    if (!enabled && fieldName !== 'accountKey') continue;
     if (!normalizeOptionalText(runtimeFields[fieldName])) {
       throw permanentError(`Missing connector runtime field ${definition.key}.${fieldName}`, {
         code: 'MKT_RUNTIME_CONFIG_INVALID',
