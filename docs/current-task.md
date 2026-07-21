@@ -118,7 +118,8 @@ npm run preview:shared-table-schema -- --base-export /actual/path/to/export.base
 - **Repository hygiene:** passed
 - **Dependency audit:** 0 vulnerabilities
 - **Wrangler dry-run:** passed — 658.68 KiB / gzip 130.35 KiB
-- **Previous Final Branch Verification:** run `29827613813` passed on head `1e43499eaff377d7aa9891fde1c27a4fba51bb1c`
+- **Implementation Branch Verification:** run `29827613813` passed on implementation head `1e43499eaff377d7aa9891fde1c27a4fba51bb1c`
+- **Live-evidence Branch Verification:** run `29830454537` passed on evidence head `d8b4fee0aa575704b8e704dc9dcf0de724da72fa`
 - **Live Preview evidence:** sanitized summary committed at `docs/shared-table-blueprint-v0.12.1/live-dev-preview-summary.md`; Table IDs and record values excluded
 - **Offline placeholder command:** `/path/to/export.base` returned expected `ENOENT`; not a Schema failure
 - **Live DEV mutation:** none
@@ -128,4 +129,4 @@ npm run preview:shared-table-schema -- --base-export /actual/path/to/export.base
 
 ## Next gate
 
-Run final Branch Verification for the documentation-only evidence commits, then review and Squash Merge PR #9. After merge, Apply design/implementation remains a separate task requiring explicit authorization before any live rename, create, Field update or View creation.
+Review and Squash Merge PR #9. After merge, Apply design/implementation remains a separate task requiring explicit authorization before any live rename, create, Field update or View creation.
