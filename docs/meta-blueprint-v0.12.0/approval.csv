@@ -1,5 +1,5 @@
 Decision area,Approved contract,Status,Approval note
-Blueprint version,v0.12.0-meta-data-model-review-candidate,Approved,Approved by user on 2026-07-21
+Blueprint version,v0.12.0-meta-data-model-approved,Approved,Approved by user on 2026-07-21
 Scope,Facebook Organic + Instagram Organic + Meta Ads,Locked,One Meta Ads connector for FB/IG placements
 DEV preflight,Facebook PASS; Instagram PASS; Meta Ads access PASS/valid_no_data,Accepted evidence,Data UAT remains pending
 Organic canonical decision,Add MKT_Account_Daily,Approved,MKT_Account_Daily approved as the canonical home for Page/Account daily metrics
