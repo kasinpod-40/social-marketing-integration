@@ -1,0 +1,29 @@
+name: Export Shared Apply Source
+
+on:
+  push:
+    branches:
+      - work/shared-table-schema-apply
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Package source
+        run: |
+          zip -qr /tmp/shared-apply-source.zip . \
+            -x '.git/*' 'node_modules/*' '.wrangler/*' '.dev.vars' 'wrangler.sync.jsonc'
+
+      - name: Upload source
+        uses: actions/upload-artifact@v4
+        with:
+          name: shared-apply-source
+          path: /tmp/shared-apply-source.zip
+          if-no-files-found: error
+          retention-days: 1
