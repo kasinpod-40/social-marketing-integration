@@ -1,100 +1,94 @@
-# Current Task — Guarded Shared-table DEV Schema Apply v0.12.3
+# Current Task — Guarded Google Ads DEV Schema Apply v0.13.0 RC1
 
 ## Status
 
-- **Task status:** `remote_ci_passed_ready_for_merge_review`
-- **Accepted baseline:** `cbc3da8e40190509ed3985e14a573d6cedbe9c32`
-- **Merged review:** `PR #9`
-- **Working branch:** `work/shared-table-schema-apply`
-- **Pull request:** `PR #10`
+- **Task status:** `implemented_draft_pr_ci_pass`
+- **Accepted baseline:** `abe2fc3fdbfc81c7c3b2480210ab3762cc42e2e6`
+- **Working branch:** `work/google-ads-schema-apply`
+- **Draft Pull Request:** `#11`
+- **Verified source head:** `7e84005b29b430073774b24539e4908b37cbf365`
+- **Verified documentation head:** `52a27728ae518f5ba1a3bba404ad5c726c442796`
 - **Environment:** developer-owned DEV
 - **Profile:** `dev_ft_pumkin`
-- **Apply implementation:** `approved_and_implemented_for_review`
-- **Live Lark mutation:** `not_authorized_not_run`
-- **Connector implementation:** `blocked_until_live_apply_and_zero_drift_verified`
-- **Last updated:** `2026-07-21`
-
-PR #9 merged the Read-only Preview and recorded a successful live DEV plan: five verified-empty tables can be reused in place, two tables are genuinely missing, all Primary metadata is authoritative, and there are no conflicts, warnings or protected-table actions. The user then authorized development of a separate Guarded Apply task. This authorization covers implementation and review only; an exact fresh authorization is still required before running the live Apply command.
+- **Data model:** approved workbook `Social_MKT_Data_Hub_Google_Ads_Blueprint_v0.13.0_RC1.xlsx`
+- **Implementation:** `complete_source_only`
+- **Live Lark mutation:** `blocked_pending_lark_scope_release_meta_zero_drift_decisions_and_fresh_authorization`
+- **Connector / Worker / Schedule:** `out_of_scope_disabled`
+- **Last updated:** `2026-07-22`
 
 ## Objective
 
-Implement a fail-closed, resumable and idempotent DEV-only Apply for the approved seven-table Shared-table contract while preserving every existing Table ID selected for reuse and guaranteeing zero mutation against `RAW_TikTok_Creator_Videos`.
+Implement a fail-closed, resumable and idempotent Schema-only Preview/Apply workflow for the approved Google Ads Blueprint. The workflow creates the 13 Google-specific RAW tables and `MKT_Ads_AssetGroups`, reuses the existing Canonical Ads tables without duplication, adds only missing compatible fields/options, creates approved Relations/Views after every Table ID is known, and requires final live read-back with zero drift.
 
-## In scope
+## Implemented scope
 
-- add a separate `setup:shared-table-schema` Preview command and confirmation-gated Apply command;
-- rerun a fresh live Preview immediately before the first write;
-- validate the entire plan against the approved seven-table/128-field/17-View contract;
-- rename five verified-empty Planned Raw tables in place, preserving their Table IDs;
-- rename the five existing Text Primary fields in place, preserving their Field IDs and Primary role;
-- add/update only approved Fields;
-- create only `MKT_Account_Daily` and `MKT_Ads_Ads`;
-- create and configure the 17 approved filtered Views through the existing live-verified View resolver;
-- record confirmed progress when a later action fails so a rerun can reconcile safely;
-- rerun Schema and View Preview after Apply and require absolute zero drift;
-- return Table-ID environment updates to the local operator without committing them;
-- update task, Project Brain, README, Changelog and Blueprint documentation;
-- run full Repository gates and remote PR CI.
+- sanitized Google Ads schema metadata derived from the approved workbook;
+- exact validation of 13 RAW tables, 208 RAW fields, one new Canonical table and 44 Canonical definitions/extensions;
+- one Primary Text field first in every RAW table and Text enforcement for Google Ads IDs;
+- logical Lark table mappings for all 13 RAW tables and `MKT_Ads_AssetGroups`, with placeholders only;
+- separate always-read-only Preview and exact-confirmation guarded Apply commands;
+- DEV/profile fail-closed guard for `development` + `dev_ft_pumkin` only;
+- fresh live Preview before the first write;
+- Meta/shared dependency gate requiring the final shared table names and rejecting the five legacy pre-Meta names;
+- Canonical Ads v2 compatibility gate for 63 required core fields without creating, renaming or type-mutating the core;
+- creation restricted to the 13 Google RAW tables and `MKT_Ads_AssetGroups`;
+- reuse of `MKT_Ads_Accounts`, `MKT_Ads_Campaigns`, `MKT_Ads_AdGroups`, `MKT_Ads_Ads`, `MKT_Ads_Creatives` and `MKT_Ads_Daily`;
+- add-only compatible Canonical extensions and Select options while retaining existing option IDs/values;
+- explicit blocking decision for `google_other_ads` when shared `google_other` already exists;
+- seven declared Link fields, including many-to-many `creative_links`, created only after source/target Table IDs resolve;
+- 19 physical Views: six workbook Views plus 13 table-scoped `Google Ads RAW Errors` Views;
+- sequential writes, typed partial-progress errors and idempotent rerun recovery;
+- final Schema/Relation/View read-back requiring zero remaining drift;
+- logical config key → live Lark Table ID output for ignored local config;
+- non-blocking Lark UI review for the rolling Last-30-days date filter;
+- project-brain design record at `docs/project-brain/google-ads-schema-apply-v0.13.0-rc1.md`.
 
-## Out of scope
+## Out of scope and unchanged
 
-- running the live Lark Apply while PR #10 is under implementation/review;
-- deleting a Table, Field, View, Select option or Record;
-- writing, updating or deleting Business records;
-- changing `RAW_TikTok_Creator_Videos` in any way;
-- Facebook, Instagram, Meta Ads, TikTok Ads or Google Ads connector implementation/activation;
-- source Platform API calls;
-- Cloudflare deployment, D1 migration, Queue message or schedule changes;
-- advertisement creation, activation or spend;
-- WooCommerce/Chatwoot live access;
-- UAT or Production mutation.
+- live Lark Apply before the new Lark permission version is active and the user gives a new exact authorization;
+- Google Ads connector, Manager Script changes, Worker endpoint, Queue job, D1 migration or Schedule activation;
+- Google Ads API/GAQL calls or Live data UAT;
+- creating, activating or spending on advertisements;
+- reading/writing/updating/deleting Business records;
+- deleting/renaming existing Canonical tables or fields;
+- changing an existing field type automatically;
+- changing `RAW_TikTok_Creator_Videos` or another protected external source;
+- UAT or Production mutation;
+- committing credentials, developer token, OAuth secret/token, password, authorization header, billing data or real Lark Table IDs.
+
+## Locked data contract
+
+1. Google-specific RAW tables remain separate from `RAW_Ads_Entities` and `RAW_Ads_Daily`: the former preserve exact resource/query contracts; the latter remain normalized shared adapter outputs.
+2. Ad, reusable Asset/Creative and Performance Max Asset Group are separate entities.
+3. Ad ↔ Asset is many-to-many through `RAW_Google_Ads_Ad_Assets` and Canonical `creative_links`.
+4. Performance Max Asset Group must never be normalized as Ad Group.
+5. Money source of truth is integer micros; divide by 1,000,000 only in display/normalization.
+6. Daily date uses `segments.date` in the Google Ads account timezone.
+7. Explicit source zero remains zero; only unsupported/unreturned fields are null.
+8. `segment_key != all` remains RAW-only for Canonical V1.
+9. Conversions and All conversions stay separate.
+10. Conversion Actions remain separate until an approved conversion set exists.
+11. `RAW_Google_Ads_Account_Links.link_status` is `SingleSelect` because the approved option set is controlled.
+12. Formula expressions remain metadata hints in this Schema task; future calculation must be blank-aware and preserve explicit zero.
+13. `google_other_ads` versus existing `google_other` is a blocking semantic decision; Apply does not add both blindly.
+14. Only the seven physical Link fields explicitly declared in `03_Canonical_Extensions` are created; undeclared `MKT_Ads_Daily` Link names are not invented.
+15. The logical cross-table RAW error View is implemented as 13 table-scoped physical Views.
 
 ## Locked execution contract
 
-1. `npm run setup:shared-table-schema` is always Read-only, even if confirmation variables remain in the Shell.
-2. Apply requires all of the following in the same invocation:
-   - the dedicated `:apply` npm script, which supplies `--apply`;
-   - `CONFIRM_WRITE=YES`;
-   - `CONFIRM_SHARED_TABLE_SCHEMA=YES`.
-3. Apply is allowed only when runtime resolves exactly to `MKT_ENV=development` and `MKT_CUSTOMER_PROFILE=dev_ft_pumkin`.
-4. A fresh Preview must have zero conflicts, warnings and manual blockers before the first write.
-5. The protected TikTok Native table must be found exactly once and have zero planned actions.
-6. Every reuse candidate must still resolve to the expected table, remain empty before rename and preserve its Table ID.
-7. Only approved action kinds and contract resources may run; no implicit merge, delete or Record action exists.
-8. Schema writes run sequentially and expose only confirmed progress on failure.
-9. Create operations use idempotent reconciliation on rerun; ambiguous/partial View work is recovered by name and current property.
-10. Final Schema and View verification must have zero remaining actions, conflicts, warnings and manual blockers.
-11. Real Table IDs remain in ignored `.dev.vars`/`wrangler.sync.jsonc` only and are never committed.
-12. Table rename uses the official Lark Base v3 `PATCH .../tables/:table_id` contract and requires the app scope `base:table:update`.
-
-## Expected first live plan
-
-The most recent Read-only live DEV Preview reported:
-
-- 5 table renames;
-- 5 Primary-field renames;
-- 93 Field creates;
-- 1 Field-description update;
-- 2 table creates;
-- 17 View creates;
-- 0 conflicts, warnings, manual blockers, protected actions, deletes and Record writes.
-
-These counts are evidence, not a bypass. The Apply command recalculates the live plan and stops before writing if the safety contract is no longer satisfied.
-
-## Acceptance criteria
-
-1. Preview remains Read-only and cannot be converted to Apply by ambient environment variables.
-2. Apply fails unless both confirmation variables and `--apply` are present.
-3. DEV/profile guard rejects UAT and Production before creating a Lark client write plan.
-4. The official Table rename request preserves the current Table ID.
-5. A non-empty reuse candidate, missing/ambiguous protected table, duplicate target, field conflict or missing reuse slot blocks before the first write.
-6. New table creation is limited to `MKT_Account_Daily` and `MKT_Ads_Ads`.
-7. `RAW_TikTok_Creator_Videos` receives zero Schema and Record actions.
-8. Existing shared View resolver converts field names and Select names to live IDs and verifies filters idempotently.
-9. Successful Apply rerun performs zero writes.
-10. A failure after confirmed writes returns accurate progress and a rerun completes without duplicating tables or Views.
-11. Final verification is zero drift and reports no delete/Record write.
-12. Full Unit/Integration, Workers-runtime, Report reliability, architecture, hygiene, audit and Wrangler dry-run gates pass.
+1. `npm run setup:google-ads-schema` is always read-only, even when confirmation variables remain in the shell.
+2. Apply requires `setup:google-ads-schema:apply`, `--apply`, `CONFIRM_WRITE=YES` and `CONFIRM_GOOGLE_ADS_SCHEMA=YES` together.
+3. DEV/profile guard rejects UAT and Production before a write-capable operation.
+4. A fresh Preview must have zero conflicts, warnings and blocking manual actions before the first write.
+5. Meta/shared dependencies and the Canonical core compatibility gate must pass.
+6. Apply permits only create table, create field, add-only Select update, create Link, create View and update View actions.
+7. Rename, delete, Record write and existing field-type mutation actions remain impossible in the Google phase.
+8. Writes are sequential and confirmed progress is attached to failures.
+9. Rerun reconciles exact table/field/option/Relation/View identity and does not duplicate resources.
+10. Relations are deferred until every referenced Table ID exists.
+11. Final read-back must report zero actions, conflicts, warnings and blocking manual decisions.
+12. Real Table IDs are returned only as operator output for ignored `.dev.vars` / `wrangler.sync.jsonc`.
+13. Connector, Worker endpoint and every Google Ads Business Schedule remain disabled after Schema Apply.
 
 ## Commands
 
@@ -102,59 +96,72 @@ These counts are evidence, not a bypass. The Apply command recalculates the live
 npm ci
 npm run check
 node --test \
-  tests/application/apply-shared-table-lark-schema.test.js \
-  tests/application/preview-shared-table-lark-schema.test.js \
-  tests/application/install-lark-report-views.test.js \
-  tests/config/shared-table-lark-schema.test.js \
-  tests/config/shared-table-schema-runtime-config.test.js \
-  tests/connectors/lark-bitable-client.test.js \
-  tests/scripts/shared-table-schema-installer-mode.test.js
+  tests/config/google-ads-lark-schema.test.js \
+  tests/config/google-ads-schema-runtime-config.test.js \
+  tests/application/preview-google-ads-lark-schema.test.js \
+  tests/application/apply-google-ads-lark-schema.test.js \
+  tests/scripts/google-ads-schema-installer-mode.test.js
 npm test
 npm run test:report-reliability
 npm audit --audit-level=high
 npm run deploy:dry-run
 ```
 
-Operator commands after PR merge and a new explicit live authorization:
+Operator commands after merge, active Lark permission, completed Meta zero drift, resolved semantic decisions and a new exact authorization:
 
 ```bash
-# Fresh read-only plan
 npm run setup:shared-table-schema
-
-# Live DEV Apply — do not run without the separate exact authorization
 CONFIRM_WRITE=YES CONFIRM_SHARED_TABLE_SCHEMA=YES npm run setup:shared-table-schema:apply
-
-# Required zero-drift confirmation after Apply
 npm run setup:shared-table-schema
+
+npm run setup:google-ads-schema
+CONFIRM_WRITE=YES CONFIRM_GOOGLE_ADS_SCHEMA=YES npm run setup:google-ads-schema:apply
+npm run setup:google-ads-schema
 ```
 
 ## Implementation result
 
-- **Implementation status:** `PASS_FOR_MERGE_REVIEW`
-- **Guarded Apply:** implemented with fresh Preview, exact plan validation and zero-drift post-verification
-- **DEV/profile guard:** implemented
-- **Confirmation guard:** implemented; ambient confirmations cannot make Preview write
-- **Table rename:** implemented using official Base v3 PATCH contract
-- **Protected-table enforcement:** retained; missing/ambiguous protected source blocks Apply and planned actions remain zero
-- **Schema scope:** exactly 7 tables / 128 Fields from approved CSV contract
-- **Views:** exactly 17 filters use the existing live-verified View resolver
-- **Partial recovery:** confirmed Field and View failure paths are tested; rerun is idempotent
-- **Focused Apply/Preview/View/config/client tests:** 77 passed, 0 failed
-- **Node Unit/Integration:** 532 passed, 0 failed
-- **Workers runtime:** 9 passed, 0 failed
-- **Report reliability:** 70 passed, 0 failed
-- **Architecture:** 145 source files / 340 local dependencies / 0 cycles
-- **Repository hygiene:** passed before final documentation-only edits
-- **Dependency audit:** 0 vulnerabilities
-- **Wrangler dry-run:** passed — 659.26 KiB / gzip 130.46 KiB
-- **Final Branch Verification:** run `29838300095` passed on head `c8d5ff63f0549f34b58245706f7dc1470438ae32`
-- **Temporary upload/workflow files:** removed before Review
+### Files changed
+
+- Config/schema contracts: Google RAW, Canonical extensions/core, Select options, Relations, Views, runtime guard and Lark table mappings.
+- Application: Preview planner, Canonical compatibility checker, dependency/option/Relation/View planner and sequential Apply use case.
+- Scripts: read-only setup command and exact confirmation guard.
+- Tests: contract, runtime guard, installer mode, Preview, Apply, partial failure, idempotent rerun and stateful Lark fixture.
+- Documentation/config examples: current task, project-brain record, package commands and placeholder-only Wrangler mappings.
+
+### Verification
+
+Source Branch Verification run `29857040248` on head `7e84005b29b430073774b24539e4908b37cbf365` and documentation closeout run `29857420747` on head `52a27728ae518f5ba1a3bba404ad5c726c442796` both passed every workflow stage:
+
+- dependency install: PASS;
+- syntax, architecture and repository hygiene: PASS;
+- focused staged TikTok regression: 4/4;
+- Node Unit/Integration: 550/550;
+- Workers runtime: 9/9;
+- Report reliability: 70/70;
+- dependency audit at high severity: PASS;
+- Wrangler deployment dry-run: PASS.
+
+The five focused Google Ads files are included in the successful 550-test Unit/Integration run and cover 18 Google Ads-specific tests.
+
+### Safety result
+
 - **Live Lark Apply:** not run
-- **Business Record writes:** none
-- **External source APIs:** none
-- **Cloudflare/Queue/D1/Schedule:** unchanged
-- **Production mutation:** none
+- **Business Record read/write:** none
+- **Google Ads API / GAQL:** not called
+- **Cloudflare deploy / Queue / D1 / Schedule:** unchanged
+- **Protected source mutation:** none
+- **UAT / Production mutation:** none
+- **PR state:** Draft; not merged
+
+## Remaining live blockers
+
+1. Lark app version containing `base:table:update` must become active.
+2. PR #10 is already Squash Merged as baseline `abe2fc3fdbfc81c7c3b2480210ab3762cc42e2e6`; the remaining Meta dependency is the live DEV Preview/Apply/read-back/zero-drift sequence, not another code merge.
+3. Live Canonical Ads v2 compatibility must pass after Meta; Google Apply fails closed on missing/type-mismatched core fields.
+4. Approve one semantic value for `google_other_ads` versus shared `google_other` when live options are read back.
+5. Give a fresh exact authorization after reviewing the live Google Preview.
 
 ## Next gate
 
-Review and Squash Merge PR #10 after explicit approval. After merge, rerun the fresh Read-only plan and request a separate exact authorization before executing the live DEV Apply command.
+Keep PR #11 as Draft for independent final diff review. Do not merge or run live commands yet. After the permission gate is closed, run Meta Preview/Apply/zero drift, then run a fresh Google Preview and request exact authorization for the Google Schema Apply.

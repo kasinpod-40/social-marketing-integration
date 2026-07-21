@@ -15,6 +15,7 @@ export const LARK_TABLE_ENV = Object.freeze({
   mktAdsAds: 'LARK_TABLE_MKT_ADS_ADS',
   mktAdsCreatives: 'LARK_TABLE_MKT_ADS_CREATIVES',
   mktAdsDaily: 'LARK_TABLE_MKT_ADS_DAILY',
+  mktAdsAssetGroups: 'LARK_TABLE_MKT_ADS_ASSET_GROUPS',
   mktMetricDefinitions: 'LARK_TABLE_MKT_METRIC_DEFINITIONS',
   mktReportSnapshots: 'LARK_TABLE_MKT_REPORT_SNAPSHOTS',
   mktReportMetricValues: 'LARK_TABLE_MKT_REPORT_METRIC_VALUES',
@@ -34,6 +35,20 @@ export const LARK_TABLE_ENV = Object.freeze({
   rawMetaOrganicMetrics: 'LARK_TABLE_RAW_META_ORGANIC_METRICS',
   rawAdsEntities: 'LARK_TABLE_RAW_ADS_ENTITIES',
   rawAdsDaily: 'LARK_TABLE_RAW_ADS_DAILY',
+  // Google-specific RAW เก็บ Resource/GAQL contract โดยละเอียด ส่วน RAW_Ads_* ยังคงเป็น Shared normalized adapter output
+  rawGoogleAdsAccountLinks: 'LARK_TABLE_RAW_GOOGLE_ADS_ACCOUNT_LINKS',
+  rawGoogleAdsAccounts: 'LARK_TABLE_RAW_GOOGLE_ADS_ACCOUNTS',
+  rawGoogleAdsCampaignBudgets: 'LARK_TABLE_RAW_GOOGLE_ADS_CAMPAIGN_BUDGETS',
+  rawGoogleAdsCampaigns: 'LARK_TABLE_RAW_GOOGLE_ADS_CAMPAIGNS',
+  rawGoogleAdsAdGroups: 'LARK_TABLE_RAW_GOOGLE_ADS_AD_GROUPS',
+  rawGoogleAdsAds: 'LARK_TABLE_RAW_GOOGLE_ADS_ADS',
+  rawGoogleAdsAssets: 'LARK_TABLE_RAW_GOOGLE_ADS_ASSETS',
+  rawGoogleAdsAdAssets: 'LARK_TABLE_RAW_GOOGLE_ADS_AD_ASSETS',
+  rawGoogleAdsAssetGroups: 'LARK_TABLE_RAW_GOOGLE_ADS_ASSET_GROUPS',
+  rawGoogleAdsAssetGroupAssets: 'LARK_TABLE_RAW_GOOGLE_ADS_ASSET_GROUP_ASSETS',
+  rawGoogleAdsConversionActions: 'LARK_TABLE_RAW_GOOGLE_ADS_CONVERSION_ACTIONS',
+  rawGoogleAdsDaily: 'LARK_TABLE_RAW_GOOGLE_ADS_DAILY',
+  rawGoogleAdsConversionDaily: 'LARK_TABLE_RAW_GOOGLE_ADS_CONVERSION_DAILY',
 });
 
 // รายชื่อ Logical table key ทั้งหมด ใช้เป็นค่าเริ่มต้นเมื่อผู้เรียกต้องการตรวจ Environment ครบทุกตาราง
