@@ -1,0 +1,107 @@
+ename, create, field change or record write;
++- Meta/Facebook/Instagram/TikTok Ads/Google Ads connector implementation;
++- source API calls;
++- Cloudflare deploy, D1 migration, Queue message or schedule changes;
++- advertisement creation, activation or spend;
++- WooCommerce/Chatwoot live access;
++- customer UAT or Production mutation.
+ 
+ ## Acceptance criteria
+ 
+-1. Confirm the target is the isolated UAT Base before the first mutation.
+-2. Record the pre-apply table/field/options/relation inventory.
+-3. All 14 approved Raw tables exist exactly once.
+-4. `MKT_Account_Daily` exists exactly once with the approved Account×Date stable key.
+-5. Existing Organic and Ads canonical tables are reused with approved compatible additions only.
+-6. Actual fields, types, options, relations and notes match the approved contract or have an explicit reviewed exception.
+-7. Stable-key fields are Text and independent of mutable display names.
+-8. No fake, sample, DEV, customer or Ads performance rows are inserted.
+-9. A second schema apply creates no duplicate tables or fields and makes no destructive change.
+-10. Table/Field mappings are recorded without secrets.
+-11. TikTok, YouTube, Core and existing Ads contracts remain unchanged.
+-12. Applicable Repository gates pass when tooling or source-controlled mappings change.
+-
+-## Verification
+-
+-Minimum live evidence:
+-
+-- UAT Base identity
+-- before/after table inventory
+-- before/after affected-field inventory
+-- Select-option and relation checks
+-- stable-key primary-field checks
+-- idempotent second apply
+-- secret-safe failure diagnostics
+-
+-Repository gates when files or tooling change:
++1. `RAW_TikTok_Creator_Videos` is enforced as protected before any schema planner live read/write.
++2. The old 14-table Meta physical layout cannot be considered approved for apply.
++3. Exactly five existing zero-record Planned Raw tables are designated for In-place reuse.
++4. The revised Raw model contains three Meta Organic tables and two cross-platform Ads tables.
++5. Only `MKT_Account_Daily` and `MKT_Ads_Ads` increase the table count.
++6. Current Base inventory totals remain 26/4,641/352/81 in the sanitized contract.
++7. Duplicate review distinguishes Raw/Canonical/Report grain from true duplication.
++8. Existing TikTok Native and YouTube operational tables are retained without schema mutation.
++9. Safe config examples contain shared logical mappings only and no live IDs/secrets.
++10. Full tests, architecture, hygiene, audit and Wrangler dry-run pass.
++
++## Required gates
+ 
+ ```bash
+ npm ci
+ npm run check
++node --test tests/shared/csv.test.js tests/shared/lark-base-export.test.js tests/config/lark-table-governance.test.js tests/config/shared-table-blueprint.test.js
+ npm test
+ npm run test:report-reliability
+ npm audit --audit-level=high
+@@ -152,11 +115,25 @@ npm run deploy:dry-run
+ 
+ ## Implementation result
+ 
+-- **Blueprint:** `APPROVED`
+-- **Schema apply:** `authorized_not_started`
+-- **Connector implementation:** `blocked`
+-- **Live source UAT:** not authorized in this task
++- **Implementation status:** `local_gates_passed_pending_remote_ci`
++- **Architecture contract:** revised Shared-table contract complete
++- **Protected-table enforcement:** complete; planner rejects protected targets before the first Lark client call
++- **Base export analyzer:** complete; schema-only, record values excluded, Table IDs redacted by default
++- **Focused Shared-table/CSV/Base/protection tests:** 12 passed, 0 failed
++- **Node Unit/Integration:** 510 passed, 0 failed
++- **Workers runtime:** 9 passed, 0 failed
++- **Report reliability:** 70 passed, 0 failed
++- **Architecture:** 137 source files, 307 local dependencies, 0 cycles
++- **Repository hygiene:** passed
++- **Dependency audit:** 0 vulnerabilities
++- **Wrangler dry-run:** passed — 658.68 KiB / gzip 130.35 KiB
++- **Current Base schema evidence:** 26 tables / 4,641 records / 352 fields / 81 views
++- **Revised table plan:** reuse 5 empty Planned Raw tables, create 2 new Canonical tables, expected final total 28
++- **Live DEV schema:** not changed
++- **External APIs:** not called
++- **Customer data values:** not inspected or committed
++- **Production mutation:** none
+ 
+ ## Next gate
+ 
+-After the actual UAT Lark schema passes independent review, create a separate Meta connector implementation task covering pagination, identity preflight, Raw writes, normalization, checkpoints, locks, retries, DLQ, reconciliation, Schedule flags and regression testing.
++After source and CI review, perform a read-only live inventory only. A separate explicit authorization is required before renaming the five empty tables or creating the two new Canonical tables.
+diff --git a/docs/meta-blueprint-v0.12.0/README.md b/docs/meta-blueprint-v0.12.0/README.md
+index 07e760b..d64dade 100644
+--- a/docs/meta-blueprint-v0.12.0/README.md
++++ b/docs/meta-blueprint-v0.12.0/README.md
+@@ -1,5 +1,6 @@
+ # Meta Blueprint v0.12.0 — Approved Source Contract
+ 
++> **Historical physical layout only:** The 14 Raw-table layout was superseded before any live apply by `docs/shared-table-blueprint-v0.12.1/`. Retain this directory for approved metric/identity semantics and audit history; do not use it as an install manifest.
+ Approved by the user on `2026-07-21` for Lark UAT schema application only.
+ 
+ This directory is the source-controlled text representation of the approved workbook. It covers table inventory, field dictionaries, Raw-to-Canonical mapping, stable keys and metric contracts, UAT gates, approval decisions and source traceability.
+diff --git a/docs/meta-blueprint-v0.12.0/approval-status.txt b/docs/meta-blueprint-v0.12.0/approval-status.txt
+index ce742d5..fb0ad0f 100644
+--- a/docs/meta-blueprint-v0.12.0/approval-status.txt
++++ b/docs/meta-blueprint-v0.12.0/approval-status.txt
+@@ -1,2 +1,4 @@
+-approved_for_schema_apply: 2026-07-21
+-connector_implementation: pending_schema_verification
++approved_semantics_retained: 2026-07-21
++physical_table_layout: superseded_by_shared-
