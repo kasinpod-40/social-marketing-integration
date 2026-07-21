@@ -1,0 +1,60 @@
+name: Apply Shared-table Revision
+
+on:
+  push:
+    branches:
+      - work/meta-dev-schema-foundation
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: work/meta-dev-schema-foundation
+          fetch-depth: 0
+
+      - name: Assemble reviewed patches
+        run: |
+          cat .github/shared-table.patch.part00 \
+              .github/shared-table.patch.part01 \
+              .github/shared-table.patch.part02 \
+              .github/shared-table.patch.part03 \
+              .github/shared-table.patch.part04 > /tmp/shared-table.patch
+          cat .github/shared-table-new.patch.part00 \
+              .github/shared-table-new.patch.part01 \
+              .github/shared-table-new.patch.part02 \
+              .github/shared-table-new.patch.part03 \
+              .github/shared-table-new.patch.part04 > /tmp/shared-table-new.patch
+          cp .github/workflows/apply-shared-table-revision.yml /tmp/apply-shared-table-revision.yml
+          sha256sum /tmp/shared-table.patch /tmp/shared-table-new.patch
+
+      - name: Replace old PR scope with reviewed main-based tree
+        run: |
+          git fetch origin main
+          git rm -r --ignore-unmatch .
+          git checkout origin/main -- .
+          git apply --check /tmp/shared-table.patch
+          git apply /tmp/shared-table.patch
+          git apply --check /tmp/shared-table-new.patch
+          git apply /tmp/shared-table-new.patch
+          mkdir -p .github/workflows
+          cp /tmp/apply-shared-table-revision.yml .github/workflows/apply-shared-table-revision.yml
+          test -z "$(find .github -maxdepth 1 -type f -name 'shared-table*.patch*' -print -quit)"
+          git diff --check
+
+      - name: Commit and push revised scope
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "refactor: protect TikTok source and share Lark tables"
+          git push origin HEAD:work/meta-dev-schema-foundation
