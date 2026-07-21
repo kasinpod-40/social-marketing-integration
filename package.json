@@ -32,7 +32,9 @@
     "job:youtube-sync": "node scripts/print-youtube-sync-job.mjs",
     "job:redrive-dead-letter": "node scripts/print-dead-letter-redrive-job.mjs",
     "analyze:lark-base-export": "node scripts/analyze-lark-base-export.mjs",
-    "preview:shared-table-schema": "node scripts/preview-shared-table-schema.mjs"
+    "preview:shared-table-schema": "node scripts/preview-shared-table-schema.mjs",
+    "setup:shared-table-schema": "node scripts/setup-shared-table-schema.mjs",
+    "setup:shared-table-schema:apply": "node scripts/setup-shared-table-schema.mjs --apply"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.18.4",

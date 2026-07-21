@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased — Guarded Shared-table schema Apply — 2026-07-21
+
+### Added
+- Added a separate DEV-only Shared-table setup command whose default mode is Read-only Preview and whose Apply mode requires `--apply`, `CONFIRM_WRITE=YES` and `CONFIRM_SHARED_TABLE_SCHEMA=YES`.
+- Added official Lark Base v3 in-place Table rename support while preserving Table IDs.
+- Added exact action validation, sequential progress, partial-failure recovery and final Schema/View zero-drift verification.
+- Reuses the existing live-verified View resolver for Field IDs, Select option IDs and idempotent Filter PATCH behavior.
+
+### Safety
+- Apply reruns the full Preview before the first write and blocks on non-empty reuse tables, missing/ambiguous Protected TikTok, duplicate targets, field conflicts, warnings or manual blockers.
+- Only five rename/reuse tables and two new tables are allowed; no delete or Business Record operation exists.
+- Ambient confirmation variables cannot make Preview write, and UAT/Production profiles fail closed.
+- Live Lark Apply was not run during implementation or review.
+
+### Verification
+- Focused Guarded Apply/Preview/View/config/client suite passed 77/77, including idempotent rerun and recovery after a View was created but Filter PATCH failed.
+- Full gates passed: Node Unit/Integration 532/532, Workers 9/9, Report reliability 70/70, Architecture 145/340/0, hygiene, audit 0 and Wrangler dry-run 659.26/130.46 KiB.
+
 ## Unreleased — Shared-table architecture revision — 2026-07-21
 
 ### Changed

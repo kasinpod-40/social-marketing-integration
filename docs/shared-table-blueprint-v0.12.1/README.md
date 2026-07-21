@@ -31,9 +31,13 @@ Revision นี้แทน Physical table layout แบบ 14 Meta Raw tables �
 - `protected-tables.csv` ล็อกตารางที่ระบบเราห้ามแก้
 - `.base` ของผู้ใช้ใช้ตรวจแบบ Local เท่านั้นและไม่ Commit
 
-ยังไม่อนุญาต Live Lark mutation, Connector implementation, Cloudflare rollout, Advertisement creation หรือ Spend
+สถาปัตยกรรมและ Preview ผ่านแล้ว แต่ Live Lark Apply ยังต้องได้รับคำสั่งยืนยันแยกต่างหาก; Connector implementation, Cloudflare rollout, Advertisement creation และ Spend ยังไม่อนุญาต
 
 
 ## Preview tooling v0.12.2
 
-`npm run preview:shared-table-schema` ตรวจ Live DEV แบบ Read-only. `--base-export` ใช้ตรวจ Export แบบ Offline โดยไม่อ่าน Cell values. คำสั่งนี้ไม่มี Apply mode และจะปฏิเสธ `--apply`/`CONFIRM_WRITE=YES`. ผล Offline ปัจจุบันอยู่ที่ `offline-preview-summary.md`; Live Primary-field metadata ยังเป็น Gate ก่อนออกแบบ Apply.
+`npm run preview:shared-table-schema` ตรวจ Live DEV แบบ Read-only. `--base-export` ใช้ตรวจ Export แบบ Offline โดยไม่อ่าน Cell values. Live DEV Preview ผ่านแล้ว: reuse 5 ตารางว่าง, Primary metadata ครบ, conflict/warning/manual blocker เป็นศูนย์ และ Protected TikTok มี 0 actions. หลักฐาน Sanitized อยู่ที่ `live-dev-preview-summary.md`.
+
+## Guarded Apply candidate v0.12.3
+
+PR #10 เพิ่ม Apply แบบ DEV-only ซึ่ง Preview ซ้ำก่อนเขียน, บังคับสอง Confirmation, ทำงานตามลำดับ, รองรับ Partial rerun และต้อง Zero-drift หลังจบ. รายละเอียดอยู่ที่ `guarded-apply-summary.md`. การมีโค้ด Apply ไม่เท่ากับอนุญาตให้รัน Live; ต้องได้รับคำสั่งยืนยันเฉพาะรอบ Apply หลัง PR Merge.

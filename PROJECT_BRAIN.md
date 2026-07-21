@@ -7,10 +7,12 @@ This project connects social organic and paid ads data into Lark Base for report
 
 **Current architecture revision v0.12.1:** ผู้ใช้ยืนยัน Shared-table + View เป็น Physical model และล็อก `RAW_TikTok_Creator_Videos` เป็น Lark Native protected read-only source. Meta v0.12.0 endpoint-per-table layout ถูก Block ก่อน Apply. Base export ปัจจุบันมี 26 unique tables/4,641 records/352 fields/81 views; Planned Raw ว่าง 5 ตารางจะ Reuse in place และเพิ่มใหม่เฉพาะ `MKT_Account_Daily` กับ `MKT_Ads_Ads`, เป้าหมาย 28 tables. Contract: `docs/project-brain/shared-table-architecture-v0.12.1.md`.
 
-**v0.12.2 Shared-table Preview:** มี Preview-only planner ที่ derive 7 tables/128 fields และ 17 Views จาก Contract, ตรวจ reuse candidates ด้วย bounded one-record read, ป้องกัน duplicate target และบังคับ Protected TikTok actions=0. Offline `.base` preview ยืนยัน 5 ตารางว่างและ 0 conflicts แต่ยัง Block ด้วย Primary metadata 5 รายการจนกว่า Live DEV read-only preview จะยืนยัน `is_primary`. ไม่มี Apply command หรือ Live mutation.
-Official merged code baseline: `7d0e8e5` — Pre-Meta Batch C runtime/reliability hardening passed independent review and was squash-merged through PR #5. Remote migrations `0007`–`0008` and Batch C live rollout remain unexecuted.
+**v0.12.2 Shared-table Preview:** Preview-only planner derive 7 tables/128 fields และ 17 Views จาก Contract, ตรวจ reuse candidates ด้วย bounded one-record read, ป้องกัน duplicate target และบังคับ Protected TikTok actions=0. Live DEV Read-only Preview ผ่านแล้ว: ตาราง reuse ทั้ง 5 ว่าง, Primary metadata ครบ, conflict/warning/manual blocker เป็นศูนย์ และไม่มี Live mutation.
 
-Current working candidate: `v0.11.2-customer-real-uat-foundation`
+**v0.12.3 Guarded Shared-table Apply candidate:** ผู้ใช้อนุมัติให้พัฒนา Apply แยกจาก Live mutation. Candidate บังคับ DEV `dev_ft_pumkin`, Fresh Preview, Confirmation สองชั้น, Protected TikTok=0, reuse table ต้องว่าง, allowed-action validation, sequential progress/partial rerun และ final Schema+View zero-drift. Table rename ใช้ official Base v3 PATCH และต้องมี `base:table:update`. PR #10 ยังไม่รัน Live Apply; Connector ยัง Block จน Apply และ zero-drift ผ่านจริง.
+Official merged code baseline: `cbc3da8` — Shared-table Preview tooling and successful live DEV Read-only verification were squash-merged through PR #9. Remote migrations `0007`–`0008` and Batch C live rollout remain unexecuted.
+
+Current working candidate: `v0.12.3-guarded-shared-table-schema-apply`
 
 Current UAT contract: customer-real UAT uses customer-owned source accounts/data with temporary developer-owned, customer-isolated Lark Base and Cloudflare resources. Runtime profile is `uat_chemistry_k`, while Canonical `customerKey`/connector `accountKey` stay `chemistry_k` across UAT and Production. Every UAT connector/schedule is disabled by default. Full contract: `docs/project-brain/customer-real-uat.md`.
 

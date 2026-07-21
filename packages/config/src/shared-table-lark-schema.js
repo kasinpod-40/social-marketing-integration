@@ -112,6 +112,71 @@ export function buildSharedTableViewContractFromCsv(input) {
   return deepFreeze(views);
 }
 
+
+/**
+ * แปลง View plan แบบอ่านง่ายจาก CSV เป็น Contract ของ View installer กลาง
+ * เพื่อใช้ Resolver เดียวกับ Report Views สำหรับ Field ID, Select option ID และ Idempotency.
+ */
+export function buildSharedTableViewInstallerContract(input) {
+  const views = Array.isArray(input?.views) ? input.views : [];
+  const schema = Array.isArray(input?.schema) ? input.schema : [];
+  validateSharedTableLarkSchema(schema);
+  const schemaByName = new Map(schema.map((tableContract) => [tableContract.logicalName, tableContract]));
+  const grouped = new Map();
+
+  for (let index = 0; index < views.length; index += 1) {
+    const view = views[index];
+    const tableContract = schemaByName.get(view?.table);
+    if (!tableContract) throw invalid(`Shared-table View targets unknown table: ${view?.table}`);
+    const parsedFilter = parseSharedTableViewFilter(view.filter, tableContract);
+    const group = grouped.get(tableContract.key) ?? {
+      tableKey: tableContract.key,
+      envName: tableContract.envName,
+      views: [],
+    };
+    group.views.push(Object.freeze({
+      key: `shared_${String(index + 1).padStart(2, '0')}`,
+      name: requireText(view.viewName, `${tableContract.logicalName}.viewName`),
+      type: 'grid',
+      hiddenFields: Object.freeze([]),
+      filterInfo: parsedFilter,
+    }));
+    grouped.set(tableContract.key, group);
+  }
+
+  const contract = schema
+    .filter((tableContract) => grouped.has(tableContract.key))
+    .map((tableContract) => {
+      const group = grouped.get(tableContract.key);
+      return Object.freeze({
+        tableKey: group.tableKey,
+        envName: group.envName,
+        views: Object.freeze(group.views),
+      });
+    });
+
+  if (contract.flatMap((tableContract) => tableContract.views).length !== views.length) {
+    throw invalid('Shared-table View installer contract lost one or more Views');
+  }
+  return deepFreeze(contract);
+}
+
+function parseSharedTableViewFilter(value, tableContract) {
+  const text = requireText(value, `${tableContract.logicalName}.filter`);
+  const fieldsByName = new Set(tableContract.fields.map((field) => field.fieldName));
+  const conditions = text.split(/\s+AND\s+/iu).map((expression) => {
+    const match = /^([A-Za-z][A-Za-z0-9_]*)=([A-Za-z0-9_]+)$/u.exec(expression.trim());
+    if (!match) throw invalid(`Unsupported Shared-table View filter: ${text}`);
+    const [, fieldName, filterValue] = match;
+    if (!fieldsByName.has(fieldName)) {
+      throw invalid(`Shared-table View filter references unknown field ${tableContract.logicalName}.${fieldName}`);
+    }
+    return Object.freeze({ fieldName, operator: 'is', value: filterValue });
+  });
+  if (conditions.length === 0) throw invalid(`Shared-table View filter is empty: ${text}`);
+  return Object.freeze({ conjunction: 'and', conditions: Object.freeze(conditions) });
+}
+
 export function validateSharedTableLarkSchema(schema) {
   if (!Array.isArray(schema) || schema.length !== SHARED_TABLE_LARK_SCHEMA_EXPECTED_TABLE_COUNT) {
     throw invalid(`Shared-table schema must contain exactly ${SHARED_TABLE_LARK_SCHEMA_EXPECTED_TABLE_COUNT} tables`);

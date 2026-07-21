@@ -102,10 +102,12 @@ export async function planLarkReportViews(input = {}) {
     }
   }
 
-  manualActions.push(Object.freeze({
-    code: 'CLIENT_ROLE_PERMISSION_REVIEW_REQUIRED',
-    message: 'สิทธิ์ซ่อน RAW/Daily/Sync/System tables จาก Client role ต้องตั้งใน Lark Advanced Permission ตอนติดตั้ง Production',
-  }));
+  if (input.includePermissionManualAction !== false) {
+    manualActions.push(Object.freeze({
+      code: 'CLIENT_ROLE_PERMISSION_REVIEW_REQUIRED',
+      message: 'สิทธิ์ซ่อน RAW/Daily/Sync/System tables จาก Client role ต้องตั้งใน Lark Advanced Permission ตอนติดตั้ง Production',
+    }));
+  }
 
   return deepFreeze({
     mode: 'preview',
@@ -140,7 +142,8 @@ export async function applyLarkReportViews(input = {}) {
   const env = input.env ?? {};
   const contract = input.contract ?? LARK_REPORT_VIEWS;
   const onProgress = typeof input.onProgress === 'function' ? input.onProgress : () => undefined;
-  const preview = await planLarkReportViews({ client, env, contract });
+  const includePermissionManualAction = input.includePermissionManualAction !== false;
+  const preview = await planLarkReportViews({ client, env, contract, includePermissionManualAction });
   if (!preview.readyToApply) {
     throw permanentError('Lark report client views contain conflicts and cannot be applied safely', {
       code: 'LARK_REPORT_VIEW_CONFLICT',
@@ -209,7 +212,7 @@ export async function applyLarkReportViews(input = {}) {
     onProgress(Object.freeze({ stage: 'report_view_action_complete', action }));
   }
 
-  const verification = await planLarkReportViews({ client, env, contract });
+  const verification = await planLarkReportViews({ client, env, contract, includePermissionManualAction });
   if (verification.conflicts.length > 0 || verification.actions.length > 0) {
     throw permanentError('Lark report client view apply finished but verification is not clean', {
       code: 'LARK_REPORT_VIEW_VERIFICATION_FAILED',

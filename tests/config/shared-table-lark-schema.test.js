@@ -7,6 +7,7 @@ import {
   SHARED_TABLE_LARK_SCHEMA_TABLE_KEYS,
   buildSharedTableLarkSchemaFromCsv,
   buildSharedTableViewContractFromCsv,
+  buildSharedTableViewInstallerContract,
   validateSharedTableLarkSchema,
 } from '../../packages/config/src/shared-table-lark-schema.js';
 import { LARK_TABLE_ENV } from '../../packages/config/src/lark-table-config.js';
@@ -82,4 +83,40 @@ test('rejects incomplete or unexpected shared-table CSV contracts', async () => 
     fieldsCsv: `${fieldsCsv}RAW_Unexpected,1,key,Text,Yes,No,Primary,,,,,,\n`,
     migrationMapCsv,
   }), (error) => error?.code === 'SHARED_TABLE_LARK_SCHEMA_INVALID');
+});
+
+
+test('builds the 17 filtered Views with the shared Report View resolver contract', async () => {
+  const { schema, views } = await loadContract();
+  const contract = buildSharedTableViewInstallerContract({ schema, views });
+  assert.equal(contract.length, 5);
+  assert.equal(contract.flatMap((table) => table.views).length, 17);
+  const entities = contract.find((table) => table.tableKey === 'rawAdsEntities');
+  const metaCampaigns = entities.views.find((view) => view.name === 'Meta Campaigns');
+  assert.deepEqual(metaCampaigns.filterInfo, {
+    conjunction: 'and',
+    conditions: [
+      { fieldName: 'platform', operator: 'is', value: 'meta_ads' },
+      { fieldName: 'entity_type', operator: 'is', value: 'campaign' },
+    ],
+  });
+  assert.deepEqual(metaCampaigns.hiddenFields, []);
+});
+
+test('rejects unsupported or unknown Shared-table View filters', async () => {
+  const { schema, views } = await loadContract();
+  assert.throws(
+    () => buildSharedTableViewInstallerContract({
+      schema,
+      views: [{ ...views[0], filter: 'platform!=facebook' }],
+    }),
+    (error) => error?.code === 'SHARED_TABLE_LARK_SCHEMA_INVALID',
+  );
+  assert.throws(
+    () => buildSharedTableViewInstallerContract({
+      schema,
+      views: [{ ...views[0], filter: 'missing_field=facebook' }],
+    }),
+    (error) => error?.code === 'SHARED_TABLE_LARK_SCHEMA_INVALID',
+  );
 });
