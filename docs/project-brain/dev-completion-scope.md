@@ -1,3 +1,0 @@
-# DEV Completion Scope
-
-Placeholder
