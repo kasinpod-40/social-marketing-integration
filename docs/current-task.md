@@ -8,7 +8,7 @@
 - **Working branch:** `work/meta-blueprint-approved-v0.12.0`
 - **Approved source contract:** `docs/meta-blueprint-v0.12.0/`
 - **Approved workbook handoff:** `Social_MKT_Data_Hub_Meta_Blueprint_v0.12.0_APPROVED.xlsx`
-- **Workbook SHA-256:** `4c49148b84051b221cdf4eca7b16315421e03812e6d058bb6ac4978a531bc02d`
+- **Workbook SHA-256:** `b18b2020de1bfc95b33f6b0d202d35913a12d997a57d2a53c5011a95223d38cb`
 - **Target profile:** `uat_chemistry_k`
 - **Target environment:** `uat`
 - **Connector implementation:** `blocked_until_schema_apply_verified`
