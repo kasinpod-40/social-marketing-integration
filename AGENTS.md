@@ -83,7 +83,7 @@
 - UAT เป็นข้อมูลจริง ไม่ใช่ Sandbox/Demo; ต้องใช้ Security, Least privilege, Audit, Retention และ Cleanup ระดับ Production
 - `profileKey` อาจต่างกันระหว่าง UAT/Production แต่ `customerKey` และ Connector `accountKey` ต้องคงเดิมเพื่อรักษา Canonical stable keys
 - DEV, UAT และ Production ต้องแยก Worker, D1, Queue, DLQ, Secrets, Checkpoint, Lock, Alert, Schedule และ Lark Base
-- UAT Connector ทุกช่องทางและ Schedule ทุกตัวต้องปิดโดย Default จนกว่า Identity/Source-contract preflight ของช่องทางนั้นจะผ่าน
+- UAT Connector ทุกช่องทางและ Business Schedule ทุกตัวต้องปิดโดย Default จนกว่า Identity/Source-contract preflight ของช่องทางนั้นจะผ่าน; System recovery jobs ที่ไม่เขียน Business data ให้ยึด Runtime reliability contract แยกต่างหาก
 - เก็บเฉพาะ non-secret IDs/mappings ใน Source
 - Token, API key, password, app secret, OTP, session cookie และ credential ต้องอยู่ใน Environment/Secret store เท่านั้น
 - ห้าม Commit `.dev.vars` หรือ `wrangler.sync.jsonc`
