@@ -1,0 +1,28 @@
+name: Temporary Source Export
+
+on:
+  push:
+    branches:
+      - work/meta-dev-schema-foundation
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package source
+        run: |
+          zip -rq source-export.zip . \
+            -x '.git/*' \
+            -x 'node_modules/*' \
+            -x '.wrangler/*'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: source-export
+          path: source-export.zip
+          if-no-files-found: error
+          retention-days: 1
