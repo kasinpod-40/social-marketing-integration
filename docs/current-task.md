@@ -2,10 +2,11 @@
 
 ## Status
 
-- **Task status:** `implementation_in_progress`
+- **Task status:** `verification_passed_docs_closeout_pending`
 - **Accepted code baseline:** `7d0e8e545d2c318e7fe01a18c47ee2fe8941d023`
 - **Merged review:** `PR #5`
 - **Working branch:** `work/customer-real-uat-foundation`
+- **Draft pull request:** `PR #6`
 - **Target profile:** `uat_chemistry_k`
 - **Target environment:** `uat`
 - **Last updated:** `2026-07-21`
@@ -35,65 +36,70 @@ UAT is production-like and contains real customer data. It is not sample, sandbo
 1. `MKT_ENV` supports `development`, `uat` and `production` as separate fail-closed environments.
 2. `uat_chemistry_k` is a runtime/profile identity only. It must not become a Canonical customer or account identity.
 3. `customerKey` and every customer connector `accountKey` remain `chemistry_k` in both UAT and Production, preventing Stable-key drift during cutover.
-4. UAT ownership must be represented explicitly:
+4. UAT ownership is represented explicitly:
    - `infrastructureOwner=developer`
    - `sourceAssetOwner=customer`
    - `dataOwner=customer`
    - `dataMode=customer_real_uat`
 5. `resourceOwner` remains a compatibility alias for infrastructure ownership only; new code must use the explicit ownership fields.
-6. Every UAT connector and every schedule is disabled by default.
-7. Source-specific live identity such as TikTok handle must not be guessed or committed. A disabled connector may omit it; enabling the connector requires an exact Environment value.
-8. TikTok UAT begins with Lark Native connection and read-only identity/source-contract preflight. Worker sync remains disabled until that gate passes.
-9. Tokens, passwords, OTPs, API keys, app secrets, cookies, customer numeric IDs and Lark table IDs remain outside Source and operational logs.
-10. DEV, UAT and Production must use separate Lark Base, Worker, D1, Queue, DLQ, Secrets, checkpoints, locks, alerts and schedules.
+6. Every UAT connector and every UAT business schedule is disabled by default.
+7. A bounded system-recovery job may exist only under the isolated runtime contract and must not write customer business data when no durable recovery work exists.
+8. `accountKey` remains required even when a connector is disabled.
+9. Source-specific live identity such as TikTok handle must not be guessed or committed. A disabled connector may omit it; enabling the connector requires an exact Environment value.
+10. TikTok UAT begins with Lark Native connection and read-only identity/source-contract preflight. Worker sync remains disabled until that gate passes.
+11. Authentication secrets, customer numeric IDs and Lark table IDs remain outside Source and operational logs.
+12. DEV, UAT and Production use separate Lark Base, Worker, D1, Queue, DLQ, Secrets, checkpoints, locks, alerts and business schedules.
 
-## In scope
+## Implemented scope
 
-### A — Close Batch C documentation state
+### A — Batch C handoff state
 
-- Record that PR #5 was squash-merged to `main` as `7d0e8e5` after `PASS_FOR_MERGE`.
-- Retain the verified Batch C evidence: Node 495/495, Workers 9/9, Report reliability 70/70, architecture 133/304/0, audit 0, migration replay 0001–0008 and Wrangler dry-run.
-- Keep migrations `0007` and `0008` explicitly unapplied to the remote UAT/DEV database.
+- Recorded PR #5 squash merge baseline `7d0e8e5` and retained the verified Batch C evidence.
+- Migrations `0007` and `0008` remain unapplied to remote DEV/UAT.
 
-### B — Add customer-real UAT runtime contract
+### B — Customer-real UAT runtime contract
 
-- Add `uat` to supported environments.
-- Add `uat_chemistry_k` with explicit source/data/infrastructure ownership.
-- Preserve `chemistry_k` Canonical identity across UAT and Production.
-- Keep all UAT connectors disabled by default.
-- Allow disabled connectors to omit live source identity while requiring it immediately when enabled.
+- Added `uat` to supported environments.
+- Added `uat_chemistry_k` with explicit source/data/infrastructure ownership.
+- Preserved `chemistry_k` Canonical identity across UAT and Production.
+- Kept all UAT connectors disabled by default.
+- Allowed disabled connectors to omit live source identity while requiring it immediately when enabled.
+- Kept Canonical `accountKey` mandatory even for disabled connectors.
 
-### C — Documentation and configuration examples
+### C — Documentation and safe configuration
 
-- Add a modular Project Brain document for customer-real UAT ownership, isolation, authorization, identity, rollout and cutover rules.
-- Update `AGENTS.md`, `PROJECT_BRAIN.md`, `README.md`, `CHANGELOG.md` and `wrangler.sync.example.jsonc`.
-- Do not place real customer identifiers, Table IDs, credentials or resource IDs in Source.
+- Added modular Project Brain document `docs/project-brain/customer-real-uat.md`.
+- Updated `AGENTS.md`, `docs/current-task.md` and `wrangler.sync.example.jsonc`.
+- Kept real customer identities, Table IDs, credentials and Cloudflare resource IDs out of Source.
+- Root `PROJECT_BRAIN.md`, `README.md` and `CHANGELOG.md` still require a documentation-only closeout before this PR can be marked complete.
 
-## Acceptance criteria
+## Acceptance results
 
-- `loadCustomerRuntimeConfig` accepts only the correct `uat`/`uat_chemistry_k` pairing.
-- UAT resolves `customerKey=chemistry_k` and connector `accountKey=chemistry_k`.
-- UAT reports developer infrastructure ownership and customer source/data ownership.
-- UAT loads successfully with TikTok disabled and no source handle.
-- Enabling UAT TikTok without `TIKTOK_SOURCE_HANDLE` fails closed.
-- Enabling UAT TikTok with an Environment handle preserves `accountKey=chemistry_k` and marks the handle source as `environment`.
-- Planned connectors remain impossible to enable.
-- Existing DEV and Production profile behavior remains compatible.
-- Repository documents consistently describe customer-real UAT and customer-owned Production.
+- Correct `uat`/`uat_chemistry_k` pairing: passed.
+- UAT `customerKey=chemistry_k` and connector `accountKey=chemistry_k`: passed.
+- Developer infrastructure ownership plus customer source/data ownership: passed.
+- Disabled TikTok with no source handle: passed.
+- Enabled TikTok without `TIKTOK_SOURCE_HANDLE`: fails closed as required.
+- Enabled TikTok with Environment handle: passed while preserving Canonical account key.
+- Disabled connector without `accountKey`: fails closed as required.
+- Planned connectors remain impossible to enable: passed.
+- Existing DEV and Production profile regressions: passed.
+- Root documentation consistency: pending documentation-only closeout.
 
-## Required tests and gates
+## Verification evidence
 
-```bash
-npm ci
-node --test tests/config/customer-profiles.test.js tests/config/connector-runtime-config.test.js
-npm run check
-npm test
-npm run test:report-reliability
-npm audit --audit-level=high
-npm run deploy:dry-run
-```
+GitHub Actions Branch Verification run `29800251001` passed on clean head `95d2b44` before the final documentation wording-only commits:
 
-Do not weaken, skip or hide an existing gate.
+- Locked dependency install: passed
+- Architecture, syntax and repository hygiene: passed
+- Focused staged TikTok: **4 passed, 0 failed**
+- Node Unit/Integration: **498 passed, 0 failed**
+- Workers runtime: **9 passed, 0 failed**
+- Report reliability: **70 passed, 0 failed**
+- Dependency audit: passed
+- Wrangler dry-run: passed
+
+A final merge-ref CI run is still required after documentation closeout. No existing gate was weakened, skipped or hidden.
 
 ## Out of scope
 
@@ -104,29 +110,20 @@ Do not weaken, skip or hide an existing gate.
 - Applying migration `0007` or `0008` remotely
 - Deploying a Worker
 - Sending a live Queue message
-- Enabling a connector or schedule
+- Enabling a connector or business schedule
 - Calling TikTok, Meta, YouTube, WooCommerce or Chatwoot APIs
 - Copying UAT data to Production
 - Any Production mutation
 
 ## Implementation result
 
-- **Implementation status:** `in_progress`
+- **Implementation status:** `source_and_tests_complete_root_docs_pending`
 - **External/Live UAT:** not run and not authorized
-
-### Implemented so far
-
-- [x] Added `uat_chemistry_k` with explicit ownership/data-mode fields.
-- [x] Preserved `chemistry_k` customer/account stable identity across UAT and Production.
-- [x] Kept UAT connectors disabled by default and TikTok live handle out of Source.
-- [x] Required live connector identity only when that connector is enabled.
-- [x] Added focused profile/runtime regression coverage.
-- [ ] Update repository/project documentation and example config.
-- [ ] Run focused/full CI gates and perform independent diff review.
+- **Independent review:** code/config review in progress; merge decision blocked by root documentation closeout and final CI
 
 ## Next live gate after this task
 
-After this source-only foundation is reviewed and merged, the next task must begin with a customer-authorized Lark Native TikTok connection and read-only preflight:
+After this source-only foundation is reviewed and merged, the next task begins with a customer-authorized Lark Native TikTok connection and read-only preflight:
 
 1. Confirm the connected TikTok account identity exactly.
 2. Inspect Raw table fields and historical volume without destination writes.
