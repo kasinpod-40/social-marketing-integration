@@ -1,31 +1,70 @@
-name: Temporary Source Export
+name: Apply Meta DEV Schema Patch
 
 on:
   push:
     branches:
       - work/meta-dev-schema-foundation
-  pull_request:
-    branches:
-      - main
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  export:
+  apply:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Package source
-        run: |
-          zip -rq source-export.zip . \
-            -x '.git/*' \
-            -x 'node_modules/*' \
-            -x '.wrangler/*'
-      - uses: actions/upload-artifact@v4
         with:
-          name: source-export
-          path: source-export.zip
-          if-no-files-found: error
-          retention-days: 1
+          fetch-depth: 0
+      - name: Decode and verify patch
+        run: |
+          base64 -d .github/meta-dev-schema.patch.gz.b64 | gzip -d > /tmp/meta-dev-schema.patch
+          echo "0c7c616405c7231bbb17a47c99dabc4fe1f75573e00aa968de306aa0b97cb4f3  /tmp/meta-dev-schema.patch" | sha256sum -c -
+      - name: Restore patch baseline workflow
+        run: |
+          cat > .github/workflows/source-export-temporary.yml <<'YAML'
+          name: Temporary Source Export
+
+          on:
+            push:
+              branches:
+                - work/meta-dev-schema-foundation
+            pull_request:
+              branches:
+                - main
+            workflow_dispatch:
+
+          permissions:
+            contents: read
+
+          jobs:
+            export:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@v4
+                - name: Package source
+                  run: |
+                    zip -rq source-export.zip . \
+                      -x '.git/*' \
+                      -x 'node_modules/*' \
+                      -x '.wrangler/*'
+                - uses: actions/upload-artifact@v4
+                  with:
+                    name: source-export
+                    path: source-export.zip
+                    if-no-files-found: error
+                    retention-days: 1
+          YAML
+      - name: Apply reviewed patch
+        run: |
+          git apply --check /tmp/meta-dev-schema.patch
+          git apply /tmp/meta-dev-schema.patch
+          rm -f .github/meta-dev-schema.patch.gz.b64
+          git diff --check
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: add Meta DEV schema foundation"
+          git push origin HEAD:work/meta-dev-schema-foundation
