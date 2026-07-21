@@ -31,12 +31,24 @@ jobs:
           sha256sum /tmp/shared-preview.patch
           cp .github/workflows/apply-shared-preview.yml /tmp/apply-shared-preview.yml
 
-      - name: Replace staging files with reviewed implementation
+      - name: Validate patch against main
         run: |
           git fetch origin main
+          git worktree add /tmp/shared-preview-main origin/main
+          if ! (cd /tmp/shared-preview-main && git apply --check /tmp/shared-preview.patch) 2> /tmp/shared-preview-apply-error.txt; then
+            cp /tmp/shared-preview-apply-error.txt .github/shared-preview-apply-error.txt
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add .github/shared-preview-apply-error.txt
+            git commit -m "chore: record shared preview patch error"
+            git push origin HEAD:work/shared-table-dev-schema-preview
+            exit 1
+          fi
+
+      - name: Replace staging files with reviewed implementation
+        run: |
           git rm -r --ignore-unmatch .
           git checkout origin/main -- .
-          git apply --check /tmp/shared-preview.patch
           git apply /tmp/shared-preview.patch
           mkdir -p .github/workflows
           cp /tmp/apply-shared-preview.yml .github/workflows/apply-shared-preview.yml
