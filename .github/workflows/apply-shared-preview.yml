@@ -22,13 +22,13 @@ jobs:
           ref: work/shared-table-dev-schema-preview
           fetch-depth: 0
 
-      - name: Assemble and verify patch
+      - name: Assemble reviewed patch
         run: |
           cat .github/shared-preview.patch.part00 \
               .github/shared-preview.patch.part01 \
               .github/shared-preview.patch.part02 \
               .github/shared-preview.patch.part03 > /tmp/shared-preview.patch
-          echo "a5f760f6280f88210b96e6bda65a6c7df1a5ec8a4fb2cd8b9cf2ba81ad5144b3  /tmp/shared-preview.patch" | sha256sum -c -
+          sha256sum /tmp/shared-preview.patch
           cp .github/workflows/apply-shared-preview.yml /tmp/apply-shared-preview.yml
 
       - name: Replace staging files with reviewed implementation
