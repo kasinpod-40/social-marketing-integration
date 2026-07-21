@@ -4,11 +4,13 @@
 
 ## Baseline ปัจจุบัน
 
-Working candidate: `v0.11.0`
+Working candidate: `v0.11.2-customer-real-uat-foundation`
 
-Official clean baseline: `v0.10.2-multi-channel-foundation-approved`
+Official merged code baseline: `7d0e8e5` — Pre-Meta Batch C hardening passed independent review and was squash-merged through PR #5.
 
-Corrective large-account Reliability patch ถูก Deploy ใน DEV แล้ว. Remote migrations 0005–0006 ผ่าน guarded rollout, controlled Redrive/replay ผ่านแบบ idempotent, YouTube Schedule/Owner Analytics เปิดกลับเฉพาะ DEV และ Redrive ปิด. Active Worker คือ `adc0f825-68e5-4231-847b-4b41a6592204`; Customer 837-video Live UAT ยังเป็น Production release blocker.
+Customer-real UAT uses real customer-owned source accounts/data with a temporary developer-owned, customer-isolated Lark Base and Cloudflare environment. Use profile `uat_chemistry_k`; Canonical `customerKey` and connector `accountKey` remain `chemistry_k` for Production cutover. All UAT connectors and schedules stay disabled until channel-specific identity/source-contract preflight passes. See `docs/project-brain/customer-real-uat.md`.
+
+Corrective large-account Reliability patch remains deployed only in DEV. Remote migrations 0005–0006 passed guarded rollout; migrations 0007–0008 and Batch C live rollout have not been applied. Production remains disabled.
 
 สถานะปัจจุบัน:
 
