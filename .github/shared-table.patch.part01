@@ -1,0 +1,142 @@
+dated:** `2026-07-21`
+ 
+-The user approved Meta Data Model / Lark Blueprint v0.12.0 for guarded application to the isolated customer-real UAT Lark Base. This approval authorizes schema work only. It does not authorize connector coding, live source calls, business-data writes, Cloudflare rollout, advertisement creation or spend.
++The user rejected endpoint-per-table growth and reconfirmed the original architecture: use shared tables across platforms and separate channel/entity presentation with Lark Views. The user also locked `RAW_TikTok_Creator_Videos` as an externally managed Lark Native TikTok source that our system must never mutate.
+ 
+-## Approved preflight state
++## Evidence reviewed
+ 
+-- Facebook Organic: `PASS`
+-- Instagram Organic: `PASS`
+-- Meta Ads access: `PASS`
+-- Meta Ads data: `valid_no_data`
+-- Meta Ads Data UAT: `PENDING`
+-- Reels, Video, Carousel, Stories and multi-page pagination coverage: `NOT_TESTABLE_YET`
++The user-provided `Social MKT Data Hub(6).base` export was inspected locally without committing the file or record values:
+ 
+-Detailed DEV evidence and observed response shapes are recorded in the approved workbook. The durable source-controlled field and mapping contract is under `docs/meta-blueprint-v0.12.0/`.
++- 26 unique tables
++- 4,641 records
++- 352 fields
++- 81 views
++- one repeated export block for `MKT_Report_Top_Content`, not a duplicate physical table
++- five unused Planned Raw tables with zero records
+ 
+-## Approved Data Model
++Sanitized schema-only evidence is recorded under `docs/shared-table-blueprint-v0.12.1/`.
+ 
+-### Raw/source tables — 14
++## Locked architecture
+ 
+-Facebook Organic:
++### Protected external source
+ 
+-1. `RAW_Facebook_Pages`
+-2. `RAW_Facebook_Posts`
+-3. `RAW_Facebook_Post_Insights`
+-4. `RAW_Facebook_Page_Insights`
++`RAW_TikTok_Creator_Videos`:
+ 
+-Instagram Organic:
++- owned and written by Lark Native TikTok for Creator;
++- read-only to our connector;
++- no rename/delete/field mutation/record write from our installer or Worker;
++- normalized downstream into shared Canonical tables only.
+ 
+-5. `RAW_Instagram_Accounts`
+-6. `RAW_Instagram_Media`
+-7. `RAW_Instagram_Media_Insights`
+-8. `RAW_Instagram_Account_Insights`
++### Shared Raw tables
+ 
+-Meta Ads:
++Meta Organic uses three tables:
+ 
+-9. `RAW_Meta_Ad_Accounts`
+-10. `RAW_Meta_Campaigns`
+-11. `RAW_Meta_Ad_Sets`
+-12. `RAW_Meta_Ads`
+-13. `RAW_Meta_Creatives`
+-14. `RAW_Meta_Ads_Insights`
++1. `RAW_Meta_Organic_Accounts`
++2. `RAW_Meta_Organic_Content`
++3. `RAW_Meta_Organic_Metrics`
+ 
+-### Canonical destination mapping
++All paid platforms use two tables:
+ 
+-Organic:
++4. `RAW_Ads_Entities`
++5. `RAW_Ads_Daily`
+ 
+-- `MKT_Accounts`
+-- new `MKT_Account_Daily`
+-- `MKT_Content`
+-- `MKT_Content_Daily`
++`platform`, `entity_type`, `ad_channel` and Views separate Facebook, Instagram, Meta Ads, TikTok Ads and Google Ads.
+ 
+-Ads:
++### In-place reuse
+ 
+-- `MKT_Ads_Accounts`
+-- `MKT_Ads_Campaigns`
+-- `MKT_Ads_AdGroups`
+-- `MKT_Ads_Ads`
+-- `MKT_Ads_Creatives`
+-- `MKT_Ads_Daily`
++Five current zero-record Planned Raw tables are renamed/reused in place, preserving their Table IDs. This adds no Raw table.
+ 
+-Meta Ad Set maps to canonical Ads Ad Group. Ad and Creative identities remain separate.
++### New tables allowed
+ 
+-## Locked contracts
++Only two new tables have distinct missing grains:
+ 
+-- UAT profile is environment identity only; canonical customer/account keys remain stable across UAT and Production.
+-- Instagram canonical identity comes from `/me`; an Insights resource prefix is audit metadata only.
+-- Meta IDs remain Text and are never coerced through unsafe numeric types.
+-- Raw timestamps and `end_time` values are retained exactly.
+-- Organic canonical dates use `Asia/Bangkok`; Ads dates use the advertising-account timezone.
+-- Numeric `0` remains `0`; missing/unsupported metrics remain null or absent according to the metric contract.
+-- `valid_no_data` is an authorized empty result, not an error and not a successful-data claim.
+-- `NOT_TESTABLE_YET` is explicit coverage debt, not failure.
+-- Raw Ads action lists remain structured data until a later approved conversion mapping exists.
+-- Canonical money uses safe integer micros.
+-- Schema application must be idempotent and non-destructive.
++1. `MKT_Account_Daily` — Account×Date
++2. `MKT_Ads_Ads` — Ad identity separate from Creative
+ 
+-## Authorized scope
++Expected final unique table count: **28**, not 41.
+ 
+-The schema task may:
++## In scope
+ 
+-- use the approved source contract and workbook handoff;
+-- inspect the isolated UAT Base before mutation;
+-- create missing approved Raw tables;
+-- create `MKT_Account_Daily` if absent;
+-- reconcile approved fields, types, Select options, relations and import notes;
+-- reuse existing canonical tables rather than create duplicates;
+-- record non-secret Table/Field mappings in the environment-specific configuration path;
+-- run an idempotent second apply and post-apply schema comparison;
+-- record actual Lark limitations as explicit reviewed exceptions.
++- supersede the v0.12.0 physical layout before it is applied;
++- create the revised Shared-table source contract, fields, migration map and View plan;
++- record a sanitized inventory/duplicate review from the current Base export;
++- replace stale planned Raw environment mappings with five shared logical mappings;
++- add fail-closed protected-table governance to the generic schema planner;
++- add a schema-only `.base` analyzer that excludes record values and redacts Table IDs by default;
++- update Project Brain, README and Changelog;
++- run full Repository gates and remote PR merge-ref CI.
+ 
+ ## Out of scope
+ 
+-- Meta connector implementation or activation
+-- Live Facebook, Instagram or Marketing API calls
+-- Customer source-data reads or destination business-data writes
+-- Advertisement creation, activation or spend
+-- Cloudflare resource creation, migration or deployment
+-- Live Queue messages or schedule activation
+-- Production mutation
++- live Lark table r
