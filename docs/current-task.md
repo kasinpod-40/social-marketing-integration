@@ -2,11 +2,11 @@
 
 ## Status
 
-- **Task status:** `local_gates_passed_pending_remote_ci`
+- **Task status:** `remote_ci_passed_ready_for_review`
 - **Accepted baseline:** `ae13440f52f9647c18bf26a75c4e4e6f4c1f18e9`
 - **Merged review:** `PR #7`
 - **Working branch:** `work/meta-dev-schema-foundation`
-- **Pull request:** `PR #8` — scope is being replaced before merge
+- **Pull request:** `PR #8` — revised Shared-table scope
 - **Environment:** developer-owned DEV
 - **Profile:** `dev_ft_pumkin`
 - **Live Lark mutation:** `not_authorized_not_run`
@@ -115,7 +115,7 @@ npm run deploy:dry-run
 
 ## Implementation result
 
-- **Implementation status:** `local_gates_passed_pending_remote_ci`
+- **Implementation status:** `PASS_FOR_REVIEW`
 - **Architecture contract:** revised Shared-table contract complete
 - **Protected-table enforcement:** complete; planner rejects protected targets before the first Lark client call
 - **Base export analyzer:** complete; schema-only, record values excluded, Table IDs redacted by default
@@ -127,6 +127,7 @@ npm run deploy:dry-run
 - **Repository hygiene:** passed
 - **Dependency audit:** 0 vulnerabilities
 - **Wrangler dry-run:** passed — 658.68 KiB / gzip 130.35 KiB
+- **Final Branch Verification:** run `29823277707` passed on head `f944bfcf121d497b9a874cc67c02aab2e43bf73f`
 - **Current Base schema evidence:** 26 tables / 4,641 records / 352 fields / 81 views
 - **Revised table plan:** reuse 5 empty Planned Raw tables, create 2 new Canonical tables, expected final total 28
 - **Live DEV schema:** not changed
@@ -136,4 +137,4 @@ npm run deploy:dry-run
 
 ## Next gate
 
-After source and CI review, perform a read-only live inventory only. A separate explicit authorization is required before renaming the five empty tables or creating the two new Canonical tables.
+After source review and merge authorization, perform a read-only live inventory only. A separate explicit authorization is required before renaming the five empty tables or creating the two new Canonical tables.
