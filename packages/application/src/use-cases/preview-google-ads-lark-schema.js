@@ -7,6 +7,7 @@ import {
   validateGoogleAdsRelationTargets,
 } from '../../../config/src/google-ads-lark-schema.js';
 import { planLarkSchema } from './install-lark-report-schema.js';
+import { checkGoogleAdsCanonicalCore } from './google-ads-canonical-core-planning.js';
 import {
   checkGoogleAdsMetaDependency,
   checkGoogleAdsProtectedTables,
@@ -21,7 +22,7 @@ import {
 
 /**
  * วางแผน Google Ads Schema แบบ Read-only:
- * - Meta/shared dependency ต้องเสร็จก่อน
+ * - Meta/shared dependency และ Canonical Ads v2 core ต้องพร้อมก่อน
  * - Canonical Ads เดิมห้ามถูกสร้างซ้ำ
  * - Existing fields เปลี่ยนได้เฉพาะเติม Select options แบบ Add-only
  * - Link และ View ที่อ้าง Table ใหม่ถูก Deferred จนรู้ Table ID จริง
@@ -69,6 +70,12 @@ export async function previewGoogleAdsLarkSchema(input = {}) {
 
   const metaChecks = checkGoogleAdsMetaDependency(liveTables);
   conflicts.push(...metaChecks.conflicts);
+
+  const canonicalCore = await checkGoogleAdsCanonicalCore({
+    liveTables,
+    planningClient,
+  });
+  conflicts.push(...canonicalCore.conflicts);
 
   const protectedChecks = checkGoogleAdsProtectedTables(liveTables);
   for (const check of protectedChecks) {
@@ -178,6 +185,7 @@ export async function previewGoogleAdsLarkSchema(input = {}) {
     && uniqueBlockingManualActions.length === 0
     && protectedChecks.every((check) => check.found && !check.ambiguous)
     && metaChecks.ready
+    && canonicalCore.ready
   );
 
   return deepFreeze({
@@ -186,6 +194,7 @@ export async function previewGoogleAdsLarkSchema(input = {}) {
     readyForApplyAuthorization: ready,
     applyImplemented: true,
     metaDependencyReady: metaChecks.ready,
+    canonicalCoreReady: canonicalCore.ready,
     summary: summarizeGoogleAdsPreview({
       liveTables,
       schema,
@@ -196,6 +205,7 @@ export async function previewGoogleAdsLarkSchema(input = {}) {
       protectedChecks,
     }),
     metaChecks: metaChecks.checks,
+    canonicalCoreChecks: canonicalCore.checks,
     protectedChecks,
     resolvedTables: basePlan.resolvedTables,
     actions: uniqueActions,
