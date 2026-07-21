@@ -4,9 +4,9 @@
 
 ## Baseline ปัจจุบัน
 
-Working candidate: `v0.12.2-shared-table-schema-preview`
+Working candidate: `v0.12.3-guarded-shared-table-schema-apply`
 
-Official merged code baseline: `ff74c37` — Shared-table architecture and protected TikTok Native source were squash-merged through PR #8.
+Official merged code baseline: `cbc3da8` — Shared-table Preview tooling and successful live DEV Read-only verification were squash-merged through PR #9.
 
 Customer-real UAT uses real customer-owned source accounts/data with a temporary developer-owned, customer-isolated Lark Base and Cloudflare environment. Use profile `uat_chemistry_k`; Canonical `customerKey` and connector `accountKey` remain `chemistry_k` for Production cutover. All UAT connectors and schedules stay disabled until channel-specific identity/source-contract preflight passes. See `docs/project-brain/customer-real-uat.md`.
 
@@ -14,7 +14,7 @@ Corrective large-account Reliability patch remains deployed only in DEV. Remote 
 
 สถานะปัจจุบัน:
 
-- v0.12.1 กำลังแก้ Physical model กลับเป็น Shared-table + View: Protected `RAW_TikTok_Creator_Videos`, Reuse Planned Raw ว่าง 5 ตาราง, เพิ่มจริงเฉพาะ `MKT_Account_Daily` และ `MKT_Ads_Ads`; Meta v0.12.0 แบบ 14 Raw tables ห้าม Apply
+- v0.12.3 เป็น Guarded Apply candidate: ใช้ Shared-table + View, ล็อก `RAW_TikTok_Creator_Videos`, Reuse Planned Raw ว่าง 5 ตารางแบบรักษา Table ID และเพิ่มจริงเฉพาะ `MKT_Account_Daily` กับ `MKT_Ads_Ads`; Live Apply ยังไม่รัน
 - DEV ใช้ Lark Base ของผู้พัฒนาและ TikTok `@ft.pumkin`
 - Production profile `chemistry_k` เตรียมไว้ใน Source code แต่ Production จริงต้องใช้ Lark Base, App, Cloud และบัญชี Social ที่ลูกค้าเป็นเจ้าของ
 - TikTok DEV Sync จริงผ่าน 20 Content + 20 Daily Snapshot แล้วก่อน Audit รอบนี้
@@ -123,21 +123,29 @@ npm run test:report-reliability
 ```
 
 
-## Shared-table Schema Preview v0.12.2
+## Shared-table Schema Preview and Guarded Apply v0.12.3
 
-Live DEV Preview อ่าน Schema เท่านั้นและใช้ `.dev.vars` ที่ถูก ignore:
+Read-only Live DEV Preview:
 
 ```bash
 npm run preview:shared-table-schema
+# หรือคำสั่ง setup ที่ Default เป็น Preview เช่นกัน
+npm run setup:shared-table-schema
 ```
 
 Offline Preview จาก Lark Base export โดยไม่อ่านค่าข้อมูลใน Cell:
 
 ```bash
-npm run preview:shared-table-schema -- --base-export /path/to/export.base
+npm run preview:shared-table-schema -- --base-export /actual/path/to/export.base
 ```
 
-คำสั่งนี้ไม่มี Apply mode. การส่ง `--apply` หรือ `CONFIRM_WRITE=YES` จะถูกปฏิเสธ. Apply implementation, Rename/Create table และ View/Field mutation ต้องเป็นงานแยกที่ได้รับอนุมัติชัดเจนหลัง Live Preview ผ่านเท่านั้น.
+Guarded Apply มีไว้สำหรับ developer-owned DEV เท่านั้น และต้องได้รับคำสั่งอนุมัติ Live แยกหลัง PR Merge. คำสั่งต้องมีทั้ง Dedicated apply script และ Confirmation สองชั้น:
+
+```bash
+CONFIRM_WRITE=YES CONFIRM_SHARED_TABLE_SCHEMA=YES npm run setup:shared-table-schema:apply
+```
+
+Apply จะ Preview ซ้ำก่อนเขียน, ตรวจ Protected TikTok/ตารางว่าง/Conflict, ทำงานแบบ Sequential, รองรับ Partial rerun และ Preview ซ้ำหลังจบจนเหลือศูนย์ Actions/Conflicts/Warnings/Manual blockers. Table rename ใช้ Lark Base v3 และ App ต้องมี `base:table:update`. Real Table IDs ต้องเก็บใน `.dev.vars` และ `wrangler.sync.jsonc` ที่ถูก ignore เท่านั้น.
 
 ## Lark Report Schema Installer v0.8.2
 

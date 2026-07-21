@@ -824,6 +824,29 @@ test('lists and normalizes tables in the configured Base', async () => {
   assert.deepEqual(await client.listTables(), [{ tableId: 'tbl1', name: 'MKT_Table', revision: 7 }]);
 });
 
+test('renames a table through the official Base v3 PATCH contract while preserving table ID', async () => {
+  let request = null;
+  const client = new LarkBitableClient({
+    appId: 'app-id', appSecret: 'app-secret', appToken: 'app-token', minRequestIntervalMs: 0,
+    fetchImpl: async (url, options) => {
+      if (String(url).includes('tenant_access_token')) {
+        return new Response(JSON.stringify({ code: 0, tenant_access_token: 'token', expire: 7200 }), { status: 200 });
+      }
+      request = { url: String(url), options, body: JSON.parse(options.body) };
+      return new Response(JSON.stringify({
+        code: 0,
+        data: { table: { id: 'tblReuse', name: 'RAW_Ads_Entities', rev: 8 } },
+      }), { status: 200 });
+    },
+  });
+
+  const result = await client.renameTable({ tableId: 'tblReuse', name: 'RAW_Ads_Entities' });
+  assert.deepEqual(result, { tableId: 'tblReuse', name: 'RAW_Ads_Entities', revision: 8 });
+  assert.match(request.url, /\/open-apis\/base\/v3\/bases\/app-token\/tables\/tblReuse$/u);
+  assert.equal(request.options.method, 'PATCH');
+  assert.deepEqual(request.body, { name: 'RAW_Ads_Entities' });
+});
+
 test('creates a table with the primary field first and returns its table ID', async () => {
   let request = null;
   const client = new LarkBitableClient({

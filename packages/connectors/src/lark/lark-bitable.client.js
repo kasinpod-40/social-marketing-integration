@@ -177,6 +177,20 @@ export class LarkBitableClient {
     });
   }
 
+  /** Rename Table โดยใช้ Base v3 PATCH ซึ่งรักษา table_id และข้อมูลเดิมไว้ */
+  async renameTable(input) {
+    const tableId = requireText(input?.tableId, 'tableId');
+    const name = requireText(input?.name, 'name');
+    const response = await this.requestBitableJson(
+      `/open-apis/base/v3/bases/${encodeURIComponent(this.appToken)}/tables/${encodeURIComponent(tableId)}`,
+      {
+        method: 'PATCH',
+        body: { name },
+      },
+    );
+    return normalizeTable(response?.data?.table ?? response?.data);
+  }
+
   /** สร้าง Table ใหม่พร้อม Field contract โดยวาง Primary field เป็น Field แรก */
   async createTable(input) {
     const name = requireText(input?.name, 'name');

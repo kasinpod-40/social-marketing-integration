@@ -1,132 +1,158 @@
-# Current Task — Shared-table DEV Schema Preview v0.12.2
+# Current Task — Guarded Shared-table DEV Schema Apply v0.12.3
 
 ## Status
 
-- **Task status:** `live_dev_preview_passed_ready_for_merge_review`
-- **Accepted baseline:** `ff74c373b57e5d4dc9e2088cdbbd5d2e4d68d194`
-- **Merged review:** `PR #8`
-- **Working branch:** `work/shared-table-dev-schema-preview`
-- **Pull request:** `PR #9`
+- **Task status:** `implementation_complete_local_gates_passed_pending_remote_ci_review`
+- **Accepted baseline:** `cbc3da8e40190509ed3985e14a573d6cedbe9c32`
+- **Merged review:** `PR #9`
+- **Working branch:** `work/shared-table-schema-apply`
+- **Pull request:** `PR #10`
 - **Environment:** developer-owned DEV
 - **Profile:** `dev_ft_pumkin`
+- **Apply implementation:** `approved_and_implemented_for_review`
 - **Live Lark mutation:** `not_authorized_not_run`
-- **Live Lark preview:** `passed_read_only`
-- **Schema Apply:** `blocked_not_implemented_separate_authorization_required`
-- **Connector implementation:** `blocked_until_schema_apply_verified`
+- **Connector implementation:** `blocked_until_live_apply_and_zero_drift_verified`
 - **Last updated:** `2026-07-21`
 
-PR #8 locked the Shared-table + View architecture and protected `RAW_TikTok_Creator_Videos`. This task implements and verifies the next gate as a Preview-only schema planner. It may inspect live DEV schema and at most one record item per reuse candidate to prove emptiness, but it cannot rename, create or update any Lark resource.
+PR #9 merged the Read-only Preview and recorded a successful live DEV plan: five verified-empty tables can be reused in place, two tables are genuinely missing, all Primary metadata is authoritative, and there are no conflicts, warnings or protected-table actions. The user then authorized development of a separate Guarded Apply task. This authorization covers implementation and review only; an exact fresh authorization is still required before running the live Apply command.
 
 ## Objective
 
-Build a source-controlled, fail-closed Read-only Preview for the seven-table Shared-table contract:
-
-- reuse five current zero-record Planned Raw tables in place;
-- plan two genuinely new Canonical tables;
-- compare all 128 approved fields;
-- list the 17 required Views;
-- verify the protected TikTok Native table receives zero actions;
-- expose every conflict or manual Primary-field dependency before Apply is designed or authorized.
+Implement a fail-closed, resumable and idempotent DEV-only Apply for the approved seven-table Shared-table contract while preserving every existing Table ID selected for reuse and guaranteeing zero mutation against `RAW_TikTok_Creator_Videos`.
 
 ## In scope
 
-- derive Schema and View plans directly from `docs/shared-table-blueprint-v0.12.1/*.csv`;
-- resolve current reuse tables through their existing names while preserving Table IDs;
-- verify each reuse candidate is empty with a bounded one-record read;
-- detect duplicate target names, field-type conflicts and missing/ambiguous resources;
-- plan Primary-field rename when authoritative live `is_primary` metadata identifies exactly one Text Primary field;
-- retain a blocking manual action when an offline export lacks authoritative Primary metadata;
-- support live DEV preview through `.dev.vars` and offline preview through `--base-export`;
-- keep the generic schema planner genuinely Read-only by requiring write methods only for Apply;
-- update README, Project Brain, Changelog and Blueprint status;
-- run all Repository gates.
+- add a separate `setup:shared-table-schema` Preview command and confirmation-gated Apply command;
+- rerun a fresh live Preview immediately before the first write;
+- validate the entire plan against the approved seven-table/128-field/17-View contract;
+- rename five verified-empty Planned Raw tables in place, preserving their Table IDs;
+- rename the five existing Text Primary fields in place, preserving their Field IDs and Primary role;
+- add/update only approved Fields;
+- create only `MKT_Account_Daily` and `MKT_Ads_Ads`;
+- create and configure the 17 approved filtered Views through the existing live-verified View resolver;
+- record confirmed progress when a later action fails so a rerun can reconcile safely;
+- rerun Schema and View Preview after Apply and require absolute zero drift;
+- return Table-ID environment updates to the local operator without committing them;
+- update task, Project Brain, README, Changelog and Blueprint documentation;
+- run full Repository gates and remote PR CI.
 
 ## Out of scope
 
-- implementing or exposing an Apply command;
-- live table rename/create, Field/View mutation or Record write;
-- Facebook, Instagram, Meta Ads, TikTok Ads or Google Ads connector implementation;
-- source API calls;
+- running the live Lark Apply while PR #10 is under implementation/review;
+- deleting a Table, Field, View, Select option or Record;
+- writing, updating or deleting Business records;
+- changing `RAW_TikTok_Creator_Videos` in any way;
+- Facebook, Instagram, Meta Ads, TikTok Ads or Google Ads connector implementation/activation;
+- source Platform API calls;
 - Cloudflare deployment, D1 migration, Queue message or schedule changes;
 - advertisement creation, activation or spend;
 - WooCommerce/Chatwoot live access;
-- customer UAT or Production mutation.
+- UAT or Production mutation.
 
-## Locked safety contract
+## Locked execution contract
 
-1. `npm run preview:shared-table-schema` is Read-only.
-2. `--apply` or ambient `CONFIRM_WRITE=YES` must fail with `SHARED_TABLE_SCHEMA_APPLY_NOT_AUTHORIZED`.
-3. Live mode is allowed only for `MKT_ENV=development` and `MKT_CUSTOMER_PROFILE=dev_ft_pumkin`.
-4. `RAW_TikTok_Creator_Videos` remains protected and receives zero planned actions.
-5. Reuse candidates are eligible only when a one-record bounded check returns empty.
-6. A separate target table with the same target name is a conflict, never an implicit merge.
-7. Apply readiness requires zero conflicts and zero blocking manual Primary-field actions.
-8. Offline `.base` mode reads schema metadata and record counts only; record cell values and Table IDs are not committed.
+1. `npm run setup:shared-table-schema` is always Read-only, even if confirmation variables remain in the Shell.
+2. Apply requires all of the following in the same invocation:
+   - the dedicated `:apply` npm script, which supplies `--apply`;
+   - `CONFIRM_WRITE=YES`;
+   - `CONFIRM_SHARED_TABLE_SCHEMA=YES`.
+3. Apply is allowed only when runtime resolves exactly to `MKT_ENV=development` and `MKT_CUSTOMER_PROFILE=dev_ft_pumkin`.
+4. A fresh Preview must have zero conflicts, warnings and manual blockers before the first write.
+5. The protected TikTok Native table must be found exactly once and have zero planned actions.
+6. Every reuse candidate must still resolve to the expected table, remain empty before rename and preserve its Table ID.
+7. Only approved action kinds and contract resources may run; no implicit merge, delete or Record action exists.
+8. Schema writes run sequentially and expose only confirmed progress on failure.
+9. Create operations use idempotent reconciliation on rerun; ambiguous/partial View work is recovered by name and current property.
+10. Final Schema and View verification must have zero remaining actions, conflicts, warnings and manual blockers.
+11. Real Table IDs remain in ignored `.dev.vars`/`wrangler.sync.jsonc` only and are never committed.
+12. Table rename uses the official Lark Base v3 `PATCH .../tables/:table_id` contract and requires the app scope `base:table:update`.
+
+## Expected first live plan
+
+The most recent Read-only live DEV Preview reported:
+
+- 5 table renames;
+- 5 Primary-field renames;
+- 93 Field creates;
+- 1 Field-description update;
+- 2 table creates;
+- 17 View creates;
+- 0 conflicts, warnings, manual blockers, protected actions, deletes and Record writes.
+
+These counts are evidence, not a bypass. The Apply command recalculates the live plan and stops before writing if the safety contract is no longer satisfied.
 
 ## Acceptance criteria
 
-1. Exactly seven tables and 128 fields are derived from the approved CSV contract.
-2. Exactly five tables are `rename_reuse_in_place` and two are `create_new`.
-3. Preview plans five table renames and two table creates against the reviewed Base.
-4. All five reuse candidates are verified empty.
-5. `RAW_TikTok_Creator_Videos` is found once and has `plannedActions=0`.
-6. Preview lists all 17 View names without writing them.
-7. Offline Base export preview reports zero conflicts and blocks Apply readiness only because the export lacks authoritative Primary metadata for five reused tables.
-8. Authoritative live Primary metadata replaces those five manual blockers with five safe Primary-field rename plans.
-9. Generic schema Preview works with a client that exposes only read methods; Apply still rejects missing write methods.
-10. Full regression, architecture, hygiene, audit and Wrangler dry-run gates pass.
+1. Preview remains Read-only and cannot be converted to Apply by ambient environment variables.
+2. Apply fails unless both confirmation variables and `--apply` are present.
+3. DEV/profile guard rejects UAT and Production before creating a Lark client write plan.
+4. The official Table rename request preserves the current Table ID.
+5. A non-empty reuse candidate, missing/ambiguous protected table, duplicate target, field conflict or missing reuse slot blocks before the first write.
+6. New table creation is limited to `MKT_Account_Daily` and `MKT_Ads_Ads`.
+7. `RAW_TikTok_Creator_Videos` receives zero Schema and Record actions.
+8. Existing shared View resolver converts field names and Select names to live IDs and verifies filters idempotently.
+9. Successful Apply rerun performs zero writes.
+10. A failure after confirmed writes returns accurate progress and a rerun completes without duplicating tables or Views.
+11. Final verification is zero drift and reports no delete/Record write.
+12. Full Unit/Integration, Workers-runtime, Report reliability, architecture, hygiene, audit and Wrangler dry-run gates pass.
 
-## Required commands
+## Commands
 
 ```bash
 npm ci
 npm run check
-node --test tests/shared/csv.test.js tests/shared/lark-base-export.test.js tests/config/lark-table-governance.test.js tests/config/shared-table-blueprint.test.js tests/config/shared-table-lark-schema.test.js tests/application/preview-shared-table-lark-schema.test.js
+node --test \
+  tests/application/apply-shared-table-lark-schema.test.js \
+  tests/application/preview-shared-table-lark-schema.test.js \
+  tests/application/install-lark-report-views.test.js \
+  tests/config/shared-table-lark-schema.test.js \
+  tests/config/shared-table-schema-runtime-config.test.js \
+  tests/connectors/lark-bitable-client.test.js \
+  tests/scripts/shared-table-schema-installer-mode.test.js
 npm test
 npm run test:report-reliability
 npm audit --audit-level=high
 npm run deploy:dry-run
 ```
 
-Preview commands:
+Operator commands after PR merge and a new explicit live authorization:
 
 ```bash
-# Live DEV — requires ignored local .dev.vars
-npm run preview:shared-table-schema
+# Fresh read-only plan
+npm run setup:shared-table-schema
 
-# Offline schema-only preview from a real Lark .base export path
-npm run preview:shared-table-schema -- --base-export /actual/path/to/export.base
+# Live DEV Apply — do not run without the separate exact authorization
+CONFIRM_WRITE=YES CONFIRM_SHARED_TABLE_SCHEMA=YES npm run setup:shared-table-schema:apply
+
+# Required zero-drift confirmation after Apply
+npm run setup:shared-table-schema
 ```
 
-## Implementation and verification result
+## Implementation result
 
-- **Implementation status:** `PASS_FOR_MERGE_REVIEW`
-- **Schema contract:** 7 tables / 128 fields derived from approved CSV files
-- **View contract:** 17 Views derived from approved CSV
-- **Preview safety:** Apply command absent; `--apply` and `CONFIRM_WRITE=YES` rejected
-- **Protected-table enforcement:** `RAW_TikTok_Creator_Videos` found exactly once and receives zero actions
-- **Offline Base preview:** 26 tables, 5 empty reuse candidates, 5 renames, 2 creates, 98 missing fields, 1 description update, 17 View creates, 0 conflicts, 5 Primary metadata blockers
-- **Live DEV Preview:** passed Read-only with `readyForApplyAuthorization=true` and `requiresManualSchemaResolution=false`
-- **Live reuse checks:** all 5 candidates empty; authoritative Text Primary metadata found for all 5
-- **Live action plan:** 5 table renames, 2 table creates, 93 field creates, 1 field description update, 5 Primary-field renames, 17 View creates
-- **Live safety result:** 0 conflicts, 0 warnings, 0 manual blockers, 0 protected actions, 0 deletes, 0 record writes
-- **Focused Shared-table tests:** 22 passed, 0 failed
-- **Node Unit/Integration:** 520 passed, 0 failed
+- **Implementation status:** `PASS_LOCAL_GATES_READY_FOR_REMOTE_REVIEW`
+- **Guarded Apply:** implemented with fresh Preview, exact plan validation and zero-drift post-verification
+- **DEV/profile guard:** implemented
+- **Confirmation guard:** implemented; ambient confirmations cannot make Preview write
+- **Table rename:** implemented using official Base v3 PATCH contract
+- **Protected-table enforcement:** retained; missing/ambiguous protected source blocks Apply and planned actions remain zero
+- **Schema scope:** exactly 7 tables / 128 Fields from approved CSV contract
+- **Views:** exactly 17 filters use the existing live-verified View resolver
+- **Partial recovery:** confirmed Field and View failure paths are tested; rerun is idempotent
+- **Focused Apply/Preview/View/config/client tests:** 77 passed, 0 failed
+- **Node Unit/Integration:** 532 passed, 0 failed
 - **Workers runtime:** 9 passed, 0 failed
 - **Report reliability:** 70 passed, 0 failed
-- **Architecture:** 140 source files, 321 local dependencies, 0 cycles
-- **Repository hygiene:** passed
+- **Architecture:** 145 source files / 340 local dependencies / 0 cycles
+- **Repository hygiene:** passed before final documentation-only edits
 - **Dependency audit:** 0 vulnerabilities
-- **Wrangler dry-run:** passed — 658.68 KiB / gzip 130.35 KiB
-- **Implementation Branch Verification:** run `29827613813` passed on implementation head `1e43499eaff377d7aa9891fde1c27a4fba51bb1c`
-- **Live-evidence Branch Verification:** run `29830454537` passed on evidence head `d8b4fee0aa575704b8e704dc9dcf0de724da72fa`
-- **Live Preview evidence:** sanitized summary committed at `docs/shared-table-blueprint-v0.12.1/live-dev-preview-summary.md`; Table IDs and record values excluded
-- **Offline placeholder command:** `/path/to/export.base` returned expected `ENOENT`; not a Schema failure
-- **Live DEV mutation:** none
-- **External APIs:** none
+- **Wrangler dry-run:** passed — 659.26 KiB / gzip 130.46 KiB
+- **Live Lark Apply:** not run
+- **Business Record writes:** none
+- **External source APIs:** none
 - **Cloudflare/Queue/D1/Schedule:** unchanged
 - **Production mutation:** none
 
 ## Next gate
 
-Review and Squash Merge PR #9. After merge, Apply design/implementation remains a separate task requiring explicit authorization before any live rename, create, Field update or View creation.
+Run the final full Repository gates, publish PR #10 for review and wait for explicit Squash Merge approval. After merge, rerun the fresh Read-only plan and request a separate exact authorization before executing the live DEV Apply command.
