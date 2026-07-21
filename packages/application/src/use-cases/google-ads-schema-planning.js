@@ -277,7 +277,8 @@ export async function planGoogleAdsViews(input) {
   const resolvedContract = [];
   const deferredActions = [];
   const conflicts = [];
-  for (const tableContract of input.contract) {
+  const physicalContract = mergeGoogleAdsViewContract(input.contract);
+  for (const tableContract of physicalContract) {
     const resolved = input.resolvedByKey.get(tableContract.tableKey);
     if (resolved?.tableId) {
       input.env[tableContract.envName] = resolved.tableId;
@@ -307,7 +308,7 @@ export async function planGoogleAdsViews(input) {
     return { actions: deferredActions, conflicts, warnings: [], manualActions: [] };
   }
   const planned = await planLarkReportViews({
-    client: input.client,
+    client: readOnlyViewPlanningClient(input.client),
     env: input.env,
     contract: resolvedContract,
     includePermissionManualAction: false,
@@ -406,6 +407,40 @@ function optionRuleTargetsTable(rule, tableName) {
   if (rule.scope === 'MKT_Ads_*') return tableName.startsWith('MKT_Ads_');
   if (rule.scope === 'Canonical status') return tableName.startsWith('MKT_Ads_');
   return rule.scope === tableName;
+}
+
+function mergeGoogleAdsViewContract(contract) {
+  const byTableKey = new Map();
+  for (const table of contract ?? []) {
+    const current = byTableKey.get(table.tableKey);
+    if (!current) {
+      byTableKey.set(table.tableKey, {
+        tableKey: table.tableKey,
+        envName: table.envName,
+        views: [...table.views],
+      });
+      continue;
+    }
+    if (current.envName !== table.envName) {
+      throw new TypeError(`Google Ads View envName mismatch for ${table.tableKey}`);
+    }
+    current.views.push(...table.views);
+  }
+  return [...byTableKey.values()];
+}
+
+function readOnlyViewPlanningClient(client) {
+  return {
+    async listFields(input) { return client.listFields(input); },
+    async listViews(input) { return client.listViews(input); },
+    async getView(input) { return client.getView(input); },
+    async createView() {
+      throw new Error('Google Ads View Preview attempted createView');
+    },
+    async updateView() {
+      throw new Error('Google Ads View Preview attempted updateView');
+    },
+  };
 }
 
 function groupTablesByName(tables) {
