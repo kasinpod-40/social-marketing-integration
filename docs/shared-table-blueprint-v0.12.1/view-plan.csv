@@ -1,0 +1,18 @@
+Table,View,Filter,Purpose
+RAW_Meta_Organic_Accounts,Facebook Pages,platform=facebook,Facebook account/page inspection
+RAW_Meta_Organic_Accounts,Instagram Accounts,platform=instagram,Instagram account inspection
+RAW_Meta_Organic_Content,Facebook Content,platform=facebook,Facebook posts/reels/videos
+RAW_Meta_Organic_Content,Instagram Content,platform=instagram,Instagram media
+RAW_Meta_Organic_Metrics,Facebook Account Metrics,platform=facebook AND entity_type=account,Facebook Page Insights
+RAW_Meta_Organic_Metrics,Facebook Content Metrics,platform=facebook AND entity_type=content,Facebook Post Insights
+RAW_Meta_Organic_Metrics,Instagram Account Metrics,platform=instagram AND entity_type=account,Instagram Account Insights
+RAW_Meta_Organic_Metrics,Instagram Content Metrics,platform=instagram AND entity_type=content,Instagram Media Insights
+RAW_Ads_Entities,Meta Campaigns,platform=meta_ads AND entity_type=campaign,Meta campaign inventory
+RAW_Ads_Entities,TikTok Campaigns,platform=tiktok_ads AND entity_type=campaign,TikTok campaign inventory
+RAW_Ads_Entities,Google Campaigns,platform=google_ads AND entity_type=campaign,Google campaign inventory
+RAW_Ads_Entities,All Ad Groups,entity_type=ad_group,Cross-platform ad-group inventory
+RAW_Ads_Entities,All Ads,entity_type=ad,Cross-platform ad inventory
+RAW_Ads_Entities,All Creatives,entity_type=creative,Cross-platform creative inventory
+RAW_Ads_Daily,Meta Ads Daily,platform=meta_ads,Meta performance
+RAW_Ads_Daily,TikTok Ads Daily,platform=tiktok_ads,TikTok performance
+RAW_Ads_Daily,Google Ads Daily,platform=google_ads,Google performance

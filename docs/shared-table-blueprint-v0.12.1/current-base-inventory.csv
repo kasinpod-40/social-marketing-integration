@@ -1,0 +1,27 @@
+Table,Records,Fields,Views,Category,Decision
+MKT_Accounts,1,9,3,Canonical/Master,Retain shared Canonical table; use platform Views; align fields separately
+MKT_Ads_Accounts,0,7,3,Canonical/Master,Retain shared Canonical table; use platform Views; align fields separately
+MKT_Metric_Definitions,68,19,8,Canonical/Master,Retain; no duplicate table removal proposed
+MKT_Classification_Dictionary,53,11,1,Canonical/Master,Retain; no duplicate table removal proposed
+MKT_Content,22,29,5,Canonical/Master,Retain shared Canonical table; use platform Views; align fields separately
+MKT_Content_Daily,208,15,5,Canonical/Master,Retain shared Canonical table; use platform Views; align fields separately
+MKT_Ads_Campaigns,0,17,5,Canonical/Master,Retain shared Canonical table; use platform Views; align fields separately
+MKT_Ads_AdGroups,0,10,5,Canonical/Master,Retain shared Canonical table; use platform Views; align fields separately
+MKT_Ads_Creatives,0,17,5,Canonical/Master,Retain shared Canonical table; use platform Views; align fields separately
+MKT_Ads_Daily,0,20,5,Canonical/Master,Retain shared Canonical table; use platform Views; align fields separately
+MKT_AI_Report_Runs,0,16,5,Report,Retain; no duplicate table removal proposed
+MKT_Report_Settings,2,19,2,Report,Retain; no duplicate table removal proposed
+MKT_Sync_Log,2012,7,4,System/Reliability,Retain; no duplicate table removal proposed
+MKT_System_Alerts,80,5,3,System/Reliability,Retain; no duplicate table removal proposed
+RAW_TikTok_Creator_Videos,2020,18,1,External-managed Raw,Retain protected; read-only; never rename or mutate schema
+RAW_TikTok_Business_Campaigns,0,4,1,Planned Raw,Rename/reuse in place as RAW_Meta_Organic_Accounts after live zero-record confirmation
+RAW_TikTok_Business_AdGroups,0,3,1,Planned Raw,Rename/reuse in place as RAW_Meta_Organic_Content after live zero-record confirmation
+RAW_TikTok_Business_Ads,0,4,1,Planned Raw,Rename/reuse in place as RAW_Meta_Organic_Metrics after live zero-record confirmation
+RAW_Google_Campaigns,0,4,1,Planned Raw,Rename/reuse in place as RAW_Ads_Entities after live zero-record confirmation
+RAW_Google_Customer_Lists,0,4,1,Planned Raw,Rename/reuse in place as RAW_Ads_Daily after live zero-record confirmation
+RAW_YouTube_Channels,1,10,1,Operational Raw,Retain operational table; no merge in this revision
+RAW_YouTube_Videos,2,19,1,Operational Raw,Retain operational table; no merge in this revision
+RAW_YouTube_Analytics_Daily,1,13,1,Operational Raw,Retain operational table; no merge in this revision
+MKT_Report_Snapshots,9,20,7,Report,Retain; no duplicate table removal proposed
+MKT_Report_Metric_Values,117,26,3,Report,Retain; no duplicate table removal proposed
+MKT_Report_Top_Content,45,26,3,Report,Retain; no duplicate table removal proposed

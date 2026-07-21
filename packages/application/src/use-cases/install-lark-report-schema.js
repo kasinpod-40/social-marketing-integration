@@ -1,5 +1,6 @@
 import { RuntimeError, permanentError } from '../../../shared/src/errors/runtime-error.js';
 import { larkFieldTypeAllowsProperty, normalizeLarkFieldProperty } from '../../../shared/src/lark/lark-field-contract.js';
+import { assertSchemaDoesNotTargetProtectedTables } from '../../../config/src/lark-table-governance.js';
 import {
   LARK_REPORT_SCHEMA,
   LARK_REPORT_SCHEMA_VERSION,
@@ -31,6 +32,7 @@ export async function planLarkSchema(input) {
   const schemaVersion = input?.schemaVersion ?? LARK_REPORT_SCHEMA_VERSION;
   const validateSchema = input?.validateSchema ?? validateReportSchemaDefinition;
   validateSchema(schema);
+  assertSchemaDoesNotTargetProtectedTables(schema);
 
   const liveTables = await client.listTables();
   const tableIndex = buildTableIndex(liveTables);

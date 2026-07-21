@@ -130,6 +130,7 @@
     "MKT_SYNC_LOCK_RENEW_INTERVAL_MS": "120000",
 
     // Table IDs ต้องเป็นของ Base เฉพาะ Environment; ห้ามแชร์ DEV/UAT/Production
+    // Protected source: Lark Native TikTok เป็นเจ้าของ Schema; Worker อ่านอย่างเดียวและห้าม Schema mutation
     "LARK_TABLE_RAW_TIKTOK_CREATOR_VIDEOS": "replace-with-table-id",
     // YouTube tables ใช้เมื่อ Blueprint ถูก Apply และ Live UAT ได้รับอนุมัติเท่านั้น
     "LARK_TABLE_RAW_YOUTUBE_CHANNELS": "replace-with-table-id",
@@ -139,7 +140,14 @@
     "LARK_TABLE_MKT_ACCOUNTS": "replace-with-table-id",
     "LARK_TABLE_MKT_CONTENT": "replace-with-table-id",
     "LARK_TABLE_MKT_CONTENT_DAILY": "replace-with-table-id",
-    // Ads tables ยังเป็น planned; ตั้งค่าเมื่อ Blueprint ผ่าน Review และ Customer-real UAT ได้รับอนุมัติเท่านั้น
+    "LARK_TABLE_MKT_ACCOUNT_DAILY": "replace-with-table-id",
+    // Shared Raw tables ใช้ View แยก Platform/Entity; ค่า ID จริงมาจากการ Rename/Reuse ตาราง Planned เดิมแบบ In-place
+    "LARK_TABLE_RAW_META_ORGANIC_ACCOUNTS": "replace-with-table-id",
+    "LARK_TABLE_RAW_META_ORGANIC_CONTENT": "replace-with-table-id",
+    "LARK_TABLE_RAW_META_ORGANIC_METRICS": "replace-with-table-id",
+    "LARK_TABLE_RAW_ADS_ENTITIES": "replace-with-table-id",
+    "LARK_TABLE_RAW_ADS_DAILY": "replace-with-table-id",
+    // Canonical Ads ใช้ร่วมกับ Meta/TikTok/Google Ads และแยก Ad จาก Creative ตาม Grain
     "LARK_TABLE_MKT_ADS_ACCOUNTS": "replace-with-table-id",
     "LARK_TABLE_MKT_ADS_CAMPAIGNS": "replace-with-table-id",
     "LARK_TABLE_MKT_ADS_ADGROUPS": "replace-with-table-id",

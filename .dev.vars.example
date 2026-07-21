@@ -60,6 +60,7 @@ LARK_APP_SECRET=replace-with-lark-app-secret
 LARK_APP_TOKEN=replace-with-lark-base-app-token
 
 # Lark Table IDs — ไม่ใช่ Secret แต่ต้องตรงกับ Base ของ Environment
+# Protected source: Lark Native TikTok เป็นเจ้าของ Schema; ระบบเราอ่านอย่างเดียว
 LARK_TABLE_RAW_TIKTOK_CREATOR_VIDEOS=replace-with-table-id
 LARK_TABLE_RAW_YOUTUBE_CHANNELS=replace-with-table-id
 LARK_TABLE_RAW_YOUTUBE_VIDEOS=replace-with-table-id
@@ -67,6 +68,13 @@ LARK_TABLE_RAW_YOUTUBE_ANALYTICS_DAILY=replace-with-table-id
 LARK_TABLE_MKT_ACCOUNTS=replace-with-table-id
 LARK_TABLE_MKT_CONTENT=replace-with-table-id
 LARK_TABLE_MKT_CONTENT_DAILY=replace-with-table-id
+LARK_TABLE_MKT_ACCOUNT_DAILY=replace-with-table-id
+# Shared Raw tables: ใช้ View แยก Platform/Entity และ Reuse ตาราง Planned เดิมแบบ In-place
+LARK_TABLE_RAW_META_ORGANIC_ACCOUNTS=replace-with-table-id
+LARK_TABLE_RAW_META_ORGANIC_CONTENT=replace-with-table-id
+LARK_TABLE_RAW_META_ORGANIC_METRICS=replace-with-table-id
+LARK_TABLE_RAW_ADS_ENTITIES=replace-with-table-id
+LARK_TABLE_RAW_ADS_DAILY=replace-with-table-id
 LARK_TABLE_MKT_ADS_ACCOUNTS=replace-with-table-id
 LARK_TABLE_MKT_ADS_CAMPAIGNS=replace-with-table-id
 LARK_TABLE_MKT_ADS_ADGROUPS=replace-with-table-id

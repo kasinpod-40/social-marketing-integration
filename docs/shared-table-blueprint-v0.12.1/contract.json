@@ -1,0 +1,34 @@
+{
+  "version": "shared-table-blueprint-v0.12.1",
+  "status": "architecture_revised_pending_guarded_schema_plan",
+  "baseSnapshot": {
+    "reviewedLocally": true,
+    "fileCommitted": false,
+    "uniqueTables": 26,
+    "records": 4641,
+    "fields": 352,
+    "views": 81,
+    "duplicateSnapshotBlocks": 1
+  },
+  "protectedTables": [
+    "RAW_TikTok_Creator_Videos"
+  ],
+  "reusedEmptyTables": 5,
+  "newTables": [
+    "MKT_Account_Daily",
+    "MKT_Ads_Ads"
+  ],
+  "expectedFinalUniqueTableCount": 28,
+  "rawStrategy": {
+    "metaOrganicTables": 3,
+    "adsTables": 2,
+    "platformSeparation": "views_and_platform_field"
+  },
+  "blocked": [
+    "live_schema_apply",
+    "connector_implementation",
+    "business_data_write",
+    "production_mutation",
+    "ad_creation_or_spend"
+  ]
+}

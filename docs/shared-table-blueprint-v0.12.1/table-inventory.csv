@@ -1,0 +1,8 @@
+Table,Layer,Scope,Grain,Write mode,Stable key field,Physical action,Current source table,Table count effect,Decision
+RAW_Meta_Organic_Accounts,Raw,Facebook + Instagram Organic,Account latest state,Upsert latest,raw_account_key,Rename/reuse in place,RAW_TikTok_Business_Campaigns,0,Shared table; Views by platform
+RAW_Meta_Organic_Content,Raw,Facebook + Instagram Organic,Content latest state,Upsert latest,raw_content_key,Rename/reuse in place,RAW_TikTok_Business_AdGroups,0,Shared table; Views by platform/content type
+RAW_Meta_Organic_Metrics,Raw,Facebook + Instagram Organic,Entity×Metric×Source time,Upsert,raw_metric_key,Rename/reuse in place,RAW_TikTok_Business_Ads,0,Shared metric fact table
+RAW_Ads_Entities,Raw,Meta + TikTok + Google Ads,Account/Campaign/AdGroup/Ad/Creative/Audience latest state,Upsert latest,raw_ads_entity_key,Rename/reuse in place,RAW_Google_Campaigns,0,entity_type + Views replace platform tables
+RAW_Ads_Daily,Raw,Meta + TikTok + Google Ads,Entity×Date×Breakdown,Upsert,raw_ads_daily_key,Rename/reuse in place,RAW_Google_Customer_Lists,0,Shared performance fact table
+MKT_Account_Daily,Canonical,Organic,Account×Date,Upsert,account_daily_key,Create new,,+1,Required distinct grain
+MKT_Ads_Ads,Canonical,Paid Ads,Ad latest state,Upsert,ads_ad_key,Create new,,+1,Required to keep Ad and Creative identities separate

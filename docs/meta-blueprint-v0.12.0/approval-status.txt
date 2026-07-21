@@ -1,2 +1,4 @@
-approved_for_schema_apply: 2026-07-21
-connector_implementation: pending_schema_verification
+approved_semantics_retained: 2026-07-21
+physical_table_layout: superseded_by_shared-table-blueprint-v0.12.1
+schema_apply: blocked
+connector_implementation: pending_revised_schema_verification

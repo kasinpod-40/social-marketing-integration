@@ -1,0 +1,3 @@
+architecture_revision_authorized: 2026-07-21
+schema_apply: blocked_pending_revised_contract_review
+connector_implementation: blocked_pending_schema_verification

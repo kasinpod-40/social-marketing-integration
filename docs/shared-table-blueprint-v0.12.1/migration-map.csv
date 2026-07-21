@@ -1,0 +1,9 @@
+Current table,Current records,Target table,Action,Preserve Table ID,Data migration,Reason,Safety gate
+RAW_TikTok_Creator_Videos,2020,RAW_TikTok_Creator_Videos,Protected retain,Yes,None,Lark Native TikTok owns schema and writes,Block every schema/business write from our installer
+RAW_TikTok_Business_Campaigns,0,RAW_Meta_Organic_Accounts,Rename/reuse empty slot,Yes,None,Unused planned table; avoid adding table,Confirm live record count remains 0
+RAW_TikTok_Business_AdGroups,0,RAW_Meta_Organic_Content,Rename/reuse empty slot,Yes,None,Unused planned table; avoid adding table,Confirm live record count remains 0
+RAW_TikTok_Business_Ads,0,RAW_Meta_Organic_Metrics,Rename/reuse empty slot,Yes,None,Unused planned table; avoid adding table,Confirm live record count remains 0
+RAW_Google_Campaigns,0,RAW_Ads_Entities,Rename/reuse empty slot,Yes,None,One shared Ads entity table across platforms,Confirm live record count remains 0
+RAW_Google_Customer_Lists,0,RAW_Ads_Daily,Rename/reuse empty slot,Yes,None,Audience remains entity_type=audience; daily table uses freed slot,Confirm live record count remains 0
+,0,MKT_Account_Daily,Create new,No,None,Account×Date is not Content×Date,Preview must show exactly one create
+,0,MKT_Ads_Ads,Create new,No,None,Ad and Creative are different identities,Preview must show exactly one create

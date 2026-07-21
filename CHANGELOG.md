@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased — Shared-table architecture revision — 2026-07-21
+
+### Changed
+- Replaced the unapplied 14-table Meta physical layout with five shared Raw tables separated by `platform`, `entity_type`, `ad_channel` and Lark Views.
+- Reuses five existing zero-record Planned Raw tables in place and permits only two new tables: `MKT_Account_Daily` and `MKT_Ads_Ads`.
+- Recorded a sanitized review of the current Base export: 26 unique tables, 4,641 records, 352 fields, 81 views and one duplicate export block rather than a duplicate table.
+
+### Safety
+- Locked `RAW_TikTok_Creator_Videos` as an externally managed Lark Native source; generic schema planning now fails closed before live access when a contract targets it.
+- Added a schema-only `.base` analyzer that does not inspect record values and redacts Table IDs by default.
+- No Lark mutation, source API call, Cloudflare rollout, Queue message, advertisement action, spend or Production change occurred.
+
 ## Unreleased — Customer-real UAT foundation — 2026-07-21
 
 ### Added

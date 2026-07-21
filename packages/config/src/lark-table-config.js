@@ -9,6 +9,7 @@ export const LARK_TABLE_ENV = Object.freeze({
   mktAdsAccounts: 'LARK_TABLE_MKT_ADS_ACCOUNTS',
   mktContent: 'LARK_TABLE_MKT_CONTENT',
   mktContentDaily: 'LARK_TABLE_MKT_CONTENT_DAILY',
+  mktAccountDaily: 'LARK_TABLE_MKT_ACCOUNT_DAILY',
   mktAdsCampaigns: 'LARK_TABLE_MKT_ADS_CAMPAIGNS',
   mktAdsAdGroups: 'LARK_TABLE_MKT_ADS_ADGROUPS',
   mktAdsAds: 'LARK_TABLE_MKT_ADS_ADS',
@@ -27,11 +28,12 @@ export const LARK_TABLE_ENV = Object.freeze({
   rawYouTubeChannels: 'LARK_TABLE_RAW_YOUTUBE_CHANNELS',
   rawYouTubeVideos: 'LARK_TABLE_RAW_YOUTUBE_VIDEOS',
   rawYouTubeAnalyticsDaily: 'LARK_TABLE_RAW_YOUTUBE_ANALYTICS_DAILY',
-  rawTikTokBusinessCampaigns: 'LARK_TABLE_RAW_TIKTOK_BUSINESS_CAMPAIGNS',
-  rawTikTokBusinessAdGroups: 'LARK_TABLE_RAW_TIKTOK_BUSINESS_ADGROUPS',
-  rawTikTokBusinessAds: 'LARK_TABLE_RAW_TIKTOK_BUSINESS_ADS',
-  rawGoogleCampaigns: 'LARK_TABLE_RAW_GOOGLE_CAMPAIGNS',
-  rawGoogleCustomerLists: 'LARK_TABLE_RAW_GOOGLE_CUSTOMER_LISTS',
+  // ตาราง Planned เดิม 5 ตารางใน DEV Base จะถูก Rename/Reuse แบบ In-place เพื่อไม่เพิ่ม Table โดยไม่จำเป็น
+  rawMetaOrganicAccounts: 'LARK_TABLE_RAW_META_ORGANIC_ACCOUNTS',
+  rawMetaOrganicContent: 'LARK_TABLE_RAW_META_ORGANIC_CONTENT',
+  rawMetaOrganicMetrics: 'LARK_TABLE_RAW_META_ORGANIC_METRICS',
+  rawAdsEntities: 'LARK_TABLE_RAW_ADS_ENTITIES',
+  rawAdsDaily: 'LARK_TABLE_RAW_ADS_DAILY',
 });
 
 // รายชื่อ Logical table key ทั้งหมด ใช้เป็นค่าเริ่มต้นเมื่อผู้เรียกต้องการตรวจ Environment ครบทุกตาราง
