@@ -7,10 +7,21 @@
 - Reuses five existing zero-record Planned Raw tables in place and permits only two new tables: `MKT_Account_Daily` and `MKT_Ads_Ads`.
 - Recorded a sanitized review of the current Base export: 26 unique tables, 4,641 records, 352 fields, 81 views and one duplicate export block rather than a duplicate table.
 
+### Added
+- Added a Preview-only Shared-table schema command derived from the approved seven-table/128-field CSV contract and 17-View plan.
+- Supports both live DEV read-only inspection and offline `.base` inspection without cell values.
+- Checks each reuse candidate with a bounded one-record read and plans Primary-field rename only when authoritative live metadata identifies exactly one Text Primary field.
+
 ### Safety
 - Locked `RAW_TikTok_Creator_Videos` as an externally managed Lark Native source; generic schema planning now fails closed before live access when a contract targets it.
 - Added a schema-only `.base` analyzer that does not inspect record values and redacts Table IDs by default.
 - No Lark mutation, source API call, Cloudflare rollout, Queue message, advertisement action, spend or Production change occurred.
+- `--apply` and ambient `CONFIRM_WRITE=YES` fail closed; no Apply implementation is exposed.
+
+### Verification
+- Offline current-Base preview: five empty reuse candidates, five rename plans, two create-table plans, 98 missing Fields, one description update, 17 View plans, zero conflicts and zero protected actions.
+- Offline export lacks authoritative Primary metadata, so five manual blockers remain until the live DEV Preview runs.
+- Local gates: focused 22/22, Node Unit/Integration 520/520, Workers 9/9, Report reliability 70/70, Architecture 140/321/0, hygiene, audit 0 and Wrangler dry-run 658.68/130.35 KiB.
 
 ## Unreleased — Customer-real UAT foundation — 2026-07-21
 

@@ -1,6 +1,6 @@
 {
   "version": "shared-table-blueprint-v0.12.1",
-  "status": "architecture_revised_pending_guarded_schema_plan",
+  "status": "preview_tooling_complete_live_preview_pending",
   "baseSnapshot": {
     "reviewedLocally": true,
     "fileCommitted": false,
@@ -30,5 +30,19 @@
     "business_data_write",
     "production_mutation",
     "ad_creation_or_spend"
-  ]
+  ],
+  "preview": {
+    "tables": 7,
+    "fields": 128,
+    "views": 17,
+    "mode": "read_only",
+    "applyImplemented": false,
+    "offlineCurrentBase": {
+      "reuseEmpty": 5,
+      "renamePlans": 5,
+      "createPlans": 2,
+      "conflicts": 0,
+      "primaryMetadataBlockers": 5
+    }
+  }
 }

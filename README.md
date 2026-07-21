@@ -4,9 +4,9 @@
 
 ## Baseline ปัจจุบัน
 
-Working candidate: `v0.11.2-customer-real-uat-foundation`
+Working candidate: `v0.12.2-shared-table-schema-preview`
 
-Official merged code baseline: `7d0e8e5` — Pre-Meta Batch C hardening passed independent review and was squash-merged through PR #5.
+Official merged code baseline: `ff74c37` — Shared-table architecture and protected TikTok Native source were squash-merged through PR #8.
 
 Customer-real UAT uses real customer-owned source accounts/data with a temporary developer-owned, customer-isolated Lark Base and Cloudflare environment. Use profile `uat_chemistry_k`; Canonical `customerKey` and connector `accountKey` remain `chemistry_k` for Production cutover. All UAT connectors and schedules stay disabled until channel-specific identity/source-contract preflight passes. See `docs/project-brain/customer-real-uat.md`.
 
@@ -121,6 +121,23 @@ Focused Report gate:
 ```bash
 npm run test:report-reliability
 ```
+
+
+## Shared-table Schema Preview v0.12.2
+
+Live DEV Preview อ่าน Schema เท่านั้นและใช้ `.dev.vars` ที่ถูก ignore:
+
+```bash
+npm run preview:shared-table-schema
+```
+
+Offline Preview จาก Lark Base export โดยไม่อ่านค่าข้อมูลใน Cell:
+
+```bash
+npm run preview:shared-table-schema -- --base-export /path/to/export.base
+```
+
+คำสั่งนี้ไม่มี Apply mode. การส่ง `--apply` หรือ `CONFIRM_WRITE=YES` จะถูกปฏิเสธ. Apply implementation, Rename/Create table และ View/Field mutation ต้องเป็นงานแยกที่ได้รับอนุมัติชัดเจนหลัง Live Preview ผ่านเท่านั้น.
 
 ## Lark Report Schema Installer v0.8.2
 
