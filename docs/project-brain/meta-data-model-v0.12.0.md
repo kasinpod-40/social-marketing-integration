@@ -75,11 +75,18 @@ Meta Ad Set maps to canonical Ads Ad Group. Ad and Creative are separate identit
 - Canonical money uses safe integer micros.
 - Schema apply is idempotent and non-destructive.
 
-## Approved artifact
+## Approved artifacts
 
-`docs/Social_MKT_Data_Hub_Meta_Blueprint_v0.12.0.xlsx`
+Durable source-controlled contract:
 
-The workbook is the field-level authority for table names, field types, required/nullability, stable keys, relations, Select options, source paths, metric definitions, timestamp semantics, zero/null behavior, examples, import notes, Raw-to-Canonical mapping and UAT gates.
+- `docs/meta-blueprint-v0.12.0/`
+
+User-facing workbook handoff:
+
+- `Social_MKT_Data_Hub_Meta_Blueprint_v0.12.0_APPROVED.xlsx`
+- SHA-256: `4c49148b84051b221cdf4eca7b16315421e03812e6d058bb6ac4978a531bc02d`
+
+The source-controlled CSV contracts are the durable field-level authority for table names, field types, required/nullability, stable keys, relations, Select options, source paths, metric definitions, timestamp semantics, zero/null behavior, examples, import notes, Raw-to-Canonical mapping and UAT gates. The Excel workbook is the review and import handoff representation of the same contract.
 
 ## Next gate
 
