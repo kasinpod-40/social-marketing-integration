@@ -25,6 +25,38 @@ test('environment feature flag can disable an active connector safely', () => {
   assert.equal(config.connectors.tiktok.enabledSource, 'environment');
 });
 
+test('disabled UAT connector can omit live identity but enabling it requires an exact environment value', () => {
+  const disabled = loadCustomerRuntimeConfig({
+    MKT_ENV: 'uat',
+    MKT_CUSTOMER_PROFILE: 'uat_chemistry_k',
+  });
+
+  assert.equal(disabled.connectors.tiktok.enabled, false);
+  assert.equal(disabled.connectors.tiktok.accountKey, 'chemistry_k');
+  assert.equal(disabled.connectors.tiktok.sourceHandle, null);
+
+  assert.throws(
+    () => loadCustomerRuntimeConfig({
+      MKT_ENV: 'uat',
+      MKT_CUSTOMER_PROFILE: 'uat_chemistry_k',
+      MKT_CONNECTOR_TIKTOK_ENABLED: 'true',
+    }),
+    /Missing connector runtime field tiktok.sourceHandle/,
+  );
+
+  const enabled = loadCustomerRuntimeConfig({
+    MKT_ENV: 'uat',
+    MKT_CUSTOMER_PROFILE: 'uat_chemistry_k',
+    MKT_CONNECTOR_TIKTOK_ENABLED: 'true',
+    TIKTOK_SOURCE_HANDLE: 'customer.actual.handle',
+  });
+
+  assert.equal(enabled.connectors.tiktok.enabled, true);
+  assert.equal(enabled.connectors.tiktok.accountKey, 'chemistry_k');
+  assert.equal(enabled.connectors.tiktok.sourceHandle, 'customer.actual.handle');
+  assert.equal(enabled.connectors.tiktok.sourceHandleSource, 'environment');
+});
+
 test('YouTube connector can be enabled after activation review', () => {
   const config = loadCustomerRuntimeConfig({
     MKT_ENV: 'development',
