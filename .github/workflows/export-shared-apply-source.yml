@@ -4,9 +4,16 @@ on:
   push:
     branches:
       - work/shared-table-schema-apply
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
+
+concurrency:
+  group: guarded-shared-apply-patch
+  cancel-in-progress: true
 
 jobs:
   apply:
