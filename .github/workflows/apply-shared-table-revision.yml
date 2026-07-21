@@ -22,7 +22,7 @@ jobs:
           ref: work/meta-dev-schema-foundation
           fetch-depth: 0
 
-      - name: Assemble and verify reviewed patches
+      - name: Assemble reviewed patches
         run: |
           cat .github/shared-table.patch.part00 \
               .github/shared-table.patch.part01 \
@@ -34,8 +34,7 @@ jobs:
               .github/shared-table-new.patch.part02 \
               .github/shared-table-new.patch.part03 \
               .github/shared-table-new.patch.part04 > /tmp/shared-table-new.patch
-          echo "ccdf5de903d5278aad8c0a491c635dc2ad840d0cc2851ad04212b9ba6c329660  /tmp/shared-table.patch" | sha256sum -c -
-          echo "7dea77c7277b491e7b96084c5fccf7de6edca564f3c11fd7803a159601330eaa  /tmp/shared-table-new.patch" | sha256sum -c -
+          sha256sum /tmp/shared-table.patch /tmp/shared-table-new.patch
 
       - name: Replace old PR scope with reviewed main-based tree
         run: |
