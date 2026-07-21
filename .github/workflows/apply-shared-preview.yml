@@ -36,7 +36,7 @@ jobs:
         run: |
           git fetch origin main
           git worktree add /tmp/shared-preview-main origin/main
-          if ! (cd /tmp/shared-preview-main && git apply --check /tmp/shared-preview.patch) 2> /tmp/shared-preview-apply-error.txt; then
+          if ! (cd /tmp/shared-preview-main && git apply --check --exclude=docs/current-task.md /tmp/shared-preview.patch) 2> /tmp/shared-preview-apply-error.txt; then
             cp /tmp/shared-preview-apply-error.txt .github/shared-preview-apply-error.txt
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -50,7 +50,7 @@ jobs:
         run: |
           git rm -r --ignore-unmatch .
           git checkout origin/main -- .
-          git apply /tmp/shared-preview.patch
+          git apply --exclude=docs/current-task.md /tmp/shared-preview.patch
           mkdir -p .github/workflows
           cp /tmp/apply-shared-preview.yml .github/workflows/apply-shared-preview.yml
           test -z "$(find .github -maxdepth 1 -type f -name 'shared-preview.patch.part*' -print -quit)"
