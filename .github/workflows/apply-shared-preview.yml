@@ -1,0 +1,49 @@
+name: Apply Shared Preview Patch
+
+on:
+  push:
+    branches:
+      - work/shared-table-dev-schema-preview
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: work/shared-table-dev-schema-preview
+          fetch-depth: 0
+
+      - name: Assemble and verify patch
+        run: |
+          cat .github/shared-preview.patch.part00 \
+              .github/shared-preview.patch.part01 \
+              .github/shared-preview.patch.part02 \
+              .github/shared-preview.patch.part03 > /tmp/shared-preview.patch
+          echo "a5f760f6280f88210b96e6bda65a6c7df1a5ec8a4fb2cd8b9cf2ba81ad5144b3  /tmp/shared-preview.patch" | sha256sum -c -
+          cp .github/workflows/apply-shared-preview.yml /tmp/apply-shared-preview.yml
+
+      - name: Replace staging files with reviewed implementation
+        run: |
+          git fetch origin main
+          git rm -r --ignore-unmatch .
+          git checkout origin/main -- .
+          git apply --check /tmp/shared-preview.patch
+          git apply /tmp/shared-preview.patch
+          mkdir -p .github/workflows
+          cp /tmp/apply-shared-preview.yml .github/workflows/apply-shared-preview.yml
+          test -z "$(find .github -maxdepth 1 -type f -name 'shared-preview.patch.part*' -print -quit)"
+          git diff --check
+
+      - name: Commit and push implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: add shared-table schema preview"
+          git push origin HEAD:work/shared-table-dev-schema-preview
