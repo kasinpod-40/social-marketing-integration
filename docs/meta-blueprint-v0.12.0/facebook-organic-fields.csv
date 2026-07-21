@@ -1,0 +1,51 @@
+Table,Order,Field,Lark Type,Required,Nullable,Key role,Source path / metric,Definition,Time / zero / null semantics,Example,Relation / Options,Import note
+RAW_Facebook_Pages,1,raw_page_key,Text,Yes,No,Primary + Stable,facebook:{source_page_id},Stable raw Page identity,Never null,facebook:FACEBOOK_PAGE_ID,,Primary field
+RAW_Facebook_Pages,2,source_page_id,Text,Yes,No,Identity,id,Canonical Page ID as text,Never coerce to number,FACEBOOK_PAGE_ID,,Text
+RAW_Facebook_Pages,3,page_name,Text,Yes,No,Not a key,name,Current Page name,Latest value,ThanakirinFarm,,
+RAW_Facebook_Pages,4,username,Text,No,Yes,Not a key,username,Page username when returned,Null valid,,,
+RAW_Facebook_Pages,5,category,Text,No,Yes,Not a key,category,Page category,Null valid,,,
+RAW_Facebook_Pages,6,followers_count,Number,No,Yes,Metric,followers_count,Current follower count,0 is valid,,,Whole number
+RAW_Facebook_Pages,7,fan_count,Number,No,Yes,Metric,fan_count,Current Page fan count,0 is valid,,,Whole number
+RAW_Facebook_Pages,8,link,URL,No,Yes,Not a key,link,Canonical Page URL,Null valid,,,
+RAW_Facebook_Pages,9,fetched_at,DateTime,Yes,No,Audit,connector clock,UTC fetch timestamp,Store exact instant,46224.166666666664,,
+RAW_Facebook_Pages,10,source_payload_json,LongText,Yes,No,Audit,full source object,Redacted raw payload JSON,No token/secret,{...},,JSON string
+RAW_Facebook_Pages,11,sync_run_id,Text,Yes,No,Audit,runtime,D1/Lark sync correlation ID,Never null,run_...,MKT_Sync_Log,
+RAW_Facebook_Posts,1,raw_post_key,Text,Yes,No,Primary + Stable,facebook:{source_page_id}:{source_post_id},Stable raw Post identity,Never null,facebook:1144:1144_999,,Primary field
+RAW_Facebook_Posts,2,source_page_id,Text,Yes,No,Identity,parent Page,Canonical Page ID,Text,FACEBOOK_PAGE_ID,RAW_Facebook_Pages,
+RAW_Facebook_Posts,3,source_post_id,Text,Yes,No,Identity,id,Meta Post ID,Text; composite IDs allowed,1144_999,,
+RAW_Facebook_Posts,4,message,LongText,No,Yes,Not a key,message,Post body/caption,Null valid,,,
+RAW_Facebook_Posts,5,title,Text,No,Yes,Not a key,title,Post title when available,title=null is valid,,,
+RAW_Facebook_Posts,6,post_type,SingleSelect,No,Yes,Classification,type,Meta post type,Unknown stays raw/null,photo,photo|video|status|link|reel|other,
+RAW_Facebook_Posts,7,permalink_url,URL,No,Yes,Not a key,permalink_url,Public post link,Null valid,,,
+RAW_Facebook_Posts,8,created_time,DateTime,Yes,No,Source time,created_time,Original Meta publish timestamp,Store exact source timestamp,46219.307858796295,,
+RAW_Facebook_Posts,9,updated_time,DateTime,No,Yes,Source time,updated_time,Last source update,Null valid,,,
+RAW_Facebook_Posts,10,is_published,Checkbox,No,Yes,State,is_published,Published status,Boolean preserved,True,,
+RAW_Facebook_Posts,11,fetched_at,DateTime,Yes,No,Audit,connector clock,Fetch instant UTC,Exact instant,,,
+RAW_Facebook_Posts,12,source_payload_json,LongText,Yes,No,Audit,full source object,Redacted raw payload,No secret,,,JSON string
+RAW_Facebook_Posts,13,sync_run_id,Text,Yes,No,Audit,runtime,Sync correlation,Never null,,MKT_Sync_Log,
+RAW_Facebook_Post_Insights,1,raw_post_insight_key,Text,Yes,No,Primary + Stable,facebook:{source_post_id}:{metric_name}:{period}:{source_end_time_or_snapshot},One row per metric/source time,Never null,facebook:...:page_media_view:day:2026-07-17,,Primary field
+RAW_Facebook_Post_Insights,2,source_post_id,Text,Yes,No,Identity,post id,Source entity ID,Text,,,
+RAW_Facebook_Post_Insights,3,metric_name,Text,Yes,No,Identity,name,Exact Meta metric name,Do not rename in RAW,page_media_view,,
+RAW_Facebook_Post_Insights,4,period,Text,Yes,No,Identity,period,Metric period/lifetime contract,Exact source value,day,,
+RAW_Facebook_Post_Insights,5,value_number,Number,No,Yes,Metric,values[].value or scalar,Numeric metric value,0 is real; null only missing/unsupported,0,,
+RAW_Facebook_Post_Insights,6,value_json,LongText,No,Yes,Metric raw,values[].value when non-scalar,Preserve structured values,Null valid,,,JSON
+RAW_Facebook_Post_Insights,7,end_time_raw,Text,No,Yes,Source time,values[].end_time,Exact Meta end_time text,Do not pre-convert,2026-07-17T07:00:00+0000,,
+RAW_Facebook_Post_Insights,8,source_snapshot_at,DateTime,No,Yes,Source time,response/source context,Source timestamp if available,Null valid,,,
+RAW_Facebook_Post_Insights,9,snapshot_date,Date,Yes,No,Derived date,end_time/fetched_at in Asia/Bangkok,Destination reporting date,Date-only Bangkok,2026-07-17,,
+RAW_Facebook_Post_Insights,10,response_shape,SingleSelect,Yes,No,Contract,adapter,Observed payload shape,Never null,values,values|scalar|other,
+RAW_Facebook_Post_Insights,11,fetched_at,DateTime,Yes,No,Audit,connector clock,Fetch instant UTC,Exact instant,,,
+RAW_Facebook_Post_Insights,12,source_payload_json,LongText,Yes,No,Audit,metric object,Redacted raw metric payload,No secret,,,JSON
+RAW_Facebook_Post_Insights,13,sync_run_id,Text,Yes,No,Audit,runtime,Sync correlation,Never null,,MKT_Sync_Log,
+RAW_Facebook_Page_Insights,1,raw_page_insight_key,Text,Yes,No,Primary + Stable,facebook:{source_page_id}:{metric_name}:{period}:{source_end_time_or_snapshot},One row per metric/source time,Never null,facebook:...:page_media_view:day:2026-07-17,,Primary field
+RAW_Facebook_Page_Insights,2,source_page_id,Text,Yes,No,Identity,page id,Source entity ID,Text,,,
+RAW_Facebook_Page_Insights,3,metric_name,Text,Yes,No,Identity,name,Exact Meta metric name,Do not rename in RAW,page_media_view,,
+RAW_Facebook_Page_Insights,4,period,Text,Yes,No,Identity,period,Metric period/lifetime contract,Exact source value,day,,
+RAW_Facebook_Page_Insights,5,value_number,Number,No,Yes,Metric,values[].value or scalar,Numeric metric value,0 is real; null only missing/unsupported,0,,
+RAW_Facebook_Page_Insights,6,value_json,LongText,No,Yes,Metric raw,values[].value when non-scalar,Preserve structured values,Null valid,,,JSON
+RAW_Facebook_Page_Insights,7,end_time_raw,Text,No,Yes,Source time,values[].end_time,Exact Meta end_time text,Do not pre-convert,2026-07-17T07:00:00+0000,,
+RAW_Facebook_Page_Insights,8,source_snapshot_at,DateTime,No,Yes,Source time,response/source context,Source timestamp if available,Null valid,,,
+RAW_Facebook_Page_Insights,9,snapshot_date,Date,Yes,No,Derived date,end_time/fetched_at in Asia/Bangkok,Destination reporting date,Date-only Bangkok,2026-07-17,,
+RAW_Facebook_Page_Insights,10,response_shape,SingleSelect,Yes,No,Contract,adapter,Observed payload shape,Never null,values,values|scalar|other,
+RAW_Facebook_Page_Insights,11,fetched_at,DateTime,Yes,No,Audit,connector clock,Fetch instant UTC,Exact instant,,,
+RAW_Facebook_Page_Insights,12,source_payload_json,LongText,Yes,No,Audit,metric object,Redacted raw metric payload,No secret,,,JSON
+RAW_Facebook_Page_Insights,13,sync_run_id,Text,Yes,No,Audit,runtime,Sync correlation,Never null,,MKT_Sync_Log,
