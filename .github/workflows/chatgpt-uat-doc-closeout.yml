@@ -1,9 +1,9 @@
 name: ChatGPT UAT Documentation Closeout
 
 on:
-  pull_request:
+  push:
     branches:
-      - main
+      - work/customer-real-uat-foundation
 
 permissions:
   contents: write
@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   update-docs:
-    if: github.head_ref == 'work/customer-real-uat-foundation'
+    if: github.ref_name == 'work/customer-real-uat-foundation'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
