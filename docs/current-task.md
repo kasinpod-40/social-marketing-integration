@@ -6,7 +6,8 @@
 - **Accepted baseline:** `abe2fc3fdbfc81c7c3b2480210ab3762cc42e2e6`
 - **Working branch:** `work/google-ads-schema-apply`
 - **Draft Pull Request:** `#11`
-- **Verified head:** `7e84005b29b430073774b24539e4908b37cbf365`
+- **Verified source head:** `7e84005b29b430073774b24539e4908b37cbf365`
+- **Verified documentation head:** `52a27728ae518f5ba1a3bba404ad5c726c442796`
 - **Environment:** developer-owned DEV
 - **Profile:** `dev_ft_pumkin`
 - **Data model:** approved workbook `Social_MKT_Data_Hub_Google_Ads_Blueprint_v0.13.0_RC1.xlsx`
@@ -130,7 +131,7 @@ npm run setup:google-ads-schema
 
 ### Verification
 
-Final Branch Verification run `29857040248` on head `7e84005b29b430073774b24539e4908b37cbf365` passed every workflow stage:
+Source Branch Verification run `29857040248` on head `7e84005b29b430073774b24539e4908b37cbf365` and documentation closeout run `29857420747` on head `52a27728ae518f5ba1a3bba404ad5c726c442796` both passed every workflow stage:
 
 - dependency install: PASS;
 - syntax, architecture and repository hygiene: PASS;
@@ -156,11 +157,11 @@ The five focused Google Ads files are included in the successful 550-test Unit/I
 ## Remaining live blockers
 
 1. Lark app version containing `base:table:update` must become active.
-2. PR #10 / Meta shared-table code must be merged before this PR, or PR #11 must be rebased after it; the live Meta Apply then must pass read-back and zero drift.
-3. Live Canonical Ads v2 compatibility must pass after Meta; Google Apply will fail closed on missing/type-mismatched core fields.
+2. PR #10 is already Squash Merged as baseline `abe2fc3fdbfc81c7c3b2480210ab3762cc42e2e6`; the remaining Meta dependency is the live DEV Preview/Apply/read-back/zero-drift sequence, not another code merge.
+3. Live Canonical Ads v2 compatibility must pass after Meta; Google Apply fails closed on missing/type-mismatched core fields.
 4. Approve one semantic value for `google_other_ads` versus shared `google_other` when live options are read back.
 5. Give a fresh exact authorization after reviewing the live Google Preview.
 
 ## Next gate
 
-Keep PR #11 as Draft for independent final diff/document review. Do not merge or run live commands yet. After the dependency and permission gates are closed, merge in the correct order, run Meta Preview/Apply/zero drift, then run a fresh Google Preview and request exact authorization for the Google Schema Apply.
+Keep PR #11 as Draft for independent final diff review. Do not merge or run live commands yet. After the permission gate is closed, run Meta Preview/Apply/zero drift, then run a fresh Google Preview and request exact authorization for the Google Schema Apply.
