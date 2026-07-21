@@ -32,3 +32,8 @@ Revision นี้แทน Physical table layout แบบ 14 Meta Raw tables �
 - `.base` ของผู้ใช้ใช้ตรวจแบบ Local เท่านั้นและไม่ Commit
 
 ยังไม่อนุญาต Live Lark mutation, Connector implementation, Cloudflare rollout, Advertisement creation หรือ Spend
+
+
+## Preview tooling v0.12.2
+
+`npm run preview:shared-table-schema` ตรวจ Live DEV แบบ Read-only. `--base-export` ใช้ตรวจ Export แบบ Offline โดยไม่อ่าน Cell values. คำสั่งนี้ไม่มี Apply mode และจะปฏิเสธ `--apply`/`CONFIRM_WRITE=YES`. ผล Offline ปัจจุบันอยู่ที่ `offline-preview-summary.md`; Live Primary-field metadata ยังเป็น Gate ก่อนออกแบบ Apply.

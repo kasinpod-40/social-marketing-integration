@@ -26,7 +26,7 @@ const PLACEHOLDER_TABLE_ID_PATTERNS = Object.freeze([
  * - Primary field ของ Table เดิมเป็น Manual action เพราะ Lark Field API ไม่ควรถูกใช้เปลี่ยนแบบทำลายข้อมูล
  */
 export async function planLarkSchema(input) {
-  const client = requireClient(input?.client);
+  const client = requirePlanningClient(input?.client);
   const env = input?.env ?? {};
   const schema = input?.schema ?? LARK_REPORT_SCHEMA;
   const schemaVersion = input?.schemaVersion ?? LARK_REPORT_SCHEMA_VERSION;
@@ -112,7 +112,7 @@ export async function planLarkSchema(input) {
  * ฟังก์ชันนี้ไม่อ่าน process.env เอง เพื่อให้ Tests และ Script guard แยกความรับผิดชอบชัดเจน
  */
 export async function applyLarkSchema(input) {
-  const client = requireClient(input?.client);
+  const client = requireApplyClient(input?.client);
   const env = input?.env ?? {};
   const schema = input?.schema ?? LARK_REPORT_SCHEMA;
   const schemaVersion = input?.schemaVersion ?? LARK_REPORT_SCHEMA_VERSION;
@@ -547,12 +547,19 @@ function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function requireClient(value) {
-  const methods = ['listTables', 'listFields', 'createTable', 'createField', 'updateField'];
-  for (const method of methods) {
-    if (typeof value?.[method] !== 'function') throw new TypeError(`Schema installer requires client.${method}`);
+function requirePlanningClient(value) {
+  for (const method of ['listTables', 'listFields']) {
+    if (typeof value?.[method] !== 'function') throw new TypeError(`Schema planner requires client.${method}`);
   }
   return value;
+}
+
+function requireApplyClient(value) {
+  const client = requirePlanningClient(value);
+  for (const method of ['createTable', 'createField', 'updateField']) {
+    if (typeof client?.[method] !== 'function') throw new TypeError(`Schema apply requires client.${method}`);
+  }
+  return client;
 }
 
 function requireText(value, name) {
