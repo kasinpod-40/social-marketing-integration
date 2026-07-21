@@ -24,7 +24,7 @@ export async function applyGoogleAdsLarkSchema(input = {}) {
   const env = input.env ?? {};
   const schema = input.schema ?? GOOGLE_ADS_LARK_SCHEMA;
   const relations = input.relations ?? GOOGLE_ADS_RELATIONS;
-  const viewContract = input.viewContract ?? GOOGLE_ADS_VIEW_CONTRACT;
+  const viewContract = mergeGoogleAdsViewContract(input.viewContract ?? GOOGLE_ADS_VIEW_CONTRACT);
   const schemaVersion = input.schemaVersion ?? GOOGLE_ADS_LARK_SCHEMA_VERSION;
   const validateSchema = input.validateSchema ?? validateGoogleAdsLarkSchema;
   const onProgress = typeof input.onProgress === 'function' ? input.onProgress : () => undefined;
@@ -294,6 +294,7 @@ function assertApplyPreview(preview, input) {
   const problems = [];
   if (preview.readyForApplyAuthorization !== true) problems.push('preview_not_ready');
   if (preview.metaDependencyReady !== true) problems.push('meta_dependency_not_ready');
+  if (preview.canonicalCoreReady !== true) problems.push('canonical_core_not_ready');
   if (preview.conflicts.length > 0) problems.push('conflicts_present');
   if (preview.warnings.length > 0) problems.push('warnings_present');
   if (preview.blockingManualActions.length > 0) problems.push('blocking_manual_actions_present');
@@ -377,6 +378,26 @@ function assertCleanVerification(verification, appliedActions) {
 function compareBaseActions(left, right) {
   const order = new Map([['create_table', 1], ['create_field', 2], ['update_field', 3]]);
   return (order.get(left.kind) ?? 99) - (order.get(right.kind) ?? 99);
+}
+
+function mergeGoogleAdsViewContract(contract) {
+  const byTableKey = new Map();
+  for (const table of contract ?? []) {
+    const current = byTableKey.get(table.tableKey);
+    if (!current) {
+      byTableKey.set(table.tableKey, {
+        tableKey: table.tableKey,
+        envName: table.envName,
+        views: [...table.views],
+      });
+      continue;
+    }
+    if (current.envName !== table.envName) {
+      throw new TypeError(`Google Ads View envName mismatch for ${table.tableKey}`);
+    }
+    current.views.push(...table.views);
+  }
+  return [...byTableKey.values()];
 }
 
 function invalidAction(action) {
