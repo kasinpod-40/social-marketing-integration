@@ -81,7 +81,7 @@ test('safe examples expose only new shared logical mappings and protected source
   for (const key of ['rawTikTokCreatorVideos', 'rawMetaOrganicAccounts', 'rawMetaOrganicContent', 'rawMetaOrganicMetrics', 'rawAdsEntities', 'rawAdsDaily', 'mktAccountDaily']) {
     const envName = LARK_TABLE_ENV[key];
     assert.match(devVars, new RegExp(`^${envName}=replace-with-table-id$`, 'mu'));
-    assert.match(wrangler, new RegExp(`"${envName}"\s*:\s*"replace-with-table-id"`, 'u'));
+    assert.ok(wrangler.includes(`"${envName}": "replace-with-table-id"`), `missing ${envName} in Wrangler example`);
   }
   for (const stale of ['LARK_TABLE_RAW_FACEBOOK_PAGES', 'LARK_TABLE_RAW_INSTAGRAM_MEDIA', 'LARK_TABLE_RAW_META_CAMPAIGNS']) {
     assert.doesNotMatch(devVars, new RegExp(stale, 'u'));
