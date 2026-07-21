@@ -1,0 +1,12 @@
+Decision area,Approved contract,Status,Approval note
+Blueprint version,v0.12.0-meta-data-model-review-candidate,Approved,Approved by user on 2026-07-21
+Scope,Facebook Organic + Instagram Organic + Meta Ads,Locked,One Meta Ads connector for FB/IG placements
+DEV preflight,Facebook PASS; Instagram PASS; Meta Ads access PASS/valid_no_data,Accepted evidence,Data UAT remains pending
+Organic canonical decision,Add MKT_Account_Daily,Approved,MKT_Account_Daily approved as the canonical home for Page/Account daily metrics
+Instagram identity,/me ID is canonical; insight resource prefix is alias,Locked,No overwrite permitted
+Zero/null,0 is real; missing/unsupported is null/no row per metric contract,Locked,Applies all channels
+Time semantics,Store raw source timestamp/end_time; derive canonical dates separately,Locked,Organic uses Asia/Bangkok; Ads uses Ad Account timezone
+Ads entity model,Ad Account → Campaign → Ad Set→canonical AdGroup → Ad → Creative,Locked,Ad and Creative distinct
+Ads performance,RAW actions remain JSON until action_type mapping approved,Approval required later,Prevents incorrect conversion totals/ROAS
+Current authorization,Blueprint approval authorizes Lark schema apply only,Locked,"No connector coding, live API calls, ad creation or spend authorized"
+Decision,APPROVED FOR LARK SCHEMA APPLY,Approved,User approval recorded 2026-07-21; connector implementation remains blocked until schema apply and verification pass
