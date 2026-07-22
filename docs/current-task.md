@@ -136,7 +136,7 @@ Local source-snapshot verification after the final code changes:
 - `git diff --check`: PASS;
 - secret/build-artifact/repository hygiene scan: PASS.
 
-The final Draft PR head must still pass the repository Branch Verification workflow (`npm ci`, `npm run check`, staged TikTok regression, `npm test` including Workers runtime, report reliability, dependency audit and Wrangler dry run) before handoff.
+The final Draft PR implementation tree passed the repository Branch Verification workflow: `npm ci`, `npm run check`, staged TikTok regression, `npm test` including Workers runtime, report reliability, dependency audit and Wrangler dry run all completed successfully.
 
 ## Remaining risks
 
