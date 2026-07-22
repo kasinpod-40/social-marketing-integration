@@ -1,7 +1,7 @@
 const REPORT_SETTING_TEMPLATES = Object.freeze({
   integration_workspace: Object.freeze({
     customerProfile: 'integration_workspace',
-    accountKey: 'ft_pumkin',
+    accountKey: 'chemistry_k',
   }),
   chemistry_k: Object.freeze({
     customerProfile: 'chemistry_k',
