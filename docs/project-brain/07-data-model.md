@@ -26,8 +26,13 @@ Base name: `Social MKT Data Hub`
 - `RAW_TikTok_Business_Campaigns`
 - `RAW_TikTok_Business_AdGroups`
 - `RAW_TikTok_Business_Ads`
-- `RAW_Google_Campaigns`
-- `RAW_Google_Customer_Lists`
+- `RAW_Google_Ads_Accounts`
+- `RAW_Google_Ads_Campaigns`
+- `RAW_Google_Ads_Ad_Groups`
+- `RAW_Google_Ads_Ads`
+- `RAW_Google_Ads_Assets`
+- `RAW_Google_Ads_Daily`
+- Additional applied Google RAW tables remain outside signed-delivery v1 until separately approved.
 
 ## TikTok Creator keys
 - `content_key = platform:account_id:external_content_id`
@@ -51,6 +56,8 @@ Base name: `Social MKT Data Hub`
 - Other raw metrics: impressions, reach, clicks และ conversions.
 - Derived metrics are calculated centrally; zero denominator or missing components return `null`.
 - `target_roas` is never treated as `actual_roas`; `platform` and client-facing `ad_channel` are separate dimensions.
+- Google Ads signed-delivery v1 writes campaign-level daily rows only with `segment_key=all`; unsupported fields stay `null` and explicit source zero stays zero.
+- Physical stable-key fields in the already-applied Lark Base are `campaign_key`, `ad_group_key` and `creative_key` for the three reused Canonical tables. Historical blueprint aliases are not used by this connector's physical write plan.
 
 ## TikTok Creator read/write flow
 ```text
@@ -110,3 +117,12 @@ Examples:
 
 ### Metric-definition rule
 Cross-platform dashboards must use `MKT_Metric_Definitions` before comparing metrics. For example, TikTok `unique_viewers` is not automatically the same as Facebook/Instagram `reach`.
+
+## Google Ads signed-delivery operational state
+
+Migration `0009_google_ads_signed_delivery.sql` adds:
+
+- `google_ads_delivery_nonces` — atomic replay nonce reservation with 600-second retention;
+- `google_ads_deliveries` — request idempotency, bounded raw payload, Queue/processing state, reconciliation and terminal audit.
+
+PREVIEW/completed payloads are redacted immediately. Failed payloads are usable for controlled DLQ investigation/redrive for seven days, then fail closed and are redacted on the next ingress/read. Terminal audit rows become cleanup-eligible after 30 days. No new cleanup schedule is introduced. These tables are operational state, not report data.

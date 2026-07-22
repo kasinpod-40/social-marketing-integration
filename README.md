@@ -8,7 +8,7 @@
 - Documentation closeout: PR `#14`
 - Application package line: `0.11.0`
 - Lark contract versions: View `v0.13.5`, Formula `v0.13.6`, repository correction `v0.13.7`
-- Current task: `docs/current-task.md` — closed
+- Current task: `docs/current-task.md` — Google Ads signed delivery implemented; isolated UAT pending
 - Current project state: `PROJECT_BRAIN.md`
 
 Contract version numbers do not automatically bump the application package version.
@@ -20,7 +20,7 @@ Milestone estimates, not code coverage:
 ```text
 MKT DEV MVP                         ~59%
 Lark data model/schema foundation   100%
-Google Ads end-to-end                45%
+Google Ads end-to-end                65%
 Customer-real UAT readiness          40%
 Chemistry K Production readiness     25%
 ```
@@ -130,7 +130,7 @@ Full contract: `docs/project-brain/customer-real-uat.md`.
 | Facebook Organic | Planned | Meta Graph business adapter + shared reliability |
 | Instagram Organic | Planned | Instagram Login/Graph business adapter + shared reliability |
 | Meta Ads | Planned | Controlled API/Worker connector |
-| Google Ads | Read-only UAT passed; delivery not implemented | Manager Script signed delivery MVP; direct API optional Phase 2 |
+| Google Ads | Signed delivery implemented; isolated UAT pending | Read-only Manager Script → signed Worker ingress → Queue/D1/reliability/Lark; schedule disabled |
 | TikTok Ads | Planned | Controlled API/Worker connector; Lark native Ads is not Production source of truth |
 | WooCommerce | Planned | Sanitized source contract, connector pending |
 | Chatwoot | Planned | Sanitized conversation contract, connector pending |
@@ -161,18 +161,28 @@ Current level             Test Account Access
 
 Direct API approval does not block the Manager Script MVP.
 
-Not implemented:
+Implemented on the current feature branch:
 
-- signed external delivery
-- Worker ingress
-- HMAC/timestamp/nonce/replay checks
-- Google Ads Queue job and router
-- D1 nonce/checkpoint/idempotency state
-- normalization and Lark Business Record writes
-- schedule
-- deployment
+- exact HTTPS signed delivery route `POST /v1/google-ads/deliveries`;
+- HMAC-SHA-256 raw-body digest/signature, timestamp, nonce, replay and key rotation;
+- strict six-dataset schema with exact Chemistry K allowlist and bounded limits;
+- D1 nonce/delivery/payload/idempotency state;
+- reference-only Queue job using shared retry, distributed lock, DLQ/redrive and reconciliation;
+- plan-before-write normalization to six Google RAW and six already-applied Canonical tables;
+- `DRY_RUN`, zero-write signed `PREVIEW` and manual one-shot `LIVE`;
+- connector flag disabled by default and Production blocked pending customer-real UAT.
 
-Sanitized evidence: `docs/google-ads-manager-script-read-only-uat-evidence.md`.
+Still pending:
+
+- isolated signed PREVIEW against a deployed UAT Worker;
+- one-shot LIVE UAT, zero-duplicate rerun and controlled retry/lock/DLQ evidence;
+- any schedule or Production deployment.
+
+Contract: `docs/google-ads-signed-delivery-contract-v1.md`.
+
+UAT/rollback: `docs/google-ads-signed-delivery-uat.md`.
+
+Read-only source evidence: `docs/google-ads-manager-script-read-only-uat-evidence.md`.
 
 ## Google Ads View Filter command
 
@@ -366,26 +376,20 @@ docs/               contracts, runbooks, audits and Project Brain
 
 Dependency direction must remain inward toward Domain/Application contracts. New connectors reuse the central Job Catalog, Connector Catalog and reliability architecture.
 
-## Next approval gate
+## Next gate
 
-Proposed workstream:
+Run the isolated Google Ads signed-delivery UAT in `docs/google-ads-signed-delivery-uat.md` while keeping the Script and all business schedules manual/disabled.
 
-`Google Ads Manager Script signed delivery connector`
+Required before Production consideration:
 
-Before coding, approve:
+1. signed PREVIEW with zero Queue/Lark business writes;
+2. one-shot LIVE delivery with all 12 destination plans reconciled;
+3. same-delivery and fresh-delivery idempotent reruns with zero duplicate Stable keys;
+4. controlled retry/backoff, distributed lock, DLQ/redrive and payload-expiry evidence;
+5. TikTok, Meta, YouTube and Core regression gates;
+6. customer-owned Production resources and a separately approved schedule contract.
 
-1. six-dataset payload schema/version
-2. stable key and idempotency key
-3. HMAC signature, timestamp, nonce and replay window
-4. bounded batch and payload size
-5. null semantics
-6. partial-write/retry classification
-7. Queue/DLQ/checkpoint/lock/reconciliation
-8. retention/redaction/audit
-9. DEV/UAT/Production isolation
-10. schedule disabled by default
-
-Then run isolated manual UAT and an idempotent rerun before any schedule is enabled.
+Do not reopen Lark Formula, View or schema work.
 
 ## Release safety
 

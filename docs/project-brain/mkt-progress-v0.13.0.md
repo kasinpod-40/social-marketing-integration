@@ -147,7 +147,7 @@ Remaining:
 - reliability/reconciliation
 - customer-real UAT, schedule and Production
 
-### Google Ads — 45%
+### Google Ads — 65%
 
 Completed:
 
@@ -160,6 +160,11 @@ Completed:
 - Lark Google RAW schema, Canonical Ads, Relations, managed filters and formulas
 - update-only View maintenance guard
 - access-history and repository documentation correction
+- sanitized read-only Script snapshot with DRY_RUN default
+- exact HMAC/timestamp/nonce/replay/idempotency Contract
+- API ingress, D1 delivery state and reference-only Queue job
+- shared retry/lock/DLQ/redrive path
+- six RAW plus six Canonical plan-before-write normalization and reconciliation tests
 
 Direct API state:
 
@@ -174,14 +179,10 @@ Manager Script MVP does not wait for direct API approval.
 
 Remaining:
 
-- sanitized immutable Script evidence for reproducibility
-- signed delivery payload/security contract
-- Worker ingress
-- connector/catalog/job registration
-- Queue/DLQ and D1 nonce/checkpoint/idempotency state
-- six-dataset normalization and Lark writes
-- partial failure, reconciliation and reliability UAT
-- schedule and Production
+- isolated signed PREVIEW against UAT Worker
+- one-shot LIVE Lark reconciliation and zero-duplicate rerun
+- controlled retry/lock/DLQ/redrive/expiry customer-real evidence
+- schedule approval and customer-owned Production
 
 ### TikTok Ads — 10%
 

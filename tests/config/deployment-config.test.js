@@ -55,7 +55,7 @@ test('deployment examples keep every connector disabled until environment UAT', 
   const apiConfigText = await readFile(new URL('../../wrangler.example.jsonc', import.meta.url), 'utf8');
 
   for (const configText of [syncConfigText, apiConfigText]) {
-    for (const connector of ['TIKTOK', 'FACEBOOK', 'INSTAGRAM', 'YOUTUBE', 'WOOCOMMERCE', 'CHATWOOT']) {
+    for (const connector of ['TIKTOK', 'FACEBOOK', 'INSTAGRAM', 'YOUTUBE', 'GOOGLE_ADS', 'WOOCOMMERCE', 'CHATWOOT']) {
       assert.match(configText, new RegExp(`"MKT_CONNECTOR_${connector}_ENABLED"\\s*:\\s*"false"`));
     }
     assert.doesNotMatch(configText, /dev_ft_pumkin|ft\.pumkin|chemistry_k/u);
@@ -88,4 +88,16 @@ test('sync deployment example enables persisted Workers logs and traces for DEV 
   assert.match(configText, /"persist"\s*:\s*true/);
   const samplingMatches = configText.match(/"head_sampling_rate"\s*:\s*1\b/g) ?? [];
   assert.equal(samplingMatches.length, 2);
+});
+
+
+test('Google Ads signed delivery config declares isolated API state and no business schedule', async () => {
+  const syncConfigText = await readSyncWranglerExample();
+  const apiConfigText = await readFile(new URL('../../wrangler.example.jsonc', import.meta.url), 'utf8');
+  assert.match(apiConfigText, /"binding"\s*:\s*"MKT_STATE_DB"/u);
+  assert.match(apiConfigText, /"binding"\s*:\s*"MKT_SYNC_QUEUE"/u);
+  assert.match(apiConfigText, /"MKT_CONNECTOR_GOOGLE_ADS_ENABLED"\s*:\s*"false"/u);
+  assert.match(syncConfigText, /"MKT_CONNECTOR_GOOGLE_ADS_ENABLED"\s*:\s*"false"/u);
+  assert.doesNotMatch(syncConfigText, /MKT_SCHEDULE_GOOGLE_ADS_ENABLED/u);
+  assert.doesNotMatch(apiConfigText, /MKT_SCHEDULE_GOOGLE_ADS_ENABLED/u);
 });

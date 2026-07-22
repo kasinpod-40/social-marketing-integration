@@ -6,10 +6,12 @@ import {
   sanitizeOperationalError,
   sanitizeOperationalValue,
 } from '../../../packages/shared/src/errors/runtime-error.js';
+import { handleGoogleAdsSignedDelivery } from './google-ads-delivery-handler.js';
 
 /** Map Route แบบคงที่เพื่อไม่ต้องสร้าง Router dependency ใน MVP */
 const ROUTES = new Map([
   ['GET /health', handleHealth],
+  ['POST /v1/google-ads/deliveries', handleGoogleAdsSignedDelivery],
 ]);
 
 /** Cloudflare API Worker สำหรับ Endpoint สาธารณะของระบบ */
@@ -36,12 +38,14 @@ export default {
         code: operationalError.code,
       })));
 
+      const status = httpStatusForError(error);
       return json(
         {
           ok: false,
-          error: 'Unhandled API error',
+          error: status >= 500 ? 'Unhandled API error' : 'Request rejected',
+          ...(status < 500 && operationalError.code ? { code: operationalError.code } : {}),
         },
-        { status: 500 },
+        { status },
       );
     }
   },
@@ -67,4 +71,16 @@ async function handleHealth({ env }) {
     version: BUILD_VERSION,
     connectors,
   });
+}
+
+
+function httpStatusForError(error) {
+  if (error?.retryable === true) return 503;
+  const code = String(error?.code ?? '');
+  if (code === 'GOOGLE_ADS_DELIVERY_REPLAY_REJECTED'
+    || code === 'GOOGLE_ADS_DELIVERY_IDEMPOTENCY_CONFLICT') return 409;
+  if (code === 'GOOGLE_ADS_DELIVERY_SIGNATURE_INVALID'
+    || code === 'GOOGLE_ADS_DELIVERY_KEY_REJECTED') return 401;
+  if (code.startsWith('GOOGLE_ADS_DELIVERY_')) return 400;
+  return 500;
 }

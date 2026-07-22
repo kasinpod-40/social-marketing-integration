@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased — Google Ads signed delivery connector — 2026-07-22
+
+### Added
+- Added an exact-account, read-only Google Ads Manager Script with `DRY_RUN`, signed zero-write `PREVIEW` and manual one-shot `LIVE`; it contains no Google Ads mutation or schedule API.
+- Locked `google_ads_signed_delivery_v1`: exact HTTPS route, six required headers, raw-body SHA-256, HMAC-SHA-256 canonical input, 300-second timestamp window, 600-second nonce retention and `google-ads:<deliveryId>` idempotency.
+- Added strict six-dataset validation with exact MCC/advertiser/customer/account/timezone allowlist, bounded rows/body, canonical ordering, relation checks, null semantics and integer-micros money.
+- Added API ingress, D1 nonce/delivery state, reference-only Queue job, shared distributed lock/retry/DLQ/redrive, 12-table plan-before-write normalization and per-table reconciliation.
+- Added migration `0009_google_ads_signed_delivery.sql`, current/previous signing-key rotation, bounded payload/audit retention and focused security/reliability/Script-safety tests.
+- Added the signed-delivery Contract and isolated UAT/rollback runbook.
+
+### Safety
+- Connector flags remain `false` by default; no Google Ads schedule flag or cron exists.
+- PREVIEW and completed payloads are redacted immediately; failed payload has a seven-day application redrive window and is redacted on the first ingress/read after expiry; Queue messages never include secrets, signatures, nonce or raw payload.
+- No Lark Formula/View/schema mutation, Google Ads mutation, Worker deployment, remote D1 migration, live Queue message, Production change or TikTok Ads scope change occurred during source implementation.
+- Production remains blocked until customer-real signed PREVIEW/LIVE, idempotency, reconciliation, retry/lock/DLQ and ownership gates pass.
+
 ## Unreleased — Google Ads read-only access preflight — 2026-07-22
 
 ### Live read-only result
@@ -8,7 +24,7 @@
 - First Preview failed closed because the Scripts runtime rejected `campaign.start_date` and `campaign.end_date`; removed those request fields while retaining nullable output mapping.
 - Final Preview returned `data_available`: six non-empty bounded datasets, zero dataset errors/truncation, samples within cap and `No changes`.
 - Script management verification returned Frequency `—` and `Finished with no changes`; no schedule was configured.
-- API Center remains `Test Account Access`, but direct API access is now an optional Phase 2 path rather than a Manager Script MVP blocker. No access application was submitted.
+- API Center remains `Test Account Access`; Basic Access was submitted on 2026-07-21 under case `1-686800040839` and is pending. Direct API access is an optional Phase 2 path rather than a Manager Script MVP blocker.
 - Checked configuration key names without reading secret values; no local `GOOGLE_ADS_*` OAuth/developer-token/login-customer/customer mappings were available.
 - Direct `ListAccessibleCustomers` was not called. Google Ads/Lark records, account links, Campaigns, Ads, budgets, billing, Worker, Queue, D1, Schedule, deployment and Production were unchanged.
 - Recorded the safe continuation as a separate signed Manager Script delivery task with replay/idempotency/retention/redaction gates before any endpoint or schedule.

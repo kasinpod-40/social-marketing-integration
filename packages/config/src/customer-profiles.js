@@ -47,6 +47,11 @@ const CUSTOMER_PROFILES = Object.freeze({
         accountKey: 'dev_ft_pumkin',
         displayLabel: 'YouTube Dev - FT Pumkin',
       },
+      google_ads: {
+        enabledByDefault: false,
+        accountKey: 'dev_ft_pumkin',
+        displayLabel: 'Google Ads Dev - FT Pumkin',
+      },
       woocommerce: {
         enabledByDefault: false,
         accountKey: 'dev_ft_pumkin',
@@ -95,6 +100,11 @@ const CUSTOMER_PROFILES = Object.freeze({
         accountKey: 'chemistry_k',
         displayLabel: 'YouTube UAT - Chemistry K',
       },
+      google_ads: {
+        enabledByDefault: false,
+        accountKey: 'chemistry_k',
+        displayLabel: 'Google Ads UAT - Chemistry K',
+      },
       woocommerce: {
         enabledByDefault: false,
         accountKey: 'chemistry_k',
@@ -140,6 +150,11 @@ const CUSTOMER_PROFILES = Object.freeze({
         enabledByDefault: false,
         accountKey: 'chemistry_k',
         displayLabel: 'YouTube - Chemistry K',
+      },
+      google_ads: {
+        enabledByDefault: false,
+        accountKey: 'chemistry_k',
+        displayLabel: 'Google Ads - Chemistry K',
       },
       woocommerce: {
         enabledByDefault: false,

@@ -56,6 +56,36 @@ test('YouTube connector is runnable after activation when the normal feature fla
   assert.equal(assertConnectorRunnable(runtimeConfig, 'youtube').enabled, true);
 });
 
+
+test('Google Ads signed delivery is runnable only when the UAT feature flag is explicit', () => {
+  const disabled = loadCustomerRuntimeConfig({
+    MKT_ENV: 'uat', MKT_CUSTOMER_PROFILE: 'uat_chemistry_k',
+  });
+  assert.throws(
+    () => assertConnectorRunnable(disabled, 'google_ads'),
+    (error) => error?.code === 'MKT_CONNECTOR_DISABLED',
+  );
+
+  const enabled = loadCustomerRuntimeConfig({
+    MKT_ENV: 'uat', MKT_CUSTOMER_PROFILE: 'uat_chemistry_k',
+    MKT_CONNECTOR_GOOGLE_ADS_ENABLED: 'true',
+  });
+  assert.equal(assertConnectorRunnable(enabled, 'google_ads').accountKey, 'chemistry_k');
+});
+
+test('Google Ads Production remains blocked until reliability and Live UAT gates are verified', () => {
+  const runtimeConfig = loadCustomerRuntimeConfig({
+    MKT_ENV: 'production', MKT_CUSTOMER_PROFILE: 'chemistry_k',
+    MKT_CONNECTOR_GOOGLE_ADS_ENABLED: 'true',
+  });
+  assert.throws(
+    () => assertConnectorRunnable(runtimeConfig, 'google_ads'),
+    (error) => error?.code === 'MKT_CONNECTOR_LARGE_ACCOUNT_UAT_PENDING'
+      && error?.details?.minimumFixtureItems === 10000
+      && error?.details?.missingGates?.includes('liveAccountUat'),
+  );
+});
+
 test('registry rejects runtime profiles that omit an active connector state', () => {
   assert.throws(
     () => assertConnectorRunnable({ connectors: {} }, 'tiktok'),

@@ -16,18 +16,29 @@
     "MKT_CONNECTOR_FACEBOOK_ENABLED": "false",
     "MKT_CONNECTOR_INSTAGRAM_ENABLED": "false",
     "MKT_CONNECTOR_YOUTUBE_ENABLED": "false",
+    "MKT_CONNECTOR_GOOGLE_ADS_ENABLED": "false",
+    // Key ID ไม่ใช่ Secret; Secret ต้องตั้งด้วย wrangler secret เท่านั้น
+    "MKT_GOOGLE_ADS_SIGNING_KEY_ID": "replace-with-key-id",
     "MKT_CONNECTOR_WOOCOMMERCE_ENABLED": "false",
     "MKT_CONNECTOR_CHATWOOT_ENABLED": "false",
 
     // Handle จริงต้องอยู่ใน Local/Environment config และเปิด Connector หลัง UAT เท่านั้น
     "TIKTOK_SOURCE_HANDLE": "replace-with-tiktok-handle"
   },
+  "d1_databases": [
+    {
+      "binding": "MKT_STATE_DB",
+      "database_name": "replace-with-environment-specific-d1-name",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "./migrations"
+    }
+  ],
   "queues": {
     "producers": [
       {
         // API Worker ส่งงาน Sync ไปยัง Queue แต่ไม่เป็น Consumer เอง
         "queue": "social-mkt-sync-jobs",
-        "binding": "SYNC_QUEUE"
+        "binding": "MKT_SYNC_QUEUE"
       }
     ]
   }

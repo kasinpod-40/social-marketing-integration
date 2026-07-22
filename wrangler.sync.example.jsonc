@@ -77,6 +77,7 @@
     "MKT_CONNECTOR_FACEBOOK_ENABLED": "false",
     "MKT_CONNECTOR_INSTAGRAM_ENABLED": "false",
     "MKT_CONNECTOR_YOUTUBE_ENABLED": "false",
+    "MKT_CONNECTOR_GOOGLE_ADS_ENABLED": "false",
     "MKT_YOUTUBE_ANALYTICS_ENABLED": "false",
     "MKT_CONNECTOR_WOOCOMMERCE_ENABLED": "false",
     "MKT_CONNECTOR_CHATWOOT_ENABLED": "false",
@@ -136,6 +137,13 @@
     "LARK_TABLE_RAW_YOUTUBE_CHANNELS": "replace-with-table-id",
     "LARK_TABLE_RAW_YOUTUBE_VIDEOS": "replace-with-table-id",
     "LARK_TABLE_RAW_YOUTUBE_ANALYTICS_DAILY": "replace-with-table-id",
+    // Google Ads six-dataset signed delivery; Schema Apply สำเร็จแล้วแต่ Connector/Schedule ยังปิด
+    "LARK_TABLE_RAW_GOOGLE_ADS_ACCOUNTS": "replace-with-table-id",
+    "LARK_TABLE_RAW_GOOGLE_ADS_CAMPAIGNS": "replace-with-table-id",
+    "LARK_TABLE_RAW_GOOGLE_ADS_AD_GROUPS": "replace-with-table-id",
+    "LARK_TABLE_RAW_GOOGLE_ADS_ADS": "replace-with-table-id",
+    "LARK_TABLE_RAW_GOOGLE_ADS_ASSETS": "replace-with-table-id",
+    "LARK_TABLE_RAW_GOOGLE_ADS_DAILY": "replace-with-table-id",
     // YouTube Channel identity ต้อง Preflight ตาราง Account ก่อนเรียก Source API ในรอบ Activation
     "LARK_TABLE_MKT_ACCOUNTS": "replace-with-table-id",
     "LARK_TABLE_MKT_CONTENT": "replace-with-table-id",

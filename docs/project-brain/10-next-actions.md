@@ -21,89 +21,24 @@ npm run deploy:dry-run          PASS
 
 No Live Lark Apply, Google Ads mutation, Queue message, D1 migration, schedule change or deployment occurred.
 
-## Immediate next approval gate
+## Immediate next gate
 
-Open a separate task only after user approval:
+The signed-delivery Source implementation is complete on Draft PR `#17`. Run the isolated UAT in `docs/google-ads-signed-delivery-uat.md`.
 
-`Google Ads Manager Script signed delivery connector`
+Required order:
 
-Do not begin implementation until the contract below is approved.
+1. final branch CI and security scan;
+2. isolated UAT D1 migration and Worker deployment;
+3. Manager Script `DRY_RUN`;
+4. signed zero-write `PREVIEW`;
+5. negative signature/tamper/header/timestamp/replay checks;
+6. manual one-shot `LIVE`;
+7. all 12 destination reconciliation;
+8. exact-body and fresh-delivery idempotent reruns;
+9. controlled retry/backoff, concurrent-lock and DLQ/redrive/expiry checks;
+10. TikTok, Meta, YouTube and Core regression evidence.
 
-## Contract to lock before coding
-
-### Payload
-
-1. Envelope schema and version.
-2. Exact six dataset schemas:
-   - account;
-   - campaigns;
-   - ad groups;
-   - ads;
-   - YouTube assets;
-   - campaign daily metrics.
-3. Null semantics and unsupported-field handling.
-4. Bounded batch and payload size.
-5. Stable ordering where required for deterministic signatures/tests.
-
-### Security
-
-1. HMAC algorithm and canonical serialization.
-2. Timestamp format and allowed clock skew.
-3. Nonce format and replay window.
-4. Key rotation and environment separation.
-5. Constant-time signature comparison.
-6. Redacted diagnostics that never expose key, token, customer ID or raw payload.
-
-### Identity and idempotency
-
-1. Canonical `customerKey` and `accountKey`.
-2. Stable key per dataset grain.
-3. Request-level idempotency key.
-4. Row-level fingerprint/checkpoint rules.
-5. Rerun behavior with zero duplicate records.
-
-### Reliability
-
-1. Worker ingress validation order.
-2. Queue job type in the central catalog.
-3. Retryable versus Permanent classification.
-4. D1 nonce/replay state.
-5. D1 checkpoint and distributed lock.
-6. DLQ and controlled redrive.
-7. Partial-write semantics.
-8. Reconciliation and data-quality counters.
-9. Retention and expiry.
-
-### Destination
-
-1. RAW Google table mapping.
-2. Canonical Ads Accounts/Campaigns/AdGroups/Ads/Creatives/AssetGroups/Daily mapping.
-3. Relation/stable-key resolution.
-4. Money micros conversion and Formula ownership.
-5. Lark write batching and rate-limit handling.
-6. Sync Log and System Alert evidence.
-
-### Environment and rollout
-
-1. DEV, `uat_chemistry_k` and Production isolation.
-2. Separate secrets and signing keys per environment.
-3. Connector feature flag disabled by default.
-4. Schedule disabled by default.
-5. Customer-real UAT retention/cleanup.
-6. Customer-owned Production resources.
-
-## Implementation order after approval
-
-1. Add Google Ads connector/catalog/job contracts in disabled state.
-2. Add signed ingress parser and security tests without destination writes.
-3. Add Queue/D1 replay/idempotency state.
-4. Add six-dataset normalization and destination planning.
-5. Add bounded Lark writes behind explicit UAT flags.
-6. Add partial-failure, retry, DLQ and reconciliation tests.
-7. Run isolated manual signed-delivery UAT with schedule off.
-8. Repeat the same payload and verify zero duplicates.
-9. Run controlled partial-failure/recovery tests.
-10. Observe a clean manual cycle before considering schedule.
+Keep Schedule disabled and do not reopen Lark Formula/View/schema work. Production requires a separate approval and customer-owned resources.
 
 ## Direct Google Ads API track
 

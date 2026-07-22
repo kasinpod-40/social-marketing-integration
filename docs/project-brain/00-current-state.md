@@ -4,7 +4,7 @@
 
 - Implementation baseline: `d4a531fbb4e05dad7ce2296859c97f571e23acf3` / PR `#13`
 - Documentation closeout: PR `#14`
-- Current task: `docs/current-task.md` — closed
+- Current task: `docs/current-task.md` — signed delivery implemented; isolated UAT pending
 - Application package line: `0.11.0`
 - Contract versions: View `v0.13.5`, Formula `v0.13.6`, audit correction `v0.13.7`
 
@@ -58,6 +58,9 @@ The 55 specialized Views are not defective merely because their names imply Acti
 - Facebook Organic
 - Instagram Organic
 - Meta Ads
+
+### Implemented with isolated UAT pending
+
 - Google Ads signed delivery
 
 ### Planning/access pending
@@ -88,15 +91,20 @@ Review pending
 Current access Test Account Access
 ```
 
+Implemented in Source:
+
+- exact signed payload Contract and read-only Script snapshot
+- HMAC/timestamp/nonce/replay/key-rotation checks
+- Worker ingress and D1 idempotency/payload state
+- reference-only Queue job using shared lock/retry/DLQ/redrive
+- six RAW plus six Canonical plan-before-write mappings
+- reconciliation, retention and regression tests
+
 Remaining:
 
-- signed payload connector
-- HMAC/timestamp/nonce/replay checks
-- Worker ingress
-- Queue/DLQ and D1 state
-- normalization and destination writes
-- reliability/reconciliation UAT
-- schedule and Production
+- isolated signed PREVIEW and manual one-shot LIVE UAT
+- customer-real idempotency/reconciliation/retry/lock/DLQ evidence
+- schedule approval and Production
 
 ## Google View safety correction
 
@@ -145,10 +153,6 @@ The transitive `sharp` vulnerability chain was fixed with `overrides.sharp=0.35.
 - every write path requires stable key, idempotency, retry and reconciliation
 - missing metric remains `null` unless the source proves zero
 
-## Next approval gate
+## Next gate
 
-Proposed workstream:
-
-`Google Ads Manager Script signed delivery connector`
-
-Approve payload, signature/replay, idempotency, batch, null, retry, Queue/D1, retention/redaction and ownership contracts before implementation. Schedule stays disabled until isolated manual UAT and idempotent rerun pass.
+Run `docs/google-ads-signed-delivery-uat.md` in isolated `uat_chemistry_k` resources. Schedule stays disabled, Lark Formula/View/schema work stays closed, and Production remains blocked.

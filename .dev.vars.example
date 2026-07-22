@@ -14,6 +14,7 @@ MKT_CONNECTOR_TIKTOK_ENABLED=false
 MKT_CONNECTOR_FACEBOOK_ENABLED=false
 MKT_CONNECTOR_INSTAGRAM_ENABLED=false
 MKT_CONNECTOR_YOUTUBE_ENABLED=false
+MKT_CONNECTOR_GOOGLE_ADS_ENABLED=false
 MKT_CONNECTOR_WOOCOMMERCE_ENABLED=false
 MKT_CONNECTOR_CHATWOOT_ENABLED=false
 
@@ -42,6 +43,13 @@ YOUTUBE_CHANNEL_ID=replace-with-youtube-channel-id
 YOUTUBE_API_KEY=replace-with-youtube-api-key
 YOUTUBE_OAUTH_ACCESS_TOKEN=replace-with-oauth-access-token
 
+# Google Ads signed delivery ingress — ค่า Secret ต้องอยู่เฉพาะ .dev.vars หรือ Secret store
+MKT_GOOGLE_ADS_SIGNING_KEY_ID=replace-with-key-id
+MKT_GOOGLE_ADS_SIGNING_SECRET=replace-with-at-least-32-character-secret
+# Optional key rotation pair
+MKT_GOOGLE_ADS_PREVIOUS_SIGNING_KEY_ID=
+MKT_GOOGLE_ADS_PREVIOUS_SIGNING_SECRET=
+
 # Meta shared client — ใช้ Version ที่เลือกตอนเริ่ม Live DEV UAT
 META_GRAPH_API_VERSION=vXX.X
 META_ACCESS_TOKEN=replace-with-meta-access-token
@@ -65,6 +73,12 @@ LARK_TABLE_RAW_TIKTOK_CREATOR_VIDEOS=replace-with-table-id
 LARK_TABLE_RAW_YOUTUBE_CHANNELS=replace-with-table-id
 LARK_TABLE_RAW_YOUTUBE_VIDEOS=replace-with-table-id
 LARK_TABLE_RAW_YOUTUBE_ANALYTICS_DAILY=replace-with-table-id
+LARK_TABLE_RAW_GOOGLE_ADS_ACCOUNTS=replace-with-table-id
+LARK_TABLE_RAW_GOOGLE_ADS_CAMPAIGNS=replace-with-table-id
+LARK_TABLE_RAW_GOOGLE_ADS_AD_GROUPS=replace-with-table-id
+LARK_TABLE_RAW_GOOGLE_ADS_ADS=replace-with-table-id
+LARK_TABLE_RAW_GOOGLE_ADS_ASSETS=replace-with-table-id
+LARK_TABLE_RAW_GOOGLE_ADS_DAILY=replace-with-table-id
 LARK_TABLE_MKT_ACCOUNTS=replace-with-table-id
 LARK_TABLE_MKT_CONTENT=replace-with-table-id
 LARK_TABLE_MKT_CONTENT_DAILY=replace-with-table-id

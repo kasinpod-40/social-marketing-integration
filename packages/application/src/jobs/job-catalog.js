@@ -11,6 +11,7 @@ export const JOB_TYPES = Object.freeze({
   FACEBOOK_ORGANIC_SYNC: 'facebook.page.organic.sync',
   INSTAGRAM_ORGANIC_SYNC: 'instagram.business.organic.sync',
   YOUTUBE_ORGANIC_SYNC: 'youtube.channel.organic.sync',
+  GOOGLE_ADS_MANAGER_SCRIPT_DELIVERY: 'google_ads.manager_script.delivery',
   WOOCOMMERCE_COMMERCE_SYNC: 'woocommerce.commerce.sync',
   CHATWOOT_CONVERSATIONS_SYNC: 'chatwoot.conversations.sync',
 
@@ -64,6 +65,11 @@ const JOB_CATALOG = Object.freeze({
     type: JOB_TYPES.YOUTUBE_ORGANIC_SYNC,
     implementationStatus: JOB_IMPLEMENTATION_STATUS.ACTIVE,
     connectorKey: CONNECTOR_KEYS.YOUTUBE,
+  }),
+  [JOB_TYPES.GOOGLE_ADS_MANAGER_SCRIPT_DELIVERY]: freezeJob({
+    type: JOB_TYPES.GOOGLE_ADS_MANAGER_SCRIPT_DELIVERY,
+    implementationStatus: JOB_IMPLEMENTATION_STATUS.ACTIVE,
+    connectorKey: CONNECTOR_KEYS.GOOGLE_ADS,
   }),
   [JOB_TYPES.WOOCOMMERCE_COMMERCE_SYNC]: freezeJob({
     type: JOB_TYPES.WOOCOMMERCE_COMMERCE_SYNC,
