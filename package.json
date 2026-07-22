@@ -34,7 +34,9 @@
     "analyze:lark-base-export": "node scripts/analyze-lark-base-export.mjs",
     "preview:shared-table-schema": "node scripts/preview-shared-table-schema.mjs",
     "setup:shared-table-schema": "node scripts/setup-shared-table-schema.mjs",
-    "setup:shared-table-schema:apply": "node scripts/setup-shared-table-schema.mjs --apply"
+    "setup:shared-table-schema:apply": "node scripts/setup-shared-table-schema.mjs --apply",
+    "setup:google-ads-view-filters": "node scripts/setup-google-ads-view-filters.mjs",
+    "setup:google-ads-view-filters:apply": "node scripts/setup-google-ads-view-filters.mjs --apply"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.18.4",

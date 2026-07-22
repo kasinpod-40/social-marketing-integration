@@ -74,7 +74,20 @@ export async function planLarkReportViews(input = {}) {
           viewType: desired.type,
           property: resolved,
         }));
-      } else if (!sameViewProperty(live.property, resolved)) {
+      } else if (!sameViewProperty(live.property, resolved, desired)) {
+        if (
+          desired.allowAdditionalLiveFilterConditions === true
+          && hasAdditionalLiveFilterConditions(live.property?.filterInfo, resolved.filterInfo)
+        ) {
+          conflicts.push(Object.freeze({
+            code: 'VIEW_MANAGED_FILTER_DRIFT_WITH_UI_CONDITIONS',
+            tableKey: tableContract.tableKey,
+            tableId,
+            viewName: desired.name,
+            message: `Managed Filter ของ ${desired.name} drift ขณะที่มี UI-owned conditions; Installer จะไม่ PATCH เพื่อป้องกันการลบ relative-date contract`,
+          }));
+          continue;
+        }
         actions.push(Object.freeze({
           kind: 'update_view',
           tableKey: tableContract.tableKey,
@@ -478,12 +491,30 @@ function buildViewIndex(views, tableContract, conflicts) {
   return index;
 }
 
-function sameViewProperty(live, desired) {
+function sameViewProperty(live, desired, contract = {}) {
   const liveHidden = normalizeHiddenFields(live?.hiddenFields);
   const desiredHidden = normalizeHiddenFields(desired.hiddenFields);
-  return JSON.stringify(normalizeFilter(live?.filterInfo))
-      === JSON.stringify(normalizeFilter(desired.filterInfo))
-    && JSON.stringify(liveHidden) === JSON.stringify(desiredHidden);
+  if (JSON.stringify(liveHidden) !== JSON.stringify(desiredHidden)) return false;
+  const liveFilter = normalizeFilter(live?.filterInfo);
+  const desiredFilter = normalizeFilter(desired.filterInfo);
+  if (contract.allowAdditionalLiveFilterConditions !== true) {
+    return JSON.stringify(liveFilter) === JSON.stringify(desiredFilter);
+  }
+  if (!liveFilter || !desiredFilter || liveFilter.conjunction !== desiredFilter.conjunction) return false;
+  const liveConditions = liveFilter.conditions.map(conditionSignature);
+  return desiredFilter.conditions.every((condition) => liveConditions.includes(conditionSignature(condition)));
+}
+
+function hasAdditionalLiveFilterConditions(live, desired) {
+  const liveFilter = normalizeFilter(live);
+  const desiredFilter = normalizeFilter(desired);
+  if (!liveFilter || !desiredFilter) return false;
+  const desiredConditions = desiredFilter.conditions.map(conditionSignature);
+  return liveFilter.conditions.some((condition) => !desiredConditions.includes(conditionSignature(condition)));
+}
+
+function conditionSignature(condition) {
+  return JSON.stringify(condition);
 }
 
 function normalizeHiddenFields(value) {

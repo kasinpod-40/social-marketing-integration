@@ -80,4 +80,15 @@ Observed sources:
 Conclusion:
 - Native Google Ads is useful for customer/audience lists and campaign master/config fields.
 - It does not currently provide confirmed daily performance metrics such as spend, impressions, clicks, conversions, conversion value, or ROAS.
-- Google Ads Performance Reporting still needs custom Google Ads API / GAQL unless another native source is found.
+- Google Ads Performance Reporting uses Manager Script `AdsApp.search()` GAQL for the MVP; direct Google Ads API remains an optional Phase 2 path.
+
+## Google Ads — Manager Script
+
+Status: Customer-authorized read-only Live Preview passed on 2026-07-22.
+
+- Exact target allowlist matched the linked advertiser and `AdsManagerApp.select()` switched into the intended account.
+- The Script queried six bounded datasets: account, campaigns, ad groups, ads, YouTube assets and campaign daily metrics.
+- This Live Google Ads Scripts runtime rejected `campaign.start_date` and `campaign.end_date` with `QueryError.UNRECOGNIZED_FIELD`; removing those request fields produced a successful rerun. Nullable output fields remain in the mapper and return `null`.
+- Final result: `data_available`, dataset errors `0`, truncation `0`, six non-empty datasets and Preview `No changes`.
+- Script Frequency remains `—`; no schedule is configured.
+- No `UrlFetchApp`, external delivery or Ads resource mutation exists in the verified Dry Run. Signed delivery is a separate future contract.

@@ -1,5 +1,45 @@
 # Changelog
 
+## Unreleased — Google Ads read-only access preflight — 2026-07-22
+
+### Live read-only result
+- After customer authorization, verified the approved Chemistry K advertiser as `Enabled`, directly managed by the intended manager and selectable into its existing production Overview. Link/selectability passed without changing account settings.
+- Retargeted the existing Google Ads Manager Script from the obsolete setup account to the approved advertiser after a full 598-line safety scan found read-only GAQL/logging only and no external delivery or Ads mutations.
+- First Preview failed closed because the Scripts runtime rejected `campaign.start_date` and `campaign.end_date`; removed those request fields while retaining nullable output mapping.
+- Final Preview returned `data_available`: six non-empty bounded datasets, zero dataset errors/truncation, samples within cap and `No changes`.
+- Script management verification returned Frequency `—` and `Finished with no changes`; no schedule was configured.
+- API Center remains `Test Account Access`, but direct API access is now an optional Phase 2 path rather than a Manager Script MVP blocker. No access application was submitted.
+- Checked configuration key names without reading secret values; no local `GOOGLE_ADS_*` OAuth/developer-token/login-customer/customer mappings were available.
+- Direct `ListAccessibleCustomers` was not called. Google Ads/Lark records, account links, Campaigns, Ads, budgets, billing, Worker, Queue, D1, Schedule, deployment and Production were unchanged.
+- Recorded the safe continuation as a separate signed Manager Script delivery task with replay/idempotency/retention/redaction gates before any endpoint or schedule.
+
+## Unreleased — Lark Formula UI Live closeout — 2026-07-22
+
+### Live DEV
+- Corrected the unverified handoff syntax after the Live editor rejected both `{field}` references and `BLANK()`; the verified tenant contract uses `[field]`, `ISBLANK(...)` and `""` for blank numeric results.
+- Saved `MKT_Ads_Campaigns.budget`, `MKT_Ads_Daily.all_conversion_value`, `cost_per_conversion` and `conversion_rate` with their approved two-decimal/percentage formats.
+- Reopened every Field editor and matched Formula type, exact normalized expression and format `4/4`; Lark showed `Saved to cloud`.
+- Fresh configuration-only export SHA-256 `3f177a1c2639da506c3e76e2d72bb9a018ccfb7ad29a38cbbca986b863d4b6c8` passed offline Formula/type/formatter verification `4/4`; 42 tables, 737 fields and 133 Views retained zero Filter/Sort/Hidden drift.
+- No Table/View/Record, Connector, Worker, Queue, D1, Schedule, deployment or Production mutation occurred.
+
+## Unreleased — Full Lark View contract and Google Filter closeout — 2026-07-22
+
+### Added
+- Added a complete 133-View audit plus explicit baseline-preservation contracts for 55 legacy specialized Views and 36 All/default Views without inferring business filters from names.
+- Added a DEV-only 19-View Google Filter contract and Preview/Apply command with exact Live table resolution, redacted diagnostics and explicit confirmation.
+- Added fail-closed handling for UI-owned relative-date conditions: managed subset parity is accepted, while managed drift with additional UI conditions blocks mutation.
+
+### Live DEV
+- Preview planned exactly 17 updates with zero creates/conflicts/warnings; Apply updated 17/17 and final managed Preview returned zero actions.
+- Saved `Google Ads Daily 30D` as `platform=google_ads AND metric_date in the past 30 days` in Lark UI.
+- Full Live audit returned 42 tables, 133 Views, 42 filtered Views, 7 hidden-field Views and exactly the expected 17 Filter differences from the pre-Apply export; Hidden-field differences were zero.
+- No Table/Field/View creation, deletion or rename, Business Record access, Connector/Worker/Queue/D1/Schedule change, deployment or Production mutation occurred.
+
+### Verification
+- Focused View planner/contract tests passed 16/16; Node Unit/Integration 536/536, Workers runtime 9/9 and Report reliability 70/70 passed.
+- `npm run check` passed syntax, Architecture 147/348/0 and Repository hygiene; offline audit found 0 vulnerabilities and Wrangler dry-run passed at 659.26/130.46 KiB.
+- Fresh configuration-only `.base` SHA-256 `704c10ea6fb1cd0790949cbc94a0865398521f00f7695a4f8ef5e8aa3c4c3ef2` passed final offline serialization audit: 42 tables, 133/133 Views, Filter/Sort/Hidden drift 0/0/0, identity missing/unexpected 0/0 and Google changes 17/17.
+
 ## Unreleased — Guarded Shared-table schema Apply — 2026-07-21
 
 ### Added

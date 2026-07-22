@@ -147,6 +147,44 @@ CONFIRM_WRITE=YES CONFIRM_SHARED_TABLE_SCHEMA=YES npm run setup:shared-table-sch
 
 Apply จะ Preview ซ้ำก่อนเขียน, ตรวจ Protected TikTok/ตารางว่าง/Conflict, ทำงานแบบ Sequential, รองรับ Partial rerun และ Preview ซ้ำหลังจบจนเหลือศูนย์ Actions/Conflicts/Warnings/Manual blockers. Table rename ใช้ Lark Base v3 และ App ต้องมี `base:table:update`. Real Table IDs ต้องเก็บใน `.dev.vars` และ `wrangler.sync.jsonc` ที่ถูก ignore เท่านั้น.
 
+## Google Ads View Filters v0.13.5
+
+คำสั่งนี้จัดการเฉพาะ Filter ของ Google Ads Views 19 รายการใน developer-owned DEV. Preview เป็นค่าเริ่มต้น; Apply ต้องใช้ explicit confirmation และไม่สร้าง/ลบ/เปลี่ยนชื่อ View หรือแตะ Business Records:
+
+```bash
+npm run setup:google-ads-view-filters
+CONFIRM_WRITE=YES npm run setup:google-ads-view-filters:apply
+npm run setup:google-ads-view-filters
+```
+
+`Google Ads Daily 30D` แยก ownership: Tool จัดการ `platform=google_ads`; Lark UI จัดการ rolling `metric_date in the past 30 days`. Preview ยอมรับ UI condition เพิ่มเติมเมื่อ managed condition ยังถูกต้อง และ fail closed หาก managed condition drift เพื่อไม่ replay Request schema ที่ยังไม่ยืนยัน.
+
+Fresh configuration-only `.base` export SHA-256 `704c10ea6fb1cd0790949cbc94a0865398521f00f7695a4f8ef5e8aa3c4c3ef2` ผ่าน offline audit แล้ว: 42 tables, 133/133 Views, Google changes 17/17 และ Filter/Sort/Hidden drift เป็นศูนย์.
+
+## Google Ads Formula UI v0.13.6
+
+Live tenant ใช้ `[field]` สำหรับ Field reference และไม่มี `BLANK()`; ห้ามนำ handoff syntax เดิมที่ใช้ `{field}`/`BLANK()` กลับมาใช้. Formula ที่ผ่าน Live editor validation และ exact readback คือ:
+
+```text
+MKT_Ads_Campaigns.budget
+IF(ISBLANK([budget_micros]),"",[budget_micros]/1000000)
+
+MKT_Ads_Daily.all_conversion_value
+IF(ISBLANK([all_conversion_value_micros]),"",[all_conversion_value_micros]/1000000)
+
+MKT_Ads_Daily.cost_per_conversion
+IF(OR(ISBLANK([conversions]),[conversions]=0,ISBLANK([spend])),"",[spend]/[conversions])
+
+MKT_Ads_Daily.conversion_rate
+IF(OR(ISBLANK([clicks]),[clicks]=0,ISBLANK([conversions])),"",[conversions]/[clicks])
+```
+
+สาม Field แรกใช้ Number แบบ 2 decimal places; `conversion_rate` ใช้ Percentage with decimals. Live readback ผ่าน `4/4`. Fresh post-Formula `.base` SHA-256 `3f177a1c2639da506c3e76e2d72bb9a018ccfb7ad29a38cbbca986b863d4b6c8` ยืนยัน Formula/type/formatter `4/4` และ View Filter/Sort/Hidden zero drift แล้ว.
+
+## Google Ads access gate
+
+Read-only Live preflight เมื่อ 2026-07-22 ยืนยันว่า Chemistry K advertiser ที่ลูกค้าอนุมัติเป็น `Enabled`, อยู่ใต้ approved manager โดยตรงและ selectable. Manager Script ถูก retarget และ safety-scan ครบ 598 บรรทัด. First Preview พบ `campaign.start_date/end_date` ไม่รองรับใน Scripts runtime; หลังถอดสอง Request fields โดยคง nullable mapper แล้ว Final Preview เป็น `data_available`, datasets 6/6 สำเร็จและไม่ว่าง, errors/truncation `0/0`, Changes เป็น `No changes`. API Center ยังเป็น `Test Account Access` แต่ direct API เป็น Phase 2 optional; MVP ใช้ Manager Script read-only GAQL. Signed endpoint/Worker/Queue/D1/Lark writes/Schedule ยังไม่อยู่ใน scope และต้องผ่าน task แยก.
+
 ## Lark Report Schema Installer v0.8.2
 
 อ่านรายละเอียดที่ `docs/lark-report-schema-installer-v0.8.2.md`

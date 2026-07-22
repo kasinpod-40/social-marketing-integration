@@ -4,6 +4,18 @@
 
 ChatGPT Work and Codex share `docs/current-task.md`. Migration 0005 และ source patch ถูก Deploy ใน DEV แบบ Schedule off แล้ว; healthy/stale/Permanent smoke ผ่าน. Live Redrive เปิดเผย legacy status CHECK blocker และมี migration 0006 รอ Apply/verify. Production และ Connector อื่นยัง fail-closed; Customer 837-video Live UAT ยังไม่รัน.
 
+## Google Ads access gate — Manager Script read-only UAT passed 2026-07-22
+
+After customer authorization, read-only Live UI preflight confirmed the approved Chemistry K advertiser as `Enabled`, directly managed and selectable. The existing Manager Script target allowlist was updated and Previewed. A first fail-closed `partial_error` identified two runtime-incompatible Campaign date fields; after removing them, final Preview returned `data_available`, six successful non-empty bounded datasets, zero errors/truncation and `No changes`.
+
+Safe continuation order:
+
+1. Open a separate approved Manager Script delivery task.
+2. Lock signed payload/version, HMAC verification, replay window, idempotency key, bounded batches, retention and redaction.
+3. Implement a disabled-by-default isolated UAT endpoint and destination preflight; do not enable Script delivery yet.
+4. Run a manual signed-delivery UAT, idempotent rerun and reconciliation before any schedule.
+5. Treat direct Google Ads API Basic/Explorer Access as an optional Phase 2 track, not an MVP blocker.
+
 ## Immediate post-review handoff
 
 1. รอ failed Admin Redrive message drain และยืนยัน work/active lock = 0

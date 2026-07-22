@@ -340,6 +340,56 @@ test('excludes a primary field from hidden_fields instead of sending an invalid 
   assert.equal(result.manualActions.some((item) => item.code === 'VIEW_HIDDEN_FIELDS_REVIEW_REQUIRED'), false);
 });
 
+test('accepts an additional UI-owned relative-date condition when the managed Filter remains correct', async () => {
+  const contract = structuredClone(CONTRACT);
+  contract[0].views[0].allowAdditionalLiveFilterConditions = true;
+  const client = statefulClient({
+    views: [{
+      viewId: 'vew1', viewName: 'Daily Client', viewType: 'grid',
+      property: {
+        hiddenFields: ['fldMeta'],
+        filterInfo: {
+          conjunction: 'and',
+          conditions: [
+            { fieldId: 'fldType', fieldType: 3, operator: 'is', value: '["optDaily"]' },
+            { fieldId: 'fldVisible', fieldType: 7, operator: 'is', value: '[true]' },
+            { fieldId: 'fldRank', fieldType: 5, operator: 'is', value: '["TheLastMonth"]' },
+          ],
+        },
+      },
+    }],
+  });
+
+  const result = await planLarkReportViews({ client, env: { TABLE_METRICS: 'tblMetrics' }, contract });
+  assert.equal(result.actions.length, 0);
+  assert.equal(result.conflicts.length, 0);
+});
+
+test('fails closed instead of replacing UI-owned conditions when a managed condition drifts', async () => {
+  const contract = structuredClone(CONTRACT);
+  contract[0].views[0].allowAdditionalLiveFilterConditions = true;
+  const client = statefulClient({
+    views: [{
+      viewId: 'vew1', viewName: 'Daily Client', viewType: 'grid',
+      property: {
+        hiddenFields: ['fldMeta'],
+        filterInfo: {
+          conjunction: 'and',
+          conditions: [
+            { fieldId: 'fldType', fieldType: 3, operator: 'is', value: '["optWeekly"]' },
+            { fieldId: 'fldRank', fieldType: 5, operator: 'is', value: '["TheLastMonth"]' },
+          ],
+        },
+      },
+    }],
+  });
+
+  const result = await planLarkReportViews({ client, env: { TABLE_METRICS: 'tblMetrics' }, contract });
+  assert.equal(result.actions.length, 0);
+  assert.equal(result.readyToApply, false);
+  assert.equal(result.conflicts.some((item) => item.code === 'VIEW_MANAGED_FILTER_DRIFT_WITH_UI_CONDITIONS'), true);
+});
+
 function statefulClient(state) {
   return {
     async listFields() { return structuredClone(FIELDS); },

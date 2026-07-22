@@ -4,27 +4,27 @@
 
 ## Executive status
 
-- **MKT DEV MVP โดยรวม:** `58%`
-- **Data model/Lark schema foundation:** `95%`
+- **MKT DEV MVP โดยรวม:** `59%`
+- **Data model/Lark schema foundation:** `100%`
 - **Customer-real UAT readiness:** `40%`
 - **Chemistry K Production readiness:** `25%`
 
-เหตุผลที่ Schema เกือบเสร็จแต่ภาพรวมยัง 58%: Connector, customer-real UAT, operational rollout, AI summary และ Production cutover ยังเป็นงานใหญ่กว่าการสร้าง Table/Field.
+เหตุผลที่ Schema เสร็จแต่ภาพรวมยัง 59%: Connector, customer-real UAT, operational rollout, AI summary และ Production cutover ยังเป็นงานใหญ่กว่าการสร้าง Table/Field.
 
 ## Weighted DEV MVP calculation
 
 | Workstream | Weight | Completion | Weighted result |
 |---|---:|---:|---:|
 | Core runtime, Queue, D1, lock/retry/DLQ/alert | 12% | 95% | 11.40% |
-| Lark data model, Canonical model, schema and Views | 13% | 95% | 12.35% |
+| Lark data model, Canonical model, schema and Views | 13% | 100% | 13.00% |
 | TikTok Organic | 12% | 95% | 11.40% |
 | YouTube Organic | 12% | 90% | 10.80% |
 | Facebook + Instagram Organic | 10% | 30% | 3.00% |
-| Paid Ads: Meta + Google + TikTok Ads | 16% | 25% | 4.00% |
+| Paid Ads: Meta + Google + TikTok Ads | 16% | 27% | 4.32% |
 | WooCommerce + Chatwoot | 8% | 10% | 0.80% |
 | Reporting, AI summary, insight and notification | 7% | 50% | 3.50% |
 | Customer-real UAT and Production cutover | 10% | 10% | 1.00% |
-| **Total** | **100%** |  | **58.25% ≈ 58%** |
+| **Total** | **100%** |  | **59.22% ≈ 59%** |
 
 ## Channel-by-channel status
 
@@ -102,23 +102,25 @@ Remaining:
 - reliability, reconciliation and schedule;
 - customer-real data UAT and Production.
 
-### Google Ads — 35%
+### Google Ads — 45%
 
 Completed:
 
 - Manager account and read-only reporting direction;
 - Manager Script contract/dry-run foundation;
 - Chemistry K target customer ID recorded in operational handoff;
+- customer-authorized Chemistry K link/selectability passed through the approved direct manager; account is enabled and its production Overview opens read-only;
+- API Center preflight confirmed token access remains test-account-only;
+- Manager Script target allowlist updated and 598-line safety scan passed;
+- read-only GAQL Preview passed `data_available` across six non-empty bounded datasets with zero errors/truncation and zero Ads changes;
 - automated Lark schema: 13 RAW tables / 208 fields;
 - Canonical Ads core 63/63, Relations 12/12 and View shells 19/19;
 - zero destructive actions and zero Business Record writes.
 
 Remaining:
 
-- Manual Lark UI: 4 Formula expressions and 17 View filters;
-- customer account link/selectability confirmation;
-- Basic Access outcome/API live read UAT as applicable;
-- Worker connector, normalization, checkpoints/reconciliation and reliability;
+- signed Script delivery endpoint, normalization, checkpoints/reconciliation and reliability;
+- direct API access/OAuth UAT only if required for Phase 2 scale or unsupported fields;
 - schedule and customer-real UAT/Production.
 
 ### TikTok Ads — 10%
@@ -157,7 +159,7 @@ Remaining:
 
 ## Lark Ads schema closeout
 
-Latest audited Base export: `Social MKT Data Hub(8).base`, revision `51`.
+Latest audited configuration-only export: `Social MKT Data Hub.base`, SHA-256 `3f177a1c2639da506c3e76e2d72bb9a018ccfb7ad29a38cbbca986b863d4b6c8`.
 
 | Gate | Result |
 |---|---:|
@@ -170,22 +172,23 @@ Latest audited Base export: `Social MKT Data Hub(8).base`, revision `51`.
 | View shells | 19/19 |
 | Automated schema issues | 0 |
 | New Google tables containing Records | 0 |
-| Formula expressions configured | 0/4 |
-| View filters configured | 2/19 |
+| Formula expressions configured | 4/4 Live editor verified |
+| View filters configured | 19/19 Live |
+| Fresh `.base` View audit | 133/133, zero Filter/Sort/Hidden drift |
+| Fresh post-Formula `.base` audit | Formula/type/formatter 4/4; zero View drift |
 
-Automated schema task is closed. Manual UI remains a separate handoff and does not authorize Connector, Worker, Schedule or Production changes.
+Automated schema, Google View filters and Formula UI tasks are closed with Live and fresh `.base` verification. This does not authorize Connector, Worker, Schedule or Production changes.
 
 ## Priority order from this baseline
 
-1. Finish 4 Formula expressions and 17 View filters; export and audit Base again.
-2. Complete Google Ads link/selectability and read-only customer-real UAT.
-3. Approve and implement Google Ads connector behind disabled flags.
-4. Implement Facebook/Instagram Organic connectors using the shared reliability architecture.
-5. Complete Meta Ads and TikTok Ads connector/access tracks.
-6. Implement WooCommerce and Chatwoot.
-7. Complete multi-channel AI summary/insight/notification.
-8. Run isolated `uat_chemistry_k` channel-by-channel.
-9. Build customer-owned `chemistry_k` Production resources and perform cutover.
+1. Approve and implement the signed Google Ads Manager Script delivery path behind disabled flags.
+2. Complete manual signed-delivery, idempotency, reconciliation and reliability UAT before scheduling.
+3. Implement Facebook/Instagram Organic connectors using the shared reliability architecture.
+4. Complete Meta Ads and TikTok Ads connector/access tracks.
+5. Implement WooCommerce and Chatwoot.
+6. Complete multi-channel AI summary/insight/notification.
+7. Run isolated `uat_chemistry_k` channel-by-channel.
+8. Build customer-owned `chemistry_k` Production resources and perform cutover.
 
 ## Permanent safety status
 

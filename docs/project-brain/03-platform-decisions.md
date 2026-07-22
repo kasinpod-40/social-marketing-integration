@@ -13,7 +13,9 @@ Custom TikTok Reporting API is still needed for spend, impressions, clicks, conv
 ## Google Ads
 Lark Google Ads Native Integration currently exposes Customer List and Campaign List. It is useful for master/config data but not enough for performance dashboards.
 
-Custom Google Ads API / GAQL is required for daily performance metrics.
+For the MVP, use a customer-authorized Google Ads Manager Script with exact account allowlisting and read-only `AdsApp.search()` GAQL. This path can read daily performance without waiting for direct API Basic Access.
+
+Direct Google Ads API / GAQL remains a Phase 2 option for scale, centralized OAuth or fields unavailable to Scripts. External delivery from the Manager Script requires a separately approved signed endpoint and must remain disabled until replay/idempotency, retention, redaction and destination-write contracts pass.
 
 ## Meta / Facebook / Instagram
 Custom integration is expected for organic and ads data, subject to permissions and API access.
