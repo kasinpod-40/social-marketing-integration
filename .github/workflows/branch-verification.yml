@@ -32,38 +32,59 @@ jobs:
           test_file = Path('tests/application/generate-tiktok-organic-report.test.js')
           text = test_file.read_text()
           old = "  const dailySetting = createReportSettingRowsForProfile('integration_workspace')[0];"
-          new = """  // Legacy fixture stays scoped to ft_pumkin so compatibility behavior remains tested.
+          malformed = """  // Legacy fixture stays scoped to ft_pumkin so compatibility behavior remains tested.
           // Live Integration Workspace seeds only chemistry_k and cannot mix these records into customer reports.
           const dailySetting = {
             ...createReportSettingRowsForProfile('integration_workspace')[0],
             account_keys_json: '[\"ft_pumkin\"]',
-          };"""
-          if text.count(old) != 1:
-              raise SystemExit('Expected exactly one legacy dailySetting fixture assignment')
-          test_file.write_text(text.replace(old, new))
+          };""".replace('\n          ', '\n')
+          desired = """  // Legacy fixture stays scoped to ft_pumkin so compatibility behavior remains tested.
+            // Live Integration Workspace seeds only chemistry_k and cannot mix these records into customer reports.
+            const dailySetting = {
+              ...createReportSettingRowsForProfile('integration_workspace')[0],
+              account_keys_json: '[\"ft_pumkin\"]',
+            };""".replace('\n            ', '\n  ')
+          if old in text:
+              text = text.replace(old, desired)
+          elif 'Legacy fixture stays scoped to ft_pumkin' in text:
+              start = text.index('  // Legacy fixture stays scoped to ft_pumkin')
+              end = text.index('  const tables =', start)
+              text = text[:start] + desired + '\n' + text[end:]
+          else:
+              raise SystemExit('TikTok legacy fixture block not found')
+          test_file.write_text(text)
 
           readme = Path('README.md')
           readme_text = readme.read_text()
           old_readme = '- TikTok, Facebook, Instagram and YouTube may use temporary developer-owned sources;'
           new_readme = '- TikTok and Google Ads use Chemistry K customer sources; Facebook, Instagram and YouTube may still use temporary developer-owned sources;'
-          if old_readme not in readme_text:
-              raise SystemExit('Expected Integration Workspace source sentence in README')
-          readme.write_text(readme_text.replace(old_readme, new_readme))
+          if old_readme in readme_text:
+              readme_text = readme_text.replace(old_readme, new_readme)
+          elif new_readme not in readme_text:
+              raise SystemExit('Integration Workspace source sentence not found in README')
+          readme.write_text(readme_text)
 
           task = Path('docs/current-task.md')
           task_text = task.read_text()
-          task_replacements = {
-            '- Source ownership is per Connector. Google Ads already uses Chemistry K customer data while other channels may still use temporary developer-owned sources.':
+          replacements = [
+            (
+              '- Source ownership is per Connector. Google Ads already uses Chemistry K customer data while other channels may still use temporary developer-owned sources.',
               '- Source ownership is per Connector. TikTok (`@chemistry_k`) and Google Ads already use Chemistry K customer data; Facebook, Instagram and YouTube may still use temporary developer-owned sources.',
-            '- [x] legacy TikTok report profile/key records remain readable without a Lark data rewrite\n':
+            ),
+            (
+              '- [x] legacy TikTok report profile/key records remain readable without a Lark data rewrite\n',
               '- [x] legacy TikTok report profile/key records remain readable without a Lark data rewrite\n- [x] Lark TikTok For Creator account connection points to `@chemistry_k`\n- [ ] TikTok protected RAW / Canonical / Report reconciliation and exact-scope cleanup of legacy `ft_pumkin` rows\n',
-            '- Temporary developer-source rows in other channels must be removed by exact source scope before those channels are replaced with customer data.':
+            ),
+            (
+              '- Temporary developer-source rows in other channels must be removed by exact source scope before those channels are replaced with customer data.',
               '- TikTok Lark Native source is now `@chemistry_k`, but protected RAW/Canonical/Report reconciliation and exact-scope cleanup of legacy `ft_pumkin` records remain pending.\n- Temporary developer-source rows in Facebook, Instagram and YouTube must be removed by exact source scope when those channels are replaced with customer data.',
-          }
-          for old_text, new_text in task_replacements.items():
-              if old_text not in task_text:
-                  raise SystemExit(f'Expected Current Task text not found: {old_text}')
-              task_text = task_text.replace(old_text, new_text)
+            ),
+          ]
+          for old_text, new_text in replacements:
+              if old_text in task_text:
+                  task_text = task_text.replace(old_text, new_text)
+              elif new_text not in task_text:
+                  raise SystemExit(f'Current Task transition text not found: {old_text}')
           task.write_text(task_text)
 
       - name: Remove temporary files and restore standard workflow
