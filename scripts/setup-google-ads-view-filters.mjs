@@ -3,6 +3,7 @@ import { printJson } from './lib/lark-runtime.js';
 import { resolveConfirmedApplyMode } from './lib/confirmed-apply-mode.js';
 import { createLarkBitableClientFromEnv } from '../packages/connectors/src/lark/lark-bitable.client.js';
 import { assertSharedTableSchemaDevTarget } from '../packages/config/src/shared-table-schema-runtime-config.js';
+import { assertGoogleAdsViewFilterUpdateOnly } from '../packages/config/src/google-ads-view-filter-apply-guard.js';
 import {
   GOOGLE_ADS_VIEW_FILTER_MANUAL_ACTIONS,
   GOOGLE_ADS_VIEW_FILTER_VERSION,
@@ -48,14 +49,14 @@ async function main() {
       : undefined,
   });
   const env = await resolveLiveTableEnvironment(client, baseEnv);
+  const preview = assertGoogleAdsViewFilterUpdateOnly(await planLarkReportViews({
+    client,
+    env,
+    contract: GOOGLE_ADS_VIEW_FILTERS,
+    includePermissionManualAction: false,
+  }));
 
   if (!mode.apply) {
-    const preview = await planLarkReportViews({
-      client,
-      env,
-      contract: GOOGLE_ADS_VIEW_FILTERS,
-      includePermissionManualAction: false,
-    });
     printJson({
       ok: preview.readyToApply,
       mode: preview.mode,
@@ -71,9 +72,16 @@ async function main() {
         : null,
       note: preview.actions.length === 0
         ? 'Google Ads View filters ตรง managed OpenAPI contract แล้ว'
-        : 'Preview เท่านั้น: ไม่เขียน View, Field, Table หรือ Record',
+        : 'Preview เท่านั้น: update Filter ของ View เดิมเท่านั้น ไม่สร้าง View, Field, Table หรือ Record',
     });
     return;
+  }
+
+  if (!preview.readyToApply) {
+    const error = new Error('Google Ads View filter Preview contains conflicts');
+    error.code = 'GOOGLE_ADS_VIEW_FILTER_PREVIEW_BLOCKED';
+    error.details = { conflicts: preview.conflicts.map(sanitizeDiagnostic) };
+    throw error;
   }
 
   const result = await applyLarkReportViews({
@@ -86,6 +94,8 @@ async function main() {
       action: sanitizeAction(event.action),
     })),
   });
+  assertGoogleAdsViewFilterUpdateOnly(result.verification);
+
   printJson({
     ok: result.ok,
     mode: result.mode,
@@ -94,7 +104,7 @@ async function main() {
     viewVersion: GOOGLE_ADS_VIEW_FILTER_VERSION,
     target: { environment: runtime.environment, profileKey: runtime.profileKey },
     manualActions: GOOGLE_ADS_VIEW_FILTER_MANUAL_ACTIONS,
-    note: 'Apply เฉพาะ Filter ของ 19 Google Views; ไม่แก้ Sort, Table, Field หรือ Record',
+    note: 'Apply เฉพาะ Filter ของ 19 Google Views ที่มีอยู่แล้ว; ไม่สร้าง/ลบ/เปลี่ยนชื่อ View และไม่แก้ Sort, Table, Field หรือ Record',
   });
 }
 
