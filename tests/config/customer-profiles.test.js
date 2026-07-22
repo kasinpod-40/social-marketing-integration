@@ -19,11 +19,11 @@ test('loads one mixed-source integration workspace without DEV/UAT profile switc
   assert.equal(config.workspacePurpose, 'assemble_full_system_before_customer_owned_production');
 
   assert.equal(config.connectors.tiktok.enabled, true);
-  assert.equal(config.connectors.tiktok.accountKey, 'ft_pumkin');
-  assert.equal(config.connectors.tiktok.sourceHandle, 'ft.pumkin');
-  assert.equal(config.connectors.tiktok.sourceOwner, 'developer');
-  assert.equal(config.connectors.tiktok.sourceRole, 'temporary_substitute');
-  assert.equal(config.connectors.tiktok.replacementRequired, true);
+  assert.equal(config.connectors.tiktok.accountKey, 'chemistry_k');
+  assert.equal(config.connectors.tiktok.sourceHandle, 'chemistry_k');
+  assert.equal(config.connectors.tiktok.sourceOwner, 'customer');
+  assert.equal(config.connectors.tiktok.sourceRole, 'customer_real');
+  assert.equal(config.connectors.tiktok.replacementRequired, false);
 
   assert.equal(config.connectors.google_ads.enabled, false);
   assert.equal(config.connectors.google_ads.accountKey, 'chemistry_k');
