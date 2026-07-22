@@ -16,7 +16,7 @@ test('scheduler queues TikTok sync first and daily report at Bangkok 08:10', () 
       MKT_SCHEDULE_TIKTOK_ENABLED: 'true',
       MKT_SCHEDULE_DAILY_REPORT_ENABLED: 'true',
       MKT_DAILY_REPORT_TIME: '08:10',
-      MKT_DAILY_REPORT_SETTING_KEY: 'dev_ft_pumkin:tiktok:daily',
+      MKT_DAILY_REPORT_SETTING_KEY: 'integration_workspace:tiktok:daily',
       MKT_SCHEDULE_WEEKLY_REPORT_ENABLED: 'false',
     },
   });
@@ -28,7 +28,7 @@ test('scheduler queues TikTok sync first and daily report at Bangkok 08:10', () 
   ]);
   assert.equal(jobs[0].metricDate, '2026-07-13');
   assert.equal(jobs[1].periodEnd, '2026-07-12');
-  assert.equal(jobs[1].reportSettingKey, 'dev_ft_pumkin:tiktok:daily');
+  assert.equal(jobs[1].reportSettingKey, 'integration_workspace:tiktok:daily');
 });
 
 test('weekly report is due only on configured Bangkok weekday and time', () => {
@@ -39,7 +39,7 @@ test('weekly report is due only on configured Bangkok weekday and time', () => {
     MKT_SCHEDULE_WEEKLY_REPORT_ENABLED: 'true',
     MKT_WEEKLY_REPORT_TIME: '08:15',
     MKT_WEEKLY_REPORT_WEEKDAY: 'monday',
-    MKT_WEEKLY_REPORT_SETTING_KEY: 'dev_ft_pumkin:tiktok:weekly',
+    MKT_WEEKLY_REPORT_SETTING_KEY: 'integration_workspace:tiktok:weekly',
   };
 
   const weeklyJobs = buildPrimaryScheduledJobs({ scheduledAt: '2026-07-13T01:15:00Z', env });
@@ -107,7 +107,7 @@ test('scheduled report period uses the last completed local day across a year bo
       MKT_SCHEDULE_TIKTOK_ENABLED: 'false',
       MKT_SCHEDULE_DAILY_REPORT_ENABLED: 'true',
       MKT_DAILY_REPORT_TIME: '08:10',
-      MKT_DAILY_REPORT_SETTING_KEY: 'dev_ft_pumkin:tiktok:daily',
+      MKT_DAILY_REPORT_SETTING_KEY: 'integration_workspace:tiktok:daily',
       MKT_SCHEDULE_WEEKLY_REPORT_ENABLED: 'false',
     },
   });
@@ -123,7 +123,7 @@ test('scheduled report period uses the last completed local day across a month b
       MKT_SCHEDULE_TIKTOK_ENABLED: 'false',
       MKT_SCHEDULE_DAILY_REPORT_ENABLED: 'true',
       MKT_DAILY_REPORT_TIME: '08:10',
-      MKT_DAILY_REPORT_SETTING_KEY: 'dev_ft_pumkin:tiktok:daily',
+      MKT_DAILY_REPORT_SETTING_KEY: 'integration_workspace:tiktok:daily',
       MKT_SCHEDULE_WEEKLY_REPORT_ENABLED: 'false',
     },
   });
@@ -139,7 +139,7 @@ test('scheduled report period uses leap day as the last completed local day', ()
       MKT_SCHEDULE_TIKTOK_ENABLED: 'false',
       MKT_SCHEDULE_DAILY_REPORT_ENABLED: 'true',
       MKT_DAILY_REPORT_TIME: '08:10',
-      MKT_DAILY_REPORT_SETTING_KEY: 'dev_ft_pumkin:tiktok:daily',
+      MKT_DAILY_REPORT_SETTING_KEY: 'integration_workspace:tiktok:daily',
       MKT_SCHEDULE_WEEKLY_REPORT_ENABLED: 'false',
     },
   });

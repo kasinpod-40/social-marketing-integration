@@ -10,7 +10,7 @@ import {
  * กฎสำคัญ:
  * - key ต้องคงที่เพราะถูกใช้ใน Config, Queue job, Log และ Feature flag
  * - implementationStatus='active' หมายถึงมี Write/Validation path จริงพร้อม Test แล้ว
- * - implementationStatus='uat_pending' หมายถึงมี Code/Contract แต่ยังห้าม Runtime ทำงานก่อน Live DEV UAT
+ * - implementationStatus='uat_pending' เป็นชื่อสถานะ Legacy; หมายถึงมี Code/Contract แต่ยังห้าม Runtime ทำงานก่อน Integration validation
  * - implementationStatus='planned' หมายถึงเตรียม Contract ไว้เท่านั้นและห้าม Runtime ทำงานจริง
  */
 export const CONNECTOR_KEYS = Object.freeze({

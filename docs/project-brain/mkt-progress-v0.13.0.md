@@ -4,13 +4,13 @@
 
 ## Executive status
 
-- **MKT DEV MVP:** `59%`
+- **MKT Integration Workspace completion:** `59%`
 - **Lark data model/schema foundation:** `100%`
 - **Google Ads end-to-end:** `45%`
-- **Customer-real UAT readiness:** `40%`
+- **Customer-source replacement readiness:** `40%`
 - **Chemistry K Production readiness:** `25%`
 
-Schema เสร็จไม่ได้แปลว่า Connector และ Production เสร็จ. งาน Source delivery, reliability, customer-real UAT, AI summary และ customer-owned cutover ยังเป็นสัดส่วนใหญ่.
+Schema เสร็จไม่ได้แปลว่า Connector และ Production เสร็จ. งาน Source delivery, reliability, customer-data validation, AI summary และ customer-owned cutover ยังเป็นสัดส่วนใหญ่.
 
 ## Current merged baseline
 
@@ -20,7 +20,7 @@ Schema เสร็จไม่ได้แปลว่า Connector และ P
 - Full gates: PASS
 - Live mutations during repository correction: `0`
 
-## Weighted DEV MVP calculation
+## Weighted Integration Workspace calculation
 
 | Workstream | Weight | Completion | Weighted result |
 |---|---:|---:|---:|
@@ -32,7 +32,7 @@ Schema เสร็จไม่ได้แปลว่า Connector และ P
 | Paid Ads: Meta + Google + TikTok Ads | 16% | 27% | 4.32% |
 | WooCommerce + Chatwoot | 8% | 10% | 0.80% |
 | Reporting, AI summary, insight and notification | 7% | 50% | 3.50% |
-| Customer-real UAT and Production cutover | 10% | 10% | 1.00% |
+| Customer-data validation and Production cutover | 10% | 10% | 1.00% |
 | **Total** | **100%** |  | **59.22% ≈ 59%** |
 
 ## Data model and Lark presentation — 100%
@@ -81,12 +81,12 @@ Completed:
 - stable key/idempotency/reconciliation
 - D1 checkpoint, lock, retry, DLQ and alerts
 - Daily/Weekly reports and Client Views
-- DEV schedules and reliability UAT
+- Workspace schedules and reliability validation
 
 Remaining:
 
 - natural operational observation
-- customer-real UAT
+- customer-data validation
 - customer-owned Production cutover
 
 ### YouTube Organic — 90%
@@ -95,13 +95,13 @@ Completed:
 
 - Public/OAuth access and identity gates
 - RAW Channel/Video/Analytics and Canonical writes
-- scheduled DEV Data API and Owner Analytics
+- scheduled Workspace Data API and Owner Analytics
 - large-account pagination/chunking/durable resume
-- outbox/redrive/migration reliability and DEV smoke
+- outbox/redrive/migration reliability and Workspace smoke
 
 Remaining:
 
-- customer-owned 837-video Live UAT
+- customer-owned 837-video validation
 - applicable rollout/observation gates
 - Production cutover
 
@@ -117,7 +117,7 @@ Remaining:
 
 - connector/business adapter
 - normalization, checkpoint/reconciliation and reliability
-- schedule, UAT and Production
+- schedule, validation and Production
 
 ### Instagram Organic — 30%
 
@@ -130,7 +130,7 @@ Completed:
 Remaining:
 
 - connector and token-refresh operations
-- reliability, schedule, UAT and Production
+- reliability, schedule, validation and Production
 
 ### Meta Ads — 25%
 
@@ -145,14 +145,14 @@ Remaining:
 - source queries/connector
 - entity/daily normalization and writes
 - reliability/reconciliation
-- customer-real UAT, schedule and Production
+- customer-data validation, schedule and Production
 
 ### Google Ads — 65%
 
 Completed:
 
 - customer-authorized account link/selectability
-- exact allowlisted Manager Script read-only UAT
+- exact allowlisted Manager Script read-only validation
 - six non-empty bounded datasets
 - errors/truncation `0/0`
 - Google Ads `No changes`
@@ -179,9 +179,9 @@ Manager Script MVP does not wait for direct API approval.
 
 Remaining:
 
-- signed PREVIEW against the existing DEV Worker with customer data
+- signed PREVIEW against the existing Workspace Worker with customer data
 - one-shot LIVE Lark reconciliation and zero-duplicate rerun
-- controlled retry/lock/DLQ/redrive/expiry customer-real evidence
+- controlled retry/lock/DLQ/redrive/expiry customer-source evidence
 - schedule approval and customer-owned Production
 
 ### TikTok Ads — 10%
@@ -199,7 +199,7 @@ Remaining:
 
 - Business Center/app/advertiser authorization preflight
 - metrics/dimensions/rate-limit contract
-- connector, reliability, UAT and Production
+- connector, reliability, validation and Production
 
 ### WooCommerce — 10%
 
@@ -211,7 +211,7 @@ Completed:
 Remaining:
 
 - approved active-scope data model
-- connector, pagination, checkpoint/reconciliation, reliability and UAT
+- connector, pagination, checkpoint/reconciliation, reliability and validation
 
 ### Chatwoot — 10%
 
@@ -222,7 +222,7 @@ Completed:
 Remaining:
 
 - final objects/retention contract
-- connector, checkpoint/reconciliation, reliability and UAT
+- connector, checkpoint/reconciliation, reliability and validation
 
 ## Reporting and AI — 50%
 
@@ -238,13 +238,13 @@ Remaining:
 - multi-channel report aggregation
 - AI summary/insight generation
 - Lark group notification
-- customer-specific report configuration and UAT
+- customer-specific report configuration and validation
 
-## Customer-real UAT readiness — 40%
+## Customer-source replacement readiness — 40%
 
 Completed:
 
-- `uat_chemistry_k` logical profile on the existing `development` environment
+- `integration_workspace` single profile on the existing technical `development` environment
 - customer-owned source identity rule
 - Canonical identity continuity into Production
 - schedule/connector disabled-by-default rule
@@ -252,9 +252,9 @@ Completed:
 
 Remaining:
 
-- reuse of existing DEV Cloudflare/D1/Queue/Lark resources for customer-real UAT
-- signed Google Ads delivery UAT
-- Facebook/Instagram/Meta Ads connector UAT
+- reuse of the single Integration Workspace Cloudflare/D1/Queue/Lark resources
+- signed Google Ads delivery validation
+- Facebook/Instagram/Meta Ads connector validation
 - retention/cleanup evidence
 - channel-by-channel operational sign-off
 
@@ -272,7 +272,7 @@ Remaining:
 - customer-owned Lark/App/Cloudflare/D1/Queues/Secrets
 - connector credentials and authorization
 - Production migrations and deploy
-- customer-scale UAT
+- customer-scale validation
 - monitoring, rollback and operational ownership
 - final cutover
 
@@ -307,20 +307,20 @@ This validates missing raw identity, not every supporting field. Comprehensive d
 
 1. Approve Google Ads signed delivery contracts.
 2. Implement disabled-by-default Google Ads ingress/Queue/D1/Lark path.
-3. Run manual signed-delivery UAT, idempotent rerun and reconciliation.
+3. Run manual signed-delivery validation, idempotent rerun and reconciliation.
 4. Implement Facebook/Instagram Organic connectors.
 5. Implement Meta Ads and TikTok Ads tracks.
 6. Implement WooCommerce and Chatwoot.
 7. Complete multi-channel AI summary/notification.
-8. Run Customer-real UAT channel by channel on existing DEV with profile `uat_chemistry_k`.
+8. Replace temporary sources channel by channel and validate on profile `integration_workspace`.
 9. Build customer-owned Production and cut over.
 
 ## Permanent safety status
 
 - Production disabled
 - new connector/schedule flags disabled by default
-- Developer-test DEV and Customer-real UAT share existing DEV resources through logical profiles; Production isolated
-- customer-real UAT uses customer-owned source data
+- One mixed-source Integration Workspace is used before Production; Production isolated
+- source ownership is tracked per Connector and temporary sources are replaced before final validation
 - Production resources customer-owned
 - secrets excluded from Source/Logs/Release
 - every write path requires stable key/idempotency/retry/reconciliation

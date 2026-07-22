@@ -4,8 +4,8 @@ import { buildReportSnapshot } from '../../packages/application/src/use-cases/bu
 
 function baseInput(overrides = {}) {
   return {
-    reportSettingKey: 'dev_ft_pumkin:tiktok:weekly',
-    customerProfile: 'dev_ft_pumkin',
+    reportSettingKey: 'integration_workspace:tiktok:weekly',
+    customerProfile: 'integration_workspace',
     accountId: 'ft_pumkin',
     reportType: 'weekly_organic_report',
     periodStart: '2026-07-01',
@@ -36,7 +36,7 @@ test('builds a stable Lark-ready report snapshot row', () => {
 
   assert.equal(
     row.report_id,
-    'weekly_organic_report::dev_ft_pumkin::ft_pumkin::2026-07-01::2026-07-07::year_over_year::2025-07-01::2025-07-07::facebook+tiktok::M.4/1::dev_ft_pumkin%3Atiktok%3Aweekly',
+    'weekly_organic_report::integration_workspace::ft_pumkin::2026-07-01::2026-07-07::year_over_year::2025-07-01::2025-07-07::facebook+tiktok::M.4/1::integration_workspace%3Atiktok%3Aweekly',
   );
   assert.deepEqual(row.platform, ['facebook', 'tiktok']);
   assert.equal(row.metric_payload_json, '{"views":{"current":1000,"previous":800}}');

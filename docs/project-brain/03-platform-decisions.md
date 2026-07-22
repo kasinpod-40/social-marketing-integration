@@ -21,7 +21,7 @@ Required before implementation:
 - pagination/rate-limit contract
 - stable keys and reconciliation
 - Queue/DLQ/D1 reliability
-- customer-real UAT and Production ownership
+- customer-data validation and Production ownership
 
 ## Google Ads
 
@@ -71,5 +71,5 @@ Every custom connector must use:
 - partial-write and retry classification
 - reconciliation and retention
 - secret/identity redaction
-- shared-DEV logical profile safety and Production isolation
+- single-Workspace profile safety and Production isolation
 - schedule disabled by default

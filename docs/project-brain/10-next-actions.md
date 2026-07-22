@@ -23,12 +23,12 @@ No Live Lark Apply, Google Ads mutation, Queue message, D1 migration, schedule c
 
 ## Immediate next gate
 
-The signed-delivery Source implementation is complete on Draft PR `#17`. Run Customer-real UAT on the existing DEV resources using `docs/google-ads-signed-delivery-uat.md`.
+The signed-delivery Source implementation is complete on Draft PR `#17`. Run Google Ads validation in the same Integration Workspace using `docs/google-ads-signed-delivery-integration-validation.md`.
 
 Required order:
 
 1. final branch CI and security scan;
-2. existing DEV D1 migration and Worker deployment;
+2. existing Integration Workspace D1 migration and Worker deployment;
 3. Manager Script `DRY_RUN`;
 4. signed zero-write `PREVIEW`;
 5. negative signature/tamper/header/timestamp/replay checks;
@@ -51,7 +51,7 @@ Review pending
 Current level Test Account Access
 ```
 
-Direct API is optional Phase 2. Do not delay the Manager Script MVP solely for approval, but do not claim production direct-API readiness until approval and OAuth UAT pass.
+Direct API is optional Phase 2. Do not delay the Manager Script MVP solely for approval, but do not claim production direct-API readiness until approval and OAuth validation passes.
 
 ## View work
 
@@ -101,13 +101,14 @@ Do not overload the current stable-key Views without approval.
 
 1. Facebook Organic connector using shared Meta transport and reliability.
 2. Instagram Organic connector and token-refresh operations.
-3. Meta Ads connector and customer-real data UAT.
+3. Meta Ads connector and customer-data validation.
 4. TikTok Ads access/Business Center/API preflight and connector.
 5. WooCommerce.
 6. Chatwoot.
 7. Multi-channel AI summary/insight/notification.
-8. Channel-by-channel Customer-real UAT on DEV using profile `uat_chemistry_k`.
-9. Customer-owned Production cutover.
+8. Replace temporary developer sources channel by channel without changing profile `integration_workspace`.
+9. Run full customer-data validation in the same Workspace.
+10. Customer-owned Production cutover.
 
 ## Permanent release blockers
 
@@ -117,6 +118,6 @@ Do not overload the current stable-key Views without approval.
 - Missing bounded pagination/batch limits.
 - Missing replay/signature validation for inbound delivery.
 - Reliability, reconciliation or partial-write gate failing.
-- Schedule enabled before manual UAT.
+- Schedule enabled before manual integration validation.
 - Secret/customer identity present in Source or logs.
-- Customer-scale Live UAT not completed where required.
+- Customer-scale live validation not completed where required.

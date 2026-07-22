@@ -8,7 +8,7 @@ const DELIVERY_ID = '123e4567-e89b-42d3-a456-426614174000';
 function googleEnv() {
   const env = {
     MKT_ENV: 'development',
-    MKT_CUSTOMER_PROFILE: 'uat_chemistry_k',
+    MKT_CUSTOMER_PROFILE: 'integration_workspace',
     MKT_CONNECTOR_GOOGLE_ADS_ENABLED: 'true',
     MKT_SYNC_LOCK_LEASE_MS: '600000',
     MKT_SYNC_LOCK_RENEW_INTERVAL_MS: '120000',
@@ -33,7 +33,7 @@ test('active Google Ads job routes through the shared distributed lock and compl
     env: googleEnv(),
     getRuntimeConfig() {
       return {
-        profileKey: 'uat_chemistry_k', environment: 'development',
+        profileKey: 'integration_workspace', environment: 'development',
         connectors: { google_ads: { enabled: true, accountKey: 'chemistry_k' } },
       };
     },
@@ -66,7 +66,7 @@ test('active Google Ads job routes through the shared distributed lock and compl
   assert.equal(result.status, 'completed_idempotent');
   assert.equal(lockCalls[0][0], 'acquire');
   assert.equal(lockCalls.at(-1)[0], 'release');
-  assert.equal(lockCalls[0][1].lockKey, 'uat_chemistry_k:google_ads:chemistry_k:signed_delivery');
+  assert.equal(lockCalls[0][1].lockKey, 'integration_workspace:google_ads:chemistry_k:signed_delivery');
   assert.deepEqual(syncRuns.map((row) => row.status), ['running', 'success']);
 });
 

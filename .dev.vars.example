@@ -1,12 +1,12 @@
 # ============================================================
-# Social MKT Data Hub — ตัวอย่าง Environment Variables สำหรับ DEV
+# Social MKT Data Hub — ตัวอย่าง Integration Workspace Variables
 # คัดลอกไฟล์นี้เป็น .dev.vars แล้วแทนค่าที่จำเป็นในเครื่องผู้พัฒนา
 # ห้ามใส่ Secret จริงในไฟล์ตัวอย่างนี้
 # ============================================================
 
-# สภาพแวดล้อมและ Customer Profile
+# Runtime technical label และ Integration Workspace profile คงที่
 MKT_ENV=development
-MKT_CUSTOMER_PROFILE=replace-with-customer-profile
+MKT_CUSTOMER_PROFILE=integration_workspace
 DEFAULT_TIMEZONE=Asia/Bangkok
 
 # เปิดเฉพาะ Connector ที่ Implement และอนุญาตให้ใช้แล้ว
@@ -18,7 +18,7 @@ MKT_CONNECTOR_GOOGLE_ADS_ENABLED=false
 MKT_CONNECTOR_WOOCOMMERCE_ENABLED=false
 MKT_CONNECTOR_CHATWOOT_ENABLED=false
 
-# Schedule ปิดเป็นค่าเริ่มต้น เพื่อให้ผู้ดูแลเปิดหลังตรวจ Schema, Seed และ UAT ของ Connector นั้นแล้ว
+# Schedule ปิดเป็นค่าเริ่มต้น เพื่อให้ผู้ดูแลเปิดหลังตรวจ Schema, Seed และ manual integration validation ของ Connector นั้นแล้ว
 MKT_SCHEDULE_TIKTOK_ENABLED=false
 MKT_SCHEDULE_YOUTUBE_ENABLED=false
 MKT_SCHEDULE_DAILY_REPORT_ENABLED=false
@@ -35,10 +35,10 @@ MKT_MAIN_QUEUE_NAME=social-mkt-sync-jobs
 MKT_DLQ_QUEUE_NAME=social-mkt-sync-dlq
 MKT_QUEUE_RETRY_DELAY_SECONDS=30
 
-# TikTok Creator DEV
+# TikTok Creator — temporary developer source in Integration Workspace
 TIKTOK_SOURCE_HANDLE=replace-with-tiktok-handle
 
-# YouTube DEV — ตัวอย่างยังปิด Connector/Schedule จนกว่า Schema และ DEV UAT ของ Environment นั้นจะผ่าน
+# YouTube — temporary developer source; Connector/Schedule ปิดจนกว่า Integration validation จะผ่าน
 YOUTUBE_CHANNEL_ID=replace-with-youtube-channel-id
 YOUTUBE_API_KEY=replace-with-youtube-api-key
 YOUTUBE_OAUTH_ACCESS_TOKEN=replace-with-oauth-access-token
@@ -50,11 +50,11 @@ MKT_GOOGLE_ADS_SIGNING_SECRET=replace-with-at-least-32-character-secret
 MKT_GOOGLE_ADS_PREVIOUS_SIGNING_KEY_ID=
 MKT_GOOGLE_ADS_PREVIOUS_SIGNING_SECRET=
 
-# Meta shared client — ใช้ Version ที่เลือกตอนเริ่ม Live DEV UAT
+# Meta shared client — ใช้ Version ที่เลือกตอนเริ่ม Integration validation
 META_GRAPH_API_VERSION=vXX.X
 META_ACCESS_TOKEN=replace-with-meta-access-token
 
-# WooCommerce / Chatwoot DEV — Foundations ยังไม่ถูก Route เข้า Worker
+# WooCommerce / Chatwoot customer sources in Integration Workspace — Foundations ยังไม่ถูก Route เข้า Worker
 WOOCOMMERCE_BASE_URL=https://replace-with-dev-store.example
 WOOCOMMERCE_CONSUMER_KEY=replace-with-consumer-key
 WOOCOMMERCE_CONSUMER_SECRET=replace-with-consumer-secret
@@ -67,7 +67,7 @@ LARK_APP_ID=replace-with-lark-app-id
 LARK_APP_SECRET=replace-with-lark-app-secret
 LARK_APP_TOKEN=replace-with-lark-base-app-token
 
-# Lark Table IDs — ไม่ใช่ Secret แต่ต้องตรงกับ Base ของ Environment
+# Lark Table IDs — ไม่ใช่ Secret แต่ต้องตรงกับ Base ของ Integration Workspace หรือ Production target
 # Protected source: Lark Native TikTok เป็นเจ้าของ Schema; ระบบเราอ่านอย่างเดียว
 LARK_TABLE_RAW_TIKTOK_CREATOR_VIDEOS=replace-with-table-id
 LARK_TABLE_RAW_YOUTUBE_CHANNELS=replace-with-table-id

@@ -81,7 +81,7 @@ test('disabled active connector jobs are acknowledged before Lark credentials ar
   await syncWorker.queue({ queue: 'sync-main', messages: [message] }, {
     ...minimalEnv(),
     MKT_ENV: 'development',
-    MKT_CUSTOMER_PROFILE: 'dev_ft_pumkin',
+    MKT_CUSTOMER_PROFILE: 'integration_workspace',
     MKT_CONNECTOR_TIKTOK_ENABLED: 'false',
   });
 

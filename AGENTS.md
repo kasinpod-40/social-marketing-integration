@@ -42,7 +42,7 @@
 - ตรวจทั้ง Codebase ก่อนเพิ่มโค้ดใหม่
 - แก้ Implementation, Refactor, Tests, Migration และ Tooling ใน Repository จริง
 - รัน Gate ที่กำหนดและบันทึกผลใน `docs/current-task.md`
-- รายงาน Files changed, Commands run, Tests, Live UAT, Remaining risks และ Commit suggestion
+- รายงาน Files changed, Commands run, Tests, live validation, Remaining risks และ Commit suggestion
 
 ### กติกาส่งงานกลับ
 
@@ -58,7 +58,7 @@
 - Performance, pagination, batching, bounded concurrency และ memory usage
 - Security, permissions, secrets, rate limits, retries, timeout และ partial failure
 - Stable keys, idempotency, reconciliation, sync log และ observability
-- ผลกระทบต่อ Developer-test DEV profile, Customer-real UAT logical profile, Production profile และทุก Connector/Job ที่ใช้ Contract กลาง
+- ผลกระทบต่อ Integration Workspace profile, Production profile และทุก Connector/Job ที่ใช้ Contract กลาง
 
 ห้ามเพิ่ม Utility หรือ Layer ใหม่เมื่อขยายของเดิมได้อย่างสะอาดกว่า
 
@@ -75,21 +75,23 @@
 
 ห้ามเริ่ม Connector Implementation หาก `docs/current-task.md` ยังระบุว่า Data model หรือ Source contract ยังไม่อนุมัติ
 
-## 6. Environment, Ownership และ Secret
+## 6. Integration Workspace, Ownership และ Secret
 
-- DEV infrastructure ปัจจุบันเป็นของผู้พัฒนาและใช้ร่วมกันสอง logical profiles: `dev_ft_pumkin` สำหรับข้อมูลทดสอบของผู้พัฒนา และ `uat_chemistry_k` สำหรับ Customer-real UAT
-- Customer-real UAT **คือ DEV เดิม**: ใช้ Worker, D1, Queue, DLQ, Secrets store, Checkpoint, Lock, Alert, Schedule config และ Lark Base ชุดเดิม โดยเปลี่ยนเฉพาะบัญชีต้นทาง/ข้อมูลเป็นของลูกค้า Chemistry K
-- ห้ามสร้างหรือบังคับแยก UAT infrastructure เพิ่ม เว้นแต่ผู้ใช้อนุมัติเป็นงานใหม่ภายหลัง
-- Production ใช้ profile `chemistry_k` และต้องใช้ Lark Base, Cloudflare, App credentials และ Platform assets ที่ลูกค้าเป็นเจ้าของ
-- UAT เป็นข้อมูลจริง ไม่ใช่ Sandbox/Demo; แม้อยู่บน DEV เดิมก็ต้องใช้ Security, Least privilege, Audit, Retention และ Cleanup ระดับ Production
-- `profileKey` แยก logical execution mode แต่ `customerKey` และ Connector `accountKey` ต้องเป็น `chemistry_k` ทั้ง UAT/Production เพื่อรักษา Canonical stable keys
-- ห้ามรัน Developer-test source และ Customer-real source ของ Connector เดียวกันพร้อมกันโดยไม่มี Runbook/Checkpoint boundary ที่ชัดเจน
-- UAT Connector ทุกช่องทางและ Business Schedule ทุกตัวต้องปิดโดย Default จนกว่า Identity/Source-contract preflight ของช่องทางนั้นจะผ่าน; System recovery jobs ที่ไม่เขียน Business data ให้ยึด Runtime reliability contract แยกต่างหาก
+- ก่อน Production มี **Integration Workspace เพียงชุดเดียว** บน Lark Base, Cloudflare Worker, D1, Queue, DLQ และ Secret store ของผู้พัฒนา
+- `MKT_ENV=development` เป็นเพียง Technical isolation label ของ Runtime ปัจจุบัน ไม่ใช่ขั้น DEV/UAT ที่ต้องสลับไปมา
+- ใช้ `MKT_CUSTOMER_PROFILE=integration_workspace` ต่อเนื่องตลอดการประกอบระบบและการทดสอบด้วยข้อมูลจริง
+- แหล่งข้อมูลของแต่ละ Connector อาจเป็นของผู้พัฒนาหรือลูกค้าได้ชั่วคราว โดยต้องระบุ `sourceOwner`, `sourceRole` และ `replacementRequired` รายช่องทาง
+- ข้อมูลของผู้พัฒนาที่ใช้แทนชั่วคราวมีไว้เพื่อทำ Connector, Mapping, Queue, Reliability, Lark, Report, AI และ Notify ให้ครบเท่านั้น ไม่ถือเป็นข้อมูล Production
+- ห้ามสร้าง Profile แยกตามคำว่า DEV/UAT หรือสลับ Profile เพื่อเปิดแต่ละช่องทาง; Legacy names `dev_ft_pumkin` และ `uat_chemistry_k` เป็น Compatibility aliases ที่ชี้เข้า Workspace เดียวกัน
+- เมื่อลูกค้าพร้อมในช่องทางที่ใช้ข้อมูลผู้พัฒนา ให้หยุด Connector/Schedule ของช่องทางนั้น, Backup/Export, ลบเฉพาะข้อมูลตาม Source/account/platform scope, เปลี่ยน Credential/Source identity แล้วรัน Full backfill + reconciliation ใน Workspace เดิม
+- หลังข้อมูลทุกช่องทางเป็นของลูกค้า ให้รัน Full end-to-end validation ใน Workspace เดิมก่อนย้ายไป Production
+- Production ใช้ profile `chemistry_k` และต้องใช้ Lark Base, Cloudflare, D1, Queue, App credentials และ Platform assets ที่ลูกค้าเป็นเจ้าของ
+- Connector ทุกช่องทางและ Business Schedule ทุกตัวต้องปิดโดย Default จนกว่า Identity/Source-contract และ manual validation ของช่องทางนั้นจะผ่าน
 - เก็บเฉพาะ non-secret IDs/mappings ใน Source
 - Token, API key, password, app secret, OTP, session cookie และ credential ต้องอยู่ใน Environment/Secret store เท่านั้น
 - ห้าม Commit `.dev.vars` หรือ `wrangler.sync.jsonc`
 - ห้ามเปิดเผย Secret, Token, Customer identity หรือข้อมูลส่วนบุคคลใน Log/Health/Admin response
-- Contract รายละเอียดของ UAT อยู่ที่ `docs/project-brain/customer-real-uat.md`
+- Contract ของ Workspace อยู่ที่ `docs/project-brain/integration-workspace.md`
 
 ## 7. Connector และ Queue contract
 

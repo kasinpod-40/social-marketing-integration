@@ -11,8 +11,8 @@ import {
 
 function settingRecord(overrides = {}) {
   return { recordId: 'setting-1', fields: {
-    report_setting_key: 'dev_ft_pumkin:tiktok:daily',
-    customer_profile: 'dev_ft_pumkin',
+    report_setting_key: 'integration_workspace:tiktok:daily',
+    customer_profile: 'integration_workspace',
     report_name: 'TikTok Daily Organic',
     report_type: 'daily_organic_report',
     period_type: 'daily',
@@ -50,32 +50,49 @@ function metricRecord(key, overrides = {}) {
 
 test('normalizes a customer-scoped TikTok report setting', () => {
   const setting = normalizeReportSettingRecord(settingRecord());
-  assert.equal(setting.reportSettingKey, 'dev_ft_pumkin:tiktok:daily');
+  assert.equal(setting.reportSettingKey, 'integration_workspace:tiktok:daily');
   assert.deepEqual(setting.accountKeys, ['ft_pumkin']);
   assert.deepEqual(setting.platforms, ['tiktok']);
   assert.equal(setting.topContentLimit, 5);
   assert.equal(setting.enabled, true);
 });
 
+
+test('report setting loader accepts the legacy stable profile value as the same Integration Workspace', async () => {
+  const repository = {
+    listByFieldValues: async () => [settingRecord({
+      report_setting_key: 'dev_ft_pumkin:tiktok:daily',
+      customer_profile: 'dev_ft_pumkin',
+    })],
+  };
+  const setting = await loadReportSetting({
+    repository,
+    tableId: 'tbl_settings',
+    reportSettingKey: 'dev_ft_pumkin:tiktok:daily',
+    customerProfile: 'integration_workspace',
+  });
+  assert.equal(setting.customerProfile, 'dev_ft_pumkin');
+});
+
 test('report setting loader rejects missing, duplicate, profile mismatch, and disabled rows', async () => {
   const repository = { listByFieldValues: async () => [] };
   await assert.rejects(() => loadReportSetting({
-    repository, tableId: 'tbl_settings', reportSettingKey: 'missing', customerProfile: 'dev_ft_pumkin',
+    repository, tableId: 'tbl_settings', reportSettingKey: 'missing', customerProfile: 'integration_workspace',
   }), (error) => error.code === 'REPORT_SETTING_NOT_FOUND');
 
   repository.listByFieldValues = async () => [settingRecord(), settingRecord()];
   await assert.rejects(() => loadReportSetting({
-    repository, tableId: 'tbl_settings', reportSettingKey: 'duplicate', customerProfile: 'dev_ft_pumkin',
+    repository, tableId: 'tbl_settings', reportSettingKey: 'duplicate', customerProfile: 'integration_workspace',
   }), (error) => error.code === 'REPORT_SETTING_DUPLICATE');
 
   repository.listByFieldValues = async () => [settingRecord({ customer_profile: 'chemistry_k' })];
   await assert.rejects(() => loadReportSetting({
-    repository, tableId: 'tbl_settings', reportSettingKey: 'x', customerProfile: 'dev_ft_pumkin',
+    repository, tableId: 'tbl_settings', reportSettingKey: 'x', customerProfile: 'integration_workspace',
   }), (error) => error.code === 'REPORT_SETTING_PROFILE_MISMATCH');
 
   repository.listByFieldValues = async () => [settingRecord({ enabled: false })];
   await assert.rejects(() => loadReportSetting({
-    repository, tableId: 'tbl_settings', reportSettingKey: 'x', customerProfile: 'dev_ft_pumkin',
+    repository, tableId: 'tbl_settings', reportSettingKey: 'x', customerProfile: 'integration_workspace',
   }), (error) => error.code === 'REPORT_SETTING_DISABLED');
 });
 

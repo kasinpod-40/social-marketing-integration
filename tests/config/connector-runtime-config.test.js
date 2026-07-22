@@ -7,7 +7,7 @@ import { listConnectorKeys } from '../../packages/config/src/connector-catalog.j
 test('runtime profile contains every registered connector with a deterministic feature flag', () => {
   const config = loadCustomerRuntimeConfig({
     MKT_ENV: 'development',
-    MKT_CUSTOMER_PROFILE: 'dev_ft_pumkin',
+    MKT_CUSTOMER_PROFILE: 'integration_workspace',
   });
 
   assert.deepEqual(Object.keys(config.connectors), listConnectorKeys());
@@ -18,7 +18,7 @@ test('runtime profile contains every registered connector with a deterministic f
 test('environment feature flag can disable an active connector safely', () => {
   const config = loadCustomerRuntimeConfig({
     MKT_ENV: 'development',
-    MKT_CUSTOMER_PROFILE: 'dev_ft_pumkin',
+    MKT_CUSTOMER_PROFILE: 'integration_workspace',
     MKT_CONNECTOR_TIKTOK_ENABLED: 'false',
   });
 
@@ -26,36 +26,30 @@ test('environment feature flag can disable an active connector safely', () => {
   assert.equal(config.connectors.tiktok.enabledSource, 'environment');
 });
 
-test('disabled customer-real UAT connector on DEV can omit live identity but enabling it requires an exact environment value', () => {
-  const disabled = loadCustomerRuntimeConfig({
+test('one integration profile can replace a temporary source identity without switching profiles', () => {
+  const current = loadCustomerRuntimeConfig({
     MKT_ENV: 'development',
-    MKT_CUSTOMER_PROFILE: 'uat_chemistry_k',
+    MKT_CUSTOMER_PROFILE: 'integration_workspace',
   });
 
-  assert.equal(disabled.connectors.tiktok.enabled, false);
-  assert.equal(disabled.connectors.tiktok.accountKey, 'chemistry_k');
-  assert.equal(disabled.connectors.tiktok.sourceHandle, null);
+  assert.equal(current.connectors.tiktok.enabled, true);
+  assert.equal(current.connectors.tiktok.accountKey, 'ft_pumkin');
+  assert.equal(current.connectors.tiktok.sourceHandle, 'ft.pumkin');
+  assert.equal(current.connectors.tiktok.sourceOwner, 'developer');
+  assert.equal(current.connectors.tiktok.replacementRequired, true);
 
-  assert.throws(
-    () => loadCustomerRuntimeConfig({
-      MKT_ENV: 'development',
-      MKT_CUSTOMER_PROFILE: 'uat_chemistry_k',
-      MKT_CONNECTOR_TIKTOK_ENABLED: 'true',
-    }),
-    /Missing connector runtime field tiktok.sourceHandle/,
-  );
-
-  const enabled = loadCustomerRuntimeConfig({
+  const replacement = loadCustomerRuntimeConfig({
     MKT_ENV: 'development',
-    MKT_CUSTOMER_PROFILE: 'uat_chemistry_k',
+    MKT_CUSTOMER_PROFILE: 'integration_workspace',
     MKT_CONNECTOR_TIKTOK_ENABLED: 'true',
     TIKTOK_SOURCE_HANDLE: 'customer.actual.handle',
   });
 
-  assert.equal(enabled.connectors.tiktok.enabled, true);
-  assert.equal(enabled.connectors.tiktok.accountKey, 'chemistry_k');
-  assert.equal(enabled.connectors.tiktok.sourceHandle, 'customer.actual.handle');
-  assert.equal(enabled.connectors.tiktok.sourceHandleSource, 'environment');
+  assert.equal(replacement.profileKey, 'integration_workspace');
+  assert.equal(replacement.connectors.tiktok.enabled, true);
+  assert.equal(replacement.connectors.tiktok.accountKey, 'ft_pumkin');
+  assert.equal(replacement.connectors.tiktok.sourceHandle, 'customer.actual.handle');
+  assert.equal(replacement.connectors.tiktok.sourceHandleSource, 'environment');
 });
 
 test('disabled connectors still require the canonical account key', () => {
@@ -78,7 +72,7 @@ test('disabled connectors still require the canonical account key', () => {
 test('YouTube connector can be enabled after activation review', () => {
   const config = loadCustomerRuntimeConfig({
     MKT_ENV: 'development',
-    MKT_CUSTOMER_PROFILE: 'dev_ft_pumkin',
+    MKT_CUSTOMER_PROFILE: 'integration_workspace',
     MKT_CONNECTOR_YOUTUBE_ENABLED: 'true',
   });
 
@@ -101,7 +95,7 @@ test('connector feature flags accept only explicit true or false values', () => 
   assert.throws(
     () => loadCustomerRuntimeConfig({
       MKT_ENV: 'development',
-      MKT_CUSTOMER_PROFILE: 'dev_ft_pumkin',
+      MKT_CUSTOMER_PROFILE: 'integration_workspace',
       MKT_CONNECTOR_TIKTOK_ENABLED: 'yes',
     }),
     /must be true or false/,
@@ -123,7 +117,7 @@ test('production source handle can be supplied by environment without changing c
 test('boolean feature flag values are supported for runtime adapters that provide typed vars', () => {
   const config = loadCustomerRuntimeConfig({
     MKT_ENV: 'development',
-    MKT_CUSTOMER_PROFILE: 'dev_ft_pumkin',
+    MKT_CUSTOMER_PROFILE: 'integration_workspace',
     MKT_CONNECTOR_TIKTOK_ENABLED: false,
   });
 
@@ -134,7 +128,7 @@ test('source-handle environment override rejects non-string values instead of si
   assert.throws(
     () => loadCustomerRuntimeConfig({
       MKT_ENV: 'development',
-      MKT_CUSTOMER_PROFILE: 'dev_ft_pumkin',
+      MKT_CUSTOMER_PROFILE: 'integration_workspace',
       TIKTOK_SOURCE_HANDLE: 123,
     }),
     /must be a non-empty string/,

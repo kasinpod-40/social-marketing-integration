@@ -6,7 +6,7 @@ import { assertJobImplemented, getJobDefinition, JOB_TYPES } from '../../package
 
 test('allows active YouTube jobs through the normal connector feature flag', () => {
   const runtime = loadCustomerRuntimeConfig({
-    MKT_ENV: 'development', MKT_CUSTOMER_PROFILE: 'dev_ft_pumkin',
+    MKT_ENV: 'development', MKT_CUSTOMER_PROFILE: 'integration_workspace',
     MKT_CONNECTOR_TIKTOK_ENABLED: 'false', MKT_CONNECTOR_YOUTUBE_ENABLED: 'true',
   });
   const job = assertJobImplemented(getJobDefinition(JOB_TYPES.YOUTUBE_ORGANIC_SYNC));
@@ -17,7 +17,7 @@ test('allows active YouTube jobs through the normal connector feature flag', () 
 
 test('active YouTube remains fail-closed while its normal feature flag is disabled', () => {
   const runtime = loadCustomerRuntimeConfig({
-    MKT_ENV: 'development', MKT_CUSTOMER_PROFILE: 'dev_ft_pumkin',
+    MKT_ENV: 'development', MKT_CUSTOMER_PROFILE: 'integration_workspace',
     MKT_CONNECTOR_TIKTOK_ENABLED: 'false', MKT_CONNECTOR_YOUTUBE_ENABLED: 'false',
   });
   assert.throws(

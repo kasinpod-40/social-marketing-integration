@@ -1,4 +1,4 @@
-# 08 — UAT and Definition of Done
+# 08 — Validation and Definition of Done
 
 ## Definition of Done
 A task is not done unless:
@@ -43,4 +43,4 @@ A task is not done unless:
 - Retry/backoff, distributed lock, DLQ/redrive and retention are proven.
 - Reconciliation accounts for every expected row and rerun creates zero duplicate Stable keys.
 - Secret/raw payload does not appear in logs, Queue, Lark or Git.
-- Schedule remains disabled until a separate approval after customer-real UAT.
+- Schedule remains disabled until a separate approval after customer-data validation.

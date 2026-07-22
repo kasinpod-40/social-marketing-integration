@@ -4,11 +4,11 @@
 
 - Implementation baseline: `d4a531fbb4e05dad7ce2296859c97f571e23acf3` / PR `#13`
 - Documentation closeout: PR `#14`
-- Current task: `docs/current-task.md` — signed delivery implemented; Customer-real UAT on existing DEV pending
+- Current task: `docs/current-task.md` — signed delivery implemented; Integration Workspace validation pending
 - Application package line: `0.11.0`
 - Contract versions: View `v0.13.5`, Formula `v0.13.6`, audit correction `v0.13.7`
 
-## Lark DEV baseline
+## Lark Integration Workspace baseline
 
 Fresh configuration-only audit of `Social MKT Data Hub(11).base`:
 
@@ -48,7 +48,7 @@ The 55 specialized Views are not defective merely because their names imply Acti
 
 ## Channel state
 
-### Active in verified DEV
+### Active in Integration Workspace
 
 - TikTok Organic
 - YouTube Organic
@@ -59,7 +59,7 @@ The 55 specialized Views are not defective merely because their names imply Acti
 - Instagram Organic
 - Meta Ads
 
-### Implemented with Customer-real UAT on existing DEV pending
+### Implemented with Integration Workspace validation pending
 
 - Google Ads signed delivery
 
@@ -74,7 +74,7 @@ The 55 specialized Views are not defective merely because their names imply Acti
 Completed:
 
 - customer-authorized account link/selectability
-- Manager Script read-only UAT
+- Manager Script read-only validation
 - six bounded non-empty datasets
 - errors/truncation `0/0`
 - Google Ads `No changes`
@@ -102,8 +102,8 @@ Implemented in Source:
 
 Remaining:
 
-- signed PREVIEW and manual one-shot LIVE using Chemistry K data on existing DEV
-- customer-real idempotency/reconciliation/retry/lock/DLQ evidence
+- signed PREVIEW and manual one-shot LIVE using Chemistry K data in the Integration Workspace
+- customer-data idempotency/reconciliation/retry/lock/DLQ evidence
 - schedule approval and Production
 
 ## Google View safety correction
@@ -146,8 +146,8 @@ The transitive `sharp` vulnerability chain was fixed with `overrides.sharp=0.35.
 
 ## Runtime safety
 
-- Developer-test DEV and Customer-real UAT share the existing DEV resources through separate logical profiles; Production remains isolated
-- Customer-real UAT and Production connectors/schedules disabled by default
+- One mixed-source Integration Workspace uses the existing resources; Production remains isolated
+- Integration and Production connectors/schedules remain disabled by default until their gates pass
 - Production customer-owned
 - secrets only in Environment/Secret Manager
 - every write path requires stable key, idempotency, retry and reconciliation
@@ -155,4 +155,4 @@ The transitive `sharp` vulnerability chain was fixed with `overrides.sharp=0.35.
 
 ## Next gate
 
-Run `docs/google-ads-signed-delivery-uat.md` on the existing DEV resources with `MKT_ENV=development` and profile `uat_chemistry_k`. Schedule stays disabled, Lark Formula/View/schema work stays closed, and Production remains blocked.
+Run `docs/google-ads-signed-delivery-integration-validation.md` on the existing resources with `MKT_ENV=development` and profile `integration_workspace`. Schedule stays disabled, Lark Formula/View/schema work stays closed, and Production remains blocked.

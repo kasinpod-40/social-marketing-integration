@@ -41,7 +41,7 @@ async function createRequest(envelope = createGoogleAdsDeliveryEnvelope(), overr
 function env() {
   return {
     MKT_ENV: 'development',
-    MKT_CUSTOMER_PROFILE: 'uat_chemistry_k',
+    MKT_CUSTOMER_PROFILE: 'integration_workspace',
     MKT_CONNECTOR_GOOGLE_ADS_ENABLED: 'true',
     MKT_GOOGLE_ADS_SIGNING_KEY_ID: KEY_ID,
     MKT_GOOGLE_ADS_SIGNING_SECRET: SECRET,

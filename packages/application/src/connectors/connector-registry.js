@@ -17,7 +17,7 @@ export function assertConnectorRunnable(runtimeConfig, connectorKey) {
   const definition = getConnectorCatalogEntry(connectorKey);
   if (definition.implementationStatus !== CONNECTOR_IMPLEMENTATION_STATUS.ACTIVE) {
     const uatPending = definition.implementationStatus === CONNECTOR_IMPLEMENTATION_STATUS.UAT_PENDING;
-    throw permanentError(`${definition.displayName} connector is ${uatPending ? 'waiting for Live DEV UAT' : 'not implemented'}`, {
+    throw permanentError(`${definition.displayName} connector is ${uatPending ? 'waiting for integration validation' : 'not implemented'}`, {
       code: uatPending ? 'MKT_CONNECTOR_UAT_PENDING' : 'MKT_CONNECTOR_NOT_IMPLEMENTED',
       details: { connectorKey: definition.key },
     });

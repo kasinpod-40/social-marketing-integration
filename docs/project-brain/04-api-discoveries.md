@@ -2,7 +2,7 @@
 
 ## YouTube Data API / Analytics API
 
-Status: Source contract and DEV smoke verified; customer-scale Live UAT pending.
+Status: Source contract and Workspace smoke verified; customer-scale validation pending.
 
 - Data API Channel lookup uses `channels.list`.
 - Upload enumeration uses `playlistItems.list` with cursor pagination.
@@ -44,7 +44,7 @@ Status: Confirmed MVP RAW source.
 
 - Lark Native Integration creates and manages the source table.
 - The table may be renamed to `RAW_TikTok_Creator_Videos` and moved into the RAW folder without breaking sync.
-- Manual sync updates existing rows and does not create duplicate records in verified DEV tests.
+- Manual sync updates existing rows and does not create duplicate records in verified Workspace tests.
 - Missing content can reflect eligibility/content availability and is not proof of a fixed row limit.
 - Worker must treat this table as protected read-only schema.
 - Canonical reporting uses `MKT_Content` and `MKT_Content_Daily`, not RAW directly.
@@ -110,10 +110,10 @@ Evidence boundary:
 
 - The original 598-line safety scan remains documented Live review evidence.
 - A sanitized replacement source is now committed at `scripts/google-ads-manager-script-signed-delivery.js`.
-- External signed PREVIEW/LIVE has not yet been run on the existing DEV resources with Chemistry K data; Source implementation does not equal Live UAT.
+- External signed PREVIEW/LIVE has not yet been run on the existing Workspace resources with Chemistry K data; Source implementation does not equal live validation.
 - Signature, payload and replay details are locked in `docs/google-ads-signed-delivery-contract-v1.md`.
 
-See `docs/google-ads-manager-script-read-only-uat-evidence.md` and `docs/google-ads-signed-delivery-uat.md`.
+See `docs/google-ads-manager-script-read-only-uat-evidence.md` and `docs/google-ads-signed-delivery-integration-validation.md`.
 
 ## Lark View OpenAPI discoveries
 

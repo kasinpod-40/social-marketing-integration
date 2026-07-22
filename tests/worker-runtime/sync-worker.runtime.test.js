@@ -120,7 +120,7 @@ describe('Sync Worker ใน Workers runtime จริง', () => {
 
     await worker.queue(batch, queueEnv({
       MKT_ENV: 'development',
-      MKT_CUSTOMER_PROFILE: 'dev_ft_pumkin',
+      MKT_CUSTOMER_PROFILE: 'integration_workspace',
       LARK_TABLE_MKT_METRIC_DEFINITIONS: 'tbl_metric_definitions',
     }), ctx);
     const result = await getQueueResult(batch, ctx);
@@ -143,7 +143,7 @@ describe('Sync Worker ใน Workers runtime จริง', () => {
 
     await worker.scheduled(controller, {
       MKT_ENV: 'development',
-      MKT_CUSTOMER_PROFILE: 'dev_ft_pumkin',
+      MKT_CUSTOMER_PROFILE: 'integration_workspace',
       MKT_CONNECTOR_TIKTOK_ENABLED: 'true',
       MKT_SCHEDULE_TIKTOK_ENABLED: 'true',
       MKT_SYNC_QUEUE: { send },
@@ -198,7 +198,7 @@ describe('Sync Worker ใน Workers runtime จริง', () => {
 
     await worker.scheduled(controller, {
       MKT_ENV: 'development',
-      MKT_CUSTOMER_PROFILE: 'dev_ft_pumkin',
+      MKT_CUSTOMER_PROFILE: 'integration_workspace',
       MKT_CONNECTOR_TIKTOK_ENABLED: 'true',
       MKT_CONNECTOR_YOUTUBE_ENABLED: 'true',
       MKT_SCHEDULE_TIKTOK_ENABLED: 'true',
@@ -222,13 +222,13 @@ describe('Sync Worker ใน Workers runtime จริง', () => {
 
     await worker.scheduled(controller, {
       MKT_ENV: 'development',
-      MKT_CUSTOMER_PROFILE: 'dev_ft_pumkin',
+      MKT_CUSTOMER_PROFILE: 'integration_workspace',
       MKT_CONNECTOR_TIKTOK_ENABLED: 'true',
       DEFAULT_TIMEZONE: 'Asia/Bangkok',
       MKT_SCHEDULE_TIKTOK_ENABLED: 'true',
       MKT_SCHEDULE_DAILY_REPORT_ENABLED: 'true',
       MKT_DAILY_REPORT_TIME: '08:10',
-      MKT_DAILY_REPORT_SETTING_KEY: 'dev_ft_pumkin:tiktok:daily',
+      MKT_DAILY_REPORT_SETTING_KEY: 'integration_workspace:tiktok:daily',
       MKT_SCHEDULE_WEEKLY_REPORT_ENABLED: 'false',
       MKT_SYNC_QUEUE: { send },
     });
@@ -253,7 +253,7 @@ describe('Sync Worker ใน Workers runtime จริง', () => {
 
     await worker.scheduled(controller, {
       MKT_ENV: 'development',
-      MKT_CUSTOMER_PROFILE: 'dev_ft_pumkin',
+      MKT_CUSTOMER_PROFILE: 'integration_workspace',
       MKT_CONNECTOR_TIKTOK_ENABLED: 'false',
       MKT_CONNECTOR_YOUTUBE_ENABLED: 'true',
       DEFAULT_TIMEZONE: 'Asia/Bangkok',

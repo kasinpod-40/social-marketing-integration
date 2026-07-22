@@ -4,10 +4,10 @@
   "main": "apps/api-worker/src/index.js",
   "compatibility_date": "2026-07-15",
   "vars": {
-    // Environment หลักของระบบ: development หรือ production
+    // Technical environment label: Integration Workspace ใช้ development; Production ใช้ production
     "MKT_ENV": "development",
     // โปรไฟล์ลูกค้าที่เตรียมไว้ในโค้ด
-    "MKT_CUSTOMER_PROFILE": "replace-with-customer-profile",
+    "MKT_CUSTOMER_PROFILE": "integration_workspace",
     // Timezone กลางของรายงานและ Daily Snapshot
     "DEFAULT_TIMEZONE": "Asia/Bangkok",
 
@@ -22,13 +22,13 @@
     "MKT_CONNECTOR_WOOCOMMERCE_ENABLED": "false",
     "MKT_CONNECTOR_CHATWOOT_ENABLED": "false",
 
-    // Handle จริงต้องอยู่ใน Local/Environment config และเปิด Connector หลัง UAT เท่านั้น
+    // Handle จริงต้องอยู่ใน Local/Environment config และเปิด Connector หลัง manual integration validation เท่านั้น
     "TIKTOK_SOURCE_HANDLE": "replace-with-tiktok-handle"
   },
   "d1_databases": [
     {
       "binding": "MKT_STATE_DB",
-      "database_name": "replace-with-environment-specific-d1-name",
+      "database_name": "replace-with-workspace-or-production-d1-name",
       "database_id": "00000000-0000-0000-0000-000000000000",
       "migrations_dir": "./migrations"
     }

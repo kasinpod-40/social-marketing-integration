@@ -4,7 +4,7 @@
 
 ## Approval
 
-The user approved this Data Model on `2026-07-21` for guarded application to the existing developer DEV Lark Base using customer-real data.
+The user approved this Data Model on `2026-07-21` for guarded application to the existing Integration Workspace Lark Base using the currently authorized source data.
 
 Approval permits Lark schema work only. Connector implementation, live source calls, business-data writes, Cloudflare rollout, advertisement creation and spend remain blocked.
 
@@ -63,7 +63,7 @@ Meta Ad Set maps to canonical Ads Ad Group. Ad and Creative are separate identit
 
 ## Core decisions
 
-- Canonical business keys stay stable between UAT and Production.
+- Canonical business keys stay stable between validation and Production.
 - Instagram `/me` identity is authoritative; Insights resource aliases cannot replace it.
 - Platform identifiers are Text.
 - Raw source timestamps are retained before canonical date derivation.
@@ -88,7 +88,7 @@ User-facing workbook handoff:
 - `Social_MKT_Data_Hub_Meta_Blueprint_v0.12.0_APPROVED.xlsx`
 - SHA-256: `b18b2020de1bfc95b33f6b0d202d35913a12d997a57d2a53c5011a95223d38cb`
 
-The source-controlled CSV contracts are the durable field-level authority for table names, field types, required/nullability, stable keys, relations, Select options, source paths, metric definitions, timestamp semantics, zero/null behavior, examples, import notes, Raw-to-Canonical mapping and UAT gates. The Excel workbook is the review and import handoff representation of the same contract.
+The source-controlled CSV contracts are the durable field-level authority for table names, field types, required/nullability, stable keys, relations, Select options, source paths, metric definitions, timestamp semantics, zero/null behavior, examples, import notes, Raw-to-Canonical mapping and validation gates. The Excel workbook is the review and import handoff representation of the same contract.
 
 ## Next gate
 
