@@ -95,6 +95,9 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
-          test -z "$(git status --porcelain | grep 'iw-patch-' || true)"
+          if git diff --cached --name-status | grep -E '^[AM].*iw-patch-'; then
+            echo 'Patch chunk remained in final tree' >&2
+            exit 1
+          fi
           git commit -m 'refactor: use one mixed-source integration workspace'
           git push origin HEAD:agent/google-ads-signed-delivery
