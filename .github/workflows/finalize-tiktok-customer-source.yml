@@ -1,0 +1,88 @@
+name: Finalize TikTok Customer Source
+
+on:
+  push:
+    branches:
+      - agent/google-ads-signed-delivery
+
+permissions:
+  contents: write
+
+concurrency:
+  group: finalize-tiktok-customer-source
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/google-ads-signed-delivery
+          fetch-depth: 0
+
+      - name: Preserve legacy report fixture without widening live report scope
+        shell: python
+        run: |
+          from pathlib import Path
+
+          test_file = Path('tests/application/generate-tiktok-organic-report.test.js')
+          text = test_file.read_text()
+          old = "  const dailySetting = createReportSettingRowsForProfile('integration_workspace')[0];"
+          new = """  // Legacy fixture stays scoped to ft_pumkin so compatibility behavior remains tested.
+          // Live Integration Workspace seeds only chemistry_k and cannot mix these records into customer reports.
+          const dailySetting = {
+            ...createReportSettingRowsForProfile('integration_workspace')[0],
+            account_keys_json: '[\"ft_pumkin\"]',
+          };"""
+          if text.count(old) != 1:
+              raise SystemExit('Expected exactly one legacy dailySetting fixture assignment')
+          test_file.write_text(text.replace(old, new))
+
+          readme = Path('README.md')
+          readme_text = readme.read_text()
+          old_readme = '- TikTok, Facebook, Instagram and YouTube may use temporary developer-owned sources;'
+          new_readme = '- TikTok and Google Ads use Chemistry K customer sources; Facebook, Instagram and YouTube may still use temporary developer-owned sources;'
+          if old_readme not in readme_text:
+              raise SystemExit('Expected Integration Workspace source sentence in README')
+          readme.write_text(readme_text.replace(old_readme, new_readme))
+
+      - name: Remove one-time workflow
+        run: rm .github/workflows/finalize-tiktok-customer-source.yml
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Verify final source transition
+        shell: bash
+        run: |
+          npm run check
+          node --test \
+            tests/config/customer-profiles.test.js \
+            tests/config/connector-runtime-config.test.js \
+            tests/config/report-settings-seed.test.js \
+            tests/application/connector-registry.test.js \
+            tests/application/generate-tiktok-organic-report.test.js
+          npm test
+          npm run test:report-reliability
+          npm audit --audit-level=high
+          npm run deploy:dry-run
+          git diff --check
+
+      - name: Commit verified result
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          test ! -e .github/workflows/finalize-tiktok-customer-source.yml
+          git commit -m 'fix: align TikTok integration with Chemistry K source'
+          git push origin HEAD:agent/google-ads-signed-delivery
