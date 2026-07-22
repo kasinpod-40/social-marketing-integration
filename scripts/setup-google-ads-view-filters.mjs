@@ -3,7 +3,10 @@ import { printJson } from './lib/lark-runtime.js';
 import { resolveConfirmedApplyMode } from './lib/confirmed-apply-mode.js';
 import { createLarkBitableClientFromEnv } from '../packages/connectors/src/lark/lark-bitable.client.js';
 import { assertSharedTableSchemaDevTarget } from '../packages/config/src/shared-table-schema-runtime-config.js';
-import { assertGoogleAdsViewFilterUpdateOnly } from '../packages/config/src/google-ads-view-filter-apply-guard.js';
+import {
+  assertGoogleAdsViewFilterUpdateOnly,
+  createGoogleAdsUpdateOnlyClient,
+} from '../packages/config/src/google-ads-view-filter-apply-guard.js';
 import {
   GOOGLE_ADS_VIEW_FILTER_MANUAL_ACTIONS,
   GOOGLE_ADS_VIEW_FILTER_VERSION,
@@ -85,7 +88,7 @@ async function main() {
   }
 
   const result = await applyLarkReportViews({
-    client,
+    client: createGoogleAdsUpdateOnlyClient(client),
     env,
     contract: GOOGLE_ADS_VIEW_FILTERS,
     includePermissionManualAction: false,
