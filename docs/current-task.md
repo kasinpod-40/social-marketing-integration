@@ -13,7 +13,7 @@
 - **Queue/DLQ live message:** none
 - **Schedule:** disabled; no Google Ads schedule contract exists
 - **Production mutation:** none
-- **Last updated:** `2026-07-22`
+- **Last updated:** `2026-07-23`
 
 ## Objective
 
@@ -141,11 +141,12 @@ Integration Workspace correction and compatibility verification:
 - report reliability: `71/71 PASS`;
 - patch integrity and `git diff --check`: PASS.
 
-Final Branch Verification run `#217` on head `91036a8a367517beeba9c33769ed3ff91c322430` completed successfully:
+TikTok Chemistry K source-transition verification run `#231` tested the exact clean tree later committed as `87e5dd292c422f91602c2864af9949b2b612fad5`:
 
+- source-transition patch and temporary-file cleanup: PASS;
 - `npm ci`: PASS;
 - `npm run check`: PASS;
-- staged TikTok regression: PASS;
+- focused TikTok customer-source/config/report tests: PASS;
 - `npm test` including Workers runtime: PASS;
 - `npm run test:report-reliability`: PASS;
 - `npm audit --audit-level=high`: PASS;
@@ -164,5 +165,6 @@ Final Branch Verification run `#217` on head `91036a8a367517beeba9c33769ed3ff91c
 - `LINKED_UI_PASS`
 - `NEXT_TASK = GOOGLE_ADS_SIGNED_DELIVERY_INTEGRATION_VALIDATION`
 - `INTEGRATION_WORKSPACE = SINGLE_PROFILE / MIXED_SOURCES`
+- `TIKTOK_SOURCE = CHEMISTRY_K / RECONCILIATION_PENDING`
 - `LARK_SCHEMA_WORK = COMPLETE / DO_NOT_REOPEN`
 - `SCHEDULE = DISABLED`
