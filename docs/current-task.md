@@ -33,6 +33,7 @@ Header names, HMAC algorithm/signing input, envelope fields, limits, timestamp/r
 - Keep `MKT_ENV=development` as the technical runtime label and `MKT_CUSTOMER_PROFILE=integration_workspace` throughout assembly and validation.
 - Reuse the existing Worker, D1, Queue, DLQ, secret store, Lark Base and table IDs.
 - Source ownership is per Connector. TikTok (`@chemistry_k`) and Google Ads already use Chemistry K customer data; Facebook, Instagram and YouTube may still use temporary developer-owned sources.
+- TikTok Organic was already Chemistry K before this task; it is not a newly switched source and does not require a source-replacement cleanup step.
 - Do not switch profiles for Google Ads validation. Change only Google Ads connector flag, signing configuration and Script execution mode.
 - After manual validation, restore Google Ads to connector-disabled and Script `DRY_RUN`; the Workspace profile stays unchanged.
 
@@ -62,7 +63,8 @@ Header names, HMAC algorithm/signing input, envelope fields, limits, timestamp/r
 - Production deployment/cutover;
 - unapproved conversion-action aggregation;
 - new Asset Group/Conversion Action/Conversion Daily delivery datasets;
-- inferred changes to preserved legacy Lark Views.
+- inferred changes to preserved legacy Lark Views;
+- deletion or relabeling of TikTok records based only on old runtime/profile labels.
 
 ## Implementation result
 
@@ -121,9 +123,9 @@ Header names, HMAC algorithm/signing input, envelope fields, limits, timestamp/r
 - [x] Manager Script mutation/schedule safety scan
 - [x] one Integration Workspace profile with mixed per-Connector source ownership
 - [x] legacy DEV/UAT profile aliases normalize to the same Workspace
-- [x] legacy TikTok report profile/key records remain readable without a Lark data rewrite
-- [x] Lark TikTok For Creator account connection points to `@chemistry_k`
-- [ ] TikTok protected RAW / Canonical / Report reconciliation and exact-scope cleanup of legacy `ft_pumkin` rows
+- [x] Lark TikTok For Creator account is `@chemistry_k`
+- [x] latest inspected Base export shows `RAW_TikTok_Creator_Videos` already populated with `2,021` records
+- [x] old `dev_ft_pumkin` / `ft_pumkin` names are treated as compatibility labels, not proof of different TikTok data ownership
 - [ ] signed PREVIEW against the existing API Worker using Chemistry K Google Ads data
 - [ ] one-shot LIVE and exact Google Ads UI reconciliation
 - [ ] controlled retry/lock/DLQ/redrive validation
@@ -135,18 +137,19 @@ Integration Workspace correction and compatibility verification:
 
 - canonical pre-Production profile: `integration_workspace`;
 - per-Connector source ownership and replacement metadata: PASS;
+- established Chemistry K TikTok source status: PASS;
+- Base inventory evidence: `RAW_TikTok_Creator_Videos = 2,021 records`;
 - legacy profile/report-key compatibility: PASS;
 - architecture/hygiene: `154 source files / 372 local dependencies / 0 cycles`;
 - Node unit/integration: `589/589 PASS`;
 - report reliability: `71/71 PASS`;
-- patch integrity and `git diff --check`: PASS.
+- `git diff --check`: PASS.
 
-TikTok Chemistry K source-transition verification run `#231` tested the exact clean tree later committed as `87e5dd292c422f91602c2864af9949b2b612fad5`:
+Final Branch Verification run `#235` completed successfully after the TikTok source metadata correction:
 
-- source-transition patch and temporary-file cleanup: PASS;
 - `npm ci`: PASS;
 - `npm run check`: PASS;
-- focused TikTok customer-source/config/report tests: PASS;
+- staged TikTok regression: PASS;
 - `npm test` including Workers runtime: PASS;
 - `npm run test:report-reliability`: PASS;
 - `npm audit --audit-level=high`: PASS;
@@ -157,14 +160,14 @@ TikTok Chemistry K source-transition verification run `#231` tested the exact cl
 - External signed PREVIEW/LIVE has not been executed against the existing Workspace with Chemistry K Google Ads data.
 - Signing secrets must be configured through the existing secret store.
 - Customer-scale retry/DLQ/idempotency evidence remains required before Production.
-- TikTok Lark Native source is now `@chemistry_k`, but protected RAW/Canonical/Report reconciliation and exact-scope cleanup of legacy `ft_pumkin` records remain pending.
-- Temporary developer-source rows in Facebook, Instagram and YouTube must be removed by exact source scope when those channels are replaced with customer data.
+- Facebook, Instagram and YouTube still require customer-source replacement later in the same Workspace.
 
 ## Handoff state
 
 - `LINKED_UI_PASS`
 - `NEXT_TASK = GOOGLE_ADS_SIGNED_DELIVERY_INTEGRATION_VALIDATION`
 - `INTEGRATION_WORKSPACE = SINGLE_PROFILE / MIXED_SOURCES`
-- `TIKTOK_SOURCE = CHEMISTRY_K / RECONCILIATION_PENDING`
+- `TIKTOK_SOURCE = CHEMISTRY_K / ESTABLISHED`
+- `TIKTOK_RECORD_DELETION = NOT_REQUIRED / NOT_AUTHORIZED`
 - `LARK_SCHEMA_WORK = COMPLETE / DO_NOT_REOPEN`
 - `SCHEDULE = DISABLED`
