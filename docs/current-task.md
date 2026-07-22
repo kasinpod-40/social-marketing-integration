@@ -1,63 +1,66 @@
-# Current Task — Ads Schema DEV Closeout v0.13.0
+# Current Task — Ads Schema and Google Ads Read-only UAT Closeout v0.13.7
 
 ## Status
 
-- **Task status:** `closed_schema_views_and_formulas_dev_verified`
+- **Task status:** `closed_with_repository_corrections_pending_review`
 - **Environment:** developer-owned DEV
 - **Profile:** `dev_ft_pumkin`
-- **Merged implementation:** `PR #10`
-- **Merged baseline:** `abe2fc3fdbfc81c7c3b2480210ab3762cc42e2e6`
+- **Merged implementation baseline:** `ddd876c3670af0dc6a4748b5399a1ac5acfe6642`
+- **Correction branch:** `work/repository-closeout-corrections`
 - **Live Lark mutation:** `completed_and_verified`
 - **Meta schema:** `apply_pass_zero_drift_pass`
 - **Canonical Ads v2 migration:** `pass_zero_drift_pass`
 - **Google Ads automated schema:** `pass_zero_drift_pass`
-- **Manual Lark UI:** `4_formulas_live_verified_view_filters_19_of_19_complete`
-- **Connector implementation:** `not_started`
-- **Google Ads access preflight:** `manager_script_read_only_uat_pass`
+- **Manual Lark UI:** `4_formulas_live_verified_google_filters_19_of_19_complete`
+- **Managed Lark presentation:** `pass`
+- **Legacy specialized View business contracts:** `55_contract_missing_preserved_without_inferred_filters`
+- **Google Ads link/selectability:** `pass`
 - **Google Ads Manager Script UAT:** `pass_data_available_6_of_6_zero_changes`
-- **Google Ads direct API UAT:** `deferred_optional_for_mvp`
-- **Cloudflare/Queue/D1/Schedule:** `unchanged_for_this_task`
+- **Google Ads direct API access:** `basic_access_application_submitted_pending_review_current_test_account_access`
+- **Google Ads signed delivery connector:** `not_started`
+- **Cloudflare/Queue/D1/Schedule for Google Ads:** `not_implemented_disabled`
 - **Production mutation:** `none`
 - **Last updated:** `2026-07-22`
 
-งาน Guarded Shared-table Apply, Ads/Google Ads Schema, View filters และ Formula fields ถูก Apply ลง Lark DEV จริงแล้ว. Schema/Views/Formula ตรวจด้วย Live readback และ fresh configuration-only `.base` ครบแล้ว; งานถัดไปเป็น Connector/Access scope แยกต่างหาก.
+## Authoritative correction
 
-## Objective completed
+The Google Ads Basic Access application **was submitted on 2026-07-21** and is pending review.
 
-ปิด Data-model-first และ Lark Schema foundation สำหรับ Organic/Ads แบบ Shared-table โดย:
+- Case ID: `1-686800040839`
+- Cloud project number: `788131774873`
+- Current developer-token level: `Test Account Access`
+- Manager Script MVP remains independent from direct API approval.
 
-- รักษา `RAW_TikTok_Creator_Videos` เป็น Lark Native protected read-only source;
-- Reuse Planned Raw tables ตาม Shared-table contract โดยไม่ลบ Record;
-- Apply Meta Ads extensions และ Canonical Ads v2 แบบไม่สร้าง Canonical core ซ้ำ;
-- เพิ่ม Google Ads RAW/Canonical extensions, Relations และ View shells;
-- รองรับ Partial resume และตรวจ Zero drift หลัง Apply;
-- ไม่เขียน Business Record, ไม่เรียก Platform source API, ไม่ Deploy Worker และไม่เปิด Schedule ในงาน Schema นี้.
+Any earlier statement that no access application was submitted is superseded by this section.
 
-## Verified live result
+## Verified Lark result
 
-Latest audited configuration-only export: `Social MKT Data Hub.base`
+Latest configuration-only Base state:
 
-- SHA-256: `3f177a1c2639da506c3e76e2d72bb9a018ccfb7ad29a38cbbca986b863d4b6c8`
 - Physical tables: `42`
+- Fields: `737`
+- Views: `133`
 - Duplicate table names: `0`
+- Table emoji names: `42/42`
+- View emoji names: `133/133`
+- Folder placement: `42/42`
 - Google RAW tables: `13/13`
 - Google RAW fields: `208/208`
-- `MKT_Ads_AssetGroups`: `PASS`
 - Canonical Ads v2 core: `63/63`
 - Google Ads Relations: `12/12`
 - Google Ads View shells: `19/19`
-- Automated schema issues: `0`
+- Formula expressions/type/formatter: `4/4`
+- Google Ads managed filters: `19/19`
+- Shared-table managed filters: `17/17`
+- Report managed Views: `6/6`
+- Filtered Views total: `42`
+- Sorted Views: `6`
+- Views with hidden fields: `7`
 - New Google tables containing Records: `0`
-- Remaining schema actions: `0`
-- Remaining View-shell actions: `0`
-- Blockers/warnings: `0/0`
-- Record writes/deletes: `0/0`
+- Automated schema issues: `0`
+- Record writes/deletes during schema closeout: `0/0`
 
-## Manual UI result
-
-OpenAPI-supported schema work, all 19 Google View filters and Formula UI work are complete in Live DEV. Formula contract เดิมใช้ `{field}` และ `BLANK()` ซึ่ง Live tenant ปฏิเสธ; final contract ด้านล่างใช้ official `[field]` reference และ `ISBLANK(...)` ที่ผ่าน Formula editor validation จริง.
-
-### Formula expressions — 4/4 Live verified
+### Formula contract — 4/4
 
 1. `MKT_Ads_Campaigns.budget`
    - `IF(ISBLANK([budget_micros]),"",[budget_micros]/1000000)`
@@ -72,127 +75,108 @@ OpenAPI-supported schema work, all 19 Google View filters and Formula UI work ar
    - `IF(OR(ISBLANK([clicks]),[clicks]=0,ISBLANK([conversions])),"",[conversions]/[clicks])`
    - format `0.00%`
 
-Live readback reopened all four Field editors and matched Formula type, exact normalized expression and number format `4/4`. Lark showed `Saved to cloud`. Fresh configuration-only export SHA-256 `3f177a1c2639da506c3e76e2d72bb9a018ccfb7ad29a38cbbca986b863d4b6c8` subsequently passed offline serialization: Formula/type/formatter `4/4`, 42 tables, 737 fields, 133 Views and Filter/Sort/Hidden drift `0/0/0`.
+`Google Ads Daily 30D` is verified as `platform=google_ads AND metric_date=TheLastMonth`.
 
-### View filters
+## View contract interpretation
 
-- Contract View shells exist `19/19`.
-- Filters verified Live after the v0.13.5 Apply: `19/19`.
-- Guarded Apply updated `17` Views, created `0` Views and finished with zero actions/conflicts/warnings.
-- `Google Ads Daily 30D` also has the UI-owned condition `metric_date is in the past 30 days`; Live Get View returns its canonical response token as `TheLastMonth`.
-- Full Live audit after Apply: 42 tables, 133 Views, 42 filtered Views, 7 Views with hidden fields and 133/133 identity match against the pre-Apply export.
-- The only 17 Filter differences from that export are the exact expected Google actions; hidden-field differences are `0`.
-- Fresh configuration-only export SHA-256 `704c10ea6fb1cd0790949cbc94a0865398521f00f7695a4f8ef5e8aa3c4c3ef2` passed the final offline serialization audit: 42 tables, 133 Views, Filter/Sort/Hidden drift `0/0/0`, missing/unexpected Views `0/0` and prior Google changes matched `17/17`.
-- The fresh export confirms `Google Ads Daily 30D` as `platform is google_ads AND metric_date is TheLastMonth`; no rerun of Apply is required.
+The 133 Views are not all business-managed filters:
 
-The Full View Contract v0.13.5 and Formula UI handoff are closed and verified for DEV. Do not rerun View or Formula Apply.
+- Shared-table managed Views: `17`
+- Report managed Views: `6`
+- Google Ads managed Views: `19`
+- All/default Views intentionally unfiltered: `36`
+- Legacy specialized Views preserved without inferred business logic: `55`
 
-## Live apply history
+The current closeout therefore means **managed contract and preservation contract pass**. It does not mean the 55 legacy specialized Views implement business meanings implied by names such as Active, Failed, Latest, Connection Issues or High Spend Low ROAS.
 
-- PR #10 was Squash Merged into `main` at commit `abe2fc3fdbfc81c7c3b2480210ab3762cc42e2e6`.
-- Meta schema Apply passed and returned zero drift.
-- Canonical Ads v2 migration passed and returned `63/63` zero drift.
-- Google Ads executor resumed safely across partial stages.
-- Final executor version: `0.13.0-rc5.1`.
-- Final automated status: `SCHEMA_APPLY_MANUAL_UI_REQUIRED`.
-- All 16 missing Google Ads View shells were created; final verification returned `viewActions=0`.
-- No rollback or destructive cleanup is required.
+A future business-view task must define exact Table, View, purpose, conjunction, conditions, sort and hidden fields before changing those 55 Views.
 
-## Scope explicitly not completed here
+## Google Ads read-only UAT
 
-- Google Ads data extraction/normalization connector;
-- Google Ads signed delivery connector, destination writes and operational rollout;
-- TikTok Ads connector or production access;
-- Facebook/Instagram Organic connectors despite completed access preflight;
-- Meta Ads data connector despite valid no-data access preflight;
-- WooCommerce and Chatwoot connectors;
-- Multi-channel AI summary/notification completion;
-- customer-real UAT rollout and customer-owned Production deployment.
+After customer authorization:
+
+- Chemistry K advertiser is enabled under the intended manager and selectable.
+- Manager Script target allowlist was updated to the approved advertiser.
+- Read-only Script used `AdsManagerApp` and `AdsApp.search()` GAQL.
+- Runtime rejected `campaign.start_date` and `campaign.end_date`; those request fields were removed while nullable output fields remain.
+- Final Preview returned `data_available`.
+- Six bounded datasets succeeded and were non-empty.
+- Dataset errors/truncation: `0/0`.
+- Google Ads changes: `No changes`.
+- Frequency: `—`; no schedule.
+- No external delivery, Lark write, Worker route, Queue/D1 path or deployment exists for Google Ads.
+
+The repository currently contains a reproducible evidence manifest, but not the complete sanitized 598-line Script source. The full Script snapshot must be added before a future delivery connector release if independent source-level re-review is required.
+
+## Repository safety correction
+
+The Google Ads View filter command is update-only. The correction branch adds an explicit guard that blocks when the generic planner proposes any `create_view` or other non-`update_view` action.
+
+Required behavior:
+
+- Existing managed Views may receive Filter updates.
+- Missing managed Views cause `GOOGLE_ADS_VIEW_FILTER_CREATE_FORBIDDEN`.
+- No View creation, deletion or rename is allowed in this task.
+- No Field, Table or Business Record operation is allowed.
+
+## RAW error coverage decision
+
+The current 13 Google RAW error Views implement the approved minimum check:
+
+- the table-specific primary raw stable key uses `isEmpty`.
+
+This is an identity-key QA contract, not a comprehensive validation of every supporting field. A separate data-quality task is required if customer ID, entity IDs, status values, report level, segment key or policy state must be checked independently.
+
+## Scope not completed
+
+- Google Ads signed Manager Script delivery endpoint;
+- payload version and bounded batch contract;
+- HMAC verification, timestamp, nonce and replay protection;
+- Google Ads connector catalog entry and feature flag;
+- Google Ads Queue job and router;
+- D1 nonce/checkpoint/idempotency state;
+- six-dataset normalization and destination writers;
+- partial-write/retry/reconciliation behavior;
+- retention, audit and log redaction;
+- isolated customer-real UAT;
+- Google Ads schedule activation;
+- Production deployment;
+- direct Google Ads API authorization/UAT beyond the pending Basic Access application;
+- business contracts for 55 legacy specialized Views;
+- Meta Ads, TikTok Ads, Facebook/Instagram Organic, WooCommerce and Chatwoot connectors;
+- full multi-channel AI summary/notification rollout.
 
 ## Progress model
 
 Percentages are milestone estimates, not code coverage:
 
-- Ads/Google Lark data model and presentation: `100%` — Formula Live and fresh `.base` offline verification passed.
-- Google Ads channel end-to-end: `45%` — schema, link/selectability and Manager Script read-only UAT pass; signed delivery connector, reliability and schedule remain.
-- MKT DEV MVP across all planned channels: approximately `59%`.
-- Chemistry K Production readiness: approximately `25%` because customer-owned UAT/Production rollout and several connectors remain.
-
-Detailed channel percentages and weighting are recorded in `docs/project-brain/mkt-progress-v0.13.0.md`.
+- Lark data model and managed presentation: `100%`
+- Google Ads channel end-to-end: `45%`
+- MKT DEV MVP across planned channels: approximately `59%`
+- Chemistry K Production readiness: approximately `25%`
 
 ## Next gate
 
-1. Approve a separate Google Ads Manager Script delivery task before adding a Worker endpoint, Queue/D1 state or Lark writes.
-2. Lock the signed payload, replay/idempotency, bounded batch, retention and redaction contracts before enabling external delivery.
-3. Run a manual isolated UAT through the signed endpoint with Connector/Schedule disabled, then verify reconciliation and idempotent rerun.
-4. Keep direct Google Ads API Basic/Explorer Access as an optional Phase 2 path for scale or fields unavailable to Scripts; it does not block the Manager Script MVP.
-5. Keep every new connector and Production schedule disabled by default until its own access, identity, source-contract and reliability gates pass.
+1. Merge the repository closeout correction only after focused tests and full gates pass.
+2. Open a separate task named `Google Ads Manager Script signed delivery connector`.
+3. Lock payload schema, stable/idempotency keys, HMAC/replay, batch limits, null semantics, partial-write behavior, retention and redaction before coding.
+4. Implement the connector disabled by default in an isolated DEV/UAT path.
+5. Run manual signed-delivery UAT, reconciliation and idempotent rerun with schedule disabled.
+6. Enable schedule only after reliability gates pass.
+7. Keep Production customer-owned and disabled until channel-specific UAT passes.
 
-## Definition of done for this closed task
+## Definition of done for this correction branch
 
-- [x] PR #10 merged.
-- [x] Shared-table guarded Apply executed in developer-owned DEV.
-- [x] Meta schema Apply and zero-drift verification passed.
-- [x] Canonical Ads v2 migration and `63/63` verification passed.
-- [x] Google Ads 13 RAW tables / 208 fields / 12 Relations / 19 View shells verified.
-- [x] Zero destructive actions and zero Business Record writes verified.
-- [x] Latest `.base` export audited with zero schema issues.
-- [x] Formula UI work completed and verified by exact Live editor readback `4/4`.
-- [x] Fresh post-Formula `.base` offline serialization proof passed Formula/type/formatter `4/4` with zero View drift.
-- [x] Modular Project Brain progress baseline prepared.
-
-## Implementation result — Google Ads Manager Script read-only UAT 2026-07-22
-
-- Signed-in Google Ads UI access to the developer-owned manager succeeded without changing account, campaign, billing or API settings.
-- After customer authorization, the manager account table exposed the approved Chemistry K advertiser as `Enabled` under the intended direct manager. Opening the account loaded its Overview and existing production history, so link, exact UI identity and selectability passed.
-- API Center showed the developer token at `Test Account Access`; no application or access-level change was submitted. This blocks the direct API path but does not block Google Ads Manager Scripts running under the authorized manager.
-- No `GOOGLE_ADS_*` OAuth/developer-token/login-customer/customer configuration keys were present in the checked local runtime/config key names. Secret values were not viewed, copied or logged.
-- The existing 598-line Manager Script was safety-scanned before execution. It uses `AdsManagerApp` plus `AdsApp.search()` GAQL and logging; no external delivery, Spreadsheet/Mail, Ads mutation, budget, pause/enable/remove or campaign-builder path was found.
-- The target allowlist was changed from the obsolete DEV setup account to the customer-authorized Chemistry K account; only that allowlist and safety comments were changed before Preview.
-- First Preview failed closed as `partial_error` because this Google Ads Scripts runtime rejected `campaign.start_date` and `campaign.end_date`. Those two query fields were removed while their mappers remain nullable, preserving `null` semantics instead of fabricating values.
-- Final Preview returned `data_available`: all six datasets succeeded, all were non-empty, dataset errors/truncation were `0/0`, sample rows stayed within the configured cap, and the Changes tab showed `No changes`.
-- Script management readback showed Frequency `—` (no schedule) and `Finished with no changes`; no automatic execution was enabled.
-- Direct `ListAccessibleCustomers` was not called and direct API Basic Access remains deferred. Manager Script GAQL read-only UAT passed without requiring the direct API developer token.
-- Google Ads account/settings mutations, Campaign/Ad/Budget writes, Lark writes, Worker/Queue/D1/Schedule changes, deployment and Production mutations: `0`.
-- Connector delivery implementation remains out of scope until a separate signed-endpoint task is approved.
-- Final repository gates after the handoff update: `npm run check` pass (Architecture `147/348/0`), Unit `536/536`, Workers runtime `9/9`, Report reliability `70/70`, offline audit `0` and deploy dry-run `659.26/130.46 KiB` pass. No deployment occurred.
-
-## Implementation result — Formula UI Live closeout v0.13.6
-
-- Live target: developer-owned DEV / `dev_ft_pumkin`.
-- Field mutations: Formula expression and number format only for the four approved fields; Table/View/Record mutations `0`.
-- Confirmed Live syntax correction: `{field}` → `[field]`; `BLANK()` → `ISBLANK(...)` with `""` as the blank result.
-- Formula editor validation passed before each save; final exact expression/format readback passed `4/4` and Lark showed `Saved to cloud`.
-- No Connector, source API, Worker, Queue, D1, Schedule, deployment or Production action occurred.
-- Fresh post-Formula `.base` SHA-256 `3f177a1c2639da506c3e76e2d72bb9a018ccfb7ad29a38cbbca986b863d4b6c8`: offline Formula/type/formatter `4/4`; View identity/Filter/Sort/Hidden drift `0/0/0/0`.
-
-## Implementation result — Full View Contract and Google Filters v0.13.5
-
-### Files changed
-
-- Added the 133-View audit and baseline-preservation contract.
-- Added an immutable 19-View Google Filter contract, guarded Preview/Apply command and focused tests.
-- Hardened the shared View planner to accept an additional UI-owned relative-date condition only when every managed condition remains correct; managed drift with UI-owned conditions now fails closed instead of PATCHing.
-- Updated package commands, README, Project Brain and CHANGELOG handoff.
-
-### Live DEV result
-
-- Target: `development / dev_ft_pumkin`.
-- Initial Preview: create `0`, update `17`, conflicts/warnings `0/0`.
-- Apply: planned/applied `17/17`, created `0`, updated `17`.
-- UI: saved `metric_date is in the past 30 days` on `Google Ads Daily 30D`; Lark showed `Saved to cloud`.
-- Final managed Preview: create/update/conflicts/warnings `0/0/0/0`.
-- Full Live read-only audit: tables `42`, Views `133`, filtered `42`, hidden `7`, identities `133/133`; exactly 17 expected Filter differences from the old export and zero Hidden-field differences.
-- Fresh `.base` offline audit: tables `42`, Views `133`, filtered `42`, sorted `6`, hidden `7`; identity/filter/sort/hidden drift `0/0/0/0`, Google changes `17/17`.
-- Table/Field/View create, delete or rename: `0`; Business Record reads/writes: `0`; Connector/Worker/Queue/D1/Schedule/Production mutation: `0`.
-
-### Verification
-
-- Focused View contract/planner tests: `16/16` pass.
-- Node Unit/Integration: `536/536` pass.
-- Workers runtime: `9/9` pass.
-- Report reliability: `70/70` pass.
-- `npm run check`: syntax, Architecture `147/348/0` and Repository hygiene pass.
-- `npm audit --offline`: `0` vulnerabilities.
-- `npm run deploy:dry-run`: pass at `659.26 KiB / gzip 130.46 KiB`; no deployment occurred.
-- Fresh `.base` SHA-256 `704c10ea6fb1cd0790949cbc94a0865398521f00f7695a4f8ef5e8aa3c4c3ef2`; offline serialization audit passed with zero contract drift.
+- [x] Correct direct API application history.
+- [x] Clarify 133-View contract classes and the 55 missing business contracts.
+- [x] Add update-only Google View Filter guard.
+- [x] Add focused guard tests.
+- [x] Record reproducible Manager Script evidence limitations.
+- [x] Record stable-key-only RAW error coverage.
+- [ ] Run `npm ci`.
+- [ ] Run `npm run check`.
+- [ ] Run `npm test`.
+- [ ] Run `npm run test:report-reliability`.
+- [ ] Run `npm audit --offline`.
+- [ ] Run `npm run deploy:dry-run`.
+- [ ] Review and merge correction PR.
