@@ -12,7 +12,7 @@ test('creates deterministic daily and weekly settings per customer profile', () 
   assert.equal(rows[0].ai_enabled, false);
   assert.equal(rows[0].notification_enabled, false);
   assert.equal(rows[1].send_weekday, 'monday');
-  assert.equal(rows[0].account_keys_json, '["ft_pumkin"]');
+  assert.equal(rows[0].account_keys_json, '["chemistry_k"]');
 });
 
 test('rejects unknown report profile instead of inventing an account', () => {
@@ -36,5 +36,6 @@ test('seeds report settings idempotently by report_setting_key', async () => {
 
   assert.equal(call.keyField, 'report_setting_key');
   assert.equal(call.rows.length, 2);
+  assert.equal(call.rows[0].account_keys_json, '["chemistry_k"]');
   assert.equal(result.created, 2);
 });
