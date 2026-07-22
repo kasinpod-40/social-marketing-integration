@@ -4,11 +4,11 @@
 
 ## Current baseline
 
-- Main commit before the active correction branch: `ddd876c3670af0dc6a4748b5399a1ac5acfe6642`
-- Active branch: `work/repository-audit-corrections-2026-07-22`
+- Main commit: `d4a531fbb4e05dad7ce2296859c97f571e23acf3`
+- Merged PR: `#13` — repository audit correction and Google View safety hardening
 - Application package line: `0.11.0`
 - Lark contract versions: View `v0.13.5`, Formula `v0.13.6`, repository correction `v0.13.7`
-- Active task: `docs/current-task.md`
+- Current task: `docs/current-task.md` — closed
 - Current project state: `PROJECT_BRAIN.md`
 
 Contract version numbers do not automatically bump the application package version.
@@ -135,7 +135,7 @@ Full contract: `docs/project-brain/customer-real-uat.md`.
 | WooCommerce | Planned | Sanitized source contract, connector pending |
 | Chatwoot | Planned | Sanitized conversation contract, connector pending |
 
-Connector catalog currently activates only implementations that have a real tested Runtime path. Planned connectors fail closed even if a flag is set to true.
+Connector Catalog activates only implementations with a real tested Runtime path. Planned connectors fail closed even if a flag is set to true.
 
 ## Google Ads current status
 
@@ -148,6 +148,7 @@ Completed:
 - Google Ads `No changes`
 - Frequency `—`
 - Lark schema, Relations, managed Views and formulas
+- update-only Google View maintenance safety guard
 
 Direct API access:
 
@@ -227,6 +228,23 @@ primary raw stable key isEmpty
 
 They detect missing raw identity only. Customer ID, entity ID, status, report-level, segment-key and policy-state validation requires a separate Data Quality contract.
 
+## Repository correction verification
+
+PR #13 passed:
+
+```text
+npm ci                         PASS
+npm run check                  PASS
+Focused staged TikTok           4/4 PASS
+Node Unit/Integration         540/540 PASS
+Workers runtime                 9/9 PASS
+Report reliability             70/70 PASS
+npm audit --audit-level=high    0 vulnerabilities
+npm run deploy:dry-run          PASS
+```
+
+The transitive `sharp` vulnerability chain was remediated by `overrides.sharp=0.35.3` and a refreshed lockfile. No Live resource was mutated.
+
 ## Local setup
 
 ```bash
@@ -263,7 +281,7 @@ npm ci
 npm run check
 npm test
 npm run test:report-reliability
-npm audit --offline
+npm audit --audit-level=high
 npm run deploy:dry-run
 ```
 
@@ -343,12 +361,14 @@ packages/
 
 scripts/            guarded setup/preflight/release tools
 tests/              unit, integration, worker-runtime and reliability tests
-docs/               contracts, runbooks, audits and project brain
+docs/               contracts, runbooks, audits and Project Brain
 ```
 
 Dependency direction must remain inward toward Domain/Application contracts. New connectors reuse the central Job Catalog, Connector Catalog and reliability architecture.
 
-## Next workstream
+## Next approval gate
+
+Proposed workstream:
 
 `Google Ads Manager Script signed delivery connector`
 
