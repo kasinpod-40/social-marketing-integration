@@ -2,52 +2,60 @@
 
 ## Purpose
 
-ระบบรวมข้อมูล Social Organic, Paid Ads, Commerce และ Conversation เข้าสู่ Lark Base เพื่อทำ Daily Snapshot, Reporting, AI Summary, Insight และ Alert โดยใช้ Cloudflare Workers, D1, Queues และ JavaScript ES Modules.
+ระบบรวมข้อมูล Social Organic, Paid Ads, Commerce และ Conversation เข้าสู่ Lark Base เพื่อทำ Daily Snapshot, Reporting, AI Summary, Insight และ Alert โดยใช้ Cloudflare Workers, D1, Queues และ JavaScript ES Modules
 
-ไฟล์นี้เก็บ **Current verified state** เท่านั้น. ประวัติรุ่นอยู่ใน `CHANGELOG.md` และเอกสาร Modular Project Brain ใต้ `docs/project-brain/`.
+ไฟล์นี้เก็บ **Current verified state** เท่านั้น ประวัติรุ่นอยู่ใน `CHANGELOG.md` และเอกสารใต้ `docs/project-brain/`
 
-Authority order ให้ยึด `AGENTS.md` และ `docs/current-task.md` ก่อนเสมอ.
+Authority order ให้ยึด `AGENTS.md` และ `docs/current-task.md` ก่อนเสมอ
 
-## Current source baseline
+## Current repository baseline
 
-- Implementation baseline: `d4a531fbb4e05dad7ce2296859c97f571e23acf3` / PR `#13`
-- Documentation closeout: PR `#14`
+- Main code/documentation baseline before this docs update: `c9c77b19bb1dd9572d71e455a391cf70bc3cc9dd`
 - Application package line: `0.11.0`
-- Current contract versions:
-  - Shared/Ads schema closeout: `v0.13.0`
-  - Google Ads View filters: `v0.13.5`
-  - Formula UI: `v0.13.6`
-  - Repository audit correction: `v0.13.7`
+- Lark schema/View/Formula closeout: complete; do not reopen without a new approved contract
+- Google Ads signed-delivery implementation: Draft PR `#17`, not merged to `main`, not deployed
 
-Contract version numbers are not automatic application package releases.
+## Integration Workspace operating model
 
-## Environment and ownership
+There is one pre-Production **Integration Workspace**, not separate DEV and UAT operating modes
 
-### DEV
+```text
+MKT_ENV=development                 # technical runtime label only
+MKT_CUSTOMER_PROFILE=integration_workspace
+```
 
-- Profile: `dev_ft_pumkin`
-- Lark/Cloudflare/source assets: developer-owned
-- TikTok Organic and YouTube Organic active only where DEV gates passed
+Current Workspace resources are developer-owned:
 
-### Customer-real UAT
+- Social MKT Data Hub Lark Base
+- Cloudflare Worker
+- D1
+- Queue and DLQ
+- Secret store
+- checkpoints, locks, sync runs and alerts
 
-- Profile: `uat_chemistry_k`
-- Source accounts/data: customer-owned
-- Temporary isolated Lark/Cloudflare: developer-owned
-- Canonical `customerKey` and connector `accountKey`: `chemistry_k`
-- Every new connector and schedule disabled by default
+Source ownership is tracked per Connector and can be mixed temporarily. Production remains separate and must be customer-owned
 
-### Production
+Full contract: `docs/project-brain/integration-workspace.md`
 
-- Profile: `chemistry_k`
-- Lark, Cloudflare, D1, Queue, App credentials and platform assets must be customer-owned
-- Production remains disabled
+The old separate-UAT document `docs/project-brain/customer-real-uat.md` is superseded and retained only as history
 
-Full ownership contract: `docs/project-brain/customer-real-uat.md`.
+## Current source ownership
 
-## Current Lark DEV baseline
+| Connector | Source currently used in Integration Workspace | Current gap |
+| --- | --- | --- |
+| TikTok Organic | Chemistry K `@chemistry_k` through Lark Native | RAW populated; current customer RAW → Canonical sync not yet verified |
+| Facebook Organic | Developer temporary source | Connector/normalization/reliability and later customer-source replacement |
+| Instagram Organic | Developer temporary source | Connector/normalization/reliability and later customer-source replacement |
+| YouTube Organic | Developer temporary source | Customer-source replacement and final validation |
+| Google Ads | Chemistry K advertiser linked/read-only data available | Signed delivery remains Draft PR `#17`; not merged/deployed |
+| Meta Ads | Developer no-data account preflight | Connector and customer data validation |
+| TikTok Ads | Access/design preflight only | Business authorization, reporting contract and connector |
+| WooCommerce | Chemistry K source/access-dependent | Connector pending |
+| Chatwoot | Chemistry K source/access-dependent | Connector pending |
 
-Fresh configuration-only audit of `Social MKT Data Hub(11).base`:
+## Current Lark Base baseline
+
+Latest verified configuration closeout:
 
 ```text
 Physical tables             42
@@ -59,282 +67,152 @@ Views with hidden fields     7
 Duplicate table names        0
 Table emoji/folders       42/42
 View emoji names         133/133
-```
-
-Managed presentation:
-
-```text
-Google Ads Formula fields    4/4 PASS
-Google Ads managed filters  19/19 PASS
+Google Ads formulas          4/4 PASS
+Google Ads filters          19/19 PASS
 Shared-table filters        17/17 PASS
 Report Views                 6/6 PASS
-Google Ads Daily 30D         platform=google_ads + TheLastMonth
 ```
 
-Do not rerun Lark View Apply or Formula UI work.
+Do not rerun Lark View Apply or Formula UI work
 
-## Full View contract meaning
-
-133 Views are classified as:
-
-- 17 Shared-table managed Views
-- 6 Report managed Views
-- 19 Google Ads managed Views
-- 36 All/default Views intentionally preserved without Filter
-- 55 legacy specialized Views preserved without inferred business rules
-
-The 42 filtered Views are exactly `17 + 6 + 19`.
-
-“Full View contract complete” means every View is managed or explicitly preserved. It does not mean all specialized names such as Active, Failed, Latest, Connection Issues or High Spend Low ROAS already have business logic. The 55 specialized Views require a separate business-owner contract before mutation.
-
-Contract: `docs/lark-full-view-contract-v0.13.5.md`.
-
-## Active channel status
-
-### TikTok Organic — 95%
-
-Completed:
-
-- Lark Native protected RAW source
-- RAW → Canonical Content/Daily flow
-- stable key, idempotency, reconciliation
-- D1 checkpoint, lock, retry, DLQ and alerts
-- Daily/Weekly reports and managed Client Views
-- DEV schedules and live reliability gates
-
-Remaining:
-
-- ongoing operational observation
-- customer-real UAT and Production cutover
-
-### YouTube Organic — 90%
-
-Completed:
-
-- Public/OAuth access and identity gates
-- RAW Channel/Video/Analytics and Canonical writes
-- scheduled DEV Data API and Owner Analytics
-- bounded large-account pagination/chunking and durable resume
-- reliability/outbox/redrive migrations and DEV smoke
-
-Remaining:
-
-- customer-owned 837-video Live UAT
-- applicable pending rollout/observation gates
-- Production cutover
-
-### Facebook Organic — 30%
-
-Completed:
-
-- real Page/post/Page Insights access preflight
-- shared Lark schema foundation
-- Meta Graph transport foundation
-
-Remaining:
-
-- business adapter and connector implementation
-- normalization, checkpoint/reconciliation and reliability
-- schedule, customer-real UAT and Production
-
-### Instagram Organic — 30%
-
-Completed:
-
-- Instagram Login scopes/token lifecycle preflight
-- media/media insights/account insights read verification
-- shared Lark schema foundation
-
-Remaining:
-
-- connector and token operations
-- reliability, schedule, UAT and Production
-
-### Meta Ads — 25%
-
-Completed:
-
-- `ads_read` access preflight
-- valid no-data Account/Insights response
-- Ads Lark schema and Canonical Ads v2 zero drift
-
-Remaining:
-
-- source queries and connector
-- entity/daily normalization and writes
-- reliability, reconciliation, UAT, schedule and Production
-
-### Google Ads — 45%
-
-Completed:
-
-- customer-authorized account link/selectability
-- Manager Script exact allowlist and read-only GAQL UAT
-- `data_available`, six non-empty bounded datasets
-- errors/truncation `0/0`, Google Ads `No changes`
-- automated Lark schema, Relations, managed filters and formulas
-- repository safety correction and no-create View maintenance guard
-
-Direct API state:
+Latest inspected record inventory relevant to TikTok:
 
 ```text
-Basic Access application submitted 2026-07-21
-Case ID 1-686800040839
-Review pending
-Current level Test Account Access
+RAW_TikTok_Creator_Videos   2,021 records / 18 fields
+MKT_Content                    22 records / 29 fields
+MKT_Content_Daily             208 records / 15 fields
 ```
 
-Direct API is optional Phase 2 for MVP.
+These counts prove that the RAW source is populated and Canonical tables exist. Counts alone do not prove that Chemistry K TikTok RAW rows were synchronized correctly into both Canonical tables
 
-Remaining:
+## TikTok Organic current state
 
-- signed Script delivery connector
-- Worker ingress and signature/replay checks
-- Queue/DLQ and D1 state
-- normalization and destination writes
-- idempotency/reconciliation/reliability UAT
-- schedule and Production
+Verified:
 
-Sanitized UAT evidence: `docs/google-ads-manager-script-read-only-uat-evidence.md`.
+- Lark Native TikTok For Creator is connected to Chemistry K `@chemistry_k`
+- connection existed before the current documentation correction
+- protected RAW table is populated with 2,021 records
+- TikTok reliability foundation, stable-key planning, locks, retry, DLQ and report components exist in the codebase
 
-### TikTok Ads — 10%
+Not yet verified for the current Chemistry K source:
 
-Completed:
+- exact RAW identity/unique-video audit
+- current runtime mapping to `accountKey=chemistry_k`
+- write plan into `MKT_Content`
+- write plan into `MKT_Content_Daily`
+- reconciliation of expected/created/updated/skipped
+- idempotent rerun with zero duplicates
+- downstream report verification from Chemistry K Canonical rows
 
-- represented in Canonical Ads model and planning scope
+Therefore TikTok Organic is not considered complete merely because RAW is populated
 
-Direction:
+Historical names such as `dev_ft_pumkin`, `uat_chemistry_k` or `ft_pumkin` may remain in old configuration/report history. They are not sufficient evidence to identify the owner of current Lark records and do not authorize deletion or relabeling
 
-- Production integration must use a controlled API/Worker connector
-- Lark native Ads integration is not the Production source of truth
+## Google Ads current state
 
-Remaining:
+Merged `main` state:
 
-- access/Business Center/app authorization preflight
-- reporting contract and connector
-- reliability, UAT and Production
+- Chemistry K advertiser link/selectability passed
+- Manager Script read-only Preview passed
+- six non-empty datasets returned
+- errors/truncation `0/0`
+- Google Ads reported `No changes`
+- Lark schema, relations, formulas and managed Views complete
+- direct API Basic Access review remains optional Phase 2
 
-### WooCommerce — 10%
+Draft PR `#17` state:
 
-- sanitized source/transport foundation exists
-- connector, pagination, checkpoint/reconciliation and UAT remain
+- signed Manager Script delivery connector implemented and tested on its branch
+- HMAC/timestamp/nonce/replay/idempotency contract
+- Worker ingress, D1 delivery state and reference-only Queue job
+- 12-table Google Ads plan/reconciliation
+- schedule disabled
 
-### Chatwoot — 10%
+Draft PR `#17` is **not** the `main` implementation baseline and has not been deployed or externally validated
 
-- sanitized contract exists
-- final objects/retention contract, connector and UAT remain
+## Other channel status
 
-## Core runtime state
+### YouTube Organic
 
-Reusable reliability foundation exists for active connectors:
+- public/OAuth access and initial connector foundation exist
+- developer source used in the Integration Workspace
+- customer-source replacement and final customer-scale validation remain
 
-- Queue-backed jobs
+### Facebook Organic
+
+- real Page/post/Page Insights access preflight passed on developer source
+- shared Meta transport/schema foundation exists
+- business connector, normalization and reliability remain
+
+### Instagram Organic
+
+- token lifecycle, media and insights preflight passed on developer source
+- shared schema foundation exists
+- connector, operations and reliability remain
+
+### Meta Ads
+
+- `ads_read` preflight passed
+- current developer ad account returns valid no-data
+- connector and real customer data validation remain
+
+### TikTok Ads
+
+- separate from TikTok Organic
+- controlled API/Worker connector required
+- access, authorization, reporting and reliability remain
+
+### WooCommerce / Chatwoot
+
+- source/transport contracts exist
+- production-grade connectors remain
+
+## Core runtime rules
+
+Every active write path must reuse:
+
+- central Connector and Job catalogs
+- deterministic stable keys
+- idempotent plan/diff/execute
 - D1 checkpoints and resumable work
 - distributed lease lock and renewal
 - bounded retry and Permanent classification
-- DLQ and controlled redrive
-- deterministic alert/outbox behavior
-- partial-write semantics and reconciliation
+- Queue/DLQ and controlled redrive
+- reconciliation and alerts
 - secret/identity redaction
 
-Every new connector must reuse these contracts rather than add parallel reliability logic.
-
-## Google Ads View safety correction
-
-The generic report View installer supports View creation for legitimate setup flows. The Google Ads Filter command is update-only and now adds a dedicated guard:
-
-- `createViews` must be zero
-- every action must be `update_view`
-- missing View blocks with `GOOGLE_ADS_VIEW_FILTER_VIEW_MISSING_NO_CREATE`
-- wrapped client rejects `createView`
-
-This is future-maintenance protection only. Current Lark state is already zero drift.
-
-## RAW error coverage decision
-
-The 13 Google RAW error Views use a stable-key-only minimum contract:
-
-```text
-primary raw stable key isEmpty
-```
-
-They detect missing raw identity, not every invalid customer/entity/status/report/policy field. Comprehensive Data Quality validation must be a separate approved contract.
-
-## Manager Script evidence boundary
-
-The 598-line safety scan is documented Live review evidence. Sanitized Script source is not committed, so it is not an independently reproducible source audit. Before external delivery, commit either:
-
-- sanitized Script source; or
-- immutable checksum + exact query/output manifest + safety report.
-
-No customer ID, token, secret or sample business row may be committed.
-
-## Repository correction verification
-
-PR #13 passed:
-
-```text
-npm ci                         PASS
-npm run check                  PASS
-Focused staged TikTok           4/4 PASS
-Node Unit/Integration         540/540 PASS
-Workers runtime                 9/9 PASS
-Report reliability             70/70 PASS
-npm audit --audit-level=high    0 vulnerabilities
-npm run deploy:dry-run          PASS
-```
-
-The transitive vulnerable `sharp` chain was remediated with `overrides.sharp=0.35.3` and a refreshed lockfile. No Live resource mutation occurred.
-
-## Current project progress
-
-Milestone estimates, not code coverage:
-
-```text
-MKT DEV MVP                         ~59%
-Lark data model/schema foundation   100%
-Google Ads end-to-end                45%
-Customer-real UAT readiness          40%
-Chemistry K Production readiness     25%
-```
-
-Detailed weighting: `docs/project-brain/mkt-progress-v0.13.0.md`.
+Do not create a parallel reliability stack for a new Connector
 
 ## Current task
 
-`docs/current-task.md` records the merged repository audit correction and is closed.
+Authoritative task: `docs/current-task.md`
 
-No connector Implementation task is active until the user approves the next workstream.
+Next implementation task:
 
-## Next approval gate
+```text
+TikTok Chemistry K RAW
+→ MKT_Content
+→ MKT_Content_Daily
+→ reconciliation
+→ idempotent rerun
+→ report verification
+```
 
-Proposed task:
+This is not a TikTok account-switch task and does not authorize RAW deletion or Lark schema changes
 
-`Google Ads Manager Script signed delivery connector`
-
-Before coding, approve:
-
-1. six-dataset payload schema/version
-2. stable and idempotency keys
-3. HMAC signature, timestamp, nonce and replay window
-4. bounded batch/payload size
-5. null semantics
-6. partial-write/retry classification
-7. Queue/DLQ/checkpoint/lock/reconciliation
-8. retention/redaction/audit
-9. DEV/UAT/Production isolation
-10. schedule disabled by default
-
-Then implement and run isolated manual UAT. Schedule may be enabled only after idempotent rerun, reconciliation and reliability gates pass.
+Google Ads PR `#17` remains Draft until the shared documentation baseline and work sequencing are synchronized
 
 ## Permanent safety rules
 
-- Data model before connector
-- new connector flags and schedules disabled by default
+- Data model before Connector
+- one Integration Workspace before customer-owned Production
+- mixed Source ownership is tracked per Connector, not by switching environments
+- new Connector flags and schedules disabled by default
 - no fake Production success or dummy Production data
-- every Write path requires stable key, idempotency and retry semantics
+- every write path requires stable key, idempotency and retry semantics
 - missing metric is `null`, not zero, unless the source proves zero
 - secrets remain in Environment/Secret Manager
-- DEV/UAT/Production infrastructure stays isolated
+- no record deletion/relabeling from a historical Profile name alone
+- no Lark schema/Formula/View reopening without a new approved contract
 - Production resources must be customer-owned
 - no Live Apply based only on chat instructions when Repository contract is newer

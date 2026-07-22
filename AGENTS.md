@@ -33,7 +33,7 @@
 
 - วิเคราะห์ Requirement, Scope, Data model, Architecture และความเสี่ยง
 - เขียนหรือปรับ `docs/current-task.md` ให้มี Objective, In scope, Out of scope, Contract, Acceptance criteria และ Required tests
-- ตรวจผลลัพธ์ทางธุรกิจ, UAT, Regression และ Release handoff
+- ตรวจผลลัพธ์ทางธุรกิจ, External validation, Regression และ Release handoff
 - อัปเดต Project Brain, README, CHANGELOG และเอกสารส่งมอบ
 
 ### Codex รับผิดชอบ
@@ -42,7 +42,7 @@
 - ตรวจทั้ง Codebase ก่อนเพิ่มโค้ดใหม่
 - แก้ Implementation, Refactor, Tests, Migration และ Tooling ใน Repository จริง
 - รัน Gate ที่กำหนดและบันทึกผลใน `docs/current-task.md`
-- รายงาน Files changed, Commands run, Tests, Live UAT, Remaining risks และ Commit suggestion
+- รายงาน Files changed, Commands run, Tests, Live validation, Remaining risks และ Commit suggestion
 
 ### กติกาส่งงานกลับ
 
@@ -58,7 +58,7 @@
 - Performance, pagination, batching, bounded concurrency และ memory usage
 - Security, permissions, secrets, rate limits, retries, timeout และ partial failure
 - Stable keys, idempotency, reconciliation, sync log และ observability
-- ผลกระทบต่อ DEV/UAT/Production profiles และทุก Connector/Job ที่ใช้ Contract กลาง
+- ผลกระทบต่อ Integration Workspace, Production profile และทุก Connector/Job ที่ใช้ Contract กลาง
 
 ห้ามเพิ่ม Utility หรือ Layer ใหม่เมื่อขยายของเดิมได้อย่างสะอาดกว่า
 
@@ -75,20 +75,22 @@
 
 ห้ามเริ่ม Connector Implementation หาก `docs/current-task.md` ยังระบุว่า Data model หรือ Source contract ยังไม่อนุมัติ
 
-## 6. Environment, Ownership และ Secret
+## 6. Integration Workspace, Ownership และ Secret
 
-- DEV ปัจจุบันใช้ profile `dev_ft_pumkin` และทรัพยากร/ข้อมูลของผู้พัฒนา
-- Customer-real UAT ใช้ profile `uat_chemistry_k`: บัญชีต้นทางและข้อมูลเป็นของลูกค้า แต่ Lark Base และ Cloudflare UAT เป็นของผู้พัฒนาชั่วคราวและต้องแยกจาก DEV
-- Production ใช้ profile `chemistry_k` และต้องใช้ Lark Base, Cloudflare, App credentials และ Platform assets ที่ลูกค้าเป็นเจ้าของ
-- UAT เป็นข้อมูลจริง ไม่ใช่ Sandbox/Demo; ต้องใช้ Security, Least privilege, Audit, Retention และ Cleanup ระดับ Production
-- `profileKey` อาจต่างกันระหว่าง UAT/Production แต่ `customerKey` และ Connector `accountKey` ต้องคงเดิมเพื่อรักษา Canonical stable keys
-- DEV, UAT และ Production ต้องแยก Worker, D1, Queue, DLQ, Secrets, Checkpoint, Lock, Alert, Schedule และ Lark Base
-- UAT Connector ทุกช่องทางและ Business Schedule ทุกตัวต้องปิดโดย Default จนกว่า Identity/Source-contract preflight ของช่องทางนั้นจะผ่าน; System recovery jobs ที่ไม่เขียน Business data ให้ยึด Runtime reliability contract แยกต่างหาก
+- ก่อน Production มี **Integration Workspace เพียงชุดเดียว** สำหรับประกอบ Connector, Worker, D1, Queue/DLQ, Lark, Report, AI และ Notify ให้ครบทั้งระบบ
+- ใช้ `MKT_ENV=development` เป็น Technical runtime label และใช้ `MKT_CUSTOMER_PROFILE=integration_workspace`; ไม่ปฏิบัติงานแบบแยก DEV/UAT และไม่สลับ Profile ตามช่องทาง
+- Worker, D1, Queue, DLQ, Secret store และ Lark Base ปัจจุบันเป็นของผู้พัฒนาในช่วงประกอบระบบ
+- Source ownership แยกราย Connector และอาจผสมกันชั่วคราวได้: บางช่องทางใช้ข้อมูลผู้พัฒนา บางช่องทางใช้ข้อมูลลูกค้า
+- TikTok Organic ที่ยืนยันแล้วเชื่อม Lark Native กับ Chemistry K `@chemistry_k`; RAW มีข้อมูลอยู่แล้ว แต่การ Sync ชุด Chemistry K เข้า `MKT_Content` / `MKT_Content_Daily` ยังต้องตรวจและทำให้ผ่าน
+- ชื่อเก่าเช่น `dev_ft_pumkin`, `uat_chemistry_k` หรือ `ft_pumkin` เป็น Historical configuration/runtime labels; ห้ามใช้เป็นหลักฐานตัดสินเจ้าของ Records และห้ามลบ/เปลี่ยนชื่อข้อมูลจาก Label เพียงอย่างเดียว
+- เมื่อบัญชีลูกค้าของช่องทางอื่นพร้อม ให้เปลี่ยนเฉพาะ Source/Credential/Mapping ของ Connector นั้นใน Workspace เดิม พร้อม Exact-scope audit, backfill, reconciliation และ idempotent rerun
+- Production ใช้ profile `chemistry_k` และต้องใช้ Lark Base, Cloudflare, D1, Queue, App credentials, Secrets และ Platform assets ที่ลูกค้าเป็นเจ้าของ
 - เก็บเฉพาะ non-secret IDs/mappings ใน Source
 - Token, API key, password, app secret, OTP, session cookie และ credential ต้องอยู่ใน Environment/Secret store เท่านั้น
 - ห้าม Commit `.dev.vars` หรือ `wrangler.sync.jsonc`
 - ห้ามเปิดเผย Secret, Token, Customer identity หรือข้อมูลส่วนบุคคลใน Log/Health/Admin response
-- Contract รายละเอียดของ UAT อยู่ที่ `docs/project-brain/customer-real-uat.md`
+- Contract รายละเอียดอยู่ที่ `docs/project-brain/integration-workspace.md`
+- `docs/project-brain/customer-real-uat.md` เป็นเอกสารแนวคิดเก่าที่ถูกแทนที่แล้ว ห้ามใช้เป็น Current operating model
 
 ## 7. Connector และ Queue contract
 
@@ -123,7 +125,7 @@
 - `npm run check` ผ่าน รวม Architecture และ Repository hygiene
 - `npm audit` ไม่มีช่องโหว่ที่ยอมรับไม่ได้
 - `npm run deploy:dry-run` ผ่าน
-- Live/Sandbox/UAT ผ่านเมื่อ Scope ต้องใช้ External API
+- External/manual validation ผ่านเมื่อ Scope ต้องใช้ External API หรือ Live data
 - ไม่มี duplicate logic, dead files, local config, Secret หรือ build artifact ใน Release
 - `docs/current-task.md`, Project Brain และ CHANGELOG อัปเดต
 
@@ -150,5 +152,5 @@ npm run deploy:dry-run
 ## 11. ภาษากับ Comments
 
 - เอกสารและคำอธิบายสำหรับผู้ใช้ใช้ภาษาไทยเป็นหลัก
-- Config blocks และจุด Mapping ลูกค้าใช้คอมเมนต์ภาษาไทยที่อธิบายหน้าที่และข้อจำกัด
+- Config blocks และจุด Mapping ลูกค้าใช้คอมเมนต์ไทยที่อธิบายหน้าที่และข้อจำกัด
 - Comments ต้องอธิบายเหตุผล/Contract ไม่ใช่แปลทุกบรรทัดหรือบรรยาย Syntax
