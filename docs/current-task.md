@@ -123,18 +123,20 @@ Header names, HMAC algorithm/signing input, envelope fields, limits, timestamp/r
 - [ ] controlled live retry/lock/DLQ/redrive UAT
 - [ ] customer-real zero-duplicate rerun
 
-## Local verification
+## Verification before final branch gate
 
-Focused signed-delivery suite currently passes. Full repository gates must pass again on the final branch and GitHub Actions before handoff:
+Implementation commit: `31474c92cc48bbb6d45fd4aa1d2d3eb7b6354526`.
 
-```bash
-npm ci
-npm run check
-npm test
-npm run test:report-reliability
-npm audit --audit-level=high
-npm run deploy:dry-run
-```
+Local source-snapshot verification after the final code changes:
+
+- focused Google Ads signed-delivery tests: `43/43 PASS`;
+- architecture/hygiene: `154 source files / 371 local dependencies / 0 cycles`;
+- Node unit/integration tests: `586/586 PASS`;
+- report reliability: `70/70 PASS`;
+- `git diff --check`: PASS;
+- secret/build-artifact/repository hygiene scan: PASS.
+
+The final Draft PR head must still pass the repository Branch Verification workflow (`npm ci`, `npm run check`, staged TikTok regression, `npm test` including Workers runtime, report reliability, dependency audit and Wrangler dry run) before handoff.
 
 ## Remaining risks
 
