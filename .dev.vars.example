@@ -35,7 +35,7 @@ MKT_MAIN_QUEUE_NAME=social-mkt-sync-jobs
 MKT_DLQ_QUEUE_NAME=social-mkt-sync-dlq
 MKT_QUEUE_RETRY_DELAY_SECONDS=30
 
-# TikTok Creator — temporary developer source in Integration Workspace
+# TikTok Creator — Chemistry K customer source connected through Lark TikTok For Creator
 TIKTOK_SOURCE_HANDLE=replace-with-tiktok-handle
 
 # YouTube — temporary developer source; Connector/Schedule ปิดจนกว่า Integration validation จะผ่าน
