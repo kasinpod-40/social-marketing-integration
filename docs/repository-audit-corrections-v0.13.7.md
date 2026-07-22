@@ -2,8 +2,10 @@
 
 ## Status
 
-- **Target branch:** `work/repository-audit-corrections-2026-07-22`
-- **Base commit:** `ddd876c3670af0dc6a4748b5399a1ac5acfe6642`
+- **Status:** `merged_and_verified`
+- **Merged PR:** `#13`
+- **Merged commit:** `d4a531fbb4e05dad7ce2296859c97f571e23acf3`
+- **Merge method:** squash
 - **Scope:** documentation accuracy, Google Ads View safety guard and reproducible handoff
 - **Live Lark mutation:** none
 - **Google Ads mutation:** none
@@ -55,7 +57,7 @@
 - Current developer-token level: `Test Account Access`
 - Manager Script MVP ไม่รอ direct API approval
 
-ข้อความเดิมที่ระบุว่า “No access application was submitted” ถูกยกเลิกโดยเอกสารนี้และ `docs/current-task.md` รุ่นแก้ไข.
+ข้อความเดิมที่ระบุว่า “No access application was submitted” ถูกยกเลิกโดยเอกสารนี้และ `docs/current-task.md`.
 
 ### Google Ads Manager Script evidence level
 
@@ -72,7 +74,7 @@ Live UI UAT ยืนยัน:
 
 ## Google Ads View safety correction
 
-คำสั่ง `setup:google-ads-view-filters` มี Scope เป็น update-only. Generic View installer รองรับ Create สำหรับงานอื่น จึงเพิ่ม Guard เฉพาะ Google Ads:
+คำสั่ง `setup-google-ads-view-filters` มี Scope เป็น update-only. Generic View installer รองรับ Create สำหรับงานอื่น จึงเพิ่ม Guard เฉพาะ Google Ads:
 
 - Pre-Apply Preview ต้อง `createViews=0`;
 - ทุก Action ต้องเป็น `update_view`;
@@ -91,13 +93,39 @@ Google Ads RAW error Views 13 รายการใช้ **stable-key-only mini
 
 Contract นี้ใช้ตรวจ missing canonical raw identity ไม่ใช่ comprehensive data-quality validation. หากต้องการตรวจ customer ID, entity ID, status, report level, segment key หรือ policy state ให้สร้าง Data Quality contract/workstream แยกและห้ามเปลี่ยนความหมายของ View ปัจจุบันโดยไม่มี approval.
 
+## Dependency security correction
+
+Branch Verification พบ High vulnerabilities ใน transitive `sharp <0.35.0` chain. PR #13:
+
+- เพิ่ม `overrides.sharp=0.35.3`;
+- refresh `package-lock.json`;
+- เก็บ `audit.log` ใน CI diagnostics;
+- ผ่าน dependency audit ด้วย `0 vulnerabilities`.
+
 ## Version clarification
 
 - Root package version `0.11.0` คือ application release line ปัจจุบัน.
-- `v0.13.5`, `v0.13.6`, `v0.13.7` ในเอกสารนี้เป็น Lark schema/view/formula/audit contract versions.
+- `v0.13.5`, `v0.13.6`, `v0.13.7` เป็น Lark schema/view/formula/audit contract versions.
 - ห้ามอนุมานว่า package release ถูก bump จากเลข Contract โดยอัตโนมัติ.
 
-## Next approved workstream
+## Verification result
+
+Final PR head `0835957df06db02c57d37bf5ce47380642ed418b` passed Branch Verification run `171`:
+
+```text
+npm ci                         PASS
+npm run check                  PASS
+Focused staged TikTok           4/4 PASS
+Node Unit/Integration         540/540 PASS
+Workers runtime                 9/9 PASS
+Report reliability             70/70 PASS
+npm audit --audit-level=high    0 vulnerabilities
+npm run deploy:dry-run          PASS
+```
+
+No Live Apply or deployment occurred.
+
+## Next approval gate
 
 `Google Ads Manager Script signed delivery connector`
 
@@ -114,15 +142,4 @@ Contract นี้ใช้ตรวจ missing canonical raw identity ไม่
 9. DEV/UAT/Production ownership;
 10. schedule disabled by default.
 
-## Verification requirement for this correction branch
-
-```bash
-npm ci
-npm run check
-npm test
-npm run test:report-reliability
-npm audit --offline
-npm run deploy:dry-run
-```
-
-No Live Apply or deployment is required for this correction branch.
+No new Connector task is active until the user approves this scope.
