@@ -1,34 +1,19 @@
 # 10 — Next Actions
 
-## Shared task workflow
+## Immediate repository correction gate
 
-ChatGPT Work and Codex share `docs/current-task.md`. Migration 0005 และ source patch ถูก Deploy ใน DEV แบบ Schedule off แล้ว; healthy/stale/Permanent smoke ผ่าน. Live Redrive เปิดเผย legacy status CHECK blocker และมี migration 0006 รอ Apply/verify. Production และ Connector อื่นยัง fail-closed; Customer 837-video Live UAT ยังไม่รัน.
+Before starting a new connector:
 
-## Google Ads access gate — Manager Script read-only UAT passed 2026-07-22
-
-After customer authorization, read-only Live UI preflight confirmed the approved Chemistry K advertiser as `Enabled`, directly managed and selectable. The existing Manager Script target allowlist was updated and Previewed. A first fail-closed `partial_error` identified two runtime-incompatible Campaign date fields; after removing them, final Preview returned `data_available`, six successful non-empty bounded datasets, zero errors/truncation and `No changes`.
-
-Safe continuation order:
-
-1. Open a separate approved Manager Script delivery task.
-2. Lock signed payload/version, HMAC verification, replay window, idempotency key, bounded batches, retention and redaction.
-3. Implement a disabled-by-default isolated UAT endpoint and destination preflight; do not enable Script delivery yet.
-4. Run a manual signed-delivery UAT, idempotent rerun and reconciliation before any schedule.
-5. Treat direct Google Ads API Basic/Explorer Access as an optional Phase 2 track, not an MVP blocker.
-
-## Immediate post-review handoff
-
-1. รอ failed Admin Redrive message drain และยืนยัน work/active lock = 0
-2. Apply/verify migration 0006 โดยตรวจ row count, indexes และ `redrive_pending`/`redriven` CHECK contract
-3. Deploy Source โดย Schedule/Analytics/Redrive ยังปิด แล้ว rerun controlled Redrive + healthy recovery
-4. ตรวจ cross-generation warning drain และ TTL guard โดยห้ามลบ active/locked/pending-warning work
-5. เปิด YouTube Schedule/Analytics กลับเมื่อ Smoke ผ่าน; `MKT_DLQ_REDRIVE_ENABLED` ต้องกลับเป็น `false`
-6. Keep Production disabled; ห้ามตีความ DEV 2-video smoke หรือ deterministic 837 fixture เป็น Customer 837-video Live UAT
-7. เตรียม Customer-owned Channel, matching Owner OAuth, Lark Base และ Cloudflare DEV/Staging profile
-8. รัน Initial Full 837, Content incremental 100 + Analytics tracked/selected/queried 837 และ Observe natural 07:50 run
-9. Instagram/Facebook/TikTok งานถัดไปต้อง reuse generation/outbox/terminal/redrive contracts และมี large-account fixture ของตนเอง
-
-## Clean candidate verification for v0.11.0
+1. Review branch `work/repository-closeout-corrections`.
+2. Confirm the Google Ads View Filter command blocks all `create_view` and non-`update_view` actions.
+3. Confirm Basic Access application history is corrected:
+   - submitted `2026-07-21`;
+   - case `1-686800040839`;
+   - project `788131774873`;
+   - pending review;
+   - current access remains Test Account Access.
+4. Confirm the 55 legacy specialized Views remain preservation-only and are not described as business-filter complete.
+5. Run full gates:
 
 ```bash
 npm ci
@@ -37,85 +22,120 @@ npm test
 npm run test:report-reliability
 npm audit --offline
 npm run deploy:dry-run
-npm run release:package
-npm run release:verify -- outputs/releases/social-marketing-integration-v0.11.0.zip
 ```
 
-## YouTube DEV access and schema
+6. Merge only after clean diff and gate review.
 
-Status 2026-07-19: Public/Owner preflight, three-table Lark Schema Apply, DateTime/Permission verification, Queue/Reliability UAT, activation deployment and Active smoke test passed. Local Table IDs are stored only in ignored `wrangler.sync.jsonc`.
+## Next implementation workstream
 
-Completed setup reference:
+Open a separate approved task:
 
-```bash
-npm run preflight:youtube
-npm run setup:youtube-schema
-CONFIRM_WRITE=YES npm run setup:youtube-schema:apply
-```
+`Google Ads Manager Script signed delivery connector`
 
-Destination/Sync Log/System Alert mappings ถูกตรวจว่าเป็นค่าจริงและไม่ซ้ำแล้ว. Release examples ยังปิดทุก flag; ignored DEV config เปิดเฉพาะ environment ที่ผ่าน UAT แล้ว.
+Do not expand the closed Lark schema/View/Formula task.
 
-## Active DEV operations
+## Contract decisions required before coding
 
-DEV activation policy:
+### Payload
 
-```text
-MKT_CONNECTOR_YOUTUBE_ENABLED=true
-MKT_SCHEDULE_YOUTUBE_ENABLED=true
-MKT_YOUTUBE_ANALYTICS_ENABLED=true
-MKT_YOUTUBE_ANALYTICS_TIME=07:50
-MKT_YOUTUBE_ANALYTICS_LOOKBACK_DAYS=7
-```
+- schema name and version;
+- six dataset envelopes;
+- bounded batch size and payload byte limit;
+- source-generated timestamp;
+- nullable field semantics;
+- unknown field/version behavior;
+- partial batch acceptance policy.
 
-Generate an optional manual active job body:
+### Identity and idempotency
 
-```bash
-npm run job:youtube-sync
-```
+- customer key and Google Ads account key;
+- stable key per dataset;
+- delivery ID and idempotency key;
+- deterministic record fingerprints;
+- duplicate and replay behavior;
+- reconciliation scope.
 
-Core UAT ที่ผ่านแล้ว:
+### Security
 
-1. Public Channel/uploads/video และ Owner OAuth preflight
-2. First Full sync
-3. Idempotent Full rerun
-4. Checkpoint-driven recent-window incremental update
-5. Manual Full reconciliation ในสภาพไม่มี missing resource
-6. Owner Analytics small Pacific-date range แบบ valid no-data
-7. Verify RAW, Canonical, Account, Sync Log และ System Alert counts ใน Lark
+- HMAC algorithm and canonical signing string;
+- timestamp tolerance;
+- nonce format and D1 reservation;
+- replay rejection;
+- secret rotation;
+- safe error responses;
+- log and payload redaction;
+- retention and deletion policy.
 
-Reliability fault cases ที่ผ่าน Live DEV:
+### Reliability
 
-1. Distributed lock collision → bounded retry → success และ cleanup
-2. Controlled timeout → retry exhaustion → DLQ → D1/Lark Critical Alert
-3. Safe restore → retry-0 healthy run และ Test incident retained as `resolved`
-4. Live OAuth read-only identity mismatch → Permanent classification + redaction
+- ingress validation before Queue enqueue;
+- Queue job type and schema version;
+- retryable versus permanent errors;
+- DLQ behavior;
+- distributed lock scope;
+- D1 checkpoint and partial progress;
+- bounded write chunks;
+- partial-write semantics;
+- reconciliation and idempotent rerun;
+- System Alert and Sync Log evidence.
 
-Production-path deterministic cases ที่ผ่าน:
+### Ownership and rollout
 
-1. Playlist ID absent from `videos.list` และ previously observed Video disappears → retain/no-delete/no-zero
-2. Previously observed Analytics Stable key disappears on exact re-fetch while never-observed gaps remain silent
-3. Quota exhaustion เป็น terminal; rate-limit/server failure เป็น bounded retry
-4. D1 warning-alert persistence failure → Retry and no Queue Ack
-5. Lease renewal/loss, retry routing, DLQ persistence และ Alert mirror/redaction
+- DEV connector disabled by default;
+- isolated `uat_chemistry_k` Worker, D1, Queue, DLQ, Secrets and Lark Base;
+- customer-owned source account;
+- customer-owned Production infrastructure;
+- schedule disabled until manual UAT and reliability gates pass.
 
-ไม่จงใจสร้าง actual Provider missing/private/deleted, เผา quota, บังคับ 429 หรือทำ D1 outage. ให้เฝ้าดู scenario เหล่านี้เมื่อเกิดตามธรรมชาติและใช้ Alert/Runbook เดิม.
+## Implementation sequence
 
-## Completed activation
+1. Add Google Ads connector catalog entry and disabled feature flag.
+2. Add signed ingress contract and verifier without enabling delivery.
+3. Add nonce/replay D1 migration and repository.
+4. Add Queue job catalog entry and Worker route.
+5. Add six-dataset source DTO validation.
+6. Add normalization and stable-key destination plans.
+7. Add RAW/Canonical/Daily Lark writers using existing sync engine.
+8. Add checkpoint, lock, retry, DLQ, reconciliation and redaction.
+9. Add bounded fixtures and failure tests.
+10. Run local gates and deploy dry-run.
+11. Deploy isolated UAT with schedule off.
+12. Run one manual signed delivery.
+13. Run idempotent resend and reconciliation.
+14. Test controlled retry/DLQ paths without changing Ads.
+15. Observe clean operational state.
+16. Consider schedule only after explicit approval.
 
-- YouTube connector/job เป็น `active`
-- Data API Cron: `50 0,6,12,18 * * *` (ทุก 6 ชั่วโมง)
-- Analytics: วันละครั้ง 07:50 Asia/Bangkok, query 7 completed Pacific dates
-- Worker version: `2037232c-152a-4e26-95fa-fca044f65bd9`
-- Post-patch Data API และ Owner Analytics smoke: success/retry 0; Analytics tracked/selected/queried 2/2/2 complete, staging/lock/open alert 0 และ Lark duplicates 0
+## Direct Google Ads API track
 
-Next work must not silently expand into Meta, WooCommerce, Chatwoot, Ads activation or Lark AI notification.
+Basic Access review remains pending. Direct API is not an MVP blocker for Manager Script delivery.
 
-## TikTok parallel operations
+Use direct API later when needed for:
 
-- Continue observing Daily report at 08:10 Asia/Bangkok.
-- Continue observing Weekly report Monday 08:15 Asia/Bangkok.
-- These observations do not block the completed YouTube activation.
+- centralized OAuth;
+- higher scale;
+- fields unavailable in Manager Scripts;
+- cross-client SaaS onboarding;
+- API-native scheduling and reporting.
 
-## Production ownership
+Do not mix direct API implementation into the first signed-delivery task unless the user approves a scope change.
 
-Customer Production must use customer-owned Lark Base/App, Cloudflare/D1/Queues, Google project/OAuth credentials and YouTube assets. DEV identifiers and credentials must never be copied into a Production profile or release ZIP.
+## Other channel order after Google Ads delivery
+
+1. Facebook Organic connector.
+2. Instagram Organic connector and token lifecycle monitoring.
+3. Meta Ads connector.
+4. TikTok Ads access and connector track.
+5. WooCommerce.
+6. Chatwoot.
+7. Multi-channel AI summary, insight and notification.
+8. Channel-by-channel customer-real UAT.
+9. Customer-owned Production cutover.
+
+## Permanent restrictions
+
+- Do not rerun Lark schema, Formula or managed Google View Apply unless a verified drift is found.
+- Do not infer Filter/Sort/Hidden behavior for the 55 legacy specialized Views from names.
+- Do not enable Google Ads delivery or schedule before signed-delivery UAT.
+- Do not store secrets or customer identifiers in Source or documentation.
+- Do not deploy Production resources under the developer's ownership.
