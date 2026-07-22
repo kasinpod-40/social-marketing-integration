@@ -103,7 +103,7 @@ MKT_CUSTOMER_PROFILE=integration_workspace
 
 The same Worker, D1, Queue, DLQ, secret store, Lark Base and table IDs are used while the full system is assembled. Source ownership is defined per Connector:
 
-- TikTok, Facebook, Instagram and YouTube may use temporary developer-owned sources;
+- TikTok and Google Ads use Chemistry K customer sources; Facebook, Instagram and YouTube may still use temporary developer-owned sources;
 - Google Ads, WooCommerce and Chatwoot use customer-owned sources when access exists;
 - the profile does not change when a source is replaced;
 - temporary rows are removed by exact platform/account/source scope before customer data is backfilled.
