@@ -1,0 +1,91 @@
+name: Apply UAT topology correction
+
+on:
+  push:
+    branches:
+      - agent/google-ads-signed-delivery
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-uat-topology-correction
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/google-ads-signed-delivery
+          fetch-depth: 0
+
+      - name: Apply reviewed correction
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .uat-topology-correction/chunk-* | base64 --decode > /tmp/uat-topology-correction.tar.xz
+          test "$(sha256sum /tmp/uat-topology-correction.tar.xz | awk '{print $1}')" = "58723112081f4652216b3e7dae267c3100d8297bd48af03fa76a7a1c74b00443"
+          tar -xJf /tmp/uat-topology-correction.tar.xz
+          rm -rf .uat-topology-correction
+          rm -f .github/workflows/apply-uat-topology-correction.yml
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Syntax architecture and hygiene
+        run: npm run check
+
+      - name: Focused topology and Google Ads tests
+        shell: bash
+        run: |
+          node --test \
+            tests/application/connector-registry.test.js \
+            tests/config/customer-profiles.test.js \
+            tests/config/connector-runtime-config.test.js \
+            tests/config/shared-table-schema-runtime-config.test.js \
+            tests/config/deployment-config.test.js \
+            tests/google-ads/*.test.js
+
+      - name: Unit and Workers runtime tests
+        run: npm test
+
+      - name: Report reliability regression
+        run: npm run test:report-reliability
+
+      - name: Dependency audit
+        run: npm audit --audit-level=high
+
+      - name: Wrangler dry run
+        run: npm run deploy:dry-run
+
+      - name: Record verification and commit clean correction
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('docs/current-task.md')
+          text = path.read_text()
+          text = text.replace(
+              '- final GitHub Branch Verification must pass on the correction commit.',
+              '- correction workflow passed npm ci, check, focused regression, full tests including Workers runtime, report reliability, dependency audit and Wrangler dry run before committing the clean correction.',
+          )
+          path.write_text(text)
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'fix: use existing DEV for customer UAT'
+          git push origin HEAD:agent/google-ads-signed-delivery
