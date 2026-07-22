@@ -179,7 +179,7 @@ Manager Script MVP does not wait for direct API approval.
 
 Remaining:
 
-- isolated signed PREVIEW against UAT Worker
+- signed PREVIEW against the existing DEV Worker with customer data
 - one-shot LIVE Lark reconciliation and zero-duplicate rerun
 - controlled retry/lock/DLQ/redrive/expiry customer-real evidence
 - schedule approval and customer-owned Production
@@ -244,7 +244,7 @@ Remaining:
 
 Completed:
 
-- isolated `uat_chemistry_k` environment/profile contract
+- `uat_chemistry_k` logical profile on the existing `development` environment
 - customer-owned source identity rule
 - Canonical identity continuity into Production
 - schedule/connector disabled-by-default rule
@@ -252,7 +252,7 @@ Completed:
 
 Remaining:
 
-- isolated UAT Cloudflare/D1/Queue/Lark setup
+- reuse of existing DEV Cloudflare/D1/Queue/Lark resources for customer-real UAT
 - signed Google Ads delivery UAT
 - Facebook/Instagram/Meta Ads connector UAT
 - retention/cleanup evidence
@@ -312,14 +312,14 @@ This validates missing raw identity, not every supporting field. Comprehensive d
 5. Implement Meta Ads and TikTok Ads tracks.
 6. Implement WooCommerce and Chatwoot.
 7. Complete multi-channel AI summary/notification.
-8. Run isolated `uat_chemistry_k` channel by channel.
+8. Run Customer-real UAT channel by channel on existing DEV with profile `uat_chemistry_k`.
 9. Build customer-owned Production and cut over.
 
 ## Permanent safety status
 
 - Production disabled
 - new connector/schedule flags disabled by default
-- DEV/UAT/Production isolated
+- Developer-test DEV and Customer-real UAT share existing DEV resources through logical profiles; Production isolated
 - customer-real UAT uses customer-owned source data
 - Production resources customer-owned
 - secrets excluded from Source/Logs/Release

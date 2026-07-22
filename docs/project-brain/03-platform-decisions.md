@@ -71,5 +71,5 @@ Every custom connector must use:
 - partial-write and retry classification
 - reconciliation and retention
 - secret/identity redaction
-- DEV/UAT/Production isolation
+- shared-DEV logical profile safety and Production isolation
 - schedule disabled by default

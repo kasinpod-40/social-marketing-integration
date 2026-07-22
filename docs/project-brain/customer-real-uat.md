@@ -2,121 +2,80 @@
 
 ## Purpose
 
-Customer-real UAT uses real customer-owned accounts and customer data to validate production-scale behavior before customer-owned Production infrastructure is ready. It is not sample, sandbox or demo data.
+Customer-real UAT uses real Chemistry K source accounts and customer data to validate production behavior before customer-owned Production infrastructure is ready. It is not sample, sandbox or demo data.
+
+**Locked owner decision:** Customer-real UAT is performed on the existing developer DEV infrastructure. It is a logical data/profile switch, not a third deployment environment.
 
 ## Ownership matrix
 
-| Layer | DEV | Customer-real UAT | Production |
+| Layer | Developer-test DEV | Customer-real UAT on DEV | Production |
 | --- | --- | --- | --- |
 | Source accounts and data | Developer | Customer | Customer |
-| Lark Base | Developer | Developer, temporary | Customer |
-| Cloudflare Worker/D1/Queue/DLQ | Developer | Developer, isolated | Customer |
+| Lark Base | Existing developer DEV Base | Same existing developer DEV Base | Customer |
+| Cloudflare Worker/D1/Queue/DLQ | Existing developer DEV resources | Same existing developer DEV resources | Customer |
+| `MKT_ENV` | `development` | `development` | `production` |
 | Runtime profile | `dev_ft_pumkin` | `uat_chemistry_k` | `chemistry_k` |
 | Canonical customer/account identity | DEV-specific | `chemistry_k` | `chemistry_k` |
 
-The temporary UAT infrastructure does not transfer ownership of connected accounts or data away from the customer.
+No UAT Worker, D1, Queue, DLQ, Lark Base or secret store is created or renamed merely for UAT. The only intended operational change is the authorized source account/data and the logical runtime profile used to preserve customer identity.
 
 ## Identity and stable-key contract
 
-- `profileKey` identifies an environment configuration and may differ between UAT and Production.
-- `customerKey` and connector `accountKey` identify business data and must remain `chemistry_k` across UAT and Production.
+- `MKT_ENV=development` for both developer-test DEV and Customer-real UAT.
+- `profileKey=uat_chemistry_k` identifies customer-real execution on the existing DEV resources.
+- `customerKey` and connector `accountKey` remain `chemistry_k` across UAT and Production.
 - Never prefix Canonical business identity with `uat_`.
-- `accountKey` is required even while a connector is disabled.
-- A live source identity such as TikTok handle may remain absent while disabled, but enabling the connector without it must fail closed.
-- Live identities must come from approved Environment configuration after customer authorization and exact identity verification.
+- Live identities must come from approved Environment configuration or the locked connector contract after customer authorization and exact identity verification.
+- Switching back to developer-test data requires restoring `MKT_CUSTOMER_PROFILE=dev_ft_pumkin` and the corresponding source authorization/config; do not mix source identities in one run.
 
-## Isolation contract
+## Shared-DEV safety boundary
 
-DEV, UAT and Production must not share:
+Because UAT reuses the existing DEV resources:
 
-- Lark Base or destination tables
-- Worker deployment/environment
-- D1 database
-- Queue or DLQ
-- authentication secrets
-- checkpoints, resumable work, generation fences or locks
-- sync runs, alerts, dead letters or mirror outbox
-- business schedule flags
-
-Recommended non-secret UAT names:
-
-```text
-profile: uat_chemistry_k
-worker: social-mkt-sync-worker-uat-chemistry-k
-d1: social-mkt-state-uat-chemistry-k
-queue: social-mkt-sync-jobs-uat-chemistry-k
-dlq: social-mkt-sync-dlq-uat-chemistry-k
-```
+- do not run developer-test and customer-real source executions for the same connector concurrently;
+- record the active profile, source account, checkpoint boundary and operator before each manual UAT run;
+- take the existing DEV D1 backup before applying a new approved migration;
+- preserve stable-key and customer/account identity so customer rows cannot collide with developer-test rows;
+- keep connector and business schedule flags disabled by default;
+- use manual Preview/one-shot execution until UAT acceptance;
+- do not rerun Lark Formula, View or schema Apply when the existing DEV Base is already complete;
+- secrets remain in the existing DEV secret store and must not be copied into Git, Lark, logs or documents.
 
 ## Authorization and access
 
-- The customer or an authorized customer administrator signs in and authorizes the source account.
-- The customer completes authentication on the customer's device or session.
+- The customer or an authorized customer administrator authorizes the intended source account.
+- The customer completes authentication on the customer's device/session when required.
 - The developer does not collect customer login credentials.
-- UAT access is least-privilege and limited to people involved in delivery and acceptance.
-- Customer data is not reused for another customer or a public demo without explicit authorization.
+- Access is least-privilege and limited to people involved in delivery and acceptance.
+- Customer data is not reused for another customer or public demo without explicit authorization.
 
 ## Default safety state
 
-- Every UAT connector is disabled by default.
-- Every UAT business schedule is disabled until its channel gate passes.
-- Redrive is disabled by default.
+- Every customer-real connector is disabled by default until its identity/source-contract gate passes.
+- Every business schedule remains disabled during UAT unless the user separately approves activation after manual idempotency/reconciliation evidence.
+- Redrive remains disabled by default except during an approved controlled incident/UAT step.
 - Production remains disabled.
-- Live identities, Table IDs and authentication secrets stay outside Source.
-- Migration, deployment and write actions require a separate approved task and guarded runbook.
-- A bounded system-recovery job may be configured only with the isolated UAT runtime. It must not write customer business data when no durable recovery work exists.
+- Migration, deployment and write actions require the approved Current Task and guarded runbook.
 
-## TikTok-first UAT gate
+## Customer-real UAT gate
 
-The first customer-real channel is TikTok through Lark Native Integration.
+1. Confirm customer authorization and exact source account identity.
+2. Confirm the existing DEV Base/schema is the approved target and no schema work is reopened.
+3. Switch only the logical runtime profile/source configuration required for customer data.
+4. Apply only the approved migration to the existing DEV D1 after backup.
+5. Deploy the approved code to the existing DEV Worker(s) with the connector flag still disabled by default.
+6. Run read-only `DRY_RUN`/preflight.
+7. Run signed `PREVIEW` with zero Queue/Lark business writes.
+8. Run manual one-shot `LIVE`, then return to `DRY_RUN`/disabled state immediately.
+9. Verify idempotency, reconciliation, retry, lock, DLQ/redrive, alerts and zero duplicate stable keys.
+10. Keep Production blocked until customer-owned Production resources and cutover gates are approved.
 
-### Gate 1 — Customer authorization
+## Data retention and Production cutover
 
-The customer authorizes the intended TikTok account without transferring login access to the developer.
-
-### Gate 2 — Read-only identity preflight
-
-Before destination writes, confirm:
-
-- expected customer/account identity
-- actual connected handle/account identity
-- exact match or an explicitly approved identity mapping
-
-Mismatch must fail closed.
-
-### Gate 3 — Raw source-contract inspection
-
-Inspect without destination writes:
-
-- table and field contract
-- total rows and unique video IDs
-- duplicate IDs
-- oldest and newest dates
-- required-field gaps
-- null versus zero semantics
-- pagination and refresh behavior
-- realistic record volume
-
-### Gate 4 — Isolated UAT runtime preparation
-
-Only after the read-only gate passes:
-
-- create isolated UAT Cloudflare resources
-- take backups before remote migrations
-- apply approved migrations
-- deploy with connectors and business schedules disabled
-- allow only the bounded recovery route required by the approved runtime contract
-- run validation and manual sync with explicit caps
-- rerun for idempotency
-- verify reconciliation, retry, lock, DLQ, alerts and reliability mirror
-- enable business schedules only after manual UAT acceptance
-
-## Data retention and cutover
-
-Before the first destination write, record customer authorization, access scope, retention period, export procedure and deletion procedure.
+Before the first customer-data destination write, record customer authorization, access scope, retention/export/deletion procedure and the existing DEV data cleanup boundary.
 
 Production cutover must use customer-owned Lark and Cloudflare resources. Code and Data Model remain the same; environment bindings, non-secret mappings and secrets change. A later cutover task decides whether Production backfills from source or migrates approved UAT data based on historical API limits and reconciliation evidence.
 
 ## Current authorization boundary
 
-This document authorizes only Source/profile foundation work and automated tests. It does not authorize a live TikTok connection, customer-data read, Lark mutation, Cloudflare resource creation, remote migration, deployment, Queue message or Production mutation.
+This contract permits Customer-real UAT to use the existing DEV resources. It does not itself authorize Production rollout, schedule activation, unreviewed migration, Lark schema mutation or Google Ads campaign/ad mutation.

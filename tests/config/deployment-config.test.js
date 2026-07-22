@@ -91,7 +91,7 @@ test('sync deployment example enables persisted Workers logs and traces for DEV 
 });
 
 
-test('Google Ads signed delivery config declares isolated API state and no business schedule', async () => {
+test('Google Ads signed delivery config declares API state bindings and no business schedule', async () => {
   const syncConfigText = await readSyncWranglerExample();
   const apiConfigText = await readFile(new URL('../../wrangler.example.jsonc', import.meta.url), 'utf8');
   assert.match(apiConfigText, /"binding"\s*:\s*"MKT_STATE_DB"/u);

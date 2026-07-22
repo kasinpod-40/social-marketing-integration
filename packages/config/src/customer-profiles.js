@@ -6,7 +6,7 @@ import { permanentError } from '../../shared/src/errors/runtime-error.js';
  *
  * หลักถาวรของโปรเจกต์:
  * - DEV ใช้ Lark Base, Cloudflare และบัญชีทดสอบของผู้พัฒนา
- * - UAT ใช้ข้อมูล/บัญชีต้นทางจริงของลูกค้า แต่ Lark Base และ Cloudflare เป็นของผู้พัฒนาชั่วคราว
+ * - Customer-real UAT ใช้ DEV infrastructure เดิมของผู้พัฒนา โดยเปลี่ยนเฉพาะบัญชีต้นทาง/ข้อมูลเป็นของลูกค้า
  * - Production ใช้ทรัพยากรทุกส่วนที่ลูกค้าเป็นเจ้าของและเชิญผู้พัฒนาเข้าไปดูแล
  * - เก็บเฉพาะชื่อ, Stable key, Mapping และค่าเริ่มต้นที่ไม่เป็นความลับไว้ในโค้ด
  * - Token, Secret, API key, Password และ Platform account ID จริงต้องมาจาก Environment/Secret Manager
@@ -67,7 +67,7 @@ const CUSTOMER_PROFILES = Object.freeze({
 
   uat_chemistry_k: freezeProfile({
     profileKey: 'uat_chemistry_k',
-    environment: 'uat',
+    environment: 'development',
     // customerKey/accountKey ต้องตรง Production เพื่อให้ Canonical identity คงเดิมตอน Cutover
     customerKey: 'chemistry_k',
     customerName: 'Chemistry K — Customer-real UAT',
@@ -170,11 +170,12 @@ const CUSTOMER_PROFILES = Object.freeze({
   }),
 });
 
-const SUPPORTED_ENVIRONMENTS = Object.freeze(['development', 'uat', 'production']);
+const SUPPORTED_ENVIRONMENTS = Object.freeze(['development', 'production']);
 
 /**
  * โหลด Runtime Profile จาก Environment โดยตรวจคู่ environment/profile และ Feature flags
- * เพื่อป้องกันทรัพยากร DEV/UAT/Production ปะปนกันและป้องกัน Connector ที่ยังไม่พร้อมถูกเปิดใช้
+ * โดย DEV test และ Customer-real UAT ใช้ development environment เดียวกัน แต่แยก logical profile/identity
+ * เพื่อป้องกัน Connector ที่ยังไม่พร้อมถูกเปิดใช้และรักษา Stable key ของลูกค้า
  */
 export function loadCustomerRuntimeConfig(env) {
   const source = env ?? {};

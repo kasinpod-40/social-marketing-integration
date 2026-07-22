@@ -4,7 +4,7 @@
 
 ## Approval
 
-The user approved this Data Model on `2026-07-21` for guarded application to the isolated customer-real UAT Lark Base.
+The user approved this Data Model on `2026-07-21` for guarded application to the existing developer DEV Lark Base using customer-real data.
 
 Approval permits Lark schema work only. Connector implementation, live source calls, business-data writes, Cloudflare rollout, advertisement creation and spend remain blocked.
 

@@ -58,7 +58,7 @@
 - Performance, pagination, batching, bounded concurrency และ memory usage
 - Security, permissions, secrets, rate limits, retries, timeout และ partial failure
 - Stable keys, idempotency, reconciliation, sync log และ observability
-- ผลกระทบต่อ DEV/UAT/Production profiles และทุก Connector/Job ที่ใช้ Contract กลาง
+- ผลกระทบต่อ Developer-test DEV profile, Customer-real UAT logical profile, Production profile และทุก Connector/Job ที่ใช้ Contract กลาง
 
 ห้ามเพิ่ม Utility หรือ Layer ใหม่เมื่อขยายของเดิมได้อย่างสะอาดกว่า
 
@@ -77,12 +77,13 @@
 
 ## 6. Environment, Ownership และ Secret
 
-- DEV ปัจจุบันใช้ profile `dev_ft_pumkin` และทรัพยากร/ข้อมูลของผู้พัฒนา
-- Customer-real UAT ใช้ profile `uat_chemistry_k`: บัญชีต้นทางและข้อมูลเป็นของลูกค้า แต่ Lark Base และ Cloudflare UAT เป็นของผู้พัฒนาชั่วคราวและต้องแยกจาก DEV
+- DEV infrastructure ปัจจุบันเป็นของผู้พัฒนาและใช้ร่วมกันสอง logical profiles: `dev_ft_pumkin` สำหรับข้อมูลทดสอบของผู้พัฒนา และ `uat_chemistry_k` สำหรับ Customer-real UAT
+- Customer-real UAT **คือ DEV เดิม**: ใช้ Worker, D1, Queue, DLQ, Secrets store, Checkpoint, Lock, Alert, Schedule config และ Lark Base ชุดเดิม โดยเปลี่ยนเฉพาะบัญชีต้นทาง/ข้อมูลเป็นของลูกค้า Chemistry K
+- ห้ามสร้างหรือบังคับแยก UAT infrastructure เพิ่ม เว้นแต่ผู้ใช้อนุมัติเป็นงานใหม่ภายหลัง
 - Production ใช้ profile `chemistry_k` และต้องใช้ Lark Base, Cloudflare, App credentials และ Platform assets ที่ลูกค้าเป็นเจ้าของ
-- UAT เป็นข้อมูลจริง ไม่ใช่ Sandbox/Demo; ต้องใช้ Security, Least privilege, Audit, Retention และ Cleanup ระดับ Production
-- `profileKey` อาจต่างกันระหว่าง UAT/Production แต่ `customerKey` และ Connector `accountKey` ต้องคงเดิมเพื่อรักษา Canonical stable keys
-- DEV, UAT และ Production ต้องแยก Worker, D1, Queue, DLQ, Secrets, Checkpoint, Lock, Alert, Schedule และ Lark Base
+- UAT เป็นข้อมูลจริง ไม่ใช่ Sandbox/Demo; แม้อยู่บน DEV เดิมก็ต้องใช้ Security, Least privilege, Audit, Retention และ Cleanup ระดับ Production
+- `profileKey` แยก logical execution mode แต่ `customerKey` และ Connector `accountKey` ต้องเป็น `chemistry_k` ทั้ง UAT/Production เพื่อรักษา Canonical stable keys
+- ห้ามรัน Developer-test source และ Customer-real source ของ Connector เดียวกันพร้อมกันโดยไม่มี Runbook/Checkpoint boundary ที่ชัดเจน
 - UAT Connector ทุกช่องทางและ Business Schedule ทุกตัวต้องปิดโดย Default จนกว่า Identity/Source-contract preflight ของช่องทางนั้นจะผ่าน; System recovery jobs ที่ไม่เขียน Business data ให้ยึด Runtime reliability contract แยกต่างหาก
 - เก็บเฉพาะ non-secret IDs/mappings ใน Source
 - Token, API key, password, app secret, OTP, session cookie และ credential ต้องอยู่ใน Environment/Secret store เท่านั้น

@@ -23,12 +23,12 @@ No Live Lark Apply, Google Ads mutation, Queue message, D1 migration, schedule c
 
 ## Immediate next gate
 
-The signed-delivery Source implementation is complete on Draft PR `#17`. Run the isolated UAT in `docs/google-ads-signed-delivery-uat.md`.
+The signed-delivery Source implementation is complete on Draft PR `#17`. Run Customer-real UAT on the existing DEV resources using `docs/google-ads-signed-delivery-uat.md`.
 
 Required order:
 
 1. final branch CI and security scan;
-2. isolated UAT D1 migration and Worker deployment;
+2. existing DEV D1 migration and Worker deployment;
 3. Manager Script `DRY_RUN`;
 4. signed zero-write `PREVIEW`;
 5. negative signature/tamper/header/timestamp/replay checks;
@@ -106,7 +106,7 @@ Do not overload the current stable-key Views without approval.
 5. WooCommerce.
 6. Chatwoot.
 7. Multi-channel AI summary/insight/notification.
-8. Channel-by-channel `uat_chemistry_k`.
+8. Channel-by-channel Customer-real UAT on DEV using profile `uat_chemistry_k`.
 9. Customer-owned Production cutover.
 
 ## Permanent release blockers

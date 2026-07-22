@@ -7,7 +7,7 @@ const DELIVERY_ID = '123e4567-e89b-42d3-a456-426614174000';
 
 function googleEnv() {
   const env = {
-    MKT_ENV: 'uat',
+    MKT_ENV: 'development',
     MKT_CUSTOMER_PROFILE: 'uat_chemistry_k',
     MKT_CONNECTOR_GOOGLE_ADS_ENABLED: 'true',
     MKT_SYNC_LOCK_LEASE_MS: '600000',
@@ -33,7 +33,7 @@ test('active Google Ads job routes through the shared distributed lock and compl
     env: googleEnv(),
     getRuntimeConfig() {
       return {
-        profileKey: 'uat_chemistry_k', environment: 'uat',
+        profileKey: 'uat_chemistry_k', environment: 'development',
         connectors: { google_ads: { enabled: true, accountKey: 'chemistry_k' } },
       };
     },

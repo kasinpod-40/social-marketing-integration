@@ -19,7 +19,7 @@ test('allows only developer-owned DEV for Shared-table schema operations', () =>
   );
   assert.throws(
     () => assertSharedTableSchemaDevTarget({
-      MKT_ENV: 'uat',
+      MKT_ENV: 'development',
       MKT_CUSTOMER_PROFILE: 'uat_chemistry_k',
     }),
     (error) => error.code === 'SHARED_TABLE_SCHEMA_DEV_TARGET_REQUIRED',

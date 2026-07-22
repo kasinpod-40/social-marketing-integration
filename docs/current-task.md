@@ -2,7 +2,7 @@
 
 ## Status
 
-- **Task status:** `implemented_ready_for_isolated_uat`
+- **Task status:** `implemented_ready_for_customer_data_uat_on_dev`
 - **Approval source:** explicit user instruction on `2026-07-22` to proceed with `Google Ads Manager Script signed delivery connector`
 - **Repository branch:** `agent/google-ads-signed-delivery`
 - **Draft PR:** `#17`
@@ -25,11 +25,19 @@ The exact transport and runtime contract is:
 
 `docs/google-ads-signed-delivery-contract-v1.md`
 
-The step-by-step isolated UAT and rollback procedure is:
+The step-by-step Customer-real UAT on the existing DEV resources and rollback procedure is:
 
 `docs/google-ads-signed-delivery-uat.md`
 
 Header names, HMAC algorithm/signing input, envelope fields, limits, timestamp/replay window, idempotency rule and exact allowlist are locked by that document and the implementation constants.
+
+### Customer-real UAT topology lock
+
+- UAT is the current developer DEV environment, not a third environment.
+- Use `MKT_ENV=development` with logical profile `uat_chemistry_k`.
+- Reuse the existing DEV Worker, D1, Queue, DLQ, secret store and Lark Base/table IDs.
+- Change only the authorized source account/data and logical customer profile; do not create or rename UAT resources.
+- Restore the connector-disabled/`DRY_RUN` state after the manual UAT window.
 
 ## In scope
 
@@ -44,7 +52,7 @@ Header names, HMAC algorithm/signing input, envelope fields, limits, timestamp/r
 - shared retry/backoff, distributed lock, reliability, DLQ/redrive and reconciliation;
 - six Google RAW plus six already-applied Canonical destination tables;
 - exact Chemistry K allowlist;
-- tests and isolated UAT instructions;
+- tests and Customer-real UAT instructions for the existing DEV resources;
 - feature flag disabled by default and Production gate blocked.
 
 ## Out of scope
@@ -118,7 +126,7 @@ Header names, HMAC algorithm/signing input, envelope fields, limits, timestamp/r
 - [x] bounded payload retention and expiry
 - [x] Production gate and schedule-disabled config
 - [x] Manager Script mutation/schedule safety scan
-- [ ] isolated signed PREVIEW against UAT Worker
+- [ ] signed PREVIEW against the existing DEV API Worker using Chemistry K data
 - [ ] one-shot LIVE UAT and exact Google Ads UI reconciliation
 - [ ] controlled live retry/lock/DLQ/redrive UAT
 - [ ] customer-real zero-duplicate rerun
@@ -131,17 +139,26 @@ Local source-snapshot verification after the final code changes:
 
 - focused Google Ads signed-delivery tests: `43/43 PASS`;
 - architecture/hygiene: `154 source files / 371 local dependencies / 0 cycles`;
-- Node unit/integration tests: `586/586 PASS`;
+- Node unit/integration tests: `587/587 PASS`;
 - report reliability: `70/70 PASS`;
 - `git diff --check`: PASS;
 - secret/build-artifact/repository hygiene scan: PASS.
 
 The final Draft PR implementation tree passed the repository Branch Verification workflow: `npm ci`, `npm run check`, staged TikTok regression, `npm test` including Workers runtime, report reliability, dependency audit and Wrangler dry run all completed successfully.
 
+Customer-real UAT topology correction verification:
+
+- `uat_chemistry_k` now pairs with `MKT_ENV=development`;
+- standalone `MKT_ENV=uat` is rejected;
+- focused profile/connector/Google Ads regression: `44/44 PASS`;
+- Node unit/integration after correction: `587/587 PASS`;
+- architecture/hygiene: `154 source files / 371 local dependencies / 0 cycles`;
+- correction workflow passed npm ci, check, focused regression, full tests including Workers runtime, report reliability, dependency audit and Wrangler dry run before committing the clean correction.
+
 ## Remaining risks
 
-- External signed PREVIEW/LIVE has not been executed from Google Ads Scripts to an isolated UAT deployment.
-- Exact live Lark Table IDs and UAT secrets must be configured through environment/secret stores.
+- External signed PREVIEW/LIVE has not been executed from Google Ads Scripts against the existing DEV resources with Chemistry K data.
+- Existing DEV Lark Table IDs remain unchanged; signing secrets must be configured through the existing DEV secret store.
 - Customer-real dataset volume/retry/DLQ evidence is still required before Production.
 - The Manager Script intentionally keeps unsupported Campaign dates `null`; a future Google runtime change needs a separately verified contract revision before querying them.
 

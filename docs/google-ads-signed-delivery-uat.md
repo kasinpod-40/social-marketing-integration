@@ -1,8 +1,10 @@
-# Google Ads Signed Delivery — Isolated UAT Runbook
+# Google Ads Signed Delivery — Customer-real UAT on Existing DEV
 
 ## Purpose
 
-Validate the signed Manager Script → API Worker → D1 → Queue → Sync Worker → Lark flow for Chemistry K while keeping Google Ads read-only and keeping every business schedule disabled.
+Validate the signed Manager Script → API Worker → D1 → Queue → Sync Worker → Lark flow for Chemistry K while keeping Google Ads read-only and every business schedule disabled.
+
+**Topology lock:** UAT uses the current developer DEV Worker, D1, Queue, DLQ, secret store and Lark Base. Do not create, rename or separate UAT infrastructure. Change only the logical runtime profile/source account/data required for Chemistry K.
 
 This runbook does not authorize Production rollout.
 
@@ -10,27 +12,28 @@ This runbook does not authorize Production rollout.
 
 - Google Ads manager `946-357-0541` can select advertiser `566-233-2033`.
 - The exact read-only Manager Script source is reviewed against `scripts/google-ads-manager-script-signed-delivery.js`.
-- Isolated `uat_chemistry_k` Worker, D1, Queue, DLQ and Lark resources exist and are not shared with DEV or Production.
-- Lark schema Apply is already complete. Do not rerun Formula, View or schema work.
+- Existing DEV API Worker, Sync Worker, D1, Queue, DLQ and `Social MKT Data Hub` Base are the approved UAT target.
+- Lark schema Apply is complete. Do not rerun Formula, View or schema work.
 - No Google Ads schedule exists.
-- UAT operators can inspect D1/Queue/DLQ/Lark evidence without exposing credentials or raw signed bodies.
+- Existing developer-test execution for Google Ads is stopped before switching to Chemistry K customer data.
+- Operators can inspect D1/Queue/DLQ/Lark evidence without exposing credentials or raw signed bodies.
 
 ## Configuration names
 
-### API Worker
+### Existing DEV API Worker
 
-Non-secret variables/bindings:
+Keep the existing DEV bindings/resources. Set only the logical profile and connector state needed for the UAT window:
 
 ```text
-MKT_ENV=uat
+MKT_ENV=development
 MKT_CUSTOMER_PROFILE=uat_chemistry_k
 MKT_CONNECTOR_GOOGLE_ADS_ENABLED=true
-MKT_GOOGLE_ADS_SIGNING_KEY_ID=<UAT key id>
-MKT_STATE_DB=<isolated UAT D1 binding>
-MKT_SYNC_QUEUE=<isolated UAT Queue producer binding>
+MKT_GOOGLE_ADS_SIGNING_KEY_ID=<DEV/UAT key id>
+MKT_STATE_DB=<existing DEV D1 binding>
+MKT_SYNC_QUEUE=<existing DEV Queue producer binding>
 ```
 
-Secrets:
+Secrets in the existing DEV secret store:
 
 ```text
 MKT_GOOGLE_ADS_SIGNING_SECRET
@@ -43,16 +46,16 @@ Optional non-secret rotation variable:
 MKT_GOOGLE_ADS_PREVIOUS_SIGNING_KEY_ID
 ```
 
-### Sync Worker
+### Existing DEV Sync Worker
 
 ```text
-MKT_ENV=uat
+MKT_ENV=development
 MKT_CUSTOMER_PROFILE=uat_chemistry_k
 MKT_CONNECTOR_GOOGLE_ADS_ENABLED=true
-MKT_STATE_DB=<same isolated UAT D1>
-MKT_SYNC_QUEUE=<isolated UAT Queue/DLQ bindings>
-LARK_APP_ID=<UAT app identity>
-LARK_BASE_APP_TOKEN=<isolated UAT Base>
+MKT_STATE_DB=<same existing DEV D1>
+MKT_SYNC_QUEUE=<same existing DEV Queue/DLQ bindings>
+LARK_APP_ID=<existing DEV app identity>
+LARK_BASE_APP_TOKEN=<existing DEV Base>
 LARK_TABLE_RAW_GOOGLE_ADS_ACCOUNTS
 LARK_TABLE_RAW_GOOGLE_ADS_CAMPAIGNS
 LARK_TABLE_RAW_GOOGLE_ADS_AD_GROUPS
@@ -69,7 +72,7 @@ LARK_TABLE_MKT_SYNC_LOG
 LARK_TABLE_MKT_SYSTEM_ALERTS
 ```
 
-Lark credentials are secrets and must use the environment secret store. Never paste values into Git, Lark records, logs or this document.
+Do not change existing table IDs merely for UAT. Lark credentials are secrets and must remain in the environment secret store.
 
 ### Manager Script Properties
 
@@ -79,21 +82,23 @@ MKT_GOOGLE_ADS_SIGNING_KEY_ID
 MKT_GOOGLE_ADS_SIGNING_SECRET
 ```
 
-The URL must be exact HTTPS with no query string and end at `/v1/google-ads/deliveries`.
+The URL is the existing DEV API Worker URL and must be exact HTTPS with no query string, ending at `/v1/google-ads/deliveries`.
 
-## Step 1 — Source and deployment preflight
+## Step 1 — Existing DEV preflight
 
 1. Confirm branch checks pass: `npm ci`, `npm run check`, `npm test`, `npm run test:report-reliability`, `npm audit --audit-level=high`, `npm run deploy:dry-run`.
 2. Confirm `scripts/google-ads-manager-script-signed-delivery.js` still has `EXECUTION_MODE: 'DRY_RUN'`.
 3. Search the Script for mutation/schedule APIs; expected result is none.
-4. Confirm `wrangler` examples contain no Google Ads schedule flag or cron.
-5. Apply `migrations/0009_google_ads_signed_delivery.sql` to the isolated UAT D1 only.
-6. Verify both tables and indexes exist:
-   - `google_ads_delivery_nonces`;
-   - `google_ads_deliveries`.
-7. Set the UAT secrets through the secret store. Do not print or read them back into logs.
-8. Deploy API and Sync Workers to isolated UAT with the Google Ads connector flag enabled only in UAT.
-9. Verify no Production deployment and no Production traffic change occurred.
+4. Confirm no Google Ads schedule flag or cron exists.
+5. Record the current DEV Worker versions, D1 database, Queue/DLQ names, Base token identity and active profile without printing secrets.
+6. Stop any developer-test Google Ads execution and confirm the connector flag is currently disabled.
+7. Back up the existing DEV D1 before migration.
+8. Apply `migrations/0009_google_ads_signed_delivery.sql` to the existing DEV D1.
+9. Verify `google_ads_delivery_nonces` and `google_ads_deliveries` plus their indexes exist.
+10. Set the signing secret in the existing DEV secret store.
+11. Set `MKT_ENV=development`, `MKT_CUSTOMER_PROFILE=uat_chemistry_k` and enable Google Ads only for the manual UAT window.
+12. Deploy the approved API/Sync Worker code to the existing DEV Workers.
+13. Confirm Production and all unrelated connectors/schedules remain unchanged.
 
 ## Step 2 — Manager Script `DRY_RUN`
 
@@ -101,109 +106,89 @@ The URL must be exact HTTPS with no query string and end at `/v1/google-ads/deli
 2. Leave `EXECUTION_MODE` as `DRY_RUN`.
 3. Run Preview in Google Ads Scripts.
 4. Confirm exact account selection resolves only `566-233-2033`.
-5. Confirm output shows:
-   - schema `google_ads_signed_delivery_v1`;
-   - six dataset counts;
-   - `externalDelivery: false`;
-   - no raw payload or credential.
+5. Confirm output shows schema `google_ads_signed_delivery_v1`, six dataset counts and `externalDelivery: false` without raw payload or credential.
 6. Confirm Google Ads reports `No changes`.
-7. Confirm API Worker, D1, Queue, DLQ and Lark have no delivery activity from this run.
+7. Confirm API Worker, D1 delivery tables, Queue, DLQ and Lark have no delivery activity from this run.
 
 Stop immediately if account selection is missing, ambiguous or mismatched.
 
 ## Step 3 — Signed `PREVIEW`
 
-1. Set Script Properties with UAT URL/key ID/secret.
+1. Set Script Properties with the existing DEV URL/key ID/secret.
 2. Change only `EXECUTION_MODE` to `PREVIEW`.
 3. Run the Script manually once.
-4. Expected HTTP result: `200` with `status=preview_validated` and the six dataset counts.
-5. Verify D1 contains a terminal `preview_validated` audit row whose `payload_json` is `{}`.
+4. Expected HTTP result: `200`, `status=preview_validated`, with six dataset counts.
+5. Verify D1 contains a terminal `preview_validated` row whose `payload_json` is `{}`.
 6. Verify no Queue message, DLQ record or Lark business record write occurred.
-7. Confirm logs contain no signature, secret, nonce, raw body or customer display data beyond approved sanitized operational evidence.
+7. Confirm logs contain no signature, secret, nonce, raw body or unapproved customer display data.
 
 ## Step 4 — Negative security checks
 
-Run the automated focused suite against the exact UAT build. It must prove:
-
-- valid signature accepted;
-- invalid signature rejected;
-- tampered body/digest rejected;
-- missing header rejected;
-- duplicate header rejected;
-- query-string route rejected;
-- timestamp older/newer than 300 seconds rejected;
-- reused nonce rejected;
-- wrong MCC/customer/customerKey/accountKey/timezone rejected;
-- unknown schema field, count mismatch, duplicate row, unstable order and broken parent relation rejected.
+Run the automated focused suite against the exact DEV build. It must prove valid/invalid signature, tampering, missing/duplicate headers, query-string rejection, timestamp expiry, nonce replay, identity mismatch, unknown fields, count/order/duplicate/relation failures.
 
 Do not mutate the real Google Ads account to perform negative tests.
 
 ## Step 5 — Manual one-shot `LIVE`
 
-1. Confirm schedules remain absent/disabled.
-2. Capture pre-run row counts and stable-key duplicate counts for the 12 destination tables.
+1. Confirm every schedule remains absent/disabled.
+2. Capture pre-run row counts and stable-key duplicate counts for the 12 destination tables in the existing DEV Base.
 3. Change only `EXECUTION_MODE` to `LIVE`.
 4. Run the Script manually once.
-5. Restore `EXECUTION_MODE` to `DRY_RUN` immediately after the request is accepted.
+5. Restore `EXECUTION_MODE` to `DRY_RUN` immediately after acceptance.
 6. Verify API response is `202 queued` or an idempotent accepted state.
-7. Verify the Queue body contains only schema version, job type, delivery ID and requested timestamp.
+7. Verify Queue body contains only schema version, job type, delivery ID and requested timestamp.
 8. Verify D1 progresses through `queued`/`processing` to `completed`.
-9. Verify the shared reliability run acquires and releases its distributed lock.
-10. Verify the Sync Log/reliability mirror records success without exposing the raw payload or secret.
-11. Verify reconciliation for all 12 tables:
-    - expected equals created + updated + skipped;
-    - duplicate input rows equals zero;
-    - no partial write started before all 12 plans passed.
+9. Verify the shared reliability run acquires/releases its distributed lock.
+10. Verify Sync Log/reliability mirror records success without raw payload or secret.
+11. Verify all 12 plans succeeded before the first write and each result satisfies `created + updated + skipped = expected`, `duplicateInputRows = 0`.
 12. Verify Google Ads still reports no changes and no Campaign/Ad/budget/billing mutation.
 
 ## Step 6 — Idempotency and reconciliation
 
-1. Replay the exact saved LIVE body and delivery ID with a fresh timestamp/nonce/signature inside payload retention.
-2. Expected request-level result: idempotent accepted; no second Queue message for queued/processing/completed state.
+1. Replay the exact saved LIVE body/delivery ID with a fresh timestamp/nonce/signature inside retention.
+2. Expect an idempotent accepted result and no second Queue message for queued/processing/completed state.
 3. Run a fresh Script collection with a new delivery ID.
-4. Verify destination stable keys produce updates/skips rather than duplicate records.
+4. Verify destination stable keys produce updates/skips rather than duplicates.
 5. Recount duplicates in all 12 tables; expected zero.
-6. Compare exact date range and account timezone against Google Ads UI totals for spend, impressions, clicks and video views.
-7. Treat missing/unsupported values as `null`; verify explicit zero remains zero.
+6. Compare the exact date range/account timezone against Google Ads UI totals for spend, impressions, clicks and video views.
+7. Verify omitted/unsupported values remain `null` and explicit source zero remains `0`.
 
 ## Step 7 — Retry, lock, DLQ and redrive
 
-Use isolated UAT fault injection or test doubles; do not corrupt Production resources.
+Use controlled DEV fault injection or test doubles; do not corrupt Production or unrelated DEV connector state.
 
-1. Simulate transient D1/Lark/Queue failure and verify retry classification plus Queue backoff.
-2. Verify the same delivery resumes under the same stable identities and does not duplicate writes.
-3. Run two concurrent copies of one delivery and verify only one distributed lock holder writes.
+1. Simulate transient D1/Lark/Queue failure and verify retry classification/backoff.
+2. Verify the same delivery resumes without duplicate writes.
+3. Run two concurrent copies and verify only one distributed lock holder writes.
 4. Simulate a permanent schema/reconciliation failure.
 5. Verify delivery state becomes `failed_permanent` before DLQ persistence.
-6. Verify the bounded payload remains usable for investigation/redrive only inside the 7-day application window.
-7. Perform one controlled DLQ redrive within retention and confirm idempotent recovery or the same permanent rejection.
-8. Verify the first ingress/read after payload expiry redacts it and blocks redrive; no Google Ads cleanup schedule is added.
-9. Verify terminal audit rows become cleanup-eligible after 30 days and are removed on the next ingress sweep.
+6. Verify the payload remains usable only inside the seven-day window.
+7. Perform one controlled redrive and confirm idempotent recovery or the same permanent rejection.
+8. Verify post-expiry access redacts payload and blocks redrive.
+9. Verify terminal audit cleanup eligibility after 30 days remains activity-driven; no cleanup schedule is added.
 
-## Step 8 — UAT decision
+## Step 8 — Restore normal DEV safety state
 
-Pass only when all conditions are true:
+1. Set `MKT_CONNECTOR_GOOGLE_ADS_ENABLED=false` after the UAT evidence is captured.
+2. Keep the Manager Script at `DRY_RUN`.
+3. Keep `MKT_ENV=development` and restore `MKT_CUSTOMER_PROFILE=dev_ft_pumkin` only when returning to developer-test data.
+4. Do not run developer-test and Chemistry K Google Ads source modes concurrently.
+5. Do not remove customer UAT rows blindly; use stable-key/reconciliation evidence and the agreed retention procedure.
 
-- exact account selection passed;
-- signed PREVIEW passed with zero Queue/Lark business writes;
-- negative security/replay tests passed;
-- one-shot LIVE completed all 12 plans/writes/reconciliation;
-- reruns created zero duplicate stable keys;
-- retry/backoff, distributed lock, DLQ/redrive and payload expiry passed;
-- Google Ads mutations remained zero;
-- TikTok, Meta, YouTube and Core regression gates passed;
-- Schedule remained disabled;
-- no secret/raw signed payload leaked.
+## UAT decision
+
+Pass only when exact selection, signed PREVIEW, negative security/replay, one-shot LIVE, 12-table reconciliation, zero-duplicate rerun, retry/lock/DLQ/redrive, zero Google Ads mutation, cross-connector regression, schedule-disabled state and no secret/raw-body leakage all pass.
 
 Record evidence in `docs/current-task.md`. Do not mark Production ready from source tests alone.
 
 ## Rollback
 
-1. Set `MKT_CONNECTOR_GOOGLE_ADS_ENABLED=false` on both UAT Workers.
-2. Restore the Manager Script to `DRY_RUN` or stop invoking it. No schedule should exist to disable.
-3. Stop manual delivery calls and pause/drain the isolated UAT Queue as appropriate.
-4. Deploy the prior known-good Worker commit.
-5. Preserve D1 audit/DLQ evidence until investigation and retention complete.
-6. Do not reverse Lark schema, Formula or Views; this task did not change them.
-7. Treat any partial Lark rows as stable-key upserts. Reconcile by delivery evidence before any approved correction; do not bulk-delete blindly.
-8. After Queue/DLQ drain and retention, UAT-only delivery tables may be removed through a separately reviewed migration. Never drop Production state as an ad-hoc rollback.
+1. Set `MKT_CONNECTOR_GOOGLE_ADS_ENABLED=false` on the existing DEV API/Sync Workers.
+2. Restore the Manager Script to `DRY_RUN` or stop manual invocation.
+3. Stop manual delivery calls and pause/drain only the affected existing DEV Queue messages as appropriate.
+4. Deploy the prior known-good DEV Worker commit.
+5. Preserve D1/DLQ evidence through investigation/retention.
+6. Restore `MKT_CUSTOMER_PROFILE=dev_ft_pumkin` only when intentionally returning to developer-test source data.
+7. Do not reverse Lark schema, Formula or Views; this task did not change them.
+8. Reconcile partial rows by delivery/stable-key evidence; do not bulk-delete blindly.
+9. Removing delivery tables or customer UAT records requires a separately reviewed cleanup/migration task.

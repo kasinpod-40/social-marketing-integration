@@ -24,13 +24,13 @@ test('loads the developer-owned FT Pumkin profile with TikTok enabled only', () 
   assert.equal(config.tiktok, config.connectors.tiktok);
 });
 
-test('loads customer-real Chemistry K UAT with developer infrastructure and every connector disabled', () => {
+test('loads customer-real Chemistry K UAT on the existing development infrastructure with every connector disabled', () => {
   const config = loadCustomerRuntimeConfig({
-    MKT_ENV: 'uat',
+    MKT_ENV: 'development',
     MKT_CUSTOMER_PROFILE: 'uat_chemistry_k',
   });
 
-  assert.equal(config.environment, 'uat');
+  assert.equal(config.environment, 'development');
   assert.equal(config.profileKey, 'uat_chemistry_k');
   assert.equal(config.customerKey, 'chemistry_k');
   assert.equal(config.resourceOwner, 'developer');
@@ -66,7 +66,7 @@ test('loads the customer-owned Chemistry K production profile without enabling u
   assert.equal(config.connectors.facebook.displayLabel, 'Facebook - Chemistry K');
 });
 
-test('rejects development/UAT/production profile mismatches', () => {
+test('rejects development/production profile mismatches', () => {
   assert.throws(
     () => loadCustomerRuntimeConfig({ MKT_ENV: 'production', MKT_CUSTOMER_PROFILE: 'dev_ft_pumkin' }),
     /Invalid runtime pairing/,
@@ -76,8 +76,15 @@ test('rejects development/UAT/production profile mismatches', () => {
     /Invalid runtime pairing/,
   );
   assert.throws(
-    () => loadCustomerRuntimeConfig({ MKT_ENV: 'uat', MKT_CUSTOMER_PROFILE: 'chemistry_k' }),
+    () => loadCustomerRuntimeConfig({ MKT_ENV: 'development', MKT_CUSTOMER_PROFILE: 'chemistry_k' }),
     /Invalid runtime pairing/,
+  );
+});
+
+test('rejects the removed standalone UAT environment', () => {
+  assert.throws(
+    () => loadCustomerRuntimeConfig({ MKT_ENV: 'uat', MKT_CUSTOMER_PROFILE: 'uat_chemistry_k' }),
+    /MKT_ENV must be one of: development, production/,
   );
 });
 

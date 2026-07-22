@@ -4,7 +4,7 @@
 
 - Implementation baseline: `d4a531fbb4e05dad7ce2296859c97f571e23acf3` / PR `#13`
 - Documentation closeout: PR `#14`
-- Current task: `docs/current-task.md` — signed delivery implemented; isolated UAT pending
+- Current task: `docs/current-task.md` — signed delivery implemented; Customer-real UAT on existing DEV pending
 - Application package line: `0.11.0`
 - Contract versions: View `v0.13.5`, Formula `v0.13.6`, audit correction `v0.13.7`
 
@@ -59,7 +59,7 @@ The 55 specialized Views are not defective merely because their names imply Acti
 - Instagram Organic
 - Meta Ads
 
-### Implemented with isolated UAT pending
+### Implemented with Customer-real UAT on existing DEV pending
 
 - Google Ads signed delivery
 
@@ -102,7 +102,7 @@ Implemented in Source:
 
 Remaining:
 
-- isolated signed PREVIEW and manual one-shot LIVE UAT
+- signed PREVIEW and manual one-shot LIVE using Chemistry K data on existing DEV
 - customer-real idempotency/reconciliation/retry/lock/DLQ evidence
 - schedule approval and Production
 
@@ -146,8 +146,8 @@ The transitive `sharp` vulnerability chain was fixed with `overrides.sharp=0.35.
 
 ## Runtime safety
 
-- DEV/UAT/Production remain isolated
-- UAT and Production connectors/schedules disabled by default
+- Developer-test DEV and Customer-real UAT share the existing DEV resources through separate logical profiles; Production remains isolated
+- Customer-real UAT and Production connectors/schedules disabled by default
 - Production customer-owned
 - secrets only in Environment/Secret Manager
 - every write path requires stable key, idempotency, retry and reconciliation
@@ -155,4 +155,4 @@ The transitive `sharp` vulnerability chain was fixed with `overrides.sharp=0.35.
 
 ## Next gate
 
-Run `docs/google-ads-signed-delivery-uat.md` in isolated `uat_chemistry_k` resources. Schedule stays disabled, Lark Formula/View/schema work stays closed, and Production remains blocked.
+Run `docs/google-ads-signed-delivery-uat.md` on the existing DEV resources with `MKT_ENV=development` and profile `uat_chemistry_k`. Schedule stays disabled, Lark Formula/View/schema work stays closed, and Production remains blocked.

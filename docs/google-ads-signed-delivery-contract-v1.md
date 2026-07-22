@@ -312,5 +312,7 @@ Retention:
 - Connector flag: `MKT_CONNECTOR_GOOGLE_ADS_ENABLED=false` by default.
 - No `MKT_SCHEDULE_GOOGLE_ADS_ENABLED` setting exists.
 - No Google Ads cron job exists.
-- UAT and Production use isolated Worker, D1, Queue, DLQ, signing keys and Lark resources.
+- Customer-real UAT reuses the existing developer DEV Worker, D1, Queue, DLQ, secret store and Lark resources with `MKT_ENV=development` and profile `uat_chemistry_k`.
+- No separate UAT infrastructure is created; only the authorized source account/data and logical profile change.
+- Production remains isolated and customer-owned.
 - Production remains blocked until customer-real reliability/idempotency/reconciliation UAT and ownership gates pass.

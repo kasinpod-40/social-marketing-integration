@@ -26,9 +26,9 @@ test('environment feature flag can disable an active connector safely', () => {
   assert.equal(config.connectors.tiktok.enabledSource, 'environment');
 });
 
-test('disabled UAT connector can omit live identity but enabling it requires an exact environment value', () => {
+test('disabled customer-real UAT connector on DEV can omit live identity but enabling it requires an exact environment value', () => {
   const disabled = loadCustomerRuntimeConfig({
-    MKT_ENV: 'uat',
+    MKT_ENV: 'development',
     MKT_CUSTOMER_PROFILE: 'uat_chemistry_k',
   });
 
@@ -38,7 +38,7 @@ test('disabled UAT connector can omit live identity but enabling it requires an 
 
   assert.throws(
     () => loadCustomerRuntimeConfig({
-      MKT_ENV: 'uat',
+      MKT_ENV: 'development',
       MKT_CUSTOMER_PROFILE: 'uat_chemistry_k',
       MKT_CONNECTOR_TIKTOK_ENABLED: 'true',
     }),
@@ -46,7 +46,7 @@ test('disabled UAT connector can omit live identity but enabling it requires an 
   );
 
   const enabled = loadCustomerRuntimeConfig({
-    MKT_ENV: 'uat',
+    MKT_ENV: 'development',
     MKT_CUSTOMER_PROFILE: 'uat_chemistry_k',
     MKT_CONNECTOR_TIKTOK_ENABLED: 'true',
     TIKTOK_SOURCE_HANDLE: 'customer.actual.handle',

@@ -57,9 +57,9 @@ test('YouTube connector is runnable after activation when the normal feature fla
 });
 
 
-test('Google Ads signed delivery is runnable only when the UAT feature flag is explicit', () => {
+test('Google Ads signed delivery is runnable only when the customer-real DEV feature flag is explicit', () => {
   const disabled = loadCustomerRuntimeConfig({
-    MKT_ENV: 'uat', MKT_CUSTOMER_PROFILE: 'uat_chemistry_k',
+    MKT_ENV: 'development', MKT_CUSTOMER_PROFILE: 'uat_chemistry_k',
   });
   assert.throws(
     () => assertConnectorRunnable(disabled, 'google_ads'),
@@ -67,7 +67,7 @@ test('Google Ads signed delivery is runnable only when the UAT feature flag is e
   );
 
   const enabled = loadCustomerRuntimeConfig({
-    MKT_ENV: 'uat', MKT_CUSTOMER_PROFILE: 'uat_chemistry_k',
+    MKT_ENV: 'development', MKT_CUSTOMER_PROFILE: 'uat_chemistry_k',
     MKT_CONNECTOR_GOOGLE_ADS_ENABLED: 'true',
   });
   assert.equal(assertConnectorRunnable(enabled, 'google_ads').accountKey, 'chemistry_k');

@@ -29,11 +29,13 @@ Contract version numbers are not automatic application package releases.
 - Lark/Cloudflare/source assets: developer-owned
 - TikTok Organic and YouTube Organic active only where DEV gates passed
 
-### Customer-real UAT
+### Customer-real UAT on existing DEV
 
+- Environment: `development`
 - Profile: `uat_chemistry_k`
 - Source accounts/data: customer-owned
-- Temporary isolated Lark/Cloudflare: developer-owned
+- Worker, D1, Queue, DLQ, Secret store and Lark Base: reuse the existing developer DEV resources
+- No separate UAT infrastructure is created; only the logical profile/source data changes
 - Canonical `customerKey` and connector `accountKey`: `chemistry_k`
 - Every new connector and schedule disabled by default
 
@@ -164,7 +166,7 @@ Remaining:
 - entity/daily normalization and writes
 - reliability, reconciliation, UAT, schedule and Production
 
-### Google Ads — 65%
+### Google Ads — 45%
 
 Completed:
 
@@ -174,11 +176,6 @@ Completed:
 - errors/truncation `0/0`, Google Ads `No changes`
 - automated Lark schema, Relations, managed filters and formulas
 - repository safety correction and no-create View maintenance guard
-- sanitized read-only Manager Script source committed with `DRY_RUN` default and no schedule/mutation API
-- exact signed-delivery v1 ingress with HMAC, timestamp, nonce/replay and key rotation
-- strict six-dataset allowlist/schema/limits/order/relation/null validation
-- D1 idempotency/payload state, reference-only Queue job and shared reliability/lock/DLQ path
-- six RAW plus six Canonical plan-before-write mappings and reconciliation tests
 
 Direct API state:
 
@@ -193,14 +190,14 @@ Direct API is optional Phase 2 for MVP.
 
 Remaining:
 
-- isolated signed PREVIEW against a deployed UAT Worker
-- one-shot LIVE delivery and Google Ads UI reconciliation
-- customer-real zero-duplicate rerun and controlled retry/lock/DLQ/redrive evidence
-- separate schedule approval and customer-owned Production cutover
+- signed Script delivery connector
+- Worker ingress and signature/replay checks
+- Queue/DLQ and D1 state
+- normalization and destination writes
+- idempotency/reconciliation/reliability UAT
+- schedule and Production
 
-Contract: `docs/google-ads-signed-delivery-contract-v1.md`.
-Runbook: `docs/google-ads-signed-delivery-uat.md`.
-Sanitized source UAT evidence: `docs/google-ads-manager-script-read-only-uat-evidence.md`.
+Sanitized UAT evidence: `docs/google-ads-manager-script-read-only-uat-evidence.md`.
 
 ### TikTok Ads — 10%
 
@@ -298,7 +295,7 @@ Milestone estimates, not code coverage:
 ```text
 MKT DEV MVP                         ~59%
 Lark data model/schema foundation   100%
-Google Ads end-to-end                65%
+Google Ads end-to-end                45%
 Customer-real UAT readiness          40%
 Chemistry K Production readiness     25%
 ```
@@ -307,13 +304,30 @@ Detailed weighting: `docs/project-brain/mkt-progress-v0.13.0.md`.
 
 ## Current task
 
-`docs/current-task.md` records the Google Ads signed-delivery implementation as `implemented_ready_for_isolated_uat`.
+`docs/current-task.md` records the merged repository audit correction and is closed.
 
-The locked Contract is `docs/google-ads-signed-delivery-contract-v1.md`. The UAT and rollback procedure is `docs/google-ads-signed-delivery-uat.md`.
+No connector Implementation task is active until the user approves the next workstream.
 
-## Next gate
+## Next approval gate
 
-Run isolated signed PREVIEW and manual one-shot LIVE UAT with Schedule disabled. Production remains blocked until exact reconciliation, zero-duplicate rerun, retry/lock/DLQ/redrive, regression and customer-owned resource gates pass.
+Proposed task:
+
+`Google Ads Manager Script signed delivery connector`
+
+Before coding, approve:
+
+1. six-dataset payload schema/version
+2. stable and idempotency keys
+3. HMAC signature, timestamp, nonce and replay window
+4. bounded batch/payload size
+5. null semantics
+6. partial-write/retry classification
+7. Queue/DLQ/checkpoint/lock/reconciliation
+8. retention/redaction/audit
+9. shared-DEV logical profile safety and Production isolation
+10. schedule disabled by default
+
+Then implement and run manual customer-real UAT on the existing DEV resources. Schedule may be enabled only after idempotent rerun, reconciliation and reliability gates pass.
 
 ## Permanent safety rules
 
@@ -323,6 +337,6 @@ Run isolated signed PREVIEW and manual one-shot LIVE UAT with Schedule disabled.
 - every Write path requires stable key, idempotency and retry semantics
 - missing metric is `null`, not zero, unless the source proves zero
 - secrets remain in Environment/Secret Manager
-- DEV/UAT/Production infrastructure stays isolated
+- Developer-test DEV and Customer-real UAT share the approved DEV infrastructure through separate logical profiles; Production stays isolated and customer-owned
 - Production resources must be customer-owned
 - no Live Apply based only on chat instructions when Repository contract is newer

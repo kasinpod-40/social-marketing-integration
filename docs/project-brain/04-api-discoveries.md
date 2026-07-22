@@ -110,7 +110,7 @@ Evidence boundary:
 
 - The original 598-line safety scan remains documented Live review evidence.
 - A sanitized replacement source is now committed at `scripts/google-ads-manager-script-signed-delivery.js`.
-- External signed PREVIEW/LIVE has not yet been run against isolated UAT; Source implementation does not equal Live UAT.
+- External signed PREVIEW/LIVE has not yet been run on the existing DEV resources with Chemistry K data; Source implementation does not equal Live UAT.
 - Signature, payload and replay details are locked in `docs/google-ads-signed-delivery-contract-v1.md`.
 
 See `docs/google-ads-manager-script-read-only-uat-evidence.md` and `docs/google-ads-signed-delivery-uat.md`.
