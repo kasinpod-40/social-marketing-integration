@@ -2,9 +2,9 @@
 
 ## Source baseline
 
-- Main commit before audit correction: `ddd876c3670af0dc6a4748b5399a1ac5acfe6642`
-- Active branch: `work/repository-audit-corrections-2026-07-22`
-- Current task: `docs/current-task.md`
+- Main commit: `d4a531fbb4e05dad7ce2296859c97f571e23acf3`
+- Merged PR: `#13`
+- Current task: `docs/current-task.md` — closed
 - Application package line: `0.11.0`
 - Contract versions: View `v0.13.5`, Formula `v0.13.6`, audit correction `v0.13.7`
 
@@ -77,6 +77,7 @@ Completed:
 - Google Ads `No changes`
 - Frequency `—`
 - Lark schema/Relations/filters/formulas
+- update-only Google View maintenance guard
 
 Direct API:
 
@@ -99,7 +100,7 @@ Remaining:
 
 ## Google View safety correction
 
-The generic View installer may create Views for setup workflows. The Google Ads Filter command is now explicitly update-only:
+The generic View installer may create Views for setup workflows. The Google Ads Filter command is explicitly update-only:
 
 - `createViews=0`
 - action allowlist `update_view`
@@ -118,6 +119,23 @@ primary raw stable key isEmpty
 
 Comprehensive customer/entity/status/report/policy validation is a separate future Data Quality contract.
 
+## Repository correction verification
+
+PR #13 passed:
+
+```text
+npm ci                         PASS
+npm run check                  PASS
+Focused staged TikTok           4/4 PASS
+Node Unit/Integration         540/540 PASS
+Workers runtime                 9/9 PASS
+Report reliability             70/70 PASS
+npm audit --audit-level=high    0 vulnerabilities
+npm run deploy:dry-run          PASS
+```
+
+The transitive `sharp` vulnerability chain was fixed with `overrides.sharp=0.35.3` and a refreshed lockfile. No Live resource mutation occurred.
+
 ## Runtime safety
 
 - DEV/UAT/Production remain isolated
@@ -127,23 +145,10 @@ Comprehensive customer/entity/status/report/policy validation is a separate futu
 - every write path requires stable key, idempotency, retry and reconciliation
 - missing metric remains `null` unless the source proves zero
 
-## Current verification status
+## Next approval gate
 
-Prior main baseline recorded:
-
-```text
-Unit/Integration   536/536
-Workers runtime      9/9
-Report reliability  70/70
-Architecture     147/348/0
-Audit                  0
-Dry-run              PASS
-```
-
-Those results predate the new audit guard. The correction branch must run the complete gate again before merge.
-
-## Next workstream
+Proposed workstream:
 
 `Google Ads Manager Script signed delivery connector`
 
-Approve the payload, signature/replay, idempotency, batch, null, retry, Queue/D1, retention/redaction and ownership contracts before implementation. Schedule stays disabled until isolated manual UAT and idempotent rerun pass.
+Approve payload, signature/replay, idempotency, batch, null, retry, Queue/D1, retention/redaction and ownership contracts before implementation. Schedule stays disabled until isolated manual UAT and idempotent rerun pass.
