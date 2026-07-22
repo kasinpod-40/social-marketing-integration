@@ -1,25 +1,29 @@
 # 10 — Next Actions
 
-## Current source correction gate
+## Completed source correction
 
-Active branch: `work/repository-audit-corrections-2026-07-22`
+Repository audit/safety correction PR `#13` was squash-merged to main commit:
 
-Before merge:
+`d4a531fbb4e05dad7ce2296859c97f571e23acf3`
 
-```bash
-npm ci
-npm run check
-npm test
-npm run test:report-reliability
-npm audit --offline
-npm run deploy:dry-run
+Verification passed:
+
+```text
+npm ci                         PASS
+npm run check                  PASS
+Focused staged TikTok           4/4 PASS
+Node Unit/Integration         540/540 PASS
+Workers runtime                 9/9 PASS
+Report reliability             70/70 PASS
+npm audit --audit-level=high    0 vulnerabilities
+npm run deploy:dry-run          PASS
 ```
 
-No Live Lark Apply, Google Ads mutation, Queue message, D1 migration, schedule change or deployment is required for this branch.
+No Live Lark Apply, Google Ads mutation, Queue message, D1 migration, schedule change or deployment occurred.
 
-## Immediate next workstream
+## Immediate next approval gate
 
-Open a separate task:
+Open a separate task only after user approval:
 
 `Google Ads Manager Script signed delivery connector`
 
@@ -124,6 +128,7 @@ Direct API is optional Phase 2. Do not delay the Manager Script MVP solely for a
 - Report Views 6/6
 - Google Ads managed filters 19/19
 - Google Formula fields 4/4
+- Google View update-only maintenance guard
 
 Do not rerun these applies.
 
