@@ -10,9 +10,8 @@ Authority order ให้ยึด `AGENTS.md` และ `docs/current-task.md` 
 
 ## Current source baseline
 
-- Main commit: `d4a531fbb4e05dad7ce2296859c97f571e23acf3`
-- Commit message: `fix: correct repository state and harden Google Ads View maintenance`
-- Merged PR: `#13`
+- Implementation baseline: `d4a531fbb4e05dad7ce2296859c97f571e23acf3` / PR `#13`
+- Documentation closeout: PR `#14`
 - Application package line: `0.11.0`
 - Current contract versions:
   - Shared/Ads schema closeout: `v0.13.0`

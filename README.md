@@ -4,8 +4,8 @@
 
 ## Current baseline
 
-- Main commit: `d4a531fbb4e05dad7ce2296859c97f571e23acf3`
-- Merged PR: `#13` — repository audit correction and Google View safety hardening
+- Implementation baseline: `d4a531fbb4e05dad7ce2296859c97f571e23acf3` / PR `#13`
+- Documentation closeout: PR `#14`
 - Application package line: `0.11.0`
 - Lark contract versions: View `v0.13.5`, Formula `v0.13.6`, repository correction `v0.13.7`
 - Current task: `docs/current-task.md` — closed
