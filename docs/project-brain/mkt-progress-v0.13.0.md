@@ -1,22 +1,23 @@
-# MKT Progress Baseline v0.13.0 — 2026-07-22
+# MKT Progress Baseline v0.13.7 — 2026-07-22
 
-เอกสารนี้เป็น Modular Project Brain สำหรับ Current progress หลังปิดงาน Ads/Google Ads Lark Schema ใน developer-owned DEV. เปอร์เซ็นต์ทั้งหมดเป็น **milestone estimate** สำหรับวางแผน ไม่ใช่ code coverage และไม่ใช่การรับรอง Production readiness.
+เปอร์เซ็นต์ทั้งหมดเป็น milestone estimate สำหรับวางแผน ไม่ใช่ code coverage และไม่ใช่ Production certification.
 
 ## Executive status
 
-- **MKT DEV MVP โดยรวม:** `59%`
-- **Data model/Lark schema foundation:** `100%`
+- **MKT DEV MVP:** `59%`
+- **Lark data model/schema foundation:** `100%`
+- **Google Ads end-to-end:** `45%`
 - **Customer-real UAT readiness:** `40%`
 - **Chemistry K Production readiness:** `25%`
 
-เหตุผลที่ Schema เสร็จแต่ภาพรวมยัง 59%: Connector, customer-real UAT, operational rollout, AI summary และ Production cutover ยังเป็นงานใหญ่กว่าการสร้าง Table/Field.
+Schema เสร็จไม่ได้แปลว่า Connector และ Production เสร็จ. งาน Source delivery, reliability, customer-real UAT, AI summary และ customer-owned cutover ยังเป็นสัดส่วนใหญ่.
 
 ## Weighted DEV MVP calculation
 
 | Workstream | Weight | Completion | Weighted result |
 |---|---:|---:|---:|
 | Core runtime, Queue, D1, lock/retry/DLQ/alert | 12% | 95% | 11.40% |
-| Lark data model, Canonical model, schema and Views | 13% | 100% | 13.00% |
+| Lark data model, Canonical model, schema and managed Views | 13% | 100% | 13.00% |
 | TikTok Organic | 12% | 95% | 11.40% |
 | YouTube Organic | 12% | 90% | 10.80% |
 | Facebook + Instagram Organic | 10% | 30% | 3.00% |
@@ -26,175 +27,273 @@
 | Customer-real UAT and Production cutover | 10% | 10% | 1.00% |
 | **Total** | **100%** |  | **59.22% ≈ 59%** |
 
-## Channel-by-channel status
+## Data model and Lark presentation — 100%
+
+Fresh `Social MKT Data Hub(11).base` configuration-only audit:
+
+| Gate | Result |
+|---|---:|
+| Physical tables | 42 |
+| Fields | 737 |
+| Views | 133 |
+| Filtered Views | 42 |
+| Sorted Views | 6 |
+| Views with hidden fields | 7 |
+| Duplicate table names | 0 |
+| Table emoji/folder placement | 42/42 |
+| View emoji names | 133/133 |
+| Formula expressions | 4/4 |
+| Google managed filters | 19/19 |
+| Shared-table managed filters | 17/17 |
+| Report Views | 6/6 |
+| Google Ads Daily 30D | `platform=google_ads + TheLastMonth` |
+
+### View-scope clarification
+
+133 Views consist of:
+
+- Shared managed 17
+- Report managed 6
+- Google managed 19
+- All/default preserved 36
+- Specialized legacy preserved 55
+
+42 filtered Views are `17 + 6 + 19`.
+
+The 55 specialized Views do not have approved business semantics merely because their names say Active, Latest, Failed, Connection Issues or similar. They are preserved intentionally and require a separate business-owner contract before mutation.
+
+## Channel status
 
 ### TikTok Organic — 95%
 
 Completed:
 
-- Lark Native protected source;
-- RAW → Canonical Content/Daily flow;
-- Stable key/idempotency/reconciliation;
-- Queue, D1 checkpoint, lock, retry, DLQ and alert UAT;
-- Daily/Weekly reports, Client Views and DEV schedules.
+- protected Lark Native source
+- RAW → Canonical Content/Daily
+- stable key/idempotency/reconciliation
+- D1 checkpoint, lock, retry, DLQ and alerts
+- Daily/Weekly reports and Client Views
+- DEV schedules and reliability UAT
 
 Remaining:
 
-- natural operational observation and customer-real UAT/Production cutover.
+- natural operational observation
+- customer-real UAT
+- customer-owned Production cutover
 
 ### YouTube Organic — 90%
 
 Completed:
 
-- Public/OAuth access and identity gates;
-- RAW Channel/Video/Analytics and Canonical writes;
-- scheduled DEV Data API and Owner Analytics;
-- large-account resumable design and DEV rollout;
-- reliability/outbox/redrive/migrations 0004–0006.
+- Public/OAuth access and identity gates
+- RAW Channel/Video/Analytics and Canonical writes
+- scheduled DEV Data API and Owner Analytics
+- large-account pagination/chunking/durable resume
+- outbox/redrive/migration reliability and DEV smoke
 
 Remaining:
 
-- customer-owned 837-video Live UAT;
-- pending Batch C / migrations 0007–0008 rollout where applicable;
-- customer Production cutover.
+- customer-owned 837-video Live UAT
+- applicable rollout/observation gates
+- Production cutover
 
 ### Facebook Organic — 30%
 
 Completed:
 
-- Page access/source preflight;
-- real Page/posts and Page Insights read verification;
-- shared Lark schema foundation.
+- Page/post/Page Insights access preflight
+- Meta transport foundation
+- shared Lark schema
 
 Remaining:
 
-- connector implementation;
-- normalization, checkpoint/reconciliation, Queue/reliability tests;
-- DEV schedule, customer-real UAT and Production.
+- connector/business adapter
+- normalization, checkpoint/reconciliation and reliability
+- schedule, UAT and Production
 
 ### Instagram Organic — 30%
 
 Completed:
 
-- Instagram Login token lifecycle and scopes preflight;
-- `/me`, media, media insights and account insights verification;
-- shared Lark schema foundation.
+- Instagram Login scopes/token lifecycle preflight
+- media/media insights/account insights verification
+- shared Lark schema
 
 Remaining:
 
-- connector implementation and complete reliability lifecycle;
-- token operations/refresh monitoring;
-- schedule, customer-real UAT and Production.
+- connector and token-refresh operations
+- reliability, schedule, UAT and Production
 
 ### Meta Ads — 25%
 
 Completed:
 
-- Marketing API `ads_read` access preflight;
-- Ad Account and valid no-data reporting response;
-- Meta Ads Lark schema Apply and zero drift;
-- Canonical Ads v2 migration and zero drift.
+- `ads_read` access preflight
+- valid no-data Account/Insights response
+- Lark Ads schema and Canonical Ads v2 zero drift
 
 Remaining:
 
-- connector/source queries and normalization;
-- campaign/ad set/ad/creative/daily writes;
-- reliability, reconciliation and schedule;
-- customer-real data UAT and Production.
+- source queries/connector
+- entity/daily normalization and writes
+- reliability/reconciliation
+- customer-real UAT, schedule and Production
 
 ### Google Ads — 45%
 
 Completed:
 
-- Manager account and read-only reporting direction;
-- Manager Script contract/dry-run foundation;
-- Chemistry K target customer ID recorded in operational handoff;
-- customer-authorized Chemistry K link/selectability passed through the approved direct manager; account is enabled and its production Overview opens read-only;
-- API Center preflight confirmed token access remains test-account-only;
-- Manager Script target allowlist updated and 598-line safety scan passed;
-- read-only GAQL Preview passed `data_available` across six non-empty bounded datasets with zero errors/truncation and zero Ads changes;
-- automated Lark schema: 13 RAW tables / 208 fields;
-- Canonical Ads core 63/63, Relations 12/12 and View shells 19/19;
-- zero destructive actions and zero Business Record writes.
+- customer-authorized account link/selectability
+- exact allowlisted Manager Script read-only UAT
+- six non-empty bounded datasets
+- errors/truncation `0/0`
+- Google Ads `No changes`
+- Frequency `—`
+- Lark Google RAW schema, Canonical Ads, Relations, managed filters and formulas
+
+Direct API state:
+
+```text
+Basic Access application submitted 2026-07-21
+Case ID 1-686800040839
+Review pending
+Current developer-token level Test Account Access
+```
+
+Manager Script MVP does not wait for direct API approval.
 
 Remaining:
 
-- signed Script delivery endpoint, normalization, checkpoints/reconciliation and reliability;
-- direct API access/OAuth UAT only if required for Phase 2 scale or unsupported fields;
-- schedule and customer-real UAT/Production.
+- sanitized immutable Script evidence for reproducibility
+- signed delivery payload/security contract
+- Worker ingress
+- connector/catalog/job registration
+- Queue/DLQ and D1 nonce/checkpoint/idempotency state
+- six-dataset normalization and Lark writes
+- partial failure, reconciliation and reliability UAT
+- schedule and Production
 
 ### TikTok Ads — 10%
 
 Completed:
 
-- channel recognized in Canonical Ads model and planning scope.
+- represented in Canonical Ads model and planning scope
+
+Direction:
+
+- controlled API/Worker connector for Production
+- Lark native Ads integration is not the Production source of truth
 
 Remaining:
 
-- access eligibility/Business Center/app authorization preflight;
-- Sandbox/test strategy and reporting endpoint contract;
-- connector implementation, reliability, UAT and Production.
+- Business Center/app/advertiser authorization preflight
+- metrics/dimensions/rate-limit contract
+- connector, reliability, UAT and Production
 
 ### WooCommerce — 10%
 
 Completed:
 
-- sanitized source/transport foundation and client-owned Production rule.
+- sanitized source/transport foundation
+- client-owned Production rule
 
 Remaining:
 
-- approved data model/source contract for active scope;
-- connector, pagination, checkpoint/reconciliation, reliability and UAT.
+- approved active-scope data model
+- connector, pagination, checkpoint/reconciliation, reliability and UAT
 
 ### Chatwoot — 10%
 
 Completed:
 
-- sanitized contract foundation and ownership direction.
+- sanitized operational contract and ownership direction
 
 Remaining:
 
-- final scope/objects/data retention contract;
-- connector, checkpoint/reconciliation, reliability and UAT.
+- final objects/retention contract
+- connector, checkpoint/reconciliation, reliability and UAT
 
-## Lark Ads schema closeout
+## Reporting and AI — 50%
 
-Latest audited configuration-only export: `Social MKT Data Hub.base`, SHA-256 `3f177a1c2639da506c3e76e2d72bb9a018ccfb7ad29a38cbbca986b863d4b6c8`.
+Completed:
 
-| Gate | Result |
-|---|---:|
-| Physical tables | 42 |
-| Duplicate table names | 0 |
-| Google RAW tables | 13/13 |
-| Google RAW fields | 208/208 |
-| Canonical Ads v2 core | 63/63 |
-| Relations | 12/12 |
-| View shells | 19/19 |
-| Automated schema issues | 0 |
-| New Google tables containing Records | 0 |
-| Formula expressions configured | 4/4 Live editor verified |
-| View filters configured | 19/19 Live |
-| Fresh `.base` View audit | 133/133, zero Filter/Sort/Hidden drift |
-| Fresh post-Formula `.base` audit | Formula/type/formatter 4/4; zero View drift |
+- TikTok Daily/Weekly report engine
+- managed Report Views
+- deterministic completed-period dates
+- idempotency and partial-write behavior
 
-Automated schema, Google View filters and Formula UI tasks are closed with Live and fresh `.base` verification. This does not authorize Connector, Worker, Schedule or Production changes.
+Remaining:
 
-## Priority order from this baseline
+- multi-channel report aggregation
+- AI summary/insight generation
+- Lark group notification
+- customer-specific report configuration and UAT
 
-1. Approve and implement the signed Google Ads Manager Script delivery path behind disabled flags.
-2. Complete manual signed-delivery, idempotency, reconciliation and reliability UAT before scheduling.
-3. Implement Facebook/Instagram Organic connectors using the shared reliability architecture.
-4. Complete Meta Ads and TikTok Ads connector/access tracks.
-5. Implement WooCommerce and Chatwoot.
-6. Complete multi-channel AI summary/insight/notification.
-7. Run isolated `uat_chemistry_k` channel-by-channel.
-8. Build customer-owned `chemistry_k` Production resources and perform cutover.
+## Customer-real UAT readiness — 40%
+
+Completed:
+
+- isolated `uat_chemistry_k` environment/profile contract
+- customer-owned source identity rule
+- Canonical identity continuity into Production
+- schedule/connector disabled-by-default rule
+- channel access preflight for several sources
+
+Remaining:
+
+- isolated UAT Cloudflare/D1/Queue/Lark setup
+- signed Google Ads delivery UAT
+- Facebook/Instagram/Meta Ads connector UAT
+- retention/cleanup evidence
+- channel-by-channel operational sign-off
+
+## Production readiness — 25%
+
+Completed:
+
+- customer-owned Production architecture direction
+- non-secret profile foundation
+- separation and safety rules
+- stable Canonical identity direction
+
+Remaining:
+
+- customer-owned Lark/App/Cloudflare/D1/Queues/Secrets
+- connector credentials and authorization
+- Production migrations and deploy
+- customer-scale UAT
+- monitoring, rollback and operational ownership
+- final cutover
+
+## RAW error coverage note
+
+The 13 Google RAW error Views use stable-key-only minimum QA:
+
+```text
+primary raw stable key isEmpty
+```
+
+This validates missing raw identity, not every supporting field. Comprehensive data-quality checks require a separate approved contract.
+
+## Priority order
+
+1. Merge repository audit/safety correction after full gates.
+2. Approve Google Ads signed delivery contracts.
+3. Implement disabled-by-default Google Ads ingress/Queue/D1/Lark path.
+4. Run manual signed-delivery UAT, idempotent rerun and reconciliation.
+5. Implement Facebook/Instagram Organic connectors.
+6. Implement Meta Ads and TikTok Ads tracks.
+7. Implement WooCommerce and Chatwoot.
+8. Complete multi-channel AI summary/notification.
+9. Run isolated `uat_chemistry_k` channel by channel.
+10. Build customer-owned Production and cut over.
 
 ## Permanent safety status
 
-- Production remains disabled.
-- New connectors and schedules remain disabled by default.
-- DEV/UAT/Production resources stay isolated.
-- No secrets or tokens belong in Source or documentation.
-- Customer-real UAT uses customer-owned source data with isolated developer-owned temporary UAT infrastructure.
-- Production must be customer-owned.
+- Production disabled
+- new connector/schedule flags disabled by default
+- DEV/UAT/Production isolated
+- customer-real UAT uses customer-owned source data
+- Production resources customer-owned
+- secrets excluded from Source/Logs/Release
+- every write path requires stable key/idempotency/retry/reconciliation

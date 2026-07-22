@@ -12,6 +12,10 @@ import {
   applyLarkReportViews,
   planLarkReportViews,
 } from '../packages/application/src/use-cases/install-lark-report-views.js';
+import {
+  assertGoogleAdsViewFilterPlanSafe,
+  createNoCreateLarkViewClient,
+} from '../packages/application/src/use-cases/guard-google-ads-view-filter-plan.js';
 
 try {
   await main();
@@ -42,22 +46,27 @@ async function main() {
     confirmationErrorCode: 'GOOGLE_ADS_VIEW_FILTER_WRITE_CONFIRMATION_REQUIRED',
     applyCommand: 'CONFIRM_WRITE=YES npm run setup:google-ads-view-filters:apply',
   });
-  const client = createLarkBitableClientFromEnv(baseEnv, {
+  const rawClient = createLarkBitableClientFromEnv(baseEnv, {
     onRequest: process.env.MKT_VIEW_VERBOSE === 'true'
       ? (event) => console.error(JSON.stringify(event))
       : undefined,
   });
+  // Defense in depth: even if a View disappears between Preview and Apply,
+  // this task can never call the generic createView path.
+  const client = createNoCreateLarkViewClient(rawClient);
   const env = await resolveLiveTableEnvironment(client, baseEnv);
 
+  const preview = await planLarkReportViews({
+    client,
+    env,
+    contract: GOOGLE_ADS_VIEW_FILTERS,
+    includePermissionManualAction: false,
+  });
+  assertGoogleAdsViewFilterPlanSafe(preview);
+
   if (!mode.apply) {
-    const preview = await planLarkReportViews({
-      client,
-      env,
-      contract: GOOGLE_ADS_VIEW_FILTERS,
-      includePermissionManualAction: false,
-    });
     printJson({
-      ok: preview.readyToApply,
+      ok: true,
       mode: preview.mode,
       viewVersion: GOOGLE_ADS_VIEW_FILTER_VERSION,
       target: { environment: runtime.environment, profileKey: runtime.profileKey },
@@ -66,12 +75,12 @@ async function main() {
       conflicts: preview.conflicts.map(sanitizeDiagnostic),
       warnings: preview.warnings.map(sanitizeDiagnostic),
       manualActions: GOOGLE_ADS_VIEW_FILTER_MANUAL_ACTIONS,
-      nextCommand: preview.readyToApply && preview.actions.length > 0
+      nextCommand: preview.actions.length > 0
         ? 'CONFIRM_WRITE=YES npm run setup:google-ads-view-filters:apply'
         : null,
       note: preview.actions.length === 0
         ? 'Google Ads View filters ตรง managed OpenAPI contract แล้ว'
-        : 'Preview เท่านั้น: ไม่เขียน View, Field, Table หรือ Record',
+        : 'Preview เท่านั้น: อนุญาตเฉพาะ update_view; missing View จะ Block และไม่มี create/delete/rename/record write',
     });
     return;
   }
@@ -94,7 +103,7 @@ async function main() {
     viewVersion: GOOGLE_ADS_VIEW_FILTER_VERSION,
     target: { environment: runtime.environment, profileKey: runtime.profileKey },
     manualActions: GOOGLE_ADS_VIEW_FILTER_MANUAL_ACTIONS,
-    note: 'Apply เฉพาะ Filter ของ 19 Google Views; ไม่แก้ Sort, Table, Field หรือ Record',
+    note: 'Apply เฉพาะ Filter ของ 19 Google Views; missing View fail-closed และห้าม create/sort/table/field/record mutation',
   });
 }
 

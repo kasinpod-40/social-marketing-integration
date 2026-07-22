@@ -38,6 +38,9 @@
     "setup:google-ads-view-filters": "node scripts/setup-google-ads-view-filters.mjs",
     "setup:google-ads-view-filters:apply": "node scripts/setup-google-ads-view-filters.mjs --apply"
   },
+  "overrides": {
+    "sharp": "0.35.3"
+  },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.18.4",
     "vitest": "4.1.10",
