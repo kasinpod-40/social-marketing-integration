@@ -12,6 +12,14 @@
 
 Schema เสร็จไม่ได้แปลว่า Connector และ Production เสร็จ. งาน Source delivery, reliability, customer-real UAT, AI summary และ customer-owned cutover ยังเป็นสัดส่วนใหญ่.
 
+## Current merged baseline
+
+- Main commit: `d4a531fbb4e05dad7ce2296859c97f571e23acf3`
+- Merged PR: `#13`
+- Repository correction: `v0.13.7`
+- Full gates: PASS
+- Live mutations during repository correction: `0`
+
 ## Weighted DEV MVP calculation
 
 | Workstream | Weight | Completion | Weighted result |
@@ -150,6 +158,8 @@ Completed:
 - Google Ads `No changes`
 - Frequency `—`
 - Lark Google RAW schema, Canonical Ads, Relations, managed filters and formulas
+- update-only View maintenance guard
+- access-history and repository documentation correction
 
 Direct API state:
 
@@ -265,6 +275,23 @@ Remaining:
 - monitoring, rollback and operational ownership
 - final cutover
 
+## Repository correction verification
+
+PR #13 passed:
+
+```text
+npm ci                         PASS
+npm run check                  PASS
+Focused staged TikTok           4/4 PASS
+Node Unit/Integration         540/540 PASS
+Workers runtime                 9/9 PASS
+Report reliability             70/70 PASS
+npm audit --audit-level=high    0 vulnerabilities
+npm run deploy:dry-run          PASS
+```
+
+The transitive `sharp` vulnerability chain was remediated with `overrides.sharp=0.35.3` and a refreshed lockfile.
+
 ## RAW error coverage note
 
 The 13 Google RAW error Views use stable-key-only minimum QA:
@@ -277,16 +304,15 @@ This validates missing raw identity, not every supporting field. Comprehensive d
 
 ## Priority order
 
-1. Merge repository audit/safety correction after full gates.
-2. Approve Google Ads signed delivery contracts.
-3. Implement disabled-by-default Google Ads ingress/Queue/D1/Lark path.
-4. Run manual signed-delivery UAT, idempotent rerun and reconciliation.
-5. Implement Facebook/Instagram Organic connectors.
-6. Implement Meta Ads and TikTok Ads tracks.
-7. Implement WooCommerce and Chatwoot.
-8. Complete multi-channel AI summary/notification.
-9. Run isolated `uat_chemistry_k` channel by channel.
-10. Build customer-owned Production and cut over.
+1. Approve Google Ads signed delivery contracts.
+2. Implement disabled-by-default Google Ads ingress/Queue/D1/Lark path.
+3. Run manual signed-delivery UAT, idempotent rerun and reconciliation.
+4. Implement Facebook/Instagram Organic connectors.
+5. Implement Meta Ads and TikTok Ads tracks.
+6. Implement WooCommerce and Chatwoot.
+7. Complete multi-channel AI summary/notification.
+8. Run isolated `uat_chemistry_k` channel by channel.
+9. Build customer-owned Production and cut over.
 
 ## Permanent safety status
 
