@@ -135,6 +135,8 @@ Header names, HMAC algorithm/signing input, envelope fields, limits, timestamp/r
 
 Implementation commit: `31474c92cc48bbb6d45fd4aa1d2d3eb7b6354526`.
 
+Customer-real UAT topology correction commit: `12ee519aaa5264a2acd5e7189b4cad54050f1ebd`.
+
 Local source-snapshot verification after the final code changes:
 
 - focused Google Ads signed-delivery tests: `43/43 PASS`;
