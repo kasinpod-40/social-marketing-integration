@@ -26,30 +26,33 @@ test('environment feature flag can disable an active connector safely', () => {
   assert.equal(config.connectors.tiktok.enabledSource, 'environment');
 });
 
-test('one integration profile can replace a temporary source identity without switching profiles', () => {
+test('TikTok remains Chemistry K customer data when the exact source handle is supplied by environment', () => {
   const current = loadCustomerRuntimeConfig({
     MKT_ENV: 'development',
     MKT_CUSTOMER_PROFILE: 'integration_workspace',
   });
 
   assert.equal(current.connectors.tiktok.enabled, true);
-  assert.equal(current.connectors.tiktok.accountKey, 'ft_pumkin');
-  assert.equal(current.connectors.tiktok.sourceHandle, 'ft.pumkin');
-  assert.equal(current.connectors.tiktok.sourceOwner, 'developer');
-  assert.equal(current.connectors.tiktok.replacementRequired, true);
+  assert.equal(current.connectors.tiktok.accountKey, 'chemistry_k');
+  assert.equal(current.connectors.tiktok.sourceHandle, 'chemistry_k');
+  assert.equal(current.connectors.tiktok.sourceOwner, 'customer');
+  assert.equal(current.connectors.tiktok.sourceRole, 'customer_real');
+  assert.equal(current.connectors.tiktok.replacementRequired, false);
 
-  const replacement = loadCustomerRuntimeConfig({
+  const overridden = loadCustomerRuntimeConfig({
     MKT_ENV: 'development',
     MKT_CUSTOMER_PROFILE: 'integration_workspace',
     MKT_CONNECTOR_TIKTOK_ENABLED: 'true',
-    TIKTOK_SOURCE_HANDLE: 'customer.actual.handle',
+    TIKTOK_SOURCE_HANDLE: 'chemistry_k',
   });
 
-  assert.equal(replacement.profileKey, 'integration_workspace');
-  assert.equal(replacement.connectors.tiktok.enabled, true);
-  assert.equal(replacement.connectors.tiktok.accountKey, 'ft_pumkin');
-  assert.equal(replacement.connectors.tiktok.sourceHandle, 'customer.actual.handle');
-  assert.equal(replacement.connectors.tiktok.sourceHandleSource, 'environment');
+  assert.equal(overridden.profileKey, 'integration_workspace');
+  assert.equal(overridden.connectors.tiktok.enabled, true);
+  assert.equal(overridden.connectors.tiktok.accountKey, 'chemistry_k');
+  assert.equal(overridden.connectors.tiktok.sourceHandle, 'chemistry_k');
+  assert.equal(overridden.connectors.tiktok.sourceHandleSource, 'environment');
+  assert.equal(overridden.connectors.tiktok.sourceOwner, 'customer');
+  assert.equal(overridden.connectors.tiktok.replacementRequired, false);
 });
 
 test('disabled connectors still require the canonical account key', () => {
