@@ -13,7 +13,9 @@ test('returns the active TikTok connector state from the runtime profile', () =>
   });
 
   const connector = assertConnectorRunnable(runtimeConfig, 'tiktok');
-  assert.equal(connector.accountKey, 'ft_pumkin');
+  assert.equal(connector.accountKey, 'chemistry_k');
+  assert.equal(connector.sourceOwner, 'customer');
+  assert.equal(connector.replacementRequired, false);
   assert.equal(connector.enabled, true);
 });
 
@@ -55,7 +57,6 @@ test('YouTube connector is runnable after activation when the normal feature fla
   });
   assert.equal(assertConnectorRunnable(runtimeConfig, 'youtube').enabled, true);
 });
-
 
 test('Google Ads signed delivery is runnable only when the Integration Workspace feature flag is explicit', () => {
   const disabled = loadCustomerRuntimeConfig({
