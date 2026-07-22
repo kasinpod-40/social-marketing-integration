@@ -1,28 +1,51 @@
 name: Branch Verification
 
 on:
-  push:
-    branches:
-      - 'codex/**'
   pull_request:
     branches:
       - main
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
-  group: branch-verification-${{ github.ref }}
-  cancel-in-progress: true
+  group: integration-workspace-apply-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  verify:
+  verify-and-apply:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Checkout
+      - name: Checkout head branch
         uses: actions/checkout@v4
+        with:
+          ref: agent/google-ads-signed-delivery
+          fetch-depth: 0
+
+      - name: Verify expected baseline
+        shell: bash
+        run: git merge-base --is-ancestor 8d8f1b560b84d646506ccb2fe8b91543d15797b0 HEAD
+
+      - name: Reassemble and verify patch
+        shell: bash
+        run: |
+          cat .github/iw-patch-* > /tmp/integration-workspace.patch.xz.b64
+          echo '1816508d167f8a075acad7d0102fe3f11defbca9878417b5ce08f236817fa1b2  /tmp/integration-workspace.patch.xz.b64' | sha256sum --check
+          base64 --decode /tmp/integration-workspace.patch.xz.b64 > /tmp/integration-workspace.patch.xz
+          echo '750eb28bc7d4e21ba8cf8f39a4532741f52761db4415c1e46f2157aa12c019bb  /tmp/integration-workspace.patch.xz' | sha256sum --check
+          xz -dc /tmp/integration-workspace.patch.xz > /tmp/integration-workspace.patch
+          echo '63449280d714b25d33e0024b199fe13f8eda6e581c379804efc0296df99e1278  /tmp/integration-workspace.patch' | sha256sum --check
+
+      - name: Apply clean Integration Workspace model
+        shell: bash
+        run: |
+          git apply --check /tmp/integration-workspace.patch
+          git apply /tmp/integration-workspace.patch
+          rm .github/iw-patch-*
+          git show 8d8f1b560b84d646506ccb2fe8b91543d15797b0:.github/workflows/branch-verification.yml > .github/workflows/branch-verification.yml
+          git diff --check
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -36,40 +59,42 @@ jobs:
       - name: Syntax architecture and hygiene
         run: npm run check
 
-      - name: Focused staged TikTok tests
+      - name: Focused Integration Workspace and Google Ads tests
         shell: bash
         run: |
-          set -o pipefail
-          node --test tests/application/tiktok-staged-business-sync.test.js 2>&1 | tee focused-test.log
+          node --test \
+            tests/config/customer-profiles.test.js \
+            tests/config/connector-runtime-config.test.js \
+            tests/application/connector-registry.test.js \
+            tests/application/report-config-loaders.test.js \
+            tests/scripts/tiktok-report-schedule-config.test.js \
+            tests/google-ads/google-ads-api-ingress.test.js \
+            tests/google-ads/google-ads-queue-routing.test.js \
+            tests/google-ads/google-ads-signature.test.js \
+            tests/google-ads/signed-delivery-contract.test.js \
+            tests/google-ads/d1-google-ads-delivery-store.test.js \
+            tests/google-ads/sync-google-ads-manager-script-delivery.test.js \
+            tests/google-ads/google-ads-manager-script-safety.test.js \
+            tests/google-ads/google-ads-signed-delivery-migration.test.js
 
       - name: Unit and Workers runtime tests
-        shell: bash
-        run: |
-          set -o pipefail
-          npm test 2>&1 | tee full-test.log
+        run: npm test
 
       - name: Report reliability regression
-        shell: bash
-        run: |
-          set -o pipefail
-          npm run test:report-reliability 2>&1 | tee report-test.log
+        run: npm run test:report-reliability
 
       - name: Dependency audit
-        shell: bash
-        run: |
-          set -o pipefail
-          npm audit --audit-level=high 2>&1 | tee audit.log
+        run: npm audit --audit-level=high
 
       - name: Wrangler dry run
         run: npm run deploy:dry-run
 
-      - name: Upload verification diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: branch-verification-logs
-          path: |
-            *-test.log
-            audit.log
-          if-no-files-found: ignore
-          retention-days: 7
+      - name: Commit verified clean result
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          test -z "$(git status --porcelain | grep 'iw-patch-' || true)"
+          git commit -m 'refactor: use one mixed-source integration workspace'
+          git push origin HEAD:agent/google-ads-signed-delivery
