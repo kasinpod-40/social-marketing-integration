@@ -129,18 +129,25 @@ Header names, HMAC algorithm/signing input, envelope fields, limits, timestamp/r
 
 ## Verification
 
-Previous implementation verification passed source, architecture, unit, Workers runtime, report reliability, dependency audit and Wrangler dry-run gates.
+Integration Workspace correction and compatibility verification:
 
-Workspace-model correction and compatibility layer must pass again on the final branch:
+- canonical pre-Production profile: `integration_workspace`;
+- per-Connector source ownership and replacement metadata: PASS;
+- legacy profile/report-key compatibility: PASS;
+- architecture/hygiene: `154 source files / 372 local dependencies / 0 cycles`;
+- Node unit/integration: `589/589 PASS`;
+- report reliability: `71/71 PASS`;
+- patch integrity and `git diff --check`: PASS.
 
-```bash
-npm ci
-npm run check
-npm test
-npm run test:report-reliability
-npm audit --audit-level=high
-npm run deploy:dry-run
-```
+Final Branch Verification run `#217` on head `91036a8a367517beeba9c33769ed3ff91c322430` completed successfully:
+
+- `npm ci`: PASS;
+- `npm run check`: PASS;
+- staged TikTok regression: PASS;
+- `npm test` including Workers runtime: PASS;
+- `npm run test:report-reliability`: PASS;
+- `npm audit --audit-level=high`: PASS;
+- `npm run deploy:dry-run`: PASS.
 
 ## Remaining risks
 
