@@ -4,15 +4,15 @@ import { createReportSettingRowsForProfile } from '../../packages/config/src/rep
 import { seedReportSettings } from '../../packages/application/src/use-cases/seed-report-settings.js';
 
 test('creates deterministic daily and weekly settings per customer profile', () => {
-  const rows = createReportSettingRowsForProfile('dev_ft_pumkin');
+  const rows = createReportSettingRowsForProfile('integration_workspace');
   assert.deepEqual(rows.map((row) => row.report_setting_key), [
-    'dev_ft_pumkin:tiktok:daily',
-    'dev_ft_pumkin:tiktok:weekly',
+    'integration_workspace:tiktok:daily',
+    'integration_workspace:tiktok:weekly',
   ]);
   assert.equal(rows[0].ai_enabled, false);
   assert.equal(rows[0].notification_enabled, false);
   assert.equal(rows[1].send_weekday, 'monday');
-  assert.equal(rows[0].account_keys_json, '["ft_pumkin"]');
+  assert.equal(rows[0].account_keys_json, '["chemistry_k"]');
 });
 
 test('rejects unknown report profile instead of inventing an account', () => {
@@ -31,10 +31,11 @@ test('seeds report settings idempotently by report_setting_key', async () => {
     async syncByKey(input) { call = input; return { created: input.rows.length, updated: 0, skipped: 0 }; },
   };
   const result = await seedReportSettings({
-    repository, syncEngine, tableId: 'tbl_settings', profileKey: 'dev_ft_pumkin',
+    repository, syncEngine, tableId: 'tbl_settings', profileKey: 'integration_workspace',
   });
 
   assert.equal(call.keyField, 'report_setting_key');
   assert.equal(call.rows.length, 2);
+  assert.equal(call.rows[0].account_keys_json, '["chemistry_k"]');
   assert.equal(result.created, 2);
 });

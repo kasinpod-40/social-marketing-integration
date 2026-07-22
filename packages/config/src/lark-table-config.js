@@ -28,6 +28,12 @@ export const LARK_TABLE_ENV = Object.freeze({
   rawYouTubeChannels: 'LARK_TABLE_RAW_YOUTUBE_CHANNELS',
   rawYouTubeVideos: 'LARK_TABLE_RAW_YOUTUBE_VIDEOS',
   rawYouTubeAnalyticsDaily: 'LARK_TABLE_RAW_YOUTUBE_ANALYTICS_DAILY',
+  rawGoogleAdsAccounts: 'LARK_TABLE_RAW_GOOGLE_ADS_ACCOUNTS',
+  rawGoogleAdsCampaigns: 'LARK_TABLE_RAW_GOOGLE_ADS_CAMPAIGNS',
+  rawGoogleAdsAdGroups: 'LARK_TABLE_RAW_GOOGLE_ADS_AD_GROUPS',
+  rawGoogleAdsAds: 'LARK_TABLE_RAW_GOOGLE_ADS_ADS',
+  rawGoogleAdsAssets: 'LARK_TABLE_RAW_GOOGLE_ADS_ASSETS',
+  rawGoogleAdsDaily: 'LARK_TABLE_RAW_GOOGLE_ADS_DAILY',
   // ตาราง Planned เดิม 5 ตารางใน DEV Base จะถูก Rename/Reuse แบบ In-place เพื่อไม่เพิ่ม Table โดยไม่จำเป็น
   rawMetaOrganicAccounts: 'LARK_TABLE_RAW_META_ORGANIC_ACCOUNTS',
   rawMetaOrganicContent: 'LARK_TABLE_RAW_META_ORGANIC_CONTENT',

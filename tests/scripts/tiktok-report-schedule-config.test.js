@@ -26,6 +26,18 @@ test('schedule apply enables both flags and verifies idempotently', async () => 
   assert.equal(rerun.changed.length, 0);
 });
 
+
+test('schedule preview accepts existing legacy report setting keys without profile switching', async () => {
+  const { filePath } = await fixture({
+    MKT_DAILY_REPORT_SETTING_KEY: 'dev_ft_pumkin:tiktok:daily',
+    MKT_WEEKLY_REPORT_SETTING_KEY: 'dev_ft_pumkin:tiktok:weekly',
+  });
+  const result = await planTikTokReportScheduleActivation({ filePath });
+  assert.equal(result.readyToApply, true);
+  assert.equal(result.summary.warnings, 2);
+  assert.equal(result.warnings.every((item) => item.code === 'LEGACY_REPORT_SETTING_KEY_IN_USE'), true);
+});
+
 test('schedule activation fails closed for placeholder table IDs', async () => {
   const { filePath } = await fixture({ LARK_TABLE_MKT_REPORT_TOP_CONTENT: 'replace-with-table-id' });
   const result = await planTikTokReportScheduleActivation({ filePath });
@@ -36,7 +48,7 @@ test('schedule activation fails closed for placeholder table IDs', async () => {
 async function fixture(overrides = {}) {
   const values = {
     MKT_ENV: 'development',
-    MKT_CUSTOMER_PROFILE: 'dev_ft_pumkin',
+    MKT_CUSTOMER_PROFILE: 'integration_workspace',
     MKT_CONNECTOR_TIKTOK_ENABLED: 'true',
     MKT_SCHEDULE_TIKTOK_ENABLED: 'true',
     MKT_SCHEDULE_DAILY_REPORT_ENABLED: 'false',
@@ -44,8 +56,8 @@ async function fixture(overrides = {}) {
     MKT_DAILY_REPORT_TIME: '08:10',
     MKT_WEEKLY_REPORT_TIME: '08:15',
     MKT_WEEKLY_REPORT_WEEKDAY: 'monday',
-    MKT_DAILY_REPORT_SETTING_KEY: 'dev_ft_pumkin:tiktok:daily',
-    MKT_WEEKLY_REPORT_SETTING_KEY: 'dev_ft_pumkin:tiktok:weekly',
+    MKT_DAILY_REPORT_SETTING_KEY: 'integration_workspace:tiktok:daily',
+    MKT_WEEKLY_REPORT_SETTING_KEY: 'integration_workspace:tiktok:weekly',
     LARK_TABLE_MKT_REPORT_SETTINGS: 'tblSettings',
     LARK_TABLE_MKT_REPORT_SNAPSHOTS: 'tblSnapshots',
     LARK_TABLE_MKT_REPORT_METRIC_VALUES: 'tblMetrics',

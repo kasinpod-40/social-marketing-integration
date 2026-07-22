@@ -2,7 +2,7 @@
 
 ## YouTube Data API / Analytics API
 
-Status: Source contract and DEV smoke verified; customer-scale Live UAT pending.
+Status: Source contract and Workspace smoke verified; customer-scale validation pending.
 
 - Data API Channel lookup uses `channels.list`.
 - Upload enumeration uses `playlistItems.list` with cursor pagination.
@@ -44,7 +44,7 @@ Status: Confirmed MVP RAW source.
 
 - Lark Native Integration creates and manages the source table.
 - The table may be renamed to `RAW_TikTok_Creator_Videos` and moved into the RAW folder without breaking sync.
-- Manual sync updates existing rows and does not create duplicate records in verified DEV tests.
+- Manual sync updates existing rows and does not create duplicate records in verified Workspace tests.
 - Missing content can reflect eligibility/content availability and is not proof of a fixed row limit.
 - Worker must treat this table as protected read-only schema.
 - Canonical reporting uses `MKT_Content` and `MKT_Content_Daily`, not RAW directly.
@@ -104,15 +104,16 @@ Status: Customer-authorized read-only Live Preview passed on 2026-07-22.
 - Removing those request fields produced a successful rerun while nullable output mapping remained `null`.
 - Final result: `data_available`, six non-empty datasets, errors/truncation `0/0`, Preview `No changes`.
 - Frequency remains `—`; no schedule exists.
-- No external delivery exists in the reviewed version.
+- The committed replacement Script keeps `DRY_RUN` default and adds exact signed PREVIEW/manual LIVE delivery without mutation APIs.
 
 Evidence boundary:
 
-- The 598-line safety scan is documented Live review evidence.
-- Sanitized source is not committed, so it is not independently reproducible from Repository source.
-- Before signed delivery, add a sanitized Script snapshot or immutable checksum/query/output manifest.
+- The original 598-line safety scan remains documented Live review evidence.
+- A sanitized replacement source is now committed at `scripts/google-ads-manager-script-signed-delivery.js`.
+- External signed PREVIEW/LIVE has not yet been run on the existing Workspace resources with Chemistry K data; Source implementation does not equal live validation.
+- Signature, payload and replay details are locked in `docs/google-ads-signed-delivery-contract-v1.md`.
 
-See `docs/google-ads-manager-script-read-only-uat-evidence.md`.
+See `docs/google-ads-manager-script-read-only-uat-evidence.md` and `docs/google-ads-signed-delivery-integration-validation.md`.
 
 ## Lark View OpenAPI discoveries
 

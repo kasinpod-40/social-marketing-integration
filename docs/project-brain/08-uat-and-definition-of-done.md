@@ -1,4 +1,4 @@
-# 08 — UAT and Definition of Done
+# 08 — Validation and Definition of Done
 
 ## Definition of Done
 A task is not done unless:
@@ -31,3 +31,16 @@ A task is not done unless:
 - Completeness expected/query counts ตรงกัน; scope ขาดต้อง fail/partial พร้อม operational evidence
 - Rerun ไม่เพิ่ม Stable-key rows
 - Memory/API work ถูกแบ่งเป็น bounded units และ safety limit ไม่ truncate แบบ silent success
+
+## Signed inbound delivery DoD
+
+- Exact method/path/content type and required headers are enforced.
+- Raw-body digest and HMAC are verified before JSON trust.
+- Timestamp, nonce/replay and request idempotency pass.
+- Account/customer/environment identity is allowlisted exactly.
+- PREVIEW produces zero Queue/Lark business writes.
+- All destination tables are planned before the first write.
+- Retry/backoff, distributed lock, DLQ/redrive and retention are proven.
+- Reconciliation accounts for every expected row and rerun creates zero duplicate Stable keys.
+- Secret/raw payload does not appear in logs, Queue, Lark or Git.
+- Schedule remains disabled until a separate approval after customer-data validation.

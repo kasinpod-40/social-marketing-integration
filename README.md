@@ -18,16 +18,16 @@ Contract version numbers do not automatically bump the application package versi
 Milestone estimates, not code coverage:
 
 ```text
-MKT DEV MVP                         ~59%
+MKT Integration Workspace          ~59%
 Lark data model/schema foundation   100%
 Google Ads end-to-end                45%
-Customer-real UAT readiness          40%
+Customer-source replacement readiness 40%
 Chemistry K Production readiness     25%
 ```
 
 Detailed weighting: `docs/project-brain/mkt-progress-v0.13.0.md`.
 
-## Current Lark DEV state
+## Current Integration Workspace Lark state
 
 Fresh configuration-only audit of `Social MKT Data Hub(11).base`:
 
@@ -90,47 +90,45 @@ AGENTS.md
 - Connector coding cannot start until the current task records technical approval.
 - Credential, Live resource, Schedule and Production changes require separate gates.
 
-## Environment and ownership
+## Integration Workspace and ownership
 
-### DEV
+Before Production there is one operational Workspace:
 
 ```env
 MKT_ENV=development
-MKT_CUSTOMER_PROFILE=dev_ft_pumkin
+MKT_CUSTOMER_PROFILE=integration_workspace
 ```
 
-Developer-owned resources and test data only.
+`development` is only the current Cloudflare isolation label. It does not create separate DEV/UAT workflows.
 
-### Customer-real UAT
+The same Worker, D1, Queue, DLQ, secret store, Lark Base and table IDs are used while the full system is assembled. Source ownership is defined per Connector:
 
-```env
-MKT_ENV=uat
-MKT_CUSTOMER_PROFILE=uat_chemistry_k
-```
+- TikTok and Google Ads use Chemistry K customer sources; Facebook, Instagram and YouTube may still use temporary developer-owned sources;
+- Google Ads, WooCommerce and Chatwoot use customer-owned sources when access exists;
+- the profile does not change when a source is replaced;
+- temporary rows are removed by exact platform/account/source scope before customer data is backfilled.
 
-Customer-owned source accounts/data with isolated temporary developer-owned Lark and Cloudflare resources. Canonical `customerKey` and connector `accountKey` remain `chemistry_k` for Production cutover.
-
-### Production
+Production uses:
 
 ```env
 MKT_ENV=production
 MKT_CUSTOMER_PROFILE=chemistry_k
 ```
 
-Production must use customer-owned Lark, Cloudflare, D1, Queues, credentials and platform assets. Production remains disabled.
+Production must use customer-owned Lark, Cloudflare, D1, Queues, credentials and platform assets.
 
-Full contract: `docs/project-brain/customer-real-uat.md`.
+Full contract: `docs/project-brain/integration-workspace.md`.
 
 ## Connector status
 
 | Connector | Status | Current direction |
 |---|---|---|
-| TikTok Organic | Active in verified DEV | Lark Native protected RAW → Canonical Content/Daily |
-| YouTube Organic | Active in verified DEV | YouTube Data API + Owner Analytics |
+| TikTok Organic | Active in Integration Workspace | Lark Native protected RAW → Canonical Content/Daily |
+| YouTube Organic | Active in Integration Workspace | YouTube Data API + Owner Analytics |
 | Facebook Organic | Planned | Meta Graph business adapter + shared reliability |
 | Instagram Organic | Planned | Instagram Login/Graph business adapter + shared reliability |
 | Meta Ads | Planned | Controlled API/Worker connector |
-| Google Ads | Read-only UAT passed; delivery not implemented | Manager Script signed delivery MVP; direct API optional Phase 2 |
+| Google Ads | Signed-delivery source implementation complete; Integration Workspace validation pending | Manager Script signed delivery MVP; direct API optional Phase 2 |
 | TikTok Ads | Planned | Controlled API/Worker connector; Lark native Ads is not Production source of truth |
 | WooCommerce | Planned | Sanitized source contract, connector pending |
 | Chatwoot | Planned | Sanitized conversation contract, connector pending |
@@ -182,7 +180,7 @@ Read-only Preview:
 npm run setup:google-ads-view-filters
 ```
 
-Guarded Apply is reserved for a verified DEV mismatch and requires explicit confirmation:
+Guarded Apply is reserved for a verified Integration Workspace mismatch and requires explicit confirmation:
 
 ```bash
 CONFIRM_WRITE=YES npm run setup:google-ads-view-filters:apply
@@ -255,11 +253,11 @@ npm ci
 
 Do not commit `.dev.vars` or `wrangler.sync.jsonc`.
 
-Minimum DEV identity:
+Current Integration Workspace identity:
 
 ```env
 MKT_ENV=development
-MKT_CUSTOMER_PROFILE=dev_ft_pumkin
+MKT_CUSTOMER_PROFILE=integration_workspace
 ```
 
 Secrets must remain in `.dev.vars`, Wrangler Secret or the environment-specific Secret Manager:
@@ -329,7 +327,7 @@ CONFIRM_WRITE=YES npm run setup:youtube-schema:apply
 npm run job:youtube-sync
 ```
 
-DEV schedules and Owner Analytics must remain environment-specific. Customer-scale 837-video Live UAT is still required before Production.
+Workspace schedules and Owner Analytics remain channel-gated. Customer-scale 837-video validation is still required before Production.
 
 ## Cloudflare configuration
 
@@ -382,10 +380,10 @@ Before coding, approve:
 6. partial-write/retry classification
 7. Queue/DLQ/checkpoint/lock/reconciliation
 8. retention/redaction/audit
-9. DEV/UAT/Production isolation
+9. single-Workspace profile safety and Production isolation
 10. schedule disabled by default
 
-Then run isolated manual UAT and an idempotent rerun before any schedule is enabled.
+Then run manual signed-delivery validation in the same Integration Workspace and an idempotent rerun before any schedule is enabled.
 
 ## Release safety
 
@@ -415,7 +413,7 @@ npm run release:verify -- outputs/releases/<archive>.zip
 ## Permanent rules
 
 - Data model before Connector
-- DEV/UAT/Production resources stay isolated
+- One mixed-source Integration Workspace is used before Production; source ownership is tracked per Connector and the profile is not switched between channels
 - Production is customer-owned
 - connectors and schedules disabled by default until their gates pass
 - no fake Production success

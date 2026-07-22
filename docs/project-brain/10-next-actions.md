@@ -21,89 +21,24 @@ npm run deploy:dry-run          PASS
 
 No Live Lark Apply, Google Ads mutation, Queue message, D1 migration, schedule change or deployment occurred.
 
-## Immediate next approval gate
+## Immediate next gate
 
-Open a separate task only after user approval:
+The signed-delivery Source implementation is complete on Draft PR `#17`. Run Google Ads validation in the same Integration Workspace using `docs/google-ads-signed-delivery-integration-validation.md`.
 
-`Google Ads Manager Script signed delivery connector`
+Required order:
 
-Do not begin implementation until the contract below is approved.
+1. final branch CI and security scan;
+2. existing Integration Workspace D1 migration and Worker deployment;
+3. Manager Script `DRY_RUN`;
+4. signed zero-write `PREVIEW`;
+5. negative signature/tamper/header/timestamp/replay checks;
+6. manual one-shot `LIVE`;
+7. all 12 destination reconciliation;
+8. exact-body and fresh-delivery idempotent reruns;
+9. controlled retry/backoff, concurrent-lock and DLQ/redrive/expiry checks;
+10. TikTok, Meta, YouTube and Core regression evidence.
 
-## Contract to lock before coding
-
-### Payload
-
-1. Envelope schema and version.
-2. Exact six dataset schemas:
-   - account;
-   - campaigns;
-   - ad groups;
-   - ads;
-   - YouTube assets;
-   - campaign daily metrics.
-3. Null semantics and unsupported-field handling.
-4. Bounded batch and payload size.
-5. Stable ordering where required for deterministic signatures/tests.
-
-### Security
-
-1. HMAC algorithm and canonical serialization.
-2. Timestamp format and allowed clock skew.
-3. Nonce format and replay window.
-4. Key rotation and environment separation.
-5. Constant-time signature comparison.
-6. Redacted diagnostics that never expose key, token, customer ID or raw payload.
-
-### Identity and idempotency
-
-1. Canonical `customerKey` and `accountKey`.
-2. Stable key per dataset grain.
-3. Request-level idempotency key.
-4. Row-level fingerprint/checkpoint rules.
-5. Rerun behavior with zero duplicate records.
-
-### Reliability
-
-1. Worker ingress validation order.
-2. Queue job type in the central catalog.
-3. Retryable versus Permanent classification.
-4. D1 nonce/replay state.
-5. D1 checkpoint and distributed lock.
-6. DLQ and controlled redrive.
-7. Partial-write semantics.
-8. Reconciliation and data-quality counters.
-9. Retention and expiry.
-
-### Destination
-
-1. RAW Google table mapping.
-2. Canonical Ads Accounts/Campaigns/AdGroups/Ads/Creatives/AssetGroups/Daily mapping.
-3. Relation/stable-key resolution.
-4. Money micros conversion and Formula ownership.
-5. Lark write batching and rate-limit handling.
-6. Sync Log and System Alert evidence.
-
-### Environment and rollout
-
-1. DEV, `uat_chemistry_k` and Production isolation.
-2. Separate secrets and signing keys per environment.
-3. Connector feature flag disabled by default.
-4. Schedule disabled by default.
-5. Customer-real UAT retention/cleanup.
-6. Customer-owned Production resources.
-
-## Implementation order after approval
-
-1. Add Google Ads connector/catalog/job contracts in disabled state.
-2. Add signed ingress parser and security tests without destination writes.
-3. Add Queue/D1 replay/idempotency state.
-4. Add six-dataset normalization and destination planning.
-5. Add bounded Lark writes behind explicit UAT flags.
-6. Add partial-failure, retry, DLQ and reconciliation tests.
-7. Run isolated manual signed-delivery UAT with schedule off.
-8. Repeat the same payload and verify zero duplicates.
-9. Run controlled partial-failure/recovery tests.
-10. Observe a clean manual cycle before considering schedule.
+Keep Schedule disabled and do not reopen Lark Formula/View/schema work. Production requires a separate approval and customer-owned resources.
 
 ## Direct Google Ads API track
 
@@ -116,7 +51,7 @@ Review pending
 Current level Test Account Access
 ```
 
-Direct API is optional Phase 2. Do not delay the Manager Script MVP solely for approval, but do not claim production direct-API readiness until approval and OAuth UAT pass.
+Direct API is optional Phase 2. Do not delay the Manager Script MVP solely for approval, but do not claim production direct-API readiness until approval and OAuth validation passes.
 
 ## View work
 
@@ -166,13 +101,14 @@ Do not overload the current stable-key Views without approval.
 
 1. Facebook Organic connector using shared Meta transport and reliability.
 2. Instagram Organic connector and token-refresh operations.
-3. Meta Ads connector and customer-real data UAT.
+3. Meta Ads connector and customer-data validation.
 4. TikTok Ads access/Business Center/API preflight and connector.
 5. WooCommerce.
 6. Chatwoot.
 7. Multi-channel AI summary/insight/notification.
-8. Channel-by-channel `uat_chemistry_k`.
-9. Customer-owned Production cutover.
+8. Replace temporary developer sources channel by channel without changing profile `integration_workspace`.
+9. Run full customer-data validation in the same Workspace.
+10. Customer-owned Production cutover.
 
 ## Permanent release blockers
 
@@ -182,6 +118,6 @@ Do not overload the current stable-key Views without approval.
 - Missing bounded pagination/batch limits.
 - Missing replay/signature validation for inbound delivery.
 - Reliability, reconciliation or partial-write gate failing.
-- Schedule enabled before manual UAT.
+- Schedule enabled before manual integration validation.
 - Secret/customer identity present in Source or logs.
-- Customer-scale Live UAT not completed where required.
+- Customer-scale live validation not completed where required.

@@ -32,11 +32,19 @@ export async function planTikTokReportScheduleActivation(input = {}) {
   const warnings = [];
 
   expectValue(vars, 'MKT_ENV', 'development', conflicts);
-  expectValue(vars, 'MKT_CUSTOMER_PROFILE', 'dev_ft_pumkin', conflicts);
+  expectValue(vars, 'MKT_CUSTOMER_PROFILE', 'integration_workspace', conflicts);
   expectValue(vars, 'MKT_CONNECTOR_TIKTOK_ENABLED', 'true', conflicts);
   expectValue(vars, 'MKT_SCHEDULE_TIKTOK_ENABLED', 'true', conflicts);
-  expectValue(vars, 'MKT_DAILY_REPORT_SETTING_KEY', 'dev_ft_pumkin:tiktok:daily', conflicts);
-  expectValue(vars, 'MKT_WEEKLY_REPORT_SETTING_KEY', 'dev_ft_pumkin:tiktok:weekly', conflicts);
+  expectReportSettingKey(
+    vars, 'MKT_DAILY_REPORT_SETTING_KEY',
+    ['integration_workspace:tiktok:daily', 'dev_ft_pumkin:tiktok:daily'],
+    conflicts, warnings,
+  );
+  expectReportSettingKey(
+    vars, 'MKT_WEEKLY_REPORT_SETTING_KEY',
+    ['integration_workspace:tiktok:weekly', 'dev_ft_pumkin:tiktok:weekly'],
+    conflicts, warnings,
+  );
 
   for (const key of [
     'LARK_TABLE_MKT_REPORT_SETTINGS',
@@ -125,6 +133,22 @@ export async function applyTikTokReportScheduleActivation(input = {}) {
     verification,
     deployCommand: `npx wrangler deploy --config ${filePath}`,
   });
+}
+
+
+function expectReportSettingKey(vars, key, supported, conflicts, warnings) {
+  const actual = vars[key];
+  if (!supported.includes(actual)) {
+    conflicts.push(conflict('REPORT_SETTING_KEY_INVALID', key, `${key} ต้องเป็น ${supported.join(' หรือ ')}`));
+    return;
+  }
+  if (actual.startsWith('dev_ft_pumkin:')) {
+    warnings.push(Object.freeze({
+      code: 'LEGACY_REPORT_SETTING_KEY_IN_USE',
+      field: key,
+      message: `${key} ยังใช้ Stable key เดิมได้โดยไม่ต้องแก้ Lark record; การสร้างใหม่ให้ใช้ integration_workspace`,
+    }));
+  }
 }
 
 function expectValue(vars, key, expected, conflicts) {

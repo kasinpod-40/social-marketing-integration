@@ -21,31 +21,27 @@ Authority order ให้ยึด `AGENTS.md` และ `docs/current-task.md` 
 
 Contract version numbers are not automatic application package releases.
 
-## Environment and ownership
+## Integration Workspace and ownership
 
-### DEV
+### Integration Workspace
 
-- Profile: `dev_ft_pumkin`
-- Lark/Cloudflare/source assets: developer-owned
-- TikTok Organic and YouTube Organic active only where DEV gates passed
-
-### Customer-real UAT
-
-- Profile: `uat_chemistry_k`
-- Source accounts/data: customer-owned
-- Temporary isolated Lark/Cloudflare: developer-owned
-- Canonical `customerKey` and connector `accountKey`: `chemistry_k`
-- Every new connector and schedule disabled by default
+- Technical environment label: `development`
+- Runtime profile: `integration_workspace`
+- Worker, D1, Queue, DLQ, secret store and Lark Base: developer-owned current resources
+- Target customer context: `chemistry_k`
+- Source accounts/data: mixed per Connector
+- Temporary developer sources are allowed only to complete the end-to-end system and are marked for replacement
+- No DEV/UAT profile switching or separate UAT infrastructure
 
 ### Production
 
 - Profile: `chemistry_k`
 - Lark, Cloudflare, D1, Queue, App credentials and platform assets must be customer-owned
-- Production remains disabled
+- Production remains disabled until every customer source and full-system gate passes
 
-Full ownership contract: `docs/project-brain/customer-real-uat.md`.
+Full ownership/replacement contract: `docs/project-brain/integration-workspace.md`.
 
-## Current Lark DEV baseline
+## Current Integration Workspace Lark baseline
 
 Fresh configuration-only audit of `Social MKT Data Hub(11).base`:
 
@@ -100,12 +96,12 @@ Completed:
 - stable key, idempotency, reconciliation
 - D1 checkpoint, lock, retry, DLQ and alerts
 - Daily/Weekly reports and managed Client Views
-- DEV schedules and live reliability gates
+- Workspace schedules and live reliability gates
 
 Remaining:
 
 - ongoing operational observation
-- customer-real UAT and Production cutover
+- customer-source validation and Production cutover
 
 ### YouTube Organic — 90%
 
@@ -113,13 +109,13 @@ Completed:
 
 - Public/OAuth access and identity gates
 - RAW Channel/Video/Analytics and Canonical writes
-- scheduled DEV Data API and Owner Analytics
+- scheduled Workspace Data API and Owner Analytics
 - bounded large-account pagination/chunking and durable resume
-- reliability/outbox/redrive migrations and DEV smoke
+- reliability/outbox/redrive migrations and Workspace smoke
 
 Remaining:
 
-- customer-owned 837-video Live UAT
+- customer-owned 837-video validation
 - applicable pending rollout/observation gates
 - Production cutover
 
@@ -135,7 +131,7 @@ Remaining:
 
 - business adapter and connector implementation
 - normalization, checkpoint/reconciliation and reliability
-- schedule, customer-real UAT and Production
+- schedule, customer-source validation and Production
 
 ### Instagram Organic — 30%
 
@@ -148,7 +144,7 @@ Completed:
 Remaining:
 
 - connector and token operations
-- reliability, schedule, UAT and Production
+- reliability, schedule, validation and Production
 
 ### Meta Ads — 25%
 
@@ -162,14 +158,14 @@ Remaining:
 
 - source queries and connector
 - entity/daily normalization and writes
-- reliability, reconciliation, UAT, schedule and Production
+- reliability, reconciliation, validation, schedule and Production
 
 ### Google Ads — 45%
 
 Completed:
 
 - customer-authorized account link/selectability
-- Manager Script exact allowlist and read-only GAQL UAT
+- Manager Script exact allowlist and read-only GAQL validation
 - `data_available`, six non-empty bounded datasets
 - errors/truncation `0/0`, Google Ads `No changes`
 - automated Lark schema, Relations, managed filters and formulas
@@ -192,10 +188,10 @@ Remaining:
 - Worker ingress and signature/replay checks
 - Queue/DLQ and D1 state
 - normalization and destination writes
-- idempotency/reconciliation/reliability UAT
+- idempotency/reconciliation/reliability validation
 - schedule and Production
 
-Sanitized UAT evidence: `docs/google-ads-manager-script-read-only-uat-evidence.md`.
+Sanitized validation evidence: `docs/google-ads-manager-script-read-only-uat-evidence.md`.
 
 ### TikTok Ads — 10%
 
@@ -212,17 +208,17 @@ Remaining:
 
 - access/Business Center/app authorization preflight
 - reporting contract and connector
-- reliability, UAT and Production
+- reliability, validation and Production
 
 ### WooCommerce — 10%
 
 - sanitized source/transport foundation exists
-- connector, pagination, checkpoint/reconciliation and UAT remain
+- connector, pagination, checkpoint/reconciliation and validation remain
 
 ### Chatwoot — 10%
 
 - sanitized contract exists
-- final objects/retention contract, connector and UAT remain
+- final objects/retention contract, connector and validation remain
 
 ## Core runtime state
 
@@ -291,10 +287,10 @@ The transitive vulnerable `sharp` chain was remediated with `overrides.sharp=0.3
 Milestone estimates, not code coverage:
 
 ```text
-MKT DEV MVP                         ~59%
+MKT Integration Workspace completion                         ~59%
 Lark data model/schema foundation   100%
 Google Ads end-to-end                45%
-Customer-real UAT readiness          40%
+Customer-source replacement readiness 40%
 Chemistry K Production readiness     25%
 ```
 
@@ -322,10 +318,10 @@ Before coding, approve:
 6. partial-write/retry classification
 7. Queue/DLQ/checkpoint/lock/reconciliation
 8. retention/redaction/audit
-9. DEV/UAT/Production isolation
+9. single mixed-source Workspace safety and Production isolation
 10. schedule disabled by default
 
-Then implement and run isolated manual UAT. Schedule may be enabled only after idempotent rerun, reconciliation and reliability gates pass.
+Then run manual validation in the same Integration Workspace. Schedule may be enabled only after idempotent rerun, reconciliation and reliability gates pass.
 
 ## Permanent safety rules
 
@@ -335,6 +331,6 @@ Then implement and run isolated manual UAT. Schedule may be enabled only after i
 - every Write path requires stable key, idempotency and retry semantics
 - missing metric is `null`, not zero, unless the source proves zero
 - secrets remain in Environment/Secret Manager
-- DEV/UAT/Production infrastructure stays isolated
+- One mixed-source Integration Workspace is used before Production; Production stays isolated and customer-owned
 - Production resources must be customer-owned
 - no Live Apply based only on chat instructions when Repository contract is newer

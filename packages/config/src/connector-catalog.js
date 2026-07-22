@@ -10,7 +10,7 @@ import {
  * กฎสำคัญ:
  * - key ต้องคงที่เพราะถูกใช้ใน Config, Queue job, Log และ Feature flag
  * - implementationStatus='active' หมายถึงมี Write/Validation path จริงพร้อม Test แล้ว
- * - implementationStatus='uat_pending' หมายถึงมี Code/Contract แต่ยังห้าม Runtime ทำงานก่อน Live DEV UAT
+ * - implementationStatus='uat_pending' เป็นชื่อสถานะ Legacy; หมายถึงมี Code/Contract แต่ยังห้าม Runtime ทำงานก่อน Integration validation
  * - implementationStatus='planned' หมายถึงเตรียม Contract ไว้เท่านั้นและห้าม Runtime ทำงานจริง
  */
 export const CONNECTOR_KEYS = Object.freeze({
@@ -18,6 +18,7 @@ export const CONNECTOR_KEYS = Object.freeze({
   FACEBOOK: 'facebook',
   INSTAGRAM: 'instagram',
   YOUTUBE: 'youtube',
+  GOOGLE_ADS: 'google_ads',
   WOOCOMMERCE: 'woocommerce',
   CHATWOOT: 'chatwoot',
 });
@@ -97,6 +98,24 @@ const CONNECTOR_CATALOG = Object.freeze({
         rateLimitAwareRetry: true,
         largeAccountFixture: true,
         liveAccountUat: false,
+      },
+    }),
+  }),
+  [CONNECTOR_KEYS.GOOGLE_ADS]: freezeDefinition({
+    key: CONNECTOR_KEYS.GOOGLE_ADS,
+    displayName: 'Google Ads',
+    capability: 'paid_ads_reporting',
+    implementationStatus: CONNECTOR_IMPLEMENTATION_STATUS.ACTIVE,
+    featureFlagEnv: 'MKT_CONNECTOR_GOOGLE_ADS_ENABLED',
+    requiredRuntimeFields: ['accountKey'],
+    largeAccount: createLargeAccountReadiness({
+      status: LARGE_ACCOUNT_STATUS.FOUNDATION_READY,
+      primaryEntity: 'campaign_daily_rows',
+      minimumFixtureItems: 10000,
+      gates: {
+        boundedChunking: true,
+        stableKeyIdempotency: true,
+        rateLimitAwareRetry: true,
       },
     }),
   }),

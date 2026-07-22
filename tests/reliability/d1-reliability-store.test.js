@@ -24,7 +24,7 @@ test('D1 sync run persistence redacts secret-like keys in details JSON', async (
 
   await store.saveSyncRun({
     syncId: 'run-1',
-    customerProfile: 'dev_ft_pumkin',
+    customerProfile: 'integration_workspace',
     platform: 'tiktok',
     accountKey: 'ft_pumkin',
     source: 'source',

@@ -18,6 +18,7 @@ import { seedMetricDefinitions } from '../../../packages/application/src/use-cas
 import { seedReportSettings } from '../../../packages/application/src/use-cases/seed-report-settings.js';
 import { syncTikTokCreatorNativeToLark } from '../../../packages/application/src/use-cases/sync-tiktok-creator-native-to-lark.js';
 import { syncYouTubeOrganicToLark } from '../../../packages/application/src/use-cases/sync-youtube-organic-to-lark.js';
+import { syncGoogleAdsManagerScriptDelivery } from '../../../packages/application/src/use-cases/sync-google-ads-manager-script-delivery.js';
 import { validateLarkLiveSync } from '../../../packages/application/src/use-cases/validate-lark-live-sync.js';
 import { readLarkTableIdsFromEnv } from '../../../packages/config/src/lark-table-config.js';
 import {
@@ -82,6 +83,49 @@ export async function processJob(input) {
     ? assertConnectorRunnable(runtimeConfig, definition.connectorKey)
     : null;
   const infrastructure = input.getInfrastructure();
+
+  if (definition.type === JOB_TYPES.GOOGLE_ADS_MANAGER_SCRIPT_DELIVERY) {
+    const tableIds = readLarkTableIdsFromEnv(input.env, [
+      'rawGoogleAdsAccounts', 'rawGoogleAdsCampaigns', 'rawGoogleAdsAdGroups',
+      'rawGoogleAdsAds', 'rawGoogleAdsAssets', 'rawGoogleAdsDaily',
+      'mktAdsAccounts', 'mktAdsCampaigns', 'mktAdsAdGroups',
+      'mktAdsAds', 'mktAdsCreatives', 'mktAdsDaily',
+      'mktSyncLog', 'mktSystemAlerts',
+    ]);
+    const reliability = infrastructure.getReliability(tableIds);
+    const deliveryStore = infrastructure.getGoogleAdsDeliveryStore();
+    const deliveryId = requireJobText(input.job.body?.deliveryId, 'deliveryId');
+
+    return runReliableSync({
+      store: reliability.store,
+      lockManager: reliability.lockManager,
+      customerProfile: runtimeConfig.profileKey,
+      accountKey: connectorConfig.accountKey,
+      platform: 'google_ads',
+      source: 'google_ads_manager_script',
+      syncType: 'signed_delivery',
+      retryCount: Math.max(0, readAttempts(input.message) - 1),
+      leaseMs: readPositiveInteger(input.env?.MKT_SYNC_LOCK_LEASE_MS, DEFAULT_LOCK_LEASE_MS),
+      renewIntervalMs: readPositiveInteger(
+        input.env?.MKT_SYNC_LOCK_RENEW_INTERVAL_MS,
+        DEFAULT_LOCK_RENEW_INTERVAL_MS,
+      ),
+      alertOnRetryableFailure: false,
+      onReliabilityError: (event) => logQueueResult({
+        ok: false,
+        scope: 'reliability',
+        ...sanitizeReliabilityEvent(event),
+      }),
+      execute: ({ assertLockActive }) => syncGoogleAdsManagerScriptDelivery({
+        deliveryId,
+        deliveryStore,
+        assertLockActive,
+        repository: infrastructure.repository,
+        syncEngine: infrastructure.syncEngine,
+        tables: tableIds,
+      }),
+    });
+  }
 
   if (definition.type === JOB_TYPES.YOUTUBE_ORGANIC_SYNC) {
     // ต้องตรวจ Schema/Table IDs ก่อนสร้าง YouTube client เพื่อไม่เสีย Quota โดยไม่จำเป็น

@@ -1,22 +1,22 @@
 Table,Layer,Connector,Grain,Write mode,Stable key field,Schema status,Environment,Purpose,Decision
-RAW_Facebook_Pages,Raw,Facebook Organic,Account/Page,Upsert latest,raw_page_key,Required,DEV/UAT,Page identity and account metadata,New
-RAW_Facebook_Posts,Raw,Facebook Organic,Post,Upsert latest,raw_post_key,Required,DEV/UAT,Post inventory and metadata,New
-RAW_Facebook_Post_Insights,Raw,Facebook Organic,Post×Metric×Source time,Upsert,raw_post_insight_key,Required,DEV/UAT,Post lifetime/time-series metric payload,New
-RAW_Facebook_Page_Insights,Raw,Facebook Organic,Page×Metric×Source time,Upsert,raw_page_insight_key,Required,DEV/UAT,Daily Page insight payload,New
-RAW_Instagram_Accounts,Raw,Instagram Organic,Account,Upsert latest,raw_ig_account_key,Required,DEV/UAT,Canonical /me identity and account metadata,New
-RAW_Instagram_Media,Raw,Instagram Organic,Media,Upsert latest,raw_ig_media_key,Required,DEV/UAT,Media inventory and metadata,New
-RAW_Instagram_Media_Insights,Raw,Instagram Organic,Media×Metric×Source time,Upsert,raw_ig_media_insight_key,Required,DEV/UAT,Lifetime/time-series media metrics,New
-RAW_Instagram_Account_Insights,Raw,Instagram Organic,Account×Metric×Source time,Upsert,raw_ig_account_insight_key,Required,DEV/UAT,Account aggregate/time-series metrics,New
-RAW_Meta_Ad_Accounts,Raw,Meta Ads,Ad Account,Upsert latest,raw_meta_ad_account_key,Required,DEV/UAT,"Ad account identity, currency and timezone",New
-RAW_Meta_Campaigns,Raw,Meta Ads,Campaign,Upsert latest,raw_meta_campaign_key,Required,DEV/UAT,Campaign inventory,New
-RAW_Meta_Ad_Sets,Raw,Meta Ads,Ad Set,Upsert latest,raw_meta_ad_set_key,Required,DEV/UAT,Ad Set inventory,New
-RAW_Meta_Ads,Raw,Meta Ads,Ad,Upsert latest,raw_meta_ad_key,Required,DEV/UAT,Delivery Ad inventory,New
-RAW_Meta_Creatives,Raw,Meta Ads,Creative,Upsert latest,raw_meta_creative_key,Required,DEV/UAT,Reusable creative/object-story linkage,New
+RAW_Facebook_Pages,Raw,Facebook Organic,Account/Page,Upsert latest,raw_page_key,Required,Integration Workspace,Page identity and account metadata,New
+RAW_Facebook_Posts,Raw,Facebook Organic,Post,Upsert latest,raw_post_key,Required,Integration Workspace,Post inventory and metadata,New
+RAW_Facebook_Post_Insights,Raw,Facebook Organic,Post×Metric×Source time,Upsert,raw_post_insight_key,Required,Integration Workspace,Post lifetime/time-series metric payload,New
+RAW_Facebook_Page_Insights,Raw,Facebook Organic,Page×Metric×Source time,Upsert,raw_page_insight_key,Required,Integration Workspace,Daily Page insight payload,New
+RAW_Instagram_Accounts,Raw,Instagram Organic,Account,Upsert latest,raw_ig_account_key,Required,Integration Workspace,Canonical /me identity and account metadata,New
+RAW_Instagram_Media,Raw,Instagram Organic,Media,Upsert latest,raw_ig_media_key,Required,Integration Workspace,Media inventory and metadata,New
+RAW_Instagram_Media_Insights,Raw,Instagram Organic,Media×Metric×Source time,Upsert,raw_ig_media_insight_key,Required,Integration Workspace,Lifetime/time-series media metrics,New
+RAW_Instagram_Account_Insights,Raw,Instagram Organic,Account×Metric×Source time,Upsert,raw_ig_account_insight_key,Required,Integration Workspace,Account aggregate/time-series metrics,New
+RAW_Meta_Ad_Accounts,Raw,Meta Ads,Ad Account,Upsert latest,raw_meta_ad_account_key,Required,Integration Workspace,"Ad account identity, currency and timezone",New
+RAW_Meta_Campaigns,Raw,Meta Ads,Campaign,Upsert latest,raw_meta_campaign_key,Required,Integration Workspace,Campaign inventory,New
+RAW_Meta_Ad_Sets,Raw,Meta Ads,Ad Set,Upsert latest,raw_meta_ad_set_key,Required,Integration Workspace,Ad Set inventory,New
+RAW_Meta_Ads,Raw,Meta Ads,Ad,Upsert latest,raw_meta_ad_key,Required,Integration Workspace,Delivery Ad inventory,New
+RAW_Meta_Creatives,Raw,Meta Ads,Creative,Upsert latest,raw_meta_creative_key,Required,Integration Workspace,Reusable creative/object-story linkage,New
 RAW_Meta_Ads_Insights,Raw,Meta Ads,Entity×Date×Placement,Upsert,raw_meta_ads_insight_key,Required,UAT,"Raw performance, actions and breakdowns",New
-MKT_Accounts,Canonical,Organic,Account,Upsert,account_key,Existing,DEV/UAT/PROD,Facebook Page and Instagram account master,Extend mapping
-MKT_Account_Daily,Canonical,Organic,Account×Date,Upsert,account_daily_key,Required,DEV/UAT/PROD,Daily Page/Account metrics,New
-MKT_Content,Canonical,Organic,Content,Upsert,content_key,Existing,DEV/UAT/PROD,Facebook Post and Instagram Media master,Extend mapping
-MKT_Content_Daily,Canonical,Organic,Content×Snapshot date,Upsert,content_daily_key,Existing,DEV/UAT/PROD,Cumulative/lifetime content snapshots,Extend mapping
+MKT_Accounts,Canonical,Organic,Account,Upsert,account_key,Existing,Integration Workspace/PROD,Facebook Page and Instagram account master,Extend mapping
+MKT_Account_Daily,Canonical,Organic,Account×Date,Upsert,account_daily_key,Required,Integration Workspace/PROD,Daily Page/Account metrics,New
+MKT_Content,Canonical,Organic,Content,Upsert,content_key,Existing,Integration Workspace/PROD,Facebook Post and Instagram Media master,Extend mapping
+MKT_Content_Daily,Canonical,Organic,Content×Snapshot date,Upsert,content_daily_key,Existing,Integration Workspace/PROD,Cumulative/lifetime content snapshots,Extend mapping
 MKT_Ads_Accounts,Canonical,Meta Ads,Ad Account,Upsert,ads_account_key,Existing v2,UAT/PROD,Ad account master,Existing canonical
 MKT_Ads_Campaigns,Canonical,Meta Ads,Campaign,Upsert,ads_campaign_key,Existing v2,UAT/PROD,Campaign master,Existing canonical
 MKT_Ads_AdGroups,Canonical,Meta Ads,Ad Set,Upsert,ads_ad_group_key,Existing v2,UAT/PROD,Cross-platform canonical Ad Group,Meta source=Ad Set

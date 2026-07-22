@@ -3,6 +3,7 @@ import {
   readLarkText,
 } from '../../../connectors/src/shared/lark-cell-value.js';
 import { permanentError } from '../../../shared/src/errors/runtime-error.js';
+import { normalizeCustomerProfileKey } from '../../../config/src/customer-profiles.js';
 
 const SUPPORTED_REPORT_TYPES = new Set(['daily_organic_report', 'weekly_organic_report']);
 const SUPPORTED_COMPARISON_MODES = new Set(['none', 'previous_period']);
@@ -34,12 +35,19 @@ export async function loadReportSetting(input = {}) {
   }
 
   const setting = normalizeReportSettingRecord(records[0]);
-  if (setting.customerProfile !== expectedProfile) {
+  const normalizedExpectedProfile = normalizeCustomerProfileKey(expectedProfile);
+  const normalizedActualProfile = normalizeCustomerProfileKey(setting.customerProfile);
+  if (normalizedActualProfile !== normalizedExpectedProfile) {
     throw permanentError(
       `Report setting ${reportSettingKey} belongs to ${setting.customerProfile}, not ${expectedProfile}`,
       {
         code: 'REPORT_SETTING_PROFILE_MISMATCH',
-        details: { reportSettingKey, expectedProfile, actualProfile: setting.customerProfile },
+        details: {
+          reportSettingKey,
+          expectedProfile: normalizedExpectedProfile,
+          actualProfile: setting.customerProfile,
+          normalizedActualProfile,
+        },
       },
     );
   }

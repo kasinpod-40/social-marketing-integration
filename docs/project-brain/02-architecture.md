@@ -74,3 +74,20 @@ External page/chunk
 ```
 
 `sync_work_*` ไม่ใช่ Source-of-truth checkpoint. Connector ห้ามเลื่อน `sync_cursors` หรือ `source_record_states` ก่อน Business writes สำเร็จ และห้ามทำ pagination/retry state machine ซ้ำเมื่อ shared work store รองรับอยู่แล้ว.
+
+## Google Ads signed delivery flow
+
+```text
+Google Ads Manager Script (exact account, read-only)
+    -> DRY_RUN counts only
+    -> signed PREVIEW / manual LIVE
+    -> API Worker raw-body HMAC + timestamp + nonce/replay + schema
+    -> D1 durable delivery payload/idempotency
+    -> reference-only Queue job
+    -> shared D1 reliability + distributed lock + DLQ/redrive
+    -> plan all 12 Lark destinations
+    -> stable-key writes
+    -> per-table reconciliation
+```
+
+The API Worker never puts the signing secret, signature, nonce or raw payload on the Queue. PREVIEW is terminal with zero business writes. The connector reuses the central TableSyncEngine and reliability path; it does not create a second retry/lock/DLQ system.

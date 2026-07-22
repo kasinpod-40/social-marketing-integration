@@ -1,6 +1,7 @@
 import { JOB_TYPES } from '../../../packages/application/src/jobs/job-catalog.js';
 import { createLarkBitableClientFromEnv } from '../../../packages/connectors/src/lark/lark-bitable.client.js';
 import { LarkRecordRepository } from '../../../packages/connectors/src/lark/lark-record-repository.js';
+import { D1GoogleAdsDeliveryStore } from '../../../packages/connectors/src/google-ads/d1-google-ads-delivery-store.js';
 import { D1ReliabilityMirrorOutbox } from '../../../packages/reliability/src/d1-reliability-mirror-outbox.js';
 import { D1ReliabilityStore } from '../../../packages/reliability/src/d1-reliability-store.js';
 import { DurableMirrorReliabilityStore } from '../../../packages/reliability/src/durable-mirror-reliability-store.js';
@@ -20,6 +21,7 @@ export function createInfrastructure(env) {
   let incrementalStateStore = null;
   let resumableWorkStore = null;
   let mirrorOutbox = null;
+  let googleAdsDeliveryStore = null;
   const larkReliabilityStores = new Map();
 
   const getSyncEngine = () => {
@@ -38,6 +40,10 @@ export function createInfrastructure(env) {
     getIncrementalStateStore() {
       incrementalStateStore ??= new D1IncrementalStateStore({ db: env?.MKT_STATE_DB });
       return incrementalStateStore;
+    },
+    getGoogleAdsDeliveryStore() {
+      googleAdsDeliveryStore ??= new D1GoogleAdsDeliveryStore({ db: env?.MKT_STATE_DB });
+      return googleAdsDeliveryStore;
     },
     getResumableWorkStore() {
       resumableWorkStore ??= new D1ResumableWorkStore({ db: env?.MKT_STATE_DB });

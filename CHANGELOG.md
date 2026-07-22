@@ -84,15 +84,15 @@
 ## Unreleased — Customer-real UAT foundation — 2026-07-21
 
 ### Added
-- Added a distinct fail-closed `uat` runtime environment and `uat_chemistry_k` profile.
-- Separated infrastructure, source-asset and data ownership so UAT can use customer-real data while temporary Lark/Cloudflare resources remain developer-owned.
+- Added `uat_chemistry_k` as a customer-real logical profile on the existing `development` environment; no separate UAT runtime/infrastructure is created.
+- Kept infrastructure developer-owned and unchanged while switching only source-asset/data ownership to Chemistry K for customer-real UAT.
 - Preserved `chemistry_k` as the Canonical customer/account identity across UAT and Production to prevent Stable-key drift during cutover.
-- Added a customer-real UAT contract covering isolation, authorization, identity preflight, retention and TikTok-first rollout gates.
+- Added a customer-real UAT contract covering shared-DEV safety, authorization, identity preflight, retention and rollout gates.
 
 ### Safety
 - Every UAT connector and schedule remains disabled by default.
 - TikTok live handle is not stored in Source and is required from Environment only when the connector is enabled.
-- No Lark connection, customer-data read, Cloudflare resource creation, remote migration, deployment, live Queue message, external API call or Production mutation occurred in this source task.
+- No new UAT infrastructure, Lark mutation, customer-data read, remote migration, deployment, live Queue message, external API call or Production mutation occurred in this source task.
 
 ## Unreleased — YouTube outbox, redrive and migration transition closure — 2026-07-19
 

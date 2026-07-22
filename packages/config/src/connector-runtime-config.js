@@ -5,14 +5,14 @@ import {
 import { permanentError } from '../../shared/src/errors/runtime-error.js';
 
 /**
- * สร้าง Runtime state ของ Connector ทุกช่องทางจาก Customer profile และ Environment
+ * สร้าง Runtime state ของ Connector ทุกช่องทางจาก Integration/Production profile และ Environment
  *
  * Priority ของ enabled:
  * 1. Environment feature flag เช่น MKT_CONNECTOR_TIKTOK_ENABLED
  * 2. enabledByDefault ใน Customer profile
  *
  * Identity ที่เปลี่ยนตามทรัพยากรจริง เช่น TikTok handle สามารถ Override ผ่าน Environment
- * โดยไม่แก้ Source code ขณะที่ accountKey ยังคงมาจาก Customer profile เพื่อรักษา Stable key
+ * โดยไม่แก้ Source code ขณะที่ accountKey และ Source ownership มาจาก Profile ราย Connector
  *
  * Connector ที่ยัง implementationStatus='planned' จะเปิดใช้งานไม่ได้แม้ตั้ง flag=true
  * เพื่อป้องกันการ Deploy โค้ดที่มีเพียงโครงแต่ยังไม่มี Integration จริง
@@ -27,7 +27,7 @@ export function resolveConnectorRuntimeConfig(profileConnectors, env = {}) {
     if (enabled && definition.implementationStatus !== CONNECTOR_IMPLEMENTATION_STATUS.ACTIVE) {
       const uatPending = definition.implementationStatus === CONNECTOR_IMPLEMENTATION_STATUS.UAT_PENDING;
       throw permanentError(
-        `${definition.displayName} connector is enabled but ${uatPending ? 'Live DEV UAT is pending' : 'its implementation is not ready'}`,
+        `${definition.displayName} connector is enabled but ${uatPending ? 'integration validation is pending' : 'its implementation is not ready'}`,
         {
           code: uatPending ? 'MKT_CONNECTOR_UAT_PENDING' : 'MKT_CONNECTOR_NOT_IMPLEMENTED',
           details: {
@@ -65,6 +65,9 @@ export function resolveConnectorRuntimeConfig(profileConnectors, env = {}) {
           ? 'profile'
           : null,
       displayLabel: normalizeOptionalText(profile.displayLabel),
+      sourceOwner: normalizeOptionalText(profile.sourceOwner),
+      sourceRole: normalizeOptionalText(profile.sourceRole),
+      replacementRequired: profile.replacementRequired === true,
     })];
   });
 

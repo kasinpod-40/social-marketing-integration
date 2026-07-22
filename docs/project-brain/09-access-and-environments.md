@@ -1,75 +1,61 @@
-# 09 — Access and Environments
+# 09 — Access and Runtime Ownership
 
-## Ownership model ที่ใช้จริง
+## Integration Workspace
 
-### DEV
+The project has one pre-Production Workspace:
 
-- Lark Base, Lark App, Cloud/runtime และบัญชี TikTok ทดสอบเป็นทรัพยากรของผู้พัฒนา
-- Runtime profile: `dev_ft_pumkin`
-- TikTok source: `@ft.pumkin`
-- ใช้เพื่อพัฒนา, Dry run, Regression และ UAT ก่อนติดตั้งลูกค้า
-
-### Production — Chemistry K
-
-- ลูกค้าต้องเป็นเจ้าของ Lark Base, Lark App, Cloudflare/runtime, Secrets และ Platform assets ทั้งหมด
-- ผู้พัฒนาได้รับเชิญด้วย Role/IAM ที่เหมาะสม ห้ามแชร์ Password
-- Runtime profile `chemistry_k` เตรียมไว้ใน Source codeแล้ว
-- Table IDs และ Secret จริงต้องตั้งใน Environment ของลูกค้า ไม่แก้ Source codeตอน Deploy
-
-## Runtime selector
-
-```env
-# DEV
+```text
 MKT_ENV=development
-MKT_CUSTOMER_PROFILE=dev_ft_pumkin
+MKT_CUSTOMER_PROFILE=integration_workspace
+```
 
-# Production
+`development` is a technical Cloudflare isolation label only. It is not a separate business stage from UAT.
+
+Ownership:
+
+- Lark Base, Worker, D1, Queue, DLQ and secret store: developer-owned current resources;
+- target customer context: Chemistry K;
+- source ownership: mixed per Connector;
+- secrets: Environment/Secret Manager only;
+- schedules: disabled until each connector passes manual validation.
+
+## Per-Connector source ownership
+
+Runtime readiness exposes:
+
+- `sourceOwner`: `developer` or `customer`;
+- `sourceRole`: `temporary_substitute` or `customer_real`;
+- `replacementRequired`: whether the source must be replaced before final customer-data validation.
+
+The profile remains `integration_workspace` while sources are replaced.
+
+## Production
+
+```text
 MKT_ENV=production
 MKT_CUSTOMER_PROFILE=chemistry_k
 ```
 
-ระบบต้องหยุดทันทีเมื่อ Environment/Profile จับคู่ไม่ถูกต้อง
+Production resources, platform assets and secrets must be customer-owned. The developer is invited with least privilege.
 
-## Connector feature flags
+## Replacement boundary
 
-```env
-MKT_CONNECTOR_TIKTOK_ENABLED=true
-MKT_CONNECTOR_FACEBOOK_ENABLED=false
-MKT_CONNECTOR_INSTAGRAM_ENABLED=false
-MKT_CONNECTOR_YOUTUBE_ENABLED=false
-MKT_CONNECTOR_WOOCOMMERCE_ENABLED=false
-MKT_CONNECTOR_CHATWOOT_ENABLED=false
-```
+Before replacing a temporary source:
 
-Connector ที่ยังเป็น `planned` ห้ามเปิดเป็น `true` ระบบจะ Fail ตอนโหลด Runtime config
+1. stop the connector and its schedules;
+2. record source identity/checkpoint and backup/export;
+3. clean rows only by exact platform/account/source scope;
+4. replace credentials and source identifiers;
+5. run full backfill, reconciliation and idempotent rerun;
+6. verify no temporary rows or duplicate customer stable keys remain.
 
-Identity ที่ขึ้นกับบัญชีจริงเปลี่ยนผ่าน Environment ได้ เช่น:
+## Secret rules
 
-```env
-TIKTOK_SOURCE_HANDLE=ft.pumkin
-```
-
-`accountKey` สำหรับ Stable key ยังอยู่ใน Customer profile และห้ามเปลี่ยนหลังเริ่มใช้งานจริง
-
-## Source code กับ Secret
-
-เก็บใน Source codeได้:
-
-- Customer/profile key
-- Stable account key
-- Connector catalog และ Feature mapping
-- Display name ของลูกค้า
-- Field/table env mapping
-- ค่า default ที่ไม่เป็นความลับ
-- คอมเมนต์ภาษาไทย
-
-ห้ามเก็บใน Source code/Git/ZIP/Log:
-
-- App secret, Access token, API key
-- Password, Webhook secret
-- OAuth refresh token
-- Database credentials
+- no tokens, passwords, API secrets, OTPs or session cookies in Git/Lark/logs;
+- non-secret IDs and mappings may be source-controlled;
+- customer login credentials are never collected;
+- current developer secrets are not copied into customer-owned Production.
 
 ## Freelancer constraint
 
-ผู้พัฒนาไม่มีบริษัทจดทะเบียน จึงใช้ Client-owned Production resources เป็นค่าเริ่มต้นสำหรับ Business verification, Developer app review และสิทธิ์ Platform ทางการ
+The user has no registered company. Customer-owned Production remains the default for Business Verification, Developer App ownership, OAuth consent, cloud resources and platform assets.

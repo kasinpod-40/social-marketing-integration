@@ -23,9 +23,9 @@ Release จะยังไม่ถือว่า Production-ready จนกว
 - [x] Metric Null semantics และ Unique viewer semantics ชัดเจน
 - [x] Report key และ JSON payload มี Collision/Data-loss guard
 
-### Dev และ Production
+### Integration Workspace และ Production
 
-- [x] DEV profile ใช้ `dev_ft_pumkin`
+- [x] Integration Workspace ใช้ profile `integration_workspace` และรองรับ Source ownership แบบผสมราย Connector
 - [x] Production profile ใช้ `chemistry_k`
 - [x] `MKT_ENV` และ `MKT_CUSTOMER_PROFILE` จับคู่แบบ Fail-fast
 - [x] Customer-owned Production rule บันทึกใน PROJECT_BRAIN
@@ -47,7 +47,7 @@ Release จะยังไม่ถือว่า Production-ready จนกว
 - [x] Input/Destination duplicate และ Destination identity conflict มี Guard
 - [x] Empty Multi-select/URL shape ไม่สร้าง False update
 - [x] Plan เดิม Execute ซ้ำไม่ได้
-- [ ] Benchmark/Load test เมื่อข้อมูลเพิ่ม 10x และ 100x (ไม่ Block DEV/Staging deploy รอบแรก)
+- [ ] Benchmark/Load test เมื่อข้อมูลเพิ่ม 10x และ 100x (ไม่ Block Integration Workspace รอบแรก)
 - [x] D1 cursor/fingerprint Incremental processing พร้อม Full reconciliation 24 ชั่วโมง (RAW traversal ยัง Full เพื่อ Safety)
 - [x] Distributed lease lock บน D1 พร้อม owner-scoped renewal/heartbeat ก่อนเพิ่ม Queue concurrency
 - [x] Persisted `MKT_Sync_Log`, `sync_run_id`, DLQ alert และ Reconciliation summary
@@ -62,11 +62,11 @@ Release จะยังไม่ถือว่า Production-ready จนกว
 - [x] แตก ZIP ใหม่แล้ว Test/Check ผ่านซ้ำ
 - [x] บันทึก SHA-256 ของ ZIP ไว้นอก Archive หลังสร้าง Release ขั้นสุดท้าย
 
-### Live DEV gate หลังติดตั้ง ZIP
+### Integration Workspace live gate หลังติดตั้ง ZIP
 
 - [x] Baseline v0.4.0 ยืนยัน TikTok=true และ Connector ที่ยัง planned=false ทั้งหมด
 
-- [x] Baseline v0.4.0 `npm run validate:tiktok` ผ่านกับ DEV Base จริง
+- [x] Baseline v0.4.0 `npm run validate:tiktok` ผ่านกับ Integration Workspace Base จริง
 - [x] Baseline v0.4.0 Source identity เป็น `ft.pumkin`
 - [x] Baseline v0.4.0 ไม่มี skipped rows/issues/destination identity conflicts
 - [x] Baseline v0.4.0 Sync จริงรอบแรกผ่าน
@@ -74,15 +74,15 @@ Release จะยังไม่ถือว่า Production-ready จนกว
 - [x] Baseline v0.4.0 จำนวน Content/Daily ไม่เพิ่มจาก Stable Key เดิม
 
 
-### Live DEV reliability gate ของ v0.5.0/v0.5.1
+### Integration Workspace reliability gate ของ v0.5.0/v0.5.1
 
 - [x] เพิ่ม `LARK_TABLE_MKT_SYNC_LOG` และ `LARK_TABLE_MKT_SYSTEM_ALERTS` ใน `.dev.vars`
 - [x] Local write สร้าง `sync_run_id` และ Upsert `MKT_Sync_Log` จาก `running` เป็น `success`
 - [x] รันซ้ำแล้ว Content/Daily ไม่ Create หรือ Update ซ้ำ
 - [x] เปิดสอง Terminal พร้อมกันแล้วรอบที่ชน Lock ได้ `SYNC_LOCK_BUSY` โดยไม่เขียนข้อมูลธุรกิจ
 - [x] จำลอง Source identity error แบบปลอดภัยและตรวจว่า `MKT_System_Alerts` ได้ Alert พร้อม `sync_run_id`
-- [x] Apply `0002_reliability.sql` กับ D1 DEV resource จริงสำเร็จ
-- [x] Queue Retry, DLQ persistence, D1/Lark Alerts และ D1 lease lock ผ่าน Cloudflare DEV UAT
+- [x] Apply `0002_reliability.sql` กับ D1 Integration Workspace resource จริงสำเร็จ
+- [x] Queue Retry, DLQ persistence, D1/Lark Alerts และ D1 lease lock ผ่าน Cloudflare Integration Workspace validation
 
 - [x] Wrangler config อยู่ root และ `npm run deploy:dry-run` ผ่าน
 - [x] D1 เป็น Primary ส่วน Lark เป็น best-effort mirror
@@ -91,9 +91,9 @@ Release จะยังไม่ถือว่า Production-ready จนกว
 - [x] Workers-runtime tests ครอบ Main Queue, DLQ, Unknown Queue, Active routing และ Scheduled producer
 
 
-### Live DEV incremental gate ของ v0.6.0
+### Integration Workspace incremental gate ของ v0.6.0
 
-- [ ] Apply `0003_incremental_sync.sql` กับ D1 DEV resource จริง
+- [ ] Apply `0003_incremental_sync.sql` กับ D1 Integration Workspace resource จริง
 - [ ] รอบแรกสร้าง Full checkpoint (`initial_checkpoint`) สำเร็จ
 - [ ] รอบไม่มีการเปลี่ยนแปลงเลือก 0 records และไม่ทำ Destination I/O
 - [ ] แก้ RAW หนึ่งรายการแล้วเลือก/อัปเดตเฉพาะรายการนั้น
@@ -106,7 +106,7 @@ Release จะยังไม่ถือว่า Production-ready จนกว
 - [ ] ตั้ง Production Variables/Secrets ใน Account ลูกค้า
 - [ ] ตรวจ Field/Table mapping กับ Base ลูกค้าจริง
 - [ ] Dry run ผ่านใน Production
-- [ ] UAT/Approval จากลูกค้าก่อนเปิด Schedule/Queue จริง
+- [ ] customer validation/approvalก่อนเปิด Schedule/Queue จริง
 
 ## v0.7.2 Completed Report Period & Packaging Gate
 
@@ -116,7 +116,7 @@ Release จะยังไม่ถือว่า Production-ready จนกว
 - [x] Release package excludes `wrangler.sync.jsonc`, `.dev.vars`, `.DS_Store`, `__MACOSX`, AppleDouble files, caches, and local locks
 - [x] Orphan Local mutation guard runbook exists and remains fail-closed
 - [ ] Existing repository Git index no longer tracks `wrangler.sync.jsonc` (`git ls-files wrangler.sync.jsonc` returns nothing)
-- [ ] Report schedules remain `false` until Lark schema/seed/manual UAT passes
+- [ ] Report schedules remain `false` until Lark schema/seed/manual validation passes
 
 ## v0.7.1 Report & Runtime Reliability Gate
 
@@ -128,10 +128,10 @@ Release จะยังไม่ถือว่า Production-ready จนกว
 - [x] Exhausted Lark 1254290 remains retryable rejection, not ambiguous write
 - [x] Local lock mutations use an exclusive guard to prevent renewal/takeover race
 - [x] Repository hygiene rejects tracked `.dev.vars` and `wrangler.sync.jsonc`
-- [x] Wrangler example enables persisted DEV Logs and Traces
+- [x] Wrangler example enables persisted Integration Workspace Logs and Traces
 - [ ] Apply observability block and appropriate sampling to customer-owned Production config
 - [ ] Lark report schema, seed, manual Daily/Weekly UAT, and idempotent rerun pass
-- [ ] Report schedules remain `false` until all Report UAT items pass
+- [ ] Report schedules remain `false` until all Report validation items pass
 
 
 ## v0.8.1 Lark Report Schema Installer Gate
@@ -146,4 +146,4 @@ Release จะยังไม่ถือว่า Production-ready จนกว
 - [ ] `environmentUpdates` are copied to local/customer-owned deployment config only.
 - [ ] Primary-field manual actions are reviewed in Lark UI.
 - [ ] Metric and Report Settings seeds are rerun idempotently.
-- [ ] Report schedules remain disabled until Manual Daily/Weekly UAT passes.
+- [ ] Report schedules remain disabled until Manual Daily/Weekly validation passes.

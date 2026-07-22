@@ -5,7 +5,7 @@
   "compatibility_date": "2026-07-15",
   "compatibility_flags": ["nodejs_compat"],
 
-  // DEV/UAT เก็บ Logs/Traces 100% เพื่อให้ Reliability UAT ตรวจย้อนหลังได้
+  // Integration Workspace เก็บ Logs/Traces 100% เพื่อให้ Reliability validation ตรวจย้อนหลังได้
   // Production ที่ Traffic สูงควรลด head_sampling_rate ตามงบและปริมาณงาน
   "observability": {
     "enabled": true,
@@ -24,15 +24,15 @@
 
   "triggers": {
     // Primary Cron ตรวจ TikTok/Daily/Weekly; YouTube Cron รันทุก 6 ชั่วโมงที่นาที 50 (UTC)
-    // Connector/Schedule flags ด้านล่างปิดทั้งหมด จึงไม่ทำ Business sync จนกว่าจะผ่าน UAT gate
+    // Connector/Schedule flags ด้านล่างปิดทั้งหมด จึงไม่ทำ Business sync จนกว่าจะผ่าน manual validation gate
     "crons": ["*/5 * * * *", "50 0,6,12,18 * * *"]
   },
 
   "d1_databases": [
     {
-      // D1 เป็น operational source of truth และต้องแยก Database ต่อ DEV/UAT/Production
+      // D1 เป็น operational source of truth: Integration Workspace ใช้ฐานเดิมหนึ่งชุด และ Production ต้องแยก customer-owned
       "binding": "MKT_STATE_DB",
-      "database_name": "replace-with-environment-specific-d1-name",
+      "database_name": "replace-with-workspace-or-production-d1-name",
       "database_id": "00000000-0000-0000-0000-000000000000",
       "migrations_dir": "./migrations"
     }
@@ -41,7 +41,7 @@
   "queues": {
     "producers": [
       {
-        // ตัวอย่างนี้รักษา Queue contract ที่ Tests ตรวจ; UAT config จริงต้องเปลี่ยนเป็นชื่อเฉพาะลูกค้า/Environment
+        // ตัวอย่างนี้รักษา Queue contract ที่ Tests ตรวจ; Integration Workspace ใช้ Queue เดิมจนถึง customer-owned Production
         "binding": "MKT_SYNC_QUEUE",
         "queue": "social-mkt-sync-jobs"
       }
@@ -67,16 +67,17 @@
   },
 
   "vars": {
-    // รองรับ development | uat | production และต้องจับคู่ Profile ให้ตรง Environment
+    // รองรับ development | production; Integration Workspace ใช้ development + integration_workspace คงที่
     "MKT_ENV": "development",
-    "MKT_CUSTOMER_PROFILE": "replace-with-customer-profile",
+    "MKT_CUSTOMER_PROFILE": "integration_workspace",
     "DEFAULT_TIMEZONE": "Asia/Bangkok",
 
-    // Release example ปิด Connector ทุกตัว; UAT เปิดทีละช่องทางหลัง Exact identity/source-contract preflight
+    // Release example ปิด Connector ทุกตัว; เปิดทีละช่องทางหลัง Exact identity/source-contract และ manual validation
     "MKT_CONNECTOR_TIKTOK_ENABLED": "false",
     "MKT_CONNECTOR_FACEBOOK_ENABLED": "false",
     "MKT_CONNECTOR_INSTAGRAM_ENABLED": "false",
     "MKT_CONNECTOR_YOUTUBE_ENABLED": "false",
+    "MKT_CONNECTOR_GOOGLE_ADS_ENABLED": "false",
     "MKT_YOUTUBE_ANALYTICS_ENABLED": "false",
     "MKT_CONNECTOR_WOOCOMMERCE_ENABLED": "false",
     "MKT_CONNECTOR_CHATWOOT_ENABLED": "false",
@@ -86,7 +87,7 @@
     // Owner Analytics รันวันละครั้ง 07:50 Bangkok และ re-fetch 7 Pacific days ที่จบแล้ว
     "MKT_YOUTUBE_ANALYTICS_TIME": "07:50",
     "MKT_YOUTUBE_ANALYTICS_LOOKBACK_DAYS": "7",
-    // Safe default: ปิดไว้สำหรับการติดตั้งใหม่; หลัง Schema/Seed/UAT ผ่านให้ใช้ npm run enable:tiktok-report-schedules
+    // Safe default: ปิดไว้สำหรับการติดตั้งใหม่; หลัง Schema/Seed/manual validation ผ่านให้ใช้ npm run enable:tiktok-report-schedules
     "MKT_SCHEDULE_DAILY_REPORT_ENABLED": "false",
     "MKT_SCHEDULE_WEEKLY_REPORT_ENABLED": "false",
     "MKT_DAILY_REPORT_TIME": "08:10",
@@ -120,7 +121,7 @@
     "YOUTUBE_API_TIMEOUT_MS": "30000",
     "YOUTUBE_MAX_PAGES": "100",
 
-    // Live identity ห้ามเดา/Commit; UAT ใส่ Handle ที่ตรวจตรงกับ Lark Native connection แล้วเท่านั้น
+    // Live identity ห้ามเดา/Commit; ใส่ Source ที่ตรวจตรงกับ Connection แล้วเท่านั้น
     "TIKTOK_SOURCE_HANDLE": "replace-with-tiktok-handle",
     // YouTube Channel ID ไม่ใช่ Secret; API key/OAuth ต้องตั้งผ่าน Secrets/.dev.vars เท่านั้น
     "YOUTUBE_CHANNEL_ID": "replace-with-youtube-channel-id",
@@ -129,13 +130,20 @@
     "MKT_SYNC_LOCK_LEASE_MS": "600000",
     "MKT_SYNC_LOCK_RENEW_INTERVAL_MS": "120000",
 
-    // Table IDs ต้องเป็นของ Base เฉพาะ Environment; ห้ามแชร์ DEV/UAT/Production
+    // Table IDs ใช้ Base เดิมของ Integration Workspace; Production ต้องใช้ Base customer-owned แยก
     // Protected source: Lark Native TikTok เป็นเจ้าของ Schema; Worker อ่านอย่างเดียวและห้าม Schema mutation
     "LARK_TABLE_RAW_TIKTOK_CREATOR_VIDEOS": "replace-with-table-id",
-    // YouTube tables ใช้เมื่อ Blueprint ถูก Apply และ Live UAT ได้รับอนุมัติเท่านั้น
+    // YouTube tables ใช้เมื่อ Blueprint ถูก Apply และ manual validation ได้รับอนุมัติเท่านั้น
     "LARK_TABLE_RAW_YOUTUBE_CHANNELS": "replace-with-table-id",
     "LARK_TABLE_RAW_YOUTUBE_VIDEOS": "replace-with-table-id",
     "LARK_TABLE_RAW_YOUTUBE_ANALYTICS_DAILY": "replace-with-table-id",
+    // Google Ads six-dataset signed delivery; Schema Apply สำเร็จแล้วแต่ Connector/Schedule ยังปิด
+    "LARK_TABLE_RAW_GOOGLE_ADS_ACCOUNTS": "replace-with-table-id",
+    "LARK_TABLE_RAW_GOOGLE_ADS_CAMPAIGNS": "replace-with-table-id",
+    "LARK_TABLE_RAW_GOOGLE_ADS_AD_GROUPS": "replace-with-table-id",
+    "LARK_TABLE_RAW_GOOGLE_ADS_ADS": "replace-with-table-id",
+    "LARK_TABLE_RAW_GOOGLE_ADS_ASSETS": "replace-with-table-id",
+    "LARK_TABLE_RAW_GOOGLE_ADS_DAILY": "replace-with-table-id",
     // YouTube Channel identity ต้อง Preflight ตาราง Account ก่อนเรียก Source API ในรอบ Activation
     "LARK_TABLE_MKT_ACCOUNTS": "replace-with-table-id",
     "LARK_TABLE_MKT_CONTENT": "replace-with-table-id",

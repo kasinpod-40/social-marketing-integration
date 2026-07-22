@@ -6,6 +6,7 @@ import {
   permanentError,
 } from '../../../packages/shared/src/errors/runtime-error.js';
 import { D1ResumableWorkStore } from '../../../packages/sync-engine/src/d1-resumable-work-store.js';
+import { D1GoogleAdsDeliveryStore } from '../../../packages/connectors/src/google-ads/d1-google-ads-delivery-store.js';
 import { loadCustomerRuntimeConfig } from '../../../packages/config/src/customer-profiles.js';
 import {
   logQueueResult,
@@ -270,6 +271,16 @@ error=${input.error instanceof Error ? input.error.message : String(input.error)
 
 async function markQueueWorkTerminal(input) {
   const platform = platformFromJobType(input.jobType);
+  if (platform === 'google_ads') {
+    if (!input.env?.MKT_STATE_DB) return false;
+    const deliveryId = input.message?.body?.deliveryId;
+    if (typeof deliveryId !== 'string' || deliveryId.trim() === '') return false;
+    return new D1GoogleAdsDeliveryStore({ db: input.env.MKT_STATE_DB }).markFailed({
+      deliveryId,
+      retryable: false,
+      errorCode: input.reason,
+    });
+  }
   if (!new Set(['youtube', 'tiktok']).has(platform)) return false;
   // Dependency-injected/non-production route อาจไม่มี D1 binding;
   // Production path ยัง fail-closed ที่ createOperationalStore เมื่อ binding หาย
@@ -288,7 +299,7 @@ function platformFromJobType(type) {
   if (typeof type !== 'string') return 'system';
   if (type.startsWith('report.')) return 'tiktok';
   const prefix = type.split('.')[0];
-  return new Set(['facebook', 'instagram', 'tiktok', 'youtube']).has(prefix) ? prefix : 'system';
+  return new Set(['facebook', 'instagram', 'tiktok', 'youtube', 'google_ads']).has(prefix) ? prefix : 'system';
 }
 
 function shouldCreateQueueFailureAlert(jobType) {

@@ -1,5 +1,5 @@
 Source,Used for,URL / Repository path,Reviewed at,Authority
-Meta DEV preflight handoff,"Observed DEV identities, metrics, response shapes and token lifecycle",User-provided verified handoff in ChatGPT project,2026-07-21,Live evidence
+Meta integration preflight handoff,"Observed source identities, metrics, response shapes and token lifecycle",User-provided verified handoff in ChatGPT project,2026-07-21,Live evidence
 Facebook Page reference,Page fields and Page edges,https://developers.facebook.com/docs/graph-api/reference/page/,2026-07-21,Primary URL
 Facebook Page Insights,Page metric time-series contract,https://developers.facebook.com/docs/graph-api/reference/v23.0/insights,2026-07-21,Primary URL
 Instagram API with Instagram Login,Professional account/media API overview,https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login/,2026-07-21,Primary URL
@@ -10,5 +10,5 @@ Marketing API Insights,"Fields, levels, date windows and breakdowns",https://dev
 Marketing API Breakdowns,publisher_platform/platform_position/device_platform,https://developers.facebook.com/docs/marketing-api/insights/breakdowns/,2026-07-21,Primary URL
 Existing Ads canonical model,"Ads tables, stable keys and money micros contract",packages/config/src/ads-data-model.js,v0.10.2,Repository
 Existing Ads domain,Safe money parsing and derived metrics,packages/domain/src/entities/ads.js,v0.10.2,Repository
-Customer-real UAT contract,"Ownership, identity and rollout gates",docs/project-brain/customer-real-uat.md,9c23b56,Repository
-Current task,Merged UAT foundation and next live gate,docs/current-task.md,9c23b56,Repository
+Integration Workspace contract,"Mixed-source ownership, identity, replacement and rollout gates",docs/project-brain/integration-workspace.md,2026-07-22,Repository
+Current task,Current Integration Workspace foundation and next live gate,docs/current-task.md,9c23b56,Repository

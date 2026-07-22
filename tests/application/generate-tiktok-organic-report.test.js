@@ -17,7 +17,12 @@ const TABLES = Object.freeze({
 });
 
 function buildRepository() {
-  const dailySetting = createReportSettingRowsForProfile('dev_ft_pumkin')[0];
+  // Legacy fixture stays scoped to ft_pumkin so compatibility behavior remains tested.
+  // Live Integration Workspace seeds only chemistry_k and cannot mix these records into customer reports.
+  const dailySetting = {
+    ...createReportSettingRowsForProfile('integration_workspace')[0],
+    account_keys_json: '["ft_pumkin"]',
+  };
   const tables = new Map(Object.entries({
     content: [{ recordId: 'content-1', fields: {
       content_key: 'tiktok:ft_pumkin:1', external_content_id: '1', account_id: 'ft_pumkin',
@@ -117,10 +122,10 @@ test('generates idempotent daily TikTok report rows across all report tables', a
   const first = await generateTikTokOrganicReport({
     repository,
     syncEngine: new TableSyncEngine(),
-    customerProfile: 'dev_ft_pumkin',
+    customerProfile: 'integration_workspace',
     accountId: 'ft_pumkin',
     reportType: 'daily_organic_report',
-    reportSettingKey: 'dev_ft_pumkin:tiktok:daily',
+    reportSettingKey: 'integration_workspace:tiktok:daily',
     periodEnd: '2026-07-11',
     now: () => Date.parse('2026-07-12T01:00:00Z'),
     tables: TABLES,
@@ -138,10 +143,10 @@ test('generates idempotent daily TikTok report rows across all report tables', a
   const second = await generateTikTokOrganicReport({
     repository,
     syncEngine: new TableSyncEngine(),
-    customerProfile: 'dev_ft_pumkin',
+    customerProfile: 'integration_workspace',
     accountId: 'ft_pumkin',
     reportType: 'daily_organic_report',
-    reportSettingKey: 'dev_ft_pumkin:tiktok:daily',
+    reportSettingKey: 'integration_workspace:tiktok:daily',
     periodEnd: '2026-07-11',
     now: () => Date.parse('2026-07-12T01:00:00Z'),
     tables: TABLES,
@@ -171,8 +176,8 @@ test('plans every output table before the first write', async () => {
 
   await assert.rejects(() => generateTikTokOrganicReport({
     repository, syncEngine,
-    customerProfile: 'dev_ft_pumkin', accountId: 'ft_pumkin',
-    reportType: 'daily_organic_report', reportSettingKey: 'dev_ft_pumkin:tiktok:daily',
+    customerProfile: 'integration_workspace', accountId: 'ft_pumkin',
+    reportType: 'daily_organic_report', reportSettingKey: 'integration_workspace:tiktok:daily',
     periodEnd: '2026-07-11', now: () => Date.parse('2026-07-12T01:00:00Z'), tables: TABLES,
   }), /Schema invalid/);
 
@@ -203,8 +208,8 @@ test('keeps a first-table permanent rejection as failed instead of partial_succe
 
   await assert.rejects(() => generateTikTokOrganicReport({
     repository, syncEngine,
-    customerProfile: 'dev_ft_pumkin', accountId: 'ft_pumkin',
-    reportType: 'daily_organic_report', reportSettingKey: 'dev_ft_pumkin:tiktok:daily',
+    customerProfile: 'integration_workspace', accountId: 'ft_pumkin',
+    reportType: 'daily_organic_report', reportSettingKey: 'integration_workspace:tiktok:daily',
     periodEnd: '2026-07-11', now: () => Date.parse('2026-07-12T01:00:00Z'), tables: TABLES,
   }), (error) => error.code === 'LARK_PERMANENT_API_ERROR'
     && error.code !== 'SYNC_PARTIAL_WRITE');
@@ -241,8 +246,8 @@ test('wraps a later table failure as partial only after a prior table wrote rows
 
   await assert.rejects(() => generateTikTokOrganicReport({
     repository, syncEngine,
-    customerProfile: 'dev_ft_pumkin', accountId: 'ft_pumkin',
-    reportType: 'daily_organic_report', reportSettingKey: 'dev_ft_pumkin:tiktok:daily',
+    customerProfile: 'integration_workspace', accountId: 'ft_pumkin',
+    reportType: 'daily_organic_report', reportSettingKey: 'integration_workspace:tiktok:daily',
     periodEnd: '2026-07-11', now: () => Date.parse('2026-07-12T01:00:00Z'), tables: TABLES,
   }), (error) => error.code === 'SYNC_PARTIAL_WRITE'
     && error.details.failedPhase === 'reportMetricValues'
@@ -256,10 +261,10 @@ test('uses one bounded top-content limit for snapshot JSON and normalized rows',
   const result = await generateTikTokOrganicReport({
     repository,
     syncEngine: new TableSyncEngine(),
-    customerProfile: 'dev_ft_pumkin',
+    customerProfile: 'integration_workspace',
     accountId: 'ft_pumkin',
     reportType: 'daily_organic_report',
-    reportSettingKey: 'dev_ft_pumkin:tiktok:daily',
+    reportSettingKey: 'integration_workspace:tiktok:daily',
     topContentLimit: 3,
     periodEnd: '2026-07-11',
     now: () => Date.parse('2026-07-12T01:00:00Z'),
@@ -275,10 +280,10 @@ test('uses one bounded top-content limit for snapshot JSON and normalized rows',
   await assert.rejects(() => generateTikTokOrganicReport({
     repository,
     syncEngine: new TableSyncEngine(),
-    customerProfile: 'dev_ft_pumkin',
+    customerProfile: 'integration_workspace',
     accountId: 'ft_pumkin',
     reportType: 'daily_organic_report',
-    reportSettingKey: 'dev_ft_pumkin:tiktok:daily',
+    reportSettingKey: 'integration_workspace:tiktok:daily',
     topContentLimit: 101,
     periodEnd: '2026-07-11',
     now: () => Date.parse('2026-07-12T01:00:00Z'),
@@ -292,8 +297,8 @@ test('neutralizes stale ranks when top-content limit is reduced', async () => {
   await generateTikTokOrganicReport({
     repository,
     syncEngine: new TableSyncEngine(),
-    customerProfile: 'dev_ft_pumkin', accountId: 'ft_pumkin',
-    reportType: 'daily_organic_report', reportSettingKey: 'dev_ft_pumkin:tiktok:daily',
+    customerProfile: 'integration_workspace', accountId: 'ft_pumkin',
+    reportType: 'daily_organic_report', reportSettingKey: 'integration_workspace:tiktok:daily',
     topContentLimit: 5,
     periodEnd: '2026-07-11', now: () => Date.parse('2026-07-12T01:00:00Z'), tables: TABLES,
   });
@@ -301,8 +306,8 @@ test('neutralizes stale ranks when top-content limit is reduced', async () => {
   const second = await generateTikTokOrganicReport({
     repository,
     syncEngine: new TableSyncEngine(),
-    customerProfile: 'dev_ft_pumkin', accountId: 'ft_pumkin',
-    reportType: 'daily_organic_report', reportSettingKey: 'dev_ft_pumkin:tiktok:daily',
+    customerProfile: 'integration_workspace', accountId: 'ft_pumkin',
+    reportType: 'daily_organic_report', reportSettingKey: 'integration_workspace:tiktok:daily',
     topContentLimit: 3,
     periodEnd: '2026-07-11', now: () => Date.parse('2026-07-12T02:00:00Z'), tables: TABLES,
   });
@@ -376,10 +381,10 @@ test('server-filtered source produces the same report metrics as bounded full-pa
 
   const common = {
     syncEngine: new TableSyncEngine(),
-    customerProfile: 'dev_ft_pumkin',
+    customerProfile: 'integration_workspace',
     accountId: 'ft_pumkin',
     reportType: 'daily_organic_report',
-    reportSettingKey: 'dev_ft_pumkin:tiktok:daily',
+    reportSettingKey: 'integration_workspace:tiktok:daily',
     periodEnd: '2026-07-11',
     now: () => Date.parse('2026-07-12T01:00:00Z'),
     tables: TABLES,
@@ -408,10 +413,10 @@ test('bounded fallback cap fails before any report output plan or write', async 
   await assert.rejects(() => generateTikTokOrganicReport({
     repository,
     syncEngine,
-    customerProfile: 'dev_ft_pumkin',
+    customerProfile: 'integration_workspace',
     accountId: 'ft_pumkin',
     reportType: 'daily_organic_report',
-    reportSettingKey: 'dev_ft_pumkin:tiktok:daily',
+    reportSettingKey: 'integration_workspace:tiktok:daily',
     periodEnd: '2026-07-11',
     maxFallbackScanRecords: 1,
     now: () => Date.parse('2026-07-12T01:00:00Z'),

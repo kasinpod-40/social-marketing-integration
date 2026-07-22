@@ -7,7 +7,7 @@ test('health endpoint exposes build health but not customer profile or secrets',
     new Request('https://example.test/health'),
     {
       MKT_ENV: 'development',
-      MKT_CUSTOMER_PROFILE: 'dev_ft_pumkin',
+      MKT_CUSTOMER_PROFILE: 'integration_workspace',
       LARK_APP_SECRET: 'must-not-leak',
     },
     {},
@@ -23,7 +23,7 @@ test('health endpoint exposes build health but not customer profile or secrets',
   assert.equal(JSON.stringify(body).includes('must-not-leak'), false);
   assert.equal(JSON.stringify(body).includes('ft_pumkin'), false);
   assert.equal(JSON.stringify(body).includes('ft.pumkin'), false);
-  assert.equal(JSON.stringify(body).includes('dev_ft_pumkin'), false);
+  assert.equal(JSON.stringify(body).includes('integration_workspace'), false);
 });
 
 test('internal project-brain route is not exposed publicly', async () => {

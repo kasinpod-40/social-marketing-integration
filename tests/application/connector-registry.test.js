@@ -9,18 +9,20 @@ import {
 test('returns the active TikTok connector state from the runtime profile', () => {
   const runtimeConfig = loadCustomerRuntimeConfig({
     MKT_ENV: 'development',
-    MKT_CUSTOMER_PROFILE: 'dev_ft_pumkin',
+    MKT_CUSTOMER_PROFILE: 'integration_workspace',
   });
 
   const connector = assertConnectorRunnable(runtimeConfig, 'tiktok');
-  assert.equal(connector.accountKey, 'ft_pumkin');
+  assert.equal(connector.accountKey, 'chemistry_k');
+  assert.equal(connector.sourceOwner, 'customer');
+  assert.equal(connector.replacementRequired, false);
   assert.equal(connector.enabled, true);
 });
 
 test('rejects an active connector when the feature flag disables it', () => {
   const runtimeConfig = loadCustomerRuntimeConfig({
     MKT_ENV: 'development',
-    MKT_CUSTOMER_PROFILE: 'dev_ft_pumkin',
+    MKT_CUSTOMER_PROFILE: 'integration_workspace',
     MKT_CONNECTOR_TIKTOK_ENABLED: 'false',
   });
 
@@ -50,10 +52,39 @@ test('planned connector is never reported as runnable', () => {
 test('YouTube connector is runnable after activation when the normal feature flag is enabled', () => {
   const runtimeConfig = loadCustomerRuntimeConfig({
     MKT_ENV: 'development',
-    MKT_CUSTOMER_PROFILE: 'dev_ft_pumkin',
+    MKT_CUSTOMER_PROFILE: 'integration_workspace',
     MKT_CONNECTOR_YOUTUBE_ENABLED: 'true',
   });
   assert.equal(assertConnectorRunnable(runtimeConfig, 'youtube').enabled, true);
+});
+
+test('Google Ads signed delivery is runnable only when the Integration Workspace feature flag is explicit', () => {
+  const disabled = loadCustomerRuntimeConfig({
+    MKT_ENV: 'development', MKT_CUSTOMER_PROFILE: 'integration_workspace',
+  });
+  assert.throws(
+    () => assertConnectorRunnable(disabled, 'google_ads'),
+    (error) => error?.code === 'MKT_CONNECTOR_DISABLED',
+  );
+
+  const enabled = loadCustomerRuntimeConfig({
+    MKT_ENV: 'development', MKT_CUSTOMER_PROFILE: 'integration_workspace',
+    MKT_CONNECTOR_GOOGLE_ADS_ENABLED: 'true',
+  });
+  assert.equal(assertConnectorRunnable(enabled, 'google_ads').accountKey, 'chemistry_k');
+});
+
+test('Google Ads Production remains blocked until reliability and live validation gates are verified', () => {
+  const runtimeConfig = loadCustomerRuntimeConfig({
+    MKT_ENV: 'production', MKT_CUSTOMER_PROFILE: 'chemistry_k',
+    MKT_CONNECTOR_GOOGLE_ADS_ENABLED: 'true',
+  });
+  assert.throws(
+    () => assertConnectorRunnable(runtimeConfig, 'google_ads'),
+    (error) => error?.code === 'MKT_CONNECTOR_LARGE_ACCOUNT_UAT_PENDING'
+      && error?.details?.minimumFixtureItems === 10000
+      && error?.details?.missingGates?.includes('liveAccountUat'),
+  );
 });
 
 test('registry rejects runtime profiles that omit an active connector state', () => {
@@ -63,7 +94,7 @@ test('registry rejects runtime profiles that omit an active connector state', ()
   );
 });
 
-test('Production rejects active connectors until the large-account Live UAT gate is verified', () => {
+test('Production rejects active connectors until the large-account live validation gate is verified', () => {
   const tiktokProduction = loadCustomerRuntimeConfig({
     MKT_ENV: 'production',
     MKT_CUSTOMER_PROFILE: 'chemistry_k',
@@ -96,7 +127,7 @@ test('Production rejects active connectors until the large-account Live UAT gate
 test('readiness summary exposes volume targets and missing large-account gates without secrets', () => {
   const runtimeConfig = loadCustomerRuntimeConfig({
     MKT_ENV: 'development',
-    MKT_CUSTOMER_PROFILE: 'dev_ft_pumkin',
+    MKT_CUSTOMER_PROFILE: 'integration_workspace',
     MKT_CONNECTOR_YOUTUBE_ENABLED: 'true',
   });
   const readiness = listConnectorReadiness(runtimeConfig);
