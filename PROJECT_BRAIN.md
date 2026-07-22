@@ -10,9 +10,9 @@ Authority order ให้ยึด `AGENTS.md` และ `docs/current-task.md` 
 
 ## Current source baseline
 
-- Main commit before the active correction branch: `ddd876c3670af0dc6a4748b5399a1ac5acfe6642`
-- Main commit message: `feat: close Google Ads view and script UAT`
-- Active correction branch: `work/repository-audit-corrections-2026-07-22`
+- Main commit: `d4a531fbb4e05dad7ce2296859c97f571e23acf3`
+- Commit message: `fix: correct repository state and harden Google Ads View maintenance`
+- Merged PR: `#13`
 - Application package line: `0.11.0`
 - Current contract versions:
   - Shared/Ads schema closeout: `v0.13.0`
@@ -28,7 +28,7 @@ Contract version numbers are not automatic application package releases.
 
 - Profile: `dev_ft_pumkin`
 - Lark/Cloudflare/source assets: developer-owned
-- TikTok Organic and YouTube Organic are active only where their DEV gates passed
+- TikTok Organic and YouTube Organic active only where DEV gates passed
 
 ### Customer-real UAT
 
@@ -86,7 +86,7 @@ Do not rerun Lark View Apply or Formula UI work.
 
 The 42 filtered Views are exactly `17 + 6 + 19`.
 
-“Full View contract complete” means every View is either managed or explicitly preserved. It does not mean all specialized names such as Active, Failed, Latest, Connection Issues or High Spend Low ROAS already have business logic. The 55 specialized Views require a separate business-owner contract before mutation.
+“Full View contract complete” means every View is managed or explicitly preserved. It does not mean all specialized names such as Active, Failed, Latest, Connection Issues or High Spend Low ROAS already have business logic. The 55 specialized Views require a separate business-owner contract before mutation.
 
 Contract: `docs/lark-full-view-contract-v0.13.5.md`.
 
@@ -174,14 +174,18 @@ Completed:
 - `data_available`, six non-empty bounded datasets
 - errors/truncation `0/0`, Google Ads `No changes`
 - automated Lark schema, Relations, managed filters and formulas
+- repository safety correction and no-create View maintenance guard
 
 Direct API state:
 
-- Basic Access application submitted `2026-07-21`
-- Case ID `1-686800040839`
-- Review pending
-- Current level `Test Account Access`
-- Direct API is optional Phase 2 for MVP
+```text
+Basic Access application submitted 2026-07-21
+Case ID 1-686800040839
+Review pending
+Current level Test Account Access
+```
+
+Direct API is optional Phase 2 for MVP.
 
 Remaining:
 
@@ -202,7 +206,7 @@ Completed:
 
 Direction:
 
-- production integration must use a controlled API/Worker connector
+- Production integration must use a controlled API/Worker connector
 - Lark native Ads integration is not the Production source of truth
 
 Remaining:
@@ -243,7 +247,7 @@ The generic report View installer supports View creation for legitimate setup fl
 - `createViews` must be zero
 - every action must be `update_view`
 - missing View blocks with `GOOGLE_ADS_VIEW_FILTER_VIEW_MISSING_NO_CREATE`
-- wrapped client always rejects `createView`
+- wrapped client rejects `createView`
 
 This is future-maintenance protection only. Current Lark state is already zero drift.
 
@@ -266,6 +270,23 @@ The 598-line safety scan is documented Live review evidence. Sanitized Script so
 
 No customer ID, token, secret or sample business row may be committed.
 
+## Repository correction verification
+
+PR #13 passed:
+
+```text
+npm ci                         PASS
+npm run check                  PASS
+Focused staged TikTok           4/4 PASS
+Node Unit/Integration         540/540 PASS
+Workers runtime                 9/9 PASS
+Report reliability             70/70 PASS
+npm audit --audit-level=high    0 vulnerabilities
+npm run deploy:dry-run          PASS
+```
+
+The transitive vulnerable `sharp` chain was remediated with `overrides.sharp=0.35.3` and a refreshed lockfile. No Live resource mutation occurred.
+
 ## Current project progress
 
 Milestone estimates, not code coverage:
@@ -280,22 +301,15 @@ Chemistry K Production readiness     25%
 
 Detailed weighting: `docs/project-brain/mkt-progress-v0.13.0.md`.
 
-## Active task
+## Current task
 
-`docs/current-task.md` is the source of truth for the current branch and review gates.
+`docs/current-task.md` records the merged repository audit correction and is closed.
 
-Current correction task:
+No connector Implementation task is active until the user approves the next workstream.
 
-- synchronize repository state
-- correct Basic Access history
-- enforce Google View update-only safety
-- document 55 preserved View contracts
-- record stable-key-only RAW error scope
-- bound Manager Script evidence claims
+## Next approval gate
 
-No Live resource mutation is part of this task.
-
-## Next approved workstream
+Proposed task:
 
 `Google Ads Manager Script signed delivery connector`
 
@@ -325,16 +339,3 @@ Then implement and run isolated manual UAT. Schedule may be enabled only after i
 - DEV/UAT/Production infrastructure stays isolated
 - Production resources must be customer-owned
 - no Live Apply based only on chat instructions when Repository contract is newer
-
-## Required verification before merge
-
-```bash
-npm ci
-npm run check
-npm test
-npm run test:report-reliability
-npm audit --offline
-npm run deploy:dry-run
-```
-
-The current correction branch has not deployed or changed Lark, Google Ads, D1, Queue, schedules or Production.
