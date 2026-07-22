@@ -1,742 +1,191 @@
 # Project Brain — Social Marketing Data Integration
 
 ## Current baseline
-This project connects social organic and paid ads data into Lark Base for reporting, daily snapshots, monitoring, and AI summaries. The implementation target is a lean MVP using Cloudflare Workers, Cloudflare D1, Cloudflare Queues, Lark Base, Lark Native Integrations where useful, and JavaScript.
 
-## Current project status
+This project connects organic social, paid ads, commerce and conversation data into Lark Base for daily snapshots, reporting, monitoring, AI summaries and alerts. Runtime foundations use JavaScript ES Modules, Cloudflare Workers, D1, Queues and Lark Open API.
 
-**Current architecture revision v0.12.1:** ผู้ใช้ยืนยัน Shared-table + View เป็น Physical model และล็อก `RAW_TikTok_Creator_Videos` เป็น Lark Native protected read-only source. Meta v0.12.0 endpoint-per-table layout ถูก Block ก่อน Apply. Base export ปัจจุบันมี 26 unique tables/4,641 records/352 fields/81 views; Planned Raw ว่าง 5 ตารางจะ Reuse in place และเพิ่มใหม่เฉพาะ `MKT_Account_Daily` กับ `MKT_Ads_Ads`, เป้าหมาย 28 tables. Contract: `docs/project-brain/shared-table-architecture-v0.12.1.md`.
+Authoritative task state: `docs/current-task.md`.
 
-**v0.12.2 Shared-table Preview:** Preview-only planner derive 7 tables/128 fields และ 17 Views จาก Contract, ตรวจ reuse candidates ด้วย bounded one-record read, ป้องกัน duplicate target และบังคับ Protected TikTok actions=0. Live DEV Read-only Preview ผ่านแล้ว: ตาราง reuse ทั้ง 5 ว่าง, Primary metadata ครบ, conflict/warning/manual blocker เป็นศูนย์ และไม่มี Live mutation.
+## Current repository baseline
 
-**v0.12.3 Guarded Shared-table Apply candidate:** ผู้ใช้อนุมัติให้พัฒนา Apply แยกจาก Live mutation. Candidate บังคับ DEV `dev_ft_pumkin`, Fresh Preview, Confirmation สองชั้น, Protected TikTok=0, reuse table ต้องว่าง, allowed-action validation, sequential progress/partial rerun และ final Schema+View zero-drift. Table rename ใช้ official Base v3 PATCH และต้องมี `base:table:update`. PR #10 ยังไม่รัน Live Apply; Connector ยัง Block จน Apply และ zero-drift ผ่านจริง.
-Official merged code baseline: `cbc3da8` — Shared-table Preview tooling and successful live DEV Read-only verification were squash-merged through PR #9. Remote migrations `0007`–`0008` and Batch C live rollout remain unexecuted.
+- Main commit before this correction: `ddd876c3670af0dc6a4748b5399a1ac5acfe6642`
+- Main commit message: `feat: close Google Ads view and script UAT`
+- Active correction branch: `work/repository-closeout-corrections`
+- Application package version remains `0.11.0`; v0.13.x labels are schema/contract/tool revisions, not the deployed application release version.
+- Production remains disabled.
+- New connectors and schedules remain disabled by default until their own access, identity, source-contract and reliability gates pass.
 
-Current working candidate: `v0.12.3-guarded-shared-table-schema-apply`
+## Lark Base state
 
-Current UAT contract: customer-real UAT uses customer-owned source accounts/data with temporary developer-owned, customer-isolated Lark Base and Cloudflare resources. Runtime profile is `uat_chemistry_k`, while Canonical `customerKey`/connector `accountKey` stay `chemistry_k` across UAT and Production. Every UAT connector/schedule is disabled by default. Full contract: `docs/project-brain/customer-real-uat.md`.
+Latest verified developer-owned DEV Base:
 
-Prior DEV operational state remains: corrective outbox/generation/terminal/Redrive patch was deployed in DEV; migrations 0005–0006 and controlled Redrive/replay passed; YouTube Schedule/Owner Analytics are enabled only in DEV and Production remains disabled. Customer-scale Live UAT is still required before Production.
+- Physical tables: `42`
+- Fields: `737`
+- Views: `133`
+- Duplicate table names: `0`
+- Table emoji/folder placement: `42/42`
+- View emoji names: `133/133`
+- Formula expressions/type/formatter: `4/4`
+- Shared-table managed filters: `17/17`
+- Report managed Views: `6/6`
+- Google Ads managed filters: `19/19`
+- Filtered Views total: `42`
+- Sorted Views: `6`
+- Views with hidden fields: `7`
+- Google RAW tables/fields: `13/13`, `208/208`
+- Canonical Ads v2 core: `63/63`
+- Google Ads Relations/View shells: `12/12`, `19/19`
+- New Google tables containing Records: `0`
 
-Current YouTube design artifact: `docs/Social_MKT_Data_Hub_Multi_Channel_Blueprint_v0.10.2.xlsx` — Technical review approved. v0.11.0 implements guarded Schema/Access, RAW/Canonical/Account writes, checkpoint/reconciliation and Reliability reuse. All DEV UAT gates passed. The connector is active in DEV with a six-hour Data API Cron and once-daily Owner Analytics using a bounded seven-day completed-Pacific overlap; Production remains disabled.
+`Google Ads Daily 30D` is `platform=google_ads AND metric_date=TheLastMonth`.
 
-TikTok Organic DEV ingestion/report logic ผ่าน Live Queue UAT และ Reliability UAT แล้ว. Client Views ทั้ง 6 รายการติดตั้ง Filter/Hidden fields และ Sort `rank` ascending สำเร็จ; Advanced Permissions เปิดแล้วพร้อม `Client` role แบบ least privilege และ Final Preview เป็นศูนย์ actions/conflicts. Daily/Weekly schedules เปิดและ deploy ไปยัง Cloudflare DEV แล้ว; เหลือ operational observation ของรอบ schedule.
+### View contract classes
 
-Multi-channel foundation ทั้ง 6 ส่วนถูกเพิ่มใน Code แล้ว: YouTube Organic เป็น `active` ใน DEV; Canonical Organic core ใช้ร่วมกับ TikTok โดย Regression ผ่าน. Meta Graph transport, WooCommerce/Chatwoot sanitized contracts และ Canonical Ads model ยังเป็น `planned`.
+The full 133-View inventory is classified as:
 
-**v0.10.1-multi-channel-foundation-reviewed — ตรวจทาน Foundation ก่อน Live UAT: `videos.list(id)` ไม่ส่ง `maxResults`, quota exhaustion ไม่ Short retry, Ads แยก Ad/Creative, Money ใช้ integer micros และมี Excel/Lark Blueprint ที่ตรวจภาพแล้ว. Activation gates อยู่ใน `docs/multi-channel-foundation-v0.10.1.md`.**
+- 17 shared-table managed Views;
+- 6 report managed Views;
+- 19 Google Ads managed Views;
+- 36 All/default Views intentionally unfiltered;
+- 55 legacy specialized Views preserved without inferred business filters.
 
-**v0.10.2-multi-channel-foundation-approved — Blueprint/Source foundation ผ่าน Technical review และเลื่อนเป็น Official clean baseline; Example config ปิด Connector/Schedule ทั้งหมดและ Release tooling ตรวจ Blocklist/Allowlist, Secret, DEV IDs, duplicate artifacts, Manifest และ SHA-256.**
+The managed and preservation contracts pass. The 55 legacy specialized Views do not yet have approved business-owner contracts; names such as Active, Failed, Latest or High Spend Low ROAS must not be treated as executable logic without a separate approved task.
 
-**v0.11.0-rc.1 — YouTube Manual DEV UAT implementation: guarded three-table Schema installer, Public/OAuth preflight, RAW/Canonical/Account write flow, Manual Queue-only route, D1 incremental checkpoint, non-destructive Video/Analytics reconciliation, D1-primary Alert gate, operational identity redaction และ Sync Log/Lock/Retry/DLQ/System Alert reuse. Connector ยัง `uat_pending`; Schedule/Production ปิด.**
+## Google Ads status
 
-**v0.11.0 — YouTube Organic DEV complete: connector/job active, Data API scheduled every six hours, Owner Analytics once daily with a seven-day Pacific overlap, active Data/Analytics smoke tests success, first real RAW Analytics fact created, no active lock/open alert, and Production remains disabled.**
+### Access
 
-**Unreleased YouTube large-account fix — ช่อง 837 videos ใช้ Full pagination 17 หน้า, incremental Content 100 แต่ Owner Analytics query tracked scope ครบ 837 IDs/17 chunks, D1 `sync_work_*` resume Source/Analytics unit หลัง Queue retry, exact queried-ID guard ป้องกัน complete success เมื่อ scope ขาด, `MKT_YOUTUBE_ANALYTICS_TIME` fail-closed และ Cron routing เป็น whitelist. Source/Migration/DEV smoke ผ่าน; Customer 837-video Live UAT ยังไม่รัน.**
+- Chemistry K advertiser link/selectability: `PASS`
+- Advertiser is enabled under the intended manager and opens read-only.
+- Basic Access application was submitted on `2026-07-21`.
+- Case ID: `1-686800040839`
+- Cloud project number: `788131774873`
+- Application review: `pending`
+- Current developer-token level: `Test Account Access`
+- Direct API approval is optional for the Manager Script MVP but remains relevant for Phase 2 scale and centralized OAuth.
 
-**Permanent resumable-sync reliability rule — งานทุก generation ต้องมี durable comparable `requestedAt`, claim fence ก่อนเริ่ม, recheck ก่อน staging/Plan/ทุก write chunk/checkpoint และ checkpoint ต้อง guarded CAS. Warning ที่มีผลทางธุรกิจต้อง persist ใน outbox ก่อนทิ้ง state ที่ใช้สร้าง warning และใช้ deterministic alert ID. Permanent/DLQ work ต้องจบเป็น terminal พร้อม reason/audit/expiry; redrive สร้าง generation/work key ใหม่ และ cleanup ห้ามลบ active, locked หรือ pending-warning work.**
+Any older statement that no Basic Access application was submitted is superseded.
 
-**Corrective outbox/redrive/migration rule — Completed work ที่มี Pending warning ต้อง replay/drain ได้แม้ Fence ถูก Generation ใหม่ยึด; Operational payload กับ Replay payload ต้องแยกกัน โดย Replay เก็บเฉพาะ Queue contract และตัด Secret/Token. Reliability-handled Permanent ต้อง Persist Dead-letter payload เช่นเดียวกับ Unhandled. Migration 0005 ต้อง Quiesce Producer/Queue/Lock ก่อน Apply และ Bootstrap fence จาก Business checkpoint ล่าสุด. Admin redrive ปิดเป็นค่าเริ่มต้นและเปิดเฉพาะ Incident ที่อนุมัติ.**
+### Manager Script read-only UAT
 
-**Secret/redrive follow-up rule — Secret key matcher ต้องครอบคลุม private/signing key และ credential variants ทั้ง Operational/Replay และต้อง Redact ค่าที่ไม่ใช่ null ทุกชนิดรวม Number/Boolean โดยแยกจากกฎ Identity/count เพื่อรักษา Completeness counters. Redrive ต้อง Validate Candidate แบบ read-only ก่อน reservation และ Storage ต้องตรวจ forbidden job type ซ้ำก่อนเปลี่ยน status. Generated manifest/macOS metadata ห้ามอยู่ใน Source root.**
+- Exact advertiser allowlist and selectability passed.
+- Script uses read-only `AdsManagerApp` and `AdsApp.search()` GAQL.
+- Runtime-incompatible `campaign.start_date` and `campaign.end_date` request fields were removed while nullable output mapping remains.
+- Final Preview: `data_available`.
+- Six bounded datasets: `6/6` successful and non-empty.
+- Dataset errors/truncation: `0/0`.
+- Google Ads changes: `No changes`.
+- Frequency: `—`; schedule disabled.
+- No external delivery, Worker ingestion, Queue/D1 path, Lark destination writes or deployment exists yet.
 
-Unreleased independent-review verification: Unit/Integration 407/407, Workers runtime 8/8, Report reliability 60/60, focused review 46/46, Architecture 111/233/0, repository hygiene, offline audit 0, empty/existing SQLite migration replay และ Wrangler dry-run 512.33/102.41 KiB ผ่าน. Clean archive 261 files และ fresh-extraction gates ผ่าน. ไม่มี Live API, Remote D1, Queue, deployment, schedule, Secret หรือ Production mutation.
+The repository contains the verified outcome and query/output manifest, but not the full sanitized 598-line Script source. Add a sanitized immutable snapshot or exact source hash before a future delivery connector release when independent source review is required.
 
-Corrective source verification after Code X/scalar-Secret follow-up: Unit/Integration 426/426, Workers runtime 8/8, Report reliability 64/64, scalar sanitizer/D1 focused 12/12, Architecture 113/238/0, repository hygiene, offline audit 0, Wrangler dry-run 534.48/106.76 KiB และ SQLite migration guard/bootstrap ผ่าน. Source handoff 264 files ไม่มี generated manifest/macOS metadata; ยังไม่มี Live API, Remote D1, Queue, deployment, schedule, Secret หรือ Production mutation.
+### Google Ads channel progress
 
-Guarded reliability rollout 2026-07-20: D1 backups were taken before migrations 0005 and 0006; both migrations applied and no pending migration remains. Migration 0006 preserved all 8 Dead-letter rows, 16 columns and both indexes. Controlled Redrive reached `redriven`, replay succeeded retry 0 with zero creates, and final active work/lock/pending warning/redrive pending = 0/0/0/0. Final source gates are Unit/Integration 428/428, Workers 8/8, Report reliability 64/64, Architecture 113/238/0, hygiene, audit 0 and dry-run 534.51/106.78 KiB. Production remains disabled.
+- Lark schema and managed presentation: complete.
+- Link/selectability and read-only extraction UAT: complete.
+- Signed delivery connector and end-to-end destination flow: not implemented.
+- Channel end-to-end estimate: approximately `45%`.
 
-Unreleased large-account source verification: Unit/Integration 397/397, Workers runtime 8/8, Report reliability 60/60, focused YouTube/Scheduler/Queue/Reliability/Resumable-work 69/69, Architecture 111 source files / 232 local dependencies / 0 cycles, repository hygiene, offline npm audit 0, SQLite migration replay และ Wrangler dry-run 480.80 KiB / gzip 97.58 KiB ผ่าน.
+## Runtime and connector status
 
-Unreleased large-account DEV rollout: Remote D1 migration 0004 applied, work tables verified, Worker `2037232c-152a-4e26-95fa-fca044f65bd9` serves 100%, both Cron triggers verified, Full/Incremental/Analytics Queue smoke success/retry 0, Analytics completeness 2/2/2, staging/lock/open alert 0, and Lark Stable-key duplicates 0. DEV channel has only 2 videos, so this does not replace Customer 837-video Live UAT.
+### Active in DEV
 
-v0.10.0 verification: Node unit/integration 336/336, Workers runtime 6/6, focused Report reliability 51/51, Architecture 94 source files / 189 local dependencies / 0 cycles, repository hygiene, offline npm audit 0, and Wrangler dry-run 373.71 KiB / gzip 76.31 KiB.
+- TikTok Organic: native protected source, Canonical Content/Daily, reliability, reports and DEV schedules.
+- YouTube Organic: Data API/Owner Analytics, Canonical writes, checkpoint/reconciliation, resumable large-account foundation and DEV schedules.
 
-v0.10.1 verification after clean `npm ci`: Node unit/integration 340/340, Workers runtime 6/6, focused Report reliability 51/51, Architecture 94 source files / 189 local dependencies / 0 cycles, repository hygiene, offline npm audit 0, Excel Blueprint integrity + 8-sheet visual/formula verification, and Wrangler dry-run 373.74 KiB / gzip 76.31 KiB.
+### Access/schema foundation complete but connector planned
 
-v0.10.2-rc.2 source verification: Node unit/integration 351/351, Workers runtime 6/6, Report reliability 51/51, Architecture 99 source files / 195 local dependencies / 0 cycles, repository hygiene passed, offline npm audit 0, Workbook/source parity and 10-sheet visual/formula QA passed, and Wrangler dry-run 373.74 KiB / gzip 76.31 KiB. Clean archive verification adds required-path, blocked-path, Secret/DEV-ID, duplicate-artifact, Manifest and SHA-256 gates.
+- Facebook Organic
+- Instagram Organic
+- Meta Ads
+- Google Ads delivery
 
-YouTube Blueprint v0.10.2 rc.2 verification is included in the 351/351 source gate: all 42 fields, explicit sort/missing-row semantics and every canonical destination field are checked against the Workbook.
-
-v0.11.0-rc.1 hardened source and fresh-archive verification: Node unit/integration 376/376, Workers runtime 6/6, focused Report reliability 53/53, focused YouTube/Reliability/Redaction 37/37, Architecture 109 source files / 230 local dependencies / 0 cycles, repository hygiene passed, offline npm audit 0, and Wrangler dry-run 443.78 KiB / gzip 90.89 KiB. Archive verification found zero blocked, missing, sensitive, or duplicate artifacts.
-
-YouTube Lark presentation correction verification on 2026-07-17: managed Thai descriptions for all 42 fields, emoji-prefixed aliases and full-update property preservation passed focused tests 53/53 and full Unit/Integration 377/377; Workers 6/6, Report reliability 53/53, Architecture 109/230/0, hygiene, audit 0, and Wrangler dry-run 444.06 KiB / gzip 90.94 KiB also passed. Live final Preview after rename/move returned zero drift.
-
-YouTube Manual Queue core UAT on 2026-07-17: First Full pulled 3 and created 8; repeated Full and incremental created 0; Owner Analytics returned valid no-data; Lark retained Channel 1, Video 2, Analytics 0, Account 1, Content 2 and Daily 2. D1/Lark recorded 5 successful sync runs with zero failed/partial/alerts. Final UAT-only Worker version is `820fbe7d-1db8-48a9-8494-d6e047c62846`.
-
-YouTube Reliability continuation on 2026-07-17: DateTime Apply/zero-drift Preview and Client RAW `No access` verification passed. Live lock collision retried to success without noisy alerts; controlled timeout exhausted retries into DLQ and a mirrored D1/Lark Critical Alert, then safe settings were restored and a retry-0 healthy run passed. The Test incident is retained as `resolved`. Live OAuth identity fault exposed and fixed missing `YOUTUBE_CHANNEL_IDENTITY_MISMATCH` classification. Final gates passed at Unit 377/377, Workers 6/6, Report reliability 53/53, Architecture 109/231/0, audit 0 and dry-run 444.25/90.99 KiB. Final UAT-only Worker version is `538ed8a6-7e43-49d1-ad87-5791a6ed37d9`; Activation review remains pending.
-
-
-
-**v0.9.7-agent-workflow-foundation — เพิ่ม `AGENTS.md` และ `docs/current-task.md` เป็น Shared repository handoff ระหว่าง ChatGPT Work/Codex, บังคับ reading order, Data-model-first, Live API verification, Definition of Done และผล Implementation ที่ต้องบันทึกกลับเข้า Repository. Repository hygiene ตรวจสองไฟล์นี้เป็น Required artifacts.**
-
-**v0.9.6-tiktok-organic-dev-complete — Clean handoff baseline หลัง TikTok Organic DEV implementation, Live UAT, Client Views, least-privilege permission, report schedules และ Cloudflare deployment ผ่านแล้ว. Release package ไม่มี Secret, local Wrangler config, macOS metadata หรือ build artifacts; operational observation ของรอบ Daily/Weekly ตามเวลาจริงไม่บล็อกช่องทางถัดไป.**
-
-**v0.9.5-lark-view-live-verified — Root cause ที่ยืนยันแล้วคือ request ส่ง response-only fields และ encode Checkbox ผิดชนิด. PATCH ปัจจุบันส่งเฉพาะ `field_id`/`operator`/`value`, Checkbox เป็น `[true]`, และ verifier ใช้ Get View เพราะ List Views ไม่คืน Filter property. Live View ทั้ง 6 รายการตรง Contract แล้ว.**
-
-**v0.9.0-tiktok-organic-dev-complete — ปิด TikTok Organic DEV logic และ Live UAT: Daily/Weekly reports, idempotency, partial baseline, stale-rank cleanup/restore และ report lock retry ผ่านแล้ว; เพิ่ม Client View installer, guarded schedule activator และ closeout runbook.**
-
-Final operational activation on the developer machine:
-- completed: guarded Client View Apply → Filter/Hidden fields → zero-action Preview
-- completed: Lark UI Sort `rank` ascending ทั้ง 6 Views และ Advanced Permissions/Client role
-- completed: guarded schedule activation and Cloudflare deployment
-- ongoing observation: confirm naturally due Daily/Weekly report outputs; this is not a release blocker
-
-Failure/partial-write semantics are covered by deterministic regression tests rather than destructive live corruption. Weekly complete baseline is an operational observation after enough snapshots accumulate, not a code-release blocker.
-
-**v0.8.2-lark-number-formatter-fix — แก้ Number Field Create/Update ให้ใช้ formatter enum ของ Lark OpenAPI (`1,000`, `0.0000`) แทน spreadsheet pattern ที่ทำให้ `WrongRequestBody`; Report schedule ยังต้องคงปิดจนกว่า Apply, Seed และ Live UAT จะผ่าน.**
-
-Completed in Lark:
-- Created Lark Base: `Social MKT Data Hub`.
-- Imported main `MKT_*` tables.
-- Imported `RAW_*` native integration tables.
-- Organized sidebar folders.
-- Added table icons.
-- Fixed primary fields for main MKT tables.
-- Configured core field types.
-- Configured main select options.
-- Created base views with icons.
-
-Completed TikTok For Creator POC:
-- Connected TikTok For Creator via Lark Native Integration.
-- Lark created a sync-managed table automatically.
-- The table was renamed to `RAW_TikTok_Creator_Videos` and moved into `🧪 Raw Integration Tables`.
-- Sync stayed connected after rename/move.
-- Manual sync updates existing rows and does not create duplicates.
-- Initial sync returned 20 records.
-- The TikTok account has 21 videos; the missing video has removed audio, so the omission is likely video eligibility/content availability rather than a confirmed pagination limit.
-
-Completed Live Cloudflare DEV reliability UAT:
-- Main Queue/Lark sync, idempotency และ Reconciliation ผ่าน
-- D1 Distributed Lock collision/retry/cleanup ผ่าน
-- Retry exhaustion -> DLQ -> D1/Lark System Alert ผ่าน
-- Scheduled TikTok Sync ผ่านต่อเนื่อง 3 รอบโดยไม่เขียนซ้ำ
-
-Completed TikTok Organic Report Live DEV UAT:
-- Report schema clean rerun: zero create/update actions and zero conflicts.
-- Metric seed: 68 created, rerun skipped 68; Report settings: 2 created, rerun skipped 2.
-- Daily report: created 1 Snapshot / 13 Metrics / 5 Top Content; rerun created 0 and updated the same stable rows.
-- Weekly report: same row counts; correctly marked `partial` because the comparison week predates available snapshots; rerun idempotent.
-- Top Content limit 5 → 3 neutralized ranks 4–5 to `no_data`; restoring 5 repopulated them without duplicates.
-- Manual report lock returned retryable `SYNC_LOCK_BUSY`; the same Queue message succeeded after lock release with created=0.
-- See `docs/tiktok-organic-dev-closeout-v0.9.0.md`.
-
-Completed in v0.9.0 closeout tooling:
-- Lark View API list/create/patch adapters with pagination and request-contract tests.
-- Idempotent Client Views for Daily/Weekly Metrics and Daily/Weekly Top Content.
-- Read-only Preview and double-confirmed Apply safety shared across schema/view/schedule tools.
-- Atomic local Wrangler config activation after validating DEV profile, setting keys/times and real report table IDs.
-- `npm run test:report-reliability` focused regression gate.
-
-Completed in v0.8.2 Number formatter fix:
-
-- Report Schema Number fields use official Lark formatter enums instead of spreadsheet patterns.
-- Shared Field contract normalizes legacy `#,##0` / `#,##0.0000` values before Create/Update.
-- Every Number formatter in the five-table schema is regression-tested against an allowlist.
-- The observed v0.8.1 Apply failed before any action (`appliedActionCount=0`), so v0.8.2 can be applied without rollback.
-
-Completed in v0.8.1 schema installer safety fix:
-
-- `npm run setup:report-schema` is always read-only; Apply requires the separate `CONFIRM_WRITE=YES npm run setup:report-schema:apply` command.
-- Lark Field payloads use canonical OpenAPI property keys; Checkbox and other propertyless field types omit `property` entirely.
-- Unsupported UI-only keys are filtered before Create/Update and schema failures expose the exact failed action plus prior applied-action count.
-- A partially completed v0.8.0 installer run is resumed idempotently after Preview.
-
-Completed in v0.8.0 schema installer:
-
-- Five Report tables use one versioned 110-field contract.
-- Missing tables/fields/options are created incrementally; existing schema is never deleted.
-- Type conflicts and unresolved configured Table IDs fail closed.
-- Created table IDs are returned as `environmentUpdates` for local Wrangler config.
-- Existing Primary mismatches remain an explicit Lark UI review step.
-
-Completed in v0.7.2 release correction:
-- Daily/Weekly report `periodEnd` = previous completed local day derived at the scheduler producer.
-- Month/year/leap-day boundaries are covered by regression tests.
-- Clean release package excludes local Wrangler config and macOS metadata while retaining `.gitignore` / `.dev.vars.example`.
-- Orphan Local mutation guard remediation is documented in `docs/local-file-lock-guard-runbook-v0.7.2.md`.
-
-Completed in v0.7.1 reliability hardening code:
-- First-write rejection remains `failed`; `partial_success` is used only when confirmed/unknown write progress exists.
-- Scheduled TikTok jobs persist the local `metricDate`; report jobs persist the previous completed local day as `periodEnd`, both derived from `scheduledTime` for deterministic retries.
-- Top Content resolves one bounded limit (1–100) for JSON and normalized rows and neutralizes stale ranks with `no_data`.
-- Lease expiry fails closed, chunk guard failures preserve prior confirmed progress, and exhausted Lark 1254290 remains a retryable rejection instead of unknown write.
-- Local file-lock mutation is serialized by an exclusive guard; tracked local deployment config now fails repository hygiene.
-- DEV Wrangler example enables persisted Workers Logs/Traces; production sampling remains customer/environment configuration.
-
-
-Completed in v0.7.0 report foundation code (retained in v0.7.2):
-- Reviewed the latest `.base` export before implementation and documented the report schema contract.
-- Added cumulative-delta Daily/Weekly TikTok report calculations, previous-period comparison, weighted watch/completion metrics, partial-baseline quality status, and negative correction handling.
-- Added normalized Metric Values and fixed-rank Top Content outputs for client-facing views.
-- Added customer-scoped report-setting seed, metric metadata seed, active report Queue jobs, reliability accounting, and timezone-aware schedule producers.
-- Daily/Weekly schedule flags remain `false` until Lark fields/tables are created and Live DEV UAT passes.
-
-Completed TikTok Incremental layer in v0.6.0:
-- D1 `sync_cursors` และ `source_record_states` จาก migration `0003_incremental_sync.sql`
-- Fingerprint RAW/Dictionary และเลือกเฉพาะ changed records เข้าสู่ Destination plan/write
-- Safe Full fallback สำหรับ initial checkpoint, วันใหม่, Dictionary เปลี่ยน, Source deletion และรอบ 24 ชั่วโมง
-- Checkpoint commit หลัง business writes สำเร็จ; cursor commit สุดท้ายเพื่อรองรับ Queue retry
-- RAW traversal/normalization ยังครบทุกแถวเพื่อ Source identity และ deletion safety
-
-Completed Reliability layer:
-- ทุก TikTok write run มี `sync_run_id` และ lifecycle `running -> success|partial_success|failed|skipped`.
-- `MKT_Sync_Log` และ `MKT_System_Alerts` ใช้ Schema จริงของ Dev Base โดยไม่เพิ่ม Field.
-- D1 migration `0002_reliability.sql` เพิ่ม `sync_runs`, `sync_locks`, `dead_letter_jobs`, `system_alerts`.
-- Cloudflare write job บังคับ D1 binding `MKT_STATE_DB`; Local ใช้ file lease lock ใน `.mkt-locks/`.
-- Lock key = `customer_profile:platform:account_key:sync_type`; release ได้เฉพาะ owner เดิม.
-- Prepare path ตรวจความไม่ครบคู่ของ Content/Daily และรอบถัดไปเติมเฉพาะ Stable key ที่ขาด.
-- Daily write failure หลัง Content สำเร็จกลายเป็น retryable `SYNC_PARTIAL_WRITE`, บันทึก `partial_success` และ Critical alert.
-- Queue หลักรองรับ `dead_letter_queue`; DLQ consumer Persist ลง D1, Mirror Alert ไป Lark เมื่อ config พร้อม และไม่ Execute งานเดิมซ้ำ.
-- Permanent queue failure ถูกเก็บใน D1 และ Mirror Alert ไป Lark แบบ Best effort เมื่อ config พร้อม; secret-like keys ใน payload/details ถูก redact.
-
-Completed in code:
-- Added central Connector Catalog for TikTok, Facebook, Instagram, YouTube, WooCommerce, and Chatwoot.
-- Added strict connector runtime flags and blocked all planned connectors from accidental activation.
-- Added Customer-profile connector config for DEV and Chemistry K Production without storing secrets.
-- Added Connector Registry and Queue Job Catalog/Schema version 1.
-- Registered future connector/report/reconciliation/notification jobs as planned permanent failures, never fake success.
-- Split Queue validation from Lark infrastructure creation so unsupported/disabled work does not touch credentials.
-- Added `TIKTOK_SOURCE_HANDLE` environment override while keeping stable account keys in source-controlled profiles.
-- Added robust TikTok For Creator native row mapper.
-- Added TikTok Creator normalization use case from `RAW_TikTok_Creator_Videos` to `MKT_Content` and `MKT_Content_Daily`.
-- Added TikTok Creator batch normalization use case with O(n) dedupe and skipped-row collection.
-- Added Lark Bitable client, thin Lark repository adapter, and storage-neutral universal TableSyncEngine.
-- Added TikTok Creator read/write use case from `RAW_TikTok_Creator_Videos` to `MKT_Content` and `MKT_Content_Daily`.
-- Wired sync-worker queue job type `tiktok.creator.native.sync` to the Lark upsert flow.
-- Added tests for TikTok metric parsing, null handling, invalid numeric rejection, exact observed Lark labels, batch dedupe, snapshot key generation, Lark upsert behavior, and TikTok Creator sync orchestration.
-- Added Canva-ready Lark table IDs to config.
-- Added deterministic rule-based course/content/funnel classification for `MKT_Content`.
-- Added `MKT_Metric_Definitions` seed rows and idempotent seed use case.
-- Added `MKT_Report_Snapshots` row builder for weekly/monthly/YoY report payloads.
-- Added sync-worker queue job type `metric.definitions.seed`.
-- Added tests for content classification, metric seed, and report snapshot payloads.
-- Added TikTok For Creator POC result in `docs/poc/tiktok-for-creator-poc.md`.
-
-## Phase 0 objective
-Create the project foundation before writing platform connectors:
-
-1. Lock the project scope and hard rules. ✅
-2. Lock the Lark table/field model. ✅
-3. Prepare Lark import templates. ✅
-4. Create the Lark Base structure. ✅
-5. Create a Clean Architecture monorepo skeleton. ✅
-6. Run Native Integration POCs. In progress
-
-## Hard direction
-- JavaScript only for implementation.
-- Clean Architecture + Monorepo + Modular Monolith.
-- Native-first, custom-fallback.
-- No external dashboard in phase 1; Lark Base and Lark dashboards are the main UI.
-- Read-only reporting first; no campaign creation, budget editing, bid editing, or auto-optimization.
-- Daily snapshots are required for reporting.
-- Metrics must have strict definitions before being shown in dashboards.
-- Project Brain updates are part of the Definition of Done.
-
-## Lark Base structure
-Base name: `Social MKT Data Hub`
-
-Sidebar groups:
-- `📊 Dashboards`
-- `🧩 Master Data`
-- `📱 Organic Social`
-- `💰 Paid Ads`
-- `🤖 AI Reports`
-- `⚙️ Sync & System`
-- `🧪 Raw Integration Tables`
-
-Main tables:
-- `MKT_Accounts`
-- `MKT_Content`
-- `MKT_Content_Daily`
-- `MKT_Ads_Accounts`
-- `MKT_Ads_Campaigns`
-- `MKT_Ads_AdGroups`
-- `MKT_Ads_Ads` — planned; ยังไม่มี Live Table ID จนกว่า Blueprint Apply
-- `MKT_Ads_Creatives`
-- `MKT_Ads_Daily`
-- `MKT_Sync_Log`
-- `MKT_System_Alerts`
-- `MKT_AI_Report_Runs`
-- `MKT_Report_Settings`
-
-Raw tables:
-- `RAW_TikTok_Creator_Videos` — official native sync-managed TikTok Creator raw source
-- `RAW_YouTube_Channels` — planned/API-managed YouTube channel source
-- `RAW_YouTube_Videos` — planned/API-managed YouTube video source
-- `RAW_YouTube_Analytics_Daily` — planned OAuth owner-analytics period metrics
-- `RAW_TikTok_Business_Campaigns`
-- `RAW_TikTok_Business_AdGroups`
-- `RAW_TikTok_Business_Ads`
-- `RAW_Google_Campaigns`
-- `RAW_Google_Customer_Lists`
-
-## TikTok For Creator normalization baseline
-Native row source: `RAW_TikTok_Creator_Videos`
-
-Output tables:
-- `MKT_Content`
-- `MKT_Content_Daily`
-
-Current mapping rules:
-- `video_id` becomes `external_content_id`.
-- `content_key` is generated from `platform:account_id:external_content_id`.
-- `content_daily_key` is generated from `platform:account_id:external_content_id:metric_date`.
-- Missing unsupported metrics remain `null`, never `0`.
-- Completion rate is normalized to decimal ratio, for example `45%` becomes `0.45`.
-- Unique viewers stays `unique_viewers`; do not rename it as reach.
-- Raw/native rows are not reporting tables; dashboard reporting must use `MKT_Content_Daily`.
-- Batch normalization is O(n), dedupes by upsert key, and isolates invalid rows instead of failing the entire batch.
-
-## Primary artifacts
-- `PROJECT_BRAIN.md` — current truth and handoff summary.
-- `docs/project-brain/` — project history, rules, decisions, and next actions.
-- `docs/poc/tiktok-for-creator-poc.md` — TikTok For Creator POC result.
-- `docs/multi-channel-foundation-v0.4.0.md` — Connector/Queue foundation and activation rules.
-- `migrations/` — D1 schema draft.
-- `apps/` — Cloudflare Worker entry points.
-- `packages/` — clean architecture modules.
-- `tests/` — baseline tests for pure domain and mapping logic.
-
-## Local-only Lark resource mapping
-
-DEV Table IDs ถูกย้ายออกจาก Source/Release documentation แล้วและเก็บเฉพาะใน `wrangler.sync.jsonc`
-ของเครื่องผู้พัฒนา ตารางเดิมและ YouTube RAW มีสถานะตาม Live UAT evidence ส่วน `MKT_Ads_Ads`
-ยังรอ guarded Preview/Apply ใน DEV เพราะ Source artifact ไม่มี Live credential. Production ต้องตั้งค่า Table IDs ของลูกค้าเองผ่าน Local/Environment config.
-
-## Next action
-1. เฝ้าดู YouTube scheduled run ตามธรรมชาติรอบถัดไป โดยเฉพาะ Owner Analytics 07:50 Asia/Bangkok และ Alert เมื่อ Provider fault เกิดจริง
-2. ทำ Customer-owned 837-video Full → incremental → Owner Analytics UAT พร้อม exact completeness/duplicate/queue/retry evidence ก่อน Production
-3. Production onboarding ต้องใช้ Lark/Cloudflare/Google/YouTube assets ที่ลูกค้าเป็นเจ้าของ
-4. Meta และ Connector อื่นยังเป็นงานแยกและต้องผ่าน Data-model/Access/UAT/large-account fixture ของตนเอง
-
-## 2026-07-09 — v0.1.4 env-driven config + Lark classification dictionary
-- Baseline: `v0.1.4-env-config-lark-dictionary`.
-- Lark table IDs are now resolved from env only; source code is client-neutral.
-- Added `LARK_TABLE_MKT_CLASSIFICATION_DICTIONARY` and dictionary loading from Lark.
-- `MKT_Classification_Dictionary` is now the source of truth for course/content/funnel/CTA/promotion/urgency mapping.
-- Removed Chemistry K-specific hardcoded classification rules from core code.
-- Unmatched content now goes to manual review via low confidence and `manual_tag_note` instead of guessed fields.
-- Validation: `npm test` passed 25 tests; `npm run check` passed.
-
-
-## v0.1.5 — Lark live sync validation
-
-The next release adds a safe pre-write validation path for the first real Lark integration test. The new `tiktok.creator.native.validate` queue job reads real Lark tables, loads `MKT_Classification_Dictionary`, normalizes TikTok Creator rows in memory, and logs row counts, skipped rows, sample keys, and warnings without writing to `MKT_Content` or `MKT_Content_Daily`. The actual sync use case also supports `dryRun: true`.
-
-This keeps the first live test safe: validate field/table/env mapping first, then run the write job only after the dry-run result is clean.
-
-## v0.1.6 Local Lark run tools
-
-Decision: because this project is deployed one Cloudflare project per client, table IDs remain environment-driven and no D1 tenant config is needed. To make first live validation easier before Cloudflare deploy/queue wiring, local Node runner scripts now read `.dev.vars` and call the same application use cases used by Workers.
-
-Added commands:
-- `npm run validate:tiktok`: reads real RAW TikTok Creator and dictionary tables, normalizes in memory, does not write.
-- `CONFIRM_WRITE=YES npm run sync:tiktok`: writes/upserts into `MKT_Content` and `MKT_Content_Daily`.
-- `CONFIRM_WRITE=YES npm run seed:metrics`: writes metric definition seed rows.
-
-Safety: write scripts refuse to run unless `CONFIRM_WRITE=YES` is set. `.dev.vars` is intentionally local-only and must not be committed. `.dev.vars.example` is included for setup.
-
-
----
-
-# Update: MKT Architecture (2026-07)
-
-## Customer
-- Chemistry K
-- Online chemistry courses
-- WooCommerce commerce
-- Chatwoot conversations
-
-## Integration Scope
-### Social
-- TikTok
-- Facebook
-- Instagram
-- YouTube
-
-### Chatwoot
-- Conversations
-- Messages
-- Contacts
-- Agents
-- Inbox
-- Labels
-
-### WooCommerce
-- Orders
-- Order Items
-- Products
-- Customers
-- Coupons
-- Refunds
-
-## Flow
-Social + Chatwoot + WooCommerce
-→ Connectors
-→ Raw Data
-→ Normalization
-→ Master Tables
-→ Daily Snapshot
-→ Dashboard
-→ AI Analysis
-→ Lark Group Notification
-
-## AI
-MKT:
-- Collect
-- Normalize
-- Calculate metrics
-- Daily Snapshot
-- Rule alerts
-
-Lark AI:
-- Summary
-- Insight
-- Recommendation
-- Alert explanation
-
-Lark Bot:
-- Notify Lark Group
-- Log notification
-
----
-
-## Codebase Review Policy
-
-Before starting any new feature, bug fix, connector, refactor, or release, the complete current codebase must be reviewed first.
-
-The review must check for:
-
-- Duplicate business logic, duplicated helpers, and duplicated API mapping
-- Dead code, unused imports, unused files, obsolete scripts, and stale configuration
-- Code that should be moved into shared helpers, services, adapters, or domain modules
-- Poor architecture, excessive coupling, hardcoded values, and fragile implementation patterns
-- Performance issues, unnecessary loops, repeated API calls, avoidable database or Lark requests, and inefficient memory usage
-- Idempotency, retry, pagination, rate-limit handling, logging, error handling, and recovery behavior
-- Regression risks across TikTok, Facebook, Instagram, YouTube, Chatwoot, WooCommerce, Lark Base, AI analysis, dashboards, snapshots, and notifications
-- Test quality, missing edge cases, validation coverage, and whether the current implementation remains production-ready
-
-Rules:
-
-1. Do not blindly add new code on top of existing code.
-2. Reuse existing production-quality logic where appropriate.
-3. Refactor shared behavior instead of creating parallel or duplicated implementations.
-4. Remove code waste and obsolete code when it is safe to do so.
-5. If existing code is weak, unsafe, slow, or difficult to maintain, improve it before or together with the new work.
-6. Avoid unnecessary large refactors that increase risk without clear value.
-7. After changes, run relevant validation, unit tests, regression tests, static checks, and production build or dry-run checks.
-8. Update PROJECT_BRAIN and CHANGELOG whenever architecture, flow, contracts, or development rules change.
-
-Standard workflow:
-
-Codebase audit
-→ Architecture and code-health assessment
-→ Reuse / refactor / cleanup plan
-→ Implementation
-→ Validation and regression checks
-→ Performance and reliability re-check
-→ PROJECT_BRAIN and CHANGELOG update
-
----
-
-## 2026-07-10 — v0.1.7 TikTok canonical keys and current Lark Base baseline
-
-TikTok identity keys now use a single colon delimiter:
-
-- `content_key = platform:account_id:external_content_id`
-- `content_daily_key = platform:account_id:external_content_id:metric_date`
-
-For Chemistry K, examples are:
-
-- `tiktok:chemistry_k:video_id`
-- `tiktok:chemistry_k:video_id:2026-07-10`
-
-The key format is owned by the shared builder in `create-daily-snapshot.js`; connectors and tests must not rebuild this contract independently. Report IDs retain their existing double-colon delimiter because they are a separate contract.
-
-Current Lark Base source of truth supplied by the customer:
-
-- Base name: `Social MKT Data Hub`
-- Base revision: `9`
-- Timezone: `Asia/Bangkok`
-- Current tables: 21
-- Current domains: social organic, ads, reports, AI report runs, classification dictionary, sync logs, and system alerts
-- Chatwoot and WooCommerce tables are approved scope but have not yet been added to the current Base schema.
-
-Before the next connector is implemented, code, PROJECT_BRAIN, and the latest exported Lark Base must be checked together.
-
-### Validation status for v0.1.7
-
-- Full automated test suite: passed, 31/31 tests.
-- JavaScript syntax/static check: passed.
-- Repository-wide search confirmed no remaining old TikTok content-key expectations; remaining `::` usage belongs only to the separate report ID contract and migration note.
-- Live `validate:tiktok` and real Lark sync were not completed in the packaging environment because outbound DNS/network access to `open.larksuite.com` was unavailable.
-- Next action on a network-enabled development machine: run `npm run validate:tiktok`, inspect sample keys, then run `CONFIRM_WRITE=YES npm run sync:tiktok` and verify idempotent second-run updates in Lark Base.
-
----
-
-## Lark API Rate-Limit Policy (v0.1.8)
-
-The production Lark Base adapter must not issue one search request per row during an upsert. It must read the destination table once, build a local stable-key index, and then use batch create/update operations. Connector table writes should run sequentially unless concurrency has been proven safe.
-
-The Lark client must cache the tenant access token and retry transient failures with bounded exponential backoff and jitter. Retryable failures currently include Lark error `1254290 TooManyRequest`, HTTP 429, and temporary HTTP 5xx responses.
-
-The TikTok sync sequence is: read raw/dictionary data concurrently, normalize locally, upsert `MKT_Content`, then upsert `MKT_Content_Daily`. This avoids concurrent search/write bursts against the same Base app.
-
-
----
-
-## v0.2.0 — Core Sync Engine baseline
-
-The project now follows **Core First, Feature Second**. Connector-specific code must fetch and normalize only; synchronization policy is owned by the shared core.
-
-### Mandatory architecture
-
-```text
-Source Connector
-  → Raw/Normalized Rows
-  → TableSyncEngine
-  → Storage Repository
-  → Lark Bitable Client
-```
-
-Responsibilities:
-
-- Connector adapter: fetch and source-field mapping.
-- Application use case: orchestration and domain normalization.
-- `TableSyncEngine`: stable-key dedupe, destination indexing, diff, unchanged skip, create/update plan, and duplicate-key integrity checks.
-- `LarkRecordRepository`: thin list/create/update I/O adapter only.
-- `LarkBitableClient`: auth token cache, request pacing, pagination, batch transport, retry/backoff, and HTTP/API error handling.
-
-### Hard rules
-
-1. No connector may implement its own upsert, retry, rate-limit, batch-write, or destination lookup logic.
-2. No per-row destination API lookup is allowed for normal table sync.
-3. A table sync must read once, index locally, diff locally, and batch writes.
-4. Unchanged rows must be skipped and must not be rewritten.
-5. Duplicate stable keys already present in a destination table are treated as a data-integrity error and must stop the write.
-6. Queue jobs sharing the same Lark app runtime run sequentially unless measured evidence proves a higher concurrency safe.
-7. Retry is a resilience layer, not a substitute for reducing request volume.
-8. New Facebook, Instagram, YouTube, Chatwoot, and WooCommerce connectors must use this same engine.
-
-### v0.2.0 audit result
-
-- Removed the per-row Lark search path.
-- Separated synchronization policy from Lark storage I/O.
-- Added request pacing, changed-field diffing, duplicate detection, and unchanged-row skipping.
-- Migrated TikTok and metric seeding to the shared engine.
-- Automated validation: 36/36 tests passed and syntax checks passed.
-- Full audit report: `docs/architecture-audit-v0.2.0.md`.
-
-### Next action
-
-Return to TikTok validation only after installing this baseline:
-
-1. `npm install`
-2. `npm run validate:tiktok`
-3. `CONFIRM_WRITE=YES npm run sync:tiktok`
-4. Run the same write command a second time.
-5. Confirm the second run reports unchanged rows as `skipped`, with no duplicate records and no `1254290`.
-
----
-
-## Lark Schema-Aware Write Contract (v0.2.1)
-
-All writes to Lark Base must pass through the shared destination-schema preflight layer.
-
-Required flow:
-
-Connector normalized rows
-→ Lark table field metadata
-→ Shared typed field serializer
-→ Preflight validation
-→ Universal TableSyncEngine diff
-→ Batch create/update
-
-Rules:
-
-1. Connectors must not format Lark-specific field payloads themselves.
-2. The repository loads `/fields` metadata and caches it per table for the process lifetime.
-3. URL fields are serialized as `{ link, text }`; raw URL strings must never be sent directly to a Lark URL field.
-4. Empty optional values are omitted from write payloads.
-5. Unknown destination fields and invalid typed values must fail before any write request.
-6. Preflight errors must identify destination table, stable row key, and field name.
-7. Diff comparison must use the same serialized representation that will be written to Lark.
-8. Lark schema changes require updated tests and PROJECT_BRAIN review before sync.
-
-This policy applies to TikTok, Facebook, Instagram, YouTube, Chatwoot, WooCommerce, and every future connector.
-
-
-## v0.2.2 Lark sync observability and timeout
-- Added per-request timeout with AbortController so stalled Lark requests cannot hang forever.
-- Added stage progress logs for TikTok sync.
-- Timeout errors include the Lark API path and configured timeout.
-## Lark Sync Observability Rule
-Every production sync must expose progress from use case → sync engine → repository/client. Logs must identify scope, table, operation, page/chunk, attempt, elapsed time, retry delay, and Lark status/code without exposing tokens or secrets. Silent network waits are not acceptable.
-
----
-
-## Lark Pagination Contract (v0.2.4)
-
-Every Lark collection read must use the shared guarded paginator. This applies to table fields, records, and any future paginated Lark collection endpoint.
-
-Mandatory behavior:
-
-1. Continue only when the response explicitly contains `has_more: true`.
-2. Ignore `page_token` when `has_more` is false; Lark may return a stale token on the terminal page.
-3. When `has_more` is true, require a non-empty next `page_token`.
-4. Detect a repeated page token and stop before an unbounded request loop can continue.
-5. Enforce a configurable maximum page count as a final safety boundary.
-6. Empty pages are allowed only when `has_more` is true and the next token advances.
-7. Fields and records must use the same shared pagination implementation; connector-specific pagination loops are prohibited.
-8. Pagination logs must report resource, table, page, row count, total row count, completion, and guarded failure without exposing secrets.
-
-Incident learned from TikTok production validation:
-
-- Lark returned 29 fields on page 1, `has_more: false`, and a stale `page_token`.
-- The previous implementation followed the token alone and repeatedly requested the same empty page hundreds of times.
-- The defect caused unnecessary API traffic and could trigger rate limiting even though no write had started.
-- The fixed contract treats `has_more` as authoritative and uses token checks only when another page is explicitly declared.
-
-## Canonical date-time contract (v0.2.5)
-- Normalized domain date-time values must be epoch milliseconds.
-- Source adapters must convert epoch seconds, epoch milliseconds, numeric epoch strings, Date objects, and explicit-timezone ISO strings through the shared date-time parser.
-- Ambiguous timezone-less strings are rejected rather than interpreted using the host machine timezone.
-- Lark date fields are serialized from the same shared parser, so connectors may not implement their own date conversion logic.
-
-## 0.2.6 - Lark URL source contract
-- Fixed TikTok native source mapping for Lark Bitable URL fields returned as `{ link, text }`.
-- URL source values are now validated and extracted before domain normalization; arbitrary objects are never coerced to `"[object Object]"`.
-- Added regression coverage using the real structured Lark URL response shape.
-
-
----
-
-## Live Contract Audit Rule (v0.2.7)
-
-Before any connector is allowed to write, validation must exercise the same field serialization path as production using the live Lark destination schema. A normalization-only dry run is not sufficient.
-
-Required checks:
-
-- Decode actual Lark source cell shapes (rich text arrays, URL arrays, primitive numbers and epoch dates).
-- Serialize every destination row against live field metadata.
-- Validate URL, date, number, single-select and multi-select contracts.
-- Validate that the source social account matches the configured account identity.
-- Stop before writes when the source account is inconsistent, destination fields are missing, or select values are not configured.
-- Reporting date values are stored as Asia/Bangkok midnight epoch milliseconds; identity keys continue to use `YYYY-MM-DD`.
-- The original content URL is not a CTA destination. `cta_destination` may only come from an explicit URL in human-authored caption/title/campaign text.
-
-Current Base audit observations (2026-07-11):
-
-- RAW TikTok URL and text cells are returned as arrays of rich segments, not plain strings.
-- The current RAW TikTok table contains URLs for handle `@ft.pumkin`; this must not be synced with `MKT_CUSTOMER_PROFILE=chemistry_k`.
-- The Classification Dictionary contains `course_level` outputs `DEK73` and `ม.3`, while the current `MKT_Content.course_level` select options do not include those values. Add the options or disable/change the affected rules before content matching those rules is synced.
-
----
-
-## Runtime Environment and Customer Profiles (v0.2.8)
-
-### Ownership model
-
-- `Social MKT Data Hub` ที่ใช้อยู่ปัจจุบันเป็น Lark Base สำหรับพัฒนาและทดสอบของผู้พัฒนา
-- Development ใช้ทรัพยากรของผู้พัฒนา เช่น TikTok `@ft.pumkin`
-- Production ของ Chemistry K ต้องติดตั้งในทรัพยากรที่ลูกค้าเป็นเจ้าของ ได้แก่ Lark Base, Lark App/Bot, API credentials, Cloud/Runtime, Chatwoot, WooCommerce และ Social assets
-- ใช้ codebase เดียวกัน แต่เลือก environment/profile ผ่าน Environment Variables โดยไม่แก้ source code
-
-### Runtime selector
-
-Development:
-
-```env
-MKT_ENV=development
-MKT_CUSTOMER_PROFILE=dev_ft_pumkin
-```
-
-Production:
-
-```env
-MKT_ENV=production
-MKT_CUSTOMER_PROFILE=chemistry_k
-```
-
-ระบบต้อง fail-fast หาก environment และ profile ไม่ตรงคู่กัน
-
-### TikTok identity contract
-
-- `accountKey` ใช้สร้าง stable canonical key
-- `sourceHandle` ใช้ตรวจว่าข้อมูล RAW มาจากบัญชีจริงที่ถูกต้อง
-- Development: `accountKey=ft_pumkin`, `sourceHandle=ft.pumkin`
-- Production Chemistry K: `accountKey=chemistry_k`, `sourceHandle=chemistry_k`
-- ห้ามนำข้อมูลจาก `@ft.pumkin` ไปสร้าง key ภายใต้ `chemistry_k`
-
-### Configuration rule
-
-- Business logic และ Connector ห้ามอ่าน `process.env` โดยตรง
-- Environment ถูกแปลงเป็น RuntimeConfig กลางก่อนส่งเข้า use case
-- เก็บใน code ได้เฉพาะ non-secret profile, mapping, feature flags และ stable identifiers
-- Token, Secret, API Key, Password และ credentials ต้องอยู่ใน Environment/Secret Manager เท่านั้น
-- Customer profile ต้องมีคอมเมนต์ภาษาไทยอธิบาย ownership และ field สำคัญ
-
-
----
-
-## Full Codebase Audit Baseline (v0.3.1)
-
-- TikTok/Lark validation และ write ใช้ Prepare/Plan path เดียวกัน; Content และ Daily ต้องผ่าน Preflight ก่อน Write แรก
-- Destination lookup ใช้ Filtered stable-key search; Paginator ตรวจ `has_more`, missing/repeated token และ max pages
-- Batch Create ไม่ Retry เมื่อ Timeout/Network/5xx ให้ Job ใหม่ Re-plan จาก Stable Key เพื่อเลี่ยง Duplicate
-- Source handle, account mismatch, legacy stable key, TikTok URL handle/video ID และ unsafe numeric ID ถูกตรวจแบบ Fail-fast
-- DEV ใช้ Base/TikTok ของผู้พัฒนา (`dev_ft_pumkin`, `@ft.pumkin`); Production `chemistry_k` ใช้ทรัพยากรที่ลูกค้าเป็นเจ้าของ
-- Residual risks: ไม่มี cross-table transaction/distributed lock, RAW/Dictionary ยัง full read, ยังไม่มี persisted sync run/DLQ และยังไม่เปิด Classification field clearing จนกว่าจะยืนยัน Lark Cell-clear contract
-- รายงานเต็ม: `docs/full-codebase-audit-v0.3.1.md`
-
-
-## 2026-07-11 — v0.5.0 Reliability Layer
-
-- Baseline: `v0.5.0-reliability-layer`.
-- No Lark Content/Daily schema changes. Existing `MKT_Sync_Log` 7 fields and `MKT_System_Alerts` 5 fields are used as user-facing mirrors.
-- D1 is the operational source of truth for timestamps, detailed counts, retry metadata, lock leases, DLQ payloads and alert details.
-- Automatic reconciliation is part of the normal TikTok sync path; a separate fake reconcile success is not used.
-- Local and Cloud resources remain separate: Local file lock protects one machine only; Cloudflare D1 lock protects Worker invocations. Do not run Local write against the same Base while Cloud scheduled sync is enabled.
-- Known residual risk: D1 lease has no renewal heartbeat yet; configure lease longer than the maximum expected sync duration.
-- Full contract: `docs/reliability-layer-v0.5.0.md`.
-
-## 2026-07-11 — v0.5.1 Cloudflare Deploy Hardening
-
-- Wrangler Sync config ต้องอยู่ repository root หรืออ้าง path ตามตำแหน่ง config; baseline นี้ใช้ `wrangler.sync.example.jsonc` ที่ root.
-- D1 เป็น operational primary: `saveSyncRun`, `saveSystemAlert`, `saveDeadLetter` ต้องสำเร็จก่อน Ack; Lark เป็น best-effort human-readable mirror เท่านั้น.
-- Main Queue และ DLQ ใช้ exact-name whitelist; Queue ที่ไม่รู้จักต้อง quarantine และห้าม execute งาน.
-- Scheduled handler เป็น Producer ส่ง `tiktok.creator.native.sync` เข้า Main Queue ไม่ทำ Sync ตรงใน Cron.
-- Lease lock ต้อง renew ก่อนหมดอายุและ Use case ต้องตรวจ ownership ก่อนทุก write chunk; lost ownership เป็น retryable failure.
-- Lark batch adapter ต้องรายงาน confirmed rows/chunks เมื่อเกิด partial/unknown write และ Reliability status ต้องเป็น `partial_success` พร้อม Critical alert.
-- Source identity mismatch ต้อง fail fast ก่อน Destination schema/search.
-- CI/Release gate บังคับ Node unit tests, Workers-runtime tests, `npm run check`, `npm run deploy:dry-run`, migration replay และ extracted ZIP retest.
-- Production secrets ห้ามอยู่ใน code/config example; DEV ใช้ทรัพยากรผู้พัฒนา ส่วน Production ใช้ Lark/Cloudflare/App/Credentials ที่ลูกค้าเป็นเจ้าของ.
-
-## 2026-07-19 — Large-account sync contract
-
-ปริมาณจริงของลูกค้าเป็น Architecture input ไม่ใช่ Edge case: YouTube 837 videos, Instagram 1,941 posts, TikTok หลายร้อย videos และ Facebook หลายร้อยถึงหลายพัน posts.
-
-YouTube ใช้ shared durable work staging:
-
-```text
-Queue message ID
-→ sync_work_runs
-→ Source page / resource chunk / Analytics page ใน sync_work_units
-→ exact phase counters ใน sync_work_phases
-→ Plan Lark ทุกตาราง
-→ Execute RAW/Canonical แล้ว Account สุดท้าย
-→ Commit source_record_states + sync_cursors
-→ Clear sync_work_*
-```
-
-กฎถาวร:
-
-- `sync_work_*` เป็น retry staging; ห้ามใช้แทน Business checkpoint หรือประกาศ Source complete
-- Source page/chunk payload commit กับ progress ใน D1 batch เดียวกัน
-- Retry resume เฉพาะ unit ที่ยังไม่ complete; stable key rerun ต้องไม่สร้าง Duplicate
-- No-data Analytics เป็น valid ได้ แต่ queried-video markers ต้องครบ exact tracked set
-- Expected/selected/queried/skipped/failed/pages/chunks/completeness ต้องอยู่ใน Sync result และ D1 Sync Log details
-- Safety limit เช่น max pages ต้อง fail-closed พร้อม error/alert; ห้าม truncate ข้อมูลเก่าแล้วรายงาน success
-- อ่าน staged units กลับแบบ bounded pages; หาก normalized plan ของ large fixture เกิน Worker memory budget ต้องขยาย shared persisted-plan execution ก่อน Activation
-- Instagram/Facebook/TikTok งานถัดไปต้อง reuse contract นี้ พร้อม Initial full, persisted cursor, incremental, periodic full reconciliation, rate-limit retry และ large-account fixtures; ห้ามสร้าง connector-specific state machine ซ้ำ
+### Early planning only
+
+- TikTok Ads
+- WooCommerce
+- Chatwoot
+- Multi-channel AI summary/notification completion
+
+The current connector catalog intentionally contains only the existing runtime connector keys. Google Ads requires a separate catalog entry, feature flag, job type and route as part of the signed-delivery task.
+
+## Permanent architecture rules
+
+- Data model and source contract must be approved before connector coding.
+- Every write path requires stable keys, idempotency, retry classification, partial-write semantics and reconciliation.
+- Missing metrics use `null`, not fabricated zero.
+- DEV, customer-real UAT and Production resources must remain isolated.
+- Customer-real UAT uses customer-owned source data with temporary isolated developer-owned UAT infrastructure.
+- Production Lark, Cloudflare, credentials and source assets must be customer-owned.
+- Secrets never belong in Source, documentation, logs or release archives.
+- New connectors and schedules are disabled by default.
+- Unknown jobs and unsupported schema versions fail permanently.
+- Lark View mutations must send request-only fields and hydrate Get View state before idempotency comparison.
+
+## Google Ads View safety correction
+
+The Google Ads Filter tool is update-only:
+
+- Missing managed Views must block.
+- Any `create_view` or other non-`update_view` action is forbidden.
+- No View creation/deletion/rename, Field/Table mutation or Business Record operation is allowed.
+- The correction branch adds `GOOGLE_ADS_VIEW_FILTER_CREATE_FORBIDDEN` and focused tests.
+
+## RAW error coverage
+
+Current Google RAW error Views check the table-specific primary raw stable key with `isEmpty`. This is the approved minimum identity-key QA contract, not comprehensive validation of every supporting field. Broader customer/entity/status/report/policy validation requires a separate data-quality contract.
+
+## Current progress estimate
+
+Milestone estimates, not code coverage:
+
+- Core runtime/reliability: `95%`
+- Lark data model and managed presentation: `100%`
+- TikTok Organic: `95%`
+- YouTube Organic: `90%`
+- Facebook Organic: `30%`
+- Instagram Organic: `30%`
+- Meta Ads: `25%`
+- Google Ads end-to-end: `45%`
+- TikTok Ads: `10%`
+- WooCommerce: `10%`
+- Chatwoot: `10%`
+- MKT DEV MVP overall: approximately `59%`
+- Chemistry K Production readiness: approximately `25%`
+
+Detailed weighting: `docs/project-brain/mkt-progress-v0.13.0.md`.
+
+## Next workstream
+
+Before connector implementation, merge the repository correction after full gates pass. Then open a separate task:
+
+`Google Ads Manager Script signed delivery connector`
+
+Lock before coding:
+
+1. six-dataset payload schema and schema version;
+2. stable keys and idempotency keys;
+3. HMAC signature, timestamp, nonce and replay window;
+4. bounded batch and payload limits;
+5. null semantics;
+6. partial-write and retry behavior;
+7. Queue, DLQ, checkpoint, lock and reconciliation;
+8. retention, audit and redaction;
+9. DEV/UAT/Production ownership;
+10. schedule disabled by default.
+
+Run isolated manual UAT and idempotent rerun before enabling any schedule. Production remains disabled until customer-owned rollout gates pass.
+
+## References
+
+- `AGENTS.md`
+- `docs/current-task.md`
+- `docs/project-brain/00-current-state.md`
+- `docs/project-brain/03-platform-decisions.md`
+- `docs/project-brain/04-api-discoveries.md`
+- `docs/project-brain/10-next-actions.md`
+- `docs/project-brain/mkt-progress-v0.13.0.md`
+- `docs/lark-full-view-contract-v0.13.5.md`
+- `docs/Lark_Full_View_Audit_v0.13.5.md`
+- `docs/repository-closeout-corrections-v0.13.7.md`
