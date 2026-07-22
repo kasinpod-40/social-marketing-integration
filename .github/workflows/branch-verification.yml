@@ -1,99 +1,28 @@
 name: Branch Verification
 
 on:
+  push:
+    branches:
+      - 'codex/**'
   pull_request:
     branches:
       - main
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: finalize-tiktok-customer-source-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: false
+  group: branch-verification-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  verify-and-finalize:
+  verify:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Checkout head branch
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: agent/google-ads-signed-delivery
-          fetch-depth: 0
-
-      - name: Apply exact TikTok customer-source correction
-        shell: python
-        run: |
-          from pathlib import Path
-
-          test_file = Path('tests/application/generate-tiktok-organic-report.test.js')
-          text = test_file.read_text()
-          old = "  const dailySetting = createReportSettingRowsForProfile('integration_workspace')[0];"
-          malformed = """  // Legacy fixture stays scoped to ft_pumkin so compatibility behavior remains tested.
-          // Live Integration Workspace seeds only chemistry_k and cannot mix these records into customer reports.
-          const dailySetting = {
-            ...createReportSettingRowsForProfile('integration_workspace')[0],
-            account_keys_json: '[\"ft_pumkin\"]',
-          };""".replace('\n          ', '\n')
-          desired = """  // Legacy fixture stays scoped to ft_pumkin so compatibility behavior remains tested.
-            // Live Integration Workspace seeds only chemistry_k and cannot mix these records into customer reports.
-            const dailySetting = {
-              ...createReportSettingRowsForProfile('integration_workspace')[0],
-              account_keys_json: '[\"ft_pumkin\"]',
-            };""".replace('\n            ', '\n  ')
-          if old in text:
-              text = text.replace(old, desired)
-          elif 'Legacy fixture stays scoped to ft_pumkin' in text:
-              start = text.index('  // Legacy fixture stays scoped to ft_pumkin')
-              end = text.index('  const tables =', start)
-              text = text[:start] + desired + '\n' + text[end:]
-          else:
-              raise SystemExit('TikTok legacy fixture block not found')
-          test_file.write_text(text)
-
-          readme = Path('README.md')
-          readme_text = readme.read_text()
-          old_readme = '- TikTok, Facebook, Instagram and YouTube may use temporary developer-owned sources;'
-          new_readme = '- TikTok and Google Ads use Chemistry K customer sources; Facebook, Instagram and YouTube may still use temporary developer-owned sources;'
-          if old_readme in readme_text:
-              readme_text = readme_text.replace(old_readme, new_readme)
-          elif new_readme not in readme_text:
-              raise SystemExit('Integration Workspace source sentence not found in README')
-          readme.write_text(readme_text)
-
-          task = Path('docs/current-task.md')
-          task_text = task.read_text()
-          replacements = [
-            (
-              '- Source ownership is per Connector. Google Ads already uses Chemistry K customer data while other channels may still use temporary developer-owned sources.',
-              '- Source ownership is per Connector. TikTok (`@chemistry_k`) and Google Ads already use Chemistry K customer data; Facebook, Instagram and YouTube may still use temporary developer-owned sources.',
-            ),
-            (
-              '- [x] legacy TikTok report profile/key records remain readable without a Lark data rewrite\n',
-              '- [x] legacy TikTok report profile/key records remain readable without a Lark data rewrite\n- [x] Lark TikTok For Creator account connection points to `@chemistry_k`\n- [ ] TikTok protected RAW / Canonical / Report reconciliation and exact-scope cleanup of legacy `ft_pumkin` rows\n',
-            ),
-            (
-              '- Temporary developer-source rows in other channels must be removed by exact source scope before those channels are replaced with customer data.',
-              '- TikTok Lark Native source is now `@chemistry_k`, but protected RAW/Canonical/Report reconciliation and exact-scope cleanup of legacy `ft_pumkin` records remain pending.\n- Temporary developer-source rows in Facebook, Instagram and YouTube must be removed by exact source scope when those channels are replaced with customer data.',
-            ),
-          ]
-          for old_text, new_text in replacements:
-              if old_text in task_text:
-                  task_text = task_text.replace(old_text, new_text)
-              elif new_text not in task_text:
-                  raise SystemExit(f'Current Task transition text not found: {old_text}')
-          task.write_text(task_text)
-
-      - name: Remove temporary files and restore standard workflow
-        shell: bash
-        run: |
-          rm -f .github/workflows/finalize-tiktok-customer-source.yml
-          rm -f .github/finalize-tiktok-customer-source.trigger
-          git show abbd22ab8423e19435558f28743c43707ca56262:.github/workflows/branch-verification.yml > .github/workflows/branch-verification.yml
-          git diff --check
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -107,35 +36,40 @@ jobs:
       - name: Syntax architecture and hygiene
         run: npm run check
 
-      - name: Focused TikTok customer-source tests
+      - name: Focused staged TikTok tests
         shell: bash
         run: |
-          node --test \
-            tests/config/customer-profiles.test.js \
-            tests/config/connector-runtime-config.test.js \
-            tests/config/report-settings-seed.test.js \
-            tests/application/connector-registry.test.js \
-            tests/application/generate-tiktok-organic-report.test.js
+          set -o pipefail
+          node --test tests/application/tiktok-staged-business-sync.test.js 2>&1 | tee focused-test.log
 
       - name: Unit and Workers runtime tests
-        run: npm test
+        shell: bash
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee full-test.log
 
       - name: Report reliability regression
-        run: npm run test:report-reliability
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run test:report-reliability 2>&1 | tee report-test.log
 
       - name: Dependency audit
-        run: npm audit --audit-level=high
+        shell: bash
+        run: |
+          set -o pipefail
+          npm audit --audit-level=high 2>&1 | tee audit.log
 
       - name: Wrangler dry run
         run: npm run deploy:dry-run
 
-      - name: Commit verified clean result
-        shell: bash
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
-          test ! -e .github/workflows/finalize-tiktok-customer-source.yml
-          test ! -e .github/finalize-tiktok-customer-source.trigger
-          git commit -m 'fix: align TikTok integration with Chemistry K source'
-          git push origin HEAD:agent/google-ads-signed-delivery
+      - name: Upload verification diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: branch-verification-logs
+          path: |
+            *-test.log
+            audit.log
+          if-no-files-found: ignore
+          retention-days: 7

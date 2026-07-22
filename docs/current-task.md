@@ -32,7 +32,7 @@ Header names, HMAC algorithm/signing input, envelope fields, limits, timestamp/r
 - There is one pre-Production Integration Workspace, not separate DEV/UAT operating modes.
 - Keep `MKT_ENV=development` as the technical runtime label and `MKT_CUSTOMER_PROFILE=integration_workspace` throughout assembly and validation.
 - Reuse the existing Worker, D1, Queue, DLQ, secret store, Lark Base and table IDs.
-- Source ownership is per Connector. Google Ads already uses Chemistry K customer data while other channels may still use temporary developer-owned sources.
+- Source ownership is per Connector. TikTok (`@chemistry_k`) and Google Ads already use Chemistry K customer data; Facebook, Instagram and YouTube may still use temporary developer-owned sources.
 - Do not switch profiles for Google Ads validation. Change only Google Ads connector flag, signing configuration and Script execution mode.
 - After manual validation, restore Google Ads to connector-disabled and Script `DRY_RUN`; the Workspace profile stays unchanged.
 
@@ -122,6 +122,8 @@ Header names, HMAC algorithm/signing input, envelope fields, limits, timestamp/r
 - [x] one Integration Workspace profile with mixed per-Connector source ownership
 - [x] legacy DEV/UAT profile aliases normalize to the same Workspace
 - [x] legacy TikTok report profile/key records remain readable without a Lark data rewrite
+- [x] Lark TikTok For Creator account connection points to `@chemistry_k`
+- [ ] TikTok protected RAW / Canonical / Report reconciliation and exact-scope cleanup of legacy `ft_pumkin` rows
 - [ ] signed PREVIEW against the existing API Worker using Chemistry K Google Ads data
 - [ ] one-shot LIVE and exact Google Ads UI reconciliation
 - [ ] controlled retry/lock/DLQ/redrive validation
@@ -154,7 +156,8 @@ Final Branch Verification run `#217` on head `91036a8a367517beeba9c33769ed3ff91c
 - External signed PREVIEW/LIVE has not been executed against the existing Workspace with Chemistry K Google Ads data.
 - Signing secrets must be configured through the existing secret store.
 - Customer-scale retry/DLQ/idempotency evidence remains required before Production.
-- Temporary developer-source rows in other channels must be removed by exact source scope before those channels are replaced with customer data.
+- TikTok Lark Native source is now `@chemistry_k`, but protected RAW/Canonical/Report reconciliation and exact-scope cleanup of legacy `ft_pumkin` records remain pending.
+- Temporary developer-source rows in Facebook, Instagram and YouTube must be removed by exact source scope when those channels are replaced with customer data.
 
 ## Handoff state
 

@@ -18,11 +18,11 @@ const TABLES = Object.freeze({
 
 function buildRepository() {
   // Legacy fixture stays scoped to ft_pumkin so compatibility behavior remains tested.
-// Live Integration Workspace seeds only chemistry_k and cannot mix these records into customer reports.
-const dailySetting = {
-  ...createReportSettingRowsForProfile('integration_workspace')[0],
-  account_keys_json: '["ft_pumkin"]',
-};
+  // Live Integration Workspace seeds only chemistry_k and cannot mix these records into customer reports.
+  const dailySetting = {
+    ...createReportSettingRowsForProfile('integration_workspace')[0],
+    account_keys_json: '["ft_pumkin"]',
+  };
   const tables = new Map(Object.entries({
     content: [{ recordId: 'content-1', fields: {
       content_key: 'tiktok:ft_pumkin:1', external_content_id: '1', account_id: 'ft_pumkin',
