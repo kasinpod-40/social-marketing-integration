@@ -13,7 +13,7 @@ MKT_ENV=development                 # technical isolation label only
 MKT_CUSTOMER_PROFILE=integration_workspace
 ```
 
-The profile remains constant while channels are built and while source accounts are replaced. Legacy profile names are compatibility aliases only and must not be used as workflow stages. Existing TikTok report records keyed with `dev_ft_pumkin` remain readable as legacy stable identifiers, so this model does not require an immediate Lark record rewrite.
+The profile remains constant while channels are built and while source accounts are replaced. Legacy profile names are compatibility aliases only and must not be used as workflow stages. Existing TikTok report and Canonical records keyed with `dev_ft_pumkin` or `ft_pumkin` remain readable as legacy identities until a scoped cleanup/reconciliation task is approved; they are not the identity for new Chemistry K rows.
 
 ## Ownership model
 
@@ -31,7 +31,7 @@ Current source roles:
 
 | Connector | Current source role | Replacement required before final customer-data validation |
 | --- | --- | --- |
-| TikTok | developer temporary substitute (`ft.pumkin`) | yes |
+| TikTok | Chemistry K customer-real (`@chemistry_k`) through Lark TikTok For Creator | no |
 | Facebook | developer temporary substitute | yes |
 | Instagram | developer temporary substitute | yes |
 | YouTube | developer temporary substitute | yes |
@@ -45,8 +45,10 @@ The table is operational metadata, not a reason to create another environment/pr
 
 - `customerKey=chemistry_k` identifies the target business context.
 - Connector `accountKey` identifies the current source account and may differ while a temporary substitute is used.
+- TikTok now uses `accountKey=chemistry_k` and `sourceHandle=chemistry_k` for every new sync, lock, log, report and Stable key.
 - Every connector exposes `sourceOwner`, `sourceRole` and `replacementRequired` in runtime readiness metadata.
 - Stable keys must include the connector account/source identity required by the existing Data Model.
+- Do not relabel old `ft_pumkin` records as Chemistry K records; reconcile and delete them only by exact source scope.
 - Do not relabel temporary developer data as customer source data in logs or evidence.
 
 ## Assembly workflow
@@ -69,6 +71,8 @@ For each connector marked `replacementRequired=true`:
 7. verify zero temporary-source rows and zero duplicate customer stable keys;
 8. re-enable only after validation.
 
+TikTok has completed the source-account replacement step at the Lark Native connection level. Before treating the data transition as closed, inspect the protected RAW table, reconcile new `chemistry_k` Canonical/report rows and remove legacy `ft_pumkin` rows only through a separately reviewed exact-scope cleanup.
+
 Never bulk-delete unrelated channels or shared tables without exact platform/account filters and reconciliation evidence.
 
 ## Final validation and Production
@@ -88,4 +92,4 @@ When every connector uses customer data:
 - source ownership is visible in runtime metadata and evidence;
 - business schedules remain disabled until manual validation;
 - Production remains separate and customer-owned;
-- this contract does not authorize Google Ads mutation, Lark schema reopening or Production cutover.
+- this contract does not authorize bulk deletion of legacy TikTok rows, Google Ads mutation, Lark schema reopening or Production cutover.
