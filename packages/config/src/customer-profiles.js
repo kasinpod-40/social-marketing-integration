@@ -30,12 +30,12 @@ const CUSTOMER_PROFILES = Object.freeze({
     connectors: {
       tiktok: {
         enabledByDefault: true,
-        accountKey: 'ft_pumkin',
-        sourceHandle: 'ft.pumkin',
-        sourceOwner: 'developer',
-        sourceRole: 'temporary_substitute',
-        replacementRequired: true,
-        displayLabel: 'TikTok Integration — temporary developer source',
+        accountKey: 'chemistry_k',
+        sourceHandle: 'chemistry_k',
+        sourceOwner: 'customer',
+        sourceRole: 'customer_real',
+        replacementRequired: false,
+        displayLabel: 'TikTok Integration — Chemistry K source',
       },
       facebook: {
         enabledByDefault: false,
@@ -178,7 +178,6 @@ export function loadCustomerRuntimeConfig(env) {
     tiktok: connectors.tiktok,
   });
 }
-
 
 /** Normalize legacy pre-Production profile names into the single Integration Workspace identity. */
 export function normalizeCustomerProfileKey(profileKey) {
