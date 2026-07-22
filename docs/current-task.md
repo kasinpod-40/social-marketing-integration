@@ -2,11 +2,13 @@
 
 ## Status
 
-- **Task status:** `implementation_complete_verification_pending`
+- **Task status:** `ready_for_merge`
 - **Environment:** source-only correction branch
 - **Target profile:** none; no Runtime execution
 - **Branch:** `work/repository-audit-corrections-2026-07-22`
 - **Base commit:** `ddd876c3670af0dc6a4748b5399a1ac5acfe6642`
+- **Verification commit:** `edd0ad2de3901b64a06c7f2b5f832fb2126ba8f3`
+- **Verification workflow:** Branch Verification run `170` / `29933315983`
 - **Live Lark mutation:** none
 - **Google Ads mutation:** none
 - **Worker/Queue/D1/Schedule:** unchanged
@@ -25,6 +27,7 @@ Full correction record: `docs/repository-audit-corrections-v0.13.7.md`.
 - Main commit before this correction: `ddd876c3670af0dc6a4748b5399a1ac5acfe6642`
 - Application package line: `0.11.0`
 - Lark contract versions: `v0.13.5` View filters, `v0.13.6` Formula UI, `v0.13.7` repository correction
+- Dependency lock refreshed after adding the patched `sharp` override
 
 ### Lark DEV
 
@@ -133,6 +136,17 @@ Current authoritative state is recorded in:
 
 Historical release notes remain historical; when a historical statement conflicts with this file, this file wins under `AGENTS.md` authority order.
 
+### 6. Dependency security correction
+
+Branch Verification exposed four High findings through the transitive `sharp <0.35.0` chain used by the Cloudflare test/runtime toolset. The branch now:
+
+- pins the patched transitive dependency through `overrides.sharp=0.35.3`;
+- refreshes `package-lock.json`;
+- retains `audit.log` in CI diagnostics;
+- passes the online High-level dependency audit with `0 vulnerabilities`.
+
+No application source behavior or deployment configuration was changed by this dependency correction.
+
 ## Explicitly out of scope
 
 - Google Ads signed delivery endpoint;
@@ -177,13 +191,14 @@ Contract must be approved before coding:
 - [x] RAW error stable-key-only coverage documented.
 - [x] Manager Script evidence level documented without overclaiming reproducibility.
 - [x] Connector/schedule/deployment remain out of scope and disabled.
-- [ ] `npm ci`
-- [ ] `npm run check`
-- [ ] `npm test`
-- [ ] `npm run test:report-reliability`
-- [ ] `npm audit --offline`
-- [ ] `npm run deploy:dry-run`
-- [ ] Work review of final PR diff
+- [x] Vulnerable transitive `sharp` chain upgraded and lockfile refreshed.
+- [x] `npm ci`
+- [x] `npm run check`
+- [x] `npm test`
+- [x] `npm run test:report-reliability`
+- [x] `npm audit --audit-level=high`
+- [x] `npm run deploy:dry-run`
+- [x] Work review of final source and documentation diff
 
 ## Implementation result
 
@@ -197,6 +212,9 @@ Contract must be approved before coding:
 ### Files updated
 
 - `scripts/setup-google-ads-view-filters.mjs`
+- `package.json`
+- `package-lock.json`
+- `.github/workflows/branch-verification.yml`
 - Current state, Project Brain and handoff documentation listed above
 
 ### Live operations
@@ -212,6 +230,19 @@ Schedule changes      0
 Production changes    0
 ```
 
-### Remaining verification
+### Verification result
 
-GitHub connector edits source but does not execute the repository locally. Run the full gates from a clean checkout before merge. Do not claim the recorded prior `536/536`, `9/9`, `70/70` results as verification of this new guard until the branch gates run.
+Branch Verification run `170` passed on commit `edd0ad2de3901b64a06c7f2b5f832fb2126ba8f3`:
+
+```text
+npm ci                         PASS
+npm run check                  PASS
+Focused staged TikTok           4/4 PASS
+Node Unit/Integration         540/540 PASS
+Workers runtime                 9/9 PASS
+Report reliability             70/70 PASS
+npm audit --audit-level=high    0 vulnerabilities
+npm run deploy:dry-run          PASS
+```
+
+The verification workflow has returned to read-only `contents` permission. No temporary lockfile write job remains.
