@@ -15,7 +15,11 @@ export const TIKTOK_HISTORY_PREFLIGHT_PHASE = 'tiktok_organic_history_preflight_
 export const TIKTOK_HISTORY_WRITE_PHASE = 'tiktok_organic_history_write_v1';
 const DATASET_KEY = 'organic_content_cumulative';
 
-/** Write at most one staged source Unit per live invocation. */
+/**
+ * Process at most one staged source Unit per Queue invocation.
+ * Preflight is also staged one Unit at a time; live D1 writes begin only on a later invocation
+ * after full-source preflight has already completed.
+ */
 export async function bootstrapTikTokOrganicHistoryDurable(input = {}) {
   const gateway = requireGateway(input.gateway);
   await gateway.assertSchemaReady();
@@ -31,7 +35,7 @@ export async function bootstrapTikTokOrganicHistoryDurable(input = {}) {
     metricDate: values.metricDate,
     syncMode: 'full',
     incrementalEnabled: false,
-    dryRun: input.dryRun === true,
+    dryRun: values.dryRun,
     rawTableId: values.rawTableId,
     assertLockActive: values.assertLockActive,
   });
@@ -83,19 +87,69 @@ export async function bootstrapTikTokOrganicHistoryDurable(input = {}) {
     sourceSummary: source.summary,
     onProgress: values.onProgress,
   };
-  const preflight = await preflightAllUnits(unitInput);
 
-  if (input.dryRun === true) {
+  const preflightStep = await preflightOneUnit(unitInput);
+  const preflight = preflightStep.state;
+  const existingWrite = await loadWriteState(context);
+
+  // Even the invocation that completes the final preflight Unit stops here. This preserves the
+  // hard one-Unit boundary; a continuation begins D1 business writes on the next invocation.
+  if (preflightStep.processedUnit) {
+    if (values.dryRun && preflightStep.complete) {
+      const result = buildResult({
+        values,
+        context,
+        sourceSummary: source.summary,
+        preflight,
+        write: existingWrite,
+        identities,
+        mode: 'dry_run',
+        coverageStatus: preflight.issueRows > 0 ? 'partial' : 'complete',
+        continuationRequired: false,
+        continuationPhase: null,
+        nextSequence: preflight.nextSequence,
+      });
+      await completeTikTokResumableSource(context, result);
+      return result;
+    }
+    return buildResult({
+      values,
+      context,
+      sourceSummary: source.summary,
+      preflight,
+      write: existingWrite,
+      identities,
+      mode: 'd1_only_preflight_continuation',
+      coverageStatus: 'not_started',
+      continuationRequired: true,
+      continuationPhase: TIKTOK_HISTORY_PREFLIGHT_PHASE,
+      nextSequence: preflight.nextSequence,
+    });
+  }
+
+  if (!preflightStep.complete) {
+    throw permanentError('TikTok history preflight made no progress', {
+      code: 'TIKTOK_HISTORY_BOOTSTRAP_INCOMPLETE',
+      details: {
+        phase: TIKTOK_HISTORY_PREFLIGHT_PHASE,
+        nextSequence: preflight.nextSequence,
+      },
+    });
+  }
+
+  if (values.dryRun) {
     const result = buildResult({
       values,
       context,
       sourceSummary: source.summary,
       preflight,
-      write: emptyWriteState(),
+      write: existingWrite,
       identities,
       mode: 'dry_run',
       coverageStatus: preflight.issueRows > 0 ? 'partial' : 'complete',
       continuationRequired: false,
+      continuationPhase: null,
+      nextSequence: preflight.nextSequence,
     });
     await completeTikTokResumableSource(context, result);
     return result;
@@ -108,7 +162,7 @@ export async function bootstrapTikTokOrganicHistoryDurable(input = {}) {
   });
   const write = await writeOneUnit({
     ...unitInput,
-    existingState: await loadWriteState(context),
+    existingState: existingWrite,
   });
   if (!write.complete) {
     return buildResult({
@@ -118,9 +172,11 @@ export async function bootstrapTikTokOrganicHistoryDurable(input = {}) {
       preflight,
       write,
       identities,
-      mode: 'd1_only_continuation',
+      mode: 'd1_only_write_continuation',
       coverageStatus: 'partial',
       continuationRequired: true,
+      continuationPhase: TIKTOK_HISTORY_WRITE_PHASE,
+      nextSequence: write.nextSequence,
     });
   }
 
@@ -158,6 +214,8 @@ export async function bootstrapTikTokOrganicHistoryDurable(input = {}) {
     mode: 'd1_only',
     coverageStatus,
     continuationRequired: false,
+    continuationPhase: null,
+    nextSequence: write.nextSequence,
   });
   await completeTikTokResumableSource(context, result);
   return result;
@@ -187,47 +245,84 @@ async function createHistoryIdentities({ context, values, source }) {
   });
 }
 
-async function preflightAllUnits(input) {
+async function preflightOneUnit(input) {
   const existing = await input.context.store.loadPhase({
     workKey: input.context.workKey,
     phase: TIKTOK_HISTORY_PREFLIGHT_PHASE,
   });
-  if (existing?.complete) return normalizePreflight(existing.state);
-  let state = normalizePreflight(existing?.state);
-  const seen = new Set(state.seenContentKeys);
+  if (existing?.complete) {
+    return Object.freeze({
+      state: normalizePreflight(existing.state),
+      complete: true,
+      processedUnit: false,
+    });
+  }
+
+  const previous = normalizePreflight(existing?.state);
+  const seen = new Set(previous.seenContentKeys);
+  let nextUnit = null;
   for await (const unit of iterateTikTokStagedSourceUnits({
     context: input.context,
-    afterSequence: state.nextSequence,
+    afterSequence: previous.nextSequence,
   })) {
-    const normalized = normalizeUnit(input, unit.records);
-    const selected = selectUniqueRows(normalized, seen);
-    const plan = await input.writer.preflightBatch(selected);
-    const duplicateRows = duplicateCount(normalized) + selected.crossUnitDuplicates;
-    const skippedRows = normalized.skippedRows.length;
-    state = Object.freeze({
-      nextSequence: unit.sequence + 1,
-      unitsPreflighted: state.unitsPreflighted + 1,
-      rawRecords: state.rawRecords + unit.records.length,
-      validContentRows: state.validContentRows + plan.contentRows,
-      skippedRows: state.skippedRows + skippedRows,
-      duplicateRows: state.duplicateRows + duplicateRows,
-      issueRows: state.issueRows + skippedRows + duplicateRows,
-      plannedStateRows: state.plannedStateRows + plan.stateRows.length,
-      plannedObservationRows: state.plannedObservationRows + plan.observationRows.length,
-      seenContentKeys: Object.freeze([...seen].sort()),
-    });
-    await savePhase(input.context, TIKTOK_HISTORY_PREFLIGHT_PHASE, state, false, input.sourceSummary);
-    input.onProgress(Object.freeze({
-      stage: 'tiktok_history_unit_preflighted',
-      sequence: unit.sequence,
-      rawRecords: unit.records.length,
-      validContentRows: plan.contentRows,
-      issueRows: skippedRows + duplicateRows,
-    }));
+    nextUnit = unit;
+    break;
   }
-  assertCompleteness(state.rawRecords, input.sourceSummary.records, 'preflight');
-  await savePhase(input.context, TIKTOK_HISTORY_PREFLIGHT_PHASE, state, true, input.sourceSummary);
-  return state;
+  if (!nextUnit) {
+    assertCompleteness(previous.rawRecords, input.sourceSummary.records, 'preflight');
+    await savePhase(
+      input.context,
+      TIKTOK_HISTORY_PREFLIGHT_PHASE,
+      previous,
+      true,
+      input.sourceSummary,
+    );
+    return Object.freeze({ state: previous, complete: true, processedUnit: false });
+  }
+
+  const normalized = normalizeUnit(input, nextUnit.records);
+  const selected = selectUniqueRows(normalized, seen);
+  const plan = await input.writer.preflightBatch(selected);
+  const duplicateRows = duplicateCount(normalized) + selected.crossUnitDuplicates;
+  const skippedRows = normalized.skippedRows.length;
+  const state = Object.freeze({
+    nextSequence: nextUnit.sequence + 1,
+    unitsPreflighted: previous.unitsPreflighted + 1,
+    rawRecords: previous.rawRecords + nextUnit.records.length,
+    validContentRows: previous.validContentRows + plan.contentRows,
+    skippedRows: previous.skippedRows + skippedRows,
+    duplicateRows: previous.duplicateRows + duplicateRows,
+    issueRows: previous.issueRows + skippedRows + duplicateRows,
+    plannedStateRows: previous.plannedStateRows + plan.stateRows.length,
+    plannedObservationRows: previous.plannedObservationRows + plan.observationRows.length,
+    seenContentKeys: Object.freeze([...seen].sort()),
+  });
+  const complete = state.rawRecords === input.sourceSummary.records;
+  if (state.rawRecords > input.sourceSummary.records) {
+    throw permanentError('TikTok history preflight exceeded staged source size', {
+      code: 'TIKTOK_HISTORY_BOOTSTRAP_INCOMPLETE',
+      details: {
+        expectedRows: input.sourceSummary.records,
+        processedRows: state.rawRecords,
+      },
+    });
+  }
+  await savePhase(
+    input.context,
+    TIKTOK_HISTORY_PREFLIGHT_PHASE,
+    state,
+    complete,
+    input.sourceSummary,
+  );
+  input.onProgress(Object.freeze({
+    stage: 'tiktok_history_unit_preflighted',
+    sequence: nextUnit.sequence,
+    rawRecords: nextUnit.records.length,
+    validContentRows: plan.contentRows,
+    issueRows: skippedRows + duplicateRows,
+    continuationRequired: !complete || input.context.dryRun !== true,
+  }));
+  return Object.freeze({ state, complete, processedUnit: true });
 }
 
 async function writeOneUnit(input) {
@@ -253,6 +348,15 @@ async function writeOneUnit(input) {
   const result = await input.writer.writeBatch(selected);
   const rawRecordsCompleted = input.existingState.rawRecordsCompleted + nextUnit.records.length;
   const complete = rawRecordsCompleted === input.sourceSummary.records;
+  if (rawRecordsCompleted > input.sourceSummary.records) {
+    throw permanentError('TikTok history write exceeded staged source size', {
+      code: 'TIKTOK_HISTORY_BOOTSTRAP_INCOMPLETE',
+      details: {
+        expectedRows: input.sourceSummary.records,
+        processedRows: rawRecordsCompleted,
+      },
+    });
+  }
   const state = Object.freeze({
     ...input.existingState,
     nextSequence: nextUnit.sequence + 1,
@@ -329,7 +433,9 @@ function selectUniqueRows(normalized, seen) {
 }
 
 function buildResult(input) {
-  const { write, preflight } = input;
+  const { write, preflight, sourceSummary } = input;
+  const dryRun = input.mode === 'dry_run';
+  const observedEntities = dryRun ? preflight.validContentRows : write.validContentRows;
   return Object.freeze({
     syncRunId: input.values.syncRunId,
     platform: 'tiktok',
@@ -337,11 +443,13 @@ function buildResult(input) {
     operation: 'organic_history_bootstrap',
     mode: input.mode,
     destinationMode: 'd1_only',
-    rawRecords: input.sourceSummary.records,
-    sourcePagination: input.sourceSummary,
+    dryRun,
+    rawRecords: sourceSummary.records,
+    sourcePagination: sourceSummary,
     sourceIdentity: Object.freeze({ expectedHandle: 'chemistry_k' }),
     continuationRequired: input.continuationRequired,
-    nextSequence: write.nextSequence,
+    continuationPhase: input.continuationPhase,
+    nextSequence: input.nextSequence,
     d1: Object.freeze({
       schemaReady: true,
       coverageRunId: input.identities.coverageRunId,
@@ -361,20 +469,23 @@ function buildResult(input) {
     }),
     lark: Object.freeze({ contentWrites: 0, dailyWrites: 0, blocked: true }),
     reconciliation: Object.freeze({
-      expectedEntities: preflight.rawRecords,
-      observedEntities: write.validContentRows,
-      expectedRows: preflight.rawRecords,
-      observedRows: write.validContentRows,
-      failedRows: input.coverageStatus === 'complete' ? 0 : preflight.issueRows,
+      expectedEntities: sourceSummary.records,
+      observedEntities,
+      expectedRows: sourceSummary.records,
+      observedRows: observedEntities,
+      failedRows: input.coverageStatus === 'partial' && !input.continuationRequired
+        ? preflight.issueRows
+        : 0,
       skippedRows: preflight.skippedRows,
       duplicateRows: preflight.duplicateRows,
       status: input.coverageStatus,
     }),
     resumableWork: Object.freeze({
       generation: input.context.generation,
-      complete: input.mode === 'd1_only',
+      complete: input.mode === 'd1_only' || input.mode === 'dry_run',
       bounded: true,
       maxSourceUnitsPerInvocation: 1,
+      preflightComplete: preflight.rawRecords === sourceSummary.records,
     }),
   });
 }
@@ -401,6 +512,7 @@ function normalizeInput(input) {
     cursorKey: requireText(input.cursorKey, 'cursorKey'),
     rawTableId: requireText(input.rawTableId, 'rawTableId'),
     metricDate: dateOnlyInTimeZone(requestedAt, sourceTimezone),
+    dryRun: input.dryRun === true,
     assertLockActive: typeof input.assertLockActive === 'function'
       ? input.assertLockActive
       : async () => undefined,
