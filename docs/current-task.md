@@ -119,7 +119,7 @@ No Lark retention or deletion is authorized by this task.
 ## Current task — in scope
 
 1. Record the exact Storage Architecture and Migration Contract in Repository `main`.
-2. Synchronize `docs/current-task.md`, Project Brain, README and CHANGELOG.
+2. Synchronize `docs/current-task.md`, Project Brain, Time-series direction and README; preserve the existing root `CHANGELOG.md` history unchanged in this docs-only branch.
 3. Lock Dashboard periods, metric semantics, D1 grains/keys/indexes, Lark roles, migration flags, parity and rollback.
 4. Keep TikTok Canonical write blocked until Storage Foundation phases are implemented and validated.
 5. Keep Google Ads Draft PR `#17` unmerged until it is rebuilt/rebased against the new storage/RAW lineage contract.
@@ -148,6 +148,7 @@ No Lark retention or deletion is authorized by this task.
 - [x] Feature flags default false and migration phases are documented.
 - [x] Parity, Live validation and rollback gates are documented.
 - [x] Retention remains blocked until D1 capacity and rollback evidence exist.
+- [x] Existing root Changelog history remains untouched.
 - [x] No runtime, Lark, D1, Queue, Schedule or Production mutation occurs.
 
 ## Proposed next Implementation task after merge
