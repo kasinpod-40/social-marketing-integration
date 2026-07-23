@@ -16,6 +16,8 @@ import {
 import {
   buildStagedPartialError,
   buildWriteResult,
+  mergeHistoryPlan,
+  mergeHistoryResult,
   mergePlanSummary,
   mergeReconciliation,
   mergeTableResult,
@@ -39,6 +41,9 @@ export async function preflightAllUnits(input) {
     const selectedIds = selectUnitExternalContentIds(unit.records, input.selectedExternalIds);
     const prepared = await prepareUnit({ ...input, unit, selectedIds });
     assertTikTokSyncReady(prepared);
+    const historyPlan = input.historyHooks
+      ? await input.historyHooks.preflightUnit(prepared)
+      : null;
 
     state = Object.freeze({
       ...state,
@@ -48,6 +53,7 @@ export async function preflightAllUnits(input) {
       selectedRowsPreflighted: state.selectedRowsPreflighted + prepared.plans.content.inputRows,
       contentPlan: mergePlanSummary(state.contentPlan, prepared.plans.content),
       dailyPlan: mergePlanSummary(state.dailyPlan, prepared.plans.dailySnapshots),
+      historyPlan: historyPlan ? mergeHistoryPlan(state.historyPlan, historyPlan) : state.historyPlan,
       reconciliation: mergeReconciliation(state.reconciliation, prepared.reconciliation),
       warnings: mergeWarnings(state.warnings, prepared.warnings),
     });
@@ -64,6 +70,7 @@ export async function preflightAllUnits(input) {
       sequence: unit.sequence,
       unitRecords: unit.records.length,
       recordsPreflighted: state.recordsPreflighted,
+      d1HistoryRows: historyPlan?.contentRows ?? 0,
     });
   }
 
@@ -79,6 +86,15 @@ export async function preflightAllUnits(input) {
         processedPages: state.unitsPreflighted,
         expectedSelectedRecords: input.incrementalPlan.selectedRecords,
         selectedRowsPreflighted: state.selectedRowsPreflighted,
+      },
+    });
+  }
+  if (input.historyHooks && state.historyPlan.contentRows !== input.incrementalPlan.selectedRecords) {
+    throw permanentError('TikTok D1 history preflight completeness check failed', {
+      code: 'TIKTOK_HISTORY_PREFLIGHT_INCOMPLETE',
+      details: {
+        expectedRows: input.incrementalPlan.selectedRecords,
+        plannedRows: state.historyPlan.contentRows,
       },
     });
   }
@@ -109,6 +125,32 @@ export async function writeAllUnits(input) {
     assertTikTokSyncReady(prepared);
     await input.context.assertCurrent();
 
+    let historyResult = null;
+    if (input.historyHooks) {
+      try {
+        historyResult = await input.historyHooks.writeUnit(prepared);
+      } catch (cause) {
+        throw buildStagedPartialError({
+          cause,
+          input,
+          state,
+          prepared,
+          failedPhase: 'd1_history',
+          historyResult: null,
+          contentResult: null,
+          dailyResult: null,
+        });
+      }
+      input.onProgress({
+        stage: 'tiktok_d1_history_unit_written',
+        sequence: unit.sequence,
+        syncRunId: input.syncRunId,
+        contentRows: historyResult.contentRows,
+        observationsCreated: historyResult.observationsCreated,
+        observationsSkipped: historyResult.observationsSkipped,
+      });
+    }
+
     let contentResult;
     try {
       contentResult = await input.syncEngine.executePlan(prepared.plans.content, {
@@ -127,6 +169,7 @@ export async function writeAllUnits(input) {
         state,
         prepared,
         failedPhase: 'content',
+        historyResult,
         contentResult: isPartialSyncError(cause)
           ? normalizeTablePartialResult(cause.partialResult, prepared.plans.content)
           : null,
@@ -152,6 +195,7 @@ export async function writeAllUnits(input) {
         state,
         prepared,
         failedPhase: 'daily_snapshots',
+        historyResult,
         contentResult,
         dailyResult: isPartialSyncError(cause)
           ? normalizeTablePartialResult(cause.partialResult, prepared.plans.dailySnapshots)
@@ -167,6 +211,9 @@ export async function writeAllUnits(input) {
       selectedRecordsCompleted: state.selectedRecordsCompleted + prepared.plans.content.inputRows,
       contentResult: mergeTableResult(state.contentResult, contentResult),
       dailyResult: mergeTableResult(state.dailyResult, dailyResult),
+      historyResult: historyResult
+        ? mergeHistoryResult(state.historyResult, historyResult)
+        : state.historyResult,
       reconciliation: mergeReconciliation(state.reconciliation, prepared.reconciliation),
       warnings: mergeWarnings(state.warnings, prepared.warnings),
     });
@@ -177,6 +224,7 @@ export async function writeAllUnits(input) {
       unitRecords: unit.records.length,
       selectedRecords: prepared.plans.content.inputRows,
       unitsCompleted: state.unitsCompleted,
+      d1HistoryEnabled: state.historyResult.enabled,
     });
   }
 
@@ -192,6 +240,16 @@ export async function writeAllUnits(input) {
         processedPages: state.unitsCompleted,
         expectedSelectedRecords: input.incrementalPlan.selectedRecords,
         selectedRecordsCompleted: state.selectedRecordsCompleted,
+      },
+    });
+  }
+  if (input.historyHooks
+    && state.historyResult.contentRowsDurable !== input.incrementalPlan.selectedRecords) {
+    throw permanentError('TikTok D1 history write completeness check failed', {
+      code: 'TIKTOK_HISTORY_WRITE_INCOMPLETE',
+      details: {
+        expectedRows: input.incrementalPlan.selectedRecords,
+        durableRows: state.historyResult.contentRowsDurable,
       },
     });
   }
