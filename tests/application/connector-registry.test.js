@@ -6,22 +6,23 @@ import {
   listConnectorReadiness,
 } from '../../packages/application/src/connectors/connector-registry.js';
 
-test('returns the active TikTok connector state from the runtime profile', () => {
+test('returns the manually enabled Chemistry K TikTok connector from Integration Workspace', () => {
   const runtimeConfig = loadCustomerRuntimeConfig({
     MKT_ENV: 'development',
-    MKT_CUSTOMER_PROFILE: 'dev_ft_pumkin',
+    MKT_CUSTOMER_PROFILE: 'integration_workspace',
+    MKT_CONNECTOR_TIKTOK_ENABLED: 'true',
   });
 
   const connector = assertConnectorRunnable(runtimeConfig, 'tiktok');
-  assert.equal(connector.accountKey, 'ft_pumkin');
+  assert.equal(connector.accountKey, 'chemistry_k');
+  assert.equal(connector.sourceHandle, 'chemistry_k');
   assert.equal(connector.enabled, true);
 });
 
-test('rejects an active connector when the feature flag disables it', () => {
+test('rejects the active TikTok implementation when the feature flag remains disabled', () => {
   const runtimeConfig = loadCustomerRuntimeConfig({
     MKT_ENV: 'development',
-    MKT_CUSTOMER_PROFILE: 'dev_ft_pumkin',
-    MKT_CONNECTOR_TIKTOK_ENABLED: 'false',
+    MKT_CUSTOMER_PROFILE: 'integration_workspace',
   });
 
   assert.throws(
@@ -47,10 +48,10 @@ test('planned connector is never reported as runnable', () => {
   assert.equal(facebook.runnable, false);
 });
 
-test('YouTube connector is runnable after activation when the normal feature flag is enabled', () => {
+test('YouTube connector is runnable after manual activation in Integration Workspace', () => {
   const runtimeConfig = loadCustomerRuntimeConfig({
     MKT_ENV: 'development',
-    MKT_CUSTOMER_PROFILE: 'dev_ft_pumkin',
+    MKT_CUSTOMER_PROFILE: 'integration_workspace',
     MKT_CONNECTOR_YOUTUBE_ENABLED: 'true',
   });
   assert.equal(assertConnectorRunnable(runtimeConfig, 'youtube').enabled, true);
@@ -63,7 +64,7 @@ test('registry rejects runtime profiles that omit an active connector state', ()
   );
 });
 
-test('Production rejects active connectors until the large-account Live UAT gate is verified', () => {
+test('Production rejects active connectors until the large-account Live validation gate is verified', () => {
   const tiktokProduction = loadCustomerRuntimeConfig({
     MKT_ENV: 'production',
     MKT_CUSTOMER_PROFILE: 'chemistry_k',
@@ -93,10 +94,10 @@ test('Production rejects active connectors until the large-account Live UAT gate
   );
 });
 
-test('readiness summary exposes volume targets and missing large-account gates without secrets', () => {
+test('readiness summary exposes volume targets and missing gates without secrets', () => {
   const runtimeConfig = loadCustomerRuntimeConfig({
     MKT_ENV: 'development',
-    MKT_CUSTOMER_PROFILE: 'dev_ft_pumkin',
+    MKT_CUSTOMER_PROFILE: 'integration_workspace',
     MKT_CONNECTOR_YOUTUBE_ENABLED: 'true',
   });
   const readiness = listConnectorReadiness(runtimeConfig);
