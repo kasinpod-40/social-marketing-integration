@@ -1,11 +1,11 @@
-# Current Task — Storage Foundation Phase 1
+# Current Task — Organic D1 Dual-write and Controlled Bootstrap
 
 ## Status
 
-- **Task status:** `phase_1_complete`
+- **Task status:** `approved_for_implementation`
 - **Approved by user:** `2026-07-23`
-- **Main baseline:** `0c3a6ba838ad8bb2a1783d203b62a70527a08ec4`
-- **Task-open baseline:** `5d75f7e967e03999ea36a088b7867f7aa4a60be4`
+- **Main baseline:** `9e54ef339cfe02ca24bda3d2eaae807f130e1b79`
+- **Previous task:** `STORAGE_FOUNDATION_PHASE_1_COMPLETE`
 - **Contract:** `docs/project-brain/storage-architecture-and-migration-contract-v1.md`
 - **Integration Workspace:** one pre-Production workspace
 - **Schedules:** disabled
@@ -13,272 +13,274 @@
 
 ## Objective
 
-Implement the non-live foundation required before any TikTok Chemistry K Canonical write:
+Implement the first Organic Marketing-history writer and a controlled TikTok bootstrap path:
 
 ```text
-Storage Foundation Phase 1
-= Runtime/Profile identity alignment
-+ Chemistry K TikTok Canonical identity
-+ MKT_Content Field ownership protection
-+ additive D1 historical-storage schema/repositories/tests
-+ all new Feature flags false
-+ no Live business-data write
+Protected RAW_TikTok_Creator_Videos
+→ strict source identity + bounded durable staging
+→ D1 organic_content_state
+→ D1 organic_content_observations
+→ D1 data_coverage_runs / data_coverage_entities
+→ reconciliation + idempotent retry evidence
 ```
 
-The work was delivered as two separate Pull Requests:
+The implementation must also prepare the existing TikTok Canonical sync for D1-first dual-write behind a disabled-by-default Feature flag, without enabling the customer-visible Lark write in this task.
 
-1. **Phase 1A — Runtime identity and Field ownership**
-2. **Phase 1B — D1 schema and repositories**
-
-## Authoritative operating model
+## Authoritative runtime identity
 
 ```text
 MKT_ENV=development
 MKT_CUSTOMER_PROFILE=integration_workspace
-```
-
-For TikTok Organic in the Integration Workspace:
-
-```text
 customerKey=chemistry_k
 accountKey=chemistry_k
 sourceHandle=chemistry_k
+reportingTimezone=Asia/Bangkok
 ```
 
-Historical names such as `dev_ft_pumkin`, `uat_chemistry_k` and `ft_pumkin` are compatibility/history labels only. They must not create a second operating mode, change current record ownership or authorize deletion/relabeling.
+Historical profile/account labels remain compatibility metadata only and must not create another customer identity or authorize record cleanup.
 
-## Phase 1A — Delivered scope
+## Key safety decision
 
-### Runtime/Profile alignment
-
-- Added authoritative `integration_workspace` customer profile.
-- Kept `MKT_ENV=development` as the technical runtime label.
-- Mapped TikTok Organic Canonical identity to Chemistry K.
-- Preserved Production profile isolation and customer-owned Production rules.
-- Treated legacy profile names as explicit compatibility aliases.
-- Aligned report-setting seeds/examples with `integration_workspace` and `chemistry_k` without writing Live Lark records.
-- Kept every business schedule disabled.
-
-### `MKT_Content` Field ownership
-
-Implemented reusable Field ownership policy in the planning/diff path rather than connector-specific filtering.
-
-Protected business fields:
+The current TikTok RAW source contains about 2,021 records while the existing Lark Report reader still caps `MKT_Content` at 800 records. Therefore the first live bootstrap in this task is **D1-only**.
 
 ```text
-course_name
-course_level
-course_type
-content_theme
-funnel_stage
-cta_type
-cta_destination
-promotion_type
-urgency_level
-manual_tag_note
+LIVE_BOOTSTRAP_DESTINATION = D1_ONLY
+LIVE_LARK_CANONICAL_WRITE = BLOCKED
 ```
 
-Delivered behavior:
+The code may support D1-first dual-write for a later approved bounded Canonical run, but this task must not enable or execute the full RAW → `MKT_Content` / `MKT_Content_Daily` write.
 
-- On Create, incoming approved classification values may be written.
-- On Update, system-managed fields may update normally.
-- When existing `classification_source=manual`, all protected classification fields are preserved.
-- `manual_tag_note` is never overwritten after record creation.
-- Incoming `null`, empty or missing values never clear protected existing values.
-- For non-manual existing records, protected classification fields may be filled only when the existing value is blank.
-- Formula, Lookup, Relation and fields outside the incoming ownership mask remain untouched.
-- TikTok and YouTube use the same reusable policy.
+## In scope
 
-## Phase 1B — Delivered scope
+### 1. Manual-only bootstrap job
 
-Added local additive D1 migration and repository modules for:
+Add one explicit active Job type:
+
+```text
+tiktok.creator.native.history.bootstrap
+```
+
+Rules:
+
+- never emitted by `scheduled-jobs.js`;
+- accepted only through an explicit manual Queue message;
+- reuses the existing Connector catalog, Queue router, reliable sync runner, distributed lock, durable source staging, resumable work, DLQ and redaction stack;
+- requires `MKT_TIME_SERIES_D1_WRITE_ENABLED=true` and `MKT_TIME_SERIES_D1_BACKFILL_ENABLED=true`;
+- fails closed when either flag is false;
+- supports `dryRun=true` without D1 or Lark business writes;
+- bootstrap write mode writes D1 only.
+
+Add a local helper command that prints a validated manual Queue payload but does not send it.
+
+### 2. D1 Marketing-history infrastructure wiring
+
+- Lazily create `D1MarketingHistoryStore` from `MKT_STATE_DB` only for routes that require it.
+- Add a schema-readiness check for Migration `0009` tables before the first Source read/write.
+- Missing tables must fail permanently with a redacted storage-schema error.
+- Do not create a parallel D1 binding or reliability stack.
+
+### 3. Reusable Organic history builder/writer
+
+Add an Application-layer service reusable by future Organic connectors.
+
+Input must include:
+
+```text
+customerProfile
+customerKey
+platform
+accountKey
+sourceAccountId (nullable)
+sourceTimezone
+observedAt
+fetchedAt
+syncRunId
+coverageRunId
+sourceRevision (nullable)
+scopeMode
+normalized Content rows
+normalized cumulative metric rows
+```
+
+It must create exact Contract rows for:
 
 ```text
 organic_content_state
 organic_content_observations
-organic_account_daily_facts
-ads_entity_state
-ads_daily_facts
-ads_conversion_daily_facts
 data_coverage_runs
 data_coverage_entities
-report_materializations
-report_requests
 ```
 
-Delivered requirements:
+No Lark field names may leak into the D1 repository contract beyond the explicit mapping service.
 
-- Exact Grain, fields, Stable keys, constraints and indexes match the approved Storage contract and review note.
-- Existing operational D1 tables and migrations remain compatible.
-- Repositories support typed validation, idempotent UPSERT/no-op behavior and bounded queries for later phases.
-- Partial coverage never deletes unseen facts.
-- JSON payloads enforce approved byte limits.
-- All new runtime Feature flags default to `false`.
-- No Remote migration or business writer was activated.
+### 4. Observation and time semantics
 
-## Explicitly not authorized by Phase 1
+Bootstrap must not invent historical dates.
 
-- Reading or writing Live TikTok/YouTube/Meta/Ads business data;
-- TikTok RAW → `MKT_Content`/`MKT_Content_Daily` Sync;
-- applying Remote D1 migration `0009`;
-- deploying Worker code;
-- sending Queue messages;
-- opening any schedule;
-- changing Lark Tables, Fields, Views, Formulas or Records;
-- changing `MKT_Content_Daily` or `MKT_Ads_Daily` Retention;
-- Report D1 reader/shadow parity/cutover;
+- `observed_at` is the durable source-request instant for the Work generation, not `published_at` and not an arbitrary historical `metric_date`;
+- `metric_date` is derived from `observed_at` using the reporting timezone;
+- `fetched_at` is stable for retries of the same durable Work generation;
+- the first trusted row creates `observation_kind=initial`;
+- changed cumulative metrics create `changed`;
+- a decrease in any observed cumulative counter creates `correction`;
+- unchanged cumulative metrics do not create another Observation;
+- metadata-only changes may update Current state without creating a metric Observation;
+- missing metrics remain `null`; observed zero remains `0`;
+- no daily rows are synthesized for dates before the bootstrap observation.
+
+### 5. Stable identity and retry behavior
+
+- `content_key` remains `platform:account_key:external_content_id`;
+- `coverage_run_id` must be deterministic for durable Work key + generation + dataset;
+- `coverage_entity_key` follows the approved Contract;
+- Observation identity remains stable across Queue retries of the same Work generation;
+- a retry with the same durable payload is a no-op, not a duplicate;
+- a retry that reuses an Observation key with changed business payload fails closed;
+- attempt-specific `syncRunId` changes must not create duplicate Observations for the same durable source snapshot.
+
+### 6. Coverage contract
+
+Bootstrap coverage uses:
+
+```text
+dataset_key=organic_content_cumulative
+metric_semantics=cumulative
+scope_mode=full_inventory
+```
+
+Required behavior:
+
+- create/update a deterministic Coverage run;
+- record each selected Content as `observed` only after identity and row validation;
+- `expected_entities`, `observed_entities`, `expected_rows` and `observed_rows` must reconcile exactly;
+- invalid/skipped source rows make Coverage `partial`, never silently `complete`;
+- Source unavailable or incomplete staging must not zero or delete existing facts;
+- Coverage completion occurs only after all D1 units are durable;
+- result and Sync Log expose Coverage status, counts and source watermark without secrets.
+
+### 7. D1-first dual-write integration
+
+Prepare the existing staged TikTok Canonical path so that when `MKT_TIME_SERIES_D1_WRITE_ENABLED=true` in a later approved run:
+
+1. all unit rows and D1 contracts are validated before the unit writes;
+2. D1 Current state/Observation/Coverage writes happen before Lark Content/Daily writes;
+3. D1 failure prevents the Lark unit from starting;
+4. Lark failure after D1 success is retryable;
+5. retry replays D1 idempotently and repairs Lark;
+6. durable work state and result counters distinguish D1 writes from Lark writes;
+7. no unit is marked complete until the required destinations for that mode complete.
+
+For the bootstrap Job in this task, required destination mode is `d1_only`; Lark plan execution is skipped.
+
+### 8. Runtime configuration
+
+Extend fail-closed rules:
+
+- `MKT_TIME_SERIES_D1_BACKFILL_ENABLED=true` requires `MKT_TIME_SERIES_D1_WRITE_ENABLED=true`;
+- Report reader, materialization, Lark retention and Notification flags remain false;
+- enabling the D1 write flag does not enable a schedule;
+- Production remains blocked.
+
+### 9. Guarded rollout artifacts
+
+Add a runbook for the Integration Workspace with:
+
+1. read-only remote D1 table/row/size inspection;
+2. exact backup/export command;
+3. additive remote Migration `0009` apply command with explicit confirmation;
+4. schema verification;
+5. dry-run bootstrap payload;
+6. bounded live D1-only bootstrap payload;
+7. D1 row-count and Stable-key reconciliation;
+8. idempotent rerun;
+9. rollback by disabling both Storage write/backfill flags;
+10. no Lark cleanup or Schedule enablement.
+
+Repository implementation does not itself apply the Remote migration or send the Queue message automatically.
+
+## Out of scope
+
+- full TikTok RAW → `MKT_Content` / `MKT_Content_Daily` live write;
+- changing current Lark Tables, Fields, Views, Formulas or Records;
+- importing existing `MKT_Content_Daily` rows as trusted history;
+- creating synthetic historical observations;
+- Report D1 shadow reader or customer-visible cutover;
 - Dashboard UI changes;
+- Lark Daily retention or deletion;
+- Organic Account Daily facts;
+- YouTube/Meta Organic writer activation;
+- Ads facts or Google Ads PR `#17`;
 - Notification implementation;
-- Google Ads PR `#17` merge/reuse;
-- Production cutover.
+- automatic remote D1 migration;
+- Worker deployment from the implementation PR;
+- Schedule enablement;
+- Production.
 
-## Required tests — Phase 1A
+## Acceptance criteria
 
-- [x] `integration_workspace` resolves only with `MKT_ENV=development`.
-- [x] TikTok identity resolves to Chemistry K and produces `tiktok:chemistry_k:*` Stable keys.
-- [x] Legacy aliases do not become separate customer/account identities.
-- [x] Production isolation and disabled schedules remain unchanged.
-- [x] Manual classification and `manual_tag_note` survive reruns.
-- [x] Blank protected fields can be filled under the approved rules.
-- [x] System-managed fields still update.
-- [x] TikTok, YouTube and Core regression tests pass.
+### Configuration and routing
 
-## Required tests — Phase 1B
+- [ ] New bootstrap Job is in the central Job catalog and cannot be scheduled.
+- [ ] Bootstrap fails closed unless both D1 write and backfill flags are true.
+- [ ] Invalid Boolean/flag dependencies fail permanently.
+- [ ] Dry run performs no D1/Lark business write.
 
-- [x] Migration replay on empty and existing schema is safe and idempotent.
-- [x] Every required Table, constraint and index exists.
-- [x] Stable-key duplicate attempts do not create extra rows.
-- [x] Organic observation retry is idempotent.
-- [x] Ads old-day revision updates the same fact row.
-- [x] Different breakdown/segment/conversion identities remain separate.
-- [x] Partial coverage does not delete or zero unseen facts.
-- [x] Coverage controlled values fail closed.
-- [x] Bounded JSON guards fail closed.
-- [x] Existing D1 reliability, lock, checkpoint, DLQ/redrive and resumable-work regressions pass.
+### Mapping and semantics
 
-## Verification gates
+- [ ] All generated D1 rows pass exact Storage Contract validation.
+- [ ] Current state preserves first seen time and non-null metrics.
+- [ ] First observation, changed observation and negative correction are classified correctly.
+- [ ] Unchanged retry does not create an Observation.
+- [ ] Metric date is derived from observed time in `Asia/Bangkok`.
+- [ ] `null` and observed `0` remain distinct.
+- [ ] Bootstrap creates no fake historical dates.
+
+### Reliability and reconciliation
+
+- [ ] Source pages remain bounded and durable.
+- [ ] D1 is written before Lark in dual-write mode.
+- [ ] D1 failure produces zero Lark writes.
+- [ ] Lark failure after D1 success is recoverable by retry without duplicate D1 facts.
+- [ ] Coverage run/entity counts reconcile to selected source rows.
+- [ ] Partial/invalid source evidence never deletes or zeroes unseen facts.
+- [ ] Retry, DLQ and redrive payloads remain identity/secret safe.
+
+### Bootstrap evidence
+
+- [ ] Local tests replay Migration `0009` and bootstrap writes idempotently.
+- [ ] Dry-run result reports exact planned D1 rows and zero Lark writes.
+- [ ] Same durable bootstrap Work rerun creates zero duplicate Content/Observation rows.
+- [ ] A new Work generation with unchanged metrics updates Coverage/Current observation time without fabricating metric history.
+- [ ] A new Work generation with changed metrics creates exactly one new Observation.
+
+## Required gates
 
 ```bash
 npm ci
 npm run check
 npm test
 npm run test:report-reliability
+npm audit --audit-level=high
 npm run deploy:dry-run
 ```
 
-`npm audit --audit-level=high` reported no unacceptable vulnerability.
+Add focused tests for Job routing, Feature flags, Organic history mapping, D1 ordering, retry recovery, Coverage and bootstrap output.
 
-## Implementation result — Phase 1A
+## Implementation result
 
-### Pull request
+Pending.
 
-- PR: `#22` — `feat: align runtime identity and protect content fields`
-- Squash merge commit: `00c528279070cb0a67c9fc269abede58c3c4a0d8`
-- Branch Verification: run `#252`, run ID `29986052678`, `success`
-
-### Implemented
-
-- Added canonical `integration_workspace` Runtime profile and removed separate UAT operating mode.
-- Historical profile names resolve only as compatibility aliases to `integration_workspace`.
-- TikTok Organic Canonical identity is `customerKey/accountKey/sourceHandle=chemistry_k`.
-- All connectors and schedules remain disabled by default in release examples.
-- Report setting seeds use `integration_workspace:tiktok:{daily|weekly}` and account `chemistry_k`.
-- Added reusable Organic Content ownership policy at the Lark repository boundary.
-- Worker and local Script runtimes apply the policy only to physical `MKT_Content`.
-- TikTok and YouTube share the same ownership behavior without connector-specific duplicate logic.
-- Manual classification and `manual_tag_note` are preserved; blank non-manual classification fields may be filled; system-managed metrics continue updating.
-- Shared-table schema guard now targets the developer-owned Integration Workspace.
-
-### Verification
+## Safety boundary
 
 ```text
-Syntax / architecture / hygiene    PASS
-Focused staged TikTok tests        PASS
-Node Unit + Workers runtime        PASS
-Report reliability regression      PASS
-Dependency audit                   PASS
-Wrangler dry run                   PASS
-```
-
-## Implementation result — Phase 1B
-
-### Pull request
-
-- PR: `#24` — `feat: add D1 marketing storage foundation`
-- Superseded closed PR `#23`; no implementation scope was lost.
-- Squash merge commit: `0c3a6ba838ad8bb2a1783d203b62a70527a08ec4`
-- Verified implementation head: `5ed23addaba8cfdf021c1191729812e74bbe6d19`
-- Implementation verification: run `#265`, run ID `29996119555`, `success`
-- Final status verification: run `#267`, run ID `29996289060`, `success`
-
-### Implemented
-
-- Added additive migration `migrations/0009_storage_foundation.sql` with all ten approved Storage tables and indexes.
-- Added exact typed Storage contracts and deterministic Stable-key builders.
-- Added D1 repository behavior for idempotent Current state, Organic observations, Ads revisions, Coverage and Report materializations.
-- Preserved Breakdown, Segment, Conversion action and Attribution identity boundaries.
-- Added Application-level JSON guards: Report payload `262144` bytes; Ads actions/breakdown `65536` bytes.
-- Added bounded account/date and entity/date reads; no delete or Retention method exists in this phase.
-- Added explicit `none` identity requirements; `null` is rejected instead of silently collapsed.
-- Added strict calendar-date validation for Stable keys and report periods.
-- Added Storage migration, contract, repository and Feature-flag tests.
-- All new Storage, Reader, Retention and Notification flags default to `false`.
-- Normalized SQLite test rows without Proxying SQLite internal properties.
-- Corrected the migration replay test to build SQL placeholders with a Template literal.
-
-### Verification
-
-```text
-Syntax / architecture / hygiene    PASS
-Focused staged TikTok tests        PASS
-Node Unit + Workers runtime        PASS (573/573)
-Report reliability regression      PASS
-Dependency audit                   PASS
-Wrangler dry run                   PASS
-```
-
-### Safety result — Phase 1A and Phase 1B
-
-```text
-LIVE_BUSINESS_DATA_READ_WRITE = NONE
-LARK_MUTATION                = NONE
-REMOTE_D1_MIGRATION          = NONE
-QUEUE_MESSAGE                = NONE
-SCHEDULE_CHANGE              = NONE
-DEPLOYMENT                   = NONE
-PRODUCTION_CHANGE            = NONE
-```
-
-## Completion and next approval boundary
-
-Storage Foundation Phase 1 is complete and merged.
-
-The next possible task is **manual, Feature-flagged Organic D1 dual-write/bootstrap with schedules disabled**, but it is `NOT_APPROVED` by this closeout and must receive separate scope approval before implementation.
-
-The following remain blocked:
-
-- Remote D1 migration apply;
-- Live Dual-write;
-- TikTok Canonical Sync;
-- Report Reader cutover;
-- Lark Retention;
-- Schedule enablement;
-- Production.
-
-## Handoff
-
-```text
-STORAGE_CONTRACT = V1_DOCUMENTED
-CURRENT_TASK = STORAGE_FOUNDATION_PHASE_1_COMPLETE
-PHASE_1A = MERGED
-PHASE_1B = MERGED
-NEXT_TASK = NOT_APPROVED
-LIVE_BUSINESS_WRITE = FORBIDDEN
-REMOTE_D1_MIGRATION = FORBIDDEN
-TIKTOK_CANONICAL_SYNC = BLOCKED
+LARK_SCHEMA_MUTATION = NONE
+LARK_RECORD_MUTATION = NONE_FOR_BOOTSTRAP
+REMOTE_D1_MIGRATION = MANUAL_GUARDED_STEP_ONLY
+LIVE_BOOTSTRAP = D1_ONLY_AFTER_CODE_AND_PREFLIGHT
+LIVE_TIKTOK_CANONICAL_SYNC = BLOCKED
 REPORT_CUTOVER = BLOCKED
 LARK_RETENTION = BLOCKED
-GOOGLE_ADS_PR_17 = HOLD
 SCHEDULE = DISABLED
+GOOGLE_ADS_PR_17 = HOLD
 PRODUCTION = BLOCKED
 ```
