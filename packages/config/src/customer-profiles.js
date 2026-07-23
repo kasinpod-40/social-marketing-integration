@@ -2,108 +2,60 @@ import { resolveConnectorRuntimeConfig } from './connector-runtime-config.js';
 import { permanentError } from '../../shared/src/errors/runtime-error.js';
 
 /**
- * โปรไฟล์ลูกค้าและสภาพแวดล้อมที่ไม่เป็นความลับ
+ * โปรไฟล์ Runtime ที่ไม่เป็นความลับ
  *
- * หลักถาวรของโปรเจกต์:
- * - DEV ใช้ Lark Base, Cloudflare และบัญชีทดสอบของผู้พัฒนา
- * - UAT ใช้ข้อมูล/บัญชีต้นทางจริงของลูกค้า แต่ Lark Base และ Cloudflare เป็นของผู้พัฒนาชั่วคราว
- * - Production ใช้ทรัพยากรทุกส่วนที่ลูกค้าเป็นเจ้าของและเชิญผู้พัฒนาเข้าไปดูแล
- * - เก็บเฉพาะชื่อ, Stable key, Mapping และค่าเริ่มต้นที่ไม่เป็นความลับไว้ในโค้ด
+ * Operating model ปัจจุบัน:
+ * - ก่อน Production มี Integration Workspace เพียงชุดเดียวบน Infrastructure ของผู้พัฒนา
+ * - Source ownership แยกราย Connector และอาจเป็นของผู้พัฒนากับลูกค้าปะปนกันได้
+ * - Production แยกต่างหากและต้องใช้ทรัพยากรที่ลูกค้าเป็นเจ้าของ
+ * - accountKey เป็นส่วนหนึ่งของ Canonical Stable key จึงห้ามเปลี่ยนจาก Historical label
  * - Token, Secret, API key, Password และ Platform account ID จริงต้องมาจาก Environment/Secret Manager
- * - accountKey เป็นส่วนหนึ่งของ Canonical key ห้ามเปลี่ยนระหว่าง UAT และ Production
  */
 const CUSTOMER_PROFILES = Object.freeze({
-  dev_ft_pumkin: freezeProfile({
-    profileKey: 'dev_ft_pumkin',
+  integration_workspace: freezeProfile({
+    profileKey: 'integration_workspace',
     environment: 'development',
-    customerKey: 'dev_ft_pumkin',
-    customerName: 'Development - FT Pumkin',
+    customerKey: 'chemistry_k',
+    customerName: 'Social MKT Data Hub — Integration Workspace',
     // resourceOwner คงไว้เป็น Compatibility alias ของ infrastructureOwner
     resourceOwner: 'developer',
     infrastructureOwner: 'developer',
-    sourceAssetOwner: 'developer',
-    dataOwner: 'developer',
-    dataMode: 'developer_test',
-    businessType: 'development_sandbox',
+    sourceAssetOwner: 'mixed',
+    dataOwner: 'mixed',
+    dataMode: 'integration_workspace_mixed_sources',
+    businessType: 'multi_source_marketing_integration',
     connectors: {
       tiktok: {
-        enabledByDefault: true,
-        accountKey: 'ft_pumkin',
-        sourceHandle: 'ft.pumkin',
-        displayLabel: 'TikTok Dev - FT Pumkin',
+        // Chemistry K เป็น Source ที่ยืนยันแล้ว แต่ Runtime ต้องเปิดด้วย Feature flag แบบ Manual เท่านั้น
+        enabledByDefault: false,
+        accountKey: 'chemistry_k',
+        sourceHandle: 'chemistry_k',
+        displayLabel: 'TikTok Organic — Chemistry K',
       },
       facebook: {
         enabledByDefault: false,
         accountKey: 'dev_ft_pumkin',
-        displayLabel: 'Facebook Dev - FT Pumkin',
+        displayLabel: 'Facebook Organic — Temporary developer source',
       },
       instagram: {
         enabledByDefault: false,
         accountKey: 'dev_ft_pumkin',
-        displayLabel: 'Instagram Dev - FT Pumkin',
+        displayLabel: 'Instagram Organic — Temporary developer source',
       },
       youtube: {
         enabledByDefault: false,
         accountKey: 'dev_ft_pumkin',
-        displayLabel: 'YouTube Dev - FT Pumkin',
-      },
-      woocommerce: {
-        enabledByDefault: false,
-        accountKey: 'dev_ft_pumkin',
-        displayLabel: 'WooCommerce Dev - FT Pumkin',
-      },
-      chatwoot: {
-        enabledByDefault: false,
-        accountKey: 'dev_ft_pumkin',
-        displayLabel: 'Chatwoot Dev - FT Pumkin',
-      },
-    },
-  }),
-
-  uat_chemistry_k: freezeProfile({
-    profileKey: 'uat_chemistry_k',
-    environment: 'uat',
-    // customerKey/accountKey ต้องตรง Production เพื่อให้ Canonical identity คงเดิมตอน Cutover
-    customerKey: 'chemistry_k',
-    customerName: 'Chemistry K — Customer-real UAT',
-    resourceOwner: 'developer',
-    infrastructureOwner: 'developer',
-    sourceAssetOwner: 'customer',
-    dataOwner: 'customer',
-    dataMode: 'customer_real_uat',
-    businessType: 'online_chemistry_course',
-    connectors: {
-      tiktok: {
-        // ปิดจนกว่า Lark Native connection และ Exact identity preflight จะผ่าน
-        enabledByDefault: false,
-        accountKey: 'chemistry_k',
-        sourceHandle: null,
-        displayLabel: 'TikTok UAT - Chemistry K',
-      },
-      facebook: {
-        enabledByDefault: false,
-        accountKey: 'chemistry_k',
-        displayLabel: 'Facebook UAT - Chemistry K',
-      },
-      instagram: {
-        enabledByDefault: false,
-        accountKey: 'chemistry_k',
-        displayLabel: 'Instagram UAT - Chemistry K',
-      },
-      youtube: {
-        enabledByDefault: false,
-        accountKey: 'chemistry_k',
-        displayLabel: 'YouTube UAT - Chemistry K',
+        displayLabel: 'YouTube Organic — Temporary developer source',
       },
       woocommerce: {
         enabledByDefault: false,
         accountKey: 'chemistry_k',
-        displayLabel: 'WooCommerce UAT - Chemistry K',
+        displayLabel: 'WooCommerce — Chemistry K pending',
       },
       chatwoot: {
         enabledByDefault: false,
         accountKey: 'chemistry_k',
-        displayLabel: 'Chatwoot UAT - Chemistry K',
+        displayLabel: 'Chatwoot — Chemistry K pending',
       },
     },
   }),
@@ -121,65 +73,85 @@ const CUSTOMER_PROFILES = Object.freeze({
     businessType: 'online_chemistry_course',
     connectors: {
       tiktok: {
-        enabledByDefault: true,
+        // Production connector ต้องเปิดด้วย Environment หลังผ่าน Cutover gate เท่านั้น
+        enabledByDefault: false,
         accountKey: 'chemistry_k',
         sourceHandle: 'chemistry_k',
-        displayLabel: 'TikTok - Chemistry K',
+        displayLabel: 'TikTok — Chemistry K',
       },
       facebook: {
         enabledByDefault: false,
         accountKey: 'chemistry_k',
-        displayLabel: 'Facebook - Chemistry K',
+        displayLabel: 'Facebook — Chemistry K',
       },
       instagram: {
         enabledByDefault: false,
         accountKey: 'chemistry_k',
-        displayLabel: 'Instagram - Chemistry K',
+        displayLabel: 'Instagram — Chemistry K',
       },
       youtube: {
         enabledByDefault: false,
         accountKey: 'chemistry_k',
-        displayLabel: 'YouTube - Chemistry K',
+        displayLabel: 'YouTube — Chemistry K',
       },
       woocommerce: {
         enabledByDefault: false,
         accountKey: 'chemistry_k',
-        displayLabel: 'WooCommerce - Chemistry K',
+        displayLabel: 'WooCommerce — Chemistry K',
       },
       chatwoot: {
         enabledByDefault: false,
         accountKey: 'chemistry_k',
-        displayLabel: 'Chatwoot - Chemistry K',
+        displayLabel: 'Chatwoot — Chemistry K',
       },
     },
   }),
 });
 
-const SUPPORTED_ENVIRONMENTS = Object.freeze(['development', 'uat', 'production']);
+/**
+ * Historical labels ยังคงรับได้เพื่อให้ Local config เก่า Fail safely ไปยัง Contract ใหม่
+ * แต่ไม่คืนเป็น Profile แยกและไม่สามารถสร้าง customer/account identity เก่าได้อีก
+ */
+const PROFILE_ALIASES = Object.freeze({
+  dev_ft_pumkin: 'integration_workspace',
+  uat_chemistry_k: 'integration_workspace',
+});
+
+const SUPPORTED_ENVIRONMENTS = Object.freeze(['development', 'production']);
 
 /**
- * โหลด Runtime Profile จาก Environment โดยตรวจคู่ environment/profile และ Feature flags
- * เพื่อป้องกันทรัพยากร DEV/UAT/Production ปะปนกันและป้องกัน Connector ที่ยังไม่พร้อมถูกเปิดใช้
+ * โหลด Runtime Profile จาก Environment โดย Resolve Historical alias ก่อนตรวจ Environment
+ * เพื่อให้มี Operating mode ก่อน Production เพียง Integration Workspace เดียว
  */
 export function loadCustomerRuntimeConfig(env) {
   const source = env ?? {};
   const environment = requireChoice(source.MKT_ENV, 'MKT_ENV', SUPPORTED_ENVIRONMENTS);
-  const profileKey = requireText(source.MKT_CUSTOMER_PROFILE, 'MKT_CUSTOMER_PROFILE');
+  const requestedProfileKey = requireText(source.MKT_CUSTOMER_PROFILE, 'MKT_CUSTOMER_PROFILE');
+  const profileKey = PROFILE_ALIASES[requestedProfileKey] ?? requestedProfileKey;
   const profile = CUSTOMER_PROFILES[profileKey];
 
   if (!profile) {
-    throw permanentError(`Unknown MKT_CUSTOMER_PROFILE=${profileKey}. Supported profiles: ${Object.keys(CUSTOMER_PROFILES).join(', ')}`, {
-      code: 'MKT_RUNTIME_CONFIG_INVALID',
-      details: { fieldName: 'MKT_CUSTOMER_PROFILE', profileKey },
-    });
+    const accepted = [...Object.keys(CUSTOMER_PROFILES), ...Object.keys(PROFILE_ALIASES)];
+    throw permanentError(
+      `Unknown MKT_CUSTOMER_PROFILE=${requestedProfileKey}. Supported profiles/aliases: ${accepted.join(', ')}`,
+      {
+        code: 'MKT_RUNTIME_CONFIG_INVALID',
+        details: { fieldName: 'MKT_CUSTOMER_PROFILE', profileKey: requestedProfileKey },
+      },
+    );
   }
 
   if (profile.environment !== environment) {
     throw permanentError(
-      `Invalid runtime pairing: MKT_ENV=${environment} cannot use MKT_CUSTOMER_PROFILE=${profileKey}; expected MKT_ENV=${profile.environment}`,
+      `Invalid runtime pairing: MKT_ENV=${environment} cannot use MKT_CUSTOMER_PROFILE=${requestedProfileKey}; expected MKT_ENV=${profile.environment}`,
       {
         code: 'MKT_RUNTIME_CONFIG_INVALID',
-        details: { environment, profileKey, expectedEnvironment: profile.environment },
+        details: {
+          environment,
+          requestedProfileKey,
+          profileKey,
+          expectedEnvironment: profile.environment,
+        },
       },
     );
   }
@@ -189,6 +161,8 @@ export function loadCustomerRuntimeConfig(env) {
   return Object.freeze({
     environment,
     profileKey,
+    requestedProfileKey,
+    compatibilityAlias: requestedProfileKey === profileKey ? null : requestedProfileKey,
     customerKey: profile.customerKey,
     customerName: profile.customerName,
     // Compatibility alias: โค้ดใหม่ควรใช้ infrastructureOwner/sourceAssetOwner/dataOwner
@@ -206,9 +180,14 @@ export function loadCustomerRuntimeConfig(env) {
   });
 }
 
-/** คืนรายชื่อ Profile ที่เตรียมใน Source code สำหรับหน้า Admin/Test โดยไม่เปิดเผย Secret */
+/** คืนเฉพาะ Canonical Profile เพื่อไม่ให้หน้า Admin แสดง Historical alias เป็น Operating mode */
 export function listCustomerProfiles() {
   return Object.freeze(Object.keys(CUSTOMER_PROFILES));
+}
+
+/** คืน Alias สำหรับ Diagnostics/Test โดยไม่เปิดเผย Secret */
+export function listCustomerProfileAliases() {
+  return Object.freeze({ ...PROFILE_ALIASES });
 }
 
 /** บังคับค่าให้เป็นหนึ่งในตัวเลือกที่รองรับ */
