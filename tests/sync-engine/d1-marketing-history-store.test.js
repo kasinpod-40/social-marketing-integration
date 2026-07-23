@@ -8,7 +8,7 @@ import {
   createObservationKey,
   createReportId,
 } from '../../packages/application/src/storage/marketing-history-contract.js';
-import { D1MarketingHistoryStore } from '../../packages/sync-engine/src/d1-marketing-history-store.js';
+import { D1MarketingHistoryStore } from '../../packages/connectors/src/d1-marketing-history-store.js';
 import { createSqliteD1 } from '../helpers/sqlite-d1.js';
 
 const MIGRATION_URL = new URL('../../migrations/0009_storage_foundation.sql', import.meta.url);
