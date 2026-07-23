@@ -2,7 +2,11 @@ import { createOrganicHistoryWriter } from './organic-history-writer.js';
 
 /** สร้าง Hooks สำหรับ TikTok staged Canonical path โดยบังคับ D1 ก่อน Lark ทุก Unit */
 export function createTikTokOrganicHistoryHooks(input = {}) {
-  const writer = createOrganicHistoryWriter(input);
+  const writer = createOrganicHistoryWriter({
+    ...input,
+    // Incremental selected Content เป็น exact entity set ตาม Coverage contract
+    scopeMode: input.scopeMode === 'changed_entities' ? 'exact_entities' : input.scopeMode,
+  });
   const sourceWatermark = requireText(input.sourceWatermark, 'sourceWatermark');
 
   return Object.freeze({
