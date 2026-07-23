@@ -97,7 +97,7 @@ async function processBootstrapJob(input) {
     execute: async ({ syncRunId, lockKey, assertLockActive }) => {
       const gateway = infrastructure.getOrganicHistoryGateway();
       await gateway.assertSchemaReady();
-      return bootstrapTikTokOrganicHistory({
+      const bootstrapResult = await bootstrapTikTokOrganicHistory({
         syncRunId,
         assertLockActive,
         repository: infrastructure.repository,
@@ -128,6 +128,7 @@ async function processBootstrapJob(input) {
           ...event,
         }),
       });
+      return enrichBootstrapOperationalResult(bootstrapResult);
     },
   });
 
@@ -169,6 +170,7 @@ async function processD1FirstTikTokSync(input) {
     generation: requestedAt,
     datasetKey: 'organic_content_cumulative',
   });
+  const coverageRunId = `coverage:tiktok:${coverageDigest}`;
 
   const result = await runReliableSync({
     store: reliability.store,
@@ -200,13 +202,13 @@ async function processD1FirstTikTokSync(input) {
         observedAt: requestedAt,
         fetchedAt: requestedAt,
         historySyncRunId: `history:tiktok:${coverageDigest}`,
-        coverageRunId: `coverage:tiktok:${coverageDigest}`,
+        coverageRunId,
         sourceRevision: sourceWatermark,
         sourceWatermark,
-        scopeMode: incrementalEnabled ? 'changed_entities' : 'full_inventory',
+        scopeMode: incrementalEnabled ? 'exact_entities' : 'full_inventory',
         datasetKey: 'organic_content_cumulative',
       });
-      return syncTikTokCreatorNativeToLark({
+      const syncResult = await syncTikTokCreatorNativeToLark({
         syncRunId,
         assertLockActive,
         repository: infrastructure.repository,
@@ -245,10 +247,70 @@ async function processD1FirstTikTokSync(input) {
           mktClassificationDictionary: tableIds.mktClassificationDictionary,
         },
       });
+      return enrichD1FirstOperationalResult(syncResult, {
+        coverageRunId,
+        sourceWatermark,
+      });
     },
   });
   await resumableWorkStore.cleanupExpiredWork({ limit: 25 });
   return result;
+}
+
+/** ทำให้ Coverage proof อยู่ใน Sync Log details โดยไม่แปลงเป็น Lark write counters */
+function enrichBootstrapOperationalResult(result) {
+  const d1 = isObject(result?.d1) ? result.d1 : {};
+  const baseReconciliation = isObject(result?.reconciliation) ? result.reconciliation : {};
+  const coverageStatus = d1.coverageStatus ?? baseReconciliation.status ?? 'not_observed';
+  const warnings = coverageStatus === 'complete'
+    ? Object.freeze([])
+    : Object.freeze([Object.freeze({
+      code: 'TIKTOK_HISTORY_COVERAGE_INCOMPLETE',
+      coverageStatus,
+      coverageRunId: d1.coverageRunId ?? null,
+      expectedRows: baseReconciliation.expectedRows ?? 0,
+      observedRows: baseReconciliation.observedRows ?? 0,
+      skippedRows: baseReconciliation.skippedRows ?? 0,
+      duplicateRows: baseReconciliation.duplicateRows ?? 0,
+    })]);
+
+  return Object.freeze({
+    ...result,
+    dryRun: result?.mode === 'dry_run',
+    sourceSummary: result?.sourcePagination ?? null,
+    warnings,
+    reconciliation: Object.freeze({
+      ...baseReconciliation,
+      coverageStatus,
+      coverageRunId: d1.coverageRunId ?? null,
+      sourceWatermark: d1.sourceWatermark ?? null,
+      plannedStateRows: d1.plannedStateRows ?? 0,
+      plannedObservationRows: d1.plannedObservationRows ?? 0,
+      contentRowsDurable: d1.contentRowsDurable ?? 0,
+      observationRowsDurable: d1.observationRowsDurable ?? 0,
+      stateWritten: d1.stateWritten ?? 0,
+      stateSkipped: d1.stateSkipped ?? 0,
+      observationsCreated: d1.observationsCreated ?? 0,
+      observationsSkipped: d1.observationsSkipped ?? 0,
+      observationsNotRequired: d1.observationsNotRequired ?? 0,
+      coverageEntitiesWritten: d1.coverageEntitiesWritten ?? 0,
+      coverageEntitiesSkipped: d1.coverageEntitiesSkipped ?? 0,
+    }),
+  });
+}
+
+function enrichD1FirstOperationalResult(result, input) {
+  const d1History = isObject(result?.d1History) ? result.d1History : {};
+  const baseReconciliation = isObject(result?.reconciliation) ? result.reconciliation : {};
+  return Object.freeze({
+    ...result,
+    reconciliation: Object.freeze({
+      ...baseReconciliation,
+      coverageRunId: input.coverageRunId,
+      sourceWatermark: input.sourceWatermark,
+      d1History: Object.freeze({ ...d1History }),
+    }),
+  });
 }
 
 function assertIntegrationWorkspace(runtimeConfig) {
@@ -266,4 +328,8 @@ function reliabilityLogger(event) {
     scope: 'reliability',
     ...sanitizeReliabilityEvent(event),
   });
+}
+
+function isObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
