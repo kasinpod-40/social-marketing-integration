@@ -46,7 +46,7 @@ describe('Sync Worker ใน Workers runtime จริง', () => {
     expect(result.retryMessages).toEqual([]);
   });
 
-  it('DLQ หลัง retry exhaustion ถูก persist อย่างเดียวและไม่ execute งานเดิมซ้ำ', async () => {
+  it('DLQ persist โดยแยก Main Queue attempts ออกจาก DLQ delivery attempts', async () => {
     const processJob = vi.fn();
     const store = {
       saveDeadLetter: vi.fn(async () => true),
@@ -66,9 +66,15 @@ describe('Sync Worker ใน Workers runtime จริง', () => {
     expect(store.saveDeadLetter).toHaveBeenCalledTimes(1);
     expect(store.saveDeadLetter.mock.calls[0][0]).toMatchObject({
       errorCode: 'QUEUE_RETRY_EXHAUSTED',
-      retryCount: 6,
+      retryCount: 0,
     });
     expect(store.saveSystemAlert).toHaveBeenCalledTimes(1);
+    expect(store.saveSystemAlert.mock.calls[0][0]).toMatchObject({
+      details: {
+        mainQueueAttempts: 0,
+        dlqDeliveryAttempts: 6,
+      },
+    });
     expect(result.explicitAcks).toEqual(['dlq-1']);
   });
 
