@@ -31,12 +31,23 @@ export function readAttempts(message) {
   return Number.isSafeInteger(attempts) && attempts > 0 ? attempts : 1;
 }
 
-export function readRetryDelaySeconds(env, message) {
+/**
+ * Normal retry remains bounded linear backoff. A busy distributed lock must wait until after the
+ * persisted lease expiry so all Queue retries cannot be exhausted while the stale owner is valid.
+ */
+export function readRetryDelaySeconds(env, message, error = null, now = Date.now()) {
   const configured = Number(env?.MKT_QUEUE_RETRY_DELAY_SECONDS);
   const base = Number.isSafeInteger(configured) && configured > 0
     ? configured
     : DEFAULT_RETRY_DELAY_SECONDS;
-  return Math.min(43_200, base * Math.min(readAttempts(message), 10));
+  const backoff = base * Math.min(readAttempts(message), 10);
+  const expiresAt = error?.code === 'SYNC_LOCK_BUSY'
+    ? Number(error?.details?.expiresAt)
+    : null;
+  const remainingLeaseSeconds = Number.isSafeInteger(expiresAt) && expiresAt > now
+    ? Math.ceil((expiresAt - now) / 1000) + 5
+    : 0;
+  return Math.min(43_200, Math.max(backoff, remainingLeaseSeconds));
 }
 
 export function readSyncJobGeneration(job, connectorName, fallbackTimestamp = null) {
@@ -129,6 +140,9 @@ export function summarizeJobResult(result) {
     sourceSummary: result.sourceSummary ?? null,
     sourcePagination: result.sourcePagination ?? null,
     resumableWork: result.resumableWork ?? null,
+    continuationRequired: result.continuationRequired ?? null,
+    operationId: result.operationId ?? null,
+    workKey: result.workKey ?? null,
     checkpointSaved: result.checkpointSaved ?? null,
     reportType: result.reportType ?? null,
     reportSettingKey: result.reportSettingKey ?? null,
