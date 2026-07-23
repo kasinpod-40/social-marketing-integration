@@ -69,12 +69,97 @@ export function mergeOrganicContentUpdateFields(input = {}) {
   return Object.freeze(output);
 }
 
-/** คืน Options ชุดเดียวที่ TikTok และ YouTube ต้องส่งให้ TableSyncEngine */
-export function organicContentOwnershipPlanOptions() {
+/**
+ * Decorate Repository เฉพาะแผน MKT_Content:
+ * - Prepare Existing ด้วย Ownership fields เพิ่มเติม
+ * - ทำให้ Diff มองข้าม Field ที่ Policy ป้องกัน
+ * - Strip Field เหล่านั้นอีกครั้งก่อน Update จริง
+ *
+ * Create path ยังคงใช้ Incoming row เต็มชุด จึงรองรับ Initial classification ตาม Contract
+ */
+export function createOrganicContentOwnershipRepository(repository) {
+  const base = requireRepository(repository);
+  const incomingByKey = new Map();
+  const existingByRecordId = new Map();
+  let keyField = null;
+
   return Object.freeze({
-    existingFieldNames: ORGANIC_CONTENT_OWNERSHIP_EXISTING_FIELDS,
-    mergeExistingFields: mergeOrganicContentUpdateFields,
+    async prepareRows(tableId, rows, context = {}) {
+      keyField = requireText(context?.keyField, 'keyField');
+      const prepared = await base.prepareRows(tableId, rows, context);
+      incomingByKey.clear();
+      for (const row of prepared) {
+        incomingByKey.set(requireText(row?.[keyField], keyField), row);
+      }
+      return prepared;
+    },
+
+    async listByFieldValues(tableId, fieldName, values) {
+      if (typeof base.listByFieldValues === 'function') {
+        return base.listByFieldValues(tableId, fieldName, values);
+      }
+      const allowed = new Set(values.map(String));
+      const records = await base.listAll(tableId);
+      return records.filter((record) => allowed.has(String(record?.fields?.[fieldName] ?? '')));
+    },
+
+    async listAll(tableId) {
+      return base.listAll(tableId);
+    },
+
+    async prepareExistingRecords(tableId, records, context = {}) {
+      const incomingFields = uniqueTextValues([
+        ...(context?.incomingFieldNames ?? []),
+        ...ORGANIC_CONTENT_OWNERSHIP_EXISTING_FIELDS,
+      ]);
+      const normalized = typeof base.prepareExistingRecords === 'function'
+        ? await base.prepareExistingRecords(tableId, records, {
+          ...context,
+          incomingFieldNames: incomingFields,
+        })
+        : records;
+
+      existingByRecordId.clear();
+      return Object.freeze(normalized.map((record) => {
+        const recordId = requireText(record?.recordId ?? record?.record_id, 'recordId');
+        const existingFields = requireObject(record?.fields ?? {}, 'record.fields');
+        const incoming = incomingByKey.get(requireText(existingFields[keyField], keyField));
+        existingByRecordId.set(recordId, existingFields);
+        if (!incoming) return record;
+
+        const effective = mergeOrganicContentUpdateFields({
+          existingFields,
+          incomingFields: incoming,
+        });
+        const comparisonFields = { ...existingFields };
+        for (const [fieldName, value] of Object.entries(incoming)) {
+          if (!Object.hasOwn(effective, fieldName)) comparisonFields[fieldName] = value;
+        }
+        return Object.freeze({ recordId, fields: Object.freeze(comparisonFields) });
+      }));
+    },
+
+    async createMany(tableId, rows, options = {}) {
+      return base.createMany(tableId, rows, options);
+    },
+
+    async updateMany(tableId, records, options = {}) {
+      const protectedRecords = records.map((record) => {
+        const recordId = requireText(record?.recordId, 'recordId');
+        const existingFields = requireObject(existingByRecordId.get(recordId) ?? {}, 'existingFields');
+        const fields = mergeOrganicContentUpdateFields({
+          existingFields,
+          incomingFields: requireObject(record?.fields, 'record.fields'),
+        });
+        return Object.freeze({ recordId, fields });
+      });
+      return base.updateMany(tableId, protectedRecords, options);
+    },
   });
+}
+
+function uniqueTextValues(values) {
+  return Object.freeze([...new Set(values.map((value) => requireText(value, 'fieldName')))]);
 }
 
 function isBlank(value) {
@@ -88,9 +173,25 @@ function normalizeText(value) {
   return typeof value === 'string' ? value.trim().toLowerCase() : '';
 }
 
+function requireRepository(value) {
+  for (const method of ['prepareRows', 'listAll', 'createMany', 'updateMany']) {
+    if (typeof value?.[method] !== 'function') {
+      throw new TypeError(`Organic content ownership requires repository.${method}`);
+    }
+  }
+  return value;
+}
+
 function requireObject(value, fieldName) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     throw new TypeError(`Organic content ownership requires ${fieldName}`);
   }
   return value;
+}
+
+function requireText(value, fieldName) {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new TypeError(`Organic content ownership requires ${fieldName}`);
+  }
+  return value.trim();
 }
