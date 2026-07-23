@@ -10,8 +10,9 @@ import { createSqliteD1 } from '../helpers/sqlite-d1.js';
 const MIGRATION_URL = new URL('../../migrations/0010_tiktok_bootstrap_durable_recovery.sql', import.meta.url);
 const NOW = Date.parse('2026-07-24T02:00:00.000Z');
 const CURSOR_KEY = 'tiktok:chemistry_k:lark_native_tiktok_for_creator:organic_history_bootstrap';
+const COVERAGE_RUN_ID = 'coverage:tiktok:exact-incident';
 
-test('exact incident recovery requires expired lock and checkpoint nextSequence=2', async () => {
+test('exact incident recovery requires expired lock, exact checkpoint and durable completion proof', async () => {
   const raw = createSqliteD1();
   const db = withBatch(raw);
   createOperationalSchema(raw);
@@ -28,17 +29,28 @@ test('exact incident recovery requires expired lock and checkpoint nextSequence=
     assert.equal(authorization.nextSequence, 2);
     assert.equal(authorization.firstAuthorization, true);
 
-    raw.database.prepare(`
-      UPDATE sync_work_runs
-      SET lifecycle_status = 'completed', completed_at = ?
-      WHERE work_key = ?
-    `).run(NOW + 1, TIKTOK_BOOTSTRAP_INCIDENT.workKey);
+    await assert.rejects(
+      () => store.markTikTokBootstrapIncidentRecovered({
+        ...incidentIdentity(),
+        auditReference: 'recovery:exact-incident',
+        completedAt: NOW + 1,
+      }),
+      (error) => error.code === 'TIKTOK_BOOTSTRAP_RECOVERY_WORK_INCOMPLETE',
+    );
+    assert.equal(
+      raw.database.prepare('SELECT status FROM dead_letter_jobs WHERE dlq_id = ?')
+        .get(TIKTOK_BOOTSTRAP_INCIDENT.dlqId).status,
+      'open',
+    );
+
+    seedCompletionProof(raw);
     const completed = await store.markTikTokBootstrapIncidentRecovered({
       ...incidentIdentity(),
       auditReference: 'recovery:exact-incident',
       completedAt: NOW + 1,
     });
     assert.equal(completed.status, 'completed');
+    assert.equal(completed.coverageRunId, COVERAGE_RUN_ID);
 
     const dlq = raw.database.prepare(`
       SELECT status, redrive_reference, redriven_at
@@ -134,6 +146,7 @@ function createOperationalSchema(d1) {
       generation INTEGER NOT NULL,
       requested_at INTEGER NOT NULL,
       lifecycle_status TEXT NOT NULL,
+      completion_json TEXT,
       completed_at INTEGER
     );
     CREATE TABLE sync_work_phases (
@@ -149,6 +162,16 @@ function createOperationalSchema(d1) {
       acquired_at INTEGER NOT NULL,
       expires_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
+    );
+    CREATE TABLE data_coverage_runs (
+      coverage_run_id TEXT PRIMARY KEY,
+      status TEXT NOT NULL,
+      expected_entities INTEGER,
+      observed_entities INTEGER,
+      expected_rows INTEGER,
+      observed_rows INTEGER,
+      failed_rows INTEGER NOT NULL DEFAULT 0,
+      completed_at INTEGER
     );
   `);
 }
@@ -195,6 +218,41 @@ function seedIncident(d1, input) {
     INSERT INTO sync_locks (lock_key, owner_id, acquired_at, expires_at, updated_at)
     VALUES (?, 'old-owner', ?, ?, ?)
   `).run(CURSOR_KEY, NOW - 700_000, input.lockExpiresAt, NOW - 700_000);
+}
+
+function seedCompletionProof(d1) {
+  const expected = TIKTOK_BOOTSTRAP_INCIDENT.expectedRows;
+  d1.database.prepare(`
+    UPDATE sync_work_runs
+    SET lifecycle_status = 'completed', completed_at = ?, completion_json = ?
+    WHERE work_key = ?
+  `).run(
+    NOW + 1,
+    JSON.stringify({ d1: { coverageRunId: COVERAGE_RUN_ID, coverageStatus: 'complete' } }),
+    TIKTOK_BOOTSTRAP_INCIDENT.workKey,
+  );
+  d1.database.prepare(`
+    UPDATE sync_work_phases
+    SET complete = 1, state_json = ?
+    WHERE work_key = ? AND phase = ?
+  `).run(
+    JSON.stringify({
+      nextSequence: 5,
+      unitsCompleted: 5,
+      rawRecordsCompleted: expected,
+      contentRowsDurable: expected,
+      observationRowsDurable: expected,
+      coverageEntitiesWritten: expected,
+    }),
+    TIKTOK_BOOTSTRAP_INCIDENT.workKey,
+    TIKTOK_BOOTSTRAP_INCIDENT.phase,
+  );
+  d1.database.prepare(`
+    INSERT INTO data_coverage_runs (
+      coverage_run_id, status, expected_entities, observed_entities,
+      expected_rows, observed_rows, failed_rows, completed_at
+    ) VALUES (?, 'complete', ?, ?, ?, ?, 0, ?)
+  `).run(COVERAGE_RUN_ID, expected, expected, expected, expected, NOW + 1);
 }
 
 function incidentIdentity() {
