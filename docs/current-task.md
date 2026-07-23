@@ -2,11 +2,13 @@
 
 ## Status
 
-- **Task status:** `implementation_in_progress`
+- **Task status:** `implementation_complete_pending_review`
 - **Opened:** `2026-07-24`
 - **Branch:** `agent/tiktok-bootstrap-durable-recovery-hotfix`
 - **Target:** `main`
-- **Pull request:** pending Draft PR
+- **Pull request:** `#29` — Draft
+- **Verified head:** `657139518d73621baf040c75416c429257fcb740`
+- **Branch Verification:** run `#341` / ID `30037843667` / PASS
 - **Remote recovery execution:** forbidden in this task
 - **Schedules:** disabled
 - **Google Ads PR #17:** Draft / HOLD
@@ -75,6 +77,8 @@ DLQ error_code        = QUEUE_RETRY_EXHAUSTED
 6. TikTok history bootstrap had no guarded durable recovery route.
 7. One invocation could perform multiple sequential source-Unit D1 writes and stop mid-Unit.
 8. The previous writer persisted State before Observation, so the 309 partial State rows could suppress their missing initial Observations on replay.
+9. A full-source preflight could still process several staged Units in one invocation.
+10. A continuation that forced `dryRun=false` could turn a bounded dry-run into a live write path.
 
 ## Implemented source design
 
@@ -83,14 +87,17 @@ DLQ error_code        = QUEUE_RETRY_EXHAUSTED
 - `operationId`, `workKey`, `generation` and `originalRequestedAt` survive retries, continuation, DLQ persistence and recovery.
 - Main Queue attempts and DLQ delivery attempts are stored separately.
 - Busy-lock retry delay waits past persisted `expiresAt` plus a safety margin.
-- Live bootstrap writes at most one staged source Unit per Queue invocation.
-- Unit completion advances the phase checkpoint, emits one continuation with the same operation identity, then permits the current message to be acknowledged.
+- Preflight and live write each process at most one staged source Unit per Queue invocation.
+- The invocation that finishes the final preflight Unit stops before the first D1 business write.
+- Unit completion advances the relevant phase checkpoint, emits one continuation with the same operation identity and dry-run mode, then permits the current message to be acknowledged.
 - Mid-Unit interruption leaves `nextSequence` unchanged.
 - Durable writer uses deterministic Observation → State → Coverage ordering for future runs.
 - Recovery repairs missing initial Observations for State rows created at the exact original operation timestamp.
 - Guarded recovery accepts only the exact incident DLQ, Work key, operation ID, generation/requestedAt, expired lock and initial `nextSequence=2` checkpoint.
 - Recovery never creates a new generation and never deletes partial business facts.
+- Exact DLQ resolution additionally requires completed original Work, complete write phase and complete Coverage proof for 2,021 rows with `failed_rows=0`.
 - Exact DLQ row remains retained and receives recovery audit metadata when completed.
+- Recovery dry-run is fail-closed; normal bootstrap dry-run remains dry-run across every continuation.
 - Lark business writes remain hard zero.
 
 ## Required regression contract
@@ -107,9 +114,26 @@ DLQ error_code        = QUEUE_RETRY_EXHAUSTED
 - [x] Coverage completes with expected=observed=2,021 and failed_rows=0.
 - [x] Original durable Work receives completion.
 - [x] Exact DLQ recovery guard and audit retention are covered.
+- [x] DLQ resolution is blocked until Work, phase and Coverage completion proof pass.
 - [x] Lark contentWrites/dailyWrites remain zero.
+- [x] Preflight and write are each bounded to one staged Unit per invocation.
+- [x] Dry-run remains dry-run through all continuations and performs zero business writes.
 - [x] Bootstrap and recovery jobs remain absent from all schedules.
-- [ ] Full repository CI and regression — pending Draft PR verification.
+- [x] Full repository CI and regression passed on Draft PR #29.
+
+## Verification
+
+```text
+Verified head                       657139518d73621baf040c75416c429257fcb740
+Branch Verification                 run #341 / ID 30037843667 / PASS
+Syntax / architecture / hygiene     PASS
+Focused staged TikTok tests         PASS
+Node Unit / Integration             PASS
+Workers runtime                     PASS
+Report reliability regression       PASS
+Dependency audit                    PASS / 0 vulnerabilities
+Wrangler dry run                    PASS
+```
 
 ## Explicitly not performed
 
