@@ -2,9 +2,9 @@
 
 ## Status
 
-- **Task status:** `phase_1a_ready_for_merge`
+- **Task status:** `phase_1b_verification_pending`
 - **Approved by user:** `2026-07-23`
-- **Main baseline:** `a0c4f36ec2b6421e5dc7f800300c622fac9896d7`
+- **Main baseline:** `00c528279070cb0a67c9fc269abede58c3c4a0d8`
 - **Task-open baseline:** `5d75f7e967e03999ea36a088b7867f7aa4a60be4`
 - **Contract:** `docs/project-brain/storage-architecture-and-migration-contract-v1.md`
 - **Integration Workspace:** one pre-Production workspace
@@ -175,8 +175,8 @@ Add focused tests for the files changed. `npm audit --audit-level=high` must rep
 ### Pull request
 
 - PR: `#22` — `feat: align runtime identity and protect content fields`
-- Branch head verified: `9779b76da834daf45948ca74df4060004ceebbbc`
-- Branch Verification: run `#251`, run ID `29985912721`, `success`
+- Squash merge commit: `00c528279070cb0a67c9fc269abede58c3c4a0d8`
+- Branch Verification: run `#252`, run ID `29986052678`, `success`
 
 ### Implemented
 
@@ -202,7 +202,38 @@ Dependency audit                   PASS
 Wrangler dry run                   PASS
 ```
 
-### Safety result
+## Implementation result — Phase 1B
+
+### Pull request
+
+- PR: `#23` — `feat: add D1 marketing storage foundation`
+- Implementation head before final verification: `1df5d080a4a3fc4aead4b8344dd5c5d17c9de063`
+- Final Branch Verification: pending on the Current Task status commit.
+
+### Implemented
+
+- Added additive migration `migrations/0009_storage_foundation.sql` with all ten approved Storage tables and indexes.
+- Added exact typed Storage contracts and deterministic Stable-key builders.
+- Added D1 repository behavior for idempotent Current state, Organic observations, Ads revisions, Coverage and Report materializations.
+- Preserved Breakdown, Segment, Conversion action and Attribution identity boundaries.
+- Added Application-level JSON guards: Report payload `262144` bytes; Ads actions/breakdown `65536` bytes.
+- Added bounded account/date and entity/date reads; no delete or Retention method exists in this phase.
+- Added explicit `none` identity requirements; `null` is rejected instead of silently collapsed.
+- Added strict calendar-date validation for Stable keys and report periods.
+- Added Storage migration, contract, repository and Feature-flag tests.
+- All new Storage, Reader, Retention and Notification flags default to `false`.
+
+### Verification state
+
+```text
+ARCHITECTURE_LAYER_FIX       APPLIED
+SQLITE_ROW_NORMALIZATION     APPLIED_TO_TEST_ADAPTER
+ADS_NONE_NULL_GUARD          APPLIED
+STRICT_CALENDAR_DATE_GUARD   APPLIED
+FINAL_FULL_GATE              PENDING
+```
+
+### Safety result — Phase 1A and Phase 1B
 
 ```text
 LIVE_BUSINESS_DATA_READ_WRITE = NONE
@@ -213,12 +244,6 @@ SCHEDULE_CHANGE              = NONE
 DEPLOYMENT                   = NONE
 PRODUCTION_CHANGE            = NONE
 ```
-
-### Remaining
-
-- Phase 1A must be merged before Phase 1B branches from the new `main`.
-- Phase 1B D1 schema/repositories is not implemented yet.
-- TikTok Canonical Sync remains blocked.
 
 ## Completion boundary
 
@@ -239,8 +264,8 @@ The next separately approved task after Phase 1 is manual, Feature-flagged Organ
 ```text
 STORAGE_CONTRACT = V1_DOCUMENTED
 CURRENT_TASK = STORAGE_FOUNDATION_PHASE_1
-PHASE_1A = READY_FOR_MERGE
-PHASE_1B = NOT_STARTED
+PHASE_1A = MERGED
+PHASE_1B = VERIFICATION_PENDING
 LIVE_BUSINESS_WRITE = FORBIDDEN
 REMOTE_D1_MIGRATION = FORBIDDEN
 TIKTOK_CANONICAL_SYNC = BLOCKED
