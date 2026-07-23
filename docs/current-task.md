@@ -2,9 +2,10 @@
 
 ## Status
 
-- **Task status:** `approved_for_implementation`
+- **Task status:** `phase_1a_ready_for_merge`
 - **Approved by user:** `2026-07-23`
 - **Main baseline:** `a0c4f36ec2b6421e5dc7f800300c622fac9896d7`
+- **Task-open baseline:** `5d75f7e967e03999ea36a088b7867f7aa4a60be4`
 - **Contract:** `docs/project-brain/storage-architecture-and-migration-contract-v1.md`
 - **Integration Workspace:** one pre-Production workspace
 - **Schedules:** must remain disabled
@@ -24,7 +25,7 @@ Storage Foundation Phase 1
 + no Live business-data write
 ```
 
-The work must be delivered as two separate Pull Requests after this task document is merged:
+The work must be delivered as two separate Pull Requests:
 
 1. **Phase 1A — Runtime identity and Field ownership**
 2. **Phase 1B — D1 schema and repositories**
@@ -135,27 +136,27 @@ Requirements:
 
 ## Required tests — Phase 1A
 
-- `integration_workspace` resolves only with `MKT_ENV=development`.
-- TikTok identity resolves to Chemistry K and produces `tiktok:chemistry_k:*` Stable keys.
-- Legacy aliases do not become separate customer/account identities.
-- Production isolation and disabled schedules remain unchanged.
-- Manual classification and `manual_tag_note` survive reruns.
-- Blank protected fields can be filled under the approved rules.
-- System-managed fields still update.
-- TikTok, YouTube and Core regression tests pass.
+- [x] `integration_workspace` resolves only with `MKT_ENV=development`.
+- [x] TikTok identity resolves to Chemistry K and produces `tiktok:chemistry_k:*` Stable keys.
+- [x] Legacy aliases do not become separate customer/account identities.
+- [x] Production isolation and disabled schedules remain unchanged.
+- [x] Manual classification and `manual_tag_note` survive reruns.
+- [x] Blank protected fields can be filled under the approved rules.
+- [x] System-managed fields still update.
+- [x] TikTok, YouTube and Core regression tests pass.
 
 ## Required tests — Phase 1B
 
-- Migration replay on empty and existing schema is safe and idempotent.
-- Every required Table, constraint and index exists.
-- Stable-key duplicate attempts do not create extra rows.
-- Organic observation retry is idempotent.
-- Ads old-day revision updates the same fact row.
-- Different breakdown/segment/conversion identities remain separate.
-- Partial coverage does not delete or zero unseen facts.
-- Coverage controlled values fail closed.
-- Bounded JSON guards fail closed.
-- Existing D1 reliability, lock, checkpoint, DLQ/redrive and resumable-work regressions pass.
+- [ ] Migration replay on empty and existing schema is safe and idempotent.
+- [ ] Every required Table, constraint and index exists.
+- [ ] Stable-key duplicate attempts do not create extra rows.
+- [ ] Organic observation retry is idempotent.
+- [ ] Ads old-day revision updates the same fact row.
+- [ ] Different breakdown/segment/conversion identities remain separate.
+- [ ] Partial coverage does not delete or zero unseen facts.
+- [ ] Coverage controlled values fail closed.
+- [ ] Bounded JSON guards fail closed.
+- [ ] Existing D1 reliability, lock, checkpoint, DLQ/redrive and resumable-work regressions pass.
 
 ## Gates for each implementation PR
 
@@ -168,6 +169,56 @@ npm run deploy:dry-run
 ```
 
 Add focused tests for the files changed. `npm audit --audit-level=high` must report no unacceptable vulnerability.
+
+## Implementation result — Phase 1A
+
+### Pull request
+
+- PR: `#22` — `feat: align runtime identity and protect content fields`
+- Branch head verified: `9779b76da834daf45948ca74df4060004ceebbbc`
+- Branch Verification: run `#251`, run ID `29985912721`, `success`
+
+### Implemented
+
+- Added canonical `integration_workspace` Runtime profile and removed separate UAT operating mode.
+- Historical profile names resolve only as compatibility aliases to `integration_workspace`.
+- TikTok Organic Canonical identity is `customerKey/accountKey/sourceHandle=chemistry_k`.
+- All connectors and schedules remain disabled by default in release examples.
+- Report setting seeds use `integration_workspace:tiktok:{daily|weekly}` and account `chemistry_k`.
+- Added reusable Organic Content ownership policy at the Lark repository boundary.
+- Worker and local Script runtimes apply the policy only to physical `MKT_Content`.
+- TikTok and YouTube share the same ownership behavior without connector-specific duplicate logic.
+- Manual classification and `manual_tag_note` are preserved; blank non-manual classification fields may be filled; system-managed metrics continue updating.
+- Shared-table schema guard now targets the developer-owned Integration Workspace.
+
+### Verification
+
+```text
+Syntax / architecture / hygiene    PASS
+Focused staged TikTok tests        PASS
+Node Unit + Workers runtime        PASS
+Report reliability regression      PASS
+Dependency audit                   PASS
+Wrangler dry run                   PASS
+```
+
+### Safety result
+
+```text
+LIVE_BUSINESS_DATA_READ_WRITE = NONE
+LARK_MUTATION                = NONE
+REMOTE_D1_MIGRATION          = NONE
+QUEUE_MESSAGE                = NONE
+SCHEDULE_CHANGE              = NONE
+DEPLOYMENT                   = NONE
+PRODUCTION_CHANGE            = NONE
+```
+
+### Remaining
+
+- Phase 1A must be merged before Phase 1B branches from the new `main`.
+- Phase 1B D1 schema/repositories is not implemented yet.
+- TikTok Canonical Sync remains blocked.
 
 ## Completion boundary
 
@@ -188,8 +239,8 @@ The next separately approved task after Phase 1 is manual, Feature-flagged Organ
 ```text
 STORAGE_CONTRACT = V1_DOCUMENTED
 CURRENT_TASK = STORAGE_FOUNDATION_PHASE_1
-PHASE_1A = RUNTIME_IDENTITY_AND_FIELD_OWNERSHIP
-PHASE_1B = D1_SCHEMA_AND_REPOSITORIES
+PHASE_1A = READY_FOR_MERGE
+PHASE_1B = NOT_STARTED
 LIVE_BUSINESS_WRITE = FORBIDDEN
 REMOTE_D1_MIGRATION = FORBIDDEN
 TIKTOK_CANONICAL_SYNC = BLOCKED

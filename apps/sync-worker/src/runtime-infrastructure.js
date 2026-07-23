@@ -1,4 +1,5 @@
 import { JOB_TYPES } from '../../../packages/application/src/jobs/job-catalog.js';
+import { createOrganicContentOwnershipRoutingRepository } from '../../../packages/application/src/policies/organic-content-field-ownership.js';
 import { createLarkBitableClientFromEnv } from '../../../packages/connectors/src/lark/lark-bitable.client.js';
 import { LarkRecordRepository } from '../../../packages/connectors/src/lark/lark-record-repository.js';
 import { D1ReliabilityMirrorOutbox } from '../../../packages/reliability/src/d1-reliability-mirror-outbox.js';
@@ -28,7 +29,13 @@ export function createInfrastructure(env) {
   };
   const getRepository = () => {
     client ??= createLarkBitableClientFromEnv(env);
-    repository ??= new LarkRecordRepository({ client });
+    if (!repository) {
+      const baseRepository = new LarkRecordRepository({ client });
+      repository = createOrganicContentOwnershipRoutingRepository({
+        repository: baseRepository,
+        mktContentTableId: env?.LARK_TABLE_MKT_CONTENT,
+      });
+    }
     return repository;
   };
 

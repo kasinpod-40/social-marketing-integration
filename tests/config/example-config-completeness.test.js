@@ -20,7 +20,7 @@ test('safe examples declare every YouTube table required by activation preflight
   }
 });
 
-test('release examples keep every connector and schedule fail-closed', async () => {
+test('release examples keep every connector and schedule fail-closed under Integration Workspace', async () => {
   const [devVars, wrangler] = await Promise.all([
     readFile(resolve(root, '.dev.vars.example'), 'utf8'),
     readFile(resolve(root, 'wrangler.sync.example.jsonc'), 'utf8'),
@@ -41,9 +41,14 @@ test('release examples keep every connector and schedule fail-closed', async () 
     assert.match(devVars, new RegExp(`^${flag}=false$`, 'mu'));
     assert.match(wrangler, new RegExp(`"${flag}"\\s*:\\s*"false"`, 'u'));
   }
+
   for (const content of [devVars, wrangler]) {
-    assert.doesNotMatch(content, /dev_ft_pumkin|ft\.pumkin/u);
-    assert.match(content, /MKT_CUSTOMER_PROFILE(?:=|"\s*:\s*")replace-with-customer-profile/u);
-    assert.match(content, /TIKTOK_SOURCE_HANDLE(?:=|"\s*:\s*")replace-with-tiktok-handle/u);
+    assert.doesNotMatch(content, /dev_ft_pumkin|ft\.pumkin|uat_chemistry_k/u);
+    assert.match(content, /MKT_CUSTOMER_PROFILE(?:=|"\s*:\s*")integration_workspace/u);
+    assert.match(content, /TIKTOK_SOURCE_HANDLE(?:=|"\s*:\s*")chemistry_k/u);
   }
+  assert.match(devVars, /^MKT_ENV=development$/mu);
+  assert.match(wrangler, /"MKT_ENV"\s*:\s*"development"/u);
+  assert.match(devVars, /^MKT_DAILY_REPORT_SETTING_KEY=integration_workspace:tiktok:daily$/mu);
+  assert.match(wrangler, /"MKT_DAILY_REPORT_SETTING_KEY"\s*:\s*"integration_workspace:tiktok:daily"/u);
 });

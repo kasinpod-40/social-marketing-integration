@@ -1,15 +1,15 @@
 # ============================================================
-# Social MKT Data Hub — ตัวอย่าง Environment Variables สำหรับ DEV
+# Social MKT Data Hub — ตัวอย่าง Environment Variables สำหรับ Integration Workspace
 # คัดลอกไฟล์นี้เป็น .dev.vars แล้วแทนค่าที่จำเป็นในเครื่องผู้พัฒนา
 # ห้ามใส่ Secret จริงในไฟล์ตัวอย่างนี้
 # ============================================================
 
-# สภาพแวดล้อมและ Customer Profile
+# Technical runtime label + Canonical pre-Production profile
 MKT_ENV=development
-MKT_CUSTOMER_PROFILE=replace-with-customer-profile
+MKT_CUSTOMER_PROFILE=integration_workspace
 DEFAULT_TIMEZONE=Asia/Bangkok
 
-# เปิดเฉพาะ Connector ที่ Implement และอนุญาตให้ใช้แล้ว
+# เปิดเฉพาะ Connector ที่ Implement และได้รับอนุมัติให้รันแบบ Manual แล้ว
 MKT_CONNECTOR_TIKTOK_ENABLED=false
 MKT_CONNECTOR_FACEBOOK_ENABLED=false
 MKT_CONNECTOR_INSTAGRAM_ENABLED=false
@@ -17,7 +17,7 @@ MKT_CONNECTOR_YOUTUBE_ENABLED=false
 MKT_CONNECTOR_WOOCOMMERCE_ENABLED=false
 MKT_CONNECTOR_CHATWOOT_ENABLED=false
 
-# Schedule ปิดเป็นค่าเริ่มต้น เพื่อให้ผู้ดูแลเปิดหลังตรวจ Schema, Seed และ UAT ของ Connector นั้นแล้ว
+# Schedule ปิดเป็นค่าเริ่มต้น และ Phase 1 ห้ามเปิดทุกกรณี
 MKT_SCHEDULE_TIKTOK_ENABLED=false
 MKT_SCHEDULE_YOUTUBE_ENABLED=false
 MKT_SCHEDULE_DAILY_REPORT_ENABLED=false
@@ -28,26 +28,26 @@ MKT_YOUTUBE_ANALYTICS_LOOKBACK_DAYS=7
 MKT_DAILY_REPORT_TIME=08:10
 MKT_WEEKLY_REPORT_TIME=08:15
 MKT_WEEKLY_REPORT_WEEKDAY=monday
-MKT_DAILY_REPORT_SETTING_KEY=replace-with-daily-report-setting-key
-MKT_WEEKLY_REPORT_SETTING_KEY=replace-with-weekly-report-setting-key
+MKT_DAILY_REPORT_SETTING_KEY=integration_workspace:tiktok:daily
+MKT_WEEKLY_REPORT_SETTING_KEY=integration_workspace:tiktok:weekly
 MKT_MAIN_QUEUE_NAME=social-mkt-sync-jobs
 MKT_DLQ_QUEUE_NAME=social-mkt-sync-dlq
 MKT_QUEUE_RETRY_DELAY_SECONDS=30
 
-# TikTok Creator DEV
-TIKTOK_SOURCE_HANDLE=replace-with-tiktok-handle
+# TikTok Creator — Lark Native เชื่อม Chemistry K แล้ว; Connector ยังปิดจนถึง Manual write gate
+TIKTOK_SOURCE_HANDLE=chemistry_k
 
-# YouTube DEV — ตัวอย่างยังปิด Connector/Schedule จนกว่า Schema และ DEV UAT ของ Environment นั้นจะผ่าน
+# YouTube temporary developer source — Connector/Schedule ยังปิดจนกว่างานถัดไปอนุมัติ
 YOUTUBE_CHANNEL_ID=replace-with-youtube-channel-id
 YOUTUBE_API_KEY=replace-with-youtube-api-key
 YOUTUBE_OAUTH_ACCESS_TOKEN=replace-with-oauth-access-token
 
-# Meta shared client — ใช้ Version ที่เลือกตอนเริ่ม Live DEV UAT
+# Meta shared client — ใช้ Version ที่เลือกตอนเริ่ม Live validation
 META_GRAPH_API_VERSION=vXX.X
 META_ACCESS_TOKEN=replace-with-meta-access-token
 
-# WooCommerce / Chatwoot DEV — Foundations ยังไม่ถูก Route เข้า Worker
-WOOCOMMERCE_BASE_URL=https://replace-with-dev-store.example
+# WooCommerce / Chatwoot — Foundations ยังไม่ถูก Route เข้า Worker
+WOOCOMMERCE_BASE_URL=https://replace-with-customer-store.example
 WOOCOMMERCE_CONSUMER_KEY=replace-with-consumer-key
 WOOCOMMERCE_CONSUMER_SECRET=replace-with-consumer-secret
 CHATWOOT_BASE_URL=https://replace-with-chatwoot.example
@@ -59,7 +59,7 @@ LARK_APP_ID=replace-with-lark-app-id
 LARK_APP_SECRET=replace-with-lark-app-secret
 LARK_APP_TOKEN=replace-with-lark-base-app-token
 
-# Lark Table IDs — ไม่ใช่ Secret แต่ต้องตรงกับ Base ของ Environment
+# Lark Table IDs — ไม่ใช่ Secret แต่ต้องตรงกับ Integration Workspace Base
 # Protected source: Lark Native TikTok เป็นเจ้าของ Schema; ระบบเราอ่านอย่างเดียว
 LARK_TABLE_RAW_TIKTOK_CREATOR_VIDEOS=replace-with-table-id
 LARK_TABLE_RAW_YOUTUBE_CHANNELS=replace-with-table-id
