@@ -93,6 +93,24 @@ When a customer source becomes available for a Connector still using a temporary
 
 Never bulk-delete unrelated channels or shared tables.
 
+## Future storage and notification direction
+
+The approved future direction is recorded in:
+
+`docs/project-brain/time-series-retention-and-notification.md`
+
+It preserves this single Integration Workspace model and proposes D1 as detailed historical/runtime storage, Lark as current-state/aggregate/report/configuration presentation, and customer-configurable Lark Group notifications.
+
+This direction is `AUDIT_PENDING / IMPLEMENTATION_NOT_STARTED` and does not authorize:
+
+- changing `MKT_Content_Daily` or `MKT_Ads_Daily` Grain/Retention;
+- creating Notification tables or D1 migrations;
+- deleting historical Records;
+- enabling new schedules;
+- reopening the completed Lark schema/Formula/View contract.
+
+A separate Current Task must first audit the complete Repository `main`, latest Base and all Writer/Reader/Report dependencies.
+
 ## Production cutover
 
 After every Connector uses customer data and the whole Integration Workspace passes end-to-end validation:
@@ -113,5 +131,6 @@ Production is not the current Integration Workspace and remains disabled until a
 - Schedule remains fail-closed until channel validation;
 - no Lark schema, Formula or View reopening without a new approved contract;
 - no TikTok record cleanup based only on legacy labels;
+- no Retention/delete behavior before historical source-of-truth, reconciliation and rollback evidence;
 - no Google Ads mutation;
 - no Production cutover from this document alone.

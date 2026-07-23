@@ -61,6 +61,8 @@ Therefore the next implementation task is:
 - changing the connected TikTok account;
 - deleting or relabeling records from old profile names alone;
 - changing Lark tables, fields, formulas or views;
+- changing the current meaning, Grain or Retention of `MKT_Content_Daily`;
+- adding Time-series D1 migrations or Notification tables;
 - TikTok Ads;
 - Google Ads deployment or signed-delivery Live validation;
 - Production cutover;
@@ -71,6 +73,21 @@ Therefore the next implementation task is:
 Google Ads signed-delivery implementation exists only in Draft PR `#17`. It is not merged to `main`, not deployed and has not run external PREVIEW/LIVE delivery. Do not treat Draft PR code or documentation as the current `main` implementation baseline.
 
 After this documentation baseline is merged, work should resume from the TikTok Chemistry K Canonical sync task above before another connector workstream is advanced.
+
+## Approved future architecture direction — not this task
+
+The user approved a future direction for scalable Time-series retention and customer-configurable Lark Group notifications. Full decision record:
+
+`docs/project-brain/time-series-retention-and-notification.md`
+
+The direction is `APPROVED_DIRECTION / AUDIT_PENDING / IMPLEMENTATION_NOT_STARTED` and does not authorize Code, Lark Base, D1, Schedule or Production mutation.
+
+Current sequencing rules:
+
+1. Finish the bounded TikTok Chemistry K RAW → Canonical reconciliation task using the existing schema and schedules-off boundary.
+2. Do not introduce Retention, delete historical rows, change `MKT_Content_Daily`/`MKT_Ads_Daily` semantics or create Notification tables inside the TikTok task.
+3. Before a separate Time-series/Notification implementation, audit the complete Repository `main`, latest Base, every Daily-table Writer/Reader, Report Engine, Dashboard, D1 migrations and Draft PR `#17` impact.
+4. Start implementation only after an exact Data Model, migration, dual-write, parity, rollback and schedule gate is approved in a new Current Task.
 
 ## Acceptance criteria for TikTok Canonical sync
 
@@ -86,6 +103,7 @@ After this documentation baseline is merged, work should resume from the TikTok 
 - [ ] TikTok/YouTube/Core regression passes
 - [ ] schedules remain disabled until accepted
 - [ ] no deletion based only on legacy profile/config labels
+- [ ] no Time-series/Notification schema or runtime mutation in this task
 
 ## Handoff
 
@@ -95,6 +113,7 @@ TIKTOK_SOURCE = CHEMISTRY_K_EXISTING_CONNECTION
 TIKTOK_RAW = POPULATED_2021_ROWS
 TIKTOK_CANONICAL_SYNC = NOT_YET_VERIFIED
 NEXT_TASK = TIKTOK_CHEMISTRY_K_CANONICAL_SYNC
+TIME_SERIES_NOTIFICATION = APPROVED_DIRECTION_AUDIT_PENDING
 GOOGLE_ADS_PR_17 = DRAFT_NOT_MERGED_NOT_DEPLOYED
 LARK_SCHEMA = COMPLETE_DO_NOT_REOPEN
 PRODUCTION = BLOCKED

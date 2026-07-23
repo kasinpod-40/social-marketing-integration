@@ -10,10 +10,11 @@ Authority order ให้ยึด `AGENTS.md` และ `docs/current-task.md` 
 
 ## Current repository baseline
 
-- Main code/documentation baseline before this docs update: `c9c77b19bb1dd9572d71e455a391cf70bc3cc9dd`
+- Main baseline reviewed for this decision: `bb020bd4a9360e49e049ad55710c43cfae7a699b`
 - Application package line: `0.11.0`
 - Lark schema/View/Formula closeout: complete; do not reopen without a new approved contract
 - Google Ads signed-delivery implementation: Draft PR `#17`, not merged to `main`, not deployed
+- Time-series retention and Lark notification direction: approved for documentation; full Repository/Base audit still required before implementation
 
 ## Integration Workspace operating model
 
@@ -118,7 +119,7 @@ Merged `main` state:
 - errors/truncation `0/0`
 - Google Ads reported `No changes`
 - Lark schema, relations, formulas and managed Views complete
-- direct API Basic Access review remains optional Phase 2
+- direct API Basic Access application submitted on `2026-07-21`, case `1-686800040839`, review pending; direct API remains optional Phase 2
 
 Draft PR `#17` state:
 
@@ -183,6 +184,36 @@ Every active write path must reuse:
 
 Do not create a parallel reliability stack for a new Connector
 
+## Approved future data-retention and notification direction
+
+Decision record: `docs/project-brain/time-series-retention-and-notification.md`
+
+Status:
+
+```text
+TIME_SERIES_ARCHITECTURE = APPROVED_DIRECTION_AUDIT_PENDING
+NOTIFICATION_CONFIGURATION = APPROVED_DIRECTION_AUDIT_PENDING
+CODE_CHANGES = NOT_STARTED
+LARK_BASE_CHANGES = NOT_STARTED
+D1_MIGRATIONS = NOT_STARTED
+SCHEDULE_CHANGES = NOT_STARTED
+```
+
+Locked direction after the required audit:
+
+- `MKT_Content` remains one Customer-facing current-state row per Content;
+- `MKT_Content_Daily` moves toward a bounded recent/diagnostic cache, not unlimited Full history;
+- `MKT_Ads_Daily` moves toward bounded recent Ads detail, while exact Ads daily facts live in D1 and support attribution lookback/UPSERT;
+- `MKT_Account_Daily` is the preferred long-term Lark Dashboard aggregate;
+- `MKT_Report_*` stores materialized KPI/Top-row results instead of all detailed history;
+- D1 is the historical source of truth with explicit coverage/completeness semantics;
+- unbounded JSON history in Lark is forbidden;
+- R2 is optional cold archive only after a separately approved capacity threshold;
+- customer-configurable Lark Group delivery uses separate Notification settings/destinations, while D1/Queue owns schedule state, retry, lock and idempotency;
+- AI explains deterministic report snapshots and must not infer confidence from partial data as if it were complete.
+
+This direction does not authorize changing the current 42-table Base, existing Daily-table Grain, Report Engine, Retention or Notification runtime before a complete Repository/Base dependency audit and a new approved Current Task
+
 ## Current task
 
 Authoritative task: `docs/current-task.md`
@@ -198,9 +229,11 @@ TikTok Chemistry K RAW
 → report verification
 ```
 
-This is not a TikTok account-switch task and does not authorize RAW deletion or Lark schema changes
+This is not a TikTok account-switch task and does not authorize RAW deletion, Lark schema changes, Daily-table Retention changes or Notification implementation
 
-Google Ads PR `#17` remains Draft until the shared documentation baseline and work sequencing are synchronized
+The TikTok task must remain bounded/manual with schedules disabled. The separate Time-series/Notification architecture audit follows only through a new approved task
+
+Google Ads PR `#17` remains Draft and is not `main`
 
 ## Permanent safety rules
 
@@ -214,5 +247,6 @@ Google Ads PR `#17` remains Draft until the shared documentation baseline and wo
 - secrets remain in Environment/Secret Manager
 - no record deletion/relabeling from a historical Profile name alone
 - no Lark schema/Formula/View reopening without a new approved contract
+- no Retention/delete job before source-of-truth, reconciliation and rollback evidence
 - Production resources must be customer-owned
 - no Live Apply based only on chat instructions when Repository contract is newer
