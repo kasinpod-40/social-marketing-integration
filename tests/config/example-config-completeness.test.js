@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { LARK_TABLE_ENV } from '../../packages/config/src/lark-table-config.js';
+import { STORAGE_FEATURE_FLAG_ENV } from '../../packages/config/src/storage-runtime-config.js';
 import { YOUTUBE_REQUIRED_LARK_TABLE_KEYS } from '../../packages/config/src/youtube-organic-runtime-config.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -20,7 +21,7 @@ test('safe examples declare every YouTube table required by activation preflight
   }
 });
 
-test('release examples keep every connector and schedule fail-closed under Integration Workspace', async () => {
+test('release examples keep every connector, schedule and Storage flag fail-closed', async () => {
   const [devVars, wrangler] = await Promise.all([
     readFile(resolve(root, '.dev.vars.example'), 'utf8'),
     readFile(resolve(root, 'wrangler.sync.example.jsonc'), 'utf8'),
@@ -36,6 +37,7 @@ test('release examples keep every connector and schedule fail-closed under Integ
     'MKT_SCHEDULE_YOUTUBE_ENABLED',
     'MKT_SCHEDULE_DAILY_REPORT_ENABLED',
     'MKT_SCHEDULE_WEEKLY_REPORT_ENABLED',
+    ...Object.values(STORAGE_FEATURE_FLAG_ENV),
   ];
   for (const flag of flags) {
     assert.match(devVars, new RegExp(`^${flag}=false$`, 'mu'));

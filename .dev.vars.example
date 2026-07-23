@@ -34,6 +34,15 @@ MKT_MAIN_QUEUE_NAME=social-mkt-sync-jobs
 MKT_DLQ_QUEUE_NAME=social-mkt-sync-dlq
 MKT_QUEUE_RETRY_DELAY_SECONDS=30
 
+# Storage Foundation flags — Phase 1B สร้าง Schema/Repository เท่านั้น ทุก Flag ต้องปิด
+MKT_TIME_SERIES_D1_WRITE_ENABLED=false
+MKT_TIME_SERIES_D1_BACKFILL_ENABLED=false
+MKT_REPORT_D1_SHADOW_READ_ENABLED=false
+MKT_REPORT_D1_READ_ENABLED=false
+MKT_REPORT_PRESET_MATERIALIZATION_ENABLED=false
+MKT_LARK_DAILY_RETENTION_ENABLED=false
+MKT_NOTIFICATION_RUNTIME_ENABLED=false
+
 # TikTok Creator — Lark Native เชื่อม Chemistry K แล้ว; Connector ยังปิดจนถึง Manual write gate
 TIKTOK_SOURCE_HANDLE=chemistry_k
 
