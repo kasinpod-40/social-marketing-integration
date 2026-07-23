@@ -47,7 +47,7 @@ test('Organic history creates initial observation and retries the same durable s
     });
 
     assert.equal(first.observationsCreated, 1);
-    assert.equal(retry.observationsSkipped, 1);
+    assert.equal(retry.observationsNotRequired, 1);
     assert.equal(count(d1, 'organic_content_state'), 1);
     assert.equal(count(d1, 'organic_content_observations'), 1);
     assert.equal(count(d1, 'data_coverage_entities'), 1);
