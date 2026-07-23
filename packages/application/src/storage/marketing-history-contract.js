@@ -1,3 +1,4 @@
+import { requireDateOnly } from '../../../shared/src/date/date-only.js';
 import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 
 export const STORAGE_DATA_STATUSES = Object.freeze([
@@ -115,19 +116,37 @@ const TABLE_FIELDS = Object.freeze({
 });
 
 export function createContentKey(input = {}) {
-  return `${requiredText(input.platform, 'platform')}:${requiredText(input.account_key, 'account_key')}:${requiredText(input.external_content_id, 'external_content_id')}`;
+  return [
+    requiredText(input.platform, 'platform'),
+    requiredText(input.account_key, 'account_key'),
+    requiredText(input.external_content_id, 'external_content_id'),
+  ].join(':');
 }
 
 export function createObservationKey(input = {}) {
-  return `${requiredText(input.content_key, 'content_key')}:${requiredInteger(input.observed_at, 'observed_at')}:${requiredChoice(input.observation_kind, 'observation_kind', OBSERVATION_KINDS)}:v1`;
+  return [
+    requiredText(input.content_key, 'content_key'),
+    requiredInteger(input.observed_at, 'observed_at'),
+    requiredChoice(input.observation_kind, 'observation_kind', OBSERVATION_KINDS),
+    'v1',
+  ].join(':');
 }
 
 export function createAccountDailyKey(input = {}) {
-  return `${requiredText(input.platform, 'platform')}:${requiredText(input.account_key, 'account_key')}:${requiredDate(input.metric_date, 'metric_date')}`;
+  return [
+    requiredText(input.platform, 'platform'),
+    requiredText(input.account_key, 'account_key'),
+    requiredDate(input.metric_date, 'metric_date'),
+  ].join(':');
 }
 
 export function createAdsEntityKey(input = {}) {
-  return `${requiredText(input.platform, 'platform')}:${requiredText(input.account_key, 'account_key')}:${requiredText(input.entity_type, 'entity_type')}:${requiredText(input.external_entity_id, 'external_entity_id')}`;
+  return [
+    requiredText(input.platform, 'platform'),
+    requiredText(input.account_key, 'account_key'),
+    requiredText(input.entity_type, 'entity_type'),
+    requiredText(input.external_entity_id, 'external_entity_id'),
+  ].join(':');
 }
 
 export function createAdsFactKey(input = {}) {
@@ -156,7 +175,11 @@ export function createConversionFactKey(input = {}) {
 }
 
 export function createCoverageEntityKey(input = {}) {
-  return `${requiredText(input.coverage_run_id, 'coverage_run_id')}:${requiredText(input.entity_type, 'entity_type')}:${requiredText(input.external_entity_id, 'external_entity_id')}`;
+  return [
+    requiredText(input.coverage_run_id, 'coverage_run_id'),
+    requiredText(input.entity_type, 'entity_type'),
+    requiredText(input.external_entity_id, 'external_entity_id'),
+  ].join(':');
 }
 
 export function createReportId(input = {}) {
@@ -190,7 +213,7 @@ export function validateStorageRow(tableName, value) {
 function validateOrganicContentState(row) {
   requireKey(row.content_key, createContentKey(row), 'content_key');
   requiredText(row.customer_profile, 'customer_profile');
-  commonIdentity(row);
+  commonContentIdentity(row);
   optionalText(row.source_account_id, 'source_account_id');
   optionalText(row.content_type, 'content_type');
   optionalInteger(row.published_at, 'published_at');
@@ -212,12 +235,14 @@ function validateOrganicContentState(row) {
 
 function validateOrganicObservation(row) {
   requiredText(row.content_key, 'content_key');
-  commonIdentity(row);
+  commonContentIdentity(row);
   requiredInteger(row.observed_at, 'observed_at');
   requiredDate(row.metric_date, 'metric_date');
   requiredText(row.source_timezone, 'source_timezone');
   requiredChoice(row.observation_kind, 'observation_kind', OBSERVATION_KINDS);
-  if (row.metric_semantics !== 'cumulative') throw contractError('organic_content_observations.metric_semantics must be cumulative');
+  if (row.metric_semantics !== 'cumulative') {
+    throw contractError('organic_content_observations.metric_semantics must be cumulative');
+  }
   requireKey(row.observation_key, createObservationKey(row), 'observation_key');
   cumulativeMetrics(row);
   requiredText(row.metrics_hash, 'metrics_hash');
@@ -237,9 +262,10 @@ function validateOrganicAccountDaily(row) {
   requireKey(row.account_daily_key, createAccountDailyKey(row), 'account_daily_key');
   optionalText(row.source_account_id, 'source_account_id');
   requiredText(row.account_timezone, 'account_timezone');
-  for (const field of ['followers', 'follows', 'profile_views', 'views', 'reach', 'accounts_engaged', 'total_interactions']) {
-    optionalNonNegativeInteger(row[field], field);
-  }
+  validateIntegerFields(row, [
+    'followers', 'follows', 'profile_views', 'views', 'reach',
+    'accounts_engaged', 'total_interactions',
+  ]);
   optionalInteger(row.net_follows, 'net_follows');
   dataEvidence(row);
   auditTimes(row, true);
@@ -254,9 +280,10 @@ function validateAdsEntityState(row) {
   requiredText(row.external_entity_id, 'external_entity_id');
   requireKey(row.entity_key, createAdsEntityKey(row), 'entity_key');
   requiredText(row.source_account_id, 'source_account_id');
-  for (const field of ['parent_campaign_id', 'parent_ad_group_id', 'parent_ad_id', 'external_creative_id', 'entity_name', 'status', 'objective', 'currency', 'timezone']) {
-    optionalText(row[field], field);
-  }
+  validateOptionalTextFields(row, [
+    'parent_campaign_id', 'parent_ad_group_id', 'parent_ad_id', 'external_creative_id',
+    'entity_name', 'status', 'objective', 'currency', 'timezone',
+  ]);
   optionalInteger(row.source_updated_at, 'source_updated_at');
   requiredInteger(row.first_seen_at, 'first_seen_at');
   requiredInteger(row.last_seen_at, 'last_seen_at');
@@ -265,17 +292,25 @@ function validateAdsEntityState(row) {
   requiredText(row.last_coverage_run_id, 'last_coverage_run_id');
   requiredText(row.last_sync_run_id, 'last_sync_run_id');
   auditTimes(row, true);
-  if (row.first_seen_at > row.last_seen_at) throw contractError('first_seen_at cannot be after last_seen_at');
+  if (row.first_seen_at > row.last_seen_at) {
+    throw contractError('first_seen_at cannot be after last_seen_at');
+  }
   return freeze(row);
 }
 
 function validateAdsDailyFact(row) {
-  adsIdentity(row);
+  adsIdentity(row, { requireBreakdown: true });
   requireKey(row.ads_fact_key, createAdsFactKey(row), 'ads_fact_key');
   requiredText(row.entity_type, 'entity_type');
-  for (const field of ['external_campaign_id', 'external_ad_group_id', 'external_ad_id', 'external_creative_id', 'ad_channel']) optionalText(row[field], field);
+  validateOptionalTextFields(row, [
+    'external_campaign_id', 'external_ad_group_id', 'external_ad_id',
+    'external_creative_id', 'ad_channel',
+  ]);
   requiredText(row.currency, 'currency');
-  for (const field of ['spend_micros', 'impressions', 'reach', 'clicks', 'conversion_value_micros', 'video_views', 'average_cpv_micros']) optionalNonNegativeInteger(row[field], field);
+  validateIntegerFields(row, [
+    'spend_micros', 'impressions', 'reach', 'clicks', 'conversion_value_micros',
+    'video_views', 'average_cpv_micros',
+  ]);
   optionalNonNegativeNumber(row.conversions, 'conversions');
   optionalRatio(row.video_view_rate, 'video_view_rate');
   optionalJson(row.actions_json, 'actions_json', STORAGE_JSON_LIMITS.actionsBytes);
@@ -289,7 +324,9 @@ function validateAdsDailyFact(row) {
 function validateConversionFact(row) {
   adsIdentity(row);
   requireKey(row.conversion_fact_key, createConversionFactKey(row), 'conversion_fact_key');
-  for (const field of ['external_campaign_id', 'external_ad_group_id', 'external_ad_id', 'conversion_action_name']) optionalText(row[field], field);
+  validateOptionalTextFields(row, [
+    'external_campaign_id', 'external_ad_group_id', 'external_ad_id', 'conversion_action_name',
+  ]);
   requiredText(row.conversion_action_key, 'conversion_action_key');
   requiredText(row.conversion_category, 'conversion_category');
   requiredText(row.currency, 'currency');
@@ -304,23 +341,32 @@ function validateConversionFact(row) {
 }
 
 function validateCoverageRun(row) {
-  for (const field of ['coverage_run_id', 'sync_run_id', 'customer_key', 'platform', 'account_key', 'dataset_key', 'source_timezone']) requiredText(row[field], field);
+  validateRequiredTextFields(row, [
+    'coverage_run_id', 'sync_run_id', 'customer_key', 'platform',
+    'account_key', 'dataset_key', 'source_timezone',
+  ]);
   requiredChoice(row.metric_semantics, 'metric_semantics', METRIC_SEMANTICS);
   requiredChoice(row.scope_mode, 'scope_mode', COVERAGE_SCOPE_MODES);
   optionalDate(row.period_start, 'period_start');
   optionalDate(row.period_end, 'period_end');
   dateOrder(row.period_start, row.period_end, 'coverage period');
   requiredChoice(row.status, 'status', STORAGE_DATA_STATUSES);
-  for (const field of ['expected_entities', 'observed_entities', 'expected_rows', 'observed_rows', 'written_rows', 'failed_rows']) optionalNonNegativeInteger(row[field], field);
+  validateIntegerFields(row, [
+    'expected_entities', 'observed_entities', 'expected_rows',
+    'observed_rows', 'written_rows', 'failed_rows',
+  ]);
   optionalText(row.source_watermark, 'source_watermark');
   optionalInteger(row.revisable_until, 'revisable_until');
   requiredInteger(row.started_at, 'started_at');
   optionalInteger(row.completed_at, 'completed_at');
   optionalText(row.error_code, 'error_code');
   auditTimes(row, true);
+
   if (row.status === 'complete') {
     requiredInteger(row.completed_at, 'completed_at');
-    if ((row.failed_rows ?? 0) !== 0) throw contractError('complete coverage cannot contain failed_rows');
+    if ((row.failed_rows ?? 0) !== 0) {
+      throw contractError('complete coverage cannot contain failed_rows');
+    }
     assertExpectedObserved(row.expected_entities, row.observed_entities, 'entities');
     assertExpectedObserved(row.expected_rows, row.observed_rows, 'rows');
     if (row.scope_mode === 'full_inventory') {
@@ -332,9 +378,7 @@ function validateCoverageRun(row) {
 }
 
 function validateCoverageEntity(row) {
-  requiredText(row.coverage_run_id, 'coverage_run_id');
-  requiredText(row.entity_type, 'entity_type');
-  requiredText(row.external_entity_id, 'external_entity_id');
+  validateRequiredTextFields(row, ['coverage_run_id', 'entity_type', 'external_entity_id']);
   requireKey(row.coverage_entity_key, createCoverageEntityKey(row), 'coverage_entity_key');
   requiredChoice(row.observation_status, 'observation_status', COVERAGE_ENTITY_STATUSES);
   optionalText(row.source_revision, 'source_revision');
@@ -344,7 +388,10 @@ function validateCoverageEntity(row) {
 }
 
 function validateReportMaterialization(row) {
-  for (const field of ['report_setting_key', 'customer_key', 'platform_scope', 'account_key', 'report_type', 'period_kind', 'formula_version', 'payload_checksum']) requiredText(row[field], field);
+  validateRequiredTextFields(row, [
+    'report_setting_key', 'customer_key', 'platform_scope', 'account_key',
+    'report_type', 'period_kind', 'formula_version', 'payload_checksum',
+  ]);
   requireKey(row.report_id, createReportId(row), 'report_id');
   optionalPositiveInteger(row.window_days, 'window_days');
   requiredDate(row.period_start, 'period_start');
@@ -357,8 +404,10 @@ function validateReportMaterialization(row) {
   optionalRatio(row.coverage_rate, 'coverage_rate');
   optionalText(row.source_watermark, 'source_watermark');
   const parsed = requiredJson(row.payload_json, 'payload_json', STORAGE_JSON_LIMITS.reportPayloadBytes);
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)
-    || !optionalText(parsed.schemaVersion ?? parsed.version, 'payload version')) {
+  const version = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+    ? parsed.schemaVersion ?? parsed.version
+    : null;
+  if (!version || typeof version !== 'string' || version.trim() === '') {
     throw contractError('payload_json must be an object with schemaVersion or version');
   }
   requiredInteger(row.generated_at, 'generated_at');
@@ -368,7 +417,7 @@ function validateReportMaterialization(row) {
 }
 
 function validateReportRequest(row) {
-  for (const field of ['request_id', 'customer_key', 'account_key', 'platform_scope']) requiredText(row[field], field);
+  validateRequiredTextFields(row, ['request_id', 'customer_key', 'account_key', 'platform_scope']);
   requiredDate(row.period_start, 'period_start');
   requiredDate(row.period_end, 'period_end');
   dateOrder(row.period_start, row.period_end, 'request period');
@@ -387,23 +436,20 @@ function validateReportRequest(row) {
   return freeze(row);
 }
 
-function commonIdentity(row) {
-  requiredText(row.customer_key, 'customer_key');
-  requiredText(row.platform, 'platform');
-  requiredText(row.account_key, 'account_key');
-  requiredText(row.external_content_id, 'external_content_id');
+function commonContentIdentity(row) {
+  validateRequiredTextFields(row, [
+    'customer_key', 'platform', 'account_key', 'external_content_id',
+  ]);
 }
 
-function adsIdentity(row) {
-  requiredText(row.customer_key, 'customer_key');
-  requiredText(row.platform, 'platform');
-  requiredText(row.account_key, 'account_key');
-  requiredText(row.source_account_id, 'source_account_id');
-  requiredText(row.report_level, 'report_level');
-  requiredText(row.external_entity_id, 'external_entity_id');
+function adsIdentity(row, options = {}) {
+  validateRequiredTextFields(row, [
+    'customer_key', 'platform', 'account_key', 'source_account_id',
+    'report_level', 'external_entity_id', 'account_timezone',
+  ]);
   requiredDate(row.metric_date, 'metric_date');
-  requiredText(row.account_timezone, 'account_timezone');
   requiredIdentityPart(row.segment_key, 'segment_key');
+  if (options.requireBreakdown) requiredIdentityPart(row.breakdown_key, 'breakdown_key');
 }
 
 function dataEvidence(row) {
@@ -415,10 +461,22 @@ function dataEvidence(row) {
 }
 
 function cumulativeMetrics(row) {
-  for (const field of ['views', 'likes', 'comments', 'shares', 'unique_viewers']) optionalNonNegativeInteger(row[field], field);
+  validateIntegerFields(row, ['views', 'likes', 'comments', 'shares', 'unique_viewers']);
   optionalNonNegativeNumber(row.avg_watch_time_seconds, 'avg_watch_time_seconds');
   optionalNonNegativeNumber(row.total_watch_time_seconds, 'total_watch_time_seconds');
   optionalRatio(row.completion_rate, 'completion_rate');
+}
+
+function validateRequiredTextFields(row, fields) {
+  for (const field of fields) requiredText(row[field], field);
+}
+
+function validateOptionalTextFields(row, fields) {
+  for (const field of fields) optionalText(row[field], field);
+}
+
+function validateIntegerFields(row, fields) {
+  for (const field of fields) optionalNonNegativeInteger(row[field], field);
 }
 
 function auditTimes(row, updatedRequired) {
@@ -429,16 +487,23 @@ function auditTimes(row, updatedRequired) {
 function exactRow(tableName, value) {
   const fields = TABLE_FIELDS[tableName];
   if (!fields) throw contractError(`Unknown storage table: ${tableName}`, { tableName });
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw contractError(`${tableName} row must be an object`);
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw contractError(`${tableName} row must be an object`);
+  }
   const allowed = new Set(fields);
   const unknown = Object.keys(value).filter((key) => !allowed.has(key));
-  if (unknown.length > 0) throw contractError(`${tableName} contains unknown fields`, { unknown });
+  if (unknown.length > 0) {
+    throw contractError(`${tableName} contains unknown fields`, { unknown });
+  }
   return { ...value };
 }
 
 function requireKey(actual, expected, fieldName) {
   if (requiredText(actual, fieldName) !== expected) {
-    throw contractError(`${fieldName} does not match the approved Stable key`, { fieldName, expected });
+    throw contractError(`${fieldName} does not match the approved Stable key`, {
+      fieldName,
+      expected,
+    });
   }
 }
 
@@ -449,32 +514,43 @@ function assertExpectedObserved(expected, observed, label) {
 }
 
 function dateOrder(start, end, label) {
-  if (start && end && start > end) throw contractError(`${label} start cannot be after end`);
+  if (start && end && start > end) {
+    throw contractError(`${label} start cannot be after end`);
+  }
 }
 
+/** Stable-key dimensions must contain an explicit value; callers use the literal `none` when absent. */
 function requiredIdentityPart(value, fieldName) {
-  return requiredText(value ?? 'none', fieldName);
+  return requiredText(value, fieldName);
 }
 
 function requiredText(value, fieldName) {
-  if (typeof value !== 'string' || value.trim() === '') throw contractError(`${fieldName} is required`, { fieldName });
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw contractError(`${fieldName} is required`, { fieldName });
+  }
   return value.trim();
 }
 
 function optionalText(value, fieldName) {
   if (value === undefined || value === null) return null;
-  if (typeof value !== 'string' || value.trim() === '') throw contractError(`${fieldName} must be a non-empty string or null`, { fieldName });
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw contractError(`${fieldName} must be a non-empty string or null`, { fieldName });
+  }
   return value.trim();
 }
 
 function requiredChoice(value, fieldName, choices) {
   const text = requiredText(value, fieldName);
-  if (!choices.includes(text)) throw contractError(`${fieldName} must be one of: ${choices.join(', ')}`, { fieldName });
+  if (!choices.includes(text)) {
+    throw contractError(`${fieldName} must be one of: ${choices.join(', ')}`, { fieldName });
+  }
   return text;
 }
 
 function requiredInteger(value, fieldName) {
-  if (!Number.isSafeInteger(value)) throw contractError(`${fieldName} must be a safe integer`, { fieldName });
+  if (!Number.isSafeInteger(value)) {
+    throw contractError(`${fieldName} must be a safe integer`, { fieldName });
+  }
   return value;
 }
 
@@ -485,34 +561,44 @@ function optionalInteger(value, fieldName) {
 
 function optionalNonNegativeInteger(value, fieldName) {
   const number = optionalInteger(value, fieldName);
-  if (number !== null && number < 0) throw contractError(`${fieldName} must be non-negative`, { fieldName });
+  if (number !== null && number < 0) {
+    throw contractError(`${fieldName} must be non-negative`, { fieldName });
+  }
   return number;
 }
 
 function optionalPositiveInteger(value, fieldName) {
   const number = optionalInteger(value, fieldName);
-  if (number !== null && number <= 0) throw contractError(`${fieldName} must be positive`, { fieldName });
+  if (number !== null && number <= 0) {
+    throw contractError(`${fieldName} must be positive`, { fieldName });
+  }
   return number;
 }
 
 function optionalNonNegativeNumber(value, fieldName) {
   if (value === undefined || value === null) return null;
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) throw contractError(`${fieldName} must be a non-negative finite number`, { fieldName });
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    throw contractError(`${fieldName} must be a non-negative finite number`, { fieldName });
+  }
   return value;
 }
 
 function optionalRatio(value, fieldName) {
   const number = optionalNonNegativeNumber(value, fieldName);
-  if (number !== null && number > 1) throw contractError(`${fieldName} must be between 0 and 1`, { fieldName });
+  if (number !== null && number > 1) {
+    throw contractError(`${fieldName} must be between 0 and 1`, { fieldName });
+  }
   return number;
 }
 
 function requiredDate(value, fieldName) {
-  const text = requiredText(value, fieldName);
-  if (!/^\d{4}-\d{2}-\d{2}$/u.test(text) || Number.isNaN(Date.parse(`${text}T00:00:00Z`))) {
-    throw contractError(`${fieldName} must be YYYY-MM-DD`, { fieldName });
+  try {
+    return requireDateOnly(value, { label: fieldName });
+  } catch (cause) {
+    throw contractError(cause instanceof Error ? cause.message : `${fieldName} must be YYYY-MM-DD`, {
+      fieldName,
+    });
   }
-  return text;
 }
 
 function optionalDate(value, fieldName) {
@@ -528,7 +614,13 @@ function optionalJson(value, fieldName, maxBytes) {
 function requiredJson(value, fieldName, maxBytes) {
   const text = requiredText(value, fieldName);
   const bytes = new TextEncoder().encode(text).byteLength;
-  if (bytes > maxBytes) throw contractError(`${fieldName} exceeds ${maxBytes} bytes`, { fieldName, bytes, maxBytes });
+  if (bytes > maxBytes) {
+    throw contractError(`${fieldName} exceeds ${maxBytes} bytes`, {
+      fieldName,
+      bytes,
+      maxBytes,
+    });
+  }
   try {
     return JSON.parse(text);
   } catch {
