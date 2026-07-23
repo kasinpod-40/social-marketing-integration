@@ -13,11 +13,19 @@ import {
 } from '../../apps/sync-worker/src/scheduled-jobs.js';
 
 const SCHEDULED_AT = '2026-07-23T01:10:00.000Z';
+const MANUAL_HISTORY_TYPES = Object.freeze([
+  JOB_TYPES.TIKTOK_CREATOR_NATIVE_HISTORY_BOOTSTRAP,
+  JOB_TYPES.TIKTOK_CREATOR_NATIVE_HISTORY_RECOVER,
+]);
 
-test('history bootstrap Job is active manual-only and never emitted by schedules', () => {
-  const definition = getJobDefinition(JOB_TYPES.TIKTOK_CREATOR_NATIVE_HISTORY_BOOTSTRAP);
-  assert.equal(definition.implementationStatus, 'active');
-  assert.equal(definition.manualOnly, true);
+test('history bootstrap and recovery are active manual-only and never emitted by schedules', () => {
+  const bootstrap = getJobDefinition(JOB_TYPES.TIKTOK_CREATOR_NATIVE_HISTORY_BOOTSTRAP);
+  const recovery = getJobDefinition(JOB_TYPES.TIKTOK_CREATOR_NATIVE_HISTORY_RECOVER);
+  assert.equal(bootstrap.implementationStatus, 'active');
+  assert.equal(bootstrap.manualOnly, true);
+  assert.equal(recovery.implementationStatus, 'active');
+  assert.equal(recovery.manualOnly, true);
+  assert.equal(recovery.recoveryOnly, true);
 
   const environments = [{}, {
     MKT_SCHEDULE_TIKTOK_ENABLED: 'true',
@@ -36,10 +44,9 @@ test('history bootstrap Job is active manual-only and never emitted by schedules
         scheduledAt: SCHEDULED_AT,
         event: { cron, scheduledTime: SCHEDULED_AT },
       });
-      assert.equal(
-        jobs.some((job) => job.type === JOB_TYPES.TIKTOK_CREATOR_NATIVE_HISTORY_BOOTSTRAP),
-        false,
-      );
+      for (const type of MANUAL_HISTORY_TYPES) {
+        assert.equal(jobs.some((job) => job.type === type), false);
+      }
     }
   }
 });
@@ -76,6 +83,27 @@ test('history bootstrap rejects scheduled or malformed triggers before infrastru
       },
     }),
     (error) => error.code === 'TIKTOK_HISTORY_BOOTSTRAP_MANUAL_ONLY',
+  );
+  assert.equal(runtimeReads, 0);
+});
+
+test('incident recovery blocks dry-run before identity or infrastructure access', async () => {
+  let runtimeReads = 0;
+  await assert.rejects(
+    () => processJobWithHistoryBootstrap({
+      job: {
+        body: {
+          type: JOB_TYPES.TIKTOK_CREATOR_NATIVE_HISTORY_RECOVER,
+          trigger: 'manual_recovery',
+          dryRun: true,
+        },
+      },
+      getRuntimeConfig() {
+        runtimeReads += 1;
+        throw new Error('must not read runtime');
+      },
+    }),
+    (error) => error.code === 'TIKTOK_HISTORY_RECOVERY_DRY_RUN_BLOCKED',
   );
   assert.equal(runtimeReads, 0);
 });
