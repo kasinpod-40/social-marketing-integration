@@ -12,10 +12,11 @@ const MIGRATION_URL = new URL('../../migrations/0009_storage_foundation.sql', im
 const REQUESTED_AT = 1784829780000;
 const WORK_KEY = 'tiktok:f59b852f00634005c7ff4da51afee964';
 const CURSOR_KEY = 'tiktok:chemistry_k:lark_native_tiktok_for_creator:organic_history_bootstrap';
+const PREFLIGHT_PHASE = 'tiktok_organic_history_preflight_v1';
 const WRITE_PHASE = 'tiktok_organic_history_write_v1';
 const RECORDS = Object.freeze(Array.from({ length: 2021 }, (_, index) => rawRecord(index + 1)));
 
-/** Exact incident shape: two complete Units, then the old State-first writer stops after 309 rows. */
+/** Exact incident shape: staged preflight, two complete write Units, then 309 legacy State rows. */
 test('TikTok bootstrap recovers Unit 3 idempotently after 309 durable State rows', async () => {
   const d1 = createSqliteD1();
   d1.exec(await readFile(MIGRATION_URL, 'utf8'));
@@ -24,10 +25,28 @@ test('TikTok bootstrap recovers Unit 3 idempotently after 309 durable State rows
   const repository = paginatedRepository(RECORDS);
 
   try {
+    for (let expectedSequence = 1; expectedSequence <= 5; expectedSequence += 1) {
+      const preflight = await runDurable({ gateway, store, repository });
+      assert.equal(preflight.mode, 'd1_only_preflight_continuation');
+      assert.equal(preflight.continuationRequired, true);
+      assert.equal(preflight.continuationPhase, PREFLIGHT_PHASE);
+      assert.equal(preflight.nextSequence, expectedSequence);
+      assert.equal(count(d1, 'organic_content_state'), 0);
+      assert.equal(count(d1, 'organic_content_observations'), 0);
+      assert.equal(count(d1, 'data_coverage_entities'), 0);
+      const checkpoint = await store.loadPhase({ workKey: WORK_KEY, phase: PREFLIGHT_PHASE });
+      assert.equal(checkpoint.state.unitsPreflighted, expectedSequence);
+      assert.equal(checkpoint.complete, expectedSequence === 5);
+    }
+    assert.equal(count(d1, 'data_coverage_runs'), 0);
+
     const first = await runDurable({ gateway, store, repository });
     const second = await runDurable({ gateway, store, repository });
-    assert.equal(first.continuationRequired, true);
-    assert.equal(second.continuationRequired, true);
+    assert.equal(first.mode, 'd1_only_write_continuation');
+    assert.equal(second.mode, 'd1_only_write_continuation');
+    assert.equal(first.continuationPhase, WRITE_PHASE);
+    assert.equal(second.continuationPhase, WRITE_PHASE);
+    assert.equal(first.nextSequence, 1);
     assert.equal(second.nextSequence, 2);
     assert.equal(count(d1, 'organic_content_state'), 1000);
     assert.equal(count(d1, 'organic_content_observations'), 1000);
@@ -65,12 +84,15 @@ test('TikTok bootstrap recovers Unit 3 idempotently after 309 durable State rows
 
     const recoveredUnitThree = await runDurable({ gateway, store, repository });
     assert.equal(recoveredUnitThree.continuationRequired, true);
+    assert.equal(recoveredUnitThree.continuationPhase, WRITE_PHASE);
     assert.equal(recoveredUnitThree.nextSequence, 3);
     assert.equal(count(d1, 'organic_content_state'), 1500);
     assert.equal(count(d1, 'organic_content_observations'), 1500);
     assert.equal(count(d1, 'data_coverage_entities'), 1500);
 
-    await runDurable({ gateway, store, repository });
+    const unitFour = await runDurable({ gateway, store, repository });
+    assert.equal(unitFour.continuationRequired, true);
+    assert.equal(unitFour.nextSequence, 4);
     const completed = await runDurable({ gateway, store, repository });
     assert.equal(completed.mode, 'd1_only');
     assert.equal(completed.continuationRequired, false);
@@ -104,6 +126,52 @@ test('TikTok bootstrap recovers Unit 3 idempotently after 309 durable State rows
     assert.equal(work.completion.reconciliation.expectedRows, 2021);
     assert.equal(work.completion.reconciliation.observedRows, 2021);
     assert.equal(work.completion.reconciliation.failedRows, 0);
+  } finally {
+    d1.close();
+  }
+});
+
+test('TikTok bootstrap dry-run remains bounded and never turns into a live write', async () => {
+  const d1 = createSqliteD1();
+  d1.exec(await readFile(MIGRATION_URL, 'utf8'));
+  const gateway = new D1OrganicHistoryGateway({ db: d1 });
+  const store = new InMemoryWorkStore();
+  const repository = paginatedRepository(RECORDS);
+  const workKey = 'tiktok:dry-run-operation';
+
+  try {
+    for (let expectedSequence = 1; expectedSequence <= 4; expectedSequence += 1) {
+      const result = await runDurable({
+        gateway,
+        store,
+        repository,
+        workKey,
+        dryRun: true,
+      });
+      assert.equal(result.mode, 'd1_only_preflight_continuation');
+      assert.equal(result.continuationRequired, true);
+      assert.equal(result.nextSequence, expectedSequence);
+      assert.equal(result.lark.contentWrites, 0);
+      assert.equal(result.lark.dailyWrites, 0);
+    }
+    const completed = await runDurable({
+      gateway,
+      store,
+      repository,
+      workKey,
+      dryRun: true,
+    });
+    assert.equal(completed.mode, 'dry_run');
+    assert.equal(completed.dryRun, true);
+    assert.equal(completed.continuationRequired, false);
+    assert.equal(completed.nextSequence, 5);
+    assert.equal(completed.resumableWork.complete, true);
+    assert.equal(completed.d1.plannedStateRows, 2021);
+    assert.equal(completed.d1.plannedObservationRows, 2021);
+    assert.equal(count(d1, 'organic_content_state'), 0);
+    assert.equal(count(d1, 'organic_content_observations'), 0);
+    assert.equal(count(d1, 'data_coverage_runs'), 0);
+    assert.equal(count(d1, 'data_coverage_entities'), 0);
   } finally {
     d1.close();
   }
@@ -158,7 +226,13 @@ async function simulateLegacyUnitThreeInterruption(input) {
   });
 }
 
-function runDurable({ gateway, store, repository }) {
+function runDurable({
+  gateway,
+  store,
+  repository,
+  workKey = WORK_KEY,
+  dryRun = false,
+}) {
   return bootstrapTikTokOrganicHistoryDurable({
     syncRunId: `attempt:${Math.random()}`,
     assertLockActive: async () => true,
@@ -173,11 +247,11 @@ function runDurable({ gateway, store, repository }) {
     requestedAt: REQUESTED_AT,
     generation: REQUESTED_AT,
     cursorKey: CURSOR_KEY,
-    workKey: WORK_KEY,
+    workKey,
     rawTableId: 'raw-tiktok',
     sourcePageSize: 500,
     sourceMaxPages: 10,
-    dryRun: false,
+    dryRun,
   });
 }
 
