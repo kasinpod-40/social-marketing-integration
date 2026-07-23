@@ -1,7 +1,7 @@
 const REPORT_SETTING_TEMPLATES = Object.freeze({
-  dev_ft_pumkin: Object.freeze({
-    customerProfile: 'dev_ft_pumkin',
-    accountKey: 'ft_pumkin',
+  integration_workspace: Object.freeze({
+    customerProfile: 'integration_workspace',
+    accountKey: 'chemistry_k',
   }),
   chemistry_k: Object.freeze({
     customerProfile: 'chemistry_k',
@@ -9,13 +9,21 @@ const REPORT_SETTING_TEMPLATES = Object.freeze({
   }),
 });
 
+const REPORT_SETTING_PROFILE_ALIASES = Object.freeze({
+  dev_ft_pumkin: 'integration_workspace',
+  uat_chemistry_k: 'integration_workspace',
+});
+
 /**
- * สร้าง Report settings มาตรฐานแยกตาม Customer profile
+ * สร้าง Report settings มาตรฐานแยกตาม Canonical Customer profile
+ * Historical profile labels Resolve ไปยัง Integration Workspace เพื่อไม่สร้าง Setting/Account identity เก่าเพิ่ม
  * เก็บเฉพาะค่าที่ไม่เป็นความลับ ส่วน Group ID จริงแก้ใน Lark Base ของเจ้าของทรัพยากร
  */
 export function createReportSettingRowsForProfile(profileKey) {
-  const template = REPORT_SETTING_TEMPLATES[requireText(profileKey, 'profileKey')];
-  if (!template) throw new Error(`Unsupported report setting profile: ${profileKey}`);
+  const requestedProfileKey = requireText(profileKey, 'profileKey');
+  const canonicalProfileKey = REPORT_SETTING_PROFILE_ALIASES[requestedProfileKey] ?? requestedProfileKey;
+  const template = REPORT_SETTING_TEMPLATES[canonicalProfileKey];
+  if (!template) throw new Error(`Unsupported report setting profile: ${requestedProfileKey}`);
 
   return Object.freeze([
     createSettingRow({
