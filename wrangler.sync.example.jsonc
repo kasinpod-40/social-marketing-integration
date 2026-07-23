@@ -108,6 +108,15 @@
     // Durable reliability mirror drain อ่านทีละ Batch เพื่อไม่ให้ Lark delivery ครอง Invocation นานเกินไป
     "MKT_RELIABILITY_MIRROR_BATCH_SIZE": "25",
 
+    // Storage Foundation Phase 1B สร้าง Schema/Repository เท่านั้น ทุก Flag ต้องปิด
+    "MKT_TIME_SERIES_D1_WRITE_ENABLED": "false",
+    "MKT_TIME_SERIES_D1_BACKFILL_ENABLED": "false",
+    "MKT_REPORT_D1_SHADOW_READ_ENABLED": "false",
+    "MKT_REPORT_D1_READ_ENABLED": "false",
+    "MKT_REPORT_PRESET_MATERIALIZATION_ENABLED": "false",
+    "MKT_LARK_DAILY_RETENTION_ENABLED": "false",
+    "MKT_NOTIFICATION_RUNTIME_ENABLED": "false",
+
     // เปิด Checkpoint/Fingerprint ใน D1 เฉพาะงานที่อนุมัติภายหลัง
     "MKT_TIKTOK_INCREMENTAL_ENABLED": "false",
     // Full reconciliation interval ยังไม่เปิด Schedule ใน Phase 1
