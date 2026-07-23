@@ -28,7 +28,7 @@ test('Lark failure after D1 success retries D1 idempotently and repairs Lark', a
 
   await assert.rejects(
     () => writeAllUnits(input),
-    (error) => error.code === 'PARTIAL_SYNC_FAILURE'
+    (error) => error.code === 'SYNC_PARTIAL_WRITE'
       && error.details.failedPhase === 'content'
       && error.details.d1ContentRowsDurable === 1,
   );
