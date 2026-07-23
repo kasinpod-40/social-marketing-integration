@@ -157,6 +157,7 @@ export function loadCustomerRuntimeConfig(env) {
   }
 
   const connectors = resolveConnectorRuntimeConfig(profile.connectors, source);
+  assertLockedConnectorIdentities(profileKey, connectors);
 
   return Object.freeze({
     environment,
@@ -188,6 +189,32 @@ export function listCustomerProfiles() {
 /** คืน Alias สำหรับ Diagnostics/Test โดยไม่เปิดเผย Secret */
 export function listCustomerProfileAliases() {
   return Object.freeze({ ...PROFILE_ALIASES });
+}
+
+/**
+ * TikTok ของ Integration Workspace เป็น Chemistry K ที่ผูกกับ Canonical accountKey แล้ว
+ * จึงห้าม Environment เปลี่ยน Handle ไปเป็น Source อื่นใต้ Stable key เดิม.
+ */
+function assertLockedConnectorIdentities(profileKey, connectors) {
+  if (profileKey !== 'integration_workspace') return;
+  const tiktok = connectors?.tiktok;
+  if (tiktok?.accountKey !== 'chemistry_k'
+    || normalizeHandle(tiktok?.sourceHandle) !== 'chemistry_k') {
+    throw permanentError('Integration Workspace TikTok identity cannot be overridden', {
+      code: 'MKT_RUNTIME_IDENTITY_OVERRIDE_BLOCKED',
+      details: {
+        connectorKey: 'tiktok',
+        expectedAccountKey: 'chemistry_k',
+        expectedSourceHandle: 'chemistry_k',
+      },
+    });
+  }
+}
+
+function normalizeHandle(value) {
+  return typeof value === 'string'
+    ? value.trim().replace(/^@/u, '').toLowerCase()
+    : '';
 }
 
 /** บังคับค่าให้เป็นหนึ่งในตัวเลือกที่รองรับ */

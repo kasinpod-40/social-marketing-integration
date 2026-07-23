@@ -19,6 +19,7 @@ export function normalizePreflightState(value, planFingerprint = null) {
     selectedRowsPreflighted: nonNegativeInteger(state.selectedRowsPreflighted ?? 0),
     contentPlan: normalizePlanSummary(state.contentPlan),
     dailyPlan: normalizePlanSummary(state.dailyPlan),
+    historyPlan: normalizeHistoryPlan(state.historyPlan),
     reconciliation: normalizeReconciliation(state.reconciliation),
     warnings: Object.freeze(Array.isArray(state.warnings) ? state.warnings : []),
   });
@@ -34,6 +35,7 @@ export function normalizeWriteState(value, planFingerprint = null) {
     selectedRecordsCompleted: nonNegativeInteger(state.selectedRecordsCompleted ?? 0),
     contentResult: normalizeTableResult(state.contentResult),
     dailyResult: normalizeTableResult(state.dailyResult),
+    historyResult: normalizeHistoryResult(state.historyResult),
     reconciliation: normalizeReconciliation(state.reconciliation),
     warnings: Object.freeze(Array.isArray(state.warnings) ? state.warnings : []),
     checkpointAttemptSyncRunId: optionalText(state.checkpointAttemptSyncRunId),
@@ -67,6 +69,29 @@ export function normalizePlanSummary(value) {
   });
 }
 
+export function mergeHistoryPlan(left, right) {
+  const base = normalizeHistoryPlan(left);
+  const incoming = normalizeHistoryPlan(right);
+  return Object.freeze({
+    enabled: base.enabled || incoming.enabled,
+    contentRows: base.contentRows + incoming.contentRows,
+    stateRows: base.stateRows + incoming.stateRows,
+    observationRows: base.observationRows + incoming.observationRows,
+  });
+}
+
+export function normalizeHistoryPlan(value) {
+  return Object.freeze({
+    enabled: value?.enabled === true
+      || nonNegativeInteger(value?.contentRows ?? 0) > 0
+      || nonNegativeInteger(value?.stateRows ?? 0) > 0
+      || nonNegativeInteger(value?.observationRows ?? 0) > 0,
+    contentRows: nonNegativeInteger(value?.contentRows ?? 0),
+    stateRows: nonNegativeInteger(value?.stateRows ?? 0),
+    observationRows: nonNegativeInteger(value?.observationRows ?? 0),
+  });
+}
+
 export function mergeTableResult(left, right) {
   const base = normalizeTableResult(left);
   const incoming = normalizeTableResult(right);
@@ -84,6 +109,43 @@ export function normalizeTableResult(value) {
     updated: nonNegativeInteger(value?.updated ?? 0),
     skipped: nonNegativeInteger(value?.skipped ?? 0),
     duplicateInputRows: nonNegativeInteger(value?.duplicateInputRows ?? 0),
+  });
+}
+
+export function mergeHistoryResult(left, right) {
+  const base = normalizeHistoryResult(left);
+  const incoming = normalizeHistoryResult(right);
+  return Object.freeze({
+    enabled: base.enabled || incoming.enabled,
+    contentRows: base.contentRows + incoming.contentRows,
+    contentRowsDurable: base.contentRowsDurable + incoming.contentRows,
+    observationRowsDurable: base.observationRowsDurable
+      + incoming.observationsCreated + incoming.observationsSkipped,
+    stateWritten: base.stateWritten + incoming.stateWritten,
+    stateSkipped: base.stateSkipped + incoming.stateSkipped,
+    observationsCreated: base.observationsCreated + incoming.observationsCreated,
+    observationsSkipped: base.observationsSkipped + incoming.observationsSkipped,
+    observationsNotRequired: base.observationsNotRequired + incoming.observationsNotRequired,
+    coverageEntitiesWritten: base.coverageEntitiesWritten + incoming.coverageEntitiesWritten,
+    coverageEntitiesSkipped: base.coverageEntitiesSkipped + incoming.coverageEntitiesSkipped,
+  });
+}
+
+export function normalizeHistoryResult(value) {
+  return Object.freeze({
+    enabled: value?.enabled === true
+      || nonNegativeInteger(value?.contentRows ?? 0) > 0
+      || nonNegativeInteger(value?.contentRowsDurable ?? 0) > 0,
+    contentRows: nonNegativeInteger(value?.contentRows ?? 0),
+    contentRowsDurable: nonNegativeInteger(value?.contentRowsDurable ?? 0),
+    observationRowsDurable: nonNegativeInteger(value?.observationRowsDurable ?? 0),
+    stateWritten: nonNegativeInteger(value?.stateWritten ?? 0),
+    stateSkipped: nonNegativeInteger(value?.stateSkipped ?? 0),
+    observationsCreated: nonNegativeInteger(value?.observationsCreated ?? 0),
+    observationsSkipped: nonNegativeInteger(value?.observationsSkipped ?? 0),
+    observationsNotRequired: nonNegativeInteger(value?.observationsNotRequired ?? 0),
+    coverageEntitiesWritten: nonNegativeInteger(value?.coverageEntitiesWritten ?? 0),
+    coverageEntitiesSkipped: nonNegativeInteger(value?.coverageEntitiesSkipped ?? 0),
   });
 }
 
@@ -206,6 +268,7 @@ export function buildDryRunResult(input) {
     classificationDictionary: summarizeDictionary(input.dictionaryAnalysis),
     content: withPlanSourceSkips(input.preflight.contentPlan, input.plan),
     dailySnapshots: withPlanSourceSkips(input.preflight.dailyPlan, input.plan),
+    d1History: input.preflight.historyPlan,
     reconciliation: input.preflight.reconciliation,
     skippedRows: Object.freeze([]),
     sourceIdentity: input.plan.sourceIdentity,
@@ -233,6 +296,7 @@ export function buildWriteResult(input) {
     incremental: summarizeIncremental(input.plan, input.checkpointSaved),
     content: withTableSourceSkips(input.state.contentResult, input.plan),
     dailySnapshots: withTableSourceSkips(input.state.dailyResult, input.plan),
+    d1History: input.state.historyResult,
     reconciliation: Object.freeze({
       ...input.state.reconciliation,
       status: input.state.reconciliation.required ? 'recovered' : 'not_required',
@@ -265,14 +329,19 @@ export function buildStagedPartialError(input) {
       : plannedOnlyResult(input.prepared.plans.dailySnapshots));
   const contentAggregate = mergeTableResult(input.state.contentResult, contentCurrent);
   const dailyAggregate = mergeTableResult(input.state.dailyResult, dailyCurrent);
+  const historyAggregate = input.historyResult
+    ? mergeHistoryResult(input.state.historyResult, input.historyResult)
+    : normalizeHistoryResult(input.state.historyResult);
   const confirmedWrites = contentAggregate.created + contentAggregate.updated
-    + dailyAggregate.created + dailyAggregate.updated;
+    + dailyAggregate.created + dailyAggregate.updated
+    + historyAggregate.contentRowsDurable + historyAggregate.observationRowsDurable;
   if (confirmedWrites === 0 && !isPartialSyncError(input.cause)) return input.cause;
 
   const partialState = Object.freeze({
     ...input.state,
     contentResult: contentAggregate,
     dailyResult: dailyAggregate,
+    historyResult: historyAggregate,
     reconciliation: mergeReconciliation(input.state.reconciliation, input.prepared.reconciliation),
   });
   const partialResult = buildWriteResult({
@@ -291,6 +360,8 @@ export function buildStagedPartialError(input) {
     details: {
       failedPhase: input.failedPhase,
       unitsCompleted: input.state.unitsCompleted,
+      d1ContentRowsDurable: historyAggregate.contentRowsDurable,
+      d1ObservationRowsDurable: historyAggregate.observationRowsDurable,
       contentCreated: contentAggregate.created,
       contentUpdated: contentAggregate.updated,
       dailyCreated: dailyAggregate.created,

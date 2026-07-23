@@ -13,6 +13,7 @@
     "check": "find apps packages tests scripts -type f \\( -name '*.js' -o -name '*.mjs' \\) -print0 | xargs -0 -n1 node --check && node scripts/audit-architecture.mjs && node scripts/check-repository-hygiene.mjs",
     "validate:tiktok": "node scripts/validate-tiktok-creator.mjs",
     "sync:tiktok": "node scripts/sync-tiktok-creator.mjs",
+    "job:tiktok-history-bootstrap": "node scripts/print-tiktok-history-bootstrap-job.mjs",
     "seed:metrics": "node scripts/seed-metric-definitions.mjs",
     "audit:architecture": "node scripts/audit-architecture.mjs",
     "deploy:dry-run": "wrangler deploy --dry-run --config wrangler.sync.example.jsonc",

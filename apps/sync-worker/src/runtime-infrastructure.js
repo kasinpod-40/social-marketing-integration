@@ -1,5 +1,6 @@
 import { JOB_TYPES } from '../../../packages/application/src/jobs/job-catalog.js';
 import { createOrganicContentOwnershipRoutingRepository } from '../../../packages/application/src/policies/organic-content-field-ownership.js';
+import { D1OrganicHistoryGateway } from '../../../packages/connectors/src/d1-organic-history-gateway.js';
 import { createLarkBitableClientFromEnv } from '../../../packages/connectors/src/lark/lark-bitable.client.js';
 import { LarkRecordRepository } from '../../../packages/connectors/src/lark/lark-record-repository.js';
 import { D1ReliabilityMirrorOutbox } from '../../../packages/reliability/src/d1-reliability-mirror-outbox.js';
@@ -20,6 +21,7 @@ export function createInfrastructure(env) {
   let reliability = null;
   let incrementalStateStore = null;
   let resumableWorkStore = null;
+  let organicHistoryGateway = null;
   let mirrorOutbox = null;
   const larkReliabilityStores = new Map();
 
@@ -49,6 +51,10 @@ export function createInfrastructure(env) {
     getResumableWorkStore() {
       resumableWorkStore ??= new D1ResumableWorkStore({ db: env?.MKT_STATE_DB });
       return resumableWorkStore;
+    },
+    getOrganicHistoryGateway() {
+      organicHistoryGateway ??= new D1OrganicHistoryGateway({ db: env?.MKT_STATE_DB });
+      return organicHistoryGateway;
     },
     getReliability() {
       reliability ??= createCloudflareReliabilityRuntime({

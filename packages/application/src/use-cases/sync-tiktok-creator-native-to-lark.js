@@ -19,7 +19,7 @@ const BUSINESS_WRITE_PHASE = 'tiktok_native_business_write_v1';
 /**
  * Entry point กลางของ TikTok Creator sync
  * - Local/legacy callers ที่ไม่มี Durable work store ใช้ Flow เดิมเพื่อรักษา Compatibility
- * - Queue production path ที่มี Durable work store ต้อง Stage และประมวลผล Business ทีละ Unit เท่านั้น
+ * - Queue production path ที่มี Durable work storeต้อง Stage และประมวลผล Business ทีละ Unit เท่านั้น
  */
 export async function syncTikTokCreatorNativeToLark(input = {}) {
   if (!input.resumableWorkStore) {
@@ -104,11 +104,13 @@ function normalizeAttemptWriteResult(result, beforeState, afterState) {
     subtractTableResult(afterState.dailyResult, beforeState?.dailyResult),
     sourceSkips,
   );
+  const d1History = subtractHistoryResult(afterState.historyResult, beforeState?.historyResult);
 
   return Object.freeze({
     ...result,
     content,
     dailySnapshots,
+    d1History,
     stagedBusiness: Object.freeze({
       ...(result.stagedBusiness ?? {}),
       attemptUnitsCompleted: subtractCount(
@@ -122,6 +124,7 @@ function normalizeAttemptWriteResult(result, beforeState, afterState) {
       workTotals: Object.freeze({
         content: addSkipped(normalizeTableResult(afterState.contentResult), sourceSkips),
         dailySnapshots: addSkipped(normalizeTableResult(afterState.dailyResult), sourceSkips),
+        d1History: normalizeHistoryResult(afterState.historyResult),
         unitsCompleted: nonNegativeInteger(afterState.unitsCompleted ?? 0),
         selectedRecordsCompleted: nonNegativeInteger(
           afterState.selectedRecordsCompleted ?? 0,
@@ -140,6 +143,7 @@ function normalizeAttemptPartialError(error, beforeState) {
     normalizeTableResult(result?.dailySnapshots),
     sourceSkips,
   );
+  const historyCumulative = normalizeHistoryResult(result?.d1History);
   const normalizedResult = Object.freeze({
     ...result,
     content: addSkipped(
@@ -150,11 +154,13 @@ function normalizeAttemptPartialError(error, beforeState) {
       subtractTableResult(dailyCumulative, beforeState?.dailyResult),
       sourceSkips,
     ),
+    d1History: subtractHistoryResult(historyCumulative, beforeState?.historyResult),
     stagedBusiness: Object.freeze({
       ...(result?.stagedBusiness ?? {}),
       workTotals: Object.freeze({
         content: addSkipped(contentCumulative, sourceSkips),
         dailySnapshots: addSkipped(dailyCumulative, sourceSkips),
+        d1History: historyCumulative,
       }),
     }),
   });
@@ -183,6 +189,7 @@ function normalizeDurableReplayResult(result) {
     skipped: sourceSkips,
     duplicateInputRows: 0,
   });
+  const historyTotals = normalizeHistoryResult(result?.d1History);
   const normalizedIncremental = result?.incremental
     ? Object.freeze({
       ...result.incremental,
@@ -205,12 +212,14 @@ function normalizeDurableReplayResult(result) {
     incremental: normalizedIncremental,
     content: emptyResult,
     dailySnapshots: emptyResult,
+    d1History: emptyHistoryResult(historyTotals.enabled),
     stagedBusiness: Object.freeze({
       ...(result?.stagedBusiness ?? {}),
       durableReplay: true,
       workTotals: Object.freeze({
         content: normalizeTableResult(result?.content),
         dailySnapshots: normalizeTableResult(result?.dailySnapshots),
+        d1History: historyTotals,
         unitsCompleted: nonNegativeInteger(result?.stagedBusiness?.unitsCompleted ?? 0),
         selectedRecordsCompleted: nonNegativeInteger(
           result?.stagedBusiness?.selectedRecordsCompleted ?? 0,
@@ -249,6 +258,76 @@ function normalizeTableResult(value) {
     updated: nonNegativeInteger(value?.updated ?? 0),
     skipped: nonNegativeInteger(value?.skipped ?? 0),
     duplicateInputRows: nonNegativeInteger(value?.duplicateInputRows ?? 0),
+  });
+}
+
+function subtractHistoryResult(after, before) {
+  const final = normalizeHistoryResult(after);
+  const initial = normalizeHistoryResult(before);
+  return Object.freeze({
+    enabled: final.enabled || initial.enabled,
+    contentRows: subtractCount(final.contentRows, initial.contentRows),
+    contentRowsDurable: subtractCount(final.contentRowsDurable, initial.contentRowsDurable),
+    observationRowsDurable: subtractCount(
+      final.observationRowsDurable,
+      initial.observationRowsDurable,
+    ),
+    stateWritten: subtractCount(final.stateWritten, initial.stateWritten),
+    stateSkipped: subtractCount(final.stateSkipped, initial.stateSkipped),
+    observationsCreated: subtractCount(
+      final.observationsCreated,
+      initial.observationsCreated,
+    ),
+    observationsSkipped: subtractCount(
+      final.observationsSkipped,
+      initial.observationsSkipped,
+    ),
+    observationsNotRequired: subtractCount(
+      final.observationsNotRequired,
+      initial.observationsNotRequired,
+    ),
+    coverageEntitiesWritten: subtractCount(
+      final.coverageEntitiesWritten,
+      initial.coverageEntitiesWritten,
+    ),
+    coverageEntitiesSkipped: subtractCount(
+      final.coverageEntitiesSkipped,
+      initial.coverageEntitiesSkipped,
+    ),
+  });
+}
+
+function normalizeHistoryResult(value) {
+  return Object.freeze({
+    enabled: value?.enabled === true
+      || nonNegativeInteger(value?.contentRows ?? 0) > 0
+      || nonNegativeInteger(value?.contentRowsDurable ?? 0) > 0,
+    contentRows: nonNegativeInteger(value?.contentRows ?? 0),
+    contentRowsDurable: nonNegativeInteger(value?.contentRowsDurable ?? 0),
+    observationRowsDurable: nonNegativeInteger(value?.observationRowsDurable ?? 0),
+    stateWritten: nonNegativeInteger(value?.stateWritten ?? 0),
+    stateSkipped: nonNegativeInteger(value?.stateSkipped ?? 0),
+    observationsCreated: nonNegativeInteger(value?.observationsCreated ?? 0),
+    observationsSkipped: nonNegativeInteger(value?.observationsSkipped ?? 0),
+    observationsNotRequired: nonNegativeInteger(value?.observationsNotRequired ?? 0),
+    coverageEntitiesWritten: nonNegativeInteger(value?.coverageEntitiesWritten ?? 0),
+    coverageEntitiesSkipped: nonNegativeInteger(value?.coverageEntitiesSkipped ?? 0),
+  });
+}
+
+function emptyHistoryResult(enabled) {
+  return Object.freeze({
+    enabled: enabled === true,
+    contentRows: 0,
+    contentRowsDurable: 0,
+    observationRowsDurable: 0,
+    stateWritten: 0,
+    stateSkipped: 0,
+    observationsCreated: 0,
+    observationsSkipped: 0,
+    observationsNotRequired: 0,
+    coverageEntitiesWritten: 0,
+    coverageEntitiesSkipped: 0,
   });
 }
 
