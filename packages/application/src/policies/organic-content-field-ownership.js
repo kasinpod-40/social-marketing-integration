@@ -75,7 +75,7 @@ export function mergeOrganicContentUpdateFields(input = {}) {
  * - ทำให้ Diff มองข้าม Field ที่ Policy ป้องกัน
  * - Strip Field เหล่านั้นอีกครั้งก่อน Update จริง
  *
- * Create path ยังคงใช้ Incoming row เต็มชุด จึงรองรับ Initial classification ตาม Contract
+ * Create path ยังคงใช้ Incoming rowเต็มชุด จึงรองรับ Initial classification ตาม Contract
  */
 export function createOrganicContentOwnershipRepository(repository) {
   const base = requireRepository(repository);
@@ -167,35 +167,37 @@ export function createOrganicContentOwnershipRoutingRepository(input = {}) {
   const mktContentTableId = optionalText(input.mktContentTableId);
   if (!mktContentTableId) return base;
   const owned = createOrganicContentOwnershipRepository(base);
-  const route = (tableId) => requireText(tableId, 'tableId') === mktContentTableId ? owned : base;
+  const isContentTable = (tableId) => requireText(tableId, 'tableId') === mktContentTableId;
+  const writeRoute = (tableId) => isContentTable(tableId) ? owned : base;
 
   return Object.freeze({
-    async listAll(tableId) { return route(tableId).listAll(tableId); },
+    // Read-only helpers ต้องใช้ Base repository เสมอ เพราะ Ownership state มีผลเฉพาะ Plan/Update
+    async listAll(tableId) { return base.listAll(tableId); },
     async listPage(tableId, options = {}) {
-      return requireMethod(route(tableId), 'listPage')(tableId, options);
+      return requireMethod(base, 'listPage')(tableId, options);
     },
     async searchRecords(tableId, options = {}) {
-      return requireMethod(route(tableId), 'searchRecords')(tableId, options);
+      return requireMethod(base, 'searchRecords')(tableId, options);
     },
     async listByFieldValues(tableId, fieldName, values) {
-      return route(tableId).listByFieldValues(tableId, fieldName, values);
+      return base.listByFieldValues(tableId, fieldName, values);
     },
     async prepareRows(tableId, rows, context = {}) {
-      return route(tableId).prepareRows(tableId, rows, context);
+      return writeRoute(tableId).prepareRows(tableId, rows, context);
     },
     async prepareExistingRecords(tableId, records, context = {}) {
-      const selected = route(tableId);
+      const selected = writeRoute(tableId);
       if (typeof selected.prepareExistingRecords !== 'function') return records;
       return selected.prepareExistingRecords(tableId, records, context);
     },
     async createMany(tableId, rows, options = {}) {
-      return route(tableId).createMany(tableId, rows, options);
+      return writeRoute(tableId).createMany(tableId, rows, options);
     },
     async updateMany(tableId, records, options = {}) {
-      return route(tableId).updateMany(tableId, records, options);
+      return writeRoute(tableId).updateMany(tableId, records, options);
     },
     async getTableFields(tableId) {
-      return requireMethod(route(tableId), 'getTableFields')(tableId);
+      return requireMethod(base, 'getTableFields')(tableId);
     },
   });
 }
