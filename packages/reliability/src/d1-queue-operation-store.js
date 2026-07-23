@@ -13,6 +13,7 @@ export const TIKTOK_BOOTSTRAP_INCIDENT = Object.freeze({
   originalRequestedAt: 1784829780000,
   phase: 'tiktok_organic_history_write_v1',
   initialNextSequence: 2,
+  expectedRows: 2021,
 });
 
 /** Operational metadata for stable Queue identity, attempt separation and guarded incident recovery. */
@@ -258,11 +259,13 @@ export class D1QueueOperationStore {
     }
   }
 
+  /** Resolve the exact DLQ only after the original Work, write phase and Coverage prove completion. */
   async markTikTokBootstrapIncidentRecovered(input = {}) {
     assertExactIncident(input);
     const completedAt = timestamp(input.completedAt ?? this.now(), 'completedAt');
     const auditReference = requireText(input.auditReference, 'auditReference');
     try {
+      const proof = await this.#readTikTokBootstrapCompletionProof();
       await this.db.batch([
         this.db.prepare(`
           UPDATE dead_letter_jobs
@@ -303,10 +306,63 @@ export class D1QueueOperationStore {
         dlqId: TIKTOK_BOOTSTRAP_INCIDENT.dlqId,
         auditReference,
         completedAt,
+        coverageRunId: proof.coverageRunId,
       });
     } catch (cause) {
+      if (cause?.code?.startsWith?.('TIKTOK_BOOTSTRAP_RECOVERY_')) throw cause;
       throw d1Error('Failed to complete TikTok bootstrap incident recovery', 'D1_TIKTOK_BOOTSTRAP_RECOVERY_COMPLETE_FAILED', cause);
     }
+  }
+
+  async #readTikTokBootstrapCompletionProof() {
+    const work = await this.db.prepare(`
+      SELECT generation, requested_at, lifecycle_status, completion_json
+      FROM sync_work_runs
+      WHERE work_key = ?
+    `).bind(TIKTOK_BOOTSTRAP_INCIDENT.workKey).first();
+    if (!work
+      || Number(work.generation) !== TIKTOK_BOOTSTRAP_INCIDENT.generation
+      || Number(work.requested_at) !== TIKTOK_BOOTSTRAP_INCIDENT.originalRequestedAt
+      || work.lifecycle_status !== 'completed') {
+      throw incidentError('Original TikTok bootstrap Work is not completed', 'TIKTOK_BOOTSTRAP_RECOVERY_WORK_INCOMPLETE');
+    }
+    const completion = parseObject(work.completion_json, 'completion_json');
+    const coverageRunId = optionalText(completion?.d1?.coverageRunId);
+    if (!coverageRunId || completion?.d1?.coverageStatus !== 'complete') {
+      throw incidentError('Original TikTok bootstrap completion lacks complete Coverage', 'TIKTOK_BOOTSTRAP_RECOVERY_COVERAGE_INCOMPLETE');
+    }
+
+    const phase = await this.db.prepare(`
+      SELECT state_json, complete
+      FROM sync_work_phases
+      WHERE work_key = ? AND phase = ?
+    `).bind(TIKTOK_BOOTSTRAP_INCIDENT.workKey, TIKTOK_BOOTSTRAP_INCIDENT.phase).first();
+    const phaseState = parseObject(phase?.state_json, 'state_json');
+    if (Number(phase?.complete) !== 1
+      || Number(phaseState.rawRecordsCompleted) !== TIKTOK_BOOTSTRAP_INCIDENT.expectedRows
+      || Number(phaseState.contentRowsDurable) !== TIKTOK_BOOTSTRAP_INCIDENT.expectedRows
+      || Number(phaseState.observationRowsDurable) !== TIKTOK_BOOTSTRAP_INCIDENT.expectedRows) {
+      throw incidentError('TikTok bootstrap write phase is not durably complete', 'TIKTOK_BOOTSTRAP_RECOVERY_PHASE_INCOMPLETE');
+    }
+
+    const coverage = await this.db.prepare(`
+      SELECT status, expected_entities, observed_entities,
+             expected_rows, observed_rows, failed_rows, completed_at
+      FROM data_coverage_runs
+      WHERE coverage_run_id = ?
+    `).bind(coverageRunId).first();
+    const expected = TIKTOK_BOOTSTRAP_INCIDENT.expectedRows;
+    if (!coverage
+      || coverage.status !== 'complete'
+      || Number(coverage.expected_entities) !== expected
+      || Number(coverage.observed_entities) !== expected
+      || Number(coverage.expected_rows) !== expected
+      || Number(coverage.observed_rows) !== expected
+      || Number(coverage.failed_rows) !== 0
+      || !Number.isSafeInteger(Number(coverage.completed_at))) {
+      throw incidentError('TikTok bootstrap Coverage proof is not complete', 'TIKTOK_BOOTSTRAP_RECOVERY_COVERAGE_INCOMPLETE');
+    }
+    return Object.freeze({ coverageRunId });
   }
 }
 
