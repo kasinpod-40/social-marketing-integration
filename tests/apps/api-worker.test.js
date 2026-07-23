@@ -2,12 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import apiWorker from '../../apps/api-worker/src/index.js';
 
-test('health endpoint exposes build health but not customer profile or secrets', async () => {
+test('health endpoint exposes build health but not customer profile, identity or secrets', async () => {
   const response = await apiWorker.fetch(
     new Request('https://example.test/health'),
     {
       MKT_ENV: 'development',
-      MKT_CUSTOMER_PROFILE: 'dev_ft_pumkin',
+      MKT_CUSTOMER_PROFILE: 'integration_workspace',
+      MKT_CONNECTOR_TIKTOK_ENABLED: 'true',
       LARK_APP_SECRET: 'must-not-leak',
     },
     {},
@@ -21,8 +22,8 @@ test('health endpoint exposes build health but not customer profile or secrets',
   assert.equal(body.connectors.find((item) => item.key === 'tiktok').runnable, true);
   assert.equal(body.connectors.find((item) => item.key === 'facebook').runnable, false);
   assert.equal(JSON.stringify(body).includes('must-not-leak'), false);
-  assert.equal(JSON.stringify(body).includes('ft_pumkin'), false);
-  assert.equal(JSON.stringify(body).includes('ft.pumkin'), false);
+  assert.equal(JSON.stringify(body).includes('chemistry_k'), false);
+  assert.equal(JSON.stringify(body).includes('integration_workspace'), false);
   assert.equal(JSON.stringify(body).includes('dev_ft_pumkin'), false);
 });
 
