@@ -33,26 +33,31 @@ export function createSqliteD1(input = {}) {
   });
 }
 
-/** ทำให้การใช้ DatabaseSync โดยตรงใน Test คืน Row แบบเดียวกับ D1 adapter */
+/** Wrapper แบบ explicit เพื่อไม่ดัก Symbol/internal properties ของ node:sqlite */
 function createPlainDatabase(rawDatabase) {
-  return new Proxy(rawDatabase, {
-    get(target, property) {
-      if (property === 'prepare') {
-        return (sql) => createPlainStatement(target.prepare(String(sql)));
-      }
-      const value = Reflect.get(target, property, target);
-      return typeof value === 'function' ? value.bind(target) : value;
+  return Object.freeze({
+    exec(sql) {
+      return rawDatabase.exec(String(sql));
+    },
+    prepare(sql) {
+      return createPlainStatement(rawDatabase.prepare(String(sql)));
+    },
+    close() {
+      return rawDatabase.close();
     },
   });
 }
 
 function createPlainStatement(statement) {
-  return new Proxy(statement, {
-    get(target, property) {
-      if (property === 'get') return (...values) => toPlainRow(target.get(...values));
-      if (property === 'all') return (...values) => target.all(...values).map(toPlainRow);
-      const value = Reflect.get(target, property, target);
-      return typeof value === 'function' ? value.bind(target) : value;
+  return Object.freeze({
+    get(...values) {
+      return toPlainRow(statement.get(...values));
+    },
+    all(...values) {
+      return statement.all(...values).map(toPlainRow);
+    },
+    run(...values) {
+      return statement.run(...values);
     },
   });
 }
