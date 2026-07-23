@@ -206,9 +206,10 @@ Wrangler dry run                   PASS
 
 ### Pull request
 
-- PR: `#23` — `feat: add D1 marketing storage foundation`
-- Implementation head before final verification: `1df5d080a4a3fc4aead4b8344dd5c5d17c9de063`
-- Final Branch Verification: pending on the Current Task status commit.
+- PR: `#24` — `feat: add D1 marketing storage foundation`
+- Replacement for PR `#23`, using the same implementation history plus Current Task corrections.
+- Verification base head: `bb8c98ffb702bf91c89d0c8e6d0b8fb7884a4576`
+- Final Branch Verification: pending on the PR `#24` head.
 
 ### Implemented
 
