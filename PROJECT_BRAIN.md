@@ -12,7 +12,8 @@
 Storage Architecture                V1 documented
 Storage Foundation Phase 1A         merged
 Storage Foundation Phase 1B         merged
-Organic D1 bootstrap                implemented in PR #27
+Organic D1 bootstrap PR #27         merged
+Organic D1 bootstrap merge          d182bf9efc8c6ea51f275ea725cdb0eaeae3d5e0
 Remote Migration 0009               not applied
 Worker deployment                   none from PR #27
 Queue delivery                      none from PR #27
@@ -133,7 +134,7 @@ Migration `0009_storage_foundation.sql` and typed repositories exist locally wit
 - bounded JSON/query guards;
 - no delete/retention methods.
 
-Remote Migration `0009` has not been applied by repository implementation.
+Remote Migration `0009` has not been applied.
 
 ## Organic D1 bootstrap implementation
 
@@ -168,7 +169,7 @@ missing metric                     null
 observed zero                      0
 ```
 
-`observed_at` and `fetched_at` are stable for a durable Work generation. `metric_date` derives from `observed_at` in the reporting timezone. No historic Daily rows are synthesized.
+`observed_at` and `fetched_at` are stable for a durable Work generation. `metric_date` derives from `observed_at` in the Reporting timezone. No historic Daily rows are synthesized.
 
 Coverage contract:
 
@@ -183,7 +184,7 @@ Invalid/skipped/duplicate evidence results in `partial`, never false `complete`.
 
 ## D1-first TikTok Canonical preparation
 
-The staged TikTok path can use D1-first hooks behind `MKT_TIME_SERIES_D1_WRITE_ENABLED`:
+The staged TikTok path supports D1-first hooks behind `MKT_TIME_SERIES_D1_WRITE_ENABLED`:
 
 ```text
 validate complete unit
@@ -271,7 +272,7 @@ Backfill requires D1 write. Retention requires Report D1 reader. Storage flags n
 
 ## Guarded rollout boundary
 
-The implementation runbook is:
+Runbook:
 
 ```text
 docs/runbooks/tiktok-organic-d1-bootstrap.md
@@ -294,9 +295,9 @@ read-only D1 preflight
 → semantic rerun
 ```
 
-Repository implementation has not executed any of these Remote actions.
+No Remote action in this sequence has been executed by PR #27.
 
-Rollback is non-destructive: disable backfill/write/TikTok flags and redeploy through a separate confirmation. Never drop tables, delete D1 facts or clean Lark records as routine rollback.
+Rollback is non-destructive: disable backfill/write/TikTok flags and redeploy through separate confirmation. Never drop tables, delete D1 facts or clean Lark records as routine rollback.
 
 ## RAW lineage rule
 
@@ -350,21 +351,12 @@ Do not create a parallel Reliability stack.
 
 Authoritative task: `docs/current-task.md`
 
-Current code task is complete pending PR #27 merge. Merge does not authorize Remote rollout.
-
-Possible next step after merge requires a separate explicit confirmation:
-
 ```text
-Guarded Integration Workspace rollout
-= read-only D1 preflight
-+ backup
-+ Migration 0009
-+ deploy with schedules false
-+ Dry-run bootstrap
-+ evidence review
-+ live D1-only bootstrap
-+ reconciliation and semantic rerun
+CURRENT_TASK = ORGANIC_D1_BOOTSTRAP_IMPLEMENTATION_MERGED
+NEXT_TASK = GUARDED_REMOTE_ROLLOUT_NOT_APPROVED
 ```
+
+The source and runbook are available on `main`. Remote D1 preflight, backup, Migration `0009`, deployment and Queue delivery require a separate explicit approval.
 
 ## Permanent safety rules
 
