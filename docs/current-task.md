@@ -2,13 +2,13 @@
 
 ## Status
 
-- **Task status:** `phase_1b_ready_for_merge`
+- **Task status:** `phase_1_complete`
 - **Approved by user:** `2026-07-23`
-- **Main baseline:** `00c528279070cb0a67c9fc269abede58c3c4a0d8`
+- **Main baseline:** `0c3a6ba838ad8bb2a1783d203b62a70527a08ec4`
 - **Task-open baseline:** `5d75f7e967e03999ea36a088b7867f7aa4a60be4`
 - **Contract:** `docs/project-brain/storage-architecture-and-migration-contract-v1.md`
 - **Integration Workspace:** one pre-Production workspace
-- **Schedules:** must remain disabled
+- **Schedules:** disabled
 - **Production:** blocked
 
 ## Objective
@@ -25,12 +25,10 @@ Storage Foundation Phase 1
 + no Live business-data write
 ```
 
-The work must be delivered as two separate Pull Requests:
+The work was delivered as two separate Pull Requests:
 
 1. **Phase 1A — Runtime identity and Field ownership**
 2. **Phase 1B — D1 schema and repositories**
-
-Do not combine both implementations into one PR.
 
 ## Authoritative operating model
 
@@ -49,21 +47,21 @@ sourceHandle=chemistry_k
 
 Historical names such as `dev_ft_pumkin`, `uat_chemistry_k` and `ft_pumkin` are compatibility/history labels only. They must not create a second operating mode, change current record ownership or authorize deletion/relabeling.
 
-## Phase 1A — In scope
+## Phase 1A — Delivered scope
 
 ### Runtime/Profile alignment
 
-- Add an authoritative `integration_workspace` customer profile.
-- Keep `MKT_ENV=development` as the technical runtime label.
-- Map TikTok Organic Canonical identity to Chemistry K.
-- Preserve Production profile isolation and customer-owned Production rules.
-- Treat legacy profile names as explicit compatibility aliases where required by existing tests or stored operational history.
-- Align report-setting seeds/examples with `integration_workspace` and `chemistry_k` without writing Live Lark records.
-- Keep every business schedule disabled.
+- Added authoritative `integration_workspace` customer profile.
+- Kept `MKT_ENV=development` as the technical runtime label.
+- Mapped TikTok Organic Canonical identity to Chemistry K.
+- Preserved Production profile isolation and customer-owned Production rules.
+- Treated legacy profile names as explicit compatibility aliases.
+- Aligned report-setting seeds/examples with `integration_workspace` and `chemistry_k` without writing Live Lark records.
+- Kept every business schedule disabled.
 
 ### `MKT_Content` Field ownership
 
-Implement a reusable Field ownership policy in the planning/diff path rather than connector-specific ad hoc filtering.
+Implemented reusable Field ownership policy in the planning/diff path rather than connector-specific filtering.
 
 Protected business fields:
 
@@ -80,20 +78,20 @@ urgency_level
 manual_tag_note
 ```
 
-Required behavior:
+Delivered behavior:
 
 - On Create, incoming approved classification values may be written.
 - On Update, system-managed fields may update normally.
-- When existing `classification_source=manual`, preserve all protected classification fields.
+- When existing `classification_source=manual`, all protected classification fields are preserved.
 - `manual_tag_note` is never overwritten after record creation.
 - Incoming `null`, empty or missing values never clear protected existing values.
 - For non-manual existing records, protected classification fields may be filled only when the existing value is blank.
-- Formula, Lookup, Relation and fields outside the incoming ownership mask must remain untouched.
-- The policy must work with TikTok and YouTube planning paths and remain reusable for future Organic connectors.
+- Formula, Lookup, Relation and fields outside the incoming ownership mask remain untouched.
+- TikTok and YouTube use the same reusable policy.
 
-## Phase 1B — In scope
+## Phase 1B — Delivered scope
 
-Create additive local D1 migration and repository modules for the exact Contract tables:
+Added local additive D1 migration and repository modules for:
 
 ```text
 organic_content_state
@@ -108,21 +106,21 @@ report_materializations
 report_requests
 ```
 
-Requirements:
+Delivered requirements:
 
-- Exact Grain, fields, Stable keys, constraints and indexes must match the approved Storage contract and review note.
-- Existing operational D1 tables and migrations must remain compatible.
-- Repositories must support typed validation, idempotent UPSERT/no-op behavior and bounded queries needed by later dual-write/report phases.
-- Partial coverage must never delete unseen facts.
-- JSON payloads must enforce approved byte/shape limits.
+- Exact Grain, fields, Stable keys, constraints and indexes match the approved Storage contract and review note.
+- Existing operational D1 tables and migrations remain compatible.
+- Repositories support typed validation, idempotent UPSERT/no-op behavior and bounded queries for later phases.
+- Partial coverage never deletes unseen facts.
+- JSON payloads enforce approved byte limits.
 - All new runtime Feature flags default to `false`.
-- Creating the migration and repositories does not authorize Remote migration apply or business writes.
+- No Remote migration or business writer was activated.
 
-## Out of scope
+## Explicitly not authorized by Phase 1
 
 - Reading or writing Live TikTok/YouTube/Meta/Ads business data;
 - TikTok RAW → `MKT_Content`/`MKT_Content_Daily` Sync;
-- applying a Remote D1 migration;
+- applying Remote D1 migration `0009`;
 - deploying Worker code;
 - sending Queue messages;
 - opening any schedule;
@@ -158,7 +156,7 @@ Requirements:
 - [x] Bounded JSON guards fail closed.
 - [x] Existing D1 reliability, lock, checkpoint, DLQ/redrive and resumable-work regressions pass.
 
-## Gates for each implementation PR
+## Verification gates
 
 ```bash
 npm ci
@@ -168,7 +166,7 @@ npm run test:report-reliability
 npm run deploy:dry-run
 ```
 
-Add focused tests for the files changed. `npm audit --audit-level=high` must report no unacceptable vulnerability.
+`npm audit --audit-level=high` reported no unacceptable vulnerability.
 
 ## Implementation result — Phase 1A
 
@@ -207,9 +205,11 @@ Wrangler dry run                   PASS
 ### Pull request
 
 - PR: `#24` — `feat: add D1 marketing storage foundation`
-- Supersedes closed PR `#23`; no implementation scope was lost.
+- Superseded closed PR `#23`; no implementation scope was lost.
+- Squash merge commit: `0c3a6ba838ad8bb2a1783d203b62a70527a08ec4`
 - Verified implementation head: `5ed23addaba8cfdf021c1191729812e74bbe6d19`
-- Branch Verification: run `#265`, run ID `29996119555`, `success`
+- Implementation verification: run `#265`, run ID `29996119555`, `success`
+- Final status verification: run `#267`, run ID `29996289060`, `success`
 
 ### Implemented
 
@@ -249,9 +249,13 @@ DEPLOYMENT                   = NONE
 PRODUCTION_CHANGE            = NONE
 ```
 
-## Completion boundary
+## Completion and next approval boundary
 
-Phase 1 is complete only when both implementation PRs are merged and verified. Completion still does **not** authorize:
+Storage Foundation Phase 1 is complete and merged.
+
+The next possible task is **manual, Feature-flagged Organic D1 dual-write/bootstrap with schedules disabled**, but it is `NOT_APPROVED` by this closeout and must receive separate scope approval before implementation.
+
+The following remain blocked:
 
 - Remote D1 migration apply;
 - Live Dual-write;
@@ -261,15 +265,14 @@ Phase 1 is complete only when both implementation PRs are merged and verified. C
 - Schedule enablement;
 - Production.
 
-The next separately approved task after Phase 1 is manual, Feature-flagged Organic D1 dual-write/bootstrap with schedules disabled.
-
 ## Handoff
 
 ```text
 STORAGE_CONTRACT = V1_DOCUMENTED
-CURRENT_TASK = STORAGE_FOUNDATION_PHASE_1
+CURRENT_TASK = STORAGE_FOUNDATION_PHASE_1_COMPLETE
 PHASE_1A = MERGED
-PHASE_1B = READY_FOR_MERGE
+PHASE_1B = MERGED
+NEXT_TASK = NOT_APPROVED
 LIVE_BUSINESS_WRITE = FORBIDDEN
 REMOTE_D1_MIGRATION = FORBIDDEN
 TIKTOK_CANONICAL_SYNC = BLOCKED
