@@ -4,14 +4,22 @@ import {
   assertJobImplemented,
   getJobDefinition,
 } from '../../../packages/application/src/jobs/job-catalog.js';
+import {
+  resolveQueueOperation,
+  withQueueOperation,
+} from '../../../packages/application/src/jobs/queue-operation.js';
 import { createTikTokOrganicHistoryHooks } from '../../../packages/application/src/storage/tiktok-organic-history-hooks.js';
-import { bootstrapTikTokOrganicHistory } from '../../../packages/application/src/use-cases/bootstrap-tiktok-organic-history.js';
+import { bootstrapTikTokOrganicHistoryDurable } from '../../../packages/application/src/use-cases/bootstrap-tiktok-organic-history-durable.js';
 import { syncTikTokCreatorNativeToLark } from '../../../packages/application/src/use-cases/sync-tiktok-creator-native-to-lark.js';
 import { readLarkTableIdsFromEnv } from '../../../packages/config/src/lark-table-config.js';
 import { readStorageRuntimeConfig } from '../../../packages/config/src/storage-runtime-config.js';
+import {
+  D1QueueOperationStore,
+  TIKTOK_BOOTSTRAP_INCIDENT,
+} from '../../../packages/reliability/src/d1-queue-operation-store.js';
 import { runReliableSync } from '../../../packages/reliability/src/reliable-sync-runner.js';
 import { createStableFingerprint } from '../../../packages/shared/src/hash/stable-fingerprint.js';
-import { permanentError } from '../../../packages/shared/src/errors/runtime-error.js';
+import { permanentError, transientError } from '../../../packages/shared/src/errors/runtime-error.js';
 import { processJob as processActiveJob } from './active-job-router.js';
 import {
   DEFAULT_LOCK_LEASE_MS,
@@ -29,10 +37,15 @@ import {
   sanitizeReliabilityEvent,
 } from './worker-runtime-support.js';
 
-/** แยก Manual bootstrap และ Flagged D1-first TikTok route ออกจาก Active router เดิม */
+const HISTORY_JOB_TYPES = new Set([
+  JOB_TYPES.TIKTOK_CREATOR_NATIVE_HISTORY_BOOTSTRAP,
+  JOB_TYPES.TIKTOK_CREATOR_NATIVE_HISTORY_RECOVER,
+]);
+
+/** แยก Manual bootstrap/recovery และ Flagged D1-first TikTok route ออกจาก Active router เดิม */
 export async function processJobWithHistoryBootstrap(input) {
   const type = input.job?.body?.type;
-  if (type === JOB_TYPES.TIKTOK_CREATOR_NATIVE_HISTORY_BOOTSTRAP) {
+  if (HISTORY_JOB_TYPES.has(type)) {
     return processBootstrapJob(input);
   }
   if (type === JOB_TYPES.TIKTOK_CREATOR_NATIVE_SYNC) {
@@ -46,12 +59,20 @@ export async function processJobWithHistoryBootstrap(input) {
 
 async function processBootstrapJob(input) {
   const definition = assertJobImplemented(getJobDefinition(input.job.body.type));
-  if (definition.manualOnly !== true || input.job.body?.trigger !== 'manual') {
-    throw permanentError('TikTok history bootstrap accepts manual Queue jobs only', {
-      code: 'TIKTOK_HISTORY_BOOTSTRAP_MANUAL_ONLY',
+  const recovery = definition.recoveryOnly === true;
+  const expectedTrigger = recovery ? 'manual_recovery' : 'manual';
+  if (definition.manualOnly !== true || input.job.body?.trigger !== expectedTrigger) {
+    throw permanentError(`TikTok history ${recovery ? 'recovery' : 'bootstrap'} accepts ${expectedTrigger} Queue jobs only`, {
+      code: recovery
+        ? 'TIKTOK_HISTORY_RECOVERY_MANUAL_ONLY'
+        : 'TIKTOK_HISTORY_BOOTSTRAP_MANUAL_ONLY',
     });
   }
 
+  const operation = input.operation ?? resolveQueueOperation({
+    job: input.job,
+    message: input.message,
+  });
   const runtimeConfig = input.getRuntimeConfig();
   assertIntegrationWorkspace(runtimeConfig);
   const connectorConfig = assertConnectorRunnable(runtimeConfig, definition.connectorKey);
@@ -74,7 +95,25 @@ async function processBootstrapJob(input) {
   ]);
   const reliability = infrastructure.getReliability(tableIds);
   const resumableWorkStore = infrastructure.getResumableWorkStore();
-  const requestedAt = readSyncJobGeneration(input.job, 'TikTok history', input.message?.timestamp);
+  const queueOperationStore = new D1QueueOperationStore({ db: input.env?.MKT_STATE_DB });
+  const recoveryReference = recovery
+    ? requireJobText(
+      input.job.body?.recoveryReference
+        ?? `recovery:${TIKTOK_BOOTSTRAP_INCIDENT.dlqId}:${operation.workKey}`,
+      'recoveryReference',
+    )
+    : null;
+
+  if (recovery) {
+    await queueOperationStore.authorizeTikTokBootstrapIncidentRecovery({
+      dlqId: input.job.body?.dlqId,
+      operationId: operation.operationId,
+      workKey: operation.workKey,
+      generation: operation.generation,
+      originalRequestedAt: operation.originalRequestedAt,
+      recoveryReference,
+    });
+  }
 
   const result = await runReliableSync({
     store: reliability.store,
@@ -84,7 +123,10 @@ async function processBootstrapJob(input) {
     platform: 'tiktok',
     source: 'lark_native_tiktok_for_creator',
     syncType: 'organic_history_bootstrap',
-    retryCount: Math.max(0, readAttempts(input.message) - 1),
+    retryCount: Math.max(
+      0,
+      Number(input.mainQueueAttempts ?? readAttempts(input.message)) - 1,
+    ),
     leaseMs: readPositiveInteger(input.env?.MKT_SYNC_LOCK_LEASE_MS, DEFAULT_LOCK_LEASE_MS),
     renewIntervalMs: readPositiveInteger(
       input.env?.MKT_SYNC_LOCK_RENEW_INTERVAL_MS,
@@ -97,7 +139,7 @@ async function processBootstrapJob(input) {
     execute: async ({ syncRunId, lockKey, assertLockActive }) => {
       const gateway = infrastructure.getOrganicHistoryGateway();
       await gateway.assertSchemaReady();
-      const bootstrapResult = await bootstrapTikTokOrganicHistory({
+      const bootstrapResult = await bootstrapTikTokOrganicHistoryDurable({
         syncRunId,
         assertLockActive,
         repository: infrastructure.repository,
@@ -108,9 +150,10 @@ async function processBootstrapJob(input) {
         accountKey: connectorConfig.accountKey,
         sourceHandle: connectorConfig.sourceHandle,
         sourceTimezone: input.env?.DEFAULT_TIMEZONE ?? 'Asia/Bangkok',
-        requestedAt,
+        requestedAt: operation.originalRequestedAt,
+        generation: operation.generation,
         cursorKey: lockKey,
-        workKey: `tiktok:${requireJobText(input.message?.id, 'message.id')}`,
+        workKey: operation.workKey,
         rawTableId: tableIds.rawTikTokCreatorVideos,
         sourcePageSize: readPositiveInteger(
           input.env?.MKT_TIKTOK_SOURCE_PAGE_SIZE,
@@ -124,6 +167,8 @@ async function processBootstrapJob(input) {
         onProgress: (event) => logQueueResult({
           ok: true,
           scope: 'tiktok_history_bootstrap',
+          operationId: operation.operationId,
+          workKey: operation.workKey,
           syncRunId,
           ...event,
         }),
@@ -132,8 +177,63 @@ async function processBootstrapJob(input) {
     },
   });
 
+  if (result.continuationRequired === true) {
+    await enqueueBootstrapContinuation({
+      env: input.env,
+      originalBody: input.job.body,
+      operation,
+      recovery,
+      recoveryReference,
+      nextSequence: result.nextSequence,
+    });
+  } else if (recovery && result.resumableWork?.complete === true) {
+    await queueOperationStore.markTikTokBootstrapIncidentRecovered({
+      dlqId: input.job.body?.dlqId,
+      operationId: operation.operationId,
+      workKey: operation.workKey,
+      generation: operation.generation,
+      originalRequestedAt: operation.originalRequestedAt,
+      auditReference: recoveryReference,
+    });
+  }
+
   await resumableWorkStore.cleanupExpiredWork({ limit: 25 });
-  return result;
+  return Object.freeze({
+    ...result,
+    operationId: operation.operationId,
+    workKey: operation.workKey,
+    generation: operation.generation,
+    originalRequestedAt: operation.originalRequestedAt,
+    recovery: recovery ? Object.freeze({
+      dlqId: input.job.body?.dlqId,
+      recoveryReference,
+      completed: result.resumableWork?.complete === true,
+    }) : null,
+  });
+}
+
+async function enqueueBootstrapContinuation(input) {
+  if (typeof input.env?.MKT_SYNC_QUEUE?.send !== 'function') {
+    throw transientError('TikTok history continuation Queue binding is unavailable', {
+      code: 'TIKTOK_HISTORY_CONTINUATION_QUEUE_UNAVAILABLE',
+    });
+  }
+  const body = withQueueOperation({
+    ...input.originalBody,
+    schemaVersion: input.originalBody.schemaVersion ?? 1,
+    type: input.recovery
+      ? JOB_TYPES.TIKTOK_CREATOR_NATIVE_HISTORY_RECOVER
+      : JOB_TYPES.TIKTOK_CREATOR_NATIVE_HISTORY_BOOTSTRAP,
+    trigger: input.recovery ? 'manual_recovery' : 'manual',
+    dryRun: false,
+    continuation: true,
+    continuationNextSequence: input.nextSequence,
+    ...(input.recovery ? {
+      dlqId: TIKTOK_BOOTSTRAP_INCIDENT.dlqId,
+      recoveryReference: input.recoveryReference,
+    } : {}),
+  }, input.operation);
+  await input.env.MKT_SYNC_QUEUE.send(body);
 }
 
 async function processD1FirstTikTokSync(input) {
@@ -262,7 +362,7 @@ function enrichBootstrapOperationalResult(result) {
   const d1 = isObject(result?.d1) ? result.d1 : {};
   const baseReconciliation = isObject(result?.reconciliation) ? result.reconciliation : {};
   const coverageStatus = d1.coverageStatus ?? baseReconciliation.status ?? 'not_observed';
-  const warnings = coverageStatus === 'complete'
+  const warnings = result?.continuationRequired === true || coverageStatus === 'complete'
     ? Object.freeze([])
     : Object.freeze([Object.freeze({
       code: 'TIKTOK_HISTORY_COVERAGE_INCOMPLETE',
