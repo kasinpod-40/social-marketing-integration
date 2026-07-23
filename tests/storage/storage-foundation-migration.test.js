@@ -70,7 +70,7 @@ test('migration 0009 remains additive beside existing operational tables and row
       { sync_run_id: 'existing-run', status: 'success' },
     );
     assert.equal(
-      d1.database.prepare("SELECT count(*) AS total FROM sqlite_master WHERE type='table' AND name IN (${REQUIRED_TABLES.map(() => '?').join(',')})")
+      d1.database.prepare(`SELECT count(*) AS total FROM sqlite_master WHERE type='table' AND name IN (${REQUIRED_TABLES.map(() => '?').join(',')})`)
         .get(...REQUIRED_TABLES).total,
       REQUIRED_TABLES.length,
     );
