@@ -32,13 +32,14 @@ import {
 } from './tiktok-staged-business-phases.js';
 import {
   buildDryRunResult,
+  normalizeWriteState,
   withCheckpointSaved,
 } from './tiktok-staged-business-state.js';
 
 /**
  * ประมวลผล TikTok business rows จาก Durable source units แบบสอง Pass:
  * 1) Validate/Preflight ทุก Unit ก่อน Write แรก
- * 2) Plan/Write ทีละ Unit และ Persist completion หลัง Content + Daily สำเร็จทั้งคู่
+ * 2) D1 history (เมื่อเปิด) → Lark Content → Lark Daily แล้วจึง Persist Unit completion
  */
 export async function syncTikTokStagedBusinessToLark(input = {}) {
   const context = requireContext(input.context);
@@ -50,6 +51,7 @@ export async function syncTikTokStagedBusinessToLark(input = {}) {
   const accountId = requireText(input.accountId, 'accountId');
   const sourceHandle = requireText(input.sourceHandle, 'sourceHandle');
   const metricDate = requireText(input.metricDate, 'metricDate');
+  const historyHooks = normalizeHistoryHooks(input.historyHooks);
   const onProgress = typeof input.onProgress === 'function' ? input.onProgress : () => undefined;
   const now = typeof input.now === 'function' ? input.now : () => Date.now();
   const incrementalEnabled = input.incrementalEnabled === true;
@@ -118,6 +120,7 @@ export async function syncTikTokStagedBusinessToLark(input = {}) {
     selectedExternalIds,
     planFingerprint,
     sourceSummary,
+    historyHooks,
     onProgress,
   };
   const preflight = await preflightAllUnits(phaseInput);
@@ -134,10 +137,25 @@ export async function syncTikTokStagedBusinessToLark(input = {}) {
     return result;
   }
 
-  let writeState = await writeAllUnits({
-    ...phaseInput,
-    syncRunId,
-  });
+  if (historyHooks) await historyHooks.begin(preflight.historyPlan);
+  let writeState;
+  try {
+    writeState = await writeAllUnits({
+      ...phaseInput,
+      syncRunId,
+    });
+    if (historyHooks) await historyHooks.complete(writeState.historyResult, now());
+  } catch (error) {
+    if (historyHooks) {
+      const failedPhase = await loadPhase(context, TIKTOK_STAGED_BUSINESS_PHASES.WRITE);
+      const persisted = normalizeWriteState(failedPhase?.state, planFingerprint);
+      await historyHooks.fail(Object.freeze({
+        ...persisted.historyResult,
+        contentRows: preflight.historyPlan.contentRows,
+      }), error, now());
+    }
+    throw error;
+  }
 
   if (incrementalEnabled && !checkpointAlreadySaved(writeState, checkpoint, true)) {
     writeState = await recordCheckpointAttempt({
@@ -185,4 +203,14 @@ export async function syncTikTokStagedBusinessToLark(input = {}) {
   const result = withCheckpointSaved(writeState.resultDraft, incrementalEnabled);
   await saveCompletionPhase({ context, sourceSummary, result });
   return Object.freeze({ ...result, syncRunId });
+}
+
+function normalizeHistoryHooks(value) {
+  if (value === null || value === undefined) return null;
+  for (const method of ['preflightUnit', 'begin', 'writeUnit', 'complete', 'fail']) {
+    if (typeof value?.[method] !== 'function') {
+      throw new TypeError(`TikTok staged business historyHooks.${method} is required`);
+    }
+  }
+  return value;
 }
