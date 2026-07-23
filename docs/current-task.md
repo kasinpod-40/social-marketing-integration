@@ -1,4 +1,138 @@
-# Current Task — Organic D1 Dual-write and Controlled Bootstrap
+# Current Task — TikTok Organic Bootstrap Durable Recovery Hotfix
+
+## Status
+
+- **Task status:** `implementation_in_progress`
+- **Opened:** `2026-07-24`
+- **Branch:** `agent/tiktok-bootstrap-durable-recovery-hotfix`
+- **Target:** `main`
+- **Pull request:** pending Draft PR
+- **Remote recovery execution:** forbidden in this task
+- **Schedules:** disabled
+- **Google Ads PR #17:** Draft / HOLD
+- **Production:** blocked
+
+## Incident identity — immutable
+
+```text
+original_requested_at = 1784829780000 / 2026-07-23T18:03:00Z
+operation_id           = f59b852f00634005c7ff4da51afee964
+original_work_key      = tiktok:f59b852f00634005c7ff4da51afee964
+generation             = 1784829780000
+dlq_id                  = dlq:8d1b9077657385a417cb32a0ed3114cb
+dlq_message_id          = 8d1b9077657385a417cb32a0ed3114cb
+```
+
+Durable checkpoint at interruption:
+
+```text
+phase                    = tiktok_organic_history_write_v1
+nextSequence             = 2
+unitsCompleted           = 2
+rawRecordsCompleted      = 1000
+contentRowsDurable       = 1000
+observationRowsDurable   = 1000
+coverageEntitiesWritten  = 1000
+```
+
+Observed D1 business facts:
+
+```text
+organic_content_state         = 1309
+organic_content_observations  = 1000
+data_coverage_entities        = 1000
+coverage.expected             = 2021
+coverage.status               = partial
+coverage.completed_at         = null
+```
+
+Lock evidence:
+
+```text
+last_renewed = 2026-07-24 01:17:39 Asia/Bangkok
+expired      = 2026-07-24 01:27:39 Asia/Bangkok
+lease_ms     = 600000
+renew_ms     = 120000
+```
+
+Queue evidence:
+
+```text
+max_concurrency       = 1
+max_retries           = 5
+retry_delay_base      = 30 seconds
+DLQ status            = open
+DLQ error_code        = QUEUE_RETRY_EXHAUSTED
+```
+
+## Confirmed root causes
+
+1. Bootstrap Work identity depended on Main Queue `message.id`.
+2. DLQ receives a different delivery `message.id`.
+3. DLQ terminalization derived a new Work key from the DLQ delivery and missed the original Work.
+4. DLQ delivery attempts were labelled as the original Main Queue retry count.
+5. Five retries could be exhausted before a stale ten-minute lock expired.
+6. TikTok history bootstrap had no guarded durable recovery route.
+7. One invocation could perform multiple sequential source-Unit D1 writes and stop mid-Unit.
+8. The previous writer persisted State before Observation, so the 309 partial State rows could suppress their missing initial Observations on replay.
+
+## Implemented source design
+
+- Stable `operationId` is mandatory for bootstrap/recovery jobs.
+- `workKey` is derived only as `tiktok:<operationId>` and is validated against payload drift.
+- `operationId`, `workKey`, `generation` and `originalRequestedAt` survive retries, continuation, DLQ persistence and recovery.
+- Main Queue attempts and DLQ delivery attempts are stored separately.
+- Busy-lock retry delay waits past persisted `expiresAt` plus a safety margin.
+- Live bootstrap writes at most one staged source Unit per Queue invocation.
+- Unit completion advances the phase checkpoint, emits one continuation with the same operation identity, then permits the current message to be acknowledged.
+- Mid-Unit interruption leaves `nextSequence` unchanged.
+- Durable writer uses deterministic Observation → State → Coverage ordering for future runs.
+- Recovery repairs missing initial Observations for State rows created at the exact original operation timestamp.
+- Guarded recovery accepts only the exact incident DLQ, Work key, operation ID, generation/requestedAt, expired lock and initial `nextSequence=2` checkpoint.
+- Recovery never creates a new generation and never deletes partial business facts.
+- Exact DLQ row remains retained and receives recovery audit metadata when completed.
+- Lark business writes remain hard zero.
+
+## Required regression contract
+
+- [x] Synthetic interruption after 309 State rows in Unit 3.
+- [x] Checkpoint remains at 1,000 rows / `nextSequence=2` after interruption.
+- [x] Unit 3 restarts idempotently.
+- [x] Existing 309 State rows are preserved and safely replayed.
+- [x] Missing initial Observations are repaired exactly once.
+- [x] Coverage entities are created exactly once.
+- [x] Final State / Observation / Coverage entity counts are each 2,021.
+- [x] Initial Observation count is 2,021.
+- [x] Duplicate Content and Observation keys are zero.
+- [x] Coverage completes with expected=observed=2,021 and failed_rows=0.
+- [x] Original durable Work receives completion.
+- [x] Exact DLQ recovery guard and audit retention are covered.
+- [x] Lark contentWrites/dailyWrites remain zero.
+- [x] Bootstrap and recovery jobs remain absent from all schedules.
+- [ ] Full repository CI and regression — pending Draft PR verification.
+
+## Explicitly not performed
+
+```text
+REMOTE_D1_READ            = NONE
+REMOTE_D1_WRITE           = NONE
+REMOTE_MIGRATION_0010     = NOT_APPLIED
+LIVE_RECOVERY             = NOT_EXECUTED
+QUEUE_MESSAGE             = NONE
+LARK_READ_OR_WRITE        = NONE
+CLOUDFLARE_DEPLOYMENT     = NONE
+SCHEDULE_CHANGE           = NONE
+GOOGLE_ADS_PR_17          = DRAFT_HOLD
+PRODUCTION_CHANGE         = NONE
+```
+
+## Approval boundary
+
+This task is source implementation and regression only. A later task must separately review the Draft PR, merge it, prepare a guarded rollout, inspect Remote state read-only, apply Migration `0010`, deploy with schedules false, and explicitly authorize the exact recovery payload. Nothing in this task grants that approval.
+
+---
+
+# Preserved Prior Task Record — Organic D1 Dual-write and Controlled Bootstrap
 
 ## Status
 
