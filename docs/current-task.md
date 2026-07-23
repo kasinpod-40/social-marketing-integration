@@ -2,7 +2,7 @@
 
 ## Status
 
-- **Task status:** `phase_1b_verification_pending`
+- **Task status:** `phase_1b_ready_for_merge`
 - **Approved by user:** `2026-07-23`
 - **Main baseline:** `00c528279070cb0a67c9fc269abede58c3c4a0d8`
 - **Task-open baseline:** `5d75f7e967e03999ea36a088b7867f7aa4a60be4`
@@ -147,16 +147,16 @@ Requirements:
 
 ## Required tests — Phase 1B
 
-- [ ] Migration replay on empty and existing schema is safe and idempotent.
-- [ ] Every required Table, constraint and index exists.
-- [ ] Stable-key duplicate attempts do not create extra rows.
-- [ ] Organic observation retry is idempotent.
-- [ ] Ads old-day revision updates the same fact row.
-- [ ] Different breakdown/segment/conversion identities remain separate.
-- [ ] Partial coverage does not delete or zero unseen facts.
-- [ ] Coverage controlled values fail closed.
-- [ ] Bounded JSON guards fail closed.
-- [ ] Existing D1 reliability, lock, checkpoint, DLQ/redrive and resumable-work regressions pass.
+- [x] Migration replay on empty and existing schema is safe and idempotent.
+- [x] Every required Table, constraint and index exists.
+- [x] Stable-key duplicate attempts do not create extra rows.
+- [x] Organic observation retry is idempotent.
+- [x] Ads old-day revision updates the same fact row.
+- [x] Different breakdown/segment/conversion identities remain separate.
+- [x] Partial coverage does not delete or zero unseen facts.
+- [x] Coverage controlled values fail closed.
+- [x] Bounded JSON guards fail closed.
+- [x] Existing D1 reliability, lock, checkpoint, DLQ/redrive and resumable-work regressions pass.
 
 ## Gates for each implementation PR
 
@@ -207,9 +207,9 @@ Wrangler dry run                   PASS
 ### Pull request
 
 - PR: `#24` — `feat: add D1 marketing storage foundation`
-- Replacement for PR `#23`, using the same implementation history plus Current Task corrections.
-- Verification base head: `bb8c98ffb702bf91c89d0c8e6d0b8fb7884a4576`
-- Final Branch Verification: pending on the PR `#24` head.
+- Supersedes closed PR `#23`; no implementation scope was lost.
+- Verified implementation head: `5ed23addaba8cfdf021c1191729812e74bbe6d19`
+- Branch Verification: run `#265`, run ID `29996119555`, `success`
 
 ### Implemented
 
@@ -223,15 +223,18 @@ Wrangler dry run                   PASS
 - Added strict calendar-date validation for Stable keys and report periods.
 - Added Storage migration, contract, repository and Feature-flag tests.
 - All new Storage, Reader, Retention and Notification flags default to `false`.
+- Normalized SQLite test rows without Proxying SQLite internal properties.
+- Corrected the migration replay test to build SQL placeholders with a Template literal.
 
-### Verification state
+### Verification
 
 ```text
-ARCHITECTURE_LAYER_FIX       APPLIED
-SQLITE_ROW_NORMALIZATION     APPLIED_TO_TEST_ADAPTER
-ADS_NONE_NULL_GUARD          APPLIED
-STRICT_CALENDAR_DATE_GUARD   APPLIED
-FINAL_FULL_GATE              PENDING
+Syntax / architecture / hygiene    PASS
+Focused staged TikTok tests        PASS
+Node Unit + Workers runtime        PASS (573/573)
+Report reliability regression      PASS
+Dependency audit                   PASS
+Wrangler dry run                   PASS
 ```
 
 ### Safety result — Phase 1A and Phase 1B
@@ -266,7 +269,7 @@ The next separately approved task after Phase 1 is manual, Feature-flagged Organ
 STORAGE_CONTRACT = V1_DOCUMENTED
 CURRENT_TASK = STORAGE_FOUNDATION_PHASE_1
 PHASE_1A = MERGED
-PHASE_1B = VERIFICATION_PENDING
+PHASE_1B = READY_FOR_MERGE
 LIVE_BUSINESS_WRITE = FORBIDDEN
 REMOTE_D1_MIGRATION = FORBIDDEN
 TIKTOK_CANONICAL_SYNC = BLOCKED
