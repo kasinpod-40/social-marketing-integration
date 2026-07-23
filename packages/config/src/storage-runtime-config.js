@@ -17,6 +17,16 @@ export function readStorageRuntimeConfig(env = {}) {
     readBoolean(env?.[envName], envName),
   ]));
 
+  if (flags.timeSeriesD1BackfillEnabled && !flags.timeSeriesD1WriteEnabled) {
+    throw permanentError(
+      'MKT_TIME_SERIES_D1_BACKFILL_ENABLED requires MKT_TIME_SERIES_D1_WRITE_ENABLED',
+      {
+        code: 'MKT_STORAGE_RUNTIME_CONFIG_INVALID',
+        details: { fieldName: STORAGE_FEATURE_FLAG_ENV.timeSeriesD1BackfillEnabled },
+      },
+    );
+  }
+
   // Retention ห้ามเปิดก่อน D1 Reader cutover แม้ Environment ถูกตั้งผิดโดยไม่ตั้งใจ
   if (flags.larkDailyRetentionEnabled && !flags.reportD1ReadEnabled) {
     throw permanentError(
