@@ -1,6 +1,6 @@
 import { createSyncWorker } from './sync-worker.js';
 
-export { processJob } from './active-job-router.js';
+export { processJobWithHistoryBootstrap as processJob } from './history-bootstrap-job-router.js';
 export {
   QUEUE_ROLES,
   classifyQueueBatch,
