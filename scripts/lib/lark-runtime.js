@@ -7,6 +7,7 @@ import { loadCustomerRuntimeConfig } from '../../packages/config/src/customer-pr
 import { todayInTimeZone } from '../../packages/shared/src/date/date-only.js';
 import { DEFAULT_REPORT_TIMEZONE, resolveMetricDate } from '../../packages/config/src/metric-date-config.js';
 import { assertConnectorRunnable } from '../../packages/application/src/connectors/connector-registry.js';
+import { createOrganicContentOwnershipRoutingRepository } from '../../packages/application/src/policies/organic-content-field-ownership.js';
 
 /**
  * สร้าง Runtime สำหรับ Script บนเครื่องผู้พัฒนา
@@ -26,7 +27,11 @@ export async function createLocalLarkRuntime(requiredTableKeys, options = {}) {
   const client = createLarkBitableClientFromEnv(normalizedEnv, {
     onRequest: options?.onRequest,
   });
-  const repository = new LarkRecordRepository({ client });
+  const baseRepository = new LarkRecordRepository({ client });
+  const repository = createOrganicContentOwnershipRoutingRepository({
+    repository: baseRepository,
+    mktContentTableId: normalizedEnv.LARK_TABLE_MKT_CONTENT,
+  });
   const syncEngine = new TableSyncEngine();
 
   return Object.freeze({
