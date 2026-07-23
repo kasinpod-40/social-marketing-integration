@@ -5,6 +5,7 @@ import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 export const JOB_TYPES = Object.freeze({
   TIKTOK_CREATOR_NATIVE_SYNC: 'tiktok.creator.native.sync',
   TIKTOK_CREATOR_NATIVE_VALIDATE: 'tiktok.creator.native.validate',
+  TIKTOK_CREATOR_NATIVE_HISTORY_BOOTSTRAP: 'tiktok.creator.native.history.bootstrap',
   METRIC_DEFINITIONS_SEED: 'metric.definitions.seed',
   REPORT_SETTINGS_SEED: 'report.settings.seed',
 
@@ -38,6 +39,12 @@ const JOB_CATALOG = Object.freeze({
     type: JOB_TYPES.TIKTOK_CREATOR_NATIVE_VALIDATE,
     implementationStatus: JOB_IMPLEMENTATION_STATUS.ACTIVE,
     connectorKey: CONNECTOR_KEYS.TIKTOK,
+  }),
+  [JOB_TYPES.TIKTOK_CREATOR_NATIVE_HISTORY_BOOTSTRAP]: freezeJob({
+    type: JOB_TYPES.TIKTOK_CREATOR_NATIVE_HISTORY_BOOTSTRAP,
+    implementationStatus: JOB_IMPLEMENTATION_STATUS.ACTIVE,
+    connectorKey: CONNECTOR_KEYS.TIKTOK,
+    manualOnly: true,
   }),
   [JOB_TYPES.METRIC_DEFINITIONS_SEED]: freezeJob({
     type: JOB_TYPES.METRIC_DEFINITIONS_SEED,
