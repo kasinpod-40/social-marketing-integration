@@ -158,6 +158,48 @@ export function createOrganicContentOwnershipRepository(repository) {
   });
 }
 
+/**
+ * Routing adapter สำหรับ Runtime จริง: ใช้ Ownership repository เฉพาะ Physical MKT_Content table
+ * Table อื่นยังใช้ Repository เดิมทุก Method จึงไม่เปลี่ยน RAW/Daily/Report/Reliability contract
+ */
+export function createOrganicContentOwnershipRoutingRepository(input = {}) {
+  const base = requireRepository(input.repository);
+  const mktContentTableId = optionalText(input.mktContentTableId);
+  if (!mktContentTableId) return base;
+  const owned = createOrganicContentOwnershipRepository(base);
+  const route = (tableId) => requireText(tableId, 'tableId') === mktContentTableId ? owned : base;
+
+  return Object.freeze({
+    async listAll(tableId) { return route(tableId).listAll(tableId); },
+    async listPage(tableId, options = {}) {
+      return requireMethod(route(tableId), 'listPage')(tableId, options);
+    },
+    async searchRecords(tableId, options = {}) {
+      return requireMethod(route(tableId), 'searchRecords')(tableId, options);
+    },
+    async listByFieldValues(tableId, fieldName, values) {
+      return route(tableId).listByFieldValues(tableId, fieldName, values);
+    },
+    async prepareRows(tableId, rows, context = {}) {
+      return route(tableId).prepareRows(tableId, rows, context);
+    },
+    async prepareExistingRecords(tableId, records, context = {}) {
+      const selected = route(tableId);
+      if (typeof selected.prepareExistingRecords !== 'function') return records;
+      return selected.prepareExistingRecords(tableId, records, context);
+    },
+    async createMany(tableId, rows, options = {}) {
+      return route(tableId).createMany(tableId, rows, options);
+    },
+    async updateMany(tableId, records, options = {}) {
+      return route(tableId).updateMany(tableId, records, options);
+    },
+    async getTableFields(tableId) {
+      return requireMethod(route(tableId), 'getTableFields')(tableId);
+    },
+  });
+}
+
 function uniqueTextValues(values) {
   return Object.freeze([...new Set(values.map((value) => requireText(value, 'fieldName')))]);
 }
@@ -171,6 +213,18 @@ function isBlank(value) {
 
 function normalizeText(value) {
   return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
+
+function optionalText(value) {
+  if (typeof value !== 'string') return null;
+  return value.trim() || null;
+}
+
+function requireMethod(value, methodName) {
+  if (typeof value?.[methodName] !== 'function') {
+    throw new TypeError(`Organic content ownership requires repository.${methodName}`);
+  }
+  return value[methodName].bind(value);
 }
 
 function requireRepository(value) {
