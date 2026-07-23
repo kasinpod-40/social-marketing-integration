@@ -25,15 +25,16 @@ Application package line           0.11.0
 Storage Architecture               V1 documented
 Storage Foundation Phase 1A        merged
 Storage Foundation Phase 1B        merged
-Organic D1 bootstrap implementation PR #27
-Remote rollout                     not run
+Organic D1 bootstrap PR #27        merged
+Organic D1 bootstrap merge         d182bf9efc8c6ea51f275ea725cdb0eaeae3d5e0
+Remote rollout                     not started
 TikTok Canonical Lark sync         blocked
 Report D1 reader                   not implemented
 Schedules                          disabled
 Production                         blocked
 ```
 
-PR #27 implements source code and a guarded runbook only. It has not applied Migration `0009` remotely, deployed a Worker, sent a Queue message or written Live D1/Lark business data.
+PR #27 added source code and a guarded runbook. It did not apply Migration `0009` remotely, deploy a Worker, send a Queue message or write Live D1/Lark business data.
 
 ## Integration Workspace
 
@@ -189,7 +190,7 @@ Customer Dashboard must eventually support:
 - Ads use additive Daily facts and old-day Attribution revisions;
 - old Content without a baseline is `partial`;
 - Dashboard must show Coverage/Data status;
-- Report D1 shadow read and customer-visible cutover are not part of PR #27.
+- Report D1 shadow read and customer-visible cutover are not part of the bootstrap implementation.
 
 ## `MKT_Content` ownership
 
@@ -234,7 +235,7 @@ Backfill requires D1 write. Retention requires the D1 Report reader. Enabling St
 
 | Connector | Current state | Direction |
 | --- | --- | --- |
-| TikTok Organic | Chemistry K protected Native RAW populated | Controlled D1 bootstrap, then Report shadow reader before Canonical scale |
+| TikTok Organic | Chemistry K protected Native RAW populated | Guarded D1-only rollout, then Report shadow reader before Canonical scale |
 | YouTube Organic | Runtime foundation exists on developer source | Later map cumulative/period facts into Storage contract |
 | Facebook Organic | Access/schema ready | Shared Meta connector after Organic storage rollout |
 | Instagram Organic | Access/schema ready | Shared Meta connector after Organic storage rollout |
@@ -257,7 +258,7 @@ npm audit --audit-level=high
 npm run deploy:dry-run
 ```
 
-PR #27 latest implementation head before documentation closeout passed Branch Verification run #321.
+PR #27 merged after Branch Verification run #327 passed all gates.
 
 ## Safety
 
