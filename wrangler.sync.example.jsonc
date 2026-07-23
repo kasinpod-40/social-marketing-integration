@@ -5,7 +5,7 @@
   "compatibility_date": "2026-07-15",
   "compatibility_flags": ["nodejs_compat"],
 
-  // DEV/UAT เก็บ Logs/Traces 100% เพื่อให้ Reliability UAT ตรวจย้อนหลังได้
+  // Integration Workspace เก็บ Logs/Traces 100% เพื่อให้ Reliability ตรวจย้อนหลังได้
   // Production ที่ Traffic สูงควรลด head_sampling_rate ตามงบและปริมาณงาน
   "observability": {
     "enabled": true,
@@ -23,14 +23,14 @@
   },
 
   "triggers": {
-    // Primary Cron ตรวจ TikTok/Daily/Weekly; YouTube Cron รันทุก 6 ชั่วโมงที่นาที 50 (UTC)
-    // Connector/Schedule flags ด้านล่างปิดทั้งหมด จึงไม่ทำ Business sync จนกว่าจะผ่าน UAT gate
+    // Primary Cron และ YouTube Cron มีไว้ใน Worker contract แต่ทุก Business schedule ด้านล่างปิด
+    // Phase 1 ไม่อนุญาตให้ทำ Business sync, Report schedule หรือ Live data write
     "crons": ["*/5 * * * *", "50 0,6,12,18 * * *"]
   },
 
   "d1_databases": [
     {
-      // D1 เป็น operational source of truth และต้องแยก Database ต่อ DEV/UAT/Production
+      // Integration Workspace ใช้ D1 ของผู้พัฒนา; Production ต้องใช้ D1 ของลูกค้าแยกต่างหาก
       "binding": "MKT_STATE_DB",
       "database_name": "replace-with-environment-specific-d1-name",
       "database_id": "00000000-0000-0000-0000-000000000000",
@@ -41,7 +41,7 @@
   "queues": {
     "producers": [
       {
-        // ตัวอย่างนี้รักษา Queue contract ที่ Tests ตรวจ; UAT config จริงต้องเปลี่ยนเป็นชื่อเฉพาะลูกค้า/Environment
+        // ตัวอย่างนี้รักษา Queue contract ที่ Tests ตรวจ; Production ต้องใช้ Queue ของลูกค้า
         "binding": "MKT_SYNC_QUEUE",
         "queue": "social-mkt-sync-jobs"
       }
@@ -67,12 +67,12 @@
   },
 
   "vars": {
-    // รองรับ development | uat | production และต้องจับคู่ Profile ให้ตรง Environment
+    // ก่อน Production ใช้ development + integration_workspace เพียง Operating mode เดียว
     "MKT_ENV": "development",
-    "MKT_CUSTOMER_PROFILE": "replace-with-customer-profile",
+    "MKT_CUSTOMER_PROFILE": "integration_workspace",
     "DEFAULT_TIMEZONE": "Asia/Bangkok",
 
-    // Release example ปิด Connector ทุกตัว; UAT เปิดทีละช่องทางหลัง Exact identity/source-contract preflight
+    // Release example ปิด Connector ทุกตัว; เปิดเฉพาะ Manual validation หลังอนุมัติแยก
     "MKT_CONNECTOR_TIKTOK_ENABLED": "false",
     "MKT_CONNECTOR_FACEBOOK_ENABLED": "false",
     "MKT_CONNECTOR_INSTAGRAM_ENABLED": "false",
@@ -83,23 +83,23 @@
 
     "MKT_SCHEDULE_TIKTOK_ENABLED": "false",
     "MKT_SCHEDULE_YOUTUBE_ENABLED": "false",
-    // Owner Analytics รันวันละครั้ง 07:50 Bangkok และ re-fetch 7 Pacific days ที่จบแล้ว
+    // Owner Analytics config คง Contract เดิม แต่ Flag ปิดใน Phase 1
     "MKT_YOUTUBE_ANALYTICS_TIME": "07:50",
     "MKT_YOUTUBE_ANALYTICS_LOOKBACK_DAYS": "7",
-    // Safe default: ปิดไว้สำหรับการติดตั้งใหม่; หลัง Schema/Seed/UAT ผ่านให้ใช้ npm run enable:tiktok-report-schedules
+    // Report schedules ปิดไว้จน Storage/Reader parity ผ่านในงานภายหลัง
     "MKT_SCHEDULE_DAILY_REPORT_ENABLED": "false",
     "MKT_SCHEDULE_WEEKLY_REPORT_ENABLED": "false",
     "MKT_DAILY_REPORT_TIME": "08:10",
     "MKT_WEEKLY_REPORT_TIME": "08:15",
     "MKT_WEEKLY_REPORT_WEEKDAY": "monday",
-    // Report source ใช้ Server-side filter; Compatibility fallback ต้องหยุดเมื่อชนเพดานเหล่านี้
+    // Report source เดิมยังคงเพดาน Fail-closed จน D1 Reader ใหม่ผ่าน Parity
     "MKT_REPORT_MAX_CONTENT_RECORDS": "800",
     "MKT_REPORT_MAX_SNAPSHOT_RECORDS": "50000",
     "MKT_REPORT_MAX_FALLBACK_SCAN_RECORDS": "50000",
     "MKT_REPORT_MAX_PAGES_PER_QUERY": "100",
     "MKT_REPORT_SOURCE_PAGE_SIZE": "500",
-    "MKT_DAILY_REPORT_SETTING_KEY": "replace-with-daily-report-setting-key",
-    "MKT_WEEKLY_REPORT_SETTING_KEY": "replace-with-weekly-report-setting-key",
+    "MKT_DAILY_REPORT_SETTING_KEY": "integration_workspace:tiktok:daily",
+    "MKT_WEEKLY_REPORT_SETTING_KEY": "integration_workspace:tiktok:weekly",
     "MKT_MAIN_QUEUE_NAME": "social-mkt-sync-jobs",
     "MKT_DLQ_QUEUE_NAME": "social-mkt-sync-dlq",
     // Redrive เป็น Manual admin action เท่านั้นและปิดทุก Release example
@@ -108,9 +108,9 @@
     // Durable reliability mirror drain อ่านทีละ Batch เพื่อไม่ให้ Lark delivery ครอง Invocation นานเกินไป
     "MKT_RELIABILITY_MIRROR_BATCH_SIZE": "25",
 
-    // เปิด Checkpoint/Fingerprint ใน D1 เพื่อประมวลผลปลายทางเฉพาะ RAW records ที่เปลี่ยน
+    // เปิด Checkpoint/Fingerprint ใน D1 เฉพาะงานที่อนุมัติภายหลัง
     "MKT_TIKTOK_INCREMENTAL_ENABLED": "false",
-    // บังคับ Full reconciliation อย่างน้อยวันละครั้ง แม้ไม่มี Fingerprint เปลี่ยน
+    // Full reconciliation interval ยังไม่เปิด Schedule ใน Phase 1
     "MKT_TIKTOK_FULL_RECONCILIATION_INTERVAL_MS": "86400000",
     "MKT_TIKTOK_SOURCE_PAGE_SIZE": "500",
     "MKT_TIKTOK_SOURCE_MAX_PAGES": "1000",
@@ -120,8 +120,8 @@
     "YOUTUBE_API_TIMEOUT_MS": "30000",
     "YOUTUBE_MAX_PAGES": "100",
 
-    // Live identity ห้ามเดา/Commit; UAT ใส่ Handle ที่ตรวจตรงกับ Lark Native connection แล้วเท่านั้น
-    "TIKTOK_SOURCE_HANDLE": "replace-with-tiktok-handle",
+    // Chemistry K TikTok identity ยืนยันแล้ว; Connector Flag ยังปิด
+    "TIKTOK_SOURCE_HANDLE": "chemistry_k",
     // YouTube Channel ID ไม่ใช่ Secret; API key/OAuth ต้องตั้งผ่าน Secrets/.dev.vars เท่านั้น
     "YOUTUBE_CHANNEL_ID": "replace-with-youtube-channel-id",
 
@@ -129,14 +129,13 @@
     "MKT_SYNC_LOCK_LEASE_MS": "600000",
     "MKT_SYNC_LOCK_RENEW_INTERVAL_MS": "120000",
 
-    // Table IDs ต้องเป็นของ Base เฉพาะ Environment; ห้ามแชร์ DEV/UAT/Production
+    // Table IDs ต้องเป็นของ Integration Workspace; Production ต้องใช้ Base ของลูกค้าแยกต่างหาก
     // Protected source: Lark Native TikTok เป็นเจ้าของ Schema; Worker อ่านอย่างเดียวและห้าม Schema mutation
     "LARK_TABLE_RAW_TIKTOK_CREATOR_VIDEOS": "replace-with-table-id",
-    // YouTube tables ใช้เมื่อ Blueprint ถูก Apply และ Live UAT ได้รับอนุมัติเท่านั้น
+    // YouTube tables ใช้ Temporary developer source ใน Workspace และยังปิด Connector/Schedule
     "LARK_TABLE_RAW_YOUTUBE_CHANNELS": "replace-with-table-id",
     "LARK_TABLE_RAW_YOUTUBE_VIDEOS": "replace-with-table-id",
     "LARK_TABLE_RAW_YOUTUBE_ANALYTICS_DAILY": "replace-with-table-id",
-    // YouTube Channel identity ต้อง Preflight ตาราง Account ก่อนเรียก Source API ในรอบ Activation
     "LARK_TABLE_MKT_ACCOUNTS": "replace-with-table-id",
     "LARK_TABLE_MKT_CONTENT": "replace-with-table-id",
     "LARK_TABLE_MKT_CONTENT_DAILY": "replace-with-table-id",
