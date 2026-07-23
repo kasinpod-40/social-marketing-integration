@@ -68,6 +68,11 @@ async function processBootstrapJob(input) {
         : 'TIKTOK_HISTORY_BOOTSTRAP_MANUAL_ONLY',
     });
   }
+  if (recovery && input.job.body?.dryRun === true) {
+    throw permanentError('TikTok history incident recovery cannot run as dry-run', {
+      code: 'TIKTOK_HISTORY_RECOVERY_DRY_RUN_BLOCKED',
+    });
+  }
 
   const operation = input.operation ?? resolveQueueOperation({
     job: input.job,
@@ -184,6 +189,7 @@ async function processBootstrapJob(input) {
       operation,
       recovery,
       recoveryReference,
+      continuationPhase: result.continuationPhase,
       nextSequence: result.nextSequence,
     });
   } else if (recovery && result.resumableWork?.complete === true) {
@@ -225,8 +231,9 @@ async function enqueueBootstrapContinuation(input) {
       ? JOB_TYPES.TIKTOK_CREATOR_NATIVE_HISTORY_RECOVER
       : JOB_TYPES.TIKTOK_CREATOR_NATIVE_HISTORY_BOOTSTRAP,
     trigger: input.recovery ? 'manual_recovery' : 'manual',
-    dryRun: false,
+    dryRun: input.originalBody.dryRun === true,
     continuation: true,
+    continuationPhase: input.continuationPhase,
     continuationNextSequence: input.nextSequence,
     ...(input.recovery ? {
       dlqId: TIKTOK_BOOTSTRAP_INCIDENT.dlqId,
