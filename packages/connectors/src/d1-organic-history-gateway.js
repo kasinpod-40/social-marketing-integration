@@ -1,5 +1,5 @@
 import { D1MarketingHistoryStore } from './d1-marketing-history-store.js';
-import { permanentError, transientError } from '../shared/src/errors/runtime-error.js';
+import { permanentError, transientError } from '../../shared/src/errors/runtime-error.js';
 
 const REQUIRED_TABLES = Object.freeze([
   'organic_content_state',
