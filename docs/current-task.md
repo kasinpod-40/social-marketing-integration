@@ -1,94 +1,98 @@
-# Current Task — Exact Storage Architecture and Migration Contract v1
+# Current Task — Storage Foundation Phase 1
 
 ## Status
 
-- **Task status:** `storage_architecture_contract_documented`
-- **User direction:** redesign historical storage before any TikTok Canonical write or additional Connector implementation
-- **Documentation approval:** `2026-07-23`
-- **Implementation status:** not started
-- **Runtime mutation:** none
-- **Lark Table/Field/View/Formula/Record mutation:** none
-- **D1 migration:** none
-- **Queue/Schedule/Deployment:** none
-- **Production mutation:** none
-- **Last updated:** `2026-07-23`
+- **Task status:** `approved_for_implementation`
+- **Approved by user:** `2026-07-23`
+- **Main baseline:** `a0c4f36ec2b6421e5dc7f800300c622fac9896d7`
+- **Contract:** `docs/project-brain/storage-architecture-and-migration-contract-v1.md`
+- **Integration Workspace:** one pre-Production workspace
+- **Schedules:** must remain disabled
+- **Production:** blocked
 
-## Authoritative contract
+## Objective
 
-Exact design and migration sequence:
-
-`docs/project-brain/storage-architecture-and-migration-contract-v1.md`
-
-Related direction record:
-
-`docs/project-brain/time-series-retention-and-notification.md`
-
-The exact contract has authority over older sequencing that proposed writing TikTok RAW directly into the existing unlimited Lark Daily model.
-
-## Operating model
-
-The project continues to use one pre-Production **Integration Workspace**:
+Implement the non-live foundation required before any TikTok Chemistry K Canonical write:
 
 ```text
-MKT_ENV=development                 # technical runtime label only
+Storage Foundation Phase 1
+= Runtime/Profile identity alignment
++ Chemistry K TikTok Canonical identity
++ MKT_Content Field ownership protection
++ additive D1 historical-storage schema/repositories/tests
++ all new Feature flags false
++ no Live business-data write
+```
+
+The work must be delivered as two separate Pull Requests after this task document is merged:
+
+1. **Phase 1A — Runtime identity and Field ownership**
+2. **Phase 1B — D1 schema and repositories**
+
+Do not combine both implementations into one PR.
+
+## Authoritative operating model
+
+```text
+MKT_ENV=development
 MKT_CUSTOMER_PROFILE=integration_workspace
 ```
 
-Current Workspace infrastructure remains developer-owned while Production remains separate and customer-owned.
-
-## Verified source and Base state
-
-- TikTok Organic source is the established Chemistry K connection `@chemistry_k` through Lark Native TikTok For Creator.
-- `RAW_TikTok_Creator_Videos` contains `2,021` records and is protected/read-only to our Worker.
-- Latest verified Base configuration contains `42` physical tables, `737` fields and `133` Views with no duplicate table names.
-- Google Ads Formula/View/Filter and Shared-table View work is already complete; do not rerun Apply.
-
-## Audit result that changes sequencing
-
-The completed Repository/Base dependency audit found the following blockers:
-
-1. TikTok Report source currently allows only `800` Content records and `50,000` Daily snapshots.
-2. `MKT_Content_Daily` is the current cumulative snapshot source used by the TikTok Report Engine for period baselines and deltas.
-3. `MKT_Content` has no approved Field-level ownership mask and may overwrite manual classification fields.
-4. Runtime Source code still does not fully implement the documented `integration_workspace`/Chemistry K identity contract.
-5. D1 currently stores operational reliability/checkpoint/work state but no approved Marketing historical facts.
-6. RAW provider-specific versus Shared RAW lineage is not locked for every Connector.
-7. D1 capacity, Live row lineage and retention evidence are still missing.
-
-Therefore:
+For TikTok Organic in the Integration Workspace:
 
 ```text
-TIKTOK_CANONICAL_SYNC = BLOCKED
-LARK_DAILY_RETENTION = BLOCKED
-REPORT_READER_CUTOVER = BLOCKED
-GOOGLE_ADS_PR_17 = HOLD
-SCHEDULE = DISABLED
-PRODUCTION = BLOCKED
+customerKey=chemistry_k
+accountKey=chemistry_k
+sourceHandle=chemistry_k
 ```
 
-## Approved storage direction
+Historical names such as `dev_ft_pumkin`, `uat_chemistry_k` and `ft_pumkin` are compatibility/history labels only. They must not create a second operating mode, change current record ownership or authorize deletion/relabeling.
+
+## Phase 1A — In scope
+
+### Runtime/Profile alignment
+
+- Add an authoritative `integration_workspace` customer profile.
+- Keep `MKT_ENV=development` as the technical runtime label.
+- Map TikTok Organic Canonical identity to Chemistry K.
+- Preserve Production profile isolation and customer-owned Production rules.
+- Treat legacy profile names as explicit compatibility aliases where required by existing tests or stored operational history.
+- Align report-setting seeds/examples with `integration_workspace` and `chemistry_k` without writing Live Lark records.
+- Keep every business schedule disabled.
+
+### `MKT_Content` Field ownership
+
+Implement a reusable Field ownership policy in the planning/diff path rather than connector-specific ad hoc filtering.
+
+Protected business fields:
 
 ```text
-Platform/Lark Native Sources
-→ validated ingestion
-→ D1 current state + historical facts + coverage
-→ deterministic report calculation
-→ Lark current state + bounded cache + aggregate + report results
-→ Dashboard / AI / Notification
+course_name
+course_level
+course_type
+content_theme
+funnel_stage
+cta_type
+cta_destination
+promotion_type
+urgency_level
+manual_tag_note
 ```
 
-Dashboard requirement:
+Required behavior:
 
-```text
-3D / 7D / 9D / 15D / 30D / 90D / CUSTOM_RANGE
-```
+- On Create, incoming approved classification values may be written.
+- On Update, system-managed fields may update normally.
+- When existing `classification_source=manual`, preserve all protected classification fields.
+- `manual_tag_note` is never overwritten after record creation.
+- Incoming `null`, empty or missing values never clear protected existing values.
+- For non-manual existing records, protected classification fields may be filled only when the existing value is blank.
+- Formula, Lookup, Relation and fields outside the incoming ownership mask must remain untouched.
+- The policy must work with TikTok and YouTube planning paths and remain reusable for future Organic connectors.
 
-- Organic cumulative metrics use end observation minus pre-period baseline.
-- Ads use additive Daily facts with Attribution revision/UPSERT.
-- Missing baseline remains `partial`; missing metric remains `null`.
-- Dashboard must expose Coverage/Data status.
+## Phase 1B — In scope
 
-## Exact D1 tables approved for implementation planning
+Create additive local D1 migration and repository modules for the exact Contract tables:
 
 ```text
 organic_content_state
@@ -103,100 +107,95 @@ report_materializations
 report_requests
 ```
 
-Names, Grain, Fields, Stable keys, Indexes and UPSERT rules are defined in the authoritative contract. Changing them requires a Contract revision before implementation.
+Requirements:
 
-## Lark role after migration
-
-- `MKT_Content`: Current-state row per Content with explicit Field ownership.
-- `MKT_Content_Daily`: compatibility/recent diagnostic cache only after D1 parity and Reader cutover.
-- `MKT_Account_Daily`: long-term Account×Date Dashboard aggregate.
-- `MKT_Ads_Daily`: bounded recent Ads detail after D1 parity.
-- `MKT_Report_*`: materialized deterministic KPI/Top results.
-- Protected/Native RAW: unchanged and not deleted by our system.
-
-No Lark retention or deletion is authorized by this task.
-
-## Current task — in scope
-
-1. Record the exact Storage Architecture and Migration Contract in Repository `main`.
-2. Synchronize `docs/current-task.md`, Project Brain, Time-series direction and README; preserve the existing root `CHANGELOG.md` history unchanged in this docs-only branch.
-3. Lock Dashboard periods, metric semantics, D1 grains/keys/indexes, Lark roles, migration flags, parity and rollback.
-4. Keep TikTok Canonical write blocked until Storage Foundation phases are implemented and validated.
-5. Keep Google Ads Draft PR `#17` unmerged until it is rebuilt/rebased against the new storage/RAW lineage contract.
+- Exact Grain, fields, Stable keys, constraints and indexes must match the approved Storage contract and review note.
+- Existing operational D1 tables and migrations must remain compatible.
+- Repositories must support typed validation, idempotent UPSERT/no-op behavior and bounded queries needed by later dual-write/report phases.
+- Partial coverage must never delete unseen facts.
+- JSON payloads must enforce approved byte/shape limits.
+- All new runtime Feature flags default to `false`.
+- Creating the migration and repositories does not authorize Remote migration apply or business writes.
 
 ## Out of scope
 
-- Source/runtime code changes;
-- D1 migration creation or Remote apply;
-- TikTok/YouTube/Meta/Ads Live write;
-- Lark Table/Field/View/Formula/Record mutation;
-- Daily-row deletion or retention job;
-- Report Reader cutover;
-- Notification tables/runtime;
-- Queue messages, schedules or deployment;
-- merging PR `#17`;
+- Reading or writing Live TikTok/YouTube/Meta/Ads business data;
+- TikTok RAW → `MKT_Content`/`MKT_Content_Daily` Sync;
+- applying a Remote D1 migration;
+- deploying Worker code;
+- sending Queue messages;
+- opening any schedule;
+- changing Lark Tables, Fields, Views, Formulas or Records;
+- changing `MKT_Content_Daily` or `MKT_Ads_Daily` Retention;
+- Report D1 reader/shadow parity/cutover;
+- Dashboard UI changes;
+- Notification implementation;
+- Google Ads PR `#17` merge/reuse;
 - Production cutover.
 
-## Acceptance criteria for this documentation task
+## Required tests — Phase 1A
 
-- [x] Exact Dashboard period contract covers 3D/7D/9D/15D/30D/90D/Custom.
-- [x] Organic cumulative, Organic period and Ads daily semantics are separated.
-- [x] Exact D1 Table names, Grain, Stable keys, Fields, Indexes and UPSERT rules are documented.
-- [x] Coverage state and Entity-scope proof are documented.
-- [x] `MKT_Content` manual/system Field ownership is documented.
-- [x] Lark current/cache/aggregate/report roles are documented.
-- [x] Feature flags default false and migration phases are documented.
-- [x] Parity, Live validation and rollback gates are documented.
-- [x] Retention remains blocked until D1 capacity and rollback evidence exist.
-- [x] Existing root Changelog history remains untouched.
-- [x] No runtime, Lark, D1, Queue, Schedule or Production mutation occurs.
+- `integration_workspace` resolves only with `MKT_ENV=development`.
+- TikTok identity resolves to Chemistry K and produces `tiktok:chemistry_k:*` Stable keys.
+- Legacy aliases do not become separate customer/account identities.
+- Production isolation and disabled schedules remain unchanged.
+- Manual classification and `manual_tag_note` survive reruns.
+- Blank protected fields can be filled under the approved rules.
+- System-managed fields still update.
+- TikTok, YouTube and Core regression tests pass.
 
-## Proposed next Implementation task after merge
+## Required tests — Phase 1B
 
-```text
-Storage Foundation Phase 1
-= integration_workspace identity alignment
-+ Chemistry K TikTok account identity
-+ MKT_Content Field ownership policy
-+ additive D1 schema/repositories/tests
-+ all new Feature flags false
-+ no Live business-data write
+- Migration replay on empty and existing schema is safe and idempotent.
+- Every required Table, constraint and index exists.
+- Stable-key duplicate attempts do not create extra rows.
+- Organic observation retry is idempotent.
+- Ads old-day revision updates the same fact row.
+- Different breakdown/segment/conversion identities remain separate.
+- Partial coverage does not delete or zero unseen facts.
+- Coverage controlled values fail closed.
+- Bounded JSON guards fail closed.
+- Existing D1 reliability, lock, checkpoint, DLQ/redrive and resumable-work regressions pass.
+
+## Gates for each implementation PR
+
+```bash
+npm ci
+npm run check
+npm test
+npm run test:report-reliability
+npm run deploy:dry-run
 ```
 
-Implementation may start only after this documentation branch is merged, `main` is reread and a new Implementation Current Task is explicitly opened.
+Add focused tests for the files changed. `npm audit --audit-level=high` must report no unacceptable vulnerability.
 
-## Pull request boundaries
+## Completion boundary
 
-Do not combine these into one PR:
+Phase 1 is complete only when both implementation PRs are merged and verified. Completion still does **not** authorize:
 
-1. Runtime/profile and Field ownership alignment;
-2. D1 schema/repositories;
-3. Organic dual-write/bootstrap;
-4. Ads dual-write;
-5. Report shadow reader;
-6. Report cutover/materialization;
-7. Lark retention;
-8. Notification runtime;
-9. Google Ads signed-delivery rebuild/rebase.
+- Remote D1 migration apply;
+- Live Dual-write;
+- TikTok Canonical Sync;
+- Report Reader cutover;
+- Lark Retention;
+- Schedule enablement;
+- Production.
+
+The next separately approved task after Phase 1 is manual, Feature-flagged Organic D1 dual-write/bootstrap with schedules disabled.
 
 ## Handoff
 
 ```text
-INTEGRATION_WORKSPACE = SINGLE_PRE_PRODUCTION_WORKSPACE
 STORAGE_CONTRACT = V1_DOCUMENTED
-REPOSITORY_AUDIT = COMPLETE_WITH_BLOCKERS
-DASHBOARD_RANGE = 3D_7D_9D_15D_30D_90D_CUSTOM
-TIKTOK_SOURCE = CHEMISTRY_K_EXISTING_CONNECTION
-TIKTOK_RAW = POPULATED_2021_ROWS
-TIKTOK_CANONICAL_SYNC = BLOCKED_BY_STORAGE_FOUNDATION
-CONTENT_FIELD_OWNERSHIP = CONTRACT_DEFINED_IMPLEMENTATION_PENDING
-D1_HISTORICAL_FACTS = CONTRACT_DEFINED_IMPLEMENTATION_PENDING
-REPORT_D1_READER = NOT_IMPLEMENTED
-LARK_RETENTION = NOT_APPROVED
-NOTIFICATION = DEFERRED_UNTIL_REPORT_PARITY
-GOOGLE_ADS_PR_17 = HOLD_REBUILD_REQUIRED
-LARK_SCHEMA = COMPLETE_DO_NOT_REOPEN_FROM_THIS_TASK
+CURRENT_TASK = STORAGE_FOUNDATION_PHASE_1
+PHASE_1A = RUNTIME_IDENTITY_AND_FIELD_OWNERSHIP
+PHASE_1B = D1_SCHEMA_AND_REPOSITORIES
+LIVE_BUSINESS_WRITE = FORBIDDEN
+REMOTE_D1_MIGRATION = FORBIDDEN
+TIKTOK_CANONICAL_SYNC = BLOCKED
+REPORT_CUTOVER = BLOCKED
+LARK_RETENTION = BLOCKED
+GOOGLE_ADS_PR_17 = HOLD
 SCHEDULE = DISABLED
 PRODUCTION = BLOCKED
-NEXT_TASK = STORAGE_FOUNDATION_PHASE_1_AFTER_SEPARATE_APPROVAL
 ```
