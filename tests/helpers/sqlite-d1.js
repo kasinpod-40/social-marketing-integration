@@ -21,10 +21,11 @@ export function createSqliteD1(input = {}) {
           return { meta: { changes: Number(result.changes ?? 0) } };
         },
         async first() {
-          return statement.get(...bindings) ?? null;
+          const row = statement.get(...bindings);
+          return row ? { ...row } : null;
         },
         async all() {
-          return { results: statement.all(...bindings) };
+          return { results: statement.all(...bindings).map((row) => ({ ...row })) };
         },
       };
     },
