@@ -1,6 +1,6 @@
 import { permanentError } from '../../shared/src/errors/runtime-error.js';
 import { D1ReliabilityMirrorOutbox } from './d1-reliability-mirror-outbox.js';
-import { D1ReliabilityStore } from './d1-reliability-store.js';
+import { D1StaleAwareReliabilityStore } from './d1-stale-aware-reliability-store.js';
 import { DurableMirrorReliabilityStore } from './durable-mirror-reliability-store.js';
 
 /**
@@ -16,7 +16,7 @@ export function createCloudflareReliabilityRuntime(input = {}) {
     });
   }
 
-  const d1Store = new D1ReliabilityStore({ db });
+  const d1Store = new D1StaleAwareReliabilityStore({ db });
   const mirrorOutbox = new D1ReliabilityMirrorOutbox({ db });
   const store = new DurableMirrorReliabilityStore({
     primary: d1Store,
