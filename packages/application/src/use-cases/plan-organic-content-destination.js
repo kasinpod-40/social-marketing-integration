@@ -1,12 +1,9 @@
-import { createOrganicContentOwnershipRepository } from '../policies/organic-content-field-ownership.js';
-
 /**
  * สร้าง Destination plans ของ Organic content แบบ Platform-neutral
  * Adapter/Use case ภายนอกยังต้องตรวจ Source identity และ Account conflict ก่อน Write
  */
 export async function planOrganicContentDestination(input = {}) {
   const repository = requireRepository(input.repository);
-  const contentRepository = createOrganicContentOwnershipRepository(repository);
   const syncEngine = requireSyncEngine(input.syncEngine);
   const contentRows = requireArray(input.contentRows, 'contentRows');
   const dailySnapshotRows = requireArray(input.dailySnapshotRows, 'dailySnapshotRows');
@@ -15,7 +12,7 @@ export async function planOrganicContentDestination(input = {}) {
 
   const [content, dailySnapshots] = await Promise.all([
     syncEngine.planByKey({
-      repository: contentRepository,
+      repository,
       tableId: tables.mktContent,
       keyField: 'content_key',
       rows: contentRows,
