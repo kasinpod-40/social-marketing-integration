@@ -16,7 +16,7 @@ test('sync worker config uses root-relative entrypoint and migrations paths', as
   assert.match(configText, /"migrations_dir"\s*:\s*"\.\/migrations"/);
 });
 
-test('sync queue consumers stay at max_concurrency 1 during DEV UAT', async () => {
+test('sync queue consumers stay at max_concurrency 1 in the Integration Workspace', async () => {
   const configText = await readSyncWranglerExample();
   const matches = configText.match(/"max_concurrency"\s*:\s*1\b/g) ?? [];
   assert.equal(matches.length, 2);
@@ -50,7 +50,7 @@ test('YouTube schedule and Analytics policy stay fail-closed in release examples
   assert.match(configText, /"MKT_DLQ_REDRIVE_ENABLED"\s*:\s*"false"/);
 });
 
-test('deployment examples keep every connector disabled until environment UAT', async () => {
+test('deployment examples keep every connector disabled under the canonical operating model', async () => {
   const syncConfigText = await readSyncWranglerExample();
   const apiConfigText = await readFile(new URL('../../wrangler.example.jsonc', import.meta.url), 'utf8');
 
@@ -58,8 +58,12 @@ test('deployment examples keep every connector disabled until environment UAT', 
     for (const connector of ['TIKTOK', 'FACEBOOK', 'INSTAGRAM', 'YOUTUBE', 'WOOCOMMERCE', 'CHATWOOT']) {
       assert.match(configText, new RegExp(`"MKT_CONNECTOR_${connector}_ENABLED"\\s*:\\s*"false"`));
     }
-    assert.doesNotMatch(configText, /dev_ft_pumkin|ft\.pumkin|chemistry_k/u);
+    assert.doesNotMatch(configText, /dev_ft_pumkin|ft\.pumkin|uat_chemistry_k/u);
   }
+
+  assert.match(syncConfigText, /"MKT_ENV"\s*:\s*"development"/);
+  assert.match(syncConfigText, /"MKT_CUSTOMER_PROFILE"\s*:\s*"integration_workspace"/);
+  assert.match(syncConfigText, /"TIKTOK_SOURCE_HANDLE"\s*:\s*"chemistry_k"/);
 });
 
 
@@ -70,17 +74,18 @@ test('sync deployment declares TikTok incremental controls but keeps them disabl
 });
 
 
-test('report schedules stay disabled until Lark report schema and seed UAT are complete', async () => {
+test('report schedules stay disabled until D1 report parity is complete', async () => {
   const configText = await readSyncWranglerExample();
   assert.match(configText, /"MKT_SCHEDULE_DAILY_REPORT_ENABLED"\s*:\s*"false"/);
   assert.match(configText, /"MKT_SCHEDULE_WEEKLY_REPORT_ENABLED"\s*:\s*"false"/);
   assert.match(configText, /"MKT_DAILY_REPORT_TIME"\s*:\s*"08:10"/);
   assert.match(configText, /"MKT_WEEKLY_REPORT_TIME"\s*:\s*"08:15"/);
+  assert.match(configText, /"MKT_DAILY_REPORT_SETTING_KEY"\s*:\s*"integration_workspace:tiktok:daily"/);
   assert.match(configText, /"LARK_TABLE_MKT_REPORT_METRIC_VALUES"/);
   assert.match(configText, /"LARK_TABLE_MKT_REPORT_TOP_CONTENT"/);
 });
 
-test('sync deployment example enables persisted Workers logs and traces for DEV observability', async () => {
+test('sync deployment example enables persisted Workers logs and traces for Integration Workspace observability', async () => {
   const configText = await readSyncWranglerExample();
   assert.match(configText, /"observability"\s*:\s*\{/);
   assert.match(configText, /"logs"\s*:\s*\{/);
