@@ -3,23 +3,43 @@ import assert from 'node:assert/strict';
 import { createReportSettingRowsForProfile } from '../../packages/config/src/report-settings.seed.js';
 import { seedReportSettings } from '../../packages/application/src/use-cases/seed-report-settings.js';
 
-test('creates deterministic daily and weekly settings per customer profile', () => {
-  const rows = createReportSettingRowsForProfile('dev_ft_pumkin');
+test('creates deterministic Integration Workspace settings for Chemistry K TikTok', () => {
+  const rows = createReportSettingRowsForProfile('integration_workspace');
   assert.deepEqual(rows.map((row) => row.report_setting_key), [
-    'dev_ft_pumkin:tiktok:daily',
-    'dev_ft_pumkin:tiktok:weekly',
+    'integration_workspace:tiktok:daily',
+    'integration_workspace:tiktok:weekly',
   ]);
+  assert.equal(rows[0].customer_profile, 'integration_workspace');
   assert.equal(rows[0].ai_enabled, false);
   assert.equal(rows[0].notification_enabled, false);
   assert.equal(rows[1].send_weekday, 'monday');
-  assert.equal(rows[0].account_keys_json, '["ft_pumkin"]');
+  assert.equal(rows[0].account_keys_json, '["chemistry_k"]');
+});
+
+test('legacy report profile labels resolve to the canonical Integration Workspace settings', () => {
+  for (const alias of ['dev_ft_pumkin', 'uat_chemistry_k']) {
+    const rows = createReportSettingRowsForProfile(alias);
+    assert.deepEqual(rows.map((row) => row.report_setting_key), [
+      'integration_workspace:tiktok:daily',
+      'integration_workspace:tiktok:weekly',
+    ]);
+    assert.equal(rows[0].customer_profile, 'integration_workspace');
+    assert.equal(rows[0].account_keys_json, '["chemistry_k"]');
+  }
+});
+
+test('keeps Production report identity separate', () => {
+  const rows = createReportSettingRowsForProfile('chemistry_k');
+  assert.equal(rows[0].report_setting_key, 'chemistry_k:tiktok:daily');
+  assert.equal(rows[0].customer_profile, 'chemistry_k');
+  assert.equal(rows[0].account_keys_json, '["chemistry_k"]');
 });
 
 test('rejects unknown report profile instead of inventing an account', () => {
   assert.throws(() => createReportSettingRowsForProfile('unknown'), /Unsupported report setting profile/);
 });
 
-test('seeds report settings idempotently by report_setting_key', async () => {
+test('seeds report settings idempotently by canonical report_setting_key', async () => {
   let call;
   const repository = {
     async prepareRows(_tableId, rows) { return rows; },
@@ -31,10 +51,11 @@ test('seeds report settings idempotently by report_setting_key', async () => {
     async syncByKey(input) { call = input; return { created: input.rows.length, updated: 0, skipped: 0 }; },
   };
   const result = await seedReportSettings({
-    repository, syncEngine, tableId: 'tbl_settings', profileKey: 'dev_ft_pumkin',
+    repository, syncEngine, tableId: 'tbl_settings', profileKey: 'integration_workspace',
   });
 
   assert.equal(call.keyField, 'report_setting_key');
   assert.equal(call.rows.length, 2);
+  assert.equal(call.rows[0].report_setting_key, 'integration_workspace:tiktok:daily');
   assert.equal(result.created, 2);
 });
