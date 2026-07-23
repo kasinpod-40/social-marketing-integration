@@ -1,35 +1,63 @@
 # Social Marketing Data Integration
 
-ระบบรวมข้อมูล Social Organic, Paid Ads, Commerce และ Conversation เข้าสู่ Lark Base สำหรับ Daily Snapshot, Dashboard, Reporting, AI Summary, Insight และ Alert โดยใช้ JavaScript ES Modules, Cloudflare Workers, D1, Queues และ Lark Open API.
+ระบบรวมข้อมูล Social Organic, Paid Ads, Commerce และ Conversation เข้าสู่ Lark Base สำหรับ Dashboard, Reporting, AI Summary, Insight, Alert และ Notification โดยใช้ JavaScript ES Modules, Cloudflare Workers, D1, Queues และ Lark Open API
+
+## Read first
+
+```text
+AGENTS.md
+→ docs/current-task.md
+→ PROJECT_BRAIN.md
+→ docs/project-brain/storage-architecture-and-migration-contract-v1.md
+→ docs/project-brain/* relevant files
+→ README.md / CHANGELOG.md
+→ Source and Tests
+```
+
+- `docs/current-task.md` เป็น Current authority สำหรับ Scope และ Acceptance criteria
+- ห้ามเริ่ม Connector/Storage implementation จากแชทเพียงอย่างเดียวเมื่อ Repository ใหม่กว่า
+- Credential, Live write, Migration, Schedule, Retention และ Production ต้องผ่าน Gate แยก
 
 ## Current baseline
 
-- Implementation baseline: `d4a531fbb4e05dad7ce2296859c97f571e23acf3` / PR `#13`
-- Documentation closeout: PR `#14`
+- Main baseline reviewed for Storage audit: `430b503cf074443776ac7fc5a011d2843192ec9c`
 - Application package line: `0.11.0`
-- Lark contract versions: View `v0.13.5`, Formula `v0.13.6`, repository correction `v0.13.7`
-- Current task: `docs/current-task.md` — closed
-- Current project state: `PROJECT_BRAIN.md`
+- Exact Storage contract: `docs/project-brain/storage-architecture-and-migration-contract-v1.md`
+- Current task: documentation-only Storage Architecture closeout
+- Lark Formula/View/Filter closeout: complete; do not rerun
+- Google Ads signed delivery: Draft PR `#17`, HOLD / do not merge yet
 
-Contract version numbers do not automatically bump the application package version.
+## Integration Workspace
 
-## Current progress
+ก่อน Production ใช้ **Integration Workspace เพียงชุดเดียว** ไม่แยก DEV/UAT ในการปฏิบัติงาน
 
-Milestone estimates, not code coverage:
-
-```text
-MKT DEV MVP                         ~59%
-Lark data model/schema foundation   100%
-Google Ads end-to-end                45%
-Customer-real UAT readiness          40%
-Chemistry K Production readiness     25%
+```env
+MKT_ENV=development
+MKT_CUSTOMER_PROFILE=integration_workspace
 ```
 
-Detailed weighting: `docs/project-brain/mkt-progress-v0.13.0.md`.
+`MKT_ENV=development` เป็น Technical runtime label เท่านั้น
 
-## Current Lark DEV state
+ทรัพยากรปัจจุบันเป็นของผู้พัฒนา:
 
-Fresh configuration-only audit of `Social MKT Data Hub(11).base`:
+- Lark Base
+- Cloudflare Worker
+- D1
+- Queue/DLQ
+- Secret store
+
+Source ownership ติดตามราย Connector และอาจเป็นข้อมูลผู้พัฒนาหรือลูกค้าปะปนกันชั่วคราว
+
+Production ใช้:
+
+```env
+MKT_ENV=production
+MKT_CUSTOMER_PROFILE=chemistry_k
+```
+
+และต้องใช้ Lark, Cloudflare, D1, Queue, credentials และ Platform assets ที่ลูกค้าเป็นเจ้าของ
+
+## Current Lark state
 
 ```text
 Physical tables             42
@@ -39,242 +67,208 @@ Filtered Views              42
 Sorted Views                 6
 Views with hidden fields     7
 Duplicate table names        0
-Table emoji/folders       42/42
-View emoji names         133/133
-```
-
-Managed contracts:
-
-```text
 Google Ads Formula fields    4/4 PASS
 Google Ads managed filters  19/19 PASS
 Shared-table filters        17/17 PASS
 Report Views                 6/6 PASS
-Google Ads Daily 30D         platform=google_ads + TheLastMonth
 ```
 
-Do not rerun the Google Ads View Apply or Formula UI closeout.
-
-## View contract rule
-
-133 Views are classified as:
-
-- 17 Shared-table managed Views
-- 6 Report managed Views
-- 19 Google Ads managed Views
-- 36 All/default Views intentionally preserved without Filter
-- 55 legacy specialized Views preserved without inferred business logic
-
-The 42 filtered Views are exactly `17 + 6 + 19`.
-
-A complete Full View contract means every View is managed or explicitly preserved. It does not mean all specialized names such as Active, Failed, Latest, Connection Issues or High Spend Low ROAS already have business filters. Those 55 Views require a separate business-owner contract before mutation.
-
-See `docs/lark-full-view-contract-v0.13.5.md`.
-
-## Shared workflow between ChatGPT Work and Codex
-
-Read in this order before analysis or implementation:
+Relevant TikTok inventory:
 
 ```text
-AGENTS.md
-→ docs/current-task.md
-→ PROJECT_BRAIN.md
-→ docs/project-brain/* relevant files
-→ README.md and CHANGELOG.md
-→ Source and Tests
+RAW_TikTok_Creator_Videos   2,021 records
+MKT_Content                    22 records
+MKT_Content_Daily             208 records
 ```
 
-- `AGENTS.md` defines repository-wide operating rules.
-- `docs/current-task.md` is the current source of truth for Scope, Contract, Acceptance criteria and Implementation result.
-- Historical documents cannot override a newer verified current task.
-- Connector coding cannot start until the current task records technical approval.
-- Credential, Live resource, Schedule and Production changes require separate gates.
+`RAW_TikTok_Creator_Videos` เป็น Protected Lark Native source ระบบอ่านได้แต่ห้ามแก้ Table/Field/Record
 
-## Environment and ownership
+## Current blocking decision
 
-### DEV
+ยังห้าม Sync Chemistry K TikTok RAW เข้า Canonical ตอนนี้
 
-```env
-MKT_ENV=development
-MKT_CUSTOMER_PROFILE=dev_ft_pumkin
+Repository/Base audit พบ:
+
+- TikTok Report loader จำกัด Content `800` และ Daily snapshots `50,000`;
+- `MKT_Content_Daily` ยังเป็น Report baseline source;
+- `MKT_Content` ยังไม่มี Field ownership mask สำหรับข้อมูล Manual;
+- Runtime ยังไม่ตรง `integration_workspace`/Chemistry K contract ทั้งหมด;
+- D1 ยังไม่มี Marketing historical facts;
+- RAW lineage และ D1 capacity ยังไม่ปิด Contract เชิงปฏิบัติการ.
+
+```text
+TIKTOK_CANONICAL_SYNC = BLOCKED
+REPORT_READER_CUTOVER = BLOCKED
+LARK_RETENTION = BLOCKED
+SCHEDULE = DISABLED
+PRODUCTION = BLOCKED
 ```
 
-Developer-owned resources and test data only.
+## Storage Architecture v1
 
-### Customer-real UAT
-
-```env
-MKT_ENV=uat
-MKT_CUSTOMER_PROFILE=uat_chemistry_k
+```text
+Platform/Lark Native Sources
+→ validated ingestion
+→ D1 current state + historical facts + coverage
+→ deterministic calculation
+→ Lark current state + bounded cache + aggregate + report result
+→ Dashboard / AI / Notification
 ```
 
-Customer-owned source accounts/data with isolated temporary developer-owned Lark and Cloudflare resources. Canonical `customerKey` and connector `accountKey` remain `chemistry_k` for Production cutover.
+Exact D1 Tables:
 
-### Production
-
-```env
-MKT_ENV=production
-MKT_CUSTOMER_PROFILE=chemistry_k
+```text
+organic_content_state
+organic_content_observations
+organic_account_daily_facts
+ads_entity_state
+ads_daily_facts
+ads_conversion_daily_facts
+data_coverage_runs
+data_coverage_entities
+report_materializations
+report_requests
 ```
 
-Production must use customer-owned Lark, Cloudflare, D1, Queues, credentials and platform assets. Production remains disabled.
+ชื่อ Table, Grain, Keys, Fields, Indexes และ UPSERT rules อยู่ใน Storage contract
 
-Full contract: `docs/project-brain/customer-real-uat.md`.
+## Dashboard range contract
+
+Customer Dashboard ต้องรองรับ:
+
+```text
+3D / 7D / 9D / 15D / 30D / 90D / CUSTOM_RANGE
+```
+
+- Preset เป็น Rolling completed days จบเมื่อวานตาม Reporting timezone
+- `30D` คือหนึ่งเดือนย้อนหลังแบบ Rolling
+- `90D` คือสามเดือนย้อนหลังแบบ Rolling
+- Organic cumulative ใช้ End observation ลบ Baseline ก่อนช่วง
+- Ads ใช้ SUM Daily facts และรองรับ Attribution revision
+- Old Content ที่ไม่มี Baseline เป็น `partial`
+- Missing metric เป็น `null`; observed zero เป็น `0`
+- Dashboard ต้องแสดง Coverage/Data status
+
+## Lark roles after cutover
+
+| Table | Target role |
+| --- | --- |
+| `MKT_Content` | Current-state Content พร้อม Manual field protection |
+| `MKT_Content_Daily` | Bounded recent/diagnostic cache หลัง D1 parity |
+| `MKT_Account_Daily` | Account×Date Dashboard aggregate |
+| `MKT_Ads_Daily` | Bounded recent Ads detail หลัง D1 parity |
+| `MKT_Report_*` | Materialized KPI/comparison/Top results |
+| Protected RAW | External source; no Worker mutation |
+
+ยังไม่มีสิทธิ์ลบ Daily/RAW records จาก Contract นี้
+
+## `MKT_Content` ownership
+
+System-managed fields อัปเดตจาก Source ได้หลัง Validation
+
+Manual-managed fields ต้อง preserve:
+
+```text
+course_name
+course_level
+course_type
+content_theme
+funnel_stage
+cta_type
+cta_destination
+promotion_type
+urgency_level
+manual_tag_note
+```
+
+- เติมได้ตอน Create หรือ Existing blank
+- `classification_source=manual` ต้อง preserve ชุด Classification
+- `manual_tag_note` ห้ามทับหลัง Create
+- Incoming `null` ห้ามล้าง Manual value
 
 ## Connector status
 
-| Connector | Status | Current direction |
-|---|---|---|
-| TikTok Organic | Active in verified DEV | Lark Native protected RAW → Canonical Content/Daily |
-| YouTube Organic | Active in verified DEV | YouTube Data API + Owner Analytics |
-| Facebook Organic | Planned | Meta Graph business adapter + shared reliability |
-| Instagram Organic | Planned | Instagram Login/Graph business adapter + shared reliability |
-| Meta Ads | Planned | Controlled API/Worker connector |
-| Google Ads | Read-only UAT passed; delivery not implemented | Manager Script signed delivery MVP; direct API optional Phase 2 |
-| TikTok Ads | Planned | Controlled API/Worker connector; Lark native Ads is not Production source of truth |
-| WooCommerce | Planned | Sanitized source contract, connector pending |
-| Chatwoot | Planned | Sanitized conversation contract, connector pending |
+| Connector | Current state | Direction |
+| --- | --- | --- |
+| TikTok Organic | Chemistry K Native RAW populated | Storage foundation before Canonical write |
+| YouTube Organic | Runtime foundation exists on developer source | Migrate cumulative/period facts into new Storage contract |
+| Facebook Organic | Access/schema ready | Shared Meta connector after Storage foundation |
+| Instagram Organic | Access/schema ready | Shared Meta connector after Storage foundation |
+| Meta Ads | Access valid/no data | Ads facts/revision contract first |
+| Google Ads | Read-only source passed; Draft PR #17 | Rebuild/rebase against Storage/RAW lineage |
+| TikTok Ads | Access/design preflight | Controlled API/Worker connector later |
+| WooCommerce | Planned | Connector pending |
+| Chatwoot | Planned | Connector pending |
 
-Connector Catalog activates only implementations with a real tested Runtime path. Planned connectors fail closed even if a flag is set to true.
+Planned connectors fail closed even if a Feature flag is accidentally enabled
 
-## Google Ads current status
+## Google Ads status
 
 Completed:
 
-- customer-authorized account link/selectability
-- exact allowlisted Manager Script read-only Preview
-- six non-empty bounded datasets
-- dataset errors/truncation `0/0`
-- Google Ads `No changes`
-- Frequency `—`
-- Lark schema, Relations, managed Views and formulas
-- update-only Google View maintenance safety guard
+- Chemistry K account link/selectability
+- Manager Script read-only Preview
+- six bounded non-empty datasets
+- errors/truncation `0/0`
+- Lark schema/Relations/Views/Formulas
+- direct API Basic Access application submitted `2026-07-21`, review pending
 
-Direct API access:
+Draft PR `#17` is not `main`, not deployed and not external LIVE validated
 
-```text
-Basic Access application  submitted 2026-07-21
-Case ID                   1-686800040839
-Review                    pending
-Current level             Test Account Access
-```
+It must not merge until:
 
-Direct API approval does not block the Manager Script MVP.
+- rebased to current `main`;
+- RAW path is chosen explicitly;
+- segment/conversion keys preserve Grain;
+- D1 facts/coverage/revision contract is implemented;
+- Full Gate and external validation pass.
 
-Not implemented:
+Draft PR `#11` is obsolete/superseded and must not be merged
 
-- signed external delivery
-- Worker ingress
-- HMAC/timestamp/nonce/replay checks
-- Google Ads Queue job and router
-- D1 nonce/checkpoint/idempotency state
-- normalization and Lark Business Record writes
-- schedule
-- deployment
+## Migration feature flags
 
-Sanitized evidence: `docs/google-ads-manager-script-read-only-uat-evidence.md`.
-
-## Google Ads View Filter command
-
-Read-only Preview:
-
-```bash
-npm run setup:google-ads-view-filters
-```
-
-Guarded Apply is reserved for a verified DEV mismatch and requires explicit confirmation:
-
-```bash
-CONFIRM_WRITE=YES npm run setup:google-ads-view-filters:apply
-```
-
-The Google Ads command is update-only:
-
-- missing managed View is a blocker;
-- `createViews` must be zero;
-- every Action must be `update_view`;
-- a wrapped client permanently blocks `createView`;
-- no Table, Field, View-name, Sort, Hidden-field or Record mutation is permitted by this command.
-
-Current Live state is already zero drift. Do not rerun Apply.
-
-## Google Ads Formula contract
-
-Live tenant uses `[field]`, `ISBLANK(...)` and `""` for blank numeric results:
-
-```text
-MKT_Ads_Campaigns.budget
-IF(ISBLANK([budget_micros]),"",[budget_micros]/1000000)
-
-MKT_Ads_Daily.all_conversion_value
-IF(ISBLANK([all_conversion_value_micros]),"",[all_conversion_value_micros]/1000000)
-
-MKT_Ads_Daily.cost_per_conversion
-IF(OR(ISBLANK([conversions]),[conversions]=0,ISBLANK([spend])),"",[spend]/[conversions])
-
-MKT_Ads_Daily.conversion_rate
-IF(OR(ISBLANK([clicks]),[clicks]=0,ISBLANK([conversions])),"",[conversions]/[clicks])
-```
-
-All four are Live verified. Do not reapply.
-
-## RAW error View coverage
-
-The 13 Google RAW error Views use a stable-key-only minimum contract:
-
-```text
-primary raw stable key isEmpty
-```
-
-They detect missing raw identity only. Customer ID, entity ID, status, report-level, segment-key and policy-state validation requires a separate Data Quality contract.
-
-## Repository correction verification
-
-PR #13 passed:
-
-```text
-npm ci                         PASS
-npm run check                  PASS
-Focused staged TikTok           4/4 PASS
-Node Unit/Integration         540/540 PASS
-Workers runtime                 9/9 PASS
-Report reliability             70/70 PASS
-npm audit --audit-level=high    0 vulnerabilities
-npm run deploy:dry-run          PASS
-```
-
-The transitive `sharp` vulnerability chain was remediated by `overrides.sharp=0.35.3` and a refreshed lockfile. No Live resource was mutated.
-
-## Local setup
-
-```bash
-cp .dev.vars.example .dev.vars
-chmod 600 .dev.vars
-npm ci
-```
-
-Do not commit `.dev.vars` or `wrangler.sync.jsonc`.
-
-Minimum DEV identity:
+All default `false`:
 
 ```env
-MKT_ENV=development
-MKT_CUSTOMER_PROFILE=dev_ft_pumkin
+MKT_TIME_SERIES_D1_WRITE_ENABLED=false
+MKT_TIME_SERIES_D1_BACKFILL_ENABLED=false
+MKT_REPORT_D1_SHADOW_READ_ENABLED=false
+MKT_REPORT_D1_READ_ENABLED=false
+MKT_REPORT_PRESET_MATERIALIZATION_ENABLED=false
+MKT_LARK_DAILY_RETENTION_ENABLED=false
+MKT_NOTIFICATION_RUNTIME_ENABLED=false
 ```
 
-Secrets must remain in `.dev.vars`, Wrangler Secret or the environment-specific Secret Manager:
+Reader cutover, Retention, Notification and Schedule are separate approvals
+
+## Migration sequence
+
+1. Documentation baseline
+2. Runtime/profile and `MKT_Content` Field ownership alignment
+3. Additive D1 schema/repositories with flags false
+4. Manual dual-write with schedules disabled
+5. Controlled bootstrap without fake history
+6. D1 shadow Report read and range parity
+7. Reader cutover with one-flag rollback
+8. Lark retention after backup/reconciliation
+9. Notification after deterministic Report parity
+10. Customer-owned Production separately
+
+## Next proposed Implementation task
 
 ```text
-LARK_APP_ID
-LARK_APP_SECRET
-LARK_APP_TOKEN
-API keys
-OAuth tokens
-Webhook/signing secrets
-Passwords
+Storage Foundation Phase 1
+= integration_workspace identity alignment
++ Chemistry K TikTok identity
++ MKT_Content Field ownership policy
++ additive D1 schema/repositories/tests
++ all new flags false
++ no Live business-data write
 ```
 
-## Verification commands
+Implementation must be opened as a separate Current Task after this documentation baseline is merged
+
+## Default verification gates
 
 ```bash
 npm ci
@@ -285,142 +279,16 @@ npm audit --audit-level=high
 npm run deploy:dry-run
 ```
 
-Focused commands:
+Add focused migration, storage, report parity and rollback tests without reducing existing gates
 
-```bash
-npm run validate:tiktok
-npm run preflight:youtube
-npm run analyze:lark-base-export -- --base-export /path/to/export.base
-npm run setup:google-ads-view-filters
-```
+## Safety
 
-## TikTok Organic commands
-
-Read-only validation:
-
-```bash
-npm run validate:tiktok
-```
-
-Confirmed local write only after validation:
-
-```bash
-CONFIRM_WRITE=YES npm run sync:tiktok
-```
-
-Report schema and managed Views:
-
-```bash
-npm run setup:report-schema
-CONFIRM_WRITE=YES npm run setup:report-schema:apply
-
-npm run setup:report-views
-CONFIRM_WRITE=YES npm run setup:report-views:apply
-```
-
-Do not rerun a Live Apply when Preview is already zero drift.
-
-## YouTube Organic commands
-
-```bash
-npm run preflight:youtube
-npm run setup:youtube-schema
-CONFIRM_WRITE=YES npm run setup:youtube-schema:apply
-npm run job:youtube-sync
-```
-
-DEV schedules and Owner Analytics must remain environment-specific. Customer-scale 837-video Live UAT is still required before Production.
-
-## Cloudflare configuration
-
-Copy the example into an ignored local file:
-
-```bash
-cp -n wrangler.sync.example.jsonc wrangler.sync.jsonc
-```
-
-Replace environment-specific D1, Queue and Table IDs locally. Release examples keep all new connectors and schedules disabled.
-
-Never deploy using placeholder IDs.
-
-## Architecture
-
-```text
-apps/
-  api-worker/       HTTP/admin/health boundaries
-  sync-worker/      scheduled and Queue jobs
-
-packages/
-  domain/           entities and value objects
-  application/      use cases, connector and job contracts
-  sync-engine/      storage-neutral plan/diff/execute
-  connectors/       Lark, TikTok, YouTube, Meta transport and source clients
-  config/           profiles, catalogs, feature flags and table mappings
-  reliability/      D1 stores, lock, retry, DLQ, outbox and redrive
-  shared/           date, error, HTTP and serialization utilities
-
-scripts/            guarded setup/preflight/release tools
-tests/              unit, integration, worker-runtime and reliability tests
-docs/               contracts, runbooks, audits and Project Brain
-```
-
-Dependency direction must remain inward toward Domain/Application contracts. New connectors reuse the central Job Catalog, Connector Catalog and reliability architecture.
-
-## Next approval gate
-
-Proposed workstream:
-
-`Google Ads Manager Script signed delivery connector`
-
-Before coding, approve:
-
-1. six-dataset payload schema/version
-2. stable key and idempotency key
-3. HMAC signature, timestamp, nonce and replay window
-4. bounded batch and payload size
-5. null semantics
-6. partial-write/retry classification
-7. Queue/DLQ/checkpoint/lock/reconciliation
-8. retention/redaction/audit
-9. DEV/UAT/Production isolation
-10. schedule disabled by default
-
-Then run isolated manual UAT and an idempotent rerun before any schedule is enabled.
-
-## Release safety
-
-Release archives must exclude:
-
-```text
-.dev.vars
-wrangler.sync.jsonc
-.git
-.wrangler
-node_modules
-.DS_Store
-__MACOSX
-AppleDouble files
-local SQLite files and sidecars
-.mkt-locks
-outputs and generated local artifacts
-```
-
-Use:
-
-```bash
-npm run release:package
-npm run release:verify -- outputs/releases/<archive>.zip
-```
-
-## Permanent rules
-
-- Data model before Connector
-- DEV/UAT/Production resources stay isolated
-- Production is customer-owned
-- connectors and schedules disabled by default until their gates pass
-- no fake Production success
-- no Business write without stable key/idempotency/retry semantics
-- missing metrics remain `null` unless zero is a real source value
-- secrets never enter Source, Log, Health or release artifacts
-- do not infer View business logic from a View name
-- do not claim a Live root cause without a minimal Live reproduction or successful Apply
+- No Secret in Source or logs
+- No fake history
+- No missing→zero conversion
+- No Protected RAW mutation
+- No Record deletion from old Profile labels
+- No Lark Formula/View Apply rerun
+- No D1 retention before Capacity evidence
+- No Schedule before manual parity/idempotency
+- No Production resources owned by the developer
