@@ -1,5 +1,18 @@
 # 10 — Next Actions
 
+## Immediate next approval gate — Customer OAuth rollout
+
+PR A/B/C source and tests are published as stacked Draft PRs `#42` → `#43` → `#44`. Next:
+
+1. Let GitHub CI finish and review the Draft PRs in order `#42` → `#43` → `#44`; keep PR #17 Draft/HOLD.
+2. Merge only after review approval, preserving the same order.
+3. Obtain separate approval for Remote D1 backup/migration, Worker Secrets, Google Redirect URIs and deployment.
+4. Deploy with every Business schedule false and smoke only the HTTP allowlist.
+5. Obtain separate approval to generate the two one-time customer Connect links.
+6. Wait for the customer, then inspect redacted Connection results read-only.
+
+Do not enqueue business jobs, write Lark, enable schedules or rerun TikTok recovery. Exact commands are in `docs/customer-connection-oauth-rollout.md`.
+
 ## Completed source correction
 
 Repository audit/safety correction PR `#13` was squash-merged to main commit:
