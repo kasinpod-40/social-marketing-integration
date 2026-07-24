@@ -1,18 +1,18 @@
 # 00 — Current State
 
-## Customer OAuth retry-safe v2 — deployed, test links ready
+## Customer OAuth retry-safe v2 — customer links active
 
 As of 2026-07-24, Shared Customer Connection/OAuth, Google Ads OAuth and YouTube OAuth are implemented, verified and merged in order through PRs `#42` → `#43` → `#44`. The approved Integration Workspace rollout is complete through Remote D1 migration, Google Cloud configuration, Worker Secrets/runtime mappings, deployment and HTTP smoke.
 
 ```text
 CONNECTOR_IMPLEMENTATION            COMPLETE_MERGED
-RETRY_SAFE_V2                       DEPLOYED_TEST_LINKS_ACTIVE
+RETRY_SAFE_V2                       DEPLOYED_CUSTOMER_LINKS_ACTIVE
 MOCK_CONTRACT_TEST                  PASS
 INTEGRATION_WORKSPACE_DEPLOYMENT    PASS
-CUSTOMER_OAUTH                      AUTHORIZATION_PENDING_STATES_EXPIRED
+CUSTOMER_OAUTH                      AWAITING_CUSTOMER_ACTION
 LIVE_ACCESS                         NOT_RUN
 HTTP_SMOKE                          PASS_404_405
-CONNECT_LINK_GENERATION             V2_TEST_LINKS_2_ACTIVE
+CONNECT_LINK_GENERATION             V2_CUSTOMER_LINKS_2_ACTIVE_7D
 REMOTE_MIGRATION                    0011_0012_APPLIED
 LIVE_WORKER                         V2_PREVIEW_SAFE
 SCHEDULE                            DISABLED
@@ -21,7 +21,7 @@ PRODUCTION                          BLOCKED
 
 Migrations `0011` and `0012` are applied remotely with no pending migration.
 Worker v2 is deployed; final Secret-change version
-`be07d411-5d36-415c-9fc0-874a45952bf8` is at 100%. Historical v1 invitations
+`79ef3710-2ed2-4373-b0d0-42ec76896fa6` is at 100%. Historical v1 invitations
 remain consumed and closed.
 
 PR `#45` implements contract v2 and is merged to `main` at `9ca8375`:
@@ -32,17 +32,18 @@ closure on successful callback. Additive migration
 43/43; Unit 686/686, Workers 9/9, report reliability 70/70, Architecture
 191/460/0, audit 0 and deploy dry-run pass. GitHub Branch Verification passed.
 Remote backup, migration, real-config dry-run, deployment and HTTP smoke passed.
-One 15-minute/three-attempt test invitation per connector is active. Opening each
-GET URL twice returned confirmation HTML while D1 remained attempt count 0,
-active attempt count 0 and OAuth state count 4. Provider callbacks remain
-pending. No Queue/Lark effect or schedule change occurred. PR #17 remains
+The 15-minute test invitations expired unused with zero OAuth starts. On
+`2026-07-25`, one seven-day/three-attempt customer invitation per connector was
+created and handed to the user. They expire around
+`2026-08-01 00:15 Asia/Bangkok`; signed URLs are not stored. Provider callbacks
+remain pending. No Queue/Lark effect or schedule change occurred. PR #17 remains
 Draft/HOLD.
 
 ## Source baseline
 
 - Implementation baseline: `d4a531fbb4e05dad7ce2296859c97f571e23acf3` / PR `#13`
 - Documentation closeout: PR `#14`
-- Current task: `docs/current-task.md` — v2 test callbacks pending
+- Current task: `docs/current-task.md` — awaiting customer callbacks
 - Application package line: `0.11.0`
 - Contract versions: View `v0.13.5`, Formula `v0.13.6`, audit correction `v0.13.7`
 

@@ -3,7 +3,7 @@
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = RETRY_SAFE_CONNECT_TEST_LINKS_READY
+TASK_STATUS                         = CUSTOMER_LINKS_ACTIVE_AWAITING_CALLBACK
 CURRENT_PROGRAM                     = MULTI_CONNECTOR_CUSTOMER_CONNECTION_FOUNDATION
 FIRST_PRIORITY                      = GOOGLE_ADS_AND_YOUTUBE_CUSTOMER_OAUTH
 OTHER_CONNECTORS                    = PLANNED_NOT_STARTED
@@ -14,13 +14,13 @@ PRODUCTION                          = BLOCKED
 REMOTE_D1_MIGRATION                 = 0011_0012_COMPLETE
 WORKER_DEPLOYMENT                   = V2_DEPLOYED
 GOOGLE_REDIRECT_URI_LIVE_CHANGE     = COMPLETE
-CONNECT_LINK_GENERATION             = V2_TEST_LINKS_2_ACTIVE
+CONNECT_LINK_GENERATION             = V2_CUSTOMER_LINKS_2_ACTIVE_7D
 CONNECTOR_IMPLEMENTATION            = COMPLETE_MERGED
 RETRY_SAFE_IMPLEMENTATION           = MERGED_PR_45
-MERGED_PR_SEQUENCE                  = #42 -> #43 -> #44 -> #45 -> #46
+MERGED_PR_SEQUENCE                  = #42 -> #43 -> #44 -> #45 -> #46 -> #47
 MOCK_CONTRACT_TEST                  = PASS
 INTEGRATION_WORKSPACE_DEPLOYMENT    = PASS
-CUSTOMER_OAUTH                      = AUTHORIZATION_PENDING_STATES_EXPIRED
+CUSTOMER_OAUTH                      = AWAITING_CUSTOMER_ACTION
 LIVE_ACCESS                         = NOT_RUN
 LIVE_DATA_UAT                       = NOT_RUN
 LARK_WRITE_UAT                      = NOT_APPLICABLE_THIS_PHASE
@@ -206,6 +206,13 @@ complete.
   and OAuth state count remained `4`.
 - Signed test URLs are handed to the user only and are intentionally not stored
   in Repository documentation.
+- On `2026-07-25`, the unused test links were confirmed expired. The operator
+  Secret was rotated without persisting plaintext and one seven-day,
+  three-attempt customer invitation per connector was created. Current Worker
+  version is `79ef3710-2ed2-4373-b0d0-42ec76896fa6`.
+- Branch Verification later detected `GHSA-r28c-9q8g-f849` in transitive
+  `postcss@8.5.16`; the lockfile now resolves `postcss@8.5.23` within Vite's
+  existing dependency range.
 - No Queue message, Lark write, connector/schedule activation or Production
   mutation occurred.
 
@@ -293,8 +300,9 @@ Current encrypted credential counts           2 active PKCE / 2 replaced PKCE / 
 ### Remaining blockers
 
 - All four historical v1 invitations remain consumed and cannot be replayed.
-- Two short-lived v2 test invitations are active and preview-safe; both provider
-  callbacks still need manual completion before expiry.
+- The two short-lived v2 test invitations expired unused with zero OAuth starts.
+- One seven-day v2 customer invitation per connector is active and preview-safe;
+  both provider callbacks require customer action before expiry.
 - Expired OAuth attempts leave active/replaced PKCE verifier audit rows; cleanup behavior requires review and explicit authorization before any data mutation.
 - OAuth callback, encrypted Refresh Token persistence and provider identity validation remain untested.
 - Google Ads Developer Token remains `Test Account Access`; OAuth can retain the credential with `google_ads_api_access_pending`, but Production advertiser API access must not be claimed.
@@ -303,44 +311,49 @@ Current encrypted credential counts           2 active PKCE / 2 replaced PKCE / 
 
 Exact rollout and rollback commands: `docs/customer-connection-oauth-rollout.md`.
 
-## Next boundary — Complete both v2 test callbacks
+## Next boundary — Await customer callbacks
 
 Remote migration `0012`, v2 deployment and repeat-GET smoke are complete. The
-test links are valid for 15 minutes from generation and support at most three
-OAuth starts each.
+customer links expire around `2026-08-01 00:15 Asia/Bangkok` and support at most
+three OAuth starts each.
 
 Current operating rules:
 
 - Signed links are not stored in Source, docs or logs.
+- No polling/monitoring is required while waiting.
 - Customer opens each link, reviews the confirmation page and presses the Google
   button only when ready to complete consent.
 - After each callback, verify encrypted Refresh Token, exact provider identity,
   invitation completion and zero Queue/Lark side effects.
-- Generate longer-lived customer links only if test callbacks require a separate
-  customer round.
+- Regenerate customer links only if they expire or exhaust their attempt budget.
 - Review orphaned PKCE cleanup separately; do not delete D1 audit rows or credentials without exact approval.
 
-## Account handoff — 2026-07-24
+## Account handoff — 2026-07-25
 
 Another account can resume by reading `AGENTS.md`, this file, `docs/project-brain/00-current-state.md` and `docs/project-brain/10-next-actions.md`.
 
 ```text
-SOURCE_MAIN                         5e5b8ee / PR #45 + #46
+SOURCE_MAIN                         7164a92 / PR #45 + #46 + #47
 MERGED_PR                           #45 / retry-safe Connect v2
 FEATURE_COMMIT                      f7b17ed
-LIVE_WORKER_VERSION                 be07d411-5d36-415c-9fc0-874a45952bf8
+LIVE_WORKER_VERSION                 79ef3710-2ed2-4373-b0d0-42ec76896fa6
 REMOTE_D1_MIGRATION                 0011 + 0012 applied / none pending
-INVITATIONS                         legacy 4 consumed; v2 test 2 active
+INVITATIONS                         legacy 4 consumed; v2 test 2 expired; customer 2 active
 OAUTH_STATES                        google_ads 2 expired; youtube 2 expired; callbacks 0
 PKCE_CREDENTIALS                    per connector: 1 active + 1 replaced
 REFRESH_TOKENS                      0
 IDENTITY_SELECTIONS                 0
 CONNECTIONS                         authorization_pending / not_validated
 QUEUE_LARK_SCHEDULES                disabled / no business side effects
-SIGNED_URLS                         v2 test URLs handed to user, not stored
+SIGNED_URLS                         v2 customer URLs handed to user, not stored
 ```
 
-The live operator token was rotated during test-link generation and its plaintext temporary copy was securely deleted. Cloudflare Secrets are not readable; any future invitation generation therefore requires a separately approved operator-token rotation. The real non-secret runtime mapping remains only in ignored local `wrangler.sync.jsonc`; never commit it or replace it with the example config for remote commands.
+The live operator token was rotated during customer-link generation and its
+plaintext existed only in the creating process. Cloudflare Secrets are not
+readable; any future invitation generation therefore requires a separately
+approved operator-token rotation. The real non-secret runtime mapping remains
+only in ignored local `wrangler.sync.jsonc`; never commit it or replace it with
+the example config for remote commands.
 
 Business Queue jobs, Lark writes, connector activation and schedules are outside this approval and remain prohibited.
 

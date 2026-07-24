@@ -7,19 +7,21 @@ REMOTE_D1_MIGRATION             = 0011_0012_COMPLETE
 WORKER_DEPLOYMENT               = V2_COMPLETE
 SOURCE                          = V2_MERGED_PR_45
 GOOGLE_REDIRECT_URI_LIVE_CHANGE = COMPLETE
-CONNECT_LINK_GENERATION         = V2_TEST_LINKS_2_ACTIVE
-CUSTOMER_OAUTH                  = AUTHORIZATION_PENDING_STATES_EXPIRED
+CONNECT_LINK_GENERATION         = V2_CUSTOMER_LINKS_2_ACTIVE_7D
+CUSTOMER_OAUTH                  = AWAITING_CUSTOMER_ACTION
 SCHEDULES                       = DISABLED
 QUEUE_MESSAGES                  = 0
 LARK_WRITES                     = 0
 ```
 
-Migration `0012` and Worker v2 rollout completed on `2026-07-24`. The final live
-version after operator Secret rotation is
-`be07d411-5d36-415c-9fc0-874a45952bf8`. One short-lived v2 test link per
-connector is active; repeated GET preview consumed zero attempts. Signed URLs are
-not stored here. Provider callback UAT remains pending. Use the real ignored
-`wrangler.sync.jsonc`; never substitute the example file for remote commands.
+Migration `0012` and Worker v2 rollout completed on `2026-07-24`. The short-lived
+test links expired unused. On `2026-07-25`, the operator Secret was rotated
+without persisting plaintext and one seven-day/three-attempt customer link per
+connector was created. Final live version is
+`79ef3710-2ed2-4373-b0d0-42ec76896fa6`. Links expire around
+`2026-08-01 00:15 Asia/Bangkok`; signed URLs are not stored here. Provider
+callback UAT remains pending. Use the real ignored `wrangler.sync.jsonc`; never
+substitute the example file for remote commands.
 
 ## Routes
 
