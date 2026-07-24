@@ -113,10 +113,38 @@ testing, but Meta reports API access restricted until every app administrator
 completes Developer Portal account verification. The user confirms that the
 customer supplied separate Facebook and Instagram tokens. The locally stored
 Instagram credential passed a read-only `/me` identity request with HTTP `200`;
-the Facebook token is not yet available under the expected local
-`META_ACCESS_TOKEN` runtime name, so its identity/scope preflight remains
-pending. No App/Business ID is stored here, no dashboard setting was changed,
-and the separate developer-owned app is not evidence for customer readiness.
+the Facebook credential is present locally but all read-only identity,
+permission, Page, app and debug requests returned the sanitized provider
+outcome `API access blocked`. The later Business Settings inspection no longer
+showed the administrator that issued that credential, so it must be treated as
+orphaned and rotated after verified administration is restored.
+
+The token-based Meta preflight foundation is now implemented locally on
+`codex/meta-token-preflight-foundation` and pushed at `c1675ed`: independent Facebook Organic,
+Instagram Organic and Meta Ads GET-only adapters, exact identity guards,
+redacted results and the `npm run preflight:meta` operator command. All three
+connectors remain `uat_pending` and disabled. No Live request, write, deployment
+or Production action occurred in the implementation round. Live UAT waits for a
+new Facebook token, pinned API version and exact Page/Instagram/Ad Account
+mappings. No raw App/Business ID is stored here, no dashboard setting was
+changed, and the separate developer-owned app is not evidence for customer
+readiness.
+
+The follow-on Meta Business Ingestion design is prepared without Live access in
+`docs/meta-business-ingestion-contract-v1.md` and
+`packages/config/src/meta-business-ingestion-contract.js`. It locks GET-only
+datasets, the five existing Shared Raw tables, D1/Canonical destinations,
+Stable keys, Coverage/revision and credential lifecycles.
+
+The authorized local-only follow-on now also has contract-bound GET adapters,
+safe static operation observability, pure Shared Raw/D1 candidate normalizers
+and synthetic Facebook/Instagram/Meta Ads fixtures. Focused tests pass 28/28;
+Unit 719/719, Workers 9/9, report reliability 70/70, Architecture
+206/492/0, repository hygiene and Wrangler dry-run pass. Dependency files were
+unchanged and the explicitly approved fresh online npm audit reports zero
+vulnerabilities. No Live request, Queue/D1/Lark writer, Worker route, job,
+feature activation, schedule or deployment was added. Every dataset remains
+`live_fixture_required`.
 
 ## Google Ads state
 

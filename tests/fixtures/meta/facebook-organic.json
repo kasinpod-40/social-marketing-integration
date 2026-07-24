@@ -1,0 +1,33 @@
+{
+  "account": {
+    "id": "page_fixture_001",
+    "name": "Fixture Facebook Page",
+    "username": "fixture.facebook",
+    "category": "Education",
+    "fan_count": "1200",
+    "followers_count": 1250,
+    "link": "https://example.test/facebook/fixture?tracking=remove"
+  },
+  "content": [
+    {
+      "id": "post_fixture_001",
+      "message": "Synthetic Facebook post",
+      "created_time": "2026-07-23T17:30:00+0000",
+      "updated_time": "2026-07-23T18:00:00+0000",
+      "permalink_url": "https://example.test/facebook/posts/fixture?tracking=remove",
+      "is_published": true
+    }
+  ],
+  "content_insights": [
+    {
+      "name": "post_media_view",
+      "period": "lifetime",
+      "values": [
+        {
+          "value": 0,
+          "end_time": "2026-07-24T00:00:00+0000"
+        }
+      ]
+    }
+  ]
+}

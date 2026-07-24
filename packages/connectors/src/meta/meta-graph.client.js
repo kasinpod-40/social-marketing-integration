@@ -10,7 +10,7 @@ const DEFAULT_PAGE_SIZE = 100;
 const DEFAULT_MAX_ATTEMPTS = 5;
 const DEFAULT_RETRY_BASE_DELAY_MS = 500;
 const DEFAULT_MAX_RETRY_DELAY_MS = 30_000;
-const MAX_REMOTE_ERROR_MESSAGE_LENGTH = 500;
+const DEFAULT_MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 
 /**
  * Shared Meta Graph client สำหรับ Facebook Page, Instagram Business และ Meta Ads adapters
@@ -35,6 +35,10 @@ export class MetaGraphClient {
     this.maxPages = positiveInteger(config.maxPages ?? DEFAULT_MAX_PAGES, 'maxPages');
     this.pageSize = positiveInteger(config.pageSize ?? DEFAULT_PAGE_SIZE, 'pageSize');
     this.maxAttempts = positiveInteger(config.maxAttempts ?? DEFAULT_MAX_ATTEMPTS, 'maxAttempts');
+    this.maxResponseBytes = positiveInteger(
+      config.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES,
+      'maxResponseBytes',
+    );
     this.retryBaseDelayMs = positiveInteger(
       config.retryBaseDelayMs ?? DEFAULT_RETRY_BASE_DELAY_MS,
       'retryBaseDelayMs',
@@ -49,17 +53,23 @@ export class MetaGraphClient {
   }
 
   /** อ่าน Graph node/edge หนึ่งคำขอ พร้อม Retry เฉพาะ Error ที่ทำซ้ำได้ปลอดภัย */
-  async get(path, query = {}) {
+  async get(path, query = {}, options = {}) {
     const safePath = normalizeGraphPath(path);
+    const operation = normalizeOperationName(options.operationName);
     let lastError = null;
 
     for (let attempt = 1; attempt <= this.maxAttempts; attempt += 1) {
-      this.onRequest({ stage: 'meta_request_start', path: safePath, attempt, maxAttempts: this.maxAttempts });
+      this.onRequest({
+        stage: 'meta_request_start',
+        operation,
+        attempt,
+        maxAttempts: this.maxAttempts,
+      });
       try {
-        const result = await this.#requestOnce(safePath, query);
+        const result = await this.#requestOnce(safePath, query, operation);
         this.onRequest({
           stage: 'meta_request_success',
-          path: safePath,
+          operation,
           attempt,
           status: result.status,
           usage: result.usage,
@@ -70,7 +80,7 @@ export class MetaGraphClient {
         if (error?.retryable !== true || attempt === this.maxAttempts) {
           this.onRequest({
             stage: 'meta_request_failed',
-            path: safePath,
+            operation,
             attempt,
             retryable: error?.retryable === true,
             code: error?.code ?? null,
@@ -88,7 +98,7 @@ export class MetaGraphClient {
         });
         this.onRequest({
           stage: 'meta_request_retry',
-          path: safePath,
+          operation,
           attempt,
           delayMs,
           code: error?.code ?? null,
@@ -107,11 +117,12 @@ export class MetaGraphClient {
    */
   async getPage(path, query = {}, options = {}) {
     const after = optionalText(options.after);
+    const operation = normalizeOperationName(options.operationName);
     const visitedCursors = new Set(normalizeCursorList(options.visitedCursors));
     if (after && visitedCursors.has(after)) {
       throw permanentError('Meta Graph pagination received an already visited cursor', {
         code: 'META_CURSOR_REPEATED',
-        details: { path: normalizeGraphPath(path) },
+        details: { operation },
       });
     }
 
@@ -119,12 +130,12 @@ export class MetaGraphClient {
       ...query,
       limit: query.limit ?? this.pageSize,
       ...(after ? { after } : {}),
-    });
+    }, { operationName: operation });
     const data = payload?.data;
     if (!Array.isArray(data)) {
       throw permanentError('Meta Graph edge response must contain data array', {
         code: 'META_INVALID_RESPONSE',
-        details: { path: normalizeGraphPath(path) },
+        details: { operation },
       });
     }
 
@@ -133,13 +144,13 @@ export class MetaGraphClient {
     if (hasMore && !nextCursor) {
       throw permanentError('Meta Graph paging.next exists without after cursor', {
         code: 'META_CURSOR_MISSING',
-        details: { path: normalizeGraphPath(path) },
+        details: { operation },
       });
     }
     if (nextCursor && (nextCursor === after || visitedCursors.has(nextCursor))) {
       throw permanentError('Meta Graph pagination repeated an after cursor', {
         code: 'META_CURSOR_REPEATED',
-        details: { path: normalizeGraphPath(path) },
+        details: { operation },
       });
     }
 
@@ -151,13 +162,18 @@ export class MetaGraphClient {
   }
 
   /** Compatibility helper สำหรับชุดข้อมูลเล็กเท่านั้น; Runtime ขนาดใหญ่ต้องใช้ getPage + Durable staging */
-  async listEdge(path, query = {}) {
+  async listEdge(path, query = {}, options = {}) {
     const rows = [];
     const visitedCursors = new Set();
+    const operation = normalizeOperationName(options.operationName);
     let after = null;
 
     for (let page = 1; page <= this.maxPages; page += 1) {
-      const result = await this.getPage(path, query, { after, visitedCursors: [...visitedCursors] });
+      const result = await this.getPage(path, query, {
+        after,
+        visitedCursors: [...visitedCursors],
+        operationName: operation,
+      });
       rows.push(...result.rows);
       if (!result.hasMore) return Object.freeze(rows);
       if (after) visitedCursors.add(after);
@@ -166,11 +182,11 @@ export class MetaGraphClient {
 
     throw permanentError('Meta Graph pagination exceeded configured maxPages', {
       code: 'META_PAGINATION_LIMIT',
-      details: { path: normalizeGraphPath(path), maxPages: this.maxPages },
+      details: { operation, maxPages: this.maxPages },
     });
   }
 
-  async #requestOnce(safePath, query) {
+  async #requestOnce(safePath, query, operation) {
     const url = new URL(`${this.baseUrl}/${this.apiVersion}/${safePath}`);
     for (const [key, value] of Object.entries(query)) {
       if (value !== null && value !== undefined && value !== '') url.searchParams.set(key, String(value));
@@ -184,26 +200,26 @@ export class MetaGraphClient {
 
     try {
       const response = await this.fetchImpl(url, { method: 'GET', headers, signal: controller.signal });
-      const text = await response.text();
-      const payload = parseJsonPayload(text, safePath, response.status);
+      const text = await readBoundedResponseText(response, this.maxResponseBytes);
+      const payload = parseJsonPayload(text, operation, response.status);
       const usage = readUsageHeaders(response.headers);
       if (response.ok && !payload?.error) {
         return Object.freeze({ payload, status: response.status, usage });
       }
-      throw createMetaApiError({ response, payload, path: safePath });
+      throw createMetaApiError({ response, payload, operation });
     } catch (cause) {
       if (controller.signal.aborted || cause?.name === 'AbortError') {
-        throw transientError(`Meta Graph request timed out: ${safePath}`, {
+        throw transientError(`Meta Graph request timed out: ${operation}`, {
           code: 'META_REQUEST_TIMEOUT',
           cause,
-          details: { path: safePath, timeoutMs: this.timeoutMs },
+          details: { operation, timeoutMs: this.timeoutMs },
         });
       }
       if (cause?.code) throw cause;
-      throw transientError(`Meta Graph network request failed: ${safePath}`, {
+      throw transientError(`Meta Graph network request failed: ${operation}`, {
         code: 'META_NETWORK_ERROR',
         cause,
-        details: { path: safePath },
+        details: { operation },
       });
     } finally {
       clearTimeout(timeout);
@@ -211,32 +227,75 @@ export class MetaGraphClient {
   }
 }
 
-function createMetaApiError({ response, payload, path }) {
+/** อ่าน Response body แบบมีเพดานเพื่อไม่ให้ Provider response กิน Worker memory ไม่จำกัด */
+async function readBoundedResponseText(response, maxResponseBytes) {
+  if (!response?.body || typeof response.body.getReader !== 'function') {
+    const text = await response.text();
+    if (new TextEncoder().encode(text).byteLength > maxResponseBytes) {
+      throw responseTooLarge(maxResponseBytes);
+    }
+    return text;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let totalBytes = 0;
+  let text = '';
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > maxResponseBytes) {
+        try {
+          await reader.cancel('Meta response exceeded configured byte limit');
+        } catch {
+          // การยกเลิก Stream เป็น best effort; ต้องรักษาเหตุผลหลักว่า Body เกินเพดาน
+        }
+        throw responseTooLarge(maxResponseBytes);
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    text += decoder.decode();
+    return text;
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+function responseTooLarge(maxResponseBytes) {
+  return permanentError('Meta Graph response exceeded the configured byte limit', {
+    code: 'META_RESPONSE_TOO_LARGE',
+    details: { maxResponseBytes },
+  });
+}
+
+function createMetaApiError({ response, payload, operation }) {
   const metaError = payload?.error ?? {};
   const retryable = response.status === 429 || response.status >= 500 || metaError.is_transient === true;
   const factory = retryable ? transientError : permanentError;
-  return factory(`Meta Graph request failed: ${path}`, {
+  return factory(`Meta Graph request failed: ${operation}`, {
     code: retryable ? 'META_TRANSIENT_API_ERROR' : 'META_PERMANENT_API_ERROR',
     details: {
-      path,
+      operation,
       status: response.status,
       graphCode: metaError.code ?? null,
       graphSubcode: metaError.error_subcode ?? null,
       traceId: optionalText(metaError.fbtrace_id),
       retryAfter: readRetryAfter(response.headers),
-      remoteMessage: truncateText(metaError.message),
+      providerReason: classifyMetaErrorReason(metaError.message),
     },
   });
 }
 
-function parseJsonPayload(text, path, status) {
+function parseJsonPayload(text, operation, status) {
   try {
     return text === '' ? {} : JSON.parse(text);
   } catch (cause) {
-    throw transientError(`Meta Graph returned invalid JSON: ${path}`, {
+    throw transientError(`Meta Graph returned invalid JSON: ${operation}`, {
       code: 'META_INVALID_RESPONSE',
       cause,
-      details: { path, status },
+      details: { operation, status },
     });
   }
 }
@@ -282,10 +341,10 @@ function normalizeCursorList(value) {
   return value.map((cursor) => requireText(cursor, 'visitedCursor'));
 }
 
-function truncateText(value) {
-  if (typeof value !== 'string') return null;
-  const text = value.trim();
-  return text ? text.slice(0, MAX_REMOTE_ERROR_MESSAGE_LENGTH) : null;
+function classifyMetaErrorReason(value) {
+  const message = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  if (message === 'api access blocked.') return 'api_access_blocked';
+  return null;
 }
 
 function normalizeGraphPath(value) {
@@ -294,6 +353,16 @@ function normalizeGraphPath(value) {
     throw new TypeError('Meta Graph path must not contain traversal or query fragments');
   }
   return text;
+}
+
+function normalizeOperationName(value) {
+  const operation = value === null || value === undefined || value === ''
+    ? 'meta.graph.request'
+    : requireText(value, 'operationName');
+  if (operation.length > 100 || !/^[a-z][a-z0-9._-]*$/u.test(operation)) {
+    throw new TypeError('Meta operationName must be a bounded static identifier');
+  }
+  return operation;
 }
 
 function normalizeApiVersion(value) {

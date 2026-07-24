@@ -87,6 +87,7 @@
     "MKT_CONNECTOR_TIKTOK_ENABLED": "false",
     "MKT_CONNECTOR_FACEBOOK_ENABLED": "false",
     "MKT_CONNECTOR_INSTAGRAM_ENABLED": "false",
+    "MKT_CONNECTOR_META_ADS_ENABLED": "false",
     "MKT_CONNECTOR_YOUTUBE_ENABLED": "false",
     "MKT_YOUTUBE_ANALYTICS_ENABLED": "false",
     "MKT_CONNECTOR_WOOCOMMERCE_ENABLED": "false",
@@ -144,6 +145,17 @@
     "TIKTOK_SOURCE_HANDLE": "chemistry_k",
     // YouTube Channel ID ไม่ใช่ Secret; API key/OAuth ต้องตั้งผ่าน Secrets/.dev.vars เท่านั้น
     "YOUTUBE_CHANNEL_ID": "replace-with-youtube-channel-id",
+
+    // Meta version/identity เป็น Non-secret; Access Tokens ต้องตั้งด้วย Worker Secrets เท่านั้น
+    "META_GRAPH_API_VERSION": "v25.0",
+    "META_FACEBOOK_PAGE_ID": "replace-with-facebook-page-id",
+    "META_INSTAGRAM_ACCOUNT_ID": "replace-with-instagram-account-id",
+    "META_AD_ACCOUNT_ID": "replace-with-meta-ad-account-id",
+    "META_API_TIMEOUT_MS": "30000",
+    "META_MAX_PAGES": "100",
+    "META_PAGE_SIZE": "100",
+    "META_MAX_ATTEMPTS": "5",
+    "META_MAX_RESPONSE_BYTES": "8388608",
 
     // Lease 10 นาที และต่ออายุทุก 2 นาที เพื่อลดความเสี่ยง Lock หมดกลางงาน
     "MKT_SYNC_LOCK_LEASE_MS": "600000",

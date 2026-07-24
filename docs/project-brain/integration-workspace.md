@@ -33,8 +33,9 @@ Infrastructure ownership and Source ownership are separate concerns. A customer-
 | Connector | Current source | Status |
 | --- | --- | --- |
 | TikTok Organic | Chemistry K `@chemistry_k` through Lark Native TikTok For Creator | RAW populated; Canonical sync for current customer source not yet verified |
-| Facebook Organic | Developer temporary source | Replace later in same Workspace |
-| Instagram Organic | Developer temporary source | Replace later in same Workspace |
+| Facebook Organic | Customer token preflight foundation implemented; current token provider-blocked/orphaned | Restore verified app administrator, rotate token and validate exact Page in same Workspace |
+| Instagram Organic | Customer Instagram Login token passed prior `/me`; preflight foundation implemented | Configure exact account mapping and repeat redacted Live UAT |
+| Meta Ads | Shares customer Facebook credential only at the Secret boundary; independent preflight result | Rotate token and validate exact Ad Account independently |
 | YouTube Organic | Developer temporary source; Customer OAuth source merged via PR `#44` | Customer Connect deployment/authorization pending |
 | Google Ads | Chemistry K advertiser linked and Manager Script read-only data available; Customer OAuth source merged via PR `#43` | OAuth deployment and Developer Token Live access pending; PR `#17` remains Draft/HOLD |
 | WooCommerce | Chemistry K source/access-dependent | Connector pending |

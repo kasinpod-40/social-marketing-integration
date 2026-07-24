@@ -1,0 +1,37 @@
+{
+  "account": {
+    "user_id": "ig_fixture_001",
+    "id": "scoped_fixture_001",
+    "username": "fixture.instagram",
+    "name": "Fixture Instagram",
+    "account_type": "BUSINESS",
+    "followers_count": 2345,
+    "follows_count": 123,
+    "media_count": 45
+  },
+  "content": [
+    {
+      "id": "media_fixture_001",
+      "caption": "Synthetic Instagram reel",
+      "media_type": "VIDEO",
+      "media_product_type": "REELS",
+      "permalink": "https://example.test/instagram/reel/fixture?tracking=remove",
+      "media_url": "https://cdn.example.test/media/fixture.mp4?signature=remove",
+      "thumbnail_url": "https://cdn.example.test/media/fixture.jpg?signature=remove",
+      "timestamp": "2026-07-23T23:30:00+0000"
+    }
+  ],
+  "content_insights": [
+    {
+      "name": "total_interactions",
+      "period": "lifetime",
+      "total_value": {
+        "value": {
+          "like": 10,
+          "comment": 0
+        },
+        "breakdowns": []
+      }
+    }
+  ]
+}

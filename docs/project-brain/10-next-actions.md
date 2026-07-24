@@ -20,31 +20,44 @@ Do not enqueue business jobs, write Lark, enable schedules or rerun TikTok recov
 
 ## Parallel Meta connection preflight
 
-The customer-owned Meta app does not require a new customer Connect link before
-token validation because the customer supplied separate Facebook and Instagram
-tokens. A read-only Safari inspection on `2026-07-25` found Marketing/Page read
-permissions available for testing, but the app is API-restricted until every
-administrator completes Developer Portal account verification. The locally
-stored Instagram token passed read-only `/me` identity validation with HTTP
-`200`; Facebook validation is pending because `META_ACCESS_TOKEN` is not
-currently present in the ignored local runtime config.
+The customer-owned Meta app does not require a new customer Connect link because
+this phase uses customer-supplied Facebook and Instagram tokens. The local
+preflight foundation is implemented with separate redacted results for Facebook
+Organic, Instagram Organic and Meta Ads. A read-only Safari inspection on
+`2026-07-25` found Marketing/Page permissions available for testing, but the app
+is API-restricted. The Instagram token passed `/me` with HTTP `200`; the
+Facebook token returned `API access blocked` on every read-only identity/scope
+probe, and the administrator that issued it is no longer visible in Business
+Settings. Treat it as orphaned and rotate it.
 
 Safe order:
 
-1. Store the supplied Facebook token under the approved ignored/Secret
-   boundary; never paste it into Source, docs or logs.
-2. Run read-only Facebook Page identity/scope validation.
-3. Customer-app administrators complete Developer Portal verification in
-   parallel and repeat the read-only app audit.
-4. Lock token lifecycle, exact Facebook/Instagram identity and separate
-   Facebook Organic / Instagram Organic / Meta Ads connection records.
-5. Update `docs/current-task.md` to approve the exact token-based Meta
-   connector scope before implementation.
+1. Restore at least one verified administrator on the customer-owned Meta
+   app/business and complete any required Developer Portal verification.
+2. Rotate the orphaned Facebook token; keep Facebook/Meta Ads under
+   `META_ACCESS_TOKEN` and Instagram under `META_INSTAGRAM_ACCESS_TOKEN` only in
+   `.dev.vars` or the Worker Secret boundary.
+3. Configure `META_GRAPH_API_VERSION=v25.0` and exact non-secret
+   `META_FACEBOOK_PAGE_ID`, `META_INSTAGRAM_ACCOUNT_ID` and
+   `META_AD_ACCOUNT_ID`.
+4. Run `npm run preflight:meta`; require exact identity matches, sufficient
+   permissions, independently classified results and `businessWrites=0`.
+5. Record Live UAT evidence, then request separate approval before adding
+   Business ingestion, Queue/Lark writes, schedules or deployment.
 
-Do not reuse the developer-owned Meta app as customer evidence. Do not add an
-Instagram use case, change permissions, publish the app, submit App Review or
-generate Meta customer links from this preflight. The dashboard restriction is
-an operational blocker/risk, not evidence that the supplied tokens are invalid.
+The no-credential Business ingestion design and local fixture-driven source
+boundary are now complete: contract-bound GET-only adapters, safe operation
+observability, synthetic fixtures and pure Shared Raw/D1 candidate normalizers
+are implemented with all datasets still `live_fixture_required`. After token
+preflight passes, the next separately approved boundary is GET-only Live fixture
+capture against exact customer identities. D1/Lark writers remain a later PR
+after those Live response shapes and null/zero/action semantics are proven.
+
+Do not reuse the developer-owned Meta app as customer evidence. Do not change
+permissions, publish the app, submit App Review or generate Meta customer links
+from this token-based preflight. The dashboard restriction is an operational
+blocker/risk; the old Facebook credential is not accepted as current customer
+evidence.
 
 ## Completed source correction
 

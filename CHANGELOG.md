@@ -3,6 +3,31 @@
 ## Unreleased — Multi-Connector Customer Connection Foundation — 2026-07-24
 
 ### Added
+- Added fixture-driven GET-only source adapters for Facebook Organic, Instagram
+  Organic and Meta Ads, with contract-scoped paths/fields/metrics, exact
+  identity checks, bounded cursor envelopes and 31-day Ads date chunks.
+- Added pure Shared Raw/D1 candidate normalizers plus synthetic Meta fixtures;
+  observed zero, structured Insights values, exact money micros, Ads breakdowns
+  and unmapped action arrays are preserved without any business writer.
+- Replaced dynamic Meta Graph path observability with bounded static operation
+  names and added redacted, 64 KiB-bounded source payload serialization.
+- Added the design-only Meta Business Ingestion contract with machine-readable
+  GET-only datasets, five-Shared-Raw routing, D1/Canonical destinations, Stable
+  keys, Coverage/revision rules and bounded transport limits.
+- Separated Facebook User/System User discovery from the Page access credential
+  required for Page business reads, and required
+  `instagram_business_manage_insights` before Instagram Insights activation.
+- Added contract tests that keep every business dataset
+  `live_fixture_required` and prohibit Live calls, writes, ad mutation, Spend,
+  schedules and feature activation.
+- Added a token-based Meta connection preflight contract and independent
+  GET-only adapters for Facebook Organic, Instagram Organic through Instagram
+  Login and Meta Ads.
+- Added exact Page, Instagram Account and Ad Account identity guards, pinned
+  Graph API version validation and a redacted `npm run preflight:meta` operator
+  command that reads ignored local credentials without shell evaluation.
+- Added `meta_ads` as a fail-closed `uat_pending` connector; Facebook,
+  Instagram and Meta Ads remain disabled.
 - Added Customer Connection OAuth contract v2 with a side-effect-free
   confirmation GET, exact POST-to-start and default three-attempt bounded retry.
 - Added additive migration `0012_retry_safe_customer_connection.sql` with atomic
@@ -14,6 +39,25 @@
 - Extended the existing YouTube API client with 0/1/N `mine=true` discovery and added signed one-time explicit Channel selection.
 
 ### Safety and verification
+- Meta fixture-driven source verification passed: focused 28/28, Unit 719/719,
+  Workers 9/9, report reliability 70/70, Architecture 206/492/0, repository
+  hygiene, fresh online audit with zero vulnerabilities and Wrangler dry-run.
+  No dependency file changed.
+- No Live Meta request, credential mutation, Queue/D1/Lark write, Worker route,
+  job/schedule activation, deployment, commit or push occurred in this source
+  implementation round.
+- Meta Business Ingestion design verification passed: focused Shared Meta
+  contracts 12/12, Unit 705/705, Workers 9/9, report reliability 70/70,
+  Architecture 199/475/0, offline audit 0 and Wrangler dry-run. No Live Meta
+  call, business write, schedule or deployment occurred.
+- Hardened Meta Graph responses with an 8 MiB body limit and removed raw
+  provider messages from returned diagnostics. Focused Meta/config/application
+  tests pass 49/49; final Unit 699/699, Workers 9/9, report reliability 70/70,
+  Architecture 198/475/0, offline audit 0 and Wrangler dry-run pass.
+- No Live Meta request, credential mutation, D1/Queue/Lark write, schedule,
+  deployment, Production action, commit or push occurred in the Meta foundation
+  implementation round. Live UAT waits for a rotated Facebook token and exact
+  customer mappings.
 - Repeated link preview and scanner HEAD do not reserve an attempt, create PKCE
   or create OAuth state; concurrent starts allow only one active attempt.
 - The source implementation and verification phase made no Remote mutation; the
