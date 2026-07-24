@@ -1,18 +1,20 @@
 # 10 — Next Actions
 
-## Immediate next action — Complete v2 test callbacks
+## Immediate next action — Await customer callbacks
 
 PR A/B/C and retry-safe PR `#45` are merged. Migration `0012` and Worker v2 are
-live. Repeated GET smoke proved both test invitations stay unused. Next:
+live. The test invitations expired unused; seven-day customer links are active.
+Next:
 
 1. Keep PR #17 Draft/HOLD.
 2. Keep merged source `9ca8375` plus docs closeout `5e5b8ee` as rollout evidence.
 3. Review the additive data model and guarded rollout; keep orphaned PKCE cleanup
    outside this rollout.
-4. Customer explicitly confirms Google Ads and YouTube test links before expiry.
+4. Do not poll while waiting; customer explicitly confirms Google Ads and
+   YouTube links before `2026-08-01 00:15 Asia/Bangkok`.
 5. Verify successful callback closure, encrypted Refresh Tokens, provider
    identity and zero Queue/Lark side effects.
-6. Create customer links only if a separate longer-lived round is still needed.
+6. Regenerate links only if they expire or exhaust the three-attempt budget.
 
 Do not enqueue business jobs, write Lark, enable schedules or rerun TikTok recovery. Exact commands are in `docs/customer-connection-oauth-rollout.md`.
 

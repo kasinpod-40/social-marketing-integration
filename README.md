@@ -44,8 +44,8 @@ Migration 0011                     applied remotely
 Worker deployment                  v2 / preview-safe smoke passed
 Google OAuth config                redirects/APIs/scopes ready
 Worker Secrets                     required names 7/7
-Customer Connect links             2 v2 test links active / 3 starts each
-Customer OAuth                     authorization pending / states expired
+Customer Connect links             2 customer links active / 7 days / 3 starts each
+Customer OAuth                     awaiting customer action
 Retry-safe Connect v2              deployed / repeat-GET passed
 Migration 0012                     applied remotely / none pending
 Queue/Lark callback side effects   0 / 0 by contract
@@ -55,7 +55,8 @@ See `docs/customer-connection-oauth-contract-v2.md` and
 `docs/customer-connection-oauth-rollout.md`. PR `#45` merged a side-effect-free
 GET confirmation and bounded explicit POST-to-start into `main`. Migration
 `0012` and Worker v2 are live; opening both test URLs twice consumed zero
-attempts and created no OAuth state. Signed URLs are not stored in the
+attempts and created no OAuth state. The short-lived test links expired unused;
+seven-day customer links are now active. Signed URLs are not stored in the
 Repository.
 
 PR #27 added source code and a guarded runbook. It did not apply Migration `0009` remotely, deploy a Worker, send a Queue message or write Live D1/Lark business data.

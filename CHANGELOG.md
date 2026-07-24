@@ -28,6 +28,9 @@
   15-minute, three-attempt test link per connector.
 - Repeated GET preview returned 200 four times while attempts/active attempts
   stayed 0/0 and OAuth state count stayed unchanged; callbacks remain pending.
+- After the test links expired unused, rotated the operator Secret without
+  persisting plaintext and created one seven-day/three-attempt customer link per
+  connector. Signed URLs were handed to the user only and are not stored.
 - OAuth callbacks refresh from the persisted encrypted credential, return masked identity/status metadata only, and never enqueue Business jobs or write Lark.
 - Applied additive migration `0011_customer_connection_oauth.sql` to the Integration Workspace after a verified Remote D1 export; no migration remains pending.
 - Configured exact Google callback URIs/scopes/APIs and all seven required Worker Secret names, then deployed Worker version `827b1f67-9a00-49c8-98f9-76f92d597c5d`.
@@ -36,7 +39,7 @@
 - After separate test-link approval, generated a 15-minute test invitation for each connector. Both customer and test pairs ultimately reached OAuth begin without callback completion; all four states expired and signed URLs were not stored in the Repository.
 - Final v1 live verification found `authorization_pending` / `not_validated`,
   zero Refresh Tokens, zero identity selections and only PKCE verifier audit
-  rows; retry-safe v2 is now merged but not yet deployed.
+  rows; retry-safe v2 is now deployed and awaiting customer callbacks.
 - Business schedules/connectors/writes remained disabled.
 - Local verification passed: Unit 677/677, Workers 9/9, report reliability 70/70, Architecture 191/460/0, audit 0 and Wrangler dry-run.
 - Merged source in order through PRs `#42` → `#43` → `#44`; no Queue message, Lark write, schedule activation or Production action occurred.
