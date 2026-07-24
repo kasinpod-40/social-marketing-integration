@@ -16,7 +16,7 @@ import { readStorageRuntimeConfig } from '../../../packages/config/src/storage-r
 import {
   D1QueueOperationStore,
   TIKTOK_BOOTSTRAP_INCIDENT,
-} from '../../../packages/reliability/src/d1-queue-operation-store.js';
+} from '../../../packages/reliability/src/d1-tiktok-recovery-queue-operation-store.js';
 import { runReliableSync } from '../../../packages/reliability/src/reliable-sync-runner.js';
 import { createStableFingerprint } from '../../../packages/shared/src/hash/stable-fingerprint.js';
 import { permanentError, transientError } from '../../../packages/shared/src/errors/runtime-error.js';

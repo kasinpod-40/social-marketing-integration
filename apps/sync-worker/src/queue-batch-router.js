@@ -10,7 +10,7 @@ import {
   isRetryableError,
   permanentError,
 } from '../../../packages/shared/src/errors/runtime-error.js';
-import { D1ResumableWorkStore } from '../../../packages/sync-engine/src/d1-resumable-work-store.js';
+import { D1ResumableWorkStore } from '../../../packages/sync-engine/src/queue-terminal-safe-d1-resumable-work-store.js';
 import { loadCustomerRuntimeConfig } from '../../../packages/config/src/customer-profiles.js';
 import {
   logQueueResult,
