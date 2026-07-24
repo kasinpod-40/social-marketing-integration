@@ -42,14 +42,57 @@ Cloudflare D1 supports at most 100 bound parameters per query. The local SQLite 
 - Reserve one parameter for `observed_at` and limit observation-repair reads to 99 keys per statement.
 - Add a regression that executes a 500-key observation read against a fake D1 binding which rejects any statement above 100 bound parameters.
 
+Implementation merge:
+
+```text
+9ada02baf6059b6d9efc1aab2b96a4ff3b0bdfa4
+```
+
+## Guarded hotfix rollout
+
+The hotfix has a separate operator boundary. It does not reuse the original `send` phase and does not enable generic DLQ redrive.
+
+### Hotfix deploy
+
+```text
+CONFIRM_TIKTOK_RECOVERY_HOTFIX_DEPLOY=DEPLOY_D1_BIND_LIMIT_HOTFIX_SCHEDULES_FALSE
+npm run rollout:tiktok-recovery:hotfix-deploy
+```
+
+The deploy phase requires:
+
+- `main` contains the exact hotfix merge;
+- clean Git worktree;
+- prior Migration 0010 evidence remains passed;
+- exact Integration Workspace Worker/D1/Queue configuration;
+- all schedule/report/notification/redrive flags remain false;
+- syntax, architecture, focused recovery tests and Wrangler dry-run pass.
+
+It writes `hotfix-deploy.json` with the exact deployed repository head.
+
+### Exact resume
+
+```text
+CONFIRM_TIKTOK_RECOVERY_RESUME=RESUME_EXACT_TIKTOK_RECOVERY_AFTER_D1_BIND_FIX
+npm run rollout:tiktok-recovery:resume
+```
+
+Before sending one exact payload, the resume phase requires all of the following Remote D1 evidence:
+
+- business facts remain `1309 / 1000 / 1000`;
+- original Work remains active at `nextSequence=2`, `unitsCompleted=2`, durable counters `1000`;
+- original incident DLQ remains open;
+- original recovery metadata remains `in_progress` with the same operation, Work, generation and recovery reference;
+- tracked Main Queue attempts equal exactly `6`;
+- failed recovery DLQ `dlq:06f7660b796808ebca3b8cd2e7780894` is retained open with retry exhaustion;
+- exactly six matching failed Sync runs exist with retry counts `0..5` and `D1_ORGANIC_OBSERVATION_READ_FAILED`;
+- lock is absent or expired;
+- Coverage remains the exact partial `2021 / 0 / 0 / failed=0` shape.
+
+Any mismatch stops before the Queue API call. A successful resume writes `resume.json` and sends the same operation/generation/recovery reference once.
+
 ## Safety and next boundary
 
-This hotfix changes only read batching. It does not alter row mapping, stable keys, write ordering, Work identity, checkpoint semantics, Coverage semantics, Queue retry rules, DLQ records or Lark behavior.
+This hotfix changes only read batching plus guarded rollout tooling. It does not alter row mapping, stable keys, write ordering, Work identity, checkpoint semantics, Coverage semantics, normal Queue retry rules, existing DLQ facts or Lark behavior.
 
-Before any retry of the exact recovery operation:
-
-1. merge the hotfix after full CI;
-2. deploy the Worker with all existing schedule/report/notification flags still false;
-3. re-check that business facts remain 1309 / 1000 / 1000 and Work remains at nextSequence 2;
-4. use a separately guarded exact resume action for the same operation/generation and recovery reference;
-5. do not use generic DLQ redrive and do not create a new generation.
+Do not use generic DLQ redrive, do not re-run the old `send` phase, and do not create a new generation.
