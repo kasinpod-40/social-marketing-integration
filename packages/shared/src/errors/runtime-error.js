@@ -3,7 +3,7 @@
  */
 const OPERATIONAL_REDACTION = '[REDACTED]';
 const OPERATIONAL_SECRET_KEY_PATTERN = /(?:secret|token|password|authorization|credentials?|(?:private|signing|api)[_-]?key|consumer[_-]?secret)/iu;
-const OPERATIONAL_IDENTITY_KEY_PATTERN = /(?:lock[_-]?key|cursor[_-]?key|customer[_-]?profile|account[_-]?(?:key|id)|page[_-]?id|ig[_-]?(?:user|account)?[_-]?id|instagram[_-]?(?:user|account)?[_-]?id|ad[_-]?account[_-]?id|table[_-]?id|report[_-]?setting[_-]?key|identity|handles?|(?:channel|video|content)[_-]?ids?|(?:source|expected|actual|detected)[_-]?(?:channel|video|content)?[_-]?(?:ids?|handles?)|uploads[_-]?playlist[_-]?id|mismatched[_-]?videos?|stable[_-]?keys?)/iu;
+const OPERATIONAL_IDENTITY_KEY_PATTERN = /(?:lock[_-]?key|cursor[_-]?key|customer[_-]?(?:profile|key|id)|connection[_-]?id|invitation(?:[_-]?(?:id|url))?|oauth[_-]?(?:state|attempt[_-]?id)|nonce|redirect[_-]?uri|account[_-]?(?:key|id)|page[_-]?id|ig[_-]?(?:user|account)?[_-]?id|instagram[_-]?(?:user|account)?[_-]?id|ad[_-]?account[_-]?id|table[_-]?id|report[_-]?setting[_-]?key|identity|handles?|(?:channel|video|content)[_-]?ids?|(?:source|expected|actual|detected)[_-]?(?:channel|video|content)?[_-]?(?:ids?|handles?)|uploads[_-]?playlist[_-]?id|mismatched[_-]?videos?|stable[_-]?keys?)/iu;
 const OPERATIONAL_SAFE_COUNTER_KEYS = new Set([
   'analytics_tracked_video_ids',
   'attempts',

@@ -72,6 +72,17 @@
     "MKT_CUSTOMER_PROFILE": "integration_workspace",
     "DEFAULT_TIMEZONE": "Asia/Bangkok",
 
+    // Customer OAuth public values; Client secret/signing/encryption/operator keys ต้องใช้ Worker Secrets เท่านั้น
+    "MKT_CONNECTION_PUBLIC_ORIGIN": "https://replace-with-sync-worker.example",
+    "MKT_CONNECTION_CUSTOMER_KEY": "chemistry_k",
+    "MKT_GOOGLE_ADS_REDIRECT_URI": "https://replace-with-sync-worker.example/oauth/google-ads/callback",
+    "MKT_YOUTUBE_REDIRECT_URI": "https://replace-with-sync-worker.example/oauth/youtube/callback",
+    "GOOGLE_OAUTH_CLIENT_ID": "replace-with-google-oauth-client-id",
+    "MKT_CONNECTION_ENCRYPTION_KEY_VERSION": "v1",
+    "MKT_GOOGLE_ADS_MANAGER_CUSTOMER_ID": "replace-with-10-digit-manager-customer-id",
+    "MKT_GOOGLE_ADS_ADVERTISER_CUSTOMER_ID": "replace-with-10-digit-advertiser-customer-id",
+    "MKT_GOOGLE_ADS_API_VERSION": "v24",
+
     // Release example ปิด Connector ทุกตัว; เปิดเฉพาะ Manual validation หลังอนุมัติแยก
     "MKT_CONNECTOR_TIKTOK_ENABLED": "false",
     "MKT_CONNECTOR_FACEBOOK_ENABLED": "false",

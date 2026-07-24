@@ -43,6 +43,11 @@ test('structured operational sanitization keeps counts but redacts stable keys, 
     password: 123456,
     accessToken: 654321,
     credentials: true,
+    customerKey: 'customer-private',
+    connectionId: 'connection-private',
+    invitation: 'signed-invitation-private',
+    oauthState: 'signed-state-private',
+    nonce: 'nonce-private',
     safe: 'ok',
   });
 
@@ -57,6 +62,11 @@ test('structured operational sanitization keeps counts but redacts stable keys, 
   assert.equal(sanitized.password, '[REDACTED]');
   assert.equal(sanitized.accessToken, '[REDACTED]');
   assert.equal(sanitized.credentials, '[REDACTED]');
+  assert.equal(sanitized.customerKey, '[REDACTED]');
+  assert.equal(sanitized.connectionId, '[REDACTED]');
+  assert.equal(sanitized.invitation, '[REDACTED]');
+  assert.equal(sanitized.oauthState, '[REDACTED]');
+  assert.equal(sanitized.nonce, '[REDACTED]');
   assert.equal(sanitized.safe, 'ok');
   assert.doesNotMatch(JSON.stringify(sanitized), /111111|222222|123456|654321/u);
 });

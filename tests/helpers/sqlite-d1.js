@@ -9,6 +9,18 @@ export function createSqliteD1(input = {}) {
   return Object.freeze({
     database,
     exec(sql) { rawDatabase.exec(String(sql)); },
+    async batch(statements) {
+      rawDatabase.exec('BEGIN;');
+      try {
+        const results = [];
+        for (const statement of statements) results.push(await statement.run());
+        rawDatabase.exec('COMMIT;');
+        return results;
+      } catch (error) {
+        rawDatabase.exec('ROLLBACK;');
+        throw error;
+      }
+    },
     prepare(sql) {
       const statement = rawDatabase.prepare(String(sql));
       let bindings = [];

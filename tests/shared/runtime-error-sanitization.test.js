@@ -51,6 +51,12 @@ test('structured operational sanitization keeps allowlisted counters but redacts
     password: 123456,
     accessToken: 654321,
     credentials: true,
+    customerKey: 'customer-private',
+    connectionId: 'connection-private',
+    invitation: 'signed-invitation-private',
+    oauthState: 'signed-state-private',
+    nonce: 'nonce-private',
+    redirectUri: 'https://worker.example/oauth/callback',
     safe: 'ok',
   });
 
@@ -73,10 +79,16 @@ test('structured operational sanitization keeps allowlisted counters but redacts
   assert.equal(sanitized.password, '[REDACTED]');
   assert.equal(sanitized.accessToken, '[REDACTED]');
   assert.equal(sanitized.credentials, '[REDACTED]');
+  assert.equal(sanitized.customerKey, '[REDACTED]');
+  assert.equal(sanitized.connectionId, '[REDACTED]');
+  assert.equal(sanitized.invitation, '[REDACTED]');
+  assert.equal(sanitized.oauthState, '[REDACTED]');
+  assert.equal(sanitized.nonce, '[REDACTED]');
+  assert.equal(sanitized.redirectUri, '[REDACTED]');
   assert.equal(sanitized.safe, 'ok');
   assert.doesNotMatch(
     JSON.stringify(sanitized),
-    /chemistry_k|customer_account|123456789|223456789|323456789|423456789|tbl_private|111111|222222|123456|654321/u,
+    /chemistry_k|customer_account|customer-private|connection-private|signed-invitation-private|signed-state-private|nonce-private|worker\.example|123456789|223456789|323456789|423456789|tbl_private|111111|222222|123456|654321/u,
   );
 });
 
