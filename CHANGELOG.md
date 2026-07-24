@@ -3,6 +3,10 @@
 ## Unreleased — Multi-Connector Customer Connection Foundation — 2026-07-24
 
 ### Added
+- Added Customer Connection OAuth contract v2 with a side-effect-free
+  confirmation GET, exact POST-to-start and default three-attempt bounded retry.
+- Added additive migration `0012_retry_safe_customer_connection.sql` with atomic
+  active-attempt reservation, expiry/release and permanent completion state.
 - Added signed, expiring, one-time connector/customer invitations and OAuth state with PKCE-S256.
 - Added AES-256-GCM encrypted dynamic credential storage with random IV, key version, authenticated context, replacement/revoke lifecycle and D1-backed atomic consumption.
 - Extended the Sync Worker with explicit `fetch` routing while preserving `scheduled` and `queue`.
@@ -10,6 +14,12 @@
 - Extended the existing YouTube API client with 0/1/N `mine=true` discovery and added signed one-time explicit Channel selection.
 
 ### Safety and verification
+- Repeated link preview and scanner HEAD do not reserve an attempt, create PKCE
+  or create OAuth state; concurrent starts allow only one active attempt.
+- Retry-safe v2 is local only: migration `0012`, Worker deploy, Secret rotation
+  and new link generation have not run.
+- Local verification passed: focused v2 43/43, Unit 686/686, Workers 9/9,
+  report reliability 70/70, Architecture 191/460/0, audit 0 and deploy dry-run.
 - OAuth callbacks refresh from the persisted encrypted credential, return masked identity/status metadata only, and never enqueue Business jobs or write Lark.
 - Applied additive migration `0011_customer_connection_oauth.sql` to the Integration Workspace after a verified Remote D1 export; no migration remains pending.
 - Configured exact Google callback URIs/scopes/APIs and all seven required Worker Secret names, then deployed Worker version `827b1f67-9a00-49c8-98f9-76f92d597c5d`.

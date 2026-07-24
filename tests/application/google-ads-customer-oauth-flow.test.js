@@ -27,7 +27,7 @@ test('Google Ads callback encrypts Refresh Token before read-only validation and
   assert.equal(result.externalIdentity.accountId, '******2033');
   assert.equal(result.queued, false);
   assert.equal(result.larkWrite, false);
-  assert.equal(fixture.calls.order.join(','), 'exchange,encrypt,decrypt,refresh,validate,update');
+  assert.equal(fixture.calls.order.join(','), 'exchange,encrypt,decrypt,refresh,validate,update,complete');
   assert.equal(fixture.calls.encrypt[0].plaintext, 'refresh-private');
   assert.equal(fixture.calls.update[0].connectionStatus, 'connected');
   assert.equal(fixture.calls.update[0].accessStatus, 'validated');
@@ -43,6 +43,7 @@ test('Google Ads developer access pending retains encrypted credential and retur
   assert.equal(fixture.calls.encrypt.length, 1);
   assert.equal(fixture.calls.update[0].accessStatus, 'google_ads_api_access_pending');
   assert.equal(fixture.calls.update[0].lastErrorCode, 'GOOGLE_ADS_API_ACCESS_PENDING');
+  assert.equal(fixture.calls.complete.length, 1);
 });
 
 test('Google Ads callback rejects insufficient scopes before credential persistence', async () => {
@@ -53,6 +54,7 @@ test('Google Ads callback rejects insufficient scopes before credential persiste
   );
   assert.equal(fixture.calls.encrypt.length, 0);
   assert.equal(fixture.calls.update.at(-1).lastErrorCode, 'CONNECTION_SCOPE_INSUFFICIENT');
+  assert.equal(fixture.calls.release.length, 1);
 });
 
 test('Google Ads refresh failure retains encrypted credential and records lifecycle failure', async () => {
@@ -67,6 +69,7 @@ test('Google Ads refresh failure retains encrypted credential and records lifecy
   assert.equal(fixture.calls.encrypt.length, 1);
   assert.equal(fixture.calls.update[0].lastErrorCode, 'GOOGLE_OAUTH_TOKEN_REFRESH_REJECTED');
   assert.equal(fixture.calls.order.includes('validate'), false);
+  assert.equal(fixture.calls.release.length, 1);
 });
 
 test('Google Ads account-not-visible keeps credential but fails exact identity binding', async () => {
@@ -79,6 +82,7 @@ test('Google Ads account-not-visible keeps credential but fails exact identity b
   assert.equal(result.connectionStatus, 'identity_mismatch');
   assert.equal(result.accessStatus, 'identity_mismatch');
   assert.equal(fixture.calls.encrypt.length, 1);
+  assert.equal(fixture.calls.release.length, 1);
 });
 
 function createFixture(options = {}) {
@@ -88,8 +92,13 @@ function createFixture(options = {}) {
     encrypt: [],
     update: [],
     order: [],
+    complete: [],
+    release: [],
   };
   const shared = {
+    async previewInvitation() {
+      return { attemptsRemaining: 3, canStart: true };
+    },
     async beginOAuth(input) {
       calls.begin.push(input);
       return { state: 'signed-state', codeChallenge: 'challenge' };
@@ -97,9 +106,20 @@ function createFixture(options = {}) {
     async consumeCallbackState() {
       return {
         connectionId: 'connection-private',
+        invitationId: 'invitation-private',
+        connectorKey: 'google_ads',
+        customerKey: 'customer-private',
         attemptId: 'attempt-private',
         pkceVerifier: 'pkce-private',
       };
+    },
+    async completeOAuthAttempt(input) {
+      calls.order.push('complete');
+      calls.complete.push(input);
+    },
+    async releaseOAuthAttempt(input) {
+      calls.order.push('release');
+      calls.release.push(input);
     },
   };
   const oauthClient = {

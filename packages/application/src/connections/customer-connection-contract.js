@@ -45,6 +45,7 @@ export const CONNECTOR_ROUTE_SLUGS = Object.freeze({
 
 export const DEFAULT_INVITATION_TTL_MS = 24 * 60 * 60 * 1000;
 export const DEFAULT_OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
+export const DEFAULT_INVITATION_MAX_ATTEMPTS = 3;
 
 const CONNECTOR_VALUES = new Set(Object.values(CUSTOMER_CONNECTION_CONNECTORS));
 const CONNECTION_STATUS_VALUES = new Set(Object.values(CUSTOMER_CONNECTION_STATUSES));
@@ -117,6 +118,20 @@ export function readOAuthStateTtlMs(value) {
     30 * 60 * 1000,
     'oauthStateTtlMs',
   );
+}
+
+export function readInvitationMaxAttempts(value) {
+  if (value === null || value === undefined || value === '') {
+    return DEFAULT_INVITATION_MAX_ATTEMPTS;
+  }
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number < 1 || number > 5) {
+    throw permanentError('invitationMaxAttempts is outside the approved range', {
+      code: 'CONNECTION_INVITATION_MAX_ATTEMPTS_INVALID',
+      details: { fieldName: 'invitationMaxAttempts', minimum: 1, maximum: 5 },
+    });
+  }
+  return number;
 }
 
 function readBoundedTtl(value, fallback, minimum, maximum, fieldName) {

@@ -1,5 +1,9 @@
 # Customer Connection and Google OAuth Contract v1
 
+> Historical foundation contract. The current Connect invitation/start lifecycle
+> is superseded by `docs/customer-connection-oauth-contract-v2.md`; provider,
+> encryption and connector isolation rules not replaced there remain in force.
+
 ## Status
 
 ```text

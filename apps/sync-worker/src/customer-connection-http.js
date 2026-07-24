@@ -21,9 +21,9 @@ import {
 
 const INVITATION_PATH = '/operator/connection-invitations';
 const KNOWN_METHODS = new Map([[INVITATION_PATH, Object.freeze(['POST'])]]);
-KNOWN_METHODS.set(GOOGLE_ADS_CONNECTION_PATHS.connect, Object.freeze(['GET']));
+KNOWN_METHODS.set(GOOGLE_ADS_CONNECTION_PATHS.connect, Object.freeze(['GET', 'POST']));
 KNOWN_METHODS.set(GOOGLE_ADS_CONNECTION_PATHS.callback, Object.freeze(['GET']));
-KNOWN_METHODS.set(YOUTUBE_CONNECTION_PATHS.connect, Object.freeze(['GET']));
+KNOWN_METHODS.set(YOUTUBE_CONNECTION_PATHS.connect, Object.freeze(['GET', 'POST']));
 KNOWN_METHODS.set(YOUTUBE_CONNECTION_PATHS.callback, Object.freeze(['GET']));
 KNOWN_METHODS.set(YOUTUBE_CONNECTION_PATHS.select, Object.freeze(['POST']));
 
@@ -63,6 +63,7 @@ export function createCustomerConnectionHttpHandler(dependencies = {}) {
           publicOrigin: runtime.config.publicOrigin,
           redirectUri: runtime.config.redirectUris[connectorKey],
           ttlMs: body.ttlMs,
+          maxAttempts: body.maxAttempts,
         });
         return json({ ok: true, invitation: result }, {
           status: 201,
@@ -127,6 +128,9 @@ async function requireOperatorAuthorization(request, expectedToken) {
 
 function statusForError(code) {
   if (code === 'CONNECTION_OPERATOR_UNAUTHORIZED') return 401;
+  if (code?.endsWith('_TOO_LARGE')) return 413;
+  if (code?.endsWith('_ATTEMPTS_EXHAUSTED')) return 429;
+  if (code?.endsWith('_ATTEMPT_ACTIVE') || code?.endsWith('_ATTEMPT_INACTIVE')) return 409;
   if (code?.endsWith('_REPLAYED')) return 409;
   if (code?.endsWith('_EXPIRED')) return 410;
   if (

@@ -18,6 +18,7 @@ test('operator route creates an allowlisted invitation response with no-store po
       body: JSON.stringify({
         connectorKey: 'google_ads',
         customerKey: 'customer-a',
+        maxAttempts: 4,
       }),
     },
   ), {});
@@ -32,6 +33,7 @@ test('operator route creates an allowlisted invitation response with no-store po
       connectUrl: 'https://worker.example/connect/google-ads?invitation=signed',
       expiresAt: '2026-07-25T00:00:00.000Z',
       environment: 'development',
+      maxAttempts: 4,
     },
   });
   assert.equal(JSON.stringify(body).includes(OPERATOR_TOKEN), false);
@@ -42,6 +44,7 @@ test('operator route creates an allowlisted invitation response with no-store po
     publicOrigin: 'https://worker.example/',
     redirectUri: 'https://worker.example/oauth/google-ads/callback',
     ttlMs: undefined,
+    maxAttempts: 4,
   });
 });
 
@@ -88,6 +91,26 @@ test('HTTP boundary returns 405 for a known path and 404 for an unknown path', a
   assert.equal(missingResponse.status, 404);
 });
 
+test('connect routes allow confirmation GET/POST only and reject scanner HEAD without side effects', async () => {
+  const connectorCalls = [];
+  const handler = createCustomerConnectionHttpHandler({
+    createRuntime() {
+      throw new Error('runtime must not load for rejected methods');
+    },
+    async handleConnectorRequest(input) {
+      connectorCalls.push(input);
+      return null;
+    },
+  });
+  const response = await handler(new Request(
+    'https://worker.example/connect/google-ads?invitation=signed',
+    { method: 'HEAD' },
+  ), {});
+  assert.equal(response.status, 405);
+  assert.equal(response.headers.get('allow'), 'GET, POST');
+  assert.deepEqual(connectorCalls, []);
+});
+
 test('adding fetch keeps scheduled and queue handlers independently injectable', async () => {
   const { createSyncWorker } = await import('../../apps/sync-worker/src/sync-worker.js');
   const events = [];
@@ -123,6 +146,7 @@ function createHandler(calls) {
               connectUrl: 'https://worker.example/connect/google-ads?invitation=signed',
               expiresAt: '2026-07-25T00:00:00.000Z',
               environment: input.environment,
+              maxAttempts: input.maxAttempts,
             };
           },
         },

@@ -19,13 +19,14 @@ test('creates connector/customer/environment-specific invitation without exposin
   assert.equal(result.connector, 'google_ads');
   assert.equal(result.customerKey, 'customer');
   assert.equal(result.environment, 'development');
+  assert.equal(result.maxAttempts, 3);
   assert.match(result.connectUrl, /^https:\/\/worker\.example\/connect\/google-ads\?invitation=/u);
   assert.equal(JSON.stringify(result).includes(INVITATION_KEY), false);
   assert.equal(JSON.stringify(result).includes(STATE_KEY), false);
   assert.equal(fixture.store.invitations.length, 1);
 });
 
-test('invitation and OAuth state are one-time and connector/customer bound', async () => {
+test('preview is read-only, OAuth attempts are bounded and callback state stays one-time', async () => {
   const fixture = createFixture();
   const invitation = await fixture.service.createInvitation({
     connectorKey: 'youtube',
@@ -35,6 +36,23 @@ test('invitation and OAuth state are one-time and connector/customer bound', asy
     redirectUri: 'https://worker.example/oauth/youtube/callback',
   });
   const invitationToken = new URL(invitation.connectUrl).searchParams.get('invitation');
+  const firstPreview = await fixture.service.previewInvitation({
+    connectorKey: 'youtube',
+    customerKey: 'customer',
+    environment: 'development',
+    redirectUri: 'https://worker.example/oauth/youtube/callback',
+    invitationToken,
+  });
+  const secondPreview = await fixture.service.previewInvitation({
+    connectorKey: 'youtube',
+    customerKey: 'customer',
+    environment: 'development',
+    redirectUri: 'https://worker.example/oauth/youtube/callback',
+    invitationToken,
+  });
+  assert.deepEqual(firstPreview, secondPreview);
+  assert.equal(firstPreview.attemptsRemaining, 3);
+  assert.equal(fixture.store.invitations[0].attemptCount, 0);
 
   await assert.rejects(
     () => fixture.service.beginOAuth({
@@ -63,8 +81,18 @@ test('invitation and OAuth state are one-time and connector/customer bound', asy
       redirectUri: 'https://worker.example/oauth/youtube/callback',
       invitationToken,
     }),
-    (error) => error.code === 'CONNECTION_INVITATION_REPLAYED',
+    (error) => error.code === 'CONNECTION_INVITATION_ATTEMPT_ACTIVE',
   );
+  const activePreview = await fixture.service.previewInvitation({
+    connectorKey: 'youtube',
+    customerKey: 'customer',
+    environment: 'development',
+    redirectUri: 'https://worker.example/oauth/youtube/callback',
+    invitationToken,
+  });
+  assert.equal(activePreview.canStart, false);
+  assert.equal(activePreview.attemptsRemaining, 2);
+  assert.equal(activePreview.retryAvailableAt, '1970-01-01T00:10:01.000Z');
 
   const consumed = await fixture.service.consumeCallbackState({
     connectorKey: 'youtube',
@@ -74,6 +102,16 @@ test('invitation and OAuth state are one-time and connector/customer bound', asy
   });
   assert.equal(consumed.connectionId, attempt.connectionId);
   assert.match(consumed.pkceVerifier, /^random-/u);
+  await fixture.service.releaseOAuthAttempt(consumed);
+  const retry = await fixture.service.beginOAuth({
+    connectorKey: 'youtube',
+    customerKey: 'customer',
+    environment: 'development',
+    redirectUri: 'https://worker.example/oauth/youtube/callback',
+    invitationToken,
+  });
+  assert.notEqual(retry.attemptId, attempt.attemptId);
+  assert.equal(fixture.store.invitations[0].attemptCount, 2);
   await assert.rejects(
     () => fixture.service.consumeCallbackState({
       connectorKey: 'youtube',
@@ -109,6 +147,50 @@ test('expired invitation fails before creating connection or OAuth state', async
   );
   assert.equal(fixture.store.connections.length, 0);
   assert.equal(fixture.store.states.length, 0);
+});
+
+test('invitation allows bounded retry after state expiry and closes permanently after success', async () => {
+  let now = 1_000;
+  const fixture = createFixture({ now: () => now });
+  const invitation = await fixture.service.createInvitation({
+    connectorKey: 'google_ads',
+    customerKey: 'customer',
+    environment: 'development',
+    publicOrigin: 'https://worker.example/',
+    redirectUri: 'https://worker.example/oauth/google-ads/callback',
+    maxAttempts: 2,
+  });
+  const invitationToken = new URL(invitation.connectUrl).searchParams.get('invitation');
+  const first = await fixture.service.beginOAuth({
+    connectorKey: 'google_ads',
+    environment: 'development',
+    redirectUri: 'https://worker.example/oauth/google-ads/callback',
+    invitationToken,
+  });
+  now += 10 * 60 * 1000 + 1;
+  const second = await fixture.service.beginOAuth({
+    connectorKey: 'google_ads',
+    environment: 'development',
+    redirectUri: 'https://worker.example/oauth/google-ads/callback',
+    invitationToken,
+  });
+  assert.notEqual(first.attemptId, second.attemptId);
+  await fixture.service.completeOAuthAttempt({
+    invitationId: second.invitationId,
+    attemptId: second.attemptId,
+    connectionId: second.connectionId,
+    connectorKey: second.connectorKey,
+    customerKey: second.customerKey,
+  });
+  await assert.rejects(
+    () => fixture.service.previewInvitation({
+      connectorKey: 'google_ads',
+      environment: 'development',
+      redirectUri: 'https://worker.example/oauth/google-ads/callback',
+      invitationToken,
+    }),
+    (error) => error.code === 'CONNECTION_INVITATION_REPLAYED',
+  );
 });
 
 test('reconnect reuses the existing connector/customer Connection record', async () => {
@@ -172,15 +254,52 @@ function createMemoryStore() {
     connections,
     states,
     async createInvitation(input) {
-      invitations.push({ ...input, consumedAt: null, connectionId: null });
+      invitations.push({
+        ...input,
+        consumedAt: null,
+        connectionId: null,
+        attemptCount: 0,
+        activeAttemptId: null,
+        activeAttemptExpiresAt: null,
+      });
     },
-    async consumeInvitation(input) {
+    async getInvitation(invitationId) {
+      return invitations.find((item) => item.invitationId === invitationId) ?? null;
+    },
+    async reserveInvitationAttempt(input) {
       const row = invitations.find((item) => item.invitationId === input.id);
       if (row?.consumedAt !== null) throw permanentError('replay', { code: 'CONNECTION_INVITATION_REPLAYED' });
       if (!row || row.connectorKey !== input.connectorKey || row.customerKey !== input.customerKey) {
         throw permanentError('mismatch', { code: 'CONNECTION_INVITATION_MISMATCH' });
       }
+      if (row.attemptCount >= row.maxAttempts) {
+        throw permanentError('exhausted', { code: 'CONNECTION_INVITATION_ATTEMPTS_EXHAUSTED' });
+      }
+      if (row.activeAttemptId && row.activeAttemptExpiresAt >= input.now) {
+        throw permanentError('active', { code: 'CONNECTION_INVITATION_ATTEMPT_ACTIVE' });
+      }
+      row.attemptCount += 1;
+      row.activeAttemptId = input.attemptId;
+      row.activeAttemptExpiresAt = input.attemptExpiresAt;
+      return row;
+    },
+    async releaseInvitationAttempt(input) {
+      const row = invitations.find((item) => item.invitationId === input.id);
+      if (!row || row.activeAttemptId !== input.attemptId) {
+        throw permanentError('inactive', { code: 'CONNECTION_INVITATION_ATTEMPT_INACTIVE' });
+      }
+      row.activeAttemptId = null;
+      row.activeAttemptExpiresAt = null;
+      return row;
+    },
+    async completeInvitation(input) {
+      const row = invitations.find((item) => item.invitationId === input.id);
+      if (!row || row.activeAttemptId !== input.attemptId) {
+        throw permanentError('inactive', { code: 'CONNECTION_INVITATION_ATTEMPT_INACTIVE' });
+      }
       row.consumedAt = input.now;
+      row.activeAttemptId = null;
+      row.activeAttemptExpiresAt = null;
       return row;
     },
     async createConnection(input) {
@@ -189,6 +308,9 @@ function createMemoryStore() {
     },
     async attachInvitationConnection(input) {
       const row = invitations.find((item) => item.invitationId === input.invitationId);
+      if (row.activeAttemptId !== input.attemptId) {
+        throw permanentError('inactive', { code: 'CONNECTION_INVITATION_ATTEMPT_INACTIVE' });
+      }
       row.connectionId = input.connectionId;
     },
     async createOAuthState(input) {

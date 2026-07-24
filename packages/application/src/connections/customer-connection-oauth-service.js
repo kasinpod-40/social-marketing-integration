@@ -1,5 +1,6 @@
 import {
   CONNECTOR_ROUTE_SLUGS,
+  readInvitationMaxAttempts,
   readInvitationTtlMs,
   readOAuthStateTtlMs,
   requireCustomerConnectionConnector,
@@ -12,7 +13,7 @@ import {
 } from '../../../shared/src/security/secure-token.js';
 import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 
-const CONTRACT_VERSION = 1;
+const CONTRACT_VERSION = 2;
 
 /** Shared invitation/state orchestration; Provider-specific code exchange/identity อยู่นอก Service นี้ */
 export class CustomerConnectionOAuthService {
@@ -39,6 +40,7 @@ export class CustomerConnectionOAuthService {
     const redirectUri = requireHttpsUrl(input.redirectUri, 'redirectUri');
     const issuedAt = requireTimestamp(this.now(), 'now');
     const expiresAt = issuedAt + readInvitationTtlMs(input.ttlMs);
+    const maxAttempts = readInvitationMaxAttempts(input.maxAttempts);
     const invitationId = this.createId('invitation');
     const nonce = this.randomToken(32);
     const payload = Object.freeze({
@@ -50,6 +52,7 @@ export class CustomerConnectionOAuthService {
       redirectUri,
       issuedAt,
       expiresAt,
+      maxAttempts,
       nonce,
     });
     const [nonceHash, token] = await Promise.all([
@@ -65,6 +68,7 @@ export class CustomerConnectionOAuthService {
       redirectUri,
       issuedAt,
       expiresAt,
+      maxAttempts,
     });
     const slug = CONNECTOR_ROUTE_SLUGS[connectorKey];
     const connectUrl = new URL(`/connect/${slug}`, publicOrigin);
@@ -75,102 +79,159 @@ export class CustomerConnectionOAuthService {
       connectUrl: connectUrl.toString(),
       expiresAt: new Date(expiresAt).toISOString(),
       environment,
+      maxAttempts,
+    });
+  }
+
+  async previewInvitation(input = {}) {
+    const value = await this.readInvitation(input);
+    const activeAttemptExpiresAt = (
+      value.row.activeAttemptId
+      && value.row.activeAttemptExpiresAt !== null
+      && value.row.activeAttemptExpiresAt >= value.now
+    ) ? value.row.activeAttemptExpiresAt : null;
+    return Object.freeze({
+      connector: value.connectorKey,
+      expiresAt: new Date(value.row.expiresAt).toISOString(),
+      attemptsRemaining: Math.max(0, value.row.maxAttempts - value.row.attemptCount),
+      canStart: activeAttemptExpiresAt === null,
+      retryAvailableAt: activeAttemptExpiresAt === null
+        ? null
+        : new Date(activeAttemptExpiresAt).toISOString(),
     });
   }
 
   async beginOAuth(input = {}) {
-    const connectorKey = requireCustomerConnectionConnector(input.connectorKey);
-    const environment = requireText(input.environment, 'environment');
-    const redirectUri = requireHttpsUrl(input.redirectUri, 'redirectUri');
-    const now = requireTimestamp(this.now(), 'now');
-    const invitation = await verifyCompactPayload(
-      requireText(input.invitationToken, 'invitationToken'),
-      this.invitationSigningKey,
-      { cryptoImpl: this.cryptoImpl },
-    );
-    const customerKey = requireText(invitation.customerKey, 'customerKey');
-    validateInvitationPayload(invitation, {
-      connectorKey,
-      customerKey: input.customerKey
-        ? requireText(input.customerKey, 'customerKey')
-        : customerKey,
-      environment,
-      redirectUri,
-      now,
-    });
-    const nonceHash = await hashSecureToken(invitation.nonce, this.cryptoImpl);
-    await this.store.consumeInvitation({
-      id: invitation.invitationId,
-      connectorKey,
-      customerKey,
-      nonceHash,
-      now,
-    });
-
-    const existingConnection = typeof this.store.findConnectionByCustomerConnector === 'function'
-      ? await this.store.findConnectionByCustomerConnector({ connectorKey, customerKey })
-      : null;
-    const connectionId = existingConnection?.connectionId ?? this.createId('connection');
     const attemptId = this.createId('oauth-attempt');
-    if (!existingConnection) {
-      await this.store.createConnection({
-        connectionId,
-        connectorKey,
-        customerKey,
-        createdAt: now,
+    const value = await this.readInvitation(input);
+    const expiresAt = Math.min(
+      value.now + readOAuthStateTtlMs(input.stateTtlMs),
+      value.invitation.expiresAt,
+    );
+    if (expiresAt <= value.now) {
+      throw permanentError('Connection invitation has expired', {
+        code: 'CONNECTION_INVITATION_EXPIRED',
       });
     }
-    await this.store.attachInvitationConnection({
-      invitationId: invitation.invitationId,
-      connectionId,
+    await this.store.reserveInvitationAttempt({
+      id: value.invitation.invitationId,
+      attemptId,
+      connectorKey: value.connectorKey,
+      customerKey: value.customerKey,
+      nonceHash: value.nonceHash,
+      maxAttempts: value.invitation.maxAttempts,
+      attemptExpiresAt: expiresAt,
+      now: value.now,
     });
 
-    const pkceVerifier = this.randomToken(64);
-    const pkceCredentialReference = await this.credentials.replace({
-      connectionId,
-      connectorKey,
-      credentialKind: 'pkce_verifier',
-      plaintext: pkceVerifier,
+    let connectionId = null;
+    let pkceCredentialReference = null;
+    try {
+      const existingConnection = typeof this.store.findConnectionByCustomerConnector === 'function'
+        ? await this.store.findConnectionByCustomerConnector({
+          connectorKey: value.connectorKey,
+          customerKey: value.customerKey,
+        })
+        : null;
+      connectionId = existingConnection?.connectionId ?? this.createId('connection');
+      if (!existingConnection) {
+        await this.store.createConnection({
+          connectionId,
+          connectorKey: value.connectorKey,
+          customerKey: value.customerKey,
+          createdAt: value.now,
+        });
+      }
+      await this.store.attachInvitationConnection({
+        invitationId: value.invitation.invitationId,
+        connectionId,
+        attemptId,
+      });
+
+      const pkceVerifier = this.randomToken(64);
+      pkceCredentialReference = await this.credentials.replace({
+        connectionId,
+        connectorKey: value.connectorKey,
+        credentialKind: 'pkce_verifier',
+        plaintext: pkceVerifier,
+      });
+      const stateNonce = this.randomToken(32);
+      const statePayload = Object.freeze({
+        v: CONTRACT_VERSION,
+        connectorKey: value.connectorKey,
+        customerKey: value.customerKey,
+        attemptId,
+        connectionId,
+        redirectUri: value.redirectUri,
+        issuedAt: value.now,
+        expiresAt,
+        nonce: stateNonce,
+        invitationId: value.invitation.invitationId,
+      });
+      const [stateNonceHash, state, codeChallenge] = await Promise.all([
+        hashSecureToken(stateNonce, this.cryptoImpl),
+        signCompactPayload(statePayload, this.stateSigningKey, { cryptoImpl: this.cryptoImpl }),
+        hashSecureToken(pkceVerifier, this.cryptoImpl),
+      ]);
+      await this.store.createOAuthState({
+        attemptId,
+        invitationId: value.invitation.invitationId,
+        connectionId,
+        connectorKey: value.connectorKey,
+        customerKey: value.customerKey,
+        redirectUri: value.redirectUri,
+        nonceHash: stateNonceHash,
+        pkceCredentialReference,
+        issuedAt: value.now,
+        expiresAt,
+      });
+      return Object.freeze({
+        state,
+        codeChallenge,
+        codeChallengeMethod: 'S256',
+        connectionId,
+        attemptId,
+        invitationId: value.invitation.invitationId,
+        connectorKey: value.connectorKey,
+        customerKey: value.customerKey,
+        redirectUri: value.redirectUri,
+        expiresAt,
+      });
+    } catch (error) {
+      await this.rollbackBeginFailure({
+        invitationId: value.invitation.invitationId,
+        attemptId,
+        connectionId,
+        connectorKey: value.connectorKey,
+        customerKey: value.customerKey,
+        pkceCredentialReference,
+        now: value.now,
+      });
+      throw error;
+    }
+  }
+
+  async completeOAuthAttempt(input = {}) {
+    const value = normalizeAttemptLifecycle(input, this.now());
+    return this.store.completeInvitation({
+      id: value.invitationId,
+      attemptId: value.attemptId,
+      connectionId: value.connectionId,
+      connectorKey: value.connectorKey,
+      customerKey: value.customerKey,
+      now: value.now,
     });
-    const stateNonce = this.randomToken(32);
-    const expiresAt = now + readOAuthStateTtlMs(input.stateTtlMs);
-    const statePayload = Object.freeze({
-      v: CONTRACT_VERSION,
-      connectorKey,
-      customerKey,
-      attemptId,
-      connectionId,
-      redirectUri,
-      issuedAt: now,
-      expiresAt,
-      nonce: stateNonce,
-      invitationId: invitation.invitationId,
-    });
-    const [stateNonceHash, state, codeChallenge] = await Promise.all([
-      hashSecureToken(stateNonce, this.cryptoImpl),
-      signCompactPayload(statePayload, this.stateSigningKey, { cryptoImpl: this.cryptoImpl }),
-      hashSecureToken(pkceVerifier, this.cryptoImpl),
-    ]);
-    await this.store.createOAuthState({
-      attemptId,
-      invitationId: invitation.invitationId,
-      connectionId,
-      connectorKey,
-      customerKey,
-      redirectUri,
-      nonceHash: stateNonceHash,
-      pkceCredentialReference,
-      issuedAt: now,
-      expiresAt,
-    });
-    return Object.freeze({
-      state,
-      codeChallenge,
-      codeChallengeMethod: 'S256',
-      connectionId,
-      attemptId,
-      redirectUri,
-      expiresAt,
+  }
+
+  async releaseOAuthAttempt(input = {}) {
+    const value = normalizeAttemptLifecycle(input, this.now());
+    return this.store.releaseInvitationAttempt({
+      id: value.invitationId,
+      attemptId: value.attemptId,
+      connectionId: value.connectionId,
+      connectorKey: value.connectorKey,
+      customerKey: value.customerKey,
+      now: value.now,
     });
   }
 
@@ -234,6 +295,71 @@ export class CustomerConnectionOAuthService {
       pkceVerifier,
     });
   }
+
+  async readInvitation(input = {}) {
+    const connectorKey = requireCustomerConnectionConnector(input.connectorKey);
+    const environment = requireText(input.environment, 'environment');
+    const redirectUri = requireHttpsUrl(input.redirectUri, 'redirectUri');
+    const now = requireTimestamp(this.now(), 'now');
+    const invitation = await verifyCompactPayload(
+      requireText(input.invitationToken, 'invitationToken'),
+      this.invitationSigningKey,
+      { cryptoImpl: this.cryptoImpl },
+    );
+    const customerKey = requireText(invitation.customerKey, 'customerKey');
+    validateInvitationPayload(invitation, {
+      connectorKey,
+      customerKey: input.customerKey
+        ? requireText(input.customerKey, 'customerKey')
+        : customerKey,
+      environment,
+      redirectUri,
+      now,
+    });
+    const nonceHash = await hashSecureToken(invitation.nonce, this.cryptoImpl);
+    const row = await this.store.getInvitation(invitation.invitationId);
+    validatePersistedInvitation(row, {
+      invitation,
+      connectorKey,
+      customerKey,
+      environment,
+      redirectUri,
+      nonceHash,
+      now,
+    });
+    return Object.freeze({
+      invitation,
+      row,
+      connectorKey,
+      customerKey,
+      environment,
+      redirectUri,
+      nonceHash,
+      now,
+    });
+  }
+
+  async rollbackBeginFailure(input) {
+    const cleanup = [
+      this.store.releaseInvitationAttempt({
+        id: input.invitationId,
+        attemptId: input.attemptId,
+        connectionId: input.connectionId ?? 'connection-not-created',
+        connectorKey: input.connectorKey,
+        customerKey: input.customerKey,
+        now: input.now,
+      }),
+    ];
+    if (input.pkceCredentialReference && input.connectionId) {
+      cleanup.push(this.credentials.revoke({
+        credentialReference: input.pkceCredentialReference,
+        connectionId: input.connectionId,
+        connectorKey: input.connectorKey,
+        credentialKind: 'pkce_verifier',
+      }));
+    }
+    await Promise.all(cleanup);
+  }
 }
 
 function validateInvitationPayload(payload, expected) {
@@ -243,6 +369,7 @@ function validateInvitationPayload(payload, expected) {
     || payload.customerKey !== expected.customerKey
     || payload.environment !== expected.environment
     || normalizeUrl(payload.redirectUri) !== expected.redirectUri
+    || readInvitationMaxAttempts(payload.maxAttempts) !== payload.maxAttempts
   ) {
     throw permanentError('Connection invitation binding does not match', {
       code: 'CONNECTION_INVITATION_MISMATCH',
@@ -251,6 +378,44 @@ function validateInvitationPayload(payload, expected) {
   validateTemporalPayload(payload, expected.now, 'INVITATION');
   requireText(payload.invitationId, 'invitationId');
   requireText(payload.nonce, 'nonce');
+}
+
+function validatePersistedInvitation(row, expected) {
+  if (!row) {
+    throw permanentError('Connection invitation is invalid', {
+      code: 'CONNECTION_INVITATION_INVALID',
+    });
+  }
+  if (
+    row.invitationId !== expected.invitation.invitationId
+    || row.connectorKey !== expected.connectorKey
+    || row.customerKey !== expected.customerKey
+    || row.environment !== expected.environment
+    || normalizeUrl(row.redirectUri) !== expected.redirectUri
+    || row.nonceHash !== expected.nonceHash
+    || row.issuedAt !== expected.invitation.issuedAt
+    || row.expiresAt !== expected.invitation.expiresAt
+    || row.maxAttempts !== expected.invitation.maxAttempts
+  ) {
+    throw permanentError('Connection invitation binding does not match', {
+      code: 'CONNECTION_INVITATION_MISMATCH',
+    });
+  }
+  if (row.consumedAt !== null) {
+    throw permanentError('Connection invitation was already completed', {
+      code: 'CONNECTION_INVITATION_REPLAYED',
+    });
+  }
+  if (row.expiresAt < expected.now) {
+    throw permanentError('Connection invitation has expired', {
+      code: 'CONNECTION_INVITATION_EXPIRED',
+    });
+  }
+  if (row.attemptCount >= row.maxAttempts) {
+    throw permanentError('Connection invitation retry limit was reached', {
+      code: 'CONNECTION_INVITATION_ATTEMPTS_EXHAUSTED',
+    });
+  }
 }
 
 function validateStatePayload(payload, expected) {
@@ -285,10 +450,24 @@ function validateTemporalPayload(payload, now, prefix) {
   }
 }
 
+function normalizeAttemptLifecycle(input, nowValue) {
+  return Object.freeze({
+    invitationId: requireText(input.invitationId, 'invitationId'),
+    attemptId: requireText(input.attemptId, 'attemptId'),
+    connectionId: requireText(input.connectionId, 'connectionId'),
+    connectorKey: requireCustomerConnectionConnector(input.connectorKey),
+    customerKey: requireText(input.customerKey, 'customerKey'),
+    now: requireTimestamp(nowValue, 'now'),
+  });
+}
+
 function requireStore(value) {
   for (const method of [
     'createInvitation',
-    'consumeInvitation',
+    'getInvitation',
+    'reserveInvitationAttempt',
+    'releaseInvitationAttempt',
+    'completeInvitation',
     'createConnection',
     'attachInvitationConnection',
     'createOAuthState',

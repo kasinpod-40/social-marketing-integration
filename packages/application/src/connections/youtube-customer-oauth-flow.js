@@ -19,8 +19,11 @@ const SELECTION_VERSION = 1;
 /** YouTube customer consent พร้อม explicit 0/1/N channel decision */
 export class YouTubeCustomerOAuthFlow {
   constructor(input = {}) {
-    this.shared = requireMethod(input.shared, 'beginOAuth', 'shared');
+    this.shared = requireMethod(input.shared, 'previewInvitation', 'shared');
+    requireMethod(input.shared, 'beginOAuth', 'shared');
     requireMethod(input.shared, 'consumeCallbackState', 'shared');
+    requireMethod(input.shared, 'completeOAuthAttempt', 'shared');
+    requireMethod(input.shared, 'releaseOAuthAttempt', 'shared');
     this.oauthClient = requireMethod(input.oauthClient, 'buildAuthorizationUrl', 'oauthClient');
     requireMethod(input.oauthClient, 'exchangeAuthorizationCode', 'oauthClient');
     requireMethod(input.oauthClient, 'refreshAccessToken', 'oauthClient');
@@ -42,6 +45,15 @@ export class YouTubeCustomerOAuthFlow {
       ? input.randomToken
       : createSecureRandomToken;
     this.cryptoImpl = input.cryptoImpl ?? globalThis.crypto;
+  }
+
+  async preview(invitationToken) {
+    return this.shared.previewInvitation({
+      connectorKey: CONNECTOR,
+      environment: this.environment,
+      redirectUri: this.redirectUri,
+      invitationToken: requireText(invitationToken, 'invitationToken'),
+    });
   }
 
   async begin(invitationToken) {
@@ -105,6 +117,7 @@ export class YouTubeCustomerOAuthFlow {
           lastErrorCode: error?.code ?? 'GOOGLE_OAUTH_TOKEN_REFRESH_FAILED',
           providerMetadata: { credentialReference },
         });
+        await this.shared.releaseOAuthAttempt(callback);
         return safeResult({
           connectionId: callback.connectionId,
           connectionStatus: CUSTOMER_CONNECTION_STATUSES.TOKEN_REFRESH_FAILED,
@@ -130,6 +143,7 @@ export class YouTubeCustomerOAuthFlow {
           lastErrorCode: 'YOUTUBE_CHANNEL_NOT_FOUND',
           providerMetadata: { credentialReference, candidateCount: 0 },
         });
+        await this.shared.releaseOAuthAttempt(callback);
         return safeResult({
           connectionId: callback.connectionId,
           connectionStatus: CUSTOMER_CONNECTION_STATUSES.IDENTITY_MISMATCH,
@@ -140,6 +154,7 @@ export class YouTubeCustomerOAuthFlow {
       }
       if (candidates.length === 1) {
         await this.finalizeSelection(callback, candidates[0], lifecycle);
+        await this.shared.completeOAuthAttempt(callback);
         return safeResult({
           connectionId: callback.connectionId,
           candidate: candidates[0],
@@ -150,7 +165,9 @@ export class YouTubeCustomerOAuthFlow {
           nextAction: 'none',
         });
       }
-      return this.createSelection(callback, candidates, lifecycle);
+      const selection = await this.createSelection(callback, candidates, lifecycle);
+      await this.shared.completeOAuthAttempt(callback);
+      return selection;
     } catch (error) {
       await this.recordFailure(callback, error?.code ?? 'YOUTUBE_OAUTH_CALLBACK_FAILED');
       throw error;
@@ -298,6 +315,7 @@ export class YouTubeCustomerOAuthFlow {
       grantedScopes: [],
       lastErrorCode: errorCode,
     });
+    await this.shared.releaseOAuthAttempt(callback);
   }
 }
 

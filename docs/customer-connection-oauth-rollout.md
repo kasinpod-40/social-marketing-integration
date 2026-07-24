@@ -3,8 +3,8 @@
 ## Current authority
 
 ```text
-REMOTE_D1_MIGRATION             = COMPLETE
-WORKER_DEPLOYMENT               = COMPLETE
+REMOTE_D1_MIGRATION             = 0011_COMPLETE_0012_NOT_APPLIED
+WORKER_DEPLOYMENT               = LIVE_V1_V2_NOT_DEPLOYED
 GOOGLE_REDIRECT_URI_LIVE_CHANGE = COMPLETE
 CONNECT_LINK_GENERATION         = ALL_4_CONSUMED_NO_CALLBACK
 CUSTOMER_OAUTH                  = AUTHORIZATION_PENDING_STATES_EXPIRED
@@ -13,15 +13,22 @@ QUEUE_MESSAGES                  = 0
 LARK_WRITES                     = 0
 ```
 
-Remote D1 migration, Worker deployment and Google Redirect URI changes were completed on `2026-07-24`. Both the first customer pair and the separately approved 15-minute test pair were consumed at OAuth begin without callback completion. All four OAuth states expired; no Refresh Token or identity selection exists. Signed URLs are not stored here and all prior links are unusable. Do not rerun migration/deployment or generate further links against the current one-shot-on-GET behavior. Implement and verify a retry-safe, preview-safe confirmation boundary first. Use the real uncommitted `wrangler.sync.jsonc`; never substitute the example file for remote commands.
+Remote migration `0011`, the v1 Worker deployment and Google Redirect URI
+changes completed on `2026-07-24`. All four v1 links are consumed without
+callbacks. Contract v2 and migration `0012` are implemented locally but are not
+deployed. Do not generate links until the reviewed v2 rollout below completes.
+Use the real ignored `wrangler.sync.jsonc`; never substitute the example file for
+remote commands.
 
 ## Routes
 
 ```text
 POST /operator/connection-invitations
 GET  /connect/google-ads
+POST /connect/google-ads
 GET  /oauth/google-ads/callback
 GET  /connect/youtube
+POST /connect/youtube
 GET  /oauth/youtube/callback
 POST /oauth/youtube/select-channel
 ```
@@ -65,14 +72,14 @@ Never pass Secret values in shell arguments, source files, logs or chat. Set eac
 npx wrangler secret put <SECRET_NAME> --config wrangler.sync.jsonc
 ```
 
-## Guarded sequence after approval
+## Guarded v2 sequence after separate approval
 
 Record the current Worker version, then export Remote D1 before migration:
 
 ```bash
 npx wrangler versions list --config wrangler.sync.jsonc
-npx wrangler d1 export social-mkt-state-dev --remote --config wrangler.sync.jsonc --output /tmp/social-mkt-state-dev-before-0011.sql
-shasum -a 256 /tmp/social-mkt-state-dev-before-0011.sql
+npx wrangler d1 export social-mkt-state-dev --remote --config wrangler.sync.jsonc --output /tmp/social-mkt-state-dev-before-0012.sql
+shasum -a 256 /tmp/social-mkt-state-dev-before-0012.sql
 ```
 
 Verify that all Business schedule/connector/write flags in `wrangler.sync.jsonc` remain false, then apply the additive migration:
@@ -88,14 +95,18 @@ Deploy only after Secrets and both exact Redirect URIs are configured:
 npx wrangler deploy --config wrangler.sync.jsonc
 ```
 
-Smoke without customer credentials:
+Smoke without customer credentials. Verify an unknown route is `404`, operator
+GET is `405`, and scanner `HEAD /connect/<connector>` is `405`. After separately
+approved test-link generation, open the same GET URL repeatedly and verify it
+stays on the confirmation page; only the explicit form POST may redirect:
 
 ```bash
 curl -i https://<deployed-domain>/unknown
 curl -i https://<deployed-domain>/operator/connection-invitations
 ```
 
-Expected: unknown route `404`; unsupported operator method `405`; no Queue message and no Lark write.
+Expected: no invitation attempt, OAuth state, Queue message or Lark write from
+GET/HEAD smoke.
 
 Generate invitations only after separate Connect-link approval. Read the operator token without printing it and send JSON over HTTPS:
 
@@ -104,7 +115,7 @@ curl --fail-with-body --request POST \
   --url https://<deployed-domain>/operator/connection-invitations \
   --header "Authorization: Bearer <OPERATOR_TOKEN_FROM_SECRET_STORE>" \
   --header "Content-Type: application/json" \
-  --data '{"connectorKey":"google_ads","customerKey":"chemistry_k"}'
+  --data '{"connectorKey":"google_ads","customerKey":"chemistry_k","maxAttempts":3}'
 ```
 
 Repeat with `connectorKey` set to `youtube`. Do not paste the operator token into command history; the placeholder above is illustrative only.
@@ -117,6 +128,10 @@ Rollback the Worker to the recorded pre-rollout version:
 npx wrangler rollback <PREVIOUS_VERSION_ID> --config wrangler.sync.jsonc --message "rollback customer OAuth rollout"
 ```
 
-Migration `0011` is additive. Do not drop tables/columns or restore over the existing Remote D1 automatically. Preserve invitation/state/credential audit rows, disable public routing by Worker rollback, and use a separately reviewed forward-fix or replacement-database restore from `/tmp/social-mkt-state-dev-before-0011.sql` only with explicit approval.
+Migrations `0011` and `0012` are additive. Do not drop tables/columns or restore
+over the existing Remote D1 automatically. Preserve invitation/state/credential
+audit rows, disable public routing by Worker rollback, and use a separately
+reviewed forward-fix or replacement-database restore from
+`/tmp/social-mkt-state-dev-before-0012.sql` only with explicit approval.
 
 After rollback, verify schedules remain false and Queue/Lark counters remain zero.
