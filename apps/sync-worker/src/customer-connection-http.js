@@ -10,6 +10,10 @@ import {
   GOOGLE_ADS_CONNECTION_PATHS,
 } from './google-ads-customer-connection-http.js';
 import {
+  createYouTubeCustomerConnectionHttpHandler,
+  YOUTUBE_CONNECTION_PATHS,
+} from './youtube-customer-connection-http.js';
+import {
   connectionRequestError,
   readBoundedConnectionJson,
   requireConnectionText,
@@ -19,6 +23,9 @@ const INVITATION_PATH = '/operator/connection-invitations';
 const KNOWN_METHODS = new Map([[INVITATION_PATH, Object.freeze(['POST'])]]);
 KNOWN_METHODS.set(GOOGLE_ADS_CONNECTION_PATHS.connect, Object.freeze(['GET']));
 KNOWN_METHODS.set(GOOGLE_ADS_CONNECTION_PATHS.callback, Object.freeze(['GET']));
+KNOWN_METHODS.set(YOUTUBE_CONNECTION_PATHS.connect, Object.freeze(['GET']));
+KNOWN_METHODS.set(YOUTUBE_CONNECTION_PATHS.callback, Object.freeze(['GET']));
+KNOWN_METHODS.set(YOUTUBE_CONNECTION_PATHS.select, Object.freeze(['POST']));
 
 /** Explicit HTTP boundary; Connector callback handlers จะถูก inject เพิ่มใน PR B/PR C */
 export function createCustomerConnectionHttpHandler(dependencies = {}) {
@@ -26,6 +33,7 @@ export function createCustomerConnectionHttpHandler(dependencies = {}) {
   const connectorHandler = dependencies.handleConnectorRequest
     ?? composeConnectorHandlers([
       createGoogleAdsCustomerConnectionHttpHandler({ createRuntime: runtimeFactory }),
+      createYouTubeCustomerConnectionHttpHandler({ createRuntime: runtimeFactory }),
     ]);
 
   return async function handleCustomerConnectionHttp(request, env, ctx) {

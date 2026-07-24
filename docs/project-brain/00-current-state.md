@@ -1,5 +1,21 @@
 # 00 — Current State
 
+## Customer OAuth foundation — merged source
+
+As of 2026-07-24, Shared Customer Connection/OAuth, Google Ads OAuth and YouTube OAuth are implemented, verified and merged in order through PRs `#42` → `#43` → `#44`.
+
+```text
+CONNECTOR_IMPLEMENTATION            COMPLETE_MERGED
+MOCK_CONTRACT_TEST                  PASS
+INTEGRATION_WORKSPACE_DEPLOYMENT    NOT_RUN
+CUSTOMER_OAUTH                      NOT_RUN
+LIVE_ACCESS                         NOT_RUN
+SCHEDULE                            DISABLED
+PRODUCTION                          BLOCKED
+```
+
+Migration `0011_customer_connection_oauth.sql`, Worker routes, Secrets and Google Redirect URIs are not applied remotely. No Connect link has been generated. PR #17 remains Draft/HOLD. Current authority and exact rollout boundary are in `docs/current-task.md` and `docs/customer-connection-oauth-rollout.md`.
+
 ## Source baseline
 
 - Implementation baseline: `d4a531fbb4e05dad7ce2296859c97f571e23acf3` / PR `#13`

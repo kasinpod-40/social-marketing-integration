@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased — Multi-Connector Customer Connection Foundation — 2026-07-24
+
+### Added
+- Added signed, expiring, one-time connector/customer invitations and OAuth state with PKCE-S256.
+- Added AES-256-GCM encrypted dynamic credential storage with random IV, key version, authenticated context, replacement/revoke lifecycle and D1-backed atomic consumption.
+- Extended the Sync Worker with explicit `fetch` routing while preserving `scheduled` and `queue`.
+- Added Google Ads v24 OAuth/read-only exact advertiser validation under the approved manager context, including a distinct Developer Token access-pending outcome.
+- Extended the existing YouTube API client with 0/1/N `mine=true` discovery and added signed one-time explicit Channel selection.
+
+### Safety and verification
+- OAuth callbacks refresh from the persisted encrypted credential, return masked identity/status metadata only, and never enqueue Business jobs or write Lark.
+- Migration `0011_customer_connection_oauth.sql` is additive and has not been applied remotely.
+- Local verification passed: Unit 677/677, Workers 9/9, report reliability 70/70, Architecture 191/460/0, audit 0 and Wrangler dry-run.
+- Merged source in order through PRs `#42` → `#43` → `#44`; no Remote D1 migration, deployment, Redirect URI change, Connect-link generation, Queue message, Lark write, schedule change or Production action occurred.
+
 ## Unreleased — Google Ads read-only access preflight — 2026-07-22
 
 ### Live read-only result

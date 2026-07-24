@@ -1,4 +1,214 @@
-# Current Task — TikTok Organic Bootstrap Durable Recovery Rollout Closeout
+# Current Task — Multi-Connector Customer Connection Foundation
+
+## Authoritative status
+
+```text
+TASK_STATUS                         = SOURCE_MERGE_COMPLETE_REMOTE_ROLLOUT_PENDING
+CURRENT_PROGRAM                     = MULTI_CONNECTOR_CUSTOMER_CONNECTION_FOUNDATION
+FIRST_PRIORITY                      = GOOGLE_ADS_AND_YOUTUBE_CUSTOMER_OAUTH
+OTHER_CONNECTORS                    = PLANNED_NOT_STARTED
+INTEGRATION_WORKSPACE               = development / integration_workspace
+GOOGLE_ADS_PR_17                    = DRAFT_HOLD
+SCHEDULES                           = DISABLED
+PRODUCTION                          = BLOCKED
+REMOTE_D1_MIGRATION                 = NOT_AUTHORIZED
+WORKER_DEPLOYMENT                   = NOT_AUTHORIZED
+GOOGLE_REDIRECT_URI_LIVE_CHANGE     = NOT_AUTHORIZED
+CONNECT_LINK_GENERATION             = NOT_AUTHORIZED
+CONNECTOR_IMPLEMENTATION            = COMPLETE_MERGED
+MERGED_PR_SEQUENCE                  = #42 -> #43 -> #44
+MOCK_CONTRACT_TEST                  = PASS
+INTEGRATION_WORKSPACE_DEPLOYMENT    = NOT_RUN
+CUSTOMER_OAUTH                      = NOT_RUN
+LIVE_ACCESS                         = NOT_RUN
+LIVE_DATA_UAT                       = NOT_RUN
+LARK_WRITE_UAT                      = NOT_APPLICABLE_THIS_PHASE
+RELIABILITY_UAT                     = NOT_RUN
+SCHEDULE                            = DISABLED
+```
+
+งานนี้สร้าง Customer OAuth Connection สำหรับ Google Ads และ YouTube บน Shared Google OAuth Core โดยคงเป็นคนละ Connector, คนละ Consent scope และคนละ Connection record. Callback ต้องเก็บ Refresh Token แบบ encrypted server-side, ตรวจ Provider identity และไม่ส่ง Queue/เริ่ม Sync/เขียน Lark.
+
+## Objective
+
+เตรียม Source code, additive D1 migration, Worker routes, guarded invitation operator และ Tests ให้พร้อมสำหรับลำดับ:
+
+```text
+PR A — Shared Customer Connection/OAuth Foundation
+PR B — Google Ads Customer OAuth Connection
+PR C — YouTube Customer OAuth Connection
+```
+
+PR #17 ห้าม merge, cherry-pick หรือใช้เป็น implementation baseline. Diff กับ `main` ปัจจุบันต้องเก็บเป็น review evidence เท่านั้น.
+
+## Approved architecture
+
+```text
+Operator creates signed one-time invitation
+→ Customer opens connector-specific URL
+→ Worker validates and consumes invitation
+→ Worker creates signed one-time OAuth state
+→ Google authorization-code consent
+→ Callback validates and consumes state
+→ Code exchange
+→ AES-GCM encrypted Refresh Token persistence
+→ Access Token refresh/lifecycle proof
+→ Provider identity validation
+→ Connection metadata update
+→ Connected / Action required page
+```
+
+Permanent rules:
+
+- Invitation TTL default 24 hours and configurable.
+- OAuth state TTL default 10 minutes and configurable.
+- Invitation and OAuth state are signed, expiring, nonce-bound and one-time.
+- Google Ads and YouTube never share a Connection record or combined Consent.
+- Dynamic customer Refresh Tokens never use `.dev.vars`, Lark, Queue payload or plaintext D1.
+- Existing YouTube environment credential adapter remains for compatibility.
+- Callback never emits Queue messages and never writes Lark or Marketing business facts.
+- Unknown HTTP routes return 404; unsupported methods on known routes return 405.
+- Every Business schedule remains false.
+
+## Data model authority
+
+Exact contract:
+
+`docs/customer-connection-oauth-contract-v1.md`
+
+The existing `connections` table remains the metadata authority. Migration extends it additively and leaves legacy encrypted-token columns unused. Distinct-grain tables are added only for:
+
+- `connection_invitations`
+- `oauth_state_attempts`
+- `encrypted_credentials`
+- `connection_identity_selections`
+
+## PR A — Shared foundation scope
+
+- Worker `fetch`, `scheduled` and `queue` handlers coexist without regression.
+- Explicit HTTP route/method allowlist.
+- Signed one-time invitation and signed one-time OAuth state.
+- D1-backed atomic nonce consumption.
+- AES-256-GCM credential repository with random IV, authenticated context and key version.
+- Refresh/access lifecycle interfaces and bounded in-memory access-token cache.
+- Connection metadata/status contract.
+- Reconnect, token replacement and disconnect/revoke state transitions.
+- Environment credential adapter remains available for legacy YouTube DEV.
+- Central operational redaction covers connection/OAuth fields.
+- Operator route returns only connector, customer key, connect URL, expiry and environment.
+
+## PR B — Google Ads scope
+
+- `GET /connect/google-ads`
+- `GET /oauth/google-ads/callback`
+- Exact `adwords` scope and offline access.
+- Google Ads identity validation against the approved advertiser and manager mapping.
+- OAuth success remains `connected` when Developer Token access is pending.
+- Success output contains only Connection ID, masked/approved identity and statuses.
+- No Google Ads business ingestion and no PR #17 signed-delivery merge.
+
+## PR C — YouTube scope
+
+- `GET /connect/youtube`
+- `GET /oauth/youtube/callback`
+- Exact `youtube.readonly` and `yt-analytics.readonly` scopes.
+- Reuse existing YouTube Data/Analytics clients and refresh-token provider.
+- `channels.list mine=true` identity validation.
+- Zero channels fails identity validation; one binds; multiple require explicit signed selection.
+- No automatic first-channel choice and no Queue/Lark write.
+
+## Acceptance criteria
+
+- [x] PR A invitation signature/expiry/one-time/replay/mismatch tests pass.
+- [x] PR A state signature/expiry/replay/mismatch/callback error tests pass.
+- [x] PR A encryption/decryption/tamper/key-version/redaction tests pass.
+- [x] PR A HTTP allowlist plus scheduled/queue regressions pass.
+- [x] PR B authorization URL/code exchange/reconnect/access-pending tests pass.
+- [x] PR B exact Customer/Manager/account-not-visible tests pass.
+- [x] PR B proves zero Queue/Lark writes.
+- [x] PR C authorization URL/code exchange/channel 0/1/many/selection tests pass.
+- [x] PR C environment-adapter and existing YouTube connector regressions pass.
+- [x] PR C proves zero Queue/Lark writes.
+- [x] `npm ci`, `npm run check`, `npm test`, report reliability, audit and deploy dry-run pass.
+- [x] `Implementation result` records files, commands, tests, security review and remaining blockers.
+
+## Implementation result
+
+Source implementation is complete and merged through three stacked PRs. No Remote D1 migration, deployment, Google Cloud configuration, invitation generation, Queue message or Lark write was performed.
+
+### Merged PR sequence
+
+The reviewed change is split as:
+
+1. PR A `#42` / `codex/customer-oauth-foundation`: migration/shared crypto, D1 repositories, runtime config, invitation/state/operator HTTP boundary and shared tests.
+2. PR B `#43` / `codex/google-ads-customer-oauth`: Google Ads v24 read-only identity/access validation, OAuth flow/routes and tests.
+3. PR C `#44` / `codex/youtube-customer-oauth`: reuse/extension of YouTube client, 0/1/N identity selection flow/routes, tests and release documentation.
+
+The PRs were reviewed and merged in order `#42` → `#43` → `#44` with Branch Verification passing. Draft PR #17 remains untouched and must not be merged/cherry-picked.
+
+### Implemented behavior
+
+- Sync Worker exports `fetch`, `scheduled` and `queue`.
+- Operator invitation is connector/customer/environment-bound, signed, expiring and one-time.
+- OAuth state is signed, PKCE-S256, nonce-bound, redirect-bound and one-time.
+- Refresh Token is AES-256-GCM encrypted with random IV, key version and authenticated context.
+- Callback reads the persisted credential back and refreshes an Access Token before provider validation.
+- Google Ads uses v24 read-only Customer search with exact advertiser target and manager login header.
+- Google Ads Developer Token pending retains the credential with `connection_status=connected` and `access_status=google_ads_api_access_pending`.
+- YouTube reuses `YouTubeApiClient`; `listMyChannels()` preserves zero/one/many results and multiple channels require a signed one-time explicit selection.
+- Browser results contain Connection ID, masked identity, statuses, scopes, validation time and next action only.
+- Callback paths contain no Queue or Lark dependency and return `queued=false`, `larkWrite=false`.
+
+### Verification
+
+```text
+npm ci                                      PASS / 80 packages / 0 vulnerabilities
+npm run check                               PASS / 191 source files / 460 deps / 0 cycles
+npm run test:unit                           PASS / 677 tests
+npm run test:worker                         PASS / 9 tests
+npm run test:report-reliability             PASS / 70 tests
+npm audit --audit-level=high                PASS / 0 vulnerabilities
+npm run deploy:dry-run                      PASS
+focused customer OAuth suites               PASS
+```
+
+`npm test` completed its first Unit phase 673/673; after the final provider isolation, reconnect and PKCE lifecycle regressions were added, `npm run test:unit` passed 677/677. Its first Worker phase was blocked by the local sandbox (`EPERM` on Wrangler log/loopback), then the exact Worker gate passed 9/9 with its log redirected to `/tmp` and local runtime permission granted.
+
+### Security review
+
+- No real Secret/Token is present in source, examples, test outputs, URL query other than signed invitation/state/selection bearer artifacts, or operational logs.
+- Signing/operator/encryption/client/developer keys are named only and must be Worker Secrets.
+- Dynamic Refresh Tokens never use `.dev.vars`, legacy `connections.encrypted_*` columns, Queue payload or Lark.
+- Central redaction now covers connection/customer/invitation/state/nonce/redirect identifiers.
+- Operator authorization compares fixed-length SHA-256 digests with timing-safe comparison where the runtime supports it.
+- Unknown route and unsupported method handling are explicit; browser responses use no-store/no-referrer/security headers.
+- Encrypted credential replacement is transactional and tamper/key-version failures fail closed.
+
+### Remaining blockers
+
+- Source review and ordered merge are complete; remote rollout remains a separate approval boundary.
+- Migration `0011_customer_connection_oauth.sql` is not applied remotely.
+- Worker Secrets and non-secret runtime mappings are not configured.
+- Exact Redirect URIs are not registered in Google Cloud.
+- Worker is not deployed; HTTP smoke, customer OAuth and Live access remain untested.
+- Connect links cannot exist until the guarded rollout receives explicit approval.
+
+Exact rollout and rollback commands: `docs/customer-connection-oauth-rollout.md`.
+
+## Remote rollout approval boundary
+
+Implementation must stop before all remote actions. After local/CI review passes, report:
+
+- additive migration and backup requirement;
+- routes and Redirect URIs;
+- Secret names only;
+- exact deploy/rollback commands;
+- schedules false, Queue messages zero, Lark writes zero;
+- guarded link-generation command.
+
+User approval is required before Remote D1 backup/migration, Worker deployment, Google Cloud Redirect URI change or Connect-link generation.
+
+## Preserved Prior Task Record — TikTok Organic Bootstrap Durable Recovery Rollout Closeout
 
 ## Status
 

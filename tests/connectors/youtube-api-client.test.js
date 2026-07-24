@@ -31,6 +31,22 @@ test('YouTube channel lookup without items is a permanent identity mismatch', as
   );
 });
 
+test('YouTube OAuth discovery preserves zero/one/many channels for explicit selection', async () => {
+  const client = new YouTubeApiClient({
+    accessToken: 'access-private',
+    fetchImpl: async () => Response.json({
+      items: [{ id: 'channel_A' }, { id: 'channel_B' }],
+    }),
+  });
+  const channels = await client.listMyChannels();
+  assert.deepEqual(channels.map((item) => item.id), ['channel_A', 'channel_B']);
+  await assert.rejects(
+    () => client.getChannel({ mine: true }),
+    (error) => error.code === 'YOUTUBE_CHANNEL_IDENTITY_MISMATCH'
+      && error.details.resultCount === 2,
+  );
+});
+
 test('YouTube client follows bounded pageToken and chunks videos at 50 IDs', async () => {
   const calls = [];
   const client = new YouTubeApiClient({
