@@ -14,6 +14,7 @@ test('runtime profile contains every registered connector with a deterministic f
   assert.equal(config.connectors.tiktok.featureFlagEnv, 'MKT_CONNECTOR_TIKTOK_ENABLED');
   assert.equal(config.connectors.facebook.featureFlagEnv, 'MKT_CONNECTOR_FACEBOOK_ENABLED');
   assert.equal(config.connectors.meta_ads.featureFlagEnv, 'MKT_CONNECTOR_META_ADS_ENABLED');
+  assert.equal(config.connectors.google_ads.featureFlagEnv, 'MKT_CONNECTOR_GOOGLE_ADS_ENABLED');
 });
 
 test('environment feature flag keeps the active TikTok implementation disabled safely', () => {
@@ -114,6 +115,25 @@ test('Meta connection foundations cannot be enabled before Live DEV UAT', () => 
       MKT_CONNECTOR_META_ADS_ENABLED: 'true',
     }),
     (error) => error?.code === 'MKT_CONNECTOR_UAT_PENDING',
+  );
+});
+
+test('Google Ads signed-delivery connector remains planned and cannot be enabled', () => {
+  const disabled = loadCustomerRuntimeConfig({
+    MKT_ENV: 'development',
+    MKT_CUSTOMER_PROFILE: 'integration_workspace',
+  });
+  assert.equal(disabled.connectors.google_ads.implementationStatus, 'planned');
+  assert.equal(disabled.connectors.google_ads.enabled, false);
+  assert.equal(disabled.connectors.google_ads.accountKey, 'chemistry_k');
+
+  assert.throws(
+    () => loadCustomerRuntimeConfig({
+      MKT_ENV: 'development',
+      MKT_CUSTOMER_PROFILE: 'integration_workspace',
+      MKT_CONNECTOR_GOOGLE_ADS_ENABLED: 'true',
+    }),
+    (error) => error?.code === 'MKT_CONNECTOR_NOT_IMPLEMENTED',
   );
 });
 

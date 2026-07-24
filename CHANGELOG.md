@@ -1,5 +1,40 @@
 # Changelog
 
+## Unreleased — Google Ads Manager Script signed-delivery Phase 1 — 2026-07-25
+
+### Added
+
+- Added a sanitized DRY_RUN-first Manager Script artifact with exact Manager
+  and advertiser guards, six bounded read-only GAQL datasets, deterministic
+  chunking/signing and delivery disabled by default.
+- Added a machine-readable GAQL/safety manifest with the exact Script SHA-256.
+- Added Google Ads to the central Connector and Job catalogs as `planned`, plus
+  fail-closed Connector, Signed-ingress and Business-write flags.
+- Added exact six-dataset envelope validation and a pure Web Crypto HMAC
+  verifier covering canonical JSON, body digest, timestamp, current/previous
+  key rotation, identity and idempotency matching.
+- Added focused contract/security/safety/config tests. Full local gates pass:
+  offline clean install, Unit 744/744, Workers 9/9, report reliability 70/70,
+  Architecture 209/497/0, repository hygiene, offline audit and deploy dry-run.
+
+### Contract
+
+- Added a new approval-gated signed-delivery Contract on current `main` with
+  exact six-dataset schemas, deterministic HMAC-SHA-256 transport, timestamp,
+  hashed nonce, replay/key-rotation rules and bounded multi-chunk assembly.
+- Replaced the old Draft PR `#17` destination topology with D1-first Ads
+  history/Coverage, reference-only Queue processing and Shared RAW
+  `RAW_Ads_Entities`/`RAW_Ads_Daily`.
+- Locked request/run/work/row idempotency, cross-chunk reconciliation,
+  checkpoint/DLQ/redrive, payload redaction/retention and disabled-by-default
+  PREVIEW/LIVE rollout.
+
+### Safety
+
+- Local Phase 1 only: no dependency, migration, endpoint, secret, live request,
+  Queue/D1/Lark business write, schedule, deployment or Production action.
+- Draft PR `#17` remains Draft/HOLD and evidence-only.
+
 ## Unreleased — Multi-Connector Customer Connection Foundation — 2026-07-24
 
 ### Added

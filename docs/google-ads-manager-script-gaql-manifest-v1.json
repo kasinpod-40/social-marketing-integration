@@ -1,0 +1,125 @@
+{
+  "schemaVersion": "google_ads_manager_script_gaql_manifest_v1",
+  "artifactVersion": "google_ads_manager_script_signed_delivery_v1",
+  "scriptArtifact": "scripts/google-ads-manager-script-signed-delivery.js",
+  "scriptSha256": "ab5084a3aeec8f75ac89226394f019f63a45aaa05c0cb67634532932f12a270a",
+  "sourceModeDefault": "DRY_RUN",
+  "deliveryEnabledDefault": false,
+  "lookbackDays": 30,
+  "datasets": {
+    "account": {
+      "maxRows": 1,
+      "resource": "customer",
+      "fields": [
+        "customer.id",
+        "customer.descriptive_name",
+        "customer.currency_code",
+        "customer.time_zone",
+        "customer.status",
+        "customer.manager",
+        "customer.test_account",
+        "customer.resource_name"
+      ]
+    },
+    "campaigns": {
+      "maxRows": 500,
+      "resource": "campaign",
+      "fields": [
+        "campaign.id",
+        "campaign.name",
+        "campaign.status",
+        "campaign.primary_status",
+        "campaign.serving_status",
+        "campaign.advertising_channel_type",
+        "campaign.advertising_channel_sub_type",
+        "campaign.bidding_strategy_type",
+        "campaign.campaign_budget",
+        "campaign.resource_name"
+      ],
+      "nullableOutputOnly": [
+        "campaign.start_date",
+        "campaign.end_date"
+      ]
+    },
+    "adGroups": {
+      "maxRows": 2000,
+      "resource": "ad_group",
+      "fields": [
+        "ad_group.id",
+        "campaign.id",
+        "ad_group.name",
+        "ad_group.status",
+        "ad_group.primary_status",
+        "ad_group.type",
+        "ad_group.resource_name"
+      ]
+    },
+    "ads": {
+      "maxRows": 5000,
+      "resource": "ad_group_ad",
+      "fields": [
+        "ad_group_ad.ad.id",
+        "ad_group.id",
+        "campaign.id",
+        "ad_group_ad.ad.name",
+        "ad_group_ad.status",
+        "ad_group_ad.primary_status",
+        "ad_group_ad.ad.type",
+        "ad_group_ad.ad.final_urls",
+        "ad_group_ad.ad.display_url",
+        "ad_group_ad.resource_name"
+      ]
+    },
+    "youtubeAssets": {
+      "maxRows": 5000,
+      "resource": "asset",
+      "fields": [
+        "asset.id",
+        "asset.name",
+        "asset.status",
+        "asset.type",
+        "asset.youtube_video_asset.youtube_video_id",
+        "asset.youtube_video_asset.youtube_video_title",
+        "asset.resource_name"
+      ],
+      "where": "asset.type = 'YOUTUBE_VIDEO'"
+    },
+    "campaignDailyMetrics": {
+      "maxRows": 10000,
+      "resource": "campaign",
+      "fields": [
+        "segments.date",
+        "campaign.id",
+        "campaign.advertising_channel_type",
+        "campaign.advertising_channel_sub_type",
+        "customer.currency_code",
+        "metrics.cost_micros",
+        "metrics.impressions",
+        "metrics.clicks",
+        "metrics.conversions",
+        "metrics.conversions_value",
+        "metrics.video_views",
+        "metrics.video_view_rate",
+        "metrics.average_cpv"
+      ],
+      "where": "segments.date DURING LAST_30_DAYS"
+    }
+  },
+  "liveEvidence": {
+    "classification": "documented_live_review",
+    "historicalReviewedSourceInRepository": false,
+    "historicalReviewedLineCount": 598,
+    "externalDeliveryWasEnabled": false,
+    "adsMutationObserved": false,
+    "allSixDatasetsWereNonEmpty": true,
+    "datasetErrors": 0,
+    "truncation": 0
+  },
+  "safetyScan": {
+    "containsCustomerId": false,
+    "containsSecret": false,
+    "createsTrigger": false,
+    "mutatesGoogleAds": false,
+    "writesExternalDataByDefault": false
+  }
+}

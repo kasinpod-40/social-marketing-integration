@@ -265,7 +265,7 @@ Backfill requires D1 write. Retention requires the D1 Report reader. Enabling St
 | Facebook Organic | Token preflight implemented / Live UAT blocked | Restore customer-app admin, rotate token and validate exact Page |
 | Instagram Organic | Token preflight implemented / exact mapping pending | Repeat customer-token UAT with exact Instagram Account |
 | Meta Ads | Token preflight implemented / Live UAT blocked | Validate exact Ad Account independently; Ads facts/revision contract remains separate |
-| Google Ads | Read-only source passed; Draft PR #17 | HOLD; rebuild/rebase against Storage/RAW lineage |
+| Google Ads | Read-only source passed; signed-delivery Local Phase 1 complete | Review/PR foundation, then separately approve D1 replay/endpoint Phase 2; PR #17 stays HOLD |
 | TikTok Ads | Access/design preflight | Controlled API/Worker connector later |
 | WooCommerce | Planned | Connector pending |
 | Chatwoot | Planned | Connector pending |

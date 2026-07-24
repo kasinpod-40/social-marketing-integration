@@ -88,6 +88,10 @@
     "MKT_CONNECTOR_FACEBOOK_ENABLED": "false",
     "MKT_CONNECTOR_INSTAGRAM_ENABLED": "false",
     "MKT_CONNECTOR_META_ADS_ENABLED": "false",
+    "MKT_CONNECTOR_GOOGLE_ADS_ENABLED": "false",
+    // Signed ingress และ Business writer ต้องเปิดแยกภายหลังเมื่อแต่ละ Gate ผ่าน
+    "MKT_GOOGLE_ADS_SIGNED_INGRESS_ENABLED": "false",
+    "MKT_GOOGLE_ADS_BUSINESS_WRITE_ENABLED": "false",
     "MKT_CONNECTOR_YOUTUBE_ENABLED": "false",
     "MKT_YOUTUBE_ANALYTICS_ENABLED": "false",
     "MKT_CONNECTOR_WOOCOMMERCE_ENABLED": "false",

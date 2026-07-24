@@ -1,4 +1,126 @@
-# Current Task — Multi-Connector Customer Connection Foundation
+# Current Task — Google Ads Manager Script Signed Delivery Contract
+
+## Authoritative status
+
+```text
+TASK_STATUS             = PHASE_1_LOCAL_IMPLEMENTED
+CURRENT_PROGRAM         = GOOGLE_ADS_MANAGER_SCRIPT_SIGNED_DELIVERY
+CONTRACT                = docs/google-ads-manager-script-signed-delivery-contract-v1.md
+CONTRACT_APPROVAL       = APPROVED_2026_07_25
+IMPLEMENTATION          = CONTRACT_SECURITY_FOUNDATION_COMPLETE
+GOOGLE_ADS_PR_17        = DRAFT_HOLD_EVIDENCE_ONLY
+LIVE_DELIVERY           = DISABLED
+BUSINESS_WRITES         = DISABLED
+SCHEDULES               = DISABLED
+PRODUCTION              = BLOCKED
+CUSTOMER_OAUTH          = AWAITING_CUSTOMER_CALLBACK_IN_PARALLEL
+```
+
+## Objective
+
+ล็อก Contract ใหม่บน `main` ล่าสุดสำหรับ Signed HMAC multi-chunk delivery จาก
+Google Ads Manager Script ไปยัง API Worker, D1 transport staging,
+reference-only Queue, D1-first Ads history และ Shared RAW/Canonical Lark โดย
+Reuse Reliability stack กลางทั้งหมด
+
+## In scope
+
+- Exact six dataset schemas
+- Deterministic JSON/HMAC/timestamp/nonce/key rotation
+- Multi-chunk manifest, bounded payload และ cross-chunk reconciliation
+- Request/row/work idempotency
+- Additive D1 transport state design
+- Central Job/Connector and reference-only Queue contract
+- D1-first/Shared RAW/Canonical destination mapping
+- Partial failure, checkpoint, DLQ/redrive, retention และ redaction
+- Disabled-by-default rollout และ required tests
+- Sanitized DRY_RUN-first Manager Script artifact และ exact GAQL/safety manifest
+- Central Connector/Job registration แบบ `planned`
+- Pure exact-envelope/canonical JSON/HMAC verification boundary และ tests
+
+## Out of scope
+
+- Live endpoint route, D1 nonce/run/chunk Migration หรือ Writer
+- Google Ads/Spend mutation
+- Live request, Secret change, Queue send, D1/Lark business write
+- Commit/Push/PR/Deploy
+- Schedule หรือ Production
+- Draft PR `#17` merge/cherry-pick/reuse
+
+## Data model and contract authority
+
+Authoritative contract:
+
+`docs/google-ads-manager-script-signed-delivery-contract-v1.md`
+
+Contract ใช้ Shared RAW `RAW_Ads_Entities` / `RAW_Ads_Daily`, D1
+`ads_entity_state` / `ads_daily_facts` / Coverage และ Canonical Ads tables เดิม
+ไม่มี separate RAW Google tables และไม่มี `ads_conversion_daily_facts` write
+เพราะ Source v1 ไม่มี Conversion-action identity
+
+## Acceptance criteria
+
+- [x] อ่าน `main` ล่าสุดและเอกสารบังคับครบ
+- [x] เทียบ Draft PR `#17` แบบ read-only โดยไม่ reuse
+- [x] ล็อก Payload/Security/Identity/Idempotency/Reliability/Destination draft
+- [x] ล็อก multi-chunk protocol และ reference-only Queue
+- [x] ล็อก D1-first + Shared RAW lineage
+- [x] ล็อก Feature flags/schedules เป็น false
+- [x] ระบุ Required implementation sequence/tests
+- [x] ผู้ใช้อนุมัติ Contract
+- [x] เปิดและทำ Local Phase 1 boundary แยก
+- [x] เพิ่ม Sanitized Script + GAQL/safety manifest พร้อม SHA-256
+- [x] เพิ่ม Central Connector/Job แบบ `planned` และ Flags ปิด
+- [x] เพิ่ม pure signed-delivery schema/security verification และ focused tests
+- [x] รัน Static/Architecture/Hygiene, Unit, Workers, report reliability และ dry-run
+- [ ] เพิ่ม D1 nonce/run/chunk transport state และ Live endpoint
+- [ ] ทำ Manual signed PREVIEW หลัง Phase 2 และอนุมัติ Remote แยก
+
+## Implementation result
+
+Local Phase 1 เสร็จบน Branch `codex/google-ads-signed-delivery-contract`:
+
+- เพิ่ม `scripts/google-ads-manager-script-signed-delivery.js` แบบ sanitized,
+  exact-manager/exact-advertiser, read-only GAQL หกชุด, capped chunk,
+  `DRY_RUN` default และ Delivery default `false`
+- เพิ่ม `docs/google-ads-manager-script-gaql-manifest-v1.json` พร้อม exact fields,
+  Safety result และ SHA-256 ของ Script artifact
+- เพิ่ม Google Ads Connector/Job ใน Catalog กลางเป็น `planned`; เปิด Flag ไม่ได้
+- เพิ่ม exact envelope/row schema, null/zero/ordering/idempotency contract
+- เพิ่ม pure Web Crypto HMAC verifier ที่รองรับ Current/Previous key,
+  timestamp/body digest/canonical JSON/runtime identity และ safe nonce fingerprint
+- เพิ่ม Flags `MKT_CONNECTOR_GOOGLE_ADS_ENABLED`,
+  `MKT_GOOGLE_ADS_SIGNED_INGRESS_ENABLED` และ
+  `MKT_GOOGLE_ADS_BUSINESS_WRITE_ENABLED` เป็น `false` ใน Release examples
+
+Verification:
+
+```text
+npm ci --offline                    PASS (81 packages / 0 vulnerabilities)
+Focused Google Ads/config suites   78/78 PASS
+npm run check                      PASS (209 files / 497 deps / 0 cycles)
+Node Unit/Integration              744/744 PASS
+Workers runtime                    9/9 PASS
+Report reliability                70/70 PASS
+npm audit --offline               0 vulnerabilities
+npm run deploy:dry-run             PASS
+```
+
+Online `npm audit` ไม่ได้รันเพราะ External registry metadata request ไม่ผ่าน
+execution-policy gate; Offline audit ผ่าน ไม่มี Dependency ใหม่ใน Phase นี้
+
+ไม่มี Endpoint/Migration/Writer ถูกเพิ่ม ไม่มี Secret ถูกแก้ ไม่มี Live request,
+Queue/D1/Lark business mutation, Commit, Push, PR, Deploy, Schedule หรือ
+Production action
+
+## Next approval gate
+
+Review Local Phase 1 diff แล้วอนุมัติ Commit/Push/PR แยก หากต้องการนำ Foundation
+เข้าหา `main`. Phase 2 ต้องขออนุมัติ Implementation แยกสำหรับ additive D1
+nonce/run/chunk state, Atomic replay/idempotency store และ Live API route โดยยัง
+ไม่มี Business writer หรือ Remote rollout
+
+# Preserved Prior Task — Multi-Connector Customer Connection Foundation
 
 ## Authoritative status
 

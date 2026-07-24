@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import syncWorker, { createSyncWorker, processJob } from '../../apps/sync-worker/src/index.js';
+import { JOB_TYPES } from '../../packages/application/src/jobs/job-catalog.js';
 import {
   markReliabilityHandled,
   permanentError,
@@ -68,13 +69,18 @@ test('sync worker acknowledges malformed queue bodies as permanent failures with
   assert.equal(next.acked, true);
 });
 
-test('known but unfinished connector jobs are acknowledged before runtime configuration is loaded', async () => {
-  const message = createMessage({ type: 'facebook.page.organic.sync' });
-  await syncWorker.queue({ queue: 'sync-main', messages: [message] }, minimalEnv());
+for (const jobType of [
+  JOB_TYPES.FACEBOOK_ORGANIC_SYNC,
+  JOB_TYPES.GOOGLE_ADS_MANAGER_SIGNED_DELIVERY_PROCESS,
+]) {
+  test(`${jobType} is acknowledged as unfinished before runtime configuration loads`, async () => {
+    const message = createMessage({ type: jobType });
+    await syncWorker.queue({ queue: 'sync-main', messages: [message] }, minimalEnv());
 
-  assert.equal(message.acked, true);
-  assert.equal(message.retried, false);
-});
+    assert.equal(message.acked, true);
+    assert.equal(message.retried, false);
+  });
+}
 
 test('disabled active connector jobs are acknowledged before Lark credentials are required', async () => {
   const message = createMessage({ type: 'tiktok.creator.native.sync' });

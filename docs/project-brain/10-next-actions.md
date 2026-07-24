@@ -1,6 +1,27 @@
 # 10 — Next Actions
 
-## Immediate next action — Await customer callbacks
+## Immediate next action — Review Google Ads signed-delivery Local Phase 1
+
+Contract ได้รับอนุมัติและ Local Phase 1 เสร็จบน
+`codex/google-ads-signed-delivery-contract` แล้ว:
+
+- sanitized DRY_RUN-first Script + exact GAQL/safety manifest/SHA-256;
+- exact six-dataset/null-zero/order validation;
+- pure deterministic JSON/HMAC/timestamp/key-rotation verification;
+- central Google Ads Connector/Job แบบ `planned`;
+- Connector/Signed ingress/Business write flags เป็น `false`;
+- focused 78/78, Unit 744/744, Workers 9/9, report 70/70 และ dry-run ผ่าน
+
+ขั้นถัดไป:
+
+1. Review diff ปัจจุบัน
+2. หากอนุมัติ Release ให้ Commit/Push/PR แยก
+3. ขออนุมัติ Phase 2 ก่อนเพิ่ม D1 nonce/run/chunk state และ Live API route
+4. ห้ามเปิด Signed ingress หรือ Business writer จน Phase 2 gates ผ่าน
+
+Draft PR `#17` remains Draft/HOLD and evidence-only.
+
+## Parallel external wait — Customer OAuth callbacks
 
 PR A/B/C and retry-safe PR `#45` are merged. Migration `0012` and Worker v2 are
 live. The test invitations expired unused; seven-day customer links are active.
@@ -80,15 +101,13 @@ npm run deploy:dry-run          PASS
 
 No Live Lark Apply, Google Ads mutation, Queue message, D1 migration, schedule change or deployment occurred.
 
-## Immediate next approval gate
+## Current approval gate
 
-Open a separate task only after user approval:
+Google Ads Contract ได้รับอนุมัติและ Local Phase 1 เสร็จแล้ว. Gate ปัจจุบันคือ
+Review/Commit decision; D1 transport state, endpoint, Business writer และ Remote
+rollout ยังไม่ได้รับอนุมัติ
 
-`Google Ads Manager Script signed delivery connector`
-
-Do not begin implementation until the contract below is approved.
-
-## Contract to lock before coding
+## Approved contract retained for Phase 2
 
 ### Payload
 
@@ -144,25 +163,27 @@ Do not begin implementation until the contract below is approved.
 
 ### Environment and rollout
 
-1. DEV, `uat_chemistry_k` and Production isolation.
+1. One pre-Production `development / integration_workspace` runtime and
+   customer-owned Production isolation; `uat_chemistry_k` is only a historical
+   compatibility alias.
 2. Separate secrets and signing keys per environment.
 3. Connector feature flag disabled by default.
 4. Schedule disabled by default.
 5. Customer-real UAT retention/cleanup.
 6. Customer-owned Production resources.
 
-## Implementation order after approval
+## Remaining implementation order after Local Phase 1
 
-1. Add Google Ads connector/catalog/job contracts in disabled state.
-2. Add signed ingress parser and security tests without destination writes.
-3. Add Queue/D1 replay/idempotency state.
+1. Review/Commit/Push Local Phase 1 through a new PR if authorized.
+2. Add Queue/D1 replay/idempotency state.
+3. Add Live API route behind disabled Signed-ingress flag.
 4. Add six-dataset normalization and destination planning.
 5. Add bounded Lark writes behind explicit UAT flags.
 6. Add partial-failure, retry, DLQ and reconciliation tests.
 7. Run isolated manual signed-delivery UAT with schedule off.
 8. Repeat the same payload and verify zero duplicates.
 9. Run controlled partial-failure/recovery tests.
-10. Observe a clean manual cycle before considering schedule.
+10. Observe clean manual cycles before considering schedule.
 
 ## Direct Google Ads API track
 
@@ -230,7 +251,7 @@ Do not overload the current stable-key Views without approval.
 5. WooCommerce.
 6. Chatwoot.
 7. Multi-channel AI summary/insight/notification.
-8. Channel-by-channel `uat_chemistry_k`.
+8. Connector-by-connector manual UAT inside the single Integration Workspace.
 9. Customer-owned Production cutover.
 
 ## Permanent release blockers

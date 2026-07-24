@@ -6,7 +6,15 @@
 
 ไฟล์นี้เก็บ **Current verified repository/runtime state** เท่านั้น ให้ยึด `AGENTS.md` และ `docs/current-task.md` ก่อนเสมอ
 
-## Current verified state — 2026-07-24
+## Current verified state — 2026-07-25
+
+Google Ads Manager Script signed-delivery Contract is approved and Local Phase 1
+is implemented on `codex/google-ads-signed-delivery-contract`: sanitized
+DRY_RUN-first Script, exact GAQL/safety manifest, central planned Connector/Job
+and pure canonical JSON/HMAC/schema verification. It replaces the old Draft PR
+`#17` topology with multi-chunk signed transport, reference-only Queue,
+D1-first Ads history and the existing Shared RAW lineage. No endpoint,
+migration, writer, live delivery, schedule or Production action is authorized.
 
 ```text
 Integration Workspace                         active
@@ -287,12 +295,15 @@ Do not create a parallel Reliability stack.
 ## Current task and next boundary
 
 ```text
-CURRENT_TASK = TIKTOK_ORGANIC_DURABLE_RECOVERY_ROLLOUT_COMPLETE
-NEXT_TASK = GOOGLE_ADS_MANAGER_SCRIPT_SIGNED_DELIVERY_CONNECTOR_PLANNING
-NEXT_TASK_STATUS = NOT_STARTED
+PRIOR_TASK = TIKTOK_ORGANIC_DURABLE_RECOVERY_ROLLOUT_COMPLETE
+CURRENT_TASK = GOOGLE_ADS_MANAGER_SCRIPT_SIGNED_DELIVERY_CONNECTOR
+CURRENT_TASK_STATUS = PHASE_1_LOCAL_IMPLEMENTED
 ```
 
-The next task must read `AGENTS.md`, `docs/current-task.md`, this Project Brain, the Storage contract and all current Google Ads code/docs before planning. No implementation, merge, deployment or schedule follows automatically from this closeout.
+Phase 1 has passed focused, repository, Unit, Workers-runtime, report
+reliability, offline audit and deploy dry-run gates. Review/Commit is the next
+decision. Phase 2 D1 transport/endpoint work needs separate authorization; no
+merge, deployment, Live delivery or schedule follows automatically.
 
 ## Permanent safety rules
 

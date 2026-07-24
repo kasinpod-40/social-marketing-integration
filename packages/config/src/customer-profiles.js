@@ -47,6 +47,11 @@ const CUSTOMER_PROFILES = Object.freeze({
         accountKey: 'chemistry_k',
         displayLabel: 'Meta Ads — Chemistry K preflight pending',
       },
+      google_ads: {
+        enabledByDefault: false,
+        accountKey: 'chemistry_k',
+        displayLabel: 'Google Ads — Chemistry K signed delivery planned',
+      },
       youtube: {
         enabledByDefault: false,
         accountKey: 'dev_ft_pumkin',
@@ -98,6 +103,11 @@ const CUSTOMER_PROFILES = Object.freeze({
         enabledByDefault: false,
         accountKey: 'chemistry_k',
         displayLabel: 'Meta Ads — Chemistry K',
+      },
+      google_ads: {
+        enabledByDefault: false,
+        accountKey: 'chemistry_k',
+        displayLabel: 'Google Ads — Chemistry K',
       },
       youtube: {
         enabledByDefault: false,

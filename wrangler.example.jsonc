@@ -15,6 +15,10 @@
     "MKT_CONNECTOR_TIKTOK_ENABLED": "false",
     "MKT_CONNECTOR_FACEBOOK_ENABLED": "false",
     "MKT_CONNECTOR_INSTAGRAM_ENABLED": "false",
+    "MKT_CONNECTOR_GOOGLE_ADS_ENABLED": "false",
+    // Phase 1 มีเฉพาะ Contract/Artifact: ยังไม่มี Live ingress หรือ Business write
+    "MKT_GOOGLE_ADS_SIGNED_INGRESS_ENABLED": "false",
+    "MKT_GOOGLE_ADS_BUSINESS_WRITE_ENABLED": "false",
     "MKT_CONNECTOR_YOUTUBE_ENABLED": "false",
     "MKT_CONNECTOR_WOOCOMMERCE_ENABLED": "false",
     "MKT_CONNECTOR_CHATWOOT_ENABLED": "false",
