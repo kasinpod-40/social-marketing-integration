@@ -322,13 +322,22 @@ Verified customer-app state:
   `pages_show_list` are available for testing;
 - Meta currently reports that API access is restricted until every app
   administrator completes Developer Portal account verification;
-- Instagram customer use-case readiness is not yet verified and must not be
-  inferred from the separate developer-owned app.
+- the user confirms that the customer supplied separate Facebook and Instagram
+  access tokens, so Meta onboarding does not require a new customer OAuth link
+  before token validation;
+- the locally stored Instagram credential passed a read-only
+  `graph.instagram.com/me` identity request with HTTP `200`; no raw token,
+  username or full external ID was logged;
+- no Facebook credential is currently available under the repository's
+  expected local `META_ACCESS_TOKEN` name, so Facebook identity/scope validation
+  remains pending.
 
-This evidence does not authorize a Meta connector implementation, OAuth link
-generation, App Review submission, permission mutation or Production rollout.
-The next safe action is for the customer-app administrators to finish Developer
-Portal verification, followed by another read-only app/use-case/redirect audit.
+The API-restricted dashboard banner remains an App Review/administration risk;
+it is not proof that the supplied tokens are invalid. The next safe actions are
+to store the supplied Facebook token in an approved ignored/Secret boundary,
+run read-only Facebook identity/scope validation, and complete administrator
+Developer Portal verification in parallel. This evidence does not authorize an
+App Review submission, permission mutation or Production rollout.
 
 Exact rollout and rollback commands: `docs/customer-connection-oauth-rollout.md`.
 

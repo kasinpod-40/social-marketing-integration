@@ -20,24 +20,31 @@ Do not enqueue business jobs, write Lark, enable schedules or rerun TikTok recov
 
 ## Parallel Meta connection preflight
 
-The customer-owned Meta app is not ready for customer Connect-link rollout yet.
-A read-only Safari inspection on `2026-07-25` found Marketing/Page read
+The customer-owned Meta app does not require a new customer Connect link before
+token validation because the customer supplied separate Facebook and Instagram
+tokens. A read-only Safari inspection on `2026-07-25` found Marketing/Page read
 permissions available for testing, but the app is API-restricted until every
-administrator completes Developer Portal account verification. Instagram
-customer use-case readiness is still unverified.
+administrator completes Developer Portal account verification. The locally
+stored Instagram token passed read-only `/me` identity validation with HTTP
+`200`; Facebook validation is pending because `META_ACCESS_TOKEN` is not
+currently present in the ignored local runtime config.
 
 Safe order:
 
-1. Customer-app administrators complete Developer Portal verification.
-2. Repeat a read-only customer-app audit in Safari.
-3. Lock separate Facebook Organic, Instagram Organic and Meta Ads connection
-   records, least-privilege scopes, redirect URIs and identity-selection rules.
-4. Update `docs/current-task.md` to approve the exact Meta connection contract.
-5. Only then implement disabled-by-default routes and tests.
+1. Store the supplied Facebook token under the approved ignored/Secret
+   boundary; never paste it into Source, docs or logs.
+2. Run read-only Facebook Page identity/scope validation.
+3. Customer-app administrators complete Developer Portal verification in
+   parallel and repeat the read-only app audit.
+4. Lock token lifecycle, exact Facebook/Instagram identity and separate
+   Facebook Organic / Instagram Organic / Meta Ads connection records.
+5. Update `docs/current-task.md` to approve the exact token-based Meta
+   connector scope before implementation.
 
 Do not reuse the developer-owned Meta app as customer evidence. Do not add an
 Instagram use case, change permissions, publish the app, submit App Review or
-generate Meta customer links from this preflight.
+generate Meta customer links from this preflight. The dashboard restriction is
+an operational blocker/risk, not evidence that the supplied tokens are invalid.
 
 ## Completed source correction
 
