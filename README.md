@@ -37,16 +37,16 @@ Production                         blocked
 Customer OAuth source status (2026-07-24):
 
 ```text
-Shared Connection/OAuth            Draft PR #42
-Google Ads Customer OAuth          Draft PR #43
-YouTube Customer OAuth             Draft PR #44
+Shared Connection/OAuth            merged via PR #42
+Google Ads Customer OAuth          merged via PR #43
+YouTube Customer OAuth             merged via PR #44
 Migration 0011                     not applied remotely
 Worker deployment                  not run
 Customer Connect links             not generated
 Queue/Lark callback side effects   0 / 0 by contract
 ```
 
-See `docs/customer-connection-oauth-contract-v1.md` and `docs/customer-connection-oauth-rollout.md`. Review/merge order is `#42` → `#43` → `#44`; Remote D1, Worker deployment, Redirect URI changes and link generation require separate approval.
+See `docs/customer-connection-oauth-contract-v1.md` and `docs/customer-connection-oauth-rollout.md`. Source merged in order `#42` → `#43` → `#44`; Remote D1, Worker deployment, Redirect URI changes and link generation require separate approval.
 
 PR #27 added source code and a guarded runbook. It did not apply Migration `0009` remotely, deploy a Worker, send a Queue message or write Live D1/Lark business data.
 

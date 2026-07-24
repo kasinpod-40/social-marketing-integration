@@ -13,7 +13,7 @@
 - OAuth callbacks refresh from the persisted encrypted credential, return masked identity/status metadata only, and never enqueue Business jobs or write Lark.
 - Migration `0011_customer_connection_oauth.sql` is additive and has not been applied remotely.
 - Local verification passed: Unit 677/677, Workers 9/9, report reliability 70/70, Architecture 191/460/0, audit 0 and Wrangler dry-run.
-- Published stacked Draft PRs `#42` → `#43` → `#44`; no merge, Remote D1 migration, deployment, Redirect URI change, Connect-link generation, Queue message, Lark write, schedule change or Production action occurred.
+- Merged source in order through PRs `#42` → `#43` → `#44`; no Remote D1 migration, deployment, Redirect URI change, Connect-link generation, Queue message, Lark write, schedule change or Production action occurred.
 
 ## Unreleased — Google Ads read-only access preflight — 2026-07-22
 

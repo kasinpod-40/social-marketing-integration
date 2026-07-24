@@ -1,11 +1,11 @@
 # 00 — Current State
 
-## Customer OAuth foundation — stacked Draft PRs
+## Customer OAuth foundation — merged source
 
-As of 2026-07-24, Shared Customer Connection/OAuth, Google Ads OAuth and YouTube OAuth are implemented, locally verified and published as stacked Draft PRs `#42` → `#43` → `#44`.
+As of 2026-07-24, Shared Customer Connection/OAuth, Google Ads OAuth and YouTube OAuth are implemented, verified and merged in order through PRs `#42` → `#43` → `#44`.
 
 ```text
-CONNECTOR_IMPLEMENTATION            COMPLETE_DRAFT_PRS
+CONNECTOR_IMPLEMENTATION            COMPLETE_MERGED
 MOCK_CONTRACT_TEST                  PASS
 INTEGRATION_WORKSPACE_DEPLOYMENT    NOT_RUN
 CUSTOMER_OAUTH                      NOT_RUN
@@ -14,7 +14,7 @@ SCHEDULE                            DISABLED
 PRODUCTION                          BLOCKED
 ```
 
-The Draft PRs are not merged. Migration `0011_customer_connection_oauth.sql`, Worker routes, Secrets and Google Redirect URIs are not applied remotely. No Connect link has been generated. PR #17 remains Draft/HOLD. Current authority and exact rollout boundary are in `docs/current-task.md` and `docs/customer-connection-oauth-rollout.md`.
+Migration `0011_customer_connection_oauth.sql`, Worker routes, Secrets and Google Redirect URIs are not applied remotely. No Connect link has been generated. PR #17 remains Draft/HOLD. Current authority and exact rollout boundary are in `docs/current-task.md` and `docs/customer-connection-oauth-rollout.md`.
 
 ## Source baseline
 

@@ -3,7 +3,7 @@
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = STACKED_DRAFT_REVIEW_REMOTE_ROLLOUT_PENDING
+TASK_STATUS                         = SOURCE_MERGE_COMPLETE_REMOTE_ROLLOUT_PENDING
 CURRENT_PROGRAM                     = MULTI_CONNECTOR_CUSTOMER_CONNECTION_FOUNDATION
 FIRST_PRIORITY                      = GOOGLE_ADS_AND_YOUTUBE_CUSTOMER_OAUTH
 OTHER_CONNECTORS                    = PLANNED_NOT_STARTED
@@ -15,8 +15,8 @@ REMOTE_D1_MIGRATION                 = NOT_AUTHORIZED
 WORKER_DEPLOYMENT                   = NOT_AUTHORIZED
 GOOGLE_REDIRECT_URI_LIVE_CHANGE     = NOT_AUTHORIZED
 CONNECT_LINK_GENERATION             = NOT_AUTHORIZED
-CONNECTOR_IMPLEMENTATION            = COMPLETE_DRAFT_PRS
-STACKED_DRAFT_PRS                   = #42 -> #43 -> #44
+CONNECTOR_IMPLEMENTATION            = COMPLETE_MERGED
+MERGED_PR_SEQUENCE                  = #42 -> #43 -> #44
 MOCK_CONTRACT_TEST                  = PASS
 INTEGRATION_WORKSPACE_DEPLOYMENT    = NOT_RUN
 CUSTOMER_OAUTH                      = NOT_RUN
@@ -134,9 +134,9 @@ The existing `connections` table remains the metadata authority. Migration exten
 
 ## Implementation result
 
-Source implementation is complete and published as three stacked Draft PRs. No merge, Remote D1 migration, deployment, Google Cloud configuration, invitation generation, Queue message or Lark write was performed.
+Source implementation is complete and merged through three stacked PRs. No Remote D1 migration, deployment, Google Cloud configuration, invitation generation, Queue message or Lark write was performed.
 
-### Published stacked PRs
+### Merged PR sequence
 
 The reviewed change is split as:
 
@@ -144,7 +144,7 @@ The reviewed change is split as:
 2. PR B `#43` / `codex/google-ads-customer-oauth`: Google Ads v24 read-only identity/access validation, OAuth flow/routes and tests.
 3. PR C `#44` / `codex/youtube-customer-oauth`: reuse/extension of YouTube client, 0/1/N identity selection flow/routes, tests and release documentation.
 
-All three PRs are Draft. Review/merge order remains `#42` → `#43` → `#44`. Draft PR #17 remains untouched and must not be merged/cherry-picked.
+The PRs were reviewed and merged in order `#42` → `#43` → `#44` with Branch Verification passing. Draft PR #17 remains untouched and must not be merged/cherry-picked.
 
 ### Implemented behavior
 
@@ -186,7 +186,7 @@ focused customer OAuth suites               PASS
 
 ### Remaining blockers
 
-- Draft PR review and merge remain pending in order `#42` → `#43` → `#44`.
+- Source review and ordered merge are complete; remote rollout remains a separate approval boundary.
 - Migration `0011_customer_connection_oauth.sql` is not applied remotely.
 - Worker Secrets and non-secret runtime mappings are not configured.
 - Exact Redirect URIs are not registered in Google Cloud.
