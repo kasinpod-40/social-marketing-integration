@@ -31,9 +31,10 @@ attempts, one atomic active-attempt lock, retry after expiry/failure and permane
 closure on successful callback. Additive migration
 `0012_retry_safe_customer_connection.sql` is local only. Focused suites pass
 43/43; Unit 686/686, Workers 9/9, report reliability 70/70, Architecture
-191/460/0, audit 0 and deploy dry-run pass. Final review, commit/push, Remote
-migration and deployment remain pending. No live mutation, Queue/Lark effect or
-schedule change occurred. PR #17 remains Draft/HOLD.
+191/460/0, audit 0 and deploy dry-run pass. Commit `df719c7` is pushed on the
+feature branch. Pull-request review/merge, Remote migration and deployment remain
+pending. No live mutation, Queue/Lark effect or schedule change occurred. PR #17
+remains Draft/HOLD.
 
 ## Source baseline
 

@@ -7,10 +7,10 @@ locally verified on `codex/retry-safe-connect-flow`; all default gates pass. The
 live Worker still uses v1 and every old link is unusable. Next:
 
 1. Keep PR #17 Draft/HOLD.
-2. Inspect the final v2 diff and run all default gates.
+2. Review the pushed v2 change set and merge only while GitHub checks pass.
 3. Review the additive data model and guarded rollout; keep orphaned PKCE cleanup
    outside this rollout.
-4. Commit/push the reviewed branch; do not merge/deploy from a failing gate.
+4. Do not deploy from a failing or unreviewed commit.
 5. Under separate Remote rollout approval, export D1, apply migration `0012`,
    deploy and smoke repeated GET plus exact POST.
 6. Rotate the unreadable operator Secret, generate short-lived test links and
