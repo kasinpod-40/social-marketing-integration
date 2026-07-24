@@ -6,6 +6,10 @@ import {
 import { timingSafeEqualText } from '../../../packages/shared/src/security/secure-token.js';
 import { createCustomerConnectionRuntime } from './customer-connection-runtime.js';
 import {
+  createGoogleAdsCustomerConnectionHttpHandler,
+  GOOGLE_ADS_CONNECTION_PATHS,
+} from './google-ads-customer-connection-http.js';
+import {
   connectionRequestError,
   readBoundedConnectionJson,
   requireConnectionText,
@@ -13,11 +17,16 @@ import {
 
 const INVITATION_PATH = '/operator/connection-invitations';
 const KNOWN_METHODS = new Map([[INVITATION_PATH, Object.freeze(['POST'])]]);
+KNOWN_METHODS.set(GOOGLE_ADS_CONNECTION_PATHS.connect, Object.freeze(['GET']));
+KNOWN_METHODS.set(GOOGLE_ADS_CONNECTION_PATHS.callback, Object.freeze(['GET']));
 
 /** Explicit HTTP boundary; Connector callback handlers จะถูก inject เพิ่มใน PR B/PR C */
 export function createCustomerConnectionHttpHandler(dependencies = {}) {
   const runtimeFactory = dependencies.createRuntime ?? createCustomerConnectionRuntime;
-  const connectorHandler = dependencies.handleConnectorRequest ?? null;
+  const connectorHandler = dependencies.handleConnectorRequest
+    ?? composeConnectorHandlers([
+      createGoogleAdsCustomerConnectionHttpHandler({ createRuntime: runtimeFactory }),
+    ]);
 
   return async function handleCustomerConnectionHttp(request, env, ctx) {
     const url = new URL(request.url);
@@ -83,6 +92,16 @@ export function createCustomerConnectionHttpHandler(dependencies = {}) {
         },
       });
     }
+  };
+}
+
+function composeConnectorHandlers(handlers) {
+  return async (context) => {
+    for (const handler of handlers) {
+      const response = await handler(context);
+      if (response instanceof Response) return response;
+    }
+    return null;
   };
 }
 
