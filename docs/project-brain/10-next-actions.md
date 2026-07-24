@@ -1,20 +1,18 @@
 # 10 — Next Actions
 
-## Immediate next action — Verify and roll out retry-safe v2
+## Immediate next action — Complete v2 test callbacks
 
-PR A/B/C and retry-safe PR `#45` are merged. Contract v2 and migration `0012`
-passed local and GitHub verification. The live Worker still uses v1 and every old
-link is unusable. Next:
+PR A/B/C and retry-safe PR `#45` are merged. Migration `0012` and Worker v2 are
+live. Repeated GET smoke proved both test invitations stay unused. Next:
 
 1. Keep PR #17 Draft/HOLD.
-2. Keep `main` commit `9ca8375` as the v2 rollout source.
+2. Keep merged source `9ca8375` plus docs closeout `5e5b8ee` as rollout evidence.
 3. Review the additive data model and guarded rollout; keep orphaned PKCE cleanup
    outside this rollout.
-4. Do not deploy from a failing or unreviewed commit.
-5. Under separate Remote rollout approval, export D1, apply migration `0012`,
-   deploy and smoke repeated GET plus exact POST.
-6. Rotate the unreadable operator Secret, generate short-lived test links and
-   complete both callbacks before creating customer links.
+4. Customer explicitly confirms Google Ads and YouTube test links before expiry.
+5. Verify successful callback closure, encrypted Refresh Tokens, provider
+   identity and zero Queue/Lark side effects.
+6. Create customer links only if a separate longer-lived round is still needed.
 
 Do not enqueue business jobs, write Lark, enable schedules or rerun TikTok recovery. Exact commands are in `docs/customer-connection-oauth-rollout.md`.
 
