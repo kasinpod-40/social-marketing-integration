@@ -1,12 +1,12 @@
 # 00 — Current State
 
-## Customer OAuth retry-safe v2 — local implementation pending rollout
+## Customer OAuth retry-safe v2 — source merged, rollout pending
 
 As of 2026-07-24, Shared Customer Connection/OAuth, Google Ads OAuth and YouTube OAuth are implemented, verified and merged in order through PRs `#42` → `#43` → `#44`. The approved Integration Workspace rollout is complete through Remote D1 migration, Google Cloud configuration, Worker Secrets/runtime mappings, deployment and HTTP smoke.
 
 ```text
 CONNECTOR_IMPLEMENTATION            COMPLETE_MERGED
-RETRY_SAFE_V2                       LOCAL_VERIFIED_REVIEW_READY
+RETRY_SAFE_V2                       MERGED_PR_45
 MOCK_CONTRACT_TEST                  PASS
 INTEGRATION_WORKSPACE_DEPLOYMENT    PASS
 CUSTOMER_OAUTH                      AUTHORIZATION_PENDING_STATES_EXPIRED
@@ -25,16 +25,15 @@ one-shot-on-GET behavior. Both customer and test invitation pairs were consumed
 without callback completion; D1 still has four expired states, no Refresh Token
 and no identity selection.
 
-Branch `codex/retry-safe-connect-flow` now implements contract v2 locally:
+PR `#45` implements contract v2 and is merged to `main` at `9ca8375`:
 side-effect-free GET confirmation, exact POST-to-start, default three bounded
 attempts, one atomic active-attempt lock, retry after expiry/failure and permanent
 closure on successful callback. Additive migration
 `0012_retry_safe_customer_connection.sql` is local only. Focused suites pass
 43/43; Unit 686/686, Workers 9/9, report reliability 70/70, Architecture
-191/460/0, audit 0 and deploy dry-run pass. Commit `df719c7` is pushed on the
-feature branch. Pull-request review/merge, Remote migration and deployment remain
-pending. No live mutation, Queue/Lark effect or schedule change occurred. PR #17
-remains Draft/HOLD.
+191/460/0, audit 0 and deploy dry-run pass. GitHub Branch Verification passed.
+Remote migration `0012` and deployment remain pending. No live mutation,
+Queue/Lark effect or schedule change occurred. PR #17 remains Draft/HOLD.
 
 ## Source baseline
 

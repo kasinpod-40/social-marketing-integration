@@ -3,7 +3,7 @@
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = RETRY_SAFE_CONNECT_LOCAL_VERIFIED_REVIEW_READY
+TASK_STATUS                         = RETRY_SAFE_CONNECT_MERGED_ROLLOUT_PENDING
 CURRENT_PROGRAM                     = MULTI_CONNECTOR_CUSTOMER_CONNECTION_FOUNDATION
 FIRST_PRIORITY                      = GOOGLE_ADS_AND_YOUTUBE_CUSTOMER_OAUTH
 OTHER_CONNECTORS                    = PLANNED_NOT_STARTED
@@ -16,7 +16,7 @@ WORKER_DEPLOYMENT                   = LIVE_V1_COMPLETE_V2_NOT_DEPLOYED
 GOOGLE_REDIRECT_URI_LIVE_CHANGE     = COMPLETE
 CONNECT_LINK_GENERATION             = ALL_4_CONSUMED_NO_CALLBACK
 CONNECTOR_IMPLEMENTATION            = COMPLETE_MERGED
-RETRY_SAFE_IMPLEMENTATION           = LOCAL_VERIFIED_REVIEW_READY
+RETRY_SAFE_IMPLEMENTATION           = MERGED_PR_45
 MERGED_PR_SEQUENCE                  = #42 -> #43 -> #44
 MOCK_CONTRACT_TEST                  = PASS
 INTEGRATION_WORKSPACE_DEPLOYMENT    = PASS
@@ -160,8 +160,8 @@ The v1 source implementation is merged through three stacked PRs. The approved
 Integration Workspace rollout and two rounds of v1 Connect-link generation are
 complete. All four v1 invitations were consumed at OAuth begin without callback
 completion. The local branch now implements the v2 preview-safe/bounded-retry
-contract and additive migration `0012`; commit `df719c7` is pushed on
-`codex/retry-safe-connect-flow` but is not merged, migrated remotely or deployed.
+contract and additive migration `0012`; PR `#45` is merged to `main` at
+`9ca8375`. It is not migrated remotely or deployed.
 
 ### Retry-safe v2 local implementation — 2026-07-24
 
@@ -268,7 +268,7 @@ Current encrypted credential counts           2 active PKCE / 2 replaced PKCE / 
 - All customer and test invitations are consumed and cannot be replayed.
 - The live Worker still runs v1 one-shot-on-GET behavior. The v2 local patch is
   not available to customers until review, migration `0012` and deploy.
-- Pull-request review and merge remain pending.
+- Remote migration `0012`, deployment and customer OAuth UAT remain pending.
 - Expired OAuth attempts leave active/replaced PKCE verifier audit rows; cleanup behavior requires review and explicit authorization before any data mutation.
 - OAuth callback, encrypted Refresh Token persistence and provider identity validation remain untested.
 - Google Ads Developer Token remains `Test Account Access`; OAuth can retain the credential with `google_ads_api_access_pending`, but Production advertiser API access must not be claimed.
@@ -299,10 +299,9 @@ Current operating rules:
 Another account can resume by reading `AGENTS.md`, this file, `docs/project-brain/00-current-state.md` and `docs/project-brain/10-next-actions.md`.
 
 ```text
-BASE_GIT_HEAD                       ccaf753 / main = origin/main
-WORK_BRANCH                         codex/retry-safe-connect-flow
-CHANGE_SET                          retry-safe v2 on feature branch
-FEATURE_COMMIT                      df719c7 / pushed to origin
+MAIN_GIT_HEAD                       9ca8375 / main = origin/main
+MERGED_PR                           #45 / retry-safe Connect v2
+FEATURE_COMMIT                      f7b17ed
 LIVE_WORKER_VERSION                 e80e46f0-5f81-4ce9-ae06-678cafab6efe
 REMOTE_D1_MIGRATION                 0011 applied / 0012 not applied
 INVITATIONS                         google_ads 2/2 consumed; youtube 2/2 consumed

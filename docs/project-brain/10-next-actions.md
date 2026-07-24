@@ -2,12 +2,12 @@
 
 ## Immediate next action — Verify and roll out retry-safe v2
 
-PR A/B/C source is merged. Contract v2 and migration `0012` are implemented and
-locally verified on `codex/retry-safe-connect-flow`; all default gates pass. The
-live Worker still uses v1 and every old link is unusable. Next:
+PR A/B/C and retry-safe PR `#45` are merged. Contract v2 and migration `0012`
+passed local and GitHub verification. The live Worker still uses v1 and every old
+link is unusable. Next:
 
 1. Keep PR #17 Draft/HOLD.
-2. Review the pushed v2 change set and merge only while GitHub checks pass.
+2. Keep `main` commit `9ca8375` as the v2 rollout source.
 3. Review the additive data model and guarded rollout; keep orphaned PKCE cleanup
    outside this rollout.
 4. Do not deploy from a failing or unreviewed commit.
