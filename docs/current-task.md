@@ -2,14 +2,14 @@
 
 ## Status
 
-- **Task status:** `implementation_complete_pending_review`
+- **Task status:** `implementation_merged_rollout_not_started`
 - **Opened:** `2026-07-24`
-- **Branch:** `agent/tiktok-bootstrap-durable-recovery-hotfix`
-- **Target:** `main`
-- **Pull request:** `#29` — Draft
-- **Verified head:** `657139518d73621baf040c75416c429257fcb740`
-- **Branch Verification:** run `#341` / ID `30037843667` / PASS
-- **Remote recovery execution:** forbidden in this task
+- **Implementation PR:** `#29` — `fix: recover TikTok bootstrap durable work safely`
+- **Verified implementation head:** `e77633442cc48454df134c608bd4740254d43d2f`
+- **Branch Verification:** run `#342` / ID `30038029278` / PASS
+- **Squash merge commit:** `1fce94344100a6b1ed9dce471966f3596c00778a`
+- **Merged into:** `main`
+- **Remote recovery execution:** not performed / not approved
 - **Schedules:** disabled
 - **Google Ads PR #17:** Draft / HOLD
 - **Production:** blocked
@@ -37,7 +37,7 @@ observationRowsDurable   = 1000
 coverageEntitiesWritten  = 1000
 ```
 
-Observed D1 business facts:
+Observed D1 business facts remain unchanged by this source task:
 
 ```text
 organic_content_state         = 1309
@@ -80,7 +80,7 @@ DLQ error_code        = QUEUE_RETRY_EXHAUSTED
 9. A full-source preflight could still process several staged Units in one invocation.
 10. A continuation that forced `dryRun=false` could turn a bounded dry-run into a live write path.
 
-## Implemented source design
+## Merged implementation
 
 - Stable `operationId` is mandatory for bootstrap/recovery jobs.
 - `workKey` is derived only as `tiktok:<operationId>` and is validated against payload drift.
@@ -100,7 +100,7 @@ DLQ error_code        = QUEUE_RETRY_EXHAUSTED
 - Recovery dry-run is fail-closed; normal bootstrap dry-run remains dry-run across every continuation.
 - Lark business writes remain hard zero.
 
-## Required regression contract
+## Acceptance result
 
 - [x] Synthetic interruption after 309 State rows in Unit 3.
 - [x] Checkpoint remains at 1,000 rows / `nextSequence=2` after interruption.
@@ -119,20 +119,22 @@ DLQ error_code        = QUEUE_RETRY_EXHAUSTED
 - [x] Preflight and write are each bounded to one staged Unit per invocation.
 - [x] Dry-run remains dry-run through all continuations and performs zero business writes.
 - [x] Bootstrap and recovery jobs remain absent from all schedules.
-- [x] Full repository CI and regression passed on Draft PR #29.
+- [x] Full repository CI and regression passed.
+- [x] PR #29 was Squash Merged into `main`.
 
 ## Verification
 
 ```text
-Verified head                       657139518d73621baf040c75416c429257fcb740
-Branch Verification                 run #341 / ID 30037843667 / PASS
-Syntax / architecture / hygiene     PASS
-Focused staged TikTok tests         PASS
-Node Unit / Integration             PASS
-Workers runtime                     PASS
-Report reliability regression       PASS
-Dependency audit                    PASS / 0 vulnerabilities
-Wrangler dry run                    PASS
+Verified implementation head          e77633442cc48454df134c608bd4740254d43d2f
+Branch Verification                    run #342 / ID 30038029278 / PASS
+Node Unit / Integration                595 / 595 PASS
+Workers runtime                        9 / 9 PASS
+Focused staged TikTok                  4 / 4 PASS
+Report reliability regression          70 / 70 PASS
+Syntax / architecture / hygiene        PASS
+Dependency audit                       PASS / 0 vulnerabilities
+Wrangler dry run                       PASS
+Squash merge commit                    1fce94344100a6b1ed9dce471966f3596c00778a
 ```
 
 ## Explicitly not performed
@@ -150,9 +152,38 @@ GOOGLE_ADS_PR_17          = DRAFT_HOLD
 PRODUCTION_CHANGE         = NONE
 ```
 
-## Approval boundary
+## Next approval boundary
 
-This task is source implementation and regression only. A later task must separately review the Draft PR, merge it, prepare a guarded rollout, inspect Remote state read-only, apply Migration `0010`, deploy with schedules false, and explicitly authorize the exact recovery payload. Nothing in this task grants that approval.
+Implementation is merged. The next task is **guarded rollout and incident recovery**, which remains not approved. It must separately perform and review:
+
+```text
+read-only Remote D1 preflight
+→ Remote backup and checksum
+→ Migration 0010 review and explicit approval
+→ Migration 0010 apply
+→ schema verification
+→ deploy with all schedules false
+→ exact recovery payload review
+→ guarded recovery execution
+→ Work / Coverage / DLQ reconciliation
+→ semantic idempotent rerun evidence
+```
+
+Any mismatch must stop the rollout. No cleanup/delete path is authorized, and the 309 partially written State rows must remain intact.
+
+## Handoff
+
+```text
+CURRENT_TASK = TIKTOK_BOOTSTRAP_DURABLE_RECOVERY_IMPLEMENTATION_MERGED
+NEXT_TASK = GUARDED_REMOTE_ROLLOUT_AND_RECOVERY_NOT_APPROVED
+REMOTE_MIGRATION_0010 = NOT_APPLIED
+LIVE_RECOVERY = NOT_EXECUTED
+QUEUE_MESSAGE = NONE
+LARK_BUSINESS_WRITE = NONE
+SCHEDULE = DISABLED
+GOOGLE_ADS_PR_17 = DRAFT_HOLD
+PRODUCTION = BLOCKED
+```
 
 ---
 
