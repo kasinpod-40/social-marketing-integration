@@ -309,6 +309,36 @@ Current encrypted credential counts           2 active PKCE / 2 replaced PKCE / 
 - Google Ads Direct API Live access, customer-visible connection results and reliability UAT remain pending.
 - Business Queue work, Lark writes, connector flags and all schedules remain disabled.
 
+### Meta customer connection preflight — 2026-07-25
+
+A read-only inspection was repeated in the customer-owned Safari session after
+discarding an earlier inspection of the developer-owned Meta app. No dashboard
+setting was changed and no customer App/Business ID is stored in Source.
+
+Verified customer-app state:
+
+- the customer Meta app is in Development / not published;
+- `ads_read`, `business_management`, `pages_read_engagement` and
+  `pages_show_list` are available for testing;
+- Meta currently reports that API access is restricted until every app
+  administrator completes Developer Portal account verification;
+- the user confirms that the customer supplied separate Facebook and Instagram
+  access tokens, so Meta onboarding does not require a new customer OAuth link
+  before token validation;
+- the locally stored Instagram credential passed a read-only
+  `graph.instagram.com/me` identity request with HTTP `200`; no raw token,
+  username or full external ID was logged;
+- no Facebook credential is currently available under the repository's
+  expected local `META_ACCESS_TOKEN` name, so Facebook identity/scope validation
+  remains pending.
+
+The API-restricted dashboard banner remains an App Review/administration risk;
+it is not proof that the supplied tokens are invalid. The next safe actions are
+to store the supplied Facebook token in an approved ignored/Secret boundary,
+run read-only Facebook identity/scope validation, and complete administrator
+Developer Portal verification in parallel. This evidence does not authorize an
+App Review submission, permission mutation or Production rollout.
+
 Exact rollout and rollback commands: `docs/customer-connection-oauth-rollout.md`.
 
 ## Next boundary — Await customer callbacks
