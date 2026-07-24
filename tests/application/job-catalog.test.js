@@ -27,6 +27,16 @@ test('planned jobs fail explicitly instead of returning fake success', () => {
   );
 });
 
+test('Google Ads signed-delivery job is centrally registered but remains planned', () => {
+  const definition = getJobDefinition(JOB_TYPES.GOOGLE_ADS_MANAGER_SIGNED_DELIVERY_PROCESS);
+  assert.equal(definition.connectorKey, 'google_ads');
+  assert.equal(definition.implementationStatus, 'planned');
+  assert.throws(
+    () => assertJobImplemented(definition),
+    (error) => error?.code === 'SYNC_JOB_NOT_IMPLEMENTED',
+  );
+});
+
 test('YouTube job is active after Live DEV reliability UAT passed', () => {
   const definition = getJobDefinition(JOB_TYPES.YOUTUBE_ORGANIC_SYNC);
   assert.equal(definition.implementationStatus, 'active');

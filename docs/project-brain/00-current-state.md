@@ -1,5 +1,31 @@
 # 00 — Current State
 
+## Google Ads signed delivery Phase 1 local foundation
+
+ผู้ใช้อนุมัติ Contract ของ Google Ads Manager Script signed-delivery แล้ว
+Local Phase 1 implementation อยู่บน Branch
+`codex/google-ads-signed-delivery-contract`. Contract authority อยู่ที่
+`docs/google-ads-manager-script-signed-delivery-contract-v1.md`
+
+```text
+TASK_STATUS       = PHASE_1_LOCAL_IMPLEMENTED
+IMPLEMENTATION    = CONTRACT_SECURITY_FOUNDATION_COMPLETE
+LIVE_DELIVERY     = DISABLED
+BUSINESS_WRITES   = DISABLED
+SCHEDULES         = DISABLED
+PRODUCTION        = BLOCKED
+GOOGLE_ADS_PR_17  = DRAFT_HOLD_EVIDENCE_ONLY
+```
+
+Phase 1 เพิ่ม sanitized DRY_RUN-first six-dataset Script artifact, exact
+GAQL/safety manifest + SHA-256, Google Ads Connector/Job แบบ `planned`,
+fail-closed flags และ pure canonical JSON/HMAC/schema verifier พร้อม tests.
+ยังไม่มี Endpoint, Migration, D1 reservation, Queue send หรือ Writer.
+
+Contract ใหม่แก้ Architecture เดิมของ PR `#17` โดยใช้ multi-chunk transport,
+reference-only Queue, D1-first Storage และ Shared RAW
+`RAW_Ads_Entities`/`RAW_Ads_Daily` ไม่มี separate RAW Google tables.
+
 ## Customer OAuth retry-safe v2 — customer links active
 
 As of 2026-07-24, Shared Customer Connection/OAuth, Google Ads OAuth and YouTube OAuth are implemented, verified and merged in order through PRs `#42` → `#43` → `#44`. The approved Integration Workspace rollout is complete through Remote D1 migration, Google Cloud configuration, Worker Secrets/runtime mappings, deployment and HTTP smoke.
@@ -43,7 +69,9 @@ Draft/HOLD.
 
 - Implementation baseline: `d4a531fbb4e05dad7ce2296859c97f571e23acf3` / PR `#13`
 - Documentation closeout: PR `#14`
-- Current task: `docs/current-task.md` — awaiting customer callbacks
+- Current task: `docs/current-task.md` — Google Ads signed-delivery Local Phase 1
+  complete, awaiting review/commit decision; customer callbacks remain an
+  external parallel wait
 - Application package line: `0.11.0`
 - Contract versions: View `v0.13.5`, Formula `v0.13.6`, audit correction `v0.13.7`
 
@@ -97,7 +125,7 @@ The 55 specialized Views are not defective merely because their names imply Acti
 - Facebook Organic
 - Instagram Organic
 - Meta Ads
-- Google Ads signed delivery
+- Google Ads signed delivery Phase 1 local foundation
 
 ### Planning/access pending
 
@@ -227,8 +255,9 @@ The transitive `sharp` vulnerability chain was fixed with `overrides.sharp=0.35.
 
 ## Next approval gate
 
-Proposed workstream:
-
-`Google Ads Manager Script signed delivery connector`
-
-Approve payload, signature/replay, idempotency, batch, null, retry, Queue/D1, retention/redaction and ownership contracts before implementation. Schedule stays disabled until isolated manual UAT and idempotent rerun pass.
+Approve
+`docs/google-ads-manager-script-signed-delivery-contract-v1.md`. Approval opens
+only the local implementation boundary; Commit, Push, PR, Migration, Deployment,
+Live delivery, Lark write, Schedule and Production still require their own
+explicit authorization. Schedule stays disabled until isolated manual UAT,
+idempotent rerun and controlled recovery pass.
