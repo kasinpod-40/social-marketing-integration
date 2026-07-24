@@ -1,6 +1,11 @@
 import { JOB_TYPES } from '../../../packages/application/src/jobs/job-catalog.js';
+import {
+  isStableOperationJobType,
+  resolveQueueOperation,
+} from '../../../packages/application/src/jobs/queue-operation.js';
 import { normalizeQueueJobMessage } from '../../../packages/application/src/jobs/queue-job.js';
 import { createSystemAlert } from '../../../packages/domain/src/entities/system-alert.js';
+import { D1QueueOperationStore } from '../../../packages/reliability/src/d1-queue-operation-store.js';
 import {
   isRetryableError,
   permanentError,
@@ -11,7 +16,6 @@ import {
   logQueueResult,
   readAttempts,
   readRetryDelaySeconds,
-  requireJobText,
   requireQueueName,
   summarizeJobResult,
 } from './worker-runtime-support.js';
@@ -34,7 +38,6 @@ export async function routeQueueBatch(batch, env, dependencies = {}) {
     await processUnknownQueueBatch(batch, env, operationalStoreFactory);
     return;
   }
-
   await processMainQueueBatch(batch, env, dependencies);
 }
 
@@ -57,6 +60,7 @@ async function processMainQueueBatch(batch, env, dependencies) {
   const processJobImpl = dependencies.processJob;
   const infrastructureFactory = dependencies.createInfrastructure;
   const operationalStoreFactory = dependencies.createOperationalStore;
+  const queueOperationStore = createQueueOperationStore(env);
   let runtimeConfig = null;
   let infrastructure = null;
   const getRuntimeConfig = () => {
@@ -70,11 +74,26 @@ async function processMainQueueBatch(batch, env, dependencies) {
 
   for (const message of batch.messages) {
     let job = null;
+    let operation = null;
+    let mainQueueAttempts = readAttempts(message);
     try {
       job = normalizeQueueJobMessage(message);
+      operation = resolveQueueOperation({ job, message });
+      if (operation.stable && queueOperationStore) {
+        const recorded = await queueOperationStore.recordMainQueueAttempt({
+          operationId: operation.operationId,
+          workKey: operation.workKey,
+          generation: operation.generation,
+          originalRequestedAt: operation.originalRequestedAt,
+          messageId: message.id,
+        });
+        mainQueueAttempts = recorded.mainQueueAttempts;
+      }
       const result = await processJobImpl({
         job,
         message,
+        operation,
+        mainQueueAttempts,
         env,
         getRuntimeConfig,
         getInfrastructure,
@@ -82,7 +101,9 @@ async function processMainQueueBatch(batch, env, dependencies) {
       logQueueResult({
         ok: true,
         messageId: message.id,
-        attempts: readAttempts(message),
+        mainQueueAttempts,
+        operationId: operation?.operationId ?? null,
+        workKey: operation?.workKey ?? null,
         schemaVersion: job.schemaVersion,
         type: job.body?.type,
         result: summarizeJobResult(result),
@@ -93,7 +114,9 @@ async function processMainQueueBatch(batch, env, dependencies) {
       logQueueResult({
         ok: false,
         messageId: message.id,
-        attempts: readAttempts(message),
+        mainQueueAttempts,
+        operationId: operation?.operationId ?? null,
+        workKey: operation?.workKey ?? null,
         schemaVersion: job?.schemaVersion ?? null,
         type: job?.body?.type ?? null,
         syncRunId: error?.syncRunId ?? null,
@@ -104,26 +127,35 @@ async function processMainQueueBatch(batch, env, dependencies) {
       });
 
       if (retryable) {
-        message.retry({ delaySeconds: readRetryDelaySeconds(env, message) });
+        message.retry({ delaySeconds: readRetryDelaySeconds(env, message, error) });
         continue;
       }
 
       try {
-        // Permanent ทุกเส้นทางต้องมี Dead-letter payload สำหรับ Redrive
-        // แม้ Reliability runner จะบันทึก Sync failure/alert ไปแล้วก็ตาม.
         await recordPermanentQueueFailure({
-          env, batch, message, job, error, operationalStoreFactory,
+          env,
+          batch,
+          message,
+          job,
+          operation,
+          mainQueueAttempts,
+          error,
+          operationalStoreFactory,
+          queueOperationStore,
         });
       } catch (persistenceError) {
         logQueueResult({
           ok: false,
           scope: 'terminal_failure_persistence',
           messageId: message.id,
-          error: persistenceError instanceof Error ? persistenceError.message : String(persistenceError),
+          error: persistenceError instanceof Error
+            ? persistenceError.message
+            : String(persistenceError),
           code: persistenceError?.code ?? null,
         });
-        // D1 เป็น source of truth จึงห้าม Ack เมื่อบันทึก terminal state ไม่สำเร็จ
-        message.retry({ delaySeconds: readRetryDelaySeconds(env, message) });
+        message.retry({
+          delaySeconds: readRetryDelaySeconds(env, message, persistenceError),
+        });
         continue;
       }
       message.ack();
@@ -133,15 +165,33 @@ async function processMainQueueBatch(batch, env, dependencies) {
 
 async function processDeadLetterBatch(batch, env, storeFactory) {
   const store = storeFactory(env);
+  const queueOperationStore = createQueueOperationStore(env);
   for (const message of batch.messages) {
     let job = null;
-    try { job = normalizeQueueJobMessage(message); } catch { /* เก็บ Raw body ต่อได้ */ }
+    let operation = null;
+    try {
+      job = normalizeQueueJobMessage(message);
+      operation = resolveQueueOperation({ job, message });
+    } catch {
+      // Keep malformed/legacy payload available for forensic persistence, but never derive a
+      // stable bootstrap Work from the DLQ delivery message.id.
+    }
     const dlqId = `dlq:${message.id}`;
+    const dlqDeliveryAttempts = readAttempts(message);
+    const recordedAttempts = operation?.operationId && queueOperationStore
+      ? await queueOperationStore.readMainQueueAttempts({ operationId: operation.operationId })
+      : null;
+    const mainQueueAttempts = recordedAttempts?.tracked
+      ? recordedAttempts.mainQueueAttempts
+      : 0;
+
     try {
       await markQueueWorkTerminal({
         env,
         message,
         jobType: job?.body?.type,
+        workKey: operation?.workKey ?? null,
+        stableOperation: operation?.stable === true,
         reason: 'QUEUE_RETRY_EXHAUSTED',
         auditReference: dlqId,
       });
@@ -154,9 +204,20 @@ async function processDeadLetterBatch(batch, env, storeFactory) {
         payload: job?.body ?? message.body,
         errorCode: 'QUEUE_RETRY_EXHAUSTED',
         errorMessage: 'Cloudflare Queue moved this message to the dead-letter queue after retry exhaustion',
-        retryCount: readAttempts(message),
+        retryCount: mainQueueAttempts,
         status: 'open',
       });
+      if (queueOperationStore) {
+        await queueOperationStore.saveDeadLetterMetadata({
+          dlqId,
+          operationId: operation?.operationId ?? null,
+          workKey: operation?.workKey ?? null,
+          generation: operation?.generation ?? null,
+          originalRequestedAt: operation?.originalRequestedAt ?? null,
+          mainQueueAttempts,
+          dlqDeliveryAttempts,
+        });
+      }
       if (shouldCreateQueueFailureAlert(job?.body?.type)) {
         await store.saveSystemAlert(createSystemAlert({
           alertId: `alert:${dlqId}`,
@@ -165,13 +226,27 @@ async function processDeadLetterBatch(batch, env, storeFactory) {
           platform: platformFromJobType(job?.body?.type),
           status: 'open',
           errorCode: 'QUEUE_RETRY_EXHAUSTED',
-          message: `Queue job ไปถึง DLQ หลัง Retry ครบ
-message_id=${message.id}
-job_type=${job?.body?.type ?? 'unknown'}`,
-          details: { queueName: batch.queue, attempts: readAttempts(message) },
+          message: `Queue job ไปถึง DLQ หลัง Retry ครบ\nmessage_id=${message.id}\njob_type=${job?.body?.type ?? 'unknown'}`,
+          details: {
+            queueName: batch.queue,
+            mainQueueAttempts,
+            dlqDeliveryAttempts,
+            operationId: operation?.operationId ?? null,
+            workKey: operation?.workKey ?? null,
+          },
         }));
       }
-      logQueueResult({ ok: false, scope: 'dead_letter', messageId: message.id, dlqId, persisted: true });
+      logQueueResult({
+        ok: false,
+        scope: 'dead_letter',
+        messageId: message.id,
+        dlqId,
+        mainQueueAttempts,
+        dlqDeliveryAttempts,
+        operationId: operation?.operationId ?? null,
+        workKey: operation?.workKey ?? null,
+        persisted: true,
+      });
       message.ack();
     } catch (error) {
       logQueueResult({
@@ -183,7 +258,7 @@ job_type=${job?.body?.type ?? 'unknown'}`,
         error: error instanceof Error ? error.message : String(error),
         code: error?.code ?? null,
       });
-      message.retry({ delaySeconds: readRetryDelaySeconds(env, message) });
+      message.retry({ delaySeconds: readRetryDelaySeconds(env, message, error) });
     }
   }
 }
@@ -225,7 +300,7 @@ async function processUnknownQueueBatch(batch, env, storeFactory) {
         error: error instanceof Error ? error.message : String(error),
         code: error?.code ?? null,
       });
-      message.retry({ delaySeconds: readRetryDelaySeconds(env, message) });
+      message.retry({ delaySeconds: readRetryDelaySeconds(env, message, error) });
     }
   }
 }
@@ -237,6 +312,8 @@ async function recordPermanentQueueFailure(input) {
     env: input.env,
     message: input.message,
     jobType: input.job?.body?.type,
+    workKey: input.operation?.workKey ?? null,
+    stableOperation: input.operation?.stable === true,
     reason: 'QUEUE_PERMANENT_FAILURE',
     auditReference: dlqId,
   });
@@ -249,9 +326,20 @@ async function recordPermanentQueueFailure(input) {
     payload: input.job?.body ?? input.message.body,
     errorCode: input.error?.code ?? 'PERMANENT_QUEUE_FAILURE',
     errorMessage: input.error instanceof Error ? input.error.message : String(input.error),
-    retryCount: Math.max(0, readAttempts(input.message) - 1),
+    retryCount: input.mainQueueAttempts,
     status: 'open',
   });
+  if (input.queueOperationStore) {
+    await input.queueOperationStore.saveDeadLetterMetadata({
+      dlqId,
+      operationId: input.operation?.operationId ?? null,
+      workKey: input.operation?.workKey ?? null,
+      generation: input.operation?.generation ?? null,
+      originalRequestedAt: input.operation?.originalRequestedAt ?? null,
+      mainQueueAttempts: input.mainQueueAttempts,
+      dlqDeliveryAttempts: 0,
+    });
+  }
   if (shouldCreateQueueFailureAlert(input.job?.body?.type)) {
     await store.saveSystemAlert(createSystemAlert({
       alertId: `alert:${dlqId}`,
@@ -259,11 +347,12 @@ async function recordPermanentQueueFailure(input) {
       severity: 'critical',
       platform: platformFromJobType(input.job?.body?.type),
       errorCode: input.error?.code ?? 'PERMANENT_QUEUE_FAILURE',
-      message: `Queue job หยุดแบบ Permanent
-message_id=${input.message.id}
-job_type=${input.job?.body?.type ?? 'unknown'}
-error=${input.error instanceof Error ? input.error.message : String(input.error)}`,
-      details: { attempts: readAttempts(input.message) },
+      message: `Queue job หยุดแบบ Permanent\nmessage_id=${input.message.id}\njob_type=${input.job?.body?.type ?? 'unknown'}\nerror=${input.error instanceof Error ? input.error.message : String(input.error)}`,
+      details: {
+        mainQueueAttempts: input.mainQueueAttempts,
+        operationId: input.operation?.operationId ?? null,
+        workKey: input.operation?.workKey ?? null,
+      },
     }));
   }
 }
@@ -271,12 +360,16 @@ error=${input.error instanceof Error ? input.error.message : String(input.error)
 async function markQueueWorkTerminal(input) {
   const platform = platformFromJobType(input.jobType);
   if (!new Set(['youtube', 'tiktok']).has(platform)) return false;
-  // Dependency-injected/non-production route อาจไม่มี D1 binding;
-  // Production path ยัง fail-closed ที่ createOperationalStore เมื่อ binding หาย
   if (!input.env?.MKT_STATE_DB) return false;
-  const workStore = new D1ResumableWorkStore({ db: input.env?.MKT_STATE_DB });
+  let workKey = input.workKey;
+  if (!workKey && input.stableOperation !== true && !isStableOperationJobType(input.jobType)) {
+    workKey = `${platform}:${requireMessageId(input.message?.id)}`;
+  }
+  // Stable bootstrap/recovery jobs without persisted identity must not terminalize a different Work.
+  if (!workKey) return false;
+  const workStore = new D1ResumableWorkStore({ db: input.env.MKT_STATE_DB });
   const result = await workStore.abandonWork({
-    workKey: `${platform}:${requireJobText(input.message?.id, 'message.id')}`,
+    workKey,
     reason: input.reason,
     auditReference: input.auditReference,
   });
@@ -284,15 +377,31 @@ async function markQueueWorkTerminal(input) {
   return result;
 }
 
+function createQueueOperationStore(env) {
+  return typeof env?.MKT_STATE_DB?.prepare === 'function'
+    && typeof env?.MKT_STATE_DB?.batch === 'function'
+    ? new D1QueueOperationStore({ db: env.MKT_STATE_DB })
+    : null;
+}
+
+function requireMessageId(value) {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw permanentError('Queue message.id is required', {
+      code: 'MKT_RUNTIME_CONFIG_INVALID',
+    });
+  }
+  return value.trim();
+}
+
 function platformFromJobType(type) {
   if (typeof type !== 'string') return 'system';
   if (type.startsWith('report.')) return 'tiktok';
   const prefix = type.split('.')[0];
-  return new Set(['facebook', 'instagram', 'tiktok', 'youtube']).has(prefix) ? prefix : 'system';
+  return new Set(['facebook', 'instagram', 'tiktok', 'youtube']).has(prefix)
+    ? prefix
+    : 'system';
 }
 
 function shouldCreateQueueFailureAlert(jobType) {
-  // Mirror delivery failure must not create a new mirrored alert, otherwise Lark outage
-  // would recursively enqueue more mirror jobs after every terminal/DLQ event.
   return jobType !== JOB_TYPES.RELIABILITY_MIRROR_DELIVER;
 }

@@ -10,12 +10,7 @@ const REQUIRED_TABLES = Object.freeze([
 const STATE_READ_BATCH_SIZE = 100;
 const MAX_STATE_READ_KEYS = 1_000;
 
-/**
- * Runtime gateway สำหรับ Organic Marketing history
- *
- * ใช้ Store Foundation เดิมเป็น Writer และเพิ่มเฉพาะ Schema guard/Read methods
- * ที่ Phase bootstrap ต้องใช้ โดยไม่สร้าง Reliability stack หรือ D1 binding ใหม่.
- */
+/** Runtime gateway สำหรับ Organic Marketing history */
 export class D1OrganicHistoryGateway {
   constructor(input = {}) {
     this.db = requireD1(input.db);
@@ -38,7 +33,6 @@ export class D1OrganicHistoryGateway {
         cause,
       });
     }
-
     const existing = new Set(rows.map((row) => String(row?.name ?? '')));
     const missing = REQUIRED_TABLES.filter((table) => !existing.has(table));
     if (missing.length > 0) {
@@ -54,7 +48,6 @@ export class D1OrganicHistoryGateway {
     const keys = normalizeKeys(contentKeys);
     if (keys.length === 0) return Object.freeze([]);
     const rows = [];
-
     for (let offset = 0; offset < keys.length; offset += STATE_READ_BATCH_SIZE) {
       const batch = keys.slice(offset, offset + STATE_READ_BATCH_SIZE);
       let result;
@@ -74,6 +67,35 @@ export class D1OrganicHistoryGateway {
       rows.push(...batchRows.map((row) => Object.freeze({ ...row })));
     }
     return Object.freeze(rows);
+  }
+
+  /** Read which Content rows already have any observation at the durable operation timestamp. */
+  async listObservedContentKeysAt(contentKeys, observedAt) {
+    const keys = normalizeKeys(contentKeys);
+    const instant = safeTimestamp(observedAt, 'observedAt');
+    if (keys.length === 0) return Object.freeze([]);
+    const observed = new Set();
+    for (let offset = 0; offset < keys.length; offset += STATE_READ_BATCH_SIZE) {
+      const batch = keys.slice(offset, offset + STATE_READ_BATCH_SIZE);
+      let result;
+      try {
+        result = await this.db.prepare(`
+          SELECT DISTINCT content_key
+          FROM organic_content_observations
+          WHERE observed_at = ?
+            AND content_key IN (${placeholders(batch.length)})
+          ORDER BY content_key ASC
+        `).bind(instant, ...batch).all();
+      } catch (cause) {
+        throw transientError('Failed to read Organic observation repair state', {
+          code: 'D1_ORGANIC_OBSERVATION_READ_FAILED',
+          cause,
+        });
+      }
+      const rows = Array.isArray(result) ? result : (result?.results ?? []);
+      for (const row of rows) observed.add(requireText(row.content_key, 'content_key'));
+    }
+    return Object.freeze([...observed].sort());
   }
 
   async readCoverageRun(coverageRunId) {
@@ -122,6 +144,17 @@ function normalizeKeys(values) {
     });
   }
   return keys.sort();
+}
+
+function safeTimestamp(value, fieldName) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number < 0) {
+    throw permanentError(`${fieldName} must be a non-negative safe timestamp`, {
+      code: 'MKT_ORGANIC_HISTORY_INPUT_INVALID',
+      details: { fieldName },
+    });
+  }
+  return number;
 }
 
 function placeholders(count) {
