@@ -13,6 +13,7 @@ test('runtime profile contains every registered connector with a deterministic f
   assert.deepEqual(Object.keys(config.connectors), listConnectorKeys());
   assert.equal(config.connectors.tiktok.featureFlagEnv, 'MKT_CONNECTOR_TIKTOK_ENABLED');
   assert.equal(config.connectors.facebook.featureFlagEnv, 'MKT_CONNECTOR_FACEBOOK_ENABLED');
+  assert.equal(config.connectors.meta_ads.featureFlagEnv, 'MKT_CONNECTOR_META_ADS_ENABLED');
 });
 
 test('environment feature flag keeps the active TikTok implementation disabled safely', () => {
@@ -97,14 +98,22 @@ test('YouTube connector can be enabled after activation review', () => {
   assert.equal(config.connectors.youtube.enabled, true);
 });
 
-test('planned connectors cannot be enabled before a real implementation exists', () => {
+test('Meta connection foundations cannot be enabled before Live DEV UAT', () => {
   assert.throws(
     () => loadCustomerRuntimeConfig({
       MKT_ENV: 'production',
       MKT_CUSTOMER_PROFILE: 'chemistry_k',
       MKT_CONNECTOR_FACEBOOK_ENABLED: 'true',
     }),
-    (error) => error?.code === 'MKT_CONNECTOR_NOT_IMPLEMENTED',
+    (error) => error?.code === 'MKT_CONNECTOR_UAT_PENDING',
+  );
+  assert.throws(
+    () => loadCustomerRuntimeConfig({
+      MKT_ENV: 'development',
+      MKT_CUSTOMER_PROFILE: 'integration_workspace',
+      MKT_CONNECTOR_META_ADS_ENABLED: 'true',
+    }),
+    (error) => error?.code === 'MKT_CONNECTOR_UAT_PENDING',
   );
 });
 

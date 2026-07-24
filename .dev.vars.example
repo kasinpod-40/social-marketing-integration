@@ -34,6 +34,7 @@ MKT_CONNECTION_ENCRYPTION_KEY_V1=replace-with-256-bit-base64url-key
 MKT_CONNECTOR_TIKTOK_ENABLED=false
 MKT_CONNECTOR_FACEBOOK_ENABLED=false
 MKT_CONNECTOR_INSTAGRAM_ENABLED=false
+MKT_CONNECTOR_META_ADS_ENABLED=false
 MKT_CONNECTOR_YOUTUBE_ENABLED=false
 MKT_CONNECTOR_WOOCOMMERCE_ENABLED=false
 MKT_CONNECTOR_CHATWOOT_ENABLED=false
@@ -72,9 +73,18 @@ YOUTUBE_CHANNEL_ID=replace-with-youtube-channel-id
 YOUTUBE_API_KEY=replace-with-youtube-api-key
 YOUTUBE_OAUTH_ACCESS_TOKEN=replace-with-oauth-access-token
 
-# Meta shared client — ใช้ Version ที่เลือกตอนเริ่ม Live validation
-META_GRAPH_API_VERSION=vXX.X
+# Meta token-based preflight — Pin version; Token แยก FB/Ads กับ Instagram Login
+META_GRAPH_API_VERSION=v25.0
 META_ACCESS_TOKEN=replace-with-meta-access-token
+META_INSTAGRAM_ACCESS_TOKEN=replace-with-instagram-access-token
+META_FACEBOOK_PAGE_ID=replace-with-facebook-page-id
+META_INSTAGRAM_ACCOUNT_ID=replace-with-instagram-account-id
+META_AD_ACCOUNT_ID=replace-with-meta-ad-account-id
+META_API_TIMEOUT_MS=30000
+META_MAX_PAGES=100
+META_PAGE_SIZE=100
+META_MAX_ATTEMPTS=5
+META_MAX_RESPONSE_BYTES=8388608
 
 # WooCommerce / Chatwoot — Foundations ยังไม่ถูก Route เข้า Worker
 WOOCOMMERCE_BASE_URL=https://replace-with-customer-store.example

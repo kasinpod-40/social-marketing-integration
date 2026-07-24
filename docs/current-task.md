@@ -6,7 +6,8 @@
 TASK_STATUS                         = CUSTOMER_LINKS_ACTIVE_AWAITING_CALLBACK
 CURRENT_PROGRAM                     = MULTI_CONNECTOR_CUSTOMER_CONNECTION_FOUNDATION
 FIRST_PRIORITY                      = GOOGLE_ADS_AND_YOUTUBE_CUSTOMER_OAUTH
-OTHER_CONNECTORS                    = PLANNED_NOT_STARTED
+NON_META_OTHER_CONNECTORS           = PLANNED_NOT_STARTED
+META_TOKEN_CONNECTION_FOUNDATION    = IMPLEMENTED_LOCAL_UAT_PENDING
 INTEGRATION_WORKSPACE               = development / integration_workspace
 GOOGLE_ADS_PR_17                    = DRAFT_HOLD
 SCHEDULES                           = DISABLED
@@ -328,18 +329,89 @@ Verified customer-app state:
 - the locally stored Instagram credential passed a read-only
   `graph.instagram.com/me` identity request with HTTP `200`; no raw token,
   username or full external ID was logged;
-- no Facebook credential is currently available under the repository's
-  expected local `META_ACCESS_TOKEN` name, so Facebook identity/scope validation
-  remains pending.
+- the ignored local runtime now has a Facebook credential under
+  `META_ACCESS_TOKEN`, but read-only `/me`, `/me/permissions`, `/me/accounts`,
+  `/app` and `/debug_token` attempts all failed with HTTP `400`, OAuth code
+  `200` and the sanitized provider outcome `API access blocked`;
+- the later Business Settings inspection no longer showed the administrator
+  account that issued the Facebook token. Treat that credential as orphaned and
+  rotate it after customer-app administration is restored; do not infer token
+  validity from age alone.
 
 The API-restricted dashboard banner remains an App Review/administration risk;
-it is not proof that the supplied tokens are invalid. The next safe actions are
-to store the supplied Facebook token in an approved ignored/Secret boundary,
-run read-only Facebook identity/scope validation, and complete administrator
-Developer Portal verification in parallel. This evidence does not authorize an
-App Review submission, permission mutation or Production rollout.
+it does not by itself distinguish an invalid token from an app-level block. The
+next safe actions are to restore a verified customer-app administrator, rotate
+the orphaned Facebook token, configure exact non-secret customer mappings and
+repeat the new read-only preflight. This evidence does not authorize an App
+Review submission, permission mutation or Production rollout.
 
 Exact rollout and rollback commands: `docs/customer-connection-oauth-rollout.md`.
+
+### Meta token connection foundation — implemented locally 2026-07-25
+
+The user authorized implementation of a connection/preflight foundation before
+the final customer credential and identity Live UAT. Exact contract:
+
+`docs/meta-token-connection-contract-v1.md`
+
+In scope:
+
+- separate Facebook Organic, Instagram Organic and Meta Ads preflight results;
+- ignored/Secret-backed credential factory;
+- exact Page, Instagram account and Ad Account identity guards;
+- read-only permission/asset discovery;
+- redacted CLI and unit tests.
+
+Out of scope:
+
+- Meta OAuth/Connect links, callback or token persistence;
+- Business ingestion, normalization and destination writes;
+- Queue jobs, D1 business facts, Lark writes or schedules;
+- App role/permission mutation, App Review, deployment or Production.
+
+All three Meta connectors remain `uat_pending` and disabled. Implementation may
+not change them to `active` until exact customer identity, permission, lifecycle,
+large-account and Live data gates pass.
+
+Implementation result:
+
+- Added a fail-closed configuration factory that keeps Facebook/Meta Ads and
+  Instagram credentials separate, requires a pinned Graph API version and keeps
+  exact Page, Instagram Account and Ad Account mappings non-secret.
+- Added three independent GET-only adapters plus a redacted preflight
+  orchestrator and `npm run preflight:meta` operator command.
+- Facebook preflight enumerates granted permissions and accessible Pages;
+  Instagram Login validates the exact business account on
+  `graph.instagram.com`; Meta Ads enumerates granted permissions and accessible
+  Ad Accounts. No adapter fetches names or emits raw external IDs.
+- Hardened the shared Meta Graph transport with an 8 MiB bounded response body
+  and removed raw provider messages from returned error details.
+- Added `meta_ads` to the catalog/profile contract as `uat_pending`; Facebook,
+  Instagram and Meta Ads flags remain `false`, and enabling any of them still
+  fails closed.
+- Focused Meta/config/application tests pass `49/49`; full Unit tests pass
+  `699/699`; Workers runtime `9/9`; report reliability `70/70`; Architecture
+  `198 source files / 475 dependencies / 0 cycles`; repository hygiene and
+  Wrangler deploy dry-run pass.
+- `npm ci --offline` and `npm audit --offline --audit-level=high` report zero
+  vulnerabilities. The online audit was not performed because the required
+  outbound dependency-metadata request was not authorized.
+- No Live Meta request was made by this implementation round. No `.dev.vars`
+  value, Secret, D1 row, Queue message, Lark record, schedule, deployment,
+  Production setting, commit or push was changed.
+
+Remaining Live UAT inputs:
+
+1. Restore a verified administrator on the customer-owned Meta app/business and
+   rotate the orphaned Facebook token.
+2. Configure ignored/Secret-backed credentials plus
+   `META_GRAPH_API_VERSION=v25.0` and the exact non-secret
+   `META_FACEBOOK_PAGE_ID`, `META_INSTAGRAM_ACCOUNT_ID` and
+   `META_AD_ACCOUNT_ID` mappings.
+3. Run `npm run preflight:meta`; require each configured result to reach
+   `identity_validated` with `businessWrites=0`.
+4. Separately approve any future Business ingestion, Queue/Lark write, schedule,
+   deployment or Production activation.
 
 ## Next boundary — Await customer callbacks
 

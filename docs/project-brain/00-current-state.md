@@ -113,10 +113,22 @@ testing, but Meta reports API access restricted until every app administrator
 completes Developer Portal account verification. The user confirms that the
 customer supplied separate Facebook and Instagram tokens. The locally stored
 Instagram credential passed a read-only `/me` identity request with HTTP `200`;
-the Facebook token is not yet available under the expected local
-`META_ACCESS_TOKEN` runtime name, so its identity/scope preflight remains
-pending. No App/Business ID is stored here, no dashboard setting was changed,
-and the separate developer-owned app is not evidence for customer readiness.
+the Facebook credential is present locally but all read-only identity,
+permission, Page, app and debug requests returned the sanitized provider
+outcome `API access blocked`. The later Business Settings inspection no longer
+showed the administrator that issued that credential, so it must be treated as
+orphaned and rotated after verified administration is restored.
+
+The token-based Meta preflight foundation is now implemented locally on
+`codex/meta-token-preflight-foundation`: independent Facebook Organic,
+Instagram Organic and Meta Ads GET-only adapters, exact identity guards,
+redacted results and the `npm run preflight:meta` operator command. All three
+connectors remain `uat_pending` and disabled. No Live request, write, deployment
+or Production action occurred in the implementation round. Live UAT waits for a
+new Facebook token, pinned API version and exact Page/Instagram/Ad Account
+mappings. No raw App/Business ID is stored here, no dashboard setting was
+changed, and the separate developer-owned app is not evidence for customer
+readiness.
 
 ## Google Ads state
 

@@ -149,6 +149,20 @@ test('Meta timeout covers response body consumption', async () => {
   );
 });
 
+test('Meta shared client rejects an oversized response body before JSON parsing', async () => {
+  const client = new MetaGraphClient({
+    accessToken: 'x',
+    apiVersion: 'v99.0',
+    maxResponseBytes: 16,
+    maxAttempts: 1,
+    fetchImpl: async () => Response.json({ data: [{ value: 'larger-than-limit' }] }),
+  });
+  await assert.rejects(
+    client.get('me'),
+    (error) => error?.code === 'META_RESPONSE_TOO_LARGE' && error.retryable === false,
+  );
+});
+
 test('Meta shared client rejects non-versioned config and classifies permanent errors', async () => {
   assert.throws(
     () => new MetaGraphClient({ accessToken: 'x', apiVersion: 'latest', fetchImpl: async () => null }),
@@ -157,10 +171,19 @@ test('Meta shared client rejects non-versioned config and classifies permanent e
   const client = new MetaGraphClient({
     accessToken: 'x',
     apiVersion: 'v99.0',
-    fetchImpl: async () => Response.json({ error: { code: 100, is_transient: false } }, { status: 400 }),
+    fetchImpl: async () => Response.json({
+      error: {
+        code: 200,
+        is_transient: false,
+        message: 'API access blocked.',
+      },
+    }, { status: 400 }),
   });
   await assert.rejects(
     client.get('me'),
-    (error) => error?.code === 'META_PERMANENT_API_ERROR' && error.retryable === false,
+    (error) => error?.code === 'META_PERMANENT_API_ERROR'
+      && error.retryable === false
+      && error?.details?.providerReason === 'api_access_blocked'
+      && !JSON.stringify(error.details).includes('API access blocked.'),
   );
 });

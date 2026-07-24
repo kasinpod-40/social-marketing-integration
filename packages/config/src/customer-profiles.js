@@ -34,13 +34,18 @@ const CUSTOMER_PROFILES = Object.freeze({
       },
       facebook: {
         enabledByDefault: false,
-        accountKey: 'dev_ft_pumkin',
-        displayLabel: 'Facebook Organic — Temporary developer source',
+        accountKey: 'chemistry_k',
+        displayLabel: 'Facebook Organic — Chemistry K preflight pending',
       },
       instagram: {
         enabledByDefault: false,
-        accountKey: 'dev_ft_pumkin',
-        displayLabel: 'Instagram Organic — Temporary developer source',
+        accountKey: 'chemistry_k',
+        displayLabel: 'Instagram Organic — Chemistry K preflight pending',
+      },
+      meta_ads: {
+        enabledByDefault: false,
+        accountKey: 'chemistry_k',
+        displayLabel: 'Meta Ads — Chemistry K preflight pending',
       },
       youtube: {
         enabledByDefault: false,
@@ -88,6 +93,11 @@ const CUSTOMER_PROFILES = Object.freeze({
         enabledByDefault: false,
         accountKey: 'chemistry_k',
         displayLabel: 'Instagram — Chemistry K',
+      },
+      meta_ads: {
+        enabledByDefault: false,
+        accountKey: 'chemistry_k',
+        displayLabel: 'Meta Ads — Chemistry K',
       },
       youtube: {
         enabledByDefault: false,

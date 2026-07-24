@@ -31,7 +31,7 @@ test('rejects the active TikTok implementation when the feature flag remains dis
   );
 });
 
-test('planned connector is never reported as runnable', () => {
+test('Meta UAT-pending connector is never reported as runnable', () => {
   const runtimeConfig = loadCustomerRuntimeConfig({
     MKT_ENV: 'production',
     MKT_CUSTOMER_PROFILE: 'chemistry_k',
@@ -39,7 +39,7 @@ test('planned connector is never reported as runnable', () => {
 
   assert.throws(
     () => assertConnectorRunnable(runtimeConfig, 'facebook'),
-    (error) => error?.code === 'MKT_CONNECTOR_NOT_IMPLEMENTED',
+    (error) => error?.code === 'MKT_CONNECTOR_UAT_PENDING',
   );
 
   const readiness = listConnectorReadiness(runtimeConfig);

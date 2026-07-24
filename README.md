@@ -262,15 +262,26 @@ Backfill requires D1 write. Retention requires the D1 Report reader. Enabling St
 | --- | --- | --- |
 | TikTok Organic | Chemistry K protected Native RAW populated | Guarded D1-only rollout, then Report shadow reader before Canonical scale |
 | YouTube Organic | Runtime foundation exists on developer source | Later map cumulative/period facts into Storage contract |
-| Facebook Organic | Access/schema ready | Shared Meta connector after Organic storage rollout |
-| Instagram Organic | Access/schema ready | Shared Meta connector after Organic storage rollout |
-| Meta Ads | Access valid/no data | Ads facts/revision contract first |
+| Facebook Organic | Token preflight implemented / Live UAT blocked | Restore customer-app admin, rotate token and validate exact Page |
+| Instagram Organic | Token preflight implemented / exact mapping pending | Repeat customer-token UAT with exact Instagram Account |
+| Meta Ads | Token preflight implemented / Live UAT blocked | Validate exact Ad Account independently; Ads facts/revision contract remains separate |
 | Google Ads | Read-only source passed; Draft PR #17 | HOLD; rebuild/rebase against Storage/RAW lineage |
 | TikTok Ads | Access/design preflight | Controlled API/Worker connector later |
 | WooCommerce | Planned | Connector pending |
 | Chatwoot | Planned | Connector pending |
 
 Draft PR #11 is obsolete/superseded and must not be merged.
+
+Meta token preflight is intentionally separate from Business ingestion:
+
+```bash
+npm run preflight:meta
+```
+
+The command reads ignored local credentials, performs GET-only identity and
+permission discovery, emits redacted per-connector results and makes zero
+Queue/Lark/D1/business writes. Facebook Organic, Instagram Organic and Meta Ads
+remain `uat_pending` with every feature flag set to `false`.
 
 ## Verification gates
 

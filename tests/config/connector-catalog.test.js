@@ -40,10 +40,12 @@ test('every connector declares a frozen large-account activation contract', () =
   }
 });
 
-test('YouTube and TikTok are technical/fixture ready while Production stays blocked until Live UAT', () => {
+test('YouTube and TikTok are technical/fixture ready while Meta remains UAT pending', () => {
   const youtube = getConnectorCatalogEntry('youtube');
   const tiktok = getConnectorCatalogEntry('tiktok');
   const instagram = getConnectorCatalogEntry('instagram');
+  const facebook = getConnectorCatalogEntry('facebook');
+  const metaAds = getConnectorCatalogEntry('meta_ads');
 
   assert.equal(youtube.largeAccount.status, 'dev_ready');
   assert.equal(youtube.largeAccount.minimumFixtureItems, 1000);
@@ -54,6 +56,10 @@ test('YouTube and TikTok are technical/fixture ready while Production stays bloc
   assert.deepEqual(tiktok.largeAccount.missingGates, ['liveAccountUat']);
 
   assert.equal(instagram.largeAccount.status, 'planned');
+  assert.equal(instagram.implementationStatus, 'uat_pending');
+  assert.equal(facebook.implementationStatus, 'uat_pending');
+  assert.equal(metaAds.implementationStatus, 'uat_pending');
+  assert.equal(metaAds.capability, 'paid_ads');
   assert.equal(instagram.largeAccount.minimumFixtureItems, 2000);
   assert.equal(instagram.largeAccount.productionReady, false);
 });

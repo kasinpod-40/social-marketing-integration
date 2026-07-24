@@ -30,6 +30,7 @@ test('release examples keep every connector, schedule and Storage flag fail-clos
     'MKT_CONNECTOR_TIKTOK_ENABLED',
     'MKT_CONNECTOR_FACEBOOK_ENABLED',
     'MKT_CONNECTOR_INSTAGRAM_ENABLED',
+    'MKT_CONNECTOR_META_ADS_ENABLED',
     'MKT_CONNECTOR_YOUTUBE_ENABLED',
     'MKT_CONNECTOR_WOOCOMMERCE_ENABLED',
     'MKT_CONNECTOR_CHATWOOT_ENABLED',
@@ -53,4 +54,5 @@ test('release examples keep every connector, schedule and Storage flag fail-clos
   assert.match(wrangler, /"MKT_ENV"\s*:\s*"development"/u);
   assert.match(devVars, /^MKT_DAILY_REPORT_SETTING_KEY=integration_workspace:tiktok:daily$/mu);
   assert.match(wrangler, /"MKT_DAILY_REPORT_SETTING_KEY"\s*:\s*"integration_workspace:tiktok:daily"/u);
+  assert.doesNotMatch(wrangler, /"META_(?:ACCESS_TOKEN|INSTAGRAM_ACCESS_TOKEN)"\s*:/u);
 });

@@ -10,7 +10,7 @@ const DEFAULT_PAGE_SIZE = 100;
 const DEFAULT_MAX_ATTEMPTS = 5;
 const DEFAULT_RETRY_BASE_DELAY_MS = 500;
 const DEFAULT_MAX_RETRY_DELAY_MS = 30_000;
-const MAX_REMOTE_ERROR_MESSAGE_LENGTH = 500;
+const DEFAULT_MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 
 /**
  * Shared Meta Graph client สำหรับ Facebook Page, Instagram Business และ Meta Ads adapters
@@ -35,6 +35,10 @@ export class MetaGraphClient {
     this.maxPages = positiveInteger(config.maxPages ?? DEFAULT_MAX_PAGES, 'maxPages');
     this.pageSize = positiveInteger(config.pageSize ?? DEFAULT_PAGE_SIZE, 'pageSize');
     this.maxAttempts = positiveInteger(config.maxAttempts ?? DEFAULT_MAX_ATTEMPTS, 'maxAttempts');
+    this.maxResponseBytes = positiveInteger(
+      config.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES,
+      'maxResponseBytes',
+    );
     this.retryBaseDelayMs = positiveInteger(
       config.retryBaseDelayMs ?? DEFAULT_RETRY_BASE_DELAY_MS,
       'retryBaseDelayMs',
@@ -184,7 +188,7 @@ export class MetaGraphClient {
 
     try {
       const response = await this.fetchImpl(url, { method: 'GET', headers, signal: controller.signal });
-      const text = await response.text();
+      const text = await readBoundedResponseText(response, this.maxResponseBytes);
       const payload = parseJsonPayload(text, safePath, response.status);
       const usage = readUsageHeaders(response.headers);
       if (response.ok && !payload?.error) {
@@ -211,6 +215,49 @@ export class MetaGraphClient {
   }
 }
 
+/** อ่าน Response body แบบมีเพดานเพื่อไม่ให้ Provider response กิน Worker memory ไม่จำกัด */
+async function readBoundedResponseText(response, maxResponseBytes) {
+  if (!response?.body || typeof response.body.getReader !== 'function') {
+    const text = await response.text();
+    if (new TextEncoder().encode(text).byteLength > maxResponseBytes) {
+      throw responseTooLarge(maxResponseBytes);
+    }
+    return text;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let totalBytes = 0;
+  let text = '';
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > maxResponseBytes) {
+        try {
+          await reader.cancel('Meta response exceeded configured byte limit');
+        } catch {
+          // การยกเลิก Stream เป็น best effort; ต้องรักษาเหตุผลหลักว่า Body เกินเพดาน
+        }
+        throw responseTooLarge(maxResponseBytes);
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    text += decoder.decode();
+    return text;
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+function responseTooLarge(maxResponseBytes) {
+  return permanentError('Meta Graph response exceeded the configured byte limit', {
+    code: 'META_RESPONSE_TOO_LARGE',
+    details: { maxResponseBytes },
+  });
+}
+
 function createMetaApiError({ response, payload, path }) {
   const metaError = payload?.error ?? {};
   const retryable = response.status === 429 || response.status >= 500 || metaError.is_transient === true;
@@ -224,7 +271,7 @@ function createMetaApiError({ response, payload, path }) {
       graphSubcode: metaError.error_subcode ?? null,
       traceId: optionalText(metaError.fbtrace_id),
       retryAfter: readRetryAfter(response.headers),
-      remoteMessage: truncateText(metaError.message),
+      providerReason: classifyMetaErrorReason(metaError.message),
     },
   });
 }
@@ -282,10 +329,10 @@ function normalizeCursorList(value) {
   return value.map((cursor) => requireText(cursor, 'visitedCursor'));
 }
 
-function truncateText(value) {
-  if (typeof value !== 'string') return null;
-  const text = value.trim();
-  return text ? text.slice(0, MAX_REMOTE_ERROR_MESSAGE_LENGTH) : null;
+function classifyMetaErrorReason(value) {
+  const message = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  if (message === 'api access blocked.') return 'api_access_blocked';
+  return null;
 }
 
 function normalizeGraphPath(value) {

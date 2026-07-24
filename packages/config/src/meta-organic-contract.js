@@ -11,17 +11,24 @@ export const META_ORGANIC_CONTRACT = deepFreeze({
   facebook: {
     identity: 'page_id',
     token: 'page_access_token',
+    preflightToken: 'facebook_user_or_system_user_access_token',
+    tokenEnv: 'META_ACCESS_TOKEN',
+    identityEnv: 'META_FACEBOOK_PAGE_ID',
     ownershipGuard: 'selected_page_id_must_match_response_page_id',
     adapter: 'facebook_page_adapter_required',
   },
   instagram: {
     identity: 'instagram_business_account_id',
     linkedAsset: 'facebook_page_id',
+    loginMode: 'instagram_login',
+    tokenEnv: 'META_INSTAGRAM_ACCESS_TOKEN',
+    identityEnv: 'META_INSTAGRAM_ACCOUNT_ID',
     ownershipGuard: 'selected_ig_account_id_must_match_response_account_id',
     adapter: 'instagram_business_adapter_required',
   },
   activation: {
     defaultEnabled: false,
+    implementationStatus: 'uat_pending',
     required: ['app_roles_or_advanced_access', 'live_dev_assets', 'token_lifecycle_uat'],
   },
 });

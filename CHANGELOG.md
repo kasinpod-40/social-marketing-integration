@@ -3,6 +3,14 @@
 ## Unreleased — Multi-Connector Customer Connection Foundation — 2026-07-24
 
 ### Added
+- Added a token-based Meta connection preflight contract and independent
+  GET-only adapters for Facebook Organic, Instagram Organic through Instagram
+  Login and Meta Ads.
+- Added exact Page, Instagram Account and Ad Account identity guards, pinned
+  Graph API version validation and a redacted `npm run preflight:meta` operator
+  command that reads ignored local credentials without shell evaluation.
+- Added `meta_ads` as a fail-closed `uat_pending` connector; Facebook,
+  Instagram and Meta Ads remain disabled.
 - Added Customer Connection OAuth contract v2 with a side-effect-free
   confirmation GET, exact POST-to-start and default three-attempt bounded retry.
 - Added additive migration `0012_retry_safe_customer_connection.sql` with atomic
@@ -14,6 +22,14 @@
 - Extended the existing YouTube API client with 0/1/N `mine=true` discovery and added signed one-time explicit Channel selection.
 
 ### Safety and verification
+- Hardened Meta Graph responses with an 8 MiB body limit and removed raw
+  provider messages from returned diagnostics. Focused Meta/config/application
+  tests pass 49/49; final Unit 699/699, Workers 9/9, report reliability 70/70,
+  Architecture 198/475/0, offline audit 0 and Wrangler dry-run pass.
+- No Live Meta request, credential mutation, D1/Queue/Lark write, schedule,
+  deployment, Production action, commit or push occurred in the Meta foundation
+  implementation round. Live UAT waits for a rotated Facebook token and exact
+  customer mappings.
 - Repeated link preview and scanner HEAD do not reserve an attempt, create PKCE
   or create OAuth state; concurrent starts allow only one active attempt.
 - The source implementation and verification phase made no Remote mutation; the
