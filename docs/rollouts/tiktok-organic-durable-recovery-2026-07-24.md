@@ -13,6 +13,9 @@ PR #29 merged
 implementation head e77633442cc48454df134c608bd4740254d43d2f
 Branch Verification #342 / 30038029278 / PASS
 merge commit 1fce94344100a6b1ed9dce471966f3596c00778a
+operator PR #32 merged as dbe98d8dbfbb1c47dc6c3ad3c06a9cb56bb41264
+partial Coverage validation hotfix PR #33 merged as 28922bdb38ae9fd2be512774225ce3fdf64cf5f2
+runbook alignment PR #34 merged as 01c8bca0c0bb55e44369ce737f77b82c0efe04ab
 ```
 
 Exact operator runbook:
@@ -21,28 +24,71 @@ Exact operator runbook:
 docs/runbooks/tiktok-organic-bootstrap-durable-recovery.md
 ```
 
-## Execution status
+## Authenticated Integration Workspace evidence
+
+Read-only preflight passed with the immutable incident identity and exact durable facts:
 
 ```text
-REMOTE_EXECUTOR = unavailable in ChatGPT GitHub connector environment
-LOCAL_WRANGLER_CONFIG = unavailable
-CLOUDFLARE_AUTH = unavailable
-REMOTE_D1_PREFLIGHT = not run
-REMOTE_D1_BACKUP = not run
-REMOTE_MIGRATION_0010 = not applied
+organic_content_state = 1309
+organic_content_observations = 1000
+data_coverage_entities = 1000
+Work = active
+write phase nextSequence = 2
+write phase unitsCompleted = 2
+write phase durable counters = 1000
+DLQ = open / QUEUE_RETRY_EXHAUSTED
+lock = expired
+Coverage = partial / expected 2021 / summary observed 0 / 0 / failed 0 / completed_at null
+```
+
+Remote D1 backup passed:
+
+```text
+backup_file = social-mkt-state-dev-before-0010-20260724T031853642Z.sql
+backup_sha256 = 6e6b7d8bb57e63da78b3888f39b95db4f50f4d5e0eb891699d598beb98b4e58b
+```
+
+The ignored operator evidence remains on the authenticated machine under:
+
+```text
+outputs/tiktok-durable-recovery/exact-2026-07-23/
+```
+
+## Migration 0010 first attempt — stopped before Remote apply
+
+The first guarded migration command failed during Wrangler argument parsing:
+
+```text
+wrangler = 4.110.0
+rejected_argument = --skip-confirmation
+error = Unknown arguments: skip-confirmation, skipConfirmation
+```
+
+Wrangler rejected the command before applying any migration. No `migrate.json` passed evidence was created, the evidence chain did not advance and no Worker deployment or Queue send was attempted.
+
+Cloudflare's Wrangler 4.110 migration apply contract has no `--skip-confirmation` option. Non-interactive or CI execution skips the prompt while still capturing Wrangler's migration backup. The operator hotfix removes only the unsupported argument and sets `CI=true` only for the migration apply subprocess. All pre-apply backup/checksum and exact pending-migration gates remain mandatory.
+
+## Current execution status
+
+```text
+REMOTE_D1_PREFLIGHT = passed
+REMOTE_D1_BACKUP = passed
+REMOTE_MIGRATION_0010 = not applied; first command stopped at CLI parsing
 WORKER_DEPLOYMENT = not run
 QUEUE_MESSAGE = not sent
 LIVE_RECOVERY = not executed
+LARK_BUSINESS_WRITE = none
+SCHEDULE_CHANGE = none
+PRODUCTION_CHANGE = none
+GOOGLE_ADS_PR_17 = draft / hold
 ```
-
-The GitHub connector can inspect and edit the Repository but cannot authenticate to the private Cloudflare account, execute Wrangler commands, export D1, deploy the Worker or push a Queue message. The available container also has no `gh`, no authenticated Wrangler session, no repository checkout and no ignored `wrangler.sync.jsonc`; DNS access to GitHub/npm is unavailable. No Remote result is claimed.
 
 ## Prepared safeguards
 
 - exact incident identity is embedded in code and payload printer;
 - Migration `0010` is additive only;
-- runbook requires read-only identity/fact preflight before any write;
-- backup and SHA-256 are mandatory;
+- read-only identity/fact preflight passed before any write attempt;
+- backup and SHA-256 passed and must be revalidated before retry;
 - pending migration set must be exactly Migration `0010`;
 - post-migration business facts must remain `1309 / 1000 / 1000`;
 - deploy requires all schedules false;
@@ -52,18 +98,9 @@ The GitHub connector can inspect and edit the Repository but cannot authenticate
 - exact replay must leave business facts unchanged;
 - rollback is flag-only and non-destructive.
 
-## Required operator evidence
-
-Populate only from an authenticated Integration Workspace machine:
+## Remaining operator evidence
 
 ```text
-checked_out_main_sha = pending
-wrangler_identity = pending
-d1_info = pending
-incident_preflight = pending
-backup_file = pending
-backup_sha256 = pending
-pending_migrations = pending
 migration_0010_apply = pending
 post_migration_schema = pending
 post_migration_counts = pending

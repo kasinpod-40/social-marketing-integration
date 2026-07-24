@@ -181,8 +181,9 @@ async function runMigration(target) {
     'wrangler', 'd1', 'migrations', 'apply', target.databaseName,
     '--remote',
     '--config', target.wranglerConfig,
-    '--skip-confirmation',
-  ]);
+  ], {
+    env: { CI: 'true' },
+  });
   const after = runCommand('npx', [
     'wrangler', 'd1', 'migrations', 'list', target.databaseName,
     '--remote',
@@ -314,11 +315,11 @@ function runD1Query(target, sql) {
   ]);
 }
 
-function runCommand(command, args) {
+function runCommand(command, args, options = {}) {
   const result = spawnSync(command, args, {
     cwd: process.cwd(),
     encoding: 'utf8',
-    env: process.env,
+    env: { ...process.env, ...(options.env ?? {}) },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   if (result.status !== 0) {
