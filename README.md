@@ -283,6 +283,11 @@ permission discovery, emits redacted per-connector results and makes zero
 Queue/Lark/D1/business writes. Facebook Organic, Instagram Organic and Meta Ads
 remain `uat_pending` with every feature flag set to `false`.
 
+The next no-credential design boundary is documented in
+`docs/meta-business-ingestion-contract-v1.md`. It reuses the existing five
+Shared Raw tables and approved D1/Canonical model; it does not authorize Live
+Meta calls, business writes, schedules or deployment.
+
 ## Verification gates
 
 ```bash

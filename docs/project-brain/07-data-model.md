@@ -23,11 +23,17 @@ Base name: `Social MKT Data Hub`
 - `RAW_YouTube_Channels` — latest-state Channel identity/cumulative statistics; includes `subscriber_count_hidden`; a missing uploads playlist blocks activation but may remain null in RAW.
 - `RAW_YouTube_Videos` — latest-state Video metadata/cumulative statistics plus `last_seen_at`, `source_availability_status`, and `missing_since`; missing rows are retained and never zero-filled.
 - `RAW_YouTube_Analytics_Daily` — OAuth Owner Analytics period metrics keyed by exact Pacific `source_metric_date`; RAW-only in Phase 1 and never overwrites cumulative snapshots.
-- `RAW_TikTok_Business_Campaigns`
-- `RAW_TikTok_Business_AdGroups`
-- `RAW_TikTok_Business_Ads`
-- `RAW_Google_Campaigns`
-- `RAW_Google_Customer_Lists`
+- `RAW_Meta_Organic_Accounts` — Shared Facebook Page/Instagram Account latest state.
+- `RAW_Meta_Organic_Content` — Shared Facebook Post and Instagram Media latest state.
+- `RAW_Meta_Organic_Metrics` — Shared Organic Entity×Metric×Source-time facts.
+- `RAW_Ads_Entities` — Shared Meta/TikTok/Google Ads entity state separated by `platform` and `entity_type`.
+- `RAW_Ads_Daily` — Shared Entity×Date×Breakdown Ads performance facts.
+Historical Planned names
+`RAW_TikTok_Business_Campaigns`, `RAW_TikTok_Business_AdGroups`,
+`RAW_TikTok_Business_Ads`, `RAW_Google_Campaigns` and
+`RAW_Google_Customer_Lists` are migration aliases only. The Live Shared-table
+schema reused those table IDs under the five Shared Raw names. New connectors
+must target the Shared names and must not recreate provider-specific Raw tables.
 
 ## TikTok Creator keys
 - `content_key = platform:account_id:external_content_id`

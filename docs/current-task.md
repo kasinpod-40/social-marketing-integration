@@ -8,6 +8,7 @@ CURRENT_PROGRAM                     = MULTI_CONNECTOR_CUSTOMER_CONNECTION_FOUNDA
 FIRST_PRIORITY                      = GOOGLE_ADS_AND_YOUTUBE_CUSTOMER_OAUTH
 NON_META_OTHER_CONNECTORS           = PLANNED_NOT_STARTED
 META_TOKEN_CONNECTION_FOUNDATION    = IMPLEMENTED_LOCAL_UAT_PENDING
+META_BUSINESS_INGESTION_CONTRACT    = DESIGN_COMPLETE_LIVE_UAT_PENDING
 INTEGRATION_WORKSPACE               = development / integration_workspace
 GOOGLE_ADS_PR_17                    = DRAFT_HOLD
 SCHEDULES                           = DISABLED
@@ -397,8 +398,9 @@ Implementation result:
   vulnerabilities. The online audit was not performed because the required
   outbound dependency-metadata request was not authorized.
 - No Live Meta request was made by this implementation round. No `.dev.vars`
-  value, Secret, D1 row, Queue message, Lark record, schedule, deployment,
-  Production setting, commit or push was changed.
+  value, Secret, D1 row, Queue message, Lark record, schedule, deployment or
+  Production setting changed. After explicit approval, the verified source was
+  committed and pushed at `c1675ed`.
 
 Remaining Live UAT inputs:
 
@@ -412,6 +414,40 @@ Remaining Live UAT inputs:
    `identity_validated` with `businessWrites=0`.
 4. Separately approve any future Business ingestion, Queue/Lark write, schedule,
    deployment or Production activation.
+
+### Meta business ingestion contract — prepared 2026-07-25
+
+After the token preflight foundation was committed and pushed at `c1675ed`, the
+user authorized safe preparation work that does not require customer
+credentials. Exact design authority:
+
+`docs/meta-business-ingestion-contract-v1.md`
+
+Prepared:
+
+- one machine-readable Source contract for Facebook Organic, Instagram Organic
+  through Instagram Login and Meta Ads;
+- GET-only dataset paths, fields/candidate metrics, credentials, permissions and
+  exact identity boundaries;
+- the approved Provider → five Shared Raw tables → D1 → Canonical route, with no
+  new Physical table;
+- Organic and Ads Stable keys, timezone, zero/null, money-micros, Coverage,
+  revision, pagination and partial-failure rules;
+- separate Facebook discovery and Page-read credential lifecycles;
+- explicit PR boundaries from read-only fixtures through D1 parity and later
+  Lark mirror;
+- contract tests that prohibit mutation, Spend, Live calls, schedules and
+  business writes.
+- Focused Shared Meta contract tests pass `12/12`; full Unit tests pass
+  `705/705`; Workers runtime `9/9`; report reliability `70/70`; Architecture
+  `199 source files / 475 dependencies / 0 cycles`; repository hygiene, offline
+  audit `0` and Wrangler deploy dry-run pass.
+
+This is design/config only. It adds no Meta request executor, normalizer, Queue
+job, D1/Lark writer, Worker route or schedule. Every dataset remains
+`live_fixture_required`; mocked adapter implementation requires the next exact
+Current Task scope, while Live calls/writes/deployment require separate
+authorization.
 
 ## Next boundary — Await customer callbacks
 

@@ -120,7 +120,7 @@ showed the administrator that issued that credential, so it must be treated as
 orphaned and rotated after verified administration is restored.
 
 The token-based Meta preflight foundation is now implemented locally on
-`codex/meta-token-preflight-foundation`: independent Facebook Organic,
+`codex/meta-token-preflight-foundation` and pushed at `c1675ed`: independent Facebook Organic,
 Instagram Organic and Meta Ads GET-only adapters, exact identity guards,
 redacted results and the `npm run preflight:meta` operator command. All three
 connectors remain `uat_pending` and disabled. No Live request, write, deployment
@@ -129,6 +129,14 @@ new Facebook token, pinned API version and exact Page/Instagram/Ad Account
 mappings. No raw App/Business ID is stored here, no dashboard setting was
 changed, and the separate developer-owned app is not evidence for customer
 readiness.
+
+The follow-on Meta Business Ingestion design is prepared without Live access in
+`docs/meta-business-ingestion-contract-v1.md` and
+`packages/config/src/meta-business-ingestion-contract.js`. It locks GET-only
+datasets, the five existing Shared Raw tables, D1/Canonical destinations,
+Stable keys, Coverage/revision and credential lifecycles. It adds no request
+executor, Queue job, writer, route or schedule; all datasets remain
+`live_fixture_required`.
 
 ## Google Ads state
 

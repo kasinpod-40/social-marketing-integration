@@ -3,6 +3,15 @@
 ## Unreleased — Multi-Connector Customer Connection Foundation — 2026-07-24
 
 ### Added
+- Added the design-only Meta Business Ingestion contract with machine-readable
+  GET-only datasets, five-Shared-Raw routing, D1/Canonical destinations, Stable
+  keys, Coverage/revision rules and bounded transport limits.
+- Separated Facebook User/System User discovery from the Page access credential
+  required for Page business reads, and required
+  `instagram_business_manage_insights` before Instagram Insights activation.
+- Added contract tests that keep every business dataset
+  `live_fixture_required` and prohibit Live calls, writes, ad mutation, Spend,
+  schedules and feature activation.
 - Added a token-based Meta connection preflight contract and independent
   GET-only adapters for Facebook Organic, Instagram Organic through Instagram
   Login and Meta Ads.
@@ -22,6 +31,10 @@
 - Extended the existing YouTube API client with 0/1/N `mine=true` discovery and added signed one-time explicit Channel selection.
 
 ### Safety and verification
+- Meta Business Ingestion design verification passed: focused Shared Meta
+  contracts 12/12, Unit 705/705, Workers 9/9, report reliability 70/70,
+  Architecture 199/475/0, offline audit 0 and Wrangler dry-run. No Live Meta
+  call, business write, schedule or deployment occurred.
 - Hardened Meta Graph responses with an 8 MiB body limit and removed raw
   provider messages from returned diagnostics. Focused Meta/config/application
   tests pass 49/49; final Unit 699/699, Workers 9/9, report reliability 70/70,

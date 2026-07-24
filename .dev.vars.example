@@ -76,6 +76,7 @@ YOUTUBE_OAUTH_ACCESS_TOKEN=replace-with-oauth-access-token
 # Meta token-based preflight — Pin version; Token แยก FB/Ads กับ Instagram Login
 META_GRAPH_API_VERSION=v25.0
 META_ACCESS_TOKEN=replace-with-meta-access-token
+META_FACEBOOK_PAGE_ACCESS_TOKEN=replace-with-facebook-page-access-token
 META_INSTAGRAM_ACCESS_TOKEN=replace-with-instagram-access-token
 META_FACEBOOK_PAGE_ID=replace-with-facebook-page-id
 META_INSTAGRAM_ACCOUNT_ID=replace-with-instagram-account-id
