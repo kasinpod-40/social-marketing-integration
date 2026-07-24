@@ -12,8 +12,16 @@ export class MetaAdsConnectionAdapter {
   async preflight(input = {}) {
     const expectedAdAccountId = normalizeAdAccountId(input.expectedAdAccountId);
     const [permissionRows, adAccounts] = await Promise.all([
-      this.client.listEdge('me/permissions', { fields: PERMISSIONS_FIELDS }),
-      this.client.listEdge('me/adaccounts', { fields: AD_ACCOUNT_FIELDS }),
+      this.client.listEdge(
+        'me/permissions',
+        { fields: PERMISSIONS_FIELDS },
+        { operationName: 'meta_ads.preflight.permissions' },
+      ),
+      this.client.listEdge(
+        'me/adaccounts',
+        { fields: AD_ACCOUNT_FIELDS },
+        { operationName: 'meta_ads.preflight.accounts' },
+      ),
     ]);
     const accountIds = adAccounts.map((account) => requireAdAccountId(account));
     const activeCandidateCount = adAccounts.filter(

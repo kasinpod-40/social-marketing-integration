@@ -53,17 +53,23 @@ export class MetaGraphClient {
   }
 
   /** อ่าน Graph node/edge หนึ่งคำขอ พร้อม Retry เฉพาะ Error ที่ทำซ้ำได้ปลอดภัย */
-  async get(path, query = {}) {
+  async get(path, query = {}, options = {}) {
     const safePath = normalizeGraphPath(path);
+    const operation = normalizeOperationName(options.operationName);
     let lastError = null;
 
     for (let attempt = 1; attempt <= this.maxAttempts; attempt += 1) {
-      this.onRequest({ stage: 'meta_request_start', path: safePath, attempt, maxAttempts: this.maxAttempts });
+      this.onRequest({
+        stage: 'meta_request_start',
+        operation,
+        attempt,
+        maxAttempts: this.maxAttempts,
+      });
       try {
-        const result = await this.#requestOnce(safePath, query);
+        const result = await this.#requestOnce(safePath, query, operation);
         this.onRequest({
           stage: 'meta_request_success',
-          path: safePath,
+          operation,
           attempt,
           status: result.status,
           usage: result.usage,
@@ -74,7 +80,7 @@ export class MetaGraphClient {
         if (error?.retryable !== true || attempt === this.maxAttempts) {
           this.onRequest({
             stage: 'meta_request_failed',
-            path: safePath,
+            operation,
             attempt,
             retryable: error?.retryable === true,
             code: error?.code ?? null,
@@ -92,7 +98,7 @@ export class MetaGraphClient {
         });
         this.onRequest({
           stage: 'meta_request_retry',
-          path: safePath,
+          operation,
           attempt,
           delayMs,
           code: error?.code ?? null,
@@ -111,11 +117,12 @@ export class MetaGraphClient {
    */
   async getPage(path, query = {}, options = {}) {
     const after = optionalText(options.after);
+    const operation = normalizeOperationName(options.operationName);
     const visitedCursors = new Set(normalizeCursorList(options.visitedCursors));
     if (after && visitedCursors.has(after)) {
       throw permanentError('Meta Graph pagination received an already visited cursor', {
         code: 'META_CURSOR_REPEATED',
-        details: { path: normalizeGraphPath(path) },
+        details: { operation },
       });
     }
 
@@ -123,12 +130,12 @@ export class MetaGraphClient {
       ...query,
       limit: query.limit ?? this.pageSize,
       ...(after ? { after } : {}),
-    });
+    }, { operationName: operation });
     const data = payload?.data;
     if (!Array.isArray(data)) {
       throw permanentError('Meta Graph edge response must contain data array', {
         code: 'META_INVALID_RESPONSE',
-        details: { path: normalizeGraphPath(path) },
+        details: { operation },
       });
     }
 
@@ -137,13 +144,13 @@ export class MetaGraphClient {
     if (hasMore && !nextCursor) {
       throw permanentError('Meta Graph paging.next exists without after cursor', {
         code: 'META_CURSOR_MISSING',
-        details: { path: normalizeGraphPath(path) },
+        details: { operation },
       });
     }
     if (nextCursor && (nextCursor === after || visitedCursors.has(nextCursor))) {
       throw permanentError('Meta Graph pagination repeated an after cursor', {
         code: 'META_CURSOR_REPEATED',
-        details: { path: normalizeGraphPath(path) },
+        details: { operation },
       });
     }
 
@@ -155,13 +162,18 @@ export class MetaGraphClient {
   }
 
   /** Compatibility helper สำหรับชุดข้อมูลเล็กเท่านั้น; Runtime ขนาดใหญ่ต้องใช้ getPage + Durable staging */
-  async listEdge(path, query = {}) {
+  async listEdge(path, query = {}, options = {}) {
     const rows = [];
     const visitedCursors = new Set();
+    const operation = normalizeOperationName(options.operationName);
     let after = null;
 
     for (let page = 1; page <= this.maxPages; page += 1) {
-      const result = await this.getPage(path, query, { after, visitedCursors: [...visitedCursors] });
+      const result = await this.getPage(path, query, {
+        after,
+        visitedCursors: [...visitedCursors],
+        operationName: operation,
+      });
       rows.push(...result.rows);
       if (!result.hasMore) return Object.freeze(rows);
       if (after) visitedCursors.add(after);
@@ -170,11 +182,11 @@ export class MetaGraphClient {
 
     throw permanentError('Meta Graph pagination exceeded configured maxPages', {
       code: 'META_PAGINATION_LIMIT',
-      details: { path: normalizeGraphPath(path), maxPages: this.maxPages },
+      details: { operation, maxPages: this.maxPages },
     });
   }
 
-  async #requestOnce(safePath, query) {
+  async #requestOnce(safePath, query, operation) {
     const url = new URL(`${this.baseUrl}/${this.apiVersion}/${safePath}`);
     for (const [key, value] of Object.entries(query)) {
       if (value !== null && value !== undefined && value !== '') url.searchParams.set(key, String(value));
@@ -189,25 +201,25 @@ export class MetaGraphClient {
     try {
       const response = await this.fetchImpl(url, { method: 'GET', headers, signal: controller.signal });
       const text = await readBoundedResponseText(response, this.maxResponseBytes);
-      const payload = parseJsonPayload(text, safePath, response.status);
+      const payload = parseJsonPayload(text, operation, response.status);
       const usage = readUsageHeaders(response.headers);
       if (response.ok && !payload?.error) {
         return Object.freeze({ payload, status: response.status, usage });
       }
-      throw createMetaApiError({ response, payload, path: safePath });
+      throw createMetaApiError({ response, payload, operation });
     } catch (cause) {
       if (controller.signal.aborted || cause?.name === 'AbortError') {
-        throw transientError(`Meta Graph request timed out: ${safePath}`, {
+        throw transientError(`Meta Graph request timed out: ${operation}`, {
           code: 'META_REQUEST_TIMEOUT',
           cause,
-          details: { path: safePath, timeoutMs: this.timeoutMs },
+          details: { operation, timeoutMs: this.timeoutMs },
         });
       }
       if (cause?.code) throw cause;
-      throw transientError(`Meta Graph network request failed: ${safePath}`, {
+      throw transientError(`Meta Graph network request failed: ${operation}`, {
         code: 'META_NETWORK_ERROR',
         cause,
-        details: { path: safePath },
+        details: { operation },
       });
     } finally {
       clearTimeout(timeout);
@@ -258,14 +270,14 @@ function responseTooLarge(maxResponseBytes) {
   });
 }
 
-function createMetaApiError({ response, payload, path }) {
+function createMetaApiError({ response, payload, operation }) {
   const metaError = payload?.error ?? {};
   const retryable = response.status === 429 || response.status >= 500 || metaError.is_transient === true;
   const factory = retryable ? transientError : permanentError;
-  return factory(`Meta Graph request failed: ${path}`, {
+  return factory(`Meta Graph request failed: ${operation}`, {
     code: retryable ? 'META_TRANSIENT_API_ERROR' : 'META_PERMANENT_API_ERROR',
     details: {
-      path,
+      operation,
       status: response.status,
       graphCode: metaError.code ?? null,
       graphSubcode: metaError.error_subcode ?? null,
@@ -276,14 +288,14 @@ function createMetaApiError({ response, payload, path }) {
   });
 }
 
-function parseJsonPayload(text, path, status) {
+function parseJsonPayload(text, operation, status) {
   try {
     return text === '' ? {} : JSON.parse(text);
   } catch (cause) {
-    throw transientError(`Meta Graph returned invalid JSON: ${path}`, {
+    throw transientError(`Meta Graph returned invalid JSON: ${operation}`, {
       code: 'META_INVALID_RESPONSE',
       cause,
-      details: { path, status },
+      details: { operation, status },
     });
   }
 }
@@ -341,6 +353,16 @@ function normalizeGraphPath(value) {
     throw new TypeError('Meta Graph path must not contain traversal or query fragments');
   }
   return text;
+}
+
+function normalizeOperationName(value) {
+  const operation = value === null || value === undefined || value === ''
+    ? 'meta.graph.request'
+    : requireText(value, 'operationName');
+  if (operation.length > 100 || !/^[a-z][a-z0-9._-]*$/u.test(operation)) {
+    throw new TypeError('Meta operationName must be a bounded static identifier');
+  }
+  return operation;
 }
 
 function normalizeApiVersion(value) {

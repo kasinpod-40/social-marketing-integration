@@ -353,6 +353,23 @@ export const META_BUSINESS_INGESTION_CONTRACT = deepFreeze({
   },
 });
 
+/** คืน Connector contract แบบ Fail-closed เพื่อไม่ให้ Adapter กระจาย Dataset literal */
+export function getMetaBusinessConnectorContract(connectorKey) {
+  const key = requireContractKey(connectorKey, 'connectorKey');
+  const connector = META_BUSINESS_INGESTION_CONTRACT.connectors[key];
+  if (!connector) throw new TypeError(`Unknown Meta business connector: ${key}`);
+  return connector;
+}
+
+/** คืน Dataset contract ที่เป็นสมาชิกของ Connector ที่ระบุเท่านั้น */
+export function getMetaBusinessDatasetContract(connectorKey, datasetKey) {
+  const connector = getMetaBusinessConnectorContract(connectorKey);
+  const key = requireContractKey(datasetKey, 'datasetKey');
+  const dataset = connector.datasets.find((candidate) => candidate.key === key);
+  if (!dataset) throw new TypeError(`Unknown Meta business dataset: ${key}`);
+  return dataset;
+}
+
 function metricDataset(input) {
   return dataset({
     ...input,
@@ -388,6 +405,13 @@ function dataset(input) {
     activation: 'live_fixture_required',
     queryContract: input.queryContract ?? null,
   };
+}
+
+function requireContractKey(value, fieldName) {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new TypeError(`Meta business contract requires ${fieldName}`);
+  }
+  return value.trim();
 }
 
 function deepFreeze(value) {

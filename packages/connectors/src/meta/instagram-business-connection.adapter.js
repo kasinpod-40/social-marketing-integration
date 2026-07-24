@@ -10,7 +10,11 @@ export class InstagramBusinessConnectionAdapter {
 
   async preflight(input = {}) {
     const expectedAccountId = optionalIdentity(input.expectedAccountId);
-    const response = await this.client.get('me', { fields: IDENTITY_FIELDS });
+    const response = await this.client.get(
+      'me',
+      { fields: IDENTITY_FIELDS },
+      { operationName: 'instagram.preflight.identity' },
+    );
     const accountId = requireIdentity(response?.user_id ?? response?.id);
 
     return Object.freeze({

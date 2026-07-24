@@ -12,8 +12,16 @@ export class FacebookPageConnectionAdapter {
   async preflight(input = {}) {
     const expectedPageId = optionalIdentity(input.expectedPageId);
     const [permissionRows, pages] = await Promise.all([
-      this.client.listEdge('me/permissions', { fields: PERMISSIONS_FIELDS }),
-      this.client.listEdge('me/accounts', { fields: PAGE_FIELDS }),
+      this.client.listEdge(
+        'me/permissions',
+        { fields: PERMISSIONS_FIELDS },
+        { operationName: 'facebook.preflight.permissions' },
+      ),
+      this.client.listEdge(
+        'me/accounts',
+        { fields: PAGE_FIELDS },
+        { operationName: 'facebook.preflight.accounts' },
+      ),
     ]);
     const pageIds = pages.map((page) => requireIdentity(page?.id, 'Facebook Page response'));
     const linkedInstagramCount = pages.filter(

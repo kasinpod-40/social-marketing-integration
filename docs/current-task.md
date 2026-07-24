@@ -9,6 +9,7 @@ FIRST_PRIORITY                      = GOOGLE_ADS_AND_YOUTUBE_CUSTOMER_OAUTH
 NON_META_OTHER_CONNECTORS           = PLANNED_NOT_STARTED
 META_TOKEN_CONNECTION_FOUNDATION    = IMPLEMENTED_LOCAL_UAT_PENDING
 META_BUSINESS_INGESTION_CONTRACT    = DESIGN_COMPLETE_LIVE_UAT_PENDING
+META_SOURCE_FIXTURE_IMPLEMENTATION  = IMPLEMENTED_LOCAL_ONLY_LIVE_UAT_PENDING
 INTEGRATION_WORKSPACE               = development / integration_workspace
 GOOGLE_ADS_PR_17                    = DRAFT_HOLD
 SCHEDULES                           = DISABLED
@@ -443,11 +444,76 @@ Prepared:
   `199 source files / 475 dependencies / 0 cycles`; repository hygiene, offline
   audit `0` and Wrangler deploy dry-run pass.
 
-This is design/config only. It adds no Meta request executor, normalizer, Queue
-job, D1/Lark writer, Worker route or schedule. Every dataset remains
-`live_fixture_required`; mocked adapter implementation requires the next exact
-Current Task scope, while Live calls/writes/deployment require separate
-authorization.
+That initial round was design/config only and added no Meta request executor,
+normalizer, Queue job, D1/Lark writer, Worker route or schedule. The exact
+local-only adapter/normalizer scope is now opened and completed below. Every
+dataset remains `live_fixture_required`; Live calls, writes and deployment still
+require separate authorization.
+
+### Meta fixture-driven source implementation — authorized 2026-07-25
+
+The user authorized the next local-only PR boundary from
+`docs/meta-business-ingestion-contract-v1.md`.
+
+In scope:
+
+- GET-only Facebook Organic, Instagram Organic and Meta Ads source adapters;
+- sanitized operation names so provider paths containing customer IDs never
+  enter operational events/errors;
+- checked-in synthetic fixtures only;
+- pure Shared Raw/D1 candidate normalizers with exact identity, Stable-key,
+  timestamp, zero/null, money-micros and response-shape guards;
+- unit/fixture tests for bounded pagination, identity drift, duplicates,
+  malformed responses and Ads breakdown/action preservation.
+
+Out of scope:
+
+- customer credential use or any Live Meta request;
+- Queue/D1/Lark writer, Worker route, Job Catalog entry or schedule;
+- token persistence/refresh mutation;
+- App permission/role change, App Review, advertisement mutation or Spend;
+- feature-flag activation, deployment or Production.
+
+### Implementation result — Meta fixture-driven source — 2026-07-25
+
+Implemented:
+
+- added contract-bound GET-only adapters for Facebook Organic, Instagram
+  Organic and Meta Ads; no adapter exposes a publish/update/create method;
+- changed Meta Graph observability to emit bounded static operation names
+  instead of dynamic Graph paths containing source identities;
+- added pure Organic/Ads normalizers for the five approved Shared Raw shapes
+  and D1 candidates, including exact identity, deterministic Stable keys,
+  Bangkok Organic metric dates, exact money micros, observed-zero preservation
+  and unmapped Meta Ads action arrays;
+- added hard response/page-envelope guards, 31-day inclusive Ads chunks,
+  response-date/account checks and redacted/bounded source payload JSON;
+- added checked-in synthetic Facebook, Instagram and Meta Ads fixtures only;
+  no customer response, ID, token or Secret was recorded.
+
+Verification:
+
+```text
+Focused Meta source/config tests         28/28 PASS
+Node Unit/Integration                   719/719 PASS
+Workers runtime                           9/9 PASS
+Report reliability                       70/70 PASS
+npm run check                 206 files / 492 deps / 0 cycles PASS
+Repository hygiene                                 PASS
+npm audit --audit-level=high          0 vulnerabilities PASS
+Wrangler 4.110.0 deploy dry-run                     PASS
+```
+
+After explicit approval to send Repository-derived dependency metadata to npm,
+the fresh `npm audit --audit-level=high` completed with zero vulnerabilities.
+`package.json` and `package-lock.json` were unchanged in this implementation.
+
+No Live Meta request, credential mutation, Queue/D1/Lark write, Worker route,
+Job Catalog entry, feature activation, schedule, deployment, commit or push
+occurred. The next safe boundary is a separately approved GET-only Live fixture
+capture after the customer restores verified Meta administration, rotates the
+Facebook token and supplies exact non-secret Page/Instagram/Ad Account
+mappings. D1/Lark writers remain blocked until those Live response shapes pass.
 
 ## Next boundary — Await customer callbacks
 

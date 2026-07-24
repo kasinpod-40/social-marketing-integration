@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  getMetaBusinessConnectorContract,
+  getMetaBusinessDatasetContract,
   META_BUSINESS_CONNECTOR_KEYS,
   META_BUSINESS_INGESTION_CONTRACT,
   META_BUSINESS_SHARED_RAW_TABLES,
@@ -101,4 +103,28 @@ test('all Meta business transport limits are finite and bounded', () => {
     assert.ok(transport[key] > 0);
   }
   assert.equal(transport.authentication, 'bearer_header_only');
+});
+
+test('Meta contract lookups stay connector-scoped and fail closed', () => {
+  const facebook = getMetaBusinessConnectorContract(
+    META_BUSINESS_CONNECTOR_KEYS.FACEBOOK_ORGANIC,
+  );
+  const account = getMetaBusinessDatasetContract(
+    META_BUSINESS_CONNECTOR_KEYS.FACEBOOK_ORGANIC,
+    'facebook.account.latest',
+  );
+
+  assert.equal(facebook.platform, 'facebook');
+  assert.equal(account.pathTemplate, '{page_id}');
+  assert.throws(
+    () => getMetaBusinessConnectorContract('unknown'),
+    /Unknown Meta business connector/u,
+  );
+  assert.throws(
+    () => getMetaBusinessDatasetContract(
+      META_BUSINESS_CONNECTOR_KEYS.INSTAGRAM_ORGANIC,
+      'facebook.account.latest',
+    ),
+    /Unknown Meta business dataset/u,
+  );
 });

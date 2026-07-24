@@ -1,0 +1,44 @@
+{
+  "account": {
+    "id": "act_987650001",
+    "name": "Fixture Ad Account",
+    "account_status": 1,
+    "currency": "THB",
+    "timezone_name": "Asia/Bangkok",
+    "timezone_offset_hours_utc": 7
+  },
+  "campaign": {
+    "id": "campaign_fixture_001",
+    "name": "Fixture Campaign",
+    "objective": "OUTCOME_AWARENESS",
+    "effective_status": "ACTIVE",
+    "start_time": "2026-07-01T00:00:00+0700",
+    "updated_time": "2026-07-24T08:00:00+0000"
+  },
+  "daily": {
+    "account_id": "987650001",
+    "account_currency": "THB",
+    "campaign_id": "campaign_fixture_001",
+    "adset_id": "adset_fixture_001",
+    "ad_id": "ad_fixture_001",
+    "date_start": "2026-07-23",
+    "date_stop": "2026-07-23",
+    "publisher_platform": "instagram",
+    "spend": "100.250001",
+    "impressions": "1000",
+    "reach": "800",
+    "clicks": "25",
+    "actions": [
+      {
+        "action_type": "link_click",
+        "value": "25"
+      }
+    ],
+    "action_values": [
+      {
+        "action_type": "purchase",
+        "value": "999.50"
+      }
+    ]
+  }
+}

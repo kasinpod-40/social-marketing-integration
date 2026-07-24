@@ -45,11 +45,13 @@ Safe order:
 5. Record Live UAT evidence, then request separate approval before adding
    Business ingestion, Queue/Lark writes, schedules or deployment.
 
-The no-credential Business ingestion design is now complete in
-`docs/meta-business-ingestion-contract-v1.md`. After token preflight passes, the
-next source PR may implement fixture-driven GET-only adapters and pure
-normalizers only after `docs/current-task.md` opens that exact implementation
-scope. D1/Lark writers remain a later PR after Live response-shape proof.
+The no-credential Business ingestion design and local fixture-driven source
+boundary are now complete: contract-bound GET-only adapters, safe operation
+observability, synthetic fixtures and pure Shared Raw/D1 candidate normalizers
+are implemented with all datasets still `live_fixture_required`. After token
+preflight passes, the next separately approved boundary is GET-only Live fixture
+capture against exact customer identities. D1/Lark writers remain a later PR
+after those Live response shapes and null/zero/action semantics are proven.
 
 Do not reuse the developer-owned Meta app as customer evidence. Do not change
 permissions, publish the app, submit App Review or generate Meta customer links

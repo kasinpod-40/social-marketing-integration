@@ -134,8 +134,16 @@ The follow-on Meta Business Ingestion design is prepared without Live access in
 `docs/meta-business-ingestion-contract-v1.md` and
 `packages/config/src/meta-business-ingestion-contract.js`. It locks GET-only
 datasets, the five existing Shared Raw tables, D1/Canonical destinations,
-Stable keys, Coverage/revision and credential lifecycles. It adds no request
-executor, Queue job, writer, route or schedule; all datasets remain
+Stable keys, Coverage/revision and credential lifecycles.
+
+The authorized local-only follow-on now also has contract-bound GET adapters,
+safe static operation observability, pure Shared Raw/D1 candidate normalizers
+and synthetic Facebook/Instagram/Meta Ads fixtures. Focused tests pass 28/28;
+Unit 719/719, Workers 9/9, report reliability 70/70, Architecture
+206/492/0, repository hygiene and Wrangler dry-run pass. Dependency files were
+unchanged and the explicitly approved fresh online npm audit reports zero
+vulnerabilities. No Live request, Queue/D1/Lark writer, Worker route, job,
+feature activation, schedule or deployment was added. Every dataset remains
 `live_fixture_required`.
 
 ## Google Ads state

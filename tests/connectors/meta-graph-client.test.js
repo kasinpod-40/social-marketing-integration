@@ -121,6 +121,41 @@ test('Meta 429 honors retry-after and exposes usage metadata to request events',
   assert.equal(success.usage.appUsage.call_count, 75);
 });
 
+test('Meta observability exposes only a static operation name, never the dynamic Graph path', async () => {
+  const events = [];
+  const dynamicId = 'page_fixture_sensitive_001';
+  const client = new MetaGraphClient({
+    accessToken: 'synthetic-token',
+    apiVersion: 'v99.0',
+    maxAttempts: 1,
+    onRequest: (event) => events.push(event),
+    fetchImpl: async () => Response.json({
+      error: { code: 200, message: 'Synthetic permission failure' },
+    }, { status: 403 }),
+  });
+
+  await assert.rejects(
+    client.get(`${dynamicId}/insights`, {}, {
+      operationName: 'facebook.content.insights',
+    }),
+    (error) => {
+      assert.equal(error.details.operation, 'facebook.content.insights');
+      assert.doesNotMatch(error.message, new RegExp(dynamicId, 'u'));
+      assert.doesNotMatch(JSON.stringify(error.details), new RegExp(dynamicId, 'u'));
+      return error?.code === 'META_PERMANENT_API_ERROR';
+    },
+  );
+
+  assert.ok(events.length > 0);
+  assert.ok(events.every((event) => event.operation === 'facebook.content.insights'));
+  assert.doesNotMatch(JSON.stringify(events), new RegExp(dynamicId, 'u'));
+  assert.ok(events.every((event) => !Object.hasOwn(event, 'path')));
+  await assert.rejects(
+    client.get('me', {}, { operationName: 'unsafe/operation' }),
+    /operationName/u,
+  );
+});
+
 test('Meta timeout covers response body consumption', async () => {
   const client = new MetaGraphClient({
     accessToken: 'x',

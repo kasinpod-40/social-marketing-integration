@@ -3,6 +3,14 @@
 ## Unreleased — Multi-Connector Customer Connection Foundation — 2026-07-24
 
 ### Added
+- Added fixture-driven GET-only source adapters for Facebook Organic, Instagram
+  Organic and Meta Ads, with contract-scoped paths/fields/metrics, exact
+  identity checks, bounded cursor envelopes and 31-day Ads date chunks.
+- Added pure Shared Raw/D1 candidate normalizers plus synthetic Meta fixtures;
+  observed zero, structured Insights values, exact money micros, Ads breakdowns
+  and unmapped action arrays are preserved without any business writer.
+- Replaced dynamic Meta Graph path observability with bounded static operation
+  names and added redacted, 64 KiB-bounded source payload serialization.
 - Added the design-only Meta Business Ingestion contract with machine-readable
   GET-only datasets, five-Shared-Raw routing, D1/Canonical destinations, Stable
   keys, Coverage/revision rules and bounded transport limits.
@@ -31,6 +39,13 @@
 - Extended the existing YouTube API client with 0/1/N `mine=true` discovery and added signed one-time explicit Channel selection.
 
 ### Safety and verification
+- Meta fixture-driven source verification passed: focused 28/28, Unit 719/719,
+  Workers 9/9, report reliability 70/70, Architecture 206/492/0, repository
+  hygiene, fresh online audit with zero vulnerabilities and Wrangler dry-run.
+  No dependency file changed.
+- No Live Meta request, credential mutation, Queue/D1/Lark write, Worker route,
+  job/schedule activation, deployment, commit or push occurred in this source
+  implementation round.
 - Meta Business Ingestion design verification passed: focused Shared Meta
   contracts 12/12, Unit 705/705, Workers 9/9, report reliability 70/70,
   Architecture 199/475/0, offline audit 0 and Wrangler dry-run. No Live Meta
