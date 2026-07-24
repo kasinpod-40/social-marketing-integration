@@ -1,20 +1,22 @@
 # 00 — Current State
 
-## Customer OAuth foundation — merged source
+## Customer OAuth foundation — Integration Workspace rollout complete
 
-As of 2026-07-24, Shared Customer Connection/OAuth, Google Ads OAuth and YouTube OAuth are implemented, verified and merged in order through PRs `#42` → `#43` → `#44`.
+As of 2026-07-24, Shared Customer Connection/OAuth, Google Ads OAuth and YouTube OAuth are implemented, verified and merged in order through PRs `#42` → `#43` → `#44`. The approved Integration Workspace rollout is complete through Remote D1 migration, Google Cloud configuration, Worker Secrets/runtime mappings, deployment and HTTP smoke.
 
 ```text
 CONNECTOR_IMPLEMENTATION            COMPLETE_MERGED
 MOCK_CONTRACT_TEST                  PASS
-INTEGRATION_WORKSPACE_DEPLOYMENT    NOT_RUN
-CUSTOMER_OAUTH                      NOT_RUN
+INTEGRATION_WORKSPACE_DEPLOYMENT    PASS
+CUSTOMER_OAUTH                      AUTHORIZATION_PENDING_STATES_EXPIRED
 LIVE_ACCESS                         NOT_RUN
+HTTP_SMOKE                          PASS_404_405
+CONNECT_LINK_GENERATION             ALL_4_CONSUMED_NO_CALLBACK
 SCHEDULE                            DISABLED
 PRODUCTION                          BLOCKED
 ```
 
-Migration `0011_customer_connection_oauth.sql`, Worker routes, Secrets and Google Redirect URIs are not applied remotely. No Connect link has been generated. PR #17 remains Draft/HOLD. Current authority and exact rollout boundary are in `docs/current-task.md` and `docs/customer-connection-oauth-rollout.md`.
+Migration `0011_customer_connection_oauth.sql` is applied remotely, the Worker is deployed at the existing Integration Workspace domain, the seven required Secret names are configured and the exact Google Redirect URIs/scopes/APIs are ready. Both the first customer invitations and the separately approved test invitations were consumed at OAuth begin without callback completion. Each connection is `authorization_pending` / `not_validated`. Final read-only D1 verification found four expired OAuth states, two active plus two replaced encrypted PKCE verifiers, zero Refresh Tokens and zero identity selections. Signed URLs are not stored and all prior links are unusable. No Queue/Lark business side effect occurred. The next task is a retry-safe, preview-safe Connect flow; it is not implemented. PR #17 remains Draft/HOLD. Current authority and the next boundary are in `docs/current-task.md` and `docs/customer-connection-oauth-rollout.md`.
 
 ## Source baseline
 

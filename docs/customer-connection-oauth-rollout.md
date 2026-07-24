@@ -3,16 +3,17 @@
 ## Current authority
 
 ```text
-REMOTE_D1_MIGRATION             = NOT_AUTHORIZED
-WORKER_DEPLOYMENT               = NOT_AUTHORIZED
-GOOGLE_REDIRECT_URI_LIVE_CHANGE = NOT_AUTHORIZED
-CONNECT_LINK_GENERATION         = NOT_AUTHORIZED
+REMOTE_D1_MIGRATION             = COMPLETE
+WORKER_DEPLOYMENT               = COMPLETE
+GOOGLE_REDIRECT_URI_LIVE_CHANGE = COMPLETE
+CONNECT_LINK_GENERATION         = ALL_4_CONSUMED_NO_CALLBACK
+CUSTOMER_OAUTH                  = AUTHORIZATION_PENDING_STATES_EXPIRED
 SCHEDULES                       = DISABLED
 QUEUE_MESSAGES                  = 0
 LARK_WRITES                     = 0
 ```
 
-Do not run this runbook until the user explicitly approves the remote rollout. Use the real uncommitted `wrangler.sync.jsonc`; never substitute the example file for remote commands.
+Remote D1 migration, Worker deployment and Google Redirect URI changes were completed on `2026-07-24`. Both the first customer pair and the separately approved 15-minute test pair were consumed at OAuth begin without callback completion. All four OAuth states expired; no Refresh Token or identity selection exists. Signed URLs are not stored here and all prior links are unusable. Do not rerun migration/deployment or generate further links against the current one-shot-on-GET behavior. Implement and verify a retry-safe, preview-safe confirmation boundary first. Use the real uncommitted `wrangler.sync.jsonc`; never substitute the example file for remote commands.
 
 ## Routes
 

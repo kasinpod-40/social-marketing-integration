@@ -3,7 +3,7 @@
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = SOURCE_MERGE_COMPLETE_REMOTE_ROLLOUT_PENDING
+TASK_STATUS                         = RETRY_SAFE_CONNECT_FLOW_REQUIRED
 CURRENT_PROGRAM                     = MULTI_CONNECTOR_CUSTOMER_CONNECTION_FOUNDATION
 FIRST_PRIORITY                      = GOOGLE_ADS_AND_YOUTUBE_CUSTOMER_OAUTH
 OTHER_CONNECTORS                    = PLANNED_NOT_STARTED
@@ -11,19 +11,19 @@ INTEGRATION_WORKSPACE               = development / integration_workspace
 GOOGLE_ADS_PR_17                    = DRAFT_HOLD
 SCHEDULES                           = DISABLED
 PRODUCTION                          = BLOCKED
-REMOTE_D1_MIGRATION                 = NOT_AUTHORIZED
-WORKER_DEPLOYMENT                   = NOT_AUTHORIZED
-GOOGLE_REDIRECT_URI_LIVE_CHANGE     = NOT_AUTHORIZED
-CONNECT_LINK_GENERATION             = NOT_AUTHORIZED
+REMOTE_D1_MIGRATION                 = COMPLETE
+WORKER_DEPLOYMENT                   = COMPLETE
+GOOGLE_REDIRECT_URI_LIVE_CHANGE     = COMPLETE
+CONNECT_LINK_GENERATION             = ALL_4_CONSUMED_NO_CALLBACK
 CONNECTOR_IMPLEMENTATION            = COMPLETE_MERGED
 MERGED_PR_SEQUENCE                  = #42 -> #43 -> #44
 MOCK_CONTRACT_TEST                  = PASS
-INTEGRATION_WORKSPACE_DEPLOYMENT    = NOT_RUN
-CUSTOMER_OAUTH                      = NOT_RUN
+INTEGRATION_WORKSPACE_DEPLOYMENT    = PASS
+CUSTOMER_OAUTH                      = AUTHORIZATION_PENDING_STATES_EXPIRED
 LIVE_ACCESS                         = NOT_RUN
 LIVE_DATA_UAT                       = NOT_RUN
 LARK_WRITE_UAT                      = NOT_APPLICABLE_THIS_PHASE
-RELIABILITY_UAT                     = NOT_RUN
+RELIABILITY_UAT                     = HTTP_SMOKE_PASS
 SCHEDULE                            = DISABLED
 ```
 
@@ -134,7 +134,7 @@ The existing `connections` table remains the metadata authority. Migration exten
 
 ## Implementation result
 
-Source implementation is complete and merged through three stacked PRs. No Remote D1 migration, deployment, Google Cloud configuration, invitation generation, Queue message or Lark write was performed.
+Source implementation is complete and merged through three stacked PRs. The approved Integration Workspace rollout and two rounds of Connect-link generation are complete. All four invitations (customer and short-lived test, one per connector per round) were consumed at OAuth begin without callback completion. All four OAuth states are expired and unconsumed. Both connections are `authorization_pending` / `not_validated`; only encrypted PKCE verifiers exist, with no Refresh Token, identity selection, Queue message or Lark write.
 
 ### Merged PR sequence
 
@@ -170,9 +170,42 @@ npm run test:report-reliability             PASS / 70 tests
 npm audit --audit-level=high                PASS / 0 vulnerabilities
 npm run deploy:dry-run                      PASS
 focused customer OAuth suites               PASS
+Remote D1 backup/export                     PASS / 503,727,528 bytes
+Remote migration 0011                       PASS / no pending migrations
+Google OAuth redirects/scopes/APIs          PASS
+Worker Secrets                              PASS / required names 7/7
+Real-config Wrangler dry-run                PASS / all business flags false
+Integration Workspace Worker deploy         PASS / version 827b1f67-9a00-49c8-98f9-76f92d597c5d
+HTTP smoke unknown/operator GET             PASS / 404 / 405
+Post-smoke OAuth table counts                PASS / 0 / 0 / 0 / 0
+Approved customer Connect-link generation    PASS / 2 created
+Approved test Connect-link generation        PASS / 2 created / both later consumed
+Current invitation counts                     4 consumed / 0 active
+Current OAuth state counts                    4 expired / 0 consumed callbacks
+Current encrypted credential counts           2 active PKCE / 2 replaced PKCE / 0 Refresh Token
 ```
 
 `npm test` completed its first Unit phase 673/673; after the final provider isolation, reconnect and PKCE lifecycle regressions were added, `npm run test:unit` passed 677/677. Its first Worker phase was blocked by the local sandbox (`EPERM` on Wrangler log/loopback), then the exact Worker gate passed 9/9 with its log redirected to `/tmp` and local runtime permission granted.
+
+### Integration Workspace rollout result — 2026-07-24
+
+- Recorded rollback target Worker version `56956a78-cd67-42da-9956-fa9ad10deeb7`.
+- Exported Remote D1 before migration to a mode-`600` temporary file; SHA-256 `c91fd9233331de877bdbdc30ae4d12e3bad4b7af9f868b3f096997a8e020c811`.
+- Applied additive migration `0011_customer_connection_oauth.sql`; Remote D1 reports no pending migrations and all four OAuth tables exist.
+- Configured the customer-owned Google Cloud project with the exact Google Ads and YouTube callback URIs.
+- Enabled Google Ads API; YouTube Data API v3 and YouTube Analytics API were already enabled.
+- Preserved OAuth Audience as `External / Testing`; the two approved customer test users were already present.
+- Registered exact `adwords`, `youtube.readonly` and `yt-analytics.readonly` scopes.
+- Configured the required seven Worker Secret names without logging or committing values.
+- Deployed `social-mkt-sync-worker` to `https://social-mkt-sync-worker.kasinpod40.workers.dev`.
+- Unknown route returned `404`; unsupported `GET /operator/connection-invitations` returned `405`.
+- `connection_invitations`, `oauth_state_attempts`, `encrypted_credentials` and `connection_identity_selections` remained at zero rows after smoke.
+- Temporary Secret files were removed after deployment and the Developer Token was re-masked in Google Ads UI.
+- After separate approval, rotated the operator token and deployed Worker version `afaf61e8-95e2-4387-ae2d-8e6abe008b1c` at 100%.
+- Generated one Google Ads invitation and one YouTube invitation. Both were later consumed at OAuth begin without callback completion; each connection remains `authorization_pending` / `not_validated`.
+- After separate test-link approval, rotated the operator token and deployed Worker version `e80e46f0-5f81-4ce9-ae06-678cafab6efe` at 100%, then generated one 15-minute test invitation per connector. Both test invitations were also consumed at OAuth begin without callback completion.
+- Final read-only D1 verification found two expired/unconsumed OAuth states per connector, one active plus one replaced encrypted `pkce_verifier` per connector, zero Refresh Tokens and zero identity selections.
+- Signed Connect URLs are handed to the user only and are intentionally not stored in Repository documentation.
 
 ### Security review
 
@@ -186,27 +219,52 @@ focused customer OAuth suites               PASS
 
 ### Remaining blockers
 
-- Source review and ordered merge are complete; remote rollout remains a separate approval boundary.
-- Migration `0011_customer_connection_oauth.sql` is not applied remotely.
-- Worker Secrets and non-secret runtime mappings are not configured.
-- Exact Redirect URIs are not registered in Google Cloud.
-- Worker is not deployed; HTTP smoke, customer OAuth and Live access remain untested.
-- Connect links cannot exist until the guarded rollout receives explicit approval.
+- All customer and test invitations are consumed and cannot be replayed.
+- The current `GET /connect/*` route consumes the invitation before Google callback; link preview/security scanners or an aborted consent therefore make a link unusable.
+- A retry-safe, preview-safe connection flow is requested but not implemented.
+- Expired OAuth attempts leave active/replaced PKCE verifier audit rows; cleanup behavior requires review and explicit authorization before any data mutation.
+- OAuth callback, encrypted Refresh Token persistence and provider identity validation remain untested.
+- Google Ads Developer Token remains `Test Account Access`; OAuth can retain the credential with `google_ads_api_access_pending`, but Production advertiser API access must not be claimed.
+- Google Ads Direct API Live access, customer-visible connection results and reliability UAT remain pending.
+- Business Queue work, Lark writes, connector flags and all schedules remain disabled.
 
 Exact rollout and rollback commands: `docs/customer-connection-oauth-rollout.md`.
 
-## Remote rollout approval boundary
+## Next boundary — Retry-safe and preview-safe Connect flow
 
-Implementation must stop before all remote actions. After local/CI review passes, report:
+Remote D1 migration, Worker Secrets/runtime mappings, Google Cloud configuration, deployment and HTTP smoke are complete. Current customer/test links are unusable because all invitations were consumed before callback completion.
 
-- additive migration and backup requirement;
-- routes and Redirect URIs;
-- Secret names only;
-- exact deploy/rollback commands;
-- schedules false, Queue messages zero, Lark writes zero;
-- guarded link-generation command.
+Current operating rules:
 
-User approval is required before Remote D1 backup/migration, Worker deployment, Google Cloud Redirect URI change or Connect-link generation.
+- Signed links are not stored in Source, docs or logs.
+- Do not generate replacement customer links against the current one-shot-on-GET behavior.
+- Design a safe landing/confirmation boundary: `GET` must be side-effect free and OAuth begin must require an explicit user action.
+- Support bounded retry before successful callback, with expiry, rate limiting, audit and permanent closure after success; do not make an unlimited reusable bearer link.
+- Add contract/data-model review, focused replay/prefetch/abort/retry tests, default gates and a guarded rollout plan before deployment.
+- Review orphaned PKCE cleanup separately; do not delete D1 audit rows or credentials without exact approval.
+
+## Account handoff — 2026-07-24
+
+Another account can resume by reading `AGENTS.md`, this file, `docs/project-brain/00-current-state.md` and `docs/project-brain/10-next-actions.md`.
+
+```text
+GIT_HEAD                            425bfde / main = origin/main
+WORKTREE                            6 tracked documentation files modified
+LIVE_WORKER_VERSION                 e80e46f0-5f81-4ce9-ae06-678cafab6efe
+REMOTE_D1_MIGRATION                 0011 applied
+INVITATIONS                         google_ads 2/2 consumed; youtube 2/2 consumed
+OAUTH_STATES                        google_ads 2 expired; youtube 2 expired; callbacks 0
+PKCE_CREDENTIALS                    per connector: 1 active + 1 replaced
+REFRESH_TOKENS                      0
+IDENTITY_SELECTIONS                 0
+CONNECTIONS                         authorization_pending / not_validated
+QUEUE_LARK_SCHEDULES                disabled / no business side effects
+SIGNED_URLS                         intentionally not stored; all prior links unusable
+```
+
+The live operator token was rotated during test-link generation and its plaintext temporary copy was securely deleted. Cloudflare Secrets are not readable; any future invitation generation therefore requires a separately approved operator-token rotation. The real non-secret runtime mapping remains only in ignored local `wrangler.sync.jsonc`; never commit it or replace it with the example config for remote commands.
+
+Business Queue jobs, Lark writes, connector activation and schedules are outside this approval and remain prohibited.
 
 ## Preserved Prior Task Record — TikTok Organic Bootstrap Durable Recovery Rollout Closeout
 

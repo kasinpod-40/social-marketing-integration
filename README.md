@@ -27,7 +27,7 @@ Storage Foundation Phase 1A        merged
 Storage Foundation Phase 1B        merged
 Organic D1 bootstrap PR #27        merged
 Organic D1 bootstrap merge         d182bf9efc8c6ea51f275ea725cdb0eaeae3d5e0
-Remote rollout                     not started
+Customer OAuth remote rollout      complete
 TikTok Canonical Lark sync         blocked
 Report D1 reader                   not implemented
 Schedules                          disabled
@@ -40,13 +40,16 @@ Customer OAuth source status (2026-07-24):
 Shared Connection/OAuth            merged via PR #42
 Google Ads Customer OAuth          merged via PR #43
 YouTube Customer OAuth             merged via PR #44
-Migration 0011                     not applied remotely
-Worker deployment                  not run
-Customer Connect links             not generated
+Migration 0011                     applied remotely
+Worker deployment                  pass / HTTP smoke 404 + 405
+Google OAuth config                redirects/APIs/scopes ready
+Worker Secrets                     required names 7/7
+Customer Connect links             all 4 consumed / no reusable link
+Customer OAuth                     authorization pending / states expired
 Queue/Lark callback side effects   0 / 0 by contract
 ```
 
-See `docs/customer-connection-oauth-contract-v1.md` and `docs/customer-connection-oauth-rollout.md`. Source merged in order `#42` → `#43` → `#44`; Remote D1, Worker deployment, Redirect URI changes and link generation require separate approval.
+See `docs/customer-connection-oauth-contract-v1.md` and `docs/customer-connection-oauth-rollout.md`. Source merged in order `#42` → `#43` → `#44`; the approved Integration Workspace rollout is complete. Signed URLs are not stored in the Repository. Both customer and test invitations reached OAuth begin without callback completion and are unusable; a retry-safe, preview-safe Connect flow is the next unimplemented task.
 
 PR #27 added source code and a guarded runbook. It did not apply Migration `0009` remotely, deploy a Worker, send a Queue message or write Live D1/Lark business data.
 

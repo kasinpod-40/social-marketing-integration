@@ -1,14 +1,16 @@
 # 10 — Next Actions
 
-## Immediate next approval gate — Customer OAuth rollout
+## Immediate next action — Retry-safe Connect flow
 
-PR A/B/C source and tests are merged in order `#42` → `#43` → `#44`. Next:
+PR A/B/C source and tests are merged in order `#42` → `#43` → `#44`. Remote D1 migration, Google OAuth configuration, Worker Secrets/runtime mappings, deployment and HTTP smoke are complete. Both customer and test invitations were consumed at OAuth begin without callbacks; all states expired and all prior links are unusable. Next:
 
 1. Keep PR #17 Draft/HOLD.
-2. Obtain separate approval for Remote D1 backup/migration, Worker Secrets, Google Redirect URIs and deployment.
-3. Deploy with every Business schedule false and smoke only the HTTP allowlist.
-4. Obtain separate approval to generate the two one-time customer Connect links.
-5. Wait for the customer, then inspect redacted Connection results read-only.
+2. Do not generate more links against the current one-shot-on-GET flow.
+3. Make `GET /connect/*` side-effect free and require an explicit confirmation action before OAuth begins.
+4. Add bounded retries until successful callback, with expiry, rate limiting, audit and permanent closure after success.
+5. Review the additive data-model change and orphaned PKCE cleanup semantics; do not mutate Remote D1 without exact approval.
+6. Add prefetch/scanner, abort, retry, replay, expiry and concurrent-submit tests, then run all default gates.
+7. Deploy only after reviewed rollout approval; rotate the unreadable operator Secret, then generate fresh test links before customer links.
 
 Do not enqueue business jobs, write Lark, enable schedules or rerun TikTok recovery. Exact commands are in `docs/customer-connection-oauth-rollout.md`.
 
