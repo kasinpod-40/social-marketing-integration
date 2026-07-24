@@ -63,9 +63,11 @@ Work = active with original generation/requestedAt
 write phase = nextSequence 2, two Units, 1000 durable rows, incomplete
 exact DLQ = open / QUEUE_RETRY_EXHAUSTED
 lock = expired
-Coverage = partial / expected 2021 / observed 1000 / failed 0 / completed_at null
+Coverage = partial / expected 2021 / summary observed entities and rows both 0 or both equal the exact durable Coverage checkpoint / failed 0 / completed_at null
 pending migrations = only 0010_tiktok_bootstrap_durable_recovery.sql
 ```
+
+For the current runtime semantics, the valid Remote incident shape is `coverage_observed_entities=0` and `coverage_observed_rows=0` while status is `partial`. Durable progress is independently proven by the Work checkpoint and `data_coverage_entities=1000`. Final verification remains strict at expected=observed=2021.
 
 Any mismatch stops before a Remote write.
 
