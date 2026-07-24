@@ -28,6 +28,10 @@ export {
   createGoogleAdsCustomerConnectionHttpHandler,
   GOOGLE_ADS_CONNECTION_PATHS,
 } from './google-ads-customer-connection-http.js';
+export {
+  createYouTubeCustomerConnectionHttpHandler,
+  YOUTUBE_CONNECTION_PATHS,
+} from './youtube-customer-connection-http.js';
 
 const syncWorker = createSyncWorker();
 export default syncWorker;

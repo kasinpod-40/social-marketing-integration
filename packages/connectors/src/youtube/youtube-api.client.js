@@ -43,12 +43,23 @@ export class YouTubeApiClient {
       });
     }
 
+    if (mine) {
+      const items = await this.listMyChannels();
+      if (items.length !== 1) {
+        throw permanentError(`YouTube channel lookup returned ${items.length} records`, {
+          code: 'YOUTUBE_CHANNEL_IDENTITY_MISMATCH',
+          details: { resultCount: items.length },
+        });
+      }
+      return items[0];
+    }
+
     const payload = await this.requestJson({
       baseUrl: this.dataBaseUrl,
       path: '/channels',
       query: {
         part: 'snippet,contentDetails,statistics,status',
-        ...(channelId ? { id: channelId } : { mine: 'true' }),
+        id: channelId,
       },
     });
     // Data API อาจละ `items` เมื่อ lookup ไม่พบ Channel; ถือเป็น empty result
@@ -63,6 +74,28 @@ export class YouTubeApiClient {
       });
     }
     return Object.freeze(items[0]);
+  }
+
+  /** OAuth identity discovery คืน 0..N channels เพื่อให้ Application บังคับ explicit selection */
+  async listMyChannels() {
+    if (!this.accessToken && !this.accessTokenProvider) {
+      throw permanentError('YouTube mine=true requires OAuth access token', {
+        code: 'YOUTUBE_OAUTH_REQUIRED',
+      });
+    }
+    const payload = await this.requestJson({
+      baseUrl: this.dataBaseUrl,
+      path: '/channels',
+      authMode: 'oauth',
+      query: {
+        part: 'snippet,contentDetails,statistics,status',
+        mine: 'true',
+      },
+    });
+    const items = payload.items === undefined
+      ? []
+      : requireArray(payload.items, 'YouTube channels.items');
+    return Object.freeze(items.map((item) => Object.freeze(item)));
   }
 
   /** เดิน uploads playlist ด้วย pageToken แบบมีเพดานและคืน Video IDs ที่ไม่ซ้ำ */
