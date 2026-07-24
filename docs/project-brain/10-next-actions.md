@@ -18,6 +18,27 @@ Next:
 
 Do not enqueue business jobs, write Lark, enable schedules or rerun TikTok recovery. Exact commands are in `docs/customer-connection-oauth-rollout.md`.
 
+## Parallel Meta connection preflight
+
+The customer-owned Meta app is not ready for customer Connect-link rollout yet.
+A read-only Safari inspection on `2026-07-25` found Marketing/Page read
+permissions available for testing, but the app is API-restricted until every
+administrator completes Developer Portal account verification. Instagram
+customer use-case readiness is still unverified.
+
+Safe order:
+
+1. Customer-app administrators complete Developer Portal verification.
+2. Repeat a read-only customer-app audit in Safari.
+3. Lock separate Facebook Organic, Instagram Organic and Meta Ads connection
+   records, least-privilege scopes, redirect URIs and identity-selection rules.
+4. Update `docs/current-task.md` to approve the exact Meta connection contract.
+5. Only then implement disabled-by-default routes and tests.
+
+Do not reuse the developer-owned Meta app as customer evidence. Do not add an
+Instagram use case, change permissions, publish the app, submit App Review or
+generate Meta customer links from this preflight.
+
 ## Completed source correction
 
 Repository audit/safety correction PR `#13` was squash-merged to main commit:

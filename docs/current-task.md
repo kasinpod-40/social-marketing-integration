@@ -309,6 +309,27 @@ Current encrypted credential counts           2 active PKCE / 2 replaced PKCE / 
 - Google Ads Direct API Live access, customer-visible connection results and reliability UAT remain pending.
 - Business Queue work, Lark writes, connector flags and all schedules remain disabled.
 
+### Meta customer connection preflight — 2026-07-25
+
+A read-only inspection was repeated in the customer-owned Safari session after
+discarding an earlier inspection of the developer-owned Meta app. No dashboard
+setting was changed and no customer App/Business ID is stored in Source.
+
+Verified customer-app state:
+
+- the customer Meta app is in Development / not published;
+- `ads_read`, `business_management`, `pages_read_engagement` and
+  `pages_show_list` are available for testing;
+- Meta currently reports that API access is restricted until every app
+  administrator completes Developer Portal account verification;
+- Instagram customer use-case readiness is not yet verified and must not be
+  inferred from the separate developer-owned app.
+
+This evidence does not authorize a Meta connector implementation, OAuth link
+generation, App Review submission, permission mutation or Production rollout.
+The next safe action is for the customer-app administrators to finish Developer
+Portal verification, followed by another read-only app/use-case/redirect audit.
+
 Exact rollout and rollback commands: `docs/customer-connection-oauth-rollout.md`.
 
 ## Next boundary — Await customer callbacks

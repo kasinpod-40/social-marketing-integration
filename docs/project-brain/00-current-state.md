@@ -105,6 +105,16 @@ The 55 specialized Views are not defective merely because their names imply Acti
 - WooCommerce
 - Chatwoot
 
+### Meta customer-app access gate
+
+The customer-owned Meta app was inspected read-only in the customer Safari
+session on `2026-07-25`. Marketing/Page read permissions are available for
+testing, but Meta reports API access restricted until every app administrator
+completes Developer Portal account verification. Instagram customer use-case
+readiness remains unverified. No App/Business ID is stored here, no dashboard
+setting was changed, and the separate developer-owned app is not evidence for
+customer readiness.
+
 ## Google Ads state
 
 Completed:
