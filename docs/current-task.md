@@ -126,19 +126,12 @@ The failed-recovery DLQ remains open as retained forensic evidence. It must not 
 | PR | Purpose | Merge commit |
 | --- | --- | --- |
 | #29 | Durable TikTok bootstrap recovery implementation | `1fce94344100a6b1ed9dce471966f3596c00778a` |
-| #30 | Initial recovery documentation | `68b...` |
-| #31 | Rollout runbook and evidence contract | `6a91...` |
-| #32 | Guarded recovery operator CLI | `dbe98...` |
-| #33 | Partial Coverage validation | `28922...` |
-| #34 | Recovery semantics documentation | `01c8...` |
-| #35 | Wrangler migration flag correction | `b192...` |
-| #36 | D1 101-bind observation-read correction | `9ada...` |
 | #37 | Guarded deploy/resume operator | `9c1f4e17a1addcd94422e4e840300856a3cff15c` |
 | #38 | Cloudflare auth isolation | `7970b8d707650150af548684defac6ccb74c7c33` |
 | #39 | Exact terminal Work reactivation/resume | `cfed6355b1db426c271235572522a6e751b4e808` |
 | #40 | Completion-closure and replay safety | `870ac618c75e3d9efa1fd1e20ea3618b56f8aceb` |
 
-Abbreviated historical SHAs above remain traceable through their PR records. The final deployed source head for completion closure is `870ac618c75e3d9efa1fd1e20ea3618b56f8aceb`.
+Supporting PRs #30–#36 contain the rollout documentation, evidence contract, guarded CLI and intermediate corrections. Their exact commits remain available in Git/PR history. The final deployed source head for completion closure is `870ac618c75e3d9efa1fd1e20ea3618b56f8aceb`.
 
 ## Local rollout evidence set
 
