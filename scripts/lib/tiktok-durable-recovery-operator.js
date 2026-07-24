@@ -321,13 +321,12 @@ export function validateTikTokRecoveryPreflightRow(row, now = Date.now()) {
     dlq_error_code: 'QUEUE_RETRY_EXHAUSTED',
     coverage_status: 'partial',
     coverage_expected_entities: incident.expectedRows,
-    coverage_observed_entities: 1000,
     coverage_expected_rows: incident.expectedRows,
-    coverage_observed_rows: 1000,
     coverage_failed_rows: 0,
     coverage_completed_at: null,
   };
   assertRowMatches(row, exact, 'preflight');
+  assertPartialCoverageCounters(row);
   const expiresAt = Number(row?.lock_expires_at);
   if (!Number.isSafeInteger(expiresAt) || expiresAt >= now) {
     throw operatorError('TikTok recovery lock is not proven expired', 'TIKTOK_RECOVERY_LOCK_NOT_EXPIRED', {
@@ -435,6 +434,25 @@ function assertEqual(actual, expected, fieldName) {
       expected,
       actual: actual ?? null,
     });
+  }
+}
+
+function assertPartialCoverageCounters(row) {
+  const observedEntities = normalizeScalar(row?.coverage_observed_entities);
+  const observedRows = normalizeScalar(row?.coverage_observed_rows);
+  const durableEntities = normalizeScalar(row?.coverage_entities_written);
+  const accepted = new Set([0, durableEntities]);
+
+  if (observedEntities !== observedRows || !accepted.has(observedEntities)) {
+    throw operatorError(
+      'TikTok recovery partial Coverage summary counters are inconsistent with durable evidence',
+      'TIKTOK_RECOVERY_PREFLIGHT_EVIDENCE_MISMATCH',
+      {
+        fieldName: 'coverage_observed_entities/coverage_observed_rows',
+        expected: [...accepted],
+        actual: { observedEntities, observedRows },
+      },
+    );
   }
 }
 
