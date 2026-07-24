@@ -24,6 +24,8 @@
     "rollout:tiktok-recovery:verify": "node scripts/tiktok-durable-recovery-operator.mjs --phase=verify --execute",
     "rollout:tiktok-recovery:replay": "node scripts/tiktok-durable-recovery-operator.mjs --phase=replay --execute",
     "rollout:tiktok-recovery:replay-verify": "node scripts/tiktok-durable-recovery-operator.mjs --phase=replay-verify --execute",
+    "rollout:tiktok-recovery:hotfix-deploy": "node scripts/tiktok-durable-recovery-bind-hotfix-operator.mjs --phase=deploy --execute",
+    "rollout:tiktok-recovery:resume": "node scripts/tiktok-durable-recovery-bind-hotfix-operator.mjs --phase=resume --execute",
     "seed:metrics": "node scripts/seed-metric-definitions.mjs",
     "audit:architecture": "node scripts/audit-architecture.mjs",
     "deploy:dry-run": "wrangler deploy --dry-run --config wrangler.sync.example.jsonc",
