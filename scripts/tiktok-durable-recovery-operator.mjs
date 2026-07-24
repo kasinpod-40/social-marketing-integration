@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import {
   TIKTOK_DURABLE_RECOVERY_CONFIRMATIONS,
   TIKTOK_DURABLE_RECOVERY_INCIDENT,
@@ -91,7 +91,7 @@ async function runPhase(phase, target) {
 
 async function runPreflight(target) {
   assertRepositoryState();
-  requireReadableFile(target.wranglerConfig);
+  await requireReadableFile(target.wranglerConfig);
 
   const check = runCommand('npm', ['run', 'check']);
   const focused = runCommand('node', [
@@ -100,6 +100,7 @@ async function runPreflight(target) {
     'tests/reliability/d1-queue-operation-store.test.js',
     'tests/application/queue-operation.test.js',
     'tests/application/tiktok-history-bootstrap-routing.test.js',
+    'tests/application/tiktok-durable-recovery-operator.test.js',
   ]);
   const dryRun = runCommand('npm', ['run', 'deploy:dry-run']);
   const whoami = runCommand('npx', ['wrangler', 'whoami']);
@@ -147,7 +148,7 @@ async function runBackup(target) {
     '--remote',
     '--config', target.wranglerConfig,
     '--output', backupFile,
-    '--yes',
+    '--skip-confirmation',
   ]);
   await requireReadableFile(backupFile);
   const contents = await readFile(backupFile);
@@ -180,7 +181,7 @@ async function runMigration(target) {
     'wrangler', 'd1', 'migrations', 'apply', target.databaseName,
     '--remote',
     '--config', target.wranglerConfig,
-    '--yes',
+    '--skip-confirmation',
   ]);
   const after = runCommand('npx', [
     'wrangler', 'd1', 'migrations', 'list', target.databaseName,
@@ -225,9 +226,7 @@ async function runDeploy(target) {
 async function runQueueSend(target, phase) {
   if (phase === 'send') await requirePassedEvidence('deploy');
   else await requirePassedEvidence('verify');
-  const envelope = buildTikTokDurableRecoveryEnvelope({
-    recoveryReference: process.env.TIKTOK_RECOVERY_REFERENCE,
-  });
+  const envelope = buildTikTokDurableRecoveryEnvelope();
   const url = buildCloudflareQueuePushUrl({ accountId: target.accountId, queueId: target.queueId });
   const response = await fetch(url, {
     method: 'POST',
@@ -268,7 +267,6 @@ async function runVerify(target, phase) {
     status: 'passed',
     capturedAt: new Date().toISOString(),
     final: row,
-    note: 'Lark business writes are structurally blocked by the recovery route; inspect Worker logs for lark.contentWrites=0 and lark.dailyWrites=0 before accepting rollout closeout.',
   };
   await saveEvidence(phase, evidence);
   return { evidenceFile: evidencePath(phase), final: row };
