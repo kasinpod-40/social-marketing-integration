@@ -18,6 +18,7 @@ import {
   parseTikTokRecoveryBindHotfixArgs,
   validateTikTokRecoveryBindResumeRow,
 } from './lib/tiktok-durable-recovery-bind-hotfix.js';
+import { buildWranglerOAuthEnvironment } from './lib/cloudflare-auth-environment.js';
 
 const EVIDENCE_ROOT = resolve(
   process.env.TIKTOK_RECOVERY_EVIDENCE_DIR
@@ -185,14 +186,16 @@ function runD1Query(target, sql) {
     '--config', target.wranglerConfig,
     '--command', sql,
     '--json',
-  ]);
+  ], {
+    env: buildWranglerOAuthEnvironment(process.env),
+  });
 }
 
-function runCommand(command, args) {
+function runCommand(command, args, options = {}) {
   const result = spawnSync(command, args, {
     cwd: process.cwd(),
     encoding: 'utf8',
-    env: process.env,
+    env: options.env ?? process.env,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   if (result.status !== 0) {
