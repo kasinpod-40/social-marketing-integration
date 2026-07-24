@@ -17,6 +17,13 @@ export {
   resolveYouTubeAnalyticsEnabled,
 } from './scheduled-jobs.js';
 export { createSyncWorker } from './sync-worker.js';
+export {
+  createCustomerConnectionRuntime,
+  loadGoogleAdsRuntimeConfig,
+  loadGoogleOAuthRuntimeConfig,
+  loadCustomerConnectionRuntimeConfig,
+} from './customer-connection-runtime.js';
+export { createCustomerConnectionHttpHandler } from './customer-connection-http.js';
 
 const syncWorker = createSyncWorker();
 export default syncWorker;

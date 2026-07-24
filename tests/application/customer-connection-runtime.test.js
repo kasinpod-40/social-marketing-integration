@@ -1,0 +1,70 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  loadGoogleAdsRuntimeConfig,
+  loadGoogleOAuthRuntimeConfig,
+  loadCustomerConnectionRuntimeConfig,
+} from '../../apps/sync-worker/src/customer-connection-runtime.js';
+
+test('connection runtime locks Integration Workspace and reads exact redirect/key contracts', () => {
+  const config = loadCustomerConnectionRuntimeConfig(validEnv());
+  assert.equal(config.environment, 'development');
+  assert.equal(config.customerProfile, 'integration_workspace');
+  assert.equal(config.customerKey, 'chemistry_k');
+  assert.equal(config.redirectUris.google_ads, 'https://worker.example/oauth/google-ads/callback');
+  assert.equal(config.redirectUris.youtube, 'https://worker.example/oauth/youtube/callback');
+  assert.equal(config.encryptionKeyVersion, 'v1');
+  assert.equal(loadGoogleAdsRuntimeConfig(validEnv()).managerCustomerId, '9463570541');
+  assert.equal(loadGoogleAdsRuntimeConfig(validEnv()).advertiserCustomerId, '5662332033');
+  assert.equal(loadGoogleOAuthRuntimeConfig(validEnv()).clientId, 'google-client-id');
+});
+
+test('connection runtime rejects historical profiles and placeholder secrets', () => {
+  assert.throws(
+    () => loadCustomerConnectionRuntimeConfig({
+      ...validEnv(),
+      MKT_CUSTOMER_PROFILE: 'dev_ft_pumkin',
+    }),
+    /MKT_CUSTOMER_PROFILE must be integration_workspace/u,
+  );
+  assert.throws(
+    () => loadCustomerConnectionRuntimeConfig({
+      ...validEnv(),
+      MKT_CONNECTION_OPERATOR_TOKEN: 'replace-with-operator-token',
+    }),
+    /Worker Secrets/u,
+  );
+});
+
+test('shared/YouTube runtime does not require a Google Ads Developer Token', () => {
+  const env = validEnv();
+  delete env.GOOGLE_ADS_DEVELOPER_TOKEN;
+  delete env.MKT_GOOGLE_ADS_MANAGER_CUSTOMER_ID;
+  delete env.MKT_GOOGLE_ADS_ADVERTISER_CUSTOMER_ID;
+  assert.equal(loadCustomerConnectionRuntimeConfig(env).customerKey, 'chemistry_k');
+  assert.equal(loadGoogleOAuthRuntimeConfig(env).clientId, 'google-client-id');
+  assert.throws(() => loadGoogleAdsRuntimeConfig(env), /GOOGLE_ADS_DEVELOPER_TOKEN/u);
+});
+
+function validEnv() {
+  return {
+    MKT_ENV: 'development',
+    MKT_CUSTOMER_PROFILE: 'integration_workspace',
+    MKT_CONNECTION_PUBLIC_ORIGIN: 'https://worker.example',
+    MKT_CONNECTION_CUSTOMER_KEY: 'chemistry_k',
+    MKT_GOOGLE_ADS_REDIRECT_URI: 'https://worker.example/oauth/google-ads/callback',
+    MKT_YOUTUBE_REDIRECT_URI: 'https://worker.example/oauth/youtube/callback',
+    MKT_CONNECTION_OPERATOR_TOKEN: 'operator-secret',
+    MKT_CONNECTION_INVITATION_SIGNING_KEY: 'invitation-signing-key',
+    MKT_CONNECTION_STATE_SIGNING_KEY: 'state-signing-key',
+    MKT_CONNECTION_SELECTION_SIGNING_KEY: 'selection-signing-key',
+    MKT_CONNECTION_ENCRYPTION_KEY_VERSION: 'v1',
+    MKT_CONNECTION_ENCRYPTION_KEY_V1: 'encryption-key',
+    GOOGLE_OAUTH_CLIENT_ID: 'google-client-id',
+    GOOGLE_OAUTH_CLIENT_SECRET: 'google-client-secret',
+    GOOGLE_ADS_DEVELOPER_TOKEN: 'developer-token',
+    MKT_GOOGLE_ADS_MANAGER_CUSTOMER_ID: '946-357-0541',
+    MKT_GOOGLE_ADS_ADVERTISER_CUSTOMER_ID: '566-233-2033',
+    MKT_GOOGLE_ADS_API_VERSION: 'v24',
+  };
+}

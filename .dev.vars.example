@@ -9,6 +9,27 @@ MKT_ENV=development
 MKT_CUSTOMER_PROFILE=integration_workspace
 DEFAULT_TIMEZONE=Asia/Bangkok
 
+# Customer Connection OAuth — URL/Client ID ไม่ใช่ Secret แต่ต้องตรงกับ Google Cloud Console
+MKT_CONNECTION_PUBLIC_ORIGIN=https://replace-with-sync-worker.example
+MKT_CONNECTION_CUSTOMER_KEY=chemistry_k
+MKT_GOOGLE_ADS_REDIRECT_URI=https://replace-with-sync-worker.example/oauth/google-ads/callback
+MKT_YOUTUBE_REDIRECT_URI=https://replace-with-sync-worker.example/oauth/youtube/callback
+GOOGLE_OAUTH_CLIENT_ID=replace-with-google-oauth-client-id
+MKT_CONNECTION_ENCRYPTION_KEY_VERSION=v1
+MKT_GOOGLE_ADS_MANAGER_CUSTOMER_ID=replace-with-10-digit-manager-customer-id
+MKT_GOOGLE_ADS_ADVERTISER_CUSTOMER_ID=replace-with-10-digit-advertiser-customer-id
+MKT_GOOGLE_ADS_API_VERSION=v24
+
+# Secret ต่อไปนี้ใช้ local .dev.vars ได้เฉพาะ Development; Runtime จริงต้องตั้งด้วย `wrangler secret put`
+GOOGLE_OAUTH_CLIENT_SECRET=replace-with-google-oauth-client-secret
+GOOGLE_ADS_DEVELOPER_TOKEN=replace-with-google-ads-developer-token
+MKT_CONNECTION_OPERATOR_TOKEN=replace-with-operator-token
+MKT_CONNECTION_INVITATION_SIGNING_KEY=replace-with-random-signing-key
+MKT_CONNECTION_STATE_SIGNING_KEY=replace-with-random-signing-key
+MKT_CONNECTION_SELECTION_SIGNING_KEY=replace-with-random-signing-key
+# Base64URL ของ random 32 bytes; ห้ามใช้ Password/ข้อความธรรมดาแทน Encryption key
+MKT_CONNECTION_ENCRYPTION_KEY_V1=replace-with-256-bit-base64url-key
+
 # เปิดเฉพาะ Connector ที่ Implement และได้รับอนุมัติให้รันแบบ Manual แล้ว
 MKT_CONNECTOR_TIKTOK_ENABLED=false
 MKT_CONNECTOR_FACEBOOK_ENABLED=false
