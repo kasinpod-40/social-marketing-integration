@@ -46,17 +46,16 @@ Google OAuth config                redirects/APIs/scopes ready
 Worker Secrets                     required names 7/7
 Customer Connect links             all 4 consumed / no reusable link
 Customer OAuth                     authorization pending / states expired
-Retry-safe Connect v2              local implementation / rollout pending
+Retry-safe Connect v2              merged via PR #45 / rollout pending
 Migration 0012                     local only / not applied remotely
 Queue/Lark callback side effects   0 / 0 by contract
 ```
 
 See `docs/customer-connection-oauth-contract-v2.md` and
-`docs/customer-connection-oauth-rollout.md`. Branch
-`codex/retry-safe-connect-flow` implements a side-effect-free GET confirmation
-and bounded explicit POST-to-start locally. The live Worker remains on v1 until
-migration `0012` and deployment receive separate rollout approval. Signed URLs
-are not stored in the Repository.
+`docs/customer-connection-oauth-rollout.md`. PR `#45` merged a side-effect-free
+GET confirmation and bounded explicit POST-to-start into `main`. The live Worker
+remains on v1 until migration `0012` and deployment receive separate rollout
+approval. Signed URLs are not stored in the Repository.
 
 PR #27 added source code and a guarded runbook. It did not apply Migration `0009` remotely, deploy a Worker, send a Queue message or write Live D1/Lark business data.
 
