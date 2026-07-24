@@ -210,6 +210,9 @@ complete.
   Secret was rotated without persisting plaintext and one seven-day,
   three-attempt customer invitation per connector was created. Current Worker
   version is `79ef3710-2ed2-4373-b0d0-42ec76896fa6`.
+- Branch Verification later detected `GHSA-r28c-9q8g-f849` in transitive
+  `postcss@8.5.16`; the lockfile now resolves `postcss@8.5.23` within Vite's
+  existing dependency range.
 - No Queue message, Lark write, connector/schedule activation or Production
   mutation occurred.
 

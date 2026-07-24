@@ -31,6 +31,9 @@
 - After the test links expired unused, rotated the operator Secret without
   persisting plaintext and created one seven-day/three-attempt customer link per
   connector. Signed URLs were handed to the user only and are not stored.
+- Updated the transitive PostCSS lock from `8.5.16` to `8.5.23` after
+  `GHSA-r28c-9q8g-f849` caused Branch Verification to fail; no application
+  dependency range or runtime behavior changed.
 - OAuth callbacks refresh from the persisted encrypted credential, return masked identity/status metadata only, and never enqueue Business jobs or write Lark.
 - Applied additive migration `0011_customer_connection_oauth.sql` to the Integration Workspace after a verified Remote D1 export; no migration remains pending.
 - Configured exact Google callback URIs/scopes/APIs and all seven required Worker Secret names, then deployed Worker version `827b1f67-9a00-49c8-98f9-76f92d597c5d`.
