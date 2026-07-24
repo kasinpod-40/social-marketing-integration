@@ -16,12 +16,18 @@
 ### Safety and verification
 - Repeated link preview and scanner HEAD do not reserve an attempt, create PKCE
   or create OAuth state; concurrent starts allow only one active attempt.
-- Retry-safe v2 is local only: migration `0012`, Worker deploy, Secret rotation
-  and new link generation have not run.
+- The source implementation and verification phase made no Remote mutation; the
+  separately approved rollout is recorded below.
 - Local verification passed: focused v2 43/43, Unit 686/686, Workers 9/9,
   report reliability 70/70, Architecture 191/460/0, audit 0 and deploy dry-run.
 - PR `#45` merged retry-safe v2 to `main` at `9ca8375`; GitHub Branch
-  Verification passed and Remote rollout remains pending.
+  Verification passed before Remote rollout.
+- Exported a mode-`600` Remote D1 backup, applied migration `0012`, verified
+  legacy invitations stayed closed and deployed Worker v2.
+- Rotated the operator Secret without persisting plaintext and created one
+  15-minute, three-attempt test link per connector.
+- Repeated GET preview returned 200 four times while attempts/active attempts
+  stayed 0/0 and OAuth state count stayed unchanged; callbacks remain pending.
 - OAuth callbacks refresh from the persisted encrypted credential, return masked identity/status metadata only, and never enqueue Business jobs or write Lark.
 - Applied additive migration `0011_customer_connection_oauth.sql` to the Integration Workspace after a verified Remote D1 export; no migration remains pending.
 - Configured exact Google callback URIs/scopes/APIs and all seven required Worker Secret names, then deployed Worker version `827b1f67-9a00-49c8-98f9-76f92d597c5d`.
