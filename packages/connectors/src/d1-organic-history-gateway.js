@@ -7,7 +7,10 @@ const REQUIRED_TABLES = Object.freeze([
   'data_coverage_runs',
   'data_coverage_entities',
 ]);
-const STATE_READ_BATCH_SIZE = 100;
+const D1_MAX_BOUND_PARAMETERS = 100;
+const STATE_READ_BATCH_SIZE = D1_MAX_BOUND_PARAMETERS;
+const OBSERVATION_READ_FIXED_PARAMETERS = 1;
+const OBSERVATION_READ_BATCH_SIZE = D1_MAX_BOUND_PARAMETERS - OBSERVATION_READ_FIXED_PARAMETERS;
 const MAX_STATE_READ_KEYS = 1_000;
 
 /** Runtime gateway สำหรับ Organic Marketing history */
@@ -75,8 +78,8 @@ export class D1OrganicHistoryGateway {
     const instant = safeTimestamp(observedAt, 'observedAt');
     if (keys.length === 0) return Object.freeze([]);
     const observed = new Set();
-    for (let offset = 0; offset < keys.length; offset += STATE_READ_BATCH_SIZE) {
-      const batch = keys.slice(offset, offset + STATE_READ_BATCH_SIZE);
+    for (let offset = 0; offset < keys.length; offset += OBSERVATION_READ_BATCH_SIZE) {
+      const batch = keys.slice(offset, offset + OBSERVATION_READ_BATCH_SIZE);
       let result;
       try {
         result = await this.db.prepare(`
