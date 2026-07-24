@@ -9,8 +9,10 @@ import {
 } from './customer-connection-runtime.js';
 import { json } from '../../../packages/shared/src/http/response.js';
 import {
+  connectionConfirmationPage,
   connectionSecurityHeaders,
   readBoundedConnectionJson,
+  requireConnectionConfirmation,
   requireConnectionQuery,
   requireConnectionText,
 } from './customer-connection-http-utils.js';
@@ -28,11 +30,21 @@ export function createYouTubeCustomerConnectionHttpHandler(dependencies = {}) {
 
   return async function handleYouTubeConnection({ request, env, url }) {
     if (request.method === 'GET' && url.pathname === YOUTUBE_CONNECTION_PATHS.connect) {
+      const preview = await flowFactory(runtimeFactory(env), env).preview(
+        requireConnectionQuery(url, 'invitation'),
+      );
+      return connectionConfirmationPage({
+        connectorLabel: 'YouTube',
+        preview,
+      });
+    }
+    if (request.method === 'POST' && url.pathname === YOUTUBE_CONNECTION_PATHS.connect) {
+      await requireConnectionConfirmation(request);
       const location = await flowFactory(runtimeFactory(env), env).begin(
         requireConnectionQuery(url, 'invitation'),
       );
       return new Response(null, {
-        status: 302,
+        status: 303,
         headers: connectionSecurityHeaders({ location }),
       });
     }

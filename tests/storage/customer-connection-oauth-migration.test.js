@@ -5,6 +5,10 @@ import { createSqliteD1 } from '../helpers/sqlite-d1.js';
 
 const INITIAL_URL = new URL('../../migrations/0001_initial.sql', import.meta.url);
 const MIGRATION_URL = new URL('../../migrations/0011_customer_connection_oauth.sql', import.meta.url);
+const RETRY_MIGRATION_URL = new URL(
+  '../../migrations/0012_retry_safe_customer_connection.sql',
+  import.meta.url,
+);
 
 test('migration 0011 extends the existing connection authority and preserves legacy rows', async () => {
   const [initial, migration] = await Promise.all([
@@ -156,6 +160,61 @@ test('migration 0011 rejects plaintext-like credential kinds and unsupported alg
       1,
       1,
     ), /CHECK constraint failed/u);
+  } finally {
+    d1.close();
+  }
+});
+
+test('migration 0012 adds bounded retry state without reopening legacy invitations', async () => {
+  const [initial, migration, retryMigration] = await Promise.all([
+    readFile(INITIAL_URL, 'utf8'),
+    readFile(MIGRATION_URL, 'utf8'),
+    readFile(RETRY_MIGRATION_URL, 'utf8'),
+  ]);
+  const d1 = createSqliteD1();
+  try {
+    d1.exec(initial);
+    d1.exec(migration);
+    d1.database.prepare(`
+      INSERT INTO connection_invitations (
+        invitation_id, connector_key, customer_key, environment, nonce_hash,
+        redirect_uri, issued_at, expires_at, consumed_at, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      'legacy-consumed',
+      'youtube',
+      'customer',
+      'development',
+      'legacy-nonce',
+      'https://example.test/oauth/youtube/callback',
+      100,
+      1_000,
+      500,
+      100,
+    );
+
+    d1.exec(retryMigration);
+
+    const row = d1.database.prepare(`
+      SELECT attempt_count, max_attempts, active_attempt_id, active_attempt_expires_at, consumed_at
+      FROM connection_invitations WHERE invitation_id = ?
+    `).get('legacy-consumed');
+    assert.deepEqual(row, {
+      attempt_count: 0,
+      max_attempts: 1,
+      active_attempt_id: null,
+      active_attempt_expires_at: null,
+      consumed_at: 500,
+    });
+    const columns = d1.database.prepare(
+      'PRAGMA table_info(connection_invitations)',
+    ).all().map((item) => item.name);
+    for (const name of [
+      'attempt_count',
+      'max_attempts',
+      'active_attempt_id',
+      'active_attempt_expires_at',
+    ]) assert.ok(columns.includes(name), name);
   } finally {
     d1.close();
   }

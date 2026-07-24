@@ -1,28 +1,45 @@
 # 00 — Current State
 
-## Customer OAuth foundation — Integration Workspace rollout complete
+## Customer OAuth retry-safe v2 — local implementation pending rollout
 
 As of 2026-07-24, Shared Customer Connection/OAuth, Google Ads OAuth and YouTube OAuth are implemented, verified and merged in order through PRs `#42` → `#43` → `#44`. The approved Integration Workspace rollout is complete through Remote D1 migration, Google Cloud configuration, Worker Secrets/runtime mappings, deployment and HTTP smoke.
 
 ```text
 CONNECTOR_IMPLEMENTATION            COMPLETE_MERGED
+RETRY_SAFE_V2                       LOCAL_VERIFIED_REVIEW_READY
 MOCK_CONTRACT_TEST                  PASS
 INTEGRATION_WORKSPACE_DEPLOYMENT    PASS
 CUSTOMER_OAUTH                      AUTHORIZATION_PENDING_STATES_EXPIRED
 LIVE_ACCESS                         NOT_RUN
 HTTP_SMOKE                          PASS_404_405
 CONNECT_LINK_GENERATION             ALL_4_CONSUMED_NO_CALLBACK
+REMOTE_MIGRATION                    0011_APPLIED_0012_NOT_APPLIED
+LIVE_WORKER                         V1_ONE_SHOT
 SCHEDULE                            DISABLED
 PRODUCTION                          BLOCKED
 ```
 
-Migration `0011_customer_connection_oauth.sql` is applied remotely, the Worker is deployed at the existing Integration Workspace domain, the seven required Secret names are configured and the exact Google Redirect URIs/scopes/APIs are ready. Both the first customer invitations and the separately approved test invitations were consumed at OAuth begin without callback completion. Each connection is `authorization_pending` / `not_validated`. Final read-only D1 verification found four expired OAuth states, two active plus two replaced encrypted PKCE verifiers, zero Refresh Tokens and zero identity selections. Signed URLs are not stored and all prior links are unusable. No Queue/Lark business side effect occurred. The next task is a retry-safe, preview-safe Connect flow; it is not implemented. PR #17 remains Draft/HOLD. Current authority and the next boundary are in `docs/current-task.md` and `docs/customer-connection-oauth-rollout.md`.
+Migration `0011_customer_connection_oauth.sql` is applied remotely and the live
+Worker remains version `e80e46f0-5f81-4ce9-ae06-678cafab6efe` with v1
+one-shot-on-GET behavior. Both customer and test invitation pairs were consumed
+without callback completion; D1 still has four expired states, no Refresh Token
+and no identity selection.
+
+Branch `codex/retry-safe-connect-flow` now implements contract v2 locally:
+side-effect-free GET confirmation, exact POST-to-start, default three bounded
+attempts, one atomic active-attempt lock, retry after expiry/failure and permanent
+closure on successful callback. Additive migration
+`0012_retry_safe_customer_connection.sql` is local only. Focused suites pass
+43/43; Unit 686/686, Workers 9/9, report reliability 70/70, Architecture
+191/460/0, audit 0 and deploy dry-run pass. Final review, commit/push, Remote
+migration and deployment remain pending. No live mutation, Queue/Lark effect or
+schedule change occurred. PR #17 remains Draft/HOLD.
 
 ## Source baseline
 
 - Implementation baseline: `d4a531fbb4e05dad7ce2296859c97f571e23acf3` / PR `#13`
 - Documentation closeout: PR `#14`
-- Current task: `docs/current-task.md` — closed
+- Current task: `docs/current-task.md` — v2 local verification in progress
 - Application package line: `0.11.0`
 - Contract versions: View `v0.13.5`, Formula `v0.13.6`, audit correction `v0.13.7`
 

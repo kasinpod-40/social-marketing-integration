@@ -12,8 +12,11 @@ const CONNECTOR = CUSTOMER_CONNECTION_CONNECTORS.GOOGLE_ADS;
 /** Google Ads customer consent + encrypted credential persistence + read-only identity validation */
 export class GoogleAdsCustomerOAuthFlow {
   constructor(input = {}) {
-    this.shared = requireMethod(input.shared, 'beginOAuth', 'shared');
+    this.shared = requireMethod(input.shared, 'previewInvitation', 'shared');
+    requireMethod(input.shared, 'beginOAuth', 'shared');
     requireMethod(input.shared, 'consumeCallbackState', 'shared');
+    requireMethod(input.shared, 'completeOAuthAttempt', 'shared');
+    requireMethod(input.shared, 'releaseOAuthAttempt', 'shared');
     this.oauthClient = requireMethod(input.oauthClient, 'buildAuthorizationUrl', 'oauthClient');
     requireMethod(input.oauthClient, 'exchangeAuthorizationCode', 'oauthClient');
     requireMethod(input.oauthClient, 'refreshAccessToken', 'oauthClient');
@@ -26,6 +29,15 @@ export class GoogleAdsCustomerOAuthFlow {
     this.environment = requireText(input.environment, 'environment');
     this.approvedTargetCustomerId = optionalText(input.approvedTargetCustomerId);
     this.now = typeof input.now === 'function' ? input.now : () => Date.now();
+  }
+
+  async preview(invitationToken) {
+    return this.shared.previewInvitation({
+      connectorKey: CONNECTOR,
+      environment: this.environment,
+      redirectUri: this.redirectUri,
+      invitationToken: requireText(invitationToken, 'invitationToken'),
+    });
   }
 
   async begin(invitationToken) {
@@ -93,6 +105,7 @@ export class GoogleAdsCustomerOAuthFlow {
           providerMetadata: { credentialReference },
           updatedAt: this.now(),
         });
+        await this.shared.releaseOAuthAttempt(callback);
         return safeResult({
           connectionId: callback.connectionId,
           connectionStatus: CUSTOMER_CONNECTION_STATUSES.TOKEN_REFRESH_FAILED,
@@ -126,6 +139,7 @@ export class GoogleAdsCustomerOAuthFlow {
           },
           updatedAt: this.now(),
         });
+        await this.shared.completeOAuthAttempt(callback);
         return safeResult({
           connectionId: callback.connectionId,
           connectionStatus: CUSTOMER_CONNECTION_STATUSES.CONNECTED,
@@ -152,6 +166,7 @@ export class GoogleAdsCustomerOAuthFlow {
             providerMetadata: { credentialReference },
             updatedAt: this.now(),
           });
+          await this.shared.releaseOAuthAttempt(callback);
           return safeResult({
             connectionId: callback.connectionId,
             connectionStatus: CUSTOMER_CONNECTION_STATUSES.IDENTITY_MISMATCH,
@@ -175,6 +190,7 @@ export class GoogleAdsCustomerOAuthFlow {
           providerMetadata: { credentialReference },
           updatedAt: this.now(),
         });
+        await this.shared.completeOAuthAttempt(callback);
         return safeResult({
           connectionId: callback.connectionId,
           connectionStatus: CUSTOMER_CONNECTION_STATUSES.CONNECTED,
@@ -213,6 +229,7 @@ export class GoogleAdsCustomerOAuthFlow {
       lastErrorCode: operational.code,
       updatedAt: this.now(),
     });
+    await this.shared.releaseOAuthAttempt(callback);
   }
 }
 

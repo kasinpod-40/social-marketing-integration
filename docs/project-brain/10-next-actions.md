@@ -1,16 +1,20 @@
 # 10 — Next Actions
 
-## Immediate next action — Retry-safe Connect flow
+## Immediate next action — Verify and roll out retry-safe v2
 
-PR A/B/C source and tests are merged in order `#42` → `#43` → `#44`. Remote D1 migration, Google OAuth configuration, Worker Secrets/runtime mappings, deployment and HTTP smoke are complete. Both customer and test invitations were consumed at OAuth begin without callbacks; all states expired and all prior links are unusable. Next:
+PR A/B/C source is merged. Contract v2 and migration `0012` are implemented and
+locally verified on `codex/retry-safe-connect-flow`; all default gates pass. The
+live Worker still uses v1 and every old link is unusable. Next:
 
 1. Keep PR #17 Draft/HOLD.
-2. Do not generate more links against the current one-shot-on-GET flow.
-3. Make `GET /connect/*` side-effect free and require an explicit confirmation action before OAuth begins.
-4. Add bounded retries until successful callback, with expiry, rate limiting, audit and permanent closure after success.
-5. Review the additive data-model change and orphaned PKCE cleanup semantics; do not mutate Remote D1 without exact approval.
-6. Add prefetch/scanner, abort, retry, replay, expiry and concurrent-submit tests, then run all default gates.
-7. Deploy only after reviewed rollout approval; rotate the unreadable operator Secret, then generate fresh test links before customer links.
+2. Inspect the final v2 diff and run all default gates.
+3. Review the additive data model and guarded rollout; keep orphaned PKCE cleanup
+   outside this rollout.
+4. Commit/push the reviewed branch; do not merge/deploy from a failing gate.
+5. Under separate Remote rollout approval, export D1, apply migration `0012`,
+   deploy and smoke repeated GET plus exact POST.
+6. Rotate the unreadable operator Secret, generate short-lived test links and
+   complete both callbacks before creating customer links.
 
 Do not enqueue business jobs, write Lark, enable schedules or rerun TikTok recovery. Exact commands are in `docs/customer-connection-oauth-rollout.md`.
 

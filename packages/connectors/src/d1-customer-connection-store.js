@@ -18,8 +18,9 @@ export class D1CustomerConnectionStore {
     await run(this.db.prepare(`
       INSERT INTO connection_invitations (
         invitation_id, connector_key, customer_key, environment, nonce_hash,
-        redirect_uri, issued_at, expires_at, consumed_at, connection_id, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)
+        redirect_uri, issued_at, expires_at, consumed_at, connection_id, created_at,
+        attempt_count, max_attempts, active_attempt_id, active_attempt_expires_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, 0, ?, NULL, NULL)
     `).bind(
       row.invitationId,
       row.connectorKey,
@@ -30,19 +31,84 @@ export class D1CustomerConnectionStore {
       row.issuedAt,
       row.expiresAt,
       row.issuedAt,
+      row.maxAttempts,
     ), 'CONNECTION_INVITATION_CREATE_FAILED');
     return row;
   }
 
-  async consumeInvitation(input = {}) {
-    const value = normalizeConsume(input);
+  async reserveInvitationAttempt(input = {}) {
+    const value = normalizeInvitationAttempt(input);
     const result = await run(this.db.prepare(`
       UPDATE connection_invitations
-      SET consumed_at = ?
+      SET attempt_count = attempt_count + 1,
+          active_attempt_id = ?,
+          active_attempt_expires_at = ?
       WHERE invitation_id = ?
         AND connector_key = ?
         AND customer_key = ?
         AND nonce_hash = ?
+        AND consumed_at IS NULL
+        AND expires_at >= ?
+        AND expires_at >= ?
+        AND max_attempts = ?
+        AND attempt_count < max_attempts
+        AND (
+          active_attempt_id IS NULL
+          OR active_attempt_expires_at < ?
+        )
+    `).bind(
+      value.attemptId,
+      value.attemptExpiresAt,
+      value.id,
+      value.connectorKey,
+      value.customerKey,
+      value.nonceHash,
+      value.now,
+      value.attemptExpiresAt,
+      value.maxAttempts,
+      value.now,
+    ), 'CONNECTION_INVITATION_RESERVE_FAILED');
+    if (readChanges(result) === 1) return this.getInvitation(value.id);
+    const row = await this.getInvitation(value.id);
+    throw classifyInvitationAttemptFailure(row, value);
+  }
+
+  async releaseInvitationAttempt(input = {}) {
+    const value = normalizeInvitationAttemptCompletion(input);
+    const result = await run(this.db.prepare(`
+      UPDATE connection_invitations
+      SET active_attempt_id = NULL,
+          active_attempt_expires_at = NULL
+      WHERE invitation_id = ?
+        AND connector_key = ?
+        AND customer_key = ?
+        AND (connection_id IS NULL OR connection_id = ?)
+        AND active_attempt_id = ?
+        AND consumed_at IS NULL
+    `).bind(
+      value.id,
+      value.connectorKey,
+      value.customerKey,
+      value.connectionId,
+      value.attemptId,
+    ), 'CONNECTION_INVITATION_RELEASE_FAILED');
+    if (readChanges(result) === 1) return this.getInvitation(value.id);
+    const row = await this.getInvitation(value.id);
+    throw classifyInvitationCompletionFailure(row, value);
+  }
+
+  async completeInvitation(input = {}) {
+    const value = normalizeInvitationAttemptCompletion(input);
+    const result = await run(this.db.prepare(`
+      UPDATE connection_invitations
+      SET consumed_at = ?,
+          active_attempt_id = NULL,
+          active_attempt_expires_at = NULL
+      WHERE invitation_id = ?
+        AND connector_key = ?
+        AND customer_key = ?
+        AND connection_id = ?
+        AND active_attempt_id = ?
         AND consumed_at IS NULL
         AND expires_at >= ?
     `).bind(
@@ -50,12 +116,13 @@ export class D1CustomerConnectionStore {
       value.id,
       value.connectorKey,
       value.customerKey,
-      value.nonceHash,
+      value.connectionId,
+      value.attemptId,
       value.now,
-    ), 'CONNECTION_INVITATION_CONSUME_FAILED');
+    ), 'CONNECTION_INVITATION_COMPLETE_FAILED');
     if (readChanges(result) === 1) return this.getInvitation(value.id);
     const row = await this.getInvitation(value.id);
-    throw classifyOneTimeFailure(row, value, 'INVITATION');
+    throw classifyInvitationCompletionFailure(row, value);
   }
 
   async getInvitation(invitationId) {
@@ -113,13 +180,21 @@ export class D1CustomerConnectionStore {
   }
 
   async attachInvitationConnection(input = {}) {
+    const invitationId = requireText(input.invitationId, 'invitationId');
+    const connectionId = requireText(input.connectionId, 'connectionId');
+    const attemptId = requireText(input.attemptId, 'attemptId');
     const result = await run(this.db.prepare(`
       UPDATE connection_invitations
       SET connection_id = ?
-      WHERE invitation_id = ? AND consumed_at IS NOT NULL AND connection_id IS NULL
+      WHERE invitation_id = ?
+        AND consumed_at IS NULL
+        AND active_attempt_id = ?
+        AND (connection_id IS NULL OR connection_id = ?)
     `).bind(
-      requireText(input.connectionId, 'connectionId'),
-      requireText(input.invitationId, 'invitationId'),
+      connectionId,
+      invitationId,
+      attemptId,
+      connectionId,
     ), 'CONNECTION_INVITATION_ATTACH_FAILED');
     if (readChanges(result) !== 1) {
       throw permanentError('Invitation cannot be attached to a connection', {
@@ -498,6 +573,7 @@ function normalizeInvitation(input) {
     redirectUri: requireHttpsUrl(input.redirectUri, 'redirectUri'),
     issuedAt,
     expiresAt,
+    maxAttempts: requireBoundedInteger(input.maxAttempts, 'maxAttempts', 1, 5),
   });
 }
 
@@ -534,6 +610,31 @@ function normalizeConsume(input) {
     connectorKey: requireCustomerConnectionConnector(input.connectorKey),
     customerKey: requireText(input.customerKey, 'customerKey'),
     nonceHash: requireText(input.nonceHash, 'nonceHash'),
+    now: requireTimestamp(input.now, 'now'),
+  });
+}
+
+function normalizeInvitationAttempt(input) {
+  const now = requireTimestamp(input.now, 'now');
+  const attemptExpiresAt = requireTimestamp(input.attemptExpiresAt, 'attemptExpiresAt');
+  if (attemptExpiresAt <= now) {
+    throw new TypeError('attemptExpiresAt must be after now');
+  }
+  return Object.freeze({
+    ...normalizeConsume(input),
+    attemptId: requireText(input.attemptId, 'attemptId'),
+    attemptExpiresAt,
+    maxAttempts: requireBoundedInteger(input.maxAttempts, 'maxAttempts', 1, 5),
+  });
+}
+
+function normalizeInvitationAttemptCompletion(input) {
+  return Object.freeze({
+    id: requireText(input.id, 'id'),
+    attemptId: requireText(input.attemptId, 'attemptId'),
+    connectionId: requireText(input.connectionId, 'connectionId'),
+    connectorKey: requireCustomerConnectionConnector(input.connectorKey),
+    customerKey: requireText(input.customerKey, 'customerKey'),
     now: requireTimestamp(input.now, 'now'),
   });
 }
@@ -604,6 +705,10 @@ function mapInvitation(row) {
     expiresAt: Number(row.expires_at),
     consumedAt: optionalTimestamp(row.consumed_at),
     connectionId: optionalText(row.connection_id),
+    attemptCount: Number(row.attempt_count),
+    maxAttempts: Number(row.max_attempts),
+    activeAttemptId: optionalText(row.active_attempt_id),
+    activeAttemptExpiresAt: optionalTimestamp(row.active_attempt_expires_at),
   });
 }
 
@@ -672,6 +777,83 @@ function classifyOneTimeFailure(row, input, prefix) {
   }
   return permanentError(`${prefix} binding validation failed`, {
     code: `CONNECTION_${prefix}_MISMATCH`,
+  });
+}
+
+function classifyInvitationAttemptFailure(row, input) {
+  if (!row) {
+    return permanentError('Invitation is invalid', {
+      code: 'CONNECTION_INVITATION_INVALID',
+    });
+  }
+  if (
+    row.connectorKey !== input.connectorKey
+    || row.customerKey !== input.customerKey
+    || row.nonceHash !== input.nonceHash
+    || row.maxAttempts !== input.maxAttempts
+  ) {
+    return permanentError('Invitation binding validation failed', {
+      code: 'CONNECTION_INVITATION_MISMATCH',
+    });
+  }
+  if (row.consumedAt !== null) {
+    return permanentError('Invitation was already completed', {
+      code: 'CONNECTION_INVITATION_REPLAYED',
+    });
+  }
+  if (row.expiresAt < input.now) {
+    return permanentError('Invitation has expired', {
+      code: 'CONNECTION_INVITATION_EXPIRED',
+    });
+  }
+  if (row.attemptCount >= row.maxAttempts) {
+    return permanentError('Invitation retry limit was reached', {
+      code: 'CONNECTION_INVITATION_ATTEMPTS_EXHAUSTED',
+    });
+  }
+  if (
+    row.activeAttemptId
+    && row.activeAttemptExpiresAt !== null
+    && row.activeAttemptExpiresAt >= input.now
+  ) {
+    return permanentError('Invitation already has an active OAuth attempt', {
+      code: 'CONNECTION_INVITATION_ATTEMPT_ACTIVE',
+      details: { retryAt: row.activeAttemptExpiresAt },
+    });
+  }
+  return permanentError('Invitation attempt cannot be reserved', {
+    code: 'CONNECTION_INVITATION_RESERVATION_REJECTED',
+  });
+}
+
+function classifyInvitationCompletionFailure(row, input) {
+  if (!row) {
+    return permanentError('Invitation is invalid', {
+      code: 'CONNECTION_INVITATION_INVALID',
+    });
+  }
+  if (
+    row.connectorKey !== input.connectorKey
+    || row.customerKey !== input.customerKey
+    || (row.connectionId !== null && row.connectionId !== input.connectionId)
+    || (row.activeAttemptId !== null && row.activeAttemptId !== input.attemptId)
+  ) {
+    return permanentError('Invitation attempt binding validation failed', {
+      code: 'CONNECTION_INVITATION_MISMATCH',
+    });
+  }
+  if (row.consumedAt !== null) {
+    return permanentError('Invitation was already completed', {
+      code: 'CONNECTION_INVITATION_REPLAYED',
+    });
+  }
+  if (row.expiresAt < input.now) {
+    return permanentError('Invitation has expired', {
+      code: 'CONNECTION_INVITATION_EXPIRED',
+    });
+  }
+  return permanentError('Invitation attempt is no longer active', {
+    code: 'CONNECTION_INVITATION_ATTEMPT_INACTIVE',
   });
 }
 
@@ -749,6 +931,14 @@ function requireHttpsUrl(value, fieldName) {
 function requireTimestamp(value, fieldName) {
   const number = Number(value);
   if (!Number.isSafeInteger(number) || number < 0) throw new TypeError(`${fieldName} must be a timestamp`);
+  return number;
+}
+
+function requireBoundedInteger(value, fieldName, minimum, maximum) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number < minimum || number > maximum) {
+    throw new TypeError(`${fieldName} must be an integer from ${minimum} to ${maximum}`);
+  }
   return number;
 }
 

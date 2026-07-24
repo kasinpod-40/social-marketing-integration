@@ -3,7 +3,7 @@
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = RETRY_SAFE_CONNECT_FLOW_REQUIRED
+TASK_STATUS                         = RETRY_SAFE_CONNECT_LOCAL_VERIFIED_REVIEW_READY
 CURRENT_PROGRAM                     = MULTI_CONNECTOR_CUSTOMER_CONNECTION_FOUNDATION
 FIRST_PRIORITY                      = GOOGLE_ADS_AND_YOUTUBE_CUSTOMER_OAUTH
 OTHER_CONNECTORS                    = PLANNED_NOT_STARTED
@@ -11,11 +11,12 @@ INTEGRATION_WORKSPACE               = development / integration_workspace
 GOOGLE_ADS_PR_17                    = DRAFT_HOLD
 SCHEDULES                           = DISABLED
 PRODUCTION                          = BLOCKED
-REMOTE_D1_MIGRATION                 = COMPLETE
-WORKER_DEPLOYMENT                   = COMPLETE
+REMOTE_D1_MIGRATION                 = 0011_COMPLETE_0012_NOT_APPLIED
+WORKER_DEPLOYMENT                   = LIVE_V1_COMPLETE_V2_NOT_DEPLOYED
 GOOGLE_REDIRECT_URI_LIVE_CHANGE     = COMPLETE
 CONNECT_LINK_GENERATION             = ALL_4_CONSUMED_NO_CALLBACK
 CONNECTOR_IMPLEMENTATION            = COMPLETE_MERGED
+RETRY_SAFE_IMPLEMENTATION           = LOCAL_VERIFIED_REVIEW_READY
 MERGED_PR_SEQUENCE                  = #42 -> #43 -> #44
 MOCK_CONTRACT_TEST                  = PASS
 INTEGRATION_WORKSPACE_DEPLOYMENT    = PASS
@@ -44,9 +45,10 @@ PR #17 ห้าม merge, cherry-pick หรือใช้เป็น impleme
 ## Approved architecture
 
 ```text
-Operator creates signed one-time invitation
-→ Customer opens connector-specific URL
-→ Worker validates and consumes invitation
+Operator creates signed bounded-retry invitation
+→ Customer opens connector-specific URL with side-effect-free GET
+→ Customer explicitly confirms with POST
+→ Worker atomically reserves one bounded attempt
 → Worker creates signed one-time OAuth state
 → Google authorization-code consent
 → Callback validates and consumes state
@@ -55,6 +57,7 @@ Operator creates signed one-time invitation
 → Access Token refresh/lifecycle proof
 → Provider identity validation
 → Connection metadata update
+→ success permanently closes invitation / failure releases bounded retry
 → Connected / Action required page
 ```
 
@@ -62,7 +65,9 @@ Permanent rules:
 
 - Invitation TTL default 24 hours and configurable.
 - OAuth state TTL default 10 minutes and configurable.
-- Invitation and OAuth state are signed, expiring, nonce-bound and one-time.
+- Invitation is signed, expiring, nonce-bound, preview-safe and bounded to 1–5
+  OAuth starts; the default is 3.
+- OAuth state remains signed, expiring, redirect-bound and one-time.
 - Google Ads and YouTube never share a Connection record or combined Consent.
 - Dynamic customer Refresh Tokens never use `.dev.vars`, Lark, Queue payload or plaintext D1.
 - Existing YouTube environment credential adapter remains for compatibility.
@@ -74,9 +79,13 @@ Permanent rules:
 
 Exact contract:
 
-`docs/customer-connection-oauth-contract-v1.md`
+`docs/customer-connection-oauth-contract-v2.md`
 
-The existing `connections` table remains the metadata authority. Migration extends it additively and leaves legacy encrypted-token columns unused. Distinct-grain tables are added only for:
+The v1 provider/encryption rules remain in
+`docs/customer-connection-oauth-contract-v1.md`. The existing `connections`
+table remains the metadata authority. Migration `0012` extends
+`connection_invitations` additively with bounded attempt and active-lock fields;
+legacy consumed rows stay closed. Distinct-grain tables remain:
 
 - `connection_invitations`
 - `oauth_state_attempts`
@@ -99,7 +108,8 @@ The existing `connections` table remains the metadata authority. Migration exten
 
 ## PR B — Google Ads scope
 
-- `GET /connect/google-ads`
+- `GET /connect/google-ads` — read-only confirmation preview
+- `POST /connect/google-ads` — exact user confirmation and OAuth begin
 - `GET /oauth/google-ads/callback`
 - Exact `adwords` scope and offline access.
 - Google Ads identity validation against the approved advertiser and manager mapping.
@@ -109,7 +119,8 @@ The existing `connections` table remains the metadata authority. Migration exten
 
 ## PR C — YouTube scope
 
-- `GET /connect/youtube`
+- `GET /connect/youtube` — read-only confirmation preview
+- `POST /connect/youtube` — exact user confirmation and OAuth begin
 - `GET /oauth/youtube/callback`
 - Exact `youtube.readonly` and `yt-analytics.readonly` scopes.
 - Reuse existing YouTube Data/Analytics clients and refresh-token provider.
@@ -132,9 +143,44 @@ The existing `connections` table remains the metadata authority. Migration exten
 - [x] `npm ci`, `npm run check`, `npm test`, report reliability, audit and deploy dry-run pass.
 - [x] `Implementation result` records files, commands, tests, security review and remaining blockers.
 
+### Retry-safe v2 acceptance
+
+- [x] Repeated `GET /connect/*` renders confirmation without reserving an attempt.
+- [x] `HEAD` and invalid confirmation POST cause zero OAuth side effects.
+- [x] D1 atomically permits one active attempt and rejects concurrent starts.
+- [x] Failed/expired attempts permit bounded retry; success closes permanently.
+- [x] Legacy consumed invitations remain closed after additive migration `0012`.
+- [x] Focused service, D1, HTTP and provider-flow suites pass.
+- [x] Full default gates pass on the final v2 diff.
+- [ ] Reviewed Remote D1 migration `0012`, deployment and test-link rollout.
+
 ## Implementation result
 
-Source implementation is complete and merged through three stacked PRs. The approved Integration Workspace rollout and two rounds of Connect-link generation are complete. All four invitations (customer and short-lived test, one per connector per round) were consumed at OAuth begin without callback completion. All four OAuth states are expired and unconsumed. Both connections are `authorization_pending` / `not_validated`; only encrypted PKCE verifiers exist, with no Refresh Token, identity selection, Queue message or Lark write.
+The v1 source implementation is merged through three stacked PRs. The approved
+Integration Workspace rollout and two rounds of v1 Connect-link generation are
+complete. All four v1 invitations were consumed at OAuth begin without callback
+completion. The local branch now implements the v2 preview-safe/bounded-retry
+contract and additive migration `0012`; it is not yet committed, migrated
+remotely or deployed.
+
+### Retry-safe v2 local implementation — 2026-07-24
+
+- `GET /connect/google-ads` and `GET /connect/youtube` verify and render a
+  confirmation page without invitation, PKCE or OAuth-state mutation.
+- Exact form POST `confirm=connect` reserves a D1 attempt and redirects with
+  `303`; the confirmation body is bounded to 1 KiB.
+- New invitations default to three starts and may explicitly allow 1–5.
+- D1 conditionally increments `attempt_count`, allows only one unexpired active
+  attempt and verifies exact attempt/connection binding on attach/release/finish.
+- Callback success completes the invitation permanently; callback/provider
+  failure releases the active lock while retaining the consumed attempt count.
+- Migration `0012_retry_safe_customer_connection.sql` is additive and keeps
+  legacy invitations at `max_attempts=1`.
+- Focused application/connector/storage suites pass `43/43`.
+- Full verification passes: Unit `686/686`, Workers runtime `9/9`, report
+  reliability `70/70`, Architecture `191/460/0`, audit `0` and deploy dry-run.
+- No Remote D1 command, Secret change, link generation, deploy, Queue message,
+  Lark write, schedule change or Production action occurred.
 
 ### Merged PR sequence
 
@@ -220,8 +266,9 @@ Current encrypted credential counts           2 active PKCE / 2 replaced PKCE / 
 ### Remaining blockers
 
 - All customer and test invitations are consumed and cannot be replayed.
-- The current `GET /connect/*` route consumes the invitation before Google callback; link preview/security scanners or an aborted consent therefore make a link unusable.
-- A retry-safe, preview-safe connection flow is requested but not implemented.
+- The live Worker still runs v1 one-shot-on-GET behavior. The v2 local patch is
+  not available to customers until review, migration `0012` and deploy.
+- Final diff/security review and commit/push remain pending.
 - Expired OAuth attempts leave active/replaced PKCE verifier audit rows; cleanup behavior requires review and explicit authorization before any data mutation.
 - OAuth callback, encrypted Refresh Token persistence and provider identity validation remain untested.
 - Google Ads Developer Token remains `Test Account Access`; OAuth can retain the credential with `google_ads_api_access_pending`, but Production advertiser API access must not be claimed.
@@ -230,17 +277,21 @@ Current encrypted credential counts           2 active PKCE / 2 replaced PKCE / 
 
 Exact rollout and rollback commands: `docs/customer-connection-oauth-rollout.md`.
 
-## Next boundary — Retry-safe and preview-safe Connect flow
+## Next boundary — Verify and roll out retry-safe v2
 
-Remote D1 migration, Worker Secrets/runtime mappings, Google Cloud configuration, deployment and HTTP smoke are complete. Current customer/test links are unusable because all invitations were consumed before callback completion.
+Remote migration `0011`, Worker Secrets/runtime mappings and Google Cloud
+configuration are complete. Current v1 customer/test links are unusable. The
+v2 patch and migration `0012` exist only on the local branch.
 
 Current operating rules:
 
 - Signed links are not stored in Source, docs or logs.
-- Do not generate replacement customer links against the current one-shot-on-GET behavior.
-- Design a safe landing/confirmation boundary: `GET` must be side-effect free and OAuth begin must require an explicit user action.
-- Support bounded retry before successful callback, with expiry, rate limiting, audit and permanent closure after success; do not make an unlimited reusable bearer link.
-- Add contract/data-model review, focused replay/prefetch/abort/retry tests, default gates and a guarded rollout plan before deployment.
+- Finish full gates and review the v2 diff/contract.
+- Do not generate replacement links before migration `0012` and the v2 Worker
+  deploy are confirmed.
+- Under separate rollout approval: export Remote D1, apply `0012`, deploy, smoke
+  repeated GET plus explicit POST, then generate fresh short-lived test links.
+- Generate customer links only after both connector test callbacks pass.
 - Review orphaned PKCE cleanup separately; do not delete D1 audit rows or credentials without exact approval.
 
 ## Account handoff — 2026-07-24
@@ -248,10 +299,11 @@ Current operating rules:
 Another account can resume by reading `AGENTS.md`, this file, `docs/project-brain/00-current-state.md` and `docs/project-brain/10-next-actions.md`.
 
 ```text
-GIT_HEAD                            425bfde / main = origin/main
-WORKTREE                            6 tracked documentation files modified
+BASE_GIT_HEAD                       ccaf753 / main = origin/main
+WORK_BRANCH                         codex/retry-safe-connect-flow
+CHANGE_SET                          retry-safe v2 on feature branch
 LIVE_WORKER_VERSION                 e80e46f0-5f81-4ce9-ae06-678cafab6efe
-REMOTE_D1_MIGRATION                 0011 applied
+REMOTE_D1_MIGRATION                 0011 applied / 0012 not applied
 INVITATIONS                         google_ads 2/2 consumed; youtube 2/2 consumed
 OAUTH_STATES                        google_ads 2 expired; youtube 2 expired; callbacks 0
 PKCE_CREDENTIALS                    per connector: 1 active + 1 replaced

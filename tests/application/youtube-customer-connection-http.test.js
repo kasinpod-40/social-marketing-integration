@@ -4,15 +4,35 @@ import {
   createYouTubeCustomerConnectionHttpHandler,
 } from '../../apps/sync-worker/src/youtube-customer-connection-http.js';
 
-test('YouTube connect redirects with no-store browser policy', async () => {
+test('YouTube GET renders confirmation without starting OAuth', async () => {
   const calls = [];
   const handler = createHandler(calls);
   const url = new URL('https://worker.example/connect/youtube?invitation=signed');
   const response = await handler({ request: new Request(url), env: {}, url });
-  assert.equal(response.status, 302);
-  assert.equal(response.headers.get('location'), 'https://accounts.google.test/youtube-consent');
+  assert.equal(response.status, 200);
   assert.equal(response.headers.get('cache-control'), 'no-store');
-  assert.equal(calls[0], 'signed');
+  const html = await response.text();
+  assert.match(html, /ยืนยันการเชื่อมต่อ YouTube/u);
+  assert.equal(html.includes('signed'), false);
+  assert.deepEqual(calls[0], { type: 'preview', invitation: 'signed' });
+});
+
+test('YouTube POST requires explicit confirmation before redirecting with 303', async () => {
+  const calls = [];
+  const handler = createHandler(calls);
+  const url = new URL('https://worker.example/connect/youtube?invitation=signed');
+  const response = await handler({
+    request: new Request(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: 'confirm=connect',
+    }),
+    env: {},
+    url,
+  });
+  assert.equal(response.status, 303);
+  assert.equal(response.headers.get('location'), 'https://accounts.google.test/youtube-consent');
+  assert.deepEqual(calls[0], { type: 'begin', invitation: 'signed' });
 });
 
 test('YouTube callback can return explicit selection candidates without auto-selecting', async () => {
@@ -56,8 +76,17 @@ function createHandler(calls) {
   return createYouTubeCustomerConnectionHttpHandler({
     createRuntime: () => ({}),
     createFlow: () => ({
+      async preview(invitation) {
+        calls.push({ type: 'preview', invitation });
+        return {
+          attemptsRemaining: 3,
+          canStart: true,
+          retryAvailableAt: null,
+          expiresAt: '2026-07-25T00:00:00.000Z',
+        };
+      },
       async begin(invitation) {
-        calls.push(invitation);
+        calls.push({ type: 'begin', invitation });
         return 'https://accounts.google.test/youtube-consent';
       },
       async complete() {

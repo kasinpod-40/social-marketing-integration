@@ -14,7 +14,7 @@ test('YouTube callback connects the only owned channel and persists null when su
   const fixture = createFixture({ channels: [channel('channel_A', { hidden: true })] });
   const result = await fixture.flow.complete({ state: 'signed-state', code: 'auth-code' });
   assert.equal(result.connectionStatus, 'connected');
-  assert.equal(fixture.calls.order.join(','), 'exchange,encrypt,decrypt,refresh,list,update');
+  assert.equal(fixture.calls.order.join(','), 'exchange,encrypt,decrypt,refresh,list,update,complete');
   assert.equal(fixture.calls.update[0].externalAccountId, 'channel_A');
   assert.equal(fixture.calls.update[0].providerMetadata.uploadsPlaylistId, 'UU_channel_A');
   assert.equal(fixture.calls.update[0].providerMetadata.subscriberCountHidden, true);
@@ -28,6 +28,7 @@ test('YouTube callback with zero channels retains credential and records identit
   assert.equal(fixture.calls.encrypt.length, 1);
   assert.equal(fixture.calls.update[0].accessStatus, 'identity_mismatch');
   assert.equal(fixture.calls.update[0].lastErrorCode, 'YOUTUBE_CHANNEL_NOT_FOUND');
+  assert.equal(fixture.calls.release.length, 1);
 });
 
 test('YouTube callback with multiple channels requires signed one-time explicit selection', async () => {
@@ -43,6 +44,7 @@ test('YouTube callback with multiple channels requires signed one-time explicit 
   ]);
   assert.equal(fixture.calls.selections.length, 1);
   assert.equal(fixture.calls.update[0].accessStatus, 'identity_selection_required');
+  assert.equal(fixture.calls.complete.length, 1);
 
   fixture.selectedCandidate = fixture.calls.selections[0].candidates[1];
   const selected = await fixture.flow.select({
@@ -75,6 +77,7 @@ test('YouTube refresh failure retains encrypted credential and does not discover
   assert.equal(result.nextAction, 'reconnect');
   assert.equal(fixture.calls.encrypt.length, 1);
   assert.equal(fixture.calls.order.includes('list'), false);
+  assert.equal(fixture.calls.release.length, 1);
 });
 
 function createFixture(options = {}) {
@@ -84,6 +87,8 @@ function createFixture(options = {}) {
     update: [],
     selections: [],
     consume: [],
+    complete: [],
+    release: [],
   };
   let sequence = 0;
   const fixture = {
@@ -91,14 +96,27 @@ function createFixture(options = {}) {
     selectedCandidate: null,
   };
   const shared = {
+    async previewInvitation() {
+      return { attemptsRemaining: 3, canStart: true };
+    },
     async beginOAuth() { return { state: 'signed-state', codeChallenge: 'challenge' }; },
     async consumeCallbackState() {
       return {
         connectionId: 'connection-private',
         customerKey: 'customer-private',
+        connectorKey: 'youtube',
+        invitationId: 'invitation-private',
         attemptId: 'attempt-private',
         pkceVerifier: 'pkce-private',
       };
+    },
+    async completeOAuthAttempt(input) {
+      calls.order.push('complete');
+      calls.complete.push(input);
+    },
+    async releaseOAuthAttempt(input) {
+      calls.order.push('release');
+      calls.release.push(input);
     },
   };
   const oauthClient = {

@@ -8,9 +8,13 @@ import { encodeBase64Url } from '../../packages/shared/src/security/secure-token
 
 const INITIAL_URL = new URL('../../migrations/0001_initial.sql', import.meta.url);
 const MIGRATION_URL = new URL('../../migrations/0011_customer_connection_oauth.sql', import.meta.url);
+const RETRY_MIGRATION_URL = new URL(
+  '../../migrations/0012_retry_safe_customer_connection.sql',
+  import.meta.url,
+);
 const ENCRYPTION_KEY = encodeBase64Url(crypto.getRandomValues(new Uint8Array(32)));
 
-test('D1 invitation consume is exact, expiring and one-time', async () => {
+test('D1 invitation reservation is exact, bounded and allows retry after active state expiry', async () => {
   const fixture = await createFixture();
   try {
     await fixture.store.createInvitation({
@@ -22,35 +26,204 @@ test('D1 invitation consume is exact, expiring and one-time', async () => {
       redirectUri: 'https://example.test/oauth/youtube/callback',
       issuedAt: 1_000,
       expiresAt: 2_000,
+      maxAttempts: 2,
     });
 
     await assert.rejects(
-      () => fixture.store.consumeInvitation({
+      () => fixture.store.reserveInvitationAttempt({
         id: 'invitation-1',
+        attemptId: 'attempt-wrong',
         connectorKey: 'google_ads',
         customerKey: 'customer',
         nonceHash: 'nonce-hash',
+        maxAttempts: 2,
+        attemptExpiresAt: 1_700,
         now: 1_500,
       }),
       (error) => error.code === 'CONNECTION_INVITATION_MISMATCH',
     );
-    const consumed = await fixture.store.consumeInvitation({
+    const reserved = await fixture.store.reserveInvitationAttempt({
       id: 'invitation-1',
+      attemptId: 'attempt-1',
       connectorKey: 'youtube',
       customerKey: 'customer',
       nonceHash: 'nonce-hash',
+      maxAttempts: 2,
+      attemptExpiresAt: 1_700,
       now: 1_500,
     });
-    assert.equal(consumed.consumedAt, 1_500);
+    assert.equal(reserved.attemptCount, 1);
+    assert.equal(reserved.consumedAt, null);
     await assert.rejects(
-      () => fixture.store.consumeInvitation({
+      () => fixture.store.reserveInvitationAttempt({
         id: 'invitation-1',
+        attemptId: 'attempt-2',
         connectorKey: 'youtube',
         customerKey: 'customer',
         nonceHash: 'nonce-hash',
+        maxAttempts: 2,
+        attemptExpiresAt: 1_800,
         now: 1_600,
       }),
+      (error) => error.code === 'CONNECTION_INVITATION_ATTEMPT_ACTIVE',
+    );
+    const retried = await fixture.store.reserveInvitationAttempt({
+      id: 'invitation-1',
+      attemptId: 'attempt-2',
+      connectorKey: 'youtube',
+      customerKey: 'customer',
+      nonceHash: 'nonce-hash',
+      maxAttempts: 2,
+      attemptExpiresAt: 1_950,
+      now: 1_701,
+    });
+    assert.equal(retried.attemptCount, 2);
+    await assert.rejects(
+      () => fixture.store.reserveInvitationAttempt({
+        id: 'invitation-1',
+        attemptId: 'attempt-3',
+        connectorKey: 'youtube',
+        customerKey: 'customer',
+        nonceHash: 'nonce-hash',
+        maxAttempts: 2,
+        attemptExpiresAt: 1_990,
+        now: 1_951,
+      }),
+      (error) => error.code === 'CONNECTION_INVITATION_ATTEMPTS_EXHAUSTED',
+    );
+  } finally {
+    fixture.close();
+  }
+});
+
+test('D1 invitation permits one concurrent reservation and closes only after successful completion', async () => {
+  const fixture = await createFixture();
+  try {
+    await fixture.store.createInvitation({
+      invitationId: 'invitation-concurrent',
+      connectorKey: 'google_ads',
+      customerKey: 'customer',
+      environment: 'development',
+      nonceHash: 'nonce-concurrent',
+      redirectUri: 'https://example.test/oauth/google-ads/callback',
+      issuedAt: 1_000,
+      expiresAt: 10_000,
+      maxAttempts: 3,
+    });
+    const reserve = (attemptId) => fixture.store.reserveInvitationAttempt({
+      id: 'invitation-concurrent',
+      attemptId,
+      connectorKey: 'google_ads',
+      customerKey: 'customer',
+      nonceHash: 'nonce-concurrent',
+      maxAttempts: 3,
+      attemptExpiresAt: 2_000,
+      now: 1_100,
+    });
+    const outcomes = await Promise.allSettled([reserve('attempt-a'), reserve('attempt-b')]);
+    assert.equal(outcomes.filter((item) => item.status === 'fulfilled').length, 1);
+    assert.equal(
+      outcomes.filter((item) => item.status === 'rejected')[0].reason.code,
+      'CONNECTION_INVITATION_ATTEMPT_ACTIVE',
+    );
+    const activeAttemptId = outcomes.find((item) => item.status === 'fulfilled').value.activeAttemptId;
+
+    await fixture.store.createConnection({
+      connectionId: 'connection-concurrent',
+      connectorKey: 'google_ads',
+      customerKey: 'customer',
+      createdAt: 1_100,
+    });
+    await fixture.store.attachInvitationConnection({
+      invitationId: 'invitation-concurrent',
+      connectionId: 'connection-concurrent',
+      attemptId: activeAttemptId,
+    });
+    const completed = await fixture.store.completeInvitation({
+      id: 'invitation-concurrent',
+      attemptId: activeAttemptId,
+      connectionId: 'connection-concurrent',
+      connectorKey: 'google_ads',
+      customerKey: 'customer',
+      now: 1_200,
+    });
+    assert.equal(completed.consumedAt, 1_200);
+    assert.equal(completed.activeAttemptId, null);
+    await assert.rejects(
+      () => reserve('attempt-after-success'),
       (error) => error.code === 'CONNECTION_INVITATION_REPLAYED',
+    );
+  } finally {
+    fixture.close();
+  }
+});
+
+test('D1 invitation release permits an immediate bounded retry after callback failure', async () => {
+  const fixture = await createFixture();
+  try {
+    await fixture.store.createInvitation({
+      invitationId: 'invitation-release',
+      connectorKey: 'youtube',
+      customerKey: 'customer',
+      environment: 'development',
+      nonceHash: 'nonce-release',
+      redirectUri: 'https://example.test/oauth/youtube/callback',
+      issuedAt: 1_000,
+      expiresAt: 10_000,
+      maxAttempts: 3,
+    });
+    await fixture.store.reserveInvitationAttempt({
+      id: 'invitation-release',
+      attemptId: 'attempt-1',
+      connectorKey: 'youtube',
+      customerKey: 'customer',
+      nonceHash: 'nonce-release',
+      maxAttempts: 3,
+      attemptExpiresAt: 2_000,
+      now: 1_100,
+    });
+    await fixture.store.releaseInvitationAttempt({
+      id: 'invitation-release',
+      attemptId: 'attempt-1',
+      connectionId: 'connection-not-created',
+      connectorKey: 'youtube',
+      customerKey: 'customer',
+      now: 1_200,
+    });
+    const retry = await fixture.store.reserveInvitationAttempt({
+      id: 'invitation-release',
+      attemptId: 'attempt-2',
+      connectorKey: 'youtube',
+      customerKey: 'customer',
+      nonceHash: 'nonce-release',
+      maxAttempts: 3,
+      attemptExpiresAt: 2_100,
+      now: 1_201,
+    });
+    assert.equal(retry.attemptCount, 2);
+    assert.equal(retry.activeAttemptId, 'attempt-2');
+
+    await fixture.store.createConnection({
+      connectionId: 'connection-release',
+      connectorKey: 'youtube',
+      customerKey: 'customer',
+      createdAt: 1_202,
+    });
+    await fixture.store.attachInvitationConnection({
+      invitationId: 'invitation-release',
+      connectionId: 'connection-release',
+      attemptId: 'attempt-2',
+    });
+    await assert.rejects(
+      () => fixture.store.releaseInvitationAttempt({
+        id: 'invitation-release',
+        attemptId: 'attempt-2',
+        connectionId: 'wrong-connection',
+        connectorKey: 'youtube',
+        customerKey: 'customer',
+        now: 1_203,
+      }),
+      (error) => error.code === 'CONNECTION_INVITATION_MISMATCH',
     );
   } finally {
     fixture.close();
@@ -354,12 +527,16 @@ async function seedPendingAttempt(store) {
     redirectUri: 'https://example.test/oauth/youtube/callback',
     issuedAt: 1_000,
     expiresAt: 2_000,
+    maxAttempts: 3,
   });
-  await store.consumeInvitation({
+  await store.reserveInvitationAttempt({
     id: 'invitation-1',
+    attemptId: 'attempt-1',
     connectorKey: 'youtube',
     customerKey: 'customer',
     nonceHash: 'invitation-hash',
+    maxAttempts: 3,
+    attemptExpiresAt: 2_000,
     now: 1_100,
   });
   await store.createConnection({
@@ -371,6 +548,7 @@ async function seedPendingAttempt(store) {
   await store.attachInvitationConnection({
     invitationId: 'invitation-1',
     connectionId: 'connection-1',
+    attemptId: 'attempt-1',
   });
   await store.createOAuthState({
     attemptId: 'attempt-1',
@@ -386,13 +564,15 @@ async function seedPendingAttempt(store) {
 }
 
 async function createFixture() {
-  const [initial, migration] = await Promise.all([
+  const [initial, migration, retryMigration] = await Promise.all([
     readFile(INITIAL_URL, 'utf8'),
     readFile(MIGRATION_URL, 'utf8'),
+    readFile(RETRY_MIGRATION_URL, 'utf8'),
   ]);
   const d1 = createSqliteD1();
   d1.exec(initial);
   d1.exec(migration);
+  d1.exec(retryMigration);
   return {
     d1,
     store: new D1CustomerConnectionStore({ db: d1 }),

@@ -10,7 +10,9 @@ import {
 } from './customer-connection-runtime.js';
 import { json } from '../../../packages/shared/src/http/response.js';
 import {
+  connectionConfirmationPage,
   connectionSecurityHeaders,
+  requireConnectionConfirmation,
   requireConnectionQuery,
 } from './customer-connection-http-utils.js';
 
@@ -27,9 +29,18 @@ export function createGoogleAdsCustomerConnectionHttpHandler(dependencies = {}) 
   return async function handleGoogleAdsConnection({ request, env, url }) {
     if (request.method === 'GET' && url.pathname === GOOGLE_ADS_CONNECTION_PATHS.connect) {
       const flow = flowFactory(runtimeFactory(env), env);
+      const preview = await flow.preview(requireConnectionQuery(url, 'invitation'));
+      return connectionConfirmationPage({
+        connectorLabel: 'Google Ads',
+        preview,
+      });
+    }
+    if (request.method === 'POST' && url.pathname === GOOGLE_ADS_CONNECTION_PATHS.connect) {
+      await requireConnectionConfirmation(request);
+      const flow = flowFactory(runtimeFactory(env), env);
       const location = await flow.begin(requireConnectionQuery(url, 'invitation'));
       return new Response(null, {
-        status: 302,
+        status: 303,
         headers: connectionSecurityHeaders({ location }),
       });
     }
