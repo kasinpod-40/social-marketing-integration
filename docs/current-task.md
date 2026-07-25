@@ -12,6 +12,8 @@ FACEBOOK_TOKEN                   = READY_IN_SECRET_BOUNDARY
 INSTAGRAM_TOKEN                  = READY_IN_SECRET_BOUNDARY
 FACEBOOK_ORGANIC                 = SOURCE_FOUNDATION_READY_WRITE_PATH_PENDING
 INSTAGRAM_ORGANIC                = SOURCE_FOUNDATION_READY_WRITE_PATH_PENDING
+GOOGLE_ADS_CUSTOMER_CONFIRMATION = WAITING_CUSTOMER_CLICK
+YOUTUBE_CUSTOMER_CONFIRMATION    = WAITING_CUSTOMER_CLICK
 D1_BUSINESS_WRITES               = TO_IMPLEMENT
 LARK_RAW_WRITES                  = TO_IMPLEMENT
 LARK_CANONICAL_WRITES            = TO_IMPLEMENT
@@ -43,6 +45,26 @@ connection status when the remaining path to Lark is implementable. Foundation-o
 work is allowed only for a real blocker and must not outrank a ready Connector that
 can produce customer-visible data.
 
+## Current connector sequencing
+
+Facebook Organic and Instagram Organic are the active implementation priority
+because their tokens are already available in the Secret boundary and both have
+approved source adapters and normalization contracts.
+
+Google Ads and YouTube are not rejected and are not waiting for another foundation
+phase. Their connection flows are waiting for the customer to click and confirm the
+customer-owned authorization. No workaround, fake confirmation or developer-owned
+credential substitution is allowed.
+
+After either customer confirmation succeeds, that Connector must be taken through
+the same end-to-end rule: exact identity validation, real source read, D1 durability,
+Shared RAW/Canonical Lark delivery, reconciliation and idempotent rerun. It must not
+be treated as another access-only or transport-only milestone.
+
+The standalone Google Ads Queue-admission branch remains paused. Resume it only when
+it is part of the reviewed end-to-end Google Ads path to customer-visible Lark data,
+not as a higher-priority transport milestone while Facebook/Instagram are ready.
+
 ## Objective
 
 Deliver real Facebook Page Organic and Instagram Organic data from the currently
@@ -50,9 +72,8 @@ authorized Integration Workspace sources into the existing Shared RAW and Canoni
 Lark tables, with D1-first durability, exact stable keys, Coverage, reliability,
 reconciliation and an idempotent manual rerun.
 
-The completion boundary is not "token works" or "API returns data". Completion
-requires the user and customer to open Lark and see the expected Facebook and
-Instagram account/content/metric rows in the approved Views without duplicate
+Completion requires the user and customer to open Lark and see the expected Facebook
+and Instagram account/content/metric rows in the approved Views without duplicate
 stable keys or fabricated metrics.
 
 ## Existing approved foundation
@@ -67,14 +88,12 @@ PR `#50` already provides:
 - five Shared RAW table topology;
 - exact stable-key, null/zero, time and Coverage semantics.
 
-The existing physical destinations are reused. No provider-specific duplicate Raw
-tables may be created.
+Reuse the existing physical destinations. Do not create provider-specific duplicate
+Raw tables or a parallel reliability stack.
 
 ## Source scope
 
 ### Facebook Organic
-
-Required datasets:
 
 ```text
 facebook.account.latest
@@ -83,20 +102,17 @@ facebook.content.insights
 facebook.account.insights
 ```
 
-Required credential boundary:
+Credential boundary:
 
 ```text
 META_FACEBOOK_PAGE_ACCESS_TOKEN
 ```
 
-The Page token must remain in Secret storage. Exact Page identity must be verified
-before the first business write. Unsupported or deprecated Insight metrics become
-`null` or no row with Coverage evidence; they must never be guessed or converted to
-zero.
+The Page token remains in Secret storage. Verify exact Page identity before the
+first business write. Unsupported/deprecated metrics become `null` or no row with
+Coverage evidence; never guess or convert them to zero.
 
 ### Instagram Organic
-
-Required datasets:
 
 ```text
 instagram.account.latest
@@ -105,15 +121,14 @@ instagram.content.insights
 instagram.account.insights
 ```
 
-Required credential boundary:
+Credential boundary:
 
 ```text
 META_INSTAGRAM_ACCESS_TOKEN
 ```
 
-The token must include the permissions required by the approved contract, including
-Insights permission. Exact professional-account identity must be verified before the
-first business write.
+The token must include the approved Insights permission. Verify the exact
+professional-account identity before the first business write.
 
 ## Destination scope
 
@@ -136,8 +151,6 @@ MKT_Content_Daily
 
 ### D1 authority
 
-Reuse the approved Storage Architecture and existing D1 business grains:
-
 ```text
 organic_content_state
 organic_content_observations
@@ -148,8 +161,6 @@ sync_cursors
 sync_work_runs / sync_work_phases / sync_work_units
 sync_runs / sync_locks / dead_letter_jobs / system_alerts
 ```
-
-Do not create a parallel Meta reliability stack.
 
 ## Stable-key and metric rules
 
@@ -170,17 +181,14 @@ D1 observation
   {content_key}:{observed_at}:{observation_kind}:v1
 ```
 
-Rules:
-
 - External IDs remain Text.
 - Missing/unsupported metric is `null` or no row.
 - Observed zero remains `0`.
 - Source timestamp is retained exactly; reporting dates use `Asia/Bangkok`.
 - One generation reuses `fetched_at`, `observed_at`, Coverage ID and stable keys.
-- Rerun must not create duplicate rows or duplicate Observations for unchanged
-  cumulative metrics.
-- Incoming `null` must not erase a protected existing non-null value unless the
-  source contract explicitly represents deletion/absence.
+- Rerun must not create duplicate rows or false Observations for unchanged metrics.
+- Incoming `null` must not erase a protected non-null value without explicit source
+  deletion/absence semantics.
 
 ## Required write order
 
@@ -198,26 +206,25 @@ For each bounded durable unit:
 ```
 
 The cursor and completion marker may advance only after all authorized destinations
-for the unit reconcile successfully. Partial failure must remain partial and resume
-from the durable checkpoint.
+for the unit reconcile successfully. Partial failure remains partial and resumes from
+the durable checkpoint.
 
 ## Implementation order
 
-1. Full review of current Meta adapters, normalizers, D1 stores, shared Lark
-   repository, Sync Engine, Queue routing and reliability code.
+1. Review current Meta adapters, normalizers, D1 stores, shared Lark repository,
+   Sync Engine, Queue routing and reliability code.
 2. Record duplicate/dead-code and architecture findings before adding modules.
-3. Add Facebook Organic and Instagram Organic active use cases using shared
-   abstractions where possible.
+3. Add shared Facebook/Instagram Organic active use cases without duplicate clients.
 4. Add exact runtime configuration and independent default-false feature flags.
-5. Add D1-first durable unit staging/checkpoint/Coverage integration.
-6. Add Shared RAW and Canonical Lark planners/writers using existing table contracts.
-7. Add central Job routing for manual one-shot execution; no schedule producer.
+5. Add D1-first durable unit/checkpoint/Coverage integration.
+6. Add Shared RAW and Canonical Lark planners/writers using existing contracts.
+7. Add central manual one-shot Job routing; no schedule producer.
 8. Add fixture, failure, retry, partial-write, idempotency and reconciliation tests.
-9. Run local full gates.
-10. Deploy only after reviewed source merge and a protected Remote rollout plan.
+9. Run full local Definition of Done gates.
+10. Merge only after review, then use a protected Remote rollout plan.
 11. Run Facebook manual UAT and verify Lark.
 12. Run Instagram manual UAT and verify Lark.
-13. Rerun both with the same source state and prove zero duplicate/business drift.
+13. Rerun both and prove zero duplicate/business drift.
 14. Keep schedules disabled until the customer-visible result is accepted.
 
 ## In scope
@@ -228,42 +235,44 @@ from the durable checkpoint.
 - Exact identity/permission preflight before writes.
 - D1-first durability, distributed lock, generation fence and resumable checkpoint.
 - Coverage, Sync Log, typed retry/DLQ/Alert behavior.
-- Bounded pagination, request/body limits and rate-limit-aware retry.
+- Bounded pagination, response limits and rate-limit-aware retry.
 - Customer-visible Lark verification and idempotent rerun evidence.
-- Safe token use from Secret storage only.
+- Secret-boundary token use only.
 
 ## Out of scope
 
-- Meta Ads ingestion in this release; its current no-data state does not block
-  Facebook/Instagram Organic delivery.
-- Google Ads Queue-admission implementation; the existing branch remains paused.
+- Meta Ads ingestion in this release; current no-data does not block Organic delivery.
+- Google Ads and YouTube live connection/UAT until the customer clicks and confirms.
+- Standalone Google Ads Queue-admission implementation while the branch is paused.
 - Schedule/Cron activation before manual UAT and customer review.
 - Advertisement mutation, publishing, messaging or Spend changes.
-- Lark Schema/View/Formula redesign or creation of new provider-specific Raw tables.
+- Lark Schema/View/Formula redesign or provider-specific Raw tables.
 - Retention/delete operations.
 - Production cutover or customer-owned infrastructure migration.
 
 ## Acceptance criteria
 
 - [ ] Full current-codebase review completed before implementation.
-- [ ] Existing Meta source adapters and normalizers are reused without duplicate
-  provider clients or reliability stacks.
-- [ ] Facebook exact Page identity and required permissions pass with the live token.
+- [ ] Existing Meta adapters/normalizers are reused without duplicate provider clients
+  or reliability stacks.
+- [ ] Facebook exact Page identity and permissions pass with the live token.
 - [ ] Instagram exact professional-account identity and Insights permissions pass.
 - [ ] Facebook and Instagram manual jobs use central Connector/Job catalogs.
 - [ ] Feature flags remain false in repository examples and default runtime.
-- [ ] D1 durable state, Observations/account facts and Coverage reconcile exactly.
-- [ ] Shared RAW Lark rows appear in all three approved Meta Organic tables.
+- [ ] D1 state, Observations/account facts and Coverage reconcile exactly.
+- [ ] Shared RAW rows appear in all three approved Meta Organic tables.
 - [ ] Canonical rows appear in Accounts, Account Daily, Content and Content Daily.
 - [ ] `created + updated + skipped = expected` and `failed = 0` per dataset.
-- [ ] Exact rerun creates no duplicate stable keys and no false Observations.
+- [ ] Exact rerun creates no duplicate stable keys or false Observations.
 - [ ] Missing metrics remain `null`; observed zero remains `0`.
-- [ ] No token, Page credential, identity payload or raw provider error leaks to Git,
+- [ ] No token, credential, identity payload or raw provider error leaks to Git,
   Queue, D1/Lark business rows, logs or alerts.
 - [ ] Retryable failures resume from checkpoint; permanent failures enter typed DLQ.
 - [ ] Facebook manual Live UAT is visible and verified in Lark.
 - [ ] Instagram manual Live UAT is visible and verified in Lark.
-- [ ] Schedules remain disabled after manual UAT unless separately approved.
+- [ ] Google Ads/YouTube remain recorded as customer-confirmation pending without
+  fake completion or developer-owned substitution.
+- [ ] Schedules remain disabled unless separately approved after customer review.
 - [ ] `npm ci`, `npm run check`, `npm test`,
   `npm run test:report-reliability`, `npm audit --audit-level=high` and
   `npm run deploy:dry-run` pass.
