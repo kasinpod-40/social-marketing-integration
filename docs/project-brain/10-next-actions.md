@@ -2,14 +2,14 @@
 
 ## Immediate next action — External Signed PREVIEW closeout review
 
-Google Ads Manager Script signed-delivery source/transport progression is now:
+Google Ads Manager Script signed-delivery progression is now:
 
-1. Phase 1 merged through PR `#51` at `d7400c5`;
-2. Phase 2 merged through PR `#52` at `e317fb9`;
-3. Remote transport Closeout merged through PR `#53` at `217d54e`;
-4. actual Manager Script external `DRY_RUN` correction merged through PR `#54`;
-5. one-time Signing Secret provisioning implementation merged through PR `#55`
-   at `4008b991e9aba2309691b733caccd7613f2ad2a8`;
+1. Phase 1 merged through PR `#51` at `d7400c5`.
+2. Phase 2 merged through PR `#52` at `e317fb9`.
+3. Remote transport Closeout merged through PR `#53` at `217d54e`.
+4. Actual Manager Script external `DRY_RUN` correction merged through PR `#54`.
+5. One-time Signing Secret provisioning implementation merged through PR `#55`
+   at `4008b991e9aba2309691b733caccd7613f2ad2a8`.
 6. Migration `0014`, actual Script provisioning and actual external Signed
    PREVIEW passed in separately approved operator windows.
 
@@ -124,8 +124,8 @@ No Live Lark Apply, Google Ads mutation, Queue message, D1 migration, schedule c
 
 ## Current approval gate
 
-Documentation-only Closeout review/merge for the actual Google Ads Manager
-Script Secret provisioning and External Signed PREVIEW. Runtime gates are already
+Documentation-only Closeout review/merge for actual Google Ads Manager Script
+Secret provisioning and External Signed PREVIEW. Runtime gates are already
 safe-closed. After merge, the next implementation task may design and implement
 Local reference-only Queue admission from authenticated completed Run/Chunk
 references only. Business writer, D1 Ads facts, Shared RAW/Lark writes, LIVE,
@@ -171,3 +171,123 @@ Schedule and Production remain separately gated.
 3. Retryable versus Permanent classification.
 4. D1 nonce/replay state.
 5. D1 checkpoint and distributed lock.
+6. DLQ and controlled redrive.
+7. Partial-write semantics.
+8. Reconciliation and data-quality counters.
+9. Retention and expiry.
+
+### Destination
+
+1. RAW Google table mapping.
+2. Canonical Ads Accounts/Campaigns/AdGroups/Ads/Creatives/AssetGroups/Daily mapping.
+3. Relation/stable-key resolution.
+4. Money micros conversion and Formula ownership.
+5. Lark write batching and rate-limit handling.
+6. Sync Log and System Alert evidence.
+
+### Environment and rollout
+
+1. One pre-Production `development / integration_workspace` runtime and
+   customer-owned Production isolation; `uat_chemistry_k` is only a historical
+   compatibility alias.
+2. Separate secrets and signing keys per environment.
+3. Connector feature flag disabled by default.
+4. Schedule disabled by default.
+5. Customer-real UAT retention/cleanup.
+6. Customer-owned Production resources.
+
+## Remaining implementation order after External Signed PREVIEW
+
+1. Merge this documentation-only Closeout after review.
+2. Open a separate Local reference-only Queue admission task.
+3. Add Queue/D1 replay/idempotency state only where the current transport store
+   does not already provide the required authority.
+4. Admit only completed authenticated transport references; do not copy raw
+   payloads into Queue messages.
+5. Add Sync Worker reference processing behind disabled flags.
+6. Add six-dataset normalization and destination planning in a later gate.
+7. Add bounded D1/Lark writes only after separate approval.
+8. Add partial-failure, retry, DLQ and reconciliation tests.
+9. Run isolated manual UAT with schedules off.
+10. Observe clean manual cycles before considering schedule.
+
+## Direct Google Ads API track
+
+Current state:
+
+```text
+Basic Access application submitted 2026-07-21
+Case ID 1-686800040839
+Review pending
+Current level Test Account Access
+```
+
+Direct API is optional Phase 2. Do not delay the Manager Script MVP solely for approval, but do not claim production direct-API readiness until approval and OAuth UAT pass.
+
+## View work
+
+### Closed
+
+- Table names/icons/folders
+- View names/icons
+- Shared-table managed filters 17/17
+- Report Views 6/6
+- Google Ads managed filters 19/19
+- Google Formula fields 4/4
+- Google View update-only maintenance guard
+
+Do not rerun these applies.
+
+### Separate future decision
+
+55 legacy specialized Views are intentionally preserved without inferred business filters. Create a new business-owner contract only when there is a real use case. Each new contract must specify:
+
+- Table and exact View name
+- intended audience/purpose
+- Filter conjunction and conditions
+- Sort
+- Hidden fields
+- source/evidence
+- acceptance test
+
+Do not infer semantics from names such as Active, Failed, Latest or High Spend Low ROAS.
+
+## RAW data-quality work
+
+Current Google RAW error Views use stable-key-only minimum QA.
+
+A separate Data Quality workstream may add checks for:
+
+- customer/account IDs
+- campaign/ad group/ad/asset IDs
+- status/primary status/serving status
+- report level and segment key
+- conversion action identity
+- policy state
+- date and metric grain
+
+Do not overload the current stable-key Views without approval.
+
+## Other channel priority after Google Ads connector
+
+1. Facebook Organic connector using shared Meta transport and reliability.
+2. Instagram Organic connector and token-refresh operations.
+3. Meta Ads connector and customer-real data UAT.
+4. TikTok Ads access/Business Center/API preflight and connector.
+5. WooCommerce.
+6. Chatwoot.
+7. Multi-channel AI summary/insight/notification.
+8. Connector-by-connector manual UAT inside the single Integration Workspace.
+9. Customer-owned Production cutover.
+
+## Permanent release blockers
+
+- Production resources not customer-owned.
+- Connector/source identity not verified.
+- Missing stable key or idempotency contract.
+- Missing bounded pagination/batch limits.
+- Missing replay/signature validation for inbound delivery.
+- Reliability, reconciliation or partial-write gate failing.
+- Schedule enabled before manual UAT.
+- Secret/customer identity present in Source or logs.
+- Customer-scale Live UAT not completed where required.
