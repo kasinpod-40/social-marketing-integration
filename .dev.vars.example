@@ -42,8 +42,9 @@ MKT_CONNECTOR_FACEBOOK_ENABLED=false
 MKT_CONNECTOR_INSTAGRAM_ENABLED=false
 MKT_CONNECTOR_META_ADS_ENABLED=false
 MKT_CONNECTOR_GOOGLE_ADS_ENABLED=false
-# Signed ingress และ Business writer เป็นคนละ Gate; Release example ต้องปิดทั้งคู่
+# Signed ingress, one-time Secret provisioning และ Business writer เป็นคนละ Gate; ปิดทั้งหมดเป็นค่าเริ่มต้น
 MKT_GOOGLE_ADS_SIGNED_INGRESS_ENABLED=false
+MKT_GOOGLE_ADS_SECRET_PROVISIONING_ENABLED=false
 MKT_GOOGLE_ADS_BUSINESS_WRITE_ENABLED=false
 MKT_CONNECTOR_YOUTUBE_ENABLED=false
 MKT_CONNECTOR_WOOCOMMERCE_ENABLED=false

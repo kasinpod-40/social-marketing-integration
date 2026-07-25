@@ -10,15 +10,24 @@ import {
   createGoogleAdsManagerDeliveryHttpHandler,
   GOOGLE_ADS_MANAGER_DELIVERY_ROUTE,
 } from './google-ads-manager-delivery-http.js';
+import {
+  createGoogleAdsSigningSecretProvisioningHttpHandler,
+  GOOGLE_ADS_SIGNING_PROVISIONING_ROUTES,
+} from './google-ads-signing-secret-provisioning-http.js';
 
 /** Map Route แบบคงที่เพื่อไม่ต้องสร้าง Router dependency ใน MVP */
 const googleAdsManagerDeliveryHandler = createGoogleAdsManagerDeliveryHttpHandler();
+const googleAdsSigningProvisioningHandler = createGoogleAdsSigningSecretProvisioningHttpHandler();
 const ROUTES = new Map([
   ['GET /health', handleHealth],
   [
     `${GOOGLE_ADS_MANAGER_DELIVERY_ROUTE.method} ${GOOGLE_ADS_MANAGER_DELIVERY_ROUTE.path}`,
     googleAdsManagerDeliveryHandler,
   ],
+  ...GOOGLE_ADS_SIGNING_PROVISIONING_ROUTES.map((route) => [
+    `${route.method} ${route.path}`,
+    googleAdsSigningProvisioningHandler,
+  ]),
 ]);
 const KNOWN_PATH_METHODS = new Map([
   ['/health', Object.freeze(['GET'])],
@@ -26,6 +35,10 @@ const KNOWN_PATH_METHODS = new Map([
     GOOGLE_ADS_MANAGER_DELIVERY_ROUTE.path,
     Object.freeze([GOOGLE_ADS_MANAGER_DELIVERY_ROUTE.method]),
   ],
+  ...GOOGLE_ADS_SIGNING_PROVISIONING_ROUTES.map((route) => [
+    route.path,
+    Object.freeze([route.method]),
+  ]),
 ]);
 
 /** Cloudflare API Worker สำหรับ Endpoint สาธารณะของระบบ */
