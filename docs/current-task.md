@@ -6,7 +6,7 @@
 TASK_STATUS                  = PR_56_READY_FOR_MERGE
 SOURCE_BASELINE              = PR_55_MERGED_4008B991
 CLOSEOUT_PR                  = PR_56_OPEN
-BRANCH_VERIFICATION          = PASS_RUN_456
+BRANCH_VERIFICATION          = PASS_RUN_457
 PROVISIONING                 = PASS_CONFIRMED
 EXTERNAL_MANAGER_SCRIPT      = PASS
 TRANSPORT_RUN                = PREVIEW_VALIDATED
@@ -98,7 +98,7 @@ Out of scope:
 - [x] PR `#56` opened against `main`.
 - [x] Changed-file allowlist contains exactly eight Markdown files.
 - [x] Branch is ahead of the approved baseline and behind by zero commits.
-- [x] Branch Verification run `#456` passed every step.
+- [x] Branch Verification run `#457` passed every step.
 - [ ] Squash-merge PR `#56` after final review.
 
 ## PR changed-file allowlist
@@ -119,7 +119,7 @@ is present in the PR diff.
 
 ## Verification
 
-GitHub Branch Verification run `#456` passed:
+GitHub Branch Verification run `#457` passed:
 
 ```text
 Locked dependency install           PASS
