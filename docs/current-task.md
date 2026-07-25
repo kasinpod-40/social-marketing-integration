@@ -3,11 +3,14 @@
 ## Authoritative status
 
 ```text
-TASK_STATUS             = PHASE_2_LOCAL_IMPLEMENTED
+TASK_STATUS             = PHASE_2_REMOTE_TRANSPORT_UAT_COMPLETE
 CURRENT_PROGRAM         = GOOGLE_ADS_MANAGER_SCRIPT_SIGNED_DELIVERY
 CONTRACT                = docs/google-ads-manager-script-signed-delivery-contract-v1.md
 CONTRACT_APPROVAL       = APPROVED_2026_07_25
-IMPLEMENTATION          = PREVIEW_INGRESS_TRANSPORT_COMPLETE_LOCAL
+IMPLEMENTATION          = PREVIEW_INGRESS_TRANSPORT_DEPLOYED_SAFE_CLOSED
+REMOTE_MIGRATION_0013   = APPLIED
+SIGNED_PREVIEW          = CONTRACT_CLIENT_PASS
+ACTUAL_MANAGER_SCRIPT   = EXTERNAL_PREVIEW_PENDING
 GOOGLE_ADS_PR_17        = DRAFT_HOLD_EVIDENCE_ONLY
 LIVE_DELIVERY           = DISABLED
 BUSINESS_WRITES         = DISABLED
@@ -39,13 +42,17 @@ Reuse Reliability stack กลางทั้งหมด
 - Pure exact-envelope/canonical JSON/HMAC verification boundary และ tests
 - Additive D1 nonce/run/chunk transport Migration และ atomic store
 - PREVIEW-only API Worker ingress, cross-chunk validation และ immediate redaction
+- Approved Remote D1 backup, Migration `0013`, flags-false API deployment
+- Manual signed transport PREVIEW, exact retry/replay และ zero-business-write proof
+- Restore Signed ingress to `false` after UAT
 
 ## Out of scope
 
 - Google Ads/Spend mutation
-- Remote migration, Live request, Secret change, Queue send, D1/Lark business write
+- Actual Google Ads Manager Script `AdsApp`/GAQL external PREVIEW
+- Queue send, D1/Lark business write
 - Queue admission, Sync Worker processing, Normalizer หรือ Business writer
-- Commit/Push/PR/Deploy
+- Commit/Push/PR ของเอกสาร Closeout
 - Schedule หรือ Production
 - Draft PR `#17` merge/cherry-pick/reuse
 
@@ -78,12 +85,17 @@ Contract ใช้ Shared RAW `RAW_Ads_Entities` / `RAW_Ads_Daily`, D1
 - [x] เพิ่ม D1 nonce/run/chunk transport state และ disabled-by-default API endpoint
 - [x] เพิ่ม Atomic nonce replay/run/chunk reservation, exact retry และ conflict tests
 - [x] เพิ่ม PREVIEW cross-chunk validation และ immediate payload redaction
-- [ ] ทำ Manual signed PREVIEW หลัง Phase 2 และอนุมัติ Remote แยก
+- [x] Merge Phase 2 ผ่าน PR `#52`
+- [x] Export/verify Remote D1 backup และ Apply Migration `0013`
+- [x] Deploy API Worker แบบ flags false และผ่าน HTTP smoke
+- [x] ทำ signed transport PREVIEW, exact retry/replay และ zero Business writes
+- [x] คืน Signed ingress เป็น `false` หลัง UAT
+- [ ] ทำ External PREVIEW จาก Google Ads Manager Script จริงด้วย `AdsApp`
 
 ## Implementation result
 
-Phase 1 ถูก merge ผ่าน PR `#51` เข้า `main` ที่ `d7400c5`.
-Local Phase 2 เสร็จบน Branch `codex/google-ads-signed-delivery-phase2`:
+Phase 1 ถูก merge ผ่าน PR `#51` ที่ `d7400c5`. Phase 2 ถูก merge ผ่าน PR
+`#52` ที่ `e317fb9`:
 
 - เพิ่ม `scripts/google-ads-manager-script-signed-delivery.js` แบบ sanitized,
   exact-manager/exact-advertiser, read-only GAQL หกชุด, capped chunk,
@@ -123,16 +135,37 @@ npm audit --audit-level=high        0 vulnerabilities
 npm run deploy:dry-run             PASS
 ```
 
-Migration เป็น Source file เท่านั้นและยังไม่ได้ Apply Remote. ไม่มี Secret ถูก
-สร้าง/เปลี่ยน ไม่มี Live request, Queue/D1 Remote/Lark business mutation,
-Commit, Push, PR, Deploy, Schedule หรือ Production action
+Approved Remote rollout ผ่านแล้ว:
+
+```text
+Remote D1 export                    PASS / 503,743,626 bytes
+Backup SHA-256                      4d84fd74b37cbcc9d01b36bfd1f6269c27f457ffae10ac53336028983fadac11
+Backup SQLite import/integrity      PASS / exact baseline counts
+Migration 0013                      PASS / no pending migrations
+Transport tables/indexes            PASS / 3 / 4
+API flags-false deploy              PASS
+Health / disabled ingress           PASS / 200 / 404
+Signed PREVIEW / exact retry         PASS / 200 / 200
+Nonce replay                         PASS / 409
+Payload redaction                    PASS / unredacted 0
+Business/Queue count drift           PASS / zero
+Final safe deployment               PASS / all Google Ads flags false
+```
+
+Sanitized evidence อยู่ที่
+`docs/rollouts/google-ads-signed-delivery-phase2-2026-07-25.md`. Signing Secret
+อยู่ใน Cloudflare Secret store เท่านั้น; ไฟล์ Secret ชั่วคราวถูกลบแล้ว. ไม่มี
+Queue message, D1/Lark business mutation, Google Ads mutation, Schedule หรือ
+Production action
 
 ## Next approval gate
 
-Review Local Phase 2 diff และ Full-gate evidence แล้วอนุมัติ Commit/Push/PR
-แยก หากต้องการนำเข้า `main`. หลัง merge ต้องขออนุมัติ Remote rollout แยกสำหรับ
-backup + Migration `0013` + deploy flags false + Manual signed PREVIEW.
-Queue admission, Business writer, LIVE, Schedule และ Production เป็น Gate หลังจากนั้น
+Review/Commit/Push/PR เอกสาร Remote rollout Closeout. จากนั้นขออนุมัติ External
+PREVIEW จาก Google Ads Manager Script จริงโดยเปิด Signed ingress ชั่วคราว,
+ตั้ง Secret ใน Script Properties และยืนยัน six-dataset GAQL/UrlFetchApp
+compatibility. Reference-only Queue admission เป็น Local Phase ถัดไปหลัง
+External Script evidence; Business writer, LIVE, Schedule และ Production ยัง
+เป็น Gate แยก
 
 # Preserved Prior Task — Multi-Connector Customer Connection Foundation
 

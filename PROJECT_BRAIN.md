@@ -8,12 +8,12 @@
 
 ## Current verified state — 2026-07-25
 
-Google Ads Manager Script signed-delivery Phase 1 merged through PR `#51` at
-`d7400c5`. Local Phase 2 is implemented on
-`codex/google-ads-signed-delivery-phase2`: additive Migration `0013`, atomic
-nonce/run/chunk staging, PREVIEW-only API ingress, cross-chunk validation and
-immediate payload redaction. Flags remain false. No Remote migration, Queue,
-Business writer, live delivery, schedule or Production action is authorized.
+Google Ads Manager Script signed-delivery Phase 2 merged through PR `#52` at
+`e317fb9`. Approved Remote rollout completed: verified D1 backup, Migration
+`0013`, API Worker deployment, signed transport PREVIEW, exact retry/replay,
+immediate payload redaction and zero Business/Queue drift. Final Google Ads
+flags are all false. Actual Google Ads Manager Script `AdsApp` external PREVIEW,
+Queue, Business writer, LIVE, schedule and Production remain separately gated.
 
 ```text
 Integration Workspace                         active
@@ -25,6 +25,11 @@ TikTok completion closure                     complete
 TikTok same-generation replay                 pass / no business drift
 Migration 0009                                applied remotely
 Migration 0010                                applied remotely
+Migration 0011                                applied remotely
+Migration 0012                                applied remotely
+Migration 0013                                applied remotely
+Google Ads API Worker                         deployed / safely closed
+Google Ads signed transport PREVIEW           pass / zero business drift
 Organic Content State                         2021
 Organic Observations                          2021
 Initial Observations                          2021
@@ -44,6 +49,7 @@ Authoritative closeout:
 
 ```text
 docs/current-task.md
+docs/rollouts/google-ads-signed-delivery-phase2-2026-07-25.md
 docs/rollouts/tiktok-organic-durable-recovery-closeout-2026-07-24.md
 ```
 
@@ -296,13 +302,13 @@ Do not create a parallel Reliability stack.
 ```text
 PRIOR_TASK = TIKTOK_ORGANIC_DURABLE_RECOVERY_ROLLOUT_COMPLETE
 CURRENT_TASK = GOOGLE_ADS_MANAGER_SCRIPT_SIGNED_DELIVERY_CONNECTOR
-CURRENT_TASK_STATUS = PHASE_2_LOCAL_IMPLEMENTED
+CURRENT_TASK_STATUS = PHASE_2_REMOTE_TRANSPORT_UAT_COMPLETE
 ```
 
-Phase 1 is merged. Phase 2 focused transport/security tests and all local Full
-gates pass. Review/Commit/Push/PR is the current approval boundary. Remote
-migration, deployment, Live
-PREVIEW, Queue, Business writer and schedule each remain separately gated.
+Phase 2 source and Remote transport rollout are complete and safely closed.
+The current approval boundary is closeout documentation, followed by an actual
+Google Ads Manager Script external PREVIEW. Queue admission, Business writer,
+LIVE and schedule each remain separately gated.
 
 ## Permanent safety rules
 
