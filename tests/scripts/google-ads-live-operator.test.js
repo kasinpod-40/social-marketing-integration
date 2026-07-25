@@ -121,7 +121,8 @@ test('connection gate SQL is read-only and excludes encrypted credential materia
   const sql = buildGoogleAdsConnectionGateSql(target);
   assert.match(sql, /SELECT/u);
   assert.match(sql, /encrypted_credentials/u);
-  assert.doesNotMatch(sql, /ciphertext|\biv\b|refresh_token/u);
+  assert.match(sql, /credential_kind = 'refresh_token'/u);
+  assert.doesNotMatch(sql, /ciphertext|\biv\b/u);
   assert.doesNotMatch(sql, /UPDATE|INSERT|DELETE/u);
 
   const row = validateGoogleAdsConnectionGateRow({
