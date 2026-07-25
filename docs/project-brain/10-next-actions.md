@@ -1,35 +1,46 @@
 # 10 — Next Actions
 
-## Immediate next action — Review DRY_RUN correction and provisioning Design
+## Immediate next action — External Signed PREVIEW closeout review
 
-Phase 2 merge ผ่าน PR `#52` ที่ `e317fb9` และ Approved Remote transport rollout
-ผ่านแล้ว; Closeout merge ผ่าน PR `#53` ที่ `217d54e`.
+Google Ads Manager Script signed-delivery source/transport progression is now:
 
-Actual Google Ads Manager Script external `DRY_RUN` ผ่านแล้ว:
+1. Phase 1 merged through PR `#51` at `d7400c5`;
+2. Phase 2 merged through PR `#52` at `e317fb9`;
+3. Remote transport Closeout merged through PR `#53` at `217d54e`;
+4. actual Manager Script external `DRY_RUN` correction merged through PR `#54`;
+5. one-time Signing Secret provisioning implementation merged through PR `#55`
+   at `4008b991e9aba2309691b733caccd7613f2ad2a8`;
+6. Migration `0014`, actual Script provisioning and actual external Signed
+   PREVIEW passed in separately approved operator windows.
 
-- Authorization ผ่าน
-- exact sanitized artifact ใช้ Google Ads API `v24`
-- six non-empty datasets และ 7 planned chunks
-- `truncated=false`
-- Google Ads `No changes`
-- delivery disabled / ไม่มี `UrlFetchApp`
+Verified runtime result:
 
-One-time Signing Secret provisioning มี Design แบบ Ticket CSPRNG อายุ 5 นาที,
-Atomic single redeem, exact identity binding, HMAC confirmation และ
-Provisioning flag แยกที่ default `false`; implementation ยังไม่เริ่ม.
+- one-time Ticket status `confirmed`;
+- actual Manager Script used `AdsApp`, `AdsManagerApp`, GAQL, HMAC and
+  `UrlFetchApp`;
+- transport Run status `preview_validated`;
+- datasets `6/6`, chunks `7/7`, rows `1375/1375`;
+- every staged payload redacted;
+- Business/Queue/Lark drift zero;
+- signed ingress and provisioning routes restored to disabled / `404`;
+- Business writer disabled;
+- Script Properties restored to `DRY_RUN` / delivery `false`;
+- clean Repository Script restored;
+- schedules, LIVE and Production disabled.
 
-ขั้นถัดไป:
+Current action:
 
-1. Review local GAQL correction, sanitized external evidence และ provisioning Design
-2. Commit/Push/PR เฉพาะเมื่อได้รับอนุมัติ
-3. ขออนุมัติ Local provisioning implementation + Migration source แยก
-4. รัน Full gates และ Review threat model/code แยก
-5. ขออนุมัติ Remote migration/deploy/Ticket creation แยกทุก Boundary
-6. Provision Secret และพิสูจน์ challenge โดย Signed ingress ยังคงปิด
-7. ขออนุมัติ signed PREVIEW แยกก่อนเปิด ingress ชั่วคราว
-8. ปิด ingress แล้วจึงพิจารณา Local reference-only Queue admission
+1. Review this documentation-only branch and sanitized rollout record.
+2. Confirm only documentation changed; no Source, dependency, migration,
+   runtime flag or deployment change belongs in this PR.
+3. Merge the Closeout only after diff/hygiene review passes.
+4. Open a new separately approved task for Local reference-only Queue admission.
+5. Keep Connector activation, Queue processing beyond references, Business
+   writers, D1 Ads facts, Shared RAW/Lark writes, schedules, LIVE and Production
+   disabled until their own gates.
 
-Draft PR `#17` remains Draft/HOLD and evidence-only.
+Draft PR `#17` remains Draft/HOLD and evidence-only. Do not merge or use it as
+the implementation baseline.
 
 ## Parallel external wait — Customer OAuth callbacks
 
@@ -113,12 +124,14 @@ No Live Lark Apply, Google Ads mutation, Queue message, D1 migration, schedule c
 
 ## Current approval gate
 
-Google Ads Local Phase 2 transport/endpoint, Full verification, Remote transport
-UAT และ Actual Script external DRY_RUN ผ่านแล้ว. Gate ปัจจุบันคือ Review/Commit
-GAQL correction + one-time provisioning Design. Provisioning implementation,
-signed PREVIEW, Queue admission, Business writer และ LIVE ยังไม่ได้รับอนุมัติ
+Documentation-only Closeout review/merge for the actual Google Ads Manager
+Script Secret provisioning and External Signed PREVIEW. Runtime gates are already
+safe-closed. After merge, the next implementation task may design and implement
+Local reference-only Queue admission from authenticated completed Run/Chunk
+references only. Business writer, D1 Ads facts, Shared RAW/Lark writes, LIVE,
+Schedule and Production remain separately gated.
 
-## Approved contract retained for Phase 2
+## Approved contract retained for next boundary
 
 ### Payload
 
@@ -158,121 +171,3 @@ signed PREVIEW, Queue admission, Business writer และ LIVE ยังไม�
 3. Retryable versus Permanent classification.
 4. D1 nonce/replay state.
 5. D1 checkpoint and distributed lock.
-6. DLQ and controlled redrive.
-7. Partial-write semantics.
-8. Reconciliation and data-quality counters.
-9. Retention and expiry.
-
-### Destination
-
-1. RAW Google table mapping.
-2. Canonical Ads Accounts/Campaigns/AdGroups/Ads/Creatives/AssetGroups/Daily mapping.
-3. Relation/stable-key resolution.
-4. Money micros conversion and Formula ownership.
-5. Lark write batching and rate-limit handling.
-6. Sync Log and System Alert evidence.
-
-### Environment and rollout
-
-1. One pre-Production `development / integration_workspace` runtime and
-   customer-owned Production isolation; `uat_chemistry_k` is only a historical
-   compatibility alias.
-2. Separate secrets and signing keys per environment.
-3. Connector feature flag disabled by default.
-4. Schedule disabled by default.
-5. Customer-real UAT retention/cleanup.
-6. Customer-owned Production resources.
-
-## Remaining implementation order after Local Phase 1
-
-1. Review/Commit/Push Local Phase 1 through a new PR if authorized.
-2. Add Queue/D1 replay/idempotency state.
-3. Add Live API route behind disabled Signed-ingress flag.
-4. Add six-dataset normalization and destination planning.
-5. Add bounded Lark writes behind explicit UAT flags.
-6. Add partial-failure, retry, DLQ and reconciliation tests.
-7. Run isolated manual signed-delivery UAT with schedule off.
-8. Repeat the same payload and verify zero duplicates.
-9. Run controlled partial-failure/recovery tests.
-10. Observe clean manual cycles before considering schedule.
-
-## Direct Google Ads API track
-
-Current state:
-
-```text
-Basic Access application submitted 2026-07-21
-Case ID 1-686800040839
-Review pending
-Current level Test Account Access
-```
-
-Direct API is optional Phase 2. Do not delay the Manager Script MVP solely for approval, but do not claim production direct-API readiness until approval and OAuth UAT pass.
-
-## View work
-
-### Closed
-
-- Table names/icons/folders
-- View names/icons
-- Shared-table managed filters 17/17
-- Report Views 6/6
-- Google Ads managed filters 19/19
-- Google Formula fields 4/4
-- Google View update-only maintenance guard
-
-Do not rerun these applies.
-
-### Separate future decision
-
-55 legacy specialized Views are intentionally preserved without inferred business filters. Create a new business-owner contract only when there is a real use case. Each new contract must specify:
-
-- Table and exact View name
-- intended audience/purpose
-- Filter conjunction and conditions
-- Sort
-- Hidden fields
-- source/evidence
-- acceptance test
-
-Do not infer semantics from names such as Active, Failed, Latest or High Spend Low ROAS.
-
-## RAW data-quality work
-
-Current Google RAW error Views use stable-key-only minimum QA.
-
-A separate Data Quality workstream may add checks for:
-
-- customer/account IDs
-- campaign/ad group/ad/asset IDs
-- status/primary status/serving status
-- report level and segment key
-- conversion action identity
-- policy state
-- date and metric grain
-
-Do not overload the current stable-key Views without approval.
-
-## Other channel priority after Google Ads connector
-
-1. Facebook Organic connector using shared Meta transport and reliability.
-2. Instagram Organic connector and token-refresh operations.
-3. Meta Ads connector and customer-real data UAT.
-4. TikTok Ads access/Business Center/API preflight and connector.
-5. WooCommerce.
-6. Chatwoot.
-7. Multi-channel AI summary/insight/notification.
-8. Connector-by-connector manual UAT inside the single Integration Workspace.
-9. Customer-owned Production cutover.
-
-## Permanent release blockers
-
-- Production resources not customer-owned.
-- Connector/source identity not verified.
-- Missing stable key or idempotency contract.
-- Missing bounded pagination/batch limits.
-- Missing replay/signature validation for inbound delivery.
-- Reliability, reconciliation or partial-write gate failing.
-- Schedule enabled before manual UAT.
-- Secret/customer identity present in Source or logs.
-- Customer-scale Live UAT not completed where required.
