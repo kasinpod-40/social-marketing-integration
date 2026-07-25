@@ -55,7 +55,6 @@ test('manual UAT runtime accepts only developer Integration Workspace with every
 test('Google Ads wrapper intercepts only the signed delivery job', async () => {
   const result = await processJobWithGoogleAdsUat({
     job: { body: { type: 'unsupported.fixture' } },
-    // Generic router rejects this before loading runtime dependencies.
   }).catch((error) => error);
-  assert.equal(result.code, 'SYNC_JOB_NOT_IMPLEMENTED');
+  assert.equal(result.code, 'UNSUPPORTED_SYNC_JOB');
 });
