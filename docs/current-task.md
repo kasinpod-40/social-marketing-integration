@@ -3,11 +3,11 @@
 ## Authoritative status
 
 ```text
-TASK_STATUS             = PHASE_1_LOCAL_IMPLEMENTED
+TASK_STATUS             = PHASE_2_LOCAL_IMPLEMENTED
 CURRENT_PROGRAM         = GOOGLE_ADS_MANAGER_SCRIPT_SIGNED_DELIVERY
 CONTRACT                = docs/google-ads-manager-script-signed-delivery-contract-v1.md
 CONTRACT_APPROVAL       = APPROVED_2026_07_25
-IMPLEMENTATION          = CONTRACT_SECURITY_FOUNDATION_COMPLETE
+IMPLEMENTATION          = PREVIEW_INGRESS_TRANSPORT_COMPLETE_LOCAL
 GOOGLE_ADS_PR_17        = DRAFT_HOLD_EVIDENCE_ONLY
 LIVE_DELIVERY           = DISABLED
 BUSINESS_WRITES         = DISABLED
@@ -37,12 +37,14 @@ Reuse Reliability stack กลางทั้งหมด
 - Sanitized DRY_RUN-first Manager Script artifact และ exact GAQL/safety manifest
 - Central Connector/Job registration แบบ `planned`
 - Pure exact-envelope/canonical JSON/HMAC verification boundary และ tests
+- Additive D1 nonce/run/chunk transport Migration และ atomic store
+- PREVIEW-only API Worker ingress, cross-chunk validation และ immediate redaction
 
 ## Out of scope
 
-- Live endpoint route, D1 nonce/run/chunk Migration หรือ Writer
 - Google Ads/Spend mutation
-- Live request, Secret change, Queue send, D1/Lark business write
+- Remote migration, Live request, Secret change, Queue send, D1/Lark business write
+- Queue admission, Sync Worker processing, Normalizer หรือ Business writer
 - Commit/Push/PR/Deploy
 - Schedule หรือ Production
 - Draft PR `#17` merge/cherry-pick/reuse
@@ -73,12 +75,15 @@ Contract ใช้ Shared RAW `RAW_Ads_Entities` / `RAW_Ads_Daily`, D1
 - [x] เพิ่ม Central Connector/Job แบบ `planned` และ Flags ปิด
 - [x] เพิ่ม pure signed-delivery schema/security verification และ focused tests
 - [x] รัน Static/Architecture/Hygiene, Unit, Workers, report reliability และ dry-run
-- [ ] เพิ่ม D1 nonce/run/chunk transport state และ Live endpoint
+- [x] เพิ่ม D1 nonce/run/chunk transport state และ disabled-by-default API endpoint
+- [x] เพิ่ม Atomic nonce replay/run/chunk reservation, exact retry และ conflict tests
+- [x] เพิ่ม PREVIEW cross-chunk validation และ immediate payload redaction
 - [ ] ทำ Manual signed PREVIEW หลัง Phase 2 และอนุมัติ Remote แยก
 
 ## Implementation result
 
-Local Phase 1 เสร็จบน Branch `codex/google-ads-signed-delivery-contract`:
+Phase 1 ถูก merge ผ่าน PR `#51` เข้า `main` ที่ `d7400c5`.
+Local Phase 2 เสร็จบน Branch `codex/google-ads-signed-delivery-phase2`:
 
 - เพิ่ม `scripts/google-ads-manager-script-signed-delivery.js` แบบ sanitized,
   exact-manager/exact-advertiser, read-only GAQL หกชุด, capped chunk,
@@ -92,33 +97,42 @@ Local Phase 1 เสร็จบน Branch `codex/google-ads-signed-delivery-con
 - เพิ่ม Flags `MKT_CONNECTOR_GOOGLE_ADS_ENABLED`,
   `MKT_GOOGLE_ADS_SIGNED_INGRESS_ENABLED` และ
   `MKT_GOOGLE_ADS_BUSINESS_WRITE_ENABLED` เป็น `false` ใน Release examples
+- เพิ่ม Migration `0013_google_ads_signed_delivery_transport.sql` แยก Nonce,
+  Run และ Chunk grain พร้อม bounded retention/index/constraint
+- เพิ่ม D1 atomic nonce reservation, transactional Run/Chunk reservation,
+  exact retry/body conflict และ activity-driven cleanup
+- เพิ่ม API Worker route
+  `POST /v1/google-ads/manager-script/deliveries` ซึ่งไม่โหลด D1/Secret เมื่อ
+  Signed ingress flag ปิด
+- บังคับ Header ก่อน body stream, body cap 512 KiB, HMAC ก่อน nonce reserve,
+  nonce reserve ก่อน JSON parse และ fail-closed runtime identity
+- เพิ่ม cross-chunk completeness/global order/duplicate/parent/currency checks;
+  PREVIEW ที่ครบจะเก็บเฉพาะ sanitized counts และ redact payload ทันที
+- `LIVE`, Queue admission, Sync Worker processing และ Business writer ยังไม่มี
 
 Verification:
 
 ```text
-npm ci --offline                    PASS (81 packages / 0 vulnerabilities)
-Focused Google Ads/config suites   78/78 PASS
-npm run check                      PASS (209 files / 497 deps / 0 cycles)
-Node Unit/Integration              744/744 PASS
+npm ci                              PASS (80 packages installed)
+Focused Phase 2 suites              45/45 PASS
+npm run check                       PASS (211 files / 508 deps / 0 cycles)
+Node Unit/Integration              759/759 PASS
 Workers runtime                    9/9 PASS
 Report reliability                70/70 PASS
-npm audit --offline               0 vulnerabilities
+npm audit --audit-level=high        0 vulnerabilities
 npm run deploy:dry-run             PASS
 ```
 
-Online `npm audit` ไม่ได้รันเพราะ External registry metadata request ไม่ผ่าน
-execution-policy gate; Offline audit ผ่าน ไม่มี Dependency ใหม่ใน Phase นี้
-
-ไม่มี Endpoint/Migration/Writer ถูกเพิ่ม ไม่มี Secret ถูกแก้ ไม่มี Live request,
-Queue/D1/Lark business mutation, Commit, Push, PR, Deploy, Schedule หรือ
-Production action
+Migration เป็น Source file เท่านั้นและยังไม่ได้ Apply Remote. ไม่มี Secret ถูก
+สร้าง/เปลี่ยน ไม่มี Live request, Queue/D1 Remote/Lark business mutation,
+Commit, Push, PR, Deploy, Schedule หรือ Production action
 
 ## Next approval gate
 
-Review Local Phase 1 diff แล้วอนุมัติ Commit/Push/PR แยก หากต้องการนำ Foundation
-เข้าหา `main`. Phase 2 ต้องขออนุมัติ Implementation แยกสำหรับ additive D1
-nonce/run/chunk state, Atomic replay/idempotency store และ Live API route โดยยัง
-ไม่มี Business writer หรือ Remote rollout
+Review Local Phase 2 diff และ Full-gate evidence แล้วอนุมัติ Commit/Push/PR
+แยก หากต้องการนำเข้า `main`. หลัง merge ต้องขออนุมัติ Remote rollout แยกสำหรับ
+backup + Migration `0013` + deploy flags false + Manual signed PREVIEW.
+Queue admission, Business writer, LIVE, Schedule และ Production เป็น Gate หลังจากนั้น
 
 # Preserved Prior Task — Multi-Connector Customer Connection Foundation
 

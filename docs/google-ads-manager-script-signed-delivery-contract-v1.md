@@ -16,9 +16,10 @@ PRODUCTION        = BLOCKED
 Reliability, Storage และ Rollout ของ Google Ads Manager Script signed delivery
 บน `main` ปัจจุบัน การอนุมัติครอบคลุม Local Phase 1: sanitized Script artifact,
 Central Connector/Job แบบ `planned` และ pure signed-ingress contract/security
-tests เท่านั้น เอกสารนี้ยังไม่อนุญาตให้เพิ่ม Live Endpoint, Migration, Queue
-send, Business writer, Secret, Schedule, Deployment หรือ Live request จนกว่า
-Boundary ถัดไปจะได้รับการอนุมัติแยกต่างหาก
+tests เท่านั้น ต่อมาผู้ใช้อนุมัติ Local Phase 2 แยกเมื่อ `2026-07-25` สำหรับ
+Additive nonce/run/chunk Migration, atomic store และ disabled-by-default
+PREVIEW API ingress. ยังไม่อนุญาต Remote migration, Queue send, Business writer,
+Secret change, Schedule, Deployment หรือ Live request
 
 Draft PR `#17` เป็นหลักฐานเปรียบเทียบเท่านั้น ห้าม merge, cherry-pick หรือใช้เป็น
 Implementation baseline เพราะใช้ RAW lineage และ Reliability model รุ่นเก่า

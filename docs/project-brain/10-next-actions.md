@@ -1,23 +1,28 @@
 # 10 — Next Actions
 
-## Immediate next action — Review Google Ads signed-delivery Local Phase 1
+## Immediate next action — Review Google Ads signed-delivery Local Phase 2
 
-Contract ได้รับอนุมัติและ Local Phase 1 เสร็จบน
-`codex/google-ads-signed-delivery-contract` แล้ว:
+Phase 1 merge ผ่าน PR `#51`. Local Phase 2 เสร็จบน
+`codex/google-ads-signed-delivery-phase2` แล้ว:
 
 - sanitized DRY_RUN-first Script + exact GAQL/safety manifest/SHA-256;
 - exact six-dataset/null-zero/order validation;
 - pure deterministic JSON/HMAC/timestamp/key-rotation verification;
 - central Google Ads Connector/Job แบบ `planned`;
 - Connector/Signed ingress/Business write flags เป็น `false`;
-- focused 78/78, Unit 744/744, Workers 9/9, report 70/70 และ dry-run ผ่าน
+- additive Migration `0013` สำหรับ nonce/run/chunk grain;
+- atomic replay/idempotency/conflict state;
+- disabled PREVIEW-only API ingress + 512-KiB streamed body cap;
+- out-of-order cross-chunk validation + immediate PREVIEW redaction;
+- ไม่มี Queue admission, Business writer หรือ Remote action
 
 ขั้นถัดไป:
 
-1. Review diff ปัจจุบัน
+1. Review final diff/security และ Full-gate evidence ที่ผ่านแล้ว
 2. หากอนุมัติ Release ให้ Commit/Push/PR แยก
-3. ขออนุมัติ Phase 2 ก่อนเพิ่ม D1 nonce/run/chunk state และ Live API route
-4. ห้ามเปิด Signed ingress หรือ Business writer จน Phase 2 gates ผ่าน
+3. หลัง merge ขออนุมัติ Remote backup + Migration `0013` + deploy flags false
+4. ขออนุมัติ Manual signed PREVIEW แยกและพิสูจน์ zero Business writes
+5. Queue admission/Business writer/LIVE เป็น Phase ถัดไป
 
 Draft PR `#17` remains Draft/HOLD and evidence-only.
 
@@ -103,9 +108,9 @@ No Live Lark Apply, Google Ads mutation, Queue message, D1 migration, schedule c
 
 ## Current approval gate
 
-Google Ads Contract ได้รับอนุมัติและ Local Phase 1 เสร็จแล้ว. Gate ปัจจุบันคือ
-Review/Commit decision; D1 transport state, endpoint, Business writer และ Remote
-rollout ยังไม่ได้รับอนุมัติ
+Google Ads Local Phase 2 transport/endpoint เสร็จแล้ว. Gate ปัจจุบันคือ Full
+verification ผ่านแล้วและรอ Review/Commit/Push/PR decision; Remote rollout, Queue admission,
+Business writer และ Live PREVIEW/LIVE ยังไม่ได้รับอนุมัติ
 
 ## Approved contract retained for Phase 2
 

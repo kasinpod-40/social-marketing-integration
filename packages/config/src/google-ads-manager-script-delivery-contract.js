@@ -1,4 +1,5 @@
 import { permanentError } from '../../shared/src/errors/runtime-error.js';
+import { stableSerialize } from '../../shared/src/hash/stable-fingerprint.js';
 
 export const GOOGLE_ADS_MANAGER_DELIVERY_SCHEMA_VERSION =
   'google_ads_manager_script_signed_delivery_v1';
@@ -159,6 +160,116 @@ export function createGoogleAdsManagerIdempotencyKey(envelope) {
     requireChoice(dataset.key, 'dataset.key', GOOGLE_ADS_MANAGER_DATASET_KEYS),
     requireNonNegativeInteger(dataset.chunkIndex, 'dataset.chunkIndex'),
   ].join(':');
+}
+
+/**
+ * ประกอบ Run ที่ผ่าน per-chunk auth/schema แล้ว เพื่อตรวจ completeness, global order,
+ * duplicate identity, parent relation และ Currency ก่อน PREVIEW completion/Queue admission.
+ */
+export function validateGoogleAdsManagerDeliveryRun(values) {
+  if (!Array.isArray(values) || values.length === 0) {
+    throw invalid('Signed delivery run requires at least one chunk');
+  }
+  if (values.length > GOOGLE_ADS_MANAGER_TRANSPORT_LIMITS.chunksPerRun) {
+    throw invalid('Signed delivery run exceeds the maximum chunks per run');
+  }
+
+  const firstSource = exactObject(values[0], ENVELOPE_FIELDS, 'envelope');
+  const runtimeIdentity = {
+    managerCustomerId: firstSource.managerCustomerId,
+    customerId: firstSource.customerId,
+    customerKey: firstSource.customerKey,
+    accountKey: firstSource.accountKey,
+    sourceTimezone: firstSource.sourceTimezone,
+  };
+  const normalized = values.map((source) => {
+    const envelope = exactObject(source, ENVELOPE_FIELDS, 'envelope');
+    const fetchedAt = requireUtcTimestamp(envelope.fetchedAt, 'fetchedAt');
+    return validateGoogleAdsManagerDeliveryChunk(envelope, {
+      runtimeIdentity,
+      headerTimestampSeconds: Math.trunc(fetchedAt / 1_000),
+    });
+  });
+  const first = normalized[0];
+  const manifestJson = stableSerialize(first.manifest);
+  for (const envelope of normalized) {
+    for (const fieldName of [
+      'schemaVersion',
+      'runId',
+      'mode',
+      'runStartedAt',
+      'managerCustomerId',
+      'customerId',
+      'customerKey',
+      'accountKey',
+      'sourceTimezone',
+    ]) {
+      requireEqual(envelope[fieldName], first[fieldName], fieldName);
+    }
+    requireEqual(stableSerialize(envelope.manifest), manifestJson, 'manifest');
+  }
+
+  const expectedChunkCount = GOOGLE_ADS_MANAGER_DATASET_KEYS
+    .reduce((total, key) => total + first.manifest[key].chunkCount, 0);
+  requireEqual(normalized.length, expectedChunkCount, 'run.chunkCount');
+
+  const rowsByDataset = {};
+  const counts = {};
+  for (const datasetKey of GOOGLE_ADS_MANAGER_DATASET_KEYS) {
+    const chunks = normalized
+      .filter((envelope) => envelope.dataset.key === datasetKey)
+      .sort((left, right) => left.dataset.chunkIndex - right.dataset.chunkIndex);
+    const manifestEntry = first.manifest[datasetKey];
+    requireEqual(chunks.length, manifestEntry.chunkCount, `${datasetKey}.chunkCount`);
+    chunks.forEach((envelope, index) => {
+      requireEqual(envelope.dataset.chunkIndex, index, `${datasetKey}.chunkIndex`);
+    });
+    const rows = chunks.flatMap((envelope) => envelope.dataset.rows);
+    requireEqual(rows.length, manifestEntry.totalRows, `${datasetKey}.totalRows`);
+    if (rows.length > 0) assertStableOrderAndUnique(datasetKey, rows);
+    rowsByDataset[datasetKey] = rows;
+    counts[datasetKey] = Object.freeze({
+      chunks: chunks.length,
+      rows: rows.length,
+    });
+  }
+
+  validateRunRelations(rowsByDataset);
+  return deepFreeze({
+    runId: first.runId,
+    mode: first.mode,
+    expectedChunkCount,
+    expectedRowCount: Object.values(counts)
+      .reduce((total, value) => total + value.rows, 0),
+    datasets: counts,
+  });
+}
+
+function validateRunRelations(rowsByDataset) {
+  const account = rowsByDataset.account;
+  if (account.length !== 1) throw invalid('Signed delivery run requires exactly one account row');
+  const campaignIds = new Set(rowsByDataset.campaigns.map((row) => row.campaignId));
+  const adGroupCampaigns = new Map();
+  for (const row of rowsByDataset.adGroups) {
+    if (!campaignIds.has(row.campaignId)) {
+      throw invalid('Signed delivery ad group parent campaign is missing');
+    }
+    adGroupCampaigns.set(row.adGroupId, row.campaignId);
+  }
+  for (const row of rowsByDataset.ads) {
+    if (!campaignIds.has(row.campaignId)
+      || adGroupCampaigns.get(row.adGroupId) !== row.campaignId) {
+      throw invalid('Signed delivery ad parent relation is invalid');
+    }
+  }
+  for (const row of rowsByDataset.campaignDailyMetrics) {
+    if (!campaignIds.has(row.campaignId)) {
+      throw invalid('Signed delivery daily metric parent campaign is missing');
+    }
+    if (row.currency !== account[0].currencyCode) {
+      throw invalid('Signed delivery daily metric currency does not match account currency');
+    }
+  }
 }
 
 function validateManifest(value) {

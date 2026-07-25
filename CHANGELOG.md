@@ -1,5 +1,37 @@
 # Changelog
 
+## Unreleased — Google Ads Manager Script signed-delivery Phase 2 — 2026-07-25
+
+### Added
+
+- Added additive Migration `0013` with isolated nonce fingerprint, run
+  manifest/status/audit and bounded chunk payload grains.
+- Added atomic D1 nonce reservation and transactional Run/Chunk staging with
+  exact-retry, changed-body/manifest conflict and activity-driven cleanup.
+- Added the PREVIEW-only API Worker endpoint behind
+  `MKT_GOOGLE_ADS_SIGNED_INGRESS_ENABLED=false`.
+- Added 512-KiB streamed body enforcement, HMAC-before-nonce and
+  nonce-before-JSON validation order, runtime identity guards and bounded
+  redacted responses.
+- Added cross-chunk completeness, global ordering, duplicate, parent relation
+  and currency validation. Completed PREVIEW payloads are redacted immediately.
+- Extended the deploy dry-run to bundle both API and Sync Workers.
+
+### Safety
+
+- Local implementation only. Migration `0013` was not applied remotely and no
+  signing Secret was created or changed.
+- No Queue admission, Sync Worker processing, D1/Lark Business writer, Live
+  request, schedule, deployment or Production action is included.
+- Connector, Signed ingress and Business-write flags remain `false`; Google Ads
+  Connector/Job remain `planned`.
+
+### Verification
+
+- Full local gates pass: focused Phase 2 `45/45`, Unit `759/759`, Workers
+  runtime `9/9`, report reliability `70/70`, Architecture `211/508/0`,
+  repository hygiene, npm audit `0` and API/Sync Worker deploy dry-run.
+
 ## Unreleased — Google Ads Manager Script signed-delivery Phase 1 — 2026-07-25
 
 ### Added

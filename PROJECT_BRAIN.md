@@ -8,13 +8,12 @@
 
 ## Current verified state — 2026-07-25
 
-Google Ads Manager Script signed-delivery Contract is approved and Local Phase 1
-is implemented on `codex/google-ads-signed-delivery-contract`: sanitized
-DRY_RUN-first Script, exact GAQL/safety manifest, central planned Connector/Job
-and pure canonical JSON/HMAC/schema verification. It replaces the old Draft PR
-`#17` topology with multi-chunk signed transport, reference-only Queue,
-D1-first Ads history and the existing Shared RAW lineage. No endpoint,
-migration, writer, live delivery, schedule or Production action is authorized.
+Google Ads Manager Script signed-delivery Phase 1 merged through PR `#51` at
+`d7400c5`. Local Phase 2 is implemented on
+`codex/google-ads-signed-delivery-phase2`: additive Migration `0013`, atomic
+nonce/run/chunk staging, PREVIEW-only API ingress, cross-chunk validation and
+immediate payload redaction. Flags remain false. No Remote migration, Queue,
+Business writer, live delivery, schedule or Production action is authorized.
 
 ```text
 Integration Workspace                         active
@@ -297,13 +296,13 @@ Do not create a parallel Reliability stack.
 ```text
 PRIOR_TASK = TIKTOK_ORGANIC_DURABLE_RECOVERY_ROLLOUT_COMPLETE
 CURRENT_TASK = GOOGLE_ADS_MANAGER_SCRIPT_SIGNED_DELIVERY_CONNECTOR
-CURRENT_TASK_STATUS = PHASE_1_LOCAL_IMPLEMENTED
+CURRENT_TASK_STATUS = PHASE_2_LOCAL_IMPLEMENTED
 ```
 
-Phase 1 has passed focused, repository, Unit, Workers-runtime, report
-reliability, offline audit and deploy dry-run gates. Review/Commit is the next
-decision. Phase 2 D1 transport/endpoint work needs separate authorization; no
-merge, deployment, Live delivery or schedule follows automatically.
+Phase 1 is merged. Phase 2 focused transport/security tests and all local Full
+gates pass. Review/Commit/Push/PR is the current approval boundary. Remote
+migration, deployment, Live
+PREVIEW, Queue, Business writer and schedule each remain separately gated.
 
 ## Permanent safety rules
 

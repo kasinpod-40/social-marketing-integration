@@ -28,7 +28,7 @@
     "rollout:tiktok-recovery:resume": "node scripts/tiktok-durable-recovery-bind-hotfix-operator.mjs --phase=resume --execute",
     "seed:metrics": "node scripts/seed-metric-definitions.mjs",
     "audit:architecture": "node scripts/audit-architecture.mjs",
-    "deploy:dry-run": "wrangler deploy --dry-run --config wrangler.sync.example.jsonc",
+    "deploy:dry-run": "wrangler deploy --dry-run --config wrangler.example.jsonc && wrangler deploy --dry-run --config wrangler.sync.example.jsonc",
     "seed:report-settings": "node scripts/seed-report-settings.mjs",
     "setup:report-schema": "node scripts/setup-report-schema.mjs",
     "setup:report-schema:apply": "node scripts/setup-report-schema.mjs --apply",

@@ -1,15 +1,15 @@
 # 00 — Current State
 
-## Google Ads signed delivery Phase 1 local foundation
+## Google Ads signed delivery Phase 2 local transport
 
 ผู้ใช้อนุมัติ Contract ของ Google Ads Manager Script signed-delivery แล้ว
-Local Phase 1 implementation อยู่บน Branch
-`codex/google-ads-signed-delivery-contract`. Contract authority อยู่ที่
+Phase 1 merge ผ่าน PR `#51` ที่ `d7400c5`. Local Phase 2 อยู่บน Branch
+`codex/google-ads-signed-delivery-phase2`. Contract authority อยู่ที่
 `docs/google-ads-manager-script-signed-delivery-contract-v1.md`
 
 ```text
-TASK_STATUS       = PHASE_1_LOCAL_IMPLEMENTED
-IMPLEMENTATION    = CONTRACT_SECURITY_FOUNDATION_COMPLETE
+TASK_STATUS       = PHASE_2_LOCAL_IMPLEMENTED
+IMPLEMENTATION    = PREVIEW_INGRESS_TRANSPORT_COMPLETE_LOCAL
 LIVE_DELIVERY     = DISABLED
 BUSINESS_WRITES   = DISABLED
 SCHEDULES         = DISABLED
@@ -17,10 +17,15 @@ PRODUCTION        = BLOCKED
 GOOGLE_ADS_PR_17  = DRAFT_HOLD_EVIDENCE_ONLY
 ```
 
-Phase 1 เพิ่ม sanitized DRY_RUN-first six-dataset Script artifact, exact
-GAQL/safety manifest + SHA-256, Google Ads Connector/Job แบบ `planned`,
-fail-closed flags และ pure canonical JSON/HMAC/schema verifier พร้อม tests.
-ยังไม่มี Endpoint, Migration, D1 reservation, Queue send หรือ Writer.
+Phase 2 เพิ่ม additive Migration `0013`, atomic nonce/run/chunk D1 store,
+disabled-by-default PREVIEW API ingress, streamed 512-KiB cap, exact validation
+order, out-of-order cross-chunk completeness และ immediate payload redaction.
+ยังไม่มี Remote migration, Queue admission, Sync Worker processing, Business
+writer, Live request หรือ Secret.
+
+Local Full gates ผ่าน: Focused Phase 2 `45/45`, Unit `759/759`, Workers
+runtime `9/9`, report reliability `70/70`, Architecture `211/508/0`,
+repository hygiene, npm audit `0` และ API/Sync Worker deploy dry-run.
 
 Contract ใหม่แก้ Architecture เดิมของ PR `#17` โดยใช้ multi-chunk transport,
 reference-only Queue, D1-first Storage และ Shared RAW
@@ -198,10 +203,10 @@ Current access Test Account Access
 
 Remaining:
 
-- signed payload connector
-- HMAC/timestamp/nonce/replay checks
-- Worker ingress
-- Queue/DLQ and D1 state
+- review/commit/push/PR ของ Local Phase 2
+- Remote backup/migration/deploy flags false หลังอนุมัติแยก
+- Manual signed PREVIEW และ zero-business-write proof
+- reference-only Queue admission + Sync Worker processing
 - normalization and destination writes
 - reliability/reconciliation UAT
 - schedule and Production
@@ -255,9 +260,8 @@ The transitive `sharp` vulnerability chain was fixed with `overrides.sharp=0.35.
 
 ## Next approval gate
 
-Approve
-`docs/google-ads-manager-script-signed-delivery-contract-v1.md`. Approval opens
-only the local implementation boundary; Commit, Push, PR, Migration, Deployment,
-Live delivery, Lark write, Schedule and Production still require their own
-explicit authorization. Schedule stays disabled until isolated manual UAT,
-idempotent rerun and controlled recovery pass.
+Review Local Phase 2 diff และอนุมัติ Commit/Push/PR หากต้องการนำเข้า `main`.
+Remote Migration `0013`, Deployment, Live signed PREVIEW, Queue, Business
+writer, Lark write, Schedule และ Production ยังต้องได้รับอนุมัติแยก.
+Schedule stays disabled until isolated manual UAT, idempotent rerun and
+controlled recovery pass.

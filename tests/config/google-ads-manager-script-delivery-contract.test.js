@@ -4,6 +4,7 @@ import {
   GOOGLE_ADS_MANAGER_DATASET_KEYS,
   createGoogleAdsManagerIdempotencyKey,
   validateGoogleAdsManagerDeliveryChunk,
+  validateGoogleAdsManagerDeliveryRun,
 } from '../../packages/config/src/google-ads-manager-script-delivery-contract.js';
 import {
   GOOGLE_ADS_DELIVERY_FIXTURE_TIMESTAMP,
@@ -152,4 +153,86 @@ test('rejects duplicates and unstable row ordering inside a chunk', () => {
       (error) => error?.code === 'GOOGLE_ADS_DELIVERY_CONTRACT_INVALID',
     );
   }
+});
+
+test('validates complete cross-chunk relations, global ordering and counts', () => {
+  const campaigns = [
+    googleAdsDatasetRows('campaigns')[0],
+    {
+      ...googleAdsDatasetRows('campaigns')[0],
+      campaignId: '11',
+      campaignName: 'Campaign 11',
+      resourceName: 'customers/2222222222/campaigns/11',
+    },
+  ];
+  const manifest = createGoogleAdsDeliveryManifest({
+    campaigns: { totalRows: 2, chunkCount: 2 },
+  });
+  const chunks = [
+    createGoogleAdsDeliveryEnvelope({ manifest }),
+    createGoogleAdsDeliveryEnvelope({
+      datasetKey: 'campaigns',
+      rows: [campaigns[0]],
+      manifest,
+      chunkIndex: 0,
+      chunkCount: 2,
+      totalRows: 2,
+    }),
+    createGoogleAdsDeliveryEnvelope({
+      datasetKey: 'campaigns',
+      rows: [campaigns[1]],
+      manifest,
+      chunkIndex: 1,
+      chunkCount: 2,
+      totalRows: 2,
+    }),
+  ];
+  const result = validateGoogleAdsManagerDeliveryRun(chunks);
+  assert.equal(result.expectedChunkCount, 3);
+  assert.deepEqual(result.datasets.campaigns, { chunks: 2, rows: 2 });
+});
+
+test('rejects missing parent, cross-chunk duplicate and row-count mismatch', () => {
+  const adGroup = googleAdsDatasetRows('adGroups')[0];
+  const missingParentManifest = createGoogleAdsDeliveryManifest({
+    adGroups: { totalRows: 1, chunkCount: 1 },
+  });
+  assert.throws(
+    () => validateGoogleAdsManagerDeliveryRun([
+      createGoogleAdsDeliveryEnvelope({ manifest: missingParentManifest }),
+      createGoogleAdsDeliveryEnvelope({
+        datasetKey: 'adGroups',
+        rows: [adGroup],
+        manifest: missingParentManifest,
+      }),
+    ]),
+    (error) => error?.code === 'GOOGLE_ADS_DELIVERY_CONTRACT_INVALID',
+  );
+
+  const campaign = googleAdsDatasetRows('campaigns')[0];
+  const duplicateManifest = createGoogleAdsDeliveryManifest({
+    campaigns: { totalRows: 2, chunkCount: 2 },
+  });
+  assert.throws(
+    () => validateGoogleAdsManagerDeliveryRun([
+      createGoogleAdsDeliveryEnvelope({ manifest: duplicateManifest }),
+      createGoogleAdsDeliveryEnvelope({
+        datasetKey: 'campaigns',
+        rows: [campaign],
+        manifest: duplicateManifest,
+        chunkIndex: 0,
+        chunkCount: 2,
+        totalRows: 2,
+      }),
+      createGoogleAdsDeliveryEnvelope({
+        datasetKey: 'campaigns',
+        rows: [campaign],
+        manifest: duplicateManifest,
+        chunkIndex: 1,
+        chunkCount: 2,
+        totalRows: 2,
+      }),
+    ]),
+    (error) => error?.code === 'GOOGLE_ADS_DELIVERY_CONTRACT_INVALID',
+  );
 });

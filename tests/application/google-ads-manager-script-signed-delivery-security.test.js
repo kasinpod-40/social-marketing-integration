@@ -6,6 +6,7 @@ import {
 import {
   GOOGLE_ADS_DELIVERY_FIXTURE_NOW,
   GOOGLE_ADS_DELIVERY_FIXTURE_SECRET,
+  GOOGLE_ADS_DELIVERY_FIXTURE_TIMESTAMP,
   createGoogleAdsDeliveryEnvelope,
   createSignedGoogleAdsDeliveryRequest,
 } from '../helpers/google-ads-manager-delivery-fixture.js';
@@ -17,8 +18,36 @@ test('verifies a canonical current-key request and returns no raw nonce or secre
   assert.equal(verified.keySlot, 'current');
   assert.match(verified.nonceFingerprint, /^[A-Za-z0-9_-]{43}$/u);
   assert.equal(verified.idempotencyKey.endsWith(':account:0'), true);
+  assert.match(verified.runFingerprint, /^[A-Za-z0-9_-]{43}$/u);
   assert.equal(JSON.stringify(verified).includes('abcdefghijklmnopqrstuv'), false);
   assert.equal(JSON.stringify(verified).includes(GOOGLE_ADS_DELIVERY_FIXTURE_SECRET), false);
+});
+
+test('reserves nonce after HMAC but before canonical JSON parsing', async () => {
+  const noncanonical = JSON.stringify(createGoogleAdsDeliveryEnvelope(), null, 2);
+  const request = await createSignedGoogleAdsDeliveryRequest({ body: noncanonical });
+  const calls = [];
+  await assert.rejects(
+    () => verifyGoogleAdsManagerSignedDelivery({
+      ...request,
+      requireNonceReservation: true,
+      async reserveNonce(input) {
+        calls.push(input);
+      },
+    }),
+    (error) => error?.code === 'GOOGLE_ADS_DELIVERY_BODY_INVALID',
+  );
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].nonceFingerprint, /^[A-Za-z0-9_-]{43}$/u);
+  assert.equal(calls[0].requestTimestampSeconds, GOOGLE_ADS_DELIVERY_FIXTURE_TIMESTAMP);
+
+  await assert.rejects(
+    () => verifyGoogleAdsManagerSignedDelivery({
+      ...request,
+      requireNonceReservation: true,
+    }),
+    (error) => error?.code === 'GOOGLE_ADS_DELIVERY_NONCE_RESERVATION_UNAVAILABLE',
+  );
 });
 
 test('accepts the previous key during bounded rotation', async () => {
