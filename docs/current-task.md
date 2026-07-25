@@ -1,154 +1,281 @@
-# Current Task — Google Ads External Signed PREVIEW Closeout
+# Current Task — Facebook and Instagram Organic End-to-End Lark Delivery
 
 ## Authoritative status
 
 ```text
-TASK_STATUS                  = PR_56_READY_FOR_MERGE
-SOURCE_BASELINE              = PR_55_MERGED_4008B991
-CLOSEOUT_PR                  = PR_56_OPEN
-BRANCH_VERIFICATION          = PASS_RUN_457
-PROVISIONING                 = PASS_CONFIRMED
-EXTERNAL_MANAGER_SCRIPT      = PASS
-TRANSPORT_RUN                = PREVIEW_VALIDATED
-DATASETS                     = 6_OF_6
-CHUNKS                       = 7_OF_7
-ROWS                         = 1375_OF_1375
-PAYLOAD_REDACTION            = PASS
-BUSINESS_QUEUE_LARK_DRIFT    = ZERO
-SIGNED_INGRESS               = DISABLED_404
-PROVISIONING_ROUTE           = DISABLED_404
-BUSINESS_WRITES              = DISABLED
-SCRIPT_RUNTIME               = DRY_RUN_DELIVERY_FALSE
-GOOGLE_ADS_SCRIPT            = CLEAN_ARTIFACT_RESTORED
-SCHEDULE_LIVE_PRODUCTION     = DISABLED
-NEXT_GATE                    = LOCAL_REFERENCE_ONLY_QUEUE_ADMISSION
+TASK_STATUS                      = APPROVED_FOR_IMPLEMENTATION
+CURRENT_PROGRAM                  = META_ORGANIC_CUSTOMER_VISIBLE_DELIVERY
+SOURCE_BASELINE                  = PR_56_MERGED_3488C2A6
+WORK_BRANCH                      = work/meta-organic-end-to-end-lark
+CUSTOMER_VISIBLE_PRIORITY        = END_TO_END_LARK_FIRST
+FACEBOOK_TOKEN                   = READY_IN_SECRET_BOUNDARY
+INSTAGRAM_TOKEN                  = READY_IN_SECRET_BOUNDARY
+FACEBOOK_ORGANIC                 = SOURCE_FOUNDATION_READY_WRITE_PATH_PENDING
+INSTAGRAM_ORGANIC                = SOURCE_FOUNDATION_READY_WRITE_PATH_PENDING
+D1_BUSINESS_WRITES               = TO_IMPLEMENT
+LARK_RAW_WRITES                  = TO_IMPLEMENT
+LARK_CANONICAL_WRITES            = TO_IMPLEMENT
+MANUAL_LIVE_UAT                  = REQUIRED
+SCHEDULE                         = DISABLED_UNTIL_MANUAL_UAT_PASS
+PRODUCTION                       = BLOCKED
+GOOGLE_ADS_QUEUE_ADMISSION       = PAUSED_NOT_DISCARDED
 ```
 
-The full prior task record is preserved verbatim at:
+## Product priority rule
+
+From this task onward, a Connector whose credential, authorization and exact
+source identity are available must be taken through a customer-visible outcome:
 
 ```text
-docs/archive/current-task-before-google-ads-external-preview-closeout.md
+Connection / authorization
+→ exact identity and permission preflight
+→ real source read
+→ D1 durable business state and Coverage
+→ Shared RAW Lark rows
+→ Canonical Lark rows
+→ read-only reconciliation
+→ idempotent manual rerun
+→ customer-visible Lark verification
 ```
+
+Do not stop at access preflight, transport-only staging, local fixture adapters or
+connection status when the remaining path to Lark is implementable. Foundation-only
+work is allowed only for a real blocker and must not outrank a ready Connector that
+can produce customer-visible data.
 
 ## Objective
 
-Close the separately approved provisioning and actual Manager Script Signed
-PREVIEW runtime gates with sanitized documentation only. Confirm the final
-safe-closed state and prepare PR `#56` for merge without changing executable
-code, dependencies, migrations, runtime configuration or deployment state.
+Deliver real Facebook Page Organic and Instagram Organic data from the currently
+authorized Integration Workspace sources into the existing Shared RAW and Canonical
+Lark tables, with D1-first durability, exact stable keys, Coverage, reliability,
+reconciliation and an idempotent manual rerun.
 
-## Verified runtime result
+The completion boundary is not "token works" or "API returns data". Completion
+requires the user and customer to open Lark and see the expected Facebook and
+Instagram account/content/metric rows in the approved Views without duplicate
+stable keys or fabricated metrics.
+
+## Existing approved foundation
+
+PR `#50` already provides:
+
+- independent Facebook Organic and Instagram Organic connection preflight;
+- GET-only source adapters;
+- pinned Graph API hosts/version contract;
+- pure Organic normalizers;
+- synthetic fixtures and contract tests;
+- five Shared RAW table topology;
+- exact stable-key, null/zero, time and Coverage semantics.
+
+The existing physical destinations are reused. No provider-specific duplicate Raw
+tables may be created.
+
+## Source scope
+
+### Facebook Organic
+
+Required datasets:
 
 ```text
-Provisioning confirmation   PASS
-Manager Script execution    PASS
-Transport status            preview_validated
-Datasets                    6 / 6
-Chunks                      7 / 7
-Rows                        1375 / 1375
-Payload redaction           PASS
-Business/Queue/Lark drift   ZERO
-Google Ads mutation         ZERO
-Final transport route       disabled / 404
-Final provisioning route    disabled / 404
-Final Business writer       disabled
-Final Script runtime        DRY_RUN / delivery false
-Clean Script                restored
+facebook.account.latest
+facebook.content.inventory
+facebook.content.insights
+facebook.account.insights
 ```
 
-Sanitized rollout authority:
+Required credential boundary:
 
 ```text
-docs/rollouts/google-ads-manager-script-external-signed-preview-2026-07-26.md
+META_FACEBOOK_PAGE_ACCESS_TOKEN
 ```
 
-Ignored local evidence is referenced by directory name only. No capability,
-credential, proof, raw payload or unredacted identity is stored in Git.
+The Page token must remain in Secret storage. Exact Page identity must be verified
+before the first business write. Unsupported or deprecated Insight metrics become
+`null` or no row with Coverage evidence; they must never be guessed or converted to
+zero.
 
-## Scope
+### Instagram Organic
 
-In scope:
+Required datasets:
 
-- current task closeout;
-- sanitized rollout evidence;
-- Project Brain / Current State / Next Actions updates;
-- Changelog update;
-- exact archival preservation of the previous Current Task and Changelog;
-- documentation-only PR, changed-file review and Branch Verification.
+```text
+instagram.account.latest
+instagram.content.inventory
+instagram.content.insights
+instagram.account.insights
+```
 
-Out of scope:
+Required credential boundary:
 
-- executable source or dependency changes;
-- migrations or deployments;
-- runtime flag or credential changes;
-- another external run;
-- Queue admission or processing;
-- Ads business facts, normalization, Shared RAW or Lark writes;
-- schedules, LIVE or Production;
-- Draft PR `#17` reuse or merge.
+```text
+META_INSTAGRAM_ACCESS_TOKEN
+```
+
+The token must include the permissions required by the approved contract, including
+Insights permission. Exact professional-account identity must be verified before the
+first business write.
+
+## Destination scope
+
+### Shared RAW Lark
+
+```text
+RAW_Meta_Organic_Accounts
+RAW_Meta_Organic_Content
+RAW_Meta_Organic_Metrics
+```
+
+### Canonical Lark
+
+```text
+MKT_Accounts
+MKT_Account_Daily
+MKT_Content
+MKT_Content_Daily
+```
+
+### D1 authority
+
+Reuse the approved Storage Architecture and existing D1 business grains:
+
+```text
+organic_content_state
+organic_content_observations
+organic_account_daily_facts
+data_coverage_runs
+data_coverage_entities
+sync_cursors
+sync_work_runs / sync_work_phases / sync_work_units
+sync_runs / sync_locks / dead_letter_jobs / system_alerts
+```
+
+Do not create a parallel Meta reliability stack.
+
+## Stable-key and metric rules
+
+```text
+Raw account
+  {platform}:{source_account_id}
+
+Raw content
+  {platform}:{source_account_id}:{source_content_id}
+
+Raw metric
+  {platform}:{entity_type}:{source_entity_id}:{metric_name}:{period}:{source_time_key}
+
+D1 content
+  {platform}:{account_key}:{external_content_id}
+
+D1 observation
+  {content_key}:{observed_at}:{observation_kind}:v1
+```
+
+Rules:
+
+- External IDs remain Text.
+- Missing/unsupported metric is `null` or no row.
+- Observed zero remains `0`.
+- Source timestamp is retained exactly; reporting dates use `Asia/Bangkok`.
+- One generation reuses `fetched_at`, `observed_at`, Coverage ID and stable keys.
+- Rerun must not create duplicate rows or duplicate Observations for unchanged
+  cumulative metrics.
+- Incoming `null` must not erase a protected existing non-null value unless the
+  source contract explicitly represents deletion/absence.
+
+## Required write order
+
+For each bounded durable unit:
+
+```text
+1. complete source/identity/schema validation
+2. normalize and calculate stable keys/fingerprints
+3. plan every D1 and Lark destination
+4. write D1 business state/observation/account facts
+5. write Shared RAW Lark rows
+6. write Canonical Lark rows
+7. persist unit checkpoint
+8. update Coverage and Sync Log
+```
+
+The cursor and completion marker may advance only after all authorized destinations
+for the unit reconcile successfully. Partial failure must remain partial and resume
+from the durable checkpoint.
+
+## Implementation order
+
+1. Full review of current Meta adapters, normalizers, D1 stores, shared Lark
+   repository, Sync Engine, Queue routing and reliability code.
+2. Record duplicate/dead-code and architecture findings before adding modules.
+3. Add Facebook Organic and Instagram Organic active use cases using shared
+   abstractions where possible.
+4. Add exact runtime configuration and independent default-false feature flags.
+5. Add D1-first durable unit staging/checkpoint/Coverage integration.
+6. Add Shared RAW and Canonical Lark planners/writers using existing table contracts.
+7. Add central Job routing for manual one-shot execution; no schedule producer.
+8. Add fixture, failure, retry, partial-write, idempotency and reconciliation tests.
+9. Run local full gates.
+10. Deploy only after reviewed source merge and a protected Remote rollout plan.
+11. Run Facebook manual UAT and verify Lark.
+12. Run Instagram manual UAT and verify Lark.
+13. Rerun both with the same source state and prove zero duplicate/business drift.
+14. Keep schedules disabled until the customer-visible result is accepted.
+
+## In scope
+
+- Facebook Organic end-to-end source → D1 → Shared RAW → Canonical Lark.
+- Instagram Organic end-to-end source → D1 → Shared RAW → Canonical Lark.
+- Manual one-shot Queue jobs and Worker routing.
+- Exact identity/permission preflight before writes.
+- D1-first durability, distributed lock, generation fence and resumable checkpoint.
+- Coverage, Sync Log, typed retry/DLQ/Alert behavior.
+- Bounded pagination, request/body limits and rate-limit-aware retry.
+- Customer-visible Lark verification and idempotent rerun evidence.
+- Safe token use from Secret storage only.
+
+## Out of scope
+
+- Meta Ads ingestion in this release; its current no-data state does not block
+  Facebook/Instagram Organic delivery.
+- Google Ads Queue-admission implementation; the existing branch remains paused.
+- Schedule/Cron activation before manual UAT and customer review.
+- Advertisement mutation, publishing, messaging or Spend changes.
+- Lark Schema/View/Formula redesign or creation of new provider-specific Raw tables.
+- Retention/delete operations.
+- Production cutover or customer-owned infrastructure migration.
 
 ## Acceptance criteria
 
-- [x] Runtime provisioning confirmation recorded without sensitive material.
-- [x] Actual Manager Script Signed PREVIEW recorded as `preview_validated`.
-- [x] Dataset, chunk and row reconciliation recorded exactly.
-- [x] Payload redaction and zero Business/Queue/Lark drift recorded.
-- [x] Final disabled routes and safe Script runtime recorded.
-- [x] Previous Current Task and Changelog preserved verbatim under `docs/archive/`.
-- [x] PR `#56` opened against `main`.
-- [x] Changed-file allowlist contains exactly eight Markdown files.
-- [x] Branch is ahead of the approved baseline and behind by zero commits.
-- [x] Branch Verification run `#457` passed every step.
-- [ ] Squash-merge PR `#56` after final review.
+- [ ] Full current-codebase review completed before implementation.
+- [ ] Existing Meta source adapters and normalizers are reused without duplicate
+  provider clients or reliability stacks.
+- [ ] Facebook exact Page identity and required permissions pass with the live token.
+- [ ] Instagram exact professional-account identity and Insights permissions pass.
+- [ ] Facebook and Instagram manual jobs use central Connector/Job catalogs.
+- [ ] Feature flags remain false in repository examples and default runtime.
+- [ ] D1 durable state, Observations/account facts and Coverage reconcile exactly.
+- [ ] Shared RAW Lark rows appear in all three approved Meta Organic tables.
+- [ ] Canonical rows appear in Accounts, Account Daily, Content and Content Daily.
+- [ ] `created + updated + skipped = expected` and `failed = 0` per dataset.
+- [ ] Exact rerun creates no duplicate stable keys and no false Observations.
+- [ ] Missing metrics remain `null`; observed zero remains `0`.
+- [ ] No token, Page credential, identity payload or raw provider error leaks to Git,
+  Queue, D1/Lark business rows, logs or alerts.
+- [ ] Retryable failures resume from checkpoint; permanent failures enter typed DLQ.
+- [ ] Facebook manual Live UAT is visible and verified in Lark.
+- [ ] Instagram manual Live UAT is visible and verified in Lark.
+- [ ] Schedules remain disabled after manual UAT unless separately approved.
+- [ ] `npm ci`, `npm run check`, `npm test`,
+  `npm run test:report-reliability`, `npm audit --audit-level=high` and
+  `npm run deploy:dry-run` pass.
+- [ ] Current Task, Project Brain and CHANGELOG contain sanitized final evidence.
 
-## PR changed-file allowlist
+## Implementation result
 
-```text
-CHANGELOG.md
-PROJECT_BRAIN.md
-docs/archive/CHANGELOG-before-google-ads-external-preview-closeout.md
-docs/archive/current-task-before-google-ads-external-preview-closeout.md
-docs/current-task.md
-docs/project-brain/00-current-state.md
-docs/project-brain/10-next-actions.md
-docs/rollouts/google-ads-manager-script-external-signed-preview-2026-07-26.md
-```
+Not started.
 
-No executable, test, package, lockfile, migration or runtime configuration file
-is present in the PR diff.
+## Completion boundary
 
-## Verification
-
-GitHub Branch Verification run `#457` passed:
-
-```text
-Locked dependency install           PASS
-Syntax / architecture / hygiene     PASS
-Focused staged TikTok regression    PASS
-Unit and Workers runtime tests      PASS
-Report reliability regression       PASS
-Dependency audit                    PASS
-Wrangler dry run                    PASS
-```
-
-## Next approval gate
-
-After this Closeout merges, open a new task for **Local reference-only Queue
-admission**. The new task must start with a fresh full-codebase review and define
-exact reference grain, idempotency, retry/DLQ, checkpoint, retention,
-observability and reconciliation rules.
-
-The following remain disabled until separately approved:
-
-```text
-Google Ads Connector activation
-Business writer
-D1 Ads business facts
-Shared RAW writes
-Lark writes
-Schedules
-LIVE delivery
-Production
-```
-
-Draft PR `#17` remains Draft/HOLD and evidence-only.
+This task is complete only when both connected Organic sources have real,
+reconciled, customer-visible rows in Lark and an idempotent manual rerun passes.
+A passing token preflight, API response, local fixture test, deployment or Queue
+acknowledgement alone is not completion.
