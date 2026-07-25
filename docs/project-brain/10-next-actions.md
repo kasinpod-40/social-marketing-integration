@@ -1,35 +1,46 @@
 # 10 — Next Actions
 
-## Immediate next action — Review DRY_RUN correction and provisioning Design
+## Immediate next action — External Signed PREVIEW closeout review
 
-Phase 2 merge ผ่าน PR `#52` ที่ `e317fb9` และ Approved Remote transport rollout
-ผ่านแล้ว; Closeout merge ผ่าน PR `#53` ที่ `217d54e`.
+Google Ads Manager Script signed-delivery progression is now:
 
-Actual Google Ads Manager Script external `DRY_RUN` ผ่านแล้ว:
+1. Phase 1 merged through PR `#51` at `d7400c5`.
+2. Phase 2 merged through PR `#52` at `e317fb9`.
+3. Remote transport Closeout merged through PR `#53` at `217d54e`.
+4. Actual Manager Script external `DRY_RUN` correction merged through PR `#54`.
+5. One-time Signing Secret provisioning implementation merged through PR `#55`
+   at `4008b991e9aba2309691b733caccd7613f2ad2a8`.
+6. Migration `0014`, actual Script provisioning and actual external Signed
+   PREVIEW passed in separately approved operator windows.
 
-- Authorization ผ่าน
-- exact sanitized artifact ใช้ Google Ads API `v24`
-- six non-empty datasets และ 7 planned chunks
-- `truncated=false`
-- Google Ads `No changes`
-- delivery disabled / ไม่มี `UrlFetchApp`
+Verified runtime result:
 
-One-time Signing Secret provisioning มี Design แบบ Ticket CSPRNG อายุ 5 นาที,
-Atomic single redeem, exact identity binding, HMAC confirmation และ
-Provisioning flag แยกที่ default `false`; implementation ยังไม่เริ่ม.
+- one-time Ticket status `confirmed`;
+- actual Manager Script used `AdsApp`, `AdsManagerApp`, GAQL, HMAC and
+  `UrlFetchApp`;
+- transport Run status `preview_validated`;
+- datasets `6/6`, chunks `7/7`, rows `1375/1375`;
+- every staged payload redacted;
+- Business/Queue/Lark drift zero;
+- signed ingress and provisioning routes restored to disabled / `404`;
+- Business writer disabled;
+- Script Properties restored to `DRY_RUN` / delivery `false`;
+- clean Repository Script restored;
+- schedules, LIVE and Production disabled.
 
-ขั้นถัดไป:
+Current action:
 
-1. Review local GAQL correction, sanitized external evidence และ provisioning Design
-2. Commit/Push/PR เฉพาะเมื่อได้รับอนุมัติ
-3. ขออนุมัติ Local provisioning implementation + Migration source แยก
-4. รัน Full gates และ Review threat model/code แยก
-5. ขออนุมัติ Remote migration/deploy/Ticket creation แยกทุก Boundary
-6. Provision Secret และพิสูจน์ challenge โดย Signed ingress ยังคงปิด
-7. ขออนุมัติ signed PREVIEW แยกก่อนเปิด ingress ชั่วคราว
-8. ปิด ingress แล้วจึงพิจารณา Local reference-only Queue admission
+1. Review this documentation-only branch and sanitized rollout record.
+2. Confirm only documentation changed; no Source, dependency, migration,
+   runtime flag or deployment change belongs in this PR.
+3. Merge the Closeout only after diff/hygiene review passes.
+4. Open a new separately approved task for Local reference-only Queue admission.
+5. Keep Connector activation, Queue processing beyond references, Business
+   writers, D1 Ads facts, Shared RAW/Lark writes, schedules, LIVE and Production
+   disabled until their own gates.
 
-Draft PR `#17` remains Draft/HOLD and evidence-only.
+Draft PR `#17` remains Draft/HOLD and evidence-only. Do not merge or use it as
+the implementation baseline.
 
 ## Parallel external wait — Customer OAuth callbacks
 
@@ -113,12 +124,14 @@ No Live Lark Apply, Google Ads mutation, Queue message, D1 migration, schedule c
 
 ## Current approval gate
 
-Google Ads Local Phase 2 transport/endpoint, Full verification, Remote transport
-UAT และ Actual Script external DRY_RUN ผ่านแล้ว. Gate ปัจจุบันคือ Review/Commit
-GAQL correction + one-time provisioning Design. Provisioning implementation,
-signed PREVIEW, Queue admission, Business writer และ LIVE ยังไม่ได้รับอนุมัติ
+Documentation-only Closeout review/merge for actual Google Ads Manager Script
+Secret provisioning and External Signed PREVIEW. Runtime gates are already
+safe-closed. After merge, the next implementation task may design and implement
+Local reference-only Queue admission from authenticated completed Run/Chunk
+references only. Business writer, D1 Ads facts, Shared RAW/Lark writes, LIVE,
+Schedule and Production remain separately gated.
 
-## Approved contract retained for Phase 2
+## Approved contract retained for next boundary
 
 ### Payload
 
@@ -183,17 +196,19 @@ signed PREVIEW, Queue admission, Business writer และ LIVE ยังไม�
 5. Customer-real UAT retention/cleanup.
 6. Customer-owned Production resources.
 
-## Remaining implementation order after Local Phase 1
+## Remaining implementation order after External Signed PREVIEW
 
-1. Review/Commit/Push Local Phase 1 through a new PR if authorized.
-2. Add Queue/D1 replay/idempotency state.
-3. Add Live API route behind disabled Signed-ingress flag.
-4. Add six-dataset normalization and destination planning.
-5. Add bounded Lark writes behind explicit UAT flags.
-6. Add partial-failure, retry, DLQ and reconciliation tests.
-7. Run isolated manual signed-delivery UAT with schedule off.
-8. Repeat the same payload and verify zero duplicates.
-9. Run controlled partial-failure/recovery tests.
+1. Merge this documentation-only Closeout after review.
+2. Open a separate Local reference-only Queue admission task.
+3. Add Queue/D1 replay/idempotency state only where the current transport store
+   does not already provide the required authority.
+4. Admit only completed authenticated transport references; do not copy raw
+   payloads into Queue messages.
+5. Add Sync Worker reference processing behind disabled flags.
+6. Add six-dataset normalization and destination planning in a later gate.
+7. Add bounded D1/Lark writes only after separate approval.
+8. Add partial-failure, retry, DLQ and reconciliation tests.
+9. Run isolated manual UAT with schedules off.
 10. Observe clean manual cycles before considering schedule.
 
 ## Direct Google Ads API track

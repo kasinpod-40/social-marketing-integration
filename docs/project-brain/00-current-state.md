@@ -1,20 +1,27 @@
 # 00 — Current State
 
-## Google Ads signed delivery Phase 2 Remote transport UAT
+## Google Ads signed delivery — External Manager Script PREVIEW complete
 
 ผู้ใช้อนุมัติ Contract ของ Google Ads Manager Script signed-delivery แล้ว
 Phase 1 merge ผ่าน PR `#51` ที่ `d7400c5`, Phase 2 merge ผ่าน PR `#52` ที่
-`e317fb9` และ Remote rollout Closeout merge ผ่าน PR `#53` ที่ `217d54e`.
-Contract authority อยู่ที่
+`e317fb9`, Remote rollout Closeout merge ผ่าน PR `#53` ที่ `217d54e`, external
+DRY_RUN correction merge ผ่าน PR `#54` และ one-time Signing Secret provisioning
+implementation merge ผ่าน PR `#55` ที่
+`4008b991e9aba2309691b733caccd7613f2ad2a8`. Contract authority อยู่ที่
 `docs/google-ads-manager-script-signed-delivery-contract-v1.md`
 
 ```text
-TASK_STATUS       = PHASE_2_REMOTE_TRANSPORT_UAT_COMPLETE
-IMPLEMENTATION    = PREVIEW_INGRESS_TRANSPORT_DEPLOYED_SAFE_CLOSED
+TASK_STATUS       = EXTERNAL_SIGNED_PREVIEW_PASS_SAFE_CLOSED
+IMPLEMENTATION    = ACTUAL_MANAGER_SCRIPT_PREVIEW_VALIDATED
 MIGRATION_0013    = APPLIED
-SIGNED_PREVIEW    = CONTRACT_CLIENT_PASS
-ACTUAL_ADS_SCRIPT = EXTERNAL_DRY_RUN_PASS
-SECRET_PROVISION  = DESIGN_COMPLETE_NOT_IMPLEMENTED
+MIGRATION_0014    = APPLIED
+SIGNED_PREVIEW    = ACTUAL_MANAGER_SCRIPT_PASS
+SECRET_PROVISION  = CONFIRMED
+DATASETS          = 6_OF_6
+CHUNKS            = 7_OF_7
+ROWS              = 1375_OF_1375
+PAYLOAD_REDACTION = PASS
+BUSINESS_DRIFT    = ZERO
 LIVE_DELIVERY     = DISABLED
 BUSINESS_WRITES   = DISABLED
 SCHEDULES         = DISABLED
@@ -22,21 +29,25 @@ PRODUCTION        = BLOCKED
 GOOGLE_ADS_PR_17  = DRAFT_HOLD_EVIDENCE_ONLY
 ```
 
-Approved Remote rollout ผ่าน verified D1 backup, Migration `0013`, API Worker
-deployment, signed transport PREVIEW, exact retry/replay, immediate payload
-redaction และ zero Business/Queue drift. Final Google Ads flags ทั้งสามเป็น
-`false`; Cloudflare signing Secret คงอยู่ใน Secret store และไฟล์ Local ชั่วคราว
-ถูกลบแล้ว.
+Approved Remote transport rollout ผ่าน verified D1 backup, Migration `0013`, API
+Worker deployment, contract-client signed PREVIEW, exact retry/replay, immediate
+payload redaction และ zero Business/Queue drift. Actual Manager Script external
+`DRY_RUN` then passed Authorization and six non-empty datasets after the GAQL
+compatibility correction.
 
-Actual Manager Script external `DRY_RUN` ผ่าน Authorization และ six non-empty
-datasets หลังแก้ GAQL compatibility drift: ตัด `asset.status`, คง output
-`status=null`, pin Google Ads API `v24` และใช้ TrueView metric names ปัจจุบัน.
-Logger สรุป 7 planned chunks, `truncated=false`; Google Ads แสดง `No changes`,
-delivery ปิดและไม่มี `UrlFetchApp`
+The separately approved provisioning and External Signed PREVIEW windows are now
+complete. Migration `0014` was applied, one five-minute capability Ticket was
+redeemed and confirmed from the actual Manager Script, and the Script received
+the Signing Key ID/Secret only through Script Properties. The actual Script then
+used `AdsApp`, `AdsManagerApp`, GAQL, HMAC and `UrlFetchApp` to deliver six
+datasets, seven chunks and 1,375 rows. The D1 transport run reached
+`preview_validated`; all staged payloads were redacted and Business/Queue/Lark
+drift remained zero.
 
-Current local Full gates ผ่าน: Focused Google Ads `34/34`, Unit `759/759`,
-Workers runtime `9/9`, report reliability `70/70`, Architecture `211/508/0`,
-repository hygiene, npm audit `0` และ API/Sync Worker deploy dry-run.
+Final Google Ads Connector, signed ingress, provisioning, Business-write,
+schedule, LIVE and Production flags are disabled. Signed and provisioning routes
+return `404`; Script Properties are restored to `DRY_RUN` and delivery `false`,
+and the clean Repository Script is restored.
 
 Contract ใหม่แก้ Architecture เดิมของ PR `#17` โดยใช้ multi-chunk transport,
 reference-only Queue, D1-first Storage และ Shared RAW
@@ -83,11 +94,15 @@ Draft/HOLD.
 
 ## Source baseline
 
+- Google Ads signed-delivery source baseline: PR `#55` /
+  `4008b991e9aba2309691b733caccd7613f2ad2a8`
+- External Signed PREVIEW closeout:
+  `docs/rollouts/google-ads-manager-script-external-signed-preview-2026-07-26.md`
 - Implementation baseline: `d4a531fbb4e05dad7ce2296859c97f571e23acf3` / PR `#13`
 - Documentation closeout: PR `#14`
-- Current task: `docs/current-task.md` — External DRY_RUN ผ่าน; one-time Signing
-  Secret provisioning Design เสร็จและรอ Review/implementation approval;
-  customer callbacks remain an external parallel wait
+- Current task: `docs/current-task.md` — Secret provisioning and actual external
+  Signed PREVIEW passed safely; documentation closeout is active; customer
+  callbacks remain an external parallel wait
 - Application package line: `0.11.0`
 - Contract versions: View `v0.13.5`, Formula `v0.13.6`, audit correction `v0.13.7`
 
@@ -141,7 +156,7 @@ The 55 specialized Views are not defective merely because their names imply Acti
 - Facebook Organic
 - Instagram Organic
 - Meta Ads
-- Google Ads signed delivery Phase 1 local foundation
+- Google Ads signed delivery transport validated / Connector still disabled
 
 ### Planning/access pending
 
@@ -195,13 +210,25 @@ feature activation, schedule or deployment was added. Every dataset remains
 Completed:
 
 - customer-authorized account link/selectability
-- Manager Script read-only UAT
+- Manager Script authorization and read-only DRY_RUN
 - six bounded non-empty datasets
+- Google Ads API `v24` compatibility correction
 - errors/truncation `0/0`
 - Google Ads `No changes`
 - Frequency `—`
 - Lark schema/Relations/filters/formulas
 - update-only Google View maintenance guard
+- Migration `0013` signed transport
+- Migration `0014` one-time Secret provisioning
+- confirmed one-time Secret provisioning from the actual Manager Script
+- actual external Signed PREVIEW through `UrlFetchApp`
+- six datasets / seven chunks / 1,375 rows reconciled
+- transport run `preview_validated`
+- complete staged-payload redaction
+- zero Business/Queue/Lark drift
+- final signed/provisioning routes disabled / `404`
+- final Script Properties `DRY_RUN` / delivery `false`
+- clean Repository Script restored
 
 Direct API:
 
@@ -214,13 +241,13 @@ Current access Test Account Access
 
 Remaining:
 
-- review/commit/push/PR ของ GAQL compatibility correction + provisioning Design
-- one-time Signing Secret provisioning implementation
-- actual signed Google Ads Manager Script PREVIEW
-- reference-only Queue admission + Sync Worker processing
-- normalization and destination writes
-- reliability/reconciliation UAT
-- schedule and Production
+- review/merge documentation-only External Signed PREVIEW closeout
+- separately approve Local reference-only Queue admission
+- Sync Worker reference processing
+- normalization and destination Business writers
+- D1 Ads facts / Shared RAW / Lark writes
+- reliability/reconciliation UAT for Business facts
+- schedule, LIVE and Production
 
 ## Google View safety correction
 
@@ -262,16 +289,19 @@ The transitive `sharp` vulnerability chain was fixed with `overrides.sharp=0.35.
 
 ## Runtime safety
 
-- DEV/UAT/Production remain isolated
-- UAT and Production connectors/schedules disabled by default
+- Integration Workspace and Production remain isolated
+- Connector/provisioning/signed-ingress/Business-write gates disabled by default
+- UAT and Production schedules disabled by default
 - Production customer-owned
-- secrets only in Environment/Secret Manager
+- secrets only in Environment/Secret Manager or Script Properties
 - every write path requires stable key, idempotency, retry and reconciliation
 - missing metric remains `null` unless the source proves zero
 
 ## Next approval gate
 
-Review/Commit/Push/PR ของ GAQL compatibility correction และ one-time Secret
-provisioning Design. Provisioning implementation, Remote migration/deploy,
-Ticket creation, signed PREVIEW, Queue, Business writer, Lark write, LIVE,
-Schedule และ Production ยังต้องได้รับอนุมัติแยก.
+Review and merge this documentation-only closeout. The next separately approved
+implementation gate is Local reference-only Queue admission from completed,
+authenticated transport references. It must reuse the central Job/Queue and
+Reliability contracts. Connector activation, Business writer, D1 Ads facts,
+Shared RAW/Lark writes, LIVE, Schedule and Production remain disabled and require
+separate approval.
