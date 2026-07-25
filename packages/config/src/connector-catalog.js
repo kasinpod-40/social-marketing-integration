@@ -89,7 +89,7 @@ const CONNECTOR_CATALOG = Object.freeze({
     key: CONNECTOR_KEYS.GOOGLE_ADS,
     displayName: 'Google Ads',
     capability: 'paid_ads',
-    implementationStatus: CONNECTOR_IMPLEMENTATION_STATUS.PLANNED,
+    implementationStatus: CONNECTOR_IMPLEMENTATION_STATUS.UAT_PENDING,
     featureFlagEnv: 'MKT_CONNECTOR_GOOGLE_ADS_ENABLED',
     requiredRuntimeFields: ['accountKey'],
     largeAccount: plannedLargeAccount('ads', 5000),
