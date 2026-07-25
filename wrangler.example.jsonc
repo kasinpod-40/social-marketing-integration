@@ -16,12 +16,13 @@
     "MKT_CONNECTOR_FACEBOOK_ENABLED": "false",
     "MKT_CONNECTOR_INSTAGRAM_ENABLED": "false",
     "MKT_CONNECTOR_GOOGLE_ADS_ENABLED": "false",
-    // Signed ingress, provisioning, Queue admission, Business และ Lark เป็น Gate อิสระ
+    // Signed ingress, provisioning, Queue admission, Business, Lark และ Schedule เป็น Gate อิสระ
     "MKT_GOOGLE_ADS_SIGNED_INGRESS_ENABLED": "false",
     "MKT_GOOGLE_ADS_SECRET_PROVISIONING_ENABLED": "false",
     "MKT_GOOGLE_ADS_QUEUE_ADMISSION_ENABLED": "false",
     "MKT_GOOGLE_ADS_BUSINESS_WRITE_ENABLED": "false",
     "MKT_GOOGLE_ADS_LARK_WRITE_ENABLED": "false",
+    "MKT_SCHEDULE_GOOGLE_ADS_ENABLED": "false",
     "MKT_GOOGLE_ADS_MANAGER_CUSTOMER_ID": "replace-with-10-digit-manager-customer-id",
     "MKT_GOOGLE_ADS_ADVERTISER_CUSTOMER_ID": "replace-with-10-digit-advertiser-customer-id",
     "MKT_GOOGLE_ADS_SOURCE_TIMEZONE": "Asia/Bangkok",
