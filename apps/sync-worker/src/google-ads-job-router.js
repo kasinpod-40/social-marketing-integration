@@ -44,6 +44,11 @@ export async function processGoogleAdsManualUatJob(input = {}) {
   assertQueueOperationMatches(reference, input.operation);
 
   const infrastructure = input.getInfrastructure();
+  const admissionStore = infrastructure.getGoogleAdsAdmissionStore();
+  // Queue receipt proves that an ambiguous producer send reached Cloudflare even if
+  // the producer failed before persisting its final queued marker.
+  await confirmGoogleAdsQueueReceipt({ admissionStore, reference });
+
   const tableIds = readLarkTableIdsFromEnv(input.env, GOOGLE_ADS_TABLE_KEYS);
   const reliability = infrastructure.getReliability(tableIds);
   const resumableWorkStore = infrastructure.getResumableWorkStore();
@@ -88,7 +93,7 @@ export async function processGoogleAdsManualUatJob(input = {}) {
       syncRunId,
       cursorKey: lockKey,
       assertLockActive,
-      admissionStore: infrastructure.getGoogleAdsAdmissionStore(),
+      admissionStore,
       deliveryStore: infrastructure.getGoogleAdsDeliveryStore(),
       historyStore: infrastructure.getMarketingHistoryStore(),
       resumableWorkStore,
@@ -116,6 +121,34 @@ export async function processGoogleAdsManualUatJob(input = {}) {
 
   await resumableWorkStore.cleanupExpiredWork({ limit: 25 });
   return result;
+}
+
+/** Promote only an ambiguous send-pending admission; all other states remain unchanged. */
+export async function confirmGoogleAdsQueueReceipt(input = {}) {
+  const admissionStore = input.admissionStore;
+  if (typeof admissionStore?.getByOperationId !== 'function'
+    || typeof admissionStore?.markQueued !== 'function') {
+    throw new TypeError('confirmGoogleAdsQueueReceipt requires admissionStore getByOperationId/markQueued');
+  }
+  const reference = validateGoogleAdsQueueReference(input.reference);
+  const admission = await admissionStore.getByOperationId(reference.operationId);
+  if (!admission) {
+    throw permanentError('Google Ads Queue receipt has no LIVE admission', {
+      code: 'GOOGLE_ADS_LIVE_ADMISSION_NOT_FOUND',
+    });
+  }
+  if (admission.operationId !== reference.operationId
+    || admission.workKey !== reference.workKey
+    || admission.generation !== reference.generation
+    || admission.originalRequestedAt !== reference.originalRequestedAt) {
+    throw permanentError('Google Ads Queue receipt conflicts with LIVE admission', {
+      code: 'GOOGLE_ADS_LIVE_ADMISSION_IDENTITY_MISMATCH',
+    });
+  }
+  if (admission.status === 'send_pending') {
+    return admissionStore.markQueued({ runId: reference.operationId });
+  }
+  return admission;
 }
 
 export function assertGoogleAdsManualUatRuntime(runtimeConfig, env = {}) {
