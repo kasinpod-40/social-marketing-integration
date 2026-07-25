@@ -10,6 +10,10 @@ async function readSyncWranglerExample() {
   return readFile(new URL('../../wrangler.sync.example.jsonc', import.meta.url), 'utf8');
 }
 
+async function readApiWranglerExample() {
+  return readFile(new URL('../../wrangler.example.jsonc', import.meta.url), 'utf8');
+}
+
 test('sync worker config uses root-relative entrypoint and migrations paths', async () => {
   const configText = await readSyncWranglerExample();
   assert.match(configText, /"main"\s*:\s*"\.\/apps\/sync-worker\/src\/index\.js"/);
@@ -52,10 +56,10 @@ test('YouTube schedule and Analytics policy stay fail-closed in release examples
 
 test('deployment examples keep every connector disabled under the canonical operating model', async () => {
   const syncConfigText = await readSyncWranglerExample();
-  const apiConfigText = await readFile(new URL('../../wrangler.example.jsonc', import.meta.url), 'utf8');
+  const apiConfigText = await readApiWranglerExample();
 
   for (const configText of [syncConfigText, apiConfigText]) {
-    for (const connector of ['TIKTOK', 'FACEBOOK', 'INSTAGRAM', 'YOUTUBE', 'WOOCOMMERCE', 'CHATWOOT']) {
+    for (const connector of ['TIKTOK', 'FACEBOOK', 'INSTAGRAM', 'GOOGLE_ADS', 'YOUTUBE', 'WOOCOMMERCE', 'CHATWOOT']) {
       assert.match(configText, new RegExp(`"MKT_CONNECTOR_${connector}_ENABLED"\\s*:\\s*"false"`));
     }
     assert.doesNotMatch(configText, /dev_ft_pumkin|ft\.pumkin|uat_chemistry_k/u);
@@ -66,25 +70,42 @@ test('deployment examples keep every connector disabled under the canonical oper
   assert.match(syncConfigText, /"TIKTOK_SOURCE_HANDLE"\s*:\s*"chemistry_k"/);
 });
 
-test('API deployment example binds additive transport D1 and keeps signing Secrets out of vars', async () => {
-  const configText = await readFile(
-    new URL('../../wrangler.example.jsonc', import.meta.url),
-    'utf8',
-  );
-  assert.match(configText, /"binding"\s*:\s*"MKT_STATE_DB"/u);
-  assert.match(configText, /"migrations_dir"\s*:\s*"\.\/migrations"/u);
-  assert.match(configText, /"MKT_GOOGLE_ADS_SIGNED_INGRESS_ENABLED"\s*:\s*"false"/u);
-  assert.match(configText, /"MKT_GOOGLE_ADS_BUSINESS_WRITE_ENABLED"\s*:\s*"false"/u);
-  assert.doesNotMatch(configText, /"MKT_GOOGLE_ADS_(?:PREVIOUS_)?SIGNING_SECRET"\s*:/u);
+test('Google Ads execution gates and schedule stay fail-closed in every release example', async () => {
+  const [devVars, syncConfigText, apiConfigText] = await Promise.all([
+    readFile(new URL('../../.dev.vars.example', import.meta.url), 'utf8'),
+    readSyncWranglerExample(),
+    readApiWranglerExample(),
+  ]);
+  const flags = [
+    'MKT_CONNECTOR_GOOGLE_ADS_ENABLED',
+    'MKT_GOOGLE_ADS_SIGNED_INGRESS_ENABLED',
+    'MKT_GOOGLE_ADS_QUEUE_ADMISSION_ENABLED',
+    'MKT_GOOGLE_ADS_BUSINESS_WRITE_ENABLED',
+    'MKT_GOOGLE_ADS_LARK_WRITE_ENABLED',
+  ];
+  for (const flag of flags) {
+    assert.match(devVars, new RegExp(`^${flag}=false$`, 'mu'));
+    assert.match(syncConfigText, new RegExp(`"${flag}"\\s*:\\s*"false"`, 'u'));
+    assert.match(apiConfigText, new RegExp(`"${flag}"\\s*:\\s*"false"`, 'u'));
+  }
+  assert.match(devVars, /^MKT_SCHEDULE_GOOGLE_ADS_ENABLED=false$/mu);
+  assert.match(syncConfigText, /"MKT_SCHEDULE_GOOGLE_ADS_ENABLED"\s*:\s*"false"/u);
+  assert.doesNotMatch(syncConfigText, /GOOGLE_ADS[^\n]*cron/iu);
 });
 
+test('API deployment example binds additive transport D1 and reference-only Queue producer', async () => {
+  const configText = await readApiWranglerExample();
+  assert.match(configText, /"binding"\s*:\s*"MKT_STATE_DB"/u);
+  assert.match(configText, /"migrations_dir"\s*:\s*"\.\/migrations"/u);
+  assert.match(configText, /"binding"\s*:\s*"MKT_SYNC_QUEUE"/u);
+  assert.doesNotMatch(configText, /"MKT_GOOGLE_ADS_(?:PREVIOUS_)?SIGNING_SECRET"\s*:/u);
+});
 
 test('sync deployment declares TikTok incremental controls but keeps them disabled by default', async () => {
   const configText = await readSyncWranglerExample();
   assert.match(configText, /"MKT_TIKTOK_INCREMENTAL_ENABLED"\s*:\s*"false"/);
   assert.match(configText, /"MKT_TIKTOK_FULL_RECONCILIATION_INTERVAL_MS"\s*:\s*"86400000"/);
 });
-
 
 test('report schedules stay disabled until D1 report parity is complete', async () => {
   const configText = await readSyncWranglerExample();
