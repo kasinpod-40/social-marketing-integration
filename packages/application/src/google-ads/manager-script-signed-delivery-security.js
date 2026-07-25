@@ -22,8 +22,15 @@ export const GOOGLE_ADS_MANAGER_DELIVERY_HEADERS = Object.freeze({
   signature: 'x-mkt-signature',
 });
 
+/** ตรวจ method/path/HTTPS, Content-Type และ signed Header cardinality ก่อนอ่าน body stream */
+export function assertGoogleAdsManagerSignedDeliveryRequestHead(input = {}) {
+  assertRequestTarget(input);
+  readSignedHeaders(input.headers);
+  return true;
+}
+
 /**
- * ตรวจ Transport/Auth/Canonical body แบบ pure ก่อน D1 nonce reservation.
+ * ตรวจ Transport/Auth ก่อนเรียก Atomic nonce reservation ที่ inject เข้ามา แล้วจึง Parse body.
  * คืนเฉพาะ fingerprint/identity ที่ปลอดภัยต่อขั้น Persistence และไม่คืน Secret/Nonce/raw body.
  */
 export async function verifyGoogleAdsManagerSignedDelivery(input = {}) {
@@ -50,6 +57,18 @@ export async function verifyGoogleAdsManagerSignedDelivery(input = {}) {
     cryptoImpl,
   });
   const nonceFingerprint = await sha256Base64Url(headers.nonce, cryptoImpl);
+  if (typeof input.reserveNonce === 'function') {
+    await input.reserveNonce({
+      nonceFingerprint,
+      requestTimestampSeconds: timestampSeconds,
+      bodyDigest,
+    });
+  } else if (input.requireNonceReservation === true) {
+    throw securityError(
+      'Signed delivery nonce reservation is unavailable',
+      'GOOGLE_ADS_DELIVERY_NONCE_RESERVATION_UNAVAILABLE',
+    );
+  }
   const bodyText = decodeBody(bodyBytes);
   const envelope = parseCanonicalEnvelope(bodyText);
   const validatedEnvelope = validateGoogleAdsManagerDeliveryChunk(envelope, {
@@ -63,11 +82,13 @@ export async function verifyGoogleAdsManagerSignedDelivery(input = {}) {
       'GOOGLE_ADS_DELIVERY_IDEMPOTENCY_CONFLICT',
     );
   }
+  const runFingerprint = await sha256Base64Url(validatedEnvelope.runId, cryptoImpl);
 
   return deepFreeze({
     envelope: validatedEnvelope,
     bodyDigest,
     nonceFingerprint,
+    runFingerprint,
     idempotencyKey: expectedIdempotencyKey,
     timestampSeconds,
     keySlot: key.slot,

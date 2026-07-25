@@ -19,10 +19,16 @@ MKT_CONNECTION_ENCRYPTION_KEY_VERSION=v1
 MKT_GOOGLE_ADS_MANAGER_CUSTOMER_ID=replace-with-10-digit-manager-customer-id
 MKT_GOOGLE_ADS_ADVERTISER_CUSTOMER_ID=replace-with-10-digit-advertiser-customer-id
 MKT_GOOGLE_ADS_API_VERSION=v24
+MKT_GOOGLE_ADS_SOURCE_TIMEZONE=Asia/Bangkok
+MKT_GOOGLE_ADS_SIGNING_KEY_ID=replace-with-non-secret-key-id
 
 # Secret ต่อไปนี้ใช้ local .dev.vars ได้เฉพาะ Development; Runtime จริงต้องตั้งด้วย `wrangler secret put`
 GOOGLE_OAUTH_CLIENT_SECRET=replace-with-google-oauth-client-secret
 GOOGLE_ADS_DEVELOPER_TOKEN=replace-with-google-ads-developer-token
+MKT_GOOGLE_ADS_SIGNING_SECRET=replace-with-256-bit-google-ads-signing-secret
+# Previous key ใช้เฉพาะช่วง Manual rotation และต้องตั้ง ID/Secret พร้อมกัน
+MKT_GOOGLE_ADS_PREVIOUS_SIGNING_KEY_ID=
+MKT_GOOGLE_ADS_PREVIOUS_SIGNING_SECRET=
 MKT_CONNECTION_OPERATOR_TOKEN=replace-with-operator-token
 MKT_CONNECTION_INVITATION_SIGNING_KEY=replace-with-random-signing-key
 MKT_CONNECTION_STATE_SIGNING_KEY=replace-with-random-signing-key
@@ -36,7 +42,7 @@ MKT_CONNECTOR_FACEBOOK_ENABLED=false
 MKT_CONNECTOR_INSTAGRAM_ENABLED=false
 MKT_CONNECTOR_META_ADS_ENABLED=false
 MKT_CONNECTOR_GOOGLE_ADS_ENABLED=false
-# Signed ingress และ Business writer เป็นคนละ Gate; Phase 1 ต้องปิดทั้งคู่
+# Signed ingress และ Business writer เป็นคนละ Gate; Release example ต้องปิดทั้งคู่
 MKT_GOOGLE_ADS_SIGNED_INGRESS_ENABLED=false
 MKT_GOOGLE_ADS_BUSINESS_WRITE_ENABLED=false
 MKT_CONNECTOR_YOUTUBE_ENABLED=false

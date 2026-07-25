@@ -37,6 +37,26 @@ test('internal project-brain route is not exposed publicly', async () => {
   assert.equal(response.status, 404);
 });
 
+test('signed-delivery path exposes only POST and stays hidden while disabled', async () => {
+  const getResponse = await apiWorker.fetch(
+    new Request('https://example.test/v1/google-ads/manager-script/deliveries'),
+    {},
+    {},
+  );
+  assert.equal(getResponse.status, 405);
+  assert.equal(getResponse.headers.get('allow'), 'POST');
+
+  const postResponse = await apiWorker.fetch(
+    new Request('https://example.test/v1/google-ads/manager-script/deliveries', {
+      method: 'POST',
+      body: '{}',
+    }),
+    { MKT_GOOGLE_ADS_SIGNED_INGRESS_ENABLED: 'false' },
+    {},
+  );
+  assert.equal(postResponse.status, 404);
+});
+
 
 test('health endpoint fails safely when an unfinished connector is enabled', async () => {
   const response = await apiWorker.fetch(

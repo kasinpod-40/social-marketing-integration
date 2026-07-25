@@ -7,7 +7,7 @@
     // Environment หลักของระบบ: development หรือ production
     "MKT_ENV": "development",
     // โปรไฟล์ลูกค้าที่เตรียมไว้ในโค้ด
-    "MKT_CUSTOMER_PROFILE": "replace-with-customer-profile",
+    "MKT_CUSTOMER_PROFILE": "integration_workspace",
     // Timezone กลางของรายงานและ Daily Snapshot
     "DEFAULT_TIMEZONE": "Asia/Bangkok",
 
@@ -16,9 +16,13 @@
     "MKT_CONNECTOR_FACEBOOK_ENABLED": "false",
     "MKT_CONNECTOR_INSTAGRAM_ENABLED": "false",
     "MKT_CONNECTOR_GOOGLE_ADS_ENABLED": "false",
-    // Phase 1 มีเฉพาะ Contract/Artifact: ยังไม่มี Live ingress หรือ Business write
+    // Phase 2 มี PREVIEW ingress แต่ยังปิดเป็นค่าเริ่มต้นและไม่มี Business write
     "MKT_GOOGLE_ADS_SIGNED_INGRESS_ENABLED": "false",
     "MKT_GOOGLE_ADS_BUSINESS_WRITE_ENABLED": "false",
+    "MKT_GOOGLE_ADS_MANAGER_CUSTOMER_ID": "replace-with-10-digit-manager-customer-id",
+    "MKT_GOOGLE_ADS_ADVERTISER_CUSTOMER_ID": "replace-with-10-digit-advertiser-customer-id",
+    "MKT_GOOGLE_ADS_SOURCE_TIMEZONE": "Asia/Bangkok",
+    "MKT_GOOGLE_ADS_SIGNING_KEY_ID": "replace-with-non-secret-key-id",
     "MKT_CONNECTOR_YOUTUBE_ENABLED": "false",
     "MKT_CONNECTOR_WOOCOMMERCE_ENABLED": "false",
     "MKT_CONNECTOR_CHATWOOT_ENABLED": "false",
@@ -26,6 +30,15 @@
     // Handle จริงต้องอยู่ใน Local/Environment config และเปิด Connector หลัง UAT เท่านั้น
     "TIKTOK_SOURCE_HANDLE": "replace-with-tiktok-handle"
   },
+  "d1_databases": [
+    {
+      // Transport state ใช้ D1 binding; Migration 0013 ต้องอนุมัติและ Apply แยกก่อน Deploy
+      "binding": "MKT_STATE_DB",
+      "database_name": "replace-with-environment-specific-d1-name",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "./migrations"
+    }
+  ],
   "queues": {
     "producers": [
       {

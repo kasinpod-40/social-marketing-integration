@@ -6,10 +6,26 @@ import {
   sanitizeOperationalError,
   sanitizeOperationalValue,
 } from '../../../packages/shared/src/errors/runtime-error.js';
+import {
+  createGoogleAdsManagerDeliveryHttpHandler,
+  GOOGLE_ADS_MANAGER_DELIVERY_ROUTE,
+} from './google-ads-manager-delivery-http.js';
 
 /** Map Route แบบคงที่เพื่อไม่ต้องสร้าง Router dependency ใน MVP */
+const googleAdsManagerDeliveryHandler = createGoogleAdsManagerDeliveryHttpHandler();
 const ROUTES = new Map([
   ['GET /health', handleHealth],
+  [
+    `${GOOGLE_ADS_MANAGER_DELIVERY_ROUTE.method} ${GOOGLE_ADS_MANAGER_DELIVERY_ROUTE.path}`,
+    googleAdsManagerDeliveryHandler,
+  ],
+]);
+const KNOWN_PATH_METHODS = new Map([
+  ['/health', Object.freeze(['GET'])],
+  [
+    GOOGLE_ADS_MANAGER_DELIVERY_ROUTE.path,
+    Object.freeze([GOOGLE_ADS_MANAGER_DELIVERY_ROUTE.method]),
+  ],
 ]);
 
 /** Cloudflare API Worker สำหรับ Endpoint สาธารณะของระบบ */
@@ -21,6 +37,13 @@ export default {
     const handler = ROUTES.get(routeKey);
 
     if (!handler) {
+      const methods = KNOWN_PATH_METHODS.get(url.pathname);
+      if (methods) {
+        return json({ ok: false, error: 'Method not allowed' }, {
+          status: 405,
+          headers: { allow: methods.join(', ') },
+        });
+      }
       return json({ ok: false, error: 'Route not found', path: url.pathname }, { status: 404 });
     }
 

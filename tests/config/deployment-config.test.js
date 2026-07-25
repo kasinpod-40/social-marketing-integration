@@ -66,6 +66,18 @@ test('deployment examples keep every connector disabled under the canonical oper
   assert.match(syncConfigText, /"TIKTOK_SOURCE_HANDLE"\s*:\s*"chemistry_k"/);
 });
 
+test('API deployment example binds additive transport D1 and keeps signing Secrets out of vars', async () => {
+  const configText = await readFile(
+    new URL('../../wrangler.example.jsonc', import.meta.url),
+    'utf8',
+  );
+  assert.match(configText, /"binding"\s*:\s*"MKT_STATE_DB"/u);
+  assert.match(configText, /"migrations_dir"\s*:\s*"\.\/migrations"/u);
+  assert.match(configText, /"MKT_GOOGLE_ADS_SIGNED_INGRESS_ENABLED"\s*:\s*"false"/u);
+  assert.match(configText, /"MKT_GOOGLE_ADS_BUSINESS_WRITE_ENABLED"\s*:\s*"false"/u);
+  assert.doesNotMatch(configText, /"MKT_GOOGLE_ADS_(?:PREVIOUS_)?SIGNING_SECRET"\s*:/u);
+});
+
 
 test('sync deployment declares TikTok incremental controls but keeps them disabled by default', async () => {
   const configText = await readSyncWranglerExample();
