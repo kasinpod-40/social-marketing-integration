@@ -3,21 +3,24 @@
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = APPROVED_FOR_IMPLEMENTATION
+TASK_STATUS                         = IMPLEMENTATION_COMPLETE_DRAFT_PR_57
 CURRENT_PROGRAM                     = GOOGLE_ADS_CUSTOMER_VISIBLE_DELIVERY
-SOURCE_BASELINE                     = PR_56_MERGED_3488C2A6
+SOURCE_BASELINE                     = 42D7347F
 WORK_BRANCH                         = work/google-ads-end-to-end-lark-ready-before-oauth
+DRAFT_PR                            = PR_57_OPEN
+BRANCH_VERIFICATION                 = FINAL_DOCS_RUN_PENDING
 EXTERNAL_SIGNED_PREVIEW             = PASS_PREVIEW_VALIDATED
 SIGNING_SECRET                      = PROVISIONED_CONFIRMED
 CUSTOMER_OAUTH                      = WAITING_CUSTOMER_CLICK
-CUSTOMER_CREDENTIAL_RUNTIME_BRIDGE  = TO_IMPLEMENT
-REFERENCE_ONLY_QUEUE_ADMISSION      = TO_IMPLEMENT
-QUEUE_CONSUMER                      = TO_IMPLEMENT
-D1_ADS_BUSINESS_WRITES              = TO_IMPLEMENT
-LARK_RAW_WRITES                     = TO_IMPLEMENT
-LARK_CANONICAL_WRITES               = TO_IMPLEMENT
-MANUAL_LIVE_OPERATOR                = TO_IMPLEMENT
-REMOTE_ROLLOUT                      = NOT_AUTHORIZED_BY_THIS_TASK
+CUSTOMER_CREDENTIAL_RUNTIME_BRIDGE  = IMPLEMENTED_LOCAL
+REFERENCE_ONLY_QUEUE_ADMISSION      = IMPLEMENTED_LOCAL
+QUEUE_CONSUMER                      = IMPLEMENTED_LOCAL_UAT_PENDING
+D1_ADS_BUSINESS_WRITES              = IMPLEMENTED_LOCAL
+LARK_RAW_WRITES                     = IMPLEMENTED_LOCAL
+LARK_CANONICAL_WRITES               = IMPLEMENTED_LOCAL
+DLQ_REDRIVE                         = IMPLEMENTED_LOCAL_MANUAL_ONLY
+MANUAL_LIVE_OPERATOR                = IMPLEMENTED_PLAN_ONLY_DEFAULT
+REMOTE_ROLLOUT                      = NOT_AUTHORIZED_NOT_RUN
 SCHEDULE                            = DISABLED
 PRODUCTION                          = BLOCKED
 META_AND_YOUTUBE_TASKS              = PAUSED_NOT_DISCARDED
@@ -29,35 +32,33 @@ The completed External Signed PREVIEW closeout is preserved at:
 docs/archive/current-task-google-ads-external-signed-preview-closeout-merged-2026-07-26.md
 ```
 
-## Product decision
-
-Finish the complete Google Ads implementation now so the repository and safely
-closed Integration Workspace can be prepared before the customer authorizes the
-Google Ads connection.
-
-After this implementation and its separately reviewed flags-false rollout are
-complete, customer authorization must not trigger another coding phase. The only
-remaining steps should be external/runtime gates:
+The rollout runbook is:
 
 ```text
-customer clicks Google OAuth confirmation
-→ encrypted Refresh Token is stored
-→ exact advertiser identity and provider access are validated
-→ one protected manual sync is triggered
-→ D1 / Shared RAW / Canonical Lark reconciliation is verified
-→ exact rerun proves zero duplicate/business drift
+docs/rollouts/google-ads-end-to-end-lark-ready-before-oauth.md
 ```
 
-Provider-side access rejection, insufficient scope, wrong Google account or pending
-Google Ads Developer Token access remain real external blockers. They must be
-reported as such, not hidden as implementation success.
+## Objective
+
+Finish the complete Google Ads repository implementation before customer OAuth so
+customer authorization does not require another coding phase. After a separately
+approved rollout, the intended external sequence is:
+
+```text
+customer authorizes Google Ads
+→ encrypted Refresh Token reference is validated
+→ clean Manager Script delivers one signed LIVE run
+→ API Worker admits one reference-only Queue operation
+→ Sync Worker writes D1 first, then Shared RAW and Canonical Lark
+→ reconciliation completes and staged payload is redacted
+→ exact rerun proves zero duplicate/business-count drift
+```
+
+Provider rejection, insufficient scope, wrong Google account, pending/rejected
+Developer Token access, manager/advertiser mismatch, currency mismatch or timezone
+mismatch remain real external blockers and must fail closed.
 
 ## Source and authorization architecture
-
-Do not create a competing direct-fetch pipeline that discards the completed Manager
-Script signed-delivery work.
-
-Use these responsibilities:
 
 ```text
 Customer Google OAuth connection
@@ -70,51 +71,55 @@ API Worker + Queue + Sync Worker
   = authenticated admission, durable processing, D1-first writes and Lark delivery
 ```
 
-The customer OAuth gate and the signed source identity must both resolve to the same
-approved advertiser. A mismatch fails closed before Queue admission or business write.
-No Refresh Token, Access Token, Signing Secret, Nonce, signature or raw credential may
-enter Queue, D1 business rows, Lark, logs, alerts or Git.
+The OAuth gate and signed source must resolve to the same approved customer,
+manager, advertiser, currency and timezone before Queue admission. No Refresh Token,
+Access Token, Signing Secret, nonce, signature, ciphertext or IV enters Queue,
+business rows, Lark, logs, alerts or Git.
 
 ## Existing verified foundation
 
-- Manager `9463570541` and advertiser `5662332033` were selectable in the actual
-  Manager Script path.
-- The actual signed PREVIEW completed `6/6` datasets, `7/7` chunks and `1375/1375`
-  rows.
-- The transport reached `preview_validated`, redacted every PREVIEW payload and
-  produced zero Business/Queue/Lark drift.
-- Migration `0013` provides nonce/run/chunk transport state.
-- Migration `0014` and one-time provisioning established the Signing Secret without
-  storing it in Git.
-- Customer Google OAuth flow, encrypted credential persistence and exact target
-  validation foundation already exist.
-- Existing Ads D1 grains and Shared RAW/Canonical Lark tables are the only approved
-  business destinations.
+- Actual Manager Script PREVIEW passed six datasets, seven chunks and 1,375 rows.
+- PREVIEW payloads were redacted and produced zero Queue/Business/Lark drift.
+- Migration `0013` provides nonce/run/chunk signed transport state.
+- Migration `0014` and one-time provisioning established the Signing Secret outside Git.
+- Customer OAuth, AES-256-GCM credential persistence, refresh lifecycle and target
+  validation already existed.
+- Migration `0009` and `D1MarketingHistoryStore` provide approved Ads/Coverage grains.
+- Shared Ads RAW and Canonical Lark schema/View/Formula work is already applied and is
+  not reopened by this task.
 
-## Completion boundary before customer click
+## Implementation result
 
-Implementation is ready-before-OAuth only when all of the following exist and pass
-locally, with repository/runtime defaults still false:
+Draft PR `#57` implements:
 
-1. encrypted Customer Connection credential bridge usable by the manual Google Ads
-   workflow without copying a Refresh Token into ordinary environment config;
-2. exact authorization gate for customer key, manager, advertiser, currency and
-   timezone;
-3. signed `LIVE` run assembly and cross-chunk validation;
-4. durable reference-only Queue admission;
-5. stable Queue operation identity and duplicate-safe consumer processing;
-6. D1-first normalization and writes for Ads entities, daily facts, conversion facts
-   and Coverage;
-7. Shared RAW and Canonical Lark plans/writers;
-8. checkpoint, retry, partial failure, DLQ, alert and redrive semantics;
-9. exact reconciliation and idempotent replay tests;
-10. protected manual operator and flags-false rollout/runbook;
-11. all migrations and Worker code deployable safely with every Google Ads execution
-    gate disabled until the customer connection becomes validated.
+1. exact-schema reference-only Queue contract;
+2. provider-aware stable Queue operation identity independent from Cloudflare message ID;
+3. additive `0015_google_ads_live_admission.sql` transport-to-business lifecycle;
+4. encrypted Customer Connection read gate using only active credential references;
+5. exact customer/manager/advertiser/currency/timezone/scope validation;
+6. six-dataset LIVE run reconstruction after complete cross-chunk validation;
+7. D1-first Ads entity, daily fact and six-dataset Coverage writes;
+8. Shared `RAW_Ads_Entities` / `RAW_Ads_Daily` plans;
+9. Canonical Ads table plans with connector-owned fields only;
+10. destination preflight before first write, bounded D1 phases and one-Lark-table
+    continuation checkpoints;
+11. durable reconciliation, payload redaction and exact completed replay;
+12. protected `uat_pending` Sync Worker route available only in developer-owned
+    `integration_workspace` with all manual flags enabled and schedule false;
+13. producer-marker ambiguity recovery from actual Queue receipt;
+14. controlled Google Ads DLQ redrive using the exact original Queue reference;
+15. same-generation terminal Work revival only when no active lock exists;
+16. completed/superseded Work redrive protection;
+17. phase-confirmed rollout operator whose default invocation is plan-only;
+18. synthetic transport, OAuth, Queue, D1, Lark, checkpoint, redrive and operator tests;
+19. release examples with every Google Ads execution/schedule flag false.
+
+No provider-specific `RAW_Google_*` table, competing Google Ads API ingestion pipeline,
+new Reliability stack or schedule was created.
 
 ## Queue reference contract
 
-Queue body contains only a stable Run reference:
+Queue body contains only:
 
 ```json
 {
@@ -130,13 +135,16 @@ Queue body contains only a stable Run reference:
 
 Rules:
 
-- `operationId` equals the signed Run ID.
-- `workKey` equals `google_ads:<runId>`.
-- `generation` and `originalRequestedAt` equal `Date.parse(runStartedAt)`.
-- no source row, customer/manager ID, campaign/ad ID, credential, key ID, signature,
-  nonce or Secret enters the Queue body;
-- an ambiguous Queue send may produce an exact duplicate reference; consumer dedupe
-  must use the stable operation identity rather than Cloudflare message ID.
+- `operationId` equals the signed Run ID;
+- `workKey` equals `google_ads:<runId>`;
+- `generation` and `originalRequestedAt` equal `Date.parse(runStartedAt)`;
+- `requestedAt` is the exact ISO representation of that generation;
+- unknown fields fail permanently;
+- no customer/manager/advertiser ID, source row, signature, nonce or credential enters
+  the Queue body;
+- ambiguous send may create an exact duplicate reference and is fenced by stable
+  operation identity;
+- Google Ads redrive sends the exact original body without redrive metadata.
 
 ## D1 and Lark destination scope
 
@@ -145,13 +153,17 @@ Rules:
 ```text
 ads_entity_state
 ads_daily_facts
-ads_conversion_daily_facts
 data_coverage_runs
 data_coverage_entities
-sync_cursors
+google_ads_delivery_runs / google_ads_delivery_chunks
+google_ads_live_admissions
 sync_work_runs / sync_work_phases / sync_work_units
 sync_runs / sync_locks / dead_letter_jobs / system_alerts
 ```
+
+`ads_conversion_daily_facts` remains unused in v1 because the signed source has no
+explicit conversion-action identity. Aggregate conversions are not fabricated into a
+conversion-action grain.
 
 ### Shared RAW Lark
 
@@ -171,54 +183,58 @@ MKT_Ads_Creatives
 MKT_Ads_Daily
 ```
 
-Reuse the approved Google Ads Blueprint fields, ownership masks, formulas, relations
-and Views. Do not reopen Schema/View/Formula Apply and do not create provider-specific
-duplicate tables.
+No `MKT_Ads_AssetGroups` write occurs in v1. Existing ownership masks, formulas,
+relations and Views remain authoritative.
 
 ## Dataset mapping
 
-The six signed datasets are processed as follows:
-
 ```text
-account                  → Ads account entity / MKT_Ads_Accounts
+account                  → account entity / MKT_Ads_Accounts
 campaigns                → campaign entities / MKT_Ads_Campaigns
 adGroups                 → ad_group entities / MKT_Ads_AdGroups
 ads                      → ad entities / MKT_Ads_Ads
-youtubeAssets            → creative/asset entities / MKT_Ads_Creatives
+youtubeAssets            → creative entities / MKT_Ads_Creatives
 campaignDailyMetrics     → ads_daily_facts / RAW_Ads_Daily / MKT_Ads_Daily
 ```
 
-Conversion facts are written only from explicitly mapped conversion-action fields.
-No fabricated conversion total, value, CPA or ROAS is allowed. Missing metrics remain
-`null`; observed zero remains `0`. Money uses exact micros/integer-safe parsing.
+Missing unsupported metrics remain `null`; observed zero remains `0`; money remains
+integer micros. Reach is not fabricated from another metric.
 
-## Required write order
-
-For one completely validated Run:
+## Required processing order
 
 ```text
-1. verify Customer Connection and exact advertiser identity
-2. verify signed Run identity, manifest and all chunks
-3. reserve one durable Queue admission reference
-4. consumer acquires distributed lock and generation fence
-5. reconstruct and validate the bounded Run from D1 transport chunks
-6. normalize and plan every D1 and Lark destination before the first business write
-7. write D1 Ads entities/daily/conversion facts and Coverage
-8. write Shared RAW Lark
-9. write Canonical Lark with ownership masks
-10. reconcile created + updated + skipped = expected and failed = 0
-11. persist checkpoint/completion
-12. redact staged payloads only after durable completion or terminal retention policy
+1. verify exact Queue reference and LIVE Admission
+2. reconstruct complete signed Run from D1 transport chunks
+3. validate all six datasets and cross-dataset relations
+4. plan every Shared RAW/Canonical Lark destination before first business write
+5. claim generation fence and renewable distributed lock
+6. write D1 Ads entities, daily facts and Coverage in bounded checkpointed units
+7. write Shared RAW one table at a time
+8. write Canonical Lark one table at a time with ownership masks
+9. reconcile created + updated + skipped = expected and failed = 0
+10. complete durable Work and Admission
+11. redact staged LIVE payload only after durable completion
 ```
 
-A partial failure remains partial and resumes from a durable checkpoint. It must not
-publish success, advance completion incorrectly or erase prior non-null facts with an
-unsupported incoming `null`.
+Partial failure remains partial/retryable and resumes from checkpoints. Incoming
+unsupported `null` does not erase protected non-null history.
+
+## DLQ and controlled redrive
+
+- Main Queue and existing DLQ remain authoritative.
+- Google Ads retries preserve stable operation identity.
+- DLQ terminal marking does not execute the job again.
+- Manual redrive requires `MKT_DLQ_REDRIVE_ENABLED=true` and an explicit admin job.
+- Redrive revives only the same Work key/generation with lifecycle `terminal` or an
+  already active retry boundary and no active lock.
+- Completed and superseded Work remain closed.
+- Queue-send ambiguity may resend only the exact original reference.
+- Actual Queue receipt may promote a `send_pending` Admission to `queued`
+  idempotently before processing.
 
 ## Feature gates
 
-Add or reuse independent fail-closed flags. Repository examples and deployed
-pre-authorization configuration must keep every execution gate false:
+All release examples keep these false:
 
 ```text
 MKT_CONNECTOR_GOOGLE_ADS_ENABLED=false
@@ -227,92 +243,64 @@ MKT_GOOGLE_ADS_QUEUE_ADMISSION_ENABLED=false
 MKT_GOOGLE_ADS_BUSINESS_WRITE_ENABLED=false
 MKT_GOOGLE_ADS_LARK_WRITE_ENABLED=false
 MKT_SCHEDULE_GOOGLE_ADS_ENABLED=false
+MKT_DLQ_REDRIVE_ENABLED=false
 ```
 
-A manual source-to-Lark run may be authorized only after:
+Google Ads Connector and Job remain `uat_pending`, not `active`. The protected route
+is limited to Development Integration Workspace manual UAT and does not make generic
+`uat_pending` connectors runnable.
 
-- merged reviewed source;
-- required Remote migration/backup and flags-false deployment;
-- customer connection is present and accepted by the exact identity gate;
-- a separate explicit rollout instruction.
+## In scope completed
 
-No schedule is authorized by this task.
+- [x] Full current-codebase review before source edits.
+- [x] Existing transport/OAuth/Queue/Reliability/D1/Lark stacks reused.
+- [x] Encrypted credential-reference bridge implemented without plaintext exposure.
+- [x] Exact authorization and signed-source identity gate implemented.
+- [x] Additive LIVE Admission migration/store implemented.
+- [x] Reference-only Queue producer and stable consumer implemented.
+- [x] D1-first normalization, Coverage and bounded writes implemented.
+- [x] Shared RAW and Canonical Lark planning/writing implemented.
+- [x] Checkpoint/resume, retry, partial failure, alert and redaction semantics implemented.
+- [x] Exact-schema DLQ redrive and terminal Work revival implemented.
+- [x] Protected manual operator/runbook implemented.
+- [x] Synthetic/fake provider, Queue, D1 and Lark tests added.
+- [x] Google Ads execution/schedule flags remain false in release examples.
+- [ ] Final Branch Verification after documentation closeout.
 
-## In scope
+## Explicitly not executed
 
-- Full review of the current Google Ads transport, OAuth, Queue/reliability, D1,
-  Lark repository, Sync Engine and test architecture.
-- Customer Connection credential/identity bridge without plaintext token copying.
-- Additive migration(s) for Queue admission and processing lifecycle.
-- Signed `LIVE` assembly behind default-false gates.
-- Reference-only Queue producer and stable-operation consumer.
-- D1-first Ads entity/daily/conversion normalization and persistence.
-- Shared RAW and Canonical Lark planning/writing.
-- Coverage, checkpoint, retry, DLQ, alert, redrive, reconciliation and payload
-  redaction/retention.
-- Manual one-shot operator/runbook that remains unusable without explicit approval.
-- Synthetic/fake provider, Queue, D1 and Lark tests only during implementation.
-- Full regression for PREVIEW, OAuth, TikTok, YouTube, Meta and Core.
-
-## Out of scope
-
-- Customer clicking the OAuth link during implementation.
-- Remote D1 migration, Worker deployment, Secret/flag mutation or Queue send.
-- Actual external `LIVE` run or Lark write before a separate rollout approval.
+- Customer OAuth click/callback.
+- Remote D1 backup or migration `0015` apply.
+- Worker deployment.
+- Runtime Secret or flag mutation.
+- Actual external LIVE signed delivery.
+- Actual Queue message.
+- D1 Ads business write.
+- Shared RAW or Canonical Lark business write.
+- DLQ redrive.
 - Schedule/Cron activation.
-- Google Ads campaign/ad mutation or Spend changes.
-- Meta/YouTube implementation while this task is active.
-- Production cutover or customer-owned infrastructure migration.
-- Reuse, merge or cherry-pick of Draft PR `#17`; current architecture must be
-  implemented fresh against the verified Storage model.
+- Production cutover.
+- Google Ads campaign/ad/bid/budget/spend mutation.
 
-## Acceptance criteria
+## Required rollout sequence after separate approval
 
-- [ ] Full current-codebase review completed before source edits.
-- [ ] No duplicate Google Ads client, Lark writer or reliability stack is created.
-- [ ] Customer credential bridge reads only encrypted Connection storage and never
-  exposes a plaintext token outside the provider client boundary.
-- [ ] Exact customer/manager/advertiser identity mismatch fails before admission.
-- [ ] Queue body is exact-schema reference-only and secret/identity scan passes.
-- [ ] Admission race creates one durable identity; exact retry is duplicate-safe.
-- [ ] Queue unavailable and sent-marker ambiguity preserve correct retry state.
-- [ ] Consumer uses stable operation identity and rejects unknown version/type.
-- [ ] Six datasets reconcile across all expected chunks and rows.
-- [ ] D1 Ads entities/daily/conversion facts use approved stable keys and UPSERT rules.
-- [ ] Shared RAW and Canonical Lark plans use existing tables and ownership masks.
-- [ ] Partial failure resumes from checkpoint without duplicate facts or false success.
-- [ ] Exact rerun creates zero duplicate groups and zero false metric observations.
-- [ ] Payloads remain bounded and are redacted after durable completion.
-- [ ] PREVIEW still performs zero Queue/Business/Lark writes and immediate redaction.
-- [ ] All execution flags remain false in repository examples and rollout baseline.
-- [ ] Google Ads Connector/Job are not promoted to active before manual Live UAT.
-- [ ] No real Queue, Remote D1, Worker, Secret, Google Ads or Lark action occurs.
-- [ ] Focused tests pass.
-- [ ] `npm ci`, `npm run check`, `npm test`, `npm run test:report-reliability`,
-  `npm audit --audit-level=high` and `npm run deploy:dry-run` pass.
-- [ ] Current Task, Project Brain and CHANGELOG record sanitized implementation result
-  and the exact remaining customer/runtime gates.
+```text
+1. review and merge PR #57
+2. run guarded preflight
+3. back up Remote D1
+4. apply additive migrations
+5. deploy both Workers with all execution flags false
+6. wait for exact validated Customer OAuth connection
+7. run read-only encrypted Connection gate
+8. obtain separate manual LIVE approval
+9. enable only approved manual flags
+10. execute one clean Manager Script LIVE run
+11. disable execution flags immediately after admission
+12. verify D1 / Shared RAW / Canonical reconciliation
+13. exact rerun and verify zero business-count drift
+14. observe clean manual cycles
+15. open a separate Schedule decision task
+```
 
-## Required implementation sequence
-
-1. Review all current Google Ads, OAuth, Queue, D1, Lark and reliability source/tests.
-2. Record duplicate/dead-code, architecture and retention risks before editing.
-3. Add migration and transport/admission lifecycle tests first.
-4. Implement the encrypted Customer Connection authorization bridge.
-5. Implement reference-only admission and shared Queue operation identity.
-6. Implement the consumer, D1-first business plans and durable checkpoints.
-7. Implement Shared RAW and Canonical Lark plans/writers.
-8. Add failure/retry/DLQ/redrive/reconciliation and exact-rerun tests.
-9. Prove PREVIEW and all unrelated regressions.
-10. Run the full Definition of Done gates.
-11. Update `Implementation result` and stop for Work review before PR/Remote action.
-
-## Implementation result
-
-Not started.
-
-## Next approval gate
-
-Review the completed local diff and all gate results. Commit/PR, Remote migration,
-flags-false deployment, customer OAuth confirmation, manual `LIVE`, Queue send, D1/Lark
-business write, schedule and Production remain separate approval boundaries.
+Approval of this implementation task never authorizes Remote rollout, customer OAuth,
+LIVE execution, Lark writes, schedule activation or Production.
