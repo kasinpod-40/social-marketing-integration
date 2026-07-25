@@ -5,7 +5,8 @@
 ```text
 CONTRACT_ID       = google_ads_manager_script_signed_delivery_v1
 CONTRACT_STATUS   = APPROVED_2026_07_25
-IMPLEMENTATION    = PHASE_1_LOCAL_FOUNDATION_COMPLETE
+IMPLEMENTATION    = PHASE_2_REMOTE_TRANSPORT_UAT_COMPLETE
+EXTERNAL_DRY_RUN  = AUTHORIZED_GAQL_COMPATIBILITY_VALIDATION
 LIVE_DELIVERY     = DISABLED
 BUSINESS_WRITES   = DISABLED
 SCHEDULE          = DISABLED
@@ -61,7 +62,7 @@ Manager Script ต้อง:
 
 - เลือกบัญชีโฆษณาเพียงบัญชีเดียวจาก allowlist ที่กำหนด;
 - ตรวจ selected account ซ้ำหลัง `AdsManagerApp.select(...)`;
-- ใช้ `AdsApp.search()` และ GAQL แบบ read-only เท่านั้น;
+- ใช้ `AdsApp.search(..., { apiVersion: "v24" })` และ GAQL แบบ read-only เท่านั้น;
 - ไม่มี Builder, mutate, pause, enable, remove, Spreadsheet, Mail หรือ trigger API;
 - เริ่มต้นที่ `DRY_RUN`;
 - รองรับ `PREVIEW` และ manual one-shot `LIVE` เท่านั้น;
@@ -298,6 +299,9 @@ youtubeVideoTitle, resourceName
 - เรียง Numeric `assetId`
 - ID ไม่ซ้ำ
 - `assetType=YOUTUBE_VIDEO`
+- `status=null` ใน Source v1 เพราะ `asset` ไม่มี selectable status;
+  `customer_asset`/`campaign_asset` status เป็นคนละ Linkage grain และห้ามนำมา
+  ปะปนโดยไม่มี Contract แยก
 - Asset ถูก Normalize เป็น `entity_type=creative`; ไม่ใช่ Organic content
 
 ### `campaignDailyMetrics`
@@ -320,6 +324,10 @@ conversionValueMicros, videoViews, videoViewRate, averageCpvMicros
 - Money/count เป็น non-negative safe integer หรือ `null`
 - `conversions` เป็น non-negative finite number หรือ `null`
 - `videoViewRate` อยู่ในช่วง `0..1` หรือ `null`
+- Source fields ใช้ชื่อ v24
+  `video_trueview_views`, `video_trueview_view_rate` และ
+  `trueview_average_cpv`; output contract คงชื่อกลาง
+  `videoViews`, `videoViewRate`, `averageCpvMicros`
 - `reach=null` เพราะ Google campaign source v1 ไม่รองรับ
 - Aggregate conversion ไม่มี Conversion-action identity จึงไม่เขียน
   `ads_conversion_daily_facts` ใน v1

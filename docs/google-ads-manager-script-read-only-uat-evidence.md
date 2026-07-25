@@ -96,3 +96,22 @@ The next connector task must add at least one sanitized immutable artifact:
 - SHA-256 of the reviewed Script plus exact GAQL field manifest, dataset schema, version and safety scan report.
 
 The artifact must not contain Customer ID, token, secret, login identity or raw sample rows.
+
+## Reproducible sanitized artifact validation — 2026-07-25
+
+The committed sanitized Script artifact was later copied exactly into the
+Google Ads Manager Script and run again in `DRY_RUN`. Authorization passed.
+Two fail-closed GAQL compatibility drifts were corrected:
+
+- `asset.status` was removed and the output keeps `youtubeAssets.status=null`;
+- legacy video metrics were replaced with v24
+  `video_trueview_views`, `video_trueview_view_rate` and
+  `trueview_average_cpv`.
+
+The final external DRY_RUN passed all six non-empty datasets, planned seven
+chunks, reported `truncated=false` and showed `No changes`. Delivery remained
+disabled and no Secret or `UrlFetchApp` call was required.
+
+Current sanitized evidence:
+
+`docs/rollouts/google-ads-manager-script-external-dry-run-2026-07-25.md`

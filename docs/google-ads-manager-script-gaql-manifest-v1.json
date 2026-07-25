@@ -2,7 +2,8 @@
   "schemaVersion": "google_ads_manager_script_gaql_manifest_v1",
   "artifactVersion": "google_ads_manager_script_signed_delivery_v1",
   "scriptArtifact": "scripts/google-ads-manager-script-signed-delivery.js",
-  "scriptSha256": "ab5084a3aeec8f75ac89226394f019f63a45aaa05c0cb67634532932f12a270a",
+  "scriptSha256": "947b0bf3062cf4c6836e5b3101e36896340ffb0e83f9d2ba29459ae2d0b8a509",
+  "apiVersion": "v24",
   "sourceModeDefault": "DRY_RUN",
   "deliveryEnabledDefault": false,
   "lookbackDays": 30,
@@ -76,11 +77,13 @@
       "fields": [
         "asset.id",
         "asset.name",
-        "asset.status",
         "asset.type",
         "asset.youtube_video_asset.youtube_video_id",
         "asset.youtube_video_asset.youtube_video_title",
         "asset.resource_name"
+      ],
+      "nullableOutputOnly": [
+        "status"
       ],
       "where": "asset.type = 'YOUTUBE_VIDEO'"
     },
@@ -98,17 +101,19 @@
         "metrics.clicks",
         "metrics.conversions",
         "metrics.conversions_value",
-        "metrics.video_views",
-        "metrics.video_view_rate",
-        "metrics.average_cpv"
+        "metrics.video_trueview_views",
+        "metrics.video_trueview_view_rate",
+        "metrics.trueview_average_cpv"
       ],
       "where": "segments.date DURING LAST_30_DAYS"
     }
   },
   "liveEvidence": {
-    "classification": "documented_live_review",
+    "classification": "external_dry_run_pass",
     "historicalReviewedSourceInRepository": false,
     "historicalReviewedLineCount": 598,
+    "currentSanitizedArtifactExternallyValidated": true,
+    "externalDryRunDate": "2026-07-25",
     "externalDeliveryWasEnabled": false,
     "adsMutationObserved": false,
     "allSixDatasetsWereNonEmpty": true,

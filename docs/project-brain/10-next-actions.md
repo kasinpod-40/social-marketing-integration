@@ -1,25 +1,33 @@
 # 10 — Next Actions
 
-## Immediate next action — Close out Remote transport UAT
+## Immediate next action — Review DRY_RUN correction and provisioning Design
 
 Phase 2 merge ผ่าน PR `#52` ที่ `e317fb9` และ Approved Remote transport rollout
-ผ่านแล้ว:
+ผ่านแล้ว; Closeout merge ผ่าน PR `#53` ที่ `217d54e`.
 
-- verified D1 backup + exact SQLite re-import/integrity;
-- Migration `0013` applied with no pending migrations;
-- API Worker deployed and health/disabled-route smoke passed;
-- signed PREVIEW `200`, exact retry `200`, nonce replay `409`;
-- one Run/Chunk validated with payload fully redacted;
-- Business/Queue row-count drift zero;
-- final Connector/Signed-ingress/Business-write flags all `false`.
+Actual Google Ads Manager Script external `DRY_RUN` ผ่านแล้ว:
+
+- Authorization ผ่าน
+- exact sanitized artifact ใช้ Google Ads API `v24`
+- six non-empty datasets และ 7 planned chunks
+- `truncated=false`
+- Google Ads `No changes`
+- delivery disabled / ไม่มี `UrlFetchApp`
+
+One-time Signing Secret provisioning มี Design แบบ Ticket CSPRNG อายุ 5 นาที,
+Atomic single redeem, exact identity binding, HMAC confirmation และ
+Provisioning flag แยกที่ default `false`; implementation ยังไม่เริ่ม.
 
 ขั้นถัดไป:
 
-1. Review/Commit/Push/PR เอกสาร Remote rollout Closeout
-2. ขออนุมัติ External PREVIEW จาก Google Ads Manager Script จริง
-3. เปิด Signed ingress ชั่วคราวและตั้ง Secret ผ่าน Script Properties เท่านั้น
-4. พิสูจน์ six-dataset GAQL/UrlFetchApp compatibility และ zero Business writes
-5. ปิด Signed ingress แล้วจึงพิจารณา Local reference-only Queue admission
+1. Review local GAQL correction, sanitized external evidence และ provisioning Design
+2. Commit/Push/PR เฉพาะเมื่อได้รับอนุมัติ
+3. ขออนุมัติ Local provisioning implementation + Migration source แยก
+4. รัน Full gates และ Review threat model/code แยก
+5. ขออนุมัติ Remote migration/deploy/Ticket creation แยกทุก Boundary
+6. Provision Secret และพิสูจน์ challenge โดย Signed ingress ยังคงปิด
+7. ขออนุมัติ signed PREVIEW แยกก่อนเปิด ingress ชั่วคราว
+8. ปิด ingress แล้วจึงพิจารณา Local reference-only Queue admission
 
 Draft PR `#17` remains Draft/HOLD and evidence-only.
 
@@ -105,10 +113,10 @@ No Live Lark Apply, Google Ads mutation, Queue message, D1 migration, schedule c
 
 ## Current approval gate
 
-Google Ads Local Phase 2 transport/endpoint, Full verification และ Remote
-transport UAT ผ่านแล้ว. Gate ปัจจุบันคือ Closeout Review/Commit และ Actual
-Manager Script external PREVIEW; Queue admission, Business writer และ LIVE
-ยังไม่ได้รับอนุมัติ
+Google Ads Local Phase 2 transport/endpoint, Full verification, Remote transport
+UAT และ Actual Script external DRY_RUN ผ่านแล้ว. Gate ปัจจุบันคือ Review/Commit
+GAQL correction + one-time provisioning Design. Provisioning implementation,
+signed PREVIEW, Queue admission, Business writer และ LIVE ยังไม่ได้รับอนุมัติ
 
 ## Approved contract retained for Phase 2
 

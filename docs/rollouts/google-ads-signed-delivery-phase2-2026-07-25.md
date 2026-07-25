@@ -120,12 +120,14 @@ Source, logs, health responses or evidence.
 
 ## Remaining gates
 
-1. Review and merge this sanitized Closeout.
-2. Run an actual Google Ads Manager Script external PREVIEW with Secret kept in
-   Script Properties only.
-3. Prove all six read-only GAQL datasets and `UrlFetchApp` signing compatibility.
-4. Restore Signed ingress to `false`.
-5. Only then consider Local reference-only Queue admission.
+This historical list is superseded as follows:
+
+1. The sanitized Closeout merged through PR `#53`.
+2. Actual Script external `DRY_RUN` passed six datasets with no changes.
+3. One-time Secret provisioning is Design-only and awaits separate implementation.
+4. Signed PREVIEW and `UrlFetchApp` compatibility remain pending.
+5. Signed ingress remains false until that separately approved PREVIEW window.
+6. Only then consider Local reference-only Queue admission.
 
 Queue processing, Business writers, D1 Ads facts, Lark writes, LIVE mode,
 schedules and Production remain unimplemented or disabled.

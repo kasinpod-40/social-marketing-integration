@@ -1,5 +1,41 @@
 # Changelog
 
+## Unreleased — Google Ads external DRY_RUN and Secret provisioning Design — 2026-07-25
+
+### External validation
+
+- Confirmed PR `#53` is merged on `main` at `217d54e` and corrected stale
+  Closeout/current-task documentation.
+- Ran the actual Google Ads Manager Script with valid authorization in
+  `DRY_RUN`; final result passed all six non-empty datasets, planned seven
+  chunks, reported `truncated=false` and showed `No changes`.
+- Corrected fail-closed GAQL drift by removing unsupported `asset.status`,
+  retaining `youtubeAssets.status=null`, pinning API `v24` and replacing legacy
+  video metrics with current TrueView field names.
+- Updated the actual Google Ads Script to the same sanitized Repository artifact
+  without reading or changing Script Properties.
+
+### Design and safety
+
+- Added a Design-only one-time Signing Secret provisioning contract using a
+  five-minute 256-bit Ticket, D1 fingerprint-only persistence, Atomic consume,
+  exact runtime identity binding and HMAC confirmation.
+- Provisioning implementation, Migration, endpoint, operator, Ticket creation,
+  Worker Secret change, deployment and signed PREVIEW remain unimplemented or
+  separately gated.
+- Signed ingress remained disabled. `DRY_RUN` returned before `UrlFetchApp`;
+  no Queue, D1/Lark Business write, schedule, LIVE, Production or Google Ads
+  mutation occurred.
+
+### Verification
+
+- Focused Google Ads suites `34/34`, Unit `759/759`, Worker runtime `9/9` and
+  report reliability `70/70` passed.
+- Architecture audit passed at `211` source files / `508` local dependencies /
+  `0` cycles; repository hygiene and final diff/Secret scans passed.
+- `npm audit --audit-level=high` reported `0` vulnerabilities.
+- API and Sync Worker `deploy --dry-run` passed without deployment.
+
 ## Unreleased — Google Ads signed-delivery Remote transport UAT — 2026-07-25
 
 ### Remote rollout
@@ -21,8 +57,9 @@
   schedule or Production action occurred.
 - The temporary Local signing-secret file was removed. The ignored backup and
   sanitized operator evidence remain outside Git.
-- Actual Google Ads Manager Script `AdsApp` external PREVIEW remains pending
-  before Queue admission work.
+- Actual Script external `DRY_RUN` is now complete in the later entry above;
+  Secret provisioning implementation and signed PREVIEW remain pending before
+  Queue admission work.
 
 ## Unreleased — Google Ads Manager Script signed-delivery Phase 2 — 2026-07-25
 

@@ -17,8 +17,18 @@ test('sanitized Manager Script is DRY_RUN-first and exact-account scoped', async
   assert.match(script, /AdsManagerApp\.accounts\(\)\.withIds\(\[config\.customerId\]\)/u);
   assert.match(script, /executionCustomerId !== config\.managerCustomerId/u);
   assert.match(script, /selected !== config\.customerId/u);
-  assert.match(script, /AdsApp\.search\(query\)/u);
+  assert.match(script, /apiVersion:\s*'v24'/u);
+  assert.match(
+    script,
+    /AdsApp\.search\(query,\s*\{\s*apiVersion:\s*GOOGLE_ADS_SIGNED_DELIVERY\.apiVersion/u,
+  );
   assert.match(script, /MKT_GOOGLE_ADS_ADVERTISER_CUSTOMER_ID/u);
+  assert.doesNotMatch(script, /\basset\.status\b/u);
+  assert.doesNotMatch(
+    script,
+    /\bmetrics\.(?:video_views|video_view_rate|average_cpv)\b/u,
+  );
+  assert.match(script, /function mapYoutubeAssetRow_[\s\S]*status:\s*null/u);
   assert.doesNotMatch(script, /MKT_GOOGLE_ADS_CUSTOMER_ID/u);
   assert.doesNotMatch(script, /(?<!\d)\d{10}(?!\d)/u);
 });
@@ -63,8 +73,10 @@ test('GAQL manifest matches all six bounded datasets and the exact script bytes'
   ];
 
   assert.deepEqual(Object.keys(manifest.datasets), expectedDatasets);
+  assert.equal(manifest.apiVersion, 'v24');
   assert.equal(manifest.sourceModeDefault, 'DRY_RUN');
   assert.equal(manifest.deliveryEnabledDefault, false);
+  assert.deepEqual(manifest.datasets.youtubeAssets.nullableOutputOnly, ['status']);
   assert.deepEqual(manifest.safetyScan, {
     containsCustomerId: false,
     containsSecret: false,

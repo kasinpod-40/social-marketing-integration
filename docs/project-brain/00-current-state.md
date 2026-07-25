@@ -3,8 +3,9 @@
 ## Google Ads signed delivery Phase 2 Remote transport UAT
 
 ผู้ใช้อนุมัติ Contract ของ Google Ads Manager Script signed-delivery แล้ว
-Phase 1 merge ผ่าน PR `#51` ที่ `d7400c5` และ Phase 2 merge ผ่าน PR `#52` ที่
-`e317fb9`. Contract authority อยู่ที่
+Phase 1 merge ผ่าน PR `#51` ที่ `d7400c5`, Phase 2 merge ผ่าน PR `#52` ที่
+`e317fb9` และ Remote rollout Closeout merge ผ่าน PR `#53` ที่ `217d54e`.
+Contract authority อยู่ที่
 `docs/google-ads-manager-script-signed-delivery-contract-v1.md`
 
 ```text
@@ -12,7 +13,8 @@ TASK_STATUS       = PHASE_2_REMOTE_TRANSPORT_UAT_COMPLETE
 IMPLEMENTATION    = PREVIEW_INGRESS_TRANSPORT_DEPLOYED_SAFE_CLOSED
 MIGRATION_0013    = APPLIED
 SIGNED_PREVIEW    = CONTRACT_CLIENT_PASS
-ACTUAL_ADS_SCRIPT = EXTERNAL_PREVIEW_PENDING
+ACTUAL_ADS_SCRIPT = EXTERNAL_DRY_RUN_PASS
+SECRET_PROVISION  = DESIGN_COMPLETE_NOT_IMPLEMENTED
 LIVE_DELIVERY     = DISABLED
 BUSINESS_WRITES   = DISABLED
 SCHEDULES         = DISABLED
@@ -26,8 +28,14 @@ redaction และ zero Business/Queue drift. Final Google Ads flags ทั้�
 `false`; Cloudflare signing Secret คงอยู่ใน Secret store และไฟล์ Local ชั่วคราว
 ถูกลบแล้ว.
 
-Local Full gates ผ่าน: Focused Phase 2 `45/45`, Unit `759/759`, Workers
-runtime `9/9`, report reliability `70/70`, Architecture `211/508/0`,
+Actual Manager Script external `DRY_RUN` ผ่าน Authorization และ six non-empty
+datasets หลังแก้ GAQL compatibility drift: ตัด `asset.status`, คง output
+`status=null`, pin Google Ads API `v24` และใช้ TrueView metric names ปัจจุบัน.
+Logger สรุป 7 planned chunks, `truncated=false`; Google Ads แสดง `No changes`,
+delivery ปิดและไม่มี `UrlFetchApp`
+
+Current local Full gates ผ่าน: Focused Google Ads `34/34`, Unit `759/759`,
+Workers runtime `9/9`, report reliability `70/70`, Architecture `211/508/0`,
 repository hygiene, npm audit `0` และ API/Sync Worker deploy dry-run.
 
 Contract ใหม่แก้ Architecture เดิมของ PR `#17` โดยใช้ multi-chunk transport,
@@ -77,9 +85,9 @@ Draft/HOLD.
 
 - Implementation baseline: `d4a531fbb4e05dad7ce2296859c97f571e23acf3` / PR `#13`
 - Documentation closeout: PR `#14`
-- Current task: `docs/current-task.md` — Google Ads signed-delivery Local Phase 1
-  complete, awaiting review/commit decision; customer callbacks remain an
-  external parallel wait
+- Current task: `docs/current-task.md` — External DRY_RUN ผ่าน; one-time Signing
+  Secret provisioning Design เสร็จและรอ Review/implementation approval;
+  customer callbacks remain an external parallel wait
 - Application package line: `0.11.0`
 - Contract versions: View `v0.13.5`, Formula `v0.13.6`, audit correction `v0.13.7`
 
@@ -206,8 +214,9 @@ Current access Test Account Access
 
 Remaining:
 
-- review/commit/push/PR ของ Remote rollout Closeout
-- actual Google Ads Manager Script `AdsApp` external PREVIEW
+- review/commit/push/PR ของ GAQL compatibility correction + provisioning Design
+- one-time Signing Secret provisioning implementation
+- actual signed Google Ads Manager Script PREVIEW
 - reference-only Queue admission + Sync Worker processing
 - normalization and destination writes
 - reliability/reconciliation UAT
@@ -262,6 +271,7 @@ The transitive `sharp` vulnerability chain was fixed with `overrides.sharp=0.35.
 
 ## Next approval gate
 
-Review/Commit/Push/PR เอกสาร Remote rollout Closeout. จากนั้นขออนุมัติ External
-PREVIEW จาก Google Ads Manager Script จริง. Queue, Business writer, Lark write,
-LIVE, Schedule และ Production ยังต้องได้รับอนุมัติแยก.
+Review/Commit/Push/PR ของ GAQL compatibility correction และ one-time Secret
+provisioning Design. Provisioning implementation, Remote migration/deploy,
+Ticket creation, signed PREVIEW, Queue, Business writer, Lark write, LIVE,
+Schedule และ Production ยังต้องได้รับอนุมัติแยก.

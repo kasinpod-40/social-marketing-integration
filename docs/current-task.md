@@ -1,4 +1,142 @@
-# Current Task — Google Ads Manager Script Signed Delivery Contract
+# Current Task — Google Ads External DRY_RUN and Secret Provisioning Design
+
+## Authoritative status
+
+```text
+TASK_STATUS                  = EXTERNAL_DRY_RUN_PASS_DESIGN_COMPLETE
+CURRENT_PROGRAM              = GOOGLE_ADS_MANAGER_SCRIPT_EXTERNAL_VALIDATION
+SOURCE_BASELINE              = PR_53_MERGED_217D54E
+EXTERNAL_AUTHORIZATION       = PASS
+EXTERNAL_DRY_RUN             = SIX_DATASETS_PASS
+GOOGLE_ADS_CHANGES           = NONE
+SIGNED_INGRESS               = DISABLED
+SECRET_PROVISIONING_DESIGN   = LOCAL_DESIGN_COMPLETE
+SECRET_PROVISIONING_CODE     = NOT_STARTED
+REMOTE_MIGRATION_DEPLOYMENT  = NOT_AUTHORIZED
+QUEUE_LARK_BUSINESS_WRITES   = DISABLED
+SCHEDULE_LIVE_PRODUCTION     = DISABLED
+CUSTOMER_OAUTH               = AWAITING_CUSTOMER_CALLBACK_IN_PARALLEL
+```
+
+## Objective
+
+ยืนยันสถานะหลัง PR `#53` merge, แก้ documentation drift, พิสูจน์
+Authorization และ six-dataset GAQL compatibility จาก Google Ads Manager Script
+จริงใน `DRY_RUN`, และล็อก Design สำหรับ one-time Signing Secret provisioning
+โดยไม่เปิด Signed ingress หรือ Business path ใด
+
+## In scope
+
+- ตรวจ Git status/log/fetch/branches จาก `main`
+- ยืนยัน PR `#53` merge ที่ `217d54e`
+- แก้เอกสารที่ยังบอกว่า Remote rollout Closeout รอ Commit/PR
+- รัน Script จริงใน Google Ads Manager UI แบบ `DRY_RUN`
+- แก้ fail-closed GAQL compatibility drift ใน sanitized Script/manifest
+- Pin exact Google Ads API version สำหรับ reproducibility
+- อัปเดต Script จริงให้ตรง sanitized Repository artifact
+- เขียน one-time Signing Secret provisioning Design พร้อม Threat model,
+  D1/HTTP/Script-helper contract, tests และ rollout gates
+- รัน Focused และ Full Repository Definition of Done gates
+- อัปเดต Current Task, Project Brain และ CHANGELOG
+
+## Out of scope
+
+- Implement D1 Migration, Ticket store, operator หรือ provisioning endpoint
+- สร้าง/ใช้ one-time Ticket หรือเปลี่ยน Signing Secret
+- เปิด `MKT_GOOGLE_ADS_SIGNED_INGRESS_ENABLED`
+- Signed PREVIEW/LIVE delivery หรือ `UrlFetchApp`
+- Queue send, Sync processing, D1/Lark Business write
+- Schedule, Production หรือ Google Ads mutation/Spend
+- Commit, Push, PR, Deploy หรือ Remote migration
+- Draft PR `#17` merge/cherry-pick/reuse
+
+## Acceptance criteria
+
+- [x] อ่าน `AGENTS.md`, Current Task, Project Brain, relevant contracts,
+  README และ CHANGELOG
+- [x] Git fetch แล้ว `main...origin/main = 0/0`
+- [x] ยืนยัน PR `#53` เป็น HEAD `217d54e`
+- [x] External Script Authorization ผ่าน
+- [x] ตรวจพบและแก้ `asset.status` incompatibility โดยคง output `null`
+- [x] ตรวจพบและแก้ legacy video metric names
+- [x] Pin `AdsApp.search` ที่ API `v24`
+- [x] External DRY_RUN ผ่าน six non-empty datasets / no changes
+- [x] Delivery ปิดและไม่มี Secret/UrlFetch/Queue/Lark side effect
+- [x] One-time Signing Secret provisioning Design เสร็จแบบ Design-only
+- [x] Focused tests ผ่าน
+- [x] `npm ci`, `npm run check`, `npm test`,
+  `npm run test:report-reliability`, audit และ deploy dry-run ผ่าน
+- [x] ตรวจ final diff/hygiene/Secret scan และบันทึกผล
+
+## Implementation result
+
+External Google Ads Manager Script validation ผ่านแล้ว:
+
+```text
+Authorization              PASS
+Mode / delivery            DRY_RUN / false
+Datasets                   6/6 non-empty
+Rows                       1 / 58 / 110 / 760 / 161 / 287
+Planned chunks             7
+Truncated                  false
+Google Ads changes         No changes
+UrlFetch / Signed ingress  not called / disabled
+```
+
+แก้ compatibility drift สองชุด:
+
+- ตัด `asset.status` จาก GAQL เพราะ status อยู่ที่ Linkage resource คนละ grain
+  และคง `youtubeAssets.status=null`
+- เปลี่ยน video metrics เป็น v24
+  `video_trueview_views`, `video_trueview_view_rate` และ
+  `trueview_average_cpv`
+- Pin `AdsApp.search(..., { apiVersion: "v24" })`
+
+Sanitized Script จริงใน Google Ads ถูกอัปเดตให้ตรง Repository artifact SHA-256:
+
+```text
+947b0bf3062cf4c6836e5b3101e36896340ffb0e83f9d2ba29459ae2d0b8a509
+```
+
+หลักฐาน:
+
+- `docs/rollouts/google-ads-manager-script-external-dry-run-2026-07-25.md`
+- `docs/google-ads-manager-script-signing-secret-provisioning-design-v1.md`
+
+Design provisioning ใช้ Ticket CSPRNG อายุ 5 นาที, เก็บเฉพาะ Fingerprint ใน
+D1, Atomic single redeem, exact identity/key binding, return Secret ครั้งเดียว,
+HMAC confirmation และ Feature flag แยกที่ default `false`. ยังไม่มี
+Migration/Endpoint/Operator/helper implementation และไม่มี Remote action
+
+Verification:
+
+```text
+Focused Google Ads suites        PASS 34/34
+Repository check                 PASS (211 source / 508 dependencies / 0 cycles)
+Repository hygiene               PASS
+Unit tests                       PASS 759/759
+Worker runtime tests             PASS 9/9
+Report reliability tests         PASS 70/70
+npm audit --audit-level=high     PASS 0 vulnerabilities
+API/Sync Worker deploy dry-run   PASS / PASS
+Final diff check                 PASS
+Secret/identity scan             PASS
+```
+
+`npm test` รอบแรกผ่าน Unit `759/759` แต่ Worker runner ถูก Local sandbox กัน
+การสร้าง `node_modules/.vite-temp`; rerun ด้วยสิทธิ์เขียนเฉพาะ Repository แล้ว
+ผ่าน Unit `759/759` และ Worker `9/9`. Wrangler dry-run รอบแรกถูก sandbox กัน
+`.wrangler/tmp`; rerun แบบ `--dry-run` ด้วยสิทธิ์เดียวกันแล้วผ่านทั้งสอง config
+โดยไม่มี Deployment
+
+## Next approval gate
+
+Review local diff และผล Full gates. หากอนุมัติจึง Commit/Push/PR รอบนี้.
+Implementation ของ one-time provisioning, Remote migration/deploy, Ticket
+creation และ Signed PREVIEW เป็น Gate แยกทั้งหมด. Signed ingress, Queue,
+Business writes, Lark, Schedule, LIVE และ Production ต้องคงปิด
+
+# Preserved Prior Task — Google Ads Manager Script Signed Delivery Contract
 
 ## Authoritative status
 
@@ -10,7 +148,7 @@ CONTRACT_APPROVAL       = APPROVED_2026_07_25
 IMPLEMENTATION          = PREVIEW_INGRESS_TRANSPORT_DEPLOYED_SAFE_CLOSED
 REMOTE_MIGRATION_0013   = APPLIED
 SIGNED_PREVIEW          = CONTRACT_CLIENT_PASS
-ACTUAL_MANAGER_SCRIPT   = EXTERNAL_PREVIEW_PENDING
+ACTUAL_MANAGER_SCRIPT   = EXTERNAL_DRY_RUN_PASS_SUPERSEDED_BY_CURRENT_TASK
 GOOGLE_ADS_PR_17        = DRAFT_HOLD_EVIDENCE_ONLY
 LIVE_DELIVERY           = DISABLED
 BUSINESS_WRITES         = DISABLED
@@ -158,14 +296,12 @@ Sanitized evidence อยู่ที่
 Queue message, D1/Lark business mutation, Google Ads mutation, Schedule หรือ
 Production action
 
-## Next approval gate
+## Historical next approval gate — superseded
 
-Review/Commit/Push/PR เอกสาร Remote rollout Closeout. จากนั้นขออนุมัติ External
-PREVIEW จาก Google Ads Manager Script จริงโดยเปิด Signed ingress ชั่วคราว,
-ตั้ง Secret ใน Script Properties และยืนยัน six-dataset GAQL/UrlFetchApp
-compatibility. Reference-only Queue admission เป็น Local Phase ถัดไปหลัง
-External Script evidence; Business writer, LIVE, Schedule และ Production ยัง
-เป็น Gate แยก
+Remote rollout Closeout ถูก merge ผ่าน PR `#53` แล้ว และ External DRY_RUN
+ผ่านใน Current Task ด้านบน. Signed PREVIEW, Secret provisioning implementation,
+Reference-only Queue admission, Business writer, LIVE, Schedule และ Production
+ยังเป็น Gate แยก
 
 # Preserved Prior Task — Multi-Connector Customer Connection Foundation
 
