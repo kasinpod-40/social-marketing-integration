@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased — Google Ads signed-delivery Remote transport UAT — 2026-07-25
+
+### Remote rollout
+
+- Merged Phase 2 through PR `#52` at `e317fb9`.
+- Exported and verified the Remote D1 backup before applying the sole pending
+  additive Migration `0013`.
+- Deployed `social-mkt-api-worker`, configured the signing key in Cloudflare
+  Secret storage and kept Connector/Business-write flags disabled.
+- Passed signed transport PREVIEW, exact retry and nonce replay protection.
+- Verified one completed Run/Chunk, immediate payload redaction and zero
+  Business/Queue count drift.
+- Restored Signed ingress to `false`; final health is `200` and the disabled
+  delivery route is `404`.
+
+### Safety
+
+- No Queue message, Ads business fact, Lark write, Google Ads mutation,
+  schedule or Production action occurred.
+- The temporary Local signing-secret file was removed. The ignored backup and
+  sanitized operator evidence remain outside Git.
+- Actual Google Ads Manager Script `AdsApp` external PREVIEW remains pending
+  before Queue admission work.
+
 ## Unreleased — Google Ads Manager Script signed-delivery Phase 2 — 2026-07-25
 
 ### Added
