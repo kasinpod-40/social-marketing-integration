@@ -105,12 +105,24 @@ Status: Customer-authorized read-only Live Preview passed on 2026-07-22.
 - Final result: `data_available`, six non-empty datasets, errors/truncation `0/0`, Preview `No changes`.
 - Frequency remains `—`; no schedule exists.
 - No external delivery exists in the reviewed version.
+- Reproducible sanitized artifact validation on 2026-07-25 found two additional
+  current-runtime drifts:
+  - `asset.status` is not selectable from `asset`; output remains `status=null`
+    rather than mixing a linkage resource grain.
+  - legacy `video_views`, `video_view_rate` and `average_cpv` are replaced with
+    v24 `video_trueview_views`, `video_trueview_view_rate` and
+    `trueview_average_cpv`.
+- `AdsApp.search` is now pinned to `apiVersion=v24`; final external DRY_RUN
+  passed six non-empty datasets, seven planned chunks, `truncated=false` and
+  `No changes` with delivery disabled.
 
 Evidence boundary:
 
-- The 598-line safety scan is documented Live review evidence.
-- Sanitized source is not committed, so it is not independently reproducible from Repository source.
-- Before signed delivery, add a sanitized Script snapshot or immutable checksum/query/output manifest.
+- The original 598-line safety scan remains documented Live review evidence.
+- A sanitized source + exact manifest is now committed and the exact artifact
+  was externally DRY_RUN-validated.
+- Signed `UrlFetchApp` delivery remains unvalidated until one-time Secret
+  provisioning and a separately approved signed PREVIEW.
 
 See `docs/google-ads-manager-script-read-only-uat-evidence.md`.
 

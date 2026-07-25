@@ -13,6 +13,7 @@
 
 const GOOGLE_ADS_SIGNED_DELIVERY = Object.freeze({
   schemaVersion: 'google_ads_manager_script_signed_delivery_v1',
+  apiVersion: 'v24',
   endpointPath: '/v1/google-ads/manager-script/deliveries',
   modeDefault: 'DRY_RUN',
   deliveryEnabledDefault: false,
@@ -90,7 +91,6 @@ const GOOGLE_ADS_GAQL = Object.freeze({
     SELECT
       asset.id,
       asset.name,
-      asset.status,
       asset.type,
       asset.youtube_video_asset.youtube_video_id,
       asset.youtube_video_asset.youtube_video_title,
@@ -111,9 +111,9 @@ const GOOGLE_ADS_GAQL = Object.freeze({
       metrics.clicks,
       metrics.conversions,
       metrics.conversions_value,
-      metrics.video_views,
-      metrics.video_view_rate,
-      metrics.average_cpv
+      metrics.video_trueview_views,
+      metrics.video_trueview_view_rate,
+      metrics.trueview_average_cpv
     FROM campaign
     WHERE segments.date DURING LAST_30_DAYS
     ORDER BY segments.date, campaign.id
@@ -240,7 +240,9 @@ function readAllDatasets_() {
 }
 
 function readQuery_(datasetKey, query, mapper) {
-  const iterator = AdsApp.search(query);
+  const iterator = AdsApp.search(query, {
+    apiVersion: GOOGLE_ADS_SIGNED_DELIVERY.apiVersion,
+  });
   const rows = [];
   const maximum = GOOGLE_ADS_SIGNED_DELIVERY.datasetLimits[datasetKey];
   while (iterator.hasNext()) {
@@ -320,7 +322,8 @@ function mapYoutubeAssetRow_(row) {
   return {
     assetId: idText_(readPath_(row, 'asset.id')),
     assetName: textOrNull_(readPath_(row, 'asset.name')),
-    status: textOrNull_(readPath_(row, 'asset.status')),
+    // Resource `asset` ไม่มี selectable status; linkage status เป็นคนละ Grain.
+    status: null,
     assetType: requiredText_(readPath_(row, 'asset.type'), 'assetType'),
     youtubeVideoId: textOrNull_(readPath_(row, 'asset.youtubeVideoAsset.youtubeVideoId')),
     youtubeVideoTitle: textOrNull_(
@@ -357,9 +360,11 @@ function mapCampaignDailyRow_(row, currency) {
     conversionValueMicros: decimalToMicrosOrNull_(
       readPath_(row, 'metrics.conversionsValue'),
     ),
-    videoViews: integerOrNull_(readPath_(row, 'metrics.videoViews')),
-    videoViewRate: numberOrNull_(readPath_(row, 'metrics.videoViewRate')),
-    averageCpvMicros: decimalToMicrosOrNull_(readPath_(row, 'metrics.averageCpv')),
+    videoViews: integerOrNull_(readPath_(row, 'metrics.videoTrueviewViews')),
+    videoViewRate: numberOrNull_(readPath_(row, 'metrics.videoTrueviewViewRate')),
+    averageCpvMicros: decimalToMicrosOrNull_(
+      readPath_(row, 'metrics.trueviewAverageCpv'),
+    ),
   };
 }
 

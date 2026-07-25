@@ -9,11 +9,19 @@
 ## Current verified state — 2026-07-25
 
 Google Ads Manager Script signed-delivery Phase 2 merged through PR `#52` at
-`e317fb9`. Approved Remote rollout completed: verified D1 backup, Migration
+`e317fb9`; sanitized Remote rollout Closeout merged through PR `#53` at
+`217d54e`. Approved Remote rollout completed: verified D1 backup, Migration
 `0013`, API Worker deployment, signed transport PREVIEW, exact retry/replay,
 immediate payload redaction and zero Business/Queue drift. Final Google Ads
-flags are all false. Actual Google Ads Manager Script `AdsApp` external PREVIEW,
-Queue, Business writer, LIVE, schedule and Production remain separately gated.
+flags are all false.
+
+The actual Google Ads Manager Script external `DRY_RUN` now passes authorization
+and all six non-empty datasets with `No changes`, delivery disabled and no
+`UrlFetchApp`. The reproducible artifact is pinned to Google Ads API `v24`;
+`asset.status` remains `null` because linkage status is a different grain, and
+the current TrueView metric field names are used. One-time Signing Secret
+provisioning is Design-only; Migration/Endpoint/Deploy/Ticket creation and
+signed PREVIEW remain separately gated.
 
 ```text
 Integration Workspace                         active
@@ -30,6 +38,8 @@ Migration 0012                                applied remotely
 Migration 0013                                applied remotely
 Google Ads API Worker                         deployed / safely closed
 Google Ads signed transport PREVIEW           pass / zero business drift
+Google Ads actual Script DRY_RUN               pass / six datasets / no changes
+Google Ads Secret provisioning                 design complete / not implemented
 Organic Content State                         2021
 Organic Observations                          2021
 Initial Observations                          2021
@@ -272,6 +282,15 @@ Completed read-only preparation includes:
 - completed Lark schema/view/formula work;
 - no Google Ads schedule.
 
+Current external Script evidence:
+
+- authorization passed without a new consent prompt;
+- sanitized Repository artifact copied exactly to the actual Script;
+- Google Ads API pinned to `v24`;
+- six datasets non-empty, seven planned chunks, `truncated=false`;
+- Google Ads reported `No changes`;
+- delivery remained disabled and `UrlFetchApp` was not called.
+
 Draft PR #17:
 
 - remains Draft/HOLD;
@@ -301,14 +320,16 @@ Do not create a parallel Reliability stack.
 
 ```text
 PRIOR_TASK = TIKTOK_ORGANIC_DURABLE_RECOVERY_ROLLOUT_COMPLETE
-CURRENT_TASK = GOOGLE_ADS_MANAGER_SCRIPT_SIGNED_DELIVERY_CONNECTOR
-CURRENT_TASK_STATUS = PHASE_2_REMOTE_TRANSPORT_UAT_COMPLETE
+CURRENT_TASK = GOOGLE_ADS_EXTERNAL_DRY_RUN_AND_SECRET_PROVISIONING_DESIGN
+CURRENT_TASK_STATUS = EXTERNAL_DRY_RUN_PASS_DESIGN_COMPLETE
 ```
 
-Phase 2 source and Remote transport rollout are complete and safely closed.
-The current approval boundary is closeout documentation, followed by an actual
-Google Ads Manager Script external PREVIEW. Queue admission, Business writer,
-LIVE and schedule each remain separately gated.
+Phase 2 source and Remote transport rollout are complete and safely closed;
+Closeout is merged through PR `#53`. Actual Script DRY_RUN is complete. The
+current approval boundary is review/commit of the GAQL compatibility correction
+and one-time Secret provisioning Design. Provisioning implementation, signed
+PREVIEW, Queue admission, Business writer, LIVE and schedule each remain
+separately gated.
 
 ## Permanent safety rules
 

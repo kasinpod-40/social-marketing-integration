@@ -33,6 +33,8 @@ Report D1 reader                   not implemented
 Schedules                          disabled
 Production                         blocked
 Google Ads signed delivery         Remote transport UAT pass / safely closed
+Google Ads actual Script DRY_RUN   pass / six datasets / no changes
+Google Ads Secret provisioning     design complete / not implemented
 ```
 
 Customer OAuth source status (2026-07-24):
@@ -266,7 +268,7 @@ Backfill requires D1 write. Retention requires the D1 Report reader. Enabling St
 | Facebook Organic | Token preflight implemented / Live UAT blocked | Restore customer-app admin, rotate token and validate exact Page |
 | Instagram Organic | Token preflight implemented / exact mapping pending | Repeat customer-token UAT with exact Instagram Account |
 | Meta Ads | Token preflight implemented / Live UAT blocked | Validate exact Ad Account independently; Ads facts/revision contract remains separate |
-| Google Ads | Signed transport PREVIEW/replay/redaction passed; final flags false | Actual Manager Script external PREVIEW, then reference-only Queue phase; PR #17 stays HOLD |
+| Google Ads | Signed transport UAT safely closed; actual Script DRY_RUN passes six datasets | Review provisioning Design, then separately approve implementation and signed PREVIEW; PR #17 stays HOLD |
 | TikTok Ads | Access/design preflight | Controlled API/Worker connector later |
 | WooCommerce | Planned | Connector pending |
 | Chatwoot | Planned | Connector pending |
