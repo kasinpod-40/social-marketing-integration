@@ -7,14 +7,24 @@
 - 256-bit Ticket/challenge generation and fingerprint-only persistence;
 - atomic single redeem and HMAC confirmation;
 - disabled-by-default redeem/confirm API routes;
+- guarded application-level `create_one_ticket` operator requiring explicit
+  approval and verified persistence before returning plaintext;
 - placeholder-only temporary Google Ads Manager Script helper;
-- focused security, D1, HTTP, route, config and helper tests.
+- helper hardening for exact schema/routes, no redirects, 128-bit digest nonce,
+  exact response fields and unconditional failed-confirmation cleanup;
+- focused security, operator, D1, HTTP, route, config and helper tests.
 
 ## Verified
 
-GitHub Branch Verification run `30157759986` passed Unit `776/776`, Workers
-`9/9`, report reliability `70/70`, dependency audit `0`, repository hygiene and
-Wrangler deploy dry-run.
+GitHub Branch Verification run `30158898274` passed on commit
+`b7ac4029aa07c020f8cb8e6423832d0668fffbc4`:
+
+- focused staged TikTok regression `4/4`;
+- Unit `780/780`;
+- Workers `9/9`;
+- report reliability `70/70`;
+- dependency audit `0`;
+- repository syntax/architecture/hygiene and Wrangler deploy dry-run.
 
 ## Safety
 
