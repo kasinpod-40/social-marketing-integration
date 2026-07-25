@@ -1,6 +1,9 @@
 import { JOB_TYPES } from '../../../packages/application/src/jobs/job-catalog.js';
 import { createOrganicContentOwnershipRoutingRepository } from '../../../packages/application/src/policies/organic-content-field-ownership.js';
 import { D1OrganicHistoryGateway } from '../../../packages/connectors/src/d1-organic-history-gateway.js';
+import { D1MarketingHistoryStore } from '../../../packages/connectors/src/d1-marketing-history-store.js';
+import { D1GoogleAdsManagerDeliveryStore } from '../../../packages/connectors/src/google-ads/d1-google-ads-manager-delivery-store.js';
+import { D1GoogleAdsLiveAdmissionStore } from '../../../packages/connectors/src/google-ads/d1-google-ads-live-admission-store.js';
 import { createLarkBitableClientFromEnv } from '../../../packages/connectors/src/lark/lark-bitable.client.js';
 import { LarkRecordRepository } from '../../../packages/connectors/src/lark/lark-record-repository.js';
 import { D1ReliabilityMirrorOutbox } from '../../../packages/reliability/src/d1-reliability-mirror-outbox.js';
@@ -22,6 +25,9 @@ export function createInfrastructure(env) {
   let incrementalStateStore = null;
   let resumableWorkStore = null;
   let organicHistoryGateway = null;
+  let marketingHistoryStore = null;
+  let googleAdsDeliveryStore = null;
+  let googleAdsAdmissionStore = null;
   let mirrorOutbox = null;
   const larkReliabilityStores = new Map();
 
@@ -55,6 +61,18 @@ export function createInfrastructure(env) {
     getOrganicHistoryGateway() {
       organicHistoryGateway ??= new D1OrganicHistoryGateway({ db: env?.MKT_STATE_DB });
       return organicHistoryGateway;
+    },
+    getMarketingHistoryStore() {
+      marketingHistoryStore ??= new D1MarketingHistoryStore({ db: env?.MKT_STATE_DB });
+      return marketingHistoryStore;
+    },
+    getGoogleAdsDeliveryStore() {
+      googleAdsDeliveryStore ??= new D1GoogleAdsManagerDeliveryStore({ db: env?.MKT_STATE_DB });
+      return googleAdsDeliveryStore;
+    },
+    getGoogleAdsAdmissionStore() {
+      googleAdsAdmissionStore ??= new D1GoogleAdsLiveAdmissionStore({ db: env?.MKT_STATE_DB });
+      return googleAdsAdmissionStore;
     },
     getReliability() {
       reliability ??= createCloudflareReliabilityRuntime({
