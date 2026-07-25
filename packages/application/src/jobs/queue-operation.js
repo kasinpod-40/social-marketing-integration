@@ -1,34 +1,36 @@
 import { JOB_TYPES } from './job-catalog.js';
 import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 
-const STABLE_OPERATION_JOB_TYPES = new Set([
-  JOB_TYPES.TIKTOK_CREATOR_NATIVE_HISTORY_BOOTSTRAP,
-  JOB_TYPES.TIKTOK_CREATOR_NATIVE_HISTORY_RECOVER,
+const STABLE_OPERATION_CONTRACTS = new Map([
+  [JOB_TYPES.TIKTOK_CREATOR_NATIVE_HISTORY_BOOTSTRAP, Object.freeze({ prefix: 'tiktok' })],
+  [JOB_TYPES.TIKTOK_CREATOR_NATIVE_HISTORY_RECOVER, Object.freeze({ prefix: 'tiktok' })],
+  [JOB_TYPES.GOOGLE_ADS_MANAGER_SIGNED_DELIVERY_PROCESS, Object.freeze({ prefix: 'google_ads' })],
 ]);
 
 /**
  * Resolve durable Queue identity independently from Cloudflare delivery message.id.
- * Bootstrap/recovery jobs fail closed unless operationId/workKey/generation/requestedAt are stable.
+ * Every stable-operation job fails closed unless operationId/workKey/generation/requestedAt agree.
  */
 export function resolveQueueOperation(input = {}) {
   const body = input.job?.body ?? {};
   const type = optionalText(body.type);
+  const contract = STABLE_OPERATION_CONTRACTS.get(type) ?? null;
   const requestedAt = normalizeTimestamp(
     body.originalRequestedAt ?? body.requestedAt ?? input.job?.requestedAt,
     'originalRequestedAt',
-    STABLE_OPERATION_JOB_TYPES.has(type),
+    Boolean(contract),
   );
   const generation = normalizeTimestamp(
     body.generation ?? requestedAt,
     'generation',
-    STABLE_OPERATION_JOB_TYPES.has(type),
+    Boolean(contract),
   );
   const operationId = optionalText(body.operationId);
   const explicitWorkKey = optionalText(body.workKey);
 
-  if (STABLE_OPERATION_JOB_TYPES.has(type)) {
+  if (contract) {
     const stableOperationId = requireText(operationId, 'operationId');
-    const derivedWorkKey = `tiktok:${stableOperationId}`;
+    const derivedWorkKey = `${contract.prefix}:${stableOperationId}`;
     if (explicitWorkKey && explicitWorkKey !== derivedWorkKey) {
       throw permanentError('Queue workKey does not match stable operationId', {
         code: 'QUEUE_OPERATION_IDENTITY_MISMATCH',
@@ -36,7 +38,7 @@ export function resolveQueueOperation(input = {}) {
       });
     }
     if (generation !== requestedAt) {
-      throw permanentError('TikTok bootstrap generation must equal original requestedAt', {
+      throw permanentError('Stable Queue generation must equal original requestedAt', {
         code: 'QUEUE_OPERATION_GENERATION_MISMATCH',
         details: { type, generation, originalRequestedAt: requestedAt },
       });
@@ -64,6 +66,14 @@ export function resolveQueueOperation(input = {}) {
 
 /** Preserve the exact durable identity in continuation, redrive and manual recovery payloads. */
 export function withQueueOperation(body = {}, operation = {}) {
+  const type = requireText(body.type, 'body.type');
+  const contract = STABLE_OPERATION_CONTRACTS.get(type);
+  if (!contract) {
+    throw permanentError('Cannot serialize an unsupported stable Queue operation', {
+      code: 'QUEUE_OPERATION_IDENTITY_INVALID',
+      details: { type },
+    });
+  }
   const operationId = requireText(operation.operationId, 'operation.operationId');
   const workKey = requireText(operation.workKey, 'operation.workKey');
   const generation = normalizeTimestamp(operation.generation, 'operation.generation', true);
@@ -72,7 +82,7 @@ export function withQueueOperation(body = {}, operation = {}) {
     'operation.originalRequestedAt',
     true,
   );
-  if (workKey !== `tiktok:${operationId}` || generation !== originalRequestedAt) {
+  if (workKey !== `${contract.prefix}:${operationId}` || generation !== originalRequestedAt) {
     throw permanentError('Cannot serialize an inconsistent durable Queue operation', {
       code: 'QUEUE_OPERATION_IDENTITY_MISMATCH',
     });
@@ -88,7 +98,7 @@ export function withQueueOperation(body = {}, operation = {}) {
 }
 
 export function isStableOperationJobType(type) {
-  return STABLE_OPERATION_JOB_TYPES.has(type);
+  return STABLE_OPERATION_CONTRACTS.has(type);
 }
 
 function normalizeTimestamp(value, fieldName, required) {
@@ -127,6 +137,7 @@ function optionalText(value) {
 function platformFromJobType(type) {
   if (typeof type !== 'string') return 'system';
   if (type.startsWith('report.')) return 'tiktok';
+  if (type.startsWith('google.ads.')) return 'google_ads';
   const prefix = type.split('.')[0];
   return new Set(['facebook', 'instagram', 'tiktok', 'youtube']).has(prefix)
     ? prefix
