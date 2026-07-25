@@ -7,18 +7,23 @@
  * - Does not enable delivery, PREVIEW/LIVE, schedules, triggers, Queue, Lark or Ads mutation.
  * - Remove this helper from the Google Ads Script immediately after a sanitized success.
  */
+const MKT_PROVISIONING_SCHEMA_VERSION = 'google_ads_signing_secret_provisioning_v1';
+const MKT_PROVISIONING_REDEEM_PATH = '/v1/google-ads/manager-script/signing-secret/redeem';
+const MKT_PROVISIONING_CONFIRM_PATH = '/v1/google-ads/manager-script/signing-secret/confirm';
+const MKT_PROVISIONING_RESPONSE_BYTES = 4096;
+
 const MKT_SIGNING_SECRET_PROVISIONING = Object.freeze({
-  schemaVersion: 'google_ads_signing_secret_provisioning_v1',
+  schemaVersion: MKT_PROVISIONING_SCHEMA_VERSION,
   origin: 'https://replace-with-api-worker.example',
-  redeemPath: '/v1/google-ads/manager-script/signing-secret/redeem',
-  confirmPath: '/v1/google-ads/manager-script/signing-secret/confirm',
+  redeemPath: MKT_PROVISIONING_REDEEM_PATH,
+  confirmPath: MKT_PROVISIONING_CONFIRM_PATH,
   managerCustomerId: '0000000000',
   customerId: '0000000000',
   customerKey: 'replace-with-customer-key',
   accountKey: 'replace-with-account-key',
   keyId: 'replace-with-non-secret-key-id',
   oneTimeTicket: 'PASTE_ONE_TIME_TICKET_HERE',
-  maximumResponseBytes: 4096,
+  maximumResponseBytes: MKT_PROVISIONING_RESPONSE_BYTES,
 });
 
 function provisionGoogleAdsSigningSecretOnce() {
@@ -50,12 +55,12 @@ function provisionGoogleAdsSigningSecretOnce() {
   );
   assertRedeemResponse_(redeemed, config.keyId);
 
-  properties.setProperties({
-    MKT_GOOGLE_ADS_SIGNING_KEY_ID: redeemed.keyId,
-    MKT_GOOGLE_ADS_SIGNING_SECRET: redeemed.signingSecret,
-  }, false);
-
   try {
+    properties.setProperties({
+      MKT_GOOGLE_ADS_SIGNING_KEY_ID: redeemed.keyId,
+      MKT_GOOGLE_ADS_SIGNING_SECRET: redeemed.signingSecret,
+    }, false);
+
     const confirmationPayload = canonicalJson_({
       schemaVersion: config.schemaVersion,
       managerCustomerId: config.managerCustomerId,
@@ -83,10 +88,9 @@ function provisionGoogleAdsSigningSecretOnce() {
       confirmationPayload,
       proof,
     );
-    if (!confirmed || confirmed.ok !== true || confirmed.status !== 'confirmed') {
-      throw new Error('Provisioning confirmation was rejected');
-    }
+    assertConfirmationResponse_(confirmed);
   } catch (error) {
+    // Cleanup is unconditional because setProperties could fail after a partial provider-side write.
     properties.deleteProperty('MKT_GOOGLE_ADS_SIGNING_KEY_ID');
     properties.deleteProperty('MKT_GOOGLE_ADS_SIGNING_SECRET');
     throw error;
@@ -117,34 +121,43 @@ function fetchProvisioningJson_(url, ticket, payload, proof) {
     contentType: 'application/json',
     payload,
     muteHttpExceptions: true,
+    followRedirects: false,
     headers,
   });
   const status = response.getResponseCode();
   const text = response.getContentText();
-  if (utf8Bytes_(text) > MKT_SIGNING_SECRET_PROVISIONING.maximumResponseBytes) {
+  if (utf8Bytes_(text) > MKT_PROVISIONING_RESPONSE_BYTES) {
     throw new Error('Provisioning response exceeded the byte limit');
   }
   if (status < 200 || status >= 300) {
     throw new Error('Provisioning request failed with HTTP ' + status);
   }
-  let body;
   try {
-    body = JSON.parse(text);
+    return JSON.parse(text);
   } catch (error) {
     throw new Error('Provisioning response was not JSON');
   }
-  return body;
 }
 
 function assertRedeemResponse_(value, expectedKeyId) {
+  const fields = value && typeof value === 'object' ? Object.keys(value).sort() : [];
   if (
-    !value
+    fields.join(',') !== 'challenge,keyId,ok,signingSecret,status'
     || value.ok !== true
     || value.status !== 'redeemed_pending_confirmation'
     || value.keyId !== expectedKeyId
     || !/^[A-Za-z0-9_-]{43}$/.test(value.challenge || '')
     || utf8Bytes_(value.signingSecret || '') < 32
   ) throw new Error('Provisioning redeem response was invalid');
+}
+
+function assertConfirmationResponse_(value) {
+  const fields = value && typeof value === 'object' ? Object.keys(value).sort() : [];
+  if (
+    fields.join(',') !== 'ok,status'
+    || value.ok !== true
+    || value.status !== 'confirmed'
+  ) throw new Error('Provisioning confirmation was rejected');
 }
 
 function selectProvisioningAdvertiser_(config) {
@@ -163,8 +176,25 @@ function selectProvisioningAdvertiser_(config) {
 }
 
 function validateProvisioningConfig_(value) {
+  if (value.schemaVersion !== MKT_PROVISIONING_SCHEMA_VERSION) {
+    throw new Error('Provisioning schema version is invalid');
+  }
+  if (value.redeemPath !== MKT_PROVISIONING_REDEEM_PATH) {
+    throw new Error('Provisioning redeem path is invalid');
+  }
+  if (value.confirmPath !== MKT_PROVISIONING_CONFIRM_PATH) {
+    throw new Error('Provisioning confirm path is invalid');
+  }
+  if (value.maximumResponseBytes !== MKT_PROVISIONING_RESPONSE_BYTES) {
+    throw new Error('Provisioning response limit is invalid');
+  }
+
   const origin = String(value.origin || '').replace(/\/+$/, '');
-  if (!/^https:\/\/[^/?#]+$/.test(origin)) throw new Error('Provisioning origin is invalid');
+  if (
+    !/^https:\/\/[^/?#]+$/.test(origin)
+    || /replace-with|\.example(?::\d+)?$/i.test(origin)
+  ) throw new Error('Provisioning origin placeholder must be replaced');
+
   const managerCustomerId = normalizeCustomerId_(value.managerCustomerId);
   const customerId = normalizeCustomerId_(value.customerId);
   if (!/^\d{10}$/.test(managerCustomerId) || /^0{10}$/.test(managerCustomerId)) {
@@ -173,15 +203,18 @@ function validateProvisioningConfig_(value) {
   if (!/^\d{10}$/.test(customerId) || /^0{10}$/.test(customerId)) {
     throw new Error('Advertiser customer ID placeholder must be replaced');
   }
-  if (!/^[A-Za-z0-9._:-]{1,128}$/.test(value.customerKey || '')) {
-    throw new Error('Customer key is invalid');
-  }
-  if (!/^[A-Za-z0-9._:-]{1,128}$/.test(value.accountKey || '')) {
-    throw new Error('Account key is invalid');
-  }
-  if (!/^[A-Za-z0-9._-]{1,64}$/.test(value.keyId || '')) {
-    throw new Error('Signing key ID is invalid');
-  }
+  if (
+    !/^[A-Za-z0-9._:-]{1,128}$/.test(value.customerKey || '')
+    || /^replace-with-/i.test(value.customerKey)
+  ) throw new Error('Customer key placeholder must be replaced');
+  if (
+    !/^[A-Za-z0-9._:-]{1,128}$/.test(value.accountKey || '')
+    || /^replace-with-/i.test(value.accountKey)
+  ) throw new Error('Account key placeholder must be replaced');
+  if (
+    !/^[A-Za-z0-9._-]{1,64}$/.test(value.keyId || '')
+    || /^replace-with-/i.test(value.keyId)
+  ) throw new Error('Signing key ID placeholder must be replaced');
   if (!/^[A-Za-z0-9_-]{43}$/.test(value.oneTimeTicket || '')) {
     throw new Error('One-time Ticket placeholder must be replaced');
   }
@@ -200,13 +233,14 @@ function validateProvisioningConfig_(value) {
 }
 
 function createProvisioningClientNonce_() {
-  const hex = Utilities.getUuid().replace(/-/g, '');
-  const bytes = [];
-  for (let index = 0; index < hex.length; index += 2) {
-    const byte = parseInt(hex.slice(index, index + 2), 16);
-    bytes.push(byte > 127 ? byte - 256 : byte);
-  }
-  return Utilities.base64EncodeWebSafe(bytes).replace(/=+$/g, '');
+  // Two independent UUIDv4 values provide more than 128 bits of input entropy.
+  const seed = Utilities.getUuid() + ':' + Utilities.getUuid() + ':' + String(Date.now());
+  const digest = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    seed,
+    Utilities.Charset.UTF_8,
+  );
+  return Utilities.base64EncodeWebSafe(digest.slice(0, 16)).replace(/=+$/g, '');
 }
 
 function canonicalJson_(value) {
