@@ -7,10 +7,12 @@ Baseline main                         ddfcf600 / PR #54
 Implementation branch                 codex/google-ads-secret-provisioning-local
 Draft PR                              #55
 Local implementation                  complete
-Verified implementation commit        b0a9b5e8a4e3ba7aab624861431ad6308b1d43b2
+Verified implementation commit        b7ac4029aa07c020f8cb8e6423832d0668fffbc4
+Branch Verification run               30158898274 / PASS
 Migration 0014                        source only / not applied
 Provisioning endpoints                implemented / default false
-Temporary Script helper               placeholder-only
+Guarded Ticket operator               implemented / not executed
+Temporary Script helper               placeholder-only / hardened
 Ticket creation / redeem / confirm    not run
 Signing Secret change                 not run
 Worker deployment                     not run
@@ -21,17 +23,23 @@ Schedules / LIVE / Production         disabled
 
 ## Verification
 
-Branch Verification run `30157759986` passed Syntax/Architecture/Hygiene,
-focused TikTok regression `4/4`, Unit `776/776`, Workers `9/9`, report
+Branch Verification run `30158898274` passed Syntax/Architecture/Hygiene,
+focused TikTok regression `4/4`, Unit `780/780`, Workers `9/9`, report
 reliability `70/70`, dependency audit `0` and Wrangler deploy dry-run.
 
 ## Architecture result
 
 The implementation reuses the existing Worker, Web Crypto, D1 and runtime
 profile boundaries. It adds no parallel reliability stack and no public Ticket
-creation route. D1 stores fingerprints and lifecycle metadata only. The Signing
-Secret is returned once after atomic Ticket redeem and provisioning completes
-only after exact HMAC confirmation.
+creation route. D1 stores fingerprints and lifecycle metadata only. The guarded
+application operator requires exact `create_one_ticket` approval and returns the
+plaintext Ticket only after fingerprint persistence is verified.
+
+The Signing Secret is returned once after atomic Ticket redeem and provisioning
+completes only after exact HMAC confirmation. The temporary Script helper pins
+the exact schema/routes, refuses redirects, verifies exact response fields,
+derives a 128-bit client nonce from two UUIDv4 values through SHA-256 and removes
+both Script Properties after any failed write/confirmation path.
 
 ## Preserved authority
 
