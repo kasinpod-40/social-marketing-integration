@@ -42,17 +42,21 @@ MKT_CONNECTOR_FACEBOOK_ENABLED=false
 MKT_CONNECTOR_INSTAGRAM_ENABLED=false
 MKT_CONNECTOR_META_ADS_ENABLED=false
 MKT_CONNECTOR_GOOGLE_ADS_ENABLED=false
-# Signed ingress, one-time Secret provisioning และ Business writer เป็นคนละ Gate; ปิดทั้งหมดเป็นค่าเริ่มต้น
+# Google Ads transport/admission/business/Lark เป็น Gate อิสระและปิดทุกค่าเป็น Default
 MKT_GOOGLE_ADS_SIGNED_INGRESS_ENABLED=false
 MKT_GOOGLE_ADS_SECRET_PROVISIONING_ENABLED=false
+MKT_GOOGLE_ADS_QUEUE_ADMISSION_ENABLED=false
 MKT_GOOGLE_ADS_BUSINESS_WRITE_ENABLED=false
+MKT_GOOGLE_ADS_LARK_WRITE_ENABLED=false
+MKT_GOOGLE_ADS_D1_ROWS_PER_INVOCATION=250
 MKT_CONNECTOR_YOUTUBE_ENABLED=false
 MKT_CONNECTOR_WOOCOMMERCE_ENABLED=false
 MKT_CONNECTOR_CHATWOOT_ENABLED=false
 
-# Schedule ปิดเป็นค่าเริ่มต้น และ Phase 1 ห้ามเปิดทุกกรณี
+# Schedule ปิดเป็นค่าเริ่มต้น และ Google Ads ไม่มี Cron activation ในงานนี้
 MKT_SCHEDULE_TIKTOK_ENABLED=false
 MKT_SCHEDULE_YOUTUBE_ENABLED=false
+MKT_SCHEDULE_GOOGLE_ADS_ENABLED=false
 MKT_SCHEDULE_DAILY_REPORT_ENABLED=false
 MKT_SCHEDULE_WEEKLY_REPORT_ENABLED=false
 MKT_YOUTUBE_ANALYTICS_ENABLED=false
@@ -104,7 +108,7 @@ WOOCOMMERCE_CONSUMER_KEY=replace-with-consumer-key
 WOOCOMMERCE_CONSUMER_SECRET=replace-with-consumer-secret
 CHATWOOT_BASE_URL=https://replace-with-chatwoot.example
 CHATWOOT_ACCOUNT_ID=replace-with-account-id
-CHATWOOT_API_ACCESS_TOKEN=replace-with-api-access-token
+CHATWOOT_API_ACCESS_TOKEN=replace-with-chatwoot-api-access-token
 
 # Lark App Credentials — ต้องแทนด้วยค่าจริงเฉพาะใน .dev.vars
 LARK_APP_ID=replace-with-lark-app-id
