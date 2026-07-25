@@ -30,9 +30,7 @@ function liveManifest() {
 }
 
 function createAdmissionStore() {
-  const state = {
-    admission: null,
-  };
+  const state = { admission: null };
   return {
     state,
     async reserve(input) {
@@ -68,6 +66,14 @@ function createAdmissionStore() {
   };
 }
 
+function deliveryEnvelope(options) {
+  return createGoogleAdsDeliveryEnvelope({
+    ...options,
+    customerKey: 'chemistry_k',
+    accountKey: 'chemistry_k',
+  });
+}
+
 test('validated LIVE run queues one exact reference and exact retry does not send again', async () => {
   const migration = await readFile(
     new URL('../../migrations/0013_google_ads_signed_delivery_transport.sql', import.meta.url),
@@ -89,7 +95,7 @@ test('validated LIVE run queues one exact reference and exact retry does not sen
       async findValidatedConnection() {
         return {
           connectionId: 'connection-validated',
-          customerKey: 'fixture_customer',
+          customerKey: 'chemistry_k',
           connectorKey: 'google_ads',
           advertiserCustomerId: '2222222222',
           connectionStatus: 'connected',
@@ -123,6 +129,7 @@ test('validated LIVE run queues one exact reference and exact retry does not sen
     MKT_GOOGLE_ADS_QUEUE_ADMISSION_ENABLED: 'true',
     MKT_GOOGLE_ADS_BUSINESS_WRITE_ENABLED: 'true',
     MKT_GOOGLE_ADS_LARK_WRITE_ENABLED: 'true',
+    MKT_SCHEDULE_GOOGLE_ADS_ENABLED: 'false',
     MKT_GOOGLE_ADS_MANAGER_CUSTOMER_ID: '1111111111',
     MKT_GOOGLE_ADS_ADVERTISER_CUSTOMER_ID: '2222222222',
     MKT_GOOGLE_ADS_SOURCE_TIMEZONE: 'Asia/Bangkok',
@@ -135,7 +142,7 @@ test('validated LIVE run queues one exact reference and exact retry does not sen
   try {
     for (let index = 0; index < DATASET_KEYS.length; index += 1) {
       const datasetKey = DATASET_KEYS[index];
-      const envelope = createGoogleAdsDeliveryEnvelope({
+      const envelope = deliveryEnvelope({
         runId: RUN_ID,
         mode: 'LIVE',
         datasetKey,
@@ -155,7 +162,7 @@ test('validated LIVE run queues one exact reference and exact retry does not sen
         env,
         url: new URL(signed.url),
       });
-      assert.equal(finalResponse.status, index === DATASET_KEYS.length - 1 ? 202 : 202);
+      assert.equal(finalResponse.status, 202);
     }
 
     assert.equal((await finalResponse.json()).status, 'queued');
@@ -170,7 +177,7 @@ test('validated LIVE run queues one exact reference and exact retry does not sen
     assert.equal(JSON.stringify(queued[0]).includes('credential'), false);
     assert.equal(JSON.stringify(queued[0]).includes('signature'), false);
 
-    const retryEnvelope = createGoogleAdsDeliveryEnvelope({
+    const retryEnvelope = deliveryEnvelope({
       runId: RUN_ID,
       mode: 'LIVE',
       datasetKey: 'campaignDailyMetrics',
@@ -198,9 +205,9 @@ test('validated LIVE run queues one exact reference and exact retry does not sen
   }
 });
 
-test('LIVE run fails before Queue when validated customer connection is missing', async () => {
+test('disabled signed ingress still fails before loading transport or Queue dependencies', async () => {
   const handler = createGoogleAdsManagerDeliveryHttpHandler({
-    createStore() { throw new Error('transport store is not needed for disabled LIVE gate test'); },
+    createStore() { throw new Error('transport store is not needed while ingress is disabled'); },
   });
   const request = new Request(
     'https://ingress.example.test/v1/google-ads/manager-script/deliveries',
