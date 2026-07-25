@@ -91,6 +91,18 @@ export class D1GoogleAdsLiveRedriveStore {
             AND original_requested_at = ?
             AND status IN ('failed_retryable', 'failed_permanent', 'send_pending')
             AND completed_at IS NULL
+            AND EXISTS (
+              SELECT 1 FROM sync_work_runs AS work
+              WHERE work.work_key = google_ads_live_admissions.work_key
+                AND work.generation = google_ads_live_admissions.generation
+                AND work.lifecycle_status = 'active'
+                AND work.completed_at IS NULL
+                AND NOT EXISTS (
+                  SELECT 1 FROM sync_locks
+                  WHERE lock_key = work.cursor_key
+                    AND expires_at > ?
+                )
+            )
         `).bind(
           value.now,
           value.operationId,
@@ -98,6 +110,7 @@ export class D1GoogleAdsLiveRedriveStore {
           value.workKey,
           value.generation,
           value.originalRequestedAt,
+          value.now,
         ),
       ]);
     } catch (cause) {
