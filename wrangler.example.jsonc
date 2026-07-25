@@ -16,11 +16,12 @@
     "MKT_CONNECTOR_FACEBOOK_ENABLED": "false",
     "MKT_CONNECTOR_INSTAGRAM_ENABLED": "false",
     "MKT_CONNECTOR_GOOGLE_ADS_ENABLED": "false",
-    // PREVIEW ingress, one-time Secret provisioning และ Business writer เป็นคนละ Gate
-    // Release example ต้องปิดทั้งหมด และ Migration 0014 source ยังไม่อนุญาตให้ Apply Remote
+    // Signed ingress, provisioning, Queue admission, Business และ Lark เป็น Gate อิสระ
     "MKT_GOOGLE_ADS_SIGNED_INGRESS_ENABLED": "false",
     "MKT_GOOGLE_ADS_SECRET_PROVISIONING_ENABLED": "false",
+    "MKT_GOOGLE_ADS_QUEUE_ADMISSION_ENABLED": "false",
     "MKT_GOOGLE_ADS_BUSINESS_WRITE_ENABLED": "false",
+    "MKT_GOOGLE_ADS_LARK_WRITE_ENABLED": "false",
     "MKT_GOOGLE_ADS_MANAGER_CUSTOMER_ID": "replace-with-10-digit-manager-customer-id",
     "MKT_GOOGLE_ADS_ADVERTISER_CUSTOMER_ID": "replace-with-10-digit-advertiser-customer-id",
     "MKT_GOOGLE_ADS_SOURCE_TIMEZONE": "Asia/Bangkok",
@@ -34,7 +35,7 @@
   },
   "d1_databases": [
     {
-      // Transport/provisioning state ใช้ D1 binding; Remote Migration ต้องอนุมัติแยกก่อน Deploy
+      // Transport/admission state ใช้ D1 binding; Remote Migration ต้องอนุมัติแยกก่อน Deploy
       "binding": "MKT_STATE_DB",
       "database_name": "replace-with-environment-specific-d1-name",
       "database_id": "00000000-0000-0000-0000-000000000000",
@@ -44,9 +45,9 @@
   "queues": {
     "producers": [
       {
-        // API Worker ส่งงาน Sync ไปยัง Queue แต่ไม่เป็น Consumer เอง
+        // API Worker ส่งเฉพาะ reference-only job; Release examples ไม่เปิด admission flag
         "queue": "social-mkt-sync-jobs",
-        "binding": "SYNC_QUEUE"
+        "binding": "MKT_SYNC_QUEUE"
       }
     ]
   }
