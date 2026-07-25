@@ -5,8 +5,6 @@
   "compatibility_date": "2026-07-15",
   "compatibility_flags": ["nodejs_compat"],
 
-  // Integration Workspace เก็บ Logs/Traces 100% เพื่อให้ Reliability ตรวจย้อนหลังได้
-  // Production ที่ Traffic สูงควรลด head_sampling_rate ตามงบและปริมาณงาน
   "observability": {
     "enabled": true,
     "logs": {
@@ -23,14 +21,13 @@
   },
 
   "triggers": {
-    // Primary Cron และ YouTube Cron มีไว้ใน Worker contract แต่ทุก Business schedule ด้านล่างปิด
-    // Phase 1 ไม่อนุญาตให้ทำ Business sync, Report schedule หรือ Live data write
+    // Existing Cron contracts remain; every Business schedule below is false.
+    // Google Ads has no Cron producer in this implementation.
     "crons": ["*/5 * * * *", "50 0,6,12,18 * * *"]
   },
 
   "d1_databases": [
     {
-      // Integration Workspace ใช้ D1 ของผู้พัฒนา; Production ต้องใช้ D1 ของลูกค้าแยกต่างหาก
       "binding": "MKT_STATE_DB",
       "database_name": "replace-with-environment-specific-d1-name",
       "database_id": "00000000-0000-0000-0000-000000000000",
@@ -41,7 +38,6 @@
   "queues": {
     "producers": [
       {
-        // ตัวอย่างนี้รักษา Queue contract ที่ Tests ตรวจ; Production ต้องใช้ Queue ของลูกค้า
         "binding": "MKT_SYNC_QUEUE",
         "queue": "social-mkt-sync-jobs"
       }
@@ -56,7 +52,6 @@
         "dead_letter_queue": "social-mkt-sync-dlq"
       },
       {
-        // DLQ มี Consumer แยกและบันทึกอย่างเดียว ห้าม Execute งานเดิมซ้ำ
         "queue": "social-mkt-sync-dlq",
         "max_concurrency": 1,
         "max_batch_size": 10,
@@ -67,12 +62,10 @@
   },
 
   "vars": {
-    // ก่อน Production ใช้ development + integration_workspace เพียง Operating mode เดียว
     "MKT_ENV": "development",
     "MKT_CUSTOMER_PROFILE": "integration_workspace",
     "DEFAULT_TIMEZONE": "Asia/Bangkok",
 
-    // Customer OAuth public values; Client secret/signing/encryption/operator keys ต้องใช้ Worker Secrets เท่านั้น
     "MKT_CONNECTION_PUBLIC_ORIGIN": "https://replace-with-sync-worker.example",
     "MKT_CONNECTION_CUSTOMER_KEY": "chemistry_k",
     "MKT_GOOGLE_ADS_REDIRECT_URI": "https://replace-with-sync-worker.example/oauth/google-ads/callback",
@@ -82,16 +75,18 @@
     "MKT_GOOGLE_ADS_MANAGER_CUSTOMER_ID": "replace-with-10-digit-manager-customer-id",
     "MKT_GOOGLE_ADS_ADVERTISER_CUSTOMER_ID": "replace-with-10-digit-advertiser-customer-id",
     "MKT_GOOGLE_ADS_API_VERSION": "v24",
+    "MKT_GOOGLE_ADS_SOURCE_TIMEZONE": "Asia/Bangkok",
 
-    // Release example ปิด Connector ทุกตัว; เปิดเฉพาะ Manual validation หลังอนุมัติแยก
     "MKT_CONNECTOR_TIKTOK_ENABLED": "false",
     "MKT_CONNECTOR_FACEBOOK_ENABLED": "false",
     "MKT_CONNECTOR_INSTAGRAM_ENABLED": "false",
     "MKT_CONNECTOR_META_ADS_ENABLED": "false",
     "MKT_CONNECTOR_GOOGLE_ADS_ENABLED": "false",
-    // Signed ingress และ Business writer ต้องเปิดแยกภายหลังเมื่อแต่ละ Gate ผ่าน
     "MKT_GOOGLE_ADS_SIGNED_INGRESS_ENABLED": "false",
+    "MKT_GOOGLE_ADS_QUEUE_ADMISSION_ENABLED": "false",
     "MKT_GOOGLE_ADS_BUSINESS_WRITE_ENABLED": "false",
+    "MKT_GOOGLE_ADS_LARK_WRITE_ENABLED": "false",
+    "MKT_GOOGLE_ADS_D1_ROWS_PER_INVOCATION": "250",
     "MKT_CONNECTOR_YOUTUBE_ENABLED": "false",
     "MKT_YOUTUBE_ANALYTICS_ENABLED": "false",
     "MKT_CONNECTOR_WOOCOMMERCE_ENABLED": "false",
@@ -99,16 +94,14 @@
 
     "MKT_SCHEDULE_TIKTOK_ENABLED": "false",
     "MKT_SCHEDULE_YOUTUBE_ENABLED": "false",
-    // Owner Analytics config คง Contract เดิม แต่ Flag ปิดใน Phase 1
+    "MKT_SCHEDULE_GOOGLE_ADS_ENABLED": "false",
     "MKT_YOUTUBE_ANALYTICS_TIME": "07:50",
     "MKT_YOUTUBE_ANALYTICS_LOOKBACK_DAYS": "7",
-    // Report schedules ปิดไว้จน Storage/Reader parity ผ่านในงานภายหลัง
     "MKT_SCHEDULE_DAILY_REPORT_ENABLED": "false",
     "MKT_SCHEDULE_WEEKLY_REPORT_ENABLED": "false",
     "MKT_DAILY_REPORT_TIME": "08:10",
     "MKT_WEEKLY_REPORT_TIME": "08:15",
     "MKT_WEEKLY_REPORT_WEEKDAY": "monday",
-    // Report source เดิมยังคงเพดาน Fail-closed จน D1 Reader ใหม่ผ่าน Parity
     "MKT_REPORT_MAX_CONTENT_RECORDS": "800",
     "MKT_REPORT_MAX_SNAPSHOT_RECORDS": "50000",
     "MKT_REPORT_MAX_FALLBACK_SCAN_RECORDS": "50000",
@@ -118,13 +111,10 @@
     "MKT_WEEKLY_REPORT_SETTING_KEY": "integration_workspace:tiktok:weekly",
     "MKT_MAIN_QUEUE_NAME": "social-mkt-sync-jobs",
     "MKT_DLQ_QUEUE_NAME": "social-mkt-sync-dlq",
-    // Redrive เป็น Manual admin action เท่านั้นและปิดทุก Release example
     "MKT_DLQ_REDRIVE_ENABLED": "false",
     "MKT_QUEUE_RETRY_DELAY_SECONDS": "30",
-    // Durable reliability mirror drain อ่านทีละ Batch เพื่อไม่ให้ Lark delivery ครอง Invocation นานเกินไป
     "MKT_RELIABILITY_MIRROR_BATCH_SIZE": "25",
 
-    // Storage Foundation Phase 1B สร้าง Schema/Repository เท่านั้น ทุก Flag ต้องปิด
     "MKT_TIME_SERIES_D1_WRITE_ENABLED": "false",
     "MKT_TIME_SERIES_D1_BACKFILL_ENABLED": "false",
     "MKT_REPORT_D1_SHADOW_READ_ENABLED": "false",
@@ -133,9 +123,7 @@
     "MKT_LARK_DAILY_RETENTION_ENABLED": "false",
     "MKT_NOTIFICATION_RUNTIME_ENABLED": "false",
 
-    // เปิด Checkpoint/Fingerprint ใน D1 เฉพาะงานที่อนุมัติภายหลัง
     "MKT_TIKTOK_INCREMENTAL_ENABLED": "false",
-    // Full reconciliation interval ยังไม่เปิด Schedule ใน Phase 1
     "MKT_TIKTOK_FULL_RECONCILIATION_INTERVAL_MS": "86400000",
     "MKT_TIKTOK_SOURCE_PAGE_SIZE": "500",
     "MKT_TIKTOK_SOURCE_MAX_PAGES": "1000",
@@ -145,12 +133,9 @@
     "YOUTUBE_API_TIMEOUT_MS": "30000",
     "YOUTUBE_MAX_PAGES": "100",
 
-    // Chemistry K TikTok identity ยืนยันแล้ว; Connector Flag ยังปิด
     "TIKTOK_SOURCE_HANDLE": "chemistry_k",
-    // YouTube Channel ID ไม่ใช่ Secret; API key/OAuth ต้องตั้งผ่าน Secrets/.dev.vars เท่านั้น
     "YOUTUBE_CHANNEL_ID": "replace-with-youtube-channel-id",
 
-    // Meta version/identity เป็น Non-secret; Access Tokens ต้องตั้งด้วย Worker Secrets เท่านั้น
     "META_GRAPH_API_VERSION": "v25.0",
     "META_FACEBOOK_PAGE_ID": "replace-with-facebook-page-id",
     "META_INSTAGRAM_ACCOUNT_ID": "replace-with-instagram-account-id",
@@ -161,14 +146,10 @@
     "META_MAX_ATTEMPTS": "5",
     "META_MAX_RESPONSE_BYTES": "8388608",
 
-    // Lease 10 นาที และต่ออายุทุก 2 นาที เพื่อลดความเสี่ยง Lock หมดกลางงาน
     "MKT_SYNC_LOCK_LEASE_MS": "600000",
     "MKT_SYNC_LOCK_RENEW_INTERVAL_MS": "120000",
 
-    // Table IDs ต้องเป็นของ Integration Workspace; Production ต้องใช้ Base ของลูกค้าแยกต่างหาก
-    // Protected source: Lark Native TikTok เป็นเจ้าของ Schema; Worker อ่านอย่างเดียวและห้าม Schema mutation
     "LARK_TABLE_RAW_TIKTOK_CREATOR_VIDEOS": "replace-with-table-id",
-    // YouTube tables ใช้ Temporary developer source ใน Workspace และยังปิด Connector/Schedule
     "LARK_TABLE_RAW_YOUTUBE_CHANNELS": "replace-with-table-id",
     "LARK_TABLE_RAW_YOUTUBE_VIDEOS": "replace-with-table-id",
     "LARK_TABLE_RAW_YOUTUBE_ANALYTICS_DAILY": "replace-with-table-id",
@@ -176,13 +157,11 @@
     "LARK_TABLE_MKT_CONTENT": "replace-with-table-id",
     "LARK_TABLE_MKT_CONTENT_DAILY": "replace-with-table-id",
     "LARK_TABLE_MKT_ACCOUNT_DAILY": "replace-with-table-id",
-    // Shared Raw tables ใช้ View แยก Platform/Entity; ค่า ID จริงมาจากการ Rename/Reuse ตาราง Planned เดิมแบบ In-place
     "LARK_TABLE_RAW_META_ORGANIC_ACCOUNTS": "replace-with-table-id",
     "LARK_TABLE_RAW_META_ORGANIC_CONTENT": "replace-with-table-id",
     "LARK_TABLE_RAW_META_ORGANIC_METRICS": "replace-with-table-id",
     "LARK_TABLE_RAW_ADS_ENTITIES": "replace-with-table-id",
     "LARK_TABLE_RAW_ADS_DAILY": "replace-with-table-id",
-    // Canonical Ads ใช้ร่วมกับ Meta/TikTok/Google Ads และแยก Ad จาก Creative ตาม Grain
     "LARK_TABLE_MKT_ADS_ACCOUNTS": "replace-with-table-id",
     "LARK_TABLE_MKT_ADS_CAMPAIGNS": "replace-with-table-id",
     "LARK_TABLE_MKT_ADS_ADGROUPS": "replace-with-table-id",
