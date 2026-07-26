@@ -1,13 +1,13 @@
 import { WOOCOMMERCE_D1_TABLE_CONTRACTS } from '../../../application/src/commerce/woocommerce-commerce-model.js';
 import { permanentError, transientError } from '../../../shared/src/errors/runtime-error.js';
 
-const OBSERVATION_TABLES = new Set(['commerce_order_status_observations']);
 const REQUIRED_TABLES = Object.freeze(Object.keys(WOOCOMMERCE_D1_TABLE_CONTRACTS));
+const APPEND_ONLY_TABLES = new Set(['commerce_order_status_observations']);
 const MAX_WRITE_ROWS = 5_000;
 
 /**
  * Additive WooCommerce Commerce repository.
- * The shared runtime injects D1; this class does not create bindings, migrations or reliability state.
+ * Shared runtime supplies D1 and owns Reliability, locks, Queue and DLQ.
  */
 export class D1WooCommerceCommerceStore {
   constructor(input = {}) {
@@ -16,20 +16,12 @@ export class D1WooCommerceCommerceStore {
 
   async assertSchemaReady() {
     const placeholders = REQUIRED_TABLES.map(() => '?').join(', ');
-    let result;
-    try {
-      result = await this.db.prepare(`
-        SELECT name
-        FROM sqlite_master
-        WHERE type = 'table' AND name IN (${placeholders})
-      `).bind(...REQUIRED_TABLES).all();
-    } catch (cause) {
-      throw transientError('WooCommerce D1 schema readiness check failed', {
-        code: 'WOOCOMMERCE_D1_SCHEMA_CHECK_FAILED',
-        cause,
-      });
-    }
-    const found = new Set(readRows(result).map((row) => row?.name).filter(Boolean));
+    const result = await this.#all(`
+      SELECT name
+      FROM sqlite_master
+      WHERE type = 'table' AND name IN (${placeholders})
+    `, REQUIRED_TABLES, 'WOOCOMMERCE_D1_SCHEMA_CHECK_FAILED');
+    const found = new Set(result.map((row) => row?.name).filter(Boolean));
     const missing = REQUIRED_TABLES.filter((table) => !found.has(table));
     if (missing.length > 0) {
       throw permanentError('WooCommerce Commerce migration is not applied', {
@@ -41,11 +33,9 @@ export class D1WooCommerceCommerceStore {
   }
 
   async upsertRowsByTable(rowsByTable = {}) {
-    if (!isPlainObject(rowsByTable)) {
-      throw contractError('WooCommerce rowsByTable must be an object');
-    }
-    const results = {};
+    if (!isPlainObject(rowsByTable)) throw contractError('rowsByTable must be an object');
     let totalRows = 0;
+    const tables = {};
     for (const [table, rows] of Object.entries(rowsByTable)) {
       if (!Array.isArray(rows) || rows.length === 0) continue;
       totalRows += rows.length;
@@ -55,60 +45,42 @@ export class D1WooCommerceCommerceStore {
           details: { totalRows, maxRows: MAX_WRITE_ROWS },
         });
       }
-      results[table] = await this.#upsertTableRows(table, rows);
+      tables[table] = await this.#upsertTable(table, rows);
     }
-    return Object.freeze({
-      totalRows,
-      tables: Object.freeze(results),
-    });
+    return Object.freeze({ totalRows, tables: Object.freeze(tables) });
   }
 
   async rebuildDerivedFacts(input = {}) {
-    const accountKey = requireText(input.accountKey, 'accountKey');
-    const dates = uniqueDates(input.metricDates ?? []);
-    const customerAggregateKeys = uniqueTexts(input.customerAggregateKeys ?? []);
-    const syncRunId = requireText(input.syncRunId, 'syncRunId');
-    const coverageRunId = requireText(input.coverageRunId, 'coverageRunId');
-    const now = nonNegativeInteger(input.now ?? Date.now(), 'now');
+    const context = derivedContext(input);
     let salesRows = 0;
     let productRows = 0;
     let customerRows = 0;
-
-    for (const metricDate of dates) {
-      salesRows += await this.#rebuildDailySales({ accountKey, metricDate, syncRunId, coverageRunId, now });
-      productRows += await this.#rebuildProductDaily({ accountKey, metricDate, syncRunId, coverageRunId, now });
+    for (const metricDate of context.metricDates) {
+      salesRows += await this.#rebuildDailySales({ ...context, metricDate });
+      productRows += await this.#rebuildProductDaily({ ...context, metricDate });
     }
-    for (const aggregateKey of customerAggregateKeys) {
+    for (const customerAggregateKey of context.customerAggregateKeys) {
       customerRows += await this.#rebuildCustomerAggregate({
-        accountKey,
-        aggregateKey,
-        syncRunId,
-        coverageRunId,
-        now,
+        ...context,
+        customerAggregateKey,
       });
     }
-
     return Object.freeze({ salesRows, productRows, customerRows });
   }
 
   async readDerivedRows(input = {}) {
     const accountKey = requireText(input.accountKey, 'accountKey');
-    const dates = uniqueDates(input.metricDates ?? []);
+    const metricDates = uniqueDates(input.metricDates ?? []);
     const customerAggregateKeys = uniqueTexts(input.customerAggregateKeys ?? []);
-    const sales = dates.length === 0
-      ? []
-      : await this.#selectByValues('commerce_daily_sales_facts', 'metric_date', dates, accountKey);
-    const products = dates.length === 0
-      ? []
-      : await this.#selectByValues('commerce_product_daily_facts', 'metric_date', dates, accountKey);
-    const customers = customerAggregateKeys.length === 0
-      ? []
-      : await this.#selectByValues(
-        'commerce_customer_aggregates',
-        'customer_aggregate_key',
-        customerAggregateKeys,
-        accountKey,
-      );
+    const sales = metricDates.length === 0 ? [] : await this.#selectByValues(
+      'commerce_daily_sales_facts', 'metric_date', metricDates, accountKey,
+    );
+    const products = metricDates.length === 0 ? [] : await this.#selectByValues(
+      'commerce_product_daily_facts', 'metric_date', metricDates, accountKey,
+    );
+    const customers = customerAggregateKeys.length === 0 ? [] : await this.#selectByValues(
+      'commerce_customer_aggregates', 'customer_aggregate_key', customerAggregateKeys, accountKey,
+    );
     return Object.freeze({
       sales: Object.freeze(sales.map(freezeRow)),
       products: Object.freeze(products.map(freezeRow)),
@@ -116,7 +88,7 @@ export class D1WooCommerceCommerceStore {
     });
   }
 
-  async #upsertTableRows(table, rows) {
+  async #upsertTable(table, rows) {
     const contract = WOOCOMMERCE_D1_TABLE_CONTRACTS[table];
     if (!contract) {
       throw permanentError('WooCommerce D1 table is not allowlisted', {
@@ -124,43 +96,37 @@ export class D1WooCommerceCommerceStore {
         details: { table },
       });
     }
-    const columns = contract.columns;
-    const keyField = contract.keyField;
+    const { keyField, columns } = contract;
     const updates = columns
       .filter((column) => column !== keyField && column !== 'created_at')
-      .map((column) => `${quoteIdentifier(column)} = excluded.${quoteIdentifier(column)}`)
-      .join(',\n          ');
-    const conflictAction = OBSERVATION_TABLES.has(table)
+      .map((column) => `${quote(column)} = excluded.${quote(column)}`)
+      .join(', ');
+    const conflict = APPEND_ONLY_TABLES.has(table)
       ? 'DO NOTHING'
-      : `DO UPDATE SET\n          ${updates}`;
-    const statement = `
-      INSERT INTO ${quoteIdentifier(table)} (
-        ${columns.map(quoteIdentifier).join(', ')}
-      ) VALUES (${columns.map(() => '?').join(', ')})
-      ON CONFLICT(${quoteIdentifier(keyField)}) ${conflictAction}
+      : `DO UPDATE SET ${updates}`;
+    const sql = `
+      INSERT INTO ${quote(table)} (${columns.map(quote).join(', ')})
+      VALUES (${columns.map(() => '?').join(', ')})
+      ON CONFLICT(${quote(keyField)}) ${conflict}
     `;
-    const counts = { written: 0, skipped: 0 };
+    let written = 0;
+    let skipped = 0;
     for (const row of rows) {
       validateRow(table, row, contract);
-      let result;
-      try {
-        result = await this.db.prepare(statement).bind(...columns.map((column) => normalizeBind(row[column]))).run();
-      } catch (cause) {
-        throw transientError('WooCommerce D1 row write failed', {
-          code: 'WOOCOMMERCE_D1_WRITE_FAILED',
-          cause,
-          details: { table },
-        });
-      }
-      if (readChanges(result) > 0) counts.written += 1;
-      else counts.skipped += 1;
+      const changes = await this.#run(
+        sql,
+        columns.map((column) => bindValue(row[column])),
+        'WOOCOMMERCE_D1_WRITE_FAILED',
+        { table },
+      );
+      if (changes > 0) written += 1;
+      else skipped += 1;
     }
-    return Object.freeze({ expected: rows.length, ...counts });
+    return Object.freeze({ expected: rows.length, written, skipped });
   }
 
   async #rebuildDailySales(input) {
-    const keyPrefix = `woocommerce:${input.accountKey}:${input.metricDate}:`;
-    return this.#runMutation(`
+    return this.#run(`
       INSERT INTO commerce_daily_sales_facts (
         commerce_daily_key, customer_key, account_key, platform, metric_date, currency,
         gross_sales_micros, discount_micros, refund_micros, net_sales_micros,
@@ -170,12 +136,8 @@ export class D1WooCommerceCommerceStore {
         created_at, updated_at
       )
       SELECT
-        ? || currency,
-        MIN(customer_key),
-        account_key,
-        'woocommerce',
-        metric_date,
-        currency,
+        'woocommerce:' || account_key || ':' || metric_date || ':' || currency,
+        MIN(customer_key), account_key, 'woocommerce', metric_date, currency,
         SUM(CASE WHEN status_class = 'recognized' THEN gross_sales_micros ELSE 0 END),
         SUM(CASE WHEN status_class = 'recognized' THEN discount_micros ELSE 0 END),
         SUM(refund_micros),
@@ -189,12 +151,7 @@ export class D1WooCommerceCommerceStore {
         SUM(CASE WHEN status_class = 'failed' THEN 1 ELSE 0 END),
         SUM(CASE WHEN status = 'refunded' OR refund_micros > 0 THEN 1 ELSE 0 END),
         SUM(CASE WHEN status_class = 'recognized' THEN quantity_total ELSE 0 END),
-        'complete',
-        ?,
-        CAST(MAX(source_modified_at) AS TEXT),
-        ?,
-        ?,
-        ?
+        'complete', ?, CAST(MAX(source_modified_at) AS TEXT), ?, ?, ?
       FROM commerce_order_state
       WHERE account_key = ? AND metric_date = ?
       GROUP BY account_key, metric_date, currency
@@ -219,7 +176,6 @@ export class D1WooCommerceCommerceStore {
         sync_run_id = excluded.sync_run_id,
         updated_at = excluded.updated_at
     `, [
-      keyPrefix,
       input.coverageRunId,
       input.syncRunId,
       input.now,
@@ -230,7 +186,7 @@ export class D1WooCommerceCommerceStore {
   }
 
   async #rebuildProductDaily(input) {
-    return this.#runMutation(`
+    return this.#run(`
       INSERT INTO commerce_product_daily_facts (
         product_daily_key, product_key, customer_key, account_key, platform, metric_date,
         currency, quantity_ordered, gross_sales_micros, discount_micros, refund_micros,
@@ -239,24 +195,15 @@ export class D1WooCommerceCommerceStore {
       )
       SELECT
         line.product_key || ':' || line.metric_date || ':' || line.currency,
-        line.product_key,
-        MIN(line.customer_key),
-        line.account_key,
-        'woocommerce',
-        line.metric_date,
-        line.currency,
+        line.product_key, MIN(line.customer_key), line.account_key, 'woocommerce',
+        line.metric_date, line.currency,
         SUM(CASE WHEN orders.status_class = 'recognized' THEN line.quantity ELSE 0 END),
         SUM(CASE WHEN orders.status_class = 'recognized' THEN line.gross_sales_micros ELSE 0 END),
         SUM(CASE WHEN orders.status_class = 'recognized' THEN line.discount_micros ELSE 0 END),
         SUM(line.refund_micros),
         SUM(CASE WHEN orders.status_class = 'recognized' THEN line.net_sales_micros ELSE -line.refund_micros END),
         COUNT(DISTINCT CASE WHEN orders.status_class = 'recognized' THEN line.order_key END),
-        'complete',
-        ?,
-        CAST(MAX(orders.source_modified_at) AS TEXT),
-        ?,
-        ?,
-        ?
+        'complete', ?, CAST(MAX(orders.source_modified_at) AS TEXT), ?, ?, ?
       FROM commerce_order_line_facts AS line
       INNER JOIN commerce_order_state AS orders ON orders.order_key = line.order_key
       WHERE line.account_key = ? AND line.metric_date = ?
@@ -285,7 +232,7 @@ export class D1WooCommerceCommerceStore {
   }
 
   async #rebuildCustomerAggregate(input) {
-    return this.#runMutation(`
+    return this.#run(`
       INSERT INTO commerce_customer_aggregates (
         customer_aggregate_key, customer_key, account_key, platform, external_customer_id,
         customer_type, orders_count, total_spent_micros, currency, first_order_at,
@@ -293,27 +240,15 @@ export class D1WooCommerceCommerceStore {
         last_sync_run_id, created_at, updated_at
       )
       SELECT
-        ?,
-        MIN(customer_key),
-        account_key,
-        'woocommerce',
-        external_customer_id,
-        'registered',
-        SUM(recognized_order_count),
-        SUM(recognized_revenue_micros),
-        currency,
+        ?, MIN(customer_key), account_key, 'woocommerce', external_customer_id,
+        'registered', SUM(recognized_order_count), SUM(recognized_revenue_micros), currency,
         MIN(CASE WHEN status_class = 'recognized' THEN source_created_at END),
         MAX(CASE WHEN status_class = 'recognized' THEN source_created_at END),
-        MIN(source_created_at),
-        MAX(source_modified_at),
-        ?,
-        ?,
-        ?,
-        ?
+        MIN(source_created_at), MAX(source_modified_at), ?, ?, ?, ?
       FROM commerce_order_state
       WHERE account_key = ?
         AND customer_type = 'registered'
-        AND ('woocommerce:' || account_key || ':registered:' || external_customer_id) = ?
+        AND ('woocommerce:' || account_key || ':registered:' || external_customer_id || ':' || currency) = ?
       GROUP BY account_key, external_customer_id, currency
       ON CONFLICT(customer_aggregate_key) DO UPDATE SET
         customer_key = excluded.customer_key,
@@ -328,13 +263,13 @@ export class D1WooCommerceCommerceStore {
         last_sync_run_id = excluded.last_sync_run_id,
         updated_at = excluded.updated_at
     `, [
-      input.aggregateKey,
+      input.customerAggregateKey,
       input.coverageRunId,
       input.syncRunId,
       input.now,
       input.now,
       input.accountKey,
-      input.aggregateKey,
+      input.customerAggregateKey,
     ], 'WOOCOMMERCE_D1_CUSTOMER_REBUILD_FAILED');
   }
 
@@ -346,100 +281,96 @@ export class D1WooCommerceCommerceStore {
         details: { table, field },
       });
     }
-    const placeholders = values.map(() => '?').join(', ');
-    let result;
-    try {
-      result = await this.db.prepare(`
-        SELECT ${contract.columns.map(quoteIdentifier).join(', ')}
-        FROM ${quoteIdentifier(table)}
-        WHERE account_key = ? AND ${quoteIdentifier(field)} IN (${placeholders})
-        ORDER BY ${quoteIdentifier(field)} ASC
-      `).bind(accountKey, ...values).all();
-    } catch (cause) {
-      throw transientError('WooCommerce derived D1 read failed', {
-        code: 'WOOCOMMERCE_D1_READ_FAILED',
-        cause,
-        details: { table },
-      });
-    }
-    return readRows(result);
+    return this.#all(`
+      SELECT ${contract.columns.map(quote).join(', ')}
+      FROM ${quote(table)}
+      WHERE account_key = ? AND ${quote(field)} IN (${values.map(() => '?').join(', ')})
+      ORDER BY ${quote(field)} ASC
+    `, [accountKey, ...values], 'WOOCOMMERCE_D1_READ_FAILED', { table });
   }
 
-  async #runMutation(sql, bindings, code) {
+  async #run(sql, bindings, code, details = undefined) {
     try {
       const result = await this.db.prepare(sql).bind(...bindings).run();
       return readChanges(result);
     } catch (cause) {
-      throw transientError('WooCommerce D1 derived fact rebuild failed', {
-        code,
-        cause,
-      });
+      throw transientError('WooCommerce D1 mutation failed', { code, cause, details });
+    }
+  }
+
+  async #all(sql, bindings, code, details = undefined) {
+    try {
+      const result = await this.db.prepare(sql).bind(...bindings).all();
+      return readRows(result);
+    } catch (cause) {
+      throw transientError('WooCommerce D1 read failed', { code, cause, details });
     }
   }
 }
 
+function derivedContext(input) {
+  return Object.freeze({
+    accountKey: requireText(input.accountKey, 'accountKey'),
+    metricDates: uniqueDates(input.metricDates ?? []),
+    customerAggregateKeys: uniqueTexts(input.customerAggregateKeys ?? []),
+    syncRunId: requireText(input.syncRunId, 'syncRunId'),
+    coverageRunId: requireText(input.coverageRunId, 'coverageRunId'),
+    now: nonNegativeInteger(input.now ?? Date.now(), 'now'),
+  });
+}
+
 function validateRow(table, row, contract) {
-  if (!isPlainObject(row)) throw contractError(`WooCommerce ${table} row must be an object`);
+  if (!isPlainObject(row)) throw contractError(`${table} row must be an object`);
   const unexpected = Object.keys(row).filter((field) => !contract.columns.includes(field));
-  if (unexpected.length > 0) {
-    throw permanentError('WooCommerce D1 row contains non-allowlisted fields', {
+  const missing = contract.columns.filter((field) => !(field in row));
+  if (unexpected.length > 0 || missing.length > 0) {
+    throw permanentError('WooCommerce D1 row does not match its allowlisted contract', {
       code: 'WOOCOMMERCE_D1_ROW_INVALID',
-      details: { table, unexpectedFieldCount: unexpected.length },
+      details: { table, unexpectedFieldCount: unexpected.length, missingFieldCount: missing.length },
     });
   }
-  const key = row[contract.keyField];
-  if (typeof key !== 'string' || key.trim() === '') {
+  if (typeof row[contract.keyField] !== 'string' || row[contract.keyField].trim() === '') {
     throw permanentError('WooCommerce D1 row is missing its Stable key', {
       code: 'WOOCOMMERCE_D1_ROW_INVALID',
       details: { table, keyField: contract.keyField },
     });
   }
-  for (const column of contract.columns) {
-    if (!(column in row)) {
-      throw permanentError('WooCommerce D1 row is missing an allowlisted column', {
-        code: 'WOOCOMMERCE_D1_ROW_INVALID',
-        details: { table, fieldName: column },
-      });
-    }
-  }
 }
 
 function uniqueDates(values) {
   const dates = uniqueTexts(values);
-  for (const value of dates) {
-    if (!/^\d{4}-\d{2}-\d{2}$/u.test(value)) throw contractError('WooCommerce metric date must be YYYY-MM-DD');
+  for (const date of dates) {
+    if (!/^\d{4}-\d{2}-\d{2}$/u.test(date)) throw contractError('metricDate must be YYYY-MM-DD');
   }
   return dates;
 }
 
 function uniqueTexts(values) {
-  if (!Array.isArray(values)) throw contractError('WooCommerce value list must be an array');
+  if (!Array.isArray(values)) throw contractError('value list must be an array');
   return [...new Set(values.map((value) => requireText(value, 'value')))].sort();
 }
 
-function quoteIdentifier(value) {
-  const text = requireText(value, 'identifier');
-  if (!/^[a-z][a-z0-9_]*$/u.test(text)) throw contractError('WooCommerce SQL identifier is invalid');
-  return `"${text}"`;
+function quote(value) {
+  const identifier = requireText(value, 'identifier');
+  if (!/^[a-z][a-z0-9_]*$/u.test(identifier)) throw contractError('SQL identifier is invalid');
+  return `"${identifier}"`;
 }
 
-function normalizeBind(value) {
+function bindValue(value) {
   if (value === undefined) return null;
   if (typeof value === 'boolean') return value ? 1 : 0;
   if (typeof value === 'bigint') {
     const number = Number(value);
-    if (!Number.isSafeInteger(number)) throw contractError('WooCommerce bigint exceeds D1 integer range');
+    if (!Number.isSafeInteger(number)) throw contractError('bigint exceeds D1 integer range');
     return number;
   }
-  if (value !== null && typeof value === 'object') {
-    throw contractError('WooCommerce D1 row values must be scalar');
-  }
+  if (value !== null && typeof value === 'object') throw contractError('D1 values must be scalar');
   return value;
 }
 
 function readChanges(result) {
-  const value = result?.meta?.changes ?? result?.changes ?? 0;
-  return Number.isSafeInteger(value) && value >= 0 ? value : 0;
+  const changes = result?.meta?.changes ?? result?.changes ?? 0;
+  return Number.isSafeInteger(changes) && changes >= 0 ? changes : 0;
 }
 
 function readRows(result) {
@@ -461,18 +392,18 @@ function requireD1(value) {
 }
 
 function requireText(value, fieldName) {
-  if (typeof value !== 'string' || value.trim() === '') throw contractError(`WooCommerce requires ${fieldName}`);
+  if (typeof value !== 'string' || value.trim() === '') throw contractError(`${fieldName} is required`);
   return value.trim();
 }
 
 function nonNegativeInteger(value, fieldName) {
   const number = Number(value);
-  if (!Number.isSafeInteger(number) || number < 0) throw contractError(`WooCommerce ${fieldName} must be non-negative`);
+  if (!Number.isSafeInteger(number) || number < 0) throw contractError(`${fieldName} must be non-negative`);
   return number;
 }
 
 function contractError(message) {
-  return permanentError(message, { code: 'WOOCOMMERCE_D1_CONTRACT_INVALID' });
+  return permanentError(`WooCommerce ${message}`, { code: 'WOOCOMMERCE_D1_CONTRACT_INVALID' });
 }
 
 function isPlainObject(value) {
