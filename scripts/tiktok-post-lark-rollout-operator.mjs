@@ -301,7 +301,8 @@ async function runAudit(target) {
 }
 
 async function runDisableAudit(target) {
-  await requirePassedEvidence('audit');
+  // Emergency safe-close must remain available even when the authenticated audit fails.
+  await requirePassedEvidence('enable-audit');
   const configText = await readFile(target.safeWranglerConfig, 'utf8');
   const config = validateTikTokPostLarkWranglerConfig(configText, { auditEnabled: false });
   runCommand('npx', ['wrangler', 'deploy', '--dry-run', '--config', target.safeWranglerConfig]);
