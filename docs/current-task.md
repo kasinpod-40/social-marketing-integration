@@ -1,19 +1,20 @@
-# Current Task — Google Ads Canonical Lark Mapping Hotfix
+# Current Task — Google Ads Lark Key-Field Contract Hotfix
 
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = PR_62_MERGED_GUARDED_RECOVERY_DEPLOY_READY
+TASK_STATUS                         = IMPLEMENTED_PR_63_BRANCH_VERIFICATION_PASS_AWAITING_REVIEW
 CURRENT_PROGRAM                     = GOOGLE_ADS_MANAGER_SCRIPT_SIGNED_DELIVERY_TO_LARK
 INCIDENT_DATE                       = 2026-07-26
 INCIDENT_RUN_ID                     = 88351cb4-714d-49ef-91db-d95550a93ebf
 FIRST_DLQ_ID                        = terminal:a6ed54413000c25efd73ce7888cc2d10
 FIRST_DLQ_STATUS                    = redriven
 SECOND_DLQ_ID                       = terminal:6b1c7a5142f1eedb12a2b40b0a7cba78
-SECOND_DLQ_STATUS                   = open
-FIRST_FAILURE_FIELD                 = RAW_Ads_Daily.metric_date
-SECOND_FAILURE_FIELD                = MKT_Ads_Accounts.ads_account_id
-SECOND_FAILURE_REASON               = field does not exist in destination schema
+SECOND_DLQ_STATUS                   = redriven
+THIRD_DLQ_ID                        = PENDING_READ_ONLY_VERIFICATION
+THIRD_SYNC_RUN_ID                   = 9ab3cacb-c491-4991-b755-d4224e70ff33
+THIRD_FAILURE_CODE                  = UNHANDLED_SYNC_ERROR
+THIRD_FAILURE_MESSAGE               = TableSyncEngine requires campaign_key
 TRANSPORT_CHUNKS                    = 7 / 7
 TRANSPORT_ROWS                      = 1375 / 1375
 D1_ADS_BUSINESS_ROWS                = 0
@@ -21,146 +22,140 @@ LARK_BUSINESS_WRITES                = 0
 SCRIPT_MODE                         = DRY_RUN
 SCRIPT_DELIVERY_ENABLED             = false
 API_GOOGLE_ADS_FLAGS                = false
-SYNC_GOOGLE_ADS_FLAGS               = false
-DLQ_REDRIVE_ENABLED                 = false
+SAFE_SYNC_FLAGS_REQUIRED            = true
 SCHEDULE                            = DISABLED
 PRODUCTION                          = BLOCKED
 ```
 
 ## Incident progression
 
-The first guarded LIVE run reached destination preflight and failed before any business write because
-Google Ads date-only `metricDate` was sent to Lark DateTime fields without timezone resolution. PR
-`#61` corrected the date serialization and guarded same-generation `failed_permanent` redrive.
+The original signed LIVE run has been retained and redriven through two reviewed hotfixes without
+rerunning Manager Script:
 
-The original DLQ was then redriven exactly once. The second attempt passed the original
-`metric_date` failure and stopped at the first Canonical Ads row:
+1. PR `#61` fixed Lark DateTime serialization and guarded `failed_permanent` redrive.
+2. PR `#62` aligned Canonical output rows with the live Canonical Ads v2 field names.
+3. The third processing attempt passed both previous failures but stopped in destination preflight
+   before any D1 or Lark business write:
 
 ```text
-sync_run_id          = 115a17e8-2a25-4260-b921-5a5ae4e7f127
-error_code           = LARK_PREFLIGHT_FAILED
-table_id             = tbl3yPcXdQzZQvBc
-logical_table        = MKT_Ads_Accounts
-row                  = 0
-field                = ads_account_id
-reason               = field does not exist in destination schema
+sync_run_id          = 9ab3cacb-c491-4991-b755-d4224e70ff33
+admission_status     = failed_permanent
+last_error_code      = GOOGLE_ADS_PROCESSING_FAILED
+sync_error_code      = UNHANDLED_SYNC_ERROR
+sync_error_message   = TableSyncEngine requires campaign_key
+send_attempts        = 3
+ads_entity_rows      = 0
+ads_daily_rows       = 0
 partial              = false
-new terminal DLQ     = terminal:6b1c7a5142f1eedb12a2b40b0a7cba78
 ```
 
-This confirms PR `#61` worked and exposed an independent Canonical adapter/schema drift. Both
-attempts remained non-partial: destination preflight stopped execution before any D1 Ads fact or
-Lark business write.
+## Confirmed root cause
 
-## Root cause
-
-The live Lark Base already uses the applied Canonical Ads v2 field contract. The Google Ads runtime
-adapter still emitted several pre-migration aliases, including:
+The Canonical row adapter emits the reviewed v2 stable-key fields, but the processor's private
+`LARK_TABLES` routing contract retained three pre-migration key-field aliases:
 
 ```text
-ads_account_id
-ads_account_name
-connection_status
-campaign_key
-campaign_id
-campaign_status
-ad_group_key
-ad_group_id
-ad_group_status
-creative_key
-ad_status
-last_sync_at
+canonical.campaigns  previous=campaign_key   corrected=ads_campaign_key
+canonical.adGroups   previous=ad_group_key   corrected=ads_ad_group_key
+canonical.creatives  previous=creative_key   corrected=ads_creative_key
 ```
 
-Lark Schema, Views and Formulas are not defective and are not changed by this hotfix.
-
-## Merged correction
-
-PR `#62` was Squash Merged into `main`:
+The other five destination key fields were already correct:
 
 ```text
-PR                       = #62 / MERGED
-MERGE_COMMIT             = 3ab7a249cb40f6e3f377cecf02f2d8713bbdcb61
-REVIEWED_SOURCE_HEAD     = 56d27b6c98b7b915e4367a2b5781f110cbc10f45
-FINAL_BRANCH_HEAD        = f702319a9bcbb339f7f300c9e56fb46fee460a0a
-SOURCE_VERIFICATION      = PASS / RUN_505
-FINAL_DOCS_VERIFICATION  = PASS / RUN_509
+raw.entities         raw_ads_entity_key
+raw.daily            raw_ads_daily_key
+canonical.accounts   ads_account_key
+canonical.ads        ads_ad_key
+canonical.daily      ads_daily_key
 ```
 
-The merged implementation:
+`TableSyncEngine.planByKey()` validates that every row contains the configured key field. The stale
+Campaign contract failed before the preflight phase could be saved and before D1 writes began. This
+was a source routing-contract defect, not a Lark Schema or D1 defect.
 
-1. Accounts use `account_id`, `account_name`, `status` and grounded Google extensions.
-2. Campaigns use `ads_campaign_key`, `account_id`, `external_campaign_id`, optional `objective`,
-   Canonical status, reviewed channel values and source-timezone DateTime values.
-3. Ad Groups use `ads_ad_group_key`, `external_campaign_id` and `external_ad_group_id`.
-4. Ads use `ads_ad_key`, exact external parent IDs, `ad_type` and `final_url`.
-5. YouTube assets use `ads_creative_key`, `external_creative_id`, `creative_name`,
-   `creative_type`, `status` and `source_content_id`.
-6. Daily rows use Canonical account/entity/external IDs, currency and approved metric fields.
-7. Google source statuses map to `active`, `paused`, `removed` or `unknown`.
-8. Search, Display, YouTube, Demand Gen, Performance Max, Shopping, App and fallback channels map
-   to reviewed Canonical options.
-9. Canonical Daily derives modern channel from Campaign source enums when signed transport v1 uses
-   legacy `google_other`.
-10. Average CPV micros convert to the Canonical display-unit `average_cpv` field.
-11. Generic ownership metadata is omitted because it is not grounded in signed source/runtime data.
-12. All D1 contracts, source payloads and stable-key values remain unchanged.
-13. Exact per-table allowlists and forbidden-alias tests prevent stale names from returning.
+## Implemented correction
+
+PR `#63` changes only the three stale routing keys and processor-level regression coverage:
+
+1. `campaign_key` → `ads_campaign_key`;
+2. `ad_group_key` → `ads_ad_group_key`;
+3. `creative_key` → `ads_creative_key`;
+4. every `planByKey()` call now has test evidence that all rows contain the configured non-empty key;
+5. destination preflight must use the exact eight-table `(tableId, keyField)` sequence;
+6. one-table-per-continuation Lark execution must reuse the identical sequence.
+
+Table order, table bindings, Canonical row payloads, D1 contracts, stable-key values, phases,
+continuations, reconciliation and retry semantics remain unchanged.
+
+## Out of scope
+
+- Remote D1 mutation or manual status repair;
+- Queue send or DLQ redrive;
+- Worker deployment;
+- Lark Schema/View/Formula mutation;
+- Manager Script rerun;
+- changing Canonical row field names or stable-key values again;
+- schedule activation;
+- Production cutover;
+- deleting or closing forensic DLQ, Sync Run or Alert evidence.
 
 ## Acceptance result
 
 ```text
-MKT_Ads_Accounts no longer emits ads_account_id             PASS
-all Canonical rows obey exact per-table field allowlists    PASS
-all forbidden pre-migration aliases are absent              PASS
-optional Campaign objective is preserved                    PASS
-ungrounded generic ownership metadata is omitted            PASS
-stable-key values remain unchanged                          PASS
-D1 date-only facts and write contracts remain unchanged     PASS
-ENABLED status maps to active                               PASS
-campaign dates use source-timezone local midnight           PASS
-Daily account/entity/external IDs and currency are present  PASS
-legacy google_other is normalized from Campaign source      PASS
+Campaign routing key      ads_campaign_key                         PASS
+Ad Group routing key      ads_ad_group_key                         PASS
+Creative routing key      ads_creative_key                         PASS
+all 8 preflight rows      contain configured non-empty key         PASS
+preflight plan sequence   exact and stable                         PASS
+Lark execution routing    same exact key contract                  PASS
+D1 contracts              unchanged                               PASS
+Canonical row payloads    unchanged                               PASS
+stable-key values         unchanged                               PASS
+TikTok/Core regression    PASS
+Remote actions            none
 ```
 
 ## Verification result
 
 ```text
+BRANCH                   = work/google-ads-lark-keyfield-contract-hotfix
+PR                       = #63 / DRAFT
+REVIEWED_SOURCE_HEAD     = a4549d5fffa0bdcb8050f8a7db840e0fb9c18df8
+BRANCH_VERIFICATION      = PASS / RUN_510
 FOCUSED_TIKTOK_TESTS     = 4 / 4 PASS
 NODE_UNIT_INTEGRATION    = 825 / 825 PASS
 WORKERS_RUNTIME_TESTS    = 9 / 9 PASS
 REPORT_RELIABILITY       = 70 / 70 PASS
 DEPENDENCY_AUDIT         = 0 vulnerabilities
 WRANGLER_DRY_RUN         = PASS
-REVIEW_THREADS           = 0
-REVIEW_COMMENTS          = 0
+FILES_CHANGED            = 5 after documentation closeout
 REMOTE_ACTIONS_IN_PR     = none
 ```
 
-## Controlled recovery authorized next
+## Remaining controlled rollout
 
-The Repository gate is complete. The remaining Integration Workspace runtime steps are:
+Before any later exact redrive:
 
-1. pull clean merged `main`;
-2. deploy the merged Sync Worker through the guarded recovery configuration;
-3. keep signed ingress and Google Ads schedule disabled;
-4. enable Connector, Queue admission, D1/Lark writes and DLQ redrive only for the bounded window;
-5. send one redrive command for the second DLQ only;
-6. verify Queue → destination preflight → D1 → Lark → reconciliation for the original Run ID;
-7. restore all Google Ads and DLQ-redrive flags to false immediately after verification.
-
-The first DLQ must never be redriven again. Manager Script must not be rerun.
+1. restore the currently deployed recovery Worker to `wrangler.sync.jsonc` safe flags;
+2. verify all Google Ads execution and DLQ-redrive flags are false;
+3. read the newest open Google Ads terminal DLQ ID from Remote D1;
+4. review and merge PR `#63`;
+5. deploy the merged Sync Worker through a new bounded recovery window;
+6. redrive only the newly verified third DLQ once;
+7. verify destination preflight, D1, Lark and reconciliation;
+8. restore safe flags immediately.
 
 ## Runtime hold boundary
 
 ```text
 Google Ads Script          DRY_RUN / delivery=false
-API Google Ads flags       false
-Sync Google Ads flags      false
-DLQ redrive                false
-Google Ads schedules       false
+API signed ingress         false
+Google Ads schedule        false
+Recovery Worker flags      MUST be restored to false immediately
 First DLQ                  redriven / retain / never redrive again
-Second DLQ                 open / retain
-Second exact redrive       blocked until merged Sync recovery deploy is verified
+Second DLQ                 redriven / retain / never redrive again
+Third DLQ                  retain / exact ID pending read-only verification
+Next exact redrive         prohibited
 Production                 blocked
 ```

@@ -11,6 +11,17 @@ import {
 const RUN_ID = '123e4567-e89b-42d3-a456-426614174000';
 const RUN_STARTED_AT = Date.parse('2026-07-25T04:00:00.000Z');
 
+const EXPECTED_LARK_KEY_CONTRACT = Object.freeze([
+  Object.freeze({ tableId: 'raw-entities', keyField: 'raw_ads_entity_key' }),
+  Object.freeze({ tableId: 'raw-daily', keyField: 'raw_ads_daily_key' }),
+  Object.freeze({ tableId: 'accounts', keyField: 'ads_account_key' }),
+  Object.freeze({ tableId: 'campaigns', keyField: 'ads_campaign_key' }),
+  Object.freeze({ tableId: 'ad-groups', keyField: 'ads_ad_group_key' }),
+  Object.freeze({ tableId: 'ads', keyField: 'ads_ad_key' }),
+  Object.freeze({ tableId: 'creatives', keyField: 'ads_creative_key' }),
+  Object.freeze({ tableId: 'daily', keyField: 'ads_daily_key' }),
+]);
+
 function liveEnvelopes() {
   const manifest = createGoogleAdsDeliveryManifest(Object.fromEntries([
     'campaigns', 'adGroups', 'ads', 'youtubeAssets', 'campaignDailyMetrics',
@@ -29,6 +40,7 @@ function createFixture() {
   const phases = new Map();
   const continuations = [];
   const historyCalls = [];
+  const planCalls = [];
   let completion = null;
   const admission = {
     operationId: RUN_ID,
@@ -91,6 +103,23 @@ function createFixture() {
   };
   const syncEngine = {
     async planByKey(input) {
+      for (const [index, row] of input.rows.entries()) {
+        assert.equal(
+          typeof row[input.keyField],
+          'string',
+          `${input.tableId}[${index}] must contain string key ${input.keyField}`,
+        );
+        assert.notEqual(
+          row[input.keyField].trim(),
+          '',
+          `${input.tableId}[${index}] must contain non-empty key ${input.keyField}`,
+        );
+      }
+      planCalls.push(Object.freeze({
+        tableId: input.tableId,
+        keyField: input.keyField,
+        rowCount: input.rows.length,
+      }));
       return {
         repository: input.repository,
         tableId: input.tableId,
@@ -109,6 +138,7 @@ function createFixture() {
     admission,
     continuations,
     historyCalls,
+    planCalls,
     input: {
       queueReference: buildGoogleAdsQueueReference({ runId: RUN_ID, runStartedAt: RUN_STARTED_AT }),
       admissionStore,
@@ -152,6 +182,19 @@ test('durable processor completes D1 first then one Lark table per continuation'
   assert.equal(fixture.continuations.every((body) => body.operationId === RUN_ID), true);
   assert.equal(result.reconciliation.failed, 0);
   assert.equal(result.reconciliation.lark.length, 8);
+
+  const normalizedCalls = fixture.planCalls.map(({ tableId, keyField }) => ({ tableId, keyField }));
+  assert.equal(normalizedCalls.length, EXPECTED_LARK_KEY_CONTRACT.length * 2);
+  assert.deepEqual(
+    normalizedCalls.slice(0, EXPECTED_LARK_KEY_CONTRACT.length),
+    EXPECTED_LARK_KEY_CONTRACT,
+    'destination preflight must use the exact eight-table stable-key contract',
+  );
+  assert.deepEqual(
+    normalizedCalls.slice(EXPECTED_LARK_KEY_CONTRACT.length),
+    EXPECTED_LARK_KEY_CONTRACT,
+    'one-table-per-continuation Lark writes must reuse the exact preflight key contract',
+  );
 });
 
 test('completed admission returns idempotently without another business write', async () => {
@@ -162,6 +205,7 @@ test('completed admission returns idempotently without another business write', 
   assert.equal(result.status, 'completed_idempotent');
   assert.equal(fixture.historyCalls.length, 0);
   assert.equal(fixture.continuations.length, 0);
+  assert.equal(fixture.planCalls.length, 0);
 });
 
 test('processor fails closed before reading admission when either write gate is false', async () => {
@@ -171,4 +215,5 @@ test('processor fails closed before reading admission when either write gate is 
     (error) => error.code === 'GOOGLE_ADS_PROCESSING_GATES_DISABLED',
   );
   assert.equal(fixture.historyCalls.length, 0);
+  assert.equal(fixture.planCalls.length, 0);
 });

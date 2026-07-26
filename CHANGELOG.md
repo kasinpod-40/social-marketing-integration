@@ -1,5 +1,43 @@
 # Changelog
 
+## Unreleased — Google Ads Lark Key-Field Contract Hotfix — 2026-07-26
+
+### Runtime incident
+
+- Confirmed the third controlled processing attempt passed the prior Lark DateTime
+  and Canonical Ads v2 field-name defects.
+- Recorded the next fail-closed boundary before any D1 or Lark business write:
+  `UNHANDLED_SYNC_ERROR: TableSyncEngine requires campaign_key`.
+- Verified `send_attempts=3`, zero `ads_entity_state` rows and zero
+  `ads_daily_facts` rows for the Google Ads account.
+- Kept the exact new terminal DLQ ID pending read-only verification rather than
+  inferring or reusing either previously redriven DLQ.
+
+### Source correction
+
+- Aligned the processor Campaign routing key from `campaign_key` to
+  `ads_campaign_key`.
+- Aligned the Ad Group routing key from `ad_group_key` to
+  `ads_ad_group_key`.
+- Aligned the Creative routing key from `creative_key` to
+  `ads_creative_key`.
+- Preserved destination order, table bindings, Canonical row payloads, D1
+  contracts, stable-key values, resumable phases, continuations, reconciliation
+  and retry semantics.
+
+### Verification and safety
+
+- Added processor-level validation that every planned row contains its configured
+  non-empty stable key.
+- Added the exact eight-table key-field sequence for destination preflight and
+  verified one-table-per-continuation Lark writes reuse the same contract.
+- Branch Verification run `#510` passed syntax/architecture/hygiene, focused
+  TikTok regression, 825 Node Unit/Integration tests, 9 Workers runtime tests,
+  70 report reliability tests, dependency audit and Wrangler deployment dry-run.
+- No Remote D1 mutation, Queue send, DLQ redrive, Lark write/schema mutation,
+  Worker deployment, Manager Script execution, schedule or Production action
+  occurred in this implementation.
+
 ## Unreleased — Google Ads Canonical Lark Mapping Hotfix — 2026-07-26
 
 ### Runtime incident
