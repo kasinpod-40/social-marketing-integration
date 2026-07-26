@@ -3,6 +3,9 @@ import { MetaGraphClient } from './meta-graph.client.js';
 import { FacebookPageConnectionAdapter } from './facebook-page-connection.adapter.js';
 import { InstagramBusinessConnectionAdapter } from './instagram-business-connection.adapter.js';
 import { MetaAdsConnectionAdapter } from './meta-ads-connection.adapter.js';
+import { FacebookOrganicSourceAdapter } from './facebook-organic-source.adapter.js';
+import { InstagramOrganicSourceAdapter } from './instagram-organic-source.adapter.js';
+import { MetaAdsSourceAdapter } from './meta-ads-source.adapter.js';
 
 const FACEBOOK_GRAPH_BASE_URL = 'https://graph.facebook.com';
 const INSTAGRAM_GRAPH_BASE_URL = 'https://graph.instagram.com';
@@ -50,6 +53,17 @@ export function createMetaTokenConnectionRuntime(env = {}, options = {}) {
     metaAds: facebookClient
       ? new MetaAdsConnectionAdapter({ client: facebookClient })
       : null,
+    sources: {
+      facebook: facebookClient
+        ? new FacebookOrganicSourceAdapter({ client: facebookClient })
+        : null,
+      instagram: instagramClient
+        ? new InstagramOrganicSourceAdapter({ client: instagramClient })
+        : null,
+      meta_ads: facebookClient
+        ? new MetaAdsSourceAdapter({ client: facebookClient })
+        : null,
+    },
     mappings: config.mappings,
   });
 }
