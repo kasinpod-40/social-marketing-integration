@@ -83,19 +83,29 @@ function createDependencies(options = {}) {
     },
     async completeWork(input) { phaseState.completed = input.completion; return true; },
   };
+  const customerRows = new Map();
   const commerceStore = {
     async assertSchemaReady() { events.push('d1:schema'); return { ready: true }; },
     async upsertRowsByTable(rows) {
       events.push('d1:upsert');
+      for (const row of rows.commerce_customer_aggregates ?? []) {
+        customerRows.set(row.customer_aggregate_key, structuredClone(row));
+      }
       return { totalRows: Object.values(rows).reduce((sum, list) => sum + list.length, 0), tables: {} };
     },
     async rebuildDerivedFacts() {
       events.push('d1:derive');
       return { salesRows: 0, productRows: 0, customerRows: 0 };
     },
-    async readDerivedRows() {
+    async readDerivedRows(input) {
       events.push('d1:read-derived');
-      return { sales: [], products: [], customers: [] };
+      return {
+        sales: [],
+        products: [],
+        customers: (input.customerAggregateKeys ?? [])
+          .map((key) => customerRows.get(key))
+          .filter(Boolean),
+      };
     },
   };
   const coverageRuns = [];
