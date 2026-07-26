@@ -6,6 +6,7 @@ import { D1WooCommerceCommerceStore } from '../../packages/connectors/src/woocom
 import { D1WooCommerceReportSource } from '../../packages/connectors/src/woocommerce/d1-woocommerce-report-source.js';
 import { generateWooCommerceCommerceReport } from '../../packages/application/src/commerce/generate-woocommerce-commerce-report.js';
 import {
+  WOOCOMMERCE_D1_TABLE_CONTRACTS,
   WOOCOMMERCE_DATASETS,
   normalizeWooCommerceDataset,
 } from '../../packages/application/src/commerce/woocommerce-commerce-model.js';
@@ -14,6 +15,7 @@ const MIGRATION_URL = new URL(
   '../../docs/tasks/patches/woocommerce-commerce-migration.sql',
   import.meta.url,
 );
+const TABLE_COUNT = Object.keys(WOOCOMMERCE_D1_TABLE_CONTRACTS).length;
 const NOW = Date.parse('2026-07-26T03:00:00Z');
 const CONTEXT = Object.freeze({
   customerKey: 'chemistry_k',
@@ -76,7 +78,7 @@ function orderFixture(overrides = {}) {
 test('Commerce Store validates proposed schema, upserts idempotently and rebuilds daily facts', async () => {
   const { d1, store } = await fixture();
   try {
-    assert.deepEqual(await store.assertSchemaReady(), { ready: true, tableCount: 15 });
+    assert.deepEqual(await store.assertSchemaReady(), { ready: true, tableCount: TABLE_COUNT });
     const normalized = await normalizeWooCommerceDataset({
       ...CONTEXT,
       dataset: WOOCOMMERCE_DATASETS.ORDERS,
@@ -112,6 +114,7 @@ test('Commerce Store validates proposed schema, upserts idempotently and rebuild
     const customer = d1.database.prepare('SELECT * FROM commerce_customer_aggregates').get();
     assert.equal(customer.customer_aggregate_key, 'woocommerce:chemistry_k:registered:55:THB');
     assert.equal(customer.orders_count, 1);
+    assert.equal(customer.currency, 'THB');
   } finally {
     d1.close();
   }
@@ -205,7 +208,7 @@ test('Commerce Store fails closed when the additive migration is absent', async 
     await assert.rejects(
       store.assertSchemaReady(),
       (error) => error?.code === 'WOOCOMMERCE_D1_SCHEMA_NOT_READY'
-        && error.details.missingTableCount === 15,
+        && error.details.missingTableCount === TABLE_COUNT,
     );
   } finally {
     d1.close();
