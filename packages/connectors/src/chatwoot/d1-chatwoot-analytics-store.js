@@ -1,7 +1,32 @@
 import { permanentError, transientError } from '../../../shared/src/errors/runtime-error.js';
 
 const MAX_READ_IDS = 500;
-const FORBIDDEN_FIELD = /(?:content|processed_message|email|phone|identifier|name|avatar|thumbnail|url|token|secret|authorization|attachment_json|custom_attributes|additional_attributes)/iu;
+const FORBIDDEN_FIELDS = new Set([
+  'content',
+  'processed_message_content',
+  'message_content',
+  'email',
+  'phone',
+  'phone_number',
+  'identifier',
+  'name',
+  'available_name',
+  'avatar',
+  'avatar_url',
+  'thumbnail',
+  'url',
+  'website_url',
+  'callback_webhook_url',
+  'website_token',
+  'access_token',
+  'authorization',
+  'secret',
+  'token',
+  'attachments',
+  'attachment_json',
+  'custom_attributes',
+  'additional_attributes',
+]);
 
 const TABLES = Object.freeze({
   account: spec('chatwoot_account_state', 'account_state_key', [
@@ -180,6 +205,39 @@ export class D1ChatwootAnalyticsStore {
     }
   }
 
+  async readMessageCursors(input = {}) {
+    const accountKey = requireText(input.accountKey, 'accountKey');
+    const externalIds = uniqueIds(input.externalConversationIds ?? []);
+    if (externalIds.length === 0) return Object.freeze([]);
+    if (externalIds.length > MAX_READ_IDS) {
+      throw permanentError('Chatwoot message cursor read exceeds ID limit', {
+        code: 'CHATWOOT_D1_READ_LIMIT',
+        details: { rows: externalIds.length, maxRows: MAX_READ_IDS },
+      });
+    }
+    try {
+      const result = await this.db.prepare(`
+        SELECT external_conversation_id,
+               MAX(CAST(external_message_id AS INTEGER)) AS last_message_id
+        FROM chatwoot_message_analytics_state
+        WHERE account_key = ?
+          AND external_conversation_id IN (${placeholders(externalIds.length)})
+        GROUP BY external_conversation_id
+      `).bind(accountKey, ...externalIds).all();
+      return Object.freeze(readRows(result).map((row) => Object.freeze({
+        externalConversationId: String(row.external_conversation_id),
+        lastMessageId: row.last_message_id === null || row.last_message_id === undefined
+          ? null
+          : requirePositiveId(row.last_message_id, 'last_message_id'),
+      })));
+    } catch (cause) {
+      throw transientError('Failed to read Chatwoot message cursors', {
+        code: 'CHATWOOT_D1_READ_FAILED',
+        cause,
+      });
+    }
+  }
+
   async #upsert(table, row) {
     assertSafeRow(row, table.allowDisplayFields);
     requireColumns(row, table.columns);
@@ -233,7 +291,7 @@ function spec(table, keyField, columns, options = {}) {
 function assertSafeRow(row, allowDisplayFields) {
   requireObject(row, 'row');
   for (const [key, value] of Object.entries(row)) {
-    if (FORBIDDEN_FIELD.test(key) && !allowDisplayFields.has(key)) {
+    if (isForbiddenField(key) && !allowDisplayFields.has(key)) {
       throw permanentError(`Forbidden Chatwoot PII field reached D1 adapter: ${key}`, {
         code: 'CHATWOOT_PII_POLICY_VIOLATION',
       });
@@ -243,6 +301,12 @@ function assertSafeRow(row, allowDisplayFields) {
       throw new TypeError(`Chatwoot D1 row field ${key} must be a scalar`);
     }
   }
+}
+
+function isForbiddenField(key) {
+  const normalized = String(key).trim().toLowerCase();
+  return FORBIDDEN_FIELDS.has(normalized)
+    || /(?:^|_)(?:email|phone|phone_number|identifier|avatar|avatar_url|thumbnail|website_token|access_token|secret|token)$/u.test(normalized);
 }
 
 function requireColumns(row, columns) {
