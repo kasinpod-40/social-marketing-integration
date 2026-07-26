@@ -126,31 +126,33 @@ Branch and PR:
 
 ```text
 branch                     work/google-ads-canonical-lark-mapping-hotfix
-pull request               #62
-reviewed source head       4f8dff480621b0e033495e694fd38f9df7e23c7e
-branch verification        PASS / RUN_499
+pull request               #62 / READY_FOR_REVIEW
+reviewed source head       56d27b6c98b7b915e4367a2b5781f110cbc10f45
+branch verification        PASS / RUN_505
 ```
 
 The hotfix:
 
 1. replaces stale aliases across Accounts, Campaigns, Ad Groups, Ads, Creatives and Daily;
 2. preserves all D1 contracts and stable-key values;
-3. normalizes Google source statuses to `active`, `paused`, `removed` or `unknown`;
-4. maps Search, Display, YouTube, Demand Gen, Performance Max, Shopping, App and fallback
+3. retains Canonical Campaign `objective` when supplied by the signed source;
+4. omits generic ownership metadata that is not grounded in the signed source or runtime identity;
+5. normalizes Google source statuses to `active`, `paused`, `removed` or `unknown`;
+6. maps Search, Display, YouTube, Demand Gen, Performance Max, Shopping, App and fallback
    channels to reviewed Canonical options;
-5. derives Canonical Daily channel from Campaign source enums when signed v1 transport carries
+7. derives Canonical Daily channel from Campaign source enums when signed v1 transport carries
    its legacy `google_other` fallback;
-6. resolves Campaign date-only fields to source-timezone local-midnight epoch values for Lark;
-7. maps Google video assets to Canonical Creative identity fields;
-8. converts average CPV micros to the Canonical display-unit `average_cpv` field;
-9. enforces exact per-table output allowlists and forbidden-alias tests.
+8. resolves Campaign date-only fields to source-timezone local-midnight epoch values for Lark;
+9. maps Google video assets to Canonical Creative identity fields;
+10. converts average CPV micros to the Canonical display-unit `average_cpv` field;
+11. enforces exact per-table output allowlists and forbidden-alias tests.
 
 No Lark Schema/View/Formula change is authorized for this incident. The already-applied Canonical
 Ads v2 schema remains authoritative.
 
 ## Verification evidence
 
-Branch Verification run `#499` passed:
+Final Branch Verification run `#505` passed:
 
 ```text
 syntax / architecture / hygiene    PASS
@@ -175,7 +177,7 @@ DLQ redrive                 false
 Google Ads schedules        false
 first DLQ                   redriven / retained
 second DLQ                  open / retained
-next exact redrive          blocked pending review, merge and guarded deployment
+next exact redrive          blocked pending merge and guarded deployment
 Production                  blocked
 ```
 
@@ -186,10 +188,11 @@ Production                  blocked
 - Do not bypass consent, scope, active credential, Manager/advertiser identity or signed-source
   checks.
 - Do not alter Lark fields to accommodate stale connector aliases.
+- Do not write ownership classifications that are not grounded in customer profile/runtime data.
 - Do not rewrite D1 date-only facts or stable keys with epoch values.
 - Do not rerun Google Ads Manager Script to recover the retained staged incident.
 - Do not redrive the first DLQ again; it is already `redriven`.
-- Do not redrive the second DLQ before PR `#62` is reviewed, merged and deployed through the
-  guarded Sync recovery configuration.
+- Do not redrive the second DLQ before PR `#62` is merged and deployed through the guarded Sync
+  recovery configuration.
 - Do not enable the Google Ads schedule during manual UAT.
 - Do not cut over Production without a separate customer-owned Production task.
