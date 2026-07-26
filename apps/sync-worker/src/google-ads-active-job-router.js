@@ -21,7 +21,9 @@ export async function processJobWithGoogleAdsUat(input) {
     }
     return redriveDeadLetterJob({
       store: new D1ReliabilityStore({ db: input.env?.MKT_STATE_DB }),
-      googleAdsRedriveStore: new D1GoogleAdsLiveRedriveStore({ db: input.env?.MKT_STATE_DB }),
+      createGoogleAdsRedriveStore: () => new D1GoogleAdsLiveRedriveStore({
+        db: input.env?.MKT_STATE_DB,
+      }),
       queue: requireQueue(input.env),
       dlqId: requireJobText(input.job.body?.dlqId, 'dlqId'),
     });
