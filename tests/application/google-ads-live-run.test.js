@@ -26,7 +26,6 @@ const CANONICAL_FIELD_ALLOWLISTS = Object.freeze({
     'is_test_account',
     'manager_account_id',
     'platform',
-    'resource_owner',
     'status',
     'timezone',
   ]),
@@ -39,6 +38,7 @@ const CANONICAL_FIELD_ALLOWLISTS = Object.freeze({
     'channel_subtype',
     'end_date',
     'external_campaign_id',
+    'objective',
     'platform',
     'start_date',
     'status',
@@ -203,13 +203,13 @@ test('Lark write set matches Canonical Ads v2 fields and preserves source identi
     currency: 'THB',
     timezone: 'Asia/Bangkok',
     status: 'active',
-    resource_owner: 'developer_dev',
     manager_account_id: '1111111111',
     is_test_account: false,
     account_link_status: 'selectable',
   });
   assert.equal(writeSet.canonical.campaigns[0].ads_campaign_key, 'google_ads:2222222222:campaign:10');
   assert.equal(writeSet.canonical.campaigns[0].external_campaign_id, '10');
+  assert.equal(writeSet.canonical.campaigns[0].objective, 'VIDEO_ACTION');
   assert.equal(writeSet.canonical.campaigns[0].status, 'active');
   assert.equal(writeSet.canonical.adGroups[0].ads_ad_group_key, 'google_ads:2222222222:ad_group:20');
   assert.equal(writeSet.canonical.adGroups[0].external_ad_group_id, '20');
