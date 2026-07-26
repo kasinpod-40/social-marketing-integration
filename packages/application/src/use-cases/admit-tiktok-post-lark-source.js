@@ -25,22 +25,26 @@ export async function admitTikTokPostLarkSource(input = {}) {
     sourceWatermark: settled.second.sourceWatermark,
     metricDate: requireDate(input.metricDate, 'metricDate'),
   });
+  const admissionKey = `tiktok-admission:${identityDigest}`;
   const operationId = `watermark:${identityDigest}`;
   const workKey = `tiktok:${operationId}`;
-  const claim = await store.claimAdmission({
-    admissionKey: `tiktok-admission:${identityDigest}`,
-    customerProfile: input.customerProfile,
-    customerKey: input.customerKey,
-    accountKey: input.accountKey,
-    sourceHandle: settled.second.sourceHandle,
-    sourceWatermark: settled.second.sourceWatermark,
-    metricDate: input.metricDate,
-    sourceRecordCount: settled.second.recordCount,
-    sourceMaxModifiedAt: settled.second.maxModifiedAt,
-    generation: requestedAt,
-    workKey,
-    requestedAt,
-  });
+  const existing = await store.readAdmission(admissionKey);
+  const claim = existing
+    ? Object.freeze({ created: false, admission: existing })
+    : await store.claimAdmission({
+      admissionKey,
+      customerProfile: input.customerProfile,
+      customerKey: input.customerKey,
+      accountKey: input.accountKey,
+      sourceHandle: settled.second.sourceHandle,
+      sourceWatermark: settled.second.sourceWatermark,
+      metricDate: input.metricDate,
+      sourceRecordCount: settled.second.recordCount,
+      sourceMaxModifiedAt: settled.second.maxModifiedAt,
+      generation: requestedAt,
+      workKey,
+      requestedAt,
+    });
   const admission = claim.admission;
   if (['queued', 'processing', 'completed', 'failed_permanent'].includes(admission.status)) {
     return Object.freeze({
@@ -61,7 +65,7 @@ export async function admitTikTokPostLarkSource(input = {}) {
     sourceRecordCount: admission.sourceRecordCount,
     sourceMaxModifiedAt: admission.sourceMaxModifiedAt,
     operationId,
-    workKey,
+    workKey: admission.workKey,
     generation: admission.generation,
     originalRequestedAt: admission.requestedAt,
     requestedAt: new Date(admission.requestedAt).toISOString(),
@@ -100,7 +104,7 @@ function requireSettledProbe(value) {
 }
 
 function requireStore(value) {
-  for (const method of ['claimAdmission', 'markQueued', 'markFailed']) {
+  for (const method of ['readAdmission', 'claimAdmission', 'markQueued', 'markFailed']) {
     if (typeof value?.[method] !== 'function') {
       throw new TypeError(`TikTok post-Lark admission requires store.${method}`);
     }
