@@ -39,6 +39,15 @@ export function buildScheduledJobs(input = {}) {
   const youtubeEnabled = includeYouTubeJobs
     ? readBoolean(env.MKT_SCHEDULE_YOUTUBE_ENABLED, false)
     : false;
+  if (tiktokEnabled && !readBoolean(env.MKT_TIKTOK_WATERMARK_ADMISSION_ENABLED, false)) {
+    throw permanentError(
+      'TikTok schedule requires watermark admission instead of blind Business sync',
+      {
+        code: 'MKT_SCHEDULE_CONFIG_INVALID',
+        details: { fieldName: 'MKT_TIKTOK_WATERMARK_ADMISSION_ENABLED' },
+      },
+    );
+  }
   const needsLocalSchedule = tiktokEnabled || dailyEnabled || weeklyEnabled || youtubeEnabled;
   const timeZone = needsLocalSchedule
     ? requireJobText(env.DEFAULT_TIMEZONE ?? 'Asia/Bangkok', 'DEFAULT_TIMEZONE')
@@ -50,12 +59,11 @@ export function buildScheduledJobs(input = {}) {
   if (includePrimaryJobs && tiktokEnabled) {
     jobs.push(Object.freeze({
       schemaVersion: 1,
-      type: JOB_TYPES.TIKTOK_CREATOR_NATIVE_SYNC,
+      type: JOB_TYPES.TIKTOK_CREATOR_NATIVE_PROBE,
       trigger: 'scheduled',
-      syncMode: 'auto',
       requestedAt,
-      // ล็อกวันที่จาก scheduledTime เพื่อให้ Queue delay/retry ข้ามวันยังเขียน Snapshot วันเดิม
-      metricDate: local.date,
+      // Lark Native 07:00 เป็น Snapshot แรกหลังวันก่อนหน้าปิด จึงล็อกวันสมบูรณ์ล่าสุด.
+      metricDate: completedPeriodEnd,
     }));
   }
 
