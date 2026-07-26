@@ -27,13 +27,14 @@ test('planned jobs fail explicitly instead of returning fake success', () => {
   );
 });
 
-test('Google Ads signed-delivery job is centrally registered but remains planned', () => {
+test('Google Ads signed-delivery job is centrally registered and remains UAT-pending', () => {
   const definition = getJobDefinition(JOB_TYPES.GOOGLE_ADS_MANAGER_SIGNED_DELIVERY_PROCESS);
   assert.equal(definition.connectorKey, 'google_ads');
-  assert.equal(definition.implementationStatus, 'planned');
+  assert.equal(definition.implementationStatus, 'uat_pending');
+  assert.equal(definition.manualOnly, true);
   assert.throws(
     () => assertJobImplemented(definition),
-    (error) => error?.code === 'SYNC_JOB_NOT_IMPLEMENTED',
+    (error) => error?.code === 'SYNC_JOB_UAT_PENDING',
   );
 });
 
@@ -42,7 +43,6 @@ test('YouTube job is active after Live DEV reliability UAT passed', () => {
   assert.equal(definition.implementationStatus, 'active');
   assert.equal(assertJobImplemented(definition), definition);
 });
-
 
 test('dead-letter redrive job is active but remains environment-gated', () => {
   const definition = getJobDefinition(JOB_TYPES.DEAD_LETTER_REDRIVE);

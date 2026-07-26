@@ -78,6 +78,7 @@ function createFlow(runtime, env) {
     store: runtime.store,
     redirectUri: runtime.config.redirectUris.google_ads,
     environment: runtime.config.environment,
+    approvedManagerCustomerId: googleAds.managerCustomerId,
     approvedTargetCustomerId: googleAds.advertiserCustomerId,
   });
 }

@@ -1,9 +1,11 @@
+import { validateGoogleAdsQueueReference } from '../google-ads/google-ads-queue-reference.js';
 import { JOB_TYPES } from '../jobs/job-catalog.js';
 import { normalizeQueueJobMessage } from '../jobs/queue-job.js';
 import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 
 const SUPPORTED_REDRIVE_JOB_TYPES = new Set([
   JOB_TYPES.YOUTUBE_ORGANIC_SYNC,
+  JOB_TYPES.GOOGLE_ADS_MANAGER_SIGNED_DELIVERY_PROCESS,
 ]);
 const FORBIDDEN_REDRIVE_JOB_TYPES = Object.freeze(
   Object.values(JOB_TYPES).filter((type) => !SUPPORTED_REDRIVE_JOB_TYPES.has(type)),
@@ -12,8 +14,9 @@ const FORBIDDEN_REDRIVE_JOB_TYPES = Object.freeze(
 /**
  * Redrive Dead-letter แบบ Idempotent:
  * - D1 จอง requestedAt/redriveReference ก่อน Queue send
- * - Retry หลัง send/mark ล้มใช้ generation เดิม
- * - รุ่นนี้รองรับเฉพาะ YouTube เพราะมี durable generation fence ครบ
+ * - YouTube ใช้ generation ใหม่ตาม Contract เดิม
+ * - Google Ads ส่ง exact original reference และ revive same-generation durable Work แบบควบคุม
+ * - Retry หลัง send/mark ล้มส่ง duplicate ที่ consumer fence ด้วย stable operation identity
  */
 export async function redriveDeadLetterJob(input = {}) {
   const store = requireStore(input.store);
@@ -43,16 +46,12 @@ export async function redriveDeadLetterJob(input = {}) {
     dlqId,
     redriveReference: candidateReference,
   });
-  normalizeQueueJobMessage(
-    { id: candidateReference, body: candidateBody },
-    new Date(candidateRequestedAt),
-  );
+  validateRedriveBody(candidateBody, candidateOriginal.type, candidateRequestedAt, candidateReference);
 
   const prepared = await store.prepareDeadLetterRedrive({
     dlqId,
     requestedAt: candidateRequestedAt,
     redriveReference: candidateReference,
-    // Store อ่าน Incident ซ้ำและปฏิเสธทุก Job ที่ไม่มี YouTube generation fence ก่อน UPDATE.
     forbiddenJobTypes: FORBIDDEN_REDRIVE_JOB_TYPES,
   });
   if (prepared.status === 'redriven') {
@@ -60,7 +59,6 @@ export async function redriveDeadLetterJob(input = {}) {
   }
 
   const original = requireObject(prepared.payload, 'deadLetter.payload');
-  // ตรวจซ้ำหลัง prepare เป็น defense-in-depth ก่อน Queue send.
   assertSupportedRedriveTarget(original, dlqId);
   const redriveRequestedAt = safeTimestamp(prepared.redriveRequestedAt, 'redriveRequestedAt');
   const body = createRedriveBody({
@@ -70,11 +68,37 @@ export async function redriveDeadLetterJob(input = {}) {
     dlqId,
     redriveReference: prepared.redriveReference,
   });
+  validateRedriveBody(body, original.type, redriveRequestedAt, prepared.redriveReference);
 
-  // Validate ก่อนส่ง Queue เพื่อไม่เปลี่ยน Dead-letter เป็น Poison message รอบใหม่.
-  normalizeQueueJobMessage({ id: prepared.redriveReference, body }, new Date(redriveRequestedAt));
-  await queue.send(body);
-  await store.markDeadLetterRedriven({ dlqId, redrivenAt: safeTimestamp(now(), 'redrivenAt') });
+  let sent = false;
+  if (original.type === JOB_TYPES.GOOGLE_ADS_MANAGER_SIGNED_DELIVERY_PROCESS) {
+    const reference = validateGoogleAdsQueueReference(body);
+    const googleAdsRedriveStore = resolveGoogleAdsRedriveStore(input);
+    const redriveState = await googleAdsRedriveStore.prepare({
+      operationId: reference.operationId,
+      workKey: reference.workKey,
+      generation: reference.generation,
+      originalRequestedAt: reference.originalRequestedAt,
+      auditReference: prepared.redriveReference,
+      now: safeTimestamp(now(), 'googleAdsRedriveAt'),
+    });
+    if (!['completed', 'already_queued'].includes(redriveState.disposition)) {
+      await queue.send(body);
+      sent = true;
+      await googleAdsRedriveStore.markQueued({
+        operationId: reference.operationId,
+        now: safeTimestamp(now(), 'googleAdsQueuedAt'),
+      });
+    }
+  } else {
+    await queue.send(body);
+    sent = true;
+  }
+
+  await store.markDeadLetterRedriven({
+    dlqId,
+    redrivenAt: safeTimestamp(now(), 'redrivenAt'),
+  });
 
   return Object.freeze({
     status: 'redriven',
@@ -82,6 +106,7 @@ export async function redriveDeadLetterJob(input = {}) {
     requestedAt: body.requestedAt,
     redriveReference: prepared.redriveReference,
     jobType: body.type,
+    queueSend: sent ? 'sent' : 'already_admitted',
   });
 }
 
@@ -101,6 +126,10 @@ function assertSupportedRedriveTarget(payload, dlqId) {
 }
 
 function createRedriveBody(input) {
+  if (input.original.type === JOB_TYPES.GOOGLE_ADS_MANAGER_SIGNED_DELIVERY_PROCESS) {
+    // Exact-schema Queue reference ห้ามเติม redrive metadata หรือเปลี่ยน requestedAt/generation.
+    return Object.freeze({ ...input.original });
+  }
   return Object.freeze({
     ...input.original,
     schemaVersion: input.schemaVersion ?? input.original.schemaVersion ?? 1,
@@ -108,6 +137,16 @@ function createRedriveBody(input) {
     redriveOfDlqId: input.dlqId,
     redriveReference: input.redriveReference,
   });
+}
+
+function validateRedriveBody(body, jobType, requestedAt, messageId) {
+  if (jobType === JOB_TYPES.GOOGLE_ADS_MANAGER_SIGNED_DELIVERY_PROCESS) {
+    validateGoogleAdsQueueReference(body);
+  }
+  normalizeQueueJobMessage(
+    { id: messageId, body },
+    new Date(requestedAt),
+  );
 }
 
 function alreadyRedrivenResult({ dlqId, candidate }) {
@@ -124,6 +163,21 @@ function requireStore(value) {
     || typeof value?.prepareDeadLetterRedrive !== 'function'
     || typeof value?.markDeadLetterRedriven !== 'function') {
     throw new TypeError('redriveDeadLetterJob requires a durable redrive store');
+  }
+  return value;
+}
+
+function resolveGoogleAdsRedriveStore(input) {
+  const value = input.googleAdsRedriveStore
+    ?? (typeof input.createGoogleAdsRedriveStore === 'function'
+      ? input.createGoogleAdsRedriveStore()
+      : null);
+  return requireGoogleAdsRedriveStore(value);
+}
+
+function requireGoogleAdsRedriveStore(value) {
+  if (typeof value?.prepare !== 'function' || typeof value?.markQueued !== 'function') {
+    throw new TypeError('Google Ads redrive requires googleAdsRedriveStore prepare/markQueued');
   }
   return value;
 }

@@ -48,14 +48,14 @@ test('Meta UAT-pending connector is never reported as runnable', () => {
   assert.equal(facebook.runnable, false);
 });
 
-test('planned Google Ads connector cannot enter the runtime when its feature flag is true', () => {
+test('Google Ads UAT-pending connector cannot enter generic runtime routing', () => {
   assert.throws(
     () => loadCustomerRuntimeConfig({
       MKT_ENV: 'development',
       MKT_CUSTOMER_PROFILE: 'integration_workspace',
       MKT_CONNECTOR_GOOGLE_ADS_ENABLED: 'true',
     }),
-    (error) => error?.code === 'MKT_CONNECTOR_NOT_IMPLEMENTED',
+    (error) => error?.code === 'MKT_CONNECTOR_UAT_PENDING',
   );
 });
 

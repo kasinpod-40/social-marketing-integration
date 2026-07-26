@@ -14,8 +14,8 @@ import { permanentError } from '../../shared/src/errors/runtime-error.js';
  * Identity ที่เปลี่ยนตามทรัพยากรจริง เช่น TikTok handle สามารถ Override ผ่าน Environment
  * โดยไม่แก้ Source code ขณะที่ accountKey ยังคงมาจาก Customer profile เพื่อรักษา Stable key
  *
- * Connector ที่ยัง implementationStatus='planned' จะเปิดใช้งานไม่ได้แม้ตั้ง flag=true
- * เพื่อป้องกันการ Deploy โค้ดที่มีเพียงโครงแต่ยังไม่มี Integration จริง
+ * Connector planned เปิดไม่ได้ทุกกรณี ส่วน Google Ads uat_pending เปิด Runtime config ได้เฉพาะ
+ * protected manual UAT ใน developer Integration Workspace เมื่อ admission/business/Lark gates เปิดครบ.
  */
 export function resolveConnectorRuntimeConfig(profileConnectors, env = {}) {
   const profileMap = requireObject(profileConnectors, 'profile.connectors');
@@ -23,8 +23,11 @@ export function resolveConnectorRuntimeConfig(profileConnectors, env = {}) {
     const profile = requireObject(profileMap[definition.key], `profile.connectors.${definition.key}`);
     const enabledOverride = readOptionalBoolean(env[definition.featureFlagEnv], definition.featureFlagEnv);
     const enabled = enabledOverride ?? (profile.enabledByDefault === true);
+    const protectedUat = isProtectedGoogleAdsUatRuntime(definition, env);
 
-    if (enabled && definition.implementationStatus !== CONNECTOR_IMPLEMENTATION_STATUS.ACTIVE) {
+    if (enabled
+      && definition.implementationStatus !== CONNECTOR_IMPLEMENTATION_STATUS.ACTIVE
+      && !protectedUat) {
       const uatPending = definition.implementationStatus === CONNECTOR_IMPLEMENTATION_STATUS.UAT_PENDING;
       throw permanentError(
         `${definition.displayName} connector is enabled but ${uatPending ? 'Live DEV UAT is pending' : 'its implementation is not ready'}`,
@@ -57,6 +60,7 @@ export function resolveConnectorRuntimeConfig(profileConnectors, env = {}) {
       sourceHandleEnv: definition.sourceHandleEnv ?? null,
       enabled,
       enabledSource: enabledOverride === null ? 'profile' : 'environment',
+      protectedUatRuntime: protectedUat,
       accountKey: runtimeFields.accountKey,
       sourceHandle: runtimeFields.sourceHandle,
       sourceHandleSource: sourceHandleOverride
@@ -69,6 +73,31 @@ export function resolveConnectorRuntimeConfig(profileConnectors, env = {}) {
   });
 
   return Object.freeze(Object.fromEntries(runtimeEntries));
+}
+
+function isProtectedGoogleAdsUatRuntime(definition, env) {
+  if (definition.key !== 'google_ads'
+    || definition.implementationStatus !== CONNECTOR_IMPLEMENTATION_STATUS.UAT_PENDING) {
+    return false;
+  }
+  return env.MKT_ENV === 'development'
+    && env.MKT_CUSTOMER_PROFILE === 'integration_workspace'
+    && readOptionalBoolean(
+      env.MKT_GOOGLE_ADS_QUEUE_ADMISSION_ENABLED,
+      'MKT_GOOGLE_ADS_QUEUE_ADMISSION_ENABLED',
+    ) === true
+    && readOptionalBoolean(
+      env.MKT_GOOGLE_ADS_BUSINESS_WRITE_ENABLED,
+      'MKT_GOOGLE_ADS_BUSINESS_WRITE_ENABLED',
+    ) === true
+    && readOptionalBoolean(
+      env.MKT_GOOGLE_ADS_LARK_WRITE_ENABLED,
+      'MKT_GOOGLE_ADS_LARK_WRITE_ENABLED',
+    ) === true
+    && readOptionalBoolean(
+      env.MKT_SCHEDULE_GOOGLE_ADS_ENABLED,
+      'MKT_SCHEDULE_GOOGLE_ADS_ENABLED',
+    ) !== true;
 }
 
 /** อ่าน Boolean ที่ยอมรับเฉพาะ true/false เพื่อไม่ตีความคำคลุมเครืออย่าง yes, 1 หรือ on */
@@ -104,10 +133,6 @@ function readOptionalTextEnv(value, fieldName) {
   return text;
 }
 
-/**
- * accountKey เป็น Canonical identity จึงต้องมีเสมอแม้ Connector ปิดอยู่
- * ส่วน Live identity อื่น เช่น sourceHandle อาจเว้นได้ขณะปิด แต่ต้องมีทันทีเมื่อเปิด Connector
- */
 function validateRequiredRuntimeFields(definition, runtimeFields, enabled) {
   for (const fieldName of definition.requiredRuntimeFields) {
     if (!enabled && fieldName !== 'accountKey') continue;
@@ -120,7 +145,6 @@ function validateRequiredRuntimeFields(definition, runtimeFields, enabled) {
   }
 }
 
-/** บังคับค่าเป็น Object ปกติ ไม่รับ Array/null */
 function requireObject(value, fieldName) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     throw permanentError(`${fieldName} must be an object`, {
@@ -131,14 +155,12 @@ function requireObject(value, fieldName) {
   return value;
 }
 
-/** Normalize ข้อความ Optional โดยคืน null เมื่อไม่มีค่า */
 function normalizeOptionalText(value) {
   if (value === null || value === undefined) return null;
   const text = typeof value === 'string' ? value.trim() : '';
   return text || null;
 }
 
-/** สร้าง Error รูปแบบเดียวกันเมื่อ Feature flag ไม่ใช่ Boolean ที่รองรับ */
 function invalidBoolean(fieldName, value) {
   return permanentError(`${fieldName} must be true or false`, {
     code: 'MKT_RUNTIME_CONFIG_INVALID',

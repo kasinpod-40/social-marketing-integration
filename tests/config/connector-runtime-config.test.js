@@ -118,12 +118,12 @@ test('Meta connection foundations cannot be enabled before Live DEV UAT', () => 
   );
 });
 
-test('Google Ads signed-delivery connector remains planned and cannot be enabled', () => {
+test('Google Ads remains UAT-pending and requires every protected manual gate', () => {
   const disabled = loadCustomerRuntimeConfig({
     MKT_ENV: 'development',
     MKT_CUSTOMER_PROFILE: 'integration_workspace',
   });
-  assert.equal(disabled.connectors.google_ads.implementationStatus, 'planned');
+  assert.equal(disabled.connectors.google_ads.implementationStatus, 'uat_pending');
   assert.equal(disabled.connectors.google_ads.enabled, false);
   assert.equal(disabled.connectors.google_ads.accountKey, 'chemistry_k');
 
@@ -133,8 +133,21 @@ test('Google Ads signed-delivery connector remains planned and cannot be enabled
       MKT_CUSTOMER_PROFILE: 'integration_workspace',
       MKT_CONNECTOR_GOOGLE_ADS_ENABLED: 'true',
     }),
-    (error) => error?.code === 'MKT_CONNECTOR_NOT_IMPLEMENTED',
+    (error) => error?.code === 'MKT_CONNECTOR_UAT_PENDING',
   );
+
+  const protectedUat = loadCustomerRuntimeConfig({
+    MKT_ENV: 'development',
+    MKT_CUSTOMER_PROFILE: 'integration_workspace',
+    MKT_CONNECTOR_GOOGLE_ADS_ENABLED: 'true',
+    MKT_GOOGLE_ADS_QUEUE_ADMISSION_ENABLED: 'true',
+    MKT_GOOGLE_ADS_BUSINESS_WRITE_ENABLED: 'true',
+    MKT_GOOGLE_ADS_LARK_WRITE_ENABLED: 'true',
+    MKT_SCHEDULE_GOOGLE_ADS_ENABLED: 'false',
+  });
+  assert.equal(protectedUat.connectors.google_ads.enabled, true);
+  assert.equal(protectedUat.connectors.google_ads.protectedUatRuntime, true);
+  assert.equal(protectedUat.connectors.google_ads.implementationStatus, 'uat_pending');
 });
 
 test('connector feature flags accept only explicit true or false values', () => {

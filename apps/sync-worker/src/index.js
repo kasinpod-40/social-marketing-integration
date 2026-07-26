@@ -1,6 +1,6 @@
 import { createSyncWorker } from './sync-worker.js';
 
-export { processJobWithHistoryBootstrap as processJob } from './history-bootstrap-job-router.js';
+export { processJobWithGoogleAdsUat as processJob } from './google-ads-active-job-router.js';
 export {
   QUEUE_ROLES,
   classifyQueueBatch,

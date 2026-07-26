@@ -12,6 +12,18 @@ const ORIGINAL_JOB = Object.freeze({
   analyticsEnabled: false,
 });
 
+const GOOGLE_RUN_ID = '123e4567-e89b-42d3-a456-426614174000';
+const GOOGLE_GENERATION = Date.parse('2026-07-25T04:00:00.000Z');
+const GOOGLE_JOB = Object.freeze({
+  schemaVersion: 1,
+  type: 'google.ads.manager.signed-delivery.process',
+  operationId: GOOGLE_RUN_ID,
+  workKey: `google_ads:${GOOGLE_RUN_ID}`,
+  generation: GOOGLE_GENERATION,
+  originalRequestedAt: GOOGLE_GENERATION,
+  requestedAt: new Date(GOOGLE_GENERATION).toISOString(),
+});
+
 test('redrive reserves one generation, sends the original payload, and marks it redriven', async () => {
   const calls = [];
   const store = {
@@ -51,6 +63,7 @@ test('redrive reserves one generation, sends the original payload, and marks it 
   });
 
   assert.equal(result.status, 'redriven');
+  assert.equal(result.queueSend, 'sent');
   assert.equal(sent.length, 1);
   assert.deepEqual(sent[0], {
     ...ORIGINAL_JOB,
@@ -62,6 +75,7 @@ test('redrive reserves one generation, sends the original payload, and marks it 
   assert.ok(calls[1][1].forbiddenJobTypes.includes('system.dead-letter.redrive'));
   assert.ok(calls[1][1].forbiddenJobTypes.includes('tiktok.creator.native.sync'));
   assert.equal(calls[1][1].forbiddenJobTypes.includes('youtube.channel.organic.sync'), false);
+  assert.equal(calls[1][1].forbiddenJobTypes.includes('google.ads.manager.signed-delivery.process'), false);
   assert.equal(calls[2][0], 'mark');
   assert.equal(calls[2][1].dlqId, 'dlq:message-old');
 });
@@ -101,6 +115,141 @@ test('retry after queue send reuses the persisted generation so duplicate messag
   assert.equal(sent.length, 2);
   assert.equal(sent[0].requestedAt, sent[1].requestedAt);
   assert.equal(sent[0].redriveReference, sent[1].redriveReference);
+});
+
+test('Google Ads redrive sends the exact original reference without redrive metadata', async () => {
+  const calls = [];
+  const store = {
+    async readDeadLetterRedriveCandidate() {
+      return {
+        status: 'open',
+        schemaVersion: 1,
+        payload: GOOGLE_JOB,
+        redriveRequestedAt: null,
+        redriveReference: null,
+      };
+    },
+    async prepareDeadLetterRedrive(input) {
+      calls.push(['prepare-dead-letter', input]);
+      return {
+        status: 'redrive_pending',
+        schemaVersion: 1,
+        payload: GOOGLE_JOB,
+        redriveRequestedAt: input.requestedAt,
+        redriveReference: input.redriveReference,
+      };
+    },
+    async markDeadLetterRedriven(input) { calls.push(['mark-dead-letter', input]); },
+  };
+  const googleAdsRedriveStore = {
+    async prepare(input) {
+      calls.push(['prepare-google-ads', input]);
+      return { disposition: 'send_pending' };
+    },
+    async markQueued(input) {
+      calls.push(['mark-google-ads-queued', input]);
+      return { disposition: 'queued' };
+    },
+  };
+  const sent = [];
+  const nowValues = [
+    Date.parse('2026-07-26T00:00:00.000Z'),
+    Date.parse('2026-07-26T00:00:01.000Z'),
+    Date.parse('2026-07-26T00:00:02.000Z'),
+    Date.parse('2026-07-26T00:00:03.000Z'),
+  ];
+  const result = await redriveDeadLetterJob({
+    store,
+    googleAdsRedriveStore,
+    queue: { async send(body) { sent.push(structuredClone(body)); } },
+    dlqId: 'dlq:google-ads-old',
+    now: () => nowValues.shift(),
+  });
+
+  assert.equal(result.status, 'redriven');
+  assert.equal(result.queueSend, 'sent');
+  assert.equal(sent.length, 1);
+  assert.deepEqual(sent[0], GOOGLE_JOB);
+  assert.deepEqual(Object.keys(sent[0]).sort(), Object.keys(GOOGLE_JOB).sort());
+  assert.equal('redriveOfDlqId' in sent[0], false);
+  assert.equal('redriveReference' in sent[0], false);
+  assert.equal(sent[0].requestedAt, GOOGLE_JOB.requestedAt);
+  assert.equal(calls.find(([name]) => name === 'prepare-google-ads')[1].generation, GOOGLE_GENERATION);
+});
+
+test('Google Ads ambiguous send retry emits only identical stable references', async () => {
+  const prepared = {
+    status: 'redrive_pending',
+    schemaVersion: 1,
+    payload: GOOGLE_JOB,
+    redriveRequestedAt: Date.parse('2026-07-26T00:00:00.000Z'),
+    redriveReference: 'redrive:dlq:google-ads-old:1785024000000',
+  };
+  const store = {
+    async readDeadLetterRedriveCandidate() { return prepared; },
+    async prepareDeadLetterRedrive() { return prepared; },
+    async markDeadLetterRedriven() {},
+  };
+  let queuedMarkers = 0;
+  const googleAdsRedriveStore = {
+    async prepare() { return { disposition: 'send_pending' }; },
+    async markQueued() {
+      queuedMarkers += 1;
+      if (queuedMarkers === 1) throw new Error('Synthetic queued marker ambiguity');
+      return { disposition: 'queued' };
+    },
+  };
+  const sent = [];
+  const queue = { async send(body) { sent.push(structuredClone(body)); } };
+
+  await assert.rejects(
+    () => redriveDeadLetterJob({
+      store,
+      googleAdsRedriveStore,
+      queue,
+      dlqId: 'dlq:google-ads-old',
+      now: () => Date.parse('2026-07-26T00:00:04.000Z'),
+    }),
+    /Synthetic queued marker ambiguity/,
+  );
+  await redriveDeadLetterJob({
+    store,
+    googleAdsRedriveStore,
+    queue,
+    dlqId: 'dlq:google-ads-old',
+    now: () => Date.parse('2026-07-26T00:00:05.000Z'),
+  });
+
+  assert.equal(sent.length, 2);
+  assert.deepEqual(sent[0], GOOGLE_JOB);
+  assert.deepEqual(sent[1], GOOGLE_JOB);
+});
+
+test('Google Ads prepared admission avoids another Queue send after dead-letter mark ambiguity', async () => {
+  const prepared = {
+    status: 'redrive_pending',
+    schemaVersion: 1,
+    payload: GOOGLE_JOB,
+    redriveRequestedAt: Date.parse('2026-07-26T00:00:00.000Z'),
+    redriveReference: 'redrive:dlq:google-ads-old:1785024000000',
+  };
+  let marked = false;
+  const result = await redriveDeadLetterJob({
+    store: {
+      async readDeadLetterRedriveCandidate() { return prepared; },
+      async prepareDeadLetterRedrive() { return prepared; },
+      async markDeadLetterRedriven() { marked = true; },
+    },
+    googleAdsRedriveStore: {
+      async prepare() { return { disposition: 'already_queued' }; },
+      async markQueued() { throw new Error('must not mark queued'); },
+    },
+    queue: { async send() { throw new Error('must not send'); } },
+    dlqId: 'dlq:google-ads-old',
+    now: () => Date.parse('2026-07-26T00:00:06.000Z'),
+  });
+  assert.equal(result.queueSend, 'already_admitted');
+  assert.equal(marked, true);
 });
 
 test('unsupported job types fail before prepare mutation or Queue send', async () => {

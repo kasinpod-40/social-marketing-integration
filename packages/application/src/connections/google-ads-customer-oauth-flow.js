@@ -27,7 +27,8 @@ export class GoogleAdsCustomerOAuthFlow {
     requireMethod(input.store, 'getConnection', 'store');
     this.redirectUri = requireText(input.redirectUri, 'redirectUri');
     this.environment = requireText(input.environment, 'environment');
-    this.approvedTargetCustomerId = optionalText(input.approvedTargetCustomerId);
+    this.approvedTargetCustomerId = optionalCustomerId(input.approvedTargetCustomerId);
+    this.approvedManagerCustomerId = optionalCustomerId(input.approvedManagerCustomerId);
     this.now = typeof input.now === 'function' ? input.now : () => Date.now();
   }
 
@@ -102,7 +103,7 @@ export class GoogleAdsCustomerOAuthFlow {
           connectionStatus: CUSTOMER_CONNECTION_STATUSES.TOKEN_REFRESH_FAILED,
           accessStatus: CUSTOMER_CONNECTION_ACCESS_STATUSES.NOT_VALIDATED,
           lastErrorCode: error?.code ?? 'GOOGLE_OAUTH_TOKEN_REFRESH_FAILED',
-          providerMetadata: { credentialReference },
+          providerMetadata: this.providerMetadata({ credentialReference }),
           updatedAt: this.now(),
         });
         await this.shared.releaseOAuthAttempt(callback);
@@ -132,11 +133,12 @@ export class GoogleAdsCustomerOAuthFlow {
           connectionStatus: CUSTOMER_CONNECTION_STATUSES.CONNECTED,
           accessStatus: CUSTOMER_CONNECTION_ACCESS_STATUSES.VALIDATED,
           lastErrorCode: null,
-          providerMetadata: {
+          providerMetadata: this.providerMetadata({
             credentialReference,
             currencyCode: identity.currencyCode,
             timeZone: identity.timeZone,
-          },
+            advertiserCustomerId: identity.customerId,
+          }),
           updatedAt: this.now(),
         });
         await this.shared.completeOAuthAttempt(callback);
@@ -163,7 +165,7 @@ export class GoogleAdsCustomerOAuthFlow {
             connectionStatus: CUSTOMER_CONNECTION_STATUSES.IDENTITY_MISMATCH,
             accessStatus: CUSTOMER_CONNECTION_ACCESS_STATUSES.IDENTITY_MISMATCH,
             lastErrorCode: error.code,
-            providerMetadata: { credentialReference },
+            providerMetadata: this.providerMetadata({ credentialReference }),
             updatedAt: this.now(),
           });
           await this.shared.releaseOAuthAttempt(callback);
@@ -187,7 +189,7 @@ export class GoogleAdsCustomerOAuthFlow {
           connectionStatus: CUSTOMER_CONNECTION_STATUSES.CONNECTED,
           accessStatus: CUSTOMER_CONNECTION_ACCESS_STATUSES.GOOGLE_ADS_API_ACCESS_PENDING,
           lastErrorCode: error.code,
-          providerMetadata: { credentialReference },
+          providerMetadata: this.providerMetadata({ credentialReference }),
           updatedAt: this.now(),
         });
         await this.shared.completeOAuthAttempt(callback);
@@ -204,6 +206,23 @@ export class GoogleAdsCustomerOAuthFlow {
       await this.recordFailure(callback, error?.code ?? 'GOOGLE_ADS_OAUTH_CALLBACK_FAILED');
       throw error;
     }
+  }
+
+  providerMetadata(input = {}) {
+    return Object.freeze({
+      credentialReference: requireText(input.credentialReference, 'credentialReference'),
+      ...(this.approvedManagerCustomerId
+        ? { managerCustomerId: this.approvedManagerCustomerId }
+        : {}),
+      ...(this.approvedTargetCustomerId
+        ? { approvedAdvertiserCustomerId: this.approvedTargetCustomerId }
+        : {}),
+      ...(input.advertiserCustomerId
+        ? { advertiserCustomerId: normalizeCustomerId(input.advertiserCustomerId, 'advertiserCustomerId') }
+        : {}),
+      ...(input.currencyCode ? { currencyCode: requireCurrency(input.currencyCode) } : {}),
+      ...(input.timeZone ? { timeZone: requireText(input.timeZone, 'timeZone') } : {}),
+    });
   }
 
   async recordFailure(callback, errorCode) {
@@ -270,6 +289,23 @@ function requireText(value, fieldName) {
 function optionalText(value) {
   if (value === null || value === undefined || value === '') return null;
   return String(value).trim() || null;
+}
+
+function normalizeCustomerId(value, fieldName) {
+  const id = requireText(value, fieldName).replaceAll('-', '');
+  if (!/^\d{10}$/u.test(id)) throw new TypeError(`${fieldName} must be a 10-digit customer ID`);
+  return id;
+}
+
+function optionalCustomerId(value) {
+  if (value === null || value === undefined || value === '') return null;
+  return normalizeCustomerId(value, 'customerId');
+}
+
+function requireCurrency(value) {
+  const currency = requireText(value, 'currencyCode').toUpperCase();
+  if (!/^[A-Z]{3}$/u.test(currency)) throw new TypeError('currencyCode must be ISO-4217');
+  return currency;
 }
 
 function maskIdentity(value) {

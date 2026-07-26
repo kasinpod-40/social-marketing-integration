@@ -3,6 +3,15 @@ import {
   verifyGoogleAdsManagerSignedDelivery,
 } from '../../../packages/application/src/google-ads/manager-script-signed-delivery-security.js';
 import {
+  assertGoogleAdsLiveAuthorization,
+} from '../../../packages/application/src/google-ads/google-ads-live-authorization.js';
+import {
+  assembleGoogleAdsLiveRun,
+} from '../../../packages/application/src/google-ads/google-ads-live-run.js';
+import {
+  buildGoogleAdsQueueReference,
+} from '../../../packages/application/src/google-ads/google-ads-queue-reference.js';
+import {
   GOOGLE_ADS_MANAGER_DELIVERY_PATH,
   GOOGLE_ADS_MANAGER_TRANSPORT_LIMITS,
   validateGoogleAdsManagerDeliveryRun,
@@ -11,6 +20,12 @@ import { loadCustomerRuntimeConfig } from '../../../packages/config/src/customer
 import {
   D1GoogleAdsManagerDeliveryStore,
 } from '../../../packages/connectors/src/google-ads/d1-google-ads-manager-delivery-store.js';
+import {
+  D1GoogleAdsLiveAdmissionStore,
+} from '../../../packages/connectors/src/google-ads/d1-google-ads-live-admission-store.js';
+import {
+  D1GoogleAdsCustomerConnectionReadStore,
+} from '../../../packages/connectors/src/google-ads/d1-google-ads-customer-connection-read-store.js';
 import {
   sanitizeOperationalError,
   sanitizeOperationalValue,
@@ -28,12 +43,17 @@ export const GOOGLE_ADS_MANAGER_DELIVERY_ROUTE = Object.freeze({
   path: GOOGLE_ADS_MANAGER_DELIVERY_PATH,
 });
 
-/** สร้าง PREVIEW-only signed ingress; Queue และ Business writer ยังไม่มีใน Phase 2 */
+/** Signed PREVIEW/LIVE ingress with exact OAuth gate and reference-only Queue admission. */
 export function createGoogleAdsManagerDeliveryHttpHandler(dependencies = {}) {
   const now = typeof dependencies.now === 'function' ? dependencies.now : () => Date.now();
   const cryptoImpl = dependencies.cryptoImpl ?? globalThis.crypto;
   const createStore = dependencies.createStore
     ?? ((env) => new D1GoogleAdsManagerDeliveryStore({ db: requireD1(env), now }));
+  const createAdmissionStore = dependencies.createAdmissionStore
+    ?? ((env) => new D1GoogleAdsLiveAdmissionStore({ db: requireD1(env), now }));
+  const createConnectionStore = dependencies.createConnectionStore
+    ?? ((env) => new D1GoogleAdsCustomerConnectionReadStore({ db: requireD1(env) }));
+  const createQueue = dependencies.createQueue ?? ((env) => requireQueue(env));
   const randomUuid = dependencies.randomUuid
     ?? (() => requireRandomUuid(cryptoImpl).randomUUID());
 
@@ -44,11 +64,6 @@ export function createGoogleAdsManagerDeliveryHttpHandler(dependencies = {}) {
         return json({ ok: false, error: 'Route not found' }, {
           status: 404,
           headers: noStoreHeaders(),
-        });
-      }
-      if (readBooleanFlag(env?.MKT_GOOGLE_ADS_BUSINESS_WRITE_ENABLED)) {
-        throw permanentError('Google Ads business writer is not implemented', {
-          code: 'GOOGLE_ADS_DELIVERY_BUSINESS_WRITE_NOT_IMPLEMENTED',
         });
       }
 
@@ -84,11 +99,6 @@ export function createGoogleAdsManagerDeliveryHttpHandler(dependencies = {}) {
         },
       });
       runFingerprint = verified.runFingerprint;
-      if (verified.envelope.mode !== 'PREVIEW') {
-        throw permanentError('Google Ads LIVE delivery is disabled', {
-          code: 'GOOGLE_ADS_DELIVERY_LIVE_DISABLED',
-        });
-      }
 
       const manifestJson = stableSerialize(verified.envelope.manifest);
       const identityFingerprint = await createStableFingerprint(runtime.identity, {
@@ -125,7 +135,7 @@ export function createGoogleAdsManagerDeliveryHttpHandler(dependencies = {}) {
         now: receivedAt,
       });
 
-      if (staged.run.status === 'preview_validated') {
+      if (verified.envelope.mode === 'PREVIEW' && staged.run.status === 'preview_validated') {
         return previewCompleteResponse(staged.run, runFingerprint, 'exact_retry');
       }
       if (staged.run.receivedChunkCount < staged.run.expectedChunkCount) {
@@ -142,22 +152,7 @@ export function createGoogleAdsManagerDeliveryHttpHandler(dependencies = {}) {
         });
       }
 
-      const chunks = await store.listRunChunks(verified.envelope.runId);
-      const envelopes = chunks.map((chunk) => {
-        if (typeof chunk.payloadJson !== 'string') {
-          throw permanentError('Signed delivery payload staging is incomplete', {
-            code: 'GOOGLE_ADS_DELIVERY_RUN_INCOMPLETE',
-          });
-        }
-        try {
-          return JSON.parse(chunk.payloadJson);
-        } catch (cause) {
-          throw transientError('Signed delivery staged payload cannot be decoded', {
-            code: 'GOOGLE_ADS_DELIVERY_D1_PAYLOAD_INVALID',
-            cause,
-          });
-        }
-      });
+      const envelopes = await loadStagedEnvelopes(store, verified.envelope.runId);
       let summary;
       try {
         summary = validateGoogleAdsManagerDeliveryRun(envelopes);
@@ -169,11 +164,96 @@ export function createGoogleAdsManagerDeliveryHttpHandler(dependencies = {}) {
         });
         throw error;
       }
-      const completed = await store.completePreview({
-        runId: verified.envelope.runId,
+
+      if (verified.envelope.mode === 'PREVIEW') {
+        assertPreviewGates(env);
+        const completed = await store.completePreview({
+          runId: verified.envelope.runId,
+          now: receivedAt,
+        });
+        return previewCompleteResponse(completed, runFingerprint, staged.disposition, summary);
+      }
+
+      assertLiveGates(env);
+      const run = assembleGoogleAdsLiveRun(envelopes);
+      const account = run.datasets.account[0];
+      const authorization = await assertGoogleAdsLiveAuthorization({
+        connectionStore: createConnectionStore(env),
+        customerKey: run.customerKey,
+        managerCustomerId: run.managerCustomerId,
+        customerId: run.customerId,
+        currencyCode: account.currencyCode,
+        sourceTimezone: run.sourceTimezone,
+      });
+      const queueReference = buildGoogleAdsQueueReference({
+        runId: run.runId,
+        runStartedAt: Date.parse(run.runStartedAt),
+      });
+      const queueBodyDigest = await createStableFingerprint(queueReference, {
+        digestImpl: cryptoImpl.subtle.digest.bind(cryptoImpl.subtle),
+      });
+      const admissionStore = createAdmissionStore(env);
+      const reserved = await admissionStore.reserve({
+        runId: run.runId,
+        operationId: queueReference.operationId,
+        workKey: queueReference.workKey,
+        generation: queueReference.generation,
+        originalRequestedAt: queueReference.originalRequestedAt,
+        queueBodyDigest,
         now: receivedAt,
       });
-      return previewCompleteResponse(completed, runFingerprint, staged.disposition, summary);
+
+      if (reserved.admission.status === 'completed') {
+        return liveAcceptedResponse({
+          runFingerprint,
+          disposition: 'exact_retry',
+          status: 'completed',
+          httpStatus: 200,
+          summary,
+        });
+      }
+      if (['queued', 'processing'].includes(reserved.admission.status)) {
+        return liveAcceptedResponse({
+          runFingerprint,
+          disposition: 'exact_retry',
+          status: reserved.admission.status,
+          httpStatus: 202,
+          summary,
+        });
+      }
+      if (reserved.admission.status === 'failed_permanent') {
+        throw permanentError('Google Ads LIVE admission is permanently failed', {
+          code: reserved.admission.lastErrorCode ?? 'GOOGLE_ADS_LIVE_ADMISSION_FAILED_PERMANENT',
+        });
+      }
+
+      await admissionStore.markSendPending({ runId: run.runId, now: receivedAt });
+      try {
+        await createQueue(env).send(queueReference);
+      } catch (cause) {
+        await admissionStore.markFailed({
+          runId: run.runId,
+          retryable: true,
+          errorCode: 'GOOGLE_ADS_QUEUE_SEND_FAILED',
+          now: receivedAt,
+        });
+        throw transientError('Google Ads Queue admission send failed', {
+          code: 'GOOGLE_ADS_QUEUE_SEND_FAILED',
+          cause,
+        });
+      }
+      await admissionStore.markQueued({ runId: run.runId, now: receivedAt });
+      return liveAcceptedResponse({
+        runFingerprint,
+        disposition: reserved.disposition,
+        status: 'queued',
+        httpStatus: 202,
+        summary,
+        authorization: {
+          validated: true,
+          lastValidatedAt: authorization.lastValidatedAt,
+        },
+      });
     } catch (error) {
       const operational = sanitizeOperationalError(error);
       console.error(JSON.stringify(sanitizeOperationalValue({
@@ -194,6 +274,23 @@ export function createGoogleAdsManagerDeliveryHttpHandler(dependencies = {}) {
       });
     }
   };
+}
+
+async function loadStagedEnvelopes(store, runId) {
+  const chunks = await store.listRunChunks(runId);
+  return chunks.map((chunk) => {
+    if (typeof chunk.payloadJson !== 'string') {
+      throw permanentError('Signed delivery payload staging is incomplete', {
+        code: 'GOOGLE_ADS_DELIVERY_RUN_INCOMPLETE',
+      });
+    }
+    try { return JSON.parse(chunk.payloadJson); } catch (cause) {
+      throw transientError('Signed delivery staged payload cannot be decoded', {
+        code: 'GOOGLE_ADS_DELIVERY_D1_PAYLOAD_INVALID',
+        cause,
+      });
+    }
+  });
 }
 
 function loadGoogleAdsManagerDeliveryRuntime(env = {}) {
@@ -247,6 +344,37 @@ function loadGoogleAdsManagerDeliveryRuntime(env = {}) {
         : {}),
     }),
   });
+}
+
+function assertPreviewGates(env) {
+  for (const key of [
+    'MKT_GOOGLE_ADS_QUEUE_ADMISSION_ENABLED',
+    'MKT_GOOGLE_ADS_BUSINESS_WRITE_ENABLED',
+    'MKT_GOOGLE_ADS_LARK_WRITE_ENABLED',
+  ]) {
+    if (readBooleanFlag(env?.[key])) {
+      throw permanentError('Google Ads PREVIEW requires every business gate disabled', {
+        code: 'GOOGLE_ADS_PREVIEW_BUSINESS_GATE_ENABLED',
+        details: { key },
+      });
+    }
+  }
+}
+
+function assertLiveGates(env) {
+  const required = [
+    'MKT_CONNECTOR_GOOGLE_ADS_ENABLED',
+    'MKT_GOOGLE_ADS_QUEUE_ADMISSION_ENABLED',
+    'MKT_GOOGLE_ADS_BUSINESS_WRITE_ENABLED',
+    'MKT_GOOGLE_ADS_LARK_WRITE_ENABLED',
+  ];
+  const disabled = required.filter((key) => !readBooleanFlag(env?.[key]));
+  if (disabled.length > 0) {
+    throw permanentError('Google Ads LIVE delivery gates are disabled', {
+      code: 'GOOGLE_ADS_LIVE_GATES_DISABLED',
+      details: { disabled },
+    });
+  }
 }
 
 async function readBoundedRequestBody(request, maximumBytes) {
@@ -309,19 +437,36 @@ function previewCompleteResponse(run, runFingerprint, disposition, summary = nul
   });
 }
 
+function liveAcceptedResponse(input) {
+  return json({
+    ok: true,
+    status: input.status,
+    disposition: input.disposition,
+    runFingerprint: input.runFingerprint,
+    datasets: input.summary.datasets,
+    receivedChunks: input.summary.expectedChunkCount,
+    receivedRows: input.summary.expectedRowCount,
+    ...(input.authorization ? { authorization: input.authorization } : {}),
+  }, {
+    status: input.httpStatus,
+    headers: noStoreHeaders(),
+  });
+}
+
 function statusForDeliveryError(code) {
   if (code === 'GOOGLE_ADS_DELIVERY_NONCE_REPLAYED') return 409;
-  if (code?.includes('_CONFLICT') || code?.endsWith('_RUN_INCOMPLETE')) return 409;
+  if (code?.includes('_CONFLICT') || code?.includes('_MISMATCH')
+    || code?.endsWith('_RUN_INCOMPLETE') || code?.endsWith('_REQUIRED')) return 409;
   if (code === 'GOOGLE_ADS_DELIVERY_BODY_TOO_LARGE') return 413;
   if (code === 'GOOGLE_ADS_DELIVERY_SIGNATURE_INVALID') return 401;
-  if (code === 'GOOGLE_ADS_DELIVERY_LIVE_DISABLED'
-    || code === 'GOOGLE_ADS_DELIVERY_BUSINESS_WRITE_NOT_IMPLEMENTED') return 403;
-  if (code?.includes('_D1_')) return 503;
+  if (code?.includes('_GATES_DISABLED') || code?.includes('_GATE_ENABLED')
+    || code?.includes('_SCOPE_INSUFFICIENT') || code?.includes('_CREDENTIAL_UNAVAILABLE')) return 403;
+  if (code?.includes('_D1_') || code?.includes('_READ_FAILED') || code?.includes('_QUEUE_SEND_FAILED')) return 503;
   return 400;
 }
 
 function boundedErrorCode(code) {
-  return typeof code === 'string' && /^GOOGLE_ADS_DELIVERY_[A-Z0-9_]{1,96}$/u.test(code)
+  return typeof code === 'string' && /^GOOGLE_ADS_[A-Z0-9_]{1,120}$/u.test(code)
     ? code
     : 'GOOGLE_ADS_DELIVERY_REJECTED';
 }
@@ -358,6 +503,16 @@ function requireD1(env) {
     });
   }
   return db;
+}
+
+function requireQueue(env) {
+  const queue = env?.MKT_SYNC_QUEUE;
+  if (typeof queue?.send !== 'function') {
+    throw permanentError('Google Ads Queue binding is unavailable', {
+      code: 'GOOGLE_ADS_QUEUE_BINDING_UNAVAILABLE',
+    });
+  }
+  return queue;
 }
 
 function requireRandomUuid(value) {
