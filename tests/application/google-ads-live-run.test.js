@@ -264,13 +264,16 @@ test('Google campaign channels map to approved Canonical Ads options', () => {
     ['MULTI_CHANNEL', 'APP_CAMPAIGN', 'google_app_ads'],
     ['UNKNOWN', null, 'google_other_ads'],
   ];
-  const campaigns = channelCases.map(([channel, subtype], index) => ({
-    ...googleAdsDatasetRows('campaigns')[0],
-    campaignId: String(index + 100),
-    advertisingChannelType: channel,
-    advertisingChannelSubType: subtype,
-  }));
+  const campaigns = [
+    googleAdsDatasetRows('campaigns')[0],
+    ...channelCases.map(([channel, subtype], index) => ({
+      ...googleAdsDatasetRows('campaigns')[0],
+      campaignId: String(index + 100),
+      advertisingChannelType: channel,
+      advertisingChannelSubType: subtype,
+    })),
+  ];
   const run = assembleGoogleAdsLiveRun(liveEnvelopes({ campaigns }));
   const rows = buildGoogleAdsLarkWriteSet({ run, syncRunId: 'sync-google-ads-1' }).canonical.campaigns;
-  assert.deepEqual(rows.map((row) => row.ad_channel), channelCases.map((entry) => entry[2]));
+  assert.deepEqual(rows.slice(1).map((row) => row.ad_channel), channelCases.map((entry) => entry[2]));
 });
