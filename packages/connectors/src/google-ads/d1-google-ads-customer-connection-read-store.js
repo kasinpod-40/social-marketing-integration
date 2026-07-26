@@ -1,17 +1,13 @@
 import { transientError } from '../../../shared/src/errors/runtime-error.js';
 
-/** Read-only bridge from encrypted Customer Connection state to Google Ads LIVE admission. */
+/** Read-only bridge from encrypted Customer Connection state to Manager Script LIVE admission. */
 export class D1GoogleAdsCustomerConnectionReadStore {
   constructor(input = {}) {
     this.db = requireD1(input.db);
   }
 
-  async findValidatedConnection(input = {}) {
+  async findScriptAuthorizedConnection(input = {}) {
     const customerKey = requireText(input.customerKey, 'customerKey');
-    const advertiserCustomerId = normalizeCustomerId(
-      input.advertiserCustomerId,
-      'advertiserCustomerId',
-    );
     let row;
     try {
       row = await this.db.prepare(`
@@ -36,12 +32,11 @@ export class D1GoogleAdsCustomerConnectionReadStore {
         WHERE c.customer_key = ?
           AND c.connector_key = 'google_ads'
           AND c.connection_status = 'connected'
-          AND c.access_status = 'validated'
-          AND REPLACE(c.external_account_id, '-', '') = ?
+          AND c.access_status IN ('validated', 'google_ads_api_access_pending')
           AND c.credential_reference = ec.credential_reference
         ORDER BY c.updated_at DESC, c.id DESC
         LIMIT 1
-      `).bind(customerKey, advertiserCustomerId).first();
+      `).bind(customerKey).first();
     } catch (cause) {
       throw transientError('Google Ads customer connection gate read failed', {
         code: 'GOOGLE_ADS_CONNECTION_GATE_READ_FAILED',
@@ -57,7 +52,7 @@ function mapConnection(row) {
     connectionId: row.id,
     customerKey: row.customer_key,
     connectorKey: row.connector_key,
-    advertiserCustomerId: normalizeCustomerId(row.external_account_id, 'externalAccountId'),
+    advertiserCustomerId: optionalCustomerId(row.external_account_id),
     connectionStatus: row.connection_status,
     accessStatus: row.access_status,
     grantedScopes: parseArray(row.granted_scopes_json),
@@ -101,9 +96,10 @@ function requireText(value, fieldName) {
   return value.trim();
 }
 
-function normalizeCustomerId(value, fieldName) {
-  const id = requireText(value, fieldName).replaceAll('-', '');
-  if (!/^\d{10}$/u.test(id)) throw new TypeError(`${fieldName} must be a 10-digit customer ID`);
+function optionalCustomerId(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const id = String(value).trim().replaceAll('-', '');
+  if (!/^\d{10}$/u.test(id)) throw new TypeError('externalAccountId must be a 10-digit customer ID');
   return id;
 }
 

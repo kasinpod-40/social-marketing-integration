@@ -74,7 +74,7 @@ function deliveryEnvelope(options) {
   });
 }
 
-test('validated LIVE run queues one exact reference and exact retry does not send again', async () => {
+test('API-pending consent allows validated LIVE Script run to queue one exact reference', async () => {
   const migration = await readFile(
     new URL('../../migrations/0013_google_ads_signed_delivery_transport.sql', import.meta.url),
     'utf8',
@@ -92,24 +92,23 @@ test('validated LIVE run queues one exact reference and exact retry does not sen
     }),
     createAdmissionStore: () => admissionStore,
     createConnectionStore: () => ({
-      async findValidatedConnection() {
+      async findScriptAuthorizedConnection() {
         return {
-          connectionId: 'connection-validated',
+          connectionId: 'connection-script-authorized',
           customerKey: 'chemistry_k',
           connectorKey: 'google_ads',
-          advertiserCustomerId: '2222222222',
+          advertiserCustomerId: null,
           connectionStatus: 'connected',
-          accessStatus: 'validated',
+          accessStatus: 'google_ads_api_access_pending',
           grantedScopes: ['https://www.googleapis.com/auth/adwords'],
           credentialReference: 'credential-reference',
           activeCredentialReference: 'credential-reference',
           credentialKeyVersion: 'v1',
           providerMetadata: {
             managerCustomerId: '1111111111',
-            currencyCode: 'THB',
-            timeZone: 'Asia/Bangkok',
+            approvedAdvertiserCustomerId: '2222222222',
           },
-          lastValidatedAt: GOOGLE_ADS_DELIVERY_FIXTURE_NOW - 1_000,
+          lastValidatedAt: null,
         };
       },
     }),
@@ -165,7 +164,10 @@ test('validated LIVE run queues one exact reference and exact retry does not sen
       assert.equal(finalResponse.status, 202);
     }
 
-    assert.equal((await finalResponse.json()).status, 'queued');
+    const finalBody = await finalResponse.json();
+    assert.equal(finalBody.status, 'queued');
+    assert.equal(finalBody.authorization.validated, true);
+    assert.equal(finalBody.authorization.lastValidatedAt, null);
     assert.equal(queued.length, 1);
     assert.deepEqual(Object.keys(queued[0]).sort(), [
       'generation', 'operationId', 'originalRequestedAt', 'requestedAt',

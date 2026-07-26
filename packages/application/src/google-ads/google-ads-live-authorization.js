@@ -1,29 +1,40 @@
 import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 
 const ADWORDS_SCOPE = 'https://www.googleapis.com/auth/adwords';
+const SCRIPT_AUTHORIZED_ACCESS_STATUSES = Object.freeze(new Set([
+  'validated',
+  'google_ads_api_access_pending',
+]));
 
-/** Fail closed unless encrypted Customer Connection state matches the signed source identity exactly. */
+/**
+ * Fail closed unless Customer Connection consent, encrypted credential and the
+ * approved Manager Script identities match the signed source exactly.
+ *
+ * Google Ads API developer-token approval is intentionally not a prerequisite
+ * for Manager Script signed delivery. The Script payload remains protected by
+ * the existing signature, replay, runtime-identity and manifest validation.
+ */
 export async function assertGoogleAdsLiveAuthorization(input = {}) {
-  const store = requireMethod(input.connectionStore, 'findValidatedConnection');
+  const store = requireMethod(input.connectionStore, 'findScriptAuthorizedConnection');
   const expected = normalizeExpectedIdentity(input);
-  const connection = await store.findValidatedConnection({
+  const connection = await store.findScriptAuthorizedConnection({
     customerKey: expected.customerKey,
-    advertiserCustomerId: expected.customerId,
   });
   if (!connection) {
-    throw permanentError('Validated Google Ads customer connection is required', {
+    throw permanentError('Script-authorized Google Ads customer connection is required', {
       code: 'GOOGLE_ADS_CUSTOMER_CONNECTION_REQUIRED',
     });
   }
+
   if (connection.customerKey !== expected.customerKey
     || connection.connectorKey !== 'google_ads'
     || connection.connectionStatus !== 'connected'
-    || connection.accessStatus !== 'validated'
-    || connection.advertiserCustomerId !== expected.customerId) {
-    throw permanentError('Google Ads customer connection identity is inconsistent', {
+    || !SCRIPT_AUTHORIZED_ACCESS_STATUSES.has(connection.accessStatus)) {
+    throw permanentError('Google Ads customer connection state is inconsistent', {
       code: 'GOOGLE_ADS_CUSTOMER_CONNECTION_IDENTITY_MISMATCH',
     });
   }
+
   if (!connection.grantedScopes.includes(ADWORDS_SCOPE)) {
     throw permanentError('Google Ads customer connection scope is insufficient', {
       code: 'GOOGLE_ADS_CUSTOMER_CONNECTION_SCOPE_INSUFFICIENT',
@@ -36,21 +47,39 @@ export async function assertGoogleAdsLiveAuthorization(input = {}) {
     });
   }
 
-  const currencyCode = optionalUpper(connection.providerMetadata?.currencyCode);
-  const timeZone = optionalText(connection.providerMetadata?.timeZone);
-  const managerCustomerId = optionalCustomerId(connection.providerMetadata?.managerCustomerId);
-  if (currencyCode !== expected.currencyCode || timeZone !== expected.sourceTimezone) {
+  const metadata = connection.providerMetadata ?? {};
+  const approvedAdvertiserCustomerId = optionalCustomerId(metadata.approvedAdvertiserCustomerId);
+  const validatedAdvertiserCustomerId = optionalCustomerId(
+    connection.advertiserCustomerId ?? metadata.advertiserCustomerId,
+  );
+  const advertiserMatches = connection.accessStatus === 'google_ads_api_access_pending'
+    ? approvedAdvertiserCustomerId === expected.customerId
+    : approvedAdvertiserCustomerId === expected.customerId
+      || validatedAdvertiserCustomerId === expected.customerId;
+  if (!advertiserMatches
+    || (validatedAdvertiserCustomerId && validatedAdvertiserCustomerId !== expected.customerId)) {
+    throw permanentError('Google Ads approved advertiser identity is inconsistent', {
+      code: 'GOOGLE_ADS_CUSTOMER_CONNECTION_IDENTITY_MISMATCH',
+    });
+  }
+
+  const managerCustomerId = optionalCustomerId(metadata.managerCustomerId);
+  if (managerCustomerId !== expected.managerCustomerId) {
+    throw permanentError('Google Ads customer connection manager identity is inconsistent', {
+      code: 'GOOGLE_ADS_CUSTOMER_CONNECTION_MANAGER_MISMATCH',
+    });
+  }
+
+  const currencyCode = optionalUpper(metadata.currencyCode);
+  const timeZone = optionalText(metadata.timeZone);
+  if ((currencyCode && currencyCode !== expected.currencyCode)
+    || (timeZone && timeZone !== expected.sourceTimezone)) {
     throw permanentError('Google Ads customer connection account metadata is inconsistent', {
       code: 'GOOGLE_ADS_CUSTOMER_CONNECTION_METADATA_MISMATCH',
       details: {
-        currencyMatches: currencyCode === expected.currencyCode,
-        timezoneMatches: timeZone === expected.sourceTimezone,
+        currencyMatches: !currencyCode || currencyCode === expected.currencyCode,
+        timezoneMatches: !timeZone || timeZone === expected.sourceTimezone,
       },
-    });
-  }
-  if (managerCustomerId && managerCustomerId !== expected.managerCustomerId) {
-    throw permanentError('Google Ads customer connection manager identity is inconsistent', {
-      code: 'GOOGLE_ADS_CUSTOMER_CONNECTION_MANAGER_MISMATCH',
     });
   }
 
@@ -61,8 +90,11 @@ export async function assertGoogleAdsLiveAuthorization(input = {}) {
     customerKey: expected.customerKey,
     managerCustomerId: expected.managerCustomerId,
     advertiserCustomerId: expected.customerId,
-    currencyCode,
-    sourceTimezone: timeZone,
+    currencyCode: expected.currencyCode,
+    sourceTimezone: expected.sourceTimezone,
+    accessStatus: connection.accessStatus,
+    apiAccessValidated: connection.accessStatus === 'validated',
+    authorizationSource: 'manager_script_signed_delivery',
     lastValidatedAt: connection.lastValidatedAt,
   });
 }
@@ -95,7 +127,7 @@ function requireCustomerId(value, fieldName) {
 
 function optionalCustomerId(value) {
   if (value === null || value === undefined || value === '') return null;
-  return requireCustomerId(String(value), 'managerCustomerId');
+  return requireCustomerId(String(value), 'customerId');
 }
 
 function requireCurrency(value) {
