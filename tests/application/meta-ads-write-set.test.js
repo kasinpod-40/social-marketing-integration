@@ -1,0 +1,113 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { buildMetaAdsWriteSet } from '../../packages/application/src/use-cases/build-meta-ads-write-set.js';
+
+const FETCHED_AT = Date.parse('2026-07-24T08:05:00Z');
+
+function baseInput() {
+  return {
+    accountId: '987650001',
+    accountKey: 'chemistry_k_meta_ads',
+    customerKey: 'chemistry_k',
+    syncRunId: 'sync_ads_1',
+    operationId: 'operation_ads_1',
+    fetchedAt: FETCHED_AT,
+    accountTimezone: 'Asia/Bangkok',
+    currency: 'THB',
+    accountResource: {
+      id: 'act_987650001',
+      name: 'Fixture Ad Account',
+      account_status: 1,
+      currency: 'THB',
+      timezone_name: 'Asia/Bangkok',
+    },
+  };
+}
+
+test('builds Meta Ads D1 breakdown facts and one bounded Canonical daily aggregate', async () => {
+  const writeSet = await buildMetaAdsWriteSet({
+    ...baseInput(),
+    campaigns: [{
+      id: 'campaign_fixture_001',
+      name: 'Fixture Campaign',
+      objective: 'OUTCOME_AWARENESS',
+      effective_status: 'ACTIVE',
+      updated_time: '2026-07-24T08:00:00+0000',
+    }],
+    adSets: [{
+      id: 'adset_fixture_001',
+      campaign_id: 'campaign_fixture_001',
+      name: 'Fixture Ad Set',
+      effective_status: 'ACTIVE',
+    }],
+    ads: [{
+      id: 'ad_fixture_001',
+      campaign_id: 'campaign_fixture_001',
+      adset_id: 'adset_fixture_001',
+      name: 'Fixture Ad',
+      effective_status: 'ACTIVE',
+      creative: { id: 'creative_fixture_001' },
+    }],
+    creatives: [{ id: 'creative_fixture_001', name: 'Fixture Creative' }],
+    dailyInsights: [
+      {
+        account_id: '987650001',
+        account_currency: 'THB',
+        campaign_id: 'campaign_fixture_001',
+        adset_id: 'adset_fixture_001',
+        ad_id: 'ad_fixture_001',
+        date_start: '2026-07-23',
+        date_stop: '2026-07-23',
+        publisher_platform: 'facebook',
+        spend: '10.000000',
+        impressions: '100',
+        reach: '80',
+        clicks: '5',
+      },
+      {
+        account_id: '987650001',
+        account_currency: 'THB',
+        campaign_id: 'campaign_fixture_001',
+        adset_id: 'adset_fixture_001',
+        ad_id: 'ad_fixture_001',
+        date_start: '2026-07-23',
+        date_stop: '2026-07-23',
+        publisher_platform: 'instagram',
+        spend: '20.250001',
+        impressions: '200',
+        reach: '150',
+        clicks: '10',
+      },
+    ],
+  });
+
+  assert.equal(writeSet.d1.adsDailyFacts.length, 2);
+  assert.notEqual(writeSet.d1.adsDailyFacts[0].ads_fact_key, writeSet.d1.adsDailyFacts[1].ads_fact_key);
+  assert.equal(writeSet.canonical.adsDaily.length, 1);
+  assert.equal(writeSet.canonical.adsDaily[0].spend_micros, 30_250_001);
+  assert.equal(writeSet.canonical.adsDaily[0].impressions, 300);
+  assert.equal(Object.hasOwn(writeSet.canonical.adsDaily[0], 'ad_channel'), false);
+  assert.equal(Object.hasOwn(writeSet.canonical.adsDaily[0], 'reach'), false);
+  assert.equal(writeSet.reconciliation.campaignsStatus, 'complete');
+  assert.equal(writeSet.reconciliation.spendStatus, 'revisable');
+});
+
+test('empty Meta Ads inventory and spend are no_data_confirmed, not failure', async () => {
+  const writeSet = await buildMetaAdsWriteSet({
+    ...baseInput(),
+    campaigns: [],
+    adSets: [],
+    ads: [],
+    creatives: [],
+    dailyInsights: [],
+  });
+
+  assert.equal(writeSet.canonical.adsAccounts.length, 1);
+  assert.equal(writeSet.canonical.adsCampaigns.length, 0);
+  assert.equal(writeSet.canonical.adsDaily.length, 0);
+  assert.equal(writeSet.reconciliation.campaignsStatus, 'no_data_confirmed');
+  assert.equal(writeSet.reconciliation.spendStatus, 'no_data_confirmed');
+  assert.ok(writeSet.d1.coverageRuns.some((row) => (
+    row.dataset_key === 'meta_ads.performance.daily' && row.status === 'no_data_confirmed'
+  )));
+});
