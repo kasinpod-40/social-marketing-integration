@@ -54,7 +54,7 @@ export class D1TikTokReportRequestStore {
   }
 
   async markProcessing(input = {}) {
-    return this.#transition(input.requestId, ['pending', 'failed_retryable'], 'processing', {
+    return this.#transition(input.requestId, ['pending', 'processing', 'failed_retryable'], 'processing', {
       started_at: safeTimestamp(input.startedAt ?? this.now(), 'startedAt'),
       error_code: null,
     });
