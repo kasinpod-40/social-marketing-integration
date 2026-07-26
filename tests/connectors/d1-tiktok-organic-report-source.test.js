@@ -29,7 +29,7 @@ function makeObservation(id, date, observedAt, overrides = {}) {
   };
 }
 
-function buildD1() {
+function buildD1(options = {}) {
   const states = Array.from({ length: TOTAL }, (_, index) => {
     const id = index + 1;
     return {
@@ -41,6 +41,12 @@ function buildD1() {
       published_at: Date.parse('2026-01-01T00:00:00Z'),
     };
   });
+  const coverageEntities = Array.from({ length: TOTAL }, (_, index) => ({
+    external_entity_id: String(index + 1),
+    observation_status: options.uncoveredId === String(index + 1) ? 'failed' : 'observed',
+    source_revision: 'watermark-latest',
+    observed_at: 30,
+  }));
   const byDate = new Map([
     ['2026-07-10', Array.from({ length: TOTAL }, (_, index) => {
       const id = index + 1;
@@ -65,6 +71,7 @@ function buildD1() {
           return {
             async all() {
               if (sql.includes('FROM organic_content_state')) return { results: states };
+              if (sql.includes('FROM data_coverage_entities')) return { results: coverageEntities };
               if (sql.includes('ROW_NUMBER() OVER')) {
                 const boundary = bindings[3];
                 if (sql.includes('metric_date < ?')) return { results: byDate.get('2026-06-26') };
@@ -110,6 +117,8 @@ test('D1 TikTok report source supports more than 800 identities with comparison 
   assert.equal(result.readSummary.externalContentIds, TOTAL);
   assert.equal(result.readSummary.dailyQueries, 3);
   assert.equal(result.readSummary.coverageStatus, 'complete');
+  assert.equal(result.readSummary.coverageEntities, TOTAL);
+  assert.equal(result.readSummary.uncoveredContentCount, 0);
   assert.equal(result.readSummary.sourceWatermark, 'watermark-latest');
   assert.deepEqual(
     [...new Set(result.dailySnapshots.filter((row) => row.externalContentId === '1').map((row) => row.metricDate))],
@@ -144,6 +153,19 @@ test('D1 report source preserves null, observed zero and negative corrections', 
   const corrected = calculated.contentRows.find((row) => row.content.externalContentId === '1');
   assert.equal(corrected.periodViews, -5);
   assert.equal(corrected.performanceStatus, 'corrected_down');
+});
+
+test('D1 report source exposes uncovered current identities', async () => {
+  const source = new D1TikTokOrganicReportSource({ db: buildD1({ uncoveredId: '7' }) });
+  const result = await source.load({
+    customerKey: 'chemistry_k',
+    accountKey: 'chemistry_k',
+    periodStart: '2026-07-04',
+    periodEnd: '2026-07-10',
+    maxContentRecords: 2_000,
+  });
+  assert.equal(result.readSummary.uncoveredContentCount, 1);
+  assert.deepEqual(result.readSummary.uncoveredContentIds, ['7']);
 });
 
 test('D1 TikTok report source fails closed at its configured bound', async () => {
