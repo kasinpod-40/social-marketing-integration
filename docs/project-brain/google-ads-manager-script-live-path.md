@@ -168,16 +168,18 @@ The merged hotfix:
 No Lark Schema/View/Formula change is authorized for these incidents. The applied Canonical Ads v2
 schema remains authoritative.
 
-## Active key-field hotfix
+## Merged key-field routing correction
 
 ```text
-branch                     work/google-ads-lark-keyfield-contract-hotfix
-pull request               #63 / DRAFT
+pull request               #63 / MERGED
+merge commit               23a40b9f1c1e85838d9648a32deb2db2944b2604
 reviewed source head       a4549d5fffa0bdcb8050f8a7db840e0fb9c18df8
-branch verification        PASS / RUN_510
+final branch head          e877d217970bffa6ee65bafb13538a80649f6825
+source verification        PASS / RUN_510
+final docs verification    PASS / RUN_513
 ```
 
-PR `#63`:
+The merged correction:
 
 1. changes Campaign routing to `ads_campaign_key`;
 2. changes Ad Group routing to `ads_ad_group_key`;
@@ -190,8 +192,6 @@ PR `#63`:
    continuations or reconciliation.
 
 ## Verification evidence
-
-Branch Verification run `#510` passed:
 
 ```text
 syntax / architecture / hygiene    PASS
@@ -213,7 +213,7 @@ Before another redrive:
 1. restore the currently deployed recovery Worker to the safe `wrangler.sync.jsonc` configuration;
 2. verify Google Ads Connector, Queue admission, D1/Lark writes and DLQ redrive are all false;
 3. retrieve the newest open Google Ads terminal DLQ ID from Remote D1;
-4. review and merge PR `#63`;
+4. pull clean merged `main` containing `23a40b9f1c1e85838d9648a32deb2db2944b2604`;
 5. deploy the merged Worker through a new bounded recovery window;
 6. redrive only the newly verified third DLQ once;
 7. verify destination preflight, D1, Lark and final reconciliation;
