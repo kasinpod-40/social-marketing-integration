@@ -21,15 +21,28 @@ export class D1TikTokOrganicReportSource {
     const periodStart = requireDate(input.periodStart, 'periodStart');
     const periodEnd = requireDate(input.periodEnd, 'periodEnd');
     const compareStart = optionalDate(input.compareStart, 'compareStart');
+    const compareEnd = optionalDate(input.compareEnd, 'compareEnd');
     const earliestStart = compareStart ?? periodStart;
     if (periodStart > periodEnd) throw invalidQuery('periodStart cannot be after periodEnd');
+    if ((compareStart === null) !== (compareEnd === null)) {
+      throw invalidQuery('compareStart and compareEnd must be provided together');
+    }
     const maxContentRecords = boundedPositiveInteger(
       input.maxContentRecords ?? DEFAULT_MAX_CONTENT,
       'maxContentRecords',
       MAX_CONTENT,
     );
 
-    const [states, currentRows, baselineRows, coverage] = await Promise.all([
+    const comparePromise = compareEnd
+      ? this.#all(latestObservationSql('<='), [
+        customerKey,
+        PLATFORM,
+        accountKey,
+        compareEnd,
+        maxContentRecords + 1,
+      ], 'D1_TIKTOK_REPORT_OBSERVATION_READ_FAILED')
+      : Promise.resolve([]);
+    const [states, currentRows, compareRows, baselineRows, coverage] = await Promise.all([
       this.#all(`
         SELECT s.*
         FROM organic_content_state s
@@ -48,6 +61,7 @@ export class D1TikTokOrganicReportSource {
         periodEnd,
         maxContentRecords + 1,
       ], 'D1_TIKTOK_REPORT_OBSERVATION_READ_FAILED'),
+      comparePromise,
       this.#all(latestObservationSql('<'), [
         customerKey,
         PLATFORM,
@@ -67,6 +81,7 @@ export class D1TikTokOrganicReportSource {
 
     assertWithinLimit(states.length, maxContentRecords, 'content state rows');
     assertWithinLimit(currentRows.length, maxContentRecords, 'current observation rows');
+    assertWithinLimit(compareRows.length, maxContentRecords, 'comparison observation rows');
     assertWithinLimit(baselineRows.length, maxContentRecords, 'baseline observation rows');
 
     const stateByKey = new Map(states.map((row) => [row.content_key, row]));
@@ -77,7 +92,7 @@ export class D1TikTokOrganicReportSource {
       timeZone,
     ));
     const observations = new Map();
-    for (const row of [...currentRows, ...baselineRows]) {
+    for (const row of [...currentRows, ...compareRows, ...baselineRows]) {
       observations.set(row.observation_key, buildSnapshot(row, accountKey));
     }
     const dailySnapshots = [...observations.values()].sort((left, right) => (
@@ -96,8 +111,12 @@ export class D1TikTokOrganicReportSource {
         dailySnapshotRecords: dailySnapshots.length,
         externalContentIds: contents.length,
         contentQueries: 1,
-        dailyQueries: 2,
-        rowsFetched: states.length + currentRows.length + baselineRows.length + (coverage ? 1 : 0),
+        dailyQueries: compareEnd ? 3 : 2,
+        rowsFetched: states.length
+          + currentRows.length
+          + compareRows.length
+          + baselineRows.length
+          + (coverage ? 1 : 0),
         fallbackRowsScanned: 0,
         coverageStatus: coverage?.status ?? 'not_observed',
         coverageRunId: coverage?.coverage_run_id ?? null,
