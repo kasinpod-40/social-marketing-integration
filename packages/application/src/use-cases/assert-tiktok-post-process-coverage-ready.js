@@ -4,18 +4,21 @@ import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 export async function assertTikTokPostProcessCoverageReady(input = {}) {
   const gateway = requireGateway(input.gateway);
   const coverageRunId = requireText(input.coverageRunId, 'coverageRunId');
+  const expectedSourceWatermark = optionalText(input.expectedSourceWatermark);
   const coverage = await gateway.readCoverageRun(coverageRunId);
   const expectedEntities = nullableInteger(coverage?.expected_entities);
   const observedEntities = nullableInteger(coverage?.observed_entities);
   const expectedRows = nullableInteger(coverage?.expected_rows);
   const observedRows = nullableInteger(coverage?.observed_rows);
   const failedRows = nullableInteger(coverage?.failed_rows) ?? 0;
+  const sourceWatermark = optionalText(coverage?.source_watermark);
   const ready = coverage?.status === 'complete'
     && coverage?.completed_at !== null
     && coverage?.completed_at !== undefined
     && failedRows === 0
     && (expectedEntities === null || expectedEntities === observedEntities)
-    && (expectedRows === null || expectedRows === observedRows);
+    && (expectedRows === null || expectedRows === observedRows)
+    && (expectedSourceWatermark === null || sourceWatermark === expectedSourceWatermark);
   if (!ready) {
     throw permanentError('TikTok post-processing Report requires completed Coverage', {
       code: 'TIKTOK_POST_PROCESS_COVERAGE_INCOMPLETE',
@@ -27,6 +30,8 @@ export async function assertTikTokPostProcessCoverageReady(input = {}) {
         expectedRows,
         observedRows,
         failedRows,
+        sourceWatermark,
+        expectedSourceWatermark,
       },
     });
   }
@@ -38,7 +43,7 @@ export async function assertTikTokPostProcessCoverageReady(input = {}) {
     expectedRows,
     observedRows,
     failedRows,
-    sourceWatermark: coverage.source_watermark ?? null,
+    sourceWatermark,
     completedAt: Number(coverage.completed_at),
   });
 }
@@ -55,6 +60,10 @@ function requireText(value, fieldName) {
     throw new TypeError(`TikTok post-processing Coverage gate requires ${fieldName}`);
   }
   return value.trim();
+}
+
+function optionalText(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
 function nullableInteger(value) {
