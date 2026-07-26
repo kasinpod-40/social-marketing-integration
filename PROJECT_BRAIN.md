@@ -4,7 +4,13 @@
 
 ระบบรวมข้อมูล Social Organic, Paid Ads, Commerce และ Conversation เข้าสู่ Lark Base เพื่อทำ Dashboard, Reporting, AI Summary, Insight, Alert และ Notification โดยใช้ Cloudflare Workers, D1, Queues และ JavaScript ES Modules
 
-ไฟล์นี้เก็บ **Current verified repository/runtime state** เท่านั้น ให้ยึด `AGENTS.md` และ `docs/current-task.md` ก่อนเสมอ รายละเอียดย้อนหลังของ Root Project Brain ก่อนงานนี้ถูกเก็บแบบ immutable ที่ `docs/archive/PROJECT_BRAIN-before-tiktok-post-lark-parity-2026-07-26.md`.
+ไฟล์นี้เก็บ **Current verified repository/runtime state** เท่านั้น ให้ยึด `AGENTS.md` และ `docs/current-task.md` ก่อนเสมอ
+
+Historical Root Project Brain ก่อน TikTok post-Lark implementation ถูกเก็บแบบ immutable ที่:
+
+```text
+docs/archive/PROJECT_BRAIN-before-tiktok-post-lark-parity-2026-07-26.md
+```
 
 ## Current verified repository state — 2026-07-26
 
@@ -12,23 +18,21 @@
 Integration Workspace                         active
 Technical environment                         development
 Runtime profile                               integration_workspace
-Current task                                  TikTok Organic post-Lark D1 parity
-Task status                                   implementation complete / review pending
-Draft PR                                      #65
-Branch                                        agent/tiktok-organic-post-lark-d1-parity
-Base main                                     e9275b6fbd4c28cf0290434cc4a449373e2e2bf9
-Code-verified head                            e3c00b93ea95b4a4e564f09cafacc40954b30593
-Branch Verification                          #517 PASS
+TikTok post-Lark implementation               merged via PR #65
+TikTok merge commit                           acb0b76bb3be936319e0e8bed4849592c96761b5
+Reviewed PR head                              5d596d78753f29284667853c46fe87865701ff7e
+Final Branch Verification                    #522 PASS
 Migration 0016                                source only / not applied remotely
 Worker deployment                            not run
 Queue send / DLQ redrive                     none
 Remote D1 / Lark mutation                    none
 Schedules                                     disabled
+Retention/delete                              blocked
 Production                                    blocked
 Google Ads                                    LIVE UAT complete / safely closed
 ```
 
-## TikTok Organic identity and source
+## TikTok Organic identity and protected source
 
 ```text
 customerKey=chemistry_k
@@ -37,9 +41,9 @@ sourceHandle=chemistry_k
 source=lark_native_tiktok_for_creator
 ```
 
-`RAW_TikTok_Creator_Videos` is a protected Lark Native source. The Worker may read it but must not mutate its Table, Fields, Views, Formula, Filter or Records.
+`RAW_TikTok_Creator_Videos` is a protected Lark Native source. Runtime may read it but must not mutate its Table, Fields, Views, Formula, Filter or Records.
 
-Retained last verified Live facts remain:
+Retained last verified Live facts:
 
 ```text
 RAW_TikTok_Creator_Videos             approximately 2021
@@ -51,9 +55,9 @@ MKT_Content                           22 at last verified audit
 MKT_Content_Daily                     208 at last verified audit
 ```
 
-These counts are retained evidence, not a new freshness claim. Any new Live count requires the guarded read-only audit.
+These counts are historical evidence, not a new freshness claim. New Live facts require the guarded read-only audit.
 
-## TikTok post-Lark architecture
+## Merged TikTok post-Lark architecture
 
 ```text
 Lark Native TikTok sync approximately 07:00 Asia/Bangkok
@@ -75,24 +79,25 @@ Lark Native TikTok sync approximately 07:00 Asia/Bangkok
 
 Scheduled `metricDate` is the previous completed local day. The scheduler no longer emits a blind TikTok Business sync and rejects conflicting independent/post-processing Daily Report producers.
 
-No second TikTok connector, Reliability stack, Queue/DLQ framework, D1 history writer, Canonical writer or Report engine was created.
+No second TikTok connector, Reliability stack, Queue/DLQ framework, D1 history writer, Canonical writer, Lark sync engine or Report formula engine was created.
 
-## Repository implementation result
+## Merged implementation capabilities
 
-Draft PR `#65` adds:
+PR `#65` added:
 
 - deterministic protected-RAW watermark probing and settling;
-- additive `tiktok_source_admissions` Migration 0016;
+- exact Chemistry K identity validation;
+- additive `tiktok_source_admissions` Migration `0016`;
 - same-watermark idempotent admission and stable Work identity;
 - exact staged-watermark verification before Business writes;
 - D1 Organic Report history over State/Observation/Coverage with more than 800 identities;
-- null, observed-zero and correction semantics;
+- missing `null`, observed-zero and correction semantics;
 - Lark/D1 shadow parity and fail-closed D1-primary gate;
 - Coverage-gated post-processing Report admission;
 - guarded GET-only operator audit at `/operator/tiktok/post-lark-audit`;
 - optional deterministic Report materialization preparation.
 
-Branch Verification `#517` passed:
+Final Branch Verification `#522` passed:
 
 ```text
 Focused staged TikTok tests          4 / 4
@@ -117,52 +122,50 @@ MKT_SCHEDULE_DAILY_REPORT_ENABLED=false
 MKT_LARK_DAILY_RETENTION_ENABLED=false
 ```
 
-Storage/report flags do not implicitly enable schedules.
+Storage and Report flags never implicitly enable schedules.
 
-## Shared Storage authority
+## Shared Core authority
 
-```text
-organic_content_state
-organic_content_observations
-organic_account_daily_facts
-ads_entity_state
-ads_daily_facts
-ads_conversion_daily_facts
-data_coverage_runs
-data_coverage_entities
-report_materializations
-report_requests
-```
+All channel Workstreams must reuse:
 
-Names, Grain, Stable keys, metric semantics, indexes and UPSERT rules remain governed by `docs/project-brain/storage-architecture-and-migration-contract-v1.md`.
+- central Connector and Job catalogs;
+- deterministic Stable keys and exact identity validation;
+- existing Queue/DLQ and operation identity helpers;
+- existing Reliability runner, lock renewal and typed retry classification;
+- D1 history/Coverage contracts and Storage Foundation;
+- existing Canonical Lark writer and `TableSyncEngine`;
+- existing Report calculations, materialization and output writers;
+- sanitized observability with no Secret or raw customer payload exposure.
+
+Do not create a parallel Reliability, Queue, D1 writer, Lark sync or Report engine.
 
 ## Parallel Workstreams
 
 ```text
-TikTok Organic       Draft PR #65 / this Integration stream
+TikTok Organic       merged PR #65 / Integration rollout pending
 All Meta             separate Branch and Draft PR
 YouTube Organic      separate Branch and Draft PR
 Chatwoot             separate Branch and Draft PR
 WooCommerce          separate Branch and Draft PR
-Google Ads           completed / no duplicate implementation
+Google Ads           complete / safely closed
 ```
 
-Each Workstream must reuse Shared Core, own a unique Branch, avoid shared-file ownership collisions and leave Migration, deployment, Queue, Remote Lark/D1, schedules and LIVE UAT to the Integration stream.
+Each Workstream owns a unique Branch and Draft PR. Migration, deployment, Queue sends, Remote Lark/D1 mutation, schedules and LIVE UAT remain Integration-stream responsibilities only.
 
-## Next separate approval gate
+## Next separately approved TikTok rollout
 
-No Live action is authorized by Draft PR #65. The later bounded rollout sequence is:
+Merge does not authorize Runtime actions. The exact order is:
 
-1. read-only Remote config/schema preflight;
+1. read-only Remote configuration and schema preflight;
 2. Remote D1 backup;
-3. additive Migration 0016 apply;
+3. additive Migration `0016` apply;
 4. flags-false Worker deployment and route smoke;
 5. guarded read-only RAW/D1/Canonical audit;
-6. one manual freshness probe and new-watermark admission;
+6. manual freshness probe and one new-watermark admission;
 7. D1/Canonical/Coverage reconciliation;
 8. Lark-primary + D1-shadow parity;
 9. exact same-watermark rerun with zero Business drift;
-10. D1-primary Report validation with Lark-primary rollback path;
+10. D1-primary Report validation with Lark-primary rollback;
 11. only then propose controlled schedule activation.
 
 ## Permanent safety rules
@@ -174,7 +177,7 @@ No Live action is authorized by Draft PR #65. The later bounded rollout sequence
 - no Retention/delete before parity, backup, reconciliation and rollback;
 - no protected RAW mutation;
 - no rerun of completed TikTok recovery operators;
-- no duplicate Reliability/Queue/D1/Lark engine;
+- no duplicate Reliability/Queue/D1/Lark/Report engine;
 - Connector flags and schedules disabled by default;
-- secrets stay in Environment/Secret Manager;
+- Secrets stay in Environment/Secret Manager;
 - Production resources must be customer-owned.
