@@ -3,9 +3,12 @@
 ## Status
 
 ```text
-IMPLEMENTATION_STATUS                 = CODE_COMPLETE_REVIEW_PENDING
+IMPLEMENTATION_STATUS                 = IMPLEMENTATION_COMPLETE_REVIEW_PENDING
 BASE_COMMIT                          = e9275b6fbd4c28cf0290434cc4a449373e2e2bf9
 BRANCH                               = agent/tiktok-organic-post-lark-d1-parity
+DRAFT_PR                             = #65
+CODE_VERIFIED_HEAD                   = e3c00b93ea95b4a4e564f09cafacc40954b30593
+BRANCH_VERIFICATION                  = #517 PASS
 REMOTE_MIGRATION                     = NOT_APPLIED
 WORKER_DEPLOYMENT                    = NOT_RUN
 QUEUE_SEND                           = NOT_RUN
@@ -19,15 +22,15 @@ PRODUCTION                           = BLOCKED
 ## Problem closed by this implementation
 
 TikTok Organic already uses the protected Lark Native connector. The missing production-like layer was
-not another Source connector; it was the deterministic post-Lark admission, D1 historical report
-reader and parity-controlled Report cutover.
+not another Source connector; it was deterministic post-Lark admission, a D1 historical Report reader
+and a parity-controlled Report cutover.
 
-The pre-implementation state had these blockers:
+The pre-implementation blockers were:
 
-- Primary Cron could emit a TikTok Business sync every five minutes without checking whether the
+- Primary Cron could emit a TikTok Business sync every five minutes without proving that the protected
   Lark Native RAW source had completed a new generation;
-- the active TikTok Report reader used `MKT_Content` and `MKT_Content_Daily` directly and capped
-  Content at 800 identities;
+- the active TikTok Report reader used `MKT_Content` and `MKT_Content_Daily` directly and capped Content
+  at 800 identities;
 - D1 Report flags existed but were not connected to the active handler;
 - scheduled TikTok Snapshot date used the current local day while Daily Report used the previous
   completed day;
@@ -36,7 +39,7 @@ The pre-implementation state had these blockers:
 ## Implemented architecture
 
 ```text
-Lark Native TikTok sync 07:00
+Lark Native TikTok sync approximately 07:00
 → guarded read-only RAW probe
 → two identical bounded probes / stable source watermark
 → durable same-watermark admission
@@ -53,7 +56,8 @@ Lark Native TikTok sync 07:00
 → optional deterministic D1 materialization
 ```
 
-No second TikTok source connector, metric engine or Reliability stack was created.
+No second TikTok source connector, metric engine, Queue framework, D1 writer, Lark sync engine or
+Reliability stack was created.
 
 ## Date contract
 
@@ -85,6 +89,7 @@ Admission rules:
 
 - source handle must match Chemistry K exactly;
 - bounded pagination must complete without repeated cursors;
+- duplicate source record/content identities and invalid Stable-key inputs fail closed;
 - two probes must return the same watermark, count and maximum modified instant;
 - Admission identity is account + source watermark + Snapshot metric date;
 - same-watermark active/completed Admission is a no-op;
@@ -166,7 +171,7 @@ success and a fresh durable Coverage re-read proves:
 The Report request key includes Customer/Profile/Account/Report type/Period/Formula version/Watermark.
 Processing retry and completion replay are idempotent.
 
-The scheduler rejects simultaneous use of post-processing Report admission and the blind Daily
+The scheduler rejects simultaneous use of post-processing Report admission and the independent Daily
 Report schedule, preventing duplicate Daily producers.
 
 ## Default-false controls
@@ -183,19 +188,41 @@ MKT_SCHEDULE_DAILY_REPORT_ENABLED=false
 MKT_LARK_DAILY_RETENTION_ENABLED=false
 ```
 
+## Repository verification
+
+Branch Verification run `#517` passed on code head
+`e3c00b93ea95b4a4e564f09cafacc40954b30593`:
+
+```text
+Locked dependency install             PASS
+Syntax / architecture / hygiene       PASS
+Focused staged TikTok                  4 / 4 PASS
+Node Unit / Integration                868 / 868 PASS
+Workers runtime                        9 / 9 PASS
+Report reliability                     91 / 91 PASS
+Dependency audit                       0 vulnerabilities
+Wrangler dry-run                       PASS / no deployment
+```
+
+During review, stale scheduler fixtures were corrected to assert the new watermark-probe producer and
+the previous-completed-day metric contract instead of the removed blind scheduled Sync behavior.
+
 ## Safety result
 
 This branch performs Repository implementation only. It does not authorize or perform:
 
-- Remote Migration;
+- Remote Migration or D1 backup;
 - Worker deployment;
 - Queue send;
-- DLQ redrive;
+- DLQ redrive/delete;
 - Lark mutation;
 - Remote D1 Business mutation;
 - Schedule enablement;
 - Recovery;
+- Retention/delete;
+- LIVE UAT;
 - Production change.
 
 A separately approved rollout must begin with the guarded read-only audit, then a bounded Manual
-watermark admission, reconciliation, Shadow parity and exact rerun before any schedule proposal.
+watermark admission, D1/Canonical/Coverage reconciliation, Shadow parity and exact same-watermark
+rerun before any schedule proposal.
