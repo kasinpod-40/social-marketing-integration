@@ -1,4 +1,7 @@
-import { transientError } from '../../../shared/src/errors/runtime-error.js';
+import { permanentError, transientError } from '../../../shared/src/errors/runtime-error.js';
+
+const DEFAULT_MAX_CONTENT = 10_000;
+const MAX_CONTENT = 50_000;
 
 /** Read-only aggregate audit. No method in this adapter mutates D1. */
 export class D1TikTokPostLarkAuditStore {
@@ -10,7 +13,12 @@ export class D1TikTokPostLarkAuditStore {
     const customerKey = requireText(input.customerKey, 'customerKey');
     const accountKey = requireText(input.accountKey, 'accountKey');
     const platform = 'tiktok';
-    const [state, observations, coverage] = await Promise.all([
+    const maxContentRecords = boundedPositiveInteger(
+      input.maxContentRecords ?? DEFAULT_MAX_CONTENT,
+      'maxContentRecords',
+      MAX_CONTENT,
+    );
+    const [state, observations, coverage, contentIdentities] = await Promise.all([
       this.#first(`
         SELECT
           COUNT(*) AS total_rows,
@@ -39,7 +47,15 @@ export class D1TikTokPostLarkAuditStore {
         ORDER BY completed_at DESC, started_at DESC, coverage_run_id ASC
         LIMIT 1
       `, [customerKey, platform, accountKey]),
+      this.#all(`
+        SELECT content_key, external_content_id
+        FROM organic_content_state
+        WHERE customer_key = ? AND platform = ? AND account_key = ?
+        ORDER BY content_key ASC
+        LIMIT ?
+      `, [customerKey, platform, accountKey, maxContentRecords + 1]),
     ]);
+    assertWithinLimit(contentIdentities.length, maxContentRecords, 'content identities');
 
     const coverageRunId = optionalText(coverage?.coverage_run_id);
     const [coverageEntities, missingObservation, missingCoverage] = await Promise.all([
@@ -86,6 +102,10 @@ export class D1TikTokPostLarkAuditStore {
       platform,
       state: freezeCounts(state),
       observations: freezeCounts(observations),
+      contentIdentities: Object.freeze(contentIdentities.map((row) => Object.freeze({
+        contentKey: requireText(row.content_key, 'contentKey'),
+        externalContentId: requireText(row.external_content_id, 'externalContentId'),
+      }))),
       coverage: coverage ? Object.freeze({
         coverageRunId,
         status: coverage.status ?? null,
@@ -112,11 +132,17 @@ export class D1TikTokPostLarkAuditStore {
       const row = await this.db.prepare(sql).bind(...bindings).first();
       return row ? Object.freeze({ ...row }) : null;
     } catch (cause) {
-      throw transientError('Failed to read TikTok post-Lark D1 audit', {
-        code: 'D1_TIKTOK_POST_LARK_AUDIT_FAILED',
-        cause,
-        details: { causeMessage: cause instanceof Error ? cause.message : String(cause ?? '') },
-      });
+      throw readError(cause);
+    }
+  }
+
+  async #all(sql, bindings) {
+    try {
+      const result = await this.db.prepare(sql).bind(...bindings).all();
+      const rows = Array.isArray(result) ? result : (result?.results ?? []);
+      return rows.map((row) => Object.freeze({ ...row }));
+    } catch (cause) {
+      throw readError(cause);
     }
   }
 }
@@ -129,6 +155,23 @@ function freezeCounts(row) {
     missingKeys: nullableInteger(row?.missing_keys) ?? 0,
     latestObservedAt: nullableInteger(row?.latest_observed_at),
   });
+}
+
+function assertWithinLimit(observed, limit, label) {
+  if (observed > limit) {
+    throw permanentError(`TikTok D1 audit ${label} exceeded the configured limit`, {
+      code: 'TIKTOK_POST_LARK_AUDIT_LIMIT_EXCEEDED',
+      details: { observed, limit },
+    });
+  }
+}
+
+function boundedPositiveInteger(value, fieldName, maximum) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number <= 0 || number > maximum) {
+    throw new TypeError(`${fieldName} must be from 1 to ${maximum}`);
+  }
+  return number;
 }
 
 function nullableInteger(value) {
@@ -151,4 +194,12 @@ function requireD1(value) {
     throw new TypeError('D1TikTokPostLarkAuditStore requires a D1 binding');
   }
   return value;
+}
+
+function readError(cause) {
+  return transientError('Failed to read TikTok post-Lark D1 audit', {
+    code: 'D1_TIKTOK_POST_LARK_AUDIT_FAILED',
+    cause,
+    details: { causeMessage: cause instanceof Error ? cause.message : String(cause ?? '') },
+  });
 }
