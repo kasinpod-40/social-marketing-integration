@@ -1,12 +1,17 @@
 # WooCommerce End-to-End Integration
 
-## Workstream authority
+## Workstream status
 
 ```text
-TASK_STATUS                     = IMPLEMENTATION_IN_PROGRESS
+TASK_STATUS                     = READY_FOR_INTEGRATION_REVIEW
 WORKSTREAM                      = WOOCOMMERCE_END_TO_END
 BRANCH                          = agent/woocommerce-end-to-end
-BASE_SHA                        = e9275b6fbd4c28cf0290434cc4a449373e2e2bf9
+DRAFT_PR                        = #66
+AUDITED_BASE_SHA                = e9275b6fbd4c28cf0290434cc4a449373e2e2bf9
+CURRENT_PR_BASE_SHA             = acb0b76bb3be936319e0e8bed4849592c96761b5
+LATEST_SHARED_MIGRATION_SEEN    = 0016
+CODE_VERIFICATION_HEAD          = 987c845d494e1d83531f0b95b2386777ca8900ce
+CODE_VERIFICATION_RUN           = 541 / PASS
 REMOTE_D1_MIGRATION             = NOT_APPLIED
 WORKER_DEPLOYMENT               = NONE
 QUEUE_MESSAGE                   = NONE
@@ -14,201 +19,238 @@ REMOTE_LARK_MUTATION            = NONE
 SCHEDULE                        = DISABLED
 LIVE_UAT                        = NOT_AUTHORIZED
 PRODUCTION                      = BLOCKED
+MERGE                           = NOT_PERFORMED
 ```
 
-This workstream implements isolated WooCommerce source, normalization, D1 repository, reporting and Lark-row modules. Integration into reserved shared files remains a later Integration Chat action.
+This Workstream stops at a Draft PR. Integration Chat owns all reserved-file changes, migration numbering/application, runtime routing, shared table registration, deployment and UAT.
 
 ## Repository audit
 
-Reviewed before coding:
+Read and reviewed before implementation:
 
 - `AGENTS.md`
 - `docs/current-task.md`
 - `PROJECT_BRAIN.md`
 - `README.md`
-- `package.json`
-- Storage Architecture v1
-- Connector and Job catalogs
-- Customer profiles
-- D1 Marketing History store
+- root `package.json`
+- Storage Architecture and Migration Contract v1
+- Connector Catalog and Job Catalog
+- customer profiles
+- D1 Marketing History/Coverage store
+- `D1ResumableWorkStore`
 - `TableSyncEngine`
 - Sync Worker runtime infrastructure
-- Google Ads staged D1-first/Lark continuation pattern
-- open Draft PRs `#17` and `#11`
-- latest additive migration `0014_google_ads_signing_secret_provisioning.sql`
+- staged Google Ads D1-first/Lark-repair pattern
+- open Draft PRs present at Workstream start
+- shared migration sequence
 
 ### Audit conclusions
 
-- WooCommerce Connector and Job keys already exist and remain `planned`.
-- `MKT_CONNECTOR_WOOCOMMERCE_ENABLED` already defaults to disabled through the Connector catalog/profile contract.
-- Reliability, distributed locks, generation fences, Queue/DLQ, resumable work, D1 write conventions, Coverage and `TableSyncEngine` already exist and must be injected into this workstream rather than recreated.
-- `apps/sync-worker/src/*`, Job Catalog, Connector Catalog, customer profiles, root package files, Wrangler files, migration numbering and the shared Lark table registry are reserved for Integration Chat.
-- Current D1 Storage v1 has Organic and Ads facts but no Commerce tables. Commerce needs an additive migration proposal; this branch does not allocate a migration number or apply it.
-
-## Objective
-
-Read WooCommerce data through the authenticated WC REST API, preserve raw lineage, normalize it into a privacy-minimized Canonical commerce model, write idempotently to D1, calculate deterministic daily/report outputs and generate Lark rows for the existing `TableSyncEngine`.
+- WooCommerce Connector and Job identifiers already exist in shared catalogs and remain disabled/planned.
+- Existing Shared Reliability, distributed lock, generation fence, Queue/DLQ, Coverage, D1 and Lark engines must be injected; none were recreated.
+- Commerce storage did not exist in Storage v1, so this branch provides an unnumbered additive migration proposal outside `migrations/`.
+- `main` advanced after branch creation. Pull-request verification tests the merge result against the current PR base without editing reserved shared files.
+- The current shared migration sequence has advanced to `0016`; Integration Chat must allocate the then-current next number rather than copying a stale number from this Task.
 
 ## Source contract
 
 ### API and authentication
 
-- Base path: `/wp-json/wc/v3`.
-- HTTPS only.
-- HTTP Basic Authentication using Consumer Key as username and Consumer Secret as password.
-- Secrets are injected at runtime and never written to Source, logs, D1 or Lark.
-- Query-string authentication is intentionally unsupported because URLs are more likely to leak through logs/proxies.
-- Read-only API keys are required for UAT/Production.
+- REST base path: `/wp-json/wc/v3`.
+- HTTPS is mandatory.
+- Consumer Key/Secret are sent only through the HTTP Basic `Authorization` header.
+- Query-string credentials are rejected to avoid URL/proxy/log leakage.
+- Customer UAT/Production must use read-only credentials owned by the customer.
+- Secrets never enter Source code, Queue messages, D1 rows, Lark rows or operational details.
 
 ### Pagination
 
-- Sequential `page` pagination, 1-based.
+- Sequential, 1-based `page` pagination.
 - `per_page` is bounded to `1..100`.
-- Prefer `X-WP-Total` and `X-WP-TotalPages`; Link headers are accepted as supplementary evidence.
-- Every page records expected/observed counts and a source watermark.
-- Page fetches are retry-safe; D1/Lark writes use Stable keys.
+- `X-WP-Total` and `X-WP-TotalPages` provide expected-row/page evidence.
+- Missing headers fall back safely and may cause one empty terminal-page read rather than silent truncation.
+- Refund and Variation subresources use bounded nested pagination and bounded concurrency.
 
-### Incremental sync
+### Incremental and late-update strategy
 
-- Orders and Products use `modified_after`, `dates_are_gmt=true`, `orderby=modified`, `order=asc`.
-- A configurable overlap window re-reads recently modified rows to capture late order changes, refunds and status transitions.
-- Full reconciliation omits `modified_after` and verifies all pages.
-- Categories, Coupons and Customers use full or bounded changed-source reads according to endpoint capability and retained checkpoint.
-- Variations are read per changed variable product with bounded concurrency.
-- Refund detail is read per changed order when refund summaries indicate refunds.
+- Orders and Products use:
 
-### Error classification
+```text
+modified_after=<overlapped watermark>
+dates_are_gmt=true
+orderby=modified
+order=asc
+```
 
-- `401/403`: permanent credential/permission error.
-- `404`: permanent endpoint/route mismatch.
-- `400/422`: permanent source-contract error unless a documented transient provider code is present.
-- `408/425/429/5xx` and network failures: transient; preserve `Retry-After` when present.
-- Invalid JSON or identity mismatch: permanent unless evidence indicates a truncated transient response.
+- A configurable overlap window re-reads recent modifications.
+- Late status changes and refunds upsert the Stable Order/line keys and rebuild the original Asia/Bangkok metric date.
+- A full reconciliation omits `modified_after` and requires expected Source rows to equal observed Source rows.
+- Incremental Coverage is `recent_window`; it must never claim full-inventory completeness.
+- Categories, Customers and Coupons use paged snapshots according to endpoint capability.
+- Variable Products fetch Variations per changed parent Product.
+- Orders fetch detailed Refunds when Source summaries/status indicate a refund.
+
+### Error classes
+
+| Condition | Classification |
+| --- | --- |
+| `401`, `403` | permanent credential/permission failure |
+| `404` | permanent route/version mismatch |
+| invalid request/Source contract | permanent |
+| network, `408`, `425`, `429`, `5xx` | transient/retryable |
+| invalid JSON/identity mismatch | permanent unless upstream truncation evidence exists |
+
+`Retry-After` is retained when supplied.
 
 ## Data model
 
-All money fields use signed integer micros (`1 currency unit = 1,000,000 micros`) plus the original ISO currency. Decimal API strings are parsed without floating-point arithmetic.
+Money is stored as signed integer micros:
+
+```text
+1 currency unit = 1,000,000 micros
+```
+
+Decimal Source strings are parsed without floating-point arithmetic. ISO currency is retained on every monetary fact; currencies are never summed together.
 
 ### RAW tables
 
-| Table | Grain / primary key | Purpose |
+| Table | Primary / idempotency key | Grain |
 | --- | --- | --- |
-| `raw_commerce_stores` | `store_key` | Sanitized Store identity and API/version evidence |
-| `raw_commerce_orders` | `raw_order_key = woocommerce:account_key:order_id` | Source Order payload without PII |
-| `raw_commerce_order_items` | `raw_order_item_key = raw_order_key:line_item_id` | Order line items |
-| `raw_commerce_products` | `raw_product_key = woocommerce:account_key:product_id` | Product source state |
-| `raw_commerce_product_variations` | `raw_variation_key = raw_product_key:variation_id` | Variation source state |
-| `raw_commerce_categories` | `raw_category_key = woocommerce:account_key:category_id` | Category source state |
-| `raw_commerce_customers` | `raw_customer_key = woocommerce:account_key:customer_id` | PII-minimized customer source state |
-| `raw_commerce_coupons` | `raw_coupon_key = woocommerce:account_key:coupon_id` | Coupon source state; code may be hashed for customer-facing outputs |
-| `raw_commerce_refunds` | `raw_refund_key = raw_order_key:refund_id` | Refund and partial-refund facts |
+| `raw_commerce_stores` | `woocommerce:account_key` | sanitized Store identity |
+| `raw_commerce_orders` | `woocommerce:account_key:order_id` | current sanitized Order payload |
+| `raw_commerce_order_items` | `order_key:line_item_id` | Order line item |
+| `raw_commerce_products` | `woocommerce:account_key:product_id` | Product |
+| `raw_commerce_product_variations` | `woocommerce:account_key:product_id:variation_id` | Variation |
+| `raw_commerce_categories` | `woocommerce:account_key:category_id` | Category |
+| `raw_commerce_customers` | `woocommerce:account_key:customer:customer_id` | PII-minimized registered customer snapshot |
+| `raw_commerce_coupons` | `woocommerce:account_key:coupon_id` | Coupon with hashed code |
+| `raw_commerce_refunds` | `order_key:refund_id` | Refund / partial refund |
 
-RAW rows keep selected source fields plus `source_payload_hash`, `source_modified_at`, `fetched_at`, `sync_run_id` and `coverage_run_id`. They do not store billing/shipping names, email, phone, addresses, IP, user-agent, payment tokens or free-form customer notes.
+RAW rows retain selected allowlisted fields, Source hash, Source modified timestamp, fetched time, Sync Run and Coverage Run. They are not unrestricted payload archives.
 
-### Canonical commerce tables
+### Canonical tables
 
-| Table | Primary/idempotency key | Grain |
+| Table | Primary / idempotency key | Grain |
 | --- | --- | --- |
-| `commerce_store_state` | `store_key` | Store current state |
-| `commerce_order_state` | `order_key = woocommerce:account_key:order_id` | Current Order state |
-| `commerce_order_status_observations` | `status_observation_key = order_key:status:source_modified_at` | Source-supported observed status history |
-| `commerce_order_line_facts` | `order_line_key = order_key:line_item_id` | Current line economics and product identity |
-| `commerce_product_state` | `product_key = woocommerce:account_key:product_id[:variation_id]` | Product/variation current state |
-| `commerce_customer_aggregates` | `customer_aggregate_key = woocommerce:account_key:registered:customer_id` | Registered-customer aggregate without PII |
+| `commerce_store_state` | `woocommerce:account_key` | Store state |
+| `commerce_order_state` | `woocommerce:account_key:order_id` | current Order state/economics |
+| `commerce_order_status_observations` | `order_key:status:source_modified_at` | Source-observed status history |
+| `commerce_order_line_facts` | `order_key:line_item_id` | line economics and Product identity |
+| `commerce_product_state` | `woocommerce:account_key:product_id[:variation_id]` | Product/Variation state |
+| `commerce_customer_aggregates` | `woocommerce:account_key:registered:customer_id:currency` | registered-customer aggregate by currency |
 
-Guest checkout is represented as `customer_type=guest`; no cross-order guest identity is created by default. A guest Order uses `guest_order_key = order_key`, preventing email-derived tracking.
+Guest checkout uses `customer_type=guest`. No email/phone-derived cross-Order guest identity is created.
 
-### Daily snapshot/fact tables
+### Daily fact tables
 
-| Table | Primary/idempotency key | Grain |
+| Table | Primary / idempotency key | Grain |
 | --- | --- | --- |
-| `commerce_daily_sales_facts` | `commerce_daily_key = woocommerce:account_key:metric_date:currency` | Store × local date × currency |
-| `commerce_product_daily_facts` | `product_daily_key = product_key:metric_date:currency` | Product/variation × local date × currency |
+| `commerce_daily_sales_facts` | `woocommerce:account_key:metric_date:currency` | Store × Asia/Bangkok date × currency |
+| `commerce_product_daily_facts` | `product_key:metric_date:currency` | Product/Variation × date × currency |
 
-Daily rows are revision-safe. A late status/refund update recalculates and upserts the original Order date rather than appending a duplicate.
+The migration proposal creates 17 additive tables in total and the D1 repository fails closed until all 17 are present.
 
 ## Metric definitions
 
-### Order values
-
 ```text
 gross_sales_micros
-  = SUM(line_item.subtotal + line_item.subtotal_tax)
+  = SUM(line subtotal + line subtotal tax)
 
 discount_micros
-  = order.discount_total + order.discount_tax
+  = order discount total + order discount tax
 
 refund_micros
-  = absolute SUM(refund.total) with detailed line/tax evidence retained when available
+  = absolute SUM(detailed refund total)
 
 net_sales_micros
-  = gross_sales_micros - discount_micros - refund_micros
+  = gross sales - discount - refund
 
 shipping_micros
-  = order.shipping_total + order.shipping_tax
+  = shipping total + shipping tax
 
 tax_micros
-  = order.total_tax
+  = order total tax
 
 recognized_revenue_micros
-  = order.total - refund_micros
+  = order total - refund
 ```
 
-- `cancelled`, `failed` and `trash` Orders contribute zero recognized Order count/revenue.
-- `pending` and `on-hold` are tracked separately as provisional.
-- `processing` and `completed` are recognized.
-- `refunded` and partial refunds subtract the exact refund amount.
-- Negative corrections are preserved; missing values remain `null` where Source evidence is absent.
-- Currency values are never summed across currencies.
+Status treatment:
 
-### Product performance
+- `processing`, `completed`, `refunded`: recognized state.
+- `pending`, `on-hold`: provisional state.
+- `cancelled`, `trash`: cancelled state with zero recognized count/revenue.
+- `failed`: failed state with zero recognized count/revenue.
+- Full/partial refunds subtract exact refund amounts and refunded line quantities where detailed evidence exists.
+- Negative corrections are preserved.
+- Unknown/missing evidence remains explicit rather than being fabricated as zero.
 
-- quantity ordered
-- gross item sales
-- discounts allocated from line subtotal vs total
-- refunds and refunded quantity when refund line items identify the product
-- net item sales
-- order count
-- unique registered-customer count when Source supports it without PII
+Product performance includes quantity, gross, allocated line discount, refund amount/refunded quantity, net sales and recognized Order count.
 
-### Payment/shipping summaries
-
-Aggregates use stable provider IDs and sanitized labels:
-
-- `payment_method_id`, `payment_method_title`
-- `shipping_method_id`, `shipping_method_title`
-- order count, recognized revenue, refund amount
-
-No payment token, card data or gateway response is stored.
+Payment and shipping summaries are generated from D1 Order state. Multiple shipping methods on one Order are represented as one deterministic combined bucket so Order/revenue totals are not double counted.
 
 ## PII minimization
 
 Never store or emit to Lark:
 
-- billing/shipping first/last name
-- company when it can identify a person
+- billing/shipping names
 - email
 - phone
-- street address, postcode or exact location
+- street address/postcode/exact location
 - customer IP address
 - user-agent
-- payment token or transaction secret
-- password/reset/session data
+- payment token/card/gateway secret
+- passwords/session/reset data
 - free-form customer note
-- raw metadata unless explicitly allowlisted
+- refund reason text
+- unrestricted metadata
+- raw Coupon code
 
-Allowed customer fields:
+Allowed customer identity is limited to WooCommerce numeric customer ID plus aggregate timestamps/counts/money by currency. Guest Orders have no durable person-level key.
 
-- numeric WooCommerce customer ID
-- registered/guest type
-- created/modified timestamps
-- order count
-- total spend micros by currency
-- country only if a later approved privacy review explicitly enables it; default is omitted
+## Execution and Reliability contract
+
+Shared caller owns:
+
+- Reliability Runner
+- distributed lock and renewal
+- generation fence
+- Queue retry and DLQ
+- runtime routing and flags
+
+WooCommerce use case owns:
+
+- Source pagination and nested enrichment
+- privacy-minimized normalization
+- per-page resumable checkpoint
+- D1-first writes
+- derived daily/customer rebuild
+- Lark repair using existing `TableSyncEngine`
+- Coverage and reconciliation
+
+Page ordering:
+
+```text
+validate Source page and configured Lark table IDs
+→ plan direct Lark rows
+→ idempotent D1 RAW/Canonical upserts
+→ rebuild/read D1-derived facts
+→ plan derived Lark rows
+→ execute existing TableSyncEngine plans
+→ save Coverage and durable page checkpoint
+```
+
+Consequences:
+
+- Source/contract failure causes zero D1/Lark writes.
+- Direct Lark plan failure occurs before D1.
+- Derived Lark failure can occur after D1 because derived rows are D1-generated; retry idempotently replays D1 and repairs Lark.
+- Continuations contain reference/checkpoint identity only, never Source payload or credentials.
+- No unseen entity is deleted or zeroed during incremental Coverage.
 
 ## Lark targets
 
-Proposed logical table keys for the shared registry (Integration Chat must allocate actual IDs):
+Proposed logical registry keys; Integration Chat must allocate actual table IDs:
 
 ```text
 rawCommerceStores
@@ -227,31 +269,11 @@ mktCommerceDaily
 mktCommerceProductDaily
 ```
 
-Rows use the same snake_case Stable-key fields as D1. The workstream calls existing `TableSyncEngine.planByKey()` and `executePlan()` only; it does not create a Lark sync engine.
-
-## Reliability and execution contract
-
-- The caller owns Shared Reliability Runner, distributed lock, lock renewal, generation fence, Queue retry and DLQ classification.
-- The WooCommerce use case owns source pagination, normalization, D1-first ordering, per-page durable checkpoints, Coverage and reconciliation.
-- Page write order:
-
-```text
-source page validation
-→ Lark destination preflight for that page
-→ D1 RAW + Canonical + Daily idempotent upserts
-→ Lark TableSyncEngine execution
-→ durable page completion
-```
-
-- D1 failure causes zero Lark writes.
-- Lark failure after D1 success is retryable; D1 replays idempotently and Lark repairs.
-- Continuations carry reference/checkpoint identity only, never WooCommerce payload or credentials.
-- Full reconciliation records expected pages/entities/rows.
-- Incremental runs are marked `modified_window`; they cannot claim full-inventory completeness.
+Every write uses existing `TableSyncEngine.planByKey()` and `executePlan()`.
 
 ## Runtime flags
 
-All proposed flags default to `false`:
+All proposed defaults remain false:
 
 ```text
 MKT_CONNECTOR_WOOCOMMERCE_ENABLED=false
@@ -261,7 +283,7 @@ MKT_WOOCOMMERCE_FULL_RECONCILIATION_ENABLED=false
 MKT_SCHEDULE_WOOCOMMERCE_ENABLED=false
 ```
 
-Secrets/config proposed for Integration Chat:
+Proposed Integration-managed configuration/secrets:
 
 ```text
 WOOCOMMERCE_BASE_URL
@@ -272,46 +294,70 @@ WOOCOMMERCE_PAGE_SIZE=100
 WOOCOMMERCE_INCREMENTAL_OVERLAP_SECONDS=300
 ```
 
-## Reserved-file integration proposal
+## Files changed
 
-This branch must not directly edit the following. Integration Chat should later apply a reviewed patch that:
+- `docs/tasks/woocommerce-end-to-end.md`
+- `docs/tasks/patches/woocommerce-commerce-migration.sql`
+- `packages/connectors/src/woocommerce/woocommerce-rest-client.js`
+- `packages/connectors/src/woocommerce/d1-woocommerce-commerce-store.js`
+- `packages/connectors/src/woocommerce/d1-woocommerce-report-source.js`
+- `packages/application/src/commerce/woocommerce-commerce-model.js`
+- `packages/application/src/commerce/generate-woocommerce-commerce-report.js`
+- `packages/application/src/use-cases/sync-woocommerce-commerce.js`
+- five focused files under `tests/woocommerce/`
 
-1. adds the additive Commerce migration after current `0014` using the then-current next number;
-2. adds D1 Commerce store construction to runtime infrastructure;
-3. adds WooCommerce Job routing while retaining `planned` or `uat_pending` until UAT approval;
-4. adds logical Lark table IDs to the shared registry;
-5. adds disabled example flags/secrets to Wrangler examples;
-6. adds an explicit schedule entry only after a separately approved schedule task;
-7. updates shared docs after merge.
+No reserved shared file was modified.
 
-## Acceptance criteria
+## Verification evidence
 
-- Source client authenticates with Basic Auth over HTTPS and redacts credentials.
-- Pagination is bounded, deterministic and follows total-page evidence.
-- Incremental Orders/Products use `modified_after` with overlap.
-- Late changes, statuses and partial refunds revise Stable rows idempotently.
-- Money parsing is exact and currency-preserving.
-- PII fields are excluded by tests.
-- Guest checkout creates no cross-order email-derived identity.
-- D1 writes are allowlisted and idempotent.
-- D1 precedes Lark; retry repairs partial Lark progress.
-- Coverage distinguishes full inventory from modified window.
-- Daily sales/product facts and reports are deterministic.
-- All Connector/schedule/write flags remain false by default.
-- No Remote D1/Lark/Queue/Deploy/Production action occurs.
+Branch Verification run `541` on code head `987c845d494e1d83531f0b95b2386777ca8900ce`:
 
-## Required verification
-
-```bash
-npm ci
-npm run check
-npm test
-node --test tests/woocommerce/*.test.js
-npm audit --audit-level=high
-npm run deploy:dry-run
-git diff --check
+```text
+npm ci                                      PASS
+npm run check                               PASS
+npm test                                    PASS — 885/885
+WooCommerce-focused subtests in npm test    PASS — 15/15
+npm run test:report-reliability             PASS — 91/91
+npm audit --audit-level=high                 PASS — 0 vulnerabilities
+npm run deploy:dry-run                       PASS
 ```
+
+The repository workflow does not expose a separate WooCommerce-only command step; the 15 Workstream subtests ran and passed inside the full Node test suite. `npm run check` supplied repository syntax/architecture/hygiene validation. Integration Review may rerun `node --test tests/woocommerce/*.test.js` and `git diff --check` locally as an additional operator gate.
+
+## Remote actions explicitly not performed
+
+- no Customer Production Consumer Key/Secret
+- no WordPress or WooCommerce change
+- no Plugin installation
+- no Worker deployment
+- no Remote D1 migration/query
+- no Queue message
+- no Remote Lark schema/record change
+- no Cron/Schedule enablement
+- no Production/Customer LIVE UAT
+- no secret/Cloudflare configuration change
+- no merge
+
+## Integration Chat follow-up
+
+After review/approval, Integration Chat must:
+
+1. re-audit current `main`, open PRs and current migration sequence;
+2. review the migration proposal and allocate the then-current next migration number after `0016` or later;
+3. add D1 Commerce store/report source construction to reserved runtime infrastructure;
+4. route the existing WooCommerce Job while Connector/write flags remain disabled;
+5. allocate shared Lark table registry IDs and create/apply approved Lark schema separately;
+6. add disabled Wrangler examples and customer-owned secrets;
+7. define deterministic rehydration of the same incremental/full-reconciliation scope for reference-only continuations;
+8. run local/Remote migration verification only in the Integration workflow;
+9. perform credential preflight and Customer LIVE UAT under a separate approved task;
+10. add schedule only after separate explicit approval.
 
 ## Implementation result
 
-Pending.
+```text
+RESULT                          = PASS_FOR_INTEGRATION_REVIEW
+DRAFT_PR                        = OPEN
+REMOTE_STATE                    = UNCHANGED
+MERGE                           = BLOCKED_PENDING_REVIEW
+```
