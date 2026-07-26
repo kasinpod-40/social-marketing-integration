@@ -1,0 +1,763 @@
+import { createStableFingerprint } from '../../../shared/src/hash/stable-fingerprint.js';
+import { permanentError, transientError } from '../../../shared/src/errors/runtime-error.js';
+import {
+  WOOCOMMERCE_DATASETS,
+  WOOCOMMERCE_LARK_TABLES,
+  createWooCommerceIncrementalBoundary,
+  normalizeWooCommerceDataset,
+} from '../commerce/woocommerce-commerce-model.js';
+
+const PHASE = 'woocommerce_commerce_pages_v1';
+const SCHEMA_VERSION = 'woocommerce-commerce-v1';
+const DEFAULT_MAX_PAGES_PER_INVOCATION = 2;
+const DEFAULT_NESTED_CONCURRENCY = 3;
+const DATASET_PLAN = Object.freeze([
+  Object.freeze({ dataset: WOOCOMMERCE_DATASETS.STORE, resource: null, entityType: 'store' }),
+  Object.freeze({ dataset: WOOCOMMERCE_DATASETS.ORDERS, resource: 'orders', entityType: 'order' }),
+  Object.freeze({ dataset: WOOCOMMERCE_DATASETS.PRODUCTS, resource: 'products', entityType: 'product' }),
+  Object.freeze({ dataset: WOOCOMMERCE_DATASETS.CATEGORIES, resource: 'products/categories', entityType: 'category' }),
+  Object.freeze({ dataset: WOOCOMMERCE_DATASETS.CUSTOMERS, resource: 'customers', entityType: 'customer' }),
+  Object.freeze({ dataset: WOOCOMMERCE_DATASETS.COUPONS, resource: 'coupons', entityType: 'coupon' }),
+]);
+
+/**
+ * Resumable WooCommerce Commerce ingestion.
+ * Shared Reliability owns lock acquisition/renewal, Queue retry and DLQ. This use case owns
+ * Source pagination, privacy-minimized normalization, D1-first writes, Lark repair and Coverage.
+ */
+export async function syncWooCommerceCommerce(input = {}) {
+  const dependencies = readDependencies(input);
+  const reference = normalizeReference(input);
+  const runtime = normalizeRuntime(input);
+  assertExecutionGates(runtime);
+
+  const operationFingerprint = await createStableFingerprint({
+    contract: SCHEMA_VERSION,
+    workKey: reference.workKey,
+    generation: reference.generation,
+    accountKey: runtime.accountKey,
+    fullReconciliation: runtime.fullReconciliation,
+    modifiedAfter: runtime.modifiedAfter,
+  });
+  const begun = await dependencies.resumableWorkStore.beginWork({
+    workKey: reference.workKey,
+    cursorKey: reference.cursorKey,
+    workType: reference.type,
+    operationFingerprint,
+    generation: reference.generation,
+    requestedAt: reference.originalRequestedAt,
+  });
+  if (begun.superseded) return Object.freeze({ status: 'superseded', workKey: reference.workKey });
+  if (begun.completed) {
+    return Object.freeze({
+      status: 'completed_idempotent',
+      workKey: reference.workKey,
+      reconciliation: begun.completion ?? null,
+    });
+  }
+
+  await dependencies.assertLockActive();
+  await dependencies.commerceStore.assertSchemaReady();
+  let phase = await dependencies.resumableWorkStore.loadPhase({ workKey: reference.workKey, phase: PHASE });
+  let state = normalizeState(phase?.state, runtime);
+  let pagesThisInvocation = 0;
+
+  while (state.datasetIndex < DATASET_PLAN.length
+    && pagesThisInvocation < runtime.maxPagesPerInvocation) {
+    await dependencies.assertLockActive();
+    await dependencies.resumableWorkStore.assertCurrentGeneration?.({
+      workKey: reference.workKey,
+      cursorKey: reference.cursorKey,
+      generation: reference.generation,
+    });
+
+    const contract = DATASET_PLAN[state.datasetIndex];
+    const coverageRunId = `${reference.syncRunId}:woocommerce:${contract.dataset}`;
+    const pageResult = await fetchDatasetPage({
+      contract,
+      state,
+      runtime,
+      client: dependencies.client,
+    });
+    const enriched = await enrichNestedResources({
+      contract,
+      records: pageResult.records,
+      client: dependencies.client,
+      concurrency: runtime.nestedConcurrency,
+      maxNestedPages: runtime.maxNestedPages,
+    });
+    const normalized = await normalizePage({
+      contract,
+      pageResult,
+      enriched,
+      runtime,
+      reference,
+      coverageRunId,
+    });
+
+    const directPlans = await planLarkRows({
+      output: normalized,
+      repository: dependencies.repository,
+      syncEngine: dependencies.syncEngine,
+      tables: dependencies.tables,
+      includeDerived: false,
+    });
+
+    await dependencies.assertLockActive();
+    const d1Result = await dependencies.commerceStore.upsertRowsByTable(normalized.d1RowsByTable);
+    const derivedResult = await dependencies.commerceStore.rebuildDerivedFacts({
+      accountKey: runtime.accountKey,
+      metricDates: normalized.impactedDates,
+      customerAggregateKeys: normalized.impactedCustomers,
+      syncRunId: reference.syncRunId,
+      coverageRunId,
+      now: runtime.now(),
+    });
+    const derivedRows = await dependencies.commerceStore.readDerivedRows({
+      accountKey: runtime.accountKey,
+      metricDates: normalized.impactedDates,
+      customerAggregateKeys: normalized.impactedCustomers,
+    });
+    const derivedOutput = createDerivedOutput(derivedRows);
+    const derivedPlans = await planLarkRows({
+      output: derivedOutput,
+      repository: dependencies.repository,
+      syncEngine: dependencies.syncEngine,
+      tables: dependencies.tables,
+      includeDerived: true,
+      derivedOnly: true,
+    });
+
+    const larkResults = [];
+    for (const plan of [...directPlans, ...derivedPlans]) {
+      await dependencies.assertLockActive();
+      const result = await dependencies.syncEngine.executePlan(plan.plan, {
+        beforeWriteChunk: dependencies.assertLockActive,
+      });
+      larkResults.push(Object.freeze({
+        tableKey: plan.tableKey,
+        expected: plan.expected,
+        created: result.created,
+        updated: result.updated,
+        skipped: result.skipped,
+      }));
+    }
+
+    const observedEntities = buildCoverageEntities({
+      records: pageResult.records,
+      entityType: contract.entityType,
+      coverageRunId,
+      observedAt: runtime.now(),
+    });
+    if (observedEntities.length > 0) {
+      await dependencies.coverageStore.saveCoverageEntities(observedEntities);
+    }
+
+    state = advanceState({
+      state,
+      contract,
+      pageResult,
+      normalized,
+      d1Result,
+      derivedResult,
+      larkResults,
+    });
+    const datasetComplete = pageResult.nextPage === null;
+    await dependencies.coverageStore.saveCoverageRun(buildCoverageRun({
+      reference,
+      runtime,
+      contract,
+      state,
+      coverageRunId,
+      pageResult,
+      complete: datasetComplete,
+    }));
+    if (datasetComplete) {
+      state = Object.freeze({ ...state, datasetIndex: state.datasetIndex + 1, page: 1 });
+    } else {
+      state = Object.freeze({ ...state, page: pageResult.nextPage });
+    }
+
+    pagesThisInvocation += 1;
+    phase = await dependencies.resumableWorkStore.savePhase({
+      workKey: reference.workKey,
+      phase: PHASE,
+      state,
+      expectedItems: DATASET_PLAN.length,
+      processedItems: state.datasetIndex,
+      pagesProcessed: state.counts.pages,
+      chunksProcessed: state.counts.pages,
+      complete: state.datasetIndex >= DATASET_PLAN.length,
+      unit: {
+        unitKey: `${contract.dataset}:page:${pageResult.page}`,
+        sequence: state.counts.pages - 1,
+        payload: {
+          dataset: contract.dataset,
+          page: pageResult.page,
+          sourceRows: pageResult.records.length,
+          d1Rows: d1Result.totalRows,
+          larkRows: sumLarkRows(larkResults),
+        },
+      },
+    });
+    state = normalizeState(phase.state, runtime);
+  }
+
+  if (state.datasetIndex < DATASET_PLAN.length) {
+    await queueContinuation(dependencies.continuationQueue, reference);
+    return Object.freeze({
+      status: 'continuation_queued',
+      workKey: reference.workKey,
+      continuationQueued: true,
+      progress: summarizeProgress(state),
+    });
+  }
+
+  const reconciliation = createReconciliation(reference, runtime, state);
+  await dependencies.assertLockActive();
+  await dependencies.resumableWorkStore.completeWork({
+    workKey: reference.workKey,
+    completion: reconciliation,
+  });
+  return Object.freeze({
+    status: 'completed',
+    workKey: reference.workKey,
+    reconciliation,
+  });
+}
+
+async function fetchDatasetPage({ contract, state, runtime, client }) {
+  if (contract.dataset === WOOCOMMERCE_DATASETS.STORE) {
+    const store = await client.getStoreIdentity();
+    return Object.freeze({
+      page: 1,
+      totalPages: 1,
+      totalRows: 1,
+      nextPage: null,
+      sourceWatermark: runtime.now(),
+      records: Object.freeze([store]),
+    });
+  }
+  const params = buildSourceParams(contract.dataset, runtime);
+  return client.listPage(contract.resource, {
+    page: state.page,
+    perPage: runtime.pageSize,
+    params,
+  });
+}
+
+function buildSourceParams(dataset, runtime) {
+  const params = {};
+  if ([WOOCOMMERCE_DATASETS.ORDERS, WOOCOMMERCE_DATASETS.PRODUCTS].includes(dataset)) {
+    params.order = 'asc';
+    params.orderby = 'modified';
+    params.dates_are_gmt = true;
+    if (runtime.incrementalBoundary) params.modified_after = runtime.incrementalBoundary;
+  }
+  if (dataset === WOOCOMMERCE_DATASETS.ORDERS) {
+    params.status = 'any';
+    params.dp = 6;
+  }
+  return params;
+}
+
+async function enrichNestedResources(input) {
+  const refundsByOrderId = new Map();
+  const variationsByProductId = new Map();
+  if (input.contract.dataset === WOOCOMMERCE_DATASETS.ORDERS) {
+    const orders = input.records.filter((order) => shouldFetchRefunds(order));
+    const pairs = await mapBounded(orders, input.concurrency, async (order) => [
+      positiveInteger(order.id, 'order.id'),
+      await readAllNestedPages((page) => input.client.listOrderRefunds(order.id, { page }), input.maxNestedPages),
+    ]);
+    for (const [orderId, refunds] of pairs) refundsByOrderId.set(orderId, refunds);
+  }
+  if (input.contract.dataset === WOOCOMMERCE_DATASETS.PRODUCTS) {
+    const products = input.records.filter((product) => shouldFetchVariations(product));
+    const pairs = await mapBounded(products, input.concurrency, async (product) => [
+      positiveInteger(product.id, 'product.id'),
+      await readAllNestedPages((page) => input.client.listProductVariations(product.id, { page }), input.maxNestedPages),
+    ]);
+    for (const [productId, variations] of pairs) variationsByProductId.set(productId, variations);
+  }
+  return Object.freeze({ refundsByOrderId, variationsByProductId });
+}
+
+async function readAllNestedPages(fetchPage, maxPages) {
+  const records = [];
+  let page = 1;
+  while (page <= maxPages) {
+    const result = await fetchPage(page);
+    records.push(...result.records);
+    if (result.nextPage === null) return Object.freeze(records);
+    page = result.nextPage;
+  }
+  throw transientError('WooCommerce nested pagination exceeded its bound', {
+    code: 'WOOCOMMERCE_NESTED_PAGINATION_BOUND_EXCEEDED',
+    details: { maxPages },
+  });
+}
+
+async function normalizePage({ contract, pageResult, enriched, runtime, reference, coverageRunId }) {
+  const common = {
+    dataset: contract.dataset,
+    records: pageResult.records,
+    customerKey: runtime.customerKey,
+    accountKey: runtime.accountKey,
+    reportingTimezone: runtime.reportingTimezone,
+    defaultCurrency: runtime.defaultCurrency,
+    syncRunId: reference.syncRunId,
+    coverageRunId,
+    fetchedAt: runtime.now(),
+    now: runtime.now(),
+    refundsByOrderId: enriched.refundsByOrderId,
+  };
+  let output = await normalizeWooCommerceDataset(common);
+  if (contract.dataset === WOOCOMMERCE_DATASETS.STORE) {
+    const store = pageResult.records[0];
+    output = await normalizeWooCommerceDataset({
+      ...common,
+      defaultCurrency: store.currency ?? runtime.defaultCurrency,
+    });
+  }
+  if (contract.dataset === WOOCOMMERCE_DATASETS.PRODUCTS) {
+    for (const [parentProductId, variations] of enriched.variationsByProductId.entries()) {
+      const variationOutput = await normalizeWooCommerceDataset({
+        ...common,
+        dataset: WOOCOMMERCE_DATASETS.VARIATIONS,
+        records: variations,
+        parentProductId,
+      });
+      output = mergeNormalizedOutputs(output, variationOutput);
+    }
+  }
+  return output;
+}
+
+async function planLarkRows(input) {
+  const plans = [];
+  for (const contract of WOOCOMMERCE_LARK_TABLES) {
+    const derived = contract.path.startsWith('daily.') || contract.path === 'canonical.customers';
+    if (input.derivedOnly === true && !derived) continue;
+    if (input.includeDerived !== true && derived) continue;
+    const rows = readPath(input.output, contract.path);
+    if (rows.length === 0) continue;
+    const tableId = requireText(input.tables[contract.tableKey], contract.tableKey);
+    const plan = await input.syncEngine.planByKey({
+      repository: input.repository,
+      tableId,
+      keyField: contract.keyField,
+      rows,
+    });
+    if (plan.duplicateInputRows !== 0) {
+      throw permanentError('WooCommerce Lark preflight found duplicate Stable keys', {
+        code: 'WOOCOMMERCE_LARK_DUPLICATE_INPUT',
+        details: { tableKey: contract.tableKey, duplicateRows: plan.duplicateInputRows },
+      });
+    }
+    plans.push(Object.freeze({
+      tableKey: contract.tableKey,
+      expected: rows.length,
+      plan,
+    }));
+  }
+  return Object.freeze(plans);
+}
+
+function createDerivedOutput(rows) {
+  return Object.freeze({
+    raw: emptyRaw(),
+    canonical: Object.freeze({
+      orders: Object.freeze([]),
+      orderStatusObservations: Object.freeze([]),
+      orderLines: Object.freeze([]),
+      products: Object.freeze([]),
+      customers: rows.customers,
+    }),
+    daily: Object.freeze({ sales: rows.sales, products: rows.products }),
+  });
+}
+
+function emptyRaw() {
+  return Object.freeze({
+    stores: Object.freeze([]), orders: Object.freeze([]), orderItems: Object.freeze([]),
+    products: Object.freeze([]), variations: Object.freeze([]), categories: Object.freeze([]),
+    customers: Object.freeze([]), coupons: Object.freeze([]), refunds: Object.freeze([]),
+  });
+}
+
+function buildCoverageEntities(input) {
+  return Object.freeze(input.records.map((record, index) => {
+    const externalId = record?.id ?? (input.entityType === 'store' ? 'store' : `row-${index + 1}`);
+    return Object.freeze({
+      coverage_entity_key: `${input.coverageRunId}:${input.entityType}:${externalId}`,
+      coverage_run_id: input.coverageRunId,
+      entity_type: input.entityType,
+      external_entity_id: String(externalId),
+      observation_status: 'observed',
+      source_revision: sourceRevision(record),
+      observed_at: input.observedAt,
+      created_at: input.observedAt,
+    });
+  }));
+}
+
+function buildCoverageRun(input) {
+  const datasetState = input.state.datasetCounts[input.contract.dataset] ?? emptyDatasetCount();
+  const expected = input.pageResult.totalRows;
+  const observed = datasetState.sourceRows;
+  const status = input.complete
+    ? (expected === 0 ? 'no_data_confirmed' : observed === expected ? 'complete' : 'partial')
+    : 'partial';
+  return Object.freeze({
+    coverage_run_id: input.coverageRunId,
+    sync_run_id: input.reference.syncRunId,
+    customer_key: input.runtime.customerKey,
+    platform: 'woocommerce',
+    account_key: input.runtime.accountKey,
+    dataset_key: `woocommerce_${input.contract.dataset}`,
+    metric_semantics: 'snapshot',
+    scope_mode: input.runtime.fullReconciliation ? 'full_inventory' : 'recent_window',
+    period_start: null,
+    period_end: null,
+    source_timezone: input.runtime.reportingTimezone,
+    status,
+    expected_entities: expected,
+    observed_entities: observed,
+    expected_rows: expected,
+    observed_rows: observed,
+    written_rows: datasetState.d1Rows,
+    failed_rows: 0,
+    source_watermark: datasetState.sourceWatermark === null ? null : String(datasetState.sourceWatermark),
+    revisable_until: input.contract.dataset === WOOCOMMERCE_DATASETS.ORDERS
+      ? input.runtime.now() + input.runtime.revisionLookbackMs
+      : null,
+    started_at: input.reference.originalRequestedAt,
+    completed_at: input.complete ? input.runtime.now() : null,
+    error_code: null,
+    created_at: input.reference.originalRequestedAt,
+    updated_at: input.runtime.now(),
+  });
+}
+
+function advanceState(input) {
+  const datasetCounts = { ...input.state.datasetCounts };
+  const current = { ...(datasetCounts[input.contract.dataset] ?? emptyDatasetCount()) };
+  current.pages += 1;
+  current.sourceRows += input.pageResult.records.length;
+  current.d1Rows += input.d1Result.totalRows;
+  current.derivedRows += input.derivedResult.salesRows + input.derivedResult.productRows + input.derivedResult.customerRows;
+  current.larkRows += sumLarkRows(input.larkResults);
+  current.sourceWatermark = maxNullable(current.sourceWatermark, input.pageResult.sourceWatermark);
+  current.expectedRows = input.pageResult.totalRows;
+  datasetCounts[input.contract.dataset] = Object.freeze(current);
+  return Object.freeze({
+    ...input.state,
+    datasetCounts: Object.freeze(datasetCounts),
+    counts: Object.freeze({
+      pages: input.state.counts.pages + 1,
+      sourceRows: input.state.counts.sourceRows + input.pageResult.records.length,
+      d1Rows: input.state.counts.d1Rows + input.d1Result.totalRows,
+      derivedRows: input.state.counts.derivedRows
+        + input.derivedResult.salesRows + input.derivedResult.productRows + input.derivedResult.customerRows,
+      larkRows: input.state.counts.larkRows + sumLarkRows(input.larkResults),
+      failedRows: input.state.counts.failedRows,
+    }),
+  });
+}
+
+function normalizeState(value, runtime) {
+  const source = value && typeof value === 'object' ? value : {};
+  const datasetCounts = {};
+  for (const contract of DATASET_PLAN) {
+    datasetCounts[contract.dataset] = Object.freeze({
+      ...emptyDatasetCount(),
+      ...(source.datasetCounts?.[contract.dataset] ?? {}),
+    });
+  }
+  return Object.freeze({
+    datasetIndex: boundedInteger(source.datasetIndex ?? 0, 'datasetIndex', 0, DATASET_PLAN.length),
+    page: boundedInteger(source.page ?? 1, 'page', 1, 1_000_000),
+    incrementalBoundary: source.incrementalBoundary ?? runtime.incrementalBoundary,
+    datasetCounts: Object.freeze(datasetCounts),
+    counts: Object.freeze({
+      pages: nonNegativeInteger(source.counts?.pages ?? 0, 'pages'),
+      sourceRows: nonNegativeInteger(source.counts?.sourceRows ?? 0, 'sourceRows'),
+      d1Rows: nonNegativeInteger(source.counts?.d1Rows ?? 0, 'd1Rows'),
+      derivedRows: nonNegativeInteger(source.counts?.derivedRows ?? 0, 'derivedRows'),
+      larkRows: nonNegativeInteger(source.counts?.larkRows ?? 0, 'larkRows'),
+      failedRows: nonNegativeInteger(source.counts?.failedRows ?? 0, 'failedRows'),
+    }),
+  });
+}
+
+function normalizeReference(input) {
+  const generation = nonNegativeInteger(input.generation, 'generation');
+  const originalRequestedAt = nonNegativeInteger(input.originalRequestedAt ?? generation, 'originalRequestedAt');
+  return Object.freeze({
+    type: requireText(input.type ?? 'woocommerce.commerce.sync', 'type'),
+    schemaVersion: SCHEMA_VERSION,
+    workKey: requireText(input.workKey, 'workKey'),
+    cursorKey: requireText(input.cursorKey, 'cursorKey'),
+    syncRunId: requireText(input.syncRunId, 'syncRunId'),
+    generation,
+    originalRequestedAt,
+  });
+}
+
+function normalizeRuntime(input) {
+  const now = typeof input.now === 'function' ? input.now : () => Date.now();
+  const fullReconciliation = input.fullReconciliation === true;
+  const modifiedAfter = nullableTimestamp(input.modifiedAfter);
+  return Object.freeze({
+    customerKey: requireText(input.customerKey, 'customerKey'),
+    accountKey: requireText(input.accountKey, 'accountKey'),
+    reportingTimezone: requireText(input.reportingTimezone ?? 'Asia/Bangkok', 'reportingTimezone'),
+    defaultCurrency: optionalText(input.defaultCurrency)?.toUpperCase() ?? null,
+    connectorEnabled: input.connectorEnabled === true,
+    d1WriteEnabled: input.d1WriteEnabled === true,
+    larkWriteEnabled: input.larkWriteEnabled === true,
+    fullReconciliation,
+    modifiedAfter,
+    incrementalBoundary: fullReconciliation ? null : createWooCommerceIncrementalBoundary({
+      sourceWatermark: modifiedAfter,
+      overlapSeconds: input.overlapSeconds ?? 300,
+    }),
+    pageSize: boundedInteger(input.pageSize ?? 100, 'pageSize', 1, 100),
+    maxPagesPerInvocation: boundedInteger(
+      input.maxPagesPerInvocation ?? DEFAULT_MAX_PAGES_PER_INVOCATION,
+      'maxPagesPerInvocation',
+      1,
+      20,
+    ),
+    maxNestedPages: boundedInteger(input.maxNestedPages ?? 100, 'maxNestedPages', 1, 1_000),
+    nestedConcurrency: boundedInteger(
+      input.nestedConcurrency ?? DEFAULT_NESTED_CONCURRENCY,
+      'nestedConcurrency',
+      1,
+      10,
+    ),
+    revisionLookbackMs: boundedInteger(
+      input.revisionLookbackMs ?? 30 * 86_400_000,
+      'revisionLookbackMs',
+      86_400_000,
+      365 * 86_400_000,
+    ),
+    now,
+  });
+}
+
+function readDependencies(input) {
+  return Object.freeze({
+    client: requireMethods(input.client, [
+      'getStoreIdentity', 'listPage', 'listOrderRefunds', 'listProductVariations',
+    ], 'client'),
+    commerceStore: requireMethods(input.commerceStore, [
+      'assertSchemaReady', 'upsertRowsByTable', 'rebuildDerivedFacts', 'readDerivedRows',
+    ], 'commerceStore'),
+    coverageStore: requireMethods(input.coverageStore, [
+      'saveCoverageRun', 'saveCoverageEntities',
+    ], 'coverageStore'),
+    resumableWorkStore: requireMethods(input.resumableWorkStore, [
+      'beginWork', 'loadPhase', 'savePhase', 'completeWork',
+    ], 'resumableWorkStore'),
+    repository: requireObject(input.repository, 'repository'),
+    syncEngine: requireMethods(input.syncEngine, ['planByKey', 'executePlan'], 'syncEngine'),
+    tables: requireObject(input.tables, 'tables'),
+    continuationQueue: requireMethods(input.continuationQueue, ['send'], 'continuationQueue'),
+    assertLockActive: typeof input.assertLockActive === 'function'
+      ? input.assertLockActive
+      : async () => undefined,
+  });
+}
+
+function assertExecutionGates(runtime) {
+  if (!runtime.connectorEnabled || !runtime.d1WriteEnabled || !runtime.larkWriteEnabled) {
+    throw permanentError('WooCommerce Connector, D1 and Lark gates must all be enabled', {
+      code: 'WOOCOMMERCE_PROCESSING_GATES_DISABLED',
+    });
+  }
+}
+
+async function queueContinuation(queue, reference) {
+  const message = Object.freeze({
+    type: reference.type,
+    schemaVersion: reference.schemaVersion,
+    workKey: reference.workKey,
+    cursorKey: reference.cursorKey,
+    syncRunId: reference.syncRunId,
+    generation: reference.generation,
+    originalRequestedAt: reference.originalRequestedAt,
+  });
+  try {
+    await queue.send(message);
+  } catch (cause) {
+    throw transientError('WooCommerce continuation Queue send failed', {
+      code: 'WOOCOMMERCE_CONTINUATION_QUEUE_SEND_FAILED',
+      cause,
+    });
+  }
+}
+
+function createReconciliation(reference, runtime, state) {
+  for (const contract of DATASET_PLAN) {
+    const dataset = state.datasetCounts[contract.dataset];
+    if (dataset.larkRows < 0 || dataset.d1Rows < 0 || dataset.sourceRows < 0) {
+      throw permanentError('WooCommerce reconciliation contains invalid counters', {
+        code: 'WOOCOMMERCE_RECONCILIATION_FAILED',
+      });
+    }
+    if (runtime.fullReconciliation && dataset.expectedRows !== dataset.sourceRows) {
+      throw permanentError('WooCommerce full reconciliation is incomplete', {
+        code: 'WOOCOMMERCE_RECONCILIATION_FAILED',
+        details: { dataset: contract.dataset },
+      });
+    }
+  }
+  return Object.freeze({
+    schemaVersion: 'woocommerce_commerce_reconciliation_v1',
+    workKey: reference.workKey,
+    generation: reference.generation,
+    scopeMode: runtime.fullReconciliation ? 'full_inventory' : 'recent_window',
+    datasets: state.datasetCounts,
+    totals: state.counts,
+    failed: state.counts.failedRows,
+  });
+}
+
+function summarizeProgress(state) {
+  return Object.freeze({
+    datasetIndex: state.datasetIndex,
+    page: state.page,
+    counts: state.counts,
+  });
+}
+
+function mergeNormalizedOutputs(left, right) {
+  const mergeGroup = (a, b) => Object.freeze(Object.fromEntries(Object.keys(a).map((key) => [
+    key,
+    Object.freeze([...(a[key] ?? []), ...(b[key] ?? [])]),
+  ])));
+  const d1RowsByTable = {};
+  for (const source of [left.d1RowsByTable, right.d1RowsByTable]) {
+    for (const [table, rows] of Object.entries(source)) {
+      d1RowsByTable[table] ??= [];
+      d1RowsByTable[table].push(...rows);
+    }
+  }
+  return Object.freeze({
+    raw: mergeGroup(left.raw, right.raw),
+    canonical: mergeGroup(left.canonical, right.canonical),
+    daily: mergeGroup(left.daily, right.daily),
+    d1RowsByTable: Object.freeze(Object.fromEntries(Object.entries(d1RowsByTable)
+      .map(([table, rows]) => [table, Object.freeze(rows)]))),
+    impactedDates: Object.freeze([...new Set([...left.impactedDates, ...right.impactedDates])].sort()),
+    impactedProducts: Object.freeze([...new Set([...left.impactedProducts, ...right.impactedProducts])].sort()),
+    impactedCustomers: Object.freeze([...new Set([...left.impactedCustomers, ...right.impactedCustomers])].sort()),
+  });
+}
+
+async function mapBounded(values, concurrency, mapper) {
+  const source = [...values];
+  const results = new Array(source.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(concurrency, source.length) }, async () => {
+    while (next < source.length) {
+      const index = next;
+      next += 1;
+      results[index] = await mapper(source[index], index);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+function shouldFetchRefunds(order) {
+  return (Array.isArray(order?.refunds) && order.refunds.length > 0)
+    || Number(order?.total_refunded ?? 0) > 0
+    || order?.status === 'refunded';
+}
+
+function shouldFetchVariations(product) {
+  return product?.type === 'variable'
+    || (Array.isArray(product?.variations) && product.variations.length > 0);
+}
+
+function readPath(value, path) {
+  const rows = path.split('.').reduce((current, key) => current?.[key], value);
+  if (!Array.isArray(rows)) throw new TypeError(`WooCommerce Lark path is invalid: ${path}`);
+  return rows;
+}
+
+function sourceRevision(record) {
+  const value = record?.date_modified_gmt ?? record?.date_modified ?? null;
+  return optionalText(value);
+}
+
+function sumLarkRows(results) {
+  return results.reduce((total, result) => total + result.created + result.updated + result.skipped, 0);
+}
+
+function emptyDatasetCount() {
+  return Object.freeze({
+    pages: 0,
+    sourceRows: 0,
+    expectedRows: 0,
+    d1Rows: 0,
+    derivedRows: 0,
+    larkRows: 0,
+    sourceWatermark: null,
+  });
+}
+
+function maxNullable(left, right) {
+  if (left === null || left === undefined) return right ?? null;
+  if (right === null || right === undefined) return left;
+  return Math.max(Number(left), Number(right));
+}
+
+function requireMethods(value, methods, fieldName) {
+  const object = requireObject(value, fieldName);
+  for (const method of methods) {
+    if (typeof object[method] !== 'function') throw new TypeError(`${fieldName}.${method} is required`);
+  }
+  return object;
+}
+
+function requireObject(value, fieldName) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError(`${fieldName} is required`);
+  return value;
+}
+
+function requireText(value, fieldName) {
+  if (typeof value !== 'string' || value.trim() === '') throw new TypeError(`${fieldName} is required`);
+  return value.trim();
+}
+
+function optionalText(value) {
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
+}
+
+function positiveInteger(value, fieldName) {
+  return boundedInteger(value, fieldName, 1, Number.MAX_SAFE_INTEGER);
+}
+
+function nonNegativeInteger(value, fieldName) {
+  return boundedInteger(value, fieldName, 0, Number.MAX_SAFE_INTEGER);
+}
+
+function boundedInteger(value, fieldName, minimum, maximum) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number < minimum || number > maximum) {
+    throw new TypeError(`${fieldName} must be an integer from ${minimum} to ${maximum}`);
+  }
+  return number;
+}
+
+function nullableTimestamp(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) return value;
+  const timestamp = Date.parse(String(value));
+  if (!Number.isFinite(timestamp)) throw new TypeError('modifiedAfter must be an ISO timestamp or epoch milliseconds');
+  return timestamp;
+}
