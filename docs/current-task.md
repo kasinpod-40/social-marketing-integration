@@ -3,7 +3,7 @@
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = IMPLEMENTATION_PASS_AWAITING_MERGE
+TASK_STATUS                         = HOTFIX_MERGED_REMOTE_ROLLOUT_READY_OPERATOR_ENV_REQUIRED
 CURRENT_PROGRAM                     = GOOGLE_ADS_MANAGER_SCRIPT_SIGNED_DELIVERY_TO_LARK
 USER_AUTHORIZATION                  = COMPLETE_THROUGH_MANUAL_LIVE_D1_LARK_UAT_2026_07_26
 DELIVERY_SOURCE                     = GOOGLE_ADS_MANAGER_SCRIPT
@@ -11,11 +11,12 @@ DIRECT_GOOGLE_ADS_API               = OPTIONAL_FUTURE_PATH
 GOOGLE_ADS_API_ACCESS               = PENDING_NON_BLOCKING
 CUSTOMER_OAUTH                      = COMPLETED
 CUSTOMER_CONNECTION                 = CONNECTED_ENCRYPTED_REFRESH_TOKEN_ACTIVE
-SCRIPT_GATE_HOTFIX                  = PASS_PR_59
-SOURCE_HEAD                         = 96decafb6a1a83328f8798e7fd4ef957ee15a66a
-BRANCH_VERIFICATION                 = PASS_RUN_489
+SCRIPT_GATE_HOTFIX                  = MERGED_PR_59
+MERGE_COMMIT                        = 82767ffe80e417901e9b0a9f1f767ecefedb8c82
+REVIEWED_SOURCE_HEAD                = 84cd1a34c23282000ed43b8e0a378069fdfbbdd8
+BRANCH_VERIFICATION                 = PASS_RUN_490
 REPOSITORY_REVIEW                   = PASS
-REMOTE_OPERATOR_PREFLIGHT           = NOT_RUN
+REMOTE_OPERATOR_PREFLIGHT           = BLOCKED_OPERATOR_ENV_NOT_CONNECTED
 REMOTE_D1_BACKUP                    = NOT_RUN
 REMOTE_D1_MIGRATION_0015            = NOT_RUN
 API_WORKER_DEPLOYMENT               = NOT_RUN
@@ -30,9 +31,9 @@ SCHEDULE                            = DISABLED
 PRODUCTION                          = BLOCKED
 ```
 
-## Latest user decision
+## Authoritative delivery decision
 
-The primary and authoritative Google Ads ingestion path is:
+The primary Google Ads ingestion path is:
 
 ```text
 Google Ads
@@ -44,10 +45,10 @@ Google Ads
 → Canonical Ads tables in Lark
 ```
 
-Google Ads API developer-token approval is not a prerequisite for this path. The existing
-OAuth connection remains valuable as customer consent and encrypted credential evidence,
-and may support a future direct API path, but `google_ads_api_access_pending` must not block
-Manager Script signed delivery.
+Google Ads API Developer Token approval is not a prerequisite. The completed OAuth connection
+continues to provide customer consent and encrypted credential evidence, while direct API
+access remains an optional future path. `google_ads_api_access_pending` must not block Manager
+Script delivery.
 
 Related Project Brain authority:
 
@@ -55,46 +56,78 @@ Related Project Brain authority:
 docs/project-brain/google-ads-manager-script-live-path.md
 ```
 
-## Root cause
+## Root cause and merged correction
 
-PR `#57` correctly implemented the durable LIVE, Queue, D1 and Lark path but coupled LIVE
-admission to direct Google Ads API validation:
+PR `#57` implemented the durable LIVE, Queue, D1 and Lark path but incorrectly coupled Manager
+Script LIVE admission to direct Google Ads API validation. The customer had completed OAuth and
+Manager Script PREVIEW had already proved six datasets, seven chunks and 1,375 rows, but
+`google_ads_api_access_pending` prevented LIVE admission.
 
-- the Connection read required `access_status = 'validated'`;
-- the authorization layer required API-derived external account metadata;
-- the rollout operator required API validation, currency and timezone metadata.
+PR `#59` corrected the gate and was Squash Merged into `main` at:
 
-The customer has completed OAuth and has one active encrypted refresh token, but the direct
-API validation status is `google_ads_api_access_pending`. Manager Script PREVIEW already proved
-that the approved Manager and advertiser are selectable and that six datasets, seven chunks
-and 1,375 rows can be signed and delivered without Google Ads API access.
+```text
+82767ffe80e417901e9b0a9f1f767ecefedb8c82
+```
 
-## Implemented correction
+The merged correction:
 
-1. Manager Script LIVE now accepts either `validated` or
-   `google_ads_api_access_pending` while retaining all exact consent and identity checks.
-2. Customer Connection remains fail-closed on:
-   - `customer_key = chemistry_k`;
-   - `connector_key = google_ads`;
-   - `connection_status = connected`;
-   - exact `adwords` OAuth scope;
-   - active encrypted refresh-token credential reference;
-   - Manager ID `9463570541`;
-   - approved advertiser ID `5662332033`.
-3. Signed Script source identity, HMAC, key ID, timestamp, nonce/replay, manifest,
-   dataset count and payload limits remain unchanged.
-4. API-derived currency/timezone metadata is checked when present, but is not required while
-   direct API access is pending.
-5. The operator connection gate treats API state as informational and Script consent as the
-   blocking decision.
-6. The D1 read query and operator SQL were executed through the SQLite/D1 test adapter.
-7. Queue contract, D1/Lark writer, migrations, stable keys, generation fences, locks,
-   resumable checkpoints, reconciliation and redaction were not weakened or duplicated.
+1. accepts `validated` or `google_ads_api_access_pending` for the Manager Script path;
+2. still requires `connected`, the exact `adwords` scope and an active encrypted
+   refresh-token reference;
+3. requires exact approved Manager `9463570541` and advertiser `5662332033` mappings;
+4. preserves signed runtime identity, HMAC, key ID, timestamp, nonce/replay, manifest,
+   dataset count and payload limits;
+5. checks API-derived currency/timezone metadata when present, without requiring it while
+   direct API access is pending;
+6. treats API status as informational in the operator connection gate;
+7. executes the D1 read query and operator SQL through the SQLite/D1 test adapter;
+8. leaves Queue contract, D1/Lark writers, migrations, stable keys, generation fences,
+   renewable locks, resumable checkpoints, reconciliation and redaction unchanged.
 
-## In scope after merge
+## Verification result
 
-The user has already authorized the guarded Integration Workspace rollout through one manual
-LIVE UAT and exact rerun:
+Final Branch Verification run `#490` passed on reviewed source head:
+
+```text
+84cd1a34c23282000ed43b8e0a378069fdfbbdd8
+```
+
+Passed stages:
+
+- locked dependency installation;
+- syntax, architecture and repository hygiene;
+- focused TikTok regression;
+- Node Unit/Integration and Workers runtime tests;
+- report reliability regression;
+- high-severity dependency audit;
+- Wrangler deployment dry-run;
+- diagnostics upload.
+
+Focused Manager Script coverage passed:
+
+```text
+PASS  connected + google_ads_api_access_pending + exact scope/token/manager/advertiser
+PASS  connected + validated + exact scope/token/manager/advertiser
+FAIL  missing connection or unsupported state
+FAIL  missing adwords scope
+FAIL  inactive/replaced encrypted credential
+FAIL  approved advertiser mismatch
+FAIL  manager mismatch
+FAIL  optional API metadata conflict
+PASS  LIVE HTTP queues one reference from API-pending Script consent
+PASS  exact retry does not enqueue a second operation
+PASS  operator SQL accepts pending or validated API state
+PASS  operator SQL executes through SQLite/D1 adapter
+FAIL  operator gate when a required Script consent field mismatches
+```
+
+No Remote D1, Cloudflare, Queue, Lark, schedule or Production action occurred during the hotfix.
+No existing business fact was changed.
+
+## Approved remaining work
+
+The user has authorized one guarded Integration Workspace rollout through manual LIVE, Lark
+visibility and exact rerun:
 
 1. guarded read-only preflight;
 2. Remote D1 backup and SHA-256 evidence;
@@ -102,26 +135,30 @@ LIVE UAT and exact rerun:
 4. flags-false API and Sync Worker deployment;
 5. disabled-route and schema verification;
 6. read-only Manager Script Customer Connection gate;
-7. enable only required manual flags with schedule remaining false;
+7. enable only required manual flags while schedule remains false;
 8. run the reviewed Manager Script once in LIVE mode;
-9. verify Queue, D1, Lark RAW and Canonical completion;
-10. reconcile all six datasets;
-11. exact rerun with zero durable business-fact drift;
-12. restore manual execution flags to false.
+9. verify Queue and durable Work completion;
+10. verify D1 Ads facts and six Coverage records;
+11. verify Shared RAW and Canonical Lark writes;
+12. reconcile all six datasets;
+13. perform one exact rerun with zero durable business-fact drift;
+14. restore manual execution flags to false and retain sanitized evidence.
 
-## Out of scope
+Expected Lark destinations:
 
-- Direct Google Ads API as the primary ingestion source;
-- schedule activation;
-- Production cutover;
-- DLQ redrive unless the UAT creates a specifically reviewed retryable incident;
-- Google Ads campaign, ad, bid, budget or spend mutation;
-- deleting or rewriting existing D1/Lark business facts;
-- reopening completed Lark Schema/View/Formula work.
+```text
+RAW_Ads_Entities
+RAW_Ads_Daily
+MKT_Ads_Accounts
+MKT_Ads_Campaigns
+MKT_Ads_AdGroups
+MKT_Ads_Ads
+MKT_Ads_Creatives
+MKT_Ads_Daily
+```
 
 ## Runtime safety contract
 
-The Manager Script gate must never accept only a bearer claim or a manually edited status.
 LIVE still requires:
 
 ```text
@@ -142,63 +179,23 @@ The Queue body remains reference-only and contains no token, signature, source r
 identity. D1-first and Lark phases retain stable keys, generation fences, renewable locks,
 resumable checkpoints, reconciliation and staged-payload redaction.
 
-## Validation result
+## Out of scope
 
-Branch Verification run `#489` passed on source head:
-
-```text
-96decafb6a1a83328f8798e7fd4ef957ee15a66a
-```
-
-Verified stages include:
-
-- locked dependency installation;
-- syntax, architecture and repository hygiene;
-- focused TikTok regression;
-- Node Unit/Integration tests;
-- Workers runtime tests;
-- report reliability regression;
-- high-severity dependency audit;
-- Wrangler deployment dry-run.
-
-Focused Google Ads coverage passed for:
-
-```text
-PASS  connected + google_ads_api_access_pending + exact scope/token/manager/advertiser
-PASS  connected + validated + exact scope/token/manager/advertiser
-FAIL  missing connection or unsupported state
-FAIL  missing adwords scope
-FAIL  inactive/replaced encrypted credential
-FAIL  approved advertiser mismatch
-FAIL  manager mismatch
-FAIL  optional API metadata conflict
-PASS  LIVE HTTP queues one reference from API-pending Script consent
-PASS  exact retry does not enqueue a second operation
-PASS  operator SQL accepts pending or validated API state
-PASS  operator SQL executes through SQLite/D1 adapter
-FAIL  operator gate when a required Script consent field mismatches
-```
-
-## Implementation result
-
-```text
-PR                         = 59
-BRANCH                     = agent/google-ads-manager-script-live-gate-hotfix
-SOURCE_HEAD                = 96decafb6a1a83328f8798e7fd4ef957ee15a66a
-BRANCH_VERIFICATION        = PASS_RUN_489
-REMOTE_ACTIONS             = NONE
-BUSINESS_FACT_MUTATION     = NONE
-```
-
-Changed files are limited to the Manager Script authorization/read gate, guarded operator,
-focused tests, Current Task, rollout runbook, Changelog and the related Project Brain module.
-No Queue schema, D1/Lark business writer, migration or Source business fact was changed.
+- Direct Google Ads API as the primary ingestion source;
+- schedule activation;
+- Production cutover;
+- DLQ redrive unless the UAT creates a specifically reviewed retryable incident;
+- Google Ads campaign, ad, bid, budget or spend mutation;
+- deleting or rewriting existing D1/Lark business facts;
+- reopening completed Lark Schema/View/Formula work.
 
 ## Exact remote resume boundary
 
-Remote execution must start only from the clean merged `main` checkout in the protected
-operator environment containing reviewed ignored Wrangler configs and authenticated
-Cloudflare/Wrangler identity. Do not guess config paths or expose Secrets.
+Remote execution must begin only from the clean merged `main` checkout in the protected
+operator environment containing reviewed ignored Wrangler configs, authenticated
+Cloudflare/Wrangler identity and a writable ignored evidence directory. The current chat
+session does not have those resources and must not guess config paths or request/expose
+Secrets.
 
 ```text
 1. guarded read-only preflight
