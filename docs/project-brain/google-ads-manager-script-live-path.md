@@ -120,23 +120,23 @@ This proved the date hotfix worked and exposed a separate adapter/schema drift: 
 already uses Canonical Ads v2 while the runtime adapter still emitted several pre-migration aliases.
 The second failure also remained non-partial with zero D1 Ads business rows and zero Lark writes.
 
-## Canonical Ads v2 hotfix contract
-
-Branch and PR:
+## Canonical Ads v2 merged correction
 
 ```text
-branch                     work/google-ads-canonical-lark-mapping-hotfix
-pull request               #62 / READY_FOR_REVIEW
+pull request               #62 / MERGED
+merge commit               3ab7a249cb40f6e3f377cecf02f2d8713bbdcb61
 reviewed source head       56d27b6c98b7b915e4367a2b5781f110cbc10f45
-branch verification        PASS / RUN_505
+final branch head          f702319a9bcbb339f7f300c9e56fb46fee460a0a
+source verification        PASS / RUN_505
+final docs verification    PASS / RUN_509
 ```
 
-The hotfix:
+The merged hotfix:
 
 1. replaces stale aliases across Accounts, Campaigns, Ad Groups, Ads, Creatives and Daily;
 2. preserves all D1 contracts and stable-key values;
 3. retains Canonical Campaign `objective` when supplied by the signed source;
-4. omits generic ownership metadata that is not grounded in the signed source or runtime identity;
+4. omits generic ownership metadata that is not grounded in signed source/runtime identity;
 5. normalizes Google source statuses to `active`, `paused`, `removed` or `unknown`;
 6. maps Search, Display, YouTube, Demand Gen, Performance Max, Shopping, App and fallback
    channels to reviewed Canonical options;
@@ -152,8 +152,6 @@ Ads v2 schema remains authoritative.
 
 ## Verification evidence
 
-Final Branch Verification run `#505` passed:
-
 ```text
 syntax / architecture / hygiene    PASS
 focused TikTok regression          4 / 4 PASS
@@ -162,10 +160,25 @@ Workers runtime                    9 / 9 PASS
 report reliability                 70 / 70 PASS
 dependency audit                   0 vulnerabilities
 Wrangler deployment dry-run        PASS
+review threads                     0
+review comments                    0
 ```
 
 No Remote D1 mutation, Queue send, DLQ redrive, Lark mutation/write, Worker deployment,
 Manager Script execution, schedule or Production action occurred in PR `#62` implementation.
+
+## Authorized guarded recovery next
+
+Repository review and merge are complete. The next bounded runtime operation is:
+
+1. pull clean merged `main`;
+2. deploy Sync Worker with the guarded recovery flags;
+3. keep signed ingress and Google Ads schedule disabled;
+4. redrive only `terminal:6b1c7a5142f1eedb12a2b40b0a7cba78` once;
+5. verify the original Run ID through destination preflight, D1, Lark and reconciliation;
+6. restore all execution and redrive flags to false.
+
+The original Manager Script must not run again. The first DLQ must not be redriven again.
 
 ## Runtime hold state
 
@@ -175,9 +188,9 @@ API Google Ads flags        false
 Sync Google Ads flags       false
 DLQ redrive                 false
 Google Ads schedules        false
-first DLQ                   redriven / retained
+first DLQ                   redriven / retained / closed to redrive
 second DLQ                  open / retained
-next exact redrive          blocked pending merge and guarded deployment
+next exact redrive          blocked until merged Sync recovery deploy is verified
 Production                  blocked
 ```
 
@@ -192,7 +205,6 @@ Production                  blocked
 - Do not rewrite D1 date-only facts or stable keys with epoch values.
 - Do not rerun Google Ads Manager Script to recover the retained staged incident.
 - Do not redrive the first DLQ again; it is already `redriven`.
-- Do not redrive the second DLQ before PR `#62` is merged and deployed through the guarded Sync
-  recovery configuration.
+- Do not redrive the second DLQ before the merged Sync recovery deployment is verified.
 - Do not enable the Google Ads schedule during manual UAT.
 - Do not cut over Production without a separate customer-owned Production task.
