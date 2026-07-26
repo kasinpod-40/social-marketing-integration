@@ -3,7 +3,7 @@
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = APPROVED_FOR_IMPLEMENTATION
+TASK_STATUS                         = IMPLEMENTED_PR_63_BRANCH_VERIFICATION_PASS_AWAITING_REVIEW
 CURRENT_PROGRAM                     = GOOGLE_ADS_MANAGER_SCRIPT_SIGNED_DELIVERY_TO_LARK
 INCIDENT_DATE                       = 2026-07-26
 INCIDENT_RUN_ID                     = 88351cb4-714d-49ef-91db-d95550a93ebf
@@ -51,16 +51,16 @@ partial              = false
 
 ## Confirmed root cause
 
-The Canonical row adapter now emits the reviewed v2 stable-key fields, but the processor's private
-`LARK_TABLES` routing contract still contains three pre-migration key-field aliases:
+The Canonical row adapter emits the reviewed v2 stable-key fields, but the processor's private
+`LARK_TABLES` routing contract retained three pre-migration key-field aliases:
 
 ```text
-canonical.campaigns  current=campaign_key   required=ads_campaign_key
-canonical.adGroups   current=ad_group_key   required=ads_ad_group_key
-canonical.creatives  current=creative_key   required=ads_creative_key
+canonical.campaigns  previous=campaign_key   corrected=ads_campaign_key
+canonical.adGroups   previous=ad_group_key   corrected=ads_ad_group_key
+canonical.creatives  previous=creative_key   corrected=ads_creative_key
 ```
 
-The other five destination key fields are already correct:
+The other five destination key fields were already correct:
 
 ```text
 raw.entities         raw_ads_entity_key
@@ -71,28 +71,22 @@ canonical.daily      ads_daily_key
 ```
 
 `TableSyncEngine.planByKey()` validates that every row contains the configured key field. The stale
-Campaign contract therefore fails before the preflight phase can be saved and before D1 writes begin.
-This is a source routing-contract defect, not a Lark Schema or D1 defect.
+Campaign contract failed before the preflight phase could be saved and before D1 writes began. This
+was a source routing-contract defect, not a Lark Schema or D1 defect.
 
-## Objective
+## Implemented correction
 
-Align every Google Ads destination routing key with the row contract produced by
-`buildGoogleAdsLarkWriteSet()` and add a processor-level regression test that would have rejected all
-three stale aliases before runtime.
+PR `#63` changes only the three stale routing keys and processor-level regression coverage:
 
-## In scope
+1. `campaign_key` → `ads_campaign_key`;
+2. `ad_group_key` → `ads_ad_group_key`;
+3. `creative_key` → `ads_creative_key`;
+4. every `planByKey()` call now has test evidence that all rows contain the configured non-empty key;
+5. destination preflight must use the exact eight-table `(tableId, keyField)` sequence;
+6. one-table-per-continuation Lark execution must reuse the identical sequence.
 
-1. Change only these processor contracts:
-   - `campaign_key` → `ads_campaign_key`;
-   - `ad_group_key` → `ads_ad_group_key`;
-   - `creative_key` → `ads_creative_key`.
-2. Preserve table order, destination table bindings, row payloads, stable-key values, D1 contracts,
-   phases, continuations, reconciliation and retry semantics.
-3. Record every `planByKey()` invocation in the durable processor test.
-4. Assert the exact eight-table `(tableId, keyField)` sequence during preflight.
-5. Assert each configured key field exists and is non-empty in every planned row.
-6. Confirm the exact same routing contract is reused by one-table-per-continuation Lark execution.
-7. Update Current Task, Project Brain and CHANGELOG with sanitized third-attempt evidence.
+Table order, table bindings, Canonical row payloads, D1 contracts, stable-key values, phases,
+continuations, reconciliation and retry semantics remain unchanged.
 
 ## Out of scope
 
@@ -106,45 +100,51 @@ three stale aliases before runtime.
 - Production cutover;
 - deleting or closing forensic DLQ, Sync Run or Alert evidence.
 
-## Acceptance criteria
+## Acceptance result
 
 ```text
-Campaign routing key      ads_campaign_key
-Ad Group routing key      ads_ad_group_key
-Creative routing key      ads_creative_key
-all 8 preflight rows      contain configured non-empty key
-preflight plan sequence   exact and stable
-Lark execution routing    same exact key contract
-D1 contracts              unchanged
-Canonical row payloads    unchanged
-stable-key values         unchanged
+Campaign routing key      ads_campaign_key                         PASS
+Ad Group routing key      ads_ad_group_key                         PASS
+Creative routing key      ads_creative_key                         PASS
+all 8 preflight rows      contain configured non-empty key         PASS
+preflight plan sequence   exact and stable                         PASS
+Lark execution routing    same exact key contract                  PASS
+D1 contracts              unchanged                               PASS
+Canonical row payloads    unchanged                               PASS
+stable-key values         unchanged                               PASS
 TikTok/Core regression    PASS
 Remote actions            none
 ```
 
-Required gates:
+## Verification result
 
 ```text
-npm ci
-npm run check
-npm test
-npm run test:report-reliability
-npm audit --audit-level=high
-npm run deploy:dry-run
+BRANCH                   = work/google-ads-lark-keyfield-contract-hotfix
+PR                       = #63 / DRAFT
+REVIEWED_SOURCE_HEAD     = a4549d5fffa0bdcb8050f8a7db840e0fb9c18df8
+BRANCH_VERIFICATION      = PASS / RUN_510
+FOCUSED_TIKTOK_TESTS     = 4 / 4 PASS
+NODE_UNIT_INTEGRATION    = 825 / 825 PASS
+WORKERS_RUNTIME_TESTS    = 9 / 9 PASS
+REPORT_RELIABILITY       = 70 / 70 PASS
+DEPENDENCY_AUDIT         = 0 vulnerabilities
+WRANGLER_DRY_RUN         = PASS
+FILES_CHANGED            = 5 after documentation closeout
+REMOTE_ACTIONS_IN_PR     = none
 ```
 
-## Implementation result
+## Remaining controlled rollout
 
-```text
-STATUS          = IN_PROGRESS
-BRANCH          = work/google-ads-lark-keyfield-contract-hotfix
-FILES_CHANGED   = pending
-COMMANDS_RUN    = pending CI
-FOCUSED_TESTS   = pending CI
-FULL_GATES      = pending CI
-REMOTE_ACTIONS  = none
-REMAINING_RISK  = third exact redrive blocked until safe close, review, merge and guarded deployment
-```
+Before any later exact redrive:
+
+1. restore the currently deployed recovery Worker to `wrangler.sync.jsonc` safe flags;
+2. verify all Google Ads execution and DLQ-redrive flags are false;
+3. read the newest open Google Ads terminal DLQ ID from Remote D1;
+4. review and merge PR `#63`;
+5. deploy the merged Sync Worker through a new bounded recovery window;
+6. redrive only the newly verified third DLQ once;
+7. verify destination preflight, D1, Lark and reconciliation;
+8. restore safe flags immediately.
 
 ## Runtime hold boundary
 
