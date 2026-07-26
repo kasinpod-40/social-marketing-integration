@@ -73,7 +73,7 @@ export async function redriveDeadLetterJob(input = {}) {
   let sent = false;
   if (original.type === JOB_TYPES.GOOGLE_ADS_MANAGER_SIGNED_DELIVERY_PROCESS) {
     const reference = validateGoogleAdsQueueReference(body);
-    const googleAdsRedriveStore = requireGoogleAdsRedriveStore(input.googleAdsRedriveStore);
+    const googleAdsRedriveStore = resolveGoogleAdsRedriveStore(input);
     const redriveState = await googleAdsRedriveStore.prepare({
       operationId: reference.operationId,
       workKey: reference.workKey,
@@ -165,6 +165,14 @@ function requireStore(value) {
     throw new TypeError('redriveDeadLetterJob requires a durable redrive store');
   }
   return value;
+}
+
+function resolveGoogleAdsRedriveStore(input) {
+  const value = input.googleAdsRedriveStore
+    ?? (typeof input.createGoogleAdsRedriveStore === 'function'
+      ? input.createGoogleAdsRedriveStore()
+      : null);
+  return requireGoogleAdsRedriveStore(value);
 }
 
 function requireGoogleAdsRedriveStore(value) {
