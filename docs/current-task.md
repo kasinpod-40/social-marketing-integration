@@ -1,21 +1,27 @@
-# Current Task — Google Ads Remote Rollout Awaiting Approval
+# Current Task — Google Ads Remote Rollout Gate
 
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = IMPLEMENTATION_MERGED_AWAITING_REMOTE_ROLLOUT_APPROVAL
+TASK_STATUS                         = REMOTE_ROLLOUT_APPROVED_PREFLIGHT_BLOCKED_OPERATOR_ENV_NOT_CONNECTED
 CURRENT_PROGRAM                     = GOOGLE_ADS_CUSTOMER_VISIBLE_DELIVERY
+ROLLOUT_APPROVAL                    = EXPLICIT_USER_INSTRUCTION_2026_07_26
+AUTHORIZED_PHASES                   = PREFLIGHT_BACKUP_MIGRATE_FLAGS_FALSE_DEPLOY_DISABLED_VERIFY
 MERGED_PR                           = PR_57
 MERGE_METHOD                        = SQUASH
 MERGE_COMMIT                        = e114db4669fea93b23fb4816232f4598de3e401a
 SOURCE_HEAD_BEFORE_MERGE            = 168f2edc47c1cd0fdc8ddd15f6294287a5a7e1f9
 BRANCH_VERIFICATION                 = PASS_RUN_482
-CUSTOMER_OAUTH                      = WAITING_CUSTOMER_CLICK
-GOOGLE_ADS_CONNECTOR_STATUS         = UAT_PENDING
-GOOGLE_ADS_JOB_STATUS               = UAT_PENDING_MANUAL_ONLY
+REPOSITORY_REVIEW                   = PASS
+REMOTE_OPERATOR_PREFLIGHT           = NOT_EXECUTED_OPERATOR_ENV_NOT_CONNECTED
+REMOTE_D1_BACKUP                    = NOT_RUN
 REMOTE_D1_MIGRATION_0015            = NOT_RUN
 API_WORKER_DEPLOYMENT               = NOT_RUN
 SYNC_WORKER_DEPLOYMENT              = NOT_RUN
+DISABLED_ROUTE_SCHEMA_VERIFY        = NOT_RUN
+CUSTOMER_OAUTH                      = WAITING_CUSTOMER_CLICK
+GOOGLE_ADS_CONNECTOR_STATUS         = UAT_PENDING
+GOOGLE_ADS_JOB_STATUS               = UAT_PENDING_MANUAL_ONLY
 SIGNED_LIVE                         = NOT_RUN
 QUEUE_BUSINESS_PROCESSING           = NOT_RUN
 D1_ADS_BUSINESS_WRITES              = NOT_RUN
@@ -27,7 +33,30 @@ PRODUCTION                          = BLOCKED
 META_AND_YOUTUBE_TASKS              = PAUSED_NOT_DISCARDED
 ```
 
-## Merge result
+## Rollout authorization and execution attempt
+
+The user explicitly authorized the next guarded Remote rollout task on 2026-07-26.
+The authorized boundary is limited to:
+
+1. read-only operator preflight;
+2. Remote D1 backup and SHA-256 evidence;
+3. additive migration apply, including `0015_google_ads_live_admission.sql`;
+4. API and Sync Worker deployment with every Google Ads execution flag false;
+5. disabled-route and schema verification.
+
+The rollout did not begin because the current execution session has Repository access
+but does not have the approved operator environment required by the merged runbook:
+
+- no mounted clean `main` checkout from the developer workstation;
+- no ignored real API/Sync Wrangler config files;
+- no authenticated Cloudflare/Wrangler session;
+- no access to the ignored evidence directory on the operator workstation.
+
+This is an operator-environment blocker, not a Remote runtime failure. No config was
+guessed, no Secret was requested or exposed, and no fallback deployment path was
+created.
+
+## Verified repository foundation
 
 PR `#57` was Squash Merged into `main` at:
 
@@ -115,11 +144,10 @@ MKT_SCHEDULE_GOOGLE_ADS_ENABLED=false
 MKT_DLQ_REDRIVE_ENABLED=false
 ```
 
-Merge approval did not authorize:
+This rollout approval does not authorize:
 
-- Remote D1 backup or migration apply;
-- Cloudflare deployment;
-- Secret, Script Property or runtime flag mutation;
+- Secret, Script Property or runtime flag mutation beyond proving the existing flags
+  remain false;
 - customer OAuth completion;
 - actual signed LIVE delivery;
 - real Queue message;
@@ -130,22 +158,20 @@ Merge approval did not authorize:
 - Production cutover;
 - Google Ads campaign, ad, bid, budget or spend mutation.
 
-## Next task boundary
+## Exact resume boundary
 
-The next task must be opened explicitly as a Remote rollout task and must follow:
+Resume only from a clean reviewed `main` checkout in the approved operator environment.
+Follow the merged operator and runbook without replacing or bypassing them:
 
 ```text
-1. guarded read-only preflight
-2. Remote D1 backup + checksum
-3. additive migration apply
-4. API and Sync deployment with every Google Ads execution flag false
-5. disabled-route and schema verification
-6. wait for exact validated customer OAuth connection
-7. separate approval for one manual signed LIVE run
-8. disable execution flags immediately after admission
-9. verify D1 / Shared RAW / Canonical reconciliation
-10. exact rerun and verify zero business-count drift
-11. decide schedule only after clean manual cycles
+1. execute guarded preflight
+2. preserve preflight evidence
+3. create Remote D1 backup + checksum
+4. verify backup evidence
+5. apply additive pending migrations
+6. deploy API and Sync Workers with all Google Ads execution flags false
+7. verify disabled routes and migration schema
+8. stop and wait for exact validated customer OAuth connection
 ```
 
 Runbook:
@@ -154,5 +180,6 @@ Runbook:
 docs/rollouts/google-ads-end-to-end-lark-ready-before-oauth.md
 ```
 
-Until a separate explicit rollout instruction is received, stop at this merged,
-flags-false repository state.
+A separate explicit instruction remains required before enabling manual execution
+flags, running one signed LIVE delivery, sending a Queue operation, writing D1/Lark
+business facts, performing redrive, enabling a schedule or cutting over Production.
