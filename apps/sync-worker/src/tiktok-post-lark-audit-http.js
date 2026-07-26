@@ -26,14 +26,14 @@ export function createTikTokPostLarkAuditHttpHandler(dependencies = {}) {
         headers: { allow: 'GET', 'cache-control': 'no-store' },
       });
     }
-    if (!readBoolean(env?.MKT_TIKTOK_AUDIT_HTTP_ENABLED, false)) {
-      return json({ ok: false, error: 'Route not found' }, {
-        status: 404,
-        headers: { 'cache-control': 'no-store' },
-      });
-    }
 
     try {
+      if (!readBoolean(env?.MKT_TIKTOK_AUDIT_HTTP_ENABLED, false)) {
+        return json({ ok: false, error: 'Route not found' }, {
+          status: 404,
+          headers: { 'cache-control': 'no-store' },
+        });
+      }
       await requireOperatorAuthorization(request, env?.MKT_CONNECTION_OPERATOR_TOKEN);
       const runtimeConfig = runtimeLoader(env);
       if (runtimeConfig.environment !== 'development'
