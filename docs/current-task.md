@@ -78,9 +78,9 @@ Lark Schema, Views and Formulas are not defective and are not changed by this ho
 
 PR `#62` updates only the Google Ads Lark adapter and focused tests:
 
-1. Accounts now use `account_id`, `account_name`, `status` and reviewed Google extensions.
-2. Campaigns use `ads_campaign_key`, `account_id`, `external_campaign_id`, Canonical status,
-   reviewed channel values and source-timezone DateTime values.
+1. Accounts now use `account_id`, `account_name`, `status` and grounded Google extensions.
+2. Campaigns use `ads_campaign_key`, `account_id`, `external_campaign_id`, optional `objective`,
+   Canonical status, reviewed channel values and source-timezone DateTime values.
 3. Ad Groups use `ads_ad_group_key`, `external_campaign_id` and `external_ad_group_id`.
 4. Ads use `ads_ad_key`, exact external parent IDs, `ad_type` and `final_url`.
 5. YouTube assets use `ads_creative_key`, `external_creative_id`, `creative_name`,
@@ -92,8 +92,9 @@ PR `#62` updates only the Google Ads Lark adapter and focused tests:
 9. Canonical Daily derives modern channel from Campaign source enums when signed transport v1 uses
    legacy `google_other`.
 10. Average CPV micros convert to the Canonical display-unit `average_cpv` field.
-11. All D1 contracts, source payloads and stable-key values remain unchanged.
-12. Exact per-table allowlists and forbidden-alias tests prevent stale names from returning.
+11. Generic ownership metadata is omitted because it is not grounded in signed source/runtime data.
+12. All D1 contracts, source payloads and stable-key values remain unchanged.
+13. Exact per-table allowlists and forbidden-alias tests prevent stale names from returning.
 
 ## Out of scope
 
@@ -113,6 +114,8 @@ PR `#62` updates only the Google Ads Lark adapter and focused tests:
 MKT_Ads_Accounts no longer emits ads_account_id             PASS
 all Canonical rows obey exact per-table field allowlists    PASS
 all forbidden pre-migration aliases are absent              PASS
+optional Campaign objective is preserved                    PASS
+ungrounded generic ownership metadata is omitted            PASS
 stable-key values remain unchanged                          PASS
 D1 date-only facts and write contracts remain unchanged     PASS
 ENABLED status maps to active                               PASS
@@ -126,15 +129,18 @@ no Remote D1/Lark/Queue/Worker action occurred              PASS
 
 ```text
 BRANCH                   = work/google-ads-canonical-lark-mapping-hotfix
-PR                       = #62 / DRAFT
-REVIEWED_SOURCE_HEAD     = 4f8dff480621b0e033495e694fd38f9df7e23c7e
-BRANCH_VERIFICATION      = PASS / RUN_499
+PR                       = #62 / READY_FOR_REVIEW
+FINAL_HEAD               = 56d27b6c98b7b915e4367a2b5781f110cbc10f45
+BRANCH_VERIFICATION      = PASS / RUN_505
 FOCUSED_TIKTOK_TESTS     = 4 / 4 PASS
 NODE_UNIT_INTEGRATION    = 825 / 825 PASS
 WORKERS_RUNTIME_TESTS    = 9 / 9 PASS
 REPORT_RELIABILITY       = 70 / 70 PASS
 DEPENDENCY_AUDIT         = 0 vulnerabilities
 WRANGLER_DRY_RUN         = PASS
+REVIEW_THREADS           = 0
+REVIEW_COMMENTS          = 0
+MERGEABLE                = true
 REMOTE_ACTIONS           = none
 ```
 
@@ -169,6 +175,6 @@ DLQ redrive                false
 Google Ads schedules       false
 First DLQ                  redriven / retain / never redrive again
 Second DLQ                 open / retain
-Second exact redrive       prohibited until PR #62 review, merge and guarded deploy
+Second exact redrive       prohibited until PR #62 merge and guarded deploy
 Production                 blocked
 ```
