@@ -82,8 +82,6 @@ run_id                     88351cb4-714d-49ef-91db-d95550a93ebf
 chunks                     7 / 7
 rows                       1,375 / 1,375
 transport_status           assembling
-admission_status           failed_permanent
-work_lifecycle_status      active
 D1 Ads business rows       0
 Lark business writes       0
 ```
@@ -98,7 +96,7 @@ DLQ                        terminal:a6ed54413000c25efd73ce7888cc2d10
 ```
 
 PR `#61` corrected Lark daily date serialization and the guarded same-generation
-`failed_permanent` redrive path. The original DLQ was then redriven exactly once without rerunning
+`failed_permanent` redrive path. The original DLQ was redriven exactly once without rerunning
 Manager Script.
 
 ### Failure 2 — Canonical field alias drift
@@ -113,20 +111,40 @@ field                      ads_account_id
 error                      field does not exist in destination schema
 partial                    false
 second DLQ                 terminal:6b1c7a5142f1eedb12a2b40b0a7cba78
-second DLQ status          open
 ```
 
-This proved the date hotfix worked and exposed a separate adapter/schema drift: the live Lark Base
-already uses Canonical Ads v2 while the runtime adapter still emitted several pre-migration aliases.
-The second failure also remained non-partial with zero D1 Ads business rows and zero Lark writes.
+PR `#62` aligned Canonical output rows with the already-applied Ads v2 schema and preserved the
+D1 and stable-key contracts. The second DLQ was then redriven exactly once.
 
-## Canonical Ads v2 merged correction
+### Failure 3 — Processor key-field routing drift
+
+The third attempt passed both prior defects and failed before the destination preflight phase
+could be saved:
+
+```text
+sync_run_id                9ab3cacb-c491-4991-b755-d4224e70ff33
+admission_status           failed_permanent
+admission_error            GOOGLE_ADS_PROCESSING_FAILED
+sync_error                 UNHANDLED_SYNC_ERROR
+message                    TableSyncEngine requires campaign_key
+send_attempts              3
+ads_entity_state rows      0
+ads_daily_facts rows       0
+partial                    false
+third DLQ                  pending read-only verification
+```
+
+The Canonical rows already emitted `ads_campaign_key`, `ads_ad_group_key` and
+`ads_creative_key`, but the processor's private destination routing table still configured
+`campaign_key`, `ad_group_key` and `creative_key`. `TableSyncEngine.planByKey()` therefore failed
+closed before D1 or Lark writes. This is not a Lark Schema or D1 defect.
+
+## Merged Canonical Ads v2 correction
 
 ```text
 pull request               #62 / MERGED
 merge commit               3ab7a249cb40f6e3f377cecf02f2d8713bbdcb61
 reviewed source head       56d27b6c98b7b915e4367a2b5781f110cbc10f45
-final branch head          f702319a9bcbb339f7f300c9e56fb46fee460a0a
 source verification        PASS / RUN_505
 final docs verification    PASS / RUN_509
 ```
@@ -147,10 +165,33 @@ The merged hotfix:
 10. converts average CPV micros to the Canonical display-unit `average_cpv` field;
 11. enforces exact per-table output allowlists and forbidden-alias tests.
 
-No Lark Schema/View/Formula change is authorized for this incident. The already-applied Canonical
-Ads v2 schema remains authoritative.
+No Lark Schema/View/Formula change is authorized for these incidents. The applied Canonical Ads v2
+schema remains authoritative.
+
+## Active key-field hotfix
+
+```text
+branch                     work/google-ads-lark-keyfield-contract-hotfix
+pull request               #63 / DRAFT
+reviewed source head       a4549d5fffa0bdcb8050f8a7db840e0fb9c18df8
+branch verification        PASS / RUN_510
+```
+
+PR `#63`:
+
+1. changes Campaign routing to `ads_campaign_key`;
+2. changes Ad Group routing to `ads_ad_group_key`;
+3. changes Creative routing to `ads_creative_key`;
+4. preserves the remaining five correct routing keys;
+5. validates every planned row contains its configured non-empty key;
+6. asserts the exact eight-table preflight routing sequence;
+7. asserts one-table-per-continuation Lark writes reuse the identical sequence;
+8. does not change row payloads, D1 contracts, stable-key values, table order, phases,
+   continuations or reconciliation.
 
 ## Verification evidence
+
+Branch Verification run `#510` passed:
 
 ```text
 syntax / architecture / hygiene    PASS
@@ -160,37 +201,35 @@ Workers runtime                    9 / 9 PASS
 report reliability                 70 / 70 PASS
 dependency audit                   0 vulnerabilities
 Wrangler deployment dry-run        PASS
-review threads                     0
-review comments                    0
 ```
 
 No Remote D1 mutation, Queue send, DLQ redrive, Lark mutation/write, Worker deployment,
-Manager Script execution, schedule or Production action occurred in PR `#62` implementation.
+Manager Script execution, schedule or Production action occurred in PR `#63` implementation.
 
-## Authorized guarded recovery next
+## Recovery boundary
 
-Repository review and merge are complete. The next bounded runtime operation is:
+Before another redrive:
 
-1. pull clean merged `main`;
-2. deploy Sync Worker with the guarded recovery flags;
-3. keep signed ingress and Google Ads schedule disabled;
-4. redrive only `terminal:6b1c7a5142f1eedb12a2b40b0a7cba78` once;
-5. verify the original Run ID through destination preflight, D1, Lark and reconciliation;
-6. restore all execution and redrive flags to false.
-
-The original Manager Script must not run again. The first DLQ must not be redriven again.
+1. restore the currently deployed recovery Worker to the safe `wrangler.sync.jsonc` configuration;
+2. verify Google Ads Connector, Queue admission, D1/Lark writes and DLQ redrive are all false;
+3. retrieve the newest open Google Ads terminal DLQ ID from Remote D1;
+4. review and merge PR `#63`;
+5. deploy the merged Worker through a new bounded recovery window;
+6. redrive only the newly verified third DLQ once;
+7. verify destination preflight, D1, Lark and final reconciliation;
+8. restore safe flags immediately.
 
 ## Runtime hold state
 
 ```text
 Manager Script              DRY_RUN / delivery=false
-API Google Ads flags        false
-Sync Google Ads flags       false
-DLQ redrive                 false
+API signed ingress          false
 Google Ads schedules        false
-first DLQ                   redriven / retained / closed to redrive
-second DLQ                  open / retained
-next exact redrive          blocked until merged Sync recovery deploy is verified
+Recovery Worker flags       must be restored to false
+first DLQ                   redriven / retained / never redrive again
+second DLQ                  redriven / retained / never redrive again
+third DLQ                   retain / exact ID pending read-only verification
+next exact redrive          prohibited
 Production                  blocked
 ```
 
@@ -200,11 +239,11 @@ Production                  blocked
 - Do not mark API access validated when it is pending.
 - Do not bypass consent, scope, active credential, Manager/advertiser identity or signed-source
   checks.
-- Do not alter Lark fields to accommodate stale connector aliases.
+- Do not alter Lark fields to accommodate stale connector contracts.
 - Do not write ownership classifications that are not grounded in customer profile/runtime data.
 - Do not rewrite D1 date-only facts or stable keys with epoch values.
 - Do not rerun Google Ads Manager Script to recover the retained staged incident.
-- Do not redrive the first DLQ again; it is already `redriven`.
-- Do not redrive the second DLQ before the merged Sync recovery deployment is verified.
+- Do not redrive the first or second DLQ again; both are already `redriven`.
+- Do not infer the third DLQ ID from prior message IDs; read it from Remote D1.
 - Do not enable the Google Ads schedule during manual UAT.
 - Do not cut over Production without a separate customer-owned Production task.
