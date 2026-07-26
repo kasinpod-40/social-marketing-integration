@@ -3,11 +3,14 @@
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = APPROVED_FOR_IMPLEMENTATION
+TASK_STATUS                         = IMPLEMENTATION_COMPLETE_REVIEW_PENDING
 CURRENT_PROGRAM                     = TIKTOK_POST_LARK_GUARDED_ROLLOUT_OPERATOR
 APPROVED_DATE                       = 2026-07-26
 BASE_COMMIT                         = ad6614dd8ee0cb2a1dda5cdbe7035f44b40581d4
 IMPLEMENTATION_BRANCH               = agent/tiktok-post-lark-rollout-operator
+DRAFT_PR                            = #71
+CODE_VERIFIED_HEAD                  = 7ab8f4f232ee564fcfa0220e260e0c2edd1301c4
+BRANCH_VERIFICATION                 = #552 PASS
 ENVIRONMENT                         = development
 CUSTOMER_PROFILE                    = integration_workspace
 CUSTOMER_KEY                        = chemistry_k
@@ -39,34 +42,34 @@ plan
 → restore all-flags-false Worker deployment
 ```
 
-The operator prepares these phases only. This implementation task does not execute any phase
+The operator prepares these phases only. This implementation task did not execute any phase
 against Remote infrastructure.
 
 ## Starting evidence
 
 - PR `#65` was Squash Merged at `acb0b76bb3be936319e0e8bed4849592c96761b5`.
 - TikTok merge closeout was merged at `ad6614dd8ee0cb2a1dda5cdbe7035f44b40581d4`.
-- Final implementation Branch Verification `#522` passed.
+- Final pipeline implementation Branch Verification `#522` passed.
 - A temporary GitHub Actions read-only preflight passed Repository gates and confirmed the
   deployed unauthenticated Audit route remains safe-closed with HTTP `404`.
 - GitHub Actions and the connected execution environment have no Cloudflare credentials,
   Wrangler session or local `wrangler.sync.jsonc`; Remote D1 inspection was therefore skipped.
 - No Migration, deployment, Queue, D1/Lark write, schedule or Production action occurred.
 
-## In scope
+## Implemented scope
 
-1. Add a pure rollout-contract module with:
+1. Added a pure rollout-contract module with:
    - phase and exact-confirmation parsing;
    - exact Integration Workspace target validation;
    - safe/audit-only Wrangler config validation;
    - exact pending Migration `0016` gate;
    - read-only preflight and post-migration SQL;
-   - additive business-count parity validation;
+   - additive Business-count parity validation;
    - Wrangler D1 JSON parsing;
    - HTTP `404` / `401` / `200` route-state gates;
    - authenticated Audit response validation.
 
-2. Add a CLI operator with evidence chaining for:
+2. Added a CLI operator with evidence chaining for:
    - `preflight`
    - `backup`
    - `migrate`
@@ -75,9 +78,13 @@ against Remote infrastructure.
    - `audit`
    - `disable-audit`
 
-3. Add npm commands and focused tests.
+3. Added npm commands and focused tests.
 
-4. Add a runbook for the authorized local Integration Workspace runtime.
+4. Added a runbook for the authorized local Integration Workspace runtime.
+
+5. Preserved emergency safe-close: `disable-audit` depends on successful `enable-audit`
+   evidence rather than authenticated Audit success, so the safe Worker can be restored even
+   when the Audit request or response validation fails.
 
 ## Safety contracts
 
@@ -120,29 +127,67 @@ against Remote infrastructure.
 - Schedule activation.
 - Production.
 
-## Acceptance criteria
+## Acceptance result
 
-- Pure operator tests cover argument/confirmation, target identity, safe/audit configs,
-  Migration 0016, read-only SQL, pre/post migration count parity, D1 response parsing,
-  Audit identity/readiness and HTTP route states.
-- `npm run check` passes.
-- `npm test` passes.
-- focused TikTok rollout operator tests pass.
-- `npm run test:report-reliability` passes.
-- `npm audit --audit-level=high` reports no unacceptable vulnerabilities.
-- `npm run deploy:dry-run` passes.
-- No Remote action occurs.
-- Draft PR is opened for Integration Review and is not merged automatically.
+```text
+Argument / confirmation gates                PASS
+Exact Integration Workspace target           PASS
+Safe / audit-only config gates               PASS
+Migration 0016 exact-pending gate            PASS
+Read-only SQL contract                       PASS
+Pre/post migration Business-count parity     PASS
+Wrangler D1 response parsing                 PASS
+Audit identity / diagnostic readiness        PASS
+HTTP route-state gates                       PASS
+Emergency Audit safe-close                   PASS by review and syntax gate
+Syntax / architecture / repository hygiene   PASS
+Focused staged TikTok regression             PASS
+Full Node Unit / Integration                  PASS
+Workers runtime                              PASS
+Report reliability regression                PASS
+Dependency audit                             PASS
+Wrangler deployment dry-run                  PASS / no deployment
+Remote execution                             NOT RUN
+```
+
+## Verification evidence
+
+Branch Verification `#552` passed on code head
+`7ab8f4f232ee564fcfa0220e260e0c2edd1301c4`:
+
+```text
+Install locked dependencies          PASS
+Syntax / architecture / hygiene      PASS
+Focused staged TikTok tests          PASS
+Node Unit / Integration tests        PASS
+Workers runtime tests                PASS
+Report reliability regression        PASS
+Dependency audit                     PASS
+Wrangler deployment dry-run          PASS / no deployment
+Diagnostics upload                   PASS
+```
 
 ## Implementation result
 
 ```text
-STATUS          = IN_PROGRESS
-DRAFT_PR        = PENDING
-TESTS           = PENDING
-LIVE_VALIDATION = NOT_RUN
+STATUS          = IMPLEMENTATION_COMPLETE_REVIEW_PENDING
+DRAFT_PR        = #71
+CODE_HEAD       = 7ab8f4f232ee564fcfa0220e260e0c2edd1301c4
+TESTS           = PASS / Branch Verification #552
+LIVE_VALIDATION = NOT_RUN / RUNTIME ACCESS UNAVAILABLE
 REMOTE_ACTIONS  = NONE
+REMAINING_RISK  = Remote config/schema, backup, Migration 0016, deployment and authenticated
+                  Audit still require an authorized local Integration Workspace runtime
 ```
+
+## Next separate approval gate
+
+After PR `#71` passes Integration Review and is merged, the authorized local runtime may follow
+`docs/runbooks/tiktok-post-lark-rollout.md` one phase at a time. Merge does not authorize any
+Remote phase automatically.
+
+Manual watermark processing Admission, D1/Canonical writes, Report parity, D1-primary cutover
+and schedules remain outside this operator and require later separate approvals.
 
 ## Archived predecessor
 
