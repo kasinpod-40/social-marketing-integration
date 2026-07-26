@@ -10,8 +10,6 @@ export async function generateWooCommerceCommerceReport(input = {}) {
     currency: requireText(input.currency, 'currency').toUpperCase(),
   });
   const totals = sumDaily(range.daily);
-  const paymentMethods = aggregatePaymentMethods(range.orders);
-  const shippingMethods = aggregateShippingMethods(range.orders);
   const products = range.products.map((row) => Object.freeze({
     product_key: row.product_key,
     quantity_ordered: integer(row.quantity_ordered),
@@ -22,12 +20,6 @@ export async function generateWooCommerceCommerceReport(input = {}) {
     recognized_orders: integer(row.recognized_orders),
     data_status: row.data_status ?? 'partial',
   }));
-  const dataStatus = resolveDataStatus(range.daily, products);
-  const sourceWatermark = latestText([
-    ...range.daily.map((row) => row.source_revision),
-    ...range.products.map((row) => row.source_revision),
-  ]);
-
   return Object.freeze({
     schema_version: 'woocommerce_commerce_report_v1',
     platform: 'woocommerce',
@@ -35,12 +27,15 @@ export async function generateWooCommerceCommerceReport(input = {}) {
     currency: range.currency,
     period_start: range.periodStart,
     period_end: range.periodEnd,
-    data_status: dataStatus,
-    source_watermark: sourceWatermark,
+    data_status: resolveDataStatus(range.daily, products),
+    source_watermark: latestText([
+      ...range.daily.map((row) => row.source_revision),
+      ...range.products.map((row) => row.source_revision),
+    ]),
     totals: Object.freeze(totals),
     products: Object.freeze(products),
-    payment_methods: Object.freeze(paymentMethods),
-    shipping_methods: Object.freeze(shippingMethods),
+    payment_methods: Object.freeze(aggregatePaymentMethods(range.orders)),
+    shipping_methods: Object.freeze(aggregateShippingMethods(range.orders)),
   });
 }
 
@@ -77,42 +72,56 @@ function aggregatePaymentMethods(orders) {
       recognized_revenue_micros: 0,
       refund_micros: 0,
     };
-    if (order.status_class === 'recognized') current.recognized_orders += 1;
-    current.recognized_revenue_micros += integer(order.recognized_revenue_micros);
-    current.refund_micros += integer(order.refund_micros);
+    applyOrderMetrics(current, order);
     byKey.set(key, current);
   }
-  return [...byKey.values()]
-    .map((row) => Object.freeze({ ...row }))
-    .sort((a, b) => b.recognized_revenue_micros - a.recognized_revenue_micros
-      || a.payment_method_id.localeCompare(b.payment_method_id));
+  return sortSummaries(byKey, 'payment_method_id');
 }
 
 function aggregateShippingMethods(orders) {
   const byKey = new Map();
   for (const order of orders) {
-    const ids = parseTextArray(order.shipping_method_ids_json);
-    const titles = parseTextArray(order.shipping_method_titles_json);
-    const keys = ids.length > 0 ? ids : ['unknown'];
-    for (let index = 0; index < keys.length; index += 1) {
-      const key = textOrUnknown(keys[index]);
-      const current = byKey.get(key) ?? {
-        shipping_method_id: key,
-        shipping_method_title: nullableText(titles[index]),
-        recognized_orders: 0,
-        recognized_revenue_micros: 0,
-        refund_micros: 0,
-      };
-      if (order.status_class === 'recognized') current.recognized_orders += 1;
-      current.recognized_revenue_micros += integer(order.recognized_revenue_micros);
-      current.refund_micros += integer(order.refund_micros);
-      byKey.set(key, current);
-    }
+    const method = shippingMethodCombination(order);
+    const current = byKey.get(method.id) ?? {
+      shipping_method_id: method.id,
+      shipping_method_title: method.title,
+      recognized_orders: 0,
+      recognized_revenue_micros: 0,
+      refund_micros: 0,
+    };
+    applyOrderMetrics(current, order);
+    byKey.set(method.id, current);
   }
+  return sortSummaries(byKey, 'shipping_method_id');
+}
+
+function shippingMethodCombination(order) {
+  const ids = parseTextArray(order.shipping_method_ids_json);
+  const titles = parseTextArray(order.shipping_method_titles_json);
+  const pairs = ids.map((id, index) => ({
+    id: textOrUnknown(id),
+    title: nullableText(titles[index]),
+  }));
+  if (pairs.length === 0) return Object.freeze({ id: 'unknown', title: null });
+  const unique = [...new Map(pairs.map((pair) => [pair.id, pair])).values()]
+    .sort((left, right) => left.id.localeCompare(right.id));
+  return Object.freeze({
+    id: unique.map((pair) => pair.id).join('+'),
+    title: unique.map((pair) => pair.title ?? pair.id).join(' + '),
+  });
+}
+
+function applyOrderMetrics(summary, order) {
+  if (order.status_class === 'recognized') summary.recognized_orders += 1;
+  summary.recognized_revenue_micros += integer(order.recognized_revenue_micros);
+  summary.refund_micros += integer(order.refund_micros);
+}
+
+function sortSummaries(byKey, keyField) {
   return [...byKey.values()]
     .map((row) => Object.freeze({ ...row }))
-    .sort((a, b) => b.recognized_revenue_micros - a.recognized_revenue_micros
-      || a.shipping_method_id.localeCompare(b.shipping_method_id));
+    .sort((left, right) => right.recognized_revenue_micros - left.recognized_revenue_micros
+      || left[keyField].localeCompare(right[keyField]));
 }
 
 function resolveDataStatus(daily, products) {
@@ -129,7 +138,9 @@ function resolveDataStatus(daily, products) {
 function parseTextArray(value) {
   if (typeof value !== 'string' || value.trim() === '') return [];
   let parsed;
-  try { parsed = JSON.parse(value); } catch (cause) {
+  try {
+    parsed = JSON.parse(value);
+  } catch (cause) {
     throw permanentError('WooCommerce report contains invalid method JSON', {
       code: 'WOOCOMMERCE_REPORT_SOURCE_INVALID',
       cause,
