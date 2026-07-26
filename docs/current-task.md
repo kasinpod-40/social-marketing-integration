@@ -3,7 +3,7 @@
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = IMPLEMENTED_PR_62_READY_FOR_REVIEW
+TASK_STATUS                         = PR_62_MERGED_GUARDED_RECOVERY_DEPLOY_READY
 CURRENT_PROGRAM                     = GOOGLE_ADS_MANAGER_SCRIPT_SIGNED_DELIVERY_TO_LARK
 INCIDENT_DATE                       = 2026-07-26
 INCIDENT_RUN_ID                     = 88351cb4-714d-49ef-91db-d95550a93ebf
@@ -74,11 +74,22 @@ last_sync_at
 
 Lark Schema, Views and Formulas are not defective and are not changed by this hotfix.
 
-## Implemented correction
+## Merged correction
 
-PR `#62` updates only the Google Ads Lark adapter and focused tests:
+PR `#62` was Squash Merged into `main`:
 
-1. Accounts now use `account_id`, `account_name`, `status` and grounded Google extensions.
+```text
+PR                       = #62 / MERGED
+MERGE_COMMIT             = 3ab7a249cb40f6e3f377cecf02f2d8713bbdcb61
+REVIEWED_SOURCE_HEAD     = 56d27b6c98b7b915e4367a2b5781f110cbc10f45
+FINAL_BRANCH_HEAD        = f702319a9bcbb339f7f300c9e56fb46fee460a0a
+SOURCE_VERIFICATION      = PASS / RUN_505
+FINAL_DOCS_VERIFICATION  = PASS / RUN_509
+```
+
+The merged implementation:
+
+1. Accounts use `account_id`, `account_name`, `status` and grounded Google extensions.
 2. Campaigns use `ads_campaign_key`, `account_id`, `external_campaign_id`, optional `objective`,
    Canonical status, reviewed channel values and source-timezone DateTime values.
 3. Ad Groups use `ads_ad_group_key`, `external_campaign_id` and `external_ad_group_id`.
@@ -96,18 +107,6 @@ PR `#62` updates only the Google Ads Lark adapter and focused tests:
 12. All D1 contracts, source payloads and stable-key values remain unchanged.
 13. Exact per-table allowlists and forbidden-alias tests prevent stale names from returning.
 
-## Out of scope
-
-- Lark field/table/view/formula mutation;
-- Remote D1 mutation or manual state repair;
-- Queue send or DLQ redrive;
-- Worker deployment;
-- Manager Script rerun;
-- new Google Ads datasets, budget joins, Asset Group ingestion or conversion-action expansion;
-- schedule activation;
-- Production cutover;
-- deleting or closing either forensic DLQ/alert record.
-
 ## Acceptance result
 
 ```text
@@ -122,16 +121,11 @@ ENABLED status maps to active                               PASS
 campaign dates use source-timezone local midnight           PASS
 Daily account/entity/external IDs and currency are present  PASS
 legacy google_other is normalized from Campaign source      PASS
-no Remote D1/Lark/Queue/Worker action occurred              PASS
 ```
 
 ## Verification result
 
 ```text
-BRANCH                   = work/google-ads-canonical-lark-mapping-hotfix
-PR                       = #62 / READY_FOR_REVIEW
-REVIEWED_SOURCE_HEAD     = 56d27b6c98b7b915e4367a2b5781f110cbc10f45
-BRANCH_VERIFICATION      = PASS / RUN_505
 FOCUSED_TIKTOK_TESTS     = 4 / 4 PASS
 NODE_UNIT_INTEGRATION    = 825 / 825 PASS
 WORKERS_RUNTIME_TESTS    = 9 / 9 PASS
@@ -140,30 +134,22 @@ DEPENDENCY_AUDIT         = 0 vulnerabilities
 WRANGLER_DRY_RUN         = PASS
 REVIEW_THREADS           = 0
 REVIEW_COMMENTS          = 0
-MERGEABLE                = true
-REMOTE_ACTIONS           = none
+REMOTE_ACTIONS_IN_PR     = none
 ```
 
-Changed files:
+## Controlled recovery authorized next
 
-```text
-CHANGELOG.md
-docs/current-task.md
-docs/project-brain/google-ads-manager-script-live-path.md
-packages/application/src/google-ads/google-ads-live-run.js
-tests/application/google-ads-live-run.test.js
-```
+The Repository gate is complete. The remaining Integration Workspace runtime steps are:
 
-## Remaining controlled rollout
+1. pull clean merged `main`;
+2. deploy the merged Sync Worker through the guarded recovery configuration;
+3. keep signed ingress and Google Ads schedule disabled;
+4. enable Connector, Queue admission, D1/Lark writes and DLQ redrive only for the bounded window;
+5. send one redrive command for the second DLQ only;
+6. verify Queue → destination preflight → D1 → Lark → reconciliation for the original Run ID;
+7. restore all Google Ads and DLQ-redrive flags to false immediately after verification.
 
-After Repository review and merge only:
-
-1. deploy the merged Sync Worker through the guarded recovery configuration;
-2. keep signed ingress and Google Ads schedule disabled;
-3. enable Connector, Queue admission, D1/Lark writes and DLQ redrive only for the bounded window;
-4. send one redrive command for the second DLQ only;
-5. verify Queue → preflight → D1 → Lark → reconciliation for the original Run ID;
-6. restore all Google Ads and DLQ-redrive flags to false immediately after verification.
+The first DLQ must never be redriven again. Manager Script must not be rerun.
 
 ## Runtime hold boundary
 
@@ -175,6 +161,6 @@ DLQ redrive                false
 Google Ads schedules       false
 First DLQ                  redriven / retain / never redrive again
 Second DLQ                 open / retain
-Second exact redrive       prohibited until PR #62 merge and guarded deploy
+Second exact redrive       blocked until merged Sync recovery deploy is verified
 Production                 blocked
 ```
