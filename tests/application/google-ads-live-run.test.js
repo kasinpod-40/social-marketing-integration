@@ -277,3 +277,21 @@ test('Google campaign channels map to approved Canonical Ads options', () => {
   const rows = buildGoogleAdsLarkWriteSet({ run, syncRunId: 'sync-google-ads-1' }).canonical.campaigns;
   assert.deepEqual(rows.slice(1).map((row) => row.ad_channel), channelCases.map((entry) => entry[2]));
 });
+
+test('Canonical Daily derives modern channel from Campaign when signed row uses legacy fallback', () => {
+  const campaign = {
+    ...googleAdsDatasetRows('campaigns')[0],
+    advertisingChannelType: 'PERFORMANCE_MAX',
+    advertisingChannelSubType: null,
+  };
+  const daily = {
+    ...googleAdsDatasetRows('campaignDailyMetrics')[0],
+    adChannel: 'google_other',
+  };
+  const run = assembleGoogleAdsLiveRun(liveEnvelopes({
+    campaigns: [campaign],
+    campaignDailyMetrics: [daily],
+  }));
+  const row = buildGoogleAdsLarkWriteSet({ run, syncRunId: 'sync-google-ads-1' }).canonical.daily[0];
+  assert.equal(row.ad_channel, 'google_performance_max_ads');
+});
