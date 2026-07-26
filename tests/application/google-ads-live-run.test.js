@@ -286,6 +286,8 @@ test('Canonical Daily derives modern channel from Campaign when signed row uses 
   };
   const daily = {
     ...googleAdsDatasetRows('campaignDailyMetrics')[0],
+    advertisingChannelType: 'PERFORMANCE_MAX',
+    advertisingChannelSubType: null,
     adChannel: 'google_other',
   };
   const run = assembleGoogleAdsLiveRun(liveEnvelopes({
