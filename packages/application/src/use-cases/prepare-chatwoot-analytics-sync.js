@@ -1,124 +1,84 @@
 import { createStableFingerprint } from '../../../shared/src/hash/stable-fingerprint.js';
 
 export const CHATWOOT_LARK_WRITE_TARGETS = Object.freeze([
-  Object.freeze({ path: 'raw.accounts', tableKey: 'rawChatwootAccounts', keyField: 'account_state_key' }),
-  Object.freeze({ path: 'raw.inboxes', tableKey: 'rawChatwootInboxes', keyField: 'inbox_key' }),
-  Object.freeze({ path: 'raw.contacts', tableKey: 'rawChatwootContacts', keyField: 'contact_key' }),
-  Object.freeze({ path: 'raw.agents', tableKey: 'rawChatwootAgents', keyField: 'agent_key' }),
-  Object.freeze({ path: 'raw.teams', tableKey: 'rawChatwootTeams', keyField: 'team_key' }),
-  Object.freeze({ path: 'raw.labels', tableKey: 'rawChatwootLabels', keyField: 'label_key' }),
-  Object.freeze({ path: 'raw.conversations', tableKey: 'rawChatwootConversations', keyField: 'conversation_key' }),
-  Object.freeze({
-    path: 'raw.conversationLabels',
-    tableKey: 'rawChatwootConversationLabels',
-    keyField: 'conversation_label_key',
-  }),
-  Object.freeze({ path: 'raw.messages', tableKey: 'rawChatwootMessageAnalytics', keyField: 'message_key' }),
-  Object.freeze({
-    path: 'raw.reportingEvents',
-    tableKey: 'rawChatwootReportingEvents',
-    keyField: 'reporting_event_key',
-  }),
-  Object.freeze({ path: 'canonical.conversations', tableKey: 'mktConversations', keyField: 'conversation_key' }),
-  Object.freeze({
-    path: 'canonical.conversationDaily',
-    tableKey: 'mktConversationDaily',
-    keyField: 'conversation_daily_key',
-  }),
-  Object.freeze({ path: 'canonical.agentDaily', tableKey: 'mktAgentDaily', keyField: 'agent_daily_key' }),
-  Object.freeze({ path: 'canonical.inboxDaily', tableKey: 'mktInboxDaily', keyField: 'inbox_daily_key' }),
-  Object.freeze({
-    path: 'canonical.accountDaily',
-    tableKey: 'mktConversationAccountDaily',
-    keyField: 'account_daily_key',
-  }),
+  target('raw.accounts', 'rawChatwootAccounts', 'account_state_key'),
+  target('raw.inboxes', 'rawChatwootInboxes', 'inbox_key'),
+  target('raw.contacts', 'rawChatwootContacts', 'contact_key'),
+  target('raw.agents', 'rawChatwootAgents', 'agent_key'),
+  target('raw.teams', 'rawChatwootTeams', 'team_key'),
+  target('raw.labels', 'rawChatwootLabels', 'label_key'),
+  target('raw.conversations', 'rawChatwootConversations', 'conversation_key'),
+  target('raw.conversationLabels', 'rawChatwootConversationLabels', 'conversation_label_key'),
+  target('raw.messages', 'rawChatwootMessageAnalytics', 'message_key'),
+  target('raw.reportingEvents', 'rawChatwootReportingEvents', 'reporting_event_key'),
+  target('canonical.conversations', 'mktConversations', 'conversation_key'),
+  target('canonical.conversationDaily', 'mktConversationDaily', 'conversation_daily_key'),
+  target('canonical.agentDaily', 'mktAgentDaily', 'agent_daily_key'),
+  target('canonical.inboxDaily', 'mktInboxDaily', 'inbox_daily_key'),
+  target('canonical.accountDaily', 'mktConversationAccountDaily', 'account_daily_key'),
 ]);
 
-/**
- * Convert one fully normalized Chatwoot source snapshot into D1 and Lark write sets.
- * This function is deterministic and performs no I/O.
- */
+/** Build deterministic, PII-minimized D1 and Lark write sets from normalized Chatwoot rows. */
 export async function prepareChatwootAnalyticsSync(input = {}) {
   const context = readContext(input);
-  const account = requireObject(input.account, 'account');
-  const inboxes = requireArray(input.inboxes, 'inboxes');
-  const contacts = requireArray(input.contacts, 'contacts');
-  const agents = requireArray(input.agents, 'agents');
-  const teams = requireArray(input.teams, 'teams');
-  const labels = requireArray(input.labels, 'labels');
-  const conversations = requireArray(input.conversations, 'conversations');
-  const messages = requireArray(input.messages, 'messages');
-  const reportingEvents = requireArray(input.reportingEvents, 'reportingEvents');
-  assertSharedIdentity(context, [account, ...inboxes, ...contacts, ...agents, ...teams, ...labels,
-    ...conversations, ...messages, ...reportingEvents]);
+  const source = readSource(input);
+  assertIdentity(context, source);
 
-  const labelIdByKey = new Map(labels.map((row) => [row.labelKey, row.externalLabelId]));
-  const conversationLabels = buildConversationLabels(conversations, labelIdByKey, context);
-  const conversationDaily = conversations.map((row) => buildConversationDaily(row, context));
-  const agentDaily = buildAgentDaily(conversationDaily, context);
-  const inboxDaily = buildInboxDaily(conversationDaily, context);
-  const accountDaily = buildAccountDaily(conversationDaily, agents, inboxes, context);
-  const coverage = buildCoverage({
-    context,
-    datasets: {
-      accounts: [account],
-      inboxes,
-      contacts,
-      agents,
-      teams,
-      labels,
-      conversations,
+  const labelIds = new Map(source.labels.map((row) => [row.labelKey, row.externalLabelId]));
+  const conversationLabels = buildConversationLabels(source.conversations, labelIds, context);
+  const conversationDaily = source.conversations.map((row) => buildConversationDaily(row, context));
+  const agentDaily = aggregateDaily(conversationDaily, context, 'agent');
+  const inboxDaily = aggregateDaily(conversationDaily, context, 'inbox');
+  const accountDaily = aggregateAccountDaily(conversationDaily, source.agents, source.inboxes, context);
+
+  const d1 = Object.freeze({
+    account: accountState(source.account, context),
+    inboxes: freezeRows(source.inboxes.map((row) => inboxState(row, context))),
+    contacts: freezeRows(source.contacts.map((row) => contactState(row, context))),
+    agents: freezeRows(source.agents.map((row) => agentState(row, context))),
+    teams: freezeRows(source.teams.map((row) => teamState(row, context))),
+    labels: freezeRows(source.labels.map((row) => labelState(row, context))),
+    conversations: freezeRows(source.conversations.map((row) => conversationState(row, context))),
+    conversationLabels: freezeRows(conversationLabels),
+    messages: freezeRows(source.messages.map((row) => messageState(row, context))),
+    reportingEvents: freezeRows(source.reportingEvents.map((row) => reportingEventFact(row, context))),
+    conversationDaily: freezeRows(conversationDaily),
+    agentDaily: freezeRows(agentDaily),
+    inboxDaily: freezeRows(inboxDaily),
+    accountDaily: freezeRows(accountDaily),
+    ...buildCoverage(context, {
+      accounts: [source.account],
+      inboxes: source.inboxes,
+      contacts: source.contacts,
+      agents: source.agents,
+      teams: source.teams,
+      labels: source.labels,
+      conversations: source.conversations,
       conversationLabels,
-      messages,
-      reportingEvents,
+      messages: source.messages,
+      reportingEvents: source.reportingEvents,
       conversationDaily,
       agentDaily,
       inboxDaily,
       accountDaily,
-    },
-  });
-  const sourceRecordStates = await buildSourceRecordStates({
-    account, inboxes, contacts, agents, teams, labels, conversations, messages, reportingEvents,
-  });
-  const cursorWatermark = findMaxTimestamp([
-    account, ...inboxes, ...contacts, ...agents, ...teams, ...labels,
-    ...conversations, ...messages, ...reportingEvents,
-  ]);
-
-  const d1 = Object.freeze({
-    account: toAccountState(account, context),
-    inboxes: Object.freeze(inboxes.map((row) => toInboxState(row, context))),
-    contacts: Object.freeze(contacts.map((row) => toContactState(row, context))),
-    agents: Object.freeze(agents.map((row) => toAgentState(row, context))),
-    teams: Object.freeze(teams.map((row) => toTeamState(row, context))),
-    labels: Object.freeze(labels.map((row) => toLabelState(row, context))),
-    conversations: Object.freeze(conversations.map((row) => toConversationState(row, context))),
-    conversationLabels: Object.freeze(conversationLabels),
-    messages: Object.freeze(messages.map((row) => toMessageState(row, context))),
-    reportingEvents: Object.freeze(reportingEvents.map((row) => toReportingEventFact(row, context))),
-    conversationDaily: Object.freeze(conversationDaily),
-    agentDaily: Object.freeze(agentDaily),
-    inboxDaily: Object.freeze(inboxDaily),
-    accountDaily: Object.freeze(accountDaily),
-    coverageRuns: coverage.runs,
-    coverageEntities: coverage.entities,
+    }),
   });
 
   const lark = Object.freeze({
     raw: Object.freeze({
-      accounts: Object.freeze([toLarkAccount(d1.account)]),
-      inboxes: Object.freeze(d1.inboxes.map(toLarkInbox)),
-      contacts: Object.freeze(d1.contacts.map(toLarkContact)),
-      agents: Object.freeze(d1.agents.map(toLarkAgent)),
-      teams: Object.freeze(d1.teams.map(toLarkTeam)),
-      labels: Object.freeze(d1.labels.map(toLarkLabel)),
-      conversations: Object.freeze(d1.conversations.map(toLarkConversation)),
-      conversationLabels: Object.freeze(d1.conversationLabels.map(toLarkConversationLabel)),
-      messages: Object.freeze(d1.messages.map(toLarkMessage)),
-      reportingEvents: Object.freeze(d1.reportingEvents.map(toLarkReportingEvent)),
+      accounts: freezeRows([d1.account]),
+      inboxes: d1.inboxes,
+      contacts: d1.contacts,
+      agents: d1.agents,
+      teams: d1.teams,
+      labels: d1.labels,
+      conversations: d1.conversations,
+      conversationLabels: d1.conversationLabels,
+      messages: d1.messages,
+      reportingEvents: d1.reportingEvents,
     }),
     canonical: Object.freeze({
-      conversations: Object.freeze(d1.conversations.map(toCanonicalConversation)),
+      conversations: freezeRows(d1.conversations.map(canonicalConversation)),
       conversationDaily: d1.conversationDaily,
       agentDaily: d1.agentDaily,
       inboxDaily: d1.inboxDaily,
@@ -126,22 +86,24 @@ export async function prepareChatwootAnalyticsSync(input = {}) {
     }),
   });
 
+  const sourceRecordStates = await buildSourceRecordStates(source);
+  const sourceRows = 1 + source.inboxes.length + source.contacts.length + source.agents.length
+    + source.teams.length + source.labels.length + source.conversations.length
+    + conversationLabels.length + source.messages.length + source.reportingEvents.length;
+
   return Object.freeze({
     source: 'chatwoot_application_api',
     d1,
     lark,
     incremental: Object.freeze({
       cursorKey: `chatwoot:${context.accountKey}:analytics`,
-      cursorWatermark,
+      cursorWatermark: maxTimestamp(flattenSource(source)),
       sourceRecordStates,
-      fullSnapshot: input.fullSnapshot === true,
+      fullSnapshot: context.fullSnapshot,
     }),
     reconciliation: Object.freeze({
-      datasets: coverage.summary,
-      sourceRows: countSourceRows({
-        account, inboxes, contacts, agents, teams, labels, conversations, conversationLabels,
-        messages, reportingEvents,
-      }),
+      datasets: coverageSummary(d1.coverageRuns),
+      sourceRows,
       dailyRows: conversationDaily.length + agentDaily.length + inboxDaily.length + accountDaily.length,
       piiPolicy: 'allowlist_no_message_body_or_direct_contact_agent_identity',
       complete: true,
@@ -153,25 +115,44 @@ export function readChatwootWriteSetPath(value, path) {
   return path.split('.').reduce((current, segment) => current?.[segment], value) ?? [];
 }
 
+function target(path, tableKey, keyField) {
+  return Object.freeze({ path, tableKey, keyField });
+}
+
 function readContext(input) {
   const observedAt = positiveInteger(input.observedAt, 'observedAt');
   const reportingTimezone = requireText(input.reportingTimezone ?? 'UTC', 'reportingTimezone');
   assertTimeZone(reportingTimezone);
   return Object.freeze({
     customerProfile: requireText(input.customerProfile, 'customerProfile'),
-    customerKey: requireIdentity(input.customerKey, 'customerKey'),
-    accountKey: requireIdentity(input.accountKey, 'accountKey'),
-    externalAccountId: requirePositiveId(input.externalAccountId, 'externalAccountId'),
+    customerKey: identity(input.customerKey, 'customerKey'),
+    accountKey: identity(input.accountKey, 'accountKey'),
+    externalAccountId: positiveId(input.externalAccountId, 'externalAccountId'),
     syncRunId: requireText(input.syncRunId, 'syncRunId'),
     coverageRunIdPrefix: requireText(input.coverageRunIdPrefix ?? input.syncRunId, 'coverageRunIdPrefix'),
     observedAt,
     reportingTimezone,
-    metricDate: formatDate(observedAt, reportingTimezone),
+    metricDate: dateOnly(observedAt, reportingTimezone),
+    fullSnapshot: input.fullSnapshot === true,
   });
 }
 
-function assertSharedIdentity(context, rows) {
-  for (const row of rows) {
+function readSource(input) {
+  return Object.freeze({
+    account: requireObject(input.account, 'account'),
+    inboxes: requireArray(input.inboxes, 'inboxes'),
+    contacts: requireArray(input.contacts, 'contacts'),
+    agents: requireArray(input.agents, 'agents'),
+    teams: requireArray(input.teams, 'teams'),
+    labels: requireArray(input.labels, 'labels'),
+    conversations: requireArray(input.conversations, 'conversations'),
+    messages: requireArray(input.messages, 'messages'),
+    reportingEvents: requireArray(input.reportingEvents, 'reportingEvents'),
+  });
+}
+
+function assertIdentity(context, source) {
+  for (const row of flattenSource(source)) {
     requireObject(row, 'normalized row');
     if (row.customerKey !== context.customerKey
       || row.accountKey !== context.accountKey
@@ -181,241 +162,8 @@ function assertSharedIdentity(context, rows) {
   }
 }
 
-function buildConversationLabels(conversations, labelIdByKey, context) {
-  const rows = [];
-  for (const conversation of conversations) {
-    for (const labelKey of conversation.labelKeys ?? []) {
-      const externalLabelId = labelIdByKey.get(labelKey);
-      if (!externalLabelId) throw new TypeError(`Conversation references unknown label key: ${labelKey}`);
-      rows.push(Object.freeze({
-        conversation_label_key: `${conversation.conversationKey}:label:${externalLabelId}`,
-        conversation_key: conversation.conversationKey,
-        label_key: labelKey,
-        external_conversation_id: conversation.externalConversationId,
-        external_label_id: externalLabelId,
-        active: 1,
-        observed_at: context.observedAt,
-        removed_at: null,
-        coverage_run_id: coverageRunId(context, 'conversation_labels'),
-        sync_run_id: context.syncRunId,
-        created_at: context.observedAt,
-        updated_at: context.observedAt,
-      }));
-    }
-  }
-  return rows.sort(compareKey('conversation_label_key'));
-}
-
-function buildConversationDaily(conversation, context) {
-  const metricDate = formatDate(conversation.sourceUpdatedAt, context.reportingTimezone);
-  return Object.freeze({
-    conversation_daily_key: `${conversation.conversationKey}:${metricDate}`,
-    customer_key: context.customerKey,
-    account_key: context.accountKey,
-    external_account_id: context.externalAccountId,
-    external_conversation_id: conversation.externalConversationId,
-    external_inbox_id: conversation.externalInboxId,
-    external_agent_id: conversation.externalAssigneeId,
-    external_team_id: conversation.externalTeamId,
-    metric_date: metricDate,
-    reporting_timezone: context.reportingTimezone,
-    status: conversation.status,
-    new_conversation_count: formatDate(conversation.sourceCreatedAt, context.reportingTimezone) === metricDate ? 1 : 0,
-    resolved_count: conversation.status === 'resolved' ? 1 : 0,
-    reopened_count: conversation.reopenCountDelta,
-    incoming_message_count: conversation.incomingMessageCount,
-    outgoing_message_count: conversation.outgoingMessageCount,
-    private_message_count: conversation.privateMessageCount,
-    attachment_message_count: conversation.attachmentMessageCount,
-    first_response_seconds: conversation.firstResponseSeconds,
-    first_response_business_seconds: conversation.firstResponseBusinessSeconds,
-    resolution_seconds: conversation.resolutionSeconds,
-    resolution_business_seconds: conversation.resolutionBusinessSeconds,
-    reply_seconds: conversation.replySeconds,
-    reply_business_seconds: conversation.replyBusinessSeconds,
-    data_status: 'complete_for_observed_scope',
-    coverage_run_id: coverageRunId(context, 'conversation_daily'),
-    source_revision: String(conversation.sourceUpdatedAt),
-    fetched_at: context.observedAt,
-    sync_run_id: context.syncRunId,
-    created_at: context.observedAt,
-    updated_at: context.observedAt,
-  });
-}
-
-function buildAgentDaily(rows, context) {
-  const groups = groupBy(rows.filter((row) => row.external_agent_id), (row) => (
-    `${row.external_agent_id}:${row.metric_date}`
-  ));
-  return [...groups.values()].map((values) => {
-    const first = values[0];
-    return Object.freeze({
-      agent_daily_key: `chatwoot:${context.accountKey}:agent:${first.external_agent_id}:${first.metric_date}`,
-      customer_key: context.customerKey,
-      account_key: context.accountKey,
-      external_account_id: context.externalAccountId,
-      external_agent_id: first.external_agent_id,
-      metric_date: first.metric_date,
-      reporting_timezone: context.reportingTimezone,
-      assigned_conversation_count: values.length,
-      resolved_count: sum(values, 'resolved_count'),
-      reopened_count: sum(values, 'reopened_count'),
-      incoming_message_count: sum(values, 'incoming_message_count'),
-      outgoing_message_count: sum(values, 'outgoing_message_count'),
-      avg_first_response_seconds: average(values, 'first_response_seconds'),
-      avg_resolution_seconds: average(values, 'resolution_seconds'),
-      avg_reply_seconds: average(values, 'reply_seconds'),
-      data_status: 'complete_for_observed_scope',
-      coverage_run_id: coverageRunId(context, 'agent_daily'),
-      source_revision: maxText(values.map((row) => row.source_revision)),
-      fetched_at: context.observedAt,
-      sync_run_id: context.syncRunId,
-      created_at: context.observedAt,
-      updated_at: context.observedAt,
-    });
-  }).sort(compareKey('agent_daily_key'));
-}
-
-function buildInboxDaily(rows, context) {
-  const groups = groupBy(rows, (row) => `${row.external_inbox_id}:${row.metric_date}`);
-  return [...groups.values()].map((values) => {
-    const first = values[0];
-    return Object.freeze({
-      inbox_daily_key: `chatwoot:${context.accountKey}:inbox:${first.external_inbox_id}:${first.metric_date}`,
-      customer_key: context.customerKey,
-      account_key: context.accountKey,
-      external_account_id: context.externalAccountId,
-      external_inbox_id: first.external_inbox_id,
-      metric_date: first.metric_date,
-      reporting_timezone: context.reportingTimezone,
-      conversation_count: values.length,
-      new_conversation_count: sum(values, 'new_conversation_count'),
-      resolved_count: sum(values, 'resolved_count'),
-      reopened_count: sum(values, 'reopened_count'),
-      incoming_message_count: sum(values, 'incoming_message_count'),
-      outgoing_message_count: sum(values, 'outgoing_message_count'),
-      avg_first_response_seconds: average(values, 'first_response_seconds'),
-      avg_resolution_seconds: average(values, 'resolution_seconds'),
-      avg_reply_seconds: average(values, 'reply_seconds'),
-      data_status: 'complete_for_observed_scope',
-      coverage_run_id: coverageRunId(context, 'inbox_daily'),
-      source_revision: maxText(values.map((row) => row.source_revision)),
-      fetched_at: context.observedAt,
-      sync_run_id: context.syncRunId,
-      created_at: context.observedAt,
-      updated_at: context.observedAt,
-    });
-  }).sort(compareKey('inbox_daily_key'));
-}
-
-function buildAccountDaily(rows, agents, inboxes, context) {
-  const groups = groupBy(rows, (row) => row.metric_date);
-  if (groups.size === 0) groups.set(context.metricDate, []);
-  return [...groups.entries()].map(([metricDate, values]) => Object.freeze({
-    account_daily_key: `chatwoot:${context.accountKey}:account:${metricDate}`,
-    customer_key: context.customerKey,
-    account_key: context.accountKey,
-    external_account_id: context.externalAccountId,
-    metric_date: metricDate,
-    reporting_timezone: context.reportingTimezone,
-    conversation_count: values.length,
-    new_conversation_count: sum(values, 'new_conversation_count'),
-    open_conversation_count: values.filter((row) => row.status === 'open').length,
-    resolved_conversation_count: values.filter((row) => row.status === 'resolved').length,
-    pending_conversation_count: values.filter((row) => row.status === 'pending').length,
-    snoozed_conversation_count: values.filter((row) => row.status === 'snoozed').length,
-    reopened_count: sum(values, 'reopened_count'),
-    incoming_message_count: sum(values, 'incoming_message_count'),
-    outgoing_message_count: sum(values, 'outgoing_message_count'),
-    avg_first_response_seconds: average(values, 'first_response_seconds'),
-    avg_resolution_seconds: average(values, 'resolution_seconds'),
-    avg_reply_seconds: average(values, 'reply_seconds'),
-    active_agent_count: agents.filter((row) => row.availabilityStatus !== 'offline').length,
-    active_inbox_count: inboxes.length,
-    data_status: 'complete_for_observed_scope',
-    coverage_run_id: coverageRunId(context, 'account_daily'),
-    source_revision: maxText(values.map((row) => row.source_revision)),
-    fetched_at: context.observedAt,
-    sync_run_id: context.syncRunId,
-    created_at: context.observedAt,
-    updated_at: context.observedAt,
-  })).sort(compareKey('account_daily_key'));
-}
-
-function buildCoverage({ context, datasets }) {
-  const runs = [];
-  const entities = [];
-  const summary = {};
-  for (const [dataset, rows] of Object.entries(datasets)) {
-    const runId = coverageRunId(context, dataset);
-    const stableIds = rows.map((row, index) => readStableKey(row) ?? `${dataset}:${index + 1}`);
-    runs.push(Object.freeze({
-      coverage_run_id: runId,
-      sync_run_id: context.syncRunId,
-      customer_key: context.customerKey,
-      platform: 'chatwoot',
-      account_key: context.accountKey,
-      dataset_key: `chatwoot.${toSnake(dataset)}`,
-      metric_semantics: dataset.toLowerCase().includes('daily') ? 'period' : 'snapshot',
-      scope_mode: 'bounded_poll',
-      period_start: null,
-      period_end: context.metricDate,
-      source_timezone: context.reportingTimezone,
-      status: 'complete',
-      expected_entities: rows.length,
-      observed_entities: rows.length,
-      expected_rows: rows.length,
-      observed_rows: rows.length,
-      written_rows: rows.length,
-      failed_rows: 0,
-      source_watermark: String(findMaxTimestamp(rows)),
-      revisable_until: null,
-      started_at: context.observedAt,
-      completed_at: context.observedAt,
-      error_code: null,
-      created_at: context.observedAt,
-      updated_at: context.observedAt,
-    }));
-    for (const stableId of stableIds) {
-      entities.push(Object.freeze({
-        coverage_entity_key: `${runId}:${stableId}`,
-        coverage_run_id: runId,
-        entity_type: toSnake(dataset),
-        external_entity_id: stableId,
-        observation_status: 'observed',
-        source_revision: null,
-        observed_at: context.observedAt,
-        created_at: context.observedAt,
-      }));
-    }
-    summary[dataset] = Object.freeze({ expected: rows.length, observed: rows.length, failed: 0 });
-  }
-  return Object.freeze({
-    runs: Object.freeze(runs),
-    entities: Object.freeze(entities),
-    summary: Object.freeze(summary),
-  });
-}
-
-async function buildSourceRecordStates(datasets) {
-  const rows = [];
-  for (const [dataset, values] of Object.entries(datasets)) {
-    const list = Array.isArray(values) ? values : [values];
-    for (const value of list) {
-      const sourceRecordId = `${toSnake(dataset)}:${readExternalId(value)}`;
-      rows.push(Object.freeze({
-        sourceRecordId,
-        sourceModifiedAt: readSourceUpdatedAt(value),
-        sourceHash: await createStableFingerprint(value),
-        externalContentId: readStableKey(value),
-      }));
-    }
-  }
-  return Object.freeze(rows.sort((a, b) => a.sourceRecordId.localeCompare(b.sourceRecordId)));
-}
-
-function toAccountState(row, context) {
-  return Object.freeze({
+function accountState(row, context) {
+  return freeze({
     account_state_key: row.accountStateKey,
     customer_key: context.customerKey,
     account_key: context.accountKey,
@@ -424,15 +172,12 @@ function toAccountState(row, context) {
     last_seen_at: row.lastSeenAt,
     source_updated_at: row.sourceUpdatedAt,
     metadata_hash: row.metadataHash,
-    last_coverage_run_id: coverageRunId(context, 'accounts'),
-    last_sync_run_id: context.syncRunId,
-    created_at: context.observedAt,
-    updated_at: context.observedAt,
+    ...lineage(context, 'accounts'),
   });
 }
 
-function toInboxState(row, context) {
-  return Object.freeze({
+function inboxState(row, context) {
+  return freeze({
     inbox_key: row.inboxKey,
     customer_key: context.customerKey,
     account_key: context.accountKey,
@@ -449,15 +194,12 @@ function toInboxState(row, context) {
     last_seen_at: row.lastSeenAt,
     source_updated_at: row.sourceUpdatedAt,
     metadata_hash: row.metadataHash,
-    last_coverage_run_id: coverageRunId(context, 'inboxes'),
-    last_sync_run_id: context.syncRunId,
-    created_at: context.observedAt,
-    updated_at: context.observedAt,
+    ...lineage(context, 'inboxes'),
   });
 }
 
-function toContactState(row, context) {
-  return Object.freeze({
+function contactState(row, context) {
+  return freeze({
     contact_key: row.contactKey,
     customer_key: context.customerKey,
     account_key: context.accountKey,
@@ -472,15 +214,12 @@ function toContactState(row, context) {
     first_seen_at: row.firstSeenAt,
     last_seen_at: row.lastSeenAt,
     metadata_hash: row.metadataHash,
-    last_coverage_run_id: coverageRunId(context, 'contacts'),
-    last_sync_run_id: context.syncRunId,
-    created_at: context.observedAt,
-    updated_at: context.observedAt,
+    ...lineage(context, 'contacts'),
   });
 }
 
-function toAgentState(row, context) {
-  return Object.freeze({
+function agentState(row, context) {
+  return freeze({
     agent_key: row.agentKey,
     customer_key: context.customerKey,
     account_key: context.accountKey,
@@ -495,15 +234,12 @@ function toAgentState(row, context) {
     last_seen_at: row.lastSeenAt,
     source_updated_at: row.sourceUpdatedAt,
     metadata_hash: row.metadataHash,
-    last_coverage_run_id: coverageRunId(context, 'agents'),
-    last_sync_run_id: context.syncRunId,
-    created_at: context.observedAt,
-    updated_at: context.observedAt,
+    ...lineage(context, 'agents'),
   });
 }
 
-function toTeamState(row, context) {
-  return Object.freeze({
+function teamState(row, context) {
+  return freeze({
     team_key: row.teamKey,
     customer_key: context.customerKey,
     account_key: context.accountKey,
@@ -514,15 +250,12 @@ function toTeamState(row, context) {
     last_seen_at: row.lastSeenAt,
     source_updated_at: row.sourceUpdatedAt,
     metadata_hash: row.metadataHash,
-    last_coverage_run_id: coverageRunId(context, 'teams'),
-    last_sync_run_id: context.syncRunId,
-    created_at: context.observedAt,
-    updated_at: context.observedAt,
+    ...lineage(context, 'teams'),
   });
 }
 
-function toLabelState(row, context) {
-  return Object.freeze({
+function labelState(row, context) {
+  return freeze({
     label_key: row.labelKey,
     customer_key: context.customerKey,
     account_key: context.accountKey,
@@ -535,15 +268,12 @@ function toLabelState(row, context) {
     last_seen_at: row.lastSeenAt,
     source_updated_at: row.sourceUpdatedAt,
     metadata_hash: row.metadataHash,
-    last_coverage_run_id: coverageRunId(context, 'labels'),
-    last_sync_run_id: context.syncRunId,
-    created_at: context.observedAt,
-    updated_at: context.observedAt,
+    ...lineage(context, 'labels'),
   });
 }
 
-function toConversationState(row, context) {
-  return Object.freeze({
+function conversationState(row, context) {
+  return freeze({
     conversation_key: row.conversationKey,
     customer_key: context.customerKey,
     account_key: context.accountKey,
@@ -574,15 +304,12 @@ function toConversationState(row, context) {
     reply_business_seconds: row.replyBusinessSeconds,
     metrics_hash: row.metricsHash,
     metadata_hash: row.metadataHash,
-    last_coverage_run_id: coverageRunId(context, 'conversations'),
-    last_sync_run_id: context.syncRunId,
-    created_at: context.observedAt,
-    updated_at: context.observedAt,
+    ...lineage(context, 'conversations'),
   });
 }
 
-function toMessageState(row, context) {
-  return Object.freeze({
+function messageState(row, context) {
+  return freeze({
     message_key: row.messageKey,
     conversation_key: row.conversationKey,
     customer_key: context.customerKey,
@@ -601,15 +328,12 @@ function toMessageState(row, context) {
     source_created_at: row.sourceCreatedAt,
     source_updated_at: row.sourceUpdatedAt,
     metadata_hash: row.metadataHash,
-    last_coverage_run_id: coverageRunId(context, 'messages'),
-    last_sync_run_id: context.syncRunId,
-    created_at: context.observedAt,
-    updated_at: context.observedAt,
+    ...lineage(context, 'messages'),
   });
 }
 
-function toReportingEventFact(row, context) {
-  return Object.freeze({
+function reportingEventFact(row, context) {
+  return freeze({
     reporting_event_key: row.reportingEventKey,
     customer_key: context.customerKey,
     account_key: context.accountKey,
@@ -626,25 +350,219 @@ function toReportingEventFact(row, context) {
     source_created_at: row.sourceCreatedAt,
     source_updated_at: row.sourceUpdatedAt,
     source_payload_hash: row.sourcePayloadHash,
-    coverage_run_id: coverageRunId(context, 'reporting_events'),
+    coverage_run_id: coverageId(context, 'reporting_events'),
     sync_run_id: context.syncRunId,
     created_at: context.observedAt,
     updated_at: context.observedAt,
   });
 }
 
-function toLarkAccount(row) { return row; }
-function toLarkInbox(row) { return row; }
-function toLarkContact(row) { return row; }
-function toLarkAgent(row) { return row; }
-function toLarkTeam(row) { return row; }
-function toLarkLabel(row) { return row; }
-function toLarkConversation(row) { return row; }
-function toLarkConversationLabel(row) { return row; }
-function toLarkMessage(row) { return row; }
-function toLarkReportingEvent(row) { return row; }
-function toCanonicalConversation(row) {
+function buildConversationLabels(conversations, labelIds, context) {
+  const rows = [];
+  for (const conversation of conversations) {
+    for (const labelKey of conversation.labelKeys ?? []) {
+      const externalLabelId = labelIds.get(labelKey);
+      if (!externalLabelId) throw new TypeError(`Conversation references unknown label key: ${labelKey}`);
+      rows.push(freeze({
+        conversation_label_key: `${conversation.conversationKey}:label:${externalLabelId}`,
+        conversation_key: conversation.conversationKey,
+        label_key: labelKey,
+        external_conversation_id: conversation.externalConversationId,
+        external_label_id: externalLabelId,
+        active: 1,
+        observed_at: context.observedAt,
+        removed_at: null,
+        coverage_run_id: coverageId(context, 'conversation_labels'),
+        sync_run_id: context.syncRunId,
+        created_at: context.observedAt,
+        updated_at: context.observedAt,
+      }));
+    }
+  }
+  return rows.sort(by('conversation_label_key'));
+}
+
+function buildConversationDaily(row, context) {
+  const metricDate = dateOnly(row.sourceUpdatedAt, context.reportingTimezone);
+  return freeze({
+    conversation_daily_key: `${row.conversationKey}:${metricDate}`,
+    customer_key: context.customerKey,
+    account_key: context.accountKey,
+    external_account_id: context.externalAccountId,
+    external_conversation_id: row.externalConversationId,
+    external_inbox_id: row.externalInboxId,
+    external_agent_id: row.externalAssigneeId,
+    external_team_id: row.externalTeamId,
+    metric_date: metricDate,
+    reporting_timezone: context.reportingTimezone,
+    status: row.status,
+    new_conversation_count: dateOnly(row.sourceCreatedAt, context.reportingTimezone) === metricDate ? 1 : 0,
+    resolved_count: row.status === 'resolved' ? 1 : 0,
+    reopened_count: row.reopenCountDelta,
+    incoming_message_count: row.incomingMessageCount,
+    outgoing_message_count: row.outgoingMessageCount,
+    private_message_count: row.privateMessageCount,
+    attachment_message_count: row.attachmentMessageCount,
+    first_response_seconds: row.firstResponseSeconds,
+    first_response_business_seconds: row.firstResponseBusinessSeconds,
+    resolution_seconds: row.resolutionSeconds,
+    resolution_business_seconds: row.resolutionBusinessSeconds,
+    reply_seconds: row.replySeconds,
+    reply_business_seconds: row.replyBusinessSeconds,
+    data_status: 'complete',
+    coverage_run_id: coverageId(context, 'conversation_daily'),
+    source_revision: String(row.sourceUpdatedAt),
+    fetched_at: context.observedAt,
+    sync_run_id: context.syncRunId,
+    created_at: context.observedAt,
+    updated_at: context.observedAt,
+  });
+}
+
+function aggregateDaily(rows, context, dimension) {
+  const idField = dimension === 'agent' ? 'external_agent_id' : 'external_inbox_id';
+  const keyField = dimension === 'agent' ? 'agent_daily_key' : 'inbox_daily_key';
+  const groups = group(rows.filter((row) => row[idField]), (row) => `${row[idField]}:${row.metric_date}`);
+  return [...groups.values()].map((values) => {
+    const first = values[0];
+    const common = {
+      [keyField]: `chatwoot:${context.accountKey}:${dimension}:${first[idField]}:${first.metric_date}`,
+      customer_key: context.customerKey,
+      account_key: context.accountKey,
+      external_account_id: context.externalAccountId,
+      [idField]: first[idField],
+      metric_date: first.metric_date,
+      reporting_timezone: context.reportingTimezone,
+      resolved_count: sum(values, 'resolved_count'),
+      reopened_count: sum(values, 'reopened_count'),
+      incoming_message_count: sum(values, 'incoming_message_count'),
+      outgoing_message_count: sum(values, 'outgoing_message_count'),
+      avg_first_response_seconds: avg(values, 'first_response_seconds'),
+      avg_resolution_seconds: avg(values, 'resolution_seconds'),
+      avg_reply_seconds: avg(values, 'reply_seconds'),
+      data_status: 'complete',
+      coverage_run_id: coverageId(context, `${dimension}_daily`),
+      source_revision: maxRevision(values),
+      fetched_at: context.observedAt,
+      sync_run_id: context.syncRunId,
+      created_at: context.observedAt,
+      updated_at: context.observedAt,
+    };
+    if (dimension === 'agent') common.assigned_conversation_count = values.length;
+    else {
+      common.conversation_count = values.length;
+      common.new_conversation_count = sum(values, 'new_conversation_count');
+    }
+    return freeze(common);
+  }).sort(by(keyField));
+}
+
+function aggregateAccountDaily(rows, agents, inboxes, context) {
+  const groups = group(rows, (row) => row.metric_date);
+  if (groups.size === 0) groups.set(context.metricDate, []);
+  return [...groups.entries()].map(([metricDate, values]) => freeze({
+    account_daily_key: `chatwoot:${context.accountKey}:account:${metricDate}`,
+    customer_key: context.customerKey,
+    account_key: context.accountKey,
+    external_account_id: context.externalAccountId,
+    metric_date: metricDate,
+    reporting_timezone: context.reportingTimezone,
+    conversation_count: values.length,
+    new_conversation_count: sum(values, 'new_conversation_count'),
+    open_conversation_count: count(values, 'status', 'open'),
+    resolved_conversation_count: count(values, 'status', 'resolved'),
+    pending_conversation_count: count(values, 'status', 'pending'),
+    snoozed_conversation_count: count(values, 'status', 'snoozed'),
+    reopened_count: sum(values, 'reopened_count'),
+    incoming_message_count: sum(values, 'incoming_message_count'),
+    outgoing_message_count: sum(values, 'outgoing_message_count'),
+    avg_first_response_seconds: avg(values, 'first_response_seconds'),
+    avg_resolution_seconds: avg(values, 'resolution_seconds'),
+    avg_reply_seconds: avg(values, 'reply_seconds'),
+    active_agent_count: agents.filter((row) => row.availabilityStatus !== 'offline').length,
+    active_inbox_count: inboxes.length,
+    data_status: 'complete',
+    coverage_run_id: coverageId(context, 'account_daily'),
+    source_revision: maxRevision(values),
+    fetched_at: context.observedAt,
+    sync_run_id: context.syncRunId,
+    created_at: context.observedAt,
+    updated_at: context.observedAt,
+  })).sort(by('account_daily_key'));
+}
+
+function buildCoverage(context, datasets) {
+  const coverageRuns = [];
+  const coverageEntities = [];
+  for (const [dataset, rows] of Object.entries(datasets)) {
+    const entityType = snake(dataset);
+    const runId = coverageId(context, dataset);
+    const watermark = maxTimestamp(rows);
+    coverageRuns.push(freeze({
+      coverage_run_id: runId,
+      sync_run_id: context.syncRunId,
+      customer_key: context.customerKey,
+      platform: 'chatwoot',
+      account_key: context.accountKey,
+      dataset_key: `chatwoot.${entityType}`,
+      metric_semantics: entityType.includes('daily') ? 'period' : 'snapshot',
+      scope_mode: context.fullSnapshot ? 'full_inventory' : 'recent_window',
+      period_start: null,
+      period_end: context.metricDate,
+      source_timezone: context.reportingTimezone,
+      status: 'complete',
+      expected_entities: rows.length,
+      observed_entities: rows.length,
+      expected_rows: rows.length,
+      observed_rows: rows.length,
+      written_rows: rows.length,
+      failed_rows: 0,
+      source_watermark: watermark > 0 ? String(watermark) : null,
+      revisable_until: null,
+      started_at: context.observedAt,
+      completed_at: context.observedAt,
+      error_code: null,
+      created_at: context.observedAt,
+      updated_at: context.observedAt,
+    }));
+    rows.forEach((row, index) => {
+      const externalId = stableKey(row) ?? `${entityType}:${index + 1}`;
+      coverageEntities.push(freeze({
+        coverage_entity_key: `${runId}:${entityType}:${externalId}`,
+        coverage_run_id: runId,
+        entity_type: entityType,
+        external_entity_id: externalId,
+        observation_status: 'observed',
+        source_revision: null,
+        observed_at: context.observedAt,
+        created_at: context.observedAt,
+      }));
+    });
+  }
   return Object.freeze({
+    coverageRuns: freezeRows(coverageRuns),
+    coverageEntities: freezeRows(coverageEntities),
+  });
+}
+
+async function buildSourceRecordStates(source) {
+  const records = [];
+  for (const [dataset, values] of Object.entries(source)) {
+    const rows = Array.isArray(values) ? values : [values];
+    for (const row of rows) {
+      records.push(freeze({
+        sourceRecordId: `${snake(dataset)}:${externalId(row)}`,
+        sourceModifiedAt: sourceUpdatedAt(row),
+        sourceHash: await createStableFingerprint(row),
+        externalContentId: stableKey(row),
+      }));
+    }
+  }
+  return freezeRows(records.sort(by('sourceRecordId')));
+}
+
+function canonicalConversation(row) {
+  return freeze({
     conversation_key: row.conversation_key,
     account_key: row.account_key,
     external_conversation_id: row.external_conversation_id,
@@ -667,70 +585,93 @@ function toCanonicalConversation(row) {
   });
 }
 
-function countSourceRows(value) {
-  return 1 + value.inboxes.length + value.contacts.length + value.agents.length
-    + value.teams.length + value.labels.length + value.conversations.length
-    + value.conversationLabels.length + value.messages.length + value.reportingEvents.length;
+function lineage(context, dataset) {
+  return {
+    last_coverage_run_id: coverageId(context, dataset),
+    last_sync_run_id: context.syncRunId,
+    created_at: context.observedAt,
+    updated_at: context.observedAt,
+  };
 }
 
-function coverageRunId(context, dataset) {
-  return `${context.coverageRunIdPrefix}:chatwoot:${toSnake(dataset)}`;
+function coverageId(context, dataset) {
+  return `${context.coverageRunIdPrefix}:chatwoot:${snake(dataset)}`;
 }
 
-function readStableKey(value) {
-  return value.accountStateKey ?? value.inboxKey ?? value.contactKey ?? value.agentKey
-    ?? value.teamKey ?? value.labelKey ?? value.conversationKey ?? value.messageKey
-    ?? value.reportingEventKey ?? value.account_state_key ?? value.inbox_key ?? value.contact_key
-    ?? value.agent_key ?? value.team_key ?? value.label_key ?? value.conversation_key
-    ?? value.message_key ?? value.reporting_event_key ?? value.conversation_label_key
-    ?? value.conversation_daily_key ?? value.agent_daily_key ?? value.inbox_daily_key
-    ?? value.account_daily_key ?? null;
+function coverageSummary(runs) {
+  return Object.freeze(Object.fromEntries(runs.map((row) => [
+    row.dataset_key.replace(/^chatwoot\./u, ''),
+    Object.freeze({
+      expected: row.expected_rows,
+      observed: row.observed_rows,
+      failed: row.failed_rows,
+    }),
+  ])));
 }
 
-function readExternalId(value) {
-  return value.externalAccountId ?? value.externalInboxId ?? value.externalContactId
-    ?? value.externalAgentId ?? value.externalTeamId ?? value.externalLabelId
-    ?? value.externalConversationId ?? value.externalMessageId ?? value.externalReportingEventId
-    ?? readStableKey(value);
+function flattenSource(source) {
+  return [source.account, ...source.inboxes, ...source.contacts, ...source.agents, ...source.teams,
+    ...source.labels, ...source.conversations, ...source.messages, ...source.reportingEvents];
 }
 
-function readSourceUpdatedAt(value) {
-  return value.sourceUpdatedAt ?? value.lastSeenAt ?? value.observedAt ?? null;
+function stableKey(row) {
+  return row.accountStateKey ?? row.inboxKey ?? row.contactKey ?? row.agentKey ?? row.teamKey
+    ?? row.labelKey ?? row.conversationKey ?? row.messageKey ?? row.reportingEventKey
+    ?? row.account_state_key ?? row.inbox_key ?? row.contact_key ?? row.agent_key ?? row.team_key
+    ?? row.label_key ?? row.conversation_key ?? row.message_key ?? row.reporting_event_key
+    ?? row.conversation_label_key ?? row.conversation_daily_key ?? row.agent_daily_key
+    ?? row.inbox_daily_key ?? row.account_daily_key ?? null;
 }
 
-function findMaxTimestamp(rows) {
-  let max = 0;
+function externalId(row) {
+  return row.externalAccountId ?? row.externalInboxId ?? row.externalContactId ?? row.externalAgentId
+    ?? row.externalTeamId ?? row.externalLabelId ?? row.externalConversationId
+    ?? row.externalMessageId ?? row.externalReportingEventId ?? stableKey(row);
+}
+
+function sourceUpdatedAt(row) {
+  return row.sourceUpdatedAt ?? row.lastSeenAt ?? row.observedAt ?? null;
+}
+
+function maxTimestamp(rows) {
+  let result = 0;
   for (const row of rows) {
-    const candidates = [row.sourceUpdatedAt, row.lastActivityAt, row.eventEndAt, row.lastSeenAt,
-      row.source_updated_at, row.last_activity_at, row.event_end_at, row.updated_at];
-    for (const value of candidates) if (Number.isFinite(Number(value))) max = Math.max(max, Number(value));
+    for (const value of [row.sourceUpdatedAt, row.lastActivityAt, row.eventEndAt, row.lastSeenAt,
+      row.source_updated_at, row.last_activity_at, row.event_end_at, row.updated_at]) {
+      const number = Number(value);
+      if (Number.isFinite(number)) result = Math.max(result, number);
+    }
   }
-  return max;
+  return result;
 }
 
-function groupBy(rows, keyFn) {
-  const groups = new Map();
+function group(rows, keyFn) {
+  const result = new Map();
   for (const row of rows) {
     const key = keyFn(row);
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(row);
+    if (!result.has(key)) result.set(key, []);
+    result.get(key).push(row);
   }
-  return groups;
+  return result;
 }
 
 function sum(rows, field) {
   return rows.reduce((total, row) => total + Number(row[field] ?? 0), 0);
 }
 
-function average(rows, field) {
+function avg(rows, field) {
   const values = rows.map((row) => row[field]).filter((value) => value !== null && value !== undefined)
     .map(Number).filter(Number.isFinite);
   return values.length === 0 ? null : values.reduce((total, value) => total + value, 0) / values.length;
 }
 
-function maxText(values) {
-  const numbers = values.map(Number).filter(Number.isFinite);
-  return numbers.length === 0 ? null : String(Math.max(...numbers));
+function maxRevision(rows) {
+  const values = rows.map((row) => Number(row.source_revision)).filter(Number.isFinite);
+  return values.length === 0 ? null : String(Math.max(...values));
+}
+
+function count(rows, field, value) {
+  return rows.filter((row) => row[field] === value).length;
 }
 
 function boolInt(value) {
@@ -738,15 +679,15 @@ function boolInt(value) {
   return value === true ? 1 : 0;
 }
 
-function compareKey(field) {
-  return (left, right) => String(left[field]).localeCompare(String(right[field]));
-}
-
-function toSnake(value) {
+function snake(value) {
   return String(value).replace(/([a-z0-9])([A-Z])/gu, '$1_$2').toLowerCase();
 }
 
-function formatDate(timestamp, timeZone) {
+function by(field) {
+  return (left, right) => String(left[field]).localeCompare(String(right[field]));
+}
+
+function dateOnly(timestamp, timeZone) {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone,
     year: 'numeric',
@@ -763,35 +704,32 @@ function assertTimeZone(value) {
   }
 }
 
-function requireIdentity(value, fieldName) {
-  const text = requireText(value, fieldName);
-  if (text.includes(':')) throw new TypeError(`${fieldName} must not contain ":"`);
-  return text;
-}
-
-function requirePositiveId(value, fieldName) {
-  const number = Number(value);
-  if (!Number.isSafeInteger(number) || number <= 0) throw new TypeError(`${fieldName} must be a positive safe integer`);
-  return String(number);
-}
-
-function positiveInteger(value, fieldName) {
-  const number = Number(value);
-  if (!Number.isSafeInteger(number) || number <= 0) throw new TypeError(`${fieldName} must be a positive integer`);
-  return number;
-}
-
-function requireText(value, fieldName) {
-  if (typeof value !== 'string' || value.trim() === '') throw new TypeError(`${fieldName} must be a non-empty string`);
-  return value.trim();
-}
-
+function freeze(value) { return Object.freeze(value); }
+function freezeRows(rows) { return Object.freeze(rows.map(freeze)); }
 function requireObject(value, fieldName) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new TypeError(`${fieldName} must be an object`);
   return value;
 }
-
 function requireArray(value, fieldName) {
   if (!Array.isArray(value)) throw new TypeError(`${fieldName} must be an array`);
   return value;
+}
+function requireText(value, fieldName) {
+  if (typeof value !== 'string' || value.trim() === '') throw new TypeError(`${fieldName} must be a non-empty string`);
+  return value.trim();
+}
+function identity(value, fieldName) {
+  const text = requireText(value, fieldName);
+  if (text.includes(':')) throw new TypeError(`${fieldName} must not contain ":"`);
+  return text;
+}
+function positiveId(value, fieldName) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number <= 0) throw new TypeError(`${fieldName} must be a positive safe integer`);
+  return String(number);
+}
+function positiveInteger(value, fieldName) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number <= 0) throw new TypeError(`${fieldName} must be a positive integer`);
+  return number;
 }
