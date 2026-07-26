@@ -1,5 +1,41 @@
 # Changelog
 
+## Unreleased — Google Ads Manager Script LIVE UAT Closeout — 2026-07-26
+
+### Runtime completion
+
+- Completed the original signed LIVE run `88351cb4-714d-49ef-91db-d95550a93ebf`
+  without rerunning the Manager Script.
+- Reconciled all six datasets, seven of seven chunks and 1,375 of 1,375 rows.
+- Completed durable admission after four send attempts and closed the Work lifecycle.
+- Persisted 1,090 Ads entity rows and 285 Ads daily rows in D1.
+- Completed six of six Coverage runs with zero failed rows.
+- Completed the eight-destination preflight and the resumable D1/Lark continuation path.
+
+### Recovery evidence
+
+- Redrove the exact third terminal record
+  `terminal:f909996a2e4985697f3e67feacfe7c69` once after PR `#63` was merged and the
+  bounded Recovery Worker was verified.
+- Retained all three terminal records as forensic evidence with status `redriven`;
+  none may be deleted, reused or redriven again.
+- Preserved the original run generation `1785048890422` and avoided another Manager
+  Script LIVE execution.
+
+### Verification and safe close
+
+- The guarded operator returned `ok=true` with exact transport counts, completed
+  admission and durable Work, six Coverage rows and redaction of both staged payload
+  locations.
+- Closed the Recovery Window by deploying the normal Sync configuration at Worker
+  version `dcee150f-34cc-4a6f-aafa-5b52ece44093`.
+- Verified Google Ads Connector, signed ingress, Queue admission, D1/Lark writes,
+  DLQ redrive and Google Ads schedule are all disabled.
+- Kept the Manager Script at `DRY_RUN` with delivery disabled and kept Production
+  blocked.
+- Added the sanitized Project Brain closeout at
+  `docs/project-brain/google-ads-manager-script-live-uat-closeout-2026-07-26.md`.
+
 ## Unreleased — Google Ads Lark Key-Field Contract Hotfix — 2026-07-26
 
 ### Runtime incident
