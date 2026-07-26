@@ -1,0 +1,236 @@
+name: TikTok Post-Lark Read-Only Preflight
+
+on:
+  push:
+    branches:
+      - 'ops/tiktok-post-lark-readonly-preflight'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tiktok-post-lark-readonly-preflight
+  cancel-in-progress: true
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      WORKER_ORIGIN: https://social-mkt-sync-worker.kasinpod40.workers.dev
+      SYNC_WORKER_NAME: social-mkt-sync-worker
+      D1_DATABASE_NAME: social-mkt-state-dev
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Verify repository and merged baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD ad6614dd8ee0cb2a1dda5cdbe7035f44b40581d4)" = "ad6614dd8ee0cb2a1dda5cdbe7035f44b40581d4"
+          npm run check
+          node --test tests/application/tiktok-staged-business-sync.test.js
+          npm run deploy:dry-run
+
+      - name: Verify deployed audit route remains safe-closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          status="$(curl --silent --show-error --output audit-response.json --write-out '%{http_code}' \
+            "$WORKER_ORIGIN/operator/tiktok/post-lark-audit")"
+          printf '%s\n' "$status" > audit-http-status.txt
+          if [ "$status" != "404" ]; then
+            echo "Expected the unauthenticated audit route to remain disabled with HTTP 404; got $status" >&2
+            exit 1
+          fi
+          echo "PASS: deployed audit route is safe-closed (404)."
+
+      - name: Detect Cloudflare read-only credentials
+        id: cloudflare_access
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${CLOUDFLARE_API_TOKEN:-}" ] && [ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "Cloudflare repository secrets are available for read-only preflight."
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "Cloudflare repository secrets are not configured; Remote D1/Worker inspection is blocked."
+          fi
+
+      - name: Verify Cloudflare identity
+        if: steps.cloudflare_access.outputs.available == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler whoami >/tmp/wrangler-whoami.txt
+          echo "PASS: Wrangler identity check completed without printing identity details."
+
+      - name: Discover D1 database
+        if: steps.cloudflare_access.outputs.available == 'true'
+        id: d1
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 list --json > /tmp/d1-list.json
+          database_id="$(node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const rows = JSON.parse(readFileSync('/tmp/d1-list.json', 'utf8'));
+          const row = rows.find((item) => item.name === process.env.D1_DATABASE_NAME);
+          if (!row?.uuid && !row?.id) process.exit(2);
+          process.stdout.write(row.uuid ?? row.id);
+          NODE
+          )"
+          echo "database_id=$database_id" >> "$GITHUB_OUTPUT"
+          echo "PASS: target D1 database was resolved by exact name."
+
+      - name: Read deployed Worker safe-state flags
+        if: steps.cloudflare_access.outputs.available == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --silent --show-error --fail \
+            --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$SYNC_WORKER_NAME/settings" \
+            --output /tmp/worker-settings.json
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          const response = JSON.parse(readFileSync('/tmp/worker-settings.json', 'utf8'));
+          if (response.success === false) throw new Error('Cloudflare Worker settings request failed');
+          const bindings = response?.result?.bindings ?? response?.bindings ?? [];
+          const wanted = new Set([
+            'MKT_ENV',
+            'MKT_CUSTOMER_PROFILE',
+            'MKT_CONNECTOR_TIKTOK_ENABLED',
+            'MKT_TIKTOK_AUDIT_HTTP_ENABLED',
+            'MKT_TIKTOK_WATERMARK_ADMISSION_ENABLED',
+            'MKT_TIKTOK_POST_PROCESS_REPORT_ENABLED',
+            'MKT_TIME_SERIES_D1_WRITE_ENABLED',
+            'MKT_TIME_SERIES_D1_BACKFILL_ENABLED',
+            'MKT_REPORT_D1_SHADOW_READ_ENABLED',
+            'MKT_REPORT_D1_READ_ENABLED',
+            'MKT_REPORT_PRESET_MATERIALIZATION_ENABLED',
+            'MKT_SCHEDULE_TIKTOK_ENABLED',
+            'MKT_SCHEDULE_DAILY_REPORT_ENABLED',
+            'MKT_LARK_DAILY_RETENTION_ENABLED',
+            'MKT_DLQ_REDRIVE_ENABLED',
+            'MKT_CONNECTOR_GOOGLE_ADS_ENABLED',
+            'MKT_GOOGLE_ADS_SIGNED_INGRESS_ENABLED',
+            'MKT_GOOGLE_ADS_QUEUE_ADMISSION_ENABLED',
+            'MKT_GOOGLE_ADS_BUSINESS_WRITE_ENABLED',
+            'MKT_GOOGLE_ADS_LARK_WRITE_ENABLED',
+            'MKT_SCHEDULE_GOOGLE_ADS_ENABLED',
+          ]);
+          const selected = {};
+          for (const binding of bindings) {
+            if (!wanted.has(binding.name)) continue;
+            const value = binding.text ?? binding.value ?? null;
+            selected[binding.name] = value;
+          }
+          writeFileSync('selected-worker-flags.json', `${JSON.stringify(selected, null, 2)}\n`);
+          const requiredFalse = [
+            'MKT_TIKTOK_AUDIT_HTTP_ENABLED',
+            'MKT_TIKTOK_WATERMARK_ADMISSION_ENABLED',
+            'MKT_TIKTOK_POST_PROCESS_REPORT_ENABLED',
+            'MKT_REPORT_D1_SHADOW_READ_ENABLED',
+            'MKT_REPORT_D1_READ_ENABLED',
+            'MKT_REPORT_PRESET_MATERIALIZATION_ENABLED',
+            'MKT_SCHEDULE_TIKTOK_ENABLED',
+            'MKT_SCHEDULE_DAILY_REPORT_ENABLED',
+            'MKT_LARK_DAILY_RETENTION_ENABLED',
+            'MKT_DLQ_REDRIVE_ENABLED',
+            'MKT_CONNECTOR_GOOGLE_ADS_ENABLED',
+            'MKT_GOOGLE_ADS_SIGNED_INGRESS_ENABLED',
+            'MKT_GOOGLE_ADS_QUEUE_ADMISSION_ENABLED',
+            'MKT_GOOGLE_ADS_BUSINESS_WRITE_ENABLED',
+            'MKT_GOOGLE_ADS_LARK_WRITE_ENABLED',
+            'MKT_SCHEDULE_GOOGLE_ADS_ENABLED',
+          ];
+          const invalid = requiredFalse.filter((name) => selected[name] !== 'false');
+          if (selected.MKT_ENV !== 'development') invalid.push('MKT_ENV');
+          if (selected.MKT_CUSTOMER_PROFILE !== 'integration_workspace') invalid.push('MKT_CUSTOMER_PROFILE');
+          if (invalid.length > 0) {
+            throw new Error(`Worker safe-state mismatch: ${invalid.join(', ')}`);
+          }
+          console.log('PASS: selected deployed Worker flags are safe-closed.');
+          NODE
+
+      - name: Read Remote D1 migration and operational state
+        if: steps.cloudflare_access.outputs.available == 'true'
+        shell: bash
+        env:
+          DATABASE_ID: ${{ steps.d1.outputs.database_id }}
+        run: |
+          set -euo pipefail
+          cat > /tmp/wrangler-tiktok-preflight.jsonc <<EOF
+          {
+            "name": "$SYNC_WORKER_NAME",
+            "compatibility_date": "2026-07-15",
+            "d1_databases": [
+              {
+                "binding": "MKT_STATE_DB",
+                "database_name": "$D1_DATABASE_NAME",
+                "database_id": "$DATABASE_ID",
+                "migrations_dir": "./migrations"
+              }
+            ]
+          }
+          EOF
+          npx wrangler d1 migrations list "$D1_DATABASE_NAME" \
+            --remote --config /tmp/wrangler-tiktok-preflight.jsonc \
+            > migration-list.txt
+          npx wrangler d1 execute "$D1_DATABASE_NAME" \
+            --remote --config /tmp/wrangler-tiktok-preflight.jsonc \
+            --command "SELECT
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='tiktok_source_admissions') AS migration_0016_table_present,
+              (SELECT COUNT(*) FROM sync_work_runs WHERE lifecycle_status='active') AS active_work,
+              (SELECT COUNT(*) FROM sync_locks WHERE expires_at > unixepoch('now') * 1000) AS active_locks,
+              (SELECT COUNT(*) FROM dead_letter_jobs WHERE status='open') AS open_dlq,
+              (SELECT COUNT(*) FROM system_alerts WHERE status='open') AS open_alerts,
+              (SELECT COUNT(*) FROM organic_content_state) AS organic_content_state,
+              (SELECT COUNT(*) FROM organic_content_observations) AS organic_content_observations,
+              (SELECT COUNT(*) FROM data_coverage_entities) AS coverage_entities;" \
+            > remote-d1-state.txt
+          echo "PASS: Remote D1 migration list and bounded operational counts were read."
+
+      - name: Write preflight summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## TikTok Post-Lark Read-Only Preflight'
+            echo
+            echo '- Repository baseline: `ad6614dd8ee0cb2a1dda5cdbe7035f44b40581d4`'
+            if [ -f audit-http-status.txt ]; then
+              echo "- Audit route HTTP status: \`$(cat audit-http-status.txt)\`"
+            fi
+            echo "- Cloudflare runtime credentials available: \`${{ steps.cloudflare_access.outputs.available || 'unknown' }}\`"
+            echo '- No migration, deployment, Queue send, DLQ redrive, D1/Lark write, schedule or Production action is present in this workflow.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload sanitized preflight evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tiktok-post-lark-readonly-preflight
+          path: |
+            audit-http-status.txt
+            migration-list.txt
+            remote-d1-state.txt
+            selected-worker-flags.json
+          if-no-files-found: ignore
+          retention-days: 7
