@@ -237,6 +237,7 @@ export function buildGoogleAdsLarkWriteSet(input = {}) {
   const syncRunId = requireText(input.syncRunId, 'syncRunId');
   const fetchedAt = Date.parse(run.fetchedAt);
   const account = run.datasets.account[0];
+  const campaignById = new Map(run.datasets.campaigns.map((row) => [row.campaignId, row]));
 
   const rawEntities = [rawEntity({
     run, account, row: account, entityType: 'account', externalId: run.customerId,
@@ -304,7 +305,7 @@ export function buildGoogleAdsLarkWriteSet(input = {}) {
   const campaigns = run.datasets.campaigns.map((row) => compact({
     ads_campaign_key: canonicalEntityKey(run.customerId, 'campaign', row.campaignId),
     platform: 'google_ads',
-    ad_channel: mapAdChannel(row.advertisingChannelType, row.advertisingChannelSubType),
+    ad_channel: mapCanonicalAdChannel(row.advertisingChannelType, row.advertisingChannelSubType),
     account_id: run.customerId,
     external_campaign_id: row.campaignId,
     campaign_name: row.campaignName,
@@ -351,7 +352,7 @@ export function buildGoogleAdsLarkWriteSet(input = {}) {
     ads_daily_key: `${canonicalEntityKey(run.customerId, 'campaign', row.externalEntityId)}:${row.metricDate}`,
     metric_date: larkMetricDate(row.metricDate, run.sourceTimezone),
     platform: 'google_ads',
-    ad_channel: row.adChannel,
+    ad_channel: canonicalDailyChannel(row, campaignById),
     account_id: run.customerId,
     entity_type: row.reportLevel ?? 'campaign',
     external_entity_id: row.externalEntityId,
@@ -414,7 +415,7 @@ function rawEntity({ run, account, row, entityType, externalId, fetchedAt, syncR
     platform: 'google_ads',
     ad_channel: entityType === 'creative'
       ? 'youtube_ads'
-      : mapAdChannel(row.advertisingChannelType, row.advertisingChannelSubType),
+      : mapRawAdChannel(row.advertisingChannelType),
     account_id: run.customerId,
     entity_type: entityType,
     external_entity_id: externalId,
@@ -517,10 +518,12 @@ function larkOptionalDate(value, sourceTimezone, label) {
     : dateOnlyInTimeZoneToEpochMilliseconds(date, sourceTimezone, { label });
 }
 
-function mapAdChannel(value, subtype) {
+function mapCanonicalAdChannel(value, subtype, fallback = null) {
   const normalized = optionalText(value)?.toUpperCase();
   const normalizedSubtype = optionalText(subtype)?.toUpperCase();
   if (normalized === 'SEARCH') return 'google_search_ads';
+  if (normalized === 'DISPLAY' && (normalizedSubtype?.includes('DEMAND_GEN')
+    || normalizedSubtype?.includes('DISCOVERY'))) return 'google_demand_gen_ads';
   if (normalized === 'DISPLAY') return 'google_display_ads';
   if (normalized === 'VIDEO') return 'youtube_ads';
   if (normalized === 'DEMAND_GEN'
@@ -529,7 +532,40 @@ function mapAdChannel(value, subtype) {
   if (normalized === 'PERFORMANCE_MAX') return 'google_performance_max_ads';
   if (normalized === 'SHOPPING') return 'google_shopping_ads';
   if (normalized === 'APP' || normalized === 'MULTI_CHANNEL') return 'google_app_ads';
+  return normalizeCanonicalAdChannel(fallback);
+}
+
+function canonicalDailyChannel(row, campaignById) {
+  const campaign = campaignById.get(row.campaignId);
+  return mapCanonicalAdChannel(
+    campaign?.advertisingChannelType,
+    campaign?.advertisingChannelSubType,
+    row.adChannel,
+  );
+}
+
+function normalizeCanonicalAdChannel(value) {
+  const channel = optionalText(value)?.toLowerCase();
+  if ([
+    'youtube_ads',
+    'google_search_ads',
+    'google_display_ads',
+    'google_demand_gen_ads',
+    'google_performance_max_ads',
+    'google_shopping_ads',
+    'google_app_ads',
+    'google_other_ads',
+  ].includes(channel)) return channel;
+  if (channel === 'google_other') return 'google_other_ads';
   return 'google_other_ads';
+}
+
+function mapRawAdChannel(value) {
+  const normalized = optionalText(value)?.toUpperCase();
+  if (normalized === 'SEARCH') return 'google_search_ads';
+  if (normalized === 'DISPLAY') return 'google_display_ads';
+  if (normalized === 'VIDEO') return 'youtube_ads';
+  return 'google_other';
 }
 
 function normalizeGoogleAdsStatus(value) {
