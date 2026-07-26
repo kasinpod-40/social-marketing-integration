@@ -35,6 +35,7 @@ import {
   normalizeWriteState,
   withCheckpointSaved,
 } from './tiktok-staged-business-state.js';
+import { verifyTikTokStagedSourceWatermark } from './verify-tiktok-staged-source-watermark.js';
 
 /**
  * ประมวลผล TikTok business rows จาก Durable source units แบบสอง Pass:
@@ -73,6 +74,18 @@ export async function syncTikTokStagedBusinessToLark(input = {}) {
         completionPhaseReplay: true,
       }),
     });
+  }
+
+  // Admission probe และ Durable staging อาจคั่นด้วยเวลา ต้องเทียบ Dataset จริงอีกครั้ง
+  // ก่อน Preflight/Write แรกเพื่อปิด race กับ Lark Native ที่ยังอัปเดตหลายหน้า.
+  const stagedWatermark = await verifyTikTokStagedSourceWatermark({
+    context,
+    accountKey: accountId,
+    sourceHandle,
+    expectedSourceWatermark: input.expectedSourceWatermark,
+  });
+  if (stagedWatermark && stagedWatermark.recordCount !== sourceSummary.records) {
+    throw new TypeError('TikTok staged watermark record count does not match source summary');
   }
 
   const existingWritePhase = await loadPhase(context, TIKTOK_STAGED_BUSINESS_PHASES.WRITE);
