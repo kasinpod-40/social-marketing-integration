@@ -4,7 +4,7 @@ import { D1GoogleAdsLiveRedriveStore } from '../../../packages/connectors/src/go
 import { D1ReliabilityStore } from '../../../packages/reliability/src/d1-reliability-store.js';
 import { permanentError } from '../../../packages/shared/src/errors/runtime-error.js';
 import { processGoogleAdsManualUatJob } from './google-ads-job-router.js';
-import { processJobWithTikTokPostLark } from './tiktok-post-lark-job-router.js';
+import { processJobWithTikTokD1AwareReport } from './tiktok-d1-aware-report-job-router.js';
 import { readBoolean, requireJobText } from './worker-runtime-support.js';
 
 /** Route protected Google Ads UAT and exact redrive before generic active-job enforcement. */
@@ -28,7 +28,7 @@ export async function processJobWithGoogleAdsUat(input) {
       dlqId: requireJobText(input.job.body?.dlqId, 'dlqId'),
     });
   }
-  return processJobWithTikTokPostLark(input);
+  return processJobWithTikTokD1AwareReport(input);
 }
 
 function requireQueue(env) {
