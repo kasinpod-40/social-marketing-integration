@@ -9,11 +9,13 @@ import {
 import { calculateTikTokOrganicPeriodMetrics } from '../reports/calculate-tiktok-organic-report.js';
 import { compareTikTokOrganicReportResults } from '../reports/compare-tiktok-organic-report-results.js';
 import { createTikTokReportSourceOverrideRepository } from '../reports/tiktok-report-source-override-repository.js';
+import { createReportId as createStorageReportId } from '../storage/marketing-history-contract.js';
 import { generateTikTokOrganicReport } from './generate-tiktok-organic-report.js';
 import { createStableFingerprint } from '../../../shared/src/hash/stable-fingerprint.js';
 import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 
 const FORMULA_VERSION = 'tiktok-organic-v1';
+const MATERIALIZATION_SCHEMA_VERSION = 'tiktok-organic-materialization-v1';
 
 /** Reuse the existing calculator/output writer while selecting Lark, D1 or shadow mode. */
 export async function generateTikTokOrganicReportD1Aware(input = {}) {
@@ -144,8 +146,12 @@ export async function generateTikTokOrganicReportD1Aware(input = {}) {
 }
 
 async function saveMaterialization(input) {
+  const periodKind = input.result.reportType === 'daily_organic_report'
+    ? 'rolling_days'
+    : 'weekly';
   const payload = Object.freeze({
-    reportId: input.result.reportId,
+    schemaVersion: MATERIALIZATION_SCHEMA_VERSION,
+    sourceReportId: input.result.reportId,
     reportType: input.result.reportType,
     period: input.result.period,
     dataStatus: input.result.dataStatus,
@@ -159,14 +165,22 @@ async function saveMaterialization(input) {
     input.result.period.periodStart,
     input.result.period.periodEnd,
   );
+  const materializationId = createStorageReportId({
+    report_setting_key: input.result.reportSettingKey,
+    account_key: requireText(input.accountKey, 'accountKey'),
+    period_kind: periodKind,
+    period_start: input.result.period.periodStart,
+    period_end: input.result.period.periodEnd,
+    formula_version: FORMULA_VERSION,
+  });
   const write = await input.store.saveReportMaterialization({
-    report_id: input.result.reportId,
+    report_id: materializationId,
     report_setting_key: input.result.reportSettingKey,
     customer_key: requireText(input.customerKey, 'customerKey'),
     platform_scope: 'tiktok',
     account_key: requireText(input.accountKey, 'accountKey'),
     report_type: input.result.reportType,
-    period_kind: input.result.reportType === 'daily_organic_report' ? 'rolling_days' : 'weekly',
+    period_kind: periodKind,
     window_days: windowDays,
     period_start: input.result.period.periodStart,
     period_end: input.result.period.periodEnd,
@@ -183,7 +197,12 @@ async function saveMaterialization(input) {
     created_at: input.generatedAt,
     updated_at: input.generatedAt,
   });
-  return Object.freeze({ ...write, payloadChecksum });
+  return Object.freeze({
+    ...write,
+    reportId: materializationId,
+    sourceReportId: input.result.reportId,
+    payloadChecksum,
+  });
 }
 
 function assertD1CoverageReady(summary, primary) {
