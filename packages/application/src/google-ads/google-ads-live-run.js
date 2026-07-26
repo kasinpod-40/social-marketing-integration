@@ -11,6 +11,9 @@ import {
   createStableFingerprint,
   stableSerialize,
 } from '../../../shared/src/hash/stable-fingerprint.js';
+import {
+  dateOnlyInTimeZoneToEpochMilliseconds,
+} from '../../../shared/src/date/date-time.js';
 import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 
 const ENTITY_DATASETS = Object.freeze({
@@ -269,7 +272,7 @@ export function buildGoogleAdsLarkWriteSet(input = {}) {
     external_ad_group_id: null,
     external_ad_id: null,
     external_creative_id: null,
-    metric_date: row.metricDate,
+    metric_date: larkMetricDate(row.metricDate, run.sourceTimezone),
     account_timezone: run.sourceTimezone,
     currency: row.currency,
     spend_micros: nullableInteger(row.spendMicros),
@@ -342,7 +345,7 @@ export function buildGoogleAdsLarkWriteSet(input = {}) {
   }));
   const daily = run.datasets.campaignDailyMetrics.map((row) => compact({
     ads_daily_key: `${canonicalEntityKey(run.customerId, 'campaign', row.externalEntityId)}:${row.metricDate}`,
-    metric_date: row.metricDate,
+    metric_date: larkMetricDate(row.metricDate, run.sourceTimezone),
     platform: 'google_ads',
     ad_channel: row.adChannel,
     ads_account_id: run.customerId,
@@ -492,6 +495,12 @@ function externalIdFor(datasetKey, row) {
 
 function canonicalEntityKey(accountId, entityType, externalId) {
   return ['google_ads', accountId, entityType, externalId].join(':');
+}
+
+function larkMetricDate(metricDate, sourceTimezone) {
+  return dateOnlyInTimeZoneToEpochMilliseconds(metricDate, sourceTimezone, {
+    label: 'Google Ads metricDate',
+  });
 }
 
 function mapAdChannel(value) {
