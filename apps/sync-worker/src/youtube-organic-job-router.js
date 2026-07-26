@@ -47,6 +47,7 @@ export async function processYouTubeOrganicEndToEndJob(input) {
   const endToEndEnabled = readBoolean(input.env?.MKT_YOUTUBE_END_TO_END_ENABLED, false);
   const storage = readStorageRuntimeConfig(input.env);
   const d1WriteEnabled = storage.timeSeriesD1WriteEnabled;
+  const larkWriteEnabled = readBoolean(input.env?.MKT_YOUTUBE_LARK_WRITE_ENABLED, false);
   const dryRun = input.job.body?.dryRun === true;
   if (!endToEndEnabled) {
     throw permanentError('YouTube end-to-end route is disabled for this environment', {
@@ -56,6 +57,11 @@ export async function processYouTubeOrganicEndToEndJob(input) {
   if (!dryRun && !d1WriteEnabled) {
     throw permanentError('YouTube end-to-end D1 writing is disabled', {
       code: 'YOUTUBE_END_TO_END_D1_WRITE_DISABLED',
+    });
+  }
+  if (!dryRun && !larkWriteEnabled) {
+    throw permanentError('YouTube end-to-end Lark delivery is disabled', {
+      code: 'YOUTUBE_END_TO_END_LARK_WRITE_DISABLED',
     });
   }
 
@@ -147,7 +153,7 @@ export async function processYouTubeOrganicEndToEndJob(input) {
         analyticsEndDate: input.job.body?.analyticsEndDate,
         analyticsMaxPages: readPositiveInteger(input.env?.MKT_YOUTUBE_ANALYTICS_MAX_PAGES, 1000),
         d1WriteEnabled,
-        larkWriteEnabled: !dryRun,
+        larkWriteEnabled,
         dryRun,
         tables: {
           mktAccounts: tableIds.mktAccounts,
