@@ -3,7 +3,7 @@
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = APPROVED_FOR_IMPLEMENTATION
+TASK_STATUS                         = IMPLEMENTED_PR_61_BRANCH_VERIFICATION_PASS_AWAITING_REVIEW
 CURRENT_PROGRAM                     = GOOGLE_ADS_MANAGER_SCRIPT_SIGNED_DELIVERY_TO_LARK
 INCIDENT_DATE                       = 2026-07-26
 INCIDENT_RUN_ID                     = 88351cb4-714d-49ef-91db-d95550a93ebf
@@ -53,19 +53,19 @@ verified business row counts remain zero.
 
 ### 1. Lark DateTime serialization mismatch
 
-`buildGoogleAdsLarkWriteSet()` currently forwards Google Ads `metricDate` as the source date-only
-string `YYYY-MM-DD` into both Shared RAW and Canonical Lark daily rows. The live Lark fields are
-DateTime fields and the shared serializer intentionally accepts only epoch values or ISO-8601
-instants with an explicit timezone.
+`buildGoogleAdsLarkWriteSet()` forwarded Google Ads `metricDate` as the source date-only string
+`YYYY-MM-DD` into both Shared RAW and Canonical Lark daily rows. The live Lark fields are DateTime
+fields and the shared serializer intentionally accepts only epoch values or ISO-8601 instants with
+an explicit timezone.
 
-The D1 daily-fact contract and every stable key correctly use the date-only source value and must
-remain unchanged.
+The D1 daily-fact contract and every stable key correctly use the date-only source value and remain
+unchanged.
 
 ### 2. Failed-permanent exact redrive state mismatch
 
 `D1GoogleAdsLiveAdmissionStore.markFailed()` stores `completed_at` for `failed_permanent` as terminal
-failure evidence. `D1GoogleAdsLiveRedriveStore.prepare()` declares `failed_permanent` eligible but its
-SQL requires admission `completed_at IS NULL`, so the exact incident cannot be revived through the
+failure evidence. `D1GoogleAdsLiveRedriveStore.prepare()` declared `failed_permanent` eligible but its
+SQL required admission `completed_at IS NULL`, so the exact incident could not be revived through the
 reviewed same-generation redrive path.
 
 ## Objective
@@ -75,7 +75,7 @@ DLQ reference without running Google Ads Manager Script again, while preserving 
 stable keys, same-generation identity, payload retention guards and all completed/superseded safety
 fences.
 
-## In scope
+## Implemented scope
 
 1. Convert Google Ads date-only `metricDate` to epoch milliseconds at local midnight in
    `run.sourceTimezone` for Lark DateTime fields only.
@@ -98,8 +98,8 @@ fences.
    - clear terminal admission `completed_at` and `last_error_code`;
    - increment `send_attempts` once only;
    - retain exact original Queue reference and generation.
-6. Add focused tests for date serialization and failed-permanent redrive with non-null
-   `completed_at`, plus fail-closed payload-redaction coverage.
+6. Add focused tests for date serialization, failed-permanent redrive with non-null
+   `completed_at`, idempotent prepare and fail-closed payload availability.
 7. Update Current Task, Project Brain module and CHANGELOG with sanitized implementation evidence.
 
 ## Out of scope
@@ -136,7 +136,7 @@ Stable keys continue to contain `2026-07-24`, not the epoch value.
 
 ### Failed-permanent redrive
 
-The redrive store must fail closed when any of these is true:
+The redrive store fails closed when any of these is true:
 
 - admission or Work is completed;
 - Work is superseded;
@@ -149,42 +149,48 @@ The redrive store must fail closed when any of these is true:
 
 No generic reopening of arbitrary terminal jobs is authorized.
 
-## Acceptance criteria
+## Acceptance result
 
 - Shared RAW and Canonical Lark daily rows contain identical epoch-millisecond `metric_date` values
-  resolved from the signed source timezone.
-- D1 daily facts and all stable keys retain the original date-only value.
-- Existing Google Ads fixture for `2026-07-24` / `Asia/Bangkok` resolves to `1784826000000`.
+  resolved from the signed source timezone: PASS.
+- D1 daily facts and all stable keys retain the original date-only value: PASS.
+- Fixture `2026-07-24` / `Asia/Bangkok` resolves to `1784826000000`: PASS.
 - `failed_permanent` with non-null admission `completed_at` becomes `send_pending`, clears
-  `completed_at`, clears `last_error_code` and increments attempts exactly once.
-- A repeated prepare before Queue mark remains idempotent and does not increment attempts again.
-- Redacted or unavailable staged payload fails closed without mutating admission or Work state.
-- Completed, superseded, active-lock and identity-drift guards continue to pass.
-- Focused Google Ads tests pass.
-- `npm run check`, `npm test`, `npm run test:report-reliability`, `npm audit --audit-level=high` and
-  `npm run deploy:dry-run` pass before merge.
-- No Remote D1, Cloudflare, Queue, Lark, schedule or Production action occurs in this implementation.
-
-## Required focused tests
-
-```text
-tests/application/google-ads-live-run.test.js
-tests/google-ads/d1-google-ads-live-redrive-store.test.js
-tests/application/redrive-dead-letter-job.test.js
-tests/application/process-google-ads-manager-signed-delivery.test.js
-```
+  `completed_at`, clears `last_error_code` and increments attempts exactly once: PASS.
+- Repeated prepare before Queue mark remains idempotent: PASS.
+- Redacted or unavailable staged payload fails closed without state mutation: PASS.
+- Completed, superseded, active-lock and identity-drift guards continue to pass: PASS.
+- No Remote D1, Cloudflare, Queue, Lark, schedule or Production action occurred: PASS.
 
 ## Implementation result
 
 ```text
-STATUS          = IN_PROGRESS
-BRANCH          = work/google-ads-live-lark-date-redrive-hotfix
-FILES_CHANGED   = pending
-COMMANDS_RUN    = pending CI
-FOCUSED_TESTS   = pending CI
-FULL_GATES      = pending CI
-REMOTE_ACTIONS  = none
-REMAINING_RISK  = exact staged incident redrive remains blocked until review, merge and guarded rollout
+STATUS                   = READY_FOR_REPOSITORY_REVIEW
+BRANCH                   = work/google-ads-live-lark-date-redrive-hotfix
+PR                       = #61 / DRAFT
+REVIEWED_SOURCE_HEAD     = ca07b6033e4d306258702227154405298dddcc90
+BRANCH_VERIFICATION      = PASS / RUN_492
+FILES_CHANGED            = 7
+FOCUSED_TIKTOK_TESTS     = 4 / 4 PASS
+NODE_UNIT_INTEGRATION    = 822 / 822 PASS
+WORKERS_RUNTIME_TESTS    = 9 / 9 PASS
+REPORT_RELIABILITY       = 70 / 70 PASS
+DEPENDENCY_AUDIT         = 0 vulnerabilities
+WRANGLER_DRY_RUN         = PASS
+REMOTE_ACTIONS           = none
+REMAINING_RISK           = exact staged incident redrive blocked until review, merge and guarded rollout
+```
+
+Changed files:
+
+```text
+CHANGELOG.md
+docs/current-task.md
+docs/project-brain/google-ads-manager-script-live-path.md
+packages/application/src/google-ads/google-ads-live-run.js
+packages/connectors/src/google-ads/d1-google-ads-live-redrive-store.js
+tests/application/google-ads-live-run.test.js
+tests/google-ads/d1-google-ads-live-redrive-store.test.js
 ```
 
 ## Runtime hold boundary
