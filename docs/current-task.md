@@ -3,7 +3,7 @@
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = IMPLEMENTED_PR_61_BRANCH_VERIFICATION_PASS_AWAITING_REVIEW
+TASK_STATUS                         = IMPLEMENTED_PR_61_READY_FOR_REVIEW
 CURRENT_PROGRAM                     = GOOGLE_ADS_MANAGER_SCRIPT_SIGNED_DELIVERY_TO_LARK
 INCIDENT_DATE                       = 2026-07-26
 INCIDENT_RUN_ID                     = 88351cb4-714d-49ef-91db-d95550a93ebf
@@ -167,9 +167,10 @@ No generic reopening of arbitrary terminal jobs is authorized.
 ```text
 STATUS                   = READY_FOR_REPOSITORY_REVIEW
 BRANCH                   = work/google-ads-live-lark-date-redrive-hotfix
-PR                       = #61 / DRAFT
+PR                       = #61 / READY_FOR_REVIEW
 REVIEWED_SOURCE_HEAD     = ca07b6033e4d306258702227154405298dddcc90
-BRANCH_VERIFICATION      = PASS / RUN_492
+DOCUMENTATION_HEAD       = 70dcd332e4ecbf6aada5f71dd6d30dd93b08850c
+BRANCH_VERIFICATION      = PASS / RUN_492 + RUN_493
 FILES_CHANGED            = 7
 FOCUSED_TIKTOK_TESTS     = 4 / 4 PASS
 NODE_UNIT_INTEGRATION    = 822 / 822 PASS
