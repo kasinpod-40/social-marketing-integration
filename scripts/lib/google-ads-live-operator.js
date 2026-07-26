@@ -33,6 +33,7 @@ const REQUIRED_FALSE_FLAGS = Object.freeze([
   'MKT_SCHEDULE_GOOGLE_ADS_ENABLED',
 ]);
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+const ADWORDS_SCOPE = 'https://www.googleapis.com/auth/adwords';
 
 export function parseGoogleAdsLiveOperatorArgs(args = []) {
   let phase = 'plan';
@@ -143,14 +144,23 @@ export function buildGoogleAdsConnectionGateSql(target) {
   const value = normalizeTarget(target);
   return compactSql(`
     SELECT
-      COUNT(*) AS validated_connection_count,
+      COUNT(*) AS script_authorized_connection_count,
       MAX(CASE WHEN c.connection_status = 'connected' THEN 1 ELSE 0 END) AS connected,
-      MAX(CASE WHEN c.access_status = 'validated' THEN 1 ELSE 0 END) AS access_validated,
-      MAX(CASE WHEN REPLACE(c.external_account_id, '-', '') = '${value.advertiserCustomerId}' THEN 1 ELSE 0 END) AS advertiser_matches,
+      MAX(CASE WHEN c.access_status IN ('validated', 'google_ads_api_access_pending') THEN 1 ELSE 0 END) AS script_access_allowed,
+      MAX(CASE WHEN c.access_status = 'validated' THEN 1 ELSE 0 END) AS api_access_validated,
+      MAX(CASE WHEN c.access_status = 'google_ads_api_access_pending' THEN 1 ELSE 0 END) AS api_access_pending,
+      MAX(CASE WHEN
+        REPLACE(COALESCE(c.external_account_id, ''), '-', '') = '${value.advertiserCustomerId}'
+        OR json_extract(c.provider_metadata_json, '$.advertiserCustomerId') = '${value.advertiserCustomerId}'
+        OR json_extract(c.provider_metadata_json, '$.approvedAdvertiserCustomerId') = '${value.advertiserCustomerId}'
+      THEN 1 ELSE 0 END) AS advertiser_matches,
       MAX(CASE WHEN c.credential_reference = ec.credential_reference THEN 1 ELSE 0 END) AS active_credential_matches,
       MAX(CASE WHEN json_extract(c.provider_metadata_json, '$.managerCustomerId') = '${value.managerCustomerId}' THEN 1 ELSE 0 END) AS manager_matches,
-      MAX(CASE WHEN json_extract(c.provider_metadata_json, '$.currencyCode') = 'THB' THEN 1 ELSE 0 END) AS currency_matches,
-      MAX(CASE WHEN json_extract(c.provider_metadata_json, '$.timeZone') = '${value.sourceTimezone}' THEN 1 ELSE 0 END) AS timezone_matches
+      MAX(CASE WHEN EXISTS (
+        SELECT 1
+        FROM json_each(COALESCE(c.granted_scopes_json, '[]')) AS scope
+        WHERE scope.value = '${ADWORDS_SCOPE}'
+      ) THEN 1 ELSE 0 END) AS scope_matches
     FROM connections AS c
     JOIN encrypted_credentials AS ec
       ON ec.connection_id = c.id
@@ -162,20 +172,22 @@ export function buildGoogleAdsConnectionGateSql(target) {
 }
 
 export function validateGoogleAdsConnectionGateRow(row = {}) {
-  const fields = [
-    'validated_connection_count',
+  const requiredFields = [
+    'script_authorized_connection_count',
     'connected',
-    'access_validated',
+    'script_access_allowed',
     'advertiser_matches',
     'active_credential_matches',
     'manager_matches',
-    'currency_matches',
-    'timezone_matches',
+    'scope_matches',
   ];
+  const informationalFields = ['api_access_validated', 'api_access_pending'];
+  const fields = [...requiredFields, ...informationalFields];
   const normalized = Object.fromEntries(fields.map((field) => [field, Number(row?.[field] ?? 0)]));
-  if (normalized.validated_connection_count !== 1
-    || fields.slice(1).some((field) => normalized[field] !== 1)) {
-    throw operatorError('Google Ads encrypted Customer Connection gate is not ready', 'GOOGLE_ADS_OPERATOR_CONNECTION_GATE_FAILED', normalized);
+  if (normalized.script_authorized_connection_count !== 1
+    || requiredFields.slice(1).some((field) => normalized[field] !== 1)
+    || normalized.api_access_validated + normalized.api_access_pending !== 1) {
+    throw operatorError('Google Ads Manager Script Customer Connection gate is not ready', 'GOOGLE_ADS_OPERATOR_CONNECTION_GATE_FAILED', normalized);
   }
   return Object.freeze(normalized);
 }
