@@ -7,6 +7,7 @@ import {
 import { resolveQueueOperation } from '../../../packages/application/src/jobs/queue-operation.js';
 import { createTikTokOrganicHistoryHooks } from '../../../packages/application/src/storage/tiktok-organic-history-hooks.js';
 import { admitTikTokPostLarkSource } from '../../../packages/application/src/use-cases/admit-tiktok-post-lark-source.js';
+import { assertTikTokPostProcessCoverageReady } from '../../../packages/application/src/use-cases/assert-tiktok-post-process-coverage-ready.js';
 import {
   settleTikTokNativeSourceWatermark,
 } from '../../../packages/application/src/use-cases/probe-tiktok-native-source-watermark.js';
@@ -123,8 +124,14 @@ async function processAdmittedSyncJob(input) {
       operation,
       syncRunId,
     });
+    let coverageProof = null;
     let reportRequest = null;
     if (config.postProcessReportEnabled) {
+      coverageProof = await assertTikTokPostProcessCoverageReady({
+        gateway: input.getInfrastructure().getOrganicHistoryGateway(),
+        coverageRunId: result.reconciliation?.coverageRunId,
+        expectedSourceWatermark: admission.sourceWatermark,
+      });
       reportRequest = await enqueuePostProcessReport({
         input,
         admission,
@@ -139,6 +146,7 @@ async function processAdmittedSyncJob(input) {
     return Object.freeze({
       ...result,
       postLarkAdmission: completed,
+      postProcessCoverage: coverageProof,
       reportRequest,
     });
   } catch (error) {
