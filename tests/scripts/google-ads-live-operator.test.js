@@ -68,6 +68,21 @@ function verificationRow(overrides = {}) {
   };
 }
 
+function scriptGateRow(overrides = {}) {
+  return {
+    script_authorized_connection_count: 1,
+    connected: 1,
+    script_access_allowed: 1,
+    api_access_validated: 0,
+    api_access_pending: 1,
+    advertiser_matches: 1,
+    active_credential_matches: 1,
+    manager_matches: 1,
+    scope_matches: 1,
+    ...overrides,
+  };
+}
+
 test('operator argument and confirmation contracts fail closed', () => {
   assert.deepEqual(parseGoogleAdsLiveOperatorArgs([]), { phase: 'plan', execute: false });
   assert.deepEqual(
@@ -116,28 +131,35 @@ test('flags-false config validation requires D1/Queue bindings and disabled sche
   );
 });
 
-test('connection gate SQL is read-only and excludes encrypted credential material', () => {
+test('connection gate accepts API-pending Script consent and remains read-only', () => {
   const target = loadGoogleAdsLiveOperatorTarget(targetEnv());
   const sql = buildGoogleAdsConnectionGateSql(target);
   assert.match(sql, /SELECT/u);
   assert.match(sql, /encrypted_credentials/u);
+  assert.match(sql, /google_ads_api_access_pending/u);
+  assert.match(sql, /approvedAdvertiserCustomerId/u);
+  assert.match(sql, /json_each/u);
   assert.match(sql, /credential_kind = 'refresh_token'/u);
   assert.doesNotMatch(sql, /ciphertext|\biv\b/u);
   assert.doesNotMatch(sql, /UPDATE|INSERT|DELETE/u);
 
-  const row = validateGoogleAdsConnectionGateRow({
-    validated_connection_count: 1,
-    connected: 1,
-    access_validated: 1,
-    advertiser_matches: 1,
-    active_credential_matches: 1,
-    manager_matches: 1,
-    currency_matches: 1,
-    timezone_matches: 1,
-  });
-  assert.equal(row.validated_connection_count, 1);
+  const pending = validateGoogleAdsConnectionGateRow(scriptGateRow());
+  assert.equal(pending.script_authorized_connection_count, 1);
+  assert.equal(pending.api_access_pending, 1);
+  assert.equal(pending.api_access_validated, 0);
+
+  const validated = validateGoogleAdsConnectionGateRow(scriptGateRow({
+    api_access_pending: 0,
+    api_access_validated: 1,
+  }));
+  assert.equal(validated.api_access_validated, 1);
+
   assert.throws(
-    () => validateGoogleAdsConnectionGateRow({ ...row, manager_matches: 0 }),
+    () => validateGoogleAdsConnectionGateRow(scriptGateRow({ manager_matches: 0 })),
+    (error) => error.code === 'GOOGLE_ADS_OPERATOR_CONNECTION_GATE_FAILED',
+  );
+  assert.throws(
+    () => validateGoogleAdsConnectionGateRow(scriptGateRow({ scope_matches: 0 })),
     (error) => error.code === 'GOOGLE_ADS_OPERATOR_CONNECTION_GATE_FAILED',
   );
 });
