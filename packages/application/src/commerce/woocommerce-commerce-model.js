@@ -719,6 +719,7 @@ async function normalizeCustomer(customer, context) {
       created_at: context.now,
       updated_at: context.now,
     }],
+    impactedCustomers: [aggregateKey],
   };
 }
 
