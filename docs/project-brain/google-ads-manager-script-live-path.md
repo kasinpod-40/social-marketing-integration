@@ -72,7 +72,7 @@ No token, signature, nonce, customer ID or source row enters the Queue body. D1-
 Ads/Coverage writes, Lark destination preflight, stable keys, generation fence, renewable lock,
 resumable phases, reconciliation, exact rerun and staged-payload redaction remain authoritative.
 
-## First guarded LIVE incident
+## Guarded LIVE incident progression
 
 The first guarded manual LIVE delivery reached signed transport and Queue processing with all
 expected data:
@@ -84,37 +84,88 @@ rows                       1,375 / 1,375
 transport_status           assembling
 admission_status           failed_permanent
 work_lifecycle_status      active
-error_code                 LARK_PREFLIGHT_FAILED
 D1 Ads business rows       0
 Lark business writes       0
 ```
 
-The failure happened in destination preflight because `metric_date` was passed to a Lark DateTime
-field as `YYYY-MM-DD`. The shared DateTime serializer correctly failed closed before any D1 or Lark
-business write.
-
-A second defect prevented exact recovery: permanent failure records terminal `completed_at`
-evidence, while the redrive SQL declared `failed_permanent` eligible but required
-`completed_at IS NULL`.
-
-## Active hotfix contract
-
-Branch:
+### Failure 1 — Shared RAW daily date serialization
 
 ```text
-work/google-ads-live-lark-date-redrive-hotfix
+logical destination        RAW_Ads_Daily
+field                      metric_date
+error                      date-only value lacked an explicit timezone
+DLQ                        terminal:a6ed54413000c25efd73ce7888cc2d10
 ```
 
-The hotfix must:
+PR `#61` corrected Lark daily date serialization and the guarded same-generation
+`failed_permanent` redrive path. The original DLQ was then redriven exactly once without rerunning
+Manager Script.
 
-1. resolve source date-only `metricDate` to local midnight in the signed `sourceTimezone` for Lark
-   DateTime fields only;
-2. preserve D1 date-only facts, stable keys, Coverage identities and source payload JSON;
-3. allow exact same-generation redrive from `failed_permanent` by clearing admission terminal
-   `completed_at` only after confirming complete unredacted staged payloads;
-4. continue to reject completed/superseded Work, identity drift, active locks, redacted payloads and
-   incomplete staged runs;
-5. reuse the retained DLQ reference and never require a new Manager Script LIVE run.
+### Failure 2 — Canonical field alias drift
+
+The second attempt passed the original date failure and stopped in destination preflight before
+any business write:
+
+```text
+sync_run_id                115a17e8-2a25-4260-b921-5a5ae4e7f127
+logical destination        MKT_Ads_Accounts
+field                      ads_account_id
+error                      field does not exist in destination schema
+partial                    false
+second DLQ                 terminal:6b1c7a5142f1eedb12a2b40b0a7cba78
+second DLQ status          open
+```
+
+This proved the date hotfix worked and exposed a separate adapter/schema drift: the live Lark Base
+already uses Canonical Ads v2 while the runtime adapter still emitted several pre-migration aliases.
+The second failure also remained non-partial with zero D1 Ads business rows and zero Lark writes.
+
+## Canonical Ads v2 hotfix contract
+
+Branch and PR:
+
+```text
+branch                     work/google-ads-canonical-lark-mapping-hotfix
+pull request               #62 / READY_FOR_REVIEW
+reviewed source head       56d27b6c98b7b915e4367a2b5781f110cbc10f45
+branch verification        PASS / RUN_505
+```
+
+The hotfix:
+
+1. replaces stale aliases across Accounts, Campaigns, Ad Groups, Ads, Creatives and Daily;
+2. preserves all D1 contracts and stable-key values;
+3. retains Canonical Campaign `objective` when supplied by the signed source;
+4. omits generic ownership metadata that is not grounded in the signed source or runtime identity;
+5. normalizes Google source statuses to `active`, `paused`, `removed` or `unknown`;
+6. maps Search, Display, YouTube, Demand Gen, Performance Max, Shopping, App and fallback
+   channels to reviewed Canonical options;
+7. derives Canonical Daily channel from Campaign source enums when signed v1 transport carries
+   its legacy `google_other` fallback;
+8. resolves Campaign date-only fields to source-timezone local-midnight epoch values for Lark;
+9. maps Google video assets to Canonical Creative identity fields;
+10. converts average CPV micros to the Canonical display-unit `average_cpv` field;
+11. enforces exact per-table output allowlists and forbidden-alias tests.
+
+No Lark Schema/View/Formula change is authorized for this incident. The already-applied Canonical
+Ads v2 schema remains authoritative.
+
+## Verification evidence
+
+Final Branch Verification run `#505` passed:
+
+```text
+syntax / architecture / hygiene    PASS
+focused TikTok regression          4 / 4 PASS
+Node Unit / Integration            825 / 825 PASS
+Workers runtime                    9 / 9 PASS
+report reliability                 70 / 70 PASS
+dependency audit                   0 vulnerabilities
+Wrangler deployment dry-run        PASS
+```
+
+No Remote D1 mutation, Queue send, DLQ redrive, Lark mutation/write, Worker deployment,
+Manager Script execution, schedule or Production action occurred in PR `#62` implementation.
 
 ## Runtime hold state
 
@@ -122,14 +173,13 @@ The hotfix must:
 Manager Script              DRY_RUN / delivery=false
 API Google Ads flags        false
 Sync Google Ads flags       false
+DLQ redrive                 false
 Google Ads schedules        false
-Incident DLQ                open / retained
-Exact redrive               blocked pending hotfix review and merge
+first DLQ                   redriven / retained
+second DLQ                  open / retained
+next exact redrive          blocked pending merge and guarded deployment
 Production                  blocked
 ```
-
-No Remote D1 mutation, Queue send, Lark write, Worker deployment, schedule or Production action is
-part of the source implementation branch.
 
 ## Permanent boundary
 
@@ -137,8 +187,12 @@ part of the source implementation branch.
 - Do not mark API access validated when it is pending.
 - Do not bypass consent, scope, active credential, Manager/advertiser identity or signed-source
   checks.
-- Do not alter Lark DateTime fields to Text to accommodate connector output.
+- Do not alter Lark fields to accommodate stale connector aliases.
+- Do not write ownership classifications that are not grounded in customer profile/runtime data.
 - Do not rewrite D1 date-only facts or stable keys with epoch values.
 - Do not rerun Google Ads Manager Script to recover the retained staged incident.
+- Do not redrive the first DLQ again; it is already `redriven`.
+- Do not redrive the second DLQ before PR `#62` is merged and deployed through the guarded Sync
+  recovery configuration.
 - Do not enable the Google Ads schedule during manual UAT.
 - Do not cut over Production without a separate customer-owned Production task.

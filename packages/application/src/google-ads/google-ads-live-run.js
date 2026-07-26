@@ -292,66 +292,75 @@ export function buildGoogleAdsLarkWriteSet(input = {}) {
   const accounts = [compact({
     ads_account_key: canonicalEntityKey(run.customerId, 'account', run.customerId),
     platform: 'google_ads',
-    ads_account_id: run.customerId,
-    ads_account_name: account.descriptiveName,
+    account_id: run.customerId,
+    account_name: account.descriptiveName,
     currency: account.currencyCode,
     timezone: account.timeZone,
-    connection_status: 'connected',
+    status: normalizeGoogleAdsStatus(account.status),
+    manager_account_id: run.managerCustomerId,
+    is_test_account: account.isTestAccount,
+    account_link_status: 'selectable',
   })];
   const campaigns = run.datasets.campaigns.map((row) => compact({
-    campaign_key: canonicalEntityKey(run.customerId, 'campaign', row.campaignId),
+    ads_campaign_key: canonicalEntityKey(run.customerId, 'campaign', row.campaignId),
     platform: 'google_ads',
-    ad_channel: mapAdChannel(row.advertisingChannelType),
-    ads_account_id: run.customerId,
-    campaign_id: row.campaignId,
+    ad_channel: mapCanonicalAdChannel(row.advertisingChannelType, row.advertisingChannelSubType),
+    account_id: run.customerId,
+    external_campaign_id: row.campaignId,
     campaign_name: row.campaignName,
     objective: row.advertisingChannelSubType,
-    campaign_status: normalizeStatus(row.status),
-    start_date: row.startDate,
-    end_date: row.endDate,
+    status: normalizeGoogleAdsStatus(row.status),
+    channel_subtype: row.advertisingChannelSubType,
+    start_date: larkOptionalDate(row.startDate, run.sourceTimezone, 'Google Ads campaign startDate'),
+    end_date: larkOptionalDate(row.endDate, run.sourceTimezone, 'Google Ads campaign endDate'),
+    bidding_strategy_type: row.biddingStrategyType,
   }));
   const adGroups = run.datasets.adGroups.map((row) => compact({
-    ad_group_key: canonicalEntityKey(run.customerId, 'ad_group', row.adGroupId),
+    ads_ad_group_key: canonicalEntityKey(run.customerId, 'ad_group', row.adGroupId),
     platform: 'google_ads',
-    ad_channel: mapAdChannel(campaignById.get(row.campaignId)?.advertisingChannelType),
-    ads_account_id: run.customerId,
-    campaign_id: row.campaignId,
-    ad_group_id: row.adGroupId,
+    account_id: run.customerId,
+    external_campaign_id: row.campaignId,
+    external_ad_group_id: row.adGroupId,
     ad_group_name: row.adGroupName,
-    ad_group_status: normalizeStatus(row.status),
+    status: normalizeGoogleAdsStatus(row.status),
+    ad_group_type: row.type,
   }));
   const ads = run.datasets.ads.map((row) => compact({
     ads_ad_key: canonicalEntityKey(run.customerId, 'ad', row.adId),
     platform: 'google_ads',
-    ad_channel: mapAdChannel(campaignById.get(row.campaignId)?.advertisingChannelType),
     account_id: run.customerId,
     external_campaign_id: row.campaignId,
     external_ad_group_id: row.adGroupId,
     external_ad_id: row.adId,
     external_creative_id: null,
     ad_name: row.adName,
-    status: normalizeStatus(row.status),
-    last_sync_at: fetchedAt,
+    status: normalizeGoogleAdsStatus(row.status),
+    ad_type: row.type,
+    final_url: firstArrayValue(row.finalUrls),
   }));
   const creatives = run.datasets.youtubeAssets.map((row) => compact({
-    creative_key: canonicalEntityKey(run.customerId, 'creative', row.assetId),
+    ads_creative_key: canonicalEntityKey(run.customerId, 'creative', row.assetId),
     platform: 'google_ads',
-    ad_channel: 'youtube_ads',
-    ads_account_id: run.customerId,
-    ad_name: row.assetName,
-    ad_status: normalizeStatus(row.status),
-    video_id: row.youtubeVideoId,
-    creative_type: 'video',
+    account_id: run.customerId,
+    external_creative_id: row.assetId,
+    creative_name: row.assetName,
+    creative_type: mapCreativeType(row.assetType),
+    status: normalizeGoogleAdsStatus(row.status),
+    source_content_id: row.youtubeVideoId,
   }));
   const daily = run.datasets.campaignDailyMetrics.map((row) => compact({
     ads_daily_key: `${canonicalEntityKey(run.customerId, 'campaign', row.externalEntityId)}:${row.metricDate}`,
     metric_date: larkMetricDate(row.metricDate, run.sourceTimezone),
     platform: 'google_ads',
-    ad_channel: row.adChannel,
-    ads_account_id: run.customerId,
-    campaign_id: row.campaignId,
-    ad_group_id: null,
-    ad_id: null,
+    ad_channel: canonicalDailyChannel(row, campaignById),
+    account_id: run.customerId,
+    entity_type: row.reportLevel ?? 'campaign',
+    external_entity_id: row.externalEntityId,
+    external_campaign_id: row.campaignId,
+    external_ad_group_id: row.adGroupId,
+    external_ad_id: row.adId,
+    external_creative_id: null,
+    currency: row.currency,
     spend_micros: nullableInteger(row.spendMicros),
     impressions: nullableInteger(row.impressions),
     reach: null,
@@ -360,8 +369,7 @@ export function buildGoogleAdsLarkWriteSet(input = {}) {
     conversion_value_micros: nullableInteger(row.conversionValueMicros),
     video_views: nullableInteger(row.videoViews),
     video_view_rate: nullableNumber(row.videoViewRate),
-    average_cpv_micros: nullableInteger(row.averageCpvMicros),
-    last_sync_at: fetchedAt,
+    average_cpv: microsToCurrencyUnits(row.averageCpvMicros),
   }));
 
   return deepFreeze({
@@ -407,7 +415,7 @@ function rawEntity({ run, account, row, entityType, externalId, fetchedAt, syncR
     platform: 'google_ads',
     ad_channel: entityType === 'creative'
       ? 'youtube_ads'
-      : mapAdChannel(row.advertisingChannelType),
+      : mapRawAdChannel(row.advertisingChannelType),
     account_id: run.customerId,
     entity_type: entityType,
     external_entity_id: externalId,
@@ -503,7 +511,56 @@ function larkMetricDate(metricDate, sourceTimezone) {
   });
 }
 
-function mapAdChannel(value) {
+function larkOptionalDate(value, sourceTimezone, label) {
+  const date = optionalText(value);
+  return date === null
+    ? null
+    : dateOnlyInTimeZoneToEpochMilliseconds(date, sourceTimezone, { label });
+}
+
+function mapCanonicalAdChannel(value, subtype, fallback = null) {
+  const normalized = optionalText(value)?.toUpperCase();
+  const normalizedSubtype = optionalText(subtype)?.toUpperCase();
+  if (normalized === 'SEARCH') return 'google_search_ads';
+  if (normalized === 'DISPLAY' && (normalizedSubtype?.includes('DEMAND_GEN')
+    || normalizedSubtype?.includes('DISCOVERY'))) return 'google_demand_gen_ads';
+  if (normalized === 'DISPLAY') return 'google_display_ads';
+  if (normalized === 'VIDEO') return 'youtube_ads';
+  if (normalized === 'DEMAND_GEN'
+    || normalizedSubtype?.includes('DEMAND_GEN')
+    || normalizedSubtype?.includes('DISCOVERY')) return 'google_demand_gen_ads';
+  if (normalized === 'PERFORMANCE_MAX') return 'google_performance_max_ads';
+  if (normalized === 'SHOPPING') return 'google_shopping_ads';
+  if (normalized === 'APP' || normalized === 'MULTI_CHANNEL') return 'google_app_ads';
+  return normalizeCanonicalAdChannel(fallback);
+}
+
+function canonicalDailyChannel(row, campaignById) {
+  const campaign = campaignById.get(row.campaignId);
+  return mapCanonicalAdChannel(
+    campaign?.advertisingChannelType,
+    campaign?.advertisingChannelSubType,
+    row.adChannel,
+  );
+}
+
+function normalizeCanonicalAdChannel(value) {
+  const channel = optionalText(value)?.toLowerCase();
+  if ([
+    'youtube_ads',
+    'google_search_ads',
+    'google_display_ads',
+    'google_demand_gen_ads',
+    'google_performance_max_ads',
+    'google_shopping_ads',
+    'google_app_ads',
+    'google_other_ads',
+  ].includes(channel)) return channel;
+  if (channel === 'google_other') return 'google_other_ads';
+  return 'google_other_ads';
+}
+
+function mapRawAdChannel(value) {
   const normalized = optionalText(value)?.toUpperCase();
   if (normalized === 'SEARCH') return 'google_search_ads';
   if (normalized === 'DISPLAY') return 'google_display_ads';
@@ -511,9 +568,29 @@ function mapAdChannel(value) {
   return 'google_other';
 }
 
-function normalizeStatus(value) {
-  const status = optionalText(value)?.toLowerCase();
-  return status ?? null;
+function normalizeGoogleAdsStatus(value) {
+  const status = optionalText(value)?.toUpperCase();
+  if (status === 'ENABLED') return 'active';
+  if (status === 'PAUSED') return 'paused';
+  if (['REMOVED', 'CANCELED', 'CANCELLED', 'CLOSED', 'ENDED'].includes(status)) return 'removed';
+  return 'unknown';
+}
+
+function mapCreativeType(value) {
+  const type = optionalText(value)?.toUpperCase();
+  if (type === 'YOUTUBE_VIDEO' || type === 'VIDEO') return 'video';
+  if (type === 'IMAGE') return 'image';
+  if (type === 'CAROUSEL') return 'carousel';
+  return 'other';
+}
+
+function firstArrayValue(value) {
+  return Array.isArray(value) ? optionalText(value[0]) : null;
+}
+
+function microsToCurrencyUnits(value) {
+  const micros = nullableInteger(value);
+  return micros === null ? null : micros / 1_000_000;
 }
 
 async function fingerprint(value) {

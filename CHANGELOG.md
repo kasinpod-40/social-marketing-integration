@@ -1,5 +1,52 @@
 # Changelog
 
+## Unreleased — Google Ads Canonical Lark Mapping Hotfix — 2026-07-26
+
+### Runtime incident
+
+- Confirmed the first exact redrive passed the prior `RAW_Ads_Daily.metric_date`
+  serialization defect and reached the Canonical Ads destination preflight.
+- Recorded the second fail-closed boundary at `MKT_Ads_Accounts.ads_account_id`:
+  the runtime adapter emitted a pre-migration alias that does not exist in the
+  already-applied Canonical Ads v2 schema.
+- Retained the new terminal DLQ
+  `terminal:6b1c7a5142f1eedb12a2b40b0a7cba78` as `open`; the original DLQ remains
+  `redriven` forensic evidence.
+- Verified the second failure remained non-partial with zero D1 Ads business rows
+  and zero Lark business writes.
+
+### Source correction
+
+- Replaced stale Canonical field aliases across Accounts, Campaigns, Ad Groups,
+  Ads, Creatives and Daily output while preserving existing stable-key values and
+  all D1 contracts.
+- Preserved the Canonical Campaign `objective` field when supported by the signed
+  source and omitted ungrounded ownership metadata from the generic adapter.
+- Normalized Google Ads source statuses to the reviewed Canonical options
+  `active`, `paused`, `removed` and `unknown`.
+- Normalized Search, Display, YouTube, Demand Gen, Performance Max, Shopping, App
+  and fallback channels to reviewed Canonical options.
+- Derive Canonical Daily channel from the Campaign source enum when the signed v1
+  transport uses its legacy `google_other` fallback.
+- Resolve Campaign date-only fields to source-timezone local-midnight epoch values
+  for Lark DateTime fields.
+- Map Google video assets to Canonical Creative identity fields and convert average
+  CPV micros to the Canonical display-unit `average_cpv` field.
+
+### Verification and safety
+
+- Added exact per-table Canonical field allowlists and forbidden-alias regression
+  assertions so stale v1 names cannot silently return.
+- Added value coverage for all six Canonical destinations, stable identities,
+  nullable objective, status normalization, source-timezone dates and modern
+  channel normalization.
+- Final Branch Verification run `#505` passed syntax/architecture/hygiene, focused
+  TikTok regression, 825 Node Unit/Integration tests, 9 Workers runtime tests,
+  70 report reliability tests, dependency audit and Wrangler deployment dry-run.
+- No Remote D1 mutation, Queue send, DLQ redrive, Lark mutation/write, Worker
+  deployment, Manager Script execution, schedule or Production action occurred in
+  this implementation.
+
 ## Unreleased — Google Ads LIVE Lark Date and Failed-Permanent Redrive Hotfix — 2026-07-26
 
 ### Runtime incident
