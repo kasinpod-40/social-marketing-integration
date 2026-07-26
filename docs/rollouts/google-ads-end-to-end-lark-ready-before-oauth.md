@@ -3,7 +3,11 @@
 ## Status
 
 ```text
-SOURCE_IMPLEMENTATION     = DRAFT_PR_57
+SOURCE_IMPLEMENTATION     = MERGED_PR_57
+MERGE_COMMIT              = e114db4669fea93b23fb4816232f4598de3e401a
+ROLLOUT_APPROVAL          = APPROVED_2026_07_26
+OPERATOR_PREFLIGHT        = BLOCKED_OPERATOR_ENV_NOT_CONNECTED
+REMOTE_BACKUP             = NOT_RUN
 REMOTE_MIGRATION          = NOT_RUN
 WORKER_DEPLOYMENT         = NOT_RUN
 CUSTOMER_OAUTH_CALLBACK   = NOT_RECEIVED
@@ -14,8 +18,10 @@ SCHEDULE                  = DISABLED
 PRODUCTION                = BLOCKED
 ```
 
-This runbook describes the separately approved future rollout boundary. Merely
-merging the implementation does not authorize any phase below.
+The user explicitly approved the guarded Remote rollout boundary on 2026-07-26.
+Execution stopped before Phase 1 because the approved operator environment was not
+connected to the execution session. No Remote command ran, no config was guessed and
+no Secret was requested or exposed.
 
 ## Safety model
 
@@ -44,9 +50,11 @@ The operator never:
 - enables a schedule;
 - cuts over Production.
 
-## Required environment boundary
+## Required operator environment
 
-The following values are supplied only in the protected operator environment:
+The rollout must run from a clean reviewed `main` checkout in the developer-owned
+Integration Workspace operator environment. The following values are supplied only in
+that protected environment:
 
 ```text
 MKT_ENV=development
@@ -59,6 +67,13 @@ MKT_GOOGLE_ADS_MANAGER_CUSTOMER_ID=<approved-manager-id>
 MKT_GOOGLE_ADS_ADVERTISER_CUSTOMER_ID=<approved-advertiser-id>
 MKT_GOOGLE_ADS_SOURCE_TIMEZONE=Asia/Bangkok
 ```
+
+The operator environment must also provide:
+
+- the ignored real API and Sync Wrangler configs;
+- authenticated Wrangler/Cloudflare identity;
+- a writable ignored evidence directory;
+- a clean `main` working tree at the reviewed source.
 
 No OAuth token, Refresh Token, access token, Signing Secret, ciphertext, IV or
 operator token is accepted as an operator argument or written to evidence.
@@ -125,7 +140,24 @@ MKT_GOOGLE_ADS_LARK_WRITE_ENABLED=false
 MKT_SCHEDULE_GOOGLE_ADS_ENABLED=false
 ```
 
-### 5. Encrypted Customer Connection gate
+### 5. Disabled-route and schema verification
+
+After deployment, verify without enabling any execution flag:
+
+- `0015_google_ads_live_admission.sql` is recorded as applied;
+- `google_ads_live_admissions` exists with the expected columns and indexes;
+- API and Sync Workers report the new deployment successfully;
+- signed ingress and Queue admission reject execution while disabled;
+- no Google Ads Queue message, Ads business fact or Lark business write occurred;
+- Google Ads Connector and Job remain `uat_pending`;
+- schedules remain unchanged and Google Ads schedule remains disabled.
+
+This verification must use bounded read-only commands and sanitized evidence.
+
+### 6. Encrypted Customer Connection gate
+
+This phase is not expected to pass until the customer completes the exact OAuth
+connection.
 
 ```bash
 CONFIRM_GOOGLE_ADS_CONNECTION_GATE_READ=connection-gate \
@@ -142,7 +174,7 @@ validated Google Ads connection with:
 
 It never selects ciphertext, IV or plaintext credentials.
 
-### 6. External LIVE readiness boundary
+### 7. External LIVE readiness boundary
 
 ```bash
 CONFIRM_GOOGLE_ADS_EXTERNAL_LIVE_READY_CHECK=live-ready \
@@ -162,7 +194,7 @@ The customer OAuth callback and Google Ads provider access must already be valid
 Wrong account, insufficient scope, rejected Developer Token access or metadata
 mismatch remain real blockers.
 
-### 7. Verify first LIVE run
+### 8. Verify first LIVE run
 
 ```bash
 MKT_GOOGLE_ADS_LIVE_RUN_ID=<uuid-v4> \
@@ -178,7 +210,7 @@ Requires:
 - six Coverage rows;
 - bounded Ads entity/daily counts available for comparison.
 
-### 8. Exact rerun verification
+### 9. Exact rerun verification
 
 After the exact same signed Run is retried under a separately approved operator
 window:
@@ -219,6 +251,7 @@ Stop without attempting recovery when any of these occurs:
 
 - config flag or schedule is not safely false at the phase that requires it;
 - backup/checksum evidence is absent;
+- Cloudflare identity or real config path is unavailable;
 - customer connection count is not exactly one;
 - manager, advertiser, currency or timezone mismatch;
 - missing/expired/revoked encrypted credential reference;
@@ -230,7 +263,15 @@ Stop without attempting recovery when any of these occurs:
 
 ## Current boundary
 
-This implementation task stops after reviewed source, tests, Draft PR and
-flags-false runbook. Remote migration, deployment, customer authorization, LIVE,
-Queue/D1/Lark business writes and schedule activation remain unexecuted and require
-separate approval.
+The source implementation is merged and the guarded rollout is approved only through
+flags-false deployment and disabled-route/schema verification. The first execution
+attempt stopped before operator preflight because the protected operator environment
+was not connected.
+
+Resume from Phase 1 only after the clean reviewed `main` checkout, ignored real
+Wrangler configs, authenticated Cloudflare identity and writable evidence directory
+are available together. Do not bypass the operator, synthesize replacement configs or
+move secrets into Git/chat.
+
+Customer authorization, signed LIVE execution, Queue/D1/Lark business writes,
+redrive, schedule activation and Production still require separate approval.
