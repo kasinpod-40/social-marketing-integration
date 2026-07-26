@@ -101,9 +101,28 @@ async function processAdmittedSyncJob(input) {
   const admissionKey = requireJobText(input.job.body?.admissionKey, 'admissionKey');
   const admission = await admissionStore.readAdmission(admissionKey);
   assertAdmissionMatches(admission, input.job.body, operation);
+  if (admission.status === 'completed') {
+    return Object.freeze({
+      mode: 'already_completed',
+      platform: 'tiktok',
+      source: 'lark_native_tiktok_for_creator',
+      syncRunId: admission.syncRunId,
+      postLarkAdmission: admission,
+      reportRequest: admission.reportRequestId
+        ? Object.freeze({ requestId: admission.reportRequestId })
+        : null,
+      warnings: Object.freeze([]),
+    });
+  }
 
+  const syncRunId = `tiktok-post-lark:${requireJobText(operation.operationId, 'operation.operationId')}`;
+  await admissionStore.markProcessing({ admissionKey, syncRunId });
   try {
-    const result = await processPostLarkD1FirstSync({ ...input, operation });
+    const result = await processPostLarkD1FirstSync({
+      ...input,
+      operation,
+      syncRunId,
+    });
     let reportRequest = null;
     if (config.postProcessReportEnabled) {
       reportRequest = await enqueuePostProcessReport({
@@ -114,7 +133,7 @@ async function processAdmittedSyncJob(input) {
     }
     const completed = await admissionStore.markCompleted({
       admissionKey,
-      syncRunId: requireJobText(result.syncRunId, 'result.syncRunId'),
+      syncRunId,
       reportRequestId: reportRequest?.requestId ?? null,
     });
     return Object.freeze({
@@ -126,7 +145,7 @@ async function processAdmittedSyncJob(input) {
     await admissionStore.markFailed({
       admissionKey,
       retryable: error?.retryable === true,
-      syncRunId: error?.syncRunId,
+      syncRunId,
       errorCode: error?.code ?? 'TIKTOK_POST_LARK_PROCESSING_FAILED',
     });
     throw error;
@@ -171,6 +190,7 @@ async function processPostLarkD1FirstSync(input) {
   const coverageRunId = `coverage:tiktok:${coverageDigest}`;
 
   const result = await runReliableSync({
+    syncRunId: requireJobText(input.syncRunId, 'syncRunId'),
     store: reliability.store,
     lockManager: reliability.lockManager,
     customerProfile: runtimeConfig.profileKey,
