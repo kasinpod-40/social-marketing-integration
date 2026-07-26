@@ -80,8 +80,10 @@ Manager Script PREVIEW       PASS / 6 datasets / 7 chunks / 1,375 rows
 Customer OAuth               COMPLETE
 Encrypted refresh token      ACTIVE
 Direct API access            PENDING / NON-BLOCKING
-LIVE gate hotfix             PR #59
-Remote preflight             NOT RUN
+LIVE gate hotfix             MERGED_PR_59
+Hotfix merge commit          82767ffe80e417901e9b0a9f1f767ecefedb8c82
+Final Branch Verification    PASS_RUN_490
+Remote preflight             NOT RUN / OPERATOR ENV NOT CONNECTED
 Migration 0015               NOT RUN
 Workers deployment           NOT RUN
 LIVE Queue/D1/Lark            NOT RUN
