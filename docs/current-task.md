@@ -130,7 +130,7 @@ no Remote D1/Lark/Queue/Worker action occurred              PASS
 ```text
 BRANCH                   = work/google-ads-canonical-lark-mapping-hotfix
 PR                       = #62 / READY_FOR_REVIEW
-FINAL_HEAD               = 56d27b6c98b7b915e4367a2b5781f110cbc10f45
+REVIEWED_SOURCE_HEAD     = 56d27b6c98b7b915e4367a2b5781f110cbc10f45
 BRANCH_VERIFICATION      = PASS / RUN_505
 FOCUSED_TIKTOK_TESTS     = 4 / 4 PASS
 NODE_UNIT_INTEGRATION    = 825 / 825 PASS
