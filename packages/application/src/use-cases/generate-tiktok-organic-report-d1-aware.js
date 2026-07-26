@@ -293,12 +293,18 @@ function resolveMetadataLimit(override, configured) {
 
 function assertD1CoverageReady(summary, primary) {
   if (!primary) return;
-  if (summary.coverageStatus !== 'complete' || Number(summary.failedRows ?? 0) !== 0) {
+  const failedRows = Number(summary.failedRows ?? 0);
+  const uncoveredContentCount = Number(summary.uncoveredContentCount ?? 0);
+  if (summary.coverageStatus !== 'complete'
+    || failedRows !== 0
+    || uncoveredContentCount !== 0) {
     throw permanentError('TikTok D1-primary report requires complete Coverage', {
       code: 'REPORT_D1_COVERAGE_INCOMPLETE',
       details: {
         coverageStatus: summary.coverageStatus,
-        failedRows: summary.failedRows ?? 0,
+        failedRows,
+        uncoveredContentCount,
+        uncoveredContentIds: summary.uncoveredContentIds ?? [],
         coverageRunId: summary.coverageRunId,
       },
     });
