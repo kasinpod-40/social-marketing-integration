@@ -9,6 +9,7 @@ import {
 import { calculateTikTokOrganicPeriodMetrics } from '../reports/calculate-tiktok-organic-report.js';
 import { compareTikTokOrganicReportResults } from '../reports/compare-tiktok-organic-report-results.js';
 import { createTikTokReportSourceOverrideRepository } from '../reports/tiktok-report-source-override-repository.js';
+import { hydrateTikTokReportContentMetadata } from '../reports/hydrate-tiktok-report-content-metadata.js';
 import { createReportId as createStorageReportId } from '../storage/marketing-history-contract.js';
 import { generateTikTokOrganicReport } from './generate-tiktok-organic-report.js';
 import { createStableFingerprint } from '../../../shared/src/hash/stable-fingerprint.js';
@@ -16,6 +17,7 @@ import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 
 const FORMULA_VERSION = 'tiktok-organic-v1';
 const MATERIALIZATION_SCHEMA_VERSION = 'tiktok-organic-materialization-v1';
+const MAX_METADATA_RECORDS = 100;
 
 /** Reuse the existing calculator/output writer while selecting Lark, D1 or shadow mode. */
 export async function generateTikTokOrganicReportD1Aware(input = {}) {
@@ -48,11 +50,10 @@ export async function generateTikTokOrganicReportD1Aware(input = {}) {
     period,
     maxContentRecords: input.d1MaxContentRecords,
   });
-  const d1Calculation = calculateTikTokOrganicPeriodMetrics({
+  const d1Calculations = calculateReportWindows({
     contents: d1Source.contents,
     dailySnapshots: d1Source.dailySnapshots,
-    periodStart: period.periodStart,
-    periodEnd: period.periodEnd,
+    period,
   });
   assertD1CoverageReady(d1Source.readSummary, storage.reportD1ReadEnabled);
 
@@ -70,7 +71,7 @@ export async function generateTikTokOrganicReportD1Aware(input = {}) {
       maxPagesPerQuery: input.maxPagesPerQuery,
       pageSize: input.sourcePageSize,
     });
-    const larkCalculation = calculateTikTokOrganicPeriodMetrics({
+    const larkCalculations = calculateReportWindows({
       contents: normalizeTikTokContentRecords(larkSource.contentRecords, {
         accountId,
         timeZone: setting.timeZone,
@@ -79,12 +80,11 @@ export async function generateTikTokOrganicReportD1Aware(input = {}) {
         accountId,
         timeZone: setting.timeZone,
       }),
-      periodStart: period.periodStart,
-      periodEnd: period.periodEnd,
+      period,
     });
-    parity = await compareTikTokOrganicReportResults({
-      primary: storage.reportD1ReadEnabled ? d1Calculation : larkCalculation,
-      shadow: storage.reportD1ReadEnabled ? larkCalculation : d1Calculation,
+    parity = await compareReportWindows({
+      primary: storage.reportD1ReadEnabled ? d1Calculations : larkCalculations,
+      shadow: storage.reportD1ReadEnabled ? larkCalculations : d1Calculations,
       floatTolerance: input.floatTolerance,
     });
     if (storage.reportD1ReadEnabled && !parity.ok) {
@@ -99,12 +99,26 @@ export async function generateTikTokOrganicReportD1Aware(input = {}) {
     }
   }
 
+  let d1Contents = d1Source.contents;
+  if (storage.reportD1ReadEnabled) {
+    const metadataLimit = resolveMetadataLimit(input.topContentLimit, setting.topContentLimit);
+    const metadataIds = d1Calculations.current.contentRows
+      .slice(0, metadataLimit)
+      .map((row) => row.content.externalContentId);
+    d1Contents = await hydrateTikTokReportContentMetadata({
+      repository,
+      tableId: tables.mktContent,
+      contents: d1Contents,
+      externalContentIds: metadataIds,
+    });
+  }
+
   const reportRepository = storage.reportD1ReadEnabled
     ? createTikTokReportSourceOverrideRepository({
       repository,
       tables,
       timeZone: setting.timeZone,
-      contents: d1Source.contents,
+      contents: d1Contents,
       dailySnapshots: d1Source.dailySnapshots,
     })
     : repository;
@@ -143,6 +157,67 @@ export async function generateTikTokOrganicReportD1Aware(input = {}) {
     warnings,
     materialization,
   });
+}
+
+function calculateReportWindows(input) {
+  const current = calculateTikTokOrganicPeriodMetrics({
+    contents: input.contents,
+    dailySnapshots: input.dailySnapshots,
+    periodStart: input.period.periodStart,
+    periodEnd: input.period.periodEnd,
+  });
+  const compare = input.period.comparisonMode === 'none'
+    ? null
+    : calculateTikTokOrganicPeriodMetrics({
+      contents: input.contents,
+      dailySnapshots: input.dailySnapshots,
+      periodStart: input.period.compareStart,
+      periodEnd: input.period.compareEnd,
+    });
+  return Object.freeze({ current, compare });
+}
+
+async function compareReportWindows(input) {
+  const current = await compareTikTokOrganicReportResults({
+    primary: input.primary.current,
+    shadow: input.shadow.current,
+    floatTolerance: input.floatTolerance,
+  });
+  const compare = input.primary.compare && input.shadow.compare
+    ? await compareTikTokOrganicReportResults({
+      primary: input.primary.compare,
+      shadow: input.shadow.compare,
+      floatTolerance: input.floatTolerance,
+    })
+    : null;
+  const mismatches = [
+    ...prefixMismatches(current.mismatches, 'current'),
+    ...prefixMismatches(compare?.mismatches ?? [], 'compare'),
+  ];
+  return Object.freeze({
+    ok: current.ok && (compare?.ok ?? true),
+    mismatchCount: current.mismatchCount + (compare?.mismatchCount ?? 0),
+    mismatches: Object.freeze(mismatches),
+    truncated: current.truncated || (compare?.truncated ?? false),
+    floatTolerance: current.floatTolerance,
+    primaryDigest: await createStableFingerprint({
+      current: current.primaryDigest,
+      compare: compare?.primaryDigest ?? null,
+    }),
+    shadowDigest: await createStableFingerprint({
+      current: current.shadowDigest,
+      compare: compare?.shadowDigest ?? null,
+    }),
+    current,
+    compare,
+  });
+}
+
+function prefixMismatches(values, windowName) {
+  return values.map((value) => Object.freeze({
+    ...value,
+    path: `$.${windowName}${String(value.path ?? '$').slice(1)}`,
+  }));
 }
 
 async function saveMaterialization(input) {
@@ -203,6 +278,17 @@ async function saveMaterialization(input) {
     sourceReportId: input.result.reportId,
     payloadChecksum,
   });
+}
+
+function resolveMetadataLimit(override, configured) {
+  const value = override === null || override === undefined || override === ''
+    ? configured
+    : override;
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number <= 0 || number > MAX_METADATA_RECORDS) {
+    throw new TypeError(`topContentLimit must be an integer between 1 and ${MAX_METADATA_RECORDS}`);
+  }
+  return number;
 }
 
 function assertD1CoverageReady(summary, primary) {
