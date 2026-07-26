@@ -24,10 +24,10 @@ const LARK_TABLES = Object.freeze([
   { path: 'raw.entities', tableKey: 'rawAdsEntities', keyField: 'raw_ads_entity_key' },
   { path: 'raw.daily', tableKey: 'rawAdsDaily', keyField: 'raw_ads_daily_key' },
   { path: 'canonical.accounts', tableKey: 'mktAdsAccounts', keyField: 'ads_account_key' },
-  { path: 'canonical.campaigns', tableKey: 'mktAdsCampaigns', keyField: 'campaign_key' },
-  { path: 'canonical.adGroups', tableKey: 'mktAdsAdGroups', keyField: 'ad_group_key' },
+  { path: 'canonical.campaigns', tableKey: 'mktAdsCampaigns', keyField: 'ads_campaign_key' },
+  { path: 'canonical.adGroups', tableKey: 'mktAdsAdGroups', keyField: 'ads_ad_group_key' },
   { path: 'canonical.ads', tableKey: 'mktAdsAds', keyField: 'ads_ad_key' },
-  { path: 'canonical.creatives', tableKey: 'mktAdsCreatives', keyField: 'creative_key' },
+  { path: 'canonical.creatives', tableKey: 'mktAdsCreatives', keyField: 'ads_creative_key' },
   { path: 'canonical.daily', tableKey: 'mktAdsDaily', keyField: 'ads_daily_key' },
 ]);
 
