@@ -3,6 +3,10 @@ import assert from 'node:assert/strict';
 import {
   D1GoogleAdsCustomerConnectionReadStore,
 } from '../../packages/connectors/src/google-ads/d1-google-ads-customer-connection-read-store.js';
+import {
+  buildGoogleAdsConnectionGateSql,
+  validateGoogleAdsConnectionGateRow,
+} from '../../scripts/lib/google-ads-live-operator.js';
 import { createSqliteD1 } from '../helpers/sqlite-d1.js';
 
 function createConnectionDb(accessStatus = 'google_ads_api_access_pending') {
@@ -59,6 +63,15 @@ function createConnectionDb(accessStatus = 'google_ads_api_access_pending') {
   return d1;
 }
 
+function operatorTarget() {
+  return {
+    customerKey: 'chemistry_k',
+    managerCustomerId: '9463570541',
+    advertiserCustomerId: '5662332033',
+    sourceTimezone: 'Asia/Bangkok',
+  };
+}
+
 test('D1 read store returns API-pending Script consent with active encrypted credential', async () => {
   const d1 = createConnectionDb();
   try {
@@ -69,6 +82,23 @@ test('D1 read store returns API-pending Script consent with active encrypted cre
     assert.equal(connection.providerMetadata.approvedAdvertiserCustomerId, '5662332033');
     assert.equal(connection.credentialReference, 'credential-1');
     assert.equal(connection.activeCredentialReference, 'credential-1');
+  } finally {
+    d1.close();
+  }
+});
+
+test('operator Script consent SQL executes on SQLite/D1 and accepts API-pending state', async () => {
+  const d1 = createConnectionDb();
+  try {
+    const sql = buildGoogleAdsConnectionGateSql(operatorTarget());
+    const row = await d1.prepare(sql).first();
+    const gate = validateGoogleAdsConnectionGateRow(row);
+    assert.equal(gate.script_authorized_connection_count, 1);
+    assert.equal(gate.script_access_allowed, 1);
+    assert.equal(gate.api_access_pending, 1);
+    assert.equal(gate.api_access_validated, 0);
+    assert.equal(gate.scope_matches, 1);
+    assert.equal(gate.advertiser_matches, 1);
   } finally {
     d1.close();
   }
