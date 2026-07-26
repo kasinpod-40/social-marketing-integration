@@ -3,18 +3,21 @@
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = APPROVED_FOR_IMPLEMENTATION
+TASK_STATUS                         = IMPLEMENTATION_COMPLETE_REVIEW_PENDING
 CURRENT_PROGRAM                     = TIKTOK_ORGANIC_POST_LARK_DAILY_PIPELINE_AND_REPORT_D1_PARITY
 APPROVED_DATE                       = 2026-07-26
 BASE_COMMIT                         = e9275b6fbd4c28cf0290434cc4a449373e2e2bf9
 IMPLEMENTATION_BRANCH               = agent/tiktok-organic-post-lark-d1-parity
+DRAFT_PR                            = #65
+VERIFIED_HEAD                       = e3c00b93ea95b4a4e564f09cafacc40954b30593
+BRANCH_VERIFICATION                 = #517 PASS
 ENVIRONMENT                         = development
 CUSTOMER_PROFILE                    = integration_workspace
 CUSTOMER_KEY                        = chemistry_k
 ACCOUNT_KEY                         = chemistry_k
 SOURCE_HANDLE                       = chemistry_k
 SOURCE                              = lark_native_tiktok_for_creator
-LARK_NATIVE_SYNC_TIME               = 07:00 Asia/Bangkok
+LARK_NATIVE_SYNC_TIME               = approximately 07:00 Asia/Bangkok
 SNAPSHOT_DATE_CONTRACT              = previous_completed_day
 LIVE_RUNTIME_ACTIONS                = PROHIBITED
 SCHEDULES                           = DISABLED
@@ -24,16 +27,16 @@ PRODUCTION                          = BLOCKED
 
 ## Objective
 
-Implement a fail-closed TikTok Organic post-Lark pipeline that detects a stable new RAW source
-watermark after the existing Lark Native sync, processes D1 and Canonical destinations idempotently,
-calculates Daily/Weekly reports from D1 historical observations with Lark shadow parity, and only
-admits a report after the corresponding processing and Coverage have completed.
+Implement a fail-closed TikTok Organic post-Lark pipeline that detects a stable new protected RAW
+source watermark after the existing Lark Native sync, processes D1 and Canonical destinations
+idempotently, calculates Daily/Weekly reports from D1 historical observations with Lark shadow
+parity, and admits a Daily report only after the corresponding processing and Coverage complete.
 
-The implementation must reuse the existing TikTok Native connector, Durable source staging,
-preflight, D1 Organic history, Canonical Lark writer, Reliability runner, Queue/DLQ contracts and
-Report engine. It must not create a second TikTok source connector or a parallel reliability stack.
+The implementation reuses the existing TikTok Native connector, Durable source staging, preflight,
+D1 Organic history, Canonical Lark writer, Reliability runner, Queue/DLQ contracts and Report engine.
+It does not create a second TikTok source connector or a parallel Reliability/Queue/D1/Lark stack.
 
-## Verified starting state
+## Retained verified starting facts
 
 ```text
 RAW_TikTok_Creator_Videos             approximately 2021 / protected Lark Native source
@@ -46,67 +49,117 @@ MKT_Content last verified             22
 MKT_Content_Daily last verified       208
 Report primary reader                 Lark MKT_Content + MKT_Content_Daily
 Report content limit                  800
-Report D1 reader                      not implemented
-Report D1 shadow read                 not connected to active handler
+Report D1 reader                      not implemented before this branch
+Report D1 shadow read                 not connected before this branch
 TikTok schedule                       disabled
 Daily report schedule                 disabled
 Production                            blocked
 ```
 
-These are retained repository/rollout facts. A new Live count or freshness claim requires the
-read-only audit operator and external evidence; implementation tests must not fabricate a Live pass.
+These are retained repository/rollout facts. Any new Live count, freshness, Coverage or parity claim
+requires the guarded read-only audit and separately approved external validation. Tests and fixtures
+must not be described as a Live pass.
 
 ## Date contract
 
-The Lark Native sync runs at approximately 07:00 Asia/Bangkok and returns the first trusted
-cumulative snapshot after the prior calendar day has completed. Scheduled TikTok processing must
-therefore write:
+The Lark Native sync at approximately 07:00 Asia/Bangkok is treated as the first trusted cumulative
+snapshot after the preceding local calendar day has completed. Scheduled post-Lark processing writes:
 
 ```text
 metricDate = local scheduled date - 1 day
 ```
 
-The Daily report uses the same completed day as `periodEnd`. This aligns the 07:00 ingestion cutoff
-with the report period and prevents a current-day Snapshot from being excluded by a previous-day
-report boundary.
+Daily Report uses the same completed date as `periodEnd`. Manual jobs may provide an explicit approved
+`metricDate`; the scheduled producer must not infer the current local day.
 
-Manual jobs may still provide an explicit approved `metricDate`; the producer must not infer a
-current-day date for the scheduled post-Lark path.
+## Implemented scope
 
-## In scope
+### 1. Guarded read-only audit
 
-### 1. Read-only audit
+Added GET-only operator path:
 
-Add a guarded read-only audit path that can inspect, without mutation:
+```text
+/operator/tiktok/post-lark-audit
+```
 
-- RAW count, source handles, latest modified instant and deterministic compact watermark;
-- duplicate RAW record/content identities and invalid Stable-key inputs;
-- D1 State, Observation and Coverage counts plus duplicate/missing relationships;
-- Canonical `MKT_Content` and `MKT_Content_Daily` counts and Stable-key gaps;
-- latest completed TikTok Coverage and source watermark;
-- current Report source mode and configured bounds.
+The route requires a default-false audit flag, bearer operator authentication and the Integration
+Workspace identity. It has no Queue or write capability and returns only sanitized counts, identities,
+watermarks and cross-layer gaps for:
 
-Audit output must be sanitized and must not include captions, raw payloads, credentials, tokens,
-Lark cell payloads, customer PII or secret IDs beyond approved non-secret business keys.
+- protected `RAW_TikTok_Creator_Videos`;
+- D1 State, Observation, Coverage and Coverage entities;
+- Canonical `MKT_Content` and `MKT_Content_Daily`;
+- latest completed Coverage/watermark and active Report source mode.
 
-### 2. D1 report source
+It excludes captions, RAW payloads, Lark cell payloads, credentials, tokens and unapproved identity.
 
-Implement a bounded D1 TikTok Organic report reader over:
+### 2. Deterministic RAW watermark
 
-- `organic_content_state` for Canonical identity and current metadata available in D1;
-- `organic_content_observations` for the latest cumulative observation at period end and the latest
-  baseline before the earliest report/compare start;
-- `data_coverage_runs` and `data_coverage_entities` for data-status and Coverage proof.
+Added bounded read-only source probing with:
 
-The reader must support more than 800 content identities, preserve `null` versus observed zero,
-retain corrections, use deterministic ordering and expose a source summary/watermark.
+- exact Chemistry K account/source-handle validation;
+- deterministic compact watermark;
+- bounded pagination and repeated-cursor rejection;
+- duplicate source record/content identity rejection;
+- invalid Stable-key input rejection;
+- two-probe settling requiring identical count, maximum modified instant and watermark.
 
-Lark `MKT_Content` remains a bounded metadata cache for caption/URL/thumbnail hydration only. The
-D1 reader must not depend on full Lark history or `MKT_Content_Daily`.
+The compact watermark uses only approved identity/hash state and does not retain Caption or RAW body.
 
-### 3. Shadow parity
+### 3. Durable watermark admission
 
-Wire the existing fail-closed flags into the active Report handler:
+Added additive Migration:
+
+```text
+migrations/0016_tiktok_post_lark_pipeline.sql
+```
+
+It defines `tiktok_source_admissions` with stable admission/work uniqueness and lifecycle checks.
+Admission identity is based on Customer/Account, source watermark and Snapshot metric date. A repeated
+same-watermark active/completed admission is a no-op and does not create Business drift.
+
+Migration 0016 exists in source only. It has not been applied remotely.
+
+### 4. Staged source-watermark fence
+
+The admitted Queue job retains the original generation and Work identity. Before the first Business
+write, the exact Durable staged dataset is hashed and compared with the admitted source watermark.
+A mismatch is Permanent and fail-closed.
+
+### 5. D1-first processing and Canonical delivery
+
+The implementation reuses the existing staged TikTok processor and hooks:
+
+```text
+Durable source staging
+→ full-unit preflight
+→ Observation
+→ Current State
+→ Coverage
+→ existing Canonical MKT_Content / MKT_Content_Daily writer
+```
+
+It preserves existing stable keys, idempotent upsert, generation fence, retry, lock, DLQ and
+partial-write semantics. No second D1 writer or Lark sync engine was introduced.
+
+### 6. D1 TikTok Organic Report source
+
+Added a bounded deterministic D1 reader over:
+
+- `organic_content_state`;
+- `organic_content_observations`;
+- `data_coverage_runs`;
+- `data_coverage_entities`.
+
+It supports more than 800 Content identities, preserves missing metric `null`, observed zero and
+negative corrections, and selects current/compare/baseline observations deterministically.
+
+D1 is the historical metric authority. Lark `MKT_Content` is used only as a bounded metadata cache for
+top-ranked Caption/URL/thumbnail hydration.
+
+### 7. Lark/D1 shadow parity and D1-primary gate
+
+The active Report route now honors the existing default-false storage controls:
 
 ```text
 MKT_REPORT_D1_SHADOW_READ_ENABLED
@@ -117,191 +170,177 @@ MKT_REPORT_PRESET_MATERIALIZATION_ENABLED
 Modes:
 
 ```text
-all false                 Lark primary only
-shadow=true               Lark primary + D1 shadow compare; Lark output remains authoritative
-read=true                 D1 primary; shadow comparison optional
+all false                 existing Lark-only behavior
+shadow=true               Lark authoritative + D1 diagnostic comparison
+read=true                 D1 historical metric source
+read=true + shadow=true   D1 cutover blocked by any parity mismatch
 ```
 
-Shadow comparison must verify stable identities, period metrics, data status, baseline coverage,
-source snapshot count, top-content rank/IDs and deterministic result digests. Integer and identity
-values require exact equality. Floating metrics require an explicit bounded tolerance.
+Parity compares identities, current and comparison metrics, Data status, baseline Coverage, source
+Snapshot count, top-content rank/IDs and deterministic digests. Integers/identities require exact
+equality; floating values use an explicit bounded tolerance.
 
-A shadow mismatch must fail closed for a D1 cutover but must not alter the Lark-primary customer
-result while the D1 reader flag remains false.
+D1 primary also requires completed Coverage, zero failed rows and zero current Content identities
+missing an observed Coverage entity.
 
-### 4. Watermark-aware admission
+### 8. Coverage-gated post-processing report admission
 
-Add a read-only RAW probe and deterministic source watermark based on the approved compact source
-state. A new Business job may be admitted only when:
+When the post-process flag is enabled, the Daily report request is created only after processing
+success and a fresh durable Coverage re-read proves:
 
-- source identity matches Chemistry K exactly;
-- two bounded probes of the source produce the same count and watermark;
-- the watermark differs from the latest completed checkpoint/admission;
-- no same-watermark active or completed work already exists;
-- the configured settling interval and bounds are satisfied.
+- Coverage status is complete;
+- expected and observed entity counts match;
+- failed rows equal zero;
+- Coverage source watermark equals the admitted RAW watermark.
 
-The Work/admission identity must be based on account, source watermark and Snapshot metric date, not
-only a Queue message ID. Same-watermark checks are no-op and must not create Business drift.
+The request identity includes Customer/Profile/Account, report type, period end, formula version and
+source watermark. Claim, retry, completion and replay are idempotent.
 
-### 5. Post-processing report admission
+### 9. Scheduler safety
 
-After TikTok processing and Coverage complete, create an idempotent Daily report request keyed by:
+The Primary Cron now emits a read-only TikTok watermark probe rather than a blind Business sync.
+Scheduled TikTok processing requires watermark admission to be explicitly enabled. The producer uses
+the previous completed local day for `metricDate`.
+
+The scheduler rejects simultaneous use of post-processing Daily report admission and the independent
+Daily report schedule, preventing duplicate Daily producers.
+
+### 10. Default-false controls
 
 ```text
-customer profile + account + report type + period end + formula version + source watermark
+MKT_TIKTOK_AUDIT_HTTP_ENABLED=false
+MKT_TIKTOK_WATERMARK_ADMISSION_ENABLED=false
+MKT_TIKTOK_POST_PROCESS_REPORT_ENABLED=false
+MKT_REPORT_D1_SHADOW_READ_ENABLED=false
+MKT_REPORT_D1_READ_ENABLED=false
+MKT_REPORT_PRESET_MATERIALIZATION_ENABLED=false
+MKT_SCHEDULE_TIKTOK_ENABLED=false
+MKT_SCHEDULE_DAILY_REPORT_ENABLED=false
+MKT_LARK_DAILY_RETENTION_ENABLED=false
 ```
 
-The report must not be admitted before D1/Canonical processing and Coverage complete. A later
-watchdog may retry a missing report request but may not bypass the completion gate.
-
-### 6. Materialization preparation
-
-When `MKT_REPORT_PRESET_MATERIALIZATION_ENABLED=true`, persist deterministic D1 report
-materializations through the existing Storage Foundation contract. Retention remains disabled and is
-not part of this task.
-
-### 7. Tests and documentation
-
-Add focused Unit/Integration/Workers-runtime coverage for all new contracts, update the Current Task,
-Project Brain, README and CHANGELOG, and preserve all existing TikTok/Core/Google Ads behavior.
-
-## Out of scope
-
-- creating another TikTok platform/source connector;
-- changing or mutating `RAW_TikTok_Creator_Videos`;
-- Lark Schema/View/Formula/Filter changes;
-- destructive D1 migrations or deletion/retention;
-- Remote D1 mutation from implementation;
-- Queue send, DLQ redrive or Recovery execution;
-- Worker deployment;
-- enabling TikTok, Report or any other Business schedule;
-- changing Google Ads closed runtime state;
-- Facebook, Instagram, Meta Ads, WooCommerce or Chatwoot runtime implementation;
-- Production rollout.
-
-## Safety boundary
-
-During implementation and review:
-
-```text
-Deploy                              prohibited
-Remote D1 write/migration           prohibited
-Lark write/schema mutation          prohibited
-Queue message                       prohibited
-DLQ redrive/delete                  prohibited
-Recovery                            prohibited
-Schedule enable                     prohibited
-Retention/delete                    prohibited
-Production                          blocked
-```
-
-All new runtime behavior must remain behind existing or new default-false flags. Storage flags must
-not implicitly enable schedules.
+Storage/report flags do not implicitly enable schedules.
 
 ## Architecture contract
 
 ```text
-Lark Native TikTok sync 07:00
+Lark Native TikTok sync approximately 07:00
 → bounded read-only RAW probes
 → stable new source watermark
-→ idempotent TikTok admission
+→ durable same-watermark admission
 → existing Durable source staging
-→ preflight all Units
-→ D1 Observation / State / Coverage
-→ Lark MKT_Content / MKT_Content_Daily
-→ completed checkpoint
+→ exact staged-watermark fence
+→ full-unit preflight
+→ existing D1 Observation / State / Coverage
+→ existing Canonical Lark writer
+→ completed Coverage re-read
 → idempotent report request
-→ D1 primary/shadow report calculation
-→ Lark report output
+→ Lark-primary + D1-shadow or D1-primary Report calculation
+→ bounded Lark metadata hydration
+→ existing Lark Report output
+→ optional deterministic D1 materialization
 ```
 
-The D1 report reader must reuse the current Report calculation and output builders. Do not duplicate
-metric formulas or create a second report engine.
+## Out of scope and safety boundary
 
-## Acceptance criteria
+This implementation did not authorize or perform:
 
 ```text
-RAW source identity                         exact Chemistry K
-RAW watermark                               deterministic and stable
-RAW duplicate content identities            0
-Same-watermark admission                    no-op
-New-watermark admission                     exactly one logical Work
-Stale generation                            rejected
-RAW → D1 missing keys                       0 in approved Live UAT
-D1 State/Observation/Coverage duplicates    0
-D1 → MKT_Content missing keys               0 in approved Live UAT
-MKT_Content stable-key duplicates           0
-MKT_Content_Daily stable-key duplicates     0
-Scheduled Snapshot metricDate               previous completed day
-Report identities >800                      supported by D1 source
-Report D1 reader                             bounded and deterministic
-D1/Lark shadow comparison                   exact under parity fixture/UAT
-D1 primary cutover                          blocked on mismatch
-Report request before processing complete   rejected/no-op
-Report request after processing complete    idempotent
-Exact rerun                                 zero Business drift
-Retention/delete                            disabled
-Schedules during Manual UAT                 disabled
-Production                                  blocked
+Remote D1 backup or Migration 0016 apply    NOT RUN
+Worker deployment                           NOT RUN
+Queue message                               NOT SENT
+DLQ redrive/delete                          NOT RUN
+Recovery                                    NOT RUN
+Remote Lark schema/data mutation            NONE
+Remote D1 Business mutation                 NONE
+Schedule enablement                         NONE
+Retention/delete                            NONE
+LIVE UAT                                    NOT RUN
+Production                                  BLOCKED
+Google Ads runtime-state change             NONE
 ```
 
-## Required tests
+Facebook, Instagram, Meta Ads, YouTube, WooCommerce and Chatwoot implementation are separate
+Workstreams and are not part of this task.
 
-```bash
-npm ci
-npm run check
-npm test
-npm run test:report-reliability
-npm audit
-npm run deploy:dry-run
+## Repository acceptance result
+
+```text
+RAW watermark determinism                   PASS by focused tests
+RAW duplicate/invalid identity rejection    PASS by focused tests
+Two-read settling                           PASS by focused tests
+Same-watermark admission no-op              PASS by focused tests
+New-watermark logical admission             PASS by focused tests
+Stale/admission identity conflict            PASS by focused tests
+Staged source-watermark mismatch            PASS by focused tests
+Previous-completed-day schedule contract    PASS by Unit and Worker runtime tests
+D1 identities above 800                     PASS by connector tests
+Null / observed zero / correction           PASS by connector/report tests
+Coverage-derived data status                PASS by application tests
+Lark/D1 parity and mismatch diagnostics     PASS by report tests
+D1-primary fail-closed gate                 PASS by report tests
+Report request/materialization idempotency  PASS by application/connector tests
+TikTok resumable/generation/replay          PASS by focused regression
+Google Ads safe-state/router regression     PASS by full suite
+Remote RAW→D1 reconciliation                PENDING separate approved LIVE UAT
+Remote D1→Canonical reconciliation          PENDING separate approved LIVE UAT
+Remote exact rerun zero drift               PENDING separate approved LIVE UAT
 ```
 
-Focused coverage must include:
+## Verification evidence
 
-- RAW watermark determinism, settling and duplicate rejection;
-- previous-completed-day schedule date contract;
-- same/new watermark admission identities;
-- D1 current/baseline selection across more than 800 Content rows;
-- null, observed zero and correction semantics;
-- Coverage-derived data status;
-- Lark/D1 shadow parity and mismatch diagnostics;
-- D1-primary fail-closed mode;
-- report request/materialization idempotency;
-- TikTok resumable/generation/replay regression;
-- Google Ads safe-state and router regression.
+Branch Verification run `#517` passed on reviewed head
+`e3c00b93ea95b4a4e564f09cafacc40954b30593`:
 
-## Manual LIVE UAT gate
+```text
+Install locked dependencies          PASS
+Syntax / architecture / hygiene      PASS
+Focused staged TikTok tests          4 / 4 PASS
+Node Unit / Integration tests        868 / 868 PASS
+Workers runtime tests                9 / 9 PASS
+Report reliability regression        91 / 91 PASS
+Dependency audit                     0 vulnerabilities
+Wrangler deployment dry-run          PASS / no deployment
+Diagnostics upload                   PASS
+```
 
-No Live action is authorized by this implementation task. After source review and Branch
-Verification pass, a separate bounded rollout plan must be presented for approval. That plan must
-start read-only and preserve all schedules as disabled.
-
-Required sequence for the later separately approved rollout:
-
-1. read-only RAW/D1/Canonical audit;
-2. manual freshness probe;
-3. one new-watermark processing admission;
-4. D1/Canonical/Coverage reconciliation;
-5. Lark-primary + D1-shadow parity;
-6. exact same-watermark rerun with zero drift;
-7. D1-primary report validation with rollback to Lark primary;
-8. only then propose controlled schedule activation.
+Two stale regression fixtures were corrected during review so they now assert the approved watermark
+probe producer and previous-completed-day contract rather than the removed blind scheduled sync.
 
 ## Implementation result
 
 ```text
-STATUS          = IN_PROGRESS
-FILES_CHANGED   = PENDING
-COMMANDS_RUN    = GitHub connector inspection only
-TESTS           = NOT_RUN
-LIVE_VALIDATION = NOT_RUN / PROHIBITED
+STATUS          = IMPLEMENTATION_COMPLETE_REVIEW_PENDING
+DRAFT_PR        = #65
+VERIFIED_HEAD   = e3c00b93ea95b4a4e564f09cafacc40954b30593
+TESTS           = PASS / Branch Verification #517
+LIVE_VALIDATION = NOT RUN / PROHIBITED BY THIS TASK
 REMOTE_ACTIONS  = NONE
-REMAINING_RISKS = D1/Lark parity and Live freshness require separately approved external validation
+REMAINING_RISKS = Remote schema readiness, Live source freshness, Coverage reconciliation and
+                  Lark/D1 parity require a separately approved guarded rollout
 ```
+
+## Next separate approval gate
+
+No Live action is authorized by this implementation closeout. A later rollout must remain bounded,
+manual and schedule-disabled in this order:
+
+1. read-only Remote configuration and schema preflight;
+2. Remote D1 backup;
+3. additive Migration 0016 apply;
+4. flags-false Worker deployment and route smoke;
+5. guarded read-only RAW/D1/Canonical audit;
+6. manual freshness probe;
+7. one new-watermark admission;
+8. D1/Canonical/Coverage reconciliation;
+9. Lark-primary + D1-shadow parity;
+10. exact same-watermark rerun with zero Business drift;
+11. D1-primary Report validation with immediate rollback path to Lark primary;
+12. only then propose controlled schedule activation.
 
 ## Archived predecessor
 
-The completed Google Ads task is preserved at:
+The completed Google Ads task remains preserved at:
 
 ```text
 docs/archive/current-task-before-tiktok-post-lark-d1-parity-2026-07-26.md
