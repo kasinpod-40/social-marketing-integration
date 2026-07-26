@@ -3,7 +3,7 @@
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = IMPLEMENTED_PR_63_BRANCH_VERIFICATION_PASS_AWAITING_REVIEW
+TASK_STATUS                         = PR_63_MERGED_SAFE_CLOSE_REQUIRED
 CURRENT_PROGRAM                     = GOOGLE_ADS_MANAGER_SCRIPT_SIGNED_DELIVERY_TO_LARK
 INCIDENT_DATE                       = 2026-07-26
 INCIDENT_RUN_ID                     = 88351cb4-714d-49ef-91db-d95550a93ebf
@@ -74,31 +74,30 @@ canonical.daily      ads_daily_key
 Campaign contract failed before the preflight phase could be saved and before D1 writes began. This
 was a source routing-contract defect, not a Lark Schema or D1 defect.
 
-## Implemented correction
+## Merged correction
 
-PR `#63` changes only the three stale routing keys and processor-level regression coverage:
+PR `#63` was Squash Merged into `main`:
 
-1. `campaign_key` → `ads_campaign_key`;
-2. `ad_group_key` → `ads_ad_group_key`;
-3. `creative_key` → `ads_creative_key`;
-4. every `planByKey()` call now has test evidence that all rows contain the configured non-empty key;
-5. destination preflight must use the exact eight-table `(tableId, keyField)` sequence;
-6. one-table-per-continuation Lark execution must reuse the identical sequence.
+```text
+PR                       = #63 / MERGED
+MERGE_COMMIT             = 23a40b9f1c1e85838d9648a32deb2db2944b2604
+REVIEWED_SOURCE_HEAD     = a4549d5fffa0bdcb8050f8a7db840e0fb9c18df8
+FINAL_BRANCH_HEAD        = e877d217970bffa6ee65bafb13538a80649f6825
+SOURCE_VERIFICATION      = PASS / RUN_510
+FINAL_DOCS_VERIFICATION  = PASS / RUN_513
+```
+
+The merged implementation:
+
+1. changes `campaign_key` to `ads_campaign_key`;
+2. changes `ad_group_key` to `ads_ad_group_key`;
+3. changes `creative_key` to `ads_creative_key`;
+4. validates every planned row contains its configured non-empty key;
+5. locks the exact eight-table destination preflight sequence;
+6. verifies one-table-per-continuation Lark execution reuses the identical key contract.
 
 Table order, table bindings, Canonical row payloads, D1 contracts, stable-key values, phases,
 continuations, reconciliation and retry semantics remain unchanged.
-
-## Out of scope
-
-- Remote D1 mutation or manual status repair;
-- Queue send or DLQ redrive;
-- Worker deployment;
-- Lark Schema/View/Formula mutation;
-- Manager Script rerun;
-- changing Canonical row field names or stable-key values again;
-- schedule activation;
-- Production cutover;
-- deleting or closing forensic DLQ, Sync Run or Alert evidence.
 
 ## Acceptance result
 
@@ -113,34 +112,30 @@ D1 contracts              unchanged                               PASS
 Canonical row payloads    unchanged                               PASS
 stable-key values         unchanged                               PASS
 TikTok/Core regression    PASS
-Remote actions            none
+Remote actions in PR      none
 ```
 
 ## Verification result
 
 ```text
-BRANCH                   = work/google-ads-lark-keyfield-contract-hotfix
-PR                       = #63 / DRAFT
-REVIEWED_SOURCE_HEAD     = a4549d5fffa0bdcb8050f8a7db840e0fb9c18df8
-BRANCH_VERIFICATION      = PASS / RUN_510
 FOCUSED_TIKTOK_TESTS     = 4 / 4 PASS
 NODE_UNIT_INTEGRATION    = 825 / 825 PASS
 WORKERS_RUNTIME_TESTS    = 9 / 9 PASS
 REPORT_RELIABILITY       = 70 / 70 PASS
 DEPENDENCY_AUDIT         = 0 vulnerabilities
 WRANGLER_DRY_RUN         = PASS
-FILES_CHANGED            = 5 after documentation closeout
-REMOTE_ACTIONS_IN_PR     = none
+REVIEW_THREADS           = 0
+MERGE                    = PASS
 ```
 
 ## Remaining controlled rollout
 
 Before any later exact redrive:
 
-1. restore the currently deployed recovery Worker to `wrangler.sync.jsonc` safe flags;
+1. restore the currently deployed recovery Worker to `wrangler.sync.jsonc` safe flags immediately;
 2. verify all Google Ads execution and DLQ-redrive flags are false;
 3. read the newest open Google Ads terminal DLQ ID from Remote D1;
-4. review and merge PR `#63`;
+4. pull clean merged `main` containing commit `23a40b9f1c1e85838d9648a32deb2db2944b2604`;
 5. deploy the merged Sync Worker through a new bounded recovery window;
 6. redrive only the newly verified third DLQ once;
 7. verify destination preflight, D1, Lark and reconciliation;
