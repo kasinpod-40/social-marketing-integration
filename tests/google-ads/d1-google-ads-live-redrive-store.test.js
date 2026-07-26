@@ -30,6 +30,23 @@ function createFixture(options = {}) {
       expires_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
+    CREATE TABLE google_ads_delivery_runs (
+      run_id TEXT PRIMARY KEY,
+      mode TEXT NOT NULL,
+      status TEXT NOT NULL,
+      expected_chunk_count INTEGER NOT NULL,
+      received_chunk_count INTEGER NOT NULL,
+      expected_row_count INTEGER NOT NULL,
+      received_row_count INTEGER NOT NULL,
+      payload_redacted_at INTEGER
+    );
+    CREATE TABLE google_ads_delivery_chunks (
+      run_id TEXT NOT NULL,
+      chunk_index INTEGER NOT NULL,
+      payload_json TEXT,
+      redacted_at INTEGER,
+      PRIMARY KEY (run_id, chunk_index)
+    );
     CREATE TABLE google_ads_live_admissions (
       run_id TEXT PRIMARY KEY,
       operation_id TEXT NOT NULL,
@@ -41,6 +58,7 @@ function createFixture(options = {}) {
       last_error_code TEXT,
       queued_at INTEGER,
       completed_at INTEGER,
+      payload_redacted_at INTEGER,
       updated_at INTEGER NOT NULL
     );
   `);
@@ -61,10 +79,36 @@ function createFixture(options = {}) {
     NOW - 1_000,
   );
   d1.database.prepare(`
+    INSERT INTO google_ads_delivery_runs (
+      run_id, mode, status, expected_chunk_count, received_chunk_count,
+      expected_row_count, received_row_count, payload_redacted_at
+    ) VALUES (?, ?, ?, 2, ?, 2, ?, ?)
+  `).run(
+    RUN_ID,
+    options.transportMode ?? 'LIVE',
+    options.transportStatus ?? 'assembling',
+    options.receivedChunkCount ?? 2,
+    options.receivedRowCount ?? 2,
+    options.transportPayloadRedactedAt ?? null,
+  );
+  for (const chunkIndex of [0, 1]) {
+    const unavailable = options.missingChunkPayload === chunkIndex;
+    d1.database.prepare(`
+      INSERT INTO google_ads_delivery_chunks (run_id, chunk_index, payload_json, redacted_at)
+      VALUES (?, ?, ?, ?)
+    `).run(
+      RUN_ID,
+      chunkIndex,
+      unavailable ? null : JSON.stringify({ chunkIndex }),
+      unavailable ? NOW - 2_000 : null,
+    );
+  }
+  d1.database.prepare(`
     INSERT INTO google_ads_live_admissions (
       run_id, operation_id, work_key, generation, original_requested_at,
-      status, send_attempts, last_error_code, queued_at, completed_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, 1, 'SYNTHETIC_FAILURE', NULL, ?, ?)
+      status, send_attempts, last_error_code, queued_at, completed_at,
+      payload_redacted_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, 1, 'SYNTHETIC_FAILURE', NULL, ?, ?, ?)
   `).run(
     RUN_ID,
     RUN_ID,
@@ -73,6 +117,7 @@ function createFixture(options = {}) {
     GENERATION,
     options.admissionStatus ?? 'failed_retryable',
     options.admissionCompletedAt ?? null,
+    options.admissionPayloadRedactedAt ?? null,
     NOW - 1_000,
   );
   if (options.activeLock) {
@@ -124,6 +169,80 @@ test('prepare revives terminal same-generation Work and reserves one exact send'
     });
   } finally {
     fixture.d1.close();
+  }
+});
+
+test('failed-permanent terminal evidence is cleared only for guarded exact redrive', async () => {
+  const fixture = createFixture({
+    workLifecycleStatus: 'active',
+    admissionStatus: 'failed_permanent',
+    admissionCompletedAt: NOW - 2_000,
+  });
+  try {
+    const result = await fixture.store.prepare(prepareInput());
+    assert.equal(result.disposition, 'send_pending');
+    assert.equal(result.sendAttempts, 2);
+
+    const admission = fixture.d1.database.prepare(`
+      SELECT status, send_attempts, last_error_code, completed_at, payload_redacted_at
+      FROM google_ads_live_admissions WHERE run_id = ?
+    `).get(RUN_ID);
+    assert.deepEqual(admission, {
+      status: 'send_pending',
+      send_attempts: 2,
+      last_error_code: null,
+      completed_at: null,
+      payload_redacted_at: null,
+    });
+
+    const retry = await fixture.store.prepare({ ...prepareInput(), now: NOW + 1 });
+    assert.equal(retry.disposition, 'send_pending');
+    assert.equal(retry.sendAttempts, 2);
+  } finally {
+    fixture.d1.close();
+  }
+});
+
+test('redacted or incomplete staged payload fails closed without state mutation', async () => {
+  for (const options of [
+    { admissionPayloadRedactedAt: NOW - 2_000 },
+    { transportPayloadRedactedAt: NOW - 2_000 },
+    { missingChunkPayload: 1 },
+    { receivedChunkCount: 1 },
+    { receivedRowCount: 1 },
+  ]) {
+    const fixture = createFixture({
+      ...options,
+      workLifecycleStatus: 'active',
+      admissionStatus: 'failed_permanent',
+      admissionCompletedAt: NOW - 2_000,
+    });
+    try {
+      await assert.rejects(
+        () => fixture.store.prepare(prepareInput()),
+        (error) => error.code === 'GOOGLE_ADS_REDRIVE_PAYLOAD_UNAVAILABLE',
+      );
+      assert.deepEqual(
+        fixture.d1.database.prepare(`
+          SELECT status, send_attempts, last_error_code, completed_at
+          FROM google_ads_live_admissions WHERE run_id = ?
+        `).get(RUN_ID),
+        {
+          status: 'failed_permanent',
+          send_attempts: 1,
+          last_error_code: 'SYNTHETIC_FAILURE',
+          completed_at: NOW - 2_000,
+        },
+      );
+      assert.equal(
+        fixture.d1.database.prepare(
+          'SELECT lifecycle_status FROM sync_work_runs WHERE work_key = ?',
+        ).get(`google_ads:${RUN_ID}`).lifecycle_status,
+        'active',
+      );
+    } finally {
+      fixture.d1.close();
+    }
   }
 });
 

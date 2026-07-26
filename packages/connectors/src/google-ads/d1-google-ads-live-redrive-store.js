@@ -7,7 +7,8 @@ const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f
 
 /**
  * Controlled redrive bridge for one exact Google Ads Queue reference.
- * Revives only terminal same-generation Work and never touches completed/superseded Work.
+ * Revives only same-generation Work with complete unredacted staged payloads and never touches
+ * completed/superseded Work.
  */
 export class D1GoogleAdsLiveRedriveStore {
   constructor(input = {}) {
@@ -48,6 +49,7 @@ export class D1GoogleAdsLiveRedriveStore {
         details: { status: current.admissionStatus },
       });
     }
+    assertStagedPayloadAvailable(current);
 
     try {
       await this.db.batch([
@@ -83,6 +85,7 @@ export class D1GoogleAdsLiveRedriveStore {
                 ELSE send_attempts + 1
               END,
               last_error_code = NULL,
+              completed_at = NULL,
               updated_at = ?
           WHERE run_id = ?
             AND operation_id = ?
@@ -90,9 +93,10 @@ export class D1GoogleAdsLiveRedriveStore {
             AND generation = ?
             AND original_requested_at = ?
             AND status IN ('failed_retryable', 'failed_permanent', 'send_pending')
-            AND completed_at IS NULL
+            AND payload_redacted_at IS NULL
             AND EXISTS (
-              SELECT 1 FROM sync_work_runs AS work
+              SELECT 1
+              FROM sync_work_runs AS work
               WHERE work.work_key = google_ads_live_admissions.work_key
                 AND work.generation = google_ads_live_admissions.generation
                 AND work.lifecycle_status = 'active'
@@ -102,6 +106,27 @@ export class D1GoogleAdsLiveRedriveStore {
                   WHERE lock_key = work.cursor_key
                     AND expires_at > ?
                 )
+            )
+            AND EXISTS (
+              SELECT 1
+              FROM google_ads_delivery_runs AS run
+              WHERE run.run_id = google_ads_live_admissions.run_id
+                AND run.mode = 'LIVE'
+                AND run.status = 'assembling'
+                AND run.received_chunk_count = run.expected_chunk_count
+                AND run.received_row_count = run.expected_row_count
+                AND run.payload_redacted_at IS NULL
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM google_ads_delivery_chunks AS chunk
+                  WHERE chunk.run_id = run.run_id
+                    AND (chunk.payload_json IS NULL OR chunk.redacted_at IS NOT NULL)
+                )
+                AND (
+                  SELECT COUNT(*)
+                  FROM google_ads_delivery_chunks AS chunk
+                  WHERE chunk.run_id = run.run_id
+                ) = run.expected_chunk_count
             )
         `).bind(
           value.now,
@@ -128,12 +153,14 @@ export class D1GoogleAdsLiveRedriveStore {
     }
     assertIdentity(prepared, value);
     if (prepared.admissionStatus !== 'send_pending'
-      || prepared.workLifecycleStatus !== 'active') {
+      || prepared.workLifecycleStatus !== 'active'
+      || prepared.admissionCompletedAt !== null) {
       throw permanentError('Google Ads redrive state transition was rejected', {
         code: 'GOOGLE_ADS_REDRIVE_STATE_INVALID',
         details: {
           admissionStatus: prepared.admissionStatus,
           workLifecycleStatus: prepared.workLifecycleStatus,
+          admissionCompletedAt: prepared.admissionCompletedAt,
         },
       });
     }
@@ -183,14 +210,36 @@ export class D1GoogleAdsLiveRedriveStore {
           admission.status AS admission_status,
           admission.send_attempts,
           admission.completed_at AS admission_completed_at,
+          admission.payload_redacted_at AS admission_payload_redacted_at,
           work.cursor_key,
           work.work_type,
           work.generation AS work_generation,
           work.lifecycle_status AS work_lifecycle_status,
-          work.completed_at AS work_completed_at
+          work.completed_at AS work_completed_at,
+          run.mode AS transport_mode,
+          run.status AS transport_status,
+          run.expected_chunk_count,
+          run.received_chunk_count,
+          run.expected_row_count,
+          run.received_row_count,
+          run.payload_redacted_at AS transport_payload_redacted_at,
+          (
+            SELECT COUNT(*)
+            FROM google_ads_delivery_chunks AS chunk
+            WHERE chunk.run_id = run.run_id
+          ) AS staged_chunk_count,
+          (
+            SELECT COUNT(*)
+            FROM google_ads_delivery_chunks AS chunk
+            WHERE chunk.run_id = run.run_id
+              AND chunk.payload_json IS NOT NULL
+              AND chunk.redacted_at IS NULL
+          ) AS available_chunk_count
         FROM google_ads_live_admissions AS admission
         JOIN sync_work_runs AS work
           ON work.work_key = admission.work_key
+        JOIN google_ads_delivery_runs AS run
+          ON run.run_id = admission.run_id
         WHERE admission.operation_id = ?
         LIMIT 1
       `).bind(requireUuid(operationId, 'operationId')).first();
@@ -237,6 +286,34 @@ function assertIdentity(row, expected) {
   }
 }
 
+function assertStagedPayloadAvailable(row) {
+  const available = row.admissionPayloadRedactedAt === null
+    && row.transportPayloadRedactedAt === null
+    && row.transportMode === 'LIVE'
+    && row.transportStatus === 'assembling'
+    && row.expectedChunks === row.receivedChunks
+    && row.expectedRows === row.receivedRows
+    && row.stagedChunkCount === row.expectedChunks
+    && row.availableChunkCount === row.expectedChunks;
+  if (!available) {
+    throw permanentError('Google Ads staged LIVE payload is unavailable for redrive', {
+      code: 'GOOGLE_ADS_REDRIVE_PAYLOAD_UNAVAILABLE',
+      details: {
+        admissionPayloadRedacted: row.admissionPayloadRedactedAt !== null,
+        transportPayloadRedacted: row.transportPayloadRedactedAt !== null,
+        transportMode: row.transportMode,
+        transportStatus: row.transportStatus,
+        expectedChunks: row.expectedChunks,
+        receivedChunks: row.receivedChunks,
+        stagedChunkCount: row.stagedChunkCount,
+        availableChunkCount: row.availableChunkCount,
+        expectedRows: row.expectedRows,
+        receivedRows: row.receivedRows,
+      },
+    });
+  }
+}
+
 function mapRow(row) {
   return Object.freeze({
     runId: row.run_id,
@@ -247,11 +324,21 @@ function mapRow(row) {
     admissionStatus: row.admission_status,
     sendAttempts: Number(row.send_attempts),
     admissionCompletedAt: nullableTimestamp(row.admission_completed_at),
+    admissionPayloadRedactedAt: nullableTimestamp(row.admission_payload_redacted_at),
     cursorKey: row.cursor_key,
     workType: row.work_type,
     workGeneration: Number(row.work_generation),
     workLifecycleStatus: row.work_lifecycle_status,
     workCompletedAt: nullableTimestamp(row.work_completed_at),
+    transportMode: row.transport_mode,
+    transportStatus: row.transport_status,
+    expectedChunks: Number(row.expected_chunk_count),
+    receivedChunks: Number(row.received_chunk_count),
+    expectedRows: Number(row.expected_row_count),
+    receivedRows: Number(row.received_row_count),
+    transportPayloadRedactedAt: nullableTimestamp(row.transport_payload_redacted_at),
+    stagedChunkCount: Number(row.staged_chunk_count),
+    availableChunkCount: Number(row.available_chunk_count),
   });
 }
 

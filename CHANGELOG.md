@@ -1,5 +1,39 @@
 # Changelog
 
+## Unreleased — Google Ads LIVE Lark Date and Failed-Permanent Redrive Hotfix — 2026-07-26
+
+### Runtime incident
+
+- Recorded the first guarded Manager Script LIVE run
+  `88351cb4-714d-49ef-91db-d95550a93ebf` with all six datasets, seven chunks and
+  1,375 rows received.
+- Confirmed processing failed permanently during Lark destination preflight before
+  any D1 Ads fact or Lark business write.
+- Identified the exact mismatch: source `metricDate` was forwarded as `YYYY-MM-DD`
+  into Lark DateTime fields that require an epoch value or ISO-8601 instant with an
+  explicit timezone.
+
+### Source correction
+
+- Convert Google Ads Lark daily `metric_date` values to epoch milliseconds at local
+  midnight in the signed source timezone.
+- Preserve D1 `metric_date`, Shared RAW/Canonical stable keys, Coverage identities
+  and source payload JSON as the original date-only value.
+- Add guarded `failed_permanent` exact-redrive support that clears terminal admission
+  `completed_at` only when the same-generation staged LIVE payload is complete and
+  unredacted.
+- Continue to fail closed for completed/superseded Work, active locks, identity drift,
+  redacted payloads, missing chunks and incomplete run counts.
+
+### Safety and rollout
+
+- Retain the original DLQ reference and staged transport payload for exact recovery;
+  no new Manager Script LIVE run is required.
+- Keep Script delivery, API/Sync Google Ads flags and schedules disabled throughout
+  implementation.
+- No Remote D1 mutation, Queue send, Lark write, Worker deployment or Production
+  action is part of this branch.
+
 ## Unreleased — Google Ads Manager Script LIVE Gate Hotfix — 2026-07-26
 
 ### Architecture correction

@@ -68,33 +68,68 @@ The Queue operation remains reference-only:
 }
 ```
 
-No token, signature, nonce, customer ID or source row enters the Queue body. The existing
-D1-first Ads/Coverage writes, Lark destination preflight, stable keys, generation fence,
-renewable lock, resumable phases, reconciliation, exact rerun and staged-payload redaction
-remain authoritative.
+No token, signature, nonce, customer ID or source row enters the Queue body. D1-first
+Ads/Coverage writes, Lark destination preflight, stable keys, generation fence, renewable lock,
+resumable phases, reconciliation, exact rerun and staged-payload redaction remain authoritative.
 
-## Current rollout state
+## First guarded LIVE incident
+
+The first guarded manual LIVE delivery reached signed transport and Queue processing with all
+expected data:
 
 ```text
-Manager Script PREVIEW       PASS / 6 datasets / 7 chunks / 1,375 rows
-Customer OAuth               COMPLETE
-Encrypted refresh token      ACTIVE
-Direct API access            PENDING / NON-BLOCKING
-LIVE gate hotfix             MERGED_PR_59
-Hotfix merge commit          82767ffe80e417901e9b0a9f1f767ecefedb8c82
-Final Branch Verification    PASS_RUN_490
-Remote preflight             NOT RUN / OPERATOR ENV NOT CONNECTED
-Migration 0015               NOT RUN
-Workers deployment           NOT RUN
-LIVE Queue/D1/Lark            NOT RUN
-Schedule                     DISABLED
-Production                   BLOCKED
+run_id                     88351cb4-714d-49ef-91db-d95550a93ebf
+chunks                     7 / 7
+rows                       1,375 / 1,375
+transport_status           assembling
+admission_status           failed_permanent
+work_lifecycle_status      active
+error_code                 LARK_PREFLIGHT_FAILED
+D1 Ads business rows       0
+Lark business writes       0
 ```
 
-The user has authorized one manual Integration Workspace LIVE UAT through Queue, D1 and Lark
-plus exact rerun verification. Remote execution must still begin from a clean merged `main`
-checkout in the protected operator environment with reviewed ignored Wrangler configs,
-authenticated Cloudflare/Wrangler identity and an ignored evidence directory.
+The failure happened in destination preflight because `metric_date` was passed to a Lark DateTime
+field as `YYYY-MM-DD`. The shared DateTime serializer correctly failed closed before any D1 or Lark
+business write.
+
+A second defect prevented exact recovery: permanent failure records terminal `completed_at`
+evidence, while the redrive SQL declared `failed_permanent` eligible but required
+`completed_at IS NULL`.
+
+## Active hotfix contract
+
+Branch:
+
+```text
+work/google-ads-live-lark-date-redrive-hotfix
+```
+
+The hotfix must:
+
+1. resolve source date-only `metricDate` to local midnight in the signed `sourceTimezone` for Lark
+   DateTime fields only;
+2. preserve D1 date-only facts, stable keys, Coverage identities and source payload JSON;
+3. allow exact same-generation redrive from `failed_permanent` by clearing admission terminal
+   `completed_at` only after confirming complete unredacted staged payloads;
+4. continue to reject completed/superseded Work, identity drift, active locks, redacted payloads and
+   incomplete staged runs;
+5. reuse the retained DLQ reference and never require a new Manager Script LIVE run.
+
+## Runtime hold state
+
+```text
+Manager Script              DRY_RUN / delivery=false
+API Google Ads flags        false
+Sync Google Ads flags       false
+Google Ads schedules        false
+Incident DLQ                open / retained
+Exact redrive               blocked pending hotfix review and merge
+Production                  blocked
+```
+
+No Remote D1 mutation, Queue send, Lark write, Worker deployment, schedule or Production action is
+part of the source implementation branch.
 
 ## Permanent boundary
 
@@ -102,5 +137,8 @@ authenticated Cloudflare/Wrangler identity and an ignored evidence directory.
 - Do not mark API access validated when it is pending.
 - Do not bypass consent, scope, active credential, Manager/advertiser identity or signed-source
   checks.
+- Do not alter Lark DateTime fields to Text to accommodate connector output.
+- Do not rewrite D1 date-only facts or stable keys with epoch values.
+- Do not rerun Google Ads Manager Script to recover the retained staged incident.
 - Do not enable the Google Ads schedule during manual UAT.
 - Do not cut over Production without a separate customer-owned Production task.

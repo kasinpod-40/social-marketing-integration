@@ -1,219 +1,210 @@
-# Current Task — Google Ads Manager Script LIVE to Lark
+# Current Task — Google Ads LIVE Lark Date Serialization and Failed-Permanent Redrive Hotfix
 
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = HOTFIX_MERGED_REMOTE_ROLLOUT_READY_OPERATOR_ENV_REQUIRED
+TASK_STATUS                         = IMPLEMENTED_PR_61_READY_FOR_REVIEW
 CURRENT_PROGRAM                     = GOOGLE_ADS_MANAGER_SCRIPT_SIGNED_DELIVERY_TO_LARK
-USER_AUTHORIZATION                  = COMPLETE_THROUGH_MANUAL_LIVE_D1_LARK_UAT_2026_07_26
-DELIVERY_SOURCE                     = GOOGLE_ADS_MANAGER_SCRIPT
-DIRECT_GOOGLE_ADS_API               = OPTIONAL_FUTURE_PATH
-GOOGLE_ADS_API_ACCESS               = PENDING_NON_BLOCKING
-CUSTOMER_OAUTH                      = COMPLETED
-CUSTOMER_CONNECTION                 = CONNECTED_ENCRYPTED_REFRESH_TOKEN_ACTIVE
-SCRIPT_GATE_HOTFIX                  = MERGED_PR_59
-MERGE_COMMIT                        = 82767ffe80e417901e9b0a9f1f767ecefedb8c82
-REVIEWED_SOURCE_HEAD                = 84cd1a34c23282000ed43b8e0a378069fdfbbdd8
-BRANCH_VERIFICATION                 = PASS_RUN_490
-REPOSITORY_REVIEW                   = PASS
-REMOTE_OPERATOR_PREFLIGHT           = BLOCKED_OPERATOR_ENV_NOT_CONNECTED
-REMOTE_D1_BACKUP                    = NOT_RUN
-REMOTE_D1_MIGRATION_0015            = NOT_RUN
-API_WORKER_DEPLOYMENT               = NOT_RUN
-SYNC_WORKER_DEPLOYMENT              = NOT_RUN
-SIGNED_LIVE                         = NOT_RUN
-QUEUE_BUSINESS_PROCESSING           = NOT_RUN
-D1_ADS_BUSINESS_WRITES              = NOT_RUN
-LARK_RAW_WRITES                     = NOT_RUN
-LARK_CANONICAL_WRITES               = NOT_RUN
-EXACT_RERUN                         = NOT_RUN
+INCIDENT_DATE                       = 2026-07-26
+INCIDENT_RUN_ID                     = 88351cb4-714d-49ef-91db-d95550a93ebf
+INCIDENT_DLQ_ID                     = terminal:a6ed54413000c25efd73ce7888cc2d10
+INCIDENT_ERROR_CODE                 = LARK_PREFLIGHT_FAILED
+TRANSPORT_CHUNKS                    = 7 / 7
+TRANSPORT_ROWS                      = 1375 / 1375
+D1_ADS_BUSINESS_ROWS                = 0
+LARK_BUSINESS_WRITES                = 0
+SCRIPT_MODE                         = DRY_RUN
+SCRIPT_DELIVERY_ENABLED             = false
+API_GOOGLE_ADS_FLAGS                = false
+SYNC_GOOGLE_ADS_FLAGS               = false
 SCHEDULE                            = DISABLED
 PRODUCTION                          = BLOCKED
 ```
 
-## Authoritative delivery decision
+## Incident evidence
 
-The primary Google Ads ingestion path is:
-
-```text
-Google Ads
-→ Manager Script
-→ signed HMAC delivery
-→ reference-only Queue operation
-→ durable D1 Ads facts and Coverage
-→ Shared RAW Ads tables in Lark
-→ Canonical Ads tables in Lark
-```
-
-Google Ads API Developer Token approval is not a prerequisite. The completed OAuth connection
-continues to provide customer consent and encrypted credential evidence, while direct API
-access remains an optional future path. `google_ads_api_access_pending` must not block Manager
-Script delivery.
-
-Related Project Brain authority:
+The first guarded external Google Ads Manager Script LIVE delivery completed signed transport and
+reference-only Queue admission for all six datasets, seven chunks and 1,375 rows. Processing then
+failed permanently during Lark destination preflight before any D1 Ads fact or Lark business write.
 
 ```text
-docs/project-brain/google-ads-manager-script-live-path.md
+run_id               = 88351cb4-714d-49ef-91db-d95550a93ebf
+work_key              = google_ads:88351cb4-714d-49ef-91db-d95550a93ebf
+generation            = 1785048890422
+admission_status      = failed_permanent
+work_lifecycle_status = active
+last_error_code       = LARK_PREFLIGHT_FAILED
+failed_table          = RAW_Ads_Daily
+failed_field          = metric_date
+failed_value_shape    = YYYY-MM-DD
 ```
 
-## Root cause and merged correction
-
-PR `#57` implemented the durable LIVE, Queue, D1 and Lark path but incorrectly coupled Manager
-Script LIVE admission to direct Google Ads API validation. The customer had completed OAuth and
-Manager Script PREVIEW had already proved six datasets, seven chunks and 1,375 rows, but
-`google_ads_api_access_pending` prevented LIVE admission.
-
-PR `#59` corrected the gate and was Squash Merged into `main` at:
+Sanitized runtime evidence:
 
 ```text
-82767ffe80e417901e9b0a9f1f767ecefedb8c82
+Lark preflight failed: raw_ads_daily_key=google_ads:5662332033:campaign:23664394265:2026-06-26:all:all,
+field=metric_date: Lark field metric_date must be a valid ISO-8601 date-time with an explicit timezone
 ```
 
-The merged correction:
+The incident is non-partial: destination preflight runs before D1 and Lark business phases, and the
+verified business row counts remain zero.
 
-1. accepts `validated` or `google_ads_api_access_pending` for the Manager Script path;
-2. still requires `connected`, the exact `adwords` scope and an active encrypted
-   refresh-token reference;
-3. requires exact approved Manager `9463570541` and advertiser `5662332033` mappings;
-4. preserves signed runtime identity, HMAC, key ID, timestamp, nonce/replay, manifest,
-   dataset count and payload limits;
-5. checks API-derived currency/timezone metadata when present, without requiring it while
-   direct API access is pending;
-6. treats API status as informational in the operator connection gate;
-7. executes the D1 read query and operator SQL through the SQLite/D1 test adapter;
-8. leaves Queue contract, D1/Lark writers, migrations, stable keys, generation fences,
-   renewable locks, resumable checkpoints, reconciliation and redaction unchanged.
+## Root causes
 
-## Verification result
+### 1. Lark DateTime serialization mismatch
 
-Final Branch Verification run `#490` passed on reviewed source head:
+`buildGoogleAdsLarkWriteSet()` forwarded Google Ads `metricDate` as the source date-only string
+`YYYY-MM-DD` into both Shared RAW and Canonical Lark daily rows. The live Lark fields are DateTime
+fields and the shared serializer intentionally accepts only epoch values or ISO-8601 instants with
+an explicit timezone.
 
-```text
-84cd1a34c23282000ed43b8e0a378069fdfbbdd8
-```
+The D1 daily-fact contract and every stable key correctly use the date-only source value and remain
+unchanged.
 
-Passed stages:
+### 2. Failed-permanent exact redrive state mismatch
 
-- locked dependency installation;
-- syntax, architecture and repository hygiene;
-- focused TikTok regression;
-- Node Unit/Integration and Workers runtime tests;
-- report reliability regression;
-- high-severity dependency audit;
-- Wrangler deployment dry-run;
-- diagnostics upload.
+`D1GoogleAdsLiveAdmissionStore.markFailed()` stores `completed_at` for `failed_permanent` as terminal
+failure evidence. `D1GoogleAdsLiveRedriveStore.prepare()` declared `failed_permanent` eligible but its
+SQL required admission `completed_at IS NULL`, so the exact incident could not be revived through the
+reviewed same-generation redrive path.
 
-Focused Manager Script coverage passed:
+## Objective
 
-```text
-PASS  connected + google_ads_api_access_pending + exact scope/token/manager/advertiser
-PASS  connected + validated + exact scope/token/manager/advertiser
-FAIL  missing connection or unsupported state
-FAIL  missing adwords scope
-FAIL  inactive/replaced encrypted credential
-FAIL  approved advertiser mismatch
-FAIL  manager mismatch
-FAIL  optional API metadata conflict
-PASS  LIVE HTTP queues one reference from API-pending Script consent
-PASS  exact retry does not enqueue a second operation
-PASS  operator SQL accepts pending or validated API state
-PASS  operator SQL executes through SQLite/D1 adapter
-FAIL  operator gate when a required Script consent field mismatches
-```
+Repair the two source defects so the exact staged LIVE run can later be redriven from its retained
+DLQ reference without running Google Ads Manager Script again, while preserving source dates,
+stable keys, same-generation identity, payload retention guards and all completed/superseded safety
+fences.
 
-No Remote D1, Cloudflare, Queue, Lark, schedule or Production action occurred during the hotfix.
-No existing business fact was changed.
+## Implemented scope
 
-## Approved remaining work
-
-The user has authorized one guarded Integration Workspace rollout through manual LIVE, Lark
-visibility and exact rerun:
-
-1. guarded read-only preflight;
-2. Remote D1 backup and SHA-256 evidence;
-3. additive Migration `0015`;
-4. flags-false API and Sync Worker deployment;
-5. disabled-route and schema verification;
-6. read-only Manager Script Customer Connection gate;
-7. enable only required manual flags while schedule remains false;
-8. run the reviewed Manager Script once in LIVE mode;
-9. verify Queue and durable Work completion;
-10. verify D1 Ads facts and six Coverage records;
-11. verify Shared RAW and Canonical Lark writes;
-12. reconcile all six datasets;
-13. perform one exact rerun with zero durable business-fact drift;
-14. restore manual execution flags to false and retain sanitized evidence.
-
-Expected Lark destinations:
-
-```text
-RAW_Ads_Entities
-RAW_Ads_Daily
-MKT_Ads_Accounts
-MKT_Ads_Campaigns
-MKT_Ads_AdGroups
-MKT_Ads_Ads
-MKT_Ads_Creatives
-MKT_Ads_Daily
-```
-
-## Runtime safety contract
-
-LIVE still requires:
-
-```text
-connected customer consent
-+ exact adwords scope
-+ active encrypted refresh-token reference
-+ exact approved manager and advertiser mapping
-+ signed runtime identity
-+ valid HMAC key ID/signature
-+ bounded timestamp
-+ reserved non-replayed nonce
-+ complete six-dataset manifest
-+ all manual LIVE/Queue/D1/Lark flags explicitly enabled
-+ schedule disabled
-```
-
-The Queue body remains reference-only and contains no token, signature, source row or customer
-identity. D1-first and Lark phases retain stable keys, generation fences, renewable locks,
-resumable checkpoints, reconciliation and staged-payload redaction.
+1. Convert Google Ads date-only `metricDate` to epoch milliseconds at local midnight in
+   `run.sourceTimezone` for Lark DateTime fields only.
+2. Apply the conversion to:
+   - `raw.daily[].metric_date`;
+   - `canonical.daily[].metric_date`.
+3. Preserve date-only values in:
+   - D1 `ads_daily_facts.metric_date`;
+   - RAW and Canonical stable keys;
+   - Coverage identities and report period bounds;
+   - source payload JSON.
+4. Permit controlled exact redrive from `failed_permanent` when:
+   - admission and Work identities match exactly;
+   - Work is same-generation `terminal` or `active` and not completed/superseded;
+   - no active lock exists;
+   - staged transport run and chunk payloads remain available and unredacted.
+5. On successful redrive preparation:
+   - revive Work to `active`;
+   - move admission to `send_pending`;
+   - clear terminal admission `completed_at` and `last_error_code`;
+   - increment `send_attempts` once only;
+   - retain exact original Queue reference and generation.
+6. Add focused tests for date serialization, failed-permanent redrive with non-null
+   `completed_at`, idempotent prepare and fail-closed payload availability.
+7. Update Current Task, Project Brain module and CHANGELOG with sanitized implementation evidence.
 
 ## Out of scope
 
-- Direct Google Ads API as the primary ingestion source;
-- schedule activation;
-- Production cutover;
-- DLQ redrive unless the UAT creates a specifically reviewed retryable incident;
+- Remote D1 mutation, manual SQL repair or staged-payload edits;
+- Queue send, DLQ redrive or any real Worker invocation;
+- Lark Schema/View/Formula changes or changing DateTime fields to Text;
+- Google Ads Manager Script rerun;
 - Google Ads campaign, ad, bid, budget or spend mutation;
-- deleting or rewriting existing D1/Lark business facts;
-- reopening completed Lark Schema/View/Formula work.
+- schedule activation;
+- Production deployment or cutover;
+- deleting or closing forensic DLQ/alert evidence.
 
-## Exact remote resume boundary
+## Contracts
 
-Remote execution must begin only from the clean merged `main` checkout in the protected
-operator environment containing reviewed ignored Wrangler configs, authenticated
-Cloudflare/Wrangler identity and a writable ignored evidence directory. The current chat
-session does not have those resources and must not guess config paths or request/expose
-Secrets.
+### Lark metric date
+
+For each source `metricDate=YYYY-MM-DD`:
 
 ```text
-1. guarded read-only preflight
-2. preserve evidence
-3. Remote D1 backup + SHA-256
-4. apply Migration 0015 only after backup validation
-5. deploy API and Sync Workers with all Google Ads flags false
-6. verify disabled routes and schema
-7. run read-only Manager Script authorization gate
-8. enable manual UAT flags, schedule remaining false
-9. run one Manager Script LIVE delivery
-10. verify Queue → D1 → Lark and six-dataset reconciliation
-11. exact rerun with zero durable count drift
-12. restore manual execution flags false and preserve sanitized evidence
+lark_metric_date = local midnight of YYYY-MM-DD in run.sourceTimezone, expressed as epoch ms
 ```
 
-Runbook:
+Example:
 
 ```text
-docs/rollouts/google-ads-end-to-end-lark-ready-before-oauth.md
+source date       = 2026-07-24
+source timezone   = Asia/Bangkok
+Lark epoch ms     = 1784826000000
+UTC instant       = 2026-07-23T17:00:00.000Z
+```
+
+Stable keys continue to contain `2026-07-24`, not the epoch value.
+
+### Failed-permanent redrive
+
+The redrive store fails closed when any of these is true:
+
+- admission or Work is completed;
+- Work is superseded;
+- generation/work identity drifts;
+- active lock exists;
+- admission payload has been redacted;
+- transport run payload has been redacted;
+- any staged chunk payload is unavailable;
+- staged run is incomplete.
+
+No generic reopening of arbitrary terminal jobs is authorized.
+
+## Acceptance result
+
+- Shared RAW and Canonical Lark daily rows contain identical epoch-millisecond `metric_date` values
+  resolved from the signed source timezone: PASS.
+- D1 daily facts and all stable keys retain the original date-only value: PASS.
+- Fixture `2026-07-24` / `Asia/Bangkok` resolves to `1784826000000`: PASS.
+- `failed_permanent` with non-null admission `completed_at` becomes `send_pending`, clears
+  `completed_at`, clears `last_error_code` and increments attempts exactly once: PASS.
+- Repeated prepare before Queue mark remains idempotent: PASS.
+- Redacted or unavailable staged payload fails closed without state mutation: PASS.
+- Completed, superseded, active-lock and identity-drift guards continue to pass: PASS.
+- No Remote D1, Cloudflare, Queue, Lark, schedule or Production action occurred: PASS.
+
+## Implementation result
+
+```text
+STATUS                   = READY_FOR_REPOSITORY_REVIEW
+BRANCH                   = work/google-ads-live-lark-date-redrive-hotfix
+PR                       = #61 / READY_FOR_REVIEW
+REVIEWED_SOURCE_HEAD     = ca07b6033e4d306258702227154405298dddcc90
+DOCUMENTATION_HEAD       = 70dcd332e4ecbf6aada5f71dd6d30dd93b08850c
+BRANCH_VERIFICATION      = PASS / RUN_492 + RUN_493
+FILES_CHANGED            = 7
+FOCUSED_TIKTOK_TESTS     = 4 / 4 PASS
+NODE_UNIT_INTEGRATION    = 822 / 822 PASS
+WORKERS_RUNTIME_TESTS    = 9 / 9 PASS
+REPORT_RELIABILITY       = 70 / 70 PASS
+DEPENDENCY_AUDIT         = 0 vulnerabilities
+WRANGLER_DRY_RUN         = PASS
+REMOTE_ACTIONS           = none
+REMAINING_RISK           = exact staged incident redrive blocked until review, merge and guarded rollout
+```
+
+Changed files:
+
+```text
+CHANGELOG.md
+docs/current-task.md
+docs/project-brain/google-ads-manager-script-live-path.md
+packages/application/src/google-ads/google-ads-live-run.js
+packages/connectors/src/google-ads/d1-google-ads-live-redrive-store.js
+tests/application/google-ads-live-run.test.js
+tests/google-ads/d1-google-ads-live-redrive-store.test.js
+```
+
+## Runtime hold boundary
+
+Until this hotfix is reviewed, merged and deployed through a separately guarded operator step:
+
+```text
+Google Ads Script          DRY_RUN / delivery=false
+API Google Ads flags       false
+Sync Google Ads flags      false
+Google Ads schedules       false
+Incident DLQ               open / retained
+Staged transport payload   retained / do not edit or delete
+Exact redrive              prohibited
+Production                 blocked
 ```
