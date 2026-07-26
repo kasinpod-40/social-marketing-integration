@@ -78,11 +78,21 @@ export class D1TikTokOrganicReportSource {
         LIMIT 1
       `, [customerKey, PLATFORM, accountKey, DATASET_KEY], 'D1_TIKTOK_REPORT_COVERAGE_READ_FAILED'),
     ]);
+    const coverageEntities = coverage
+      ? await this.#all(`
+        SELECT external_entity_id, observation_status, source_revision, observed_at
+        FROM data_coverage_entities
+        WHERE coverage_run_id = ? AND entity_type = 'content'
+        ORDER BY external_entity_id ASC
+        LIMIT ?
+      `, [coverage.coverage_run_id, maxContentRecords + 1], 'D1_TIKTOK_REPORT_COVERAGE_READ_FAILED')
+      : [];
 
     assertWithinLimit(states.length, maxContentRecords, 'content state rows');
     assertWithinLimit(currentRows.length, maxContentRecords, 'current observation rows');
     assertWithinLimit(compareRows.length, maxContentRecords, 'comparison observation rows');
     assertWithinLimit(baselineRows.length, maxContentRecords, 'baseline observation rows');
+    assertWithinLimit(coverageEntities.length, maxContentRecords, 'coverage entity rows');
 
     const stateByKey = new Map(states.map((row) => [row.content_key, row]));
     const contents = currentRows.map((row) => buildContent(
@@ -100,6 +110,14 @@ export class D1TikTokOrganicReportSource {
       || left.metricDate.localeCompare(right.metricDate)
       || String(left.recordId).localeCompare(String(right.recordId))
     ));
+    const coverageById = new Map(coverageEntities.map((row) => [
+      String(row.external_entity_id),
+      row.observation_status,
+    ]));
+    const uncoveredContentIds = contents
+      .map((content) => content.externalContentId)
+      .filter((externalContentId) => coverageById.get(externalContentId) !== 'observed')
+      .sort();
 
     return Object.freeze({
       contents: Object.freeze(contents),
@@ -112,10 +130,12 @@ export class D1TikTokOrganicReportSource {
         externalContentIds: contents.length,
         contentQueries: 1,
         dailyQueries: compareEnd ? 3 : 2,
+        coverageQueries: coverage ? 2 : 1,
         rowsFetched: states.length
           + currentRows.length
           + compareRows.length
           + baselineRows.length
+          + coverageEntities.length
           + (coverage ? 1 : 0),
         fallbackRowsScanned: 0,
         coverageStatus: coverage?.status ?? 'not_observed',
@@ -123,6 +143,9 @@ export class D1TikTokOrganicReportSource {
         expectedEntities: nullableInteger(coverage?.expected_entities),
         observedEntities: nullableInteger(coverage?.observed_entities),
         failedRows: nullableInteger(coverage?.failed_rows) ?? 0,
+        coverageEntities: coverageEntities.length,
+        uncoveredContentCount: uncoveredContentIds.length,
+        uncoveredContentIds: Object.freeze(uncoveredContentIds.slice(0, 100)),
         sourceWatermark: coverage?.source_watermark ?? null,
         coverageCompletedAt: nullableInteger(coverage?.completed_at),
       }),
