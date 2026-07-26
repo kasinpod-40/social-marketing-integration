@@ -1,0 +1,142 @@
+name: TikTok Post-Lark Read-Only Preflight PR
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/tiktok-post-lark-readonly-preflight*.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tiktok-post-lark-readonly-preflight-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      WORKER_ORIGIN: https://social-mkt-sync-worker.kasinpod40.workers.dev
+      SYNC_WORKER_NAME: social-mkt-sync-worker
+      D1_DATABASE_NAME: social-mkt-state-dev
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Verify merged baseline and repository gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD ad6614dd8ee0cb2a1dda5cdbe7035f44b40581d4)" = "ad6614dd8ee0cb2a1dda5cdbe7035f44b40581d4"
+          npm run check
+          node --test tests/application/tiktok-staged-business-sync.test.js
+          npm run deploy:dry-run
+
+      - name: Verify deployed audit route remains safe-closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          status="$(curl --silent --show-error --output /tmp/audit-response.json --write-out '%{http_code}' \
+            "$WORKER_ORIGIN/operator/tiktok/post-lark-audit")"
+          printf '%s\n' "$status" > audit-http-status.txt
+          test "$status" = "404"
+          echo "PASS: deployed audit route is safe-closed (404)."
+
+      - name: Detect Cloudflare runtime access
+        id: cloudflare
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${CLOUDFLARE_API_TOKEN:-}" ] && [ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "PASS: Cloudflare repository secrets are available."
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "BLOCKED: Cloudflare repository secrets are not configured."
+          fi
+
+      - name: Read Remote D1 migration and bounded operational state
+        if: steps.cloudflare.outputs.available == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler whoami >/tmp/wrangler-whoami.txt
+          npx wrangler d1 list --json > /tmp/d1-list.json
+          database_id="$(node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const rows = JSON.parse(readFileSync('/tmp/d1-list.json', 'utf8'));
+          const row = rows.find((item) => item.name === process.env.D1_DATABASE_NAME);
+          if (!row?.uuid && !row?.id) process.exit(2);
+          process.stdout.write(row.uuid ?? row.id);
+          NODE
+          )"
+          cat > /tmp/wrangler-tiktok-preflight.jsonc <<EOF
+          {
+            "name": "$SYNC_WORKER_NAME",
+            "compatibility_date": "2026-07-15",
+            "d1_databases": [{
+              "binding": "MKT_STATE_DB",
+              "database_name": "$D1_DATABASE_NAME",
+              "database_id": "$database_id",
+              "migrations_dir": "./migrations"
+            }]
+          }
+          EOF
+          npx wrangler d1 migrations list "$D1_DATABASE_NAME" \
+            --remote --config /tmp/wrangler-tiktok-preflight.jsonc \
+            > migration-list.txt
+          npx wrangler d1 execute "$D1_DATABASE_NAME" \
+            --remote --config /tmp/wrangler-tiktok-preflight.jsonc \
+            --command "SELECT
+              (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='tiktok_source_admissions') AS migration_0016_table_present,
+              (SELECT COUNT(*) FROM sync_work_runs WHERE lifecycle_status='active') AS active_work,
+              (SELECT COUNT(*) FROM sync_locks WHERE expires_at > unixepoch('now') * 1000) AS active_locks,
+              (SELECT COUNT(*) FROM dead_letter_jobs WHERE status='open') AS open_dlq,
+              (SELECT COUNT(*) FROM system_alerts WHERE status='open') AS open_alerts,
+              (SELECT COUNT(*) FROM organic_content_state) AS organic_content_state,
+              (SELECT COUNT(*) FROM organic_content_observations) AS organic_content_observations,
+              (SELECT COUNT(*) FROM data_coverage_entities) AS coverage_entities;" \
+            > remote-d1-state.txt
+          echo "PASS: Remote D1 migration list and bounded operational state were read."
+
+      - name: Write summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## TikTok Post-Lark Read-Only Preflight'
+            echo
+            echo '- Repository baseline: `ad6614dd8ee0cb2a1dda5cdbe7035f44b40581d4`'
+            echo "- Cloudflare runtime access: \`${{ steps.cloudflare.outputs.available || 'unknown' }}\`"
+            if [ -f audit-http-status.txt ]; then
+              echo "- Audit route HTTP status: \`$(cat audit-http-status.txt)\`"
+            fi
+            echo '- Mutation paths in this workflow: none.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload sanitized evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tiktok-post-lark-readonly-preflight-pr
+          path: |
+            audit-http-status.txt
+            migration-list.txt
+            remote-d1-state.txt
+          if-no-files-found: ignore
+          retention-days: 7
