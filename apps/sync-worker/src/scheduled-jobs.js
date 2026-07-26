@@ -39,12 +39,24 @@ export function buildScheduledJobs(input = {}) {
   const youtubeEnabled = includeYouTubeJobs
     ? readBoolean(env.MKT_SCHEDULE_YOUTUBE_ENABLED, false)
     : false;
+  const postProcessReportEnabled = includePrimaryJobs
+    ? readBoolean(env.MKT_TIKTOK_POST_PROCESS_REPORT_ENABLED, false)
+    : false;
   if (tiktokEnabled && !readBoolean(env.MKT_TIKTOK_WATERMARK_ADMISSION_ENABLED, false)) {
     throw permanentError(
       'TikTok schedule requires watermark admission instead of blind Business sync',
       {
         code: 'MKT_SCHEDULE_CONFIG_INVALID',
         details: { fieldName: 'MKT_TIKTOK_WATERMARK_ADMISSION_ENABLED' },
+      },
+    );
+  }
+  if (dailyEnabled && postProcessReportEnabled) {
+    throw permanentError(
+      'Scheduled Daily report cannot run alongside post-processing report admission',
+      {
+        code: 'MKT_SCHEDULE_CONFIG_INVALID',
+        details: { fieldName: 'MKT_SCHEDULE_DAILY_REPORT_ENABLED' },
       },
     );
   }
