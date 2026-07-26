@@ -312,8 +312,14 @@ function buildAccountSnapshot(row, accountKey) {
 function deriveDataStatus(coverage, uncoveredContentCount) {
   if (!coverage) return 'not_observed';
   if (coverage.status === 'source_unavailable') return 'source_unavailable';
+  const expectedEntities = Number(coverage.expected_entities ?? 0);
+  const observedEntities = Number(coverage.observed_entities ?? 0);
+  const expectedRows = Number(coverage.expected_rows ?? 0);
+  const observedRows = Number(coverage.observed_rows ?? 0);
   if (coverage.status !== 'complete'
     || Number(coverage.failed_rows ?? 0) > 0
+    || expectedEntities !== observedEntities
+    || expectedRows !== observedRows
     || uncoveredContentCount > 0) return 'partial';
   return 'complete';
 }
