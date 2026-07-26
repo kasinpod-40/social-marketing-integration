@@ -113,6 +113,10 @@ export async function probeTikTokNativeSourceWatermark(input = {}) {
     sourceHandle: expectedSourceHandle,
     pagesProcessed,
     bounded: true,
+    // External IDs are approved non-secret business keys; RAW payload/caption is never exposed.
+    externalContentIds: Object.freeze(
+      watermark.recordStates.map((state) => state.externalContentId).sort(),
+    ),
   });
 }
 
