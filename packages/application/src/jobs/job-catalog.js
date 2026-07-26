@@ -3,6 +3,7 @@ import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 
 /** Job type กลางของ Queue ห้ามกระจาย String literal ซ้ำใน Worker/Producer/Test */
 export const JOB_TYPES = Object.freeze({
+  TIKTOK_CREATOR_NATIVE_PROBE: 'tiktok.creator.native.probe',
   TIKTOK_CREATOR_NATIVE_SYNC: 'tiktok.creator.native.sync',
   TIKTOK_CREATOR_NATIVE_VALIDATE: 'tiktok.creator.native.validate',
   TIKTOK_CREATOR_NATIVE_HISTORY_BOOTSTRAP: 'tiktok.creator.native.history.bootstrap',
@@ -32,6 +33,11 @@ export const JOB_IMPLEMENTATION_STATUS = Object.freeze({
 });
 
 const JOB_CATALOG = Object.freeze({
+  [JOB_TYPES.TIKTOK_CREATOR_NATIVE_PROBE]: freezeJob({
+    type: JOB_TYPES.TIKTOK_CREATOR_NATIVE_PROBE,
+    implementationStatus: JOB_IMPLEMENTATION_STATUS.ACTIVE,
+    connectorKey: CONNECTOR_KEYS.TIKTOK,
+  }),
   [JOB_TYPES.TIKTOK_CREATOR_NATIVE_SYNC]: freezeJob({
     type: JOB_TYPES.TIKTOK_CREATOR_NATIVE_SYNC,
     implementationStatus: JOB_IMPLEMENTATION_STATUS.ACTIVE,
@@ -174,7 +180,7 @@ function requireJobType(value) {
   return value.trim();
 }
 
-/** Freeze Job definition เพื่อป้องกัน Test หรือ Runtime แก้ Routing กลาง */
+/** Freeze Job definition เพื่อป้องกัน Test หรือ Runtime แก้ Registry กลาง */
 function freezeJob(definition) {
   return Object.freeze({ ...definition });
 }

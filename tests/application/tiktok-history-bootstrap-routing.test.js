@@ -29,6 +29,7 @@ test('history bootstrap and recovery are active manual-only and never emitted by
 
   const environments = [{}, {
     MKT_SCHEDULE_TIKTOK_ENABLED: 'true',
+    MKT_TIKTOK_WATERMARK_ADMISSION_ENABLED: 'true',
     MKT_SCHEDULE_DAILY_REPORT_ENABLED: 'true',
     MKT_DAILY_REPORT_TIME: '08:10',
     MKT_DAILY_REPORT_SETTING_KEY: 'setting:daily',

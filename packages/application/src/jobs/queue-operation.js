@@ -7,6 +7,14 @@ const STABLE_OPERATION_CONTRACTS = new Map([
   [JOB_TYPES.GOOGLE_ADS_MANAGER_SIGNED_DELIVERY_PROCESS, Object.freeze({ prefix: 'google_ads' })],
 ]);
 
+function resolveStableOperationContract(type, body) {
+  if (type === JOB_TYPES.TIKTOK_CREATOR_NATIVE_SYNC
+    && body?.trigger === 'post_lark_watermark') {
+    return Object.freeze({ prefix: 'tiktok' });
+  }
+  return STABLE_OPERATION_CONTRACTS.get(type) ?? null;
+}
+
 /**
  * Resolve durable Queue identity independently from Cloudflare delivery message.id.
  * Every stable-operation job fails closed unless operationId/workKey/generation/requestedAt agree.
@@ -14,7 +22,7 @@ const STABLE_OPERATION_CONTRACTS = new Map([
 export function resolveQueueOperation(input = {}) {
   const body = input.job?.body ?? {};
   const type = optionalText(body.type);
-  const contract = STABLE_OPERATION_CONTRACTS.get(type) ?? null;
+  const contract = resolveStableOperationContract(type, body);
   const requestedAt = normalizeTimestamp(
     body.originalRequestedAt ?? body.requestedAt ?? input.job?.requestedAt,
     'originalRequestedAt',
@@ -67,7 +75,7 @@ export function resolveQueueOperation(input = {}) {
 /** Preserve the exact durable identity in continuation, redrive and manual recovery payloads. */
 export function withQueueOperation(body = {}, operation = {}) {
   const type = requireText(body.type, 'body.type');
-  const contract = STABLE_OPERATION_CONTRACTS.get(type);
+  const contract = resolveStableOperationContract(type, body);
   if (!contract) {
     throw permanentError('Cannot serialize an unsupported stable Queue operation', {
       code: 'QUEUE_OPERATION_IDENTITY_INVALID',
@@ -97,8 +105,8 @@ export function withQueueOperation(body = {}, operation = {}) {
   });
 }
 
-export function isStableOperationJobType(type) {
-  return STABLE_OPERATION_CONTRACTS.has(type);
+export function isStableOperationJobType(type, body = {}) {
+  return Boolean(resolveStableOperationContract(type, body));
 }
 
 function normalizeTimestamp(value, fieldName, required) {

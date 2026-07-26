@@ -8,12 +8,13 @@ import {
   resolveYouTubeAnalyticsEnabled,
 } from '../../apps/sync-worker/src/index.js';
 
-test('scheduler queues TikTok sync first and daily report at Bangkok 08:10', () => {
+test('scheduler queues TikTok watermark probe first and daily report at Bangkok 08:10', () => {
   const jobs = buildPrimaryScheduledJobs({
     scheduledAt: '2026-07-13T01:10:00.000Z',
     env: {
       DEFAULT_TIMEZONE: 'Asia/Bangkok',
       MKT_SCHEDULE_TIKTOK_ENABLED: 'true',
+      MKT_TIKTOK_WATERMARK_ADMISSION_ENABLED: 'true',
       MKT_SCHEDULE_DAILY_REPORT_ENABLED: 'true',
       MKT_DAILY_REPORT_TIME: '08:10',
       MKT_DAILY_REPORT_SETTING_KEY: 'dev_ft_pumkin:tiktok:daily',
@@ -22,13 +23,24 @@ test('scheduler queues TikTok sync first and daily report at Bangkok 08:10', () 
   });
 
   assert.deepEqual(jobs.map((job) => job.type), [
-    'tiktok.creator.native.sync',
+    'tiktok.creator.native.probe',
     'report.daily.generate',
     'system.reliability-mirror.deliver',
   ]);
-  assert.equal(jobs[0].metricDate, '2026-07-13');
+  assert.equal(jobs[0].metricDate, '2026-07-12');
   assert.equal(jobs[1].periodEnd, '2026-07-12');
   assert.equal(jobs[1].reportSettingKey, 'dev_ft_pumkin:tiktok:daily');
+});
+
+test('TikTok schedule fails closed without watermark admission', () => {
+  assert.throws(() => buildPrimaryScheduledJobs({
+    scheduledAt: '2026-07-13T01:10:00.000Z',
+    env: {
+      DEFAULT_TIMEZONE: 'Asia/Bangkok',
+      MKT_SCHEDULE_TIKTOK_ENABLED: 'true',
+    },
+  }), (error) => error.code === 'MKT_SCHEDULE_CONFIG_INVALID'
+    && error.details.fieldName === 'MKT_TIKTOK_WATERMARK_ADMISSION_ENABLED');
 });
 
 test('weekly report is due only on configured Bangkok weekday and time', () => {
@@ -84,19 +96,20 @@ test('enabled report schedules fail closed when time or setting key is invalid',
 });
 
 
-test('scheduled date identity stays bound to scheduledTime even when consumption is later', () => {
+test('scheduled date identity stays bound to the previous completed day even when consumption is later', () => {
   const jobs = buildPrimaryScheduledJobs({
     scheduledAt: '2026-07-12T16:59:59.000Z',
     env: {
       DEFAULT_TIMEZONE: 'Asia/Bangkok',
       MKT_SCHEDULE_TIKTOK_ENABLED: 'true',
+      MKT_TIKTOK_WATERMARK_ADMISSION_ENABLED: 'true',
       MKT_SCHEDULE_DAILY_REPORT_ENABLED: 'false',
       MKT_SCHEDULE_WEEKLY_REPORT_ENABLED: 'false',
     },
   });
 
   assert.equal(jobs[0].requestedAt, '2026-07-12T16:59:59.000Z');
-  assert.equal(jobs[0].metricDate, '2026-07-12');
+  assert.equal(jobs[0].metricDate, '2026-07-11');
 });
 
 test('scheduled report period uses the last completed local day across a year boundary', () => {
@@ -200,6 +213,7 @@ test('primary cron never queues YouTube and YouTube cron never queues TikTok or 
   const env = {
     DEFAULT_TIMEZONE: 'Asia/Bangkok',
     MKT_SCHEDULE_TIKTOK_ENABLED: 'true',
+    MKT_TIKTOK_WATERMARK_ADMISSION_ENABLED: 'true',
     MKT_SCHEDULE_YOUTUBE_ENABLED: 'true',
     MKT_SCHEDULE_DAILY_REPORT_ENABLED: 'false',
     MKT_SCHEDULE_WEEKLY_REPORT_ENABLED: 'false',
@@ -214,9 +228,10 @@ test('primary cron never queues YouTube and YouTube cron never queues TikTok or 
   });
 
   assert.deepEqual(primary.map((job) => job.type), [
-    'tiktok.creator.native.sync',
+    'tiktok.creator.native.probe',
     'system.reliability-mirror.deliver',
   ]);
+  assert.equal(primary[0].metricDate, '2026-07-18');
   assert.deepEqual(youtube.map((job) => job.type), ['youtube.channel.organic.sync']);
 });
 

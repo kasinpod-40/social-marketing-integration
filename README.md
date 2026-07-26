@@ -18,6 +18,30 @@ AGENTS.md
 - Credential, Live write, Remote migration, Deployment, Schedule, Retention และ Production ต้องผ่าน Gate แยก
 - ห้ามใช้แชทเป็นอำนาจเหนือ Repository `main`
 
+## Current TikTok implementation branch — Draft PR #65
+
+```text
+Branch                              agent/tiktok-organic-post-lark-d1-parity
+Base main                           e9275b6fbd4c28cf0290434cc4a449373e2e2bf9
+Code-verified head                  e3c00b93ea95b4a4e564f09cafacc40954b30593
+Branch Verification                 #517 PASS
+TikTok RAW producer                 watermark probe / no blind scheduled sync
+Scheduled metric date               previous completed day
+TikTok D1 Report reader             implemented / not remotely cut over
+Lark/D1 shadow parity               implemented / flags default false
+Post-processing Report admission    Coverage-gated / flag default false
+Migration 0016                      source only / not applied remotely
+Worker deployment                   not run
+Queue / Lark / Remote D1 mutation   none
+Schedules                           disabled
+Production                          blocked
+```
+
+The branch reuses the existing protected Lark Native source, Durable staging, D1 Organic history,
+Coverage, Reliability runner, Queue/DLQ, Canonical Lark writer and Report engine. The separately
+approved rollout must start read-only and keep all schedules disabled. See
+`docs/project-brain/tiktok-organic-post-lark-d1-parity-2026-07-26.md`.
+
 ## Current repository state
 
 ```text
@@ -28,13 +52,13 @@ Storage Foundation Phase 1B        merged
 Organic D1 bootstrap PR #27        merged
 Organic D1 bootstrap merge         d182bf9efc8c6ea51f275ea725cdb0eaeae3d5e0
 Customer OAuth remote rollout      complete
-TikTok Canonical Lark sync         blocked
-Report D1 reader                   not implemented
+TikTok Canonical Lark sync         repository implementation in Draft PR #65 / Live rollout pending
+Report D1 reader                   implemented in Draft PR #65 / cutover disabled
 Schedules                          disabled
 Production                         blocked
 Google Ads signed delivery         Remote transport UAT pass / safely closed
 Google Ads actual Script DRY_RUN   pass / six datasets / no changes
-Google Ads Secret provisioning     design complete / not implemented
+Google Ads Secret provisioning     completed / route safely closed
 ```
 
 Customer OAuth source status (2026-07-24):
@@ -203,7 +227,7 @@ validate complete unit
 
 D1 failure prevents Lark writes. Lark failure after D1 success is retryable; D1 replays idempotently and Lark is repaired.
 
-The full Chemistry K TikTok RAW → Lark Canonical run remains blocked because the current Report reader caps `MKT_Content` at 800 rows and still reads `MKT_Content_Daily` for cumulative baselines.
+The full Chemistry K TikTok RAW → Lark Canonical run remains blocked from Live execution until the separately approved Migration/deploy/audit/parity rollout for Draft PR #65 completes.
 
 ## Dashboard range contract
 
@@ -218,7 +242,7 @@ Customer Dashboard must eventually support:
 - Ads use additive Daily facts and old-day Attribution revisions;
 - old Content without a baseline is `partial`;
 - Dashboard must show Coverage/Data status;
-- Report D1 shadow read and customer-visible cutover are not part of the bootstrap implementation.
+- Report D1 shadow read and customer-visible cutover require the separately approved PR #65 rollout.
 
 ## `MKT_Content` ownership
 
@@ -255,6 +279,9 @@ MKT_REPORT_D1_READ_ENABLED=false
 MKT_REPORT_PRESET_MATERIALIZATION_ENABLED=false
 MKT_LARK_DAILY_RETENTION_ENABLED=false
 MKT_NOTIFICATION_RUNTIME_ENABLED=false
+MKT_TIKTOK_AUDIT_HTTP_ENABLED=false
+MKT_TIKTOK_WATERMARK_ADMISSION_ENABLED=false
+MKT_TIKTOK_POST_PROCESS_REPORT_ENABLED=false
 ```
 
 Backfill requires D1 write. Retention requires the D1 Report reader. Enabling Storage flags does not enable a schedule.
@@ -263,15 +290,15 @@ Backfill requires D1 write. Retention requires the D1 Report reader. Enabling St
 
 | Connector | Current state | Direction |
 | --- | --- | --- |
-| TikTok Organic | Chemistry K protected Native RAW populated | Guarded D1-only rollout, then Report shadow reader before Canonical scale |
-| YouTube Organic | Runtime foundation exists on developer source | Later map cumulative/period facts into Storage contract |
-| Facebook Organic | Token preflight implemented / Live UAT blocked | Restore customer-app admin, rotate token and validate exact Page |
-| Instagram Organic | Token preflight implemented / exact mapping pending | Repeat customer-token UAT with exact Instagram Account |
-| Meta Ads | Token preflight implemented / Live UAT blocked | Validate exact Ad Account independently; Ads facts/revision contract remains separate |
-| Google Ads | Signed transport UAT safely closed; actual Script DRY_RUN passes six datasets | Review provisioning Design, then separately approve implementation and signed PREVIEW; PR #17 stays HOLD |
+| TikTok Organic | Draft PR #65 code complete and verified; protected Native RAW retained | Separate read-only-first rollout for Migration 0016, audit, one watermark admission and parity |
+| YouTube Organic | Runtime foundation exists on developer source | Separate parallel Workstream |
+| Facebook Organic | Token preflight implemented / Live UAT blocked | All Meta parallel Workstream |
+| Instagram Organic | Token preflight implemented / exact mapping pending | All Meta parallel Workstream |
+| Meta Ads | Token preflight implemented / Live UAT blocked | All Meta parallel Workstream; empty Ads data remains valid-no-data |
+| Google Ads | Signed delivery and LIVE UAT completed / safely closed | No new implementation unless a separate incident or enhancement is approved |
 | TikTok Ads | Access/design preflight | Controlled API/Worker connector later |
-| WooCommerce | Planned | Connector pending |
-| Chatwoot | Planned | Connector pending |
+| WooCommerce | Planned | Separate parallel Workstream |
+| Chatwoot | Planned | Separate parallel Workstream |
 
 Draft PR #11 is obsolete/superseded and must not be merged.
 
@@ -302,19 +329,20 @@ npm audit --audit-level=high
 npm run deploy:dry-run
 ```
 
-PR #27 merged after Branch Verification run #327 passed all gates.
+PR #27 merged after Branch Verification run #327 passed all gates. Draft PR #65 code head
+`e3c00b93ea95b4a4e564f09cafacc40954b30593` passed Branch Verification run #517.
 
 ## Safety
 
 ```text
-REMOTE_D1_MIGRATION       not applied by PR #27
-WORKER_DEPLOYMENT         none
-QUEUE_MESSAGE             none
-LIVE_D1_BOOTSTRAP         none
+REMOTE_D1_MIGRATION       Migration 0016 not applied by PR #65
+WORKER_DEPLOYMENT         none by PR #65
+QUEUE_MESSAGE             none by PR #65
+LIVE_D1_CANONICAL_RUN     none by PR #65
 LARK_SCHEMA_MUTATION      none
-LARK_RECORD_MUTATION      none
-TIKTOK_CANONICAL_SYNC     blocked
-REPORT_CUTOVER            blocked
+LARK_RECORD_MUTATION      none by PR #65
+TIKTOK_CANONICAL_SYNC     repository-ready / Live rollout pending
+REPORT_CUTOVER            disabled / rollout pending
 LARK_RETENTION            blocked
 SCHEDULE                  disabled
 PRODUCTION                blocked

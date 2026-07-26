@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased — TikTok Organic Post-Lark D1 Parity — 2026-07-26
+
+### Repository implementation
+
+- Added bounded read-only probing of the protected TikTok Native RAW source with an exact Chemistry K identity check, deterministic compact watermark, duplicate rejection and two-read settling.
+- Added additive Migration `0016_tiktok_post_lark_pipeline.sql` for durable source-watermark admission; it remains source-only and has not been applied remotely.
+- Replaced the blind scheduled TikTok Business sync producer with a watermark probe and locked the scheduled Snapshot date to the previous completed Asia/Bangkok day.
+- Added a staged-watermark fence before Business writes and preserved the existing Durable staging, Reliability, Queue/DLQ, D1 history, Coverage and Canonical Lark contracts.
+- Added a bounded D1 TikTok Organic Report source supporting more than 800 Content identities, null/zero/correction semantics, Coverage-derived data status and deterministic baseline selection.
+- Connected the existing default-false D1 shadow/read/materialization controls to the active Report route and added fail-closed Lark/D1 parity checks.
+- Added Coverage-gated, idempotent post-processing Daily Report admission and a guarded GET-only operator audit route.
+
+### Verification and safety
+
+- Branch Verification run `#517` passed on code head `e3c00b93ea95b4a4e564f09cafacc40954b30593`:
+  focused staged TikTok 4/4, Node Unit/Integration 868/868, Workers runtime 9/9,
+  Report reliability 91/91, dependency audit with zero vulnerabilities and Wrangler dry-run.
+- Corrected stale regression fixtures that still expected a blind scheduled TikTok Sync and current-day Snapshot date; the tests now assert the approved watermark-probe and previous-completed-day contracts.
+- Opened Draft PR `#65`; it remains unmerged and all new execution/report/schedule flags default to `false`.
+- No Remote D1 backup or Migration 0016 apply, Worker deployment, Queue send, DLQ redrive, Lark mutation, Recovery, schedule activation, LIVE UAT or Production action occurred.
+
 ## Unreleased — Google Ads Manager Script LIVE UAT Closeout — 2026-07-26
 
 ### Runtime completion
