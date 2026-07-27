@@ -3,7 +3,7 @@
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = IMPLEMENTATION_COMPLETE_FINAL_HEAD_VERIFICATION_PENDING
+TASK_STATUS                         = PASS_FOR_INTEGRATION_REVIEW
 CURRENT_PROGRAM                     = YOUTUBE_QUEUE_TIMEOUT_REMOTE_COMPATIBILITY_HOTFIX
 BASE_MAIN_SHA                       = 8fc1d504d7af2ed7d005d0a8c3324c2c83b9cd2f
 BRANCH                              = hotfix/youtube-queue-max-wait-time-ms
@@ -76,7 +76,7 @@ LARK_REQUEST                        = NOT_RUN
 WORKER_DEPLOYMENT                   = NOT_RUN
 ```
 
-## Implemented Hotfix
+## Implementation result
 
 - Accept `settings.max_wait_time_ms` and top-level `max_wait_time_ms` from scoped Remote Queue responses.
 - Require non-negative safe integers.
@@ -87,26 +87,26 @@ WORKER_DEPLOYMENT                   = NOT_RUN
 - Never default a missing Remote timeout from Local configuration.
 - Preserve exact Queue command context, Main/DLQ separation, D1 UUID, flags, Secrets, consumers, Cron,
   routes, workers.dev, traffic and Remote fingerprint validation.
-- Exercise the complete deterministic Remote fingerprint regression using the current live
+- Exercise the complete deterministic Remote fingerprint regression using the current Live
   `max_wait_time_ms` shape for both Main Queue and DLQ.
 
-## Acceptance
+## Acceptance result
 
 ```text
 30000 ms                            = 30 s / PASS
-negative milliseconds               = FAIL_CLOSED
-fractional-second milliseconds      = FAIL_CLOSED
-seconds/milliseconds mismatch       = FAIL_CLOSED
-missing Remote timeout              = FAIL_CLOSED / NO LOCAL DEFAULT
+negative milliseconds               = FAIL_CLOSED / PASS
+fractional-second milliseconds      = FAIL_CLOSED / PASS
+seconds/milliseconds mismatch       = FAIL_CLOSED / PASS
+missing Remote timeout              = FAIL_CLOSED / NO LOCAL DEFAULT / PASS
 legacy seconds field                = PASS
-Main Queue and DLQ contexts         = DISTINCT
+Main Queue and DLQ contexts         = DISTINCT / PASS
 Remote fingerprint after normalize = UNCHANGED / PASS
 ```
 
-## Verification history
+## Exact implementation verification
 
-The initial implementation head `55c0d28977c22de9874febe7b1491f43fccabc8a` passed Branch Verification
-`#771` / run `30300067213` completely:
+Exact combined implementation head `7c2cb8433dde780d2c04005a9169281a94b64129` passed Branch Verification
+`#776` / run `30300427023` completely:
 
 ```text
 INSTALL_LOCKED_DEPENDENCIES         = PASS
@@ -116,18 +116,20 @@ NODE_AND_WORKERS_RUNTIME            = PASS
 REPORT_RELIABILITY                  = PASS
 DEPENDENCY_AUDIT                    = PASS
 WRANGLER_DRY_RUN                    = PASS / NO DEPLOYMENT
+DIAGNOSTICS_ARTIFACT                = 8666336304
+DIAGNOSTICS_DIGEST                  = sha256:888130977ecc586e78bd54c155251bc09f6d0ce80049ea414c4a294ee73e33db
 REMOTE_ACTION_COUNT                 = 0
 ```
 
-After that proof, the Full fingerprint fixture was strengthened to use the actual Live
-`max_wait_time_ms` response shape. Alignment PR #153 then merged current
-`main@8fc1d504d7af2ed7d005d0a8c3324c2c83b9cd2f` into the Hotfix Branch. Exact combined-head Branch
-Verification is therefore required again before Integration review.
+Alignment PR #151 merged `main@a4212f4d1887e1c672fa5c3a0bb7e3d39d1db9a9` into the Hotfix Branch.
+After the Full fingerprint fixture was strengthened, alignment PR #153 merged current
+`main@8fc1d504d7af2ed7d005d0a8c3324c2c83b9cd2f`. Final compare at implementation verification was ahead
+and behind zero, with exactly seven expected changed files.
 
 ## Remaining sequence
 
 ```text
-Exact combined-head Branch Verification
+Docs-final exact-head Branch Verification
 → Integration review and zero-thread check
 → mark PR #152 Ready
 → separate Squash Merge decision
