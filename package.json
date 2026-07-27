@@ -34,6 +34,8 @@
     "rollout:tiktok-post-lark:enable-audit": "node scripts/tiktok-post-lark-rollout-operator.mjs --phase=enable-audit --execute",
     "rollout:tiktok-post-lark:audit": "node scripts/tiktok-post-lark-rollout-operator.mjs --phase=audit --execute",
     "rollout:tiktok-post-lark:disable-audit": "node scripts/tiktok-post-lark-rollout-operator.mjs --phase=disable-audit --execute",
+    "rollout:tiktok-gap-reconciliation": "node scripts/tiktok-post-lark-gap-reconciliation.mjs",
+    "rollout:tiktok-gap-reconciliation:run": "node scripts/tiktok-post-lark-gap-reconciliation.mjs --execute",
     "rollout:google-ads-live": "node scripts/google-ads-live-operator.mjs",
     "rollout:google-ads-live:preflight": "node scripts/google-ads-live-operator.mjs --phase=preflight --execute",
     "rollout:google-ads-live:backup": "node scripts/google-ads-live-operator.mjs --phase=backup --execute",
