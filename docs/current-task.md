@@ -89,13 +89,15 @@ REMOTE_ACTION_COUNT                 = 0
 
 ## Only remaining step
 
-From a clean checkout of `main@fb3f2a46b4c22bd293ad5395e7717add75bba690` with the documented local
-ignored credentials/configuration available, run exactly:
+From a clean checkout of the current `main` branch that contains implementation commit
+`fb3f2a46b4c22bd293ad5395e7717add75bba690`, with the documented local ignored
+credentials/configuration available, run exactly:
 
 ```bash
 CONFIRM_WOOCOMMERCE_FINAL_ROLLOUT=EXECUTE_WOOCOMMERCE_FINAL_ROLLOUT \
 node scripts/woocommerce-final-one-command.mjs --execute
 ```
 
-The command closes WooCommerce Integration Workspace only when Full, parity, rerun, incremental and
-Schedule gates all pass. Production/customer-owned deployment remains a separate blocked scope.
+The command binds itself to the clean checkout's current Git HEAD. It closes WooCommerce Integration
+Workspace only when Full, parity, rerun, incremental and Schedule gates all pass.
+Production/customer-owned deployment remains a separate blocked scope.
