@@ -7,7 +7,10 @@ TASK_STATUS                         = MERGED_REMOTE_ROLLOUT_NOT_AUTHORIZED
 CURRENT_PROGRAM                     = WOOCOMMERCE_INTEGRATION_MERGE_CLOSEOUT
 MERGED_PR                           = #94
 MERGE_COMMIT                        = 060977cd9ed2933700fbd121c9236e6578ad571e
-CLOSEOUT_PR                         = #98 / DRAFT
+CLOSEOUT_PR                         = #98 / MERGED
+CLOSEOUT_MERGE_COMMIT               = 77ee75df26ffce6d25217975776e1eb4a3194f4f
+CLOSEOUT_VERIFIED_HEAD              = d89ee93b19d62c8d6a7f72e0b9ed30117a2685fd
+CLOSEOUT_BRANCH_VERIFICATION        = #627 / 30247248691 / PASS
 REVIEWED_SOURCE_PR                  = #66 / PASS_FOR_INTEGRATION
 REVIEWED_SOURCE_HEAD                = 10cdd910b1083e6ffd5f8a4e118c06cdc6c842ee
 INTEGRATION_VERIFIED_HEAD           = d0ce3399177b5d6c8fcdb6c56eadd77851ae29e9
@@ -74,7 +77,7 @@ Wrangler deployment dry-run       PASS / no deployment
 Diagnostics upload                PASS
 ```
 
-Documentation-only closeout PR `#98` must retain a successful exact-head Branch Verification check. The PR check is authoritative and does not require a later content-only status commit.
+Documentation-only closeout PR `#98` passed exact-head Branch Verification `#627`, run ID `30247248691`, on head `d89ee93b19d62c8d6a7f72e0b9ed30117a2685fd` and was Squash Merged into `main` at `77ee75df26ffce6d25217975776e1eb4a3194f4f`.
 
 ## Migration ownership
 
@@ -82,7 +85,7 @@ WooCommerce now owns source Migration `0017`. It remains unapplied remotely. The
 
 ## Remote safe state
 
-No WooCommerce Provider/API request, Customer Consumer Key/Secret use, WordPress/WooCommerce mutation, Remote D1 migration/query/write, Remote Lark schema/record mutation, Queue/DLQ action, Worker deployment, Schedule activation, Customer LIVE UAT or Production change occurred as part of PR `#94` or this closeout.
+No WooCommerce Provider/API request, Customer Consumer Key/Secret use, WordPress/WooCommerce mutation, Remote D1 migration/query/write, Remote Lark schema/record mutation, Queue/DLQ action, Worker deployment, Schedule activation, Customer LIVE UAT or Production change occurred as part of PR `#94`, PR `#98`, or this status correction.
 
 ## Repository audit note
 
