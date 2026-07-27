@@ -1,149 +1,165 @@
-# Current Task — WooCommerce Chemistry K Customer Data to Lark Read-only Preflight
+# Current Task — Chatwoot Safe Config and Remote Read-only Preflight
 
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = PASS_FOR_INTEGRATION_REVIEW
-CURRENT_PROGRAM                     = WOOCOMMERCE_CUSTOMER_DATA_TO_LARK_ROLLOUT
-BASE_MAIN_SHA                       = 025a2f68800d3c4115676c644b28384eacacdc7f
-BRANCH                              = integration/woocommerce-customer-data-lark-rollout
-DRAFT_PR                            = #118 / OPEN / DRAFT / UNMERGED
-IMPLEMENTATION_OWNER                = CHATGPT_WORK_GITHUB_TOOLS
-CHATWOOT_WORKSTREAM                 = STOPPED_IN_THIS_CHAT
-VERIFIED_IMPLEMENTATION_HEAD        = 17211c975e2de29e299854870cc4a9506ede3dd7
-BRANCH_VERIFICATION                 = #689 / 30288449765 / PASS
-REMOTE_EXECUTION_AUTHORIZED         = READ_ONLY_PREFLIGHT_AFTER_MERGE_ONLY
-REMOTE_ACTIONS                      = NONE_DURING_IMPLEMENTATION
-MIGRATION_0017_STATE                = UNRESOLVED_REMOTE_TRUTH
-WOOCOMMERCE_PROVIDER_REQUEST        = NOT_RUN
-LARK_METADATA_REQUEST               = NOT_RUN
+TASK_STATUS                         = READY_FOR_LOCAL_PREPARATION_AND_REMOTE_READ_ONLY_PREFLIGHT
+CURRENT_PROGRAM                     = CHATWOOT_REMOTE_READINESS_EXECUTION
+BASE_MAIN_SHA                       = c124e6fdbe27fcd56fb357baef1b4769957748df
+IMPLEMENTATION_OWNER                = CHATGPT_WORK_AND_CODEX_TERMINAL
+CHATWOOT_READINESS_OPERATOR_PR      = #111 / MERGED
+CHATWOOT_SAFE_CONFIG_PR             = #125 / MERGED
+CHATWOOT_SAFE_CONFIG_MERGE_SHA      = e4ada6d91037a133aa6bfee17485e11ff3c4b49f
+WOO_PRELIGHT_PR                     = #118 / MERGED
+TIKTOK_AUDIT_FIX_PR                 = #120 / MERGED
+SAFE_CONFIG_PREPARATION             = NOT_RUN
+CHATWOOT_REMOTE_PREFLIGHT           = NOT_RUN
+REMOTE_EXECUTION_AUTHORIZED         = CHATWOOT_READ_ONLY_PREFLIGHT_ONLY
 REMOTE_D1_MUTATION                  = NONE
-LARK_MUTATION                       = NONE
+D1_BACKUP                           = NOT_RUN
+MIGRATION_0018                      = SOURCE_ONLY / NOT_APPLIED
+SCHEMA_READBACK                     = NOT_RUN
+CHATWOOT_PROVIDER_REQUEST           = NOT_RUN
 QUEUE_OR_DLQ_ACTION                 = NONE
+LARK_MUTATION                       = NONE
 WORKER_DEPLOYMENT                   = NOT_RUN
-SCHEDULE                            = DISABLED
+SCHEDULE_OR_WEBHOOK                 = DISABLED
 PRODUCTION                          = BLOCKED
 ```
 
-The preceding Meta merge-closeout task is referenced by immutable commit/blob provenance at:
+The preceding WooCommerce preflight task is archived by immutable commit/blob provenance at:
 
 ```text
-docs/archive/current-task-before-woocommerce-customer-data-lark-rollout-2026-07-27.md
+docs/archive/woocommerce-customer-data-lark-preflight-merged-current-task-2026-07-28.md
 ```
 
-## Objective completed
+## Objective
 
-Implemented and verified the first guarded gate for the Chemistry K WooCommerce end-to-end path:
+Prepare the exact local all-flags-false Wrangler config from the ignored Integration Workspace config,
+then execute only the merged Chatwoot Remote read-only preflight and capture sanitized evidence.
 
 ```text
-WooCommerce GET-only source
-→ D1 durable commerce facts
-→ Lark RAW and Canonical commerce tables
-→ parity / rerun / incremental UAT
+clean current main
+→ local Safe config generation
+→ local config validation
+→ Remote read-only preflight
+→ stop before Backup
 ```
 
-This Repository task adds the read-only evidence chain only. It does not execute a Remote phase or
-import customer data yet.
+## Repository and local file contract
 
-## Existing runtime retained
+- `wrangler.sync.jsonc` is local/ignored and must not be committed.
+- Generated output is local/ignored at
+  `outputs/chatwoot-remote-readiness/wrangler.chatwoot-preflight.safe.jsonc`.
+- The generator must use the merged `chatwoot_safe_wrangler_config_v1` contract.
+- It must require the exact Integration Workspace, Chemistry K, Worker, D1 and Queue/DLQ topology.
+- Every required execution flag must be explicitly `false`.
+- Generated config must omit triggers, routes, Provider identity, OAuth IDs, Lark mappings and Secret values.
+- `$schema`, `main` and `migrations_dir` must be rebased for the generated config location.
+- Generation performs no Git, Wrangler Remote, D1, Queue, Lark or Provider command.
+
+## Exact target
 
 ```text
-WooCommerce REST client
-Shared Queue + stable operation identity
-Shared Reliability / lock / retry / DLQ
-Resumable work and continuation
-D1-first commerce writer
-Derived commerce facts
-Coverage engine
-Shared Lark repository and sync engine
+MKT_ENV                         = development
+MKT_CUSTOMER_PROFILE            = integration_workspace
+MKT_CONNECTION_CUSTOMER_KEY     = chemistry_k
+Worker                          = social-mkt-sync-worker
+D1                              = social-mkt-state-dev
+D1 binding                      = MKT_STATE_DB
+Main Queue                      = social-mkt-sync-jobs
+Main Queue binding              = MKT_SYNC_QUEUE
+DLQ                             = social-mkt-sync-dlq
 ```
 
-No replacement runtime, Queue, Reliability, D1, Coverage or Lark engine was introduced.
+## Local preparation
 
-## Implemented operator phases
+Run from a clean, current `main`:
+
+```bash
+git switch main
+git pull --ff-only
+git status --short
+git rev-parse HEAD
+
+npm run prepare:chatwoot-readiness-config
+
+node --test tests/application/chatwoot-safe-wrangler-config.test.js
+npm run check
+
+test -f outputs/chatwoot-remote-readiness/wrangler.chatwoot-preflight.safe.jsonc \
+  && echo SAFE_CONFIG_READY
+
+git status --short
+```
+
+Preparation must stop if the target/topology differs, any required identity is missing, or the generated
+file fails the existing Chatwoot readiness validator. Generated output must remain ignored so a clean
+`main` stays clean.
+
+## Remote read-only preflight
+
+Only after local preparation succeeds:
+
+```bash
+npx wrangler whoami
+
+SAFE_CONFIG="$PWD/outputs/chatwoot-remote-readiness/wrangler.chatwoot-preflight.safe.jsonc"
+
+MKT_ENV=development \
+MKT_CUSTOMER_PROFILE=integration_workspace \
+MKT_CONNECTION_CUSTOMER_KEY=chemistry_k \
+MKT_CHATWOOT_ROLLOUT_DATABASE_NAME=social-mkt-state-dev \
+MKT_CHATWOOT_ROLLOUT_WRANGLER_CONFIG="$SAFE_CONFIG" \
+CONFIRM_CHATWOOT_REMOTE_PREFLIGHT=READ_ONLY_CHATWOOT_REMOTE_PREFLIGHT \
+npm run rollout:chatwoot-readiness:preflight
+```
+
+## Preflight evidence required
+
+Return sanitized evidence for:
 
 ```text
-plan
-→ remote-preflight
-→ provider-preflight
-→ lark-preflight
-→ summary
+current main SHA
+Wrangler version / authenticated status without account or token disclosure
+generated config path and SHA-256
+Operator exit code and full sanitized JSON result
+Evidence file path and digest
+Worker / D1 / Queue / DLQ identity verdicts
+Secret-name presence only; never Secret values
+pending migration set
+Migration 0017 state
+Migration 0018 state
+active durable-work count
+active lock count
+Chatwoot table/index counts
+Remote mutation count
 ```
 
-Every executable phase requires its own exact confirmation and passed target-bound evidence.
+## Stop boundary
 
-## Locked contracts
-
-- Integration Workspace / Chemistry K / Worker / D1 target identity is exact and fingerprinted.
-- Migration `0017_woocommerce_commerce.sql` source must contain exactly 17 additive tables and 13 indexes.
-- Remote pending set may be empty or exactly Migration `0017`; any additional pending migration fails.
-- Remote preflight is SELECT-only and requires zero active work and locks.
-- Ledger/schema drift fails closed.
-- Provider preflight performs GET-only store identity and one-row samples for orders, products and customers.
-- Provider evidence stores only minimized identity/count metadata, never raw records or credentials.
-- Lark preflight reads table/field metadata only and requires all 14 unique WooCommerce table IDs.
-- Summary returns either a separately gated Migration path or readiness for guarded manual D1/Lark backfill.
-
-## Lark target tables
+This task authorizes no later phase. Stop immediately after preflight success or failure.
 
 ```text
-RAW_Commerce_Stores
-RAW_Commerce_Orders
-RAW_Commerce_Order_Items
-RAW_Commerce_Products
-RAW_Commerce_Product_Variations
-RAW_Commerce_Categories
-RAW_Commerce_Customers
-RAW_Commerce_Coupons
-RAW_Commerce_Refunds
-MKT_Commerce_Orders
-MKT_Commerce_Products
-MKT_Commerce_Customers
-MKT_Commerce_Daily
-MKT_Commerce_Product_Daily
+D1 backup                    NOT AUTHORIZED BY THIS TASK
+Migration 0018 apply         NOT AUTHORIZED
+Schema read-back             NOT AUTHORIZED UNTIL PRIOR PHASES PASS
+Chatwoot Provider API        NOT AUTHORIZED
+Queue / DLQ                  NONE
+Lark                         NONE
+Worker deployment            NOT AUTHORIZED
+Schedule / Webhook           DISABLED
+Production                   BLOCKED
 ```
 
-## Repository verification
+Do not work around a failed gate by committing a local config, editing Remote configuration, applying a
+migration, sending Queue messages, calling Chatwoot, mutating Lark or deploying the Worker.
 
-Implementation head `17211c975e2de29e299854870cc4a9506ede3dd7` passed Branch Verification
-`#689` / run `30288449765`:
+## Definition of done for this gate
 
-```text
-INSTALL_LOCKED_DEPENDENCIES          = PASS
-SYNTAX_ARCHITECTURE_HYGIENE          = PASS
-FOCUSED_STAGED_TIKTOK                = 4 / 4 PASS
-NODE_UNIT_INTEGRATION                = 1092 / 1092 PASS
-WORKERS_RUNTIME                      = 11 / 11 PASS
-REPORT_RELIABILITY                   = 91 / 91 PASS
-WOOCOMMERCE_PREFLIGHT_TESTS          = 11 / 11 INCLUDED IN FULL SUITE
-DEPENDENCY_AUDIT                     = 0 vulnerabilities
-WRANGLER_DRY_RUN                     = PASS / NO DEPLOYMENT
-DIAGNOSTICS_ARTIFACT                 = 8661809676
-DIAGNOSTICS_DIGEST                   = sha256:2dbefce519777fec6361120947c2bb459b7a37598350eb5ece6146ff1212084e
-```
-
-## Remote safe state
-
-```text
-REMOTE_D1_QUERY                      = NOT_RUN
-REMOTE_D1_BACKUP_OR_MIGRATION        = NOT_RUN
-WOOCOMMERCE_PROVIDER_GET             = NOT_RUN
-LARK_METADATA_READ                   = NOT_RUN
-LARK_SCHEMA_OR_RECORD_MUTATION       = NONE
-QUEUE_MESSAGE                        = NONE
-DLQ_ACTION                           = NONE
-WORKER_DEPLOYMENT                    = NOT_RUN
-MANUAL_BACKFILL                      = NOT_RUN
-SCHEDULE                             = DISABLED
-PRODUCTION                           = BLOCKED
-```
-
-## Remaining gate
-
-The documentation-aligned final head must pass exact-final-head Branch Verification and Integration
-Review. PR #118 remains Draft and unmerged.
-
-After merge, the first eligible execution is `remote-preflight` only. Provider GET-only and Lark
-metadata preflight each require their own later confirmation and prior passed evidence. Backup,
-Migration `0017` apply, Worker deployment, Queue send, D1/Lark customer-data backfill, parity, rerun,
-incremental UAT, Schedule and Production all remain separately gated.
+- Repository/local target is refreshed from current clean `main`.
+- Safe config generation succeeds and output remains ignored.
+- Focused generator tests and `npm run check` pass locally.
+- Remote read-only preflight returns a target-bound sanitized evidence package.
+- Remote mutation count remains zero.
+- The result clearly identifies the next separately gated decision: blocker remediation, D1 Backup, or no-op.
