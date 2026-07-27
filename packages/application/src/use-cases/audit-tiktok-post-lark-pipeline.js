@@ -3,6 +3,7 @@ import { probeTikTokNativeSourceWatermark } from './probe-tiktok-native-source-w
 
 const DEFAULT_PAGE_SIZE = 500;
 const DEFAULT_MAX_PAGES = 1_000;
+const MAX_D1_CONTENT_RECORDS = 50_000;
 const MAX_GAP_EXAMPLES = 100;
 
 /**
@@ -25,7 +26,10 @@ export async function auditTikTokPostLarkPipeline(input = {}) {
     'maxPages',
     DEFAULT_MAX_PAGES,
   );
-  const maxContentRecords = pageSize * maxPages;
+  // Lark may be scanned with the wider pagination bound, while the D1 adapter intentionally caps
+  // materialized Content identities at 50,000. Clamp the derived value instead of leaking the
+  // Lark page bound into the D1 contract and failing before any read-only evidence is produced.
+  const maxContentRecords = Math.min(pageSize * maxPages, MAX_D1_CONTENT_RECORDS);
 
   const [raw, content, daily, d1] = await Promise.all([
     probeTikTokNativeSourceWatermark({
