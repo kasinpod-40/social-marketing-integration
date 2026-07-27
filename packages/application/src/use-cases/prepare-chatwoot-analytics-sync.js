@@ -3,7 +3,7 @@ import { createStableFingerprint } from '../../../shared/src/hash/stable-fingerp
 export const CHATWOOT_LARK_WRITE_TARGETS = Object.freeze([
   target('raw.accounts', 'rawChatwootAccounts', 'account_state_key'),
   target('raw.inboxes', 'rawChatwootInboxes', 'inbox_key'),
-  target('raw.contacts', 'rawChatwootContacts', 'contact_key'),
+  target('raw.resolvedContacts', 'rawChatwootContacts', 'contact_key'),
   target('raw.agents', 'rawChatwootAgents', 'agent_key'),
   target('raw.teams', 'rawChatwootTeams', 'team_key'),
   target('raw.labels', 'rawChatwootLabels', 'label_key'),
@@ -12,28 +12,33 @@ export const CHATWOOT_LARK_WRITE_TARGETS = Object.freeze([
   target('raw.messages', 'rawChatwootMessageAnalytics', 'message_key'),
   target('raw.reportingEvents', 'rawChatwootReportingEvents', 'reporting_event_key'),
   target('canonical.conversations', 'mktConversations', 'conversation_key'),
-  target('canonical.conversationDaily', 'mktConversationDaily', 'conversation_daily_key'),
-  target('canonical.agentDaily', 'mktAgentDaily', 'agent_daily_key'),
-  target('canonical.inboxDaily', 'mktInboxDaily', 'inbox_daily_key'),
-  target('canonical.accountDaily', 'mktConversationAccountDaily', 'account_daily_key'),
+  target('canonical.conversationDaily', 'mktConversationDaily', 'conversation_daily_key', true),
+  target('canonical.agentDaily', 'mktAgentDaily', 'agent_daily_key', true),
+  target('canonical.inboxDaily', 'mktInboxDaily', 'inbox_daily_key', true),
+  target('canonical.accountDaily', 'mktConversationAccountDaily', 'account_daily_key', true),
 ]);
 
-/** Build deterministic, PII-minimized D1 and Lark write sets from normalized Chatwoot rows. */
+/** Build deterministic, PII-minimized D1 and optional report/Lark write sets. */
 export async function prepareChatwootAnalyticsSync(input = {}) {
   const context = readContext(input);
   const source = readSource(input);
   assertIdentity(context, source);
 
   const labelIds = new Map(source.labels.map((row) => [row.labelKey, row.externalLabelId]));
-  const conversationLabels = buildConversationLabels(source.conversations, labelIds, context);
-  const conversationDaily = source.conversations.map((row) => buildConversationDaily(row, context));
-  const agentDaily = aggregateDaily(conversationDaily, context, 'agent');
-  const inboxDaily = aggregateDaily(conversationDaily, context, 'inbox');
-  const accountDaily = aggregateAccountDaily(conversationDaily, source.agents, source.inboxes, context);
+  const conversationLabels = buildConversationLabels(
+    source.conversations,
+    labelIds,
+    source.previousConversationLabels,
+    context,
+  );
+  const daily = context.includeReports
+    ? buildDailyFacts(source.conversations, source.messages, source.reportingEvents, context)
+    : emptyDailyFacts();
 
   const d1 = Object.freeze({
     account: accountState(source.account, context),
     inboxes: freezeRows(source.inboxes.map((row) => inboxState(row, context))),
+    resolvedContacts: freezeRows(source.contacts.map((row) => contactState(row, context))),
     contacts: freezeRows(source.contacts.map((row) => contactState(row, context))),
     agents: freezeRows(source.agents.map((row) => agentState(row, context))),
     teams: freezeRows(source.teams.map((row) => teamState(row, context))),
@@ -42,14 +47,14 @@ export async function prepareChatwootAnalyticsSync(input = {}) {
     conversationLabels: freezeRows(conversationLabels),
     messages: freezeRows(source.messages.map((row) => messageState(row, context))),
     reportingEvents: freezeRows(source.reportingEvents.map((row) => reportingEventFact(row, context))),
-    conversationDaily: freezeRows(conversationDaily),
-    agentDaily: freezeRows(agentDaily),
-    inboxDaily: freezeRows(inboxDaily),
-    accountDaily: freezeRows(accountDaily),
+    conversationDaily: daily.conversationDaily,
+    agentDaily: daily.agentDaily,
+    inboxDaily: daily.inboxDaily,
+    accountDaily: daily.accountDaily,
     ...buildCoverage(context, {
       accounts: [source.account],
       inboxes: source.inboxes,
-      contacts: source.contacts,
+      resolvedContacts: source.contacts,
       agents: source.agents,
       teams: source.teams,
       labels: source.labels,
@@ -57,10 +62,12 @@ export async function prepareChatwootAnalyticsSync(input = {}) {
       conversationLabels,
       messages: source.messages,
       reportingEvents: source.reportingEvents,
-      conversationDaily,
-      agentDaily,
-      inboxDaily,
-      accountDaily,
+      ...(context.includeReports ? {
+        conversationDaily: daily.conversationDaily,
+        agentDaily: daily.agentDaily,
+        inboxDaily: daily.inboxDaily,
+        accountDaily: daily.accountDaily,
+      } : {}),
     }),
   });
 
@@ -68,7 +75,7 @@ export async function prepareChatwootAnalyticsSync(input = {}) {
     raw: Object.freeze({
       accounts: freezeRows([d1.account]),
       inboxes: d1.inboxes,
-      contacts: d1.contacts,
+      resolvedContacts: d1.resolvedContacts,
       agents: d1.agents,
       teams: d1.teams,
       labels: d1.labels,
@@ -104,25 +111,44 @@ export async function prepareChatwootAnalyticsSync(input = {}) {
     reconciliation: Object.freeze({
       datasets: coverageSummary(d1.coverageRuns),
       sourceRows,
-      dailyRows: conversationDaily.length + agentDaily.length + inboxDaily.length + accountDaily.length,
-      piiPolicy: 'allowlist_no_message_body_or_direct_contact_agent_identity',
-      complete: true,
+      dailyRows: daily.conversationDaily.length + daily.agentDaily.length
+        + daily.inboxDaily.length + daily.accountDaily.length,
+      piiPolicy: 'allowlist_no_message_body_direct_identity_or_label_text',
+      sourceComplete: true,
+      sinksComplete: false,
     }),
   });
+}
+
+export function finalizeChatwootCoverageRuns(runs, completedAt) {
+  const timestamp = positiveInteger(completedAt, 'completedAt');
+  return freezeRows(requireArray(runs, 'coverage runs').map((row) => freeze({
+    ...row,
+    status: 'complete',
+    written_rows: row.observed_rows,
+    failed_rows: 0,
+    completed_at: timestamp,
+    updated_at: timestamp,
+  })));
 }
 
 export function readChatwootWriteSetPath(value, path) {
   return path.split('.').reduce((current, segment) => current?.[segment], value) ?? [];
 }
 
-function target(path, tableKey, keyField) {
-  return Object.freeze({ path, tableKey, keyField });
+function target(path, tableKey, keyField, requiresReport = false) {
+  return Object.freeze({ path, tableKey, keyField, requiresReport });
 }
 
 function readContext(input) {
   const observedAt = positiveInteger(input.observedAt, 'observedAt');
   const reportingTimezone = requireText(input.reportingTimezone ?? 'UTC', 'reportingTimezone');
   assertTimeZone(reportingTimezone);
+  const fullSnapshot = input.fullSnapshot === true;
+  const includeReports = input.includeReports === true;
+  if (includeReports && !fullSnapshot) {
+    throw new TypeError('Chatwoot report preparation requires fullSnapshot=true');
+  }
   return Object.freeze({
     customerProfile: requireText(input.customerProfile, 'customerProfile'),
     customerKey: identity(input.customerKey, 'customerKey'),
@@ -133,7 +159,8 @@ function readContext(input) {
     observedAt,
     reportingTimezone,
     metricDate: dateOnly(observedAt, reportingTimezone),
-    fullSnapshot: input.fullSnapshot === true,
+    fullSnapshot,
+    includeReports,
   });
 }
 
@@ -148,6 +175,10 @@ function readSource(input) {
     conversations: requireArray(input.conversations, 'conversations'),
     messages: requireArray(input.messages, 'messages'),
     reportingEvents: requireArray(input.reportingEvents, 'reportingEvents'),
+    previousConversationLabels: requireArray(
+      input.previousConversationLabels ?? [],
+      'previousConversationLabels',
+    ),
   });
 }
 
@@ -214,7 +245,7 @@ function contactState(row, context) {
     first_seen_at: row.firstSeenAt,
     last_seen_at: row.lastSeenAt,
     metadata_hash: row.metadataHash,
-    ...lineage(context, 'contacts'),
+    ...lineage(context, 'resolved_contacts'),
   });
 }
 
@@ -261,7 +292,7 @@ function labelState(row, context) {
     account_key: context.accountKey,
     external_account_id: context.externalAccountId,
     external_label_id: row.externalLabelId,
-    title: row.title,
+    title_hash: row.titleHash,
     color: row.color,
     show_on_sidebar: boolInt(row.showOnSidebar),
     first_seen_at: row.firstSeenAt,
@@ -357,35 +388,150 @@ function reportingEventFact(row, context) {
   });
 }
 
-function buildConversationLabels(conversations, labelIds, context) {
+function buildConversationLabels(conversations, labelIds, previousRows, context) {
   const rows = [];
+  const currentKeys = new Set();
+  const selectedConversationIds = new Set(conversations.map((row) => row.externalConversationId));
   for (const conversation of conversations) {
     for (const labelKey of conversation.labelKeys ?? []) {
       const externalLabelId = labelIds.get(labelKey);
       if (!externalLabelId) throw new TypeError(`Conversation references unknown label key: ${labelKey}`);
-      rows.push(freeze({
-        conversation_label_key: `${conversation.conversationKey}:label:${externalLabelId}`,
-        conversation_key: conversation.conversationKey,
-        label_key: labelKey,
-        external_conversation_id: conversation.externalConversationId,
-        external_label_id: externalLabelId,
+      const key = `${conversation.conversationKey}:label:${externalLabelId}`;
+      currentKeys.add(key);
+      rows.push(conversationLabelRow({
+        key,
+        conversationKey: conversation.conversationKey,
+        externalConversationId: conversation.externalConversationId,
+        labelKey,
+        externalLabelId,
         active: 1,
-        observed_at: context.observedAt,
-        removed_at: null,
-        coverage_run_id: coverageId(context, 'conversation_labels'),
-        sync_run_id: context.syncRunId,
-        created_at: context.observedAt,
-        updated_at: context.observedAt,
+        removedAt: null,
+        context,
       }));
     }
+  }
+  for (const previous of previousRows) {
+    const externalConversationId = positiveId(
+      previous.externalConversationId,
+      'previousConversationLabels.externalConversationId',
+    );
+    if (!selectedConversationIds.has(externalConversationId)) continue;
+    const externalLabelId = positiveId(
+      previous.externalLabelId,
+      'previousConversationLabels.externalLabelId',
+    );
+    const conversationKey = `chatwoot:${context.accountKey}:conversation:${externalConversationId}`;
+    const key = `${conversationKey}:label:${externalLabelId}`;
+    if (currentKeys.has(key)) continue;
+    rows.push(conversationLabelRow({
+      key,
+      conversationKey,
+      externalConversationId,
+      labelKey: `chatwoot:${context.accountKey}:label:${externalLabelId}`,
+      externalLabelId,
+      active: 0,
+      removedAt: context.observedAt,
+      context,
+    }));
   }
   return rows.sort(by('conversation_label_key'));
 }
 
-function buildConversationDaily(row, context) {
-  const metricDate = dateOnly(row.sourceUpdatedAt, context.reportingTimezone);
+function conversationLabelRow(input) {
   return freeze({
-    conversation_daily_key: `${row.conversationKey}:${metricDate}`,
+    conversation_label_key: input.key,
+    conversation_key: input.conversationKey,
+    customer_key: input.context.customerKey,
+    account_key: input.context.accountKey,
+    external_account_id: input.context.externalAccountId,
+    label_key: input.labelKey,
+    external_conversation_id: input.externalConversationId,
+    external_label_id: input.externalLabelId,
+    active: input.active,
+    observed_at: input.context.observedAt,
+    removed_at: input.removedAt,
+    coverage_run_id: coverageId(input.context, 'conversation_labels'),
+    sync_run_id: input.context.syncRunId,
+    created_at: input.context.observedAt,
+    updated_at: input.context.observedAt,
+  });
+}
+
+function buildDailyFacts(conversations, messages, reportingEvents, context) {
+  const conversationsById = new Map(conversations.map((row) => [row.externalConversationId, row]));
+  const groups = new Map();
+  const ensure = (conversation, metricDate) => {
+    const key = `${conversation.conversationKey}:${metricDate}`;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        conversation,
+        metricDate,
+        newConversationCount: 0,
+        resolvedCount: 0,
+        reopenedCount: 0,
+        incomingMessageCount: 0,
+        outgoingMessageCount: 0,
+        privateMessageCount: 0,
+        attachmentMessageCount: 0,
+        firstResponse: [],
+        firstResponseBusiness: [],
+        resolution: [],
+        resolutionBusiness: [],
+        reply: [],
+        replyBusiness: [],
+      });
+    }
+    return groups.get(key);
+  };
+
+  for (const conversation of conversations) {
+    ensure(conversation, dateOnly(conversation.sourceCreatedAt, context.reportingTimezone))
+      .newConversationCount += 1;
+    if (conversation.reopenCountDelta > 0) {
+      ensure(conversation, dateOnly(conversation.sourceUpdatedAt, context.reportingTimezone))
+        .reopenedCount += conversation.reopenCountDelta;
+    }
+  }
+  for (const message of messages) {
+    const conversation = conversationsById.get(message.externalConversationId);
+    if (!conversation) continue;
+    const row = ensure(conversation, dateOnly(message.sourceCreatedAt, context.reportingTimezone));
+    if (message.direction === 'incoming') row.incomingMessageCount += 1;
+    if (message.direction === 'outgoing') row.outgoingMessageCount += 1;
+    if (message.private === true) row.privateMessageCount += 1;
+    if (Number(message.attachmentCount ?? 0) > 0) row.attachmentMessageCount += 1;
+  }
+  for (const event of reportingEvents) {
+    const conversation = conversationsById.get(event.externalConversationId);
+    if (!conversation) continue;
+    const row = ensure(conversation, dateOnly(event.eventEndAt, context.reportingTimezone));
+    if (event.name === 'first_response') {
+      row.firstResponse.push(event.valueSeconds);
+      pushNullable(row.firstResponseBusiness, event.valueBusinessSeconds);
+    } else if (event.name === 'resolution') {
+      row.resolvedCount += 1;
+      row.resolution.push(event.valueSeconds);
+      pushNullable(row.resolutionBusiness, event.valueBusinessSeconds);
+    } else if (event.name === 'reply_time') {
+      row.reply.push(event.valueSeconds);
+      pushNullable(row.replyBusiness, event.valueBusinessSeconds);
+    }
+  }
+
+  const conversationDaily = [...groups.values()].map((group) => buildConversationDailyRow(group, context))
+    .sort(by('conversation_daily_key'));
+  return Object.freeze({
+    conversationDaily: freezeRows(conversationDaily),
+    agentDaily: freezeRows(aggregateDaily(conversationDaily, context, 'agent')),
+    inboxDaily: freezeRows(aggregateDaily(conversationDaily, context, 'inbox')),
+    accountDaily: freezeRows(aggregateAccountDaily(conversationDaily, context)),
+  });
+}
+
+function buildConversationDailyRow(group, context) {
+  const row = group.conversation;
+  return freeze({
+    conversation_daily_key: `${row.conversationKey}:${group.metricDate}`,
     customer_key: context.customerKey,
     account_key: context.accountKey,
     external_account_id: context.externalAccountId,
@@ -393,25 +539,30 @@ function buildConversationDaily(row, context) {
     external_inbox_id: row.externalInboxId,
     external_agent_id: row.externalAssigneeId,
     external_team_id: row.externalTeamId,
-    metric_date: metricDate,
+    metric_date: group.metricDate,
     reporting_timezone: context.reportingTimezone,
-    status: row.status,
-    new_conversation_count: dateOnly(row.sourceCreatedAt, context.reportingTimezone) === metricDate ? 1 : 0,
-    resolved_count: row.status === 'resolved' ? 1 : 0,
-    reopened_count: row.reopenCountDelta,
-    incoming_message_count: row.incomingMessageCount,
-    outgoing_message_count: row.outgoingMessageCount,
-    private_message_count: row.privateMessageCount,
-    attachment_message_count: row.attachmentMessageCount,
-    first_response_seconds: row.firstResponseSeconds,
-    first_response_business_seconds: row.firstResponseBusinessSeconds,
-    resolution_seconds: row.resolutionSeconds,
-    resolution_business_seconds: row.resolutionBusinessSeconds,
-    reply_seconds: row.replySeconds,
-    reply_business_seconds: row.replyBusinessSeconds,
-    data_status: 'complete',
+    status: dateOnly(row.sourceUpdatedAt, context.reportingTimezone) === group.metricDate ? row.status : null,
+    new_conversation_count: group.newConversationCount,
+    resolved_count: group.resolvedCount,
+    reopened_count: group.reopenedCount,
+    incoming_message_count: group.incomingMessageCount,
+    outgoing_message_count: group.outgoingMessageCount,
+    private_message_count: group.privateMessageCount,
+    attachment_message_count: group.attachmentMessageCount,
+    first_response_seconds: avgNumbers(group.firstResponse),
+    first_response_business_seconds: avgNumbers(group.firstResponseBusiness),
+    resolution_seconds: avgNumbers(group.resolution),
+    resolution_business_seconds: avgNumbers(group.resolutionBusiness),
+    reply_seconds: avgNumbers(group.reply),
+    reply_business_seconds: avgNumbers(group.replyBusiness),
+    data_status: 'partial',
     coverage_run_id: coverageId(context, 'conversation_daily'),
-    source_revision: String(row.sourceUpdatedAt),
+    source_revision: String(maxNumber([
+      row.sourceUpdatedAt,
+      ...group.firstResponse,
+      ...group.resolution,
+      ...group.reply,
+    ])),
     fetched_at: context.observedAt,
     sync_run_id: context.syncRunId,
     created_at: context.observedAt,
@@ -440,7 +591,7 @@ function aggregateDaily(rows, context, dimension) {
       avg_first_response_seconds: avg(values, 'first_response_seconds'),
       avg_resolution_seconds: avg(values, 'resolution_seconds'),
       avg_reply_seconds: avg(values, 'reply_seconds'),
-      data_status: 'complete',
+      data_status: 'partial',
       coverage_run_id: coverageId(context, `${dimension}_daily`),
       source_revision: maxRevision(values),
       fetched_at: context.observedAt,
@@ -448,18 +599,17 @@ function aggregateDaily(rows, context, dimension) {
       created_at: context.observedAt,
       updated_at: context.observedAt,
     };
-    if (dimension === 'agent') common.assigned_conversation_count = values.length;
+    if (dimension === 'agent') common.assigned_conversation_count = null;
     else {
-      common.conversation_count = values.length;
+      common.conversation_count = new Set(values.map((row) => row.external_conversation_id)).size;
       common.new_conversation_count = sum(values, 'new_conversation_count');
     }
     return freeze(common);
   }).sort(by(keyField));
 }
 
-function aggregateAccountDaily(rows, agents, inboxes, context) {
+function aggregateAccountDaily(rows, context) {
   const groups = group(rows, (row) => row.metric_date);
-  if (groups.size === 0) groups.set(context.metricDate, []);
   return [...groups.entries()].map(([metricDate, values]) => freeze({
     account_daily_key: `chatwoot:${context.accountKey}:account:${metricDate}`,
     customer_key: context.customerKey,
@@ -467,21 +617,21 @@ function aggregateAccountDaily(rows, agents, inboxes, context) {
     external_account_id: context.externalAccountId,
     metric_date: metricDate,
     reporting_timezone: context.reportingTimezone,
-    conversation_count: values.length,
+    conversation_count: new Set(values.map((row) => row.external_conversation_id)).size,
     new_conversation_count: sum(values, 'new_conversation_count'),
-    open_conversation_count: count(values, 'status', 'open'),
-    resolved_conversation_count: count(values, 'status', 'resolved'),
-    pending_conversation_count: count(values, 'status', 'pending'),
-    snoozed_conversation_count: count(values, 'status', 'snoozed'),
+    open_conversation_count: null,
+    resolved_conversation_count: sum(values, 'resolved_count'),
+    pending_conversation_count: null,
+    snoozed_conversation_count: null,
     reopened_count: sum(values, 'reopened_count'),
     incoming_message_count: sum(values, 'incoming_message_count'),
     outgoing_message_count: sum(values, 'outgoing_message_count'),
     avg_first_response_seconds: avg(values, 'first_response_seconds'),
     avg_resolution_seconds: avg(values, 'resolution_seconds'),
     avg_reply_seconds: avg(values, 'reply_seconds'),
-    active_agent_count: agents.filter((row) => row.availabilityStatus !== 'offline').length,
-    active_inbox_count: inboxes.length,
-    data_status: 'complete',
+    active_agent_count: null,
+    active_inbox_count: null,
+    data_status: 'partial',
     coverage_run_id: coverageId(context, 'account_daily'),
     source_revision: maxRevision(values),
     fetched_at: context.observedAt,
@@ -491,6 +641,15 @@ function aggregateAccountDaily(rows, agents, inboxes, context) {
   })).sort(by('account_daily_key'));
 }
 
+function emptyDailyFacts() {
+  return Object.freeze({
+    conversationDaily: Object.freeze([]),
+    agentDaily: Object.freeze([]),
+    inboxDaily: Object.freeze([]),
+    accountDaily: Object.freeze([]),
+  });
+}
+
 function buildCoverage(context, datasets) {
   const coverageRuns = [];
   const coverageEntities = [];
@@ -498,6 +657,7 @@ function buildCoverage(context, datasets) {
     const entityType = snake(dataset);
     const runId = coverageId(context, dataset);
     const watermark = maxTimestamp(rows);
+    const scopeMode = coverageScope(context, entityType);
     coverageRuns.push(freeze({
       coverage_run_id: runId,
       sync_run_id: context.syncRunId,
@@ -506,21 +666,21 @@ function buildCoverage(context, datasets) {
       account_key: context.accountKey,
       dataset_key: `chatwoot.${entityType}`,
       metric_semantics: entityType.includes('daily') ? 'period' : 'snapshot',
-      scope_mode: context.fullSnapshot ? 'full_inventory' : 'recent_window',
-      period_start: null,
-      period_end: context.metricDate,
+      scope_mode: scopeMode,
+      period_start: entityType.includes('daily') ? minDate(rows) : null,
+      period_end: entityType.includes('daily') ? maxDate(rows) : context.metricDate,
       source_timezone: context.reportingTimezone,
-      status: 'complete',
+      status: 'partial',
       expected_entities: rows.length,
       observed_entities: rows.length,
       expected_rows: rows.length,
       observed_rows: rows.length,
-      written_rows: rows.length,
+      written_rows: 0,
       failed_rows: 0,
       source_watermark: watermark > 0 ? String(watermark) : null,
       revisable_until: null,
       started_at: context.observedAt,
-      completed_at: context.observedAt,
+      completed_at: null,
       error_code: null,
       created_at: context.observedAt,
       updated_at: context.observedAt,
@@ -533,32 +693,46 @@ function buildCoverage(context, datasets) {
         entity_type: entityType,
         external_entity_id: externalId,
         observation_status: 'observed',
-        source_revision: null,
+        source_revision: sourceRevision(row),
         observed_at: context.observedAt,
         created_at: context.observedAt,
       }));
     });
   }
-  return Object.freeze({
-    coverageRuns: freezeRows(coverageRuns),
-    coverageEntities: freezeRows(coverageEntities),
-  });
+  return Object.freeze({ coverageRuns: freezeRows(coverageRuns), coverageEntities: freezeRows(coverageEntities) });
+}
+
+function coverageScope(context, entityType) {
+  if (entityType === 'resolved_contacts') return 'exact_entities';
+  if (entityType.includes('daily')) return 'report_range';
+  return context.fullSnapshot ? 'full_inventory' : 'recent_window';
 }
 
 async function buildSourceRecordStates(source) {
   const records = [];
   for (const [dataset, values] of Object.entries(source)) {
+    if (dataset === 'previousConversationLabels') continue;
     const rows = Array.isArray(values) ? values : [values];
     for (const row of rows) {
       records.push(freeze({
         sourceRecordId: `${snake(dataset)}:${externalId(row)}`,
         sourceModifiedAt: sourceUpdatedAt(row),
-        sourceHash: await createStableFingerprint(row),
+        sourceHash: await deterministicSourceHash(row),
         externalContentId: stableKey(row),
       }));
     }
   }
   return freezeRows(records.sort(by('sourceRecordId')));
+}
+
+async function deterministicSourceHash(row) {
+  return createStableFingerprint({
+    stableKey: stableKey(row),
+    sourceUpdatedAt: sourceUpdatedAt(row),
+    metadataHash: row.metadataHash ?? null,
+    metricsHash: row.metricsHash ?? null,
+    sourcePayloadHash: row.sourcePayloadHash ?? null,
+  });
 }
 
 function canonicalConversation(row) {
@@ -601,11 +775,7 @@ function coverageId(context, dataset) {
 function coverageSummary(runs) {
   return Object.freeze(Object.fromEntries(runs.map((row) => [
     row.dataset_key.replace(/^chatwoot\./u, ''),
-    Object.freeze({
-      expected: row.expected_rows,
-      observed: row.observed_rows,
-      failed: row.failed_rows,
-    }),
+    Object.freeze({ expected: row.expected_rows, observed: row.observed_rows, failed: row.failed_rows }),
   ])));
 }
 
@@ -630,19 +800,35 @@ function externalId(row) {
 }
 
 function sourceUpdatedAt(row) {
-  return row.sourceUpdatedAt ?? row.lastSeenAt ?? row.observedAt ?? null;
+  return row.sourceUpdatedAt ?? row.lastActivityAt ?? row.eventEndAt ?? row.sourceCreatedAt ?? null;
+}
+
+function sourceRevision(row) {
+  const value = sourceUpdatedAt(row) ?? row.source_revision ?? null;
+  return value === null || value === undefined ? null : String(value);
 }
 
 function maxTimestamp(rows) {
   let result = 0;
   for (const row of rows) {
-    for (const value of [row.sourceUpdatedAt, row.lastActivityAt, row.eventEndAt, row.lastSeenAt,
-      row.source_updated_at, row.last_activity_at, row.event_end_at, row.updated_at]) {
+    for (const value of [row.sourceUpdatedAt, row.lastActivityAt, row.eventEndAt, row.sourceCreatedAt,
+      row.source_updated_at, row.last_activity_at, row.event_end_at, row.source_created_at,
+      row.updated_at]) {
       const number = Number(value);
       if (Number.isFinite(number)) result = Math.max(result, number);
     }
   }
   return result;
+}
+
+function minDate(rows) {
+  const values = rows.map((row) => row.metric_date).filter(Boolean).sort();
+  return values[0] ?? null;
+}
+
+function maxDate(rows) {
+  const values = rows.map((row) => row.metric_date).filter(Boolean).sort();
+  return values.at(-1) ?? null;
 }
 
 function group(rows, keyFn) {
@@ -660,9 +846,13 @@ function sum(rows, field) {
 }
 
 function avg(rows, field) {
-  const values = rows.map((row) => row[field]).filter((value) => value !== null && value !== undefined)
+  return avgNumbers(rows.map((row) => row[field]));
+}
+
+function avgNumbers(values) {
+  const numbers = values.filter((value) => value !== null && value !== undefined)
     .map(Number).filter(Number.isFinite);
-  return values.length === 0 ? null : values.reduce((total, value) => total + value, 0) / values.length;
+  return numbers.length === 0 ? null : numbers.reduce((total, value) => total + value, 0) / numbers.length;
 }
 
 function maxRevision(rows) {
@@ -670,8 +860,13 @@ function maxRevision(rows) {
   return values.length === 0 ? null : String(Math.max(...values));
 }
 
-function count(rows, field, value) {
-  return rows.filter((row) => row[field] === value).length;
+function maxNumber(values) {
+  const numbers = values.map(Number).filter(Number.isFinite);
+  return numbers.length === 0 ? 0 : Math.max(...numbers);
+}
+
+function pushNullable(values, value) {
+  if (value !== null && value !== undefined && Number.isFinite(Number(value))) values.push(Number(value));
 }
 
 function boolInt(value) {
@@ -707,7 +902,9 @@ function assertTimeZone(value) {
 function freeze(value) { return Object.freeze(value); }
 function freezeRows(rows) { return Object.freeze(rows.map(freeze)); }
 function requireObject(value, fieldName) {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new TypeError(`${fieldName} must be an object`);
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError(`${fieldName} must be an object`);
+  }
   return value;
 }
 function requireArray(value, fieldName) {
@@ -715,7 +912,9 @@ function requireArray(value, fieldName) {
   return value;
 }
 function requireText(value, fieldName) {
-  if (typeof value !== 'string' || value.trim() === '') throw new TypeError(`${fieldName} must be a non-empty string`);
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new TypeError(`${fieldName} must be a non-empty string`);
+  }
   return value.trim();
 }
 function identity(value, fieldName) {
@@ -725,11 +924,15 @@ function identity(value, fieldName) {
 }
 function positiveId(value, fieldName) {
   const number = Number(value);
-  if (!Number.isSafeInteger(number) || number <= 0) throw new TypeError(`${fieldName} must be a positive safe integer`);
+  if (!Number.isSafeInteger(number) || number <= 0) {
+    throw new TypeError(`${fieldName} must be a positive safe integer`);
+  }
   return String(number);
 }
 function positiveInteger(value, fieldName) {
   const number = Number(value);
-  if (!Number.isSafeInteger(number) || number <= 0) throw new TypeError(`${fieldName} must be a positive integer`);
+  if (!Number.isSafeInteger(number) || number <= 0) {
+    throw new TypeError(`${fieldName} must be a positive integer`);
+  }
   return number;
 }
