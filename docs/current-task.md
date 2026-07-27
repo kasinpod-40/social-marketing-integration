@@ -1,16 +1,15 @@
-# Current Task — Meta D1-only Rollout Operator Merge Closeout
+# Current Task — Meta Lark Parity Fast-Track Rollout Operator
 
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = MERGED_REMOTE_EXECUTION_NOT_AUTHORIZED
-CURRENT_PROGRAM                     = META_D1_ONLY_PROCESSING_GUARDED_ROLLOUT
-CONTRACT_VERSION                    = meta-d1-only-rollout-v1
-MERGED_PR                           = #114
-SOURCE_HEAD                         = 0044127bdc55f735e91b8fa02f4db19698a02868
-MERGED_MAIN_SHA                     = 50fe71da6dea64e2f0ba04b1067e7e424e2a5451
-MERGE_METHOD                        = SQUASH
-MERGED_AT                           = 2026-07-27T17:08:35Z
+TASK_STATUS                         = IMPLEMENTATION_IN_PROGRESS
+CURRENT_PROGRAM                     = META_LARK_PARITY_FAST_TRACK
+CONTRACT_VERSION                    = meta-lark-parity-rollout-v1
+BASE_MAIN_SHA                       = 025a2f68800d3c4115676c644b28384eacacdc7f
+BRANCH                              = integration/meta-lark-parity-rollout-operator
+META_PROVIDER_VALIDATION            = PASS / 4 TARGETS
+META_D1_OPERATOR                    = MERGED / REMOTE_NOT_RUN
 REMOTE_EXECUTION_AUTHORIZED         = false
 REMOTE_ACTIONS                      = NONE
 REMOTE_D1_MUTATION                  = NONE
@@ -21,125 +20,167 @@ SCHEDULE                            = DISABLED
 PRODUCTION                          = BLOCKED
 ```
 
-The completed implementation task is archived at:
+The preceding Meta D1-only rollout closeout is preserved at:
 
 ```text
-docs/archive/meta-d1-only-rollout-operator-merged-current-task-2026-07-27.md
+docs/archive/current-task-before-meta-lark-parity-rollout-2026-07-27.md
 ```
 
-Technical contracts and durable records remain in:
+## Customer-priority objective
+
+ทำให้ Chemistry K เห็นข้อมูล Meta ใน Lark เร็วที่สุดโดยไม่รอให้ D1-only ของทั้งสี่ Target จบก่อน
+จึงแยกงานเป็นสองเส้นที่ทำพร้อมกัน:
 
 ```text
-docs/tasks/meta-d1-only-rollout-operator.md
-docs/runbooks/meta-d1-only-rollout.md
-docs/project-brain/meta-d1-only-rollout-operator-2026-07-27.md
-docs/project-brain/meta-d1-only-rollout-operator-merge-closeout-2026-07-27.md
+Workstream A — D1 per target
+facebook → instagram → chemistry_k2 → chemistry_k3
+
+Workstream B — Lark readiness
+metadata/table/key preflight now
+→ continue each exact operation to Lark immediately after that target passes D1
 ```
 
-## Merge result
+## Runtime fast path
 
-PR #114 was aligned with moving `main` through feature-targeted PRs #115 and #117, passed exact-final-
-head verification and was Squash Merged into `main`. No direct push to `main` occurred.
+Meta Runtime durably stages Provider source data before D1. A D1-only operation intentionally stops at
+`lark_gate_disabled`, leaving the same Work active. The Lark continuation therefore reuses:
+
+- the same operation ID, Work key, generation and requested timestamp;
+- the already staged Provider source units;
+- the completed D1 and Coverage phases;
+- the existing Lark `TableSyncEngine` and stable-key plans.
+
+The continuation omits `d1Only=true`, enables the exact Lark gate and does not require another Meta
+Provider read. The first target that passes D1 may reach Lark while the next target is still running D1.
+
+## Target order
 
 ```text
-PR_STATE                            = CLOSED
-PR_MERGED                           = true
-FINAL_SOURCE_HEAD                   = 0044127bdc55f735e91b8fa02f4db19698a02868
-SQUASH_MERGE_COMMIT                 = 50fe71da6dea64e2f0ba04b1067e7e424e2a5451
-FINAL_ALIGNED_MAIN_SHA              = fb16083ec9615944f675b326a69db9ca98d00353
-ALIGNMENT_PR_1                      = #115
-ALIGNMENT_PR_2                      = #117
+1. facebook
+2. instagram
+3. chemistry_k2
+4. chemistry_k3
 ```
 
-## Merged Repository scope
+One target remains one evidence chain. Do not combine account identities or operations.
 
-The merged plan-only-by-default operator supports one isolated Chemistry K target per evidence chain:
+## Lark destinations
+
+Metadata preflight validates all shared Meta destinations now:
 
 ```text
-facebook
-instagram
-chemistry_k2
-chemistry_k3
+RAW_Meta_Organic_Accounts
+RAW_Meta_Organic_Content
+RAW_Meta_Organic_Metrics
+RAW_Ads_Entities
+RAW_Ads_Daily
+MKT_Accounts
+MKT_Account_Daily
+MKT_Content
+MKT_Content_Daily
+MKT_Ads_Accounts
+MKT_Ads_Campaigns
+MKT_Ads_AdGroups
+MKT_Ads_Ads
+MKT_Ads_Creatives
+MKT_Ads_Daily
 ```
 
-It supports separately confirmed phases:
+Every Table ID must exist and be unique. Every destination must contain its exact stable-key Field.
+The metadata preflight reads no records and performs no Lark mutation.
+
+## Operator phases
 
 ```text
 plan
-preflight
-backup
-deploy-safe-baseline
-verify-safe-baseline
-deploy-d1-only-gates
-verify-d1-only-deployment
-snapshot-before
-send-one-d1-only
-verify-d1-only
-resend-same-operation
-verify-idempotent-rerun
-restore-all-false
-verify-restore
-summary
+lark-preflight
+
+d1-ready
+→ deploy-safe-baseline
+→ verify-safe-baseline
+→ deploy-lark-gates
+→ verify-lark-deployment
+→ snapshot-before
+→ send-lark-continuation
+→ verify-lark
+→ resend-same-operation
+→ verify-idempotent-rerun
+→ restore-all-false
+→ verify-restore
+→ summary
 ```
 
-Every target has its own stable operation, work key, sync-run ID, backup and evidence root. Every
-executable phase requires its own exact confirmation and chain-bound prior evidence. No phase grants
-permission for a later phase.
+`lark-preflight` may run before any D1 target. Every later phase is target-bound and begins only after
+that exact target's accepted D1-only summary exists.
 
-The implementation reuses the merged Meta Runtime, Shared Queue operation/continuation path,
-Reliability runner, D1 locks, resumable work, Organic History Writer, Marketing History Store and
-Storage Foundation/Coverage contracts. It adds no new Connector, Queue framework, Reliability engine,
-D1 writer, Coverage engine, Lark sync engine or migration.
+## Approved active flag window
 
-## Locked D1-only boundary
-
-An accepted target run must prove D1 phase completion, accepted Coverage, zero failed rows, no active
-lock and no Meta Lark/full-completion phase. The active unfinished Work boundary at
-`lark_gate_disabled` is intentional and preserves a separately approved later Lark continuation.
-
-One separately confirmed same-operation resend may prove idempotency only after first verification.
-Target Business counts, operation-scoped counts and Coverage counts must remain unchanged.
-
-## Verification result
+Safe configuration:
 
 ```text
-META_END_TO_END_VERIFICATION        = #42 / 30287591901 / PASS
-BRANCH_VERIFICATION                 = #682 / 30287592019 / PASS
-FOCUSED_META_D1_ONLY_TESTS          = 15 / 15 PASS
-NODE_UNIT_INTEGRATION               = 1081 / 1081 PASS
-WORKERS_RUNTIME                     = 11 / 11 PASS
-REPORT_RELIABILITY                  = 91 / 91 PASS
-DEPENDENCY_AUDIT                    = 0 vulnerabilities
-WRANGLER_DRY_RUN                    = PASS / NO DEPLOYMENT
-FINAL_DIAGNOSTICS_ARTIFACT          = 8661468409
-FINAL_ARTIFACT_DIGEST               = sha256:2bd112b3257e62d5da376440cdfd6a2863d6e88e94b72e26e4785cab51fe1c6f
-FINAL_COMPARE_AHEAD                 = 24
-FINAL_COMPARE_BEHIND                = 0
-FINAL_CHANGED_FILES                 = 9
-UNRESOLVED_REVIEW_THREADS           = 0
+all MKT execution flags=false
 ```
 
-## Remote safe state
+Target Lark continuation configuration:
 
 ```text
-REMOTE_D1_EXPORT_OR_MUTATION         = NOT_RUN
-WORKER_DEPLOYMENT                    = NOT_RUN
-META_PROVIDER_REQUEST                = NOT_RUN
-QUEUE_MESSAGE                        = NONE
-DLQ_ACTION                           = NONE
-LARK_PREFLIGHT_OR_WRITE              = NONE
-REPORT_CUTOVER                       = NONE
-SCHEDULE_ACTIVATION                  = NONE
-RETENTION_OR_DELETE                  = NONE
-PRODUCTION                           = BLOCKED
+selected Meta Connector=true
+MKT_META_SOURCE_READ_ENABLED=true
+MKT_META_D1_WRITE_ENABLED=true
+MKT_META_LARK_WRITE_ENABLED=true
+```
+
+Mandatory false throughout:
+
+```text
+MKT_META_REPORT_READ_ENABLED=false
+all unrelated Connector/Business flags=false
+all schedules=false
+MKT_DLQ_REDRIVE_ENABLED=false
+Production=false
+```
+
+## Acceptance
+
+A target passes Lark only when:
+
+- D1 Business and Coverage counts are unchanged from the accepted D1-only snapshot;
+- destination preflight, Lark phase and completion phase are complete;
+- every expected Lark row is accounted as created, updated or skipped;
+- Work is completed and no lock remains;
+- a same-operation rerun adds a Queue attempt without changing reconciliation;
+- all flags are restored false and verified;
+- Provider request count during Lark continuation is zero.
+
+## Implementation scope
+
+- guarded Meta Lark rollout contract and CLI;
+- metadata-only Lark preflight;
+- exact D1 summary/readiness gate;
+- safe/active Worker deployment verification;
+- same-operation Queue continuation;
+- Lark parity/reconciliation and rerun verification;
+- all-false restore;
+- evidence chaining, redaction, tests and runbook.
+
+No new Connector, Provider client, Queue framework, Reliability runner, D1 writer, Lark client,
+`TableSyncEngine`, schema, Formula, View or migration is created.
+
+## Remote safe state during implementation
+
+```text
+Cloudflare/D1 commands             NOT_RUN
+Worker deployment                  NOT_RUN
+Queue messages                     NONE
+Meta Provider requests             NONE
+Lark metadata requests             NOT_RUN
+Lark record writes                 NONE
+Schedule activation               NONE
+Production                        BLOCKED
 ```
 
 ## Required next gate
 
-The next Meta phase must be opened as a new Integration-owned task from then-current `main` and must
-refresh the active Worker version, D1 migration ledger/schema, Queue topology, Worker Secret names and
-accepted sanitized Meta read-only validation summary.
-
-The first eligible scope is one target's plan and separately confirmed Remote read-only preflight.
-Backup, deployment, Queue send, D1 Business processing, rerun, restore, Lark parity and Production each
-remain separately gated. This closeout authorizes none of them.
+Complete Repository implementation, exact-head CI and Integration review. Repository completion alone
+does not authorize Remote execution. After merge, `lark-preflight` can run in parallel with Facebook
+D1 plan/preflight, then each D1-complete target can continue into Lark immediately.
