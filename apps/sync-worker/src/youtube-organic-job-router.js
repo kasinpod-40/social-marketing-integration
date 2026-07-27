@@ -8,6 +8,7 @@ import { syncYouTubeOrganicEndToEnd } from '../../../packages/application/src/us
 import { readLarkTableIdsFromEnv } from '../../../packages/config/src/lark-table-config.js';
 import {
   readYouTubeChannelIdFromEnv,
+  readYouTubeEndToEndRuntimeConfig,
   readYouTubeLarkTableIdsFromEnv,
 } from '../../../packages/config/src/youtube-organic-runtime-config.js';
 import { createYouTubeClientsFromEnv } from '../../../packages/connectors/src/youtube/youtube-runtime-factory.js';
@@ -24,7 +25,6 @@ import {
   DEFAULT_TIKTOK_FULL_RECONCILIATION_INTERVAL_MS,
   logQueueResult,
   readAttempts,
-  readBoolean,
   readMetricDate,
   readPositiveInteger,
   readSyncJobGeneration,
@@ -44,12 +44,12 @@ export async function processYouTubeOrganicEndToEndJob(input) {
   }
 
   const definition = assertJobImplemented(getJobDefinition(input.job.body.type));
-  const endToEndEnabled = readBoolean(input.env?.MKT_YOUTUBE_END_TO_END_ENABLED, false);
+  const youtubeConfig = readYouTubeEndToEndRuntimeConfig(input.env);
   const storage = readStorageRuntimeConfig(input.env);
   const d1WriteEnabled = storage.timeSeriesD1WriteEnabled;
-  const larkWriteEnabled = readBoolean(input.env?.MKT_YOUTUBE_LARK_WRITE_ENABLED, false);
+  const larkWriteEnabled = youtubeConfig.larkWriteEnabled;
   const dryRun = input.job.body?.dryRun === true;
-  if (!endToEndEnabled) {
+  if (!youtubeConfig.endToEndEnabled) {
     throw permanentError('YouTube end-to-end route is disabled for this environment', {
       code: 'YOUTUBE_END_TO_END_DISABLED',
     });
