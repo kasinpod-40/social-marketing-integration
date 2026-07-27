@@ -1,149 +1,226 @@
-# Current Task — WooCommerce Chemistry K Customer Data to Lark Read-only Preflight
+# Current Task — Meta Lark Parity Fast-Track Rollout Operator
 
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = PASS_FOR_INTEGRATION_REVIEW
-CURRENT_PROGRAM                     = WOOCOMMERCE_CUSTOMER_DATA_TO_LARK_ROLLOUT
-BASE_MAIN_SHA                       = 025a2f68800d3c4115676c644b28384eacacdc7f
-BRANCH                              = integration/woocommerce-customer-data-lark-rollout
-DRAFT_PR                            = #118 / OPEN / DRAFT / UNMERGED
-IMPLEMENTATION_OWNER                = CHATGPT_WORK_GITHUB_TOOLS
-CHATWOOT_WORKSTREAM                 = STOPPED_IN_THIS_CHAT
-VERIFIED_IMPLEMENTATION_HEAD        = 17211c975e2de29e299854870cc4a9506ede3dd7
-BRANCH_VERIFICATION                 = #689 / 30288449765 / PASS
-REMOTE_EXECUTION_AUTHORIZED         = READ_ONLY_PREFLIGHT_AFTER_MERGE_ONLY
-REMOTE_ACTIONS                      = NONE_DURING_IMPLEMENTATION
-MIGRATION_0017_STATE                = UNRESOLVED_REMOTE_TRUTH
-WOOCOMMERCE_PROVIDER_REQUEST        = NOT_RUN
-LARK_METADATA_REQUEST               = NOT_RUN
+TASK_STATUS                         = PASS_FOR_MERGE_REVIEW
+CURRENT_PROGRAM                     = META_LARK_PARITY_FAST_TRACK
+CONTRACT_VERSION                    = meta-lark-parity-rollout-v1
+ORIGINAL_BASE_MAIN_SHA              = 025a2f68800d3c4115676c644b28384eacacdc7f
+ALIGNED_MAIN_SHA                    = c124e6fdbe27fcd56fb357baef1b4769957748df
+ALIGNMENT_PR                        = #130 / MERGED_INTO_FEATURE_BRANCH
+ALIGNMENT_MERGE_COMMIT              = 1d2b86f45ae54a7de2c39f7cec41adc78cc28106
+BRANCH                              = integration/meta-lark-parity-rollout-operator
+DRAFT_PR                            = #131 / OPEN / DRAFT / UNMERGED
+VERIFIED_IMPLEMENTATION_HEAD        = c476f4f1044b73ccdfb489afe92d7199afceb872
+META_PROVIDER_VALIDATION            = PASS / 4 TARGETS
+META_D1_OPERATOR                    = MERGED / REMOTE_NOT_RUN
+REMOTE_EXECUTION_AUTHORIZED         = false
+REMOTE_ACTIONS                      = NONE
 REMOTE_D1_MUTATION                  = NONE
-LARK_MUTATION                       = NONE
 QUEUE_OR_DLQ_ACTION                 = NONE
+LARK_MUTATION                       = NONE
 WORKER_DEPLOYMENT                   = NOT_RUN
 SCHEDULE                            = DISABLED
 PRODUCTION                          = BLOCKED
 ```
 
-The preceding Meta merge-closeout task is referenced by immutable commit/blob provenance at:
+The aligned WooCommerce task is preserved at:
 
 ```text
-docs/archive/current-task-before-woocommerce-customer-data-lark-rollout-2026-07-27.md
+docs/archive/current-task-before-meta-lark-fast-track-after-alignment-2026-07-27.md
 ```
 
-## Objective completed
-
-Implemented and verified the first guarded gate for the Chemistry K WooCommerce end-to-end path:
+The preceding Meta D1 closeout remains preserved at:
 
 ```text
-WooCommerce GET-only source
-→ D1 durable commerce facts
-→ Lark RAW and Canonical commerce tables
-→ parity / rerun / incremental UAT
+docs/archive/current-task-before-meta-lark-parity-rollout-2026-07-27.md
 ```
 
-This Repository task adds the read-only evidence chain only. It does not execute a Remote phase or
-import customer data yet.
+## Customer-priority objective
 
-## Existing runtime retained
+ทำให้ Chemistry K เห็นข้อมูล Meta ใน Lark เร็วที่สุดโดยไม่รอให้ D1-only ของทั้งสี่ Target จบก่อน
+จึงใช้ Pipeline สองเส้นพร้อมกัน:
 
 ```text
-WooCommerce REST client
-Shared Queue + stable operation identity
-Shared Reliability / lock / retry / DLQ
-Resumable work and continuation
-D1-first commerce writer
-Derived commerce facts
-Coverage engine
-Shared Lark repository and sync engine
+Workstream A — D1 per target
+facebook → instagram → chemistry_k2 → chemistry_k3
+
+Workstream B — Lark readiness
+metadata/table/key preflight now
+→ continue each exact operation to Lark immediately after that target passes D1
 ```
 
-No replacement runtime, Queue, Reliability, D1, Coverage or Lark engine was introduced.
+## Runtime fast path
 
-## Implemented operator phases
+Meta Runtime durably stages Provider data before D1. A D1-only operation stops intentionally at
+`lark_gate_disabled`, leaving the exact Work active. The Lark continuation therefore reuses:
+
+- the same operation ID, Work key, generation and original requested timestamp;
+- the already staged Provider source units;
+- completed D1/Coverage state;
+- the existing Lark client, repository and `TableSyncEngine`.
+
+The continuation omits `d1Only=true`, enables the exact Lark gate and requires zero additional Meta
+Provider requests. The first target that passes D1 can reach Lark while the next target is still being
+prepared.
+
+## Target order
+
+```text
+1. facebook
+2. instagram
+3. chemistry_k2
+4. chemistry_k3
+```
+
+One target remains one evidence chain. Worker deployment and Queue-send windows are serialized even
+when read-only preparation is parallel.
+
+## Lark destination preflight
+
+Validate all 15 shared destinations immediately:
+
+```text
+RAW_Meta_Organic_Accounts
+RAW_Meta_Organic_Content
+RAW_Meta_Organic_Metrics
+RAW_Ads_Entities
+RAW_Ads_Daily
+MKT_Accounts
+MKT_Account_Daily
+MKT_Content
+MKT_Content_Daily
+MKT_Ads_Accounts
+MKT_Ads_Campaigns
+MKT_Ads_AdGroups
+MKT_Ads_Ads
+MKT_Ads_Creatives
+MKT_Ads_Daily
+```
+
+Every Table ID must exist and be unique. Every table must contain its exact stable-key Field. The
+metadata preflight reads no records and performs no mutation.
+
+## Operator phases
 
 ```text
 plan
-→ remote-preflight
-→ provider-preflight
-→ lark-preflight
+lark-preflight
+
+d1-ready
+→ deploy-safe-baseline
+→ verify-safe-baseline
+→ deploy-lark-gates
+→ verify-lark-deployment
+→ snapshot-before
+→ send-lark-continuation
+→ verify-lark
+→ resend-same-operation
+→ verify-idempotent-rerun
+→ restore-all-false
+→ verify-restore
 → summary
 ```
 
-Every executable phase requires its own exact confirmation and passed target-bound evidence.
+`lark-preflight` may run before any D1 target. Every later phase is bound to the exact accepted D1
+summary for that target.
 
-## Locked contracts
+## Approved flag window
 
-- Integration Workspace / Chemistry K / Worker / D1 target identity is exact and fingerprinted.
-- Migration `0017_woocommerce_commerce.sql` source must contain exactly 17 additive tables and 13 indexes.
-- Remote pending set may be empty or exactly Migration `0017`; any additional pending migration fails.
-- Remote preflight is SELECT-only and requires zero active work and locks.
-- Ledger/schema drift fails closed.
-- Provider preflight performs GET-only store identity and one-row samples for orders, products and customers.
-- Provider evidence stores only minimized identity/count metadata, never raw records or credentials.
-- Lark preflight reads table/field metadata only and requires all 14 unique WooCommerce table IDs.
-- Summary returns either a separately gated Migration path or readiness for guarded manual D1/Lark backfill.
-
-## Lark target tables
+Safe configuration:
 
 ```text
-RAW_Commerce_Stores
-RAW_Commerce_Orders
-RAW_Commerce_Order_Items
-RAW_Commerce_Products
-RAW_Commerce_Product_Variations
-RAW_Commerce_Categories
-RAW_Commerce_Customers
-RAW_Commerce_Coupons
-RAW_Commerce_Refunds
-MKT_Commerce_Orders
-MKT_Commerce_Products
-MKT_Commerce_Customers
-MKT_Commerce_Daily
-MKT_Commerce_Product_Daily
+all MKT execution flags=false
 ```
 
-## Repository verification
-
-Implementation head `17211c975e2de29e299854870cc4a9506ede3dd7` passed Branch Verification
-`#689` / run `30288449765`:
+Active target continuation:
 
 ```text
-INSTALL_LOCKED_DEPENDENCIES          = PASS
-SYNTAX_ARCHITECTURE_HYGIENE          = PASS
-FOCUSED_STAGED_TIKTOK                = 4 / 4 PASS
-NODE_UNIT_INTEGRATION                = 1092 / 1092 PASS
-WORKERS_RUNTIME                      = 11 / 11 PASS
-REPORT_RELIABILITY                   = 91 / 91 PASS
-WOOCOMMERCE_PREFLIGHT_TESTS          = 11 / 11 INCLUDED IN FULL SUITE
-DEPENDENCY_AUDIT                     = 0 vulnerabilities
-WRANGLER_DRY_RUN                     = PASS / NO DEPLOYMENT
-DIAGNOSTICS_ARTIFACT                 = 8661809676
-DIAGNOSTICS_DIGEST                   = sha256:2dbefce519777fec6361120947c2bb459b7a37598350eb5ece6146ff1212084e
+selected Meta Connector=true
+MKT_META_SOURCE_READ_ENABLED=true
+MKT_META_D1_WRITE_ENABLED=true
+MKT_META_LARK_WRITE_ENABLED=true
 ```
 
-## Remote safe state
+Mandatory false:
 
 ```text
-REMOTE_D1_QUERY                      = NOT_RUN
-REMOTE_D1_BACKUP_OR_MIGRATION        = NOT_RUN
-WOOCOMMERCE_PROVIDER_GET             = NOT_RUN
-LARK_METADATA_READ                   = NOT_RUN
-LARK_SCHEMA_OR_RECORD_MUTATION       = NONE
-QUEUE_MESSAGE                        = NONE
-DLQ_ACTION                           = NONE
-WORKER_DEPLOYMENT                    = NOT_RUN
-MANUAL_BACKFILL                      = NOT_RUN
-SCHEDULE                             = DISABLED
-PRODUCTION                           = BLOCKED
+MKT_META_REPORT_READ_ENABLED=false
+all unrelated Connector/Business flags=false
+all schedules=false
+MKT_DLQ_REDRIVE_ENABLED=false
+Production=false
 ```
 
-## Remaining gate
+## Acceptance
 
-The documentation-aligned final head must pass exact-final-head Branch Verification and Integration
-Review. PR #118 remains Draft and unmerged.
+A target passes only when:
 
-After merge, the first eligible execution is `remote-preflight` only. Provider GET-only and Lark
-metadata preflight each require their own later confirmation and prior passed evidence. Backup,
-Migration `0017` apply, Worker deployment, Queue send, D1/Lark customer-data backfill, parity, rerun,
-incremental UAT, Schedule and Production all remain separately gated.
+- exact D1 summary, operation and Work identity match;
+- Provider requests during continuation equal zero;
+- D1 Business and Coverage counts are unchanged;
+- destination preflight, Lark phase and completion phase are complete;
+- every expected Lark row is reconciled as created, updated or skipped;
+- Work is completed and no lock remains;
+- same-operation rerun leaves reconciliation unchanged;
+- all flags are restored false and verified.
+
+## Existing contracts reused
+
+- merged Meta source adapters and durable source staging;
+- stable Queue operation and Shared continuation;
+- Reliability, locks and resumable Work;
+- D1 Organic/Ads writers and Coverage;
+- Lark Bitable client, repositories and `TableSyncEngine`;
+- merged WooCommerce Lark-preflight, Chatwoot safe-config and TikTok exact-version changes inherited
+  from current `main` through PR #130.
+
+No new Connector, Queue framework, Reliability engine, D1 writer, Lark engine, schema, Formula, View,
+migration or Schedule is introduced.
+
+## Verification result
+
+The initial exact-head CI exposed one test-only config adapter defect: the first helper matched `=`
+while the Worker config is JSONC and uses `:`. The adapter and CLI were corrected to use the same
+JSONC string/boolean contract as the merged D1 operator. Runtime continuation semantics were unchanged.
+
+Exact implementation head `c476f4f1044b73ccdfb489afe92d7199afceb872` passed:
+
+```text
+META_END_TO_END_VERIFICATION        = #45 / 30291842594 / PASS
+BRANCH_VERIFICATION                 = #713 / 30291842621 / PASS
+FOCUSED_META_TESTS                  = 15 / 15 PASS
+NODE_UNIT_INTEGRATION               = 1117 / 1117 PASS
+WORKERS_RUNTIME                     = 12 / 12 PASS
+REPORT_RELIABILITY                  = 88 / 88 PASS
+DEPENDENCY_AUDIT                    = 0 vulnerabilities
+WRANGLER_DRY_RUN                    = PASS / NO DEPLOYMENT
+META_DIAGNOSTICS_ARTIFACT           = 8663093481
+META_ARTIFACT_DIGEST                = sha256:addc9fa012e7a0046716ed0af3c8f09f7e601b67d12adfbdc54d4ee514071e34
+BRANCH_DIAGNOSTICS_ARTIFACT         = 8663098052
+BRANCH_ARTIFACT_DIGEST              = sha256:03dff2964f4521f699ef418304ae7f3b8b8a56666d1551dfc0466d180bcc2612
+REMOTE_ACTION_COUNT                 = 0
+```
+
+## Remote safe state during implementation
+
+```text
+Cloudflare/D1 commands             NOT_RUN
+Worker deployment                  NOT_RUN
+Queue messages                     NONE
+Meta Provider requests             NONE
+Lark metadata requests             NOT_RUN
+Lark record writes                 NONE
+Schedule activation               NONE
+Production                        BLOCKED
+```
+
+## Required next gate
+
+The documentation-only final head must pass Meta End-to-End Verification and Branch Verification once
+more. Then perform final diff/review-thread/main-alignment checks before the separately authorized
+Squash Merge of PR #131.
+
+After merge, Lark metadata preflight may run immediately in parallel with Facebook D1 plan/read-only
+preflight. Repository completion alone authorizes no Remote mutation.
