@@ -9,6 +9,7 @@ import {
   normalizeScopedWranglerQueueConsumers,
   normalizeWranglerVersionD1Binding,
   normalizeWranglerVersionRequiredSecrets,
+  normalizeWranglerVersionReviewedFalseFlags,
   validateLiveRemoteYouTubeDeploymentContract,
 } from '../../scripts/lib/youtube-live-remote-contract-parser.js';
 
@@ -105,14 +106,89 @@ test('D1 parser fails closed on missing UUID, UUID drift or explicit name drift'
   );
 });
 
-test('shared Worker Secret scope requires YouTube Secrets and ignores unrelated connector Secrets', async () => {
-  const safe = await safeConfig();
-  const active = safe
-    .replace('"MKT_CONNECTOR_YOUTUBE_ENABLED": "false"', '"MKT_CONNECTOR_YOUTUBE_ENABLED": "true"')
-    .replace('"MKT_YOUTUBE_END_TO_END_ENABLED": "false"', '"MKT_YOUTUBE_END_TO_END_ENABLED": "true"');
-  const comparison = compareYouTubeDryRunConfigs(safe, active, { channelId: 'UC_TEST' });
+test('reviewed false flags omitted by live metadata are materialized without overriding explicit values', async () => {
+  const comparison = await configComparison();
+  const expectedNames = expectedFalseFlags(comparison);
+  const omittedNames = expectedNames.filter((_, index) => index % 2 === 0);
   const versionsView = versionFixture({
-    config: safe,
+    config: comparison.safeText,
+    omitPlaintextNames: omittedNames,
+  });
+  const normalized = normalizeWranglerVersionReviewedFalseFlags(versionsView, {
+    expectedFalseFlagNames: expectedNames,
+  });
+
+  assert.equal(normalized.expectedFalseFlagCount, expectedNames.length);
+  assert.equal(normalized.materializedFalseFlagCount, omittedNames.length);
+  for (const name of expectedNames) {
+    const matches = normalized.versionsView.bindings.filter((binding) => (
+      binding.type === 'plain_text' && binding.name === name
+    ));
+    assert.equal(matches.length, 1, name);
+    assert.equal(String(matches[0].text).toLowerCase(), 'false', name);
+  }
+
+  const remote = validateLiveRemoteYouTubeDeploymentContract({
+    versionsView,
+    deploymentStatus: deploymentStatus(),
+    queueConsumerContexts: scopedConsumerResponses(),
+    expectedDatabaseId: DATABASE_ID,
+    expectedDatabaseName: 'social-mkt-state-dev',
+    expectedFalseFlagNames: expectedNames,
+    workerName: 'social-mkt-sync-worker',
+    ...remoteTriggerState(),
+    active: false,
+    expectedRemoteFingerprint: comparison.comparison.safe.remoteContractFingerprint,
+  });
+  assert.equal(remote.remoteFingerprint, comparison.comparison.safe.remoteContractFingerprint);
+  assert.equal(remote.materializedFalseFlagCount, omittedNames.length);
+});
+
+test('reviewed false flag normalizer rejects invalid, duplicate or explicit true drift downstream', async () => {
+  const comparison = await configComparison();
+  const expectedNames = expectedFalseFlags(comparison.comparison);
+  const invalid = versionFixture({ config: comparison.safeText });
+  invalid.bindings.find((binding) => binding.name === expectedNames[0]).text = '0';
+  assert.throws(
+    () => normalizeWranglerVersionReviewedFalseFlags(invalid, {
+      expectedFalseFlagNames: expectedNames,
+    }),
+    (error) => error.code === 'YOUTUBE_DRY_RUN_REMOTE_FLAG_VALUE_INVALID',
+  );
+
+  const duplicate = versionFixture({ config: comparison.safeText });
+  duplicate.bindings.push({ type: 'plain_text', name: expectedNames[0], text: 'false' });
+  assert.throws(
+    () => normalizeWranglerVersionReviewedFalseFlags(duplicate, {
+      expectedFalseFlagNames: expectedNames,
+    }),
+    (error) => error.code === 'YOUTUBE_DRY_RUN_REMOTE_FLAG_BINDING_DUPLICATE',
+  );
+
+  const explicitTrue = versionFixture({ config: comparison.safeText });
+  explicitTrue.bindings.find((binding) => binding.name === expectedNames[0]).text = 'true';
+  assert.throws(
+    () => validateLiveRemoteYouTubeDeploymentContract({
+      versionsView: explicitTrue,
+      deploymentStatus: deploymentStatus(),
+      queueConsumerContexts: scopedConsumerResponses(),
+      expectedDatabaseId: DATABASE_ID,
+      expectedDatabaseName: 'social-mkt-state-dev',
+      expectedFalseFlagNames: expectedNames,
+      workerName: 'social-mkt-sync-worker',
+      ...remoteTriggerState(),
+      active: false,
+      expectedRemoteFingerprint: comparison.comparison.safe.remoteContractFingerprint,
+    }),
+    (error) => error.code === 'YOUTUBE_DRY_RUN_REMOTE_TRUE_FLAG_INVALID'
+      || error.code === 'YOUTUBE_DRY_RUN_REMOTE_FINGERPRINT_MISMATCH',
+  );
+});
+
+test('shared Worker Secret scope requires YouTube Secrets and ignores unrelated connector Secrets', async () => {
+  const config = await configComparison();
+  const versionsView = versionFixture({
+    config: config.safeText,
     includeDatabaseName: false,
     extraSecretNames: [
       'META_ACCESS_TOKEN',
@@ -139,24 +215,32 @@ test('shared Worker Secret scope requires YouTube Secrets and ignores unrelated 
     queueConsumerContexts: scopedConsumerResponses(),
     expectedDatabaseId: DATABASE_ID,
     expectedDatabaseName: 'social-mkt-state-dev',
+    expectedFalseFlagNames: expectedFalseFlags(config.comparison),
     workerName: 'social-mkt-sync-worker',
     ...remoteTriggerState(),
     active: false,
-    expectedRemoteFingerprint: comparison.safe.remoteContractFingerprint,
+    expectedRemoteFingerprint: config.comparison.safe.remoteContractFingerprint,
   });
 
-  assert.equal(remote.remoteFingerprint, comparison.safe.remoteContractFingerprint);
+  assert.equal(remote.remoteFingerprint, config.comparison.safe.remoteContractFingerprint);
   assert.equal(remote.observedSecretNameCount, 6);
   assert.equal(remote.additionalSecretNameCount, 3);
 });
 
-test('shared Worker Secret scope fails closed on missing required Secret or exposed value', () => {
+test('shared Worker Secret scope fails closed on missing, duplicate or exposed required Secret', () => {
   const missing = versionFixture();
   missing.bindings = missing.bindings.filter((binding) => binding.name !== 'YOUTUBE_API_KEY');
   assert.throws(
     () => normalizeWranglerVersionRequiredSecrets(missing),
     (error) => error.code === 'YOUTUBE_DRY_RUN_REMOTE_REQUIRED_SECRET_MISSING'
       && error.details.missing.includes('YOUTUBE_API_KEY'),
+  );
+
+  const duplicate = versionFixture();
+  duplicate.bindings.push({ type: 'secret_text', name: 'YOUTUBE_API_KEY' });
+  assert.throws(
+    () => normalizeWranglerVersionRequiredSecrets(duplicate),
+    (error) => error.code === 'YOUTUBE_DRY_RUN_REMOTE_SECRET_BINDING_DUPLICATE',
   );
 
   const exposed = versionFixture({
@@ -170,69 +254,73 @@ test('shared Worker Secret scope fails closed on missing required Secret or expo
 });
 
 test('live compatibility adapter preserves the reviewed deterministic Remote fingerprint', async () => {
-  const safe = await safeConfig();
-  const active = safe
-    .replace('"MKT_CONNECTOR_YOUTUBE_ENABLED": "false"', '"MKT_CONNECTOR_YOUTUBE_ENABLED": "true"')
-    .replace('"MKT_YOUTUBE_END_TO_END_ENABLED": "false"', '"MKT_YOUTUBE_END_TO_END_ENABLED": "true"');
-  const comparison = compareYouTubeDryRunConfigs(safe, active, { channelId: 'UC_TEST' });
+  const config = await configComparison();
   const versionsView = versionFixture({
-    config: safe,
+    config: config.safeText,
     includeDatabaseName: false,
   });
   const triggerState = remoteTriggerState();
-
-  const first = validateLiveRemoteYouTubeDeploymentContract({
+  const input = {
     versionsView,
     deploymentStatus: deploymentStatus(),
     queueConsumerContexts: scopedConsumerResponses(),
     expectedDatabaseId: DATABASE_ID,
     expectedDatabaseName: 'social-mkt-state-dev',
+    expectedFalseFlagNames: expectedFalseFlags(config.comparison),
     workerName: 'social-mkt-sync-worker',
     ...triggerState,
     active: false,
-    expectedRemoteFingerprint: comparison.safe.remoteContractFingerprint,
-  });
-  const second = validateLiveRemoteYouTubeDeploymentContract({
-    versionsView: structuredClone(versionsView),
-    deploymentStatus: deploymentStatus(),
-    queueConsumerContexts: structuredClone(scopedConsumerResponses()),
-    expectedDatabaseId: DATABASE_ID,
-    expectedDatabaseName: 'social-mkt-state-dev',
-    workerName: 'social-mkt-sync-worker',
-    ...structuredClone(triggerState),
-    active: false,
-    expectedRemoteFingerprint: comparison.safe.remoteContractFingerprint,
-  });
+    expectedRemoteFingerprint: config.comparison.safe.remoteContractFingerprint,
+  };
 
-  assert.equal(first.remoteFingerprint, comparison.safe.remoteContractFingerprint);
+  const first = validateLiveRemoteYouTubeDeploymentContract(input);
+  const second = validateLiveRemoteYouTubeDeploymentContract(structuredClone(input));
+
+  assert.equal(first.remoteFingerprint, config.comparison.safe.remoteContractFingerprint);
   assert.equal(second.remoteFingerprint, first.remoteFingerprint);
   assert.equal(first.queueConsumerCount, 2);
 });
 
 test('live compatibility adapter keeps Main Queue and DLQ contexts distinct', async () => {
-  const safe = await safeConfig();
-  const active = safe
-    .replace('"MKT_CONNECTOR_YOUTUBE_ENABLED": "false"', '"MKT_CONNECTOR_YOUTUBE_ENABLED": "true"')
-    .replace('"MKT_YOUTUBE_END_TO_END_ENABLED": "false"', '"MKT_YOUTUBE_END_TO_END_ENABLED": "true"');
-  const comparison = compareYouTubeDryRunConfigs(safe, active, { channelId: 'UC_TEST' });
+  const config = await configComparison();
   const contexts = scopedConsumerResponses();
   contexts[1].expectedQueueName = MAIN_QUEUE;
 
   assert.throws(
     () => validateLiveRemoteYouTubeDeploymentContract({
-      versionsView: versionFixture({ config: safe, includeDatabaseName: false }),
+      versionsView: versionFixture({ config: config.safeText, includeDatabaseName: false }),
       deploymentStatus: deploymentStatus(),
       queueConsumerContexts: contexts,
       expectedDatabaseId: DATABASE_ID,
       expectedDatabaseName: 'social-mkt-state-dev',
+      expectedFalseFlagNames: expectedFalseFlags(config.comparison),
       workerName: 'social-mkt-sync-worker',
       ...remoteTriggerState(),
       active: false,
-      expectedRemoteFingerprint: comparison.safe.remoteContractFingerprint,
+      expectedRemoteFingerprint: config.comparison.safe.remoteContractFingerprint,
     }),
     (error) => error.code === 'YOUTUBE_DRY_RUN_REMOTE_FINGERPRINT_MISMATCH',
   );
 });
+
+async function configComparison() {
+  const safeText = await safeConfig();
+  const activeText = safeText
+    .replace('"MKT_CONNECTOR_YOUTUBE_ENABLED": "false"', '"MKT_CONNECTOR_YOUTUBE_ENABLED": "true"')
+    .replace('"MKT_YOUTUBE_END_TO_END_ENABLED": "false"', '"MKT_YOUTUBE_END_TO_END_ENABLED": "true"');
+  return {
+    safeText,
+    activeText,
+    comparison: compareYouTubeDryRunConfigs(safeText, activeText, { channelId: 'UC_TEST' }),
+  };
+}
+
+function expectedFalseFlags(comparison) {
+  return [...new Set([
+    ...comparison.safe.falseFlags,
+    ...comparison.active.trueFlags,
+  ])].sort();
+}
 
 async function safeConfig() {
   const source = await readFile(
@@ -257,13 +345,16 @@ async function safeConfig() {
 
 function versionFixture(input = {}) {
   const config = input.config ?? '';
+  const omitted = new Set(input.omitPlaintextNames ?? []);
   const plaintextBindings = [...config.matchAll(
     /"(MKT_[A-Z0-9_]+_ENABLED)"\s*:\s*"?(true|false)"?/gu,
-  )].map(([, name, value]) => ({
-    type: 'plain_text',
-    name,
-    text: value,
-  }));
+  )]
+    .filter(([, name]) => !omitted.has(name))
+    .map(([, name, value]) => ({
+      type: 'plain_text',
+      name,
+      text: value,
+    }));
   return {
     id: VERSION,
     name: 'social-mkt-sync-worker',
