@@ -3,7 +3,7 @@
 ## Status
 
 ```text
-IMPLEMENTATION_IN_PROGRESS / DRAFT / REPOSITORY_ONLY
+PASS_FOR_INTEGRATION_REVIEW / DRAFT / REPOSITORY_ONLY / REMOTE_NOT_RUN
 ```
 
 ## Problem
@@ -20,63 +20,86 @@ operatorInvoked         = false
 remoteMutationCount     = 0
 ```
 
-## Objective
+## Objective completed
 
-Generate a deterministic local Safe Wrangler config from the ignored developer-owned
+Implemented a deterministic local Safe Wrangler config generator from the ignored developer-owned
 `wrangler.sync.jsonc` without committing the source config, D1 UUID, Provider values, Customer
 mappings or Secret values.
 
 ## Contract
 
-The generator must:
+The generator:
 
-- require Worker `social-mkt-sync-worker`;
-- require `MKT_ENV=development`;
-- require `MKT_CUSTOMER_PROFILE=integration_workspace`;
-- require `MKT_CONNECTION_CUSTOMER_KEY=chemistry_k`;
-- require D1 binding `MKT_STATE_DB` targeting `social-mkt-state-dev` with a valid immutable UUID;
-- require producer binding `MKT_SYNC_QUEUE` targeting `social-mkt-sync-jobs`;
-- require the reviewed Main Queue and DLQ consumer settings exactly;
-- emit every flag in `CHATWOOT_REMOTE_REQUIRED_FALSE_FLAGS` as the string `false`;
-- omit triggers, routes, Provider identity, OAuth values, Lark mappings and Secret-shaped values;
-- write only below ignored `outputs/` with local file permissions;
-- validate the generated text through `validateChatwootRemoteWranglerConfig()`;
-- issue no Git, Wrangler, D1, Worker, Queue, Lark or Provider command.
+- requires Worker `social-mkt-sync-worker`;
+- requires `MKT_ENV=development`;
+- requires `MKT_CUSTOMER_PROFILE=integration_workspace`;
+- requires `MKT_CONNECTION_CUSTOMER_KEY=chemistry_k`;
+- requires D1 binding `MKT_STATE_DB` targeting `social-mkt-state-dev` with a valid immutable UUID;
+- requires producer binding `MKT_SYNC_QUEUE` targeting `social-mkt-sync-jobs`;
+- requires the reviewed Main Queue and DLQ consumer settings exactly;
+- emits every flag in `CHATWOOT_REMOTE_REQUIRED_FALSE_FLAGS` as the string `false`;
+- omits triggers, routes, Provider identity, OAuth values, Lark mappings and Secret-shaped values;
+- writes only below ignored `outputs/` with local file permissions;
+- rebases `$schema`, `main` and `migrations_dir` relative to the generated config location;
+- validates the generated text through `validateChatwootRemoteWranglerConfig()`;
+- issues no Git, Wrangler, D1, Worker, Queue, Lark or Provider command.
 
 ## Files
 
 ```text
 scripts/lib/chatwoot-safe-wrangler-config.js
+scripts/lib/rebase-generated-wrangler-config-paths.js
 scripts/prepare-chatwoot-safe-wrangler-config.mjs
 tests/application/chatwoot-safe-wrangler-config.test.js
 docs/runbooks/chatwoot-safe-wrangler-config.md
+docs/project-brain/chatwoot-safe-wrangler-config-2026-07-27.md
+package.json
 ```
 
-## Out of scope
+## Verification
+
+Code head `909901f8e1696689c7412449d3a608dfe6df5e8d` passed Branch Verification `#701` / run
+`30288947642`:
 
 ```text
-Remote read-only preflight execution
-D1 backup or Migration 0018 apply
-Schema read-back
-Chatwoot Provider or Token access
-Worker deployment
-Queue/DLQ action
-Lark mutation
-Schedule/Webhook activation
-Production
+Syntax / architecture / hygiene     PASS
+Focused staged TikTok               4 / 4 PASS
+Chatwoot safe-config regressions    5 / 5 PASS
+Node Unit / Integration             1086 / 1086 PASS
+Workers runtime                     11 / 11 PASS
+Report reliability                  91 / 91 PASS
+Dependency audit                    0 vulnerabilities
+Wrangler deployment dry-run         PASS / NO DEPLOYMENT
+Artifact                            8662007837
+Artifact digest                     sha256:177f249e2ed0861fe18b8b0682179d837b34720a0bfd011cc1e7cee298abfc3f
 ```
 
-## Acceptance
+The workflow runs the five focused generator regressions inside the full Node suite rather than as a
+separate workflow step. No standalone command is falsely claimed.
 
-- JSONC comments and trailing commas are supported without executing source text.
-- Target or Queue/DLQ topology drift fails closed.
-- Generated output passes the existing Chatwoot readiness config validator.
-- Source true/omitted flags are converted to explicit false values.
-- Generated config contains no Provider/Secret/Schedule/route value.
-- Full repository verification remains required before merge.
+## Out of scope and Remote safe state
+
+```text
+Remote read-only preflight execution = NOT RUN
+D1 backup                             = NOT RUN
+Migration 0018 apply                  = NOT RUN
+Schema read-back                      = NOT RUN
+Chatwoot Provider or Token access     = NOT RUN
+Worker deployment                     = NOT RUN
+Queue/DLQ action                      = NONE
+Lark mutation                         = NONE
+Schedule/Webhook activation           = NONE
+Production                            = BLOCKED
+```
 
 ## Current-task coexistence
 
-`docs/current-task.md` belongs to the active Meta D1-only rollout workstream and is intentionally not
+`docs/current-task.md` belongs to the merged Meta D1-only rollout closeout and is intentionally not
 replaced by this parallel Chatwoot repository task. This task is recorded in this modular task file,
-the Project Brain record and the Draft PR.
+the Project Brain record and Draft PR `#125`.
+
+## Remaining gate
+
+The Draft PR requires exact final documentation-head verification and a separate merge decision. After
+merge, a clean current `main` may generate the ignored Safe config and run only the already-authorized
+Remote read-only preflight. Backup and every later phase remain separately gated.
