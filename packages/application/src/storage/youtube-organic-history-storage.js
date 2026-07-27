@@ -40,7 +40,7 @@ export async function writeYouTubeOrganicStorageFirst(context, captured) {
     accountKey: context.accountKey,
   }));
 
-  await writer.beginCoverage({
+  const coverageStart = await writer.beginCoverage({
     expectedEntities: availabilityRows.length,
     expectedRows: availabilityRows.length,
     sourceWatermark: ids.sourceWatermark,
@@ -87,20 +87,22 @@ export async function writeYouTubeOrganicStorageFirst(context, captured) {
       completedAt: context.observedAt,
     });
   } catch (error) {
-    await writer.failCoverage({
-      expectedEntities: availabilityRows.length,
-      observedEntities: contentWrite.contentRows + availabilityWrite.rowsProcessed,
-      expectedRows: availabilityRows.length,
-      observedRows: contentWrite.contentRows + availabilityWrite.rowsProcessed,
-      writtenRows: contentWrite.contentRows
-        + contentWrite.observationsCreated
-        + contentWrite.observationsSkipped
-        + availabilityWrite.rowsProcessed,
-      failedRows: 1,
-      sourceWatermark: ids.sourceWatermark,
-      errorCode: error?.code ?? 'YOUTUBE_D1_STORAGE_WRITE_FAILED',
-      completedAt: context.observedAt,
-    });
+    if (!coverageStart.replay) {
+      await writer.failCoverage({
+        expectedEntities: availabilityRows.length,
+        observedEntities: contentWrite.contentRows + availabilityWrite.rowsProcessed,
+        expectedRows: availabilityRows.length,
+        observedRows: contentWrite.contentRows + availabilityWrite.rowsProcessed,
+        writtenRows: contentWrite.contentRows
+          + contentWrite.observationsCreated
+          + contentWrite.observationsSkipped
+          + availabilityWrite.rowsProcessed,
+        failedRows: 1,
+        sourceWatermark: ids.sourceWatermark,
+        errorCode: error?.code ?? 'YOUTUBE_D1_STORAGE_WRITE_FAILED',
+        completedAt: context.observedAt,
+      });
+    }
     throw error;
   }
 
