@@ -190,3 +190,16 @@ test('release examples retain every Chatwoot execution and Schedule/Webhook gate
     assert.match(wrangler, new RegExp(`"${flag}": "false"`, 'u'));
   }
 });
+
+test('Chatwoot resumable completion preserves deterministic syncRunId', async () => {
+  const source = await readFile(
+    new URL('../../apps/sync-worker/src/chatwoot-job-router.js', import.meta.url),
+    'utf8',
+  );
+  assert.match(
+    source,
+    /const result = Object\.freeze\(\{\s*\.\.\.syncResult,\s*syncRunId: deterministicSyncRunId,/u,
+  );
+  assert.match(source, /syncRunId: result\.syncRunId/u);
+  assert.match(source, /return result;/u);
+});
