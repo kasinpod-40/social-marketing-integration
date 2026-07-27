@@ -8,6 +8,7 @@ import {
 import {
   normalizeScopedWranglerQueueConsumers,
   normalizeWranglerVersionD1Binding,
+  normalizeWranglerVersionRequiredSecrets,
   validateLiveRemoteYouTubeDeploymentContract,
 } from '../../scripts/lib/youtube-live-remote-contract-parser.js';
 
@@ -32,6 +33,8 @@ test('scoped Queue parser restores omitted Queue name from reviewed command cont
 
   assert.equal(normalized.length, 1);
   assert.equal(normalized[0].queue_name, MAIN_QUEUE);
+  assert.equal(normalized[0].settings.batch_size, 10);
+  assert.equal(normalized[0].settings.max_batch_size, 10);
   assert.equal(normalized[0].settings.max_wait_time_ms, 30000);
   assert.equal(normalized[0].settings.max_batch_timeout, 30);
   assert.equal(normalized[0].settings.dead_letter_queue, DLQ);
@@ -99,6 +102,70 @@ test('D1 parser fails closed on missing UUID, UUID drift or explicit name drift'
       expectedDatabaseName: 'social-mkt-state-dev',
     }),
     (error) => error.code === 'YOUTUBE_DRY_RUN_REMOTE_D1_NAME_MISMATCH',
+  );
+});
+
+test('shared Worker Secret scope requires YouTube Secrets and ignores unrelated connector Secrets', async () => {
+  const safe = await safeConfig();
+  const active = safe
+    .replace('"MKT_CONNECTOR_YOUTUBE_ENABLED": "false"', '"MKT_CONNECTOR_YOUTUBE_ENABLED": "true"')
+    .replace('"MKT_YOUTUBE_END_TO_END_ENABLED": "false"', '"MKT_YOUTUBE_END_TO_END_ENABLED": "true"');
+  const comparison = compareYouTubeDryRunConfigs(safe, active, { channelId: 'UC_TEST' });
+  const versionsView = versionFixture({
+    config: safe,
+    includeDatabaseName: false,
+    extraSecretNames: [
+      'META_ACCESS_TOKEN',
+      'WOOCOMMERCE_CONSUMER_SECRET',
+      'CHATWOOT_API_ACCESS_TOKEN',
+    ],
+  });
+
+  const scoped = normalizeWranglerVersionRequiredSecrets(versionsView);
+  assert.equal(scoped.requiredSecretNameCount, 3);
+  assert.equal(scoped.observedSecretNameCount, 6);
+  assert.equal(scoped.additionalSecretNameCount, 3);
+  assert.deepEqual(
+    scoped.versionsView.bindings
+      .filter((binding) => binding.type === 'secret_text')
+      .map((binding) => binding.name)
+      .sort(),
+    ['LARK_APP_ID', 'LARK_APP_SECRET', 'YOUTUBE_API_KEY'],
+  );
+
+  const remote = validateLiveRemoteYouTubeDeploymentContract({
+    versionsView,
+    deploymentStatus: deploymentStatus(),
+    queueConsumerContexts: scopedConsumerResponses(),
+    expectedDatabaseId: DATABASE_ID,
+    expectedDatabaseName: 'social-mkt-state-dev',
+    workerName: 'social-mkt-sync-worker',
+    ...remoteTriggerState(),
+    active: false,
+    expectedRemoteFingerprint: comparison.safe.remoteContractFingerprint,
+  });
+
+  assert.equal(remote.remoteFingerprint, comparison.safe.remoteContractFingerprint);
+  assert.equal(remote.observedSecretNameCount, 6);
+  assert.equal(remote.additionalSecretNameCount, 3);
+});
+
+test('shared Worker Secret scope fails closed on missing required Secret or exposed value', () => {
+  const missing = versionFixture();
+  missing.bindings = missing.bindings.filter((binding) => binding.name !== 'YOUTUBE_API_KEY');
+  assert.throws(
+    () => normalizeWranglerVersionRequiredSecrets(missing),
+    (error) => error.code === 'YOUTUBE_DRY_RUN_REMOTE_REQUIRED_SECRET_MISSING'
+      && error.details.missing.includes('YOUTUBE_API_KEY'),
+  );
+
+  const exposed = versionFixture({
+    extraSecretNames: ['META_ACCESS_TOKEN'],
+  });
+  exposed.bindings.find((binding) => binding.name === 'META_ACCESS_TOKEN').text = 'must-not-leak';
+  assert.throws(
+    () => normalizeWranglerVersionRequiredSecrets(exposed),
+    (error) => error.code === 'YOUTUBE_DRY_RUN_REMOTE_SECRET_VALUE_EXPOSED',
   );
 });
 
@@ -219,6 +286,10 @@ function versionFixture(input = {}) {
       { type: 'secret_text', name: 'LARK_APP_ID' },
       { type: 'secret_text', name: 'LARK_APP_SECRET' },
       { type: 'secret_text', name: 'YOUTUBE_API_KEY' },
+      ...(input.extraSecretNames ?? []).map((name) => ({
+        type: 'secret_text',
+        name,
+      })),
     ],
   };
 }
