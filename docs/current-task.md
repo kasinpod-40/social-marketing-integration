@@ -1,145 +1,149 @@
-# Current Task — Meta D1-only Rollout Operator Merge Closeout
+# Current Task — WooCommerce Chemistry K Customer Data to Lark Read-only Preflight
 
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = MERGED_REMOTE_EXECUTION_NOT_AUTHORIZED
-CURRENT_PROGRAM                     = META_D1_ONLY_PROCESSING_GUARDED_ROLLOUT
-CONTRACT_VERSION                    = meta-d1-only-rollout-v1
-MERGED_PR                           = #114
-SOURCE_HEAD                         = 0044127bdc55f735e91b8fa02f4db19698a02868
-MERGED_MAIN_SHA                     = 50fe71da6dea64e2f0ba04b1067e7e424e2a5451
-MERGE_METHOD                        = SQUASH
-MERGED_AT                           = 2026-07-27T17:08:35Z
-REMOTE_EXECUTION_AUTHORIZED         = false
-REMOTE_ACTIONS                      = NONE
+TASK_STATUS                         = PASS_FOR_INTEGRATION_REVIEW
+CURRENT_PROGRAM                     = WOOCOMMERCE_CUSTOMER_DATA_TO_LARK_ROLLOUT
+BASE_MAIN_SHA                       = 025a2f68800d3c4115676c644b28384eacacdc7f
+BRANCH                              = integration/woocommerce-customer-data-lark-rollout
+DRAFT_PR                            = #118 / OPEN / DRAFT / UNMERGED
+IMPLEMENTATION_OWNER                = CHATGPT_WORK_GITHUB_TOOLS
+CHATWOOT_WORKSTREAM                 = STOPPED_IN_THIS_CHAT
+VERIFIED_IMPLEMENTATION_HEAD        = 17211c975e2de29e299854870cc4a9506ede3dd7
+BRANCH_VERIFICATION                 = #689 / 30288449765 / PASS
+REMOTE_EXECUTION_AUTHORIZED         = READ_ONLY_PREFLIGHT_AFTER_MERGE_ONLY
+REMOTE_ACTIONS                      = NONE_DURING_IMPLEMENTATION
+MIGRATION_0017_STATE                = UNRESOLVED_REMOTE_TRUTH
+WOOCOMMERCE_PROVIDER_REQUEST        = NOT_RUN
+LARK_METADATA_REQUEST               = NOT_RUN
 REMOTE_D1_MUTATION                  = NONE
-QUEUE_OR_DLQ_ACTION                 = NONE
 LARK_MUTATION                       = NONE
+QUEUE_OR_DLQ_ACTION                 = NONE
 WORKER_DEPLOYMENT                   = NOT_RUN
 SCHEDULE                            = DISABLED
 PRODUCTION                          = BLOCKED
 ```
 
-The completed implementation task is archived at:
+The preceding Meta merge-closeout task is referenced by immutable commit/blob provenance at:
 
 ```text
-docs/archive/meta-d1-only-rollout-operator-merged-current-task-2026-07-27.md
+docs/archive/current-task-before-woocommerce-customer-data-lark-rollout-2026-07-27.md
 ```
 
-Technical contracts and durable records remain in:
+## Objective completed
+
+Implemented and verified the first guarded gate for the Chemistry K WooCommerce end-to-end path:
 
 ```text
-docs/tasks/meta-d1-only-rollout-operator.md
-docs/runbooks/meta-d1-only-rollout.md
-docs/project-brain/meta-d1-only-rollout-operator-2026-07-27.md
-docs/project-brain/meta-d1-only-rollout-operator-merge-closeout-2026-07-27.md
+WooCommerce GET-only source
+→ D1 durable commerce facts
+→ Lark RAW and Canonical commerce tables
+→ parity / rerun / incremental UAT
 ```
 
-## Merge result
+This Repository task adds the read-only evidence chain only. It does not execute a Remote phase or
+import customer data yet.
 
-PR #114 was aligned with moving `main` through feature-targeted PRs #115 and #117, passed exact-final-
-head verification and was Squash Merged into `main`. No direct push to `main` occurred.
+## Existing runtime retained
 
 ```text
-PR_STATE                            = CLOSED
-PR_MERGED                           = true
-FINAL_SOURCE_HEAD                   = 0044127bdc55f735e91b8fa02f4db19698a02868
-SQUASH_MERGE_COMMIT                 = 50fe71da6dea64e2f0ba04b1067e7e424e2a5451
-FINAL_ALIGNED_MAIN_SHA              = fb16083ec9615944f675b326a69db9ca98d00353
-ALIGNMENT_PR_1                      = #115
-ALIGNMENT_PR_2                      = #117
+WooCommerce REST client
+Shared Queue + stable operation identity
+Shared Reliability / lock / retry / DLQ
+Resumable work and continuation
+D1-first commerce writer
+Derived commerce facts
+Coverage engine
+Shared Lark repository and sync engine
 ```
 
-## Merged Repository scope
+No replacement runtime, Queue, Reliability, D1, Coverage or Lark engine was introduced.
 
-The merged plan-only-by-default operator supports one isolated Chemistry K target per evidence chain:
-
-```text
-facebook
-instagram
-chemistry_k2
-chemistry_k3
-```
-
-It supports separately confirmed phases:
+## Implemented operator phases
 
 ```text
 plan
-preflight
-backup
-deploy-safe-baseline
-verify-safe-baseline
-deploy-d1-only-gates
-verify-d1-only-deployment
-snapshot-before
-send-one-d1-only
-verify-d1-only
-resend-same-operation
-verify-idempotent-rerun
-restore-all-false
-verify-restore
-summary
+→ remote-preflight
+→ provider-preflight
+→ lark-preflight
+→ summary
 ```
 
-Every target has its own stable operation, work key, sync-run ID, backup and evidence root. Every
-executable phase requires its own exact confirmation and chain-bound prior evidence. No phase grants
-permission for a later phase.
+Every executable phase requires its own exact confirmation and passed target-bound evidence.
 
-The implementation reuses the merged Meta Runtime, Shared Queue operation/continuation path,
-Reliability runner, D1 locks, resumable work, Organic History Writer, Marketing History Store and
-Storage Foundation/Coverage contracts. It adds no new Connector, Queue framework, Reliability engine,
-D1 writer, Coverage engine, Lark sync engine or migration.
+## Locked contracts
 
-## Locked D1-only boundary
+- Integration Workspace / Chemistry K / Worker / D1 target identity is exact and fingerprinted.
+- Migration `0017_woocommerce_commerce.sql` source must contain exactly 17 additive tables and 13 indexes.
+- Remote pending set may be empty or exactly Migration `0017`; any additional pending migration fails.
+- Remote preflight is SELECT-only and requires zero active work and locks.
+- Ledger/schema drift fails closed.
+- Provider preflight performs GET-only store identity and one-row samples for orders, products and customers.
+- Provider evidence stores only minimized identity/count metadata, never raw records or credentials.
+- Lark preflight reads table/field metadata only and requires all 14 unique WooCommerce table IDs.
+- Summary returns either a separately gated Migration path or readiness for guarded manual D1/Lark backfill.
 
-An accepted target run must prove D1 phase completion, accepted Coverage, zero failed rows, no active
-lock and no Meta Lark/full-completion phase. The active unfinished Work boundary at
-`lark_gate_disabled` is intentional and preserves a separately approved later Lark continuation.
-
-One separately confirmed same-operation resend may prove idempotency only after first verification.
-Target Business counts, operation-scoped counts and Coverage counts must remain unchanged.
-
-## Verification result
+## Lark target tables
 
 ```text
-META_END_TO_END_VERIFICATION        = #42 / 30287591901 / PASS
-BRANCH_VERIFICATION                 = #682 / 30287592019 / PASS
-FOCUSED_META_D1_ONLY_TESTS          = 15 / 15 PASS
-NODE_UNIT_INTEGRATION               = 1081 / 1081 PASS
-WORKERS_RUNTIME                     = 11 / 11 PASS
-REPORT_RELIABILITY                  = 91 / 91 PASS
-DEPENDENCY_AUDIT                    = 0 vulnerabilities
-WRANGLER_DRY_RUN                    = PASS / NO DEPLOYMENT
-FINAL_DIAGNOSTICS_ARTIFACT          = 8661468409
-FINAL_ARTIFACT_DIGEST               = sha256:2bd112b3257e62d5da376440cdfd6a2863d6e88e94b72e26e4785cab51fe1c6f
-FINAL_COMPARE_AHEAD                 = 24
-FINAL_COMPARE_BEHIND                = 0
-FINAL_CHANGED_FILES                 = 9
-UNRESOLVED_REVIEW_THREADS           = 0
+RAW_Commerce_Stores
+RAW_Commerce_Orders
+RAW_Commerce_Order_Items
+RAW_Commerce_Products
+RAW_Commerce_Product_Variations
+RAW_Commerce_Categories
+RAW_Commerce_Customers
+RAW_Commerce_Coupons
+RAW_Commerce_Refunds
+MKT_Commerce_Orders
+MKT_Commerce_Products
+MKT_Commerce_Customers
+MKT_Commerce_Daily
+MKT_Commerce_Product_Daily
+```
+
+## Repository verification
+
+Implementation head `17211c975e2de29e299854870cc4a9506ede3dd7` passed Branch Verification
+`#689` / run `30288449765`:
+
+```text
+INSTALL_LOCKED_DEPENDENCIES          = PASS
+SYNTAX_ARCHITECTURE_HYGIENE          = PASS
+FOCUSED_STAGED_TIKTOK                = 4 / 4 PASS
+NODE_UNIT_INTEGRATION                = 1092 / 1092 PASS
+WORKERS_RUNTIME                      = 11 / 11 PASS
+REPORT_RELIABILITY                   = 91 / 91 PASS
+WOOCOMMERCE_PREFLIGHT_TESTS          = 11 / 11 INCLUDED IN FULL SUITE
+DEPENDENCY_AUDIT                     = 0 vulnerabilities
+WRANGLER_DRY_RUN                     = PASS / NO DEPLOYMENT
+DIAGNOSTICS_ARTIFACT                 = 8661809676
+DIAGNOSTICS_DIGEST                   = sha256:2dbefce519777fec6361120947c2bb459b7a37598350eb5ece6146ff1212084e
 ```
 
 ## Remote safe state
 
 ```text
-REMOTE_D1_EXPORT_OR_MUTATION         = NOT_RUN
-WORKER_DEPLOYMENT                    = NOT_RUN
-META_PROVIDER_REQUEST                = NOT_RUN
+REMOTE_D1_QUERY                      = NOT_RUN
+REMOTE_D1_BACKUP_OR_MIGRATION        = NOT_RUN
+WOOCOMMERCE_PROVIDER_GET             = NOT_RUN
+LARK_METADATA_READ                   = NOT_RUN
+LARK_SCHEMA_OR_RECORD_MUTATION       = NONE
 QUEUE_MESSAGE                        = NONE
 DLQ_ACTION                           = NONE
-LARK_PREFLIGHT_OR_WRITE              = NONE
-REPORT_CUTOVER                       = NONE
-SCHEDULE_ACTIVATION                  = NONE
-RETENTION_OR_DELETE                  = NONE
+WORKER_DEPLOYMENT                    = NOT_RUN
+MANUAL_BACKFILL                      = NOT_RUN
+SCHEDULE                             = DISABLED
 PRODUCTION                           = BLOCKED
 ```
 
-## Required next gate
+## Remaining gate
 
-The next Meta phase must be opened as a new Integration-owned task from then-current `main` and must
-refresh the active Worker version, D1 migration ledger/schema, Queue topology, Worker Secret names and
-accepted sanitized Meta read-only validation summary.
+The documentation-aligned final head must pass exact-final-head Branch Verification and Integration
+Review. PR #118 remains Draft and unmerged.
 
-The first eligible scope is one target's plan and separately confirmed Remote read-only preflight.
-Backup, deployment, Queue send, D1 Business processing, rerun, restore, Lark parity and Production each
-remain separately gated. This closeout authorizes none of them.
+After merge, the first eligible execution is `remote-preflight` only. Provider GET-only and Lark
+metadata preflight each require their own later confirmation and prior passed evidence. Backup,
+Migration `0017` apply, Worker deployment, Queue send, D1/Lark customer-data backfill, parity, rerun,
+incremental UAT, Schedule and Production all remain separately gated.
