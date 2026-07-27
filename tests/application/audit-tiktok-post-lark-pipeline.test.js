@@ -51,7 +51,8 @@ function buildRepository(options = {}) {
 function buildD1Audit(options = {}) {
   const ids = options.d1Ids ?? [1, 2];
   return {
-    async audit() {
+    async audit(input) {
+      options.onAudit?.(input);
       return Object.freeze({
         state: { totalRows: ids.length, distinctKeys: ids.length, duplicateKeys: 0, missingKeys: 0 },
         observations: { totalRows: ids.length, distinctKeys: ids.length, duplicateKeys: 0, missingKeys: 0 },
@@ -109,6 +110,21 @@ test('read-only TikTok audit proves exact RAW, D1 and Canonical parity', async (
   assert.equal(result.gaps.contentMissingInDaily.count, 0);
   assert.equal(result.readyForManualProcessing, true);
   assert.deepEqual(result.issues, []);
+});
+
+test('read-only TikTok audit clamps the D1 identity bound independently from Lark pagination', async () => {
+  let observed = null;
+  await auditTikTokPostLarkPipeline({
+    ...input,
+    repository: buildRepository(),
+    d1AuditStore: buildD1Audit({ onAudit: (value) => { observed = value; } }),
+    pageSize: 500,
+    maxPages: 1_000,
+  });
+
+  assert.equal(observed.maxContentRecords, 50_000);
+  assert.equal(observed.customerKey, 'chemistry_k');
+  assert.equal(observed.accountKey, 'chemistry_k');
 });
 
 test('read-only TikTok audit reports compact cross-layer gaps without payload data', async () => {
