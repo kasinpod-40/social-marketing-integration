@@ -4,9 +4,12 @@
 
 ```text
 BRANCH                              = integration/meta-d1-only-rollout-operator
+DRAFT_PR                            = #114
 BASE_MAIN_SHA                       = 7f06ae8729dd24c3bd6f548332bfe17ba374c8ab
+VERIFIED_IMPLEMENTATION_HEAD        = e667a1b9141a8a472157ed94d693ab0b50be90b2
 CONTRACT                            = meta-d1-only-rollout-v1
 META_READ_ONLY_PROVIDER_VALIDATION  = PASS / 4 TARGETS
+REPOSITORY_IMPLEMENTATION           = PASS
 REMOTE_EXECUTION                    = NOT_RUN
 REMOTE_MUTATION                     = NONE
 PRODUCTION                          = BLOCKED
@@ -19,7 +22,7 @@ accounts using GET-only Provider calls. The next approved architecture boundary 
 processing, but the Repository previously had no rollout operator that bound Backup, deployment
 provenance, exact Queue operation, D1/Coverage reconciliation, idempotent rerun and safe restore.
 
-The existing Meta Runtime already supports `d1Only=true`. This branch adds the guarded orchestration
+The existing Meta Runtime already supports `d1Only=true`. This branch adds guarded orchestration
 around that existing path rather than creating another Connector or write engine.
 
 ## Target isolation
@@ -101,16 +104,35 @@ target Business counts, operation-scoped Business counts and Coverage counts.
 - Tokens, Authorization headers, secret values, raw config and raw Provider payloads are excluded;
 - implementation performs no Remote action
 
+## Verification result
+
+An initial test run found a test-contract defect where an already normalized D1 snapshot was
+normalized again before classification. The normalizer was made idempotent; no Runtime or Business
+contract was changed. Both exact-head workflows then passed:
+
+```text
+META_END_TO_END_VERIFICATION        = #31 / 30284509274 / PASS
+BRANCH_VERIFICATION                 = #670 / 30284508692 / PASS
+FOCUSED_META_D1_ONLY_TESTS          = 15 / 15 PASS
+NODE_UNIT_INTEGRATION               = 1075 / 1075 PASS
+WORKERS_RUNTIME                     = 11 / 11 PASS
+REPORT_RELIABILITY                  = 91 / 91 PASS
+DEPENDENCY_AUDIT                    = 0 vulnerabilities
+WRANGLER_DRY_RUN                    = PASS / NO DEPLOYMENT
+VERIFICATION_ARTIFACT               = 8660233416
+VERIFICATION_ARTIFACT_DIGEST        = sha256:ddfd07495533887a07f83cf9e0e39eb5415bc038c1ee070a3b413f0d04eaa237
+REMOTE_ACTION_COUNT                 = 0
+```
+
 ## Remaining gates
 
-1. complete Branch Verification;
-2. review Draft PR and merge separately;
-3. refresh exact main/Worker/D1/Queue state;
-4. separately approve one target's plan/preflight;
-5. separately approve Backup and Safe deployment;
-6. separately approve one D1-only active window and same-operation rerun;
-7. restore all false;
-8. repeat with a fresh chain for the next target;
-9. after all four targets pass, open a separate Lark parity task
+1. review Draft PR #114 and merge separately;
+2. refresh exact `main`, active Worker version, D1 migration ledger and Queue topology;
+3. separately approve one target's plan/preflight;
+4. separately approve Backup and Safe deployment;
+5. separately approve one D1-only active window and same-operation rerun;
+6. restore all false;
+7. repeat with a fresh chain for the next target;
+8. after all four targets pass, open a separate Lark parity task
 
 This document authorizes none of the Remote phases above.
