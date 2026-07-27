@@ -4,7 +4,19 @@ import {
 } from './connector-catalog.js';
 import { permanentError } from '../../shared/src/errors/runtime-error.js';
 
-/** Build runtime connector state from profile and Environment with protected UAT exceptions. */
+/**
+ * สร้าง Runtime state ของ Connector ทุกช่องทางจาก Customer profile และ Environment
+ *
+ * Priority ของ enabled:
+ * 1. Environment feature flag เช่น MKT_CONNECTOR_TIKTOK_ENABLED
+ * 2. enabledByDefault ใน Customer profile
+ *
+ * Identity ที่เปลี่ยนตามทรัพยากรจริง เช่น TikTok handle สามารถ Override ผ่าน Environment
+ * โดยไม่แก้ Source code ขณะที่ accountKey ยังคงมาจาก Customer profile เพื่อรักษา Stable key
+ *
+ * Connector planned เปิดไม่ได้ทุกกรณี ส่วน UAT-pending Connector เปิด Runtime config ได้เฉพาะ
+ * protected manual UAT ใน developer Integration Workspace เมื่อ Gate ที่เกี่ยวข้องเปิดครบ.
+ */
 export function resolveConnectorRuntimeConfig(profileConnectors, env = {}) {
   const profileMap = requireObject(profileConnectors, 'profile.connectors');
   const runtimeEntries = listConnectorCatalog().map((definition) => {
@@ -73,10 +85,22 @@ function isProtectedChatwootUatRuntime(definition, env) {
   }
   return env.MKT_ENV === 'development'
     && env.MKT_CUSTOMER_PROFILE === 'integration_workspace'
-    && readOptionalBoolean(env.MKT_CONNECTOR_CHATWOOT_ENABLED, 'MKT_CONNECTOR_CHATWOOT_ENABLED') === true
-    && readOptionalBoolean(env.MKT_CHATWOOT_D1_WRITE_ENABLED, 'MKT_CHATWOOT_D1_WRITE_ENABLED') === true
-    && readOptionalBoolean(env.MKT_SCHEDULE_CHATWOOT_ENABLED, 'MKT_SCHEDULE_CHATWOOT_ENABLED') !== true
-    && readOptionalBoolean(env.MKT_CHATWOOT_WEBHOOK_ENABLED, 'MKT_CHATWOOT_WEBHOOK_ENABLED') !== true;
+    && readOptionalBoolean(
+      env.MKT_CONNECTOR_CHATWOOT_ENABLED,
+      'MKT_CONNECTOR_CHATWOOT_ENABLED',
+    ) === true
+    && readOptionalBoolean(
+      env.MKT_CHATWOOT_D1_WRITE_ENABLED,
+      'MKT_CHATWOOT_D1_WRITE_ENABLED',
+    ) === true
+    && readOptionalBoolean(
+      env.MKT_SCHEDULE_CHATWOOT_ENABLED,
+      'MKT_SCHEDULE_CHATWOOT_ENABLED',
+    ) !== true
+    && readOptionalBoolean(
+      env.MKT_CHATWOOT_WEBHOOK_ENABLED,
+      'MKT_CHATWOOT_WEBHOOK_ENABLED',
+    ) !== true;
 }
 
 function isProtectedWooCommerceUatRuntime(definition, env) {
@@ -99,8 +123,14 @@ function isProtectedMetaUatRuntime(definition, env) {
   }
   return env.MKT_ENV === 'development'
     && env.MKT_CUSTOMER_PROFILE === 'integration_workspace'
-    && readOptionalBoolean(env[definition.featureFlagEnv], definition.featureFlagEnv) === true
-    && readOptionalBoolean(env.MKT_META_SOURCE_READ_ENABLED, 'MKT_META_SOURCE_READ_ENABLED') === true;
+    && readOptionalBoolean(
+      env[definition.featureFlagEnv],
+      definition.featureFlagEnv,
+    ) === true
+    && readOptionalBoolean(
+      env.MKT_META_SOURCE_READ_ENABLED,
+      'MKT_META_SOURCE_READ_ENABLED',
+    ) === true;
 }
 
 function isProtectedGoogleAdsUatRuntime(definition, env) {
@@ -110,22 +140,39 @@ function isProtectedGoogleAdsUatRuntime(definition, env) {
   }
   return env.MKT_ENV === 'development'
     && env.MKT_CUSTOMER_PROFILE === 'integration_workspace'
-    && readOptionalBoolean(env.MKT_GOOGLE_ADS_QUEUE_ADMISSION_ENABLED, 'MKT_GOOGLE_ADS_QUEUE_ADMISSION_ENABLED') === true
-    && readOptionalBoolean(env.MKT_GOOGLE_ADS_BUSINESS_WRITE_ENABLED, 'MKT_GOOGLE_ADS_BUSINESS_WRITE_ENABLED') === true
-    && readOptionalBoolean(env.MKT_GOOGLE_ADS_LARK_WRITE_ENABLED, 'MKT_GOOGLE_ADS_LARK_WRITE_ENABLED') === true
-    && readOptionalBoolean(env.MKT_SCHEDULE_GOOGLE_ADS_ENABLED, 'MKT_SCHEDULE_GOOGLE_ADS_ENABLED') !== true;
+    && readOptionalBoolean(
+      env.MKT_GOOGLE_ADS_QUEUE_ADMISSION_ENABLED,
+      'MKT_GOOGLE_ADS_QUEUE_ADMISSION_ENABLED',
+    ) === true
+    && readOptionalBoolean(
+      env.MKT_GOOGLE_ADS_BUSINESS_WRITE_ENABLED,
+      'MKT_GOOGLE_ADS_BUSINESS_WRITE_ENABLED',
+    ) === true
+    && readOptionalBoolean(
+      env.MKT_GOOGLE_ADS_LARK_WRITE_ENABLED,
+      'MKT_GOOGLE_ADS_LARK_WRITE_ENABLED',
+    ) === true
+    && readOptionalBoolean(
+      env.MKT_SCHEDULE_GOOGLE_ADS_ENABLED,
+      'MKT_SCHEDULE_GOOGLE_ADS_ENABLED',
+    ) !== true;
 }
 
+/** อ่าน Boolean ที่ยอมรับเฉพาะ true/false เพื่อไม่ตีความคำคลุมเครืออย่าง yes, 1 หรือ on */
 function readOptionalBoolean(value, fieldName) {
   if (value === null || value === undefined || value === '') return null;
   if (value === true || value === false) return value;
-  if (typeof value !== 'string') throw invalidBoolean(fieldName, value);
+  if (typeof value !== 'string') {
+    throw invalidBoolean(fieldName, value);
+  }
+
   const normalized = value.trim().toLowerCase();
   if (normalized === 'true') return true;
   if (normalized === 'false') return false;
   throw invalidBoolean(fieldName, value);
 }
 
+/** อ่านข้อความ Optional จาก Environment และปฏิเสธชนิดข้อมูลที่ไม่ใช่ String */
 function readOptionalTextEnv(value, fieldName) {
   if (value === null || value === undefined || value === '') return null;
   if (typeof value !== 'string') {
