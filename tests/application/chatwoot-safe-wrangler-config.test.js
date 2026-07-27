@@ -6,6 +6,9 @@ import {
   parseJsoncObject,
 } from '../../scripts/lib/chatwoot-safe-wrangler-config.js';
 import {
+  rebaseGeneratedWranglerConfigPaths,
+} from '../../scripts/lib/rebase-generated-wrangler-config-paths.js';
+import {
   CHATWOOT_REMOTE_REQUIRED_FALSE_FLAGS,
   validateChatwootRemoteWranglerConfig,
 } from '../../scripts/lib/chatwoot-remote-readiness-operator.js';
@@ -44,6 +47,26 @@ test('Chatwoot safe generator parses JSONC and emits a minimal all-false config'
   }
   assert.equal(
     validateChatwootRemoteWranglerConfig(result.text).allExecutionFlagsFalse,
+    true,
+  );
+});
+
+test('Chatwoot safe generator rebases config-relative paths for ignored outputs', () => {
+  const result = buildChatwootSafeWranglerConfig(createSourceConfig());
+  const rebased = rebaseGeneratedWranglerConfigPaths(result.text, {
+    sourceDirectory: '/workspace/repository',
+    outputDirectory: '/workspace/repository/outputs/chatwoot-remote-readiness',
+  });
+  const generated = JSON.parse(rebased.text);
+
+  assert.equal(generated.main, '../../apps/sync-worker/src/index.js');
+  assert.equal(generated.d1_databases[0].migrations_dir, '../../migrations');
+  assert.equal(generated.$schema, '../../node_modules/wrangler/config-schema.json');
+  assert.equal(rebased.main, '../../apps/sync-worker/src/index.js');
+  assert.equal(rebased.migrationsDirectory, '../../migrations');
+  assert.match(rebased.sha256, /^[0-9a-f]{64}$/u);
+  assert.equal(
+    validateChatwootRemoteWranglerConfig(rebased.text).allExecutionFlagsFalse,
     true,
   );
 });
