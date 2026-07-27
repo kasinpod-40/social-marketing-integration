@@ -158,7 +158,7 @@ async function runPreflight(target) {
     runCommand('npx', [
       'wrangler', 'secret', 'list',
       '--config', target.wranglerConfig,
-      '--json',
+      '--format', 'json',
     ]),
     runD1Query(target, buildChatwootRemotePreflightSql()),
   ];

@@ -205,6 +205,19 @@ test('backup evidence is non-empty, target-bound and checksum-verified', () => {
   );
 });
 
+test('operator uses the supported Wrangler JSON format for Secret listing', async () => {
+  const source = await readFile(
+    new URL('scripts/chatwoot-remote-readiness-operator.mjs', repositoryRoot),
+    'utf8',
+  );
+  const command = source.match(
+    /runCommand\('npx', \[\s*'wrangler', 'secret', 'list',([\s\S]*?)\]\)/u,
+  );
+  assert.ok(command);
+  assert.match(command[1], /'--format', 'json'/u);
+  assert.doesNotMatch(command[1], /'--json'/u);
+});
+
 test('operator contains no Provider, Queue, Lark or Worker deployment execution path', async () => {
   const source = await readFile(
     new URL('scripts/chatwoot-remote-readiness-operator.mjs', repositoryRoot),
