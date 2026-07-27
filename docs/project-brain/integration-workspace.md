@@ -33,13 +33,39 @@ Infrastructure ownership and Source ownership are separate concerns. A customer-
 | Connector | Current source | Status |
 | --- | --- | --- |
 | TikTok Organic | Chemistry K `@chemistry_k` through Lark Native TikTok For Creator | RAW populated; Canonical sync for current customer source not yet verified |
-| Facebook Organic | Customer token preflight foundation implemented; current token provider-blocked/orphaned | Restore verified app administrator, rotate token and validate exact Page in same Workspace |
-| Instagram Organic | Customer Instagram Login token passed prior `/me`; preflight foundation implemented | Configure exact account mapping and repeat redacted Live UAT |
-| Meta Ads | Shares customer Facebook credential only at the Secret boundary; independent preflight result | Rotate token and validate exact Ad Account independently |
+| Facebook Organic | Chemistry K customer credential in local Secret boundary | Exact Page identity and `pages_read_engagement` / `pages_show_list` permissions validated by guarded GET-only operator; D1-only processing remains separately blocked |
+| Instagram Organic | Chemistry K Instagram Login credential in local Secret boundary | Exact Professional Account identity validated as `MEDIA_CREATOR` with `instagram_business_basic`; D1-only processing remains separately blocked |
+| Meta Ads | Chemistry K customer Facebook credential shared only at the Secret boundary | Exact `chemistry_k2` and `chemistry_k3` account identities validated independently with `ads_read` and `business_management`; D1-only processing remains separately blocked |
 | YouTube Organic | Developer temporary source; Customer OAuth source merged via PR `#44` | Customer Connect deployment/authorization pending |
 | Google Ads | Chemistry K advertiser linked and Manager Script read-only data available; Customer OAuth source merged via PR `#43` | OAuth deployment and Developer Token Live access pending; PR `#17` remains Draft/HOLD |
 | WooCommerce | Chemistry K source/access-dependent | Connector pending |
 | Chatwoot | Chemistry K source/access-dependent | Connector pending |
+
+## Verified Meta customer-source facts
+
+The guarded `meta_read_only_validation_v1` operator completed the ordered customer-source gate on
+2026-07-27 with one sanitized target fingerprint across every phase:
+
+```text
+configuration preflight             passed / Provider requests 0
+Facebook Organic                    identity_validated / GET 2 of 2
+Instagram Organic                   identity_validated / GET 1 of 1
+Meta Ads chemistry_k2               identity_validated / GET 2 of 2
+Meta Ads chemistry_k3               identity_validated / GET 2 of 2
+summary                              accepted / validationCount 4
+businessWrites                      0
+queueMessages                       0
+mutationPerformed                   false
+nextGate                            separate_d1_only_approval
+```
+
+Tokens remained local, were not placed in query strings and were not persisted in evidence. No D1
+or Lark mutation, Worker deployment, Schedule change, token rotation or Production action occurred.
+Detailed closeout:
+
+```text
+docs/project-brain/meta-read-only-provider-validation-closeout-2026-07-27.md
+```
 
 ## Verified TikTok facts
 
