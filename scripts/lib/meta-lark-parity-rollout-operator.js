@@ -49,7 +49,7 @@ export const META_LARK_CONFIRMATIONS = deepFreeze({
 });
 
 const FULL_SHA = /^[0-9a-f]{40}$/u;
-const EXECUTABLE_PHASES = new Set(META_LARK_OPERATOR_PHASES.filter((phase) => phase !== 'plan'));
+const EXECUTABLE_PHASES = new Set(META_LARK_OPERATOR_PHASES.slice(1));
 const D1_PHASE = 'meta_end_to_end_d1_write_v1';
 const PREFLIGHT_PHASE = 'meta_end_to_end_destination_preflight_v1';
 const LARK_PHASE = 'meta_end_to_end_lark_write_v1';
@@ -59,15 +59,9 @@ export function parseMetaLarkOperatorArgs(args = []) {
   let phase = 'plan';
   let execute = false;
   for (const arg of args) {
-    if (arg === '--execute') {
-      execute = true;
-      continue;
-    }
-    if (arg.startsWith('--phase=')) {
-      phase = arg.slice('--phase='.length);
-      continue;
-    }
-    throw operatorError(`Unknown Meta Lark rollout argument: ${arg}`, 'META_LARK_OPERATOR_ARGUMENT_INVALID');
+    if (arg === '--execute') execute = true;
+    else if (arg.startsWith('--phase=')) phase = arg.slice('--phase='.length);
+    else throw operatorError(`Unknown Meta Lark rollout argument: ${arg}`, 'META_LARK_OPERATOR_ARGUMENT_INVALID');
   }
   if (!META_LARK_OPERATOR_PHASES.includes(phase)) {
     throw operatorError(`Unsupported Meta Lark rollout phase: ${phase}`, 'META_LARK_OPERATOR_PHASE_INVALID', { phase });
@@ -136,7 +130,7 @@ export function safeMetaLarkTarget(target = {}) {
 
 export function buildMetaLarkConfigWindow(safeText, target = {}) {
   const d1Window = buildMetaD1OnlyConfigWindow(safeText, target);
-  const activeText = replaceConfigBoolean(
+  const activeText = replaceJsoncBoolean(
     d1Window.activeText,
     'MKT_META_LARK_WRITE_ENABLED',
     true,
@@ -145,7 +139,7 @@ export function buildMetaLarkConfigWindow(safeText, target = {}) {
     ...d1Window.activeTrueFlags,
     'MKT_META_LARK_WRITE_ENABLED',
   ].sort());
-  const observed = extractTrueEnabledFlags(activeText);
+  const observed = extractJsoncTrueFlags(activeText);
   if (JSON.stringify(observed) !== JSON.stringify(activeTrueFlags)) {
     throw operatorError(
       'Meta Lark active config contains an unapproved true flag',
@@ -153,7 +147,7 @@ export function buildMetaLarkConfigWindow(safeText, target = {}) {
       { trueFlags: observed },
     );
   }
-  requireConfigBoolean(activeText, 'MKT_META_REPORT_READ_ENABLED', false);
+  requireJsoncBoolean(activeText, 'MKT_META_REPORT_READ_ENABLED', false);
   return deepFreeze({
     safeText: d1Window.safeText,
     activeText,
@@ -215,7 +209,6 @@ export function validateMetaLarkInventory(input = {}) {
       { missingTables, missingKeyFields },
     );
   }
-
   return deepFreeze({
     tableCount: META_END_TO_END_REQUIRED_LARK_TABLE_KEYS.length,
     allTablesPresent: true,
@@ -292,11 +285,13 @@ export function buildMetaLarkSnapshotSql(target = {}) {
 }
 
 export function normalizeMetaLarkSnapshot(value = {}) {
-  if (isNormalizedSnapshot(value)) return deepFreeze({
-    ...value,
-    targetCounts: deepFreeze({ ...value.targetCounts }),
-    larkResults: deepFreeze(value.larkResults.map((entry) => deepFreeze({ ...entry }))),
-  });
+  if (isNormalizedSnapshot(value)) {
+    return deepFreeze({
+      ...value,
+      targetCounts: { ...value.targetCounts },
+      larkResults: value.larkResults.map((entry) => ({ ...entry })),
+    });
+  }
   const preflightState = parseNullableJson(value.preflight_state_json, 'preflight_state_json');
   const larkState = parseNullableJson(value.lark_state_json, 'lark_state_json');
   const completionState = parseNullableJson(value.completion_state_json, 'completion_state_json');
@@ -319,13 +314,13 @@ export function normalizeMetaLarkSnapshot(value = {}) {
     coverageRunCount: count(value.coverage_run_count),
     invalidCoverageCount: count(value.invalid_coverage_count),
     coverageEntityCount: count(value.coverage_entity_count),
-    targetCounts: deepFreeze({
+    targetCounts: {
       organicState: count(value.target_organic_state_count),
       organicObservations: count(value.target_organic_observation_count),
       accountDaily: count(value.target_account_daily_count),
       adsEntities: count(value.target_ads_entity_count),
       adsDaily: count(value.target_ads_daily_count),
-    }),
+    },
   });
 }
 
@@ -338,8 +333,6 @@ export function classifyMetaLarkCompletion(snapshot = {}, target = {}) {
       return expected === count(result?.created) + count(result?.updated) + count(result?.skipped);
     });
   const reconciliationResults = value.completionReconciliation?.lark;
-  const reconciliationValid = Array.isArray(reconciliationResults)
-    && reconciliationResults.length === expectedCount;
   const complete = value.syncRunStatus === 'success'
     && value.syncRunFinishedAt !== null
     && value.syncRunErrorCode === null
@@ -352,7 +345,8 @@ export function classifyMetaLarkCompletion(snapshot = {}, target = {}) {
     && value.workLifecycleStatus === 'completed'
     && value.workCompletedAt !== null
     && resultsValid
-    && reconciliationValid;
+    && Array.isArray(reconciliationResults)
+    && reconciliationResults.length === expectedCount;
   return deepFreeze({
     complete,
     reason: complete ? 'lark_complete_and_reconciled' : 'incomplete_or_invalid',
@@ -364,7 +358,6 @@ export function classifyMetaLarkCompletion(snapshot = {}, target = {}) {
 export function compareMetaLarkSnapshots(beforeInput, afterInput, target = {}, options = {}) {
   const before = normalizeMetaLarkSnapshot(beforeInput);
   const after = normalizeMetaLarkSnapshot(afterInput);
-  const rerun = options.rerun === true;
   if (after.invalidCoverageCount !== 0) {
     throw operatorError('Meta Lark continuation has invalid Coverage', 'META_LARK_COVERAGE_INVALID');
   }
@@ -384,32 +377,29 @@ export function compareMetaLarkSnapshots(beforeInput, afterInput, target = {}, o
   if (after.queueOperationAttempts < before.queueOperationAttempts + 1) {
     throw operatorError('Meta Lark Queue attempt was not observed', 'META_LARK_QUEUE_ATTEMPT_MISSING');
   }
-  if (!rerun) {
-    const classified = classifyMetaLarkCompletion(after, target);
-    if (!classified.complete) {
-      throw operatorError('Meta Lark continuation has not completed', 'META_LARK_COMPLETION_INVALID');
+  const classified = classifyMetaLarkCompletion(after, target);
+  if (!classified.complete) {
+    throw operatorError('Meta Lark continuation has not completed', 'META_LARK_COMPLETION_INVALID');
+  }
+  if (options.rerun === true) {
+    if (sha256(stableJson(after.larkResults)) !== sha256(stableJson(before.larkResults))
+      || sha256(stableJson(after.completionReconciliation))
+        !== sha256(stableJson(before.completionReconciliation))) {
+      throw operatorError('Meta Lark rerun changed reconciliation state', 'META_LARK_RERUN_RECONCILIATION_DRIFT');
     }
     return deepFreeze({
       accepted: true,
-      rerun: false,
-      expectedLarkTableCount: classified.expectedLarkTableCount,
-      larkResults: after.larkResults,
+      rerun: true,
+      larkReconciliationDrift: false,
       d1CountDrift: false,
       coverageCountDrift: false,
     });
   }
-  if (!classifyMetaLarkCompletion(after, target).complete) {
-    throw operatorError('Meta Lark rerun lost completed state', 'META_LARK_RERUN_COMPLETION_INVALID');
-  }
-  if (sha256(stableJson(after.larkResults)) !== sha256(stableJson(before.larkResults))
-    || sha256(stableJson(after.completionReconciliation))
-      !== sha256(stableJson(before.completionReconciliation))) {
-    throw operatorError('Meta Lark rerun changed reconciliation state', 'META_LARK_RERUN_RECONCILIATION_DRIFT');
-  }
   return deepFreeze({
     accepted: true,
-    rerun: true,
-    larkReconciliationDrift: false,
+    rerun: false,
+    expectedLarkTableCount: classified.expectedLarkTableCount,
+    larkResults: after.larkResults,
     d1CountDrift: false,
     coverageCountDrift: false,
   });
@@ -468,7 +458,7 @@ export function validateMetaLarkEvidenceSequence(evidence = [], target = {}) {
 }
 
 export function previousMetaLarkPhase(phase) {
-  const index = META_LARK_OPERATOR_PHASES.indexOf(phase);
+  const index = META_LARK_OPERATOR_PHASES.indexOf(requirePhase(phase));
   return index > 0 ? META_LARK_OPERATOR_PHASES[index - 1] : null;
 }
 
@@ -490,26 +480,41 @@ function confirmation(envName, value) {
   return Object.freeze({ envName, value });
 }
 
-function replaceConfigBoolean(text, key, enabled) {
-  const pattern = new RegExp(`(${escapeRegex(key)}\\s*=\\s*)(true|false)`, 'u');
-  if (!pattern.test(text)) {
-    throw operatorError(`Meta Lark config is missing ${key}`, 'META_LARK_CONFIG_FLAG_MISSING', { key });
+function replaceJsoncBoolean(text, key, enabled) {
+  const regex = new RegExp(
+    `(["']?${escapeRegex(key)}["']?\\s*:\\s*)(?:"(true|false)"|(true|false))`,
+    'u',
+  );
+  if (!regex.test(text)) {
+    throw operatorError(
+      `Meta Lark config is missing ${key}`,
+      'META_LARK_CONFIG_FLAG_MISSING',
+      { key },
+    );
   }
-  return text.replace(pattern, `$1${enabled ? 'true' : 'false'}`);
+  return text.replace(regex, `$1"${enabled ? 'true' : 'false'}"`);
 }
 
-function requireConfigBoolean(text, key, expected) {
-  const pattern = new RegExp(`${escapeRegex(key)}\\s*=\\s*(true|false)`, 'u');
-  const match = text.match(pattern);
-  if (!match || (match[1] === 'true') !== expected) {
-    throw operatorError(`Meta Lark config requires ${key}=${expected}`, 'META_LARK_CONFIG_FLAG_INVALID', { key });
+function requireJsoncBoolean(text, key, expected) {
+  const regex = new RegExp(
+    `["']?${escapeRegex(key)}["']?\\s*:\\s*(?:"(true|false)"|(true|false))`,
+    'u',
+  );
+  const match = text.match(regex);
+  const observed = match ? (match[1] ?? match[2]) === 'true' : null;
+  if (observed !== expected) {
+    throw operatorError(
+      `Meta Lark config requires ${key}=${expected}`,
+      'META_LARK_CONFIG_FLAG_INVALID',
+      { key },
+    );
   }
 }
 
-function extractTrueEnabledFlags(text) {
-  return Object.freeze([...text.matchAll(/\b(MKT_[A-Z0-9_]+_ENABLED)\s*=\s*true\b/gu)]
-    .map((match) => match[1])
-    .sort());
+function extractJsoncTrueFlags(text) {
+  return Object.freeze([
+    ...text.matchAll(/["']?(MKT_[A-Z0-9_]+_ENABLED)["']?\s*:\s*(?:"true"|true)/gu),
+  ].map((match) => match[1]).sort());
 }
 
 function normalizeRemoteTableId(table) {
@@ -521,18 +526,17 @@ function normalizeFieldName(field) {
 }
 
 function isNormalizedSnapshot(value) {
-  return value && typeof value === 'object'
-    && Object.hasOwn(value, 'syncRunStatus')
-    && Object.hasOwn(value, 'targetCounts')
-    && Array.isArray(value.larkResults);
+  return Boolean(value && typeof value === 'object'
+    && typeof value.d1PhaseComplete === 'boolean'
+    && value.targetCounts
+    && Array.isArray(value.larkResults));
 }
 
 function sanitizeEvidenceValue(value, key = '') {
   if (value === null || value === undefined) return value ?? null;
   if (Array.isArray(value)) return value.map((item) => sanitizeEvidenceValue(item, key));
   if (typeof value !== 'object') {
-    if (/token|secret|authorization|password|cookie/iu.test(key)) return '[REDACTED]';
-    return value;
+    return /token|secret|authorization|password|cookie/iu.test(key) ? '[REDACTED]' : value;
   }
   return Object.fromEntries(Object.entries(value).map(([nestedKey, nestedValue]) => [
     nestedKey,
@@ -544,7 +548,9 @@ function parseNullableJson(value, fieldName) {
   if (value === null || value === undefined || value === '') return null;
   if (typeof value === 'object') return value;
   try {
-    return JSON.parse(String(value));
+    const parsed = JSON.parse(String(value));
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('not object');
+    return parsed;
   } catch {
     throw operatorError(`${fieldName} contains invalid JSON`, 'META_LARK_SNAPSHOT_INVALID', { fieldName });
   }
@@ -560,14 +566,16 @@ function requirePhase(value) {
 
 function requireFullSha(value, fieldName) {
   const text = requireText(value, fieldName);
-  if (!FULL_SHA.test(text)) throw operatorError(`${fieldName} must be a full SHA`, 'META_LARK_INPUT_INVALID');
+  if (!FULL_SHA.test(text)) {
+    throw operatorError(`${fieldName} must be a full SHA`, 'META_LARK_INPUT_INVALID', { fieldName });
+  }
   return text;
 }
 
 function requireFingerprint(value, fieldName) {
   const text = requireText(value, fieldName);
   if (!/^[0-9a-f]{64}$/u.test(text)) {
-    throw operatorError(`${fieldName} must be a SHA-256 fingerprint`, 'META_LARK_INPUT_INVALID');
+    throw operatorError(`${fieldName} must be a SHA-256 fingerprint`, 'META_LARK_INPUT_INVALID', { fieldName });
   }
   return text;
 }
@@ -593,7 +601,7 @@ function optionalText(value) {
 function positiveInteger(value, fieldName) {
   const number = Number(value);
   if (!Number.isSafeInteger(number) || number < 1) {
-    throw operatorError(`${fieldName} must be a positive integer`, 'META_LARK_INPUT_INVALID');
+    throw operatorError(`${fieldName} must be a positive integer`, 'META_LARK_INPUT_INVALID', { fieldName });
   }
   return number;
 }
@@ -609,20 +617,19 @@ function count(value) {
 function nullableNumber(value) {
   if (value === null || value === undefined || value === '') return null;
   const number = Number(value);
-  if (!Number.isFinite(number)) throw operatorError('Meta Lark snapshot number is invalid', 'META_LARK_SNAPSHOT_INVALID');
-  return number;
-}
-
-function sqlText(value) {
-  return `'${String(value).replaceAll("'", "''")}'`;
+  return Number.isFinite(number) ? number : null;
 }
 
 function compactSql(value) {
   return value.replace(/\s+/gu, ' ').trim();
 }
 
+function sqlText(value) {
+  return `'${String(value).replaceAll("'", "''")}'`;
+}
+
 function escapeRegex(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+  return String(value).replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
 }
 
 function stableJson(value) {
@@ -634,7 +641,7 @@ function stableJson(value) {
 }
 
 function sha256(value) {
-  return createHash('sha256').update(value).digest('hex');
+  return createHash('sha256').update(String(value)).digest('hex');
 }
 
 function deepFreeze(value) {
