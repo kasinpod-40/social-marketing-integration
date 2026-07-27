@@ -273,29 +273,58 @@ export function buildTikTokAdmissionStatusSql(input = {}) {
   const metricDate = requireDate(input.metricDate, 'metricDate');
   return compactSql(`
     SELECT
-      admission_key,
-      status,
-      source_watermark,
-      metric_date,
-      source_record_count,
-      sync_run_id,
-      error_code,
-      requested_at,
-      completed_at,
-      updated_at
-    FROM tiktok_source_admissions
-    WHERE customer_key = 'chemistry_k'
-      AND account_key = 'chemistry_k'
-      AND source_watermark = '${sourceWatermark}'
-      AND metric_date = '${metricDate}'
-    ORDER BY requested_at DESC
-    LIMIT 1;
+      candidate.admission_key,
+      candidate.status,
+      candidate.source_watermark,
+      candidate.metric_date,
+      candidate.source_record_count,
+      candidate.sync_run_id,
+      candidate.error_code,
+      candidate.requested_at,
+      candidate.completed_at,
+      candidate.updated_at
+    FROM (SELECT 1 AS singleton) AS seed
+    LEFT JOIN (
+      SELECT
+        admission_key,
+        status,
+        source_watermark,
+        metric_date,
+        source_record_count,
+        sync_run_id,
+        error_code,
+        requested_at,
+        completed_at,
+        updated_at
+      FROM tiktok_source_admissions
+      WHERE customer_key = 'chemistry_k'
+        AND account_key = 'chemistry_k'
+        AND source_watermark = '${sourceWatermark}'
+        AND metric_date = '${metricDate}'
+      ORDER BY requested_at DESC
+      LIMIT 1
+    ) AS candidate ON 1 = 1;
   `);
 }
 
 export function normalizeTikTokAdmissionStatusRow(row, expected = {}) {
   if (row === null || row === undefined) return null;
   const value = requireObject(row, 'admissionRow');
+  const admissionFields = [
+    'admission_key',
+    'status',
+    'source_watermark',
+    'metric_date',
+    'source_record_count',
+    'sync_run_id',
+    'error_code',
+    'requested_at',
+    'completed_at',
+    'updated_at',
+  ];
+  if (admissionFields.every((field) => value[field] === null || value[field] === undefined)) {
+    return null;
+  }
   const status = requireText(value.status, 'admissionRow.status');
   if (!ADMISSION_STATUSES.has(status)) {
     throw reconciliationError(
