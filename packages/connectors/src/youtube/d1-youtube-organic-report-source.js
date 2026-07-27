@@ -70,8 +70,15 @@ export class D1YouTubeOrganicReportSource {
         FROM organic_content_state s
         WHERE s.customer_key = ? AND s.platform = ? AND s.account_key = ?
           AND EXISTS (
-            SELECT 1 FROM organic_content_observations o
-            WHERE o.content_key = s.content_key AND o.metric_date <= ?
+            SELECT 1
+            FROM organic_content_observations o
+            INNER JOIN data_coverage_runs c
+              ON c.coverage_run_id = o.coverage_run_id
+            WHERE o.content_key = s.content_key
+              AND o.metric_date <= ?
+              AND c.dataset_key = '${CONTENT_DATASET_KEY}'
+              AND c.status = 'complete'
+              AND COALESCE(c.failed_rows, 0) = 0
           )
         ORDER BY s.content_key ASC
         LIMIT ?
@@ -153,15 +160,29 @@ export class D1YouTubeOrganicReportSource {
       left.metricDate.localeCompare(right.metricDate)
       || String(left.recordId).localeCompare(String(right.recordId))
     ));
+
     const coverageById = new Map(coverageEntities.map((row) => [
       String(row.external_entity_id),
       row.observation_status,
     ]));
-    const uncoveredContentIds = contents
-      .map((content) => content.externalContentId)
-      .filter((externalContentId) => coverageById.get(externalContentId) !== 'observed')
-      .sort();
-    const dataStatus = deriveDataStatus(contentCoverage, uncoveredContentIds.length);
+    const uncovered = new Set(
+      contents
+        .map((content) => content.externalContentId)
+        .filter((externalContentId) => coverageById.get(externalContentId) !== 'observed'),
+    );
+    for (const row of coverageEntities) {
+      if (row.observation_status !== 'observed') uncovered.add(String(row.external_entity_id));
+    }
+    const uncoveredContentIds = [...uncovered].sort();
+    const expectedContentEntities = nullableInteger(contentCoverage?.expected_entities);
+    const coverageEntityCountMismatch = expectedContentEntities !== null
+      && coverageEntities.length !== expectedContentEntities;
+    const dataStatus = deriveDataStatus({
+      contentCoverage,
+      accountCoverage,
+      uncoveredContentCount: uncoveredContentIds.length,
+      coverageEntityCount: coverageEntities.length,
+    });
 
     return Object.freeze({
       contents: Object.freeze(contents),
@@ -171,6 +192,7 @@ export class D1YouTubeOrganicReportSource {
       readSummary: Object.freeze({
         strategy: 'd1_youtube_observation_range',
         bounded: true,
+        completeCoverageRowsOnly: true,
         contentRecords: contents.length,
         dailySnapshotRecords: dailySnapshots.length,
         accountDailySnapshotRecords: accountDailySnapshots.length,
@@ -188,20 +210,28 @@ export class D1YouTubeOrganicReportSource {
           + coverageRows.length
           + coverageEntities.length,
         fallbackRowsScanned: 0,
-        baselinePolicy: 'latest_observation_before_earliest_period_per_content',
+        baselinePolicy: 'latest_complete_coverage_observation_before_earliest_period_per_content',
         metricPolicy: 'cumulative_end_minus_pre_period_baseline',
         coverageStatus: contentCoverage?.status ?? 'not_observed',
         coverageRunId: contentCoverage?.coverage_run_id ?? null,
-        expectedEntities: nullableInteger(contentCoverage?.expected_entities),
+        expectedEntities: expectedContentEntities,
         observedEntities: nullableInteger(contentCoverage?.observed_entities),
+        expectedRows: nullableInteger(contentCoverage?.expected_rows),
+        observedRows: nullableInteger(contentCoverage?.observed_rows),
         failedRows: nullableInteger(contentCoverage?.failed_rows) ?? 0,
         coverageEntities: coverageEntities.length,
+        coverageEntityCountMismatch,
         uncoveredContentCount: uncoveredContentIds.length,
         uncoveredContentIds: Object.freeze(uncoveredContentIds.slice(0, 100)),
         sourceWatermark: contentCoverage?.source_watermark ?? null,
         coverageCompletedAt: nullableInteger(contentCoverage?.completed_at),
         accountCoverageStatus: accountCoverage?.status ?? 'not_observed',
         accountCoverageRunId: accountCoverage?.coverage_run_id ?? null,
+        accountExpectedEntities: nullableInteger(accountCoverage?.expected_entities),
+        accountObservedEntities: nullableInteger(accountCoverage?.observed_entities),
+        accountExpectedRows: nullableInteger(accountCoverage?.expected_rows),
+        accountObservedRows: nullableInteger(accountCoverage?.observed_rows),
+        accountFailedRows: nullableInteger(accountCoverage?.failed_rows) ?? 0,
       }),
     });
   }
@@ -226,8 +256,13 @@ function latestObservationSql(operator) {
           ORDER BY o.observed_at DESC, o.observation_key DESC
         ) AS report_rank
       FROM organic_content_observations o
+      INNER JOIN data_coverage_runs c
+        ON c.coverage_run_id = o.coverage_run_id
       WHERE o.customer_key = ? AND o.platform = ? AND o.account_key = ?
         AND o.metric_date ${operator} ?
+        AND c.dataset_key = '${CONTENT_DATASET_KEY}'
+        AND c.status = 'complete'
+        AND COALESCE(c.failed_rows, 0) = 0
     ) ranked
     WHERE report_rank = 1
     ORDER BY content_key ASC
@@ -244,8 +279,13 @@ function latestAccountSql(operator) {
           ORDER BY a.metric_date DESC, a.account_daily_key DESC
         ) AS report_rank
       FROM organic_account_daily_facts a
+      INNER JOIN data_coverage_runs c
+        ON c.coverage_run_id = a.coverage_run_id
       WHERE a.customer_key = ? AND a.platform = ? AND a.account_key = ?
         AND a.metric_date ${operator} ?
+        AND c.dataset_key = '${ACCOUNT_DATASET_KEY}'
+        AND c.status = 'complete'
+        AND COALESCE(c.failed_rows, 0) = 0
     ) ranked
     WHERE report_rank = 1
     ORDER BY account_key ASC
@@ -309,19 +349,33 @@ function buildAccountSnapshot(row, accountKey) {
   });
 }
 
-function deriveDataStatus(coverage, uncoveredContentCount) {
-  if (!coverage) return 'not_observed';
-  if (coverage.status === 'source_unavailable') return 'source_unavailable';
-  const expectedEntities = Number(coverage.expected_entities ?? 0);
-  const observedEntities = Number(coverage.observed_entities ?? 0);
-  const expectedRows = Number(coverage.expected_rows ?? 0);
-  const observedRows = Number(coverage.observed_rows ?? 0);
-  if (coverage.status !== 'complete'
-    || Number(coverage.failed_rows ?? 0) > 0
-    || expectedEntities !== observedEntities
-    || expectedRows !== observedRows
-    || uncoveredContentCount > 0) return 'partial';
+function deriveDataStatus(input) {
+  const coverages = [input.contentCoverage, input.accountCoverage];
+  if (coverages.some((coverage) => coverage?.status === 'source_unavailable')) {
+    return 'source_unavailable';
+  }
+  if (coverages.every((coverage) => coverage === null)) return 'not_observed';
+  if (coverages.some((coverage) => coverage === null)) return 'partial';
+  if (coverages.some((coverage) => !coverageComplete(coverage))) return 'partial';
+  const expectedContentEntities = nullableInteger(input.contentCoverage?.expected_entities);
+  if (input.uncoveredContentCount > 0) return 'partial';
+  if (expectedContentEntities !== null && input.coverageEntityCount !== expectedContentEntities) {
+    return 'partial';
+  }
   return 'complete';
+}
+
+function coverageComplete(coverage) {
+  const expectedEntities = nullableInteger(coverage?.expected_entities);
+  const observedEntities = nullableInteger(coverage?.observed_entities);
+  const expectedRows = nullableInteger(coverage?.expected_rows);
+  const observedRows = nullableInteger(coverage?.observed_rows);
+  return coverage?.status === 'complete'
+    && coverage?.completed_at !== null
+    && coverage?.completed_at !== undefined
+    && (nullableInteger(coverage?.failed_rows) ?? 0) === 0
+    && (expectedEntities === null || expectedEntities === observedEntities)
+    && (expectedRows === null || expectedRows === observedRows);
 }
 
 function dateInTimeZone(value, timeZone) {
