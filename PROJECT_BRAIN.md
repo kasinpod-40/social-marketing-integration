@@ -26,14 +26,23 @@ TikTok operator reviewed head                 df229ccade82ce7869c01bbf75c1cb3fc0
 TikTok operator final verification            #558 PASS
 Meta end-to-end implementation                merged via PR #69
 Meta implementation merge commit              11e861cfbc79ea067a90496b205f692ca8bb4d3d
+Meta protected runtime                        merged via PR #73
+Meta runtime merge commit                     13ebba1476d7983428c5b5ce51ce754adf493ad5
+Meta runtime reviewed head                    a700f5f31ebd24a32cc64cc6ca5ffe123a632ff4
+Meta runtime verification                     #26 / #593 PASS
+Meta read-only validation operator            merged via PR #82
+Meta operator merge commit                    0f38aeb8a1c69e8655145f97808f3d3d1b31615a
+Meta operator reviewed head                   9b6f8d48891daa9ad7620f731dcdf2483da871e3
+Meta operator verification                    #29 / #605 PASS
 YouTube end-to-end integration                merged via PR #85
 YouTube integration merge commit              dce3bd954ee75ee55a29efac303e9973ca060fca
 YouTube reviewed head                         c5ffc4327ffec405f82472c7b7098b45bac82722
 YouTube final verification                    #581 PASS
 Migration 0016                                source only / not applied remotely
-Worker deployment                             not run for TikTok or YouTube rollout
-Queue send / DLQ redrive                      none for TikTok or YouTube rollout
-Remote D1 / Lark mutation                     none for TikTok or YouTube rollout
+Worker deployment                             not run for TikTok, Meta or YouTube rollout
+Provider execution                            not run for Meta or YouTube rollout
+Queue send / DLQ redrive                      none for TikTok, Meta or YouTube rollout
+Remote D1 / Lark mutation                     none for TikTok, Meta or YouTube rollout
 Schedules                                     disabled
 Retention/delete                              blocked
 Production                                    blocked
@@ -89,7 +98,7 @@ Scheduled `metricDate` is the previous completed local day. The scheduler no lon
 
 No second TikTok connector, Reliability stack, Queue/DLQ framework, D1 history writer, Canonical writer, Lark sync engine or Report formula engine was created.
 
-## Merged guarded rollout operator
+## Merged guarded TikTok rollout operator
 
 PR `#71` added an operator for these separately confirmed phases:
 
@@ -153,12 +162,101 @@ docs/tasks/youtube-organic-integration-wiring-safe-rollout.md
 
 Remote schema inspection, Worker deployment, Provider calls, Queue messages, D1/Lark Business writes, schedules and LIVE UAT remain blocked pending separate authorization.
 
+## Merged Chemistry K Meta runtime
+
+PR `#73` merged the protected Meta routing and exact Chemistry K multi-account contract:
+
+```text
+Facebook Page       982406442148381 / เคมี K
+Instagram           17841413521012797 / chemistry_key
+Meta Ads alias      chemistry_k2 → 505898710119851
+Meta Ads alias      chemistry_k3 → 851206695716861
+```
+
+Canonical mapping:
+
+```text
+META_AD_ACCOUNT_MAPPINGS=chemistry_k2=505898710119851,chemistry_k3=851206695716861
+```
+
+The Shared route preserves:
+
+```text
+YouTube guarded route
+→ Google Ads protected route
+→ Meta protected route
+→ TikTok/report/active fallback
+```
+
+Meta runtime contracts:
+
+- Facebook, Instagram and Meta Ads remain `uat_pending` and manual-only;
+- protected activation requires `development`, `integration_workspace`, Chemistry K and an explicit source-read gate;
+- all Connector/source/D1/Lark/report controls default to `false`;
+- mappings reject malformed, duplicate or mixed legacy/canonical configuration;
+- every Meta Ads job chooses exactly one configured `sourceAccountKey`;
+- Queue work key, sync-run identity, Reliability scope and continuation preserve the selected alias;
+- Coverage IDs include the exact Ad Account identity;
+- unknown aliases fail before Provider access;
+- preflight output is sanitized;
+- the existing Reliability, Queue/DLQ, D1 history/Coverage and Lark `TableSyncEngine` are reused.
+
+## Merged Meta read-only validation operator
+
+PR `#82` added the separately confirmed operator:
+
+```text
+plan
+→ configuration preflight / zero Provider requests
+→ Facebook GET-only validation
+→ Instagram GET-only validation
+→ chemistry_k2 GET-only validation
+→ chemistry_k3 GET-only validation
+→ sanitized summary
+```
+
+The operator:
+
+- defaults to plan-only;
+- requires an exact confirmation for every executable phase;
+- requires every Connector, Meta, D1/report, DLQ-redrive and Schedule flag to be explicitly `false`;
+- validates one Connector/account per phase;
+- uses the existing GET-only Graph client and never places the Token in the URL;
+- rejects unknown Meta Ads aliases before Provider access;
+- binds evidence to the same contract version, API version and sanitized target fingerprint;
+- excludes Tokens and raw customer IDs from output/evidence;
+- contains no Queue send, D1/Lark mutation, Worker deployment, schedule or Production path.
+
+Repository verification passed on the final reviewed operator head:
+
+```text
+Meta End-to-End Verification  #29 PASS
+Branch Verification           #605 PASS
+```
+
+Detailed records:
+
+```text
+docs/tasks/meta-runtime-wiring.md
+docs/tasks/meta-read-only-validation-operator.md
+docs/runbooks/meta-read-only-validation.md
+```
+
+Provider execution has not run and remains a separate explicit gate.
+
 ## Default-false controls
 
 ```text
 MKT_TIKTOK_AUDIT_HTTP_ENABLED=false
 MKT_TIKTOK_WATERMARK_ADMISSION_ENABLED=false
 MKT_TIKTOK_POST_PROCESS_REPORT_ENABLED=false
+MKT_CONNECTOR_FACEBOOK_ENABLED=false
+MKT_CONNECTOR_INSTAGRAM_ENABLED=false
+MKT_CONNECTOR_META_ADS_ENABLED=false
+MKT_META_SOURCE_READ_ENABLED=false
+MKT_META_D1_WRITE_ENABLED=false
+MKT_META_LARK_WRITE_ENABLED=false
+MKT_META_REPORT_READ_ENABLED=false
 MKT_YOUTUBE_END_TO_END_ENABLED=false
 MKT_YOUTUBE_LARK_WRITE_ENABLED=false
 MKT_REPORT_D1_SHADOW_READ_ENABLED=false
@@ -170,7 +268,7 @@ MKT_SCHEDULE_DAILY_REPORT_ENABLED=false
 MKT_LARK_DAILY_RETENTION_ENABLED=false
 ```
 
-Storage and Report flags never implicitly enable schedules.
+Storage, Source-read and Report flags never implicitly enable schedules.
 
 ## Shared Core authority
 
@@ -191,7 +289,7 @@ Do not create a parallel Reliability, Queue, D1 writer, Lark sync or Report engi
 
 ```text
 TikTok Organic       pipeline PR #65 merged / rollout operator PR #71 merged / Remote rollout pending
-All Meta             implementation PR #69 merged / protected runtime wiring remains separate Draft work
+All Meta             runtime PR #73 merged / read-only operator PR #82 merged / Provider validation pending
 YouTube Organic      integration PR #85 merged / Remote read-only preflight pending
 Chatwoot             separate Draft PR
 WooCommerce          separate Draft PR
@@ -231,6 +329,32 @@ The Repository implementation is merged, but no Remote phase is authorized autom
 7. separately authorize controlled Integration Workspace D1-first/Lark UAT;
 8. verify Coverage, idempotent rerun and D1 Report shadow parity;
 9. keep Schedule and Production blocked until a new explicit approval.
+
+## Next separately approved Meta validation
+
+The runtime and operator are merged, but Provider execution is not authorized automatically. The next order is:
+
+1. run `rollout:meta-read-only` in plan-only mode from an authorized local Integration Workspace;
+2. separately authorize configuration preflight and confirm Provider requests remain zero;
+3. retain and review sanitized preflight evidence;
+4. separately authorize one Facebook GET-only identity/permission validation;
+5. separately authorize one Instagram GET-only identity/permission validation;
+6. separately authorize one `chemistry_k2` GET-only validation;
+7. separately authorize one `chemistry_k3` GET-only validation;
+8. create and review the sanitized summary;
+9. only after a clean summary, consider a separate D1-only processing gate.
+
+D1 writes, Coverage reconciliation, Lark parity, LIVE UAT, schedules and Production remain later approval gates.
+
+## Repository hygiene audit note
+
+A temporary `tmp/noop` file containing only `x` was accidentally created on `main` at
+`62857a7e6c298b4be02dc105aeecbff4080d5313` during PR `#82` branch reconstruction and immediately
+removed at `6158a8b1381d62539274a7fa77d7860bdbee624a`.
+
+The final tree contains no temporary file and no Business fact, Secret, Runtime configuration,
+migration, Queue state, D1/Lark data or deployed infrastructure was changed by the incident. The
+commits are retained as transparent audit history.
 
 ## Permanent safety rules
 
