@@ -6,6 +6,7 @@ import {
   WOOCOMMERCE_LARK_TABLES,
 } from '../../packages/application/src/commerce/woocommerce-commerce-model.js';
 import { LARK_TABLE_ENV } from '../../packages/config/src/lark-table-config.js';
+import { parseJsoncObject } from './chatwoot-safe-wrangler-config.js';
 
 export const WOOCOMMERCE_FINAL_CONTRACT_VERSION = 'woocommerce_final_rollout_v1';
 export const WOOCOMMERCE_FINAL_CONFIRMATION = Object.freeze({
@@ -21,6 +22,7 @@ export const WOOCOMMERCE_FINAL_FLAGS = Object.freeze([
   'MKT_SCHEDULE_WOOCOMMERCE_ENABLED',
 ]);
 
+const ENABLED_FLAG = /^MKT_[A-Z0-9_]+_ENABLED$/u;
 const TABLE_BINDINGS = Object.freeze([
   tableBinding('rawCommerceStores', 'RAW_Commerce_Stores', 'raw_commerce_stores'),
   tableBinding('rawCommerceOrders', 'RAW_Commerce_Orders', 'raw_commerce_orders'),
@@ -79,13 +81,18 @@ export function createWooCommerceLarkSchemaContract() {
 }
 
 export function buildWooCommerceConfigWindows(input = {}) {
-  const source = requireText(input.configText, 'configText');
+  const source = parseWooCommerceConfig(input.configText);
   const tableIds = requireObject(input.tableIds, 'tableIds');
-  let safe = source;
-  for (const flag of WOOCOMMERCE_FINAL_FLAGS) safe = setJsonStringValue(safe, flag, 'false');
+  const safeConfig = structuredClone(source);
+  const safeVars = structuredClone(requireObject(source.vars, 'vars'));
+
+  for (const flag of WOOCOMMERCE_FINAL_FLAGS) safeVars[flag] = 'false';
   for (const contract of createWooCommerceLarkSchemaContract()) {
-    safe = setJsonStringValue(safe, contract.envName, requireText(tableIds[contract.tableKey], contract.tableKey));
+    safeVars[contract.envName] = requireText(tableIds[contract.tableKey], contract.tableKey);
   }
+  safeConfig.vars = safeVars;
+
+  const safe = serializeConfig(safeConfig);
   const uat = setFlags(safe, {
     MKT_CONNECTOR_WOOCOMMERCE_ENABLED: true,
     MKT_WOOCOMMERCE_D1_WRITE_ENABLED: true,
@@ -248,13 +255,32 @@ function inferLarkFieldType(fieldName, primary) {
     || new Set(['quantity', 'manage_stock', 'individual_use', 'free_shipping', 'menu_order', 'product_count', 'recognized_orders', 'provisional_orders', 'cancelled_orders', 'failed_orders', 'refunded_orders']).has(fieldName)
     ? 2 : 1;
 }
-function setFlags(text, values) { let result = text; for (const [name, value] of Object.entries(values)) result = setJsonStringValue(result, name, value ? 'true' : 'false'); return result; }
-function setJsonStringValue(text, name, value) {
-  const pattern = new RegExp(`("${escapeRegExp(name)}"\\s*:\\s*)"[^"]*"`, 'u');
-  if (!pattern.test(text)) throw operatorError(`Wrangler config is missing ${name}`, 'WOOCOMMERCE_FINAL_CONFIG_FIELD_MISSING', { name });
-  return text.replace(pattern, `$1"${String(value).replaceAll('"', '\\"')}"`);
+function parseWooCommerceConfig(text) {
+  try {
+    return parseJsoncObject(requireText(text, 'configText'));
+  } catch (cause) {
+    throw operatorError(
+      'WooCommerce Wrangler config is not valid JSONC',
+      'WOOCOMMERCE_FINAL_CONFIG_INVALID',
+      { cause: cause?.message ?? 'JSON_PARSE_FAILED' },
+    );
+  }
 }
-function readTrueFlags(text) { return [...text.matchAll(/"(MKT_[A-Z0-9_]+_ENABLED)"\s*:\s*"true"/gu)].map((match) => match[1]).sort(); }
+function serializeConfig(value) { return `${JSON.stringify(value, null, 2)}\n`; }
+function setFlags(text, values) {
+  const config = structuredClone(parseWooCommerceConfig(text));
+  const vars = structuredClone(requireObject(config.vars, 'vars'));
+  for (const [name, value] of Object.entries(values)) vars[name] = value ? 'true' : 'false';
+  config.vars = vars;
+  return serializeConfig(config);
+}
+function readTrueFlags(text) {
+  const vars = requireObject(parseWooCommerceConfig(text).vars, 'vars');
+  return Object.entries(vars)
+    .filter(([name, value]) => ENABLED_FLAG.test(name) && String(value).trim().toLowerCase() === 'true')
+    .map(([name]) => name)
+    .sort();
+}
 function requireOperationId(value) { const text = requireText(value, 'operationId').toLowerCase(); if (!/^[a-z0-9][a-z0-9._:-]{7,127}$/u.test(text)) throw operatorError('WooCommerce operationId is invalid', 'WOOCOMMERCE_FINAL_OPERATION_ID_INVALID'); return text; }
 function requireTimestamp(value, fieldName) { const number = typeof value === 'number' ? value : Date.parse(value); if (!Number.isSafeInteger(number) || number < Date.UTC(2020, 0, 1)) throw operatorError(`${fieldName} is invalid`, 'WOOCOMMERCE_FINAL_TIMESTAMP_INVALID'); return number; }
 function count(value) { const number = Number(value ?? 0); if (!Number.isSafeInteger(number) || number < 0) throw operatorError('WooCommerce count is invalid', 'WOOCOMMERCE_FINAL_COUNT_INVALID'); return number; }
@@ -265,7 +291,6 @@ function requireObject(value, fieldName) { if (!value || typeof value !== 'objec
 function requireText(value, fieldName) { if (typeof value !== 'string' || value.trim() === '') throw operatorError(`${fieldName} is required`, 'WOOCOMMERCE_FINAL_CONTRACT_INVALID'); return value.trim(); }
 function sqlText(value) { return `'${String(value).replaceAll("'", "''")}'`; }
 function compactSql(value) { return value.replace(/\s+/gu, ' ').trim(); }
-function escapeRegExp(value) { return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'); }
 function sanitize(value) {
   if (Array.isArray(value)) return value.map(sanitize);
   if (!value || typeof value !== 'object') return value;
