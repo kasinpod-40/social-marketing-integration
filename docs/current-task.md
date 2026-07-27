@@ -3,10 +3,11 @@
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = IMPLEMENTATION_PENDING_BRANCH_VERIFICATION
+TASK_STATUS                         = PASS_FOR_REVIEW
 CURRENT_PROGRAM                     = YOUTUBE_LIVE_REMOTE_CONTRACT_PARSER_HOTFIX
 BASE_MAIN_SHA                       = 7f06ae8729dd24c3bd6f548332bfe17ba374c8ab
 BRANCH                              = hotfix/youtube-live-remote-contract-parser
+DRAFT_PR                            = #113 / OPEN / DRAFT / UNMERGED
 IMPLEMENTATION_OWNER                = CHATGPT_WORK_GITHUB_TOOLS
 REMOTE_ACTION_AUTHORIZED            = false
 REMOTE_ACTIONS                      = NONE
@@ -104,6 +105,25 @@ The adapter normalizes only the two proven metadata omissions above and then cal
 `validateRemoteYouTubeDeploymentContract`. It does not reimplement flag, trigger, consumer-setting,
 Secret-name, traffic or fingerprint decisions.
 
+## Reviewed execution path
+
+The immediate post-merge Remote read-only preflight must validate captured sanitized Wrangler and
+Cloudflare responses through:
+
+```text
+npm run validate:youtube-live-remote-contract
+npm run validate:youtube-live-remote-contract:run -- --input=<sanitized-input.json>
+```
+
+This CLI runs no Remote command. It reads reviewed local safe/active configs and sanitized captured
+responses, invokes the compatibility adapter and delegates the final decision to the existing Remote
+contract validator.
+
+The existing `rollout:youtube-dry-run:*` deployment/verification phases were not modified by this
+Hotfix. They remain unauthorized. Before any later deployment phase, Integration review must either
+wire the same adapter into that execution path or prove that the then-current live response includes
+the original strict metadata shape.
+
 ## Files
 
 ```text
@@ -132,17 +152,24 @@ docs/project-brain/youtube-live-remote-contract-parser-hotfix-2026-07-27.md
 ```text
 ADAPTER_IMPLEMENTED                  = YES
 PLAN_ONLY_VALIDATOR_CLI              = YES
-FOCUSED_TESTS_ADDED                  = 6
+FOCUSED_TESTS_ADDED                  = 6 / PASS IN FULL UNIT SUITE
+FOCUSED_STAGED_TIKTOK                = 4 / 4 PASS
+NODE_UNIT_INTEGRATION                = 1067 / 1067 PASS
+WORKERS_RUNTIME                      = 11 / 11 PASS
+REPORT_RELIABILITY                   = 91 / 91 PASS
+DEPENDENCY_AUDIT                     = 0 vulnerabilities
+WRANGLER_DRY_RUN                     = PASS / NO DEPLOYMENT
+BRANCH_VERIFICATION                  = #667 / 30281961375 / PASS
+DIAGNOSTICS_ARTIFACT                 = 8659216332
+DIAGNOSTICS_DIGEST                   = sha256:5189ff3c6f58adca983d928815fb21c9e50cbcb06bdfaa7e70874cb87efbcd37
 REMOTE_RESPONSE_VALUES_COMMITTED     = NO
 SECRET_VALUES_COMMITTED              = NO
 REMOTE_ACTION_COUNT                  = 0
-BRANCH_VERIFICATION                  = PENDING
-FULL_TEST_RESULT                     = PENDING
-DECISION                             = PENDING_CI_REVIEW
+DECISION                             = PASS_FOR_REVIEW
 ```
 
-## Required next gate
+## Remaining gate
 
-Open a Draft PR and wait for Branch Verification on the exact final head. This task authorizes no
-Remote preflight retry. After Repository review/merge, the user must separately authorize a new
-read-only preflight attempt against then-current `main` and then-current active Worker version.
+PR #113 must remain Draft until exact-final-head Branch Verification and code review pass. This task
+authorizes no Remote preflight retry. After review and merge, the user must separately authorize a
+new read-only preflight attempt against then-current `main` and then-current active Worker version.
