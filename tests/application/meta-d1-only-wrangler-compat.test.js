@@ -13,7 +13,7 @@ import {
   prepareMetaD1OnlyWranglerInvocation,
 } from '../../scripts/lib/meta-d1-only-wrangler-compat.js';
 
-test('Meta D1 Wrangler compatibility rebases operator config and emits deterministic outfile', async () => {
+test('Meta D1 Wrangler compatibility rebases JSONC operator config and emits deterministic outfile', async () => {
   const root = await mkdtemp(join(tmpdir(), 'meta-d1-compat-test-'));
   try {
     const repository = join(root, 'repository');
@@ -29,12 +29,15 @@ test('Meta D1 Wrangler compatibility rebases operator config and emits determini
     );
     const tempDirectory = join(root, 'compat');
     const outputDirectory = join(root, 'bundle');
-    const configText = JSON.stringify({
-      name: 'social-mkt-sync-worker',
-      main: '../../apps/sync-worker/src/index.js',
-      $schema: '../../node_modules/wrangler/config-schema.json',
-      d1_databases: [{ migrations_dir: '../../migrations' }],
-    }, null, 2);
+    const configText = `{
+      // Generated fast-track config remains valid Wrangler JSONC.
+      "name": "social-mkt-sync-worker",
+      "main": "../../apps/sync-worker/src/index.js",
+      "$schema": "../../node_modules/wrangler/config-schema.json",
+      "d1_databases": [{
+        "migrations_dir": "../../migrations",
+      }],
+    }`;
 
     await mkdir(dirname(originalConfig), { recursive: true });
     await mkdir(outputDirectory, { recursive: true });
@@ -168,6 +171,27 @@ test('Meta D1 Wrangler compatibility fails closed on unsafe output arguments and
         tempDirectory: join(root, 'compat-2'),
       }),
       (error) => error.code === 'META_D1_WRANGLER_COMPAT_ORIGINAL_CONFIG_REQUIRED',
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('Meta D1 Wrangler compatibility rejects malformed JSONC before invoking Wrangler', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'meta-d1-compat-jsonc-invalid-test-'));
+  try {
+    const configPath = join(root, 'wrangler.jsonc');
+    await writeFile(configPath, '{ "main": "./worker.js", trailing }');
+
+    await assert.rejects(
+      prepareMetaD1OnlyWranglerInvocation([
+        'wrangler', 'deploy', '--dry-run', '--config', configPath,
+      ], {
+        cwd: root,
+        tempDirectory: join(root, 'compat'),
+        originalConfigPath: configPath,
+      }),
+      (error) => error.code === 'CHATWOOT_SAFE_CONFIG_GENERATED_JSON_INVALID',
     );
   } finally {
     await rm(root, { recursive: true, force: true });
