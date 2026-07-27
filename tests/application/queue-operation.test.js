@@ -36,6 +36,71 @@ test('bootstrap operation identity is independent from Queue delivery message.id
   assert.equal(first.originalRequestedAt, REQUESTED_AT);
 });
 
+test('post-Lark sync operation identity is independent from Queue delivery message.id', () => {
+  const body = {
+    ...BODY,
+    type: JOB_TYPES.TIKTOK_CREATOR_NATIVE_SYNC,
+    trigger: 'post_lark_watermark',
+  };
+  const first = resolveQueueOperation({
+    job: normalizeQueueJobMessage({ id: 'probe-admission-message', body }),
+    message: { id: 'probe-admission-message' },
+  });
+  const retry = resolveQueueOperation({
+    job: normalizeQueueJobMessage({ id: 'queue-retry-message', body }),
+    message: { id: 'queue-retry-message' },
+  });
+  assert.deepEqual(retry, first);
+  assert.equal(first.stable, true);
+  assert.equal(first.workKey, `tiktok:${OPERATION_ID}`);
+});
+
+test('ordinary TikTok sync keeps the existing message-scoped operation', () => {
+  const job = normalizeQueueJobMessage({
+    id: 'legacy-tiktok-message',
+    body: {
+      schemaVersion: 1,
+      type: JOB_TYPES.TIKTOK_CREATOR_NATIVE_SYNC,
+      trigger: 'manual',
+      requestedAt: new Date(REQUESTED_AT).toISOString(),
+    },
+  });
+  const operation = resolveQueueOperation({ job, message: { id: 'legacy-tiktok-message' } });
+  assert.equal(operation.stable, false);
+  assert.equal(operation.workKey, 'tiktok:legacy-tiktok-message');
+});
+
+
+test('Meta Ads operation identity is scoped by configured account alias', () => {
+  const create = (sourceAccountKey) => resolveQueueOperation({
+    job: normalizeQueueJobMessage({
+      id: `meta-${sourceAccountKey}`,
+      body: {
+        schemaVersion: 1,
+        type: JOB_TYPES.META_ADS_SYNC,
+        trigger: 'manual_uat',
+        sourceAccountKey,
+        operationId: OPERATION_ID,
+        generation: REQUESTED_AT,
+        originalRequestedAt: REQUESTED_AT,
+      },
+    }),
+    message: { id: `meta-${sourceAccountKey}` },
+  });
+
+  const account2 = create('chemistry_k2');
+  const account3 = create('chemistry_k3');
+  assert.equal(account2.workKey, `meta_ads:chemistry_k2:${OPERATION_ID}`);
+  assert.equal(account3.workKey, `meta_ads:chemistry_k3:${OPERATION_ID}`);
+  assert.notEqual(account2.workKey, account3.workKey);
+  const continuation = withQueueOperation({
+    type: JOB_TYPES.META_ADS_SYNC,
+    trigger: 'manual_uat',
+    sourceAccountKey: 'chemistry_k2',
+  }, account2);
+  assert.equal(continuation.workKey, account2.workKey);
+});
+
 test('continuation serialization preserves exact operation generation', () => {
   const operation = resolveQueueOperation({
     job: normalizeQueueJobMessage({ id: 'main-message', body: BODY }),
@@ -53,27 +118,32 @@ test('continuation serialization preserves exact operation generation', () => {
   assert.equal(continuation.requestedAt, new Date(REQUESTED_AT).toISOString());
 });
 
-test('bootstrap rejects workKey or generation drift', () => {
-  assert.throws(
-    () => resolveQueueOperation({
-      job: normalizeQueueJobMessage({
-        id: 'message',
-        body: { ...BODY, workKey: 'tiktok:wrong' },
+test('bootstrap and admitted sync reject workKey or generation drift', () => {
+  for (const body of [
+    BODY,
+    { ...BODY, type: JOB_TYPES.TIKTOK_CREATOR_NATIVE_SYNC, trigger: 'post_lark_watermark' },
+  ]) {
+    assert.throws(
+      () => resolveQueueOperation({
+        job: normalizeQueueJobMessage({
+          id: 'message',
+          body: { ...body, workKey: 'tiktok:wrong' },
+        }),
+        message: { id: 'message' },
       }),
-      message: { id: 'message' },
-    }),
-    (error) => error.code === 'QUEUE_OPERATION_IDENTITY_MISMATCH',
-  );
-  assert.throws(
-    () => resolveQueueOperation({
-      job: normalizeQueueJobMessage({
-        id: 'message',
-        body: { ...BODY, generation: REQUESTED_AT + 1 },
+      (error) => error.code === 'QUEUE_OPERATION_IDENTITY_MISMATCH',
+    );
+    assert.throws(
+      () => resolveQueueOperation({
+        job: normalizeQueueJobMessage({
+          id: 'message',
+          body: { ...body, generation: REQUESTED_AT + 1 },
+        }),
+        message: { id: 'message' },
       }),
-      message: { id: 'message' },
-    }),
-    (error) => error.code === 'QUEUE_OPERATION_GENERATION_MISMATCH',
-  );
+      (error) => error.code === 'QUEUE_OPERATION_GENERATION_MISMATCH',
+    );
+  }
 });
 
 test('retry delay waits beyond the remaining stale lock lease', () => {

@@ -1,176 +1,149 @@
-# Current Task — Google Ads Manager Script LIVE UAT Closeout
+# Current Task — YouTube Organic Integration Merge Closeout
 
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = COMPLETE_SAFE_CLOSED
-CURRENT_PROGRAM                     = GOOGLE_ADS_MANAGER_SCRIPT_SIGNED_DELIVERY_TO_LARK
-CLOSEOUT_DATE                       = 2026-07-26
-INCIDENT_RUN_ID                     = 88351cb4-714d-49ef-91db-d95550a93ebf
-WORK_KEY                            = google_ads:88351cb4-714d-49ef-91db-d95550a93ebf
-GENERATION                          = 1785048890422
-TRANSPORT_MODE                      = LIVE
-TRANSPORT_CHUNKS                    = 7 / 7
-TRANSPORT_ROWS                      = 1375 / 1375
-ADMISSION_STATUS                    = completed
-ADMISSION_SEND_ATTEMPTS             = 4
-WORK_LIFECYCLE_STATUS               = completed
-D1_ADS_ENTITY_ROWS                  = 1090
-D1_ADS_DAILY_ROWS                   = 285
-COVERAGE_RUNS                       = 6 / 6
-COVERAGE_FAILED_ROWS                = 0
-PAYLOAD_REDACTION                   = PASS
-OPERATOR_VERIFY                     = PASS
-SAFE_WORKER_VERSION                 = dcee150f-34cc-4a6f-aafa-5b52ece44093
-SCRIPT_MODE                         = DRY_RUN
-SCRIPT_DELIVERY_ENABLED             = false
-GOOGLE_ADS_SCHEDULE                 = DISABLED
+TASK_STATUS                         = MERGED_REMOTE_ROLLOUT_NOT_AUTHORIZED
+CURRENT_PROGRAM                     = YOUTUBE_ORGANIC_END_TO_END
+MERGED_PR                           = #85
+MERGE_COMMIT                        = dce3bd954ee75ee55a29efac303e9973ca060fca
+REVIEWED_HEAD                       = c5ffc4327ffec405f82472c7b7098b45bac82722
+BASE_MAIN_AT_MERGE                  = 8b7f9a879ba0c1b0b5d89dcfa2373ad3bb3c2ce8
+SOURCE_DRAFT_PR                     = #72
+SOURCE_REVIEW_DECISION              = PASS_FOR_INTEGRATION
+FINAL_BRANCH_VERIFICATION           = #581 PASS
+REMOTE_SCHEMA_CHECK                 = NOT_RUN
+WORKER_DEPLOYMENT                   = NOT_RUN
+QUEUE_MESSAGE                       = NOT_SENT
+REMOTE_D1_OR_LARK_MUTATION          = NONE
+SCHEDULES                           = DISABLED
+CUSTOMER_OR_PRODUCTION_LIVE_UAT     = NOT_RUN
 PRODUCTION                          = BLOCKED
 ```
 
-## Objective
+## Merge result
 
-Record the final sanitized runtime evidence for the guarded Google Ads Manager Script LIVE UAT,
-close the retained incident after exact recovery, and preserve the safe post-run boundary without
-performing another Manager Script execution, Queue send, DLQ redrive, D1/Lark mutation, deployment,
-schedule activation or Production cutover from this documentation task.
+PR `#85` was Squash Merged into `main` at
+`dce3bd954ee75ee55a29efac303e9973ca060fca` after the exact reviewed head
+`c5ffc4327ffec405f82472c7b7098b45bac82722` passed Branch Verification `#581`.
 
-## Final runtime result
-
-The original signed run was recovered from its retained staged transport payload. The Manager Script
-was not rerun. The final operator verification returned `ok=true` and confirmed:
+The merge imports the reviewed YouTube Organic End-to-End implementation from Draft PR `#72` and completes the Integration-owned Shared Worker wiring.
 
 ```text
-mode                              LIVE
-transport status                  assembling
-expected / received chunks        7 / 7
-expected / received rows          1375 / 1375
-transport payload redacted        true
-admission status                  completed
-admission payload redacted        true
-admission completed               true
-work lifecycle                    completed
-ads_entity_state rows             1090
-ads_daily_facts rows              285
-data_coverage_runs                6
+YouTube job + MKT_YOUTUBE_END_TO_END_ENABLED=true
+  -> dedicated D1-first End-to-End route
+
+YouTube job + flag false/unset
+  -> existing active router and legacy YouTube route
+
+Non-YouTube job
+  -> existing Google Ads/TikTok/History/Active route chain unchanged
 ```
 
-`transport_status=assembling` is retained as the stored transport-state value. It does not invalidate
-the closeout because chunk and row reconciliation are exact, both staged payload locations are
-redacted, admission and durable work are completed, and the guarded operator accepted the row.
+## Merged contracts
 
-## Incident recovery progression
+- Existing YouTube API client, Shared Google OAuth Core, adapters and normalizers are reused.
+- Existing Reliability runner, distributed lock, resumable work, warning outbox, retry and DLQ contracts are reused.
+- Existing Organic history writer, D1 gateways/stores, Coverage model and `TableSyncEngine` are reused.
+- D1 completes before the first Lark Business plan on the dedicated route.
+- Large Content inventories use bounded D1 batches.
+- Completed Content and Account Coverage cannot be downgraded by retry replay.
+- Report reads require completed zero-failure Coverage and fail closed on missing evidence.
+- Missing/private/deleted evidence is non-destructive and never zero-fills prior metrics.
+- Hidden subscriber count remains `followers=null`.
+- YouTube Analytics period facts remain in `RAW_YouTube_Analytics_Daily`.
+- No new Migration was added; Storage Foundation `0009` is reused.
 
-The same original run crossed three reviewed fail-closed boundaries before completing:
+## Default-false controls
 
-1. PR `#61` corrected `RAW_Ads_Daily.metric_date` serialization and guarded exact recovery from
-   `failed_permanent`.
-2. PR `#62` aligned Canonical Ads output with the already-applied Ads v2 Lark field contract.
-3. PR `#63` aligned Campaign, Ad Group and Creative routing keys with the Canonical stable-key fields.
-
-The exact retained terminal records are:
+Release examples now contain:
 
 ```text
-FIRST_DLQ_ID      = terminal:a6ed54413000c25efd73ce7888cc2d10
-FIRST_DLQ_STATUS  = redriven
-SECOND_DLQ_ID     = terminal:6b1c7a5142f1eedb12a2b40b0a7cba78
-SECOND_DLQ_STATUS = redriven
-THIRD_DLQ_ID      = terminal:f909996a2e4985697f3e67feacfe7c69
-THIRD_DLQ_STATUS  = redriven
+MKT_CONNECTOR_YOUTUBE_ENABLED=false
+MKT_YOUTUBE_END_TO_END_ENABLED=false
+MKT_TIME_SERIES_D1_WRITE_ENABLED=false
+MKT_YOUTUBE_LARK_WRITE_ENABLED=false
+MKT_YOUTUBE_ANALYTICS_ENABLED=false
+MKT_SCHEDULE_YOUTUBE_ENABLED=false
+MKT_REPORT_D1_SHADOW_READ_ENABLED=false
+MKT_REPORT_D1_READ_ENABLED=false
+MKT_REPORT_PRESET_MATERIALIZATION_ENABLED=false
 ```
 
-All three records are retained forensic evidence. None may be redriven, deleted or reused again.
+The merge does not alter deployed Environment values and does not enable a Schedule.
 
-## Reconciliation result
+## Verification result
+
+Final Branch Verification on the exact merged source head:
 
 ```text
-destination preflight             8 / 8 complete
-D1 business operations            2756 / 2756 complete
-account coverage                   1 / 1 / failed 0
-campaign coverage                 58 / 58 / failed 0
-ad-group coverage                 110 / 110 / failed 0
-ad coverage                       760 / 760 / failed 0
-YouTube asset coverage            161 / 161 / failed 0
-campaign daily coverage           285 / 285 / failed 0
-total source/business rows         1375
-new open Google Ads terminal DLQ   0 at final controlled checks
+Run / workflow ID                 #581 / 30241561017
+Head                              c5ffc4327ffec405f82472c7b7098b45bac82722
+Install locked dependencies       PASS
+Syntax / architecture / hygiene   PASS
+Focused staged TikTok             PASS
+Node Unit / Integration           PASS
+Workers runtime                   PASS
+Report reliability                PASS
+Dependency audit                  PASS
+Wrangler dry-run                  PASS / no deployment
+Diagnostics upload                PASS
 ```
 
-Durable work completion occurred only after destination preflight, D1 Ads/Coverage processing and
-Lark destination processing completed through the continuation workflow.
-
-## Final safe runtime boundary
-
-The guarded Recovery Window was closed by deploying the normal Sync configuration. Verified Worker
-version:
+The prior exact-code verification `#579` recorded:
 
 ```text
-dcee150f-34cc-4a6f-aafa-5b52ece44093
+Node Unit / Integration           916/916 PASS
+Workers runtime                   9/9 PASS
+Report reliability                91/91 PASS
+Focused staged TikTok             4/4 PASS
+Dependency audit                  0 vulnerabilities
 ```
 
-Verified disabled flags:
+## Remote safe state
+
+No Remote phase was performed by Draft PR `#72`, Integration PR `#85`, or this closeout:
 
 ```text
-MKT_CONNECTOR_GOOGLE_ADS_ENABLED=false
-MKT_GOOGLE_ADS_SIGNED_INGRESS_ENABLED=false
-MKT_GOOGLE_ADS_QUEUE_ADMISSION_ENABLED=false
-MKT_GOOGLE_ADS_BUSINESS_WRITE_ENABLED=false
-MKT_GOOGLE_ADS_LARK_WRITE_ENABLED=false
-MKT_DLQ_REDRIVE_ENABLED=false
-MKT_SCHEDULE_GOOGLE_ADS_ENABLED=false
+Remote D1 schema/config read       NOT RUN with authenticated runtime
+Remote D1 migration               NOT RUN
+Remote D1 Business write          NOT RUN
+Remote Lark schema/data mutation  NONE
+Worker deployment                 NOT RUN
+Provider/API execution            NOT RUN
+Queue message                     NOT SENT
+DLQ redrive/delete                NOT RUN
+Schedule activation               NONE
+Customer/Production LIVE UAT      NOT RUN
+Production                        BLOCKED
 ```
 
-The Worker still has the expected D1, main Queue and DLQ bindings. Cron triggers may remain attached
-to the shared Worker, but Google Ads scheduling is disabled and cannot start this connector.
+## Next separately authorized gate
 
-## Acceptance result
+The next work requires an authenticated local Integration Workspace runtime with the real Cloudflare/Wrangler configuration:
+
+1. perform read-only Remote D1 schema verification for Storage Foundation `0009`;
+2. inspect current deployed Worker configuration and confirm every YouTube/Storage/Report/Schedule flag remains false;
+3. retain sanitized evidence and review it;
+4. authorize an all-flags-false Worker deployment separately;
+5. authorize a dry-run/read-only YouTube operation separately;
+6. verify non-dry execution is blocked while D1 or Lark write gate is false;
+7. authorize controlled Integration Workspace D1-first/Lark UAT separately;
+8. validate Coverage, idempotent rerun and D1 Report shadow parity;
+9. keep Schedule and Production blocked until a new explicit approval.
+
+Repository merge alone authorizes none of these Remote phases.
+
+## Detailed records
 
 ```text
-original transport reconciled        PASS
-same run recovered without rerun      PASS
-admission completed                  PASS
-durable work completed               PASS
-D1 Ads facts written                 PASS
-Coverage 6/6, failed rows 0           PASS
-staged payload redaction              PASS
-operator verification                 PASS
-Recovery Window closed                PASS
-all Google Ads execution flags false  PASS
-Google Ads schedule disabled          PASS
-Production remains blocked            PASS
+docs/tasks/youtube-organic-end-to-end.md
+docs/tasks/youtube-organic-end-to-end-integration-review.md
+docs/tasks/youtube-organic-integration-wiring-safe-rollout.md
 ```
 
-## Documentation scope
-
-This closeout changes documentation only. It must not change Source, Tests, dependencies, migrations,
-Wrangler runtime configuration, D1, Queue/DLQ, Lark, Secrets, Manager Script properties, schedules or
-Production resources.
-
-## Permanent boundaries
-
-- Do not rerun the completed Manager Script LIVE delivery.
-- Do not redrive or delete any of the three retained terminal DLQ records.
-- Do not reopen Lark Schema/View/Formula work for these incidents.
-- Do not enable Google Ads Connector, ingress, Queue admission, D1/Lark writes, redrive or schedule
-  without a separately approved task and a new bounded rollout plan.
-- Keep the Manager Script at `DRY_RUN` with delivery disabled.
-- Production remains a separate customer-owned rollout and is not authorized by this UAT.
-
-## Next task boundary
+Previous current task:
 
 ```text
-CURRENT_TASK_STATUS = COMPLETE_SAFE_CLOSED
-NEXT_TASK            = SEPARATELY_APPROVED_WORK_ONLY
-```
-
-No additional Google Ads runtime action is required for this incident. The next implementation or
-Production-planning task must be opened separately with its own scope, acceptance criteria and safety
-gates.
-
-## Archived predecessor
-
-The complete pre-closeout task is preserved at:
-
-```text
-docs/archive/current-task-before-google-ads-live-uat-closeout-2026-07-26.md
+docs/archive/current-task-before-youtube-organic-integration-2026-07-27.md
 ```

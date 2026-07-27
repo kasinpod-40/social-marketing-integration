@@ -10,6 +10,10 @@ import {
   GOOGLE_ADS_CONNECTION_PATHS,
 } from './google-ads-customer-connection-http.js';
 import {
+  createTikTokPostLarkAuditHttpHandler,
+  TIKTOK_POST_LARK_AUDIT_PATH,
+} from './tiktok-post-lark-audit-http.js';
+import {
   createYouTubeCustomerConnectionHttpHandler,
   YOUTUBE_CONNECTION_PATHS,
 } from './youtube-customer-connection-http.js';
@@ -21,17 +25,19 @@ import {
 
 const INVITATION_PATH = '/operator/connection-invitations';
 const KNOWN_METHODS = new Map([[INVITATION_PATH, Object.freeze(['POST'])]]);
+KNOWN_METHODS.set(TIKTOK_POST_LARK_AUDIT_PATH, Object.freeze(['GET']));
 KNOWN_METHODS.set(GOOGLE_ADS_CONNECTION_PATHS.connect, Object.freeze(['GET', 'POST']));
 KNOWN_METHODS.set(GOOGLE_ADS_CONNECTION_PATHS.callback, Object.freeze(['GET']));
 KNOWN_METHODS.set(YOUTUBE_CONNECTION_PATHS.connect, Object.freeze(['GET', 'POST']));
 KNOWN_METHODS.set(YOUTUBE_CONNECTION_PATHS.callback, Object.freeze(['GET']));
 KNOWN_METHODS.set(YOUTUBE_CONNECTION_PATHS.select, Object.freeze(['POST']));
 
-/** Explicit HTTP boundary; Connector callback handlers จะถูก inject เพิ่มใน PR B/PR C */
+/** Explicit HTTP boundary; guarded diagnostics and Connector handlers are composed independently. */
 export function createCustomerConnectionHttpHandler(dependencies = {}) {
   const runtimeFactory = dependencies.createRuntime ?? createCustomerConnectionRuntime;
   const connectorHandler = dependencies.handleConnectorRequest
     ?? composeConnectorHandlers([
+      createTikTokPostLarkAuditHttpHandler(dependencies.tiktokAuditDependencies),
       createGoogleAdsCustomerConnectionHttpHandler({ createRuntime: runtimeFactory }),
       createYouTubeCustomerConnectionHttpHandler({ createRuntime: runtimeFactory }),
     ]);

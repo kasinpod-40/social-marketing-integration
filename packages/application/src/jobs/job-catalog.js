@@ -3,6 +3,7 @@ import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 
 /** Job type กลางของ Queue ห้ามกระจาย String literal ซ้ำใน Worker/Producer/Test */
 export const JOB_TYPES = Object.freeze({
+  TIKTOK_CREATOR_NATIVE_PROBE: 'tiktok.creator.native.probe',
   TIKTOK_CREATOR_NATIVE_SYNC: 'tiktok.creator.native.sync',
   TIKTOK_CREATOR_NATIVE_VALIDATE: 'tiktok.creator.native.validate',
   TIKTOK_CREATOR_NATIVE_HISTORY_BOOTSTRAP: 'tiktok.creator.native.history.bootstrap',
@@ -12,6 +13,7 @@ export const JOB_TYPES = Object.freeze({
 
   FACEBOOK_ORGANIC_SYNC: 'facebook.page.organic.sync',
   INSTAGRAM_ORGANIC_SYNC: 'instagram.business.organic.sync',
+  META_ADS_SYNC: 'meta.ads.sync',
   GOOGLE_ADS_MANAGER_SIGNED_DELIVERY_PROCESS: 'google.ads.manager.signed-delivery.process',
   YOUTUBE_ORGANIC_SYNC: 'youtube.channel.organic.sync',
   WOOCOMMERCE_COMMERCE_SYNC: 'woocommerce.commerce.sync',
@@ -32,6 +34,11 @@ export const JOB_IMPLEMENTATION_STATUS = Object.freeze({
 });
 
 const JOB_CATALOG = Object.freeze({
+  [JOB_TYPES.TIKTOK_CREATOR_NATIVE_PROBE]: freezeJob({
+    type: JOB_TYPES.TIKTOK_CREATOR_NATIVE_PROBE,
+    implementationStatus: JOB_IMPLEMENTATION_STATUS.ACTIVE,
+    connectorKey: CONNECTOR_KEYS.TIKTOK,
+  }),
   [JOB_TYPES.TIKTOK_CREATOR_NATIVE_SYNC]: freezeJob({
     type: JOB_TYPES.TIKTOK_CREATOR_NATIVE_SYNC,
     implementationStatus: JOB_IMPLEMENTATION_STATUS.ACTIVE,
@@ -68,13 +75,21 @@ const JOB_CATALOG = Object.freeze({
 
   [JOB_TYPES.FACEBOOK_ORGANIC_SYNC]: freezeJob({
     type: JOB_TYPES.FACEBOOK_ORGANIC_SYNC,
-    implementationStatus: JOB_IMPLEMENTATION_STATUS.PLANNED,
+    implementationStatus: JOB_IMPLEMENTATION_STATUS.UAT_PENDING,
     connectorKey: CONNECTOR_KEYS.FACEBOOK,
+    manualOnly: true,
   }),
   [JOB_TYPES.INSTAGRAM_ORGANIC_SYNC]: freezeJob({
     type: JOB_TYPES.INSTAGRAM_ORGANIC_SYNC,
-    implementationStatus: JOB_IMPLEMENTATION_STATUS.PLANNED,
+    implementationStatus: JOB_IMPLEMENTATION_STATUS.UAT_PENDING,
     connectorKey: CONNECTOR_KEYS.INSTAGRAM,
+    manualOnly: true,
+  }),
+  [JOB_TYPES.META_ADS_SYNC]: freezeJob({
+    type: JOB_TYPES.META_ADS_SYNC,
+    implementationStatus: JOB_IMPLEMENTATION_STATUS.UAT_PENDING,
+    connectorKey: CONNECTOR_KEYS.META_ADS,
+    manualOnly: true,
   }),
   [JOB_TYPES.GOOGLE_ADS_MANAGER_SIGNED_DELIVERY_PROCESS]: freezeJob({
     type: JOB_TYPES.GOOGLE_ADS_MANAGER_SIGNED_DELIVERY_PROCESS,
@@ -174,7 +189,7 @@ function requireJobType(value) {
   return value.trim();
 }
 
-/** Freeze Job definition เพื่อป้องกัน Test หรือ Runtime แก้ Routing กลาง */
+/** Freeze Job definition เพื่อป้องกัน Test หรือ Runtime แก้ Registry กลาง */
 function freezeJob(definition) {
   return Object.freeze({ ...definition });
 }
