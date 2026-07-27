@@ -59,7 +59,7 @@ export async function buildMetaAdsWriteSet(input = {}) {
 
   for (const dataset of DATASETS) {
     const resources = resourcesByDataset[dataset.inputField];
-    const coverageRunId = `${operationId}:meta_ads:${dataset.key}`;
+    const coverageRunId = `${operationId}:meta_ads:${accountId}:${dataset.key}`;
     for (const resource of resources) {
       const normalized = normalizeMetaAdsEntityFixture({
         entityType: dataset.entityType,
@@ -143,7 +143,7 @@ export async function buildMetaAdsWriteSet(input = {}) {
   const rawDaily = [];
   const d1DailyFacts = [];
   const dailyInputs = requireArray(input.dailyInsights ?? [], 'dailyInsights');
-  const dailyCoverageRunId = `${operationId}:meta_ads:performance_daily`;
+  const dailyCoverageRunId = `${operationId}:meta_ads:${accountId}:performance_daily`;
   for (const resource of dailyInputs) {
     const normalized = normalizeMetaAdsDailyFixture({
       accountId,

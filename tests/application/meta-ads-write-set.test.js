@@ -92,6 +92,29 @@ test('builds Meta Ads D1 breakdown facts and one bounded Canonical daily aggrega
   assert.equal(writeSet.reconciliation.spendStatus, 'revisable');
 });
 
+
+test('Coverage identifiers remain separate for two Meta Ad Accounts sharing one operation ID', async () => {
+  const build = (accountId) => buildMetaAdsWriteSet({
+    ...baseInput(),
+    accountId,
+    accountResource: {
+      ...baseInput().accountResource,
+      id: `act_${accountId}`,
+      account_id: accountId,
+    },
+    campaigns: [],
+    adSets: [],
+    ads: [],
+    creatives: [],
+    dailyInsights: [],
+  });
+  const account2 = await build('505898710119851');
+  const account3 = await build('851206695716861');
+  const ids2 = new Set(account2.d1.coverageRuns.map((row) => row.coverage_run_id));
+  const ids3 = new Set(account3.d1.coverageRuns.map((row) => row.coverage_run_id));
+  assert.equal([...ids2].some((id) => ids3.has(id)), false);
+});
+
 test('empty Meta Ads inventory and spend are no_data_confirmed, not failure', async () => {
   const writeSet = await buildMetaAdsWriteSet({
     ...baseInput(),

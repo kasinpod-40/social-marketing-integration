@@ -13,6 +13,7 @@ export const JOB_TYPES = Object.freeze({
 
   FACEBOOK_ORGANIC_SYNC: 'facebook.page.organic.sync',
   INSTAGRAM_ORGANIC_SYNC: 'instagram.business.organic.sync',
+  META_ADS_SYNC: 'meta.ads.sync',
   GOOGLE_ADS_MANAGER_SIGNED_DELIVERY_PROCESS: 'google.ads.manager.signed-delivery.process',
   YOUTUBE_ORGANIC_SYNC: 'youtube.channel.organic.sync',
   WOOCOMMERCE_COMMERCE_SYNC: 'woocommerce.commerce.sync',
@@ -74,13 +75,21 @@ const JOB_CATALOG = Object.freeze({
 
   [JOB_TYPES.FACEBOOK_ORGANIC_SYNC]: freezeJob({
     type: JOB_TYPES.FACEBOOK_ORGANIC_SYNC,
-    implementationStatus: JOB_IMPLEMENTATION_STATUS.PLANNED,
+    implementationStatus: JOB_IMPLEMENTATION_STATUS.UAT_PENDING,
     connectorKey: CONNECTOR_KEYS.FACEBOOK,
+    manualOnly: true,
   }),
   [JOB_TYPES.INSTAGRAM_ORGANIC_SYNC]: freezeJob({
     type: JOB_TYPES.INSTAGRAM_ORGANIC_SYNC,
-    implementationStatus: JOB_IMPLEMENTATION_STATUS.PLANNED,
+    implementationStatus: JOB_IMPLEMENTATION_STATUS.UAT_PENDING,
     connectorKey: CONNECTOR_KEYS.INSTAGRAM,
+    manualOnly: true,
+  }),
+  [JOB_TYPES.META_ADS_SYNC]: freezeJob({
+    type: JOB_TYPES.META_ADS_SYNC,
+    implementationStatus: JOB_IMPLEMENTATION_STATUS.UAT_PENDING,
+    connectorKey: CONNECTOR_KEYS.META_ADS,
+    manualOnly: true,
   }),
   [JOB_TYPES.GOOGLE_ADS_MANAGER_SIGNED_DELIVERY_PROCESS]: freezeJob({
     type: JOB_TYPES.GOOGLE_ADS_MANAGER_SIGNED_DELIVERY_PROCESS,

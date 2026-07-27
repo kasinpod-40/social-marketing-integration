@@ -27,6 +27,7 @@ export const META_TOKEN_CONNECTION_ENV = Object.freeze({
   FACEBOOK_PAGE_ID: 'META_FACEBOOK_PAGE_ID',
   INSTAGRAM_ACCOUNT_ID: 'META_INSTAGRAM_ACCOUNT_ID',
   META_AD_ACCOUNT_ID: 'META_AD_ACCOUNT_ID',
+  META_AD_ACCOUNT_MAPPINGS: 'META_AD_ACCOUNT_MAPPINGS',
   TIMEOUT_MS: 'META_API_TIMEOUT_MS',
   MAX_PAGES: 'META_MAX_PAGES',
   PAGE_SIZE: 'META_PAGE_SIZE',
@@ -68,6 +69,10 @@ export function loadMetaTokenConnectionConfig(env = {}) {
     env[META_TOKEN_CONNECTION_ENV.API_VERSION],
     anyCredentialConfigured,
   );
+  const metaAdAccounts = readMetaAdAccounts(
+    env[META_TOKEN_CONNECTION_ENV.META_AD_ACCOUNT_MAPPINGS],
+    env[META_TOKEN_CONNECTION_ENV.META_AD_ACCOUNT_ID],
+  );
 
   return deepFreeze({
     apiVersion,
@@ -84,10 +89,10 @@ export function loadMetaTokenConnectionConfig(env = {}) {
         env[META_TOKEN_CONNECTION_ENV.INSTAGRAM_ACCOUNT_ID],
         META_TOKEN_CONNECTION_ENV.INSTAGRAM_ACCOUNT_ID,
       ),
-      metaAdAccountId: readOptionalIdentity(
-        env[META_TOKEN_CONNECTION_ENV.META_AD_ACCOUNT_ID],
-        META_TOKEN_CONNECTION_ENV.META_AD_ACCOUNT_ID,
-      ),
+      metaAdAccounts,
+      metaAdAccountIds: metaAdAccounts.map((entry) => entry.accountId),
+      // Compatibility alias: only safe when exactly one account is configured.
+      metaAdAccountId: metaAdAccounts.length === 1 ? metaAdAccounts[0].accountId : null,
     },
     transport: {
       timeoutMs: readPositiveInteger(
@@ -161,6 +166,79 @@ function readOptionalIdentity(value, fieldName) {
     });
   }
   return text;
+}
+
+function readMetaAdAccounts(value, legacyValue) {
+  const mappingText = readOptionalText(
+    value,
+    META_TOKEN_CONNECTION_ENV.META_AD_ACCOUNT_MAPPINGS,
+  );
+  const legacyText = readOptionalText(
+    legacyValue,
+    META_TOKEN_CONNECTION_ENV.META_AD_ACCOUNT_ID,
+  );
+
+  for (const [fieldName, text] of [
+    [META_TOKEN_CONNECTION_ENV.META_AD_ACCOUNT_MAPPINGS, mappingText],
+    [META_TOKEN_CONNECTION_ENV.META_AD_ACCOUNT_ID, legacyText],
+  ]) {
+    if (text && isPlaceholderConfigValue(text)) {
+      throw permanentError('Meta identity mapping is still a placeholder', {
+        code: 'META_CONNECTION_CONFIG_PLACEHOLDER',
+        details: { fieldName },
+      });
+    }
+  }
+  if (mappingText && legacyText) {
+    throw permanentError('Use either META_AD_ACCOUNT_MAPPINGS or legacy META_AD_ACCOUNT_ID, not both', {
+      code: 'META_CONNECTION_CONFIG_INVALID',
+      details: { fieldName: META_TOKEN_CONNECTION_ENV.META_AD_ACCOUNT_MAPPINGS },
+    });
+  }
+  if (!mappingText) {
+    return legacyText
+      ? deepFreeze([{ key: 'default', accountId: normalizeMetaAdAccountId(legacyText) }])
+      : Object.freeze([]);
+  }
+
+  const segments = mappingText.split(',');
+  if (segments.length > 20) {
+    throw permanentError('Meta Ad Account mapping count exceeds the supported limit', {
+      code: 'META_CONNECTION_CONFIG_INVALID',
+      details: { fieldName: META_TOKEN_CONNECTION_ENV.META_AD_ACCOUNT_MAPPINGS },
+    });
+  }
+  const keys = new Set();
+  const accountIds = new Set();
+  const entries = segments.map((segment) => {
+    const text = segment.trim();
+    const separator = text.indexOf('=');
+    if (!text || separator <= 0 || separator !== text.lastIndexOf('=')) {
+      throw invalidMetaAdAccountMapping();
+    }
+    const key = text.slice(0, separator).trim().toLowerCase();
+    const accountId = normalizeMetaAdAccountId(text.slice(separator + 1));
+    if (!/^[a-z0-9][a-z0-9_-]{0,63}$/u.test(key) || keys.has(key) || accountIds.has(accountId)) {
+      throw invalidMetaAdAccountMapping();
+    }
+    keys.add(key);
+    accountIds.add(accountId);
+    return { key, accountId };
+  });
+  return deepFreeze(entries);
+}
+
+function normalizeMetaAdAccountId(value) {
+  const normalized = String(value ?? '').trim().replace(/^act_/iu, '');
+  if (!/^\d+$/u.test(normalized)) throw invalidMetaAdAccountMapping();
+  return normalized;
+}
+
+function invalidMetaAdAccountMapping() {
+  return permanentError('META_AD_ACCOUNT_MAPPINGS must be comma-separated key=account_id pairs', {
+    code: 'META_CONNECTION_CONFIG_INVALID',
+    details: { fieldName: META_TOKEN_CONNECTION_ENV.META_AD_ACCOUNT_MAPPINGS },
+  });
 }
 
 function readOptionalText(value, fieldName) {

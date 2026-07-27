@@ -34,7 +34,10 @@ test('Meta runtime uses separate bearer secrets, versioned GETs and no token que
     }
     if (parsed.pathname.endsWith('/adaccounts')) {
       return Response.json({
-        data: [{ id: 'act_ad-private', account_id: 'ad-private', account_status: 1 }],
+        data: [
+          { id: 'act_505898710119851', account_id: '505898710119851', account_status: 1 },
+          { id: 'act_851206695716861', account_id: '851206695716861', account_status: 1 },
+        ],
       });
     }
     return Response.json({ error: { code: 100 } }, { status: 400 });
@@ -45,7 +48,7 @@ test('Meta runtime uses separate bearer secrets, versioned GETs and no token que
     META_INSTAGRAM_ACCESS_TOKEN: 'instagram-token-private',
     META_FACEBOOK_PAGE_ID: 'page-private',
     META_INSTAGRAM_ACCOUNT_ID: 'ig-private',
-    META_AD_ACCOUNT_ID: 'ad-private',
+    META_AD_ACCOUNT_MAPPINGS: 'chemistry_k2=505898710119851,chemistry_k3=851206695716861',
   }, { fetchImpl });
   const result = await preflightMetaCustomerConnections(runtime);
 
@@ -65,6 +68,6 @@ test('Meta runtime uses separate bearer secrets, versioned GETs and no token que
   const serialized = JSON.stringify(result);
   assert.doesNotMatch(
     serialized,
-    /facebook-token-private|instagram-token-private|page-private|ig-private|ad-private/u,
+    /facebook-token-private|instagram-token-private|page-private|ig-private|505898710119851|851206695716861/u,
   );
 });
