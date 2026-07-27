@@ -23,7 +23,8 @@ export function resolveConnectorRuntimeConfig(profileConnectors, env = {}) {
     const profile = requireObject(profileMap[definition.key], `profile.connectors.${definition.key}`);
     const enabledOverride = readOptionalBoolean(env[definition.featureFlagEnv], definition.featureFlagEnv);
     const enabled = enabledOverride ?? (profile.enabledByDefault === true);
-    const protectedUat = isProtectedGoogleAdsUatRuntime(definition, env);
+    const protectedUat = isProtectedGoogleAdsUatRuntime(definition, env)
+      || isProtectedMetaUatRuntime(definition, env);
 
     if (enabled
       && definition.implementationStatus !== CONNECTOR_IMPLEMENTATION_STATUS.ACTIVE
@@ -73,6 +74,23 @@ export function resolveConnectorRuntimeConfig(profileConnectors, env = {}) {
   });
 
   return Object.freeze(Object.fromEntries(runtimeEntries));
+}
+
+function isProtectedMetaUatRuntime(definition, env) {
+  if (!['facebook', 'instagram', 'meta_ads'].includes(definition.key)
+    || definition.implementationStatus !== CONNECTOR_IMPLEMENTATION_STATUS.UAT_PENDING) {
+    return false;
+  }
+  return env.MKT_ENV === 'development'
+    && env.MKT_CUSTOMER_PROFILE === 'integration_workspace'
+    && readOptionalBoolean(
+      env[definition.featureFlagEnv],
+      definition.featureFlagEnv,
+    ) === true
+    && readOptionalBoolean(
+      env.MKT_META_SOURCE_READ_ENABLED,
+      'MKT_META_SOURCE_READ_ENABLED',
+    ) === true;
 }
 
 function isProtectedGoogleAdsUatRuntime(definition, env) {

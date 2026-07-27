@@ -5,6 +5,9 @@ const STABLE_OPERATION_CONTRACTS = new Map([
   [JOB_TYPES.TIKTOK_CREATOR_NATIVE_HISTORY_BOOTSTRAP, Object.freeze({ prefix: 'tiktok' })],
   [JOB_TYPES.TIKTOK_CREATOR_NATIVE_HISTORY_RECOVER, Object.freeze({ prefix: 'tiktok' })],
   [JOB_TYPES.GOOGLE_ADS_MANAGER_SIGNED_DELIVERY_PROCESS, Object.freeze({ prefix: 'google_ads' })],
+  [JOB_TYPES.FACEBOOK_ORGANIC_SYNC, Object.freeze({ prefix: 'facebook' })],
+  [JOB_TYPES.INSTAGRAM_ORGANIC_SYNC, Object.freeze({ prefix: 'instagram' })],
+  [JOB_TYPES.META_ADS_SYNC, Object.freeze({ prefix: 'meta_ads' })],
 ]);
 
 function resolveStableOperationContract(type, body) {
@@ -146,6 +149,7 @@ function platformFromJobType(type) {
   if (typeof type !== 'string') return 'system';
   if (type.startsWith('report.')) return 'tiktok';
   if (type.startsWith('google.ads.')) return 'google_ads';
+  if (type.startsWith('meta.ads.')) return 'meta_ads';
   const prefix = type.split('.')[0];
   return new Set(['facebook', 'instagram', 'tiktok', 'youtube']).has(prefix)
     ? prefix
