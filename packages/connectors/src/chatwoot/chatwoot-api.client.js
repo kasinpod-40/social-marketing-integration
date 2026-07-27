@@ -11,16 +11,9 @@ const DEFAULT_MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 const DEFAULT_RETRY_BASE_DELAY_MS = 500;
 const DEFAULT_MAX_RETRY_DELAY_MS = 30_000;
 const MESSAGE_AFTER_PAGE_SIZE = 100;
+const MESSAGE_BEFORE_PAGE_SIZE = 20;
 
-/**
- * GET-only Chatwoot Application API client.
- *
- * Transport responsibilities stay isolated from business normalization:
- * - token is sent only through api_access_token header;
- * - every request has timeout, byte cap and bounded retry;
- * - pagination is caller-visible and cursor/page progress is validated;
- * - arbitrary provider next URLs are never followed.
- */
+/** GET-only Chatwoot Application API client with bounded transport and pagination. */
 export class ChatwootApiClient {
   constructor(config = {}) {
     this.baseUrl = normalizeBaseUrl(config.baseUrl, config.allowInsecureLocal === true);
@@ -100,6 +93,14 @@ export class ChatwootApiClient {
     const page = boundedInteger(input.page ?? 1, 'page', 1, this.maxPages);
     const payload = await this.get(this.#accountPath('reporting_events'), {
       page,
+      ...(input.since !== null && input.since !== undefined
+        ? { since: timestampSeconds(input.since, 'since') }
+        : {}),
+      ...(input.until !== null && input.until !== undefined
+        ? { until: timestampSeconds(input.until, 'until') }
+        : {}),
+      ...(input.inboxId ? { inbox_id: requirePositiveId(input.inboxId, 'inboxId') } : {}),
+      ...(input.userId ? { user_id: requirePositiveId(input.userId, 'userId') } : {}),
       ...(input.name ? { name: requireText(input.name, 'name') } : {}),
     }, { operationName: 'list_reporting_events' });
     const rows = requireArray(payload?.payload, 'list_reporting_events.payload');
@@ -107,6 +108,16 @@ export class ChatwootApiClient {
       payload?.meta?.total_pages,
       'list_reporting_events.meta.total_pages',
     );
+    const currentPage = nullablePositiveInteger(
+      payload?.meta?.current_page,
+      'list_reporting_events.meta.current_page',
+    );
+    if (currentPage !== null && currentPage !== page) {
+      throw permanentError('Chatwoot reporting events returned a mismatched page', {
+        code: 'CHATWOOT_PAGE_CONTRACT_INVALID',
+        details: { operation: 'list_reporting_events', page, currentPage },
+      });
+    }
     if (totalPages !== null && page > totalPages) {
       throw permanentError('Chatwoot reporting events page exceeds declared total pages', {
         code: 'CHATWOOT_PAGE_CONTRACT_INVALID',
@@ -146,28 +157,40 @@ export class ChatwootApiClient {
 
   async listMessagesPage(input = {}) {
     const conversationId = requirePositiveId(input.conversationId, 'conversationId');
-    const after = input.after === null || input.after === undefined || input.after === ''
-      ? null
-      : requirePositiveId(input.after, 'after');
+    const after = optionalPositiveId(input.after, 'after');
+    const before = optionalPositiveId(input.before, 'before');
+    if (after !== null && before !== null) {
+      throw new TypeError('Chatwoot message request cannot use after and before together');
+    }
+    const mode = after !== null ? 'after' : 'before';
     const payload = await this.get(
       this.#accountPath(`conversations/${conversationId}/messages`),
-      after ? { after } : {},
+      after !== null ? { after } : before !== null ? { before } : {},
       { operationName: 'list_messages' },
     );
     const rows = requireArray(payload?.payload, 'list_messages.payload');
     const messageIds = rows.map((row) => Number(requirePositiveId(row?.id, 'message.id')));
     assertStrictlyIncreasing(messageIds, after === null ? null : Number(after));
+    if (before !== null && messageIds.some((value) => value >= Number(before))) {
+      throw permanentError('Chatwoot before pagination returned an out-of-range message', {
+        code: 'CHATWOOT_MESSAGE_CURSOR_REPEATED',
+        details: { before },
+      });
+    }
     const nextAfter = messageIds.length > 0 ? String(messageIds.at(-1)) : null;
+    const nextBefore = messageIds.length > 0 ? String(messageIds[0]) : null;
+    const pageSize = mode === 'after' ? MESSAGE_AFTER_PAGE_SIZE : MESSAGE_BEFORE_PAGE_SIZE;
     return Object.freeze({
       rows: freezeRows(rows),
+      mode,
       nextAfter,
-      hasMore: rows.length >= MESSAGE_AFTER_PAGE_SIZE,
+      nextBefore,
+      hasMore: rows.length >= pageSize,
       labels: Object.freeze(requireArray(payload?.meta?.labels ?? [], 'list_messages.meta.labels')
         .map((value) => requireText(value, 'message meta label'))),
     });
   }
 
-  /** Read a bounded page sequence and expose exact completeness counters. */
   async collectPages(readPage, options = {}) {
     if (typeof readPage !== 'function') throw new TypeError('collectPages requires readPage');
     const maxPages = boundedInteger(options.maxPages ?? this.maxPages, 'maxPages', 1, this.maxPages);
@@ -272,19 +295,18 @@ export class ChatwootApiClient {
     for (const [key, value] of Object.entries(query)) {
       if (value !== null && value !== undefined && value !== '') url.searchParams.set(key, String(value));
     }
-    const headers = new Headers({
-      accept: 'application/json',
-      api_access_token: this.accessToken,
-    });
+    const headers = new Headers({ accept: 'application/json', api_access_token: this.accessToken });
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
 
     try {
       const response = await this.fetchImpl(url, { method: 'GET', headers, signal: controller.signal });
       const text = await readBoundedResponseText(response, this.maxResponseBytes);
-      const payload = parseJson(text, operation, response.status);
-      if (response.ok) return Object.freeze({ payload, status: response.status });
-      throw createHttpError(response, payload, operation);
+      if (!response.ok) {
+        throw createHttpError(response, parseJsonBestEffort(text), operation);
+      }
+      const payload = parseJsonStrict(text, operation, response.status);
+      return Object.freeze({ payload, status: response.status });
     } catch (cause) {
       if (controller.signal.aborted || cause?.name === 'AbortError') {
         throw transientError(`Chatwoot request timed out: ${operation}`, {
@@ -360,7 +382,7 @@ function responseTooLarge(maxBytes) {
   });
 }
 
-function parseJson(text, operation, status) {
+function parseJsonStrict(text, operation, status) {
   if (text === '') return null;
   try {
     return JSON.parse(text);
@@ -371,6 +393,11 @@ function parseJson(text, operation, status) {
       details: { operation, status },
     });
   }
+}
+
+function parseJsonBestEffort(text) {
+  if (text === '') return null;
+  try { return JSON.parse(text); } catch { return null; }
 }
 
 function normalizeBaseUrl(value, allowInsecureLocal) {
@@ -453,19 +480,36 @@ function readRetryAfter(value) {
   return Number.isFinite(date) ? Math.max(0, (date - Date.now()) / 1_000) : null;
 }
 
+function timestampSeconds(value, fieldName) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) throw new TypeError(`${fieldName} must be a positive timestamp`);
+  return String(Math.floor(number > 100_000_000_000 ? number / 1_000 : number));
+}
+
 function requirePositiveId(value, fieldName) {
   const number = Number(value);
-  if (!Number.isSafeInteger(number) || number <= 0) throw new TypeError(`${fieldName} must be a positive safe integer`);
+  if (!Number.isSafeInteger(number) || number <= 0) {
+    throw new TypeError(`${fieldName} must be a positive safe integer`);
+  }
   return String(number);
 }
 
+function optionalPositiveId(value, fieldName) {
+  if (value === null || value === undefined || value === '') return null;
+  return requirePositiveId(value, fieldName);
+}
+
 function requireText(value, fieldName) {
-  if (typeof value !== 'string' || value.trim() === '') throw new TypeError(`${fieldName} must be a non-empty string`);
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new TypeError(`${fieldName} must be a non-empty string`);
+  }
   return value.trim();
 }
 
 function requireObject(value, fieldName) {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new TypeError(`${fieldName} must be an object`);
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError(`${fieldName} must be an object`);
+  }
   return value;
 }
 
@@ -476,7 +520,9 @@ function requireArray(value, fieldName) {
 
 function positiveInteger(value, fieldName) {
   const number = Number(value);
-  if (!Number.isSafeInteger(number) || number <= 0) throw new TypeError(`${fieldName} must be a positive integer`);
+  if (!Number.isSafeInteger(number) || number <= 0) {
+    throw new TypeError(`${fieldName} must be a positive integer`);
+  }
   return number;
 }
 
@@ -490,7 +536,9 @@ function boundedInteger(value, fieldName, min, max) {
 
 function nonNegativeInteger(value, fieldName) {
   const number = Number(value);
-  if (!Number.isSafeInteger(number) || number < 0) throw new TypeError(`${fieldName} must be a non-negative integer`);
+  if (!Number.isSafeInteger(number) || number < 0) {
+    throw new TypeError(`${fieldName} must be a non-negative integer`);
+  }
   return number;
 }
 
