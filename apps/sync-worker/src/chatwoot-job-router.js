@@ -90,7 +90,7 @@ export async function processChatwootAnalyticsJob(input = {}) {
   const reliability = infrastructure.getReliability();
   const deterministicSyncRunId = `chatwoot:${connector.accountKey}:${operation.operationId}`;
 
-  const result = await runReliableSync({
+  const syncResult = await runReliableSync({
     syncRunId: deterministicSyncRunId,
     store: reliability.store,
     lockManager: reliability.lockManager,
@@ -161,6 +161,10 @@ export async function processChatwootAnalyticsJob(input = {}) {
         assertLockActive: assertCurrent,
       });
     },
+  });
+  const result = Object.freeze({
+    ...syncResult,
+    syncRunId: deterministicSyncRunId,
   });
 
   await resumableWorkStore.completeWork({
