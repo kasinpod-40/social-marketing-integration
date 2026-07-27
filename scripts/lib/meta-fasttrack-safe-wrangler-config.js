@@ -138,6 +138,18 @@ export function buildMetaFastTrackSafeWranglerConfig(sourceText, env = {}) {
   });
 }
 
+export function buildMetaFastTrackWranglerDryRunArgs(configPath, outputFile) {
+  const config = requireText(configPath, 'configPath');
+  const output = requireText(outputFile, 'outputFile');
+  return Object.freeze([
+    'wrangler',
+    'deploy',
+    '--dry-run',
+    '--outfile', output,
+    '--config', config,
+  ]);
+}
+
 function requireObject(value, fieldName) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw configError(
@@ -158,6 +170,17 @@ function requireExact(value, expected, fieldName) {
     );
   }
   return value;
+}
+
+function requireText(value, fieldName) {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw configError(
+      `Meta fast-track ${fieldName} is required`,
+      'META_FASTTRACK_SAFE_CONFIG_DRY_RUN_ARGUMENT_INVALID',
+      { fieldName },
+    );
+  }
+  return value.trim();
 }
 
 function stableJson(value) {

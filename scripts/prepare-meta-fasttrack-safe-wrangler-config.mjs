@@ -17,6 +17,7 @@ import { promisify } from 'node:util';
 import { readDevVars } from './lib/dev-vars.js';
 import {
   buildMetaFastTrackSafeWranglerConfig,
+  buildMetaFastTrackWranglerDryRunArgs,
 } from './lib/meta-fasttrack-safe-wrangler-config.js';
 import {
   rebaseGeneratedWranglerConfigPaths,
@@ -102,20 +103,19 @@ async function main() {
 
 async function runWranglerDryRun(configPath) {
   const outputDirectory = await mkdtemp(join(tmpdir(), 'meta-fasttrack-config-'));
+  const outputFile = join(outputDirectory, 'worker.bundle.js');
   try {
-    await execFileAsync('npx', [
-      'wrangler',
-      'deploy',
-      '--dry-run',
-      '--outdir', outputDirectory,
-      '--config', configPath,
-    ], {
-      cwd: process.cwd(),
-      encoding: 'utf8',
-      maxBuffer: 64 * 1024 * 1024,
-      env: process.env,
-    });
-    const bundle = await readFile(join(outputDirectory, 'worker.js'));
+    await execFileAsync(
+      'npx',
+      buildMetaFastTrackWranglerDryRunArgs(configPath, outputFile),
+      {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+        maxBuffer: 64 * 1024 * 1024,
+        env: process.env,
+      },
+    );
+    const bundle = await readFile(outputFile);
     return { workerBundleSha256: createHash('sha256').update(bundle).digest('hex') };
   } finally {
     await rm(outputDirectory, { recursive: true, force: true });
