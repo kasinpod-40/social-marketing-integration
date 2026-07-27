@@ -3,9 +3,9 @@
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = IMPLEMENTATION_PASS_DRAFT_PR_PENDING
+TASK_STATUS                         = IMPLEMENTATION_PASS_DRAFT_PR_OPEN
 CURRENT_PROGRAM                     = TIKTOK_POST_LARK_AUDIT_ERROR_CODE_HOTFIX
-BASE_MAIN_SHA                       = 060977cd9ed2933700fbd121c9236e6578ad571e
+BASE_MAIN_SHA                       = db475ebb825f8a6cb3100bb2f4be5d7a43c8613d
 INCIDENT_BASELINE_HEAD              = 8b7f9a879ba0c1b0b5d89dcfa2373ad3bb3c2ce8
 BRANCH                              = hotfix/tiktok-post-lark-audit-error-code
 REMOTE_MIGRATION_0016               = APPLIED
@@ -22,7 +22,7 @@ MANUAL_PROCESSING                   = BLOCKED
 PRODUCTION                          = BLOCKED
 ```
 
-The previous WooCommerce Integration Wiring task is preserved verbatim at:
+The previous WooCommerce Integration Merge Closeout task is preserved verbatim at:
 
 ```text
 docs/archive/current-task-before-tiktok-post-lark-audit-error-code-hotfix-2026-07-27.md
@@ -116,6 +116,4 @@ REMOTE_ACTION_COUNT                 = 0
 
 ## Remaining gate
 
-Run the complete Repository verification, inspect the final diff for Secret or write-path
-regression, commit only the approved files, push this branch and open a Draft PR. Review,
-merge, deployment and any new Remote Audit require separate explicit approval.
+Draft PR review and merge, deployment, and any new Remote Audit require separate explicit approval.

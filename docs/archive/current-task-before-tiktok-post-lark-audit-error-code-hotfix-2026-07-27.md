@@ -1,54 +1,54 @@
-# Current Task — WooCommerce Integration Wiring
+# Current Task — WooCommerce Integration Merge Closeout
 
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = VERIFICATION_PASS_MERGE_PENDING
-CURRENT_PROGRAM                     = WOOCOMMERCE_INTEGRATION_WIRING
-INTEGRATION_BRANCH                  = integration/woocommerce-safe-wiring
-DRAFT_PR                            = #94
+TASK_STATUS                         = MERGED_REMOTE_ROLLOUT_NOT_AUTHORIZED
+CURRENT_PROGRAM                     = WOOCOMMERCE_INTEGRATION_MERGE_CLOSEOUT
+MERGED_PR                           = #94
+MERGE_COMMIT                        = 060977cd9ed2933700fbd121c9236e6578ad571e
+CLOSEOUT_PR                         = #98 / MERGED
+CLOSEOUT_MERGE_COMMIT               = 77ee75df26ffce6d25217975776e1eb4a3194f4f
+CLOSEOUT_VERIFIED_HEAD              = d89ee93b19d62c8d6a7f72e0b9ed30117a2685fd
+CLOSEOUT_BRANCH_VERIFICATION        = #627 / 30247248691 / PASS
 REVIEWED_SOURCE_PR                  = #66 / PASS_FOR_INTEGRATION
 REVIEWED_SOURCE_HEAD                = 10cdd910b1083e6ffd5f8a4e118c06cdc6c842ee
-SOURCE_IMPORT_PR                    = #92 / Integration branch only
-MIGRATION                           = 0017_woocommerce_commerce.sql / NOT_APPLIED
-CODE_VERIFIED_HEAD                  = ed8d24aff59281eb8cac9842722fbbb51e573f20
-BRANCH_VERIFICATION                 = #618 / 30245402685 / PASS
-MAIN_ALIGNMENT                      = 844c09e4f1ad8113c66e47fddf79d3e1e8dea76d / BEHIND 0
+INTEGRATION_VERIFIED_HEAD           = d0ce3399177b5d6c8fcdb6c56eadd77851ae29e9
+FINAL_BRANCH_VERIFICATION           = #622 / 30246242431 / PASS
+MIGRATION                           = 0017_woocommerce_commerce.sql / SOURCE ONLY
+REMOTE_MIGRATION_0017               = NOT_APPLIED
 WORKER_DEPLOYMENT                   = NOT_RUN
-QUEUE_MESSAGE                       = NOT_SENT
+WOO_PROVIDER_EXECUTION              = NOT_RUN
+CUSTOMER_CREDENTIAL                 = NOT_USED
+QUEUE_OR_DLQ_ACTION                 = NONE
 REMOTE_D1_OR_LARK_MUTATION          = NONE
 SCHEDULES                           = DISABLED
-CUSTOMER_CREDENTIAL                 = NOT_USED
 CUSTOMER_OR_PRODUCTION_LIVE_UAT     = NOT_RUN
 PRODUCTION                          = BLOCKED
-MERGE_INTO_MAIN                     = NOT_PERFORMED
 ```
 
-## Objective
+## Merge result
 
-นำ WooCommerce End-to-End ที่ผ่าน `PASS_FOR_INTEGRATION` เข้าสู่ Shared repository contracts โดยจัดเลข Migration, Stable Queue identity, Runtime routing, D1 stores, Lark registry และ default-false flags ให้ครบ โดยยังไม่ดำเนินการกับ Remote infrastructure หรือ Customer source.
+PR `#94` merged the reviewed WooCommerce End-to-End implementation and Integration-owned Shared wiring into `main` at `060977cd9ed2933700fbd121c9236e6578ad571e`.
 
-Detailed contract and verification evidence:
+The merged repository scope includes:
 
-```text
-docs/tasks/woocommerce-end-to-end.md
-docs/tasks/woocommerce-integration-wiring.md
-```
+- read-only WooCommerce REST transport with HTTPS and header-only Basic authentication;
+- Store, Order, Order-line, Product, Variation, Category, PII-minimized Customer, hashed Coupon and Refund models;
+- exact signed integer micros and ISO-currency isolation;
+- immutable durable continuation scope;
+- source-revision gating and atomic accepted-revision Order-line replacement;
+- additive D1 RAW, Canonical/current-state and Daily facts;
+- Coverage-backed report status and bounded report reads;
+- stable Queue identity `woocommerce:<operationId>`;
+- protected `uat_pending` / `manualOnly` runtime route;
+- Shared Reliability, distributed lock, generation fence, Queue retry/DLQ, resumable work, Coverage and `TableSyncEngine` reuse;
+- 14 Shared WooCommerce Lark logical table keys;
+- additive Migration `0017_woocommerce_commerce.sql`.
 
-## Completed repository scope
+No duplicate Reliability engine, Queue framework, D1 writer, Coverage store, Lark client or sync engine was introduced.
 
-- Imported exact reviewed PR `#66` implementation through Integration-only PR `#92`.
-- Allocated additive Migration `0017_woocommerce_commerce.sql` without Remote apply.
-- Registered 14 WooCommerce Lark logical table keys.
-- Promoted the Connector/Job to protected `uat_pending` / `manualOnly` status.
-- Added stable Queue identity `woocommerce:<operationId>` and reference-only continuation.
-- Added strict runtime config with all execution and Schedule gates false by default.
-- Added lazy D1 Commerce/report stores and a top-level route preserving all non-WooCommerce behavior.
-- Reused Shared Reliability, lock, generation, Queue retry/DLQ, Coverage, Lark repository and `TableSyncEngine`.
-- Added focused regression coverage.
-- Aligned with current `main` while retaining Meta closeout facts and the WooCommerce Current Task.
-
-## Default-false controls
+## Default-false safe state
 
 ```text
 MKT_CONNECTOR_WOOCOMMERCE_ENABLED=false
@@ -59,38 +59,63 @@ MKT_WOOCOMMERCE_FULL_RECONCILIATION_ENABLED=false
 MKT_SCHEDULE_WOOCOMMERCE_ENABLED=false
 ```
 
-## Safety contract
-
-- Queue execution accepts `trigger=manual_uat` only.
-- Stable identity preserves exact operation ID, work key, generation and original request time.
-- Protected runtime is restricted to `development / integration_workspace / chemistry_k`.
-- Connector, D1 and Lark gates must all be true together; Schedule must remain false.
-- Full reconciliation requires a separate flag.
-- Credential preflight remains a separate read-only operator gate.
-- Migration `0017` remains source-only until backup/apply authorization.
-- No duplicate Reliability, Queue, D1, Coverage or Lark engine was created.
+Repository merge changed source code and examples only. It did not alter deployed Environment values, create Customer credentials, send a Queue message or enable a Schedule.
 
 ## Verification result
 
+Final pre-merge Branch Verification `#622`, run ID `30246242431`, passed on the exact reviewed Integration head `d0ce3399177b5d6c8fcdb6c56eadd77851ae29e9`:
+
 ```text
-Branch Verification                #618 / 30245402685 PASS
-Code head                          ed8d24aff59281eb8cac9842722fbbb51e573f20
-Install locked dependencies        PASS
-Syntax / architecture / hygiene    PASS
-Focused staged TikTok              4 / 4 PASS
-Full Node / Workers                965 / 965 PASS
-Report reliability                 91 / 91 PASS
-Dependency audit                   0 vulnerabilities
-Wrangler dry-run                   PASS / no deployment
-Behind current main                0
-Review decision                    VERIFICATION_PASS_MERGE_PENDING
-Remote execution                   NOT RUN
+Install locked dependencies       PASS
+Syntax / architecture / hygiene   PASS
+Focused staged TikTok             4 / 4 PASS
+Node Unit / Integration           990 / 990 PASS
+Workers runtime                   9 / 9 PASS
+Report reliability                91 / 91 PASS
+Dependency audit                  0 vulnerabilities
+Wrangler deployment dry-run       PASS / no deployment
+Diagnostics upload                PASS
 ```
 
-## Audit note
+Documentation-only closeout PR `#98` passed exact-head Branch Verification `#627`, run ID `30247248691`, on head `d89ee93b19d62c8d6a7f72e0b9ed30117a2685fd` and was Squash Merged into `main` at `77ee75df26ffce6d25217975776e1eb4a3194f4f`.
 
-An incorrect connector action briefly created `tmp/placeholder` containing only `x` on `main`; it was removed immediately by commit `4c9334a69ced8b595fa433b780a77452eb7cd940`. No Business fact, code path, Secret or Remote resource was affected, and the final main tree contains no placeholder.
+## Migration ownership
 
-## Next gate
+WooCommerce now owns source Migration `0017`. It remains unapplied remotely. The Chatwoot foundation closeout treats its later runtime migration as provisional `0018`; every later Integration task must refresh the actual migration directory before allocation.
 
-Keep PR `#94` Draft, run the documentation-closeout verification on the final head, inspect review threads, and wait for a separate explicit merge decision. Passing repository verification does not authorize any Remote phase.
+## Remote safe state
+
+No WooCommerce Provider/API request, Customer Consumer Key/Secret use, WordPress/WooCommerce mutation, Remote D1 migration/query/write, Remote Lark schema/record mutation, Queue/DLQ action, Worker deployment, Schedule activation, Customer LIVE UAT or Production change occurred as part of PR `#94`, PR `#98`, or this status correction.
+
+## Repository audit note
+
+During the Integration branch setup, `tmp/placeholder` containing only `x` was accidentally created on `main` at `60f5ce3c9af74f00efea90712786576e251c6672` and removed immediately at `4c9334a69ced8b595fa433b780a77452eb7cd940`. The final repository contains no placeholder. No Business fact, Secret, runtime configuration or Remote resource was affected.
+
+## Next separately authorized rollout
+
+Repository merge authorizes none of the following automatically. The controlled order is:
+
+1. authenticated read-only Remote D1 schema and deployed-configuration preflight;
+2. confirm every WooCommerce execution and Schedule flag remains false;
+3. Remote D1 backup;
+4. separately authorize additive Migration `0017` apply and read-back;
+5. separately authorize an all-flags-false Worker deployment;
+6. separately authorize WooCommerce read-only credential and exact Store identity validation;
+7. separately authorize one bounded manual D1-first/Lark UAT;
+8. verify Coverage, late revisions, exact rerun, lock/retry behavior and Lark repair;
+9. validate report shadow output;
+10. propose Schedule activation only after every previous gate passes.
+
+Detailed records:
+
+```text
+docs/tasks/woocommerce-end-to-end.md
+docs/tasks/woocommerce-integration-wiring.md
+docs/project-brain/woocommerce-integration-merge-closeout-2026-07-27.md
+```
+
+Previous Current Task archive:
+
+```text
+docs/archive/current-task-before-woocommerce-integration-merge-closeout-2026-07-27.md
+```
