@@ -1,115 +1,103 @@
-# Current Task — WooCommerce Final One-command Rollout
+# Current Task — WooCommerce Final One-command Rollout Merge Closeout
 
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = IMPLEMENTATION_COMPLETE_FINAL_HEAD_VERIFICATION_PENDING
+TASK_STATUS                         = MERGED_TERMINAL_EXECUTION_PENDING
 CURRENT_PROGRAM                     = WOOCOMMERCE_FINAL_ONE_COMMAND_ROLLOUT
 CONTRACT_VERSION                    = woocommerce_final_one_command_v1
-BASE_MAIN_SHA                       = 1630fe97ba65fab7c89a6ba1d2644884db37e453
-BRANCH                              = integration/woocommerce-final-one-command-rollout
-DRAFT_PR                            = #133 / OPEN / DRAFT / UNMERGED
-IMPLEMENTATION_OWNER                = CHATGPT_WORK_GITHUB_TOOLS
-REMOTE_EXECUTION_AUTHORIZED         = false
-REMOTE_ACTIONS                      = NONE_DURING_IMPLEMENTATION
-REMOTE_D1_MUTATION                  = NONE
-WOOCOMMERCE_PROVIDER_REQUEST        = NOT_RUN
-LARK_MUTATION                       = NONE
-QUEUE_OR_DLQ_ACTION                 = NONE
-WORKER_DEPLOYMENT                   = NOT_RUN
-SCHEDULE                            = DISABLED
+MERGED_PR                           = #133
+SOURCE_HEAD                         = 4347558fd75bddf04e918194392025d71c700ee9
+MERGED_MAIN_SHA                     = fb3f2a46b4c22bd293ad5395e7717add75bba690
+MERGE_METHOD                        = SQUASH
+MERGED_AT                           = 2026-07-27T18:36:13Z
+REMOTE_EXECUTION_AUTHORIZED         = TERMINAL_COMMAND_ONLY
+REMOTE_ACTIONS                      = NOT_RUN_YET
+REMOTE_D1_MUTATION                  = NOT_RUN_YET
+WOOCOMMERCE_PROVIDER_REQUEST        = NOT_RUN_YET
+LARK_MUTATION                       = NOT_RUN_YET
+QUEUE_OR_DLQ_ACTION                 = NOT_RUN_YET
+WORKER_DEPLOYMENT                   = NOT_RUN_YET
+SCHEDULE                            = DISABLED_UNTIL_COMMAND_PASSES
 PRODUCTION                          = BLOCKED
 ```
 
-The preceding Meta Lark merge-closeout task is preserved verbatim at:
+The merged implementation task is archived at:
 
 ```text
-docs/archive/current-task-before-woocommerce-final-one-command-rollout-2026-07-28.md
+docs/archive/woocommerce-final-one-command-rollout-merged-current-task-2026-07-28.md
 ```
 
-## Objective
+Technical contracts and operating instructions remain in:
 
-Prepare the complete Chemistry K WooCommerce Integration Workspace rollout so that, after Repository
-merge, only one terminal command remains:
+```text
+docs/tasks/woocommerce-final-one-command-rollout.md
+docs/runbooks/woocommerce-final-one-command-rollout.md
+docs/project-brain/woocommerce-final-one-command-rollout-2026-07-28.md
+```
+
+## Merge result
+
+PR #133 passed exact-final-head Branch Verification, had zero unresolved review threads, was ahead of
+`main` by one commit and behind by zero, then was Squash Merged. No direct push to `main` occurred.
+
+```text
+PR_STATE                            = CLOSED
+PR_MERGED                           = true
+FINAL_SOURCE_HEAD                   = 4347558fd75bddf04e918194392025d71c700ee9
+SQUASH_MERGE_COMMIT                 = fb3f2a46b4c22bd293ad5395e7717add75bba690
+FINAL_COMPARE_AHEAD                 = 1
+FINAL_COMPARE_BEHIND                = 0
+FINAL_CHANGED_FILES                 = 19
+UNRESOLVED_REVIEW_THREADS           = 0
+```
+
+## Merged capability
+
+The Repository now contains the complete WooCommerce Integration Workspace control plane:
+
+- active WooCommerce Connector and Queue job with exact `manual_uat` and `scheduled` trigger allowlist;
+- deterministic Bangkok scheduled operation identity;
+- conservative D1 Orders/Products incremental watermark;
+- Shared Reliability, lock renewal, retry/DLQ, resumable continuation, D1-first writer, Coverage and
+  Lark sync reuse;
+- isolated Migration `0017` backup/apply when pending without applying Chatwoot Migration `0018`;
+- additive Lark 14-table schema repair;
+- safe deployment, Full reconciliation, Coverage verification, 14-table D1/Lark parity;
+- same-operation idempotent rerun;
+- incremental UAT and final Schedule activation;
+- automatic all-WooCommerce-flags-false restore after later failures;
+- private SHA-chained evidence.
+
+## Final verification
+
+Exact source head `4347558fd75bddf04e918194392025d71c700ee9` passed Branch Verification
+`#751` / run `30294301310`:
+
+```text
+INSTALL_LOCKED_DEPENDENCIES         = PASS
+SYNTAX_ARCHITECTURE_HYGIENE         = PASS
+FOCUSED_STAGED_TIKTOK               = PASS
+NODE_AND_WORKERS_RUNTIME            = PASS
+REPORT_RELIABILITY                  = PASS
+DEPENDENCY_AUDIT                    = PASS / 0 vulnerabilities
+WRANGLER_DRY_RUN                    = PASS / NO DEPLOYMENT
+DIAGNOSTICS_ARTIFACT                = 8664014277
+DIAGNOSTICS_DIGEST                  = sha256:a0df05c8caa0ec11be21fbcc1252a7cd9289cb79b61021c7ea4d0c05441b9553
+REMOTE_ACTION_COUNT                 = 0
+```
+
+## Only remaining step
+
+From a clean checkout of the current `main` branch that contains implementation commit
+`fb3f2a46b4c22bd293ad5395e7717add75bba690`, with the documented local ignored
+credentials/configuration available, run exactly:
 
 ```bash
 CONFIRM_WOOCOMMERCE_FINAL_ROLLOUT=EXECUTE_WOOCOMMERCE_FINAL_ROLLOUT \
 node scripts/woocommerce-final-one-command.mjs --execute
 ```
 
-The command owns the complete guarded chain:
-
-```text
-Remote contract and migration preflight
-→ exact Queue ID resolution
-→ isolated Migration 0017 backup/apply when pending
-→ additive Lark 14-table schema repair
-→ second D1 backup before Business processing
-→ safe all-WooCommerce-flags-false deployment
-→ full reconciliation to D1 and Lark
-→ Coverage and 14-table parity proof
-→ same-operation idempotent rerun
-→ incremental UAT from conservative D1 watermark
-→ scheduled active deployment
-→ SHA-chained final evidence
-```
-
-## Runtime implementation
-
-- WooCommerce Connector and Queue job are active only through exact reviewed gates.
-- Accepted triggers are `manual_uat` and `scheduled` only.
-- Scheduled operation identity is deterministic per Bangkok local date/time.
-- Scheduled processing is incremental only; Full reconciliation remains operator-owned.
-- Orders/Products D1 watermarks use the older value to over-fetch safely and avoid skipped revisions.
-- Shared Reliability, lock renewal, retry/DLQ, resumable work, D1-first writer, Coverage and Lark sync
-  engines remain unchanged and authoritative.
-- Continuations preserve operation ID, Work key, generation, requested time, trigger and source window.
-
-## Final command safeguards
-
-- Reads exact clean Git HEAD automatically.
-- Resolves exact Cloudflare Main Queue ID automatically.
-- Allows only pending Migrations `0017` and `0018`.
-- If `0017` is pending, exports D1 backup and applies only `0017` from an isolated migration directory.
-- Never applies Chatwoot Migration `0018`.
-- Lark repair creates only missing Tables/Fields; no delete, rename or type-change.
-- Deploys safe configuration before any WooCommerce Business operation.
-- Automatically restores all WooCommerce execution flags false after a later failure when safe config is available.
-- Schedule is enabled only after Full, parity, rerun and incremental acceptance pass.
-
-## Acceptance
-
-```text
-WooCommerce D1 schema             = 17 tables / 13 indexes
-Work lifecycle                    = completed
-Commerce phase                    = complete
-Coverage datasets                 = 6 / accepted / failed_rows=0
-D1-Lark parity                    = 14 / 14 tables
-Same-operation rerun              = no Business/Coverage row-count drift
-Incremental UAT                   = completed + parity accepted
-Final Worker                      = WooCommerce Connector/D1/Lark/Schedule only
-Production                        = blocked
-```
-
-## Verification already completed before final main alignment
-
-Implementation head `022535fcf03d4d2b8ed247a0f8c345b16f345958` passed Branch Verification
-`#744` / run `30293625854` with every workflow step successful.
-
-```text
-SYNTAX_ARCHITECTURE_HYGIENE       = PASS
-FOCUSED_STAGED_TIKTOK             = PASS
-NODE_AND_WORKERS_RUNTIME           = PASS
-REPORT_RELIABILITY                = PASS
-DEPENDENCY_AUDIT                  = PASS / 0 vulnerabilities
-WRANGLER_DRY_RUN                  = PASS / NO DEPLOYMENT
-DIAGNOSTICS_ARTIFACT              = 8663754742
-DIAGNOSTICS_DIGEST                = sha256:aa30e9a3e243e48f484ebf7fc4bab312550c420751547857ebbe23bf7878cb41
-REMOTE_ACTION_COUNT               = 0
-```
-
-## Remaining Repository gate
-
-Align the implementation with then-current `main`, run exact-final-head Branch Verification, confirm
-zero unresolved review threads and merge PR #133 by Squash. Repository merge authorizes no Remote action
-inside GitHub; the terminal command above remains the sole final operational step.
+The command binds itself to the clean checkout's current Git HEAD. It closes WooCommerce Integration
+Workspace only when Full, parity, rerun, incremental and Schedule gates all pass.
+Production/customer-owned deployment remains a separate blocked scope.
