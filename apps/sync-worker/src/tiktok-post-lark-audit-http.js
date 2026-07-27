@@ -5,6 +5,10 @@ import { D1TikTokPostLarkAuditStore } from '../../../packages/connectors/src/tik
 import { sanitizeOperationalError } from '../../../packages/shared/src/errors/runtime-error.js';
 import { json } from '../../../packages/shared/src/http/response.js';
 import { timingSafeEqualText } from '../../../packages/shared/src/security/secure-token.js';
+import {
+  addWorkerRuntimeVersionHeader,
+  readWorkerRuntimeVersionId,
+} from '../../../packages/shared/src/cloudflare/worker-version.js';
 import { createInfrastructure } from './runtime-infrastructure.js';
 
 export const TIKTOK_POST_LARK_AUDIT_PATH = '/operator/tiktok/post-lark-audit';
@@ -17,23 +21,26 @@ export function createTikTokPostLarkAuditHttpHandler(dependencies = {}) {
   const auditUseCase = dependencies.audit ?? auditTikTokPostLarkPipeline;
   const auditStoreFactory = dependencies.createAuditStore
     ?? ((env) => new D1TikTokPostLarkAuditStore({ db: env?.MKT_STATE_DB }));
+  const runtimeVersionReader = dependencies.readRuntimeVersionId ?? readWorkerRuntimeVersionId;
 
   return async function handleTikTokPostLarkAudit(context) {
     const { request, env, url } = context;
     if (url.pathname !== TIKTOK_POST_LARK_AUDIT_PATH) return null;
-    if (request.method !== 'GET') {
-      return json({ ok: false, error: 'Method not allowed' }, {
-        status: 405,
-        headers: { allow: 'GET', 'cache-control': 'no-store' },
-      });
-    }
 
+    let runtimeVersionId = null;
     try {
+      runtimeVersionId = runtimeVersionReader(env, { allowMissing: true });
+      if (request.method !== 'GET') {
+        return versioned(json({ ok: false, error: 'Method not allowed' }, {
+          status: 405,
+          headers: { allow: 'GET', 'cache-control': 'no-store' },
+        }), runtimeVersionId);
+      }
       if (!readBoolean(env?.MKT_TIKTOK_AUDIT_HTTP_ENABLED, false)) {
-        return json({ ok: false, error: 'Route not found' }, {
+        return versioned(json({ ok: false, error: 'Route not found' }, {
           status: 404,
           headers: { 'cache-control': 'no-store' },
-        });
+        }), runtimeVersionId);
       }
       await requireOperatorAuthorization(request, env?.MKT_CONNECTION_OPERATOR_TOKEN);
       const runtimeConfig = runtimeLoader(env);
@@ -60,18 +67,18 @@ export function createTikTokPostLarkAuditHttpHandler(dependencies = {}) {
         maxPages: readPositiveInteger(env?.MKT_TIKTOK_SOURCE_MAX_PAGES ?? env?.LARK_MAX_PAGES, 1_000),
         tables: tableIds,
       });
-      return json({ ok: true, audit: result }, {
+      return versioned(json({ ok: true, audit: result }, {
         status: 200,
         headers: {
           'cache-control': 'no-store',
           'referrer-policy': 'no-referrer',
         },
-      });
+      }), runtimeVersionId);
     } catch (error) {
       const operational = sanitizeOperationalError(error);
       const code = operational.code ?? TIKTOK_POST_LARK_AUDIT_FALLBACK_CODE;
       const status = code === 'TIKTOK_POST_LARK_AUDIT_UNAUTHORIZED' ? 401 : 400;
-      return json({
+      return versioned(json({
         ok: false,
         error: status === 401 ? 'Unauthorized' : 'TikTok audit failed',
         code,
@@ -81,7 +88,7 @@ export function createTikTokPostLarkAuditHttpHandler(dependencies = {}) {
           'cache-control': 'no-store',
           'referrer-policy': 'no-referrer',
         },
-      });
+      }), runtimeVersionId);
     }
   };
 }
@@ -96,6 +103,10 @@ async function requireOperatorAuthorization(request, expectedToken) {
     error.code = 'TIKTOK_POST_LARK_AUDIT_UNAUTHORIZED';
     throw error;
   }
+}
+
+function versioned(response, runtimeVersionId) {
+  return addWorkerRuntimeVersionHeader(response, runtimeVersionId);
 }
 
 function readBoolean(value, fallback) {
