@@ -126,6 +126,10 @@ try {
     ]);
     const comparison = compareYouTubeDryRunConfigs(safeConfig, activeConfig, { channelId });
     const expected = comparison.safe;
+    const expectedFalseFlagNames = [...new Set([
+      ...expected.falseFlags,
+      ...comparison.active.trueFlags,
+    ])].sort();
 
     const deploymentBefore = await readDeploymentStatus(activeConfigPath, workerName);
     const activeBefore = parseSingleActiveDeployment(deploymentBefore);
@@ -164,6 +168,7 @@ try {
       expectedD1BindingName: 'MKT_STATE_DB',
       expectedDatabaseId: expected.databaseId,
       expectedDatabaseName: databaseName,
+      expectedFalseFlagNames,
       workerName,
       scriptList,
       schedules,
@@ -188,6 +193,10 @@ try {
       expectedRemoteFingerprint: expected.remoteContractFingerprint,
       remoteFingerprintMatch: contract.remoteFingerprint === expected.remoteContractFingerprint,
       secretNameCount: contract.secretNameCount,
+      observedSecretNameCount: contract.observedSecretNameCount,
+      additionalSecretNameCount: contract.additionalSecretNameCount,
+      expectedFalseFlagCount: contract.expectedFalseFlagCount,
+      materializedFalseFlagCount: contract.materializedFalseFlagCount,
       queueConsumerCount: contract.queueConsumerCount,
       pendingMigrations: migration.pendingMigrations,
       migration0017: migration.migration0017,
@@ -216,6 +225,7 @@ try {
     ok: false,
     decision: error?.code ?? 'BLOCKED_REMOTE_CONTRACT',
     message: error instanceof Error ? error.message : String(error),
+    diagnostic: sanitizeDiagnostic(error?.details),
     remoteMutation: 'NONE',
     providerCall: 'NOT_RUN',
     queueMessage: 'NOT_SENT',
@@ -369,6 +379,27 @@ function exactOrDefault(value, expected, name) {
     );
   }
   return observed;
+}
+
+function sanitizeDiagnostic(details) {
+  if (!details || typeof details !== 'object' || Array.isArray(details)) return undefined;
+  const allowed = new Set([
+    'expectedFingerprint',
+    'remoteFingerprint',
+    'missing',
+    'fieldName',
+    'expectedQueueName',
+    'observedQueueName',
+    'matchCount',
+    'name',
+    'status',
+  ]);
+  const sanitized = Object.fromEntries(
+    Object.entries(details)
+      .filter(([name]) => allowed.has(name))
+      .map(([name, value]) => [name, Array.isArray(value) ? [...value] : value]),
+  );
+  return Object.keys(sanitized).length > 0 ? Object.freeze(sanitized) : undefined;
 }
 
 function preflightError(message, code, details = undefined) {

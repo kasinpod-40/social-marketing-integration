@@ -120,6 +120,7 @@ test('live compatibility adapter preserves the reviewed deterministic Remote fin
     queueConsumerContexts: scopedConsumerResponses(),
     expectedDatabaseId: DATABASE_ID,
     expectedDatabaseName: 'social-mkt-state-dev',
+    expectedFalseFlagNames: expectedFalseFlags(comparison),
     workerName: 'social-mkt-sync-worker',
     ...triggerState,
     active: false,
@@ -131,6 +132,7 @@ test('live compatibility adapter preserves the reviewed deterministic Remote fin
     queueConsumerContexts: structuredClone(scopedConsumerResponses()),
     expectedDatabaseId: DATABASE_ID,
     expectedDatabaseName: 'social-mkt-state-dev',
+    expectedFalseFlagNames: expectedFalseFlags(comparison),
     workerName: 'social-mkt-sync-worker',
     ...structuredClone(triggerState),
     active: false,
@@ -158,6 +160,7 @@ test('live compatibility adapter keeps Main Queue and DLQ contexts distinct', as
       queueConsumerContexts: contexts,
       expectedDatabaseId: DATABASE_ID,
       expectedDatabaseName: 'social-mkt-state-dev',
+      expectedFalseFlagNames: expectedFalseFlags(comparison),
       workerName: 'social-mkt-sync-worker',
       ...remoteTriggerState(),
       active: false,
@@ -166,6 +169,13 @@ test('live compatibility adapter keeps Main Queue and DLQ contexts distinct', as
     (error) => error.code === 'YOUTUBE_DRY_RUN_REMOTE_FINGERPRINT_MISMATCH',
   );
 });
+
+function expectedFalseFlags(comparison) {
+  return [...new Set([
+    ...comparison.safe.falseFlags,
+    ...comparison.active.trueFlags,
+  ])].sort();
+}
 
 async function safeConfig() {
   const source = await readFile(
