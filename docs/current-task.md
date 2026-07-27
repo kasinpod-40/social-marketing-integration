@@ -1,119 +1,166 @@
-# Current Task — TikTok Post-Lark Audit Sanitized Error Code Hotfix
+# Current Task — Chatwoot Integration Runtime Wiring
 
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = IMPLEMENTATION_PASS_DRAFT_PR_OPEN
-CURRENT_PROGRAM                     = TIKTOK_POST_LARK_AUDIT_ERROR_CODE_HOTFIX
-BASE_MAIN_SHA                       = db475ebb825f8a6cb3100bb2f4be5d7a43c8613d
-INCIDENT_BASELINE_HEAD              = 8b7f9a879ba0c1b0b5d89dcfa2373ad3bb3c2ce8
-BRANCH                              = hotfix/tiktok-post-lark-audit-error-code
-REMOTE_MIGRATION_0016               = APPLIED
-REMOTE_AUDIT_ROUTE                  = SAFE_CLOSED / HTTP 404
-REMOTE_TIKTOK_AUDIT_FLAG            = false
-REMOTE_BUSINESS_FLAGS               = all false
-REMOTE_SCHEDULE_FLAGS               = all false
-AUTHENTICATED_AUDIT_HTTP_STATUS     = 400
-AUTHENTICATED_AUDIT_ERROR           = TikTok audit failed
-AUTHENTICATED_AUDIT_ERROR_CODE      = NULL_OR_MISSING
-QUEUE_OR_BUSINESS_WRITE_PERFORMED   = false
-HOTFIX_REMOTE_ACTION                = NONE
-MANUAL_PROCESSING                   = BLOCKED
+TASK_STATUS                         = IMPLEMENTATION_IN_PROGRESS_BY_CHATGPT_WORK
+CURRENT_PROGRAM                     = CHATWOOT_INTEGRATION_RUNTIME_WIRING
+BASE_MAIN                           = 1ec60980c3897f01cef9bdc5f24aa6f5b7eba295
+INTEGRATION_BRANCH                  = integration/chatwoot-safe-wiring
+DRAFT_PR                            = #97 / OPEN / DRAFT
+FOUNDATION_PR                       = #68 / MERGED
+FOUNDATION_MERGE_COMMIT             = 80601de973740e8654b2cea2c4ecf419f4378c0a
+WOOCOMMERCE_INTEGRATION_PR          = #94 / SQUASH_MERGED
+WOOCOMMERCE_MERGE_COMMIT            = 060977cd9ed2933700fbd121c9236e6578ad571e
+LATEST_MERGED_MIGRATION             = 0017_woocommerce_commerce.sql
+CHATWOOT_MIGRATION                  = 0018_chatwoot_analytics.sql / TO_CREATE_SOURCE_ONLY
+IMPLEMENTATION_OWNER                = CHATGPT_WORK_GITHUB_TOOLS
+PROVIDER_EXECUTION                  = NOT_RUN
+TOKEN_READ_OR_ROTATION              = NOT_RUN
+QUEUE_MESSAGE                       = NOT_SENT
+REMOTE_D1_OR_LARK_MUTATION          = NONE
+WORKER_DEPLOYMENT                   = NOT_RUN
+SCHEDULE_OR_WEBHOOK                 = DISABLED
+CUSTOMER_OR_PRODUCTION_LIVE_UAT     = NOT_RUN
 PRODUCTION                          = BLOCKED
-```
-
-The previous WooCommerce Integration Merge Closeout task is preserved verbatim at:
-
-```text
-docs/archive/current-task-before-tiktok-post-lark-audit-error-code-hotfix-2026-07-27.md
+MERGE_INTO_MAIN                     = NOT_AUTHORIZED
 ```
 
 ## Objective
 
-ทำให้ authenticated TikTok Post-Lark Audit failure ทุกกรณีที่ตอบ HTTP `400` มี
-sanitized, stable และ non-empty error code โดยไม่เปิดเผย raw exception, message,
-stack, details, Secret, Token, Customer identity, Table ID หรือ Content ID และทำให้
-Rollout Operator เก็บเฉพาะ HTTP status กับ sanitized remote code เมื่อ Remote Audit
-ตอบสถานะที่ไม่ใช่ `200`
+Wire the reviewed and merged Chatwoot analytics foundation through the existing Shared Worker,
+Reliability, Queue/DLQ, D1, Coverage and Lark contracts. Allocate additive Migration `0018`, add the
+protected manual-only runtime route and default-false configuration, verify the exact branch head,
+and stop before every Provider or Remote action.
 
-## In scope
-
-- ใช้ `TIKTOK_POST_LARK_AUDIT_FAILED` เมื่อ HTTP boundary ได้ operational code ที่ว่าง
-- รักษา known operational code เดิม รวมถึง `TIKTOK_POST_LARK_AUDIT_UNAUTHORIZED`
-- เพิ่ม Operator error `TIKTOK_POST_LARK_ROLLOUT_AUDIT_HTTP_FAILED`
-- จำกัด Operator error details ไว้เฉพาะ `httpStatus` และ `remoteCode`
-- fallback Remote code ที่หายหรือไม่อยู่ในรูป stable code เป็น
-  `TIKTOK_POST_LARK_AUDIT_FAILED`
-- รักษา Audit success path และ `audit.json` evidence contract เดิม
-- เพิ่ม Node และ Workers-runtime regression tests
-- อัปเดต Current Task, Project Brain และ Changelog ตาม Runtime facts ที่เกิดขึ้นจริง
-
-## Out of scope
+Detailed implementation contract:
 
 ```text
-Worker deployment
-Audit route enablement
-Live Audit
-Worker Secret rotation
-D1 Migration apply
-Remote D1 or Lark mutation
-Queue message
-DLQ action
-Watermark Admission
-D1 or Canonical Business write
-Report cutover
-Cron or Schedule activation
-Production
-PR merge
+docs/tasks/chatwoot-end-to-end.md
+docs/tasks/chatwoot-integration-wiring.md
+docs/project-brain/chatwoot-foundation-merge-closeout-2026-07-27.md
 ```
+
+## Authority and reading order
+
+1. `AGENTS.md`
+2. this file
+3. `PROJECT_BRAIN.md`
+4. the detailed Chatwoot records above
+5. current Shared Worker/config/Queue/Reliability/D1/Lark implementation and tests
+
+Repository state is authoritative over chat history. Inspect duplicate logic, dead files, route
+ordering, batching, retry/lock/generation behavior, privacy and partial-failure semantics before
+adding code.
+
+## Approved repository-only scope
+
+- Create replay-safe `migrations/0018_chatwoot_analytics.sql` for 14 approved PII-minimized tables.
+- Add strict Chatwoot runtime configuration for the Integration Workspace and Chemistry K target.
+- Promote Chatwoot Connector and Job to `uat_pending`; Job remains `manualOnly`.
+- Reuse central Queue operation identity and preserve account/run/generation/request identity.
+- Add lazy `D1ChatwootAnalyticsStore` construction to Shared runtime infrastructure.
+- Add Chatwoot as the top-level route with the current WooCommerce route as fallback.
+- Register 15 approved Chatwoot Lark logical keys without Remote Base mutation.
+- Add empty/default-false examples only.
+- Add focused route, gate, lock, retry, Coverage, checkpoint, migration and regression tests.
+- Run repository CI and update the Implementation result below.
+
+## Locked route order
+
+```text
+Chatwoot
+→ WooCommerce
+→ YouTube
+→ Google Ads
+→ Meta
+→ TikTok / reports / active fallback
+```
+
+Non-Chatwoot execution must preserve the existing chain and behavior.
+
+## Required default-false controls
+
+```text
+MKT_CONNECTOR_CHATWOOT_ENABLED=false
+MKT_CHATWOOT_D1_WRITE_ENABLED=false
+MKT_CHATWOOT_LARK_WRITE_ENABLED=false
+MKT_CHATWOOT_REPORT_WRITE_ENABLED=false
+MKT_SCHEDULE_CHATWOOT_ENABLED=false
+MKT_CHATWOOT_WEBHOOK_ENABLED=false
+```
+
+Connector disabled must fail before Provider credential access. Storage or Report flags must never
+enable Connector, Schedule or Webhook implicitly. Webhook remains unsupported and Schedule disabled.
+
+## Data and execution invariants
+
+- No Message body, name, email, phone, identifier, address, attachment detail, raw Label title,
+  arbitrary attributes, raw Provider payload or Secret may be persisted or logged.
+- D1 state/facts complete before the first Lark Business write.
+- Daily/Report writes require both Report gate and `fullSnapshot=true`.
+- Lark-disabled execution constructs no Lark repository/table mapping.
+- Coverage starts Partial, finalizes Complete only after every enabled required sink, and checkpoint
+  advances last.
+- Lock loss, generation mismatch, retryable failure and partial sink failure reuse Shared behavior and
+  fail closed.
+- Missing metrics remain `null` unless the approved contract proves real zero.
+- No duplicate Reliability, Queue/DLQ, D1 writer, Coverage store, Lark client or sync engine.
+
+## Out of scope and prohibited actions
+
+```text
+Chatwoot Provider/API request       NOT_AUTHORIZED
+Customer Token read/rotation        NOT_AUTHORIZED
+Remote D1 query/backup/apply        NOT_AUTHORIZED
+Remote D1 Business mutation         NOT_AUTHORIZED
+Remote Lark schema/data mutation    NOT_AUTHORIZED
+Queue send/retry/DLQ action         NOT_AUTHORIZED
+Worker deployment                   NOT_AUTHORIZED
+Schedule/Webhook activation         NOT_AUTHORIZED
+Customer/Production LIVE UAT        NOT_AUTHORIZED
+Production                          BLOCKED
+Draft PR merge                      NOT_AUTHORIZED
+```
+
+Do not create temporary workflows, placeholders, generated outputs, local config, Secrets or unrelated
+Business-fact edits.
 
 ## Acceptance criteria
 
-- Generic authenticated failure ตอบ HTTP `400` และ
-  `code=TIKTOK_POST_LARK_AUDIT_FAILED`
-- Known error code เช่น `LARK_TABLE_CONFIG_INVALID` ไม่ถูกเขียนทับ
-- Wrong token ยังตอบ HTTP `401` และ
-  `code=TIKTOK_POST_LARK_AUDIT_UNAUTHORIZED`
-- Disabled route ยังตอบ `404`; non-GET ยังตอบ `405`
-- Success ยังตอบ `200`, `mode=read_only` และไม่มี Queue/Business write
-- Operator error สำหรับ non-`200` มี local code คงที่และ details เพียง
-  `httpStatus` กับ `remoteCode`
-- Raw response body, Authorization header และ Token ไม่ถูก persist หรือ report
-- Existing confirmation, evidence-chain และ emergency safe-close tests ผ่าน
-
-## Required verification
-
-```text
-npm ci
-Focused TikTok Audit HTTP tests
-Focused TikTok rollout operator tests
-Workers runtime tests
-npm run check
-npm test
-npm run test:report-reliability
-npm audit
-npm run deploy:dry-run
-```
+- Migration `0018` is additive, replay-safe, PII-minimized and free of destructive SQL.
+- Chatwoot Connector/Job are `uat_pending`; the Job is manual-only.
+- Exact environment/profile/customer/account validation occurs before Provider access.
+- The Chatwoot top-level route preserves every existing fallback route.
+- Shared Reliability, Queue/DLQ, lock, generation, D1, Coverage and Lark engines are reused.
+- D1-before-Lark, Partial-to-Complete Coverage and checkpoint-last semantics are proven by tests.
+- All flags default false and fail closed.
+- Full Branch Verification passes on the exact final head.
+- No Provider, Remote or LIVE action occurs.
+- Draft PR remains unmerged for Integration Review.
 
 ## Implementation result
 
 ```text
-IMPLEMENTATION_RESULT               = PASS_TIKTOK_AUDIT_ERROR_CODE_HOTFIX_IMPLEMENTATION
-HTTP_FALLBACK_CODE                  = TIKTOK_POST_LARK_AUDIT_FAILED
-KNOWN_ERROR_CODE_PRESERVATION       = IMPLEMENTED
-OPERATOR_REMOTE_CODE_CAPTURE        = IMPLEMENTED
-RESPONSE_REDACTION_STATUS           = PASS
-QUEUE_OR_WRITE_PATH_ADDED           = false
-FOCUSED_NODE_TESTS                  = 18 / 18 PASS
-WORKERS_RUNTIME_TESTS               = 10 / 10 PASS
-NPM_CHECK                           = PASS
-NPM_TEST                            = 994 Unit + 10 Workers PASS
-REPORT_RELIABILITY                  = 91 / 91 PASS
-NPM_AUDIT                           = 0 vulnerabilities
-DEPLOY_DRY_RUN                      = PASS / no deployment
-REMOTE_ACTION_COUNT                 = 0
+STATUS                              = IN_PROGRESS
+FINAL_MAIN_SHA                      = PENDING
+FINAL_HEAD_SHA                      = PENDING
+AHEAD_BEHIND                        = PENDING
+FILES_CHANGED                       = PENDING
+MIGRATION_AUDIT                     = PENDING
+FOCUSED_CHATWOOT_TESTS              = PENDING
+FULL_NODE_TESTS                     = PENDING
+WORKERS_RUNTIME_TESTS               = PENDING
+REPORT_RELIABILITY                  = PENDING
+DEPENDENCY_AUDIT                    = PENDING
+WRANGLER_DRY_RUN                    = PENDING
+DIFF_CHECK                          = PENDING
+REMOTE_ACTIONS                      = NONE_EXPECTED
+INTEGRATION_REVIEW                  = PENDING
 ```
 
-## Remaining gate
+Previous Current Task archive:
 
-Draft PR review and merge, deployment, and any new Remote Audit require separate explicit approval.
+```text
+docs/archive/current-task-before-chatwoot-runtime-wiring-2026-07-27.md
+```
