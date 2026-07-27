@@ -1,80 +1,76 @@
-# Current Task — Chatwoot Runtime Wiring Merge Closeout
+# Current Task — Chatwoot Remote Read-only Preflight
 
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = MERGED_REMOTE_INTEGRATION_NOT_AUTHORIZED
-CURRENT_PROGRAM                     = CHATWOOT_INTEGRATION_RUNTIME_WIRING
-MERGED_PR                           = #97
-SOURCE_HEAD                         = ff1ea87472fced8a48c2551d66a100d2b59220fc
-MERGED_MAIN_SHA                     = 91ab3c6d153aa8e3e1188a5a5df75ad1b5b8ce19
-MERGE_METHOD                        = SQUASH
-MERGED_AT                           = 2026-07-27T14:15:29Z
-FOUNDATION_PR                       = #68 / MERGED
-MIGRATION_0017                      = APPLIED_OUTSIDE_WORKSTREAM / DO_NOT_RERUN
-MIGRATION_0018                      = SOURCE_ONLY / NOT_APPLIED
-REMOTE_ACTION_AUTHORIZED            = false
-REMOTE_ACTIONS                      = NONE
+TASK_STATUS                         = REPOSITORY_OPERATOR_IMPLEMENTATION_IN_PROGRESS
+CURRENT_PROGRAM                     = CHATWOOT_REMOTE_READ_ONLY_PREFLIGHT
+BASE_MAIN                           = f3e330339b114536c3a1a9ee7567abf5a76fa78b
+BRANCH                              = integration/chatwoot-remote-read-only-preflight
+DRAFT_PR                            = TO_OPEN
+CHATWOOT_RUNTIME_PR                 = #97 / MERGED
+CHATWOOT_RUNTIME_MERGE_COMMIT       = 91ab3c6d153aa8e3e1188a5a5df75ad1b5b8ce19
+CHATWOOT_CLOSEOUT_PR                = #108 / MERGED
+CHATWOOT_CLOSEOUT_MERGE_COMMIT      = f3e330339b114536c3a1a9ee7567abf5a76fa78b
+MIGRATION_0017                      = APPLIED / DO_NOT_RERUN
+MIGRATION_0018                      = SOURCE_ONLY / EXPECTED_PENDING
+REMOTE_PREFLIGHT_EXECUTION          = NOT_RUN
+REMOTE_MUTATION_AUTHORIZED          = false
 PRODUCTION                          = BLOCKED
 ```
 
-The completed implementation task is archived at:
+The previous Chatwoot Runtime Wiring Merge Closeout is preserved at:
 
 ```text
-docs/archive/chatwoot-runtime-wiring-merged-current-task-2026-07-27.md
+docs/archive/current-task-before-chatwoot-remote-read-only-preflight-2026-07-27.md
 ```
 
-Technical contracts and durable project records remain in:
+## Objective
+
+เพิ่ม guarded Operator สำหรับตรวจ Remote Integration Workspace แบบ read-only ก่อน Backup หรือ
+Apply Migration `0018_chatwoot_analytics.sql`. Operator ต้องยืนยัน exact repository/Worker target,
+active version, Remote Chatwoot flags, identity fingerprints, Secret names, D1 migration ledger,
+Queue consumers, Cron และ workers.dev state โดยไม่มี Chatwoot Provider request หรือ Remote mutation.
+
+Complete contract:
 
 ```text
-docs/tasks/chatwoot-end-to-end.md
-docs/tasks/chatwoot-integration-wiring.md
-docs/project-brain/chatwoot-foundation-merge-closeout-2026-07-27.md
-docs/project-brain/chatwoot-runtime-wiring-2026-07-27.md
-docs/project-brain/chatwoot-runtime-wiring-merge-closeout-2026-07-27.md
+docs/tasks/chatwoot-remote-read-only-preflight.md
 ```
 
-## Merge result
+## Scope
 
-PR #97 passed exact-head Branch Verification and was Squash Merged into `main`. No direct push to
-`main` occurred.
+Repository implementation only:
+
+- plan-only default operator;
+- executable `preflight` phase with exact confirmation;
+- exact reviewed Git HEAD and clean Working Tree gate;
+- local Wrangler strict dry-run bundle hash;
+- Remote Worker deployment/version metadata reads;
+- Remote plain-text flag and non-secret identity fingerprint validation;
+- Secret-name-only inspection;
+- Remote D1 migration list and applied-ledger SELECT;
+- Queue consumer metadata reads;
+- Worker script, Cron and workers.dev reads;
+- sanitized private Evidence under ignored `outputs/`;
+- focused tests and full Repository verification.
+
+## Locked target
 
 ```text
-PR_STATE                            = CLOSED
-PR_MERGED                           = true
-FINAL_SOURCE_HEAD                   = ff1ea87472fced8a48c2551d66a100d2b59220fc
-SQUASH_MERGE_COMMIT                 = 91ab3c6d153aa8e3e1188a5a5df75ad1b5b8ce19
-BRANCH_VERIFICATION                 = #655 / 30265965959 / PASS
-FINAL_DIAGNOSTICS_ARTIFACT          = 8652808933
-FINAL_ARTIFACT_DIGEST               = sha256:ff256e79e412b5cd9629fff2cb12260464b82f97010412606ad25ba4c91be18c
+MKT_ENV                         = development
+MKT_CUSTOMER_PROFILE            = integration_workspace
+MKT_CONNECTION_CUSTOMER_KEY     = chemistry_k
+accountKey                      = chemistry_k
+Worker                          = social-mkt-sync-worker
+D1                              = social-mkt-state-dev / MKT_STATE_DB
+Main Queue                      = social-mkt-sync-jobs
+DLQ                             = social-mkt-sync-dlq
 ```
 
-## Merged repository scope
+Base URL และ external Account ID ต้องตรวจด้วย SHA-256 fingerprints เท่านั้น. Evidence ห้ามมีค่าจริง.
 
-- Additive `migrations/0018_chatwoot_analytics.sql` with 14 PII-minimized tables and indexes.
-- Strict fail-closed Chatwoot config; Provider identity and Token are not read while Connector is
-  disabled.
-- Chatwoot Connector and Queue Job remain protected `uat_pending` and `manualOnly`.
-- Stable account-scoped Queue identity: `chatwoot:<accountKey>:<operationId>`.
-- Exact operation identity, generation, original request time and deterministic `syncRunId` are
-  preserved through completion and replay.
-- Shared Reliability, Queue/DLQ, distributed lock, generation fence, resumable work, D1 Coverage,
-  checkpoint, Lark repository and `TableSyncEngine` contracts are reused.
-- D1 state/facts finish before optional Lark writes; Coverage completes before checkpoint advance.
-- Fifteen logical Chatwoot Lark table keys are registered without Remote Base mutation.
-
-Locked route order:
-
-```text
-Chatwoot
-→ WooCommerce
-→ YouTube
-→ Google Ads
-→ Meta
-→ TikTok / reports / active fallback
-```
-
-## Default-false controls
+## Required all-false flags
 
 ```text
 MKT_CONNECTOR_CHATWOOT_ENABLED=false
@@ -85,42 +81,94 @@ MKT_SCHEDULE_CHATWOOT_ENABLED=false
 MKT_CHATWOOT_WEBHOOK_ENABLED=false
 ```
 
-## Verification result
+## Migration contract
 
 ```text
-ALIGNED_CODE_HEAD                   = c44b1b2247b3374d95022eef01317f77c7e0eca0
-FOCUSED_TIKTOK                      = 4 / 4 PASS
-NODE_UNIT_INTEGRATION               = 1050 / 1050 PASS
-WORKERS_RUNTIME                     = 11 / 11 PASS
-REPORT_RELIABILITY                  = 91 / 91 PASS
-CHATWOOT_NAMED_TESTS                = 38 / 38 PASS
-DEPENDENCY_AUDIT                    = 0 vulnerabilities
-WRANGLER_DRY_RUN                    = PASS / NO DEPLOYMENT
-EXACT_FINAL_HEAD_VERIFICATION       = #655 / PASS
+0017_woocommerce_commerce.sql = applied
+0018_chatwoot_analytics.sql   = not applied
+0018_chatwoot_analytics.sql   = only pending migration
+unexpected pending migration  = none
 ```
 
-## Remote safe state
+## Secret contract
+
+Required name only:
 
 ```text
-CHATWOOT_PROVIDER_API_REQUEST       = NOT_RUN
-CUSTOMER_TOKEN_ACCESS_OR_ROTATION   = NOT_RUN
-REMOTE_D1_QUERY_BACKUP_0018_APPLY   = NOT_RUN
-REMOTE_CHATWOOT_BUSINESS_MUTATION   = NONE
-REMOTE_LARK_SCHEMA_DATA_MUTATION    = NONE
-QUEUE_SEND_RETRY_DLQ_ACTION         = NONE
-WORKER_DEPLOYMENT                   = NOT_RUN
-SCHEDULE_WEBHOOK_ACTIVATION         = NONE
-CUSTOMER_PRODUCTION_LIVE_UAT        = NOT_RUN
-PRODUCTION                          = BLOCKED
+CHATWOOT_API_ACCESS_TOKEN
 ```
 
-## Required next gate
+Optional names for a later Lark parity phase:
 
-The next Chatwoot phase must be opened as a new Integration-owned task. Before any action it must
-refresh `main`, open PRs and the migration ledger, then separately authorize the intended phase.
-Potential phases include Remote read-only preflight, Migration `0018` backup/apply/readback, exact
-Lark schema mapping, guarded Provider identity/permission preflight, state-only D1 UAT, optional Lark
-parity UAT and later full-snapshot reporting UAT.
+```text
+LARK_APP_ID
+LARK_APP_SECRET
+```
 
-This merge closeout authorizes none of those phases. Schedule and Webhook remain disabled until
-reconciliation, rollback and operator verification pass.
+Secret values, Authorization headers and raw bindings must never be output or persisted.
+
+## Operator phases
+
+```text
+plan       = local plan only / default
+preflight  = read-only Remote inspection after exact confirmation
+```
+
+Exact confirmation:
+
+```text
+CONFIRM_CHATWOOT_REMOTE_READ_ONLY_PREFLIGHT=PREFLIGHT_CHATWOOT_REMOTE_READ_ONLY
+```
+
+## Prohibited actions
+
+```text
+Chatwoot Provider/API request
+Customer Token value read or rotation
+Remote D1 backup
+Migration 0018 apply
+Remote D1 Business mutation
+Remote Lark read/write/schema mutation
+Queue send/retry/DLQ action
+Worker deployment
+Schedule/route/workers.dev mutation
+Customer LIVE UAT
+Production
+PR merge
+```
+
+## Required tests
+
+- plan-only and exact confirmation;
+- exact Integration Workspace target;
+- active Worker version at 100% traffic;
+- Remote plain-text var parsing;
+- all six Chatwoot flags false;
+- Base URL/Account ID fingerprint match;
+- Secret-name-only validation;
+- applied `0017` and exactly pending `0018`;
+- Queue consumer identity/count;
+- Worker/Cron/workers.dev contract;
+- deterministic sanitized Evidence;
+- static proof of no Provider, migration apply, deployment or Queue send path;
+- full Node/Workers/report/audit/Wrangler gates.
+
+## Implementation result
+
+```text
+STATUS                              = IN_PROGRESS
+OPERATOR_CONTRACT                   = chatwoot-remote-read-only-preflight-v1
+OPERATOR_SOURCE                     = scripts/chatwoot-read-only-preflight-operator.mjs
+PURE_CONTRACT_SOURCE                = scripts/lib/chatwoot-read-only-preflight-operator.js
+FOCUSED_TEST                        = tests/application/chatwoot-read-only-preflight-operator.test.js
+REMOTE_EXECUTION                    = NOT_RUN
+REMOTE_MUTATION_COUNT               = 0
+PROVIDER_REQUEST_COUNT              = 0
+INTEGRATION_REVIEW                  = PENDING_VERIFICATION
+```
+
+## Next gate
+
+Complete Repository verification on the exact final head. A Repository merge does not authorize the
+Remote preflight execution. The actual read-only run requires a separate exact authorization and an
+environment that has read-only Cloudflare credentials plus the approved identity fingerprints.
