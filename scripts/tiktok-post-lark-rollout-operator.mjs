@@ -1,28 +1,41 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
+import {
+  access,
+  mkdir,
+  readFile,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { constants } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import {
+  TIKTOK_POST_LARK_AUDIT_PATH,
   TIKTOK_POST_LARK_ROLLOUT_CONFIRMATIONS,
   TIKTOK_POST_LARK_ROLLOUT_PHASES,
   assertTikTokPostLarkRolloutConfirmation,
   buildTikTokPostLarkPostMigrationSql,
   buildTikTokPostLarkPreflightSql,
+  createTikTokPostLarkTargetFingerprint,
   extractWranglerD1Rows,
   loadTikTokPostLarkRolloutTarget,
   parseTikTokPostLarkRolloutArgs,
+  parseWranglerDeploymentOutput,
+  probeTikTokPostLarkRouteStability,
+  selectTikTokPostLarkEnableAttemptEvidence,
   validateTikTokPostLarkAuditHttpResponse,
   validateTikTokPostLarkAuditResponse,
+  validateTikTokPostLarkFreshEnableEvidence,
   validateTikTokPostLarkNoPendingMigrations,
   validateTikTokPostLarkPendingMigrations,
   validateTikTokPostLarkPostMigrationRow,
   validateTikTokPostLarkPreflightRow,
-  validateTikTokPostLarkRouteStatus,
   validateTikTokPostLarkWranglerConfig,
 } from './lib/tiktok-post-lark-rollout-operator.js';
 
 const REQUIRED_BASELINE = 'ad6614dd8ee0cb2a1dda5cdbe7035f44b40581d4';
+const WORKER_NAME = 'social-mkt-sync-worker';
 const EVIDENCE_ROOT = resolve(
   process.env.MKT_TIKTOK_ROLLOUT_EVIDENCE_DIR
     ?? 'outputs/tiktok-post-lark-rollout',
@@ -110,6 +123,24 @@ async function runPreflight(target) {
   ]);
   const safeConfig = validateTikTokPostLarkWranglerConfig(safeText, { auditEnabled: false });
   const auditConfig = validateTikTokPostLarkWranglerConfig(auditText, { auditEnabled: true });
+  const safeTargetFingerprint = createTikTokPostLarkTargetFingerprint({
+    origin: target.workerOrigin,
+    pathname: TIKTOK_POST_LARK_AUDIT_PATH,
+    workerName: safeConfig.workerName,
+    environment: safeConfig.environment,
+  });
+  const auditTargetFingerprint = createTikTokPostLarkTargetFingerprint({
+    origin: target.workerOrigin,
+    pathname: TIKTOK_POST_LARK_AUDIT_PATH,
+    workerName: auditConfig.workerName,
+    environment: auditConfig.environment,
+  });
+  if (safeTargetFingerprint !== auditTargetFingerprint) {
+    throw operatorError(
+      'Safe and Audit Wrangler configs resolve to different targets',
+      'TIKTOK_POST_LARK_ROLLOUT_CONFIG_UNSAFE',
+    );
+  }
 
   runCommand('npm', ['run', 'check']);
   runCommand('node', [
@@ -141,8 +172,8 @@ async function runPreflight(target) {
     repositoryHead: readCommand('git', ['rev-parse', 'HEAD']).trim(),
     requiredBaseline: REQUIRED_BASELINE,
     target: sanitizedTarget(target),
-    safeConfig,
-    auditConfig,
+    safeConfig: { ...safeConfig, targetFingerprint: safeTargetFingerprint },
+    auditConfig: { ...auditConfig, targetFingerprint: auditTargetFingerprint },
     pendingMigrations,
     remote,
     mutationPerformed: false,
@@ -226,20 +257,28 @@ async function runDeploySafe(target) {
   const configText = await readFile(target.safeWranglerConfig, 'utf8');
   const config = validateTikTokPostLarkWranglerConfig(configText, { auditEnabled: false });
   runCommand('npx', ['wrangler', 'deploy', '--dry-run', '--config', target.safeWranglerConfig]);
-  runCommand('npx', ['wrangler', 'deploy', '--config', target.safeWranglerConfig]);
-  const status = await getRouteStatus(target.workerOrigin);
-  validateTikTokPostLarkRouteStatus(status, 404);
+  const route = await deployAndProbeRoute({
+    phase: 'deploy-safe',
+    target,
+    configPath: target.safeWranglerConfig,
+    expectedStatus: 404,
+  });
   const evidence = {
     phase: 'deploy-safe',
     status: 'passed',
     capturedAt: new Date().toISOString(),
+    ...route,
     config,
-    unauthenticatedAuditRouteStatus: status,
+    unauthenticatedAuditRouteStatus: route.stableRouteStatus,
     executionFlagsEnabled: false,
     schedulesEnabled: false,
   };
   await saveEvidence('deploy-safe', evidence);
-  return { evidenceFile: evidencePath('deploy-safe'), routeStatus: status };
+  return {
+    evidenceFile: evidencePath('deploy-safe'),
+    routeStatus: route.stableRouteStatus,
+    deploymentVersionId: route.deploymentVersionId,
+  };
 }
 
 async function runEnableAudit(target) {
@@ -247,24 +286,38 @@ async function runEnableAudit(target) {
   const configText = await readFile(target.auditWranglerConfig, 'utf8');
   const config = validateTikTokPostLarkWranglerConfig(configText, { auditEnabled: true });
   runCommand('npx', ['wrangler', 'deploy', '--dry-run', '--config', target.auditWranglerConfig]);
-  runCommand('npx', ['wrangler', 'deploy', '--config', target.auditWranglerConfig]);
-  const status = await getRouteStatus(target.workerOrigin);
-  validateTikTokPostLarkRouteStatus(status, 401);
+  const route = await deployAndProbeRoute({
+    phase: 'enable-audit',
+    target,
+    configPath: target.auditWranglerConfig,
+    expectedStatus: 401,
+  });
   const evidence = {
     phase: 'enable-audit',
     status: 'passed',
     capturedAt: new Date().toISOString(),
+    ...route,
     config,
-    unauthenticatedAuditRouteStatus: status,
+    unauthenticatedAuditRouteStatus: route.stableRouteStatus,
     businessFlagsEnabled: false,
     schedulesEnabled: false,
   };
   await saveEvidence('enable-audit', evidence);
-  return { evidenceFile: evidencePath('enable-audit'), routeStatus: status };
+  return {
+    evidenceFile: evidencePath('enable-audit'),
+    routeStatus: route.stableRouteStatus,
+    deploymentVersionId: route.deploymentVersionId,
+  };
 }
 
 async function runAudit(target) {
-  await requirePassedEvidence('enable-audit');
+  const enableEvidence = await requirePassedEvidence('enable-audit');
+  const failureEvidence = await readOptionalEvidence('enable-audit-failure');
+  validateTikTokPostLarkFreshEnableEvidence(enableEvidence, {
+    now: new Date(),
+    targetFingerprint: targetFingerprint(target),
+    latestFailureCapturedAt: failureEvidence?.capturedAt,
+  });
   const response = await fetch(`${target.workerOrigin}/operator/tiktok/post-lark-audit`, {
     method: 'GET',
     headers: {
@@ -303,23 +356,102 @@ async function runAudit(target) {
 
 async function runDisableAudit(target) {
   // Emergency safe-close must remain available even when the authenticated audit fails.
-  await requirePassedEvidence('enable-audit');
+  await requireEnableAttemptEvidence();
   const configText = await readFile(target.safeWranglerConfig, 'utf8');
   const config = validateTikTokPostLarkWranglerConfig(configText, { auditEnabled: false });
   runCommand('npx', ['wrangler', 'deploy', '--dry-run', '--config', target.safeWranglerConfig]);
-  runCommand('npx', ['wrangler', 'deploy', '--config', target.safeWranglerConfig]);
-  const status = await getRouteStatus(target.workerOrigin);
-  validateTikTokPostLarkRouteStatus(status, 404);
+  const route = await deployAndProbeRoute({
+    phase: 'disable-audit',
+    target,
+    configPath: target.safeWranglerConfig,
+    expectedStatus: 404,
+  });
   const evidence = {
     phase: 'disable-audit',
     status: 'passed',
     capturedAt: new Date().toISOString(),
+    ...route,
     config,
-    unauthenticatedAuditRouteStatus: status,
+    unauthenticatedAuditRouteStatus: route.stableRouteStatus,
     safeClosed: true,
   };
   await saveEvidence('disable-audit', evidence);
-  return { evidenceFile: evidencePath('disable-audit'), routeStatus: status, safeClosed: true };
+  return {
+    evidenceFile: evidencePath('disable-audit'),
+    routeStatus: route.stableRouteStatus,
+    deploymentVersionId: route.deploymentVersionId,
+    safeClosed: true,
+  };
+}
+
+async function deployAndProbeRoute({
+  phase,
+  target,
+  configPath,
+  expectedStatus,
+}) {
+  const outputFile = join(
+    tmpdir(),
+    `mkt-tiktok-rollout-deploy-${randomUUID()}.ndjson`,
+  );
+  const deploymentStartedAt = new Date().toISOString();
+  let deploymentCompletedAt = null;
+  let deployment = null;
+  try {
+    // Wrangler deploy has no --json flag; its structured output file binds the
+    // deployed Worker identity to the typed deploy.version_id field.
+    runCommand('npx', ['wrangler', 'deploy', '--config', configPath], {
+      env: { WRANGLER_OUTPUT_FILE_PATH: outputFile },
+    });
+    deploymentCompletedAt = new Date().toISOString();
+    let output;
+    try {
+      output = await readFile(outputFile, 'utf8');
+      deployment = parseWranglerDeploymentOutput(output, { workerName: WORKER_NAME });
+    } catch (cause) {
+      if (cause?.code === 'TIKTOK_POST_LARK_ROLLOUT_DEPLOYMENT_ID_UNAVAILABLE') {
+        throw cause;
+      }
+      throw operatorError(
+        'Wrangler deployment identity output is unavailable',
+        'TIKTOK_POST_LARK_ROLLOUT_DEPLOYMENT_ID_UNAVAILABLE',
+      );
+    }
+    const route = await probeTikTokPostLarkRouteStability({
+      origin: target.workerOrigin,
+      pathname: TIKTOK_POST_LARK_AUDIT_PATH,
+      workerName: WORKER_NAME,
+      environment: target.environment,
+      deploymentVersionId: deployment.deploymentVersionId,
+      expectedStatus,
+    });
+    return Object.freeze({
+      deploymentStartedAt,
+      deploymentCompletedAt,
+      ...deployment,
+      ...route,
+    });
+  } catch (error) {
+    deploymentCompletedAt ??= new Date().toISOString();
+    await saveEvidence(`${phase}-failure`, {
+      phase,
+      status: 'failed',
+      capturedAt: new Date().toISOString(),
+      deploymentStartedAt,
+      deploymentCompletedAt,
+      deploymentVersionId: deployment?.deploymentVersionId ?? null,
+      deploymentSource: deployment?.deploymentSource ?? 'wrangler',
+      targetFingerprint: targetFingerprint(target),
+      errorCode: error?.code ?? 'TIKTOK_POST_LARK_ROLLOUT_FAILED',
+      ...(error?.code === 'TIKTOK_POST_LARK_ROLLOUT_ROUTE_STABILITY_FAILED'
+        ? error.details
+        : {}),
+      safeCloseRequired: true,
+    });
+    throw error;
+  } finally {
+    await rm(outputFile, { force: true });
+  }
 }
 
 function assertRepositoryState() {
@@ -350,15 +482,6 @@ function runD1Query(target, config, sql) {
     '--command', sql,
     '--json',
   ]);
-}
-
-async function getRouteStatus(origin) {
-  const response = await fetch(`${origin}/operator/tiktok/post-lark-audit`, {
-    method: 'GET',
-    redirect: 'manual',
-  });
-  await response.arrayBuffer();
-  return response.status;
 }
 
 async function readJsonResponse(response) {
@@ -436,6 +559,27 @@ async function requirePassedEvidence(name) {
   return Object.freeze(value);
 }
 
+async function readOptionalEvidence(name) {
+  try {
+    return JSON.parse(await readFile(evidencePath(name), 'utf8'));
+  } catch (cause) {
+    if (cause?.code === 'ENOENT') return null;
+    throw operatorError(
+      `Optional TikTok post-Lark rollout evidence is invalid: ${name}`,
+      'TIKTOK_POST_LARK_ROLLOUT_EVIDENCE_INVALID',
+      { evidenceFile: evidencePath(name) },
+    );
+  }
+}
+
+async function requireEnableAttemptEvidence() {
+  const [passed, failed] = await Promise.all([
+    readOptionalEvidence('enable-audit'),
+    readOptionalEvidence('enable-audit-failure'),
+  ]);
+  return selectTikTokPostLarkEnableAttemptEvidence(passed, failed);
+}
+
 async function assertBackupEvidence(backup) {
   await requireReadableFile(backup.backupFile);
   const contents = await readFile(backup.backupFile);
@@ -474,7 +618,16 @@ function sanitizedTarget(target) {
     databaseName: target.databaseName,
     safeWranglerConfig: target.safeWranglerConfig,
     auditWranglerConfig: target.auditWranglerConfig,
-    workerOrigin: target.workerOrigin,
+    targetFingerprint: targetFingerprint(target),
+  });
+}
+
+function targetFingerprint(target) {
+  return createTikTokPostLarkTargetFingerprint({
+    origin: target.workerOrigin,
+    pathname: TIKTOK_POST_LARK_AUDIT_PATH,
+    workerName: WORKER_NAME,
+    environment: target.environment,
   });
 }
 
