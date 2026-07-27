@@ -1,0 +1,99 @@
+name: Meta Multi-Account Rebase Apply
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    if: github.base_ref == 'agent/meta-multi-account-rebase' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout integration branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/meta-multi-account-rebase
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Restore verified Meta runtime snapshot
+        run: |
+          git fetch origin fcebcdc5a88cbffd7f5830d905a34956afb4a688
+          git checkout fcebcdc5a88cbffd7f5830d905a34956afb4a688 -- \
+            .dev.vars.example \
+            wrangler.sync.example.jsonc \
+            apps/sync-worker/src/google-ads-active-job-router.js \
+            apps/sync-worker/src/meta-active-job-router.js \
+            apps/sync-worker/src/meta-end-to-end-job-router.js \
+            docs/tasks/meta-runtime-wiring.md \
+            packages/application/src/jobs/job-catalog.js \
+            packages/application/src/jobs/queue-operation.js \
+            packages/application/src/use-cases/process-meta-end-to-end-sync.js \
+            packages/config/src/connector-runtime-config.js \
+            packages/config/src/meta-end-to-end-runtime-config.js \
+            packages/connectors/src/meta/meta-token-connection-runtime.js \
+            tests/application/job-catalog.test.js \
+            tests/application/meta-end-to-end-routing-and-report.test.js \
+            tests/application/meta-runtime-wiring.test.js \
+            tests/config/meta-runtime-wiring-config.test.js
+
+      - name: Apply Chemistry K multi-account contract
+        run: |
+          base64 -d .github/meta-multi-account-apply.py.gz.b64 | gzip -d > /tmp/meta_multi_account_apply.py
+          python /tmp/meta_multi_account_apply.py
+          rm .github/meta-multi-account-apply.py.gz.b64
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Diff hygiene
+        run: git diff --check
+
+      - name: Syntax architecture and repository hygiene
+        run: npm run check
+
+      - name: Focused Meta multi-account tests
+        run: |
+          node --test \
+            tests/config/meta-token-connection-config.test.js \
+            tests/connectors/meta-token-connection-adapters.test.js \
+            tests/connectors/meta-token-connection-runtime.test.js \
+            tests/connectors/meta-business-source-adapters.test.js \
+            tests/application/preflight-meta-customer-connections.test.js \
+            tests/application/queue-operation.test.js \
+            tests/application/meta-ads-write-set.test.js \
+            tests/application/meta-end-to-end-source.test.js \
+            tests/application/meta-organic-write-set.test.js \
+            tests/application/process-meta-end-to-end-generation.test.js \
+            tests/application/meta-end-to-end-routing-and-report.test.js \
+            tests/application/meta-runtime-wiring.test.js \
+            tests/config/meta-runtime-wiring-config.test.js
+
+      - name: Unit and Workers runtime tests
+        run: npm test
+
+      - name: Report reliability regression
+        run: npm run test:report-reliability
+
+      - name: Dependency audit
+        run: npm audit --audit-level=high
+
+      - name: Wrangler dry run
+        run: npm run deploy:dry-run
+
+      - name: Commit verified multi-account snapshot
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: support Chemistry K Meta Ads accounts"
+          git push origin HEAD:agent/meta-multi-account-rebase
