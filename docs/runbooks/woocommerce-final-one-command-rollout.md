@@ -20,14 +20,27 @@ MKT_ENV=development
 MKT_CUSTOMER_PROFILE=integration_workspace
 MKT_CONNECTION_CUSTOMER_KEY=chemistry_k
 MKT_WOOCOMMERCE_ROLLOUT_WRANGLER_CONFIG=wrangler.sync.jsonc
-CLOUDFLARE_ACCOUNT_ID=<account-id>
-CLOUDFLARE_API_TOKEN=<scoped-token>
 LARK_APP_ID=<lark-app-id>
 LARK_APP_SECRET=<lark-app-secret>
 LARK_APP_TOKEN=<lark-base-app-token>
 ```
 
-ค่าเหล่านี้ไม่ต้องใส่เองหากมีอยู่แล้ว:
+Cloudflare Account ID และ bearer token ไม่ต้องบันทึกลง `.dev.vars` เมื่อ Wrangler login ใช้งานได้:
+
+```text
+CLOUDFLARE_ACCOUNT_ID
+  1. ใช้ค่าที่กำหนดแบบ non-empty ใน Environment ก่อน
+  2. fallback ไป `account_id` ใน Wrangler config
+  3. fallback ไปบัญชีเดียวจาก `wrangler whoami --json`
+
+CLOUDFLARE_API_TOKEN
+  1. ใช้ค่าที่กำหนดแบบ non-empty ใน Environment ก่อน
+  2. fallback ไป API/OAuth token จาก `wrangler auth token --json`
+```
+
+กรณี Wrangler เข้าถึงหลาย Cloudflare accounts ให้ตั้ง exact ID ใน `CLOUDFLARE_ACCOUNT_ID` หรือกำหนดชื่อ/ID ที่ตรงหนึ่งรายการด้วย `MKT_WOOCOMMERCE_ROLLOUT_ACCOUNT`. API key/email authentication ไม่รองรับสำหรับการส่ง Queue REST โดยตรงใน operator นี้.
+
+ค่าเหล่านี้ Operator หาให้อัตโนมัติ:
 
 ```text
 MKT_WOOCOMMERCE_FINAL_REPOSITORY_HEAD  ← อ่านจาก git rev-parse HEAD
@@ -45,14 +58,14 @@ LARK_APP_SECRET
 ## What the command does
 
 1. ตรวจ clean Working Tree และ exact DEV/Integration/Chemistry K identity.
-2. ตรวจ Wrangler auth, Worker, Queue และ Remote D1.
+2. ตรวจ Wrangler auth, เลือก exact Cloudflare Account, Worker, Queue และ Remote D1.
 3. ตรวจ pending migration set; ยอมรับเฉพาะ `0017` และ `0018`.
 4. ถ้า `0017` pending:
    - ตรวจ zero active work/lock;
    - Export Remote D1 backup;
    - สร้าง isolated migration directory ที่มีเพียง `0017`;
    - Apply `0017` เท่านั้น;
-   - ตรวจว่า `0018` ไม่ถูก Apply และ schema read-back = 17 tables / 13 indexes.
+   - ตรวจว่า schema read-back = 17 tables / 13 indexes.
 5. ตรวจ/สร้าง Lark WooCommerce 14 tables และ Field ที่ขาดแบบ additive.
 6. Export D1 backup รอบก่อน Business processing.
 7. Deploy safe all-WooCommerce-flags-false และ verify active version/Queue topology.
@@ -62,10 +75,12 @@ LARK_APP_SECRET
 11. ส่ง operation เดิมซ้ำหนึ่งครั้งและพิสูจน์ idempotency.
 12. รัน incremental UAT จาก conservative Orders/Products watermark.
 13. Deploy Scheduled window หลังทุก Gate ผ่าน.
-14. เขียน SHA-chained evidence ลง `outputs/woocommerce-final-rollout/`.
+14. เขียน SHA-chained evidence ลง `outputs/woocommerce-final-rollout/` โดยไม่เก็บ Account ID หรือ token แบบ plaintext.
 
 ## Fail-closed behavior
 
+- Wrangler ไม่มี account membership หรือมีหลายบัญชีโดยไม่ระบุ exact target → หยุด.
+- Wrangler auth type ไม่ใช่ API token/OAuth bearer → หยุด.
 - Migration ที่ไม่ใช่ `0017`/`0018` → หยุด.
 - Partial D1 schema/ledger drift → หยุด.
 - Active work หรือ lock → หยุด.
