@@ -1,202 +1,133 @@
-# Current Task — Meta Runtime and Read-Only Operator Merge Closeout
+# Current Task — Chatwoot Foundation Merge Closeout and Runtime Wiring Gate
 
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = MERGED_PROVIDER_EXECUTION_NOT_AUTHORIZED
-CURRENT_PROGRAM                     = META_CHEMISTRY_K_READ_ONLY_VALIDATION
-RUNTIME_PR                          = #73 / MERGED
-RUNTIME_MERGE_COMMIT                = 13ebba1476d7983428c5b5ce51ce754adf493ad5
-RUNTIME_REVIEWED_HEAD               = a700f5f31ebd24a32cc64cc6ca5ffe123a632ff4
-RUNTIME_META_VERIFICATION           = #26 PASS
-RUNTIME_BRANCH_VERIFICATION         = #593 PASS
-OPERATOR_PR                         = #82 / MERGED
-OPERATOR_MERGE_COMMIT               = 0f38aeb8a1c69e8655145f97808f3d3d1b31615a
-OPERATOR_REVIEWED_HEAD              = 9b6f8d48891daa9ad7620f731dcdf2483da871e3
-OPERATOR_META_VERIFICATION          = #29 PASS
-OPERATOR_BRANCH_VERIFICATION        = #605 PASS
-ENVIRONMENT                         = development
-CUSTOMER_PROFILE                    = integration_workspace
-CUSTOMER_KEY                        = chemistry_k
+TASK_STATUS                         = FOUNDATION_MERGED_RUNTIME_WIRING_WAITING_FOR_MIGRATION_OWNER
+CURRENT_PROGRAM                     = CHATWOOT_INTEGRATION_RUNTIME_WIRING
+FOUNDATION_PR                       = #68 / SQUASH_MERGED
+FOUNDATION_MERGE_COMMIT             = 80601de973740e8654b2cea2c4ecf419f4378c0a
+FOUNDATION_REVIEWED_HEAD            = dd2d15ffe9684ac6be567a23c36dbc25786b1038
+FOUNDATION_BRANCH_VERIFICATION      = #619 / 30245463139 PASS
+FOUNDATION_CHANGED_FILES            = 10 / CHATWOOT-ONLY
+LATEST_MERGED_MIGRATION             = 0016_tiktok_post_lark_pipeline.sql
+WOO_INTEGRATION_PR                  = #94 / OPEN / RESERVES 0017
+CHATWOOT_MIGRATION                  = PROVISIONAL_0018 / NOT_CREATED
+RUNTIME_BRANCH                      = NOT_CREATED
+RUNTIME_PR                          = NOT_OPENED
 PROVIDER_EXECUTION                  = NOT RUN
 TOKEN_READ_OR_ROTATION              = NOT RUN
 QUEUE_MESSAGE                       = NOT SENT
 REMOTE_D1_OR_LARK_MUTATION          = NONE
 WORKER_DEPLOYMENT                   = NOT RUN
-SCHEDULES                           = DISABLED
+SCHEDULE_OR_WEBHOOK                 = DISABLED
 CUSTOMER_OR_PRODUCTION_LIVE_UAT     = NOT RUN
 PRODUCTION                          = BLOCKED
 ```
 
-## Merge result
+## Foundation merge result
 
-PR `#73` was Squash Merged into `main` at
-`13ebba1476d7983428c5b5ce51ce754adf493ad5` after alignment with the merged YouTube Organic
-baseline and final verification on reviewed head
-`a700f5f31ebd24a32cc64cc6ca5ffe123a632ff4`.
+PR `#68` passed Integration Review after all recorded blockers were remediated. It was aligned with
+`main` through PR `#95`, verified on exact head
+`dd2d15ffe9684ac6be567a23c36dbc25786b1038`, and Squash Merged into `main` at
+`80601de973740e8654b2cea2c4ecf419f4378c0a`.
 
-PR `#82` was rebuilt on the merged parent baseline and Squash Merged into `main` at
-`0f38aeb8a1c69e8655145f97808f3d3d1b31615a` after final verification on reviewed head
-`9b6f8d48891daa9ad7620f731dcdf2483da871e3`.
+Merged foundation scope:
 
-Repository merge alone did not call Meta, read or rotate a Token, deploy a Worker, send a Queue
-message, mutate Remote D1/Lark, enable a Schedule or authorize LIVE UAT.
+- bounded Chatwoot Application API polling;
+- correct backwards Message-history pagination;
+- strict retry, timeout, page, row and response-size bounds;
+- PII-minimized account, inbox, contact, agent, team, label, conversation, message and event models;
+- stable keys, deterministic source hashes and immutable identity protection;
+- correct Daily Message/Event/Conversation date grain and null semantics;
+- independent Connector, D1, Lark, Report and Checkpoint gates;
+- partial-to-complete Coverage finalization only after required sinks;
+- batched D1 reads and existing `TableSyncEngine` reuse.
 
-## Chemistry K exact source identities
+The merge adds no numbered migration and performs no runtime wiring.
 
-```text
-Facebook Page
-page_id=982406442148381
-name=เคมี K
+## Migration ownership and parallel-workstream lock
 
-Instagram Professional Account
-account_id=17841413521012797
-username=chemistry_key
+WooCommerce Integration Draft PR `#94` is the current owner of additive Migration `0017`.
+Chatwoot must not create a numbered migration while that ownership is unresolved.
 
-Meta Ads
-sourceAccountKey=chemistry_k2
-account_id=505898710119851
-name=ChemistryK2
+The next Chatwoot migration is only **provisionally** `0018`. Before implementation, refresh:
 
-sourceAccountKey=chemistry_k3
-account_id=851206695716861
-name=ChemistryK3
-```
+1. current `main`;
+2. open Integration PRs;
+3. the actual migration directory;
+4. PR `#94` status and final migration number.
 
-Canonical Ads mapping:
+If WooCommerce does not merge `0017`, Chatwoot must allocate from the then-current sequence rather
+than preserving a gap or assuming `0018`.
 
-```text
-META_AD_ACCOUNT_MAPPINGS=chemistry_k2=505898710119851,chemistry_k3=851206695716861
-```
+## Runtime Wiring scope after migration ownership stabilizes
 
-Tokens remain Environment/Secret Manager inputs and are not committed, logged or written into
-operator evidence.
-
-## Merged protected runtime
-
-The Shared Worker route now preserves this order:
+Open a unique Integration branch and Draft PR. Recommended branch:
 
 ```text
-YouTube guarded route
-→ Google Ads protected route
-→ Meta protected route
-→ existing TikTok/report/active fallback
+integration/chatwoot-safe-wiring
 ```
 
-Merged Meta contracts:
+Repository-only implementation must:
 
-- Facebook Organic, Instagram Organic and Meta Ads jobs remain `uat_pending` and manual-only;
-- Meta Connector activation requires the exact Integration Workspace and source-read gate;
-- all new Connector/source/D1/Lark/report flags default to `false`;
-- Meta Ads mappings are bounded, normalized and reject duplicate aliases or Account IDs;
-- canonical multi-account and legacy singular configuration cannot be enabled together;
-- every Meta Ads operation selects exactly one configured `sourceAccountKey`;
-- Queue work identity is `meta_ads:<sourceAccountKey>:<operationId>`;
-- sync-run identity, Reliability scope and continuation preserve the selected account;
-- Coverage IDs include the exact Ad Account ID;
-- preflight results expose sanitized counts only;
-- the existing Reliability, Queue, D1 history/Coverage and Lark `TableSyncEngine` are reused.
+1. allocate the next additive Chatwoot migration without collision;
+2. create the approved Chatwoot D1 tables and indexes;
+3. wire `D1ChatwootAnalyticsStore` through the existing Worker route;
+4. reuse the existing Reliability runner, distributed lock, generation fence, Queue retry and DLQ;
+5. preserve D1-before-Lark ordering and partial Coverage until every enabled required sink succeeds;
+6. add Connector/Job catalog status as `uat_pending`, never directly `active`;
+7. add exact runtime flags with every value defaulting to `false`;
+8. add Shared Lark logical mappings only—no Remote Base apply;
+9. keep Webhook unsupported and Schedule disabled;
+10. add route-isolation, gate-combination, lock-loss, retry, partial-sink and checkpoint regressions;
+11. pass exact-head Branch Verification and stop before Remote actions.
 
-## Merged read-only operator
-
-The operator is deliberately ordered and fail-closed:
+## Required default-false controls
 
 ```text
-plan
-→ configuration preflight with zero Provider requests
-→ Facebook exact Page validation
-→ Instagram exact Professional Account validation
-→ Meta Ads chemistry_k2 exact validation
-→ Meta Ads chemistry_k3 exact validation
-→ sanitized summary
+MKT_CONNECTOR_CHATWOOT_ENABLED=false
+MKT_CHATWOOT_D1_WRITE_ENABLED=false
+MKT_CHATWOOT_LARK_WRITE_ENABLED=false
+MKT_CHATWOOT_REPORT_WRITE_ENABLED=false
+MKT_SCHEDULE_CHATWOOT_ENABLED=false
+MKT_CHATWOOT_WEBHOOK_ENABLED=false
 ```
 
-Safety contract:
-
-- plan-only default;
-- exact confirmation for every executable phase;
-- every Connector, Meta, D1/report, DLQ-redrive and Schedule flag must explicitly be `false`;
-- one Connector/account is validated per Provider phase;
-- transport is GET-only and the bearer Token is not placed in the URL;
-- unknown Meta Ads aliases fail before a Provider request;
-- evidence is ordered and bound to contract version, API version and sanitized target fingerprint;
-- evidence contains no Token or raw Page/Instagram/Ad Account ID;
-- the operator contains no Queue, D1/Lark mutation, Worker deployment, Schedule or Production path.
-
-## Verification result
-
-Runtime final verification:
-
-```text
-Meta End-to-End Verification      #26 / 30242465671 PASS
-Branch Verification               #593 / 30242465674 PASS
-```
-
-Operator final verification:
-
-```text
-Meta End-to-End Verification      #29 / 30243180589 PASS
-Branch Verification               #605 / 30243180585 PASS
-```
-
-The workflows passed dependency installation, diff and repository hygiene, focused Meta/TikTok
-regressions, full Unit and Workers runtime tests, Report reliability, dependency audit, Wrangler
-dry-run and diagnostics upload. Wrangler validation did not deploy a Worker.
-
-## Repository hygiene note
-
-During PR `#82` branch reconstruction, a temporary file `tmp/noop` containing only `x` was
-accidentally committed directly to `main` at
-`62857a7e6c298b4be02dc105aeecbff4080d5313` and immediately removed at
-`6158a8b1381d62539274a7fa77d7860bdbee624a`.
-
-The final tree contains no temporary file. The incident changed no Business fact, Secret, Runtime
-configuration, migration, Queue state, D1/Lark data or deployed infrastructure. Both commits remain
-visible as audit history.
+Storage or Report gates must never implicitly enable Connector, Schedule or Webhook execution.
 
 ## Remote safe state
 
+The foundation alignment, verification and merge performed no:
+
 ```text
-Meta Provider/API GET             NOT RUN
-Token inspection/rotation         NOT RUN
-Queue message                     NOT SENT
-DLQ action                        NONE
-Remote D1 migration/mutation      NONE
-Remote Lark schema/data mutation  NONE
-Worker deployment                 NOT RUN
-Schedule activation               NONE
-Customer/Production LIVE UAT      NOT RUN
-Production                        BLOCKED
+Chatwoot Provider/API request       NOT RUN
+Customer token access/rotation      NOT RUN
+Worker deployment                   NOT RUN
+Numbered migration creation/apply   NONE
+Remote D1 Business mutation         NONE
+Remote Lark schema/data mutation    NONE
+Queue send / retry / DLQ action     NONE
+Schedule/Webhook activation         NONE
+Customer/Production LIVE UAT        NOT RUN
+Production                          BLOCKED
 ```
 
-## Next separately authorized gate
+## Next action
 
-The next action requires a local authorized Integration Workspace checkout containing the real
-Meta credentials. It must be executed one phase at a time:
+Do not start collision-prone runtime implementation until WooCommerce PR `#94` establishes the
+migration owner. Once stable, create the Integration branch from then-current `main`, re-read
+`AGENTS.md` and this file, inspect the entire Shared runtime and open Draft PRs, then implement and
+verify Repository-only Runtime Wiring.
 
-1. run the operator plan;
-2. authorize and run configuration preflight with zero Provider requests;
-3. review the preflight evidence;
-4. authorize one Facebook GET-only validation;
-5. authorize one Instagram GET-only validation;
-6. authorize one `chemistry_k2` GET-only validation;
-7. authorize one `chemistry_k3` GET-only validation;
-8. generate and review the sanitized summary.
-
-Merge does not authorize these Provider phases automatically. D1-only processing, Coverage
-reconciliation, Lark parity, LIVE UAT, schedule activation and Production remain separate later
-approval gates.
-
-## Detailed records
+Detailed closeout:
 
 ```text
-docs/tasks/meta-runtime-wiring.md
-docs/tasks/meta-read-only-validation-operator.md
-docs/runbooks/meta-read-only-validation.md
+docs/project-brain/chatwoot-foundation-merge-closeout-2026-07-27.md
 ```
 
-Previous Current Task:
+Previous Current Task archive:
 
 ```text
-docs/archive/current-task-before-meta-read-only-operator-closeout-2026-07-27.md
+docs/archive/current-task-before-chatwoot-foundation-closeout-2026-07-27.md
 ```
