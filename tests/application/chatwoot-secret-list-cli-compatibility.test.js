@@ -10,6 +10,12 @@ test('Chatwoot preflight uses the supported Wrangler secret-list JSON format', a
     'utf8',
   );
 
-  assert.match(source, /'wrangler', 'secret', 'list',[\s\S]*?'--format', 'json'/u);
-  assert.doesNotMatch(source, /'wrangler', 'secret', 'list',[\s\S]*?'--json'/u);
+  assert.match(
+    source,
+    /'wrangler', 'secret', 'list',\s*'--config', target\.wranglerConfig,\s*'--format', 'json'/u,
+  );
+  assert.doesNotMatch(
+    source,
+    /'wrangler', 'secret', 'list',\s*'--config', target\.wranglerConfig,\s*'--json'/u,
+  );
 });
