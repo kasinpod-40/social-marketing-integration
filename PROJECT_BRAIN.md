@@ -26,10 +26,13 @@ TikTok operator reviewed head                 df229ccade82ce7869c01bbf75c1cb3fc0
 TikTok operator final verification            #558 PASS
 Meta end-to-end implementation                merged via PR #69
 Meta implementation merge commit              11e861cfbc79ea067a90496b205f692ca8bb4d3d
+YouTube end-to-end source implementation      Draft PR #72 / PASS_FOR_INTEGRATION
+YouTube shared wiring branch                  integration/youtube-organic-safe-rollout
+YouTube shared wiring                         implemented / verification pending
 Migration 0016                                source only / not applied remotely
-Worker deployment                             not run for TikTok rollout
-Queue send / DLQ redrive                      none for TikTok rollout
-Remote D1 / Lark mutation                     none for TikTok rollout
+Worker deployment                             not run for TikTok or YouTube rollout
+Queue send / DLQ redrive                      none for TikTok or YouTube rollout
+Remote D1 / Lark mutation                     none for TikTok or YouTube rollout
 Schedules                                     disabled
 Retention/delete                              blocked
 Production                                    blocked
@@ -120,16 +123,44 @@ Detailed operator closeout:
 docs/project-brain/tiktok-post-lark-rollout-operator-merge-closeout-2026-07-27.md
 ```
 
+## YouTube Organic integration wiring
+
+Reviewed YouTube End-to-End implementation from Draft PR `#72` is imported into the dedicated Integration branch. Shared routing now selects the D1-first End-to-End route only when the dedicated gate is explicitly true:
+
+```text
+YouTube job + MKT_YOUTUBE_END_TO_END_ENABLED=true
+  → dedicated D1-first route
+
+YouTube job + flag false/unset
+  → existing active router and legacy YouTube route
+
+Non-YouTube job
+  → existing Google Ads/TikTok/History/Active chain unchanged
+```
+
+The integration reuses the existing YouTube API client, Shared Google OAuth Core, normalizers, Reliability runner, distributed lock, resumable work, Organic history writer, D1 stores, Coverage and `TableSyncEngine`. No duplicate Connector, Queue, Reliability, D1, Lark or Report engine was created.
+
+Repository implementation details:
+
+```text
+docs/tasks/youtube-organic-integration-wiring-safe-rollout.md
+```
+
+Remote schema inspection, Worker deployment, Provider calls, Queue messages, D1/Lark Business writes, schedules and LIVE UAT remain blocked pending separate authorization.
+
 ## Default-false controls
 
 ```text
 MKT_TIKTOK_AUDIT_HTTP_ENABLED=false
 MKT_TIKTOK_WATERMARK_ADMISSION_ENABLED=false
 MKT_TIKTOK_POST_PROCESS_REPORT_ENABLED=false
+MKT_YOUTUBE_END_TO_END_ENABLED=false
+MKT_YOUTUBE_LARK_WRITE_ENABLED=false
 MKT_REPORT_D1_SHADOW_READ_ENABLED=false
 MKT_REPORT_D1_READ_ENABLED=false
 MKT_REPORT_PRESET_MATERIALIZATION_ENABLED=false
 MKT_SCHEDULE_TIKTOK_ENABLED=false
+MKT_SCHEDULE_YOUTUBE_ENABLED=false
 MKT_SCHEDULE_DAILY_REPORT_ENABLED=false
 MKT_LARK_DAILY_RETENTION_ENABLED=false
 ```
@@ -156,7 +187,7 @@ Do not create a parallel Reliability, Queue, D1 writer, Lark sync or Report engi
 ```text
 TikTok Organic       pipeline PR #65 merged / rollout operator PR #71 merged / Remote rollout pending
 All Meta             implementation PR #69 merged / protected runtime wiring remains separate Draft work
-YouTube Organic      separate Draft PR
+YouTube Organic      PR #72 reviewed / Integration wiring branch verification pending
 Chatwoot             separate Draft PR
 WooCommerce          separate Draft PR
 Google Ads           complete / safely closed
@@ -181,6 +212,19 @@ Repository tooling is merged, but no Remote phase is authorized automatically. T
 11. validate Lark-primary + D1-shadow parity and exact rerun stability;
 12. validate D1-primary with an immediate Lark-primary rollback path;
 13. only then propose controlled schedule activation.
+
+## Next separately approved YouTube rollout
+
+After repository verification and merge, Remote work must proceed in separate gates:
+
+1. authenticated read-only verification that Storage Foundation `0009` tables exist;
+2. inspect deployed configuration and confirm every YouTube/Storage/Report/Schedule flag is false;
+3. separately authorize an all-flags-false Worker deployment;
+4. separately authorize a dry-run/read-only YouTube operation;
+5. verify non-dry execution is blocked while D1 or Lark gate is false;
+6. separately authorize controlled Integration Workspace D1-first/Lark UAT;
+7. verify Coverage, idempotent rerun and D1 Report shadow parity;
+8. keep Schedule and Production blocked until a new explicit approval.
 
 ## Permanent safety rules
 
