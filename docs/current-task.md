@@ -3,10 +3,11 @@
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = REPOSITORY_HOTFIX_IMPLEMENTED_CI_PENDING
+TASK_STATUS                         = IMPLEMENTATION_COMPLETE_FINAL_HEAD_VERIFICATION_PENDING
 CURRENT_PROGRAM                     = YOUTUBE_QUEUE_TIMEOUT_REMOTE_COMPATIBILITY_HOTFIX
-BASE_MAIN_SHA                       = 197be38956222ed536560eb30aad9500f7643097
+BASE_MAIN_SHA                       = 8fc1d504d7af2ed7d005d0a8c3324c2c83b9cd2f
 BRANCH                              = hotfix/youtube-queue-max-wait-time-ms
+DRAFT_PR                            = #152 / OPEN / DRAFT / UNMERGED
 IMPLEMENTATION_OWNER                = CHATGPT_WORK_GITHUB_TOOLS
 HISTORICAL_YOUTUBE_LARK_SYNC        = CONFIRMED_PASS
 REMOTE_READ_ONLY_PREFLIGHT          = FAIL_CLOSED_AT_QUEUE_TIMEOUT_PARSE
@@ -86,6 +87,8 @@ WORKER_DEPLOYMENT                   = NOT_RUN
 - Never default a missing Remote timeout from Local configuration.
 - Preserve exact Queue command context, Main/DLQ separation, D1 UUID, flags, Secrets, consumers, Cron,
   routes, workers.dev, traffic and Remote fingerprint validation.
+- Exercise the complete deterministic Remote fingerprint regression using the current live
+  `max_wait_time_ms` shape for both Main Queue and DLQ.
 
 ## Acceptance
 
@@ -97,26 +100,36 @@ seconds/milliseconds mismatch       = FAIL_CLOSED
 missing Remote timeout              = FAIL_CLOSED / NO LOCAL DEFAULT
 legacy seconds field                = PASS
 Main Queue and DLQ contexts         = DISTINCT
+Remote fingerprint after normalize = UNCHANGED / PASS
 ```
 
-## Required verification
+## Verification history
+
+The initial implementation head `55c0d28977c22de9874febe7b1491f43fccabc8a` passed Branch Verification
+`#771` / run `30300067213` completely:
 
 ```text
-Focused YouTube parser tests
-Focused rollout/preflight regressions
-npm run check
-npm test
-npm run test:report-reliability
-npm audit --audit-level=high
-npm run deploy:dry-run
+INSTALL_LOCKED_DEPENDENCIES         = PASS
+SYNTAX_ARCHITECTURE_HYGIENE         = PASS
+FOCUSED_STAGED_TIKTOK               = PASS
+NODE_AND_WORKERS_RUNTIME            = PASS
+REPORT_RELIABILITY                  = PASS
+DEPENDENCY_AUDIT                    = PASS
+WRANGLER_DRY_RUN                    = PASS / NO DEPLOYMENT
+REMOTE_ACTION_COUNT                 = 0
 ```
+
+After that proof, the Full fingerprint fixture was strengthened to use the actual Live
+`max_wait_time_ms` response shape. Alignment PR #153 then merged current
+`main@8fc1d504d7af2ed7d005d0a8c3324c2c83b9cd2f` into the Hotfix Branch. Exact combined-head Branch
+Verification is therefore required again before Integration review.
 
 ## Remaining sequence
 
 ```text
-Draft PR
-→ exact-head Branch Verification
-→ Integration review
+Exact combined-head Branch Verification
+→ Integration review and zero-thread check
+→ mark PR #152 Ready
 → separate Squash Merge decision
 → rerun the same one-command Remote read-only preflight
 ```
