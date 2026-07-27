@@ -13,8 +13,10 @@ import {
 import {
   assertStableActiveDeployment,
   classifyYouTubeRemoteReadOnlyPreflight,
+  normalizeYouTubeRemotePreflightDecision,
   parsePendingMigrationNames,
   parseSingleActiveDeployment,
+  readYouTubeD1MigrationListWithRetry,
 } from './lib/youtube-remote-read-only-preflight.js';
 
 const execFileAsync = promisify(execFile);
@@ -46,7 +48,7 @@ try {
         'Worker version metadata',
         'Main Queue and DLQ consumer metadata',
         'Cron, routes and workers.dev metadata',
-        'D1 pending migration list',
+        'D1 pending migration list with bounded transient-read retry',
         'reviewed safe/active local config fingerprints',
       ],
       forbidden: [
@@ -142,7 +144,7 @@ try {
       scriptList,
       schedules,
       subdomain,
-      migrationsText,
+      migrationsRead,
     ] = await Promise.all([
       readVersionView(activeConfigPath, workerName, activeBefore.versionId),
       readQueueConsumers(mainQueueName),
@@ -150,10 +152,12 @@ try {
       readAllCloudflareWorkerScripts(accountPath, apiToken),
       cloudflareApiJson(`${scriptPath}/schedules`, apiToken),
       cloudflareApiJson(`${scriptPath}/subdomain`, apiToken),
-      wranglerText([
-        'd1', 'migrations', 'list', 'MKT_STATE_DB', '--remote',
-        '--config', activeConfigPath,
-      ]),
+      readYouTubeD1MigrationListWithRetry({
+        run: () => wranglerText([
+          'd1', 'migrations', 'list', 'MKT_STATE_DB', '--remote',
+          '--config', activeConfigPath,
+        ]),
+      }),
     ]);
     const deploymentAfter = await readDeploymentStatus(activeConfigPath, workerName);
     const stable = assertStableActiveDeployment(deploymentBefore, deploymentAfter);
@@ -177,7 +181,7 @@ try {
       expectedRemoteFingerprint: expected.remoteContractFingerprint,
     });
     const migration = classifyYouTubeRemoteReadOnlyPreflight({
-      pendingMigrations: parsePendingMigrationNames(migrationsText),
+      pendingMigrations: parsePendingMigrationNames(migrationsRead.text),
     });
     const summary = Object.freeze({
       ok: migration.decision === 'PASS_READ_ONLY_PREFLIGHT',
@@ -198,6 +202,8 @@ try {
       expectedFalseFlagCount: contract.expectedFalseFlagCount,
       materializedFalseFlagCount: contract.materializedFalseFlagCount,
       queueConsumerCount: contract.queueConsumerCount,
+      migrationReadAttempts: migrationsRead.attempts,
+      migrationReadTransientRetries: migrationsRead.transientRetries,
       pendingMigrations: migration.pendingMigrations,
       migration0017: migration.migration0017,
       migration0018: migration.migration0018,
@@ -223,7 +229,7 @@ try {
 } catch (error) {
   process.stderr.write(`${JSON.stringify({
     ok: false,
-    decision: error?.code ?? 'BLOCKED_REMOTE_CONTRACT',
+    decision: normalizeYouTubeRemotePreflightDecision(error?.code),
     message: error instanceof Error ? error.message : String(error),
     diagnostic: sanitizeDiagnostic(error?.details),
     remoteMutation: 'NONE',
@@ -393,6 +399,10 @@ function sanitizeDiagnostic(details) {
     'matchCount',
     'name',
     'status',
+    'attempts',
+    'transientRetries',
+    'cloudflareCode',
+    'retryable',
   ]);
   const sanitized = Object.fromEntries(
     Object.entries(details)

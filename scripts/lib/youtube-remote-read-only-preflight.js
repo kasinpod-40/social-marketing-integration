@@ -1,4 +1,6 @@
 const VERSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const SEMANTIC_DECISION = /^[A-Z][A-Z0-9_]+$/u;
+const CLOUDFLARE_D1_INTERNAL_ERROR_CODE = 7500;
 
 export const YOUTUBE_REMOTE_READ_ONLY_DECISIONS = Object.freeze({
   PASS: 'PASS_READ_ONLY_PREFLIGHT',
@@ -61,6 +63,79 @@ export function assertStableActiveDeployment(before, after) {
   });
 }
 
+/**
+ * Retry only the known transient Cloudflare D1 internal-read failure. Authentication, target,
+ * config, migration, parser and every other command error remain single-attempt fail-closed.
+ */
+export async function readYouTubeD1MigrationListWithRetry(input = {}) {
+  const run = requireFunction(input.run, 'run');
+  const sleep = input.sleep === undefined
+    ? sleepMilliseconds
+    : requireFunction(input.sleep, 'sleep');
+  const maxAttempts = boundedInteger(input.maxAttempts ?? 3, 'maxAttempts', 1, 5);
+  const baseDelayMs = boundedInteger(input.baseDelayMs ?? 1_000, 'baseDelayMs', 0, 30_000);
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const migrationText = await run({ attempt });
+      if (typeof migrationText !== 'string') {
+        throw preflightError(
+          'Wrangler migration output must be text',
+          'YOUTUBE_REMOTE_PREFLIGHT_MIGRATION_OUTPUT_INVALID',
+        );
+      }
+      return Object.freeze({
+        text: migrationText,
+        attempts: attempt,
+        transientRetries: attempt - 1,
+      });
+    } catch (cause) {
+      if (!isRetryableCloudflareD1MigrationReadError(cause)) {
+        if (typeof cause?.code === 'string' && SEMANTIC_DECISION.test(cause.code)) throw cause;
+        throw preflightError(
+          'Cloudflare D1 migration-list read failed',
+          'YOUTUBE_REMOTE_PREFLIGHT_D1_MIGRATION_READ_FAILED',
+          { attempts: attempt, retryable: false },
+        );
+      }
+      if (attempt >= maxAttempts) {
+        throw preflightError(
+          'Cloudflare D1 migration-list read exhausted bounded transient retries',
+          'YOUTUBE_REMOTE_PREFLIGHT_D1_MIGRATION_READ_TRANSIENT_EXHAUSTED',
+          {
+            attempts: attempt,
+            transientRetries: attempt - 1,
+            cloudflareCode: CLOUDFLARE_D1_INTERNAL_ERROR_CODE,
+          },
+        );
+      }
+      await sleep(baseDelayMs * attempt);
+    }
+  }
+
+  throw preflightError(
+    'Cloudflare D1 migration-list retry state is invalid',
+    'YOUTUBE_REMOTE_PREFLIGHT_D1_MIGRATION_READ_FAILED',
+  );
+}
+
+export function isRetryableCloudflareD1MigrationReadError(error) {
+  const output = stripAnsi([
+    error?.message,
+    error?.stderr,
+    error?.stdout,
+    error?.cause?.message,
+    error?.cause?.stderr,
+  ].filter((value) => value !== undefined && value !== null).join('\n'));
+  return /\binternal error\b/iu.test(output)
+    && /(?:\[code:\s*7500\]|\bcode\s*[:=]\s*7500\b)/iu.test(output);
+}
+
+export function normalizeYouTubeRemotePreflightDecision(value, fallback = 'BLOCKED_REMOTE_CONTRACT') {
+  const decision = typeof value === 'string' ? value.trim() : '';
+  return SEMANTIC_DECISION.test(decision) ? decision : fallback;
+}
+
 export function classifyYouTubeRemoteReadOnlyPreflight(input = {}) {
   const pendingMigrations = Object.freeze([
     ...new Set(Array.isArray(input.pendingMigrations) ? input.pendingMigrations : []),
@@ -86,6 +161,37 @@ export function classifyYouTubeRemoteReadOnlyPreflight(input = {}) {
       ? 'PENDING'
       : 'NOT_PENDING',
   });
+}
+
+function stripAnsi(value) {
+  return String(value ?? '').replace(/\u001B\[[0-?]*[ -/]*[@-~]/gu, '');
+}
+
+function boundedInteger(value, fieldName, minimum, maximum) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number < minimum || number > maximum) {
+    throw preflightError(
+      `${fieldName} must be an integer from ${minimum} to ${maximum}`,
+      'YOUTUBE_REMOTE_PREFLIGHT_RETRY_CONFIG_INVALID',
+      { fieldName },
+    );
+  }
+  return number;
+}
+
+function requireFunction(value, fieldName) {
+  if (typeof value !== 'function') {
+    throw preflightError(
+      `${fieldName} must be a function`,
+      'YOUTUBE_REMOTE_PREFLIGHT_RETRY_CONFIG_INVALID',
+      { fieldName },
+    );
+  }
+  return value;
+}
+
+function sleepMilliseconds(milliseconds) {
+  return new Promise((resolveSleep) => setTimeout(resolveSleep, milliseconds));
 }
 
 function text(value) {
