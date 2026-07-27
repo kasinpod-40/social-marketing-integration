@@ -11,6 +11,7 @@ import { writeYouTubeAccountSnapshot } from './youtube-account-history-storage.j
 
 const PLATFORM = 'youtube';
 const CONTENT_DATASET_KEY = 'organic_content_cumulative';
+const STORAGE_BATCH_SIZE = 500;
 const CAPTURE_NAMES = Object.freeze([
   'rawChannels',
   'rawVideos',
@@ -25,6 +26,7 @@ export async function writeYouTubeOrganicStorageFirst(context, captured) {
   const ids = await createStorageIds(context, rows);
   const availabilityRows = selectYouTubeAvailabilityRows(rows.rawVideos);
   const contentRows = sortContentRows(rows.contentRows);
+  const dailyByContentId = indexDailyRows(rows.dailyRows);
   const contentIds = new Set(contentRows.map((row) => (
     requireText(row.external_content_id, 'external_content_id')
   )));
@@ -47,15 +49,32 @@ export async function writeYouTubeOrganicStorageFirst(context, captured) {
   let contentWrite = emptyContentWrite();
   let availabilityWrite = emptyAvailabilityWrite();
   try {
-    contentWrite = await writer.writeBatch({
-      contentRows,
-      dailySnapshotRows: rows.dailyRows,
-    });
+    for (const contentBatch of chunks(contentRows, STORAGE_BATCH_SIZE)) {
+      await assertLockActive(context);
+      const batchWrite = await writer.writeBatch({
+        contentRows: contentBatch,
+        dailySnapshotRows: contentBatch.map((row) => {
+          const externalContentId = requireText(row.external_content_id, 'external_content_id');
+          const daily = dailyByContentId.get(externalContentId);
+          if (!daily) {
+            throw permanentError('YouTube D1 storage is missing a matching Daily row', {
+              code: 'YOUTUBE_END_TO_END_CAPTURE_INCOMPLETE',
+              details: { externalContentId },
+            });
+          }
+          return daily;
+        }),
+      });
+      contentWrite = mergeContentWrite(contentWrite, batchWrite);
+    }
+    await assertLockActive(context);
     availabilityWrite = await writeYouTubeAvailabilityStates({
       context,
       ids,
       rawVideoRows: unavailableWithoutContent,
+      batchSize: STORAGE_BATCH_SIZE,
     });
+    await assertLockActive(context);
     await writer.completeCoverage({
       expectedEntities: availabilityRows.length,
       observedEntities: availabilityRows.length,
@@ -85,6 +104,7 @@ export async function writeYouTubeOrganicStorageFirst(context, captured) {
     throw error;
   }
 
+  await assertLockActive(context);
   const accountWrite = await writeYouTubeAccountSnapshot({
     context,
     ids,
@@ -109,19 +129,37 @@ export async function previewYouTubeOrganicStorage(context, captured) {
   const rows = requireCapturedRows(captured);
   const ids = await createStorageIds(context, rows);
   const contentRows = sortContentRows(rows.contentRows);
+  const dailyByContentId = indexDailyRows(rows.dailyRows);
   const contentIds = new Set(contentRows.map((row) => row.external_content_id));
-  const plan = await createWriter(context, ids, context.gateway).preflightBatch({
-    contentRows,
-    dailySnapshotRows: rows.dailyRows,
-  });
+  let plannedStateRows = 0;
+  let plannedObservationRows = 0;
+  for (const contentBatch of chunks(contentRows, STORAGE_BATCH_SIZE)) {
+    await assertLockActive(context);
+    const plan = await createWriter(context, ids, context.gateway).preflightBatch({
+      contentRows: contentBatch,
+      dailySnapshotRows: contentBatch.map((row) => {
+        const externalContentId = requireText(row.external_content_id, 'external_content_id');
+        const daily = dailyByContentId.get(externalContentId);
+        if (!daily) {
+          throw permanentError('YouTube D1 preview is missing a matching Daily row', {
+            code: 'YOUTUBE_END_TO_END_CAPTURE_INCOMPLETE',
+            details: { externalContentId },
+          });
+        }
+        return daily;
+      }),
+    });
+    plannedStateRows += plan.stateRows.length;
+    plannedObservationRows += plan.observationRows.length;
+  }
   return Object.freeze({
     status: 'preview',
     mode: 'read_only',
     sourceWatermark: ids.sourceWatermark,
     contentCoverageRunId: ids.contentCoverageRunId,
     accountCoverageRunId: ids.accountCoverageRunId,
-    plannedStateRows: plan.stateRows.length,
-    plannedObservationRows: plan.observationRows.length,
+    plannedStateRows,
+    plannedObservationRows,
     plannedAvailabilityRows: selectYouTubeAvailabilityRows(rows.rawVideos).filter((row) => (
       normalizeYouTubeAvailability(row.source_availability_status) !== 'available'
         && !contentIds.has(row.video_id)
@@ -218,6 +256,46 @@ function sortContentRows(rows) {
   )));
 }
 
+function indexDailyRows(rows) {
+  const result = new Map();
+  for (const row of rows) {
+    const externalContentId = requireText(row.external_content_id, 'daily.external_content_id');
+    if (result.has(externalContentId)) {
+      throw permanentError('YouTube D1 capture contains duplicate Daily Content IDs', {
+        code: 'YOUTUBE_END_TO_END_CAPTURE_INCOMPLETE',
+        details: { externalContentId },
+      });
+    }
+    result.set(externalContentId, row);
+  }
+  return result;
+}
+
+function chunks(rows, size) {
+  const result = [];
+  for (let offset = 0; offset < rows.length; offset += size) {
+    result.push(Object.freeze(rows.slice(offset, offset + size)));
+  }
+  return result;
+}
+
+function mergeContentWrite(left, right) {
+  return Object.freeze({
+    contentRows: left.contentRows + right.contentRows,
+    stateWritten: left.stateWritten + right.stateWritten,
+    stateSkipped: left.stateSkipped + right.stateSkipped,
+    observationsCreated: left.observationsCreated + right.observationsCreated,
+    observationsSkipped: left.observationsSkipped + right.observationsSkipped,
+    observationsNotRequired: left.observationsNotRequired + right.observationsNotRequired,
+    coverageEntitiesWritten: left.coverageEntitiesWritten + right.coverageEntitiesWritten,
+    coverageEntitiesSkipped: left.coverageEntitiesSkipped + right.coverageEntitiesSkipped,
+    classifications: Object.freeze([
+      ...(left.classifications ?? []),
+      ...(right.classifications ?? []),
+    ]),
+  });
+}
+
 function emptyContentWrite() {
   return Object.freeze({
     contentRows: 0,
@@ -228,6 +306,7 @@ function emptyContentWrite() {
     observationsNotRequired: 0,
     coverageEntitiesWritten: 0,
     coverageEntitiesSkipped: 0,
+    classifications: Object.freeze([]),
   });
 }
 
@@ -239,6 +318,12 @@ function emptyAvailabilityWrite() {
     coverageWritten: 0,
     coverageSkipped: 0,
   });
+}
+
+async function assertLockActive(context) {
+  if (typeof context.assertLockActive === 'function') {
+    await context.assertLockActive();
+  }
 }
 
 function requireText(value, fieldName) {
