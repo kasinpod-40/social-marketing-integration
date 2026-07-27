@@ -1,80 +1,97 @@
-# Current Task — Chatwoot Runtime Wiring Merge Closeout
+# Current Task — Chatwoot Remote Read-only Preflight and Migration 0018 Readiness
 
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = MERGED_REMOTE_INTEGRATION_NOT_AUTHORIZED
-CURRENT_PROGRAM                     = CHATWOOT_INTEGRATION_RUNTIME_WIRING
-MERGED_PR                           = #97
-SOURCE_HEAD                         = ff1ea87472fced8a48c2551d66a100d2b59220fc
-MERGED_MAIN_SHA                     = 91ab3c6d153aa8e3e1188a5a5df75ad1b5b8ce19
-MERGE_METHOD                        = SQUASH
-MERGED_AT                           = 2026-07-27T14:15:29Z
-FOUNDATION_PR                       = #68 / MERGED
-MIGRATION_0017                      = APPLIED_OUTSIDE_WORKSTREAM / DO_NOT_RERUN
+TASK_STATUS                         = IMPLEMENTATION_IN_PROGRESS
+CURRENT_PROGRAM                     = CHATWOOT_REMOTE_PREFLIGHT_AND_MIGRATION_READINESS
+BASE_MAIN_SHA                       = f3e330339b114536c3a1a9ee7567abf5a76fa78b
+BRANCH                              = integration/chatwoot-remote-preflight
+DRAFT_PR                            = NOT_OPEN
+IMPLEMENTATION_OWNER                = CHATGPT_WORK_GITHUB_TOOLS
+MIGRATION_0017                      = APPLIED_REMOTE / DO_NOT_RERUN
 MIGRATION_0018                      = SOURCE_ONLY / NOT_APPLIED
-REMOTE_ACTION_AUTHORIZED            = false
+REMOTE_EXECUTION_AUTHORIZED         = false
 REMOTE_ACTIONS                      = NONE
+CHATWOOT_PROVIDER_REQUEST           = NOT_RUN
+QUEUE_OR_DLQ_ACTION                 = NONE
+LARK_MUTATION                       = NONE
+WORKER_DEPLOYMENT                   = NOT_RUN
+SCHEDULE_OR_WEBHOOK                 = DISABLED
 PRODUCTION                          = BLOCKED
 ```
 
-The completed implementation task is archived at:
+The preceding merge-closeout task is preserved at:
 
 ```text
-docs/archive/chatwoot-runtime-wiring-merged-current-task-2026-07-27.md
+docs/archive/current-task-before-chatwoot-remote-preflight-2026-07-27.md
 ```
 
-Technical contracts and durable project records remain in:
+## Objective
+
+Implement a guarded, plan-only-by-default Integration operator that can later perform separately
+confirmed Chatwoot Remote readiness phases without creating a new Reliability, Queue, D1 or Lark
+framework. The operator must prove the exact Integration Workspace target, all-false execution state,
+Migration `0018` ledger state, checksum-backed backup and additive schema read-back before any later
+Chatwoot Provider or Business-data UAT is considered.
+
+This Repository task implements and tests the operator only. It does not execute any Remote phase.
+
+## In scope
+
+- Add `scripts/chatwoot-remote-readiness-operator.mjs`.
+- Add a focused library under `scripts/lib/` for arguments, confirmations, target/config validation,
+  Migration ledger validation, read-only SQL and evidence validation.
+- Add package scripts for `plan`, `preflight`, `backup`, `migrate` and `schema-readback`.
+- Add focused Node tests and a Thai operator runbook.
+- Reuse Wrangler/D1 execution conventions and existing Repository gates.
+- Keep every Chatwoot, Queue/DLQ, Schedule, Webhook, Report and other Business execution flag false.
+- Record sanitized evidence only; never persist Secret values, Provider payloads or customer PII.
+
+## Operator phases
 
 ```text
-docs/tasks/chatwoot-end-to-end.md
-docs/tasks/chatwoot-integration-wiring.md
-docs/project-brain/chatwoot-foundation-merge-closeout-2026-07-27.md
-docs/project-brain/chatwoot-runtime-wiring-2026-07-27.md
-docs/project-brain/chatwoot-runtime-wiring-merge-closeout-2026-07-27.md
+plan
+→ preflight
+→ backup
+→ migrate
+→ schema-readback
 ```
 
-## Merge result
+Every executable phase requires its own exact confirmation. No phase is implied by another phase.
+The default invocation prints a plan and executes no Git, Wrangler, D1, Worker, Queue, Lark or
+Chatwoot Provider command.
 
-PR #97 passed exact-head Branch Verification and was Squash Merged into `main`. No direct push to
-`main` occurred.
+## Required target
 
 ```text
-PR_STATE                            = CLOSED
-PR_MERGED                           = true
-FINAL_SOURCE_HEAD                   = ff1ea87472fced8a48c2551d66a100d2b59220fc
-SQUASH_MERGE_COMMIT                 = 91ab3c6d153aa8e3e1188a5a5df75ad1b5b8ce19
-BRANCH_VERIFICATION                 = #655 / 30265965959 / PASS
-FINAL_DIAGNOSTICS_ARTIFACT          = 8652808933
-FINAL_ARTIFACT_DIGEST               = sha256:ff256e79e412b5cd9629fff2cb12260464b82f97010412606ad25ba4c91be18c
+MKT_ENV                          = development
+MKT_CUSTOMER_PROFILE             = integration_workspace
+MKT_CONNECTION_CUSTOMER_KEY      = chemistry_k
+D1 database                      = social-mkt-state-dev
+Worker                           = social-mkt-sync-worker
+Required pending Migration       = 0018_chatwoot_analytics.sql only
+Previous Migration               = 0017_woocommerce_commerce.sql already applied / do not rerun
 ```
 
-## Merged repository scope
+## Safety contracts
 
-- Additive `migrations/0018_chatwoot_analytics.sql` with 14 PII-minimized tables and indexes.
-- Strict fail-closed Chatwoot config; Provider identity and Token are not read while Connector is
-  disabled.
-- Chatwoot Connector and Queue Job remain protected `uat_pending` and `manualOnly`.
-- Stable account-scoped Queue identity: `chatwoot:<accountKey>:<operationId>`.
-- Exact operation identity, generation, original request time and deterministic `syncRunId` are
-  preserved through completion and replay.
-- Shared Reliability, Queue/DLQ, distributed lock, generation fence, resumable work, D1 Coverage,
-  checkpoint, Lark repository and `TableSyncEngine` contracts are reused.
-- D1 state/facts finish before optional Lark writes; Coverage completes before checkpoint advance.
-- Fifteen logical Chatwoot Lark table keys are registered without Remote Base mutation.
+- `preflight` is read-only and must fail unless all Business/Schedule/Webhook/DLQ-redrive flags are
+  explicitly false, the exact D1 binding/Queue topology is present, active durable work and active
+  locks are zero, Chatwoot tables are absent, and the only pending migration is `0018`.
+- `backup` requires passed preflight evidence and produces a non-empty local SQL export plus SHA-256.
+- `migrate` requires passed preflight and checksum-verified backup evidence; it may apply only the
+  exact pending Migration `0018` and must fail on any additional or missing pending migration.
+- `schema-readback` is read-only and requires no pending migrations, exactly 14 Chatwoot tables,
+  exactly 15 reviewed Chatwoot indexes, zero Chatwoot Business rows and no drift in captured Shared
+  operational/business counts.
+- The operator contains no Chatwoot HTTP request, Token read, Queue send, DLQ action, Lark call,
+  Worker deploy, Schedule/Webhook activation, retention/delete or Production path.
+- Migration `0017` must never be rerun.
 
-Locked route order:
+## Required false gates
 
-```text
-Chatwoot
-→ WooCommerce
-→ YouTube
-→ Google Ads
-→ Meta
-→ TikTok / reports / active fallback
-```
-
-## Default-false controls
+At minimum the operator must reject configuration unless these Chatwoot controls are false:
 
 ```text
 MKT_CONNECTOR_CHATWOOT_ENABLED=false
@@ -85,42 +102,56 @@ MKT_SCHEDULE_CHATWOOT_ENABLED=false
 MKT_CHATWOOT_WEBHOOK_ENABLED=false
 ```
 
-## Verification result
+It must also verify the Shared Integration Workspace Business, Queue-redrive, reporting, retention
+and other channel Schedule gates remain false so Migration readiness cannot activate unrelated work.
+
+## Acceptance criteria
+
+- Unsupported arguments/phases fail with stable sanitized codes.
+- Every executable phase has a distinct exact confirmation.
+- Target identity is locked to the Integration Workspace and exact D1 database.
+- Config validation fails closed on any enabled Business/Schedule/Webhook/DLQ-redrive flag.
+- Migration parser accepts only `0018_chatwoot_analytics.sql` as pending before apply and none after.
+- Preflight and schema SQL are `SELECT`-only.
+- Preflight rejects active work, active locks or any pre-existing Chatwoot schema.
+- Post-migration validation requires 14 tables, 15 indexes, zero rows and Shared count parity.
+- Backup evidence is non-empty and checksum-bound.
+- Evidence excludes Secret values, raw config contents, raw Provider responses and PII.
+- No Remote execution occurs during Implementation or CI.
+
+## Required verification
 
 ```text
-ALIGNED_CODE_HEAD                   = c44b1b2247b3374d95022eef01317f77c7e0eca0
-FOCUSED_TIKTOK                      = 4 / 4 PASS
-NODE_UNIT_INTEGRATION               = 1050 / 1050 PASS
-WORKERS_RUNTIME                     = 11 / 11 PASS
-REPORT_RELIABILITY                  = 91 / 91 PASS
-CHATWOOT_NAMED_TESTS                = 38 / 38 PASS
-DEPENDENCY_AUDIT                    = 0 vulnerabilities
-WRANGLER_DRY_RUN                    = PASS / NO DEPLOYMENT
-EXACT_FINAL_HEAD_VERIFICATION       = #655 / PASS
+npm ci
+npm run check
+node --test tests/application/chatwoot-remote-readiness-operator.test.js
+npm test
+npm run test:report-reliability
+npm audit --audit-level=high
+npm run deploy:dry-run
+git diff --check
 ```
 
-## Remote safe state
+## Out of scope
 
 ```text
-CHATWOOT_PROVIDER_API_REQUEST       = NOT_RUN
-CUSTOMER_TOKEN_ACCESS_OR_ROTATION   = NOT_RUN
-REMOTE_D1_QUERY_BACKUP_0018_APPLY   = NOT_RUN
-REMOTE_CHATWOOT_BUSINESS_MUTATION   = NONE
-REMOTE_LARK_SCHEMA_DATA_MUTATION    = NONE
-QUEUE_SEND_RETRY_DLQ_ACTION         = NONE
-WORKER_DEPLOYMENT                   = NOT_RUN
-SCHEDULE_WEBHOOK_ACTIVATION         = NONE
-CUSTOMER_PRODUCTION_LIVE_UAT        = NOT_RUN
-PRODUCTION                          = BLOCKED
+Remote preflight execution
+Remote D1 export or backup
+Migration 0018 apply
+Remote schema read-back
+Chatwoot base URL/account identity validation
+Chatwoot Token read/rotation
+Chatwoot Provider API request
+Lark schema preview/apply/read-back
+Queue message or DLQ action
+Worker deployment
+State-only or full-snapshot UAT
+Schedule or Webhook activation
+Production
+Merge into main
 ```
 
-## Required next gate
+## Implementation result
 
-The next Chatwoot phase must be opened as a new Integration-owned task. Before any action it must
-refresh `main`, open PRs and the migration ledger, then separately authorize the intended phase.
-Potential phases include Remote read-only preflight, Migration `0018` backup/apply/readback, exact
-Lark schema mapping, guarded Provider identity/permission preflight, state-only D1 UAT, optional Lark
-parity UAT and later full-snapshot reporting UAT.
-
-This merge closeout authorizes none of those phases. Schedule and Webhook remain disabled until
-reconciliation, rollback and operator verification pass.
+Pending. Record final SHAs, files changed, test counts, Migration/operator audit, exact verification
+and confirmation that Remote actions remain zero before Integration Review.
