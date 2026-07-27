@@ -6,11 +6,12 @@
 WORKSTREAM                          = CHATWOOT_INTEGRATION_RUNTIME_WIRING
 BRANCH                              = integration/chatwoot-safe-wiring
 DRAFT_PR                            = #97 / OPEN / DRAFT / UNMERGED
-BASE_MAIN                           = 90e367e88a4aad2a443683ca511951a67590ce90
-CODE_VERIFIED_HEAD                  = c8b83d71fd26f86abf203d5ed427a4056ac4af43
-CODE_BRANCH_VERIFICATION            = #648 / 30264683036 / PASS
-MIGRATION                           = 0018_chatwoot_analytics.sql / SOURCE_ONLY
-REMOTE_ACTIONS                      = NONE
+BASE_MAIN                           = 53c710dcadab14febe5b95078193a185038e0453
+ALIGNED_VERIFIED_HEAD               = c44b1b2247b3374d95022eef01317f77c7e0eca0
+BRANCH_VERIFICATION                 = #652 / 30265406254 / PASS
+MIGRATION_0017                      = APPLIED_OUTSIDE_WORKSTREAM / DO_NOT_RERUN
+MIGRATION_0018                      = CHATWOOT SOURCE_ONLY / NOT_APPLIED
+REMOTE_ACTIONS_BY_THIS_WORKSTREAM   = NONE
 PRODUCTION                          = BLOCKED
 ```
 
@@ -42,7 +43,8 @@ Chatwoot
 → TikTok / reports / active fallback
 ```
 
-Non-Chatwoot routing remains unchanged.
+Non-Chatwoot routing remains unchanged. The branch is aligned with the merged TikTok route-stability
+Hotfix at `53c710dcadab14febe5b95078193a185038e0453` and preserves those Shared repository facts.
 
 ## Durable identity
 
@@ -60,6 +62,9 @@ completed replay returns stable evidence rather than an undefined identifier.
 Migration `0018` creates 14 additive Chatwoot state/fact tables with replay-safe indexes. It contains
 no destructive SQL and no columns for message body, direct contact PII, raw Provider payload,
 Authorization material, Token or Secret.
+
+Migration `0017_woocommerce_commerce.sql` was applied outside this Chatwoot workstream according to
+current `main`; it must not be rerun. Chatwoot Migration `0018` remains source-only and unapplied.
 
 Runtime models retain only approved operational identifiers, hashes, classifications, timestamps,
 counts and durations. Raw label text and arbitrary attributes are excluded.
@@ -94,18 +99,19 @@ producer was added.
 
 ```text
 Focused staged TikTok             = 4 / 4 PASS
-Node Unit / Integration           = 1038 / 1038 PASS
+Node Unit / Integration           = 1050 / 1050 PASS
 Workers runtime                   = 11 / 11 PASS
 Report reliability                = 91 / 91 PASS
+Chatwoot-named tests              = 38 / 38 PASS
 Dependency audit                  = 0 vulnerabilities
 Wrangler dry-run                  = PASS / no deployment
-Diagnostics artifact             = 8652302684
-Artifact digest                  = sha256:7f0991284534f75c4f129cf3007f100a4f1216547ebf7f2f16c1ace25c716ed1
+Diagnostics artifact             = 8652588987
+Artifact digest                  = sha256:2465e36229a6b1c6a6949f52fd0d57eae56fe77badffea8e359602e22e2622ff
 ```
 
 ## Remote safe state
 
-No Chatwoot Provider request, Customer Token access, Remote D1 query/backup/Migration apply or
+No Chatwoot Provider request, Customer Token access, Remote D1 query/backup/Migration `0018` apply or
 Business write, Remote Lark mutation, Queue/DLQ action, Worker deployment, Schedule/Webhook
 activation, Customer LIVE UAT or Production action occurred.
 
