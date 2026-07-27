@@ -319,16 +319,41 @@ export function validateLiveRemoteYouTubeDeploymentContract(input = {}) {
 }
 
 function normalizeQueueConsumerPayload(value) {
-  if (Array.isArray(value?.result?.consumers)) {
-    return {
-      ...value,
-      result: {
-        ...value.result,
-        consumers: normalizeCloudflareQueueConsumerPayload(value.result.consumers),
-      },
-    };
+  try {
+    if (Array.isArray(value?.result?.consumers)) {
+      return {
+        ...value,
+        result: {
+          ...value.result,
+          consumers: normalizeCloudflareQueueConsumerPayload(value.result.consumers),
+        },
+      };
+    }
+    return normalizeCloudflareQueueConsumerPayload(value);
+  } catch (cause) {
+    throw translateQueueContractError(cause);
   }
-  return normalizeCloudflareQueueConsumerPayload(value);
+}
+
+function translateQueueContractError(cause) {
+  const fieldName = optionalText(cause?.details?.fieldName);
+  const timeoutField = ['max_wait_time_ms', 'max_batch_timeout'].includes(fieldName);
+  if (cause?.code === 'CLOUDFLARE_QUEUE_CONSUMER_TIMEOUT_INVALID'
+    || (cause?.code === 'CLOUDFLARE_QUEUE_CONSUMER_FIELD_INVALID' && timeoutField)) {
+    return parserError(
+      cause instanceof Error ? cause.message : 'Remote Queue timeout is invalid',
+      'YOUTUBE_DRY_RUN_REMOTE_QUEUE_TIMEOUT_INVALID',
+      cause?.details,
+    );
+  }
+  if (cause?.code === 'CLOUDFLARE_QUEUE_CONSUMER_FIELD_CONFLICT' && timeoutField) {
+    return parserError(
+      cause instanceof Error ? cause.message : 'Remote Queue timeout fields disagree',
+      'YOUTUBE_DRY_RUN_REMOTE_QUEUE_TIMEOUT_MISMATCH',
+      cause?.details,
+    );
+  }
+  return cause;
 }
 
 function readVersionBindings(value) {
