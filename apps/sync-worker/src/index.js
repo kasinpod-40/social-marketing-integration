@@ -1,8 +1,8 @@
 import { createSyncWorker } from './sync-worker.js';
 
 export {
-  processJobWithYouTubeOrganicEndToEnd as processJob,
-} from './youtube-organic-active-job-router.js';
+  processJobWithWooCommerceEndToEnd as processJob,
+} from './woocommerce-active-job-router.js';
 export {
   QUEUE_ROLES,
   classifyQueueBatch,

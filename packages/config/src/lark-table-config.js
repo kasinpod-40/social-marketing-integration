@@ -34,6 +34,20 @@ export const LARK_TABLE_ENV = Object.freeze({
   rawMetaOrganicMetrics: 'LARK_TABLE_RAW_META_ORGANIC_METRICS',
   rawAdsEntities: 'LARK_TABLE_RAW_ADS_ENTITIES',
   rawAdsDaily: 'LARK_TABLE_RAW_ADS_DAILY',
+  rawCommerceStores: 'LARK_TABLE_RAW_COMMERCE_STORES',
+  rawCommerceOrders: 'LARK_TABLE_RAW_COMMERCE_ORDERS',
+  rawCommerceOrderItems: 'LARK_TABLE_RAW_COMMERCE_ORDER_ITEMS',
+  rawCommerceProducts: 'LARK_TABLE_RAW_COMMERCE_PRODUCTS',
+  rawCommerceProductVariations: 'LARK_TABLE_RAW_COMMERCE_PRODUCT_VARIATIONS',
+  rawCommerceCategories: 'LARK_TABLE_RAW_COMMERCE_CATEGORIES',
+  rawCommerceCustomers: 'LARK_TABLE_RAW_COMMERCE_CUSTOMERS',
+  rawCommerceCoupons: 'LARK_TABLE_RAW_COMMERCE_COUPONS',
+  rawCommerceRefunds: 'LARK_TABLE_RAW_COMMERCE_REFUNDS',
+  mktCommerceOrders: 'LARK_TABLE_MKT_COMMERCE_ORDERS',
+  mktCommerceProducts: 'LARK_TABLE_MKT_COMMERCE_PRODUCTS',
+  mktCommerceCustomers: 'LARK_TABLE_MKT_COMMERCE_CUSTOMERS',
+  mktCommerceDaily: 'LARK_TABLE_MKT_COMMERCE_DAILY',
+  mktCommerceProductDaily: 'LARK_TABLE_MKT_COMMERCE_PRODUCT_DAILY',
 });
 
 // รายชื่อ Logical table key ทั้งหมด ใช้เป็นค่าเริ่มต้นเมื่อผู้เรียกต้องการตรวจ Environment ครบทุกตาราง

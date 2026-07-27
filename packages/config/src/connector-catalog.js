@@ -124,7 +124,7 @@ const CONNECTOR_CATALOG = Object.freeze({
     key: CONNECTOR_KEYS.WOOCOMMERCE,
     displayName: 'WooCommerce',
     capability: 'commerce',
-    implementationStatus: CONNECTOR_IMPLEMENTATION_STATUS.PLANNED,
+    implementationStatus: CONNECTOR_IMPLEMENTATION_STATUS.UAT_PENDING,
     featureFlagEnv: 'MKT_CONNECTOR_WOOCOMMERCE_ENABLED',
     requiredRuntimeFields: ['accountKey'],
     largeAccount: plannedLargeAccount('orders', 5000),

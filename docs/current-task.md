@@ -1,133 +1,96 @@
-# Current Task — Chatwoot Foundation Merge Closeout and Runtime Wiring Gate
+# Current Task — WooCommerce Integration Wiring
 
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = FOUNDATION_MERGED_RUNTIME_WIRING_WAITING_FOR_MIGRATION_OWNER
-CURRENT_PROGRAM                     = CHATWOOT_INTEGRATION_RUNTIME_WIRING
-FOUNDATION_PR                       = #68 / SQUASH_MERGED
-FOUNDATION_MERGE_COMMIT             = 80601de973740e8654b2cea2c4ecf419f4378c0a
-FOUNDATION_REVIEWED_HEAD            = dd2d15ffe9684ac6be567a23c36dbc25786b1038
-FOUNDATION_BRANCH_VERIFICATION      = #619 / 30245463139 PASS
-FOUNDATION_CHANGED_FILES            = 10 / CHATWOOT-ONLY
-LATEST_MERGED_MIGRATION             = 0016_tiktok_post_lark_pipeline.sql
-WOO_INTEGRATION_PR                  = #94 / OPEN / RESERVES 0017
-CHATWOOT_MIGRATION                  = PROVISIONAL_0018 / NOT_CREATED
-RUNTIME_BRANCH                      = NOT_CREATED
-RUNTIME_PR                          = NOT_OPENED
-PROVIDER_EXECUTION                  = NOT RUN
-TOKEN_READ_OR_ROTATION              = NOT RUN
-QUEUE_MESSAGE                       = NOT SENT
+TASK_STATUS                         = VERIFICATION_PASS_MERGE_PENDING
+CURRENT_PROGRAM                     = WOOCOMMERCE_INTEGRATION_WIRING
+INTEGRATION_BRANCH                  = integration/woocommerce-safe-wiring
+DRAFT_PR                            = #94
+REVIEWED_SOURCE_PR                  = #66 / PASS_FOR_INTEGRATION
+REVIEWED_SOURCE_HEAD                = 10cdd910b1083e6ffd5f8a4e118c06cdc6c842ee
+SOURCE_IMPORT_PR                    = #92 / Integration branch only
+MIGRATION                           = 0017_woocommerce_commerce.sql / NOT_APPLIED
+CODE_VERIFIED_HEAD                  = ed8d24aff59281eb8cac9842722fbbb51e573f20
+BRANCH_VERIFICATION                 = #618 / 30245402685 / PASS
+MAIN_ALIGNMENT                      = 844c09e4f1ad8113c66e47fddf79d3e1e8dea76d / BEHIND 0
+WORKER_DEPLOYMENT                   = NOT_RUN
+QUEUE_MESSAGE                       = NOT_SENT
 REMOTE_D1_OR_LARK_MUTATION          = NONE
-WORKER_DEPLOYMENT                   = NOT RUN
-SCHEDULE_OR_WEBHOOK                 = DISABLED
-CUSTOMER_OR_PRODUCTION_LIVE_UAT     = NOT RUN
+SCHEDULES                           = DISABLED
+CUSTOMER_CREDENTIAL                 = NOT_USED
+CUSTOMER_OR_PRODUCTION_LIVE_UAT     = NOT_RUN
 PRODUCTION                          = BLOCKED
+MERGE_INTO_MAIN                     = NOT_PERFORMED
 ```
 
-## Foundation merge result
+## Objective
 
-PR `#68` passed Integration Review after all recorded blockers were remediated. It was aligned with
-`main` through PR `#95`, verified on exact head
-`dd2d15ffe9684ac6be567a23c36dbc25786b1038`, and Squash Merged into `main` at
-`80601de973740e8654b2cea2c4ecf419f4378c0a`.
+นำ WooCommerce End-to-End ที่ผ่าน `PASS_FOR_INTEGRATION` เข้าสู่ Shared repository contracts โดยจัดเลข Migration, Stable Queue identity, Runtime routing, D1 stores, Lark registry และ default-false flags ให้ครบ โดยยังไม่ดำเนินการกับ Remote infrastructure หรือ Customer source.
 
-Merged foundation scope:
-
-- bounded Chatwoot Application API polling;
-- correct backwards Message-history pagination;
-- strict retry, timeout, page, row and response-size bounds;
-- PII-minimized account, inbox, contact, agent, team, label, conversation, message and event models;
-- stable keys, deterministic source hashes and immutable identity protection;
-- correct Daily Message/Event/Conversation date grain and null semantics;
-- independent Connector, D1, Lark, Report and Checkpoint gates;
-- partial-to-complete Coverage finalization only after required sinks;
-- batched D1 reads and existing `TableSyncEngine` reuse.
-
-The merge adds no numbered migration and performs no runtime wiring.
-
-## Migration ownership and parallel-workstream lock
-
-WooCommerce Integration Draft PR `#94` is the current owner of additive Migration `0017`.
-Chatwoot must not create a numbered migration while that ownership is unresolved.
-
-The next Chatwoot migration is only **provisionally** `0018`. Before implementation, refresh:
-
-1. current `main`;
-2. open Integration PRs;
-3. the actual migration directory;
-4. PR `#94` status and final migration number.
-
-If WooCommerce does not merge `0017`, Chatwoot must allocate from the then-current sequence rather
-than preserving a gap or assuming `0018`.
-
-## Runtime Wiring scope after migration ownership stabilizes
-
-Open a unique Integration branch and Draft PR. Recommended branch:
+Detailed contract and verification evidence:
 
 ```text
-integration/chatwoot-safe-wiring
+docs/tasks/woocommerce-end-to-end.md
+docs/tasks/woocommerce-integration-wiring.md
 ```
 
-Repository-only implementation must:
+## Completed repository scope
 
-1. allocate the next additive Chatwoot migration without collision;
-2. create the approved Chatwoot D1 tables and indexes;
-3. wire `D1ChatwootAnalyticsStore` through the existing Worker route;
-4. reuse the existing Reliability runner, distributed lock, generation fence, Queue retry and DLQ;
-5. preserve D1-before-Lark ordering and partial Coverage until every enabled required sink succeeds;
-6. add Connector/Job catalog status as `uat_pending`, never directly `active`;
-7. add exact runtime flags with every value defaulting to `false`;
-8. add Shared Lark logical mappings only—no Remote Base apply;
-9. keep Webhook unsupported and Schedule disabled;
-10. add route-isolation, gate-combination, lock-loss, retry, partial-sink and checkpoint regressions;
-11. pass exact-head Branch Verification and stop before Remote actions.
+- Imported exact reviewed PR `#66` implementation through Integration-only PR `#92`.
+- Allocated additive Migration `0017_woocommerce_commerce.sql` without Remote apply.
+- Registered 14 WooCommerce Lark logical table keys.
+- Promoted the Connector/Job to protected `uat_pending` / `manualOnly` status.
+- Added stable Queue identity `woocommerce:<operationId>` and reference-only continuation.
+- Added strict runtime config with all execution and Schedule gates false by default.
+- Added lazy D1 Commerce/report stores and a top-level route preserving all non-WooCommerce behavior.
+- Reused Shared Reliability, lock, generation, Queue retry/DLQ, Coverage, Lark repository and `TableSyncEngine`.
+- Added focused regression coverage.
+- Aligned with current `main` while retaining Meta closeout facts and the WooCommerce Current Task.
 
-## Required default-false controls
+## Default-false controls
 
 ```text
-MKT_CONNECTOR_CHATWOOT_ENABLED=false
-MKT_CHATWOOT_D1_WRITE_ENABLED=false
-MKT_CHATWOOT_LARK_WRITE_ENABLED=false
-MKT_CHATWOOT_REPORT_WRITE_ENABLED=false
-MKT_SCHEDULE_CHATWOOT_ENABLED=false
-MKT_CHATWOOT_WEBHOOK_ENABLED=false
+MKT_CONNECTOR_WOOCOMMERCE_ENABLED=false
+MKT_WOOCOMMERCE_D1_WRITE_ENABLED=false
+MKT_WOOCOMMERCE_LARK_WRITE_ENABLED=false
+MKT_WOOCOMMERCE_REPORT_READ_ENABLED=false
+MKT_WOOCOMMERCE_FULL_RECONCILIATION_ENABLED=false
+MKT_SCHEDULE_WOOCOMMERCE_ENABLED=false
 ```
 
-Storage or Report gates must never implicitly enable Connector, Schedule or Webhook execution.
+## Safety contract
 
-## Remote safe state
+- Queue execution accepts `trigger=manual_uat` only.
+- Stable identity preserves exact operation ID, work key, generation and original request time.
+- Protected runtime is restricted to `development / integration_workspace / chemistry_k`.
+- Connector, D1 and Lark gates must all be true together; Schedule must remain false.
+- Full reconciliation requires a separate flag.
+- Credential preflight remains a separate read-only operator gate.
+- Migration `0017` remains source-only until backup/apply authorization.
+- No duplicate Reliability, Queue, D1, Coverage or Lark engine was created.
 
-The foundation alignment, verification and merge performed no:
+## Verification result
 
 ```text
-Chatwoot Provider/API request       NOT RUN
-Customer token access/rotation      NOT RUN
-Worker deployment                   NOT RUN
-Numbered migration creation/apply   NONE
-Remote D1 Business mutation         NONE
-Remote Lark schema/data mutation    NONE
-Queue send / retry / DLQ action     NONE
-Schedule/Webhook activation         NONE
-Customer/Production LIVE UAT        NOT RUN
-Production                          BLOCKED
+Branch Verification                #618 / 30245402685 PASS
+Code head                          ed8d24aff59281eb8cac9842722fbbb51e573f20
+Install locked dependencies        PASS
+Syntax / architecture / hygiene    PASS
+Focused staged TikTok              4 / 4 PASS
+Full Node / Workers                965 / 965 PASS
+Report reliability                 91 / 91 PASS
+Dependency audit                   0 vulnerabilities
+Wrangler dry-run                   PASS / no deployment
+Behind current main                0
+Review decision                    VERIFICATION_PASS_MERGE_PENDING
+Remote execution                   NOT RUN
 ```
 
-## Next action
+## Audit note
 
-Do not start collision-prone runtime implementation until WooCommerce PR `#94` establishes the
-migration owner. Once stable, create the Integration branch from then-current `main`, re-read
-`AGENTS.md` and this file, inspect the entire Shared runtime and open Draft PRs, then implement and
-verify Repository-only Runtime Wiring.
+An incorrect connector action briefly created `tmp/placeholder` containing only `x` on `main`; it was removed immediately by commit `4c9334a69ced8b595fa433b780a77452eb7cd940`. No Business fact, code path, Secret or Remote resource was affected, and the final main tree contains no placeholder.
 
-Detailed closeout:
+## Next gate
 
-```text
-docs/project-brain/chatwoot-foundation-merge-closeout-2026-07-27.md
-```
-
-Previous Current Task archive:
-
-```text
-docs/archive/current-task-before-chatwoot-foundation-closeout-2026-07-27.md
-```
+Keep PR `#94` Draft, run the documentation-closeout verification on the final head, inspect review threads, and wait for a separate explicit merge decision. Passing repository verification does not authorize any Remote phase.
