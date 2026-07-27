@@ -6,6 +6,35 @@ import { isPlaceholderConfigValue } from '../../../shared/src/config/placeholder
 /** สร้าง Public Data client และ Owner Analytics client จาก Secret environment แบบ fail-closed */
 export function createYouTubeClientsFromEnv(env = {}, options = {}) {
   const apiKey = readCredential(env.YOUTUBE_API_KEY, 'YOUTUBE_API_KEY');
+  if (options.publicApiKeyOnly === true && !apiKey) {
+    throw permanentError('YouTube Worker dry-run requires YOUTUBE_API_KEY for public GET-only access', {
+      code: 'YOUTUBE_DRY_RUN_API_KEY_REQUIRED',
+      details: { fieldName: 'YOUTUBE_API_KEY' },
+    });
+  }
+  if (options.publicApiKeyOnly === true) {
+    const requestMetrics = { publicRequests: 0 };
+    const fetchImpl = options.fetchImpl ?? globalThis.fetch;
+    if (typeof fetchImpl !== 'function') {
+      throw new TypeError('YouTube public-only client requires fetch');
+    }
+    return Object.freeze({
+      publicClient: new YouTubeApiClient({
+        fetchImpl: (...args) => {
+          requestMetrics.publicRequests += 1;
+          return fetchImpl(...args);
+        },
+        timeoutMs: readPositiveInteger(env.YOUTUBE_API_TIMEOUT_MS, 30_000),
+        maxPages: readPositiveInteger(env.YOUTUBE_MAX_PAGES, 100),
+        apiKey,
+        accessToken: null,
+        accessTokenProvider: null,
+      }),
+      ownerClient: null,
+      oauthConfigured: false,
+      requestMetrics,
+    });
+  }
   const staticAccessToken = readCredential(env.YOUTUBE_OAUTH_ACCESS_TOKEN, 'YOUTUBE_OAUTH_ACCESS_TOKEN');
   const refreshConfig = readRefreshConfig(env);
   const tokenProvider = refreshConfig

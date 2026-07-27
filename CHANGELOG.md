@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased — YouTube Worker Dry-run Rollout Operator — 2026-07-27
+
+### Repository implementation
+
+- Added the central `youtube_worker_dry_run` trigger and conditional Stable Queue contract with
+  explicit `operationId`, `youtube:{operationId}` work key and fixed generation.
+- Updated the dedicated YouTube route to use deterministic sync-run/work identity, API-key-only
+  Public Data access and fail-closed Business/Lark/Analytics/Schedule/runtime guards.
+- Skipped unrelated warning drain and expired-work cleanup only on the guarded operator path;
+  normal YouTube behavior remains unchanged.
+- Added plan-only rollout orchestration, per-phase exact confirmation, reviewed config comparison,
+  full-SHA provenance, canonical SHA-256 evidence chaining, terminal D1 completion proof,
+  one-message/no-resend enforcement and a version-guarded safe restore wrapper.
+- Added actual Remote contract parsing for Worker version bindings/plain flags/Secret names,
+  deployment traffic, Queue consumers, Cron schedules, routes and workers.dev state.
+- Added dry-run completion replay preservation and a Workers-runtime/D1 integrated Queue replay
+  test, plus zero-write, public-only client, tamper/config/provenance and legacy regressions.
+
+### Safety
+
+- Dry-run permits Shared operational state, Public YouTube GET and Lark planning GET only.
+- Business/Coverage/checkpoint/Lark writes, Analytics, OAuth refresh and schedule changes remain
+  forbidden.
+- No Worker deployment, Remote D1/Lark action, Provider request, Queue/DLQ action, schedule change
+  or Production action occurred.
+
 ## Unreleased — TikTok Post-Lark Audit Error Code Hotfix — 2026-07-27
 
 ### Runtime incident
