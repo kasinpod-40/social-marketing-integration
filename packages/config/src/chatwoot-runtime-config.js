@@ -29,9 +29,7 @@ export const CHATWOOT_LARK_TABLE_KEYS = Object.freeze([
   'mktConversationAccountDaily',
 ]);
 
-/**
- * Fail-closed Chatwoot config. Provider identity and Secret are read only after Connector enablement.
- */
+/** Fail-closed config; Provider identity and Secret are read only after Connector enablement. */
 export function readChatwootRuntimeConfig(env = {}) {
   const flags = Object.freeze({
     connector: readBoolean(env.MKT_CONNECTOR_CHATWOOT_ENABLED, 'MKT_CONNECTOR_CHATWOOT_ENABLED', false),
@@ -45,7 +43,7 @@ export function readChatwootRuntimeConfig(env = {}) {
   const source = flags.connector
     ? Object.freeze({
       baseUrl: requireHttpsOrigin(env.CHATWOOT_BASE_URL, 'CHATWOOT_BASE_URL'),
-      externalAccountId: readPositiveInteger(env.CHATWOOT_ACCOUNT_ID, 'CHATWOOT_ACCOUNT_ID'),
+      externalAccountId: requirePositiveInteger(env.CHATWOOT_ACCOUNT_ID, 'CHATWOOT_ACCOUNT_ID'),
       accessToken: requireText(env.CHATWOOT_API_ACCESS_TOKEN, 'CHATWOOT_API_ACCESS_TOKEN'),
       timeoutMs: readInteger(env.CHATWOOT_API_TIMEOUT_MS, 'CHATWOOT_API_TIMEOUT_MS', 1_000, 120_000, DEFAULT_TIMEOUT_MS),
       maxAttempts: readInteger(env.CHATWOOT_API_MAX_ATTEMPTS, 'CHATWOOT_API_MAX_ATTEMPTS', 1, 10, DEFAULT_MAX_ATTEMPTS),
@@ -126,7 +124,10 @@ function readInteger(value, fieldName, minimum, maximum, fallback) {
   return number;
 }
 
-function readPositiveInteger(value, fieldName) {
+function requirePositiveInteger(value, fieldName) {
+  if (value === null || value === undefined || value === '') {
+    throw configError(`${fieldName} is required`, fieldName);
+  }
   return readInteger(value, fieldName, 1, Number.MAX_SAFE_INTEGER, null);
 }
 
