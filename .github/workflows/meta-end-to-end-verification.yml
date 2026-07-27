@@ -1,0 +1,88 @@
+name: Meta End-to-End Verification
+
+on:
+  push:
+    branches:
+      - agent/meta-end-to-end
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'apps/sync-worker/src/meta-end-to-end-job-router.js'
+      - 'packages/application/src/use-cases/*meta*'
+      - 'packages/config/src/meta-end-to-end-runtime-config.js'
+      - 'tests/application/*meta*'
+      - 'docs/tasks/meta-end-to-end.md'
+      - '.github/workflows/meta-end-to-end-verification.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Diff hygiene
+        run: |
+          git fetch origin main --depth=1
+          git diff --check origin/main...HEAD
+
+      - name: Syntax architecture and repository hygiene
+        run: npm run check
+
+      - name: Focused Meta workstream tests
+        run: |
+          set -o pipefail
+          node --test \
+            tests/application/meta-end-to-end-source.test.js \
+            tests/application/meta-organic-write-set.test.js \
+            tests/application/meta-ads-write-set.test.js \
+            tests/application/process-meta-end-to-end-generation.test.js \
+            tests/application/meta-end-to-end-routing-and-report.test.js \
+            | tee meta-focused-test.log
+
+      - name: Unit and Workers runtime tests
+        run: |
+          set -o pipefail
+          npm test | tee meta-full-test.log
+
+      - name: Report reliability regression
+        run: |
+          set -o pipefail
+          npm run test:report-reliability | tee meta-report-test.log
+
+      - name: Dependency audit
+        run: |
+          set -o pipefail
+          npm audit --audit-level=high | tee meta-audit.log
+
+      - name: Wrangler dry run
+        run: npm run deploy:dry-run
+
+      - name: Upload Meta verification diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: meta-end-to-end-verification-logs
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            meta-focused-test.log
+            meta-full-test.log
+            meta-report-test.log
+            meta-audit.log
