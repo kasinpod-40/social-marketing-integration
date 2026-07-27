@@ -8,23 +8,41 @@
 
   "observability": {
     "enabled": true,
-    "logs": { "enabled": true, "invocation_logs": true, "persist": true, "head_sampling_rate": 1 },
-    "traces": { "enabled": true, "persist": true, "head_sampling_rate": 1 }
+    "logs": {
+      "enabled": true,
+      "invocation_logs": true,
+      "persist": true,
+      "head_sampling_rate": 1
+    },
+    "traces": {
+      "enabled": true,
+      "persist": true,
+      "head_sampling_rate": 1
+    }
   },
 
   "triggers": {
+    // Existing Cron contracts remain; every Business schedule below is false.
+    // Google Ads has no Cron producer in this implementation.
     "crons": ["*/5 * * * *", "50 0,6,12,18 * * *"]
   },
 
-  "d1_databases": [{
-    "binding": "MKT_STATE_DB",
-    "database_name": "replace-with-environment-specific-d1-name",
-    "database_id": "00000000-0000-0000-0000-000000000000",
-    "migrations_dir": "./migrations"
-  }],
+  "d1_databases": [
+    {
+      "binding": "MKT_STATE_DB",
+      "database_name": "replace-with-environment-specific-d1-name",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "./migrations"
+    }
+  ],
 
   "queues": {
-    "producers": [{ "binding": "MKT_SYNC_QUEUE", "queue": "social-mkt-sync-jobs" }],
+    "producers": [
+      {
+        "binding": "MKT_SYNC_QUEUE",
+        "queue": "social-mkt-sync-jobs"
+      }
+    ],
     "consumers": [
       {
         "queue": "social-mkt-sync-jobs",
@@ -48,6 +66,7 @@
     "MKT_ENV": "development",
     "MKT_CUSTOMER_PROFILE": "integration_workspace",
     "DEFAULT_TIMEZONE": "Asia/Bangkok",
+
     "MKT_CONNECTION_PUBLIC_ORIGIN": "https://replace-with-sync-worker.example",
     "MKT_CONNECTION_CUSTOMER_KEY": "chemistry_k",
     "MKT_GOOGLE_ADS_REDIRECT_URI": "https://replace-with-sync-worker.example/oauth/google-ads/callback",
@@ -99,12 +118,10 @@
     "WOOCOMMERCE_NESTED_CONCURRENCY": "3",
     "WOOCOMMERCE_REVISION_LOOKBACK_DAYS": "30",
     "WOOCOMMERCE_DEFAULT_CURRENCY": "THB",
-
     "MKT_CONNECTOR_CHATWOOT_ENABLED": "false",
     "MKT_CHATWOOT_D1_WRITE_ENABLED": "false",
     "MKT_CHATWOOT_LARK_WRITE_ENABLED": "false",
     "MKT_CHATWOOT_REPORT_WRITE_ENABLED": "false",
-    "MKT_SCHEDULE_CHATWOOT_ENABLED": "false",
     "MKT_CHATWOOT_WEBHOOK_ENABLED": "false",
     "CHATWOOT_BASE_URL": "https://replace-with-chatwoot.example",
     "CHATWOOT_ACCOUNT_ID": "replace-with-account-id",
@@ -124,6 +141,7 @@
     "MKT_SCHEDULE_YOUTUBE_ENABLED": "false",
     "MKT_SCHEDULE_GOOGLE_ADS_ENABLED": "false",
     "MKT_SCHEDULE_WOOCOMMERCE_ENABLED": "false",
+    "MKT_SCHEDULE_CHATWOOT_ENABLED": "false",
     "MKT_YOUTUBE_ANALYTICS_TIME": "07:50",
     "MKT_YOUTUBE_ANALYTICS_LOOKBACK_DAYS": "7",
     "MKT_SCHEDULE_DAILY_REPORT_ENABLED": "false",
@@ -153,6 +171,7 @@
     "MKT_REPORT_PRESET_MATERIALIZATION_ENABLED": "false",
     "MKT_LARK_DAILY_RETENTION_ENABLED": "false",
     "MKT_NOTIFICATION_RUNTIME_ENABLED": "false",
+
     "MKT_TIKTOK_AUDIT_HTTP_ENABLED": "false",
     "MKT_TIKTOK_WATERMARK_ADMISSION_ENABLED": "false",
     "MKT_TIKTOK_POST_PROCESS_REPORT_ENABLED": "false",
@@ -166,9 +185,12 @@
     "MKT_YOUTUBE_ANALYTICS_MAX_PAGES": "1000",
     "YOUTUBE_API_TIMEOUT_MS": "30000",
     "YOUTUBE_MAX_PAGES": "100",
+
     "TIKTOK_SOURCE_HANDLE": "chemistry_k",
     "YOUTUBE_CHANNEL_ID": "replace-with-youtube-channel-id",
+
     "META_GRAPH_API_VERSION": "v25.0",
+    // Chemistry K exact customer mappings; tokens remain Wrangler Secrets.
     "META_FACEBOOK_PAGE_ID": "982406442148381",
     "META_INSTAGRAM_ACCOUNT_ID": "17841413521012797",
     "META_AD_ACCOUNT_MAPPINGS": "chemistry_k2=505898710119851,chemistry_k3=851206695716861",
@@ -178,6 +200,7 @@
     "META_PAGE_SIZE": "100",
     "META_MAX_ATTEMPTS": "5",
     "META_MAX_RESPONSE_BYTES": "8388608",
+
     "MKT_SYNC_LOCK_LEASE_MS": "600000",
     "MKT_SYNC_LOCK_RENEW_INTERVAL_MS": "120000",
 
@@ -237,6 +260,7 @@
     "LARK_TABLE_MKT_REPORT_TOP_CONTENT": "replace-with-table-id",
     "LARK_TABLE_MKT_SYNC_LOG": "replace-with-table-id",
     "LARK_TABLE_MKT_SYSTEM_ALERTS": "replace-with-table-id",
+
     "LARK_MIN_REQUEST_INTERVAL_MS": "150",
     "LARK_REQUEST_TIMEOUT_MS": "30000",
     "LARK_MAX_ATTEMPTS": "5",
