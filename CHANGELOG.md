@@ -1,34 +1,30 @@
 # Changelog
 
-## Unreleased — TikTok Post-Lark Audit Route Stability Hotfix — 2026-07-27
+## Unreleased — YouTube Worker Dry-run Rollout Operator — 2026-07-27
 
-### Incident boundary
+### Repository implementation
 
-- Recorded an Audit-only deployment whose operator probe returned `401` while the next
-  same-target unauthenticated probe returned `404` before safe-close.
-- Confirmed the Origin/path fingerprints and Safe/Audit configuration targets matched, only the
-  Audit flag differed and no unexpected deployment occurred between the two probes.
-- Classified the incident as `ROUTE_PROPAGATION_OR_RUNTIME_INCONSISTENCY`; the final Remote state
-  remains safe-closed `404` with Business and Schedule flags disabled.
-
-### Repository correction
-
-- Replaced each post-deployment single route check with exactly three consecutive bounded probes.
-- Added unique cache busting, no-cache headers, manual redirects, bounded body discard and
-  sanitized per-probe timestamps/status evidence.
-- Added typed parsing of Wrangler structured deployment output so evidence records the exact
-  deployed Worker version instead of searching console output for arbitrary UUIDs.
-- Added SHA-256 target fingerprints and deterministic five-minute freshness validation before an
-  authenticated Audit phase may consume `enable-audit` evidence.
-- Added separate failed-attempt evidence and preserved emergency safe-close without requiring a
-  successful authenticated Audit.
+- Added the central `youtube_worker_dry_run` trigger and conditional Stable Queue contract with
+  explicit `operationId`, `youtube:{operationId}` work key and fixed generation.
+- Updated the dedicated YouTube route to use deterministic sync-run/work identity, API-key-only
+  Public Data access and fail-closed Business/Lark/Analytics/Schedule/runtime guards.
+- Skipped unrelated warning drain and expired-work cleanup only on the guarded operator path;
+  normal YouTube behavior remains unchanged.
+- Added plan-only rollout orchestration, per-phase exact confirmation, reviewed config comparison,
+  full-SHA provenance, canonical SHA-256 evidence chaining, terminal D1 completion proof,
+  one-message/no-resend enforcement and a version-guarded safe restore wrapper.
+- Added actual Remote contract parsing for Worker version bindings/plain flags/Secret names,
+  deployment traffic, Queue consumers, Cron schedules, routes and workers.dev state.
+- Added dry-run completion replay preservation and a Workers-runtime/D1 integrated Queue replay
+  test, plus zero-write, public-only client, tamper/config/provenance and legacy regressions.
 
 ### Safety
 
-- No Worker deployment, Secret rotation, Audit enablement, authenticated request, Queue message,
-  D1/Lark mutation, Schedule change or Production action is part of this Repository-only Hotfix.
-- The probe and evidence contracts store no raw origin, URL, nonce, response body, Authorization
-  header or Token and add no Queue or Business-write path.
+- Dry-run permits Shared operational state, Public YouTube GET and Lark planning GET only.
+- Business/Coverage/checkpoint/Lark writes, Analytics, OAuth refresh and schedule changes remain
+  forbidden.
+- No Worker deployment, Remote D1/Lark action, Provider request, Queue/DLQ action, schedule change
+  or Production action occurred.
 
 ## Unreleased — TikTok Post-Lark Audit Error Code Hotfix — 2026-07-27
 
