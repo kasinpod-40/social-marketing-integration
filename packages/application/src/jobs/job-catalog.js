@@ -31,6 +31,8 @@ export const JOB_TYPES = Object.freeze({
 export const JOB_TRIGGERS = Object.freeze({
   TIKTOK_POST_LARK_WATERMARK: 'post_lark_watermark',
   YOUTUBE_WORKER_DRY_RUN: 'youtube_worker_dry_run',
+  WOOCOMMERCE_MANUAL_UAT: 'manual_uat',
+  WOOCOMMERCE_SCHEDULED: 'scheduled',
 });
 
 export const JOB_IMPLEMENTATION_STATUS = Object.freeze({
@@ -110,9 +112,12 @@ const JOB_CATALOG = Object.freeze({
   }),
   [JOB_TYPES.WOOCOMMERCE_COMMERCE_SYNC]: freezeJob({
     type: JOB_TYPES.WOOCOMMERCE_COMMERCE_SYNC,
-    implementationStatus: JOB_IMPLEMENTATION_STATUS.UAT_PENDING,
+    implementationStatus: JOB_IMPLEMENTATION_STATUS.ACTIVE,
     connectorKey: CONNECTOR_KEYS.WOOCOMMERCE,
-    manualOnly: true,
+    allowedTriggers: [
+      JOB_TRIGGERS.WOOCOMMERCE_MANUAL_UAT,
+      JOB_TRIGGERS.WOOCOMMERCE_SCHEDULED,
+    ],
   }),
   [JOB_TYPES.CHATWOOT_CONVERSATIONS_SYNC]: freezeJob({
     type: JOB_TYPES.CHATWOOT_CONVERSATIONS_SYNC,
@@ -199,5 +204,10 @@ function requireJobType(value) {
 
 /** Freeze Job definition เพื่อป้องกัน Test หรือ Runtime แก้ Registry กลาง */
 function freezeJob(definition) {
-  return Object.freeze({ ...definition });
+  return Object.freeze({
+    ...definition,
+    ...(Array.isArray(definition.allowedTriggers)
+      ? { allowedTriggers: Object.freeze([...definition.allowedTriggers]) }
+      : {}),
+  });
 }

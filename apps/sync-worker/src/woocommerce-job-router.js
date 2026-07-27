@@ -1,5 +1,6 @@
 import {
   JOB_IMPLEMENTATION_STATUS,
+  JOB_TRIGGERS,
   JOB_TYPES,
   getJobDefinition,
 } from '../../../packages/application/src/jobs/job-catalog.js';
@@ -24,8 +25,8 @@ import {
 } from './worker-runtime-support.js';
 
 /**
- * Protected manual Integration Workspace route.
- * การ Wiring นี้ไม่สร้าง Producer หรือ Schedule และจะ Fail ก่อน Provider เมื่อ Gate ใดปิด.
+ * Chemistry K Integration Workspace route สำหรับ Manual UAT และ Scheduled incremental.
+ * ทุก Trigger ใช้ Shared Reliability/Queue/DLQ เดิม และ Fail ก่อน Provider เมื่อ Gate ใดปิด.
  */
 export async function processWooCommerceCommerceJob(input = {}) {
   if (input.job?.body?.type !== JOB_TYPES.WOOCOMMERCE_COMMERCE_SYNC) {
@@ -38,9 +39,11 @@ export async function processWooCommerceCommerceJob(input = {}) {
   assertWooCommerceJobDefinition(definition, input.job.body);
   const wooConfig = readWooCommerceRuntimeConfig(input.env);
   const runtimeConfig = input.getRuntimeConfig();
-  const connector = assertWooCommerceManualRuntime(runtimeConfig, wooConfig);
+  const connector = assertWooCommerceRuntime(runtimeConfig, wooConfig, input.job.body.trigger);
   const operation = requireStableOperation(input.operation);
-  const fullReconciliation = input.job.body?.fullReconciliation === true;
+  const fullReconciliation = input.job.body.trigger === JOB_TRIGGERS.WOOCOMMERCE_SCHEDULED
+    ? false
+    : input.job.body?.fullReconciliation === true;
   if (fullReconciliation && !wooConfig.flags.fullReconciliation) {
     throw permanentError('WooCommerce full reconciliation gate is disabled', {
       code: 'WOOCOMMERCE_FULL_RECONCILIATION_DISABLED',
@@ -120,31 +123,36 @@ export async function processWooCommerceCommerceJob(input = {}) {
   return result;
 }
 
-export function assertWooCommerceManualRuntime(runtimeConfig, wooConfig) {
+export function assertWooCommerceRuntime(runtimeConfig, wooConfig, trigger) {
   if (runtimeConfig?.environment !== 'development'
     || runtimeConfig?.profileKey !== 'integration_workspace'
     || runtimeConfig?.infrastructureOwner !== 'developer'
     || runtimeConfig?.customerKey !== 'chemistry_k') {
-    throw permanentError('WooCommerce manual UAT requires the developer-owned Integration Workspace', {
-      code: 'WOOCOMMERCE_MANUAL_UAT_TARGET_INVALID',
+    throw permanentError('WooCommerce execution requires the developer-owned Integration Workspace', {
+      code: 'WOOCOMMERCE_RUNTIME_TARGET_INVALID',
     });
   }
   const connector = runtimeConfig?.connectors?.woocommerce;
   if (!connector
     || connector.accountKey !== 'chemistry_k'
     || connector.enabled !== true
-    || connector.protectedUatRuntime !== true) {
-    throw permanentError('WooCommerce connector is disabled or outside the protected UAT runtime', {
-      code: 'WOOCOMMERCE_MANUAL_UAT_CONNECTOR_INVALID',
+    || connector.implementationStatus !== JOB_IMPLEMENTATION_STATUS.ACTIVE) {
+    throw permanentError('WooCommerce connector is disabled or not active', {
+      code: 'WOOCOMMERCE_CONNECTOR_INVALID',
     });
   }
   const missingFlags = [];
   if (wooConfig?.flags?.connector !== true) missingFlags.push('MKT_CONNECTOR_WOOCOMMERCE_ENABLED');
   if (wooConfig?.flags?.d1Write !== true) missingFlags.push('MKT_WOOCOMMERCE_D1_WRITE_ENABLED');
   if (wooConfig?.flags?.larkWrite !== true) missingFlags.push('MKT_WOOCOMMERCE_LARK_WRITE_ENABLED');
-  if (wooConfig?.flags?.schedule === true) missingFlags.push('MKT_SCHEDULE_WOOCOMMERCE_ENABLED=false');
+  if (trigger === JOB_TRIGGERS.WOOCOMMERCE_MANUAL_UAT && wooConfig?.flags?.schedule === true) {
+    missingFlags.push('MKT_SCHEDULE_WOOCOMMERCE_ENABLED=false');
+  }
+  if (trigger === JOB_TRIGGERS.WOOCOMMERCE_SCHEDULED && wooConfig?.flags?.schedule !== true) {
+    missingFlags.push('MKT_SCHEDULE_WOOCOMMERCE_ENABLED');
+  }
   if (missingFlags.length > 0) {
-    throw permanentError('WooCommerce manual UAT gates are disabled or unsafe', {
+    throw permanentError('WooCommerce processing gates are disabled or unsafe', {
       code: 'WOOCOMMERCE_PROCESSING_GATES_DISABLED',
       details: { missingFlags },
     });
@@ -152,22 +160,33 @@ export function assertWooCommerceManualRuntime(runtimeConfig, wooConfig) {
   return connector;
 }
 
+/** Compatibility export for callers that still name the manual-only guard explicitly. */
+export function assertWooCommerceManualRuntime(runtimeConfig, wooConfig) {
+  return assertWooCommerceRuntime(
+    runtimeConfig,
+    wooConfig,
+    JOB_TRIGGERS.WOOCOMMERCE_MANUAL_UAT,
+  );
+}
+
 function assertWooCommerceJobDefinition(definition, body) {
   if (definition?.connectorKey !== 'woocommerce'
-    || definition?.implementationStatus !== JOB_IMPLEMENTATION_STATUS.UAT_PENDING
-    || definition?.manualOnly !== true) {
-    throw permanentError('WooCommerce Queue job is not registered as protected manual UAT', {
+    || definition?.implementationStatus !== JOB_IMPLEMENTATION_STATUS.ACTIVE
+    || !Array.isArray(definition?.allowedTriggers)
+    || !definition.allowedTriggers.includes(body?.trigger)) {
+    throw permanentError('WooCommerce Queue job is not registered for the requested trigger', {
       code: 'WOOCOMMERCE_JOB_UNSUPPORTED',
-    });
-  }
-  if (body?.trigger !== 'manual_uat') {
-    throw permanentError('WooCommerce jobs accept manual_uat trigger only', {
-      code: 'WOOCOMMERCE_MANUAL_ONLY',
     });
   }
   if (body?.dryRun === true) {
     throw permanentError('WooCommerce credential preflight is a separate operator gate', {
       code: 'WOOCOMMERCE_DRY_RUN_UNSUPPORTED',
+    });
+  }
+  if (body.trigger === JOB_TRIGGERS.WOOCOMMERCE_SCHEDULED
+    && body.fullReconciliation === true) {
+    throw permanentError('Scheduled WooCommerce jobs must remain incremental', {
+      code: 'WOOCOMMERCE_SCHEDULED_FULL_RECONCILIATION_BLOCKED',
     });
   }
 }
@@ -177,8 +196,9 @@ function requireStableOperation(value) {
     || typeof value.operationId !== 'string'
     || typeof value.workKey !== 'string'
     || !Number.isSafeInteger(value.generation)
-    || !Number.isSafeInteger(value.originalRequestedAt)) {
-    throw permanentError('WooCommerce manual UAT requires stable Queue operation metadata', {
+    || !Number.isSafeInteger(value.originalRequestedAt)
+    || value.generation !== value.originalRequestedAt) {
+    throw permanentError('WooCommerce execution requires stable Queue operation metadata', {
       code: 'WOOCOMMERCE_QUEUE_OPERATION_REQUIRED',
     });
   }
@@ -197,9 +217,11 @@ function createWooCommerceContinuationQueue(input, operation) {
       const body = withQueueOperation({
         type: JOB_TYPES.WOOCOMMERCE_COMMERCE_SYNC,
         schemaVersion: 1,
-        trigger: 'manual_uat',
+        trigger: input.job.body?.trigger,
         continuation: true,
-        fullReconciliation: input.job.body?.fullReconciliation === true,
+        fullReconciliation: input.job.body?.trigger === JOB_TRIGGERS.WOOCOMMERCE_SCHEDULED
+          ? false
+          : input.job.body?.fullReconciliation === true,
         modifiedAfter: input.job.body?.modifiedAfter ?? null,
         commerceSchemaVersion: reference.schemaVersion ?? null,
         cursorKey: reference.cursorKey ?? null,
