@@ -33,55 +33,92 @@ const TABLES = Object.freeze({
     'account_state_key', 'customer_key', 'account_key', 'external_account_id',
     'first_seen_at', 'last_seen_at', 'source_updated_at', 'metadata_hash',
     'last_coverage_run_id', 'last_sync_run_id', 'created_at', 'updated_at',
-  ], { revisionField: 'source_updated_at' }),
+  ], {
+    revisionField: 'source_updated_at',
+    identityFields: ['customer_key', 'account_key', 'external_account_id'],
+    preserveFields: ['first_seen_at'],
+  }),
   inboxes: spec('chatwoot_inbox_state', 'inbox_key', [
     'inbox_key', 'customer_key', 'account_key', 'external_account_id', 'external_inbox_id',
     'channel_type', 'medium', 'timezone', 'enable_auto_assignment', 'working_hours_enabled',
     'csat_survey_enabled', 'allow_messages_after_resolved', 'first_seen_at', 'last_seen_at',
     'source_updated_at', 'metadata_hash', 'last_coverage_run_id', 'last_sync_run_id',
     'created_at', 'updated_at',
-  ], { revisionField: 'source_updated_at' }),
+  ], {
+    revisionField: 'source_updated_at',
+    identityFields: ['account_key', 'external_account_id', 'external_inbox_id'],
+    preserveFields: ['first_seen_at'],
+  }),
   contacts: spec('chatwoot_contact_state', 'contact_key', [
     'contact_key', 'customer_key', 'account_key', 'external_account_id', 'external_contact_id',
     'blocked', 'availability_status', 'source_availability_status', 'source_created_at',
     'last_activity_at', 'source_updated_at', 'first_seen_at', 'last_seen_at', 'metadata_hash',
     'last_coverage_run_id', 'last_sync_run_id', 'created_at', 'updated_at',
-  ], { revisionField: 'source_updated_at' }),
+  ], {
+    revisionField: 'source_updated_at',
+    identityFields: ['account_key', 'external_account_id', 'external_contact_id'],
+    preserveFields: ['first_seen_at'],
+  }),
   agents: spec('chatwoot_agent_state', 'agent_key', [
     'agent_key', 'customer_key', 'account_key', 'external_account_id', 'external_agent_id',
     'role', 'availability_status', 'auto_offline', 'confirmed', 'custom_role_id',
     'first_seen_at', 'last_seen_at', 'source_updated_at', 'metadata_hash',
     'last_coverage_run_id', 'last_sync_run_id', 'created_at', 'updated_at',
-  ], { revisionField: 'source_updated_at' }),
+  ], {
+    revisionField: 'source_updated_at',
+    identityFields: ['account_key', 'external_account_id', 'external_agent_id'],
+    preserveFields: ['first_seen_at'],
+  }),
   teams: spec('chatwoot_team_state', 'team_key', [
     'team_key', 'customer_key', 'account_key', 'external_account_id', 'external_team_id',
     'allow_auto_assign', 'first_seen_at', 'last_seen_at', 'source_updated_at', 'metadata_hash',
     'last_coverage_run_id', 'last_sync_run_id', 'created_at', 'updated_at',
-  ], { revisionField: 'source_updated_at' }),
+  ], {
+    revisionField: 'source_updated_at',
+    identityFields: ['account_key', 'external_account_id', 'external_team_id'],
+    preserveFields: ['first_seen_at'],
+  }),
   labels: spec('chatwoot_label_state', 'label_key', [
     'label_key', 'customer_key', 'account_key', 'external_account_id', 'external_label_id',
-    'title', 'color', 'show_on_sidebar', 'first_seen_at', 'last_seen_at', 'source_updated_at',
-    'metadata_hash', 'last_coverage_run_id', 'last_sync_run_id', 'created_at', 'updated_at',
-  ], { revisionField: 'source_updated_at', allowDisplayFields: new Set(['title']) }),
+    'title_hash', 'color', 'show_on_sidebar', 'first_seen_at', 'last_seen_at',
+    'source_updated_at', 'metadata_hash', 'last_coverage_run_id', 'last_sync_run_id',
+    'created_at', 'updated_at',
+  ], {
+    revisionField: 'source_updated_at',
+    identityFields: ['account_key', 'external_account_id', 'external_label_id'],
+    preserveFields: ['first_seen_at'],
+  }),
   conversationLabels: spec('chatwoot_conversation_label_state', 'conversation_label_key', [
-    'conversation_label_key', 'conversation_key', 'label_key', 'external_conversation_id',
-    'external_label_id', 'active', 'observed_at', 'removed_at', 'coverage_run_id',
-    'sync_run_id', 'created_at', 'updated_at',
-  ], { revisionField: 'observed_at' }),
+    'conversation_label_key', 'conversation_key', 'customer_key', 'account_key',
+    'external_account_id', 'label_key', 'external_conversation_id', 'external_label_id',
+    'active', 'observed_at', 'removed_at', 'coverage_run_id', 'sync_run_id',
+    'created_at', 'updated_at',
+  ], {
+    revisionField: 'observed_at',
+    identityFields: ['account_key', 'external_conversation_id', 'external_label_id'],
+  }),
   messages: spec('chatwoot_message_analytics_state', 'message_key', [
     'message_key', 'conversation_key', 'customer_key', 'account_key', 'external_account_id',
     'external_message_id', 'external_conversation_id', 'external_inbox_id', 'message_type',
     'direction', 'content_type', 'private', 'sender_type', 'external_sender_id',
     'attachment_count', 'source_created_at', 'source_updated_at', 'metadata_hash',
     'last_coverage_run_id', 'last_sync_run_id', 'created_at', 'updated_at',
-  ], { revisionField: 'source_updated_at' }),
+  ], {
+    revisionField: 'source_updated_at',
+    identityFields: [
+      'account_key', 'external_account_id', 'external_message_id', 'external_conversation_id',
+    ],
+  }),
   reportingEvents: spec('chatwoot_reporting_event_facts', 'reporting_event_key', [
     'reporting_event_key', 'customer_key', 'account_key', 'external_account_id',
     'external_reporting_event_id', 'event_name', 'value_seconds', 'value_business_seconds',
     'external_conversation_id', 'external_inbox_id', 'external_agent_id', 'event_start_at',
     'event_end_at', 'source_created_at', 'source_updated_at', 'source_payload_hash',
     'coverage_run_id', 'sync_run_id', 'created_at', 'updated_at',
-  ], { revisionField: 'source_updated_at' }),
+  ], {
+    revisionField: 'source_updated_at',
+    identityFields: ['account_key', 'external_account_id', 'external_reporting_event_id'],
+  }),
   conversationDaily: spec('chatwoot_conversation_daily_facts', 'conversation_daily_key', [
     'conversation_daily_key', 'customer_key', 'account_key', 'external_account_id',
     'external_conversation_id', 'external_inbox_id', 'external_agent_id', 'external_team_id',
@@ -91,21 +128,30 @@ const TABLES = Object.freeze({
     'resolution_seconds', 'resolution_business_seconds', 'reply_seconds', 'reply_business_seconds',
     'data_status', 'coverage_run_id', 'source_revision', 'fetched_at', 'sync_run_id',
     'created_at', 'updated_at',
-  ], { revisionField: 'fetched_at' }),
+  ], {
+    revisionField: 'fetched_at',
+    identityFields: ['account_key', 'external_account_id', 'external_conversation_id', 'metric_date'],
+  }),
   agentDaily: spec('chatwoot_agent_daily_facts', 'agent_daily_key', [
     'agent_daily_key', 'customer_key', 'account_key', 'external_account_id', 'external_agent_id',
     'metric_date', 'reporting_timezone', 'assigned_conversation_count', 'resolved_count',
     'reopened_count', 'incoming_message_count', 'outgoing_message_count',
     'avg_first_response_seconds', 'avg_resolution_seconds', 'avg_reply_seconds', 'data_status',
     'coverage_run_id', 'source_revision', 'fetched_at', 'sync_run_id', 'created_at', 'updated_at',
-  ], { revisionField: 'fetched_at' }),
+  ], {
+    revisionField: 'fetched_at',
+    identityFields: ['account_key', 'external_account_id', 'external_agent_id', 'metric_date'],
+  }),
   inboxDaily: spec('chatwoot_inbox_daily_facts', 'inbox_daily_key', [
     'inbox_daily_key', 'customer_key', 'account_key', 'external_account_id', 'external_inbox_id',
     'metric_date', 'reporting_timezone', 'conversation_count', 'new_conversation_count',
     'resolved_count', 'reopened_count', 'incoming_message_count', 'outgoing_message_count',
     'avg_first_response_seconds', 'avg_resolution_seconds', 'avg_reply_seconds', 'data_status',
     'coverage_run_id', 'source_revision', 'fetched_at', 'sync_run_id', 'created_at', 'updated_at',
-  ], { revisionField: 'fetched_at' }),
+  ], {
+    revisionField: 'fetched_at',
+    identityFields: ['account_key', 'external_account_id', 'external_inbox_id', 'metric_date'],
+  }),
   accountDaily: spec('chatwoot_account_daily_facts', 'account_daily_key', [
     'account_daily_key', 'customer_key', 'account_key', 'external_account_id', 'metric_date',
     'reporting_timezone', 'conversation_count', 'new_conversation_count',
@@ -114,10 +160,13 @@ const TABLES = Object.freeze({
     'outgoing_message_count', 'avg_first_response_seconds', 'avg_resolution_seconds',
     'avg_reply_seconds', 'active_agent_count', 'active_inbox_count', 'data_status',
     'coverage_run_id', 'source_revision', 'fetched_at', 'sync_run_id', 'created_at', 'updated_at',
-  ], { revisionField: 'fetched_at' }),
+  ], {
+    revisionField: 'fetched_at',
+    identityFields: ['account_key', 'external_account_id', 'metric_date'],
+  }),
 });
 
-/** Domain-specific Chatwoot D1 adapter; no Queue, lock or Reliability behavior is implemented here. */
+/** Domain-specific Chatwoot D1 adapter; Queue/lock/Reliability remain shared runtime concerns. */
 export class D1ChatwootAnalyticsStore {
   constructor(input = {}) {
     this.db = requireD1(input.db);
@@ -138,7 +187,7 @@ export class D1ChatwootAnalyticsStore {
   async upsertAccountDailyFact(row) { return this.#upsert(TABLES.accountDaily, row); }
 
   async upsertConversationState(row) {
-    assertSafeRow(row, new Set());
+    assertSafeRow(row);
     const columns = [
       'conversation_key', 'customer_key', 'account_key', 'external_account_id',
       'external_conversation_id', 'external_inbox_id', 'external_contact_id', 'status', 'priority',
@@ -150,10 +199,16 @@ export class D1ChatwootAnalyticsStore {
       'reply_seconds', 'reply_business_seconds', 'metrics_hash', 'metadata_hash',
       'last_coverage_run_id', 'last_sync_run_id', 'created_at', 'updated_at',
     ];
-    const insertRow = { ...row, reopen_count: nonNegativeInteger(row.reopen_count_delta ?? 0, 'reopen_count_delta') };
+    const insertRow = {
+      ...row,
+      reopen_count: nonNegativeInteger(row.reopen_count_delta ?? 0, 'reopen_count_delta'),
+    };
     delete insertRow.reopen_count_delta;
     requireColumns(insertRow, columns);
-    const updateColumns = columns.filter((field) => !['conversation_key', 'created_at', 'reopen_count'].includes(field));
+    const identityFields = ['account_key', 'external_account_id', 'external_conversation_id'];
+    const updateColumns = columns.filter((field) => ![
+      'conversation_key', 'created_at', 'reopen_count',
+    ].includes(field));
     const assignments = [
       ...updateColumns.map((field) => `${field} = excluded.${field}`),
       `reopen_count = CASE
@@ -167,26 +222,36 @@ export class D1ChatwootAnalyticsStore {
       VALUES (${placeholders(columns.length)})
       ON CONFLICT(conversation_key) DO UPDATE SET
         ${assignments.join(',\n        ')}
-      WHERE excluded.account_key = chatwoot_conversation_state.account_key
-        AND excluded.external_conversation_id = chatwoot_conversation_state.external_conversation_id
-        AND excluded.source_updated_at >= chatwoot_conversation_state.source_updated_at
+      WHERE excluded.source_updated_at >= chatwoot_conversation_state.source_updated_at
+        AND ${identityPredicate('chatwoot_conversation_state', identityFields)}
     `;
-    return this.#run('chatwoot_conversation_state', insertRow.conversation_key, sql, bind(insertRow, columns));
+    const result = await this.#run(
+      'chatwoot_conversation_state',
+      insertRow.conversation_key,
+      sql,
+      bind(insertRow, columns),
+    );
+    if (result.outcome === 'skipped') {
+      await this.#assertExistingIdentity({
+        table: 'chatwoot_conversation_state',
+        keyField: 'conversation_key',
+        key: insertRow.conversation_key,
+        row: insertRow,
+        identityFields,
+      });
+    }
+    return result;
   }
 
   async readConversationStates(input = {}) {
-    const accountKey = requireText(input.accountKey, 'accountKey');
-    const externalIds = uniqueIds(input.externalConversationIds ?? []);
+    const { accountKey, externalIds } = readBatchInput(input);
     if (externalIds.length === 0) return Object.freeze([]);
-    if (externalIds.length > MAX_READ_IDS) {
-      throw permanentError('Chatwoot conversation state read exceeds ID limit', {
-        code: 'CHATWOOT_D1_READ_LIMIT',
-        details: { rows: externalIds.length, maxRows: MAX_READ_IDS },
-      });
-    }
     try {
       const result = await this.db.prepare(`
-        SELECT external_conversation_id, status, source_updated_at, reopen_count
+        SELECT external_conversation_id, status, source_updated_at, reopen_count,
+               first_response_seconds, first_response_business_seconds,
+               resolution_seconds, resolution_business_seconds,
+               reply_seconds, reply_business_seconds
         FROM chatwoot_conversation_state
         WHERE account_key = ?
           AND external_conversation_id IN (${placeholders(externalIds.length)})
@@ -196,8 +261,15 @@ export class D1ChatwootAnalyticsStore {
         status: row.status,
         sourceUpdatedAt: nullableInteger(row.source_updated_at),
         reopenCount: nonNegativeInteger(row.reopen_count ?? 0, 'reopen_count'),
+        firstResponseSeconds: nullableNumber(row.first_response_seconds),
+        firstResponseBusinessSeconds: nullableNumber(row.first_response_business_seconds),
+        resolutionSeconds: nullableNumber(row.resolution_seconds),
+        resolutionBusinessSeconds: nullableNumber(row.resolution_business_seconds),
+        replySeconds: nullableNumber(row.reply_seconds),
+        replyBusinessSeconds: nullableNumber(row.reply_business_seconds),
       })));
     } catch (cause) {
+      if (cause?.code) throw cause;
       throw transientError('Failed to read Chatwoot conversation states', {
         code: 'CHATWOOT_D1_READ_FAILED',
         cause,
@@ -205,16 +277,37 @@ export class D1ChatwootAnalyticsStore {
     }
   }
 
-  async readMessageCursors(input = {}) {
-    const accountKey = requireText(input.accountKey, 'accountKey');
-    const externalIds = uniqueIds(input.externalConversationIds ?? []);
+  async readConversationLabelStates(input = {}) {
+    const { accountKey, externalIds } = readBatchInput(input);
     if (externalIds.length === 0) return Object.freeze([]);
-    if (externalIds.length > MAX_READ_IDS) {
-      throw permanentError('Chatwoot message cursor read exceeds ID limit', {
-        code: 'CHATWOOT_D1_READ_LIMIT',
-        details: { rows: externalIds.length, maxRows: MAX_READ_IDS },
+    try {
+      const result = await this.db.prepare(`
+        SELECT external_conversation_id, external_label_id, active, observed_at
+        FROM chatwoot_conversation_label_state
+        WHERE account_key = ?
+          AND external_conversation_id IN (${placeholders(externalIds.length)})
+      `).bind(accountKey, ...externalIds).all();
+      return Object.freeze(readRows(result).map((row) => Object.freeze({
+        externalConversationId: requirePositiveId(
+          row.external_conversation_id,
+          'external_conversation_id',
+        ),
+        externalLabelId: requirePositiveId(row.external_label_id, 'external_label_id'),
+        active: Number(row.active) === 1,
+        observedAt: nullableInteger(row.observed_at),
+      })));
+    } catch (cause) {
+      if (cause?.code) throw cause;
+      throw transientError('Failed to read Chatwoot conversation label states', {
+        code: 'CHATWOOT_D1_READ_FAILED',
+        cause,
       });
     }
+  }
+
+  async readMessageCursors(input = {}) {
+    const { accountKey, externalIds } = readBatchInput(input);
+    if (externalIds.length === 0) return Object.freeze([]);
     try {
       const result = await this.db.prepare(`
         SELECT external_conversation_id,
@@ -231,6 +324,7 @@ export class D1ChatwootAnalyticsStore {
           : requirePositiveId(row.last_message_id, 'last_message_id'),
       })));
     } catch (cause) {
+      if (cause?.code) throw cause;
       throw transientError('Failed to read Chatwoot message cursors', {
         code: 'CHATWOOT_D1_READ_FAILED',
         cause,
@@ -239,23 +333,74 @@ export class D1ChatwootAnalyticsStore {
   }
 
   async #upsert(table, row) {
-    assertSafeRow(row, table.allowDisplayFields);
+    assertSafeRow(row);
     requireColumns(row, table.columns);
-    const updateColumns = table.columns.filter((field) => field !== table.keyField && field !== 'created_at');
+    const preserved = new Set(['created_at', ...table.preserveFields]);
+    const updateColumns = table.columns.filter(
+      (field) => field !== table.keyField && !preserved.has(field),
+    );
     const assignments = updateColumns.map((field) => `${field} = excluded.${field}`);
-    const where = table.revisionField
-      ? `WHERE excluded.${table.revisionField} IS NULL
+    const revision = table.revisionField
+      ? `(excluded.${table.revisionField} IS NULL
           OR ${table.table}.${table.revisionField} IS NULL
-          OR excluded.${table.revisionField} >= ${table.table}.${table.revisionField}`
-      : '';
+          OR excluded.${table.revisionField} >= ${table.table}.${table.revisionField})`
+      : '1 = 1';
+    const identity = table.identityFields.length > 0
+      ? identityPredicate(table.table, table.identityFields)
+      : '1 = 1';
     const sql = `
       INSERT INTO ${table.table} (${table.columns.join(', ')})
       VALUES (${placeholders(table.columns.length)})
       ON CONFLICT(${table.keyField}) DO UPDATE SET
         ${assignments.join(',\n        ')}
-      ${where}
+      WHERE ${revision}
+        AND ${identity}
     `;
-    return this.#run(table.table, row[table.keyField], sql, bind(row, table.columns));
+    const result = await this.#run(
+      table.table,
+      row[table.keyField],
+      sql,
+      bind(row, table.columns),
+    );
+    if (result.outcome === 'skipped' && table.identityFields.length > 0) {
+      await this.#assertExistingIdentity({
+        table: table.table,
+        keyField: table.keyField,
+        key: row[table.keyField],
+        row,
+        identityFields: table.identityFields,
+      });
+    }
+    return result;
+  }
+
+  async #assertExistingIdentity(input) {
+    const fields = [input.keyField, ...input.identityFields];
+    try {
+      const result = await this.db.prepare(`
+        SELECT ${fields.join(', ')}
+        FROM ${input.table}
+        WHERE ${input.keyField} = ?
+        LIMIT 1
+      `).bind(input.key).all();
+      const existing = readRows(result)[0] ?? null;
+      if (!existing) return;
+      for (const field of input.identityFields) {
+        if (!sameScalar(existing[field], input.row[field])) {
+          throw permanentError('Chatwoot immutable identity conflict', {
+            code: 'CHATWOOT_IMMUTABLE_IDENTITY_CONFLICT',
+            details: { table: input.table, keyField: input.keyField },
+          });
+        }
+      }
+    } catch (cause) {
+      if (cause?.code) throw cause;
+      throw transientError(`Failed to verify Chatwoot D1 identity for ${input.table}`, {
+        code: 'CHATWOOT_D1_READ_FAILED',
+        cause,
+        details: { table: input.table },
+      });
+    }
   }
 
   async #run(table, key, sql, values) {
@@ -269,6 +414,7 @@ export class D1ChatwootAnalyticsStore {
         rows: changes > 0 ? 1 : 0,
       });
     } catch (cause) {
+      if (cause?.code) throw cause;
       throw transientError(`Failed to write Chatwoot D1 table ${table}`, {
         code: 'CHATWOOT_D1_WRITE_FAILED',
         cause,
@@ -284,14 +430,15 @@ function spec(table, keyField, columns, options = {}) {
     keyField,
     columns: Object.freeze(columns),
     revisionField: options.revisionField ?? null,
-    allowDisplayFields: options.allowDisplayFields ?? new Set(),
+    identityFields: Object.freeze(options.identityFields ?? []),
+    preserveFields: Object.freeze(options.preserveFields ?? []),
   });
 }
 
-function assertSafeRow(row, allowDisplayFields) {
+function assertSafeRow(row) {
   requireObject(row, 'row');
   for (const [key, value] of Object.entries(row)) {
-    if (isForbiddenField(key) && !allowDisplayFields.has(key)) {
+    if (isForbiddenField(key)) {
       throw permanentError(`Forbidden Chatwoot PII field reached D1 adapter: ${key}`, {
         code: 'CHATWOOT_PII_POLICY_VIOLATION',
       });
@@ -323,8 +470,24 @@ function bind(row, columns) {
   return columns.map((field) => row[field] ?? null);
 }
 
+function identityPredicate(table, fields) {
+  return fields.map((field) => `excluded.${field} IS ${table}.${field}`).join(' AND ');
+}
+
 function placeholders(count) {
   return Array.from({ length: count }, () => '?').join(', ');
+}
+
+function readBatchInput(input) {
+  const accountKey = requireText(input.accountKey, 'accountKey');
+  const externalIds = uniqueIds(input.externalConversationIds ?? []);
+  if (externalIds.length > MAX_READ_IDS) {
+    throw permanentError('Chatwoot D1 read exceeds ID limit', {
+      code: 'CHATWOOT_D1_READ_LIMIT',
+      details: { rows: externalIds.length, maxRows: MAX_READ_IDS },
+    });
+  }
+  return { accountKey, externalIds };
 }
 
 function uniqueIds(values) {
@@ -343,30 +506,47 @@ function readChanges(result) {
   return Number.isSafeInteger(changes) && changes >= 0 ? changes : 0;
 }
 
+function sameScalar(left, right) {
+  if (left === null || left === undefined || right === null || right === undefined) {
+    return left === right || (left === null && right === undefined) || (left === undefined && right === null);
+  }
+  return String(left) === String(right);
+}
+
 function requireD1(value) {
-  if (!value || typeof value.prepare !== 'function') throw new TypeError('D1ChatwootAnalyticsStore requires D1 database');
+  if (!value || typeof value.prepare !== 'function') {
+    throw new TypeError('D1ChatwootAnalyticsStore requires D1 database');
+  }
   return value;
 }
 
 function requireObject(value, fieldName) {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new TypeError(`${fieldName} must be an object`);
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError(`${fieldName} must be an object`);
+  }
   return value;
 }
 
 function requireText(value, fieldName) {
-  if (typeof value !== 'string' || value.trim() === '') throw new TypeError(`${fieldName} must be non-empty text`);
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new TypeError(`${fieldName} must be non-empty text`);
+  }
   return value.trim();
 }
 
 function requirePositiveId(value, fieldName) {
   const number = Number(value);
-  if (!Number.isSafeInteger(number) || number <= 0) throw new TypeError(`${fieldName} must be a positive safe integer`);
+  if (!Number.isSafeInteger(number) || number <= 0) {
+    throw new TypeError(`${fieldName} must be a positive safe integer`);
+  }
   return String(number);
 }
 
 function nonNegativeInteger(value, fieldName) {
   const number = Number(value);
-  if (!Number.isSafeInteger(number) || number < 0) throw new TypeError(`${fieldName} must be a non-negative integer`);
+  if (!Number.isSafeInteger(number) || number < 0) {
+    throw new TypeError(`${fieldName} must be a non-negative integer`);
+  }
   return number;
 }
 
@@ -374,4 +554,10 @@ function nullableInteger(value) {
   if (value === null || value === undefined) return null;
   const number = Number(value);
   return Number.isSafeInteger(number) ? number : null;
+}
+
+function nullableNumber(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }
