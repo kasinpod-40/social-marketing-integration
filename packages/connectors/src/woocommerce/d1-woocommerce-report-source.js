@@ -17,7 +17,7 @@ export class D1WooCommerceReportSource {
     const currency = requireCurrency(input.currency);
     assertRange(periodStart, periodEnd);
 
-    const [daily, products, orders] = await Promise.all([
+    const [daily, productsWithSentinel, ordersWithSentinel, coverageRows] = await Promise.all([
       this.#all(`
         SELECT *
         FROM commerce_daily_sales_facts
@@ -40,7 +40,13 @@ export class D1WooCommerceReportSource {
         GROUP BY product_key
         ORDER BY net_sales_micros DESC, product_key ASC
         LIMIT ?
-      `, [accountKey, currency, periodStart, periodEnd, MAX_PRODUCT_ROWS], 'WOOCOMMERCE_REPORT_PRODUCT_READ_FAILED'),
+      `, [
+        accountKey,
+        currency,
+        periodStart,
+        periodEnd,
+        MAX_PRODUCT_ROWS + 1,
+      ], 'WOOCOMMERCE_REPORT_PRODUCT_READ_FAILED'),
       this.#all(`
         SELECT
           order_key, metric_date, status, status_class, payment_method_id,
@@ -50,13 +56,37 @@ export class D1WooCommerceReportSource {
         WHERE account_key = ? AND currency = ? AND metric_date BETWEEN ? AND ?
         ORDER BY metric_date ASC, order_key ASC
         LIMIT ?
-      `, [accountKey, currency, periodStart, periodEnd, MAX_ORDER_ROWS], 'WOOCOMMERCE_REPORT_ORDER_READ_FAILED'),
+      `, [
+        accountKey,
+        currency,
+        periodStart,
+        periodEnd,
+        MAX_ORDER_ROWS + 1,
+      ], 'WOOCOMMERCE_REPORT_ORDER_READ_FAILED'),
+      this.#all(`
+        SELECT
+          coverage_run_id, status, scope_mode, source_watermark,
+          revisable_until, completed_at, updated_at
+        FROM sync_coverage_runs
+        WHERE account_key = ?
+          AND platform = 'woocommerce'
+          AND dataset_key = 'woocommerce_orders'
+          AND completed_at IS NOT NULL
+        ORDER BY completed_at DESC, updated_at DESC
+        LIMIT 1
+      `, [accountKey], 'WOOCOMMERCE_REPORT_COVERAGE_READ_FAILED'),
     ]);
 
-    if (orders.length >= MAX_ORDER_ROWS) {
+    if (productsWithSentinel.length > MAX_PRODUCT_ROWS) {
+      throw permanentError('WooCommerce report Product source exceeds the bounded row limit', {
+        code: 'WOOCOMMERCE_REPORT_SOURCE_TOO_LARGE',
+        details: { entity: 'product', maxRows: MAX_PRODUCT_ROWS },
+      });
+    }
+    if (ordersWithSentinel.length > MAX_ORDER_ROWS) {
       throw permanentError('WooCommerce report Order source exceeds the bounded row limit', {
         code: 'WOOCOMMERCE_REPORT_SOURCE_TOO_LARGE',
-        details: { maxRows: MAX_ORDER_ROWS },
+        details: { entity: 'order', maxRows: MAX_ORDER_ROWS },
       });
     }
 
@@ -66,8 +96,9 @@ export class D1WooCommerceReportSource {
       periodStart,
       periodEnd,
       daily: Object.freeze(daily.map(freezeRow)),
-      products: Object.freeze(products.map(freezeRow)),
-      orders: Object.freeze(orders.map(freezeRow)),
+      products: Object.freeze(productsWithSentinel.map(freezeRow)),
+      orders: Object.freeze(ordersWithSentinel.map(freezeRow)),
+      coverage: coverageRows[0] ? freezeRow(coverageRows[0]) : null,
     });
   }
 
@@ -75,15 +106,10 @@ export class D1WooCommerceReportSource {
     try {
       const result = await this.db.prepare(sql).bind(...bindings).all();
       const rows = result?.results ?? result?.rows ?? [];
-      if (!Array.isArray(rows)) {
-        throw new TypeError('D1 query result rows must be an array');
-      }
+      if (!Array.isArray(rows)) throw new TypeError('D1 query result rows must be an array');
       return rows;
     } catch (cause) {
-      throw transientError('WooCommerce D1 report source read failed', {
-        code,
-        cause,
-      });
+      throw transientError('WooCommerce D1 report source read failed', { code, cause });
     }
   }
 }
