@@ -1,7 +1,7 @@
 import { syncYouTubeOrganicToLark } from './sync-youtube-organic-to-lark.js';
 import { YouTubeStorageFirstSyncEngine } from '../storage/youtube-storage-first-sync-engine.js';
 import { permanentError } from '../../../shared/src/errors/runtime-error.js';
-import { requireDateOnly } from '../../../shared/src/date/date-only.js';
+import { requireDateOnly, todayInTimeZone } from '../../../shared/src/date/date-only.js';
 
 /**
  * ประกอบ YouTube Source flow เดิมเข้ากับ Storage Architecture v1 แบบ D1-first
@@ -14,6 +14,17 @@ export async function syncYouTubeOrganicEndToEnd(input = {}) {
   const requestedAt = requiredTimestamp(input.requestedAt ?? input.generation, 'requestedAt');
   const generation = requiredTimestamp(input.generation ?? requestedAt, 'generation');
   const metricDate = requireDateOnly(input.metricDate, { label: 'metricDate' });
+  const sourceTimezone = requireText(
+    input.sourceTimezone ?? input.reportingTimezone ?? 'Asia/Bangkok',
+    'sourceTimezone',
+  );
+  const observedMetricDate = todayInTimeZone(sourceTimezone, new Date(requestedAt));
+  if (metricDate !== observedMetricDate) {
+    throw permanentError('YouTube cumulative metricDate must match the durable observation date', {
+      code: 'YOUTUBE_METRIC_DATE_GENERATION_MISMATCH',
+      details: { metricDate, observedMetricDate, sourceTimezone },
+    });
+  }
   const dryRun = input.dryRun === true;
   const d1WriteEnabled = input.d1WriteEnabled === true;
   const larkWriteEnabled = input.larkWriteEnabled === true;
@@ -46,10 +57,7 @@ export async function syncYouTubeOrganicEndToEnd(input = {}) {
     customerKey: requireText(input.customerKey, 'customerKey'),
     accountKey: requireText(input.accountKey, 'accountKey'),
     sourceAccountId: requireText(input.channelId, 'channelId'),
-    sourceTimezone: requireText(
-      input.sourceTimezone ?? input.reportingTimezone ?? 'Asia/Bangkok',
-      'sourceTimezone',
-    ),
+    sourceTimezone,
     metricDate,
     observedAt: requestedAt,
     fetchedAt: requestedAt,
