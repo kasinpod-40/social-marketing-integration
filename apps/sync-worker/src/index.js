@@ -1,6 +1,8 @@
 import { createSyncWorker } from './sync-worker.js';
 
-export { processJobWithGoogleAdsUat as processJob } from './google-ads-active-job-router.js';
+export {
+  processJobWithYouTubeOrganicEndToEnd as processJob,
+} from './youtube-organic-active-job-router.js';
 export {
   QUEUE_ROLES,
   classifyQueueBatch,

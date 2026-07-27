@@ -1,162 +1,149 @@
-# Current Task — TikTok Post-Lark Rollout Operator Merge Closeout
+# Current Task — YouTube Organic Integration Merge Closeout
 
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = ROLLOUT_OPERATOR_MERGED_REMOTE_EXECUTION_NOT_AUTHORIZED
-CURRENT_PROGRAM                     = TIKTOK_POST_LARK_GUARDED_ROLLOUT_OPERATOR
-MERGED_PR                           = #71
-MERGE_COMMIT                        = e6b8bd0b9098b9a79bae49ff24455187e43a331e
-REVIEWED_HEAD                       = df229ccade82ce7869c01bbf75c1cb3fc0f16cd1
-MAIN_BASE_AT_FINAL_REVIEW           = 11e861cfbc79ea067a90496b205f692ca8bb4d3d
-FINAL_BRANCH_VERIFICATION           = #558 PASS
-ENVIRONMENT                         = development
-CUSTOMER_PROFILE                    = integration_workspace
-CUSTOMER_KEY                        = chemistry_k
-ACCOUNT_KEY                         = chemistry_k
-SOURCE_HANDLE                       = chemistry_k
-SOURCE                              = lark_native_tiktok_for_creator
-REMOTE_RUNTIME_ACCESS               = UNAVAILABLE_IN_CONNECTED_ENVIRONMENT
-REMOTE_MIGRATION_0016               = NOT_APPLIED
+TASK_STATUS                         = MERGED_REMOTE_ROLLOUT_NOT_AUTHORIZED
+CURRENT_PROGRAM                     = YOUTUBE_ORGANIC_END_TO_END
+MERGED_PR                           = #85
+MERGE_COMMIT                        = dce3bd954ee75ee55a29efac303e9973ca060fca
+REVIEWED_HEAD                       = c5ffc4327ffec405f82472c7b7098b45bac82722
+BASE_MAIN_AT_MERGE                  = 8b7f9a879ba0c1b0b5d89dcfa2373ad3bb3c2ce8
+SOURCE_DRAFT_PR                     = #72
+SOURCE_REVIEW_DECISION              = PASS_FOR_INTEGRATION
+FINAL_BRANCH_VERIFICATION           = #581 PASS
+REMOTE_SCHEMA_CHECK                 = NOT_RUN
 WORKER_DEPLOYMENT                   = NOT_RUN
-AUDIT_ROUTE                         = SAFE_CLOSED
 QUEUE_MESSAGE                       = NOT_SENT
-DLQ_ACTION                          = NONE
 REMOTE_D1_OR_LARK_MUTATION          = NONE
 SCHEDULES                           = DISABLED
+CUSTOMER_OR_PRODUCTION_LIVE_UAT     = NOT_RUN
 PRODUCTION                          = BLOCKED
 ```
 
 ## Merge result
 
-PR `#71` was Squash Merged into `main` at
-`e6b8bd0b9098b9a79bae49ff24455187e43a331e` after the final reviewed head
-`df229ccade82ce7869c01bbf75c1cb3fc0f16cd1` was aligned with the Meta implementation baseline
-`11e861cfbc79ea067a90496b205f692ca8bb4d3d` and passed Branch Verification `#558`.
+PR `#85` was Squash Merged into `main` at
+`dce3bd954ee75ee55a29efac303e9973ca060fca` after the exact reviewed head
+`c5ffc4327ffec405f82472c7b7098b45bac82722` passed Branch Verification `#581`.
 
-The merged operator provides a manual, evidence-chained and fail-closed path for the first
-TikTok Organic post-Lark rollout gates:
+The merge imports the reviewed YouTube Organic End-to-End implementation from Draft PR `#72` and completes the Integration-owned Shared Worker wiring.
 
 ```text
-plan
-→ read-only Remote preflight
-→ D1 backup
-→ additive Migration 0016
-→ all-flags-false Worker deployment
-→ temporary audit-only deployment
-→ one authenticated GET-only RAW/D1/Canonical audit
-→ restore all-flags-false Worker deployment
+YouTube job + MKT_YOUTUBE_END_TO_END_ENABLED=true
+  -> dedicated D1-first End-to-End route
+
+YouTube job + flag false/unset
+  -> existing active router and legacy YouTube route
+
+Non-YouTube job
+  -> existing Google Ads/TikTok/History/Active route chain unchanged
 ```
 
-Merge does not execute or authorize any Remote phase.
+## Merged contracts
 
-## Merged files
+- Existing YouTube API client, Shared Google OAuth Core, adapters and normalizers are reused.
+- Existing Reliability runner, distributed lock, resumable work, warning outbox, retry and DLQ contracts are reused.
+- Existing Organic history writer, D1 gateways/stores, Coverage model and `TableSyncEngine` are reused.
+- D1 completes before the first Lark Business plan on the dedicated route.
+- Large Content inventories use bounded D1 batches.
+- Completed Content and Account Coverage cannot be downgraded by retry replay.
+- Report reads require completed zero-failure Coverage and fail closed on missing evidence.
+- Missing/private/deleted evidence is non-destructive and never zero-fills prior metrics.
+- Hidden subscriber count remains `followers=null`.
+- YouTube Analytics period facts remain in `RAW_YouTube_Analytics_Daily`.
+- No new Migration was added; Storage Foundation `0009` is reused.
+
+## Default-false controls
+
+Release examples now contain:
 
 ```text
-scripts/lib/tiktok-post-lark-rollout-operator.js
-scripts/tiktok-post-lark-rollout-operator.mjs
-tests/application/tiktok-post-lark-rollout-operator.test.js
-docs/runbooks/tiktok-post-lark-rollout.md
-package.json
-docs/current-task.md
-docs/archive/current-task-before-tiktok-post-lark-rollout-operator-2026-07-26.md
+MKT_CONNECTOR_YOUTUBE_ENABLED=false
+MKT_YOUTUBE_END_TO_END_ENABLED=false
+MKT_TIME_SERIES_D1_WRITE_ENABLED=false
+MKT_YOUTUBE_LARK_WRITE_ENABLED=false
+MKT_YOUTUBE_ANALYTICS_ENABLED=false
+MKT_SCHEDULE_YOUTUBE_ENABLED=false
+MKT_REPORT_D1_SHADOW_READ_ENABLED=false
+MKT_REPORT_D1_READ_ENABLED=false
+MKT_REPORT_PRESET_MATERIALIZATION_ENABLED=false
 ```
 
-## Operator safety contracts
-
-- Default invocation is plan-only.
-- Every executable phase requires a distinct exact confirmation.
-- Operator must run from a clean `main` containing the required TikTok merge authority.
-- Target identity is locked to the Integration Workspace and Chemistry K TikTok source.
-- Safe config keeps Audit, Admission, D1 write/backfill, Report cutover, Queue redrive,
-  schedules, retention and Google Ads execution flags false.
-- Audit-only config may enable only `MKT_TIKTOK_AUDIT_HTTP_ENABLED=true`.
-- Migration requires a readable checksum-verified D1 backup and exactly pending
-  `0016_tiktok_post_lark_pipeline.sql`.
-- Post-migration checks require the additive table/indexes, zero Admission rows, zero active
-  Work/Locks, zero duplicate groups and unchanged Business counts.
-- Audit is authenticated GET-only and contains no Queue, D1 write or Lark write path.
-- `readyForManualProcessing=false` is retained as diagnostic evidence, not converted to success.
-- Emergency `disable-audit` depends on successful `enable-audit` evidence, so safe-close remains
-  available even if the authenticated Audit fails.
-- The operator contains no Queue send, DLQ redrive/delete, Business write, schedule activation,
-  retention/delete or Production path.
+The merge does not alter deployed Environment values and does not enable a Schedule.
 
 ## Verification result
 
-Final Branch Verification `#558` passed on the aligned reviewed head:
+Final Branch Verification on the exact merged source head:
 
 ```text
-Install locked dependencies          PASS
-Syntax / architecture / hygiene      PASS
-Focused staged TikTok regression     PASS
-Node Unit / Integration tests        PASS
-Workers runtime tests                PASS
-Report reliability regression        PASS
-Dependency audit                     PASS
-Wrangler deployment dry-run          PASS / no deployment
-Diagnostics upload                   PASS
+Run / workflow ID                 #581 / 30241561017
+Head                              c5ffc4327ffec405f82472c7b7098b45bac82722
+Install locked dependencies       PASS
+Syntax / architecture / hygiene   PASS
+Focused staged TikTok             PASS
+Node Unit / Integration           PASS
+Workers runtime                   PASS
+Report reliability                PASS
+Dependency audit                  PASS
+Wrangler dry-run                  PASS / no deployment
+Diagnostics upload                PASS
 ```
 
-At Merge time:
+The prior exact-code verification `#579` recorded:
 
 ```text
-Branch behind main                   0
-PR mergeable                         true
-Unresolved review threads            0
-Requested changes                    0
-Remote actions                       none
+Node Unit / Integration           916/916 PASS
+Workers runtime                   9/9 PASS
+Report reliability                91/91 PASS
+Focused staged TikTok             4/4 PASS
+Dependency audit                  0 vulnerabilities
 ```
 
 ## Remote safe state
 
-No Remote rollout phase was performed by PR `#71`, its alignment PR or this closeout:
+No Remote phase was performed by Draft PR `#72`, Integration PR `#85`, or this closeout:
 
 ```text
-Remote configuration/schema read     NOT RUN with authorized Cloudflare runtime
-Remote D1 backup                     NOT RUN
-Migration 0016 apply                 NOT RUN
-Worker safe deploy                   NOT RUN
-Audit-only deploy                    NOT RUN
-Authenticated Live Audit             NOT RUN
-Queue message                        NOT SENT
-DLQ redrive/delete                   NOT RUN
-Remote D1 Business mutation          NONE
-Remote Lark schema/data mutation     NONE
-Schedule activation                  NONE
-Production                           BLOCKED
+Remote D1 schema/config read       NOT RUN with authenticated runtime
+Remote D1 migration               NOT RUN
+Remote D1 Business write          NOT RUN
+Remote Lark schema/data mutation  NONE
+Worker deployment                 NOT RUN
+Provider/API execution            NOT RUN
+Queue message                     NOT SENT
+DLQ redrive/delete                NOT RUN
+Schedule activation               NONE
+Customer/Production LIVE UAT      NOT RUN
+Production                        BLOCKED
 ```
-
-The last externally verified unauthenticated route check remained HTTP `404` / safe-closed.
-It is historical evidence and must not be treated as a new runtime freshness claim.
 
 ## Next separately authorized gate
 
-The next action must be performed only from an authorized local Integration Workspace runtime
-with Cloudflare/Wrangler authentication and the real `wrangler.sync.jsonc`:
+The next work requires an authenticated local Integration Workspace runtime with the real Cloudflare/Wrangler configuration:
 
-1. run the operator plan;
-2. execute read-only Remote preflight;
-3. review and retain sanitized evidence;
-4. authorize D1 backup separately;
-5. authorize Migration `0016` separately;
-6. authorize flags-false deployment separately;
-7. authorize temporary audit-only deployment and one authenticated audit separately;
-8. restore safe-closed deployment immediately after the audit.
+1. perform read-only Remote D1 schema verification for Storage Foundation `0009`;
+2. inspect current deployed Worker configuration and confirm every YouTube/Storage/Report/Schedule flag remains false;
+3. retain sanitized evidence and review it;
+4. authorize an all-flags-false Worker deployment separately;
+5. authorize a dry-run/read-only YouTube operation separately;
+6. verify non-dry execution is blocked while D1 or Lark write gate is false;
+7. authorize controlled Integration Workspace D1-first/Lark UAT separately;
+8. validate Coverage, idempotent rerun and D1 Report shadow parity;
+9. keep Schedule and Production blocked until a new explicit approval.
 
-Manual watermark Admission, D1/Canonical Business writes, Lark-primary/D1-shadow parity,
-D1-primary cutover, same-watermark rerun and schedules remain later approval gates.
+Repository merge alone authorizes none of these Remote phases.
 
-## Immutable history
-
-The complete pre-Merge operator task is preserved at:
+## Detailed records
 
 ```text
-docs/archive/current-task-before-tiktok-post-lark-rollout-operator-merge-2026-07-27.md
+docs/tasks/youtube-organic-end-to-end.md
+docs/tasks/youtube-organic-end-to-end-integration-review.md
+docs/tasks/youtube-organic-integration-wiring-safe-rollout.md
 ```
 
-The prior TikTok pipeline merge closeout remains preserved at:
+Previous current task:
 
 ```text
-docs/archive/current-task-before-tiktok-post-lark-rollout-operator-2026-07-26.md
+docs/archive/current-task-before-youtube-organic-integration-2026-07-27.md
 ```
