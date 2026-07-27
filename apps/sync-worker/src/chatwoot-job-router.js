@@ -120,7 +120,7 @@ export async function processChatwootAnalyticsJob(input = {}) {
           generation: operation.generation,
         });
       };
-      const syncResult = await syncChatwootAnalytics({
+      return syncChatwootAnalytics({
         customerProfile: runtimeConfig.profileKey,
         customerKey: requireJobText(runtimeConfig.customerKey, 'runtimeConfig.customerKey'),
         accountKey: connector.accountKey,
@@ -160,19 +160,18 @@ export async function processChatwootAnalyticsJob(input = {}) {
         },
         assertLockActive: assertCurrent,
       });
-      await resumableWorkStore.completeWork({
-        workKey: operation.workKey,
-        completion: {
-          status: syncResult.status,
-          syncRunId,
-          accountKey: connector.accountKey,
-          reconciliation: syncResult.reconciliation,
-        },
-      });
-      return syncResult;
     },
   });
 
+  await resumableWorkStore.completeWork({
+    workKey: operation.workKey,
+    completion: {
+      status: result.status,
+      syncRunId: result.syncRunId,
+      accountKey: connector.accountKey,
+      reconciliation: result.reconciliation,
+    },
+  });
   await resumableWorkStore.cleanupExpiredWork({ limit: 25 });
   return result;
 }
