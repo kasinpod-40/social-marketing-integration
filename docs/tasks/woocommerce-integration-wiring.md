@@ -1,81 +1,54 @@
 # WooCommerce Integration Wiring
 
-## Status
+## Final repository status
 
 ```text
 TASK_STATUS                         = VERIFICATION_PASS_MERGE_PENDING
-CURRENT_PROGRAM                     = WOOCOMMERCE_INTEGRATION_WIRING
 INTEGRATION_BRANCH                  = integration/woocommerce-safe-wiring
-DRAFT_PR                            = #94
+DRAFT_PR                            = #94 / OPEN / DRAFT
 REVIEWED_SOURCE_PR                  = #66 / PASS_FOR_INTEGRATION
-REVIEWED_SOURCE_HEAD                = 10cdd910b1083e6ffd5f8a4e118c06cdc6c842ee
-SOURCE_IMPORT_PR                    = #92 / merged into Integration branch only
-MIGRATION                           = 0017_woocommerce_commerce.sql / source only
-CODE_VERIFIED_HEAD                  = ed8d24aff59281eb8cac9842722fbbb51e573f20
-BRANCH_VERIFICATION                 = #618 / 30245402685 / PASS
-MAIN_ALIGNMENT                      = 844c09e4f1ad8113c66e47fddf79d3e1e8dea76d / behind 0
-REMOTE_D1_MIGRATION                 = NOT_APPLIED
-WORKER_DEPLOYMENT                   = NOT_RUN
-QUEUE_MESSAGE                       = NOT_SENT
-REMOTE_LARK_MUTATION                = NONE
-SCHEDULE                            = DISABLED
-CUSTOMER_CREDENTIAL                 = NOT_USED
-LIVE_UAT                            = NOT_RUN
-PRODUCTION                          = BLOCKED
-MERGE_INTO_MAIN                     = NOT_PERFORMED
+SOURCE_IMPORT_PR                    = #92 / INTEGRATION BRANCH ONLY
+MIGRATION                           = 0017_woocommerce_commerce.sql / SOURCE ONLY
+CURRENT_MAIN                        = 72486da7df8bacef908e286a269de2f943edec7d
+FINAL_ALIGNED_CODE_HEAD             = d0ce3399177b5d6c8fcdb6c56eadd77851ae29e9
+FINAL_BRANCH_VERIFICATION           = #622 / 30246242431 / PASS
+BRANCH_BEHIND_MAIN                  = 0
+REMOTE_EXECUTION                    = NONE
+MERGE_INTO_MAIN                     = NOT PERFORMED
 ```
 
-## Objective
+## Integrated architecture
 
-Integrate the reviewed WooCommerce end-to-end implementation into Shared repository contracts while preserving an all-flags-false safe state. This task prepares repository wiring only; it does not authorize a Provider request, Remote migration, Business write, Lark change, Queue send, deployment, Schedule or LIVE UAT.
-
-## Imported reviewed implementation
-
-PR `#66` supplies:
-
-- read-only WooCommerce REST client;
-- privacy-minimized Store, Order, line, Product, Variation, Category, Customer, Coupon and Refund models;
-- exact signed integer micros and currency isolation;
-- durable pagination and immutable continuation scope;
-- source-revision gating and atomic Order-line replacement;
-- D1 RAW/Canonical/Daily stores and report source;
-- Coverage-backed report status;
-- existing `TableSyncEngine` delivery.
-
-The exact reviewed head was imported into the Integration branch through PR `#92`; PR `#66` remains Draft and unmerged into `main`.
-
-## Shared wiring
-
-- Allocated additive Migration `0017_woocommerce_commerce.sql` from the reviewed 17-table proposal.
-- Registered all 14 WooCommerce Lark logical table keys in the Shared registry; actual table IDs remain Environment inputs.
-- Changed WooCommerce Connector and Queue job from `planned` to `uat_pending` and marked the job `manualOnly`.
-- Added stable Queue identity `woocommerce:<operationId>` and reference-only continuation serialization.
-- Added strict WooCommerce runtime config with all execution and Schedule flags defaulting to `false`.
-- Added a protected Integration Workspace runtime that requires Connector, D1 and Lark gates together while Schedule remains false.
-- Added lazy Shared infrastructure getters for the WooCommerce Commerce store and report source.
-- Added a top-level WooCommerce router that preserves the existing YouTube → Google Ads → Meta → TikTok fallback chain for every non-WooCommerce job.
-- Added the dedicated manual route through existing Reliability, lock, generation, Queue retry, DLQ, D1 Coverage and Lark engines.
-
-No duplicate Reliability engine, Queue framework, D1 writer, Coverage store, Lark client or sync engine was created.
-
-## Runtime contract
-
-Manual Queue execution requires:
+The exact reviewed WooCommerce implementation from PR `#66` is imported through Integration-only PR `#92` and connected to existing Shared contracts:
 
 ```text
-MKT_ENV=development
-MKT_CUSTOMER_PROFILE=integration_workspace
-MKT_CONNECTOR_WOOCOMMERCE_ENABLED=true
-MKT_WOOCOMMERCE_D1_WRITE_ENABLED=true
-MKT_WOOCOMMERCE_LARK_WRITE_ENABLED=true
-MKT_SCHEDULE_WOOCOMMERCE_ENABLED=false
-trigger=manual_uat
-stable operation identity present
+manual_uat WooCommerce Queue job
+→ stable operation identity
+→ Shared Reliability / distributed lock / generation fence
+→ read-only WooCommerce REST source
+→ additive Commerce D1 RAW / Canonical / Daily storage
+→ Shared Coverage
+→ existing TableSyncEngine / Lark destinations
+→ reference-only continuation when bounded work remains
 ```
 
-Full reconciliation additionally requires `MKT_WOOCOMMERCE_FULL_RECONCILIATION_ENABLED=true`.
+The top-level route preserves every non-WooCommerce path:
 
-Credential preflight remains a separate operator gate. The Queue route rejects `dryRun=true` rather than mixing a read-only credential check with Business processing.
+```text
+YouTube → Google Ads → Meta → TikTok / reports / active fallback
+```
+
+## Shared wiring completed
+
+- WooCommerce Connector and Queue job are `uat_pending`; the job is `manualOnly`.
+- Stable work identity is `woocommerce:<operationId>`.
+- Continuation retains the original operation/generation and contains no credential or Source payload.
+- Shared Reliability, lock, generation, retry/DLQ, resumable work and Coverage are reused.
+- D1 Commerce/report stores are lazy and route-scoped.
+- All 14 reviewed WooCommerce Lark logical table keys are centrally registered.
+- Consumer credentials are not required or read while the Connector gate is false.
+- Credential/identity preflight remains a separate GET-only operator gate.
+- No duplicate Reliability, Queue, D1, Coverage, Lark client or sync engine was created.
 
 ## Default-false controls
 
@@ -88,50 +61,48 @@ MKT_WOOCOMMERCE_FULL_RECONCILIATION_ENABLED=false
 MKT_SCHEDULE_WOOCOMMERCE_ENABLED=false
 ```
 
-## Migration contract
+## Migration ownership
 
-Migration `0017` is additive and replay-safe:
+Migration `0017_woocommerce_commerce.sql` contains 17 additive `CREATE TABLE IF NOT EXISTS` statements and additive indexes only. It contains no `DROP TABLE`, `DELETE FROM` or `ALTER TABLE`, and it has not been applied remotely.
 
-- 17 `CREATE TABLE IF NOT EXISTS` statements;
-- additive indexes only;
-- no `DROP TABLE`, `DELETE FROM` or `ALTER TABLE`;
-- no Remote apply in this task.
+WooCommerce owns Migration `0017`. The merged Chatwoot foundation closeout records its later runtime migration as provisional `0018` pending resolution of this PR.
 
-## Verification result
+## Final verification
 
-Branch Verification `#618` on code head `ed8d24aff59281eb8cac9842722fbbb51e573f20` passed:
+Branch Verification `#622` on `d0ce3399177b5d6c8fcdb6c56eadd77851ae29e9` passed:
 
 ```text
 Install locked dependencies       PASS
 Syntax / architecture / hygiene   PASS
 Focused staged TikTok             4 / 4 PASS
-Full Node / Workers suite         965 / 965 PASS
+Node Unit / Integration           990 / 990 PASS
+Workers runtime                   9 / 9 PASS
 Report reliability                91 / 91 PASS
 Dependency audit                  0 vulnerabilities
 Wrangler deployment dry-run       PASS / no deployment
 Diagnostics upload                PASS
 ```
 
-Focused WooCommerce implementation and wiring tests are included in the full Node suite. The standard workflow does not expose standalone steps for literal `node --test tests/woocommerce/*.test.js` or `git diff --check`; these commands are not falsely recorded as separately executed.
+The branch is aligned to `main` `72486da7df8bacef908e286a269de2f943edec7d` with `behind_by=0`. No unresolved review thread exists. The final diff contains no one-shot workflow, temporary apply script, build output or placeholder file.
 
-The branch is aligned with current `main` at `844c09e4f1ad8113c66e47fddf79d3e1e8dea76d` with `behind_by=0`.
+## Remote safe state
+
+No WooCommerce Provider request, credential read, Worker deployment, Remote D1 migration/query/write, Remote Lark mutation, Queue/DLQ activity, Schedule activation, Customer LIVE UAT, Production change or merge into `main` occurred.
 
 ## Repository audit note
 
-During branch setup, an incorrect connector action briefly created `tmp/placeholder` on `main`. It contained only `x` and was removed immediately in cleanup commit `4c9334a69ced8b595fa433b780a77452eb7cd940`. The final `main` tree contains no placeholder, and no Business fact, runtime code, Secret, infrastructure configuration or Remote resource was affected.
+An incorrect connector action briefly created `tmp/placeholder` containing only `x` on `main` at `60f5ce3c9af74f00efea90712786576e251c6672`. It was removed immediately at `4c9334a69ced8b595fa433b780a77452eb7cd940`. The final trees contain no placeholder and no Business fact, Secret, runtime configuration or Remote resource was affected.
 
-## Next separately authorized gates
+## Separately authorized next gates
 
-After repository verification and merge approval, work must remain separated:
+1. explicit repository merge decision;
+2. authenticated read-only Remote D1 schema/config preflight;
+3. Remote D1 backup;
+4. separately authorized Migration `0017` apply/read-back;
+5. all-flags-false Worker deployment;
+6. read-only WooCommerce credential and exact Store identity validation;
+7. controlled manual D1-first/Lark UAT;
+8. Coverage, revision, exact-rerun and report-shadow validation;
+9. Schedule proposal only after all earlier gates pass.
 
-1. authenticated read-only Remote D1 schema/config preflight;
-2. Remote D1 backup;
-3. separately authorized additive Migration `0017` apply;
-4. all-flags-false Worker deployment;
-5. WooCommerce read-only credential/identity preflight;
-6. controlled manual D1-first/Lark UAT;
-7. Coverage and idempotent rerun validation;
-8. report shadow validation;
-9. Schedule proposal only after all prior gates pass.
-
-Repository merge alone authorizes none of these Remote phases.
+Repository verification or merge authorizes none of these Remote phases automatically.

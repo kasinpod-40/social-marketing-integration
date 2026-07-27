@@ -6,16 +6,17 @@
 TASK_STATUS                         = VERIFICATION_PASS_MERGE_PENDING
 CURRENT_PROGRAM                     = WOOCOMMERCE_INTEGRATION_WIRING
 INTEGRATION_BRANCH                  = integration/woocommerce-safe-wiring
-DRAFT_PR                            = #94
+DRAFT_PR                            = #94 / OPEN / DRAFT
 REVIEWED_SOURCE_PR                  = #66 / PASS_FOR_INTEGRATION
 REVIEWED_SOURCE_HEAD                = 10cdd910b1083e6ffd5f8a4e118c06cdc6c842ee
-SOURCE_IMPORT_PR                    = #92 / Integration branch only
+SOURCE_IMPORT_PR                    = #92 / INTEGRATION BRANCH ONLY
 MIGRATION                           = 0017_woocommerce_commerce.sql / NOT_APPLIED
-CODE_VERIFIED_HEAD                  = ed8d24aff59281eb8cac9842722fbbb51e573f20
-BRANCH_VERIFICATION                 = #618 / 30245402685 / PASS
-MAIN_ALIGNMENT                      = 844c09e4f1ad8113c66e47fddf79d3e1e8dea76d / BEHIND 0
+CURRENT_MAIN                        = 72486da7df8bacef908e286a269de2f943edec7d
+FINAL_ALIGNED_CODE_HEAD             = d0ce3399177b5d6c8fcdb6c56eadd77851ae29e9
+FINAL_BRANCH_VERIFICATION           = #622 / 30246242431 / PASS
+BRANCH_BEHIND_MAIN                  = 0
 WORKER_DEPLOYMENT                   = NOT_RUN
-QUEUE_MESSAGE                       = NOT_SENT
+QUEUE_OR_DLQ_ACTION                 = NONE
 REMOTE_D1_OR_LARK_MUTATION          = NONE
 SCHEDULES                           = DISABLED
 CUSTOMER_CREDENTIAL                 = NOT_USED
@@ -28,11 +29,12 @@ MERGE_INTO_MAIN                     = NOT_PERFORMED
 
 นำ WooCommerce End-to-End ที่ผ่าน `PASS_FOR_INTEGRATION` เข้าสู่ Shared repository contracts โดยจัดเลข Migration, Stable Queue identity, Runtime routing, D1 stores, Lark registry และ default-false flags ให้ครบ โดยยังไม่ดำเนินการกับ Remote infrastructure หรือ Customer source.
 
-Detailed contract and verification evidence:
+Detailed contracts:
 
 ```text
 docs/tasks/woocommerce-end-to-end.md
 docs/tasks/woocommerce-integration-wiring.md
+docs/project-brain/woocommerce-integration-wiring-2026-07-27.md
 ```
 
 ## Completed repository scope
@@ -46,7 +48,7 @@ docs/tasks/woocommerce-integration-wiring.md
 - Added lazy D1 Commerce/report stores and a top-level route preserving all non-WooCommerce behavior.
 - Reused Shared Reliability, lock, generation, Queue retry/DLQ, Coverage, Lark repository and `TableSyncEngine`.
 - Added focused regression coverage.
-- Aligned with current `main` while retaining Meta closeout facts and the WooCommerce Current Task.
+- Aligned with the merged Chatwoot foundation and closeout while retaining the WooCommerce Current Task.
 
 ## Default-false controls
 
@@ -73,12 +75,13 @@ MKT_SCHEDULE_WOOCOMMERCE_ENABLED=false
 ## Verification result
 
 ```text
-Branch Verification                #618 / 30245402685 PASS
-Code head                          ed8d24aff59281eb8cac9842722fbbb51e573f20
+Branch Verification                #622 / 30246242431 PASS
+Aligned code head                  d0ce3399177b5d6c8fcdb6c56eadd77851ae29e9
 Install locked dependencies        PASS
 Syntax / architecture / hygiene    PASS
 Focused staged TikTok              4 / 4 PASS
-Full Node / Workers                965 / 965 PASS
+Node Unit / Integration            990 / 990 PASS
+Workers runtime                    9 / 9 PASS
 Report reliability                 91 / 91 PASS
 Dependency audit                   0 vulnerabilities
 Wrangler dry-run                   PASS / no deployment
@@ -87,10 +90,12 @@ Review decision                    VERIFICATION_PASS_MERGE_PENDING
 Remote execution                   NOT RUN
 ```
 
+Focused WooCommerce implementation and Shared-wiring tests run inside the full Node suite. The standard workflow does not expose separate literal steps for `node --test tests/woocommerce/*.test.js` or `git diff --check`; those commands are not recorded as separately executed.
+
 ## Audit note
 
-An incorrect connector action briefly created `tmp/placeholder` containing only `x` on `main`; it was removed immediately by commit `4c9334a69ced8b595fa433b780a77452eb7cd940`. No Business fact, code path, Secret or Remote resource was affected, and the final main tree contains no placeholder.
+An incorrect connector action briefly created `tmp/placeholder` containing only `x` on `main` at `60f5ce3c9af74f00efea90712786576e251c6672`; it was removed immediately at `4c9334a69ced8b595fa433b780a77452eb7cd940`. No Business fact, code path, Secret or Remote resource was affected, and the final trees contain no placeholder.
 
 ## Next gate
 
-Keep PR `#94` Draft, run the documentation-closeout verification on the final head, inspect review threads, and wait for a separate explicit merge decision. Passing repository verification does not authorize any Remote phase.
+Keep PR `#94` Draft and wait for a separate explicit merge decision. Repository verification does not authorize Remote schema inspection, backup, Migration `0017`, deployment, credential validation, Queue execution, Lark UAT, schedules or Production.
