@@ -40,12 +40,14 @@ export function normalizeScopedWranglerQueueConsumers(value, input = {}) {
         { expectedQueueName, observedQueueName, index },
       );
     }
+    const settings = normalizeQueueConsumerSettings(consumer, {
+      expectedQueueName,
+      index,
+    });
     return Object.freeze({
       ...consumer,
       queue_name: expectedQueueName,
-      ...(consumer.settings && typeof consumer.settings === 'object'
-        ? { settings: Object.freeze({ ...consumer.settings }) }
-        : {}),
+      ...(settings ? { settings } : {}),
     });
   }));
 }
@@ -190,6 +192,84 @@ export function validateLiveRemoteYouTubeDeploymentContract(input = {}) {
     versionsView,
     queueConsumers,
   });
+}
+
+function normalizeQueueConsumerSettings(consumer, input = {}) {
+  const rawSettings = consumer?.settings;
+  if (rawSettings !== undefined
+    && (!rawSettings || typeof rawSettings !== 'object' || Array.isArray(rawSettings))) {
+    throw parserError(
+      'Scoped Queue consumer settings must be an object when present',
+      'YOUTUBE_DRY_RUN_REMOTE_CONTRACT_INVALID',
+      { expectedQueueName: input.expectedQueueName, index: input.index },
+    );
+  }
+  const settings = rawSettings ? { ...rawSettings } : {};
+  const seconds = readEquivalentQueueInteger([
+    settings.max_batch_timeout,
+    consumer?.max_batch_timeout,
+  ], 'max_batch_timeout', input);
+  const milliseconds = readEquivalentQueueInteger([
+    settings.max_wait_time_ms,
+    consumer?.max_wait_time_ms,
+  ], 'max_wait_time_ms', input);
+
+  let normalizedSeconds = seconds;
+  if (milliseconds !== null) {
+    if (milliseconds % 1000 !== 0) {
+      throw parserError(
+        'Remote Queue max_wait_time_ms must resolve to whole seconds',
+        'YOUTUBE_DRY_RUN_REMOTE_QUEUE_TIMEOUT_INVALID',
+        {
+          expectedQueueName: input.expectedQueueName,
+          index: input.index,
+          maxWaitTimeMs: milliseconds,
+        },
+      );
+    }
+    const millisecondsAsSeconds = milliseconds / 1000;
+    if (normalizedSeconds !== null && normalizedSeconds !== millisecondsAsSeconds) {
+      throw parserError(
+        'Remote Queue timeout fields disagree',
+        'YOUTUBE_DRY_RUN_REMOTE_QUEUE_TIMEOUT_MISMATCH',
+        {
+          expectedQueueName: input.expectedQueueName,
+          index: input.index,
+          maxBatchTimeout: normalizedSeconds,
+          maxWaitTimeMs: milliseconds,
+        },
+      );
+    }
+    normalizedSeconds = millisecondsAsSeconds;
+  }
+  if (normalizedSeconds !== null) {
+    settings.max_batch_timeout = normalizedSeconds;
+  }
+  return Object.keys(settings).length > 0 ? Object.freeze(settings) : null;
+}
+
+function readEquivalentQueueInteger(values, fieldName, input = {}) {
+  const present = values.filter((value) => value !== undefined && value !== null);
+  if (present.length === 0) return null;
+  const normalized = present.map((value) => {
+    const number = Number(value);
+    if (!Number.isSafeInteger(number) || number < 0) {
+      throw parserError(
+        `Remote Queue ${fieldName} must be a non-negative integer`,
+        'YOUTUBE_DRY_RUN_REMOTE_QUEUE_TIMEOUT_INVALID',
+        { expectedQueueName: input.expectedQueueName, index: input.index, fieldName },
+      );
+    }
+    return number;
+  });
+  if (new Set(normalized).size !== 1) {
+    throw parserError(
+      `Remote Queue ${fieldName} appears with conflicting values`,
+      'YOUTUBE_DRY_RUN_REMOTE_QUEUE_TIMEOUT_MISMATCH',
+      { expectedQueueName: input.expectedQueueName, index: input.index, fieldName },
+    );
+  }
+  return normalized[0];
 }
 
 function unwrapQueueConsumers(value) {
