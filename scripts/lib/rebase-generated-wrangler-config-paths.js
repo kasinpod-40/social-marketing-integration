@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { isAbsolute, relative, resolve } from 'node:path';
+import { parseJsoncObject } from './chatwoot-safe-wrangler-config.js';
 
 export function rebaseGeneratedWranglerConfigPaths(configText, options = {}) {
   const sourceDirectory = resolveRequiredDirectory(
@@ -13,12 +14,16 @@ export function rebaseGeneratedWranglerConfigPaths(configText, options = {}) {
 
   let config;
   try {
-    config = JSON.parse(requireText(configText, 'configText'));
+    config = parseJsoncObject(requireText(configText, 'configText'));
   } catch (cause) {
     throw pathError(
-      'Generated Wrangler config is not valid JSON',
+      'Generated Wrangler config is not valid JSONC',
       'CHATWOOT_SAFE_CONFIG_GENERATED_JSON_INVALID',
-      { cause: cause?.message ?? 'JSON_PARSE_FAILED' },
+      {
+        cause: cause?.details?.cause
+          ?? cause?.message
+          ?? 'JSONC_PARSE_FAILED',
+      },
     );
   }
 
