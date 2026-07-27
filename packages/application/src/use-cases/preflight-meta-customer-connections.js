@@ -22,8 +22,8 @@ const CONNECTOR_DEFINITIONS = Object.freeze([
   Object.freeze({
     key: META_TOKEN_CONNECTION_KEYS.META_ADS,
     adapterField: 'metaAds',
-    mappingField: 'metaAdAccountId',
-    adapterMappingField: 'expectedAdAccountId',
+    mappingField: 'metaAdAccountIds',
+    adapterMappingField: 'expectedAdAccountIds',
     permissionValidation: 'permissions_edge',
   }),
 ]);
@@ -153,6 +153,9 @@ function buildSafeMetadata(connectorKey, facts) {
   }
   return {
     activeCandidateCount: safeCount(facts?.activeCandidateCount),
+    expectedAccountCount: safeCount(facts?.expectedAccountCount),
+    matchedAccountCount: safeCount(facts?.matchedAccountCount),
+    missingAccountCount: safeCount(facts?.missingAccountCount),
   };
 }
 

@@ -139,7 +139,7 @@ describe('Sync Worker ใน Workers runtime จริง', () => {
     expect(result.explicitAcks).toEqual(['metric-1']);
   });
 
-  it('Scheduled handler เป็น Producer และ enqueue TikTok Sync job', async () => {
+  it('Scheduled handler เป็น Producer และ enqueue TikTok watermark probe job', async () => {
     const send = vi.fn(async () => undefined);
     const worker = createSyncWorker();
     const controller = createScheduledController({
@@ -152,17 +152,17 @@ describe('Sync Worker ใน Workers runtime จริง', () => {
       MKT_CUSTOMER_PROFILE: 'dev_ft_pumkin',
       MKT_CONNECTOR_TIKTOK_ENABLED: 'true',
       MKT_SCHEDULE_TIKTOK_ENABLED: 'true',
+      MKT_TIKTOK_WATERMARK_ADMISSION_ENABLED: 'true',
       MKT_SYNC_QUEUE: { send },
     });
 
     expect(send).toHaveBeenCalledTimes(2);
-    expect(send.mock.calls[0][0]).toMatchObject({
+    expect(send.mock.calls[0][0]).toEqual({
       schemaVersion: 1,
-      type: 'tiktok.creator.native.sync',
+      type: 'tiktok.creator.native.probe',
       trigger: 'scheduled',
-      syncMode: 'auto',
       requestedAt: '2026-07-11T01:00:00.000Z',
-      metricDate: '2026-07-11',
+      metricDate: '2026-07-10',
     });
     expect(send.mock.calls[1][0]).toEqual({
       schemaVersion: 1,
@@ -218,7 +218,7 @@ describe('Sync Worker ใน Workers runtime จริง', () => {
     expect(send).not.toHaveBeenCalled();
   });
 
-  it('Scheduled handler enqueue Daily report หลัง TikTok sync เมื่อถึงเวลา Bangkok', async () => {
+  it('Scheduled handler enqueue Daily report หลัง TikTok probe เมื่อถึงเวลา Bangkok', async () => {
     const send = vi.fn(async () => undefined);
     const worker = createSyncWorker();
     const controller = createScheduledController({
@@ -232,6 +232,7 @@ describe('Sync Worker ใน Workers runtime จริง', () => {
       MKT_CONNECTOR_TIKTOK_ENABLED: 'true',
       DEFAULT_TIMEZONE: 'Asia/Bangkok',
       MKT_SCHEDULE_TIKTOK_ENABLED: 'true',
+      MKT_TIKTOK_WATERMARK_ADMISSION_ENABLED: 'true',
       MKT_SCHEDULE_DAILY_REPORT_ENABLED: 'true',
       MKT_DAILY_REPORT_TIME: '08:10',
       MKT_DAILY_REPORT_SETTING_KEY: 'dev_ft_pumkin:tiktok:daily',
@@ -241,11 +242,11 @@ describe('Sync Worker ใน Workers runtime จริง', () => {
 
     expect(send).toHaveBeenCalledTimes(3);
     expect(send.mock.calls.map(([job]) => job.type)).toEqual([
-      'tiktok.creator.native.sync',
+      'tiktok.creator.native.probe',
       'report.daily.generate',
       'system.reliability-mirror.deliver',
     ]);
-    expect(send.mock.calls[0][0].metricDate).toBe('2026-07-13');
+    expect(send.mock.calls[0][0].metricDate).toBe('2026-07-12');
     expect(send.mock.calls[1][0].periodEnd).toBe('2026-07-12');
   });
 

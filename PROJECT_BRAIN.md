@@ -6,361 +6,242 @@
 
 ไฟล์นี้เก็บ **Current verified repository/runtime state** เท่านั้น ให้ยึด `AGENTS.md` และ `docs/current-task.md` ก่อนเสมอ
 
-## Current verified state — 2026-07-26
+Historical Root Project Brain ก่อน TikTok post-Lark implementation ถูกเก็บแบบ immutable ที่:
 
-Google Ads Manager Script signed-delivery Phase 2 merged through PR `#52` at
-`e317fb9`; sanitized Remote rollout Closeout merged through PR `#53` at
-`217d54e`; external DRY_RUN correction merged through PR `#54`; and one-time
-Signing Secret provisioning implementation merged through PR `#55` at
-`4008b991e9aba2309691b733caccd7613f2ad2a8`.
+```text
+docs/archive/PROJECT_BRAIN-before-tiktok-post-lark-parity-2026-07-26.md
+```
 
-The approved Integration Workspace rollout is now complete through additive
-Migration `0014`, one-time Ticket redeem/confirm from the actual Manager Script,
-and an actual external Signed PREVIEW using `AdsApp`, `AdsManagerApp`, GAQL,
-HMAC and `UrlFetchApp`. The PREVIEW reconciled six datasets, seven chunks and
-1,375 rows, reached `preview_validated`, redacted every staged payload and
-produced zero Business/Queue/Lark drift. Final Google Ads Connector, signed
-ingress, provisioning, Business-write, schedule, LIVE and Production gates are
-all disabled.
+## Current verified repository state — 2026-07-27
 
 ```text
 Integration Workspace                         active
 Technical environment                         development
 Runtime profile                               integration_workspace
-TikTok Organic D1 bootstrap                   complete
-TikTok durable recovery                       complete
-TikTok completion closure                     complete
-TikTok same-generation replay                 pass / no business drift
-Migration 0009                                applied remotely
-Migration 0010                                applied remotely
-Migration 0011                                applied remotely
-Migration 0012                                applied remotely
-Migration 0013                                applied remotely
-Migration 0014                                applied remotely
-Google Ads API Worker                         deployed / safely closed
-Google Ads signed transport contract client   pass / zero business drift
-Google Ads actual Script DRY_RUN               pass / six datasets / no changes
-Google Ads Secret provisioning                 pass / confirmed / route closed
-Google Ads external Signed PREVIEW             pass / 6 datasets / 7 chunks / 1375 rows
-Google Ads PREVIEW transport run               preview_validated / payload redacted
-Organic Content State                         2021
-Organic Observations                          2021
-Initial Observations                          2021
-Coverage Entities                             2021
-Duplicate State/Observation groups            0 / 0
-Coverage                                      complete / 2021 of 2021 / failed 0
-Lark business writes from bootstrap/recovery  0
-TikTok Canonical Lark full backfill            blocked
-Report D1 reader                              not implemented
-Lark retention                                blocked
+TikTok post-Lark pipeline                     merged via PR #65
+TikTok pipeline merge commit                  acb0b76bb3be936319e0e8bed4849592c96761b5
+TikTok guarded rollout operator               merged via PR #71
+TikTok operator merge commit                  e6b8bd0b9098b9a79bae49ff24455187e43a331e
+TikTok operator reviewed head                 df229ccade82ce7869c01bbf75c1cb3fc0f16cd1
+TikTok operator final verification            #558 PASS
+Meta end-to-end implementation                merged via PR #69
+Meta implementation merge commit              11e861cfbc79ea067a90496b205f692ca8bb4d3d
+YouTube end-to-end integration                merged via PR #85
+YouTube integration merge commit              dce3bd954ee75ee55a29efac303e9973ca060fca
+YouTube reviewed head                         c5ffc4327ffec405f82472c7b7098b45bac82722
+YouTube final verification                    #581 PASS
+Migration 0016                                source only / not applied remotely
+Worker deployment                             not run for TikTok or YouTube rollout
+Queue send / DLQ redrive                      none for TikTok or YouTube rollout
+Remote D1 / Lark mutation                     none for TikTok or YouTube rollout
 Schedules                                     disabled
+Retention/delete                              blocked
 Production                                    blocked
-Google Ads PR #17                             Draft / HOLD
+Google Ads                                    LIVE UAT complete / safely closed
 ```
 
-Authoritative closeout:
-
-```text
-docs/current-task.md
-docs/rollouts/google-ads-manager-script-external-signed-preview-2026-07-26.md
-docs/rollouts/google-ads-signed-delivery-phase2-2026-07-25.md
-docs/rollouts/tiktok-organic-durable-recovery-closeout-2026-07-24.md
-```
-
-Final completion-closure source head:
-
-```text
-870ac618c75e3d9efa1fd1e20ea3618b56f8aceb
-```
-
-## Integration Workspace operating model
-
-There is one pre-Production **Integration Workspace**, not separate DEV/UAT operating modes.
-
-```text
-MKT_ENV=development
-MKT_CUSTOMER_PROFILE=integration_workspace
-```
-
-Current Workspace infrastructure is developer-owned. Source ownership is tracked per Connector and may be mixed temporarily. Production is separate and must use customer-owned Lark Base, Cloudflare resources, credentials and platform assets.
-
-TikTok Organic identity is fixed to:
+## TikTok Organic identity and protected source
 
 ```text
 customerKey=chemistry_k
 accountKey=chemistry_k
 sourceHandle=chemistry_k
+source=lark_native_tiktok_for_creator
 ```
 
-Historical profile/account labels are compatibility metadata only. They are not evidence for record ownership and must not be used to rename/delete facts.
+`RAW_TikTok_Creator_Videos` is a protected Lark Native source. Runtime may read it but must not mutate its Table, Fields, Views, Formula, Filter or Records.
 
-## Current Lark Base baseline
+Retained last verified Live facts:
 
 ```text
-Physical tables             42
-Fields                     737
-Views                      133
-Filtered Views              42
-Sorted Views                 6
-Views with hidden fields     7
-Duplicate table names        0
-Google Ads formulas          4/4 PASS
-Google Ads filters          19/19 PASS
-Shared-table filters        17/17 PASS
-Report Views                 6/6 PASS
+RAW_TikTok_Creator_Videos             approximately 2021
+organic_content_state                 2021
+organic_content_observations          2021
+data_coverage_entities                2021
+D1 duplicate State/Observation groups 0 / 0
+MKT_Content                           22 at last verified audit
+MKT_Content_Daily                     208 at last verified audit
 ```
 
-Relevant TikTok Lark inventory at the last verified audit:
+These counts are historical evidence, not a new freshness claim. New Live facts require the guarded read-only audit.
+
+## Merged TikTok post-Lark architecture
 
 ```text
-RAW_TikTok_Creator_Videos   approximately 2021 records / protected native source
-MKT_Content                 bounded existing Canonical table
-MKT_Content_Daily           current cumulative baseline table
+Lark Native TikTok sync approximately 07:00 Asia/Bangkok
+→ bounded read-only RAW probe
+→ two identical probes / deterministic watermark
+→ durable same-watermark admission
+→ existing Durable source staging
+→ staged-watermark fence
+→ full-unit preflight
+→ existing D1 Observation / State / Coverage
+→ existing Canonical Lark writer
+→ completed Coverage re-read
+→ idempotent Daily Report request
+→ Lark-primary + D1-shadow or D1-primary Report calculation
+→ bounded Lark metadata hydration
+→ existing Report output writer
+→ optional deterministic D1 materialization
 ```
 
-`RAW_TikTok_Creator_Videos` remains protected/read-only. Do not rerun Lark Schema/View/Formula/Filter Apply from the Organic bootstrap/recovery work.
+Scheduled `metricDate` is the previous completed local day. The scheduler no longer emits a blind TikTok Business sync and rejects conflicting independent/post-processing Daily Report producers.
 
-## Storage Architecture v1
+No second TikTok connector, Reliability stack, Queue/DLQ framework, D1 history writer, Canonical writer, Lark sync engine or Report formula engine was created.
+
+## Merged guarded rollout operator
+
+PR `#71` added an operator for these separately confirmed phases:
 
 ```text
-Platform API / Lark Native Sources
-→ source-specific validation
-→ D1 current state + historical facts + Coverage
-→ deterministic report calculation/materialization
-→ Lark current state + bounded cache + aggregate/report result
-→ Dashboard / AI / Notification
+plan
+preflight
+backup
+migrate
+deploy-safe
+enable-audit
+audit
+disable-audit
 ```
 
-D1 Storage authority includes:
+The operator:
+
+- defaults to plan-only;
+- locks the exact Integration Workspace, Chemistry K source, D1 and Worker identity;
+- requires a checksum-verified backup before Migration `0016`;
+- validates exactly pending Migration `0016` and additive post-migration count parity;
+- permits only Audit HTTP during the audit-only deployment;
+- validates route state `404 → 401 → 200 → 404`;
+- retains `readyForManualProcessing=false` as diagnostic evidence;
+- preserves emergency safe-close when the authenticated Audit fails;
+- contains no Queue send, DLQ action, Business write, schedule, retention/delete or Production path.
+
+Final aligned Branch Verification `#558` passed after the merged Meta implementation was included.
+
+Detailed operator closeout:
 
 ```text
-organic_content_state
-organic_content_observations
-organic_account_daily_facts
-ads_entity_state
-ads_daily_facts
-ads_conversion_daily_facts
-data_coverage_runs
-data_coverage_entities
-report_materializations
-report_requests
+docs/project-brain/tiktok-post-lark-rollout-operator-merge-closeout-2026-07-27.md
 ```
 
-Names, Grain, Stable keys, metric semantics, indexes and UPSERT rules remain governed by:
+## Merged YouTube Organic integration
+
+PR `#85` merged the reviewed YouTube End-to-End implementation and the Integration-owned Shared Worker wiring. Shared routing now selects the D1-first End-to-End route only when the dedicated gate is explicitly true:
 
 ```text
-docs/project-brain/storage-architecture-and-migration-contract-v1.md
+YouTube job + MKT_YOUTUBE_END_TO_END_ENABLED=true
+  → dedicated D1-first route
+
+YouTube job + flag false/unset
+  → existing active router and legacy YouTube route
+
+Non-YouTube job
+  → existing Google Ads/TikTok/History/Active chain unchanged
 ```
 
-## TikTok Organic D1 bootstrap result
+The merge reuses the existing YouTube API client, Shared Google OAuth Core, normalizers, Reliability runner, distributed lock, resumable work, Organic history writer, D1 stores, Coverage and `TableSyncEngine`. No duplicate Connector, Queue, Reliability, D1, Lark or Report engine was created.
 
-Manual jobs:
+The merged implementation includes bounded large-inventory storage, retry-safe Coverage, fail-closed report reads, non-destructive missing/private/deleted handling, hidden-subscriber `null` semantics, and D1-before-Lark ordering. YouTube Analytics period facts remain in `RAW_YouTube_Analytics_Daily`; no new migration was added.
+
+Detailed records:
 
 ```text
-tiktok.creator.native.history.bootstrap
-tiktok.creator.native.history.recover
+docs/tasks/youtube-organic-end-to-end.md
+docs/tasks/youtube-organic-end-to-end-integration-review.md
+docs/tasks/youtube-organic-integration-wiring-safe-rollout.md
 ```
 
-Verified runtime behavior:
+Remote schema inspection, Worker deployment, Provider calls, Queue messages, D1/Lark Business writes, schedules and LIVE UAT remain blocked pending separate authorization.
 
-- manual/recovery trigger only;
-- never emitted by schedules;
-- Integration Workspace only;
-- requires D1 write and backfill flags;
-- protected RAW is staged in bounded durable units;
-- full source preflight finishes before business writes;
-- durable unit write order is Observation → State → Coverage;
-- Stable operation identity survives retry, continuation and DLQ;
-- generation fence blocks stale drift;
-- partial business facts are retained and repaired idempotently;
-- Dry-run remains Dry-run through continuations;
-- bootstrap/recovery destination is D1-only;
-- Lark business writes remain zero.
-
-Observation semantics:
+## Default-false controls
 
 ```text
-first trusted cumulative metrics   initial
-changed cumulative metrics         changed
-cumulative decrease                correction
-unchanged cumulative metrics       no new Observation
-metadata-only change               Current state update only
-missing metric                     null
-observed zero                      0
+MKT_TIKTOK_AUDIT_HTTP_ENABLED=false
+MKT_TIKTOK_WATERMARK_ADMISSION_ENABLED=false
+MKT_TIKTOK_POST_PROCESS_REPORT_ENABLED=false
+MKT_YOUTUBE_END_TO_END_ENABLED=false
+MKT_YOUTUBE_LARK_WRITE_ENABLED=false
+MKT_REPORT_D1_SHADOW_READ_ENABLED=false
+MKT_REPORT_D1_READ_ENABLED=false
+MKT_REPORT_PRESET_MATERIALIZATION_ENABLED=false
+MKT_SCHEDULE_TIKTOK_ENABLED=false
+MKT_SCHEDULE_YOUTUBE_ENABLED=false
+MKT_SCHEDULE_DAILY_REPORT_ENABLED=false
+MKT_LARK_DAILY_RETENTION_ENABLED=false
 ```
 
-`observed_at` and `fetched_at` remain stable for a durable Work generation. No fake historical Daily rows are synthesized.
+Storage and Report flags never implicitly enable schedules.
 
-## Durable recovery closeout
+## Shared Core authority
 
-Immutable incident:
-
-```text
-operation_id       = f59b852f00634005c7ff4da51afee964
-work_key           = tiktok:f59b852f00634005c7ff4da51afee964
-generation         = 1784829780000
-original_dlq       = dlq:8d1b9077657385a417cb32a0ed3114cb
-failed_recovery    = dlq:06f7660b796808ebca3b8cd2e7780894
-terminal_closure   = terminal:a90a4dbf2f281124d40601f2f7799a90
-```
-
-Final facts:
-
-```text
-State / Observation / Initial / Coverage = 2021 / 2021 / 2021 / 2021
-Duplicate groups                          = 0 / 0
-Work                                      = completed
-Coverage                                  = complete
-Original DLQ                              = redriven / recovery completed
-Terminal closure DLQ                      = redriven / closure completed
-Failed-recovery DLQ                       = open / retained forensic evidence
-Main Queue attempts after exact replay    = 10
-Business fact drift                       = false
-Unexpected terminal failures              = 0
-```
-
-The failed-recovery DLQ must remain retained. No routine cleanup/delete/redrive is authorized.
-
-## D1-first TikTok Canonical preparation
-
-The staged path supports D1-first hooks behind `MKT_TIME_SERIES_D1_WRITE_ENABLED`:
-
-```text
-validate complete unit
-→ D1 Current state / Observation / Coverage
-→ Lark MKT_Content
-→ Lark MKT_Content_Daily
-→ persist unit completion
-```
-
-This future dual-write path remains blocked for full live TikTok Canonical scale. The completed bootstrap/recovery did **not** authorize Lark Canonical backfill.
-
-## Why Lark Canonical and Report cutover remain blocked
-
-The protected RAW source is approximately 2,021 records while the current TikTok report path still has bounded Lark readers and uses the existing cumulative Daily baseline.
-
-```text
-LIVE_BOOTSTRAP_DESTINATION = D1_ONLY
-TIKTOK_CANONICAL_SYNC = BLOCKED
-REPORT_D1_SHADOW_READ = DISABLED
-REPORT_D1_READER_CUTOVER = BLOCKED
-LARK_DAILY_RETENTION = BLOCKED
-```
-
-No retention or delete is authorized.
-
-## Feature-flag state after closeout
-
-Enabled in the Integration Workspace deployment:
-
-```text
-MKT_CONNECTOR_TIKTOK_ENABLED
-MKT_TIME_SERIES_D1_WRITE_ENABLED
-MKT_TIME_SERIES_D1_BACKFILL_ENABLED
-```
-
-Disabled:
-
-```text
-MKT_SCHEDULE_TIKTOK_ENABLED
-MKT_SCHEDULE_YOUTUBE_ENABLED
-MKT_SCHEDULE_DAILY_REPORT_ENABLED
-MKT_SCHEDULE_WEEKLY_REPORT_ENABLED
-MKT_REPORT_D1_SHADOW_READ_ENABLED
-MKT_REPORT_D1_READ_ENABLED
-MKT_LARK_DAILY_RETENTION_ENABLED
-MKT_NOTIFICATION_RUNTIME_ENABLED
-MKT_DLQ_REDRIVE_ENABLED
-MKT_CONNECTOR_GOOGLE_ADS_ENABLED
-MKT_GOOGLE_ADS_SIGNED_INGRESS_ENABLED
-MKT_GOOGLE_ADS_SECRET_PROVISIONING_ENABLED
-MKT_GOOGLE_ADS_BUSINESS_WRITE_ENABLED
-```
-
-Storage flags never enable schedules.
-
-## Google Ads current state
-
-Completed read-only and authenticated transport preparation includes:
-
-- Chemistry K advertiser link/selectability verification;
-- Manager Script authorization and bounded DRY_RUN;
-- six non-empty bounded datasets;
-- Google Ads API `v24` compatibility correction;
-- additive transport Migration `0013` and provisioning Migration `0014`;
-- one-time Signing Secret Ticket redeem/confirm from the actual Manager Script;
-- external Signed PREVIEW through `UrlFetchApp`;
-- six-dataset, seven-chunk and 1,375-row transport reconciliation;
-- `preview_validated` completion and immediate payload redaction;
-- zero Ads Business fact, Queue, DLQ, alert and Lark drift;
-- completed Lark schema/view/formula work;
-- no Google Ads schedule.
-
-Final safety state:
-
-- Connector disabled;
-- Signed ingress disabled / `404`;
-- provisioning route disabled / `404`;
-- Business writer disabled;
-- Script Properties restored to `DRY_RUN` and delivery `false`;
-- clean Repository Script restored;
-- Signing Key ID and Secret remain only in Script Properties/Secret storage;
-- no Ticket, Secret, proof or raw payload is stored in Git.
-
-Draft PR #17:
-
-- remains Draft/HOLD;
-- is not the next implementation baseline;
-- was not deployed or externally live-validated;
-- must not be merged against the old Storage/RAW-lineage model;
-- requires a new full-codebase review and approved task for any reusable concept.
-
-## Core runtime rules
-
-Every active write path must reuse:
+All channel Workstreams must reuse:
 
 - central Connector and Job catalogs;
-- deterministic Stable keys;
-- idempotent plan/diff/execute;
-- D1 checkpoints and resumable work;
-- generation fence and distributed lock renewal;
-- bounded retry and typed Permanent classification;
-- Queue/DLQ and controlled redrive;
-- reconciliation, Coverage and alerts;
-- secret/identity redaction;
-- explicit null/zero and metric semantics.
+- deterministic Stable keys and exact identity validation;
+- existing Queue/DLQ and operation identity helpers;
+- existing Reliability runner, lock renewal and typed retry classification;
+- D1 history/Coverage contracts and Storage Foundation;
+- existing Canonical Lark writer and `TableSyncEngine`;
+- existing Report calculations, materialization and output writers;
+- sanitized observability with no Secret or raw customer payload exposure.
 
-Do not create a parallel Reliability stack.
+Do not create a parallel Reliability, Queue, D1 writer, Lark sync or Report engine.
 
-## Current task and next boundary
+## Parallel Workstreams
 
 ```text
-PRIOR_TASK = GOOGLE_ADS_SECRET_PROVISIONING_AND_EXTERNAL_SIGNED_PREVIEW_COMPLETE
-CURRENT_TASK = GOOGLE_ADS_EXTERNAL_SIGNED_PREVIEW_CLOSEOUT
-CURRENT_TASK_STATUS = RUNTIME_GATE_PASS_DOCUMENTATION_CLOSEOUT
-NEXT_IMPLEMENTATION_GATE = LOCAL_REFERENCE_ONLY_QUEUE_ADMISSION
+TikTok Organic       pipeline PR #65 merged / rollout operator PR #71 merged / Remote rollout pending
+All Meta             implementation PR #69 merged / protected runtime wiring remains separate Draft work
+YouTube Organic      integration PR #85 merged / Remote read-only preflight pending
+Chatwoot             separate Draft PR
+WooCommerce          separate Draft PR
+Google Ads           complete / safely closed
 ```
 
-Actual Manager Script DRY_RUN, one-time Secret provisioning and external Signed
-PREVIEW are complete and safely closed. This documentation-only branch records
-the sanitized closeout without Source, dependency, migration or runtime changes.
-After this Closeout is reviewed and merged, the next separately approved
-implementation boundary is Local reference-only Queue admission. Business
-writers, D1 Ads facts, Shared RAW/Lark writes, schedules, LIVE and Production
-must remain disabled.
+Each remaining Workstream owns a unique Branch and Draft PR. Migration, deployment, Queue sends, Remote Lark/D1 mutation, schedules and LIVE UAT remain Integration-stream responsibilities only.
+
+## Next separately approved TikTok rollout
+
+Repository tooling is merged, but no Remote phase is authorized automatically. The next order is:
+
+1. run the operator plan from an authorized local Integration Workspace runtime;
+2. execute read-only Remote configuration/schema preflight;
+3. retain and review sanitized evidence;
+4. authorize Remote D1 backup separately;
+5. authorize additive Migration `0016` separately;
+6. authorize flags-false Worker deployment separately;
+7. authorize temporary audit-only deployment and one authenticated audit separately;
+8. restore all-flags-false Worker state immediately;
+9. only after a clean audit, consider one manual new-watermark Admission;
+10. reconcile D1/Canonical/Coverage;
+11. validate Lark-primary + D1-shadow parity and exact rerun stability;
+12. validate D1-primary with an immediate Lark-primary rollback path;
+13. only then propose controlled schedule activation.
+
+## Next separately approved YouTube rollout
+
+The Repository implementation is merged, but no Remote phase is authorized automatically. The next order is:
+
+1. authenticated read-only verification that Storage Foundation `0009` tables exist;
+2. inspect deployed configuration and confirm every YouTube/Storage/Report/Schedule flag is false;
+3. retain and review sanitized evidence;
+4. separately authorize an all-flags-false Worker deployment;
+5. separately authorize a dry-run/read-only YouTube operation;
+6. verify non-dry execution is blocked while D1 or Lark gate is false;
+7. separately authorize controlled Integration Workspace D1-first/Lark UAT;
+8. verify Coverage, idempotent rerun and D1 Report shadow parity;
+9. keep Schedule and Production blocked until a new explicit approval.
 
 ## Permanent safety rules
 
 - Data model before Connector;
 - one Integration Workspace before customer-owned Production;
 - no fake history or dummy Production data;
-- no Canonical TikTok scale before Report D1 parity;
 - missing metric is `null`, not zero, unless Source proves zero;
 - no Retention/delete before parity, backup, reconciliation and rollback;
-- no Lark Schema/View/Formula reopening from this task;
-- no rerun of the completed TikTok recovery/resume/repair/replay operators;
-- no merging Draft PR #17 against the old Storage model;
-- no Google Ads Queue admission without a separate approved task;
+- no protected RAW mutation;
+- no rerun of completed TikTok recovery operators;
+- no duplicate Reliability/Queue/D1/Lark/Report engine;
 - Connector flags and schedules disabled by default;
-- secrets stay in Environment/Secret Manager;
+- Secrets stay in Environment/Secret Manager;
 - Production resources must be customer-owned.

@@ -5,7 +5,21 @@ const STABLE_OPERATION_CONTRACTS = new Map([
   [JOB_TYPES.TIKTOK_CREATOR_NATIVE_HISTORY_BOOTSTRAP, Object.freeze({ prefix: 'tiktok' })],
   [JOB_TYPES.TIKTOK_CREATOR_NATIVE_HISTORY_RECOVER, Object.freeze({ prefix: 'tiktok' })],
   [JOB_TYPES.GOOGLE_ADS_MANAGER_SIGNED_DELIVERY_PROCESS, Object.freeze({ prefix: 'google_ads' })],
+  [JOB_TYPES.FACEBOOK_ORGANIC_SYNC, Object.freeze({ prefix: 'facebook' })],
+  [JOB_TYPES.INSTAGRAM_ORGANIC_SYNC, Object.freeze({ prefix: 'instagram' })],
+  [JOB_TYPES.META_ADS_SYNC, Object.freeze({
+    prefix: 'meta_ads',
+    scopeField: 'sourceAccountKey',
+  })],
 ]);
+
+function resolveStableOperationContract(type, body) {
+  if (type === JOB_TYPES.TIKTOK_CREATOR_NATIVE_SYNC
+    && body?.trigger === 'post_lark_watermark') {
+    return Object.freeze({ prefix: 'tiktok' });
+  }
+  return STABLE_OPERATION_CONTRACTS.get(type) ?? null;
+}
 
 /**
  * Resolve durable Queue identity independently from Cloudflare delivery message.id.
@@ -14,7 +28,7 @@ const STABLE_OPERATION_CONTRACTS = new Map([
 export function resolveQueueOperation(input = {}) {
   const body = input.job?.body ?? {};
   const type = optionalText(body.type);
-  const contract = STABLE_OPERATION_CONTRACTS.get(type) ?? null;
+  const contract = resolveStableOperationContract(type, body);
   const requestedAt = normalizeTimestamp(
     body.originalRequestedAt ?? body.requestedAt ?? input.job?.requestedAt,
     'originalRequestedAt',
@@ -30,7 +44,7 @@ export function resolveQueueOperation(input = {}) {
 
   if (contract) {
     const stableOperationId = requireText(operationId, 'operationId');
-    const derivedWorkKey = `${contract.prefix}:${stableOperationId}`;
+    const derivedWorkKey = buildStableWorkKey(contract, body, stableOperationId);
     if (explicitWorkKey && explicitWorkKey !== derivedWorkKey) {
       throw permanentError('Queue workKey does not match stable operationId', {
         code: 'QUEUE_OPERATION_IDENTITY_MISMATCH',
@@ -67,7 +81,7 @@ export function resolveQueueOperation(input = {}) {
 /** Preserve the exact durable identity in continuation, redrive and manual recovery payloads. */
 export function withQueueOperation(body = {}, operation = {}) {
   const type = requireText(body.type, 'body.type');
-  const contract = STABLE_OPERATION_CONTRACTS.get(type);
+  const contract = resolveStableOperationContract(type, body);
   if (!contract) {
     throw permanentError('Cannot serialize an unsupported stable Queue operation', {
       code: 'QUEUE_OPERATION_IDENTITY_INVALID',
@@ -82,7 +96,8 @@ export function withQueueOperation(body = {}, operation = {}) {
     'operation.originalRequestedAt',
     true,
   );
-  if (workKey !== `${contract.prefix}:${operationId}` || generation !== originalRequestedAt) {
+  if (workKey !== buildStableWorkKey(contract, body, operationId)
+    || generation !== originalRequestedAt) {
     throw permanentError('Cannot serialize an inconsistent durable Queue operation', {
       code: 'QUEUE_OPERATION_IDENTITY_MISMATCH',
     });
@@ -97,8 +112,26 @@ export function withQueueOperation(body = {}, operation = {}) {
   });
 }
 
-export function isStableOperationJobType(type) {
-  return STABLE_OPERATION_CONTRACTS.has(type);
+export function isStableOperationJobType(type, body = {}) {
+  return Boolean(resolveStableOperationContract(type, body));
+}
+
+function buildStableWorkKey(contract, body, operationId) {
+  const scope = contract.scopeField
+    ? normalizeOperationScope(body?.[contract.scopeField], contract.scopeField)
+    : null;
+  return [contract.prefix, scope, operationId].filter(Boolean).join(':');
+}
+
+function normalizeOperationScope(value, fieldName) {
+  const text = requireText(value, fieldName).toLowerCase();
+  if (!/^[a-z0-9][a-z0-9_-]{0,63}$/u.test(text)) {
+    throw permanentError(`Queue operation requires valid ${fieldName}`, {
+      code: 'QUEUE_OPERATION_SCOPE_INVALID',
+      details: { fieldName },
+    });
+  }
+  return text;
 }
 
 function normalizeTimestamp(value, fieldName, required) {
@@ -138,6 +171,7 @@ function platformFromJobType(type) {
   if (typeof type !== 'string') return 'system';
   if (type.startsWith('report.')) return 'tiktok';
   if (type.startsWith('google.ads.')) return 'google_ads';
+  if (type.startsWith('meta.ads.')) return 'meta_ads';
   const prefix = type.split('.')[0];
   return new Set(['facebook', 'instagram', 'tiktok', 'youtube']).has(prefix)
     ? prefix

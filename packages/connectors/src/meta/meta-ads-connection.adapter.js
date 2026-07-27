@@ -10,7 +10,9 @@ export class MetaAdsConnectionAdapter {
   }
 
   async preflight(input = {}) {
-    const expectedAdAccountId = normalizeAdAccountId(input.expectedAdAccountId);
+    const expectedAdAccountIds = normalizeExpectedAdAccountIds(
+      input.expectedAdAccountIds ?? input.expectedAdAccountId,
+    );
     const [permissionRows, adAccounts] = await Promise.all([
       this.client.listEdge(
         'me/permissions',
@@ -28,13 +30,19 @@ export class MetaAdsConnectionAdapter {
       (account) => Number(account?.account_status) === 1,
     ).length;
 
+    const matchedAccountCount = expectedAdAccountIds.filter(
+      (accountId) => accountIds.includes(accountId),
+    ).length;
+
     return deepFreeze({
       candidateCount: accountIds.length,
       activeCandidateCount,
-      mappingConfigured: expectedAdAccountId !== null,
-      identityMatched: expectedAdAccountId === null
-        ? false
-        : accountIds.includes(expectedAdAccountId),
+      expectedAccountCount: expectedAdAccountIds.length,
+      matchedAccountCount,
+      missingAccountCount: expectedAdAccountIds.length - matchedAccountCount,
+      mappingConfigured: expectedAdAccountIds.length > 0,
+      identityMatched: expectedAdAccountIds.length > 0
+        && matchedAccountCount === expectedAdAccountIds.length,
       grantedPermissions: readGrantedPermissions(permissionRows),
     });
   }
@@ -61,6 +69,15 @@ function requireAdAccountId(account) {
 function normalizeAdAccountId(value) {
   const text = optionalText(value);
   return text ? text.replace(/^act_/iu, '') : null;
+}
+
+function normalizeExpectedAdAccountIds(value) {
+  const candidates = Array.isArray(value)
+    ? value
+    : value === null || value === undefined || value === ''
+      ? []
+      : [value];
+  return [...new Set(candidates.map((candidate) => normalizeAdAccountId(candidate)).filter(Boolean))];
 }
 
 function optionalText(value) {
