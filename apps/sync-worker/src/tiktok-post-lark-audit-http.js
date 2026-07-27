@@ -8,6 +8,7 @@ import { timingSafeEqualText } from '../../../packages/shared/src/security/secur
 import { createInfrastructure } from './runtime-infrastructure.js';
 
 export const TIKTOK_POST_LARK_AUDIT_PATH = '/operator/tiktok/post-lark-audit';
+const TIKTOK_POST_LARK_AUDIT_FALLBACK_CODE = 'TIKTOK_POST_LARK_AUDIT_FAILED';
 
 /** Guarded GET-only diagnostics route. It has no Queue, D1 write or Lark write dependency. */
 export function createTikTokPostLarkAuditHttpHandler(dependencies = {}) {
@@ -68,11 +69,12 @@ export function createTikTokPostLarkAuditHttpHandler(dependencies = {}) {
       });
     } catch (error) {
       const operational = sanitizeOperationalError(error);
-      const status = operational.code === 'TIKTOK_POST_LARK_AUDIT_UNAUTHORIZED' ? 401 : 400;
+      const code = operational.code ?? TIKTOK_POST_LARK_AUDIT_FALLBACK_CODE;
+      const status = code === 'TIKTOK_POST_LARK_AUDIT_UNAUTHORIZED' ? 401 : 400;
       return json({
         ok: false,
         error: status === 401 ? 'Unauthorized' : 'TikTok audit failed',
-        code: operational.code,
+        code,
       }, {
         status,
         headers: {

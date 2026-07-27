@@ -23,7 +23,7 @@ function context(env, token = 'operator-secret', method = 'GET') {
   return { request, env, url: new URL(request.url) };
 }
 
-function createHandler(calls) {
+function createHandler(calls, options = {}) {
   return createTikTokPostLarkAuditHttpHandler({
     loadRuntimeConfig() {
       return {
@@ -41,6 +41,7 @@ function createHandler(calls) {
     },
     async audit(input) {
       calls.push(input);
+      if (options.auditError) throw options.auditError;
       return {
         mode: 'read_only',
         readyForManualProcessing: true,
@@ -67,6 +68,48 @@ test('TikTok audit route requires the operator bearer token', async () => {
   assert.equal(response.status, 401);
   assert.equal(body.code, 'TIKTOK_POST_LARK_AUDIT_UNAUTHORIZED');
   assert.equal(calls.length, 0);
+});
+
+test('TikTok audit route uses a stable fallback code without exposing generic error internals', async () => {
+  const calls = [];
+  const error = new Error('simulated internal failure');
+  error.stack = 'stack containing token=private-token';
+  error.details = {
+    token: 'private-token',
+    tableId: 'private-table',
+  };
+  const handler = createHandler(calls, { auditError: error });
+  const response = await handler(context(baseEnv));
+  const body = await response.json();
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(body, {
+    ok: false,
+    error: 'TikTok audit failed',
+    code: 'TIKTOK_POST_LARK_AUDIT_FAILED',
+  });
+  assert.doesNotMatch(
+    JSON.stringify(body),
+    /simulated internal failure|stack|details|private-token|private-table|token/iu,
+  );
+  assert.equal(calls.length, 1);
+});
+
+test('TikTok audit route preserves a known sanitized operational error code', async () => {
+  const calls = [];
+  const error = new Error('internal table configuration details');
+  error.code = 'LARK_TABLE_CONFIG_INVALID';
+  const handler = createHandler(calls, { auditError: error });
+  const response = await handler(context(baseEnv));
+  const body = await response.json();
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(body, {
+    ok: false,
+    error: 'TikTok audit failed',
+    code: 'LARK_TABLE_CONFIG_INVALID',
+  });
+  assert.doesNotMatch(JSON.stringify(body), /internal table configuration details/iu);
 });
 
 test('authorized TikTok audit route returns read-only sanitized evidence', async () => {

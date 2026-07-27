@@ -1,121 +1,119 @@
-# Current Task — WooCommerce Integration Merge Closeout
+# Current Task — TikTok Post-Lark Audit Sanitized Error Code Hotfix
 
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = MERGED_REMOTE_ROLLOUT_NOT_AUTHORIZED
-CURRENT_PROGRAM                     = WOOCOMMERCE_INTEGRATION_MERGE_CLOSEOUT
-MERGED_PR                           = #94
-MERGE_COMMIT                        = 060977cd9ed2933700fbd121c9236e6578ad571e
-CLOSEOUT_PR                         = #98 / MERGED
-CLOSEOUT_MERGE_COMMIT               = 77ee75df26ffce6d25217975776e1eb4a3194f4f
-CLOSEOUT_VERIFIED_HEAD              = d89ee93b19d62c8d6a7f72e0b9ed30117a2685fd
-CLOSEOUT_BRANCH_VERIFICATION        = #627 / 30247248691 / PASS
-REVIEWED_SOURCE_PR                  = #66 / PASS_FOR_INTEGRATION
-REVIEWED_SOURCE_HEAD                = 10cdd910b1083e6ffd5f8a4e118c06cdc6c842ee
-INTEGRATION_VERIFIED_HEAD           = d0ce3399177b5d6c8fcdb6c56eadd77851ae29e9
-FINAL_BRANCH_VERIFICATION           = #622 / 30246242431 / PASS
-MIGRATION                           = 0017_woocommerce_commerce.sql / SOURCE ONLY
-REMOTE_MIGRATION_0017               = NOT_APPLIED
-WORKER_DEPLOYMENT                   = NOT_RUN
-WOO_PROVIDER_EXECUTION              = NOT_RUN
-CUSTOMER_CREDENTIAL                 = NOT_USED
-QUEUE_OR_DLQ_ACTION                 = NONE
-REMOTE_D1_OR_LARK_MUTATION          = NONE
-SCHEDULES                           = DISABLED
-CUSTOMER_OR_PRODUCTION_LIVE_UAT     = NOT_RUN
+TASK_STATUS                         = IMPLEMENTATION_PASS_DRAFT_PR_OPEN
+CURRENT_PROGRAM                     = TIKTOK_POST_LARK_AUDIT_ERROR_CODE_HOTFIX
+BASE_MAIN_SHA                       = db475ebb825f8a6cb3100bb2f4be5d7a43c8613d
+INCIDENT_BASELINE_HEAD              = 8b7f9a879ba0c1b0b5d89dcfa2373ad3bb3c2ce8
+BRANCH                              = hotfix/tiktok-post-lark-audit-error-code
+REMOTE_MIGRATION_0016               = APPLIED
+REMOTE_AUDIT_ROUTE                  = SAFE_CLOSED / HTTP 404
+REMOTE_TIKTOK_AUDIT_FLAG            = false
+REMOTE_BUSINESS_FLAGS               = all false
+REMOTE_SCHEDULE_FLAGS               = all false
+AUTHENTICATED_AUDIT_HTTP_STATUS     = 400
+AUTHENTICATED_AUDIT_ERROR           = TikTok audit failed
+AUTHENTICATED_AUDIT_ERROR_CODE      = NULL_OR_MISSING
+QUEUE_OR_BUSINESS_WRITE_PERFORMED   = false
+HOTFIX_REMOTE_ACTION                = NONE
+MANUAL_PROCESSING                   = BLOCKED
 PRODUCTION                          = BLOCKED
 ```
 
-## Merge result
-
-PR `#94` merged the reviewed WooCommerce End-to-End implementation and Integration-owned Shared wiring into `main` at `060977cd9ed2933700fbd121c9236e6578ad571e`.
-
-The merged repository scope includes:
-
-- read-only WooCommerce REST transport with HTTPS and header-only Basic authentication;
-- Store, Order, Order-line, Product, Variation, Category, PII-minimized Customer, hashed Coupon and Refund models;
-- exact signed integer micros and ISO-currency isolation;
-- immutable durable continuation scope;
-- source-revision gating and atomic accepted-revision Order-line replacement;
-- additive D1 RAW, Canonical/current-state and Daily facts;
-- Coverage-backed report status and bounded report reads;
-- stable Queue identity `woocommerce:<operationId>`;
-- protected `uat_pending` / `manualOnly` runtime route;
-- Shared Reliability, distributed lock, generation fence, Queue retry/DLQ, resumable work, Coverage and `TableSyncEngine` reuse;
-- 14 Shared WooCommerce Lark logical table keys;
-- additive Migration `0017_woocommerce_commerce.sql`.
-
-No duplicate Reliability engine, Queue framework, D1 writer, Coverage store, Lark client or sync engine was introduced.
-
-## Default-false safe state
+The previous WooCommerce Integration Merge Closeout task is preserved verbatim at:
 
 ```text
-MKT_CONNECTOR_WOOCOMMERCE_ENABLED=false
-MKT_WOOCOMMERCE_D1_WRITE_ENABLED=false
-MKT_WOOCOMMERCE_LARK_WRITE_ENABLED=false
-MKT_WOOCOMMERCE_REPORT_READ_ENABLED=false
-MKT_WOOCOMMERCE_FULL_RECONCILIATION_ENABLED=false
-MKT_SCHEDULE_WOOCOMMERCE_ENABLED=false
+docs/archive/current-task-before-tiktok-post-lark-audit-error-code-hotfix-2026-07-27.md
 ```
 
-Repository merge changed source code and examples only. It did not alter deployed Environment values, create Customer credentials, send a Queue message or enable a Schedule.
+## Objective
 
-## Verification result
+ทำให้ authenticated TikTok Post-Lark Audit failure ทุกกรณีที่ตอบ HTTP `400` มี
+sanitized, stable และ non-empty error code โดยไม่เปิดเผย raw exception, message,
+stack, details, Secret, Token, Customer identity, Table ID หรือ Content ID และทำให้
+Rollout Operator เก็บเฉพาะ HTTP status กับ sanitized remote code เมื่อ Remote Audit
+ตอบสถานะที่ไม่ใช่ `200`
 
-Final pre-merge Branch Verification `#622`, run ID `30246242431`, passed on the exact reviewed Integration head `d0ce3399177b5d6c8fcdb6c56eadd77851ae29e9`:
+## In scope
+
+- ใช้ `TIKTOK_POST_LARK_AUDIT_FAILED` เมื่อ HTTP boundary ได้ operational code ที่ว่าง
+- รักษา known operational code เดิม รวมถึง `TIKTOK_POST_LARK_AUDIT_UNAUTHORIZED`
+- เพิ่ม Operator error `TIKTOK_POST_LARK_ROLLOUT_AUDIT_HTTP_FAILED`
+- จำกัด Operator error details ไว้เฉพาะ `httpStatus` และ `remoteCode`
+- fallback Remote code ที่หายหรือไม่อยู่ในรูป stable code เป็น
+  `TIKTOK_POST_LARK_AUDIT_FAILED`
+- รักษา Audit success path และ `audit.json` evidence contract เดิม
+- เพิ่ม Node และ Workers-runtime regression tests
+- อัปเดต Current Task, Project Brain และ Changelog ตาม Runtime facts ที่เกิดขึ้นจริง
+
+## Out of scope
 
 ```text
-Install locked dependencies       PASS
-Syntax / architecture / hygiene   PASS
-Focused staged TikTok             4 / 4 PASS
-Node Unit / Integration           990 / 990 PASS
-Workers runtime                   9 / 9 PASS
-Report reliability                91 / 91 PASS
-Dependency audit                  0 vulnerabilities
-Wrangler deployment dry-run       PASS / no deployment
-Diagnostics upload                PASS
+Worker deployment
+Audit route enablement
+Live Audit
+Worker Secret rotation
+D1 Migration apply
+Remote D1 or Lark mutation
+Queue message
+DLQ action
+Watermark Admission
+D1 or Canonical Business write
+Report cutover
+Cron or Schedule activation
+Production
+PR merge
 ```
 
-Documentation-only closeout PR `#98` passed exact-head Branch Verification `#627`, run ID `30247248691`, on head `d89ee93b19d62c8d6a7f72e0b9ed30117a2685fd` and was Squash Merged into `main` at `77ee75df26ffce6d25217975776e1eb4a3194f4f`.
+## Acceptance criteria
 
-## Migration ownership
+- Generic authenticated failure ตอบ HTTP `400` และ
+  `code=TIKTOK_POST_LARK_AUDIT_FAILED`
+- Known error code เช่น `LARK_TABLE_CONFIG_INVALID` ไม่ถูกเขียนทับ
+- Wrong token ยังตอบ HTTP `401` และ
+  `code=TIKTOK_POST_LARK_AUDIT_UNAUTHORIZED`
+- Disabled route ยังตอบ `404`; non-GET ยังตอบ `405`
+- Success ยังตอบ `200`, `mode=read_only` และไม่มี Queue/Business write
+- Operator error สำหรับ non-`200` มี local code คงที่และ details เพียง
+  `httpStatus` กับ `remoteCode`
+- Raw response body, Authorization header และ Token ไม่ถูก persist หรือ report
+- Existing confirmation, evidence-chain และ emergency safe-close tests ผ่าน
 
-WooCommerce now owns source Migration `0017`. It remains unapplied remotely. The Chatwoot foundation closeout treats its later runtime migration as provisional `0018`; every later Integration task must refresh the actual migration directory before allocation.
-
-## Remote safe state
-
-No WooCommerce Provider/API request, Customer Consumer Key/Secret use, WordPress/WooCommerce mutation, Remote D1 migration/query/write, Remote Lark schema/record mutation, Queue/DLQ action, Worker deployment, Schedule activation, Customer LIVE UAT or Production change occurred as part of PR `#94`, PR `#98`, or this status correction.
-
-## Repository audit note
-
-During the Integration branch setup, `tmp/placeholder` containing only `x` was accidentally created on `main` at `60f5ce3c9af74f00efea90712786576e251c6672` and removed immediately at `4c9334a69ced8b595fa433b780a77452eb7cd940`. The final repository contains no placeholder. No Business fact, Secret, runtime configuration or Remote resource was affected.
-
-## Next separately authorized rollout
-
-Repository merge authorizes none of the following automatically. The controlled order is:
-
-1. authenticated read-only Remote D1 schema and deployed-configuration preflight;
-2. confirm every WooCommerce execution and Schedule flag remains false;
-3. Remote D1 backup;
-4. separately authorize additive Migration `0017` apply and read-back;
-5. separately authorize an all-flags-false Worker deployment;
-6. separately authorize WooCommerce read-only credential and exact Store identity validation;
-7. separately authorize one bounded manual D1-first/Lark UAT;
-8. verify Coverage, late revisions, exact rerun, lock/retry behavior and Lark repair;
-9. validate report shadow output;
-10. propose Schedule activation only after every previous gate passes.
-
-Detailed records:
+## Required verification
 
 ```text
-docs/tasks/woocommerce-end-to-end.md
-docs/tasks/woocommerce-integration-wiring.md
-docs/project-brain/woocommerce-integration-merge-closeout-2026-07-27.md
+npm ci
+Focused TikTok Audit HTTP tests
+Focused TikTok rollout operator tests
+Workers runtime tests
+npm run check
+npm test
+npm run test:report-reliability
+npm audit
+npm run deploy:dry-run
 ```
 
-Previous Current Task archive:
+## Implementation result
 
 ```text
-docs/archive/current-task-before-woocommerce-integration-merge-closeout-2026-07-27.md
+IMPLEMENTATION_RESULT               = PASS_TIKTOK_AUDIT_ERROR_CODE_HOTFIX_IMPLEMENTATION
+HTTP_FALLBACK_CODE                  = TIKTOK_POST_LARK_AUDIT_FAILED
+KNOWN_ERROR_CODE_PRESERVATION       = IMPLEMENTED
+OPERATOR_REMOTE_CODE_CAPTURE        = IMPLEMENTED
+RESPONSE_REDACTION_STATUS           = PASS
+QUEUE_OR_WRITE_PATH_ADDED           = false
+FOCUSED_NODE_TESTS                  = 18 / 18 PASS
+WORKERS_RUNTIME_TESTS               = 10 / 10 PASS
+NPM_CHECK                           = PASS
+NPM_TEST                            = 994 Unit + 10 Workers PASS
+REPORT_RELIABILITY                  = 91 / 91 PASS
+NPM_AUDIT                           = 0 vulnerabilities
+DEPLOY_DRY_RUN                      = PASS / no deployment
+REMOTE_ACTION_COUNT                 = 0
 ```
+
+## Remaining gate
+
+Draft PR review and merge, deployment, and any new Remote Audit require separate explicit approval.

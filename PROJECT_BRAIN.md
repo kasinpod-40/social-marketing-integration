@@ -45,12 +45,12 @@ WooCommerce end-to-end integration            merged via PR #94
 WooCommerce integration merge commit          060977cd9ed2933700fbd121c9236e6578ad571e
 WooCommerce reviewed Integration head         d0ce3399177b5d6c8fcdb6c56eadd77851ae29e9
 WooCommerce final verification                #622 PASS
-Migration 0016                                source only / not applied remotely
+Migration 0016                                applied remotely / additive verification passed
 Migration 0017                                WooCommerce source only / not applied remotely
-Worker deployment                             not run for TikTok, Meta, YouTube, Chatwoot or WooCommerce rollout
+Worker deployment                             TikTok restored safe-closed / Meta, YouTube, Chatwoot and WooCommerce not run
 Provider execution                            not run for Meta, YouTube, Chatwoot or WooCommerce rollout
 Queue send / DLQ redrive                      none for TikTok, Meta, YouTube, Chatwoot or WooCommerce rollout
-Remote D1 / Lark mutation                     none for TikTok, Meta, YouTube, Chatwoot or WooCommerce rollout
+Remote D1 / Lark mutation                     TikTok Migration 0016 only / no Business fact or Lark mutation
 Schedules                                     disabled
 Retention/delete                              blocked
 Production                                    blocked
@@ -74,7 +74,7 @@ Retained last verified Live facts:
 RAW_TikTok_Creator_Videos             approximately 2021
 organic_content_state                 2021
 organic_content_observations          2021
-data_coverage_entities                2021
+data_coverage_entities                3396
 D1 duplicate State/Observation groups 0 / 0
 MKT_Content                           22 at last verified audit
 MKT_Content_Daily                     208 at last verified audit
@@ -140,6 +140,30 @@ Detailed operator closeout:
 ```text
 docs/project-brain/tiktok-post-lark-rollout-operator-merge-closeout-2026-07-27.md
 ```
+
+## TikTok Remote rollout and Audit diagnostic incident
+
+The separately authorized rollout completed the read-only preflight, checksum-verified Remote D1
+backup, additive Migration `0016`, and an all-flags-false Worker deployment. Migration verification
+retained zero Admission rows, zero active Work/Locks, zero duplicate groups and unchanged TikTok
+Business counts.
+
+A controlled authenticated GET-only Audit window reached the handler but returned:
+
+```text
+HTTP status                         400
+error                               TikTok audit failed
+code                                null / missing
+Queue or Business write             none
+```
+
+The route was restored to safe-closed HTTP `404` through the approved emergency safe deployment.
+TikTok Audit, Business-write and Schedule flags are all `false`. Manual processing, Queue,
+Canonical/D1 Business writes, Lark mutation, Report cutover and schedules remain blocked.
+
+The Repository-only branch `hotfix/tiktok-post-lark-audit-error-code` adds a stable sanitized
+fallback code at the HTTP boundary and propagates only `httpStatus` plus `remoteCode` through the
+rollout operator. The Hotfix performs no Remote action and authorizes no new Audit window.
 
 ## Merged YouTube Organic integration
 
@@ -344,7 +368,7 @@ Do not create a parallel Reliability, Queue, D1 writer, Lark sync or Report engi
 ## Parallel Workstreams
 
 ```text
-TikTok Organic       pipeline PR #65 merged / rollout operator PR #71 merged / Remote rollout pending
+TikTok Organic       Migration 0016 applied / Audit failed without code / safe-closed / Hotfix review pending
 All Meta             runtime PR #73 merged / read-only operator PR #82 merged / Provider validation pending
 YouTube Organic      integration PR #85 merged / Remote read-only preflight pending
 Chatwoot             foundation PR #68 merged / Runtime Wiring waits after Migration 0017 owner
@@ -356,21 +380,19 @@ Each remaining Workstream owns a unique Branch and Draft PR. Migration, deployme
 
 ## Next separately approved TikTok rollout
 
-Repository tooling is merged, but no Remote phase is authorized automatically. The next order is:
+Migration `0016` is already applied and must not be rerun. The next order is:
 
-1. run the operator plan from an authorized local Integration Workspace runtime;
-2. execute read-only Remote configuration/schema preflight;
-3. retain and review sanitized evidence;
-4. authorize Remote D1 backup separately;
-5. authorize additive Migration `0016` separately;
-6. authorize flags-false Worker deployment separately;
-7. authorize temporary audit-only deployment and one authenticated audit separately;
-8. restore all-flags-false Worker state immediately;
-9. only after a clean audit, consider one manual new-watermark Admission;
-10. reconcile D1/Canonical/Coverage;
-11. validate Lark-primary + D1-shadow parity and exact rerun stability;
-12. validate D1-primary with an immediate Lark-primary rollback path;
-13. only then propose controlled schedule activation.
+1. review and separately approve merge of the sanitized error-code Hotfix;
+2. separately authorize an all-flags-false Worker deployment containing the reviewed Hotfix;
+3. confirm the route remains safe-closed HTTP `404`;
+4. separately authorize one new controlled Audit-only window and one authenticated GET;
+5. capture the stable sanitized Remote error code or a successful read-only Audit result;
+6. restore all-flags-false Worker state immediately;
+7. only after a clean Audit, consider one manual new-watermark Admission;
+8. reconcile D1/Canonical/Coverage and validate exact rerun stability;
+9. propose Schedule activation only after all prior gates pass.
+
+This Hotfix PR authorizes none of these Remote phases.
 
 ## Next separately approved YouTube rollout
 

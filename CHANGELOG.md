@@ -1,5 +1,36 @@
 # Changelog
 
+## Unreleased — TikTok Post-Lark Audit Error Code Hotfix — 2026-07-27
+
+### Runtime incident
+
+- Recorded a controlled authenticated GET-only TikTok Audit response with HTTP `400`,
+  `error=TikTok audit failed` and a null/missing diagnostic code.
+- Restored the Worker to safe-closed HTTP `404` with TikTok Audit, Business-write and
+  Schedule flags all `false`.
+- Migration `0016` remains applied; no Queue message, Admission, D1/Lark Business write,
+  Report cutover, Schedule activation or Production action occurred during the Audit.
+
+### Repository correction
+
+- Added the stable HTTP fallback code `TIKTOK_POST_LARK_AUDIT_FAILED` when shared
+  operational sanitization has no source error code.
+- Preserved known sanitized codes, including
+  `TIKTOK_POST_LARK_AUDIT_UNAUTHORIZED` and connector/configuration codes.
+- Added a rollout-operator HTTP failure boundary with local code
+  `TIKTOK_POST_LARK_ROLLOUT_AUDIT_HTTP_FAILED` and details limited to
+  `httpStatus` plus sanitized `remoteCode`.
+- Added Node and Workers-runtime regressions proving generic-error redaction, known-code
+  preservation, wrong-token `401`, disabled `404`, non-GET `405`, successful read-only
+  behavior and zero Queue use.
+
+### Safety
+
+- This Hotfix performs no Worker deployment, Live Audit, Secret rotation, Remote D1/Lark
+  mutation, Queue/DLQ action, Schedule activation or Production action.
+- A new Remote Audit requires separate approval after Hotfix review, merge and an
+  all-flags-false deployment gate.
+
 ## Unreleased — TikTok Organic Post-Lark D1 Parity — 2026-07-26
 
 ### Repository implementation

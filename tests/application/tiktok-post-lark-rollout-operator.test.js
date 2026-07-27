@@ -8,6 +8,7 @@ import {
   extractWranglerD1Rows,
   loadTikTokPostLarkRolloutTarget,
   parseTikTokPostLarkRolloutArgs,
+  validateTikTokPostLarkAuditHttpResponse,
   validateTikTokPostLarkAuditResponse,
   validateTikTokPostLarkNoPendingMigrations,
   validateTikTokPostLarkPendingMigrations,
@@ -194,6 +195,54 @@ test('audit response preserves exact identity and can report not-ready without f
     }),
     (error) => error.code === 'TIKTOK_POST_LARK_ROLLOUT_AUDIT_RESPONSE_INVALID',
   );
+});
+
+test('operator propagates only the sanitized remote code for a failed Audit HTTP response', () => {
+  const body = {
+    code: 'LARK_TABLE_CONFIG_INVALID',
+    raw: { contentId: 'private-content' },
+    authorization: 'Bearer private-token',
+    token: 'private-token',
+  };
+  assert.throws(
+    () => validateTikTokPostLarkAuditHttpResponse(400, body),
+    (error) => {
+      assert.equal(error.code, 'TIKTOK_POST_LARK_ROLLOUT_AUDIT_HTTP_FAILED');
+      assert.deepEqual(error.details, {
+        httpStatus: 400,
+        remoteCode: 'LARK_TABLE_CONFIG_INVALID',
+      });
+      const report = JSON.stringify({
+        code: error.code,
+        message: error.message,
+        details: error.details,
+      });
+      assert.doesNotMatch(report, /private-content|private-token|authorization|Bearer/iu);
+      return true;
+    },
+  );
+});
+
+test('operator falls back when a failed Audit HTTP response has no safe remote code', () => {
+  for (const body of [
+    {},
+    { code: '' },
+    { code: null },
+    { code: 'invalid code with raw details' },
+  ]) {
+    assert.throws(
+      () => validateTikTokPostLarkAuditHttpResponse(400, body),
+      (error) => {
+        assert.equal(error.code, 'TIKTOK_POST_LARK_ROLLOUT_AUDIT_HTTP_FAILED');
+        assert.deepEqual(error.details, {
+          httpStatus: 400,
+          remoteCode: 'TIKTOK_POST_LARK_AUDIT_FAILED',
+        });
+        return true;
+      },
+    );
+  }
+  assert.equal(validateTikTokPostLarkAuditHttpResponse(200, { ok: true }), true);
 });
 
 test('route status gates distinguish safe-closed, guarded and authenticated audit states', () => {
