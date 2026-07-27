@@ -3,7 +3,7 @@
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = ALIGNMENT_PENDING_EXACT_HEAD_VERIFICATION
+TASK_STATUS                         = PASS_FOR_MERGE_REVIEW
 CURRENT_PROGRAM                     = META_D1_ONLY_PROCESSING_GUARDED_ROLLOUT
 CONTRACT_VERSION                    = meta-d1-only-rollout-v1
 ORIGINAL_BASE_MAIN_SHA              = 7f06ae8729dd24c3bd6f548332bfe17ba374c8ab
@@ -13,7 +13,7 @@ ALIGNMENT_MERGE_COMMIT              = 259da95ccf3b78d92dbc8921f4cbaed4604784be
 INHERITED_MAIN_PR                   = #113 / YOUTUBE_LIVE_REMOTE_CONTRACT_PARSER_HOTFIX
 BRANCH                              = integration/meta-d1-only-rollout-operator
 DRAFT_PR                            = #114 / OPEN / DRAFT / UNMERGED
-PRE_ALIGNMENT_VERIFIED_HEAD         = dd200b41da8ad43c4341e0fb721a79de68d7ff23
+VERIFIED_ALIGNED_HEAD               = 207e3aca51618f3320e0e5bca35e35e6179b6b71
 META_PROVIDER_VALIDATION            = PASS / 4 TARGETS
 REMOTE_EXECUTION_AUTHORIZED         = false
 REMOTE_ACTIONS                      = NONE
@@ -186,27 +186,28 @@ Rerun must show:
 - no Lark/completion phase;
 - no active lock
 
-## Pre-alignment verification
+## Verification result
 
 The first exact-head CI attempt exposed one test-only defect: a normalized camelCase D1 snapshot was
 normalized a second time by the completion classifier. The runtime contract was unchanged. The
-normalizer was made idempotent and both verification workflows then passed on implementation head
-`e667a1b9141a8a472157ed94d693ab0b50be90b2` and documentation head
-`dd200b41da8ad43c4341e0fb721a79de68d7ff23`.
+normalizer was made idempotent before alignment.
+
+After PR #115 aligned the branch with `main`, exact head
+`207e3aca51618f3320e0e5bca35e35e6179b6b71` passed both workflows:
 
 ```text
-META_END_TO_END_VERIFICATION        = #33 / 30284808514 / PASS
-BRANCH_VERIFICATION                 = #672 / 30284808470 / PASS
+META_END_TO_END_VERIFICATION        = #38 / 30286421804 / PASS
+BRANCH_VERIFICATION                 = #678 / 30286421604 / PASS
 FOCUSED_META_D1_ONLY_TESTS          = 15 / 15 PASS
-NODE_UNIT_INTEGRATION               = 1075 / 1075 PASS
+NODE_UNIT_INTEGRATION               = 1081 / 1081 PASS
 WORKERS_RUNTIME                     = 11 / 11 PASS
 REPORT_RELIABILITY                  = 91 / 91 PASS
 DEPENDENCY_AUDIT                    = 0 vulnerabilities
 WRANGLER_DRY_RUN                    = PASS / NO DEPLOYMENT
+VERIFICATION_ARTIFACT               = 8661009920
+VERIFICATION_ARTIFACT_DIGEST        = sha256:7599e5e1dabf96c89a70359732c01a1a4f5c30b7d8bdcba4d5e499023eed1d03
 REMOTE_ACTION_COUNT                 = 0
 ```
-
-These results are historical evidence only. The aligned exact head must pass both workflows again.
 
 ## Out of scope and safe state
 
@@ -227,6 +228,7 @@ PR merge into main                          NOT_YET_RUN
 
 ## Remaining gate
 
-Run exact-head Meta End-to-End Verification and Branch Verification after alignment. PR #114 remains
-Draft and unmerged until both pass and the final diff/review state is clean. Repository verification
-authorizes no Backup, deployment, Queue send, D1 Business write or later Remote phase.
+The documentation-only final head must pass Meta End-to-End Verification and Branch Verification once
+more. After exact-final-head review confirms a clean diff and no unresolved review threads, PR #114 is
+eligible for its separately authorized Squash Merge. Repository verification authorizes no Backup,
+deployment, Queue send, D1 Business write or later Remote phase.
