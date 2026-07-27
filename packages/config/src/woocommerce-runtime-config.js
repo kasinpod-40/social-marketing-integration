@@ -1,4 +1,3 @@
-import { WOOCOMMERCE_LARK_TABLES } from '../../application/src/commerce/woocommerce-commerce-model.js';
 import { permanentError } from '../../shared/src/errors/runtime-error.js';
 
 const DEFAULT_API_VERSION = 'wc/v3';
@@ -11,9 +10,23 @@ const DEFAULT_MAX_NESTED_PAGES = 100;
 const DEFAULT_NESTED_CONCURRENCY = 3;
 const DEFAULT_REVISION_LOOKBACK_DAYS = 30;
 
-export const WOOCOMMERCE_LARK_TABLE_KEYS = Object.freeze(
-  WOOCOMMERCE_LARK_TABLES.map((entry) => entry.tableKey),
-);
+/** Config-owned logical keys; Business row/path contracts remain Application-owned. */
+export const WOOCOMMERCE_LARK_TABLE_KEYS = Object.freeze([
+  'rawCommerceStores',
+  'rawCommerceOrders',
+  'rawCommerceOrderItems',
+  'rawCommerceProducts',
+  'rawCommerceProductVariations',
+  'rawCommerceCategories',
+  'rawCommerceCustomers',
+  'rawCommerceCoupons',
+  'rawCommerceRefunds',
+  'mktCommerceOrders',
+  'mktCommerceProducts',
+  'mktCommerceCustomers',
+  'mktCommerceDaily',
+  'mktCommerceProductDaily',
+]);
 
 /**
  * อ่าน WooCommerce runtime แบบ fail-closed โดยทุก Execution gate เป็น false เมื่อไม่กำหนด.
