@@ -68,6 +68,8 @@ const REQUIRED_FALSE_FLAGS = Object.freeze([
 ]);
 
 const EXPECTED_MIGRATION = '0016_tiktok_post_lark_pipeline.sql';
+const AUDIT_FALLBACK_CODE = 'TIKTOK_POST_LARK_AUDIT_FAILED';
+const AUDIT_REMOTE_CODE_PATTERN = /^[A-Z][A-Z0-9_]{0,159}$/u;
 
 export function parseTikTokPostLarkRolloutArgs(args = []) {
   let phase = 'plan';
@@ -418,6 +420,31 @@ export function validateTikTokPostLarkAuditResponse(body = {}, target = {}) {
   return result;
 }
 
+export function validateTikTokPostLarkAuditHttpResponse(status, body = {}) {
+  const httpStatus = Number(status);
+  if (!Number.isInteger(httpStatus) || httpStatus < 100 || httpStatus > 599) {
+    throw operatorError(
+      'TikTok post-Lark audit returned an invalid HTTP status',
+      'TIKTOK_POST_LARK_ROLLOUT_AUDIT_HTTP_FAILED',
+      {
+        httpStatus: Number.isFinite(httpStatus) ? httpStatus : 0,
+        remoteCode: AUDIT_FALLBACK_CODE,
+      },
+    );
+  }
+  if (httpStatus !== 200) {
+    throw operatorError(
+      'TikTok post-Lark audit request failed',
+      'TIKTOK_POST_LARK_ROLLOUT_AUDIT_HTTP_FAILED',
+      {
+        httpStatus,
+        remoteCode: sanitizeAuditRemoteCode(body?.code),
+      },
+    );
+  }
+  return true;
+}
+
 export function validateTikTokPostLarkRouteStatus(status, expected) {
   const actual = Number(status);
   if (!Number.isInteger(actual) || actual !== expected) {
@@ -512,6 +539,11 @@ function requireText(value, fieldName) {
 
 function optionalText(value) {
   return typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
+}
+
+function sanitizeAuditRemoteCode(value) {
+  const code = optionalText(value)?.toUpperCase() ?? '';
+  return AUDIT_REMOTE_CODE_PATTERN.test(code) ? code : AUDIT_FALLBACK_CODE;
 }
 
 function integer(value, fieldName) {

@@ -12,6 +12,7 @@ import {
   extractWranglerD1Rows,
   loadTikTokPostLarkRolloutTarget,
   parseTikTokPostLarkRolloutArgs,
+  validateTikTokPostLarkAuditHttpResponse,
   validateTikTokPostLarkAuditResponse,
   validateTikTokPostLarkNoPendingMigrations,
   validateTikTokPostLarkPendingMigrations,
@@ -272,7 +273,7 @@ async function runAudit(target) {
     },
   });
   const body = await readJsonResponse(response);
-  validateTikTokPostLarkRouteStatus(response.status, 200);
+  validateTikTokPostLarkAuditHttpResponse(response.status, body);
   const audit = validateTikTokPostLarkAuditResponse(body, {
     customerKey: target.customerKey,
     accountKey: target.customerKey,

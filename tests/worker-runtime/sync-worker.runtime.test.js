@@ -6,6 +6,10 @@ import {
   getQueueResult,
 } from 'cloudflare:test';
 import { createSyncWorker } from '../../apps/sync-worker/src/index.js';
+import {
+  createTikTokPostLarkAuditHttpHandler,
+  TIKTOK_POST_LARK_AUDIT_PATH,
+} from '../../apps/sync-worker/src/tiktok-post-lark-audit-http.js';
 
 const MAIN_QUEUE = 'social-mkt-sync-jobs';
 const DLQ = 'social-mkt-sync-dlq';
@@ -32,6 +36,62 @@ function activeJob() {
 }
 
 describe('Sync Worker ใน Workers runtime จริง', () => {
+  it('TikTok Audit HTTP fallback stays sanitized and performs no Queue write', async () => {
+    const send = vi.fn(async () => undefined);
+    const handler = createTikTokPostLarkAuditHttpHandler({
+      loadRuntimeConfig() {
+        return {
+          environment: 'development',
+          profileKey: 'integration_workspace',
+          customerKey: 'chemistry_k',
+          connectors: {
+            tiktok: {
+              accountKey: 'chemistry_k',
+              sourceHandle: 'chemistry_k',
+            },
+          },
+        };
+      },
+      createInfrastructure() {
+        return { repository: {} };
+      },
+      createAuditStore() {
+        return {};
+      },
+      async audit() {
+        throw new Error('simulated internal failure with private-token');
+      },
+    });
+    const request = new Request(`https://example.com${TIKTOK_POST_LARK_AUDIT_PATH}`, {
+      method: 'GET',
+      headers: { authorization: 'Bearer operator-secret' },
+    });
+    const response = await handler({
+      request,
+      url: new URL(request.url),
+      env: {
+        MKT_TIKTOK_AUDIT_HTTP_ENABLED: 'true',
+        MKT_CONNECTION_OPERATOR_TOKEN: 'operator-secret',
+        MKT_TIKTOK_SOURCE_PAGE_SIZE: '500',
+        MKT_TIKTOK_SOURCE_MAX_PAGES: '1000',
+        LARK_TABLE_RAW_TIKTOK_CREATOR_VIDEOS: 'raw',
+        LARK_TABLE_MKT_CONTENT: 'content',
+        LARK_TABLE_MKT_CONTENT_DAILY: 'daily',
+        MKT_SYNC_QUEUE: { send },
+      },
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body).toEqual({
+      ok: false,
+      error: 'TikTok audit failed',
+      code: 'TIKTOK_POST_LARK_AUDIT_FAILED',
+    });
+    expect(JSON.stringify(body)).not.toMatch(/simulated internal failure|private-token/iu);
+    expect(send).not.toHaveBeenCalled();
+  });
+
   it('ack งานจาก Main Queue เมื่อ use case สำเร็จ', async () => {
     const processJob = vi.fn(async () => ({ ok: true }));
     const worker = createSyncWorker({ processJob });
