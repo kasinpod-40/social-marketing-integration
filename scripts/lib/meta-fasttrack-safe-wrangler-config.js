@@ -57,9 +57,9 @@ export function buildMetaFastTrackSafeWranglerConfig(sourceText, env = {}) {
     TARGET.customerKey,
     'MKT_CONNECTION_CUSTOMER_KEY',
   );
-  if (source.workers_dev !== false) {
+  if (source.workers_dev !== undefined && source.workers_dev !== false) {
     throw configError(
-      'Meta fast-track source Wrangler config requires workers_dev=false',
+      'Meta fast-track source Wrangler config permits workers_dev only when omitted or false',
       'META_FASTTRACK_SAFE_CONFIG_TARGET_INVALID',
       { fieldName: 'workers_dev' },
     );

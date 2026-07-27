@@ -37,6 +37,7 @@ test('Meta fast-track generator closes flags and synchronizes all required Lark 
   assert.match(result.tableMappingFingerprint, /^[0-9a-f]{64}$/u);
   assert.match(result.d1ActiveSha256, /^[0-9a-f]{64}$/u);
   assert.match(result.larkActiveSha256, /^[0-9a-f]{64}$/u);
+  assert.equal(generated.workers_dev, false);
 
   for (const flag of META_D1_ONLY_REQUIRED_FALSE_FLAGS) {
     assert.equal(generated.vars[flag], 'false', flag);
@@ -48,6 +49,28 @@ test('Meta fast-track generator closes flags and synchronizes all required Lark 
   }
   for (const key of META_END_TO_END_REQUIRED_LARK_TABLE_KEYS) {
     assert.equal(generated.vars[LARK_TABLE_ENV[key]], env[LARK_TABLE_ENV[key]]);
+  }
+});
+
+test('Meta fast-track generator accepts omitted workers_dev but rejects enabled or invalid values', () => {
+  const env = createTableEnv('current');
+  const omitted = createSourceConfig().replace('    "workers_dev": false,\n', '');
+  const generated = JSON.parse(buildMetaFastTrackSafeWranglerConfig(omitted, env).text);
+  assert.equal(generated.workers_dev, false);
+
+  for (const unsafeValue of ['true', '"false"', 'null']) {
+    const unsafe = createSourceConfig().replace(
+      '"workers_dev": false',
+      `"workers_dev": ${unsafeValue}`,
+    );
+    assert.throws(
+      () => buildMetaFastTrackSafeWranglerConfig(unsafe, env),
+      (error) => (
+        error.code === 'META_FASTTRACK_SAFE_CONFIG_TARGET_INVALID'
+        && error.details.fieldName === 'workers_dev'
+      ),
+      unsafeValue,
+    );
   }
 });
 
