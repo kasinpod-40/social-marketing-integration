@@ -3,10 +3,11 @@
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = REPOSITORY_HOTFIX_IMPLEMENTED_CI_PENDING
+TASK_STATUS                         = PASS_FOR_MERGE_DECISION_PENDING_FINAL_ALIGNMENT_CI
 CURRENT_PROGRAM                     = YOUTUBE_SHARED_WORKER_FINGERPRINT_SCOPE_HOTFIX
-BASE_MAIN_SHA                       = 8364375549f36f0d005aea20864b0bdb5c579adb
+BASE_MAIN_SHA                       = 4e31f811a8c9960d0bda714c0c7c0fe125d305aa
 BRANCH                              = hotfix/youtube-shared-worker-fingerprint-scope
+DRAFT_PR                            = #167 / OPEN / DRAFT / UNMERGED
 IMPLEMENTATION_OWNER                = CHATGPT_WORK_GITHUB_TOOLS
 HISTORICAL_YOUTUBE_LARK_SYNC        = CONFIRMED_PASS
 REMOTE_READ_ONLY_PREFLIGHT          = FAIL_CLOSED_AT_REMOTE_FINGERPRINT
@@ -88,6 +89,7 @@ pending live confirmation. Both gaps are corrected together to avoid another bli
 
 - Reuse the shared `normalizeCloudflareQueueConsumerPayload` contract instead of maintaining duplicate
   YouTube-only Queue field logic.
+- Preserve the public YouTube Queue timeout error contract while delegating normalization to Shared Core.
 - Require the exact YouTube Secret subset:
   - `LARK_APP_ID`
   - `LARK_APP_SECRET`
@@ -99,43 +101,78 @@ pending live confirmation. Both gaps are corrected together to avoid another bli
 - Preserve explicit Remote values; explicit `true`, invalid Boolean values and duplicate bindings remain
   fail-closed.
 - Pass the expected-false set from the reviewed safe/active config comparison into the live adapter.
-- Emit only sanitized mismatch diagnostics such as fingerprints, missing names and field identifiers.
+- Emit only allowlisted sanitized mismatch diagnostics such as fingerprints, missing names and field
+  identifiers.
 - Preserve exact D1 UUID, Queue context, Main/DLQ topology, Cron, route, workers.dev, traffic, flag and
   Remote fingerprint checks.
 
-## Acceptance criteria
+## Acceptance result
 
 ```text
-Unrelated connector Secret names           = ACCEPT / NOT FINGERPRINTED FOR YOUTUBE
-Required YouTube Secret missing             = FAIL_CLOSED
-Secret value exposed                        = FAIL_CLOSED
-Duplicate Secret binding                    = FAIL_CLOSED
-Reviewed false flag omitted by metadata     = MATERIALIZE FALSE FOR COMPARISON
-Explicit reviewed flag true                 = FAIL_CLOSED
-Invalid or duplicate flag binding           = FAIL_CLOSED
-Queue current API shape                     = SHARED NORMALIZER
-D1 UUID / Queue / Cron / route / traffic    = STRICT / UNCHANGED
+Unrelated connector Secret names           = ACCEPT / NOT FINGERPRINTED FOR YOUTUBE / PASS
+Required YouTube Secret missing             = FAIL_CLOSED / PASS
+Secret value exposed                        = FAIL_CLOSED / PASS
+Duplicate Secret binding                    = FAIL_CLOSED / PASS
+Reviewed false flag omitted by metadata     = MATERIALIZE FALSE FOR COMPARISON / PASS
+Explicit reviewed flag true                 = FAIL_CLOSED / PASS
+Invalid or duplicate flag binding           = FAIL_CLOSED / PASS
+Queue current API shape                     = SHARED NORMALIZER / PASS
+YouTube Queue public error codes            = PRESERVED / PASS
+D1 UUID / Queue / Cron / route / traffic    = STRICT / UNCHANGED / PASS
 Remote writes or mutations                  = ZERO
 ```
 
-## Required verification
+## Verification history
+
+The first PR head correctly failed Unit/Workers runtime because Shared Core error codes had replaced the
+existing YouTube public timeout codes and one source-wiring assertion depended on object-property syntax.
+The correction preserved the YouTube error contract and changed the assertion to verify semantic wiring.
 
 ```text
-Focused shared-worker fingerprint tests
-Focused YouTube parser/preflight regressions
-npm run check
-npm test
-npm run test:report-reliability
-npm audit --audit-level=high
-npm run deploy:dry-run
+FAILED_HEAD                          = 9c90da5f4c65a08261d6e199bcd158b9b5b0c275
+BRANCH_VERIFICATION                 = #796 / 30303479137 / EXPECTED_FAIL
+FAILED_STAGE                        = UNIT_AND_WORKERS_RUNTIME
+FAILED_ARTIFACT                     = 8667502483
+FAILED_ARTIFACT_DIGEST              = sha256:b836446f40fb937f4c5b2cd69ffc050b6f015f566315ccc4e358b71299d80557
 ```
+
+Corrected implementation head:
+
+```text
+IMPLEMENTATION_HEAD                 = a3709433a45dec0eb74d158c5813caa08d21c292
+BRANCH_VERIFICATION                 = #800 / 30303887341 / PASS
+DIAGNOSTICS_ARTIFACT                = 8667672120
+DIAGNOSTICS_DIGEST                  = sha256:c1c0cd70a024986fbdf26fda97a4ec5326e09532fec7e905cfb45799a15bbc0d
+```
+
+Combined head after Meta alignment:
+
+```text
+COMBINED_HEAD                       = ffea4f825fa1c0036c1845bb19fd80af28e435d3
+BRANCH_VERIFICATION                 = #802 / 30304078259 / PASS
+SYNTAX_ARCHITECTURE_HYGIENE         = PASS
+FOCUSED_STAGED_TIKTOK               = PASS
+NODE_AND_WORKERS_RUNTIME            = PASS
+REPORT_RELIABILITY                  = PASS
+DEPENDENCY_AUDIT                    = PASS
+WRANGLER_DRY_RUN                    = PASS / NO DEPLOYMENT
+DIAGNOSTICS_ARTIFACT                = 8667750778
+DIAGNOSTICS_DIGEST                  = sha256:c92c5ccf80186f3894e5bcc96931f2ef91e2323343c30fb0c3fd45b8bb740a35
+REMOTE_ACTION_COUNT                 = 0
+```
+
+Latest `main@4e31f811a8c9960d0bda714c0c7c0fe125d305aa` adds the separate TikTok post-Lark
+reconciliation workstream and changes shared package/test composition without overlapping the YouTube
+Parser, preflight or focused tests. It must be aligned and pass one final exact combined-tree Branch
+Verification before PR #167 becomes Ready.
 
 ## Remaining sequence
 
 ```text
-Open Draft PR
-→ exact-head Branch Verification
-→ Integration review and zero-thread check
+Align main@4e31f811a8c9960d0bda714c0c7c0fe125d305aa
+→ exact final-head Branch Verification
+→ Integration review and zero-thread/comment check
+→ mark PR #167 Ready
 → separate Squash Merge authorization
 → rerun the same one-command Remote read-only preflight
 → PASS_READ_ONLY_PREFLIGHT closes YouTube current-main revalidation
