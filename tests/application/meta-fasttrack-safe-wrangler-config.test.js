@@ -12,6 +12,7 @@ import {
 import {
   META_FASTTRACK_SAFE_CONFIG_CONTRACT_VERSION,
   buildMetaFastTrackSafeWranglerConfig,
+  buildMetaFastTrackWranglerDryRunArgs,
 } from '../../scripts/lib/meta-fasttrack-safe-wrangler-config.js';
 import {
   rebaseGeneratedWranglerConfigPaths,
@@ -72,6 +73,38 @@ test('Meta fast-track generator accepts omitted workers_dev but rejects enabled 
       unsafeValue,
     );
   }
+});
+
+test('Meta fast-track Wrangler dry-run uses a deterministic outfile', () => {
+  const args = buildMetaFastTrackWranglerDryRunArgs(
+    '/workspace/outputs/wrangler.safe.jsonc',
+    '/tmp/meta-fasttrack/worker.bundle.js',
+  );
+
+  assert.deepEqual(args, [
+    'wrangler',
+    'deploy',
+    '--dry-run',
+    '--outfile',
+    '/tmp/meta-fasttrack/worker.bundle.js',
+    '--config',
+    '/workspace/outputs/wrangler.safe.jsonc',
+  ]);
+  assert.equal(args.includes('--outdir'), false);
+  assert.throws(
+    () => buildMetaFastTrackWranglerDryRunArgs('', '/tmp/worker.js'),
+    (error) => (
+      error.code === 'META_FASTTRACK_SAFE_CONFIG_DRY_RUN_ARGUMENT_INVALID'
+      && error.details.fieldName === 'configPath'
+    ),
+  );
+  assert.throws(
+    () => buildMetaFastTrackWranglerDryRunArgs('/tmp/wrangler.jsonc', ' '),
+    (error) => (
+      error.code === 'META_FASTTRACK_SAFE_CONFIG_DRY_RUN_ARGUMENT_INVALID'
+      && error.details.fieldName === 'outputFile'
+    ),
+  );
 });
 
 test('Meta fast-track generator emits valid JSON that can be path-rebased', () => {
