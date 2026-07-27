@@ -1,0 +1,52 @@
+name: Apply YouTube rollout wiring
+
+on:
+  push:
+    branches:
+      - integration/youtube-live-parser-rollout-wiring
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-youtube-live-parser-rollout-wiring
+  cancel-in-progress: false
+
+jobs:
+  apply-reviewed-patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact branch head
+        uses: actions/checkout@v4
+        with:
+          ref: integration/youtube-live-parser-rollout-wiring
+          fetch-depth: 0
+
+      - name: Apply exact reviewed patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          patch_file='docs/tasks/patches/youtube-live-parser-rollout-wiring.patch'
+          test -f "$patch_file"
+          git apply --check "$patch_file"
+          git apply "$patch_file"
+          node --check scripts/youtube-dry-run-rollout-operator.mjs
+          node --test \
+            tests/application/youtube-live-parser-rollout-wiring.test.js \
+            tests/application/youtube-live-remote-contract-parser.test.js
+
+      - name: Commit final source without temporary automation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm \
+            docs/tasks/patches/youtube-live-parser-rollout-wiring.patch \
+            .github/workflows/apply-youtube-live-parser-rollout-wiring.yml
+          git add \
+            scripts/youtube-dry-run-rollout-operator.mjs \
+            tests/application/youtube-live-parser-rollout-wiring.test.js
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix: wire live parser into YouTube rollout verification'
+          git push origin HEAD:integration/youtube-live-parser-rollout-wiring
