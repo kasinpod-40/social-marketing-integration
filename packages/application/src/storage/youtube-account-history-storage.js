@@ -34,15 +34,7 @@ export async function writeYouTubeAccountSnapshot(input) {
     started_at: input.context.observedAt,
     created_at: input.context.observedAt,
   };
-  await saveCoverage(input.context.store, coverageBase, {
-    status: 'partial',
-    observed_entities: 0,
-    observed_rows: 0,
-    written_rows: 0,
-    failed_rows: 0,
-    completed_at: null,
-    error_code: null,
-  }, input.context.observedAt);
+  const coverageStart = await beginAccountCoverage(input, coverageBase);
 
   const fact = validateStorageRow('organic_account_daily_facts', {
     account_daily_key: createAccountDailyKey({
@@ -56,7 +48,9 @@ export async function writeYouTubeAccountSnapshot(input) {
     source_account_id: requireText(raw.channel_id, 'channel_id'),
     metric_date: input.context.metricDate,
     account_timezone: input.context.sourceTimezone,
-    followers: nullableNonNegativeInteger(raw.subscriber_count),
+    followers: raw.subscriber_count_hidden === true
+      ? null
+      : nullableNonNegativeInteger(raw.subscriber_count),
     follows: null,
     profile_views: null,
     views: nullableNonNegativeInteger(raw.view_count),
@@ -74,7 +68,9 @@ export async function writeYouTubeAccountSnapshot(input) {
   });
 
   try {
+    await assertLockActive(input.context);
     const write = await input.context.store.upsertOrganicAccountDailyFact(fact);
+    await assertLockActive(input.context);
     await saveCoverage(input.context.store, coverageBase, {
       status: 'complete',
       observed_entities: 1,
@@ -84,19 +80,55 @@ export async function writeYouTubeAccountSnapshot(input) {
       completed_at: input.context.observedAt,
       error_code: null,
     }, input.context.observedAt);
-    return Object.freeze({ ...write, hiddenSubscriberCount: raw.subscriber_count_hidden === true });
+    return Object.freeze({
+      ...write,
+      hiddenSubscriberCount: raw.subscriber_count_hidden === true,
+      coverageReplay: coverageStart.replay,
+    });
   } catch (error) {
-    await saveCoverage(input.context.store, coverageBase, {
-      status: 'partial',
-      observed_entities: 0,
-      observed_rows: 0,
-      written_rows: 0,
-      failed_rows: 1,
-      completed_at: input.context.observedAt,
-      error_code: error?.code ?? 'YOUTUBE_ACCOUNT_SNAPSHOT_WRITE_FAILED',
-    }, input.context.observedAt);
+    if (!coverageStart.replay) {
+      await saveCoverage(input.context.store, coverageBase, {
+        status: 'partial',
+        observed_entities: 0,
+        observed_rows: 0,
+        written_rows: 0,
+        failed_rows: 1,
+        completed_at: input.context.observedAt,
+        error_code: error?.code ?? 'YOUTUBE_ACCOUNT_SNAPSHOT_WRITE_FAILED',
+      }, input.context.observedAt);
+    }
     throw error;
   }
+}
+
+async function beginAccountCoverage(input, coverageBase) {
+  const existing = await input.context.gateway.readCoverageRun(input.ids.accountCoverageRunId);
+  if (existing?.status === 'complete') {
+    const same = existing.dataset_key === DATASET_KEY
+      && existing.platform === PLATFORM
+      && existing.account_key === input.context.accountKey
+      && Number(existing.expected_entities) === 1
+      && Number(existing.expected_rows) === 1
+      && normalizeSqlText(existing.source_watermark) === input.ids.sourceWatermark;
+    if (!same) {
+      throw permanentError('Completed YouTube account Coverage identity was reused for different evidence', {
+        code: 'YOUTUBE_ACCOUNT_COVERAGE_IDENTITY_CONFLICT',
+        details: { coverageRunId: input.ids.accountCoverageRunId },
+      });
+    }
+    return Object.freeze({ replay: true, row: existing });
+  }
+
+  await saveCoverage(input.context.store, coverageBase, {
+    status: 'partial',
+    observed_entities: 0,
+    observed_rows: 0,
+    written_rows: 0,
+    failed_rows: 0,
+    completed_at: null,
+    error_code: null,
+  }, input.context.observedAt);
+  return Object.freeze({ replay: false, row: null });
 }
 
 function saveCoverage(store, base, result, updatedAt) {
@@ -105,6 +137,12 @@ function saveCoverage(store, base, result, updatedAt) {
     ...result,
     updated_at: updatedAt,
   }));
+}
+
+async function assertLockActive(context) {
+  if (typeof context.assertLockActive === 'function') {
+    await context.assertLockActive();
+  }
 }
 
 function nullableNonNegativeInteger(value) {
@@ -116,6 +154,10 @@ function nullableNonNegativeInteger(value) {
     });
   }
   return number;
+}
+
+function normalizeSqlText(value) {
+  return value === null || value === undefined || value === '' ? null : String(value);
 }
 
 function requireText(value, fieldName) {
