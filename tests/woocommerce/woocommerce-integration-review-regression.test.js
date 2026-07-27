@@ -252,7 +252,7 @@ function reportDb({ productCount = 0, orderCount = 0 } = {}) {
               refund_micros: 0,
             })) };
           }
-          if (sql.includes('FROM sync_coverage_runs')) return { results: [] };
+          if (sql.includes('FROM data_coverage_runs')) return { results: [] };
           return { results: [] };
         },
       };

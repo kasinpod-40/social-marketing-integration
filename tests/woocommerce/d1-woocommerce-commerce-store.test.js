@@ -32,7 +32,7 @@ async function fixture() {
   const d1 = createSqliteD1();
   d1.exec(await readFile(MIGRATION_URL, 'utf8'));
   d1.exec(`
-    CREATE TABLE sync_coverage_runs (
+    CREATE TABLE data_coverage_runs (
       coverage_run_id TEXT PRIMARY KEY,
       account_key TEXT NOT NULL,
       platform TEXT NOT NULL,
@@ -113,7 +113,7 @@ async function rebuild(store, normalized, overrides = {}) {
 
 function insertCoverage(d1, overrides = {}) {
   d1.database.prepare(`
-    INSERT INTO sync_coverage_runs (
+    INSERT INTO data_coverage_runs (
       coverage_run_id, account_key, platform, dataset_key, status, scope_mode,
       source_watermark, revisable_until, completed_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

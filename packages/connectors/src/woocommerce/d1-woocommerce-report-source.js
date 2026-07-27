@@ -40,13 +40,7 @@ export class D1WooCommerceReportSource {
         GROUP BY product_key
         ORDER BY net_sales_micros DESC, product_key ASC
         LIMIT ?
-      `, [
-        accountKey,
-        currency,
-        periodStart,
-        periodEnd,
-        MAX_PRODUCT_ROWS + 1,
-      ], 'WOOCOMMERCE_REPORT_PRODUCT_READ_FAILED'),
+      `, [accountKey, currency, periodStart, periodEnd, MAX_PRODUCT_ROWS + 1], 'WOOCOMMERCE_REPORT_PRODUCT_READ_FAILED'),
       this.#all(`
         SELECT
           order_key, metric_date, status, status_class, payment_method_id,
@@ -56,18 +50,12 @@ export class D1WooCommerceReportSource {
         WHERE account_key = ? AND currency = ? AND metric_date BETWEEN ? AND ?
         ORDER BY metric_date ASC, order_key ASC
         LIMIT ?
-      `, [
-        accountKey,
-        currency,
-        periodStart,
-        periodEnd,
-        MAX_ORDER_ROWS + 1,
-      ], 'WOOCOMMERCE_REPORT_ORDER_READ_FAILED'),
+      `, [accountKey, currency, periodStart, periodEnd, MAX_ORDER_ROWS + 1], 'WOOCOMMERCE_REPORT_ORDER_READ_FAILED'),
       this.#all(`
         SELECT
           coverage_run_id, status, scope_mode, source_watermark,
           revisable_until, completed_at, updated_at
-        FROM sync_coverage_runs
+        FROM data_coverage_runs
         WHERE account_key = ?
           AND platform = 'woocommerce'
           AND dataset_key = 'woocommerce_orders'
