@@ -3,7 +3,7 @@
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = FINAL_ALIGNMENT_PENDING_VERIFICATION
+TASK_STATUS                         = PASS_FOR_MERGE
 CURRENT_PROGRAM                     = META_D1_ONLY_PROCESSING_GUARDED_ROLLOUT
 CONTRACT_VERSION                    = meta-d1-only-rollout-v1
 ORIGINAL_BASE_MAIN_SHA              = 7f06ae8729dd24c3bd6f548332bfe17ba374c8ab
@@ -15,7 +15,7 @@ ALIGNMENT_MERGE_COMMIT_2            = 12137908000032df6b23263c67a4574907af724c
 INHERITED_MAIN_PRS                  = #113 / #116
 BRANCH                              = integration/meta-d1-only-rollout-operator
 DRAFT_PR                            = #114 / OPEN / DRAFT / UNMERGED
-PRE_FINAL_ALIGNMENT_VERIFIED_HEAD   = 207e3aca51618f3320e0e5bca35e35e6179b6b71
+VERIFIED_FINAL_ALIGNED_HEAD         = c369fc0b8a89a8390208048ca0453185a90ca212
 META_PROVIDER_VALIDATION            = PASS / 4 TARGETS
 REMOTE_EXECUTION_AUTHORIZED         = false
 REMOTE_ACTIONS                      = NONE
@@ -47,7 +47,7 @@ PR #117 then merged `main@fb16083ec9615944f675b326a69db9ca98d00353` into the sam
 after the YouTube merge-closeout documentation landed. Both alignment PRs targeted the feature branch
 only. Neither merged PR #114 into `main`, and neither performed a Remote action.
 
-The branch now contains both the Meta D1-only rollout operator and the complete merged YouTube live
+The branch contains both the Meta D1-only rollout operator and the complete merged YouTube live
 Remote-contract parser/closeout records. Meta package commands remain additive alongside the inherited
 YouTube validator commands.
 
@@ -194,25 +194,23 @@ Rerun must show:
 - no Lark/completion phase;
 - no active lock
 
-## Historical verification before final alignment
+## Final aligned verification
 
-Exact head `207e3aca51618f3320e0e5bca35e35e6179b6b71` passed after PR #115:
+Exact head `c369fc0b8a89a8390208048ca0453185a90ca212` passed after both alignment PRs:
 
 ```text
-META_END_TO_END_VERIFICATION        = #38 / 30286421804 / PASS
-BRANCH_VERIFICATION                 = #678 / 30286421604 / PASS
+META_END_TO_END_VERIFICATION        = #41 / 30287307265 / PASS
+BRANCH_VERIFICATION                 = #681 / 30287307241 / PASS
 FOCUSED_META_D1_ONLY_TESTS          = 15 / 15 PASS
 NODE_UNIT_INTEGRATION               = 1081 / 1081 PASS
 WORKERS_RUNTIME                     = 11 / 11 PASS
 REPORT_RELIABILITY                  = 91 / 91 PASS
 DEPENDENCY_AUDIT                    = 0 vulnerabilities
 WRANGLER_DRY_RUN                    = PASS / NO DEPLOYMENT
-VERIFICATION_ARTIFACT               = 8661009920
-VERIFICATION_ARTIFACT_DIGEST        = sha256:7599e5e1dabf96c89a70359732c01a1a4f5c30b7d8bdcba4d5e499023eed1d03
+VERIFICATION_ARTIFACT               = 8661359239
+VERIFICATION_ARTIFACT_DIGEST        = sha256:aafa16d9fbaf7829a612daee6c48fbf182ad1504f6ef0e28212f09adfaebf18e
 REMOTE_ACTION_COUNT                 = 0
 ```
-
-These results remain evidence but do not replace exact-head verification after PR #117.
 
 ## Out of scope and safe state
 
@@ -233,7 +231,7 @@ PR merge into main                          NOT_YET_RUN
 
 ## Remaining gate
 
-Run Meta End-to-End Verification and Branch Verification on the exact post-#117 head. PR #114 remains
-Draft and unmerged until both pass, the final diff is clean and no unresolved review thread remains.
-Repository verification authorizes no Backup, deployment, Queue send, D1 Business write or later
-Remote phase.
+The documentation-only final head must pass Meta End-to-End Verification and Branch Verification.
+After exact-final-head review confirms a clean diff and no unresolved review thread, PR #114 is
+eligible for its separately authorized Squash Merge. Repository verification authorizes no Backup,
+deployment, Queue send, D1 Business write or later Remote phase.
