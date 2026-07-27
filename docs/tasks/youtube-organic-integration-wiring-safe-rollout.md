@@ -8,7 +8,10 @@ BRANCH                       = integration/youtube-organic-safe-rollout
 BASE_MAIN                    = 8b7f9a879ba0c1b0b5d89dcfa2373ad3bb3c2ce8
 SOURCE_DRAFT_PR              = #72
 SOURCE_REVIEW_DECISION       = PASS_FOR_INTEGRATION
-IMPLEMENTATION               = COMPLETE / VERIFICATION_PENDING
+IMPLEMENTATION               = COMPLETE / VERIFICATION_PASS
+INTEGRATION_PR               = #85 / DRAFT
+VERIFIED_HEAD                = a8f39d1460982cf84ca69e27b6519b1037f71c4d
+BRANCH_VERIFICATION          = #579 PASS
 MERGE_TO_MAIN                = NOT_RUN
 REMOTE_SCHEMA_CHECK          = NOT_RUN
 WORKER_DEPLOYMENT            = NOT_RUN
@@ -31,7 +34,7 @@ PRODUCTION                   = BLOCKED
 - ใช้ Shared YouTube runtime config สำหรับ Dedicated flags
 - เพิ่ม Flag ตัวอย่างใน `.dev.vars.example` และ `wrangler.sync.example.jsonc`
 - เพิ่ม Regression สำหรับ route selection, default-false config และ non-YouTube fallback
-- อัปเดต Current Task, Project Brain, README และ CHANGELOG ก่อน Merge
+- อัปเดต Current Task และ Project Brain ก่อน Merge; README/CHANGELOG closeout remains merge-owned documentation follow-up
 - รัน Repository gates บน Exact Integration head
 
 ## Out of scope
@@ -67,7 +70,7 @@ The dedicated route retains its own fail-closed check. Shared selection does not
 
 ## Feature flags
 
-All release examples must contain these values and default them to false:
+All release examples contain these values and default them to false:
 
 ```text
 MKT_CONNECTOR_YOUTUBE_ENABLED=false
@@ -112,6 +115,23 @@ docs/archive/current-task-before-youtube-organic-integration-2026-07-27.md added
 
 The integration branch was fast-forwarded from current `main` to the exact reviewed PR #72 head before shared wiring. No direct push to `main` occurred.
 
+## Verification evidence
+
+GitHub Actions Branch Verification on exact head `a8f39d1460982cf84ca69e27b6519b1037f71c4d`:
+
+```text
+Run / workflow ID                 #579 / 30241398413
+Install locked dependencies       PASS
+Syntax / architecture / hygiene   PASS
+Focused staged TikTok             4/4 PASS
+Node Unit / Integration           916/916 PASS
+Workers runtime                   9/9 PASS
+Report reliability                91/91 PASS
+Dependency audit                  0 vulnerabilities
+Wrangler dry-run                  PASS
+Diagnostics upload                PASS
+```
+
 ## Acceptance criteria
 
 - [x] PR #72 implementation imported without altering Business facts
@@ -122,12 +142,12 @@ The integration branch was fast-forwarded from current `main` to the exact revie
 - [x] Example/Wrangler flags default false
 - [x] No migration added
 - [x] No Remote action performed
-- [ ] Syntax / architecture / hygiene PASS
-- [ ] Focused TikTok regression PASS
-- [ ] Unit and Workers runtime tests PASS
-- [ ] Report reliability regression PASS
-- [ ] Dependency audit PASS
-- [ ] Wrangler dry-run PASS
+- [x] Syntax / architecture / hygiene PASS
+- [x] Focused TikTok regression PASS
+- [x] Unit and Workers runtime tests PASS
+- [x] Report reliability regression PASS
+- [x] Dependency audit PASS
+- [x] Wrangler dry-run PASS
 - [ ] Integration PR reviewed and merged into main
 
 ## Remaining authority boundary
