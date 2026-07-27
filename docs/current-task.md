@@ -36,12 +36,13 @@ Reliability, Queue/DLQ, D1, Coverage and Lark contracts. The implementation allo
 Migration `0018`, adds the protected manual-only runtime route and default-false configuration, and
 stops before every Provider or Remote action.
 
-Detailed contracts:
+Detailed contracts and durable project record:
 
 ```text
 docs/tasks/chatwoot-end-to-end.md
 docs/tasks/chatwoot-integration-wiring.md
 docs/project-brain/chatwoot-foundation-merge-closeout-2026-07-27.md
+docs/project-brain/chatwoot-runtime-wiring-2026-07-27.md
 ```
 
 The YouTube Worker dry-run operator Current Task that preceded this work is preserved without
@@ -188,7 +189,7 @@ STATUS                              = IMPLEMENTATION_PASS_INTEGRATION_REVIEW_PEN
 FINAL_MAIN_SHA                      = 90e367e88a4aad2a443683ca511951a67590ce90
 CODE_VERIFIED_HEAD                  = c8b83d71fd26f86abf203d5ed427a4056ac4af43
 AHEAD_BEHIND_AT_CODE_REVIEW         = AHEAD / BEHIND 0
-FILES_CHANGED_AT_CODE_REVIEW        = 18
+FILES_CHANGED_AT_CODE_REVIEW        = 19
 MIGRATION_AUDIT                     = PASS / 14 TABLES / NON-DESTRUCTIVE
 CHATWOOT_TESTS_IN_FULL_SUITE        = 38 / 38 PASS
 FULL_NODE_TESTS                     = 1038 / 1038 PASS
