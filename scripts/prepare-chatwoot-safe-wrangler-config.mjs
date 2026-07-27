@@ -5,6 +5,9 @@ import { dirname, relative, resolve } from 'node:path';
 import {
   buildChatwootSafeWranglerConfig,
 } from './lib/chatwoot-safe-wrangler-config.js';
+import {
+  rebaseGeneratedWranglerConfigPaths,
+} from './lib/rebase-generated-wrangler-config-paths.js';
 
 const DEFAULT_SOURCE = 'wrangler.sync.jsonc';
 const DEFAULT_OUTPUT =
@@ -38,10 +41,14 @@ async function main() {
 
   const sourceText = await readFile(sourcePath, 'utf8');
   const result = buildChatwootSafeWranglerConfig(sourceText);
+  const rebased = rebaseGeneratedWranglerConfigPaths(result.text, {
+    sourceDirectory: dirname(sourcePath),
+    outputDirectory: dirname(outputPath),
+  });
   await mkdir(dirname(outputPath), { recursive: true, mode: 0o700 });
 
   const temporaryPath = `${outputPath}.tmp-${process.pid}`;
-  await writeFile(temporaryPath, result.text, {
+  await writeFile(temporaryPath, rebased.text, {
     encoding: 'utf8',
     mode: 0o600,
   });
@@ -52,7 +59,7 @@ async function main() {
     contractVersion: result.contractVersion,
     sourcePath,
     outputPath,
-    sha256: result.sha256,
+    sha256: rebased.sha256,
     workerName: result.workerName,
     databaseName: result.databaseName,
     databaseIdFingerprint: result.databaseIdFingerprint,
@@ -64,6 +71,11 @@ async function main() {
     providerValuesCopied: result.providerValuesCopied,
     scheduleValuesCopied: result.scheduleValuesCopied,
     routeValuesCopied: result.routeValuesCopied,
+    configRelativePaths: {
+      main: rebased.main,
+      migrationsDirectory: rebased.migrationsDirectory,
+      schemaPath: rebased.schemaPath,
+    },
     remoteCommandsRun: 0,
     remoteMutations: 0,
     nextCommandEnvironment: {
