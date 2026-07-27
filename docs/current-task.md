@@ -16,8 +16,8 @@ YOUTUBE_OPERATOR_CLOSEOUT_MAIN      = 90e367e88a4aad2a443683ca511951a67590ce90
 LATEST_MERGED_MIGRATION             = 0017_woocommerce_commerce.sql
 CHATWOOT_MIGRATION                  = 0018_chatwoot_analytics.sql / SOURCE_ONLY
 IMPLEMENTATION_OWNER                = CHATGPT_WORK_GITHUB_TOOLS
-CODE_VERIFIED_HEAD                  = 57b39a5ec4875b26337d488a18857c0a9c95e8e4
-CODE_BRANCH_VERIFICATION            = #643 / 30264110474 / PASS
+CODE_VERIFIED_HEAD                  = c8b83d71fd26f86abf203d5ed427a4056ac4af43
+CODE_BRANCH_VERIFICATION            = #648 / 30264683036 / PASS
 PROVIDER_EXECUTION                  = NOT_RUN
 TOKEN_READ_OR_ROTATION              = NOT_RUN
 QUEUE_MESSAGE                       = NOT_SENT
@@ -44,12 +44,15 @@ docs/tasks/chatwoot-integration-wiring.md
 docs/project-brain/chatwoot-foundation-merge-closeout-2026-07-27.md
 ```
 
-The YouTube Worker dry-run operator merge-closeout Current Task that preceded this work is preserved
-without replacing its Business facts at:
+The YouTube Worker dry-run operator Current Task that preceded this work is preserved without
+replacing its Business facts at:
 
 ```text
 docs/archive/current-task-before-chatwoot-runtime-wiring-after-youtube-operator-2026-07-27.md
 ```
+
+The older TikTok predecessor already remains in its canonical archive on `main`; no duplicate
+Chatwoot-named copy is retained.
 
 ## Completed repository scope
 
@@ -61,10 +64,12 @@ docs/archive/current-task-before-chatwoot-runtime-wiring-after-youtube-operator-
 - Added account-scoped Stable Queue identity:
   `chatwoot:<accountKey>:<operationId>`.
 - Preserved exact operation ID, Work key, generation and original request time across continuation.
+- Preserved the deterministic Chatwoot `syncRunId` in both the live result and resumable completion
+  so replay evidence cannot degrade to an undefined identifier.
 - Added lazy `D1ChatwootAnalyticsStore` construction to Shared infrastructure.
 - Added a dedicated Chatwoot top-level route with the existing WooCommerce route as fallback.
 - Registered 15 Chatwoot logical Lark table keys without Remote Base mutation.
-- Added default-false example configuration and focused runtime/migration regressions.
+- Added default-false example configuration and focused runtime/Migration regressions.
 - Reused Shared Reliability, distributed lock, generation fence, resumable work, Queue retry/DLQ,
   D1 Coverage, incremental checkpoint, Lark repository and `TableSyncEngine`.
 
@@ -127,29 +132,32 @@ TOKEN_OR_SECRET_COLUMN              = NONE
 
 ## Verification result
 
-Code head `57b39a5ec4875b26337d488a18857c0a9c95e8e4` passed Branch Verification
-`#643` / run `30264110474` after alignment with current `main`.
+Code head `c8b83d71fd26f86abf203d5ed427a4056ac4af43` passed Branch Verification
+`#648` / run `30264683036` after alignment with current `main` and after the deterministic
+`syncRunId` regression fix.
 
 ```text
 Install locked dependencies         PASS
 Syntax / architecture / hygiene     PASS
 Focused staged TikTok               4 / 4 PASS
-Node Unit / Integration             1037 / 1037 PASS
+Node Unit / Integration             1038 / 1038 PASS
 Workers runtime                     11 / 11 PASS
 Report reliability                  91 / 91 PASS
 Dependency audit                    0 vulnerabilities
 Wrangler deployment dry-run         PASS / no deployment
 Diagnostics upload                  PASS
+Artifact                            8652302684
+Artifact digest                     sha256:7f0991284534f75c4f129cf3007f100a4f1216547ebf7f2f16c1ace25c716ed1
 ```
 
-The full Node suite contains 36 Chatwoot-specific contract, normalizer, API client, D1, sync,
-routing, configuration and Migration tests, all passing. A separate literal ad-hoc
+The full Node suite contains 38 Chatwoot-named contract, normalizer, API client, D1, sync, routing,
+configuration, Migration and resumable-identity tests; all passed. A separate literal ad-hoc
 `node --test ...chatwoot...` command was not exposed by the connected Branch Verification workflow;
 this is recorded accurately rather than claiming a standalone command that did not run.
 
-An earlier aligned run `#640` found one stale Job Catalog expectation that still treated Chatwoot as
+An earlier aligned run found one stale Job Catalog expectation that still treated Chatwoot as
 `planned`. The production contract was correct; the regression test was updated to assert the new
-`uat_pending`, `manualOnly` state. Subsequent runs `#642` and `#643` passed completely.
+`uat_pending`, `manualOnly` state. Later verification passed completely.
 
 ## Remote safe state
 
@@ -178,12 +186,12 @@ Production.
 ```text
 STATUS                              = IMPLEMENTATION_PASS_INTEGRATION_REVIEW_PENDING
 FINAL_MAIN_SHA                      = 90e367e88a4aad2a443683ca511951a67590ce90
-CODE_VERIFIED_HEAD                  = 57b39a5ec4875b26337d488a18857c0a9c95e8e4
+CODE_VERIFIED_HEAD                  = c8b83d71fd26f86abf203d5ed427a4056ac4af43
 AHEAD_BEHIND_AT_CODE_REVIEW         = AHEAD / BEHIND 0
 FILES_CHANGED_AT_CODE_REVIEW        = 18
 MIGRATION_AUDIT                     = PASS / 14 TABLES / NON-DESTRUCTIVE
-CHATWOOT_TESTS_IN_FULL_SUITE        = 36 / 36 PASS
-FULL_NODE_TESTS                     = 1037 / 1037 PASS
+CHATWOOT_TESTS_IN_FULL_SUITE        = 38 / 38 PASS
+FULL_NODE_TESTS                     = 1038 / 1038 PASS
 WORKERS_RUNTIME_TESTS               = 11 / 11 PASS
 REPORT_RELIABILITY                  = 91 / 91 PASS
 DEPENDENCY_AUDIT                    = 0 VULNERABILITIES
