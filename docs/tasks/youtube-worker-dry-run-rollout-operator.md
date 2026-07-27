@@ -89,6 +89,8 @@ DLQ          social-mkt-sync-dlq
 Main retry   batch=10, timeout=30, concurrency=1, retries=5
 DLQ retry    batch=10, timeout=30, concurrency=1, retries=10
 Cron         */5 * * * * ; 50 0,6,12,18 * * *
+Routes       none
+workers.dev  false
 ```
 
 ## Phases และ authorization
@@ -142,16 +144,34 @@ youtube-dry-run-rollout-v1 phase={phase} git={FULL_SHA}
 
 Evidence อยู่ที่ `outputs/youtube-dry-run-rollout/` ซึ่ง Git ignore และเขียนเป็น sanitized JSON
 mode `0600`. ทุก phase ตรวจ contract version, full repository head, target fingerprint,
-operation identity และ evidence ของ phase ก่อนหน้า. Evidence เก็บ hash/fingerprint/counter
-และ IDs เชิง operational ที่จำเป็น แต่ไม่เก็บ credential, raw Queue payload, raw Provider/Lark
-response หรือ customer payload.
+operation identity และ SHA-256 ของ canonical evidence ก่อนหน้า. แต่ละไฟล์มี
+`priorPhase`, `priorEvidenceSha256` และ `evidenceSha256`; summary ตรวจทั้งลำดับและปฏิเสธ
+tamper, skip, reorder, head/target/operation drift. Recovery chain ผูกกลับไปยัง exact
+activation evidence แทนการเริ่ม chain ใหม่โดยไม่มี provenance. Evidence เก็บเฉพาะ
+hash/fingerprint/counter และ IDs เชิง operational ที่จำเป็น แต่ไม่เก็บ credential,
+raw Queue payload, raw Provider/Lark response หรือ customer payload.
 
 Operator client นับเฉพาะ Public Data fetch attempts และ Reliability details บันทึก sanitized
 `providerRequestCount`, `analyticsRequestCount=0`, `oauthRefreshCount=0` และ
 `larkWriteCount=0`; snapshot อ่าน counters เหล่านี้จาก exact `syncRunId` แทนการเดาค่า.
 
 Before/after SQL scope ด้วย exact `operationId`, `workKey` และ `syncRunId`; ห้ามใช้ global
-count ตัดสิน. Verify poll Remote D1 แบบ read-only และ bounded เมื่อได้รับอนุญาตในอนาคต.
+count ตัดสิน. Completion ต้องเห็น `sync_runs.status=success`, `finished_at`, Work lifecycle
+`completed`, `completed_at`, completion JSON, Main Queue attempt อย่างน้อยหนึ่งครั้ง,
+ไม่มี active lock และไม่มี DLQ. Terminal failure/partial/skipped/superseded หยุดทันที;
+สถานะ running/pending ที่ยังไม่ครบ poll ต่อแบบ bounded.
+
+Remote verification ไม่ใช้ local config fingerprint เป็นหลักฐานแทน Remote state:
+
+- `wrangler versions view --json` ตรวจ exact version, deployment message, bindings,
+  plain flags และ Secret names เท่านั้น;
+- `wrangler deployments status --json` ตรวจ single version ที่รับ traffic 100%;
+- `wrangler queues consumer list --json` ตรวจ Main/DLQ consumer settings;
+- Cloudflare Workers Scripts Read endpoints ตรวจ Cron schedules, route patterns และ
+  `workers.dev` subdomain state.
+
+การอ่าน trigger state ต้องมี `CLOUDFLARE_ACCOUNT_ID` และ `CLOUDFLARE_API_TOKEN` ที่มี
+Workers Scripts Read; operator fail closed เมื่อ response/schema ไม่ครบ.
 
 ## One-message และ restore
 
@@ -161,15 +181,24 @@ Marker คงอยู่แม้ผลคำสั่งไม่แน่น�
 `queueSendCommandCount=1`. HTTP/API failure หยุดทันทีและห้ามส่งซ้ำ.
 `verify-dry-run` มี sender count เป็นศูนย์.
 
+`new_execution` ต้องเห็น operation-scoped durable state ว่างก่อนส่งและต้องมี Public Provider
+request มากกว่าศูนย์หลังจบ. `replay_verification` ใช้ operation ที่ completed อยู่แล้ว,
+ส่งซ้ำได้เฉพาะเมื่อผู้ปฏิบัติงานเลือก mode นี้ชัดเจน และต้องมี Provider request เพิ่มเป็นศูนย์.
+Dry-run completion replay คง warnings/reconciliation/source summary, บังคับ
+`checkpointSaved=false`, ไม่สร้าง warning outbox และไม่ drain warning.
+
 เมื่อ phase หลัง activation ล้ม operator สร้าง `emergency-restore.json` ที่ sanitized และแสดง
-exact restore command. Operator ไม่ซ่อน original failure และไม่ทำ automatic resend.
-`restore-all-false` เรียกแยกได้โดยใช้ Safe config เดิม เพื่อ restore code SHA เดิมพร้อมเปลี่ยน
-เฉพาะสอง YouTube gatesกลับ false; จากนั้น `verify-restore` ต้องตรวจ active traffic 100% และ
-fingerprints.
+guarded wrapper command `npm run rollout:youtube-dry-run:restore`. Wrapper อ่าน active version
+ก่อนเสมอ: ถ้าเป็น safe baseline คืน `RESTORE_NOT_REQUIRED`; ถ้าเป็น exact dry-run version
+ที่พิสูจน์จาก activation evidence หรือ exact deployment message/SHA/phase จึงอนุญาต deploy
+Safe config; version อื่นคืน `BLOCKED_ACTIVE_VERSION_CHANGED`. ห้าม emergency artifact
+บรรจุ blind `wrangler deploy`. จากนั้น `verify-restore` ต้องตรวจ active traffic 100% และ
+Remote fingerprints.
 
 ## Repository verification
 
-Repository implementation นี้ตรวจด้วย local mocks/fixtures เท่านั้น:
+Repository implementation นี้ตรวจด้วย Node fixtures และ Workers runtime test ที่ใช้ D1
+จริงใน Miniflare; mock เฉพาะ external YouTube/Lark transports:
 
 ```bash
 npm ci

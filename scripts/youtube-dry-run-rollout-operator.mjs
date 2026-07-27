@@ -19,27 +19,26 @@ import {
   YOUTUBE_DRY_RUN_OPERATIONAL_ALLOWLIST,
   YOUTUBE_DRY_RUN_OPERATOR_CONTRACT_VERSION,
   YOUTUBE_DRY_RUN_OPERATOR_PHASES,
+  YOUTUBE_DRY_RUN_REQUIRED_SECRET_NAMES,
   buildYouTubeDryRunPhasePlan,
   buildYouTubeDryRunSnapshotSql,
+  classifyYouTubeDryRunCompletionSnapshot,
   compareYouTubeDryRunConfigs,
   compareYouTubeDryRunSnapshots,
   createYouTubeDryRunEvidence,
+  decideYouTubeDryRunRestore,
   evidenceFileForPhase,
   executeYouTubeDryRunOperatorPhase,
   loadYouTubeDryRunTarget,
   parseYouTubeDryRunOperatorArgs,
   validateActiveYouTubeDeployment,
-  validateYouTubeDryRunEvidence,
+  validateYouTubeDryRunEvidenceSequence,
+  validateRemoteYouTubeDeploymentContract,
 } from './lib/youtube-dry-run-rollout-operator.js';
 
 const execFileAsync = promisify(execFile);
 const repositoryRoot = resolve(process.cwd());
 const evidenceRoot = join(repositoryRoot, 'outputs', 'youtube-dry-run-rollout');
-const requiredSecretNames = Object.freeze([
-  'LARK_APP_ID',
-  'LARK_APP_SECRET',
-  'YOUTUBE_API_KEY',
-]);
 
 try {
   const options = parseYouTubeDryRunOperatorArgs(process.argv.slice(2));
@@ -113,11 +112,11 @@ async function executePhase(phase) {
   await mkdir(evidenceRoot, { recursive: true, mode: 0o700 });
 
   const dependencies = {
-    ...(phase === 'restore-all-false'
-      ? {}
-      : { readPriorEvidence: readEvidence }),
+    readPriorEvidence: readPriorEvidenceForPhase,
+    readRecoveryEvidence,
     writeEvidence,
     writeEmergencyRestore,
+    writeDeploymentAttempt,
     writeQueueSendAttempt,
     sendQueueMessage: (job) => sendExactlyOneQueueMessage(job, target),
     verifyDryRun: () => verifyDryRun(target),
@@ -131,6 +130,37 @@ async function executePhase(phase) {
     workingTreeClean,
   }, dependencies);
   process.stdout.write(`${JSON.stringify(evidence, null, 2)}\n`);
+}
+
+async function readPriorEvidenceForPhase(phase) {
+  if (phase === 'restore-all-false') return readRecoveryEvidence();
+  const index = YOUTUBE_DRY_RUN_OPERATOR_PHASES.indexOf(phase);
+  if (index <= 0) {
+    throw operatorFailure(
+      'Executable phase has no canonical prior evidence',
+      'YOUTUBE_DRY_RUN_PRIOR_EVIDENCE_REQUIRED',
+    );
+  }
+  return readEvidence(YOUTUBE_DRY_RUN_OPERATOR_PHASES[index - 1]);
+}
+
+async function readRecoveryEvidence() {
+  for (const [phase, reader] of [
+    ['verify-deployment', () => readEvidence('verify-deployment')],
+    ['deploy-dry-run-gates', () => readEvidence('deploy-dry-run-gates')],
+    ['deploy-dry-run-gates', readDeploymentAttempt],
+  ]) {
+    try {
+      const evidence = await reader();
+      if (evidence?.phase === phase) return evidence;
+    } catch (cause) {
+      if (cause?.code !== 'ENOENT') throw cause;
+    }
+  }
+  throw operatorFailure(
+    'No chain-bound dry-run activation evidence is available for guarded restore',
+    'YOUTUBE_DRY_RUN_RECOVERY_EVIDENCE_MISSING',
+  );
 }
 
 async function loadReviewedTarget(env) {
@@ -166,8 +196,9 @@ async function runOperatorPhase(plan, target, configs) {
       return runPreflight(target, configs);
     case 'deploy-safe-baseline':
     case 'deploy-dry-run-gates':
-    case 'restore-all-false':
       return runDeployment(plan, target, configs);
+    case 'restore-all-false':
+      return runGuardedRestore(plan, target, configs);
     case 'verify-safe-baseline':
     case 'verify-deployment':
     case 'verify-restore':
@@ -200,7 +231,8 @@ async function runPreflight(target, configs) {
     readSecretNames(target),
   ]);
   validateActiveYouTubeDeployment(deployment, target.expectedActiveVersion);
-  const missingSecrets = requiredSecretNames.filter((name) => !secretNames.includes(name));
+  const missingSecrets = YOUTUBE_DRY_RUN_REQUIRED_SECRET_NAMES
+    .filter((name) => !secretNames.includes(name));
   if (missingSecrets.length > 0) {
     throw operatorFailure(
       `Required Worker Secret names are missing: ${missingSecrets.join(', ')}`,
@@ -223,7 +255,7 @@ async function runPreflight(target, configs) {
     activeFlagFingerprint: configs.active.flagFingerprint,
     activeVersion: target.expectedActiveVersion,
     pendingMigrations,
-    requiredSecretNameCount: requiredSecretNames.length,
+    requiredSecretNameCount: YOUTUBE_DRY_RUN_REQUIRED_SECRET_NAMES.length,
     secretNameFingerprint: sha256(JSON.stringify(secretNames)),
     remoteMutationCount: 0,
   };
@@ -256,6 +288,56 @@ async function runDeployment(plan, target, configs) {
   };
 }
 
+async function runGuardedRestore(plan, target, configs) {
+  const [safeBaseline, activationEvidence, deploymentStatus] = await Promise.all([
+    readEvidence('verify-safe-baseline'),
+    readRecoveryEvidence(),
+    readDeploymentStatus(target.activeConfigPath, target.workerName),
+  ]);
+  const activeVersion = deploymentStatus?.versions?.find(
+    (version) => Number(version?.percentage) === 100,
+  )?.version_id;
+  const versionsView = activeVersion
+    ? await readVersionView(
+      target.activeConfigPath,
+      target.workerName,
+      activeVersion,
+    )
+    : {};
+  const guard = decideYouTubeDryRunRestore({
+    repositoryHead: target.repositoryHead,
+    targetFingerprint: target.targetFingerprint,
+    operationId: target.operationId,
+    safeBaselineVersion: safeBaseline?.data?.versionId,
+    activationEvidence,
+    deploymentStatus,
+    versionsView,
+  });
+  if (guard.decision === 'RESTORE_NOT_REQUIRED') {
+    return {
+      ...guard,
+      deploymentCommandCount: 0,
+      bindingFingerprint: configs.safe.bindingFingerprint,
+      flagFingerprint: configs.safe.flagFingerprint,
+    };
+  }
+  const bundle = await buildLocalBundle(target.safeConfigPath, plan.phase);
+  const result = await runCommand(plan.command);
+  const deploymentVersionId = extractVersionId(result.stdout);
+  return {
+    ...guard,
+    repositoryHead: target.repositoryHead,
+    localBundleSha256: bundle.sha256,
+    deploymentMessage: plan.command.at(-1),
+    deploymentVersionId,
+    deploymentCommandCount: 1,
+    commandExitCode: 0,
+    stdoutSha256: sha256(result.stdout),
+    bindingFingerprint: configs.safe.bindingFingerprint,
+    flagFingerprint: configs.safe.flagFingerprint,
+  };
+}
+
 async function verifyDeployment(phase, target, configs) {
   const priorPhase = phase === 'verify-safe-baseline'
     ? 'deploy-safe-baseline'
@@ -263,12 +345,48 @@ async function verifyDeployment(phase, target, configs) {
       ? 'deploy-dry-run-gates'
       : 'restore-all-false';
   const prior = await readEvidence(priorPhase);
-  const expectedVersion = prior?.data?.deploymentVersionId;
+  const expectedVersion = phase === 'verify-restore'
+    ? (prior?.data?.deploymentVersionId ?? prior?.data?.safeBaselineVersion)
+    : prior?.data?.deploymentVersionId;
   const status = await readDeploymentStatus(target.activeConfigPath, target.workerName);
   const active = validateActiveYouTubeDeployment(status, expectedVersion);
+  const [versionsView, mainConsumers, dlqConsumers, triggerState] = await Promise.all([
+    readVersionView(
+      target.activeConfigPath,
+      target.workerName,
+      expectedVersion,
+    ),
+    readQueueConsumers(target.mainQueueName),
+    readQueueConsumers(target.dlqName),
+    readRemoteTriggerState(target),
+  ]);
+  const localContract = phase === 'verify-deployment'
+    ? configs.active
+    : configs.safe;
+  const expectedDeploymentMessage = prior?.data?.deploymentMessage
+    ?? (phase === 'verify-restore' && prior?.data?.decision === 'RESTORE_NOT_REQUIRED'
+      ? (await readEvidence('deploy-safe-baseline'))?.data?.deploymentMessage
+      : null);
+  if (!expectedDeploymentMessage) {
+    throw operatorFailure(
+      'Remote verification requires exact deployment SHA/phase evidence',
+      'YOUTUBE_DRY_RUN_DEPLOYMENT_PROVENANCE_MISSING',
+    );
+  }
+  const remote = validateRemoteYouTubeDeploymentContract({
+    versionsView,
+    deploymentStatus: status,
+    queueConsumers: [...mainConsumers, ...dlqConsumers],
+    workerName: target.workerName,
+    ...triggerState,
+    active: phase === 'verify-deployment',
+    expectedDeploymentMessage,
+    expectedRemoteFingerprint: localContract.remoteContractFingerprint,
+  });
   return {
     ...active,
-    bindingFingerprint: configs.safe.bindingFingerprint,
+    remoteFingerprint: remote.remoteFingerprint,
+    bindingFingerprint: localContract.bindingFingerprint,
     flagFingerprint: phase === 'verify-deployment'
       ? configs.active.flagFingerprint
       : configs.safe.flagFingerprint,
@@ -280,6 +398,7 @@ async function verifyDryRun(target) {
   const before = beforeEvidence?.data?.snapshot;
   const after = await pollForCompletion(target);
   const comparison = compareYouTubeDryRunSnapshots(before, after, {
+    executionMode: target.executionMode,
     after: {
       youtubeLarkWrites: after.youtube_lark_records,
       analyticsRequests: after.analytics_requests,
@@ -306,8 +425,7 @@ async function pollForCompletion(target) {
   let snapshot = null;
   for (let attempt = 1; attempt <= maxPolls; attempt += 1) {
     snapshot = await readOperationalSnapshot(target);
-    if (snapshot.sync_runs >= 1 && snapshot.sync_work_runs >= 1
-      && snapshot.queue_operation_attempts >= 1) {
+    if (classifyYouTubeDryRunCompletionSnapshot(snapshot).complete) {
       return snapshot;
     }
     if (attempt < maxPolls) await new Promise((resolveWait) => setTimeout(resolveWait, pollIntervalMs));
@@ -367,20 +485,36 @@ async function sendExactlyOneQueueMessage(job, target) {
 async function summarizeEvidence(target) {
   const evidence = [];
   for (const phase of YOUTUBE_DRY_RUN_OPERATOR_PHASES.slice(0, -1)) {
-    if (phase === 'plan') continue;
-    const item = await readEvidence(phase);
-    evidence.push(validateYouTubeDryRunEvidence(item, {
-      phase,
-      repositoryHead: target.repositoryHead,
-      targetFingerprint: target.targetFingerprint,
-      operationId: target.operationId,
-    }));
+    try {
+      evidence.push(await readEvidence(phase));
+    } catch (cause) {
+      if (cause?.code !== 'ENOENT') throw cause;
+      if (phase === 'deploy-dry-run-gates') {
+        try {
+          evidence.push(await readDeploymentAttempt());
+        } catch (attemptCause) {
+          if (attemptCause?.code !== 'ENOENT') throw attemptCause;
+        }
+      }
+    }
+  }
+  const validated = validateYouTubeDryRunEvidenceSequence(evidence, {
+    repositoryHead: target.repositoryHead,
+    targetFingerprint: target.targetFingerprint,
+    operationId: target.operationId,
+  });
+  if (validated.at(-1)?.phase !== 'verify-restore') {
+    throw operatorFailure(
+      'Summary requires a verified recovery-chain restore endpoint',
+      'YOUTUBE_DRY_RUN_SUMMARY_RESTORE_INCOMPLETE',
+    );
   }
   return {
-    phaseCount: evidence.length,
+    phaseCount: validated.length,
     operation: scopedIdentity(target),
-    restoredSafeClosed: evidence.at(-1)?.phase === 'verify-restore',
-    operatorOriginatedQueueSends: evidence
+    evidenceChainHeadSha256: validated.at(-1).evidenceSha256,
+    restoredSafeClosed: true,
+    operatorOriginatedQueueSends: validated
       .filter((item) => item.phase === 'send-one-dry-run')
       .reduce((sum, item) => sum + Number(item.data?.queueSendCommandCount ?? 0), 0),
   };
@@ -402,6 +536,96 @@ async function readDeploymentStatus(configPath, workerName) {
   ]);
   const parsed = JSON.parse(output);
   return Array.isArray(parsed) ? parsed[0] : parsed;
+}
+
+async function readVersionView(configPath, workerName, versionId) {
+  const output = await wranglerText([
+    'versions', 'view', versionId, '--name', workerName,
+    '--config', configPath, '--json',
+  ]);
+  return JSON.parse(output);
+}
+
+async function readQueueConsumers(queueName) {
+  const output = await wranglerText([
+    'queues', 'consumer', 'list', queueName, '--json',
+  ]);
+  const parsed = JSON.parse(output);
+  return Array.isArray(parsed) ? parsed : (parsed?.result ?? parsed?.consumers ?? []);
+}
+
+async function readRemoteTriggerState(target) {
+  if (!target.accountId) {
+    throw operatorFailure(
+      'Remote trigger verification requires CLOUDFLARE_ACCOUNT_ID',
+      'YOUTUBE_DRY_RUN_CLOUDFLARE_ACCOUNT_ID_REQUIRED',
+    );
+  }
+  const apiToken = process.env.CLOUDFLARE_API_TOKEN;
+  if (!apiToken) {
+    throw operatorFailure(
+      'Remote trigger verification requires CLOUDFLARE_API_TOKEN with Workers Scripts Read',
+      'YOUTUBE_DRY_RUN_CLOUDFLARE_API_TOKEN_REQUIRED',
+    );
+  }
+  const accountPath = `/accounts/${encodeURIComponent(target.accountId)}/workers`;
+  const scriptPath = `${accountPath}/scripts/${encodeURIComponent(target.workerName)}`;
+  const [scriptList, schedules, subdomain] = await Promise.all([
+    readAllCloudflareWorkerScripts(accountPath, apiToken),
+    cloudflareApiJson(`${scriptPath}/schedules`, apiToken),
+    cloudflareApiJson(`${scriptPath}/subdomain`, apiToken),
+  ]);
+  return { scriptList, schedules, subdomain };
+}
+
+async function readAllCloudflareWorkerScripts(accountPath, apiToken) {
+  const scripts = [];
+  let page = 1;
+  let totalPages = 1;
+  do {
+    const response = await cloudflareApiJson(
+      `${accountPath}/scripts?page=${page}&per_page=100`,
+      apiToken,
+    );
+    if (!Array.isArray(response.result)) {
+      throw operatorFailure(
+        'Cloudflare Worker list returned an invalid result',
+        'YOUTUBE_DRY_RUN_REMOTE_CONTRACT_INVALID',
+      );
+    }
+    scripts.push(...response.result);
+    totalPages = Number(response.result_info?.total_pages ?? 1);
+    if (!Number.isSafeInteger(totalPages) || totalPages < 1 || totalPages > 10_000) {
+      throw operatorFailure(
+        'Cloudflare Worker list returned invalid pagination',
+        'YOUTUBE_DRY_RUN_REMOTE_CONTRACT_INVALID',
+      );
+    }
+    page += 1;
+  } while (page <= totalPages);
+  return { success: true, result: scripts };
+}
+
+async function cloudflareApiJson(path, apiToken) {
+  const response = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
+    headers: { Authorization: `Bearer ${apiToken}` },
+  });
+  let parsed;
+  try {
+    parsed = await response.json();
+  } catch {
+    throw operatorFailure(
+      'Cloudflare read-only verification returned non-JSON output',
+      'YOUTUBE_DRY_RUN_REMOTE_CONTRACT_INVALID',
+    );
+  }
+  if (!response.ok || parsed?.success !== true) {
+    throw operatorFailure(
+      'Cloudflare read-only verification request failed',
+      'YOUTUBE_DRY_RUN_REMOTE_CONTRACT_INVALID',
+    );
+  }
+  return parsed;
 }
 
 async function buildLocalBundle(configPath, label) {
@@ -443,8 +667,32 @@ async function writeEmergencyRestore(instruction) {
   await writePrivateJson(join(evidenceRoot, 'emergency-restore.json'), instruction);
 }
 
+async function writeDeploymentAttempt(evidence) {
+  await writeExclusivePrivateJson(
+    join(evidenceRoot, 'deploy-dry-run-gates-attempt.json'),
+    evidence,
+    'A dry-run deployment attempt is already recorded; a second activation is blocked',
+    'YOUTUBE_DRY_RUN_DEPLOYMENT_REATTEMPT_BLOCKED',
+  );
+}
+
+async function readDeploymentAttempt() {
+  return JSON.parse(await readFile(
+    join(evidenceRoot, 'deploy-dry-run-gates-attempt.json'),
+    'utf8',
+  ));
+}
+
 async function writeQueueSendAttempt(evidence) {
-  const path = join(evidenceRoot, 'send-one-dry-run-attempt.json');
+  await writeExclusivePrivateJson(
+    join(evidenceRoot, 'send-one-dry-run-attempt.json'),
+    evidence,
+    'A Queue send attempt is already recorded; automatic or manual resend is blocked',
+    'YOUTUBE_DRY_RUN_QUEUE_RESEND_BLOCKED',
+  );
+}
+
+async function writeExclusivePrivateJson(path, evidence, message, code) {
   try {
     await writeFile(path, `${JSON.stringify(evidence, null, 2)}\n`, {
       mode: 0o600,
@@ -453,10 +701,7 @@ async function writeQueueSendAttempt(evidence) {
     await chmod(path, 0o600);
   } catch (cause) {
     if (cause?.code === 'EEXIST') {
-      throw operatorFailure(
-        'A Queue send attempt is already recorded; automatic or manual resend is blocked',
-        'YOUTUBE_DRY_RUN_QUEUE_RESEND_BLOCKED',
-      );
+      throw operatorFailure(message, code);
     }
     throw cause;
   }

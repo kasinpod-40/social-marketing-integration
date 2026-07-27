@@ -65,10 +65,17 @@ Branch `integration/youtube-worker-dry-run-rollout-operator` เพิ่ม Sta
 replay โดยไม่เรียก Provider ซ้ำ ขณะที่ scheduled/legacy YouTube path คง behavior เดิม.
 
 Operator `youtube-dry-run-rollout-v1` เป็น plan-only โดย default, ใช้ confirmation แยกทุก phase,
-exact Git provenance, sanitized evidence chain, one-message/no-auto-resend และ independent
-all-flags-false restore. Dry-run อนุญาตเฉพาะ Public YouTube GET, Lark planning GET และ Shared
+exact Git provenance, canonical SHA-256 evidence chain, one-message/no-auto-resend และ guarded
+all-flags-false restore ที่ no-op บน safe baseline และ block concurrent version. Remote verifier
+ตรวจ version/bindings/flags/Secret names/traffic/Queue consumers/Cron/routes/workers.dev จาก
+read-only Remote responses โดยไม่ใช้ local config แทนหลักฐาน. Dry-run อนุญาตเฉพาะ Public
+YouTube GET, Lark planning GET และ Shared
 operational mutations; ห้าม Business/Coverage/checkpoint/Lark write, Analytics และ OAuth refresh.
 Warning drain กับ expired-work cleanup ถูกข้ามเฉพาะ Operator path.
+
+PR #101 blocker remediation เพิ่ม terminal completion proof, pre-send empty-operation mode,
+dry-run completion replay semantics และ Workers-runtime D1 integrated replay test; ยังไม่มี
+Remote action ใดเกิดขึ้น.
 
 งานนี้เป็น Repository-only: ไม่มี Worker/D1/Lark/Provider/Queue/DLQ/Schedule/Production action.
 รายละเอียด:

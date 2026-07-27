@@ -108,6 +108,28 @@ const POST_ACTIVATION_PHASES = new Set([
   'send-one-dry-run',
   'verify-dry-run',
 ]);
+const RECOVERY_SOURCE_PHASES = new Set([
+  'deploy-dry-run-gates',
+  'verify-deployment',
+]);
+const RECOVERY_PHASES = new Set([
+  'restore-all-false',
+  'verify-restore',
+  'summary',
+]);
+const TERMINAL_SYNC_RUN_STATUSES = new Set([
+  'failed',
+  'partial_success',
+  'skipped',
+]);
+const TERMINAL_WORK_LIFECYCLE_STATUSES = new Set([
+  'terminal',
+  'superseded',
+]);
+const EXECUTION_MODES = new Set([
+  'new_execution',
+  'replay_verification',
+]);
 const TRUE_DURING_DRY_RUN = Object.freeze([
   'MKT_CONNECTOR_YOUTUBE_ENABLED',
   'MKT_YOUTUBE_END_TO_END_ENABLED',
@@ -159,6 +181,11 @@ const REQUIRED_LARK_MAPPINGS = Object.freeze([
   'LARK_TABLE_MKT_SYNC_LOG',
   'LARK_TABLE_MKT_SYSTEM_ALERTS',
 ]);
+export const YOUTUBE_DRY_RUN_REQUIRED_SECRET_NAMES = Object.freeze([
+  'LARK_APP_ID',
+  'LARK_APP_SECRET',
+  'YOUTUBE_API_KEY',
+]);
 const EXPECTED_CRONS = Object.freeze([
   '*/5 * * * *',
   '50 0,6,12,18 * * *',
@@ -177,9 +204,9 @@ const EVIDENCE_PHASE_FILES = deepFreeze({
   'verify-restore': 'verify-restore.json',
   summary: 'summary.json',
 });
-const PRIOR_PHASE = new Map(
+const NORMAL_PRIOR_PHASE = new Map(
   YOUTUBE_DRY_RUN_OPERATOR_PHASES
-    .slice(1)
+    .slice(1, YOUTUBE_DRY_RUN_OPERATOR_PHASES.indexOf('restore-all-false'))
     .map((phase, index) => [phase, YOUTUBE_DRY_RUN_OPERATOR_PHASES[index]]),
 );
 
@@ -302,6 +329,9 @@ export function loadYouTubeDryRunTarget(env = {}) {
     syncRunId: `youtube-dry-run:${operationId}`,
     originalRequestedAt,
     generation: originalRequestedAt,
+    executionMode: requireExecutionMode(
+      env.MKT_YOUTUBE_DRY_RUN_EXECUTION_MODE ?? 'new_execution',
+    ),
     repositoryHead,
   };
   return deepFreeze({
@@ -338,6 +368,10 @@ export function validateYouTubeDryRunConfig(configText, input = {}) {
   requireConfigString(text, 'MKT_CONNECTION_CUSTOMER_KEY', 'chemistry_k');
   requireConfigString(text, 'YOUTUBE_CHANNEL_ID', requireText(input.channelId, 'channelId'));
   requireConfigString(text, 'database_name', 'social-mkt-state-dev');
+  const databaseId = requireNonPlaceholderUuid(
+    readConfigString(text, 'database_id'),
+    'database_id',
+  );
   requireConfigStringValue(text, 'binding', 'MKT_STATE_DB');
   requireConfigStringValue(text, 'binding', 'MKT_SYNC_QUEUE');
   requireConfigStringValue(text, 'queue', 'social-mkt-sync-jobs');
@@ -377,7 +411,15 @@ export function validateYouTubeDryRunConfig(configText, input = {}) {
     );
   }
   const routes = readConfigArrayStrings(text, 'routes', { optional: true });
-  const workersDev = readOptionalConfigBoolean(text, 'workers_dev');
+  const workersDev = readRequiredConfigBoolean(text, 'workers_dev');
+  const reviewedRemoteContract = buildReviewedRemoteContract({
+    active,
+    trueFlags,
+    crons,
+    routes,
+    workersDev,
+    databaseId,
+  });
   return deepFreeze({
     active,
     trueFlags,
@@ -385,10 +427,12 @@ export function validateYouTubeDryRunConfig(configText, input = {}) {
     crons,
     routes,
     workersDev,
+    databaseId,
     bindingFingerprint: sha256(stableJson({
       worker: 'social-mkt-sync-worker',
       d1Binding: 'MKT_STATE_DB',
       d1Database: 'social-mkt-state-dev',
+      d1DatabaseId: databaseId,
       queueBinding: 'MKT_SYNC_QUEUE',
       mainQueue: 'social-mkt-sync-jobs',
       dlq: 'social-mkt-sync-dlq',
@@ -411,6 +455,7 @@ export function validateYouTubeDryRunConfig(configText, input = {}) {
       workersDev,
     })),
     flagFingerprint: sha256(stableJson({ trueFlags, falseFlags: REQUIRED_FALSE_FLAGS })),
+    remoteContractFingerprint: sha256(stableJson(reviewedRemoteContract)),
   });
 }
 
@@ -498,6 +543,26 @@ export function buildYouTubeDryRunSnapshotSql(identity = {}) {
   ));
   return compactSql(`
     SELECT
+      (SELECT status FROM sync_runs WHERE sync_run_id = '${syncRunId}')
+        AS sync_run_status,
+      (SELECT finished_at FROM sync_runs WHERE sync_run_id = '${syncRunId}')
+        AS sync_run_finished_at,
+      (SELECT error_code FROM sync_runs WHERE sync_run_id = '${syncRunId}')
+        AS sync_run_error_code,
+      (SELECT status FROM sync_work_runs WHERE work_key = '${workKey}')
+        AS sync_work_status,
+      (SELECT lifecycle_status FROM sync_work_runs WHERE work_key = '${workKey}')
+        AS sync_work_lifecycle_status,
+      (SELECT completed_at FROM sync_work_runs WHERE work_key = '${workKey}')
+        AS sync_work_completed_at,
+      (SELECT terminal_reason FROM sync_work_runs WHERE work_key = '${workKey}')
+        AS sync_work_terminal_reason,
+      (SELECT COUNT(*) FROM sync_locks
+        WHERE owner_id = '${syncRunId}'
+          AND expires_at > (unixepoch() * 1000)) AS active_lock_count,
+      CASE WHEN (SELECT completion_json FROM sync_work_runs
+        WHERE work_key = '${workKey}') IS NULL THEN 0 ELSE 1 END
+        AS completion_json_present,
       (SELECT COUNT(*) FROM sync_runs WHERE sync_run_id = '${syncRunId}') AS sync_runs,
       (SELECT COUNT(*) FROM sync_locks WHERE owner_id = '${syncRunId}') AS sync_locks,
       (SELECT COUNT(*) FROM queue_operation_attempts WHERE operation_id = '${operationId}'
@@ -547,9 +612,20 @@ export function validateYouTubeDryRunSnapshot(row = {}, input = {}) {
     ...YOUTUBE_DRY_RUN_FORBIDDEN_BUSINESS_RESOURCES.filter(
       (name) => name !== 'youtube_lark_records',
     ),
+    'active_lock_count',
+    'completion_json_present',
     'main_queue_attempts',
     'dlq_records',
   ].map((name) => [name, nonNegativeInteger(row?.[name] ?? 0, name)]));
+  const terminal = Object.freeze({
+    sync_run_status: optionalText(row?.sync_run_status),
+    sync_run_finished_at: optionalText(row?.sync_run_finished_at),
+    sync_run_error_code: optionalText(row?.sync_run_error_code),
+    sync_work_status: optionalText(row?.sync_work_status),
+    sync_work_lifecycle_status: optionalText(row?.sync_work_lifecycle_status),
+    sync_work_completed_at: optionalText(row?.sync_work_completed_at),
+    sync_work_terminal_reason: optionalText(row?.sync_work_terminal_reason),
+  });
   const forbiddenChanged = YOUTUBE_DRY_RUN_FORBIDDEN_BUSINESS_RESOURCES
     .filter((name) => name !== 'youtube_lark_records')
     .filter((name) => result[name] !== 0);
@@ -560,25 +636,9 @@ export function validateYouTubeDryRunSnapshot(row = {}, input = {}) {
       { forbiddenChanged },
     );
   }
-  if (input.requireCompleted === true) {
-    const missing = ['sync_runs', 'queue_operation_attempts', 'sync_work_runs']
-      .filter((name) => result[name] < 1);
-    if (missing.length > 0) {
-      throw operatorError(
-        'YouTube dry-run operational completion evidence is incomplete',
-        'YOUTUBE_DRY_RUN_OPERATIONAL_EVIDENCE_INCOMPLETE',
-        { missing },
-      );
-    }
-    if (result.dlq_records !== 0) {
-      throw operatorError(
-        'YouTube dry-run operation appeared in the DLQ',
-        'YOUTUBE_DRY_RUN_DLQ_DETECTED',
-      );
-    }
-  }
   const boundary = {
     ...result,
+    ...terminal,
     youtube_lark_records: nonNegativeInteger(
       input.youtubeLarkWrites ?? row.youtube_lark_records ?? 0,
       'youtubeLarkWrites',
@@ -603,7 +663,122 @@ export function validateYouTubeDryRunSnapshot(row = {}, input = {}) {
       { forbiddenChanged: ['youtube_lark_records'] },
     );
   }
-  return deepFreeze(boundary);
+  const validated = deepFreeze(boundary);
+  const completion = classifyYouTubeDryRunCompletionSnapshot(validated);
+  if (input.requireCompleted === true && completion.complete !== true) {
+    throw operatorError(
+      'YouTube dry-run operational completion evidence is incomplete',
+      'YOUTUBE_DRY_RUN_OPERATIONAL_EVIDENCE_INCOMPLETE',
+      { missing: completion.missing },
+    );
+  }
+  return validated;
+}
+
+export function classifyYouTubeDryRunCompletionSnapshot(row = {}) {
+  const dlqRecords = nonNegativeInteger(row?.dlq_records ?? 0, 'dlq_records');
+  if (dlqRecords !== 0) {
+    throw operatorError(
+      'YouTube dry-run operation appeared in the DLQ',
+      'YOUTUBE_DRY_RUN_DLQ_DETECTED',
+    );
+  }
+  const syncRunStatus = optionalText(row?.sync_run_status);
+  const workLifecycleStatus = optionalText(row?.sync_work_lifecycle_status);
+  if (TERMINAL_SYNC_RUN_STATUSES.has(syncRunStatus)) {
+    throw operatorError(
+      'YouTube dry-run Sync run reached a terminal non-success status',
+      'YOUTUBE_DRY_RUN_TERMINAL_SYNC_RUN_FAILED',
+      {
+        syncRunStatus,
+        errorCode: optionalText(row?.sync_run_error_code),
+      },
+    );
+  }
+  if (TERMINAL_WORK_LIFECYCLE_STATUSES.has(workLifecycleStatus)
+    || optionalText(row?.sync_work_status) === 'superseded') {
+    throw operatorError(
+      'YouTube dry-run Work reached a terminal non-completed lifecycle',
+      'YOUTUBE_DRY_RUN_TERMINAL_WORK_FAILED',
+      {
+        workLifecycleStatus,
+        terminalReason: optionalText(row?.sync_work_terminal_reason),
+      },
+    );
+  }
+  const required = {
+    sync_run_status: syncRunStatus === 'success',
+    sync_run_finished_at: optionalText(row?.sync_run_finished_at) !== null,
+    sync_work_lifecycle_status: workLifecycleStatus === 'completed',
+    sync_work_completed_at: optionalText(row?.sync_work_completed_at) !== null,
+    active_lock_count: nonNegativeInteger(
+      row?.active_lock_count ?? 0,
+      'active_lock_count',
+    ) === 0,
+    completion_json_present: nonNegativeInteger(
+      row?.completion_json_present ?? 0,
+      'completion_json_present',
+    ) === 1,
+    main_queue_attempts: nonNegativeInteger(
+      row?.main_queue_attempts ?? 0,
+      'main_queue_attempts',
+    ) >= 1,
+    dlq_records: dlqRecords === 0,
+  };
+  const missing = Object.entries(required)
+    .filter(([, passed]) => !passed)
+    .map(([name]) => name);
+  return deepFreeze({ complete: missing.length === 0, missing });
+}
+
+export function validateYouTubeDryRunPreSendSnapshot(row = {}, input = {}) {
+  const mode = requireExecutionMode(input.executionMode ?? 'new_execution');
+  const snapshot = validateYouTubeDryRunSnapshot(row);
+  if (mode === 'replay_verification') {
+    const completion = classifyYouTubeDryRunCompletionSnapshot(snapshot);
+    if (!completion.complete) {
+      throw operatorError(
+        'Replay verification requires an already completed operation',
+        'YOUTUBE_DRY_RUN_REPLAY_OPERATION_INCOMPLETE',
+        { missing: completion.missing },
+      );
+    }
+    return deepFreeze({ mode, empty: false, snapshot });
+  }
+  const guardedResources = [
+    'sync_runs',
+    'queue_operation_attempts',
+    'sync_work_runs',
+    'sync_work_phases',
+    'sync_work_units',
+    'sync_generation_fences',
+    'dlq_records',
+  ];
+  const present = guardedResources.filter((name) => snapshot[name] !== 0);
+  if (present.length > 0) {
+    throw operatorError(
+      'New YouTube dry-run operation already has durable operational state',
+      'YOUTUBE_DRY_RUN_OPERATION_NOT_EMPTY',
+      { present },
+    );
+  }
+  return deepFreeze({ mode, empty: true, snapshot });
+}
+
+export function validateYouTubeDryRunProviderCount(value, input = {}) {
+  const mode = requireExecutionMode(input.executionMode ?? 'new_execution');
+  const providerRequestCount = nonNegativeInteger(value, 'providerRequestCount');
+  const valid = mode === 'new_execution'
+    ? providerRequestCount > 0
+    : providerRequestCount === 0;
+  if (!valid) {
+    throw operatorError(
+      'YouTube dry-run Provider request count does not match execution mode',
+      'YOUTUBE_DRY_RUN_PROVIDER_COUNT_INVALID',
+      { mode, providerRequestCount },
+    );
+  }
+  return deepFreeze({ mode, providerRequestCount });
 }
 
 export function compareYouTubeDryRunSnapshots(before, after, input = {}) {
@@ -630,6 +805,9 @@ export function compareYouTubeDryRunSnapshots(before, after, input = {}) {
       );
     }
   }
+  const provider = validateYouTubeDryRunProviderCount(right.providerRequests, {
+    executionMode: input.executionMode ?? 'new_execution',
+  });
   return deepFreeze({
     allowedOperationalMutations: YOUTUBE_DRY_RUN_OPERATIONAL_ALLOWLIST.filter(
       (name) => right[name] !== left[name],
@@ -638,7 +816,7 @@ export function compareYouTubeDryRunSnapshots(before, after, input = {}) {
     larkWriteCount: 0,
     analyticsRequestCount: 0,
     oauthRefreshCount: 0,
-    providerRequestCount: right.providerRequests,
+    providerRequestCount: provider.providerRequestCount,
   });
 }
 
@@ -649,9 +827,30 @@ export function createYouTubeDryRunEvidence(input = {}) {
   const operationId = input.operationId === null || input.operationId === undefined
     ? null
     : requireSafeOperationId(input.operationId, 'operationId');
-  const evidence = {
-    contractVersion: YOUTUBE_DRY_RUN_OPERATOR_CONTRACT_VERSION,
+  const chainKind = requireEvidenceChainKind(
+    input.chainKind ?? (RECOVERY_PHASES.has(phase) ? 'recovery' : 'normal'),
+  );
+  const priorEvidence = input.priorEvidence ?? null;
+  const priorPhase = priorEvidence?.phase ?? input.priorPhase ?? null;
+  const priorEvidenceSha256 = priorEvidence?.evidenceSha256
+    ?? input.priorEvidenceSha256
+    ?? null;
+  validateEvidenceLinkDefinition({
     phase,
+    chainKind,
+    priorPhase,
+    priorEvidenceSha256,
+    priorEvidence,
+    repositoryHead,
+    targetFingerprint,
+    operationId,
+  });
+  const unsignedEvidence = {
+    contractVersion: YOUTUBE_DRY_RUN_OPERATOR_CONTRACT_VERSION,
+    chainKind,
+    phase,
+    priorPhase,
+    priorEvidenceSha256,
     repositoryHead,
     targetFingerprint,
     operationId,
@@ -659,6 +858,10 @@ export function createYouTubeDryRunEvidence(input = {}) {
     syncRunId: operationId ? `youtube-dry-run:${operationId}` : null,
     createdAt: requireIsoTimestamp(input.createdAt ?? new Date().toISOString(), 'createdAt'),
     data: sanitizeEvidenceValue(input.data ?? {}),
+  };
+  const evidence = {
+    ...unsignedEvidence,
+    evidenceSha256: sha256(stableJson(unsignedEvidence)),
   };
   assertEvidenceSafe(evidence);
   return deepFreeze(evidence);
@@ -676,17 +879,90 @@ export function validateYouTubeDryRunEvidence(evidence = {}, expected = {}) {
   if ((expected.operationId ?? null) !== (evidence.operationId ?? null)) {
     throw evidenceError('operationId');
   }
+  if (evidence.workKey !== (evidence.operationId ? `youtube:${evidence.operationId}` : null)) {
+    throw evidenceError('workKey');
+  }
+  if (evidence.syncRunId !== (
+    evidence.operationId ? `youtube-dry-run:${evidence.operationId}` : null
+  )) {
+    throw evidenceError('syncRunId');
+  }
+  const chainKind = requireEvidenceChainKind(evidence.chainKind);
+  if (expected.chainKind && chainKind !== expected.chainKind) {
+    throw evidenceError('chainKind');
+  }
+  if (expected.priorPhase !== undefined && evidence.priorPhase !== expected.priorPhase) {
+    throw evidenceError('priorPhase');
+  }
+  if (expected.priorEvidenceSha256 !== undefined
+    && evidence.priorEvidenceSha256 !== expected.priorEvidenceSha256) {
+    throw evidenceError('priorEvidenceSha256');
+  }
+  requireNullablePhase(evidence.priorPhase, 'priorPhase');
+  requireNullableFingerprint(evidence.priorEvidenceSha256, 'priorEvidenceSha256');
+  const unsignedEvidence = structuredClone(evidence);
+  delete unsignedEvidence.evidenceSha256;
+  const observedHash = requireFingerprint(evidence.evidenceSha256, 'evidenceSha256');
+  const expectedHash = sha256(stableJson(unsignedEvidence));
+  if (observedHash !== expectedHash) throw evidenceError('evidenceSha256');
   assertEvidenceSafe(evidence);
   return deepFreeze(structuredClone(evidence));
 }
 
 export function validateYouTubeDryRunEvidenceChain(phase, priorEvidence, expected = {}) {
-  const requiredPrior = PRIOR_PHASE.get(requirePhase(phase));
-  if (!requiredPrior) return true;
-  return validateYouTubeDryRunEvidence(priorEvidence, {
+  const currentPhase = requirePhase(phase);
+  const chainKind = requireEvidenceChainKind(
+    expected.chainKind ?? (RECOVERY_PHASES.has(currentPhase) ? 'recovery' : 'normal'),
+  );
+  const requiredPrior = requiredPriorPhase(currentPhase, chainKind, priorEvidence?.phase);
+  if (!requiredPrior) {
+    if (priorEvidence !== null && priorEvidence !== undefined) throw evidenceError('priorPhase');
+    return true;
+  }
+  const validated = validateYouTubeDryRunEvidence(priorEvidence, {
     ...expected,
     phase: requiredPrior,
   });
+  if (chainKind === 'recovery' && currentPhase === 'restore-all-false'
+    && !RECOVERY_SOURCE_PHASES.has(validated.phase)) {
+    throw evidenceError('recoverySourcePhase');
+  }
+  return validated;
+}
+
+export function validateYouTubeDryRunEvidenceSequence(evidence = [], expected = {}) {
+  if (!Array.isArray(evidence) || evidence.length === 0) {
+    throw evidenceError('sequence');
+  }
+  const byHash = new Map();
+  const seenPhases = new Set();
+  for (const item of evidence) {
+    const validated = validateYouTubeDryRunEvidence(item, {
+      repositoryHead: expected.repositoryHead,
+      targetFingerprint: expected.targetFingerprint,
+      operationId: expected.operationId,
+    });
+    if (seenPhases.has(validated.phase)) throw evidenceError('duplicatePhase');
+    if (validated.priorPhase === null) {
+      if (validated.phase !== 'plan' || validated.chainKind !== 'normal') {
+        throw evidenceError('rootPhase');
+      }
+    } else {
+      const prior = byHash.get(validated.priorEvidenceSha256);
+      if (!prior || prior.phase !== validated.priorPhase) {
+        throw evidenceError('sequenceOrder');
+      }
+      validateYouTubeDryRunEvidenceChain(validated.phase, prior, {
+        repositoryHead: expected.repositoryHead,
+        targetFingerprint: expected.targetFingerprint,
+        operationId: expected.operationId,
+        chainKind: validated.chainKind,
+      });
+    }
+    byHash.set(validated.evidenceSha256, validated);
+    seenPhases.add(validated.phase);
+  }
+  return deepFreeze([...byHash.values()]);
 }
 
 export function validateActiveYouTubeDeployment(status = {}, expectedVersion) {
@@ -711,29 +987,330 @@ export function validateActiveYouTubeDeployment(status = {}, expectedVersion) {
   });
 }
 
+export function parseWranglerVersionsView(value = {}) {
+  const item = Array.isArray(value) ? value[0] : value;
+  const versionId = requireVersionId(
+    item?.id ?? item?.version_id ?? item?.versionId,
+    'remoteVersionId',
+  );
+  const bindings = Array.isArray(item?.bindings)
+    ? item.bindings
+    : Array.isArray(item?.resources?.bindings)
+      ? item.resources.bindings
+      : [];
+  const plaintext = {};
+  const secretNames = [];
+  const resourceBindings = [];
+  for (const binding of bindings) {
+    const name = optionalText(binding?.name ?? binding?.binding);
+    const type = normalizeRemoteBindingType(binding?.type);
+    if (!name || !type) continue;
+    if (type === 'plain_text') {
+      plaintext[name] = String(binding?.text ?? binding?.value ?? '');
+    } else if (type === 'secret_text') {
+      if (binding?.text !== undefined || binding?.value !== undefined) {
+        throw operatorError(
+          'Remote version output exposed a Secret value',
+          'YOUTUBE_DRY_RUN_REMOTE_SECRET_VALUE_EXPOSED',
+        );
+      }
+      secretNames.push(name);
+    } else if (type === 'd1') {
+      resourceBindings.push({
+        type,
+        name,
+        databaseName: optionalText(
+          binding?.database_name ?? binding?.databaseName,
+        ),
+        databaseId: optionalText(
+          binding?.database_id ?? binding?.databaseId ?? binding?.id,
+        ),
+      });
+    } else if (type === 'queue') {
+      resourceBindings.push({
+        type,
+        name,
+        queueName: optionalText(binding?.queue_name ?? binding?.queueName),
+      });
+    }
+  }
+  return deepFreeze({
+    versionId,
+    deploymentMessage: optionalText(
+      item?.annotations?.['workers/message']
+        ?? item?.metadata?.annotations?.['workers/message']
+        ?? item?.message,
+    ),
+    workerName: optionalText(item?.name ?? item?.worker_name ?? item?.workerName),
+    plaintext,
+    secretNames: [...new Set(secretNames)].sort(),
+    resourceBindings: resourceBindings.sort(compareStableObjects),
+  });
+}
+
+export function parseCloudflareWorkerTriggerState(input = {}) {
+  const workerName = requireText(input.workerName, 'workerName');
+  const scripts = unwrapCloudflareResult(input.scriptList, 'scriptList');
+  if (!Array.isArray(scripts)) {
+    throw operatorError(
+      'Cloudflare Worker list result must be an array',
+      'YOUTUBE_DRY_RUN_REMOTE_CONTRACT_INVALID',
+    );
+  }
+  const matchingScripts = scripts.filter((script) => (
+    optionalText(script?.id ?? script?.name) === workerName
+  ));
+  if (matchingScripts.length !== 1) {
+    throw operatorError(
+      'Cloudflare Worker list must contain the exact target Worker once',
+      'YOUTUBE_DRY_RUN_REMOTE_WORKER_IDENTITY_INVALID',
+      { workerName, matchCount: matchingScripts.length },
+    );
+  }
+  const scheduleResult = unwrapCloudflareResult(input.schedules, 'schedules');
+  const schedules = Array.isArray(scheduleResult?.schedules)
+    ? scheduleResult.schedules
+    : Array.isArray(scheduleResult)
+      ? scheduleResult
+      : null;
+  if (!schedules) {
+    throw operatorError(
+      'Cloudflare Cron response lacks schedules',
+      'YOUTUBE_DRY_RUN_REMOTE_CONTRACT_INVALID',
+    );
+  }
+  const subdomain = unwrapCloudflareResult(input.subdomain, 'subdomain');
+  if (typeof subdomain?.enabled !== 'boolean') {
+    throw operatorError(
+      'Cloudflare Worker subdomain response lacks enabled state',
+      'YOUTUBE_DRY_RUN_REMOTE_CONTRACT_INVALID',
+    );
+  }
+  return deepFreeze({
+    crons: schedules.map((schedule) => requireText(schedule?.cron, 'remoteCron')).sort(),
+    routes: normalizeStringArray(matchingScripts[0]?.routes?.map((route) => route?.pattern)),
+    workersDev: subdomain.enabled,
+  });
+}
+
+export function parseWranglerDeploymentStatus(value = {}) {
+  const item = Array.isArray(value) ? value[0] : value;
+  const versions = Array.isArray(item?.versions) ? item.versions : [];
+  const active = versions.filter((version) => Number(version?.percentage) === 100);
+  if (active.length !== 1 || versions.length !== 1) {
+    throw operatorError(
+      'Remote deployment must route 100 percent traffic to exactly one version',
+      'YOUTUBE_DRY_RUN_REMOTE_TRAFFIC_INVALID',
+    );
+  }
+  return deepFreeze({
+    deploymentId: optionalText(item?.id),
+    versionId: requireVersionId(
+      active[0]?.version_id ?? active[0]?.versionId,
+      'remoteActiveVersionId',
+    ),
+    traffic: 100,
+  });
+}
+
+export function parseWranglerQueueConsumers(value = []) {
+  const items = Array.isArray(value)
+    ? value
+    : Array.isArray(value?.result)
+      ? value.result
+      : Array.isArray(value?.consumers)
+        ? value.consumers
+        : [];
+  return deepFreeze(items.map((consumer) => ({
+    queue: requireText(
+      consumer?.queue_name ?? consumer?.queue ?? consumer?.name,
+      'remoteQueueName',
+    ),
+    maxConcurrency: nonNegativeInteger(
+      consumer?.settings?.max_concurrency ?? consumer?.max_concurrency,
+      'remoteMaxConcurrency',
+    ),
+    maxBatchSize: nonNegativeInteger(
+      consumer?.settings?.batch_size
+        ?? consumer?.settings?.max_batch_size
+        ?? consumer?.max_batch_size,
+      'remoteMaxBatchSize',
+    ),
+    maxBatchTimeout: nonNegativeInteger(
+      consumer?.settings?.max_batch_timeout
+        ?? consumer?.max_batch_timeout,
+      'remoteMaxBatchTimeout',
+    ),
+    maxRetries: nonNegativeInteger(
+      consumer?.settings?.max_retries ?? consumer?.max_retries,
+      'remoteMaxRetries',
+    ),
+    deadLetterQueue: optionalText(
+      consumer?.settings?.dead_letter_queue
+        ?? consumer?.dead_letter_queue,
+    ),
+  })).sort(compareStableObjects));
+}
+
+export function validateRemoteYouTubeDeploymentContract(input = {}) {
+  const version = parseWranglerVersionsView(input.versionsView);
+  const deployment = parseWranglerDeploymentStatus(input.deploymentStatus);
+  const triggers = parseCloudflareWorkerTriggerState({
+    workerName: input.workerName,
+    scriptList: input.scriptList,
+    schedules: input.schedules,
+    subdomain: input.subdomain,
+  });
+  if (version.versionId !== deployment.versionId) {
+    throw operatorError(
+      'Remote version and deployment status disagree',
+      'YOUTUBE_DRY_RUN_REMOTE_VERSION_MISMATCH',
+    );
+  }
+  if (input.expectedDeploymentMessage !== undefined
+    && version.deploymentMessage !== input.expectedDeploymentMessage) {
+    throw operatorError(
+      'Remote Worker version lacks the exact reviewed deployment SHA and phase',
+      'YOUTUBE_DRY_RUN_REMOTE_DEPLOYMENT_MESSAGE_MISMATCH',
+    );
+  }
+  const consumers = parseWranglerQueueConsumers(input.queueConsumers);
+  const allFlags = Object.entries(version.plaintext)
+    .filter(([name]) => name.startsWith('MKT_') && name.endsWith('_ENABLED'))
+    .map(([name, value]) => [name, String(value).toLowerCase() === 'true']);
+  const unexpectedTrue = allFlags
+    .filter(([name, enabled]) => enabled && !TRUE_DURING_DRY_RUN.includes(name))
+    .map(([name]) => name);
+  if (unexpectedTrue.length > 0) {
+    throw operatorError(
+      'Remote deployment contains an unapproved true flag',
+      'YOUTUBE_DRY_RUN_REMOTE_TRUE_FLAG_INVALID',
+      { unexpectedTrue },
+    );
+  }
+  const reviewedFlagNames = new Set([...TRUE_DURING_DRY_RUN, ...REQUIRED_FALSE_FLAGS]);
+  const flags = allFlags.filter(([name]) => reviewedFlagNames.has(name));
+  const actual = buildReviewedRemoteContract({
+    active: input.active === true,
+    trueFlags: flags.filter(([, enabled]) => enabled).map(([name]) => name).sort(),
+    falseFlags: flags.filter(([, enabled]) => !enabled).map(([name]) => name).sort(),
+    crons: triggers.crons,
+    routes: triggers.routes,
+    workersDev: triggers.workersDev,
+    workerName: version.workerName ?? optionalText(input.workerName),
+    resourceBindings: version.resourceBindings,
+    secretNames: version.secretNames,
+    consumers,
+  });
+  const remoteFingerprint = sha256(stableJson(actual));
+  const expectedFingerprint = requireFingerprint(
+    input.expectedRemoteFingerprint,
+    'expectedRemoteFingerprint',
+  );
+  if (remoteFingerprint !== expectedFingerprint) {
+    throw operatorError(
+      'Sanitized Remote deployment contract differs from the reviewed local contract',
+      'YOUTUBE_DRY_RUN_REMOTE_FINGERPRINT_MISMATCH',
+      { expectedFingerprint, remoteFingerprint, sanitizedRemoteContract: actual },
+    );
+  }
+  return deepFreeze({
+    ...deployment,
+    remoteFingerprint,
+    deploymentMessage: version.deploymentMessage,
+    secretNameCount: version.secretNames.length,
+    queueConsumerCount: consumers.length,
+  });
+}
+
+export function decideYouTubeDryRunRestore(input = {}) {
+  const repositoryHead = requireFullGitSha(input.repositoryHead, 'repositoryHead');
+  const safeBaselineVersion = requireVersionId(
+    input.safeBaselineVersion,
+    'safeBaselineVersion',
+  );
+  const deployment = parseWranglerDeploymentStatus(input.deploymentStatus);
+  if (deployment.versionId === safeBaselineVersion) {
+    return deepFreeze({
+      decision: 'RESTORE_NOT_REQUIRED',
+      activeVersion: deployment.versionId,
+      safeBaselineVersion,
+      deployAllowed: false,
+    });
+  }
+  const activationEvidence = validateYouTubeDryRunEvidence(input.activationEvidence, {
+    repositoryHead,
+    targetFingerprint: input.targetFingerprint,
+    operationId: input.operationId,
+  });
+  if (!RECOVERY_SOURCE_PHASES.has(activationEvidence.phase)) {
+    throw evidenceError('recoverySourcePhase');
+  }
+  const explicitVersion = optionalText(
+    activationEvidence.data?.versionId
+      ?? activationEvidence.data?.deploymentVersionId,
+  );
+  let attemptedVersion = explicitVersion
+    ? requireVersionId(explicitVersion, 'attemptedDryRunVersion')
+    : null;
+  if (!attemptedVersion) {
+    const version = parseWranglerVersionsView(input.versionsView);
+    const expectedMessage = buildYouTubeDryRunDeploymentMessage(
+      'deploy-dry-run-gates',
+      repositoryHead,
+    );
+    if (version.versionId === deployment.versionId
+      && version.deploymentMessage === expectedMessage
+      && activationEvidence.phase === 'deploy-dry-run-gates') {
+      attemptedVersion = version.versionId;
+    }
+  }
+  if (attemptedVersion === deployment.versionId) {
+    return deepFreeze({
+      decision: 'RESTORE_REQUIRED',
+      activeVersion: deployment.versionId,
+      safeBaselineVersion,
+      attemptedDryRunVersion: attemptedVersion,
+      activationPhase: activationEvidence.phase,
+      activationEvidenceSha256: activationEvidence.evidenceSha256,
+      deployAllowed: true,
+    });
+  }
+  throw operatorError(
+    'Active Worker version changed outside the exact dry-run activation evidence',
+    'BLOCKED_ACTIVE_VERSION_CHANGED',
+    {
+      activeVersion: deployment.versionId,
+      safeBaselineVersion,
+      attemptedDryRunVersion: attemptedVersion,
+    },
+  );
+}
+
 export function buildEmergencyRestoreInstruction(input = {}) {
   const repositoryHead = requireFullGitSha(input.repositoryHead, 'repositoryHead');
-  const safeConfigPath = requireText(input.safeConfigPath, 'safeConfigPath');
+  requireText(input.safeConfigPath, 'safeConfigPath');
   return deepFreeze({
     required: true,
     automaticExecution: false,
+    activeVersionGuardRequired: true,
+    blindDeploymentForbidden: true,
     reasonCode: optionalStableCode(input.reasonCode) ?? 'YOUTUBE_DRY_RUN_POST_ACTIVATION_FAILURE',
     phase: 'restore-all-false',
     confirmation: YOUTUBE_DRY_RUN_CONFIRMATIONS['restore-all-false'],
-    deploymentMessage: buildYouTubeDryRunDeploymentMessage(
-      'restore-all-false',
-      repositoryHead,
-    ),
+    repositoryHead,
+    recoveryPriorPhase: input.recoveryEvidence?.phase ?? null,
+    recoveryPriorEvidenceSha256: input.recoveryEvidence?.evidenceSha256 ?? null,
     command: [
-      'npx',
-      'wrangler',
-      'deploy',
-      '--strict',
-      '--config',
-      safeConfigPath,
-      '--message',
-      buildYouTubeDryRunDeploymentMessage('restore-all-false', repositoryHead),
+      'npm',
+      'run',
+      'rollout:youtube-dry-run:restore',
     ],
+    allowedOutcomes: Object.freeze([
+      'RESTORE_NOT_REQUIRED',
+      'RESTORE_REQUIRED',
+      'BLOCKED_ACTIVE_VERSION_CHANGED',
+    ]),
   });
 }
 
@@ -783,18 +1360,28 @@ export async function executeYouTubeDryRunOperatorPhase(input = {}, dependencies
     expectedHead: input.target?.repositoryHead,
     workingTreeClean: input.workingTreeClean,
   });
-  if (typeof dependencies.readPriorEvidence === 'function') {
-    const prior = await dependencies.readPriorEvidence(PRIOR_PHASE.get(phase));
-    validateYouTubeDryRunEvidenceChain(phase, prior, {
-      repositoryHead: input.repositoryHead,
-      targetFingerprint: input.target.targetFingerprint,
-      operationId: input.target.operationId,
-    });
+  if (typeof dependencies.readPriorEvidence !== 'function') {
+    throw operatorError(
+      'Executable phases require the exact prior canonical evidence',
+      'YOUTUBE_DRY_RUN_PRIOR_EVIDENCE_REQUIRED',
+    );
   }
+  const chainKind = RECOVERY_PHASES.has(phase) ? 'recovery' : 'normal';
+  const prior = await dependencies.readPriorEvidence(phase);
+  validateYouTubeDryRunEvidenceChain(phase, prior, {
+    repositoryHead: input.repositoryHead,
+    targetFingerprint: input.target.targetFingerprint,
+    operationId: input.target.operationId,
+    chainKind,
+  });
   let originatedQueueSends = 0;
+  let deploymentAttempt = null;
   try {
     let data;
     if (phase === 'send-one-dry-run') {
+      validateYouTubeDryRunPreSendSnapshot(prior?.data?.snapshot, {
+        executionMode: input.target.executionMode ?? 'new_execution',
+      });
       const job = buildYouTubeDryRunJob(input.target);
       if (typeof dependencies.sendQueueMessage !== 'function') {
         throw operatorError(
@@ -810,6 +1397,8 @@ export async function executeYouTubeDryRunOperatorPhase(input = {}, dependencies
       }
       await dependencies.writeQueueSendAttempt(createYouTubeDryRunEvidence({
         phase,
+        chainKind,
+        priorEvidence: prior,
         repositoryHead: input.repositoryHead,
         targetFingerprint: input.target.targetFingerprint,
         operationId: input.target.operationId,
@@ -818,6 +1407,7 @@ export async function executeYouTubeDryRunOperatorPhase(input = {}, dependencies
           queueSendCommandCount: 1,
           status: 'attempt_started_no_automatic_resend',
           payloadFingerprint: sha256(stableJson(job)),
+          executionMode: input.target.executionMode ?? 'new_execution',
         },
       }));
       originatedQueueSends += 1;
@@ -839,12 +1429,39 @@ export async function executeYouTubeDryRunOperatorPhase(input = {}, dependencies
         queueSendCommandCount: 0,
       };
     } else if (typeof dependencies.runPhase === 'function') {
+      if (phase === 'deploy-dry-run-gates') {
+        if (typeof dependencies.writeDeploymentAttempt !== 'function') {
+          throw operatorError(
+            'Dry-run deployment requires a chain-bound attempt marker',
+            'YOUTUBE_DRY_RUN_DEPLOYMENT_ATTEMPT_MARKER_REQUIRED',
+          );
+        }
+        deploymentAttempt = createYouTubeDryRunEvidence({
+          phase,
+          chainKind,
+          priorEvidence: prior,
+          repositoryHead: input.repositoryHead,
+          targetFingerprint: input.target.targetFingerprint,
+          operationId: input.target.operationId,
+          createdAt: input.createdAt,
+          data: {
+            status: 'command_started_result_uncertain',
+            deploymentMessage: buildYouTubeDryRunDeploymentMessage(
+              phase,
+              input.repositoryHead,
+            ),
+          },
+        });
+        await dependencies.writeDeploymentAttempt(deploymentAttempt);
+      }
       data = await dependencies.runPhase(buildYouTubeDryRunPhasePlan(input));
     } else {
       data = buildYouTubeDryRunPhasePlan(input);
     }
     const evidence = createYouTubeDryRunEvidence({
       phase,
+      chainKind,
+      priorEvidence: prior,
       repositoryHead: input.repositoryHead,
       targetFingerprint: input.target.targetFingerprint,
       operationId: input.target.operationId,
@@ -855,10 +1472,14 @@ export async function executeYouTubeDryRunOperatorPhase(input = {}, dependencies
     return evidence;
   } catch (cause) {
     if (POST_ACTIVATION_PHASES.has(phase)) {
+      const recoveryEvidence = await dependencies.readRecoveryEvidence?.()
+        ?? deploymentAttempt
+        ?? (RECOVERY_SOURCE_PHASES.has(prior?.phase) ? prior : null);
       const emergencyRestore = buildEmergencyRestoreInstruction({
         repositoryHead: input.repositoryHead,
         safeConfigPath: input.target.safeConfigPath,
         reasonCode: cause?.code,
+        recoveryEvidence,
       });
       await dependencies.writeEmergencyRestore?.(emergencyRestore);
       cause.emergencyRestore = emergencyRestore;
@@ -912,6 +1533,84 @@ export function evidenceFileForPhase(phase) {
 
 function confirmation(envName, value) {
   return Object.freeze({ envName, value });
+}
+
+function buildReviewedRemoteContract(input = {}) {
+  const active = input.active === true;
+  const trueFlags = [...(input.trueFlags ?? (active ? TRUE_DURING_DRY_RUN : []))].sort();
+  const falseFlags = [...(input.falseFlags ?? [
+    ...REQUIRED_FALSE_FLAGS,
+    ...(active ? [] : TRUE_DURING_DRY_RUN),
+  ])].sort();
+  return {
+    workerName: input.workerName ?? 'social-mkt-sync-worker',
+    resourceBindings: [...(input.resourceBindings ?? [
+      {
+        type: 'd1',
+        name: 'MKT_STATE_DB',
+        databaseName: 'social-mkt-state-dev',
+        databaseId: input.databaseId,
+      },
+      { type: 'queue', name: 'MKT_SYNC_QUEUE', queueName: 'social-mkt-sync-jobs' },
+    ])].sort(compareStableObjects),
+    trueFlags,
+    falseFlags,
+    secretNames: [...(input.secretNames ?? YOUTUBE_DRY_RUN_REQUIRED_SECRET_NAMES)].sort(),
+    consumers: [...(input.consumers ?? [
+      {
+        queue: 'social-mkt-sync-dlq',
+        maxConcurrency: 1,
+        maxBatchSize: 10,
+        maxBatchTimeout: 30,
+        maxRetries: 10,
+        deadLetterQueue: null,
+      },
+      {
+        queue: 'social-mkt-sync-jobs',
+        maxConcurrency: 1,
+        maxBatchSize: 10,
+        maxBatchTimeout: 30,
+        maxRetries: 5,
+        deadLetterQueue: 'social-mkt-sync-dlq',
+      },
+    ])].sort(compareStableObjects),
+    traffic: 100,
+    crons: [...(input.crons ?? EXPECTED_CRONS)].sort(),
+    routes: [...(input.routes ?? [])].sort(),
+    workersDev: input.workersDev ?? null,
+  };
+}
+
+function normalizeRemoteBindingType(value) {
+  const type = optionalText(value)?.toLowerCase();
+  if (['plain_text', 'secret_text', 'd1', 'queue'].includes(type)) return type;
+  if (type === 'd1_database') return 'd1';
+  return null;
+}
+
+function normalizeStringArray(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map((entry) => String(entry)).sort();
+}
+
+function unwrapCloudflareResult(value, label) {
+  if (!value || typeof value !== 'object') {
+    throw operatorError(
+      `Cloudflare ${label} response is invalid`,
+      'YOUTUBE_DRY_RUN_REMOTE_CONTRACT_INVALID',
+    );
+  }
+  if ('success' in value && value.success !== true) {
+    throw operatorError(
+      `Cloudflare ${label} request did not succeed`,
+      'YOUTUBE_DRY_RUN_REMOTE_CONTRACT_INVALID',
+    );
+  }
+  return 'result' in value ? value.result : value;
+}
+
+function compareStableObjects(left, right) {
+  return stableJson(left).localeCompare(stableJson(right));
 }
 
 function normalizeFlagWindow(text) {
@@ -984,13 +1683,23 @@ function readConfigArrayStrings(text, name, options = {}) {
   return Object.freeze([...match[1].matchAll(/"([^"]+)"/gu)].map((entry) => entry[1]));
 }
 
-function readOptionalConfigBoolean(text, name) {
+function readRequiredConfigBoolean(text, name) {
   const match = text.match(new RegExp(
     `"${escapeRegExp(name)}"\\s*:\\s*(?:"(true|false)"|(true|false))`,
     'u',
   ));
-  if (!match) return null;
+  if (!match) throw unsafeConfig(`Missing ${name}`, name);
   return (match[1] ?? match[2]) === 'true';
+}
+
+function requireNonPlaceholderUuid(value, fieldName) {
+  const text = requireText(value, fieldName).toLowerCase();
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
+    .test(text)
+    || /^0{8}-0{4}-0{4}-0{4}-0{12}$/u.test(text)) {
+    throw unsafeConfig(`${fieldName} must be a real UUID`, fieldName);
+  }
+  return text;
 }
 
 function isRealMapping(value) {
@@ -1015,6 +1724,7 @@ function fingerprintTarget(target) {
     connectorAccountKey: target.connectorAccountKey,
     operationId: target.operationId,
     generation: target.generation,
+    executionMode: target.executionMode,
   }));
 }
 
@@ -1051,12 +1761,86 @@ function sha256(value) {
   return createHash('sha256').update(String(value)).digest('hex');
 }
 
+function validateEvidenceLinkDefinition(input) {
+  const requiredPrior = requiredPriorPhase(
+    input.phase,
+    input.chainKind,
+    input.priorPhase,
+  );
+  if (!requiredPrior) {
+    if (input.priorPhase !== null || input.priorEvidenceSha256 !== null
+      || input.priorEvidence !== null) {
+      throw evidenceError('rootPrior');
+    }
+    return true;
+  }
+  if (input.priorPhase !== requiredPrior) throw evidenceError('priorPhase');
+  requireFingerprint(input.priorEvidenceSha256, 'priorEvidenceSha256');
+  const prior = validateYouTubeDryRunEvidence(input.priorEvidence, {
+    phase: requiredPrior,
+    repositoryHead: input.repositoryHead,
+    targetFingerprint: input.targetFingerprint,
+    operationId: input.operationId,
+  });
+  if (prior.evidenceSha256 !== input.priorEvidenceSha256) {
+    throw evidenceError('priorEvidenceSha256');
+  }
+  return true;
+}
+
+function requiredPriorPhase(phase, chainKind, observedPriorPhase) {
+  if (phase === 'plan') return null;
+  if (chainKind === 'normal') {
+    const prior = NORMAL_PRIOR_PHASE.get(phase);
+    if (!prior) throw evidenceError('normalChainPhase');
+    return prior;
+  }
+  if (phase === 'restore-all-false') {
+    if (!RECOVERY_SOURCE_PHASES.has(observedPriorPhase)) {
+      throw evidenceError('recoverySourcePhase');
+    }
+    return observedPriorPhase;
+  }
+  if (phase === 'verify-restore') return 'restore-all-false';
+  if (phase === 'summary') return 'verify-restore';
+  throw evidenceError('recoveryChainPhase');
+}
+
+function requireEvidenceChainKind(value) {
+  const chainKind = requireText(value, 'chainKind');
+  if (!['normal', 'recovery'].includes(chainKind)) {
+    throw evidenceError('chainKind');
+  }
+  return chainKind;
+}
+
+function requireNullablePhase(value, fieldName) {
+  if (value === null) return null;
+  return requirePhase(requireText(value, fieldName));
+}
+
+function requireNullableFingerprint(value, fieldName) {
+  if (value === null) return null;
+  return requireFingerprint(value, fieldName);
+}
+
 function requirePhase(value) {
   const phase = requireText(value, 'phase');
   if (!YOUTUBE_DRY_RUN_OPERATOR_PHASES.includes(phase)) {
     throw operatorError('Unknown YouTube dry-run operator phase', 'YOUTUBE_DRY_RUN_OPERATOR_PHASE_INVALID');
   }
   return phase;
+}
+
+function requireExecutionMode(value) {
+  const mode = requireText(value, 'executionMode').toLowerCase();
+  if (!EXECUTION_MODES.has(mode)) {
+    throw operatorError(
+      'executionMode must be new_execution or replay_verification',
+      'YOUTUBE_DRY_RUN_EXECUTION_MODE_INVALID',
+    );
+  }
+  return mode;
 }
 
 function requireSafeOperationId(value, fieldName) {

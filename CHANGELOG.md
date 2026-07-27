@@ -11,10 +11,12 @@
 - Skipped unrelated warning drain and expired-work cleanup only on the guarded operator path;
   normal YouTube behavior remains unchanged.
 - Added plan-only rollout orchestration, per-phase exact confirmation, reviewed config comparison,
-  full-SHA provenance, scoped D1 evidence, one-message/no-resend enforcement and independent safe
-  restore instructions.
-- Added integrated Queue/replay, zero-write, public-only client, operator/evidence/config/provenance
-  and legacy regression tests.
+  full-SHA provenance, canonical SHA-256 evidence chaining, terminal D1 completion proof,
+  one-message/no-resend enforcement and a version-guarded safe restore wrapper.
+- Added actual Remote contract parsing for Worker version bindings/plain flags/Secret names,
+  deployment traffic, Queue consumers, Cron schedules, routes and workers.dev state.
+- Added dry-run completion replay preservation and a Workers-runtime/D1 integrated Queue replay
+  test, plus zero-write, public-only client, tamper/config/provenance and legacy regressions.
 
 ### Safety
 

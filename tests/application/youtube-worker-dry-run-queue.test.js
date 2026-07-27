@@ -7,30 +7,25 @@ import { transientError } from '../../packages/shared/src/errors/runtime-error.j
 
 const REQUESTED_AT = Date.parse('2026-07-27T04:00:00.000Z');
 
-test('integrated Worker Queue dry-run uses stable replay, acknowledges success and makes zero Business writes', async () => {
+test('Queue routing unit keeps stable YouTube identity and zero-write boundaries', async () => {
   const harness = createHarness();
   const worker = createOperatorWorker(harness);
   const first = message('delivery-a', job('youtube-operation-a'));
-  const replay = message('delivery-b', job('youtube-operation-a'));
-  const next = message('delivery-c', job('youtube-operation-b'));
+  const next = message('delivery-b', job('youtube-operation-b'));
 
   await worker.queue(batch(first), harness.env);
-  await worker.queue(batch(replay), harness.env);
   await worker.queue(batch(next), harness.env);
 
   assert.equal(first.acked, true);
-  assert.equal(replay.acked, true);
   assert.equal(next.acked, true);
-  assert.equal(first.retried || replay.retried || next.retried, false);
+  assert.equal(first.retried || next.retried, false);
   assert.equal(harness.providerGets, 2);
   assert.equal(harness.larkPlanningGets, 2);
   assert.deepEqual(harness.syncRunIds, [
     'youtube-dry-run:youtube-operation-a',
-    'youtube-dry-run:youtube-operation-a',
     'youtube-dry-run:youtube-operation-b',
   ]);
   assert.deepEqual(harness.workKeys, [
-    'youtube:youtube-operation-a',
     'youtube:youtube-operation-a',
     'youtube:youtube-operation-b',
   ]);
@@ -44,7 +39,7 @@ test('integrated Worker Queue dry-run uses stable replay, acknowledges success a
   assert.equal(harness.expiredWorkCleanups, 0);
   assert.equal(harness.deadLetters, 0);
   assert.deepEqual(harness.queueAttempts.get('youtube-operation-a'), {
-    count: 2,
+    count: 1,
     workKey: 'youtube:youtube-operation-a',
   });
 });
@@ -145,12 +140,8 @@ function createOperatorWorker(harness) {
           assert.equal(input.larkWriteEnabled, false);
           assert.equal(input.analyticsEnabled, false);
           assert.equal(input.ownerClient, null);
-          if (harness.completedWork.has(input.workKey)) {
-            return { status: 'replayed', recordsPulled: 0, workKey: input.workKey };
-          }
           harness.providerGets += 1;
           await input.repository.listRecords();
-          harness.completedWork.add(input.workKey);
           return { status: 'completed', recordsPulled: 1, workKey: input.workKey };
         },
       },
@@ -178,7 +169,6 @@ function createHarness(options = {}) {
     deadLetters: 0,
     syncRunIds: [],
     workKeys: [],
-    completedWork: new Set(),
     queueAttempts: new Map(),
   };
   const resumableWorkStore = {

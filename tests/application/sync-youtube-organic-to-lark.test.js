@@ -121,6 +121,11 @@ test('operator-style dry-run plans with Lark GET, writes no Business data and re
     syncEngine: new TableSyncEngine(),
   });
   assert.equal(replay.mode, 'already_completed');
+  assert.equal(replay.checkpointSaved, false);
+  assert.deepEqual(replay.warnings, first.warnings);
+  assert.deepEqual(replay.reconciliation, first.reconciliation);
+  assert.deepEqual(replay.sourceSummary, first.sourceSummary);
+  assert.equal(replay.warningOutbox, null);
   assert.equal(providerRequests, providerRequestsAfterFirst);
   assert.equal(stateStore.saved.length, 0);
   assert.equal(repository.events.some((event) => event.startsWith('write:')), false);

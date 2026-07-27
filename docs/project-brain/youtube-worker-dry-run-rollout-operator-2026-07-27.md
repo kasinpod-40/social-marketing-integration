@@ -34,7 +34,9 @@ Lark record write         forbidden
 ```
 
 Dry-run completes the existing resumable work so a delivery ID ใหม่ที่ใช้ operation เดิม
-returns `already_completed` without another Provider request. Operation ID ใหม่สร้าง Work ใหม่.
+returns `already_completed` without another Provider request. Replay คง warnings,
+reconciliation และ source summary, บังคับ `checkpointSaved=false` และไม่สร้าง/drain warning
+outbox. Operation ID ใหม่สร้าง Work ใหม่.
 
 ## Mutation model
 
@@ -65,19 +67,25 @@ Operator dry-run ข้าม `drainPendingSyncWarnings` และ `cleanupExpir
 
 ## Rollout safety
 
-Operator defaults to plan-only. ทุก Remote phaseใช้ exact confirmation แยกและ evidence chain
-ผูก contract version, full Git SHA, target fingerprint และ operation. Deployment provenance:
+Operator defaults to plan-only. ทุก Remote phaseใช้ exact confirmation แยกและ cryptographic
+evidence chain ผูก contract version, full Git SHA, target fingerprint, operation,
+`priorEvidenceSha256` และ canonical `evidenceSha256`. Deployment provenance:
 
 ```text
 youtube-dry-run-rollout-v1 phase={phase} git={FULL_SHA}
 ```
 
 Config comparator อนุญาตให้เปลี่ยนเฉพาะ YouTube connector/end-to-end gates false → true และ
-ตรวจ bindings, Queue/DLQ consumers, Cron/routes/workers_dev, required mappings กับ Secret names.
+บังคับ D1 UUID จริงกับ `workers_dev=false`. Remote verifier อ่าน version bindings/plain flags/
+Secret names, deployment traffic, Queue/DLQ consumers, Cron schedules, account Worker routes และ
+workers.dev subdomain state จาก Wrangler/Cloudflare read-only responsesจริง; local fingerprint
+เป็น expected contract ไม่ใช่หลักฐานว่า Remote ตรง.
 One-message phaseสร้าง exclusive attempt marker ก่อนส่งจึงส่งได้หนึ่งครั้งแม้ command failure;
-verify phaseส่งไม่ได้. Post-activation failure สร้าง
-independent safe-restore instruction; restoreใช้ exact code/config และเปลี่ยนเฉพาะสอง gatesกลับ
-false.
+verify phaseส่งไม่ได้. `new_execution` ต้องผ่าน empty-operation guard ส่วน
+`replay_verification` ต้องพิสูจน์ completed state และ Provider delta เท่ากับศูนย์.
+Post-activation failure สร้าง independent guarded restore wrapper; restore deploy ได้เฉพาะ
+เมื่อ active version เป็น exact attempted dry-run version, คืน no-op หากเป็น safe baseline และ
+block เมื่อพบ concurrent version.
 
 Evidence path `outputs/youtube-dry-run-rollout/` ถูก Git ignore. Evidence เก็บ sanitized hashes,
 fingerprints, IDs และ countersเท่านั้น.
@@ -95,3 +103,13 @@ Schedules/Production           NOT RUN
 
 Remote rollout, dry-run Queue message และ restore ยังต้องได้รับอนุญาตใหม่เป็นราย phaseหลัง PR
 review/merge และ reviewed config พร้อม.
+
+## PR #101 blocker remediation
+
+Repository tests ครอบคลุม restore uncertainty/concurrent-version guard, terminal completion,
+tamper/skip/reorder evidence, Remote response fixtures, empty-operation guard, dry-run completion
+replay และ Workers runtime ที่ใช้ D1 migrations/storesจริง. Runtime testส่ง delivery ID สองค่า
+ให้ operation เดียวและยืนยัน Ack ทั้งคู่, stable IDs เดิม, Provider requests เฉพาะรอบแรก,
+completed Work, zero Business/Coverage/checkpoint/Lark/DLQ และ lock release.
+
+สถานะยังเป็น Repository-only; รายการ Remote status ด้านบนไม่ได้เปลี่ยน.
