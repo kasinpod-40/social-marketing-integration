@@ -70,6 +70,22 @@ test('TikTok audit route requires the operator bearer token', async () => {
   assert.equal(calls.length, 0);
 });
 
+test('cache-busting query preserves the guarded audit pathname contract', async () => {
+  const calls = [];
+  const handler = createHandler(calls);
+  const request = new Request(
+    `https://example.com${TIKTOK_POST_LARK_AUDIT_PATH}?mkt_probe=unique`,
+    { method: 'GET' },
+  );
+  const response = await handler({
+    request,
+    env: baseEnv,
+    url: new URL(request.url),
+  });
+  assert.equal(response.status, 401);
+  assert.equal(calls.length, 0);
+});
+
 test('TikTok audit route uses a stable fallback code without exposing generic error internals', async () => {
   const calls = [];
   const error = new Error('simulated internal failure');

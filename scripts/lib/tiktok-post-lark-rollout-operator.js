@@ -1,3 +1,4 @@
+import { createHash, randomUUID } from 'node:crypto';
 import { permanentError } from '../../packages/shared/src/errors/runtime-error.js';
 
 export const TIKTOK_POST_LARK_ROLLOUT_PHASES = Object.freeze([
@@ -70,6 +71,239 @@ const REQUIRED_FALSE_FLAGS = Object.freeze([
 const EXPECTED_MIGRATION = '0016_tiktok_post_lark_pipeline.sql';
 const AUDIT_FALLBACK_CODE = 'TIKTOK_POST_LARK_AUDIT_FAILED';
 const AUDIT_REMOTE_CODE_PATTERN = /^[A-Z][A-Z0-9_]{0,159}$/u;
+const WORKER_VERSION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const ROUTE_PROBE_INTERVAL_MS = 250;
+const ROUTE_PROBE_TIMEOUT_MS = 10_000;
+const ROUTE_PROBE_MAX_BODY_BYTES = 4_096;
+
+export const TIKTOK_POST_LARK_AUDIT_PATH = '/operator/tiktok/post-lark-audit';
+export const TIKTOK_POST_LARK_ROUTE_PROBE_COUNT = 3;
+export const TIKTOK_POST_LARK_ENABLE_EVIDENCE_MAX_AGE_MS = 5 * 60 * 1_000;
+
+export function createTikTokPostLarkTargetFingerprint(input = {}) {
+  const origin = requireHttpsOrigin(input.origin, 'origin');
+  const pathname = requirePathname(input.pathname, 'pathname');
+  const workerName = requireText(input.workerName, 'workerName');
+  const environment = requireText(input.environment, 'environment');
+  return createHash('sha256').update(JSON.stringify({
+    origin,
+    pathname,
+    workerName,
+    environment,
+  })).digest('hex');
+}
+
+export function parseWranglerDeploymentOutput(output, options = {}) {
+  const workerName = requireText(options.workerName, 'workerName');
+  let events;
+  try {
+    events = requireText(output, 'deploymentOutput')
+      .split(/\r?\n/gu)
+      .filter((line) => line.trim() !== '')
+      .map((line) => JSON.parse(line));
+  } catch {
+    throw deploymentIdUnavailable();
+  }
+  const deploymentEvents = events.filter((event) => (
+    event?.type === 'deploy'
+    && event?.version === 1
+    && event?.worker_name === workerName
+  ));
+  if (deploymentEvents.length !== 1) {
+    throw deploymentIdUnavailable();
+  }
+  const event = deploymentEvents[0];
+  if (!WORKER_VERSION_ID_PATTERN.test(event.version_id ?? '')) {
+    throw deploymentIdUnavailable();
+  }
+  return Object.freeze({
+    deploymentVersionId: event.version_id,
+    deploymentSource: 'wrangler',
+  });
+}
+
+export async function probeTikTokPostLarkRouteStability(options = {}) {
+  const origin = requireHttpsOrigin(options.origin, 'origin');
+  const pathname = requirePathname(
+    options.pathname ?? TIKTOK_POST_LARK_AUDIT_PATH,
+    'pathname',
+  );
+  const workerName = requireText(options.workerName, 'workerName');
+  const environment = requireText(options.environment, 'environment');
+  const deploymentVersionId = requireWorkerVersionId(options.deploymentVersionId);
+  const expectedStatus = httpStatus(options.expectedStatus, 'expectedStatus');
+  const fetchImpl = options.fetchImpl ?? globalThis.fetch;
+  const now = options.now ?? (() => new Date());
+  const sleep = options.sleep ?? boundedSleep;
+  const createNonce = options.createNonce ?? randomUUID;
+  if (typeof fetchImpl !== 'function' || typeof now !== 'function'
+    || typeof sleep !== 'function' || typeof createNonce !== 'function') {
+    throw operatorError(
+      'TikTok post-Lark route probe dependencies are invalid',
+      'TIKTOK_POST_LARK_ROLLOUT_ROUTE_PROBE_INVALID',
+    );
+  }
+
+  const targetFingerprint = createTikTokPostLarkTargetFingerprint({
+    origin,
+    pathname,
+    workerName,
+    environment,
+  });
+  const probes = [];
+  for (let index = 0; index < TIKTOK_POST_LARK_ROUTE_PROBE_COUNT; index += 1) {
+    const sequence = index + 1;
+    const startedAt = isoTimestamp(now(), 'probe.startedAt');
+    const url = new URL(pathname, `${origin}/`);
+    url.searchParams.set('mkt_probe', `${requireText(createNonce(), 'probeNonce')}-${sequence}`);
+    const response = await fetchImpl(url, {
+      method: 'GET',
+      redirect: 'manual',
+      headers: {
+        'Cache-Control': 'no-cache, no-store',
+        Pragma: 'no-cache',
+      },
+      signal: AbortSignal.timeout(ROUTE_PROBE_TIMEOUT_MS),
+    });
+    await discardBoundedResponseBody(response, ROUTE_PROBE_MAX_BODY_BYTES);
+    const completedAt = isoTimestamp(now(), 'probe.completedAt');
+    probes.push(Object.freeze({
+      sequence,
+      startedAt,
+      completedAt,
+      status: httpStatus(response?.status, 'probe.status'),
+      targetFingerprint,
+    }));
+    if (sequence < TIKTOK_POST_LARK_ROUTE_PROBE_COUNT) {
+      await sleep(ROUTE_PROBE_INTERVAL_MS);
+    }
+  }
+
+  const probePolicy = Object.freeze({
+    requiredStatus: expectedStatus,
+    requiredConsecutiveProbes: TIKTOK_POST_LARK_ROUTE_PROBE_COUNT,
+    cacheBusting: true,
+    noCacheHeaders: true,
+    redirectMode: 'manual',
+  });
+  const result = Object.freeze({
+    targetFingerprint,
+    probePolicy,
+    probes: Object.freeze(probes),
+    stableRouteStatus: expectedStatus,
+  });
+  if (!probes.every((probe) => probe.status === expectedStatus)) {
+    throw operatorError(
+      'TikTok post-Lark route did not reach a stable deployment state',
+      'TIKTOK_POST_LARK_ROLLOUT_ROUTE_STABILITY_FAILED',
+      {
+        expectedStatus,
+        requiredConsecutiveProbes: TIKTOK_POST_LARK_ROUTE_PROBE_COUNT,
+        observedStatuses: probes.map((probe) => probe.status),
+        probeTimestamps: probes.map((probe) => ({
+          sequence: probe.sequence,
+          startedAt: probe.startedAt,
+          completedAt: probe.completedAt,
+        })),
+        deploymentVersionId,
+        targetFingerprint,
+        safeCloseRequired: true,
+      },
+    );
+  }
+  return result;
+}
+
+export function validateTikTokPostLarkFreshEnableEvidence(evidence = {}, options = {}) {
+  const now = timestampMs(options.now ?? new Date(), 'now');
+  const maxAgeMs = nonNegativeInteger(
+    options.maxAgeMs ?? TIKTOK_POST_LARK_ENABLE_EVIDENCE_MAX_AGE_MS,
+    'maxAgeMs',
+  );
+  const expectedTargetFingerprint = requireFingerprint(
+    options.targetFingerprint,
+    'targetFingerprint',
+  );
+  const capturedAt = timestampMsOrNaN(evidence.capturedAt);
+  const deploymentStartedAt = timestampMsOrNaN(evidence.deploymentStartedAt);
+  const deploymentCompletedAt = timestampMsOrNaN(evidence.deploymentCompletedAt);
+  const probes = Array.isArray(evidence.probes) ? evidence.probes : [];
+  const latestProbeCompletedAt = probes.length === TIKTOK_POST_LARK_ROUTE_PROBE_COUNT
+    ? timestampMsOrNaN(probes.at(-1)?.completedAt)
+    : Number.NaN;
+  const latestFailureCapturedAt = options.latestFailureCapturedAt == null
+    ? null
+    : timestampMsOrNaN(options.latestFailureCapturedAt);
+  const valid = evidence.phase === 'enable-audit'
+    && evidence.status === 'passed'
+    && requireWorkerVersionIdOrNull(evidence.deploymentVersionId) !== null
+    && evidence.deploymentSource === 'wrangler'
+    && evidence.targetFingerprint === expectedTargetFingerprint
+    && evidence.stableRouteStatus === 401
+    && evidence.probePolicy?.requiredStatus === 401
+    && evidence.probePolicy?.requiredConsecutiveProbes === TIKTOK_POST_LARK_ROUTE_PROBE_COUNT
+    && evidence.probePolicy?.cacheBusting === true
+    && evidence.probePolicy?.noCacheHeaders === true
+    && evidence.probePolicy?.redirectMode === 'manual'
+    && probes.length === TIKTOK_POST_LARK_ROUTE_PROBE_COUNT
+    && probes.every((probe, index) => (
+      probe?.sequence === index + 1
+      && probe?.status === 401
+      && probe?.targetFingerprint === expectedTargetFingerprint
+      && Number.isFinite(timestampMsOrNaN(probe?.startedAt))
+      && Number.isFinite(timestampMsOrNaN(probe?.completedAt))
+      && timestampMsOrNaN(probe.completedAt) >= timestampMsOrNaN(probe.startedAt)
+      && timestampMsOrNaN(probe.startedAt) >= (
+        index === 0
+          ? deploymentCompletedAt
+          : timestampMsOrNaN(probes[index - 1]?.completedAt)
+      )
+    ))
+    && Number.isFinite(capturedAt)
+    && Number.isFinite(deploymentStartedAt)
+    && Number.isFinite(deploymentCompletedAt)
+    && Number.isFinite(latestProbeCompletedAt)
+    && deploymentCompletedAt >= deploymentStartedAt
+    && latestProbeCompletedAt >= deploymentCompletedAt
+    && capturedAt >= latestProbeCompletedAt
+    && now >= capturedAt
+    && now - capturedAt <= maxAgeMs
+    && (
+      latestFailureCapturedAt === null
+      || (Number.isFinite(latestFailureCapturedAt) && latestFailureCapturedAt < capturedAt)
+    );
+  if (!valid) {
+    throw operatorError(
+      'TikTok post-Lark enable-audit evidence is stale or incomplete',
+      'TIKTOK_POST_LARK_ROLLOUT_ENABLE_EVIDENCE_STALE',
+      {
+        maxAgeMs,
+        requiredProbeCount: TIKTOK_POST_LARK_ROUTE_PROBE_COUNT,
+      },
+    );
+  }
+  return evidence;
+}
+
+export function selectTikTokPostLarkEnableAttemptEvidence(passed, failed) {
+  const candidates = [passed, failed].filter((value) => (
+    value?.phase === 'enable-audit'
+    && (
+      value?.status === 'passed'
+      || (value?.status === 'failed' && value?.safeCloseRequired === true)
+    )
+    && Number.isFinite(timestampMsOrNaN(value?.capturedAt))
+  ));
+  if (candidates.length === 0) {
+    throw operatorError(
+      'TikTok post-Lark enable-audit attempt evidence is missing',
+      'TIKTOK_POST_LARK_ROLLOUT_EVIDENCE_MISSING',
+    );
+  }
+  return candidates.sort(
+    (left, right) => timestampMsOrNaN(right.capturedAt) - timestampMsOrNaN(left.capturedAt),
+  )[0];
+}
 
 export function parseTikTokPostLarkRolloutArgs(args = []) {
   let phase = 'plan';
@@ -445,18 +679,6 @@ export function validateTikTokPostLarkAuditHttpResponse(status, body = {}) {
   return true;
 }
 
-export function validateTikTokPostLarkRouteStatus(status, expected) {
-  const actual = Number(status);
-  if (!Number.isInteger(actual) || actual !== expected) {
-    throw operatorError(
-      `TikTok post-Lark route expected HTTP ${expected} but received ${status}`,
-      'TIKTOK_POST_LARK_ROLLOUT_ROUTE_STATUS_INVALID',
-      { expected, actual: status },
-    );
-  }
-  return true;
-}
-
 function pendingMigrationNames(output) {
   const text = requireText(output, 'migrationOutput');
   return [...new Set(text.match(/\b\d{4}_[A-Za-z0-9_.-]+\.sql\b/gu) ?? [])].sort();
@@ -514,6 +736,18 @@ function requireHttpsOrigin(value, fieldName) {
   return url.toString().replace(/\/$/u, '');
 }
 
+function requirePathname(value, fieldName) {
+  const pathname = requireText(value, fieldName);
+  if (!pathname.startsWith('/') || pathname.includes('?') || pathname.includes('#')) {
+    throw operatorError(
+      `${fieldName} must be an absolute URL pathname without query or fragment`,
+      'TIKTOK_POST_LARK_ROLLOUT_TARGET_INVALID',
+      { fieldName },
+    );
+  }
+  return new URL(pathname, 'https://fingerprint.invalid').pathname;
+}
+
 function requireSecret(value, fieldName) {
   const text = requireText(value, fieldName);
   if (/^(?:replace-with-|example|changeme)/iu.test(text)) {
@@ -556,6 +790,106 @@ function integer(value, fieldName) {
     );
   }
   return number;
+}
+
+function nonNegativeInteger(value, fieldName) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number < 0) {
+    throw operatorError(
+      `${fieldName} must be a non-negative integer`,
+      'TIKTOK_POST_LARK_ROLLOUT_VALUE_INVALID',
+      { fieldName },
+    );
+  }
+  return number;
+}
+
+function httpStatus(value, fieldName) {
+  const number = Number(value);
+  if (!Number.isInteger(number) || number < 100 || number > 599) {
+    throw operatorError(
+      `${fieldName} must be a valid HTTP status`,
+      'TIKTOK_POST_LARK_ROLLOUT_ROUTE_PROBE_INVALID',
+      { fieldName },
+    );
+  }
+  return number;
+}
+
+function isoTimestamp(value, fieldName) {
+  const timestamp = timestampMs(value, fieldName);
+  return new Date(timestamp).toISOString();
+}
+
+function timestampMs(value, fieldName) {
+  const timestamp = timestampMsOrNaN(value);
+  if (!Number.isFinite(timestamp)) {
+    throw operatorError(
+      `${fieldName} must be a valid timestamp`,
+      'TIKTOK_POST_LARK_ROLLOUT_VALUE_INVALID',
+      { fieldName },
+    );
+  }
+  return timestamp;
+}
+
+function timestampMsOrNaN(value) {
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string' && value.trim() !== '') return Date.parse(value);
+  return Number.NaN;
+}
+
+function requireWorkerVersionId(value) {
+  const versionId = requireWorkerVersionIdOrNull(value);
+  if (versionId === null) throw deploymentIdUnavailable();
+  return versionId;
+}
+
+function requireWorkerVersionIdOrNull(value) {
+  return typeof value === 'string' && WORKER_VERSION_ID_PATTERN.test(value)
+    ? value
+    : null;
+}
+
+function requireFingerprint(value, fieldName) {
+  const fingerprint = requireText(value, fieldName);
+  if (!/^[0-9a-f]{64}$/u.test(fingerprint)) {
+    throw operatorError(
+      `${fieldName} must be a SHA-256 fingerprint`,
+      'TIKTOK_POST_LARK_ROLLOUT_VALUE_INVALID',
+      { fieldName },
+    );
+  }
+  return fingerprint;
+}
+
+async function discardBoundedResponseBody(response, maxBytes) {
+  const reader = response?.body?.getReader?.();
+  if (!reader) return;
+  let receivedBytes = 0;
+  try {
+    while (receivedBytes < maxBytes) {
+      const { done, value } = await reader.read();
+      if (done) return;
+      receivedBytes += value?.byteLength ?? 0;
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
+}
+
+function boundedSleep(delayMs) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, delayMs);
+  });
+}
+
+function deploymentIdUnavailable() {
+  return operatorError(
+    'Wrangler deployment output did not contain one exact Worker version ID',
+    'TIKTOK_POST_LARK_ROLLOUT_DEPLOYMENT_ID_UNAVAILABLE',
+  );
 }
 
 function escapeRegExp(value) {

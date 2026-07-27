@@ -97,6 +97,28 @@ export MKT_CONNECTION_OPERATOR_TOKEN='<read from the authorized secret source>'
 
 Never paste or commit the token into a file, command history, issue, PR, log or Lark.
 
+## Deployment identity and route stability
+
+Every Worker deployment phase (`deploy-safe`, `enable-audit` and `disable-audit`) captures the
+exact Worker version from Wrangler structured deployment output. Missing, ambiguous or malformed
+deployment identity fails closed; the operator never selects a generic UUID from console text.
+
+After deployment, the operator performs exactly three consecutive unauthenticated probes against
+the same normalized target. Every probe:
+
+- adds a unique cache-busting query value without changing the handler pathname;
+- follows no redirects;
+- sends `Cache-Control: no-cache, no-store` and `Pragma: no-cache`;
+- sends no Authorization header;
+- reads and discards only a bounded amount of response data;
+- records only sequence, timestamps, status and the SHA-256 target fingerprint;
+- waits for a bounded interval before the next probe.
+
+Evidence never stores the raw origin, URL, query nonce, response body, headers or Token. The
+required stable sequence is three `404` responses for safe deployments and three `401` responses
+for the Audit-only deployment. A mixed sequence fails with
+`TIKTOK_POST_LARK_ROLLOUT_ROUTE_STABILITY_FAILED` and requires immediate safe-close.
+
 ## Preview the complete plan
 
 ```bash
@@ -163,7 +185,8 @@ npm run rollout:tiktok-post-lark:deploy-safe
 unset CONFIRM_TIKTOK_POST_LARK_SAFE_DEPLOY
 ```
 
-Expected unauthenticated Audit route result: HTTP `404`.
+Expected unauthenticated Audit route result: three consecutive HTTP `404` probes. Passed evidence
+must include the deployed version ID, deployment timestamps, target fingerprint and probe policy.
 
 ## Phase 5 — Temporarily enable Audit-only route
 
@@ -173,8 +196,9 @@ npm run rollout:tiktok-post-lark:enable-audit
 unset CONFIRM_TIKTOK_POST_LARK_AUDIT_ENABLE
 ```
 
-Expected unauthenticated Audit route result: HTTP `401`. This proves the route is enabled but
-still protected by the operator token.
+Expected unauthenticated Audit route result: three consecutive HTTP `401` probes. This proves the
+same deployed version is stable and protected by the operator token. A failed stability attempt is
+written separately and must never overwrite a prior passed `enable-audit.json`.
 
 ## Phase 6 — Run one authenticated read-only Audit
 
@@ -184,6 +208,11 @@ npm run rollout:tiktok-post-lark:audit
 unset CONFIRM_TIKTOK_POST_LARK_AUDIT_READ
 unset MKT_CONNECTION_OPERATOR_TOKEN
 ```
+
+The Audit phase rejects `enable-audit` evidence that is older than five minutes, incomplete,
+superseded by a later failed enable attempt, missing its deployed version ID, from another target,
+or missing exactly three successful `401` probes. Rejected evidence uses
+`TIKTOK_POST_LARK_ROLLOUT_ENABLE_EVIDENCE_STALE`; do not bypass this gate.
 
 Review the saved evidence for:
 
@@ -208,7 +237,8 @@ npm run rollout:tiktok-post-lark:disable-audit
 unset CONFIRM_TIKTOK_POST_LARK_AUDIT_DISABLE
 ```
 
-Expected unauthenticated Audit route result: HTTP `404`.
+Expected unauthenticated Audit route result: three consecutive HTTP `404` probes. Safe-close
+remains available after a failed enable attempt even when no authenticated Audit was run.
 
 ## Required stop conditions
 
@@ -222,7 +252,9 @@ Stop without continuing when any of the following occurs:
 - backup/checksum failure;
 - post-migration Business count drift;
 - any forbidden flag enabled;
-- route status differs from `404 → 401 → 200 → 404`;
+- any deployed version identity is missing or ambiguous;
+- any route probe sequence differs from stable `404 × 3 → 401 × 3 → 200 → 404 × 3`;
+- `enable-audit` evidence is stale, incomplete or superseded;
 - Audit identity mismatch;
 - Audit route cannot be restored to safe-closed.
 

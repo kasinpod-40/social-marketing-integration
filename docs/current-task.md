@@ -1,119 +1,130 @@
-# Current Task — TikTok Post-Lark Audit Sanitized Error Code Hotfix
+# Current Task — TikTok Post-Lark Audit Route Stability Hotfix
 
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = IMPLEMENTATION_PASS_DRAFT_PR_OPEN
-CURRENT_PROGRAM                     = TIKTOK_POST_LARK_AUDIT_ERROR_CODE_HOTFIX
-BASE_MAIN_SHA                       = db475ebb825f8a6cb3100bb2f4be5d7a43c8613d
-INCIDENT_BASELINE_HEAD              = 8b7f9a879ba0c1b0b5d89dcfa2373ad3bb3c2ce8
-BRANCH                              = hotfix/tiktok-post-lark-audit-error-code
-REMOTE_MIGRATION_0016               = APPLIED
-REMOTE_AUDIT_ROUTE                  = SAFE_CLOSED / HTTP 404
-REMOTE_TIKTOK_AUDIT_FLAG            = false
-REMOTE_BUSINESS_FLAGS               = all false
-REMOTE_SCHEDULE_FLAGS               = all false
-AUTHENTICATED_AUDIT_HTTP_STATUS     = 400
-AUTHENTICATED_AUDIT_ERROR           = TikTok audit failed
-AUTHENTICATED_AUDIT_ERROR_CODE      = NULL_OR_MISSING
-QUEUE_OR_BUSINESS_WRITE_PERFORMED   = false
-HOTFIX_REMOTE_ACTION                = NONE
-MANUAL_PROCESSING                   = BLOCKED
-PRODUCTION                          = BLOCKED
+TASK_STATUS                              = IMPLEMENTATION_IN_PROGRESS
+CURRENT_PROGRAM                          = TIKTOK_POST_LARK_AUDIT_ROUTE_STABILITY_HOTFIX
+BASE_MAIN_SHA                            = 1ec60980c3897f01cef9bdc5f24aa6f5b7eba295
+BRANCH                                   = hotfix/tiktok-post-lark-audit-route-stability
+REMOTE_STATE                             = SAFE_CLOSED_404
+MIGRATION_0016                           = APPLIED
+MIGRATION_0017                           = APPLIED
+PENDING_MIGRATIONS                       = 0
+AUTHENTICATED_REQUEST_COUNT_LAST_WINDOW  = 0
+ROOT_CAUSE                               = ROUTE_PROPAGATION_OR_RUNTIME_INCONSISTENCY
+NEW_REMOTE_AUDIT_AUTHORIZED              = false
+REMOTE_ACTION_COUNT                      = 0
 ```
 
-The previous WooCommerce Integration Merge Closeout task is preserved verbatim at:
+The previous Current Task is preserved verbatim at:
 
 ```text
-docs/archive/current-task-before-tiktok-post-lark-audit-error-code-hotfix-2026-07-27.md
+docs/archive/current-task-before-tiktok-post-lark-audit-route-stability-hotfix-2026-07-27.md
 ```
 
 ## Objective
 
-ทำให้ authenticated TikTok Post-Lark Audit failure ทุกกรณีที่ตอบ HTTP `400` มี
-sanitized, stable และ non-empty error code โดยไม่เปิดเผย raw exception, message,
-stack, details, Secret, Token, Customer identity, Table ID หรือ Content ID และทำให้
-Rollout Operator เก็บเฉพาะ HTTP status กับ sanitized remote code เมื่อ Remote Audit
-ตอบสถานะที่ไม่ใช่ `200`
+ทำให้ทุก Worker deployment phase ของ TikTok Post-Lark rollout operator ยืนยัน route
+ด้วย bounded consecutive probes และผูก evidence กับ exact deployed Worker version
+ก่อนอนุญาต phase ถัดไป โดยไม่เปลี่ยน Audit Business logic หรือเพิ่ม Remote action
+ในงาน Repository-only นี้
+
+## Incident boundary
+
+```text
+ENABLE_OPERATOR_ROUTE_STATUS        = 401
+EXTERNAL_POST_ENABLE_ROUTE_STATUS   = 404
+PROBE_ORDER                         = AFTER_ENABLE_BEFORE_SAFE_CLOSE
+ORIGIN_AND_PATH_MATCH               = true
+SAFE_AUDIT_CONFIG_TARGET_MATCH      = true
+UNEXPECTED_DEPLOYMENT               = false
+FINAL_REMOTE_STATE                  = SAFE_CLOSED_404
+```
+
+Root cause is classified as `ROUTE_PROPAGATION_OR_RUNTIME_INCONSISTENCY`.
+This task does not attribute the incident to Audit Business logic, Lark or D1.
 
 ## In scope
 
-- ใช้ `TIKTOK_POST_LARK_AUDIT_FAILED` เมื่อ HTTP boundary ได้ operational code ที่ว่าง
-- รักษา known operational code เดิม รวมถึง `TIKTOK_POST_LARK_AUDIT_UNAUTHORIZED`
-- เพิ่ม Operator error `TIKTOK_POST_LARK_ROLLOUT_AUDIT_HTTP_FAILED`
-- จำกัด Operator error details ไว้เฉพาะ `httpStatus` และ `remoteCode`
-- fallback Remote code ที่หายหรือไม่อยู่ในรูป stable code เป็น
-  `TIKTOK_POST_LARK_AUDIT_FAILED`
-- รักษา Audit success path และ `audit.json` evidence contract เดิม
-- เพิ่ม Node และ Workers-runtime regression tests
-- อัปเดต Current Task, Project Brain และ Changelog ตาม Runtime facts ที่เกิดขึ้นจริง
+- Three consecutive unauthenticated route probes after `deploy-safe`, `enable-audit`
+  and `disable-audit`
+- Unique cache-busting query, manual redirects and no-cache request headers
+- Bounded response-body discard, request timeout and inter-probe delay
+- SHA-256 target fingerprint without raw origin/path persistence
+- Typed Wrangler structured-output parsing for exact deployed Worker version ID
+- Deployment start/completion timestamps and source in evidence
+- Separate failed stability evidence that never overwrites prior passed evidence
+- Fresh, complete, same-target `enable-audit` evidence required before authenticated Audit
+- Emergency safe-close remains available after an enable attempt without successful Audit
+- Focused, full regression and Workers-runtime verification
 
 ## Out of scope
 
 ```text
 Worker deployment
+Secret rotation
 Audit route enablement
-Live Audit
-Worker Secret rotation
-D1 Migration apply
-Remote D1 or Lark mutation
-Queue message
-DLQ action
+Authenticated Audit request
+D1 or Lark mutation
+Queue message or DLQ action
 Watermark Admission
-D1 or Canonical Business write
-Report cutover
-Cron or Schedule activation
+Business writer or Report cutover
+Schedule change
+Migration 0016 or 0017 change
 Production
 PR merge
 ```
 
-## Acceptance criteria
+## Safety and evidence contract
 
-- Generic authenticated failure ตอบ HTTP `400` และ
-  `code=TIKTOK_POST_LARK_AUDIT_FAILED`
-- Known error code เช่น `LARK_TABLE_CONFIG_INVALID` ไม่ถูกเขียนทับ
-- Wrong token ยังตอบ HTTP `401` และ
-  `code=TIKTOK_POST_LARK_AUDIT_UNAUTHORIZED`
-- Disabled route ยังตอบ `404`; non-GET ยังตอบ `405`
-- Success ยังตอบ `200`, `mode=read_only` และไม่มี Queue/Business write
-- Operator error สำหรับ non-`200` มี local code คงที่และ details เพียง
-  `httpStatus` กับ `remoteCode`
-- Raw response body, Authorization header และ Token ไม่ถูก persist หรือ report
-- Existing confirmation, evidence-chain และ emergency safe-close tests ผ่าน
+- Route probes run exactly three times; no unbounded retry exists.
+- Probe requests never contain Authorization.
+- Evidence never stores raw origin, URL, nonce, response body, headers or Token.
+- Stability mismatch uses `TIKTOK_POST_LARK_ROLLOUT_ROUTE_STABILITY_FAILED`.
+- Missing or malformed version identity uses
+  `TIKTOK_POST_LARK_ROLLOUT_DEPLOYMENT_ID_UNAVAILABLE`.
+- Stale or incomplete enable evidence uses
+  `TIKTOK_POST_LARK_ROLLOUT_ENABLE_EVIDENCE_STALE`.
+- `enable-audit.json` is written as passed only after all three `401` probes pass.
+- Failed attempts are written separately and require safe-close.
 
 ## Required verification
 
-```text
+```bash
 npm ci
-Focused TikTok Audit HTTP tests
-Focused TikTok rollout operator tests
-Workers runtime tests
 npm run check
+node --test tests/application/tiktok-post-lark-rollout-operator.test.js
+node --test tests/application/tiktok-post-lark-audit-http.test.js
 npm test
 npm run test:report-reliability
 npm audit
 npm run deploy:dry-run
+git diff --check
 ```
 
 ## Implementation result
 
 ```text
-IMPLEMENTATION_RESULT               = PASS_TIKTOK_AUDIT_ERROR_CODE_HOTFIX_IMPLEMENTATION
-HTTP_FALLBACK_CODE                  = TIKTOK_POST_LARK_AUDIT_FAILED
-KNOWN_ERROR_CODE_PRESERVATION       = IMPLEMENTED
-OPERATOR_REMOTE_CODE_CAPTURE        = IMPLEMENTED
-RESPONSE_REDACTION_STATUS           = PASS
+IMPLEMENTATION_RESULT               = PASS_TIKTOK_AUDIT_ROUTE_STABILITY_HOTFIX_IMPLEMENTATION
+DEPLOYMENT_VERSION_CAPTURE          = PASS
+CACHE_BUSTING_PROBES                = PASS
+NO_CACHE_HEADERS                    = PASS
+THREE_CONSECUTIVE_401_GATE          = PASS
+THREE_CONSECUTIVE_404_GATE          = PASS
+STALE_EVIDENCE_BLOCK                = PASS
+EVIDENCE_REDACTION                  = PASS
 QUEUE_OR_WRITE_PATH_ADDED           = false
-FOCUSED_NODE_TESTS                  = 18 / 18 PASS
+FOCUSED_NODE_TESTS                  = 30 / 30 PASS
 WORKERS_RUNTIME_TESTS               = 10 / 10 PASS
 NPM_CHECK                           = PASS
-NPM_TEST                            = 994 Unit + 10 Workers PASS
+NPM_TEST                            = 1006 Unit + 10 Workers PASS
 REPORT_RELIABILITY                  = 91 / 91 PASS
-NPM_AUDIT                           = 0 vulnerabilities
+NPM_AUDIT                           = BRANCH_VERIFICATION_REQUIRED
 DEPLOY_DRY_RUN                      = PASS / no deployment
 REMOTE_ACTION_COUNT                 = 0
 ```
 
-## Remaining gate
-
-Draft PR review and merge, deployment, and any new Remote Audit require separate explicit approval.
+Local dependency-audit network access was not available under the execution policy. The
+authoritative Branch Verification workflow runs `npm audit --audit-level=high` on the exact Draft
+PR head. No Remote runtime action is authorized by this task.

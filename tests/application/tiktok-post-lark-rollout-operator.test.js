@@ -1,20 +1,28 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import {
+  TIKTOK_POST_LARK_AUDIT_PATH,
+  TIKTOK_POST_LARK_ENABLE_EVIDENCE_MAX_AGE_MS,
   TIKTOK_POST_LARK_ROLLOUT_CONFIRMATIONS,
+  TIKTOK_POST_LARK_ROUTE_PROBE_COUNT,
   assertTikTokPostLarkRolloutConfirmation,
   buildTikTokPostLarkPostMigrationSql,
   buildTikTokPostLarkPreflightSql,
+  createTikTokPostLarkTargetFingerprint,
   extractWranglerD1Rows,
   loadTikTokPostLarkRolloutTarget,
   parseTikTokPostLarkRolloutArgs,
+  parseWranglerDeploymentOutput,
+  probeTikTokPostLarkRouteStability,
+  selectTikTokPostLarkEnableAttemptEvidence,
   validateTikTokPostLarkAuditHttpResponse,
   validateTikTokPostLarkAuditResponse,
+  validateTikTokPostLarkFreshEnableEvidence,
   validateTikTokPostLarkNoPendingMigrations,
   validateTikTokPostLarkPendingMigrations,
   validateTikTokPostLarkPostMigrationRow,
   validateTikTokPostLarkPreflightRow,
-  validateTikTokPostLarkRouteStatus,
   validateTikTokPostLarkWranglerConfig,
 } from '../../scripts/lib/tiktok-post-lark-rollout-operator.js';
 
@@ -245,14 +253,217 @@ test('operator falls back when a failed Audit HTTP response has no safe remote c
   assert.equal(validateTikTokPostLarkAuditHttpResponse(200, { ok: true }), true);
 });
 
-test('route status gates distinguish safe-closed, guarded and authenticated audit states', () => {
-  assert.equal(validateTikTokPostLarkRouteStatus(404, 404), true);
-  assert.equal(validateTikTokPostLarkRouteStatus(401, 401), true);
-  assert.equal(validateTikTokPostLarkRouteStatus(200, 200), true);
-  assert.throws(
-    () => validateTikTokPostLarkRouteStatus(200, 404),
-    (error) => error.code === 'TIKTOK_POST_LARK_ROLLOUT_ROUTE_STATUS_INVALID',
+test('route stability gate accepts exactly three consecutive 401 responses', async () => {
+  const scenario = createProbeScenario([401, 401, 401]);
+  const result = await probeTikTokPostLarkRouteStability(scenario.options);
+  assert.equal(result.stableRouteStatus, 401);
+  assert.equal(result.probes.length, TIKTOK_POST_LARK_ROUTE_PROBE_COUNT);
+  assert.deepEqual(result.probes.map((probe) => probe.status), [401, 401, 401]);
+  assert.equal(scenario.requests.length, 3);
+  assert.deepEqual(scenario.sleepDelays, [250, 250]);
+});
+
+test('safe-close stability gate accepts exactly three consecutive 404 responses', async () => {
+  const scenario = createProbeScenario([404, 404, 404], { expectedStatus: 404 });
+  const result = await probeTikTokPostLarkRouteStability(scenario.options);
+  assert.equal(result.stableRouteStatus, 404);
+  assert.deepEqual(result.probes.map((probe) => probe.status), [404, 404, 404]);
+  assert.equal(scenario.requests.length, 3);
+});
+
+test('mixed 401, 404, 401 route responses fail closed with sanitized details', async () => {
+  const scenario = createProbeScenario([401, 404, 401]);
+  await assert.rejects(
+    probeTikTokPostLarkRouteStability(scenario.options),
+    (error) => {
+      assert.equal(error.code, 'TIKTOK_POST_LARK_ROLLOUT_ROUTE_STABILITY_FAILED');
+      assert.deepEqual(error.details.observedStatuses, [401, 404, 401]);
+      assert.equal(error.details.requiredConsecutiveProbes, 3);
+      assert.equal(error.details.safeCloseRequired, true);
+      assert.deepEqual(Object.keys(error.details).sort(), [
+        'deploymentVersionId',
+        'expectedStatus',
+        'observedStatuses',
+        'probeTimestamps',
+        'requiredConsecutiveProbes',
+        'safeCloseRequired',
+        'targetFingerprint',
+      ]);
+      return true;
+    },
   );
+});
+
+test('late 500 route response fails closed without unbounded retries', async () => {
+  const scenario = createProbeScenario([401, 401, 500]);
+  await assert.rejects(
+    probeTikTokPostLarkRouteStability(scenario.options),
+    (error) => {
+      assert.equal(error.code, 'TIKTOK_POST_LARK_ROLLOUT_ROUTE_STABILITY_FAILED');
+      assert.deepEqual(error.details.observedStatuses, [401, 401, 500]);
+      return true;
+    },
+  );
+  assert.equal(scenario.requests.length, 3);
+});
+
+test('route probes use unique cache busting, no-cache headers and no authorization', async () => {
+  const scenario = createProbeScenario([401, 401, 401]);
+  const result = await probeTikTokPostLarkRouteStability(scenario.options);
+  const urls = scenario.requests.map(({ url }) => new URL(url));
+  assert.equal(new Set(urls.map((url) => url.searchParams.get('mkt_probe'))).size, 3);
+  for (const { url, init } of scenario.requests) {
+    const parsed = new URL(url);
+    assert.equal(parsed.pathname, TIKTOK_POST_LARK_AUDIT_PATH);
+    assert.equal(init.redirect, 'manual');
+    assert.equal(init.headers['Cache-Control'], 'no-cache, no-store');
+    assert.equal(init.headers.Pragma, 'no-cache');
+    assert.equal('Authorization' in init.headers, false);
+    assert.equal('authorization' in init.headers, false);
+  }
+  const evidence = JSON.stringify(result);
+  assert.doesNotMatch(
+    evidence,
+    /sync-worker\.example\.com|mkt_probe|fixed-nonce|response-body|Authorization/iu,
+  );
+});
+
+test('target fingerprints are stable for normalized targets and change with target identity', () => {
+  const first = createTikTokPostLarkTargetFingerprint({
+    origin: 'https://SYNC-WORKER.example.com/',
+    pathname: TIKTOK_POST_LARK_AUDIT_PATH,
+    workerName: 'social-mkt-sync-worker',
+    environment: 'development',
+  });
+  const normalized = createTikTokPostLarkTargetFingerprint({
+    origin: 'https://sync-worker.example.com',
+    pathname: TIKTOK_POST_LARK_AUDIT_PATH,
+    workerName: 'social-mkt-sync-worker',
+    environment: 'development',
+  });
+  assert.equal(first, normalized);
+  for (const changed of [
+    { origin: 'https://other.example.com' },
+    { pathname: '/operator/tiktok/other' },
+    { workerName: 'other-worker' },
+    { environment: 'production' },
+  ]) {
+    assert.notEqual(
+      first,
+      createTikTokPostLarkTargetFingerprint({
+        origin: 'https://sync-worker.example.com',
+        pathname: TIKTOK_POST_LARK_AUDIT_PATH,
+        workerName: 'social-mkt-sync-worker',
+        environment: 'development',
+        ...changed,
+      }),
+    );
+  }
+});
+
+test('Wrangler deployment parser selects only the typed deploy version field', () => {
+  const versionId = '12345678-1234-4123-8123-123456789abc';
+  const output = [
+    JSON.stringify({
+      type: 'wrangler-session',
+      version: 1,
+      account_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    }),
+    JSON.stringify({
+      type: 'deploy',
+      version: 1,
+      worker_name: 'social-mkt-sync-worker',
+      version_id: versionId,
+      targets: ['https://private-origin.example.com'],
+    }),
+  ].join('\n');
+  assert.deepEqual(parseWranglerDeploymentOutput(output, {
+    workerName: 'social-mkt-sync-worker',
+  }), {
+    deploymentVersionId: versionId,
+    deploymentSource: 'wrangler',
+  });
+});
+
+test('missing or malformed Wrangler deployment identity fails closed', () => {
+  for (const output of [
+    '{"type":"wrangler-session","version":1}',
+    '{"type":"deploy","version":1,"worker_name":"social-mkt-sync-worker","version_id":"not-a-version"}',
+    '{not-json}',
+  ]) {
+    assert.throws(
+      () => parseWranglerDeploymentOutput(output, {
+        workerName: 'social-mkt-sync-worker',
+      }),
+      (error) => error.code === 'TIKTOK_POST_LARK_ROLLOUT_DEPLOYMENT_ID_UNAVAILABLE',
+    );
+  }
+});
+
+test('fresh stable enable evidence allows the authenticated Audit phase', async () => {
+  const evidence = await createEnableEvidence();
+  assert.equal(validateTikTokPostLarkFreshEnableEvidence(evidence, {
+    now: '2026-07-27T10:00:01.000Z',
+    targetFingerprint: evidence.targetFingerprint,
+  }), evidence);
+});
+
+test('stale, incomplete or superseded enable evidence blocks the authenticated Audit phase', async () => {
+  const evidence = await createEnableEvidence();
+  for (const options of [
+    {
+      now: new Date(
+        Date.parse(evidence.capturedAt) + TIKTOK_POST_LARK_ENABLE_EVIDENCE_MAX_AGE_MS + 1,
+      ),
+      targetFingerprint: evidence.targetFingerprint,
+    },
+    {
+      now: '2026-07-27T10:00:01.000Z',
+      targetFingerprint: evidence.targetFingerprint,
+      latestFailureCapturedAt: '2026-07-27T10:00:00.300Z',
+    },
+  ]) {
+    assert.throws(
+      () => validateTikTokPostLarkFreshEnableEvidence(evidence, options),
+      (error) => error.code === 'TIKTOK_POST_LARK_ROLLOUT_ENABLE_EVIDENCE_STALE',
+    );
+  }
+  assert.throws(
+    () => validateTikTokPostLarkFreshEnableEvidence({
+      ...evidence,
+      deploymentVersionId: null,
+    }, {
+      now: '2026-07-27T10:00:01.000Z',
+      targetFingerprint: evidence.targetFingerprint,
+    }),
+    (error) => error.code === 'TIKTOK_POST_LARK_ROLLOUT_ENABLE_EVIDENCE_STALE',
+  );
+});
+
+test('safe-close selects a failed enable attempt without successful Audit evidence', () => {
+  const failed = {
+    phase: 'enable-audit',
+    status: 'failed',
+    capturedAt: '2026-07-27T10:00:00.000Z',
+    safeCloseRequired: true,
+  };
+  assert.equal(selectTikTokPostLarkEnableAttemptEvidence(null, failed), failed);
+});
+
+test('operator persists failed stability separately and only passes enable after the gate', async () => {
+  const source = await readFile(
+    new URL('../../scripts/tiktok-post-lark-rollout-operator.mjs', import.meta.url),
+    'utf8',
+  );
+  const enableStart = source.indexOf('async function runEnableAudit');
+  const auditStart = source.indexOf('async function runAudit');
+  const enableSource = source.slice(enableStart, auditStart);
+  const gateIndex = enableSource.indexOf('deployAndProbeRoute');
+  const passedEvidenceIndex = enableSource.indexOf("saveEvidence('enable-audit'");
+  assert.match(source, /saveEvidence\(`\$\{phase\}-failure`/u);
+  assert.ok(gateIndex >= 0);
+  assert.ok(passedEvidenceIndex > gateIndex);
+  assert.match(source, /async function runDisableAudit[\s\S]*requireEnableAttemptEvidence/u);
 });
 
 function createTargetEnv() {
@@ -265,6 +476,50 @@ function createTargetEnv() {
     MKT_TIKTOK_ROLLOUT_SAFE_WRANGLER_CONFIG: 'wrangler.sync.jsonc',
     MKT_TIKTOK_ROLLOUT_AUDIT_WRANGLER_CONFIG: 'wrangler.sync.tiktok-audit.jsonc',
     MKT_TIKTOK_ROLLOUT_WORKER_ORIGIN: 'https://social-mkt-sync-worker.example.com',
+  };
+}
+
+function createProbeScenario(statuses, overrides = {}) {
+  const requests = [];
+  const sleepDelays = [];
+  let timestamp = Date.parse('2026-07-27T10:00:00.100Z');
+  const options = {
+    origin: 'https://sync-worker.example.com',
+    pathname: TIKTOK_POST_LARK_AUDIT_PATH,
+    workerName: 'social-mkt-sync-worker',
+    environment: 'development',
+    deploymentVersionId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    expectedStatus: 401,
+    createNonce: () => 'fixed-nonce',
+    now: () => {
+      const value = new Date(timestamp);
+      timestamp += 10;
+      return value;
+    },
+    sleep: async (delay) => {
+      sleepDelays.push(delay);
+    },
+    fetchImpl: async (url, init) => {
+      requests.push({ url: String(url), init });
+      return new Response('response-body-private', { status: statuses[requests.length - 1] });
+    },
+    ...overrides,
+  };
+  return { options, requests, sleepDelays };
+}
+
+async function createEnableEvidence() {
+  const scenario = createProbeScenario([401, 401, 401]);
+  const route = await probeTikTokPostLarkRouteStability(scenario.options);
+  return {
+    phase: 'enable-audit',
+    status: 'passed',
+    capturedAt: '2026-07-27T10:00:00.300Z',
+    deploymentStartedAt: '2026-07-27T10:00:00.000Z',
+    deploymentCompletedAt: '2026-07-27T10:00:00.050Z',
+    deploymentVersionId: scenario.options.deploymentVersionId,
+    deploymentSource: 'wrangler',
+    ...route,
   };
 }
 

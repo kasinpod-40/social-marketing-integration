@@ -24,6 +24,7 @@ TikTok guarded rollout operator               merged via PR #71
 TikTok operator merge commit                  e6b8bd0b9098b9a79bae49ff24455187e43a331e
 TikTok operator reviewed head                 df229ccade82ce7869c01bbf75c1cb3fc0f16cd1
 TikTok operator final verification            #558 PASS
+TikTok route stability Hotfix                 Repository-only implementation in progress
 Meta end-to-end implementation                merged via PR #69
 Meta implementation merge commit              11e861cfbc79ea067a90496b205f692ca8bb4d3d
 Meta protected runtime                        merged via PR #73
@@ -46,7 +47,7 @@ WooCommerce integration merge commit          060977cd9ed2933700fbd121c9236e6578
 WooCommerce reviewed Integration head         d0ce3399177b5d6c8fcdb6c56eadd77851ae29e9
 WooCommerce final verification                #622 PASS
 Migration 0016                                applied remotely / additive verification passed
-Migration 0017                                WooCommerce source only / not applied remotely
+Migration 0017                                applied remotely / additive verification passed
 Worker deployment                             TikTok restored safe-closed / Meta, YouTube, Chatwoot and WooCommerce not run
 Provider execution                            not run for Meta, YouTube, Chatwoot or WooCommerce rollout
 Queue send / DLQ redrive                      none for TikTok, Meta, YouTube, Chatwoot or WooCommerce rollout
@@ -164,6 +165,18 @@ Canonical/D1 Business writes, Lark mutation, Report cutover and schedules remain
 The Repository-only branch `hotfix/tiktok-post-lark-audit-error-code` adds a stable sanitized
 fallback code at the HTTP boundary and propagates only `httpStatus` plus `remoteCode` through the
 rollout operator. The Hotfix performs no Remote action and authorizes no new Audit window.
+
+A later controlled enable attempt exposed a route-stability mismatch: the operator observed
+unauthenticated `401`, while the next same-target probe observed `404` before safe-close. Target
+fingerprints, pathname, Safe/Audit configuration and deployment ordering matched. The incident is
+classified as `ROUTE_PROPAGATION_OR_RUNTIME_INCONSISTENCY`; no authenticated Audit request ran and
+the Worker was restored to safe-closed `404`.
+
+The Repository-only branch `hotfix/tiktok-post-lark-audit-route-stability` replaces single route
+checks with three consecutive cache-busted/no-cache probes, captures the exact deployed Worker
+version from typed Wrangler output, records only sanitized target fingerprints/status/timestamps
+and blocks authenticated Audit when enable evidence is stale, incomplete or superseded. It does
+not change Audit Business logic and authorizes no Remote action.
 
 ## Merged YouTube Organic integration
 
@@ -382,8 +395,8 @@ Each remaining Workstream owns a unique Branch and Draft PR. Migration, deployme
 
 Migration `0016` is already applied and must not be rerun. The next order is:
 
-1. review and separately approve merge of the sanitized error-code Hotfix;
-2. separately authorize an all-flags-false Worker deployment containing the reviewed Hotfix;
+1. review and separately approve merge of the route-stability Hotfix;
+2. separately authorize an all-flags-false Worker deployment containing both reviewed Hotfixes;
 3. confirm the route remains safe-closed HTTP `404`;
 4. separately authorize one new controlled Audit-only window and one authenticated GET;
 5. capture the stable sanitized Remote error code or a successful read-only Audit result;
