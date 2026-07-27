@@ -22,7 +22,6 @@ import {
   loadTikTokPostLarkRolloutTarget,
   parseTikTokPostLarkRolloutArgs,
   parseWranglerDeploymentOutput,
-  probeTikTokPostLarkRouteStability,
   selectTikTokPostLarkEnableAttemptEvidence,
   validateTikTokPostLarkAuditHttpResponse,
   validateTikTokPostLarkAuditResponse,
@@ -33,6 +32,13 @@ import {
   validateTikTokPostLarkPreflightRow,
   validateTikTokPostLarkWranglerConfig,
 } from './lib/tiktok-post-lark-rollout-operator.js';
+import {
+  fetchTikTokPostLarkExactVersionAudit,
+  probeTikTokPostLarkExactVersionRouteStability,
+  readTikTokPostLarkBoundedJsonResponse,
+  validateTikTokPostLarkExactVersionEnableEvidence,
+  validateTikTokPostLarkVersionMetadataConfig,
+} from './lib/tiktok-post-lark-exact-version.js';
 
 const REQUIRED_BASELINE = 'ad6614dd8ee0cb2a1dda5cdbe7035f44b40581d4';
 const WORKER_NAME = 'social-mkt-sync-worker';
@@ -91,6 +97,7 @@ function printPlan(mode) {
       scheduleActivation: false,
       retentionDelete: false,
       productionCutover: false,
+      exactWorkerVersionRequired: true,
     },
     note: phase
       ? `Preview only. Re-run with --phase=${phase} --execute and the exact phase confirmation.`
@@ -121,8 +128,14 @@ async function runPreflight(target) {
     readFile(target.safeWranglerConfig, 'utf8'),
     readFile(target.auditWranglerConfig, 'utf8'),
   ]);
-  const safeConfig = validateTikTokPostLarkWranglerConfig(safeText, { auditEnabled: false });
-  const auditConfig = validateTikTokPostLarkWranglerConfig(auditText, { auditEnabled: true });
+  const safeConfig = {
+    ...validateTikTokPostLarkWranglerConfig(safeText, { auditEnabled: false }),
+    ...validateTikTokPostLarkVersionMetadataConfig(safeText),
+  };
+  const auditConfig = {
+    ...validateTikTokPostLarkWranglerConfig(auditText, { auditEnabled: true }),
+    ...validateTikTokPostLarkVersionMetadataConfig(auditText),
+  };
   const safeTargetFingerprint = createTikTokPostLarkTargetFingerprint({
     origin: target.workerOrigin,
     pathname: TIKTOK_POST_LARK_AUDIT_PATH,
@@ -147,6 +160,7 @@ async function runPreflight(target) {
     '--test',
     'tests/application/tiktok-post-lark-rollout-operator.test.js',
     'tests/application/tiktok-post-lark-audit-http.test.js',
+    'tests/application/tiktok-post-lark-exact-version.test.js',
     'tests/application/tiktok-post-lark-schedule-gates.test.js',
   ]);
   runCommand('npm', ['run', 'deploy:dry-run']);
@@ -255,7 +269,10 @@ async function runMigration(target) {
 async function runDeploySafe(target) {
   await requirePassedEvidence('migrate');
   const configText = await readFile(target.safeWranglerConfig, 'utf8');
-  const config = validateTikTokPostLarkWranglerConfig(configText, { auditEnabled: false });
+  const config = {
+    ...validateTikTokPostLarkWranglerConfig(configText, { auditEnabled: false }),
+    ...validateTikTokPostLarkVersionMetadataConfig(configText),
+  };
   runCommand('npx', ['wrangler', 'deploy', '--dry-run', '--config', target.safeWranglerConfig]);
   const route = await deployAndProbeRoute({
     phase: 'deploy-safe',
@@ -278,13 +295,17 @@ async function runDeploySafe(target) {
     evidenceFile: evidencePath('deploy-safe'),
     routeStatus: route.stableRouteStatus,
     deploymentVersionId: route.deploymentVersionId,
+    runtimeVersionId: route.runtimeVersionId,
   };
 }
 
 async function runEnableAudit(target) {
   await requirePassedEvidence('deploy-safe');
   const configText = await readFile(target.auditWranglerConfig, 'utf8');
-  const config = validateTikTokPostLarkWranglerConfig(configText, { auditEnabled: true });
+  const config = {
+    ...validateTikTokPostLarkWranglerConfig(configText, { auditEnabled: true }),
+    ...validateTikTokPostLarkVersionMetadataConfig(configText),
+  };
   runCommand('npx', ['wrangler', 'deploy', '--dry-run', '--config', target.auditWranglerConfig]);
   const route = await deployAndProbeRoute({
     phase: 'enable-audit',
@@ -307,6 +328,7 @@ async function runEnableAudit(target) {
     evidenceFile: evidencePath('enable-audit'),
     routeStatus: route.stableRouteStatus,
     deploymentVersionId: route.deploymentVersionId,
+    runtimeVersionId: route.runtimeVersionId,
   };
 }
 
@@ -318,14 +340,15 @@ async function runAudit(target) {
     targetFingerprint: targetFingerprint(target),
     latestFailureCapturedAt: failureEvidence?.capturedAt,
   });
-  const response = await fetch(`${target.workerOrigin}/operator/tiktok/post-lark-audit`, {
-    method: 'GET',
-    headers: {
-      Authorization: `Bearer ${target.operatorToken}`,
-      Accept: 'application/json',
-    },
+  validateTikTokPostLarkExactVersionEnableEvidence(enableEvidence);
+  const response = await fetchTikTokPostLarkExactVersionAudit({
+    origin: target.workerOrigin,
+    pathname: TIKTOK_POST_LARK_AUDIT_PATH,
+    workerName: WORKER_NAME,
+    deploymentVersionId: enableEvidence.deploymentVersionId,
+    operatorToken: target.operatorToken,
   });
-  const body = await readJsonResponse(response);
+  const body = await readTikTokPostLarkBoundedJsonResponse(response);
   validateTikTokPostLarkAuditHttpResponse(response.status, body);
   const audit = validateTikTokPostLarkAuditResponse(body, {
     customerKey: target.customerKey,
@@ -336,6 +359,9 @@ async function runAudit(target) {
     phase: 'audit',
     status: 'passed',
     capturedAt: new Date().toISOString(),
+    deploymentVersionId: enableEvidence.deploymentVersionId,
+    runtimeVersionId: enableEvidence.runtimeVersionId,
+    versionOverridePinned: true,
     audit,
     raw: body.audit.raw,
     d1: body.audit.d1,
@@ -347,6 +373,8 @@ async function runAudit(target) {
   await saveEvidence('audit', evidence);
   return {
     evidenceFile: evidencePath('audit'),
+    deploymentVersionId: enableEvidence.deploymentVersionId,
+    runtimeVersionId: enableEvidence.runtimeVersionId,
     readyForManualProcessing: audit.readyForManualProcessing,
     issueCount: audit.issueCount,
     rawRecordCount: audit.rawRecordCount,
@@ -358,7 +386,10 @@ async function runDisableAudit(target) {
   // Emergency safe-close must remain available even when the authenticated audit fails.
   await requireEnableAttemptEvidence();
   const configText = await readFile(target.safeWranglerConfig, 'utf8');
-  const config = validateTikTokPostLarkWranglerConfig(configText, { auditEnabled: false });
+  const config = {
+    ...validateTikTokPostLarkWranglerConfig(configText, { auditEnabled: false }),
+    ...validateTikTokPostLarkVersionMetadataConfig(configText),
+  };
   runCommand('npx', ['wrangler', 'deploy', '--dry-run', '--config', target.safeWranglerConfig]);
   const route = await deployAndProbeRoute({
     phase: 'disable-audit',
@@ -380,6 +411,7 @@ async function runDisableAudit(target) {
     evidenceFile: evidencePath('disable-audit'),
     routeStatus: route.stableRouteStatus,
     deploymentVersionId: route.deploymentVersionId,
+    runtimeVersionId: route.runtimeVersionId,
     safeClosed: true,
   };
 }
@@ -417,7 +449,7 @@ async function deployAndProbeRoute({
         'TIKTOK_POST_LARK_ROLLOUT_DEPLOYMENT_ID_UNAVAILABLE',
       );
     }
-    const route = await probeTikTokPostLarkRouteStability({
+    const route = await probeTikTokPostLarkExactVersionRouteStability({
       origin: target.workerOrigin,
       pathname: TIKTOK_POST_LARK_AUDIT_PATH,
       workerName: WORKER_NAME,
@@ -433,6 +465,10 @@ async function deployAndProbeRoute({
     });
   } catch (error) {
     deploymentCompletedAt ??= new Date().toISOString();
+    const includeFailureDetails = [
+      'TIKTOK_POST_LARK_ROLLOUT_ROUTE_STABILITY_FAILED',
+      'TIKTOK_POST_LARK_ROLLOUT_RUNTIME_VERSION_MISMATCH',
+    ].includes(error?.code);
     await saveEvidence(`${phase}-failure`, {
       phase,
       status: 'failed',
@@ -443,9 +479,7 @@ async function deployAndProbeRoute({
       deploymentSource: deployment?.deploymentSource ?? 'wrangler',
       targetFingerprint: targetFingerprint(target),
       errorCode: error?.code ?? 'TIKTOK_POST_LARK_ROLLOUT_FAILED',
-      ...(error?.code === 'TIKTOK_POST_LARK_ROLLOUT_ROUTE_STABILITY_FAILED'
-        ? error.details
-        : {}),
+      ...(includeFailureDetails ? error.details : {}),
       safeCloseRequired: true,
     });
     throw error;
@@ -482,22 +516,6 @@ function runD1Query(target, config, sql) {
     '--command', sql,
     '--json',
   ]);
-}
-
-async function readJsonResponse(response) {
-  const text = await response.text();
-  try {
-    return JSON.parse(text);
-  } catch (cause) {
-    throw operatorError(
-      'TikTok post-Lark audit response was not valid JSON',
-      'TIKTOK_POST_LARK_ROLLOUT_AUDIT_RESPONSE_INVALID',
-      {
-        status: response.status,
-        cause: cause instanceof Error ? cause.message : String(cause),
-      },
-    );
-  }
 }
 
 function runCommand(command, args, options = {}) {
