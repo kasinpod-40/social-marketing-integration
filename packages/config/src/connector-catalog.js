@@ -4,15 +4,7 @@ import {
   LARGE_ACCOUNT_STATUS,
 } from './large-account-readiness.js';
 
-/**
- * รายชื่อ Connector กลางของระบบ
- *
- * กฎสำคัญ:
- * - key ต้องคงที่เพราะถูกใช้ใน Config, Queue job, Log และ Feature flag
- * - implementationStatus='active' หมายถึงมี Write/Validation path จริงพร้อม Test แล้ว
- * - implementationStatus='uat_pending' หมายถึงมี Code/Contract แต่ยังห้าม Runtime ทำงานก่อน Live DEV UAT
- * - implementationStatus='planned' หมายถึงเตรียม Contract ไว้เท่านั้นและห้าม Runtime ทำงานจริง
- */
+/** Central connector registry. */
 export const CONNECTOR_KEYS = Object.freeze({
   TIKTOK: 'tiktok',
   FACEBOOK: 'facebook',
@@ -133,7 +125,7 @@ const CONNECTOR_CATALOG = Object.freeze({
     key: CONNECTOR_KEYS.CHATWOOT,
     displayName: 'Chatwoot',
     capability: 'conversations',
-    implementationStatus: CONNECTOR_IMPLEMENTATION_STATUS.PLANNED,
+    implementationStatus: CONNECTOR_IMPLEMENTATION_STATUS.UAT_PENDING,
     featureFlagEnv: 'MKT_CONNECTOR_CHATWOOT_ENABLED',
     requiredRuntimeFields: ['accountKey'],
     largeAccount: plannedLargeAccount('conversations', 5000),
@@ -149,7 +141,6 @@ function plannedLargeAccount(primaryEntity, minimumFixtureItems) {
   });
 }
 
-/** คืน Definition ของ Connector พร้อมปฏิเสธ key ที่ไม่รู้จักแบบถาวร */
 export function getConnectorCatalogEntry(connectorKey) {
   const key = normalizeConnectorKey(connectorKey);
   const definition = CONNECTOR_CATALOG[key];
@@ -162,27 +153,21 @@ export function getConnectorCatalogEntry(connectorKey) {
   return definition;
 }
 
-/** คืน Connector Definition ทั้งหมดตามลำดับคงที่สำหรับหน้า Admin, Health และ Test */
 export function listConnectorCatalog() {
   return Object.freeze(Object.values(CONNECTOR_CATALOG));
 }
 
-/** คืน key ทั้งหมดโดยไม่เปิดให้ผู้เรียกแก้ไข Array กลาง */
 export function listConnectorKeys() {
   return Object.freeze(Object.keys(CONNECTOR_CATALOG));
 }
 
-/** Normalize key ให้เป็นตัวพิมพ์เล็กและปฏิเสธข้อความว่าง */
 function normalizeConnectorKey(value) {
   if (typeof value !== 'string' || value.trim() === '') {
-    throw permanentError('Connector key is required', {
-      code: 'UNKNOWN_CONNECTOR',
-    });
+    throw permanentError('Connector key is required', { code: 'UNKNOWN_CONNECTOR' });
   }
   return value.trim().toLowerCase();
 }
 
-/** Freeze Definition และ Array ภายในเพื่อป้องกัน Runtime แก้ Contract กลาง */
 function freezeDefinition(definition) {
   return Object.freeze({
     ...definition,
