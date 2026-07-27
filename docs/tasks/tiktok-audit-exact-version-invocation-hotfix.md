@@ -5,10 +5,10 @@
 ```text
 TASK_STATUS                       = PASS_REPOSITORY_IMPLEMENTATION
 BRANCH                            = hotfix/tiktok-audit-exact-version-invocation
-BASE_MAIN                         = 025a2f68800d3c4115676c644b28384eacacdc7f
+CURRENT_MAIN_AT_CLOSEOUT          = 15fcf96b42825cb132d581b47d21ce1780186199
 DRAFT_PR                          = #120
-ALIGNED_IMPLEMENTATION_HEAD       = 210545f9dd8d1e2f2064f538c3b13849a44b0214
-ALIGNED_BRANCH_VERIFICATION       = #702 / PASS
+PRE_CLOSEOUT_BRANCH_VERIFICATION  = #702 / PASS
+FINAL_BRANCH_VERIFICATION         = REQUIRED_ON_FINAL_PR_HEAD
 REMOTE_ACTIONS                    = NONE
 REMOTE_AUDIT_RETRY_AUTHORIZED     = false
 ```
@@ -89,10 +89,10 @@ REMOTE_ACTION_COUNT               = 0
 
 Implementation reuses a Shared Cloudflare Worker-version contract and the existing rollout probe/evidence chain. It does not add a second rollout engine, HTTP router, Queue path, D1 writer or Lark sync path.
 
-Verification on the aligned implementation head `210545f9dd8d1e2f2064f538c3b13849a44b0214`:
+Pre-closeout verification passed before the final parallel-workstream synchronization:
 
 ```text
-BRANCH_VERIFICATION               = #702 / PASS
+PRE_CLOSEOUT_BRANCH_VERIFICATION  = #702 / PASS
 FOCUSED_STAGED_TIKTOK             = 4 / 4 PASS
 NODE_UNIT_INTEGRATION             = 1090 / 1090 PASS
 WORKERS_RUNTIME                   = 12 / 12 PASS
@@ -102,4 +102,4 @@ ARCHITECTURE_AND_HYGIENE          = PASS
 WRANGLER_DRY_RUN                  = PASS / NO DEPLOYMENT
 ```
 
-The documentation closeout commit must receive a final exact-head Branch Verification before Integration Review can return `PASS_FOR_MERGE`.
+Integration Review may return `PASS_FOR_MERGE` only after the final PR head is confirmed current with `main` and its Branch Verification passes.
