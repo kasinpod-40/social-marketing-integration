@@ -38,7 +38,7 @@ test('Meta token connection config separates credentials and exact mappings', ()
     META_INSTAGRAM_ACCESS_TOKEN: 'instagram-private',
     META_FACEBOOK_PAGE_ID: 'page-private',
     META_INSTAGRAM_ACCOUNT_ID: 'instagram-account-private',
-    META_AD_ACCOUNT_ID: 'act_12345',
+    META_AD_ACCOUNT_MAPPINGS: 'chemistry_k2=act_12345,chemistry_k3=67890',
     META_MAX_PAGES: '7',
   });
 
@@ -47,9 +47,31 @@ test('Meta token connection config separates credentials and exact mappings', ()
   assert.equal(config.credentials.instagramAccessToken, 'instagram-private');
   assert.equal(config.mappings.facebookPageId, 'page-private');
   assert.equal(config.mappings.instagramAccountId, 'instagram-account-private');
-  assert.equal(config.mappings.metaAdAccountId, 'act_12345');
+  assert.deepEqual(config.mappings.metaAdAccounts, [
+    { key: 'chemistry_k2', accountId: '12345' },
+    { key: 'chemistry_k3', accountId: '67890' },
+  ]);
+  assert.deepEqual(config.mappings.metaAdAccountIds, ['12345', '67890']);
+  assert.equal(config.mappings.metaAdAccountId, null);
   assert.equal(config.transport.maxPages, 7);
   assert.deepEqual(META_REQUIRED_PERMISSIONS.meta_ads, ['ads_read', 'business_management']);
+});
+
+
+test('Meta token connection config rejects ambiguous or duplicate multi-account mappings', () => {
+  assert.throws(
+    () => loadMetaTokenConnectionConfig({
+      META_AD_ACCOUNT_MAPPINGS: 'chemistry_k2=123,chemistry_k3=123',
+    }),
+    (error) => error?.code === 'META_CONNECTION_CONFIG_INVALID',
+  );
+  assert.throws(
+    () => loadMetaTokenConnectionConfig({
+      META_AD_ACCOUNT_MAPPINGS: 'chemistry_k2=123',
+      META_AD_ACCOUNT_ID: '456',
+    }),
+    (error) => error?.code === 'META_CONNECTION_CONFIG_INVALID',
+  );
 });
 
 test('Meta token connection config rejects credential and mapping placeholders', () => {

@@ -1,0 +1,710 @@
+import { buildMetaAdsWriteSet } from './build-meta-ads-write-set.js';
+import { buildMetaOrganicWriteSet } from './build-meta-organic-write-set.js';
+import {
+  collectMetaEndToEndSourceUnit,
+} from './collect-meta-end-to-end-source.js';
+import { processMetaEndToEndGeneration } from './process-meta-end-to-end-generation.js';
+import { createStableFingerprint } from '../../../shared/src/hash/stable-fingerprint.js';
+import { permanentError } from '../../../shared/src/errors/runtime-error.js';
+
+const SOURCE_PHASE = 'meta_end_to_end_source_staging_v1';
+const ORGANIC_CONNECTORS = new Set(['facebook', 'instagram']);
+const ADS_CONNECTOR = 'meta_ads';
+const ORGANIC_STAGES = Object.freeze([
+  'account',
+  'content',
+  'account_insights',
+  'content_insights',
+  'complete',
+]);
+const ADS_STAGES = Object.freeze([
+  'account',
+  'campaigns',
+  'ad_sets',
+  'ads',
+  'creatives',
+  'daily',
+  'complete',
+]);
+
+/**
+ * One bounded Meta provider unit per invocation, staged in the existing resumable-work tables.
+ * Business writes reuse the existing D1/Lark processor only after the complete source snapshot
+ * is durably available. Queue scheduling and Reliability remain caller-owned.
+ */
+export async function processMetaEndToEndSync(input = {}) {
+  const connectorKey = requireConnector(input.connectorKey);
+  const operation = requireOperation(input.operation);
+  const workStore = requireMethods(input.resumableWorkStore, [
+    'beginWork', 'loadPhase', 'savePhase', 'listPhaseUnits',
+  ], 'resumableWorkStore');
+  const adapter = requireObject(input.adapter, 'adapter');
+  const sourceAccountId = requireText(input.sourceAccountId, 'sourceAccountId');
+  const accountKey = requireText(input.accountKey, 'accountKey');
+  const customerProfile = requireText(input.customerProfile, 'customerProfile');
+  const customerKey = requireText(input.customerKey, 'customerKey');
+  const syncRunId = requireText(input.syncRunId, 'syncRunId');
+  const sourceTimezone = requireText(input.sourceTimezone ?? 'Asia/Bangkok', 'sourceTimezone');
+  const dateRange = normalizeDateRange(input.dateRange, connectorKey === ADS_CONNECTOR);
+  const limits = normalizeLimits(input.limits);
+  const assertLockActive = typeof input.assertLockActive === 'function'
+    ? input.assertLockActive
+    : async () => undefined;
+
+  const fingerprint = await createStableFingerprint({
+    schemaVersion: 'meta_end_to_end_runtime_operation_v1',
+    connectorKey,
+    sourceAccountId,
+    accountKey,
+    customerProfile,
+    customerKey,
+    dateRange,
+    generation: operation.generation,
+  });
+  const begun = await workStore.beginWork({
+    workKey: operation.workKey,
+    cursorKey: input.cursorKey ?? `meta:${customerProfile}:${connectorKey}:${accountKey}`,
+    workType: input.jobType ?? `meta.${connectorKey}.sync`,
+    operationFingerprint: fingerprint,
+    generation: operation.generation,
+    requestedAt: operation.originalRequestedAt,
+  });
+  if (begun.superseded) {
+    return Object.freeze({
+      status: 'superseded',
+      mode: 'superseded',
+      connectorKey,
+      operationId: operation.operationId,
+      continuationRequired: false,
+    });
+  }
+  if (begun.completed) {
+    return Object.freeze({
+      status: 'completed_idempotent',
+      connectorKey,
+      operationId: operation.operationId,
+      reconciliation: begun.completion ?? null,
+      continuationRequired: false,
+    });
+  }
+
+  const existing = await workStore.loadPhase({
+    workKey: operation.workKey,
+    phase: SOURCE_PHASE,
+  });
+  let state = normalizeSourceState(existing?.state, connectorKey);
+
+  if (state.stage !== 'complete') {
+    if (state.unitCount >= limits.sourceMaxUnits) {
+      throw limitError(
+        'Meta source reached the durable unit limit before completion',
+        'META_END_TO_END_SOURCE_UNIT_LIMIT',
+        { maximum: limits.sourceMaxUnits },
+      );
+    }
+    await assertLockActive();
+    const request = resolveSourceRequest({ connectorKey, state, dateRange });
+    const unit = await collectMetaEndToEndSourceUnit({
+      connectorKey,
+      datasetKey: request.datasetKey,
+      adapters: { [connectorKey]: adapter },
+      identities: { sourceAccountId },
+      state: request.state,
+      dateRange: request.dateRange,
+      maxPages: limits.sourceMaxPages,
+    });
+    const payload = createStagedPayload(unit);
+    assertUnitSize(payload, limits.sourceMaxUnitBytes);
+    state = await advanceState({
+      connectorKey,
+      state,
+      unit,
+      payload,
+      workStore,
+      workKey: operation.workKey,
+      limits,
+    });
+    await assertLockActive();
+    await workStore.savePhase({
+      workKey: operation.workKey,
+      phase: SOURCE_PHASE,
+      state,
+      expectedItems: state.stage === 'complete' ? state.unitCount : limits.sourceMaxUnits,
+      processedItems: state.unitCount,
+      pagesProcessed: state.unitCount,
+      chunksProcessed: state.unitCount,
+      complete: state.stage === 'complete',
+      unit: {
+        unitKey: unit.unitKey,
+        sequence: state.unitCount - 1,
+        payload,
+      },
+    });
+
+    if (state.stage !== 'complete') {
+      return sourceContinuation({ connectorKey, operation, state, unit });
+    }
+  }
+
+  const staged = await readAllStagedUnits({
+    workStore,
+    workKey: operation.workKey,
+    expectedUnits: state.unitCount,
+    maximum: limits.sourceMaxUnits,
+  });
+  const sourceSnapshot = assembleSourceSnapshot({
+    connectorKey,
+    sourceAccountId,
+    staged,
+    state,
+  });
+
+  if (input.sourceReadOnly === true || input.d1WriteEnabled !== true) {
+    return Object.freeze({
+      status: 'source_validated',
+      mode: 'source_read_only',
+      connectorKey,
+      operationId: operation.operationId,
+      continuationRequired: false,
+      sourceSummary: summarizeSnapshot(sourceSnapshot),
+      sourceWatermark: state.sourceWatermark,
+    });
+  }
+
+  const writeSet = await buildWriteSet({
+    connectorKey,
+    sourceSnapshot,
+    sourceAccountId,
+    accountKey,
+    customerProfile,
+    customerKey,
+    syncRunId,
+    operation,
+    sourceTimezone,
+    sourceWatermark: state.sourceWatermark,
+  });
+
+  const result = await processMetaEndToEndGeneration({
+    writeSet,
+    resumableWorkStore: workStore,
+    historyStore: input.historyStore,
+    organicHistoryGateway: input.organicHistoryGateway,
+    repository: input.repository ?? {},
+    syncEngine: input.syncEngine ?? noLarkSyncEngine(),
+    tables: input.tables ?? {},
+    workKey: operation.workKey,
+    d1WriteEnabled: true,
+    larkWriteEnabled: input.larkWriteEnabled === true,
+    maxD1RowsPerInvocation: limits.d1RowsPerInvocation,
+    maxLarkTablesPerInvocation: limits.larkTablesPerInvocation,
+    assertLockActive,
+  });
+  return Object.freeze({
+    ...result,
+    connectorKey,
+    operationId: operation.operationId,
+    sourceSummary: summarizeSnapshot(sourceSnapshot),
+    sourceWatermark: state.sourceWatermark,
+  });
+}
+
+async function advanceState(input) {
+  const next = cloneState(input.state);
+  next.unitCount += 1;
+  next.rowCount += input.unit.rowCount;
+  next.sourceWatermark = maxText(next.sourceWatermark, input.unit.sourceWatermark);
+  if (next.unitCount > input.limits.sourceMaxUnits) {
+    throw limitError('Meta source exceeded the durable unit limit', 'META_END_TO_END_SOURCE_UNIT_LIMIT', {
+      maximum: input.limits.sourceMaxUnits,
+    });
+  }
+  if (next.rowCount > input.limits.sourceMaxRows) {
+    throw limitError('Meta source exceeded the staged row limit', 'META_END_TO_END_SOURCE_ROW_LIMIT', {
+      maximum: input.limits.sourceMaxRows,
+    });
+  }
+  if (input.unit.nextState) {
+    next.pageState = input.unit.nextState;
+    return freezeState(next);
+  }
+
+  next.pageState = null;
+  if (ORGANIC_CONNECTORS.has(input.connectorKey)) {
+    if (next.stage === 'account') next.stage = 'content';
+    else if (next.stage === 'content') {
+      const staged = await readAllStagedUnits({
+        workStore: input.workStore,
+        workKey: input.workKey,
+        expectedUnits: input.state.unitCount,
+        maximum: input.limits.sourceMaxUnits,
+      });
+      const contentIds = uniqueText([...staged, input.payload]
+        .filter((entry) => entry.datasetKey === `${input.connectorKey}.content.inventory`)
+        .flatMap((entry) => entry.rows)
+        .map((row) => row?.id));
+      next.contentIds = contentIds;
+      next.contentIndex = 0;
+      next.stage = 'account_insights';
+    } else if (next.stage === 'account_insights') {
+      next.stage = next.contentIds.length > 0 ? 'content_insights' : 'complete';
+      next.pageState = next.contentIds.length > 0
+        ? { entityId: next.contentIds[0], pageNumber: 1 }
+        : null;
+    } else if (next.stage === 'content_insights') {
+      next.contentIndex += 1;
+      if (next.contentIndex >= next.contentIds.length) {
+        next.stage = 'complete';
+      } else {
+        next.pageState = { entityId: next.contentIds[next.contentIndex], pageNumber: 1 };
+      }
+    }
+  } else {
+    const index = ADS_STAGES.indexOf(next.stage);
+    next.stage = ADS_STAGES[index + 1] ?? 'complete';
+  }
+  return freezeState(next);
+}
+
+function resolveSourceRequest({ connectorKey, state, dateRange }) {
+  const pageState = state.pageState ?? { pageNumber: 1 };
+  if (ORGANIC_CONNECTORS.has(connectorKey)) {
+    if (state.stage === 'account') {
+      return { datasetKey: `${connectorKey}.account.latest`, state: pageState };
+    }
+    if (state.stage === 'content') {
+      return { datasetKey: `${connectorKey}.content.inventory`, state: pageState };
+    }
+    if (state.stage === 'account_insights') {
+      return {
+        datasetKey: `${connectorKey}.account.insights`,
+        state: pageState,
+        dateRange,
+      };
+    }
+    if (state.stage === 'content_insights') {
+      return {
+        datasetKey: `${connectorKey}.content.insights`,
+        state: {
+          ...pageState,
+          entityId: state.contentIds[state.contentIndex],
+        },
+        dateRange,
+      };
+    }
+  }
+  const adsDatasets = {
+    account: 'meta_ads.account.latest',
+    campaigns: 'meta_ads.campaigns.inventory',
+    ad_sets: 'meta_ads.ad_sets.inventory',
+    ads: 'meta_ads.ads.inventory',
+    creatives: 'meta_ads.creatives.inventory',
+    daily: 'meta_ads.performance.daily',
+  };
+  return {
+    datasetKey: adsDatasets[state.stage],
+    state: pageState,
+    ...(state.stage === 'daily' ? { dateRange } : {}),
+  };
+}
+
+function assembleSourceSnapshot({ connectorKey, sourceAccountId, staged, state }) {
+  const rowsFor = (datasetKey) => staged
+    .filter((entry) => entry.datasetKey === datasetKey)
+    .flatMap((entry) => entry.rows);
+  if (ORGANIC_CONNECTORS.has(connectorKey)) {
+    const account = rowsFor(`${connectorKey}.account.latest`);
+    if (account.length !== 1) {
+      throw permanentError('Meta Organic account source must contain exactly one resource', {
+        code: 'META_END_TO_END_SOURCE_ACCOUNT_INVALID',
+      });
+    }
+    const insightMap = new Map();
+    for (const entry of staged.filter((item) => item.datasetKey === `${connectorKey}.content.insights`)) {
+      const id = requireText(entry.sourceEntityId, 'sourceEntityId');
+      insightMap.set(id, [...(insightMap.get(id) ?? []), ...entry.rows]);
+    }
+    return deepFreeze({
+      connectorKey,
+      sourceAccountId,
+      accountResource: account[0],
+      contentResources: rowsFor(`${connectorKey}.content.inventory`),
+      accountInsights: rowsFor(`${connectorKey}.account.insights`),
+      contentInsights: [...insightMap.entries()].map(([contentId, insights]) => ({
+        contentId,
+        insights,
+      })),
+      sourceWatermark: state.sourceWatermark,
+    });
+  }
+  const account = rowsFor('meta_ads.account.latest');
+  if (account.length !== 1) {
+    throw permanentError('Meta Ads account source must contain exactly one resource', {
+      code: 'META_END_TO_END_SOURCE_ACCOUNT_INVALID',
+    });
+  }
+  return deepFreeze({
+    connectorKey,
+    sourceAccountId,
+    accountResource: account[0],
+    campaigns: rowsFor('meta_ads.campaigns.inventory'),
+    adSets: rowsFor('meta_ads.ad_sets.inventory'),
+    ads: rowsFor('meta_ads.ads.inventory'),
+    creatives: rowsFor('meta_ads.creatives.inventory'),
+    dailyInsights: rowsFor('meta_ads.performance.daily'),
+    sourceWatermark: state.sourceWatermark,
+  });
+}
+
+async function buildWriteSet(input) {
+  const common = {
+    accountId: input.sourceAccountId,
+    accountKey: input.accountKey,
+    customerKey: input.customerKey,
+    syncRunId: input.syncRunId,
+    operationId: input.operation.operationId,
+    fetchedAt: input.operation.originalRequestedAt,
+    completedAt: input.operation.originalRequestedAt,
+    sourceRevision: input.sourceWatermark ?? input.operation.operationId,
+    sourceWatermark: input.sourceWatermark,
+  };
+  if (ORGANIC_CONNECTORS.has(input.connectorKey)) {
+    return buildMetaOrganicWriteSet({
+      ...common,
+      connectorKey: input.connectorKey,
+      customerProfile: input.customerProfile,
+      sourceTimezone: input.sourceTimezone,
+      accountResource: input.sourceSnapshot.accountResource,
+      contentResources: input.sourceSnapshot.contentResources,
+      contentInsights: input.sourceSnapshot.contentInsights,
+      accountInsights: input.sourceSnapshot.accountInsights,
+    });
+  }
+  const accountTimezone = requireText(
+    input.sourceSnapshot.accountResource?.timezone_name,
+    'Meta Ads account timezone_name',
+  );
+  const currency = requireText(
+    input.sourceSnapshot.accountResource?.currency,
+    'Meta Ads account currency',
+  );
+  return buildMetaAdsWriteSet({
+    ...common,
+    accountTimezone,
+    currency,
+    accountResource: input.sourceSnapshot.accountResource,
+    campaigns: input.sourceSnapshot.campaigns,
+    adSets: input.sourceSnapshot.adSets,
+    ads: input.sourceSnapshot.ads,
+    creatives: input.sourceSnapshot.creatives,
+    dailyInsights: input.sourceSnapshot.dailyInsights,
+  });
+}
+
+async function readAllStagedUnits({ workStore, workKey, expectedUnits, maximum }) {
+  if (expectedUnits === 0) return Object.freeze([]);
+  if (expectedUnits > maximum) {
+    throw limitError('Meta staged unit count exceeds the read limit', 'META_END_TO_END_SOURCE_UNIT_LIMIT', {
+      maximum,
+    });
+  }
+  const result = await workStore.listPhaseUnits({
+    workKey,
+    phase: SOURCE_PHASE,
+    afterSequence: 0,
+    limit: maximum,
+  });
+  if (result.units.length !== expectedUnits) {
+    throw permanentError('Meta durable source staging is incomplete', {
+      code: 'META_END_TO_END_SOURCE_STAGING_INCOMPLETE',
+      details: { expectedUnits, observedUnits: result.units.length },
+    });
+  }
+  return Object.freeze(result.units.map((unit) => normalizeStagedPayload(unit.payload)));
+}
+
+function createStagedPayload(unit) {
+  return deepFreeze({
+    schemaVersion: 'meta_end_to_end_staged_source_unit_v1',
+    datasetKey: unit.datasetKey,
+    sourceEntityId: unit.sourceEntityId,
+    sourceStatus: unit.sourceStatus,
+    sourceWatermark: unit.sourceWatermark,
+    pageNumber: unit.pageNumber,
+    rows: unit.rows,
+  });
+}
+
+function normalizeStagedPayload(value) {
+  const payload = requireObject(value, 'staged payload');
+  return deepFreeze({
+    schemaVersion: requireText(payload.schemaVersion, 'staged payload schemaVersion'),
+    datasetKey: requireText(payload.datasetKey, 'staged payload datasetKey'),
+    sourceEntityId: optionalText(payload.sourceEntityId),
+    sourceStatus: requireText(payload.sourceStatus, 'staged payload sourceStatus'),
+    sourceWatermark: optionalText(payload.sourceWatermark),
+    pageNumber: nonNegativeInteger(payload.pageNumber, 'staged payload pageNumber'),
+    rows: requireArray(payload.rows, 'staged payload rows'),
+  });
+}
+
+function sourceContinuation({ connectorKey, operation, state, unit }) {
+  return Object.freeze({
+    status: 'source_continuation',
+    connectorKey,
+    operationId: operation.operationId,
+    continuationRequired: true,
+    continuationPhase: state.stage,
+    stagedUnits: state.unitCount,
+    stagedRows: state.rowCount,
+    sourceStatus: unit.sourceStatus,
+    sourceWatermark: state.sourceWatermark,
+  });
+}
+
+function summarizeSnapshot(snapshot) {
+  if (ORGANIC_CONNECTORS.has(snapshot.connectorKey)) {
+    return Object.freeze({
+      accountRows: 1,
+      contentRows: snapshot.contentResources.length,
+      contentInsightEntities: snapshot.contentInsights.length,
+      contentInsightRows: snapshot.contentInsights.reduce((sum, entry) => sum + entry.insights.length, 0),
+      accountInsightRows: snapshot.accountInsights.length,
+    });
+  }
+  return Object.freeze({
+    accountRows: 1,
+    campaignRows: snapshot.campaigns.length,
+    adSetRows: snapshot.adSets.length,
+    adRows: snapshot.ads.length,
+    creativeRows: snapshot.creatives.length,
+    dailyRows: snapshot.dailyInsights.length,
+  });
+}
+
+function normalizeSourceState(value, connectorKey) {
+  const source = value && typeof value === 'object' ? value : {};
+  const allowedStages = ORGANIC_CONNECTORS.has(connectorKey) ? ORGANIC_STAGES : ADS_STAGES;
+  const stage = source.stage ?? 'account';
+  if (!allowedStages.includes(stage)) {
+    throw permanentError('Meta durable source stage is invalid', {
+      code: 'META_END_TO_END_SOURCE_STATE_INVALID',
+      details: { connectorKey, stage },
+    });
+  }
+  return freezeState({
+    stage,
+    pageState: normalizePageState(source.pageState),
+    contentIds: uniqueText(source.contentIds ?? []),
+    contentIndex: nonNegativeInteger(source.contentIndex ?? 0, 'contentIndex'),
+    unitCount: nonNegativeInteger(source.unitCount ?? 0, 'unitCount'),
+    rowCount: nonNegativeInteger(source.rowCount ?? 0, 'rowCount'),
+    sourceWatermark: optionalText(source.sourceWatermark),
+  });
+}
+
+function normalizePageState(value) {
+  if (value === null || value === undefined) return null;
+  const source = requireObject(value, 'pageState');
+  return Object.freeze({
+    after: optionalText(source.after),
+    visitedCursors: uniqueText(source.visitedCursors ?? []),
+    pageNumber: nonNegativeInteger(source.pageNumber ?? 1, 'pageState.pageNumber'),
+    sourceWatermark: optionalText(source.sourceWatermark),
+    entityId: optionalText(source.entityId),
+  });
+}
+
+function normalizeLimits(value) {
+  const source = requireObject(value ?? {}, 'limits');
+  return Object.freeze({
+    sourceMaxPages: boundedInteger(source.sourceMaxPages ?? 100, 'sourceMaxPages', 1, 100),
+    sourceMaxUnits: boundedInteger(source.sourceMaxUnits ?? 500, 'sourceMaxUnits', 1, 500),
+    sourceMaxRows: boundedInteger(source.sourceMaxRows ?? 50_000, 'sourceMaxRows', 1, 50_000),
+    sourceMaxUnitBytes: boundedInteger(
+      source.sourceMaxUnitBytes ?? 524_288,
+      'sourceMaxUnitBytes',
+      1_024,
+      1_048_576,
+    ),
+    d1RowsPerInvocation: boundedInteger(
+      source.d1RowsPerInvocation ?? 250,
+      'd1RowsPerInvocation',
+      1,
+      1_000,
+    ),
+    larkTablesPerInvocation: boundedInteger(
+      source.larkTablesPerInvocation ?? 1,
+      'larkTablesPerInvocation',
+      1,
+      4,
+    ),
+  });
+}
+
+function normalizeDateRange(value, required) {
+  if (!value) {
+    if (!required) return Object.freeze({});
+    throw permanentError('Meta Ads manual sync requires a bounded date range', {
+      code: 'META_END_TO_END_DATE_RANGE_REQUIRED',
+    });
+  }
+  const source = requireObject(value, 'dateRange');
+  const since = requireDate(source.since, 'dateRange.since');
+  const until = requireDate(source.until, 'dateRange.until');
+  if (since > until) throw new TypeError('dateRange.since cannot be after dateRange.until');
+  return Object.freeze({ since, until });
+}
+
+function requireOperation(value) {
+  const operation = requireObject(value, 'operation');
+  if (operation.stable !== true) {
+    throw permanentError('Meta runtime requires a stable Queue operation', {
+      code: 'META_END_TO_END_QUEUE_OPERATION_REQUIRED',
+    });
+  }
+  return Object.freeze({
+    operationId: requireText(operation.operationId, 'operation.operationId'),
+    workKey: requireText(operation.workKey, 'operation.workKey'),
+    generation: requireTimestamp(operation.generation, 'operation.generation'),
+    originalRequestedAt: requireTimestamp(
+      operation.originalRequestedAt,
+      'operation.originalRequestedAt',
+    ),
+  });
+}
+
+function requireConnector(value) {
+  const connectorKey = requireText(value, 'connectorKey');
+  if (![...ORGANIC_CONNECTORS, ADS_CONNECTOR].includes(connectorKey)) {
+    throw new TypeError(`Unsupported Meta connector: ${connectorKey}`);
+  }
+  return connectorKey;
+}
+
+function assertUnitSize(payload, maximum) {
+  const bytes = new TextEncoder().encode(JSON.stringify(payload)).byteLength;
+  if (bytes > maximum) {
+    throw limitError('Meta source unit exceeds the durable payload byte limit', 'META_END_TO_END_SOURCE_UNIT_TOO_LARGE', {
+      maximum,
+      observed: bytes,
+    });
+  }
+}
+
+function noLarkSyncEngine() {
+  return Object.freeze({
+    planByKey() {
+      throw permanentError('Meta Lark sync engine is unavailable while Lark gate is disabled', {
+        code: 'META_END_TO_END_LARK_GATE_DISABLED',
+      });
+    },
+    executePlan() {
+      throw permanentError('Meta Lark sync engine is unavailable while Lark gate is disabled', {
+        code: 'META_END_TO_END_LARK_GATE_DISABLED',
+      });
+    },
+  });
+}
+
+function cloneState(value) {
+  return {
+    stage: value.stage,
+    pageState: value.pageState ? { ...value.pageState } : null,
+    contentIds: [...value.contentIds],
+    contentIndex: value.contentIndex,
+    unitCount: value.unitCount,
+    rowCount: value.rowCount,
+    sourceWatermark: value.sourceWatermark,
+  };
+}
+
+function freezeState(value) {
+  return deepFreeze({
+    ...value,
+    contentIds: [...value.contentIds],
+  });
+}
+
+function uniqueText(values) {
+  if (!Array.isArray(values)) throw new TypeError('Expected an array of text values');
+  return Object.freeze([...new Set(values
+    .map((value) => optionalText(value))
+    .filter(Boolean))]);
+}
+
+function maxText(left, right) {
+  if (!left) return right ?? null;
+  if (!right) return left;
+  return left > right ? left : right;
+}
+
+function limitError(message, code, details) {
+  return permanentError(message, { code, details });
+}
+
+function requireMethods(value, methods, fieldName) {
+  const object = requireObject(value, fieldName);
+  for (const method of methods) {
+    if (typeof object[method] !== 'function') throw new TypeError(`${fieldName}.${method} is required`);
+  }
+  return object;
+}
+
+function requireObject(value, fieldName) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError(`${fieldName} must be an object`);
+  }
+  return value;
+}
+
+function requireArray(value, fieldName) {
+  if (!Array.isArray(value)) throw new TypeError(`${fieldName} must be an array`);
+  return value;
+}
+
+function requireText(value, fieldName) {
+  if (typeof value !== 'string' || value.trim() === '') throw new TypeError(`${fieldName} is required`);
+  return value.trim();
+}
+
+function optionalText(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value !== 'string' && typeof value !== 'number') return null;
+  return String(value).trim() || null;
+}
+
+function requireTimestamp(value, fieldName) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number < Date.UTC(2000, 0, 1)) {
+    throw new TypeError(`${fieldName} must be a valid timestamp`);
+  }
+  return number;
+}
+
+function nonNegativeInteger(value, fieldName) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number < 0) throw new TypeError(`${fieldName} must be non-negative`);
+  return number;
+}
+
+function boundedInteger(value, fieldName, minimum, maximum) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number < minimum || number > maximum) {
+    throw new TypeError(`${fieldName} must be an integer from ${minimum} to ${maximum}`);
+  }
+  return number;
+}
+
+function requireDate(value, fieldName) {
+  const text = requireText(value, fieldName);
+  if (!/^\d{4}-\d{2}-\d{2}$/u.test(text) || Number.isNaN(Date.parse(`${text}T00:00:00Z`))) {
+    throw new TypeError(`${fieldName} must be YYYY-MM-DD`);
+  }
+  return text;
+}
+
+function deepFreeze(value) {
+  if (!value || typeof value !== 'object' || Object.isFrozen(value)) return value;
+  for (const nested of Object.values(value)) deepFreeze(nested);
+  return Object.freeze(value);
+}

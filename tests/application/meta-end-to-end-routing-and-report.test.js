@@ -34,7 +34,8 @@ test('Meta workstream flags default false and router uses existing catalog jobs'
   });
   assert.equal(router.canRoute({ type: JOB_TYPES.FACEBOOK_ORGANIC_SYNC }), true);
   await router.route({ type: JOB_TYPES.FACEBOOK_ORGANIC_SYNC });
-  await router.routeConnector('meta_ads', { type: 'integration-owned-meta-ads' });
+  assert.equal(router.canRoute({ type: JOB_TYPES.META_ADS_SYNC }), true);
+  await router.route({ type: JOB_TYPES.META_ADS_SYNC });
   assert.deepEqual(calls, ['facebook', 'meta_ads']);
 
   const d1OnlyRouter = createMetaEndToEndJobRouter({

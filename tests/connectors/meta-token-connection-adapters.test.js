@@ -73,9 +73,12 @@ test('Meta Ads adapter normalizes act_ identity and returns counts only', async 
     },
   });
 
-  const result = await adapter.preflight({ expectedAdAccountId: 'act_123' });
+  const result = await adapter.preflight({ expectedAdAccountIds: ['act_123', '456'] });
   assert.equal(result.candidateCount, 2);
   assert.equal(result.activeCandidateCount, 1);
+  assert.equal(result.expectedAccountCount, 2);
+  assert.equal(result.matchedAccountCount, 2);
+  assert.equal(result.missingAccountCount, 0);
   assert.equal(result.identityMatched, true);
   assert.equal(JSON.stringify(result).includes('123'), false);
   assert.equal(JSON.stringify(result).includes('THB'), false);

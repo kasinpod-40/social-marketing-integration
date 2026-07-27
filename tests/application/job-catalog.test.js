@@ -20,7 +20,7 @@ test('active jobs pass implementation guard', () => {
 });
 
 test('planned jobs fail explicitly instead of returning fake success', () => {
-  const definition = getJobDefinition(JOB_TYPES.FACEBOOK_ORGANIC_SYNC);
+  const definition = getJobDefinition(JOB_TYPES.WOOCOMMERCE_COMMERCE_SYNC);
   assert.throws(
     () => assertJobImplemented(definition),
     (error) => error?.code === 'SYNC_JOB_NOT_IMPLEMENTED',

@@ -29,12 +29,15 @@ test('Meta preflight reports three independent validated connections and zero wr
     }),
     metaAds: successAdapter({
       grantedPermissions: ['ads_read', 'business_management'],
-      activeCandidateCount: 1,
+      activeCandidateCount: 2,
+      expectedAccountCount: 2,
+      matchedAccountCount: 2,
+      missingAccountCount: 0,
     }),
     mappings: {
       facebookPageId: 'page-private',
       instagramAccountId: 'ig-private',
-      metaAdAccountId: 'ad-private',
+      metaAdAccountIds: ['ad-private-2', 'ad-private-3'],
     },
   });
 
@@ -47,6 +50,8 @@ test('Meta preflight reports three independent validated connections and zero wr
   ]);
   const serialized = JSON.stringify(result);
   assert.doesNotMatch(serialized, /page-private|ig-private|ad-private/u);
+  assert.equal(result.connectors[2].metadata.expectedAccountCount, 2);
+  assert.equal(result.connectors[2].metadata.matchedAccountCount, 2);
 });
 
 test('Meta preflight distinguishes missing mapping, scope and identity mismatch', async () => {

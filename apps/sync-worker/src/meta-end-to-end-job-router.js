@@ -6,6 +6,7 @@ import { permanentError } from '../../../packages/shared/src/errors/runtime-erro
 const JOB_TO_CONNECTOR = Object.freeze({
   [JOB_TYPES.FACEBOOK_ORGANIC_SYNC]: CONNECTOR_KEYS.FACEBOOK,
   [JOB_TYPES.INSTAGRAM_ORGANIC_SYNC]: CONNECTOR_KEYS.INSTAGRAM,
+  [JOB_TYPES.META_ADS_SYNC]: CONNECTOR_KEYS.META_ADS,
 });
 
 /**
