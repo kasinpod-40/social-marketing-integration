@@ -33,8 +33,10 @@ import {
   parseYouTubeDryRunOperatorArgs,
   validateActiveYouTubeDeployment,
   validateYouTubeDryRunEvidenceSequence,
-  validateRemoteYouTubeDeploymentContract,
 } from './lib/youtube-dry-run-rollout-operator.js';
+import {
+  validateLiveRemoteYouTubeDeploymentContract,
+} from './lib/youtube-live-remote-contract-parser.js';
 
 const execFileAsync = promisify(execFile);
 const repositoryRoot = resolve(process.cwd());
@@ -373,10 +375,22 @@ async function verifyDeployment(phase, target, configs) {
       'YOUTUBE_DRY_RUN_DEPLOYMENT_PROVENANCE_MISSING',
     );
   }
-  const remote = validateRemoteYouTubeDeploymentContract({
+  const remote = validateLiveRemoteYouTubeDeploymentContract({
     versionsView,
     deploymentStatus: status,
-    queueConsumers: [...mainConsumers, ...dlqConsumers],
+    queueConsumerContexts: [
+      {
+        expectedQueueName: target.mainQueueName,
+        response: mainConsumers,
+      },
+      {
+        expectedQueueName: target.dlqName,
+        response: dlqConsumers,
+      },
+    ],
+    expectedD1BindingName: 'MKT_STATE_DB',
+    expectedDatabaseId: localContract.databaseId,
+    expectedDatabaseName: target.databaseName,
     workerName: target.workerName,
     ...triggerState,
     active: phase === 'verify-deployment',
@@ -550,8 +564,7 @@ async function readQueueConsumers(queueName) {
   const output = await wranglerText([
     'queues', 'consumer', 'list', queueName, '--json',
   ]);
-  const parsed = JSON.parse(output);
-  return Array.isArray(parsed) ? parsed : (parsed?.result ?? parsed?.consumers ?? []);
+  return JSON.parse(output);
 }
 
 async function readRemoteTriggerState(target) {

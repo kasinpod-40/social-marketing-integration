@@ -92,6 +92,8 @@
     "rollout:youtube-dry-run:summary": "node scripts/youtube-dry-run-rollout-operator.mjs --phase=summary --execute",
     "validate:youtube-live-remote-contract": "node scripts/validate-youtube-live-remote-contract.mjs",
     "validate:youtube-live-remote-contract:run": "node scripts/validate-youtube-live-remote-contract.mjs --execute",
+    "preflight:youtube-remote-read-only": "node scripts/youtube-remote-read-only-preflight.mjs",
+    "preflight:youtube-remote-read-only:run": "node scripts/youtube-remote-read-only-preflight.mjs --execute",
     "prepare:chatwoot-readiness-config": "node scripts/prepare-chatwoot-safe-wrangler-config.mjs",
     "rollout:chatwoot-readiness": "node scripts/chatwoot-remote-readiness-operator.mjs",
     "rollout:chatwoot-readiness:preflight": "node scripts/chatwoot-remote-readiness-operator.mjs --phase=preflight --execute",
