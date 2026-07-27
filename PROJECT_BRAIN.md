@@ -12,20 +12,24 @@ Historical Root Project Brain ก่อน TikTok post-Lark implementation ถ�
 docs/archive/PROJECT_BRAIN-before-tiktok-post-lark-parity-2026-07-26.md
 ```
 
-## Current verified repository state — 2026-07-26
+## Current verified repository state — 2026-07-27
 
 ```text
 Integration Workspace                         active
 Technical environment                         development
 Runtime profile                               integration_workspace
-TikTok post-Lark implementation               merged via PR #65
-TikTok merge commit                           acb0b76bb3be936319e0e8bed4849592c96761b5
-Reviewed PR head                              5d596d78753f29284667853c46fe87865701ff7e
-Final Branch Verification                    #522 PASS
+TikTok post-Lark pipeline                     merged via PR #65
+TikTok pipeline merge commit                  acb0b76bb3be936319e0e8bed4849592c96761b5
+TikTok guarded rollout operator               merged via PR #71
+TikTok operator merge commit                  e6b8bd0b9098b9a79bae49ff24455187e43a331e
+TikTok operator reviewed head                 df229ccade82ce7869c01bbf75c1cb3fc0f16cd1
+TikTok operator final verification            #558 PASS
+Meta end-to-end implementation                merged via PR #69
+Meta implementation merge commit              11e861cfbc79ea067a90496b205f692ca8bb4d3d
 Migration 0016                                source only / not applied remotely
-Worker deployment                            not run
-Queue send / DLQ redrive                     none
-Remote D1 / Lark mutation                    none
+Worker deployment                             not run for TikTok rollout
+Queue send / DLQ redrive                      none for TikTok rollout
+Remote D1 / Lark mutation                     none for TikTok rollout
 Schedules                                     disabled
 Retention/delete                              blocked
 Production                                    blocked
@@ -81,31 +85,39 @@ Scheduled `metricDate` is the previous completed local day. The scheduler no lon
 
 No second TikTok connector, Reliability stack, Queue/DLQ framework, D1 history writer, Canonical writer, Lark sync engine or Report formula engine was created.
 
-## Merged implementation capabilities
+## Merged guarded rollout operator
 
-PR `#65` added:
-
-- deterministic protected-RAW watermark probing and settling;
-- exact Chemistry K identity validation;
-- additive `tiktok_source_admissions` Migration `0016`;
-- same-watermark idempotent admission and stable Work identity;
-- exact staged-watermark verification before Business writes;
-- D1 Organic Report history over State/Observation/Coverage with more than 800 identities;
-- missing `null`, observed-zero and correction semantics;
-- Lark/D1 shadow parity and fail-closed D1-primary gate;
-- Coverage-gated post-processing Report admission;
-- guarded GET-only operator audit at `/operator/tiktok/post-lark-audit`;
-- optional deterministic Report materialization preparation.
-
-Final Branch Verification `#522` passed:
+PR `#71` added an operator for these separately confirmed phases:
 
 ```text
-Focused staged TikTok tests          4 / 4
-Node Unit / Integration tests        868 / 868
-Workers runtime tests                9 / 9
-Report reliability tests             91 / 91
-Dependency audit                     0 vulnerabilities
-Wrangler deployment dry-run          PASS / no deployment
+plan
+preflight
+backup
+migrate
+deploy-safe
+enable-audit
+audit
+disable-audit
+```
+
+The operator:
+
+- defaults to plan-only;
+- locks the exact Integration Workspace, Chemistry K source, D1 and Worker identity;
+- requires a checksum-verified backup before Migration `0016`;
+- validates exactly pending Migration `0016` and additive post-migration count parity;
+- permits only Audit HTTP during the audit-only deployment;
+- validates route state `404 → 401 → 200 → 404`;
+- retains `readyForManualProcessing=false` as diagnostic evidence;
+- preserves emergency safe-close when the authenticated Audit fails;
+- contains no Queue send, DLQ action, Business write, schedule, retention/delete or Production path.
+
+Final aligned Branch Verification `#558` passed after the merged Meta implementation was included.
+
+Detailed operator closeout:
+
+```text
+docs/project-brain/tiktok-post-lark-rollout-operator-merge-closeout-2026-07-27.md
 ```
 
 ## Default-false controls
@@ -142,31 +154,33 @@ Do not create a parallel Reliability, Queue, D1 writer, Lark sync or Report engi
 ## Parallel Workstreams
 
 ```text
-TikTok Organic       merged PR #65 / Integration rollout pending
-All Meta             separate Branch and Draft PR
-YouTube Organic      separate Branch and Draft PR
-Chatwoot             separate Branch and Draft PR
-WooCommerce          separate Branch and Draft PR
+TikTok Organic       pipeline PR #65 merged / rollout operator PR #71 merged / Remote rollout pending
+All Meta             implementation PR #69 merged / protected runtime wiring remains separate Draft work
+YouTube Organic      separate Draft PR
+Chatwoot             separate Draft PR
+WooCommerce          separate Draft PR
 Google Ads           complete / safely closed
 ```
 
-Each Workstream owns a unique Branch and Draft PR. Migration, deployment, Queue sends, Remote Lark/D1 mutation, schedules and LIVE UAT remain Integration-stream responsibilities only.
+Each remaining Workstream owns a unique Branch and Draft PR. Migration, deployment, Queue sends, Remote Lark/D1 mutation, schedules and LIVE UAT remain Integration-stream responsibilities only.
 
 ## Next separately approved TikTok rollout
 
-Merge does not authorize Runtime actions. The exact order is:
+Repository tooling is merged, but no Remote phase is authorized automatically. The next order is:
 
-1. read-only Remote configuration and schema preflight;
-2. Remote D1 backup;
-3. additive Migration `0016` apply;
-4. flags-false Worker deployment and route smoke;
-5. guarded read-only RAW/D1/Canonical audit;
-6. manual freshness probe and one new-watermark admission;
-7. D1/Canonical/Coverage reconciliation;
-8. Lark-primary + D1-shadow parity;
-9. exact same-watermark rerun with zero Business drift;
-10. D1-primary Report validation with Lark-primary rollback;
-11. only then propose controlled schedule activation.
+1. run the operator plan from an authorized local Integration Workspace runtime;
+2. execute read-only Remote configuration/schema preflight;
+3. retain and review sanitized evidence;
+4. authorize Remote D1 backup separately;
+5. authorize additive Migration `0016` separately;
+6. authorize flags-false Worker deployment separately;
+7. authorize temporary audit-only deployment and one authenticated audit separately;
+8. restore all-flags-false Worker state immediately;
+9. only after a clean audit, consider one manual new-watermark Admission;
+10. reconcile D1/Canonical/Coverage;
+11. validate Lark-primary + D1-shadow parity and exact rerun stability;
+12. validate D1-primary with an immediate Lark-primary rollback path;
+13. only then propose controlled schedule activation.
 
 ## Permanent safety rules
 
