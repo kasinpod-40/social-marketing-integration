@@ -3,11 +3,13 @@
 ## Status
 
 ```text
-TASK_STATUS                    = IMPLEMENTED_PENDING_CI
+TASK_STATUS                    = PASS_FOR_MERGE
 SCOPE                          = REPOSITORY_OPERATOR_ONLY
 CONTRACT_VERSION               = chatwoot-lark-additive-schema-apply-v1
-BASE_MAIN                      = 8364375549f36f0d005aea20864b0bdb5c579adb
+BASE_MAIN                      = 4e31f811a8c9960d0bda714c0c7c0fe125d305aa
 BRANCH                         = integration/chatwoot-lark-additive-schema-apply
+DRAFT_PR                       = #172
+IMPLEMENTATION_HEAD            = 21e5011ef6bb8149fc54d3c633cb688f62e36818
 REMOTE_LARK_APPLY              = NOT_RUN_DURING_IMPLEMENTATION
 PROVIDER_REQUEST               = NONE
 D1_QUEUE_DEPLOY_SCHEDULE       = NONE
@@ -155,6 +157,25 @@ CONFIRM_CHATWOOT_LARK_SCHEMA=APPLY_CHATWOOT_LARK_ADDITIVE_SCHEMA \
 
 This command performs a Remote Lark schema mutation and must be run only after the Repository implementation is merged and exact-head CI passes.
 
+## Exact implementation verification
+
+Implementation head `21e5011ef6bb8149fc54d3c633cb688f62e36818` passed Branch Verification #805 / run `30304575165` completely:
+
+```text
+INSTALL_LOCKED_DEPENDENCIES         = PASS
+SYNTAX_ARCHITECTURE_HYGIENE         = PASS
+FOCUSED_STAGED_TIKTOK               = PASS
+NODE_AND_WORKERS_RUNTIME            = PASS
+REPORT_RELIABILITY                  = PASS
+DEPENDENCY_AUDIT                    = PASS
+WRANGLER_DRY_RUN                    = PASS / NO DEPLOYMENT
+DIAGNOSTICS_ARTIFACT                = 8667939296
+DIAGNOSTICS_DIGEST                  = sha256:384008cb72f0d41bacca515ab590f5bc3d814e573e0cf20b7752b32068649cbe
+REMOTE_ACTION_COUNT                 = 0
+```
+
+Alignment PR #171 merged current `main@4e31f811a8c9960d0bda714c0c7c0fe125d305aa` into the feature Branch. The final feature Diff remains five isolated Chatwoot Lark schema files.
+
 ## Required verification
 
 ```bash
@@ -170,7 +191,7 @@ npm run deploy:dry-run
 
 ## Remaining gates
 
-1. Exact-head Branch Verification and review.
+1. Docs-final exact-head Branch Verification and zero-thread review.
 2. Squash Merge Repository implementation.
 3. Run the single confirmed Apply command from current clean `main`.
 4. Copy the generated 15 mappings into local ignored configuration.
