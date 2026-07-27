@@ -5,23 +5,23 @@
 ```text
 TASK_STATUS                         = IMPLEMENTATION_PASS_INTEGRATION_REVIEW_PENDING
 CURRENT_PROGRAM                     = CHATWOOT_INTEGRATION_RUNTIME_WIRING
-BASE_MAIN                           = 90e367e88a4aad2a443683ca511951a67590ce90
+BASE_MAIN                           = 53c710dcadab14febe5b95078193a185038e0453
 INTEGRATION_BRANCH                  = integration/chatwoot-safe-wiring
 DRAFT_PR                            = #97 / OPEN / DRAFT / UNMERGED
 FOUNDATION_PR                       = #68 / MERGED
 FOUNDATION_MERGE_COMMIT             = 80601de973740e8654b2cea2c4ecf419f4378c0a
 WOOCOMMERCE_INTEGRATION_PR          = #94 / MERGED
 WOOCOMMERCE_MERGE_COMMIT            = 060977cd9ed2933700fbd121c9236e6578ad571e
-YOUTUBE_OPERATOR_CLOSEOUT_MAIN      = 90e367e88a4aad2a443683ca511951a67590ce90
-LATEST_MERGED_MIGRATION             = 0017_woocommerce_commerce.sql
-CHATWOOT_MIGRATION                  = 0018_chatwoot_analytics.sql / SOURCE_ONLY
+TIKTOK_ROUTE_STABILITY_MAIN         = 53c710dcadab14febe5b95078193a185038e0453
+MIGRATION_0017                      = APPLIED_OUTSIDE_WORKSTREAM / DO_NOT_RERUN
+CHATWOOT_MIGRATION                  = 0018_chatwoot_analytics.sql / SOURCE_ONLY / NOT_APPLIED
 IMPLEMENTATION_OWNER                = CHATGPT_WORK_GITHUB_TOOLS
-CODE_VERIFIED_HEAD                  = c8b83d71fd26f86abf203d5ed427a4056ac4af43
-CODE_BRANCH_VERIFICATION            = #648 / 30264683036 / PASS
+ALIGNED_VERIFIED_HEAD               = c44b1b2247b3374d95022eef01317f77c7e0eca0
+BRANCH_VERIFICATION                 = #652 / 30265406254 / PASS
 PROVIDER_EXECUTION                  = NOT_RUN
 TOKEN_READ_OR_ROTATION              = NOT_RUN
 QUEUE_MESSAGE                       = NOT_SENT
-REMOTE_D1_OR_LARK_MUTATION          = NONE
+REMOTE_CHATWOOT_D1_OR_LARK_MUTATION = NONE
 WORKER_DEPLOYMENT                   = NOT_RUN
 SCHEDULE_OR_WEBHOOK                 = DISABLED
 CUSTOMER_OR_PRODUCTION_LIVE_UAT     = NOT_RUN
@@ -34,7 +34,7 @@ MERGE_INTO_MAIN                     = NOT_AUTHORIZED
 The reviewed Chatwoot analytics foundation is wired through the existing Shared Worker,
 Reliability, Queue/DLQ, D1, Coverage and Lark contracts. The implementation allocates additive
 Migration `0018`, adds the protected manual-only runtime route and default-false configuration, and
-stops before every Provider or Remote action.
+stops before every Chatwoot Provider or Remote action.
 
 Detailed contracts and durable project record:
 
@@ -54,6 +54,15 @@ docs/archive/current-task-before-chatwoot-runtime-wiring-after-youtube-operator-
 
 The older TikTok predecessor already remains in its canonical archive on `main`; no duplicate
 Chatwoot-named copy is retained.
+
+## Main alignment
+
+The Chatwoot branch is aligned with current `main` commit
+`53c710dcadab14febe5b95078193a185038e0453`, including the merged TikTok route-stability Hotfix and
+current repository facts. Branch comparison at verification was ahead with behind `0`.
+
+Current `main` records Migration `0017_woocommerce_commerce.sql` as applied remotely outside this
+workstream. It must not be rerun. Chatwoot Migration `0018` remains source-only and unapplied.
 
 ## Completed repository scope
 
@@ -133,40 +142,36 @@ TOKEN_OR_SECRET_COLUMN              = NONE
 
 ## Verification result
 
-Code head `c8b83d71fd26f86abf203d5ed427a4056ac4af43` passed Branch Verification
-`#648` / run `30264683036` after alignment with current `main` and after the deterministic
+Aligned head `c44b1b2247b3374d95022eef01317f77c7e0eca0` passed Branch Verification
+`#652` / run `30265406254` after receiving current `main` and retaining the deterministic
 `syncRunId` regression fix.
 
 ```text
 Install locked dependencies         PASS
 Syntax / architecture / hygiene     PASS
 Focused staged TikTok               4 / 4 PASS
-Node Unit / Integration             1038 / 1038 PASS
+Node Unit / Integration             1050 / 1050 PASS
 Workers runtime                     11 / 11 PASS
 Report reliability                  91 / 91 PASS
+Chatwoot-named tests                38 / 38 PASS
 Dependency audit                    0 vulnerabilities
 Wrangler deployment dry-run         PASS / no deployment
 Diagnostics upload                  PASS
-Artifact                            8652302684
-Artifact digest                     sha256:7f0991284534f75c4f129cf3007f100a4f1216547ebf7f2f16c1ace25c716ed1
+Artifact                            8652588987
+Artifact digest                     sha256:2465e36229a6b1c6a6949f52fd0d57eae56fe77badffea8e359602e22e2622ff
 ```
 
-The full Node suite contains 38 Chatwoot-named contract, normalizer, API client, D1, sync, routing,
-configuration, Migration and resumable-identity tests; all passed. A separate literal ad-hoc
-`node --test ...chatwoot...` command was not exposed by the connected Branch Verification workflow;
-this is recorded accurately rather than claiming a standalone command that did not run.
-
-An earlier aligned run found one stale Job Catalog expectation that still treated Chatwoot as
-`planned`. The production contract was correct; the regression test was updated to assert the new
-`uat_pending`, `manualOnly` state. Later verification passed completely.
+A separate literal ad-hoc `node --test ...chatwoot...` command was not exposed by the connected
+Branch Verification workflow; this is recorded accurately rather than claiming a standalone command
+that did not run.
 
 ## Remote safe state
 
 ```text
 Chatwoot Provider/API request       NOT_RUN
 Customer Token access/rotation      NOT_RUN
-Remote D1 query/backup/apply        NOT_RUN
-Remote D1 Business mutation         NONE
+Remote D1 query/backup/0018 apply   NOT_RUN
+Remote Chatwoot Business mutation   NONE
 Remote Lark schema/data mutation    NONE
 Queue send/retry/DLQ action         NONE
 Worker deployment                   NOT_RUN
@@ -186,17 +191,18 @@ Production.
 
 ```text
 STATUS                              = IMPLEMENTATION_PASS_INTEGRATION_REVIEW_PENDING
-FINAL_MAIN_SHA                      = 90e367e88a4aad2a443683ca511951a67590ce90
-CODE_VERIFIED_HEAD                  = c8b83d71fd26f86abf203d5ed427a4056ac4af43
+FINAL_MAIN_SHA                      = 53c710dcadab14febe5b95078193a185038e0453
+ALIGNED_VERIFIED_HEAD               = c44b1b2247b3374d95022eef01317f77c7e0eca0
 AHEAD_BEHIND_AT_CODE_REVIEW         = AHEAD / BEHIND 0
 FILES_CHANGED_AT_CODE_REVIEW        = 19
-MIGRATION_AUDIT                     = PASS / 14 TABLES / NON-DESTRUCTIVE
+MIGRATION_0017                      = APPLIED_OUTSIDE_WORKSTREAM / DO_NOT_RERUN
+MIGRATION_0018_AUDIT                = PASS / 14 TABLES / NON-DESTRUCTIVE / SOURCE_ONLY
 CHATWOOT_TESTS_IN_FULL_SUITE        = 38 / 38 PASS
-FULL_NODE_TESTS                     = 1038 / 1038 PASS
+FULL_NODE_TESTS                     = 1050 / 1050 PASS
 WORKERS_RUNTIME_TESTS               = 11 / 11 PASS
 REPORT_RELIABILITY                  = 91 / 91 PASS
 DEPENDENCY_AUDIT                    = 0 VULNERABILITIES
 WRANGLER_DRY_RUN                    = PASS / NO DEPLOYMENT
-REMOTE_ACTIONS                      = NONE
+REMOTE_ACTIONS_BY_THIS_WORKSTREAM   = NONE
 INTEGRATION_REVIEW                  = PENDING_EXACT_FINAL_HEAD
 ```
