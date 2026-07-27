@@ -9,6 +9,7 @@ export async function generateWooCommerceCommerceReport(input = {}) {
     periodEnd: requireText(input.periodEnd, 'periodEnd'),
     currency: requireText(input.currency, 'currency').toUpperCase(),
   });
+  const now = normalizeNow(input.now);
   const totals = sumDaily(range.daily);
   const products = range.products.map((row) => Object.freeze({
     product_key: row.product_key,
@@ -27,11 +28,19 @@ export async function generateWooCommerceCommerceReport(input = {}) {
     currency: range.currency,
     period_start: range.periodStart,
     period_end: range.periodEnd,
-    data_status: resolveDataStatus(range.daily, products),
+    data_status: resolveDataStatus(range.daily, products, range.coverage, now),
     source_watermark: latestText([
       ...range.daily.map((row) => row.source_revision),
       ...range.products.map((row) => row.source_revision),
+      range.coverage?.source_watermark,
     ]),
+    coverage: range.coverage ? Object.freeze({
+      coverage_run_id: range.coverage.coverage_run_id,
+      status: range.coverage.status,
+      scope_mode: range.coverage.scope_mode,
+      revisable_until: nullableInteger(range.coverage.revisable_until),
+      completed_at: nullableInteger(range.coverage.completed_at),
+    }) : null,
     totals: Object.freeze(totals),
     products: Object.freeze(products),
     payment_methods: Object.freeze(aggregatePaymentMethods(range.orders)),
@@ -124,14 +133,25 @@ function sortSummaries(byKey, keyField) {
       || left[keyField].localeCompare(right[keyField]));
 }
 
-function resolveDataStatus(daily, products) {
-  if (daily.length === 0) return 'no_data_confirmed';
+function resolveDataStatus(daily, products, coverage, now) {
+  if (coverage?.status === 'source_unavailable') return 'source_unavailable';
+  if (daily.length === 0) {
+    return coverage?.status === 'no_data_confirmed' && coverage?.scope_mode === 'full_inventory'
+      ? 'no_data_confirmed'
+      : 'partial';
+  }
   const statuses = new Set([
     ...daily.map((row) => row.data_status),
     ...products.map((row) => row.data_status),
   ]);
   if (statuses.has('source_unavailable')) return 'source_unavailable';
-  if (statuses.has('partial') || statuses.has('revisable')) return 'partial';
+  if (statuses.has('partial')) return 'partial';
+  if (statuses.has('revisable')) return 'revisable';
+  if (!coverage || coverage.status !== 'complete' || coverage.scope_mode !== 'full_inventory') {
+    return 'partial';
+  }
+  const revisableUntil = nullableInteger(coverage.revisable_until);
+  if (revisableUntil !== null && revisableUntil > now) return 'revisable';
   return 'complete';
 }
 
@@ -169,6 +189,25 @@ function integer(value) {
   return number;
 }
 
+function nullableInteger(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const number = Number(value);
+  return Number.isSafeInteger(number) ? number : null;
+}
+
+function normalizeNow(value) {
+  if (value === undefined) return Date.now();
+  const raw = typeof value === 'function' ? value() : value;
+  const number = Number(raw);
+  if (!Number.isSafeInteger(number) || number < 0) {
+    throw permanentError('WooCommerce report now must be an epoch-millisecond integer', {
+      code: 'WOOCOMMERCE_REPORT_INPUT_INVALID',
+      details: { fieldName: 'now' },
+    });
+  }
+  return number;
+}
+
 function textOrUnknown(value) {
   return nullableText(value) ?? 'unknown';
 }
@@ -178,7 +217,9 @@ function nullableText(value) {
 }
 
 function requireMethods(value, methods, fieldName) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError(`${fieldName} is required`);
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError(`${fieldName} is required`);
+  }
   for (const method of methods) {
     if (typeof value[method] !== 'function') throw new TypeError(`${fieldName}.${method} is required`);
   }
