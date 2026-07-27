@@ -27,7 +27,7 @@ export async function syncYouTubeOrganicEndToEnd(input = {}) {
       code: 'YOUTUBE_END_TO_END_LARK_WRITE_DISABLED',
     });
   }
-  if (larkWriteEnabled && !d1WriteEnabled) {
+  if (!dryRun && larkWriteEnabled && !d1WriteEnabled) {
     throw permanentError('YouTube Lark writes require D1-first storage', {
       code: 'YOUTUBE_END_TO_END_D1_FIRST_REQUIRED',
     });
@@ -57,6 +57,9 @@ export async function syncYouTubeOrganicEndToEnd(input = {}) {
     workKey: requireText(input.workKey, 'workKey'),
     generation,
     scopeMode,
+    assertLockActive: typeof input.assertLockActive === 'function'
+      ? input.assertLockActive
+      : async () => undefined,
   });
   const storageSyncEngine = new YouTubeStorageFirstSyncEngine({
     tableSyncEngine: requireSyncEngine(input.syncEngine),
