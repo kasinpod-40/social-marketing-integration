@@ -20,6 +20,11 @@ const shimModulePath = join(
   'scripts',
   'meta-d1-only-wrangler-compat-shim.mjs',
 );
+const generatedConfigClockPreloadPath = join(
+  repositoryRoot,
+  'scripts',
+  'meta-d1-only-generated-config-clock-preload.mjs',
+);
 
 let tempDirectory = null;
 try {
@@ -48,7 +53,12 @@ try {
 
   const child = spawn(
     process.execPath,
-    [operatorPath, ...process.argv.slice(2)],
+    [
+      '--import',
+      pathToFileURL(generatedConfigClockPreloadPath).href,
+      operatorPath,
+      ...process.argv.slice(2),
+    ],
     {
       cwd: repositoryRoot,
       env: childEnv,
