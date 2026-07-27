@@ -1,9 +1,11 @@
 import {
   CHATWOOT_LARK_WRITE_TARGETS,
+  finalizeChatwootCoverageRuns,
   prepareChatwootAnalyticsSync,
   readChatwootWriteSetPath,
 } from './prepare-chatwoot-analytics-sync.js';
 import {
+  hashChatwootLabelTitle,
   normalizeChatwootAccount,
   normalizeChatwootAgent,
   normalizeChatwootContact,
@@ -20,29 +22,25 @@ const DEFAULT_INCREMENTAL_OVERLAP_HOURS = 48;
 const DEFAULT_MAX_CONVERSATIONS = 5_000;
 const DEFAULT_MAX_CONTACTS = 5_000;
 const DEFAULT_MAX_REPORTING_EVENTS = 10_000;
-const DEFAULT_MAX_MESSAGE_PAGES_PER_CONVERSATION = 10;
+const DEFAULT_MAX_MESSAGE_PAGES_PER_CONVERSATION = 50;
 const DEFAULT_MAX_MESSAGES_PER_CONVERSATION = 1_000;
+const STORE_READ_BATCH_SIZE = 500;
 
 const CHATWOOT_STORE_METHODS = Object.freeze([
   'upsertAccountState', 'upsertInboxState', 'upsertContactState', 'upsertAgentState',
   'upsertTeamState', 'upsertLabelState', 'upsertConversationState',
   'upsertConversationLabelState', 'upsertMessageAnalyticsState', 'upsertReportingEventFact',
   'upsertConversationDailyFact', 'upsertAgentDailyFact', 'upsertInboxDailyFact',
-  'upsertAccountDailyFact', 'readConversationStates',
+  'upsertAccountDailyFact', 'readConversationStates', 'readConversationLabelStates',
 ]);
 
-/**
- * Execute one bounded Chatwoot analytics polling unit.
- *
- * The future Worker integration owns Reliability, distributed lock, generation fence,
- * Queue retry/DLQ and durable continuation. This use case performs no Queue operation.
- */
+/** Execute one bounded Chatwoot polling unit using injected shared runtime contracts. */
 export async function syncChatwootAnalytics(input = {}) {
-  assertExecutionGates(input);
-  const context = readContext(input);
+  const gates = assertExecutionGates(input);
+  const context = readContext(input, gates);
   const client = requireMethods(input.client, [
     'listInboxes', 'listAgents', 'listTeams', 'listLabels',
-    'listConversationsPage', 'listContactsPage', 'listAccountReportingEventsPage',
+    'listConversationsPage', 'listContactsPage', 'listConversationReportingEvents',
     'listConversationLabels', 'listMessagesPage', 'collectPages',
   ], 'client');
   const chatwootStore = requireMethods(input.chatwootStore, CHATWOOT_STORE_METHODS, 'chatwootStore');
@@ -52,19 +50,19 @@ export async function syncChatwootAnalytics(input = {}) {
   const incrementalStateStore = requireMethods(input.incrementalStateStore, [
     'loadCheckpoint', 'saveCheckpoint',
   ], 'incrementalStateStore');
-  const repository = requireObject(input.repository, 'repository');
-  const syncEngine = requireMethods(input.syncEngine, ['planByKey', 'executePlan'], 'syncEngine');
-  const tables = requireObject(input.tables, 'tables');
+  const lark = readLarkDependencies(input, gates);
   const assertLockActive = typeof input.assertLockActive === 'function'
     ? input.assertLockActive
     : async () => undefined;
 
   await assertLockActive();
   const checkpoint = await incrementalStateStore.loadCheckpoint(context.cursorKey);
-  const cutoff = calculateCutoff(checkpoint?.cursor?.lastSuccessfulSyncAt, context.overlapHours);
+  const cutoff = context.fullSnapshot
+    ? null
+    : calculateCutoff(checkpoint?.cursor?.lastSuccessfulSyncAt, context.overlapHours);
 
   const [sourceInboxes, sourceAgents, sourceTeams, sourceLabels, conversationCollection,
-    contactCollection, reportingEventCollection] = await Promise.all([
+    contactCollection] = await Promise.all([
     client.listInboxes(),
     client.listAgents(),
     client.listTeams(),
@@ -77,33 +75,36 @@ export async function syncChatwootAnalytics(input = {}) {
       (page) => client.listContactsPage({ page, sort: '-last_activity_at' }),
       { maxRows: context.maxContacts },
     ),
-    client.collectPages(
-      (page) => client.listAccountReportingEventsPage({ page }),
-      { maxRows: context.maxReportingEvents },
-    ),
   ]);
 
   await assertLockActive();
-  const sourceConversations = filterByCutoff(
-    conversationCollection.rows,
-    cutoff,
-    (row) => readTimestampMs(row?.updated_at ?? row?.last_activity_at),
-  );
-  const sourceContacts = filterByCutoff(
-    contactCollection.rows,
-    cutoff,
-    (row) => readTimestampMs(row?.updated_at ?? row?.last_activity_at ?? row?.created_at),
-  );
-  const sourceReportingEvents = filterByCutoff(
-    reportingEventCollection.rows,
-    cutoff,
-    (row) => readTimestampMs(row?.updated_at ?? row?.created_at ?? row?.event_end_time),
-  );
-
-  const previousStates = await chatwootStore.readConversationStates({
-    accountKey: context.accountKey,
-    externalConversationIds: sourceConversations.map((row) => row.id),
-  });
+  const sourceConversations = context.fullSnapshot
+    ? conversationCollection.rows
+    : filterByCutoff(
+      conversationCollection.rows,
+      cutoff,
+      (row) => readTimestampMs(row?.updated_at ?? row?.last_activity_at),
+    );
+  const sourceContacts = context.fullSnapshot
+    ? contactCollection.rows
+    : filterByCutoff(
+      contactCollection.rows,
+      cutoff,
+      (row) => readTimestampMs(row?.updated_at ?? row?.last_activity_at ?? row?.created_at),
+    );
+  const selectedConversationIds = sourceConversations.map((row) => row.id);
+  const [previousStates, previousConversationLabels] = await Promise.all([
+    readStoreInBatches(
+      chatwootStore.readConversationStates.bind(chatwootStore),
+      context.accountKey,
+      selectedConversationIds,
+    ),
+    readStoreInBatches(
+      chatwootStore.readConversationLabelStates.bind(chatwootStore),
+      context.accountKey,
+      selectedConversationIds,
+    ),
+  ]);
   const previousById = new Map(previousStates.map((row) => [row.externalConversationId, row]));
 
   const normalizationContext = Object.freeze({
@@ -118,49 +119,58 @@ export async function syncChatwootAnalytics(input = {}) {
   const agents = await mapAsync(sourceAgents, (row) => normalizeChatwootAgent(row, normalizationContext));
   const teams = await mapAsync(sourceTeams, (row) => normalizeChatwootTeam(row, normalizationContext));
   const labels = await mapAsync(sourceLabels, (row) => normalizeChatwootLabel(row, normalizationContext));
-  const labelIdsByTitle = buildLabelTitleIndex(labels);
-  const reportingEvents = await mapAsync(
-    sourceReportingEvents,
-    (row) => normalizeChatwootReportingEvent(row, normalizationContext),
-  );
-  const eventsByConversation = groupBy(
-    reportingEvents.filter((row) => row.externalConversationId),
-    (row) => row.externalConversationId,
-  );
+  const labelIdsByTitleHash = buildLabelTitleHashIndex(labels);
 
   const messages = [];
+  const reportingEvents = [];
   const conversations = [];
   for (const sourceConversation of sourceConversations) {
     await assertLockActive();
     const externalConversationId = requirePositiveId(sourceConversation.id, 'conversation.id');
-    const sourceMessages = await collectConversationMessages({
-      client,
-      externalConversationId,
-      maxPages: context.maxMessagePagesPerConversation,
-      maxRows: context.maxMessagesPerConversation,
-    });
+    const [sourceMessages, sourceConversationEvents] = await Promise.all([
+      collectConversationMessages({
+        client,
+        externalConversationId,
+        maxPages: context.maxMessagePagesPerConversation,
+        maxRows: context.maxMessagesPerConversation,
+      }),
+      client.listConversationReportingEvents(externalConversationId),
+    ]);
+    if (reportingEvents.length + sourceConversationEvents.length > context.maxReportingEvents) {
+      throw permanentError('Chatwoot reporting events exceeded configured row limit', {
+        code: 'CHATWOOT_REPORTING_EVENT_LIMIT',
+        details: { maxRows: context.maxReportingEvents },
+      });
+    }
     const normalizedMessages = await mapAsync(sourceMessages, (row) => normalizeChatwootMessage(row, {
       ...normalizationContext,
       externalConversationId,
       externalInboxId: sourceConversation.inbox_id,
     }));
+    const normalizedEvents = await mapAsync(
+      sourceConversationEvents,
+      (row) => normalizeChatwootReportingEvent(row, normalizationContext),
+    );
     messages.push(...normalizedMessages);
+    reportingEvents.push(...normalizedEvents);
 
     const labelTitles = await readConversationLabelTitles(client, sourceConversation, externalConversationId);
-    const labelIds = labelTitles.map((title) => {
-      const id = labelIdsByTitle.get(normalizeLabelTitle(title));
+    const labelIds = [];
+    for (const title of labelTitles) {
+      const titleHash = await hashChatwootLabelTitle(title);
+      const id = labelIdsByTitleHash.get(titleHash);
       if (!id) {
         throw permanentError('Chatwoot conversation references an unknown label', {
           code: 'CHATWOOT_LABEL_MAPPING_MISSING',
         });
       }
-      return id;
-    });
+      labelIds.push(id);
+    }
     const previous = previousById.get(externalConversationId) ?? null;
     conversations.push(await normalizeChatwootConversation(sourceConversation, {
       ...normalizationContext,
       messages: normalizedMessages,
-      reportingEvents: eventsByConversation.get(externalConversationId) ?? [],
+      reportingEvents: normalizedEvents,
       labelIds,
       previousStatus: previous?.status ?? null,
       previousSourceUpdatedAt: previous?.sourceUpdatedAt ?? null,
@@ -177,6 +187,7 @@ export async function syncChatwootAnalytics(input = {}) {
     coverageRunIdPrefix: context.coverageRunIdPrefix,
     observedAt: context.observedAt,
     fullSnapshot: context.fullSnapshot,
+    includeReports: gates.reportWriteEnabled,
     account,
     inboxes,
     contacts,
@@ -186,31 +197,41 @@ export async function syncChatwootAnalytics(input = {}) {
     conversations,
     messages,
     reportingEvents,
+    previousConversationLabels,
   });
 
-  const larkPlans = await planLarkWrites({
-    larkWriteSet: writeSets.lark,
-    repository,
-    syncEngine,
-    tables,
-  });
+  const larkPlans = gates.larkWriteEnabled
+    ? await planLarkWrites({
+      larkWriteSet: writeSets.lark,
+      repository: lark.repository,
+      syncEngine: lark.syncEngine,
+      tables: lark.tables,
+      reportWriteEnabled: gates.reportWriteEnabled,
+    })
+    : Object.freeze([]);
 
+  await saveCoverageRuns(writeSets.d1.coverageRuns, coverageStore, assertLockActive);
   await assertLockActive();
   const d1Result = await executeD1Writes({
     writeSet: writeSets.d1,
     chatwootStore,
-    coverageStore,
     assertLockActive,
   });
-  const larkResult = await executeLarkWrites({
-    plans: larkPlans,
-    syncEngine,
-    assertLockActive,
-  });
+  const larkResult = gates.larkWriteEnabled
+    ? await executeLarkWrites({ plans: larkPlans, syncEngine: lark.syncEngine, assertLockActive })
+    : disabledLarkResult();
+
+  await assertLockActive();
+  await coverageStore.saveCoverageEntities(writeSets.d1.coverageEntities);
+  const finalCoverageRuns = finalizeChatwootCoverageRuns(writeSets.d1.coverageRuns, context.observedAt);
+  await saveCoverageRuns(finalCoverageRuns, coverageStore, assertLockActive);
 
   await assertLockActive();
   const priorCursor = checkpoint?.cursor ?? null;
-  const incrementalRunCount = nonNegativeInteger(priorCursor?.incrementalRunCount ?? 0, 'incrementalRunCount') + 1;
+  const incrementalRunCount = nonNegativeInteger(
+    priorCursor?.incrementalRunCount ?? 0,
+    'incrementalRunCount',
+  ) + 1;
   const checkpointResult = await incrementalStateStore.saveCheckpoint({
     cursor: {
       cursorKey: context.cursorKey,
@@ -219,7 +240,9 @@ export async function syncChatwootAnalytics(input = {}) {
       accountKey: context.accountKey,
       source: 'chatwoot_application_api',
       syncType: context.fullSnapshot ? 'full' : 'incremental',
-      lastMetricDate: writeSets.d1.accountDaily.at(-1)?.metric_date ?? null,
+      lastMetricDate: gates.reportWriteEnabled
+        ? writeSets.d1.accountDaily.at(-1)?.metric_date ?? null
+        : priorCursor?.lastMetricDate ?? null,
       dictionaryHash: null,
       lastFullSyncAt: context.fullSnapshot ? context.observedAt : priorCursor?.lastFullSyncAt ?? null,
       lastSuccessfulSyncAt: context.observedAt,
@@ -233,10 +256,10 @@ export async function syncChatwootAnalytics(input = {}) {
 
   return Object.freeze({
     status: 'completed',
+    gates,
     source: Object.freeze({
       conversationPages: conversationCollection.pagesProcessed,
       contactPages: contactCollection.pagesProcessed,
-      reportingEventPages: reportingEventCollection.pagesProcessed,
       conversationsScanned: conversationCollection.rows.length,
       conversationsSelected: sourceConversations.length,
       contactsSelected: sourceContacts.length,
@@ -246,16 +269,20 @@ export async function syncChatwootAnalytics(input = {}) {
     }),
     d1: d1Result,
     lark: larkResult,
+    coverage: Object.freeze({ status: 'complete', runs: finalCoverageRuns.length }),
     checkpoint: checkpointResult,
-    reconciliation: writeSets.reconciliation,
+    reconciliation: Object.freeze({ ...writeSets.reconciliation, sinksComplete: true }),
   });
 }
 
 function assertExecutionGates(input) {
-  if (input.d1WriteEnabled !== true
-    || input.larkWriteEnabled !== true
-    || input.checkpointWriteEnabled !== true) {
-    throw permanentError('Chatwoot D1, Lark and checkpoint write gates must all be explicitly enabled', {
+  if (input.connectorEnabled !== true) {
+    throw permanentError('Chatwoot connector gate must be explicitly enabled', {
+      code: 'CHATWOOT_CONNECTOR_DISABLED',
+    });
+  }
+  if (input.d1WriteEnabled !== true || input.checkpointWriteEnabled !== true) {
+    throw permanentError('Chatwoot D1 and checkpoint write gates must be explicitly enabled', {
       code: 'CHATWOOT_PROCESSING_GATES_DISABLED',
     });
   }
@@ -264,10 +291,33 @@ function assertExecutionGates(input) {
       code: 'CHATWOOT_WEBHOOK_NOT_SUPPORTED',
     });
   }
+  if (input.reportWriteEnabled === true && input.fullSnapshot !== true) {
+    throw permanentError('Chatwoot report writes require an approved full snapshot', {
+      code: 'CHATWOOT_REPORT_REQUIRES_FULL_SNAPSHOT',
+    });
+  }
+  return Object.freeze({
+    connectorEnabled: true,
+    d1WriteEnabled: true,
+    larkWriteEnabled: input.larkWriteEnabled === true,
+    reportWriteEnabled: input.reportWriteEnabled === true,
+    checkpointWriteEnabled: true,
+    webhookEnabled: false,
+  });
 }
 
-function readContext(input) {
+function readLarkDependencies(input, gates) {
+  if (!gates.larkWriteEnabled) return Object.freeze({ repository: null, syncEngine: null, tables: null });
+  return Object.freeze({
+    repository: requireObject(input.repository, 'repository'),
+    syncEngine: requireMethods(input.syncEngine, ['planByKey', 'executePlan'], 'syncEngine'),
+    tables: requireObject(input.tables, 'tables'),
+  });
+}
+
+function readContext(input, gates) {
   const accountKey = requireIdentity(input.accountKey, 'accountKey');
+  const fullSnapshot = input.fullSnapshot === true;
   return Object.freeze({
     customerProfile: requireText(input.customerProfile, 'customerProfile'),
     customerKey: requireIdentity(input.customerKey, 'customerKey'),
@@ -278,7 +328,8 @@ function readContext(input) {
     coverageRunIdPrefix: requireText(input.coverageRunIdPrefix ?? input.syncRunId, 'coverageRunIdPrefix'),
     observedAt: positiveInteger(input.observedAt ?? Date.now(), 'observedAt'),
     cursorKey: input.cursorKey ?? `chatwoot:${accountKey}:analytics`,
-    fullSnapshot: input.fullSnapshot === true,
+    fullSnapshot,
+    reportWriteEnabled: gates.reportWriteEnabled,
     overlapHours: boundedInteger(
       input.incrementalOverlapHours ?? DEFAULT_INCREMENTAL_OVERLAP_HOURS,
       'incrementalOverlapHours',
@@ -302,44 +353,79 @@ function readContext(input) {
       input.maxMessagePagesPerConversation ?? DEFAULT_MAX_MESSAGE_PAGES_PER_CONVERSATION,
       'maxMessagePagesPerConversation',
       1,
-      100,
+      1_000,
     ),
     maxMessagesPerConversation: boundedInteger(
       input.maxMessagesPerConversation ?? DEFAULT_MAX_MESSAGES_PER_CONVERSATION,
       'maxMessagesPerConversation',
       1,
-      10_000,
+      100_000,
     ),
   });
 }
 
 async function collectConversationMessages(input) {
-  const rows = [];
-  let after = null;
-  for (let page = 1; page <= input.maxPages; page += 1) {
+  const first = await input.client.listMessagesPage({
+    conversationId: input.externalConversationId,
+  });
+  const rows = [...first.rows];
+  const seen = new Set(rows.map((row) => requirePositiveId(row.id, 'message.id')));
+  if (rows.length > input.maxRows) throwMessageRowLimit(rows.length, input.maxRows);
+  if (!first.hasMore || rows.length === 0) return Object.freeze(rows);
+
+  let before = first.nextBefore;
+  if (!before) throwMessageCursorError();
+  for (let page = 2; page <= input.maxPages; page += 1) {
     const result = await input.client.listMessagesPage({
       conversationId: input.externalConversationId,
-      after,
+      before,
     });
+    for (const row of result.rows) {
+      const id = requirePositiveId(row.id, 'message.id');
+      if (seen.has(id)) throwMessageCursorError();
+      seen.add(id);
+    }
     if (rows.length + result.rows.length > input.maxRows) {
-      throw permanentError('Chatwoot conversation message volume exceeds configured limit', {
-        code: 'CHATWOOT_MESSAGE_ROW_LIMIT',
-        details: { rows: rows.length + result.rows.length, maxRows: input.maxRows },
-      });
+      throwMessageRowLimit(rows.length + result.rows.length, input.maxRows);
     }
-    rows.push(...result.rows);
+    rows.unshift(...result.rows);
     if (!result.hasMore || result.rows.length === 0) return Object.freeze(rows);
-    if (!result.nextAfter || result.nextAfter === after) {
-      throw permanentError('Chatwoot message cursor did not advance', {
-        code: 'CHATWOOT_MESSAGE_CURSOR_REPEATED',
-      });
-    }
-    after = result.nextAfter;
+    if (!result.nextBefore || Number(result.nextBefore) >= Number(before)) throwMessageCursorError();
+    before = result.nextBefore;
   }
   throw permanentError('Chatwoot message pagination exceeded configured max pages', {
     code: 'CHATWOOT_MESSAGE_PAGINATION_LIMIT',
     details: { maxPages: input.maxPages },
   });
+}
+
+function throwMessageCursorError() {
+  throw permanentError('Chatwoot message cursor did not advance', {
+    code: 'CHATWOOT_MESSAGE_CURSOR_REPEATED',
+  });
+}
+
+function throwMessageRowLimit(rows, maxRows) {
+  throw permanentError('Chatwoot conversation message volume exceeds configured limit', {
+    code: 'CHATWOOT_MESSAGE_ROW_LIMIT',
+    details: { rows, maxRows },
+  });
+}
+
+async function readStoreInBatches(readMethod, accountKey, externalConversationIds) {
+  const ids = [...new Set(externalConversationIds.map((value) => requirePositiveId(
+    value,
+    'externalConversationId',
+  )))];
+  const result = [];
+  for (let index = 0; index < ids.length; index += STORE_READ_BATCH_SIZE) {
+    const rows = await readMethod({
+      accountKey,
+      externalConversationIds: ids.slice(index, index + STORE_READ_BATCH_SIZE),
+    });
+    result.push(...requireArray(rows, 'store read rows'));
+  }
+  return Object.freeze(result);
 }
 
 async function readConversationLabelTitles(client, conversation, externalConversationId) {
@@ -349,27 +435,23 @@ async function readConversationLabelTitles(client, conversation, externalConvers
   return client.listConversationLabels(externalConversationId);
 }
 
-function buildLabelTitleIndex(labels) {
+function buildLabelTitleHashIndex(labels) {
   const result = new Map();
   for (const row of labels) {
-    const key = normalizeLabelTitle(row.title);
-    if (result.has(key) && result.get(key) !== row.externalLabelId) {
+    if (result.has(row.titleHash) && result.get(row.titleHash) !== row.externalLabelId) {
       throw permanentError('Chatwoot account contains duplicate normalized label titles', {
         code: 'CHATWOOT_LABEL_MAPPING_AMBIGUOUS',
       });
     }
-    result.set(key, row.externalLabelId);
+    result.set(row.titleHash, row.externalLabelId);
   }
   return result;
-}
-
-function normalizeLabelTitle(value) {
-  return requireText(value, 'label title').trim().toLowerCase();
 }
 
 async function planLarkWrites(input) {
   const plans = [];
   for (const target of CHATWOOT_LARK_WRITE_TARGETS) {
+    if (target.requiresReport && !input.reportWriteEnabled) continue;
     const tableId = requireText(input.tables[target.tableKey], `tables.${target.tableKey}`);
     const rows = readChatwootWriteSetPath(input.larkWriteSet, target.path);
     plans.push(Object.freeze({
@@ -398,20 +480,20 @@ async function executeLarkWrites(input) {
     created += result.created;
     updated += result.updated;
     skipped += result.skipped;
-    tables.push(Object.freeze({
-      tableKey: entry.target.tableKey,
-      keyField: entry.target.keyField,
-      ...result,
-    }));
+    tables.push(Object.freeze({ tableKey: entry.target.tableKey, keyField: entry.target.keyField, ...result }));
   }
-  return Object.freeze({ created, updated, skipped, tables: Object.freeze(tables) });
+  return Object.freeze({ enabled: true, created, updated, skipped, tables: Object.freeze(tables) });
+}
+
+function disabledLarkResult() {
+  return Object.freeze({ enabled: false, created: 0, updated: 0, skipped: 0, tables: Object.freeze([]) });
 }
 
 async function executeD1Writes(input) {
   const specifications = [
     ['account', [input.writeSet.account], 'upsertAccountState'],
     ['inboxes', input.writeSet.inboxes, 'upsertInboxState'],
-    ['contacts', input.writeSet.contacts, 'upsertContactState'],
+    ['resolvedContacts', input.writeSet.resolvedContacts, 'upsertContactState'],
     ['agents', input.writeSet.agents, 'upsertAgentState'],
     ['teams', input.writeSet.teams, 'upsertTeamState'],
     ['labels', input.writeSet.labels, 'upsertLabelState'],
@@ -440,20 +522,14 @@ async function executeD1Writes(input) {
     skipped += datasetSkipped;
     datasets.push(Object.freeze({ dataset, rows: rows.length, written: datasetWritten, skipped: datasetSkipped }));
   }
+  return Object.freeze({ written, skipped, datasets: Object.freeze(datasets) });
+}
 
-  for (const row of input.writeSet.coverageRuns) {
-    await input.assertLockActive();
-    await input.coverageStore.saveCoverageRun(row);
+async function saveCoverageRuns(runs, coverageStore, assertLockActive) {
+  for (const row of runs) {
+    await assertLockActive();
+    await coverageStore.saveCoverageRun(row);
   }
-  await input.assertLockActive();
-  await input.coverageStore.saveCoverageEntities(input.writeSet.coverageEntities);
-  return Object.freeze({
-    written,
-    skipped,
-    coverageRuns: input.writeSet.coverageRuns.length,
-    coverageEntities: input.writeSet.coverageEntities.length,
-    datasets: Object.freeze(datasets),
-  });
 }
 
 function filterByCutoff(rows, cutoff, readTimestamp) {
@@ -481,16 +557,6 @@ function readTimestampMs(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function groupBy(rows, keyFn) {
-  const result = new Map();
-  for (const row of rows) {
-    const key = keyFn(row);
-    if (!result.has(key)) result.set(key, []);
-    result.get(key).push(row);
-  }
-  return result;
-}
-
 async function mapAsync(values, mapper) {
   const result = [];
   for (const value of values) result.push(await mapper(value));
@@ -506,7 +572,14 @@ function requireMethods(value, methods, fieldName) {
 }
 
 function requireObject(value, fieldName) {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new TypeError(`${fieldName} must be an object`);
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError(`${fieldName} must be an object`);
+  }
+  return value;
+}
+
+function requireArray(value, fieldName) {
+  if (!Array.isArray(value)) throw new TypeError(`${fieldName} must be an array`);
   return value;
 }
 
@@ -518,19 +591,25 @@ function requireIdentity(value, fieldName) {
 
 function requirePositiveId(value, fieldName) {
   const number = Number(value);
-  if (!Number.isSafeInteger(number) || number <= 0) throw new TypeError(`${fieldName} must be a positive safe integer`);
+  if (!Number.isSafeInteger(number) || number <= 0) {
+    throw new TypeError(`${fieldName} must be a positive safe integer`);
+  }
   return String(number);
 }
 
 function positiveInteger(value, fieldName) {
   const number = Number(value);
-  if (!Number.isSafeInteger(number) || number <= 0) throw new TypeError(`${fieldName} must be a positive integer`);
+  if (!Number.isSafeInteger(number) || number <= 0) {
+    throw new TypeError(`${fieldName} must be a positive integer`);
+  }
   return number;
 }
 
 function nonNegativeInteger(value, fieldName) {
   const number = Number(value);
-  if (!Number.isSafeInteger(number) || number < 0) throw new TypeError(`${fieldName} must be a non-negative integer`);
+  if (!Number.isSafeInteger(number) || number < 0) {
+    throw new TypeError(`${fieldName} must be a non-negative integer`);
+  }
   return number;
 }
 
@@ -543,6 +622,8 @@ function boundedInteger(value, fieldName, min, max) {
 }
 
 function requireText(value, fieldName) {
-  if (typeof value !== 'string' || value.trim() === '') throw new TypeError(`${fieldName} must be a non-empty string`);
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new TypeError(`${fieldName} must be a non-empty string`);
+  }
   return value.trim();
 }
