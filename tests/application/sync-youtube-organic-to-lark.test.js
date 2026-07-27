@@ -71,6 +71,66 @@ test('writes RAW, canonical, account-last and checkpoint idempotently', async ()
   assert.equal(second.tables.accounts.result.skipped, 1);
 });
 
+test('operator-style dry-run plans with Lark GET, writes no Business data and replays completed work', async () => {
+  const repository = createRepository();
+  const stateStore = createStateStore();
+  const resumableWorkStore = new InMemoryResumableWorkStore();
+  let providerRequests = 0;
+  const publicClient = {
+    async getChannel() { providerRequests += 1; return CHANNEL; },
+    async listUploadVideoIdsPage() {
+      providerRequests += 1;
+      return { videoIds: videos.map((video) => video.id), nextPageToken: null };
+    },
+    async listVideos() { providerRequests += 1; return videos; },
+  };
+  const input = {
+    repository,
+    syncEngine: new TableSyncEngine(),
+    incrementalStateStore: stateStore,
+    resumableWorkStore,
+    publicClient,
+    ownerClient: null,
+    syncRunId: 'youtube-dry-run:operation-a',
+    channelId: 'channel_A',
+    accountKey: 'youtube_dev',
+    customerProfile: 'integration_workspace',
+    cursorKey: 'youtube-lock',
+    workKey: 'youtube:operation-a',
+    metricDate: '2026-07-15',
+    reportingTimezone: 'Asia/Bangkok',
+    syncMode: 'full',
+    analyticsEnabled: false,
+    dryRun: true,
+    now: () => 1000,
+    generation: 1000,
+    requestedAt: 1000,
+    tables: TABLES,
+  };
+  const first = await syncYouTubeOrganicToLark(input);
+  const providerRequestsAfterFirst = providerRequests;
+  assert.equal(first.mode, 'dry_run');
+  assert.equal(first.checkpointSaved, false);
+  assert.equal(stateStore.saved.length, 0);
+  assert.equal(repository.events.some((event) => event.startsWith('write:')), false);
+  assert.ok(repository.events.some((event) => event.startsWith('read:')));
+
+  const replay = await syncYouTubeOrganicToLark({
+    ...input,
+    syncRunId: 'youtube-dry-run:operation-a',
+    syncEngine: new TableSyncEngine(),
+  });
+  assert.equal(replay.mode, 'already_completed');
+  assert.equal(replay.checkpointSaved, false);
+  assert.deepEqual(replay.warnings, first.warnings);
+  assert.deepEqual(replay.reconciliation, first.reconciliation);
+  assert.deepEqual(replay.sourceSummary, first.sourceSummary);
+  assert.equal(replay.warningOutbox, null);
+  assert.equal(providerRequests, providerRequestsAfterFirst);
+  assert.equal(stateStore.saved.length, 0);
+  assert.equal(repository.events.some((event) => event.startsWith('write:')), false);
+});
+
 test('full reconciliation marks prior missing videos without zeroing prior metrics', async () => {
   const repository = createRepository({
     videos: [{
@@ -945,6 +1005,7 @@ function createRepository(seed = {}) {
     async prepareRows(_tableId, rows) { return rows.map((row) => ({ ...row })); },
     async prepareExistingRecords(_tableId, records) { return records; },
     async listByFieldValues(tableId, fieldName, values) {
+      api.events.push(`read:${tableId}`);
       const allowed = new Set(values.map(String));
       return (stores.get(tableId) ?? []).filter((record) => allowed.has(String(record.fields[fieldName])));
     },

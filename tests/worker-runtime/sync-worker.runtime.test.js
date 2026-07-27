@@ -1,11 +1,20 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  applyD1Migrations,
   createExecutionContext,
   createMessageBatch,
   createScheduledController,
+  env,
   getQueueResult,
 } from 'cloudflare:test';
 import { createSyncWorker } from '../../apps/sync-worker/src/index.js';
+import { processYouTubeOrganicEndToEndJob } from '../../apps/sync-worker/src/youtube-organic-job-router.js';
+import { buildYouTubeDryRunJob } from '../../scripts/lib/youtube-dry-run-rollout-operator.js';
+import { D1ReliabilityStore } from '../../packages/reliability/src/d1-reliability-store.js';
+import { D1OrganicHistoryGateway } from '../../packages/connectors/src/d1-organic-history-gateway.js';
+import { D1IncrementalStateStore } from '../../packages/sync-engine/src/d1-incremental-state-store.js';
+import { D1ResumableWorkStore } from '../../packages/sync-engine/src/d1-resumable-work-store.js';
+import { TableSyncEngine } from '../../packages/sync-engine/src/table-sync-engine.js';
 import {
   createTikTokPostLarkAuditHttpHandler,
   TIKTOK_POST_LARK_AUDIT_PATH,
@@ -36,6 +45,85 @@ function activeJob() {
 }
 
 describe('Sync Worker ใน Workers runtime จริง', () => {
+  it('รัน YouTube dry-run ผ่าน Queue, Reliability และ D1 resumable replay จริง', async () => {
+    await applyD1Migrations(env.MKT_STATE_DB, env.TEST_D1_MIGRATIONS);
+    const observations = {
+      providerRequests: 0,
+      larkPlanningGets: 0,
+      larkWrites: 0,
+      warningDrains: 0,
+      expiredWorkCleanups: 0,
+      results: [],
+    };
+    const infrastructureFactory = () => createYouTubeDryRunInfrastructure(
+      env.MKT_STATE_DB,
+      observations,
+    );
+    const worker = createSyncWorker({
+      createInfrastructure: infrastructureFactory,
+      createOperationalStore: () => new D1ReliabilityStore({ db: env.MKT_STATE_DB }),
+      async processJob(input) {
+        const result = await processYouTubeOrganicEndToEndJob({
+          ...input,
+          dependencies: {
+            createYouTubeClientsFromEnv: () => createPublicYouTubeFixture(observations),
+          },
+        });
+        observations.results.push(result);
+        return result;
+      },
+    });
+    const operationId = 'workers-runtime-youtube-dry-run';
+    const job = buildYouTubeDryRunJob({
+      operationId,
+      originalRequestedAt: Date.parse('2026-07-27T04:00:00.000Z'),
+    });
+    const first = createMessageBatch(MAIN_QUEUE, [message(job, 'delivery-a')]);
+    const replay = createMessageBatch(MAIN_QUEUE, [message(job, 'delivery-b')]);
+    const firstContext = createExecutionContext();
+    const replayContext = createExecutionContext();
+    const runtimeEnv = youtubeDryRunRuntimeEnv(env);
+
+    await worker.queue(first, runtimeEnv, firstContext);
+    await worker.queue(replay, runtimeEnv, replayContext);
+
+    expect((await getQueueResult(first, firstContext)).explicitAcks).toEqual(['delivery-a']);
+    expect((await getQueueResult(replay, replayContext)).explicitAcks).toEqual(['delivery-b']);
+    expect(observations.results).toHaveLength(2);
+    expect(observations.results[0]).toMatchObject({
+      mode: 'dry_run',
+      syncRunId: `youtube-dry-run:${operationId}`,
+      checkpointSaved: false,
+      providerRequestCount: 3,
+    });
+    expect(observations.results[1]).toMatchObject({
+      mode: 'already_completed',
+      syncRunId: `youtube-dry-run:${operationId}`,
+      checkpointSaved: false,
+      providerRequestCount: 0,
+    });
+    expect(observations.results[1].warnings).toEqual(observations.results[0].warnings);
+    expect(observations.results[1].sourceSummary)
+      .toEqual(observations.results[0].sourceSummary);
+    expect(observations.providerRequests).toBe(3);
+    expect(observations.larkPlanningGets).toBeGreaterThan(0);
+    expect(observations.larkWrites).toBe(0);
+    expect(observations.warningDrains).toBe(0);
+    expect(observations.expiredWorkCleanups).toBe(0);
+
+    const counts = await readYouTubeDryRunD1Counts(env.MKT_STATE_DB, operationId);
+    expect(counts.sync_run_id).toBe(`youtube-dry-run:${operationId}`);
+    expect(counts.work_key).toBe(`youtube:${operationId}`);
+    expect(counts.main_queue_attempts).toBe(2);
+    expect(counts.work_lifecycle_status).toBe('completed');
+    expect(counts.completion_dry_run).toBe(1);
+    expect(counts.business_rows).toBe(0);
+    expect(counts.coverage_rows).toBe(0);
+    expect(counts.checkpoint_rows).toBe(0);
+    expect(counts.dlq_records).toBe(0);
+    expect(counts.active_locks).toBe(0);
+  });
+
   it('TikTok Audit HTTP fallback stays sanitized and performs no Queue write', async () => {
     const send = vi.fn(async () => undefined);
     const handler = createTikTokPostLarkAuditHttpHandler({
@@ -346,3 +434,174 @@ describe('Sync Worker ใน Workers runtime จริง', () => {
   });
 
 });
+
+function createYouTubeDryRunInfrastructure(db, observations) {
+  const reliability = new D1ReliabilityStore({ db });
+  const baseWorkStore = new D1ResumableWorkStore({ db });
+  const resumableWorkStore = new Proxy(baseWorkStore, {
+    get(target, property) {
+      if (property === 'cleanupExpiredWork') {
+        return async (...args) => {
+          observations.expiredWorkCleanups += 1;
+          return target.cleanupExpiredWork(...args);
+        };
+      }
+      if (property === 'listPendingWarnings') {
+        return async (...args) => {
+          observations.warningDrains += 1;
+          return target.listPendingWarnings(...args);
+        };
+      }
+      const value = target[property];
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+  const repository = {
+    async prepareRows(_tableId, rows) {
+      observations.larkPlanningGets += 1;
+      return rows;
+    },
+    async listByFieldValues() {
+      observations.larkPlanningGets += 1;
+      return [];
+    },
+    async createMany(_tableId, rows) {
+      observations.larkWrites += rows.length;
+      return { created: rows.length };
+    },
+    async updateMany(_tableId, rows) {
+      observations.larkWrites += rows.length;
+      return { updated: rows.length };
+    },
+  };
+  const historyGateway = new D1OrganicHistoryGateway({ db });
+  return {
+    repository,
+    syncEngine: new TableSyncEngine(),
+    getReliability() {
+      return { store: reliability, lockManager: reliability };
+    },
+    getResumableWorkStore() {
+      return resumableWorkStore;
+    },
+    getOrganicHistoryGateway() {
+      return historyGateway;
+    },
+    getIncrementalStateStore() {
+      return new D1IncrementalStateStore({ db });
+    },
+  };
+}
+
+function createPublicYouTubeFixture(observations) {
+  const requestMetrics = { publicRequests: 0 };
+  const count = () => {
+    requestMetrics.publicRequests += 1;
+    observations.providerRequests += 1;
+  };
+  return {
+    requestMetrics,
+    ownerClient: null,
+    oauthConfigured: false,
+    publicClient: {
+      async getChannel() {
+        count();
+        return {
+          id: 'UC_TEST',
+          snippet: { title: 'Integration fixture' },
+          contentDetails: { relatedPlaylists: { uploads: 'UU_TEST' } },
+          statistics: { viewCount: '10', subscriberCount: '2', videoCount: '1' },
+        };
+      },
+      async listUploadVideoIdsPage() {
+        count();
+        return { videoIds: ['video_fixture'], nextPageToken: null };
+      },
+      async listVideos() {
+        count();
+        return [{
+          id: 'video_fixture',
+          snippet: {
+            channelId: 'UC_TEST',
+            title: 'Fixture video',
+            description: 'Repository-only integration fixture',
+            publishedAt: '2026-07-27T00:00:00Z',
+          },
+          contentDetails: { duration: 'PT1M' },
+          statistics: { viewCount: '10', likeCount: '2', commentCount: '1' },
+          status: { privacyStatus: 'public' },
+        }];
+      },
+    },
+  };
+}
+
+function youtubeDryRunRuntimeEnv(base) {
+  return {
+    ...base,
+    MKT_MAIN_QUEUE_NAME: MAIN_QUEUE,
+    MKT_DLQ_QUEUE_NAME: DLQ,
+    MKT_QUEUE_RETRY_DELAY_SECONDS: '30',
+    MKT_ENV: 'development',
+    MKT_CUSTOMER_PROFILE: 'integration_workspace',
+    MKT_CONNECTION_CUSTOMER_KEY: 'chemistry_k',
+    TIKTOK_SOURCE_HANDLE: 'chemistry_k',
+    MKT_CONNECTOR_YOUTUBE_ENABLED: 'true',
+    MKT_YOUTUBE_END_TO_END_ENABLED: 'true',
+    MKT_TIME_SERIES_D1_WRITE_ENABLED: 'false',
+    MKT_YOUTUBE_LARK_WRITE_ENABLED: 'false',
+    MKT_YOUTUBE_ANALYTICS_ENABLED: 'false',
+    MKT_SCHEDULE_YOUTUBE_ENABLED: 'false',
+    DEFAULT_TIMEZONE: 'Asia/Bangkok',
+    YOUTUBE_CHANNEL_ID: 'UC_TEST',
+    LARK_TABLE_MKT_ACCOUNTS: 'tbl_accounts',
+    LARK_TABLE_RAW_YOUTUBE_CHANNELS: 'tbl_raw_channels',
+    LARK_TABLE_RAW_YOUTUBE_VIDEOS: 'tbl_raw_videos',
+    LARK_TABLE_RAW_YOUTUBE_ANALYTICS_DAILY: 'tbl_raw_analytics',
+    LARK_TABLE_MKT_CONTENT: 'tbl_content',
+    LARK_TABLE_MKT_CONTENT_DAILY: 'tbl_content_daily',
+    LARK_TABLE_MKT_SYNC_LOG: 'tbl_sync_log',
+    LARK_TABLE_MKT_SYSTEM_ALERTS: 'tbl_system_alerts',
+  };
+}
+
+async function readYouTubeDryRunD1Counts(db, operationId) {
+  return db.prepare(`
+    SELECT
+      (SELECT sync_run_id FROM sync_runs
+        WHERE sync_run_id = ?) AS sync_run_id,
+      (SELECT work_key FROM sync_work_runs
+        WHERE work_key = ?) AS work_key,
+      (SELECT main_queue_attempts FROM queue_operation_attempts
+        WHERE operation_id = ?) AS main_queue_attempts,
+      (SELECT lifecycle_status FROM sync_work_runs
+        WHERE work_key = ?) AS work_lifecycle_status,
+      COALESCE((SELECT json_extract(completion_json, '$.dryRun')
+        FROM sync_work_runs WHERE work_key = ?), 0) AS completion_dry_run,
+      (
+        (SELECT COUNT(*) FROM organic_content_state)
+        + (SELECT COUNT(*) FROM organic_content_observations)
+        + (SELECT COUNT(*) FROM organic_account_daily_facts)
+      ) AS business_rows,
+      (
+        (SELECT COUNT(*) FROM data_coverage_runs)
+        + (SELECT COUNT(*) FROM data_coverage_entities)
+      ) AS coverage_rows,
+      (
+        (SELECT COUNT(*) FROM sync_cursors)
+        + (SELECT COUNT(*) FROM source_record_states)
+      ) AS checkpoint_rows,
+      (SELECT COUNT(*) FROM dead_letter_operation_metadata
+        WHERE operation_id = ?) AS dlq_records,
+      (SELECT COUNT(*) FROM sync_locks WHERE owner_id = ?)
+        AS active_locks
+  `).bind(
+    `youtube-dry-run:${operationId}`,
+    `youtube:${operationId}`,
+    operationId,
+    `youtube:${operationId}`,
+    `youtube:${operationId}`,
+    operationId,
+    `youtube-dry-run:${operationId}`,
+  ).first();
+}
