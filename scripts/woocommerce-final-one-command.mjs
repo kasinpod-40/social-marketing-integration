@@ -15,6 +15,8 @@ import { readDevVars } from './lib/dev-vars.js';
 import {
   buildWooCommerceIsolatedMigrationConfig,
   classifyWooCommercePendingMigrations,
+  resolveCloudflareAccountId,
+  resolveCloudflareBearerAuth,
   resolveWooCommerceQueueId,
   validateWooCommercePreMigrationState,
 } from './lib/woocommerce-final-one-command.js';
@@ -69,15 +71,36 @@ async function main() {
   const databaseName = env.MKT_WOOCOMMERCE_ROLLOUT_DATABASE_NAME
     ?? 'social-mkt-state-dev';
   const mainQueueName = env.MKT_MAIN_QUEUE_NAME ?? 'social-mkt-sync-jobs';
-  const accountId = requireText(env.CLOUDFLARE_ACCOUNT_ID, 'CLOUDFLARE_ACCOUNT_ID');
-  const apiToken = requireText(env.CLOUDFLARE_API_TOKEN, 'CLOUDFLARE_API_TOKEN');
+  const baseWranglerEnv = compactCloudflareEnv(env);
+  const whoamiOutput = wranglerText(['whoami', '--json'], { env: baseWranglerEnv });
+  const accountId = resolveCloudflareAccountId({
+    explicitAccountId: env.CLOUDFLARE_ACCOUNT_ID,
+    configText,
+    whoamiOutput,
+    preferredAccount: env.MKT_WOOCOMMERCE_ROLLOUT_ACCOUNT,
+  });
+  const selectedWranglerEnv = {
+    ...baseWranglerEnv,
+    CLOUDFLARE_ACCOUNT_ID: accountId,
+  };
+  wrangler(['whoami', '--account', accountId, '--json'], { env: selectedWranglerEnv });
+  const auth = resolveCloudflareBearerAuth({
+    explicitApiToken: env.CLOUDFLARE_API_TOKEN,
+    authOutput: optionalText(env.CLOUDFLARE_API_TOKEN)
+      ? null
+      : wranglerText(['auth', 'token', '--json'], { env: selectedWranglerEnv }),
+  });
+  const apiToken = auth.token;
+  const authenticatedEnv = {
+    ...selectedWranglerEnv,
+    CLOUDFLARE_API_TOKEN: apiToken,
+  };
   await mkdir(outputRoot, { recursive: true, mode: 0o700 });
 
-  wrangler(['whoami'], { env: { ...env, CLOUDFLARE_ACCOUNT_ID: accountId } });
   const queueId = env.MKT_WOOCOMMERCE_FINAL_QUEUE_ID
     ?? resolveWooCommerceQueueId(
       wranglerText(['queues', 'list', '--json'], {
-        env: { ...env, CLOUDFLARE_ACCOUNT_ID: accountId },
+        env: authenticatedEnv,
       }),
       mainQueueName,
     );
@@ -86,12 +109,12 @@ async function main() {
     wranglerText([
       'd1', 'migrations', 'list', databaseName,
       '--remote', '--config', configPath,
-    ], { env: { ...env, CLOUDFLARE_ACCOUNT_ID: accountId } }),
+    ], { env: authenticatedEnv }),
   );
   const beforeState = readD1Row({
     databaseName,
     configPath,
-    env: { ...env, CLOUDFLARE_ACCOUNT_ID: accountId },
+    env: authenticatedEnv,
     sql: buildPreMigrationSql(),
   });
   validateWooCommercePreMigrationState(beforeState, migrationState);
@@ -105,10 +128,11 @@ async function main() {
   if (migrationState.migration0017Pending) {
     migrationEvidence = await applyIsolatedMigration0017({
       accountId,
+      apiToken,
       configPath,
       configText,
       databaseName,
-      env,
+      env: authenticatedEnv,
       migrationState,
     });
   }
@@ -119,6 +143,11 @@ async function main() {
     repositoryHead,
     databaseName,
     mainQueueName,
+    accountIdFingerprint: sha256(accountId),
+    auth: {
+      type: auth.type,
+      source: auth.source,
+    },
     queueIdFingerprint: sha256(queueId),
     migration: migrationEvidence,
     remoteMutationCount: migrationEvidence.applied ? 1 : 0,
@@ -164,6 +193,8 @@ function printPlan() {
     command: `${CONFIRMATION_NAME}=${CONFIRMATION_VALUE} node scripts/woocommerce-final-one-command.mjs --execute`,
     automaticInputs: [
       'current clean Git HEAD',
+      'Cloudflare Account ID from explicit env, Wrangler config, or exact whoami membership',
+      'Cloudflare API/OAuth bearer token from explicit env or Wrangler auth session',
       'exact main Queue ID',
       'Migration 0017 pending state',
     ],
@@ -191,7 +222,7 @@ async function applyIsolatedMigration0017(input) {
     'd1', 'export', input.databaseName,
     '--remote', '--config', input.configPath,
     '--output', backupPath, '--skip-confirmation',
-  ], { env: { ...input.env, CLOUDFLARE_ACCOUNT_ID: input.accountId } });
+  ], { env: input.env });
   await chmod(backupPath, 0o600);
   const backup = await readFile(backupPath);
   if (backup.length === 0) {
@@ -222,7 +253,6 @@ async function applyIsolatedMigration0017(input) {
       env: {
         ...input.env,
         CI: 'true',
-        CLOUDFLARE_ACCOUNT_ID: input.accountId,
       },
     });
   } finally {
@@ -233,7 +263,7 @@ async function applyIsolatedMigration0017(input) {
     wranglerText([
       'd1', 'migrations', 'list', input.databaseName,
       '--remote', '--config', input.configPath,
-    ], { env: { ...input.env, CLOUDFLARE_ACCOUNT_ID: input.accountId } }),
+    ], { env: input.env }),
   );
   if (afterMigrations.migration0017Pending) {
     throw commandError(
@@ -245,7 +275,7 @@ async function applyIsolatedMigration0017(input) {
   const afterState = readD1Row({
     databaseName: input.databaseName,
     configPath: input.configPath,
-    env: { ...input.env, CLOUDFLARE_ACCOUNT_ID: input.accountId },
+    env: input.env,
     sql: buildPreMigrationSql(),
   });
   validateWooCommercePreMigrationState(afterState, afterMigrations);
@@ -300,6 +330,19 @@ function readD1Row(input) {
 async function loadEnvironment() {
   const fileEnv = await readDevVars(process.env.DEV_VARS_FILE ?? '.dev.vars');
   return Object.freeze({ ...fileEnv, ...process.env });
+}
+
+function compactCloudflareEnv(env) {
+  const output = { ...env };
+  for (const name of [
+    'CLOUDFLARE_ACCOUNT_ID',
+    'CLOUDFLARE_API_TOKEN',
+    'CLOUDFLARE_API_KEY',
+    'CLOUDFLARE_EMAIL',
+  ]) {
+    if (!optionalText(output[name])) delete output[name];
+  }
+  return output;
 }
 
 function wranglerText(args, options = {}) {
@@ -386,6 +429,10 @@ function requireText(value, fieldName) {
     );
   }
   return value.trim();
+}
+
+function optionalText(value) {
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
 }
 
 function sanitize(value) {
