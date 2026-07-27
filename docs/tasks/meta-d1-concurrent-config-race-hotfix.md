@@ -8,10 +8,10 @@ The D1 preflight builds the Safe and Active Worker bundles concurrently. The und
 
 ## Correction
 
-- Run the Meta D1 operator through a launcher-only preload that makes `Date.now()` strictly monotonic inside the operator child process.
+- Run the guarded Meta D1 fast-track through a launcher-only preload that makes `Date.now()` strictly monotonic inside the operator child process.
 - Preserve wall-clock ordering while guaranteeing a unique timestamp suffix for every generated config path.
 - Keep the existing operator, confirmations, compatibility path rebasing and Wrangler argument normalization authoritative.
-- Route all package-level Meta D1 rollout commands through the launcher so the race guard cannot be bypassed accidentally.
+- Require the guarded Remote runbook to use `scripts/meta-d1-only-rollout-launcher.mjs` rather than invoking the internal operator directly.
 - Add focused regression proving strictly increasing timestamps and unique generated config names under same-millisecond calls.
 
 ## Safety
