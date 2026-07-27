@@ -1,5 +1,7 @@
-import { JOB_TYPES } from './job-catalog.js';
+import { JOB_TRIGGERS, JOB_TYPES } from './job-catalog.js';
 import { permanentError } from '../../../shared/src/errors/runtime-error.js';
+
+const SAFE_OPERATION_ID = /^[a-z0-9][a-z0-9_-]{0,95}$/u;
 
 const STABLE_OPERATION_CONTRACTS = new Map([
   [JOB_TYPES.TIKTOK_CREATOR_NATIVE_HISTORY_BOOTSTRAP, Object.freeze({ prefix: 'tiktok' })],
@@ -20,8 +22,16 @@ const STABLE_OPERATION_CONTRACTS = new Map([
 
 function resolveStableOperationContract(type, body) {
   if (type === JOB_TYPES.TIKTOK_CREATOR_NATIVE_SYNC
-    && body?.trigger === 'post_lark_watermark') {
+    && body?.trigger === JOB_TRIGGERS.TIKTOK_POST_LARK_WATERMARK) {
     return Object.freeze({ prefix: 'tiktok' });
+  }
+  if (type === JOB_TYPES.YOUTUBE_ORGANIC_SYNC
+    && body?.trigger === JOB_TRIGGERS.YOUTUBE_WORKER_DRY_RUN
+    && body?.dryRun === true) {
+    return Object.freeze({
+      prefix: 'youtube',
+      operationIdPattern: SAFE_OPERATION_ID,
+    });
   }
   return STABLE_OPERATION_CONTRACTS.get(type) ?? null;
 }
@@ -48,7 +58,7 @@ export function resolveQueueOperation(input = {}) {
   const explicitWorkKey = optionalText(body.workKey);
 
   if (contract) {
-    const stableOperationId = requireText(operationId, 'operationId');
+    const stableOperationId = normalizeOperationId(operationId, contract);
     const derivedWorkKey = buildStableWorkKey(contract, body, stableOperationId);
     if (explicitWorkKey && explicitWorkKey !== derivedWorkKey) {
       throw permanentError('Queue workKey does not match stable operationId', {
@@ -83,6 +93,33 @@ export function resolveQueueOperation(input = {}) {
   });
 }
 
+/**
+ * สร้าง Stable fields จาก Intent กลางครั้งเดียวสำหรับ Producer/Operator
+ * เพื่อไม่ให้ Caller ประกอบ workKey/generation/requestedAt ซ้ำหรือผูกกับ delivery message.id.
+ */
+export function createStableQueueOperationBody(body = {}, input = {}) {
+  const type = requireText(body.type, 'body.type');
+  const contract = resolveStableOperationContract(type, body);
+  if (!contract) {
+    throw permanentError('Cannot create an unsupported stable Queue operation', {
+      code: 'QUEUE_OPERATION_IDENTITY_INVALID',
+      details: { type },
+    });
+  }
+  const operationId = normalizeOperationId(input.operationId, contract);
+  const originalRequestedAt = normalizeTimestamp(
+    input.originalRequestedAt ?? input.requestedAt,
+    'originalRequestedAt',
+    true,
+  );
+  return withQueueOperation(body, {
+    operationId,
+    workKey: buildStableWorkKey(contract, body, operationId),
+    generation: originalRequestedAt,
+    originalRequestedAt,
+  });
+}
+
 /** Preserve the exact durable identity in continuation, redrive and manual recovery payloads. */
 export function withQueueOperation(body = {}, operation = {}) {
   const type = requireText(body.type, 'body.type');
@@ -93,7 +130,7 @@ export function withQueueOperation(body = {}, operation = {}) {
       details: { type },
     });
   }
-  const operationId = requireText(operation.operationId, 'operation.operationId');
+  const operationId = normalizeOperationId(operation.operationId, contract);
   const workKey = requireText(operation.workKey, 'operation.workKey');
   const generation = normalizeTimestamp(operation.generation, 'operation.generation', true);
   const originalRequestedAt = normalizeTimestamp(
@@ -126,6 +163,19 @@ function buildStableWorkKey(contract, body, operationId) {
     ? normalizeOperationScope(body?.[contract.scopeField], contract.scopeField)
     : null;
   return [contract.prefix, scope, operationId].filter(Boolean).join(':');
+}
+
+function normalizeOperationId(value, contract) {
+  const source = requireText(value, 'operationId');
+  if (!contract.operationIdPattern) return source;
+  const operationId = source.toLowerCase();
+  if (!contract.operationIdPattern.test(operationId)) {
+    throw permanentError('Queue operationId has an unsafe format', {
+      code: 'QUEUE_OPERATION_IDENTITY_INVALID',
+      details: { fieldName: 'operationId' },
+    });
+  }
+  return operationId;
 }
 
 function normalizeOperationScope(value, fieldName) {
