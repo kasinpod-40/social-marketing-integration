@@ -3,7 +3,7 @@
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = IMPLEMENTATION_PASS_INTEGRATION_REVIEW_PENDING
+TASK_STATUS                         = PASS_FOR_INTEGRATION_REVIEW
 CURRENT_PROGRAM                     = CHATWOOT_INTEGRATION_RUNTIME_WIRING
 BASE_MAIN                           = 53c710dcadab14febe5b95078193a185038e0453
 INTEGRATION_BRANCH                  = integration/chatwoot-safe-wiring
@@ -18,6 +18,7 @@ CHATWOOT_MIGRATION                  = 0018_chatwoot_analytics.sql / SOURCE_ONLY 
 IMPLEMENTATION_OWNER                = CHATGPT_WORK_GITHUB_TOOLS
 ALIGNED_VERIFIED_HEAD               = c44b1b2247b3374d95022eef01317f77c7e0eca0
 BRANCH_VERIFICATION                 = #652 / 30265406254 / PASS
+FINAL_DOCUMENTATION_VERIFICATION    = RECORDED_IN_PR_97_METADATA
 PROVIDER_EXECUTION                  = NOT_RUN
 TOKEN_READ_OR_ROTATION              = NOT_RUN
 QUEUE_MESSAGE                       = NOT_SENT
@@ -59,7 +60,7 @@ Chatwoot-named copy is retained.
 
 The Chatwoot branch is aligned with current `main` commit
 `53c710dcadab14febe5b95078193a185038e0453`, including the merged TikTok route-stability Hotfix and
-current repository facts. Branch comparison at verification was ahead with behind `0`.
+current repository facts. Branch comparison at review was ahead with behind `0`.
 
 Current `main` records Migration `0017_woocommerce_commerce.sql` as applied remotely outside this
 workstream. It must not be rerun. Chatwoot Migration `0018` remains source-only and unapplied.
@@ -180,17 +181,17 @@ Customer/Production LIVE UAT        NOT_RUN
 Production                          BLOCKED
 ```
 
-## Remaining review gate
+## Remaining merge gate
 
-The final documentation head must pass exact-head Branch Verification. PR `#97` remains Draft and
-unmerged. Repository verification does not authorize Remote D1 backup/apply, Lark schema work,
-credential preflight, Worker deployment, Queue processing, LIVE UAT, Schedule/Webhook activation or
-Production.
+PR `#97` remains Draft and unmerged. Exact final documentation-head verification is recorded in the
+PR metadata after this closeout commit passes CI. Repository verification does not authorize Remote
+D1 backup/apply, Lark schema work, credential preflight, Worker deployment, Queue processing, LIVE
+UAT, Schedule/Webhook activation or Production. Merge into `main` requires a separate decision.
 
 ## Implementation result
 
 ```text
-STATUS                              = IMPLEMENTATION_PASS_INTEGRATION_REVIEW_PENDING
+STATUS                              = PASS_FOR_INTEGRATION_REVIEW
 FINAL_MAIN_SHA                      = 53c710dcadab14febe5b95078193a185038e0453
 ALIGNED_VERIFIED_HEAD               = c44b1b2247b3374d95022eef01317f77c7e0eca0
 AHEAD_BEHIND_AT_CODE_REVIEW         = AHEAD / BEHIND 0
@@ -204,5 +205,6 @@ REPORT_RELIABILITY                  = 91 / 91 PASS
 DEPENDENCY_AUDIT                    = 0 VULNERABILITIES
 WRANGLER_DRY_RUN                    = PASS / NO DEPLOYMENT
 REMOTE_ACTIONS_BY_THIS_WORKSTREAM   = NONE
-INTEGRATION_REVIEW                  = PENDING_EXACT_FINAL_HEAD
+INTEGRATION_REVIEW                  = PASS_FOR_INTEGRATION_REVIEW
+MERGE_DECISION                      = SEPARATE_AUTHORIZATION_REQUIRED
 ```
