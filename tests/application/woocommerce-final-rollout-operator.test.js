@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  WOOCOMMERCE_FINAL_FLAGS,
   assertWooCommerceFinalConfirmation,
   buildWooCommerceConfigWindows,
   buildWooCommerceFinalJob,
@@ -13,17 +14,9 @@ import {
 } from '../../scripts/lib/woocommerce-final-rollout-operator.js';
 
 function configText() {
-  const flags = [
-    'MKT_CONNECTOR_WOOCOMMERCE_ENABLED',
-    'MKT_WOOCOMMERCE_D1_WRITE_ENABLED',
-    'MKT_WOOCOMMERCE_LARK_WRITE_ENABLED',
-    'MKT_WOOCOMMERCE_REPORT_READ_ENABLED',
-    'MKT_WOOCOMMERCE_FULL_RECONCILIATION_ENABLED',
-    'MKT_SCHEDULE_WOOCOMMERCE_ENABLED',
-  ];
   const contracts = createWooCommerceLarkSchemaContract();
   return JSON.stringify({ vars: Object.fromEntries([
-    ...flags.map((name) => [name, 'false']),
+    ...WOOCOMMERCE_FINAL_FLAGS.map((name) => [name, 'false']),
     ...contracts.map((item) => [item.envName, 'replace-with-table-id']),
   ]) }, null, 2);
 }
@@ -90,6 +83,34 @@ test('config windows are exact safe, UAT and scheduled flag sets', () => {
     'MKT_WOOCOMMERCE_LARK_WRITE_ENABLED',
   ]);
   assert.match(windows.scheduled, /"LARK_TABLE_RAW_COMMERCE_STORES": "tbl_0"/u);
+});
+
+test('config windows safely materialize omitted default-false gates and Lark mappings', () => {
+  const source = `{
+    // Canonical local config may omit connector defaults that Runtime treats as false.
+    "name": "social-mkt-sync-worker",
+    "vars": {
+      "MKT_ENV": "development",
+      "MKT_CUSTOMER_PROFILE": "integration_workspace",
+      "MKT_CONNECTION_CUSTOMER_KEY": "chemistry_k",
+      "UNRELATED_NON_SECRET_VALUE": "preserve-me",
+    },
+  }`;
+  const tableIds = Object.fromEntries(createWooCommerceLarkSchemaContract().map((item, index) => [item.tableKey, `tbl_generated_${index}`]));
+  const windows = buildWooCommerceConfigWindows({ configText: source, tableIds });
+  const safe = JSON.parse(windows.safe);
+  const uat = JSON.parse(windows.uat);
+  const scheduled = JSON.parse(windows.scheduled);
+
+  assert.equal(safe.vars.UNRELATED_NON_SECRET_VALUE, 'preserve-me');
+  for (const flag of WOOCOMMERCE_FINAL_FLAGS) assert.equal(safe.vars[flag], 'false', flag);
+  for (const [index, contract] of createWooCommerceLarkSchemaContract().entries()) {
+    assert.equal(safe.vars[contract.envName], `tbl_generated_${index}`, contract.envName);
+  }
+  assert.equal(uat.vars.MKT_WOOCOMMERCE_D1_WRITE_ENABLED, 'true');
+  assert.equal(uat.vars.MKT_SCHEDULE_WOOCOMMERCE_ENABLED, 'false');
+  assert.equal(scheduled.vars.MKT_SCHEDULE_WOOCOMMERCE_ENABLED, 'true');
+  assert.deepEqual(windows.safeTrueFlags, []);
 });
 
 test('full and incremental Queue jobs use stable WooCommerce identity', () => {
