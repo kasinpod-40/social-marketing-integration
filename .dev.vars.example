@@ -4,12 +4,10 @@
 # ห้ามใส่ Secret จริงในไฟล์ตัวอย่างนี้
 # ============================================================
 
-# Technical runtime label + Canonical pre-Production profile
 MKT_ENV=development
 MKT_CUSTOMER_PROFILE=integration_workspace
 DEFAULT_TIMEZONE=Asia/Bangkok
 
-# Customer Connection OAuth — URL/Client ID ไม่ใช่ Secret แต่ต้องตรงกับ Google Cloud Console
 MKT_CONNECTION_PUBLIC_ORIGIN=https://replace-with-sync-worker.example
 MKT_CONNECTION_CUSTOMER_KEY=chemistry_k
 MKT_GOOGLE_ADS_REDIRECT_URI=https://replace-with-sync-worker.example/oauth/google-ads/callback
@@ -22,26 +20,22 @@ MKT_GOOGLE_ADS_API_VERSION=v24
 MKT_GOOGLE_ADS_SOURCE_TIMEZONE=Asia/Bangkok
 MKT_GOOGLE_ADS_SIGNING_KEY_ID=replace-with-non-secret-key-id
 
-# Secret ต่อไปนี้ใช้ local .dev.vars ได้เฉพาะ Development; Runtime จริงต้องตั้งด้วย `wrangler secret put`
+# Secrets — local Development only; deployed Runtime must use `wrangler secret put`.
 GOOGLE_OAUTH_CLIENT_SECRET=replace-with-google-oauth-client-secret
 GOOGLE_ADS_DEVELOPER_TOKEN=replace-with-google-ads-developer-token
 MKT_GOOGLE_ADS_SIGNING_SECRET=replace-with-256-bit-google-ads-signing-secret
-# Previous key ใช้เฉพาะช่วง Manual rotation และต้องตั้ง ID/Secret พร้อมกัน
 MKT_GOOGLE_ADS_PREVIOUS_SIGNING_KEY_ID=
 MKT_GOOGLE_ADS_PREVIOUS_SIGNING_SECRET=
 MKT_CONNECTION_OPERATOR_TOKEN=replace-with-operator-token
 MKT_CONNECTION_INVITATION_SIGNING_KEY=replace-with-random-signing-key
 MKT_CONNECTION_STATE_SIGNING_KEY=replace-with-random-signing-key
 MKT_CONNECTION_SELECTION_SIGNING_KEY=replace-with-random-signing-key
-# Base64URL ของ random 32 bytes; ห้ามใช้ Password/ข้อความธรรมดาแทน Encryption key
 MKT_CONNECTION_ENCRYPTION_KEY_V1=replace-with-256-bit-base64url-key
 
-# เปิดเฉพาะ Connector ที่ Implement และได้รับอนุมัติให้รันแบบ Manual แล้ว
 MKT_CONNECTOR_TIKTOK_ENABLED=false
 MKT_CONNECTOR_FACEBOOK_ENABLED=false
 MKT_CONNECTOR_INSTAGRAM_ENABLED=false
 MKT_CONNECTOR_META_ADS_ENABLED=false
-# Meta rollout gates are independent and remain false until each manual phase is approved.
 MKT_META_SOURCE_READ_ENABLED=false
 MKT_META_D1_WRITE_ENABLED=false
 MKT_META_LARK_WRITE_ENABLED=false
@@ -53,34 +47,40 @@ MKT_META_SOURCE_MAX_ROWS=50000
 MKT_META_SOURCE_MAX_UNIT_BYTES=524288
 MKT_META_D1_ROWS_PER_INVOCATION=250
 MKT_META_LARK_TABLES_PER_INVOCATION=1
+
 MKT_CONNECTOR_GOOGLE_ADS_ENABLED=false
-# Google Ads transport/admission/business/Lark เป็น Gate อิสระและปิดทุกค่าเป็น Default
 MKT_GOOGLE_ADS_SIGNED_INGRESS_ENABLED=false
 MKT_GOOGLE_ADS_SECRET_PROVISIONING_ENABLED=false
 MKT_GOOGLE_ADS_QUEUE_ADMISSION_ENABLED=false
 MKT_GOOGLE_ADS_BUSINESS_WRITE_ENABLED=false
 MKT_GOOGLE_ADS_LARK_WRITE_ENABLED=false
 MKT_GOOGLE_ADS_D1_ROWS_PER_INVOCATION=250
+
 MKT_CONNECTOR_YOUTUBE_ENABLED=false
-# YouTube End-to-End และ Lark delivery เป็น Gate อิสระ; ค่า Default false รักษา Legacy route เดิม
 MKT_YOUTUBE_END_TO_END_ENABLED=false
 MKT_YOUTUBE_LARK_WRITE_ENABLED=false
+MKT_YOUTUBE_ANALYTICS_ENABLED=false
+
 MKT_CONNECTOR_WOOCOMMERCE_ENABLED=false
-# WooCommerce Source/D1/Lark/Report เป็น Gate อิสระและปิดทุกค่าเป็น Default
 MKT_WOOCOMMERCE_D1_WRITE_ENABLED=false
 MKT_WOOCOMMERCE_LARK_WRITE_ENABLED=false
 MKT_WOOCOMMERCE_REPORT_READ_ENABLED=false
 MKT_WOOCOMMERCE_FULL_RECONCILIATION_ENABLED=false
-MKT_CONNECTOR_CHATWOOT_ENABLED=false
 
-# Schedule ปิดเป็นค่าเริ่มต้น และ Google Ads ไม่มี Cron activation ในงานนี้
+# Chatwoot gates remain independently false. Token is required only when Connector is true.
+MKT_CONNECTOR_CHATWOOT_ENABLED=false
+MKT_CHATWOOT_D1_WRITE_ENABLED=false
+MKT_CHATWOOT_LARK_WRITE_ENABLED=false
+MKT_CHATWOOT_REPORT_WRITE_ENABLED=false
+MKT_SCHEDULE_CHATWOOT_ENABLED=false
+MKT_CHATWOOT_WEBHOOK_ENABLED=false
+
 MKT_SCHEDULE_TIKTOK_ENABLED=false
 MKT_SCHEDULE_YOUTUBE_ENABLED=false
 MKT_SCHEDULE_GOOGLE_ADS_ENABLED=false
 MKT_SCHEDULE_WOOCOMMERCE_ENABLED=false
 MKT_SCHEDULE_DAILY_REPORT_ENABLED=false
 MKT_SCHEDULE_WEEKLY_REPORT_ENABLED=false
-MKT_YOUTUBE_ANALYTICS_ENABLED=false
 MKT_YOUTUBE_ANALYTICS_TIME=07:50
 MKT_YOUTUBE_ANALYTICS_LOOKBACK_DAYS=7
 MKT_DAILY_REPORT_TIME=08:10
@@ -92,7 +92,6 @@ MKT_MAIN_QUEUE_NAME=social-mkt-sync-jobs
 MKT_DLQ_QUEUE_NAME=social-mkt-sync-dlq
 MKT_QUEUE_RETRY_DELAY_SECONDS=30
 
-# Storage Foundation flags — Phase 1B สร้าง Schema/Repository เท่านั้น ทุก Flag ต้องปิด
 MKT_TIME_SERIES_D1_WRITE_ENABLED=false
 MKT_TIME_SERIES_D1_BACKFILL_ENABLED=false
 MKT_REPORT_D1_SHADOW_READ_ENABLED=false
@@ -101,24 +100,18 @@ MKT_REPORT_PRESET_MATERIALIZATION_ENABLED=false
 MKT_LARK_DAILY_RETENTION_ENABLED=false
 MKT_NOTIFICATION_RUNTIME_ENABLED=false
 
-# TikTok Creator — Lark Native เชื่อม Chemistry K แล้ว; Connector ยังปิดจนถึง Manual write gate
 TIKTOK_SOURCE_HANDLE=chemistry_k
-
-# YouTube temporary developer source — Connector/Schedule ยังปิดจนกว่างานถัดไปอนุมัติ
 YOUTUBE_CHANNEL_ID=replace-with-youtube-channel-id
 YOUTUBE_API_KEY=replace-with-youtube-api-key
 YOUTUBE_OAUTH_ACCESS_TOKEN=replace-with-oauth-access-token
 
-# Meta token-based preflight — Pin version; Token แยก FB/Ads กับ Instagram Login
 META_GRAPH_API_VERSION=v25.0
 META_ACCESS_TOKEN=replace-with-meta-access-token
 META_FACEBOOK_PAGE_ACCESS_TOKEN=replace-with-facebook-page-access-token
 META_INSTAGRAM_ACCESS_TOKEN=replace-with-instagram-access-token
-# Chemistry K exact customer mappings (non-secret); Runtime validation is still pending.
 META_FACEBOOK_PAGE_ID=982406442148381
 META_INSTAGRAM_ACCOUNT_ID=17841413521012797
 META_AD_ACCOUNT_MAPPINGS=chemistry_k2=505898710119851,chemistry_k3=851206695716861
-# Legacy single-account input is intentionally empty when mappings are used.
 META_AD_ACCOUNT_ID=
 META_API_TIMEOUT_MS=30000
 META_MAX_PAGES=100
@@ -126,7 +119,6 @@ META_PAGE_SIZE=100
 META_MAX_ATTEMPTS=5
 META_MAX_RESPONSE_BYTES=8388608
 
-# WooCommerce — Consumer Key/Secret ต้องเป็น read-only Customer credential และอยู่ใน Secret store
 WOOCOMMERCE_BASE_URL=https://replace-with-customer-store.example
 WOOCOMMERCE_CONSUMER_KEY=ck_replace-with-consumer-key
 WOOCOMMERCE_CONSUMER_SECRET=replace-with-consumer-secret
@@ -139,18 +131,26 @@ WOOCOMMERCE_MAX_NESTED_PAGES=100
 WOOCOMMERCE_NESTED_CONCURRENCY=3
 WOOCOMMERCE_REVISION_LOOKBACK_DAYS=30
 WOOCOMMERCE_DEFAULT_CURRENCY=THB
-# Chatwoot Foundation ยังไม่ถูก Route เข้า Worker
+
 CHATWOOT_BASE_URL=https://replace-with-chatwoot.example
 CHATWOOT_ACCOUNT_ID=replace-with-account-id
 CHATWOOT_API_ACCESS_TOKEN=replace-with-chatwoot-api-access-token
+CHATWOOT_API_TIMEOUT_MS=30000
+CHATWOOT_API_MAX_ATTEMPTS=5
+CHATWOOT_API_MAX_PAGES=100
+CHATWOOT_API_MAX_ROWS=5000
+CHATWOOT_API_MAX_RESPONSE_BYTES=8388608
+CHATWOOT_INCREMENTAL_OVERLAP_HOURS=48
+CHATWOOT_MAX_CONVERSATIONS=5000
+CHATWOOT_MAX_CONTACTS=5000
+CHATWOOT_MAX_REPORTING_EVENTS=10000
+CHATWOOT_MAX_MESSAGE_PAGES_PER_CONVERSATION=50
+CHATWOOT_MAX_MESSAGES_PER_CONVERSATION=1000
 
-# Lark App Credentials — ต้องแทนด้วยค่าจริงเฉพาะใน .dev.vars
 LARK_APP_ID=replace-with-lark-app-id
 LARK_APP_SECRET=replace-with-lark-app-secret
 LARK_APP_TOKEN=replace-with-lark-base-app-token
 
-# Lark Table IDs — ไม่ใช่ Secret แต่ต้องตรงกับ Integration Workspace Base
-# Protected source: Lark Native TikTok เป็นเจ้าของ Schema; ระบบเราอ่านอย่างเดียว
 LARK_TABLE_RAW_TIKTOK_CREATOR_VIDEOS=replace-with-table-id
 LARK_TABLE_RAW_YOUTUBE_CHANNELS=replace-with-table-id
 LARK_TABLE_RAW_YOUTUBE_VIDEOS=replace-with-table-id
@@ -169,11 +169,27 @@ LARK_TABLE_MKT_COMMERCE_PRODUCTS=replace-with-table-id
 LARK_TABLE_MKT_COMMERCE_CUSTOMERS=replace-with-table-id
 LARK_TABLE_MKT_COMMERCE_DAILY=replace-with-table-id
 LARK_TABLE_MKT_COMMERCE_PRODUCT_DAILY=replace-with-table-id
+
+LARK_TABLE_RAW_CHATWOOT_ACCOUNTS=replace-with-table-id
+LARK_TABLE_RAW_CHATWOOT_INBOXES=replace-with-table-id
+LARK_TABLE_RAW_CHATWOOT_CONTACTS=replace-with-table-id
+LARK_TABLE_RAW_CHATWOOT_AGENTS=replace-with-table-id
+LARK_TABLE_RAW_CHATWOOT_TEAMS=replace-with-table-id
+LARK_TABLE_RAW_CHATWOOT_LABELS=replace-with-table-id
+LARK_TABLE_RAW_CHATWOOT_CONVERSATIONS=replace-with-table-id
+LARK_TABLE_RAW_CHATWOOT_CONVERSATION_LABELS=replace-with-table-id
+LARK_TABLE_RAW_CHATWOOT_MESSAGE_ANALYTICS=replace-with-table-id
+LARK_TABLE_RAW_CHATWOOT_REPORTING_EVENTS=replace-with-table-id
+LARK_TABLE_MKT_CONVERSATIONS=replace-with-table-id
+LARK_TABLE_MKT_CONVERSATION_DAILY=replace-with-table-id
+LARK_TABLE_MKT_AGENT_DAILY=replace-with-table-id
+LARK_TABLE_MKT_INBOX_DAILY=replace-with-table-id
+LARK_TABLE_MKT_CONVERSATION_ACCOUNT_DAILY=replace-with-table-id
+
 LARK_TABLE_MKT_ACCOUNTS=replace-with-table-id
 LARK_TABLE_MKT_CONTENT=replace-with-table-id
 LARK_TABLE_MKT_CONTENT_DAILY=replace-with-table-id
 LARK_TABLE_MKT_ACCOUNT_DAILY=replace-with-table-id
-# Shared Raw tables: ใช้ View แยก Platform/Entity และ Reuse ตาราง Planned เดิมแบบ In-place
 LARK_TABLE_RAW_META_ORGANIC_ACCOUNTS=replace-with-table-id
 LARK_TABLE_RAW_META_ORGANIC_CONTENT=replace-with-table-id
 LARK_TABLE_RAW_META_ORGANIC_METRICS=replace-with-table-id
@@ -195,14 +211,11 @@ LARK_TABLE_MKT_AI_REPORT_RUNS=replace-with-table-id
 LARK_TABLE_MKT_SYNC_LOG=replace-with-table-id
 LARK_TABLE_MKT_SYSTEM_ALERTS=replace-with-table-id
 
-# Reliability และ Local Lock
 MKT_SYNC_LOCK_LEASE_MS=600000
 MKT_SYNC_LOCK_RENEW_INTERVAL_MS=120000
 MKT_LOCAL_LOCK_DIR=.mkt-locks
 MKT_TIKTOK_INCREMENTAL_ENABLED=false
 MKT_TIKTOK_FULL_RECONCILIATION_INTERVAL_MS=86400000
-
-# Lark API Reliability
 LARK_MIN_REQUEST_INTERVAL_MS=150
 LARK_REQUEST_TIMEOUT_MS=30000
 LARK_MAX_ATTEMPTS=5
