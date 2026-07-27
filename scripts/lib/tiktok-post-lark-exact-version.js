@@ -1,74 +1,59 @@
 import { randomUUID } from 'node:crypto';
 import { permanentError } from '../../packages/shared/src/errors/runtime-error.js';
+import {
+  CLOUDFLARE_WORKERS_VERSION_OVERRIDES_HEADER,
+  WORKER_RUNTIME_VERSION_HEADER,
+  WORKER_VERSION_METADATA_BINDING,
+  buildWorkerVersionOverrideHeader,
+  isWorkerVersionId,
+  requireWorkerName,
+  requireWorkerVersionId,
+  validateWorkerResponseRuntimeVersion,
+} from '../../packages/shared/src/cloudflare/worker-version.js';
 import { probeTikTokPostLarkRouteStability } from './tiktok-post-lark-rollout-operator.js';
 
-export const TIKTOK_POST_LARK_VERSION_METADATA_BINDING = 'CF_VERSION_METADATA';
-export const TIKTOK_POST_LARK_RUNTIME_VERSION_HEADER = 'x-mkt-worker-version-id';
-export const CLOUDFLARE_WORKERS_VERSION_OVERRIDES_HEADER = 'Cloudflare-Workers-Version-Overrides';
+export const TIKTOK_POST_LARK_VERSION_METADATA_BINDING = WORKER_VERSION_METADATA_BINDING;
+export const TIKTOK_POST_LARK_RUNTIME_VERSION_HEADER = WORKER_RUNTIME_VERSION_HEADER;
+export { CLOUDFLARE_WORKERS_VERSION_OVERRIDES_HEADER };
 export const TIKTOK_POST_LARK_AUDIT_RESPONSE_MAX_BYTES = 2 * 1024 * 1024;
 
-const WORKER_VERSION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
-const WORKER_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}$/u;
 const AUDIT_TIMEOUT_MS = 30_000;
 
 export function validateTikTokPostLarkVersionMetadataConfig(configText) {
   const text = requireText(configText, 'configText');
   const bindingPattern = new RegExp(
-    `"version_metadata"\\s*:\\s*\\{[\\s\\S]*?"binding"\\s*:\\s*"${TIKTOK_POST_LARK_VERSION_METADATA_BINDING}"[\\s\\S]*?\\}`,
+    `"version_metadata"\\s*:\\s*\\{[\\s\\S]*?"binding"\\s*:\\s*"${WORKER_VERSION_METADATA_BINDING}"[\\s\\S]*?\\}`,
     'u',
   );
   if (!bindingPattern.test(text)) {
     throw operatorError(
-      `TikTok post-Lark rollout config requires version_metadata binding ${TIKTOK_POST_LARK_VERSION_METADATA_BINDING}`,
+      `TikTok post-Lark rollout config requires version_metadata binding ${WORKER_VERSION_METADATA_BINDING}`,
       'TIKTOK_POST_LARK_ROLLOUT_CONFIG_UNSAFE',
-      { binding: TIKTOK_POST_LARK_VERSION_METADATA_BINDING },
+      { binding: WORKER_VERSION_METADATA_BINDING },
     );
   }
   return Object.freeze({
-    versionMetadataBinding: TIKTOK_POST_LARK_VERSION_METADATA_BINDING,
-  });
-}
-
-export function readTikTokPostLarkRuntimeVersionId(env = {}, options = {}) {
-  const allowMissing = options.allowMissing === true;
-  const value = env?.[TIKTOK_POST_LARK_VERSION_METADATA_BINDING]?.id;
-  if ((value === undefined || value === null || value === '') && allowMissing) return null;
-  return requireWorkerVersionId(value, 'runtimeVersionId');
-}
-
-export function addTikTokPostLarkRuntimeVersionHeader(response, runtimeVersionId) {
-  if (!(response instanceof Response)) {
-    throw operatorError(
-      'TikTok post-Lark runtime version response is invalid',
-      'TIKTOK_POST_LARK_AUDIT_VERSION_METADATA_INVALID',
-    );
-  }
-  if (runtimeVersionId == null) return response;
-  const versionId = requireWorkerVersionId(runtimeVersionId, 'runtimeVersionId');
-  const headers = new Headers(response.headers);
-  headers.set(TIKTOK_POST_LARK_RUNTIME_VERSION_HEADER, versionId);
-  return new Response(response.body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers,
+    versionMetadataBinding: WORKER_VERSION_METADATA_BINDING,
   });
 }
 
 export function buildTikTokPostLarkVersionOverrideHeader(workerName, deploymentVersionId) {
-  const name = requireWorkerName(workerName);
-  const versionId = requireWorkerVersionId(deploymentVersionId, 'deploymentVersionId');
-  return `${name}="${versionId}"`;
+  return buildWorkerVersionOverrideHeader(workerName, deploymentVersionId);
 }
 
 export function validateTikTokPostLarkResponseRuntimeVersion(response, expectedVersionId) {
-  if (!(response instanceof Response)) {
-    throw runtimeVersionMismatch(expectedVersionId, null);
+  try {
+    return validateWorkerResponseRuntimeVersion(response, expectedVersionId, {
+      errorCode: 'TIKTOK_POST_LARK_ROLLOUT_RUNTIME_VERSION_MISMATCH',
+      safeCloseRequired: true,
+    });
+  } catch (error) {
+    if (error?.code === 'TIKTOK_POST_LARK_ROLLOUT_RUNTIME_VERSION_MISMATCH') throw error;
+    throw operatorError(
+      'TikTok post-Lark runtime-version validation failed',
+      'TIKTOK_POST_LARK_ROLLOUT_RUNTIME_VERSION_INVALID',
+    );
   }
-  const expected = requireWorkerVersionId(expectedVersionId, 'expectedVersionId');
-  const observedRaw = response.headers.get(TIKTOK_POST_LARK_RUNTIME_VERSION_HEADER);
-  const observed = WORKER_VERSION_ID_PATTERN.test(observedRaw ?? '') ? observedRaw : null;
-  if (observed !== expected) throw runtimeVersionMismatch(expected, observed);
-  return expected;
 }
 
 export function createTikTokPostLarkExactVersionFetch(options = {}) {
@@ -84,7 +69,7 @@ export function createTikTokPostLarkExactVersionFetch(options = {}) {
     options.deploymentVersionId,
     'deploymentVersionId',
   );
-  const override = buildTikTokPostLarkVersionOverrideHeader(workerName, deploymentVersionId);
+  const override = buildWorkerVersionOverrideHeader(workerName, deploymentVersionId);
 
   return async function exactVersionFetch(input, init = {}) {
     const headers = new Headers(init.headers ?? {});
@@ -199,8 +184,12 @@ export async function readTikTokPostLarkBoundedJsonResponse(
 }
 
 export function validateTikTokPostLarkExactVersionEnableEvidence(evidence = {}) {
-  const deploymentVersionId = requireWorkerVersionIdOrNull(evidence.deploymentVersionId);
-  const runtimeVersionId = requireWorkerVersionIdOrNull(evidence.runtimeVersionId);
+  const deploymentVersionId = isWorkerVersionId(evidence.deploymentVersionId)
+    ? evidence.deploymentVersionId
+    : null;
+  const runtimeVersionId = isWorkerVersionId(evidence.runtimeVersionId)
+    ? evidence.runtimeVersionId
+    : null;
   if (
     deploymentVersionId === null
     || runtimeVersionId !== deploymentVersionId
@@ -225,45 +214,6 @@ function parseJson(text, status) {
       { status },
     );
   }
-}
-
-function runtimeVersionMismatch(expectedVersionId, observedVersionId) {
-  return operatorError(
-    'TikTok post-Lark response runtime version did not match the exact deployment',
-    'TIKTOK_POST_LARK_ROLLOUT_RUNTIME_VERSION_MISMATCH',
-    {
-      expectedVersionId: requireWorkerVersionId(expectedVersionId, 'expectedVersionId'),
-      observedVersionId,
-      safeCloseRequired: true,
-    },
-  );
-}
-
-function requireWorkerVersionIdOrNull(value) {
-  return WORKER_VERSION_ID_PATTERN.test(value ?? '') ? value : null;
-}
-
-function requireWorkerVersionId(value, fieldName) {
-  if (!WORKER_VERSION_ID_PATTERN.test(value ?? '')) {
-    throw operatorError(
-      `${fieldName} must be a Worker version UUID`,
-      'TIKTOK_POST_LARK_ROLLOUT_RUNTIME_VERSION_INVALID',
-      { fieldName },
-    );
-  }
-  return value;
-}
-
-function requireWorkerName(value) {
-  const name = requireText(value, 'workerName');
-  if (!WORKER_NAME_PATTERN.test(name)) {
-    throw operatorError(
-      'workerName is invalid',
-      'TIKTOK_POST_LARK_ROLLOUT_RUNTIME_VERSION_INVALID',
-      { fieldName: 'workerName' },
-    );
-  }
-  return name;
 }
 
 function requireHttpsOrigin(value) {
@@ -323,5 +273,8 @@ function requireText(value, fieldName) {
 }
 
 function operatorError(message, code, details = {}) {
-  return permanentError(code, message, Object.freeze({ ...details }));
+  return permanentError(message, {
+    code,
+    details: Object.freeze({ ...details }),
+  });
 }
