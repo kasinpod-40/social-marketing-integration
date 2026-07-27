@@ -1,126 +1,148 @@
-# Current Task — Chatwoot Remote Readiness Operator Merge Closeout
+# Current Task — YouTube Live Remote Contract Parser Hotfix
 
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = MERGED_REMOTE_EXECUTION_NOT_AUTHORIZED
-CURRENT_PROGRAM                     = CHATWOOT_REMOTE_PREFLIGHT_AND_MIGRATION_READINESS
-MERGED_PR                           = #111
-SOURCE_HEAD                         = af9a0f087964716652fe29239009363e33ea7ced
-MERGED_MAIN_SHA                     = 4423d168d7802e1ee8b128a838a3188dd30416d1
-MERGE_METHOD                        = SQUASH
-MERGED_AT                           = 2026-07-27T15:36:33Z
-MIGRATION_0017                      = APPLIED_REMOTE / DO_NOT_RERUN
-MIGRATION_0018                      = SOURCE_ONLY / NOT_APPLIED
-REMOTE_EXECUTION_AUTHORIZED         = false
+TASK_STATUS                         = IMPLEMENTATION_PENDING_BRANCH_VERIFICATION
+CURRENT_PROGRAM                     = YOUTUBE_LIVE_REMOTE_CONTRACT_PARSER_HOTFIX
+BASE_MAIN_SHA                       = 7f06ae8729dd24c3bd6f548332bfe17ba374c8ab
+BRANCH                              = hotfix/youtube-live-remote-contract-parser
+IMPLEMENTATION_OWNER                = CHATGPT_WORK_GITHUB_TOOLS
+REMOTE_ACTION_AUTHORIZED            = false
 REMOTE_ACTIONS                      = NONE
-CHATWOOT_PROVIDER_REQUEST           = NOT_RUN
-QUEUE_OR_DLQ_ACTION                 = NONE
-LARK_MUTATION                       = NONE
 WORKER_DEPLOYMENT                   = NOT_RUN
-SCHEDULE_OR_WEBHOOK                 = DISABLED
+REMOTE_D1                           = NONE
+QUEUE_OR_DLQ_ACTION                 = NONE
+YOUTUBE_LARK_OAUTH_ANALYTICS        = NOT_RUN
+SCHEDULE_ROUTE_SECRET_MUTATION      = NONE
 PRODUCTION                          = BLOCKED
 ```
 
-The completed Repository implementation task is archived at:
+The preceding Chatwoot merge-closeout task is preserved verbatim at:
 
 ```text
-docs/archive/chatwoot-remote-readiness-merged-current-task-2026-07-27.md
+docs/archive/current-task-before-youtube-live-remote-contract-parser-hotfix-2026-07-27.md
 ```
 
-Technical contracts and durable records remain in:
+## Incident
+
+The authorized YouTube Remote read-only preflight reached the live Cloudflare contract parser and
+stopped fail-closed before any mutation:
 
 ```text
-docs/tasks/chatwoot-remote-readiness.md
-docs/runbooks/chatwoot-remote-readiness.md
-docs/project-brain/chatwoot-remote-readiness-implementation-2026-07-27.md
-docs/project-brain/chatwoot-remote-readiness-merge-closeout-2026-07-27.md
+ACTIVE_VERSION                       = 55e7bed8-5abd-4ffa-b7eb-2d3fe1e195fb
+ACTIVE_TRAFFIC                       = 100%
+WRANGLER_VERSION                     = 4.110.0
+WRANGLER_AUTH                        = AUTHENTICATED
+REMOTE_MUTATION                      = NONE
+DECISION                             = BLOCKED_REMOTE_CONTRACT
+BLOCKER                              = remoteQueueName is required
 ```
 
-## Merge result
+The live `queues consumer list <queue> --json` response was already scoped by the exact Queue command
+but omitted a Queue-name field inside its consumer item. The live Worker version response retained
+the immutable D1 UUID but omitted the human-readable D1 database name.
 
-PR #111 passed exact-head Branch Verification and was Squash Merged into `main`. No direct push to
-`main` occurred.
+## Objective
+
+Add a fail-closed compatibility adapter for sanitized live Wrangler response shapes without weakening
+the reviewed YouTube Remote contract validator or creating a second Runtime/Queue/Reliability layer.
+
+## In scope
+
+- Bind an omitted Queue name only from an explicit reviewed command context.
+- Reject any explicit Queue name that differs from that command context.
+- Keep Main Queue and DLQ command contexts separate.
+- Treat the immutable D1 database UUID as required Remote identity.
+- Permit an omitted D1 display name only after the exact UUID matches.
+- Reject missing/mismatched D1 UUID and explicit D1-name drift.
+- Delegate flags, bindings, Secret names, consumer settings, Cron, routes, workers.dev, traffic and
+  Remote fingerprint validation to the existing reviewed validator.
+- Add a plan-only local CLI for validating captured sanitized live response JSON through the adapter.
+- Add focused regression tests and durable task/Project Brain records.
+
+## Out of scope
 
 ```text
-PR_STATE                            = CLOSED
-PR_MERGED                           = true
-FINAL_SOURCE_HEAD                   = af9a0f087964716652fe29239009363e33ea7ced
-SQUASH_MERGE_COMMIT                 = 4423d168d7802e1ee8b128a838a3188dd30416d1
-IMPLEMENTATION_VERIFICATION         = #662 / 30276869292 / PASS
-FINAL_HEAD_VERIFICATION             = #665 / 30277330870 / PASS
-FINAL_DIAGNOSTICS_ARTIFACT          = 8657366387
-FINAL_ARTIFACT_DIGEST               = sha256:ef2c9fedda7adc73c282ecfc493e3009ed9c715cb47a0133bd36c59bb679da15
+Worker deploy/version upload/rollback
+Remote D1 query/write/migration
+Queue send/Ack/Retry/DLQ action
+YouTube/Lark/OAuth/Analytics request
+Cron/route/workers.dev/Secret mutation
+Production or Customer LIVE UAT
+PR merge
 ```
 
-## Merged Repository scope
+## Compatibility contract
 
-The merged operator is plan-only by default and supports separately confirmed phases:
+### Queue consumer responses
 
 ```text
-plan
-→ preflight
-→ backup
-→ migrate
-→ schema-readback
+identity source when response contains Queue name = response value, must match command context
+identity source when response omits Queue name     = exact expectedQueueName command context
+missing command context                            = fail closed
+explicit mismatch                                  = fail closed
+Main Queue and DLQ                                  = separate contexts
 ```
 
-Every executable phase requires its own exact confirmation and chain-bound evidence. No phase grants
-permission for a later phase.
+The adapter does not infer Queue identity from retry counts, array position or DLQ settings.
 
-Locked target and migration contract:
+### D1 version binding
 
 ```text
-MKT_ENV                          = development
-MKT_CUSTOMER_PROFILE             = integration_workspace
-MKT_CONNECTION_CUSTOMER_KEY      = chemistry_k
-D1 database                      = social-mkt-state-dev
-Worker                           = social-mkt-sync-worker
-Previous Migration               = 0017_woocommerce_commerce.sql applied / do not rerun
-Required pending Migration       = 0018_chatwoot_analytics.sql only
-Reviewed Chatwoot tables         = 14
-Reviewed Chatwoot indexes        = 15
+binding name          = MKT_STATE_DB exactly once
+immutable database ID = required valid UUID and exact reviewed match
+database display name = optional in live response
+missing display name  = restored only after UUID match
+explicit name drift   = fail closed
+missing/mismatched ID = fail closed
 ```
 
-The operator validates all Chatwoot and unrelated Business, Report, Schedule, Webhook, retention,
-notification, Audit and DLQ-redrive controls as explicitly false. Preflight and schema-readback SQL
-are SELECT-only. Backup is non-empty and SHA-256-bound. Migration and schema verification are bound
-to the exact target, migration source and prior evidence.
+### Delegation boundary
 
-## Verification result
+The adapter normalizes only the two proven metadata omissions above and then calls
+`validateRemoteYouTubeDeploymentContract`. It does not reimplement flag, trigger, consumer-setting,
+Secret-name, traffic or fingerprint decisions.
+
+## Files
 
 ```text
-FOCUSED_STAGED_TIKTOK             = 4 / 4 PASS
-NODE_UNIT_INTEGRATION             = 1061 / 1061 PASS
-WORKERS_RUNTIME                   = 11 / 11 PASS
-REPORT_RELIABILITY                = 91 / 91 PASS
-READINESS_OPERATOR_TESTS          = 11 / 11 PASS
-DEPENDENCY_AUDIT                  = 0 vulnerabilities
-WRANGLER_DRY_RUN                  = PASS / NO DEPLOYMENT
+scripts/lib/youtube-live-remote-contract-parser.js
+tests/application/youtube-live-remote-contract-parser.test.js
+scripts/validate-youtube-live-remote-contract.mjs
+package.json
+docs/tasks/youtube-live-remote-contract-parser-hotfix.md
+docs/project-brain/youtube-live-remote-contract-parser-hotfix-2026-07-27.md
 ```
 
-## Remote safe state
+## Required tests
+
+- Missing Queue name plus exact command context passes.
+- Explicit response-level or consumer-level Queue mismatch fails.
+- Main Queue and DLQ contexts remain distinct.
+- Missing D1 name plus exact UUID passes.
+- Missing/mismatched D1 UUID fails.
+- Explicit D1-name drift fails.
+- Compatibility adapter produces the exact reviewed deterministic Remote fingerprint.
+- Existing YouTube operator, Queue, Worker-runtime and all Connector regressions remain green.
+- Repository architecture/hygiene, dependency audit and Wrangler dry-run pass.
+
+## Implementation result
 
 ```text
-REMOTE_PREFLIGHT                  = NOT_RUN
-REMOTE_D1_EXPORT_OR_BACKUP        = NOT_RUN
-MIGRATION_0018_APPLY              = NOT_RUN
-REMOTE_SCHEMA_READBACK            = NOT_RUN
-CHATWOOT_TOKEN_ACCESS             = NOT_RUN
-CHATWOOT_PROVIDER_API             = NOT_RUN
-REMOTE_LARK                       = NONE
-QUEUE_OR_DLQ                      = NONE
-WORKER_DEPLOYMENT                 = NOT_RUN
-STATE_OR_REPORT_UAT               = NOT_RUN
-SCHEDULE_OR_WEBHOOK               = DISABLED
-PRODUCTION                        = BLOCKED
+ADAPTER_IMPLEMENTED                  = YES
+PLAN_ONLY_VALIDATOR_CLI              = YES
+FOCUSED_TESTS_ADDED                  = 6
+REMOTE_RESPONSE_VALUES_COMMITTED     = NO
+SECRET_VALUES_COMMITTED              = NO
+REMOTE_ACTION_COUNT                  = 0
+BRANCH_VERIFICATION                  = PENDING
+FULL_TEST_RESULT                     = PENDING
+DECISION                             = PENDING_CI_REVIEW
 ```
 
 ## Required next gate
 
-The next Chatwoot phase must be opened as a new Integration-owned task from then-current `main` after
-refreshing open PRs, migrations and Remote target state.
-
-The first eligible phase is **Remote read-only preflight only**. A later backup, Migration `0018`
-apply, schema read-back, Chatwoot identity/permission check, Lark mapping or UAT each requires its own
-separate explicit authorization and evidence chain. This closeout authorizes none of those actions.
+Open a Draft PR and wait for Branch Verification on the exact final head. This task authorizes no
+Remote preflight retry. After Repository review/merge, the user must separately authorize a new
+read-only preflight attempt against then-current `main` and then-current active Worker version.
