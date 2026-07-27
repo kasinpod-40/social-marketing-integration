@@ -2,97 +2,286 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { syncChatwootAnalytics } from '../../packages/application/src/use-cases/sync-chatwoot-analytics.js';
 
-test('Chatwoot sync fails closed unless all write gates are explicit', async () => {
+const OBSERVED_AT = Date.parse('2026-07-27T12:00:00Z');
+
+test('Chatwoot sync requires isolated connector/D1/checkpoint/report gates', async () => {
   await assert.rejects(
     () => syncChatwootAnalytics({}),
+    (error) => error?.code === 'CHATWOOT_CONNECTOR_DISABLED',
+  );
+  await assert.rejects(
+    () => syncChatwootAnalytics({ connectorEnabled: true }),
     (error) => error?.code === 'CHATWOOT_PROCESSING_GATES_DISABLED',
+  );
+  await assert.rejects(
+    () => syncChatwootAnalytics({
+      connectorEnabled: true,
+      d1WriteEnabled: true,
+      checkpointWriteEnabled: true,
+      reportWriteEnabled: true,
+      fullSnapshot: false,
+    }),
+    (error) => error?.code === 'CHATWOOT_REPORT_REQUIRES_FULL_SNAPSHOT',
   );
 });
 
-test('Chatwoot sync writes D1 then Lark then checkpoint through injected shared contracts', async () => {
+test('Chatwoot state-only sync writes D1, finalizes coverage, and checkpoints without report/Lark rows', async () => {
   const order = [];
-  const tables = Object.fromEntries([
-    'rawChatwootAccounts', 'rawChatwootInboxes', 'rawChatwootContacts', 'rawChatwootAgents',
-    'rawChatwootTeams', 'rawChatwootLabels', 'rawChatwootConversations',
-    'rawChatwootConversationLabels', 'rawChatwootMessageAnalytics', 'rawChatwootReportingEvents',
-    'mktConversations', 'mktConversationDaily', 'mktAgentDaily', 'mktInboxDaily',
-    'mktConversationAccountDaily',
-  ].map((key) => [key, `table:${key}`]));
-  const chatwootStore = makeChatwootStore(order);
-  const coverageStore = {
-    async saveCoverageRun() { order.push('d1:coverage-run'); },
-    async saveCoverageEntities() { order.push('d1:coverage-entities'); },
-  };
-  const incrementalStateStore = {
-    async loadCheckpoint() { return null; },
-    async saveCheckpoint(value) { order.push('checkpoint'); return value; },
-  };
-  const syncEngine = {
-    async planByKey(value) { return { ...value, stats: { total: value.rows.length } }; },
-    async executePlan(plan) {
-      order.push(`lark:${plan.tableId}`);
-      return { created: plan.rows.length, updated: 0, skipped: 0, stats: plan.stats };
-    },
-  };
-  const client = {
-    async listInboxes() { return []; },
-    async listAgents() { return []; },
-    async listTeams() { return []; },
-    async listLabels() { return []; },
-    async listConversationsPage() { return { page: 1, rows: [], totalCount: 0, hasMore: false }; },
-    async listContactsPage() { return { page: 1, rows: [], totalCount: 0, hasMore: false }; },
-    async listAccountReportingEventsPage() { return { page: 1, rows: [], totalCount: 0, hasMore: false }; },
-    async listConversationLabels() { return []; },
-    async listMessagesPage() { throw new Error('no conversation should read messages'); },
-    async collectPages(readPage) {
-      const page = await readPage(1);
-      return { rows: page.rows, pagesProcessed: 1, declaredTotal: page.totalCount, complete: true };
-    },
-  };
-
+  const coverageRows = [];
+  const store = makeStore({ order });
   const result = await syncChatwootAnalytics({
+    ...baseInput(),
+    connectorEnabled: true,
+    d1WriteEnabled: true,
+    larkWriteEnabled: false,
+    reportWriteEnabled: false,
+    checkpointWriteEnabled: true,
+    fullSnapshot: false,
+    client: emptyClient(),
+    chatwootStore: store,
+    coverageStore: {
+      async saveCoverageRun(row) { coverageRows.push(row); order.push(`coverage:${row.status}`); },
+      async saveCoverageEntities() { order.push('coverage:entities'); },
+    },
+    incrementalStateStore: checkpointStore(order),
+  });
+
+  assert.equal(result.status, 'completed');
+  assert.equal(result.lark.enabled, false);
+  assert.equal(result.gates.reportWriteEnabled, false);
+  assert.equal(order.includes('d1:conversation-daily'), false);
+  assert.equal(order.includes('d1:agent-daily'), false);
+  assert.equal(order.includes('d1:inbox-daily'), false);
+  assert.equal(order.includes('d1:account-daily'), false);
+  assert.equal(coverageRows.some((row) => row.status === 'partial'), true);
+  assert.equal(coverageRows.some((row) => row.status === 'complete'), true);
+  assert.equal(order.at(-1), 'checkpoint');
+});
+
+test('Chatwoot sync backfills complete message history with backward before pagination', async () => {
+  const captured = [];
+  const client = clientWithConversations([conversation(71)], {
+    async listMessagesPage(input) {
+      if (input.before === undefined) return messagePage(26, 45, true);
+      if (String(input.before) === '26') return messagePage(6, 25, true);
+      if (String(input.before) === '6') return messagePage(1, 5, false);
+      throw new Error(`unexpected before ${input.before}`);
+    },
+    async listConversationReportingEvents() { return []; },
+  });
+  const result = await syncChatwootAnalytics({
+    ...baseInput(),
+    connectorEnabled: true,
+    d1WriteEnabled: true,
+    larkWriteEnabled: false,
+    reportWriteEnabled: false,
+    checkpointWriteEnabled: true,
+    fullSnapshot: false,
+    client,
+    chatwootStore: makeStore({ capturedConversations: captured }),
+    coverageStore: coverageStore(),
+    incrementalStateStore: checkpointStore([]),
+  });
+  assert.equal(result.source.messagesSelected, 45);
+  assert.equal(captured[0].message_count, 45);
+  assert.equal(captured[0].incoming_message_count, 45);
+});
+
+test('Chatwoot sync batches D1 state and label reads above 500 conversations', async () => {
+  const rows = Array.from({ length: 501 }, (_, index) => conversation(index + 1));
+  const stateBatches = [];
+  const labelBatches = [];
+  const store = makeStore({
+    readConversationStates: async (input) => {
+      stateBatches.push(input.externalConversationIds.length);
+      return [];
+    },
+    readConversationLabelStates: async (input) => {
+      labelBatches.push(input.externalConversationIds.length);
+      return [];
+    },
+  });
+  const client = clientWithConversations(rows, {
+    async listMessagesPage() { return { rows: [], hasMore: false, nextBefore: null }; },
+    async listConversationReportingEvents() { return []; },
+  });
+  const result = await syncChatwootAnalytics({
+    ...baseInput(),
+    connectorEnabled: true,
+    d1WriteEnabled: true,
+    larkWriteEnabled: false,
+    reportWriteEnabled: false,
+    checkpointWriteEnabled: true,
+    fullSnapshot: true,
+    maxConversations: 1_000,
+    client,
+    chatwootStore: store,
+    coverageStore: coverageStore(),
+    incrementalStateStore: checkpointStore([]),
+  });
+  assert.equal(result.source.conversationsSelected, 501);
+  assert.deepEqual(stateBatches, [500, 1]);
+  assert.deepEqual(labelBatches, [500, 1]);
+});
+
+test('Chatwoot Lark failure leaves only partial coverage and does not checkpoint', async () => {
+  const coverageRows = [];
+  let checkpointed = false;
+  const tables = stateTables();
+  await assert.rejects(
+    () => syncChatwootAnalytics({
+      ...baseInput(),
+      connectorEnabled: true,
+      d1WriteEnabled: true,
+      larkWriteEnabled: true,
+      reportWriteEnabled: false,
+      checkpointWriteEnabled: true,
+      fullSnapshot: false,
+      client: emptyClient(),
+      chatwootStore: makeStore({}),
+      coverageStore: {
+        async saveCoverageRun(row) { coverageRows.push(row); },
+        async saveCoverageEntities() {},
+      },
+      incrementalStateStore: {
+        async loadCheckpoint() { return null; },
+        async saveCheckpoint() { checkpointed = true; },
+      },
+      repository: {},
+      tables,
+      syncEngine: {
+        async planByKey(value) { return value; },
+        async executePlan() { throw new Error('Lark unavailable'); },
+      },
+    }),
+    /Lark unavailable/u,
+  );
+  assert.equal(coverageRows.length > 0, true);
+  assert.equal(coverageRows.every((row) => row.status === 'partial'), true);
+  assert.equal(checkpointed, false);
+});
+
+test('Chatwoot Lark state-only mode excludes four report targets', async () => {
+  const tables = stateTables();
+  const result = await syncChatwootAnalytics({
+    ...baseInput(),
+    connectorEnabled: true,
     d1WriteEnabled: true,
     larkWriteEnabled: true,
+    reportWriteEnabled: false,
     checkpointWriteEnabled: true,
-    webhookEnabled: false,
+    fullSnapshot: false,
+    client: emptyClient(),
+    chatwootStore: makeStore({}),
+    coverageStore: coverageStore(),
+    incrementalStateStore: checkpointStore([]),
+    repository: {},
+    tables,
+    syncEngine: {
+      async planByKey(value) { return { ...value, stats: { total: value.rows.length } }; },
+      async executePlan(plan) {
+        return { created: plan.rows.length, updated: 0, skipped: 0, stats: plan.stats };
+      },
+    },
+  });
+  assert.equal(result.lark.tables.length, 11);
+  assert.equal(result.lark.tables.some((row) => row.tableKey === 'mktConversationDaily'), false);
+});
+
+function baseInput() {
+  return {
     customerProfile: 'integration_workspace',
     customerKey: 'customer_dev',
     accountKey: 'chat_dev',
     externalAccountId: '42',
     reportingTimezone: 'Asia/Bangkok',
     syncRunId: 'sync:chatwoot:test',
-    observedAt: 1_785_080_000_000,
-    client,
-    chatwootStore,
-    coverageStore,
-    incrementalStateStore,
-    repository: {},
-    syncEngine,
-    tables,
-    assertLockActive: async () => order.push('lock'),
-  });
+    observedAt: OBSERVED_AT,
+    webhookEnabled: false,
+  };
+}
 
-  assert.equal(result.status, 'completed');
-  assert.equal(result.source.conversationsSelected, 0);
-  assert.equal(result.lark.tables.length, 15);
-  assert.ok(order.indexOf('d1:account') < order.findIndex((value) => value.startsWith('lark:')));
-  assert.ok(order.findLastIndex((value) => value.startsWith('lark:')) < order.indexOf('checkpoint'));
-  assert.equal(order.at(-1), 'checkpoint');
-});
+function emptyClient() {
+  return clientWithConversations([], {});
+}
 
-function makeChatwootStore(order) {
+function clientWithConversations(conversations, overrides) {
+  const client = {
+    async listInboxes() { return []; },
+    async listAgents() { return []; },
+    async listTeams() { return []; },
+    async listLabels() { return []; },
+    async listConversationsPage() {
+      return { page: 1, rows: conversations, totalCount: conversations.length, hasMore: false };
+    },
+    async listContactsPage() { return { page: 1, rows: [], totalCount: 0, hasMore: false }; },
+    async listConversationLabels() { return []; },
+    async listMessagesPage() { return { rows: [], hasMore: false, nextBefore: null }; },
+    async listConversationReportingEvents() { return []; },
+    async collectPages(readPage) {
+      const page = await readPage(1);
+      return { rows: page.rows, pagesProcessed: 1, declaredTotal: page.totalCount, complete: true };
+    },
+    ...overrides,
+  };
+  return client;
+}
+
+function conversation(id) {
+  return {
+    id,
+    account_id: 42,
+    inbox_id: 3,
+    status: 'open',
+    created_at: '2026-07-25T01:00:00Z',
+    updated_at: '2026-07-27T04:00:00Z',
+    last_activity_at: '2026-07-27T04:00:00Z',
+    labels: [],
+    meta: {},
+  };
+}
+
+function messagePage(start, end, hasMore) {
+  const rows = Array.from({ length: end - start + 1 }, (_, index) => ({
+    id: start + index,
+    account_id: 42,
+    conversation_id: 71,
+    inbox_id: 3,
+    message_type: 0,
+    content_type: 'text',
+    private: false,
+    sender_type: 'Contact',
+    sender_id: 9,
+    created_at: 1_785_000_000 + index,
+  }));
+  return { rows, hasMore, nextBefore: rows.length ? String(rows[0].id) : null };
+}
+
+function makeStore(options) {
+  const order = options.order ?? [];
+  const capturedConversations = options.capturedConversations ?? [];
   const store = {
-    async readConversationStates() { return []; },
+    async readConversationStates(input) {
+      return options.readConversationStates ? options.readConversationStates(input) : [];
+    },
+    async readConversationLabelStates(input) {
+      return options.readConversationLabelStates ? options.readConversationLabelStates(input) : [];
+    },
   };
   const methods = [
     ['upsertAccountState', 'account'], ['upsertInboxState', 'inbox'],
     ['upsertContactState', 'contact'], ['upsertAgentState', 'agent'],
     ['upsertTeamState', 'team'], ['upsertLabelState', 'label'],
-    ['upsertConversationState', 'conversation'], ['upsertConversationLabelState', 'conversation-label'],
+    ['upsertConversationLabelState', 'conversation-label'],
     ['upsertMessageAnalyticsState', 'message'], ['upsertReportingEventFact', 'reporting-event'],
     ['upsertConversationDailyFact', 'conversation-daily'], ['upsertAgentDailyFact', 'agent-daily'],
     ['upsertInboxDailyFact', 'inbox-daily'], ['upsertAccountDailyFact', 'account-daily'],
   ];
+  store.upsertConversationState = async (row) => {
+    order.push('d1:conversation');
+    capturedConversations.push(row);
+    return { outcome: 'written', rows: 1 };
+  };
   for (const [method, label] of methods) {
     store[method] = async () => {
       order.push(`d1:${label}`);
@@ -100,4 +289,27 @@ function makeChatwootStore(order) {
     };
   }
   return store;
+}
+
+function coverageStore() {
+  return {
+    async saveCoverageRun() {},
+    async saveCoverageEntities() {},
+  };
+}
+
+function checkpointStore(order) {
+  return {
+    async loadCheckpoint() { return null; },
+    async saveCheckpoint(value) { order.push('checkpoint'); return value; },
+  };
+}
+
+function stateTables() {
+  return Object.fromEntries([
+    'rawChatwootAccounts', 'rawChatwootInboxes', 'rawChatwootContacts', 'rawChatwootAgents',
+    'rawChatwootTeams', 'rawChatwootLabels', 'rawChatwootConversations',
+    'rawChatwootConversationLabels', 'rawChatwootMessageAnalytics', 'rawChatwootReportingEvents',
+    'mktConversations',
+  ].map((key) => [key, `table:${key}`]));
 }
