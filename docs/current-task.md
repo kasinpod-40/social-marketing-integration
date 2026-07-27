@@ -1,109 +1,239 @@
-# Current Task — YouTube Live Remote Contract Parser Hotfix Merge Closeout
+# Current Task — Meta D1-only Processing Guarded Rollout Operator
 
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = MERGED_REMOTE_PREFLIGHT_RETRY_NOT_AUTHORIZED
-CURRENT_PROGRAM                     = YOUTUBE_LIVE_REMOTE_CONTRACT_PARSER_HOTFIX
-MERGED_PR                           = #113
-SOURCE_HEAD                         = 9224a42c9a1a807f83df57a5ee63dc6dd503d6fd
-MERGED_MAIN_SHA                     = 829c5e214134e7faa0b32f458e6df40e0b8959f6
-MERGE_METHOD                        = SQUASH
-MERGED_AT                           = 2026-07-27T16:34:26Z
-REMOTE_PREFLIGHT_RETRY_AUTHORIZED   = false
+TASK_STATUS                         = FINAL_ALIGNMENT_PENDING_VERIFICATION
+CURRENT_PROGRAM                     = META_D1_ONLY_PROCESSING_GUARDED_ROLLOUT
+CONTRACT_VERSION                    = meta-d1-only-rollout-v1
+ORIGINAL_BASE_MAIN_SHA              = 7f06ae8729dd24c3bd6f548332bfe17ba374c8ab
+ALIGNED_MAIN_SHA                    = fb16083ec9615944f675b326a69db9ca98d00353
+ALIGNMENT_PR_1                      = #115 / MERGED_INTO_FEATURE_BRANCH
+ALIGNMENT_MERGE_COMMIT_1            = 259da95ccf3b78d92dbc8921f4cbaed4604784be
+ALIGNMENT_PR_2                      = #117 / MERGED_INTO_FEATURE_BRANCH
+ALIGNMENT_MERGE_COMMIT_2            = 12137908000032df6b23263c67a4574907af724c
+INHERITED_MAIN_PRS                  = #113 / #116
+BRANCH                              = integration/meta-d1-only-rollout-operator
+DRAFT_PR                            = #114 / OPEN / DRAFT / UNMERGED
+PRE_FINAL_ALIGNMENT_VERIFIED_HEAD   = 207e3aca51618f3320e0e5bca35e35e6179b6b71
+META_PROVIDER_VALIDATION            = PASS / 4 TARGETS
+REMOTE_EXECUTION_AUTHORIZED         = false
 REMOTE_ACTIONS                      = NONE
-WORKER_DEPLOYMENT                   = NOT_RUN
-REMOTE_D1                           = NONE
+REMOTE_D1_MUTATION                  = NONE
 QUEUE_OR_DLQ_ACTION                 = NONE
-YOUTUBE_LARK_OAUTH_ANALYTICS        = NOT_RUN
-SCHEDULE_ROUTE_SECRET_MUTATION      = NONE
+LARK_MUTATION                       = NONE
+WORKER_DEPLOYMENT                   = NOT_RUN
+SCHEDULE                            = DISABLED
 PRODUCTION                          = BLOCKED
 ```
 
-The completed implementation task is archived at:
+The immediately preceding YouTube merge-closeout task is preserved verbatim at:
+
+```text
+docs/archive/current-task-before-meta-d1-only-rollout-operator-2026-07-27.md
+```
+
+Additional inherited closeout records remain in:
 
 ```text
 docs/archive/youtube-live-remote-contract-parser-hotfix-merged-current-task-2026-07-27.md
-```
-
-Technical contracts and durable records remain in:
-
-```text
-docs/tasks/youtube-live-remote-contract-parser-hotfix.md
-docs/project-brain/youtube-live-remote-contract-parser-hotfix-2026-07-27.md
 docs/project-brain/youtube-live-remote-contract-parser-hotfix-merge-closeout-2026-07-27.md
 ```
 
-## Merge result
+## Alignment result
 
-PR #113 passed exact-final-head Branch Verification and was Squash Merged into `main`. No direct push
-to `main` occurred.
+PR #115 merged `main@829c5e214134e7faa0b32f458e6df40e0b8959f6` into the Meta feature branch.
+PR #117 then merged `main@fb16083ec9615944f675b326a69db9ca98d00353` into the same feature branch
+after the YouTube merge-closeout documentation landed. Both alignment PRs targeted the feature branch
+only. Neither merged PR #114 into `main`, and neither performed a Remote action.
+
+The branch now contains both the Meta D1-only rollout operator and the complete merged YouTube live
+Remote-contract parser/closeout records. Meta package commands remain additive alongside the inherited
+YouTube validator commands.
+
+## Objective
+
+สร้าง Guarded rollout operator สำหรับทดสอบ Chemistry K Meta แบบ D1-only ทีละ Source หลัง
+read-only identity/permission validation ผ่านครบ โดย reuse Meta Runtime, Shared Queue,
+Reliability, resumable work, D1 History และ Coverage contracts เดิมทั้งหมด
+
+Operator รองรับ Backup, exact deployment provenance, one initial Queue operation,
+Shared continuation completion, D1/Coverage reconciliation, same-operation idempotent rerun และ
+all-flags-false restore โดยห้าม Lark, Report, Schedule และ Production
+
+## Approved targets
 
 ```text
-PR_STATE                            = CLOSED
-PR_MERGED                           = true
-FINAL_SOURCE_HEAD                   = 9224a42c9a1a807f83df57a5ee63dc6dd503d6fd
-SQUASH_MERGE_COMMIT                 = 829c5e214134e7faa0b32f458e6df40e0b8959f6
-FINAL_HEAD_VERIFICATION             = #668 / 30282452516 / PASS
-FINAL_DIAGNOSTICS_ARTIFACT          = 8659418317
-FINAL_ARTIFACT_DIGEST               = sha256:ebba68ea26cb354d8095c18584ec13e191037454c12491637b77c443b976a009
+facebook
+instagram
+chemistry_k2
+chemistry_k3
 ```
 
-## Merged Repository scope
+หนึ่ง Evidence chain เลือกได้เพียง Target เดียว แต่ละ Target ต้องใช้ operationId, workKey,
+syncRunId, Backup และ Evidence root แยกกัน
 
-- Added a narrow compatibility adapter for live Wrangler metadata omissions proven during the
-  authorized read-only preflight.
-- Queue identity may be supplied only by the exact scoped command context when the response omits it.
-- Explicit Queue-name mismatch remains fail-closed.
-- Main Queue and DLQ retain separate reviewed command contexts.
-- The immutable D1 database UUID remains mandatory and must exactly match the reviewed config.
-- A missing D1 display name is tolerated only after UUID verification; explicit name drift remains
-  fail-closed.
-- The adapter delegates flags, bindings, Secret names, consumer settings, Cron, routes, workers.dev,
-  deployment traffic and Remote fingerprint decisions to the existing strict validator.
-- Added a plan-only CLI for validating sanitized captured live responses without issuing Remote
-  commands.
+## Implemented scope
 
-Reviewed local validation path:
+- contract `meta-d1-only-rollout-v1`;
+- plan-only default;
+- exact confirmation per executable phase;
+- exact reviewed Git HEAD and clean Working Tree;
+- bind sanitized Meta read-only summary into target fingerprint;
+- validate Safe configuration with all execution flags false;
+- derive temporary Active config with exactly selected Connector + Meta source-read + Meta D1-write;
+- local Safe/Active Wrangler dry-run bundle fingerprints;
+- exact Worker active version and Queue topology verification;
+- required Worker Secret-name-only verification;
+- read-only D1 schema and operation freshness checks;
+- checksum-verified Remote D1 export phase;
+- Safe deployment, D1-only active deployment and guarded all-false restore;
+- central stable Queue operation body with `trigger=manual_uat` and `d1Only=true`;
+- one initial Queue send with pre-send attempt evidence;
+- bounded D1/Coverage completion verification;
+- one same-operation rerun and zero-drift verification;
+- SHA-256 evidence chain and secret-shaped field redaction;
+- runbook, task contract and durable Project Brain record
+
+## Existing contracts reused
+
+- Meta protected active job router;
+- exact Chemistry K Facebook/Instagram/Ads mappings;
+- Meta Graph runtime and source adapters;
+- `createStableQueueOperationBody()`;
+- Shared Queue continuation and DLQ ownership;
+- `runReliableSync()` and D1 lock;
+- `D1ResumableWorkStore`;
+- `D1MarketingHistoryStore`;
+- `D1OrganicHistoryGateway`;
+- Organic History Writer;
+- Storage Foundation Migration `0009`;
+- existing D1 Coverage tables;
+- merged YouTube live Remote-contract parser contracts from PR #113;
+- merged YouTube parser closeout records from PR #116
+
+No new Connector, Graph client, Queue framework, Reliability runner, D1 writer, Coverage engine,
+Lark sync engine or migration was created
+
+## D1-only success boundary
+
+Accepted execution must prove:
 
 ```text
-npm run validate:youtube-live-remote-contract
-npm run validate:youtube-live-remote-contract:run -- --input=<sanitized-input.json>
+sync_runs.status=success
+meta_end_to_end_d1_write_v1.complete=1
+Coverage run count > 0
+Coverage failed_rows=0
+Coverage status in complete | no_data_confirmed | revisable
+no meta_end_to_end_lark_write_v1 phase
+no meta_end_to_end_completion_v1 phase
+no active lock
+sync_work_runs.lifecycle_status=active
+sync_work_runs.completed_at=NULL
 ```
 
-## Verification result
+This is the intentional `lark_gate_disabled` boundary. It is not full end-to-end completion and must
+not be marked failed merely because Work is intentionally left active for a later Lark gate
+
+## Approved flag window
+
+Safe configuration:
 
 ```text
-FOCUSED_STAGED_TIKTOK               = 4 / 4 PASS
-NODE_UNIT_INTEGRATION               = 1067 / 1067 PASS
+all MKT execution flags=false
+```
+
+Active configuration:
+
+```text
+selected Connector flag=true
+MKT_META_SOURCE_READ_ENABLED=true
+MKT_META_D1_WRITE_ENABLED=true
+```
+
+Mandatory false throughout:
+
+```text
+MKT_META_LARK_WRITE_ENABLED=false
+MKT_META_REPORT_READ_ENABLED=false
+all unrelated Connector/Business flags=false
+all schedules=false
+MKT_DLQ_REDRIVE_ENABLED=false
+Production=false
+```
+
+## Operator phases
+
+```text
+plan
+preflight
+backup
+deploy-safe-baseline
+verify-safe-baseline
+deploy-d1-only-gates
+verify-d1-only-deployment
+snapshot-before
+send-one-d1-only
+verify-d1-only
+resend-same-operation
+verify-idempotent-rerun
+restore-all-false
+verify-restore
+summary
+```
+
+## Idempotency acceptance
+
+The same exact stable operation may be sent one additional time only after first verification.
+Rerun must show:
+
+- Queue attempt increased;
+- target Business counts unchanged;
+- operation-scoped Business counts unchanged;
+- Coverage run/entity counts unchanged;
+- no Lark/completion phase;
+- no active lock
+
+## Historical verification before final alignment
+
+Exact head `207e3aca51618f3320e0e5bca35e35e6179b6b71` passed after PR #115:
+
+```text
+META_END_TO_END_VERIFICATION        = #38 / 30286421804 / PASS
+BRANCH_VERIFICATION                 = #678 / 30286421604 / PASS
+FOCUSED_META_D1_ONLY_TESTS          = 15 / 15 PASS
+NODE_UNIT_INTEGRATION               = 1081 / 1081 PASS
 WORKERS_RUNTIME                     = 11 / 11 PASS
 REPORT_RELIABILITY                  = 91 / 91 PASS
 DEPENDENCY_AUDIT                    = 0 vulnerabilities
-ARCHITECTURE_AND_HYGIENE            = PASS
 WRANGLER_DRY_RUN                    = PASS / NO DEPLOYMENT
+VERIFICATION_ARTIFACT               = 8661009920
+VERIFICATION_ARTIFACT_DIGEST        = sha256:7599e5e1dabf96c89a70359732c01a1a4f5c30b7d8bdcba4d5e499023eed1d03
+REMOTE_ACTION_COUNT                 = 0
 ```
 
-## Remote safe state
+These results remain evidence but do not replace exact-head verification after PR #117.
+
+## Out of scope and safe state
 
 ```text
-REMOTE_PREFLIGHT_RETRY              = NOT_RUN_AFTER_MERGE
-WORKER_DEPLOY_UPLOAD_ROLLBACK        = NOT_RUN
-REMOTE_D1_QUERY_WRITE_MIGRATION      = NONE
-QUEUE_SEND_ACK_RETRY_DLQ             = NONE
-YOUTUBE_LARK_OAUTH_ANALYTICS         = NOT_RUN
-CRON_ROUTE_WORKERS_DEV_SECRET_CHANGE = NONE
-PRODUCTION                           = BLOCKED
+Remote execution during Implementation     NOT_RUN
+Remote D1 export or mutation                NOT_RUN
+Worker deployment                           NOT_RUN
+Provider request                            NOT_RUN
+Queue message                               NONE
+DLQ action                                  NONE
+Lark preflight/write                        NONE
+Report cutover/materialization              NONE
+Schedule activation                         NONE
+Retention/delete                            NONE
+Production                                  BLOCKED
+PR merge into main                          NOT_YET_RUN
 ```
 
-## Required next gate
+## Remaining gate
 
-The next eligible YouTube action is a newly authorized **Remote read-only preflight retry only** from
-then-current `main` and then-current active Worker version. It must capture sanitized Wrangler and
-Cloudflare responses and validate them through the merged compatibility CLI.
-
-The retry must still fail closed on main drift, active-version drift, authentication failure, missing
-D1 UUID, Queue-context mismatch, unsafe flags, consumer-setting drift, Cron/route/workers.dev drift,
-Secret-name mismatch, pending migrations or Remote fingerprint mismatch.
-
-This closeout authorizes no Worker deployment, Queue message, Remote D1 migration/write, Provider or
-Lark request, Schedule change, rollback, Production action or later dry-run rollout phase.
+Run Meta End-to-End Verification and Branch Verification on the exact post-#117 head. PR #114 remains
+Draft and unmerged until both pass, the final diff is clean and no unresolved review thread remains.
+Repository verification authorizes no Backup, deployment, Queue send, D1 Business write or later
+Remote phase.
