@@ -1,149 +1,107 @@
-# Current Task — YouTube Organic Integration Merge Closeout
+# Current Task — WooCommerce Integration Wiring
 
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = MERGED_REMOTE_ROLLOUT_NOT_AUTHORIZED
-CURRENT_PROGRAM                     = YOUTUBE_ORGANIC_END_TO_END
-MERGED_PR                           = #85
-MERGE_COMMIT                        = dce3bd954ee75ee55a29efac303e9973ca060fca
-REVIEWED_HEAD                       = c5ffc4327ffec405f82472c7b7098b45bac82722
-BASE_MAIN_AT_MERGE                  = 8b7f9a879ba0c1b0b5d89dcfa2373ad3bb3c2ce8
-SOURCE_DRAFT_PR                     = #72
-SOURCE_REVIEW_DECISION              = PASS_FOR_INTEGRATION
-FINAL_BRANCH_VERIFICATION           = #581 PASS
-REMOTE_SCHEMA_CHECK                 = NOT_RUN
+TASK_STATUS                         = VERIFICATION_PENDING
+CURRENT_PROGRAM                     = WOOCOMMERCE_INTEGRATION_WIRING
+INTEGRATION_BRANCH                  = integration/woocommerce-safe-wiring
+DRAFT_PR                            = #94
+REVIEWED_SOURCE_PR                  = #66 / PASS_FOR_INTEGRATION
+REVIEWED_SOURCE_HEAD                = 10cdd910b1083e6ffd5f8a4e118c06cdc6c842ee
+SOURCE_IMPORT_PR                    = #92 / Integration branch only
+MIGRATION                           = 0017_woocommerce_commerce.sql / NOT_APPLIED
 WORKER_DEPLOYMENT                   = NOT_RUN
 QUEUE_MESSAGE                       = NOT_SENT
 REMOTE_D1_OR_LARK_MUTATION          = NONE
 SCHEDULES                           = DISABLED
+CUSTOMER_CREDENTIAL                 = NOT_USED
 CUSTOMER_OR_PRODUCTION_LIVE_UAT     = NOT_RUN
 PRODUCTION                          = BLOCKED
+MERGE_INTO_MAIN                     = NOT_PERFORMED
 ```
 
-## Merge result
+## Objective
 
-PR `#85` was Squash Merged into `main` at
-`dce3bd954ee75ee55a29efac303e9973ca060fca` after the exact reviewed head
-`c5ffc4327ffec405f82472c7b7098b45bac82722` passed Branch Verification `#581`.
+นำ WooCommerce End-to-End ที่ผ่าน `PASS_FOR_INTEGRATION` เข้าสู่ Shared repository contracts โดยจัดเลข Migration, Stable Queue identity, Runtime routing, D1 stores, Lark registry และ default-false flags ให้ครบ โดยยังไม่ดำเนินการกับ Remote infrastructure หรือ Customer source.
 
-The merge imports the reviewed YouTube Organic End-to-End implementation from Draft PR `#72` and completes the Integration-owned Shared Worker wiring.
+Detailed contract and audit evidence:
 
 ```text
-YouTube job + MKT_YOUTUBE_END_TO_END_ENABLED=true
-  -> dedicated D1-first End-to-End route
-
-YouTube job + flag false/unset
-  -> existing active router and legacy YouTube route
-
-Non-YouTube job
-  -> existing Google Ads/TikTok/History/Active route chain unchanged
+docs/tasks/woocommerce-end-to-end.md
+docs/tasks/woocommerce-integration-wiring.md
 ```
 
-## Merged contracts
+## In scope
 
-- Existing YouTube API client, Shared Google OAuth Core, adapters and normalizers are reused.
-- Existing Reliability runner, distributed lock, resumable work, warning outbox, retry and DLQ contracts are reused.
-- Existing Organic history writer, D1 gateways/stores, Coverage model and `TableSyncEngine` are reused.
-- D1 completes before the first Lark Business plan on the dedicated route.
-- Large Content inventories use bounded D1 batches.
-- Completed Content and Account Coverage cannot be downgraded by retry replay.
-- Report reads require completed zero-failure Coverage and fail closed on missing evidence.
-- Missing/private/deleted evidence is non-destructive and never zero-fills prior metrics.
-- Hidden subscriber count remains `followers=null`.
-- YouTube Analytics period facts remain in `RAW_YouTube_Analytics_Daily`.
-- No new Migration was added; Storage Foundation `0009` is reused.
+- Import exact reviewed PR `#66` implementation into a separate Integration branch.
+- Allocate additive Migration `0017_woocommerce_commerce.sql`.
+- Register the 14 reviewed WooCommerce Lark logical table keys.
+- Promote WooCommerce Connector/Job to protected `uat_pending` / `manualOnly` repository status.
+- Add stable Queue operation identity and reference-only continuation.
+- Add strict runtime config with every execution and Schedule flag false by default.
+- Wire Shared Reliability, lock, generation, Queue retry/DLQ, D1 Coverage, Lark repository and `TableSyncEngine`.
+- Preserve every non-WooCommerce route unchanged.
+- Add focused regressions and run all repository gates.
+
+## Out of scope
+
+```text
+WooCommerce Provider request
+Customer Consumer Key/Secret use
+Remote D1 migration or Business write
+Remote Lark schema or record mutation
+Queue send or DLQ action
+Worker deployment
+Cron/Schedule activation
+Customer/Production LIVE UAT
+Report D1-primary cutover
+Retention/delete
+Production
+Merge into main without separate approval
+```
 
 ## Default-false controls
 
-Release examples now contain:
-
 ```text
-MKT_CONNECTOR_YOUTUBE_ENABLED=false
-MKT_YOUTUBE_END_TO_END_ENABLED=false
-MKT_TIME_SERIES_D1_WRITE_ENABLED=false
-MKT_YOUTUBE_LARK_WRITE_ENABLED=false
-MKT_YOUTUBE_ANALYTICS_ENABLED=false
-MKT_SCHEDULE_YOUTUBE_ENABLED=false
-MKT_REPORT_D1_SHADOW_READ_ENABLED=false
-MKT_REPORT_D1_READ_ENABLED=false
-MKT_REPORT_PRESET_MATERIALIZATION_ENABLED=false
+MKT_CONNECTOR_WOOCOMMERCE_ENABLED=false
+MKT_WOOCOMMERCE_D1_WRITE_ENABLED=false
+MKT_WOOCOMMERCE_LARK_WRITE_ENABLED=false
+MKT_WOOCOMMERCE_REPORT_READ_ENABLED=false
+MKT_WOOCOMMERCE_FULL_RECONCILIATION_ENABLED=false
+MKT_SCHEDULE_WOOCOMMERCE_ENABLED=false
 ```
 
-The merge does not alter deployed Environment values and does not enable a Schedule.
+## Safety contract
 
-## Verification result
+- Queue execution accepts `trigger=manual_uat` only.
+- Stable identity is `woocommerce:<operationId>` and must retain exact generation/originalRequestedAt.
+- Protected runtime is restricted to `development / integration_workspace / chemistry_k`.
+- Connector, D1 and Lark gates must all be true together; Schedule must remain false.
+- Full reconciliation requires a separate flag.
+- Credential preflight is a separate operator and is not represented as a Queue dry-run.
+- Migration `0017` is source-only until separate backup/apply authorization.
+- No duplicate Reliability, Queue, D1, Coverage or Lark engine is allowed.
 
-Final Branch Verification on the exact merged source head:
-
-```text
-Run / workflow ID                 #581 / 30241561017
-Head                              c5ffc4327ffec405f82472c7b7098b45bac82722
-Install locked dependencies       PASS
-Syntax / architecture / hygiene   PASS
-Focused staged TikTok             PASS
-Node Unit / Integration           PASS
-Workers runtime                   PASS
-Report reliability                PASS
-Dependency audit                  PASS
-Wrangler dry-run                  PASS / no deployment
-Diagnostics upload                PASS
-```
-
-The prior exact-code verification `#579` recorded:
+## Verification state
 
 ```text
-Node Unit / Integration           916/916 PASS
-Workers runtime                   9/9 PASS
-Report reliability                91/91 PASS
-Focused staged TikTok             4/4 PASS
-Dependency audit                  0 vulnerabilities
+REVIEWED_IMPLEMENTATION_IMPORT       PASS
+MIGRATION_0017_ALLOCATION            COMPLETE / SOURCE ONLY
+SHARED_ROUTING                       IMPLEMENTED
+STABLE_QUEUE_IDENTITY                IMPLEMENTED
+SHARED_LARK_REGISTRY                 IMPLEMENTED
+DEFAULT_FALSE_CONFIG                 IMPLEMENTED
+FOCUSED_TESTS                        ADDED
+FULL_REPOSITORY_VERIFICATION         PENDING
+CURRENT_MAIN_ALIGNMENT               PENDING FINAL CHECK
+REMOTE_EXECUTION                     NOT RUN
 ```
 
-## Remote safe state
+## Audit note
 
-No Remote phase was performed by Draft PR `#72`, Integration PR `#85`, or this closeout:
+An incorrect connector action briefly created `tmp/placeholder` containing only `x` on `main`; it was removed immediately by commit `4c9334a69ced8b595fa433b780a77452eb7cd940`. No Business fact, code path, Secret or Remote resource was affected, and the final main tree contains no placeholder.
 
-```text
-Remote D1 schema/config read       NOT RUN with authenticated runtime
-Remote D1 migration               NOT RUN
-Remote D1 Business write          NOT RUN
-Remote Lark schema/data mutation  NONE
-Worker deployment                 NOT RUN
-Provider/API execution            NOT RUN
-Queue message                     NOT SENT
-DLQ redrive/delete                NOT RUN
-Schedule activation               NONE
-Customer/Production LIVE UAT      NOT RUN
-Production                        BLOCKED
-```
+## Next gate
 
-## Next separately authorized gate
-
-The next work requires an authenticated local Integration Workspace runtime with the real Cloudflare/Wrangler configuration:
-
-1. perform read-only Remote D1 schema verification for Storage Foundation `0009`;
-2. inspect current deployed Worker configuration and confirm every YouTube/Storage/Report/Schedule flag remains false;
-3. retain sanitized evidence and review it;
-4. authorize an all-flags-false Worker deployment separately;
-5. authorize a dry-run/read-only YouTube operation separately;
-6. verify non-dry execution is blocked while D1 or Lark write gate is false;
-7. authorize controlled Integration Workspace D1-first/Lark UAT separately;
-8. validate Coverage, idempotent rerun and D1 Report shadow parity;
-9. keep Schedule and Production blocked until a new explicit approval.
-
-Repository merge alone authorizes none of these Remote phases.
-
-## Detailed records
-
-```text
-docs/tasks/youtube-organic-end-to-end.md
-docs/tasks/youtube-organic-end-to-end-integration-review.md
-docs/tasks/youtube-organic-integration-wiring-safe-rollout.md
-```
-
-Previous current task:
-
-```text
-docs/archive/current-task-before-youtube-organic-integration-2026-07-27.md
-```
+Complete exact-head repository verification, align with current `main`, inspect review threads and retain PR `#94` as Draft. Passing repository verification does not authorize merge or any Remote phase.
