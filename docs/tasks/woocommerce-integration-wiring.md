@@ -3,7 +3,7 @@
 ## Status
 
 ```text
-TASK_STATUS                         = VERIFICATION_PENDING
+TASK_STATUS                         = VERIFICATION_PASS_MERGE_PENDING
 CURRENT_PROGRAM                     = WOOCOMMERCE_INTEGRATION_WIRING
 INTEGRATION_BRANCH                  = integration/woocommerce-safe-wiring
 DRAFT_PR                            = #94
@@ -11,6 +11,9 @@ REVIEWED_SOURCE_PR                  = #66 / PASS_FOR_INTEGRATION
 REVIEWED_SOURCE_HEAD                = 10cdd910b1083e6ffd5f8a4e118c06cdc6c842ee
 SOURCE_IMPORT_PR                    = #92 / merged into Integration branch only
 MIGRATION                           = 0017_woocommerce_commerce.sql / source only
+CODE_VERIFIED_HEAD                  = ed8d24aff59281eb8cac9842722fbbb51e573f20
+BRANCH_VERIFICATION                 = #618 / 30245402685 / PASS
+MAIN_ALIGNMENT                      = 844c09e4f1ad8113c66e47fddf79d3e1e8dea76d / behind 0
 REMOTE_D1_MIGRATION                 = NOT_APPLIED
 WORKER_DEPLOYMENT                   = NOT_RUN
 QUEUE_MESSAGE                       = NOT_SENT
@@ -94,17 +97,24 @@ Migration `0017` is additive and replay-safe:
 - no `DROP TABLE`, `DELETE FROM` or `ALTER TABLE`;
 - no Remote apply in this task.
 
-## Verification requirements
+## Verification result
 
-- locked dependency install;
-- syntax, architecture and repository hygiene;
-- focused WooCommerce wiring tests;
-- full Unit and Workers runtime tests;
-- report reliability regression;
-- dependency audit;
-- Wrangler deployment dry-run without deployment;
-- branch alignment with current `main`;
-- no unresolved review thread.
+Branch Verification `#618` on code head `ed8d24aff59281eb8cac9842722fbbb51e573f20` passed:
+
+```text
+Install locked dependencies       PASS
+Syntax / architecture / hygiene   PASS
+Focused staged TikTok             4 / 4 PASS
+Full Node / Workers suite         965 / 965 PASS
+Report reliability                91 / 91 PASS
+Dependency audit                  0 vulnerabilities
+Wrangler deployment dry-run       PASS / no deployment
+Diagnostics upload                PASS
+```
+
+Focused WooCommerce implementation and wiring tests are included in the full Node suite. The standard workflow does not expose standalone steps for literal `node --test tests/woocommerce/*.test.js` or `git diff --check`; these commands are not falsely recorded as separately executed.
+
+The branch is aligned with current `main` at `844c09e4f1ad8113c66e47fddf79d3e1e8dea76d` with `behind_by=0`.
 
 ## Repository audit note
 

@@ -3,7 +3,7 @@
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = VERIFICATION_PENDING
+TASK_STATUS                         = VERIFICATION_PASS_MERGE_PENDING
 CURRENT_PROGRAM                     = WOOCOMMERCE_INTEGRATION_WIRING
 INTEGRATION_BRANCH                  = integration/woocommerce-safe-wiring
 DRAFT_PR                            = #94
@@ -11,6 +11,9 @@ REVIEWED_SOURCE_PR                  = #66 / PASS_FOR_INTEGRATION
 REVIEWED_SOURCE_HEAD                = 10cdd910b1083e6ffd5f8a4e118c06cdc6c842ee
 SOURCE_IMPORT_PR                    = #92 / Integration branch only
 MIGRATION                           = 0017_woocommerce_commerce.sql / NOT_APPLIED
+CODE_VERIFIED_HEAD                  = ed8d24aff59281eb8cac9842722fbbb51e573f20
+BRANCH_VERIFICATION                 = #618 / 30245402685 / PASS
+MAIN_ALIGNMENT                      = 844c09e4f1ad8113c66e47fddf79d3e1e8dea76d / BEHIND 0
 WORKER_DEPLOYMENT                   = NOT_RUN
 QUEUE_MESSAGE                       = NOT_SENT
 REMOTE_D1_OR_LARK_MUTATION          = NONE
@@ -25,41 +28,25 @@ MERGE_INTO_MAIN                     = NOT_PERFORMED
 
 นำ WooCommerce End-to-End ที่ผ่าน `PASS_FOR_INTEGRATION` เข้าสู่ Shared repository contracts โดยจัดเลข Migration, Stable Queue identity, Runtime routing, D1 stores, Lark registry และ default-false flags ให้ครบ โดยยังไม่ดำเนินการกับ Remote infrastructure หรือ Customer source.
 
-Detailed contract and audit evidence:
+Detailed contract and verification evidence:
 
 ```text
 docs/tasks/woocommerce-end-to-end.md
 docs/tasks/woocommerce-integration-wiring.md
 ```
 
-## In scope
+## Completed repository scope
 
-- Import exact reviewed PR `#66` implementation into a separate Integration branch.
-- Allocate additive Migration `0017_woocommerce_commerce.sql`.
-- Register the 14 reviewed WooCommerce Lark logical table keys.
-- Promote WooCommerce Connector/Job to protected `uat_pending` / `manualOnly` repository status.
-- Add stable Queue operation identity and reference-only continuation.
-- Add strict runtime config with every execution and Schedule flag false by default.
-- Wire Shared Reliability, lock, generation, Queue retry/DLQ, D1 Coverage, Lark repository and `TableSyncEngine`.
-- Preserve every non-WooCommerce route unchanged.
-- Add focused regressions and run all repository gates.
-
-## Out of scope
-
-```text
-WooCommerce Provider request
-Customer Consumer Key/Secret use
-Remote D1 migration or Business write
-Remote Lark schema or record mutation
-Queue send or DLQ action
-Worker deployment
-Cron/Schedule activation
-Customer/Production LIVE UAT
-Report D1-primary cutover
-Retention/delete
-Production
-Merge into main without separate approval
-```
+- Imported exact reviewed PR `#66` implementation through Integration-only PR `#92`.
+- Allocated additive Migration `0017_woocommerce_commerce.sql` without Remote apply.
+- Registered 14 WooCommerce Lark logical table keys.
+- Promoted the Connector/Job to protected `uat_pending` / `manualOnly` status.
+- Added stable Queue identity `woocommerce:<operationId>` and reference-only continuation.
+- Added strict runtime config with all execution and Schedule gates false by default.
+- Added lazy D1 Commerce/report stores and a top-level route preserving all non-WooCommerce behavior.
+- Reused Shared Reliability, lock, generation, Queue retry/DLQ, Coverage, Lark repository and `TableSyncEngine`.
+- Added focused regression coverage.
+- Aligned with current `main` while retaining Meta closeout facts and the WooCommerce Current Task.
 
 ## Default-false controls
 
@@ -75,27 +62,29 @@ MKT_SCHEDULE_WOOCOMMERCE_ENABLED=false
 ## Safety contract
 
 - Queue execution accepts `trigger=manual_uat` only.
-- Stable identity is `woocommerce:<operationId>` and must retain exact generation/originalRequestedAt.
+- Stable identity preserves exact operation ID, work key, generation and original request time.
 - Protected runtime is restricted to `development / integration_workspace / chemistry_k`.
 - Connector, D1 and Lark gates must all be true together; Schedule must remain false.
 - Full reconciliation requires a separate flag.
-- Credential preflight is a separate operator and is not represented as a Queue dry-run.
-- Migration `0017` is source-only until separate backup/apply authorization.
-- No duplicate Reliability, Queue, D1, Coverage or Lark engine is allowed.
+- Credential preflight remains a separate read-only operator gate.
+- Migration `0017` remains source-only until backup/apply authorization.
+- No duplicate Reliability, Queue, D1, Coverage or Lark engine was created.
 
-## Verification state
+## Verification result
 
 ```text
-REVIEWED_IMPLEMENTATION_IMPORT       PASS
-MIGRATION_0017_ALLOCATION            COMPLETE / SOURCE ONLY
-SHARED_ROUTING                       IMPLEMENTED
-STABLE_QUEUE_IDENTITY                IMPLEMENTED
-SHARED_LARK_REGISTRY                 IMPLEMENTED
-DEFAULT_FALSE_CONFIG                 IMPLEMENTED
-FOCUSED_TESTS                        ADDED
-FULL_REPOSITORY_VERIFICATION         PENDING
-CURRENT_MAIN_ALIGNMENT               PENDING FINAL CHECK
-REMOTE_EXECUTION                     NOT RUN
+Branch Verification                #618 / 30245402685 PASS
+Code head                          ed8d24aff59281eb8cac9842722fbbb51e573f20
+Install locked dependencies        PASS
+Syntax / architecture / hygiene    PASS
+Focused staged TikTok              4 / 4 PASS
+Full Node / Workers                965 / 965 PASS
+Report reliability                 91 / 91 PASS
+Dependency audit                   0 vulnerabilities
+Wrangler dry-run                   PASS / no deployment
+Behind current main                0
+Review decision                    VERIFICATION_PASS_MERGE_PENDING
+Remote execution                   NOT RUN
 ```
 
 ## Audit note
@@ -104,4 +93,4 @@ An incorrect connector action briefly created `tmp/placeholder` containing only 
 
 ## Next gate
 
-Complete exact-head repository verification, align with current `main`, inspect review threads and retain PR `#94` as Draft. Passing repository verification does not authorize merge or any Remote phase.
+Keep PR `#94` Draft, run the documentation-closeout verification on the final head, inspect review threads, and wait for a separate explicit merge decision. Passing repository verification does not authorize any Remote phase.
