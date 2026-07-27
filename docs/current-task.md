@@ -7,6 +7,7 @@ TASK_STATUS                         = MERGED_REMOTE_ROLLOUT_NOT_AUTHORIZED
 CURRENT_PROGRAM                     = WOOCOMMERCE_INTEGRATION_MERGE_CLOSEOUT
 MERGED_PR                           = #94
 MERGE_COMMIT                        = 060977cd9ed2933700fbd121c9236e6578ad571e
+CLOSEOUT_PR                         = #98 / DRAFT
 REVIEWED_SOURCE_PR                  = #66 / PASS_FOR_INTEGRATION
 REVIEWED_SOURCE_HEAD                = 10cdd910b1083e6ffd5f8a4e118c06cdc6c842ee
 INTEGRATION_VERIFIED_HEAD           = d0ce3399177b5d6c8fcdb6c56eadd77851ae29e9
@@ -72,6 +73,8 @@ Dependency audit                  0 vulnerabilities
 Wrangler deployment dry-run       PASS / no deployment
 Diagnostics upload                PASS
 ```
+
+Documentation-only closeout PR `#98` must retain a successful exact-head Branch Verification check. The PR check is authoritative and does not require a later content-only status commit.
 
 ## Migration ownership
 
