@@ -3,10 +3,12 @@
 ## Authoritative status
 
 ```text
-TASK_STATUS                              = IMPLEMENTATION_IN_PROGRESS
+TASK_STATUS                              = IMPLEMENTATION_PASS_DRAFT_PR_OPEN
 CURRENT_PROGRAM                          = TIKTOK_POST_LARK_AUDIT_ROUTE_STABILITY_HOTFIX
 BASE_MAIN_SHA                            = 1ec60980c3897f01cef9bdc5f24aa6f5b7eba295
 BRANCH                                   = hotfix/tiktok-post-lark-audit-route-stability
+DRAFT_PR                                 = #103
+IMPLEMENTATION_COMMIT                    = 0195366e85ba288dcde9dcb496ccb66c61e78a3c
 REMOTE_STATE                             = SAFE_CLOSED_404
 MIGRATION_0016                           = APPLIED
 MIGRATION_0017                           = APPLIED
@@ -120,11 +122,15 @@ WORKERS_RUNTIME_TESTS               = 10 / 10 PASS
 NPM_CHECK                           = PASS
 NPM_TEST                            = 1006 Unit + 10 Workers PASS
 REPORT_RELIABILITY                  = 91 / 91 PASS
-NPM_AUDIT                           = BRANCH_VERIFICATION_REQUIRED
+NPM_AUDIT                           = PASS / Branch Verification #634
 DEPLOY_DRY_RUN                      = PASS / no deployment
+BRANCH_VERIFICATION                 = #634 / 30261994832 / PASS
 REMOTE_ACTION_COUNT                 = 0
 ```
 
-Local dependency-audit network access was not available under the execution policy. The
-authoritative Branch Verification workflow runs `npm audit --audit-level=high` on the exact Draft
-PR head. No Remote runtime action is authorized by this task.
+## Remaining gate
+
+Draft PR review and merge remain separate. No Worker deployment, Secret rotation or new Remote
+Audit window is authorized by this Repository-only task. After merge, the next controlled order is:
+all-flags-false deployment, verified stable `404`, one separately approved Audit-only window,
+three stable `401` probes, one authenticated read-only Audit, then immediate stable `404` safe-close.
