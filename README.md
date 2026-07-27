@@ -61,6 +61,24 @@ Google Ads actual Script DRY_RUN   pass / six datasets / no changes
 Google Ads Secret provisioning     completed / route safely closed
 ```
 
+## YouTube Worker dry-run operator
+
+The repository includes a guarded, plan-only-by-default operator for an eventual separately
+authorized Integration Workspace dry-run:
+
+```bash
+npm run rollout:youtube-dry-run
+```
+
+It uses Stable `operationId` identity instead of Queue delivery `message.id`, permits only Public
+YouTube GET plus Lark planning GET, and forbids Business/Coverage/checkpoint/Lark writes,
+Analytics, OAuth refresh and schedules. Executable phases require separate exact confirmations;
+canonical SHA-256 evidence links every phase, Remote verification reads actual
+version/traffic/consumer/trigger state, and restore blocks any unproven concurrent version.
+Workers-runtime tests exercise real D1 migrations/stores while mocking only external transports.
+Adding the operator does not authorize Remote execution. See
+`docs/tasks/youtube-worker-dry-run-rollout-operator.md`.
+
 Customer OAuth source status (2026-07-24):
 
 ```text

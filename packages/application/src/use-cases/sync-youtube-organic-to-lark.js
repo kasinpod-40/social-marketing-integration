@@ -939,10 +939,30 @@ async function persistWarningOutbox(input) {
 }
 
 async function replayCompletedWork(input) {
-  const pending = await input.workStore.listPendingWarnings({ workKey: input.workKey });
   const completion = input.completion && typeof input.completion === 'object'
     ? input.completion
     : {};
+  if (completion.dryRun === true) {
+    return Object.freeze({
+      ...completion,
+      syncRunId: input.syncRunId,
+      platform: 'youtube',
+      source: 'youtube_data_api',
+      mode: 'already_completed',
+      warnings: Object.freeze([...(completion.warnings ?? [])]),
+      reconciliation: completion.reconciliation ?? null,
+      sourceSummary: completion.sourceSummary ?? null,
+      warningOutbox: null,
+      checkpointSaved: false,
+      resumableWork: Object.freeze({
+        resumed: true,
+        complete: true,
+        cleared: true,
+        completionReplay: true,
+      }),
+    });
+  }
+  const pending = await input.workStore.listPendingWarnings({ workKey: input.workKey });
   if (pending.length === 0) {
     return Object.freeze({
       ...completion,

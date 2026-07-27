@@ -116,6 +116,7 @@ export async function runReliableSync(input = {}) {
         warningCount: Array.isArray(result?.warnings) ? result.warnings.length : 0,
         completionMode: result?.mode ?? null,
         writeOutcomes: readWriteOutcomes(result),
+        ...readProviderBoundaryCounts(result),
       },
     }));
 
@@ -533,6 +534,16 @@ function readWriteOutcomes(result) {
     reportTopContent: result.reportTopContent?.writeOutcome ?? null,
     accounts: result.accounts?.writeOutcome ?? null,
   });
+}
+
+function readProviderBoundaryCounts(result) {
+  const entries = [
+    ['providerRequestCount', result?.providerRequestCount],
+    ['analyticsRequestCount', result?.analyticsRequestCount],
+    ['oauthRefreshCount', result?.oauthRefreshCount],
+    ['larkWriteCount', result?.larkWriteCount],
+  ].filter(([, value]) => Number.isSafeInteger(value) && value >= 0);
+  return Object.fromEntries(entries);
 }
 
 function buildAlertMessage(error, context) {

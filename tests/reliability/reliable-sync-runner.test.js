@@ -36,6 +36,10 @@ test('reliable runner writes running and success logs, returns syncRunId, and re
         analyticsChunksProcessed: 17,
         analyticsCompletenessStatus: 'complete',
       },
+      providerRequestCount: 3,
+      analyticsRequestCount: 0,
+      oauthRefreshCount: 0,
+      larkWriteCount: 0,
     }),
   });
 
@@ -46,6 +50,10 @@ test('reliable runner writes running and success logs, returns syncRunId, and re
   assert.equal(store.syncRuns[1].details.sourceSummary.analyticsTrackedVideoIds, 837);
   assert.equal(store.syncRuns[1].details.sourceSummary.analyticsSuccessfullyQueriedVideos, 837);
   assert.equal(store.syncRuns[1].details.sourceSummary.analyticsCompletenessStatus, 'complete');
+  assert.equal(store.syncRuns[1].details.providerRequestCount, 3);
+  assert.equal(store.syncRuns[1].details.analyticsRequestCount, 0);
+  assert.equal(store.syncRuns[1].details.oauthRefreshCount, 0);
+  assert.equal(store.syncRuns[1].details.larkWriteCount, 0);
   assert.equal(store.alerts.length, 0);
 
   const reacquired = await lockManager.acquire({
