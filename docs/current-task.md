@@ -1,171 +1,193 @@
-# Current Task — YouTube Worker Dry-run Rollout Operator Merge Closeout
+# Current Task — Chatwoot Integration Runtime Wiring
 
 ## Authoritative status
 
 ```text
-TASK_STATUS                 = MERGED_REMOTE_ROLLOUT_NOT_AUTHORIZED
-CURRENT_PROGRAM             = YOUTUBE_WORKER_DRY_RUN_ROLLOUT_OPERATOR
-BASE_MAIN_SHA               = 1ec60980c3897f01cef9bdc5f24aa6f5b7eba295
-REVIEWED_HEAD               = 63a36907ad17fb4902887bdffcca24293df65f4c
-MERGED_PR                   = #101
-MERGED_MAIN_SHA             = fc42396ba5e6a339853126a8561d89ef1a47f4ab
-MERGE_METHOD                = SQUASH
-MERGED_AT                   = 2026-07-27T11:32:35Z
-REMOTE_ACTION_AUTHORIZED    = false
-REMOTE_ACTIONS              = NONE
-PRODUCTION                  = BLOCKED
+TASK_STATUS                         = IMPLEMENTATION_PASS_INTEGRATION_REVIEW_PENDING
+CURRENT_PROGRAM                     = CHATWOOT_INTEGRATION_RUNTIME_WIRING
+BASE_MAIN                           = 90e367e88a4aad2a443683ca511951a67590ce90
+INTEGRATION_BRANCH                  = integration/chatwoot-safe-wiring
+DRAFT_PR                            = #97 / OPEN / DRAFT / UNMERGED
+FOUNDATION_PR                       = #68 / MERGED
+FOUNDATION_MERGE_COMMIT             = 80601de973740e8654b2cea2c4ecf419f4378c0a
+WOOCOMMERCE_INTEGRATION_PR          = #94 / MERGED
+WOOCOMMERCE_MERGE_COMMIT            = 060977cd9ed2933700fbd121c9236e6578ad571e
+YOUTUBE_OPERATOR_CLOSEOUT_MAIN      = 90e367e88a4aad2a443683ca511951a67590ce90
+LATEST_MERGED_MIGRATION             = 0017_woocommerce_commerce.sql
+CHATWOOT_MIGRATION                  = 0018_chatwoot_analytics.sql / SOURCE_ONLY
+IMPLEMENTATION_OWNER                = CHATGPT_WORK_GITHUB_TOOLS
+CODE_VERIFIED_HEAD                  = 57b39a5ec4875b26337d488a18857c0a9c95e8e4
+CODE_BRANCH_VERIFICATION            = #643 / 30264110474 / PASS
+PROVIDER_EXECUTION                  = NOT_RUN
+TOKEN_READ_OR_ROTATION              = NOT_RUN
+QUEUE_MESSAGE                       = NOT_SENT
+REMOTE_D1_OR_LARK_MUTATION          = NONE
+WORKER_DEPLOYMENT                   = NOT_RUN
+SCHEDULE_OR_WEBHOOK                 = DISABLED
+CUSTOMER_OR_PRODUCTION_LIVE_UAT     = NOT_RUN
+PRODUCTION                          = BLOCKED
+MERGE_INTO_MAIN                     = NOT_AUTHORIZED
 ```
 
-The implementation task and complete technical contracts remain preserved in:
+## Objective completed
+
+The reviewed Chatwoot analytics foundation is wired through the existing Shared Worker,
+Reliability, Queue/DLQ, D1, Coverage and Lark contracts. The implementation allocates additive
+Migration `0018`, adds the protected manual-only runtime route and default-false configuration, and
+stops before every Provider or Remote action.
+
+Detailed contracts:
 
 ```text
-docs/tasks/youtube-worker-dry-run-rollout-operator.md
-docs/project-brain/youtube-worker-dry-run-rollout-operator-2026-07-27.md
-docs/archive/current-task-before-youtube-worker-dry-run-rollout-operator-2026-07-27.md
+docs/tasks/chatwoot-end-to-end.md
+docs/tasks/chatwoot-integration-wiring.md
+docs/project-brain/chatwoot-foundation-merge-closeout-2026-07-27.md
 ```
 
-## Merge result
-
-PR #101, `feat: add guarded YouTube worker dry-run rollout operator`, passed repository review and
-Branch Verification on the exact reviewed head before being Squash Merged into `main`.
+The YouTube Worker dry-run operator merge-closeout Current Task that preceded this work is preserved
+without replacing its Business facts at:
 
 ```text
-SOURCE_HEAD                 = 63a36907ad17fb4902887bdffcca24293df65f4c
-BRANCH_VERIFICATION         = PASS (run #631)
-SQUASH_MERGE_COMMIT         = fc42396ba5e6a339853126a8561d89ef1a47f4ab
-PR_STATE                    = CLOSED
-PR_MERGED                   = true
-REMOTE_ACTION_COUNT         = 0
+docs/archive/current-task-before-chatwoot-runtime-wiring-after-youtube-operator-2026-07-27.md
 ```
 
-The merge changed Repository source and documentation only. It did not deploy or mutate any live
-Worker, D1, Queue, Lark, Provider, schedule, secret, customer or Production resource.
+## Completed repository scope
 
-## Merged architecture contract
+- Added replay-safe `migrations/0018_chatwoot_analytics.sql` with 14 PII-minimized tables and
+  additive indexes.
+- Added strict Chatwoot runtime configuration. Provider identity and Token are not read while the
+  Connector gate is false.
+- Promoted Chatwoot Connector and Job to `uat_pending`; Job remains `manualOnly`.
+- Added account-scoped Stable Queue identity:
+  `chatwoot:<accountKey>:<operationId>`.
+- Preserved exact operation ID, Work key, generation and original request time across continuation.
+- Added lazy `D1ChatwootAnalyticsStore` construction to Shared infrastructure.
+- Added a dedicated Chatwoot top-level route with the existing WooCommerce route as fallback.
+- Registered 15 Chatwoot logical Lark table keys without Remote Base mutation.
+- Added default-false example configuration and focused runtime/migration regressions.
+- Reused Shared Reliability, distributed lock, generation fence, resumable work, Queue retry/DLQ,
+  D1 Coverage, incremental checkpoint, Lark repository and `TableSyncEngine`.
 
-The merged implementation provides a guarded operator for a separately authorized Integration
-Workspace YouTube Worker dry-run.
-
-Stable operation identity:
+## Locked route order
 
 ```text
-type                 = youtube.channel.organic.sync
-trigger              = youtube_worker_dry_run
-dryRun               = true
-operationId          = explicit safe identifier
-workKey              = youtube:{operationId}
-generation           = originalRequestedAt
-requestedAt          = ISO(originalRequestedAt)
-syncRunId            = youtube-dry-run:{operationId}
-durable delivery ID  = operationId/workKey, never Cloudflare message.id
+Chatwoot
+→ WooCommerce
+→ YouTube
+→ Google Ads
+→ Meta
+→ TikTok / reports / active fallback
 ```
 
-Scheduled and legacy YouTube jobs that do not use `youtube_worker_dry_run` retain their existing
-behavior.
+Non-Chatwoot routing remains unchanged.
 
-## Dry-run side-effect contract
-
-Allowed only when a later phase receives exact authorization:
-
-- Public YouTube Data API GET.
-- Lark GET-only planning.
-- D1 checkpoint read.
-- Operation-scoped `sync_runs`, `sync_locks`, Queue attempt, resumable work/generation fence and
-  reliability-mirror operational mutations.
-- Normal Main Queue Ack/Retry classification.
-
-Forbidden:
-
-- YouTube Analytics request or OAuth refresh.
-- Lark record write.
-- Organic Business state, observation or account-daily write.
-- Coverage write.
-- Incremental checkpoint write.
-- Automatic Provider resend.
-- Schedule, route, secret, customer or Production mutation.
-
-Operator dry-run skips unrelated pending-warning drain and global expired-work cleanup.
-
-## Operator phases
+## Default-false controls
 
 ```text
-plan
-preflight
-deploy-safe-baseline
-verify-safe-baseline
-deploy-dry-run-gates
-verify-deployment
-snapshot-operational-state
-send-one-dry-run
-verify-dry-run
-restore-all-false
-verify-restore
-summary
+MKT_CONNECTOR_CHATWOOT_ENABLED=false
+MKT_CHATWOOT_D1_WRITE_ENABLED=false
+MKT_CHATWOOT_LARK_WRITE_ENABLED=false
+MKT_CHATWOOT_REPORT_WRITE_ENABLED=false
+MKT_SCHEDULE_CHATWOOT_ENABLED=false
+MKT_CHATWOOT_WEBHOOK_ENABLED=false
 ```
 
-Every executable phase requires its own exact confirmation. Authorization for one phase does not
-authorize another phase.
+Connector-disabled execution fails before Provider credential access. D1/Lark/Report flags never
+implicitly enable Connector, Schedule or Webhook. Webhook remains unsupported and Schedule remains
+disabled.
 
-## Safety and evidence contracts
+## Data and execution invariants
 
-- Default execution is plan-only.
-- Deployment messages must contain the full reviewed Git SHA and phase.
-- Evidence uses canonical SHA-256 chaining with `priorPhase`, `priorEvidenceSha256` and
-  `evidenceSha256`.
-- New execution requires an empty operation-scoped durable state.
-- Replay verification requires an already completed operation and zero new Provider requests.
-- One operator-originated Queue send is allowed only in the separately authorized send phase.
-- Verification never sends a Queue message.
-- Restore is version guarded: safe baseline is a no-op, the exact dry-run version may be restored,
-  and any concurrent unknown version blocks restore.
-- Remote configuration must be verified from actual sanitized Worker version, deployment, Queue
-  consumer, Cron, route and workers.dev responses. Local config is only the expected contract.
+- Message body, names, email, phone, identifiers, addresses, attachment details, raw Label title,
+  arbitrary attributes, raw Provider payload and Secrets are excluded from durable storage and logs.
+- D1 state/facts complete before the first optional Lark Business write.
+- Daily/Report writes require both the Report gate and `fullSnapshot=true`.
+- Lark-disabled execution creates no Lark repository or table mapping.
+- Coverage remains Partial until all enabled required sinks succeed, then Coverage entities and
+  Complete status are persisted before the checkpoint advances.
+- Lock loss, generation mismatch, retryable failures and partial sink failures reuse Shared
+  fail-closed behavior.
+- Missing metrics remain `null` unless the Source contract proves a real zero.
+- No second Reliability, Queue/DLQ, D1 writer, Coverage store, Lark client or sync engine exists.
 
-## Repository verification result
+## Migration audit
 
 ```text
-FOCUSED_TESTS               = PASS (69/69)
-UNIT_TESTS                  = PASS (1028/1028)
-WORKERS_RUNTIME_TESTS       = PASS (11/11)
-REPORT_RELIABILITY_TESTS    = PASS (91/91)
-NPM_CI                      = PASS
-NPM_CHECK                   = PASS (285 source files; 760 dependencies; 0 cycles)
-DEPENDENCY_AUDIT            = PASS (0 vulnerabilities)
-DEPLOY_DRY_RUN              = PASS (wrangler.example.jsonc + wrangler.sync.example.jsonc)
-BRANCH_VERIFICATION         = PASS (run #631)
+FILE                                = migrations/0018_chatwoot_analytics.sql
+CREATE_TABLE_IF_NOT_EXISTS          = 14
+DESTRUCTIVE_DROP                    = 0
+DELETE_FROM                         = 0
+ALTER_TABLE                         = 0
+REMOTE_APPLY                        = NOT_RUN
+RAW_PROVIDER_PAYLOAD_COLUMN         = NONE
+MESSAGE_BODY_COLUMN                 = NONE
+DIRECT_CONTACT_PII_COLUMN           = NONE
+TOKEN_OR_SECRET_COLUMN              = NONE
 ```
 
-Workers-runtime coverage uses real Shared Queue routing, Reliability/lock, D1 resumable work,
-generation fence, history/checkpoint stores and YouTube sync use case while mocking only external
-YouTube and Lark transports.
+## Verification result
 
-## Remote rollout state
+Code head `57b39a5ec4875b26337d488a18857c0a9c95e8e4` passed Branch Verification
+`#643` / run `30264110474` after alignment with current `main`.
 
 ```text
-REMOTE_PREFLIGHT            = NOT_RUN_AFTER_MERGE
-LIVE_TENANT_PARSER_CHECK    = NOT_RUN
-SAFE_CONFIG_REVIEW          = REQUIRED
-ACTIVE_CONFIG_REVIEW        = REQUIRED
-PENDING_MIGRATION_CHECK     = REQUIRED
-WORKER_DEPLOYMENT           = NOT_AUTHORIZED
-QUEUE_MESSAGE               = NOT_AUTHORIZED
-REMOTE_D1_MUTATION          = NOT_AUTHORIZED
-REMOTE_LARK_ACTION          = NOT_AUTHORIZED
-PROVIDER_API_CALL           = NOT_AUTHORIZED
-SCHEDULE_CHANGE             = NOT_AUTHORIZED
-CUSTOMER_LIVE_UAT           = NOT_AUTHORIZED
-PRODUCTION_ACTION           = NOT_AUTHORIZED
+Install locked dependencies         PASS
+Syntax / architecture / hygiene     PASS
+Focused staged TikTok               4 / 4 PASS
+Node Unit / Integration             1037 / 1037 PASS
+Workers runtime                     11 / 11 PASS
+Report reliability                  91 / 91 PASS
+Dependency audit                    0 vulnerabilities
+Wrangler deployment dry-run         PASS / no deployment
+Diagnostics upload                  PASS
 ```
 
-Migration `0017_woocommerce_commerce.sql` was the latest known source migration at merge time and
-was not applied by this workstream. Remote preflight must fail closed when any unrelated migration
-remains pending.
+The full Node suite contains 36 Chatwoot-specific contract, normalizer, API client, D1, sync,
+routing, configuration and Migration tests, all passing. A separate literal ad-hoc
+`node --test ...chatwoot...` command was not exposed by the connected Branch Verification workflow;
+this is recorded accurately rather than claiming a standalone command that did not run.
 
-## Required next gate
+An earlier aligned run `#640` found one stale Job Catalog expectation that still treated Chatwoot as
+`planned`. The production contract was correct; the regression test was updated to assert the new
+`uat_pending`, `manualOnly` state. Subsequent runs `#642` and `#643` passed completely.
 
-The next permitted step is a separately authorized **Remote read-only preflight** against the exact
-merged source and reviewed real safe/active configs. It may inspect current Worker version,
-bindings, flags, Queue consumers, Cron/routes/workers.dev, Secret names and migration status, but it
-must not deploy, send Queue messages, write D1/Lark, call YouTube or alter schedules.
+## Remote safe state
 
-No Runtime phase is authorized by this merge closeout.
+```text
+Chatwoot Provider/API request       NOT_RUN
+Customer Token access/rotation      NOT_RUN
+Remote D1 query/backup/apply        NOT_RUN
+Remote D1 Business mutation         NONE
+Remote Lark schema/data mutation    NONE
+Queue send/retry/DLQ action         NONE
+Worker deployment                   NOT_RUN
+Schedule/Webhook activation         NONE
+Customer/Production LIVE UAT        NOT_RUN
+Production                          BLOCKED
+```
+
+## Remaining review gate
+
+The final documentation head must pass exact-head Branch Verification. PR `#97` remains Draft and
+unmerged. Repository verification does not authorize Remote D1 backup/apply, Lark schema work,
+credential preflight, Worker deployment, Queue processing, LIVE UAT, Schedule/Webhook activation or
+Production.
+
+## Implementation result
+
+```text
+STATUS                              = IMPLEMENTATION_PASS_INTEGRATION_REVIEW_PENDING
+FINAL_MAIN_SHA                      = 90e367e88a4aad2a443683ca511951a67590ce90
+CODE_VERIFIED_HEAD                  = 57b39a5ec4875b26337d488a18857c0a9c95e8e4
+AHEAD_BEHIND_AT_CODE_REVIEW         = AHEAD / BEHIND 0
+FILES_CHANGED_AT_CODE_REVIEW        = 18
+MIGRATION_AUDIT                     = PASS / 14 TABLES / NON-DESTRUCTIVE
+CHATWOOT_TESTS_IN_FULL_SUITE        = 36 / 36 PASS
+FULL_NODE_TESTS                     = 1037 / 1037 PASS
+WORKERS_RUNTIME_TESTS               = 11 / 11 PASS
+REPORT_RELIABILITY                  = 91 / 91 PASS
+DEPENDENCY_AUDIT                    = 0 VULNERABILITIES
+WRANGLER_DRY_RUN                    = PASS / NO DEPLOYMENT
+REMOTE_ACTIONS                      = NONE
+INTEGRATION_REVIEW                  = PENDING_EXACT_FINAL_HEAD
+```
