@@ -3,6 +3,7 @@ import {
   META_TOKEN_CONNECTION_KEYS,
   META_TOKEN_CONNECTION_STATUSES,
 } from '../../../config/src/meta-token-connection-config.js';
+import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 
 const CONNECTOR_DEFINITIONS = Object.freeze([
   Object.freeze({
@@ -27,23 +28,15 @@ const CONNECTOR_DEFINITIONS = Object.freeze([
     permissionValidation: 'permissions_edge',
   }),
 ]);
+const CONNECTOR_DEFINITION_BY_KEY = new Map(
+  CONNECTOR_DEFINITIONS.map((definition) => [definition.key, definition]),
+);
 
 /** รัน Meta connection preflight แยกช่องทาง; Failure ช่องหนึ่งไม่ซ่อนผลอีกช่อง */
 export async function preflightMetaCustomerConnections(runtime = {}) {
-  const mappings = runtime.mappings ?? {};
-  const results = await Promise.all(CONNECTOR_DEFINITIONS.map(async (definition) => {
-    const adapter = runtime[definition.adapterField] ?? null;
-    if (!adapter) return notConfiguredResult(definition);
-
-    try {
-      const facts = await adapter.preflight({
-        [definition.adapterMappingField]: mappings[definition.mappingField],
-      });
-      return buildSuccessfulResult(definition, facts);
-    } catch (error) {
-      return buildProviderFailureResult(definition, error);
-    }
-  }));
+  const results = await Promise.all(CONNECTOR_DEFINITIONS.map(
+    (definition) => preflightMetaCustomerConnection(runtime, definition.key),
+  ));
   const configuredResults = results.filter((result) => result.configured);
 
   return deepFreeze({
@@ -54,6 +47,69 @@ export async function preflightMetaCustomerConnections(runtime = {}) {
     businessWrites: 0,
     connectors: results,
   });
+}
+
+/**
+ * รัน Preflight เพียง Connector เดียวเพื่อให้ Operator ควบคุมลำดับและหยุดหลัง Failure ได้ทันที.
+ * Meta Ads สามารถเลือกบัญชีเดียวด้วย sourceAccountKey โดย Resolve จาก Mapping ที่อนุมัติแล้ว;
+ * Alias ที่ไม่อยู่ใน Mapping จะ Fail ก่อนเรียก Provider.
+ */
+export async function preflightMetaCustomerConnection(runtime = {}, connectorKey, options = {}) {
+  const definition = requireConnectorDefinition(connectorKey);
+  const adapter = runtime?.[definition.adapterField] ?? null;
+  if (!adapter) return notConfiguredResult(definition);
+  const mapping = resolveExpectedMapping(runtime?.mappings ?? {}, definition, options);
+
+  try {
+    const facts = await adapter.preflight({
+      [definition.adapterMappingField]: mapping,
+    });
+    return buildSuccessfulResult(definition, facts);
+  } catch (error) {
+    return buildProviderFailureResult(definition, error);
+  }
+}
+
+function resolveExpectedMapping(mappings, definition, options) {
+  if (definition.key !== META_TOKEN_CONNECTION_KEYS.META_ADS
+    || options?.sourceAccountKey === null
+    || options?.sourceAccountKey === undefined
+    || options?.sourceAccountKey === '') {
+    return mappings[definition.mappingField];
+  }
+
+  const sourceAccountKey = normalizeSourceAccountKey(options.sourceAccountKey);
+  const accounts = Array.isArray(mappings.metaAdAccounts) ? mappings.metaAdAccounts : [];
+  const selected = accounts.find((entry) => entry?.key === sourceAccountKey);
+  if (!selected?.accountId) {
+    throw permanentError('Meta Ads source account is not configured for read-only preflight', {
+      code: 'META_AD_ACCOUNT_MAPPING_NOT_CONFIGURED',
+      details: { configuredAccountCount: accounts.length },
+    });
+  }
+  return Object.freeze([selected.accountId]);
+}
+
+function normalizeSourceAccountKey(value) {
+  const text = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  if (!/^[a-z0-9][a-z0-9_-]{0,63}$/u.test(text)) {
+    throw permanentError('Meta Ads sourceAccountKey is invalid', {
+      code: 'META_AD_ACCOUNT_KEY_INVALID',
+    });
+  }
+  return text;
+}
+
+function requireConnectorDefinition(connectorKey) {
+  const key = typeof connectorKey === 'string' ? connectorKey.trim() : '';
+  const definition = CONNECTOR_DEFINITION_BY_KEY.get(key);
+  if (!definition) {
+    throw permanentError('Unsupported Meta connection preflight connector', {
+      code: 'META_CONNECTION_PREFLIGHT_UNSUPPORTED',
+      details: { connectorKey: key || null },
+    });
+  }
+  return definition;
 }
 
 function notConfiguredResult(definition) {
@@ -123,7 +179,7 @@ function buildProviderFailureResult(definition, error) {
 }
 
 function buildBaseResult(definition, overrides) {
-  return {
+  return deepFreeze({
     connectorKey: definition.key,
     configured: overrides.configured,
     status: overrides.status,
@@ -137,7 +193,7 @@ function buildBaseResult(definition, overrides) {
     },
     metadata: overrides.metadata ?? {},
     providerError: overrides.providerError ?? null,
-  };
+  });
 }
 
 function buildSafeMetadata(connectorKey, facts) {

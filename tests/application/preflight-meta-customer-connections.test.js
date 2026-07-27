@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { preflightMetaCustomerConnections } from '../../packages/application/src/use-cases/preflight-meta-customer-connections.js';
+import {
+  preflightMetaCustomerConnection,
+  preflightMetaCustomerConnections,
+} from '../../packages/application/src/use-cases/preflight-meta-customer-connections.js';
 import { permanentError, transientError } from '../../packages/shared/src/errors/runtime-error.js';
 
 function successAdapter(overrides = {}) {
@@ -116,4 +119,55 @@ test('Meta preflight reports an entirely empty runtime as fail-closed not_config
   assert.equal(result.ok, false);
   assert.equal(result.businessWrites, 0);
   assert.equal(result.connectors.every((item) => item.status === 'not_configured'), true);
+});
+
+test('scoped Meta Ads preflight validates only the selected configured alias', async () => {
+  const calls = [];
+  const result = await preflightMetaCustomerConnection({
+    metaAds: {
+      async preflight(input) {
+        calls.push(input);
+        return {
+          candidateCount: 2,
+          activeCandidateCount: 2,
+          expectedAccountCount: 1,
+          matchedAccountCount: 1,
+          missingAccountCount: 0,
+          mappingConfigured: true,
+          identityMatched: true,
+          grantedPermissions: ['ads_read', 'business_management'],
+        };
+      },
+    },
+    mappings: {
+      metaAdAccounts: [
+        { key: 'chemistry_k2', accountId: '505898710119851' },
+        { key: 'chemistry_k3', accountId: '851206695716861' },
+      ],
+    },
+  }, 'meta_ads', { sourceAccountKey: 'chemistry_k3' });
+
+  assert.equal(result.status, 'identity_validated');
+  assert.equal(result.metadata.expectedAccountCount, 1);
+  assert.deepEqual(calls, [{ expectedAdAccountIds: ['851206695716861'] }]);
+  assert.doesNotMatch(JSON.stringify(result), /851206695716861/u);
+});
+
+test('unknown Meta Ads alias fails before a Provider request', async () => {
+  let calls = 0;
+  await assert.rejects(
+    preflightMetaCustomerConnection({
+      metaAds: {
+        async preflight() {
+          calls += 1;
+          return {};
+        },
+      },
+      mappings: {
+        metaAdAccounts: [{ key: 'chemistry_k2', accountId: '505898710119851' }],
+      },
+    }, 'meta_ads', { sourceAccountKey: 'unknown' }),
+    (error) => error.code === 'META_AD_ACCOUNT_MAPPING_NOT_CONFIGURED',
+  );
+  assert.equal(calls, 0);
 });
