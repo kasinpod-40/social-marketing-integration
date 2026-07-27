@@ -1,6 +1,6 @@
--- WooCommerce Commerce additive migration proposal.
--- Integration Chat must review, allocate the then-current migration number and apply remotely later.
--- This file is not under migrations/ and is never executed by this Workstream.
+-- WooCommerce Commerce additive Migration 0017.
+-- Allocated by Integration wiring; source-only until a separate Remote apply authorization.
+-- Additive tables/indexes only; no existing Business fact is modified by this file.
 
 CREATE TABLE IF NOT EXISTS raw_commerce_stores (
   store_key TEXT PRIMARY KEY,

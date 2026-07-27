@@ -11,6 +11,7 @@ const STABLE_OPERATION_CONTRACTS = new Map([
     prefix: 'meta_ads',
     scopeField: 'sourceAccountKey',
   })],
+  [JOB_TYPES.WOOCOMMERCE_COMMERCE_SYNC, Object.freeze({ prefix: 'woocommerce' })],
 ]);
 
 function resolveStableOperationContract(type, body) {
@@ -173,7 +174,7 @@ function platformFromJobType(type) {
   if (type.startsWith('google.ads.')) return 'google_ads';
   if (type.startsWith('meta.ads.')) return 'meta_ads';
   const prefix = type.split('.')[0];
-  return new Set(['facebook', 'instagram', 'tiktok', 'youtube']).has(prefix)
+  return new Set(['facebook', 'instagram', 'tiktok', 'youtube', 'woocommerce']).has(prefix)
     ? prefix
     : 'system';
 }

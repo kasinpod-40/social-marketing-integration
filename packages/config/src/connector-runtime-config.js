@@ -24,7 +24,8 @@ export function resolveConnectorRuntimeConfig(profileConnectors, env = {}) {
     const enabledOverride = readOptionalBoolean(env[definition.featureFlagEnv], definition.featureFlagEnv);
     const enabled = enabledOverride ?? (profile.enabledByDefault === true);
     const protectedUat = isProtectedGoogleAdsUatRuntime(definition, env)
-      || isProtectedMetaUatRuntime(definition, env);
+      || isProtectedMetaUatRuntime(definition, env)
+      || isProtectedWooCommerceUatRuntime(definition, env);
 
     if (enabled
       && definition.implementationStatus !== CONNECTOR_IMPLEMENTATION_STATUS.ACTIVE
@@ -74,6 +75,19 @@ export function resolveConnectorRuntimeConfig(profileConnectors, env = {}) {
   });
 
   return Object.freeze(Object.fromEntries(runtimeEntries));
+}
+
+function isProtectedWooCommerceUatRuntime(definition, env) {
+  if (definition.key !== 'woocommerce'
+    || definition.implementationStatus !== CONNECTOR_IMPLEMENTATION_STATUS.UAT_PENDING) {
+    return false;
+  }
+  return env.MKT_ENV === 'development'
+    && env.MKT_CUSTOMER_PROFILE === 'integration_workspace'
+    && readOptionalBoolean(env.MKT_CONNECTOR_WOOCOMMERCE_ENABLED, 'MKT_CONNECTOR_WOOCOMMERCE_ENABLED') === true
+    && readOptionalBoolean(env.MKT_WOOCOMMERCE_D1_WRITE_ENABLED, 'MKT_WOOCOMMERCE_D1_WRITE_ENABLED') === true
+    && readOptionalBoolean(env.MKT_WOOCOMMERCE_LARK_WRITE_ENABLED, 'MKT_WOOCOMMERCE_LARK_WRITE_ENABLED') === true
+    && readOptionalBoolean(env.MKT_SCHEDULE_WOOCOMMERCE_ENABLED, 'MKT_SCHEDULE_WOOCOMMERCE_ENABLED') !== true;
 }
 
 function isProtectedMetaUatRuntime(definition, env) {

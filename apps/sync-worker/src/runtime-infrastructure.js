@@ -4,6 +4,8 @@ import { D1OrganicHistoryGateway } from '../../../packages/connectors/src/d1-org
 import { D1MarketingHistoryStore } from '../../../packages/connectors/src/d1-marketing-history-store.js';
 import { D1GoogleAdsManagerDeliveryStore } from '../../../packages/connectors/src/google-ads/d1-google-ads-manager-delivery-store.js';
 import { D1GoogleAdsLiveAdmissionStore } from '../../../packages/connectors/src/google-ads/d1-google-ads-live-admission-store.js';
+import { D1WooCommerceCommerceStore } from '../../../packages/connectors/src/woocommerce/d1-woocommerce-commerce-store.js';
+import { D1WooCommerceReportSource } from '../../../packages/connectors/src/woocommerce/d1-woocommerce-report-source.js';
 import { createLarkBitableClientFromEnv } from '../../../packages/connectors/src/lark/lark-bitable.client.js';
 import { LarkRecordRepository } from '../../../packages/connectors/src/lark/lark-record-repository.js';
 import { D1ReliabilityMirrorOutbox } from '../../../packages/reliability/src/d1-reliability-mirror-outbox.js';
@@ -28,6 +30,8 @@ export function createInfrastructure(env) {
   let marketingHistoryStore = null;
   let googleAdsDeliveryStore = null;
   let googleAdsAdmissionStore = null;
+  let wooCommerceStore = null;
+  let wooCommerceReportSource = null;
   let mirrorOutbox = null;
   const larkReliabilityStores = new Map();
 
@@ -73,6 +77,14 @@ export function createInfrastructure(env) {
     getGoogleAdsAdmissionStore() {
       googleAdsAdmissionStore ??= new D1GoogleAdsLiveAdmissionStore({ db: env?.MKT_STATE_DB });
       return googleAdsAdmissionStore;
+    },
+    getWooCommerceCommerceStore() {
+      wooCommerceStore ??= new D1WooCommerceCommerceStore({ db: env?.MKT_STATE_DB });
+      return wooCommerceStore;
+    },
+    getWooCommerceReportSource() {
+      wooCommerceReportSource ??= new D1WooCommerceReportSource({ db: env?.MKT_STATE_DB });
+      return wooCommerceReportSource;
     },
     getReliability() {
       reliability ??= createCloudflareReliabilityRuntime({
