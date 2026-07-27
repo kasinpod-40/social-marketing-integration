@@ -48,6 +48,21 @@ export const LARK_TABLE_ENV = Object.freeze({
   mktCommerceCustomers: 'LARK_TABLE_MKT_COMMERCE_CUSTOMERS',
   mktCommerceDaily: 'LARK_TABLE_MKT_COMMERCE_DAILY',
   mktCommerceProductDaily: 'LARK_TABLE_MKT_COMMERCE_PRODUCT_DAILY',
+  rawChatwootAccounts: 'LARK_TABLE_RAW_CHATWOOT_ACCOUNTS',
+  rawChatwootInboxes: 'LARK_TABLE_RAW_CHATWOOT_INBOXES',
+  rawChatwootContacts: 'LARK_TABLE_RAW_CHATWOOT_CONTACTS',
+  rawChatwootAgents: 'LARK_TABLE_RAW_CHATWOOT_AGENTS',
+  rawChatwootTeams: 'LARK_TABLE_RAW_CHATWOOT_TEAMS',
+  rawChatwootLabels: 'LARK_TABLE_RAW_CHATWOOT_LABELS',
+  rawChatwootConversations: 'LARK_TABLE_RAW_CHATWOOT_CONVERSATIONS',
+  rawChatwootConversationLabels: 'LARK_TABLE_RAW_CHATWOOT_CONVERSATION_LABELS',
+  rawChatwootMessageAnalytics: 'LARK_TABLE_RAW_CHATWOOT_MESSAGE_ANALYTICS',
+  rawChatwootReportingEvents: 'LARK_TABLE_RAW_CHATWOOT_REPORTING_EVENTS',
+  mktConversations: 'LARK_TABLE_MKT_CONVERSATIONS',
+  mktConversationDaily: 'LARK_TABLE_MKT_CONVERSATION_DAILY',
+  mktAgentDaily: 'LARK_TABLE_MKT_AGENT_DAILY',
+  mktInboxDaily: 'LARK_TABLE_MKT_INBOX_DAILY',
+  mktConversationAccountDaily: 'LARK_TABLE_MKT_CONVERSATION_ACCOUNT_DAILY',
 });
 
 // รายชื่อ Logical table key ทั้งหมด ใช้เป็นค่าเริ่มต้นเมื่อผู้เรียกต้องการตรวจ Environment ครบทุกตาราง

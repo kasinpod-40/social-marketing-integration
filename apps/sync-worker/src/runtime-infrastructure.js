@@ -2,6 +2,7 @@ import { JOB_TYPES } from '../../../packages/application/src/jobs/job-catalog.js
 import { createOrganicContentOwnershipRoutingRepository } from '../../../packages/application/src/policies/organic-content-field-ownership.js';
 import { D1OrganicHistoryGateway } from '../../../packages/connectors/src/d1-organic-history-gateway.js';
 import { D1MarketingHistoryStore } from '../../../packages/connectors/src/d1-marketing-history-store.js';
+import { D1ChatwootAnalyticsStore } from '../../../packages/connectors/src/chatwoot/d1-chatwoot-analytics-store.js';
 import { D1GoogleAdsManagerDeliveryStore } from '../../../packages/connectors/src/google-ads/d1-google-ads-manager-delivery-store.js';
 import { D1GoogleAdsLiveAdmissionStore } from '../../../packages/connectors/src/google-ads/d1-google-ads-live-admission-store.js';
 import { D1WooCommerceCommerceStore } from '../../../packages/connectors/src/woocommerce/d1-woocommerce-commerce-store.js';
@@ -28,6 +29,7 @@ export function createInfrastructure(env) {
   let resumableWorkStore = null;
   let organicHistoryGateway = null;
   let marketingHistoryStore = null;
+  let chatwootAnalyticsStore = null;
   let googleAdsDeliveryStore = null;
   let googleAdsAdmissionStore = null;
   let wooCommerceStore = null;
@@ -69,6 +71,10 @@ export function createInfrastructure(env) {
     getMarketingHistoryStore() {
       marketingHistoryStore ??= new D1MarketingHistoryStore({ db: env?.MKT_STATE_DB });
       return marketingHistoryStore;
+    },
+    getChatwootAnalyticsStore() {
+      chatwootAnalyticsStore ??= new D1ChatwootAnalyticsStore({ db: env?.MKT_STATE_DB });
+      return chatwootAnalyticsStore;
     },
     getGoogleAdsDeliveryStore() {
       googleAdsDeliveryStore ??= new D1GoogleAdsManagerDeliveryStore({ db: env?.MKT_STATE_DB });

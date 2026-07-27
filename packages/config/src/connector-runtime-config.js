@@ -14,8 +14,8 @@ import { permanentError } from '../../shared/src/errors/runtime-error.js';
  * Identity ที่เปลี่ยนตามทรัพยากรจริง เช่น TikTok handle สามารถ Override ผ่าน Environment
  * โดยไม่แก้ Source code ขณะที่ accountKey ยังคงมาจาก Customer profile เพื่อรักษา Stable key
  *
- * Connector planned เปิดไม่ได้ทุกกรณี ส่วน Google Ads uat_pending เปิด Runtime config ได้เฉพาะ
- * protected manual UAT ใน developer Integration Workspace เมื่อ admission/business/Lark gates เปิดครบ.
+ * Connector planned เปิดไม่ได้ทุกกรณี ส่วน UAT-pending Connector เปิด Runtime config ได้เฉพาะ
+ * protected manual UAT ใน developer Integration Workspace เมื่อ Gate ที่เกี่ยวข้องเปิดครบ.
  */
 export function resolveConnectorRuntimeConfig(profileConnectors, env = {}) {
   const profileMap = requireObject(profileConnectors, 'profile.connectors');
@@ -25,7 +25,8 @@ export function resolveConnectorRuntimeConfig(profileConnectors, env = {}) {
     const enabled = enabledOverride ?? (profile.enabledByDefault === true);
     const protectedUat = isProtectedGoogleAdsUatRuntime(definition, env)
       || isProtectedMetaUatRuntime(definition, env)
-      || isProtectedWooCommerceUatRuntime(definition, env);
+      || isProtectedWooCommerceUatRuntime(definition, env)
+      || isProtectedChatwootUatRuntime(definition, env);
 
     if (enabled
       && definition.implementationStatus !== CONNECTOR_IMPLEMENTATION_STATUS.ACTIVE
@@ -75,6 +76,31 @@ export function resolveConnectorRuntimeConfig(profileConnectors, env = {}) {
   });
 
   return Object.freeze(Object.fromEntries(runtimeEntries));
+}
+
+function isProtectedChatwootUatRuntime(definition, env) {
+  if (definition.key !== 'chatwoot'
+    || definition.implementationStatus !== CONNECTOR_IMPLEMENTATION_STATUS.UAT_PENDING) {
+    return false;
+  }
+  return env.MKT_ENV === 'development'
+    && env.MKT_CUSTOMER_PROFILE === 'integration_workspace'
+    && readOptionalBoolean(
+      env.MKT_CONNECTOR_CHATWOOT_ENABLED,
+      'MKT_CONNECTOR_CHATWOOT_ENABLED',
+    ) === true
+    && readOptionalBoolean(
+      env.MKT_CHATWOOT_D1_WRITE_ENABLED,
+      'MKT_CHATWOOT_D1_WRITE_ENABLED',
+    ) === true
+    && readOptionalBoolean(
+      env.MKT_SCHEDULE_CHATWOOT_ENABLED,
+      'MKT_SCHEDULE_CHATWOOT_ENABLED',
+    ) !== true
+    && readOptionalBoolean(
+      env.MKT_CHATWOOT_WEBHOOK_ENABLED,
+      'MKT_CHATWOOT_WEBHOOK_ENABLED',
+    ) !== true;
 }
 
 function isProtectedWooCommerceUatRuntime(definition, env) {

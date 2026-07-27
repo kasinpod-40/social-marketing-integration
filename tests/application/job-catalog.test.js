@@ -19,11 +19,14 @@ test('active jobs pass implementation guard', () => {
   assert.equal(assertJobImplemented(definition), definition);
 });
 
-test('planned jobs fail explicitly instead of returning fake success', () => {
+test('Chatwoot job is centrally registered as manual-only UAT-pending', () => {
   const definition = getJobDefinition(JOB_TYPES.CHATWOOT_CONVERSATIONS_SYNC);
+  assert.equal(definition.connectorKey, 'chatwoot');
+  assert.equal(definition.implementationStatus, 'uat_pending');
+  assert.equal(definition.manualOnly, true);
   assert.throws(
     () => assertJobImplemented(definition),
-    (error) => error?.code === 'SYNC_JOB_NOT_IMPLEMENTED',
+    (error) => error?.code === 'SYNC_JOB_UAT_PENDING',
   );
 });
 

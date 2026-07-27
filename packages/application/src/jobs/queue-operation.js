@@ -14,6 +14,10 @@ const STABLE_OPERATION_CONTRACTS = new Map([
     scopeField: 'sourceAccountKey',
   })],
   [JOB_TYPES.WOOCOMMERCE_COMMERCE_SYNC, Object.freeze({ prefix: 'woocommerce' })],
+  [JOB_TYPES.CHATWOOT_CONVERSATIONS_SYNC, Object.freeze({
+    prefix: 'chatwoot',
+    scopeField: 'accountKey',
+  })],
 ]);
 
 function resolveStableOperationContract(type, body) {
@@ -224,7 +228,7 @@ function platformFromJobType(type) {
   if (type.startsWith('google.ads.')) return 'google_ads';
   if (type.startsWith('meta.ads.')) return 'meta_ads';
   const prefix = type.split('.')[0];
-  return new Set(['facebook', 'instagram', 'tiktok', 'youtube', 'woocommerce']).has(prefix)
+  return new Set(['facebook', 'instagram', 'tiktok', 'youtube', 'woocommerce', 'chatwoot']).has(prefix)
     ? prefix
     : 'system';
 }

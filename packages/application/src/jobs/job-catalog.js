@@ -116,8 +116,9 @@ const JOB_CATALOG = Object.freeze({
   }),
   [JOB_TYPES.CHATWOOT_CONVERSATIONS_SYNC]: freezeJob({
     type: JOB_TYPES.CHATWOOT_CONVERSATIONS_SYNC,
-    implementationStatus: JOB_IMPLEMENTATION_STATUS.PLANNED,
+    implementationStatus: JOB_IMPLEMENTATION_STATUS.UAT_PENDING,
     connectorKey: CONNECTOR_KEYS.CHATWOOT,
+    manualOnly: true,
   }),
 
   [JOB_TYPES.SYNC_RECONCILE]: freezeJob({

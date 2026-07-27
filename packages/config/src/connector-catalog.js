@@ -133,7 +133,7 @@ const CONNECTOR_CATALOG = Object.freeze({
     key: CONNECTOR_KEYS.CHATWOOT,
     displayName: 'Chatwoot',
     capability: 'conversations',
-    implementationStatus: CONNECTOR_IMPLEMENTATION_STATUS.PLANNED,
+    implementationStatus: CONNECTOR_IMPLEMENTATION_STATUS.UAT_PENDING,
     featureFlagEnv: 'MKT_CONNECTOR_CHATWOOT_ENABLED',
     requiredRuntimeFields: ['accountKey'],
     largeAccount: plannedLargeAccount('conversations', 5000),
