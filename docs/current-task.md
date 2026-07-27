@@ -3,11 +3,13 @@
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = IMPLEMENTATION_IN_PROGRESS
+TASK_STATUS                         = IMPLEMENTATION_PASS_DRAFT_PR_OPEN
 CURRENT_PROGRAM                     = META_D1_ONLY_PROCESSING_GUARDED_ROLLOUT
 CONTRACT_VERSION                    = meta-d1-only-rollout-v1
 BASE_MAIN_SHA                       = 7f06ae8729dd24c3bd6f548332bfe17ba374c8ab
 BRANCH                              = integration/meta-d1-only-rollout-operator
+DRAFT_PR                            = #114
+VERIFIED_IMPLEMENTATION_HEAD        = e667a1b9141a8a472157ed94d693ab0b50be90b2
 META_PROVIDER_VALIDATION            = PASS / 4 TARGETS
 REMOTE_EXECUTION_AUTHORIZED         = false
 REMOTE_ACTIONS                      = NONE
@@ -31,7 +33,7 @@ docs/archive/current-task-before-meta-d1-only-rollout-operator-2026-07-27.md
 read-only identity/permission validation ผ่านครบ โดย reuse Meta Runtime, Shared Queue,
 Reliability, resumable work, D1 History และ Coverage contracts เดิมทั้งหมด
 
-Operator ต้องรองรับ Backup, exact deployment provenance, one initial Queue operation,
+Operator รองรับ Backup, exact deployment provenance, one initial Queue operation,
 Shared continuation completion, D1/Coverage reconciliation, same-operation idempotent rerun และ
 all-flags-false restore โดยห้าม Lark, Report, Schedule และ Production
 
@@ -47,7 +49,7 @@ chemistry_k3
 หนึ่ง Evidence chain เลือกได้เพียง Target เดียว แต่ละ Target ต้องใช้ operationId, workKey,
 syncRunId, Backup และ Evidence root แยกกัน
 
-## In scope
+## Implemented scope
 
 - contract `meta-d1-only-rollout-v1`;
 - plan-only default;
@@ -67,7 +69,7 @@ syncRunId, Backup และ Evidence root แยกกัน
 - bounded D1/Coverage completion verification;
 - one same-operation rerun and zero-drift verification;
 - SHA-256 evidence chain and secret-shaped field redaction;
-- focused regression tests, runbook and durable architecture record
+- runbook, task contract and durable Project Brain record
 
 ## Existing contracts reused
 
@@ -85,7 +87,7 @@ syncRunId, Backup และ Evidence root แยกกัน
 - existing D1 Coverage tables
 
 No new Connector, Graph client, Queue framework, Reliability runner, D1 writer, Coverage engine,
-Lark sync engine or migration is authorized
+Lark sync engine or migration was created
 
 ## D1-only success boundary
 
@@ -166,65 +168,47 @@ Rerun must show:
 - no Lark/completion phase;
 - no active lock
 
-## Out of scope
+## Verification result
+
+The first exact-head CI attempt exposed one test-only defect: a normalized camelCase D1 snapshot was
+normalized a second time by the completion classifier. The runtime contract was unchanged. The
+normalizer was made idempotent and both verification workflows then passed on exact head
+`e667a1b9141a8a472157ed94d693ab0b50be90b2`.
 
 ```text
-Remote execution during Implementation
-Remote D1 export or mutation
-Worker deployment
-Queue message
-DLQ action
-Lark preflight/write
-Report cutover/materialization
-Schedule activation
-Retention/delete
-Production
-PR merge
-```
-
-## Acceptance criteria
-
-- exact one-target chain;
-- exact read-only summary prerequisite;
-- exact three-flag active config window;
-- local config drift fails closed;
-- stable Queue identity uses Shared helper;
-- D1/Coverage success boundary is explicit and tested;
-- Lark/full-completion phase fails closed;
-- same-operation rerun detects Business/Coverage drift;
-- evidence hashing and tamper rejection;
-- guarded restore can be opened from latest activation evidence;
-- Tokens, Authorization headers, raw config and raw Provider payload never enter Evidence;
-- all required verification gates pass;
-- Remote action count remains zero during implementation
-
-## Required verification
-
-```text
-npm ci
-node --test tests/application/meta-d1-only-rollout-operator.test.js
-npm run check
-npm test
-npm run test:report-reliability
-npm audit
-npm run deploy:dry-run
-```
-
-## Implementation result
-
-```text
-IMPLEMENTATION_RESULT               = PENDING_VERIFICATION
-FOCUSED_META_D1_ONLY_TESTS          = NOT_RUN
-NODE_UNIT_INTEGRATION               = NOT_RUN
-WORKERS_RUNTIME                     = NOT_RUN
-REPORT_RELIABILITY                  = NOT_RUN
-DEPENDENCY_AUDIT                    = NOT_RUN
-WRANGLER_DRY_RUN                    = NOT_RUN
+META_END_TO_END_VERIFICATION        = #31 / 30284509274 / PASS
+BRANCH_VERIFICATION                 = #670 / 30284508692 / PASS
+FOCUSED_META_D1_ONLY_TESTS          = 15 / 15 PASS
+NODE_UNIT_INTEGRATION               = 1075 / 1075 PASS
+WORKERS_RUNTIME                     = 11 / 11 PASS
+REPORT_RELIABILITY                  = 91 / 91 PASS
+DEPENDENCY_AUDIT                    = 0 vulnerabilities
+WRANGLER_DRY_RUN                    = PASS / NO DEPLOYMENT
+VERIFICATION_ARTIFACT               = 8660233416
+VERIFICATION_ARTIFACT_DIGEST        = sha256:ddfd07495533887a07f83cf9e0e39eb5415bc038c1ee070a3b413f0d04eaa237
 REMOTE_ACTION_COUNT                 = 0
+```
+
+## Out of scope and safe state
+
+```text
+Remote execution during Implementation     NOT_RUN
+Remote D1 export or mutation                NOT_RUN
+Worker deployment                           NOT_RUN
+Provider request                            NOT_RUN
+Queue message                               NONE
+DLQ action                                  NONE
+Lark preflight/write                        NONE
+Report cutover/materialization              NONE
+Schedule activation                         NONE
+Retention/delete                            NONE
+Production                                  BLOCKED
+PR merge                                    NOT_AUTHORIZED
 ```
 
 ## Remaining gate
 
-Finish exact-head Branch Verification, inspect the complete diff and open a Draft PR. Review/merge
-and every Remote phase require separate explicit approval. This task authorizes no Backup, Deploy,
-Queue send or D1 Business write
+Draft PR #114 remains open and unmerged. Review and merge require separate approval. After merge,
+refresh exact `main`, Worker version, D1 migration ledger, Queue topology and sanitized read-only
+summary before separately authorizing the first target's plan/preflight. Backup, deployment, Queue
+send and D1 Business writes remain unauthorized by this implementation result
