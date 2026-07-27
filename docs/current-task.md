@@ -1,103 +1,150 @@
-# Current Task — WooCommerce Final One-command Rollout Merge Closeout
+# Current Task — YouTube Live Parser Rollout Readiness
 
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = MERGED_TERMINAL_EXECUTION_PENDING
-CURRENT_PROGRAM                     = WOOCOMMERCE_FINAL_ONE_COMMAND_ROLLOUT
-CONTRACT_VERSION                    = woocommerce_final_one_command_v1
-MERGED_PR                           = #133
-SOURCE_HEAD                         = 4347558fd75bddf04e918194392025d71c700ee9
-MERGED_MAIN_SHA                     = fb3f2a46b4c22bd293ad5395e7717add75bba690
-MERGE_METHOD                        = SQUASH
-MERGED_AT                           = 2026-07-27T18:36:13Z
-REMOTE_EXECUTION_AUTHORIZED         = TERMINAL_COMMAND_ONLY
-REMOTE_ACTIONS                      = NOT_RUN_YET
-REMOTE_D1_MUTATION                  = NOT_RUN_YET
-WOOCOMMERCE_PROVIDER_REQUEST        = NOT_RUN_YET
-LARK_MUTATION                       = NOT_RUN_YET
-QUEUE_OR_DLQ_ACTION                 = NOT_RUN_YET
-WORKER_DEPLOYMENT                   = NOT_RUN_YET
-SCHEDULE                            = DISABLED_UNTIL_COMMAND_PASSES
+TASK_STATUS                         = MERGE_AUTHORIZED_EXACT_ALIGNED_CI_REQUIRED
+CURRENT_PROGRAM                     = YOUTUBE_LIVE_PARSER_ROLLOUT_WIRING_V2
+BASE_MAIN_SHA                       = fd346b21ecbaeca43c117b0b3634f7580683d8d6
+BRANCH                              = integration/youtube-live-parser-rollout-wiring-v2
+PR                                  = #134 / OPEN / MERGE_AUTHORIZED
+IMPLEMENTATION_OWNER                = CHATGPT_WORK_GITHUB_TOOLS
+HISTORICAL_YOUTUBE_LARK_SYNC        = CONFIRMED_PASS
+REMOTE_READ_ONLY_PREFLIGHT          = PREPARED / NOT_RUN
+REMOTE_ACTIONS                      = NONE
+WORKER_DEPLOYMENT                   = NOT_RUN
+REMOTE_D1                           = NONE
+QUEUE_OR_DLQ_ACTION                 = NONE
+YOUTUBE_OR_LARK_REQUEST             = NOT_RUN
+SCHEDULE_ROUTE_SECRET_MUTATION      = NONE
 PRODUCTION                          = BLOCKED
 ```
 
-The merged implementation task is archived at:
+The preceding WooCommerce one-command rollout merge closeout is preserved verbatim at:
 
 ```text
-docs/archive/woocommerce-final-one-command-rollout-merged-current-task-2026-07-28.md
+docs/archive/current-task-before-youtube-live-parser-rollout-wiring-v2-2026-07-28.md
 ```
 
-Technical contracts and operating instructions remain in:
+Technical contracts:
 
 ```text
-docs/tasks/woocommerce-final-one-command-rollout.md
-docs/runbooks/woocommerce-final-one-command-rollout.md
-docs/project-brain/woocommerce-final-one-command-rollout-2026-07-28.md
+docs/tasks/youtube-live-parser-rollout-wiring-v2.md
+docs/runbooks/youtube-remote-read-only-preflight-final.md
+docs/project-brain/youtube-live-parser-rollout-readiness-2026-07-28.md
 ```
 
-## Merge result
+## Correct historical baseline
 
-PR #133 passed exact-final-head Branch Verification, had zero unresolved review threads, was ahead of
-`main` by one commit and behind by zero, then was Squash Merged. No direct push to `main` occurred.
+YouTube has already completed the DEV Lark path. This task does not rebuild or re-prove first-time
+YouTube-to-Lark writes.
 
 ```text
-PR_STATE                            = CLOSED
-PR_MERGED                           = true
-FINAL_SOURCE_HEAD                   = 4347558fd75bddf04e918194392025d71c700ee9
-SQUASH_MERGE_COMMIT                 = fb3f2a46b4c22bd293ad5395e7717add75bba690
-FINAL_COMPARE_AHEAD                 = 1
-FINAL_COMPARE_BEHIND                = 0
-FINAL_CHANGED_FILES                 = 19
-UNRESOLVED_REVIEW_THREADS           = 0
+LARK_SCHEMA_APPLY                    = PASS
+FULL_SYNC                            = PASS
+IDEMPOTENT_RERUN                     = PASS
+INCREMENTAL_SYNC                     = PASS
+LOCK_RETRY_DLQ_ALERT                 = PASS
+IDENTITY_FAIL_CLOSED                 = PASS
 ```
 
-## Merged capability
-
-The Repository now contains the complete WooCommerce Integration Workspace control plane:
-
-- active WooCommerce Connector and Queue job with exact `manual_uat` and `scheduled` trigger allowlist;
-- deterministic Bangkok scheduled operation identity;
-- conservative D1 Orders/Products incremental watermark;
-- Shared Reliability, lock renewal, retry/DLQ, resumable continuation, D1-first writer, Coverage and
-  Lark sync reuse;
-- isolated Migration `0017` backup/apply when pending without applying Chatwoot Migration `0018`;
-- additive Lark 14-table schema repair;
-- safe deployment, Full reconciliation, Coverage verification, 14-table D1/Lark parity;
-- same-operation idempotent rerun;
-- incremental UAT and final Schedule activation;
-- automatic all-WooCommerce-flags-false restore after later failures;
-- private SHA-chained evidence.
-
-## Final verification
-
-Exact source head `4347558fd75bddf04e918194392025d71c700ee9` passed Branch Verification
-`#751` / run `30294301310`:
+Existing records and stable-key semantics remain protected in:
 
 ```text
-INSTALL_LOCKED_DEPENDENCIES         = PASS
+RAW_YouTube_Channels
+RAW_YouTube_Videos
+RAW_YouTube_Analytics_Daily
+MKT_Accounts
+MKT_Content
+MKT_Content_Daily
+```
+
+## Repository implementation completed
+
+- Wired the merged `validateLiveRemoteYouTubeDeploymentContract` adapter into executable rollout
+  verification for safe baseline, active deployment and restore.
+- Preserved raw Main Queue and DLQ Wrangler responses until separate exact command contexts are applied.
+- Required the reviewed immutable D1 UUID; an omitted display name is accepted only after UUID match.
+- Preserved the strict existing flag, Secret-name, consumer, Cron, route, workers.dev, traffic and Remote
+  fingerprint validator.
+- Added a plan-only-by-default one-command Remote read-only Terminal operator.
+- Added exact `main`, clean-tree and active-version-before/after guards.
+- Added deterministic migration decisions, including fail-closed treatment of pending `0017` and `0018`.
+- Added focused wiring, active-version, migration and read-only-boundary tests.
+- Preserved the Wrangler Secret-list compatibility hotfix, WooCommerce one-command runtime and all current
+  shared package commands.
+
+## Final Terminal package
+
+Plan-only, no Remote call:
+
+```bash
+npm run preflight:youtube-remote-read-only
+```
+
+After PR #134 is merged, the only remaining YouTube revalidation operation is:
+
+```bash
+CONFIRM_YOUTUBE_REMOTE_READ_ONLY_PREFLIGHT=RUN_YOUTUBE_REMOTE_READ_ONLY_PREFLIGHT \
+  npm run preflight:youtube-remote-read-only:run
+```
+
+The executable command performs only read operations and writes a private sanitized result to:
+
+```text
+outputs/youtube-remote-read-only-preflight/summary.json
+```
+
+Decision contract:
+
+```text
+PASS_READ_ONLY_PREFLIGHT
+BLOCKED_MAIN_CHANGED
+BLOCKED_ACTIVE_VERSION_CHANGED
+BLOCKED_REMOTE_CONTRACT
+BLOCKED_MIGRATION_0017_REMOTE_TRUTH
+BLOCKED_PENDING_MIGRATION_0018
+BLOCKED_PENDING_MIGRATIONS
+```
+
+Migration `0017_woocommerce_commerce.sql` must not be rerun. Migration
+`0018_chatwoot_analytics.sql` remains owned by the Chatwoot workstream and may block this preflight
+without being applied here.
+
+## Safety boundary
+
+```text
+Worker deploy/upload/rollback        = FORBIDDEN / NOT_RUN
+Queue send/Ack/Retry/DLQ mutation    = FORBIDDEN / NONE
+D1 execute/write/migration apply     = FORBIDDEN / NONE
+YouTube/Lark request                 = FORBIDDEN / NOT_RUN
+Cron/route/workers.dev/Secret change = FORBIDDEN / NONE
+Production                           = BLOCKED
+```
+
+## Verified implementation history
+
+The implementation passed repeated exact-head Branch Verification runs while `main` advanced through
+Meta, Chatwoot and WooCommerce workstreams. Latest pre-alignment proof:
+
+```text
+BRANCH_VERIFICATION                 = #756 / 30295071793 / PASS
 SYNTAX_ARCHITECTURE_HYGIENE         = PASS
 FOCUSED_STAGED_TIKTOK               = PASS
 NODE_AND_WORKERS_RUNTIME            = PASS
 REPORT_RELIABILITY                  = PASS
-DEPENDENCY_AUDIT                    = PASS / 0 vulnerabilities
+DEPENDENCY_AUDIT                    = 0 vulnerabilities
 WRANGLER_DRY_RUN                    = PASS / NO DEPLOYMENT
-DIAGNOSTICS_ARTIFACT                = 8664014277
-DIAGNOSTICS_DIGEST                  = sha256:a0df05c8caa0ec11be21fbcc1252a7cd9289cb79b61021c7ea4d0c05441b9553
+DIAGNOSTICS_ARTIFACT                = 8664315727
+DIAGNOSTICS_DIGEST                  = sha256:6526e71037d7f311abbdef81bd05f6e67c49b29c573ea8be4df9bdeea6151740
+UNRESOLVED_REVIEW_THREADS           = 0
+PR_COMMENTS_REQUIRING_ACTION        = 0
 REMOTE_ACTION_COUNT                 = 0
 ```
 
-## Only remaining step
+## Remaining gate
 
-From a clean checkout of the current `main` branch that contains implementation commit
-`fb3f2a46b4c22bd293ad5395e7717add75bba690`, with the documented local ignored
-credentials/configuration available, run exactly:
-
-```bash
-CONFIRM_WOOCOMMERCE_FINAL_ROLLOUT=EXECUTE_WOOCOMMERCE_FINAL_ROLLOUT \
-node scripts/woocommerce-final-one-command.mjs --execute
-```
-
-The command binds itself to the clean checkout's current Git HEAD. It closes WooCommerce Integration
-Workspace only when Full, parity, rerun, incremental and Schedule gates all pass.
-Production/customer-owned deployment remains a separate blocked scope.
+The branch is aligned onto current `main@fd346b21ecbaeca43c117b0b3634f7580683d8d6`. GitHub Branch
+Verification must pass on the exact aligned head, then the already authorized Squash Merge may proceed.
+After merge, only the final Terminal read-only preflight remains. A PASS closes the current YouTube
+revalidation; it does not authorize deployment, Queue execution, Schedule activation or Production.
