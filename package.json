@@ -60,6 +60,8 @@
     "rollout:youtube-dry-run:restore": "node scripts/youtube-dry-run-rollout-operator.mjs --phase=restore-all-false --execute",
     "rollout:youtube-dry-run:verify-restore": "node scripts/youtube-dry-run-rollout-operator.mjs --phase=verify-restore --execute",
     "rollout:youtube-dry-run:summary": "node scripts/youtube-dry-run-rollout-operator.mjs --phase=summary --execute",
+    "rollout:chatwoot-read-only": "node scripts/chatwoot-read-only-preflight-operator.mjs",
+    "rollout:chatwoot-read-only:preflight": "node scripts/chatwoot-read-only-preflight-operator.mjs --phase=preflight --execute",
     "seed:metrics": "node scripts/seed-metric-definitions.mjs",
     "audit:architecture": "node scripts/audit-architecture.mjs",
     "deploy:dry-run": "wrangler deploy --dry-run --config wrangler.example.jsonc && wrangler deploy --dry-run --config wrangler.sync.example.jsonc",
