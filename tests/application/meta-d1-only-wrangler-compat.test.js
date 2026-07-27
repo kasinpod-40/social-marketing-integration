@@ -102,6 +102,8 @@ test('Meta D1 Wrangler compatibility preserves non-dry-run arguments while norma
     await writeFile(configPath, JSON.stringify({
       name: 'social-mkt-sync-worker',
       main: '../../apps/sync-worker/src/index.js',
+      $schema: '../../node_modules/wrangler/config-schema.json',
+      d1_databases: [{ migrations_dir: '../../migrations' }],
     }));
 
     const prepared = await prepareMetaD1OnlyWranglerInvocation([
@@ -140,7 +142,11 @@ test('Meta D1 Wrangler compatibility fails closed on unsafe output arguments and
   const root = await mkdtemp(join(tmpdir(), 'meta-d1-compat-invalid-test-'));
   try {
     const generatedConfig = join(root, '.meta-d1-only-generated.jsonc');
-    await writeFile(generatedConfig, JSON.stringify({ main: './worker.js' }));
+    await writeFile(generatedConfig, JSON.stringify({
+      main: './apps/sync-worker/src/index.js',
+      $schema: './node_modules/wrangler/config-schema.json',
+      d1_databases: [{ migrations_dir: './migrations' }],
+    }));
 
     await assert.rejects(
       prepareMetaD1OnlyWranglerInvocation([
