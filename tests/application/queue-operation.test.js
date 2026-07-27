@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { JOB_TYPES } from '../../packages/application/src/jobs/job-catalog.js';
+import { JOB_TRIGGERS, JOB_TYPES } from '../../packages/application/src/jobs/job-catalog.js';
 import {
   resolveQueueOperation,
   withQueueOperation,
@@ -70,6 +70,46 @@ test('ordinary TikTok sync keeps the existing message-scoped operation', () => {
   assert.equal(operation.workKey, 'tiktok:legacy-tiktok-message');
 });
 
+test('operator YouTube dry-run keeps stable identity across different delivery IDs', () => {
+  const body = {
+    schemaVersion: 1,
+    type: JOB_TYPES.YOUTUBE_ORGANIC_SYNC,
+    trigger: JOB_TRIGGERS.YOUTUBE_WORKER_DRY_RUN,
+    dryRun: true,
+    analyticsEnabled: false,
+    operationId: 'youtube-dry-run-01',
+    workKey: 'youtube:youtube-dry-run-01',
+    generation: REQUESTED_AT,
+    originalRequestedAt: REQUESTED_AT,
+    requestedAt: new Date(REQUESTED_AT).toISOString(),
+  };
+  const resolve = (id) => resolveQueueOperation({
+    job: normalizeQueueJobMessage({ id, body }),
+    message: { id },
+  });
+  const first = resolve('youtube-delivery-a');
+  const retry = resolve('youtube-delivery-b');
+  assert.deepEqual(retry, first);
+  assert.equal(first.stable, true);
+  assert.equal(first.workKey, 'youtube:youtube-dry-run-01');
+});
+
+test('ordinary YouTube jobs retain the legacy delivery-scoped identity', () => {
+  const job = normalizeQueueJobMessage({
+    id: 'legacy-youtube-message',
+    body: {
+      schemaVersion: 1,
+      type: JOB_TYPES.YOUTUBE_ORGANIC_SYNC,
+      trigger: 'schedule',
+      dryRun: true,
+      requestedAt: new Date(REQUESTED_AT).toISOString(),
+    },
+  });
+  const operation = resolveQueueOperation({ job, message: { id: 'legacy-youtube-message' } });
+  assert.equal(operation.stable, false);
+  assert.equal(operation.workKey, 'youtube:legacy-youtube-message');
+});
+
 
 test('Meta Ads operation identity is scoped by configured account alias', () => {
   const create = (sourceAccountKey) => resolveQueueOperation({
@@ -118,16 +158,23 @@ test('continuation serialization preserves exact operation generation', () => {
   assert.equal(continuation.requestedAt, new Date(REQUESTED_AT).toISOString());
 });
 
-test('bootstrap and admitted sync reject workKey or generation drift', () => {
+test('bootstrap, admitted sync and YouTube operator reject workKey or generation drift', () => {
   for (const body of [
     BODY,
     { ...BODY, type: JOB_TYPES.TIKTOK_CREATOR_NATIVE_SYNC, trigger: 'post_lark_watermark' },
+    {
+      ...BODY,
+      type: JOB_TYPES.YOUTUBE_ORGANIC_SYNC,
+      trigger: JOB_TRIGGERS.YOUTUBE_WORKER_DRY_RUN,
+      dryRun: true,
+      workKey: `youtube:${OPERATION_ID}`,
+    },
   ]) {
     assert.throws(
       () => resolveQueueOperation({
         job: normalizeQueueJobMessage({
           id: 'message',
-          body: { ...body, workKey: 'tiktok:wrong' },
+          body: { ...body, workKey: 'wrong:work-key' },
         }),
         message: { id: 'message' },
       }),

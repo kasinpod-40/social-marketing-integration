@@ -57,6 +57,26 @@ Production                                    blocked
 Google Ads                                    LIVE UAT complete / safely closed
 ```
 
+## YouTube Worker dry-run rollout operator — repository implementation
+
+Branch `integration/youtube-worker-dry-run-rollout-operator` เพิ่ม Stable Queue identity
+`youtube:{operationId}` และ deterministic `youtube-dry-run:{operationId}` เฉพาะ trigger
+`youtube_worker_dry_run`. Delivery `message.id` ไม่ใช่ durable identity; completed operation
+replay โดยไม่เรียก Provider ซ้ำ ขณะที่ scheduled/legacy YouTube path คง behavior เดิม.
+
+Operator `youtube-dry-run-rollout-v1` เป็น plan-only โดย default, ใช้ confirmation แยกทุก phase,
+exact Git provenance, sanitized evidence chain, one-message/no-auto-resend และ independent
+all-flags-false restore. Dry-run อนุญาตเฉพาะ Public YouTube GET, Lark planning GET และ Shared
+operational mutations; ห้าม Business/Coverage/checkpoint/Lark write, Analytics และ OAuth refresh.
+Warning drain กับ expired-work cleanup ถูกข้ามเฉพาะ Operator path.
+
+งานนี้เป็น Repository-only: ไม่มี Worker/D1/Lark/Provider/Queue/DLQ/Schedule/Production action.
+รายละเอียด:
+
+```text
+docs/project-brain/youtube-worker-dry-run-rollout-operator-2026-07-27.md
+```
+
 ## TikTok Organic identity and protected source
 
 ```text

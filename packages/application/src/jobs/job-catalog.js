@@ -27,6 +27,12 @@ export const JOB_TYPES = Object.freeze({
   RELIABILITY_MIRROR_DELIVER: 'system.reliability-mirror.deliver',
 });
 
+/** Trigger กลางที่เปลี่ยน Queue identity หรือสิทธิ์ Runtime ห้ามกระจาย String literal */
+export const JOB_TRIGGERS = Object.freeze({
+  TIKTOK_POST_LARK_WATERMARK: 'post_lark_watermark',
+  YOUTUBE_WORKER_DRY_RUN: 'youtube_worker_dry_run',
+});
+
 export const JOB_IMPLEMENTATION_STATUS = Object.freeze({
   ACTIVE: 'active',
   UAT_PENDING: 'uat_pending',
