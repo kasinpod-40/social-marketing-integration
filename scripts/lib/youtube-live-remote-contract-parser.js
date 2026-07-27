@@ -1,4 +1,8 @@
 import {
+  normalizeCloudflareQueueConsumerPayload,
+} from './cloudflare-queue-consumer-contract.js';
+import {
+  YOUTUBE_DRY_RUN_REQUIRED_SECRET_NAMES,
   validateRemoteYouTubeDeploymentContract,
 } from './youtube-dry-run-rollout-operator.js';
 
@@ -11,9 +15,13 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
  */
 export function normalizeScopedWranglerQueueConsumers(value, input = {}) {
   const expectedQueueName = requireText(input.expectedQueueName, 'expectedQueueName');
-  const items = unwrapQueueConsumers(value);
+  const normalizedPayload = normalizeQueueConsumerPayload(value);
+  const items = unwrapQueueConsumers(normalizedPayload);
   const responseQueueName = optionalText(
-    value?.queue_name ?? value?.queueName ?? value?.queue ?? value?.name,
+    normalizedPayload?.queue_name
+      ?? normalizedPayload?.queueName
+      ?? normalizedPayload?.queue
+      ?? normalizedPayload?.name,
   );
   if (responseQueueName && responseQueueName !== expectedQueueName) {
     throw parserError(
@@ -40,14 +48,19 @@ export function normalizeScopedWranglerQueueConsumers(value, input = {}) {
         { expectedQueueName, observedQueueName, index },
       );
     }
-    const settings = normalizeQueueConsumerSettings(consumer, {
-      expectedQueueName,
-      index,
-    });
+    const settings = consumer.settings;
+    if (settings !== undefined
+      && (!settings || typeof settings !== 'object' || Array.isArray(settings))) {
+      throw parserError(
+        'Scoped Queue consumer settings must be an object when present',
+        'YOUTUBE_DRY_RUN_REMOTE_CONTRACT_INVALID',
+        { expectedQueueName, index },
+      );
+    }
     return Object.freeze({
       ...consumer,
       queue_name: expectedQueueName,
-      ...(settings ? { settings } : {}),
+      ...(settings ? { settings: Object.freeze({ ...settings }) } : {}),
     });
   }));
 }
@@ -64,33 +77,7 @@ export function normalizeWranglerVersionD1Binding(value, input = {}) {
   );
   const expectedDatabaseId = requireUuid(input.expectedDatabaseId, 'expectedDatabaseId');
   const expectedDatabaseName = requireText(input.expectedDatabaseName, 'expectedDatabaseName');
-  const isArray = Array.isArray(value);
-  const sourceItem = isArray ? value[0] : value;
-  if (!sourceItem || typeof sourceItem !== 'object' || Array.isArray(sourceItem)) {
-    throw parserError(
-      'Wrangler version view must contain one version object',
-      'YOUTUBE_DRY_RUN_REMOTE_CONTRACT_INVALID',
-    );
-  }
-  if (isArray && value.length !== 1) {
-    throw parserError(
-      'Wrangler version view must contain exactly one version object',
-      'YOUTUBE_DRY_RUN_REMOTE_CONTRACT_INVALID',
-      { versionCount: value.length },
-    );
-  }
-
-  const directBindings = Array.isArray(sourceItem.bindings) ? sourceItem.bindings : null;
-  const resourceBindings = Array.isArray(sourceItem.resources?.bindings)
-    ? sourceItem.resources.bindings
-    : null;
-  const bindings = directBindings ?? resourceBindings;
-  if (!bindings) {
-    throw parserError(
-      'Wrangler version view lacks bindings',
-      'YOUTUBE_DRY_RUN_REMOTE_CONTRACT_INVALID',
-    );
-  }
+  const { isArray, sourceItem, directBindings, bindings } = readVersionBindings(value);
 
   const matches = bindings
     .map((binding, index) => ({ binding, index }))
@@ -145,22 +132,144 @@ export function normalizeWranglerVersionD1Binding(value, input = {}) {
       })
       : item
   ));
-  const normalizedItem = directBindings
-    ? { ...sourceItem, bindings: normalizedBindings }
-    : {
-      ...sourceItem,
-      resources: {
-        ...sourceItem.resources,
-        bindings: normalizedBindings,
-      },
-    };
-  return isArray ? Object.freeze([Object.freeze(normalizedItem)]) : Object.freeze(normalizedItem);
+  return replaceVersionBindings({
+    isArray,
+    sourceItem,
+    directBindings,
+    bindings: normalizedBindings,
+  });
+}
+
+/**
+ * Wrangler live version metadata may omit plaintext bindings whose effective value is false.
+ * Materialize only the reviewed expected-false names for fingerprinting. Explicit values remain
+ * authoritative and are validated; no true value is rewritten or downgraded.
+ */
+export function normalizeWranglerVersionReviewedFalseFlags(value, input = {}) {
+  if (!Array.isArray(input.expectedFalseFlagNames)
+    || input.expectedFalseFlagNames.length === 0) {
+    throw parserError(
+      'Live Remote validation requires reviewed expected-false flag names',
+      'YOUTUBE_DRY_RUN_REMOTE_EXPECTED_FALSE_FLAGS_REQUIRED',
+    );
+  }
+  const expectedNames = [...new Set(input.expectedFalseFlagNames.map((name) => (
+    requireText(name, 'expectedFalseFlagName')
+  )))].sort();
+  const expectedSet = new Set(expectedNames);
+  const { isArray, sourceItem, directBindings, bindings } = readVersionBindings(value);
+  const matchesByName = new Map(expectedNames.map((name) => [name, []]));
+
+  for (const binding of bindings) {
+    if (normalizeBindingType(binding?.type) !== 'plain_text') continue;
+    const name = optionalText(binding?.name ?? binding?.binding);
+    if (!name || !expectedSet.has(name)) continue;
+    matchesByName.get(name).push(binding);
+  }
+
+  for (const [name, matches] of matchesByName) {
+    if (matches.length > 1) {
+      throw parserError(
+        'Remote version contains a duplicate reviewed flag binding',
+        'YOUTUBE_DRY_RUN_REMOTE_FLAG_BINDING_DUPLICATE',
+        { name, matchCount: matches.length },
+      );
+    }
+    if (matches.length === 1) {
+      requireRemoteBoolean(matches[0]?.text ?? matches[0]?.value, name);
+    }
+  }
+
+  const missingNames = expectedNames.filter((name) => matchesByName.get(name).length === 0);
+  const normalizedBindings = [
+    ...bindings,
+    ...missingNames.map((name) => Object.freeze({
+      type: 'plain_text',
+      name,
+      text: 'false',
+    })),
+  ];
+
+  return Object.freeze({
+    versionsView: replaceVersionBindings({
+      isArray,
+      sourceItem,
+      directBindings,
+      bindings: normalizedBindings,
+    }),
+    expectedFalseFlagCount: expectedNames.length,
+    materializedFalseFlagCount: missingNames.length,
+  });
+}
+
+/**
+ * The Worker is shared by multiple connectors. Require the complete YouTube Secret-name subset,
+ * reject any exposed Secret value, and remove unrelated connector Secret names only from the
+ * YouTube fingerprint input. The original Remote response is never persisted.
+ */
+export function normalizeWranglerVersionRequiredSecrets(value, input = {}) {
+  const requiredNames = [...(
+    input.requiredSecretNames ?? YOUTUBE_DRY_RUN_REQUIRED_SECRET_NAMES
+  )].map((name) => requireText(name, 'requiredSecretName')).sort();
+  const requiredSet = new Set(requiredNames);
+  const { isArray, sourceItem, directBindings, bindings } = readVersionBindings(value);
+  const observedNames = [];
+
+  for (const binding of bindings) {
+    if (normalizeBindingType(binding?.type) !== 'secret_text') continue;
+    const name = optionalText(binding?.name ?? binding?.binding);
+    if (!name) continue;
+    if (binding?.text !== undefined || binding?.value !== undefined) {
+      throw parserError(
+        'Remote version output exposed a Secret value',
+        'YOUTUBE_DRY_RUN_REMOTE_SECRET_VALUE_EXPOSED',
+      );
+    }
+    observedNames.push(name);
+  }
+
+  const observedSet = new Set(observedNames);
+  if (observedSet.size !== observedNames.length) {
+    throw parserError(
+      'Remote Worker contains a duplicate Secret binding name',
+      'YOUTUBE_DRY_RUN_REMOTE_SECRET_BINDING_DUPLICATE',
+    );
+  }
+  const missing = requiredNames.filter((name) => !observedSet.has(name));
+  if (missing.length > 0) {
+    throw parserError(
+      'Remote Worker is missing one or more required YouTube Secret bindings',
+      'YOUTUBE_DRY_RUN_REMOTE_REQUIRED_SECRET_MISSING',
+      { missing },
+    );
+  }
+
+  const scopedBindings = bindings.filter((binding) => {
+    if (normalizeBindingType(binding?.type) !== 'secret_text') return true;
+    const name = optionalText(binding?.name ?? binding?.binding);
+    return name ? requiredSet.has(name) : false;
+  });
+
+  return Object.freeze({
+    versionsView: replaceVersionBindings({
+      isArray,
+      sourceItem,
+      directBindings,
+      bindings: scopedBindings,
+    }),
+    requiredSecretNameCount: requiredNames.length,
+    observedSecretNameCount: observedSet.size,
+    additionalSecretNameCount: [...observedSet]
+      .filter((name) => !requiredSet.has(name))
+      .length,
+  });
 }
 
 /**
  * Compatibility adapter for sanitized live Wrangler responses. It normalizes only metadata already
- * proven by scoped command context or immutable D1 UUID, then delegates every flag, binding,
- * consumer, trigger, Secret-name, traffic and fingerprint decision to the reviewed validator.
+ * proven by scoped command context, immutable D1 UUID, reviewed false defaults or the required
+ * YouTube Secret-name subset, then delegates every flag, binding, consumer, trigger, traffic and
+ * fingerprint decision to the reviewed validator.
  */
 export function validateLiveRemoteYouTubeDeploymentContract(input = {}) {
   const contexts = input.queueConsumerContexts;
@@ -175,101 +284,122 @@ export function validateLiveRemoteYouTubeDeploymentContract(input = {}) {
       expectedQueueName: context?.expectedQueueName,
     })
   ));
-  const versionsView = normalizeWranglerVersionD1Binding(input.versionsView, {
+  const d1Normalized = normalizeWranglerVersionD1Binding(input.versionsView, {
     expectedBindingName: input.expectedD1BindingName ?? 'MKT_STATE_DB',
     expectedDatabaseId: input.expectedDatabaseId,
     expectedDatabaseName: input.expectedDatabaseName,
+  });
+  const flagScope = normalizeWranglerVersionReviewedFalseFlags(d1Normalized, {
+    expectedFalseFlagNames: input.expectedFalseFlagNames,
+  });
+  const secretScope = normalizeWranglerVersionRequiredSecrets(flagScope.versionsView, {
+    requiredSecretNames: input.requiredSecretNames,
   });
   const {
     queueConsumerContexts: _queueConsumerContexts,
     expectedD1BindingName: _expectedD1BindingName,
     expectedDatabaseId: _expectedDatabaseId,
     expectedDatabaseName: _expectedDatabaseName,
+    expectedFalseFlagNames: _expectedFalseFlagNames,
+    requiredSecretNames: _requiredSecretNames,
     ...validatorInput
   } = input;
-  return validateRemoteYouTubeDeploymentContract({
+  const validated = validateRemoteYouTubeDeploymentContract({
     ...validatorInput,
-    versionsView,
+    versionsView: secretScope.versionsView,
     queueConsumers,
   });
-}
-
-function normalizeQueueConsumerSettings(consumer, input = {}) {
-  const rawSettings = consumer?.settings;
-  if (rawSettings !== undefined
-    && (!rawSettings || typeof rawSettings !== 'object' || Array.isArray(rawSettings))) {
-    throw parserError(
-      'Scoped Queue consumer settings must be an object when present',
-      'YOUTUBE_DRY_RUN_REMOTE_CONTRACT_INVALID',
-      { expectedQueueName: input.expectedQueueName, index: input.index },
-    );
-  }
-  const settings = rawSettings ? { ...rawSettings } : {};
-  const seconds = readEquivalentQueueInteger([
-    settings.max_batch_timeout,
-    consumer?.max_batch_timeout,
-  ], 'max_batch_timeout', input);
-  const milliseconds = readEquivalentQueueInteger([
-    settings.max_wait_time_ms,
-    consumer?.max_wait_time_ms,
-  ], 'max_wait_time_ms', input);
-
-  let normalizedSeconds = seconds;
-  if (milliseconds !== null) {
-    if (milliseconds % 1000 !== 0) {
-      throw parserError(
-        'Remote Queue max_wait_time_ms must resolve to whole seconds',
-        'YOUTUBE_DRY_RUN_REMOTE_QUEUE_TIMEOUT_INVALID',
-        {
-          expectedQueueName: input.expectedQueueName,
-          index: input.index,
-          maxWaitTimeMs: milliseconds,
-        },
-      );
-    }
-    const millisecondsAsSeconds = milliseconds / 1000;
-    if (normalizedSeconds !== null && normalizedSeconds !== millisecondsAsSeconds) {
-      throw parserError(
-        'Remote Queue timeout fields disagree',
-        'YOUTUBE_DRY_RUN_REMOTE_QUEUE_TIMEOUT_MISMATCH',
-        {
-          expectedQueueName: input.expectedQueueName,
-          index: input.index,
-          maxBatchTimeout: normalizedSeconds,
-          maxWaitTimeMs: milliseconds,
-        },
-      );
-    }
-    normalizedSeconds = millisecondsAsSeconds;
-  }
-  if (normalizedSeconds !== null) {
-    settings.max_batch_timeout = normalizedSeconds;
-  }
-  return Object.keys(settings).length > 0 ? Object.freeze(settings) : null;
-}
-
-function readEquivalentQueueInteger(values, fieldName, input = {}) {
-  const present = values.filter((value) => value !== undefined && value !== null);
-  if (present.length === 0) return null;
-  const normalized = present.map((value) => {
-    const number = Number(value);
-    if (!Number.isSafeInteger(number) || number < 0) {
-      throw parserError(
-        `Remote Queue ${fieldName} must be a non-negative integer`,
-        'YOUTUBE_DRY_RUN_REMOTE_QUEUE_TIMEOUT_INVALID',
-        { expectedQueueName: input.expectedQueueName, index: input.index, fieldName },
-      );
-    }
-    return number;
+  return Object.freeze({
+    ...validated,
+    observedSecretNameCount: secretScope.observedSecretNameCount,
+    additionalSecretNameCount: secretScope.additionalSecretNameCount,
+    expectedFalseFlagCount: flagScope.expectedFalseFlagCount,
+    materializedFalseFlagCount: flagScope.materializedFalseFlagCount,
   });
-  if (new Set(normalized).size !== 1) {
-    throw parserError(
-      `Remote Queue ${fieldName} appears with conflicting values`,
-      'YOUTUBE_DRY_RUN_REMOTE_QUEUE_TIMEOUT_MISMATCH',
-      { expectedQueueName: input.expectedQueueName, index: input.index, fieldName },
+}
+
+function normalizeQueueConsumerPayload(value) {
+  try {
+    if (Array.isArray(value?.result?.consumers)) {
+      return {
+        ...value,
+        result: {
+          ...value.result,
+          consumers: normalizeCloudflareQueueConsumerPayload(value.result.consumers),
+        },
+      };
+    }
+    return normalizeCloudflareQueueConsumerPayload(value);
+  } catch (cause) {
+    throw translateQueueContractError(cause);
+  }
+}
+
+function translateQueueContractError(cause) {
+  const fieldName = optionalText(cause?.details?.fieldName);
+  const timeoutField = ['max_wait_time_ms', 'max_batch_timeout'].includes(fieldName);
+  if (cause?.code === 'CLOUDFLARE_QUEUE_CONSUMER_TIMEOUT_INVALID'
+    || (cause?.code === 'CLOUDFLARE_QUEUE_CONSUMER_FIELD_INVALID' && timeoutField)) {
+    return parserError(
+      cause instanceof Error ? cause.message : 'Remote Queue timeout is invalid',
+      'YOUTUBE_DRY_RUN_REMOTE_QUEUE_TIMEOUT_INVALID',
+      cause?.details,
     );
   }
-  return normalized[0];
+  if (cause?.code === 'CLOUDFLARE_QUEUE_CONSUMER_FIELD_CONFLICT' && timeoutField) {
+    return parserError(
+      cause instanceof Error ? cause.message : 'Remote Queue timeout fields disagree',
+      'YOUTUBE_DRY_RUN_REMOTE_QUEUE_TIMEOUT_MISMATCH',
+      cause?.details,
+    );
+  }
+  return cause;
+}
+
+function readVersionBindings(value) {
+  const isArray = Array.isArray(value);
+  const sourceItem = isArray ? value[0] : value;
+  if (!sourceItem || typeof sourceItem !== 'object' || Array.isArray(sourceItem)) {
+    throw parserError(
+      'Wrangler version view must contain one version object',
+      'YOUTUBE_DRY_RUN_REMOTE_CONTRACT_INVALID',
+    );
+  }
+  if (isArray && value.length !== 1) {
+    throw parserError(
+      'Wrangler version view must contain exactly one version object',
+      'YOUTUBE_DRY_RUN_REMOTE_CONTRACT_INVALID',
+      { versionCount: value.length },
+    );
+  }
+
+  const directBindings = Array.isArray(sourceItem.bindings) ? sourceItem.bindings : null;
+  const resourceBindings = Array.isArray(sourceItem.resources?.bindings)
+    ? sourceItem.resources.bindings
+    : null;
+  const bindings = directBindings ?? resourceBindings;
+  if (!bindings) {
+    throw parserError(
+      'Wrangler version view lacks bindings',
+      'YOUTUBE_DRY_RUN_REMOTE_CONTRACT_INVALID',
+    );
+  }
+  return { isArray, sourceItem, directBindings, bindings };
+}
+
+function replaceVersionBindings(input) {
+  const normalizedItem = input.directBindings
+    ? { ...input.sourceItem, bindings: input.bindings }
+    : {
+      ...input.sourceItem,
+      resources: {
+        ...input.sourceItem.resources,
+        bindings: input.bindings,
+      },
+    };
+  return input.isArray
+    ? Object.freeze([Object.freeze(normalizedItem)])
+    : Object.freeze(normalizedItem);
 }
 
 function unwrapQueueConsumers(value) {
@@ -287,6 +417,18 @@ function normalizeBindingType(value) {
   const type = optionalText(value)?.toLowerCase().replaceAll('-', '_');
   if (['d1', 'd1_database', 'd1_namespace'].includes(type)) return 'd1';
   return type;
+}
+
+function requireRemoteBoolean(value, name) {
+  if (value === true || value === false) return value;
+  const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  if (normalized === 'true') return true;
+  if (normalized === 'false') return false;
+  throw parserError(
+    'Remote reviewed flag must be an explicit Boolean value',
+    'YOUTUBE_DRY_RUN_REMOTE_FLAG_VALUE_INVALID',
+    { name },
+  );
 }
 
 function requireUuid(value, fieldName) {
