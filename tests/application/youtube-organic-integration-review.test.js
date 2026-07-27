@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import {
   writeYouTubeOrganicStorageFirst,
 } from '../../packages/application/src/storage/youtube-organic-history-storage.js';
+import {
+  syncYouTubeOrganicEndToEnd,
+} from '../../packages/application/src/use-cases/sync-youtube-organic-end-to-end.js';
 
 const OBSERVED_AT = Date.parse('2026-07-27T01:00:00Z');
 
@@ -86,6 +89,7 @@ function createDurableState() {
   const stateReadBatchSizes = [];
   const coverageEvents = [];
   let failAccountWrite = false;
+  let failContentWrite = false;
 
   const store = {
     async saveCoverageRun(row) {
@@ -119,6 +123,11 @@ function createDurableState() {
       return coverage.get(id) ?? null;
     },
     async upsertOrganicContentState(row) {
+      if (failContentWrite) {
+        const error = new Error('synthetic content retry failure');
+        error.code = 'SYNTHETIC_CONTENT_RETRY_FAILURE';
+        throw error;
+      }
       const existed = states.has(row.content_key);
       states.set(row.content_key, Object.freeze({ ...row }));
       return Object.freeze({ status: existed ? 'skipped' : 'written' });
@@ -156,6 +165,9 @@ function createDurableState() {
     coverageEvents,
     failAccountWrites() {
       failAccountWrite = true;
+    },
+    failContentWrites() {
+      failContentWrite = true;
     },
   };
 }
@@ -214,4 +226,52 @@ test('completed YouTube account Coverage is never downgraded to partial by a fai
   const retryEvents = durable.coverageEvents.slice(eventOffset)
     .filter((event) => event.id === accountCoverageId);
   assert.equal(retryEvents.some((event) => event.status === 'partial'), false);
+});
+
+test('completed YouTube content Coverage is never downgraded to partial by a failed retry', async () => {
+  const durable = createDurableState();
+  const captured = createCaptured(2);
+  const first = await writeYouTubeOrganicStorageFirst(context(durable), captured);
+  const contentCoverageId = first.contentCoverageRunId;
+  assert.equal(durable.coverage.get(contentCoverageId).status, 'complete');
+
+  const eventOffset = durable.coverageEvents.length;
+  durable.failContentWrites();
+  await assert.rejects(
+    () => writeYouTubeOrganicStorageFirst({
+      ...context(durable),
+      syncRunId: 'sync-attempt-2',
+    }, captured),
+    (error) => error.code === 'SYNTHETIC_CONTENT_RETRY_FAILURE',
+  );
+
+  assert.equal(durable.coverage.get(contentCoverageId).status, 'complete');
+  const retryEvents = durable.coverageEvents.slice(eventOffset)
+    .filter((event) => event.id === contentCoverageId);
+  assert.equal(retryEvents.some((event) => event.status === 'partial'), false);
+});
+
+test('YouTube cumulative metricDate must match the durable observation date', async () => {
+  const store = {
+    async saveCoverageRun() {},
+    async upsertOrganicAccountDailyFact() {},
+  };
+  const historyGateway = {
+    store,
+    async assertSchemaReady() {},
+    async listOrganicContentStatesByKeys() { return []; },
+    async upsertOrganicContentState() {},
+    async saveOrganicContentObservation() {},
+    async readCoverageRun() { return null; },
+    async saveCoverageRun() {},
+    async saveCoverageEntities() {},
+  };
+  await assert.rejects(() => syncYouTubeOrganicEndToEnd({
+    historyGateway,
+    historyStore: store,
+    requestedAt: Date.parse('2026-07-27T01:00:00Z'),
+    generation: Date.parse('2026-07-27T01:00:00Z'),
+    metricDate: '2026-07-26',
+    sourceTimezone: 'Asia/Bangkok',
+  }), (error) => error.code === 'YOUTUBE_METRIC_DATE_GENERATION_MISMATCH');
 });
