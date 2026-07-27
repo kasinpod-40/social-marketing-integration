@@ -1,0 +1,180 @@
+from pathlib import Path
+import re
+
+
+def sub(path, pattern, replacement, flags=0):
+    file = Path(path)
+    text = file.read_text()
+    updated, count = re.subn(pattern, replacement, text, count=1, flags=flags)
+    if count != 1:
+        raise SystemExit(f'{path}: pattern count={count}: {pattern[:80]}')
+    file.write_text(updated)
+
+
+sub('packages/config/src/connector-catalog.js',
+    r"(\[CONNECTOR_KEYS\.WOOCOMMERCE\]: freezeDefinition\(\{.*?implementationStatus: )CONNECTOR_IMPLEMENTATION_STATUS\.PLANNED",
+    r"\1CONNECTOR_IMPLEMENTATION_STATUS.UAT_PENDING", re.S)
+sub('packages/application/src/jobs/job-catalog.js',
+    r"(\[JOB_TYPES\.WOOCOMMERCE_COMMERCE_SYNC\]: freezeJob\(\{.*?implementationStatus: )JOB_IMPLEMENTATION_STATUS\.PLANNED",
+    r"\1JOB_IMPLEMENTATION_STATUS.UAT_PENDING", re.S)
+sub('packages/application/src/jobs/job-catalog.js',
+    r"(\[JOB_TYPES\.WOOCOMMERCE_COMMERCE_SYNC\]: freezeJob\(\{.*?connectorKey: CONNECTOR_KEYS\.WOOCOMMERCE,)\n(\s*\}\),)",
+    r"\1\n    manualOnly: true,\n\2", re.S)
+
+sub('packages/application/src/jobs/queue-operation.js',
+    r"(\[JOB_TYPES\.META_ADS_SYNC, Object\.freeze\(\{\n\s*prefix: 'meta_ads',\n\s*scopeField: 'sourceAccountKey',\n\s*\}\)\],)",
+    r"\1\n  [JOB_TYPES.WOOCOMMERCE_COMMERCE_SYNC, Object.freeze({ prefix: 'woocommerce' })],")
+sub('packages/application/src/jobs/queue-operation.js',
+    r"new Set\(\['facebook', 'instagram', 'tiktok', 'youtube'\]\)",
+    "new Set(['facebook', 'instagram', 'tiktok', 'youtube', 'woocommerce'])")
+
+sub('packages/config/src/connector-runtime-config.js',
+    r"const protectedUat = isProtectedGoogleAdsUatRuntime\(definition, env\)\n\s*\|\| isProtectedMetaUatRuntime\(definition, env\);",
+    "const protectedUat = isProtectedGoogleAdsUatRuntime(definition, env)\n      || isProtectedMetaUatRuntime(definition, env)\n      || isProtectedWooCommerceUatRuntime(definition, env);")
+sub('packages/config/src/connector-runtime-config.js',
+    r"function isProtectedMetaUatRuntime\(definition, env\) \{",
+    """function isProtectedWooCommerceUatRuntime(definition, env) {
+  if (definition.key !== 'woocommerce'
+    || definition.implementationStatus !== CONNECTOR_IMPLEMENTATION_STATUS.UAT_PENDING) {
+    return false;
+  }
+  return env.MKT_ENV === 'development'
+    && env.MKT_CUSTOMER_PROFILE === 'integration_workspace'
+    && readOptionalBoolean(env.MKT_CONNECTOR_WOOCOMMERCE_ENABLED, 'MKT_CONNECTOR_WOOCOMMERCE_ENABLED') === true
+    && readOptionalBoolean(env.MKT_WOOCOMMERCE_D1_WRITE_ENABLED, 'MKT_WOOCOMMERCE_D1_WRITE_ENABLED') === true
+    && readOptionalBoolean(env.MKT_WOOCOMMERCE_LARK_WRITE_ENABLED, 'MKT_WOOCOMMERCE_LARK_WRITE_ENABLED') === true
+    && readOptionalBoolean(env.MKT_SCHEDULE_WOOCOMMERCE_ENABLED, 'MKT_SCHEDULE_WOOCOMMERCE_ENABLED') !== true;
+}
+
+function isProtectedMetaUatRuntime(definition, env) {""")
+
+sub('packages/config/src/lark-table-config.js',
+    r"(\s*rawAdsDaily: 'LARK_TABLE_RAW_ADS_DAILY',)",
+    r"""\1
+  rawCommerceStores: 'LARK_TABLE_RAW_COMMERCE_STORES',
+  rawCommerceOrders: 'LARK_TABLE_RAW_COMMERCE_ORDERS',
+  rawCommerceOrderItems: 'LARK_TABLE_RAW_COMMERCE_ORDER_ITEMS',
+  rawCommerceProducts: 'LARK_TABLE_RAW_COMMERCE_PRODUCTS',
+  rawCommerceProductVariations: 'LARK_TABLE_RAW_COMMERCE_PRODUCT_VARIATIONS',
+  rawCommerceCategories: 'LARK_TABLE_RAW_COMMERCE_CATEGORIES',
+  rawCommerceCustomers: 'LARK_TABLE_RAW_COMMERCE_CUSTOMERS',
+  rawCommerceCoupons: 'LARK_TABLE_RAW_COMMERCE_COUPONS',
+  rawCommerceRefunds: 'LARK_TABLE_RAW_COMMERCE_REFUNDS',
+  mktCommerceOrders: 'LARK_TABLE_MKT_COMMERCE_ORDERS',
+  mktCommerceProducts: 'LARK_TABLE_MKT_COMMERCE_PRODUCTS',
+  mktCommerceCustomers: 'LARK_TABLE_MKT_COMMERCE_CUSTOMERS',
+  mktCommerceDaily: 'LARK_TABLE_MKT_COMMERCE_DAILY',
+  mktCommerceProductDaily: 'LARK_TABLE_MKT_COMMERCE_PRODUCT_DAILY',""")
+
+sub('apps/sync-worker/src/runtime-infrastructure.js',
+    r"(import \{ D1GoogleAdsLiveAdmissionStore \} from '[^']+';)",
+    r"\1\nimport { D1WooCommerceCommerceStore } from '../../../packages/connectors/src/woocommerce/d1-woocommerce-commerce-store.js';\nimport { D1WooCommerceReportSource } from '../../../packages/connectors/src/woocommerce/d1-woocommerce-report-source.js';")
+sub('apps/sync-worker/src/runtime-infrastructure.js',
+    r"(\s*let googleAdsAdmissionStore = null;)",
+    r"\1\n  let wooCommerceStore = null;\n  let wooCommerceReportSource = null;")
+sub('apps/sync-worker/src/runtime-infrastructure.js',
+    r"(\s*getGoogleAdsAdmissionStore\(\) \{.*?\n\s*\},)(\n\s*getReliability\(\) \{)",
+    r"""\1
+    getWooCommerceCommerceStore() {
+      wooCommerceStore ??= new D1WooCommerceCommerceStore({ db: env?.MKT_STATE_DB });
+      return wooCommerceStore;
+    },
+    getWooCommerceReportSource() {
+      wooCommerceReportSource ??= new D1WooCommerceReportSource({ db: env?.MKT_STATE_DB });
+      return wooCommerceReportSource;
+    },\2""", re.S)
+
+sub('apps/sync-worker/src/sync-worker.js',
+    r"import \{ processJobWithGoogleAdsUat \} from './google-ads-active-job-router\.js';",
+    "import { processJobWithWooCommerceEndToEnd } from './woocommerce-active-job-router.js';")
+sub('apps/sync-worker/src/sync-worker.js',
+    r"dependencies\.processJob \?\? processJobWithGoogleAdsUat",
+    "dependencies.processJob ?? processJobWithWooCommerceEndToEnd")
+sub('apps/sync-worker/src/index.js',
+    r"processJobWithYouTubeOrganicEndToEnd as processJob,\n\} from './youtube-organic-active-job-router\.js';",
+    "processJobWithWooCommerceEndToEnd as processJob,\n} from './woocommerce-active-job-router.js';")
+
+sub('.dev.vars.example', r"^MKT_CONNECTOR_WOOCOMMERCE_ENABLED=false$",
+    """MKT_CONNECTOR_WOOCOMMERCE_ENABLED=false
+# WooCommerce Source/D1/Lark/Report เป็น Gate อิสระและปิดทุกค่าเป็น Default
+MKT_WOOCOMMERCE_D1_WRITE_ENABLED=false
+MKT_WOOCOMMERCE_LARK_WRITE_ENABLED=false
+MKT_WOOCOMMERCE_REPORT_READ_ENABLED=false
+MKT_WOOCOMMERCE_FULL_RECONCILIATION_ENABLED=false""", re.M)
+sub('.dev.vars.example', r"^MKT_SCHEDULE_GOOGLE_ADS_ENABLED=false$",
+    "MKT_SCHEDULE_GOOGLE_ADS_ENABLED=false\nMKT_SCHEDULE_WOOCOMMERCE_ENABLED=false", re.M)
+sub('.dev.vars.example',
+    r"# WooCommerce / Chatwoot — Foundations ยังไม่ถูก Route เข้า Worker\nWOOCOMMERCE_BASE_URL=.*?\nWOOCOMMERCE_CONSUMER_KEY=.*?\nWOOCOMMERCE_CONSUMER_SECRET=.*?\n",
+    """# WooCommerce — Consumer Key/Secret ต้องเป็น read-only Customer credential และอยู่ใน Secret store
+WOOCOMMERCE_BASE_URL=https://replace-with-customer-store.example
+WOOCOMMERCE_CONSUMER_KEY=ck_replace-with-consumer-key
+WOOCOMMERCE_CONSUMER_SECRET=replace-with-consumer-secret
+WOOCOMMERCE_API_VERSION=wc/v3
+WOOCOMMERCE_API_TIMEOUT_MS=30000
+WOOCOMMERCE_PAGE_SIZE=100
+WOOCOMMERCE_INCREMENTAL_OVERLAP_SECONDS=300
+WOOCOMMERCE_MAX_PAGES_PER_INVOCATION=2
+WOOCOMMERCE_MAX_NESTED_PAGES=100
+WOOCOMMERCE_NESTED_CONCURRENCY=3
+WOOCOMMERCE_REVISION_LOOKBACK_DAYS=30
+WOOCOMMERCE_DEFAULT_CURRENCY=THB
+# Chatwoot Foundation ยังไม่ถูก Route เข้า Worker
+""", re.S)
+sub('.dev.vars.example', r"^(LARK_TABLE_RAW_YOUTUBE_ANALYTICS_DAILY=.*)$",
+    r"""\1
+LARK_TABLE_RAW_COMMERCE_STORES=replace-with-table-id
+LARK_TABLE_RAW_COMMERCE_ORDERS=replace-with-table-id
+LARK_TABLE_RAW_COMMERCE_ORDER_ITEMS=replace-with-table-id
+LARK_TABLE_RAW_COMMERCE_PRODUCTS=replace-with-table-id
+LARK_TABLE_RAW_COMMERCE_PRODUCT_VARIATIONS=replace-with-table-id
+LARK_TABLE_RAW_COMMERCE_CATEGORIES=replace-with-table-id
+LARK_TABLE_RAW_COMMERCE_CUSTOMERS=replace-with-table-id
+LARK_TABLE_RAW_COMMERCE_COUPONS=replace-with-table-id
+LARK_TABLE_RAW_COMMERCE_REFUNDS=replace-with-table-id
+LARK_TABLE_MKT_COMMERCE_ORDERS=replace-with-table-id
+LARK_TABLE_MKT_COMMERCE_PRODUCTS=replace-with-table-id
+LARK_TABLE_MKT_COMMERCE_CUSTOMERS=replace-with-table-id
+LARK_TABLE_MKT_COMMERCE_DAILY=replace-with-table-id
+LARK_TABLE_MKT_COMMERCE_PRODUCT_DAILY=replace-with-table-id""", re.M)
+
+sub('wrangler.sync.example.jsonc', r'^(\s*"MKT_CONNECTOR_WOOCOMMERCE_ENABLED": "false",)$',
+    r"""\1
+    "MKT_WOOCOMMERCE_D1_WRITE_ENABLED": "false",
+    "MKT_WOOCOMMERCE_LARK_WRITE_ENABLED": "false",
+    "MKT_WOOCOMMERCE_REPORT_READ_ENABLED": "false",
+    "MKT_WOOCOMMERCE_FULL_RECONCILIATION_ENABLED": "false",
+    "WOOCOMMERCE_BASE_URL": "https://replace-with-customer-store.example",
+    "WOOCOMMERCE_API_VERSION": "wc/v3",
+    "WOOCOMMERCE_API_TIMEOUT_MS": "30000",
+    "WOOCOMMERCE_PAGE_SIZE": "100",
+    "WOOCOMMERCE_INCREMENTAL_OVERLAP_SECONDS": "300",
+    "WOOCOMMERCE_MAX_PAGES_PER_INVOCATION": "2",
+    "WOOCOMMERCE_MAX_NESTED_PAGES": "100",
+    "WOOCOMMERCE_NESTED_CONCURRENCY": "3",
+    "WOOCOMMERCE_REVISION_LOOKBACK_DAYS": "30",
+    "WOOCOMMERCE_DEFAULT_CURRENCY": "THB",""", re.M)
+sub('wrangler.sync.example.jsonc', r'^(\s*"MKT_SCHEDULE_GOOGLE_ADS_ENABLED": "false",)$',
+    r'\1\n    "MKT_SCHEDULE_WOOCOMMERCE_ENABLED": "false",', re.M)
+sub('wrangler.sync.example.jsonc', r'^(\s*"LARK_TABLE_RAW_YOUTUBE_ANALYTICS_DAILY": "replace-with-table-id",)$',
+    r"""\1
+    "LARK_TABLE_RAW_COMMERCE_STORES": "replace-with-table-id",
+    "LARK_TABLE_RAW_COMMERCE_ORDERS": "replace-with-table-id",
+    "LARK_TABLE_RAW_COMMERCE_ORDER_ITEMS": "replace-with-table-id",
+    "LARK_TABLE_RAW_COMMERCE_PRODUCTS": "replace-with-table-id",
+    "LARK_TABLE_RAW_COMMERCE_PRODUCT_VARIATIONS": "replace-with-table-id",
+    "LARK_TABLE_RAW_COMMERCE_CATEGORIES": "replace-with-table-id",
+    "LARK_TABLE_RAW_COMMERCE_CUSTOMERS": "replace-with-table-id",
+    "LARK_TABLE_RAW_COMMERCE_COUPONS": "replace-with-table-id",
+    "LARK_TABLE_RAW_COMMERCE_REFUNDS": "replace-with-table-id",
+    "LARK_TABLE_MKT_COMMERCE_ORDERS": "replace-with-table-id",
+    "LARK_TABLE_MKT_COMMERCE_PRODUCTS": "replace-with-table-id",
+    "LARK_TABLE_MKT_COMMERCE_CUSTOMERS": "replace-with-table-id",
+    "LARK_TABLE_MKT_COMMERCE_DAILY": "replace-with-table-id",
+    "LARK_TABLE_MKT_COMMERCE_PRODUCT_DAILY": "replace-with-table-id",""", re.M)
+
+sub('tests/application/job-catalog.test.js',
+    r"getJobDefinition\(JOB_TYPES\.WOOCOMMERCE_COMMERCE_SYNC\)",
+    "getJobDefinition(JOB_TYPES.CHATWOOT_CONVERSATIONS_SYNC)")
+sub('migrations/0017_woocommerce_commerce.sql',
+    r"\A-- WooCommerce Commerce additive migration proposal\.\n-- Integration Chat must review, allocate the then-current migration number and apply remotely later\.\n-- This file is not under migrations/ and is never executed by this Workstream\.",
+    "-- WooCommerce Commerce additive Migration 0017.\n-- Allocated by Integration wiring; source-only until a separate Remote apply authorization.\n-- Additive tables/indexes only; no existing Business fact is modified by this file.")
