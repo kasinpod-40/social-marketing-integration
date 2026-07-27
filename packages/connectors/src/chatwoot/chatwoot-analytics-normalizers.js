@@ -22,14 +22,11 @@ export async function normalizeChatwootAccount(value, context = {}) {
   const customerKey = requireIdentity(context.customerKey, 'customerKey');
   const externalAccountId = requirePositiveId(value?.id ?? context.externalAccountId, 'account.id');
   const observedAt = requireTimestampMs(context.observedAt, 'observedAt');
-  const identity = {
+  return freezeWithHash({
     source: 'chatwoot_application_api',
     customerKey,
     accountKey,
     externalAccountId,
-  };
-  return freezeWithHash({
-    ...identity,
     accountStateKey: `chatwoot:${accountKey}:account:${externalAccountId}`,
     firstSeenAt: observedAt,
     lastSeenAt: observedAt,
@@ -47,7 +44,7 @@ export async function normalizeChatwootInbox(value, context = {}) {
     externalInboxId,
     channelType: optionalEnumText(value.channel_type, 'inbox.channel_type'),
     medium: optionalEnumText(value.medium, 'inbox.medium'),
-    timezone: optionalText(value.timezone),
+    timezone: optionalEnumText(value.timezone, 'inbox.timezone'),
     enableAutoAssignment: optionalBoolean(value.enable_auto_assignment, 'inbox.enable_auto_assignment'),
     workingHoursEnabled: optionalBoolean(value.working_hours_enabled, 'inbox.working_hours_enabled'),
     csatSurveyEnabled: optionalBoolean(value.csat_survey_enabled, 'inbox.csat_survey_enabled'),
@@ -129,21 +126,27 @@ export async function normalizeChatwootTeam(value, context = {}) {
   }, ['teamKey', 'externalTeamId', 'allowAutoAssign', 'sourceUpdatedAt']);
 }
 
+export async function hashChatwootLabelTitle(value) {
+  const normalized = normalizeLabelTitle(value);
+  return fingerprint({ normalizedLabelTitle: normalized });
+}
+
 export async function normalizeChatwootLabel(value, context = {}) {
   requireObject(value, 'label');
   const base = baseContext(context);
   const externalLabelId = requirePositiveId(value.id, 'label.id');
+  const titleHash = await hashChatwootLabelTitle(value.title);
   return freezeWithHash({
     ...base,
     labelKey: `chatwoot:${base.accountKey}:label:${externalLabelId}`,
     externalLabelId,
-    title: requireLabelTitle(value.title),
+    titleHash,
     color: optionalColor(value.color),
     showOnSidebar: optionalBoolean(value.show_on_sidebar, 'label.show_on_sidebar'),
     firstSeenAt: base.observedAt,
     lastSeenAt: base.observedAt,
     sourceUpdatedAt: optionalTimestampMs(value.updated_at, 'label.updated_at'),
-  }, ['labelKey', 'externalLabelId', 'title', 'color', 'showOnSidebar', 'sourceUpdatedAt']);
+  }, ['labelKey', 'externalLabelId', 'titleHash', 'color', 'showOnSidebar', 'sourceUpdatedAt']);
 }
 
 export async function normalizeChatwootMessage(value, context = {}) {
@@ -158,7 +161,6 @@ export async function normalizeChatwootMessage(value, context = {}) {
   const externalAccountId = optionalPositiveId(value.account_id, 'message.account_id');
   if (externalAccountId) assertExternalAccount(base.externalAccountId, externalAccountId, 'message');
   const messageType = normalizeMessageType(value.message_type);
-  const attachmentCount = readAttachmentCount(value);
   const sourceCreatedAt = requireTimestampMs(value.created_at, 'message.created_at');
   return freezeWithHash({
     ...base,
@@ -173,7 +175,7 @@ export async function normalizeChatwootMessage(value, context = {}) {
     private: optionalBoolean(value.private, 'message.private') ?? false,
     senderType: normalizeSenderType(value.sender_type ?? value?.sender?.type),
     externalSenderId: optionalPositiveId(value.sender_id ?? value?.sender?.id, 'message.sender_id'),
-    attachmentCount,
+    attachmentCount: readAttachmentCount(value),
     sourceCreatedAt,
     sourceUpdatedAt: optionalTimestampMs(value.updated_at, 'message.updated_at') ?? sourceCreatedAt,
   }, [
@@ -237,10 +239,7 @@ export async function normalizeChatwootConversation(value, context = {}) {
     conversationKey: `chatwoot:${base.accountKey}:conversation:${externalConversationId}`,
     externalConversationId,
     externalInboxId: requirePositiveId(value.inbox_id, 'conversation.inbox_id'),
-    externalContactId: optionalPositiveId(
-      value?.meta?.sender?.id ?? value?.contact_id,
-      'conversation.contact_id',
-    ),
+    externalContactId: optionalPositiveId(value?.meta?.sender?.id ?? value?.contact_id, 'conversation.contact_id'),
     status,
     priority: optionalEnumText(value.priority, 'conversation.priority'),
     externalAssigneeId: optionalPositiveId(value?.meta?.assignee?.id, 'conversation.meta.assignee.id'),
@@ -249,7 +248,7 @@ export async function normalizeChatwootConversation(value, context = {}) {
     sourceUpdatedAt,
     lastActivityAt: optionalTimestampMs(value.last_activity_at, 'conversation.last_activity_at') ?? sourceUpdatedAt,
     waitingSince: optionalTimestampMs(value.waiting_since, 'conversation.waiting_since'),
-    sourceAvailabilityStatus: context.sourceAvailabilityStatus ?? 'available',
+    sourceAvailabilityStatus: normalizeConversationSourceStatus(context.sourceAvailabilityStatus),
     messageCount: messageMetrics.messageCount,
     incomingMessageCount: messageMetrics.incomingMessageCount,
     outgoingMessageCount: messageMetrics.outgoingMessageCount,
@@ -395,9 +394,17 @@ function normalizeAvailability(value, allowed, fallback) {
 }
 
 function normalizeContactSourceStatus(value) {
-  const text = optionalText(value)?.toLowerCase() ?? 'available';
-  if (!['available', 'merged', 'deleted', 'unknown'].includes(text)) {
+  const text = optionalText(value)?.toLowerCase() ?? 'resolved_list_observed';
+  if (!['resolved_list_observed', 'merged', 'deleted', 'unknown'].includes(text)) {
     throw new TypeError('sourceAvailabilityStatus is invalid');
+  }
+  return text;
+}
+
+function normalizeConversationSourceStatus(value) {
+  const text = optionalText(value)?.toLowerCase() ?? 'available';
+  if (!['available', 'deleted', 'unknown'].includes(text)) {
+    throw new TypeError('conversation sourceAvailabilityStatus is invalid');
   }
   return text;
 }
@@ -416,8 +423,8 @@ function requireIdentity(value, fieldName) {
   return text;
 }
 
-function requireLabelTitle(value) {
-  const text = requireText(value, 'label.title').toLowerCase();
+function normalizeLabelTitle(value) {
+  const text = requireText(value, 'label.title').normalize('NFKC').trim().toLowerCase();
   if (text.length > 100) throw new TypeError('label.title must not exceed 100 characters');
   return text;
 }
@@ -443,13 +450,17 @@ function requireSetValue(value, allowed, fieldName) {
 function optionalEnumText(value, fieldName) {
   const text = optionalText(value);
   if (text === null) return null;
-  if (!/^[a-z0-9_.:-]{1,100}$/iu.test(text)) throw new TypeError(`${fieldName} contains unsupported characters`);
+  if (!/^[a-z0-9_.:/+-]{1,100}$/iu.test(text)) {
+    throw new TypeError(`${fieldName} contains unsupported characters`);
+  }
   return text.toLowerCase();
 }
 
 function requirePositiveId(value, fieldName) {
   const number = Number(value);
-  if (!Number.isSafeInteger(number) || number <= 0) throw new TypeError(`${fieldName} must be a positive safe integer`);
+  if (!Number.isSafeInteger(number) || number <= 0) {
+    throw new TypeError(`${fieldName} must be a positive safe integer`);
+  }
   return String(number);
 }
 
@@ -468,7 +479,9 @@ function optionalTimestampMs(value, fieldName) {
   if (value === null || value === undefined || value === '') return null;
   if (typeof value === 'number' || /^\d+$/u.test(String(value))) {
     const number = Number(value);
-    if (!Number.isFinite(number) || number <= 0) throw new TypeError(`${fieldName} must be a positive timestamp`);
+    if (!Number.isFinite(number) || number <= 0) {
+      throw new TypeError(`${fieldName} must be a positive timestamp`);
+    }
     const milliseconds = number < 100_000_000_000 ? number * 1_000 : number;
     if (!Number.isSafeInteger(milliseconds)) throw new TypeError(`${fieldName} must fit a safe integer`);
     return milliseconds;
@@ -486,7 +499,9 @@ function optionalBoolean(value, fieldName) {
 
 function nonNegativeNumber(value, fieldName) {
   const number = Number(value);
-  if (!Number.isFinite(number) || number < 0) throw new TypeError(`${fieldName} must be a non-negative number`);
+  if (!Number.isFinite(number) || number < 0) {
+    throw new TypeError(`${fieldName} must be a non-negative number`);
+  }
   return number;
 }
 
@@ -502,12 +517,16 @@ function optionalText(value) {
 }
 
 function requireText(value, fieldName) {
-  if (typeof value !== 'string' || value.trim() === '') throw new TypeError(`${fieldName} must be a non-empty string`);
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new TypeError(`${fieldName} must be a non-empty string`);
+  }
   return value.trim();
 }
 
 function requireObject(value, fieldName) {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new TypeError(`${fieldName} must be an object`);
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError(`${fieldName} must be an object`);
+  }
   return value;
 }
 
