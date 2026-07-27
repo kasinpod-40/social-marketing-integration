@@ -31,6 +31,20 @@ const CONTEXT = Object.freeze({
 async function fixture() {
   const d1 = createSqliteD1();
   d1.exec(await readFile(MIGRATION_URL, 'utf8'));
+  d1.exec(`
+    CREATE TABLE sync_coverage_runs (
+      coverage_run_id TEXT PRIMARY KEY,
+      account_key TEXT NOT NULL,
+      platform TEXT NOT NULL,
+      dataset_key TEXT NOT NULL,
+      status TEXT NOT NULL,
+      scope_mode TEXT NOT NULL,
+      source_watermark TEXT,
+      revisable_until INTEGER,
+      completed_at INTEGER,
+      updated_at INTEGER NOT NULL
+    );
+  `);
   return {
     d1,
     store: new D1WooCommerceCommerceStore({ db: d1 }),
@@ -75,26 +89,58 @@ function orderFixture(overrides = {}) {
   };
 }
 
-test('Commerce Store validates proposed schema, upserts idempotently and rebuilds daily facts', async () => {
+async function normalizeOrders(records, overrides = {}) {
+  return normalizeWooCommerceDataset({
+    ...CONTEXT,
+    ...overrides,
+    dataset: WOOCOMMERCE_DATASETS.ORDERS,
+    records,
+    refundsByOrderId: new Map(),
+  });
+}
+
+async function rebuild(store, normalized, overrides = {}) {
+  return store.rebuildDerivedFacts({
+    accountKey: 'chemistry_k',
+    metricDates: normalized.impactedDates,
+    customerAggregateKeys: normalized.impactedCustomers,
+    syncRunId: overrides.syncRunId ?? CONTEXT.syncRunId,
+    coverageRunId: overrides.coverageRunId ?? CONTEXT.coverageRunId,
+    dataStatus: overrides.dataStatus ?? 'complete',
+    now: overrides.now ?? NOW,
+  });
+}
+
+function insertCoverage(d1, overrides = {}) {
+  d1.database.prepare(`
+    INSERT INTO sync_coverage_runs (
+      coverage_run_id, account_key, platform, dataset_key, status, scope_mode,
+      source_watermark, revisable_until, completed_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    overrides.coverageRunId ?? CONTEXT.coverageRunId,
+    'chemistry_k',
+    'woocommerce',
+    'woocommerce_orders',
+    overrides.status ?? 'complete',
+    overrides.scopeMode ?? 'full_inventory',
+    overrides.sourceWatermark ?? String(NOW),
+    overrides.revisableUntil ?? NOW - 1,
+    overrides.completedAt ?? NOW - 1,
+    overrides.updatedAt ?? NOW - 1,
+  );
+}
+
+test('Commerce Store validates schema, upserts idempotently and rebuilds exact daily facts', async () => {
   const { d1, store } = await fixture();
   try {
     assert.deepEqual(await store.assertSchemaReady(), { ready: true, tableCount: TABLE_COUNT });
-    const normalized = await normalizeWooCommerceDataset({
-      ...CONTEXT,
-      dataset: WOOCOMMERCE_DATASETS.ORDERS,
-      records: [orderFixture()],
-      refundsByOrderId: new Map(),
-    });
-    await store.upsertRowsByTable(normalized.d1RowsByTable);
-    await store.upsertRowsByTable(normalized.d1RowsByTable);
-    await store.rebuildDerivedFacts({
-      accountKey: 'chemistry_k',
-      metricDates: normalized.impactedDates,
-      customerAggregateKeys: normalized.impactedCustomers,
-      syncRunId: CONTEXT.syncRunId,
-      coverageRunId: CONTEXT.coverageRunId,
-      now: NOW,
-    });
+    const normalized = await normalizeOrders([orderFixture()]);
+    const first = await store.upsertRowsByTable(normalized.d1RowsByTable);
+    const replay = await store.upsertRowsByTable(normalized.d1RowsByTable);
+    assert.equal(first.totalRows, replay.totalRows);
+    assert.equal(replay.tables.commerce_order_state.skipped, 1);
+    await rebuild(store, normalized);
 
     assert.equal(d1.database.prepare('SELECT COUNT(*) AS count FROM commerce_order_state').get().count, 1);
     assert.equal(d1.database.prepare('SELECT COUNT(*) AS count FROM commerce_order_line_facts').get().count, 1);
@@ -107,6 +153,7 @@ test('Commerce Store validates proposed schema, upserts idempotently and rebuild
     assert.equal(daily.net_sales_micros, 96_300_000);
     assert.equal(daily.recognized_revenue_micros, 101_650_000);
     assert.equal(daily.recognized_orders, 1);
+    assert.equal(daily.data_status, 'complete');
     const product = d1.database.prepare('SELECT * FROM commerce_product_daily_facts').get();
     assert.equal(product.product_key, 'woocommerce:chemistry_k:100:101');
     assert.equal(product.quantity_ordered, 2);
@@ -120,44 +167,50 @@ test('Commerce Store validates proposed schema, upserts idempotently and rebuild
   }
 });
 
-test('late status change revises original local date and preserves status history', async () => {
+test('newer Order revision wins, stale replay cannot roll back state or status history', async () => {
   const { d1, store } = await fixture();
   try {
-    const first = await normalizeWooCommerceDataset({
-      ...CONTEXT,
-      dataset: WOOCOMMERCE_DATASETS.ORDERS,
-      records: [orderFixture()],
-      refundsByOrderId: new Map(),
-    });
+    const first = await normalizeOrders([orderFixture()]);
     await store.upsertRowsByTable(first.d1RowsByTable);
-    await store.rebuildDerivedFacts({
-      accountKey: 'chemistry_k', metricDates: first.impactedDates,
-      customerAggregateKeys: first.impactedCustomers,
-      syncRunId: CONTEXT.syncRunId, coverageRunId: CONTEXT.coverageRunId, now: NOW,
-    });
+    await rebuild(store, first);
 
-    const changed = await normalizeWooCommerceDataset({
-      ...CONTEXT,
+    const changed = await normalizeOrders([orderFixture({
+      status: 'cancelled',
+      date_modified_gmt: '2026-07-26T03:01:00',
+    })], {
       syncRunId: 'sync-woo-d1-late',
       coverageRunId: 'coverage-woo-orders-late',
       fetchedAt: NOW + 60_000,
       now: NOW + 60_000,
-      dataset: WOOCOMMERCE_DATASETS.ORDERS,
-      records: [orderFixture({
-        status: 'cancelled',
-        date_modified_gmt: '2026-07-26T03:01:00',
-      })],
-      refundsByOrderId: new Map(),
     });
     await store.upsertRowsByTable(changed.d1RowsByTable);
-    await store.rebuildDerivedFacts({
-      accountKey: 'chemistry_k', metricDates: changed.impactedDates,
-      customerAggregateKeys: changed.impactedCustomers,
-      syncRunId: 'sync-woo-d1-late', coverageRunId: 'coverage-woo-orders-late', now: NOW + 60_000,
+    await rebuild(store, changed, {
+      syncRunId: 'sync-woo-d1-late',
+      coverageRunId: 'coverage-woo-orders-late',
+      now: NOW + 60_000,
     });
 
+    const stale = await normalizeOrders([orderFixture({
+      status: 'processing',
+      date_modified_gmt: '2026-07-26T02:00:00',
+    })], {
+      syncRunId: 'sync-woo-d1-stale',
+      coverageRunId: 'coverage-woo-orders-stale',
+      fetchedAt: NOW + 120_000,
+      now: NOW + 120_000,
+    });
+    const staleResult = await store.upsertRowsByTable(stale.d1RowsByTable);
+    assert.equal(staleResult.tables.commerce_order_state.skipped, 1);
+    await rebuild(store, stale, {
+      syncRunId: 'sync-woo-d1-stale',
+      coverageRunId: 'coverage-woo-orders-stale',
+      now: NOW + 120_000,
+    });
+
+    const order = d1.database.prepare('SELECT * FROM commerce_order_state').get();
+    assert.equal(order.status, 'cancelled');
+    assert.equal(order.source_modified_at, Date.parse('2026-07-26T03:01:00Z'));
     const daily = d1.database.prepare('SELECT * FROM commerce_daily_sales_facts').get();
-    assert.equal(daily.metric_date, '2026-07-26');
     assert.equal(daily.recognized_orders, 0);
     assert.equal(daily.recognized_revenue_micros, 0);
     assert.equal(daily.cancelled_orders, 1);
@@ -167,28 +220,84 @@ test('late status change revises original local date and preserves status histor
   }
 });
 
-test('D1 report source and generator preserve currency and summarize products/payment/shipping', async () => {
-  const { d1, store, reportSource } = await fixture();
+test('newer Order snapshot atomically replaces removed lines and removes stale Product daily rows', async () => {
+  const { d1, store } = await fixture();
   try {
-    const normalized = await normalizeWooCommerceDataset({
-      ...CONTEXT,
-      dataset: WOOCOMMERCE_DATASETS.ORDERS,
-      records: [orderFixture()],
-      refundsByOrderId: new Map(),
+    const secondLine = {
+      id: 8,
+      product_id: 200,
+      variation_id: 0,
+      sku: 'COURSE-B',
+      name: 'Course B',
+      quantity: 1,
+      subtotal: '50.000000',
+      subtotal_tax: '3.500000',
+      total: '50.000000',
+      total_tax: '3.500000',
+      taxes: [],
+    };
+    const first = await normalizeOrders([orderFixture({
+      date_modified_gmt: '2026-07-26T01:00:00',
+      line_items: [...orderFixture().line_items, secondLine],
+    })]);
+    await store.upsertRowsByTable(first.d1RowsByTable);
+    await rebuild(store, first);
+    assert.equal(d1.database.prepare('SELECT COUNT(*) AS count FROM commerce_order_line_facts').get().count, 2);
+    assert.equal(d1.database.prepare('SELECT COUNT(*) AS count FROM commerce_product_daily_facts').get().count, 2);
+
+    const changed = await normalizeOrders([orderFixture({
+      date_modified_gmt: '2026-07-26T04:00:00',
+      line_items: orderFixture().line_items,
+    })], {
+      syncRunId: 'sync-lines-replaced',
+      coverageRunId: 'coverage-lines-replaced',
+      fetchedAt: NOW + 180_000,
+      now: NOW + 180_000,
     });
-    await store.upsertRowsByTable(normalized.d1RowsByTable);
-    await store.rebuildDerivedFacts({
-      accountKey: 'chemistry_k', metricDates: normalized.impactedDates,
-      customerAggregateKeys: normalized.impactedCustomers,
-      syncRunId: CONTEXT.syncRunId, coverageRunId: CONTEXT.coverageRunId, now: NOW,
+    await store.upsertRowsByTable(changed.d1RowsByTable);
+    await rebuild(store, changed, {
+      syncRunId: 'sync-lines-replaced',
+      coverageRunId: 'coverage-lines-replaced',
+      now: NOW + 180_000,
     });
 
+    assert.equal(d1.database.prepare('SELECT COUNT(*) AS count FROM raw_commerce_order_items').get().count, 1);
+    assert.equal(d1.database.prepare('SELECT COUNT(*) AS count FROM commerce_order_line_facts').get().count, 1);
+    assert.equal(d1.database.prepare('SELECT COUNT(*) AS count FROM commerce_product_daily_facts').get().count, 1);
+    assert.equal(
+      d1.database.prepare('SELECT product_key FROM commerce_product_daily_facts').get().product_key,
+      'woocommerce:chemistry_k:100:101',
+    );
+  } finally {
+    d1.close();
+  }
+});
+
+test('D1 report requires completed full Coverage before it can claim complete', async () => {
+  const { d1, store, reportSource } = await fixture();
+  try {
+    const normalized = await normalizeOrders([orderFixture()]);
+    await store.upsertRowsByTable(normalized.d1RowsByTable);
+    await rebuild(store, normalized);
+
+    const withoutCoverage = await generateWooCommerceCommerceReport({
+      source: reportSource,
+      accountKey: 'chemistry_k',
+      periodStart: '2026-07-26',
+      periodEnd: '2026-07-26',
+      currency: 'THB',
+      now: NOW,
+    });
+    assert.equal(withoutCoverage.data_status, 'partial');
+
+    insertCoverage(d1);
     const report = await generateWooCommerceCommerceReport({
       source: reportSource,
       accountKey: 'chemistry_k',
       periodStart: '2026-07-26',
       periodEnd: '2026-07-26',
       currency: 'THB',
+      now: NOW,
     });
     assert.equal(report.currency, 'THB');
     assert.equal(report.data_status, 'complete');
@@ -196,6 +305,7 @@ test('D1 report source and generator preserve currency and summarize products/pa
     assert.equal(report.products[0].product_key, 'woocommerce:chemistry_k:100:101');
     assert.equal(report.payment_methods[0].payment_method_id, 'bacs');
     assert.equal(report.shipping_methods[0].shipping_method_id, 'flat_rate');
+    assert.equal(report.coverage.scope_mode, 'full_inventory');
   } finally {
     d1.close();
   }
