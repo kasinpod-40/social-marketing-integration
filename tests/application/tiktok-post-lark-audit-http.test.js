@@ -4,7 +4,9 @@ import {
   createTikTokPostLarkAuditHttpHandler,
   TIKTOK_POST_LARK_AUDIT_PATH,
 } from '../../apps/sync-worker/src/tiktok-post-lark-audit-http.js';
+import { WORKER_RUNTIME_VERSION_HEADER } from '../../packages/shared/src/cloudflare/worker-version.js';
 
+const RUNTIME_VERSION_ID = '12345678-1234-4123-8123-123456789abc';
 const baseEnv = Object.freeze({
   MKT_TIKTOK_AUDIT_HTTP_ENABLED: 'true',
   MKT_CONNECTION_OPERATOR_TOKEN: 'operator-secret',
@@ -13,6 +15,7 @@ const baseEnv = Object.freeze({
   LARK_TABLE_RAW_TIKTOK_CREATOR_VIDEOS: 'raw',
   LARK_TABLE_MKT_CONTENT: 'content',
   LARK_TABLE_MKT_CONTENT_DAILY: 'daily',
+  CF_VERSION_METADATA: Object.freeze({ id: RUNTIME_VERSION_ID }),
 });
 
 function context(env, token = 'operator-secret', method = 'GET') {
@@ -51,6 +54,10 @@ function createHandler(calls, options = {}) {
   });
 }
 
+function assertRuntimeVersion(response) {
+  assert.equal(response.headers.get(WORKER_RUNTIME_VERSION_HEADER), RUNTIME_VERSION_ID);
+}
+
 test('TikTok audit route is indistinguishable from missing while disabled', async () => {
   const calls = [];
   const handler = createHandler(calls);
@@ -58,6 +65,7 @@ test('TikTok audit route is indistinguishable from missing while disabled', asyn
   assert.equal(response.status, 404);
   assert.equal(calls.length, 0);
   assert.equal(response.headers.get('cache-control'), 'no-store');
+  assertRuntimeVersion(response);
 });
 
 test('TikTok audit route requires the operator bearer token', async () => {
@@ -68,6 +76,7 @@ test('TikTok audit route requires the operator bearer token', async () => {
   assert.equal(response.status, 401);
   assert.equal(body.code, 'TIKTOK_POST_LARK_AUDIT_UNAUTHORIZED');
   assert.equal(calls.length, 0);
+  assertRuntimeVersion(response);
 });
 
 test('cache-busting query preserves the guarded audit pathname contract', async () => {
@@ -84,6 +93,7 @@ test('cache-busting query preserves the guarded audit pathname contract', async 
   });
   assert.equal(response.status, 401);
   assert.equal(calls.length, 0);
+  assertRuntimeVersion(response);
 });
 
 test('TikTok audit route uses a stable fallback code without exposing generic error internals', async () => {
@@ -109,6 +119,7 @@ test('TikTok audit route uses a stable fallback code without exposing generic er
     /simulated internal failure|stack|details|private-token|private-table|token/iu,
   );
   assert.equal(calls.length, 1);
+  assertRuntimeVersion(response);
 });
 
 test('TikTok audit route preserves a known sanitized operational error code', async () => {
@@ -126,6 +137,7 @@ test('TikTok audit route preserves a known sanitized operational error code', as
     code: 'LARK_TABLE_CONFIG_INVALID',
   });
   assert.doesNotMatch(JSON.stringify(body), /internal table configuration details/iu);
+  assertRuntimeVersion(response);
 });
 
 test('authorized TikTok audit route returns read-only sanitized evidence', async () => {
@@ -142,6 +154,7 @@ test('authorized TikTok audit route returns read-only sanitized evidence', async
   assert.equal(calls[0].accountKey, 'chemistry_k');
   assert.equal(calls[0].tables.rawTikTokCreatorVideos, 'raw');
   assert.equal(response.headers.get('cache-control'), 'no-store');
+  assertRuntimeVersion(response);
 });
 
 test('TikTok audit route rejects non-GET methods before dependencies run', async () => {
@@ -150,5 +163,16 @@ test('TikTok audit route rejects non-GET methods before dependencies run', async
   const response = await handler(context(baseEnv, 'operator-secret', 'POST'));
   assert.equal(response.status, 405);
   assert.equal(response.headers.get('allow'), 'GET');
+  assert.equal(calls.length, 0);
+  assertRuntimeVersion(response);
+});
+
+test('missing Version Metadata remains fail-closed for exact-version callers without leaking data', async () => {
+  const calls = [];
+  const handler = createHandler(calls);
+  const { CF_VERSION_METADATA: _removed, ...envWithoutVersion } = baseEnv;
+  const response = await handler(context(envWithoutVersion, 'wrong-token'));
+  assert.equal(response.status, 401);
+  assert.equal(response.headers.get(WORKER_RUNTIME_VERSION_HEADER), null);
   assert.equal(calls.length, 0);
 });
