@@ -3,20 +3,22 @@
 ## Status
 
 ```text
-TASK_STATUS                  = IMPLEMENTATION_VERIFIED_DRAFT / PROVIDER_EXECUTION_NOT_RUN
-PARENT_PR                    = #73
-PARENT_BRANCH                = agent/meta-runtime-wiring
+TASK_STATUS                  = INTEGRATION_REVIEW_PASS / MERGE_PENDING
+PARENT_PR                    = #73 / MERGED
+PARENT_MERGE_COMMIT          = 13ebba1476d7983428c5b5ce51ce754adf493ad5
 DRAFT_PR                     = #82
 IMPLEMENTATION_BRANCH        = agent/meta-read-only-validation-operator
-VERIFIED_HEAD_BEFORE_DOCS    = 5f11cc9b1a1b7aa25f1ecad42508a3847d47a7a5
-META_VERIFICATION            = #22 PASS
-BRANCH_VERIFICATION          = #575 PASS
+REBUILT_BASE_MAIN            = 6158a8b1381d62539274a7fa77d7860bdbee624a
+VERIFIED_HEAD_BEFORE_DOCS    = db0aefa9ff49c5db973367bcc1693342b2132e7b
+META_VERIFICATION            = #28 PASS
+BRANCH_VERIFICATION          = #602 PASS
 ENVIRONMENT                  = development
 CUSTOMER_PROFILE             = integration_workspace
 CUSTOMER_KEY                 = chemistry_k
-QUEUE_MESSAGE                = NOT_SENT
+PROVIDER_REQUEST             = NOT RUN
+QUEUE_MESSAGE                = NOT SENT
 REMOTE_D1_OR_LARK_MUTATION   = NONE
-WORKER_DEPLOYMENT            = NOT_RUN
+WORKER_DEPLOYMENT            = NOT RUN
 SCHEDULES                    = DISABLED
 PRODUCTION                   = BLOCKED
 ```
@@ -24,8 +26,8 @@ PRODUCTION                   = BLOCKED
 ## Objective
 
 Add a manual, evidence-chained and fail-closed operator for the first Chemistry K Meta customer
-source validation gate after the protected runtime and two-account mapping contract in Draft PR
-`#73`.
+source validation gate after the protected runtime and two-account mapping contract merged through
+PR `#73`.
 
 The ordered validation is:
 
@@ -50,7 +52,7 @@ plan
    - `MKT_ENV=development`;
    - `MKT_CUSTOMER_PROFILE=integration_workspace`;
    - `MKT_CONNECTION_CUSTOMER_KEY=chemistry_k`;
-   - the approved Facebook, Instagram and two Meta Ads mappings from PR `#73`.
+   - the approved Facebook, Instagram and two Meta Ads mappings merged through PR `#73`.
 5. Requires every Connector, Meta write/read gate, D1/report gate, DLQ redrive gate and business
    schedule to be explicitly `false`.
 6. Stores sanitized local evidence under `outputs/meta-read-only-validation/`, which is ignored by
@@ -71,6 +73,7 @@ plan
 - Unknown Meta Ads aliases fail before the Provider request.
 - Facebook, Instagram, chemistry_k2 and chemistry_k3 must pass in order; a later phase cannot run
   without all earlier evidence.
+- Evidence is bound to the same contract version, API version and sanitized target fingerprint.
 - The operator contains no Queue send, D1 mutation, Lark mutation, Worker deploy, schedule,
   retention/delete or Production path.
 
@@ -83,6 +86,7 @@ tests/application/meta-read-only-validation-operator.test.js
 packages/application/src/use-cases/preflight-meta-customer-connections.js
 tests/application/preflight-meta-customer-connections.test.js
 docs/runbooks/meta-read-only-validation.md
+docs/tasks/meta-read-only-validation-operator.md
 package.json
 ```
 
@@ -100,6 +104,7 @@ Unknown account alias Provider requests            0 by regression
 Transport                                          GET only
 Token query parameter                              forbidden by shared client/test
 Ordered evidence chain                             PASS
+Target fingerprint continuity                      PASS
 Output/evidence raw IDs or tokens                  blocked by sanitization tests
 Queue / D1 / Lark / deploy / schedule              none
 Focused Meta tests                                 PASS
@@ -112,24 +117,26 @@ Live Provider execution                            NOT RUN / separate approval
 
 ## Verification evidence
 
-Temporary verification PR `#83` exposed the exact stacked head against `main` without merging it.
+PR `#82` was rebuilt as one commit on current `main` after parent PR `#73` was squash-merged.
+The rebuilt diff contains only the eight authorized operator files.
 
 ```text
-Meta End-to-End Verification run 30240840940 / #22   PASS
-Branch Verification run 30240840961 / #575           PASS
+Meta End-to-End Verification run 30242997138 / #28   PASS
+Branch Verification run 30242997245 / #602           PASS
 ```
 
 Both workflows passed locked dependency install, syntax/architecture/repository hygiene, focused
 Meta or TikTok regression, full Unit and Workers runtime tests, Report reliability, dependency
 audit, Wrangler dry-run and diagnostics upload.
 
-## Implementation result
+## Integration Review result
 
 ```text
-STATUS          = IMPLEMENTATION_VERIFIED_DRAFT
+DECISION        = PASS_FOR_MERGE
 DRAFT_PR        = #82
-TESTS           = PASS / Meta #22 and Branch #575
-LIVE_VALIDATION = NOT_RUN
+CODE_HEAD       = db0aefa9ff49c5db973367bcc1693342b2132e7b
+TESTS           = PASS / Meta #28 and Branch #602
+LIVE_VALIDATION = NOT RUN
 REMOTE_ACTIONS  = NONE
 REMAINING_RISK  = Real token validity, current permissions and exact Provider identities require
                   separately approved execution from an authorized local Integration Workspace.
@@ -137,9 +144,9 @@ REMAINING_RISK  = Real token validity, current permissions and exact Provider id
 
 ## Next gate
 
-After this stacked Draft and PR `#73` pass Integration Review, run the operator locally one phase
-at a time using `docs/runbooks/meta-read-only-validation.md`. Provider execution is not authorized
-by merge alone.
+After repository merge, run the operator locally one phase at a time only after a separate explicit
+approval, following `docs/runbooks/meta-read-only-validation.md`. Merge does not authorize Provider
+execution.
 
 A clean summary only authorizes review of evidence. D1-only processing, Coverage reconciliation,
 Lark parity, LIVE UAT, schedule activation and Production remain separate later gates.
