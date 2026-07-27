@@ -3,15 +3,16 @@
 ## Status
 
 ```text
-TASK_STATUS                  = INTEGRATION_REVIEW_PASS / MERGE_PENDING
+TASK_STATUS                  = MERGED / PROVIDER_EXECUTION_NOT_RUN
 PARENT_PR                    = #73 / MERGED
 PARENT_MERGE_COMMIT          = 13ebba1476d7983428c5b5ce51ce754adf493ad5
-DRAFT_PR                     = #82
+OPERATOR_PR                  = #82 / MERGED
+OPERATOR_MERGE_COMMIT        = 0f38aeb8a1c69e8655145f97808f3d3d1b31615a
 IMPLEMENTATION_BRANCH        = agent/meta-read-only-validation-operator
 REBUILT_BASE_MAIN            = 6158a8b1381d62539274a7fa77d7860bdbee624a
-VERIFIED_HEAD_BEFORE_DOCS    = db0aefa9ff49c5db973367bcc1693342b2132e7b
-META_VERIFICATION            = #28 PASS
-BRANCH_VERIFICATION          = #602 PASS
+FINAL_REVIEWED_HEAD          = 9b6f8d48891daa9ad7620f731dcdf2483da871e3
+META_VERIFICATION            = #29 PASS
+BRANCH_VERIFICATION          = #605 PASS
 ENVIRONMENT                  = development
 CUSTOMER_PROFILE             = integration_workspace
 CUSTOMER_KEY                 = chemistry_k
@@ -25,7 +26,7 @@ PRODUCTION                   = BLOCKED
 
 ## Objective
 
-Add a manual, evidence-chained and fail-closed operator for the first Chemistry K Meta customer
+Provide a manual, evidence-chained and fail-closed operator for the first Chemistry K Meta customer
 source validation gate after the protected runtime and two-account mapping contract merged through
 PR `#73`.
 
@@ -41,7 +42,7 @@ plan
 → sanitized evidence summary
 ```
 
-## Scope implemented
+## Merged scope
 
 1. Reuses the existing secret-owning `MetaGraphClient`, connection adapters and preflight
    classification. No second Meta client or connector was created.
@@ -115,27 +116,28 @@ Wrangler deployment dry-run                        PASS / no deployment
 Live Provider execution                            NOT RUN / separate approval
 ```
 
-## Verification evidence
+## Final verification evidence
 
-PR `#82` was rebuilt as one commit on current `main` after parent PR `#73` was squash-merged.
-The rebuilt diff contains only the eight authorized operator files.
+PR `#82` was rebuilt on current `main` after parent PR `#73` was squash-merged. The final diff
+contained only the eight authorized operator files.
 
 ```text
-Meta End-to-End Verification run 30242997138 / #28   PASS
-Branch Verification run 30242997245 / #602           PASS
+Meta End-to-End Verification run 30243180589 / #29   PASS
+Branch Verification run 30243180585 / #605           PASS
 ```
 
 Both workflows passed locked dependency install, syntax/architecture/repository hygiene, focused
 Meta or TikTok regression, full Unit and Workers runtime tests, Report reliability, dependency
 audit, Wrangler dry-run and diagnostics upload.
 
-## Integration Review result
+## Merge result
 
 ```text
-DECISION        = PASS_FOR_MERGE
-DRAFT_PR        = #82
-CODE_HEAD       = db0aefa9ff49c5db973367bcc1693342b2132e7b
-TESTS           = PASS / Meta #28 and Branch #602
+DECISION        = MERGED
+MERGED_PR       = #82
+MERGE_COMMIT    = 0f38aeb8a1c69e8655145f97808f3d3d1b31615a
+REVIEWED_HEAD   = 9b6f8d48891daa9ad7620f731dcdf2483da871e3
+TESTS           = PASS / Meta #29 and Branch #605
 LIVE_VALIDATION = NOT RUN
 REMOTE_ACTIONS  = NONE
 REMAINING_RISK  = Real token validity, current permissions and exact Provider identities require
@@ -144,9 +146,8 @@ REMAINING_RISK  = Real token validity, current permissions and exact Provider id
 
 ## Next gate
 
-After repository merge, run the operator locally one phase at a time only after a separate explicit
-approval, following `docs/runbooks/meta-read-only-validation.md`. Merge does not authorize Provider
-execution.
+Run the operator locally one phase at a time only after a separate explicit approval, following
+`docs/runbooks/meta-read-only-validation.md`. Merge does not authorize Provider execution.
 
 A clean summary only authorizes review of evidence. D1-only processing, Coverage reconciliation,
 Lark parity, LIVE UAT, schedule activation and Production remain separate later gates.

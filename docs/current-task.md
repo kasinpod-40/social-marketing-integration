@@ -1,118 +1,169 @@
-# Current Task — YouTube Organic Integration Merge Closeout
+# Current Task — Meta Runtime and Read-Only Operator Merge Closeout
 
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = MERGED_REMOTE_ROLLOUT_NOT_AUTHORIZED
-CURRENT_PROGRAM                     = YOUTUBE_ORGANIC_END_TO_END
-MERGED_PR                           = #85
-MERGE_COMMIT                        = dce3bd954ee75ee55a29efac303e9973ca060fca
-REVIEWED_HEAD                       = c5ffc4327ffec405f82472c7b7098b45bac82722
-BASE_MAIN_AT_MERGE                  = 8b7f9a879ba0c1b0b5d89dcfa2373ad3bb3c2ce8
-SOURCE_DRAFT_PR                     = #72
-SOURCE_REVIEW_DECISION              = PASS_FOR_INTEGRATION
-FINAL_BRANCH_VERIFICATION           = #581 PASS
-REMOTE_SCHEMA_CHECK                 = NOT_RUN
-WORKER_DEPLOYMENT                   = NOT_RUN
-QUEUE_MESSAGE                       = NOT_SENT
+TASK_STATUS                         = MERGED_PROVIDER_EXECUTION_NOT_AUTHORIZED
+CURRENT_PROGRAM                     = META_CHEMISTRY_K_READ_ONLY_VALIDATION
+RUNTIME_PR                          = #73 / MERGED
+RUNTIME_MERGE_COMMIT                = 13ebba1476d7983428c5b5ce51ce754adf493ad5
+RUNTIME_REVIEWED_HEAD               = a700f5f31ebd24a32cc64cc6ca5ffe123a632ff4
+RUNTIME_META_VERIFICATION           = #26 PASS
+RUNTIME_BRANCH_VERIFICATION         = #593 PASS
+OPERATOR_PR                         = #82 / MERGED
+OPERATOR_MERGE_COMMIT               = 0f38aeb8a1c69e8655145f97808f3d3d1b31615a
+OPERATOR_REVIEWED_HEAD              = 9b6f8d48891daa9ad7620f731dcdf2483da871e3
+OPERATOR_META_VERIFICATION          = #29 PASS
+OPERATOR_BRANCH_VERIFICATION        = #605 PASS
+ENVIRONMENT                         = development
+CUSTOMER_PROFILE                    = integration_workspace
+CUSTOMER_KEY                        = chemistry_k
+PROVIDER_EXECUTION                  = NOT RUN
+TOKEN_READ_OR_ROTATION              = NOT RUN
+QUEUE_MESSAGE                       = NOT SENT
 REMOTE_D1_OR_LARK_MUTATION          = NONE
+WORKER_DEPLOYMENT                   = NOT RUN
 SCHEDULES                           = DISABLED
-CUSTOMER_OR_PRODUCTION_LIVE_UAT     = NOT_RUN
+CUSTOMER_OR_PRODUCTION_LIVE_UAT     = NOT RUN
 PRODUCTION                          = BLOCKED
 ```
 
 ## Merge result
 
-PR `#85` was Squash Merged into `main` at
-`dce3bd954ee75ee55a29efac303e9973ca060fca` after the exact reviewed head
-`c5ffc4327ffec405f82472c7b7098b45bac82722` passed Branch Verification `#581`.
+PR `#73` was Squash Merged into `main` at
+`13ebba1476d7983428c5b5ce51ce754adf493ad5` after alignment with the merged YouTube Organic
+baseline and final verification on reviewed head
+`a700f5f31ebd24a32cc64cc6ca5ffe123a632ff4`.
 
-The merge imports the reviewed YouTube Organic End-to-End implementation from Draft PR `#72` and completes the Integration-owned Shared Worker wiring.
+PR `#82` was rebuilt on the merged parent baseline and Squash Merged into `main` at
+`0f38aeb8a1c69e8655145f97808f3d3d1b31615a` after final verification on reviewed head
+`9b6f8d48891daa9ad7620f731dcdf2483da871e3`.
 
-```text
-YouTube job + MKT_YOUTUBE_END_TO_END_ENABLED=true
-  -> dedicated D1-first End-to-End route
+Repository merge alone did not call Meta, read or rotate a Token, deploy a Worker, send a Queue
+message, mutate Remote D1/Lark, enable a Schedule or authorize LIVE UAT.
 
-YouTube job + flag false/unset
-  -> existing active router and legacy YouTube route
-
-Non-YouTube job
-  -> existing Google Ads/TikTok/History/Active route chain unchanged
-```
-
-## Merged contracts
-
-- Existing YouTube API client, Shared Google OAuth Core, adapters and normalizers are reused.
-- Existing Reliability runner, distributed lock, resumable work, warning outbox, retry and DLQ contracts are reused.
-- Existing Organic history writer, D1 gateways/stores, Coverage model and `TableSyncEngine` are reused.
-- D1 completes before the first Lark Business plan on the dedicated route.
-- Large Content inventories use bounded D1 batches.
-- Completed Content and Account Coverage cannot be downgraded by retry replay.
-- Report reads require completed zero-failure Coverage and fail closed on missing evidence.
-- Missing/private/deleted evidence is non-destructive and never zero-fills prior metrics.
-- Hidden subscriber count remains `followers=null`.
-- YouTube Analytics period facts remain in `RAW_YouTube_Analytics_Daily`.
-- No new Migration was added; Storage Foundation `0009` is reused.
-
-## Default-false controls
-
-Release examples now contain:
+## Chemistry K exact source identities
 
 ```text
-MKT_CONNECTOR_YOUTUBE_ENABLED=false
-MKT_YOUTUBE_END_TO_END_ENABLED=false
-MKT_TIME_SERIES_D1_WRITE_ENABLED=false
-MKT_YOUTUBE_LARK_WRITE_ENABLED=false
-MKT_YOUTUBE_ANALYTICS_ENABLED=false
-MKT_SCHEDULE_YOUTUBE_ENABLED=false
-MKT_REPORT_D1_SHADOW_READ_ENABLED=false
-MKT_REPORT_D1_READ_ENABLED=false
-MKT_REPORT_PRESET_MATERIALIZATION_ENABLED=false
+Facebook Page
+page_id=982406442148381
+name=เคมี K
+
+Instagram Professional Account
+account_id=17841413521012797
+username=chemistry_key
+
+Meta Ads
+sourceAccountKey=chemistry_k2
+account_id=505898710119851
+name=ChemistryK2
+
+sourceAccountKey=chemistry_k3
+account_id=851206695716861
+name=ChemistryK3
 ```
 
-The merge does not alter deployed Environment values and does not enable a Schedule.
+Canonical Ads mapping:
+
+```text
+META_AD_ACCOUNT_MAPPINGS=chemistry_k2=505898710119851,chemistry_k3=851206695716861
+```
+
+Tokens remain Environment/Secret Manager inputs and are not committed, logged or written into
+operator evidence.
+
+## Merged protected runtime
+
+The Shared Worker route now preserves this order:
+
+```text
+YouTube guarded route
+→ Google Ads protected route
+→ Meta protected route
+→ existing TikTok/report/active fallback
+```
+
+Merged Meta contracts:
+
+- Facebook Organic, Instagram Organic and Meta Ads jobs remain `uat_pending` and manual-only;
+- Meta Connector activation requires the exact Integration Workspace and source-read gate;
+- all new Connector/source/D1/Lark/report flags default to `false`;
+- Meta Ads mappings are bounded, normalized and reject duplicate aliases or Account IDs;
+- canonical multi-account and legacy singular configuration cannot be enabled together;
+- every Meta Ads operation selects exactly one configured `sourceAccountKey`;
+- Queue work identity is `meta_ads:<sourceAccountKey>:<operationId>`;
+- sync-run identity, Reliability scope and continuation preserve the selected account;
+- Coverage IDs include the exact Ad Account ID;
+- preflight results expose sanitized counts only;
+- the existing Reliability, Queue, D1 history/Coverage and Lark `TableSyncEngine` are reused.
+
+## Merged read-only operator
+
+The operator is deliberately ordered and fail-closed:
+
+```text
+plan
+→ configuration preflight with zero Provider requests
+→ Facebook exact Page validation
+→ Instagram exact Professional Account validation
+→ Meta Ads chemistry_k2 exact validation
+→ Meta Ads chemistry_k3 exact validation
+→ sanitized summary
+```
+
+Safety contract:
+
+- plan-only default;
+- exact confirmation for every executable phase;
+- every Connector, Meta, D1/report, DLQ-redrive and Schedule flag must explicitly be `false`;
+- one Connector/account is validated per Provider phase;
+- transport is GET-only and the bearer Token is not placed in the URL;
+- unknown Meta Ads aliases fail before a Provider request;
+- evidence is ordered and bound to contract version, API version and sanitized target fingerprint;
+- evidence contains no Token or raw Page/Instagram/Ad Account ID;
+- the operator contains no Queue, D1/Lark mutation, Worker deployment, Schedule or Production path.
 
 ## Verification result
 
-Final Branch Verification on the exact merged source head:
+Runtime final verification:
 
 ```text
-Run / workflow ID                 #581 / 30241561017
-Head                              c5ffc4327ffec405f82472c7b7098b45bac82722
-Install locked dependencies       PASS
-Syntax / architecture / hygiene   PASS
-Focused staged TikTok             PASS
-Node Unit / Integration           PASS
-Workers runtime                   PASS
-Report reliability                PASS
-Dependency audit                  PASS
-Wrangler dry-run                  PASS / no deployment
-Diagnostics upload                PASS
+Meta End-to-End Verification      #26 / 30242465671 PASS
+Branch Verification               #593 / 30242465674 PASS
 ```
 
-The prior exact-code verification `#579` recorded:
+Operator final verification:
 
 ```text
-Node Unit / Integration           916/916 PASS
-Workers runtime                   9/9 PASS
-Report reliability                91/91 PASS
-Focused staged TikTok             4/4 PASS
-Dependency audit                  0 vulnerabilities
+Meta End-to-End Verification      #29 / 30243180589 PASS
+Branch Verification               #605 / 30243180585 PASS
 ```
+
+The workflows passed dependency installation, diff and repository hygiene, focused Meta/TikTok
+regressions, full Unit and Workers runtime tests, Report reliability, dependency audit, Wrangler
+dry-run and diagnostics upload. Wrangler validation did not deploy a Worker.
+
+## Repository hygiene note
+
+During PR `#82` branch reconstruction, a temporary file `tmp/noop` containing only `x` was
+accidentally committed directly to `main` at
+`62857a7e6c298b4be02dc105aeecbff4080d5313` and immediately removed at
+`6158a8b1381d62539274a7fa77d7860bdbee624a`.
+
+The final tree contains no temporary file. The incident changed no Business fact, Secret, Runtime
+configuration, migration, Queue state, D1/Lark data or deployed infrastructure. Both commits remain
+visible as audit history.
 
 ## Remote safe state
 
-No Remote phase was performed by Draft PR `#72`, Integration PR `#85`, or this closeout:
-
 ```text
-Remote D1 schema/config read       NOT RUN with authenticated runtime
-Remote D1 migration               NOT RUN
-Remote D1 Business write          NOT RUN
+Meta Provider/API GET             NOT RUN
+Token inspection/rotation         NOT RUN
+Queue message                     NOT SENT
+DLQ action                        NONE
+Remote D1 migration/mutation      NONE
 Remote Lark schema/data mutation  NONE
 Worker deployment                 NOT RUN
-Provider/API execution            NOT RUN
-Queue message                     NOT SENT
-DLQ redrive/delete                NOT RUN
 Schedule activation               NONE
 Customer/Production LIVE UAT      NOT RUN
 Production                        BLOCKED
@@ -120,30 +171,32 @@ Production                        BLOCKED
 
 ## Next separately authorized gate
 
-The next work requires an authenticated local Integration Workspace runtime with the real Cloudflare/Wrangler configuration:
+The next action requires a local authorized Integration Workspace checkout containing the real
+Meta credentials. It must be executed one phase at a time:
 
-1. perform read-only Remote D1 schema verification for Storage Foundation `0009`;
-2. inspect current deployed Worker configuration and confirm every YouTube/Storage/Report/Schedule flag remains false;
-3. retain sanitized evidence and review it;
-4. authorize an all-flags-false Worker deployment separately;
-5. authorize a dry-run/read-only YouTube operation separately;
-6. verify non-dry execution is blocked while D1 or Lark write gate is false;
-7. authorize controlled Integration Workspace D1-first/Lark UAT separately;
-8. validate Coverage, idempotent rerun and D1 Report shadow parity;
-9. keep Schedule and Production blocked until a new explicit approval.
+1. run the operator plan;
+2. authorize and run configuration preflight with zero Provider requests;
+3. review the preflight evidence;
+4. authorize one Facebook GET-only validation;
+5. authorize one Instagram GET-only validation;
+6. authorize one `chemistry_k2` GET-only validation;
+7. authorize one `chemistry_k3` GET-only validation;
+8. generate and review the sanitized summary.
 
-Repository merge alone authorizes none of these Remote phases.
+Merge does not authorize these Provider phases automatically. D1-only processing, Coverage
+reconciliation, Lark parity, LIVE UAT, schedule activation and Production remain separate later
+approval gates.
 
 ## Detailed records
 
 ```text
-docs/tasks/youtube-organic-end-to-end.md
-docs/tasks/youtube-organic-end-to-end-integration-review.md
-docs/tasks/youtube-organic-integration-wiring-safe-rollout.md
+docs/tasks/meta-runtime-wiring.md
+docs/tasks/meta-read-only-validation-operator.md
+docs/runbooks/meta-read-only-validation.md
 ```
 
-Previous current task:
+Previous Current Task:
 
 ```text
-docs/archive/current-task-before-youtube-organic-integration-2026-07-27.md
+docs/archive/current-task-before-meta-read-only-operator-closeout-2026-07-27.md
 ```
