@@ -43,6 +43,14 @@ export function loadMetaEndToEndRuntimeConfig(env = {}) {
     limits: {
       sourcePageSize: boundedInteger(env?.MKT_META_SOURCE_PAGE_SIZE, 100, 1, 100),
       sourceMaxPages: boundedInteger(env?.MKT_META_SOURCE_MAX_PAGES, 100, 1, 100),
+      sourceMaxUnits: boundedInteger(env?.MKT_META_SOURCE_MAX_UNITS, 500, 1, 500),
+      sourceMaxRows: boundedInteger(env?.MKT_META_SOURCE_MAX_ROWS, 50_000, 1, 50_000),
+      sourceMaxUnitBytes: boundedInteger(
+        env?.MKT_META_SOURCE_MAX_UNIT_BYTES,
+        524_288,
+        1_024,
+        1_048_576,
+      ),
       d1RowsPerInvocation: boundedInteger(
         env?.MKT_META_D1_ROWS_PER_INVOCATION,
         250,

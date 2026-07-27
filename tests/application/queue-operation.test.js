@@ -70,6 +70,37 @@ test('ordinary TikTok sync keeps the existing message-scoped operation', () => {
   assert.equal(operation.workKey, 'tiktok:legacy-tiktok-message');
 });
 
+
+test('Meta Ads operation identity is scoped by configured account alias', () => {
+  const create = (sourceAccountKey) => resolveQueueOperation({
+    job: normalizeQueueJobMessage({
+      id: `meta-${sourceAccountKey}`,
+      body: {
+        schemaVersion: 1,
+        type: JOB_TYPES.META_ADS_SYNC,
+        trigger: 'manual_uat',
+        sourceAccountKey,
+        operationId: OPERATION_ID,
+        generation: REQUESTED_AT,
+        originalRequestedAt: REQUESTED_AT,
+      },
+    }),
+    message: { id: `meta-${sourceAccountKey}` },
+  });
+
+  const account2 = create('chemistry_k2');
+  const account3 = create('chemistry_k3');
+  assert.equal(account2.workKey, `meta_ads:chemistry_k2:${OPERATION_ID}`);
+  assert.equal(account3.workKey, `meta_ads:chemistry_k3:${OPERATION_ID}`);
+  assert.notEqual(account2.workKey, account3.workKey);
+  const continuation = withQueueOperation({
+    type: JOB_TYPES.META_ADS_SYNC,
+    trigger: 'manual_uat',
+    sourceAccountKey: 'chemistry_k2',
+  }, account2);
+  assert.equal(continuation.workKey, account2.workKey);
+});
+
 test('continuation serialization preserves exact operation generation', () => {
   const operation = resolveQueueOperation({
     job: normalizeQueueJobMessage({ id: 'main-message', body: BODY }),
