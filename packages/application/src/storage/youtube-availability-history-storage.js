@@ -7,6 +7,8 @@ import { createStableFingerprint } from '../../../shared/src/hash/stable-fingerp
 import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 
 const PLATFORM = 'youtube';
+const DEFAULT_BATCH_SIZE = 500;
+const MAX_BATCH_SIZE = 1_000;
 
 export function createYouTubeAvailabilityAwareGateway(input) {
   const availabilityByContentKey = new Map(input.rows.map((row) => [
@@ -33,58 +35,72 @@ export function createYouTubeAvailabilityAwareGateway(input) {
 }
 
 export async function writeYouTubeAvailabilityStates(input) {
-  const keys = input.rawVideoRows.map((row) => createContentKey({
-    platform: PLATFORM,
-    account_key: input.context.accountKey,
-    external_content_id: requireText(row.video_id, 'video_id'),
-  }));
-  const existingRows = await input.context.gateway.listOrganicContentStatesByKeys(keys);
-  const existingByKey = new Map(existingRows.map((row) => [row.content_key, row]));
-  const coverageRows = [];
+  const batchSize = boundedBatchSize(input.batchSize);
+  let rowsProcessed = 0;
   let written = 0;
   let skipped = 0;
+  let coverageWritten = 0;
+  let coverageSkipped = 0;
 
-  for (const raw of input.rawVideoRows) {
-    const externalContentId = requireText(raw.video_id, 'video_id');
-    const contentKey = createContentKey({
+  for (const rawBatch of chunks(input.rawVideoRows, batchSize)) {
+    await assertLockActive(input.context);
+    const keys = rawBatch.map((row) => createContentKey({
       platform: PLATFORM,
       account_key: input.context.accountKey,
-      external_content_id: externalContentId,
-    });
-    const availability = normalizeYouTubeAvailability(raw.source_availability_status);
-    const state = await buildAvailabilityState({
-      context: input.context,
-      ids: input.ids,
-      existing: existingByKey.get(contentKey) ?? null,
-      contentKey,
-      externalContentId,
-      availability,
-    });
-    const result = await input.context.gateway.upsertOrganicContentState(state);
-    if (result.status === 'written') written += 1;
-    else skipped += 1;
-    coverageRows.push(validateStorageRow('data_coverage_entities', {
-      coverage_entity_key: createCoverageEntityKey({
+      external_content_id: requireText(row.video_id, 'video_id'),
+    }));
+    const existingRows = await input.context.gateway.listOrganicContentStatesByKeys(keys);
+    const existingByKey = new Map(existingRows.map((row) => [row.content_key, row]));
+    const coverageRows = [];
+
+    for (const raw of rawBatch) {
+      const externalContentId = requireText(raw.video_id, 'video_id');
+      const contentKey = createContentKey({
+        platform: PLATFORM,
+        account_key: input.context.accountKey,
+        external_content_id: externalContentId,
+      });
+      const availability = normalizeYouTubeAvailability(raw.source_availability_status);
+      const state = await buildAvailabilityState({
+        context: input.context,
+        ids: input.ids,
+        existing: existingByKey.get(contentKey) ?? null,
+        contentKey,
+        externalContentId,
+        availability,
+      });
+      const result = await input.context.gateway.upsertOrganicContentState(state);
+      if (result.status === 'written') written += 1;
+      else skipped += 1;
+      rowsProcessed += 1;
+      coverageRows.push(validateStorageRow('data_coverage_entities', {
+        coverage_entity_key: createCoverageEntityKey({
+          coverage_run_id: input.ids.contentCoverageRunId,
+          entity_type: 'content',
+          external_entity_id: externalContentId,
+        }),
         coverage_run_id: input.ids.contentCoverageRunId,
         entity_type: 'content',
         external_entity_id: externalContentId,
-      }),
-      coverage_run_id: input.ids.contentCoverageRunId,
-      entity_type: 'content',
-      external_entity_id: externalContentId,
-      observation_status: 'missing',
-      source_revision: input.ids.sourceWatermark,
-      observed_at: input.context.observedAt,
-      created_at: input.context.observedAt,
-    }));
+        observation_status: 'missing',
+        source_revision: input.ids.sourceWatermark,
+        observed_at: input.context.observedAt,
+        created_at: input.context.observedAt,
+      }));
+    }
+
+    await assertLockActive(input.context);
+    const coverageResults = await input.context.gateway.saveCoverageEntities(coverageRows);
+    coverageWritten += coverageResults.filter((row) => row.status === 'written').length;
+    coverageSkipped += coverageResults.filter((row) => row.status !== 'written').length;
   }
-  const coverageResults = await input.context.gateway.saveCoverageEntities(coverageRows);
+
   return Object.freeze({
-    rowsProcessed: input.rawVideoRows.length,
+    rowsProcessed,
     written,
     skipped,
-    coverageWritten: coverageResults.filter((row) => row.status === 'written').length,
-    coverageSkipped: coverageResults.filter((row) => row.status !== 'written').length,
+    coverageWritten,
+    coverageSkipped,
   });
 }
 
@@ -156,6 +172,31 @@ async function buildAvailabilityState(input) {
     created_at: optionalInteger(input.existing?.created_at) ?? input.context.observedAt,
     updated_at: input.context.observedAt,
   });
+}
+
+function boundedBatchSize(value) {
+  if (value === null || value === undefined || value === '') return DEFAULT_BATCH_SIZE;
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number <= 0 || number > MAX_BATCH_SIZE) {
+    throw permanentError(`YouTube availability batchSize must be from 1 to ${MAX_BATCH_SIZE}`, {
+      code: 'YOUTUBE_END_TO_END_STORAGE_BATCH_INVALID',
+    });
+  }
+  return number;
+}
+
+function chunks(rows, size) {
+  const result = [];
+  for (let offset = 0; offset < rows.length; offset += size) {
+    result.push(Object.freeze(rows.slice(offset, offset + size)));
+  }
+  return result;
+}
+
+async function assertLockActive(context) {
+  if (typeof context.assertLockActive === 'function') {
+    await context.assertLockActive();
+  }
 }
 
 function valueOrNull(value) {
