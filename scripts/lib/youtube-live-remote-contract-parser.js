@@ -141,6 +141,68 @@ export function normalizeWranglerVersionD1Binding(value, input = {}) {
 }
 
 /**
+ * Wrangler live version metadata may omit plaintext bindings whose effective value is false.
+ * Materialize only the reviewed expected-false names for fingerprinting. Explicit values remain
+ * authoritative and are validated; no true value is rewritten or downgraded.
+ */
+export function normalizeWranglerVersionReviewedFalseFlags(value, input = {}) {
+  if (!Array.isArray(input.expectedFalseFlagNames)
+    || input.expectedFalseFlagNames.length === 0) {
+    throw parserError(
+      'Live Remote validation requires reviewed expected-false flag names',
+      'YOUTUBE_DRY_RUN_REMOTE_EXPECTED_FALSE_FLAGS_REQUIRED',
+    );
+  }
+  const expectedNames = [...new Set(input.expectedFalseFlagNames.map((name) => (
+    requireText(name, 'expectedFalseFlagName')
+  )))].sort();
+  const expectedSet = new Set(expectedNames);
+  const { isArray, sourceItem, directBindings, bindings } = readVersionBindings(value);
+  const matchesByName = new Map(expectedNames.map((name) => [name, []]));
+
+  for (const binding of bindings) {
+    if (normalizeBindingType(binding?.type) !== 'plain_text') continue;
+    const name = optionalText(binding?.name ?? binding?.binding);
+    if (!name || !expectedSet.has(name)) continue;
+    matchesByName.get(name).push(binding);
+  }
+
+  for (const [name, matches] of matchesByName) {
+    if (matches.length > 1) {
+      throw parserError(
+        'Remote version contains a duplicate reviewed flag binding',
+        'YOUTUBE_DRY_RUN_REMOTE_FLAG_BINDING_DUPLICATE',
+        { name, matchCount: matches.length },
+      );
+    }
+    if (matches.length === 1) {
+      requireRemoteBoolean(matches[0]?.text ?? matches[0]?.value, name);
+    }
+  }
+
+  const missingNames = expectedNames.filter((name) => matchesByName.get(name).length === 0);
+  const normalizedBindings = [
+    ...bindings,
+    ...missingNames.map((name) => Object.freeze({
+      type: 'plain_text',
+      name,
+      text: 'false',
+    })),
+  ];
+
+  return Object.freeze({
+    versionsView: replaceVersionBindings({
+      isArray,
+      sourceItem,
+      directBindings,
+      bindings: normalizedBindings,
+    }),
+    expectedFalseFlagCount: expectedNames.length,
+    materializedFalseFlagCount: missingNames.length,
+  });
+}
+
+/**
  * The Worker is shared by multiple connectors. Require the complete YouTube Secret-name subset,
  * reject any exposed Secret value, and remove unrelated connector Secret names only from the
  * YouTube fingerprint input. The original Remote response is never persisted.
@@ -167,6 +229,12 @@ export function normalizeWranglerVersionRequiredSecrets(value, input = {}) {
   }
 
   const observedSet = new Set(observedNames);
+  if (observedSet.size !== observedNames.length) {
+    throw parserError(
+      'Remote Worker contains a duplicate Secret binding name',
+      'YOUTUBE_DRY_RUN_REMOTE_SECRET_BINDING_DUPLICATE',
+    );
+  }
   const missing = requiredNames.filter((name) => !observedSet.has(name));
   if (missing.length > 0) {
     throw parserError(
@@ -199,9 +267,9 @@ export function normalizeWranglerVersionRequiredSecrets(value, input = {}) {
 
 /**
  * Compatibility adapter for sanitized live Wrangler responses. It normalizes only metadata already
- * proven by scoped command context, immutable D1 UUID or the required YouTube Secret-name subset,
- * then delegates every flag, binding, consumer, trigger, traffic and fingerprint decision to the
- * reviewed validator.
+ * proven by scoped command context, immutable D1 UUID, reviewed false defaults or the required
+ * YouTube Secret-name subset, then delegates every flag, binding, consumer, trigger, traffic and
+ * fingerprint decision to the reviewed validator.
  */
 export function validateLiveRemoteYouTubeDeploymentContract(input = {}) {
   const contexts = input.queueConsumerContexts;
@@ -221,7 +289,10 @@ export function validateLiveRemoteYouTubeDeploymentContract(input = {}) {
     expectedDatabaseId: input.expectedDatabaseId,
     expectedDatabaseName: input.expectedDatabaseName,
   });
-  const secretScope = normalizeWranglerVersionRequiredSecrets(d1Normalized, {
+  const flagScope = normalizeWranglerVersionReviewedFalseFlags(d1Normalized, {
+    expectedFalseFlagNames: input.expectedFalseFlagNames,
+  });
+  const secretScope = normalizeWranglerVersionRequiredSecrets(flagScope.versionsView, {
     requiredSecretNames: input.requiredSecretNames,
   });
   const {
@@ -229,6 +300,7 @@ export function validateLiveRemoteYouTubeDeploymentContract(input = {}) {
     expectedD1BindingName: _expectedD1BindingName,
     expectedDatabaseId: _expectedDatabaseId,
     expectedDatabaseName: _expectedDatabaseName,
+    expectedFalseFlagNames: _expectedFalseFlagNames,
     requiredSecretNames: _requiredSecretNames,
     ...validatorInput
   } = input;
@@ -241,6 +313,8 @@ export function validateLiveRemoteYouTubeDeploymentContract(input = {}) {
     ...validated,
     observedSecretNameCount: secretScope.observedSecretNameCount,
     additionalSecretNameCount: secretScope.additionalSecretNameCount,
+    expectedFalseFlagCount: flagScope.expectedFalseFlagCount,
+    materializedFalseFlagCount: flagScope.materializedFalseFlagCount,
   });
 }
 
@@ -318,6 +392,18 @@ function normalizeBindingType(value) {
   const type = optionalText(value)?.toLowerCase().replaceAll('-', '_');
   if (['d1', 'd1_database', 'd1_namespace'].includes(type)) return 'd1';
   return type;
+}
+
+function requireRemoteBoolean(value, name) {
+  if (value === true || value === false) return value;
+  const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  if (normalized === 'true') return true;
+  if (normalized === 'false') return false;
+  throw parserError(
+    'Remote reviewed flag must be an explicit Boolean value',
+    'YOUTUBE_DRY_RUN_REMOTE_FLAG_VALUE_INVALID',
+    { name },
+  );
 }
 
 function requireUuid(value, fieldName) {
