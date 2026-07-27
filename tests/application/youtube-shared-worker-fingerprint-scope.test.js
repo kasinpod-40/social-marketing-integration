@@ -149,7 +149,7 @@ test('one-command preflight wires reviewed false names and sanitized diagnostics
     new URL('../../scripts/youtube-remote-read-only-preflight.mjs', import.meta.url),
     'utf8',
   );
-  assert.match(source, /expectedFalseFlagNames:\s*expectedFalseFlagNames/u);
+  assert.match(source, /expectedFalseFlagNames(?:\s*:\s*expectedFalseFlagNames)?\s*,/u);
   assert.match(source, /additionalSecretNameCount:\s*contract\.additionalSecretNameCount/u);
   assert.match(source, /materializedFalseFlagCount:\s*contract\.materializedFalseFlagCount/u);
   assert.match(source, /diagnostic:\s*sanitizeDiagnostic\(error\?\.details\)/u);
