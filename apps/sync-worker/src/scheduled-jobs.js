@@ -1,5 +1,6 @@
 import { addDaysDateOnly } from '../../../packages/application/src/reports/report-period.js';
 import { JOB_TYPES } from '../../../packages/application/src/jobs/job-catalog.js';
+import { createStableQueueOperationBody } from '../../../packages/application/src/jobs/queue-operation.js';
 import { permanentError } from '../../../packages/shared/src/errors/runtime-error.js';
 import {
   readBoolean,
@@ -11,6 +12,7 @@ const DEFAULT_WEEKLY_REPORT_TIME = '08:15';
 const DEFAULT_WEEKLY_REPORT_WEEKDAY = 'monday';
 const DEFAULT_YOUTUBE_ANALYTICS_TIME = '07:50';
 const DEFAULT_YOUTUBE_ANALYTICS_LOOKBACK_DAYS = 7;
+const DEFAULT_WOOCOMMERCE_SYNC_TIME = '01:30';
 const YOUTUBE_ANALYTICS_TIMEZONE = 'America/Los_Angeles';
 const SCHEDULE_WEEKDAYS = new Set(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']);
 const YOUTUBE_SCHEDULE_MINUTE_UTC = 50;
@@ -29,6 +31,9 @@ export function buildScheduledJobs(input = {}) {
 
   const tiktokEnabled = includePrimaryJobs
     ? readBoolean(env.MKT_SCHEDULE_TIKTOK_ENABLED, false)
+    : false;
+  const wooCommerceEnabled = includePrimaryJobs
+    ? readBoolean(env.MKT_SCHEDULE_WOOCOMMERCE_ENABLED, false)
     : false;
   const dailyEnabled = includePrimaryJobs
     ? readBoolean(env.MKT_SCHEDULE_DAILY_REPORT_ENABLED, false)
@@ -60,7 +65,11 @@ export function buildScheduledJobs(input = {}) {
       },
     );
   }
-  const needsLocalSchedule = tiktokEnabled || dailyEnabled || weeklyEnabled || youtubeEnabled;
+  const needsLocalSchedule = tiktokEnabled
+    || wooCommerceEnabled
+    || dailyEnabled
+    || weeklyEnabled
+    || youtubeEnabled;
   const timeZone = needsLocalSchedule
     ? requireJobText(env.DEFAULT_TIMEZONE ?? 'Asia/Bangkok', 'DEFAULT_TIMEZONE')
     : null;
@@ -77,6 +86,26 @@ export function buildScheduledJobs(input = {}) {
       // Lark Native 07:00 เป็น Snapshot แรกหลังวันก่อนหน้าปิด จึงล็อกวันสมบูรณ์ล่าสุด.
       metricDate: completedPeriodEnd,
     }));
+  }
+
+  if (includePrimaryJobs && wooCommerceEnabled) {
+    const syncTime = readScheduleTime(
+      env.MKT_WOOCOMMERCE_SYNC_TIME ?? DEFAULT_WOOCOMMERCE_SYNC_TIME,
+      'MKT_WOOCOMMERCE_SYNC_TIME',
+    );
+    if (local.time === syncTime) {
+      const operationId = `scheduled-${local.date.replaceAll('-', '')}-${local.time.replace(':', '')}`;
+      jobs.push(createStableQueueOperationBody({
+        schemaVersion: 1,
+        type: JOB_TYPES.WOOCOMMERCE_COMMERCE_SYNC,
+        trigger: 'scheduled',
+        // Schedule เป็น Incremental เท่านั้น; Full reconciliation ต้องผ่าน Operator แยก.
+        fullReconciliation: false,
+      }, {
+        operationId,
+        originalRequestedAt: Date.parse(requestedAt),
+      }));
+    }
   }
 
   if (includePrimaryJobs && dailyEnabled) {

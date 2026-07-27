@@ -20,7 +20,7 @@ import { processWooCommerceCommerceJob } from '../../apps/sync-worker/src/woocom
 const REQUESTED_AT = Date.parse('2026-07-27T00:00:00Z');
 const OPERATION_ID = 'woo-integration-1';
 
-function protectedEnv() {
+function protectedEnv(overrides = {}) {
   return {
     MKT_ENV: 'development',
     MKT_CUSTOMER_PROFILE: 'integration_workspace',
@@ -33,6 +33,7 @@ function protectedEnv() {
     WOOCOMMERCE_BASE_URL: 'https://shop.example.test',
     WOOCOMMERCE_CONSUMER_KEY: 'ck_testkey',
     WOOCOMMERCE_CONSUMER_SECRET: 'cs_testsecret',
+    ...overrides,
   };
 }
 
@@ -50,27 +51,28 @@ test('WooCommerce defaults are safe-closed without reading credentials', () => {
   assert.equal(config.reportingTimezone, 'Asia/Bangkok');
 });
 
-test('WooCommerce catalog and Queue job are UAT-pending manual-only', () => {
+test('WooCommerce catalog and Queue job are active with exact trigger allowlist', () => {
   const connector = getConnectorCatalogEntry('woocommerce');
   const job = getJobDefinition(JOB_TYPES.WOOCOMMERCE_COMMERCE_SYNC);
-  assert.equal(connector.implementationStatus, 'uat_pending');
-  assert.equal(job.implementationStatus, 'uat_pending');
-  assert.equal(job.manualOnly, true);
+  assert.equal(connector.implementationStatus, 'active');
+  assert.equal(job.implementationStatus, 'active');
+  assert.deepEqual(job.allowedTriggers, ['manual_uat', 'scheduled']);
 });
 
-test('protected Integration Workspace requires Connector, D1 and Lark gates with Schedule false', () => {
-  const env = protectedEnv();
-  const runtime = loadCustomerRuntimeConfig(env);
-  const config = readWooCommerceRuntimeConfig(env);
-  assert.equal(runtime.connectors.woocommerce.enabled, true);
-  assert.equal(runtime.connectors.woocommerce.protectedUatRuntime, true);
-  assert.equal(config.source.baseUrl, 'https://shop.example.test');
-  assert.equal(config.flags.schedule, false);
+test('Integration Workspace supports explicit Manual UAT and Scheduled gate windows', () => {
+  const manualEnv = protectedEnv();
+  const manualRuntime = loadCustomerRuntimeConfig(manualEnv);
+  const manualConfig = readWooCommerceRuntimeConfig(manualEnv);
+  assert.equal(manualRuntime.connectors.woocommerce.enabled, true);
+  assert.equal(manualRuntime.connectors.woocommerce.implementationStatus, 'active');
+  assert.equal(manualConfig.source.baseUrl, 'https://shop.example.test');
+  assert.equal(manualConfig.flags.schedule, false);
 
-  assert.throws(
-    () => loadCustomerRuntimeConfig({ ...env, MKT_SCHEDULE_WOOCOMMERCE_ENABLED: 'true' }),
-    (error) => error?.code === 'MKT_CONNECTOR_UAT_PENDING',
-  );
+  const scheduledEnv = protectedEnv({ MKT_SCHEDULE_WOOCOMMERCE_ENABLED: 'true' });
+  const scheduledRuntime = loadCustomerRuntimeConfig(scheduledEnv);
+  const scheduledConfig = readWooCommerceRuntimeConfig(scheduledEnv);
+  assert.equal(scheduledRuntime.connectors.woocommerce.enabled, true);
+  assert.equal(scheduledConfig.flags.schedule, true);
 });
 
 test('WooCommerce Queue operation has stable identity and continuation preserves it', () => {
@@ -121,7 +123,9 @@ test('WooCommerce active router preserves the prior route for every non-WooComme
     processWooCommerce: async () => { calls.push('woocommerce'); return 'woo'; },
     processFallback: async () => { calls.push('fallback'); return 'fallback'; },
   });
-  assert.equal(await router({ job: { body: { type: JOB_TYPES.WOOCOMMERCE_COMMERCE_SYNC } } }), 'woo');
+  assert.equal(await router({
+    job: { body: { type: JOB_TYPES.WOOCOMMERCE_COMMERCE_SYNC, trigger: 'manual_uat' } },
+  }), 'woo');
   assert.equal(await router({ job: { body: { type: JOB_TYPES.YOUTUBE_ORGANIC_SYNC } } }), 'fallback');
   assert.deepEqual(calls, ['woocommerce', 'fallback']);
 });
@@ -145,7 +149,7 @@ test('disabled WooCommerce job fails before Infrastructure, Provider, D1 or Lark
       }),
       getInfrastructure: () => { infrastructureRead = true; return {}; },
     }),
-    (error) => error?.code === 'WOOCOMMERCE_MANUAL_UAT_CONNECTOR_INVALID',
+    (error) => error?.code === 'WOOCOMMERCE_CONNECTOR_INVALID',
   );
   assert.equal(infrastructureRead, false);
 });
