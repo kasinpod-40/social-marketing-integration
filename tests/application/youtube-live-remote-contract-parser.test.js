@@ -23,7 +23,7 @@ test('scoped Queue parser restores omitted Queue name from reviewed command cont
       settings: {
         max_concurrency: 1,
         batch_size: 10,
-        max_batch_timeout: 30,
+        max_wait_time_ms: 30000,
         max_retries: 5,
         dead_letter_queue: DLQ,
       },
@@ -32,6 +32,8 @@ test('scoped Queue parser restores omitted Queue name from reviewed command cont
 
   assert.equal(normalized.length, 1);
   assert.equal(normalized[0].queue_name, MAIN_QUEUE);
+  assert.equal(normalized[0].settings.max_wait_time_ms, 30000);
+  assert.equal(normalized[0].settings.max_batch_timeout, 30);
   assert.equal(normalized[0].settings.dead_letter_queue, DLQ);
 });
 
@@ -249,7 +251,7 @@ function queueSettings(maxRetries, deadLetterQueue = undefined) {
   return {
     max_concurrency: 1,
     batch_size: 10,
-    max_batch_timeout: 30,
+    max_wait_time_ms: 30000,
     max_retries: maxRetries,
     ...(deadLetterQueue ? { dead_letter_queue: deadLetterQueue } : {}),
   };
