@@ -3,12 +3,15 @@
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = IMPLEMENTATION_COMPLETE_VERIFICATION_PENDING
+TASK_STATUS                         = VERIFICATION_PASS_MERGE_PENDING
 CURRENT_PROGRAM                     = YOUTUBE_ORGANIC_INTEGRATION_WIRING
 INTEGRATION_BRANCH                  = integration/youtube-organic-safe-rollout
+INTEGRATION_PR                      = #85 / DRAFT
 BASE_MAIN                           = 8b7f9a879ba0c1b0b5d89dcfa2373ad3bb3c2ce8
 SOURCE_DRAFT_PR                     = #72
 SOURCE_REVIEW_DECISION              = PASS_FOR_INTEGRATION
+VERIFIED_HEAD                       = a8f39d1460982cf84ca69e27b6519b1037f71c4d
+BRANCH_VERIFICATION                 = #579 PASS
 REMOTE_SCHEMA_CHECK                 = NOT_RUN
 WORKER_DEPLOYMENT                   = NOT_RUN
 QUEUE_MESSAGE                       = NOT_SENT
@@ -22,7 +25,7 @@ PRODUCTION                          = BLOCKED
 
 นำ YouTube Organic End-to-End ที่ผ่าน Review เข้าสู่ Shared Worker route และ Shared configuration โดยรักษา Safe state เมื่อ Dedicated flag ยังปิด จากนั้นผ่าน Full Repository Verification ก่อนเสนอ Merge เข้า `main`.
 
-Detailed contract:
+Detailed contract and verification evidence:
 
 ```text
 docs/tasks/youtube-organic-integration-wiring-safe-rollout.md
@@ -44,7 +47,7 @@ docs/tasks/youtube-organic-end-to-end-integration-review.md
 - Preserve every non-YouTube route and existing Google Ads/TikTok/Meta behavior.
 - Add `MKT_YOUTUBE_END_TO_END_ENABLED` and `MKT_YOUTUBE_LARK_WRITE_ENABLED` to Shared runtime config and release examples with default `false`.
 - Add focused routing/config regressions and run all Repository gates.
-- Update Project Brain, README and CHANGELOG before Merge.
+- Update Current Task and Project Brain before Merge; README/CHANGELOG closeout remains merge-owned documentation follow-up.
 
 ## Out of scope
 
@@ -104,6 +107,24 @@ Completed on `integration/youtube-organic-safe-rollout`:
 
 No Migration, Remote action, Queue message, deployment, schedule or LIVE UAT occurred.
 
+## Verification result
+
+Exact reviewed head before this documentation-only closeout:
+
+```text
+GitHub Actions run / workflow ID     #579 / 30241398413
+Head                                  a8f39d1460982cf84ca69e27b6519b1037f71c4d
+Install locked dependencies           PASS
+Syntax / architecture / hygiene       PASS
+Focused staged TikTok                 4/4 PASS
+Node Unit / Integration               916/916 PASS
+Workers runtime                       9/9 PASS
+Report reliability                    91/91 PASS
+Dependency audit                      0 vulnerabilities
+Wrangler deployment dry-run           PASS / no deployment
+Diagnostics upload                    PASS
+```
+
 ## Acceptance criteria
 
 - [x] Existing Shared Connector/Reliability/Queue/D1/Lark contracts reused
@@ -114,18 +135,19 @@ No Migration, Remote action, Queue message, deployment, schedule or LIVE UAT occ
 - [x] Dedicated flags default false in Shared config/examples/Wrangler
 - [x] No Migration added
 - [x] No Remote or LIVE action
-- [ ] `npm ci`
-- [ ] `npm run check`
-- [ ] Focused staged TikTok regression
-- [ ] `npm test`
-- [ ] `npm run test:report-reliability`
-- [ ] `npm audit --audit-level=high`
-- [ ] `npm run deploy:dry-run`
-- [ ] Exact-head PR review and Merge into `main`
+- [x] `npm ci`
+- [x] `npm run check`
+- [x] Focused staged TikTok regression
+- [x] `npm test`
+- [x] `npm run test:report-reliability`
+- [x] `npm audit --audit-level=high`
+- [x] `npm run deploy:dry-run`
+- [ ] Exact-head final PR verification after documentation closeout
+- [ ] Merge into `main`
 
 ## Next gate
 
-Run Branch Verification on the exact Integration head. Only after all gates pass may the repository PR be considered for Merge. Merge does not authorize Remote deployment or UAT; the next Remote phase must begin with an authenticated read-only schema/config preflight under a separately recorded approval.
+Wait for Branch Verification on the new documentation-closeout head, confirm the branch is not behind `main`, inspect review threads and requested changes, then decide the repository Merge. Merge does not authorize Remote deployment or UAT; the next Remote phase must begin with an authenticated read-only schema/config preflight under a separately recorded approval.
 
 ## Immutable history
 
