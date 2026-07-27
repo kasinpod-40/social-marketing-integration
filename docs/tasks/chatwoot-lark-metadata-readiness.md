@@ -3,7 +3,7 @@
 ## Status
 
 ```text
-TASK_STATUS                    = IMPLEMENTED_PENDING_CI
+TASK_STATUS                    = PASS_FOR_MERGE_DECISION
 SCOPE                          = REPOSITORY_ONLY
 CONTRACT_VERSION               = chatwoot-lark-metadata-readiness-v1
 ENVIRONMENT                    = development
@@ -11,6 +11,8 @@ CUSTOMER_PROFILE               = integration_workspace
 CUSTOMER_KEY                   = chemistry_k
 CHATWOOT_PROVIDER_ADMIN        = STILL_PENDING
 REMOTE_LARK_REQUEST            = NOT_RUN_DURING_IMPLEMENTATION
+BRANCH_VERIFICATION            = #794 / 30302563284 / PASS
+MERGE_GATE                      = EXACT_FINAL_HEAD_CI_REQUIRED
 REMOTE_MUTATION                = NONE
 PRODUCTION                     = BLOCKED
 ```
@@ -129,6 +131,24 @@ create_field
 
 It can never contain Table/Field deletion, rename or Field-type mutation. Applying an additive plan is a
 separate explicitly reviewed Lark mutation phase and is not implemented or authorized here.
+
+## Verification
+
+Aligned implementation head `bfa9b7b2e728e83f417412aa71695da46be15a24` passed Branch Verification
+`#794` / run `30302563284`:
+
+```text
+Install locked dependencies       = PASS
+Syntax / architecture / hygiene   = PASS
+Focused staged TikTok             = PASS
+Node and Workers runtime          = PASS
+Report reliability                = PASS
+Dependency audit                  = PASS
+Wrangler deployment dry-run       = PASS / NO DEPLOYMENT
+Remote action count               = 0
+```
+
+Any later documentation-only head must pass the same exact-head Branch Verification before merge.
 
 ## Safety boundary
 
