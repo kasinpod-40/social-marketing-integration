@@ -10,7 +10,7 @@ export function calculateAdsPeriodMetrics(input = {}) {
   const rows = requireArray(input.rows, 'rows');
   const reportLevel = normalizeReportLevel(input.reportLevel, rows);
   assertOneReportLevel(rows, reportLevel);
-  const totals = Object.fromEntries(SUM_FIELDS.map((field) => [field, sumKnown(rows, field)]));
+  const totals = Object.fromEntries(SUM_FIELDS.map((field) => [field, sumStrict(rows, field)]));
   const dataStatus = resolveDataStatus(rows, input.coverageStatus);
   return Object.freeze({
     report_level: reportLevel,
@@ -91,9 +91,10 @@ function assertOneReportLevel(rows, expected) {
   }
 }
 
-function sumKnown(rows, field) {
-  const values = rows.map((row) => row?.[field]).filter((value) => value !== null && value !== undefined);
-  if (values.length === 0) return null;
+function sumStrict(rows, field) {
+  if (rows.length === 0) return null;
+  const values = rows.map((row) => row?.[field]);
+  if (values.some((value) => value === null || value === undefined)) return null;
   return values.reduce((sum, value) => sum + requireNumber(value, field), 0);
 }
 function divideKnown(numerator, denominator) {
@@ -106,11 +107,17 @@ function multiplyThenDivideKnown(value, multiplier, denominator) {
 }
 function resolveDataStatus(rows, coverageStatus) {
   if (coverageStatus === 'source_unavailable') return 'source_unavailable';
-  if (rows.length === 0) return coverageStatus === 'no_data_confirmed' ? 'no_data_confirmed' : 'partial';
+  if (rows.length === 0) {
+    if (coverageStatus === 'complete' || coverageStatus === 'no_data_confirmed') return 'no_data_confirmed';
+    if (coverageStatus === 'not_observed') return 'not_observed';
+    if (coverageStatus === 'revisable') return 'revisable';
+    return 'partial';
+  }
   const statuses = new Set(rows.map((row) => row.data_status));
   if (statuses.has('source_unavailable')) return 'source_unavailable';
+  if (statuses.has('not_observed')) return 'not_observed';
   if (statuses.has('partial')) return 'partial';
-  if (statuses.has('revisable')) return 'revisable';
+  if (statuses.has('revisable') || coverageStatus === 'revisable') return 'revisable';
   return coverageStatus === 'complete' ? 'complete' : 'partial';
 }
 function normalizeMetric(value) {
