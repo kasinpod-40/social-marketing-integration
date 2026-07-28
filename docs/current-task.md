@@ -280,5 +280,18 @@ Repository implementation and CI do not authorize D1 backup, Worker deployment, 
   coverage IDs while replay still skips the Provider.
 - Focused customer-profile, UAT operator/session, YouTube sync and storage tests pass `39/39`;
   full repository gates and CI are pending.
-- The Worker is currently restored all-false. A new customer-scoped deployment, Queue send,
-  D1/Lark write and Provider call have not yet run.
+- The Worker is currently restored and verified all-false after the first customer-scoped run.
+- Customer-scoped operation `youtube-lark-uat-20260728t080617338z-eb4dd5d5` completed successfully
+  from merged `main@eb4dd5d581686b7d94f7be030f257b966c1b0a0f`: Provider requests `35`,
+  D1 content state/observations/coverage entities `837/837/837`, account facts `1`,
+  coverage runs `2`, cursor `1`, source record states `837`.
+- Customer Lark counts are RAW channel/video `1/837`, MKT account/content/content-daily
+  `1/837/837`; Owner Analytics remains intentionally `0`.
+- The obsolete DEV Lark rows written by the earlier wrong-scope operation were deleted by exact
+  record IDs after validating the prior baseline was zero and the scoped fingerprint matched;
+  post-rollback DEV Lark counts are all zero and no schema mutation occurred.
+- The shared D1 exact-row rollback was not performed because the remote deletion approval gate
+  rejected it; the DEV audit and business history therefore remain available for forensic review.
+- The first customer verifier exposed that live Wrangler D1 timestamps are numeric epoch values.
+  The parser hotfix accepts numeric timestamps, and emergency restore now accepts the pinned v2
+  customer session. The Worker was restored and verified all-false before this hotfix.

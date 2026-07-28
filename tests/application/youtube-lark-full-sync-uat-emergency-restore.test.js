@@ -30,6 +30,8 @@ test('emergency restore is confirmation-gated and can deploy only the reviewed s
   assert.match(source, /trueFlags\.length !== 0/u);
   assert.match(source, /ALREADY_SAFE_NO_DEPLOYMENT/u);
   assert.match(source, /EMERGENCY_RESTORE_ALL_FALSE_COMPLETED/u);
+  assert.match(source, /youtube_lark_full_sync_uat_session_v2/u);
+  assert.match(source, /value\.connectionId/u);
 });
 
 test('emergency restore never sends Queue messages or writes D1/Lark', async () => {

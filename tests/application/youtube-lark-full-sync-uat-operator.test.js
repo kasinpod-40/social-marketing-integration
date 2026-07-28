@@ -184,6 +184,16 @@ test('completion requires storage IDs, terminal success, D1 facts and no lock or
   );
 });
 
+test('completion parser accepts numeric D1 epoch timestamps from live Wrangler JSON', () => {
+  const snapshot = completeSnapshot(1, 35);
+  snapshot.sync_run_finished_at = 1785227174174;
+  snapshot.work_completed_at = 1785227173381;
+  const result = classifyYouTubeLarkUatCompletion(snapshot);
+  assert.equal(result.complete, true);
+  assert.equal(result.snapshot.syncRunFinishedAt, 1785227174174);
+  assert.equal(result.snapshot.workCompletedAt, 1785227173381);
+});
+
 test('Lark counts require public-data targets but allow Analytics to remain empty', () => {
   const counts = classifyYouTubeLarkCounts(larkCounts());
   assert.equal(counts.complete, true);
