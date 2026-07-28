@@ -21,6 +21,8 @@ import {
   classifyYouTubeLarkUatCompletion,
   compareYouTubeLarkUatRerun,
   createYouTubeLarkUatEvidence,
+  loadYouTubeLarkUatTarget,
+  normalizeYouTubeLarkUatSnapshot,
   parseYouTubeLarkUatArgs,
   validateYouTubeLarkUatEvidence,
 } from '../../scripts/lib/youtube-lark-full-sync-uat-operator.js';
@@ -45,6 +47,22 @@ test('YouTube Lark UAT operator is plan-only by default and requires phase confi
   assert.equal(assertYouTubeLarkUatConfirmation('send-full-sync', {
     [confirmation.envName]: confirmation.value,
   }), true);
+});
+
+test('YouTube Lark UAT target accepts an exact numeric-string generation from environment', () => {
+  const target = loadYouTubeLarkUatTarget({
+    MKT_YOUTUBE_LARK_UAT_OPERATION_ID: OPERATION_ID,
+    MKT_YOUTUBE_LARK_UAT_ORIGINAL_REQUESTED_AT: String(REQUESTED_AT),
+    MKT_YOUTUBE_LARK_UAT_REPOSITORY_HEAD: REPOSITORY_HEAD,
+    MKT_ENV: 'development',
+    MKT_CUSTOMER_PROFILE: 'integration_workspace',
+    MKT_CONNECTION_CUSTOMER_KEY: 'chemistry_k',
+    MKT_YOUTUBE_LARK_UAT_ACCOUNT_KEY: 'dev_ft_pumkin',
+    MKT_YOUTUBE_LARK_UAT_EXPECTED_CHANNEL_ID: CHANNEL_ID,
+  });
+  assert.equal(target.originalRequestedAt, REQUESTED_AT);
+  assert.equal(target.generation, REQUESTED_AT);
+  assert.equal(target.workKey, `youtube:${OPERATION_ID}`);
 });
 
 test('YouTube Lark UAT config window enables exactly four reviewed flags', async () => {
@@ -131,6 +149,10 @@ test('YouTube Lark UAT completion requires terminal success, D1 facts and no loc
   assert.equal(complete.complete, true);
   assert.deepEqual(complete.missing, []);
 
+  const normalizedAgain = normalizeYouTubeLarkUatSnapshot(complete.snapshot);
+  assert.deepEqual(normalizedAgain, complete.snapshot);
+  assert.equal(classifyYouTubeLarkUatCompletion(normalizedAgain).complete, true);
+
   const incomplete = classifyYouTubeLarkUatCompletion({
     ...completeSnapshot(1),
     data_coverage_entities: 0,
@@ -164,9 +186,11 @@ test('YouTube Lark counts require public-data targets but allow Analytics to rem
 });
 
 test('same-operation rerun must preserve D1 and Lark business counts', () => {
+  const before = classifyYouTubeLarkUatCompletion(completeSnapshot(1)).snapshot;
+  const after = classifyYouTubeLarkUatCompletion(completeSnapshot(2)).snapshot;
   const result = compareYouTubeLarkUatRerun({
-    before: completeSnapshot(1),
-    after: completeSnapshot(2),
+    before,
+    after,
     beforeLark: larkCounts(),
     afterLark: larkCounts(),
   });
@@ -175,8 +199,8 @@ test('same-operation rerun must preserve D1 and Lark business counts', () => {
 
   assert.throws(
     () => compareYouTubeLarkUatRerun({
-      before: completeSnapshot(1),
-      after: { ...completeSnapshot(2), organic_content_observations: 3 },
+      before,
+      after: { ...after, organicContentObservations: 3 },
       beforeLark: larkCounts(),
       afterLark: larkCounts(),
     }),
@@ -210,14 +234,21 @@ test('YouTube Lark UAT evidence is tamper-evident and target-bound', () => {
 });
 
 test('executable keeps plan before environment and writes send/deploy attempt evidence first', async () => {
-  const source = await readFile(
-    new URL('../../scripts/youtube-lark-full-sync-uat-operator.mjs', import.meta.url),
-    'utf8',
-  );
+  const [source, helper] = await Promise.all([
+    readFile(
+      new URL('../../scripts/youtube-lark-full-sync-uat-operator.mjs', import.meta.url),
+      'utf8',
+    ),
+    readFile(
+      new URL('../../scripts/lib/youtube-lark-full-sync-uat-operator.js', import.meta.url),
+      'utf8',
+    ),
+  ]);
   assert.match(source, /if \(options\.phase === 'plan'\)[\s\S]*return;/u);
   assert.match(source, /await writePrivateJson\(attemptPath,[\s\S]*await fetch\(/u);
   assert.match(source, /await writePrivateJson\(attemptPath,[\s\S]*wrangler\(\[\s*'deploy'/u);
-  assert.match(source, /MKT_SCHEDULE_YOUTUBE_ENABLED/u);
+  assert.match(helper, /'MKT_SCHEDULE_YOUTUBE_ENABLED'/u);
+  assert.match(helper, /'MKT_YOUTUBE_ANALYTICS_ENABLED'/u);
   assert.doesNotMatch(source, /d1',\s*'migrations',\s*'apply'/u);
   assert.doesNotMatch(source, /batchDelete|deleteRecords|deleteTable/u);
 });
