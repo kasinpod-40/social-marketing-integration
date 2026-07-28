@@ -1,0 +1,182 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  REPORT_RUNTIME_CLOSEOUT_ACTIVE_TRUE_FLAGS,
+  REPORT_RUNTIME_CLOSEOUT_CONFIRMATION,
+  assertReportRuntimeCloseoutCompletion,
+  assertReportRuntimeCloseoutConfirmation,
+  assertReportRuntimeCloseoutPreflight,
+  assertReportRuntimeCloseoutReplay,
+  assertReportRuntimeFinalizerEvidence,
+  buildReportRuntimeCloseoutCandidates,
+  buildReportRuntimeCloseoutConfigWindow,
+  parseReportRuntimeCloseoutArgs,
+  safeReportRuntimeCloseoutEvidence,
+  selectFreshReportRuntimeCloseoutCandidate,
+} from '../../scripts/lib/report-runtime-closeout-operator.js';
+
+function validConfig() {
+  return JSON.stringify({
+    name: 'social-mkt-sync-worker',
+    main: './apps/sync-worker/src/index.js',
+    workers_dev: false,
+    triggers: { crons: ['*/5 * * * *', '50 0,6,12,18 * * *'] },
+    d1_databases: [{
+      binding: 'MKT_STATE_DB',
+      database_name: 'social-mkt-state-dev',
+      database_id: '11111111-1111-4111-8111-111111111111',
+      migrations_dir: './migrations',
+    }],
+    queues: {
+      producers: [{ binding: 'MKT_SYNC_QUEUE', queue: 'social-mkt-sync-jobs' }],
+      consumers: [
+        {
+          queue: 'social-mkt-sync-jobs',
+          max_concurrency: 1,
+          max_batch_size: 10,
+          max_batch_timeout: 30,
+          max_retries: 5,
+          dead_letter_queue: 'social-mkt-sync-dlq',
+        },
+        {
+          queue: 'social-mkt-sync-dlq',
+          max_concurrency: 1,
+          max_batch_size: 10,
+          max_batch_timeout: 30,
+          max_retries: 10,
+        },
+      ],
+    },
+    vars: {
+      MKT_ENV: 'development',
+      MKT_CUSTOMER_PROFILE: 'integration_workspace',
+      MKT_CONNECTOR_TIKTOK_ENABLED: 'true',
+      MKT_REPORT_D1_READ_ENABLED: 'false',
+      MKT_REPORT_PRESET_MATERIALIZATION_ENABLED: 'false',
+      MKT_REPORT_AI_SUMMARY_ENABLED: 'false',
+      MKT_SCHEDULE_DAILY_REPORT_ENABLED: 'false',
+      MKT_SCHEDULE_WEEKLY_REPORT_ENABLED: 'false',
+      LARK_TABLE_MKT_REPORT_SNAPSHOTS: 'tbl_snapshots',
+      LARK_TABLE_MKT_REPORT_METRIC_VALUES: 'tbl_metrics',
+      LARK_TABLE_MKT_REPORT_TOP_CONTENT: 'tbl_top_content',
+      LARK_TABLE_MKT_SYNC_LOG: 'tbl_sync_log',
+      LARK_TABLE_MKT_SYSTEM_ALERTS: 'tbl_alerts',
+    },
+  });
+}
+
+function validFinalizerEvidence() {
+  return {
+    ok: true,
+    contractVersion: 'report_runtime_finalize_v1',
+    repository: { branch: 'main', head: 'a'.repeat(40), clean: true },
+    gates: Array.from({ length: 6 }, (_, index) => ({ command: String(index), status: 'pass' })),
+    schema: { readbackActions: 0, conflicts: 0 },
+    settings: {
+      canonicalActive: 51,
+      activeLegacySettings: 0,
+      readbackCreates: 0,
+      readbackUpdates: 0,
+    },
+    runtime: {
+      reportD1ReadEnabled: false,
+      presetMaterializationEnabled: false,
+      aiSummaryEnabled: false,
+      schedulesEnabled: false,
+    },
+  };
+}
+
+test('Report closeout is plan-only by default and requires exact confirmation', () => {
+  assert.deepEqual(parseReportRuntimeCloseoutArgs([]), { execute: false });
+  assert.deepEqual(parseReportRuntimeCloseoutArgs(['--execute']), { execute: true });
+  assert.throws(() => parseReportRuntimeCloseoutArgs(['--phase=send']));
+  assert.throws(() => assertReportRuntimeCloseoutConfirmation({}));
+  assert.equal(assertReportRuntimeCloseoutConfirmation({
+    CONFIRM_REPORT_RUNTIME_CLOSEOUT: REPORT_RUNTIME_CLOSEOUT_CONFIRMATION,
+  }), true);
+});
+
+test('Report closeout config creates an exact two-flag window and all-false restore', () => {
+  const window = buildReportRuntimeCloseoutConfigWindow(validConfig());
+  assert.deepEqual(window.safeTrueFlags, []);
+  assert.deepEqual(window.activeTrueFlags, [...REPORT_RUNTIME_CLOSEOUT_ACTIVE_TRUE_FLAGS].sort());
+  const safe = JSON.parse(window.safeText);
+  const active = JSON.parse(window.activeText);
+  assert.equal(safe.vars.MKT_CONNECTOR_TIKTOK_ENABLED, 'false');
+  assert.equal(active.vars.MKT_CONNECTOR_TIKTOK_ENABLED, 'false');
+  assert.equal(active.vars.MKT_REPORT_D1_READ_ENABLED, 'true');
+  assert.equal(active.vars.MKT_REPORT_PRESET_MATERIALIZATION_ENABLED, 'true');
+  assert.equal(active.vars.MKT_REPORT_AI_SUMMARY_ENABLED, 'false');
+  assert.equal(active.vars.MKT_SCHEDULE_DAILY_REPORT_ENABLED, 'false');
+  assert.equal(active.vars.MKT_SCHEDULE_WEEKLY_REPORT_ENABLED, 'false');
+});
+
+test('Report closeout selects a fresh deterministic preset identity', () => {
+  const candidates = buildReportRuntimeCloseoutCandidates({
+    requestedAt: Date.parse('2026-07-28T12:00:00Z'),
+    periodEnd: '2026-07-27',
+    sourceWatermark: 'coverage-watermark',
+  });
+  assert.equal(candidates.length, 6);
+  assert.equal(candidates[0].windowDays, 3);
+  assert.equal(candidates[0].job.type, 'report.materialization.generate');
+  assert.equal(candidates[0].job.trigger, 'dashboard_preset');
+  const selected = selectFreshReportRuntimeCloseoutCandidate(candidates, [candidates[0].reportId]);
+  assert.equal(selected.windowDays, 7);
+  assert.throws(() => selectFreshReportRuntimeCloseoutCandidate(
+    candidates,
+    candidates.map((candidate) => candidate.reportId),
+  ));
+});
+
+test('Report closeout requires validated finalizer and D1 readiness evidence', () => {
+  assert.equal(assertReportRuntimeFinalizerEvidence(validFinalizerEvidence()), true);
+  assert.throws(() => assertReportRuntimeFinalizerEvidence({
+    ...validFinalizerEvidence(),
+    settings: { ...validFinalizerEvidence().settings, canonicalActive: 50 },
+  }));
+  assert.equal(assertReportRuntimeCloseoutPreflight({
+    coverage_status: 'complete',
+    source_watermark: 'watermark',
+    period_end: '2026-07-27',
+    content_state_count: 100,
+    observation_count: 200,
+    active_report_locks: 0,
+    open_report_dlq: 0,
+  }), true);
+  assert.throws(() => assertReportRuntimeCloseoutPreflight({
+    coverage_status: 'complete',
+    source_watermark: '',
+    period_end: '2026-07-27',
+    content_state_count: 100,
+    observation_count: 200,
+    active_report_locks: 0,
+    open_report_dlq: 0,
+  }));
+});
+
+test('Report closeout verifies completed materialization and stable replay', () => {
+  const first = {
+    report_id: 'report-id',
+    data_status: 'complete',
+    payload_checksum: 'checksum',
+    sync_status: 'success',
+    materialization_count: 1,
+    successful_sync_count: 1,
+    active_lock_count: 0,
+    new_dlq_count: 0,
+  };
+  const replay = { ...first, successful_sync_count: 2 };
+  assert.equal(assertReportRuntimeCloseoutCompletion(first, { reportId: 'report-id' }), true);
+  assert.equal(assertReportRuntimeCloseoutReplay(first, replay), true);
+  assert.throws(() => assertReportRuntimeCloseoutReplay(first, { ...replay, payload_checksum: 'changed' }));
+});
+
+test('Report closeout evidence strips credential-shaped keys', () => {
+  assert.deepEqual(safeReportRuntimeCloseoutEvidence({
+    ok: true,
+    accessToken: 'nope',
+    nested: { LARK_APP_SECRET: 'nope', reportId: 'report-id' },
+  }), { ok: true, nested: { reportId: 'report-id' } });
+});
