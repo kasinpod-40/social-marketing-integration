@@ -1,12 +1,14 @@
 # Report Runtime Finalize Operator
 
-Status: `identity_scope_hotfix_validation_pending`
+Status: `identity_scope_hotfix_repository_validated`
 
 Original branch: `codex/report-runtime-finalize-operator`
 
 Hotfix branch: `codex/report-finalizer-identity-scope-hotfix`
 
 Original merged PR: `#207`
+
+Hotfix Draft PR: `#212`
 
 ## Goal
 
@@ -95,14 +97,21 @@ Hotfix-focused tests cover:
 - Lark token/table environment values remain unchanged;
 - the caller-provided environment object is not mutated.
 
-Required final gates:
+Branch Verification history:
 
-- `npm ci`;
-- `npm run check`;
-- focused staged TikTok regression;
-- Unit and Workers runtime tests;
-- `npm run test:report-reliability`;
-- `npm audit`;
-- `npm run deploy:dry-run`.
+- run `30378764997` on HEAD `6f8dbc0c4ef944e62db9af4cec4b01963a7da8ca`: expected test-fixture failure because the regression enabled Facebook UAT before reaching the intended TikTok identity assertion; implementation gates before the full suite passed;
+- fixture corrected to isolate the stale TikTok override without changing implementation behavior;
+- run `30378972903` on HEAD `f830c02431599138860148295b3fd8258592795c`: PASS.
 
-No additional Live Lark action is authorized during Hotfix implementation or CI. After merge, rerun the exact one-command finalizer from clean current `main`.
+Successful run `30378972903` completed every required gate:
+
+- `npm ci`: PASS;
+- `npm run check`: PASS;
+- focused staged TikTok regression: PASS;
+- Unit and Workers runtime tests: PASS;
+- `npm run test:report-reliability`: PASS;
+- `npm audit`: PASS;
+- `npm run deploy:dry-run`: PASS / no deployment;
+- diagnostics upload: PASS.
+
+No additional Live Lark action occurred during Hotfix implementation or CI. After merge, rerun the exact one-command finalizer from clean current `main`.
