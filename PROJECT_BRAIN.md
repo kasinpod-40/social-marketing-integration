@@ -12,6 +12,35 @@ Historical Root Project Brain ก่อน TikTok post-Lark implementation ถ�
 docs/archive/PROJECT_BRAIN-before-tiktok-post-lark-parity-2026-07-26.md
 ```
 
+## Dashboard rolling-period repository contract — 2026-07-28
+
+Dashboard period identity ใช้ `period_kind=rolling_days|custom_range` ร่วมกับ
+`window_days`/inclusive dates; presets คือ 3D, 7D, 9D, 15D, 30D และ 90D โดย 30D
+ไม่ใช่ Calendar month. Default end คือ last completed day ตาม Reporting timezone และ
+default comparison คือ previous period ที่มีวันเท่ากัน.
+
+Custom ranges claim `report_requests` ด้วย request ID ที่รวม Source watermark ก่อนส่ง
+existing Queue/Reliability path และผลลัพธ์เขียน `report_materializations` ด้วย Storage
+Foundation Stable key เดิม. Dashboard/Lark ใช้ Materialized results เท่านั้น ไม่ Query
+Detailed D1 facts. TikTok Organic ยังคง end-minus-baseline semantics; Ads SUM daily facts
+ก่อนคำนวณ ratio. Missing metric เป็น `null`, observed zero เป็น `0`, และ Coverage/data
+status ต้องติดผลลัพธ์เสมอ. Repository binding ครอบคลุม Snapshots, Metric Values,
+Top Content และ Top Ads; ยังไม่มี Remote Apply หรือ runtime activation.
+
+Lark Settings correction เพิ่ม Canonical `integration_workspace` rows สำหรับ compatibility
+1D/7D, rolling 3/7/9/15/30/90D และ Custom โดย `dashboard_performance_report` เป็น Report type
+กลางของ Preset ใหม่. `period_kind`/`window_days` ถูกเพิ่มใน Settings และ Snapshot contract.
+Guarded reconciliation อนุญาตเฉพาะ exact schema additions/options, Canonical upsert และการ
+Disable exact historical developer setting keys หลัง Canonical rows พร้อมแล้ว; ห้าม Delete
+เพราะมี Historical Report outputs อ้าง key เดิม. Live Preview พบ active legacy settings 2 แถว,
+historical references 27 แถว, expected schema actions 9 และ Remote mutation 0.
+
+Guarded Live reconciliation ผ่านหลัง Branch Verification `#870`: additive/option schema actions
+9, Canonical settings created 9, exact legacy settings disabled 2, active legacy settings 0,
+historical references retained 27 และ deletes 0. Read-only post-check พบ schema actions 0 และ
+Canonical record creates/updates 0/0 (skipped 9). ไม่มี D1, Worker, Queue, Schedule, Secret หรือ
+Production action.
+
 ## Current verified repository state — 2026-07-27
 
 ```text

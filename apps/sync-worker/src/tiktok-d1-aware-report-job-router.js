@@ -15,9 +15,10 @@ import { generateTikTokOrganicReportD1Aware } from '../../../packages/applicatio
 import { readLarkTableIdsFromEnv } from '../../../packages/config/src/lark-table-config.js';
 import { readStorageRuntimeConfig } from '../../../packages/config/src/storage-runtime-config.js';
 import { readTikTokPostLarkRuntimeConfig } from '../../../packages/config/src/tiktok-post-lark-runtime-config.js';
+import { DASHBOARD_REPORT_TYPE } from '../../../packages/config/src/report-settings.seed.js';
 import { D1MarketingHistoryStore } from '../../../packages/connectors/src/d1-marketing-history-store.js';
 import { D1TikTokOrganicReportSource } from '../../../packages/connectors/src/tiktok/d1-tiktok-organic-report-source.js';
-import { D1TikTokReportRequestStore } from '../../../packages/connectors/src/tiktok/d1-tiktok-report-request-store.js';
+import { D1ReportRequestStore } from '../../../packages/connectors/src/d1-report-request-store.js';
 import { runReliableSync } from '../../../packages/reliability/src/reliable-sync-runner.js';
 import { permanentError } from '../../../packages/shared/src/errors/runtime-error.js';
 import { processJobWithTikTokPostLark } from './tiktok-post-lark-job-router.js';
@@ -34,6 +35,7 @@ import {
 const REPORT_TYPES = new Set([
   JOB_TYPES.DAILY_REPORT_GENERATE,
   JOB_TYPES.WEEKLY_REPORT_GENERATE,
+  JOB_TYPES.REPORT_MATERIALIZATION_GENERATE,
 ]);
 
 export async function processJobWithTikTokD1AwareReport(input) {
@@ -45,8 +47,17 @@ export async function processJobWithTikTokD1AwareReport(input) {
 
 async function processReportJob(input) {
   const definition = assertJobImplemented(getJobDefinition(input.job.body.type));
+  const platformScope = definition.type === JOB_TYPES.REPORT_MATERIALIZATION_GENERATE
+    ? requireJobText(input.job.body?.platformScope, 'platformScope')
+    : 'tiktok';
+  if (platformScope !== 'tiktok') {
+    throw permanentError('Dashboard report platform adapter is not implemented', {
+      code: 'DASHBOARD_REPORT_PLATFORM_NOT_IMPLEMENTED',
+      details: { platformScope },
+    });
+  }
   const runtimeConfig = input.getRuntimeConfig();
-  const connectorConfig = assertConnectorRunnable(runtimeConfig, definition.connectorKey);
+  const connectorConfig = assertConnectorRunnable(runtimeConfig, platformScope);
   const infrastructure = input.getInfrastructure();
   const storageConfig = readStorageRuntimeConfig(input.env);
   const postLarkConfig = readTikTokPostLarkRuntimeConfig(input.env);
@@ -62,22 +73,45 @@ async function processReportJob(input) {
     'mktSystemAlerts',
   ]);
   const reliability = infrastructure.getReliability(tableIds);
-  const reportType = definition.type === JOB_TYPES.DAILY_REPORT_GENERATE
-    ? 'daily_organic_report'
-    : 'weekly_organic_report';
-  const defaultSettingKey = definition.type === JOB_TYPES.DAILY_REPORT_GENERATE
-    ? input.env?.MKT_DAILY_REPORT_SETTING_KEY
-    : input.env?.MKT_WEEKLY_REPORT_SETTING_KEY;
+  const reportType = definition.type === JOB_TYPES.REPORT_MATERIALIZATION_GENERATE
+    ? DASHBOARD_REPORT_TYPE
+    : definition.type === JOB_TYPES.WEEKLY_REPORT_GENERATE
+      ? 'weekly_organic_report'
+      : 'daily_organic_report';
+  const defaultSettingKey = definition.type === JOB_TYPES.WEEKLY_REPORT_GENERATE
+    ? input.env?.MKT_WEEKLY_REPORT_SETTING_KEY
+    : input.env?.MKT_DAILY_REPORT_SETTING_KEY;
   const reportSettingKey = requireJobText(
     input.job.body?.reportSettingKey ?? defaultSettingKey,
     'reportSettingKey',
   );
   const requestId = optionalText(input.job.body?.reportRequestId);
   const requestStore = requestId
-    ? new D1TikTokReportRequestStore({ db: input.env?.MKT_STATE_DB })
+    ? new D1ReportRequestStore({
+      db: input.env?.MKT_STATE_DB,
+      defaultPlatformScope: platformScope,
+    })
     : null;
-  if (input.job.body?.trigger === 'post_tiktok_processing') {
-    if (!postLarkConfig.postProcessReportEnabled || !requestId) {
+  const requestTrigger = input.job.body?.trigger;
+  const isPostProcessRequest = requestTrigger === 'post_tiktok_processing';
+  const isDashboardJob = definition.type === JOB_TYPES.REPORT_MATERIALIZATION_GENERATE;
+  const isDashboardCustomRequest = requestTrigger === 'dashboard_custom_range';
+  const isDashboardPreset = requestTrigger === 'dashboard_preset';
+  if (isDashboardJob) {
+    const validShape = (isDashboardCustomRequest
+      && input.job.body?.periodKind === 'custom_range'
+      && requestId)
+      || (isDashboardPreset
+        && input.job.body?.periodKind === 'rolling_days'
+        && !requestId);
+    if (!validShape || storageConfig.reportD1ReadEnabled !== true) {
+      throw permanentError('Dashboard report requires a reviewed D1-primary job contract', {
+        code: 'DASHBOARD_REPORT_CONFIGURATION_INVALID',
+      });
+    }
+  }
+  if (isPostProcessRequest || isDashboardCustomRequest) {
+    if ((isPostProcessRequest && !postLarkConfig.postProcessReportEnabled) || !requestId) {
       throw permanentError('Post-processing report admission is disabled or incomplete', {
         code: 'TIKTOK_POST_PROCESS_REPORT_DISABLED',
       });
@@ -105,7 +139,7 @@ async function processReportJob(input) {
       lockManager: reliability.lockManager,
       customerProfile: runtimeConfig.profileKey,
       accountKey: connectorConfig.accountKey,
-      platform: 'tiktok',
+      platform: platformScope,
       source: storageConfig.reportD1ReadEnabled
         ? 'd1_organic_observations'
         : 'mkt_content_daily',
@@ -125,12 +159,17 @@ async function processReportJob(input) {
         syncEngine: infrastructure.syncEngine,
         d1Source: new D1TikTokOrganicReportSource({ db: input.env?.MKT_STATE_DB }),
         materializationStore: new D1MarketingHistoryStore({ db: input.env?.MKT_STATE_DB }),
-        storageConfig,
+        storageConfig: isDashboardJob
+          ? { ...storageConfig, reportPresetMaterializationEnabled: true }
+          : storageConfig,
         customerKey: runtimeConfig.customerKey,
         customerProfile: runtimeConfig.profileKey,
         accountId: connectorConfig.accountKey,
         reportType,
         reportSettingKey,
+        periodKind: input.job.body?.periodKind,
+        windowDays: input.job.body?.windowDays,
+        periodStart: input.job.body?.periodStart,
         periodEnd: input.job.body?.periodEnd,
         comparisonMode: input.job.body?.comparisonMode,
         topContentLimit: input.job.body?.topContentLimit,

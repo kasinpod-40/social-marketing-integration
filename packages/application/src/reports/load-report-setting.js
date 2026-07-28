@@ -2,9 +2,17 @@ import {
   readLarkNumber,
   readLarkText,
 } from '../../../connectors/src/shared/lark-cell-value.js';
+import {
+  DASHBOARD_REPORT_PRESET_DAYS,
+  DASHBOARD_REPORT_TYPE,
+} from '../../../config/src/report-settings.seed.js';
 import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 
-const SUPPORTED_REPORT_TYPES = new Set(['daily_organic_report', 'weekly_organic_report']);
+const SUPPORTED_REPORT_TYPES = new Set([
+  'daily_organic_report',
+  'weekly_organic_report',
+  DASHBOARD_REPORT_TYPE,
+]);
 const SUPPORTED_COMPARISON_MODES = new Set(['none', 'previous_period']);
 const SUPPORTED_LANGUAGES = new Set(['th', 'en']);
 
@@ -93,6 +101,7 @@ export function normalizeReportSettingRecord(record) {
       details: { fieldName: 'account_keys_json', accountKeys },
     });
   }
+  const period = normalizeReportSettingPeriod(fields, reportType);
 
   return Object.freeze({
     recordId: optionalText(record?.recordId ?? record?.record_id),
@@ -107,11 +116,13 @@ export function normalizeReportSettingRecord(record) {
     reportName: readLarkText(fields.report_name, { allowNull: false, label: 'report_name' }),
     reportType,
     periodType: readLarkText(fields.period_type, { allowNull: false, label: 'period_type' }),
+    periodKind: period.periodKind,
+    windowDays: period.windowDays,
     platforms: Object.freeze(platforms),
     accountKeys: Object.freeze(accountKeys),
     timeZone: readLarkText(fields.timezone, { allowNull: false, label: 'timezone' }),
     utcOffset: readLarkText(fields.utc_offset, { allowNull: false, label: 'utc_offset' }),
-    sendTime: readLarkText(fields.send_time, { allowNull: false, label: 'send_time' }),
+    sendTime: readLarkText(fields.send_time, { label: 'send_time' }),
     sendWeekday: readLarkText(fields.send_weekday, { label: 'send_weekday' }),
     comparisonMode,
     language,
@@ -128,6 +139,51 @@ export function normalizeReportSettingRecord(record) {
       label: 'config_version',
     }),
   });
+}
+
+function normalizeReportSettingPeriod(fields, reportType) {
+  const configuredKind = readLarkText(fields.period_kind, { label: 'period_kind' });
+  const legacyType = readLarkText(fields.period_type, { allowNull: false, label: 'period_type' });
+  const periodKind = configuredKind ?? legacyPeriodKind(legacyType, reportType);
+  if (!['rolling_days', 'custom_range'].includes(periodKind)) {
+    throw permanentError(`Unsupported report period_kind: ${periodKind}`, {
+      code: 'REPORT_SETTING_INVALID',
+      details: { fieldName: 'period_kind', periodKind },
+    });
+  }
+  const rawWindowDays = readLarkNumber(fields.window_days, {
+    allowNull: true,
+    label: 'window_days',
+  });
+  const legacyWindowDays = legacyType === 'daily'
+    ? 1
+    : legacyType === 'weekly'
+      ? 7
+      : null;
+  const windowDays = rawWindowDays ?? legacyWindowDays;
+  if (periodKind === 'custom_range') {
+    if (windowDays !== null) {
+      throw permanentError('Custom range setting must not define window_days', {
+        code: 'REPORT_SETTING_INVALID',
+        details: { fieldName: 'window_days' },
+      });
+    }
+    return Object.freeze({ periodKind, windowDays: null });
+  }
+  if (!Number.isSafeInteger(windowDays)
+    || ![1, ...DASHBOARD_REPORT_PRESET_DAYS].includes(windowDays)) {
+    throw permanentError('Rolling report setting has unsupported window_days', {
+      code: 'REPORT_SETTING_INVALID',
+      details: { fieldName: 'window_days', windowDays },
+    });
+  }
+  return Object.freeze({ periodKind, windowDays });
+}
+
+function legacyPeriodKind(periodType, reportType) {
+  if (periodType === 'daily' && reportType === 'daily_organic_report') return 'rolling_days';
+  if (periodType === 'weekly' && reportType === 'weekly_organic_report') return 'rolling_days';
+  return periodType;
 }
 
 function readTextList(value) {

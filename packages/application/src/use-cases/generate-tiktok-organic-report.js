@@ -62,7 +62,11 @@ export async function generateTikTokOrganicReport(input = {}) {
     reportType,
     timeZone: setting.timeZone,
     comparisonMode: input.comparisonMode ?? setting.comparisonMode,
+    periodKind: input.periodKind,
+    windowDays: input.windowDays,
+    periodStart: input.periodStart,
     periodEnd: input.periodEnd,
+    maxCustomRangeDays: input.maxCustomRangeDays,
     now: new Date(now()),
   });
 
@@ -130,6 +134,10 @@ export async function generateTikTokOrganicReport(input = {}) {
     customerProfile,
     accountId,
     reportType,
+    periodKind: period.periodKind ?? setting.periodKind,
+    windowDays: (period.periodKind ?? setting.periodKind) === 'rolling_days'
+      ? period.windowDays ?? setting.windowDays
+      : null,
     periodStart: period.periodStart,
     periodEnd: period.periodEnd,
     comparisonMode: period.comparisonMode,

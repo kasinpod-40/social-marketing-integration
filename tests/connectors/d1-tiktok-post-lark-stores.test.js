@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { D1TikTokPostLarkStore } from '../../packages/connectors/src/tiktok/d1-tiktok-post-lark-store.js';
-import { D1TikTokReportRequestStore } from '../../packages/connectors/src/tiktok/d1-tiktok-report-request-store.js';
+import {
+  D1TikTokReportRequestStore,
+} from '../../packages/connectors/src/tiktok/d1-tiktok-report-request-store.js';
+import { D1ReportRequestStore } from '../../packages/connectors/src/d1-report-request-store.js';
 
 function createD1() {
   const admissions = new Map();
@@ -48,22 +51,26 @@ function createD1() {
               if (sql.includes('INSERT INTO report_requests')) {
                 const key = bindings[0];
                 if (requests.has(key)) return { meta: { changes: 0 } };
+                const platformBinding = sql.includes("VALUES (?, ?, ?, 'tiktok'")
+                  ? null
+                  : bindings[3];
+                const offset = platformBinding === null ? 0 : 1;
                 requests.set(key, {
                   request_id: key,
                   customer_key: bindings[1],
                   account_key: bindings[2],
-                  platform_scope: 'tiktok',
-                  period_start: bindings[3],
-                  period_end: bindings[4],
-                  comparison_mode: bindings[5],
+                  platform_scope: platformBinding ?? 'tiktok',
+                  period_start: bindings[3 + offset],
+                  period_end: bindings[4 + offset],
+                  comparison_mode: bindings[5 + offset],
                   status: 'pending',
                   result_report_id: null,
-                  requested_at: bindings[6],
+                  requested_at: bindings[6 + offset],
                   started_at: null,
                   finished_at: null,
                   error_code: null,
-                  created_at: bindings[7],
-                  updated_at: bindings[8],
+                  created_at: bindings[7 + offset],
+                  updated_at: bindings[8 + offset],
                 });
                 return { meta: { changes: 1 } };
               }
@@ -226,4 +233,15 @@ test('TikTok report request rejects identity drift', async () => {
     ...requestInput,
     periodEnd: '2026-07-26',
   }), (error) => error.code === 'TIKTOK_REPORT_REQUEST_IDENTITY_CONFLICT');
+});
+
+test('shared report request lifecycle preserves a non-TikTok platform scope', async () => {
+  const d1 = createD1();
+  const store = new D1ReportRequestStore({ db: d1, now: () => 1_780_000_200_100 });
+  const claim = await store.claim({
+    ...requestInput,
+    requestId: 'report-request:meta_ads:1',
+    platformScope: 'meta_ads',
+  });
+  assert.equal(claim.request.platformScope, 'meta_ads');
 });

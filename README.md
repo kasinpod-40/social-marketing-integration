@@ -153,6 +153,16 @@ MKT_Content                 22 records at last verified audit
 MKT_Content_Daily           208 records at last verified audit
 ```
 
+Dashboard Report Settings reconciliation (2026-07-28):
+
+```text
+Canonical active settings              9
+Active legacy developer settings       0
+Legacy settings retained disabled      2
+Historical report references retained 27
+Report setting/history deletes         0
+```
+
 `RAW_TikTok_Creator_Videos` is a protected Lark Native source. The Worker may read it but must not mutate its Table, Fields or Records.
 
 Do not rerun Lark Formula/View/Filter Apply from the Organic bootstrap task.

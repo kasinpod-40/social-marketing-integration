@@ -302,7 +302,8 @@ export async function processJob(input) {
   }
 
   if (definition.type === JOB_TYPES.DAILY_REPORT_GENERATE
-    || definition.type === JOB_TYPES.WEEKLY_REPORT_GENERATE) {
+    || definition.type === JOB_TYPES.WEEKLY_REPORT_GENERATE
+    || definition.type === JOB_TYPES.REPORT_MATERIALIZATION_GENERATE) {
     const tableIds = readLarkTableIdsFromEnv(input.env, [
       'mktContent',
       'mktContentDaily',
@@ -315,12 +316,14 @@ export async function processJob(input) {
       'mktSystemAlerts',
     ]);
     const reliability = infrastructure.getReliability(tableIds);
-    const reportType = definition.type === JOB_TYPES.DAILY_REPORT_GENERATE
-      ? 'daily_organic_report'
-      : 'weekly_organic_report';
-    const defaultSettingKey = definition.type === JOB_TYPES.DAILY_REPORT_GENERATE
-      ? input.env?.MKT_DAILY_REPORT_SETTING_KEY
-      : input.env?.MKT_WEEKLY_REPORT_SETTING_KEY;
+    const reportType = definition.type === JOB_TYPES.REPORT_MATERIALIZATION_GENERATE
+      ? 'dashboard_performance_report'
+      : definition.type === JOB_TYPES.WEEKLY_REPORT_GENERATE
+        ? 'weekly_organic_report'
+        : 'daily_organic_report';
+    const defaultSettingKey = definition.type === JOB_TYPES.WEEKLY_REPORT_GENERATE
+      ? input.env?.MKT_WEEKLY_REPORT_SETTING_KEY
+      : input.env?.MKT_DAILY_REPORT_SETTING_KEY;
     const reportSettingKey = requireJobText(
       input.job.body?.reportSettingKey ?? defaultSettingKey,
       'reportSettingKey',
@@ -354,6 +357,9 @@ export async function processJob(input) {
         accountId: connectorConfig.accountKey,
         reportType,
         reportSettingKey,
+        periodKind: input.job.body?.periodKind,
+        windowDays: input.job.body?.windowDays,
+        periodStart: input.job.body?.periodStart,
         periodEnd: input.job.body?.periodEnd,
         comparisonMode: input.job.body?.comparisonMode,
         topContentLimit: input.job.body?.topContentLimit,

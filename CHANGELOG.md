@@ -26,6 +26,37 @@
 - Aligned non-cursor Facebook metric reads with the dataset contract by treating each requested
   period as one response while retaining cursor guards for cursor-paginated datasets.
 
+## Unreleased — Dashboard Rolling Period Presets and Custom Range — 2026-07-28
+
+### Repository implementation
+
+- Added a shared inclusive completed-day resolver for 3D, 7D, 9D, 15D, 30D, 90D and
+  bounded Custom ranges with equal previous-period comparison.
+- Added platform-neutral materialization and watermark-bound Custom request contracts that
+  reuse `report_requests`, the existing Queue/Reliability path and `report_materializations`.
+- Reused the TikTok D1-aware Organic baseline calculator and added shared Ads
+  aggregate-then-ratio semantics with explicit null/zero and Coverage status handling.
+- Added a repository-only Dashboard binding blueprint for Snapshots, Metric Values,
+  Top Content and Top Ads.
+- Added Canonical Integration Workspace Lark settings for compatibility 1D/7D, rolling
+  3/7/9/15/30/90D and Custom range with shared `period_kind`, `window_days` and
+  `dashboard_performance_report` contracts.
+- Added an exact-scope guarded Lark reconciler that creates/updates Canonical settings before
+  disabling legacy developer-profile rows; historical report references are retained and no
+  record is deleted.
+
+### Safety
+
+- Migration required: none; Storage Foundation Migration `0009` already contains the
+  approved request/materialization columns and Stable keys.
+- Guarded Integration Workspace Lark reconciliation applied nine additive/option schema actions,
+  created nine Canonical settings and disabled two exact legacy developer settings.
+- No Report setting/history record was deleted; all 27 historical output references were retained.
+- No Worker deployment, Remote D1 action, Queue message, Schedule/Cron, LIVE UAT,
+  Secret/Production configuration change or Business-fact mutation occurred.
+- Live Lark preview was read-only and found only the nine expected additive schema actions,
+  two active legacy settings and 27 historical references.
+
 ## Unreleased — YouTube Worker Dry-run Rollout Operator — 2026-07-27
 
 ### Repository implementation

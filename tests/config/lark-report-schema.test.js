@@ -7,7 +7,7 @@ import {
 } from '../../packages/config/src/lark-report-schema.js';
 
 test('defines the five report tables with one primary field placed first', () => {
-  assert.equal(LARK_REPORT_SCHEMA_VERSION, 'report-schema-v1.1');
+  assert.equal(LARK_REPORT_SCHEMA_VERSION, 'report-schema-v1.2');
   assert.equal(LARK_REPORT_SCHEMA.length, 5);
   assert.equal(validateReportSchemaDefinition(), true);
   assert.deepEqual(LARK_REPORT_SCHEMA.map((table) => table.logicalName), [
@@ -24,12 +24,24 @@ test('defines the five report tables with one primary field placed first', () =>
 });
 
 test('contains report output fields required by runtime contracts', () => {
+  const settings = LARK_REPORT_SCHEMA.find((table) => table.key === 'mktReportSettings');
+  const snapshots = LARK_REPORT_SCHEMA.find((table) => table.key === 'mktReportSnapshots');
   const metricValues = LARK_REPORT_SCHEMA.find((table) => table.key === 'mktReportMetricValues');
   const topContent = LARK_REPORT_SCHEMA.find((table) => table.key === 'mktReportTopContent');
   assert.equal(metricValues.fields.length, 26);
   assert.equal(topContent.fields.length, 26);
   assert.equal(metricValues.fields.some((field) => field.fieldName === 'change_percent'), true);
   assert.equal(topContent.fields.some((field) => field.fieldName === 'performance_status'), true);
+  assert.equal(settings.fields.some((field) => field.fieldName === 'period_kind'), true);
+  assert.equal(settings.fields.some((field) => field.fieldName === 'window_days'), true);
+  assert.equal(snapshots.fields.some((field) => field.fieldName === 'period_kind'), true);
+  for (const table of [settings, snapshots, metricValues, topContent]) {
+    const reportType = table.fields.find((field) => field.fieldName === 'report_type');
+    assert.equal(
+      reportType.property.options.some((option) => option.name === 'dashboard_performance_report'),
+      true,
+    );
+  }
 });
 
 

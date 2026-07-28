@@ -54,6 +54,14 @@ test('dead-letter redrive job is active but remains environment-gated', () => {
   assert.equal(assertJobImplemented(definition), definition);
 });
 
+test('Dashboard materialization job is one manual shared report type, not one type per preset', () => {
+  const definition = getJobDefinition(JOB_TYPES.REPORT_MATERIALIZATION_GENERATE);
+  assert.equal(definition.implementationStatus, 'active');
+  assert.equal(definition.manualOnly, true);
+  assert.equal(definition.connectorKey, null);
+  assert.equal(listJobDefinitions().some((item) => /report\.(3|7|9|15|30|90)d/u.test(item.type)), false);
+});
+
 test('unknown jobs remain unsupported permanent errors', () => {
   assert.throws(
     () => getJobDefinition('unknown.job'),
