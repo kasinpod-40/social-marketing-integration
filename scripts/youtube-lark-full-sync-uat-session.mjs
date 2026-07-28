@@ -65,7 +65,7 @@ async function runPhase(parsed) {
     );
   }
 
-  const auth = resolveCloudflareSession(baseEnv);
+  const auth = await resolveCloudflareSession(baseEnv);
   const queue = await resolveQueue(auth.accountId, auth.token, queueName);
   const session = await loadOrCreateSession({
     repositoryHead,
@@ -127,7 +127,7 @@ async function runPhase(parsed) {
   process.exitCode = result.status ?? 1;
 }
 
-function resolveCloudflareSession(baseEnv) {
+async function resolveCloudflareSession(baseEnv) {
   const env = { ...baseEnv };
   for (const key of [
     'CLOUDFLARE_ACCOUNT_ID',
@@ -137,7 +137,7 @@ function resolveCloudflareSession(baseEnv) {
   ]) {
     if (!String(env[key] ?? '').trim()) delete env[key];
   }
-  const configText = runText('cat', ['wrangler.sync.jsonc'], { env });
+  const configText = await readFile('wrangler.sync.jsonc', 'utf8');
   const whoami = runText('npx', ['wrangler', 'whoami', '--json'], { env });
   const accountId = resolveCloudflareAccountId({
     explicitAccountId: env.CLOUDFLARE_ACCOUNT_ID,
