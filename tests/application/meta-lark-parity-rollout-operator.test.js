@@ -285,6 +285,10 @@ function safeConfig() {
     "MKT_ENV": "development",
     "MKT_CUSTOMER_PROFILE": "integration_workspace",
     "MKT_CONNECTION_CUSTOMER_KEY": "chemistry_k",
+    "META_GRAPH_API_VERSION": "v25.0",
+    "META_FACEBOOK_PAGE_ID": "111111111111111",
+    "META_INSTAGRAM_ACCOUNT_ID": "222222222222222",
+    "META_AD_ACCOUNT_MAPPINGS": "chemistry_k2=333333333333333,chemistry_k3=444444444444444",
 ${flags}
   }
 }`;

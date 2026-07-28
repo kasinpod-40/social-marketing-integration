@@ -85,6 +85,9 @@ async function main() {
     tableMappingCount: result.tableMappingCount,
     changedTableMappingNames: result.changedTableMappingNames,
     tableMappingFingerprint: result.tableMappingFingerprint,
+    sourceMappingCount: result.sourceMappingCount,
+    changedSourceMappingNames: result.changedSourceMappingNames,
+    sourceMappingFingerprint: result.sourceMappingFingerprint,
     secretValuesCopied: result.secretValuesCopied,
     configRelativePaths: {
       main: rebased.main,

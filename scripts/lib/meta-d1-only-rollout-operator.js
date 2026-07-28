@@ -176,6 +176,7 @@ export function buildMetaD1OnlyConfigWindow(safeText, target = {}) {
   requireConfigStringValue(safe, 'queue', target.mainQueueName);
   requireConfigStringValue(safe, 'queue', target.dlqName);
   requireConfigStringValue(safe, 'dead_letter_queue', target.dlqName);
+  assertMetaSourceMappingConfig(safe, target);
   const safeTrueFlags = extractTrueEnabledFlags(safe);
   if (safeTrueFlags.length !== 0) throw operatorError('Safe Meta D1-only config must have every MKT execution flag false', 'META_D1_ONLY_SAFE_CONFIG_NOT_CLOSED', { trueFlags: safeTrueFlags });
   for (const flag of META_D1_ONLY_REQUIRED_FALSE_FLAGS) requireConfigBoolean(safe, flag, false);
@@ -427,6 +428,46 @@ function requireConfigString(text, key, expected) {
 function requireConfigStringValue(text, key, expected) {
   const values = [...text.matchAll(new RegExp(`["']?${escapeRegex(key)}["']?\\s*:\\s*["']([^"']+)["']`, 'gu'))].map((match) => match[1]);
   if (!values.includes(expected)) throw operatorError(`Meta D1-only config requires ${key}=${expected}`, 'META_D1_ONLY_CONFIG_INVALID', { key });
+}
+function assertMetaSourceMappingConfig(text, target) {
+  const apiVersion = readConfigString(text, 'META_GRAPH_API_VERSION');
+  if (!/^v\d+\.\d+$/u.test(apiVersion ?? '')) {
+    throw operatorError(
+      'Meta D1-only config requires a pinned Meta Graph API version',
+      'META_D1_ONLY_SOURCE_MAPPING_INVALID',
+      { key: 'META_GRAPH_API_VERSION' },
+    );
+  }
+  if (target.connectorKey === 'facebook') {
+    requireNonEmptyConfigString(text, 'META_FACEBOOK_PAGE_ID');
+    return;
+  }
+  if (target.connectorKey === 'instagram') {
+    requireNonEmptyConfigString(text, 'META_INSTAGRAM_ACCOUNT_ID');
+    return;
+  }
+  const mappings = readConfigString(text, 'META_AD_ACCOUNT_MAPPINGS');
+  const expectedKey = target.sourceAccountKey;
+  const mappedKeys = String(mappings ?? '')
+    .split(',')
+    .map((entry) => entry.slice(0, entry.indexOf('=')).trim())
+    .filter(Boolean);
+  if (!expectedKey || !mappedKeys.includes(expectedKey)) {
+    throw operatorError(
+      'Meta D1-only config is missing the selected Meta Ads source mapping',
+      'META_D1_ONLY_SOURCE_MAPPING_INVALID',
+      { key: 'META_AD_ACCOUNT_MAPPINGS', sourceAccountKey: expectedKey ?? null },
+    );
+  }
+}
+function requireNonEmptyConfigString(text, key) {
+  if (!readConfigString(text, key)) {
+    throw operatorError(
+      `Meta D1-only config requires ${key}`,
+      'META_D1_ONLY_SOURCE_MAPPING_INVALID',
+      { key },
+    );
+  }
 }
 function readConfigString(text, key) {
   const match = text.match(new RegExp(`["']?${escapeRegex(key)}["']?\\s*:\\s*["']([^"']*)["']`, 'u'));

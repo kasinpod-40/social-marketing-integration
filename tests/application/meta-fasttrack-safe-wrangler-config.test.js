@@ -34,8 +34,15 @@ test('Meta fast-track generator closes flags and synchronizes all required Lark 
     'MKT_SCHEDULE_WOOCOMMERCE_ENABLED',
   ]);
   assert.equal(result.secretValuesCopied, 0);
+  assert.equal(result.sourceMappingCount, 4);
+  assert.deepEqual(result.changedSourceMappingNames, [
+    'META_AD_ACCOUNT_MAPPINGS',
+    'META_FACEBOOK_PAGE_ID',
+    'META_INSTAGRAM_ACCOUNT_ID',
+  ]);
   assert.match(result.sha256, /^[0-9a-f]{64}$/u);
   assert.match(result.tableMappingFingerprint, /^[0-9a-f]{64}$/u);
+  assert.match(result.sourceMappingFingerprint, /^[0-9a-f]{64}$/u);
   assert.match(result.d1ActiveSha256, /^[0-9a-f]{64}$/u);
   assert.match(result.larkActiveSha256, /^[0-9a-f]{64}$/u);
   assert.equal(generated.workers_dev, false);
@@ -51,6 +58,17 @@ test('Meta fast-track generator closes flags and synchronizes all required Lark 
   for (const key of META_END_TO_END_REQUIRED_LARK_TABLE_KEYS) {
     assert.equal(generated.vars[LARK_TABLE_ENV[key]], env[LARK_TABLE_ENV[key]]);
   }
+  assert.equal(generated.vars.META_GRAPH_API_VERSION, env.META_GRAPH_API_VERSION);
+  assert.equal(generated.vars.META_FACEBOOK_PAGE_ID, env.META_FACEBOOK_PAGE_ID);
+  assert.equal(
+    generated.vars.META_INSTAGRAM_ACCOUNT_ID,
+    env.META_INSTAGRAM_ACCOUNT_ID,
+  );
+  assert.equal(
+    generated.vars.META_AD_ACCOUNT_MAPPINGS,
+    env.META_AD_ACCOUNT_MAPPINGS,
+  );
+  assert.equal(Object.hasOwn(generated.vars, 'META_AD_ACCOUNT_ID'), false);
 });
 
 test('Meta fast-track generator accepts omitted workers_dev but rejects enabled or invalid values', () => {
@@ -158,11 +176,31 @@ test('Meta fast-track generator fails closed on duplicate Lark table IDs', () =>
   );
 });
 
+test('Meta fast-track generator fails closed when source mappings are missing', () => {
+  const env = createTableEnv('current');
+  delete env.META_FACEBOOK_PAGE_ID;
+
+  assert.throws(
+    () => buildMetaFastTrackSafeWranglerConfig(createSourceConfig(), env),
+    (error) => (
+      error.code === 'META_FASTTRACK_SOURCE_MAPPING_MISSING'
+      && error.details.fieldNames.includes('META_FACEBOOK_PAGE_ID')
+    ),
+  );
+});
+
 function createTableEnv(prefix) {
-  return Object.fromEntries(META_END_TO_END_REQUIRED_LARK_TABLE_KEYS.map((key, index) => [
+  return {
+    ...Object.fromEntries(META_END_TO_END_REQUIRED_LARK_TABLE_KEYS.map((key, index) => [
     LARK_TABLE_ENV[key],
     `tbl_${prefix}_${String(index + 1).padStart(2, '0')}`,
-  ]));
+    ])),
+    META_GRAPH_API_VERSION: 'v25.0',
+    META_FACEBOOK_PAGE_ID: '111111111111111',
+    META_INSTAGRAM_ACCOUNT_ID: '222222222222222',
+    META_AD_ACCOUNT_MAPPINGS:
+      'chemistry_k2=333333333333333,chemistry_k3=444444444444444',
+  };
 }
 
 function createSourceConfig() {
