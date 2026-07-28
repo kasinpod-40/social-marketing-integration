@@ -39,6 +39,9 @@
   remain forbidden by that guard.
 - Cross-head closeout reuses an existing hash-valid, remotely reverified all-false restore instead
   of deploying an unmerged Worker bundle again.
+- Limited Meta Organic Canonical account rows to the approved Live `MKT_Accounts` fields after a
+  fail-closed Facebook Lark preflight exposed an unapproved `username` write. Provider identity,
+  profile and follower facts remain in Shared RAW and D1 account-daily storage.
 
 ## Unreleased — Dashboard Rolling Period Presets and Custom Range — 2026-07-28
 

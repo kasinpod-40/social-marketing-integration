@@ -514,6 +514,12 @@ an exact-confirmed, clean, ancestor-bound operator-only hotfix. The closeout reu
 hash-valid restore only after remote all-false/version/topology re-verification, without another
 Worker deployment.
 
+The first Facebook Lark continuation failed closed at destination preflight because its Canonical
+`MKT_Accounts` row contained Provider-specific fields such as `username` that belong to the Shared
+RAW contract and are absent from the approved Live Canonical schema. The corrected write-set keeps
+those source facts in `RAW_Meta_Organic_Accounts` and D1 account-daily facts while limiting the
+Canonical row to existing `MKT_Accounts` fields. No additive Lark schema mutation is required.
+
 The runtime and operator are merged, but Provider execution is not authorized automatically. The next order is:
 
 1. run `rollout:meta-read-only` in plan-only mode from an authorized local Integration Workspace;

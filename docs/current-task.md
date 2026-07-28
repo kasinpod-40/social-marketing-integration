@@ -346,3 +346,12 @@ Repository implementation and CI do not authorize D1 backup, Worker deployment, 
   requires exact old/new heads, ancestor lineage, a clean tree and an operator/test/docs-only diff.
 - That compatibility closeout reuses the prior hash-valid restore only after a fresh remote
   all-false/version/topology verification and performs no additional Worker deployment.
+- The first same-operation Facebook Lark continuation then failed closed before any Lark
+  Business write because the Meta Canonical account row included `username` and other
+  Provider-specific fields that are not present in the approved Live `MKT_Accounts` schema.
+- The Canonical write-set now emits only the existing `MKT_Accounts` fields. Provider identity,
+  profile and follower facts remain preserved in `RAW_Meta_Organic_Accounts` and D1 account-daily
+  facts, so the correction removes no source data and performs no schema mutation.
+- Verification passed: focused Meta `48/48`, full unit `1334/1334`, Workers runtime `14/14`,
+  report reliability `100/100`, repository check, dependency audit with zero vulnerabilities and
+  Wrangler dry-run with no deployment.

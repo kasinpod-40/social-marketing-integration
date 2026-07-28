@@ -130,18 +130,14 @@ export function buildMetaOrganicWriteSet(input = {}) {
     sourceWatermark: optionalText(input.sourceWatermark),
   });
 
+  // เก็บ Provider metadata ที่ยังไม่มีใน Canonical contract ไว้ใน Shared RAW/D1
+  // เพื่อไม่ให้ Lark preflight เขียน field นอก approved MKT_Accounts schema.
   const accountRow = compact({
     account_key: canonicalAccountKey,
     platform,
     account_id: accountId,
     account_name: accountNormalized.accountCandidate.accountName,
-    username: accountNormalized.accountCandidate.username,
     account_type: accountNormalized.accountCandidate.accountType,
-    followers: accountNormalized.accountCandidate.followers,
-    follows: accountNormalized.accountCandidate.follows,
-    content_count: accountNormalized.accountCandidate.mediaCount,
-    profile_url: accountNormalized.rawRow.profile_url,
-    customer_profile: customerProfile,
     last_sync_at: completedAt,
   });
 

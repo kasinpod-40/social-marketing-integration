@@ -43,6 +43,12 @@ test('builds Facebook Raw, Canonical, account daily and Organic history inputs w
   });
 
   assert.equal(writeSet.raw.organicAccounts[0].raw_account_key, 'facebook:page_fixture_001');
+  assert.equal(writeSet.raw.organicAccounts[0].username, 'fixture.facebook');
+  assert.equal(writeSet.raw.organicAccounts[0].followers_count, 1250);
+  assert.equal(
+    writeSet.raw.organicAccounts[0].profile_url,
+    'https://example.test/facebook/fixture?tracking=remove',
+  );
   assert.equal(
     writeSet.raw.organicContent[0].raw_content_key,
     'facebook:page_fixture_001:post_fixture_001',
@@ -53,6 +59,14 @@ test('builds Facebook Raw, Canonical, account daily and Organic history inputs w
   assert.equal(writeSet.d1.organicHistoryBatch.contentRows.length, 1);
   assert.equal(writeSet.d1.accountDailyFacts[0].followers, 1250);
   assert.equal(writeSet.reconciliation.missingContentInsightRows, 0);
+  assert.deepEqual(writeSet.canonical.accounts[0], {
+    account_key: 'facebook:page_fixture_001',
+    platform: 'facebook',
+    account_id: 'page_fixture_001',
+    account_name: 'Fixture Facebook Page',
+    account_type: 'page',
+    last_sync_at: FETCHED_AT,
+  });
 });
 
 test('keeps Meta reach in Raw metrics without mislabeling it as unique viewers', () => {
@@ -124,4 +138,13 @@ test('does not overwrite Organic latest metrics with null when content insights 
   assert.equal(writeSet.canonical.contentDaily.length, 0);
   assert.equal(writeSet.d1.organicHistoryBatch.contentRows.length, 0);
   assert.equal(writeSet.reconciliation.missingContentInsightRows, 1);
+  assert.deepEqual(writeSet.canonical.accounts[0], {
+    account_key: 'instagram:ig_fixture_001',
+    platform: 'instagram',
+    account_id: 'ig_fixture_001',
+    account_name: 'Fixture Instagram',
+    account_type: 'business',
+    last_sync_at: FETCHED_AT,
+  });
+  assert.equal(writeSet.raw.organicAccounts[0].username, 'fixture.instagram');
 });
