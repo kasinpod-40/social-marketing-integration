@@ -3,7 +3,7 @@
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = PASS_FOR_MERGE_DECISION_PENDING_DOCS_FINAL_CI
+TASK_STATUS                         = PASS_FOR_MERGE_DECISION
 CURRENT_PROGRAM                     = YOUTUBE_SHARED_WORKER_TRUE_FLAG_SCOPE_HOTFIX
 BASE_MAIN_SHA                       = 8ca246bd0de3a4a48a10e900d8c9349c00938a1c
 BRANCH                              = hotfix/youtube-shared-worker-true-flag-scope
@@ -124,7 +124,7 @@ Corrections retained Runtime behavior and fixed only test semantics:
 - the prior fail-closed regression now selects `MKT_YOUTUBE_LARK_WRITE_ENABLED` explicitly instead of the first alphabetic reviewed false flag;
 - the Shared Worker fixture updates its existing Chatwoot binding instead of adding a duplicate.
 
-Corrected exact head:
+Corrected implementation head:
 
 ```text
 VERIFIED_HEAD                        = 71b89f28cc87ce1be6d5aeec6c5f022f56dd44bb
@@ -137,6 +137,21 @@ DEPENDENCY_AUDIT                     = PASS
 WRANGLER_DRY_RUN                     = PASS / NO DEPLOYMENT
 DIAGNOSTICS_ARTIFACT                 = 8674940694
 DIAGNOSTICS_DIGEST                   = sha256:499869df75bd38bd470d6eef2990efcc888d7ed296f25388134c50499989e369
+```
+
+Documentation evidence head:
+
+```text
+DOCS_EVIDENCE_HEAD                   = 42acc8870634b6e1bac058a7e1c7d3beddcee06a
+BRANCH_VERIFICATION                  = #819 / 30324009998 / PASS
+SYNTAX_ARCHITECTURE_HYGIENE          = PASS
+FOCUSED_STAGED_TIKTOK                = PASS
+NODE_AND_WORKERS_RUNTIME             = PASS
+REPORT_RELIABILITY                   = PASS
+DEPENDENCY_AUDIT                     = PASS
+WRANGLER_DRY_RUN                     = PASS / NO DEPLOYMENT
+DIAGNOSTICS_ARTIFACT                 = 8674996766
+DIAGNOSTICS_DIGEST                   = sha256:3630dc976e7f52db7e3ad925f74f04fe63ce17e9721d5b6e235554ee5b93be6e
 CHANGED_FILES                        = 8 / EXPECTED ONLY
 BEHIND_MAIN                          = 0
 UNRESOLVED_REVIEW_THREADS            = 0
@@ -155,12 +170,12 @@ REMOTE_ACTION_DURING_IMPLEMENTATION   = NONE
 LIVE_CONFIRMATION_AFTER_MERGE         = REQUIRED
 ```
 
-The documentation-only final head must pass one exact-head Branch Verification before PR #179 is marked Ready.
+This status-record head must pass one final exact-head Branch Verification. No further source or documentation change is allowed before the merge decision unless that verification fails or `main` moves.
 
 ## Remaining sequence
 
 ```text
-Docs-final exact-head Branch Verification
+Status-record exact-head Branch Verification
 → final diff/review/main-drift inspection
 → mark PR #179 Ready
 → separate Squash Merge authorization
