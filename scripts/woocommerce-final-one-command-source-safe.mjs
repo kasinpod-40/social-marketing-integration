@@ -54,6 +54,7 @@ try {
     apiVersion: source.apiVersion,
     timeoutMs: source.timeoutMs,
     currency: source.currency,
+    publicFetchCompatibilityFlag: source.publicFetchCompatibilityFlag,
     configSha256: source.sha256,
     secretValuesCopied: source.secretValuesCopied,
   })}\n`);
