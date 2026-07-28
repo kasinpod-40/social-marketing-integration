@@ -191,6 +191,12 @@ async function processLegacyTikTokReportJob(input) {
     : input.env?.MKT_DAILY_REPORT_SETTING_KEY;
   const reportSettingKey = requireJobText(input.job.body?.reportSettingKey ?? defaultSettingKey, 'reportSettingKey');
   const requestId = optionalText(input.job.body?.reportRequestId);
+  const isPostProcessRequest = input.job.body?.trigger === 'post_tiktok_processing';
+  if (isPostProcessRequest && (!postLarkConfig.postProcessReportEnabled || !requestId)) {
+    throw permanentError('Post-processing report admission is disabled or incomplete', {
+      code: 'TIKTOK_POST_PROCESS_REPORT_DISABLED',
+    });
+  }
   const requestStore = requestId ? new D1ReportRequestStore({
     db: input.env?.MKT_STATE_DB, defaultPlatformScope: 'tiktok',
   }) : null;
