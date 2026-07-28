@@ -6,6 +6,7 @@ export const STORAGE_FEATURE_FLAG_ENV = Object.freeze({
   reportD1ShadowReadEnabled: 'MKT_REPORT_D1_SHADOW_READ_ENABLED',
   reportD1ReadEnabled: 'MKT_REPORT_D1_READ_ENABLED',
   reportPresetMaterializationEnabled: 'MKT_REPORT_PRESET_MATERIALIZATION_ENABLED',
+  reportAiSummaryEnabled: 'MKT_REPORT_AI_SUMMARY_ENABLED',
   larkDailyRetentionEnabled: 'MKT_LARK_DAILY_RETENTION_ENABLED',
   notificationRuntimeEnabled: 'MKT_NOTIFICATION_RUNTIME_ENABLED',
 });
@@ -27,6 +28,16 @@ export function readStorageRuntimeConfig(env = {}) {
     );
   }
 
+  if (flags.reportAiSummaryEnabled && !flags.reportD1ReadEnabled) {
+    throw permanentError(
+      'MKT_REPORT_AI_SUMMARY_ENABLED requires MKT_REPORT_D1_READ_ENABLED',
+      {
+        code: 'MKT_STORAGE_RUNTIME_CONFIG_INVALID',
+        details: { fieldName: STORAGE_FEATURE_FLAG_ENV.reportAiSummaryEnabled },
+      },
+    );
+  }
+
   // Retention ห้ามเปิดก่อน D1 Reader cutover แม้ Environment ถูกตั้งผิดโดยไม่ตั้งใจ
   if (flags.larkDailyRetentionEnabled && !flags.reportD1ReadEnabled) {
     throw permanentError(
@@ -44,9 +55,7 @@ export function readStorageRuntimeConfig(env = {}) {
 function readBoolean(value, fieldName) {
   if (value === undefined || value === null || value === '') return false;
   if (value === true || value === false) return value;
-  if (typeof value !== 'string') {
-    throw invalidBoolean(fieldName);
-  }
+  if (typeof value !== 'string') throw invalidBoolean(fieldName);
   const normalized = value.trim().toLowerCase();
   if (normalized === 'true') return true;
   if (normalized === 'false') return false;
