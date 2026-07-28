@@ -1,7 +1,7 @@
 name: Cleanup Report Runtime Validation
 
 on:
-  push:
+  pull_request:
     branches:
       - codex/report-multichannel-runtime
 
@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   cleanup:
-    if: startsWith(github.event.head_commit.message, 'ci: trigger temporary report validation cleanup')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
