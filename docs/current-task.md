@@ -286,6 +286,19 @@ Repository implementation and CI do not authorize D1 backup, Worker deployment, 
   without the Page secret and makes Facebook D1/Lark preflight require that secret name.
 - Focused Meta config/runtime/D1/Lark operator tests pass `38/38`; Remote Page-token activation
   and a fresh guarded Facebook D1/Lark operation remain separate authorized execution steps.
+- The authorized Page-token activation later passed with code/settings/bindings/flags and Queue
+  topology unchanged, then the fresh Facebook D1 operation proved a second Repository defect:
+  `facebook.content.inventory` ignored the reviewed period and staged 2,501 historical rows across
+  26 bounded units before `facebook.account.insights` failed with `META_CURSOR_MISSING`.
+- GET-only memory probes confirmed the exact period contains only 25 Facebook posts on one page,
+  while non-cursor account Insights returned an empty requested-period dataset with
+  `paging.next/previous` time windows and no `after` cursor.
+- The follow-up hotfix forwards the reviewed period to Facebook content inventory and treats
+  metric datasets declared `paginated=false` as one requested-period response, preserving cursor
+  enforcement for genuinely cursor-paginated datasets.
+- Follow-up verification passed: focused Meta tests `120/120`, repository check, unit tests
+  `1280/1280`, Workers-runtime tests `12/12`, report reliability `88/88`, dependency audit with
+  zero vulnerabilities and Wrangler dry-run with no deployment.
 - Focused customer-profile, UAT operator/session, YouTube sync and storage tests pass `39/39`;
   full repository gates and CI are pending.
 - The Worker is currently restored and verified all-false after the first customer-scoped run.
