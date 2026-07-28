@@ -9,7 +9,6 @@ test('administrative Lark runtime ignores connector flags and stale source ident
     MKT_ENV: 'development',
     MKT_CUSTOMER_PROFILE: 'integration_workspace',
     MKT_CONNECTOR_TIKTOK_ENABLED: 'true',
-    MKT_CONNECTOR_FACEBOOK_ENABLED: 'true',
     TIKTOK_SOURCE_HANDLE: 'ft.pumkin',
   };
 
