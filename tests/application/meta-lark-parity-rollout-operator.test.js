@@ -175,7 +175,7 @@ test('completion requires Lark parity, final reconciliation, completed work and 
 test('same-operation rerun requires another Queue attempt and immutable reconciliation', () => {
   const current = target('facebook');
   const before = larkCompleteSnapshot(current);
-  const after = { ...larkCompleteSnapshot(current), queue_operation_attempts: 3 };
+  const after = { ...larkCompleteSnapshot(current), main_queue_attempts: 3 };
   const result = compareMetaLarkSnapshots(before, after, current, { rerun: true });
   assert.equal(result.accepted, true);
   assert.equal(result.larkReconciliationDrift, false);
@@ -342,6 +342,7 @@ function d1ReadySnapshot() {
     completion_state_json: null,
     active_lock_count: 0,
     queue_operation_attempts: 1,
+    main_queue_attempts: 1,
     coverage_run_count: 2,
     invalid_coverage_count: 0,
     coverage_entity_count: 2,
@@ -369,7 +370,8 @@ function larkCompleteSnapshot(current) {
     completion_state_json: JSON.stringify({
       reconciliation: { lark: results, failed: 0 },
     }),
-    queue_operation_attempts: 2,
+    queue_operation_attempts: 1,
+    main_queue_attempts: 2,
   };
 }
 

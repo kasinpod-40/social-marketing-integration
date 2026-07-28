@@ -34,6 +34,7 @@ import {
   parseMetaD1OnlyOperatorArgs,
   previousMetaD1OnlyPhase,
   safeMetaD1OnlyTarget,
+  validateMetaD1OnlyContinuationRepositoryState,
   validateMetaD1OnlyEvidenceSequence,
   validateMetaReadOnlySummary,
 } from './lib/meta-d1-only-rollout-operator.js';
@@ -111,17 +112,22 @@ async function printPlan() {
 async function executePhase(phase) {
   assertMetaD1OnlyConfirmation(phase, process.env);
   const loaded = await loadReviewedTarget(process.env);
-  const state = await repositoryState();
-  if (state.head !== loaded.target.repositoryHead || !state.clean) {
-    throw operatorFailure(
-      'Meta D1-only rollout requires exact reviewed HEAD and a clean Working Tree',
-      'META_D1_ONLY_REPOSITORY_STATE_INVALID',
-    );
-  }
+  const state = await repositoryState(loaded.target.repositoryHead);
+  const continuation = validateMetaD1OnlyContinuationRepositoryState({
+    phase,
+    targetRepositoryHead: loaded.target.repositoryHead,
+    operatorRepositoryHead: state.head,
+    clean: state.clean,
+    changedPaths: state.changedPaths,
+    targetIsAncestor: state.targetIsAncestor,
+  }, process.env);
   await mkdir(loaded.evidenceRoot, { recursive: true, mode: 0o700 });
   const prior = await readPriorEvidence(loaded, phase);
   const data = await runPhase(loaded, phase);
-  const evidence = createEvidence(loaded.target, phase, data, prior, phasePermissions(phase));
+  const evidence = createEvidence(loaded.target, phase, {
+    ...data,
+    repositoryContinuation: continuation,
+  }, prior, phasePermissions(phase));
   await writeEvidence(loaded, phase, evidence);
   process.stdout.write(`${JSON.stringify(evidence, null, 2)}\n`);
 }
@@ -403,7 +409,7 @@ async function verifyInitialD1Only(loaded) {
 
 async function verifyIdempotentRerun(loaded) {
   const before = (await readEvidence(loaded, 'verify-d1-only')).data?.snapshotAfter;
-  const minimumAttempts = normalizeMetaD1OnlySnapshot(before).queueOperationAttempts + 1;
+  const minimumAttempts = normalizeMetaD1OnlySnapshot(before).mainQueueAttempts + 1;
   const after = await pollForRerun(loaded, minimumAttempts);
   return {
     comparison: compareMetaD1OnlySnapshots(before, after, { rerun: true }),
@@ -436,7 +442,7 @@ async function pollForRerun(loaded, minimumAttempts) {
   for (let index = 0; index < maxPolls; index += 1) {
     snapshot = await readSnapshot(loaded);
     const normalized = normalizeMetaD1OnlySnapshot(snapshot);
-    if (normalized.queueOperationAttempts >= minimumAttempts
+    if (normalized.mainQueueAttempts >= minimumAttempts
       && normalized.activeLockCount === 0
       && normalized.syncRunStatus === 'success') {
       return snapshot;
@@ -554,12 +560,38 @@ function phasePermissions(phase) {
   };
 }
 
-async function repositoryState() {
+async function repositoryState(targetRepositoryHead = null) {
   const [head, status] = await Promise.all([
     gitText(['rev-parse', 'HEAD']),
     gitText(['status', '--porcelain', '--untracked-files=all'], { trim: false }),
   ]);
-  return { head, clean: status.trim() === '' };
+  if (!targetRepositoryHead || head === targetRepositoryHead) {
+    return {
+      head,
+      clean: status.trim() === '',
+      changedPaths: [],
+      targetIsAncestor: true,
+    };
+  }
+  const [paths, targetIsAncestor] = await Promise.all([
+    gitText(['diff', '--name-only', `${targetRepositoryHead}..${head}`], { trim: false }),
+    gitSucceeds(['merge-base', '--is-ancestor', targetRepositoryHead, head]),
+  ]);
+  return {
+    head,
+    clean: status.trim() === '',
+    changedPaths: paths.split(/\r?\n/u).filter(Boolean),
+    targetIsAncestor,
+  };
+}
+
+async function gitSucceeds(args) {
+  try {
+    await execFileAsync('git', args, { cwd: repositoryRoot, encoding: 'utf8' });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function buildBundle(target, configText, label) {

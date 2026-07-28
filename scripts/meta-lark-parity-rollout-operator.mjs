@@ -369,7 +369,7 @@ async function verifyInitialLark(loaded) {
 
 async function verifyLarkRerun(loaded) {
   const before = (await readEvidence(loaded, 'verify-lark')).data?.snapshotAfter;
-  const minimumAttempts = normalizeMetaLarkSnapshot(before).queueOperationAttempts + 1;
+  const minimumAttempts = normalizeMetaLarkSnapshot(before).mainQueueAttempts + 1;
   const after = await pollForRerun(loaded, minimumAttempts);
   return {
     comparison: compareMetaLarkSnapshots(before, after, loaded.target, { rerun: true }),
@@ -400,7 +400,7 @@ async function pollForRerun(loaded, minimumAttempts) {
   for (let index = 0; index < maxPolls; index += 1) {
     const snapshot = await readSnapshot(loaded);
     const normalized = normalizeMetaLarkSnapshot(snapshot);
-    if (normalized.queueOperationAttempts >= minimumAttempts
+    if (normalized.mainQueueAttempts >= minimumAttempts
       && classifyMetaLarkCompletion(normalized, loaded.target).complete) {
       return normalized;
     }

@@ -14,6 +14,7 @@ import {
   createMetaD1OnlyEvidence,
   loadMetaD1OnlyTarget,
   parseMetaD1OnlyOperatorArgs,
+  validateMetaD1OnlyContinuationRepositoryState,
   validateMetaD1OnlyEvidenceSequence,
   validateMetaReadOnlySummary,
 } from '../../scripts/lib/meta-d1-only-rollout-operator.js';
@@ -47,6 +48,51 @@ test('every executable phase requires its exact confirmation', () => {
     CONFIRM_META_D1_ONLY_PREFLIGHT: 'PREFLIGHT_META_D1_ONLY_ROLLOUT',
   }), true);
   assert.equal(assertMetaD1OnlyConfirmation('plan', {}), true);
+});
+
+test('cross-head continuation is limited to evidence-closeout phases and operator-only diffs', () => {
+  const operatorHead = 'c'.repeat(40);
+  const env = {
+    MKT_META_D1_ONLY_CONTINUATION_FROM_HEAD: SHA,
+    MKT_META_D1_ONLY_CONTINUATION_OPERATOR_HEAD: operatorHead,
+  };
+  const accepted = validateMetaD1OnlyContinuationRepositoryState({
+    phase: 'verify-idempotent-rerun',
+    targetRepositoryHead: SHA,
+    operatorRepositoryHead: operatorHead,
+    clean: true,
+    targetIsAncestor: true,
+    changedPaths: [
+      'scripts/lib/meta-d1-only-rollout-operator.js',
+      'scripts/meta-d1-only-rollout-operator.mjs',
+      'tests/application/meta-d1-only-rollout-operator.test.js',
+    ],
+  }, env);
+  assert.equal(accepted.continuedAcrossRepositoryHead, true);
+  assert.equal(accepted.changedPathCount, 3);
+
+  assert.throws(
+    () => validateMetaD1OnlyContinuationRepositoryState({
+      phase: 'verify-idempotent-rerun',
+      targetRepositoryHead: SHA,
+      operatorRepositoryHead: operatorHead,
+      clean: true,
+      targetIsAncestor: true,
+      changedPaths: ['apps/sync-worker/src/index.js'],
+    }, env),
+    (error) => error.code === 'META_D1_ONLY_CONTINUATION_REPOSITORY_INVALID',
+  );
+  assert.throws(
+    () => validateMetaD1OnlyContinuationRepositoryState({
+      phase: 'send-one-d1-only',
+      targetRepositoryHead: SHA,
+      operatorRepositoryHead: operatorHead,
+      clean: true,
+      targetIsAncestor: true,
+      changedPaths: ['scripts/meta-d1-only-rollout-operator.mjs'],
+    }, env),
+    (error) => error.code === 'META_D1_ONLY_CONTINUATION_REPOSITORY_INVALID',
+  );
 });
 
 test('target loader creates exact stable identities for all four scopes', () => {
@@ -223,7 +269,7 @@ test('same-operation rerun requires a new Queue attempt with zero Business and C
   const before = completeSnapshot();
   const after = {
     ...completeSnapshot(),
-    queue_operation_attempts: 2,
+    queue_operation_attempts: 1,
     main_queue_attempts: 2,
   };
   const compared = compareMetaD1OnlySnapshots(before, after, { rerun: true });
