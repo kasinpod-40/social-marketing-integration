@@ -79,7 +79,7 @@ async function processDashboardReportJob(input) {
     db: input.env?.MKT_STATE_DB,
     defaultPlatformScope: platformScope,
   }) : null;
-  let accountKey = resolveReportAccountKey(runtimeConfig, platformScope);
+  let accountKey = requestStore ? null : resolveReportAccountKey(runtimeConfig, platformScope);
   if (requestStore) {
     const existing = await requestStore.read(requestId);
     if (!existing) throw permanentError('Dashboard report request does not exist', {
@@ -91,6 +91,7 @@ async function processDashboardReportJob(input) {
     });
     await requestStore.markProcessing({ requestId });
   }
+  accountKey = requireJobText(accountKey, 'accountKey');
   const reliability = infrastructure.getReliability(tableIds);
 
   try {
