@@ -52,7 +52,7 @@ const REQUIRED_LARK_KEY_FIELDS = Object.freeze({
   mktReportSnapshots: 'report_id',
   mktReportMetricValues: 'report_metric_key',
   mktReportTopContent: 'report_content_key',
-  mktSyncLog: 'sync_run_id',
+  mktSyncLog: 'sync_id',
   mktSystemAlerts: 'alert_id',
 });
 let currentStage = 'init';

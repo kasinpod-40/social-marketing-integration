@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased — Report Runtime Closeout Sync Log Stable-key Hotfix — 2026-07-29
+
+### Repository correction
+
+- Aligned the Closeout Lark metadata preflight with the existing Shared Reliability contract:
+  `MKT_Sync_Log` uses `sync_id`, not `sync_run_id`, as its Stable key.
+- Added a regression that rejects reintroducing the stale Closeout mapping.
+- Kept `MKT_REPORT_AI_SUMMARY_ENABLED=false`; no Lark field, Worker, Queue, D1 Business fact,
+  Schedule, Secret or Production state was changed.
+
 ## Unreleased — Meta Facebook Page-token Runtime Hotfix — 2026-07-28
 
 ### Runtime incident
