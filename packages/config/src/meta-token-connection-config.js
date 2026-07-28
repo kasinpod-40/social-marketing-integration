@@ -23,6 +23,7 @@ export const META_TOKEN_CONNECTION_STATUSES = Object.freeze({
 export const META_TOKEN_CONNECTION_ENV = Object.freeze({
   API_VERSION: 'META_GRAPH_API_VERSION',
   FACEBOOK_ACCESS_TOKEN: 'META_ACCESS_TOKEN',
+  FACEBOOK_PAGE_ACCESS_TOKEN: 'META_FACEBOOK_PAGE_ACCESS_TOKEN',
   INSTAGRAM_ACCESS_TOKEN: 'META_INSTAGRAM_ACCESS_TOKEN',
   FACEBOOK_PAGE_ID: 'META_FACEBOOK_PAGE_ID',
   INSTAGRAM_ACCOUNT_ID: 'META_INSTAGRAM_ACCOUNT_ID',
@@ -60,11 +61,17 @@ export function loadMetaTokenConnectionConfig(env = {}) {
     env[META_TOKEN_CONNECTION_ENV.FACEBOOK_ACCESS_TOKEN],
     META_TOKEN_CONNECTION_ENV.FACEBOOK_ACCESS_TOKEN,
   );
+  const facebookPageAccessToken = readOptionalCredential(
+    env[META_TOKEN_CONNECTION_ENV.FACEBOOK_PAGE_ACCESS_TOKEN],
+    META_TOKEN_CONNECTION_ENV.FACEBOOK_PAGE_ACCESS_TOKEN,
+  );
   const instagramAccessToken = readOptionalCredential(
     env[META_TOKEN_CONNECTION_ENV.INSTAGRAM_ACCESS_TOKEN],
     META_TOKEN_CONNECTION_ENV.INSTAGRAM_ACCESS_TOKEN,
   );
-  const anyCredentialConfigured = Boolean(facebookAccessToken || instagramAccessToken);
+  const anyCredentialConfigured = Boolean(
+    facebookAccessToken || facebookPageAccessToken || instagramAccessToken,
+  );
   const apiVersion = readApiVersion(
     env[META_TOKEN_CONNECTION_ENV.API_VERSION],
     anyCredentialConfigured,
@@ -78,6 +85,7 @@ export function loadMetaTokenConnectionConfig(env = {}) {
     apiVersion,
     credentials: {
       facebookAccessToken,
+      facebookPageAccessToken,
       instagramAccessToken,
     },
     mappings: {

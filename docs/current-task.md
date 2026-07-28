@@ -278,6 +278,14 @@ Repository implementation and CI do not authorize D1 backup, Worker deployment, 
 - The completion hotfix persists `endToEnd.storage` in `sync_work_runs.completion_json` before
   marking durable work complete, so live verification can resolve the exact D1 history and
   coverage IDs while replay still skips the Provider.
+- Meta Facebook D1-only live execution later exposed a separate credential-wiring defect:
+  `facebook.content.inventory` returned sanitized Graph `190/2069032` before any Business,
+  Coverage or Lark write, and the Worker was restored and verified all-false.
+- The Meta runtime hotfix loads `META_FACEBOOK_PAGE_ACCESS_TOKEN` separately, uses it only for
+  Facebook Page business reads, keeps discovery/Meta Ads on `META_ACCESS_TOKEN`, fails closed
+  without the Page secret and makes Facebook D1/Lark preflight require that secret name.
+- Focused Meta config/runtime/D1/Lark operator tests pass `38/38`; Remote Page-token activation
+  and a fresh guarded Facebook D1/Lark operation remain separate authorized execution steps.
 - Focused customer-profile, UAT operator/session, YouTube sync and storage tests pass `39/39`;
   full repository gates and CI are pending.
 - The Worker is currently restored and verified all-false after the first customer-scoped run.
