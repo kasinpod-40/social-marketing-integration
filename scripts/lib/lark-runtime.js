@@ -4,10 +4,16 @@ import { LarkRecordRepository } from '../../packages/connectors/src/lark/lark-re
 import { TableSyncEngine } from '../../packages/sync-engine/src/table-sync-engine.js';
 import { readLarkTableIdsFromEnv } from '../../packages/config/src/lark-table-config.js';
 import { loadCustomerRuntimeConfig } from '../../packages/config/src/customer-profiles.js';
+import { listConnectorCatalog } from '../../packages/config/src/connector-catalog.js';
 import { todayInTimeZone } from '../../packages/shared/src/date/date-only.js';
 import { DEFAULT_REPORT_TIMEZONE, resolveMetricDate } from '../../packages/config/src/metric-date-config.js';
 import { assertConnectorRunnable } from '../../packages/application/src/connectors/connector-registry.js';
 import { createOrganicContentOwnershipRoutingRepository } from '../../packages/application/src/policies/organic-content-field-ownership.js';
+
+const LOCAL_LARK_RUNTIME_CONFIG_SCOPE = Object.freeze({
+  FULL: 'full',
+  ADMINISTRATIVE: 'administrative',
+});
 
 /**
  * สร้าง Runtime สำหรับ Script บนเครื่องผู้พัฒนา
@@ -26,7 +32,11 @@ export async function createLocalLarkRuntime(requiredTableKeys, options = {}) {
     ...(options?.env ?? {}),
     ...process.env,
   });
-  const runtimeConfig = loadCustomerRuntimeConfig(normalizedEnv);
+  const runtimeConfigEnv = resolveRuntimeConfigEnv(
+    normalizedEnv,
+    options?.runtimeConfigScope ?? LOCAL_LARK_RUNTIME_CONFIG_SCOPE.FULL,
+  );
+  const runtimeConfig = loadCustomerRuntimeConfig(runtimeConfigEnv);
   const tables = readLarkTableIdsFromEnv(normalizedEnv, requiredTableKeys);
   const client = createLarkBitableClientFromEnv(normalizedEnv, {
     onRequest: options?.onRequest,
@@ -46,6 +56,28 @@ export async function createLocalLarkRuntime(requiredTableKeys, options = {}) {
     syncEngine,
     tables,
   });
+}
+
+/**
+ * งาน Lark เชิงบริหาร เช่น Schema/Settings ต้องตรวจ Environment/Profile แต่ไม่ควรรับ
+ * Connector feature flags หรือ Source identity override จาก Shell/.dev.vars เข้ามาเป็น dependency.
+ * Guard ของ Connector Runtime ปกติยังคงทำงานเหมือนเดิมใน scope `full`.
+ */
+export function buildAdministrativeLarkRuntimeConfigEnv(env = {}) {
+  const administrativeEnv = { ...env };
+  for (const definition of listConnectorCatalog()) {
+    administrativeEnv[definition.featureFlagEnv] = 'false';
+    if (definition.sourceHandleEnv) delete administrativeEnv[definition.sourceHandleEnv];
+  }
+  return Object.freeze(administrativeEnv);
+}
+
+function resolveRuntimeConfigEnv(env, scope) {
+  if (scope === LOCAL_LARK_RUNTIME_CONFIG_SCOPE.FULL) return env;
+  if (scope === LOCAL_LARK_RUNTIME_CONFIG_SCOPE.ADMINISTRATIVE) {
+    return buildAdministrativeLarkRuntimeConfigEnv(env);
+  }
+  throw new Error(`Unsupported Local Lark runtime config scope: ${scope}`);
 }
 
 /**

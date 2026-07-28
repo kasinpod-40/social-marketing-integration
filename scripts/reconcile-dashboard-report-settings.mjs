@@ -66,7 +66,10 @@ async function main() {
   const runtime = await createLocalLarkRuntime([
     'mktReportSettings',
     ...REFERENCE_TABLE_KEYS,
-  ], { env: wrangler.values });
+  ], {
+    env: wrangler.values,
+    runtimeConfigScope: 'administrative',
+  });
   if (runtime.runtimeConfig.environment !== 'development'
     || runtime.runtimeConfig.profileKey !== 'integration_workspace') {
     throw new Error('Dashboard report settings reconciliation requires development/integration_workspace');
