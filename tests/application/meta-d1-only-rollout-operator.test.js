@@ -16,6 +16,7 @@ import {
   parseMetaD1OnlyOperatorArgs,
   validateMetaD1OnlyContinuationRepositoryState,
   validateMetaD1OnlyEvidenceSequence,
+  validateMetaD1OnlyReusableRestoreSequence,
   validateMetaReadOnlySummary,
 } from '../../scripts/lib/meta-d1-only-rollout-operator.js';
 
@@ -92,6 +93,53 @@ test('cross-head continuation is limited to evidence-closeout phases and operato
       changedPaths: ['scripts/meta-d1-only-rollout-operator.mjs'],
     }, env),
     (error) => error.code === 'META_D1_ONLY_CONTINUATION_REPOSITORY_INVALID',
+  );
+});
+
+test('reusable restore requires the complete prior chain and a verified all-false version', () => {
+  const current = target('facebook');
+  const phases = [
+    'plan',
+    'preflight',
+    'backup',
+    'deploy-safe-baseline',
+    'verify-safe-baseline',
+    'deploy-d1-only-gates',
+    'verify-d1-only-deployment',
+    'snapshot-before',
+    'send-one-d1-only',
+    'verify-d1-only',
+    'resend-same-operation',
+    'restore-all-false',
+    'verify-restore',
+  ];
+  const build = (expectedTrueFlags = []) => {
+    let previous = null;
+    return phases.map((phase) => {
+      const data = phase === 'restore-all-false'
+        ? { mode: 'safe', deploymentVersionId: VERSION }
+        : phase === 'verify-restore'
+          ? { mode: 'safe', activeVersion: VERSION, expectedTrueFlags }
+          : {};
+      const evidence = createMetaD1OnlyEvidence({
+        phase,
+        capturedAt: '2026-07-28T00:00:00Z',
+        repositoryHead: current.repositoryHead,
+        targetFingerprint: current.targetFingerprint,
+        targetKey: current.targetKey,
+        operationId: current.operationId,
+        previousEvidenceSha256: previous?.evidenceSha256 ?? null,
+        data,
+      });
+      previous = evidence;
+      return evidence;
+    });
+  };
+  const accepted = validateMetaD1OnlyReusableRestoreSequence(build(), current);
+  assert.equal(accepted.deploymentVersionId, VERSION);
+  assert.throws(
+    () => validateMetaD1OnlyReusableRestoreSequence(build(['MKT_META_D1_WRITE_ENABLED']), current),
+    (error) => error.code === 'META_D1_ONLY_REUSABLE_RESTORE_INVALID',
   );
 });
 

@@ -110,5 +110,7 @@ The operator correction:
 - permits the restored evidence chain to cross only this operator hotfix when the old head is an
   ancestor, the checkout is clean, both heads are confirmed exactly and every changed path is in
   the operator/test/documentation allowlist;
+- reuses the prior hash-valid restore only after a fresh remote all-false/version/topology check,
+  so evidence closeout does not deploy the unmerged branch;
 - does not authorize Provider replay, Worker runtime changes, D1 business writes, Lark writes,
   schedules, Secrets or Production by itself.

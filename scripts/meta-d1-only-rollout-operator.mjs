@@ -36,6 +36,7 @@ import {
   safeMetaD1OnlyTarget,
   validateMetaD1OnlyContinuationRepositoryState,
   validateMetaD1OnlyEvidenceSequence,
+  validateMetaD1OnlyReusableRestoreSequence,
   validateMetaReadOnlySummary,
 } from './lib/meta-d1-only-rollout-operator.js';
 
@@ -123,11 +124,18 @@ async function executePhase(phase) {
   }, process.env);
   await mkdir(loaded.evidenceRoot, { recursive: true, mode: 0o700 });
   const prior = await readPriorEvidence(loaded, phase);
-  const data = await runPhase(loaded, phase);
+  const data = phase === 'restore-all-false'
+      && continuation.continuedAcrossRepositoryHead
+    ? await reuseVerifiedAllFalseRestore(loaded)
+    : await runPhase(loaded, phase);
+  const permissions = phasePermissions(phase);
+  if (data?.reusedExistingRestore === true) {
+    permissions.remoteMutationPerformed = false;
+  }
   const evidence = createEvidence(loaded.target, phase, {
     ...data,
     repositoryContinuation: continuation,
-  }, prior, phasePermissions(phase));
+  }, prior, permissions);
   await writeEvidence(loaded, phase, evidence);
   process.stdout.write(`${JSON.stringify(evidence, null, 2)}\n`);
 }
@@ -320,6 +328,37 @@ async function runDeployment(loaded, phase, mode) {
       ? loaded.config.activeSha256
       : loaded.config.safeSha256,
     trueFlags: mode === 'active' ? loaded.config.activeTrueFlags : [],
+    commandExitCode: 0,
+  };
+}
+
+async function reuseVerifiedAllFalseRestore(loaded) {
+  const evidence = [];
+  for (const phase of [
+    'plan',
+    'preflight',
+    'backup',
+    'deploy-safe-baseline',
+    'verify-safe-baseline',
+    'deploy-d1-only-gates',
+    'verify-d1-only-deployment',
+    'snapshot-before',
+    'send-one-d1-only',
+    'verify-d1-only',
+    'resend-same-operation',
+    'restore-all-false',
+    'verify-restore',
+  ]) {
+    evidence.push(await readEvidence(loaded, phase));
+  }
+  const prior = validateMetaD1OnlyReusableRestoreSequence(evidence, loaded.target);
+  const verified = await verifyDeployment(loaded, 'verify-restore', 'safe');
+  return {
+    ...verified,
+    deploymentVersionId: prior.deploymentVersionId,
+    reusedExistingRestore: true,
+    priorRestoreEvidenceSha256: prior.restoreEvidenceSha256,
+    priorVerificationEvidenceSha256: prior.verificationEvidenceSha256,
     commandExitCode: 0,
   };
 }

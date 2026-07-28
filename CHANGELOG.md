@@ -37,6 +37,8 @@
 - Added an exact-confirmation, clean-tree, ancestor-bound continuation guard for completing the
   already-restored D1 evidence chain across an operator-only hotfix. Worker runtime/config changes
   remain forbidden by that guard.
+- Cross-head closeout reuses an existing hash-valid, remotely reverified all-false restore instead
+  of deploying an unmerged Worker bundle again.
 
 ## Unreleased — Dashboard Rolling Period Presets and Custom Range — 2026-07-28
 

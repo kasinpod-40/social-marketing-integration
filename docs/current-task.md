@@ -344,3 +344,5 @@ Repository implementation and CI do not authorize D1 backup, Worker deployment, 
 - A guarded compatibility path permits only the remaining D1 evidence-closeout phases to run from
   the merged operator hotfix while retaining the original operation/evidence repository head. It
   requires exact old/new heads, ancestor lineage, a clean tree and an operator/test/docs-only diff.
+- That compatibility closeout reuses the prior hash-valid restore only after a fresh remote
+  all-false/version/topology verification and performs no additional Worker deployment.

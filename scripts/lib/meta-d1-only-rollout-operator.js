@@ -89,6 +89,21 @@ const CONTINUATION_ALLOWED_PATHS = new Set([
   'tests/application/meta-d1-only-rollout-operator.test.js',
   'tests/application/meta-lark-parity-rollout-operator.test.js',
 ]);
+const RESTORE_REUSE_PHASES = Object.freeze([
+  'plan',
+  'preflight',
+  'backup',
+  'deploy-safe-baseline',
+  'verify-safe-baseline',
+  'deploy-d1-only-gates',
+  'verify-d1-only-deployment',
+  'snapshot-before',
+  'send-one-d1-only',
+  'verify-d1-only',
+  'resend-same-operation',
+  'restore-all-false',
+  'verify-restore',
+]);
 const D1_PHASE = 'meta_end_to_end_d1_write_v1';
 const LARK_PHASE = 'meta_end_to_end_lark_write_v1';
 const COMPLETION_PHASE = 'meta_end_to_end_completion_v1';
@@ -167,6 +182,38 @@ export function validateMetaD1OnlyContinuationRepositoryState(input = {}, env = 
     operatorRepositoryHead,
     changedPathCount: changedPaths.length,
     changedPathFingerprint: sha256(stableJson([...changedPaths].sort())),
+  });
+}
+
+export function validateMetaD1OnlyReusableRestoreSequence(evidence = [], target = {}) {
+  const validated = validateMetaD1OnlyEvidenceSequence(evidence, target);
+  const phases = validated.map((item) => item.phase);
+  if (JSON.stringify(phases) !== JSON.stringify(RESTORE_REUSE_PHASES)) {
+    throw operatorError(
+      'Meta D1-only reusable restore evidence sequence is incomplete',
+      'META_D1_ONLY_REUSABLE_RESTORE_INVALID',
+    );
+  }
+  const restore = validated.at(-2);
+  const verification = validated.at(-1);
+  const deploymentVersionId = requireVersionId(
+    restore?.data?.deploymentVersionId,
+    'restore.data.deploymentVersionId',
+  );
+  if (restore?.data?.mode !== 'safe'
+    || verification?.data?.mode !== 'safe'
+    || verification?.data?.activeVersion !== deploymentVersionId
+    || !Array.isArray(verification?.data?.expectedTrueFlags)
+    || verification.data.expectedTrueFlags.length !== 0) {
+    throw operatorError(
+      'Meta D1-only reusable restore does not prove an active all-false deployment',
+      'META_D1_ONLY_REUSABLE_RESTORE_INVALID',
+    );
+  }
+  return deepFreeze({
+    deploymentVersionId,
+    restoreEvidenceSha256: restore.evidenceSha256,
+    verificationEvidenceSha256: verification.evidenceSha256,
   });
 }
 
