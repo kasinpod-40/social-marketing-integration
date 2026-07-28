@@ -123,7 +123,11 @@ async function invokeDataset(input) {
     case 'facebook.account.latest':
       return node(await input.adapter.fetchAccount({ pageId: accountId }));
     case 'facebook.content.inventory':
-      return page(await input.adapter.fetchContentPage({ pageId: accountId, ...commonPage }));
+      return page(await input.adapter.fetchContentPage({
+        pageId: accountId,
+        ...commonPage,
+        ...input.dateRange,
+      }));
     case 'facebook.content.insights':
       return page(await input.adapter.fetchContentInsightsPage({
         pageId: accountId,

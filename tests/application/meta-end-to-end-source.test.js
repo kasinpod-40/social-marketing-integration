@@ -25,8 +25,11 @@ test('collects exactly one bounded Facebook page and returns a durable cursor', 
     adapters,
     identities: { sourceAccountId: 'page_1' },
     state: { pageNumber: 1 },
+    dateRange: { since: '2026-07-01', until: '2026-07-27' },
   });
   assert.equal(calls.length, 1);
+  assert.equal(calls[0].since, '2026-07-01');
+  assert.equal(calls[0].until, '2026-07-27');
   assert.equal(unit.rowCount, 1);
   assert.equal(unit.sourceStatus, 'partial');
   assert.equal(unit.nextState.after, 'cursor_2');
