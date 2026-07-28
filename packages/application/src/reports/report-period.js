@@ -5,7 +5,59 @@ const REPORT_DAY_COUNTS = Object.freeze({
   weekly_organic_report: 7,
 });
 
+export const REPORT_ROLLING_PRESET_DAYS = Object.freeze([1, 3, 7, 9, 15, 30, 90]);
+export const REPORT_PERIOD_KINDS = Object.freeze(['rolling_days', 'custom_range']);
+export const DEFAULT_CUSTOM_RANGE_MAX_DAYS = 366;
+
 const COMPARISON_MODES = new Set(['none', 'previous_period']);
+const PERIOD_KINDS = new Set(REPORT_PERIOD_KINDS);
+
+/** Resolve the shared rolling/custom Dashboard period contract. */
+export function resolveReportPeriod(input = {}) {
+  const timeZone = requireText(input.timeZone ?? 'Asia/Bangkok', 'timeZone');
+  const comparisonMode = requireComparisonMode(input.comparisonMode ?? 'previous_period');
+  const periodKind = requirePeriodKind(input.periodKind ?? 'rolling_days');
+  const lastCompletedDay = addDaysDateOnly(
+    todayInTimeZone(timeZone, input.now ?? new Date()),
+    -1,
+  );
+  const periodEnd = input.periodEnd
+    ? requireDateOnly(input.periodEnd, { label: 'periodEnd' })
+    : lastCompletedDay;
+  if (periodEnd > lastCompletedDay) {
+    throw new RangeError('periodEnd must not be after the last completed reporting day');
+  }
+
+  let periodStart;
+  let windowDays;
+  if (periodKind === 'rolling_days') {
+    windowDays = requirePresetDays(input.windowDays);
+    periodStart = addDaysDateOnly(periodEnd, -(windowDays - 1));
+  } else {
+    periodStart = requireDateOnly(input.periodStart, { label: 'periodStart' });
+    windowDays = inclusiveDayCount(periodStart, periodEnd);
+    const maximum = positiveInteger(
+      input.maxCustomRangeDays ?? DEFAULT_CUSTOM_RANGE_MAX_DAYS,
+      'maxCustomRangeDays',
+    );
+    if (windowDays > maximum) {
+      throw new RangeError(`custom report range exceeds ${maximum} inclusive days`);
+    }
+  }
+
+  const comparison = comparisonMode === 'none'
+    ? { compareStart: null, compareEnd: null }
+    : previousPeriod(periodStart, windowDays);
+  return Object.freeze({
+    periodKind,
+    windowDays,
+    periodStart,
+    periodEnd,
+    comparisonMode,
+    ...comparison,
+    days: windowDays,
+  });
+}
 
 /**
  * Resolve ช่วงรายงานที่ปิดสมบูรณ์แล้วตาม Timezone
@@ -13,36 +65,18 @@ const COMPARISON_MODES = new Set(['none', 'previous_period']);
  */
 export function resolveOrganicReportPeriod(input = {}) {
   const reportType = requireReportType(input.reportType);
-  const timeZone = requireText(input.timeZone ?? 'Asia/Bangkok', 'timeZone');
-  const comparisonMode = requireComparisonMode(input.comparisonMode ?? 'previous_period');
-  const days = REPORT_DAY_COUNTS[reportType];
-  const periodEnd = input.periodEnd
-    ? requireDateOnly(input.periodEnd, { label: 'periodEnd' })
-    : addDaysDateOnly(todayInTimeZone(timeZone, input.now ?? new Date()), -1);
-  const periodStart = addDaysDateOnly(periodEnd, -(days - 1));
-
-  if (comparisonMode === 'none') {
-    return Object.freeze({
-      reportType,
-      periodStart,
-      periodEnd,
-      comparisonMode,
-      compareStart: null,
-      compareEnd: null,
-      days,
-    });
+  const resolved = resolveReportPeriod({
+    ...input,
+    periodKind: input.periodKind ?? 'rolling_days',
+    windowDays: input.windowDays ?? REPORT_DAY_COUNTS[reportType],
+  });
+  if (input.periodKind === undefined && input.windowDays === undefined) {
+    const { periodKind: _periodKind, windowDays: _windowDays, ...legacy } = resolved;
+    return Object.freeze({ reportType, ...legacy });
   }
-
-  const compareEnd = addDaysDateOnly(periodStart, -1);
-  const compareStart = addDaysDateOnly(compareEnd, -(days - 1));
   return Object.freeze({
     reportType,
-    periodStart,
-    periodEnd,
-    comparisonMode,
-    compareStart,
-    compareEnd,
-    days,
+    ...resolved,
   });
 }
 
@@ -83,6 +117,38 @@ function requireComparisonMode(value) {
     throw new Error(`Unsupported report comparison mode: ${text}`);
   }
   return text;
+}
+
+function requirePeriodKind(value) {
+  const text = requireText(value, 'periodKind').toLowerCase();
+  if (!PERIOD_KINDS.has(text)) {
+    throw new Error(`Unsupported report period kind: ${text}`);
+  }
+  return text;
+}
+
+function requirePresetDays(value) {
+  const days = positiveInteger(value, 'windowDays');
+  if (!REPORT_ROLLING_PRESET_DAYS.includes(days)) {
+    throw new RangeError(`windowDays must be one of: ${REPORT_ROLLING_PRESET_DAYS.join(', ')}`);
+  }
+  return days;
+}
+
+function positiveInteger(value, fieldName) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number <= 0) {
+    throw new TypeError(`Report period requires positive integer ${fieldName}`);
+  }
+  return number;
+}
+
+function previousPeriod(periodStart, days) {
+  const compareEnd = addDaysDateOnly(periodStart, -1);
+  return {
+    compareStart: addDaysDateOnly(compareEnd, -(days - 1)),
+    compareEnd,
+  };
 }
 
 function requireText(value, fieldName) {

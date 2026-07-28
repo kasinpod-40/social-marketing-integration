@@ -290,3 +290,30 @@ test('D1 primary rejects incomplete per-entity Coverage before output writes', a
   })), (error) => error.code === 'REPORT_D1_COVERAGE_INCOMPLETE');
   assert.equal(repository.writes.length, 0);
 });
+
+test('D1 primary custom range reuses the organic calculator and writes custom materialization', async () => {
+  const repository = buildRepository();
+  const materializationStore = {
+    writes: [],
+    async saveReportMaterialization(value) {
+      this.writes.push(value);
+      return { status: 'written', changes: 1 };
+    },
+  };
+  const result = await generateTikTokOrganicReportD1Aware(reportInput(repository, {
+    materializationStore,
+    periodKind: 'custom_range',
+    periodStart: '2026-07-10',
+    periodEnd: '2026-07-11',
+    storageConfig: {
+      reportD1ReadEnabled: true,
+      reportD1ShadowReadEnabled: false,
+      reportPresetMaterializationEnabled: true,
+    },
+  }));
+  assert.equal(result.period.periodKind, 'custom_range');
+  assert.equal(result.period.windowDays, 2);
+  assert.equal(result.metricPayload['tiktok:period_views'].current, 50);
+  assert.equal(materializationStore.writes[0].period_kind, 'custom_range');
+  assert.equal(materializationStore.writes[0].window_days, null);
+});

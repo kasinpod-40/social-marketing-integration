@@ -10,7 +10,7 @@ import { calculateTikTokOrganicPeriodMetrics } from '../reports/calculate-tiktok
 import { compareTikTokOrganicReportResults } from '../reports/compare-tiktok-organic-report-results.js';
 import { createTikTokReportSourceOverrideRepository } from '../reports/tiktok-report-source-override-repository.js';
 import { hydrateTikTokReportContentMetadata } from '../reports/hydrate-tiktok-report-content-metadata.js';
-import { createReportId as createStorageReportId } from '../storage/marketing-history-contract.js';
+import { saveDashboardReportMaterialization } from '../reports/report-materialization.js';
 import { generateTikTokOrganicReport } from './generate-tiktok-organic-report.js';
 import { createStableFingerprint } from '../../../shared/src/hash/stable-fingerprint.js';
 import { permanentError } from '../../../shared/src/errors/runtime-error.js';
@@ -39,7 +39,11 @@ export async function generateTikTokOrganicReportD1Aware(input = {}) {
     reportType,
     timeZone: setting.timeZone,
     comparisonMode: input.comparisonMode ?? setting.comparisonMode,
+    periodKind: input.periodKind,
+    windowDays: input.windowDays,
+    periodStart: input.periodStart,
     periodEnd: input.periodEnd,
+    maxCustomRangeDays: input.maxCustomRangeDays,
     now: new Date((typeof input.now === 'function' ? input.now() : Date.now())),
   });
   const d1Source = await loadTikTokOrganicReportSourceFromD1({
@@ -139,11 +143,14 @@ export async function generateTikTokOrganicReportD1Aware(input = {}) {
     : Object.freeze([]);
   let materialization = null;
   if (storage.reportPresetMaterializationEnabled) {
-    materialization = await saveMaterialization({
+    materialization = await saveDashboardReportMaterialization({
       store: requireMaterializationStore(input.materializationStore),
       result,
       customerKey: input.customerKey,
       accountKey: accountId,
+      platformScope: 'tiktok',
+      formulaVersion: FORMULA_VERSION,
+      schemaVersion: MATERIALIZATION_SCHEMA_VERSION,
       sourceWatermark: d1Source.readSummary.sourceWatermark,
       generatedAt: typeof input.now === 'function' ? input.now() : Date.now(),
     });
@@ -220,66 +227,6 @@ function prefixMismatches(values, windowName) {
   }));
 }
 
-async function saveMaterialization(input) {
-  const periodKind = input.result.reportType === 'daily_organic_report'
-    ? 'rolling_days'
-    : 'weekly';
-  const payload = Object.freeze({
-    schemaVersion: MATERIALIZATION_SCHEMA_VERSION,
-    sourceReportId: input.result.reportId,
-    reportType: input.result.reportType,
-    period: input.result.period,
-    dataStatus: input.result.dataStatus,
-    baselineCoverageRate: input.result.baselineCoverageRate,
-    metricPayload: input.result.metricPayload,
-    topContentCount: input.result.topContentCount,
-  });
-  const payloadJson = JSON.stringify(payload);
-  const payloadChecksum = await createStableFingerprint(payload);
-  const windowDays = daysInclusive(
-    input.result.period.periodStart,
-    input.result.period.periodEnd,
-  );
-  const materializationId = createStorageReportId({
-    report_setting_key: input.result.reportSettingKey,
-    account_key: requireText(input.accountKey, 'accountKey'),
-    period_kind: periodKind,
-    period_start: input.result.period.periodStart,
-    period_end: input.result.period.periodEnd,
-    formula_version: FORMULA_VERSION,
-  });
-  const write = await input.store.saveReportMaterialization({
-    report_id: materializationId,
-    report_setting_key: input.result.reportSettingKey,
-    customer_key: requireText(input.customerKey, 'customerKey'),
-    platform_scope: 'tiktok',
-    account_key: requireText(input.accountKey, 'accountKey'),
-    report_type: input.result.reportType,
-    period_kind: periodKind,
-    window_days: windowDays,
-    period_start: input.result.period.periodStart,
-    period_end: input.result.period.periodEnd,
-    compare_start: input.result.period.compareStart,
-    compare_end: input.result.period.compareEnd,
-    data_status: normalizeDataStatus(input.result.dataStatus),
-    coverage_rate: input.result.baselineCoverageRate,
-    formula_version: FORMULA_VERSION,
-    source_watermark: input.sourceWatermark,
-    payload_json: payloadJson,
-    payload_checksum: payloadChecksum,
-    generated_at: input.generatedAt,
-    expires_at: null,
-    created_at: input.generatedAt,
-    updated_at: input.generatedAt,
-  });
-  return Object.freeze({
-    ...write,
-    reportId: materializationId,
-    sourceReportId: input.result.reportId,
-    payloadChecksum,
-  });
-}
-
 function resolveMetadataLimit(override, configured) {
   const value = override === null || override === undefined || override === ''
     ? configured
@@ -309,15 +256,6 @@ function assertD1CoverageReady(summary, primary) {
       },
     });
   }
-}
-
-function daysInclusive(start, end) {
-  return Math.floor((Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86_400_000) + 1;
-}
-
-function normalizeDataStatus(value) {
-  if (value === 'no_data') return 'no_data_confirmed';
-  return value;
 }
 
 function requireStorageConfig(value) {

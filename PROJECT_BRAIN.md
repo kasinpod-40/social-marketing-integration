@@ -12,6 +12,21 @@ Historical Root Project Brain ก่อน TikTok post-Lark implementation ถ�
 docs/archive/PROJECT_BRAIN-before-tiktok-post-lark-parity-2026-07-26.md
 ```
 
+## Dashboard rolling-period repository contract — 2026-07-28
+
+Dashboard period identity ใช้ `period_kind=rolling_days|custom_range` ร่วมกับ
+`window_days`/inclusive dates; presets คือ 3D, 7D, 9D, 15D, 30D และ 90D โดย 30D
+ไม่ใช่ Calendar month. Default end คือ last completed day ตาม Reporting timezone และ
+default comparison คือ previous period ที่มีวันเท่ากัน.
+
+Custom ranges claim `report_requests` ด้วย request ID ที่รวม Source watermark ก่อนส่ง
+existing Queue/Reliability path และผลลัพธ์เขียน `report_materializations` ด้วย Storage
+Foundation Stable key เดิม. Dashboard/Lark ใช้ Materialized results เท่านั้น ไม่ Query
+Detailed D1 facts. TikTok Organic ยังคง end-minus-baseline semantics; Ads SUM daily facts
+ก่อนคำนวณ ratio. Missing metric เป็น `null`, observed zero เป็น `0`, และ Coverage/data
+status ต้องติดผลลัพธ์เสมอ. Repository binding ครอบคลุม Snapshots, Metric Values,
+Top Content และ Top Ads; ยังไม่มี Remote Apply หรือ runtime activation.
+
 ## Current verified repository state — 2026-07-27
 
 ```text

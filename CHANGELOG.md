@@ -18,6 +18,26 @@
 - Added focused regressions for credential separation, Page-only authorization and fail-closed
   behavior.
 
+## Unreleased — Dashboard Rolling Period Presets and Custom Range — 2026-07-28
+
+### Repository implementation
+
+- Added a shared inclusive completed-day resolver for 3D, 7D, 9D, 15D, 30D, 90D and
+  bounded Custom ranges with equal previous-period comparison.
+- Added platform-neutral materialization and watermark-bound Custom request contracts that
+  reuse `report_requests`, the existing Queue/Reliability path and `report_materializations`.
+- Reused the TikTok D1-aware Organic baseline calculator and added shared Ads
+  aggregate-then-ratio semantics with explicit null/zero and Coverage status handling.
+- Added a repository-only Dashboard binding blueprint for Snapshots, Metric Values,
+  Top Content and Top Ads.
+
+### Safety
+
+- Migration required: none; Storage Foundation Migration `0009` already contains the
+  approved request/materialization columns and Stable keys.
+- No Worker deployment, Remote D1/Lark action, Queue message, Schedule/Cron, LIVE UAT,
+  Secret/Production configuration change or Business-fact mutation occurred.
+
 ## Unreleased — YouTube Worker Dry-run Rollout Operator — 2026-07-27
 
 ### Repository implementation

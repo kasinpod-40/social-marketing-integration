@@ -22,6 +22,7 @@ export const JOB_TYPES = Object.freeze({
   SYNC_RECONCILE: 'sync.reconcile',
   DAILY_REPORT_GENERATE: 'report.daily.generate',
   WEEKLY_REPORT_GENERATE: 'report.weekly.generate',
+  REPORT_MATERIALIZATION_GENERATE: 'report.materialization.generate',
   LARK_NOTIFICATION_SEND: 'lark.notification.send',
   DEAD_LETTER_REDRIVE: 'system.dead-letter.redrive',
   RELIABILITY_MIRROR_DELIVER: 'system.reliability-mirror.deliver',
@@ -141,6 +142,12 @@ const JOB_CATALOG = Object.freeze({
     type: JOB_TYPES.WEEKLY_REPORT_GENERATE,
     implementationStatus: JOB_IMPLEMENTATION_STATUS.ACTIVE,
     connectorKey: CONNECTOR_KEYS.TIKTOK,
+  }),
+  [JOB_TYPES.REPORT_MATERIALIZATION_GENERATE]: freezeJob({
+    type: JOB_TYPES.REPORT_MATERIALIZATION_GENERATE,
+    implementationStatus: JOB_IMPLEMENTATION_STATUS.ACTIVE,
+    connectorKey: null,
+    manualOnly: true,
   }),
   [JOB_TYPES.LARK_NOTIFICATION_SEND]: freezeJob({
     type: JOB_TYPES.LARK_NOTIFICATION_SEND,

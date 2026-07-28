@@ -62,7 +62,11 @@ export async function generateTikTokOrganicReport(input = {}) {
     reportType,
     timeZone: setting.timeZone,
     comparisonMode: input.comparisonMode ?? setting.comparisonMode,
+    periodKind: input.periodKind,
+    windowDays: input.windowDays,
+    periodStart: input.periodStart,
     periodEnd: input.periodEnd,
+    maxCustomRangeDays: input.maxCustomRangeDays,
     now: new Date(now()),
   });
 

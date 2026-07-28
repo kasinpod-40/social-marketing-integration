@@ -19,6 +19,7 @@ export const LARK_TABLE_ENV = Object.freeze({
   mktReportSnapshots: 'LARK_TABLE_MKT_REPORT_SNAPSHOTS',
   mktReportMetricValues: 'LARK_TABLE_MKT_REPORT_METRIC_VALUES',
   mktReportTopContent: 'LARK_TABLE_MKT_REPORT_TOP_CONTENT',
+  mktReportTopAds: 'LARK_TABLE_MKT_REPORT_TOP_ADS',
   mktAiReportRuns: 'LARK_TABLE_MKT_AI_REPORT_RUNS',
   mktReportSettings: 'LARK_TABLE_MKT_REPORT_SETTINGS',
   mktSyncLog: 'LARK_TABLE_MKT_SYNC_LOG',
