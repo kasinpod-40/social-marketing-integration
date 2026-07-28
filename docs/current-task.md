@@ -3,17 +3,20 @@
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = ALIGNMENT_READY_FOR_EXACT_HEAD_CI
+TASK_STATUS                         = LIVE_UAT_BLOCKED_HOTFIX_CI
 CURRENT_PROGRAM                     = YOUTUBE_LARK_FULL_SYNC_UAT_OPERATOR
 CLOSEOUT_PR                         = #184 / SQUASH_MERGED / 9f690b2bce4c440be162649c8a2da134245fcc75
-IMPLEMENTATION_PR                   = #186 / READY / UNMERGED
-BRANCH                              = implementation/youtube-lark-full-sync-uat
-BASE_MAIN_SHA                       = 9f690b2bce4c440be162649c8a2da134245fcc75
+IMPLEMENTATION_PR                   = #186 / SQUASH_MERGED / bead0d5c4f9e78793ea00ba16fdf58bbcc80f19e
+BRANCH                              = codex/fix-youtube-uat-generated-config-lifetime
+BASE_MAIN_SHA                       = 369aff9aa805a277340ac1d32aed227d16db507d
 IMPLEMENTATION_OWNER                = CHATGPT_WORK_GITHUB_TOOLS
 READ_ONLY_PREFLIGHT                 = PASS_READ_ONLY_PREFLIGHT
 USER_LARK_CLEANUP                   = COMPLETED_MANUALLY
 FINAL_DOCS_CI                       = #848 / 30335038060 / PASS
-EXACT_ALIGNED_CI                    = PENDING
+EXACT_ALIGNED_CI                    = #849 / 30336265851 / PASS
+LIVE_UAT_OPERATION                  = youtube-lark-uat-20260728t070332538z-369aff9a
+LARK_PREFLIGHT                      = PASS / ZERO YOUTUBE-SCOPED ROWS
+REMOTE_PREFLIGHT                    = BLOCKED_BEFORE_REMOTE_READ / GENERATED_CONFIG_ENOENT
 REMOTE_ACTION_DURING_IMPLEMENTATION = NONE
 WORKER_DEPLOYMENT                   = NOT_RUN
 QUEUE_MESSAGE                       = NOT_SENT
@@ -257,7 +260,11 @@ Repository implementation and CI do not authorize D1 backup, Worker deployment, 
 ## Implementation result
 
 - Squash Merge PR #184 completed at `9f690b2bce4c440be162649c8a2da134245fcc75`.
-- The resulting `main` was merged into PR #186; the only conflict was this Current Task document.
-- The YouTube Lark Full-Sync UAT task remains authoritative over the completed read-only closeout task.
-- Exact aligned-head Branch Verification is required before Squash Merge PR #186.
-- No Worker deployment, Queue/DLQ action, Remote D1/Lark mutation, Provider call, Schedule mutation, Secret mutation or Production action occurred during alignment.
+- PR #186 passed exact-head Branch Verification `#849` and Squash Merged at `bead0d5c4f9e78793ea00ba16fdf58bbcc80f19e`.
+- Live UAT authorization was received and a session was pinned to clean `main@369aff9aa805a277340ac1d32aed227d16db507d`.
+- Lark metadata/count preflight passed for all eight destinations with zero YouTube-scoped rows and no mutation.
+- Remote preflight stopped before any Remote read or mutation because the generated Wrangler config directory was removed before the asynchronous dry-run completed.
+- The hotfix keeps both normal and emergency-restore generated configs alive until their awaited operation settles, then removes the private temporary directory.
+- Hotfix verification passed: syntax checks, focused operator/emergency tests `13/13`, repository check, unit tests `1273/1273`, Workers-runtime tests `12/12`, report reliability `88/88`, dependency audit with zero vulnerabilities, and Wrangler dry-run with no deployment.
+- The initial combined `npm test` Workers-runtime failure was environment-only (`EPERM` for the sandboxed Wrangler log and localhost listener); the same Workers-runtime suite passed outside the restricted sandbox.
+- Worker deployment, Queue/DLQ action, Remote D1/Lark mutation, Provider call, Schedule mutation, Secret mutation and Production action remain not run.

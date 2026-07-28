@@ -844,7 +844,7 @@ async function withGeneratedConfig(loaded, configText, operation) {
     const path = join(directory, 'wrangler.generated.json');
     await writeFile(path, rebased.text, { mode: 0o600 });
     await chmod(path, 0o600);
-    return operation(path);
+    return await operation(path);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

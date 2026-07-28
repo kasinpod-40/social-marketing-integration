@@ -246,15 +246,18 @@ test('evidence is tamper-evident and target-bound', () => {
   );
 });
 
-test('source wiring records UAT Provider metrics and writes attempts before remote actions', async () => {
-  const [source, helper, router] = await Promise.all([
+test('source wiring records UAT Provider metrics and keeps generated configs alive', async () => {
+  const [source, emergencyRestore, helper, router] = await Promise.all([
     readFile(new URL('../../scripts/youtube-lark-full-sync-uat-operator.mjs', import.meta.url), 'utf8'),
+    readFile(new URL('../../scripts/youtube-lark-full-sync-uat-emergency-restore.mjs', import.meta.url), 'utf8'),
     readFile(new URL('../../scripts/lib/youtube-lark-full-sync-uat-operator.js', import.meta.url), 'utf8'),
     readFile(new URL('../../apps/sync-worker/src/youtube-organic-job-router.js', import.meta.url), 'utf8'),
   ]);
   assert.match(source, /if \(options\.phase === 'plan'\)[\s\S]*return;/u);
   assert.match(source, /await writePrivateJson\(attemptPath,[\s\S]*await fetch\(/u);
   assert.match(source, /await writePrivateJson\(attemptPath,[\s\S]*wrangler\(\[\s*'deploy'/u);
+  assert.match(source, /return await operation\(path\);[\s\S]*finally \{[\s\S]*await rm\(directory/u);
+  assert.match(emergencyRestore, /return await operation\(path\);[\s\S]*finally \{[\s\S]*await rm\(directory/u);
   assert.match(helper, /'MKT_SCHEDULE_YOUTUBE_ENABLED'/u);
   assert.match(helper, /'MKT_YOUTUBE_ANALYTICS_ENABLED'/u);
   assert.match(router, /providerRequestCount:\s*Number\(clients\.requestMetrics\?\.publicRequests/u);
