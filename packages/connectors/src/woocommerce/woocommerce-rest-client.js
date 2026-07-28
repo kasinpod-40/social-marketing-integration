@@ -4,6 +4,7 @@ const DEFAULT_API_VERSION = 'wc/v3';
 const DEFAULT_PAGE_SIZE = 100;
 const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_PAGE_SIZE = 100;
+const NETWORK_DIAGNOSTIC_TEXT_LIMIT = 500;
 const ALLOWED_COLLECTIONS = new Set([
   'orders',
   'products',
@@ -154,6 +155,7 @@ export class WooCommerceRestClient {
 
   async #request(resource, options = {}) {
     const url = buildApiUrl(this.baseUrl, this.apiVersion, resource, options.params);
+    const startedAt = Date.now();
     let response;
     try {
       response = await this.fetchImpl(url, {
@@ -169,7 +171,12 @@ export class WooCommerceRestClient {
       throw transientError('WooCommerce request failed before receiving a response', {
         code: 'WOOCOMMERCE_NETWORK_ERROR',
         cause,
-        details: { resource },
+        details: {
+          resource,
+          timeoutMs: this.timeoutMs,
+          elapsedMs: Math.max(0, Date.now() - startedAt),
+          networkCause: describeNetworkCause(cause),
+        },
       });
     }
 
@@ -347,6 +354,24 @@ function ensureUtc(value) {
 
 function createTimeoutSignal(timeoutMs) {
   return typeof AbortSignal?.timeout === 'function' ? AbortSignal.timeout(timeoutMs) : undefined;
+}
+
+function describeNetworkCause(cause) {
+  const nested = cause && typeof cause === 'object' ? cause.cause : null;
+  return Object.freeze({
+    name: diagnosticText(cause?.name) ?? 'Error',
+    message: diagnosticText(cause?.message ?? cause),
+    code: diagnosticText(cause?.code),
+    nestedName: diagnosticText(nested?.name),
+    nestedMessage: diagnosticText(nested?.message),
+    nestedCode: diagnosticText(nested?.code),
+  });
+}
+
+function diagnosticText(value) {
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim();
+  return text === '' ? null : text.slice(0, NETWORK_DIAGNOSTIC_TEXT_LIMIT);
 }
 
 function freezeJson(value) {
