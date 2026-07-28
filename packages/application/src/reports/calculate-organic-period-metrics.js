@@ -48,12 +48,12 @@ export function calculateOrganicPeriodMetrics(input = {}) {
       outputField,
       subtractKnown(current[sourceField], baseline.snapshot[sourceField]),
     ]));
-    const periodEngagement = sumKnown([
+    const periodEngagement = sumStrict([
       deltas.periodLikes,
       deltas.periodComments,
       deltas.periodShares,
     ]);
-    const latestEngagement = sumKnown([current.likes, current.comments, current.shares]);
+    const latestEngagement = sumStrict([current.likes, current.comments, current.shares]);
     usedObservationIds.add(observationIdentity(current));
     if (baseline.sourceObservation) usedObservationIds.add(observationIdentity(baseline.sourceObservation));
     rows.push(Object.freeze({
@@ -77,20 +77,22 @@ export function calculateOrganicPeriodMetrics(input = {}) {
   const dataStatus = trackedContentCount === 0
     ? (input.coverageStatus === 'complete' ? 'no_data_confirmed' : normalizeCoverageStatus(input.coverageStatus))
     : (coveredContentCount === trackedContentCount ? normalizeCompleteStatus(input.coverageStatus) : 'partial');
+  const periodViews = sumField(rows, 'periodViews');
+  const periodEngagement = sumField(rows, 'periodEngagement');
   const metrics = Object.freeze({
-    period_views: sumField(rows, 'periodViews'),
+    period_views: periodViews,
     period_likes: sumField(rows, 'periodLikes'),
     period_comments: sumField(rows, 'periodComments'),
     period_shares: sumField(rows, 'periodShares'),
-    period_engagement: sumField(rows, 'periodEngagement'),
-    period_engagement_rate: calculateRate(sumField(rows, 'periodEngagement'), sumField(rows, 'periodViews')),
+    period_engagement: periodEngagement,
+    period_engagement_rate: calculateRate(periodEngagement, periodViews),
     new_content_count: rows.filter((row) => row.baselineMode === 'new_content').length,
     tracked_content_count: trackedContentCount,
     baseline_coverage_rate: coverageRate,
     latest_total_views: sumCurrentField(rows, 'views'),
     latest_total_engagement: sumField(rows, 'latestEngagement'),
-    latest_weighted_avg_watch_time_seconds: weightedAverage(rows, 'avgWatchTimeSeconds', 'views'),
-    latest_weighted_completion_rate: weightedAverage(rows, 'completionRate', 'views'),
+    latest_weighted_avg_watch_time_seconds: weightedAverageStrict(rows, 'avgWatchTimeSeconds', 'views'),
+    latest_weighted_completion_rate: weightedAverageStrict(rows, 'completionRate', 'views'),
   });
   return Object.freeze({
     platform,
@@ -230,20 +232,24 @@ function subtractKnown(current, baseline) {
   return left === null || right === null ? null : left - right;
 }
 
-function sumField(rows, fieldName) { return sumKnown(rows.map((row) => row[fieldName])); }
-function sumCurrentField(rows, fieldName) { return sumKnown(rows.map((row) => row.current?.[fieldName])); }
-function sumKnown(values) {
-  const known = values.map(normalizeMetric).filter((value) => value !== null);
-  return known.length === 0 ? null : known.reduce((sum, value) => sum + value, 0);
+function sumField(rows, fieldName) { return sumStrict(rows.map((row) => row[fieldName])); }
+function sumCurrentField(rows, fieldName) { return sumStrict(rows.map((row) => row.current?.[fieldName])); }
+function sumStrict(values) {
+  if (values.length === 0) return null;
+  const normalized = values.map(normalizeMetric);
+  if (normalized.some((value) => value === null)) return null;
+  return normalized.reduce((sum, value) => sum + value, 0);
 }
 
-function weightedAverage(rows, metricField, weightField) {
+function weightedAverageStrict(rows, metricField, weightField) {
   let numerator = 0;
   let denominator = 0;
   for (const row of rows) {
     const metric = normalizeMetric(row.current?.[metricField]);
     const weight = normalizeMetric(row.current?.[weightField]);
-    if (metric === null || weight === null || weight <= 0) continue;
+    if (weight === 0) continue;
+    if (metric === null || weight === null) return null;
+    if (weight < 0) return null;
     numerator += metric * weight;
     denominator += weight;
   }
@@ -304,7 +310,11 @@ function normalizeCoverageStatus(value) {
   if (value === 'no_data_confirmed') return value;
   return 'partial';
 }
-function normalizeCompleteStatus(value) { return value === 'revisable' ? 'revisable' : 'complete'; }
+function normalizeCompleteStatus(value) {
+  if (value === 'complete') return 'complete';
+  if (value === 'revisable') return 'revisable';
+  return 'partial';
+}
 function positiveInteger(value, fieldName) {
   const number = Number(value);
   if (!Number.isSafeInteger(number) || number <= 0 || number > 100) throw new TypeError(`${fieldName} must be 1..100`);
