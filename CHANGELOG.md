@@ -25,6 +25,9 @@
 - Forwarded the reviewed `since`/`until` period to Facebook content inventory.
 - Aligned non-cursor Facebook metric reads with the dataset contract by treating each requested
   period as one response while retaining cursor guards for cursor-paginated datasets.
+- Removed three Facebook content Insights candidates rejected by the Live Graph v25 capability
+  probe and retained the two metrics whose combined GET returned HTTP 200; unsupported engagement
+  values remain `null`.
 
 ## Unreleased — YouTube Worker Dry-run Rollout Operator — 2026-07-27
 

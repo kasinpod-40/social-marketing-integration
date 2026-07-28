@@ -473,6 +473,10 @@ mistaken for cursor pagination. The reviewed follow-up is documented in
 new operation only after the hotfix is merged, deployed all-false and preflighted against the exact
 active version.
 
+The subsequent content Insights capability probe also removed three Graph-v25-rejected metric
+candidates. Only `post_media_view` and `post_total_media_view_unique` are currently accepted for
+Facebook content Insights; unsupported engagement metrics remain `null`.
+
 The runtime and operator are merged, but Provider execution is not authorized automatically. The next order is:
 
 1. run `rollout:meta-read-only` in plan-only mode from an authorized local Integration Workspace;
