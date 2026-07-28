@@ -25,13 +25,14 @@ export async function generateDashboardReportMaterialization(input = {}) {
   const customerKey = requireText(input.customerKey, 'customerKey');
   const reportSettingKey = requireText(input.reportSettingKey, 'reportSettingKey');
   const generatedAt = requireTimestamp(input.generatedAt ?? Date.now(), 'generatedAt');
+  const timeZone = requireText(input.timeZone ?? 'Asia/Bangkok', 'timeZone');
   const period = resolveReportPeriod({
     periodKind: input.periodKind,
     windowDays: input.windowDays,
     periodStart: input.periodStart,
     periodEnd: input.periodEnd,
     comparisonMode: input.comparisonMode ?? 'previous_period',
-    timeZone: input.timeZone ?? 'Asia/Bangkok',
+    timeZone,
     now: new Date(generatedAt),
     maxCustomRangeDays: input.maxCustomRangeDays,
   });
@@ -45,6 +46,7 @@ export async function generateDashboardReportMaterialization(input = {}) {
       accountKey,
       reportSettingKey,
       period,
+      timeZone,
       sourceWatermark: optionalText(input.sourceWatermark),
       topContentLimit: input.topContentLimit,
       topAdsLimit: input.topAdsLimit,
@@ -60,7 +62,7 @@ export async function generateDashboardReportMaterialization(input = {}) {
     capability: contract.capability,
     formulaVersion: contract.formulaVersion,
     schemaVersion: MATERIALIZATION_SCHEMA_VERSION,
-    source: 'd1_historical_facts',
+    source: reportResult.source,
     sourceWatermark: reportResult.sourceWatermark,
     coverageRate: reportResult.coverageRate ?? reportResult.baselineCoverageRate ?? null,
     generatedAt,
@@ -89,12 +91,8 @@ export async function generateDashboardReportMaterialization(input = {}) {
 }
 
 async function buildActiveResult(input) {
-  if (input.contract.capability === REPORT_PLATFORM_CAPABILITY.ORGANIC) {
-    return buildOrganicResult(input);
-  }
-  if (input.contract.capability === REPORT_PLATFORM_CAPABILITY.PAID_ADS) {
-    return buildAdsResult(input);
-  }
+  if (input.contract.capability === REPORT_PLATFORM_CAPABILITY.ORGANIC) return buildOrganicResult(input);
+  if (input.contract.capability === REPORT_PLATFORM_CAPABILITY.PAID_ADS) return buildAdsResult(input);
   throw permanentError('Dashboard report capability is unsupported', {
     code: 'DASHBOARD_REPORT_CAPABILITY_UNSUPPORTED',
     details: { capability: input.contract.capability },
@@ -105,7 +103,7 @@ async function buildOrganicResult(input) {
   const source = await input.adapter.load({
     customerKey: input.customerKey,
     accountKey: input.accountKey,
-    timeZone: 'Asia/Bangkok',
+    timeZone: input.timeZone,
     periodStart: input.period.periodStart,
     periodEnd: input.period.periodEnd,
     compareStart: input.period.compareStart,
@@ -174,6 +172,9 @@ async function buildAdsResult(input) {
     }),
   ]);
   assertWatermark(input.sourceWatermark, currentSource.readSummary?.sourceWatermark, input.contract.platformScope);
+  if (compareSource) {
+    assertWatermark(input.sourceWatermark, compareSource.readSummary?.sourceWatermark, input.contract.platformScope);
+  }
   const metrics = currentSource.metrics;
   return Object.freeze({
     platform: input.contract.platformScope,
@@ -202,9 +203,7 @@ async function buildAdsResult(input) {
 function buildUnavailableResult(input) {
   const unavailable = reportSourceUnavailable(
     input.contract,
-    input.contract.sourceStatus === REPORT_SOURCE_STATUS.ACTIVE
-      ? 'REPORT_SOURCE_ADAPTER_UNAVAILABLE'
-      : null,
+    input.contract.sourceStatus === REPORT_SOURCE_STATUS.ACTIVE ? 'REPORT_SOURCE_ADAPTER_UNAVAILABLE' : null,
   );
   return Object.freeze({
     platform: input.contract.platformScope,
@@ -227,10 +226,11 @@ function buildUnavailableResult(input) {
 }
 
 function assertWatermark(expected, observed, platformScope) {
-  if (!expected || !observed || expected === observed) return;
+  if (!expected) return;
+  if (observed === expected) return;
   throw permanentError('Dashboard report source watermark changed after admission', {
     code: 'DASHBOARD_REPORT_SOURCE_WATERMARK_CHANGED',
-    details: { platformScope, expected, observed },
+    details: { platformScope, expected, observed: observed ?? null },
   });
 }
 function requireRegistry(value) {
