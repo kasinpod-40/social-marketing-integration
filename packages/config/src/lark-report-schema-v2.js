@@ -10,6 +10,12 @@ import {
 const PLATFORM_OPTIONS = LARK_REPORT_MATERIALIZATION_SCHEMA.sharedOptionExtensions.platforms;
 const ORGANIC_OPTIONS = PLATFORM_OPTIONS.filter((value) => !value.endsWith('_ads'));
 const DATA_STATUS_OPTIONS = LARK_REPORT_MATERIALIZATION_SCHEMA.sharedOptionExtensions.dataStatuses;
+const EXTENDED_TABLE_KEYS = new Set([
+  'mktReportSettings',
+  'mktReportSnapshots',
+  'mktReportMetricValues',
+  'mktReportTopContent',
+]);
 
 /** Executable additive schema used by setup:report-schema preview/apply. */
 export const LARK_REPORT_SCHEMA_V2_VERSION = LARK_REPORT_MATERIALIZATION_SCHEMA_VERSION;
@@ -25,18 +31,37 @@ export function validateReportSchemaV2(schema = LARK_REPORT_SCHEMA_V2) {
 }
 
 function extendExistingTable(table) {
-  if (!['mktReportSnapshots', 'mktReportMetricValues', 'mktReportTopContent'].includes(table.key)) {
-    return clone(table);
+  if (!EXTENDED_TABLE_KEYS.has(table.key)) return clone(table);
+
+  const fields = table.fields.map((field) => {
+    if (table.key === 'mktReportSettings' && field.fieldName === 'platforms') {
+      return withSelectOptions(field, PLATFORM_OPTIONS);
+    }
+    if (field.fieldName === 'platform') {
+      return withSelectOptions(
+        field,
+        table.key === 'mktReportTopContent' ? ORGANIC_OPTIONS : PLATFORM_OPTIONS,
+      );
+    }
+    if (field.fieldName === 'data_status') return withSelectOptions(field, DATA_STATUS_OPTIONS);
+    return clone(field);
+  });
+
+  if (table.key === 'mktReportSettings'
+    && !fields.some((field) => field.fieldName === 'top_ads_limit')) {
+    fields.push({
+      fieldName: 'top_ads_limit',
+      type: 2,
+      uiType: 'Number',
+      primary: false,
+      description: 'จำนวนอันดับ Top Ads',
+      property: { formatter: '1,000' },
+    });
   }
+
   return {
     ...clone(table),
-    fields: table.fields.map((field) => {
-      if (field.fieldName === 'platform') {
-        return withSelectOptions(field, table.key === 'mktReportTopContent' ? ORGANIC_OPTIONS : PLATFORM_OPTIONS);
-      }
-      if (field.fieldName === 'data_status') return withSelectOptions(field, DATA_STATUS_OPTIONS);
-      return clone(field);
-    }),
+    fields,
   };
 }
 
