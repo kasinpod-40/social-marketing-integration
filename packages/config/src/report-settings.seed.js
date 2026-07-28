@@ -96,6 +96,7 @@ function createSettingRow(input) {
     comparison_mode: 'previous_period',
     language: 'th',
     top_content_limit: 5,
+    top_ads_limit: 5,
     ai_enabled: false,
     notification_enabled: false,
     group_id: null,
