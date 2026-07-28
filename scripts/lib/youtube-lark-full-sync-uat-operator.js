@@ -87,7 +87,7 @@ export function loadYouTubeLarkUatTarget(env = {}) {
     environment: requireExact(env.MKT_ENV, 'development', 'MKT_ENV'),
     customerProfile: requireExact(env.MKT_CUSTOMER_PROFILE, 'integration_workspace', 'MKT_CUSTOMER_PROFILE'),
     customerKey: requireExact(env.MKT_CONNECTION_CUSTOMER_KEY, 'chemistry_k', 'MKT_CONNECTION_CUSTOMER_KEY'),
-    accountKey: requireExact(env.MKT_YOUTUBE_LARK_UAT_ACCOUNT_KEY, 'dev_ft_pumkin', 'MKT_YOUTUBE_LARK_UAT_ACCOUNT_KEY'),
+    accountKey: requireExact(env.MKT_YOUTUBE_LARK_UAT_ACCOUNT_KEY, 'chemistry_k', 'MKT_YOUTUBE_LARK_UAT_ACCOUNT_KEY'),
     channelId: requireText(env.MKT_YOUTUBE_LARK_UAT_EXPECTED_CHANNEL_ID, 'MKT_YOUTUBE_LARK_UAT_EXPECTED_CHANNEL_ID'),
     workerName: requireExact(env.MKT_YOUTUBE_LARK_UAT_WORKER_NAME ?? 'social-mkt-sync-worker', 'social-mkt-sync-worker', 'MKT_YOUTUBE_LARK_UAT_WORKER_NAME'),
     databaseName: requireExact(env.MKT_YOUTUBE_LARK_UAT_DATABASE_NAME ?? 'social-mkt-state-dev', 'social-mkt-state-dev', 'MKT_YOUTUBE_LARK_UAT_DATABASE_NAME'),

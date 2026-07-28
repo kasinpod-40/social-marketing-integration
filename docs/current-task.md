@@ -3,20 +3,20 @@
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = LIVE_UAT_BLOCKED_HOTFIX_CI
+TASK_STATUS                         = CUSTOMER_SCOPE_HOTFIX_READY_FOR_CI
 CURRENT_PROGRAM                     = YOUTUBE_LARK_FULL_SYNC_UAT_OPERATOR
 CLOSEOUT_PR                         = #184 / SQUASH_MERGED / 9f690b2bce4c440be162649c8a2da134245fcc75
 IMPLEMENTATION_PR                   = #186 / SQUASH_MERGED / bead0d5c4f9e78793ea00ba16fdf58bbcc80f19e
-BRANCH                              = codex/fix-youtube-uat-generated-config-lifetime
+BRANCH                              = codex/fix-youtube-uat-persist-end-to-end-completion
 BASE_MAIN_SHA                       = 369aff9aa805a277340ac1d32aed227d16db507d
 IMPLEMENTATION_OWNER                = CHATGPT_WORK_GITHUB_TOOLS
 READ_ONLY_PREFLIGHT                 = PASS_READ_ONLY_PREFLIGHT
 USER_LARK_CLEANUP                   = COMPLETED_MANUALLY
 FINAL_DOCS_CI                       = #848 / 30335038060 / PASS
 EXACT_ALIGNED_CI                    = #849 / 30336265851 / PASS
-LIVE_UAT_OPERATION                  = youtube-lark-uat-20260728t070332538z-369aff9a
-LARK_PREFLIGHT                      = PASS / ZERO YOUTUBE-SCOPED ROWS
-REMOTE_PREFLIGHT                    = BLOCKED_BEFORE_REMOTE_READ / GENERATED_CONFIG_ENOENT
+LIVE_UAT_OPERATION                  = NEW CUSTOMER-SCOPED SESSION REQUIRED AFTER MERGE
+LARK_PREFLIGHT                      = PENDING CUSTOMER-SCOPED RERUN
+REMOTE_PREFLIGHT                    = PENDING CUSTOMER-SCOPED RERUN
 REMOTE_ACTION_DURING_IMPLEMENTATION = NONE
 WORKER_DEPLOYMENT                   = NOT_RUN
 QUEUE_MESSAGE                       = NOT_SENT
@@ -28,7 +28,8 @@ PRODUCTION                          = BLOCKED
 
 ## Objective
 
-เติมข้อมูล YouTube DEV กลับเข้า Integration Workspace Lark หลังผู้ใช้ลบข้อมูลทดสอบเก่าที่ต้องการลบ โดยใช้ Runtime path เดิมเท่านั้น:
+เติมข้อมูล YouTube ของลูกค้า Chemistry K เข้า Integration Workspace Lark หลัง rollback ชุดข้อมูล
+YouTube DEV ที่ operation ก่อนหน้าเขียนผิด scope โดยใช้ Runtime path เดิมเท่านั้น:
 
 ```text
 YouTube Data API
@@ -106,7 +107,7 @@ The dedicated YouTube router requires:
 environment          development
 profile              integration_workspace
 customer             chemistry_k
-account              dev_ft_pumkin
+account              chemistry_k
 D1 write             true
 Lark write           true
 Owner Analytics      false
@@ -154,6 +155,8 @@ Every executable phase requires a distinct exact confirmation. Deploy and Queue 
 - reads `.dev.vars` through the repository parser;
 - resolves Cloudflare Account ID and bearer auth from the Wrangler session;
 - reads Queue inventory and pins the exact `social-mkt-sync-jobs` Queue ID;
+- reads the exact `chemistry_k` / `youtube` connection from Remote D1 and requires
+  connected + validated state with a credential reference before pinning its Channel ID;
 - creates a private `0600` non-secret session file;
 - never prints or persists the bearer token;
 - pins repository HEAD, operation ID, generation, account and Queue target;
@@ -267,4 +270,15 @@ Repository implementation and CI do not authorize D1 backup, Worker deployment, 
 - The hotfix keeps both normal and emergency-restore generated configs alive until their awaited operation settles, then removes the private temporary directory.
 - Hotfix verification passed: syntax checks, focused operator/emergency tests `13/13`, repository check, unit tests `1273/1273`, Workers-runtime tests `12/12`, report reliability `88/88`, dependency audit with zero vulnerabilities, and Wrangler dry-run with no deployment.
 - The initial combined `npm test` Workers-runtime failure was environment-only (`EPERM` for the sandboxed Wrangler log and localhost listener); the same Workers-runtime suite passed outside the restricted sandbox.
-- Worker deployment, Queue/DLQ action, Remote D1/Lark mutation, Provider call, Schedule mutation, Secret mutation and Production action remain not run.
+- A first live attempt reached the existing D1-first/Lark write path but used the obsolete
+  developer YouTube profile. It was restored to all-false immediately and was not rerun.
+- The customer-scope hotfix changes the Integration Workspace YouTube account identity to
+  `chemistry_k`, requires the exact connected/validated D1 customer connection in the session
+  wrapper, and pins that connection and Channel ID without reading or printing credential values.
+- The completion hotfix persists `endToEnd.storage` in `sync_work_runs.completion_json` before
+  marking durable work complete, so live verification can resolve the exact D1 history and
+  coverage IDs while replay still skips the Provider.
+- Focused customer-profile, UAT operator/session, YouTube sync and storage tests pass `39/39`;
+  full repository gates and CI are pending.
+- The Worker is currently restored all-false. A new customer-scoped deployment, Queue send,
+  D1/Lark write and Provider call have not yet run.

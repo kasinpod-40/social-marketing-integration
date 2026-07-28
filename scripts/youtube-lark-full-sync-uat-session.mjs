@@ -24,7 +24,9 @@ const sessionPath = resolve(
     ?? 'outputs/youtube-lark-full-sync-uat/session.json',
 );
 const queueName = 'social-mkt-sync-jobs';
-const channelId = 'UCAwEENovvqZWosKhJWTS5Kg';
+const databaseName = 'social-mkt-state-dev';
+const customerKey = 'chemistry_k';
+const connectorKey = 'youtube';
 
 try {
   const parsed = parseYouTubeLarkUatArgs(process.argv.slice(2));
@@ -67,10 +69,18 @@ async function runPhase(parsed) {
 
   const auth = await resolveCloudflareSession(baseEnv);
   const queue = await resolveQueue(auth.accountId, auth.token, queueName);
+  const connection = resolveCustomerYouTubeConnection({
+    env: {
+      ...baseEnv,
+      CLOUDFLARE_ACCOUNT_ID: auth.accountId,
+      CLOUDFLARE_API_TOKEN: auth.token,
+    },
+  });
   const session = await loadOrCreateSession({
     repositoryHead,
     accountId: auth.accountId,
     queueId: queue.queueId,
+    connection,
   });
   if (session.repositoryHead !== repositoryHead) {
     throw sessionError(
@@ -86,6 +96,13 @@ async function runPhase(parsed) {
       'YOUTUBE_LARK_UAT_SESSION_TARGET_CHANGED',
     );
   }
+  if (session.connectionId !== connection.connectionId
+    || session.channelId !== connection.channelId) {
+    throw sessionError(
+      'Resolved customer YouTube connection differs from the pinned UAT session',
+      'YOUTUBE_LARK_UAT_SESSION_CONNECTION_CHANGED',
+    );
+  }
 
   const env = {
     ...baseEnv,
@@ -93,9 +110,9 @@ async function runPhase(parsed) {
     CLOUDFLARE_API_TOKEN: auth.token,
     MKT_ENV: 'development',
     MKT_CUSTOMER_PROFILE: 'integration_workspace',
-    MKT_CONNECTION_CUSTOMER_KEY: 'chemistry_k',
-    MKT_YOUTUBE_LARK_UAT_ACCOUNT_KEY: 'dev_ft_pumkin',
-    MKT_YOUTUBE_LARK_UAT_EXPECTED_CHANNEL_ID: channelId,
+    MKT_CONNECTION_CUSTOMER_KEY: customerKey,
+    MKT_YOUTUBE_LARK_UAT_ACCOUNT_KEY: customerKey,
+    MKT_YOUTUBE_LARK_UAT_EXPECTED_CHANNEL_ID: session.channelId,
     MKT_YOUTUBE_LARK_UAT_REPOSITORY_HEAD: session.repositoryHead,
     MKT_YOUTUBE_LARK_UAT_OPERATION_ID: session.operationId,
     MKT_YOUTUBE_LARK_UAT_ORIGINAL_REQUESTED_AT: String(session.originalRequestedAt),
@@ -108,6 +125,7 @@ async function runPhase(parsed) {
     sessionResolved: true,
     cloudflareAccountResolved: true,
     queueResolved: true,
+    customerConnectionValidated: true,
     authenticationSource: auth.source,
     tokenPrinted: false,
     repositoryHead: session.repositoryHead,
@@ -205,6 +223,45 @@ async function resolveQueue(accountId, token, expectedName) {
   return Object.freeze(matches[0]);
 }
 
+function resolveCustomerYouTubeConnection(input = {}) {
+  const sql = [
+    'SELECT id, external_account_id, external_account_name, connection_status, access_status,',
+    'CASE WHEN credential_reference IS NOT NULL AND TRIM(credential_reference) <> \'\' THEN 1 ELSE 0 END AS credential_reference_present',
+    'FROM connections',
+    `WHERE customer_key = '${customerKey}' AND connector_key = '${connectorKey}'`,
+    'ORDER BY updated_at DESC;',
+  ].join(' ');
+  const output = runText('npx', [
+    'wrangler', 'd1', 'execute', databaseName, '--remote', '--json', '--command', sql,
+  ], { env: input.env });
+  const payload = JSON.parse(output);
+  const rows = Array.isArray(payload)
+    ? payload.flatMap((result) => result?.results ?? [])
+    : payload?.results ?? [];
+  if (rows.length !== 1) {
+    throw sessionError(
+      'Expected exactly one customer YouTube connection',
+      'YOUTUBE_LARK_UAT_SESSION_CONNECTION_INVALID',
+    );
+  }
+  const row = rows[0];
+  const valid = String(row.id ?? '').trim()
+    && /^UC[A-Za-z0-9_-]{20,}$/u.test(String(row.external_account_id ?? '').trim())
+    && row.connection_status === 'connected'
+    && row.access_status === 'validated'
+    && Number(row.credential_reference_present) === 1;
+  if (!valid) {
+    throw sessionError(
+      'Customer YouTube connection is not connected, validated, and credential-backed',
+      'YOUTUBE_LARK_UAT_SESSION_CONNECTION_INVALID',
+    );
+  }
+  return Object.freeze({
+    connectionId: String(row.id).trim(),
+    channelId: String(row.external_account_id).trim(),
+  });
+}
+
 async function loadOrCreateSession(input) {
   try {
     const existing = JSON.parse(await readFile(sessionPath, 'utf8'));
@@ -220,14 +277,15 @@ async function loadOrCreateSession(input) {
     input.repositoryHead.slice(0, 8),
   ].join('-');
   const session = Object.freeze({
-    contractVersion: 'youtube_lark_full_sync_uat_session_v1',
+    contractVersion: 'youtube_lark_full_sync_uat_session_v2',
     repositoryHead: input.repositoryHead,
     operationId,
     originalRequestedAt,
     cloudflareAccountId: input.accountId,
     queueId: input.queueId,
     queueName,
-    channelId,
+    connectionId: input.connection.connectionId,
+    channelId: input.connection.channelId,
     createdAt: new Date(originalRequestedAt).toISOString(),
   });
   validateSession(session);
@@ -236,14 +294,15 @@ async function loadOrCreateSession(input) {
 }
 
 function validateSession(value) {
-  if (value?.contractVersion !== 'youtube_lark_full_sync_uat_session_v1'
+  if (value?.contractVersion !== 'youtube_lark_full_sync_uat_session_v2'
     || !/^[0-9a-f]{40}$/u.test(String(value.repositoryHead ?? ''))
     || !/^[a-z0-9][a-z0-9_-]{0,95}$/u.test(String(value.operationId ?? ''))
     || !Number.isSafeInteger(Number(value.originalRequestedAt))
     || !String(value.cloudflareAccountId ?? '').trim()
     || !String(value.queueId ?? '').trim()
     || value.queueName !== queueName
-    || value.channelId !== channelId) {
+    || !String(value.connectionId ?? '').trim()
+    || !/^UC[A-Za-z0-9_-]{20,}$/u.test(String(value.channelId ?? ''))) {
     throw sessionError(
       'YouTube Lark UAT session file is invalid',
       'YOUTUBE_LARK_UAT_SESSION_INVALID',

@@ -76,23 +76,31 @@ export async function syncYouTubeOrganicEndToEnd(input = {}) {
     d1WriteEnabled,
   });
 
-  const result = await syncYouTubeOrganicToLark({
+  return syncYouTubeOrganicToLark({
     ...input,
     syncEngine: storageSyncEngine,
     // Durable generation ต้องใช้เวลาคงที่ข้าม Queue retry เพื่อไม่สร้าง Observation ใหม่จาก retry เดิม.
     now: () => requestedAt,
-  });
-  const storage = dryRun === true
-    ? await storageSyncEngine.previewStorage()
-    : storageSyncEngine.storageResult;
-
-  return Object.freeze({
-    ...result,
-    endToEnd: Object.freeze({
-      contract: 'youtube-organic-end-to-end-v1',
+    decorateCompletion: async (completion) => buildEndToEndCompletion({
+      completion,
+      dryRun,
       d1WriteEnabled,
       larkWriteEnabled,
-      storage,
+      storage: dryRun
+        ? await storageSyncEngine.previewStorage()
+        : storageSyncEngine.storageResult,
+    }),
+  });
+}
+
+export function buildEndToEndCompletion(input = {}) {
+  return Object.freeze({
+    ...requireCompletion(input.completion),
+    endToEnd: Object.freeze({
+      contract: 'youtube-organic-end-to-end-v1',
+      d1WriteEnabled: input.d1WriteEnabled === true,
+      larkWriteEnabled: input.larkWriteEnabled === true,
+      storage: input.storage ?? null,
       larkTargets: Object.freeze([
         'RAW_YouTube_Channels',
         'RAW_YouTube_Videos',
@@ -161,6 +169,13 @@ function requireSyncEngine(value) {
     || typeof value.planByKey !== 'function'
     || typeof value.executePlan !== 'function') {
     throw new TypeError('YouTube end-to-end requires Existing TableSyncEngine');
+  }
+  return value;
+}
+
+function requireCompletion(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError('YouTube end-to-end completion must be an object');
   }
   return value;
 }

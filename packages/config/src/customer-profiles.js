@@ -54,8 +54,8 @@ const CUSTOMER_PROFILES = Object.freeze({
       },
       youtube: {
         enabledByDefault: false,
-        accountKey: 'dev_ft_pumkin',
-        displayLabel: 'YouTube Organic — Temporary developer source',
+        accountKey: 'chemistry_k',
+        displayLabel: 'YouTube Organic — Chemistry K',
       },
       woocommerce: {
         enabledByDefault: false,

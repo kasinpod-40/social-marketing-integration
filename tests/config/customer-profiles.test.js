@@ -25,7 +25,7 @@ test('loads the single Integration Workspace with Chemistry K TikTok identity an
   assert.equal(config.connectors.tiktok.enabled, false);
   assert.equal(config.connectors.tiktok.accountKey, 'chemistry_k');
   assert.equal(config.connectors.tiktok.sourceHandle, 'chemistry_k');
-  assert.equal(config.connectors.youtube.accountKey, 'dev_ft_pumkin');
+  assert.equal(config.connectors.youtube.accountKey, 'chemistry_k');
   assert.ok(Object.values(config.connectors).every((connector) => connector.enabled === false));
   assert.equal(config.tiktok, config.connectors.tiktok);
 });
