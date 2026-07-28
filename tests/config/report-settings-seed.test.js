@@ -1,55 +1,51 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createReportSettingRowsForProfile } from '../../packages/config/src/report-settings.seed.js';
+import {
+  DASHBOARD_REPORT_PLATFORM_SCOPES,
+  createReportSettingRowsForProfile,
+} from '../../packages/config/src/report-settings.seed.js';
 import { seedReportSettings } from '../../packages/application/src/use-cases/seed-report-settings.js';
 
-test('creates deterministic Integration Workspace settings for Chemistry K TikTok', () => {
+const EXPECTED_SETTING_COUNT = 2 + (DASHBOARD_REPORT_PLATFORM_SCOPES.length * 7);
+
+test('creates canonical multichannel Dashboard settings and preserves TikTok 1D/7D', () => {
   const rows = createReportSettingRowsForProfile('integration_workspace');
-  assert.deepEqual(rows.map((row) => row.report_setting_key), [
+  assert.equal(rows.length, EXPECTED_SETTING_COUNT);
+  assert.deepEqual(rows.slice(0, 2).map((row) => row.report_setting_key), [
     'integration_workspace:tiktok:daily',
     'integration_workspace:tiktok:weekly',
-    'integration_workspace:tiktok:rolling:3d',
-    'integration_workspace:tiktok:rolling:7d',
-    'integration_workspace:tiktok:rolling:9d',
-    'integration_workspace:tiktok:rolling:15d',
-    'integration_workspace:tiktok:rolling:30d',
-    'integration_workspace:tiktok:rolling:90d',
-    'integration_workspace:tiktok:custom_range',
   ]);
   assert.equal(rows[0].customer_profile, 'integration_workspace');
   assert.equal(rows[0].period_kind, 'rolling_days');
   assert.equal(rows[0].window_days, 1);
+  assert.equal(rows[0].top_content_limit, 5);
+  assert.equal(rows[0].top_ads_limit, 5);
   assert.equal(rows[0].ai_enabled, false);
   assert.equal(rows[0].notification_enabled, false);
   assert.equal(rows[1].send_weekday, 'monday');
-  assert.equal(rows[2].report_type, 'dashboard_performance_report');
-  assert.equal(rows[2].window_days, 3);
-  assert.equal(rows.at(-1).period_kind, 'custom_range');
-  assert.equal(rows.at(-1).window_days, null);
-  assert.equal(rows[0].account_keys_json, '["chemistry_k"]');
+  for (const platformScope of DASHBOARD_REPORT_PLATFORM_SCOPES) {
+    const platformRows = rows.filter((row) => row.platforms[0] === platformScope
+      && row.report_type === 'dashboard_performance_report');
+    assert.deepEqual(platformRows.map((row) => row.window_days), [3, 7, 9, 15, 30, 90, null]);
+    assert.equal(platformRows.at(-1).report_setting_key, `integration_workspace:${platformScope}:custom_range`);
+    assert.equal(platformRows.every((row) => row.top_ads_limit === 5), true);
+  }
+  assert.equal(rows.every((row) => row.account_keys_json === '["chemistry_k"]'), true);
+  assert.equal(rows.some((row) => row.report_setting_key.startsWith('dev_ft_pumkin:')), false);
 });
 
-test('legacy report profile labels resolve to the canonical Integration Workspace settings', () => {
+test('legacy report profile labels resolve to canonical Integration Workspace settings', () => {
+  const canonical = createReportSettingRowsForProfile('integration_workspace');
   for (const alias of ['dev_ft_pumkin', 'uat_chemistry_k']) {
     const rows = createReportSettingRowsForProfile(alias);
-    assert.deepEqual(rows.map((row) => row.report_setting_key), [
-      'integration_workspace:tiktok:daily',
-      'integration_workspace:tiktok:weekly',
-      'integration_workspace:tiktok:rolling:3d',
-      'integration_workspace:tiktok:rolling:7d',
-      'integration_workspace:tiktok:rolling:9d',
-      'integration_workspace:tiktok:rolling:15d',
-      'integration_workspace:tiktok:rolling:30d',
-      'integration_workspace:tiktok:rolling:90d',
-      'integration_workspace:tiktok:custom_range',
-    ]);
+    assert.deepEqual(rows, canonical);
     assert.equal(rows[0].customer_profile, 'integration_workspace');
-    assert.equal(rows[0].account_keys_json, '["chemistry_k"]');
   }
 });
 
 test('keeps Production report identity separate', () => {
   const rows = createReportSettingRowsForProfile('chemistry_k');
+  assert.equal(rows.length, EXPECTED_SETTING_COUNT);
   assert.equal(rows[0].report_setting_key, 'chemistry_k:tiktok:daily');
   assert.equal(rows[0].customer_profile, 'chemistry_k');
   assert.equal(rows[0].account_keys_json, '["chemistry_k"]');
@@ -73,9 +69,8 @@ test('seeds report settings idempotently by canonical report_setting_key', async
   const result = await seedReportSettings({
     repository, syncEngine, tableId: 'tbl_settings', profileKey: 'integration_workspace',
   });
-
   assert.equal(call.keyField, 'report_setting_key');
-  assert.equal(call.rows.length, 9);
+  assert.equal(call.rows.length, EXPECTED_SETTING_COUNT);
   assert.equal(call.rows[0].report_setting_key, 'integration_workspace:tiktok:daily');
-  assert.equal(result.created, 9);
+  assert.equal(result.created, EXPECTED_SETTING_COUNT);
 });

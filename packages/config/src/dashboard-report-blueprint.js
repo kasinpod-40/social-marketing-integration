@@ -1,6 +1,9 @@
-/** Repository-only binding contract. This module never mutates a Lark Base. */
 export const DASHBOARD_REPORT_BLUEPRINT = Object.freeze({
-  schemaVersion: 'dashboard-report-blueprint-v1',
+  schemaVersion: 'dashboard-report-blueprint-v2',
+  customerProfile: 'integration_workspace',
+  platformScopes: Object.freeze([
+    'facebook', 'instagram', 'tiktok', 'youtube', 'meta_ads', 'google_ads', 'tiktok_ads',
+  ]),
   periodKinds: Object.freeze(['rolling_days', 'custom_range']),
   rollingPresetDays: Object.freeze([3, 7, 9, 15, 30, 90]),
   defaultPeriodEnd: 'last_completed_reporting_day',
@@ -13,6 +16,17 @@ export const DASHBOARD_REPORT_BLUEPRINT = Object.freeze({
     'reliability_lock',
     'report_materializations',
   ]),
+  consumerContracts: Object.freeze({
+    dashboard: 'validated_report_materialization_only',
+    lark: 'validated_report_materialization_only',
+    ai: 'validated_report_materialization_only_no_calculation',
+  }),
+  aiSummary: Object.freeze({
+    featureFlag: 'MKT_REPORT_AI_SUMMARY_ENABLED',
+    defaultEnabled: false,
+    providerBoundary: 'injectable',
+    productionBindingConfigured: false,
+  }),
   larkTables: Object.freeze({
     snapshots: 'mktReportSnapshots',
     metricValues: 'mktReportMetricValues',

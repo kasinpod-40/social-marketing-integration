@@ -1,0 +1,154 @@
+import { dateOnlyToEpochMilliseconds } from '../../../shared/src/date/date-only.js';
+import {
+  buildReportMetricValueRows,
+  buildReportTopAdsRows,
+  buildReportTopContentRows,
+} from '../reports/build-report-output-rows.js';
+import { stableStringify } from './build-report-snapshot.js';
+
+/** Dashboard/Lark binding that reads materializations only, never detailed historical facts. */
+export async function writeDashboardMaterializationToLark(input = {}) {
+  const reader = requireReader(input.reader);
+  const repository = requireObject(input.repository, 'repository');
+  const syncEngine = requireSyncEngine(input.syncEngine);
+  const materialization = await reader.readById(requireText(input.reportId, 'reportId'));
+  if (!materialization) throw new Error(`Report materialization not found: ${input.reportId}`);
+  const { row, payload } = materialization;
+  const tables = requireTables(input.tables, payload.capability);
+  const customerProfile = requireText(input.customerProfile, 'customerProfile');
+  const utcOffset = requireText(input.utcOffset ?? '+07:00', 'utcOffset');
+  const topContentLimit = boundedLimit(input.topContentLimit ?? Math.max(payload.topContent.length, 5));
+  const topAdsLimit = boundedLimit(input.topAdsLimit ?? Math.max(payload.topAds.length, 5));
+  const sourceSnapshotCount = nonNegativeInteger(input.sourceSnapshotCount ?? 0, 'sourceSnapshotCount');
+  const snapshotRow = Object.freeze({
+    report_id: row.report_id,
+    report_setting_key: row.report_setting_key,
+    customer_profile: customerProfile,
+    account_id: row.account_key,
+    report_type: row.report_type,
+    period_kind: row.period_kind,
+    window_days: row.window_days,
+    period_start: dateOnlyToEpochMilliseconds(row.period_start, { utcOffset }),
+    period_end: dateOnlyToEpochMilliseconds(row.period_end, { utcOffset }),
+    compare_start: row.compare_start ? dateOnlyToEpochMilliseconds(row.compare_start, { utcOffset }) : null,
+    compare_end: row.compare_end ? dateOnlyToEpochMilliseconds(row.compare_end, { utcOffset }) : null,
+    comparison_mode: payload.period.comparisonMode,
+    platform: Object.freeze([payload.platformScope]),
+    course_name: null,
+    metric_payload_json: stableStringify(payload.metricPayload),
+    top_content_json: stableStringify(payload.topContent),
+    top_ads_json: stableStringify(payload.topAds),
+    generated_at: row.generated_at,
+    data_status: payload.dataStatus,
+    formula_version: row.formula_version,
+    source_snapshot_count: sourceSnapshotCount,
+    baseline_coverage_rate: payload.coverageRate,
+  });
+  const metricRows = buildReportMetricValueRows({
+    reportId: row.report_id,
+    reportSettingKey: row.report_setting_key,
+    customerProfile,
+    reportType: row.report_type,
+    platform: payload.platformScope,
+    accountId: row.account_key,
+    metrics: payload.metricPayload,
+    dataStatus: payload.dataStatus,
+    sourceSnapshotCount,
+    period: payload.period,
+    generatedAt: row.generated_at,
+    utcOffset,
+  });
+  const topContentRows = payload.capability === 'organic' ? buildReportTopContentRows({
+    reportId: row.report_id,
+    reportSettingKey: row.report_setting_key,
+    customerProfile,
+    reportType: row.report_type,
+    platform: payload.platformScope,
+    accountId: row.account_key,
+    contentRows: payload.topContent,
+    limit: topContentLimit,
+    period: payload.period,
+    generatedAt: row.generated_at,
+    utcOffset,
+  }) : Object.freeze([]);
+  const topAdsRows = payload.capability === 'paid_ads' ? buildReportTopAdsRows({
+    reportId: row.report_id,
+    reportSettingKey: row.report_setting_key,
+    customerProfile,
+    reportType: row.report_type,
+    platform: payload.platformScope,
+    accountId: row.account_key,
+    adRows: payload.topAds,
+    limit: topAdsLimit,
+    period: payload.period,
+    generatedAt: row.generated_at,
+    utcOffset,
+  }) : Object.freeze([]);
+  const planEntries = [
+    ['reportSnapshot', tables.mktReportSnapshots, 'report_id', [snapshotRow]],
+    ['reportMetricValues', tables.mktReportMetricValues, 'report_metric_key', metricRows],
+    ...(topContentRows.length > 0 ? [['reportTopContent', tables.mktReportTopContent, 'report_content_key', topContentRows]] : []),
+    ...(topAdsRows.length > 0 ? [['reportTopAds', tables.mktReportTopAds, 'report_ad_key', topAdsRows]] : []),
+  ];
+  const plans = {};
+  for (const [name, tableId, keyField, rows] of planEntries) {
+    plans[name] = await syncEngine.planByKey({ repository, tableId, keyField, rows });
+  }
+  const results = {};
+  for (const [name, plan] of Object.entries(plans)) {
+    results[name] = await syncEngine.executePlan(plan, {
+      beforeWriteChunk: typeof input.assertLockActive === 'function' ? input.assertLockActive : undefined,
+    });
+  }
+  return Object.freeze({
+    reportId: row.report_id,
+    platform: payload.platformScope,
+    capability: payload.capability,
+    dataStatus: payload.dataStatus,
+    source: 'report_materializations',
+    rows: Object.freeze({ snapshots: 1, metrics: metricRows.length, topContent: topContentRows.length, topAds: topAdsRows.length }),
+    results: Object.freeze(results),
+  });
+}
+
+function requireReader(value) {
+  if (typeof value?.readById !== 'function') throw new TypeError('materialization reader requires readById()');
+  return value;
+}
+function requireSyncEngine(value) {
+  if (typeof value?.planByKey !== 'function' || typeof value?.executePlan !== 'function') {
+    throw new TypeError('syncEngine requires planByKey() and executePlan()');
+  }
+  return value;
+}
+function requireTables(value, capability) {
+  const tables = requireObject(value, 'tables');
+  const shared = {
+    mktReportSnapshots: requireText(tables.mktReportSnapshots, 'tables.mktReportSnapshots'),
+    mktReportMetricValues: requireText(tables.mktReportMetricValues, 'tables.mktReportMetricValues'),
+  };
+  return Object.freeze({
+    ...shared,
+    ...(capability === 'organic'
+      ? { mktReportTopContent: requireText(tables.mktReportTopContent, 'tables.mktReportTopContent') }
+      : { mktReportTopAds: requireText(tables.mktReportTopAds, 'tables.mktReportTopAds') }),
+  });
+}
+function boundedLimit(value) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number <= 0 || number > 100) throw new TypeError('rank limit must be 1..100');
+  return number;
+}
+function nonNegativeInteger(value, fieldName) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number < 0) throw new TypeError(`${fieldName} must be non-negative`);
+  return number;
+}
+function requireObject(value, fieldName) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError(`${fieldName} is required`);
+  return value;
+}
+function requireText(value, fieldName) {
+  if (typeof value !== 'string' || value.trim() === '') throw new TypeError(`${fieldName} is required`);
+  return value.trim();
+}
