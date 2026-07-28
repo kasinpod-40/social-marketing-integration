@@ -71,6 +71,39 @@ const SAFE_TARGET_KEY = /^[a-z0-9][a-z0-9_-]{0,63}$/u;
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/u;
 const EXECUTABLE_PHASES = new Set(META_D1_ONLY_OPERATOR_PHASES.filter((phase) => phase !== 'plan'));
 const EVIDENCE_FILES = deepFreeze(Object.fromEntries(META_D1_ONLY_OPERATOR_PHASES.map((phase) => [phase, `${phase}.json`])));
+const CONTINUATION_PHASES = new Set([
+  'verify-idempotent-rerun',
+  'restore-all-false',
+  'verify-restore',
+  'summary',
+]);
+const CONTINUATION_ALLOWED_PATHS = new Set([
+  'CHANGELOG.md',
+  'PROJECT_BRAIN.md',
+  'docs/current-task.md',
+  'docs/project-brain/meta-facebook-page-token-runtime-hotfix-2026-07-28.md',
+  'scripts/lib/meta-d1-only-rollout-operator.js',
+  'scripts/lib/meta-lark-parity-rollout-operator.js',
+  'scripts/meta-d1-only-rollout-operator.mjs',
+  'scripts/meta-lark-parity-rollout-operator.mjs',
+  'tests/application/meta-d1-only-rollout-operator.test.js',
+  'tests/application/meta-lark-parity-rollout-operator.test.js',
+]);
+const RESTORE_REUSE_PHASES = Object.freeze([
+  'plan',
+  'preflight',
+  'backup',
+  'deploy-safe-baseline',
+  'verify-safe-baseline',
+  'deploy-d1-only-gates',
+  'verify-d1-only-deployment',
+  'snapshot-before',
+  'send-one-d1-only',
+  'verify-d1-only',
+  'resend-same-operation',
+  'restore-all-false',
+  'verify-restore',
+]);
 const D1_PHASE = 'meta_end_to_end_d1_write_v1';
 const LARK_PHASE = 'meta_end_to_end_lark_write_v1';
 const COMPLETION_PHASE = 'meta_end_to_end_completion_v1';
@@ -93,6 +126,95 @@ export function assertMetaD1OnlyConfirmation(phase, env = {}) {
   const expected = META_D1_ONLY_CONFIRMATIONS[phase];
   if (env?.[expected.envName] !== expected.value) throw operatorError(`Meta D1-only rollout requires ${expected.envName}=${expected.value}`, 'META_D1_ONLY_OPERATOR_CONFIRMATION_REQUIRED', { phase, envName: expected.envName });
   return true;
+}
+
+export function validateMetaD1OnlyContinuationRepositoryState(input = {}, env = {}) {
+  const phase = requirePhase(input.phase);
+  const targetRepositoryHead = requireFullSha(
+    input.targetRepositoryHead,
+    'targetRepositoryHead',
+  );
+  const operatorRepositoryHead = requireFullSha(
+    input.operatorRepositoryHead,
+    'operatorRepositoryHead',
+  );
+  if (input.clean !== true) {
+    throw operatorError(
+      'Meta D1-only continuation requires a clean Working Tree',
+      'META_D1_ONLY_CONTINUATION_REPOSITORY_INVALID',
+    );
+  }
+  if (targetRepositoryHead === operatorRepositoryHead) {
+    return deepFreeze({
+      continuedAcrossRepositoryHead: false,
+      targetRepositoryHead,
+      operatorRepositoryHead,
+      changedPathCount: 0,
+    });
+  }
+  const continuedFrom = requireFullSha(
+    env.MKT_META_D1_ONLY_CONTINUATION_FROM_HEAD,
+    'MKT_META_D1_ONLY_CONTINUATION_FROM_HEAD',
+  );
+  const expectedOperator = requireFullSha(
+    env.MKT_META_D1_ONLY_CONTINUATION_OPERATOR_HEAD,
+    'MKT_META_D1_ONLY_CONTINUATION_OPERATOR_HEAD',
+  );
+  const changedPaths = Array.isArray(input.changedPaths)
+    ? input.changedPaths.map((path) => requireText(path, 'changedPath'))
+    : [];
+  const unsafePaths = changedPaths.filter((path) => !CONTINUATION_ALLOWED_PATHS.has(path));
+  if (!CONTINUATION_PHASES.has(phase)
+    || continuedFrom !== targetRepositoryHead
+    || expectedOperator !== operatorRepositoryHead
+    || input.targetIsAncestor !== true
+    || changedPaths.length === 0
+    || unsafePaths.length > 0) {
+    throw operatorError(
+      'Meta D1-only continuation repository boundary is not approved',
+      'META_D1_ONLY_CONTINUATION_REPOSITORY_INVALID',
+      { phase, unsafePaths },
+    );
+  }
+  return deepFreeze({
+    continuedAcrossRepositoryHead: true,
+    targetRepositoryHead,
+    operatorRepositoryHead,
+    changedPathCount: changedPaths.length,
+    changedPathFingerprint: sha256(stableJson([...changedPaths].sort())),
+  });
+}
+
+export function validateMetaD1OnlyReusableRestoreSequence(evidence = [], target = {}) {
+  const validated = validateMetaD1OnlyEvidenceSequence(evidence, target);
+  const phases = validated.map((item) => item.phase);
+  if (JSON.stringify(phases) !== JSON.stringify(RESTORE_REUSE_PHASES)) {
+    throw operatorError(
+      'Meta D1-only reusable restore evidence sequence is incomplete',
+      'META_D1_ONLY_REUSABLE_RESTORE_INVALID',
+    );
+  }
+  const restore = validated.at(-2);
+  const verification = validated.at(-1);
+  const deploymentVersionId = requireVersionId(
+    restore?.data?.deploymentVersionId,
+    'restore.data.deploymentVersionId',
+  );
+  if (restore?.data?.mode !== 'safe'
+    || verification?.data?.mode !== 'safe'
+    || verification?.data?.activeVersion !== deploymentVersionId
+    || !Array.isArray(verification?.data?.expectedTrueFlags)
+    || verification.data.expectedTrueFlags.length !== 0) {
+    throw operatorError(
+      'Meta D1-only reusable restore does not prove an active all-false deployment',
+      'META_D1_ONLY_REUSABLE_RESTORE_INVALID',
+    );
+  }
+  return deepFreeze({
+    deploymentVersionId,
+    restoreEvidenceSha256: restore.evidenceSha256,
+    verificationEvidenceSha256: verification.evidenceSha256,
+  });
 }
 
 export function loadMetaD1OnlyTarget(env = {}) {
@@ -312,7 +434,7 @@ export function compareMetaD1OnlySnapshots(beforeInput, afterInput, options = {}
     if (after.queueOperationAttempts < before.queueOperationAttempts + 1) throw operatorError('Meta D1-only initial Queue attempt was not observed', 'META_D1_ONLY_QUEUE_ATTEMPT_MISSING');
     return deepFreeze({ accepted: true, rerun: false, before, after, targetCountDelta: subtractCounts(after.targetCounts, before.targetCounts), operationCounts: after.operationCounts, coverageRunCount: after.coverageRunCount, coverageEntityCount: after.coverageEntityCount });
   }
-  if (after.queueOperationAttempts < before.queueOperationAttempts + 1) throw operatorError('Meta D1-only rerun Queue attempt was not observed', 'META_D1_ONLY_RERUN_ATTEMPT_MISSING');
+  if (after.mainQueueAttempts < before.mainQueueAttempts + 1) throw operatorError('Meta D1-only rerun Queue attempt was not observed', 'META_D1_ONLY_RERUN_ATTEMPT_MISSING');
   for (const key of Object.keys(before.targetCounts)) if (after.targetCounts[key] !== before.targetCounts[key]) throw operatorError('Meta D1-only rerun changed target Business counts', 'META_D1_ONLY_RERUN_COUNT_DRIFT', { field: key, before: before.targetCounts[key], after: after.targetCounts[key] });
   for (const key of Object.keys(before.operationCounts)) if (after.operationCounts[key] !== before.operationCounts[key]) throw operatorError('Meta D1-only rerun changed operation-scoped Business counts', 'META_D1_ONLY_RERUN_COUNT_DRIFT', { field: key, before: before.operationCounts[key], after: after.operationCounts[key] });
   if (after.coverageRunCount !== before.coverageRunCount || after.coverageEntityCount !== before.coverageEntityCount) throw operatorError('Meta D1-only rerun changed Coverage counts', 'META_D1_ONLY_RERUN_COVERAGE_DRIFT');

@@ -506,6 +506,14 @@ The subsequent content Insights capability probe also removed three Graph-v25-re
 candidates. Only `post_media_view` and `post_total_media_view_unique` are currently accepted for
 Facebook content Insights; unsupported engagement metrics remain `null`.
 
+The following Facebook D1 run proved the rerun verifier must use the durable
+`main_queue_attempts` counter, not the count of `queue_operation_attempts` rows: `operation_id` is
+the primary key, so one same-operation replay updates the existing row. The D1 and Lark operators
+retain immutable Business/Coverage/reconciliation checks and permit cross-head closeout only for
+an exact-confirmed, clean, ancestor-bound operator-only hotfix. The closeout reuses a prior
+hash-valid restore only after remote all-false/version/topology re-verification, without another
+Worker deployment.
+
 The runtime and operator are merged, but Provider execution is not authorized automatically. The next order is:
 
 1. run `rollout:meta-read-only` in plan-only mode from an authorized local Integration Workspace;

@@ -93,3 +93,24 @@ supported pair combined            HTTP 200
 The contract now requests only the two Live-accepted metrics. Reactions, comments and shares remain
 `null` unless a separately reviewed source contract supplies them; the runtime must not fabricate
 zero or relabel unsupported metrics.
+
+## Idempotent rerun verifier follow-up
+
+The next fresh Facebook operation reached the accepted D1-only boundary and the same-operation
+Queue replay incremented `main_queue_attempts` from 28 to 29 with no Business or Coverage drift.
+The verifier nevertheless timed out because it required `COUNT(*)` for the operation to increase.
+That count cannot exceed one: `queue_operation_attempts.operation_id` is the table primary key and
+the store increments `main_queue_attempts` on conflict.
+
+The operator correction:
+
+- uses `main_queue_attempts` for D1 and Lark rerun admission;
+- keeps the initial operation-row existence check unchanged;
+- preserves zero Business/Coverage/reconciliation drift requirements;
+- permits the restored evidence chain to cross only this operator hotfix when the old head is an
+  ancestor, the checkout is clean, both heads are confirmed exactly and every changed path is in
+  the operator/test/documentation allowlist;
+- reuses the prior hash-valid restore only after a fresh remote all-false/version/topology check,
+  so evidence closeout does not deploy the unmerged branch;
+- does not authorize Provider replay, Worker runtime changes, D1 business writes, Lark writes,
+  schedules, Secrets or Production by itself.

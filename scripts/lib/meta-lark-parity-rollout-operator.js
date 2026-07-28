@@ -273,6 +273,7 @@ export function buildMetaLarkSnapshotSql(target = {}) {
       (SELECT state_json FROM sync_work_phases WHERE work_key = ${workKey} AND phase = '${COMPLETION_PHASE}') AS completion_state_json,
       (SELECT COUNT(*) FROM sync_locks WHERE owner_id = ${syncRunId} AND expires_at > (unixepoch() * 1000)) AS active_lock_count,
       (SELECT COUNT(*) FROM queue_operation_attempts WHERE operation_id = ${operationId} AND work_key = ${workKey}) AS queue_operation_attempts,
+      (SELECT COALESCE(MAX(main_queue_attempts), 0) FROM queue_operation_attempts WHERE operation_id = ${operationId} AND work_key = ${workKey}) AS main_queue_attempts,
       (SELECT COUNT(*) FROM data_coverage_runs WHERE sync_run_id = ${syncRunId}) AS coverage_run_count,
       (SELECT COUNT(*) FROM data_coverage_runs WHERE sync_run_id = ${syncRunId} AND (failed_rows <> 0 OR status NOT IN ('complete', 'no_data_confirmed', 'revisable'))) AS invalid_coverage_count,
       (SELECT COUNT(*) FROM data_coverage_entities WHERE coverage_run_id IN (SELECT coverage_run_id FROM data_coverage_runs WHERE sync_run_id = ${syncRunId})) AS coverage_entity_count,
@@ -311,6 +312,7 @@ export function normalizeMetaLarkSnapshot(value = {}) {
     completionReconciliation: completionState?.reconciliation ?? null,
     activeLockCount: count(value.active_lock_count),
     queueOperationAttempts: count(value.queue_operation_attempts),
+    mainQueueAttempts: count(value.main_queue_attempts),
     coverageRunCount: count(value.coverage_run_count),
     invalidCoverageCount: count(value.invalid_coverage_count),
     coverageEntityCount: count(value.coverage_entity_count),
@@ -374,7 +376,7 @@ export function compareMetaLarkSnapshots(beforeInput, afterInput, target = {}, o
     || after.coverageEntityCount !== before.coverageEntityCount) {
     throw operatorError('Meta Lark continuation changed Coverage counts', 'META_LARK_COVERAGE_COUNT_DRIFT');
   }
-  if (after.queueOperationAttempts < before.queueOperationAttempts + 1) {
+  if (after.mainQueueAttempts < before.mainQueueAttempts + 1) {
     throw operatorError('Meta Lark Queue attempt was not observed', 'META_LARK_QUEUE_ATTEMPT_MISSING');
   }
   const classified = classifyMetaLarkCompletion(after, target);
