@@ -23,13 +23,7 @@ const UNRELATED_TRUE_FLAGS = Object.freeze([
 test('YouTube fingerprint accepts known unrelated connector true flags on the shared Worker', async () => {
   const config = await configComparison();
   const versionsView = versionFixture({ config: config.safeText });
-  setFlag(versionsView, UNRELATED_TRUE_FLAGS[0], 'true');
-  setFlag(versionsView, UNRELATED_TRUE_FLAGS[1], 'true');
-  versionsView.bindings.push({
-    type: 'plain_text',
-    name: UNRELATED_TRUE_FLAGS[2],
-    text: 'true',
-  });
+  for (const flag of UNRELATED_TRUE_FLAGS) setFlag(versionsView, flag, 'true');
 
   const remote = validateLiveRemoteYouTubeDeploymentContract({
     versionsView,
@@ -145,6 +139,7 @@ test('the executable preflight reports the scoped true-flag count without persis
     new URL('../../scripts/youtube-remote-read-only-preflight.mjs', import.meta.url),
     'utf8',
   );
+  assert.match(source, /additionalConnectorTrueFlagCount:\s*contract\.additionalConnectorTrueFlagCount/u);
   assert.doesNotMatch(source, /additionalConnectorTrueFlagNames:\s*contract/u);
   assert.doesNotMatch(source, /sanitizedRemoteContract:\s*error/u);
 });
