@@ -125,6 +125,7 @@
     "audit:architecture": "node scripts/audit-architecture.mjs",
     "deploy:dry-run": "wrangler deploy --dry-run --config wrangler.example.jsonc && wrangler deploy --dry-run --config wrangler.sync.example.jsonc",
     "seed:report-settings": "node scripts/seed-report-settings.mjs",
+    "reconcile:dashboard-report-settings": "node scripts/reconcile-dashboard-report-settings.mjs",
     "setup:report-schema": "node scripts/setup-report-schema.mjs",
     "setup:report-schema:apply": "node scripts/setup-report-schema.mjs --apply",
     "test:report-reliability": "node --test tests/application/calculate-tiktok-organic-report.test.js tests/application/generate-tiktok-organic-report.test.js tests/application/generate-tiktok-organic-report-d1-aware.test.js tests/application/load-tiktok-organic-report-source.test.js tests/application/compare-tiktok-organic-report-results.test.js tests/connectors/d1-tiktok-organic-report-source.test.js tests/application/assert-tiktok-post-process-coverage-ready.test.js tests/application/queue-job.test.js tests/application/report-config-loaders.test.js tests/application/report-output-rows.test.js tests/application/report-period.test.js tests/application/report-snapshot.test.js tests/application/tiktok-organic-report-source.test.js tests/reliability/reliable-sync-runner.test.js tests/application/scheduled-jobs.test.js tests/application/tiktok-post-lark-schedule-gates.test.js",

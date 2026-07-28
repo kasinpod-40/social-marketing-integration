@@ -51,7 +51,7 @@ Dashboard/Lark อ่าน Materialized results และ Preset ไม่ก�
 
 ## Implementation result
 
-Status: `IMPLEMENTED_BRANCH_VERIFICATION_PASS_DRAFT_PR_OPEN`
+Status: `LARK_SETTINGS_RECONCILIATION_IMPLEMENTED_PREVIEW_PASS_APPLY_PENDING`
 
 ### Files changed
 
@@ -71,6 +71,11 @@ Status: `IMPLEMENTED_BRANCH_VERIFICATION_PASS_DRAFT_PR_OPEN`
 - Repository-only Dashboard/Lark contract:
   - `packages/config/src/dashboard-report-blueprint.js`
   - `packages/config/src/lark-table-config.js`
+  - `packages/config/src/lark-report-schema.js`
+  - `packages/config/src/report-settings.seed.js`
+  - `packages/application/src/reports/load-report-setting.js`
+  - `packages/application/src/use-cases/reconcile-dashboard-report-settings.js`
+  - `scripts/reconcile-dashboard-report-settings.mjs`
 - Tests:
   - `tests/application/dashboard-report-contract.test.js`
   - `tests/application/report-period.test.js`
@@ -95,36 +100,43 @@ Status: `IMPLEMENTED_BRANCH_VERIFICATION_PASS_DRAFT_PR_OPEN`
   Queue consumer และ Reliability lock
 - Ads SUM-before-ratio, revision-compatible input, null/zero และ Coverage status semantics
 - Repository binding/blueprint ของ Snapshots, Metric Values, Top Content และ Top Ads
+- Canonical `integration_workspace` settings สำหรับ compatibility 1D/7D, rolling
+  3/7/9/15/30/90D และ Custom โดยใช้ `period_kind`/`window_days`
+- Shared `dashboard_performance_report` option ใน Settings และ Materialized output tables
+- Exact-key legacy reconciliation สร้าง Canonical rows ก่อน Disable
+  `dev_ft_pumkin`/`uat_chemistry_k`; ไม่มี Record delete
 
 ### Commands and tests run
 
-- `node --test` focused period/request/materialization/TikTok/Ads/config suites — 38/38 PASS
+- Initial focused period/request/materialization/TikTok/Ads/config suites — 38/38 PASS
+- Focused Lark settings/schema/runtime/reconciliation suites — 42/42 PASS
 - `npm ci` — PASS; locked dependencies installed
 - `npm run check` — PASS
-- `npm test` — Node 1,290/1,290 PASS; Workers runtime 12/12 PASS
-- `npm run test:report-reliability` — 98/98 PASS
+- `npm test` — Node 1,299/1,299 PASS; sandbox blocked Workers listener/log only
+- `npm run test:worker` outside restricted sandbox — 12/12 PASS
+- `npm run test:report-reliability` — 100/100 PASS
 - `npm audit` — PASS; 0 vulnerabilities
 - `npm run deploy:dry-run` — PASS for API and Sync Worker configs; no deployment
 - `git diff --check` — PASS
+- Live Lark guarded Preview — PASS; exact schema actions 9, active legacy settings 2,
+  historical references 27, mutations 0
 
 ### CI result
 
-- Draft PR #195 Branch Verification #860, run `30344010643` — PASS
-- Verified code head: `2d2af016e84af30554802a12866d6b3b0b06e162`
-- Non-blocking runner annotation: GitHub-hosted Actions forced Node.js 24 for actions
-  whose declared Node.js 20 runtime is deprecated
+Draft PR CI rerun pending after the Lark settings reconciliation correction.
 
 ### Remaining gaps
 
-- Remote Dashboard/Lark binding apply and an external UI/HTTP producer are not authorized.
+- Guarded Lark settings apply is pending after reviewed branch CI.
+- External UI/HTTP producer is not implemented or authorized.
 - Other platform adapters can reuse the shared period/request/materialization/Ads contracts;
   only the existing TikTok D1-aware Organic adapter is active in this workstream.
 
 ### Remote actions
 
-`NONE`
+`NONE` — Live Preview performed read-only; schema/record mutation count remains zero.
 
 ### Merge recommendation
 
-Keep Draft until independent review is complete; Branch Verification is passing. Do not deploy
-or perform Remote D1/Lark/Queue/Schedule actions from this PR.
+Keep Draft until the corrected Branch Verification and guarded Lark settings reconciliation pass.
+Do not deploy or perform Remote D1/Queue/Schedule actions from this PR.

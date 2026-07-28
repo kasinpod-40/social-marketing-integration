@@ -15,6 +15,7 @@ import { generateTikTokOrganicReportD1Aware } from '../../../packages/applicatio
 import { readLarkTableIdsFromEnv } from '../../../packages/config/src/lark-table-config.js';
 import { readStorageRuntimeConfig } from '../../../packages/config/src/storage-runtime-config.js';
 import { readTikTokPostLarkRuntimeConfig } from '../../../packages/config/src/tiktok-post-lark-runtime-config.js';
+import { DASHBOARD_REPORT_TYPE } from '../../../packages/config/src/report-settings.seed.js';
 import { D1MarketingHistoryStore } from '../../../packages/connectors/src/d1-marketing-history-store.js';
 import { D1TikTokOrganicReportSource } from '../../../packages/connectors/src/tiktok/d1-tiktok-organic-report-source.js';
 import { D1ReportRequestStore } from '../../../packages/connectors/src/d1-report-request-store.js';
@@ -72,9 +73,11 @@ async function processReportJob(input) {
     'mktSystemAlerts',
   ]);
   const reliability = infrastructure.getReliability(tableIds);
-  const reportType = definition.type === JOB_TYPES.WEEKLY_REPORT_GENERATE
-    ? 'weekly_organic_report'
-    : 'daily_organic_report';
+  const reportType = definition.type === JOB_TYPES.REPORT_MATERIALIZATION_GENERATE
+    ? DASHBOARD_REPORT_TYPE
+    : definition.type === JOB_TYPES.WEEKLY_REPORT_GENERATE
+      ? 'weekly_organic_report'
+      : 'daily_organic_report';
   const defaultSettingKey = definition.type === JOB_TYPES.WEEKLY_REPORT_GENERATE
     ? input.env?.MKT_WEEKLY_REPORT_SETTING_KEY
     : input.env?.MKT_DAILY_REPORT_SETTING_KEY;

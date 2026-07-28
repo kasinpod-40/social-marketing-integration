@@ -21,7 +21,11 @@ import { createOrganicContentOwnershipRoutingRepository } from '../../packages/a
 export async function createLocalLarkRuntime(requiredTableKeys, options = {}) {
   const devVarsFile = process.env.DEV_VARS_FILE ?? '.dev.vars';
   const fileEnv = await readDevVars(devVarsFile);
-  const normalizedEnv = normalizeEnvAliases({ ...fileEnv, ...process.env });
+  const normalizedEnv = normalizeEnvAliases({
+    ...fileEnv,
+    ...(options?.env ?? {}),
+    ...process.env,
+  });
   const runtimeConfig = loadCustomerRuntimeConfig(normalizedEnv);
   const tables = readLarkTableIdsFromEnv(normalizedEnv, requiredTableKeys);
   const client = createLarkBitableClientFromEnv(normalizedEnv, {

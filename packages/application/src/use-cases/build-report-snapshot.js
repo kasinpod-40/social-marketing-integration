@@ -2,6 +2,7 @@ import { dateOnlyToEpochMilliseconds, requireDateOnly } from '../../../shared/sr
 import { toEpochMilliseconds } from '../../../shared/src/date/date-time.js';
 
 const REPORT_TYPES = new Set([
+  'dashboard_performance_report',
   'daily_organic_report',
   'weekly_organic_report',
   'monthly_organic_report',
@@ -45,6 +46,8 @@ export function buildReportSnapshot(input = {}) {
   const formulaVersion = requireText(input.formulaVersion, 'formulaVersion');
   const sourceSnapshotCount = nonNegativeInteger(input.sourceSnapshotCount ?? 0, 'sourceSnapshotCount');
   const baselineCoverageRate = optionalFiniteNumber(input.baselineCoverageRate, 'baselineCoverageRate');
+  const periodKind = normalizeOptionalPeriodKind(input.periodKind);
+  const windowDays = normalizeOptionalWindowDays(input.windowDays, periodKind);
 
   assertDateRange(periodStart, periodEnd, 'report period');
   if (comparisonMode !== 'none') {
@@ -76,6 +79,8 @@ export function buildReportSnapshot(input = {}) {
     customer_profile: customerProfile,
     account_id: accountId,
     report_type: reportType,
+    period_kind: periodKind,
+    window_days: windowDays,
     period_start: dateOnlyToEpochMilliseconds(periodStart, { label: 'periodStart', utcOffset }),
     period_end: dateOnlyToEpochMilliseconds(periodEnd, { label: 'periodEnd', utcOffset }),
     compare_start: compareStart
@@ -96,6 +101,23 @@ export function buildReportSnapshot(input = {}) {
     source_snapshot_count: sourceSnapshotCount,
     baseline_coverage_rate: baselineCoverageRate,
   });
+}
+
+function normalizeOptionalPeriodKind(value) {
+  if (value === null || value === undefined || value === '') return null;
+  return requireOption(value, new Set(['rolling_days', 'custom_range']), 'periodKind');
+}
+
+function normalizeOptionalWindowDays(value, periodKind) {
+  if (value === null || value === undefined || value === '') return null;
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number <= 0) {
+    throw new TypeError('Report snapshot windowDays must be a positive integer');
+  }
+  if (periodKind === 'custom_range') {
+    throw new TypeError('Custom range report snapshot must not define windowDays');
+  }
+  return number;
 }
 
 /** สร้าง Stable report ID จากทุกมิติที่กำหนดเอกลักษณ์ของ Snapshot */

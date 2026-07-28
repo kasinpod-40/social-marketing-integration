@@ -5,7 +5,7 @@ import { larkFieldTypeAllowsProperty, normalizeLarkFieldProperty } from '../../s
  * Contract ของ Report Schema ที่ใช้ร่วมกันระหว่าง Preview, Apply และ Tests
  * เก็บเฉพาะโครงสร้าง Non-secret; Table IDs จริงอ่านจาก Environment ของแต่ละ Base
  */
-export const LARK_REPORT_SCHEMA_VERSION = 'report-schema-v1.1';
+export const LARK_REPORT_SCHEMA_VERSION = 'report-schema-v1.2';
 
 export const LARK_REPORT_SCHEMA = deepFreeze([
   {
@@ -352,8 +352,45 @@ export const LARK_REPORT_SCHEMA = deepFreeze([
             {
               "name": "yearly",
               "color": 3
+            },
+            {
+              "name": "rolling_days",
+              "color": 4
+            },
+            {
+              "name": "custom_range",
+              "color": 5
             }
           ]
+        }
+      },
+      {
+        "fieldName": "period_kind",
+        "type": 3,
+        "uiType": "SingleSelect",
+        "primary": false,
+        "description": "ชนิดช่วงกลางของ Dashboard",
+        "property": {
+          "options": [
+            {
+              "name": "rolling_days",
+              "color": 0
+            },
+            {
+              "name": "custom_range",
+              "color": 1
+            }
+          ]
+        }
+      },
+      {
+        "fieldName": "window_days",
+        "type": 2,
+        "uiType": "Number",
+        "primary": false,
+        "description": "จำนวนวันแบบ Inclusive; Custom range เว้นว่าง",
+        "property": {
+          "formatter": "0"
         }
       },
       {
@@ -392,6 +429,10 @@ export const LARK_REPORT_SCHEMA = deepFreeze([
             {
               "name": "weekly_organic_report",
               "color": 1
+            },
+            {
+              "name": "dashboard_performance_report",
+              "color": 2
             }
           ]
         }
@@ -622,8 +663,41 @@ export const LARK_REPORT_SCHEMA = deepFreeze([
             {
               "name": "daily_organic_report",
               "color": 8
+            },
+            {
+              "name": "dashboard_performance_report",
+              "color": 9
             }
           ]
+        }
+      },
+      {
+        "fieldName": "period_kind",
+        "type": 3,
+        "uiType": "SingleSelect",
+        "primary": false,
+        "description": "rolling_days หรือ custom_range",
+        "property": {
+          "options": [
+            {
+              "name": "rolling_days",
+              "color": 0
+            },
+            {
+              "name": "custom_range",
+              "color": 1
+            }
+          ]
+        }
+      },
+      {
+        "fieldName": "window_days",
+        "type": 2,
+        "uiType": "Number",
+        "primary": false,
+        "description": "จำนวนวันแบบ Inclusive; Custom range เว้นว่าง",
+        "property": {
+          "formatter": "0"
         }
       },
       {
@@ -902,6 +976,10 @@ export const LARK_REPORT_SCHEMA = deepFreeze([
             {
               "name": "weekly_organic_report",
               "color": 1
+            },
+            {
+              "name": "dashboard_performance_report",
+              "color": 2
             }
           ]
         }
@@ -1215,6 +1293,10 @@ export const LARK_REPORT_SCHEMA = deepFreeze([
             {
               "name": "weekly_organic_report",
               "color": 1
+            },
+            {
+              "name": "dashboard_performance_report",
+              "color": 2
             }
           ]
         }

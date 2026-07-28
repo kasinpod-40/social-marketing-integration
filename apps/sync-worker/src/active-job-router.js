@@ -316,9 +316,11 @@ export async function processJob(input) {
       'mktSystemAlerts',
     ]);
     const reliability = infrastructure.getReliability(tableIds);
-    const reportType = definition.type === JOB_TYPES.WEEKLY_REPORT_GENERATE
-      ? 'weekly_organic_report'
-      : 'daily_organic_report';
+    const reportType = definition.type === JOB_TYPES.REPORT_MATERIALIZATION_GENERATE
+      ? 'dashboard_performance_report'
+      : definition.type === JOB_TYPES.WEEKLY_REPORT_GENERATE
+        ? 'weekly_organic_report'
+        : 'daily_organic_report';
     const defaultSettingKey = definition.type === JOB_TYPES.WEEKLY_REPORT_GENERATE
       ? input.env?.MKT_WEEKLY_REPORT_SETTING_KEY
       : input.env?.MKT_DAILY_REPORT_SETTING_KEY;

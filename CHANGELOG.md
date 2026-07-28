@@ -30,6 +30,12 @@
   aggregate-then-ratio semantics with explicit null/zero and Coverage status handling.
 - Added a repository-only Dashboard binding blueprint for Snapshots, Metric Values,
   Top Content and Top Ads.
+- Added Canonical Integration Workspace Lark settings for compatibility 1D/7D, rolling
+  3/7/9/15/30/90D and Custom range with shared `period_kind`, `window_days` and
+  `dashboard_performance_report` contracts.
+- Added an exact-scope guarded Lark reconciler that creates/updates Canonical settings before
+  disabling legacy developer-profile rows; historical report references are retained and no
+  record is deleted.
 
 ### Safety
 
@@ -37,6 +43,8 @@
   approved request/materialization columns and Stable keys.
 - No Worker deployment, Remote D1/Lark action, Queue message, Schedule/Cron, LIVE UAT,
   Secret/Production configuration change or Business-fact mutation occurred.
+- Live Lark preview was read-only and found only the nine expected additive schema actions,
+  two active legacy settings and 27 historical references.
 
 ## Unreleased — YouTube Worker Dry-run Rollout Operator — 2026-07-27
 

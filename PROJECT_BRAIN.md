@@ -27,6 +27,14 @@ Detailed D1 facts. TikTok Organic ยังคง end-minus-baseline semantics; 
 status ต้องติดผลลัพธ์เสมอ. Repository binding ครอบคลุม Snapshots, Metric Values,
 Top Content และ Top Ads; ยังไม่มี Remote Apply หรือ runtime activation.
 
+Lark Settings correction เพิ่ม Canonical `integration_workspace` rows สำหรับ compatibility
+1D/7D, rolling 3/7/9/15/30/90D และ Custom โดย `dashboard_performance_report` เป็น Report type
+กลางของ Preset ใหม่. `period_kind`/`window_days` ถูกเพิ่มใน Settings และ Snapshot contract.
+Guarded reconciliation อนุญาตเฉพาะ exact schema additions/options, Canonical upsert และการ
+Disable exact historical developer setting keys หลัง Canonical rows พร้อมแล้ว; ห้าม Delete
+เพราะมี Historical Report outputs อ้าง key เดิม. Live Preview พบ active legacy settings 2 แถว,
+historical references 27 แถว, expected schema actions 9 และ Remote mutation 0.
+
 ## Current verified repository state — 2026-07-27
 
 ```text

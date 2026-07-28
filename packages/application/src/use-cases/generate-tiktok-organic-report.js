@@ -134,6 +134,10 @@ export async function generateTikTokOrganicReport(input = {}) {
     customerProfile,
     accountId,
     reportType,
+    periodKind: period.periodKind ?? setting.periodKind,
+    windowDays: (period.periodKind ?? setting.periodKind) === 'rolling_days'
+      ? period.windowDays ?? setting.windowDays
+      : null,
     periodStart: period.periodStart,
     periodEnd: period.periodEnd,
     comparisonMode: period.comparisonMode,

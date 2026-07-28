@@ -47,6 +47,27 @@ test('builds a stable Lark-ready report snapshot row', () => {
   assert.equal(row.formula_version, 'tiktok-organic-v1');
 });
 
+test('persists the shared dashboard period identity on materialized snapshots', () => {
+  const row = buildReportSnapshot(baseInput({
+    reportType: 'dashboard_performance_report',
+    reportSettingKey: 'integration_workspace:tiktok:rolling:30d',
+    customerProfile: 'integration_workspace',
+    accountId: 'chemistry_k',
+    periodKind: 'rolling_days',
+    windowDays: 30,
+  }));
+  assert.equal(row.period_kind, 'rolling_days');
+  assert.equal(row.window_days, 30);
+  assert.throws(
+    () => buildReportSnapshot(baseInput({
+      reportType: 'dashboard_performance_report',
+      periodKind: 'custom_range',
+      windowDays: 9,
+    })),
+    /must not define windowDays/,
+  );
+});
+
 test('requires comparison dates when comparison mode is active', () => {
   assert.throws(
     () => buildReportSnapshot(baseInput({

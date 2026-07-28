@@ -55,6 +55,37 @@ test('normalizes a customer-scoped TikTok report setting', () => {
   assert.deepEqual(setting.platforms, ['tiktok']);
   assert.equal(setting.topContentLimit, 5);
   assert.equal(setting.enabled, true);
+  assert.equal(setting.periodKind, 'rolling_days');
+  assert.equal(setting.windowDays, 1);
+});
+
+test('normalizes dashboard rolling/custom settings without inventing a window', () => {
+  const rolling = normalizeReportSettingRecord(settingRecord({
+    report_setting_key: 'integration_workspace:tiktok:rolling:30d',
+    customer_profile: 'integration_workspace',
+    report_type: 'dashboard_performance_report',
+    period_type: 'rolling_days',
+    period_kind: 'rolling_days',
+    window_days: 30,
+    account_keys_json: '["chemistry_k"]',
+    send_time: null,
+  }));
+  assert.equal(rolling.periodKind, 'rolling_days');
+  assert.equal(rolling.windowDays, 30);
+  assert.equal(rolling.sendTime, null);
+
+  const custom = normalizeReportSettingRecord(settingRecord({
+    report_setting_key: 'integration_workspace:tiktok:custom_range',
+    customer_profile: 'integration_workspace',
+    report_type: 'dashboard_performance_report',
+    period_type: 'custom_range',
+    period_kind: 'custom_range',
+    window_days: null,
+    account_keys_json: '["chemistry_k"]',
+    send_time: null,
+  }));
+  assert.equal(custom.periodKind, 'custom_range');
+  assert.equal(custom.windowDays, null);
 });
 
 test('report setting loader rejects missing, duplicate, profile mismatch, and disabled rows', async () => {
