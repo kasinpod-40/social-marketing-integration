@@ -7,6 +7,15 @@ import {
 } from './youtube-dry-run-rollout-operator.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const UNRELATED_CONNECTOR_NAMESPACES = Object.freeze([
+  'CHATWOOT',
+  'FACEBOOK',
+  'GOOGLE_ADS',
+  'INSTAGRAM',
+  'META',
+  'TIKTOK',
+  'WOOCOMMERCE',
+]);
 
 /**
  * Wrangler scopes `queues consumer list` by Queue name, so some live response shapes omit the
@@ -203,6 +212,65 @@ export function normalizeWranglerVersionReviewedFalseFlags(value, input = {}) {
 }
 
 /**
+ * The Worker is shared by multiple connectors. Other connectors may be deliberately enabled while
+ * this read-only YouTube inspection runs. Validate their explicit Boolean bindings, reject duplicate
+ * metadata, and project only known non-YouTube connector flags to false for the YouTube fingerprint.
+ * The original Remote response and actual Worker configuration are never modified.
+ */
+export function normalizeWranglerVersionUnrelatedConnectorFlags(value) {
+  const { isArray, sourceItem, directBindings, bindings } = readVersionBindings(value);
+  const matchesByName = new Map();
+
+  for (const [index, binding] of bindings.entries()) {
+    if (normalizeBindingType(binding?.type) !== 'plain_text') continue;
+    const name = optionalText(binding?.name ?? binding?.binding);
+    if (!name || !isUnrelatedConnectorFlagName(name)) continue;
+    if (!matchesByName.has(name)) matchesByName.set(name, []);
+    matchesByName.get(name).push({ binding, index });
+  }
+
+  const projectedTrueNames = [];
+  const projectedIndexes = new Set();
+  for (const [name, matches] of matchesByName) {
+    if (matches.length > 1) {
+      throw parserError(
+        'Remote version contains a duplicate unrelated connector flag binding',
+        'YOUTUBE_DRY_RUN_REMOTE_FLAG_BINDING_DUPLICATE',
+        { name, matchCount: matches.length },
+      );
+    }
+    const [{ binding, index }] = matches;
+    const enabled = requireRemoteBoolean(binding?.text ?? binding?.value, name);
+    if (enabled) {
+      projectedTrueNames.push(name);
+      projectedIndexes.add(index);
+    }
+  }
+
+  const normalizedBindings = bindings.map((binding, index) => {
+    if (!projectedIndexes.has(index)) return binding;
+    if (Object.hasOwn(binding, 'text')) {
+      return Object.freeze({ ...binding, text: 'false' });
+    }
+    if (Object.hasOwn(binding, 'value')) {
+      return Object.freeze({ ...binding, value: 'false' });
+    }
+    return Object.freeze({ ...binding, text: 'false' });
+  });
+
+  return Object.freeze({
+    versionsView: replaceVersionBindings({
+      isArray,
+      sourceItem,
+      directBindings,
+      bindings: normalizedBindings,
+    }),
+    additionalConnectorTrueFlagNames: Object.freeze(projectedTrueNames.sort()),
+    additionalConnectorTrueFlagCount: projectedTrueNames.length,
+  });
+}
+
+/**
  * The Worker is shared by multiple connectors. Require the complete YouTube Secret-name subset,
  * reject any exposed Secret value, and remove unrelated connector Secret names only from the
  * YouTube fingerprint input. The original Remote response is never persisted.
@@ -267,9 +335,9 @@ export function normalizeWranglerVersionRequiredSecrets(value, input = {}) {
 
 /**
  * Compatibility adapter for sanitized live Wrangler responses. It normalizes only metadata already
- * proven by scoped command context, immutable D1 UUID, reviewed false defaults or the required
- * YouTube Secret-name subset, then delegates every flag, binding, consumer, trigger, traffic and
- * fingerprint decision to the reviewed validator.
+ * proven by scoped command context, immutable D1 UUID, reviewed false defaults, known unrelated
+ * connector flag scope or the required YouTube Secret-name subset, then delegates every YouTube and
+ * shared-safety flag, binding, consumer, trigger, traffic and fingerprint decision to the validator.
  */
 export function validateLiveRemoteYouTubeDeploymentContract(input = {}) {
   const contexts = input.queueConsumerContexts;
@@ -292,9 +360,13 @@ export function validateLiveRemoteYouTubeDeploymentContract(input = {}) {
   const flagScope = normalizeWranglerVersionReviewedFalseFlags(d1Normalized, {
     expectedFalseFlagNames: input.expectedFalseFlagNames,
   });
-  const secretScope = normalizeWranglerVersionRequiredSecrets(flagScope.versionsView, {
-    requiredSecretNames: input.requiredSecretNames,
-  });
+  const connectorFlagScope = normalizeWranglerVersionUnrelatedConnectorFlags(
+    flagScope.versionsView,
+  );
+  const secretScope = normalizeWranglerVersionRequiredSecrets(
+    connectorFlagScope.versionsView,
+    { requiredSecretNames: input.requiredSecretNames },
+  );
   const {
     queueConsumerContexts: _queueConsumerContexts,
     expectedD1BindingName: _expectedD1BindingName,
@@ -315,6 +387,8 @@ export function validateLiveRemoteYouTubeDeploymentContract(input = {}) {
     additionalSecretNameCount: secretScope.additionalSecretNameCount,
     expectedFalseFlagCount: flagScope.expectedFalseFlagCount,
     materializedFalseFlagCount: flagScope.materializedFalseFlagCount,
+    additionalConnectorTrueFlagNames: connectorFlagScope.additionalConnectorTrueFlagNames,
+    additionalConnectorTrueFlagCount: connectorFlagScope.additionalConnectorTrueFlagCount,
   });
 }
 
@@ -411,6 +485,27 @@ function unwrapQueueConsumers(value) {
     'Wrangler Queue consumer response lacks a consumer array',
     'YOUTUBE_DRY_RUN_REMOTE_CONTRACT_INVALID',
   );
+}
+
+function isUnrelatedConnectorFlagName(name) {
+  if (!name.startsWith('MKT_') || !name.endsWith('_ENABLED')) return false;
+  if (name === 'MKT_CONNECTOR_YOUTUBE_ENABLED' || name.includes('_YOUTUBE_')) return false;
+
+  if (name.startsWith('MKT_CONNECTOR_')) {
+    const connector = name.slice('MKT_CONNECTOR_'.length, -'_ENABLED'.length);
+    return UNRELATED_CONNECTOR_NAMESPACES.some((namespace) => (
+      connector === namespace || connector.startsWith(`${namespace}_`)
+    ));
+  }
+  if (name.startsWith('MKT_SCHEDULE_')) {
+    const connector = name.slice('MKT_SCHEDULE_'.length, -'_ENABLED'.length);
+    return UNRELATED_CONNECTOR_NAMESPACES.some((namespace) => (
+      connector === namespace || connector.startsWith(`${namespace}_`)
+    ));
+  }
+  return UNRELATED_CONNECTOR_NAMESPACES.some((namespace) => (
+    name.startsWith(`MKT_${namespace}_`)
+  ));
 }
 
 function normalizeBindingType(value) {
