@@ -16,6 +16,16 @@ test('multichannel Lark schema includes Top Ads and platform-neutral options', (
   assert.deepEqual(adsPlatform.property.options.map((option) => option.name), [
     'meta_ads', 'google_ads', 'tiktok_ads',
   ]);
+
+  const settingsTable = LARK_REPORT_SCHEMA_V2.find((table) => table.key === 'mktReportSettings');
+  const settingsPlatforms = settingsTable.fields.find((field) => field.fieldName === 'platforms');
+  assert.deepEqual(settingsPlatforms.property.options.map((option) => option.name), [
+    'facebook', 'instagram', 'tiktok', 'youtube', 'meta_ads', 'google_ads', 'tiktok_ads',
+  ]);
+  const topAdsLimit = settingsTable.fields.find((field) => field.fieldName === 'top_ads_limit');
+  assert.ok(topAdsLimit);
+  assert.equal(topAdsLimit.type, 2);
+
   const metricTable = LARK_REPORT_SCHEMA_V2.find((table) => table.key === 'mktReportMetricValues');
   const metricPlatform = metricTable.fields.find((field) => field.fieldName === 'platform');
   assert.equal(metricPlatform.property.options.some((option) => option.name === 'youtube'), true);
