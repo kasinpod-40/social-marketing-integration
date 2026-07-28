@@ -272,7 +272,11 @@ function resolveSourceRequest({ connectorKey, state, dateRange }) {
       return { datasetKey: `${connectorKey}.account.latest`, state: pageState };
     }
     if (state.stage === 'content') {
-      return { datasetKey: `${connectorKey}.content.inventory`, state: pageState };
+      return {
+        datasetKey: `${connectorKey}.content.inventory`,
+        state: pageState,
+        ...(connectorKey === 'facebook' ? { dateRange } : {}),
+      };
     }
     if (state.stage === 'account_insights') {
       return {

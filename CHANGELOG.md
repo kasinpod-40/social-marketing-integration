@@ -8,6 +8,11 @@
   `facebook.content.inventory` with sanitized Graph `190/2069032`.
 - Verified zero Business/Coverage/Lark rows, no active lock and an all-false Worker restore at
   100% traffic.
+- After Page-token activation, recorded a second fail-closed operation that staged 2,501
+  historical content rows before account Insights returned time-window pagination without an
+  opaque cursor; Business/Coverage/Lark rows remained zero and the Worker was restored all-false.
+- GET-only probes confirmed the reviewed period contains 25 posts on one page and account Insights
+  returned an empty requested-period dataset with `next/previous` time windows but no cursor.
 
 ### Repository correction
 
@@ -17,6 +22,9 @@
 - Updated Facebook D1/Lark rollout preflight to require the Page secret name.
 - Added focused regressions for credential separation, Page-only authorization and fail-closed
   behavior.
+- Forwarded the reviewed `since`/`until` period to Facebook content inventory.
+- Aligned non-cursor Facebook metric reads with the dataset contract by treating each requested
+  period as one response while retaining cursor guards for cursor-paginated datasets.
 
 ## Unreleased — YouTube Worker Dry-run Rollout Operator — 2026-07-27
 

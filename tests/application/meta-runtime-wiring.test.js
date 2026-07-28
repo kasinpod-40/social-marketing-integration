@@ -236,6 +236,47 @@ test('durably stages one Meta page per invocation, completes D1-only, then resum
   assert.equal(replay.status, 'completed_idempotent');
 });
 
+test('forwards the reviewed period to Facebook content inventory staging', async () => {
+  const workStore = createWorkStore();
+  const contentCalls = [];
+  const operation = Object.freeze({
+    operationId: 'facebook-period-001',
+    workKey: 'facebook:facebook-period-001',
+    generation: REQUESTED_AT,
+    originalRequestedAt: REQUESTED_AT,
+    stable: true,
+  });
+  const input = baseInput({
+    connectorKey: 'facebook',
+    jobType: JOB_TYPES.FACEBOOK_ORGANIC_SYNC,
+    operation,
+    syncRunId: 'meta:facebook:facebook-period-001',
+    cursorKey: 'integration_workspace:facebook:chemistry_k:period',
+    adapter: {
+      async fetchAccount() {
+        return { resource: { id: 'page_1', name: 'Fixture Page' } };
+      },
+      async fetchContentPage(value) {
+        contentCalls.push(value);
+        return { rows: [], hasMore: false, nextCursor: null };
+      },
+    },
+    sourceAccountId: 'page_1',
+    resumableWorkStore: workStore,
+    sourceReadOnly: true,
+    d1WriteEnabled: false,
+    larkWriteEnabled: false,
+    dateRange: { since: '2026-07-01', until: '2026-07-27' },
+  });
+
+  await processMetaEndToEndSync(input);
+  await processMetaEndToEndSync(input);
+
+  assert.equal(contentCalls.length, 1);
+  assert.equal(contentCalls[0].since, '2026-07-01');
+  assert.equal(contentCalls[0].until, '2026-07-27');
+});
+
 
 test('fails before another Provider call when the durable source-unit limit is reached', async () => {
   const workStore = createWorkStore();

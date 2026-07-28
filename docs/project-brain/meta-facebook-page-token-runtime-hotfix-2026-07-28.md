@@ -41,3 +41,36 @@ read credential type.
 The secret value must be derived and activated only through the separately authorized memory-only
 operator flow. It must never be written to `.dev.vars`, source, evidence, command arguments or
 logs.
+
+## Period and Insights pagination follow-up
+
+After the Page-token version was activated without code/settings/binding/flag drift, a fresh
+Facebook D1-only operation passed the Provider credential boundary but exposed two related source
+scope defects:
+
+```text
+reviewed period                         2026-07-01 through 2026-07-27
+unscoped content rows staged            2,501
+unscoped bounded source units           26
+requested-period content rows           25
+requested-period content pages          1
+final source error                      META_CURSOR_MISSING
+error operation                         facebook.account.insights
+D1 Business/Coverage rows               0
+Lark phases                             0
+Worker restore                          all-false / verified / traffic 100%
+```
+
+The Facebook posts request did not receive the reviewed `since`/`until` period. The account
+Insights response for that exact period contained no data and returned `paging.next/previous`
+time-window links without cursor objects. That dataset is declared `paginated=false`; treating its
+time-window links as cursor pagination therefore contradicted the dataset contract.
+
+The follow-up hotfix:
+
+- forwards the reviewed period only to Facebook content inventory;
+- keeps Instagram inventory behavior unchanged;
+- reads Facebook metric datasets declared `paginated=false` as a single requested-period response;
+- continues to enforce opaque cursor presence/repetition guards for cursor-paginated datasets;
+- preserves GET-only transport, stable operation identity, Queue topology and all default-false
+  execution/schedule flags.

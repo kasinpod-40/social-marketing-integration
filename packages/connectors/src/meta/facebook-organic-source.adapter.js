@@ -38,9 +38,13 @@ export class FacebookOrganicSourceAdapter {
   async fetchContentPage(input = {}) {
     const pageId = requireMetaExternalId(input.pageId, 'pageId');
     const dataset = contract('facebook.content.inventory');
+    const range = normalizeMetaDateRange(input);
     const page = await this.client.getPage(
       buildMetaDatasetPath(dataset, { page_id: pageId }),
-      { fields: fieldsQuery(dataset) },
+      {
+        fields: fieldsQuery(dataset),
+        ...(range.since ? { since: range.since, until: range.until } : {}),
+      },
       {
         ...normalizeMetaPageOptions(input),
         operationName: dataset.key,
@@ -81,18 +85,26 @@ export class FacebookOrganicSourceAdapter {
   async #fetchInsightsPage({ input, dataset, pageId, sourceEntityId, pathValues }) {
     const range = normalizeMetaDateRange(input);
     const period = optionalQueryToken(input.period, 'period');
-    const page = await this.client.getPage(
-      buildMetaDatasetPath(dataset, pathValues),
-      {
-        metric: metricQuery(dataset),
-        ...(period ? { period } : {}),
-        ...(range.since ? { since: range.since, until: range.until } : {}),
-      },
-      {
-        ...normalizeMetaPageOptions(input),
-        operationName: dataset.key,
-      },
-    );
+    const query = {
+      metric: metricQuery(dataset),
+      ...(period ? { period } : {}),
+      ...(range.since ? { since: range.since, until: range.until } : {}),
+    };
+    const options = {
+      ...normalizeMetaPageOptions(input),
+      operationName: dataset.key,
+    };
+    const page = dataset.paginated
+      ? await this.client.getPage(
+        buildMetaDatasetPath(dataset, pathValues),
+        query,
+        options,
+      )
+      : singleResponsePage(await this.client.get(
+        buildMetaDatasetPath(dataset, pathValues),
+        query,
+        { operationName: dataset.key },
+      ));
     return createMetaSourcePageEnvelope({
       datasetKey: dataset.key,
       sourceAccountId: pageId,
@@ -100,6 +112,17 @@ export class FacebookOrganicSourceAdapter {
       page,
     });
   }
+}
+
+function singleResponsePage(payload) {
+  if (!Array.isArray(payload?.data)) {
+    throw new TypeError('Meta non-paginated metric response requires data array');
+  }
+  return Object.freeze({
+    rows: Object.freeze(payload.data),
+    hasMore: false,
+    nextCursor: null,
+  });
 }
 
 function contract(datasetKey) {
