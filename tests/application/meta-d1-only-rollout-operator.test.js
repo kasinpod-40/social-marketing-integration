@@ -131,6 +131,26 @@ test('safe config rejects any pre-existing enabled execution flag', () => {
   );
 });
 
+test('safe config rejects a target whose source identity mapping is missing', () => {
+  const missingFacebook = safeConfig().replace(
+    '    "META_FACEBOOK_PAGE_ID": "111111111111111",\n',
+    '',
+  );
+  assert.throws(
+    () => buildMetaD1OnlyConfigWindow(missingFacebook, target('facebook')),
+    (error) => error.code === 'META_D1_ONLY_SOURCE_MAPPING_INVALID',
+  );
+
+  const missingAdsAlias = safeConfig().replace(
+    'chemistry_k2=333333333333333,chemistry_k3=444444444444444',
+    'chemistry_k3=444444444444444',
+  );
+  assert.throws(
+    () => buildMetaD1OnlyConfigWindow(missingAdsAlias, target('chemistry_k2')),
+    (error) => error.code === 'META_D1_ONLY_SOURCE_MAPPING_INVALID',
+  );
+});
+
 test('job builder uses central stable operation contract and D1-only manual UAT body', () => {
   const facebook = buildMetaD1OnlyJob(target('facebook'));
   assert.equal(facebook.type, 'facebook.page.organic.sync');
@@ -388,6 +408,10 @@ function safeConfig() {
     "MKT_ENV": "development",
     "MKT_CUSTOMER_PROFILE": "integration_workspace",
     "MKT_CONNECTION_CUSTOMER_KEY": "chemistry_k",
+    "META_GRAPH_API_VERSION": "v25.0",
+    "META_FACEBOOK_PAGE_ID": "111111111111111",
+    "META_INSTAGRAM_ACCOUNT_ID": "222222222222222",
+    "META_AD_ACCOUNT_MAPPINGS": "chemistry_k2=333333333333333,chemistry_k3=444444444444444",
 ${flags}
   }
 }`;

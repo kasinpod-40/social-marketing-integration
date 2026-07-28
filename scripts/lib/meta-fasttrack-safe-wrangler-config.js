@@ -3,6 +3,10 @@ import {
   META_END_TO_END_REQUIRED_LARK_TABLE_KEYS,
 } from '../../packages/config/src/meta-end-to-end-runtime-config.js';
 import {
+  META_TOKEN_CONNECTION_ENV,
+  loadMetaTokenConnectionConfig,
+} from '../../packages/config/src/meta-token-connection-config.js';
+import {
   LARK_TABLE_ENV,
   readLarkTableIdsFromEnv,
 } from '../../packages/config/src/lark-table-config.js';
@@ -18,7 +22,7 @@ import {
 } from './chatwoot-safe-wrangler-config.js';
 
 export const META_FASTTRACK_SAFE_CONFIG_CONTRACT_VERSION =
-  'meta_fasttrack_safe_wrangler_config_v1';
+  'meta_fasttrack_safe_wrangler_config_v2';
 
 const TARGET = Object.freeze({
   workerName: 'social-mkt-sync-worker',
@@ -28,10 +32,16 @@ const TARGET = Object.freeze({
   databaseName: 'social-mkt-state-dev',
   mainQueueName: 'social-mkt-sync-jobs',
   dlqName: 'social-mkt-sync-dlq',
+  connectorKey: 'facebook',
+  sourceAccountKey: null,
   connectorFlag: 'MKT_CONNECTOR_FACEBOOK_ENABLED',
 });
 const ENABLED_FLAG = /^MKT_[A-Z0-9_]+_ENABLED$/u;
 const SECRET_VAR = /(?:^|_)(?:ACCESS_TOKEN|REFRESH_TOKEN|API_TOKEN|APP_SECRET|CLIENT_SECRET|PASSWORD|PRIVATE_KEY|CONSUMER_SECRET|WEBHOOK_SECRET)$/u;
+const REQUIRED_META_AD_ACCOUNT_KEYS = Object.freeze([
+  'chemistry_k2',
+  'chemistry_k3',
+]);
 
 export function buildMetaFastTrackSafeWranglerConfig(sourceText, env = {}) {
   let source;
@@ -81,6 +91,7 @@ export function buildMetaFastTrackSafeWranglerConfig(sourceText, env = {}) {
     env,
     META_END_TO_END_REQUIRED_LARK_TABLE_KEYS,
   );
+  const sourceMappings = readMetaSourceMappings(env);
   const vars = structuredClone(sourceVars);
   const sourceEnabledFlags = [];
 
@@ -96,6 +107,13 @@ export function buildMetaFastTrackSafeWranglerConfig(sourceText, env = {}) {
   vars.MKT_CONNECTION_CUSTOMER_KEY = TARGET.customerKey;
   vars.MKT_MAIN_QUEUE_NAME = TARGET.mainQueueName;
   vars.MKT_DLQ_QUEUE_NAME = TARGET.dlqName;
+
+  const changedSourceMappingNames = [];
+  for (const [name, value] of Object.entries(sourceMappings)) {
+    if (vars[name] !== value) changedSourceMappingNames.push(name);
+    vars[name] = value;
+  }
+  delete vars[META_TOKEN_CONNECTION_ENV.META_AD_ACCOUNT_ID];
 
   const changedTableMappingNames = [];
   for (const key of META_END_TO_END_REQUIRED_LARK_TABLE_KEYS) {
@@ -117,6 +135,7 @@ export function buildMetaFastTrackSafeWranglerConfig(sourceText, env = {}) {
       tableIds[key],
     ])),
   ));
+  const sourceMappingFingerprint = sha256(stableJson(sourceMappings));
 
   return Object.freeze({
     contractVersion: META_FASTTRACK_SAFE_CONFIG_CONTRACT_VERSION,
@@ -131,6 +150,9 @@ export function buildMetaFastTrackSafeWranglerConfig(sourceText, env = {}) {
     tableMappingCount: META_END_TO_END_REQUIRED_LARK_TABLE_KEYS.length,
     changedTableMappingNames: Object.freeze(changedTableMappingNames.sort()),
     tableMappingFingerprint,
+    sourceMappingCount: Object.keys(sourceMappings).length,
+    changedSourceMappingNames: Object.freeze(changedSourceMappingNames.sort()),
+    sourceMappingFingerprint,
     d1SafeSha256: d1Window.safeSha256,
     d1ActiveSha256: d1Window.activeSha256,
     larkActiveSha256: larkWindow.activeSha256,
@@ -148,6 +170,50 @@ export function buildMetaFastTrackWranglerDryRunArgs(configPath, outputFile) {
     '--outfile', output,
     '--config', config,
   ]);
+}
+
+function readMetaSourceMappings(env) {
+  let config;
+  try {
+    config = loadMetaTokenConnectionConfig(env);
+  } catch (cause) {
+    throw configError(
+      'Meta fast-track source identity environment is invalid',
+      'META_FASTTRACK_SOURCE_MAPPING_INVALID',
+      { fieldName: cause?.details?.fieldName ?? 'META_SOURCE_MAPPING' },
+    );
+  }
+
+  const missing = [];
+  if (!config.apiVersion) missing.push(META_TOKEN_CONNECTION_ENV.API_VERSION);
+  if (!config.mappings.facebookPageId) {
+    missing.push(META_TOKEN_CONNECTION_ENV.FACEBOOK_PAGE_ID);
+  }
+  if (!config.mappings.instagramAccountId) {
+    missing.push(META_TOKEN_CONNECTION_ENV.INSTAGRAM_ACCOUNT_ID);
+  }
+  const accountKeys = config.mappings.metaAdAccounts.map((entry) => entry.key).sort();
+  if (JSON.stringify(accountKeys) !== JSON.stringify(REQUIRED_META_AD_ACCOUNT_KEYS)) {
+    missing.push(META_TOKEN_CONNECTION_ENV.META_AD_ACCOUNT_MAPPINGS);
+  }
+  if (missing.length > 0) {
+    throw configError(
+      'Meta fast-track source identity environment is incomplete',
+      'META_FASTTRACK_SOURCE_MAPPING_MISSING',
+      { fieldNames: missing.sort() },
+    );
+  }
+
+  return Object.freeze({
+    [META_TOKEN_CONNECTION_ENV.API_VERSION]: config.apiVersion,
+    [META_TOKEN_CONNECTION_ENV.FACEBOOK_PAGE_ID]: config.mappings.facebookPageId,
+    [META_TOKEN_CONNECTION_ENV.INSTAGRAM_ACCOUNT_ID]:
+      config.mappings.instagramAccountId,
+    [META_TOKEN_CONNECTION_ENV.META_AD_ACCOUNT_MAPPINGS]:
+      config.mappings.metaAdAccounts
+        .map((entry) => `${entry.key}=${entry.accountId}`)
+        .join(','),
+  });
 }
 
 function requireObject(value, fieldName) {
