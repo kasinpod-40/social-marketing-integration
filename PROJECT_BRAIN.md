@@ -495,6 +495,13 @@ The Repository implementation is merged, but no Remote phase is authorized autom
 
 ## Next separately approved Meta validation
 
+The live Facebook D1 follow-up on 2026-07-28 proved that Page-token wiring alone was insufficient:
+content inventory ignored the reviewed period and account Insights time-window pagination was
+mistaken for cursor pagination. The reviewed follow-up is documented in
+`docs/project-brain/meta-facebook-page-token-runtime-hotfix-2026-07-28.md`; Remote rerun must use a
+new operation only after the hotfix is merged, deployed all-false and preflighted against the exact
+active version.
+
 The runtime and operator are merged, but Provider execution is not authorized automatically. The next order is:
 
 1. run `rollout:meta-read-only` in plan-only mode from an authorized local Integration Workspace;

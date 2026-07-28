@@ -93,6 +93,37 @@ test('WooCommerce client classifies authorization and retryable upstream failure
   );
 });
 
+test('WooCommerce client persists bounded sanitized network cause diagnostics', async () => {
+  const nested = Object.assign(new Error('connect ETIMEDOUT'), { code: 'ETIMEDOUT' });
+  const cause = Object.assign(new TypeError('Network connection lost'), {
+    code: 'WORKER_FETCH_FAILED',
+    cause: nested,
+  });
+  const client = createClient(async () => {
+    throw cause;
+  });
+
+  await assert.rejects(
+    client.getStoreIdentity(),
+    (error) => {
+      assert.equal(error.code, 'WOOCOMMERCE_NETWORK_ERROR');
+      assert.equal(error.retryable, true);
+      assert.equal(error.details.resource, 'system_status');
+      assert.equal(error.details.timeoutMs, 30_000);
+      assert.equal(error.details.networkCause.name, 'TypeError');
+      assert.equal(error.details.networkCause.message, 'Network connection lost');
+      assert.equal(error.details.networkCause.code, 'WORKER_FETCH_FAILED');
+      assert.equal(error.details.networkCause.nestedName, 'Error');
+      assert.equal(error.details.networkCause.nestedMessage, 'connect ETIMEDOUT');
+      assert.equal(error.details.networkCause.nestedCode, 'ETIMEDOUT');
+      const serialized = JSON.stringify(error.details);
+      assert.equal(serialized.includes(KEY), false);
+      assert.equal(serialized.includes(SECRET), false);
+      return true;
+    },
+  );
+});
+
 test('WooCommerce client paginates nested refunds and variations without leaking credentials', async () => {
   const urls = [];
   const client = createClient(async (url) => {

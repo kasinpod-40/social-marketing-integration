@@ -22,6 +22,8 @@ test('Facebook source adapter performs contract-bound GET reads and returns a cu
   const page = await adapter.fetchContentPage({
     pageId: 'page_fixture_001',
     after: 'prior/cursor',
+    since: '2026-07-01',
+    until: '2026-07-27',
   });
 
   assert.equal(account.datasetKey, 'facebook.account.latest');
@@ -30,6 +32,8 @@ test('Facebook source adapter performs contract-bound GET reads and returns a cu
   assert.equal(calls[1].path, 'page_fixture_001/posts');
   assert.equal(calls[1].options.operationName, 'facebook.content.inventory');
   assert.equal(calls[1].options.after, 'prior/cursor');
+  assert.equal(calls[1].query.since, '2026-07-01');
+  assert.equal(calls[1].query.until, '2026-07-27');
   assert.equal(page.nextCursor, 'opaque/cursor+value');
   assert.equal(adapter.createPost, undefined);
 });
@@ -39,7 +43,13 @@ test('Facebook source adapter sends only approved metric candidates and date fil
   const adapter = new FacebookOrganicSourceAdapter({
     client: fakeReadClient({
       calls,
-      pageResult: { rows: [], hasMore: false, nextCursor: null },
+      getResult: {
+        data: [],
+        paging: {
+          next: 'https://graph.facebook.com/v25.0/page_fixture_001/insights?since=next',
+          previous: 'https://graph.facebook.com/v25.0/page_fixture_001/insights?since=previous',
+        },
+      },
     }),
   });
 
@@ -56,6 +66,7 @@ test('Facebook source adapter sends only approved metric candidates and date fil
   assert.equal(calls[0].query.since, '2026-07-01');
   assert.equal(calls[0].query.until, '2026-07-23');
   assert.equal(calls[0].options.operationName, 'facebook.content.insights');
+  assert.equal(calls[0].method, 'get');
 });
 
 test('Instagram source adapter enforces /me identity authority', async () => {
