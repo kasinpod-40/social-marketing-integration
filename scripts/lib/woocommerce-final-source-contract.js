@@ -2,12 +2,16 @@ import { createHash } from 'node:crypto';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { parseJsoncObject } from './chatwoot-safe-wrangler-config.js';
 
+export const WOOCOMMERCE_FINAL_PUBLIC_FETCH_COMPATIBILITY_FLAG =
+  'global_fetch_strictly_public';
+
 export const WOOCOMMERCE_FINAL_SOURCE_CONTRACT = Object.freeze({
   baseUrl: 'https://chemistryk.online',
   hostname: 'chemistryk.online',
   apiVersion: 'wc/v3',
   timeoutMs: 45_000,
   currency: 'THB',
+  publicFetchCompatibilityFlag: WOOCOMMERCE_FINAL_PUBLIC_FETCH_COMPATIBILITY_FLAG,
 });
 
 const SECRET_NAMES = new Set([
@@ -16,8 +20,8 @@ const SECRET_NAMES = new Set([
 ]);
 
 /**
- * สร้าง config ชั่วคราวสำหรับ Final rollout โดยผูก Source identity จริงแบบ non-secret
- * และ rebase path ให้ใช้ได้แม้ไฟล์ generated อยู่ใต้ outputs/.
+ * สร้าง config ชั่วคราวสำหรับ Final rollout โดยผูก Source identity จริงแบบ non-secret,
+ * บังคับ public-network Worker fetch และ rebase path ให้ใช้ได้แม้ไฟล์ generated อยู่ใต้ outputs/.
  */
 export function buildWooCommerceFinalSourceConfig(sourceText, input = {}) {
   const repositoryRoot = requireText(input.repositoryRoot, 'repositoryRoot');
@@ -47,6 +51,7 @@ export function buildWooCommerceFinalSourceConfig(sourceText, input = {}) {
   nextVars.WOOCOMMERCE_API_TIMEOUT_MS = String(WOOCOMMERCE_FINAL_SOURCE_CONTRACT.timeoutMs);
   nextVars.WOOCOMMERCE_DEFAULT_CURRENCY = WOOCOMMERCE_FINAL_SOURCE_CONTRACT.currency;
   config.vars = nextVars;
+  config.compatibility_flags = materializeCompatibilityFlags(config.compatibility_flags);
 
   const configDirectory = dirname(resolve(repositoryRoot, sourceConfigPath));
   config.main = rebasePath(config.main, configDirectory, 'main');
@@ -65,6 +70,7 @@ export function buildWooCommerceFinalSourceConfig(sourceText, input = {}) {
   const text = `${JSON.stringify(config, null, 2)}\n`;
   const checked = parseJsoncObject(text);
   assertMaterializedSource(checked.vars);
+  assertMaterializedPublicFetchCompatibility(checked.compatibility_flags);
 
   return Object.freeze({
     text,
@@ -73,6 +79,7 @@ export function buildWooCommerceFinalSourceConfig(sourceText, input = {}) {
     apiVersion: WOOCOMMERCE_FINAL_SOURCE_CONTRACT.apiVersion,
     timeoutMs: WOOCOMMERCE_FINAL_SOURCE_CONTRACT.timeoutMs,
     currency: WOOCOMMERCE_FINAL_SOURCE_CONTRACT.currency,
+    publicFetchCompatibilityFlag: WOOCOMMERCE_FINAL_PUBLIC_FETCH_COMPATIBILITY_FLAG,
     secretValuesCopied: 0,
   });
 }
@@ -108,6 +115,47 @@ export function assertMaterializedSource(varsInput) {
   requireExact(String(vars.WOOCOMMERCE_API_TIMEOUT_MS), String(WOOCOMMERCE_FINAL_SOURCE_CONTRACT.timeoutMs), 'WOOCOMMERCE_API_TIMEOUT_MS');
   requireExact(vars.WOOCOMMERCE_DEFAULT_CURRENCY, WOOCOMMERCE_FINAL_SOURCE_CONTRACT.currency, 'WOOCOMMERCE_DEFAULT_CURRENCY');
   return true;
+}
+
+export function assertMaterializedPublicFetchCompatibility(flagsInput) {
+  const flags = readCompatibilityFlags(flagsInput);
+  if (!flags.includes(WOOCOMMERCE_FINAL_PUBLIC_FETCH_COMPATIBILITY_FLAG)) {
+    throw contractError(
+      'WooCommerce final Worker config must force public-network fetch semantics',
+      'WOOCOMMERCE_FINAL_PUBLIC_FETCH_COMPATIBILITY_MISSING',
+      { requiredFlag: WOOCOMMERCE_FINAL_PUBLIC_FETCH_COMPATIBILITY_FLAG },
+    );
+  }
+  return true;
+}
+
+function materializeCompatibilityFlags(value) {
+  const flags = readCompatibilityFlags(value);
+  return Object.freeze([...new Set([
+    ...flags,
+    WOOCOMMERCE_FINAL_PUBLIC_FETCH_COMPATIBILITY_FLAG,
+  ])]);
+}
+
+function readCompatibilityFlags(value) {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    throw contractError(
+      'WooCommerce final source compatibility_flags must be an array',
+      'WOOCOMMERCE_FINAL_SOURCE_CONFIG_INVALID',
+      { fieldName: 'compatibility_flags' },
+    );
+  }
+  return value.map((item, index) => {
+    if (typeof item !== 'string' || item.trim() === '') {
+      throw contractError(
+        'WooCommerce final source compatibility flag must be non-empty text',
+        'WOOCOMMERCE_FINAL_SOURCE_CONFIG_INVALID',
+        { fieldName: `compatibility_flags[${index}]` },
+      );
+    }
+    return item.trim();
+  });
 }
 
 function rebasePath(value, baseDirectory, fieldName) {
