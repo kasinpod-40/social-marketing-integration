@@ -5,9 +5,7 @@ import {
   JOB_TRIGGERS,
   JOB_TYPES,
 } from '../../packages/application/src/jobs/job-catalog.js';
-import {
-  resolveQueueOperation,
-} from '../../packages/application/src/jobs/queue-operation.js';
+import { resolveQueueOperation } from '../../packages/application/src/jobs/queue-operation.js';
 import {
   assertYouTubeLarkFullSyncUatOperation,
 } from '../../apps/sync-worker/src/youtube-organic-job-router.js';
@@ -17,6 +15,7 @@ import {
   assertYouTubeLarkUatConfirmation,
   buildYouTubeLarkFullSyncJob,
   buildYouTubeLarkUatConfigWindow,
+  buildYouTubeLarkUatSnapshotSql,
   classifyYouTubeLarkCounts,
   classifyYouTubeLarkUatCompletion,
   compareYouTubeLarkUatRerun,
@@ -33,7 +32,7 @@ const REQUESTED_AT = Date.UTC(2026, 6, 28, 3, 0, 0);
 const REPOSITORY_HEAD = '1'.repeat(40);
 const TARGET_FINGERPRINT = '2'.repeat(64);
 
-test('YouTube Lark UAT operator is plan-only by default and requires phase confirmation', () => {
+test('operator is plan-only by default and requires phase confirmation', () => {
   assert.deepEqual(parseYouTubeLarkUatArgs([]), { phase: 'plan', execute: false });
   assert.throws(
     () => parseYouTubeLarkUatArgs(['--execute']),
@@ -49,7 +48,7 @@ test('YouTube Lark UAT operator is plan-only by default and requires phase confi
   }), true);
 });
 
-test('YouTube Lark UAT target accepts an exact numeric-string generation from environment', () => {
+test('target accepts exact numeric-string generation from environment', () => {
   const target = loadYouTubeLarkUatTarget({
     MKT_YOUTUBE_LARK_UAT_OPERATION_ID: OPERATION_ID,
     MKT_YOUTUBE_LARK_UAT_ORIGINAL_REQUESTED_AT: String(REQUESTED_AT),
@@ -65,10 +64,10 @@ test('YouTube Lark UAT target accepts an exact numeric-string generation from en
   assert.equal(target.workKey, `youtube:${OPERATION_ID}`);
 });
 
-test('YouTube Lark UAT config window enables exactly four reviewed flags', async () => {
-  const source = await reviewedConfig();
-  const window = buildYouTubeLarkUatConfigWindow(source, { channelId: CHANNEL_ID });
-
+test('config window enables exactly four reviewed flags', async () => {
+  const window = buildYouTubeLarkUatConfigWindow(await reviewedConfig(), {
+    channelId: CHANNEL_ID,
+  });
   assert.deepEqual(window.safeTrueFlags, []);
   assert.deepEqual(window.activeTrueFlags, [...YOUTUBE_LARK_UAT_ACTIVE_TRUE_FLAGS].sort());
   assert.match(window.activeText, /"MKT_YOUTUBE_LARK_WRITE_ENABLED": "true"/u);
@@ -79,7 +78,7 @@ test('YouTube Lark UAT config window enables exactly four reviewed flags', async
   assert.notEqual(window.safeSha256, window.activeSha256);
 });
 
-test('YouTube Lark UAT job has deterministic stable identity and full public-data scope', () => {
+test('full-sync job has deterministic stable identity and public-data scope', () => {
   const job = buildYouTubeLarkFullSyncJob({
     operationId: OPERATION_ID,
     originalRequestedAt: REQUESTED_AT,
@@ -95,13 +94,13 @@ test('YouTube Lark UAT job has deterministic stable identity and full public-dat
   assert.equal(job.generation, REQUESTED_AT);
   assert.equal(job.originalRequestedAt, REQUESTED_AT);
 
-  const operation = resolveQueueOperation({ job: { body: job }, message: { id: 'delivery-a' } });
+  const first = resolveQueueOperation({ job: { body: job }, message: { id: 'delivery-a' } });
   const replay = resolveQueueOperation({ job: { body: job }, message: { id: 'delivery-b' } });
-  assert.deepEqual(operation, replay);
-  assert.equal(operation.stable, true);
+  assert.deepEqual(first, replay);
+  assert.equal(first.stable, true);
 });
 
-test('YouTube router accepts only stable Integration Workspace Lark UAT identity', () => {
+test('router accepts only stable Integration Workspace Lark UAT identity', () => {
   const body = buildYouTubeLarkFullSyncJob({
     operationId: OPERATION_ID,
     originalRequestedAt: REQUESTED_AT,
@@ -144,7 +143,21 @@ test('YouTube router accepts only stable Integration Workspace Lark UAT identity
   );
 });
 
-test('YouTube Lark UAT completion requires terminal success, D1 facts and no lock or DLQ', () => {
+test('snapshot SQL resolves storage facts through completion durable IDs', () => {
+  const sql = buildYouTubeLarkUatSnapshotSql({
+    operationId: OPERATION_ID,
+    workKey: `youtube:${OPERATION_ID}`,
+    syncRunId: `youtube-lark-uat:${OPERATION_ID}`,
+  });
+  assert.match(sql, /json_extract\(completion_json, '\$\.endToEnd\.storage\.historySyncRunId'\)/u);
+  assert.match(sql, /json_extract\(completion_json, '\$\.endToEnd\.storage\.contentCoverageRunId'\)/u);
+  assert.match(sql, /json_extract\(completion_json, '\$\.endToEnd\.storage\.accountCoverageRunId'\)/u);
+  assert.match(sql, /last_sync_run_id = \(SELECT history_sync_run_id FROM storage_ids\)/u);
+  assert.match(sql, /coverage_run_id = \(SELECT content_coverage_run_id FROM storage_ids\)/u);
+  assert.doesNotMatch(sql, /organic_content_state WHERE last_sync_run_id = 'youtube-lark-uat:/u);
+});
+
+test('completion requires storage IDs, terminal success, D1 facts and no lock or DLQ', () => {
   const complete = classifyYouTubeLarkUatCompletion(completeSnapshot(1));
   assert.equal(complete.complete, true);
   assert.deepEqual(complete.missing, []);
@@ -152,6 +165,13 @@ test('YouTube Lark UAT completion requires terminal success, D1 facts and no loc
   const normalizedAgain = normalizeYouTubeLarkUatSnapshot(complete.snapshot);
   assert.deepEqual(normalizedAgain, complete.snapshot);
   assert.equal(classifyYouTubeLarkUatCompletion(normalizedAgain).complete, true);
+
+  const missingStorageId = classifyYouTubeLarkUatCompletion({
+    ...completeSnapshot(1),
+    history_sync_run_id_present: 0,
+  });
+  assert.equal(missingStorageId.complete, false);
+  assert.ok(missingStorageId.missing.includes('historySyncRunIdPresent'));
 
   const incomplete = classifyYouTubeLarkUatCompletion({
     ...completeSnapshot(1),
@@ -174,7 +194,7 @@ test('YouTube Lark UAT completion requires terminal success, D1 facts and no loc
   );
 });
 
-test('YouTube Lark counts require public-data targets but allow Analytics to remain empty', () => {
+test('Lark counts require public-data targets but allow Analytics to remain empty', () => {
   const counts = classifyYouTubeLarkCounts(larkCounts());
   assert.equal(counts.complete, true);
   assert.equal(counts.counts.rawYouTubeAnalyticsDaily, 0);
@@ -185,7 +205,7 @@ test('YouTube Lark counts require public-data targets but allow Analytics to rem
   assert.deepEqual(missing.missingPositive, ['mktContent']);
 });
 
-test('same-operation rerun must preserve D1 and Lark business counts', () => {
+test('same-operation rerun preserves durable IDs and business counts', () => {
   const before = classifyYouTubeLarkUatCompletion(completeSnapshot(1)).snapshot;
   const after = classifyYouTubeLarkUatCompletion(completeSnapshot(2)).snapshot;
   const result = compareYouTubeLarkUatRerun({
@@ -208,7 +228,7 @@ test('same-operation rerun must preserve D1 and Lark business counts', () => {
   );
 });
 
-test('YouTube Lark UAT evidence is tamper-evident and target-bound', () => {
+test('evidence is tamper-evident and target-bound', () => {
   const evidence = createYouTubeLarkUatEvidence({
     phase: 'lark-preflight',
     repositoryHead: REPOSITORY_HEAD,
@@ -233,16 +253,10 @@ test('YouTube Lark UAT evidence is tamper-evident and target-bound', () => {
   );
 });
 
-test('executable keeps plan before environment and writes send/deploy attempt evidence first', async () => {
+test('executable keeps plan before env and writes send/deploy attempt evidence first', async () => {
   const [source, helper] = await Promise.all([
-    readFile(
-      new URL('../../scripts/youtube-lark-full-sync-uat-operator.mjs', import.meta.url),
-      'utf8',
-    ),
-    readFile(
-      new URL('../../scripts/lib/youtube-lark-full-sync-uat-operator.js', import.meta.url),
-      'utf8',
-    ),
+    readFile(new URL('../../scripts/youtube-lark-full-sync-uat-operator.mjs', import.meta.url), 'utf8'),
+    readFile(new URL('../../scripts/lib/youtube-lark-full-sync-uat-operator.js', import.meta.url), 'utf8'),
   ]);
   assert.match(source, /if \(options\.phase === 'plan'\)[\s\S]*return;/u);
   assert.match(source, /await writePrivateJson\(attemptPath,[\s\S]*await fetch\(/u);
@@ -254,10 +268,7 @@ test('executable keeps plan before environment and writes send/deploy attempt ev
 });
 
 async function reviewedConfig() {
-  const source = await readFile(
-    new URL('../../wrangler.sync.example.jsonc', import.meta.url),
-    'utf8',
-  );
+  const source = await readFile(new URL('../../wrangler.sync.example.jsonc', import.meta.url), 'utf8');
   const mappings = [
     'LARK_TABLE_MKT_ACCOUNTS',
     'LARK_TABLE_RAW_YOUTUBE_CHANNELS',
@@ -299,6 +310,9 @@ function completeSnapshot(mainQueueAttempts) {
     work_lifecycle_status: 'completed',
     work_completed_at: '2026-07-28T03:01:00.000Z',
     completion_json_present: 1,
+    history_sync_run_id_present: 1,
+    content_coverage_run_id_present: 1,
+    account_coverage_run_id_present: 1,
     active_lock_count: 0,
     queue_operation_attempts: mainQueueAttempts,
     main_queue_attempts: mainQueueAttempts,
@@ -306,7 +320,7 @@ function completeSnapshot(mainQueueAttempts) {
     organic_content_state: 2,
     organic_content_observations: 2,
     organic_account_daily_facts: 1,
-    data_coverage_runs: 1,
+    data_coverage_runs: 2,
     data_coverage_entities: 2,
     sync_cursors: 1,
     source_record_states: 2,
