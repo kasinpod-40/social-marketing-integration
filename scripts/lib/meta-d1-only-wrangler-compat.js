@@ -1,6 +1,9 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import {
+  normalizeCloudflareQueueConsumerPayload,
+} from './cloudflare-queue-consumer-contract.js';
+import {
   rebaseGeneratedWranglerConfigPaths,
 } from './rebase-generated-wrangler-config-paths.js';
 
@@ -97,6 +100,36 @@ export async function prepareMetaD1OnlyWranglerInvocation(args = [], options = {
     configNormalized: normalizedConfigPath !== null,
     dryRunOutfileNormalized: dryRunOutputPath !== null,
   });
+}
+
+export function isMetaD1QueueConsumerListInvocation(args = []) {
+  if (!Array.isArray(args)) {
+    throw compatError(
+      'Meta D1 Wrangler compatibility arguments must be an array',
+      'META_D1_WRANGLER_COMPAT_ARGUMENTS_INVALID',
+    );
+  }
+  const values = args.map((value) => String(value));
+  return values[0] === 'wrangler'
+    && values[1] === 'queues'
+    && values[2] === 'consumer'
+    && values[3] === 'list'
+    && values.includes('--json');
+}
+
+export function normalizeMetaD1QueueConsumerListOutput(value) {
+  const text = requiredText(value, 'Queue consumer output');
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw compatError(
+      'Wrangler Queue consumer output is not valid JSON',
+      'META_D1_WRANGLER_COMPAT_QUEUE_OUTPUT_INVALID',
+    );
+  }
+  const normalized = normalizeCloudflareQueueConsumerPayload(parsed);
+  return `${JSON.stringify(normalized)}\n`;
 }
 
 function requiredText(value, fieldName) {

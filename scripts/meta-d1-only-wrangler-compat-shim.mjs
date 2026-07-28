@@ -3,6 +3,8 @@
 import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
 import {
+  isMetaD1QueueConsumerListInvocation,
+  normalizeMetaD1QueueConsumerListOutput,
   prepareMetaD1OnlyWranglerInvocation,
 } from './lib/meta-d1-only-wrangler-compat.js';
 
@@ -27,12 +29,20 @@ try {
       originalConfigPath,
     },
   );
+  const normalizeQueueOutput = isMetaD1QueueConsumerListInvocation(prepared.args);
 
   const child = spawn(realNpx, prepared.args, {
     cwd: process.cwd(),
     env: process.env,
-    stdio: 'inherit',
+    stdio: normalizeQueueOutput ? ['inherit', 'pipe', 'inherit'] : 'inherit',
   });
+  let stdout = '';
+  if (normalizeQueueOutput) {
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk;
+    });
+  }
   const result = await new Promise((resolveResult, reject) => {
     child.once('error', reject);
     child.once('exit', (code, signal) => resolveResult({ code, signal }));
@@ -41,7 +51,13 @@ try {
   if (result.signal) {
     process.kill(process.pid, result.signal);
   } else {
-    process.exitCode = result.code ?? 1;
+    const code = result.code ?? 1;
+    if (normalizeQueueOutput) {
+      process.stdout.write(code === 0
+        ? normalizeMetaD1QueueConsumerListOutput(stdout)
+        : stdout);
+    }
+    process.exitCode = code;
   }
 } catch (error) {
   process.stderr.write(`${JSON.stringify({
