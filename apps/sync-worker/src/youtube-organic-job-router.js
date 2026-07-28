@@ -34,10 +34,7 @@ import {
   sanitizeReliabilityEvent,
 } from './worker-runtime-support.js';
 
-/**
- * Dedicated YouTube route สำหรับ Integration Workspace.
- * ไฟล์นี้ไม่ส่ง Queue, ไม่เปิด Schedule และทุก Execution flag เป็น false เมื่อ Env ไม่ระบุ.
- */
+/** Dedicated YouTube route for the Integration Workspace shared Worker. */
 export async function processYouTubeOrganicEndToEndJob(input) {
   if (input.job?.body?.type !== JOB_TYPES.YOUTUBE_ORGANIC_SYNC) {
     throw permanentError('Dedicated YouTube router received an unsupported job type', {
@@ -53,11 +50,13 @@ export async function processYouTubeOrganicEndToEndJob(input) {
   const dryRun = input.job.body?.dryRun === true;
   const operatorDryRun = input.job.body?.trigger === JOB_TRIGGERS.YOUTUBE_WORKER_DRY_RUN;
   const operatorLarkUat = input.job.body?.trigger === JOB_TRIGGERS.YOUTUBE_LARK_FULL_SYNC_UAT;
+
   if (!youtubeConfig.endToEndEnabled) {
     throw permanentError('YouTube end-to-end route is disabled for this environment', {
       code: 'YOUTUBE_END_TO_END_DISABLED',
     });
   }
+
   const operatorIdentity = operatorDryRun
     ? assertYouTubeWorkerDryRunOperation({
       body: input.job.body,
@@ -75,6 +74,7 @@ export async function processYouTubeOrganicEndToEndJob(input) {
         larkWriteEnabled,
       })
       : null;
+
   if (!dryRun && !d1WriteEnabled) {
     throw permanentError('YouTube end-to-end D1 writing is disabled', {
       code: 'YOUTUBE_END_TO_END_D1_WRITE_DISABLED',
@@ -94,9 +94,13 @@ export async function processYouTubeOrganicEndToEndJob(input) {
       label: operatorDryRun ? 'Worker dry-run' : 'Lark full-sync UAT',
     });
   }
+
   const infrastructure = input.getInfrastructure();
   const youtubeTableIds = readYouTubeLarkTableIdsFromEnv(input.env);
-  const operationalTableIds = readLarkTableIdsFromEnv(input.env, ['mktSyncLog', 'mktSystemAlerts']);
+  const operationalTableIds = readLarkTableIdsFromEnv(input.env, [
+    'mktSyncLog',
+    'mktSystemAlerts',
+  ]);
   const tableIds = Object.freeze({ ...youtubeTableIds, ...operationalTableIds });
   const reliability = infrastructure.getReliability(tableIds);
   const resumableWorkStore = infrastructure.getResumableWorkStore();
@@ -189,7 +193,10 @@ export async function processYouTubeOrganicEndToEndJob(input) {
         analyticsEnabled,
         analyticsStartDate: input.job.body?.analyticsStartDate,
         analyticsEndDate: input.job.body?.analyticsEndDate,
-        analyticsMaxPages: readPositiveInteger(input.env?.MKT_YOUTUBE_ANALYTICS_MAX_PAGES, 1000),
+        analyticsMaxPages: readPositiveInteger(
+          input.env?.MKT_YOUTUBE_ANALYTICS_MAX_PAGES,
+          1000,
+        ),
         d1WriteEnabled,
         larkWriteEnabled,
         dryRun,
@@ -202,15 +209,15 @@ export async function processYouTubeOrganicEndToEndJob(input) {
           mktContentDaily: tableIds.mktContentDaily,
         },
       });
-      return operatorDryRun
-        ? Object.freeze({
-          ...syncResult,
-          providerRequestCount: Number(clients.requestMetrics?.publicRequests ?? 0),
-          analyticsRequestCount: 0,
-          oauthRefreshCount: 0,
-          larkWriteCount: 0,
-        })
-        : syncResult;
+
+      if (!publicApiKeyOnly) return syncResult;
+      return Object.freeze({
+        ...syncResult,
+        providerRequestCount: Number(clients.requestMetrics?.publicRequests ?? 0),
+        analyticsRequestCount: 0,
+        oauthRefreshCount: 0,
+        ...(operatorDryRun ? { larkWriteCount: 0 } : {}),
+      });
     },
   });
 
@@ -218,6 +225,7 @@ export async function processYouTubeOrganicEndToEndJob(input) {
     await resumableWorkStore.cleanupExpiredWork({ limit: 25 });
     return result;
   }
+
   return Object.freeze({
     ...result,
     operation: operatorIdentity,
