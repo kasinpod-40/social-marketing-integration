@@ -1,6 +1,6 @@
 # Multichannel Report Materialization Runtime
 
-Status: `repository_implementation_complete_validation_pending`
+Status: `repository_implementation_complete_validated`
 
 Branch: `codex/report-multichannel-runtime`
 
@@ -87,10 +87,23 @@ Schedule/Cron, Worker deployment, Secrets or Production configuration.
 
 - Canonical `integration_workspace` settings cover all seven platform scopes for 3/7/9/15/30/90
   rolling days and Custom range.
+- The complete setting set is 51 rows: two TikTok 1D/7D compatibility rows plus seven platform
+  scopes multiplied by seven Dashboard period definitions.
 - Settings seed `top_content_limit=5` and `top_ads_limit=5` consistently.
-- TikTok 1D/7D keys remain first-class compatibility rows.
 - Legacy profile labels resolve to canonical Integration Workspace rows and are never created as
   active identities.
+
+## Validation fixes
+
+Real CI found and this branch corrected two repository gaps:
+
+1. Added fail-closed `MKT_REPORT_AI_SUMMARY_ENABLED=false` to
+   `wrangler.sync.example.jsonc` so release examples cover every Storage runtime flag.
+2. Replaced the legacy hardcoded nine-setting reconciliation assertions with the canonical
+   51-setting count derived from `DASHBOARD_REPORT_PLATFORM_SCOPES`.
+
+No test was weakened to hide a failure; the configuration and stale regression expectation were
+corrected to match the implemented contract.
 
 ## Tests added/updated
 
@@ -101,33 +114,32 @@ Schedule/Cron, Worker deployment, Secrets or Production configuration.
 - Workers runtime: D1-read gate and unknown-platform fail-closed behavior.
 - Config: all platform setting seeds, Top Ads limits, default-off AI flag and executable Lark
   schema v2.
-- Existing TikTok report/reliability suites remain unchanged for regression coverage.
+- Existing TikTok report/reliability suites remain active for regression coverage.
 
 ## Validation state
 
-The requested commands remain mandatory:
+Branch Verification run `30368044619` passed on implementation HEAD
+`5e3098b38d7298d0956d66bee19a0925faa7575a`:
 
 ```text
-npm ci
-npm run check
-npm test
-npm run test:report-reliability
-npm audit
-npm run deploy:dry-run
+npm ci                               PASS
+npm run check                        PASS
+focused staged TikTok regression     PASS
+npm test                             PASS — Node 1318/1318; Workers 14/14
+npm run test:report-reliability      PASS — 100/100
+npm audit                            PASS — 0 vulnerabilities
+npm run deploy:dry-run               PASS — API and Sync Worker; no deployment
 ```
 
-This execution environment has no `gh` CLI, cannot resolve `github.com` from the local container
-and has no local checkout. GitHub connector writes succeeded, but GitHub reported no workflow or
-combined-status context for the Draft PR HEAD. Therefore command execution evidence is pending a
-Terminal/CI runner; no gate is represented as passed without evidence.
+The temporary validation/export workflows were removed, and temporary Draft PRs `#200` and
+`#201` were closed without merge. No Remote action or Production mutation was used to obtain
+these results.
 
 ## Remaining authorized follow-ups
 
-1. Run the six gates in a local/CI checkout of PR #199.
-2. Review any architecture/hygiene failures caused by new modules and patch the same branch.
-3. Preview `npm run setup:report-schema`; do not apply until a separate Live Lark authorization.
-4. Provision `LARK_TABLE_MKT_REPORT_TOP_ADS` only after the schema apply is separately approved.
-5. Decide and provision the Production AI provider/binding before enabling
+1. Preview `npm run setup:report-schema`; do not apply until a separate Live Lark authorization.
+2. Provision `LARK_TABLE_MKT_REPORT_TOP_ADS` only after the schema apply is separately approved.
+3. Decide and provision the Production AI provider/binding before enabling
    `MKT_REPORT_AI_SUMMARY_ENABLED`.
-6. Promote Facebook/Instagram/Meta Ads/Google Ads/TikTok Ads source status only through their
+4. Promote Facebook/Instagram/Meta Ads/Google Ads/TikTok Ads source status only through their
    connector catalog/UAT workstreams; this report runtime must not bypass those gates.
