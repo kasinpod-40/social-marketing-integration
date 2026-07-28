@@ -6,18 +6,15 @@ import {
 } from '../reports/build-report-output-rows.js';
 import { stableStringify } from './build-report-snapshot.js';
 
-/**
- * Dashboard/Lark binding. Reads one validated report_materializations row and never queries
- * Organic or Ads detailed facts.
- */
+/** Dashboard/Lark binding that reads materializations only, never detailed historical facts. */
 export async function writeDashboardMaterializationToLark(input = {}) {
   const reader = requireReader(input.reader);
   const repository = requireObject(input.repository, 'repository');
   const syncEngine = requireSyncEngine(input.syncEngine);
-  const tables = requireTables(input.tables);
   const materialization = await reader.readById(requireText(input.reportId, 'reportId'));
   if (!materialization) throw new Error(`Report materialization not found: ${input.reportId}`);
   const { row, payload } = materialization;
+  const tables = requireTables(input.tables, payload.capability);
   const customerProfile = requireText(input.customerProfile, 'customerProfile');
   const utcOffset = requireText(input.utcOffset ?? '+07:00', 'utcOffset');
   const topContentLimit = boundedLimit(input.topContentLimit ?? Math.max(payload.topContent.length, 5));
@@ -87,16 +84,11 @@ export async function writeDashboardMaterializationToLark(input = {}) {
     generatedAt: row.generated_at,
     utcOffset,
   }) : Object.freeze([]);
-
   const planEntries = [
     ['reportSnapshot', tables.mktReportSnapshots, 'report_id', [snapshotRow]],
     ['reportMetricValues', tables.mktReportMetricValues, 'report_metric_key', metricRows],
-    ...(topContentRows.length > 0
-      ? [['reportTopContent', tables.mktReportTopContent, 'report_content_key', topContentRows]]
-      : []),
-    ...(topAdsRows.length > 0
-      ? [['reportTopAds', tables.mktReportTopAds, 'report_ad_key', topAdsRows]]
-      : []),
+    ...(topContentRows.length > 0 ? [['reportTopContent', tables.mktReportTopContent, 'report_content_key', topContentRows]] : []),
+    ...(topAdsRows.length > 0 ? [['reportTopAds', tables.mktReportTopAds, 'report_ad_key', topAdsRows]] : []),
   ];
   const plans = {};
   for (const [name, tableId, keyField, rows] of planEntries) {
@@ -114,12 +106,7 @@ export async function writeDashboardMaterializationToLark(input = {}) {
     capability: payload.capability,
     dataStatus: payload.dataStatus,
     source: 'report_materializations',
-    rows: Object.freeze({
-      snapshots: 1,
-      metrics: metricRows.length,
-      topContent: topContentRows.length,
-      topAds: topAdsRows.length,
-    }),
+    rows: Object.freeze({ snapshots: 1, metrics: metricRows.length, topContent: topContentRows.length, topAds: topAdsRows.length }),
     results: Object.freeze(results),
   });
 }
@@ -134,13 +121,17 @@ function requireSyncEngine(value) {
   }
   return value;
 }
-function requireTables(value) {
+function requireTables(value, capability) {
   const tables = requireObject(value, 'tables');
-  return Object.freeze({
+  const shared = {
     mktReportSnapshots: requireText(tables.mktReportSnapshots, 'tables.mktReportSnapshots'),
     mktReportMetricValues: requireText(tables.mktReportMetricValues, 'tables.mktReportMetricValues'),
-    mktReportTopContent: requireText(tables.mktReportTopContent, 'tables.mktReportTopContent'),
-    mktReportTopAds: requireText(tables.mktReportTopAds, 'tables.mktReportTopAds'),
+  };
+  return Object.freeze({
+    ...shared,
+    ...(capability === 'organic'
+      ? { mktReportTopContent: requireText(tables.mktReportTopContent, 'tables.mktReportTopContent') }
+      : { mktReportTopAds: requireText(tables.mktReportTopAds, 'tables.mktReportTopAds') }),
   });
 }
 function boundedLimit(value) {
