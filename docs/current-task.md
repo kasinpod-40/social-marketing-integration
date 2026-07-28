@@ -299,6 +299,14 @@ Repository implementation and CI do not authorize D1 backup, Worker deployment, 
 - Follow-up verification passed: focused Meta tests `120/120`, repository check, unit tests
   `1280/1280`, Workers-runtime tests `12/12`, report reliability `88/88`, dependency audit with
   zero vulnerabilities and Wrangler dry-run with no deployment.
+- A second fresh operation then passed period scoping and account Insights but Graph v25 rejected
+  `reactions_count`, `comments_count` and `shares_count` at the first content Insights request with
+  code `100`; the combined `post_media_view,post_total_media_view_unique` request passed HTTP 200.
+- The metric-capability hotfix removes only the three Live-rejected candidates. Their Canonical
+  values remain `null` under the missing-metric contract rather than being fabricated as zero.
+- Metric-capability verification passed: focused Meta tests `121/121`, repository check, unit
+  tests `1281/1281`, Workers-runtime tests `12/12`, report reliability `88/88`, dependency audit
+  with zero vulnerabilities and Wrangler dry-run with no deployment.
 - Focused customer-profile, UAT operator/session, YouTube sync and storage tests pass `39/39`;
   full repository gates and CI are pending.
 - The Worker is currently restored and verified all-false after the first customer-scoped run.

@@ -53,6 +53,21 @@ test('Facebook discovery and Page read credentials have separate lifecycle contr
   assert.equal(ads.readCredentialEnv, 'META_ACCESS_TOKEN');
 });
 
+test('Facebook content Insights uses only metrics accepted by the Live v25 capability probe', () => {
+  const contentInsights = getMetaBusinessDatasetContract(
+    META_BUSINESS_CONNECTOR_KEYS.FACEBOOK_ORGANIC,
+    'facebook.content.insights',
+  );
+
+  assert.deepEqual(contentInsights.metrics, [
+    'post_media_view',
+    'post_total_media_view_unique',
+  ]);
+  assert.ok(!contentInsights.metrics.includes('reactions_count'));
+  assert.ok(!contentInsights.metrics.includes('comments_count'));
+  assert.ok(!contentInsights.metrics.includes('shares_count'));
+});
+
 test('Instagram Login stays on graph.instagram.com with the insights permission', () => {
   const instagram = connectors[META_BUSINESS_CONNECTOR_KEYS.INSTAGRAM_ORGANIC];
 

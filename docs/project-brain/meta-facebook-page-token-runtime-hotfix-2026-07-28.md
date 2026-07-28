@@ -74,3 +74,22 @@ The follow-up hotfix:
 - continues to enforce opaque cursor presence/repetition guards for cursor-paginated datasets;
 - preserves GET-only transport, stable operation identity, Queue topology and all default-false
   execution/schedule flags.
+
+## Content Insights capability follow-up
+
+The next fresh operation passed period scoping and non-cursor account Insights, then failed
+safe-closed on the first content Insights request with Graph code `100`. A memory-only GET
+capability probe tested every approved candidate both with and without the period:
+
+```text
+post_media_view                    HTTP 200
+post_total_media_view_unique       HTTP 200
+reactions_count                    HTTP 400 / Graph 100
+comments_count                     HTTP 400 / Graph 100
+shares_count                       HTTP 400 / Graph 100
+supported pair combined            HTTP 200
+```
+
+The contract now requests only the two Live-accepted metrics. Reactions, comments and shares remain
+`null` unless a separately reviewed source contract supplies them; the runtime must not fabricate
+zero or relabel unsupported metrics.

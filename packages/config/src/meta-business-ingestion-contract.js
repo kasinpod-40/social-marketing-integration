@@ -138,9 +138,6 @@ export const META_BUSINESS_INGESTION_CONTRACT = deepFreeze({
           metrics: [
             'post_media_view',
             'post_total_media_view_unique',
-            'reactions_count',
-            'comments_count',
-            'shares_count',
           ],
           entityType: 'content',
         }),
