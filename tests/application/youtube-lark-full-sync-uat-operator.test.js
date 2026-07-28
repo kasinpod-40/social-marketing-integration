@@ -1,10 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
-import {
-  JOB_TRIGGERS,
-  JOB_TYPES,
-} from '../../packages/application/src/jobs/job-catalog.js';
+import { JOB_TRIGGERS, JOB_TYPES } from '../../packages/application/src/jobs/job-catalog.js';
 import { resolveQueueOperation } from '../../packages/application/src/jobs/queue-operation.js';
 import {
   assertYouTubeLarkFullSyncUatOperation,
@@ -121,29 +118,23 @@ test('router accepts only stable Integration Workspace Lark UAT identity', () =>
 
   assert.throws(
     () => assertYouTubeLarkFullSyncUatOperation({
-      body: { ...body, analyticsEnabled: true },
-      operation,
-      env: {},
-      d1WriteEnabled: true,
-      larkWriteEnabled: true,
+      body: { ...body, analyticsEnabled: true }, operation, env: {},
+      d1WriteEnabled: true, larkWriteEnabled: true,
     }),
     (error) => error.code === 'YOUTUBE_LARK_UAT_OPERATION_INVALID'
       && error.details.invalid.includes('analyticsEnabled'),
   );
   assert.throws(
     () => assertYouTubeLarkFullSyncUatOperation({
-      body,
-      operation,
-      env: { MKT_SCHEDULE_YOUTUBE_ENABLED: 'true' },
-      d1WriteEnabled: true,
-      larkWriteEnabled: true,
+      body, operation, env: { MKT_SCHEDULE_YOUTUBE_ENABLED: 'true' },
+      d1WriteEnabled: true, larkWriteEnabled: true,
     }),
     (error) => error.code === 'YOUTUBE_LARK_UAT_OPERATION_INVALID'
       && error.details.invalid.includes('youtubeSchedule'),
   );
 });
 
-test('snapshot SQL resolves storage facts through completion durable IDs', () => {
+test('snapshot SQL resolves durable storage IDs and Provider count', () => {
   const sql = buildYouTubeLarkUatSnapshotSql({
     operationId: OPERATION_ID,
     workKey: `youtube:${OPERATION_ID}`,
@@ -152,42 +143,41 @@ test('snapshot SQL resolves storage facts through completion durable IDs', () =>
   assert.match(sql, /json_extract\(completion_json, '\$\.endToEnd\.storage\.historySyncRunId'\)/u);
   assert.match(sql, /json_extract\(completion_json, '\$\.endToEnd\.storage\.contentCoverageRunId'\)/u);
   assert.match(sql, /json_extract\(completion_json, '\$\.endToEnd\.storage\.accountCoverageRunId'\)/u);
+  assert.match(sql, /json_extract\(details_json, '\$\.providerRequestCount'\)/u);
   assert.match(sql, /last_sync_run_id = \(SELECT history_sync_run_id FROM storage_ids\)/u);
   assert.match(sql, /coverage_run_id = \(SELECT content_coverage_run_id FROM storage_ids\)/u);
   assert.doesNotMatch(sql, /organic_content_state WHERE last_sync_run_id = 'youtube-lark-uat:/u);
 });
 
 test('completion requires storage IDs, terminal success, D1 facts and no lock or DLQ', () => {
-  const complete = classifyYouTubeLarkUatCompletion(completeSnapshot(1));
+  const complete = classifyYouTubeLarkUatCompletion(completeSnapshot(1, 4));
   assert.equal(complete.complete, true);
   assert.deepEqual(complete.missing, []);
+  assert.equal(complete.snapshot.providerRequests, 4);
 
   const normalizedAgain = normalizeYouTubeLarkUatSnapshot(complete.snapshot);
   assert.deepEqual(normalizedAgain, complete.snapshot);
   assert.equal(classifyYouTubeLarkUatCompletion(normalizedAgain).complete, true);
 
   const missingStorageId = classifyYouTubeLarkUatCompletion({
-    ...completeSnapshot(1),
-    history_sync_run_id_present: 0,
+    ...completeSnapshot(1, 4), history_sync_run_id_present: 0,
   });
   assert.equal(missingStorageId.complete, false);
   assert.ok(missingStorageId.missing.includes('historySyncRunIdPresent'));
 
   const incomplete = classifyYouTubeLarkUatCompletion({
-    ...completeSnapshot(1),
-    data_coverage_entities: 0,
+    ...completeSnapshot(1, 4), data_coverage_entities: 0,
   });
   assert.equal(incomplete.complete, false);
   assert.ok(incomplete.missing.includes('dataCoverageEntities'));
 
   assert.throws(
-    () => classifyYouTubeLarkUatCompletion({ ...completeSnapshot(1), dlq_records: 1 }),
+    () => classifyYouTubeLarkUatCompletion({ ...completeSnapshot(1, 4), dlq_records: 1 }),
     (error) => error.code === 'YOUTUBE_LARK_UAT_DLQ_DETECTED',
   );
   assert.throws(
     () => classifyYouTubeLarkUatCompletion({
-      ...completeSnapshot(1),
-      sync_run_status: 'failed',
+      ...completeSnapshot(1, 4), sync_run_status: 'failed',
       sync_run_error_code: 'YOUTUBE_TEST_FAILURE',
     }),
     (error) => error.code === 'YOUTUBE_LARK_UAT_SYNC_FAILED',
@@ -199,30 +189,36 @@ test('Lark counts require public-data targets but allow Analytics to remain empt
   assert.equal(counts.complete, true);
   assert.equal(counts.counts.rawYouTubeAnalyticsDaily, 0);
   assert.equal(counts.analyticsOptional, true);
-
   const missing = classifyYouTubeLarkCounts({ ...larkCounts(), mktContent: 0 });
   assert.equal(missing.complete, false);
   assert.deepEqual(missing.missingPositive, ['mktContent']);
 });
 
-test('same-operation rerun preserves durable IDs and business counts', () => {
-  const before = classifyYouTubeLarkUatCompletion(completeSnapshot(1)).snapshot;
-  const after = classifyYouTubeLarkUatCompletion(completeSnapshot(2)).snapshot;
+test('same-operation rerun preserves business counts and performs no Provider requests', () => {
+  const before = classifyYouTubeLarkUatCompletion(completeSnapshot(1, 4)).snapshot;
+  const after = classifyYouTubeLarkUatCompletion(completeSnapshot(2, 0)).snapshot;
   const result = compareYouTubeLarkUatRerun({
-    before,
-    after,
-    beforeLark: larkCounts(),
-    afterLark: larkCounts(),
+    before, after, beforeLark: larkCounts(), afterLark: larkCounts(),
   });
   assert.equal(result.idempotent, true);
+  assert.equal(result.providerReplayVerified, true);
+  assert.equal(result.firstRunProviderRequests, 4);
+  assert.equal(result.rerunProviderRequests, 0);
   assert.equal(result.mainQueueAttempts, 2);
 
   assert.throws(
     () => compareYouTubeLarkUatRerun({
       before,
+      after: { ...after, providerRequests: 1 },
+      beforeLark: larkCounts(), afterLark: larkCounts(),
+    }),
+    (error) => error.code === 'YOUTUBE_LARK_UAT_PROVIDER_REPLAY_FAILED',
+  );
+  assert.throws(
+    () => compareYouTubeLarkUatRerun({
+      before,
       after: { ...after, organicContentObservations: 3 },
-      beforeLark: larkCounts(),
-      afterLark: larkCounts(),
+      beforeLark: larkCounts(), afterLark: larkCounts(),
     }),
     (error) => error.code === 'YOUTUBE_LARK_UAT_IDEMPOTENCY_FAILED',
   );
@@ -230,12 +226,9 @@ test('same-operation rerun preserves durable IDs and business counts', () => {
 
 test('evidence is tamper-evident and target-bound', () => {
   const evidence = createYouTubeLarkUatEvidence({
-    phase: 'lark-preflight',
-    repositoryHead: REPOSITORY_HEAD,
-    targetFingerprint: TARGET_FINGERPRINT,
-    operationId: OPERATION_ID,
-    data: { tableCount: 8 },
-    createdAt: '2026-07-28T03:00:00.000Z',
+    phase: 'lark-preflight', repositoryHead: REPOSITORY_HEAD,
+    targetFingerprint: TARGET_FINGERPRINT, operationId: OPERATION_ID,
+    data: { tableCount: 8 }, createdAt: '2026-07-28T03:00:00.000Z',
   });
   const validated = validateYouTubeLarkUatEvidence(evidence, {
     repositoryHead: REPOSITORY_HEAD,
@@ -253,16 +246,19 @@ test('evidence is tamper-evident and target-bound', () => {
   );
 });
 
-test('executable keeps plan before env and writes send/deploy attempt evidence first', async () => {
-  const [source, helper] = await Promise.all([
+test('source wiring records UAT Provider metrics and writes attempts before remote actions', async () => {
+  const [source, helper, router] = await Promise.all([
     readFile(new URL('../../scripts/youtube-lark-full-sync-uat-operator.mjs', import.meta.url), 'utf8'),
     readFile(new URL('../../scripts/lib/youtube-lark-full-sync-uat-operator.js', import.meta.url), 'utf8'),
+    readFile(new URL('../../apps/sync-worker/src/youtube-organic-job-router.js', import.meta.url), 'utf8'),
   ]);
   assert.match(source, /if \(options\.phase === 'plan'\)[\s\S]*return;/u);
   assert.match(source, /await writePrivateJson\(attemptPath,[\s\S]*await fetch\(/u);
   assert.match(source, /await writePrivateJson\(attemptPath,[\s\S]*wrangler\(\[\s*'deploy'/u);
   assert.match(helper, /'MKT_SCHEDULE_YOUTUBE_ENABLED'/u);
   assert.match(helper, /'MKT_YOUTUBE_ANALYTICS_ENABLED'/u);
+  assert.match(router, /providerRequestCount:\s*Number\(clients\.requestMetrics\?\.publicRequests/u);
+  assert.match(router, /if \(!publicApiKeyOnly\) return syncResult/u);
   assert.doesNotMatch(source, /d1',\s*'migrations',\s*'apply'/u);
   assert.doesNotMatch(source, /batchDelete|deleteRecords|deleteTable/u);
 });
@@ -270,38 +266,27 @@ test('executable keeps plan before env and writes send/deploy attempt evidence f
 async function reviewedConfig() {
   const source = await readFile(new URL('../../wrangler.sync.example.jsonc', import.meta.url), 'utf8');
   const mappings = [
-    'LARK_TABLE_MKT_ACCOUNTS',
-    'LARK_TABLE_RAW_YOUTUBE_CHANNELS',
-    'LARK_TABLE_RAW_YOUTUBE_VIDEOS',
-    'LARK_TABLE_RAW_YOUTUBE_ANALYTICS_DAILY',
-    'LARK_TABLE_MKT_CONTENT',
-    'LARK_TABLE_MKT_CONTENT_DAILY',
-    'LARK_TABLE_MKT_SYNC_LOG',
-    'LARK_TABLE_MKT_SYSTEM_ALERTS',
+    'LARK_TABLE_MKT_ACCOUNTS', 'LARK_TABLE_RAW_YOUTUBE_CHANNELS',
+    'LARK_TABLE_RAW_YOUTUBE_VIDEOS', 'LARK_TABLE_RAW_YOUTUBE_ANALYTICS_DAILY',
+    'LARK_TABLE_MKT_CONTENT', 'LARK_TABLE_MKT_CONTENT_DAILY',
+    'LARK_TABLE_MKT_SYNC_LOG', 'LARK_TABLE_MKT_SYSTEM_ALERTS',
   ];
   let text = source
-    .replace(
-      '"database_name": "replace-with-environment-specific-d1-name"',
-      '"database_name": "social-mkt-state-dev"',
-    )
-    .replace(
-      '"database_id": "00000000-0000-0000-0000-000000000000"',
-      '"database_id": "12345678-1234-4234-9234-123456789abc"',
-    )
-    .replace(
-      '"YOUTUBE_CHANNEL_ID": "replace-with-youtube-channel-id"',
-      `"YOUTUBE_CHANNEL_ID": "${CHANNEL_ID}"`,
-    );
+    .replace('"database_name": "replace-with-environment-specific-d1-name"', '"database_name": "social-mkt-state-dev"')
+    .replace('"database_id": "00000000-0000-0000-0000-000000000000"', '"database_id": "12345678-1234-4234-9234-123456789abc"')
+    .replace('"YOUTUBE_CHANNEL_ID": "replace-with-youtube-channel-id"', `"YOUTUBE_CHANNEL_ID": "${CHANNEL_ID}"`);
   let index = 0;
   text = text.replaceAll('"replace-with-table-id"', () => `"tbl_real_${index += 1}"`);
   for (const [mappingIndex, name] of mappings.entries()) {
-    const pattern = new RegExp(`"${name}"\\s*:\\s*"[^"]+"`, 'u');
-    text = text.replace(pattern, `"${name}": "tbl_youtube_${mappingIndex + 1}"`);
+    text = text.replace(
+      new RegExp(`"${name}"\\s*:\\s*"[^"]+"`, 'u'),
+      `"${name}": "tbl_youtube_${mappingIndex + 1}"`,
+    );
   }
   return text;
 }
 
-function completeSnapshot(mainQueueAttempts) {
+function completeSnapshot(mainQueueAttempts, providerRequests) {
   return {
     sync_run_status: 'success',
     sync_run_finished_at: '2026-07-28T03:01:00.000Z',
@@ -317,6 +302,7 @@ function completeSnapshot(mainQueueAttempts) {
     queue_operation_attempts: mainQueueAttempts,
     main_queue_attempts: mainQueueAttempts,
     dlq_records: 0,
+    provider_requests: providerRequests,
     organic_content_state: 2,
     organic_content_observations: 2,
     organic_account_daily_facts: 1,
