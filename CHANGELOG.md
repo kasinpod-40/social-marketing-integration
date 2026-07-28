@@ -13,6 +13,9 @@
   opaque cursor; Business/Coverage/Lark rows remained zero and the Worker was restored all-false.
 - GET-only probes confirmed the reviewed period contains 25 posts on one page and account Insights
   returned an empty requested-period dataset with `next/previous` time windows but no cursor.
+- The next accepted D1-only run reached the durable D1 boundary and processed the exact replay,
+  but both D1 and Lark operator rerun verifiers timed out because they counted
+  `queue_operation_attempts` rows even though `operation_id` is the table primary key.
 
 ### Repository correction
 
@@ -28,6 +31,14 @@
 - Removed three Facebook content Insights candidates rejected by the Live Graph v25 capability
   probe and retained the two metrics whose combined GET returned HTTP 200; unsupported engagement
   values remain `null`.
+- Changed D1/Lark idempotent-rerun verification to require growth of the durable
+  `main_queue_attempts` counter while retaining immutable Business, Coverage and reconciliation
+  checks.
+- Added an exact-confirmation, clean-tree, ancestor-bound continuation guard for completing the
+  already-restored D1 evidence chain across an operator-only hotfix. Worker runtime/config changes
+  remain forbidden by that guard.
+- Cross-head closeout reuses an existing hash-valid, remotely reverified all-false restore instead
+  of deploying an unmerged Worker bundle again.
 
 ## Unreleased — Dashboard Rolling Period Presets and Custom Range — 2026-07-28
 

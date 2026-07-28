@@ -333,3 +333,16 @@ Repository implementation and CI do not authorize D1 backup, Worker deployment, 
   `1/837/0/1/837/837`.
 - The immutable reviewed all-false Worker version
   `a7b4bc48-4374-43de-b55c-c16dc7fe43c9` was restored at `100%` traffic after the rerun.
+- Facebook operation `meta-facebook-d1-20260728t163156z` reached the accepted D1 boundary on
+  merged `main@f748008707eda4eaf93eb47b266821613a03bd80`; Coverage was valid, the same-operation
+  replay incremented `main_queue_attempts` from `28` to `29`, and the Worker was restored and
+  verified all-false after the rerun verifier timed out.
+- The timeout proved an operator contract defect: `queue_operation_attempts.operation_id` is the
+  primary key, so the row count cannot increase for a same-operation replay. D1 and Lark rerun
+  verification now use the durable `main_queue_attempts` counter and continue to require immutable
+  Business, Coverage and Lark reconciliation facts.
+- A guarded compatibility path permits only the remaining D1 evidence-closeout phases to run from
+  the merged operator hotfix while retaining the original operation/evidence repository head. It
+  requires exact old/new heads, ancestor lineage, a clean tree and an operator/test/docs-only diff.
+- That compatibility closeout reuses the prior hash-valid restore only after a fresh remote
+  all-false/version/topology verification and performs no additional Worker deployment.
