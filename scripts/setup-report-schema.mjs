@@ -6,6 +6,11 @@ import {
   applyLarkReportSchema,
   planLarkReportSchema,
 } from '../packages/application/src/use-cases/install-lark-report-schema.js';
+import {
+  LARK_REPORT_SCHEMA_V2,
+  LARK_REPORT_SCHEMA_V2_VERSION,
+  validateReportSchemaV2,
+} from '../packages/config/src/lark-report-schema-v2.js';
 
 try {
   await main();
@@ -26,15 +31,21 @@ async function main() {
   const fileEnv = await readDevVars(devVarsFile);
   const env = normalizeEnvAliases({ ...fileEnv, ...process.env });
   const mode = resolveReportSchemaInstallerMode({ argv: process.argv.slice(2), env: process.env });
-
   const client = createLarkBitableClientFromEnv(env, {
     onRequest: process.env.MKT_SCHEMA_VERBOSE === 'true'
       ? (event) => console.error(JSON.stringify(event))
       : undefined,
   });
+  const schemaInput = {
+    client,
+    env,
+    schema: LARK_REPORT_SCHEMA_V2,
+    schemaVersion: LARK_REPORT_SCHEMA_V2_VERSION,
+    validateSchema: validateReportSchemaV2,
+  };
 
   if (!mode.apply) {
-    const preview = await planLarkReportSchema({ client, env });
+    const preview = await planLarkReportSchema(schemaInput);
     printJson({
       ...preview,
       nextCommand: preview.readyToApply
@@ -49,8 +60,7 @@ async function main() {
   }
 
   const result = await applyLarkReportSchema({
-    client,
-    env,
+    ...schemaInput,
     onProgress: (event) => {
       if (process.env.MKT_SCHEMA_VERBOSE === 'true') console.error(JSON.stringify(event));
     },
@@ -61,7 +71,6 @@ async function main() {
   });
 }
 
-/** รองรับชื่อ Token เดิมโดยไม่บังคับให้ผู้ใช้แก้ Secret file ทันที */
 function normalizeEnvAliases(source) {
   const normalized = { ...source };
   if (!normalized.LARK_APP_TOKEN && normalized.LARK_BASE_APP_TOKEN) {
