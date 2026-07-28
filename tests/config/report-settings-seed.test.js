@@ -18,6 +18,8 @@ test('creates canonical multichannel Dashboard settings and preserves TikTok 1D/
   assert.equal(rows[0].customer_profile, 'integration_workspace');
   assert.equal(rows[0].period_kind, 'rolling_days');
   assert.equal(rows[0].window_days, 1);
+  assert.equal(rows[0].top_content_limit, 5);
+  assert.equal(rows[0].top_ads_limit, 5);
   assert.equal(rows[0].ai_enabled, false);
   assert.equal(rows[0].notification_enabled, false);
   assert.equal(rows[1].send_weekday, 'monday');
@@ -26,6 +28,7 @@ test('creates canonical multichannel Dashboard settings and preserves TikTok 1D/
       && row.report_type === 'dashboard_performance_report');
     assert.deepEqual(platformRows.map((row) => row.window_days), [3, 7, 9, 15, 30, 90, null]);
     assert.equal(platformRows.at(-1).report_setting_key, `integration_workspace:${platformScope}:custom_range`);
+    assert.equal(platformRows.every((row) => row.top_ads_limit === 5), true);
   }
   assert.equal(rows.every((row) => row.account_keys_json === '["chemistry_k"]'), true);
   assert.equal(rows.some((row) => row.report_setting_key.startsWith('dev_ft_pumkin:')), false);
