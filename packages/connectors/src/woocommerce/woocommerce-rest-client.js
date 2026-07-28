@@ -169,10 +169,7 @@ export class WooCommerceRestClient {
       throw transientError('WooCommerce request failed before receiving a response', {
         code: 'WOOCOMMERCE_NETWORK_ERROR',
         cause,
-        details: {
-          resource,
-          ...describeWooCommerceNetworkCause(cause, this.baseUrl),
-        },
+        details: { resource },
       });
     }
 
@@ -207,24 +204,6 @@ export class WooCommerceRestClient {
       details,
     });
   }
-}
-
-/**
- * เก็บเฉพาะสาเหตุเชิง Runtime ที่ปลอดภัยต่อ Reliability evidence.
- * URL, hostname, Consumer Key/Secret และ Basic credential จะถูก redaction ก่อน persist.
- */
-export function describeWooCommerceNetworkCause(cause, baseUrl = null) {
-  const causeName = diagnosticText(cause?.name, 'Error', 80);
-  const causeCode = diagnosticToken(cause?.code);
-  const rawMessage = diagnosticText(cause?.message, '', 1_000);
-  const causeCategory = classifyNetworkCause(causeName, causeCode, rawMessage);
-  const causeMessage = redactNetworkMessage(rawMessage, baseUrl);
-  return Object.freeze({
-    causeName,
-    causeCode,
-    causeCategory,
-    causeMessage,
-  });
 }
 
 function normalizeBaseUrl(value) {
@@ -367,50 +346,7 @@ function ensureUtc(value) {
 }
 
 function createTimeoutSignal(timeoutMs) {
-  return typeof globalThis.AbortSignal?.timeout === 'function'
-    ? globalThis.AbortSignal.timeout(timeoutMs)
-    : undefined;
-}
-
-function classifyNetworkCause(name, code, message) {
-  const value = `${name} ${code ?? ''} ${message}`.toLowerCase();
-  if (/timeout|timed out|abort/u.test(value)) return 'timeout_or_abort';
-  if (/same zone|worker-to-worker|global[_ -]?fetch|service binding|error 1042|\b1042\b/u.test(value)) {
-    return 'worker_public_fetch_path';
-  }
-  if (/enotfound|eai_again|dns|resolve|name not resolved/u.test(value)) return 'dns_resolution';
-  if (/certificate|cert_|tls|ssl/u.test(value)) return 'tls_handshake';
-  if (/econnreset|econnrefused|etimedout|socket|connection/u.test(value)) return 'connection';
-  if (/fetch|network/u.test(value)) return 'fetch_runtime';
-  return 'unknown';
-}
-
-function redactNetworkMessage(message, baseUrl) {
-  if (!message) return null;
-  let output = message
-    .replace(/https?:\/\/[^\s"'<>]+/giu, '[url]')
-    .replace(/\b(?:ck|cs)_[A-Za-z0-9]+\b/gu, '[credential]')
-    .replace(/\bBasic\s+[A-Za-z0-9+/=]+\b/giu, 'Basic [credential]');
-  try {
-    const hostname = typeof baseUrl === 'string' ? new URL(baseUrl).hostname : null;
-    if (hostname) output = output.replaceAll(hostname, '[host]');
-  } catch {
-    // baseUrl is already validated by the constructor; diagnostics must never throw here.
-  }
-  return output.slice(0, 240);
-}
-
-function diagnosticText(value, fallback, maximum) {
-  return typeof value === 'string' && value.trim() !== ''
-    ? value.trim().slice(0, maximum)
-    : fallback;
-}
-
-function diagnosticToken(value) {
-  const text = typeof value === 'string' || typeof value === 'number'
-    ? String(value).trim()
-    : '';
-  return /^[A-Za-z0-9_.:-]{1,80}$/u.test(text) ? text : null;
+  return typeof AbortSignal?.timeout === 'function' ? AbortSignal.timeout(timeoutMs) : undefined;
 }
 
 function freezeJson(value) {
@@ -443,33 +379,30 @@ function requireFetch(value) {
   return value;
 }
 
-function requireText(value, fieldName) {
-  if (typeof value !== 'string' || value.trim() === '') {
-    throw permanentError(`WooCommerce ${fieldName} is required`, {
-      code: 'WOOCOMMERCE_CONFIG_INVALID',
-      details: { fieldName },
-    });
-  }
-  return value.trim();
-}
-
 function requireSecret(value, fieldName) {
   const text = requireText(value, fieldName);
-  if (/replace-with|example|placeholder/iu.test(text)) {
-    throw permanentError(`WooCommerce ${fieldName} is still a placeholder`, {
-      code: 'WOOCOMMERCE_CONFIG_INVALID',
-      details: { fieldName },
+  if (!/^ck_/u.test(text) && fieldName === 'consumerKey') {
+    throw permanentError('WooCommerce consumerKey format is invalid', {
+      code: 'WOOCOMMERCE_CONFIG_INVALID', details: { fieldName },
     });
   }
   return text;
 }
 
-function boundedInteger(value, fieldName, minimum, maximum) {
-  const number = typeof value === 'number' ? value : Number(value);
-  if (!Number.isSafeInteger(number) || number < minimum || number > maximum) {
-    throw permanentError(`WooCommerce ${fieldName} must be an integer from ${minimum} to ${maximum}`, {
-      code: 'WOOCOMMERCE_CONFIG_INVALID',
-      details: { fieldName },
+function requireText(value, fieldName) {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw permanentError(`WooCommerce requires ${fieldName}`, {
+      code: 'WOOCOMMERCE_CONFIG_INVALID', details: { fieldName },
+    });
+  }
+  return value.trim();
+}
+
+function boundedInteger(value, fieldName, min, max) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number < min || number > max) {
+    throw permanentError(`WooCommerce ${fieldName} must be an integer from ${min} to ${max}`, {
+      code: 'WOOCOMMERCE_CONFIG_INVALID', details: { fieldName },
     });
   }
   return number;
