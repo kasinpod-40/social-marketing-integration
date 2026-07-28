@@ -51,7 +51,7 @@ Dashboard/Lark อ่าน Materialized results และ Preset ไม่ก�
 
 ## Implementation result
 
-Status: `LARK_SETTINGS_RECONCILIATION_IMPLEMENTED_PREVIEW_PASS_APPLY_PENDING`
+Status: `LARK_SETTINGS_RECONCILED_LIVE_POSTCHECK_PASS`
 
 ### Files changed
 
@@ -120,23 +120,33 @@ Status: `LARK_SETTINGS_RECONCILIATION_IMPLEMENTED_PREVIEW_PASS_APPLY_PENDING`
 - `git diff --check` — PASS
 - Live Lark guarded Preview — PASS; exact schema actions 9, active legacy settings 2,
   historical references 27, mutations 0
+- Guarded Lark Apply — PASS; schema actions 9, Canonical creates 9, legacy disables 2,
+  deletes 0
+- Read-only post-apply verification — PASS; schema actions 0, Canonical creates/updates 0/0,
+  Canonical skips 9, active legacy 0, historical references retained 27
 
 ### CI result
 
-Draft PR CI rerun pending after the Lark settings reconciliation correction.
+- Draft PR #195 Branch Verification #870, run `30349520673` — PASS
+- Verified correction head: `b6e121d6aa154057da4e32a9e154612428ec3ade`
+- Final documentation-only CI rerun pending
 
 ### Remaining gaps
 
-- Guarded Lark settings apply is pending after reviewed branch CI.
 - External UI/HTTP producer is not implemented or authorized.
 - Other platform adapters can reuse the shared period/request/materialization/Ads contracts;
   only the existing TikTok D1-aware Organic adapter is active in this workstream.
 
 ### Remote actions
 
-`NONE` — Live Preview performed read-only; schema/record mutation count remains zero.
+- Lark schema actions: 9 additive/option updates
+- Canonical Report Settings created: 9
+- Legacy Report Settings disabled: 2
+- Report setting/history deletes: 0
+- Remote D1, Worker, Queue, Schedule, Secret and Production actions: `NONE`
 
 ### Merge recommendation
 
-Keep Draft until the corrected Branch Verification and guarded Lark settings reconciliation pass.
-Do not deploy or perform Remote D1/Queue/Schedule actions from this PR.
+Keep Draft until independent review is complete; corrected Branch Verification and guarded
+Lark reconciliation both pass. Do not deploy or perform Remote D1/Queue/Schedule actions
+from this PR.

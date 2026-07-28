@@ -35,6 +35,12 @@ Disable exact historical developer setting keys หลัง Canonical rows พ�
 เพราะมี Historical Report outputs อ้าง key เดิม. Live Preview พบ active legacy settings 2 แถว,
 historical references 27 แถว, expected schema actions 9 และ Remote mutation 0.
 
+Guarded Live reconciliation ผ่านหลัง Branch Verification `#870`: additive/option schema actions
+9, Canonical settings created 9, exact legacy settings disabled 2, active legacy settings 0,
+historical references retained 27 และ deletes 0. Read-only post-check พบ schema actions 0 และ
+Canonical record creates/updates 0/0 (skipped 9). ไม่มี D1, Worker, Queue, Schedule, Secret หรือ
+Production action.
+
 ## Current verified repository state — 2026-07-27
 
 ```text

@@ -41,7 +41,10 @@
 
 - Migration required: none; Storage Foundation Migration `0009` already contains the
   approved request/materialization columns and Stable keys.
-- No Worker deployment, Remote D1/Lark action, Queue message, Schedule/Cron, LIVE UAT,
+- Guarded Integration Workspace Lark reconciliation applied nine additive/option schema actions,
+  created nine Canonical settings and disabled two exact legacy developer settings.
+- No Report setting/history record was deleted; all 27 historical output references were retained.
+- No Worker deployment, Remote D1 action, Queue message, Schedule/Cron, LIVE UAT,
   Secret/Production configuration change or Business-fact mutation occurred.
 - Live Lark preview was read-only and found only the nine expected additive schema actions,
   two active legacy settings and 27 historical references.

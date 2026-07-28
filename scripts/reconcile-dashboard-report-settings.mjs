@@ -78,6 +78,14 @@ async function main() {
   });
   assertExpectedSchemaPlan(schemaPreview);
   const preAudit = await auditLegacyReferences(runtime);
+  const recordPreview = schemaPreview.actions.length === 0
+    ? await planDashboardReportSettingsReconciliation({
+      repository: runtime.repository,
+      syncEngine: runtime.syncEngine,
+      tableId: runtime.tables.mktReportSettings,
+      profileKey: runtime.runtimeConfig.profileKey,
+    })
+    : null;
 
   if (!apply) {
     printJson({
@@ -87,6 +95,9 @@ async function main() {
       schemaActionCount: schemaPreview.actions.length,
       schemaActions: schemaPreview.actions.map(sanitizeSchemaAction),
       canonicalExpected: createReportSettingRowsForProfile('integration_workspace').length,
+      canonicalCreates: recordPreview?.summary.canonicalCreates ?? null,
+      canonicalUpdates: recordPreview?.summary.canonicalUpdates ?? null,
+      canonicalSkipped: recordPreview?.summary.canonicalSkipped ?? null,
       legacySettingsFound: preAudit.legacySettingsFound,
       activeLegacySettings: preAudit.activeLegacySettings,
       historicalReferenceCount: preAudit.historicalReferenceCount,
