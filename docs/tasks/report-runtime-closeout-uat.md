@@ -1,8 +1,14 @@
 # Report Runtime Closeout UAT
 
-Status: `repository_implementation_pending_ci`
+Status: `repository_implementation_complete_validated`
 
 Branch: `codex/report-runtime-closeout-uat`
+
+Draft PR: `#214`
+
+Aligned main: `f726d86e4391892c3bb959ee7c0006eaa8ac3968`
+
+Validated implementation head before this documentation commit: `a249c836f5750362d0d9223fb8d86a68ff1efbdd`
 
 ## Objective
 
@@ -124,3 +130,26 @@ The operator does not:
 Deployment and Queue attempt evidence is written before each mutation. If an error occurs after activation,
 the operator restores all flags false in `finally`; a restore failure is surfaced separately and never reported
 as a successful closeout.
+
+## Repository validation
+
+Initial combined-tree Branch Verification run `30381340231` passed on the Draft PR merge tree.
+
+After merging current `main` into the feature branch through integration PR `#215`, exact aligned-head
+Branch Verification run `30381619424` passed on `a249c836f5750362d0d9223fb8d86a68ff1efbdd`:
+
+- install locked dependencies — PASS
+- syntax, architecture and Repository hygiene — PASS
+- focused staged TikTok regression — PASS
+- Unit and Workers-runtime tests — PASS
+- Report reliability regression — PASS
+- dependency audit — PASS
+- Wrangler dry-run — PASS; no deployment
+- diagnostics upload — PASS
+
+Focused closeout tests cover exact confirmation, two-flag activation/all-false restore, deterministic fresh
+preset selection, finalizer evidence, D1 readiness, completed materialization, replay checksum/identity and
+secret-shaped evidence redaction.
+
+No Worker deployment, Remote D1 mutation, Lark write, Queue message, Schedule activation, AI activation,
+Secret change, Production action or Live UAT was performed during implementation or CI.
