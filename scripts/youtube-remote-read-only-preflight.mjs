@@ -201,6 +201,7 @@ try {
       additionalSecretNameCount: contract.additionalSecretNameCount,
       expectedFalseFlagCount: contract.expectedFalseFlagCount,
       materializedFalseFlagCount: contract.materializedFalseFlagCount,
+      additionalConnectorTrueFlagCount: contract.additionalConnectorTrueFlagCount,
       queueConsumerCount: contract.queueConsumerCount,
       migrationReadAttempts: migrationsRead.attempts,
       migrationReadTransientRetries: migrationsRead.transientRetries,
@@ -403,6 +404,7 @@ function sanitizeDiagnostic(details) {
     'transientRetries',
     'cloudflareCode',
     'retryable',
+    'unexpectedTrue',
   ]);
   const sanitized = Object.fromEntries(
     Object.entries(details)
