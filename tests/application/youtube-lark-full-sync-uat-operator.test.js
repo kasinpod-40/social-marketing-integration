@@ -23,7 +23,7 @@ import {
   validateYouTubeLarkUatEvidence,
 } from '../../scripts/lib/youtube-lark-full-sync-uat-operator.js';
 
-const CHANNEL_ID = 'UCAwEENovvqZWosKhJWTS5Kg';
+const CHANNEL_ID = 'UC1NVIjalyZhB2hqf3sl9GMA';
 const OPERATION_ID = 'youtube-lark-uat-20260728';
 const REQUESTED_AT = Date.UTC(2026, 6, 28, 3, 0, 0);
 const REPOSITORY_HEAD = '1'.repeat(40);
@@ -53,7 +53,7 @@ test('target accepts exact numeric-string generation from environment', () => {
     MKT_ENV: 'development',
     MKT_CUSTOMER_PROFILE: 'integration_workspace',
     MKT_CONNECTION_CUSTOMER_KEY: 'chemistry_k',
-    MKT_YOUTUBE_LARK_UAT_ACCOUNT_KEY: 'dev_ft_pumkin',
+    MKT_YOUTUBE_LARK_UAT_ACCOUNT_KEY: 'chemistry_k',
     MKT_YOUTUBE_LARK_UAT_EXPECTED_CHANNEL_ID: CHANNEL_ID,
   });
   assert.equal(target.originalRequestedAt, REQUESTED_AT);

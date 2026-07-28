@@ -76,6 +76,7 @@ test('operator-style dry-run plans with Lark GET, writes no Business data and re
   const stateStore = createStateStore();
   const resumableWorkStore = new InMemoryResumableWorkStore();
   let providerRequests = 0;
+  let completionDecorations = 0;
   const publicClient = {
     async getChannel() { providerRequests += 1; return CHANNEL; },
     async listUploadVideoIdsPage() {
@@ -106,6 +107,16 @@ test('operator-style dry-run plans with Lark GET, writes no Business data and re
     generation: 1000,
     requestedAt: 1000,
     tables: TABLES,
+    async decorateCompletion(completion) {
+      completionDecorations += 1;
+      return {
+        ...completion,
+        endToEnd: {
+          contract: 'youtube-organic-end-to-end-v1',
+          storage: { historySyncRunId: 'history:youtube:test' },
+        },
+      };
+    },
   };
   const first = await syncYouTubeOrganicToLark(input);
   const providerRequestsAfterFirst = providerRequests;
@@ -114,6 +125,8 @@ test('operator-style dry-run plans with Lark GET, writes no Business data and re
   assert.equal(stateStore.saved.length, 0);
   assert.equal(repository.events.some((event) => event.startsWith('write:')), false);
   assert.ok(repository.events.some((event) => event.startsWith('read:')));
+  assert.equal(first.endToEnd.storage.historySyncRunId, 'history:youtube:test');
+  assert.equal(completionDecorations, 1);
 
   const replay = await syncYouTubeOrganicToLark({
     ...input,
@@ -126,6 +139,8 @@ test('operator-style dry-run plans with Lark GET, writes no Business data and re
   assert.deepEqual(replay.reconciliation, first.reconciliation);
   assert.deepEqual(replay.sourceSummary, first.sourceSummary);
   assert.equal(replay.warningOutbox, null);
+  assert.equal(replay.endToEnd.storage.historySyncRunId, 'history:youtube:test');
+  assert.equal(completionDecorations, 1);
   assert.equal(providerRequests, providerRequestsAfterFirst);
   assert.equal(stateStore.saved.length, 0);
   assert.equal(repository.events.some((event) => event.startsWith('write:')), false);

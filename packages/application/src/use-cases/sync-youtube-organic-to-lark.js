@@ -36,6 +36,9 @@ export async function syncYouTubeOrganicToLark(input = {}) {
     ? input.assertLockActive
     : async () => undefined;
   const onProgress = typeof input.onProgress === 'function' ? input.onProgress : () => undefined;
+  const decorateCompletion = typeof input.decorateCompletion === 'function'
+    ? input.decorateCompletion
+    : async (completion) => completion;
   const now = typeof input.now === 'function' ? input.now : () => Date.now();
   const fetchedAt = safeTimestamp(now());
   const syncRunId = requireText(input.syncRunId, 'syncRunId');
@@ -253,8 +256,9 @@ export async function syncYouTubeOrganicToLark(input = {}) {
       inventory, resourceLoad, analyticsLoad, analyticsVideoIds, analyticsRows,
       analyticsReconciliation, plans, checkpointSaved: false, workResumed: work.resumed,
     });
-    await workStore.completeWork({ workKey, completion: result });
-    return result;
+    const completedResult = await applyCompletionDecorator(decorateCompletion, result);
+    await workStore.completeWork({ workKey, completion: completedResult });
+    return completedResult;
   }
 
   const results = {};
@@ -309,13 +313,25 @@ export async function syncYouTubeOrganicToLark(input = {}) {
     fullSnapshot: syncMode.fullSnapshot,
     generationGuard: { cursorKey, workKey, generation, requestedAt },
   });
-  const completedResult = Object.freeze({
+  const baseCompletedResult = Object.freeze({
     ...result,
     warningOutbox,
   });
+  const completedResult = await applyCompletionDecorator(
+    decorateCompletion,
+    baseCompletedResult,
+  );
   await workStore.completeWork({ workKey, completion: completedResult });
 
   return completedResult;
+}
+
+async function applyCompletionDecorator(decorateCompletion, completion) {
+  const decorated = await decorateCompletion(completion);
+  if (!decorated || typeof decorated !== 'object' || Array.isArray(decorated)) {
+    throw new TypeError('YouTube completion decorator must return an object');
+  }
+  return Object.freeze({ ...decorated });
 }
 
 async function loadUploadInventory(input) {

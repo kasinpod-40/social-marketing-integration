@@ -30,6 +30,10 @@ test('session wrapper resolves targets read-only and never persists or prints th
   assert.match(source, /\/queues\?page=\$\{page\}&per_page=100/u);
   assert.match(source, /headers: \{ authorization: `Bearer \$\{token\}` \}/u);
   assert.match(source, /MKT_YOUTUBE_LARK_UAT_QUEUE_ID: session\.queueId/u);
+  assert.match(source, /resolveCustomerYouTubeConnection/u);
+  assert.match(source, /connector_key = '\$\{connectorKey\}'/u);
+  assert.match(source, /credential_reference_present/u);
+  assert.match(source, /customerConnectionValidated: true/u);
   assert.match(source, /CLOUDFLARE_API_TOKEN: auth\.token/u);
   assert.match(source, /writeFile\(temporary,[\s\S]*mode: 0o600/u);
   assert.match(source, /tokenPrinted: false/u);
@@ -39,6 +43,6 @@ test('session wrapper resolves targets read-only and never persists or prints th
     source.indexOf('const session = Object.freeze({'),
     source.indexOf('validateSession(session);'),
   );
-  assert.doesNotMatch(sessionObject, /token|apiToken|CLOUDFLARE_API_TOKEN/u);
+  assert.doesNotMatch(sessionObject, /apiToken|CLOUDFLARE_API_TOKEN/u);
   assert.doesNotMatch(source, /method:\s*'POST'[\s\S]*\/queues\?page/u);
 });

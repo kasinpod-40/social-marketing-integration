@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveYouTubeCoverageScopeMode } from '../../packages/application/src/use-cases/sync-youtube-organic-end-to-end.js';
+import {
+  buildEndToEndCompletion,
+  resolveYouTubeCoverageScopeMode,
+} from '../../packages/application/src/use-cases/sync-youtube-organic-end-to-end.js';
 import {
   YouTubeStorageFirstSyncEngine,
 } from '../../packages/application/src/storage/youtube-storage-first-sync-engine.js';
@@ -211,6 +214,23 @@ test('Coverage scope follows the existing YouTube checkpoint decision for forced
     fullSyncIntervalMs: 86_400_000,
   });
   assert.equal(recent, 'recent_window');
+});
+
+test('end-to-end storage identity is part of the durable work completion', () => {
+  const completion = buildEndToEndCompletion({
+    completion: { mode: 'write', checkpointSaved: true },
+    d1WriteEnabled: true,
+    larkWriteEnabled: true,
+    storage: {
+      historySyncRunId: 'history:youtube:test',
+      contentCoverageRunId: 'coverage:youtube:test',
+      accountCoverageRunId: 'coverage:youtube-account:test',
+    },
+  });
+  assert.equal(completion.endToEnd.contract, 'youtube-organic-end-to-end-v1');
+  assert.equal(completion.endToEnd.storage.historySyncRunId, 'history:youtube:test');
+  assert.equal(completion.endToEnd.storage.contentCoverageRunId, 'coverage:youtube:test');
+  assert.equal(completion.endToEnd.storage.accountCoverageRunId, 'coverage:youtube-account:test');
 });
 
 test('D1 is durable before Lark, retry is idempotent, and unavailable states stay non-destructive', async () => {

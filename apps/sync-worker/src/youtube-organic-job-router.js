@@ -333,7 +333,7 @@ function assertYouTubeOperatorRuntime(runtimeConfig, connectorConfig, input = {}
   const valid = runtimeConfig?.environment === 'development'
     && runtimeConfig?.profileKey === 'integration_workspace'
     && runtimeConfig?.customerKey === 'chemistry_k'
-    && connectorConfig?.accountKey === 'dev_ft_pumkin';
+    && connectorConfig?.accountKey === 'chemistry_k';
   if (!valid) {
     throw permanentError(
       `YouTube ${input.label ?? 'operator'} requires the approved Integration Workspace identity`,
