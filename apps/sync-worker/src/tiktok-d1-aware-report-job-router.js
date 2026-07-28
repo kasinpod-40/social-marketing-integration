@@ -68,7 +68,6 @@ async function processDashboardReportJob(input) {
   }
 
   const runtimeConfig = input.getRuntimeConfig();
-  const accountKey = resolveReportAccountKey(runtimeConfig, platformScope);
   const infrastructure = input.getInfrastructure();
   const requiredTables = [
     'mktReportSnapshots', 'mktReportMetricValues',
@@ -76,21 +75,23 @@ async function processDashboardReportJob(input) {
     'mktSyncLog', 'mktSystemAlerts',
   ];
   const tableIds = readLarkTableIdsFromEnv(input.env, requiredTables);
-  const reliability = infrastructure.getReliability(tableIds);
   const requestStore = requestId ? new D1ReportRequestStore({
     db: input.env?.MKT_STATE_DB,
     defaultPlatformScope: platformScope,
   }) : null;
+  let accountKey = resolveReportAccountKey(runtimeConfig, platformScope);
   if (requestStore) {
     const existing = await requestStore.read(requestId);
     if (!existing) throw permanentError('Dashboard report request does not exist', {
       code: 'DASHBOARD_REPORT_REQUEST_NOT_FOUND', details: { requestId },
     });
+    accountKey = assertDashboardRequestIdentity({ existing, body, runtimeConfig, platformScope });
     if (existing.status === 'completed') return Object.freeze({
       mode: 'already_completed', reportRequestId: requestId, reportId: existing.resultReportId, warnings: Object.freeze([]),
     });
     await requestStore.markProcessing({ requestId });
   }
+  const reliability = infrastructure.getReliability(tableIds);
 
   try {
     const result = await runReliableSync({
@@ -129,6 +130,12 @@ async function processDashboardReportJob(input) {
           maxContentRecords: readPositiveInteger(input.env?.MKT_REPORT_D1_MAX_CONTENT_RECORDS, 10_000),
           maxFactRows: readPositiveInteger(input.env?.MKT_REPORT_D1_MAX_FACT_ROWS, 10_000),
         });
+        const ai = await generateReportAiSummary({
+          enabled: storageConfig.reportAiSummaryEnabled,
+          provider: resolveInjectedAiProvider(input),
+          materializationPayload: generated.materialization.payload,
+          language: body.language ?? 'th',
+        });
         await assertLockActive();
         const lark = await writeDashboardMaterializationToLark({
           reader: new D1ReportMaterializationReader({ db: input.env?.MKT_STATE_DB }),
@@ -141,12 +148,6 @@ async function processDashboardReportJob(input) {
           topAdsLimit: body.topAdsLimit,
           assertLockActive,
           tables: tableIds,
-        });
-        const ai = await generateReportAiSummary({
-          enabled: storageConfig.reportAiSummaryEnabled,
-          provider: resolveInjectedAiProvider(input),
-          materializationPayload: generated.materialization.payload,
-          language: body.language ?? 'th',
         });
         return Object.freeze({
           ...generated,
@@ -284,6 +285,25 @@ function createD1ReportRegistry(db) {
       tiktok_ads: new D1AdsReportSource({ db, platform: 'tiktok_ads' }),
     },
   });
+}
+function assertDashboardRequestIdentity(input) {
+  const mismatches = [
+    ['customerKey', input.runtimeConfig.customerKey],
+    ['platformScope', input.platformScope],
+    ['periodStart', input.body.periodStart],
+    ['periodEnd', input.body.periodEnd],
+    ['comparisonMode', input.body.comparisonMode ?? 'previous_period'],
+  ].filter(([field, expected]) => input.existing[field] !== expected);
+  if (mismatches.length > 0) {
+    throw permanentError('Dashboard report job does not match durable request identity', {
+      code: 'DASHBOARD_REPORT_REQUEST_IDENTITY_CONFLICT',
+      details: {
+        requestId: input.existing.requestId,
+        fields: mismatches.map(([field]) => field),
+      },
+    });
+  }
+  return requireJobText(input.existing.accountKey, 'request.accountKey');
 }
 function resolveReportAccountKey(runtimeConfig, platformScope) {
   const configured = runtimeConfig?.connectors?.[platformScope]?.accountKey;
