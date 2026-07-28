@@ -211,10 +211,10 @@ export function buildYouTubeLarkUatConfigWindow(sourceText, input = {}) {
   const activeText = `${JSON.stringify(active, null, 2)}\n`;
   const safeTrueFlags = readTrueFlags(safe);
   const activeTrueFlags = readTrueFlags(active);
+  const expectedTrueFlags = [...YOUTUBE_LARK_UAT_ACTIVE_TRUE_FLAGS].sort();
   if (safeTrueFlags.length !== 0) {
     throw uatError('Safe YouTube Lark UAT config contains a true flag', 'YOUTUBE_LARK_UAT_SAFE_FLAG_INVALID');
   }
-  const expectedTrueFlags = [...YOUTUBE_LARK_UAT_ACTIVE_TRUE_FLAGS].sort();
   if (stableJson(activeTrueFlags) !== stableJson(expectedTrueFlags)) {
     throw uatError(
       'Active YouTube Lark UAT config contains an unapproved true flag',
@@ -300,6 +300,18 @@ export function buildYouTubeLarkUatSnapshotSql(input = {}) {
     'syncRunId',
   ));
   return compactSql(`
+    WITH storage_ids AS (
+      SELECT
+        json_extract(completion_json, '$.endToEnd.storage.historySyncRunId')
+          AS history_sync_run_id,
+        json_extract(completion_json, '$.endToEnd.storage.contentCoverageRunId')
+          AS content_coverage_run_id,
+        json_extract(completion_json, '$.endToEnd.storage.accountCoverageRunId')
+          AS account_coverage_run_id
+      FROM sync_work_runs
+      WHERE work_key = '${workKey}'
+      LIMIT 1
+    )
     SELECT
       (SELECT status FROM sync_runs WHERE sync_run_id = '${syncRunId}') AS sync_run_status,
       (SELECT finished_at FROM sync_runs WHERE sync_run_id = '${syncRunId}') AS sync_run_finished_at,
@@ -309,6 +321,12 @@ export function buildYouTubeLarkUatSnapshotSql(input = {}) {
       (SELECT completed_at FROM sync_work_runs WHERE work_key = '${workKey}') AS work_completed_at,
       CASE WHEN (SELECT completion_json FROM sync_work_runs WHERE work_key = '${workKey}') IS NULL
         THEN 0 ELSE 1 END AS completion_json_present,
+      CASE WHEN (SELECT history_sync_run_id FROM storage_ids) IS NULL
+        THEN 0 ELSE 1 END AS history_sync_run_id_present,
+      CASE WHEN (SELECT content_coverage_run_id FROM storage_ids) IS NULL
+        THEN 0 ELSE 1 END AS content_coverage_run_id_present,
+      CASE WHEN (SELECT account_coverage_run_id FROM storage_ids) IS NULL
+        THEN 0 ELSE 1 END AS account_coverage_run_id_present,
       (SELECT COUNT(*) FROM sync_locks WHERE owner_id = '${syncRunId}'
         AND expires_at > (unixepoch() * 1000)) AS active_lock_count,
       (SELECT COUNT(*) FROM queue_operation_attempts WHERE operation_id = '${operationId}'
@@ -317,17 +335,22 @@ export function buildYouTubeLarkUatSnapshotSql(input = {}) {
         WHERE operation_id = '${operationId}') AS main_queue_attempts,
       (SELECT COUNT(*) FROM dead_letter_operation_metadata
         WHERE operation_id = '${operationId}') AS dlq_records,
-      (SELECT COUNT(*) FROM organic_content_state WHERE last_sync_run_id = '${syncRunId}')
+      (SELECT COUNT(*) FROM organic_content_state
+        WHERE last_sync_run_id = (SELECT history_sync_run_id FROM storage_ids))
         AS organic_content_state,
-      (SELECT COUNT(*) FROM organic_content_observations WHERE sync_run_id = '${syncRunId}')
+      (SELECT COUNT(*) FROM organic_content_observations
+        WHERE sync_run_id = (SELECT history_sync_run_id FROM storage_ids))
         AS organic_content_observations,
-      (SELECT COUNT(*) FROM organic_account_daily_facts WHERE sync_run_id = '${syncRunId}')
+      (SELECT COUNT(*) FROM organic_account_daily_facts
+        WHERE sync_run_id = (SELECT history_sync_run_id FROM storage_ids))
         AS organic_account_daily_facts,
-      (SELECT COUNT(*) FROM data_coverage_runs WHERE sync_run_id = '${syncRunId}')
+      (SELECT COUNT(*) FROM data_coverage_runs
+        WHERE coverage_run_id = (SELECT content_coverage_run_id FROM storage_ids)
+          OR coverage_run_id = (SELECT account_coverage_run_id FROM storage_ids))
         AS data_coverage_runs,
-      (SELECT COUNT(*) FROM data_coverage_entities WHERE coverage_run_id IN (
-        SELECT coverage_run_id FROM data_coverage_runs WHERE sync_run_id = '${syncRunId}'
-      )) AS data_coverage_entities,
+      (SELECT COUNT(*) FROM data_coverage_entities
+        WHERE coverage_run_id = (SELECT content_coverage_run_id FROM storage_ids))
+        AS data_coverage_entities,
       (SELECT COUNT(*) FROM sync_cursors WHERE last_sync_run_id = '${syncRunId}'
         OR generation_work_key = '${workKey}') AS sync_cursors,
       (SELECT COUNT(*) FROM source_record_states WHERE last_seen_sync_run_id = '${syncRunId}')
@@ -344,6 +367,21 @@ export function normalizeYouTubeLarkUatSnapshot(row = {}) {
     workLifecycleStatus: optionalText(readEither(row, 'work_lifecycle_status', 'workLifecycleStatus')),
     workCompletedAt: optionalText(readEither(row, 'work_completed_at', 'workCompletedAt')),
     completionJsonPresent: countEither(row, 'completion_json_present', 'completionJsonPresent'),
+    historySyncRunIdPresent: countEither(
+      row,
+      'history_sync_run_id_present',
+      'historySyncRunIdPresent',
+    ),
+    contentCoverageRunIdPresent: countEither(
+      row,
+      'content_coverage_run_id_present',
+      'contentCoverageRunIdPresent',
+    ),
+    accountCoverageRunIdPresent: countEither(
+      row,
+      'account_coverage_run_id_present',
+      'accountCoverageRunIdPresent',
+    ),
     activeLockCount: countEither(row, 'active_lock_count', 'activeLockCount'),
     queueOperationAttempts: countEither(row, 'queue_operation_attempts', 'queueOperationAttempts'),
     mainQueueAttempts: countEither(row, 'main_queue_attempts', 'mainQueueAttempts'),
@@ -384,13 +422,16 @@ export function classifyYouTubeLarkUatCompletion(snapshotInput = {}) {
     workLifecycleStatus: snapshot.workLifecycleStatus === 'completed',
     workCompletedAt: snapshot.workCompletedAt !== null,
     completionJsonPresent: snapshot.completionJsonPresent === 1,
+    historySyncRunIdPresent: snapshot.historySyncRunIdPresent === 1,
+    contentCoverageRunIdPresent: snapshot.contentCoverageRunIdPresent === 1,
+    accountCoverageRunIdPresent: snapshot.accountCoverageRunIdPresent === 1,
     activeLockCount: snapshot.activeLockCount === 0,
     mainQueueAttempts: snapshot.mainQueueAttempts >= 1,
     dlqRecords: snapshot.dlqRecords === 0,
     organicContentState: snapshot.organicContentState > 0,
     organicContentObservations: snapshot.organicContentObservations > 0,
     organicAccountDailyFacts: snapshot.organicAccountDailyFacts > 0,
-    dataCoverageRuns: snapshot.dataCoverageRuns > 0,
+    dataCoverageRuns: snapshot.dataCoverageRuns >= 2,
     dataCoverageEntities: snapshot.dataCoverageEntities > 0,
     syncCursors: snapshot.syncCursors > 0,
     sourceRecordStates: snapshot.sourceRecordStates > 0,
@@ -421,6 +462,9 @@ export function compareYouTubeLarkUatRerun(input = {}) {
   const afterLark = classifyYouTubeLarkCounts(input.afterLark ?? {}).counts;
   const changedLark = Object.keys(beforeLark).filter((key) => beforeLark[key] !== afterLark[key]);
   const durableFields = [
+    'historySyncRunIdPresent',
+    'contentCoverageRunIdPresent',
+    'accountCoverageRunIdPresent',
     'organicContentState',
     'organicContentObservations',
     'organicAccountDailyFacts',
