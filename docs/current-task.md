@@ -1,60 +1,62 @@
-# Current Task — YouTube Shared-Worker True-Flag Scope Hotfix
+# Current Task — YouTube Remote Read-Only Preflight Closeout
 
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = PASS_FOR_MERGE_DECISION
-CURRENT_PROGRAM                     = YOUTUBE_SHARED_WORKER_TRUE_FLAG_SCOPE_HOTFIX
-BASE_MAIN_SHA                       = 8ca246bd0de3a4a48a10e900d8c9349c00938a1c
-BRANCH                              = hotfix/youtube-shared-worker-true-flag-scope
-DRAFT_PR                            = #179 / OPEN / DRAFT / UNMERGED
-IMPLEMENTATION_OWNER                = CHATGPT_WORK_GITHUB_TOOLS
+TASK_STATUS                         = CLOSED_PASS
+CURRENT_PROGRAM                     = YOUTUBE_CURRENT_MAIN_REMOTE_READ_ONLY_REVALIDATION
+CLOSEOUT_BRANCH                     = docs/youtube-read-only-preflight-closeout
 HISTORICAL_YOUTUBE_LARK_SYNC        = CONFIRMED_PASS
-REMOTE_READ_ONLY_PREFLIGHT          = FAIL_CLOSED_AT_UNRELATED_SHARED_WORKER_TRUE_FLAG
-LIVE_CONFIRMATION_AFTER_FIX         = PENDING
+REMOTE_READ_ONLY_PREFLIGHT          = PASS_READ_ONLY_PREFLIGHT
+LIVE_CONFIRMATION                   = COMPLETE
 REMOTE_MUTATION                     = NONE
 PROVIDER_CALL                       = NOT_RUN
 QUEUE_MESSAGE                       = NOT_SENT
 D1_WRITE                            = NONE
 LARK_REQUEST                        = NOT_RUN
 WORKER_DEPLOYMENT                   = NOT_RUN
-SCHEDULE_ROUTE_SECRET_MUTATION      = NONE
+SCHEDULE_MUTATION                   = NONE
 PRODUCTION                          = BLOCKED
 ```
 
-Related contracts:
+## Final authenticated read-only evidence
+
+The one-command preflight completed successfully from a clean local `main` that exactly matched `origin/main`:
 
 ```text
-docs/tasks/youtube-shared-worker-true-flag-scope-hotfix.md
-docs/project-brain/youtube-shared-worker-true-flag-scope-2026-07-28.md
-docs/tasks/youtube-shared-worker-fingerprint-scope-hotfix.md
-docs/tasks/youtube-d1-migration-read-transient-hotfix.md
-docs/runbooks/youtube-remote-read-only-preflight-final.md
+REPOSITORY_HEAD                     = ee342e7f27c7a03c9527d166078374a16ab9f4ef
+ORIGIN_MAIN_HEAD                    = ee342e7f27c7a03c9527d166078374a16ab9f4ef
+WORKING_TREE_CLEAN                  = true
+WRANGLER_AUTH                       = AUTHENTICATED
+DECISION                            = PASS_READ_ONLY_PREFLIGHT
+ACTIVE_VERSION                      = 06425c1c-0601-4d81-a71e-bb9937bc37c3
+ACTIVE_TRAFFIC                      = 100
+ACTIVE_VERSION_STABLE               = true
+REMOTE_FINGERPRINT                  = 1aa34e9c5bd2ff842c9d8c47132b907cef8db6cd2c16c6db5c6435de4fc352ee
+EXPECTED_REMOTE_FINGERPRINT         = 1aa34e9c5bd2ff842c9d8c47132b907cef8db6cd2c16c6db5c6435de4fc352ee
+REMOTE_FINGERPRINT_MATCH            = true
+QUEUE_CONSUMER_COUNT                = 2
+MIGRATION_READ_ATTEMPTS             = 1
+MIGRATION_READ_TRANSIENT_RETRIES    = 0
+PENDING_MIGRATIONS                  = 0
+MIGRATION_0017                      = NOT_PENDING
+MIGRATION_0018                      = NOT_PENDING
 ```
 
-## Correct historical baseline
-
-YouTube has already completed the Integration Workspace Lark path. This task does not rebuild, backfill, delete or rewrite existing YouTube business records.
+Sanitized binding evidence:
 
 ```text
-LARK_SCHEMA_APPLY                    = PASS
-FULL_SYNC                            = PASS
-IDEMPOTENT_RERUN                     = PASS
-INCREMENTAL_SYNC                     = PASS
-LOCK_RETRY_DLQ_ALERT                 = PASS
-IDENTITY_FAIL_CLOSED                 = PASS
+REQUIRED_YOUTUBE_SECRET_NAMES       = 3
+OBSERVED_SHARED_WORKER_SECRET_NAMES = 17
+ADDITIONAL_SHARED_SECRET_NAMES      = 14
+EXPECTED_FALSE_FLAG_COUNT           = 37
+MATERIALIZED_FALSE_FLAG_COUNT       = 0
+ADDITIONAL_CONNECTOR_TRUE_FLAGS     = 0
 ```
 
-## Latest live result
+No Secret values, access tokens, complete Remote binding payloads or provider data were printed or committed.
 
-The authorized one-command Remote read-only preflight authenticated through the local Wrangler session and progressed through the merged Queue timeout compatibility, Shared-Secret scoping and bounded D1 migration-list retry. It then stopped with:
-
-```text
-YOUTUBE_DRY_RUN_REMOTE_TRUE_FLAG_INVALID
-Remote deployment contains an unapproved true flag
-```
-
-Safety evidence:
+## Safety evidence
 
 ```text
 REMOTE_MUTATION                     = NONE
@@ -63,125 +65,65 @@ QUEUE_MESSAGE                       = NOT_SENT
 D1_WRITE                            = NONE
 LARK_REQUEST                        = NOT_RUN
 WORKER_DEPLOYMENT                   = NOT_RUN
+SCHEDULE_MUTATION                   = NONE
+PRODUCTION                          = BLOCKED
 ```
 
-## Root cause
+The preflight performed only authenticated metadata reads. It did not authorize or perform Worker deployment/upload/rollback, Queue send/Ack/Retry/DLQ action, Remote D1 write or migration apply, Lark request, YouTube Provider request, Cron/route/workers.dev/Secret mutation or Production action.
 
-The strict rollout validator enumerates every Remote plaintext binding named `MKT_*_ENABLED` and allows `true` only for the two YouTube dry-run gates. That behavior is correct for the dedicated local all-false safe/active configs, but the Integration Workspace Worker is shared by multiple connectors. A separately reviewed active TikTok, Meta, WooCommerce, Chatwoot, Facebook, Instagram or Google Ads flag therefore creates false YouTube drift before the sanitized YouTube fingerprint is built.
-
-The exact live flag name was not exposed by the pre-Hotfix sanitizer. The Repository root cause is verified from the validator path; the post-Hotfix failure boundary now permits only sanitized flag-name diagnostics.
-
-## Repository implementation
-
-- Add `normalizeWranglerVersionUnrelatedConnectorFlags` to the existing live compatibility adapter.
-- Recognize only known non-YouTube connector namespaces:
-  - `CHATWOOT`
-  - `FACEBOOK`
-  - `GOOGLE_ADS`
-  - `INSTAGRAM`
-  - `META`
-  - `TIKTOK`
-  - `WOOCOMMERCE`
-- Validate each recognized binding as an explicit Boolean.
-- Reject duplicate recognized connector flag bindings.
-- Project recognized connector `true` values to `false` only in the in-memory YouTube fingerprint input.
-- Preserve the original Wrangler response and actual Remote Worker configuration unchanged.
-- Never project YouTube-owned flags or unknown/shared flags.
-- Keep YouTube Lark write, Analytics and Schedule gates fail-closed when true.
-- Add only `additionalConnectorTrueFlagCount` to successful output; do not persist flag names or values.
-- Allow `unexpectedTrue` only as a sanitized failure diagnostic containing flag names.
-- Preserve Queue, D1 UUID, required Secret subset, Cron, route, workers.dev, traffic, migration and fingerprint checks.
-
-## Acceptance result
+## Repository corrections completed
 
 ```text
-Known unrelated connector true flags     = COMPARISON-ONLY PROJECT FALSE / PASS
-Original Remote response                  = UNCHANGED / PASS
-YouTube write or schedule true            = FAIL_CLOSED / PASS
-Unknown shared true flag                  = FAIL_CLOSED / PASS
-Invalid unrelated Boolean                 = FAIL_CLOSED / PASS
-Duplicate unrelated binding               = FAIL_CLOSED / PASS
-Secret or binding value exposure          = FORBIDDEN / PASS
-Successful output persists names/values   = NO / PASS
-Remote writes or mutations                = ZERO
+PR #152  Queue max_wait_time_ms compatibility                     MERGED
+PR #167  Shared Secrets and omitted-false fingerprint scope       MERGED
+PR #178  Bounded transient D1 migration-list read retry           MERGED
+PR #179  Shared Worker unrelated true-flag fingerprint scope      MERGED
 ```
 
-## Verification history
+These corrections preserve fail-closed behavior for D1 UUID, Queue topology, required YouTube Secrets, YouTube-owned flags, unknown shared flags, Cron, routes, workers.dev, active traffic, active-version stability, pending migrations and exact sanitized fingerprint equality.
 
-The first exact PR head correctly failed Unit/Workers runtime because two test fixtures were ambiguous after the contract became connector-aware:
+## Post-PASS main movement classification
+
+After the successful preflight, `main` advanced by one isolated Meta-only repository commit:
 
 ```text
-FAILED_HEAD                          = c75a52b8e3c92376b2bfcfe793aa173e4aa3be5b
-BRANCH_VERIFICATION                 = #816 / 30323507763 / EXPECTED_FAIL
-FAILED_STAGE                        = UNIT_AND_WORKERS_RUNTIME
-FAILED_TESTS                        = 2
-FAILED_ARTIFACT                     = 8674834774
-FAILED_ARTIFACT_DIGEST              = sha256:e01eccc294036c71e4eae8438fd2cef805e87bd9dd040fae6c6521b67cbd4441
+PASS_HEAD                           = ee342e7f27c7a03c9527d166078374a16ab9f4ef
+CURRENT_MAIN_AT_CLOSEOUT            = 14a895723a3f4b1a508804db9a581ebde29fa211
+COMMIT                              = fix: normalize Meta D1 Queue consumer fields
+CHANGED_FILES                       = 4
+YOUTUBE_PREFLIGHT_PATHS_CHANGED     = 0
+YOUTUBE_RUNTIME_CONFIG_CHANGED      = 0
+SHARED_QUEUE_NORMALIZER_CHANGED     = 0
 ```
 
-Corrections retained Runtime behavior and fixed only test semantics:
+The later commit modifies only the Meta D1 Wrangler compatibility shim, its focused test and task documentation. It does not alter the YouTube preflight, YouTube live parser, rollout operator, Worker configuration or Shared Queue consumer normalizer. The successful YouTube evidence therefore remains applicable and no repeated Remote read is required for this closeout.
 
-- the prior fail-closed regression now selects `MKT_YOUTUBE_LARK_WRITE_ENABLED` explicitly instead of the first alphabetic reviewed false flag;
-- the Shared Worker fixture updates its existing Chatwoot binding instead of adding a duplicate.
+## Historical YouTube business path
 
-Corrected implementation head:
+The existing Integration Workspace YouTube path remains previously verified:
 
 ```text
-VERIFIED_HEAD                        = 71b89f28cc87ce1be6d5aeec6c5f022f56dd44bb
-BRANCH_VERIFICATION                  = #818 / 30323817522 / PASS
-SYNTAX_ARCHITECTURE_HYGIENE          = PASS
-FOCUSED_STAGED_TIKTOK                = PASS
-NODE_AND_WORKERS_RUNTIME             = PASS
-REPORT_RELIABILITY                   = PASS
-DEPENDENCY_AUDIT                     = PASS
-WRANGLER_DRY_RUN                     = PASS / NO DEPLOYMENT
-DIAGNOSTICS_ARTIFACT                 = 8674940694
-DIAGNOSTICS_DIGEST                   = sha256:499869df75bd38bd470d6eef2990efcc888d7ed296f25388134c50499989e369
+LARK_SCHEMA_APPLY                   = PASS
+FULL_SYNC                           = PASS
+IDEMPOTENT_RERUN                    = PASS
+INCREMENTAL_SYNC                    = PASS
+LOCK_RETRY_DLQ_ALERT                = PASS
+IDENTITY_FAIL_CLOSED                = PASS
 ```
 
-Documentation evidence head:
+No backfill, overwrite, deletion or new YouTube business write was performed by this revalidation task.
+
+## Closeout decision
 
 ```text
-DOCS_EVIDENCE_HEAD                   = 42acc8870634b6e1bac058a7e1c7d3beddcee06a
-BRANCH_VERIFICATION                  = #819 / 30324009998 / PASS
-SYNTAX_ARCHITECTURE_HYGIENE          = PASS
-FOCUSED_STAGED_TIKTOK                = PASS
-NODE_AND_WORKERS_RUNTIME             = PASS
-REPORT_RELIABILITY                   = PASS
-DEPENDENCY_AUDIT                     = PASS
-WRANGLER_DRY_RUN                     = PASS / NO DEPLOYMENT
-DIAGNOSTICS_ARTIFACT                 = 8674996766
-DIAGNOSTICS_DIGEST                   = sha256:3630dc976e7f52db7e3ad925f74f04fe63ce17e9721d5b6e235554ee5b93be6e
-CHANGED_FILES                        = 8 / EXPECTED ONLY
-BEHIND_MAIN                          = 0
-UNRESOLVED_REVIEW_THREADS            = 0
-COMMENTS_REQUIRING_ACTION            = 0
-REMOTE_ACTION_COUNT                  = 0
+REPOSITORY_IMPLEMENTATION           = COMPLETE
+REMOTE_CONTRACT_READ                = PASS
+MIGRATION_GATE                      = PASS / NONE_PENDING
+ACTIVE_VERSION_STABILITY            = PASS
+FINGERPRINT_GATE                    = PASS
+SAFETY_BOUNDARY                     = PASS
+YOUTUBE_REVALIDATION                = CLOSED
+NEXT_REMOTE_ACTION                  = NONE_AUTHORIZED
 ```
 
-## Implementation result
-
-```text
-IMPLEMENTATION                       = COMPLETE
-FOCUSED_AND_FULL_REGRESSION           = PASS
-SHARED_RUNTIME_REGRESSION             = PASS
-TIKTOK_REGRESSION                     = PASS
-REMOTE_ACTION_DURING_IMPLEMENTATION   = NONE
-LIVE_CONFIRMATION_AFTER_MERGE         = REQUIRED
-```
-
-This status-record head must pass one final exact-head Branch Verification. No further source or documentation change is allowed before the merge decision unless that verification fails or `main` moves.
-
-## Remaining sequence
-
-```text
-Status-record exact-head Branch Verification
-→ final diff/review/main-drift inspection
-→ mark PR #179 Ready
-→ separate Squash Merge authorization
-→ git pull on local main
-→ rerun the same authenticated one-command Remote read-only preflight
-→ PASS_READ_ONLY_PREFLIGHT closes YouTube current-main revalidation
-```
-
-This task does not authorize Worker deployment, Queue execution, Remote D1/Lark mutation, YouTube Provider request, Schedule activation, Secret change or Production.
+Any future YouTube deployment, Queue execution, provider call, Lark write, schedule activation or Production rollout requires a new task and separate explicit authorization.
