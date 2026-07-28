@@ -9,7 +9,6 @@ export async function generateReportAiSummary(input = {}) {
   const payload = validateReportMaterializationPayload(input.materializationPayload);
   const enabled = input.enabled === true;
   if (!enabled) return Object.freeze({ status: 'disabled', summary: null });
-  const provider = requireProvider(input.provider);
   if (payload.dataStatus === 'source_unavailable' || payload.dataStatus === 'not_observed') {
     return Object.freeze({
       status: 'skipped',
@@ -17,6 +16,7 @@ export async function generateReportAiSummary(input = {}) {
       summary: null,
     });
   }
+  const provider = requireProvider(input.provider);
   const response = await provider.generate({
     schemaVersion: 'report-ai-summary-input-v1',
     language: requireText(input.language ?? 'th', 'language'),
