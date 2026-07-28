@@ -295,3 +295,12 @@ Repository implementation and CI do not authorize D1 backup, Worker deployment, 
 - The first customer verifier exposed that live Wrangler D1 timestamps are numeric epoch values.
   The parser hotfix accepts numeric timestamps, and emergency restore now accepts the pinned v2
   customer session. The Worker was restored and verified all-false before this hotfix.
+- The exact same operation payload was admitted a second time with the original job fingerprint.
+  `main_queue_attempts` reached `2`, the rerun recorded Provider requests `0`, DLQ remained `0`,
+  and no active lock remained.
+- Idempotency verification preserved D1 counts at content state/observations/account facts/
+  coverage runs/coverage entities/cursor/source states `837/837/1/2/837/1/837`, and preserved
+  Lark counts at RAW channel/videos/Analytics, MKT account/content/content-daily
+  `1/837/0/1/837/837`.
+- The immutable reviewed all-false Worker version
+  `a7b4bc48-4374-43de-b55c-c16dc7fe43c9` was restored at `100%` traffic after the rerun.
