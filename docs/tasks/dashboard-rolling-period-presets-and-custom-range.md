@@ -51,7 +51,7 @@ Dashboard/Lark อ่าน Materialized results และ Preset ไม่ก�
 
 ## Implementation result
 
-Status: `IMPLEMENTED_LOCAL_GATES_PASS_DRAFT_PR_PENDING`
+Status: `IMPLEMENTED_BRANCH_VERIFICATION_PASS_DRAFT_PR_OPEN`
 
 ### Files changed
 
@@ -109,7 +109,10 @@ Status: `IMPLEMENTED_LOCAL_GATES_PASS_DRAFT_PR_PENDING`
 
 ### CI result
 
-Draft PR CI pending.
+- Draft PR #195 Branch Verification #860, run `30344010643` — PASS
+- Verified code head: `2d2af016e84af30554802a12866d6b3b0b06e162`
+- Non-blocking runner annotation: GitHub-hosted Actions forced Node.js 24 for actions
+  whose declared Node.js 20 runtime is deprecated
 
 ### Remaining gaps
 
@@ -123,5 +126,5 @@ Draft PR CI pending.
 
 ### Merge recommendation
 
-Open as Draft; merge only after Branch Verification and independent review. Do not deploy or
-perform Remote D1/Lark/Queue/Schedule actions from this PR.
+Keep Draft until independent review is complete; Branch Verification is passing. Do not deploy
+or perform Remote D1/Lark/Queue/Schedule actions from this PR.
