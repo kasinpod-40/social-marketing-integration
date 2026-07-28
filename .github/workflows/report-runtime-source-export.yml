@@ -1,0 +1,28 @@
+name: Report Runtime Source Export
+
+on:
+  pull_request:
+    branches:
+      - codex/report-multichannel-runtime
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Package source checkout
+        run: tar --exclude=.git -czf report-runtime-source.tgz .
+
+      - name: Upload source checkout
+        uses: actions/upload-artifact@v4
+        with:
+          name: report-runtime-source
+          path: report-runtime-source.tgz
+          if-no-files-found: error
+          retention-days: 1
