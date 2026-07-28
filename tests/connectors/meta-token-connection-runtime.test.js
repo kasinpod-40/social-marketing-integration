@@ -45,6 +45,7 @@ test('Meta runtime uses separate bearer secrets, versioned GETs and no token que
   const runtime = createMetaTokenConnectionRuntime({
     META_GRAPH_API_VERSION: 'v25.0',
     META_ACCESS_TOKEN: 'facebook-token-private',
+    META_FACEBOOK_PAGE_ACCESS_TOKEN: 'facebook-page-token-private',
     META_INSTAGRAM_ACCESS_TOKEN: 'instagram-token-private',
     META_FACEBOOK_PAGE_ID: 'page-private',
     META_INSTAGRAM_ACCOUNT_ID: 'ig-private',
@@ -70,4 +71,29 @@ test('Meta runtime uses separate bearer secrets, versioned GETs and no token que
     serialized,
     /facebook-token-private|instagram-token-private|page-private|ig-private|505898710119851|851206695716861/u,
   );
+});
+
+test('Facebook business source uses only the Page access token', async () => {
+  const calls = [];
+  const runtime = createMetaTokenConnectionRuntime({
+    META_GRAPH_API_VERSION: 'v25.0',
+    META_ACCESS_TOKEN: 'facebook-user-token-private',
+    META_FACEBOOK_PAGE_ACCESS_TOKEN: 'facebook-page-token-private',
+    META_FACEBOOK_PAGE_ID: 'page-private',
+  }, {
+    fetchImpl: async (url, init) => {
+      calls.push({
+        pathname: new URL(url).pathname,
+        authorization: init.headers.get('authorization'),
+      });
+      return Response.json({ data: [], paging: {} });
+    },
+  });
+
+  await runtime.sources.facebook.fetchContentPage({ pageId: 'page-private' });
+
+  assert.deepEqual(calls, [{
+    pathname: '/v25.0/page-private/posts',
+    authorization: 'Bearer facebook-page-token-private',
+  }]);
 });

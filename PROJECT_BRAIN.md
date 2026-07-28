@@ -236,6 +236,22 @@ Remote schema inspection, Worker deployment, Provider calls, Queue messages, D1/
 
 ## Merged Chemistry K Meta runtime
 
+### Facebook Page-token runtime incident and hotfix
+
+A guarded Facebook D1-only operation reached the Page posts inventory endpoint but was rejected
+with sanitized Graph code/subcode `190/2069032`. The operation produced zero Business, Coverage
+and Lark rows and the Worker was restored to a verified all-false version at 100% traffic.
+
+The Repository contract already required a distinct Facebook Page credential, while the runtime
+source adapter incorrectly reused the discovery/User credential. The hotfix wires
+`META_FACEBOOK_PAGE_ACCESS_TOKEN` only to Facebook Page business reads and requires that Secret
+name in Facebook D1/Lark rollout preflight. Discovery and Meta Ads remain on `META_ACCESS_TOKEN`.
+Detailed evidence:
+
+```text
+docs/project-brain/meta-facebook-page-token-runtime-hotfix-2026-07-28.md
+```
+
 PR `#73` merged the protected Meta routing and exact Chemistry K multi-account contract:
 
 ```text

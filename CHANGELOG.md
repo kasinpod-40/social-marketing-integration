@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased — Meta Facebook Page-token Runtime Hotfix — 2026-07-28
+
+### Runtime incident
+
+- Recorded a fail-closed Facebook D1-only operation rejected at
+  `facebook.content.inventory` with sanitized Graph `190/2069032`.
+- Verified zero Business/Coverage/Lark rows, no active lock and an all-false Worker restore at
+  100% traffic.
+
+### Repository correction
+
+- Added `META_FACEBOOK_PAGE_ACCESS_TOKEN` as the distinct Facebook Page business-read credential.
+- Kept `META_ACCESS_TOKEN` for discovery and Meta Ads and blocked Facebook source creation when
+  the Page credential is absent.
+- Updated Facebook D1/Lark rollout preflight to require the Page secret name.
+- Added focused regressions for credential separation, Page-only authorization and fail-closed
+  behavior.
+
 ## Unreleased — YouTube Worker Dry-run Rollout Operator — 2026-07-27
 
 ### Repository implementation

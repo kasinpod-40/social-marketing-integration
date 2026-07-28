@@ -50,10 +50,11 @@ test('Meta runtime gates and bounded staging limits default fail-closed', () => 
   assert.equal(config.limits.sourceMaxUnitBytes, 524_288);
 });
 
-test('builds GET-only source adapters from the same secret-owning Meta clients', () => {
+test('builds GET-only source adapters with a separate Facebook Page credential', () => {
   const runtime = createMetaTokenConnectionRuntime({
     META_GRAPH_API_VERSION: 'v25.0',
     META_ACCESS_TOKEN: 'facebook-private-token',
+    META_FACEBOOK_PAGE_ACCESS_TOKEN: 'facebook-page-private-token',
     META_INSTAGRAM_ACCESS_TOKEN: 'instagram-private-token',
     META_FACEBOOK_PAGE_ID: 'page-fixture',
     META_INSTAGRAM_ACCOUNT_ID: 'ig-fixture',
@@ -67,6 +68,19 @@ test('builds GET-only source adapters from the same secret-owning Meta clients',
   assert.equal(typeof runtime.sources.meta_ads.fetchDailyInsightsPage, 'function');
   assert.equal('createCampaign' in runtime.sources.meta_ads, false);
   assert.equal('publish' in runtime.sources.facebook, false);
+});
+
+test('keeps Facebook business reads fail-closed without a Page credential', () => {
+  const runtime = createMetaTokenConnectionRuntime({
+    META_GRAPH_API_VERSION: 'v25.0',
+    META_ACCESS_TOKEN: 'facebook-private-token',
+    META_FACEBOOK_PAGE_ID: 'page-fixture',
+  }, {
+    fetchImpl: async () => Response.json({}),
+  });
+
+  assert.equal(runtime.facebook !== null, true);
+  assert.equal(runtime.sources.facebook, null);
 });
 
 

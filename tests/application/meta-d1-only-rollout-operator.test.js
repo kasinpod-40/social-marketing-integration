@@ -54,7 +54,7 @@ test('target loader creates exact stable identities for all four scopes', () => 
   assert.equal(facebook.connectorKey, 'facebook');
   assert.equal(facebook.workKey, 'facebook:meta-d1-facebook');
   assert.equal(facebook.syncRunId, 'meta:facebook:facebook:meta-d1-facebook');
-  assert.equal(facebook.requiredSecretName, 'META_ACCESS_TOKEN');
+  assert.equal(facebook.requiredSecretName, 'META_FACEBOOK_PAGE_ACCESS_TOKEN');
 
   const instagram = target('instagram');
   assert.equal(instagram.workKey, 'instagram:meta-d1-instagram');

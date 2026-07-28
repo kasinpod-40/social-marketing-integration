@@ -35,6 +35,13 @@ export function createMetaTokenConnectionRuntime(env = {}, options = {}) {
       baseUrl: FACEBOOK_GRAPH_BASE_URL,
     })
     : null;
+  const facebookPageClient = config.credentials.facebookPageAccessToken
+    ? new MetaGraphClient({
+      ...common,
+      accessToken: config.credentials.facebookPageAccessToken,
+      baseUrl: FACEBOOK_GRAPH_BASE_URL,
+    })
+    : null;
   const instagramClient = config.credentials.instagramAccessToken
     ? new MetaGraphClient({
       ...common,
@@ -54,8 +61,8 @@ export function createMetaTokenConnectionRuntime(env = {}, options = {}) {
       ? new MetaAdsConnectionAdapter({ client: facebookClient })
       : null,
     sources: {
-      facebook: facebookClient
-        ? new FacebookOrganicSourceAdapter({ client: facebookClient })
+      facebook: facebookPageClient
+        ? new FacebookOrganicSourceAdapter({ client: facebookPageClient })
         : null,
       instagram: instagramClient
         ? new InstagramOrganicSourceAdapter({ client: instagramClient })

@@ -27,7 +27,7 @@ export const META_D1_ONLY_CONFIRMATIONS = deepFreeze({
   summary: confirmation('CONFIRM_META_D1_ONLY_SUMMARY', 'SUMMARIZE_META_D1_ONLY_ROLLOUT'),
 });
 export const META_D1_ONLY_TARGETS = deepFreeze({
-  facebook: { connectorKey: 'facebook', connectorFlag: 'MKT_CONNECTOR_FACEBOOK_ENABLED', jobType: JOB_TYPES.FACEBOOK_ORGANIC_SYNC, sourceAccountKey: null, requiredSecretName: 'META_ACCESS_TOKEN', platform: 'facebook' },
+  facebook: { connectorKey: 'facebook', connectorFlag: 'MKT_CONNECTOR_FACEBOOK_ENABLED', jobType: JOB_TYPES.FACEBOOK_ORGANIC_SYNC, sourceAccountKey: null, requiredSecretName: 'META_FACEBOOK_PAGE_ACCESS_TOKEN', platform: 'facebook' },
   instagram: { connectorKey: 'instagram', connectorFlag: 'MKT_CONNECTOR_INSTAGRAM_ENABLED', jobType: JOB_TYPES.INSTAGRAM_ORGANIC_SYNC, sourceAccountKey: null, requiredSecretName: 'META_INSTAGRAM_ACCESS_TOKEN', platform: 'instagram' },
   chemistry_k2: { connectorKey: 'meta_ads', connectorFlag: 'MKT_CONNECTOR_META_ADS_ENABLED', jobType: JOB_TYPES.META_ADS_SYNC, sourceAccountKey: 'chemistry_k2', requiredSecretName: 'META_ACCESS_TOKEN', platform: 'meta_ads' },
   chemistry_k3: { connectorKey: 'meta_ads', connectorFlag: 'MKT_CONNECTOR_META_ADS_ENABLED', jobType: JOB_TYPES.META_ADS_SYNC, sourceAccountKey: 'chemistry_k3', requiredSecretName: 'META_ACCESS_TOKEN', platform: 'meta_ads' },

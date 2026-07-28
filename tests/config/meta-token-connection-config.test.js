@@ -10,6 +10,7 @@ test('Meta token connection config permits a fully unconfigured fail-closed foun
 
   assert.equal(config.apiVersion, null);
   assert.equal(config.credentials.facebookAccessToken, null);
+  assert.equal(config.credentials.facebookPageAccessToken, null);
   assert.equal(config.credentials.instagramAccessToken, null);
   assert.equal(config.mappings.facebookPageId, null);
   assert.equal(Object.isFrozen(config), true);
@@ -35,6 +36,7 @@ test('Meta token connection config separates credentials and exact mappings', ()
   const config = loadMetaTokenConnectionConfig({
     META_GRAPH_API_VERSION: 'V25.0',
     META_ACCESS_TOKEN: 'facebook-private',
+    META_FACEBOOK_PAGE_ACCESS_TOKEN: 'facebook-page-private',
     META_INSTAGRAM_ACCESS_TOKEN: 'instagram-private',
     META_FACEBOOK_PAGE_ID: 'page-private',
     META_INSTAGRAM_ACCOUNT_ID: 'instagram-account-private',
@@ -44,6 +46,7 @@ test('Meta token connection config separates credentials and exact mappings', ()
 
   assert.equal(config.apiVersion, 'v25.0');
   assert.equal(config.credentials.facebookAccessToken, 'facebook-private');
+  assert.equal(config.credentials.facebookPageAccessToken, 'facebook-page-private');
   assert.equal(config.credentials.instagramAccessToken, 'instagram-private');
   assert.equal(config.mappings.facebookPageId, 'page-private');
   assert.equal(config.mappings.instagramAccountId, 'instagram-account-private');
