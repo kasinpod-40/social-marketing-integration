@@ -2,9 +2,8 @@ import { dateOnlyToEpochMilliseconds } from '../../../shared/src/date/date-only.
 import { escapeReportIdentityPart } from '../use-cases/build-report-snapshot.js';
 
 const MAX_RANK_LIMIT = 100;
-const NO_DATA_URL = 'https://invalid.example/';
+const GENERIC_NO_DATA_URL = 'https://invalid.example/';
 
-/** สร้างแถว Normalized metrics สำหรับ MKT_Report_Metric_Values */
 export function buildReportMetricValueRows(input = {}) {
   const reportId = requireText(input.reportId, 'reportId');
   const platform = requireText(input.platform ?? 'tiktok', 'platform');
@@ -49,10 +48,10 @@ export function buildReportMetricValueRows(input = {}) {
   return Object.freeze(rows);
 }
 
-/** Fixed-rank platform-neutral Top Content output; default platform preserves TikTok compatibility. */
 export function buildReportTopContentRows(input = {}) {
   const reportId = requireText(input.reportId, 'reportId');
   const platform = requireText(input.platform ?? 'tiktok', 'platform');
+  const noDataUrl = input.noDataUrl ?? (platform === 'tiktok' ? 'https://www.tiktok.com/' : GENERIC_NO_DATA_URL);
   const rows = requireArray(input.contentRows, 'contentRows');
   const limit = positiveInteger(input.limit, 'limit');
   const period = requireObject(input.period, 'period');
@@ -75,8 +74,8 @@ export function buildReportTopContentRows(input = {}) {
       content_key: content?.contentKey ?? content?.content_key ?? `no_data:${reportId}:${rank}`,
       external_content_id: content?.externalContentId ?? content?.external_content_id ?? `no_data_${rank}`,
       caption: content?.caption ?? 'ไม่มีข้อมูล',
-      content_url: content?.contentUrl ?? content?.content_url ?? NO_DATA_URL,
-      thumbnail_url: content?.thumbnailUrl ?? content?.thumbnail_url ?? NO_DATA_URL,
+      content_url: content?.contentUrl ?? content?.content_url ?? noDataUrl,
+      thumbnail_url: content?.thumbnailUrl ?? content?.thumbnail_url ?? noDataUrl,
       published_at: content?.publishedAt ?? content?.published_at ?? generatedAt,
       period_views: optionalFinite(row?.periodViews ?? row?.period_views),
       period_likes: optionalFinite(row?.periodLikes ?? row?.period_likes),
@@ -95,7 +94,6 @@ export function buildReportTopContentRows(input = {}) {
   return Object.freeze(output);
 }
 
-/** Fixed-rank Top Ads output. Empty slots overwrite old ranks with explicit no_data rows. */
 export function buildReportTopAdsRows(input = {}) {
   const reportId = requireText(input.reportId, 'reportId');
   const platform = requireText(input.platform, 'platform');
