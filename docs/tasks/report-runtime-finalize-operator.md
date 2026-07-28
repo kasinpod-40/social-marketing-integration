@@ -1,10 +1,12 @@
 # Report Runtime Finalize Operator
 
-Status: `repository_implementation_complete_validation_pending`
+Status: `repository_implementation_complete_validated`
 
 Branch: `codex/report-runtime-finalize-operator`
 
 Stacked base: `codex/report-multichannel-runtime`
+
+Draft PR: `#207`
 
 ## Goal
 
@@ -61,9 +63,33 @@ Local validation completed before push:
 - operator plan mode: PASS;
 - focused operator tests: `4/4` PASS;
 - `npm run check`: PASS;
-- full Node/Workers tests: PASS after applying the already-reviewed AI fail-closed example fix present in the stacked base;
+- full Node/Workers tests: PASS;
 - Report reliability: PASS;
 - Wrangler dry-run: PASS;
 - no Remote action executed.
 
-Final GitHub Branch Verification evidence must be recorded on the Draft PR HEAD before this status changes to `repository_implementation_complete_validated`.
+GitHub Branch Verification run `30371545241` passed on exact implementation HEAD
+`d646c0e38fe8e62497b674ad1b6a7ca0f6c011db`:
+
+- install locked dependencies: PASS;
+- syntax, architecture and repository hygiene: PASS;
+- focused staged TikTok regression: PASS;
+- Unit and Workers runtime tests: PASS;
+- Report reliability regression: PASS;
+- dependency audit: PASS;
+- Wrangler dry-run: PASS;
+- diagnostics upload: PASS.
+
+No Worker deployment, Remote D1 action, Lark mutation, Queue action, Schedule activation,
+Secret change, Production action or LIVE UAT was performed during repository validation.
+
+## Final handoff
+
+Merge order remains controlled and must preserve stacked ancestry:
+
+1. PR `#195` into `main`;
+2. retarget PR `#199` to `main`, verify its diff, then merge;
+3. retarget PR `#207` to `main`, verify its diff, then merge;
+4. update a clean local `main` checkout and run the single guarded command above.
+
+The operator itself does not merge Pull Requests because repository authorization for this workstream explicitly keeps merge approval separate.
