@@ -5,6 +5,9 @@ import {
   planDashboardReportSettingsReconciliation,
 } from '../../packages/application/src/use-cases/reconcile-dashboard-report-settings.js';
 import { TableSyncEngine } from '../../packages/sync-engine/src/table-sync-engine.js';
+import { DASHBOARD_REPORT_PLATFORM_SCOPES } from '../../packages/config/src/report-settings.seed.js';
+
+const EXPECTED_CANONICAL_COUNT = 2 + (DASHBOARD_REPORT_PLATFORM_SCOPES.length * 7);
 
 function legacyRecord(key, profile = 'dev_ft_pumkin') {
   return {
@@ -56,8 +59,8 @@ test('creates canonical dashboard settings before disabling exact legacy rows', 
     profileKey: 'integration_workspace',
   });
   assert.deepEqual(plan.summary, {
-    canonicalExpected: 9,
-    canonicalCreates: 9,
+    canonicalExpected: EXPECTED_CANONICAL_COUNT,
+    canonicalCreates: EXPECTED_CANONICAL_COUNT,
     canonicalUpdates: 0,
     canonicalSkipped: 0,
     legacyFound: 2,
@@ -71,9 +74,9 @@ test('creates canonical dashboard settings before disabling exact legacy rows', 
     syncEngine,
     plan,
   });
-  assert.equal(result.canonical.created, 9);
+  assert.equal(result.canonical.created, EXPECTED_CANONICAL_COUNT);
   assert.equal(result.legacyDisabled, 2);
-  assert.equal(result.verification.canonicalActive, 9);
+  assert.equal(result.verification.canonicalActive, EXPECTED_CANONICAL_COUNT);
   assert.equal(result.verification.legacyActive, 0);
   assert.equal(result.verification.legacyRetainedDisabled, 2);
   assert.equal(result.deleteCount, 0);
