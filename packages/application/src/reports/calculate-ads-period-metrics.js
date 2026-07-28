@@ -74,14 +74,20 @@ function normalizeReportLevel(value, rows) {
   if (typeof value === 'string' && value.trim()) return value.trim();
   const levels = [...new Set(rows.map((row) => row?.report_level).filter((level) => typeof level === 'string' && level.trim()))];
   if (levels.length === 1) return levels[0];
-  if (rows.length === 0) return null;
-  throw new TypeError('Ads report calculation requires one explicit reportLevel');
+  if (levels.length > 1) throw new TypeError('Ads report calculation requires one explicit reportLevel');
+  // Legacy calculator callers predate report_level. Runtime D1 adapters always pass it explicitly.
+  return rows.length === 0 ? null : 'account';
 }
 
 function assertOneReportLevel(rows, expected) {
-  const mismatch = rows.find((row) => expected !== null && row?.report_level !== expected);
+  const mismatch = rows.find((row) => {
+    const observed = typeof row?.report_level === 'string' && row.report_level.trim()
+      ? row.report_level.trim()
+      : null;
+    return observed !== null && expected !== null && observed !== expected;
+  });
   if (mismatch) {
-    throw new TypeError(`Ads report row level ${mismatch?.report_level ?? 'missing'} does not match ${expected}`);
+    throw new TypeError(`Ads report row level ${mismatch.report_level} does not match ${expected}`);
   }
 }
 
@@ -90,17 +96,14 @@ function sumKnown(rows, field) {
   if (values.length === 0) return null;
   return values.reduce((sum, value) => sum + requireNumber(value, field), 0);
 }
-
 function divideKnown(numerator, denominator) {
   if (numerator === null || denominator === null || denominator === 0) return null;
   return numerator / denominator;
 }
-
 function multiplyThenDivideKnown(value, multiplier, denominator) {
   if (value === null || denominator === null || denominator === 0) return null;
   return (value * multiplier) / denominator;
 }
-
 function resolveDataStatus(rows, coverageStatus) {
   if (coverageStatus === 'source_unavailable') return 'source_unavailable';
   if (rows.length === 0) return coverageStatus === 'no_data_confirmed' ? 'no_data_confirmed' : 'partial';
@@ -110,7 +113,6 @@ function resolveDataStatus(rows, coverageStatus) {
   if (statuses.has('revisable')) return 'revisable';
   return coverageStatus === 'complete' ? 'complete' : 'partial';
 }
-
 function normalizeMetric(value) {
   if (value === null || value === undefined || value === '') return null;
   const number = Number(value);
