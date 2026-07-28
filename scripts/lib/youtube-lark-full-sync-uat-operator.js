@@ -88,9 +88,7 @@ export function parseYouTubeLarkUatArgs(args = []) {
     }
     throw uatError(`Unknown YouTube Lark UAT argument: ${arg}`, 'YOUTUBE_LARK_UAT_ARGUMENT_INVALID');
   }
-  if (!YOUTUBE_LARK_UAT_PHASES.includes(phase)) {
-    throw uatError(`Unsupported YouTube Lark UAT phase: ${phase}`, 'YOUTUBE_LARK_UAT_PHASE_INVALID');
-  }
+  requirePhase(phase);
   if (phase === 'plan' && execute) {
     throw uatError('Plan phase does not accept --execute', 'YOUTUBE_LARK_UAT_PLAN_EXECUTE_INVALID');
   }
@@ -98,6 +96,7 @@ export function parseYouTubeLarkUatArgs(args = []) {
 }
 
 export function assertYouTubeLarkUatConfirmation(phase, env = {}) {
+  requirePhase(phase);
   if (phase === 'plan') return true;
   const expected = YOUTUBE_LARK_UAT_CONFIRMATIONS[phase];
   if (env?.[expected.envName] !== expected.value) {
@@ -215,16 +214,15 @@ export function buildYouTubeLarkUatConfigWindow(sourceText, input = {}) {
   if (safeTrueFlags.length !== 0) {
     throw uatError('Safe YouTube Lark UAT config contains a true flag', 'YOUTUBE_LARK_UAT_SAFE_FLAG_INVALID');
   }
-  if (stableJson(activeTrueFlags) !== stableJson([...YOUTUBE_LARK_UAT_ACTIVE_TRUE_FLAGS].sort())) {
+  const expectedTrueFlags = [...YOUTUBE_LARK_UAT_ACTIVE_TRUE_FLAGS].sort();
+  if (stableJson(activeTrueFlags) !== stableJson(expectedTrueFlags)) {
     throw uatError(
       'Active YouTube Lark UAT config contains an unapproved true flag',
       'YOUTUBE_LARK_UAT_ACTIVE_FLAG_INVALID',
       { activeTrueFlags },
     );
   }
-  const normalizedSafe = normalizeFlagWindow(safe);
-  const normalizedActive = normalizeFlagWindow(active);
-  if (stableJson(normalizedSafe) !== stableJson(normalizedActive)) {
+  if (stableJson(normalizeFlagWindow(safe)) !== stableJson(normalizeFlagWindow(active))) {
     throw uatError(
       'YouTube Lark UAT config changes fields outside the approved flag window',
       'YOUTUBE_LARK_UAT_CONFIG_DIFF_INVALID',
@@ -249,11 +247,11 @@ export function buildYouTubeLarkUatConfigWindow(sourceText, input = {}) {
     activeSha256: sha256(activeText),
     safeTrueFlags,
     activeTrueFlags,
-    falseFlagNames: flagNames.filter((name) => !YOUTUBE_LARK_UAT_ACTIVE_TRUE_FLAGS.includes(name)),
+    falseFlagNames: flagNames.filter((name) => !expectedTrueFlags.includes(name)),
     tableIds,
     tableIdFingerprint: sha256(stableJson(tableIds)),
     databaseId: requireUuid(d1.database_id, 'database_id'),
-    databaseName: d1.database_name,
+    databaseName: requireText(d1.database_name, 'database_name'),
     bindingFingerprint: sha256(stableJson({
       d1: {
         binding: d1.binding,
@@ -339,33 +337,32 @@ export function buildYouTubeLarkUatSnapshotSql(input = {}) {
 
 export function normalizeYouTubeLarkUatSnapshot(row = {}) {
   return deepFreeze({
-    syncRunStatus: optionalText(row.sync_run_status),
-    syncRunFinishedAt: optionalText(row.sync_run_finished_at),
-    syncRunErrorCode: optionalText(row.sync_run_error_code),
-    workStatus: optionalText(row.sync_work_status),
-    workLifecycleStatus: optionalText(row.work_lifecycle_status),
-    workCompletedAt: optionalText(row.work_completed_at),
-    completionJsonPresent: nonNegativeInteger(row.completion_json_present ?? 0, 'completion_json_present'),
-    activeLockCount: nonNegativeInteger(row.active_lock_count ?? 0, 'active_lock_count'),
-    queueOperationAttempts: nonNegativeInteger(row.queue_operation_attempts ?? 0, 'queue_operation_attempts'),
-    mainQueueAttempts: nonNegativeInteger(row.main_queue_attempts ?? 0, 'main_queue_attempts'),
-    dlqRecords: nonNegativeInteger(row.dlq_records ?? 0, 'dlq_records'),
-    organicContentState: nonNegativeInteger(row.organic_content_state ?? 0, 'organic_content_state'),
-    organicContentObservations: nonNegativeInteger(
-      row.organic_content_observations ?? 0,
+    syncRunStatus: optionalText(readEither(row, 'sync_run_status', 'syncRunStatus')),
+    syncRunFinishedAt: optionalText(readEither(row, 'sync_run_finished_at', 'syncRunFinishedAt')),
+    syncRunErrorCode: optionalText(readEither(row, 'sync_run_error_code', 'syncRunErrorCode')),
+    workStatus: optionalText(readEither(row, 'sync_work_status', 'workStatus')),
+    workLifecycleStatus: optionalText(readEither(row, 'work_lifecycle_status', 'workLifecycleStatus')),
+    workCompletedAt: optionalText(readEither(row, 'work_completed_at', 'workCompletedAt')),
+    completionJsonPresent: countEither(row, 'completion_json_present', 'completionJsonPresent'),
+    activeLockCount: countEither(row, 'active_lock_count', 'activeLockCount'),
+    queueOperationAttempts: countEither(row, 'queue_operation_attempts', 'queueOperationAttempts'),
+    mainQueueAttempts: countEither(row, 'main_queue_attempts', 'mainQueueAttempts'),
+    dlqRecords: countEither(row, 'dlq_records', 'dlqRecords'),
+    organicContentState: countEither(row, 'organic_content_state', 'organicContentState'),
+    organicContentObservations: countEither(
+      row,
       'organic_content_observations',
+      'organicContentObservations',
     ),
-    organicAccountDailyFacts: nonNegativeInteger(
-      row.organic_account_daily_facts ?? 0,
+    organicAccountDailyFacts: countEither(
+      row,
       'organic_account_daily_facts',
+      'organicAccountDailyFacts',
     ),
-    dataCoverageRuns: nonNegativeInteger(row.data_coverage_runs ?? 0, 'data_coverage_runs'),
-    dataCoverageEntities: nonNegativeInteger(
-      row.data_coverage_entities ?? 0,
-      'data_coverage_entities',
-    ),
-    syncCursors: nonNegativeInteger(row.sync_cursors ?? 0, 'sync_cursors'),
-    sourceRecordStates: nonNegativeInteger(row.source_record_states ?? 0, 'source_record_states'),
+    dataCoverageRuns: countEither(row, 'data_coverage_runs', 'dataCoverageRuns'),
+    dataCoverageEntities: countEither(row, 'data_coverage_entities', 'dataCoverageEntities'),
+    syncCursors: countEither(row, 'sync_cursors', 'syncCursors'),
+    sourceRecordStates: countEither(row, 'source_record_states', 'sourceRecordStates'),
   });
 }
 
@@ -455,7 +452,7 @@ export function compareYouTubeLarkUatRerun(input = {}) {
 }
 
 export function createYouTubeLarkUatEvidence(input = {}) {
-  const phase = requireExactPhase(input.phase);
+  const phase = requirePhase(input.phase);
   const body = {
     contractVersion: YOUTUBE_LARK_UAT_CONTRACT_VERSION,
     phase,
@@ -470,7 +467,7 @@ export function createYouTubeLarkUatEvidence(input = {}) {
 }
 
 export function validateYouTubeLarkUatEvidence(evidence, input = {}) {
-  if (!evidence || typeof evidence !== 'object') {
+  if (!evidence || typeof evidence !== 'object' || Array.isArray(evidence)) {
     throw uatError('YouTube Lark UAT evidence is required', 'YOUTUBE_LARK_UAT_EVIDENCE_INVALID');
   }
   const copy = { ...evidence };
@@ -479,6 +476,8 @@ export function validateYouTubeLarkUatEvidence(evidence, input = {}) {
   if (observed !== sha256(stableJson(copy))) {
     throw uatError('YouTube Lark UAT evidence SHA is invalid', 'YOUTUBE_LARK_UAT_EVIDENCE_SHA_INVALID');
   }
+  requireExact(copy.contractVersion, YOUTUBE_LARK_UAT_CONTRACT_VERSION, 'contractVersion');
+  requirePhase(copy.phase);
   requireExact(copy.repositoryHead, input.repositoryHead, 'repositoryHead');
   requireExact(copy.targetFingerprint, input.targetFingerprint, 'targetFingerprint');
   requireExact(copy.operationId, input.operationId, 'operationId');
@@ -486,7 +485,15 @@ export function validateYouTubeLarkUatEvidence(evidence, input = {}) {
 }
 
 export function evidenceFileForYouTubeLarkUatPhase(phase) {
-  return `${requireExactPhase(phase)}.json`;
+  return `${requirePhase(phase)}.json`;
+}
+
+export function requireVersionId(value, fieldName = 'versionId') {
+  const text = requireText(value, fieldName).toLowerCase();
+  if (!VERSION_ID.test(text)) {
+    throw uatError(`${fieldName} is invalid`, 'YOUTUBE_LARK_UAT_TARGET_INVALID', { fieldName });
+  }
+  return text;
 }
 
 function validateBaseConfig(source, input) {
@@ -503,20 +510,35 @@ function validateBaseConfig(source, input) {
   }
   const crons = source.triggers?.crons ?? [];
   if (stableJson(crons) !== stableJson(EXPECTED_CRONS)) {
-    throw uatError('YouTube Lark UAT Cron set differs from the reviewed shared Worker', 'YOUTUBE_LARK_UAT_CRON_INVALID');
+    throw uatError(
+      'YouTube Lark UAT Cron set differs from the reviewed shared Worker',
+      'YOUTUBE_LARK_UAT_CRON_INVALID',
+    );
   }
   const d1 = exactlyOne(source.d1_databases, (item) => item?.binding === 'MKT_STATE_DB', 'MKT_STATE_DB');
   requireExact(d1.database_name, 'social-mkt-state-dev', 'database_name');
   requireUuid(d1.database_id, 'database_id');
-  const producer = exactlyOne(source.queues?.producers, (item) => item?.binding === 'MKT_SYNC_QUEUE', 'MKT_SYNC_QUEUE');
+  const producer = exactlyOne(
+    source.queues?.producers,
+    (item) => item?.binding === 'MKT_SYNC_QUEUE',
+    'MKT_SYNC_QUEUE',
+  );
   requireExact(producer.queue, 'social-mkt-sync-jobs', 'producer.queue');
-  const main = exactlyOne(source.queues?.consumers, (item) => item?.queue === 'social-mkt-sync-jobs', 'main consumer');
+  const main = exactlyOne(
+    source.queues?.consumers,
+    (item) => item?.queue === 'social-mkt-sync-jobs',
+    'main consumer',
+  );
   requireExact(main.dead_letter_queue, 'social-mkt-sync-dlq', 'dead_letter_queue');
   requireInteger(main.max_concurrency, 1, 'main.max_concurrency');
   requireInteger(main.max_batch_size, 10, 'main.max_batch_size');
   requireInteger(main.max_batch_timeout, 30, 'main.max_batch_timeout');
   requireInteger(main.max_retries, 5, 'main.max_retries');
-  const dlq = exactlyOne(source.queues?.consumers, (item) => item?.queue === 'social-mkt-sync-dlq', 'dlq consumer');
+  const dlq = exactlyOne(
+    source.queues?.consumers,
+    (item) => item?.queue === 'social-mkt-sync-dlq',
+    'dlq consumer',
+  );
   requireInteger(dlq.max_concurrency, 1, 'dlq.max_concurrency');
   requireInteger(dlq.max_batch_size, 10, 'dlq.max_batch_size');
   requireInteger(dlq.max_batch_timeout, 30, 'dlq.max_batch_timeout');
@@ -539,15 +561,28 @@ function readTrueFlags(config) {
     .sort();
 }
 
+function readEither(value, snakeName, camelName) {
+  if (Object.hasOwn(value, snakeName)) return value[snakeName];
+  return value[camelName];
+}
+
+function countEither(value, snakeName, camelName) {
+  return nonNegativeInteger(readEither(value, snakeName, camelName) ?? 0, camelName);
+}
+
 function exactlyOne(values, predicate, label) {
   const matches = Array.isArray(values) ? values.filter(predicate) : [];
   if (matches.length !== 1) {
-    throw uatError(`YouTube Lark UAT requires exactly one ${label}`, 'YOUTUBE_LARK_UAT_CONFIG_TOPOLOGY_INVALID');
+    throw uatError(
+      `YouTube Lark UAT requires exactly one ${label}`,
+      'YOUTUBE_LARK_UAT_CONFIG_TOPOLOGY_INVALID',
+      { label, matchCount: matches.length },
+    );
   }
   return matches[0];
 }
 
-function requireExactPhase(value) {
+function requirePhase(value) {
   const phase = requireText(value, 'phase');
   if (!YOUTUBE_LARK_UAT_PHASES.includes(phase)) {
     throw uatError(`Invalid YouTube Lark UAT phase: ${phase}`, 'YOUTUBE_LARK_UAT_PHASE_INVALID');
@@ -565,19 +600,17 @@ function requireOperationId(value) {
 
 function requireSha(value, fieldName) {
   const text = requireText(value, fieldName).toLowerCase();
-  if (!FULL_SHA.test(text)) throw uatError(`${fieldName} must be a full Git SHA`, 'YOUTUBE_LARK_UAT_TARGET_INVALID');
-  return text;
-}
-
-export function requireVersionId(value, fieldName = 'versionId') {
-  const text = requireText(value, fieldName).toLowerCase();
-  if (!VERSION_ID.test(text)) throw uatError(`${fieldName} is invalid`, 'YOUTUBE_LARK_UAT_TARGET_INVALID');
+  if (!FULL_SHA.test(text)) {
+    throw uatError(`${fieldName} must be a full Git SHA`, 'YOUTUBE_LARK_UAT_TARGET_INVALID', { fieldName });
+  }
   return text;
 }
 
 function requireUuid(value, fieldName) {
   const text = requireText(value, fieldName).toLowerCase();
-  if (!UUID.test(text)) throw uatError(`${fieldName} is invalid`, 'YOUTUBE_LARK_UAT_TARGET_INVALID');
+  if (!UUID.test(text)) {
+    throw uatError(`${fieldName} is invalid`, 'YOUTUBE_LARK_UAT_TARGET_INVALID', { fieldName });
+  }
   return text;
 }
 
@@ -590,22 +623,36 @@ function requireRealMapping(value, fieldName) {
 }
 
 function requireTimestamp(value, fieldName) {
-  const number = typeof value === 'number' ? value : Date.parse(value);
+  let number = null;
+  if (typeof value === 'number') {
+    number = value;
+  } else if (typeof value === 'string' && /^\d+$/u.test(value.trim())) {
+    number = Number(value.trim());
+  } else if (typeof value === 'string' && value.trim()) {
+    number = Date.parse(value.trim());
+  }
   if (!Number.isSafeInteger(number) || number < Date.UTC(2000, 0, 1)) {
-    throw uatError(`${fieldName} is invalid`, 'YOUTUBE_LARK_UAT_TIMESTAMP_INVALID');
+    throw uatError(`${fieldName} is invalid`, 'YOUTUBE_LARK_UAT_TIMESTAMP_INVALID', { fieldName });
   }
   return number;
 }
 
 function bangkokDate(timestamp) {
   return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit',
+    timeZone: 'Asia/Bangkok',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
   }).format(new Date(timestamp));
 }
 
 function requireInteger(value, expected, fieldName) {
   if (Number(value) !== expected) {
-    throw uatError(`${fieldName} must equal ${expected}`, 'YOUTUBE_LARK_UAT_CONFIG_TOPOLOGY_INVALID');
+    throw uatError(
+      `${fieldName} must equal ${expected}`,
+      'YOUTUBE_LARK_UAT_CONFIG_TOPOLOGY_INVALID',
+      { fieldName },
+    );
   }
   return expected;
 }
@@ -621,7 +668,11 @@ function nonNegativeInteger(value, fieldName) {
 function requireExact(value, expected, fieldName) {
   const observed = requireText(value, fieldName);
   if (observed !== expected) {
-    throw uatError(`${fieldName} must equal ${expected}`, 'YOUTUBE_LARK_UAT_TARGET_INVALID', { fieldName });
+    throw uatError(
+      `${fieldName} must equal ${expected}`,
+      'YOUTUBE_LARK_UAT_TARGET_INVALID',
+      { fieldName },
+    );
   }
   return observed;
 }
