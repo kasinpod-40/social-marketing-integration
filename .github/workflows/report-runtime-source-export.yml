@@ -17,12 +17,12 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Package source checkout
-        run: tar --exclude=.git -czf report-runtime-source.tgz .
+        run: tar --exclude=.git -czf /tmp/report-runtime-source.tgz .
 
       - name: Upload source checkout
         uses: actions/upload-artifact@v4
         with:
           name: report-runtime-source
-          path: report-runtime-source.tgz
+          path: /tmp/report-runtime-source.tgz
           if-no-files-found: error
           retention-days: 1
