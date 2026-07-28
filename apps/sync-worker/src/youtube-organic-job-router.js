@@ -34,10 +34,7 @@ import {
   sanitizeReliabilityEvent,
 } from './worker-runtime-support.js';
 
-/**
- * Dedicated YouTube route สำหรับ Integration Chat นำไปประกอบกับ Shared entrypoint ภายหลัง.
- * ไฟล์นี้ไม่ส่ง Queue, ไม่เปิด Schedule และทุก Execution flag เป็น false เมื่อ Env ไม่ระบุ.
- */
+/** Dedicated YouTube route for the Integration Workspace shared Worker. */
 export async function processYouTubeOrganicEndToEndJob(input) {
   if (input.job?.body?.type !== JOB_TYPES.YOUTUBE_ORGANIC_SYNC) {
     throw permanentError('Dedicated YouTube router received an unsupported job type', {
@@ -52,11 +49,14 @@ export async function processYouTubeOrganicEndToEndJob(input) {
   const larkWriteEnabled = youtubeConfig.larkWriteEnabled;
   const dryRun = input.job.body?.dryRun === true;
   const operatorDryRun = input.job.body?.trigger === JOB_TRIGGERS.YOUTUBE_WORKER_DRY_RUN;
+  const operatorLarkUat = input.job.body?.trigger === JOB_TRIGGERS.YOUTUBE_LARK_FULL_SYNC_UAT;
+
   if (!youtubeConfig.endToEndEnabled) {
     throw permanentError('YouTube end-to-end route is disabled for this environment', {
       code: 'YOUTUBE_END_TO_END_DISABLED',
     });
   }
+
   const operatorIdentity = operatorDryRun
     ? assertYouTubeWorkerDryRunOperation({
       body: input.job.body,
@@ -65,7 +65,16 @@ export async function processYouTubeOrganicEndToEndJob(input) {
       d1WriteEnabled,
       larkWriteEnabled,
     })
-    : null;
+    : operatorLarkUat
+      ? assertYouTubeLarkFullSyncUatOperation({
+        body: input.job.body,
+        operation: input.operation,
+        env: input.env,
+        d1WriteEnabled,
+        larkWriteEnabled,
+      })
+      : null;
+
   if (!dryRun && !d1WriteEnabled) {
     throw permanentError('YouTube end-to-end D1 writing is disabled', {
       code: 'YOUTUBE_END_TO_END_D1_WRITE_DISABLED',
@@ -79,21 +88,27 @@ export async function processYouTubeOrganicEndToEndJob(input) {
 
   const runtimeConfig = input.getRuntimeConfig();
   const connectorConfig = assertConnectorRunnable(runtimeConfig, definition.connectorKey);
-  if (operatorDryRun) {
-    assertYouTubeWorkerDryRunRuntime(runtimeConfig, connectorConfig);
+  if (operatorDryRun || operatorLarkUat) {
+    assertYouTubeOperatorRuntime(runtimeConfig, connectorConfig, {
+      code: operatorDryRun ? 'YOUTUBE_DRY_RUN_RUNTIME_INVALID' : 'YOUTUBE_LARK_UAT_RUNTIME_INVALID',
+      label: operatorDryRun ? 'Worker dry-run' : 'Lark full-sync UAT',
+    });
   }
+
   const infrastructure = input.getInfrastructure();
   const youtubeTableIds = readYouTubeLarkTableIdsFromEnv(input.env);
-  const operationalTableIds = readLarkTableIdsFromEnv(input.env, ['mktSyncLog', 'mktSystemAlerts']);
+  const operationalTableIds = readLarkTableIdsFromEnv(input.env, [
+    'mktSyncLog',
+    'mktSystemAlerts',
+  ]);
   const tableIds = Object.freeze({ ...youtubeTableIds, ...operationalTableIds });
   const reliability = infrastructure.getReliability(tableIds);
   const resumableWorkStore = infrastructure.getResumableWorkStore();
   const dependencies = input.dependencies ?? {};
+  const publicApiKeyOnly = operatorDryRun || operatorLarkUat;
   const clients = (dependencies.createYouTubeClientsFromEnv
-    ?? createYouTubeClientsFromEnv)(input.env, {
-    publicApiKeyOnly: operatorDryRun,
-  });
-  const analyticsEnabled = operatorDryRun
+    ?? createYouTubeClientsFromEnv)(input.env, { publicApiKeyOnly });
+  const analyticsEnabled = publicApiKeyOnly
     ? false
     : resolveYouTubeAnalyticsEnabled({
       configured: input.env?.MKT_YOUTUBE_ANALYTICS_ENABLED,
@@ -118,7 +133,7 @@ export async function processYouTubeOrganicEndToEndJob(input) {
   }
 
   const result = await (dependencies.runReliableSync ?? runReliableSync)({
-    ...(operatorIdentity ? { syncRunId: `youtube-dry-run:${operatorIdentity.operationId}` } : {}),
+    ...(operatorIdentity ? { syncRunId: operatorIdentity.syncRunId } : {}),
     store: reliability.store,
     lockManager: reliability.lockManager,
     customerProfile: runtimeConfig.profileKey,
@@ -178,7 +193,10 @@ export async function processYouTubeOrganicEndToEndJob(input) {
         analyticsEnabled,
         analyticsStartDate: input.job.body?.analyticsStartDate,
         analyticsEndDate: input.job.body?.analyticsEndDate,
-        analyticsMaxPages: readPositiveInteger(input.env?.MKT_YOUTUBE_ANALYTICS_MAX_PAGES, 1000),
+        analyticsMaxPages: readPositiveInteger(
+          input.env?.MKT_YOUTUBE_ANALYTICS_MAX_PAGES,
+          1000,
+        ),
         d1WriteEnabled,
         larkWriteEnabled,
         dryRun,
@@ -191,15 +209,15 @@ export async function processYouTubeOrganicEndToEndJob(input) {
           mktContentDaily: tableIds.mktContentDaily,
         },
       });
-      return operatorDryRun
-        ? Object.freeze({
-          ...syncResult,
-          providerRequestCount: Number(clients.requestMetrics?.publicRequests ?? 0),
-          analyticsRequestCount: 0,
-          oauthRefreshCount: 0,
-          larkWriteCount: 0,
-        })
-        : syncResult;
+
+      if (!publicApiKeyOnly) return syncResult;
+      return Object.freeze({
+        ...syncResult,
+        providerRequestCount: Number(clients.requestMetrics?.publicRequests ?? 0),
+        analyticsRequestCount: 0,
+        oauthRefreshCount: 0,
+        ...(operatorDryRun ? { larkWriteCount: 0 } : {}),
+      });
     },
   });
 
@@ -207,6 +225,7 @@ export async function processYouTubeOrganicEndToEndJob(input) {
     await resumableWorkStore.cleanupExpiredWork({ limit: 25 });
     return result;
   }
+
   return Object.freeze({
     ...result,
     operation: operatorIdentity,
@@ -238,6 +257,60 @@ export function assertYouTubeWorkerDryRunOperation(input = {}) {
   if (body.trigger !== JOB_TRIGGERS.YOUTUBE_WORKER_DRY_RUN) invalid.push('trigger');
   if (body.dryRun !== true) invalid.push('dryRun');
   if (body.analyticsEnabled !== false) invalid.push('analyticsEnabled');
+  const operationId = validateStableYouTubeOperationIdentity({ body, operation, invalid });
+  if (input.d1WriteEnabled === true) invalid.push('d1BusinessWrite');
+  if (input.larkWriteEnabled === true) invalid.push('larkWrite');
+  if (readBoolean(input.env?.MKT_YOUTUBE_ANALYTICS_ENABLED, false)) invalid.push('analyticsRuntime');
+  if (readBoolean(input.env?.MKT_SCHEDULE_YOUTUBE_ENABLED, false)) invalid.push('youtubeSchedule');
+  if (invalid.length > 0) {
+    throw permanentError('YouTube Worker dry-run operation failed its safety contract', {
+      code: 'YOUTUBE_DRY_RUN_OPERATION_INVALID',
+      details: { invalid: [...new Set(invalid)].sort() },
+    });
+  }
+  return Object.freeze({
+    operationId,
+    workKey: `youtube:${operationId}`,
+    syncRunId: `youtube-dry-run:${operationId}`,
+    generation: operation.generation,
+    originalRequestedAt: operation.originalRequestedAt,
+    stable: true,
+  });
+}
+
+export function assertYouTubeLarkFullSyncUatOperation(input = {}) {
+  const body = input.body ?? {};
+  const operation = input.operation;
+  const invalid = [];
+  if (body.trigger !== JOB_TRIGGERS.YOUTUBE_LARK_FULL_SYNC_UAT) invalid.push('trigger');
+  if (body.dryRun !== false) invalid.push('dryRun');
+  if (body.syncMode !== 'full') invalid.push('syncMode');
+  if (body.analyticsEnabled !== false) invalid.push('analyticsEnabled');
+  const operationId = validateStableYouTubeOperationIdentity({ body, operation, invalid });
+  if (input.d1WriteEnabled !== true) invalid.push('d1BusinessWrite');
+  if (input.larkWriteEnabled !== true) invalid.push('larkWrite');
+  if (readBoolean(input.env?.MKT_YOUTUBE_ANALYTICS_ENABLED, false)) invalid.push('analyticsRuntime');
+  if (readBoolean(input.env?.MKT_SCHEDULE_YOUTUBE_ENABLED, false)) invalid.push('youtubeSchedule');
+  if (invalid.length > 0) {
+    throw permanentError('YouTube Lark full-sync UAT operation failed its safety contract', {
+      code: 'YOUTUBE_LARK_UAT_OPERATION_INVALID',
+      details: { invalid: [...new Set(invalid)].sort() },
+    });
+  }
+  return Object.freeze({
+    operationId,
+    workKey: `youtube:${operationId}`,
+    syncRunId: `youtube-lark-uat:${operationId}`,
+    generation: operation.generation,
+    originalRequestedAt: operation.originalRequestedAt,
+    stable: true,
+  });
+}
+
+function validateStableYouTubeOperationIdentity(input) {
+  const body = input.body ?? {};
+  const operation = input.operation;
+  const invalid = input.invalid;
   if (!operation || operation.stable !== true) invalid.push('stableOperation');
   const operationId = optionalSafeOperationId(operation?.operationId);
   if (!operationId) invalid.push('operationId');
@@ -253,34 +326,19 @@ export function assertYouTubeWorkerDryRunOperation(input = {}) {
     || Number(body.originalRequestedAt) !== operation?.originalRequestedAt) {
     invalid.push('payloadIdentity');
   }
-  if (input.d1WriteEnabled === true) invalid.push('d1BusinessWrite');
-  if (input.larkWriteEnabled === true) invalid.push('larkWrite');
-  if (readBoolean(input.env?.MKT_YOUTUBE_ANALYTICS_ENABLED, false)) invalid.push('analyticsRuntime');
-  if (readBoolean(input.env?.MKT_SCHEDULE_YOUTUBE_ENABLED, false)) invalid.push('youtubeSchedule');
-  if (invalid.length > 0) {
-    throw permanentError('YouTube Worker dry-run operation failed its safety contract', {
-      code: 'YOUTUBE_DRY_RUN_OPERATION_INVALID',
-      details: { invalid: [...new Set(invalid)].sort() },
-    });
-  }
-  return Object.freeze({
-    operationId,
-    workKey: expectedWorkKey,
-    generation: operation.generation,
-    originalRequestedAt: operation.originalRequestedAt,
-    stable: true,
-  });
+  return operationId;
 }
 
-function assertYouTubeWorkerDryRunRuntime(runtimeConfig, connectorConfig) {
+function assertYouTubeOperatorRuntime(runtimeConfig, connectorConfig, input = {}) {
   const valid = runtimeConfig?.environment === 'development'
     && runtimeConfig?.profileKey === 'integration_workspace'
     && runtimeConfig?.customerKey === 'chemistry_k'
     && connectorConfig?.accountKey === 'dev_ft_pumkin';
   if (!valid) {
-    throw permanentError('YouTube Worker dry-run requires the approved Integration Workspace identity', {
-      code: 'YOUTUBE_DRY_RUN_RUNTIME_INVALID',
-    });
+    throw permanentError(
+      `YouTube ${input.label ?? 'operator'} requires the approved Integration Workspace identity`,
+      { code: input.code ?? 'YOUTUBE_OPERATOR_RUNTIME_INVALID' },
+    );
   }
 }
 

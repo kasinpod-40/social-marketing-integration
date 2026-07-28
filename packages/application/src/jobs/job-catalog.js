@@ -31,6 +31,7 @@ export const JOB_TYPES = Object.freeze({
 export const JOB_TRIGGERS = Object.freeze({
   TIKTOK_POST_LARK_WATERMARK: 'post_lark_watermark',
   YOUTUBE_WORKER_DRY_RUN: 'youtube_worker_dry_run',
+  YOUTUBE_LARK_FULL_SYNC_UAT: 'youtube_lark_full_sync_uat',
   WOOCOMMERCE_MANUAL_UAT: 'manual_uat',
   WOOCOMMERCE_SCHEDULED: 'scheduled',
 });
