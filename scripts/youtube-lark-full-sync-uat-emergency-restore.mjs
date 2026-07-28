@@ -214,12 +214,16 @@ async function readActivationEvidence(root, session) {
 }
 
 function readSession(value) {
-  if (value?.contractVersion !== 'youtube_lark_full_sync_uat_session_v1'
+  const validLegacy = value?.contractVersion === 'youtube_lark_full_sync_uat_session_v1'
+    && value.channelId === 'UCAwEENovvqZWosKhJWTS5Kg';
+  const validCustomer = value?.contractVersion === 'youtube_lark_full_sync_uat_session_v2'
+    && /^UC[A-Za-z0-9_-]{20,}$/u.test(String(value.channelId ?? ''))
+    && String(value.connectionId ?? '').trim();
+  if ((!validLegacy && !validCustomer)
     || !/^[0-9a-f]{40}$/u.test(String(value.repositoryHead ?? ''))
     || !/^[a-z0-9][a-z0-9_-]{0,95}$/u.test(String(value.operationId ?? ''))
     || !String(value.cloudflareAccountId ?? '').trim()
-    || value.queueName !== 'social-mkt-sync-jobs'
-    || value.channelId !== 'UCAwEENovvqZWosKhJWTS5Kg') {
+    || value.queueName !== 'social-mkt-sync-jobs') {
     throw restoreError(
       'Emergency restore session is invalid',
       'YOUTUBE_LARK_UAT_EMERGENCY_SESSION_INVALID',

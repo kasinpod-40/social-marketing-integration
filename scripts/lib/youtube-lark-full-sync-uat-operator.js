@@ -213,11 +213,11 @@ export function buildYouTubeLarkUatSnapshotSql(input = {}) {
 export function normalizeYouTubeLarkUatSnapshot(row = {}) {
   return deepFreeze({
     syncRunStatus: optionalText(readEither(row, 'sync_run_status', 'syncRunStatus')),
-    syncRunFinishedAt: optionalText(readEither(row, 'sync_run_finished_at', 'syncRunFinishedAt')),
+    syncRunFinishedAt: optionalRemoteTimestamp(readEither(row, 'sync_run_finished_at', 'syncRunFinishedAt')),
     syncRunErrorCode: optionalText(readEither(row, 'sync_run_error_code', 'syncRunErrorCode')),
     workStatus: optionalText(readEither(row, 'sync_work_status', 'workStatus')),
     workLifecycleStatus: optionalText(readEither(row, 'work_lifecycle_status', 'workLifecycleStatus')),
-    workCompletedAt: optionalText(readEither(row, 'work_completed_at', 'workCompletedAt')),
+    workCompletedAt: optionalRemoteTimestamp(readEither(row, 'work_completed_at', 'workCompletedAt')),
     completionJsonPresent: countEither(row, 'completion_json_present', 'completionJsonPresent'),
     historySyncRunIdPresent: countEither(row, 'history_sync_run_id_present', 'historySyncRunIdPresent'),
     contentCoverageRunIdPresent: countEither(row, 'content_coverage_run_id_present', 'contentCoverageRunIdPresent'),
@@ -449,6 +449,10 @@ function requireText(value, fieldName) {
 }
 function optionalText(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+function optionalRemoteTimestamp(value) {
+  if (typeof value === 'number' && Number.isSafeInteger(value) && value > 0) return value;
+  return optionalText(value);
 }
 function sqlText(value) {
   return String(value).replaceAll("'", "''");
