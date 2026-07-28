@@ -96,11 +96,11 @@ test('reviewed false normalizer rejects invalid and duplicate bindings', async (
   );
 });
 
-test('explicit true reviewed flag still fails closed through strict validator', async () => {
+test('explicit true reviewed YouTube flag still fails closed through strict validator', async () => {
   const config = await configComparison();
   const expectedNames = expectedFalseFlags(config.comparison);
   const versionsView = versionFixture({ config: config.safeText });
-  const reviewedFalse = expectedNames.find((name) => !config.comparison.active.trueFlags.includes(name));
+  const reviewedFalse = 'MKT_YOUTUBE_LARK_WRITE_ENABLED';
   versionsView.bindings.find((binding) => binding.name === reviewedFalse).text = 'true';
 
   assert.throws(
@@ -116,7 +116,8 @@ test('explicit true reviewed flag still fails closed through strict validator', 
       active: false,
       expectedRemoteFingerprint: config.comparison.safe.remoteContractFingerprint,
     }),
-    (error) => error.code === 'YOUTUBE_DRY_RUN_REMOTE_TRUE_FLAG_INVALID',
+    (error) => error.code === 'YOUTUBE_DRY_RUN_REMOTE_TRUE_FLAG_INVALID'
+      && error.details.unexpectedTrue.includes(reviewedFalse),
   );
 });
 
