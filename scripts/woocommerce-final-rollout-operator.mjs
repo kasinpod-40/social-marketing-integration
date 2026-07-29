@@ -192,7 +192,11 @@ async function executeFinalRollout() {
   }), full.resumedExactOperation
     ? { attemptKey: `${full.operationId}:exact-continuation:${full.priorQueueAttempts + 1}` }
     : undefined);
-  const fullAfter = await pollCompletion(full.operationId, true);
+  const fullAfter = await pollCompletion(
+    full.operationId,
+    true,
+    full.resumedExactOperation ? full.priorQueueAttempts + 1 : 1,
+  );
   await writeEvidence('06-full-reconciliation', { operation: full, before: fullBefore, after: fullAfter });
 
   currentStage = 'd1-lark-parity';
@@ -221,7 +225,7 @@ async function executeFinalRollout() {
     fullReconciliation: false,
     modifiedAfter: watermark,
   }));
-  const incrementalAfter = await pollCompletion(incremental.operationId, false);
+  const incrementalAfter = await pollCompletion(incremental.operationId, false, 1);
   const incrementalParity = await verifyParity(lark, schema.tableIds, incrementalAfter.counts);
   await writeEvidence('09-incremental-uat', {
     operation: incremental,
@@ -539,13 +543,16 @@ async function readExactContinuation(resumeOperationId) {
   );
 }
 
-async function pollCompletion(operationId, fullReconciliation) {
+async function pollCompletion(operationId, fullReconciliation, minimumQueueAttempts) {
   const maxPolls = positiveInteger(process.env.MKT_WOOCOMMERCE_FINAL_VERIFY_MAX_POLLS, 240);
   const intervalMs = positiveInteger(process.env.MKT_WOOCOMMERCE_FINAL_VERIFY_INTERVAL_MS, 5_000);
   let snapshot = null;
   for (let attempt = 0; attempt < maxPolls; attempt += 1) {
     snapshot = await readSnapshot(operationId);
-    const classification = classifyWooCommerceFinalCompletion(snapshot, { fullReconciliation });
+    const classification = classifyWooCommerceFinalCompletion(snapshot, {
+      fullReconciliation,
+      minimumQueueAttempts,
+    });
     if (classification.complete) return snapshot;
     if (classification.terminalFailure) {
       throw failure(

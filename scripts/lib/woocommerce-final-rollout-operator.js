@@ -401,6 +401,7 @@ export function classifyWooCommerceFinalCompletion(snapshotInput, options = {}) 
   const expectedCoverage = 6;
   const state = snapshot.state ?? {};
   const full = options.fullReconciliation === true;
+  const minimumQueueAttempts = count(options.minimumQueueAttempts ?? 0);
   const datasets = state.datasetCounts ?? {};
   const datasetsComplete = ['store', 'orders', 'products', 'categories', 'customers', 'coupons']
     .every((key) => !full || Number(datasets[key]?.expectedRows ?? 0) === Number(datasets[key]?.sourceRows ?? -1));
@@ -420,7 +421,8 @@ export function classifyWooCommerceFinalCompletion(snapshotInput, options = {}) 
     && snapshot.syncRunFinishedAt !== null
     && snapshot.syncRunErrorCode !== null
     && snapshot.syncRunRetryable === false
-    && snapshot.activeLockCount === 0;
+    && snapshot.activeLockCount === 0
+    && snapshot.queueOperationAttempts >= minimumQueueAttempts;
   return Object.freeze({
     complete,
     terminalFailure,
