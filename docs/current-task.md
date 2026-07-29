@@ -1,22 +1,13 @@
-# Current Task — YouTube Lark Full-Sync UAT Operator
+# Current Task — TikTok Ads Customer Connect Readiness
 
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = CUSTOMER_SCOPE_HOTFIX_READY_FOR_CI
-CURRENT_PROGRAM                     = YOUTUBE_LARK_FULL_SYNC_UAT_OPERATOR
-CLOSEOUT_PR                         = #184 / SQUASH_MERGED / 9f690b2bce4c440be162649c8a2da134245fcc75
-IMPLEMENTATION_PR                   = #186 / SQUASH_MERGED / bead0d5c4f9e78793ea00ba16fdf58bbcc80f19e
-BRANCH                              = codex/fix-youtube-uat-persist-end-to-end-completion
-BASE_MAIN_SHA                       = 369aff9aa805a277340ac1d32aed227d16db507d
+TASK_STATUS                         = APPROVED_FOR_REPOSITORY_IMPLEMENTATION
+CURRENT_PROGRAM                     = TIKTOK_ADS_CUSTOMER_CONNECT_READINESS
+BRANCH                              = integration/tiktok-ads-customer-connect-readiness
+BASE_REF                            = main
 IMPLEMENTATION_OWNER                = CHATGPT_WORK_GITHUB_TOOLS
-READ_ONLY_PREFLIGHT                 = PASS_READ_ONLY_PREFLIGHT
-USER_LARK_CLEANUP                   = COMPLETED_MANUALLY
-FINAL_DOCS_CI                       = #848 / 30335038060 / PASS
-EXACT_ALIGNED_CI                    = #849 / 30336265851 / PASS
-LIVE_UAT_OPERATION                  = NEW CUSTOMER-SCOPED SESSION REQUIRED AFTER MERGE
-LARK_PREFLIGHT                      = PENDING CUSTOMER-SCOPED RERUN
-REMOTE_PREFLIGHT                    = PENDING CUSTOMER-SCOPED RERUN
 REMOTE_ACTION_DURING_IMPLEMENTATION = NONE
 WORKER_DEPLOYMENT                   = NOT_RUN
 QUEUE_MESSAGE                       = NOT_SENT
@@ -28,330 +19,117 @@ PRODUCTION                          = BLOCKED
 
 ## Objective
 
-เติมข้อมูล YouTube ของลูกค้า Chemistry K เข้า Integration Workspace Lark หลัง rollback ชุดข้อมูล
-YouTube DEV ที่ operation ก่อนหน้าเขียนผิด scope โดยใช้ Runtime path เดิมเท่านั้น:
+เตรียม TikTok Ads Customer Connect ให้พร้อมทั้งหมดใน Repository โดยใช้ Shared Customer Connect,
+OAuth, credential encryption, connection lifecycle, Reliability, Queue/DLQ, D1 writer และ Lark
+engine ที่มีอยู่แล้วให้มากที่สุด จนเหลือเพียง:
+
+1. ลูกค้าสมัคร/เปิด TikTok for Business, Business Center, Advertiser และอนุมัติ App ตามข้อกำหนดของ TikTok;
+2. ผู้ปฏิบัติงานกรอก non-secret customer identifiers/mappings ที่ได้รับจากลูกค้า;
+3. ผู้ปฏิบัติงานตั้ง App ID/App Secret และ runtime secrets ผ่าน local Terminal;
+4. ผู้ปฏิบัติงานรัน guarded Terminal operator หลังได้รับ authorization แยกต่างหาก.
+
+งานนี้ไม่ทำ Customer authorization จริง, ไม่แลก token จริง, ไม่เรียก Provider จริง, ไม่ deploy,
+ไม่ apply Remote migration, ไม่แก้ Remote Lark, ไม่ส่ง Queue message และไม่เปิด Schedule.
+
+## Provider contract
+
+ใช้ TikTok API for Business / Marketing API v1.3 สำหรับ Advertiser authorization และ read-only
+reporting. Authorization URL ต้องมี exact callback URL, cryptographically random signed state และ scope
+ที่จำเป็นเท่านั้น. Callback รับ `auth_code` และ `state`; `auth_code` เป็น single-use/short-lived และต้องถูก
+แลกที่ server side เท่านั้น. Token และ App Secret ห้ามอยู่ใน URL, log, D1 plaintext, evidence หรือ Source.
+
+Required provider operations for final Customer Connect:
 
 ```text
-YouTube Data API
-→ Existing YouTube adapter / normalizer
-→ Shared Reliability / lock / durable work
-→ D1-first organic history
-→ Existing TableSyncEngine
-→ Lark RAW / Canonical tables
+Advertiser authorization URL
+POST /open_api/v1.3/oauth2/access_token/
+GET  /open_api/v1.3/oauth2/advertiser/get/
+GET  /open_api/v1.3/advertiser/info/
+Read-only campaign/adgroup/ad/report endpoints approved by the locked source contract
 ```
 
-ไม่มีการสร้าง Connector, Queue framework, D1 writer, Lark sync engine หรือ Reliability engine ใหม่
+Write-capable Campaign Management permissions and endpoints are out of scope.
 
-## Verified prerequisites
+## In scope
+
+- Full repository audit before coding: duplicate logic, dead code, architecture, migrations, open PRs,
+  shared Customer Connect/OAuth/credential modules, runtime routing, tests and operator patterns.
+- TikTok Ads provider definition and exact read-only permission/scope contract.
+- Reuse of existing signed invitation, state verification, callback routing, credential encryption,
+  reconnect/token replacement lifecycle and exact provider identity validation.
+- Additive TikTok Ads connection metadata/mapping support only where Shared Core cannot already express it.
+- Advertiser allow-list and exact advertiser identity pinning; fail closed on zero, multiple unexpected or
+  mismatched advertisers.
+- Token redaction and sanitized error classification.
+- Read-only connection validation with no Business fact writes.
+- Customer input template containing only non-secret identifiers and mappings.
+- Guarded local Terminal operator that defaults to plan/read-only and requires explicit confirmation per
+  mutating phase.
+- Unit, integration, Workers-runtime and focused regression tests.
+- Documentation and final operator handoff commands.
+
+## Out of scope
+
+- TikTok Ads campaign/ad group/ad creation, update, pause, delete or budget mutation.
+- TikTok Organic, TikTok Shop, TikTok One or Spark Ads post authorization implementation.
+- New Reliability engine, Queue framework, DLQ, D1 generic writer, Lark sync engine or OAuth framework.
+- Remote D1 migration/apply, Remote Lark schema/data mutation, Worker deployment, Queue message,
+  Cron/Schedule activation, Production or Customer LIVE UAT.
+- Storing App Secret, access token, auth code, refresh token or customer personal data in Source.
+
+## Customer inputs remaining at final handoff
 
 ```text
-Historical schema apply                 PASS
-Historical full sync                    PASS
-Historical idempotent rerun             PASS
-Historical incremental sync             PASS
-Historical lock / retry / DLQ / alert   PASS
-Current Remote fingerprint              MATCH
-Current active Worker version stable    PASS
-Pending migrations                      0
-Required Secret names                   PRESENT
-Required Lark mappings                  PRESENT
+customer_key              = chemistry_k
+provider                  = tiktok_ads
+business_center_id        = supplied by customer when available
+advertiser_id             = supplied by customer and exact-pinned
+advertiser_display_name   = optional non-secret verification hint
+reporting_timezone        = Asia/Bangkok unless customer account proves otherwise
+currency                  = provider-returned and exact-validated
+app_id                    = runtime secret/config input; never committed
+app_secret                = runtime secret only; never committed
+callback_origin           = deployed customer-connect origin supplied at execution time
 ```
 
-Final read-only evidence was captured on clean `main@ee342e7f27c7a03c9527d166078374a16ab9f4ef`:
+The customer must complete TikTok for Business registration and required Business Center/Advertiser/App
+approval before live authorization can succeed.
 
-```text
-decision          PASS_READ_ONLY_PREFLIGHT
-remoteMutation    NONE
-providerCall      NOT_RUN
-queueMessage      NOT_SENT
-d1Write           NONE
-larkRequest       NOT_RUN
-workerDeployment  NOT_RUN
-scheduleMutation  NONE
+## Safety invariants
+
+- All TikTok Ads execution, D1-write, Lark-write and Schedule flags remain false in committed configs.
+- Callback state is signed, expiring, single-use and provider/customer/connection scoped.
+- Authorization code and token exchange are server-side only.
+- Exact advertiser ID is verified before marking a connection validated.
+- Any missing/mismatched advertiser, scope, provider identity, callback state or secret fails closed.
+- Reconnect replaces the encrypted credential atomically without retaining plaintext or stale active tokens.
+- Logs/evidence contain only sanitized codes, fingerprints and non-secret identifiers.
+- No Provider mutation endpoint exists in the implementation.
+
+## Acceptance criteria
+
+1. Repository audit documents reused Shared modules and proves no duplicate OAuth/credential framework.
+2. TikTok Ads Customer Connect invitation and callback route are provider-specific but use Shared Core.
+3. Token exchange, advertiser discovery and advertiser validation are typed, bounded and read-only.
+4. Exact advertiser mismatch and unexpected advertiser set fail closed.
+5. Secrets/tokens/auth codes are redacted from logs, errors, health/admin responses and evidence.
+6. Reconnect/token replacement lifecycle is idempotent and tested.
+7. All committed TikTok Ads runtime flags are false; no Schedule or Provider mutation path exists.
+8. Customer input template and Terminal operator reduce final work to entering customer data/secrets and
+   running separately authorized commands.
+9. Required gates pass:
+
+```bash
+npm ci
+npm run check
+npm test
+npm run test:report-reliability
+npm audit
+npm run deploy:dry-run
 ```
 
-## User data-reset fact
-
-The user manually removed the old YouTube DEV/test Lark records they intended to clear. The operator never deletes records, tables, fields, views, formulas, relations, D1 rows or audit history. It performs only a controlled full-sync/upsert.
-
-## Repository implementation
-
-### Stable operation identity
-
-New trigger:
-
-```text
-youtube_lark_full_sync_uat
-```
-
-Approved job contract:
-
-```text
-type                youtube.channel.organic.sync
-trigger             youtube_lark_full_sync_uat
-syncMode            full
-dryRun               false
-analyticsEnabled     false
-workKey              youtube:<operationId>
-syncRunId            youtube-lark-uat:<operationId>
-generation           originalRequestedAt
-```
-
-The durable identity is independent from the Cloudflare delivery message ID. Initial send and rerun use the exact same operation identity.
-
-### Runtime guard
-
-The dedicated YouTube router requires:
-
-```text
-environment          development
-profile              integration_workspace
-customer             chemistry_k
-account              chemistry_k
-D1 write             true
-Lark write           true
-Owner Analytics      false
-YouTube Schedule     false
-```
-
-### Approved active window
-
-Exactly four flags may be true:
-
-```text
-MKT_CONNECTOR_YOUTUBE_ENABLED
-MKT_YOUTUBE_END_TO_END_ENABLED
-MKT_TIME_SERIES_D1_WRITE_ENABLED
-MKT_YOUTUBE_LARK_WRITE_ENABLED
-```
-
-Every other `MKT_*_ENABLED` flag remains false.
-
-### Guarded phases
-
-```text
-plan
-→ lark-preflight              READ ONLY
-→ remote-preflight            READ ONLY
-→ backup                      D1 EXPORT ONLY
-→ deploy-active               WORKER DEPLOYMENT
-→ verify-active               READ ONLY
-→ snapshot-before             READ ONLY
-→ send-full-sync              ONE QUEUE MESSAGE
-→ verify-full-sync            READ ONLY
-→ resend-same-operation       ONE SAME-IDENTITY MESSAGE
-→ verify-idempotent-rerun     READ ONLY
-→ restore-all-false           WORKER DEPLOYMENT
-→ verify-restore              READ ONLY
-→ summary                     LOCAL EVIDENCE ONLY
-```
-
-Every executable phase requires a distinct exact confirmation. Deploy and Queue attempt evidence is written before the remote command so ambiguous interruptions cannot be automatically repeated.
-
-### Local session wrapper
-
-`scripts/youtube-lark-full-sync-uat-session.mjs`:
-
-- reads `.dev.vars` through the repository parser;
-- resolves Cloudflare Account ID and bearer auth from the Wrangler session;
-- reads Queue inventory and pins the exact `social-mkt-sync-jobs` Queue ID;
-- reads the exact `chemistry_k` / `youtube` connection from Remote D1 and requires
-  connected + validated state with a credential reference before pinning its Channel ID;
-- creates a private `0600` non-secret session file;
-- never prints or persists the bearer token;
-- pins repository HEAD, operation ID, generation, account and Queue target;
-- forwards the exact phase to the low-level operator.
-
-### Emergency all-false restore
-
-`scripts/youtube-lark-full-sync-uat-emergency-restore.mjs` is separately confirmation-gated. It can operate even when `main` moves after activation, but only when:
-
-- the Working Tree is clean;
-- the session and evidence chain are valid;
-- the authenticated Cloudflare account matches the pinned session;
-- the current Safe config SHA equals Remote-preflight evidence;
-- the active Worker version equals either the reviewed baseline or reviewed UAT activation.
-
-It performs no Queue send, D1 write or Lark request. It deploys the reviewed all-false config only, verifies zero true execution flags and writes private evidence. A prior attempt blocks automatic repetition.
-
-## Verification contracts
-
-### D1-first verification
-
-The verifier reads durable storage IDs from `sync_work_runs.completion_json`:
-
-```text
-$.endToEnd.storage.historySyncRunId
-$.endToEnd.storage.contentCoverageRunId
-$.endToEnd.storage.accountCoverageRunId
-```
-
-D1 business counts are checked against the exact IDs used by the existing storage writer, not the outer Reliability sync-run ID.
-
-### Lark acceptance
-
-Positive YouTube-scoped counts are required in:
-
-```text
-RAW_YouTube_Channels
-RAW_YouTube_Videos
-MKT_Accounts
-MKT_Content
-MKT_Content_Daily
-```
-
-`RAW_YouTube_Analytics_Daily` may remain zero because Owner Analytics is intentionally disabled. No schema mutation occurs.
-
-### Idempotency acceptance
-
-The same stable operation is admitted twice. Verification requires:
-
-- first run Provider request count greater than zero;
-- rerun Provider request count exactly zero;
-- unchanged operation-scoped D1 business counts;
-- unchanged YouTube-scoped Lark counts;
-- no active lock;
-- no DLQ admission;
-- completed durable work and terminal success.
-
-## Repository verification history
-
-```text
-#829 / 30331782685   EXPECTED FAIL / one source-wiring test
-#832 / 30332322254   PASS
-#834 / 30332773124   PASS / phase commands
-#840 / 30333794942   PASS / durable IDs and Provider replay
-#841 / 30334016384   PASS / aligned combined tree
-#842 / 30334270419   PASS / local session wrapper
-#846 / 30334705825   PASS / emergency restore and final Runtime tree
-#848 / 30335038060   PASS / final documentation head before PR #184 squash alignment
-```
-
-Latest verified Runtime head:
-
-```text
-HEAD                    = faf8e69c5aea470321a7ccb8ac0ef481786e32ee
-BRANCH_VERIFICATION     = #846 / 30334705825 / PASS
-SYNTAX_ARCHITECTURE     = PASS
-FOCUSED_TIKTOK          = PASS
-UNIT_WORKERS_RUNTIME    = PASS
-REPORT_RELIABILITY      = PASS
-DEPENDENCY_AUDIT        = PASS
-WRANGLER_DRY_RUN        = PASS / NO DEPLOYMENT
-ARTIFACT                = 8678696845
-ARTIFACT_DIGEST         = sha256:262ddee515b1e4e01a4b3e49d17bf47735b9ba3a9ba958b2f3b1b7b8bc0bd01b
-BEHIND_MAIN             = 0
-REVIEW_THREADS          = 0
-COMMENTS_ACTION         = 0
-REMOTE_ACTION_COUNT     = 0
-```
-
-## Merge and execution boundary
-
-Required order:
-
-```text
-1. Squash Merge PR #184 — read-only closeout documentation
-2. Align PR #186 with resulting main
-3. Exact combined-head Branch Verification
-4. Squash Merge PR #186 — UAT operator implementation
-5. Separate explicit authorization for Live UAT phases
-```
-
-Repository implementation and CI do not authorize D1 backup, Worker deployment, Queue send, Provider call, D1/Lark write, restore deployment or Production. Live execution must run from the user's authenticated local Terminal after a separate authorization.
+10. No Remote action occurs during Implementation.
 
 ## Implementation result
 
-- Squash Merge PR #184 completed at `9f690b2bce4c440be162649c8a2da134245fcc75`.
-- PR #186 passed exact-head Branch Verification `#849` and Squash Merged at `bead0d5c4f9e78793ea00ba16fdf58bbcc80f19e`.
-- Live UAT authorization was received and a session was pinned to clean `main@369aff9aa805a277340ac1d32aed227d16db507d`.
-- Lark metadata/count preflight passed for all eight destinations with zero YouTube-scoped rows and no mutation.
-- Remote preflight stopped before any Remote read or mutation because the generated Wrangler config directory was removed before the asynchronous dry-run completed.
-- The hotfix keeps both normal and emergency-restore generated configs alive until their awaited operation settles, then removes the private temporary directory.
-- Hotfix verification passed: syntax checks, focused operator/emergency tests `13/13`, repository check, unit tests `1273/1273`, Workers-runtime tests `12/12`, report reliability `88/88`, dependency audit with zero vulnerabilities, and Wrangler dry-run with no deployment.
-- The initial combined `npm test` Workers-runtime failure was environment-only (`EPERM` for the sandboxed Wrangler log and localhost listener); the same Workers-runtime suite passed outside the restricted sandbox.
-- A first live attempt reached the existing D1-first/Lark write path but used the obsolete
-  developer YouTube profile. It was restored to all-false immediately and was not rerun.
-- The customer-scope hotfix changes the Integration Workspace YouTube account identity to
-  `chemistry_k`, requires the exact connected/validated D1 customer connection in the session
-  wrapper, and pins that connection and Channel ID without reading or printing credential values.
-- The completion hotfix persists `endToEnd.storage` in `sync_work_runs.completion_json` before
-  marking durable work complete, so live verification can resolve the exact D1 history and
-  coverage IDs while replay still skips the Provider.
-- Meta Facebook D1-only live execution later exposed a separate credential-wiring defect:
-  `facebook.content.inventory` returned sanitized Graph `190/2069032` before any Business,
-  Coverage or Lark write, and the Worker was restored and verified all-false.
-- The Meta runtime hotfix loads `META_FACEBOOK_PAGE_ACCESS_TOKEN` separately, uses it only for
-  Facebook Page business reads, keeps discovery/Meta Ads on `META_ACCESS_TOKEN`, fails closed
-  without the Page secret and makes Facebook D1/Lark preflight require that secret name.
-- Focused Meta config/runtime/D1/Lark operator tests pass `38/38`; Remote Page-token activation
-  and a fresh guarded Facebook D1/Lark operation remain separate authorized execution steps.
-- The authorized Page-token activation later passed with code/settings/bindings/flags and Queue
-  topology unchanged, then the fresh Facebook D1 operation proved a second Repository defect:
-  `facebook.content.inventory` ignored the reviewed period and staged 2,501 historical rows across
-  26 bounded units before `facebook.account.insights` failed with `META_CURSOR_MISSING`.
-- GET-only memory probes confirmed the exact period contains only 25 Facebook posts on one page,
-  while non-cursor account Insights returned an empty requested-period dataset with
-  `paging.next/previous` time windows and no `after` cursor.
-- The follow-up hotfix forwards the reviewed period to Facebook content inventory and treats
-  metric datasets declared `paginated=false` as one requested-period response, preserving cursor
-  enforcement for genuinely cursor-paginated datasets.
-- Follow-up verification passed: focused Meta tests `120/120`, repository check, unit tests
-  `1280/1280`, Workers-runtime tests `12/12`, report reliability `88/88`, dependency audit with
-  zero vulnerabilities and Wrangler dry-run with no deployment.
-- A second fresh operation then passed period scoping and account Insights but Graph v25 rejected
-  `reactions_count`, `comments_count` and `shares_count` at the first content Insights request with
-  code `100`; the combined `post_media_view,post_total_media_view_unique` request passed HTTP 200.
-- The metric-capability hotfix removes only the three Live-rejected candidates. Their Canonical
-  values remain `null` under the missing-metric contract rather than being fabricated as zero.
-- Metric-capability verification passed: focused Meta tests `121/121`, repository check, unit
-  tests `1281/1281`, Workers-runtime tests `12/12`, report reliability `88/88`, dependency audit
-  with zero vulnerabilities and Wrangler dry-run with no deployment.
-- Focused customer-profile, UAT operator/session, YouTube sync and storage tests pass `39/39`;
-  full repository gates and CI are pending.
-- The Worker is currently restored and verified all-false after the first customer-scoped run.
-- Customer-scoped operation `youtube-lark-uat-20260728t080617338z-eb4dd5d5` completed successfully
-  from merged `main@eb4dd5d581686b7d94f7be030f257b966c1b0a0f`: Provider requests `35`,
-  D1 content state/observations/coverage entities `837/837/837`, account facts `1`,
-  coverage runs `2`, cursor `1`, source record states `837`.
-- Customer Lark counts are RAW channel/video `1/837`, MKT account/content/content-daily
-  `1/837/837`; Owner Analytics remains intentionally `0`.
-- The obsolete DEV Lark rows written by the earlier wrong-scope operation were deleted by exact
-  record IDs after validating the prior baseline was zero and the scoped fingerprint matched;
-  post-rollback DEV Lark counts are all zero and no schema mutation occurred.
-- The shared D1 exact-row rollback was not performed because the remote deletion approval gate
-  rejected it; the DEV audit and business history therefore remain available for forensic review.
-- The first customer verifier exposed that live Wrangler D1 timestamps are numeric epoch values.
-  The parser hotfix accepts numeric timestamps, and emergency restore now accepts the pinned v2
-  customer session. The Worker was restored and verified all-false before this hotfix.
-- The exact same operation payload was admitted a second time with the original job fingerprint.
-  `main_queue_attempts` reached `2`, the rerun recorded Provider requests `0`, DLQ remained `0`,
-  and no active lock remained.
-- Idempotency verification preserved D1 counts at content state/observations/account facts/
-  coverage runs/coverage entities/cursor/source states `837/837/1/2/837/1/837`, and preserved
-  Lark counts at RAW channel/videos/Analytics, MKT account/content/content-daily
-  `1/837/0/1/837/837`.
-- The immutable reviewed all-false Worker version
-  `a7b4bc48-4374-43de-b55c-c16dc7fe43c9` was restored at `100%` traffic after the rerun.
-- Facebook operation `meta-facebook-d1-20260728t163156z` reached the accepted D1 boundary on
-  merged `main@f748008707eda4eaf93eb47b266821613a03bd80`; Coverage was valid, the same-operation
-  replay incremented `main_queue_attempts` from `28` to `29`, and the Worker was restored and
-  verified all-false after the rerun verifier timed out.
-- The timeout proved an operator contract defect: `queue_operation_attempts.operation_id` is the
-  primary key, so the row count cannot increase for a same-operation replay. D1 and Lark rerun
-  verification now use the durable `main_queue_attempts` counter and continue to require immutable
-  Business, Coverage and Lark reconciliation facts.
-- A guarded compatibility path permits only the remaining D1 evidence-closeout phases to run from
-  the merged operator hotfix while retaining the original operation/evidence repository head. It
-  requires exact old/new heads, ancestor lineage, a clean tree and an operator/test/docs-only diff.
-- That compatibility closeout reuses the prior hash-valid restore only after a fresh remote
-  all-false/version/topology verification and performs no additional Worker deployment.
-- The first same-operation Facebook Lark continuation then failed closed before any Lark
-  Business write because the Meta Canonical account row included `username` and other
-  Provider-specific fields that are not present in the approved Live `MKT_Accounts` schema.
-- The Canonical write-set now emits only the existing `MKT_Accounts` fields. Provider identity,
-  profile and follower facts remain preserved in `RAW_Meta_Organic_Accounts` and D1 account-daily
-  facts, so the correction removes no source data and performs no schema mutation.
-- Verification passed: focused Meta `48/48`, full unit `1334/1334`, Workers runtime `14/14`,
-  report reliability `100/100`, repository check, dependency audit with zero vulnerabilities and
-  Wrangler dry-run with no deployment.
+Pending repository audit and implementation.
