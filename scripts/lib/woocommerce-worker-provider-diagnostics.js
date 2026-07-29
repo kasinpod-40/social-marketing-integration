@@ -3,6 +3,8 @@ import {
   WORKER_VERSION_METADATA_BINDING,
 } from '../../packages/shared/src/cloudflare/worker-version.js';
 import {
+  WOOCOMMERCE_PROVIDER_DIAGNOSTICS_ATTESTATION_ENV,
+  WOOCOMMERCE_PROVIDER_DIAGNOSTICS_ATTESTATION_HEADER,
   WOOCOMMERCE_PROVIDER_DIAGNOSTICS_FLAG,
   WOOCOMMERCE_PROVIDER_DIAGNOSTICS_PATH,
   WOOCOMMERCE_PROVIDER_DIAGNOSTICS_TOKEN_SHA256_ENV,
@@ -21,6 +23,8 @@ export const WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_REQUIRED_SECRETS = Object.f
 export const WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_VERSION_METADATA_BINDING =
   WORKER_VERSION_METADATA_BINDING;
 export {
+  WOOCOMMERCE_PROVIDER_DIAGNOSTICS_ATTESTATION_ENV,
+  WOOCOMMERCE_PROVIDER_DIAGNOSTICS_ATTESTATION_HEADER,
   WOOCOMMERCE_PROVIDER_DIAGNOSTICS_FLAG,
   WOOCOMMERCE_PROVIDER_DIAGNOSTICS_PATH,
   WOOCOMMERCE_PROVIDER_DIAGNOSTICS_TOKEN_SHA256_ENV,
@@ -41,16 +45,27 @@ export function buildWooCommerceWorkerProviderDiagnosticConfigs(sourceText, inpu
       ?? process.env[WOOCOMMERCE_PROVIDER_DIAGNOSTICS_TOKEN_SHA256_ENV],
     WOOCOMMERCE_PROVIDER_DIAGNOSTICS_TOKEN_SHA256_ENV,
   );
+  const activeAttestation = requireSha256(input.activeAttestation, 'activeAttestation');
+  const safeAttestation = requireSha256(input.safeAttestation, 'safeAttestation');
+  if (activeAttestation === safeAttestation) {
+    throw diagnosticError(
+      'Active and Safe WooCommerce diagnostic attestations must differ',
+      'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_ATTESTATION_INVALID',
+    );
+  }
+
   const config = parseJsoncObject(source.text);
   const vars = requireObject(config.vars, 'vars');
   const versionMetadata = materializeVersionMetadata(config.version_metadata);
   const safeVars = closeExecutionFlags(vars);
   safeVars[WOOCOMMERCE_PROVIDER_DIAGNOSTICS_FLAG] = 'false';
+  safeVars[WOOCOMMERCE_PROVIDER_DIAGNOSTICS_ATTESTATION_ENV] = safeAttestation;
   delete safeVars[WOOCOMMERCE_PROVIDER_DIAGNOSTICS_TOKEN_SHA256_ENV];
   const activeVars = {
     ...safeVars,
     [WOOCOMMERCE_PROVIDER_DIAGNOSTICS_FLAG]: 'true',
     [WOOCOMMERCE_PROVIDER_DIAGNOSTICS_TOKEN_SHA256_ENV]: diagnosticTokenSha256,
+    [WOOCOMMERCE_PROVIDER_DIAGNOSTICS_ATTESTATION_ENV]: activeAttestation,
   };
 
   const safe = serialize({ ...config, version_metadata: versionMetadata, vars: safeVars });
@@ -61,6 +76,8 @@ export function buildWooCommerceWorkerProviderDiagnosticConfigs(sourceText, inpu
   assertExactList(activeTrueFlags, [WOOCOMMERCE_PROVIDER_DIAGNOSTICS_FLAG], 'activeTrueFlags');
   assertVersionMetadataBinding(parseJsoncObject(safe).version_metadata);
   assertVersionMetadataBinding(parseJsoncObject(active).version_metadata);
+  assertConfigAttestation(parseJsoncObject(safe).vars, safeAttestation);
+  assertConfigAttestation(parseJsoncObject(active).vars, activeAttestation);
 
   const origin = requireHttpsOrigin(activeVars.MKT_CONNECTION_PUBLIC_ORIGIN);
   return Object.freeze({
@@ -73,8 +90,11 @@ export function buildWooCommerceWorkerProviderDiagnosticConfigs(sourceText, inpu
     pathname: WOOCOMMERCE_PROVIDER_DIAGNOSTICS_PATH,
     safeTrueFlags: Object.freeze(safeTrueFlags),
     activeTrueFlags: Object.freeze(activeTrueFlags),
+    safeAttestation,
+    activeAttestation,
     runtimeVersionMetadataBinding: WORKER_VERSION_METADATA_BINDING,
     ephemeralAuthDigestConfigured: true,
+    deploymentAttestationConfigured: true,
     secretValuesCopied: source.secretValuesCopied,
   });
 }
@@ -162,6 +182,35 @@ export function validateWooCommerceWorkerProviderDiagnosticResponse(status, body
   return Object.freeze(body);
 }
 
+export function validateWooCommerceDiagnosticsAttestation(response, expectedInput) {
+  const expected = requireSha256(expectedInput, 'expectedAttestation');
+  const observedRaw = response instanceof Response
+    ? response.headers.get(WOOCOMMERCE_PROVIDER_DIAGNOSTICS_ATTESTATION_HEADER)
+    : null;
+  const observed = SHA256_PATTERN.test(observedRaw ?? '') ? observedRaw.toLowerCase() : null;
+  if (observed !== expected) {
+    throw diagnosticError(
+      'Worker response did not match the generated diagnostic deployment attestation',
+      'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_ATTESTATION_MISMATCH',
+      {
+        expectedAttestationFingerprint: sha256(expected),
+        observedAttestationFingerprint: observed ? sha256(observed) : null,
+        observedAttestationPresent: observed !== null,
+        responseStatus: response instanceof Response ? response.status : null,
+        responseContentType: response instanceof Response
+          ? response.headers.get('content-type')
+          : null,
+        responseServer: response instanceof Response ? response.headers.get('server') : null,
+        responseCfRayPresent: response instanceof Response
+          ? Boolean(response.headers.get('cf-ray'))
+          : false,
+        safeCloseRequired: true,
+      },
+    );
+  }
+  return expected;
+}
+
 function closeExecutionFlags(vars) {
   const output = { ...vars };
   for (const name of Object.keys(output)) {
@@ -194,6 +243,17 @@ function assertVersionMetadataBinding(value) {
       'WooCommerce diagnostics generated config is missing exact Worker version metadata binding',
       'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_VERSION_METADATA_INVALID',
       { expectedBinding: WORKER_VERSION_METADATA_BINDING },
+    );
+  }
+  return true;
+}
+
+function assertConfigAttestation(varsInput, expected) {
+  const vars = requireObject(varsInput, 'vars');
+  if (vars[WOOCOMMERCE_PROVIDER_DIAGNOSTICS_ATTESTATION_ENV] !== expected) {
+    throw diagnosticError(
+      'WooCommerce diagnostics generated config has an invalid deployment attestation',
+      'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_ATTESTATION_INVALID',
     );
   }
   return true;
