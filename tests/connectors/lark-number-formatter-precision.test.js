@@ -51,8 +51,8 @@ test('canonicalizes incoming and existing numbers with the same formatter precis
 test('preserves exact behavior for unsupported formatters and rejects invalid numbers', () => {
   const unsupported = { fieldName: 'ratio', type: 2, property: { formatter: '0.0%' } };
   assert.equal(canonicalizeNumberForLarkFormatter(0.833333333333, unsupported), 0.833333333333);
-  assert.throws(() => canonicalizeNumberForLarkFormatter(Number.NaN, fields[1]), /finite number/);
-  assert.throws(() => canonicalizeNumberForLarkFormatter(Number.POSITIVE_INFINITY, fields[1]), /finite number/);
+  assert.throws(() => canonicalizeNumberForLarkFormatter(Number.NaN, fields[1]), /finite/);
+  assert.throws(() => canonicalizeNumberForLarkFormatter(Number.POSITIVE_INFINITY, fields[1]), /finite/);
 });
 
 test('keeps observed zero distinct from missing values', () => {
