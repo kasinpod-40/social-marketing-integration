@@ -30,12 +30,16 @@ import {
   compareWooCommerceRerun,
   createWooCommerceLarkSchemaContract,
   listWooCommerceTableBindings,
+  isWooCommerceExactContinuationSnapshotEmpty,
   normalizeWooCommerceFinalSnapshot,
   parseWooCommerceFinalArgs,
   safeWooCommerceFinalEvidence,
   selectWooCommerceFullOperation,
   sha256,
 } from './lib/woocommerce-final-rollout-operator.js';
+import {
+  WOOCOMMERCE_D1_READ_RETRY_DELAYS_MS,
+} from './lib/woocommerce-d1-read-retry.js';
 
 const execFileAsync = promisify(execFile);
 const repositoryRoot = resolve(process.cwd());
@@ -134,11 +138,9 @@ async function executeFinalRollout() {
   let exactBefore = null;
   if (resumeOperationId) {
     currentStage = 'exact-continuation-preflight';
-    exactBefore = await readSnapshot(resumeOperationId);
-    exactFull = selectWooCommerceFullOperation({
-      resumeOperationId,
-      snapshot: exactBefore,
-    });
+    const exact = await readExactContinuation(resumeOperationId);
+    exactBefore = exact.snapshot;
+    exactFull = exact.operation;
     await writeEvidence('01b-exact-continuation-preflight', {
       operation: exactFull,
       snapshot: exactBefore,
@@ -432,6 +434,42 @@ function createOperation(kind) {
 
 async function readSnapshot(operationId) {
   return normalizeWooCommerceFinalSnapshot(await readD1Row(buildWooCommerceFinalSnapshotSql({ accountKey: target.accountKey, operationId })));
+}
+
+async function readExactContinuation(resumeOperationId) {
+  const maximumAttempts = WOOCOMMERCE_D1_READ_RETRY_DELAYS_MS.length + 1;
+  for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
+    const snapshot = await readSnapshot(resumeOperationId);
+    try {
+      return Object.freeze({
+        snapshot,
+        operation: selectWooCommerceFullOperation({
+          resumeOperationId,
+          snapshot,
+        }),
+      });
+    } catch (error) {
+      const delayMs = WOOCOMMERCE_D1_READ_RETRY_DELAYS_MS[attempt - 1] ?? null;
+      if (error?.code !== 'WOOCOMMERCE_FINAL_EXACT_CONTINUATION_INVALID'
+        || !isWooCommerceExactContinuationSnapshotEmpty(snapshot)
+        || delayMs === null) {
+        throw error;
+      }
+      process.stderr.write(`${JSON.stringify({
+        ok: true,
+        stage: 'woocommerce-final-exact-snapshot-semantic-retry',
+        attempt,
+        maximumAttempts,
+        delayMs,
+        businessMutationCount: 0,
+      })}\n`);
+      await sleep(delayMs);
+    }
+  }
+  throw failure(
+    'WooCommerce exact continuation snapshot retry bound was exhausted',
+    'WOOCOMMERCE_FINAL_EXACT_CONTINUATION_INVALID',
+  );
 }
 
 async function pollCompletion(operationId, fullReconciliation) {

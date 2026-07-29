@@ -98,6 +98,19 @@ docs/tasks/lark-dashboard-backfill-post-verify-hotfix-v1.md
 
 ## Implementation result
 
+### WooCommerce exact snapshot semantic retry — 2026-07-30
+
+- หลัง lifecycle reactivation สำเร็จ Final remote preflight เห็น pinned active work ถูกต้อง
+  แต่ exact snapshot query ถัดมาได้ successful semantic-empty row ชั่วคราว; attempt หยุดก่อน
+  Lark schema, backup, Deploy และ Queue.
+- เพิ่ม bounded read-only retry `1s/2s/5s/10s` เฉพาะ snapshot ที่ว่างทุก identity/state/count
+  เท่านั้น; populated contract mismatch ยัง fail closed ทันที.
+- Verification ผ่าน focused `13/13`, Unit `1490/1490`, Workers runtime `16/16`,
+  Report reliability `101/101`, architecture/hygiene `404` modules / `0` cycles,
+  audit `0` vulnerabilities และ deploy dry-run.
+- Repository implementation ไม่มี Remote mutation; หลัง merge ต้อง retry exact operation
+  `woo-final-full-e2372e56d52d` เดิมเท่านั้น.
+
 ### WooCommerce exact-resume lifecycle reactivation hotfix — 2026-07-30
 
 - Exact continuation ของ `woo-final-full-e2372e56d52d` ถูก launcher รุ่นเดิม terminalize

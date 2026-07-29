@@ -11,6 +11,7 @@ import {
   compareWooCommerceParity,
   compareWooCommerceRerun,
   createWooCommerceLarkSchemaContract,
+  isWooCommerceExactContinuationSnapshotEmpty,
   parseWooCommerceFinalArgs,
   selectWooCommerceFullOperation,
 } from '../../scripts/lib/woocommerce-final-rollout-operator.js';
@@ -165,6 +166,36 @@ test('exact continuation accepts only the existing partial failed durable identi
     resumeOperationId: 'woo-final-full-e2372e56d52d',
     snapshot: emptyPartial,
   }), /preflight rejected/u);
+});
+
+test('exact continuation classifies only a fully empty semantic snapshot as retryable', () => {
+  assert.equal(isWooCommerceExactContinuationSnapshotEmpty({}), true);
+  assert.equal(isWooCommerceExactContinuationSnapshotEmpty({
+    raw_commerce_orders: 1,
+  }), false);
+  assert.equal(isWooCommerceExactContinuationSnapshotEmpty({
+    work_lifecycle_status: 'active',
+  }), false);
+  assert.equal(isWooCommerceExactContinuationSnapshotEmpty({
+    queue_operation_attempts: 1,
+  }), false);
+  assert.equal(isWooCommerceExactContinuationSnapshotEmpty({
+    state_json: JSON.stringify({ datasetIndex: 1, page: 2 }),
+  }), false);
+});
+
+test('final CLI retries semantic-empty exact snapshots before any mutation stage', async () => {
+  const source = await readFile(
+    new URL('../../scripts/woocommerce-final-rollout-operator.mjs', import.meta.url),
+    'utf8',
+  );
+  const retryIndex = source.indexOf('readExactContinuation(resumeOperationId)');
+  const larkIndex = source.indexOf("currentStage = 'lark-schema-additive-repair'");
+  assert.ok(retryIndex > 0);
+  assert.ok(larkIndex > retryIndex);
+  assert.match(source, /woocommerce-final-exact-snapshot-semantic-retry/u);
+  assert.match(source, /WOOCOMMERCE_D1_READ_RETRY_DELAYS_MS/u);
+  assert.match(source, /businessMutationCount: 0/u);
 });
 
 test('completion requires durable work, six Coverage datasets and zero failures', () => {

@@ -190,6 +190,27 @@ export function normalizeWooCommerceFinalSnapshot(value = {}) {
   });
 }
 
+export function isWooCommerceExactContinuationSnapshotEmpty(value = {}) {
+  const snapshot = normalizeWooCommerceFinalSnapshot(value);
+  return snapshot.syncRunStatus === null
+    && snapshot.syncRunFinishedAt === null
+    && snapshot.syncRunErrorCode === null
+    && snapshot.workLifecycleStatus === null
+    && snapshot.workGeneration === null
+    && snapshot.workRequestedAt === null
+    && snapshot.workCompletedAt === null
+    && snapshot.completion === null
+    && snapshot.phaseComplete === false
+    && snapshot.state === null
+    && snapshot.activeLockCount === 0
+    && snapshot.queueGeneration === null
+    && snapshot.queueOriginalRequestedAt === null
+    && snapshot.queueOperationAttempts === 0
+    && snapshot.coverageRunCount === 0
+    && snapshot.invalidCoverageCount === 0
+    && Object.values(snapshot.counts).every((rowCount) => rowCount === 0);
+}
+
 export function selectWooCommerceFullOperation(input = {}) {
   const resumeOperationId = optionalText(input.resumeOperationId);
   if (!resumeOperationId) return null;

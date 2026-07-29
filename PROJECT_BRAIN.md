@@ -12,6 +12,23 @@ Historical Root Project Brain ก่อน TikTok post-Lark implementation ถ�
 docs/archive/PROJECT_BRAIN-before-tiktok-post-lark-parity-2026-07-26.md
 ```
 
+## WooCommerce exact snapshot semantic retry — 2026-07-30
+
+หลัง exact lifecycle reactivation ของ `woo-final-full-e2372e56d52d` สำเร็จ Final remote
+preflight เห็น pinned active work, zero other work/locks แต่ snapshot read ถัดมาได้ successful
+semantic-empty row ชั่วคราว. Read-only inspector หลัง failure ยืนยัน durable state และ partial
+facts เดิมยังครบ; attempt ไม่มี Lark/backup/Deploy/Queue mutation.
+
+Exact continuation จึง retry read-only snapshot แบบ bounded เฉพาะเมื่อทุก identity, state,
+Coverage, Queue attempts และ Commerce counts ว่างทั้งหมด. Snapshot ที่มีข้อมูลแต่ผิด contract
+ยัง fail closed ทันที และ retry เกิดก่อน Remote mutation ทุกชนิด.
+
+รายละเอียด:
+
+```text
+docs/tasks/woocommerce-exact-snapshot-semantic-retry-v1.md
+```
+
 ## WooCommerce exact-resume lifecycle reactivation — 2026-07-30
 
 Exact continuation ของ `woo-final-full-e2372e56d52d` ถูก source-safe launcher รุ่นเดิมเรียก
