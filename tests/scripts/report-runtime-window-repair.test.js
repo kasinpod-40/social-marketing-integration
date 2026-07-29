@@ -124,7 +124,7 @@ test('Incomplete Organic baseline requires null aggregate KPIs in D1 and Lark', 
   }), (error) => error.code === 'REPORT_RUNTIME_WINDOW_REPAIR_PARTIAL_AGGREGATE_NUMERIC');
 });
 
-test('One-command wrapper keeps schedules, AI and manual edits outside scope', () => {
+test('One-command wrapper secures local secrets before gates and keeps unsafe features disabled', () => {
   const source = readFileSync(
     new URL('../../scripts/report-runtime-window-repair.mjs', import.meta.url),
     'utf8',
@@ -134,6 +134,10 @@ test('One-command wrapper keeps schedules, AI and manual edits outside scope', (
   assert.match(source, /MKT_REPORT_RUNTIME_CLOSEOUT_WINDOW_DAYS/u);
   assert.match(source, /CONFIRM_REPORT_RUNTIME_FINALIZE/u);
   assert.match(source, /CONFIRM_REPORT_RUNTIME_CLOSEOUT/u);
+  assert.match(source, /await ensureDevVarsPermissions\(\);[\s\S]*runRequiredStep\('report-runtime-finalizer'/u);
+  assert.match(source, /before\.isSymbolicLink\(\)/u);
+  assert.match(source, /chmod\(devVarsPath, 0o600\)/u);
+  assert.match(source, /\(after\.mode & 0o077\) !== 0/u);
   assert.doesNotMatch(source, /MKT_SCHEDULE_DAILY_REPORT_ENABLED\s*:\s*['"]true['"]/u);
   assert.doesNotMatch(source, /MKT_REPORT_AI_SUMMARY_ENABLED\s*:\s*['"]true['"]/u);
 });
