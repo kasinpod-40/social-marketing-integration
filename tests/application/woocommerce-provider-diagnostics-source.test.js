@@ -47,11 +47,12 @@ test('accepts semantically equivalent explicit source values before canonical ma
 
 for (const [fieldName, value] of [
   ['WOOCOMMERCE_BASE_URL', 'https://other.example.test'],
+  ['WOOCOMMERCE_BASE_URL', 'https://chemistryk.online:444'],
   ['WOOCOMMERCE_API_VERSION', 'wc/v2'],
   ['WOOCOMMERCE_API_TIMEOUT_MS', '30000'],
   ['WOOCOMMERCE_DEFAULT_CURRENCY', 'USD'],
 ]) {
-  test(`rejects conflicting explicit ${fieldName} before any Provider request`, () => {
+  test(`rejects conflicting explicit ${fieldName}=${value} before any Provider request`, () => {
     assert.throws(
       () => materializeWooCommerceProviderDiagnosticSource({
         ...BASE_ENV,
