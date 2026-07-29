@@ -6,7 +6,7 @@ import { listReportPlatformContracts } from '../../packages/application/src/repo
 
 const GENERATED_AT = Date.parse('2026-07-29T05:00:00Z');
 
-test('discovers every current Report platform and a future platform without Dashboard code changes', () => {
+test('discovers every current Report platform and a future capability without Dashboard code changes', () => {
   const current = listReportPlatformContracts().map((contract, index) => materialization({
     platform: contract.platformScope,
     capability: contract.capability,
@@ -15,9 +15,12 @@ test('discovers every current Report platform and a future platform without Dash
   }));
   const future = materialization({
     platform: 'future_network',
-    capability: 'organic',
+    capability: 'commerce',
     accountId: 'future-account',
     reportId: 'future-report',
+    collections: {
+      top_products: [{ external_id: 'product-1', label: 'Product One' }],
+    },
   });
 
   const model = buildUniversalMarketingDashboardModel({ materializations: [...current, future] });
@@ -27,14 +30,16 @@ test('discovers every current Report platform and a future platform without Dash
     'meta_ads', 'tiktok', 'tiktok_ads', 'youtube',
   ]);
   assert.equal(model.reportCount, 8);
-  assert.deepEqual(model.discovery.capabilities, ['organic', 'paid_ads']);
-  assert.equal(model.sections.find((section) => section.capability === 'organic').platforms.includes('future_network'), true);
+  assert.deepEqual(model.discovery.capabilities, ['commerce', 'organic', 'paid_ads']);
+  assert.deepEqual(model.discovery.collectionKinds, ['top_products']);
+  assert.equal(model.sections.find((section) => section.capability === 'commerce').platforms.includes('future_network'), true);
+  assert.deepEqual(model.sections.find((section) => section.capability === 'commerce').collectionKinds, ['top_products']);
 });
 
 test('new accounts and client-visible metrics appear automatically while null and zero remain distinct', () => {
   const first = materialization({
     platform: 'future_network',
-    capability: 'organic',
+    capability: 'customer_service',
     accountId: 'account-a',
     reportId: 'report-a',
     metricPayload: {
@@ -58,7 +63,7 @@ test('new accounts and client-visible metrics appear automatically while null an
   });
   const second = materialization({
     platform: 'future_network',
-    capability: 'organic',
+    capability: 'customer_service',
     accountId: 'account-b',
     reportId: 'report-b',
   });
@@ -72,7 +77,7 @@ test('new accounts and client-visible metrics appear automatically while null an
   assert.equal(model.reports.find((report) => report.reportId === 'report-a').cards[0].compare, null);
 });
 
-test('groups ranking collections dynamically and surfaces partial coverage warnings', () => {
+test('renders discovered collections and preserves Organic/Ads compatibility collections', () => {
   const organic = materialization({
     platform: 'social_new',
     capability: 'organic',
@@ -89,14 +94,29 @@ test('groups ranking collections dynamically and surfaces partial coverage warni
     reportId: 'ads-report',
     topAds: [{ external_ad_id: 'ad-1', ad_name: 'One' }],
   });
+  const service = materialization({
+    platform: 'support_new',
+    capability: 'customer_service',
+    accountId: 'support-account',
+    reportId: 'support-report',
+    collections: {
+      slowest_inboxes: [{ external_id: 'inbox-1', label: 'Inbox One' }],
+      top_agents: [{ external_id: 'agent-1', label: 'Agent One', rank: 4 }],
+    },
+  });
 
-  const model = buildUniversalMarketingDashboardModel({ materializations: [organic, paid] });
+  const model = buildUniversalMarketingDashboardModel({ materializations: [organic, paid, service] });
   const organicReport = model.reports.find((report) => report.reportId === 'organic-report');
   const paidReport = model.reports.find((report) => report.reportId === 'ads-report');
+  const serviceReport = model.reports.find((report) => report.reportId === 'support-report');
 
-  assert.equal(organicReport.rankings[0].kind, 'top_content');
-  assert.equal(organicReport.rankings[0].rows[0].rank, 1);
-  assert.equal(paidReport.rankings[0].kind, 'top_ads');
+  assert.equal(organicReport.collections[0].kind, 'top_content');
+  assert.equal(organicReport.collections[0].rows[0].rank, 1);
+  assert.equal(paidReport.collections[0].kind, 'top_ads');
+  assert.deepEqual(serviceReport.collections.map((collection) => collection.kind), ['slowest_inboxes', 'top_agents']);
+  assert.equal(serviceReport.collections[0].rows[0].rank, 1);
+  assert.equal(serviceReport.collections[1].rows[0].rank, 4);
+  assert.equal(serviceReport.rankings, serviceReport.collections);
   assert.equal(model.dataQuality.status, 'attention_required');
   assert.deepEqual(organicReport.dataQuality.warnings.map((warning) => warning.code), [
     'DASHBOARD_DATA_STATUS_NOT_COMPLETE',
@@ -117,17 +137,31 @@ test('selection filters discovered data without channel-specific branches', () =
   assert.deepEqual(model.discovery.platforms, ['one', 'two']);
 });
 
-test('Dashboard model source contains no current platform or metric literals', async () => {
+test('Dashboard model source contains no current platform, capability or metric literals', async () => {
   const source = await readFile(
     new URL('../../packages/application/src/use-cases/build-universal-marketing-dashboard-model.js', import.meta.url),
     'utf8',
   );
   for (const literal of [
     'facebook', 'instagram', 'tiktok', 'youtube', 'meta_ads', 'google_ads', 'tiktok_ads',
+    'organic', 'paid_ads', 'commerce', 'customer_service',
     'views', 'likes', 'spend', 'impressions',
   ]) {
     assert.equal(source.includes(`'${literal}'`), false, `Dashboard model must not hardcode ${literal}`);
   }
+});
+
+test('rejects unsafe capability and collection identifiers before rendering', () => {
+  const unsafeCapability = materialization({ capability: 'Customer Service' });
+  assert.throws(
+    () => buildUniversalMarketingDashboardModel({ materializations: [unsafeCapability] }),
+    /capability must be a lowercase extensible key/u,
+  );
+  const unsafeCollection = materialization({ collections: { 'Top Products': [] } });
+  assert.throws(
+    () => buildUniversalMarketingDashboardModel({ materializations: [unsafeCollection] }),
+    /must be a lowercase extensible key/u,
+  );
 });
 
 function materialization(input = {}) {
@@ -169,6 +203,7 @@ function materialization(input = {}) {
           sortOrder: 10,
         }),
       },
+      collections: input.collections ?? {},
       topContent: input.topContent ?? [],
       topAds: input.topAds ?? [],
       source: 'd1_historical_facts',
