@@ -26,6 +26,12 @@ test('canonicalizes incoming and existing numbers with the same formatter precis
   assert.equal(canonicalizeNumberForLarkFormatter(0.833333333333, fields[1]), 0.8333);
   assert.equal(canonicalizeNumberForLarkFormatter(-1.23456, fields[1]), -1.2346);
   assert.equal(canonicalizeNumberForLarkFormatter(-0.00001, fields[1]), 0);
+  assert.equal(canonicalizeNumberForLarkFormatter(1.6, {
+    fieldName: 'window_days', type: 2, property: { formatter: '0' },
+  }), 2);
+  assert.equal(canonicalizeNumberForLarkFormatter(1234.567, {
+    fieldName: 'amount', type: 2, property: { formatter: '#,##0.00' },
+  }), 1234.57);
 
   const [incoming] = serializeRowsForLark([
     { key: 'one', coverage_rate: 0.833333333333 },
