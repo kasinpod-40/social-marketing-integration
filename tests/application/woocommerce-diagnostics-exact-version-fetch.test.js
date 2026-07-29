@@ -67,7 +67,7 @@ test('does not retry requests without one exact override or requests using a non
   let calls = 0;
   const fetchWithRetry = createWooCommerceDiagnosticsExactVersionFetch(async () => {
     calls += 1;
-    return versionedResponse(null, 204);
+    return versionedResponse(null, 200);
   }, {
     delaysMs: [0, 0, 0],
     sleep: async () => {
