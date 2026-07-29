@@ -59,6 +59,7 @@ export async function processWooCommerceCommerceJob(input = {}) {
     apiVersion: wooConfig.source.apiVersion,
     pageSize: wooConfig.limits.pageSize,
     timeoutMs: wooConfig.source.timeoutMs,
+    fetchImpl: createWooCommerceWorkerFetch(),
   });
   const reliability = infrastructure.getReliability();
   const resumableWorkStore = infrastructure.getResumableWorkStore();
@@ -203,6 +204,17 @@ function requireStableOperation(value) {
     });
   }
   return value;
+}
+
+/** Preserve the Cloudflare runtime receiver when invoking the global fetch method. */
+export function createWooCommerceWorkerFetch(target = globalThis) {
+  const fetchImpl = target?.fetch;
+  if (typeof fetchImpl !== 'function') {
+    throw permanentError('WooCommerce Worker fetch implementation is unavailable', {
+      code: 'WOOCOMMERCE_FETCH_RUNTIME_UNAVAILABLE',
+    });
+  }
+  return (...args) => Reflect.apply(fetchImpl, target, args);
 }
 
 function createWooCommerceContinuationQueue(input, operation) {
