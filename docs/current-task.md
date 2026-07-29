@@ -129,7 +129,9 @@ docs/tasks/lark-dashboard-backfill-post-verify-hotfix-v1.md
   OS ปฏิเสธ Wrangler log/localhost ด้วย `EPERM`; Workers suite ผ่านเมื่อ rerun นอก sandbox.
 - Implementation head `08fe830c4e38664d2210bcb97d52ee1739bb9ba9` ถูก Push และเปิด
   Draft PR `#247`; Branch Verification `#1070 / 30471168454` ผ่านทุก step.
-- Docs-only closeout head ต้องผ่าน Branch Verification รอบสุดท้ายก่อน Mark PR Ready for Review.
+- Docs-only closeout head ผ่าน Branch Verification `#1072 / 30471397433`; PR `#247`
+  ถูก Mark Ready for Review และยังไม่ Merge. Status-only handoff commit สุดท้ายต้องผ่าน
+  exact-head Branch Verification ก่อน Merge.
 - Remote action count ระหว่าง Implementation = `0`; Live rerun = `NOT_AUTHORIZED`;
   Production Worker entrypoint, Queue runtime, deployment และ traffic ไม่เปลี่ยน.
 - รายละเอียด: `docs/tasks/woocommerce-diagnostics-queue-sentinel-v1.md`.

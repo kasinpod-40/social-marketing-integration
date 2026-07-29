@@ -3,13 +3,13 @@
 ## Status
 
 ```text
-TASK_STATUS                     = READY_FOR_FINAL_DOCS_CI
+TASK_STATUS                     = READY_FOR_REVIEW
 BASE_MAIN_SHA                   = 142d742fd27df9fdd1728a371836dd395dcc88ea
 REQUIRED_ANCESTOR               = ab56882e691f93678ee56fbac2cb12f5c8ee95fc
 BRANCH                          = codex/woocommerce-diagnostics-queue-sentinel-v1
 IMPLEMENTATION_HEAD             = 08fe830c4e38664d2210bcb97d52ee1739bb9ba9
-IMPLEMENTATION_PR               = #247 / DRAFT
-BRANCH_VERIFICATION             = #1070 / 30471168454 / PASS
+IMPLEMENTATION_PR               = #247 / READY_FOR_REVIEW
+BRANCH_VERIFICATION             = #1072 / 30471397433 / PASS
 REMOTE_ACTION_DURING_IMPL       = 0
 LIVE_RERUN                      = NOT_AUTHORIZED
 PRODUCTION_DEPLOYMENT           = UNCHANGED
@@ -112,9 +112,10 @@ Repository deployment dry-runs                PASS / no deployment
 
 `npm test` ผ่าน Unit ทั้งหมดก่อน Workers runtime ถูก restricted sandbox ปฏิเสธ Wrangler log
 และ localhost ด้วย `EPERM`; full Workers suite ผ่านเมื่อ rerun นอก restricted sandbox.
-Branch Verification `#1070 / 30471168454` ผ่านทุก step บน Implementation head
-`08fe830c4e38664d2210bcb97d52ee1739bb9ba9`. Docs-only closeout head ต้องผ่าน
-Branch Verification รอบสุดท้ายก่อน Mark PR Ready for Review.
+Branch Verification `#1072 / 30471397433` ผ่านทุก step บน docs-only closeout head
+`1b280547fde058df8f200df79e9e891c1ea5803e`. Status-only handoff commit สุดท้ายต้องผ่าน
+Branch Verification ก่อน Merge. PR `#247` ถูก Mark Ready for Review แล้วและยังห้าม Merge
+โดย Implementation task นี้.
 
 ## Remote boundary
 
