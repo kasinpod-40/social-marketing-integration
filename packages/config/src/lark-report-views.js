@@ -1,18 +1,29 @@
 import { permanentError } from '../../shared/src/errors/runtime-error.js';
 
-export const LARK_REPORT_VIEW_VERSION = 'report-client-views-v1.4';
+export const LARK_REPORT_VIEW_VERSION = 'report-client-views-v2.0';
 
 /**
- * Client View contract สำหรับตาราง Report output เท่านั้น
- * Installer จัดการชื่อ View ตอนสร้างและ PATCH เฉพาะ Filter แบบ body ขั้นต่ำ.
- * Hidden fields, Sort, Column width และ Role permissions ให้ตั้งใน Lark UI เพื่อเลี่ยง tenant-specific 1254001.
+ * Universal client Views for materialized Report output.
+ *
+ * Dashboard Views filter only by the shared report type. They intentionally do not filter by
+ * platform, account or metric, so new channels and accounts appear without changing this file.
+ * Installer manages View identity and safe Filter/Hidden-field patches. Sort, width and role
+ * permissions remain explicit Lark UI actions because those APIs are tenant-sensitive.
  */
 export const LARK_REPORT_VIEWS = deepFreeze([
+  {
+    tableKey: 'mktReportSnapshots',
+    envName: 'LARK_TABLE_MKT_REPORT_SNAPSHOTS',
+    views: [
+      snapshotView('dashboard', '🧭 Dashboard Reports', 'dashboard_performance_report'),
+    ],
+  },
   {
     tableKey: 'mktReportMetricValues',
     envName: 'LARK_TABLE_MKT_REPORT_METRIC_VALUES',
     views: [
       metricCombinedView(),
+      metricView('dashboard', '🧭 Dashboard Metrics', 'dashboard_performance_report'),
       metricView('daily', '📊 Daily Metrics', 'daily_organic_report'),
       metricView('weekly', '📈 Weekly Metrics', 'weekly_organic_report'),
     ],
@@ -22,8 +33,17 @@ export const LARK_REPORT_VIEWS = deepFreeze([
     envName: 'LARK_TABLE_MKT_REPORT_TOP_CONTENT',
     views: [
       topContentCombinedView(),
+      topContentView('dashboard', '🧭 Dashboard Top Content', 'dashboard_performance_report'),
       topContentView('daily', '🏆 Daily Top Content', 'daily_organic_report'),
       topContentView('weekly', '🏅 Weekly Top Content', 'weekly_organic_report'),
+    ],
+  },
+  {
+    tableKey: 'mktReportTopAds',
+    envName: 'LARK_TABLE_MKT_REPORT_TOP_ADS',
+    views: [
+      topAdsCombinedView(),
+      topAdsView('dashboard', '🧭 Dashboard Top Ads', 'dashboard_performance_report'),
     ],
   },
 ]);
@@ -77,6 +97,21 @@ export function validateReportViewDefinition(contract = LARK_REPORT_VIEWS) {
   return true;
 }
 
+function snapshotView(key, name, reportType) {
+  return {
+    key: `${key}Reports`,
+    name,
+    type: 'grid',
+    hiddenFields: snapshotHiddenFields(),
+    filterInfo: {
+      conjunction: 'and',
+      conditions: [
+        { fieldName: 'report_type', operator: 'is', value: reportType },
+      ],
+    },
+    manualSort: { fieldName: 'generated_at', direction: 'descending' },
+  };
+}
 
 function metricCombinedView() {
   return {
@@ -100,6 +135,22 @@ function topContentCombinedView() {
     name: '🏆 Top Content',
     type: 'grid',
     hiddenFields: topContentHiddenFields(),
+    filterInfo: {
+      conjunction: 'and',
+      conditions: [
+        { fieldName: 'data_status', operator: 'isNot', value: 'no_data' },
+      ],
+    },
+    manualSort: { fieldName: 'rank', direction: 'ascending' },
+  };
+}
+
+function topAdsCombinedView() {
+  return {
+    key: 'allTopAds',
+    name: '💰 Top Ads',
+    type: 'grid',
+    hiddenFields: topAdsHiddenFields(),
     filterInfo: {
       conjunction: 'and',
       conditions: [
@@ -144,6 +195,36 @@ function topContentView(key, name, reportType) {
   };
 }
 
+function topAdsView(key, name, reportType) {
+  return {
+    key: `${key}TopAds`,
+    name,
+    type: 'grid',
+    hiddenFields: topAdsHiddenFields(),
+    filterInfo: {
+      conjunction: 'and',
+      conditions: [
+        { fieldName: 'report_type', operator: 'is', value: reportType },
+        { fieldName: 'data_status', operator: 'isNot', value: 'no_data' },
+      ],
+    },
+    manualSort: { fieldName: 'rank', direction: 'ascending' },
+  };
+}
+
+function snapshotHiddenFields() {
+  return [
+    'report_setting_key',
+    'customer_profile',
+    'account_id',
+    'course_name',
+    'metric_payload_json',
+    'top_content_json',
+    'top_ads_json',
+    'formula_version',
+    'source_snapshot_count',
+  ];
+}
 
 function metricHiddenFields() {
   return [
@@ -167,6 +248,19 @@ function topContentHiddenFields() {
     'customer_profile',
     'account_id',
     'content_key',
+  ];
+}
+
+function topAdsHiddenFields() {
+  return [
+    'report_id',
+    'report_setting_key',
+    'customer_profile',
+    'account_id',
+    'external_ad_id',
+    'external_campaign_id',
+    'external_ad_group_id',
+    'external_creative_id',
   ];
 }
 
