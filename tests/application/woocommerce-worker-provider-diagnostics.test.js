@@ -7,6 +7,7 @@ import {
   WOOCOMMERCE_PROVIDER_DIAGNOSTICS_ATTESTATION_HEADER,
   WOOCOMMERCE_PROVIDER_DIAGNOSTICS_FLAG,
   WOOCOMMERCE_PROVIDER_DIAGNOSTICS_TOKEN_SHA256_ENV,
+  WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_PREVIEW_ENTRYPOINT,
   WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_VERSION_METADATA_BINDING,
   buildWooCommerceWorkerProviderDiagnosticConfigs,
   parseWooCommerceWorkerSecretNames,
@@ -21,11 +22,23 @@ const CONFIG_OBJECT = {
   name: 'social-mkt-sync-worker',
   main: 'apps/sync-worker/src/index.js',
   compatibility_date: '2026-07-01',
+  compatibility_flags: ['nodejs_compat'],
+  workers_dev: false,
+  routes: [{ pattern: 'sync.example.test', custom_domain: true }],
+  triggers: { crons: ['*/5 * * * *'] },
+  queues: {
+    producers: [{ binding: 'MKT_SYNC_QUEUE', queue: 'social-mkt-sync-jobs' }],
+  },
+  d1_databases: [{
+    binding: 'MKT_STATE_DB',
+    database_name: 'fixture',
+    database_id: '00000000-0000-0000-0000-000000000000',
+  }],
   vars: {
     MKT_ENV: 'development',
     MKT_CUSTOMER_PROFILE: 'integration_workspace',
     MKT_CONNECTION_CUSTOMER_KEY: 'chemistry_k',
-    MKT_CONNECTION_PUBLIC_ORIGIN: 'https://social-mkt-sync-worker.example.workers.dev',
+    MKT_CONNECTION_PUBLIC_ORIGIN: 'https://wrong-public-origin.example',
     MKT_CONNECTOR_WOOCOMMERCE_ENABLED: 'true',
     MKT_WOOCOMMERCE_D1_WRITE_ENABLED: 'true',
     MKT_WOOCOMMERCE_LARK_WRITE_ENABLED: 'true',
@@ -48,10 +61,11 @@ function build(sourceText = CONFIG, overrides = {}) {
   });
 }
 
-test('builds separate attested Active and all-false Safe configs', () => {
+test('builds isolated attested Active and all-false Safe Preview Version configs', () => {
   const result = build();
   const safe = parseJsoncObject(result.safe);
   const active = parseJsoncObject(result.active);
+  const expectedMain = `/repo/${WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_PREVIEW_ENTRYPOINT}`;
 
   assert.deepEqual(result.safeTrueFlags, []);
   assert.deepEqual(result.activeTrueFlags, [WOOCOMMERCE_PROVIDER_DIAGNOSTICS_FLAG]);
@@ -61,32 +75,46 @@ test('builds separate attested Active and all-false Safe configs', () => {
   assert.equal(active.vars[WOOCOMMERCE_PROVIDER_DIAGNOSTICS_FLAG], 'true');
   assert.equal(active.vars[WOOCOMMERCE_PROVIDER_DIAGNOSTICS_TOKEN_SHA256_ENV], TOKEN_SHA256);
   assert.equal(active.vars[WOOCOMMERCE_PROVIDER_DIAGNOSTICS_ATTESTATION_ENV], ACTIVE_ATTESTATION);
-  assert.notEqual(
-    active.vars[WOOCOMMERCE_PROVIDER_DIAGNOSTICS_ATTESTATION_ENV],
-    safe.vars[WOOCOMMERCE_PROVIDER_DIAGNOSTICS_ATTESTATION_ENV],
-  );
-  assert.equal(active.vars.MKT_CONNECTOR_WOOCOMMERCE_ENABLED, 'false');
-  assert.equal(active.vars.MKT_WOOCOMMERCE_D1_WRITE_ENABLED, 'false');
-  assert.equal(active.vars.MKT_WOOCOMMERCE_LARK_WRITE_ENABLED, 'false');
-  assert.equal(active.vars.MKT_SCHEDULE_WOOCOMMERCE_ENABLED, 'false');
-  assert.equal(active.vars.MKT_TIKTOK_AUDIT_HTTP_ENABLED, 'false');
+  assert.equal(active.main, expectedMain);
+  assert.equal(safe.main, expectedMain);
+  assert.equal(active.workers_dev, false);
+  assert.equal(active.preview_urls, true);
+  assert.equal(result.workerName, 'social-mkt-sync-worker');
+  assert.equal(result.previewUrlsEnabled, true);
+  assert.equal(result.productionRoutesCopied, 0);
+  assert.equal(result.productionBindingsCopied, 0);
+  assert.equal(result.ephemeralAuthDigestConfigured, true);
+  assert.equal(result.deploymentAttestationConfigured, true);
+  assert.equal(result.secretValuesCopied, 0);
+  assert.deepEqual(active.secrets.required, [
+    'WOOCOMMERCE_CONSUMER_KEY',
+    'WOOCOMMERCE_CONSUMER_SECRET',
+  ]);
+  for (const key of ['routes', 'route', 'triggers', 'queues', 'd1_databases']) {
+    assert.equal(active[key], undefined);
+    assert.equal(safe[key], undefined);
+  }
+  for (const name of [
+    'MKT_CONNECTOR_WOOCOMMERCE_ENABLED',
+    'MKT_WOOCOMMERCE_D1_WRITE_ENABLED',
+    'MKT_WOOCOMMERCE_LARK_WRITE_ENABLED',
+    'MKT_SCHEDULE_WOOCOMMERCE_ENABLED',
+    'MKT_TIKTOK_AUDIT_HTTP_ENABLED',
+  ]) {
+    assert.equal(active.vars[name], 'false');
+  }
   assert.equal(active.vars.WOOCOMMERCE_BASE_URL, 'https://chemistryk.online');
   assert.equal(active.vars.WOOCOMMERCE_API_VERSION, 'wc/v3');
   assert.equal(active.vars.WOOCOMMERCE_API_TIMEOUT_MS, '45000');
   assert.equal(active.vars.WOOCOMMERCE_DEFAULT_CURRENCY, 'THB');
-  assert.equal(result.origin, 'https://social-mkt-sync-worker.example.workers.dev');
-  assert.equal(result.ephemeralAuthDigestConfigured, true);
-  assert.equal(result.deploymentAttestationConfigured, true);
-  assert.equal(result.secretValuesCopied, 0);
   assert.equal(result.active.includes('ck_'), false);
   assert.equal(result.active.includes('cs_'), false);
 });
 
-test('materializes exact Worker version metadata in both configs when source omits it', () => {
+test('materializes exact Worker version metadata in both Preview configs', () => {
   const result = build();
   const safe = parseJsoncObject(result.safe);
   const active = parseJsoncObject(result.active);
-
   assert.equal(
     result.runtimeVersionMetadataBinding,
     WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_VERSION_METADATA_BINDING,
@@ -110,7 +138,6 @@ test('accepts exact metadata binding and rejects conflicting binding', () => {
     parseJsoncObject(exact.active).version_metadata.binding,
     WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_VERSION_METADATA_BINDING,
   );
-
   assert.throws(
     () => build(JSON.stringify({
       ...CONFIG_OBJECT,
@@ -120,7 +147,7 @@ test('accepts exact metadata binding and rejects conflicting binding', () => {
   );
 });
 
-test('rejects missing, malformed or reused deployment attestations before deployment', () => {
+test('rejects missing, malformed or reused Preview attestations before upload', () => {
   assert.throws(
     () => build(CONFIG, { activeAttestation: 'not-a-digest' }),
     (error) => error?.code === 'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_CONFIG_INVALID',
@@ -146,13 +173,12 @@ test('requires only WooCommerce Worker Secret names without reading their values
   );
 });
 
-test('validates only the exact deployment attestation header with bounded evidence on mismatch', () => {
+test('validates exact Preview attestation with bounded mismatch evidence', () => {
   const exact = new Response('{}', {
     status: 401,
     headers: { [WOOCOMMERCE_PROVIDER_DIAGNOSTICS_ATTESTATION_HEADER]: ACTIVE_ATTESTATION },
   });
   assert.equal(validateWooCommerceDiagnosticsAttestation(exact, ACTIVE_ATTESTATION), ACTIVE_ATTESTATION);
-
   const missing = new Response('{}', {
     status: 404,
     headers: { 'content-type': 'text/html', server: 'cloudflare', 'cf-ray': 'fixture-ray' },
@@ -164,6 +190,7 @@ test('validates only the exact deployment attestation header with bounded eviden
       && error?.details?.observedAttestationPresent === false
       && error?.details?.responseStatus === 404
       && error?.details?.responseCfRayPresent === true
+      && error?.details?.previewSafeCloseRequired === true
     ),
   );
 });
@@ -195,8 +222,8 @@ test('accepts only a bounded success or exact invalid-JSON diagnostic response',
   );
 });
 
-test('ephemeral launcher and operator avoid version overrides, secrets and mutation engines', async () => {
-  const [launcher, operator] = await Promise.all([
+test('operator uploads isolated Preview Versions and never deploys Production', async () => {
+  const [launcher, operator, entrypoint] = await Promise.all([
     readFile(
       new URL('../../scripts/woocommerce-worker-provider-diagnostics-ephemeral.mjs', import.meta.url),
       'utf8',
@@ -205,18 +232,25 @@ test('ephemeral launcher and operator avoid version overrides, secrets and mutat
       new URL('../../scripts/woocommerce-worker-provider-diagnostics.mjs', import.meta.url),
       'utf8',
     ),
+    readFile(
+      new URL('../../apps/sync-worker/src/woocommerce-provider-diagnostics-entry.js', import.meta.url),
+      'utf8',
+    ),
   ]);
   assert.match(launcher, /randomBytes\(32\)/u);
   assert.match(launcher, /createHash\('sha256'\)/u);
   assert.match(launcher, /MKT_WOOCOMMERCE_PROVIDER_DIAGNOSTICS_TOKEN_SHA256/u);
   assert.doesNotMatch(launcher, /console\.|stdout\.write|stderr\.write/u);
-  assert.match(operator, /activeAttestation:\s*randomBytes\(32\)/u);
-  assert.match(operator, /safeAttestation:\s*randomBytes\(32\)/u);
-  assert.match(operator, /controlPlaneVersionVerified/u);
-  assert.match(operator, /httpDeploymentAttested/u);
-  assert.match(operator, /workerDeploymentCount/u);
-  assert.match(operator, /providerRequestCount/u);
+  assert.match(operator, /wrangler', 'versions', 'upload/u);
+  assert.match(operator, /--preview-alias/u);
+  assert.match(operator, /WRANGLER_OUTPUT_FILE_PATH/u);
+  assert.match(operator, /productionDeploymentUnchanged/u);
+  assert.match(operator, /workerDeploymentCount:\s*0/u);
+  assert.match(operator, /workerVersionUploadCount/u);
+  assert.doesNotMatch(operator, /wrangler', 'deploy'/u);
   assert.doesNotMatch(operator, /Cloudflare-Workers-Version-Overrides|buildWorkerVersionOverrideHeader/u);
   assert.doesNotMatch(operator, /queues?['"],\s*['"](?:send|messages)|d1['"],\s*['"](?:execute|migrations)|createLark|TableSyncEngine/u);
   assert.doesNotMatch(`${launcher}\n${operator}`, /secret['"],\s*['"](?:put|bulk|delete)/u);
+  assert.match(entrypoint, /createWooCommerceProviderDiagnosticsHttpHandler/u);
+  assert.doesNotMatch(entrypoint, /queue\s*\(|scheduled\s*\(|createCustomerConnectionHttpHandler|TableSyncEngine/u);
 });
