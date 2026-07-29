@@ -61,6 +61,23 @@ Google Ads actual Script DRY_RUN   pass / six datasets / no changes
 Google Ads Secret provisioning     completed / route safely closed
 ```
 
+## WooCommerce diagnostics deterministic Preview origin
+
+WooCommerce Preview diagnostics ใช้ deterministic origin:
+
+```text
+https://<preview-alias>-<worker-name>.<account-workers-dev-subdomain>.workers.dev
+```
+
+Existing Preview URL window wrapper อ่าน account subdomain ผ่าน Cloudflare account API แบบ
+GET-only และส่งต่อเฉพาะ validated DNS label. Wrangler structured upload ยังคงต้องมี
+`version-upload` exactly one และ Worker version ID ถูกต้อง; Preview URL ใน output เป็น optional
+cross-check ที่ต้องตรง origin หากมี. Raw origin/subdomain/account/auth ไม่ถูกพิมพ์หรือ persist.
+Command-failed evidence รายงานเฉพาะ output file ที่มี `command-failed` จริง.
+
+Hotfix นี้เป็น Repository/CI only, ไม่มี Remote action และไม่อนุญาต Live rerun.
+ดู `docs/tasks/woocommerce-diagnostics-preview-origin-v1.md`.
+
 ## WooCommerce diagnostics Preview Queue sentinel
 
 Preview-only WooCommerce diagnostics entrypoint มี fail-closed Queue sentinel เพื่อให้ Cloudflare

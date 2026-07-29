@@ -1,5 +1,30 @@
 # WooCommerce diagnostics Preview Version — 2026-07-29
 
+## Deterministic origin correction — 2026-07-30
+
+หลัง Queue sentinel fix, Live operation สร้าง Active และ automatic Safe Preview Version สำเร็จ
+รวม 2 uploads แต่ Wrangler 4.110.0 ไม่ส่ง Preview URL ใน array shape ที่ parser เดิมรองรับ.
+Operator จึงหยุดก่อน Provider request ด้วย `PREVIEW_URL_INVALID` ทั้งที่ upload สำเร็จ.
+Preview URL setting ถูก restore, workers.dev ยัง disabled และ Production deployment
+`8284c076-49ed-4ffc-bba9-f2e0839aa1c5` คงเดิม.
+
+Current repository correction ใช้:
+
+```text
+https://<alias>-<worker>.<validated-account-subdomain>.workers.dev
+```
+
+Existing wrapper อ่าน account subdomain ผ่าน Cloudflare account API แบบ GET-only และส่งต่อเฉพาะ
+validated DNS label. Structured `version-upload` exactly one และ valid version ID ยังคงเป็น
+authority; Wrangler URL ไม่บังคับ แต่ถ้ามีต้องตรง deterministic origin ทุกตัว. Raw origin,
+subdomain, account ID และ token ไม่ถูกพิมพ์หรือ persist.
+
+Command-failed evidence นับ captured files แยกจาก failures และไม่สร้าง false failure จาก
+successful `version-upload` หรือ application-level child exit.
+
+Implementation/CI ไม่มี Remote action และ Live rerun ยังไม่ได้รับอนุญาต. รายละเอียด:
+`docs/tasks/woocommerce-diagnostics-preview-origin-v1.md`.
+
 ## Latest verified fact
 
 The authorized diagnostic on `main@511b07716c047be83a9f84d90f1de603d4f330bb` stopped before Provider access:

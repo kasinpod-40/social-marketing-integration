@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased — WooCommerce Diagnostics Deterministic Preview Origin — 2026-07-30
+
+### Repository correction
+
+- Replaced mandatory Wrangler Preview URL extraction with a deterministic HTTPS origin built from
+  validated Preview alias, Worker name and account workers.dev subdomain.
+- Added a GET-only account subdomain lookup to the existing authenticated Preview URL wrapper and
+  forwarded only the validated DNS label to the child operator.
+- Kept exactly one structured `version-upload` and a valid Worker version ID as upload authority;
+  any Wrangler URL is now an optional fail-closed equality cross-check.
+- Redacted raw origins from operator output and retained only SHA-256 fingerprints in evidence.
+- Corrected command-failed evidence so captured file count is independent from failures and a
+  successful upload/application-level child failure cannot fabricate a Wrangler failure.
+- Added behavior regressions for API parsing/GET-only access, label limits, missing/matching/
+  mismatched/ambiguous/malformed URL output, Active/Safe isolation and evidence filtering.
+
+### Safety
+
+- Queue sentinel behavior and Preview-only config isolation remain unchanged.
+- No Preview setting mutation, Worker Version upload/deployment, Provider request, Queue message,
+  Remote D1/Lark action, Schedule, Secret, Production traffic or Live UAT action occurred.
+
 ## Unreleased — WooCommerce Diagnostics Queue Sentinel Hotfix — 2026-07-29
 
 ### Repository correction

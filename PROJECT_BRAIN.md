@@ -12,6 +12,30 @@ Historical Root Project Brain ก่อน TikTok post-Lark implementation ถ�
 docs/archive/PROJECT_BRAIN-before-tiktok-post-lark-parity-2026-07-26.md
 ```
 
+## WooCommerce diagnostics deterministic Preview origin — 2026-07-30
+
+Live diagnostics หลัง Queue sentinel fix ยืนยัน Active และ automatic Safe Preview upload สำเร็จ
+รวม 2 Version แต่ parser เดิมหยุดด้วย
+`WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_PREVIEW_URL_INVALID` เพราะ Wrangler 4.110.0
+structured output ไม่มี URL ใน array shape เดิม. Provider request เป็นศูนย์, Preview URLs และ
+workers.dev ถูก restore เป็น disabled, Production deployment/version/traffic คงเดิม และ
+Queue/D1/Lark/Schedule/Business mutations เป็นศูนย์.
+
+Hotfix สร้าง origin แบบ deterministic จาก validated alias, Worker name และ account workers.dev
+subdomain. Existing Preview URL wrapper อ่าน subdomain ผ่าน Cloudflare account API แบบ GET-only,
+ไม่พิมพ์/persist raw identity หรือ auth และส่งต่อเฉพาะ validated label. Wrangler structured
+`version-upload` exactly one กับ valid version ID ยังคงเป็น authority; URL เป็น optional
+fail-closed cross-check. Command-failed evidence แยก captured file count ออกจาก failures เพื่อ
+ไม่รายงาน successful upload หรือ application error เป็น Wrangler failure ปลอม.
+
+Implementation/CI ไม่มี Remote action และไม่อนุญาต Live rerun.
+
+รายละเอียด:
+
+```text
+docs/tasks/woocommerce-diagnostics-preview-origin-v1.md
+```
+
 ## WooCommerce diagnostics Queue sentinel — 2026-07-29
 
 Live diagnostics ยืนยันว่า Cloudflare ปฏิเสธทั้ง Active และ automatic Safe Preview Version

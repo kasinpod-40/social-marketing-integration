@@ -5,7 +5,7 @@ import { watch } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import {
-  parseWooCommerceDiagnosticsWranglerFailure,
+  summarizeWooCommerceDiagnosticsWranglerEvidence,
 } from './lib/woocommerce-diagnostics-preview-upload.js';
 
 const repositoryRoot = resolve(process.cwd());
@@ -54,14 +54,11 @@ try {
   await sleep(100);
   await Promise.allSettled([...pendingCaptures]);
 
-  const failures = [...captured.values()].map((outputText) => (
-    parseWooCommerceDiagnosticsWranglerFailure(
-      outputText,
-      '',
-      childStderr,
-      exit.status,
-    )
-  ));
+  const evidence = summarizeWooCommerceDiagnosticsWranglerEvidence(
+    [...captured.values()],
+    childStderr,
+    exit.status,
+  );
   captured.clear();
 
   const ok = exit.error === null && exit.status === 0;
@@ -71,8 +68,8 @@ try {
     diagnosticExitStatus: exit.status,
     diagnosticSignal: exit.signal,
     childStartErrorCode: exit.error?.code ?? null,
-    capturedOutputFileCount: failures.length,
-    failures,
+    capturedOutputFileCount: evidence.capturedOutputFileCount,
+    failures: evidence.failures,
     rawOutputPersisted: false,
     tokenPrintedByEvidenceLauncher: false,
     remoteActionsAddedByEvidenceLauncher: 0,

@@ -2,11 +2,15 @@ import { createHash } from 'node:crypto';
 
 const WORKER_VERSION_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const DNS_LABEL_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u;
 const MAX_FAILURE_MESSAGE_LENGTH = 2_000;
 
-/** Parse only Wrangler's structured version-upload record; stdout is bounded fallback evidence. */
-export function parseWooCommerceDiagnosticsPreviewUpload(outputText, stdoutText, expectedAlias) {
-  const alias = requireText(expectedAlias, 'expectedAlias');
+/**
+ * Accept the structured upload record as version authority and derive the Preview origin from
+ * validated inputs. Wrangler URLs are an optional, fail-closed cross-check only.
+ */
+export function parseWooCommerceDiagnosticsPreviewUpload(outputText, stdoutText, input) {
+  const previewOrigin = buildWooCommerceDiagnosticsPreviewOrigin(input);
   const records = parseNdjson(outputText);
   const uploads = records.filter((record) => record?.type === 'version-upload');
   if (uploads.length !== 1) {
@@ -21,32 +25,81 @@ export function parseWooCommerceDiagnosticsPreviewUpload(outputText, stdoutText,
     upload.version_id ?? upload.versionId,
     'version-upload.version_id',
   );
-  const targets = readTargets(upload);
-  const previewUrls = targets
-    .map(parsePreviewUrl)
-    .filter((url) => url !== null);
-  const aliased = previewUrls.filter((url) => url.hostname.includes(alias));
-  const selected = aliased.length === 1
-    ? aliased[0]
-    : previewUrls.length === 1
-      ? previewUrls[0]
-      : null;
-  if (!selected) {
+  const urlCandidates = readUrlCandidates(upload);
+  const parsedUrls = [];
+  for (const candidate of urlCandidates) {
+    const parsed = parsePreviewUrl(candidate);
+    if (!parsed) {
+      throw previewError(
+        'Wrangler version-upload Preview URL cross-check was invalid',
+        'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_PREVIEW_URL_INVALID',
+        {
+          previewUrlCandidateCount: urlCandidates.length,
+          parsedPreviewUrlCount: parsedUrls.length,
+          stdoutSha256: sha256(stdoutText ?? ''),
+        },
+      );
+    }
+    parsedUrls.push(parsed);
+  }
+  const distinctOrigins = [...new Set(parsedUrls.map((url) => url.origin))];
+  if (distinctOrigins.length > 1) {
     throw previewError(
-      'Wrangler version-upload record did not contain one unambiguous Preview URL',
+      'Wrangler version-upload Preview URL cross-check was ambiguous',
       'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_PREVIEW_URL_INVALID',
       {
-        previewUrlCount: previewUrls.length,
-        aliasedPreviewUrlCount: aliased.length,
+        previewUrlCandidateCount: urlCandidates.length,
+        distinctPreviewUrlCount: distinctOrigins.length,
+        stdoutSha256: sha256(stdoutText ?? ''),
+      },
+    );
+  }
+  if (distinctOrigins.length === 1 && distinctOrigins[0] !== previewOrigin) {
+    throw previewError(
+      'Wrangler version-upload Preview URL did not match the deterministic origin',
+      'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_PREVIEW_URL_MISMATCH',
+      {
+        previewUrlCandidateCount: urlCandidates.length,
+        constructedOriginSha256: sha256(previewOrigin),
+        observedOriginSha256: sha256(distinctOrigins[0]),
         stdoutSha256: sha256(stdoutText ?? ''),
       },
     );
   }
   return Object.freeze({
     versionId,
-    previewOrigin: selected.origin,
-    previewOriginFingerprint: sha256(selected.origin),
+    previewOrigin,
+    previewOriginFingerprint: sha256(previewOrigin),
+    wranglerPreviewUrlCrossCheckCount: parsedUrls.length,
   });
+}
+
+export function buildWooCommerceDiagnosticsPreviewOrigin(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    throw previewError(
+      'Deterministic Preview origin input is required',
+      'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_PREVIEW_ORIGIN_INVALID',
+    );
+  }
+  const alias = requireDnsLabel(input.previewAlias, 'previewAlias');
+  const workerName = requireDnsLabel(input.workerName, 'workerName');
+  const accountSubdomain = requireDnsLabel(
+    input.accountWorkersDevSubdomain,
+    'accountWorkersDevSubdomain',
+  );
+  const previewLabel = `${alias}-${workerName}`;
+  if (previewLabel.length > 63 || !DNS_LABEL_PATTERN.test(previewLabel)) {
+    throw previewError(
+      'Combined Preview alias and Worker name exceed the DNS label contract',
+      'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_PREVIEW_ORIGIN_INVALID',
+      {
+        fieldName: 'previewAlias-workerName',
+        labelLength: previewLabel.length,
+        maximumLabelLength: 63,
+      },
+    );
+  }
+  return `https://${previewLabel}.${accountSubdomain}.workers.dev`;
 }
 
 /**
@@ -91,6 +144,30 @@ export function parseWooCommerceDiagnosticsWranglerFailure(
     stderrSha256: sha256(stderrText ?? ''),
     messageRedacted: true,
     rawOutputPersisted: false,
+  });
+}
+
+export function summarizeWooCommerceDiagnosticsWranglerEvidence(
+  outputTexts,
+  stderrText,
+  statusInput,
+) {
+  if (!Array.isArray(outputTexts)) {
+    throw new TypeError('outputTexts must be an array');
+  }
+  const parsed = outputTexts.map((outputText) => (
+    parseWooCommerceDiagnosticsWranglerFailure(
+      outputText,
+      '',
+      stderrText,
+      statusInput,
+    )
+  ));
+  return Object.freeze({
+    capturedOutputFileCount: outputTexts.length,
+    failures: Object.freeze(
+      parsed.filter((failure) => failure.commandFailedRecordCount >= 1),
+    ),
   });
 }
 
@@ -167,22 +244,55 @@ function stripAnsi(value) {
   return String(value ?? '').replace(/\u001B\[[0-?]*[ -/]*[@-~]/gu, '');
 }
 
-function readTargets(upload) {
+function readUrlCandidates(upload) {
   const candidates = [
+    upload.preview_url,
+    upload.previewUrl,
     upload.preview_urls,
     upload.previewUrls,
     upload.targets,
     upload.urls,
   ];
-  const target = candidates.find(Array.isArray);
-  return target ?? [];
+  const declared = candidates.flatMap((candidate) => collectUrlCandidateStrings(candidate));
+  const additional = collectStructuredHttpUrlStrings(upload)
+    .filter((candidate) => !declared.includes(candidate));
+  return [...declared, ...additional];
+}
+
+function collectUrlCandidateStrings(value) {
+  if (typeof value === 'string') return value.trim() === '' ? [] : [value.trim()];
+  if (Array.isArray(value)) return value.flatMap(collectUrlCandidateStrings);
+  if (!value || typeof value !== 'object') return [];
+  return Object.entries(value).flatMap(([key, nested]) => {
+    if (typeof nested === 'string') {
+      return /url/iu.test(key) || /^https?:\/\//iu.test(nested.trim())
+        ? collectUrlCandidateStrings(nested)
+        : [];
+    }
+    return collectUrlCandidateStrings(nested);
+  });
+}
+
+function collectStructuredHttpUrlStrings(value) {
+  if (typeof value === 'string') {
+    return /^https?:\/\//iu.test(value.trim()) ? [value.trim()] : [];
+  }
+  if (Array.isArray(value)) return value.flatMap(collectStructuredHttpUrlStrings);
+  if (!value || typeof value !== 'object') return [];
+  return Object.values(value).flatMap(collectStructuredHttpUrlStrings);
 }
 
 function parsePreviewUrl(value) {
-  if (typeof value !== 'string') return null;
   try {
     const url = new URL(value);
-    if (url.protocol !== 'https:' || !url.hostname.endsWith('.workers.dev')) return null;
+    if (url.protocol !== 'https:'
+      || !url.hostname.endsWith('.workers.dev')
+      || url.username !== ''
+      || url.password !== ''
+      || url.port !== ''
+      || url.pathname !== '/'
+      || url.search !== ''
+      || url.hash !== '') return null;
     return url;
   } catch {
     return null;
@@ -210,6 +320,25 @@ function requireText(value, fieldName) {
     );
   }
   return value.trim();
+}
+
+function requireDnsLabel(value, fieldName) {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw previewError(
+      `${fieldName} is required`,
+      'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_PREVIEW_ORIGIN_INVALID',
+      { fieldName },
+    );
+  }
+  const text = value.trim();
+  if (!DNS_LABEL_PATTERN.test(text)) {
+    throw previewError(
+      `${fieldName} must be a lowercase DNS-safe label`,
+      'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_PREVIEW_ORIGIN_INVALID',
+      { fieldName },
+    );
+  }
+  return text;
 }
 
 function sha256(value) {
