@@ -1,4 +1,4 @@
-import { permanentError, retryableError } from '../../../shared/src/errors/runtime-error.js';
+import { permanentError, transientError } from '../../../shared/src/errors/runtime-error.js';
 
 const DEFAULT_BASE_URL = 'https://business-api.tiktok.com/open_api/v1.3';
 
@@ -29,7 +29,7 @@ export class TikTokAdsApiClient {
         details: { providerCode: String(payload?.code ?? 'unknown'), httpStatus: response.status },
       };
       throw response.status >= 500 || response.status === 429
-        ? retryableError('TikTok Ads advertiser validation failed', options)
+        ? transientError('TikTok Ads advertiser validation failed', options)
         : permanentError('TikTok Ads advertiser validation was rejected', options);
     }
     const advertiser = payload.data?.list?.find((item) => String(item.advertiser_id) === advertiserId);
@@ -49,7 +49,7 @@ export class TikTokAdsApiClient {
 
 async function readJson(response) {
   try { return await response.json(); } catch {
-    throw retryableError('TikTok Ads returned invalid JSON', { code: 'TIKTOK_ADS_RESPONSE_INVALID' });
+    throw transientError('TikTok Ads returned invalid JSON', { code: 'TIKTOK_ADS_RESPONSE_INVALID' });
   }
 }
 function requireText(value, fieldName) {
