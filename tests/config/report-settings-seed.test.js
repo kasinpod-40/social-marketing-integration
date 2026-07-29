@@ -6,9 +6,9 @@ import {
 } from '../../packages/config/src/report-settings.seed.js';
 import { seedReportSettings } from '../../packages/application/src/use-cases/seed-report-settings.js';
 
-const EXPECTED_SETTING_COUNT = 2 + (DASHBOARD_REPORT_PLATFORM_SCOPES.length * 7);
+const EXPECTED_SETTING_COUNT = 2 + (DASHBOARD_REPORT_PLATFORM_SCOPES.length * 8);
 
-test('creates canonical multichannel Dashboard settings and preserves TikTok 1D/7D', () => {
+test('creates canonical multichannel Dashboard settings including 1D and preserves TikTok compatibility rows', () => {
   const rows = createReportSettingRowsForProfile('integration_workspace');
   assert.equal(rows.length, EXPECTED_SETTING_COUNT);
   assert.deepEqual(rows.slice(0, 2).map((row) => row.report_setting_key), [
@@ -26,7 +26,7 @@ test('creates canonical multichannel Dashboard settings and preserves TikTok 1D/
   for (const platformScope of DASHBOARD_REPORT_PLATFORM_SCOPES) {
     const platformRows = rows.filter((row) => row.platforms[0] === platformScope
       && row.report_type === 'dashboard_performance_report');
-    assert.deepEqual(platformRows.map((row) => row.window_days), [3, 7, 9, 15, 30, 90, null]);
+    assert.deepEqual(platformRows.map((row) => row.window_days), [1, 3, 7, 9, 15, 30, 90, null]);
     assert.equal(platformRows.at(-1).report_setting_key, `integration_workspace:${platformScope}:custom_range`);
     assert.equal(platformRows.every((row) => row.top_ads_limit === 5), true);
   }
