@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased — WooCommerce Exact Failed-operation Recovery 6f43 — 2026-07-30
+
+### Repository correction
+
+- Repinned the existing recovery-only operator to exact operation
+  `woo-final-full-6f43ac8ee857` and a dedicated confirmation value.
+- Retained the existing read-only pre/post snapshot, failed Sync Run, stale active work,
+  no-live-lock, one-Queue-attempt, zero-Coverage and zero-Business-row eligibility guards.
+- Kept the single guarded `sync_work_runs` lifecycle mutation isolated from phases, units,
+  generation fences, Queue evidence, Business facts, Coverage and Lark.
+
+### Live evidence and safety
+
+- Provider diagnostics passed on merged `main@527cdceda2d4661c82dc000380705d1078343bdf`;
+  the isolated Preview window made one Provider GET and restored Preview URLs disabled without
+  changing Production deployment.
+- The exact operation inspector classified the incident as terminal failed with stale active work,
+  zero locks, one Queue attempt and zero rows across all 14 WooCommerce Business tables.
+- Repository implementation performed no recovery mutation, deployment, Queue message, D1
+  Business/Lark write, Schedule, Secret or Production action.
+
 ## Unreleased — WooCommerce Provider Redirect Diagnostics — 2026-07-30
 
 ### Repository correction

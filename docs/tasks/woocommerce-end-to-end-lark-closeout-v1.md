@@ -115,3 +115,51 @@ responsePathMatchesResource
 
 No raw response URL, body, prefix, header, credential or Secret value is retained. The hotfix
 does not accept contaminated JSON and does not change Provider request/retry semantics.
+
+## Live Provider diagnostics after PR #252 merge
+
+PR `#252` Squash Merged at `527cdceda2d4661c82dc000380705d1078343bdf`.
+The guarded rerun completed successfully:
+
+```text
+Active Preview Version       5c6b252a-334e-4edf-9986-e555ad339320
+Safe Preview Version         048ca321-bbd9-4578-8ead-ee0953da0b89
+Provider request             1 / PASS
+WooCommerce / WordPress      10.6.2 / 6.9.4
+Store currency               THB
+Provider/Business mutations  0
+Queue/D1/Lark/Schedule       0
+Preview URLs restored        true / disabled
+Production baseline version 8284c076-49ed-4ffc-bba9-f2e0839aa1c5
+Production unchanged         true
+```
+
+The earlier HTML/XML response did not reproduce and the bounded redirect indicators confirmed
+the successful response without retaining its URL or body.
+
+## Exact stale-operation recovery
+
+Read-only inspection of `woo-final-full-6f43ac8ee857` on the same main classified it as
+`TERMINAL_FAILED` with stale active durable work, zero active locks, exactly one Queue attempt,
+zero Coverage and zero rows across all 14 WooCommerce Business tables. The recovery-only operator
+is therefore repinned to this exact operation and confirmation:
+
+```text
+CONFIRM_WOOCOMMERCE_RECOVERY_ONLY=RECOVER_WOO_FINAL_FULL_6F43AC8EE857_ONLY
+```
+
+It retains the existing guarded lifecycle-only mutation and pre/post verification. It cannot
+deploy a Worker, send Queue work, write Business/Coverage/Lark rows or delegate to rollout.
+
+Repository verification for the repin:
+
+```text
+Focused recovery/inspector tests  20/20 PASS
+npm ci                            PASS
+npm run check                     PASS
+Unit                              1461/1461 PASS
+Workers runtime                   15/15 PASS
+Report reliability                100/100 PASS
+npm audit                         0 vulnerabilities
+npm run deploy:dry-run            PASS
+```

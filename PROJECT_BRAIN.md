@@ -35,6 +35,12 @@ Live diagnostics หลัง merge ผ่าน classifier และ Safe resto
 Worker headers ได้ JSON `401`, จึงไม่ใช่ hostname/path/Accept/User-Agent mismatch. Follow-up
 เพิ่มเฉพาะ `responseRedirected`, response URL presence และ origin/path match booleans โดยไม่เก็บ
 raw URL/body/prefix เพื่อแยก redirect จาก direct Provider contamination ก่อนตัดสิน external fix.
+Rerun หลัง PR #252 ผ่าน Provider diagnostics แล้วบน
+`main@527cdceda2d4661c82dc000380705d1078343bdf`; store รายงาน WooCommerce `10.6.2`,
+WordPress `6.9.4`, currency `THB`, Preview URLs ถูก restore disabled และ Production baseline
+ไม่เปลี่ยน. Exact inspector ของ `woo-final-full-6f43ac8ee857` ยืนยัน failed/stale-active,
+no lock, one Queue attempt และ zero Coverage/Commerce rows จึงอนุญาตเฉพาะ guarded
+lifecycle-only recovery ที่ pin operation นี้ก่อน Final rollout.
 
 ## WooCommerce diagnostics deterministic Preview origin — 2026-07-30
 
