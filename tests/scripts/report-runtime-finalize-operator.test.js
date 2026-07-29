@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs';
 import {
   REPORT_RUNTIME_FINALIZE_CONFIRMATION,
   assertDashboardSettingsPreviewSafe,
+  assertReportMetricValueFieldMigrationApplySafe,
+  assertReportMetricValueFieldMigrationPreviewSafe,
   assertReportRuntimeFinalizeConfirmation,
   assertReportRuntimeFinalizeEnvironment,
   assertReportSchemaConflictRepairApplySafe,
@@ -27,6 +29,25 @@ function safeEnv(overrides = {}) {
   };
 }
 
+function safeMetricMigrationPreview(overrides = {}) {
+  return {
+    ok: true,
+    mode: 'preview',
+    migrationCount: 2,
+    pendingMigrationCount: 2,
+    convergedMigrationCount: 0,
+    notRequiredMigrationCount: 0,
+    blockerCount: 0,
+    repairable: true,
+    plannedFieldMutationCount: 4,
+    plannedCanonicalValueWriteCount: 58,
+    remoteMutationCount: 0,
+    legacyValueMutationCount: 0,
+    deleteCount: 0,
+    ...overrides,
+  };
+}
+
 test('final operator stays plan-only and requires exact execution confirmation', () => {
   assert.deepEqual(parseReportRuntimeFinalizeArgs([]), { execute: false });
   assert.deepEqual(parseReportRuntimeFinalizeArgs(['--execute']), { execute: true });
@@ -42,6 +63,66 @@ test('final operator accepts only Integration Workspace with every runtime flag 
   assert.throws(() => assertReportRuntimeFinalizeEnvironment(safeEnv({ MKT_ENV: 'production' })));
   assert.throws(() => assertReportRuntimeFinalizeEnvironment(safeEnv({ MKT_REPORT_D1_READ_ENABLED: 'true' })));
   assert.throws(() => assertReportRuntimeFinalizeEnvironment(safeEnv({ MKT_REPORT_AI_SUMMARY_ENABLED: 'true' })));
+});
+
+test('value-preserving metric field migration preview rejects blockers, deletes and legacy mutations', () => {
+  const preview = safeMetricMigrationPreview();
+  assert.equal(assertReportMetricValueFieldMigrationPreviewSafe(preview), true);
+  assert.equal(assertReportMetricValueFieldMigrationPreviewSafe(safeMetricMigrationPreview({
+    pendingMigrationCount: 0,
+    convergedMigrationCount: 2,
+    plannedFieldMutationCount: 0,
+    plannedCanonicalValueWriteCount: 0,
+  })), true);
+  assert.throws(() => assertReportMetricValueFieldMigrationPreviewSafe({
+    ...preview,
+    repairable: false,
+    blockerCount: 1,
+  }));
+  assert.throws(() => assertReportMetricValueFieldMigrationPreviewSafe({
+    ...preview,
+    legacyValueMutationCount: 1,
+  }));
+  assert.throws(() => assertReportMetricValueFieldMigrationPreviewSafe({
+    ...preview,
+    deleteCount: 1,
+  }));
+  assert.throws(() => assertReportMetricValueFieldMigrationPreviewSafe({
+    ...preview,
+    migrationCount: 3,
+  }));
+});
+
+test('value-preserving metric field migration apply must converge without changing legacy values', () => {
+  const preview = safeMetricMigrationPreview();
+  const result = {
+    ok: true,
+    mode: 'apply',
+    migrationCount: 2,
+    pendingMigrationCount: 0,
+    convergedMigrationCount: 2,
+    notRequiredMigrationCount: 0,
+    blockerCount: 0,
+    fieldMutationCount: 4,
+    canonicalValueWriteCount: 58,
+    recordBatchWriteCount: 2,
+    remoteMutationCount: 6,
+    legacyValueMutationCount: 0,
+    deleteCount: 0,
+  };
+  assert.equal(assertReportMetricValueFieldMigrationApplySafe(result, preview), true);
+  assert.throws(() => assertReportMetricValueFieldMigrationApplySafe({
+    ...result,
+    pendingMigrationCount: 1,
+  }, preview));
+  assert.throws(() => assertReportMetricValueFieldMigrationApplySafe({
+    ...result,
+    legacyValueMutationCount: 1,
+  }, preview));
+  assert.throws(() => assertReportMetricValueFieldMigrationApplySafe({
+    ...result,
+    remoteMutationCount: 5,
+  }, preview));
 });
 
 test('schema and settings previews fail closed on conflicts, mutations and dirty read-back', () => {
@@ -109,13 +190,15 @@ test('bounded conflict recovery apply must verify all conflicts removed without 
   assert.throws(() => assertReportSchemaConflictRepairApplySafe({ ...result, deleteCount: 1 }, 2));
 });
 
-test('finalizer runs conflict recovery between first schema preview and schema apply', () => {
+test('finalizer runs value migration before schema preview and conflict recovery before schema apply', () => {
   const source = readFileSync(
     new URL('../../scripts/report-runtime-finalize-operator.mjs', import.meta.url),
     'utf8',
   );
-  assert.match(source, /report-schema-preview[\s\S]*repair-report-schema-conflicts\.mjs[\s\S]*report-schema-preview-after-conflict-recovery[\s\S]*report-schema-apply/u);
+  assert.match(source, /migrate-report-metric-value-field-types\.mjs[\s\S]*report-schema-preview[\s\S]*repair-report-schema-conflicts\.mjs[\s\S]*report-schema-preview-after-conflict-recovery[\s\S]*report-schema-apply/u);
+  assert.match(source, /CONFIRM_REPORT_METRIC_VALUE_FIELD_MIGRATION/u);
   assert.match(source, /CONFIRM_REPORT_SCHEMA_CONFLICT_REPAIR/u);
+  assert.match(source, /legacyValueMutationCount/u);
   assert.match(source, /businessValueMutationCount/u);
   assert.match(source, /deleteCount/u);
 });

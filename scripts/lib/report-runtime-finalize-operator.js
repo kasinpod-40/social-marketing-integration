@@ -56,6 +56,89 @@ export function assertReportRuntimeFinalizeEnvironment(env = {}) {
   return true;
 }
 
+export function assertReportMetricValueFieldMigrationPreviewSafe(preview) {
+  if (!preview || preview.ok !== true || preview.mode !== 'preview') {
+    throw failure(
+      'Report Metric Values field migration preview is invalid',
+      'REPORT_RUNTIME_FINALIZE_METRIC_FIELD_MIGRATION_PREVIEW_INVALID',
+    );
+  }
+  const migrationCount = Number(preview.migrationCount);
+  const pendingMigrationCount = Number(preview.pendingMigrationCount);
+  const convergedMigrationCount = Number(preview.convergedMigrationCount);
+  const notRequiredMigrationCount = Number(preview.notRequiredMigrationCount);
+  if (!Number.isSafeInteger(migrationCount) || migrationCount !== 2
+    || !Number.isSafeInteger(pendingMigrationCount) || pendingMigrationCount < 0
+    || convergedMigrationCount + notRequiredMigrationCount + pendingMigrationCount !== migrationCount
+    || preview.repairable !== true
+    || Number(preview.blockerCount ?? -1) !== 0
+    || Number(preview.remoteMutationCount ?? -1) !== 0
+    || Number(preview.legacyValueMutationCount ?? -1) !== 0
+    || Number(preview.deleteCount ?? -1) !== 0
+    || Number(preview.plannedFieldMutationCount ?? -1) < 0
+    || Number(preview.plannedCanonicalValueWriteCount ?? -1) < 0) {
+    throw failure(
+      'Report Metric Values fields cannot be migrated within the value-preserving boundary',
+      'REPORT_RUNTIME_FINALIZE_METRIC_FIELD_MIGRATION_UNSAFE',
+      {
+        migrationCount: preview.migrationCount ?? null,
+        pendingMigrationCount: preview.pendingMigrationCount ?? null,
+        convergedMigrationCount: preview.convergedMigrationCount ?? null,
+        notRequiredMigrationCount: preview.notRequiredMigrationCount ?? null,
+        blockerCount: preview.blockerCount ?? null,
+        blockers: preview.blockers ?? [],
+      },
+    );
+  }
+  if (pendingMigrationCount > 0
+    && Number(preview.plannedFieldMutationCount ?? 0)
+      + Number(preview.plannedCanonicalValueWriteCount ?? 0) === 0) {
+    throw failure(
+      'Pending Report Metric Values migration has no bounded actions',
+      'REPORT_RUNTIME_FINALIZE_METRIC_FIELD_MIGRATION_SCOPE_INVALID',
+    );
+  }
+  return true;
+}
+
+export function assertReportMetricValueFieldMigrationApplySafe(result, preview) {
+  if (!result || result.ok !== true || result.mode !== 'apply') {
+    throw failure(
+      'Report Metric Values field migration apply result is invalid',
+      'REPORT_RUNTIME_FINALIZE_METRIC_FIELD_MIGRATION_APPLY_INVALID',
+    );
+  }
+  const expectedMigrationCount = Number(preview?.migrationCount);
+  const fieldMutationCount = Number(result.fieldMutationCount ?? -1);
+  const recordBatchWriteCount = Number(result.recordBatchWriteCount ?? -1);
+  const remoteMutationCount = Number(result.remoteMutationCount ?? -1);
+  if (Number(result.migrationCount) !== expectedMigrationCount
+    || Number(result.pendingMigrationCount ?? -1) !== 0
+    || Number(result.blockerCount ?? 0) !== 0
+    || Number(result.legacyValueMutationCount ?? -1) !== 0
+    || Number(result.deleteCount ?? -1) !== 0
+    || !Number.isSafeInteger(fieldMutationCount) || fieldMutationCount < 0
+    || !Number.isSafeInteger(recordBatchWriteCount) || recordBatchWriteCount < 0
+    || !Number.isSafeInteger(Number(result.canonicalValueWriteCount ?? -1))
+    || Number(result.canonicalValueWriteCount ?? -1) < 0
+    || remoteMutationCount !== fieldMutationCount + recordBatchWriteCount) {
+    throw failure(
+      'Report Metric Values field migration did not verify a value-preserving result',
+      'REPORT_RUNTIME_FINALIZE_METRIC_FIELD_MIGRATION_APPLY_UNSAFE',
+      {
+        expectedMigrationCount,
+        migrationCount: result.migrationCount ?? null,
+        pendingMigrationCount: result.pendingMigrationCount ?? null,
+        fieldMutationCount: result.fieldMutationCount ?? null,
+        canonicalValueWriteCount: result.canonicalValueWriteCount ?? null,
+        recordBatchWriteCount: result.recordBatchWriteCount ?? null,
+        remoteMutationCount: result.remoteMutationCount ?? null,
+      },
+    );
+  }
+  return true;
+}
+
 export function assertReportSchemaPreviewSafe(preview, options = {}) {
   if (!preview || typeof preview !== 'object') {
     throw failure('Report schema preview did not return an object', 'REPORT_RUNTIME_FINALIZE_SCHEMA_PREVIEW_INVALID');

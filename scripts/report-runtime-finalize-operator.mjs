@@ -6,10 +6,13 @@ import { resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { REPORT_SCHEMA_CONFLICT_REPAIR_CONFIRMATION } from '../packages/application/src/use-cases/repair-lark-report-schema-conflicts.js';
 import { readDevVars } from './lib/dev-vars.js';
+import { REPORT_METRIC_VALUE_FIELD_MIGRATION_CONFIRMATION } from './lib/report-metric-value-field-migration.js';
 import {
   REPORT_RUNTIME_FINALIZE_CONFIRMATION,
   REPORT_RUNTIME_FINALIZE_CONTRACT_VERSION,
   assertDashboardSettingsPreviewSafe,
+  assertReportMetricValueFieldMigrationApplySafe,
+  assertReportMetricValueFieldMigrationPreviewSafe,
   assertReportRuntimeFinalizeConfirmation,
   assertReportRuntimeFinalizeEnvironment,
   assertReportSchemaConflictRepairApplySafe,
@@ -52,6 +55,7 @@ function printPlan() {
     stages: [
       'repository-clean-main-preflight',
       'repository-gates',
+      'value-preserving-report-metric-field-migration',
       'report-schema-preview',
       'bounded-empty-field-conflict-recovery-if-needed',
       'report-schema-apply',
@@ -64,6 +68,8 @@ function printPlan() {
       defaultMode: 'plan_only',
       environment: 'development',
       customerProfile: 'integration_workspace',
+      populatedFieldMigration: 'rename_legacy_create_canonical_lossless_copy',
+      legacyValuesPreserved: true,
       conflictRecovery: 'empty_non_primary_fields_or_empty_tables_only',
       workerDeploy: false,
       remoteD1Mutation: false,
@@ -96,6 +102,58 @@ async function executeFinalization() {
   ]) {
     await run(command, args, { env });
     gates.push({ command: [command, ...args].join(' '), status: 'pass' });
+  }
+
+  currentStage = 'report-metric-value-field-migration-preview';
+  const metricFieldMigrationPreview = await runJson(
+    'node',
+    ['scripts/migrate-report-metric-value-field-types.mjs'],
+    { env },
+  );
+  assertReportMetricValueFieldMigrationPreviewSafe(metricFieldMigrationPreview);
+  let metricFieldMigration = {
+    mode: 'preview',
+    migrationCount: metricFieldMigrationPreview.migrationCount,
+    pendingMigrationCount: metricFieldMigrationPreview.pendingMigrationCount,
+    convergedMigrationCount: metricFieldMigrationPreview.convergedMigrationCount,
+    notRequiredMigrationCount: metricFieldMigrationPreview.notRequiredMigrationCount,
+    plannedFieldMutationCount: metricFieldMigrationPreview.plannedFieldMutationCount,
+    plannedCanonicalValueWriteCount: metricFieldMigrationPreview.plannedCanonicalValueWriteCount,
+    migrations: metricFieldMigrationPreview.migrations ?? [],
+    legacyValueMutationCount: 0,
+    deleteCount: 0,
+  };
+  if (Number(metricFieldMigrationPreview.pendingMigrationCount) > 0) {
+    currentStage = 'report-metric-value-field-migration-apply';
+    const metricFieldMigrationApply = await runJson(
+      'node',
+      ['scripts/migrate-report-metric-value-field-types.mjs', '--apply'],
+      {
+        env: {
+          ...env,
+          CONFIRM_REPORT_METRIC_VALUE_FIELD_MIGRATION:
+            REPORT_METRIC_VALUE_FIELD_MIGRATION_CONFIRMATION,
+        },
+      },
+    );
+    assertReportMetricValueFieldMigrationApplySafe(
+      metricFieldMigrationApply,
+      metricFieldMigrationPreview,
+    );
+    metricFieldMigration = {
+      mode: 'apply',
+      migrationCount: metricFieldMigrationApply.migrationCount,
+      pendingMigrationCount: metricFieldMigrationApply.pendingMigrationCount,
+      convergedMigrationCount: metricFieldMigrationApply.convergedMigrationCount,
+      notRequiredMigrationCount: metricFieldMigrationApply.notRequiredMigrationCount,
+      fieldMutationCount: metricFieldMigrationApply.fieldMutationCount,
+      canonicalValueWriteCount: metricFieldMigrationApply.canonicalValueWriteCount,
+      recordBatchWriteCount: metricFieldMigrationApply.recordBatchWriteCount,
+      remoteMutationCount: metricFieldMigrationApply.remoteMutationCount,
+      legacyValueMutationCount: metricFieldMigrationApply.legacyValueMutationCount,
+      deleteCount: metricFieldMigrationApply.deleteCount,
+      migrations: metricFieldMigrationApply.migrations ?? [],
+    };
   }
 
   currentStage = 'report-schema-preview';
@@ -167,6 +225,7 @@ async function executeFinalization() {
     gates,
     schema: {
       version: schemaApply.schemaVersion,
+      metricFieldMigration,
       conflictRecovery,
       plannedActions: schemaApply.summary?.plannedActions ?? null,
       appliedActions: schemaApply.summary?.appliedActions ?? null,
