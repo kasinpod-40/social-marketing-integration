@@ -46,7 +46,7 @@ export function calculateOrganicPeriodMetrics(input = {}) {
     });
     const deltas = Object.fromEntries(DELTA_FIELDS.map(([sourceField, outputField]) => [
       outputField,
-      subtractKnown(current[sourceField], baseline.snapshot[sourceField]),
+      baseline.covered ? subtractKnown(current[sourceField], baseline.snapshot[sourceField]) : null,
     ]));
     const periodEngagement = sumStrict([
       deltas.periodLikes,
