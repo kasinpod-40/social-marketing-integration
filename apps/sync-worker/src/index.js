@@ -31,6 +31,11 @@ export {
   GOOGLE_ADS_CONNECTION_PATHS,
 } from './google-ads-customer-connection-http.js';
 export {
+  createWooCommerceProviderDiagnosticsHttpHandler,
+  WOOCOMMERCE_PROVIDER_DIAGNOSTICS_FLAG,
+  WOOCOMMERCE_PROVIDER_DIAGNOSTICS_PATH,
+} from './woocommerce-provider-diagnostics-http.js';
+export {
   createYouTubeCustomerConnectionHttpHandler,
   YOUTUBE_CONNECTION_PATHS,
 } from './youtube-customer-connection-http.js';
