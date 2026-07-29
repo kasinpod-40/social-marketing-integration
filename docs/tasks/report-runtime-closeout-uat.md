@@ -153,3 +153,30 @@ secret-shaped evidence redaction.
 
 No Worker deployment, Remote D1 mutation, Lark write, Queue message, Schedule activation, AI activation,
 Secret change, Production action or Live UAT was performed during implementation or CI.
+
+## Lark Sync Log Stable-key hotfix — 2026-07-29
+
+The first Closeout execution stopped fail-closed during Lark metadata preflight before any
+deployment, Queue message, D1/Lark Business write or Production action. The operator incorrectly
+required `MKT_Sync_Log.sync_run_id`, while the existing Shared `LarkReliabilityStore` persists and
+upserts that table by the real Integration Workspace Stable key `sync_id`.
+
+The Repository hotfix changes only the Closeout metadata requirement to `sync_id` and adds a
+regression that rejects the stale `sync_run_id` mapping. It does not add or mutate a Lark field.
+`MKT_REPORT_AI_SUMMARY_ENABLED` remains `false`. A new Closeout execution remains blocked until
+this hotfix is reviewed and merged under separate operational approval.
+
+### Hotfix implementation result
+
+- Files changed: Closeout operator, focused regression, this Task document and `CHANGELOG.md`
+- Contract implemented: `MKT_Sync_Log` metadata preflight requires the existing `sync_id` Stable key
+- Focused regression: 7/7 passed
+- `npm ci`: passed
+- `npm run check`: passed
+- `npm test`: 1,335 Unit/Integration and 14 Workers-runtime tests passed
+- `npm run test:report-reliability`: 100/100 passed
+- `npm audit`: passed with 0 vulnerabilities
+- `npm run deploy:dry-run`: passed; `MKT_REPORT_AI_SUMMARY_ENABLED=false`
+- Remaining gap: rerun the guarded Closeout only after review, merge and separate operational approval
+- Remote actions: NONE
+- Merge recommendation: merge after Draft PR review and Branch Verification pass

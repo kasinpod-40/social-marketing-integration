@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   REPORT_RUNTIME_CLOSEOUT_ACTIVE_TRUE_FLAGS,
   REPORT_RUNTIME_CLOSEOUT_CONFIRMATION,
@@ -179,4 +180,13 @@ test('Report closeout evidence strips credential-shaped keys', () => {
     accessToken: 'nope',
     nested: { LARK_APP_SECRET: 'nope', reportId: 'report-id' },
   }), { ok: true, nested: { reportId: 'report-id' } });
+});
+
+test('Report closeout Lark preflight uses the shared reliability sync_id key', () => {
+  const source = readFileSync(
+    new URL('../../scripts/report-runtime-closeout-operator.mjs', import.meta.url),
+    'utf8',
+  );
+  assert.match(source, /mktSyncLog:\s*'sync_id'/u);
+  assert.doesNotMatch(source, /mktSyncLog:\s*'sync_run_id'/u);
 });
