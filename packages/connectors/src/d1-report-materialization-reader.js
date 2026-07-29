@@ -53,14 +53,20 @@ export class D1ReportMaterializationReader {
 
 async function validateRow(row) {
   const validatedRow = validateStorageRow('report_materializations', row);
-  const payload = parseReportMaterializationPayload(validatedRow.payload_json);
-  const checksum = await createStableFingerprint(payload);
+
+  // Checksum protects the exact JSON contract that was persisted. Validate it before
+  // the current parser adds backward-compatible defaults such as `collections: {}`;
+  // otherwise additive schema evolution would make an unchanged historical row look tampered.
+  const storedPayload = parseStoredPayloadJson(validatedRow.payload_json, validatedRow.report_id);
+  const checksum = await createStableFingerprint(storedPayload);
   if (checksum !== validatedRow.payload_checksum) {
     throw permanentError('Report materialization checksum does not match payload', {
       code: 'REPORT_MATERIALIZATION_CHECKSUM_MISMATCH',
       details: { reportId: validatedRow.report_id },
     });
   }
+
+  const payload = parseReportMaterializationPayload(validatedRow.payload_json);
   if (payload.platformScope !== validatedRow.platform_scope
     || payload.reportType !== validatedRow.report_type
     || payload.period.periodKind !== validatedRow.period_kind
@@ -78,6 +84,18 @@ async function validateRow(row) {
     });
   }
   return Object.freeze({ row: validatedRow, payload });
+}
+
+function parseStoredPayloadJson(value, reportId) {
+  try {
+    return JSON.parse(value);
+  } catch (cause) {
+    throw permanentError('Report materialization payload JSON is invalid', {
+      code: 'REPORT_MATERIALIZATION_PAYLOAD_INVALID',
+      cause,
+      details: { reportId },
+    });
+  }
 }
 
 function requireD1(value) {
