@@ -4,7 +4,12 @@ import { execFile } from 'node:child_process';
 import { resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { writeDashboardMaterializationToLark } from '../packages/application/src/use-cases/write-dashboard-materialization-to-lark.js';
+import { LARK_REPORT_SCHEMA_V2 } from '../packages/config/src/lark-report-schema-v2.js';
+import { LARK_TABLE_ENV } from '../packages/config/src/lark-table-config.js';
 import { D1ReportMaterializationReader } from '../packages/connectors/src/d1-report-materialization-reader.js';
+import { createLarkBitableClientFromEnv } from '../packages/connectors/src/lark/lark-bitable.client.js';
+import { readDevVars } from './lib/dev-vars.js';
+import { resolveExactLarkTableEnvironment } from './lib/lark-dashboard-backfill-table-discovery.js';
 import { createLocalLarkRuntime, printJson } from './lib/lark-runtime.js';
 import {
   LARK_DASHBOARD_SHARED_DIMENSIONS_BACKFILL_CONFIRMATION,
@@ -21,6 +26,12 @@ import {
 
 const execFileAsync = promisify(execFile);
 const repositoryRoot = resolve(process.cwd());
+const REQUIRED_TABLE_KEYS = Object.freeze([
+  'mktReportSnapshots',
+  'mktReportMetricValues',
+  'mktReportTopContent',
+  'mktReportTopAds',
+]);
 
 try {
   await main();
@@ -46,12 +57,11 @@ async function main() {
   }
   assertLarkDashboardSharedDimensionsBackfillConfirmation(process.env, options.apply);
   const repository = await assertRepositoryState();
-  const runtime = await createLocalLarkRuntime([
-    'mktReportSnapshots',
-    'mktReportMetricValues',
-    'mktReportTopContent',
-    'mktReportTopAds',
-  ], { runtimeConfigScope: 'administrative' });
+  const tableResolution = await resolveBackfillTableRuntimeEnv();
+  const runtime = await createLocalLarkRuntime(REQUIRED_TABLE_KEYS, {
+    runtimeConfigScope: 'administrative',
+    env: tableResolution.env,
+  });
   assertIntegrationWorkspace(runtime.runtimeConfig);
 
   const customerKey = runtime.runtimeConfig.customerKey;
@@ -85,7 +95,7 @@ async function main() {
     printJson({
       ok: true,
       mode: 'preview',
-      operatorVersion: 'lark-dashboard-shared-dimensions-backfill-v1',
+      operatorVersion: 'lark-dashboard-shared-dimensions-backfill-v1.1',
       repository,
       target: {
         environment: runtime.runtimeConfig.environment,
@@ -93,6 +103,7 @@ async function main() {
         customerKey,
         materializations: rows.length,
         platformScopes: [...new Set(rows.map((row) => row.platform_scope))].sort(),
+        tableResolution: tableResolution.summary,
       },
       summary: previewSummary,
       safeToApply: previewSummary.createRows === 0,
@@ -131,7 +142,7 @@ async function main() {
   printJson({
     ok: true,
     mode: 'apply',
-    operatorVersion: 'lark-dashboard-shared-dimensions-backfill-v1',
+    operatorVersion: 'lark-dashboard-shared-dimensions-backfill-v1.1',
     repository,
     target: {
       environment: runtime.runtimeConfig.environment,
@@ -139,6 +150,7 @@ async function main() {
       customerKey,
       materializations: rows.length,
       platformScopes: [...new Set(rows.map((row) => row.platform_scope))].sort(),
+      tableResolution: tableResolution.summary,
     },
     preview: previewSummary,
     applied: applied.results.map((item) => ({
@@ -160,6 +172,44 @@ async function main() {
     providerCalls: 0,
     schedulesChanged: 0,
   });
+}
+
+async function resolveBackfillTableRuntimeEnv() {
+  const fileEnv = await readDevVars(process.env.DEV_VARS_FILE ?? '.dev.vars');
+  const env = {
+    ...fileEnv,
+    ...process.env,
+  };
+  if (!env.LARK_APP_TOKEN && env.LARK_BASE_APP_TOKEN) {
+    env.LARK_APP_TOKEN = env.LARK_BASE_APP_TOKEN;
+  }
+  const contracts = REQUIRED_TABLE_KEYS.map((tableKey) => {
+    const schema = LARK_REPORT_SCHEMA_V2.find((table) => table.key === tableKey);
+    const envName = LARK_TABLE_ENV[tableKey];
+    if (!schema || !envName) {
+      throw failure(
+        'Dashboard backfill table contract is missing from the shared schema',
+        'LARK_DASHBOARD_BACKFILL_TABLE_CONTRACT_MISSING',
+        { tableKey },
+      );
+    }
+    return Object.freeze({
+      tableKey,
+      envName,
+      names: Object.freeze([
+        schema.createName,
+        ...(Array.isArray(schema.aliases) ? schema.aliases : []),
+        schema.logicalName,
+      ].filter((value) => typeof value === 'string' && value.trim())),
+    });
+  });
+  const requiresDiscovery = contracts.some(({ envName }) => (
+    typeof env[envName] !== 'string' || env[envName].trim() === ''
+  ));
+  const liveTables = requiresDiscovery
+    ? await createLarkBitableClientFromEnv(env).listTables()
+    : [];
+  return resolveExactLarkTableEnvironment({ env, liveTables, contracts });
 }
 
 async function planBackfill(input) {
@@ -273,13 +323,14 @@ function assertIntegrationWorkspace(runtimeConfig) {
 
 function printHelp() {
   printJson({
-    operatorVersion: 'lark-dashboard-shared-dimensions-backfill-v1',
+    operatorVersion: 'lark-dashboard-shared-dimensions-backfill-v1.1',
     preview: 'node scripts/lark-dashboard-shared-dimensions-backfill.mjs',
     apply: [
       'CONFIRM_WRITE=YES',
       `CONFIRM_LARK_DASHBOARD_SHARED_DIMENSIONS_BACKFILL=${LARK_DASHBOARD_SHARED_DIMENSIONS_BACKFILL_CONFIRMATION}`,
       'node scripts/lark-dashboard-shared-dimensions-backfill.mjs --apply',
     ].join(' '),
+    tableIdResolution: 'environment_or_exact_live_table_name',
     remoteD1Mutation: false,
     workerDeployment: false,
     queueSend: false,
