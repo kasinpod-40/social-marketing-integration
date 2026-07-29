@@ -11,6 +11,10 @@ test('inspector exposes only allowlisted invalid-JSON response diagnostics', () 
     errorDetails: {
       resource: 'system_status',
       responseStatus: 200,
+      responseRedirected: true,
+      responseUrlPresent: true,
+      responseOriginMatchesSource: true,
+      responsePathMatchesResource: false,
       contentType: 'text/html; charset=UTF-8',
       contentEncoding: 'br',
       contentLengthHeader: 123,
@@ -31,6 +35,10 @@ test('inspector exposes only allowlisted invalid-JSON response diagnostics', () 
     networkCause: null,
     responseDiagnostics: {
       responseStatus: 200,
+      responseRedirected: true,
+      responseUrlPresent: true,
+      responseOriginMatchesSource: true,
+      responsePathMatchesResource: false,
       contentType: 'text/html; charset=UTF-8',
       contentEncoding: 'br',
       contentLengthHeader: 123,

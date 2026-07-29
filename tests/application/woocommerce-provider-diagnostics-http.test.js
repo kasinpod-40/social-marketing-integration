@@ -150,6 +150,10 @@ test('invalid JSON response exposes only allowlisted structural evidence with at
       error.details = {
         resource: 'system_status',
         responseStatus: 200,
+        responseRedirected: true,
+        responseUrlPresent: true,
+        responseOriginMatchesSource: true,
+        responsePathMatchesResource: false,
         contentType: 'text/html; charset=UTF-8',
         contentEncoding: 'br',
         contentLengthHeader: 37,
@@ -174,6 +178,10 @@ test('invalid JSON response exposes only allowlisted structural evidence with at
   assert.equal(body.providerRequestCount, 1);
   assert.equal(body.workerDeploymentCount, 0);
   assert.equal(body.failureDiagnostics.responseDiagnostics.bodyShape, 'html_or_xml');
+  assert.equal(body.failureDiagnostics.responseDiagnostics.responseRedirected, true);
+  assert.equal(body.failureDiagnostics.responseDiagnostics.responseUrlPresent, true);
+  assert.equal(body.failureDiagnostics.responseDiagnostics.responseOriginMatchesSource, true);
+  assert.equal(body.failureDiagnostics.responseDiagnostics.responsePathMatchesResource, false);
   assert.equal(serialized.includes(responseBody), false);
   assert.equal(serialized.includes(credential), false);
   assert.equal(serialized.includes(EPHEMERAL_TOKEN), false);

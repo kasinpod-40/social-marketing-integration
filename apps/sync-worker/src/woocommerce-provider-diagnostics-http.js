@@ -195,6 +195,10 @@ function extractFailureDiagnostics(error) {
   const networkCause = objectOrNull(details.networkCause);
   const response = {
     responseStatus: diagnosticNumber(details.responseStatus ?? details.status),
+    responseRedirected: diagnosticBoolean(details.responseRedirected),
+    responseUrlPresent: diagnosticBoolean(details.responseUrlPresent),
+    responseOriginMatchesSource: diagnosticBoolean(details.responseOriginMatchesSource),
+    responsePathMatchesResource: diagnosticBoolean(details.responsePathMatchesResource),
     contentType: diagnosticText(details.contentType),
     contentEncoding: diagnosticText(details.contentEncoding),
     contentLengthHeader: diagnosticNumber(details.contentLengthHeader),

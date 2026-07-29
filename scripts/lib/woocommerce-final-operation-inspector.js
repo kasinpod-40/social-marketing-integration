@@ -111,6 +111,20 @@ export function extractWooCommerceFinalNetworkDiagnostics(detailsJson) {
     responseStatus: diagnosticNumber(
       errorDetails.responseStatus ?? errorDetails.response_status ?? errorDetails.status,
     ),
+    responseRedirected: diagnosticBoolean(
+      errorDetails.responseRedirected ?? errorDetails.response_redirected,
+    ),
+    responseUrlPresent: diagnosticBoolean(
+      errorDetails.responseUrlPresent ?? errorDetails.response_url_present,
+    ),
+    responseOriginMatchesSource: diagnosticBoolean(
+      errorDetails.responseOriginMatchesSource
+        ?? errorDetails.response_origin_matches_source,
+    ),
+    responsePathMatchesResource: diagnosticBoolean(
+      errorDetails.responsePathMatchesResource
+        ?? errorDetails.response_path_matches_resource,
+    ),
     contentType: diagnosticText(errorDetails.contentType ?? errorDetails.content_type),
     contentEncoding: diagnosticText(
       errorDetails.contentEncoding ?? errorDetails.content_encoding,
