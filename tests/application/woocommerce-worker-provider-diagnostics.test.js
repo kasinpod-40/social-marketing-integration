@@ -3,15 +3,20 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { parseJsoncObject } from '../../scripts/lib/chatwoot-safe-wrangler-config.js';
 import {
+  WOOCOMMERCE_PROVIDER_DIAGNOSTICS_ATTESTATION_ENV,
+  WOOCOMMERCE_PROVIDER_DIAGNOSTICS_ATTESTATION_HEADER,
   WOOCOMMERCE_PROVIDER_DIAGNOSTICS_FLAG,
   WOOCOMMERCE_PROVIDER_DIAGNOSTICS_TOKEN_SHA256_ENV,
   WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_VERSION_METADATA_BINDING,
   buildWooCommerceWorkerProviderDiagnosticConfigs,
   parseWooCommerceWorkerSecretNames,
+  validateWooCommerceDiagnosticsAttestation,
   validateWooCommerceWorkerProviderDiagnosticResponse,
 } from '../../scripts/lib/woocommerce-worker-provider-diagnostics.js';
 
 const TOKEN_SHA256 = 'a'.repeat(64);
+const ACTIVE_ATTESTATION = 'c'.repeat(64);
+const SAFE_ATTESTATION = 'd'.repeat(64);
 const CONFIG_OBJECT = {
   name: 'social-mkt-sync-worker',
   main: 'apps/sync-worker/src/index.js',
@@ -27,19 +32,23 @@ const CONFIG_OBJECT = {
     MKT_SCHEDULE_WOOCOMMERCE_ENABLED: 'true',
     MKT_TIKTOK_AUDIT_HTTP_ENABLED: 'true',
     [WOOCOMMERCE_PROVIDER_DIAGNOSTICS_TOKEN_SHA256_ENV]: 'b'.repeat(64),
+    [WOOCOMMERCE_PROVIDER_DIAGNOSTICS_ATTESTATION_ENV]: 'e'.repeat(64),
   },
 };
 const CONFIG = JSON.stringify(CONFIG_OBJECT, null, 2);
 
-function build(sourceText = CONFIG) {
+function build(sourceText = CONFIG, overrides = {}) {
   return buildWooCommerceWorkerProviderDiagnosticConfigs(sourceText, {
     repositoryRoot: '/repo',
     sourceConfigPath: 'wrangler.sync.jsonc',
     diagnosticTokenSha256: TOKEN_SHA256,
+    activeAttestation: ACTIVE_ATTESTATION,
+    safeAttestation: SAFE_ATTESTATION,
+    ...overrides,
   });
 }
 
-test('builds one ephemeral-auth diagnostic config and one all-false Safe config', () => {
+test('builds separate attested Active and all-false Safe configs', () => {
   const result = build();
   const safe = parseJsoncObject(result.safe);
   const active = parseJsoncObject(result.active);
@@ -48,8 +57,14 @@ test('builds one ephemeral-auth diagnostic config and one all-false Safe config'
   assert.deepEqual(result.activeTrueFlags, [WOOCOMMERCE_PROVIDER_DIAGNOSTICS_FLAG]);
   assert.equal(safe.vars[WOOCOMMERCE_PROVIDER_DIAGNOSTICS_FLAG], 'false');
   assert.equal(safe.vars[WOOCOMMERCE_PROVIDER_DIAGNOSTICS_TOKEN_SHA256_ENV], undefined);
+  assert.equal(safe.vars[WOOCOMMERCE_PROVIDER_DIAGNOSTICS_ATTESTATION_ENV], SAFE_ATTESTATION);
   assert.equal(active.vars[WOOCOMMERCE_PROVIDER_DIAGNOSTICS_FLAG], 'true');
   assert.equal(active.vars[WOOCOMMERCE_PROVIDER_DIAGNOSTICS_TOKEN_SHA256_ENV], TOKEN_SHA256);
+  assert.equal(active.vars[WOOCOMMERCE_PROVIDER_DIAGNOSTICS_ATTESTATION_ENV], ACTIVE_ATTESTATION);
+  assert.notEqual(
+    active.vars[WOOCOMMERCE_PROVIDER_DIAGNOSTICS_ATTESTATION_ENV],
+    safe.vars[WOOCOMMERCE_PROVIDER_DIAGNOSTICS_ATTESTATION_ENV],
+  );
   assert.equal(active.vars.MKT_CONNECTOR_WOOCOMMERCE_ENABLED, 'false');
   assert.equal(active.vars.MKT_WOOCOMMERCE_D1_WRITE_ENABLED, 'false');
   assert.equal(active.vars.MKT_WOOCOMMERCE_LARK_WRITE_ENABLED, 'false');
@@ -61,12 +76,13 @@ test('builds one ephemeral-auth diagnostic config and one all-false Safe config'
   assert.equal(active.vars.WOOCOMMERCE_DEFAULT_CURRENCY, 'THB');
   assert.equal(result.origin, 'https://social-mkt-sync-worker.example.workers.dev');
   assert.equal(result.ephemeralAuthDigestConfigured, true);
+  assert.equal(result.deploymentAttestationConfigured, true);
   assert.equal(result.secretValuesCopied, 0);
   assert.equal(result.active.includes('ck_'), false);
   assert.equal(result.active.includes('cs_'), false);
 });
 
-test('materializes exact Worker version metadata in both generated configs when source omits it', () => {
+test('materializes exact Worker version metadata in both configs when source omits it', () => {
   const result = build();
   const safe = parseJsoncObject(result.safe);
   const active = parseJsoncObject(result.active);
@@ -83,7 +99,7 @@ test('materializes exact Worker version metadata in both generated configs when 
   });
 });
 
-test('accepts the exact existing version metadata binding and rejects a conflicting binding', () => {
+test('accepts exact metadata binding and rejects conflicting binding', () => {
   const exact = build(JSON.stringify({
     ...CONFIG_OBJECT,
     version_metadata: {
@@ -104,6 +120,17 @@ test('accepts the exact existing version metadata binding and rejects a conflict
   );
 });
 
+test('rejects missing, malformed or reused deployment attestations before deployment', () => {
+  assert.throws(
+    () => build(CONFIG, { activeAttestation: 'not-a-digest' }),
+    (error) => error?.code === 'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_CONFIG_INVALID',
+  );
+  assert.throws(
+    () => build(CONFIG, { safeAttestation: ACTIVE_ATTESTATION }),
+    (error) => error?.code === 'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_ATTESTATION_INVALID',
+  );
+});
+
 test('requires only WooCommerce Worker Secret names without reading their values', () => {
   const names = parseWooCommerceWorkerSecretNames(JSON.stringify([
     { name: 'WOOCOMMERCE_CONSUMER_SECRET' },
@@ -119,14 +146,25 @@ test('requires only WooCommerce Worker Secret names without reading their values
   );
 });
 
-test('rejects a missing or malformed ephemeral authorization digest before deployment', () => {
+test('validates only the exact deployment attestation header with bounded evidence on mismatch', () => {
+  const exact = new Response('{}', {
+    status: 401,
+    headers: { [WOOCOMMERCE_PROVIDER_DIAGNOSTICS_ATTESTATION_HEADER]: ACTIVE_ATTESTATION },
+  });
+  assert.equal(validateWooCommerceDiagnosticsAttestation(exact, ACTIVE_ATTESTATION), ACTIVE_ATTESTATION);
+
+  const missing = new Response('{}', {
+    status: 404,
+    headers: { 'content-type': 'text/html', server: 'cloudflare', 'cf-ray': 'fixture-ray' },
+  });
   assert.throws(
-    () => buildWooCommerceWorkerProviderDiagnosticConfigs(CONFIG, {
-      repositoryRoot: '/repo',
-      sourceConfigPath: 'wrangler.sync.jsonc',
-      diagnosticTokenSha256: 'not-a-digest',
-    }),
-    (error) => error?.code === 'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_CONFIG_INVALID',
+    () => validateWooCommerceDiagnosticsAttestation(missing, ACTIVE_ATTESTATION),
+    (error) => (
+      error?.code === 'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_ATTESTATION_MISMATCH'
+      && error?.details?.observedAttestationPresent === false
+      && error?.details?.responseStatus === 404
+      && error?.details?.responseCfRayPresent === true
+    ),
   );
 });
 
@@ -157,7 +195,7 @@ test('accepts only a bounded success or exact invalid-JSON diagnostic response',
   );
 });
 
-test('ephemeral launcher generates auth without printing or mutating Worker Secrets', async () => {
+test('ephemeral launcher and operator avoid version overrides, secrets and mutation engines', async () => {
   const [launcher, operator] = await Promise.all([
     readFile(
       new URL('../../scripts/woocommerce-worker-provider-diagnostics-ephemeral.mjs', import.meta.url),
@@ -172,9 +210,13 @@ test('ephemeral launcher generates auth without printing or mutating Worker Secr
   assert.match(launcher, /createHash\('sha256'\)/u);
   assert.match(launcher, /MKT_WOOCOMMERCE_PROVIDER_DIAGNOSTICS_TOKEN_SHA256/u);
   assert.doesNotMatch(launcher, /console\.|stdout\.write|stderr\.write/u);
-  assert.match(operator, /workerDeploymentCount:\s*2/u);
-  assert.match(operator, /automatic-safe-restore/u);
-  assert.match(operator, /providerRequestCount:\s*1/u);
+  assert.match(operator, /activeAttestation:\s*randomBytes\(32\)/u);
+  assert.match(operator, /safeAttestation:\s*randomBytes\(32\)/u);
+  assert.match(operator, /controlPlaneVersionVerified/u);
+  assert.match(operator, /httpDeploymentAttested/u);
+  assert.match(operator, /workerDeploymentCount/u);
+  assert.match(operator, /providerRequestCount/u);
+  assert.doesNotMatch(operator, /Cloudflare-Workers-Version-Overrides|buildWorkerVersionOverrideHeader/u);
   assert.doesNotMatch(operator, /queues?['"],\s*['"](?:send|messages)|d1['"],\s*['"](?:execute|migrations)|createLark|TableSyncEngine/u);
   assert.doesNotMatch(`${launcher}\n${operator}`, /secret['"],\s*['"](?:put|bulk|delete)/u);
 });

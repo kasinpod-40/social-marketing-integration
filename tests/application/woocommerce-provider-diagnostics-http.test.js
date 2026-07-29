@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
 import {
+  WOOCOMMERCE_PROVIDER_DIAGNOSTICS_ATTESTATION_ENV,
+  WOOCOMMERCE_PROVIDER_DIAGNOSTICS_ATTESTATION_HEADER,
   WOOCOMMERCE_PROVIDER_DIAGNOSTICS_FLAG,
   WOOCOMMERCE_PROVIDER_DIAGNOSTICS_PATH,
   WOOCOMMERCE_PROVIDER_DIAGNOSTICS_TOKEN_SHA256_ENV,
@@ -11,11 +13,13 @@ import {
 const VERSION_ID = '11111111-1111-4111-8111-111111111111';
 const EPHEMERAL_TOKEN = 'ephemeral-token-fixture-12345678901234567890';
 const TOKEN_SHA256 = createHash('sha256').update(EPHEMERAL_TOKEN).digest('hex');
+const DEPLOYMENT_ATTESTATION = 'd'.repeat(64);
 const BASE_ENV = Object.freeze({
   MKT_ENV: 'development',
   MKT_CUSTOMER_PROFILE: 'integration_workspace',
   MKT_CONNECTION_CUSTOMER_KEY: 'chemistry_k',
   [WOOCOMMERCE_PROVIDER_DIAGNOSTICS_TOKEN_SHA256_ENV]: TOKEN_SHA256,
+  [WOOCOMMERCE_PROVIDER_DIAGNOSTICS_ATTESTATION_ENV]: DEPLOYMENT_ATTESTATION,
   [WOOCOMMERCE_PROVIDER_DIAGNOSTICS_FLAG]: 'true',
   WOOCOMMERCE_BASE_URL: 'https://chemistryk.online',
   WOOCOMMERCE_CONSUMER_KEY: 'ck_fixture123',
@@ -39,7 +43,14 @@ function handler(createClient) {
   });
 }
 
-test('disabled Worker diagnostics route is 404 and does not create a Provider client', async () => {
+function assertAttested(response) {
+  assert.equal(
+    response.headers.get(WOOCOMMERCE_PROVIDER_DIAGNOSTICS_ATTESTATION_HEADER),
+    DEPLOYMENT_ATTESTATION,
+  );
+}
+
+test('disabled Worker diagnostics route is attested 404 and does not create a Provider client', async () => {
   let clientCalls = 0;
   const handle = handler(() => {
     clientCalls += 1;
@@ -51,10 +62,11 @@ test('disabled Worker diagnostics route is 404 and does not create a Provider cl
     url: new URL(request().url),
   });
   assert.equal(response.status, 404);
+  assertAttested(response);
   assert.equal(clientCalls, 0);
 });
 
-test('enabled Worker diagnostics route rejects missing or wrong ephemeral token before Provider', async () => {
+test('enabled Worker diagnostics route rejects missing or wrong token with deployment attestation before Provider', async () => {
   let clientCalls = 0;
   const handle = handler(() => {
     clientCalls += 1;
@@ -69,7 +81,25 @@ test('enabled Worker diagnostics route rejects missing or wrong ephemeral token 
     });
     assert.equal(response.status, 401);
     assert.equal(response.headers.get('x-mkt-worker-version-id'), VERSION_ID);
+    assertAttested(response);
   }
+  assert.equal(clientCalls, 0);
+});
+
+test('missing deployment attestation fails before Provider without fabricating an attestation header', async () => {
+  let clientCalls = 0;
+  const handle = handler(() => {
+    clientCalls += 1;
+    return { getStoreIdentity: async () => ({}) };
+  });
+  const authenticated = request();
+  const env = { ...BASE_ENV };
+  delete env[WOOCOMMERCE_PROVIDER_DIAGNOSTICS_ATTESTATION_ENV];
+  const response = await handle({ request: authenticated, env, url: new URL(authenticated.url) });
+  const body = await response.json();
+  assert.equal(response.status, 400);
+  assert.equal(body.code, 'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_CONFIG_INVALID');
+  assert.equal(response.headers.get(WOOCOMMERCE_PROVIDER_DIAGNOSTICS_ATTESTATION_HEADER), null);
   assert.equal(clientCalls, 0);
 });
 
@@ -92,6 +122,7 @@ test('diagnostic-only Worker window performs exactly one read and returns bounde
   const body = await response.json();
   const serialized = JSON.stringify(body);
   assert.equal(response.status, 200);
+  assertAttested(response);
   assert.equal(providerCalls, 1);
   assert.equal(body.providerRequestCount, 1);
   assert.equal(body.queueMessageCount, 0);
@@ -99,6 +130,7 @@ test('diagnostic-only Worker window performs exactly one read and returns bounde
   assert.equal(body.workerDeploymentCount, 0);
   assert.equal(serialized.includes(EPHEMERAL_TOKEN), false);
   assert.equal(serialized.includes(TOKEN_SHA256), false);
+  assert.equal(serialized.includes(DEPLOYMENT_ATTESTATION), false);
   assert.deepEqual(body.store, {
     wcVersion: '10.1.0',
     wpVersion: '6.9',
@@ -108,7 +140,7 @@ test('diagnostic-only Worker window performs exactly one read and returns bounde
   });
 });
 
-test('invalid JSON response exposes only allowlisted structural evidence', async () => {
+test('invalid JSON response exposes only allowlisted structural evidence with attestation', async () => {
   const responseBody = '<html>private provider message</html>';
   const credential = 'ck_should_never_escape';
   const handle = handler(() => ({
@@ -137,6 +169,7 @@ test('invalid JSON response exposes only allowlisted structural evidence', async
   const body = await response.json();
   const serialized = JSON.stringify(body);
   assert.equal(response.status, 422);
+  assertAttested(response);
   assert.equal(body.code, 'WOOCOMMERCE_INVALID_JSON');
   assert.equal(body.providerRequestCount, 1);
   assert.equal(body.workerDeploymentCount, 0);
@@ -145,12 +178,13 @@ test('invalid JSON response exposes only allowlisted structural evidence', async
   assert.equal(serialized.includes(credential), false);
   assert.equal(serialized.includes(EPHEMERAL_TOKEN), false);
   assert.equal(serialized.includes(TOKEN_SHA256), false);
+  assert.equal(serialized.includes(DEPLOYMENT_ATTESTATION), false);
   assert.equal(serialized.includes('responseBody'), false);
   assert.equal(serialized.includes('authorization'), false);
   assert.equal(serialized.includes('cookie'), false);
 });
 
-test('any additional true MKT execution flag blocks before Provider', async () => {
+test('any additional true MKT execution flag blocks before Provider and remains attested', async () => {
   let clientCalls = 0;
   const handle = handler(() => {
     clientCalls += 1;
@@ -164,6 +198,7 @@ test('any additional true MKT execution flag blocks before Provider', async () =
   });
   const body = await response.json();
   assert.equal(response.status, 400);
+  assertAttested(response);
   assert.equal(body.code, 'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_FLAGS_UNSAFE');
   assert.equal(body.providerRequestCount, 0);
   assert.equal(body.workerDeploymentCount, 0);
