@@ -7,6 +7,8 @@ WORKSTREAM                       = ORGANIC_DASHBOARD_WINDOW_INTEGRITY_V1
 BRANCH                           = hotfix/organic-dashboard-window-integrity-v1
 IMPLEMENTATION_BASE_MAIN         = 527cdceda2d4661c82dc000380705d1078343bdf
 ALIGNED_MAIN                     = 67a82551749569d74b9e4b66a32c82e5715b1d40
+DRAFT_PR                         = #255
+BRANCH_VERIFICATION              = #1092 / 30489571353 / PASS
 REMOTE_ACTION_DURING_IMPLEMENTATION = NONE
 WORKER_DEPLOYMENT                = NOT_RUN
 QUEUE_MESSAGE                    = NOT_SENT
@@ -76,16 +78,20 @@ The Dashboard settings count becomes:
 
 ## Guarded fresh materialization targeting
 
-The existing Report closeout operator can target a fresh exact window by environment variable:
+The existing Report closeout operator can target a fresh exact window by environment variable.
+Each execution uses a separate private evidence directory because automatic repetition inside one
+evidence directory remains blocked.
 
 ```bash
 MKT_REPORT_RUNTIME_CLOSEOUT_WINDOW_DAYS=1 \
+MKT_REPORT_RUNTIME_CLOSEOUT_EVIDENCE_DIR=outputs/report-runtime-closeout-1d \
 CONFIRM_REPORT_RUNTIME_CLOSEOUT=EXECUTE_REPORT_RUNTIME_CLOSEOUT \
 node scripts/report-runtime-closeout.mjs --execute
 ```
 
 ```bash
 MKT_REPORT_RUNTIME_CLOSEOUT_WINDOW_DAYS=30 \
+MKT_REPORT_RUNTIME_CLOSEOUT_EVIDENCE_DIR=outputs/report-runtime-closeout-30d \
 CONFIRM_REPORT_RUNTIME_CLOSEOUT=EXECUTE_REPORT_RUNTIME_CLOSEOUT \
 node scripts/report-runtime-closeout.mjs --execute
 ```
@@ -93,27 +99,24 @@ node scripts/report-runtime-closeout.mjs --execute
 The operator still fails closed when that exact report identity already exists. Existing 3D/7D
 materializations are not deleted, duplicated or overwritten by this fresh-only selector. Refreshing
 an existing deterministic materialization remains a separately guarded operational step after this
-formula hotfix is merged and exact-head CI passes.
+formula hotfix is merged.
 
 ## Validation
 
-Required:
-
 ```text
-Focused Organic calculation and monotonic complete-window regressions
-Dashboard request/period/settings/blueprint regressions
-Report closeout exact-window and finalizer-count regressions
-npm ci
-npm run check
-npm test
-npm run test:report-reliability
-npm audit
-npm run deploy:dry-run
-Exact-head Branch Verification
+Focused Organic/Dashboard tests       33/33 PASS
+Branch Verification                   #1092 / 30489571353 PASS
+Install locked dependencies           PASS
+Syntax / architecture / hygiene       PASS
+Focused staged TikTok regression      PASS
+Unit and Workers runtime              PASS
+Report reliability regression         PASS
+Dependency audit                       PASS
+Wrangler dry-run                       PASS / no deployment
 ```
 
 ## Safety boundary
 
-Implementation and CI must not deploy a Worker, send Queue/DLQ messages, mutate Remote D1 or Lark,
+Implementation and CI did not deploy a Worker, send Queue/DLQ messages, mutate Remote D1 or Lark,
 change a Schedule or Secret, run Live UAT, alter Production traffic, delete Business facts or merge
-the PR automatically.
+the implementation PR.
