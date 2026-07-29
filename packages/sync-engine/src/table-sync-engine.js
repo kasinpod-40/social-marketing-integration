@@ -62,6 +62,7 @@ export class TableSyncEngine {
         inputRows: 0,
         existingRecordsRead: 0,
         existingReadStrategy: 'none',
+        changedFieldCounts: {},
       });
     }
 
@@ -92,6 +93,7 @@ export class TableSyncEngine {
     );
     const createRows = [];
     const updateRows = [];
+    const changedFieldCounts = {};
     let skipped = 0;
 
     progress({ stage: 'sync_planning', tableId });
@@ -108,8 +110,12 @@ export class TableSyncEngine {
         throw new Error(`Destination record for ${keyField}=${keyValue} has no recordId`);
       }
 
-      if (hasChangedFields(existing.fields, row)) {
+      const changedFieldNames = listChangedFieldNames(existing.fields, row);
+      if (changedFieldNames.length > 0) {
         updateRows.push(Object.freeze({ recordId: existing.recordId, fields: row }));
+        for (const fieldName of changedFieldNames) {
+          changedFieldCounts[fieldName] = (changedFieldCounts[fieldName] ?? 0) + 1;
+        }
       } else {
         skipped += 1;
       }
@@ -135,6 +141,7 @@ export class TableSyncEngine {
       inputRows: preparedRows.length,
       existingRecordsRead: comparableExisting.length,
       existingReadStrategy: existingRead.strategy,
+      changedFieldCounts,
     });
   }
 
@@ -296,17 +303,25 @@ export function deduplicateRowsByKey(rows, keyField) {
  * Field อื่นที่มีอยู่ในปลายทาง เช่น Formula หรือ Audit field จะไม่ทำให้เกิด Update ปลอม
  */
 export function hasChangedFields(existingFields, incomingFields) {
+  return listChangedFieldNames(existingFields, incomingFields).length > 0;
+}
+
+/**
+ * คืนเฉพาะชื่อ Field ที่ต่างกันหลัง Normalize เพื่อใช้ diagnostics โดยไม่เปิดเผยค่า Business
+ */
+export function listChangedFieldNames(existingFields, incomingFields) {
   requirePlainObject(existingFields, 'existingFields');
   requirePlainObject(incomingFields, 'incomingFields');
 
+  const changed = [];
   for (const [fieldName, incomingValue] of Object.entries(incomingFields)) {
     const existingValue = existingFields[fieldName];
     if (!deepEqual(normalizeComparable(existingValue), normalizeComparable(incomingValue))) {
-      return true;
+      changed.push(fieldName);
     }
   }
 
-  return false;
+  return Object.freeze(changed);
 }
 
 /**
@@ -391,6 +406,7 @@ function createPlan(input) {
     inputRows: input.inputRows,
     existingRecordsRead: input.existingRecordsRead,
     existingReadStrategy: input.existingReadStrategy,
+    changedFieldCounts: Object.freeze({ ...input.changedFieldCounts }),
   });
 }
 

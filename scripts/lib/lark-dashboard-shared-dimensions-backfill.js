@@ -8,6 +8,16 @@ const ORGANIC_PLATFORM_SCOPES = Object.freeze([
 export const LARK_DASHBOARD_SHARED_DIMENSIONS_BACKFILL_CONFIRMATION =
   'BACKFILL_VALIDATED_MATERIALIZATIONS';
 
+export const LARK_DASHBOARD_BACKFILL_VERIFICATION_DELAYS_MS = Object.freeze([
+  0,
+  1_000,
+  2_000,
+  4_000,
+  8_000,
+]);
+
+export const LARK_DASHBOARD_BACKFILL_VERIFICATION_MAX_ELAPSED_MS = 30_000;
+
 export const LARK_DASHBOARD_SHARED_DIMENSIONS_BACKFILL_FIELDS = Object.freeze({
   mktReportSnapshots: Object.freeze([
     'customer_key',
@@ -181,11 +191,26 @@ export function createBackfillAllowedFieldsByTableId(tables = {}) {
   return Object.freeze(result);
 }
 
+export function createBackfillLogicalTableKeysByTableId(tables = {}) {
+  const result = {};
+  for (const tableKey of Object.keys(LARK_DASHBOARD_SHARED_DIMENSIONS_BACKFILL_FIELDS)) {
+    const tableId = tables[tableKey];
+    if (typeof tableId === 'string' && tableId.trim()) {
+      result[tableId.trim()] = tableKey;
+    }
+  }
+  return Object.freeze(result);
+}
+
 export function createLarkDashboardSharedDimensionsBackfillPlanner(input = {}) {
   const baseEngine = requireBaseEngine(input.baseEngine);
   const allowedFieldsByTableId = requireObject(
     input.allowedFieldsByTableId,
     'allowedFieldsByTableId',
+  );
+  const logicalTableKeysByTableId = requireObject(
+    input.logicalTableKeysByTableId,
+    'logicalTableKeysByTableId',
   );
   const planned = [];
 
@@ -193,11 +218,11 @@ export function createLarkDashboardSharedDimensionsBackfillPlanner(input = {}) {
     async planByKey(planInput = {}) {
       const tableId = requireText(planInput.tableId, 'tableId');
       const allowedFields = allowedFieldsByTableId[tableId];
-      if (!Array.isArray(allowedFields) || allowedFields.length === 0) {
+      const logicalTableKey = logicalTableKeysByTableId[tableId];
+      if (!Array.isArray(allowedFields) || allowedFields.length === 0 || !logicalTableKey) {
         throw backfillError(
           'Backfill attempted to plan an unreviewed Lark table',
           'LARK_DASHBOARD_BACKFILL_TABLE_NOT_ALLOWED',
-          { tableId },
         );
       }
       const keyField = requireText(planInput.keyField, 'keyField');
@@ -208,7 +233,7 @@ export function createLarkDashboardSharedDimensionsBackfillPlanner(input = {}) {
         ...planInput,
         rows: filteredRows,
       });
-      planned.push(Object.freeze({ tableId, keyField, plan }));
+      planned.push(Object.freeze({ logicalTableKey, keyField, plan }));
       return plan;
     },
 
@@ -245,7 +270,7 @@ export function createLarkDashboardSharedDimensionsBackfillPlanner(input = {}) {
       const results = [];
       for (const item of planned) {
         results.push(Object.freeze({
-          tableId: item.tableId,
+          logicalTableKey: item.logicalTableKey,
           result: await baseEngine.executePlan(item.plan),
         }));
       }
@@ -254,13 +279,87 @@ export function createLarkDashboardSharedDimensionsBackfillPlanner(input = {}) {
   });
 }
 
-export function assertBackfillVerificationComplete(summary = {}) {
-  const value = requireObject(summary, 'summary');
+export async function verifyBackfillPostApply(input = {}) {
+  const planAttempt = requireFunction(input.planAttempt, 'planAttempt');
+  const delaysMs = readVerificationDelays(
+    input.delaysMs ?? LARK_DASHBOARD_BACKFILL_VERIFICATION_DELAYS_MS,
+  );
+  const maximumElapsedMs = requireBoundedInteger(
+    input.maximumElapsedMs ?? LARK_DASHBOARD_BACKFILL_VERIFICATION_MAX_ELAPSED_MS,
+    1,
+    120_000,
+    'maximumElapsedMs',
+  );
+  const sleep = input.sleep ?? sleepFor;
+  const now = input.now ?? Date.now;
+  requireFunction(sleep, 'sleep');
+  requireFunction(now, 'now');
+
+  const startedAt = readClock(now, 'verification start');
+  let attempts = 0;
+  let latestSummary = null;
+
+  for (const delayMs of delaysMs) {
+    const beforeDelayElapsedMs = elapsedSince(startedAt, now);
+    if (beforeDelayElapsedMs + delayMs > maximumElapsedMs) break;
+    if (delayMs > 0) await sleep(delayMs);
+
+    attempts += 1;
+    latestSummary = requireVerificationSummary(await planAttempt({
+      attempt: attempts,
+      delayMs,
+    }));
+    const elapsedMs = elapsedSince(startedAt, now);
+    const result = createPostApplyVerificationResult({
+      attempts,
+      elapsedMs,
+      summary: latestSummary,
+    });
+
+    if (latestSummary.createRows > 0) {
+      throw backfillError(
+        'Post-apply verification refuses to create missing Lark report rows',
+        'LARK_DASHBOARD_BACKFILL_CREATE_BLOCKED',
+        result,
+      );
+    }
+    if (latestSummary.updateRows === 0) return result;
+    if (elapsedMs >= maximumElapsedMs) break;
+  }
+
+  if (!latestSummary) {
+    throw backfillError(
+      'Post-apply verification exceeded its elapsed-time budget before the first read',
+      'LARK_DASHBOARD_BACKFILL_POST_VERIFY_FAILED',
+      {
+        attempts: 0,
+        elapsedMs: elapsedSince(startedAt, now),
+        final: { createRows: 0, updateRows: 0, skippedRows: 0 },
+        pendingRowsByLogicalTable: [],
+        pendingFieldNameCounts: {},
+        readStrategy: 'not_started',
+      },
+    );
+  }
+
+  assertBackfillVerificationComplete(latestSummary, {
+    attempts,
+    elapsedMs: elapsedSince(startedAt, now),
+  });
+  throw new Error('Unreachable post-apply verification state');
+}
+
+export function assertBackfillVerificationComplete(summary = {}, context = {}) {
+  const value = requireVerificationSummary(summary);
   if (value.createRows !== 0 || value.updateRows !== 0) {
     throw backfillError(
       'Post-apply backfill verification still has pending writes',
       'LARK_DASHBOARD_BACKFILL_POST_VERIFY_FAILED',
-      { createRows: value.createRows, updateRows: value.updateRows },
+      createPostApplyVerificationResult({
+        attempts: context.attempts ?? 1,
+        elapsedMs: context.elapsedMs ?? 0,
+        summary: value,
+      }),
     );
   }
   return true;
@@ -277,12 +376,14 @@ function pickBackfillFields(rowInput, keyField, allowedFields) {
 
 function summarizePlans(planned) {
   const tables = {};
+  const pendingFieldNameCounts = {};
+  const readStrategies = new Set();
   let createRows = 0;
   let updateRows = 0;
   let skippedRows = 0;
   for (const item of planned) {
-    const current = tables[item.tableId] ?? {
-      tableId: item.tableId,
+    const current = tables[item.logicalTableKey] ?? {
+      logicalTableKey: item.logicalTableKey,
       plans: 0,
       createRows: 0,
       updateRows: 0,
@@ -292,18 +393,125 @@ function summarizePlans(planned) {
     current.createRows += item.plan.createRows.length;
     current.updateRows += item.plan.updateRows.length;
     current.skippedRows += item.plan.skipped;
-    tables[item.tableId] = current;
+    tables[item.logicalTableKey] = current;
     createRows += item.plan.createRows.length;
     updateRows += item.plan.updateRows.length;
     skippedRows += item.plan.skipped;
+    readStrategies.add(item.plan.existingReadStrategy ?? 'unknown');
+    for (const [fieldName, count] of Object.entries(item.plan.changedFieldCounts ?? {})) {
+      if (fieldName === item.keyField) continue;
+      pendingFieldNameCounts[fieldName] = (pendingFieldNameCounts[fieldName] ?? 0)
+        + requireNonNegativeInteger(count, `changedFieldCounts.${fieldName}`);
+    }
   }
   return Object.freeze({
     planCount: planned.length,
     createRows,
     updateRows,
     skippedRows,
-    tables: Object.freeze(Object.values(tables).map((value) => Object.freeze({ ...value }))),
+    tables: Object.freeze(Object.values(tables)
+      .sort((left, right) => left.logicalTableKey.localeCompare(right.logicalTableKey))
+      .map((value) => Object.freeze({ ...value }))),
+    pendingFieldNameCounts: Object.freeze(Object.fromEntries(
+      Object.entries(pendingFieldNameCounts).sort(([left], [right]) => left.localeCompare(right)),
+    )),
+    readStrategies: Object.freeze([...readStrategies].sort()),
   });
+}
+
+function createPostApplyVerificationResult(input) {
+  const summary = requireVerificationSummary(input.summary);
+  const attempts = requireNonNegativeInteger(input.attempts, 'attempts');
+  const elapsedMs = requireNonNegativeInteger(input.elapsedMs, 'elapsedMs');
+  const readStrategies = summary.readStrategies;
+  return Object.freeze({
+    attempts,
+    elapsedMs,
+    final: Object.freeze({
+      createRows: summary.createRows,
+      updateRows: summary.updateRows,
+      skippedRows: summary.skippedRows,
+    }),
+    pendingRowsByLogicalTable: Object.freeze(summary.tables
+      .filter((table) => table.createRows > 0 || table.updateRows > 0)
+      .map((table) => Object.freeze({
+        logicalTableKey: table.logicalTableKey,
+        createRows: table.createRows,
+        updateRows: table.updateRows,
+      }))),
+    pendingFieldNameCounts: summary.pendingFieldNameCounts,
+    readStrategy: readStrategies.length === 1 ? readStrategies[0] : readStrategies,
+  });
+}
+
+function requireVerificationSummary(summary) {
+  const value = requireObject(summary, 'summary');
+  const tables = requireArray(value.tables ?? [], 'summary.tables').map((table) => Object.freeze({
+    logicalTableKey: requireText(table?.logicalTableKey, 'logicalTableKey'),
+    plans: requireNonNegativeInteger(table?.plans ?? 0, 'plans'),
+    createRows: requireNonNegativeInteger(table?.createRows, 'createRows'),
+    updateRows: requireNonNegativeInteger(table?.updateRows, 'updateRows'),
+    skippedRows: requireNonNegativeInteger(table?.skippedRows, 'skippedRows'),
+  }));
+  const pendingFieldNameCounts = Object.fromEntries(
+    Object.entries(requireObject(
+      value.pendingFieldNameCounts ?? {},
+      'pendingFieldNameCounts',
+    )).map(([fieldName, count]) => [
+      requireText(fieldName, 'pending field name'),
+      requireNonNegativeInteger(count, `pendingFieldNameCounts.${fieldName}`),
+    ]),
+  );
+  const readStrategies = requireArray(
+    value.readStrategies ?? [],
+    'readStrategies',
+  ).map((strategy) => requireText(strategy, 'readStrategy'));
+  return Object.freeze({
+    planCount: requireNonNegativeInteger(value.planCount ?? 0, 'planCount'),
+    createRows: requireNonNegativeInteger(value.createRows, 'createRows'),
+    updateRows: requireNonNegativeInteger(value.updateRows, 'updateRows'),
+    skippedRows: requireNonNegativeInteger(value.skippedRows ?? 0, 'skippedRows'),
+    tables: Object.freeze(tables),
+    pendingFieldNameCounts: Object.freeze(pendingFieldNameCounts),
+    readStrategies: Object.freeze(readStrategies),
+  });
+}
+
+function readVerificationDelays(value) {
+  const delays = requireArray(value, 'delaysMs').map((delay, index) => (
+    requireBoundedInteger(delay, 0, 30_000, `delaysMs[${index}]`)
+  ));
+  if (delays.length === 0 || delays.length > 10 || delays[0] !== 0) {
+    throw backfillError(
+      'Verification delays must contain 1-10 attempts and begin at 0ms',
+      'LARK_DASHBOARD_BACKFILL_INPUT_INVALID',
+    );
+  }
+  for (let index = 1; index < delays.length; index += 1) {
+    if (delays[index] < delays[index - 1]) {
+      throw backfillError(
+        'Verification delays must be non-decreasing',
+        'LARK_DASHBOARD_BACKFILL_INPUT_INVALID',
+      );
+    }
+  }
+  return Object.freeze(delays);
+}
+
+function readClock(now, label) {
+  const value = Number(now());
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new TypeError(`${label} must be a non-negative integer`);
+  }
+  return value;
+}
+
+function elapsedSince(startedAt, now) {
+  return Math.max(0, readClock(now, 'verification clock') - startedAt);
+}
+
+async function sleepFor(milliseconds) {
+  await new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 function requireBaseEngine(value) {
@@ -335,6 +543,19 @@ function requireBoundedInteger(value, minimum, maximum, fieldName) {
     );
   }
   return number;
+}
+
+function requireNonNegativeInteger(value, fieldName) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number < 0) {
+    throw new TypeError(`${fieldName} must be a non-negative integer`);
+  }
+  return number;
+}
+
+function requireFunction(value, fieldName) {
+  if (typeof value !== 'function') throw new TypeError(`${fieldName} must be a function`);
+  return value;
 }
 
 function requireArray(value, fieldName) {
