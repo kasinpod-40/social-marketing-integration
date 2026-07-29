@@ -73,7 +73,7 @@ test('does not retry non-GET requests and rejects malformed expected attestation
   let calls = 0;
   const fetchWithRetry = createWooCommerceDiagnosticsAttestedFetch(async () => {
     calls += 1;
-    return attestedResponse(null, 204);
+    return attestedResponse(null, 200);
   }, {
     delaysMs: [0, 0, 0],
     sleep: async () => {
