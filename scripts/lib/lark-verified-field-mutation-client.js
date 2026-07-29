@@ -6,8 +6,8 @@ const DEFAULT_DELAYS_MS = Object.freeze([0, 1_000, 2_000, 4_000, 8_000]);
 /**
  * ครอบ Lark client เฉพาะ administrative field migration:
  * - update/create Field ส่ง write เพียงครั้งเดียว
- * - หลัง write ใช้ fresh listFields แบบ bounded จน metadata converge
- * - update ต้องรักษา field_id และ property เดิมแบบ exact semantic fingerprint
+ * - หลัง write ใช้ fresh bounded reads จน metadata และ Record field-name/value converge
+ * - update ต้องรักษา field_id, property และค่าของทุก Record แบบ exact fingerprint
  * - create ต้องเห็น Field เป้าหมายเพียงหนึ่งรายการและตรง type
  */
 export function createVerifiedFieldMutationClient(client, options = {}) {
@@ -34,8 +34,8 @@ async function verifiedUpdateField(client, input, delaysMs, sleep) {
   const fieldId = requireText(input?.fieldId, 'fieldId');
   const expectedName = requireText(input?.field?.fieldName ?? input?.field?.field_name, 'fieldName');
   const expectedType = requireType(input?.field?.type, 'field.type');
-  const before = await client.listFields({ tableId });
-  const source = before.find((field) => field.fieldId === fieldId);
+  const beforeFields = await client.listFields({ tableId });
+  const source = beforeFields.find((field) => field.fieldId === fieldId);
   if (!source || source.isPrimary === true) {
     throw verificationError(
       'Lark field update preflight could not resolve one non-primary source Field',
@@ -43,10 +43,15 @@ async function verifiedUpdateField(client, input, delaysMs, sleep) {
       { operation: 'update', expectedName, expectedType },
     );
   }
+  const beforeRecords = await client.listRecords({
+    tableId,
+    includeRecordMetadata: false,
+  });
   const propertyFingerprint = fingerprint(source.property ?? null);
+  const sourceValueFingerprint = recordValueFingerprint(beforeRecords, source.fieldName);
 
   const result = await client.updateField(input);
-  const verified = await pollFields({
+  const verifiedField = await pollFields({
     client,
     tableId,
     delaysMs,
@@ -62,14 +67,39 @@ async function verifiedUpdateField(client, input, delaysMs, sleep) {
       return sameId;
     },
   });
-  if (!verified) {
+  if (!verifiedField) {
     throw verificationError(
-      'Lark field update did not converge after one write',
+      'Lark field update metadata did not converge after one write',
       'LARK_FIELD_MUTATION_UPDATE_VERIFY_FAILED',
       { operation: 'update', expectedName, expectedType, writeRetryCount: 0 },
     );
   }
-  return result ?? verified;
+
+  const verifiedRecords = await pollRecords({
+    client,
+    tableId,
+    delaysMs,
+    sleep,
+    accept(records) {
+      if (records.length !== beforeRecords.length) return false;
+      return recordValueFingerprint(records, expectedName) === sourceValueFingerprint;
+    },
+  });
+  if (!verifiedRecords) {
+    throw verificationError(
+      'Lark field rename Record values did not converge after one write',
+      'LARK_FIELD_MUTATION_RECORD_VERIFY_FAILED',
+      {
+        operation: 'update',
+        expectedName,
+        expectedType,
+        recordCount: beforeRecords.length,
+        sourceValueFingerprint,
+        writeRetryCount: 0,
+      },
+    );
+  }
+  return result ?? verifiedField;
 }
 
 async function verifiedCreateField(client, input, delaysMs, sleep) {
@@ -122,6 +152,37 @@ async function pollFields(input) {
   return null;
 }
 
+async function pollRecords(input) {
+  for (const delayMs of input.delaysMs) {
+    if (delayMs > 0) await input.sleep(delayMs);
+    const records = await input.client.listRecords({
+      tableId: input.tableId,
+      includeRecordMetadata: false,
+    });
+    if (input.accept(records)) return records;
+  }
+  return null;
+}
+
+function recordValueFingerprint(records, fieldName) {
+  const rows = [...records].sort(compareRecordId).map((record) => {
+    const entry = Object.entries(record?.fields ?? {}).find(
+      ([name]) => normalizeName(name) === normalizeName(fieldName),
+    );
+    return [
+      record?.recordId ?? record?.record_id ?? null,
+      entry !== undefined,
+      entry?.[1] ?? null,
+    ];
+  });
+  return fingerprint(rows);
+}
+
+function compareRecordId(left, right) {
+  return String(left?.recordId ?? left?.record_id ?? '')
+    .localeCompare(String(right?.recordId ?? right?.record_id ?? ''));
+}
+
 function normalizeDelays(value) {
   if (!Array.isArray(value) || value.length === 0
     || value.some((delay) => !Number.isSafeInteger(delay) || delay < 0)) {
@@ -131,7 +192,7 @@ function normalizeDelays(value) {
 }
 
 function requireClient(client) {
-  for (const method of ['listFields', 'updateField', 'createField']) {
+  for (const method of ['listFields', 'listRecords', 'updateField', 'createField']) {
     if (typeof client?.[method] !== 'function') {
       throw new TypeError(`Verified Lark field mutation client requires client.${method}`);
     }
