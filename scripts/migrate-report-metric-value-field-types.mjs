@@ -8,6 +8,7 @@ import {
 } from './lib/report-metric-value-field-migration.js';
 import { createLarkBitableClientFromEnv } from '../packages/connectors/src/lark/lark-bitable.client.js';
 import { createVerifiedFieldMutationClient } from './lib/lark-verified-field-mutation-client.js';
+import { createReportMetricLegacyReadNormalizer } from './lib/report-metric-legacy-read-normalizer.js';
 import { assertReportRuntimeFinalizeEnvironment } from './lib/report-runtime-finalize-operator.js';
 import { readDevVars } from './lib/dev-vars.js';
 
@@ -16,7 +17,10 @@ try {
   const env = await readRuntimeEnvironment();
   assertReportRuntimeFinalizeEnvironment(env);
   const baseClient = createLarkBitableClientFromEnv(env);
-  const client = apply ? createVerifiedFieldMutationClient(baseClient) : baseClient;
+  // Verify raw Field/Record parity inside the mutation wrapper first, then expose only a
+  // lossless normalized read model to the migration planner.
+  const mutationClient = apply ? createVerifiedFieldMutationClient(baseClient) : baseClient;
+  const client = createReportMetricLegacyReadNormalizer(mutationClient);
   const result = apply
     ? await applyReportMetricValueFieldMigration({ client, env })
     : await planReportMetricValueFieldMigration({ client, env });
