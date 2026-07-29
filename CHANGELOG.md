@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased — WooCommerce Provider Redirect Diagnostics — 2026-07-30
+
+### Repository correction
+
+- Added bounded response redirect, URL-presence, source-origin match and exact-resource-path match
+  booleans to invalid-JSON diagnostics after Live Provider HTTP `200` returned HTML/XML under a
+  JSON Content-Type.
+- Propagated only those booleans through the existing Worker diagnostics HTTP allowlist and
+  read-only operation inspector.
+- Kept invalid JSON fail-closed and retained the body hash/shape contract without persisting the
+  response URL, body, prefix, credentials or unrestricted headers.
+
+### Live safety
+
+- The preceding Preview window uploaded isolated Active/Safe Versions, made one Provider GET,
+  restored Preview URLs/workers.dev disabled and left Production deployment/traffic unchanged.
+- Provider mutations, Queue messages, D1/Lark writes and Schedule mutations remained zero.
+
 ## Unreleased — WooCommerce Preview Alias/Version Pair Classifier — 2026-07-30
 
 ### Repository correction

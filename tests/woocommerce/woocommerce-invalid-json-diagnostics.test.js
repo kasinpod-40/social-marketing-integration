@@ -31,6 +31,10 @@ test('invalid successful WooCommerce JSON records bounded structural diagnostics
       assert.deepEqual(error.details, {
         resource: 'system_status',
         responseStatus: 200,
+        responseRedirected: false,
+        responseUrlPresent: false,
+        responseOriginMatchesSource: null,
+        responsePathMatchesResource: null,
         contentType: 'text/html; charset=UTF-8',
         contentEncoding: 'br',
         contentLengthHeader: Buffer.byteLength(secretBody),
@@ -41,6 +45,35 @@ test('invalid successful WooCommerce JSON records bounded structural diagnostics
       });
       assert.equal(JSON.stringify(error.details).includes(secretBody), false);
       assert.equal(JSON.stringify(error.details).includes('private-origin-message'), false);
+      return true;
+    },
+  );
+});
+
+test('invalid JSON classifies a followed redirect without exposing its final URL', async () => {
+  const secretRedirectUrl = 'https://shop.example.test/wp-login.php?private=customer';
+  const fetchImpl = async () => {
+    const response = new Response('<html>login</html>', {
+      status: 200,
+      headers: { 'content-type': 'text/html' },
+    });
+    Object.defineProperties(response, {
+      redirected: { value: true },
+      url: { value: secretRedirectUrl },
+    });
+    return response;
+  };
+
+  await assert.rejects(
+    () => client(fetchImpl).getStoreIdentity(),
+    (error) => {
+      assert.equal(error.code, 'WOOCOMMERCE_INVALID_JSON');
+      assert.equal(error.details.responseRedirected, true);
+      assert.equal(error.details.responseUrlPresent, true);
+      assert.equal(error.details.responseOriginMatchesSource, true);
+      assert.equal(error.details.responsePathMatchesResource, false);
+      assert.equal(JSON.stringify(error.details).includes(secretRedirectUrl), false);
+      assert.equal(JSON.stringify(error.details).includes('wp-login'), false);
       return true;
     },
   );

@@ -62,7 +62,10 @@ export class WooCommerceRestClient {
     }
 
     const response = await this.#request(normalizedResource, { params });
-    const records = await parseJsonResponse(response, normalizedResource);
+    const records = await parseJsonResponse(response, normalizedResource, {
+      baseUrl: this.baseUrl,
+      apiVersion: this.apiVersion,
+    });
     if (!Array.isArray(records)) {
       throw permanentError('WooCommerce collection response must be an array', {
         code: 'WOOCOMMERCE_SOURCE_CONTRACT_INVALID',
@@ -128,7 +131,10 @@ export class WooCommerceRestClient {
     const params = new URLSearchParams({ page: String(page), per_page: String(perPage) });
     for (const [key, value] of Object.entries(query.params ?? {})) appendQueryParam(params, key, value);
     const response = await this.#request(resource, { params });
-    const records = await parseJsonResponse(response, resource);
+    const records = await parseJsonResponse(response, resource, {
+      baseUrl: this.baseUrl,
+      apiVersion: this.apiVersion,
+    });
     if (!Array.isArray(records)) {
       throw permanentError('WooCommerce nested collection response must be an array', {
         code: 'WOOCOMMERCE_SOURCE_CONTRACT_INVALID',
@@ -151,7 +157,10 @@ export class WooCommerceRestClient {
 
   async #requestJson(resource) {
     const response = await this.#request(resource);
-    return parseJsonResponse(response, resource);
+    return parseJsonResponse(response, resource, {
+      baseUrl: this.baseUrl,
+      apiVersion: this.apiVersion,
+    });
   }
 
   async #request(resource, options = {}) {
@@ -299,7 +308,7 @@ function createBasicAuthorization(consumerKey, consumerSecret) {
   return `Basic ${globalThis.btoa(binary)}`;
 }
 
-async function parseJsonResponse(response, resource) {
+async function parseJsonResponse(response, resource, target) {
   if (response.status === 204) return [];
   let body;
   try {
@@ -308,7 +317,7 @@ async function parseJsonResponse(response, resource) {
     throw transientError('WooCommerce response body could not be read', {
       code: 'WOOCOMMERCE_RESPONSE_READ_FAILED',
       cause,
-      details: responseMetadata(response, resource),
+      details: responseMetadata(response, resource, target),
     });
   }
   const bomRemoved = body.charCodeAt(0) === 0xfeff;
@@ -318,15 +327,15 @@ async function parseJsonResponse(response, resource) {
   } catch {
     throw permanentError('WooCommerce returned invalid JSON', {
       code: 'WOOCOMMERCE_INVALID_JSON',
-      details: await describeInvalidJsonResponse(response, resource, body, bomRemoved),
+      details: await describeInvalidJsonResponse(response, resource, body, bomRemoved, target),
     });
   }
 }
 
-async function describeInvalidJsonResponse(response, resource, body, bomRemoved) {
+async function describeInvalidJsonResponse(response, resource, body, bomRemoved, target) {
   const bytes = new TextEncoder().encode(body);
   return Object.freeze({
-    ...responseMetadata(response, resource),
+    ...responseMetadata(response, resource, target),
     bodyByteLength: bytes.byteLength,
     bodySha256: await sha256Hex(bytes),
     bodyShape: classifyResponseBody(body, bomRemoved),
@@ -334,14 +343,48 @@ async function describeInvalidJsonResponse(response, resource, body, bomRemoved)
   });
 }
 
-function responseMetadata(response, resource) {
+function responseMetadata(response, resource, target) {
+  const targetClassification = classifyResponseTarget(response, resource, target);
   return Object.freeze({
     resource,
     responseStatus: Number.isSafeInteger(response?.status) ? response.status : null,
+    responseRedirected: response?.redirected === true,
+    responseUrlPresent: targetClassification.present,
+    responseOriginMatchesSource: targetClassification.originMatchesSource,
+    responsePathMatchesResource: targetClassification.pathMatchesResource,
     contentType: readBoundedHeader(response?.headers, 'content-type'),
     contentEncoding: readBoundedHeader(response?.headers, 'content-encoding'),
     contentLengthHeader: readOptionalHeaderInteger(response?.headers, 'content-length'),
   });
+}
+
+function classifyResponseTarget(response, resource, target) {
+  const responseUrl = typeof response?.url === 'string' ? response.url.trim() : '';
+  if (responseUrl === '') {
+    return Object.freeze({
+      present: false,
+      originMatchesSource: null,
+      pathMatchesResource: null,
+    });
+  }
+  try {
+    const actual = new URL(responseUrl);
+    const expected = new URL(
+      `${target.baseUrl}/wp-json/${target.apiVersion}/${resource}`,
+    );
+    return Object.freeze({
+      present: true,
+      originMatchesSource: actual.origin === expected.origin,
+      pathMatchesResource: actual.pathname === expected.pathname
+        && actual.search === expected.search,
+    });
+  } catch {
+    return Object.freeze({
+      present: true,
+      originMatchesSource: false,
+      pathMatchesResource: false,
+    });
+  }
 }
 
 function classifyResponseBody(body, bomRemoved) {

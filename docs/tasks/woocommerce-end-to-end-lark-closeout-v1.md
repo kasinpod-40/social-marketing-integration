@@ -81,3 +81,37 @@ Production traffic change 0
 หลัง exact-head Branch Verification และ Squash Merge จึงรัน Preview diagnostics window ตาม
 scoped authorization แล้วดำเนิน failed-operation recovery และ Final D1/Lark rollout ต่อ.
 
+## Live diagnostics after PR #251 merge
+
+PR `#251` Squash Merged at `a4bfd16daac6bc47a5296687fb4f843e7f132847`.
+Guarded Preview diagnostics then passed the Preview classifier/window contract:
+
+```text
+Active Preview Version       45e477d7-b3d8-44a6-bf7c-50fc36ce5b7d
+Safe Preview Version         8789af34-0d40-425a-a549-7eb8957b7cbe
+Provider request             1
+Provider mutation            0
+Queue/D1/Lark/Schedule       0
+Preview URLs restored        true
+workers.dev restored         disabled
+Production baseline version 8284c076-49ed-4ffc-bba9-f2e0839aa1c5
+Production unchanged         true
+```
+
+Provider returned HTTP `200` with declared `application/json` but the bounded parser classified
+the 51,479-byte body as `html_or_xml`, so diagnostics returned `WOOCOMMERCE_INVALID_JSON`.
+An unauthenticated public GET to the exact source/route with the Worker Accept/User-Agent headers
+returned the expected JSON `401`; therefore hostname/path/header routing is valid and the
+difference occurs only after credential processing.
+
+The next repository hotfix adds booleans only for followed-redirect/final-target classification:
+
+```text
+responseRedirected
+responseUrlPresent
+responseOriginMatchesSource
+responsePathMatchesResource
+```
+
+No raw response URL, body, prefix, header, credential or Secret value is retained. The hotfix
+does not accept contaminated JSON and does not change Provider request/retry semantics.

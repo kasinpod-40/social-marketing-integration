@@ -98,6 +98,21 @@ docs/tasks/lark-dashboard-backfill-post-verify-hotfix-v1.md
 
 ## Implementation result
 
+### WooCommerce Provider redirect diagnostics follow-up — 2026-07-30
+
+- PR `#251` Squash Merged ที่ `a4bfd16daac6bc47a5296687fb4f843e7f132847`.
+- Live Preview diagnostics ผ่าน Active/Safe pair classification และ restore ครบ; Provider GET
+  หนึ่งครั้งได้ HTTP `200`/`application/json` แต่ body shape เป็น `html_or_xml` จึงยัง fail closed
+  ด้วย `WOOCOMMERCE_INVALID_JSON`.
+- Preview URLs/workers.dev ถูก restore disabled, Production baseline
+  `8284c076-49ed-4ffc-bba9-f2e0839aa1c5` ไม่เปลี่ยน และ Queue/D1/Lark/Schedule/Business
+  mutations เป็นศูนย์.
+- Public unauthenticated exact-route GET ด้วย Worker headers ได้ JSON `401`, ยืนยัน source
+  hostname/path/Accept/User-Agent route. Follow-up เพิ่มเฉพาะ bounded redirect/final-target
+  booleans เพื่อแยก followed redirect จาก direct HTML contamination โดยไม่เก็บ URL/body/Secret.
+- Provider diagnostics rerun, failed-operation recovery และ Final D1/Lark rollout รอ hotfix
+  exact-head CI/Squash Merge.
+
 ### WooCommerce End-to-End D1 + Lark Closeout v1 — Preview pair classifier — 2026-07-30
 
 - Branch `codex/woocommerce-end-to-end-lark-closeout-v1` เริ่มจาก

@@ -30,6 +30,12 @@ action. Live diagnostics และ D1/Lark rollout ดำเนินต่อ�
 docs/tasks/woocommerce-end-to-end-lark-closeout-v1.md
 ```
 
+Live diagnostics หลัง merge ผ่าน classifier และ Safe restore แต่ Provider HTTP `200` body ถูก
+จำแนกเป็น HTML/XML ทั้งที่ Content-Type เป็น JSON. Public unauthenticated exact-route GET ด้วย
+Worker headers ได้ JSON `401`, จึงไม่ใช่ hostname/path/Accept/User-Agent mismatch. Follow-up
+เพิ่มเฉพาะ `responseRedirected`, response URL presence และ origin/path match booleans โดยไม่เก็บ
+raw URL/body/prefix เพื่อแยก redirect จาก direct Provider contamination ก่อนตัดสิน external fix.
+
 ## WooCommerce diagnostics deterministic Preview origin — 2026-07-30
 
 Live diagnostics หลัง Queue sentinel fix ยืนยัน Active และ automatic Safe Preview upload สำเร็จ
