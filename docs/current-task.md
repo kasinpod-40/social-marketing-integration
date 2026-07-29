@@ -98,6 +98,22 @@ docs/tasks/lark-dashboard-backfill-post-verify-hotfix-v1.md
 
 ## Implementation result
 
+### WooCommerce Final Safe Closeout v1 — 2026-07-30
+
+- Exact recovery PR `#253` Squash Merged ที่
+  `67a82551749569d74b9e4b66a32c82e5715b1d40`; Live recovery เปลี่ยนเฉพาะ durable lifecycle
+  row ของ `woo-final-full-6f43ac8ee857` เป็น terminal และ post-inspection ยืนยัน stale-active
+  false, locks `0`, Queue attempts `1`, Coverage/Business rows `0`.
+- Final operator เดิมยัง deploy scheduled-active window เมื่อ success ซึ่งขัด scoped
+  authorization ล่าสุดที่กำหนด Schedule/Cron disabled และ all-false Safe restore.
+- Hotfix นี้ reuse existing rollout path แต่แทน final scheduled deployment ด้วย verified
+  `safe-closeout`; summary ต้องเป็น `executionFlagsAllFalse=true`, `scheduleEnabled=false`.
+- Focused rollout/runtime tests ผ่าน `56/56`; full Unit `1462/1462`, Workers runtime
+  `15/15`, Report reliability `100/100`, repository check, dependency audit `0 vulnerabilities`
+  และ deploy dry-runs ผ่าน.
+- Repository implementation ไม่มี Remote action; Live rollout จะทำหลัง exact-head CI,
+  self-review และ Squash Merge.
+
 ### WooCommerce exact stale-operation recovery 6f43 — 2026-07-30
 
 - Provider diagnostics rerun ผ่านบน merged `main@527cdceda2d4661c82dc000380705d1078343bdf`:

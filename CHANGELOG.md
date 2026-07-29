@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased — WooCommerce Final Safe Closeout — 2026-07-30
+
+### Repository correction
+
+- Replaced the final scheduled-active deployment in the existing WooCommerce one-command rollout
+  with a verified all-false Safe closeout deployment.
+- Kept the bounded manual UAT, full reconciliation, D1/Lark parity, same-operation replay and
+  incremental validation stages unchanged.
+- Final evidence now records `executionFlagsAllFalse=true` and `scheduleEnabled=false`.
+
+### Safety
+
+- Both successful closeout and automatic failure restoration use the same all-false Safe config.
+- No Production, Schedule/Cron, Queue, D1/Lark, Provider or Worker action occurred during
+  repository implementation.
+
 ## Unreleased — WooCommerce Exact Failed-operation Recovery 6f43 — 2026-07-30
 
 ### Repository correction

@@ -99,7 +99,7 @@ function printPlan() {
       'd1-lark-parity',
       'same-operation-rerun',
       'incremental-uat',
-      'deploy-scheduled-window',
+      'deploy-safe-closeout',
       'final-summary',
     ],
     safety: {
@@ -107,6 +107,7 @@ function printPlan() {
       production: false,
       deleteExistingBusinessFacts: false,
       applyUnrelatedMigration0018: false,
+      scheduleEnabled: false,
       automaticSafeRestoreOnFailure: true,
     },
   }, null, 2)}\n`);
@@ -140,12 +141,7 @@ async function executeFinalRollout() {
     'MKT_WOOCOMMERCE_FULL_RECONCILIATION_ENABLED',
     'MKT_WOOCOMMERCE_LARK_WRITE_ENABLED',
   ]);
-  assertExactFlags(windows.scheduledTrueFlags, [
-    'MKT_CONNECTOR_WOOCOMMERCE_ENABLED',
-    'MKT_SCHEDULE_WOOCOMMERCE_ENABLED',
-    'MKT_WOOCOMMERCE_D1_WRITE_ENABLED',
-    'MKT_WOOCOMMERCE_LARK_WRITE_ENABLED',
-  ]);
+  assertExactFlags(windows.closeoutTrueFlags, []);
   latestSafeConfig = windows.safe;
 
   currentStage = 'd1-backup';
@@ -207,28 +203,29 @@ async function executeFinalRollout() {
     parity: incrementalParity,
   });
 
-  currentStage = 'deploy-scheduled-window';
-  const scheduledDeployment = await deployAndVerify(
-    windows.scheduled,
-    windows.scheduledTrueFlags,
-    'scheduled-active-window',
+  currentStage = 'deploy-safe-closeout';
+  const closeoutDeployment = await deployAndVerify(
+    windows.closeout,
+    windows.closeoutTrueFlags,
+    'safe-closeout',
   );
   latestSafeConfig = null;
-  await writeEvidence('10-scheduled-deployment', scheduledDeployment);
+  await writeEvidence('10-safe-closeout-deployment', closeoutDeployment);
 
   currentStage = 'final-summary';
   const summary = {
     accepted: true,
     contractVersion: WOOCOMMERCE_FINAL_CONTRACT_VERSION,
     repositoryHead: target.repositoryHead,
-    workerVersion: scheduledDeployment.activeVersion,
+    workerVersion: closeoutDeployment.activeVersion,
     d1Backup: backup,
     larkSchema: { tableCount: schema.tableCount, createdTables: schema.createdTables, createdFields: schema.createdFields },
     fullReconciliation: { operationId: full.operationId, totalRows: sumCounts(fullAfter.counts) },
     parityVerified: true,
     idempotentRerunVerified: true,
     incrementalVerified: true,
-    scheduleEnabled: true,
+    executionFlagsAllFalse: true,
+    scheduleEnabled: false,
     production: false,
     nextStep: 'none_for_integration_workspace_woocommerce',
   };

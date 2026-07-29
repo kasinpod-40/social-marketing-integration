@@ -99,22 +99,17 @@ export function buildWooCommerceConfigWindows(input = {}) {
     MKT_WOOCOMMERCE_LARK_WRITE_ENABLED: true,
     MKT_WOOCOMMERCE_FULL_RECONCILIATION_ENABLED: true,
   });
-  const scheduled = setFlags(safe, {
-    MKT_CONNECTOR_WOOCOMMERCE_ENABLED: true,
-    MKT_WOOCOMMERCE_D1_WRITE_ENABLED: true,
-    MKT_WOOCOMMERCE_LARK_WRITE_ENABLED: true,
-    MKT_SCHEDULE_WOOCOMMERCE_ENABLED: true,
-  });
+  const closeout = safe;
   return Object.freeze({
     safe,
     uat,
-    scheduled,
+    closeout,
     safeSha256: sha256(safe),
     uatSha256: sha256(uat),
-    scheduledSha256: sha256(scheduled),
+    closeoutSha256: sha256(closeout),
     safeTrueFlags: Object.freeze(readTrueFlags(safe)),
     uatTrueFlags: Object.freeze(readTrueFlags(uat)),
-    scheduledTrueFlags: Object.freeze(readTrueFlags(scheduled)),
+    closeoutTrueFlags: Object.freeze(readTrueFlags(closeout)),
   });
 }
 
