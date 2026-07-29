@@ -33,8 +33,13 @@ import {
   buildReportRuntimeCloseoutConfigWindow,
   parseReportRuntimeCloseoutArgs,
   safeReportRuntimeCloseoutEvidence,
-  selectFreshReportRuntimeCloseoutCandidate,
 } from './lib/report-runtime-closeout-operator.js';
+import {
+  assertReportRuntimeOrganicIntegrity,
+  assertReportRuntimeWindowChanged,
+  assertReportRuntimeWindowTargetPrestate,
+  selectReportRuntimeWindowTarget,
+} from './lib/report-runtime-window-repair.js';
 import {
   resolveCloudflareAccountId,
   resolveCloudflareBearerAuth,
@@ -85,13 +90,17 @@ function printPlan() {
     contractVersion: REPORT_RUNTIME_CLOSEOUT_CONTRACT_VERSION,
     command: `CONFIRM_REPORT_RUNTIME_CLOSEOUT=${REPORT_RUNTIME_CLOSEOUT_CONFIRMATION} node scripts/report-runtime-closeout-operator.mjs --execute`,
     scope: 'TikTok Organic rolling preset materialization from D1 to Lark',
+    target: {
+      operation: process.env.MKT_REPORT_RUNTIME_CLOSEOUT_OPERATION ?? 'fresh',
+      windowDays: process.env.MKT_REPORT_RUNTIME_CLOSEOUT_WINDOW_DAYS ?? null,
+    },
     stages: [
       'repository-and-finalizer-evidence',
       'lark-and-d1-preflight',
       'remote-safe-preflight-and-backup',
       'deploy-report-only-window',
       'send-one-materialization',
-      'verify-d1-and-lark',
+      'verify-d1-lark-and-kpi-integrity',
       'replay-same-job',
       'verify-idempotency',
       'restore-all-false',
@@ -105,6 +114,7 @@ function printPlan() {
       schedulesEnabled: false,
       production: false,
       businessFactDeletion: false,
+      manualLarkEditing: false,
       automaticSafeRestore: true,
     },
   }, null, 2)}\n`);
@@ -120,13 +130,11 @@ async function executeCloseout() {
   const repository = await assertRepositoryState();
   const finalizerEvidence = JSON.parse(await readFile(finalizerEvidencePath, 'utf8'));
   assertReportRuntimeFinalizerEvidence(finalizerEvidence);
-  if (finalizerEvidence.repository.head !== repository.head) {
-    throw failure(
-      'Report closeout requires finalizer evidence from the current main HEAD',
-      'REPORT_RUNTIME_CLOSEOUT_FINALIZER_HEAD_MISMATCH',
-      { evidenceHead: finalizerEvidence.repository.head, repositoryHead: repository.head },
-    );
-  }
+  if (finalizerEvidence.repository.head !== repository.head) throw failure(
+    'Report closeout requires finalizer evidence from the current main HEAD',
+    'REPORT_RUNTIME_CLOSEOUT_FINALIZER_HEAD_MISMATCH',
+    { evidenceHead: finalizerEvidence.repository.head, repositoryHead: repository.head },
+  );
 
   const sourceText = await readFile(configPath, 'utf8');
   const config = buildReportRuntimeCloseoutConfigWindow(sourceText);
@@ -147,26 +155,18 @@ async function executeCloseout() {
     timeZone: 'Asia/Bangkok',
   });
   const existingIds = await readExistingReportIds(config, candidates.map((candidate) => candidate.reportId));
-  const selected = selectFreshReportRuntimeCloseoutCandidate(candidates, existingIds);
+  const selected = selectReportRuntimeWindowTarget(candidates, existingIds, env);
   const snapshotBefore = await readD1Snapshot(config, selected, requestedAt);
-  if (Number(snapshotBefore.materialization_count ?? 0) !== 0) {
-    throw failure(
-      'Selected Report closeout materialization is not fresh',
-      'REPORT_RUNTIME_CLOSEOUT_SNAPSHOT_NOT_FRESH',
-      { reportId: selected.reportId },
-    );
-  }
-  const larkBefore = await readLarkReportCounts(client, config.tableIds, selected.reportId);
-  if (larkBefore.snapshots !== 0 || larkBefore.metrics !== 0 || larkBefore.topContent !== 0) {
-    throw failure(
-      'Selected Report closeout identity already exists in Lark',
-      'REPORT_RUNTIME_CLOSEOUT_LARK_SNAPSHOT_NOT_FRESH',
-      { reportId: selected.reportId, counts: larkBefore },
-    );
-  }
+  const larkBefore = await readLarkReportState(client, config.tableIds, selected.reportId);
+  assertReportRuntimeWindowTargetPrestate({
+    operation: selected.operation,
+    reportId: selected.reportId,
+    d1: snapshotBefore,
+    lark: larkBefore,
+  });
 
   currentStage = 'remote-safe-preflight-and-backup';
-  const pendingMigrations = await readPendingMigrations(config);
+  const pendingMigrations = await readPendingMigrations();
   if (pendingMigrations.length > 0) throw failure(
     `Pending migrations block Report closeout: ${pendingMigrations.join(', ')}`,
     'REPORT_RUNTIME_CLOSEOUT_PENDING_MIGRATIONS',
@@ -175,12 +175,14 @@ async function executeCloseout() {
   const safeBundle = await buildBundle(config.safeText, 'safe-preflight');
   const activeBundle = await buildBundle(config.activeText, 'active-preflight');
   const remoteSafe = await verifyRemoteDeployment(config, 'safe');
-  const backup = await createD1Backup(config, selected);
+  const backup = await createD1Backup(selected);
 
   let firstCompletion = null;
   let firstLark = null;
+  let firstIntegrity = null;
   let replayCompletion = null;
   let replayLark = null;
+  let replayIntegrity = null;
   let activeDeployment = null;
   let restoreDeployment = null;
   let primaryError = null;
@@ -191,6 +193,8 @@ async function executeCloseout() {
       expectedActiveVersion: remoteSafe.activeVersion,
       configSha256: config.activeSha256,
       selectedReportId: selected.reportId,
+      operation: selected.operation,
+      windowDays: selected.windowDays,
     });
     activeDeployment = await deployConfig(config.activeText, 'report-closeout-active');
     activeDeploymentAttempted = true;
@@ -199,20 +203,28 @@ async function executeCloseout() {
     currentStage = 'send-one-materialization';
     await writeAttempt('send-first', {
       reportId: selected.reportId,
+      operation: selected.operation,
       jobSha256: sha256(stableJson(selected.job)),
       requestedAt,
     });
     await sendQueueMessage(auth, queue.queueId, selected.job);
 
-    currentStage = 'verify-d1-and-lark';
+    currentStage = 'verify-d1-lark-and-kpi-integrity';
     firstCompletion = await pollD1Completion(config, selected, requestedAt, 1);
     assertReportRuntimeCloseoutCompletion(firstCompletion, { reportId: selected.reportId });
+    assertReportRuntimeWindowChanged({
+      operation: selected.operation,
+      before: snapshotBefore,
+      after: firstCompletion,
+    });
     firstLark = await pollLarkCompletion(client, config.tableIds, selected.reportId);
     assertLarkCompletion(firstLark);
+    firstIntegrity = assertD1LarkOrganicIntegrity(firstCompletion, firstLark);
 
     currentStage = 'replay-same-job';
     await writeAttempt('send-replay', {
       reportId: selected.reportId,
+      operation: selected.operation,
       jobSha256: sha256(stableJson(selected.job)),
       requestedAt,
     });
@@ -224,6 +236,11 @@ async function executeCloseout() {
     assertReportRuntimeCloseoutReplay(firstCompletion, replayCompletion);
     replayLark = await pollLarkCompletion(client, config.tableIds, selected.reportId);
     assertLarkReplay(firstLark, replayLark);
+    replayIntegrity = assertD1LarkOrganicIntegrity(replayCompletion, replayLark);
+    if (stableJson(firstIntegrity) !== stableJson(replayIntegrity)) throw failure(
+      'Report closeout replay changed Organic KPI integrity evidence',
+      'REPORT_RUNTIME_CLOSEOUT_REPLAY_INTEGRITY_DRIFT',
+    );
   } catch (error) {
     primaryError = error;
   } finally {
@@ -239,16 +256,14 @@ async function executeCloseout() {
         await verifyRemoteDeployment(config, 'safe', restoreDeployment.versionId);
         safeRestoreVerified = true;
       } catch (restoreError) {
-        if (primaryError) {
-          throw failure(
-            'Report closeout failed and automatic all-false restore also failed',
-            'REPORT_RUNTIME_CLOSEOUT_RESTORE_FAILED_AFTER_PRIMARY_ERROR',
-            {
-              primaryCode: primaryError?.code ?? 'UNKNOWN',
-              restoreCode: restoreError?.code ?? 'UNKNOWN',
-            },
-          );
-        }
+        if (primaryError) throw failure(
+          'Report closeout failed and automatic all-false restore also failed',
+          'REPORT_RUNTIME_CLOSEOUT_RESTORE_FAILED_AFTER_PRIMARY_ERROR',
+          {
+            primaryCode: primaryError?.code ?? 'UNKNOWN',
+            restoreCode: restoreError?.code ?? 'UNKNOWN',
+          },
+        );
         throw restoreError;
       }
     }
@@ -263,7 +278,7 @@ async function executeCloseout() {
   const summary = safeReportRuntimeCloseoutEvidence({
     ok: true,
     contractVersion: REPORT_RUNTIME_CLOSEOUT_CONTRACT_VERSION,
-    decision: 'REPORT_WORKSTREAM_CLOSED',
+    decision: selected.operation === 'refresh' ? 'REPORT_WINDOW_REFRESHED' : 'REPORT_WINDOW_CREATED',
     repository,
     finalizerEvidence: {
       contractVersion: finalizerEvidence.contractVersion,
@@ -276,6 +291,7 @@ async function executeCloseout() {
       customerProfile: 'integration_workspace',
       platform: 'tiktok',
       accountKey: 'chemistry_k',
+      operation: selected.operation,
       reportSettingKey: selected.reportSettingKey,
       reportId: selected.reportId,
       windowDays: selected.windowDays,
@@ -284,6 +300,7 @@ async function executeCloseout() {
     },
     preflight: {
       lark: larkPreflight,
+      targetRows: summarizeTargetState(snapshotBefore, larkBefore),
       d1: {
         coverageStatus: d1Preflight.coverage_status,
         contentStateCount: Number(d1Preflight.content_state_count),
@@ -299,7 +316,8 @@ async function executeCloseout() {
       payloadChecksum: firstCompletion.payload_checksum,
       d1MaterializationCount: Number(firstCompletion.materialization_count),
       firstSyncRunCount: Number(firstCompletion.successful_sync_count),
-      larkRows: firstLark,
+      larkRows: summarizeLarkState(firstLark),
+      integrity: firstIntegrity,
     },
     replay: {
       sameReportId: firstCompletion.report_id === replayCompletion.report_id,
@@ -307,6 +325,7 @@ async function executeCloseout() {
       d1MaterializationCount: Number(replayCompletion.materialization_count),
       successfulSyncRunCount: Number(replayCompletion.successful_sync_count),
       larkRowsUnchanged: stableJson(firstLark) === stableJson(replayLark),
+      integrityUnchanged: stableJson(firstIntegrity) === stableJson(replayIntegrity),
     },
     runtime: {
       activeTrueFlags: REPORT_RUNTIME_CLOSEOUT_ACTIVE_TRUE_FLAGS,
@@ -319,16 +338,46 @@ async function executeCloseout() {
       providerCalls: 0,
       production: false,
     },
-    scopeBoundary: {
-      activeSourceVerified: 'tiktok',
-      uatPendingSourcesRemainConnectorGated: ['facebook', 'instagram', 'meta_ads', 'google_ads'],
-      plannedSourcesRemainUnavailable: ['tiktok_ads'],
-      schedulesAndAiAreNotRequiredToCloseReportCore: true,
-    },
   });
   const evidencePath = join(outputRoot, 'report-runtime-closeout-summary.json');
   await writePrivateJson(evidencePath, summary);
   process.stdout.write(`${JSON.stringify({ ...summary, evidencePath }, null, 2)}\n`);
+}
+
+function assertD1LarkOrganicIntegrity(d1, lark) {
+  let payload;
+  try {
+    payload = JSON.parse(String(d1.payload_json ?? ''));
+  } catch {
+    throw failure(
+      'Report materialization payload_json is invalid',
+      'REPORT_RUNTIME_CLOSEOUT_PAYLOAD_JSON_INVALID',
+    );
+  }
+  if (lark.duplicateMetricKeys !== 0) throw failure(
+    'Lark Report metric rows contain duplicate metric_key values',
+    'REPORT_RUNTIME_CLOSEOUT_LARK_METRIC_DUPLICATE',
+    { duplicateMetricKeys: lark.duplicateMetricKeys },
+  );
+  return assertReportRuntimeOrganicIntegrity({ payload, larkMetrics: lark.metricValues });
+}
+
+function summarizeTargetState(d1, lark) {
+  return Object.freeze({
+    d1MaterializationCount: Number(d1.materialization_count ?? 0),
+    larkSnapshots: Number(lark.snapshots ?? 0),
+    larkMetrics: Number(lark.metrics ?? 0),
+    larkTopContent: Number(lark.topContent ?? 0),
+  });
+}
+
+function summarizeLarkState(lark) {
+  return Object.freeze({
+    snapshots: lark.snapshots,
+    metrics: lark.metrics,
+    topContent: lark.topContent,
+    duplicateMetricKeys: lark.duplicateMetricKeys,
+  });
 }
 
 async function assertRepositoryState() {
@@ -405,7 +454,9 @@ async function resolveQueue(accountId, token, expectedName) {
 
 async function verifyLarkInventory(client, tableIds) {
   const remoteTables = await client.listTables();
-  const remoteIds = new Set(remoteTables.map((item) => String(item?.table_id ?? item?.tableId ?? item?.id ?? '')).filter(Boolean));
+  const remoteIds = new Set(remoteTables
+    .map((item) => String(item?.table_id ?? item?.tableId ?? item?.id ?? ''))
+    .filter(Boolean));
   const fieldCounts = {};
   for (const [key, tableId] of Object.entries(tableIds)) {
     if (!remoteIds.has(tableId)) throw failure(
@@ -429,8 +480,8 @@ async function verifyLarkInventory(client, tableIds) {
   });
 }
 
-async function readD1Preflight(config) {
-  const sql = compactSql(`
+async function readD1Preflight() {
+  return readD1Row(compactSql(`
     WITH coverage AS (
       SELECT status, source_watermark, completed_at
       FROM data_coverage_runs
@@ -457,23 +508,23 @@ async function readD1Preflight(config) {
           AND l.expires_at > (unixepoch() * 1000)) AS active_report_locks,
       (SELECT COUNT(*) FROM dead_letter_jobs
         WHERE job_type = 'report.materialization.generate' AND status IN ('open', 'redrive_pending')) AS open_report_dlq;
-  `);
-  return readD1Row(config, sql);
+  `));
 }
 
-async function readExistingReportIds(config, reportIds) {
+async function readExistingReportIds(_config, reportIds) {
   const quoted = reportIds.map((value) => `'${sqlText(value)}'`).join(', ');
-  const rows = await readD1Rows(config, `SELECT report_id FROM report_materializations WHERE report_id IN (${quoted});`);
+  const rows = await readD1Rows(`SELECT report_id FROM report_materializations WHERE report_id IN (${quoted});`);
   return rows.map((row) => String(row.report_id));
 }
 
-async function readD1Snapshot(config, selected, requestedAt) {
+async function readD1Snapshot(_config, selected, requestedAt) {
   const reportId = sqlText(selected.reportId);
-  return readD1Row(config, compactSql(`
+  return readD1Row(compactSql(`
     SELECT
       (SELECT report_id FROM report_materializations WHERE report_id = '${reportId}') AS report_id,
       (SELECT data_status FROM report_materializations WHERE report_id = '${reportId}') AS data_status,
       (SELECT payload_checksum FROM report_materializations WHERE report_id = '${reportId}') AS payload_checksum,
+      (SELECT payload_json FROM report_materializations WHERE report_id = '${reportId}') AS payload_json,
       (SELECT generated_at FROM report_materializations WHERE report_id = '${reportId}') AS generated_at,
       (SELECT COUNT(*) FROM report_materializations WHERE report_id = '${reportId}') AS materialization_count,
       (SELECT status FROM sync_runs
@@ -497,7 +548,10 @@ async function readD1Snapshot(config, selected, requestedAt) {
 
 async function pollD1Completion(config, selected, requestedAt, minimumSuccessfulRuns) {
   const maxPolls = positiveInteger(process.env.MKT_REPORT_RUNTIME_CLOSEOUT_MAX_POLLS ?? 24, 'maxPolls');
-  const intervalMs = positiveInteger(process.env.MKT_REPORT_RUNTIME_CLOSEOUT_POLL_INTERVAL_MS ?? 5_000, 'pollIntervalMs');
+  const intervalMs = positiveInteger(
+    process.env.MKT_REPORT_RUNTIME_CLOSEOUT_POLL_INTERVAL_MS ?? 5_000,
+    'pollIntervalMs',
+  );
   let row = null;
   for (let attempt = 1; attempt <= maxPolls; attempt += 1) {
     row = await readD1Snapshot(config, selected, requestedAt);
@@ -514,14 +568,14 @@ async function pollD1Completion(config, selected, requestedAt, minimumSuccessful
   );
 }
 
-async function readLarkReportCounts(client, tableIds, reportId) {
-  const counts = {};
+async function readLarkReportState(client, tableIds, reportId) {
+  const recordsByName = {};
   for (const [name, key] of [
     ['snapshots', 'mktReportSnapshots'],
     ['metrics', 'mktReportMetricValues'],
     ['topContent', 'mktReportTopContent'],
   ]) {
-    const records = await client.searchRecords({
+    recordsByName[name] = await client.searchRecords({
       tableId: tableIds[key],
       filter: {
         conjunction: 'and',
@@ -530,59 +584,88 @@ async function readLarkReportCounts(client, tableIds, reportId) {
       pageSize: 500,
       maxPages: 1_000,
     });
-    counts[name] = records.length;
   }
-  return Object.freeze(counts);
+  const metricValues = {};
+  let duplicateMetricKeys = 0;
+  for (const record of recordsByName.metrics) {
+    const metricKey = normalizeLarkText(record?.fields?.metric_key);
+    if (!metricKey) throw failure(
+      'Lark Report metric row lacks metric_key',
+      'REPORT_RUNTIME_CLOSEOUT_LARK_METRIC_KEY_MISSING',
+    );
+    if (Object.hasOwn(metricValues, metricKey)) duplicateMetricKeys += 1;
+    metricValues[metricKey] = normalizeLarkNumber(record?.fields?.current_value);
+  }
+  return Object.freeze({
+    snapshots: recordsByName.snapshots.length,
+    metrics: recordsByName.metrics.length,
+    topContent: recordsByName.topContent.length,
+    duplicateMetricKeys,
+    metricValues: Object.freeze(metricValues),
+  });
 }
 
 async function pollLarkCompletion(client, tableIds, reportId) {
-  const maxPolls = positiveInteger(process.env.MKT_REPORT_RUNTIME_CLOSEOUT_LARK_MAX_POLLS ?? 12, 'larkMaxPolls');
-  const intervalMs = positiveInteger(process.env.MKT_REPORT_RUNTIME_CLOSEOUT_LARK_POLL_INTERVAL_MS ?? 2_500, 'larkPollIntervalMs');
-  let counts = null;
+  const maxPolls = positiveInteger(
+    process.env.MKT_REPORT_RUNTIME_CLOSEOUT_LARK_MAX_POLLS ?? 12,
+    'larkMaxPolls',
+  );
+  const intervalMs = positiveInteger(
+    process.env.MKT_REPORT_RUNTIME_CLOSEOUT_LARK_POLL_INTERVAL_MS ?? 2_500,
+    'larkPollIntervalMs',
+  );
+  let state = null;
   for (let attempt = 1; attempt <= maxPolls; attempt += 1) {
-    counts = await readLarkReportCounts(client, tableIds, reportId);
-    if (counts.snapshots === 1 && counts.metrics > 0) return counts;
+    state = await readLarkReportState(client, tableIds, reportId);
+    if (state.snapshots === 1 && state.metrics > 0 && state.duplicateMetricKeys === 0) return state;
     if (attempt < maxPolls) await sleep(intervalMs);
   }
   throw failure(
     'Bounded verification did not observe Report rows in Lark',
     'REPORT_RUNTIME_CLOSEOUT_LARK_VERIFY_TIMEOUT',
-    { counts },
+    { state: summarizeLarkState(state ?? {}) },
   );
 }
 
-function assertLarkCompletion(counts) {
-  if (counts.snapshots !== 1 || counts.metrics <= 0 || counts.topContent < 0) throw failure(
-    'Report closeout Lark materialization is incomplete',
-    'REPORT_RUNTIME_CLOSEOUT_LARK_INCOMPLETE',
-    { counts },
-  );
+function assertLarkCompletion(state) {
+  if (state.snapshots !== 1 || state.metrics <= 0 || state.topContent < 0 || state.duplicateMetricKeys !== 0) {
+    throw failure(
+      'Report closeout Lark materialization is incomplete',
+      'REPORT_RUNTIME_CLOSEOUT_LARK_INCOMPLETE',
+      { state: summarizeLarkState(state) },
+    );
+  }
 }
+
 function assertLarkReplay(before, after) {
   if (stableJson(before) !== stableJson(after)) throw failure(
-    'Report closeout replay changed Lark Stable-key row counts',
+    'Report closeout replay changed Lark Stable-key rows or values',
     'REPORT_RUNTIME_CLOSEOUT_LARK_REPLAY_DRIFT',
-    { before, after },
+    { before: summarizeLarkState(before), after: summarizeLarkState(after) },
   );
 }
 
-async function readPendingMigrations(config) {
+async function readPendingMigrations() {
   const output = await runText('npx', [
     'wrangler', 'd1', 'migrations', 'list', 'MKT_STATE_DB', '--remote', '--config', configPath,
   ], { env: loaded?.env });
-  return [...new Set([...output.matchAll(/\b\d{4}_[A-Za-z0-9_.-]+\.sql\b/gu)].map((match) => match[0]))].sort();
+  return [...new Set([...output.matchAll(/\b\d{4}_[A-Za-z0-9_.-]+\.sql\b/gu)]
+    .map((match) => match[0]))].sort();
 }
 
-async function createD1Backup(config, selected) {
+async function createD1Backup(selected) {
   const backupDir = join(outputRoot, 'backups');
   await mkdir(backupDir, { recursive: true, mode: 0o700 });
-  const path = join(backupDir, `report-closeout-before-${selected.windowDays}d.sql`);
+  const path = join(backupDir, `report-closeout-before-${selected.operation}-${selected.windowDays}d.sql`);
   await run('npx', [
     'wrangler', 'd1', 'export', 'MKT_STATE_DB', '--remote', '--config', configPath, '--output', path,
   ], { env: loaded?.env });
   await chmod(path, 0o600);
   const bytes = await readFile(path);
-  if (bytes.length === 0) throw failure('Report closeout D1 backup is empty', 'REPORT_RUNTIME_CLOSEOUT_BACKUP_EMPTY');
+  if (bytes.length === 0) throw failure(
+    'Report closeout D1 backup is empty',
+    'REPORT_RUNTIME_CLOSEOUT_BACKUP_EMPTY',
+  );
   return Object.freeze({
     file: relative(repositoryRoot, path),
     bytes: bytes.length,
@@ -652,7 +735,10 @@ async function verifyRemoteDeployment(config, mode, expectedVersionId = null) {
     readBindingName(binding) === 'MKT_SYNC_QUEUE' && normalizeBindingType(binding?.type) === 'queue'
   ), 'MKT_SYNC_QUEUE');
   if (String(queueBinding.queue_name ?? queueBinding.queueName ?? queueBinding.queue ?? '') !== config.mainQueueName) {
-    throw failure('Remote Worker Queue differs from the reviewed target', 'REPORT_RUNTIME_CLOSEOUT_REMOTE_QUEUE_MISMATCH');
+    throw failure(
+      'Remote Worker Queue differs from the reviewed target',
+      'REPORT_RUNTIME_CLOSEOUT_REMOTE_QUEUE_MISMATCH',
+    );
   }
   for (const [key, envName] of Object.entries(REPORT_RUNTIME_CLOSEOUT_REQUIRED_TABLES)) {
     const mapping = exactlyOne(bindings, (binding) => (
@@ -686,8 +772,8 @@ async function sendQueueMessage(auth, queueId, job) {
   return true;
 }
 
-async function readD1Row(config, sql) {
-  const rows = await readD1Rows(config, sql);
+async function readD1Row(sql) {
+  const rows = await readD1Rows(sql);
   if (rows.length !== 1) throw failure(
     'Report closeout D1 query returned an unexpected row count',
     'REPORT_RUNTIME_CLOSEOUT_D1_QUERY_SHAPE_INVALID',
@@ -696,7 +782,7 @@ async function readD1Row(config, sql) {
   return Object.freeze({ ...rows[0] });
 }
 
-async function readD1Rows(config, sql) {
+async function readD1Rows(sql) {
   const output = await runText('npx', [
     'wrangler', 'd1', 'execute', 'MKT_STATE_DB', '--remote', '--json', '--config', configPath, '--command', sql,
   ], { env: loaded?.env });
@@ -777,7 +863,7 @@ function resolveActiveVersion(value, expectedVersionId) {
   function visit(nested) {
     if (Array.isArray(nested)) { nested.forEach(visit); return; }
     if (!nested || typeof nested !== 'object') return;
-    const percentage = Number(nested.percentage ?? nested.traffic ?? nested.percent ?? NaN);
+    const percentage = Number(nested.percentage ?? nested.traffic ?? nested.percent ?? Number.NaN);
     const versionId = String(nested.version_id ?? nested.versionId ?? '').trim();
     if (percentage === 100 && /^[0-9a-f-]{36}$/iu.test(versionId)) candidates.push(versionId);
     Object.values(nested).forEach(visit);
@@ -787,8 +873,8 @@ function resolveActiveVersion(value, expectedVersionId) {
 function collectBindings(value) {
   const arrays = [];
   visit(value);
-  const selected = arrays.find((items) => items.some((item) => readBindingName(item))) ?? [];
-  return selected;
+  return arrays.find((items) => items.some((item) => readBindingName(item))) ?? [];
+
   function visit(nested) {
     if (Array.isArray(nested)) { nested.forEach(visit); return; }
     if (!nested || typeof nested !== 'object') return;
@@ -811,6 +897,33 @@ function extractVersionId(stdout) {
   return unique[0];
 }
 
+function normalizeLarkText(value) {
+  if (typeof value === 'string') return value.trim() || null;
+  if (Array.isArray(value)) {
+    const texts = value.map((item) => normalizeLarkText(item)).filter(Boolean);
+    return texts.length === 0 ? null : texts.join('');
+  }
+  if (value && typeof value === 'object') return normalizeLarkText(
+    value.text ?? value.value ?? value.name ?? null,
+  );
+  return value === null || value === undefined ? null : String(value).trim() || null;
+}
+
+function normalizeLarkNumber(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const scalar = Array.isArray(value) && value.length === 1 ? value[0] : value;
+  const candidate = scalar && typeof scalar === 'object'
+    ? (scalar.value ?? scalar.text ?? null)
+    : scalar;
+  if (candidate === null || candidate === undefined || candidate === '') return null;
+  const number = Number(candidate);
+  if (!Number.isFinite(number)) throw failure(
+    'Lark Report metric current_value is not finite or null',
+    'REPORT_RUNTIME_CLOSEOUT_LARK_METRIC_VALUE_INVALID',
+  );
+  return number;
+}
+
 function exactlyOne(values, predicate, label) {
   const matches = Array.isArray(values) ? values.filter(predicate) : [];
   if (matches.length !== 1) throw failure(
@@ -820,10 +933,9 @@ function exactlyOne(values, predicate, label) {
   );
   return matches[0];
 }
+
 function readBindingName(binding) { return String(binding?.name ?? binding?.binding ?? '').trim() || null; }
-function normalizeBindingType(value) {
-  return String(value ?? '').trim().toLowerCase().replaceAll('-', '_');
-}
+function normalizeBindingType(value) { return String(value ?? '').trim().toLowerCase().replaceAll('-', '_'); }
 function readRemoteBoolean(value) {
   if (value === true || String(value).trim().toLowerCase() === 'true') return true;
   if (value === false || String(value).trim().toLowerCase() === 'false') return false;
