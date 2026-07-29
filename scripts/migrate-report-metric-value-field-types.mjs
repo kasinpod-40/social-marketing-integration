@@ -7,6 +7,7 @@ import {
   safeReportMetricValueFieldMigrationEvidence,
 } from './lib/report-metric-value-field-migration.js';
 import { createLarkBitableClientFromEnv } from '../packages/connectors/src/lark/lark-bitable.client.js';
+import { createVerifiedFieldMutationClient } from './lib/lark-verified-field-mutation-client.js';
 import { assertReportRuntimeFinalizeEnvironment } from './lib/report-runtime-finalize-operator.js';
 import { readDevVars } from './lib/dev-vars.js';
 
@@ -14,7 +15,8 @@ try {
   const apply = parseArgs(process.argv.slice(2));
   const env = await readRuntimeEnvironment();
   assertReportRuntimeFinalizeEnvironment(env);
-  const client = createLarkBitableClientFromEnv(env);
+  const baseClient = createLarkBitableClientFromEnv(env);
+  const client = apply ? createVerifiedFieldMutationClient(baseClient) : baseClient;
   const result = apply
     ? await applyReportMetricValueFieldMigration({ client, env })
     : await planReportMetricValueFieldMigration({ client, env });
