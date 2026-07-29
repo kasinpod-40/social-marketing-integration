@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   parseWooCommerceDiagnosticsPreviewUpload,
+  parseWooCommerceDiagnosticsWranglerFailure,
 } from '../../scripts/lib/woocommerce-diagnostics-preview-upload.js';
 
 const VERSION_ID = '11111111-1111-4111-8111-111111111111';
@@ -87,4 +88,49 @@ test('rejects ambiguous, custom-domain and non-HTTPS targets with bounded eviden
       (error) => error?.code === 'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_PREVIEW_URL_INVALID',
     );
   }
+});
+
+test('extracts one structured command-failed record with bounded redacted evidence', () => {
+  const accountId = 'a'.repeat(32);
+  const consumerKey = 'ck_fixture_should_not_escape';
+  const result = parseWooCommerceDiagnosticsWranglerFailure(output([
+    { type: 'wrangler-session', version: 1 },
+    {
+      type: 'command-failed',
+      error: {
+        code: 10021,
+        message: `Request failed for account ${accountId}; URL https://api.cloudflare.com/test; key ${consumerKey}; file /Users/example/private/config.jsonc`,
+      },
+    },
+  ]), 'stdout fixture', 'stderr fixture', 1);
+
+  assert.equal(result.commandFailedRecordCount, 1);
+  assert.equal(result.code, '10021');
+  assert.equal(result.status, 1);
+  assert.match(result.message, /\[REDACTED_ACCOUNT_ID\]/u);
+  assert.match(result.message, /\[REDACTED_URL\]/u);
+  assert.match(result.message, /ck_\[REDACTED\]/u);
+  assert.match(result.message, /\[REDACTED_PATH\]/u);
+  assert.equal(result.message.includes(accountId), false);
+  assert.equal(result.message.includes(consumerKey), false);
+  assert.equal(result.messageRedacted, true);
+  assert.equal(result.rawOutputPersisted, false);
+  assert.match(result.outputSha256, /^[0-9a-f]{64}$/u);
+  assert.match(result.stdoutSha256, /^[0-9a-f]{64}$/u);
+  assert.match(result.stderrSha256, /^[0-9a-f]{64}$/u);
+});
+
+test('falls back to sanitized stderr when structured command-failed is unavailable', () => {
+  const result = parseWooCommerceDiagnosticsWranglerFailure(
+    output([{ type: 'wrangler-session', version: 1 }]),
+    '',
+    '\u001B[31m✘ [ERROR] upload failed for admin@example.com using Bearer abcdefghijklmnopqrstuvwxyz0123456789\u001B[0m',
+    1,
+  );
+  assert.equal(result.commandFailedRecordCount, 0);
+  assert.equal(result.code, null);
+  assert.equal(result.status, 1);
+  assert.equal(result.message.includes('\u001B'), false);
+  assert.match(result.message, /\[REDACTED_EMAIL\]/u);
+  assert.match(result.message, /Bearer \[REDACTED\]/u);
 });
