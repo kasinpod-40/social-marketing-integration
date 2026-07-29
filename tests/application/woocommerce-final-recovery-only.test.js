@@ -6,11 +6,13 @@ import {
   assertWooCommerceFinalRecoveryOnlyConfirmation,
   buildWooCommerceFinalRecoveryOnlySnapshotSql,
   parseWooCommerceFinalRecoveryOnlyArgs,
+  resolveWooCommerceFinalRecoveryOnlyIncident,
   verifyWooCommerceFinalRecoveryOnlyEligibility,
   verifyWooCommerceFinalRecoveryOnlyPostState,
 } from '../../scripts/lib/woocommerce-final-recovery-only.js';
 
-const OPERATION_ID = 'woo-final-full-e486b03cfe8d';
+const ORIGINAL_OPERATION_ID = 'woo-final-full-e486b03cfe8d';
+const INVALID_JSON_OPERATION_ID = 'woo-final-full-6f43ac8ee857';
 const COUNT_KEYS = Object.freeze([
   'raw_commerce_stores',
   'raw_commerce_orders',
@@ -47,82 +49,151 @@ function snapshotRow(overrides = {}) {
   };
 }
 
-test('recovery-only arguments and confirmation are pinned to the exact approved incident', () => {
-  assert.deepEqual(
-    parseWooCommerceFinalRecoveryOnlyArgs(['--operation-id', OPERATION_ID]),
-    { execute: false, operationId: OPERATION_ID },
-  );
-  assert.deepEqual(
-    parseWooCommerceFinalRecoveryOnlyArgs([`--operation-id=${OPERATION_ID}`, '--execute']),
-    { execute: true, operationId: OPERATION_ID },
+test('recovery-only arguments and confirmations remain pinned per approved incident', () => {
+  const incidents = [
+    {
+      operationId: ORIGINAL_OPERATION_ID,
+      errorCode: 'WOOCOMMERCE_NETWORK_ERROR',
+      confirmation: 'RECOVER_WOO_FINAL_FULL_E486B03CFE8D_ONLY',
+    },
+    {
+      operationId: INVALID_JSON_OPERATION_ID,
+      errorCode: 'WOOCOMMERCE_INVALID_JSON',
+      confirmation: 'RECOVER_WOO_FINAL_FULL_6F43AC8EE857_ONLY',
+    },
+  ];
+
+  for (const expected of incidents) {
+    assert.deepEqual(
+      parseWooCommerceFinalRecoveryOnlyArgs(['--operation-id', expected.operationId]),
+      { execute: false, operationId: expected.operationId },
+    );
+    assert.deepEqual(
+      parseWooCommerceFinalRecoveryOnlyArgs([
+        `--operation-id=${expected.operationId}`,
+        '--execute',
+      ]),
+      { execute: true, operationId: expected.operationId },
+    );
+
+    const incident = resolveWooCommerceFinalRecoveryOnlyIncident(expected.operationId);
+    assert.equal(incident.expectedErrorCode, expected.errorCode);
+    assert.equal(incident.confirmation.value, expected.confirmation);
+    assert.equal(assertWooCommerceFinalRecoveryOnlyConfirmation({
+      [incident.confirmation.envName]: incident.confirmation.value,
+    }, { operationId: expected.operationId }), true);
+  }
+
+  assert.equal(
+    WOOCOMMERCE_FINAL_RECOVERY_ONLY_CONFIRMATION.value,
+    'RECOVER_WOO_FINAL_FULL_E486B03CFE8D_ONLY',
   );
   assert.throws(
-    () => parseWooCommerceFinalRecoveryOnlyArgs(['--operation-id', 'woo-final-full-aaaaaaaaaaaa']),
+    () => parseWooCommerceFinalRecoveryOnlyArgs([
+      '--operation-id',
+      'woo-final-full-aaaaaaaaaaaa',
+    ]),
     (error) => error?.code === 'WOOCOMMERCE_RECOVERY_ONLY_OPERATION_NOT_APPROVED',
   );
-  assert.equal(assertWooCommerceFinalRecoveryOnlyConfirmation({
-    [WOOCOMMERCE_FINAL_RECOVERY_ONLY_CONFIRMATION.envName]:
-      WOOCOMMERCE_FINAL_RECOVERY_ONLY_CONFIRMATION.value,
-  }), true);
+  assert.throws(
+    () => assertWooCommerceFinalRecoveryOnlyConfirmation({
+      CONFIRM_WOOCOMMERCE_RECOVERY_ONLY:
+        'RECOVER_WOO_FINAL_FULL_E486B03CFE8D_ONLY',
+    }, { operationId: INVALID_JSON_OPERATION_ID }),
+    (error) => error?.code === 'WOOCOMMERCE_RECOVERY_ONLY_CONFIRMATION_REQUIRED',
+  );
 });
 
 test('exact preflight snapshot is read-only and operation-scoped', () => {
-  const sql = buildWooCommerceFinalRecoveryOnlySnapshotSql({
-    accountKey: 'chemistry_k',
-    operationId: OPERATION_ID,
-  });
-  assert.match(sql, /^SELECT /u);
-  assert.match(sql, /woocommerce:woo-final-full-e486b03cfe8d/u);
-  assert.match(sql, /account_key = 'chemistry_k'/u);
-  assert.doesNotMatch(sql, /\b(?:UPDATE|DELETE|INSERT|DROP|ALTER|CREATE)\b/iu);
+  for (const operationId of [ORIGINAL_OPERATION_ID, INVALID_JSON_OPERATION_ID]) {
+    const sql = buildWooCommerceFinalRecoveryOnlySnapshotSql({
+      accountKey: 'chemistry_k',
+      operationId,
+    });
+    assert.match(sql, /^SELECT /u);
+    assert.match(sql, new RegExp(`woocommerce:${operationId}`, 'u'));
+    assert.match(sql, /account_key = 'chemistry_k'/u);
+    assert.doesNotMatch(sql, /\b(?:UPDATE|DELETE|INSERT|DROP|ALTER|CREATE)\b/iu);
+  }
 });
 
-test('eligibility accepts only failed unlocked zero-fact single-attempt stale work', () => {
-  const result = verifyWooCommerceFinalRecoveryOnlyEligibility(snapshotRow(), {
-    operationId: OPERATION_ID,
+test('eligibility accepts only the exact failed error and zero-fact stale state', () => {
+  const original = verifyWooCommerceFinalRecoveryOnlyEligibility(snapshotRow(), {
+    operationId: ORIGINAL_OPERATION_ID,
   });
-  assert.equal(result.eligible, true);
-  assert.equal(result.workKey, `woocommerce:${OPERATION_ID}`);
-  assert.equal(result.businessRows, 0);
+  assert.equal(original.eligible, true);
+  assert.equal(original.workKey, `woocommerce:${ORIGINAL_OPERATION_ID}`);
+  assert.equal(original.expectedErrorCode, 'WOOCOMMERCE_NETWORK_ERROR');
+  assert.equal(original.businessRows, 0);
+
+  const invalidJson = verifyWooCommerceFinalRecoveryOnlyEligibility(snapshotRow({
+    sync_run_finished_at: 1785309111346,
+    sync_run_error_code: 'WOOCOMMERCE_INVALID_JSON',
+  }), { operationId: INVALID_JSON_OPERATION_ID });
+  assert.equal(invalidJson.eligible, true);
+  assert.equal(invalidJson.workKey, `woocommerce:${INVALID_JSON_OPERATION_ID}`);
+  assert.equal(invalidJson.expectedErrorCode, 'WOOCOMMERCE_INVALID_JSON');
+  assert.equal(
+    invalidJson.nextAction,
+    'run_read_only_inspector_then_separately_authorize_provider_response_diagnostics',
+  );
 
   const rejected = [
-    snapshotRow({ sync_run_status: 'running' }),
-    snapshotRow({ active_lock_count: 1 }),
-    snapshotRow({ queue_operation_attempts: 2 }),
-    snapshotRow({ coverage_run_count: 1 }),
-    snapshotRow({ completion_json: JSON.stringify({ complete: true }) }),
-    snapshotRow({ raw_commerce_orders: 1 }),
+    [ORIGINAL_OPERATION_ID, snapshotRow({ sync_run_status: 'running' })],
+    [ORIGINAL_OPERATION_ID, snapshotRow({ active_lock_count: 1 })],
+    [ORIGINAL_OPERATION_ID, snapshotRow({ queue_operation_attempts: 2 })],
+    [ORIGINAL_OPERATION_ID, snapshotRow({ coverage_run_count: 1 })],
+    [ORIGINAL_OPERATION_ID, snapshotRow({ completion_json: JSON.stringify({ complete: true }) })],
+    [ORIGINAL_OPERATION_ID, snapshotRow({ raw_commerce_orders: 1 })],
+    [ORIGINAL_OPERATION_ID, snapshotRow({ sync_run_error_code: 'WOOCOMMERCE_INVALID_JSON' })],
+    [INVALID_JSON_OPERATION_ID, snapshotRow()],
   ];
-  for (const row of rejected) {
+  for (const [operationId, row] of rejected) {
     assert.throws(
-      () => verifyWooCommerceFinalRecoveryOnlyEligibility(row, { operationId: OPERATION_ID }),
+      () => verifyWooCommerceFinalRecoveryOnlyEligibility(row, { operationId }),
       (error) => error?.code === 'WOOCOMMERCE_RECOVERY_ONLY_PREFLIGHT_REJECTED',
     );
   }
 });
 
-test('post-state requires terminal lifecycle without business, queue, coverage or phase drift', () => {
-  const result = verifyWooCommerceFinalRecoveryOnlyPostState(snapshotRow({
+test('post-state preserves the incident error and forbids business, queue, coverage or phase drift', () => {
+  const original = verifyWooCommerceFinalRecoveryOnlyPostState(snapshotRow({
     work_lifecycle_status: 'terminal',
-  }), { operationId: OPERATION_ID });
-  assert.equal(result.verified, true);
-  assert.equal(result.businessRows, 0);
+  }), { operationId: ORIGINAL_OPERATION_ID });
+  assert.equal(original.verified, true);
+  assert.equal(original.businessRows, 0);
+
+  const invalidJson = verifyWooCommerceFinalRecoveryOnlyPostState(snapshotRow({
+    sync_run_error_code: 'WOOCOMMERCE_INVALID_JSON',
+    work_lifecycle_status: 'terminal',
+  }), { operationId: INVALID_JSON_OPERATION_ID });
+  assert.equal(invalidJson.verified, true);
+  assert.equal(invalidJson.expectedErrorCode, 'WOOCOMMERCE_INVALID_JSON');
 
   assert.throws(
     () => verifyWooCommerceFinalRecoveryOnlyPostState(snapshotRow({
       work_lifecycle_status: 'terminal',
       commerce_order_state: 1,
-    }), { operationId: OPERATION_ID }),
+    }), { operationId: ORIGINAL_OPERATION_ID }),
+    (error) => error?.code === 'WOOCOMMERCE_RECOVERY_ONLY_POST_VERIFY_FAILED',
+  );
+  assert.throws(
+    () => verifyWooCommerceFinalRecoveryOnlyPostState(snapshotRow({
+      sync_run_error_code: 'WOOCOMMERCE_NETWORK_ERROR',
+      work_lifecycle_status: 'terminal',
+    }), { operationId: INVALID_JSON_OPERATION_ID }),
     (error) => error?.code === 'WOOCOMMERCE_RECOVERY_ONLY_POST_VERIFY_FAILED',
   );
 });
 
-test('CLI has one recovery mutation path and no rollout, Queue, deploy or Lark path', async () => {
+test('CLI keeps one lifecycle mutation path and selects confirmation by exact operation', async () => {
   const source = await readFile(
     new URL('../../scripts/woocommerce-final-recovery-only.mjs', import.meta.url),
     'utf8',
   );
   assert.match(source, /buildWooCommerceFailedWorkRecoverySql/u);
+  assert.match(source, /resolveWooCommerceFinalRecoveryOnlyIncident/u);
+  assert.match(source, /assertWooCommerceFinalRecoveryOnlyConfirmation\(env, \{/u);
   assert.match(source, /runMutationOnce/u);
   assert.match(source, /durableLifecycleMutationCount: 1/u);
   assert.match(source, /businessMutationCount: 0/u);
