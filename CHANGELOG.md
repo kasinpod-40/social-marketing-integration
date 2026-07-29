@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased — WooCommerce Snapshot Idempotent Normalization — 2026-07-30
+
+### Reliability
+
+- Made WooCommerce final snapshots normalize identically from raw D1 snake_case rows and already
+  normalized camelCase objects.
+- Preserved lifecycle, generation, Queue, Coverage, JSON state/completion and all Commerce counts
+  across repeated normalization.
+- Added regressions proving exact continuation selects the same durable identity from both forms.
+
+### Safety
+
+- Failed preflight attempts stopped before Lark schema, backup, Worker deployment and Queue send.
+- No Production, Schedule, Provider, Business, Coverage or Lark mutation occurred.
+
 ## Unreleased — WooCommerce Exact Snapshot Semantic Retry — 2026-07-30
 
 ### Reliability

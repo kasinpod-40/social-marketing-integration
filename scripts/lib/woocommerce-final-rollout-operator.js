@@ -168,24 +168,40 @@ export function buildWooCommerceWatermarkSql(accountKey) {
 }
 
 export function normalizeWooCommerceFinalSnapshot(value = {}) {
-  const counts = Object.fromEntries(TABLE_BINDINGS.map(({ d1Table }) => [d1Table, count(value[d1Table])]));
+  const counts = Object.fromEntries(TABLE_BINDINGS.map(({ d1Table }) => [
+    d1Table,
+    count(value[d1Table] ?? value.counts?.[d1Table]),
+  ]));
   return Object.freeze({
-    syncRunStatus: optionalText(value.sync_run_status),
-    syncRunFinishedAt: nullableNumber(value.sync_run_finished_at),
-    syncRunErrorCode: optionalText(value.sync_run_error_code),
-    workLifecycleStatus: optionalText(value.work_lifecycle_status),
-    workGeneration: nullableNumber(value.work_generation),
-    workRequestedAt: nullableNumber(value.work_requested_at),
-    workCompletedAt: nullableNumber(value.work_completed_at),
-    completion: parseNullableJson(value.completion_json),
-    phaseComplete: Number(value.phase_complete ?? 0) === 1,
-    state: parseNullableJson(value.state_json),
-    activeLockCount: count(value.active_lock_count),
-    queueGeneration: nullableNumber(value.queue_generation),
-    queueOriginalRequestedAt: nullableNumber(value.queue_original_requested_at),
-    queueOperationAttempts: count(value.queue_operation_attempts),
-    coverageRunCount: count(value.coverage_run_count),
-    invalidCoverageCount: count(value.invalid_coverage_count),
+    syncRunStatus: optionalText(value.sync_run_status ?? value.syncRunStatus),
+    syncRunFinishedAt: nullableNumber(
+      value.sync_run_finished_at ?? value.syncRunFinishedAt,
+    ),
+    syncRunErrorCode: optionalText(
+      value.sync_run_error_code ?? value.syncRunErrorCode,
+    ),
+    workLifecycleStatus: optionalText(
+      value.work_lifecycle_status ?? value.workLifecycleStatus,
+    ),
+    workGeneration: nullableNumber(value.work_generation ?? value.workGeneration),
+    workRequestedAt: nullableNumber(value.work_requested_at ?? value.workRequestedAt),
+    workCompletedAt: nullableNumber(value.work_completed_at ?? value.workCompletedAt),
+    completion: parseNullableJson(value.completion_json ?? value.completion),
+    phaseComplete: value.phaseComplete === true
+      || Number(value.phase_complete ?? 0) === 1,
+    state: parseNullableJson(value.state_json ?? value.state),
+    activeLockCount: count(value.active_lock_count ?? value.activeLockCount),
+    queueGeneration: nullableNumber(value.queue_generation ?? value.queueGeneration),
+    queueOriginalRequestedAt: nullableNumber(
+      value.queue_original_requested_at ?? value.queueOriginalRequestedAt,
+    ),
+    queueOperationAttempts: count(
+      value.queue_operation_attempts ?? value.queueOperationAttempts,
+    ),
+    coverageRunCount: count(value.coverage_run_count ?? value.coverageRunCount),
+    invalidCoverageCount: count(
+      value.invalid_coverage_count ?? value.invalidCoverageCount,
+    ),
     counts: Object.freeze(counts),
   });
 }

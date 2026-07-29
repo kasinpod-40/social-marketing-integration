@@ -12,6 +12,7 @@ import {
   compareWooCommerceRerun,
   createWooCommerceLarkSchemaContract,
   isWooCommerceExactContinuationSnapshotEmpty,
+  normalizeWooCommerceFinalSnapshot,
   parseWooCommerceFinalArgs,
   selectWooCommerceFullOperation,
 } from '../../scripts/lib/woocommerce-final-rollout-operator.js';
@@ -134,6 +135,19 @@ test('snapshot SQL is SELECT-only and scopes operation/account', () => {
   assert.doesNotMatch(sql, /\b(?:INSERT|UPDATE|DELETE|DROP|ALTER|REPLACE)\b/iu);
 });
 
+test('snapshot normalization is idempotent across raw and normalized contracts', () => {
+  const raw = completedSnapshot(7);
+  const once = normalizeWooCommerceFinalSnapshot(raw);
+  const twice = normalizeWooCommerceFinalSnapshot(once);
+  assert.deepEqual(twice, once);
+  assert.equal(twice.syncRunStatus, 'success');
+  assert.equal(twice.workLifecycleStatus, 'completed');
+  assert.equal(twice.queueOperationAttempts, 7);
+  assert.equal(twice.coverageRunCount, 6);
+  assert.equal(twice.counts.raw_commerce_orders, 2);
+  assert.equal(twice.state.datasetIndex, 6);
+});
+
 test('exact continuation accepts only the existing partial failed durable identity', () => {
   const partial = {
     ...completedSnapshot(3),
@@ -154,6 +168,10 @@ test('exact continuation accepts only the existing partial failed durable identi
   assert.equal(selected.requestedAt, 1785000000000);
   assert.equal(selected.priorQueueAttempts, 3);
   assert.equal(selected.resumedExactOperation, true);
+  assert.deepEqual(selectWooCommerceFullOperation({
+    resumeOperationId: 'woo-final-full-e2372e56d52d',
+    snapshot: normalizeWooCommerceFinalSnapshot(partial),
+  }), selected);
   assert.equal(selectWooCommerceFullOperation({}), null);
 
   assert.throws(() => selectWooCommerceFullOperation({

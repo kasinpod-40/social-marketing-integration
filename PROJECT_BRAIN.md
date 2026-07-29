@@ -12,6 +12,23 @@ Historical Root Project Brain ก่อน TikTok post-Lark implementation ถ�
 docs/archive/PROJECT_BRAIN-before-tiktok-post-lark-parity-2026-07-26.md
 ```
 
+## WooCommerce snapshot idempotent normalization — 2026-07-30
+
+Root cause ของ Final exact preflight semantic-empty คือ double normalization ภายใน operator:
+`readSnapshot()` คืน camelCase แล้ว selector/classifier เรียก snake_case-only normalizer ซ้ำ.
+D1/OAuth/bearer/generated-config/subprocess read ทั้งหมดเห็น durable operation และ 897 rows
+ถูกต้อง จึงตัด Cloudflare account, token, replica และ config drift ออกได้.
+
+Current normalizer รองรับ raw และ normalized snapshot แบบ idempotent รวม Work/Queue/Fence,
+Coverage, state/completion และ 14 Commerce counts. Semantic-empty retry ยังคงเป็น fallback
+เฉพาะ raw empty read จริง. Failed attempts ทั้งหมดหยุดก่อน Lark/backup/Deploy/Queue.
+
+รายละเอียด:
+
+```text
+docs/tasks/woocommerce-snapshot-idempotent-normalization-v1.md
+```
+
 ## WooCommerce exact snapshot semantic retry — 2026-07-30
 
 หลัง exact lifecycle reactivation ของ `woo-final-full-e2372e56d52d` สำเร็จ Final remote
