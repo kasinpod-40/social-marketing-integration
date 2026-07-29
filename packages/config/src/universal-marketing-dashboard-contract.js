@@ -1,8 +1,8 @@
 /**
  * Universal Dashboard contract.
  *
- * Dashboard surfaces must discover channels, accounts, metrics and report periods from
- * validated materializations. They must never require a code or View change for one platform.
+ * Dashboard surfaces discover channels, capabilities, accounts, metrics, collections and report
+ * periods from validated materializations. A new source must not require Dashboard/View code.
  */
 export const UNIVERSAL_MARKETING_DASHBOARD_VERSION = 'universal-marketing-dashboard-v1';
 
@@ -13,6 +13,7 @@ export const UNIVERSAL_MARKETING_DASHBOARD_CONTRACT = deepFreeze({
   capabilityDiscovery: 'materialization.capability',
   accountDiscovery: 'materialization.accountId',
   metricDiscovery: 'materialization.metricPayload.clientVisible',
+  collectionDiscovery: 'materialization.collections',
   periodDiscovery: 'materialization.period',
   filterKeys: [
     'customerKey',
@@ -25,7 +26,8 @@ export const UNIVERSAL_MARKETING_DASHBOARD_CONTRACT = deepFreeze({
     'reportSettingKey',
   ],
   sectionStrategy: 'group_by_discovered_capability',
-  rankingCollections: ['topContent', 'topAds'],
+  collectionStrategy: 'render_discovered_collection_kinds',
+  legacyCollectionCompatibility: ['topContent', 'topAds'],
   dataQuality: {
     preserveNull: true,
     observedZero: 0,
@@ -34,6 +36,8 @@ export const UNIVERSAL_MARKETING_DASHBOARD_CONTRACT = deepFreeze({
   },
   invariants: {
     platformSpecificDashboardCode: false,
+    capabilitySpecificDashboardCode: false,
+    collectionSpecificDashboardCode: false,
     platformSpecificLarkView: false,
     metricSpecificColumnRequired: false,
     accountSpecificDashboardCode: false,
@@ -53,6 +57,9 @@ export function validateUniversalMarketingDashboardContract(
   if (value.sourceOfTruth !== 'validated_report_materializations') {
     throw new TypeError('Universal Marketing Dashboard must read validated materializations only');
   }
+  if (value.collectionStrategy !== 'render_discovered_collection_kinds') {
+    throw new TypeError('Universal Marketing Dashboard collections must be dynamically discovered');
+  }
   if (!Array.isArray(value.filterKeys) || value.filterKeys.length === 0) {
     throw new TypeError('Universal Marketing Dashboard requires dynamic filter keys');
   }
@@ -60,6 +67,8 @@ export function validateUniversalMarketingDashboardContract(
     throw new TypeError('Universal Marketing Dashboard filter keys must be unique');
   }
   if (value.invariants?.platformSpecificDashboardCode !== false
+    || value.invariants?.capabilitySpecificDashboardCode !== false
+    || value.invariants?.collectionSpecificDashboardCode !== false
     || value.invariants?.platformSpecificLarkView !== false
     || value.invariants?.metricSpecificColumnRequired !== false
     || value.invariants?.accountSpecificDashboardCode !== false
