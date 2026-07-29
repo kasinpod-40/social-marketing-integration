@@ -3,6 +3,7 @@ import {
   assertMaterializedSource,
 } from './woocommerce-final-source-contract.js';
 
+const APPROVED_ORIGIN = new URL(WOOCOMMERCE_FINAL_SOURCE_CONTRACT.baseUrl).origin;
 const SOURCE_FIELDS = Object.freeze([
   'WOOCOMMERCE_BASE_URL',
   'WOOCOMMERCE_API_VERSION',
@@ -69,8 +70,7 @@ function assertCompatibleBaseUrl(value) {
   }
 
   if (
-    url.protocol !== 'https:'
-    || url.hostname !== WOOCOMMERCE_FINAL_SOURCE_CONTRACT.hostname
+    url.origin !== APPROVED_ORIGIN
     || url.pathname !== '/'
     || url.search !== ''
     || url.hash !== ''
@@ -82,7 +82,7 @@ function assertCompatibleBaseUrl(value) {
       'WOOCOMMERCE_PROVIDER_DIAGNOSTICS_SOURCE_CONFLICT',
       {
         fieldName: 'WOOCOMMERCE_BASE_URL',
-        expectedHostname: WOOCOMMERCE_FINAL_SOURCE_CONTRACT.hostname,
+        expectedOrigin: APPROVED_ORIGIN,
       },
     );
   }
