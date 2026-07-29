@@ -1,13 +1,12 @@
 # WooCommerce Final Recovery-only Operator
 
-## Live evidence — 2026-07-29
+## Live evidence — 2026-07-30
 
-Exact read-only inspection of operation `woo-final-full-e486b03cfe8d` on merged
-`main@294e48807963478c75381db66969f3efbdd8a8e6` proved:
+Exact read-only inspection of operation `woo-final-full-6f43ac8ee857` on merged
+`main@527cdceda2d4661c82dc000380705d1078343bdf` proved:
 
 ```text
-sync run              failed / WOOCOMMERCE_NETWORK_ERROR
-network cause         Cloudflare Illegal invocation / incorrect this receiver
+sync run              failed / WOOCOMMERCE_INVALID_JSON
 work lifecycle        active / stale
 active locks          0
 Queue attempts        1
@@ -17,9 +16,10 @@ completion            null
 all Commerce rows     0
 ```
 
-The Worker fetch-receiver correction was Squash Merged through PR #223 at
-`d63317d989f872ff6d5698ad11184683e799d2c8`. No deployment or new Queue admission has occurred
-since that merge.
+Provider diagnostics subsequently passed through an isolated Active Preview Version on the same
+merged main, with store identity `chemistry_k`, WooCommerce `10.6.2`, WordPress `6.9.4`,
+currency `THB`, one Provider GET and zero Queue/D1/Lark/Schedule mutations. Preview URLs were
+restored disabled and Production deployment remained unchanged.
 
 ## Objective
 
@@ -29,8 +29,8 @@ operator must stop after recovery and must not delegate to the final rollout cha
 ## Exact authority
 
 ```text
-operation_id  woo-final-full-e486b03cfe8d
-work_key      woocommerce:woo-final-full-e486b03cfe8d
+operation_id  woo-final-full-6f43ac8ee857
+work_key      woocommerce:woo-final-full-6f43ac8ee857
 account_key   chemistry_k
 profile       integration_workspace
 environment   development
@@ -39,7 +39,7 @@ environment   development
 Execution requires the dedicated confirmation:
 
 ```text
-CONFIRM_WOOCOMMERCE_RECOVERY_ONLY=RECOVER_WOO_FINAL_FULL_E486B03CFE8D_ONLY
+CONFIRM_WOOCOMMERCE_RECOVERY_ONLY=RECOVER_WOO_FINAL_FULL_6F43AC8EE857_ONLY
 ```
 
 The final-rollout confirmation does not authorize this operator and the recovery-only
@@ -111,9 +111,9 @@ env \
   MKT_ENV=development \
   MKT_CUSTOMER_PROFILE=integration_workspace \
   MKT_CONNECTION_CUSTOMER_KEY=chemistry_k \
-  CONFIRM_WOOCOMMERCE_RECOVERY_ONLY=RECOVER_WOO_FINAL_FULL_E486B03CFE8D_ONLY \
+  CONFIRM_WOOCOMMERCE_RECOVERY_ONLY=RECOVER_WOO_FINAL_FULL_6F43AC8EE857_ONLY \
   node scripts/woocommerce-final-recovery-only.mjs \
-    --operation-id woo-final-full-e486b03cfe8d \
+    --operation-id woo-final-full-6f43ac8ee857 \
     --execute
 ```
 

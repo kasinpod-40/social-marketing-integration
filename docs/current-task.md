@@ -98,6 +98,22 @@ docs/tasks/lark-dashboard-backfill-post-verify-hotfix-v1.md
 
 ## Implementation result
 
+### WooCommerce exact stale-operation recovery 6f43 — 2026-07-30
+
+- Provider diagnostics rerun ผ่านบน merged `main@527cdceda2d4661c82dc000380705d1078343bdf`:
+  WooCommerce `10.6.2`, WordPress `6.9.4`, currency `THB`, Provider GET `1`, mutations/Queue/
+  D1/Lark/Schedule `0`, Preview URLs restored disabled และ Production baseline ไม่เปลี่ยน.
+- Read-only inspector ยืนยัน `woo-final-full-6f43ac8ee857` เป็น failed + stale active,
+  active locks `0`, Queue attempts `1`, Coverage `0` และ Commerce Business rows ทั้ง 14 ตาราง `0`.
+- Recovery-only operator ถูก repin ไป exact operation และ confirmation
+  `RECOVER_WOO_FINAL_FULL_6F43AC8EE857_ONLY`; mutation ยังคงจำกัดที่ guarded lifecycle row
+  เดียว และมี read-only pre/post verification.
+- Focused recovery/inspector tests ผ่าน `20/20`; full Unit `1461/1461`, Workers runtime
+  `15/15`, Report reliability `100/100`, repository check, dependency audit `0 vulnerabilities`
+  และ deploy dry-runs ผ่าน.
+- Repository implementation นี้ยังไม่มี Remote mutation; exact recovery execution จะทำหลัง
+  exact-head CI, self-review และ Squash Merge.
+
 ### WooCommerce Provider redirect diagnostics follow-up — 2026-07-30
 
 - PR `#251` Squash Merged ที่ `a4bfd16daac6bc47a5296687fb4f843e7f132847`.
