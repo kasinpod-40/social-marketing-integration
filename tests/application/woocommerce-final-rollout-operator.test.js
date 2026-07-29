@@ -347,6 +347,17 @@ test('completion requires durable work, six Coverage datasets and zero failures'
   assert.equal(permanent.complete, false);
   assert.equal(permanent.terminalFailure, true);
   assert.equal(permanent.reason, 'woocommerce_terminal_failure');
+  assert.equal(classifyWooCommerceFinalCompletion(permanent.snapshot, {
+    fullReconciliation: true,
+    minimumQueueAttempts: 2,
+  }).terminalFailure, false);
+  assert.equal(classifyWooCommerceFinalCompletion({
+    ...permanent.snapshot,
+    queueOperationAttempts: 2,
+  }, {
+    fullReconciliation: true,
+    minimumQueueAttempts: 2,
+  }).terminalFailure, true);
   assert.equal(classifyWooCommerceFinalCompletion({
     ...permanent.snapshot,
     syncRunRetryable: true,
@@ -380,6 +391,8 @@ test('final CLI deploys all-false Safe closeout and never deploys a scheduled wi
   assert.match(source, /scheduleEnabled: false/u);
   assert.match(source, /classification\.terminalFailure/u);
   assert.match(source, /WOOCOMMERCE_FINAL_OPERATION_TERMINAL_FAILURE/u);
+  assert.match(source, /full\.priorQueueAttempts \+ 1/u);
+  assert.match(source, /minimumQueueAttempts/u);
   assert.match(source, /buildWooCommerceLarkSelectOptionRepair/u);
   assert.match(source, /larkFieldValueFingerprint/u);
   assert.doesNotMatch(source, /deploy-scheduled-window|scheduled-active-window/u);
