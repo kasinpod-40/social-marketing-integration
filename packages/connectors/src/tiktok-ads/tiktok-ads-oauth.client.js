@@ -1,4 +1,4 @@
-import { permanentError, retryableError } from '../../../shared/src/errors/runtime-error.js';
+import { permanentError, transientError } from '../../../shared/src/errors/runtime-error.js';
 
 const DEFAULT_AUTHORIZE_URL = 'https://business-api.tiktok.com/portal/auth';
 const DEFAULT_TOKEN_URL = 'https://business-api.tiktok.com/open_api/v1.3/oauth2/access_token/';
@@ -51,7 +51,7 @@ export class TikTokAdsOAuthClient {
 
 async function readJson(response) {
   try { return await response.json(); } catch {
-    throw retryableError('TikTok Ads returned invalid JSON', { code: 'TIKTOK_ADS_RESPONSE_INVALID' });
+    throw transientError('TikTok Ads returned invalid JSON', { code: 'TIKTOK_ADS_RESPONSE_INVALID' });
   }
 }
 
@@ -59,7 +59,7 @@ function classifyProviderError(payload, status, fallbackCode) {
   const code = String(payload?.code ?? fallbackCode);
   const options = { code: fallbackCode, details: { providerCode: code, httpStatus: status } };
   return status >= 500 || status === 429
-    ? retryableError('TikTok Ads provider request failed', options)
+    ? transientError('TikTok Ads provider request failed', options)
     : permanentError('TikTok Ads provider request was rejected', options);
 }
 
