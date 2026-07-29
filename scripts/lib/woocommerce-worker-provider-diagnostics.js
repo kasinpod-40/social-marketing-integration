@@ -1,5 +1,8 @@
 import { createHash } from 'node:crypto';
 import {
+  WORKER_VERSION_METADATA_BINDING,
+} from '../../packages/shared/src/cloudflare/worker-version.js';
+import {
   WOOCOMMERCE_PROVIDER_DIAGNOSTICS_FLAG,
   WOOCOMMERCE_PROVIDER_DIAGNOSTICS_PATH,
   WOOCOMMERCE_PROVIDER_DIAGNOSTICS_TOKEN_SHA256_ENV,
@@ -15,6 +18,8 @@ export const WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_REQUIRED_SECRETS = Object.f
   'WOOCOMMERCE_CONSUMER_KEY',
   'WOOCOMMERCE_CONSUMER_SECRET',
 ]);
+export const WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_VERSION_METADATA_BINDING =
+  WORKER_VERSION_METADATA_BINDING;
 export {
   WOOCOMMERCE_PROVIDER_DIAGNOSTICS_FLAG,
   WOOCOMMERCE_PROVIDER_DIAGNOSTICS_PATH,
@@ -38,6 +43,7 @@ export function buildWooCommerceWorkerProviderDiagnosticConfigs(sourceText, inpu
   );
   const config = parseJsoncObject(source.text);
   const vars = requireObject(config.vars, 'vars');
+  const versionMetadata = materializeVersionMetadata(config.version_metadata);
   const safeVars = closeExecutionFlags(vars);
   safeVars[WOOCOMMERCE_PROVIDER_DIAGNOSTICS_FLAG] = 'false';
   delete safeVars[WOOCOMMERCE_PROVIDER_DIAGNOSTICS_TOKEN_SHA256_ENV];
@@ -47,12 +53,14 @@ export function buildWooCommerceWorkerProviderDiagnosticConfigs(sourceText, inpu
     [WOOCOMMERCE_PROVIDER_DIAGNOSTICS_TOKEN_SHA256_ENV]: diagnosticTokenSha256,
   };
 
-  const safe = serialize({ ...config, vars: safeVars });
-  const active = serialize({ ...config, vars: activeVars });
+  const safe = serialize({ ...config, version_metadata: versionMetadata, vars: safeVars });
+  const active = serialize({ ...config, version_metadata: versionMetadata, vars: activeVars });
   const safeTrueFlags = readTrueFlags(safe);
   const activeTrueFlags = readTrueFlags(active);
   assertExactList(safeTrueFlags, [], 'safeTrueFlags');
   assertExactList(activeTrueFlags, [WOOCOMMERCE_PROVIDER_DIAGNOSTICS_FLAG], 'activeTrueFlags');
+  assertVersionMetadataBinding(parseJsoncObject(safe).version_metadata);
+  assertVersionMetadataBinding(parseJsoncObject(active).version_metadata);
 
   const origin = requireHttpsOrigin(activeVars.MKT_CONNECTION_PUBLIC_ORIGIN);
   return Object.freeze({
@@ -65,6 +73,7 @@ export function buildWooCommerceWorkerProviderDiagnosticConfigs(sourceText, inpu
     pathname: WOOCOMMERCE_PROVIDER_DIAGNOSTICS_PATH,
     safeTrueFlags: Object.freeze(safeTrueFlags),
     activeTrueFlags: Object.freeze(activeTrueFlags),
+    runtimeVersionMetadataBinding: WORKER_VERSION_METADATA_BINDING,
     ephemeralAuthDigestConfigured: true,
     secretValuesCopied: source.secretValuesCopied,
   });
@@ -159,6 +168,35 @@ function closeExecutionFlags(vars) {
     if (EXECUTION_FLAG_PATTERN.test(name)) output[name] = 'false';
   }
   return output;
+}
+
+function materializeVersionMetadata(value) {
+  if (value === undefined || value === null) {
+    return Object.freeze({ binding: WORKER_VERSION_METADATA_BINDING });
+  }
+  const metadata = requireObject(value, 'version_metadata');
+  const configuredBinding = metadata.binding;
+  if (configuredBinding !== undefined
+    && requireText(configuredBinding, 'version_metadata.binding') !== WORKER_VERSION_METADATA_BINDING) {
+    throw diagnosticError(
+      `version_metadata.binding must equal ${WORKER_VERSION_METADATA_BINDING}`,
+      'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_VERSION_METADATA_INVALID',
+      { expectedBinding: WORKER_VERSION_METADATA_BINDING },
+    );
+  }
+  return Object.freeze({ binding: WORKER_VERSION_METADATA_BINDING });
+}
+
+function assertVersionMetadataBinding(value) {
+  const metadata = requireObject(value, 'version_metadata');
+  if (metadata.binding !== WORKER_VERSION_METADATA_BINDING) {
+    throw diagnosticError(
+      'WooCommerce diagnostics generated config is missing exact Worker version metadata binding',
+      'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_VERSION_METADATA_INVALID',
+      { expectedBinding: WORKER_VERSION_METADATA_BINDING },
+    );
+  }
+  return true;
 }
 
 function readTrueFlags(configText) {
