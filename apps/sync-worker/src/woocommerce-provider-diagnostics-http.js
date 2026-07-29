@@ -78,6 +78,7 @@ export function createWooCommerceProviderDiagnosticsHttpHandler(dependencies = {
         providerMutationCount: 0,
         businessMutationCount: 0,
         queueMessageCount: 0,
+        workerDeploymentCount: 0,
         larkRequestCount: 0,
         scheduleMutationCount: 0,
         store: {
@@ -109,6 +110,7 @@ export function createWooCommerceProviderDiagnosticsHttpHandler(dependencies = {
         providerMutationCount: 0,
         businessMutationCount: 0,
         queueMessageCount: 0,
+        workerDeploymentCount: 0,
         larkRequestCount: 0,
         scheduleMutationCount: 0,
       }, {
