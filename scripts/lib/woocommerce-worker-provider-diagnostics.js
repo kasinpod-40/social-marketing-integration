@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import {
   WOOCOMMERCE_PROVIDER_DIAGNOSTICS_FLAG,
   WOOCOMMERCE_PROVIDER_DIAGNOSTICS_PATH,
+  WOOCOMMERCE_PROVIDER_DIAGNOSTICS_TOKEN_SHA256_ENV,
 } from '../../apps/sync-worker/src/woocommerce-provider-diagnostics-http.js';
 import { parseJsoncObject } from './chatwoot-safe-wrangler-config.js';
 import { buildWooCommerceFinalSourceConfig } from './woocommerce-final-source-contract.js';
@@ -13,11 +14,15 @@ export const WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_CONFIRMATION = Object.freez
 export const WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_REQUIRED_SECRETS = Object.freeze([
   'WOOCOMMERCE_CONSUMER_KEY',
   'WOOCOMMERCE_CONSUMER_SECRET',
-  'MKT_CONNECTION_OPERATOR_TOKEN',
 ]);
-export { WOOCOMMERCE_PROVIDER_DIAGNOSTICS_FLAG, WOOCOMMERCE_PROVIDER_DIAGNOSTICS_PATH };
+export {
+  WOOCOMMERCE_PROVIDER_DIAGNOSTICS_FLAG,
+  WOOCOMMERCE_PROVIDER_DIAGNOSTICS_PATH,
+  WOOCOMMERCE_PROVIDER_DIAGNOSTICS_TOKEN_SHA256_ENV,
+};
 
 const EXECUTION_FLAG_PATTERN = /^MKT_[A-Z0-9_]+_ENABLED$/u;
+const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
 const ALLOWED_HTTP_STATUSES = new Set([200, 422]);
 
 /** Build exact Safe and diagnostic-only configs from the same source contract as Final rollout. */
@@ -26,11 +31,21 @@ export function buildWooCommerceWorkerProviderDiagnosticConfigs(sourceText, inpu
     repositoryRoot: requireText(input.repositoryRoot, 'repositoryRoot'),
     sourceConfigPath: requireText(input.sourceConfigPath, 'sourceConfigPath'),
   });
+  const diagnosticTokenSha256 = requireSha256(
+    input.diagnosticTokenSha256
+      ?? process.env[WOOCOMMERCE_PROVIDER_DIAGNOSTICS_TOKEN_SHA256_ENV],
+    WOOCOMMERCE_PROVIDER_DIAGNOSTICS_TOKEN_SHA256_ENV,
+  );
   const config = parseJsoncObject(source.text);
   const vars = requireObject(config.vars, 'vars');
   const safeVars = closeExecutionFlags(vars);
   safeVars[WOOCOMMERCE_PROVIDER_DIAGNOSTICS_FLAG] = 'false';
-  const activeVars = { ...safeVars, [WOOCOMMERCE_PROVIDER_DIAGNOSTICS_FLAG]: 'true' };
+  delete safeVars[WOOCOMMERCE_PROVIDER_DIAGNOSTICS_TOKEN_SHA256_ENV];
+  const activeVars = {
+    ...safeVars,
+    [WOOCOMMERCE_PROVIDER_DIAGNOSTICS_FLAG]: 'true',
+    [WOOCOMMERCE_PROVIDER_DIAGNOSTICS_TOKEN_SHA256_ENV]: diagnosticTokenSha256,
+  };
 
   const safe = serialize({ ...config, vars: safeVars });
   const active = serialize({ ...config, vars: activeVars });
@@ -50,6 +65,7 @@ export function buildWooCommerceWorkerProviderDiagnosticConfigs(sourceText, inpu
     pathname: WOOCOMMERCE_PROVIDER_DIAGNOSTICS_PATH,
     safeTrueFlags: Object.freeze(safeTrueFlags),
     activeTrueFlags: Object.freeze(activeTrueFlags),
+    ephemeralAuthDigestConfigured: true,
     secretValuesCopied: source.secretValuesCopied,
   });
 }
@@ -198,6 +214,14 @@ function requireObject(value, fieldName) {
     throw diagnosticError(`${fieldName} must be an object`, 'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_CONFIG_INVALID', { fieldName });
   }
   return value;
+}
+
+function requireSha256(value, fieldName) {
+  const text = requireText(value, fieldName).toLowerCase();
+  if (!SHA256_PATTERN.test(text)) {
+    throw diagnosticError(`${fieldName} must be a SHA-256 digest`, 'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_CONFIG_INVALID', { fieldName });
+  }
+  return text;
 }
 
 function requireText(value, fieldName) {
