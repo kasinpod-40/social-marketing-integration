@@ -198,6 +198,43 @@ test('materialization writer maps Shared dimensions to Top Ads and preserves leg
   assert.equal(topAd.report_ad_key, `${materialization.row.report_id}::rank:1`);
 });
 
+test('Commerce materialization writes only shared Snapshot and Metric tables', async () => {
+  const materialization = {
+    row: materializationRow({
+      report_id: 'report-commerce',
+      platform_scope: 'woocommerce',
+      period_kind: 'rolling_days',
+      window_days: 3,
+      coverage_rate: 1,
+    }),
+    payload: materializationPayload({
+      platformScope: 'woocommerce',
+      capability: 'commerce',
+      coverageRate: 1,
+      period: rollingPeriod(),
+      collections: { top_products: [{ product_key: 'product-1' }] },
+      metricPayload: {
+        'woocommerce:net_sales_micros': {
+          metricKey: 'woocommerce:net_sales_micros',
+          displayName: 'Net sales',
+          current: 1_000_000,
+          compare: 500_000,
+          change: 500_000,
+          changePercent: 1,
+          unit: 'currency',
+          formulaVersion: 'woocommerce-commerce-v1',
+          clientVisible: true,
+          sortOrder: 1,
+        },
+      },
+    }),
+  };
+  const captured = await captureWrite(materialization);
+  assert.deepEqual([...captured.keys()].sort(), ['metrics', 'snapshots']);
+  assert.equal(captured.get('metrics')[0].capability, 'commerce');
+  assert.equal(captured.get('metrics')[0].current_value, 1_000_000);
+});
+
 test('same validated materialization rerun is idempotent across every Organic output table', async () => {
   const repository = memoryRepository();
   const reader = { async readById() { return organicMaterialization(); } };

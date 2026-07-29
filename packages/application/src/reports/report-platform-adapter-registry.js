@@ -3,6 +3,7 @@ import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 export const REPORT_PLATFORM_CAPABILITY = Object.freeze({
   ORGANIC: 'organic',
   PAID_ADS: 'paid_ads',
+  COMMERCE: 'commerce',
 });
 
 export const REPORT_SOURCE_STATUS = Object.freeze({
@@ -66,6 +67,13 @@ const PLATFORM_CONTRACTS = Object.freeze({
     summaryReportLevel: 'account',
     rankingReportLevel: 'ad',
     formulaVersion: 'tiktok-ads-v1',
+  }),
+  woocommerce: freezeContract({
+    platformScope: 'woocommerce',
+    capability: REPORT_PLATFORM_CAPABILITY.COMMERCE,
+    sourceStatus: REPORT_SOURCE_STATUS.ACTIVE,
+    datasetKey: 'commerce_daily_sales_facts',
+    formulaVersion: 'woocommerce-commerce-v1',
   }),
 });
 

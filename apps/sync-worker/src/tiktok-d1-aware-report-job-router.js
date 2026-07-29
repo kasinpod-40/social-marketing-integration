@@ -13,12 +13,14 @@ import {
   DEFAULT_REPORT_SOURCE_PAGE_SIZE,
 } from '../../../packages/application/src/reports/load-tiktok-organic-report-source.js';
 import { generateDashboardReportMaterialization } from '../../../packages/application/src/use-cases/generate-dashboard-report-materialization.js';
+import { generateWooCommerceCommerceReport } from '../../../packages/application/src/commerce/generate-woocommerce-commerce-report.js';
 import { generateReportAiSummary } from '../../../packages/application/src/use-cases/generate-report-ai-summary.js';
 import { generateTikTokOrganicReportD1Aware } from '../../../packages/application/src/use-cases/generate-tiktok-organic-report-d1-aware.js';
 import { writeDashboardMaterializationToLark } from '../../../packages/application/src/use-cases/write-dashboard-materialization-to-lark.js';
 import { readLarkTableIdsFromEnv } from '../../../packages/config/src/lark-table-config.js';
 import { readStorageRuntimeConfig } from '../../../packages/config/src/storage-runtime-config.js';
 import { readTikTokPostLarkRuntimeConfig } from '../../../packages/config/src/tiktok-post-lark-runtime-config.js';
+import { readWooCommerceRuntimeConfig } from '../../../packages/config/src/woocommerce-runtime-config.js';
 import { DASHBOARD_REPORT_TYPE } from '../../../packages/config/src/report-settings.seed.js';
 import { D1AdsReportSource } from '../../../packages/connectors/src/d1-ads-report-source.js';
 import { D1MarketingHistoryStore } from '../../../packages/connectors/src/d1-marketing-history-store.js';
@@ -26,6 +28,7 @@ import { D1OrganicReportSource } from '../../../packages/connectors/src/d1-organ
 import { D1ReportMaterializationReader } from '../../../packages/connectors/src/d1-report-materialization-reader.js';
 import { D1ReportRequestStore } from '../../../packages/connectors/src/d1-report-request-store.js';
 import { D1TikTokOrganicReportSource } from '../../../packages/connectors/src/tiktok/d1-tiktok-organic-report-source.js';
+import { D1WooCommerceReportSource } from '../../../packages/connectors/src/woocommerce/d1-woocommerce-report-source.js';
 import { runReliableSync } from '../../../packages/reliability/src/reliable-sync-runner.js';
 import { permanentError } from '../../../packages/shared/src/errors/runtime-error.js';
 import { processJobWithTikTokPostLark } from './tiktok-post-lark-job-router.js';
@@ -53,6 +56,9 @@ async function processDashboardReportJob(input) {
   const body = input.job.body;
   const platformScope = requireJobText(body.platformScope, 'platformScope');
   const contract = getReportPlatformContract(platformScope);
+  const commerceConfig = platformScope === 'woocommerce'
+    ? readWooCommerceRuntimeConfig(input.env)
+    : null;
   const requestId = optionalText(body.reportRequestId);
   const customRequest = body.trigger === 'dashboard_custom_range';
   const presetRequest = body.trigger === 'dashboard_preset';
@@ -61,7 +67,16 @@ async function processDashboardReportJob(input) {
   const storageConfig = readStorageRuntimeConfig(input.env);
   if (definition.type !== JOB_TYPES.REPORT_MATERIALIZATION_GENERATE
     || !validShape
-    || storageConfig.reportD1ReadEnabled !== true) {
+    || storageConfig.reportD1ReadEnabled !== true
+    || (commerceConfig && commerceConfig.flags.reportRead !== true)
+    || (commerceConfig && [
+      commerceConfig.flags.connector,
+      commerceConfig.flags.d1Write,
+      commerceConfig.flags.larkWrite,
+      commerceConfig.flags.fullReconciliation,
+      commerceConfig.flags.schedule,
+    ].some(Boolean))
+    || (commerceConfig && !commerceConfig.defaultCurrency)) {
     throw permanentError('Dashboard report requires a reviewed D1-primary job contract', {
       code: 'DASHBOARD_REPORT_CONFIGURATION_INVALID',
     });
@@ -71,7 +86,8 @@ async function processDashboardReportJob(input) {
   const infrastructure = input.getInfrastructure();
   const requiredTables = [
     'mktReportSnapshots', 'mktReportMetricValues',
-    contract.capability === REPORT_PLATFORM_CAPABILITY.ORGANIC ? 'mktReportTopContent' : 'mktReportTopAds',
+    ...(contract.capability === REPORT_PLATFORM_CAPABILITY.ORGANIC ? ['mktReportTopContent'] : []),
+    ...(contract.capability === REPORT_PLATFORM_CAPABILITY.PAID_ADS ? ['mktReportTopAds'] : []),
     'mktSyncLog', 'mktSystemAlerts',
   ];
   const tableIds = readLarkTableIdsFromEnv(input.env, requiredTables);
@@ -110,7 +126,10 @@ async function processDashboardReportJob(input) {
       alertOnResultWarnings: true,
       onReliabilityError: reliabilityLogger,
       execute: async ({ assertLockActive }) => {
-        const registry = createD1ReportRegistry(input.env?.MKT_STATE_DB);
+        const registry = createD1ReportRegistry(input.env?.MKT_STATE_DB, {
+          commerceCurrency: commerceConfig?.defaultCurrency,
+          generatedAt: Date.parse(body.requestedAt),
+        });
         const generated = await generateDashboardReportMaterialization({
           registry,
           materializationStore: new D1MarketingHistoryStore({ db: input.env?.MKT_STATE_DB }),
@@ -274,7 +293,7 @@ async function processLegacyTikTokReportJob(input) {
   }
 }
 
-function createD1ReportRegistry(db) {
+function createD1ReportRegistry(db, options = {}) {
   return createReportPlatformAdapterRegistry({
     adapters: {
       facebook: new D1OrganicReportSource({ db, platform: 'facebook' }),
@@ -284,6 +303,20 @@ function createD1ReportRegistry(db) {
       meta_ads: new D1AdsReportSource({ db, platform: 'meta_ads' }),
       google_ads: new D1AdsReportSource({ db, platform: 'google_ads' }),
       tiktok_ads: new D1AdsReportSource({ db, platform: 'tiktok_ads' }),
+      ...(options.commerceCurrency ? {
+        woocommerce: {
+          async load(input) {
+            return generateWooCommerceCommerceReport({
+              source: new D1WooCommerceReportSource({ db }),
+              accountKey: input.accountKey,
+              periodStart: input.periodStart,
+              periodEnd: input.periodEnd,
+              currency: options.commerceCurrency,
+              now: options.generatedAt,
+            });
+          },
+        },
+      } : {}),
     },
   });
 }

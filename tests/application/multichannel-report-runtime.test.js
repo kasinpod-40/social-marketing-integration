@@ -20,9 +20,11 @@ test('registry covers every Organic and Paid Ads platform without pretending pla
   const contracts = listReportPlatformContracts();
   assert.deepEqual(contracts.map((item) => item.platformScope), [
     'facebook', 'instagram', 'tiktok', 'youtube', 'meta_ads', 'google_ads', 'tiktok_ads',
+    'woocommerce',
   ]);
   assert.equal(contracts.find((item) => item.platformScope === 'tiktok_ads').sourceStatus, REPORT_SOURCE_STATUS.PLANNED);
   assert.equal(contracts.find((item) => item.platformScope === 'tiktok').sourceStatus, REPORT_SOURCE_STATUS.ACTIVE);
+  assert.equal(contracts.find((item) => item.platformScope === 'woocommerce').capability, 'commerce');
 });
 
 test('Organic cumulative calculation preserves new-content zero baseline and nulls uncovered partial deltas', () => {
@@ -158,6 +160,66 @@ test('active Organic adapter produces current and previous equal-length values f
   assert.equal(metric.compare, 10);
   assert.equal(result.topContent[0].period_views, 30);
   assert.equal(writes[0].window_days, null);
+});
+
+test('active Commerce adapter materializes neutral metrics and discovered collections', async () => {
+  const writes = [];
+  const registry = createReportPlatformAdapterRegistry({
+    adapters: {
+      woocommerce: {
+        async load({ periodStart }) {
+          const current = periodStart === '2026-07-25';
+          return {
+            currency: 'THB',
+            data_status: 'complete',
+            source_watermark: 'wm-commerce',
+            coverage: { status: 'complete' },
+            totals: {
+              net_sales_micros: current ? 9_000_000 : 4_000_000,
+              gross_sales_micros: current ? 10_000_000 : 5_000_000,
+              recognized_revenue_micros: current ? 9_000_000 : 4_000_000,
+              refund_micros: 0,
+              discount_micros: current ? 1_000_000 : 1_000_000,
+              shipping_micros: 0,
+              tax_micros: 0,
+              recognized_orders: current ? 3 : 2,
+              provisional_orders: 0,
+              cancelled_orders: 0,
+              failed_orders: 0,
+              refunded_orders: 0,
+              quantity_total: current ? 4 : 2,
+            },
+            products: current ? [{ product_key: 'product-1', net_sales_micros: 9_000_000 }] : [],
+            payment_methods: current ? [{ payment_method_id: 'cod', recognized_orders: 3 }] : [],
+            shipping_methods: current ? [{ shipping_method_id: 'flat_rate', recognized_orders: 3 }] : [],
+          };
+        },
+      },
+    },
+  });
+  const result = await generateDashboardReportMaterialization({
+    registry,
+    materializationStore: {
+      async saveReportMaterialization(row) {
+        writes.push(row);
+        return { status: 'written' };
+      },
+    },
+    customerKey: 'chemistry_k',
+    accountKey: 'chemistry_k',
+    platformScope: 'woocommerce',
+    reportSettingKey: 'integration_workspace:woocommerce:rolling:3d',
+    periodKind: 'rolling_days',
+    windowDays: 3,
+    periodEnd: '2026-07-27',
+    comparisonMode: 'previous_period',
+    generatedAt: GENERATED_AT,
+  });
+  assert.equal(result.capability, 'commerce');
+  assert.equal(result.metricPayload['woocommerce:net_sales_micros'].current, 9_000_000);
+  assert.equal(result.metricPayload['woocommerce:net_sales_micros'].compare, 4_000_000);
+  assert.equal(result.materialization.payload.collections.top_products[0].product_key, 'product-1');
+  assert.equal(JSON.parse(writes[0].payload_json).collections.commerce_context[0].currency, 'THB');
 });
 
 test('AI provider receives validated materialization only and preserves null versus zero', async () => {
