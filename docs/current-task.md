@@ -10,6 +10,8 @@ IMPLEMENTATION_BASE_MAIN_SHA        = ab56882
 BRANCH                              = hotfix/lark-dashboard-backfill-post-verify-v1
 OPERATOR                            = scripts/lark-dashboard-shared-dimensions-backfill.mjs
 OPERATOR_VERSION                    = lark-dashboard-shared-dimensions-backfill-v1.2
+IMPLEMENTATION_PR                   = #246 / DRAFT / DO_NOT_MERGE
+BRANCH_VERIFICATION                 = #30468846202 / PASS
 REMOTE_ACTION_DURING_IMPLEMENTATION = NONE
 LARK_APPLY                          = NOT_RUN
 D1_WRITE                            = NONE
@@ -103,7 +105,10 @@ docs/tasks/lark-dashboard-backfill-post-verify-hotfix-v1.md
   `wrangler.sync.jsonc --env development` dry-run และ repository example dry-runs ผ่าน.
 - `npm test` ใน restricted sandbox ผ่าน Unit ทั้งหมดก่อน Workers runtime ถูก OS ปฏิเสธ
   Wrangler log/localhost ด้วย `EPERM`; Workers suite เดิมผ่านเมื่อ rerun นอก restricted sandbox.
-- Commit, Draft PR และ Branch Verification CI ยัง pending.
+- Implementation commit `1fd375b5e6c6cc70562212677902f1b32b7cf8e5` ถูก Push และเปิด
+  Draft PR `#246` เข้า `main`.
+- Branch Verification run `30468846202` ผ่านทุก step; docs-only closeout Head ต้องผ่าน
+  verification รอบสุดท้ายก่อนส่งมอบ.
 - Remote action count ระหว่าง Implementation = `0`.
 
 ---

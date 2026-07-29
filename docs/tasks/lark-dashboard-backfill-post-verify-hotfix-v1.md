@@ -9,6 +9,8 @@ Implementation base main          ab56882
 Branch                            hotfix/lark-dashboard-backfill-post-verify-v1
 Operator                          scripts/lark-dashboard-shared-dimensions-backfill.mjs
 Operator version                  lark-dashboard-shared-dimensions-backfill-v1.2
+Draft PR                          #246
+Branch Verification              #30468846202 PASS
 Remote action count               0
 ```
 
@@ -162,7 +164,7 @@ Report reliability                             100/100 PASS
 Dependency audit                               0 vulnerabilities
 Exact sync-config Wrangler dry-run             PASS / NO DEPLOYMENT
 Repository example Wrangler dry-runs           PASS / NO DEPLOYMENT
-Branch Verification CI                         PENDING
+Branch Verification CI                         #30468846202 PASS
 ```
 
 `npm test` ใน restricted sandbox ผ่าน Unit `1436/1436` ก่อน Workers runtime ถูก OS ปฏิเสธ
