@@ -41,7 +41,7 @@ export async function writeDashboardMaterializationToLark(input = {}) {
     data_status: payload.dataStatus,
     formula_version: row.formula_version,
     source_snapshot_count: sourceSnapshotCount,
-    baseline_coverage_rate: payload.capability === 'organic' ? payload.coverageRate : null,
+    baseline_coverage_rate: payload.coverageRate,
   });
   const metricRows = buildReportMetricValueRows({
     reportId: row.report_id,

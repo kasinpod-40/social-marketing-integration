@@ -20,6 +20,9 @@ Snapshot เพิ่ม `customer_key`, `capability`, `coverage_rate`; อี�
 ดังกล่าวร่วมกับ `period_kind` และ `window_days`. `capability` เป็น Text extensible lowercase
 key, `window_days` ใช้ integer formatter และ `coverage_rate` ใช้ `0.0000`.
 `baseline_coverage_rate` ยังคงเป็น Organic baseline coverage เดิมและไม่ถูกแทนที่.
+Phase A คง legacy Snapshot writer ที่เขียน `payload.coverageRate` ลง Field นี้ทุก Capability
+เพื่อไม่ให้ Paid Ads rerun ล้างค่าเดิม; `coverage_rate` ใหม่เป็น Universal shared dimension.
+การ reinterpret หรือ cleanup ค่าเก่าต้องเป็น workstream แยก.
 
 Materialization-to-Lark path อ่าน validated `report_materializations` เท่านั้น, ตรวจ Storage
 contract/checksum/metadata parity แล้วสร้าง Shared dimension object หนึ่งครั้งสำหรับทุก output
@@ -28,11 +31,11 @@ row ผ่าน `TableSyncEngine` เดิม. Stable keys ไม่เปล�
 เดิมยังกรอง `report_type=dashboard_performance_report` โดยไม่มี Platform/Account/Customer
 hardcode.
 
-Focused Phase A tests ผ่าน `7/7`, expanded Dashboard/Report `34/34`, full Node `1397/1397`,
+Focused Phase A tests ผ่าน `7/7`, expanded Dashboard/Report `34/34`, full Node `1406/1406`,
 Workers runtime `14/14`, Report reliability `100/100`, dependency audit 0 vulnerabilities และ
 Wrangler dry-runs ผ่าน. Schema preview simulation ได้ additive `create_field=18`,
-`create_table=0`, `update_field=0`, `conflicts=0`. Draft stacked PR ยัง Pending. ไม่มี Remote
-Lark/D1, Worker, Queue, Schedule, Secret หรือ Production action.
+`create_table=0`, `update_field=0`, `conflicts=0`. Draft stacked PR `#237` ยังเปิดและไม่ Merge.
+ไม่มี Remote Lark/D1, Worker, Queue, Schedule, Secret หรือ Production action.
 
 รายละเอียด:
 

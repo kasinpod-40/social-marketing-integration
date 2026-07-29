@@ -8,6 +8,8 @@
   Report output contracts; Metric, Top Content and Top Ads also receive `period_kind` and
   `window_days`.
 - Preserved Snapshot `baseline_coverage_rate` as the distinct Organic baseline field.
+- Preserved its legacy all-capability writer behavior so a Paid Ads rerun cannot clear an
+  existing Snapshot value; the new `coverage_rate` remains the universal shared dimension.
 - Reused the existing checksummed `report_materializations` reader and `TableSyncEngine`; one
   validated Shared dimension object now feeds Snapshot, Metric, Top Content and Top Ads rows.
 - Kept Custom `window_days=null`, missing Coverage as `null`, observed zero as `0`, and every

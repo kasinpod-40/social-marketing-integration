@@ -176,7 +176,7 @@ test('materialization writer maps identical Shared dimensions to Snapshot, Metri
   assert.equal(topContent.report_content_key, `${materialization.row.report_id}::rank:1`);
 });
 
-test('materialization writer maps Shared dimensions to Top Ads and preserves observed zero', async () => {
+test('materialization writer maps Shared dimensions to Top Ads and preserves legacy Snapshot coverage plus observed zero', async () => {
   const materialization = paidAdsMaterialization();
   const captured = await captureWrite(materialization);
   const snapshot = captured.get('snapshots')[0];
@@ -190,7 +190,7 @@ test('materialization writer maps Shared dimensions to Top Ads and preserves obs
     coverageRate: 0,
   });
   assert.deepEqual(snapshot.platform, ['meta_ads']);
-  assert.equal(snapshot.baseline_coverage_rate, null);
+  assert.equal(snapshot.baseline_coverage_rate, materialization.payload.coverageRate);
   assert.equal(metric.current_value, 0);
   assert.equal(topAd.impressions, 0);
   assert.equal(topAd.conversions, null);

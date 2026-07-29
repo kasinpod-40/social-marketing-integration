@@ -367,9 +367,12 @@ Repository implementation and CI do not authorize D1 backup, Worker deployment, 
   existing Lark `TableSyncEngine`.
 - Stable keys, Daily/Weekly compatibility, `window_days=null`, Coverage null and observed zero
   semantics are preserved; historical rows are not backfilled.
-- Focused Phase A tests pass `7/7`; expanded Report/Dashboard `34/34`, full Node `1397/1397`,
+- Focused Phase A tests pass `7/7`; expanded Report/Dashboard `34/34`, full Node `1406/1406`,
   Workers runtime `14/14`, Report reliability `100/100`, dependency audit and Wrangler dry-runs
-  pass. Draft PR and CI remain pending.
+  pass. Draft PR `#237` remains open and unmerged.
+- Review correction preserves the legacy all-capability Snapshot write for
+  `baseline_coverage_rate`, so a Paid Ads rerun cannot clear an existing value; the new
+  `coverage_rate` field remains the Universal shared Coverage dimension.
 - Remote actions are `0`: no Lark Apply/write, Remote D1, Worker, Queue/DLQ, Schedule, Secret,
   LIVE UAT or Production mutation.
 - Detailed handoff: `docs/tasks/lark-dashboard-shared-dimensions-v1.md`.

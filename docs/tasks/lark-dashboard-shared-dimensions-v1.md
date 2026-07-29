@@ -69,6 +69,12 @@ coverage_rate           = Coverage รวมของ Report materialization
 baseline_coverage_rate  = Organic baseline coverage เดิม
 ```
 
+เพื่อรักษา Compatibility ของ Writer เดิม Phase A ยังคงเขียน
+`baseline_coverage_rate=payload.coverageRate` สำหรับทุก Capability โดยไม่ reinterpret หรือล้าง
+ค่าของ Paid Ads ระหว่าง normal rerun. Field ใหม่ `coverage_rate` เป็น Universal shared Coverage
+dimension; การ cleanup ความหมายหรือข้อมูลเก่าของ `baseline_coverage_rate` ต้องเป็น workstream
+แยกที่ผ่านการ Review และ confirmation.
+
 Focused schema preview จำลอง Base ที่มี schema ก่อน Phase A ครบแล้ว ได้ 18
 `create_field`, `create_table=0`, `update_field=0`, `conflicts=0` และ
 `readyToApply=true`.
@@ -105,7 +111,8 @@ Top Ads      report_id::rank:N
 - Writer ใหม่เติม Shared dimensions เมื่อ materialization ถูกเขียน/อัปเดตรอบถัดไป.
 - `custom_range` คง `window_days=null`.
 - `coverage_rate=null` คง `null`; observed zero คง `0`.
-- Snapshot `baseline_coverage_rate` เติมเฉพาะ Organic materialization; Paid Ads คง `null`.
+- Snapshot `baseline_coverage_rate` คง legacy write behavior จาก `payload.coverageRate` ทุก
+  Capability เพื่อไม่ให้ Paid Ads rerun ล้างค่าที่มีอยู่.
 - ไม่เดา `customer_key`, `capability` หรือ Coverage ของแถวเก่าจากชื่อ Platform.
 - หากต้อง backfill แถวเก่า ให้เปิด operator/workstream แยกที่มี Preview และ explicit
   confirmation.
@@ -141,8 +148,8 @@ Full Repository validation:
 
 ```text
 npm ci                                      PASS
-npm run check                               PASS / 386 files / 1006 deps / 0 cycles
-npm test                                    Node 1397/1397 PASS
+npm run check                               PASS / 390 files / 1012 deps / 0 cycles
+npm test                                    Node 1406/1406 PASS
 npm run test:worker                         14/14 PASS outside restricted sandbox
 npm run test:report-reliability             100/100 PASS
 npm audit                                   PASS / 0 vulnerabilities
@@ -157,6 +164,11 @@ Workers suite ต้อง rerun นอก restricted sandbox เพราะ Wr
 ถูก sandbox ปฏิเสธด้วย `EPERM`; rerun เดิมผ่าน `14/14`. Exact `wrangler.sync.jsonc --env
 development` dry-run ผ่านพร้อม warning ว่า config ใช้ top-level development settings และไม่มี
 named `[env.development]`; ไม่มี deployment.
+
+Review correction หลัง Draft PR `#237` คืน legacy
+`baseline_coverage_rate=payload.coverageRate` สำหรับ Paid Ads Snapshot และเพิ่ม regression ที่
+ยืนยัน observed zero คงเป็น `0` แทนการ clear เป็น `null`. Focused, expanded และ Full Repository
+gates ด้านบน rerun ผ่านบน corrected tree.
 
 ## Remote boundary
 
