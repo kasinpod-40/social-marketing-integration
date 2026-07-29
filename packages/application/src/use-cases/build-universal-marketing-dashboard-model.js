@@ -9,7 +9,7 @@ const COMPLETE_STATUS = 'complete';
 
 /**
  * Build a renderer-neutral Dashboard model from validated Report materializations only.
- * Platform, account, metric and capability options are discovered from input records.
+ * Platforms, capabilities, accounts, metrics and collection kinds are discovered from records.
  */
 export function buildUniversalMarketingDashboardModel(input = {}) {
   validateUniversalMarketingDashboardContract(input.contract ?? UNIVERSAL_MARKETING_DASHBOARD_CONTRACT);
@@ -17,9 +17,7 @@ export function buildUniversalMarketingDashboardModel(input = {}) {
     .map((item, index) => normalizeMaterialization(item, index));
   const selection = normalizeSelection(input.selection ?? {});
   const selected = materializations.filter((item) => matchesSelection(item, selection));
-  const reports = selected
-    .sort(compareMaterializations)
-    .map(buildReportModel);
+  const reports = selected.sort(compareMaterializations).map(buildReportModel);
   const sections = buildSections(reports);
   const warnings = reports.flatMap((report) => report.dataQuality.warnings);
 
@@ -65,10 +63,7 @@ function buildReportModel(item) {
     .map(([fallbackKey, metric]) => normalizeMetric(metric, fallbackKey))
     .filter((metric) => metric.clientVisible)
     .sort(compareMetrics);
-  const rankings = [
-    buildRanking('top_content', item.payload.topContent),
-    buildRanking('top_ads', item.payload.topAds),
-  ].filter((ranking) => ranking.rows.length > 0);
+  const collections = buildCollections(item.payload);
   const warnings = buildDataQualityWarnings(item);
 
   return Object.freeze({
@@ -83,7 +78,8 @@ function buildReportModel(item) {
     period: item.payload.period,
     generatedAt: item.generatedAt,
     cards,
-    rankings,
+    collections,
+    rankings: collections,
     dataQuality: Object.freeze({
       dataStatus: item.payload.dataStatus,
       coverageRate: item.payload.coverageRate,
@@ -108,7 +104,16 @@ function normalizeMetric(value, fallbackKey) {
   });
 }
 
-function buildRanking(kind, rows) {
+function buildCollections(payload) {
+  const entries = new Map(Object.entries(payload.collections ?? {}));
+  if (!entries.has('top_content') && payload.topContent.length > 0) entries.set('top_content', payload.topContent);
+  if (!entries.has('top_ads') && payload.topAds.length > 0) entries.set('top_ads', payload.topAds);
+  return Object.freeze([...entries.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([kind, rows]) => buildCollection(kind, rows)));
+}
+
+function buildCollection(kind, rows) {
   return Object.freeze({
     kind,
     rows: requireArray(rows, kind).map((row, index) => {
@@ -135,6 +140,7 @@ function buildSections(reports) {
       reportCount: capabilityReports.length,
       platforms: uniqueSorted(capabilityReports.map((report) => report.platform)),
       accountIds: uniqueSorted(capabilityReports.map((report) => report.accountId)),
+      collectionKinds: uniqueSorted(capabilityReports.flatMap((report) => report.collections.map((item) => item.kind))),
       reports: Object.freeze(capabilityReports),
     })));
 }
@@ -149,7 +155,15 @@ function buildDiscovery(materializations) {
     periodKinds: uniqueSorted(materializations.map((item) => item.payload.period.periodKind)),
     windowDays: uniqueNumbers(materializations.map((item) => item.payload.period.windowDays).filter((value) => value !== null)),
     reportSettingKeys: uniqueSorted(materializations.map((item) => item.reportSettingKey)),
+    collectionKinds: uniqueSorted(materializations.flatMap((item) => discoverCollectionKinds(item.payload))),
   });
+}
+
+function discoverCollectionKinds(payload) {
+  const kinds = Object.keys(payload.collections ?? {});
+  if (payload.topContent.length > 0 && !kinds.includes('top_content')) kinds.push('top_content');
+  if (payload.topAds.length > 0 && !kinds.includes('top_ads')) kinds.push('top_ads');
+  return kinds;
 }
 
 function buildDataQualityWarnings(item) {
