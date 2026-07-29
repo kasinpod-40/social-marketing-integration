@@ -29,6 +29,9 @@ export function createReportMetricLegacyReadNormalizer(client) {
 }
 
 export function normalizeLegacyReportWindowDays(value) {
+  // SingleSelect ที่ผิดปกติและมีหลาย entry ต้องคง Shape เดิมไว้ให้ Core ปฏิเสธ;
+  // ห้าม concatenate จนบังเอิญกลายเป็น preset อื่น เช่น ["3", "0"] -> "30".
+  if (Array.isArray(value) && value.length > 1) return value;
   const text = readLarkText(value, { allowNull: true, label: 'legacy window_days' });
   if (text === null) return null;
   const normalized = text.trim().toLowerCase();
