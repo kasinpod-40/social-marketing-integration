@@ -2,6 +2,10 @@ import { createHash } from 'node:crypto';
 import { buildDashboardPresetJob } from '../../packages/application/src/reports/dashboard-report-request.js';
 import { resolveReportPeriod } from '../../packages/application/src/reports/report-period.js';
 import { createReportId } from '../../packages/application/src/storage/marketing-history-contract.js';
+import {
+  DASHBOARD_REPORT_PLATFORM_SCOPES,
+  DASHBOARD_REPORT_PRESET_DAYS,
+} from '../../packages/config/src/report-settings.seed.js';
 import { parseJsoncObject } from './chatwoot-safe-wrangler-config.js';
 
 export const REPORT_RUNTIME_CLOSEOUT_CONTRACT_VERSION = 'report_runtime_closeout_uat_v1';
@@ -10,7 +14,9 @@ export const REPORT_RUNTIME_CLOSEOUT_ACTIVE_TRUE_FLAGS = Object.freeze([
   'MKT_REPORT_D1_READ_ENABLED',
   'MKT_REPORT_PRESET_MATERIALIZATION_ENABLED',
 ]);
-export const REPORT_RUNTIME_CLOSEOUT_WINDOW_DAYS = Object.freeze([3, 7, 9, 15, 30, 90]);
+export const REPORT_RUNTIME_CLOSEOUT_WINDOW_DAYS = DASHBOARD_REPORT_PRESET_DAYS;
+export const REPORT_RUNTIME_CLOSEOUT_CANONICAL_SETTING_COUNT = 2
+  + (DASHBOARD_REPORT_PLATFORM_SCOPES.length * (DASHBOARD_REPORT_PRESET_DAYS.length + 1));
 export const REPORT_RUNTIME_CLOSEOUT_REQUIRED_TABLES = Object.freeze({
   mktReportSnapshots: 'LARK_TABLE_MKT_REPORT_SNAPSHOTS',
   mktReportMetricValues: 'LARK_TABLE_MKT_REPORT_METRIC_VALUES',
@@ -56,7 +62,7 @@ export function assertReportRuntimeFinalizerEvidence(value = {}) {
     || !allGatesPassed
     || Number(value.schema?.readbackActions ?? -1) !== 0
     || Number(value.schema?.conflicts ?? -1) !== 0
-    || Number(value.settings?.canonicalActive ?? -1) !== 51
+    || Number(value.settings?.canonicalActive ?? -1) !== REPORT_RUNTIME_CLOSEOUT_CANONICAL_SETTING_COUNT
     || Number(value.settings?.activeLegacySettings ?? -1) !== 0
     || Number(value.settings?.readbackCreates ?? -1) !== 0
     || Number(value.settings?.readbackUpdates ?? -1) !== 0
@@ -223,12 +229,27 @@ export function buildReportRuntimeCloseoutCandidates(input = {}) {
   }));
 }
 
-export function selectFreshReportRuntimeCloseoutCandidate(candidates, existingReportIds = []) {
+export function selectFreshReportRuntimeCloseoutCandidate(candidates, existingReportIds = [], env = process.env) {
   if (!Array.isArray(candidates) || candidates.length === 0) throw closeoutError(
     'Report closeout candidate list is empty',
     'REPORT_RUNTIME_CLOSEOUT_CANDIDATE_INVALID',
   );
   const existing = new Set(existingReportIds.map(String));
+  const preferred = optionalWindowDays(env.MKT_REPORT_RUNTIME_CLOSEOUT_WINDOW_DAYS);
+  if (preferred !== null) {
+    const selected = candidates.find((candidate) => candidate.windowDays === preferred);
+    if (!selected) throw closeoutError(
+      `Requested Report closeout window is not available: ${preferred}D`,
+      'REPORT_RUNTIME_CLOSEOUT_WINDOW_UNAVAILABLE',
+      { windowDays: preferred },
+    );
+    if (existing.has(selected.reportId)) throw closeoutError(
+      `Requested Report closeout window already exists for the selected period: ${preferred}D`,
+      'REPORT_RUNTIME_CLOSEOUT_FRESH_PRESET_UNAVAILABLE',
+      { windowDays: preferred },
+    );
+    return selected;
+  }
   const selected = candidates.find((candidate) => !existing.has(candidate.reportId));
   if (!selected) throw closeoutError(
     'Every reviewed Report closeout preset already has a materialization for the selected period',
@@ -269,6 +290,7 @@ export function assertReportRuntimeCloseoutCompletion(row = {}, expected = {}) {
     || !['complete', 'partial', 'revisable', 'no_data_confirmed'].includes(status)
     || typeof row.payload_checksum !== 'string'
     || row.payload_checksum.trim() === ''
+    || Number(row.materialization_count ?? 0) !== 1
     || String(row.sync_status ?? '') !== 'success'
     || Number(row.active_lock_count ?? 0) !== 0
     || Number(row.new_dlq_count ?? 0) !== 0) {
@@ -278,6 +300,7 @@ export function assertReportRuntimeCloseoutCompletion(row = {}, expected = {}) {
       {
         reportIdMatched: row.report_id === expected.reportId,
         dataStatus: status || null,
+        materializationCount: Number(row.materialization_count ?? 0),
         syncStatus: row.sync_status ?? null,
         activeLockCount: Number(row.active_lock_count ?? 0),
         newDlqCount: Number(row.new_dlq_count ?? 0),
@@ -310,6 +333,17 @@ export function safeReportRuntimeCloseoutEvidence(value) {
     output[key] = safeReportRuntimeCloseoutEvidence(nested);
   }
   return output;
+}
+
+function optionalWindowDays(value) {
+  if (value === undefined || value === null || String(value).trim() === '') return null;
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || !REPORT_RUNTIME_CLOSEOUT_WINDOW_DAYS.includes(number)) throw closeoutError(
+    `MKT_REPORT_RUNTIME_CLOSEOUT_WINDOW_DAYS must be one of ${REPORT_RUNTIME_CLOSEOUT_WINDOW_DAYS.join(', ')}`,
+    'REPORT_RUNTIME_CLOSEOUT_WINDOW_INVALID',
+    { windowDays: value },
+  );
+  return number;
 }
 
 function assertQueueSettings(actual, expected) {
