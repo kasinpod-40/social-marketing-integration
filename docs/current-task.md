@@ -98,6 +98,22 @@ docs/tasks/lark-dashboard-backfill-post-verify-hotfix-v1.md
 
 ## Implementation result
 
+### WooCommerce D1 100-bound-parameter continuation hotfix — 2026-07-30
+
+- Final operation `woo-final-full-e2372e56d52d` was admitted once and wrote partial Store/Orders
+  D1 + Lark facts before exact durable retries failed at the `commerce_customer_aggregates` read.
+- Live evidence isolated the boundary: the first page passed with 99 value keys + one account bind;
+  the full page failed with 100 value keys + one account bind. D1 allows at most 100 bound
+  parameters per query.
+- The shared WooCommerce D1 derived-row reader now reserves the account bind and chunks value
+  lists to 99 while preserving sorted deterministic output.
+- The exact partial operation must be resumed through its existing durable contract after
+  PR/CI/Merge; it must not be abandoned or replaced.
+- Verification passed: focused WooCommerce `12/12`, unit `1466/1466`, Workers runtime `15/15`,
+  report reliability `101/101`, architecture/hygiene `399` source modules with `0` cycles,
+  `npm audit` with `0` vulnerabilities and deploy dry-run.
+- Repository implementation has no Remote action.
+
 ### WooCommerce Final Safe Closeout v1 — 2026-07-30
 
 - Exact recovery PR `#253` Squash Merged ที่

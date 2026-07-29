@@ -46,6 +46,11 @@ PR #253 ต่อมา Squash Merged ที่ `67a82551749569d74b9e4b66a32c82e
 Coverage/Commerce rows คง 0. ก่อน admit operation ใหม่ต้องแก้ Final operator รุ่นเดิมที่จบด้วย
 scheduled-active deployment ให้จบด้วย verified all-false `safe-closeout` แทน เพราะ
 Integration Workspace authorization ล่าสุดห้ามเปิด Schedule/Cron ตลอด Workstream.
+Final operation `woo-final-full-e2372e56d52d` ต่อมาถูก admit ครั้งเดียวและมี partial D1/Lark
+writes ก่อน retry ที่ Orders page 2 ล้มด้วย `WOOCOMMERCE_D1_READ_FAILED` บน
+`commerce_customer_aggregates`. Live boundary คือ 99 value binds + account bind ผ่าน แต่
+100 value binds + account bind รวม 101 เกิน D1 maximum 100 bound parameters. Current correction
+ต้อง chunk derived-row value reads เป็น 99 และ resume exact durable operation เดิมเท่านั้น.
 
 ## WooCommerce diagnostics deterministic Preview origin — 2026-07-30
 
