@@ -66,7 +66,7 @@ function createFlow(runtime, env) {
     adsClient: new TikTokAdsApiClient(),
     credentials: runtime.credentials,
     store: runtime.store,
-    redirectUri: runtime.config.redirectUris.tiktok_ads,
+    redirectUri: config.redirectUri,
     environment: runtime.config.environment,
     approvedAdvertiserId: config.advertiserId,
   });
