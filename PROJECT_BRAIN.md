@@ -12,6 +12,25 @@ Historical Root Project Brain ก่อน TikTok post-Lark implementation ถ�
 docs/archive/PROJECT_BRAIN-before-tiktok-post-lark-parity-2026-07-26.md
 ```
 
+## WooCommerce diagnostics Queue sentinel — 2026-07-29
+
+Live diagnostics ยืนยันว่า Cloudflare ปฏิเสธทั้ง Active และ automatic Safe Preview Version
+ด้วย `11001 Queue handler is missing` เพราะ Preview-only entrypoint มีเพียง `fetch` ขณะที่
+Worker เดียวกันลงทะเบียนเป็น Queue consumer. Safe state ถูก restore แล้ว, Production deployment
+คงเดิม และไม่มี Version upload, Provider, Queue, D1, Lark หรือ Schedule action สำเร็จ.
+
+Repository Hotfix เพิ่ม fail-closed `queue(batch)` ที่เรียก `batch.retryAll()` exactly once
+โดยไม่ ack, อ่าน message หรือ import Business Queue runtime. Active/Safe config ยังคงไม่มี
+Queue/routes/triggers/D1/Production bindings และมีเฉพาะ diagnostics vars/Secret names ที่จำเป็น.
+Production entrypoint และ Queue runtime จริงไม่เปลี่ยน. Implementation/CI ไม่มี Remote action
+และไม่อนุญาต Live rerun.
+
+รายละเอียด:
+
+```text
+docs/tasks/woocommerce-diagnostics-queue-sentinel-v1.md
+```
+
 ## Lark Dashboard backfill post-apply verification — 2026-07-29
 
 Shared dimensions backfill operator v1.2 แก้ Repository defect ที่เดิม replan เพียงครั้งเดียว

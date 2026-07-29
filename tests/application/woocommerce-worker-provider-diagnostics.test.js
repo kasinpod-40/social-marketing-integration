@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import diagnosticsPreviewWorker from '../../apps/sync-worker/src/woocommerce-provider-diagnostics-entry.js';
 import { parseJsoncObject } from '../../scripts/lib/chatwoot-safe-wrangler-config.js';
 import {
   WOOCOMMERCE_PROVIDER_DIAGNOSTICS_ATTESTATION_ENV,
@@ -90,6 +91,21 @@ test('builds isolated attested Active and all-false Safe Preview Version configs
     'WOOCOMMERCE_CONSUMER_KEY',
     'WOOCOMMERCE_CONSUMER_SECRET',
   ]);
+  assert.deepEqual(Object.keys(safe.vars).sort(), [
+    'MKT_CONNECTION_CUSTOMER_KEY',
+    'MKT_CUSTOMER_PROFILE',
+    'MKT_ENV',
+    'MKT_WOOCOMMERCE_PROVIDER_DIAGNOSTICS_ATTESTATION',
+    'MKT_WOOCOMMERCE_PROVIDER_DIAGNOSTICS_HTTP_ENABLED',
+    'WOOCOMMERCE_API_TIMEOUT_MS',
+    'WOOCOMMERCE_API_VERSION',
+    'WOOCOMMERCE_BASE_URL',
+    'WOOCOMMERCE_DEFAULT_CURRENCY',
+  ]);
+  assert.deepEqual(Object.keys(active.vars).sort(), [
+    ...Object.keys(safe.vars),
+    'MKT_WOOCOMMERCE_PROVIDER_DIAGNOSTICS_TOKEN_SHA256',
+  ].sort());
   for (const key of ['routes', 'route', 'triggers', 'queues', 'd1_databases']) {
     assert.equal(active[key], undefined);
     assert.equal(safe[key], undefined);
@@ -101,7 +117,7 @@ test('builds isolated attested Active and all-false Safe Preview Version configs
     'MKT_SCHEDULE_WOOCOMMERCE_ENABLED',
     'MKT_TIKTOK_AUDIT_HTTP_ENABLED',
   ]) {
-    assert.equal(active.vars[name], 'false');
+    assert.equal(active.vars[name], undefined);
   }
   assert.equal(active.vars.WOOCOMMERCE_BASE_URL, 'https://chemistryk.online');
   assert.equal(active.vars.WOOCOMMERCE_API_VERSION, 'wc/v3');
@@ -252,5 +268,61 @@ test('operator uploads isolated Preview Versions and never deploys Production', 
   assert.doesNotMatch(operator, /queues?['"],\s*['"](?:send|messages)|d1['"],\s*['"](?:execute|migrations)|createLark|TableSyncEngine/u);
   assert.doesNotMatch(`${launcher}\n${operator}`, /secret['"],\s*['"](?:put|bulk|delete)/u);
   assert.match(entrypoint, /createWooCommerceProviderDiagnosticsHttpHandler/u);
-  assert.doesNotMatch(entrypoint, /queue\s*\(|scheduled\s*\(|createCustomerConnectionHttpHandler|TableSyncEngine/u);
+  assert.doesNotMatch(
+    entrypoint,
+    /scheduled\s*\(|createSyncWorker|routeQueueBatch|queue-batch-router|woocommerce-active-job-router|woocommerce-job-router|runtime-infrastructure|createCustomerConnectionHttpHandler|TableSyncEngine/u,
+  );
+});
+
+test('Preview entrypoint exports fetch and fail-closed Queue sentinel without Business processing', async () => {
+  let retryAllCalls = 0;
+  let ackAllCalls = 0;
+  let messageAckCalls = 0;
+  let messageRetryCalls = 0;
+  const batch = {
+    queue: 'social-mkt-sync-jobs',
+    messages: [{
+      id: 'sensitive-message-id',
+      get body() {
+        throw new Error('Queue sentinel must not read message bodies');
+      },
+      ack() {
+        messageAckCalls += 1;
+      },
+      retry() {
+        messageRetryCalls += 1;
+      },
+    }],
+    ackAll() {
+      ackAllCalls += 1;
+    },
+    retryAll() {
+      retryAllCalls += 1;
+    },
+  };
+  const forbiddenRuntime = new Proxy({}, {
+    get() {
+      throw new Error('Queue sentinel must not access runtime bindings');
+    },
+  });
+
+  assert.equal(typeof diagnosticsPreviewWorker.fetch, 'function');
+  assert.equal(typeof diagnosticsPreviewWorker.queue, 'function');
+  assert.equal('scheduled' in diagnosticsPreviewWorker, false);
+  await diagnosticsPreviewWorker.queue(batch, forbiddenRuntime, forbiddenRuntime);
+  assert.equal(retryAllCalls, 1);
+  assert.equal(ackAllCalls, 0);
+  assert.equal(messageAckCalls, 0);
+  assert.equal(messageRetryCalls, 0);
+});
+
+test('Preview fetch fallback remains the guarded no-store 404 route', async () => {
+  const response = await diagnosticsPreviewWorker.fetch(
+    new Request('https://preview.example.test/not-a-diagnostics-route'),
+    {},
+    {},
+  );
+  assert.equal(response.status, 404);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.deepEqual(await response.json(), { ok: false, error: 'Route not found' });
 });

@@ -111,6 +111,27 @@ docs/tasks/lark-dashboard-backfill-post-verify-hotfix-v1.md
   verification รอบสุดท้ายก่อนส่งมอบ.
 - Remote action count ระหว่าง Implementation = `0`.
 
+### WooCommerce diagnostics Queue sentinel hotfix handoff
+
+- Branch `codex/woocommerce-diagnostics-queue-sentinel-v1` เริ่มจาก latest
+  `main@142d742fd27df9fdd1728a371836dd395dcc88ea` ซึ่งมี required ancestor
+  `ab56882e691f93678ee56fbac2cb12f5c8ee95fc`.
+- Preview-only diagnostics entrypoint เพิ่ม fail-closed `queue(batch)` ที่เรียก
+  `batch.retryAll()` exactly once โดยไม่ ack, อ่าน message, เรียก Business router,
+  Provider, D1, Lark, Queue producer หรือ Schedule.
+- Active/Safe generated configs ไม่มี Queue/routes/triggers/D1/production bindings และลด vars
+  เหลือเฉพาะ target, non-secret WooCommerce source และ diagnostics values ที่จำเป็น.
+- Focused Node tests ผ่าน `26/26`; Workers-runtime focused file ผ่าน `12/12`;
+  generated Active/Safe configs ผ่าน Wrangler version-upload dry-run.
+- `npm ci`, `npm run check`, Unit `1438/1438`, Workers runtime `15/15`,
+  Report reliability `100/100`, dependency audit `0 vulnerabilities` และ repository
+  deploy dry-runs ผ่าน. `npm test` ใน restricted sandbox ผ่าน Unit ก่อน Workers suite ถูก
+  OS ปฏิเสธ Wrangler log/localhost ด้วย `EPERM`; Workers suite ผ่านเมื่อ rerun นอก sandbox.
+- Exact-head Branch Verification และ PR closeout ยังรอบันทึก.
+- Remote action count ระหว่าง Implementation = `0`; Live rerun = `NOT_AUTHORIZED`;
+  Production Worker entrypoint, Queue runtime, deployment และ traffic ไม่เปลี่ยน.
+- รายละเอียด: `docs/tasks/woocommerce-diagnostics-queue-sentinel-v1.md`.
+
 ---
 
 # Historical Task Context — YouTube Lark Full-Sync UAT Operator

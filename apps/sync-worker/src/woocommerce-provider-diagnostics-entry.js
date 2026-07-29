@@ -4,8 +4,8 @@ import { createWooCommerceProviderDiagnosticsHttpHandler } from './woocommerce-p
 const diagnosticsHandler = createWooCommerceProviderDiagnosticsHttpHandler();
 
 /**
- * Preview-version-only entrypoint. It intentionally exposes exactly one guarded GET route and
- * contains no Queue, Scheduled, D1, Lark, OAuth, Report or Business handler.
+ * Preview-version-only entrypoint. It exposes one guarded GET route plus a fail-closed Queue
+ * sentinel required when Cloudflare validates a Version for a Worker registered as a consumer.
  */
 export default Object.freeze({
   async fetch(request, env, ctx) {
@@ -19,5 +19,9 @@ export default Object.freeze({
         'referrer-policy': 'no-referrer',
       },
     });
+  },
+
+  async queue(batch) {
+    batch.retryAll();
   },
 });

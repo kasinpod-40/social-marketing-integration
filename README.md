@@ -61,6 +61,16 @@ Google Ads actual Script DRY_RUN   pass / six datasets / no changes
 Google Ads Secret provisioning     completed / route safely closed
 ```
 
+## WooCommerce diagnostics Preview Queue sentinel
+
+Preview-only WooCommerce diagnostics entrypoint มี fail-closed Queue sentinel เพื่อให้ Cloudflare
+ตรวจ Worker Version ของ Worker ที่ลงทะเบียนเป็น Queue consumer ได้. Sentinel เรียก
+`batch.retryAll()` exactly once และไม่ ack/ประมวลผล message. Diagnostic configs ไม่มี Queue,
+routes, crons, D1 หรือ Production bindings; Production Worker runtime ไม่เปลี่ยน.
+Hotfix นี้เป็น Repository/CI only และไม่อนุญาต Live rerun.
+
+ดู `docs/tasks/woocommerce-diagnostics-queue-sentinel-v1.md`.
+
 ## YouTube Worker dry-run operator
 
 The repository includes a guarded, plan-only-by-default operator for an eventual separately

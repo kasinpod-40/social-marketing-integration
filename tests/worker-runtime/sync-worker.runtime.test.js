@@ -8,6 +8,7 @@ import {
   getQueueResult,
 } from 'cloudflare:test';
 import { createSyncWorker } from '../../apps/sync-worker/src/index.js';
+import diagnosticsPreviewWorker from '../../apps/sync-worker/src/woocommerce-provider-diagnostics-entry.js';
 import { processYouTubeOrganicEndToEndJob } from '../../apps/sync-worker/src/youtube-organic-job-router.js';
 import { buildYouTubeDryRunJob } from '../../scripts/lib/youtube-dry-run-rollout-operator.js';
 import { D1ReliabilityStore } from '../../packages/reliability/src/d1-reliability-store.js';
@@ -45,6 +46,20 @@ function activeJob() {
 }
 
 describe('Sync Worker ใน Workers runtime จริง', () => {
+  it('WooCommerce diagnostics Preview Queue sentinel retries the whole batch without ack', async () => {
+    const batch = createMessageBatch(MAIN_QUEUE, [
+      message({ privateBusinessPayload: 'must-not-be-processed' }, 'preview-sentinel-1'),
+    ]);
+    const ctx = createExecutionContext();
+
+    await diagnosticsPreviewWorker.queue(batch, {}, ctx);
+    const result = await getQueueResult(batch, ctx);
+
+    expect(result.retryBatch.retry).toBe(true);
+    expect(result.explicitAcks).toEqual([]);
+    expect(result.retryMessages).toEqual([]);
+  });
+
   it('รัน YouTube dry-run ผ่าน Queue, Reliability และ D1 resumable replay จริง', async () => {
     await applyD1Migrations(env.MKT_STATE_DB, env.TEST_D1_MIGRATIONS);
     const observations = {
