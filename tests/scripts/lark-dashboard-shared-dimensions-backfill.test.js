@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   LARK_DASHBOARD_BACKFILL_VERIFICATION_DELAYS_MS,
   LARK_DASHBOARD_SHARED_DIMENSIONS_BACKFILL_CONFIRMATION,
+  LARK_DASHBOARD_SHARED_DIMENSIONS_BACKFILL_OPERATOR_VERSION,
   assertBackfillVerificationComplete,
   assertBoundedMaterializationRows,
   assertLarkDashboardSharedDimensionsBackfillConfirmation,
@@ -25,6 +26,10 @@ import {
 } from '../../packages/sync-engine/src/table-sync-engine.js';
 
 test('backfill arguments and exact Apply confirmation fail closed', () => {
+  assert.equal(
+    LARK_DASHBOARD_SHARED_DIMENSIONS_BACKFILL_OPERATOR_VERSION,
+    'lark-dashboard-shared-dimensions-backfill-v1.3',
+  );
   assert.deepEqual(parseLarkDashboardSharedDimensionsBackfillArgs([]), {
     apply: false,
     help: false,

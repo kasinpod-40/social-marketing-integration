@@ -284,7 +284,7 @@ Customer Dashboard must eventually support:
 
 ### Shared-dimensions backfill recovery preview
 
-หลัง Merge operator v1.2 ให้ตรวจ Incident state แบบ read-only จาก clean Current `main`:
+หลัง Merge operator v1.3 ให้ตรวจ Incident state แบบ read-only จาก clean Current `main`:
 
 ```bash
 node scripts/lark-dashboard-shared-dimensions-backfill.mjs
@@ -293,6 +293,10 @@ node scripts/lark-dashboard-shared-dimensions-backfill.mjs
 `updateRows=0` หมายถึง Apply ก่อนหน้า converge แล้วและไม่ต้อง Apply ซ้ำ. `updateRows>0`
 หมายถึงยังมี pending จริงและต้องขออนุมัติ Apply ใหม่แยกต่างหาก. Preview ไม่เขียน Lark/D1,
 ไม่ Deploy Worker และไม่ส่ง Queue.
+
+Lark Number comparison canonicalize เฉพาะ precision ที่ formatter ระบุชัดเจนใน serializer
+boundary; D1 materialization/checksum ยังคง full precision และ `TableSyncEngine` ไม่มี global
+tolerance.
 
 ## `MKT_Content` ownership
 

@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased — Lark Number Formatter Precision Canonicalization — 2026-07-30
+
+### Repository correction
+
+- Canonicalized incoming and existing Lark Number values at the serializer boundary using
+  explicit formatter precision, without adding tolerance to `TableSyncEngine`.
+- Reused the Shared Lark formatter normalizer and recognized official fixed formats
+  `0` through `0.0000`, plus `1,000` and `1,000.00`; unsupported formats retain exact behavior.
+- Preserved full-precision D1 materializations/checksums, Stable keys, null versus observed zero,
+  and all non-Number serializers.
+- Bumped Shared Dimensions Backfill recovery output to operator v1.3 without changing its
+  confirmation gate, Allowed fields or no-create behavior.
+- Added focused regressions for fixed/grouped precision, unsupported formats, invalid numbers,
+  exact skips, real differences and existing backfill safety gates.
+
+### Safety
+
+- No Backfill Apply, Remote Lark/D1 mutation, Worker deployment, Queue/DLQ message, Provider call,
+  Schedule, Secret, Production or UAT action occurred.
+
 ## Unreleased — WooCommerce Diagnostics Queue Sentinel Hotfix — 2026-07-29
 
 ### Repository correction
