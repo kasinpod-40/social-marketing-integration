@@ -1,10 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   REPORT_RUNTIME_FINALIZE_CONFIRMATION,
   assertDashboardSettingsPreviewSafe,
   assertReportRuntimeFinalizeConfirmation,
   assertReportRuntimeFinalizeEnvironment,
+  assertReportSchemaConflictRepairApplySafe,
+  assertReportSchemaConflictRepairPreviewSafe,
   assertReportSchemaPreviewSafe,
   mergeReportSchemaEnvironment,
   parseReportRuntimeFinalizeArgs,
@@ -44,7 +47,15 @@ test('final operator accepts only Integration Workspace with every runtime flag 
 test('schema and settings previews fail closed on conflicts, mutations and dirty read-back', () => {
   const schema = { readyToApply: true, conflicts: [], actions: [] };
   assert.equal(assertReportSchemaPreviewSafe(schema, { requireClean: true }), true);
-  assert.throws(() => assertReportSchemaPreviewSafe({ ...schema, conflicts: [{}] }));
+  assert.throws(
+    () => assertReportSchemaPreviewSafe({
+      ...schema,
+      readyToApply: false,
+      conflicts: [{ code: 'FIELD_TYPE_MISMATCH', tableKey: 'mktReportSnapshots', fieldName: 'coverage_rate', expectedType: 2, actualType: 1 }],
+    }),
+    (error) => error.details.conflicts[0].fieldName === 'coverage_rate'
+      && !Object.hasOwn(error.details.conflicts[0], 'tableId'),
+  );
   assert.throws(() => assertReportSchemaPreviewSafe({ ...schema, actions: [{}] }, { requireClean: true }));
 
   const settings = {
@@ -60,6 +71,53 @@ test('schema and settings previews fail closed on conflicts, mutations and dirty
   assert.equal(assertDashboardSettingsPreviewSafe(settings, { requireClean: true }), true);
   assert.throws(() => assertDashboardSettingsPreviewSafe({ ...settings, remoteMutationCount: 1 }));
   assert.throws(() => assertDashboardSettingsPreviewSafe({ ...settings, canonicalCreates: 1 }, { requireClean: true }));
+});
+
+test('bounded conflict recovery requires complete preview scope and zero Business-value mutation', () => {
+  const preview = {
+    ok: true,
+    mode: 'preview',
+    conflictCount: 2,
+    repairConflictCount: 2,
+    repairActionCount: 2,
+    blockerCount: 0,
+    repairable: true,
+    remoteMutationCount: 0,
+    businessValueMutationCount: 0,
+    deleteCount: 0,
+  };
+  assert.equal(assertReportSchemaConflictRepairPreviewSafe(preview, 2), true);
+  assert.throws(() => assertReportSchemaConflictRepairPreviewSafe({ ...preview, repairable: false, blockerCount: 1 }, 2));
+  assert.throws(() => assertReportSchemaConflictRepairPreviewSafe({ ...preview, businessValueMutationCount: 1 }, 2));
+  assert.throws(() => assertReportSchemaConflictRepairPreviewSafe(preview, 3));
+});
+
+test('bounded conflict recovery apply must verify all conflicts removed without deletes', () => {
+  const result = {
+    ok: true,
+    mode: 'apply',
+    conflictCount: 2,
+    repairedConflictCount: 2,
+    appliedRepairCount: 2,
+    remainingConflictCount: 0,
+    remoteMutationCount: 2,
+    businessValueMutationCount: 0,
+    deleteCount: 0,
+  };
+  assert.equal(assertReportSchemaConflictRepairApplySafe(result, 2), true);
+  assert.throws(() => assertReportSchemaConflictRepairApplySafe({ ...result, remainingConflictCount: 1 }, 2));
+  assert.throws(() => assertReportSchemaConflictRepairApplySafe({ ...result, deleteCount: 1 }, 2));
+});
+
+test('finalizer runs conflict recovery between first schema preview and schema apply', () => {
+  const source = readFileSync(
+    new URL('../../scripts/report-runtime-finalize-operator.mjs', import.meta.url),
+    'utf8',
+  );
+  assert.match(source, /report-schema-preview[\s\S]*repair-report-schema-conflicts\.mjs[\s\S]*report-schema-preview-after-conflict-recovery[\s\S]*report-schema-apply/u);
+  assert.match(source, /CONFIRM_REPORT_SCHEMA_CONFLICT_REPAIR/u);
+  assert.match(source, /businessValueMutationCount/u);
+  assert.match(source, /deleteCount/u);
 });
 
 test('schema environment updates are allowlisted and evidence strips secret-shaped keys', () => {

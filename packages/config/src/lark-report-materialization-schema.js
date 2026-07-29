@@ -1,5 +1,6 @@
 const PLATFORM_OPTIONS = Object.freeze([
   'facebook', 'instagram', 'tiktok', 'youtube', 'meta_ads', 'google_ads', 'tiktok_ads',
+  'woocommerce',
 ]);
 const DATA_STATUS_OPTIONS = Object.freeze([
   'complete', 'partial', 'no_data', 'no_data_confirmed',
