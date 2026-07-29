@@ -138,16 +138,40 @@ export function buildWooCommerceIsolatedMigrationConfig(input = {}) {
   return `${JSON.stringify(source, null, 2)}\n`;
 }
 
-export function validateWooCommercePreMigrationState(row = {}, migrationState = {}) {
+export function validateWooCommercePreMigrationState(
+  row = {},
+  migrationState = {},
+  options = {},
+) {
   const activeWork = nonNegativeInteger(row.active_work, 'active_work');
   const activeLocks = nonNegativeInteger(row.active_locks, 'active_locks');
   const tableCount = nonNegativeInteger(row.commerce_table_count, 'commerce_table_count');
   const indexCount = nonNegativeInteger(row.commerce_index_count, 'commerce_index_count');
-  if (activeWork !== 0 || activeLocks !== 0) {
+  const resumeOperationId = optionalText(options.resumeOperationId);
+  const pinnedActiveWork = nonNegativeInteger(
+    row.pinned_active_work ?? 0,
+    'pinned_active_work',
+  );
+  const otherActiveWork = nonNegativeInteger(
+    row.other_active_work ?? activeWork,
+    'other_active_work',
+  );
+  const activeStateValid = resumeOperationId
+    ? activeWork === 1 && pinnedActiveWork === 1 && otherActiveWork === 0
+    : activeWork === 0;
+  if (!activeStateValid || activeLocks !== 0
+    || (resumeOperationId && migrationState.migration0017Pending === true)) {
     throw commandError(
       'Active work or lock blocks isolated Migration 0017',
       'WOOCOMMERCE_FINAL_ACTIVE_WORK_BLOCKED',
-      { activeWork, activeLocks },
+      {
+        activeWork,
+        activeLocks,
+        pinnedActiveWork,
+        otherActiveWork,
+        exactContinuation: resumeOperationId !== null,
+        migration0017Pending: migrationState.migration0017Pending === true,
+      },
     );
   }
   const exactSchema = tableCount === 17 && indexCount === 13;
@@ -159,7 +183,14 @@ export function validateWooCommercePreMigrationState(row = {}, migrationState = 
       { tableCount, indexCount, migration0017Pending: migrationState.migration0017Pending === true },
     );
   }
-  return Object.freeze({ activeWork, activeLocks, tableCount, indexCount });
+  return Object.freeze({
+    activeWork,
+    activeLocks,
+    pinnedActiveWork,
+    otherActiveWork,
+    tableCount,
+    indexCount,
+  });
 }
 
 function collectCloudflareAccounts(value) {

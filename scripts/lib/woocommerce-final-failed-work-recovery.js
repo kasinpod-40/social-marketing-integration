@@ -26,18 +26,62 @@ export function buildWooCommerceFailedWorkDiscoverySql() {
         FROM sync_locks sl
         WHERE sl.owner_id = wr.work_key
           AND sl.expires_at > unixepoch('now') * 1000
-      ) AS active_lock_count
+      ) AS active_lock_count,
+      (
+        SELECT COUNT(*)
+        FROM data_coverage_runs dcr
+        WHERE dcr.sync_run_id = wr.work_key
+      ) AS coverage_run_count,
+      (
+        (SELECT COUNT(*) FROM raw_commerce_stores WHERE account_key = sr.account_key)
+        + (SELECT COUNT(*) FROM raw_commerce_orders WHERE account_key = sr.account_key)
+        + (SELECT COUNT(*) FROM raw_commerce_order_items WHERE account_key = sr.account_key)
+        + (SELECT COUNT(*) FROM raw_commerce_products WHERE account_key = sr.account_key)
+        + (SELECT COUNT(*) FROM raw_commerce_product_variations WHERE account_key = sr.account_key)
+        + (SELECT COUNT(*) FROM raw_commerce_categories WHERE account_key = sr.account_key)
+        + (SELECT COUNT(*) FROM raw_commerce_customers WHERE account_key = sr.account_key)
+        + (SELECT COUNT(*) FROM raw_commerce_coupons WHERE account_key = sr.account_key)
+        + (SELECT COUNT(*) FROM raw_commerce_refunds WHERE account_key = sr.account_key)
+        + (SELECT COUNT(*) FROM commerce_order_state WHERE account_key = sr.account_key)
+        + (SELECT COUNT(*) FROM commerce_product_state WHERE account_key = sr.account_key)
+        + (SELECT COUNT(*) FROM commerce_customer_aggregates WHERE account_key = sr.account_key)
+        + (SELECT COUNT(*) FROM commerce_daily_sales_facts WHERE account_key = sr.account_key)
+        + (SELECT COUNT(*) FROM commerce_product_daily_facts WHERE account_key = sr.account_key)
+      ) AS business_row_count
     FROM sync_work_runs wr
     JOIN sync_runs sr ON sr.sync_run_id = wr.work_key
     WHERE wr.lifecycle_status = 'active'
       AND wr.work_key LIKE 'woocommerce:woo-final-%'
       AND sr.status = 'failed'
+      AND sr.platform = 'woocommerce'
+      AND sr.account_key IS NOT NULL
       AND NOT EXISTS (
         SELECT 1
         FROM sync_locks sl
         WHERE sl.owner_id = wr.work_key
           AND sl.expires_at > unixepoch('now') * 1000
       )
+      AND NOT EXISTS (
+        SELECT 1
+        FROM data_coverage_runs dcr
+        WHERE dcr.sync_run_id = wr.work_key
+      )
+      AND (
+        (SELECT COUNT(*) FROM raw_commerce_stores WHERE account_key = sr.account_key)
+        + (SELECT COUNT(*) FROM raw_commerce_orders WHERE account_key = sr.account_key)
+        + (SELECT COUNT(*) FROM raw_commerce_order_items WHERE account_key = sr.account_key)
+        + (SELECT COUNT(*) FROM raw_commerce_products WHERE account_key = sr.account_key)
+        + (SELECT COUNT(*) FROM raw_commerce_product_variations WHERE account_key = sr.account_key)
+        + (SELECT COUNT(*) FROM raw_commerce_categories WHERE account_key = sr.account_key)
+        + (SELECT COUNT(*) FROM raw_commerce_customers WHERE account_key = sr.account_key)
+        + (SELECT COUNT(*) FROM raw_commerce_coupons WHERE account_key = sr.account_key)
+        + (SELECT COUNT(*) FROM raw_commerce_refunds WHERE account_key = sr.account_key)
+        + (SELECT COUNT(*) FROM commerce_order_state WHERE account_key = sr.account_key)
+        + (SELECT COUNT(*) FROM commerce_product_state WHERE account_key = sr.account_key)
+        + (SELECT COUNT(*) FROM commerce_customer_aggregates WHERE account_key = sr.account_key)
+        + (SELECT COUNT(*) FROM commerce_daily_sales_facts WHERE account_key = sr.account_key)
+        + (SELECT COUNT(*) FROM commerce_product_daily_facts WHERE account_key = sr.account_key)
+      ) = 0
     ORDER BY wr.updated_at ASC, wr.work_key ASC
     LIMIT ${MAX_RECOVERABLE_WORK + 1};
   `);
@@ -89,6 +133,19 @@ export function normalizeWooCommerceFailedWorkRows(rowsInput) {
         { workKeyFingerprint: sha256(workKey), activeLockCount },
       );
     }
+    const coverageRunCount = count(row.coverage_run_count, 'coverage_run_count');
+    const businessRowCount = count(row.business_row_count, 'business_row_count');
+    if (coverageRunCount !== 0 || businessRowCount !== 0) {
+      throw recoveryError(
+        'WooCommerce failed work has durable partial writes and cannot be abandoned',
+        'WOOCOMMERCE_FINAL_FAILED_WORK_PARTIAL_WRITES_PRESENT',
+        {
+          workKeyFingerprint: sha256(workKey),
+          coverageRunCount,
+          businessRowCount,
+        },
+      );
+    }
     return Object.freeze({
       workKey,
       workKeyFingerprint: sha256(workKey),
@@ -119,6 +176,28 @@ export function buildWooCommerceFailedWorkRecoverySql(input = {}) {
         FROM sync_runs sr
         WHERE sr.sync_run_id = sync_work_runs.work_key
           AND sr.status = 'failed'
+          AND sr.platform = 'woocommerce'
+          AND sr.account_key IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM data_coverage_runs dcr
+            WHERE dcr.sync_run_id = sync_work_runs.work_key
+          )
+          AND (
+            (SELECT COUNT(*) FROM raw_commerce_stores WHERE account_key = sr.account_key)
+            + (SELECT COUNT(*) FROM raw_commerce_orders WHERE account_key = sr.account_key)
+            + (SELECT COUNT(*) FROM raw_commerce_order_items WHERE account_key = sr.account_key)
+            + (SELECT COUNT(*) FROM raw_commerce_products WHERE account_key = sr.account_key)
+            + (SELECT COUNT(*) FROM raw_commerce_product_variations WHERE account_key = sr.account_key)
+            + (SELECT COUNT(*) FROM raw_commerce_categories WHERE account_key = sr.account_key)
+            + (SELECT COUNT(*) FROM raw_commerce_customers WHERE account_key = sr.account_key)
+            + (SELECT COUNT(*) FROM raw_commerce_coupons WHERE account_key = sr.account_key)
+            + (SELECT COUNT(*) FROM raw_commerce_refunds WHERE account_key = sr.account_key)
+            + (SELECT COUNT(*) FROM commerce_order_state WHERE account_key = sr.account_key)
+            + (SELECT COUNT(*) FROM commerce_product_state WHERE account_key = sr.account_key)
+            + (SELECT COUNT(*) FROM commerce_customer_aggregates WHERE account_key = sr.account_key)
+            + (SELECT COUNT(*) FROM commerce_daily_sales_facts WHERE account_key = sr.account_key)
+            + (SELECT COUNT(*) FROM commerce_product_daily_facts WHERE account_key = sr.account_key)
+          ) = 0
       )
       AND NOT EXISTS (
         SELECT 1

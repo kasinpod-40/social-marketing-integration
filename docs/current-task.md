@@ -98,6 +98,25 @@ docs/tasks/lark-dashboard-backfill-post-verify-hotfix-v1.md
 
 ## Implementation result
 
+### WooCommerce exact-resume lifecycle reactivation hotfix — 2026-07-30
+
+- Exact continuation ของ `woo-final-full-e2372e56d52d` ถูก launcher รุ่นเดิม terminalize
+  โดย generic failed-work recovery หลัง operation มี partial D1/Lark facts แล้ว; Final operator
+  หยุดก่อน Deploy/Queue เพราะขาด `optionalText`.
+- Launcher ใหม่ข้าม generic recovery เมื่อ pin exact operation และ generic recovery ถูกจำกัด
+  แบบ read+mutation guard ให้รับเฉพาะ work ที่ Coverage/Commerce rows เป็นศูนย์.
+- One-command/Final preflight ยอม active work ได้เฉพาะ pinned work หนึ่งรายการ ไม่มี work อื่น,
+  ไม่มี lock และ Migration 0017 ไม่ pending.
+- เพิ่ม exact reactivation operator ที่ตรวจ failed code, phase page 2, Work/Queue/Fence identity,
+  Coverage และ exact 14-table counts ก่อน update lifecycle แถวเดียว พร้อม immutable post-check.
+- Live read-only inspection ยืนยัน terminal incident, Queue attempts `7`, Coverage `2`,
+  invalid Coverage `1`, Business rows `897`, active locks `0`.
+- Verification ผ่าน focused `33/33`, Unit `1488/1488`, Workers runtime `16/16`,
+  Report reliability `101/101`, architecture/hygiene `404` source modules / `0` cycles,
+  audit `0` vulnerabilities และ deploy dry-run.
+- Repository implementation ยังไม่มี Remote mutation; exact reactivation ทำได้หลัง
+  exact-head CI/Squash Merge เท่านั้น แล้วต้อง resume operation เดิม ห้ามสร้าง full operation ใหม่.
+
 ### Platform-neutral WooCommerce Commerce report runtime — 2026-07-30
 
 - Added WooCommerce to the shared Report registry/settings as active capability `commerce`.

@@ -25,6 +25,8 @@ function recoverableRow(overrides = {}) {
     sync_run_status: 'failed',
     sync_run_error_code: 'WOOCOMMERCE_NETWORK_ERROR',
     active_lock_count: 0,
+    coverage_run_count: 0,
+    business_row_count: 0,
     ...overrides,
   };
 }
@@ -36,6 +38,8 @@ test('discovery is read-only and selects only failed unlocked WooCommerce final 
   assert.match(sql, /wr\.work_key LIKE 'woocommerce:woo-final-%'/u);
   assert.match(sql, /sr\.status = 'failed'/u);
   assert.match(sql, /NOT EXISTS \( SELECT 1 FROM sync_locks/u);
+  assert.match(sql, /NOT EXISTS \( SELECT 1 FROM data_coverage_runs/u);
+  assert.match(sql, /raw_commerce_orders/u);
   assert.doesNotMatch(sql, /\b(?:UPDATE|DELETE|INSERT|DROP|ALTER|CREATE)\b/iu);
 });
 
@@ -53,6 +57,14 @@ test('normalizes exact recoverable rows and rejects unsafe lifecycle or locks', 
   assert.throws(
     () => normalizeWooCommerceFailedWorkRows([recoverableRow({ active_lock_count: 1 })]),
     (error) => error.code === 'WOOCOMMERCE_FINAL_FAILED_WORK_LOCKED',
+  );
+  assert.throws(
+    () => normalizeWooCommerceFailedWorkRows([
+      recoverableRow({ coverage_run_count: 1, business_row_count: 200 }),
+    ]),
+    (error) => (
+      error.code === 'WOOCOMMERCE_FINAL_FAILED_WORK_PARTIAL_WRITES_PRESENT'
+    ),
   );
   assert.throws(
     () => normalizeWooCommerceFailedWorkRows([recoverableRow({ work_key: 'youtube:wrong' })]),
@@ -73,7 +85,11 @@ test('recovery SQL matches shared abandonWork lifecycle and mutates no business 
   assert.match(sql, /WHERE work_key = 'woocommerce:woo-final-full-e6cd0e1b227f'/u);
   assert.match(sql, /sr\.status = 'failed'/u);
   assert.match(sql, /NOT EXISTS \( SELECT 1 FROM sync_locks/u);
-  assert.doesNotMatch(sql, /(?:raw_commerce_|commerce_order_state|commerce_product_state|commerce_customer_aggregates|commerce_daily_sales_facts)/u);
+  assert.match(sql, /SELECT COUNT\(\*\) FROM raw_commerce_orders/u);
+  assert.doesNotMatch(
+    sql,
+    /UPDATE (?:raw_commerce_|commerce_order_state|commerce_product_state|commerce_customer_aggregates|commerce_daily_sales_facts)/u,
+  );
   assert.doesNotMatch(sql, /(?:DELETE FROM sync_work_phases|DELETE FROM sync_work_units|sync_generation_fences)/u);
 });
 
@@ -150,4 +166,9 @@ test('source-safe launcher wires recovery before propagation-safe delegation', a
   assert.match(source, /businessRowMutationCount: 0/u);
   assert.match(source, /phaseDeletionCount: 0/u);
   assert.match(source, /generationFenceMutationCount: 0/u);
+  assert.match(source, /exact_continuation_pinned/u);
+  assert.match(
+    source,
+    /MKT_WOOCOMMERCE_FINAL_RESUME_OPERATION_ID/u,
+  );
 });
