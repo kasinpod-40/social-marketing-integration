@@ -22,6 +22,8 @@ const ORDER_BUNDLE_TABLES = new Set([
   'raw_commerce_refunds',
 ]);
 const MAX_WRITE_ROWS = 5_000;
+const MAX_D1_BOUND_PARAMETERS = 100;
+const SELECT_VALUE_BIND_LIMIT = MAX_D1_BOUND_PARAMETERS - 1;
 const DERIVED_STATUSES = new Set(['partial', 'revisable', 'complete']);
 
 /**
@@ -426,12 +428,17 @@ export class D1WooCommerceCommerceStore {
         details: { table, field },
       });
     }
-    return this.#all(`
-      SELECT ${contract.columns.map(quote).join(', ')}
-      FROM ${quote(table)}
-      WHERE account_key = ? AND ${quote(field)} IN (${values.map(() => '?').join(', ')})
-      ORDER BY ${quote(field)} ASC
-    `, [accountKey, ...values], 'WOOCOMMERCE_D1_READ_FAILED', { table });
+    const rows = [];
+    for (let index = 0; index < values.length; index += SELECT_VALUE_BIND_LIMIT) {
+      const chunk = values.slice(index, index + SELECT_VALUE_BIND_LIMIT);
+      rows.push(...await this.#all(`
+        SELECT ${contract.columns.map(quote).join(', ')}
+        FROM ${quote(table)}
+        WHERE account_key = ? AND ${quote(field)} IN (${chunk.map(() => '?').join(', ')})
+        ORDER BY ${quote(field)} ASC
+      `, [accountKey, ...chunk], 'WOOCOMMERCE_D1_READ_FAILED', { table }));
+    }
+    return rows;
   }
 
   async #run(sql, bindings, code, details = undefined) {

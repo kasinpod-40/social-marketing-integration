@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased — WooCommerce D1 Bound-parameter Continuation — 2026-07-30
+
+### Repository correction
+
+- Chunked WooCommerce derived-row value reads to 99 values while reserving one D1 bound parameter
+  for the account scope.
+- Preserved allowlisted table/field validation, prepared statements, deterministic ordering and
+  the existing D1/Lark write contracts.
+- Added a regression proving a 100-key customer aggregate read becomes two queries with 100 and
+  2 total bindings instead of one invalid 101-binding query.
+
+### Safety
+
+- The already-admitted partial operation remains the only continuation target.
+- No Worker, Queue, D1/Lark, Schedule, Secret or Production action occurred during implementation.
+
 ## Unreleased — WooCommerce Final Safe Closeout — 2026-07-30
 
 ### Repository correction

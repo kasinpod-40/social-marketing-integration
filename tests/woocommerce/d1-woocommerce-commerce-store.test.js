@@ -167,6 +167,47 @@ test('Commerce Store validates schema, upserts idempotently and rebuilds exact d
   }
 });
 
+test('derived reads reserve the account bind and stay within D1 100-parameter queries', async () => {
+  const observedBindCounts = [];
+  const db = {
+    prepare() {
+      return {
+        bind(...values) {
+          observedBindCounts.push(values.length);
+          if (values.length > 100) throw new Error('D1 bound parameter limit exceeded');
+          return {
+            async all() {
+              return {
+                results: values.slice(1).map((customerAggregateKey) => ({
+                  customer_aggregate_key: customerAggregateKey,
+                })),
+              };
+            },
+          };
+        },
+      };
+    },
+    async batch() {
+      return [];
+    },
+  };
+  const store = new D1WooCommerceCommerceStore({ db });
+  const customerAggregateKeys = Array.from(
+    { length: 100 },
+    (_, index) => `woocommerce:chemistry_k:registered:${String(index).padStart(3, '0')}:THB`,
+  ).reverse();
+
+  const result = await store.readDerivedRows({
+    accountKey: 'chemistry_k',
+    customerAggregateKeys,
+  });
+
+  assert.deepEqual(observedBindCounts, [100, 2]);
+  assert.equal(result.customers.length, 100);
+  assert.equal(result.customers[0].customer_aggregate_key, customerAggregateKeys.at(-1));
+  assert.equal(result.customers.at(-1).customer_aggregate_key, customerAggregateKeys[0]);
+});
+
 test('newer Order revision wins, stale replay cannot roll back state or status history', async () => {
   const { d1, store } = await fixture();
   try {
