@@ -14,6 +14,10 @@ import {
   TIKTOK_POST_LARK_AUDIT_PATH,
 } from './tiktok-post-lark-audit-http.js';
 import {
+  createWooCommerceProviderDiagnosticsHttpHandler,
+  WOOCOMMERCE_PROVIDER_DIAGNOSTICS_PATH,
+} from './woocommerce-provider-diagnostics-http.js';
+import {
   createYouTubeCustomerConnectionHttpHandler,
   YOUTUBE_CONNECTION_PATHS,
 } from './youtube-customer-connection-http.js';
@@ -26,6 +30,7 @@ import {
 const INVITATION_PATH = '/operator/connection-invitations';
 const KNOWN_METHODS = new Map([[INVITATION_PATH, Object.freeze(['POST'])]]);
 KNOWN_METHODS.set(TIKTOK_POST_LARK_AUDIT_PATH, Object.freeze(['GET']));
+KNOWN_METHODS.set(WOOCOMMERCE_PROVIDER_DIAGNOSTICS_PATH, Object.freeze(['GET']));
 KNOWN_METHODS.set(GOOGLE_ADS_CONNECTION_PATHS.connect, Object.freeze(['GET', 'POST']));
 KNOWN_METHODS.set(GOOGLE_ADS_CONNECTION_PATHS.callback, Object.freeze(['GET']));
 KNOWN_METHODS.set(YOUTUBE_CONNECTION_PATHS.connect, Object.freeze(['GET', 'POST']));
@@ -38,6 +43,9 @@ export function createCustomerConnectionHttpHandler(dependencies = {}) {
   const connectorHandler = dependencies.handleConnectorRequest
     ?? composeConnectorHandlers([
       createTikTokPostLarkAuditHttpHandler(dependencies.tiktokAuditDependencies),
+      createWooCommerceProviderDiagnosticsHttpHandler(
+        dependencies.woocommerceProviderDiagnosticsDependencies,
+      ),
       createGoogleAdsCustomerConnectionHttpHandler({ createRuntime: runtimeFactory }),
       createYouTubeCustomerConnectionHttpHandler({ createRuntime: runtimeFactory }),
     ]);

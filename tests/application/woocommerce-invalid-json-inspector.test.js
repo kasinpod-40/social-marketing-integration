@@ -56,16 +56,16 @@ test('inspector drops malformed diagnostic values rather than widening evidence'
   assert.equal(result.resource, 'system_status');
 });
 
-test('Provider response diagnostic operator is one GET only and has no mutation path', async () => {
+test('unsupported local Provider diagnostic fails closed and points only to Worker-side operator', async () => {
   const source = await readFile(
     new URL('../../scripts/woocommerce-provider-response-diagnostics.mjs', import.meta.url),
     'utf8',
   );
-  assert.match(source, /getStoreIdentity\(\)/u);
-  assert.match(source, /MKT_WOOCOMMERCE_D1_WRITE_ENABLED:\s*'false'/u);
-  assert.match(source, /MKT_WOOCOMMERCE_LARK_WRITE_ENABLED:\s*'false'/u);
-  assert.match(source, /MKT_SCHEDULE_WOOCOMMERCE_ENABLED:\s*'false'/u);
-  assert.match(source, /responseBodyPersisted:\s*false/u);
+  assert.match(source, /WOOCOMMERCE_LOCAL_PROVIDER_DIAGNOSTICS_UNSUPPORTED/u);
+  assert.match(source, /woocommerce-worker-provider-diagnostics\.mjs/u);
+  assert.match(source, /providerRequestCount:\s*0/u);
+  assert.match(source, /workerDeploymentCount:\s*0/u);
+  assert.doesNotMatch(source, /getStoreIdentity\(|WooCommerceRestClient|readWooCommerceRuntimeConfig/u);
   assert.doesNotMatch(source, /queues\/.+\/messages|wrangler['"],\s*['"]deploy|d1['"],\s*['"]execute/u);
   assert.doesNotMatch(source, /createLark|LarkBitable|TableSyncEngine/u);
 });
