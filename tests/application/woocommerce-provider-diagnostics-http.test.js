@@ -1,18 +1,21 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 import {
   WOOCOMMERCE_PROVIDER_DIAGNOSTICS_FLAG,
   WOOCOMMERCE_PROVIDER_DIAGNOSTICS_PATH,
+  WOOCOMMERCE_PROVIDER_DIAGNOSTICS_TOKEN_SHA256_ENV,
   createWooCommerceProviderDiagnosticsHttpHandler,
 } from '../../apps/sync-worker/src/woocommerce-provider-diagnostics-http.js';
 
 const VERSION_ID = '11111111-1111-4111-8111-111111111111';
-const OPERATOR_TOKEN = 'operator-token-fixture-1234567890';
+const EPHEMERAL_TOKEN = 'ephemeral-token-fixture-12345678901234567890';
+const TOKEN_SHA256 = createHash('sha256').update(EPHEMERAL_TOKEN).digest('hex');
 const BASE_ENV = Object.freeze({
   MKT_ENV: 'development',
   MKT_CUSTOMER_PROFILE: 'integration_workspace',
   MKT_CONNECTION_CUSTOMER_KEY: 'chemistry_k',
-  MKT_CONNECTION_OPERATOR_TOKEN: OPERATOR_TOKEN,
+  [WOOCOMMERCE_PROVIDER_DIAGNOSTICS_TOKEN_SHA256_ENV]: TOKEN_SHA256,
   [WOOCOMMERCE_PROVIDER_DIAGNOSTICS_FLAG]: 'true',
   WOOCOMMERCE_BASE_URL: 'https://chemistryk.online',
   WOOCOMMERCE_CONSUMER_KEY: 'ck_fixture123',
@@ -22,7 +25,7 @@ const BASE_ENV = Object.freeze({
   WOOCOMMERCE_DEFAULT_CURRENCY: 'THB',
 });
 
-function request(token = OPERATOR_TOKEN) {
+function request(token = EPHEMERAL_TOKEN) {
   return new Request(`https://worker.example.test${WOOCOMMERCE_PROVIDER_DIAGNOSTICS_PATH}`, {
     method: 'GET',
     headers: token ? { authorization: `Bearer ${token}` } : {},
@@ -51,17 +54,23 @@ test('disabled Worker diagnostics route is 404 and does not create a Provider cl
   assert.equal(clientCalls, 0);
 });
 
-test('enabled Worker diagnostics route rejects unauthenticated access before Provider', async () => {
+test('enabled Worker diagnostics route rejects missing or wrong ephemeral token before Provider', async () => {
   let clientCalls = 0;
   const handle = handler(() => {
     clientCalls += 1;
     return { getStoreIdentity: async () => ({}) };
   });
-  const unauthenticated = request(null);
-  const response = await handle({ request: unauthenticated, env: BASE_ENV, url: new URL(unauthenticated.url) });
-  assert.equal(response.status, 401);
+  for (const token of [null, 'wrong-token-fixture-12345678901234567890']) {
+    const unauthorized = request(token);
+    const response = await handle({
+      request: unauthorized,
+      env: BASE_ENV,
+      url: new URL(unauthorized.url),
+    });
+    assert.equal(response.status, 401);
+    assert.equal(response.headers.get('x-mkt-worker-version-id'), VERSION_ID);
+  }
   assert.equal(clientCalls, 0);
-  assert.equal(response.headers.get('x-mkt-worker-version-id'), VERSION_ID);
 });
 
 test('diagnostic-only Worker window performs exactly one read and returns bounded store identity', async () => {
@@ -81,12 +90,15 @@ test('diagnostic-only Worker window performs exactly one read and returns bounde
   const authenticated = request();
   const response = await handle({ request: authenticated, env: BASE_ENV, url: new URL(authenticated.url) });
   const body = await response.json();
+  const serialized = JSON.stringify(body);
   assert.equal(response.status, 200);
   assert.equal(providerCalls, 1);
   assert.equal(body.providerRequestCount, 1);
   assert.equal(body.queueMessageCount, 0);
   assert.equal(body.businessMutationCount, 0);
   assert.equal(body.workerDeploymentCount, 0);
+  assert.equal(serialized.includes(EPHEMERAL_TOKEN), false);
+  assert.equal(serialized.includes(TOKEN_SHA256), false);
   assert.deepEqual(body.store, {
     wcVersion: '10.1.0',
     wpVersion: '6.9',
@@ -131,6 +143,8 @@ test('invalid JSON response exposes only allowlisted structural evidence', async
   assert.equal(body.failureDiagnostics.responseDiagnostics.bodyShape, 'html_or_xml');
   assert.equal(serialized.includes(responseBody), false);
   assert.equal(serialized.includes(credential), false);
+  assert.equal(serialized.includes(EPHEMERAL_TOKEN), false);
+  assert.equal(serialized.includes(TOKEN_SHA256), false);
   assert.equal(serialized.includes('responseBody'), false);
   assert.equal(serialized.includes('authorization'), false);
   assert.equal(serialized.includes('cookie'), false);
