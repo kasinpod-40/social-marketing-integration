@@ -61,7 +61,7 @@ test('enabled Worker diagnostics route rejects unauthenticated access before Pro
   const response = await handle({ request: unauthenticated, env: BASE_ENV, url: new URL(unauthenticated.url) });
   assert.equal(response.status, 401);
   assert.equal(clientCalls, 0);
-  assert.equal(response.headers.get('x-mkt-worker-version'), VERSION_ID);
+  assert.equal(response.headers.get('x-mkt-worker-version-id'), VERSION_ID);
 });
 
 test('diagnostic-only Worker window performs exactly one read and returns bounded store identity', async () => {
@@ -86,6 +86,7 @@ test('diagnostic-only Worker window performs exactly one read and returns bounde
   assert.equal(body.providerRequestCount, 1);
   assert.equal(body.queueMessageCount, 0);
   assert.equal(body.businessMutationCount, 0);
+  assert.equal(body.workerDeploymentCount, 0);
   assert.deepEqual(body.store, {
     wcVersion: '10.1.0',
     wpVersion: '6.9',
@@ -126,6 +127,7 @@ test('invalid JSON response exposes only allowlisted structural evidence', async
   assert.equal(response.status, 422);
   assert.equal(body.code, 'WOOCOMMERCE_INVALID_JSON');
   assert.equal(body.providerRequestCount, 1);
+  assert.equal(body.workerDeploymentCount, 0);
   assert.equal(body.failureDiagnostics.responseDiagnostics.bodyShape, 'html_or_xml');
   assert.equal(serialized.includes(responseBody), false);
   assert.equal(serialized.includes(credential), false);
@@ -150,5 +152,6 @@ test('any additional true MKT execution flag blocks before Provider', async () =
   assert.equal(response.status, 400);
   assert.equal(body.code, 'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_FLAGS_UNSAFE');
   assert.equal(body.providerRequestCount, 0);
+  assert.equal(body.workerDeploymentCount, 0);
   assert.equal(clientCalls, 0);
 });
