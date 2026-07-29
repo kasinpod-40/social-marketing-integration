@@ -1,4 +1,5 @@
 import { parseReportMaterializationPayload } from '../../application/src/reports/report-materialization-payload.js';
+import { validateStorageRow } from '../../application/src/storage/marketing-history-contract.js';
 import { createStableFingerprint } from '../../shared/src/hash/stable-fingerprint.js';
 import { permanentError, transientError } from '../../shared/src/errors/runtime-error.js';
 
@@ -51,24 +52,32 @@ export class D1ReportMaterializationReader {
 }
 
 async function validateRow(row) {
-  const payload = parseReportMaterializationPayload(row.payload_json);
+  const validatedRow = validateStorageRow('report_materializations', row);
+  const payload = parseReportMaterializationPayload(validatedRow.payload_json);
   const checksum = await createStableFingerprint(payload);
-  if (checksum !== row.payload_checksum) {
+  if (checksum !== validatedRow.payload_checksum) {
     throw permanentError('Report materialization checksum does not match payload', {
       code: 'REPORT_MATERIALIZATION_CHECKSUM_MISMATCH',
-      details: { reportId: row.report_id },
+      details: { reportId: validatedRow.report_id },
     });
   }
-  if (payload.platformScope !== row.platform_scope
-    || payload.reportType !== row.report_type
-    || payload.period.periodStart !== row.period_start
-    || payload.period.periodEnd !== row.period_end) {
+  if (payload.platformScope !== validatedRow.platform_scope
+    || payload.reportType !== validatedRow.report_type
+    || payload.period.periodKind !== validatedRow.period_kind
+    || payload.period.windowDays !== (validatedRow.window_days ?? null)
+    || payload.period.periodStart !== validatedRow.period_start
+    || payload.period.periodEnd !== validatedRow.period_end
+    || payload.period.compareStart !== (validatedRow.compare_start ?? null)
+    || payload.period.compareEnd !== (validatedRow.compare_end ?? null)
+    || payload.dataStatus !== validatedRow.data_status
+    || payload.coverageRate !== (validatedRow.coverage_rate ?? null)
+    || payload.generatedAt !== validatedRow.generated_at) {
     throw permanentError('Report materialization row metadata does not match payload', {
       code: 'REPORT_MATERIALIZATION_METADATA_MISMATCH',
-      details: { reportId: row.report_id },
+      details: { reportId: validatedRow.report_id },
     });
   }
-  return Object.freeze({ row, payload });
+  return Object.freeze({ row: validatedRow, payload });
 }
 
 function requireD1(value) {

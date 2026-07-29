@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased — Lark Dashboard Shared Report Dimensions — 2026-07-29
+
+### Repository implementation
+
+- Added `customer_key`, extensible `capability` and aggregate `coverage_rate` to all four Lark
+  Report output contracts; Metric, Top Content and Top Ads also receive `period_kind` and
+  `window_days`.
+- Preserved Snapshot `baseline_coverage_rate` as the distinct Organic baseline field.
+- Preserved its legacy all-capability writer behavior so a Paid Ads rerun cannot clear an
+  existing Snapshot value; the new `coverage_rate` remains the universal shared dimension.
+- Reused the existing checksummed `report_materializations` reader and `TableSyncEngine`; one
+  validated Shared dimension object now feeds Snapshot, Metric, Top Content and Top Ads rows.
+- Kept Custom `window_days=null`, missing Coverage as `null`, observed zero as `0`, and every
+  existing row Stable key unchanged.
+- Strengthened the materialization reader to reject Storage-contract or payload/row metadata
+  mismatches before any Lark plan/write.
+- Added additive-only schema preview, writer, null/zero, idempotency, extensible capability and
+  universal View regressions.
+
+### Safety
+
+- No Lark schema Apply, Table/View/Record write, Remote D1 action, Worker deployment, Queue/DLQ
+  message, Schedule/Cron, Secret/config or Production action occurred.
+- Existing rows are updated only on a future normal materialization write; any historical
+  backfill remains a separate preview/confirmation-gated workstream.
+
 ## Unreleased — Report Runtime Closeout Sync Log Stable-key Hotfix — 2026-07-29
 
 ### Repository correction

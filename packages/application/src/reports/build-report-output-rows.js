@@ -7,6 +7,7 @@ const GENERIC_NO_DATA_URL = 'https://invalid.example/';
 export function buildReportMetricValueRows(input = {}) {
   const reportId = requireText(input.reportId, 'reportId');
   const platform = requireText(input.platform ?? 'tiktok', 'platform');
+  const sharedDimensions = normalizeOptionalSharedDimensions(input.sharedDimensions);
   const metrics = requireObject(input.metrics, 'metrics');
   const period = requireObject(input.period, 'period');
   const generatedAt = requireEpoch(input.generatedAt, 'generatedAt');
@@ -16,7 +17,7 @@ export function buildReportMetricValueRows(input = {}) {
     .map((metric, index) => {
       const dimensionType = 'summary';
       const dimensionValue = 'all';
-      return Object.freeze({
+      return freezeWithSharedDimensions({
         report_metric_key: [reportId, escapeReportIdentityPart(metric.metricKey), dimensionType, dimensionValue].join('::'),
         report_id: reportId,
         report_setting_key: requireText(input.reportSettingKey, 'reportSettingKey'),
@@ -43,7 +44,7 @@ export function buildReportMetricValueRows(input = {}) {
         formula_version: requireText(metric.formulaVersion, 'formulaVersion'),
         source_snapshot_count: nonNegativeInteger(input.sourceSnapshotCount ?? 0, 'sourceSnapshotCount'),
         client_visible: metric.clientVisible === true,
-      });
+      }, sharedDimensions);
     });
   return Object.freeze(rows);
 }
@@ -51,6 +52,7 @@ export function buildReportMetricValueRows(input = {}) {
 export function buildReportTopContentRows(input = {}) {
   const reportId = requireText(input.reportId, 'reportId');
   const platform = requireText(input.platform ?? 'tiktok', 'platform');
+  const sharedDimensions = normalizeOptionalSharedDimensions(input.sharedDimensions);
   const noDataUrl = input.noDataUrl ?? (platform === 'tiktok' ? 'https://www.tiktok.com/' : GENERIC_NO_DATA_URL);
   const rows = requireArray(input.contentRows, 'contentRows');
   const limit = positiveInteger(input.limit, 'limit');
@@ -62,7 +64,7 @@ export function buildReportTopContentRows(input = {}) {
     const rank = index + 1;
     const row = rows[index] ?? null;
     const content = row?.content ?? normalizeTopContentPayload(row);
-    output.push(Object.freeze({
+    output.push(freezeWithSharedDimensions({
       report_content_key: `${reportId}::rank:${rank}`,
       report_id: reportId,
       report_setting_key: requireText(input.reportSettingKey, 'reportSettingKey'),
@@ -89,7 +91,7 @@ export function buildReportTopContentRows(input = {}) {
       period_start: dateOnlyToEpochMilliseconds(period.periodStart, { utcOffset }),
       period_end: dateOnlyToEpochMilliseconds(period.periodEnd, { utcOffset }),
       generated_at: generatedAt,
-    }));
+    }, sharedDimensions));
   }
   return Object.freeze(output);
 }
@@ -97,6 +99,7 @@ export function buildReportTopContentRows(input = {}) {
 export function buildReportTopAdsRows(input = {}) {
   const reportId = requireText(input.reportId, 'reportId');
   const platform = requireText(input.platform, 'platform');
+  const sharedDimensions = normalizeOptionalSharedDimensions(input.sharedDimensions);
   const rows = requireArray(input.adRows, 'adRows');
   const limit = positiveInteger(input.limit, 'limit');
   const period = requireObject(input.period, 'period');
@@ -105,7 +108,7 @@ export function buildReportTopAdsRows(input = {}) {
   return Object.freeze(Array.from({ length: limit }, (_, index) => {
     const rank = index + 1;
     const row = rows[index] ?? null;
-    return Object.freeze({
+    return freezeWithSharedDimensions({
       report_ad_key: `${reportId}::rank:${rank}`,
       report_id: reportId,
       report_setting_key: requireText(input.reportSettingKey, 'reportSettingKey'),
@@ -135,10 +138,39 @@ export function buildReportTopAdsRows(input = {}) {
       period_start: dateOnlyToEpochMilliseconds(period.periodStart, { utcOffset }),
       period_end: dateOnlyToEpochMilliseconds(period.periodEnd, { utcOffset }),
       generated_at: generatedAt,
-    });
+    }, sharedDimensions);
   }));
 }
 
+function freezeWithSharedDimensions(row, sharedDimensions) {
+  return Object.freeze(sharedDimensions ? { ...row, ...sharedDimensions } : row);
+}
+function normalizeOptionalSharedDimensions(value) {
+  if (value === null || value === undefined) return null;
+  const dimensions = requireObject(value, 'sharedDimensions');
+  const periodKind = requireText(dimensions.period_kind, 'sharedDimensions.period_kind');
+  const windowDays = dimensions.window_days === null
+    ? null
+    : positiveInteger(dimensions.window_days, 'sharedDimensions.window_days');
+  if (periodKind === 'custom_range' && windowDays !== null) {
+    throw new TypeError('custom_range shared dimensions must keep window_days null');
+  }
+  return Object.freeze({
+    customer_key: requireText(dimensions.customer_key, 'sharedDimensions.customer_key'),
+    customer_profile: requireText(dimensions.customer_profile, 'sharedDimensions.customer_profile'),
+    capability: requireText(dimensions.capability, 'sharedDimensions.capability'),
+    account_id: requireText(dimensions.account_id, 'sharedDimensions.account_id'),
+    report_setting_key: requireText(dimensions.report_setting_key, 'sharedDimensions.report_setting_key'),
+    report_type: requireText(dimensions.report_type, 'sharedDimensions.report_type'),
+    period_kind: periodKind,
+    window_days: windowDays,
+    period_start: requireEpoch(dimensions.period_start, 'sharedDimensions.period_start'),
+    period_end: requireEpoch(dimensions.period_end, 'sharedDimensions.period_end'),
+    data_status: requireText(dimensions.data_status, 'sharedDimensions.data_status'),
+    coverage_rate: optionalFinite(dimensions.coverage_rate),
+    generated_at: requireEpoch(dimensions.generated_at, 'sharedDimensions.generated_at'),
+  });
+}
 function normalizeTopContentPayload(row) { return row && typeof row === 'object' ? row : null; }
 function optionalFinite(value) {
   if (value === null || value === undefined || value === '') return null;
