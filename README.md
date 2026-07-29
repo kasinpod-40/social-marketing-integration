@@ -272,6 +272,18 @@ Customer Dashboard must eventually support:
 - Dashboard must show Coverage/Data status;
 - Report D1 shadow read and customer-visible cutover require the separately approved PR #65 rollout.
 
+### Shared-dimensions backfill recovery preview
+
+หลัง Merge operator v1.2 ให้ตรวจ Incident state แบบ read-only จาก clean Current `main`:
+
+```bash
+node scripts/lark-dashboard-shared-dimensions-backfill.mjs
+```
+
+`updateRows=0` หมายถึง Apply ก่อนหน้า converge แล้วและไม่ต้อง Apply ซ้ำ. `updateRows>0`
+หมายถึงยังมี pending จริงและต้องขออนุมัติ Apply ใหม่แยกต่างหาก. Preview ไม่เขียน Lark/D1,
+ไม่ Deploy Worker และไม่ส่ง Queue.
+
 ## `MKT_Content` ownership
 
 Protected business fields:

@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased — Lark Dashboard Backfill Post-Apply Verification Hotfix — 2026-07-29
+
+### Repository correction
+
+- Replaced the single immediate post-Apply replan with five fresh read-only attempts at
+  `0/1000/2000/4000/8000ms`, bounded by a 30000ms elapsed budget.
+- Kept initial write execution at exactly once; verification retries never execute a Lark write.
+- Added fail-closed persistent mismatch diagnostics limited to logical table keys, pending
+  row/field-name counts, attempt/elapsed metadata and read strategy.
+- Added focused semantic normalization regressions for Text, SingleSelect, integer/decimal Number,
+  null and observed zero, plus persistent/eventually-consistent read behavior.
+- Added a read-only recovery decision to normal Preview so a prior Apply is not repeated when
+  `updateRows=0`.
+
+### Safety
+
+- No Backfill Apply, Remote Lark/D1 mutation, Worker deployment, Queue/DLQ message, Provider call,
+  Schedule, Secret, Production or UAT action occurred.
+
 ## Unreleased — Lark Dashboard Shared Report Dimensions — 2026-07-29
 
 ### Repository implementation

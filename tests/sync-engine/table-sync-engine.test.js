@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { TableSyncEngine, deduplicateRowsByKey, hasChangedFields } from '../../packages/sync-engine/src/table-sync-engine.js';
+import {
+  TableSyncEngine,
+  deduplicateRowsByKey,
+  hasChangedFields,
+  listChangedFieldNames,
+} from '../../packages/sync-engine/src/table-sync-engine.js';
 
 test('sync engine reads once, creates missing, updates changed, and skips unchanged', async () => {
   const calls = [];
@@ -60,6 +65,29 @@ test('row dedupe uses last row and field comparison ignores destination-only fie
   assert.equal(result.duplicateCount, 1);
   assert.equal(result.rows[0].value, 2);
   assert.equal(hasChangedFields({ key: 'a', value: 2, destination_only: true }, { key: 'a', value: 2 }), false);
+  assert.deepEqual(listChangedFieldNames(
+    { key: 'a', value: 1, destination_only: true },
+    { key: 'a', value: 2 },
+  ), ['value']);
+});
+
+test('sync plan exposes changed field-name counts without Business values', async () => {
+  const repository = {
+    async prepareRows(_tableId, rows) { return rows; },
+    async listByFieldValues() {
+      return [{ recordId: 'rec-1', fields: { key: 'one', coverage_rate: null, capability: 'organic' } }];
+    },
+    async createMany() { return { created: 0 }; },
+    async updateMany() { return { updated: 0 }; },
+  };
+  const plan = await new TableSyncEngine().planByKey({
+    repository,
+    tableId: 'tbl',
+    keyField: 'key',
+    rows: [{ key: 'one', coverage_rate: 0, capability: 'organic' }],
+  });
+  assert.deepEqual(plan.changedFieldCounts, { coverage_rate: 1 });
+  assert.equal(JSON.stringify(plan.changedFieldCounts).includes('organic'), false);
 });
 
 

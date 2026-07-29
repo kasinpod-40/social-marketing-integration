@@ -1,4 +1,119 @@
-# Current Task — YouTube Lark Full-Sync UAT Operator
+# Current Task — Lark Dashboard Shared Dimensions Backfill Post-Apply Verification Hotfix
+
+## Authoritative status
+
+```text
+TASK_STATUS                         = REPOSITORY_IMPLEMENTATION_VALIDATED
+CURRENT_PROGRAM                     = LARK_DASHBOARD_BACKFILL_POST_VERIFY_V1
+INCIDENT_MAIN_SHA                   = 6c249e794ce51d118c841ff17d12fd823647fd46
+IMPLEMENTATION_BASE_MAIN_SHA        = ab56882
+BRANCH                              = hotfix/lark-dashboard-backfill-post-verify-v1
+OPERATOR                            = scripts/lark-dashboard-shared-dimensions-backfill.mjs
+OPERATOR_VERSION                    = lark-dashboard-shared-dimensions-backfill-v1.2
+IMPLEMENTATION_PR                   = #246 / DRAFT / DO_NOT_MERGE
+BRANCH_VERIFICATION                 = #30468846202 / PASS
+REMOTE_ACTION_DURING_IMPLEMENTATION = NONE
+LARK_APPLY                          = NOT_RUN
+D1_WRITE                            = NONE
+WORKER_DEPLOYMENT                   = NOT_RUN
+QUEUE_MESSAGE                       = NOT_SENT
+SCHEDULE_MUTATION                   = NONE
+PRODUCTION_UAT                      = BLOCKED
+```
+
+## Objective
+
+แก้ Post-apply verification ของ Shared dimensions backfill ให้แยก Lark read-after-write
+eventual consistency ออกจาก persistent mismatch โดยทำ bounded read-only replan หลาย attempt
+หลัง `executeAll()` เพียงครั้งเดียว ห้าม retry write และต้อง Fail closed หากยังมี pending writes.
+
+Incident ก่อนหน้า Apply แสดง `createRows=0`, `updateRows=32` และจบด้วย
+`LARK_DASHBOARD_BACKFILL_POST_VERIFY_FAILED` หลัง write execution. Error นี้ยืนยันได้เพียงว่า
+single immediate verification ยังเห็น pending 32 rows; ไม่ได้ยืนยันว่า Batch update ล้มเหลว.
+
+## Root cause decision
+
+- ยืนยัน Repository defect: เส้นทางเดิม
+  `preview.planner.executeAll() → planBackfill() → assertBackfillVerificationComplete()`
+  ทำ Post-apply read/replan เพียงครั้งเดียวทันที จึงแยก eventual consistency ออกจาก
+  persistent mismatch ไม่ได้.
+- Lark record search ในแต่ละ `planBackfill()` เป็น request ใหม่; ไม่มี record-response cache
+  ใน path นี้. Schema metadata เท่านั้นที่ runtime cache ไว้.
+- Existing Lark serializer มี semantic normalization สำหรับ Text, SingleSelect, Number และ
+  omitted null อยู่แล้ว แต่ก่อน Hotfix ไม่มี focused backfill regression ที่พิสูจน์ contract นี้.
+- Root cause ของ Remote state ยังไม่ยืนยันโดย Live reproduction. Eventual consistency,
+  update persistence failure และ comparison mismatch จึงยังเป็นสมมติฐานที่ bounded fresh reads
+  จะช่วยจำแนก โดยไม่เดาจาก Batch update response.
+
+## Correction contract
+
+```text
+write execution                  exactly once before verification
+verification attempt            fresh planBackfill + fresh Lark record reads
+verification write retry        0
+delays                           0ms, 1000ms, 2000ms, 4000ms, 8000ms
+attempt bound                    5
+maximum elapsed budget          30000ms
+success                         createRows=0 AND updateRows=0
+createRows>0                    fail closed immediately
+persistent updateRows>0         LARK_DASHBOARD_BACKFILL_POST_VERIFY_FAILED
+```
+
+Persistent diagnostics เปิดเผยเฉพาะ attempt count, elapsed milliseconds, pending rows ต่อ
+logical table key, pending field-name counts และ read strategy. ห้ามมี Business values,
+Caption, Metrics, Token/Secret, Lark record payload, record ID หรือ physical Table ID.
+
+Preview ปกติยังเป็น read-only recovery mode:
+
+```bash
+node scripts/lark-dashboard-shared-dimensions-backfill.mjs
+```
+
+- `updateRows=0` หมายถึง Remote state converge แล้ว ไม่ต้อง Apply ซ้ำ.
+- `updateRows>0` หมายถึงยังมี pending จริง และต้องขออนุมัติ Apply ใหม่แยกต่างหาก.
+
+## Required validation
+
+```text
+Focused backfill / normalization / sync-engine tests
+npm ci
+npm run check
+npm test
+npm run test:report-reliability
+npm audit
+npx wrangler deploy --dry-run --config wrangler.sync.jsonc --env development
+Branch Verification CI
+```
+
+## Safety boundary
+
+Repository implementation นี้ไม่อนุญาต Backfill Apply, Remote Lark/D1 mutation, Worker deploy,
+Queue/DLQ send, Schedule change, Secret change, Production/UAT หรือ PR merge.
+
+รายละเอียด Implementation และ evidence:
+
+```text
+docs/tasks/lark-dashboard-backfill-post-verify-hotfix-v1.md
+```
+
+## Implementation result
+
+- Focused backfill, serializer และ sync-engine regressions ผ่าน `30/30`.
+- Full existing backfill/table-discovery tests ผ่าน `16/16`.
+- `npm ci`, Architecture/Repository hygiene, Unit `1436/1436`, Workers runtime `14/14`,
+  Report reliability `100/100`, dependency audit `0 vulnerabilities`, exact
+  `wrangler.sync.jsonc --env development` dry-run และ repository example dry-runs ผ่าน.
+- `npm test` ใน restricted sandbox ผ่าน Unit ทั้งหมดก่อน Workers runtime ถูก OS ปฏิเสธ
+  Wrangler log/localhost ด้วย `EPERM`; Workers suite เดิมผ่านเมื่อ rerun นอก restricted sandbox.
+- Implementation commit `1fd375b5e6c6cc70562212677902f1b32b7cf8e5` ถูก Push และเปิด
+  Draft PR `#246` เข้า `main`.
+- Branch Verification run `30468846202` ผ่านทุก step; docs-only closeout Head ต้องผ่าน
+  verification รอบสุดท้ายก่อนส่งมอบ.
+- Remote action count ระหว่าง Implementation = `0`.
+
+---
+
+# Historical Task Context — YouTube Lark Full-Sync UAT Operator
 
 ## Authoritative status
 

@@ -12,6 +12,31 @@ Historical Root Project Brain ก่อน TikTok post-Lark implementation ถ�
 docs/archive/PROJECT_BRAIN-before-tiktok-post-lark-parity-2026-07-26.md
 ```
 
+## Lark Dashboard backfill post-apply verification — 2026-07-29
+
+Shared dimensions backfill operator v1.2 แก้ Repository defect ที่เดิม replan เพียงครั้งเดียว
+ทันทีหลัง `executeAll()`. Post-apply verification ใหม่สร้าง Planner ใหม่และอ่าน Lark records
+ใหม่ทุก attempt ตาม delay `0/1000/2000/4000/8000ms`, จำกัด 5 attempts และ elapsed budget
+30000ms โดยไม่มี write retry. ผ่านเมื่อ create/update เป็น zero เท่านั้น; create หรือ persistent
+update ยังคง Fail closed.
+
+Diagnostics เปิดเผยเฉพาะ logical table key, pending row count, pending field-name count,
+attempt/elapsed และ read strategy. ไม่เปิดเผย physical Table ID, record payload/ID, Business
+values หรือ Secret. `TableSyncEngine` expose เฉพาะชื่อ Field ที่ต่างหลัง normalized comparison;
+Text, SingleSelect, Number, formatted decimal และ null shape ที่ semantic เท่ากันไม่สร้าง update
+ปลอม ขณะที่ observed zero ยังคงต่างจาก null.
+
+Remote cause ของ Incident ยังไม่ยืนยัน: Error เดิมเกิดหลัง write execution และพิสูจน์เพียงว่า
+immediate replan ยังเห็น 32 pending. Preview ปกติเป็น read-only recovery mode เพื่อจำแนกว่า
+Apply ก่อนหน้า converge แล้ว (`updateRows=0`) หรือยังต้องขอ Apply ใหม่ (`updateRows>0`).
+Implementation นี้ไม่มี Remote Lark/D1, Worker, Queue, Schedule, Secret หรือ Production action.
+
+รายละเอียด:
+
+```text
+docs/tasks/lark-dashboard-backfill-post-verify-hotfix-v1.md
+```
+
 ## Lark Dashboard Shared Report dimensions — 2026-07-29
 
 Phase A เพิ่ม Shared dimensions แบบ Additive only ให้ `MKT_Report_Snapshots`,

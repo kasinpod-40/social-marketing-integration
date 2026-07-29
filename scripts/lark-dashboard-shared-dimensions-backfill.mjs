@@ -12,20 +12,24 @@ import { readDevVars } from './lib/dev-vars.js';
 import { resolveExactLarkTableEnvironment } from './lib/lark-dashboard-backfill-table-discovery.js';
 import { createLocalLarkRuntime, printJson } from './lib/lark-runtime.js';
 import {
+  LARK_DASHBOARD_BACKFILL_VERIFICATION_DELAYS_MS,
+  LARK_DASHBOARD_BACKFILL_VERIFICATION_MAX_ELAPSED_MS,
   LARK_DASHBOARD_SHARED_DIMENSIONS_BACKFILL_CONFIRMATION,
-  assertBackfillVerificationComplete,
   assertBoundedMaterializationRows,
   assertLarkDashboardSharedDimensionsBackfillConfirmation,
   buildLarkDashboardSharedDimensionsBackfillSql,
   createBackfillAllowedFieldsByTableId,
+  createBackfillLogicalTableKeysByTableId,
   createInMemoryReportMaterializationD1,
   createLarkDashboardSharedDimensionsBackfillPlanner,
   parseLarkDashboardSharedDimensionsBackfillArgs,
   parseWranglerD1Rows,
+  verifyBackfillPostApply,
 } from './lib/lark-dashboard-shared-dimensions-backfill.js';
 
 const execFileAsync = promisify(execFile);
 const repositoryRoot = resolve(process.cwd());
+const OPERATOR_VERSION = 'lark-dashboard-shared-dimensions-backfill-v1.2';
 const REQUIRED_TABLE_KEYS = Object.freeze([
   'mktReportSnapshots',
   'mktReportMetricValues',
@@ -83,11 +87,13 @@ async function main() {
   const d1 = createInMemoryReportMaterializationD1(rows);
   const reader = new D1ReportMaterializationReader({ db: d1 });
   const allowedFieldsByTableId = createBackfillAllowedFieldsByTableId(runtime.tables);
+  const logicalTableKeysByTableId = createBackfillLogicalTableKeysByTableId(runtime.tables);
   const preview = await planBackfill({
     runtime,
     reader,
     reportIds: rows.map((row) => row.report_id),
     allowedFieldsByTableId,
+    logicalTableKeysByTableId,
   });
   const previewSummary = preview.planner.assertSafeToApply();
 
@@ -95,7 +101,7 @@ async function main() {
     printJson({
       ok: true,
       mode: 'preview',
-      operatorVersion: 'lark-dashboard-shared-dimensions-backfill-v1.1',
+      operatorVersion: OPERATOR_VERSION,
       repository,
       target: {
         environment: runtime.runtimeConfig.environment,
@@ -107,6 +113,9 @@ async function main() {
       },
       summary: previewSummary,
       safeToApply: previewSummary.createRows === 0,
+      recoveryDecision: previewSummary.updateRows === 0
+        ? 'previous_apply_converged_no_apply_needed'
+        : 'pending_updates_require_separate_apply_approval',
       writesRestrictedTo: {
         snapshots: ['customer_key', 'capability', 'coverage_rate'],
         metricValues: ['customer_key', 'capability', 'period_kind', 'window_days', 'coverage_rate'],
@@ -120,7 +129,7 @@ async function main() {
       queueMessages: 0,
       providerCalls: 0,
       schedulesChanged: 0,
-      nextCommand: [
+      nextCommand: previewSummary.updateRows === 0 ? null : [
         'CONFIRM_WRITE=YES',
         `CONFIRM_LARK_DASHBOARD_SHARED_DIMENSIONS_BACKFILL=${LARK_DASHBOARD_SHARED_DIMENSIONS_BACKFILL_CONFIRMATION}`,
         'node scripts/lark-dashboard-shared-dimensions-backfill.mjs --apply',
@@ -130,19 +139,23 @@ async function main() {
   }
 
   const applied = await preview.planner.executeAll();
-  const verification = await planBackfill({
-    runtime,
-    reader,
-    reportIds: rows.map((row) => row.report_id),
-    allowedFieldsByTableId,
+  const postApplyVerification = await verifyBackfillPostApply({
+    planAttempt: async () => {
+      const verificationAttempt = await planBackfill({
+        runtime,
+        reader,
+        reportIds: rows.map((row) => row.report_id),
+        allowedFieldsByTableId,
+        logicalTableKeysByTableId,
+      });
+      return verificationAttempt.planner.summarize();
+    },
   });
-  const verificationSummary = verification.planner.assertSafeToApply();
-  assertBackfillVerificationComplete(verificationSummary);
 
   printJson({
     ok: true,
     mode: 'apply',
-    operatorVersion: 'lark-dashboard-shared-dimensions-backfill-v1.1',
+    operatorVersion: OPERATOR_VERSION,
     repository,
     target: {
       environment: runtime.runtimeConfig.environment,
@@ -154,12 +167,18 @@ async function main() {
     },
     preview: previewSummary,
     applied: applied.results.map((item) => ({
-      tableId: item.tableId,
+      logicalTableKey: item.logicalTableKey,
       created: item.result.created,
       updated: item.result.updated,
       skipped: item.result.skipped,
     })),
-    postApplyVerification: verificationSummary,
+    postApplyVerification,
+    verificationContract: {
+      delaysMs: LARK_DASHBOARD_BACKFILL_VERIFICATION_DELAYS_MS,
+      maximumElapsedMs: LARK_DASHBOARD_BACKFILL_VERIFICATION_MAX_ELAPSED_MS,
+      readOnlyRetries: true,
+      writeRetries: 0,
+    },
     stableKeyCreates: 0,
     businessFieldsChanged: 0,
     remoteD1Writes: 0,
@@ -216,6 +235,7 @@ async function planBackfill(input) {
   const planner = createLarkDashboardSharedDimensionsBackfillPlanner({
     baseEngine: input.runtime.syncEngine,
     allowedFieldsByTableId: input.allowedFieldsByTableId,
+    logicalTableKeysByTableId: input.logicalTableKeysByTableId,
   });
   for (const reportId of input.reportIds) {
     const result = await writeDashboardMaterializationToLark({
@@ -323,7 +343,7 @@ function assertIntegrationWorkspace(runtimeConfig) {
 
 function printHelp() {
   printJson({
-    operatorVersion: 'lark-dashboard-shared-dimensions-backfill-v1.1',
+    operatorVersion: OPERATOR_VERSION,
     preview: 'node scripts/lark-dashboard-shared-dimensions-backfill.mjs',
     apply: [
       'CONFIRM_WRITE=YES',
@@ -331,6 +351,12 @@ function printHelp() {
       'node scripts/lark-dashboard-shared-dimensions-backfill.mjs --apply',
     ].join(' '),
     tableIdResolution: 'environment_or_exact_live_table_name',
+    postApplyVerification: {
+      delaysMs: LARK_DASHBOARD_BACKFILL_VERIFICATION_DELAYS_MS,
+      maximumElapsedMs: LARK_DASHBOARD_BACKFILL_VERIFICATION_MAX_ELAPSED_MS,
+      readOnlyRetries: true,
+      writeRetries: 0,
+    },
     remoteD1Mutation: false,
     workerDeployment: false,
     queueSend: false,
