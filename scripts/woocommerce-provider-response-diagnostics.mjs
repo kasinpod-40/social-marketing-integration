@@ -5,6 +5,10 @@ import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { readDevVars } from './lib/dev-vars.js';
 import { extractWooCommerceFinalNetworkDiagnostics } from './lib/woocommerce-final-operation-inspector.js';
+import {
+  listWooCommerceProviderDiagnosticSourceFields,
+  materializeWooCommerceProviderDiagnosticSource,
+} from './lib/woocommerce-provider-diagnostics-source.js';
 import { readWooCommerceRuntimeConfig } from '../packages/config/src/woocommerce-runtime-config.js';
 import { WooCommerceRestClient } from '../packages/connectors/src/woocommerce/woocommerce-rest-client.js';
 
@@ -43,18 +47,19 @@ async function main() {
     return;
   }
 
-  const env = Object.freeze({
+  const loadedEnv = Object.freeze({
     ...await readDevVars(process.env.DEV_VARS_FILE ?? '.dev.vars'),
     ...process.env,
   });
-  requireExact(env.MKT_ENV, 'development', 'MKT_ENV');
-  requireExact(env.MKT_CUSTOMER_PROFILE, 'integration_workspace', 'MKT_CUSTOMER_PROFILE');
-  requireExact(env.MKT_CONNECTION_CUSTOMER_KEY, 'chemistry_k', 'MKT_CONNECTION_CUSTOMER_KEY');
-  requireExact(env[CONFIRMATION.envName], CONFIRMATION.value, CONFIRMATION.envName);
+  requireExact(loadedEnv.MKT_ENV, 'development', 'MKT_ENV');
+  requireExact(loadedEnv.MKT_CUSTOMER_PROFILE, 'integration_workspace', 'MKT_CUSTOMER_PROFILE');
+  requireExact(loadedEnv.MKT_CONNECTION_CUSTOMER_KEY, 'chemistry_k', 'MKT_CONNECTION_CUSTOMER_KEY');
+  requireExact(loadedEnv[CONFIRMATION.envName], CONFIRMATION.value, CONFIRMATION.envName);
   const repository = assertRepositoryState();
+  const sourceEnv = materializeWooCommerceProviderDiagnosticSource(loadedEnv);
 
   const config = readWooCommerceRuntimeConfig({
-    ...env,
+    ...sourceEnv,
     MKT_CONNECTOR_WOOCOMMERCE_ENABLED: 'true',
     MKT_WOOCOMMERCE_D1_WRITE_ENABLED: 'false',
     MKT_WOOCOMMERCE_LARK_WRITE_ENABLED: 'false',
@@ -76,6 +81,8 @@ async function main() {
     ok: true,
     stage: 'woocommerce-provider-response-diagnostics',
     repositoryHead: repository.head,
+    sourceContractMaterialized: true,
+    sourceContractFields: listWooCommerceProviderDiagnosticSourceFields(),
     sourceOriginFingerprint: sha256(config.source.baseUrl),
     apiVersion: config.source.apiVersion,
     timeoutMs: config.source.timeoutMs,
@@ -113,6 +120,11 @@ function printPlan() {
     executed: false,
     stage: 'woocommerce-provider-response-diagnostics-plan',
     confirmation: `${CONFIRMATION.envName}=${CONFIRMATION.value}`,
+    sourceContract: {
+      materializedFromRepository: true,
+      nonSecretFields: listWooCommerceProviderDiagnosticSourceFields(),
+      conflictingExplicitValues: 'fail_closed_before_provider_request',
+    },
     providerRequests: ['GET /wp-json/wc/v3/system_status'],
     responseEvidence: [
       'status',
