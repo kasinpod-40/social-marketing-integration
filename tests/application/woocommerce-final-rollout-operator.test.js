@@ -3,9 +3,11 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import {
   WOOCOMMERCE_FINAL_FLAGS,
+  WOOCOMMERCE_ORDER_STATUS_OPTIONS,
   assertWooCommerceFinalConfirmation,
   buildWooCommerceConfigWindows,
   buildWooCommerceFinalJob,
+  buildWooCommerceLarkSelectOptionRepair,
   buildWooCommerceFinalSnapshotSql,
   classifyWooCommerceFinalCompletion,
   compareWooCommerceParity,
@@ -15,6 +17,7 @@ import {
   normalizeWooCommerceFinalSnapshot,
   parseWooCommerceFinalArgs,
   selectWooCommerceFullOperation,
+  verifyWooCommerceLarkSelectOptionRepair,
 } from '../../scripts/lib/woocommerce-final-rollout-operator.js';
 
 function configText() {
@@ -72,6 +75,100 @@ test('Lark schema contract covers exact 14 mappings and matching key fields', ()
     assert.equal(item.fields[0].fieldName, item.keyField);
     assert.equal(item.fields[0].type, 1);
   }
+  const orders = contract.find((item) => item.tableKey === 'mktCommerceOrders');
+  const status = orders.fields.find((field) => field.fieldName === 'status');
+  assert.equal(status.type, 3);
+  assert.equal(status.uiType, 'SingleSelect');
+  assert.deepEqual(
+    status.property.options.map((option) => option.name),
+    WOOCOMMERCE_ORDER_STATUS_OPTIONS,
+  );
+  assert.equal(WOOCOMMERCE_ORDER_STATUS_OPTIONS.includes('cancelled'), true);
+});
+
+test('Lark Select repair preserves existing option IDs and leaves new options unassigned', () => {
+  const contract = createWooCommerceLarkSchemaContract()
+    .find((item) => item.tableKey === 'mktCommerceOrders')
+    .fields.find((field) => field.fieldName === 'status');
+  const before = {
+    fieldId: 'fld_status',
+    fieldName: 'status',
+    type: 3,
+    uiType: 'SingleSelect',
+    description: 'Canonical order status',
+    property: {
+      options: [
+        { id: 'opt_completed', name: 'completed', color: 0 },
+        { id: 'opt_on_hold', name: 'on-hold', color: 1 },
+      ],
+    },
+  };
+  const repair = buildWooCommerceLarkSelectOptionRepair({
+    contractField: contract,
+    liveField: before,
+  });
+  assert.deepEqual(repair.existingOptionNames, ['completed', 'on-hold']);
+  assert.equal(repair.addedOptionNames.includes('cancelled'), true);
+  assert.deepEqual(
+    repair.field.property.options.slice(0, 2).map((option) => option.id),
+    ['opt_completed', 'opt_on_hold'],
+  );
+  assert.equal(repair.field.description, 'Canonical order status');
+  assert.equal(
+    repair.field.property.options.slice(2).some((option) => 'id' in option),
+    false,
+  );
+  assert.deepEqual(
+    repair.field.property.options.slice(0, 2).map((option) => option.name),
+    ['completed', 'on-hold'],
+  );
+
+  const after = {
+    ...before,
+    property: {
+      options: repair.field.property.options.map((option, index) => ({
+        id: `opt_${index}`,
+        ...option,
+      })),
+    },
+  };
+  assert.equal(verifyWooCommerceLarkSelectOptionRepair({
+    beforeField: before,
+    afterField: after,
+    repair,
+  }).accepted, true);
+  assert.throws(() => verifyWooCommerceLarkSelectOptionRepair({
+    beforeField: before,
+    afterField: {
+      ...after,
+      property: {
+        options: after.property.options.map((option) => (
+          option.name === 'completed'
+            ? { ...option, id: 'opt_replaced' }
+            : option
+        )),
+      },
+    },
+    repair,
+  }), /did not converge/u);
+  assert.equal(buildWooCommerceLarkSelectOptionRepair({
+    contractField: contract,
+    liveField: after,
+  }), null);
+  assert.equal(buildWooCommerceLarkSelectOptionRepair({
+    contractField: contract,
+    liveField: { ...before, type: 1, property: null },
+  }), null);
+  assert.throws(() => verifyWooCommerceLarkSelectOptionRepair({
+    beforeField: before,
+    afterField: {
+      ...after,
+      property: {
+        options: after.property.options.filter((option) => option.name !== 'completed'),
+      },
+    },
+    repair,
+  }), /did not converge/u);
 });
 
 test('config windows are exact safe, UAT and all-false closeout flag sets', () => {
@@ -132,6 +229,7 @@ test('snapshot SQL is SELECT-only and scopes operation/account', () => {
   assert.match(sql, /woocommerce:woo-final-full-12345678/u);
   assert.match(sql, /commerce_daily_sales_facts/u);
   assert.match(sql, /MAX\(main_queue_attempts\)/u);
+  assert.match(sql, /json_extract\(details_json, '\$\.retryable'\)/u);
   assert.doesNotMatch(sql, /\b(?:INSERT|UPDATE|DELETE|DROP|ALTER|REPLACE)\b/iu);
 });
 
@@ -141,6 +239,7 @@ test('snapshot normalization is idempotent across raw and normalized contracts',
   const twice = normalizeWooCommerceFinalSnapshot(once);
   assert.deepEqual(twice, once);
   assert.equal(twice.syncRunStatus, 'success');
+  assert.equal(twice.syncRunRetryable, null);
   assert.equal(twice.workLifecycleStatus, 'completed');
   assert.equal(twice.queueOperationAttempts, 7);
   assert.equal(twice.coverageRunCount, 6);
@@ -172,11 +271,23 @@ test('exact continuation accepts only the existing partial failed durable identi
     resumeOperationId: 'woo-final-full-e2372e56d52d',
     snapshot: normalizeWooCommerceFinalSnapshot(partial),
   }), selected);
+  assert.equal(selectWooCommerceFullOperation({
+    resumeOperationId: 'woo-final-full-e2372e56d52d',
+    snapshot: {
+      ...partial,
+      sync_run_error_code: 'LARK_PREFLIGHT_FAILED',
+      sync_run_retryable: 0,
+    },
+  }).operationId, 'woo-final-full-e2372e56d52d');
   assert.equal(selectWooCommerceFullOperation({}), null);
 
   assert.throws(() => selectWooCommerceFullOperation({
     resumeOperationId: 'woo-final-full-e2372e56d52d',
     snapshot: { ...partial, work_generation: 1785000000001 },
+  }), /preflight rejected/u);
+  assert.throws(() => selectWooCommerceFullOperation({
+    resumeOperationId: 'woo-final-full-e2372e56d52d',
+    snapshot: { ...partial, sync_run_error_code: 'UNRELATED_FAILURE' },
   }), /preflight rejected/u);
   const emptyPartial = { ...partial };
   for (const item of createWooCommerceLarkSchemaContract()) emptyPartial[item.d1Table] = 0;
@@ -196,6 +307,9 @@ test('exact continuation classifies only a fully empty semantic snapshot as retr
   }), false);
   assert.equal(isWooCommerceExactContinuationSnapshotEmpty({
     queue_operation_attempts: 1,
+  }), false);
+  assert.equal(isWooCommerceExactContinuationSnapshotEmpty({
+    sync_run_retryable: 0,
   }), false);
   assert.equal(isWooCommerceExactContinuationSnapshotEmpty({
     state_json: JSON.stringify({ datasetIndex: 1, page: 2 }),
@@ -219,6 +333,24 @@ test('final CLI retries semantic-empty exact snapshots before any mutation stage
 test('completion requires durable work, six Coverage datasets and zero failures', () => {
   assert.equal(classifyWooCommerceFinalCompletion(completedSnapshot(), { fullReconciliation: true }).complete, true);
   assert.equal(classifyWooCommerceFinalCompletion({ ...completedSnapshot(), coverage_run_count: 5 }, { fullReconciliation: true }).complete, false);
+  const permanent = classifyWooCommerceFinalCompletion({
+    ...completedSnapshot(),
+    sync_run_status: 'failed',
+    sync_run_error_code: 'LARK_PREFLIGHT_FAILED',
+    sync_run_retryable: 0,
+    work_lifecycle_status: 'active',
+    work_completed_at: null,
+    phase_complete: 0,
+    coverage_run_count: 2,
+    invalid_coverage_count: 1,
+  }, { fullReconciliation: true });
+  assert.equal(permanent.complete, false);
+  assert.equal(permanent.terminalFailure, true);
+  assert.equal(permanent.reason, 'woocommerce_terminal_failure');
+  assert.equal(classifyWooCommerceFinalCompletion({
+    ...permanent.snapshot,
+    syncRunRetryable: true,
+  }, { fullReconciliation: true }).terminalFailure, false);
 });
 
 test('rerun accepts only increased attempt with unchanged Business and Coverage counts', () => {
@@ -246,6 +378,10 @@ test('final CLI deploys all-false Safe closeout and never deploys a scheduled wi
   assert.match(source, /windows\.closeoutTrueFlags/u);
   assert.match(source, /executionFlagsAllFalse: true/u);
   assert.match(source, /scheduleEnabled: false/u);
+  assert.match(source, /classification\.terminalFailure/u);
+  assert.match(source, /WOOCOMMERCE_FINAL_OPERATION_TERMINAL_FAILURE/u);
+  assert.match(source, /buildWooCommerceLarkSelectOptionRepair/u);
+  assert.match(source, /larkFieldValueFingerprint/u);
   assert.doesNotMatch(source, /deploy-scheduled-window|scheduled-active-window/u);
   assert.ok(
     source.indexOf("currentStage = 'exact-continuation-preflight'")
