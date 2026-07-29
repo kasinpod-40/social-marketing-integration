@@ -10,7 +10,7 @@ import {
   verifyWooCommerceFinalRecoveryOnlyPostState,
 } from '../../scripts/lib/woocommerce-final-recovery-only.js';
 
-const OPERATION_ID = 'woo-final-full-e486b03cfe8d';
+const OPERATION_ID = 'woo-final-full-6f43ac8ee857';
 const COUNT_KEYS = Object.freeze([
   'raw_commerce_stores',
   'raw_commerce_orders',
@@ -72,7 +72,7 @@ test('exact preflight snapshot is read-only and operation-scoped', () => {
     operationId: OPERATION_ID,
   });
   assert.match(sql, /^SELECT /u);
-  assert.match(sql, /woocommerce:woo-final-full-e486b03cfe8d/u);
+  assert.match(sql, /woocommerce:woo-final-full-6f43ac8ee857/u);
   assert.match(sql, /account_key = 'chemistry_k'/u);
   assert.doesNotMatch(sql, /\b(?:UPDATE|DELETE|INSERT|DROP|ALTER|CREATE)\b/iu);
 });

@@ -5,11 +5,11 @@ import {
 } from './woocommerce-final-rollout-operator.js';
 
 const OPERATION_ID = /^woo-final-(?:full|incremental)-[0-9a-f]{12}$/u;
-const EXACT_INCIDENT_OPERATION_ID = 'woo-final-full-e486b03cfe8d';
+const EXACT_INCIDENT_OPERATION_ID = 'woo-final-full-6f43ac8ee857';
 
 export const WOOCOMMERCE_FINAL_RECOVERY_ONLY_CONFIRMATION = Object.freeze({
   envName: 'CONFIRM_WOOCOMMERCE_RECOVERY_ONLY',
-  value: 'RECOVER_WOO_FINAL_FULL_E486B03CFE8D_ONLY',
+  value: 'RECOVER_WOO_FINAL_FULL_6F43AC8EE857_ONLY',
 });
 
 export function parseWooCommerceFinalRecoveryOnlyArgs(args = []) {
