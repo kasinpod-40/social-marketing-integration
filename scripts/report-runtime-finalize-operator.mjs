@@ -4,6 +4,7 @@ import { execFile } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { promisify } from 'node:util';
+import { REPORT_SCHEMA_CONFLICT_REPAIR_CONFIRMATION } from '../packages/application/src/use-cases/repair-lark-report-schema-conflicts.js';
 import { readDevVars } from './lib/dev-vars.js';
 import {
   REPORT_RUNTIME_FINALIZE_CONFIRMATION,
@@ -11,6 +12,8 @@ import {
   assertDashboardSettingsPreviewSafe,
   assertReportRuntimeFinalizeConfirmation,
   assertReportRuntimeFinalizeEnvironment,
+  assertReportSchemaConflictRepairApplySafe,
+  assertReportSchemaConflictRepairPreviewSafe,
   assertReportSchemaPreviewSafe,
   mergeReportSchemaEnvironment,
   parseReportRuntimeFinalizeArgs,
@@ -50,6 +53,7 @@ function printPlan() {
       'repository-clean-main-preflight',
       'repository-gates',
       'report-schema-preview',
+      'bounded-empty-field-conflict-recovery-if-needed',
       'report-schema-apply',
       'dashboard-settings-preview',
       'dashboard-settings-apply',
@@ -60,6 +64,7 @@ function printPlan() {
       defaultMode: 'plan_only',
       environment: 'development',
       customerProfile: 'integration_workspace',
+      conflictRecovery: 'empty_non_primary_fields_or_empty_tables_only',
       workerDeploy: false,
       remoteD1Mutation: false,
       queueSend: false,
@@ -94,7 +99,35 @@ async function executeFinalization() {
   }
 
   currentStage = 'report-schema-preview';
-  const schemaPreview = await runJson('node', ['scripts/setup-report-schema.mjs'], { env });
+  let schemaPreview = await runJson('node', ['scripts/setup-report-schema.mjs'], { env });
+  let conflictRecovery = null;
+  const conflictCount = Array.isArray(schemaPreview.conflicts) ? schemaPreview.conflicts.length : 0;
+  if (conflictCount > 0) {
+    currentStage = 'report-schema-conflict-recovery-preview';
+    const repairPreview = await runJson('node', ['scripts/repair-report-schema-conflicts.mjs'], { env });
+    assertReportSchemaConflictRepairPreviewSafe(repairPreview, conflictCount);
+
+    currentStage = 'report-schema-conflict-recovery-apply';
+    const repairApply = await runJson('node', ['scripts/repair-report-schema-conflicts.mjs', '--apply'], {
+      env: {
+        ...env,
+        CONFIRM_REPORT_SCHEMA_CONFLICT_REPAIR: REPORT_SCHEMA_CONFLICT_REPAIR_CONFIRMATION,
+      },
+    });
+    assertReportSchemaConflictRepairApplySafe(repairApply, conflictCount);
+    conflictRecovery = {
+      conflictCount,
+      repairedConflictCount: repairApply.repairedConflictCount,
+      appliedRepairCount: repairApply.appliedRepairCount,
+      remainingConflictCount: repairApply.remainingConflictCount,
+      repairs: repairApply.repairs ?? [],
+      businessValueMutationCount: repairApply.businessValueMutationCount,
+      deleteCount: repairApply.deleteCount,
+    };
+
+    currentStage = 'report-schema-preview-after-conflict-recovery';
+    schemaPreview = await runJson('node', ['scripts/setup-report-schema.mjs'], { env });
+  }
   assertReportSchemaPreviewSafe(schemaPreview);
 
   currentStage = 'report-schema-apply';
@@ -134,6 +167,7 @@ async function executeFinalization() {
     gates,
     schema: {
       version: schemaApply.schemaVersion,
+      conflictRecovery,
       plannedActions: schemaApply.summary?.plannedActions ?? null,
       appliedActions: schemaApply.summary?.appliedActions ?? null,
       createdTables: schemaApply.summary?.createdTables ?? null,
@@ -144,6 +178,7 @@ async function executeFinalization() {
       environmentUpdateNames: Object.keys(schemaApply.environmentUpdates ?? {}).sort(),
     },
     settings: {
+      canonicalExpected: settingsPreview.canonicalExpected ?? null,
       canonicalCreated: settingsApply.canonicalCreated ?? null,
       canonicalUpdated: settingsApply.canonicalUpdated ?? null,
       canonicalSkipped: settingsApply.canonicalSkipped ?? null,
