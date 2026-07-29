@@ -27,9 +27,9 @@ test('discovers every current Report platform and a future capability without Da
 
   assert.deepEqual(model.discovery.platforms, [
     'facebook', 'future_network', 'google_ads', 'instagram',
-    'meta_ads', 'tiktok', 'tiktok_ads', 'youtube',
+    'meta_ads', 'tiktok', 'tiktok_ads', 'woocommerce', 'youtube',
   ]);
-  assert.equal(model.reportCount, 8);
+  assert.equal(model.reportCount, 9);
   assert.deepEqual(model.discovery.capabilities, ['commerce', 'organic', 'paid_ads']);
   assert.deepEqual(model.discovery.collectionKinds, ['top_products']);
   assert.equal(model.sections.find((section) => section.capability === 'commerce').platforms.includes('future_network'), true);
@@ -144,6 +144,7 @@ test('Dashboard model source contains no current platform, capability or metric 
   );
   for (const literal of [
     'facebook', 'instagram', 'tiktok', 'youtube', 'meta_ads', 'google_ads', 'tiktok_ads',
+    'woocommerce',
     'organic', 'paid_ads', 'commerce', 'customer_service',
     'views', 'likes', 'spend', 'impressions',
   ]) {

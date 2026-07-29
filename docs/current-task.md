@@ -98,6 +98,22 @@ docs/tasks/lark-dashboard-backfill-post-verify-hotfix-v1.md
 
 ## Implementation result
 
+### Platform-neutral WooCommerce Commerce report runtime — 2026-07-30
+
+- Added WooCommerce to the shared Report registry/settings as active capability `commerce`.
+- The existing D1 WooCommerce report source now feeds shared Dashboard materialization metrics
+  plus bounded `top_products`, `payment_methods`, `shipping_methods` and currency context.
+- Shared D1 materialization persistence now retains extensible collections for every capability.
+- Shared Lark materialization writes Commerce Snapshot and Metric rows without requiring Organic
+  or Paid Ads ranking tables.
+- Worker execution requires an isolated WooCommerce report-only window and rejects concurrent
+  connector, D1/Lark ingestion, full reconciliation or Schedule flags.
+- AI summary remains default-off and no report schedule is enabled.
+- Verification passed: focused Node `32/32`, focused Worker `3/3`, full unit `1476/1476`,
+  Workers runtime `16/16`, report reliability `101/101`, architecture/hygiene with `0` cycles,
+  audit `0` and deploy dry-run.
+- Repository implementation has no Remote action.
+
 ### WooCommerce exact durable continuation operator — 2026-07-30
 
 - Final rollout can pin the already-admitted partial operation through

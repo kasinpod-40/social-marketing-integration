@@ -46,4 +46,44 @@ describe('multichannel report Worker route', () => {
       env: { MKT_REPORT_D1_READ_ENABLED: 'true' },
     })).rejects.toMatchObject({ code: 'DASHBOARD_REPORT_PLATFORM_UNSUPPORTED' });
   });
+
+  it('requires an isolated WooCommerce report-only flag window', async () => {
+    const baseInput = {
+      job: {
+        body: {
+          type: JOB_TYPES.REPORT_MATERIALIZATION_GENERATE,
+          trigger: 'dashboard_preset',
+          periodKind: 'rolling_days',
+          windowDays: 3,
+          platformScope: 'woocommerce',
+          reportSettingKey: 'integration_workspace:woocommerce:rolling:3d',
+          requestedAt: '2026-07-28T00:00:00.000Z',
+        },
+      },
+      getRuntimeConfig: vi.fn(),
+      getInfrastructure: vi.fn(),
+    };
+    await expect(processJobWithTikTokD1AwareReport({
+      ...baseInput,
+      env: {
+        MKT_REPORT_D1_READ_ENABLED: 'true',
+        MKT_WOOCOMMERCE_REPORT_READ_ENABLED: 'false',
+        WOOCOMMERCE_DEFAULT_CURRENCY: 'THB',
+      },
+    })).rejects.toMatchObject({ code: 'DASHBOARD_REPORT_CONFIGURATION_INVALID' });
+    await expect(processJobWithTikTokD1AwareReport({
+      ...baseInput,
+      env: {
+        MKT_REPORT_D1_READ_ENABLED: 'true',
+        MKT_WOOCOMMERCE_REPORT_READ_ENABLED: 'true',
+        MKT_CONNECTOR_WOOCOMMERCE_ENABLED: 'true',
+        WOOCOMMERCE_BASE_URL: 'https://example.com',
+        WOOCOMMERCE_CONSUMER_KEY: 'ck_test',
+        WOOCOMMERCE_CONSUMER_SECRET: 'secret',
+        WOOCOMMERCE_DEFAULT_CURRENCY: 'THB',
+      },
+    })).rejects.toMatchObject({ code: 'DASHBOARD_REPORT_CONFIGURATION_INVALID' });
+    expect(baseInput.getRuntimeConfig).not.toHaveBeenCalled();
+    expect(baseInput.getInfrastructure).not.toHaveBeenCalled();
+  });
 });

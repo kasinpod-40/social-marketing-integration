@@ -28,6 +28,7 @@ export async function saveDashboardReportMaterialization(input = {}) {
     dataStatus: result.dataStatus,
     coverageRate: input.coverageRate ?? result.baselineCoverageRate ?? result.coverageRate ?? null,
     metricPayload: result.metricPayload ?? {},
+    collections: result.collections ?? {},
     topContent: result.topContent ?? [],
     topAds: result.topAds ?? [],
     source: input.source ?? result.source ?? 'd1_historical_facts',

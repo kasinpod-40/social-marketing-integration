@@ -12,6 +12,7 @@ export const DASHBOARD_REPORT_TYPE = 'dashboard_performance_report';
 export const DASHBOARD_REPORT_PRESET_DAYS = Object.freeze([1, 3, 7, 9, 15, 30, 90]);
 export const DASHBOARD_REPORT_PLATFORM_SCOPES = Object.freeze([
   'facebook', 'instagram', 'tiktok', 'youtube', 'meta_ads', 'google_ads', 'tiktok_ads',
+  'woocommerce',
 ]);
 export const LEGACY_REPORT_SETTING_KEYS = Object.freeze([
   'dev_ft_pumkin:tiktok:daily',
@@ -106,9 +107,12 @@ function createSettingRow(input) {
 }
 
 function displayPlatform(value) {
-  return ({ facebook: 'Facebook', instagram: 'Instagram', tiktok: 'TikTok', youtube: 'YouTube', meta_ads: 'Meta Ads', google_ads: 'Google Ads', tiktok_ads: 'TikTok Ads' })[value];
+  return ({ facebook: 'Facebook', instagram: 'Instagram', tiktok: 'TikTok', youtube: 'YouTube', meta_ads: 'Meta Ads', google_ads: 'Google Ads', tiktok_ads: 'TikTok Ads', woocommerce: 'WooCommerce' })[value];
 }
-function capabilityLabel(value) { return value.endsWith('_ads') ? 'Ads' : 'Organic'; }
+function capabilityLabel(value) {
+  if (value === 'woocommerce') return 'Commerce';
+  return value.endsWith('_ads') ? 'Ads' : 'Organic';
+}
 function requirePlatformScope(value) {
   const normalized = requireText(value, 'platformScope');
   if (!DASHBOARD_REPORT_PLATFORM_SCOPES.includes(normalized)) {

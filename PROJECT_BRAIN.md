@@ -55,6 +55,10 @@ Final operator รองรับการ pin `MKT_WOOCOMMERCE_FINAL_RESUME_OPE
 code, active durable work, no active lock, partial Business rows และความตรงกันของ work/Queue
 generation กับ original requested-at แบบ read-only ก่อน Remote mutation ทุกชนิด.
 Queue-attempt evidence ใช้ `main_queue_attempts` เพราะหนึ่ง operation มี durable row เดียว.
+WooCommerce Report ต่อผ่าน generic `report.materialization.generate` ด้วย capability `commerce`
+และ D1 Commerce source เดิมแล้ว; D1 materialization กับ Lark Snapshot/Metric ใช้ shared runtime,
+ส่วน Product/Payment/Shipping เป็น bounded extensible collections. Runtime ยอมให้ Commerce
+Report เฉพาะ report-only window ที่ ingestion/full/schedule flags เป็น false.
 
 ## WooCommerce diagnostics deterministic Preview origin — 2026-07-30
 

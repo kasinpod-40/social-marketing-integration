@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased — Platform-neutral Commerce Report Runtime — 2026-07-30
+
+### Report integration
+
+- Registered WooCommerce as an active `commerce` capability in the shared Report platform
+  adapter registry and canonical Report settings.
+- Adapted the existing D1 Commerce report into validated platform-neutral materializations with
+  deterministic metrics and bounded discovered collections.
+- Reused the shared D1 materialization, universal Dashboard model and Lark Snapshot/Metric writer;
+  no WooCommerce-specific Dashboard renderer or Lark output engine was added.
+- Required an isolated report-only runtime window: Commerce report read true while ingestion,
+  full reconciliation and Schedule flags remain false.
+
+### Safety
+
+- AI summary and Daily/Weekly schedules remain disabled.
+- Commerce collections are bounded before the shared materialization payload limit.
+
 ## Unreleased — WooCommerce Exact Durable Continuation — 2026-07-30
 
 ### Reliability

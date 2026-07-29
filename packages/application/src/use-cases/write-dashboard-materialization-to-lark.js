@@ -154,12 +154,19 @@ function requireTables(value, capability) {
     mktReportSnapshots: requireText(tables.mktReportSnapshots, 'tables.mktReportSnapshots'),
     mktReportMetricValues: requireText(tables.mktReportMetricValues, 'tables.mktReportMetricValues'),
   };
-  return Object.freeze({
-    ...shared,
-    ...(capability === 'organic'
-      ? { mktReportTopContent: requireText(tables.mktReportTopContent, 'tables.mktReportTopContent') }
-      : { mktReportTopAds: requireText(tables.mktReportTopAds, 'tables.mktReportTopAds') }),
-  });
+  if (capability === 'organic') {
+    return Object.freeze({
+      ...shared,
+      mktReportTopContent: requireText(tables.mktReportTopContent, 'tables.mktReportTopContent'),
+    });
+  }
+  if (capability === 'paid_ads') {
+    return Object.freeze({
+      ...shared,
+      mktReportTopAds: requireText(tables.mktReportTopAds, 'tables.mktReportTopAds'),
+    });
+  }
+  return Object.freeze(shared);
 }
 function boundedLimit(value) {
   const number = Number(value);

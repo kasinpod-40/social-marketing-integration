@@ -93,10 +93,112 @@ export async function generateDashboardReportMaterialization(input = {}) {
 async function buildActiveResult(input) {
   if (input.contract.capability === REPORT_PLATFORM_CAPABILITY.ORGANIC) return buildOrganicResult(input);
   if (input.contract.capability === REPORT_PLATFORM_CAPABILITY.PAID_ADS) return buildAdsResult(input);
+  if (input.contract.capability === REPORT_PLATFORM_CAPABILITY.COMMERCE) return buildCommerceResult(input);
   throw permanentError('Dashboard report capability is unsupported', {
     code: 'DASHBOARD_REPORT_CAPABILITY_UNSUPPORTED',
     details: { capability: input.contract.capability },
   });
+}
+
+async function buildCommerceResult(input) {
+  const [current, compare] = await Promise.all([
+    input.adapter.load({
+      customerKey: input.customerKey,
+      accountKey: input.accountKey,
+      periodStart: input.period.periodStart,
+      periodEnd: input.period.periodEnd,
+    }),
+    input.period.comparisonMode === 'none' ? Promise.resolve(null) : input.adapter.load({
+      customerKey: input.customerKey,
+      accountKey: input.accountKey,
+      periodStart: input.period.compareStart,
+      periodEnd: input.period.compareEnd,
+    }),
+  ]);
+  assertWatermark(input.sourceWatermark, current.source_watermark, input.contract.platformScope);
+  if (compare) assertWatermark(input.sourceWatermark, compare.source_watermark, input.contract.platformScope);
+  const metricPayload = buildCommerceMetricPayload({
+    platform: input.contract.platformScope,
+    formulaVersion: input.contract.formulaVersion,
+    current: current.totals,
+    compare: compare?.totals ?? null,
+  });
+  return Object.freeze({
+    platform: input.contract.platformScope,
+    capability: input.contract.capability,
+    reportSettingKey: input.reportSettingKey,
+    reportType: REPORT_TYPE,
+    period: input.period,
+    dataStatus: current.data_status,
+    coverageRate: coverageRate(current),
+    sourceWatermark: current.source_watermark,
+    sourceRead: Object.freeze({
+      coverageStatus: current.coverage?.status ?? null,
+      productRows: current.products.length,
+      paymentMethodRows: current.payment_methods.length,
+      shippingMethodRows: current.shipping_methods.length,
+      sourceWatermark: current.source_watermark,
+    }),
+    source: 'd1_commerce_facts',
+    metricPayload,
+    collections: Object.freeze({
+      commerce_context: Object.freeze([{ currency: current.currency }]),
+      top_products: Object.freeze(current.products.slice(0, 5)),
+      payment_methods: Object.freeze(current.payment_methods.slice(0, 20)),
+      shipping_methods: Object.freeze(current.shipping_methods.slice(0, 20)),
+    }),
+    topContent: Object.freeze([]),
+    topAds: Object.freeze([]),
+    topContentCount: 0,
+    topAdsCount: 0,
+  });
+}
+
+function buildCommerceMetricPayload(input) {
+  const definitions = [
+    ['net_sales_micros', 'Net sales', 'currency'],
+    ['gross_sales_micros', 'Gross sales', 'currency'],
+    ['recognized_revenue_micros', 'Recognized revenue', 'currency'],
+    ['refund_micros', 'Refunds', 'currency'],
+    ['discount_micros', 'Discounts', 'currency'],
+    ['shipping_micros', 'Shipping', 'currency'],
+    ['tax_micros', 'Tax', 'currency'],
+    ['recognized_orders', 'Recognized orders', 'count'],
+    ['provisional_orders', 'Provisional orders', 'count'],
+    ['cancelled_orders', 'Cancelled orders', 'count'],
+    ['failed_orders', 'Failed orders', 'count'],
+    ['refunded_orders', 'Refunded orders', 'count'],
+    ['quantity_total', 'Quantity', 'count'],
+  ];
+  return Object.freeze(Object.fromEntries(definitions.map(([key, displayName, unit], index) => {
+    const current = finiteOrNull(input.current?.[key]);
+    const compare = input.compare ? finiteOrNull(input.compare[key]) : null;
+    const change = current === null || compare === null ? null : current - compare;
+    const metricKey = `${input.platform}:${key}`;
+    return [metricKey, Object.freeze({
+      metricKey,
+      displayName,
+      unit,
+      current,
+      compare,
+      change,
+      changePercent: change === null || compare === 0 ? null : change / Math.abs(compare),
+      clientVisible: true,
+      sortOrder: index + 1,
+      formulaVersion: input.formulaVersion,
+    })];
+  })));
+}
+
+function coverageRate(report) {
+  return ['complete', 'no_data_confirmed'].includes(report.coverage?.status) ? 1 : null;
+}
+
+function finiteOrNull(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const number = Number(value);
+  if (!Number.isFinite(number)) throw new TypeError('Commerce report metric must be finite');
+  return number;
 }
 
 async function buildOrganicResult(input) {

@@ -154,11 +154,14 @@ test('Report closeout can target fresh 1D and 30D presets explicitly', () => {
 });
 
 test('Report closeout requires validated finalizer and D1 readiness evidence', () => {
-  assert.equal(REPORT_RUNTIME_CLOSEOUT_CANONICAL_SETTING_COUNT, 58);
+  assert.equal(REPORT_RUNTIME_CLOSEOUT_CANONICAL_SETTING_COUNT, 66);
   assert.equal(assertReportRuntimeFinalizerEvidence(validFinalizerEvidence()), true);
   assert.throws(() => assertReportRuntimeFinalizerEvidence({
     ...validFinalizerEvidence(),
-    settings: { ...validFinalizerEvidence().settings, canonicalActive: 57 },
+    settings: {
+      ...validFinalizerEvidence().settings,
+      canonicalActive: REPORT_RUNTIME_CLOSEOUT_CANONICAL_SETTING_COUNT - 1,
+    },
   }));
   assert.equal(assertReportRuntimeCloseoutPreflight({
     coverage_status: 'complete',
