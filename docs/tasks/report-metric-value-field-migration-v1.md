@@ -41,7 +41,7 @@ Legacy value mutation         0
 Canonical overwrite conflict  blocked
 Field write retry             0
 Record write attempts         1 per field
-Verification                  fresh bounded reads
+Verification                  fresh bounded metadata + Record reads
 ```
 
 ### display_name
@@ -59,13 +59,17 @@ Conversion    exact selected text -> Text
 Legacy name   __mkt_legacy_window_days_single_select_v1
 Source type   SingleSelect(3)
 Target type   Number(2), formatter 0
-Conversion    canonical integer preset -> Number
-Allowed       1, 3, 7, 9, 15, 30, 90
+Conversion    unambiguous preset-day label -> Number
+Allowed days  1, 3, 7, 9, 15, 30, 90
+Read forms    3 | 3D | 3 days | rolling:3d
 ```
 
-ค่าที่ไม่เป็น canonical preset, SingleSelect หลายค่า, Canonical value ที่ไม่ตรง Legacy,
-Canonical value ที่มีอยู่โดยไม่มี Legacy source, Field identity ambiguity, Primary Field หรือ
-Record count เกิน bound ต้อง Fail closed ก่อน write.
+Read-form normalization เกิดเฉพาะใน in-memory migration model; Raw Legacy cell ไม่ถูกแก้.
+รูปแบบที่มี semantic ไม่ชัด เช่น `03`, `3 weeks`, `custom`, `365D` ต้องคงค่าดิบไว้เพื่อให้
+Migration Fail closed ก่อน write.
+
+SingleSelect หลายค่า, Canonical value ที่ไม่ตรง Legacy, Canonical value ที่มีอยู่โดยไม่มี Legacy
+source, Field identity ambiguity, Primary Field หรือ Record count เกิน bound ต้อง Fail closed.
 
 ## Controlled sequence
 
@@ -74,6 +78,7 @@ read schema + all bounded records
 -> validate every conversion and build semantic fingerprints
 -> rename original Field once, preserving field_id/property/options
 -> bounded fresh metadata verification; no write retry
+-> bounded fresh Record-name/value parity verification
 -> create canonical Field once
 -> bounded fresh metadata verification; no create retry
 -> batch-update only missing canonical values once
@@ -89,9 +94,11 @@ Canonical Field ซ้ำ.
 ## Finalizer integration
 
 `report-runtime-finalize-operator.mjs` ต้องรัน migration preview/apply ก่อน Report schema preview.
-หาก Tenant ใหม่ยังไม่มี Historical mismatch, migration ต้องเป็น `not_required` และ Schema
-installer ทำงานตามปกติ. หลัง migration สำเร็จ Schema preview ต้องเหลือ type conflict เป็นศูนย์
-ก่อน Schema/Settings Apply.
+Tenant ที่มี Canonical Text/Number fields ถูกต้องและไม่มี Legacy fields ต้องได้สถานะ
+`not_required`. Tenant ที่ยังไม่มี Report table อยู่ใน Bootstrap scope ของ Schema installer และ
+ต้องถูกจัดการแยกจาก Historical populated-field migration contract นี้.
+
+หลัง migration สำเร็จ Schema preview ต้องเหลือ type conflict เป็นศูนย์ก่อน Schema/Settings Apply.
 
 ## Evidence boundary
 
