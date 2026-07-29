@@ -67,6 +67,12 @@ Provider call during coding    none
 Schedule/Secret/Production     none
 ```
 
+## Concurrent main movement
+
+While this Draft PR was being opened, `main` received a temporary placeholder commit followed by an
+exact revert. The compare from the implementation base to current `main@509beeb838e6db6389de6a0fe64aac9a5b52f5f9`
+contains zero changed files, so the WooCommerce seven-file diff remains isolated and unchanged.
+
 Do not rerun Final rollout and do not automatically resend operation `woo-final-full-6f43ac8ee857`.
 After this diagnostics hotfix is reviewed and merged, run the one-GET Provider probe first. Exact
 stale-work recovery and any later Worker diagnostic window remain separate authorizations.
