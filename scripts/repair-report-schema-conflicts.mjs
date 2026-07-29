@@ -18,9 +18,11 @@ try {
     ? await applyLarkReportSchemaConflictRepair({ client, env })
     : await planLarkReportSchemaConflictRepair({ client, env });
   const safe = safeReportSchemaConflictRepairEvidence(result);
+  delete safe.environmentUpdates;
   process.stdout.write(`${JSON.stringify({
     ok: true,
     ...safe,
+    environmentUpdateNames: Object.keys(result.environmentUpdates ?? {}).sort(),
     ...(apply ? {
       remoteMutationCount: result.appliedRepairCount,
       businessValueMutationCount: 0,
