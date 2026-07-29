@@ -10,10 +10,10 @@ import {
   verifyWooCommerceFailedWorkRecovery,
 } from './lib/woocommerce-final-failed-work-recovery.js';
 import {
-  WOOCOMMERCE_FINAL_RECOVERY_ONLY_CONFIRMATION,
   assertWooCommerceFinalRecoveryOnlyConfirmation,
   buildWooCommerceFinalRecoveryOnlySnapshotSql,
   parseWooCommerceFinalRecoveryOnlyArgs,
+  resolveWooCommerceFinalRecoveryOnlyIncident,
   verifyWooCommerceFinalRecoveryOnlyEligibility,
   verifyWooCommerceFinalRecoveryOnlyPostState,
 } from './lib/woocommerce-final-recovery-only.js';
@@ -57,7 +57,9 @@ async function main() {
   requireExact(env.MKT_ENV, 'development', 'MKT_ENV');
   requireExact(env.MKT_CUSTOMER_PROFILE, 'integration_workspace', 'MKT_CUSTOMER_PROFILE');
   requireExact(env.MKT_CONNECTION_CUSTOMER_KEY, 'chemistry_k', 'MKT_CONNECTION_CUSTOMER_KEY');
-  assertWooCommerceFinalRecoveryOnlyConfirmation(env);
+  assertWooCommerceFinalRecoveryOnlyConfirmation(env, {
+    operationId: options.operationId,
+  });
 
   const repositoryHead = gitText(['rev-parse', 'HEAD']);
   requireExact(gitText(['branch', '--show-current']), 'main', 'git branch');
@@ -109,7 +111,7 @@ async function main() {
     repositoryHead,
     operationId: options.operationId,
     decision: 'RECOVERED_TERMINAL',
-    nextAction: 'run_read_only_inspector_then_authorize_guarded_final_rollout',
+    nextAction: post.nextAction,
     syncRunStatus: post.snapshot.syncRunStatus,
     syncRunErrorCode: post.snapshot.syncRunErrorCode,
     workLifecycleStatus: post.snapshot.workLifecycleStatus,
@@ -130,13 +132,16 @@ async function main() {
 }
 
 function printPlan(operationId) {
-  const { envName, value } = WOOCOMMERCE_FINAL_RECOVERY_ONLY_CONFIRMATION;
+  const incident = resolveWooCommerceFinalRecoveryOnlyIncident(operationId);
+  const { envName, value } = incident.confirmation;
   process.stdout.write(`${JSON.stringify({
     ok: true,
     executed: false,
     stage: 'woocommerce-final-recovery-only-plan',
     operationId,
+    expectedErrorCode: incident.expectedErrorCode,
     confirmation: `${envName}=${value}`,
+    nextActionAfterRecovery: incident.nextAction,
     remoteAction: 'one exact guarded sync_work_runs lifecycle update with read-only pre/post verification',
     durableLifecycleMutationCount: 0,
     businessMutationCount: 0,
