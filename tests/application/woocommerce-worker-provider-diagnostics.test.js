@@ -4,11 +4,13 @@ import test from 'node:test';
 import { parseJsoncObject } from '../../scripts/lib/chatwoot-safe-wrangler-config.js';
 import {
   WOOCOMMERCE_PROVIDER_DIAGNOSTICS_FLAG,
+  WOOCOMMERCE_PROVIDER_DIAGNOSTICS_TOKEN_SHA256_ENV,
   buildWooCommerceWorkerProviderDiagnosticConfigs,
   parseWooCommerceWorkerSecretNames,
   validateWooCommerceWorkerProviderDiagnosticResponse,
 } from '../../scripts/lib/woocommerce-worker-provider-diagnostics.js';
 
+const TOKEN_SHA256 = 'a'.repeat(64);
 const CONFIG = JSON.stringify({
   name: 'social-mkt-sync-worker',
   main: 'apps/sync-worker/src/index.js',
@@ -24,13 +26,15 @@ const CONFIG = JSON.stringify({
     MKT_WOOCOMMERCE_LARK_WRITE_ENABLED: 'true',
     MKT_SCHEDULE_WOOCOMMERCE_ENABLED: 'true',
     MKT_TIKTOK_AUDIT_HTTP_ENABLED: 'true',
+    [WOOCOMMERCE_PROVIDER_DIAGNOSTICS_TOKEN_SHA256_ENV]: 'b'.repeat(64),
   },
 }, null, 2);
 
-test('builds one diagnostic-only Worker config and one all-false Safe config', () => {
+test('builds one ephemeral-auth diagnostic config and one all-false Safe config', () => {
   const result = buildWooCommerceWorkerProviderDiagnosticConfigs(CONFIG, {
     repositoryRoot: '/repo',
     sourceConfigPath: 'wrangler.sync.jsonc',
+    diagnosticTokenSha256: TOKEN_SHA256,
   });
   const safe = parseJsoncObject(result.safe);
   const active = parseJsoncObject(result.active);
@@ -38,7 +42,9 @@ test('builds one diagnostic-only Worker config and one all-false Safe config', (
   assert.deepEqual(result.safeTrueFlags, []);
   assert.deepEqual(result.activeTrueFlags, [WOOCOMMERCE_PROVIDER_DIAGNOSTICS_FLAG]);
   assert.equal(safe.vars[WOOCOMMERCE_PROVIDER_DIAGNOSTICS_FLAG], 'false');
+  assert.equal(safe.vars[WOOCOMMERCE_PROVIDER_DIAGNOSTICS_TOKEN_SHA256_ENV], undefined);
   assert.equal(active.vars[WOOCOMMERCE_PROVIDER_DIAGNOSTICS_FLAG], 'true');
+  assert.equal(active.vars[WOOCOMMERCE_PROVIDER_DIAGNOSTICS_TOKEN_SHA256_ENV], TOKEN_SHA256);
   assert.equal(active.vars.MKT_CONNECTOR_WOOCOMMERCE_ENABLED, 'false');
   assert.equal(active.vars.MKT_WOOCOMMERCE_D1_WRITE_ENABLED, 'false');
   assert.equal(active.vars.MKT_WOOCOMMERCE_LARK_WRITE_ENABLED, 'false');
@@ -49,25 +55,35 @@ test('builds one diagnostic-only Worker config and one all-false Safe config', (
   assert.equal(active.vars.WOOCOMMERCE_API_TIMEOUT_MS, '45000');
   assert.equal(active.vars.WOOCOMMERCE_DEFAULT_CURRENCY, 'THB');
   assert.equal(result.origin, 'https://social-mkt-sync-worker.example.workers.dev');
+  assert.equal(result.ephemeralAuthDigestConfigured, true);
   assert.equal(result.secretValuesCopied, 0);
   assert.equal(result.active.includes('ck_'), false);
   assert.equal(result.active.includes('cs_'), false);
 });
 
-test('requires all three existing Worker Secret names without reading their values', () => {
+test('requires only WooCommerce Worker Secret names without reading their values', () => {
   const names = parseWooCommerceWorkerSecretNames(JSON.stringify([
     { name: 'WOOCOMMERCE_CONSUMER_SECRET' },
-    { name: 'MKT_CONNECTION_OPERATOR_TOKEN' },
     { name: 'WOOCOMMERCE_CONSUMER_KEY' },
   ]));
   assert.deepEqual(names, [
-    'MKT_CONNECTION_OPERATOR_TOKEN',
     'WOOCOMMERCE_CONSUMER_KEY',
     'WOOCOMMERCE_CONSUMER_SECRET',
   ]);
   assert.throws(
     () => parseWooCommerceWorkerSecretNames([{ name: 'WOOCOMMERCE_CONSUMER_KEY' }]),
     (error) => error?.code === 'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_SECRET_MISSING',
+  );
+});
+
+test('rejects a missing or malformed ephemeral authorization digest before deployment', () => {
+  assert.throws(
+    () => buildWooCommerceWorkerProviderDiagnosticConfigs(CONFIG, {
+      repositoryRoot: '/repo',
+      sourceConfigPath: 'wrangler.sync.jsonc',
+      diagnosticTokenSha256: 'not-a-digest',
+    }),
+    (error) => error?.code === 'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_CONFIG_INVALID',
   );
 });
 
@@ -98,14 +114,24 @@ test('accepts only a bounded success or exact invalid-JSON diagnostic response',
   );
 });
 
-test('one-command operator has no Queue, D1, Lark, Schedule or Secret mutation command', async () => {
-  const source = await readFile(
-    new URL('../../scripts/woocommerce-worker-provider-diagnostics.mjs', import.meta.url),
-    'utf8',
-  );
-  assert.match(source, /workerDeploymentCount:\s*2/u);
-  assert.match(source, /automatic-safe-restore/u);
-  assert.match(source, /providerRequestCount:\s*1/u);
-  assert.doesNotMatch(source, /queues?['"],\s*['"](?:send|messages)|d1['"],\s*['"](?:execute|migrations)|createLark|TableSyncEngine/u);
-  assert.doesNotMatch(source, /secret['"],\s*['"](?:put|bulk|delete)/u);
+test('ephemeral launcher generates auth without printing or mutating Worker Secrets', async () => {
+  const [launcher, operator] = await Promise.all([
+    readFile(
+      new URL('../../scripts/woocommerce-worker-provider-diagnostics-ephemeral.mjs', import.meta.url),
+      'utf8',
+    ),
+    readFile(
+      new URL('../../scripts/woocommerce-worker-provider-diagnostics.mjs', import.meta.url),
+      'utf8',
+    ),
+  ]);
+  assert.match(launcher, /randomBytes\(32\)/u);
+  assert.match(launcher, /createHash\('sha256'\)/u);
+  assert.match(launcher, /MKT_WOOCOMMERCE_PROVIDER_DIAGNOSTICS_TOKEN_SHA256/u);
+  assert.doesNotMatch(launcher, /console\.|stdout\.write|stderr\.write/u);
+  assert.match(operator, /workerDeploymentCount:\s*2/u);
+  assert.match(operator, /automatic-safe-restore/u);
+  assert.match(operator, /providerRequestCount:\s*1/u);
+  assert.doesNotMatch(operator, /queues?['"],\s*['"](?:send|messages)|d1['"],\s*['"](?:execute|migrations)|createLark|TableSyncEngine/u);
+  assert.doesNotMatch(`${launcher}\n${operator}`, /secret['"],\s*['"](?:put|bulk|delete)/u);
 });
