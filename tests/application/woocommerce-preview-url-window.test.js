@@ -69,19 +69,26 @@ test('builds mutations that never enable the base workers.dev route', () => {
 });
 
 test('Preview window wrapper is confirmation-gated and restores in finally', async () => {
-  const source = await readFile(
-    new URL('../../scripts/woocommerce-worker-provider-diagnostics-preview-window.mjs', import.meta.url),
-    'utf8',
-  );
+  const [source, contract] = await Promise.all([
+    readFile(
+      new URL('../../scripts/woocommerce-worker-provider-diagnostics-preview-window.mjs', import.meta.url),
+      'utf8',
+    ),
+    readFile(
+      new URL('../../scripts/lib/woocommerce-preview-url-window.js', import.meta.url),
+      'utf8',
+    ),
+  ]);
   assert.match(source, /CONFIRM_WOOCOMMERCE_PREVIEW_URL_WINDOW/u);
   assert.match(source, /OPEN_AND_RESTORE_WOOCOMMERCE_PREVIEW_URLS/u);
   assert.match(source, /finally\s*\{/u);
   assert.match(source, /restorePreviewUrls\(\)/u);
   assert.match(source, /buildWooCommercePreviewUrlMutation\(previewsEnabled\)/u);
-  assert.match(source, /enabled:\s*false/u);
   assert.match(source, /previewUrlsRestored/u);
   assert.match(source, /productionTrafficChange:\s*false/u);
   assert.match(source, /stdio:\s*'inherit'/u);
+  assert.match(contract, /enabled:\s*false/u);
+  assert.match(contract, /previews_enabled:\s*previewsEnabled/u);
   assert.doesNotMatch(source, /wrangler',\s*'deploy'|queues?['"],\s*['"]send|d1['"],\s*['"]execute|secret['"],\s*['"]put/u);
   assert.doesNotMatch(source, /console\.log\(.*token|process\.stdout\.write\(.*token/iu);
 });
