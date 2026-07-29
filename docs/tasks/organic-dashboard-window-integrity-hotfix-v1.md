@@ -5,7 +5,8 @@
 ```text
 WORKSTREAM                       = ORGANIC_DASHBOARD_WINDOW_INTEGRITY_V1
 BRANCH                           = hotfix/organic-dashboard-window-integrity-v1
-BASE_MAIN                        = 527cdceda2d4661c82dc000380705d1078343bdf
+IMPLEMENTATION_BASE_MAIN         = 527cdceda2d4661c82dc000380705d1078343bdf
+ALIGNED_MAIN                     = 67a82551749569d74b9e4b66a32c82e5715b1d40
 REMOTE_ACTION_DURING_IMPLEMENTATION = NONE
 WORKER_DEPLOYMENT                = NOT_RUN
 QUEUE_MESSAGE                    = NOT_SENT
