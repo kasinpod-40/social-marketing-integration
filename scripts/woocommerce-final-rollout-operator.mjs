@@ -24,6 +24,7 @@ import {
   buildWooCommerceConfigWindows,
   buildWooCommerceFinalJob,
   buildWooCommerceFinalSnapshotSql,
+  buildWooCommerceLarkSelectOptionRepair,
   buildWooCommerceWatermarkSql,
   classifyWooCommerceFinalCompletion,
   compareWooCommerceParity,
@@ -36,6 +37,7 @@ import {
   safeWooCommerceFinalEvidence,
   selectWooCommerceFullOperation,
   sha256,
+  verifyWooCommerceLarkSelectOptionRepair,
 } from './lib/woocommerce-final-rollout-operator.js';
 import {
   WOOCOMMERCE_D1_READ_RETRY_DELAYS_MS,
@@ -52,6 +54,7 @@ const REQUIRED_SECRET_NAMES = Object.freeze([
 ]);
 const EXPECTED_TABLE_COUNT = 17;
 const EXPECTED_INDEX_COUNT = 13;
+const LARK_SCHEMA_VERIFY_DELAYS_MS = Object.freeze([0, 1_000, 2_000, 4_000, 8_000]);
 let latestSafeConfig = null;
 let target = null;
 let currentStage = 'init';
@@ -368,6 +371,9 @@ async function ensureLarkSchema(client, env) {
   const tableIds = {};
   let createdTables = 0;
   let createdFields = 0;
+  let updatedFields = 0;
+  let addedSelectOptions = 0;
+  let recordValueVerifications = 0;
   for (const contract of contracts) {
     const configuredId = optional(env[contract.envName]);
     let table = configuredId ? byId.get(configuredId) : null;
@@ -383,16 +389,77 @@ async function ensureLarkSchema(client, env) {
     const fields = await client.listFields({ tableId: table.tableId });
     const byField = new Map(fields.map((field) => [field.fieldName, field]));
     for (const field of contract.fields) {
-      if (byField.has(field.fieldName)) continue;
-      await client.createField({ tableId: table.tableId, field });
-      createdFields += 1;
+      const existing = byField.get(field.fieldName);
+      if (!existing) {
+        const created = await client.createField({ tableId: table.tableId, field });
+        createdFields += 1;
+        byField.set(field.fieldName, created);
+        continue;
+      }
+      const repair = buildWooCommerceLarkSelectOptionRepair({
+        contractField: field,
+        liveField: existing,
+      });
+      if (!repair) continue;
+
+      const beforeRecords = await client.listRecords({
+        tableId: table.tableId,
+        pageSize: 500,
+      });
+      const beforeValueFingerprint = larkFieldValueFingerprint(
+        beforeRecords,
+        existing.fieldName,
+      );
+      await client.updateField({
+        tableId: table.tableId,
+        fieldId: repair.fieldId,
+        field: repair.field,
+      });
+      const verifiedField = await waitForLarkSelectOptionRepair({
+        client,
+        tableId: table.tableId,
+        beforeField: existing,
+        repair,
+      });
+      const afterRecords = await client.listRecords({
+        tableId: table.tableId,
+        pageSize: 500,
+      });
+      const afterValueFingerprint = larkFieldValueFingerprint(
+        afterRecords,
+        existing.fieldName,
+      );
+      if (beforeValueFingerprint !== afterValueFingerprint) {
+        throw failure(
+          'WooCommerce Lark Select option repair changed existing Record values',
+          'WOOCOMMERCE_FINAL_LARK_SELECT_RECORD_DRIFT',
+          {
+            tableKey: contract.tableKey,
+            fieldName: existing.fieldName,
+            beforeRecordCount: beforeRecords.length,
+            afterRecordCount: afterRecords.length,
+          },
+        );
+      }
+      byField.set(field.fieldName, verifiedField);
+      updatedFields += 1;
+      addedSelectOptions += repair.addedOptionNames.length;
+      recordValueVerifications += 1;
     }
     tableIds[contract.tableKey] = table.tableId;
   }
   if (new Set(Object.values(tableIds)).size !== contracts.length) {
     throw failure('WooCommerce Lark table IDs are not unique', 'WOOCOMMERCE_FINAL_LARK_TABLE_DUPLICATE');
   }
-  return Object.freeze({ tableCount: contracts.length, tableIds: Object.freeze(tableIds), createdTables, createdFields });
+  return Object.freeze({
+    tableCount: contracts.length,
+    tableIds: Object.freeze(tableIds),
+    createdTables,
+    createdFields,
+    updatedFields,
+    addedSelectOptions,
+    recordValueVerifications,
+  });
 }
 
 async function backupD1(currentTarget) {
@@ -478,7 +545,22 @@ async function pollCompletion(operationId, fullReconciliation) {
   let snapshot = null;
   for (let attempt = 0; attempt < maxPolls; attempt += 1) {
     snapshot = await readSnapshot(operationId);
-    if (classifyWooCommerceFinalCompletion(snapshot, { fullReconciliation }).complete) return snapshot;
+    const classification = classifyWooCommerceFinalCompletion(snapshot, { fullReconciliation });
+    if (classification.complete) return snapshot;
+    if (classification.terminalFailure) {
+      throw failure(
+        'WooCommerce operation reached a permanent terminal failure',
+        'WOOCOMMERCE_FINAL_OPERATION_TERMINAL_FAILURE',
+        {
+          operationId,
+          syncRunStatus: snapshot.syncRunStatus,
+          syncRunErrorCode: snapshot.syncRunErrorCode,
+          workLifecycleStatus: snapshot.workLifecycleStatus,
+          activeLockCount: snapshot.activeLockCount,
+          queueOperationAttempts: snapshot.queueOperationAttempts,
+        },
+      );
+    }
     if (attempt + 1 < maxPolls) await sleep(intervalMs);
   }
   throw failure('WooCommerce operation did not complete within bounded verification', 'WOOCOMMERCE_FINAL_VERIFY_TIMEOUT', { operationId, snapshot });
@@ -648,6 +730,37 @@ function extractVersionId(output) {
   return values[0];
 }
 function normalizeLarkScalar(value) { if (Array.isArray(value)) return value.length === 1 ? normalizeLarkScalar(value[0]) : null; if (value && typeof value === 'object') return value.text ?? value.value ?? null; return value === null || value === undefined ? null : String(value); }
+async function waitForLarkSelectOptionRepair(input) {
+  let lastError = null;
+  for (const delayMs of LARK_SCHEMA_VERIFY_DELAYS_MS) {
+    if (delayMs > 0) await sleep(delayMs);
+    const fields = await input.client.listFields({ tableId: input.tableId });
+    const afterField = fields.find((field) => field.fieldId === input.beforeField.fieldId);
+    if (!afterField) continue;
+    try {
+      verifyWooCommerceLarkSelectOptionRepair({
+        beforeField: input.beforeField,
+        afterField,
+        repair: input.repair,
+      });
+      return afterField;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError ?? failure(
+    'WooCommerce Lark Select option repair Field disappeared',
+    'WOOCOMMERCE_FINAL_LARK_SELECT_REPAIR_VERIFY_FAILED',
+  );
+}
+function larkFieldValueFingerprint(records, fieldName) {
+  const rows = records.map((record) => [
+    record.recordId ?? record.record_id ?? null,
+    Object.hasOwn(record.fields ?? {}, fieldName),
+    record.fields?.[fieldName] ?? null,
+  ]).sort((left, right) => String(left[0]).localeCompare(String(right[0])));
+  return sha256(JSON.stringify(rows));
+}
 function booleanLike(value) { return value === true || value === 1 || String(value ?? '').trim().toLowerCase() === 'true'; }
 function walk(value, callback) { callback(value); if (Array.isArray(value)) for (const item of value) walk(item, callback); else if (value && typeof value === 'object') for (const nested of Object.values(value)) walk(nested, callback); }
 function resolveRepositoryFile(value) { const path = resolve(repositoryRoot, required(value, 'config path')); if (!path.startsWith(`${repositoryRoot}/`) && path !== repositoryRoot) throw failure('Config path must be inside Repository', 'WOOCOMMERCE_FINAL_PATH_INVALID'); return path; }

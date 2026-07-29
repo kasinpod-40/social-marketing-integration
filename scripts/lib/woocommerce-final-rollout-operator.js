@@ -21,8 +21,23 @@ export const WOOCOMMERCE_FINAL_FLAGS = Object.freeze([
   'MKT_WOOCOMMERCE_FULL_RECONCILIATION_ENABLED',
   'MKT_SCHEDULE_WOOCOMMERCE_ENABLED',
 ]);
+export const WOOCOMMERCE_ORDER_STATUS_OPTIONS = Object.freeze([
+  'pending',
+  'processing',
+  'on-hold',
+  'completed',
+  'cancelled',
+  'refunded',
+  'failed',
+  'trash',
+  'unknown',
+]);
 
 const ENABLED_FLAG = /^MKT_[A-Z0-9_]+_ENABLED$/u;
+const EXACT_RESUME_ERROR_CODES = new Set([
+  'WOOCOMMERCE_D1_READ_FAILED',
+  'LARK_PREFLIGHT_FAILED',
+]);
 const TABLE_BINDINGS = Object.freeze([
   tableBinding('rawCommerceStores', 'RAW_Commerce_Stores', 'raw_commerce_stores'),
   tableBinding('rawCommerceOrders', 'RAW_Commerce_Orders', 'raw_commerce_orders'),
@@ -72,12 +87,115 @@ export function createWooCommerceLarkSchemaContract() {
       ...binding,
       envName: LARK_TABLE_ENV[binding.tableKey],
       keyField: d1.keyField,
-      fields: Object.freeze(columns.map((fieldName) => Object.freeze({
+      fields: Object.freeze(columns.map((fieldName) => createLarkFieldContract(
+        binding,
         fieldName,
-        type: inferLarkFieldType(fieldName, fieldName === d1.keyField),
-      }))),
+        fieldName === d1.keyField,
+      ))),
     });
   }));
+}
+
+export function buildWooCommerceLarkSelectOptionRepair(input = {}) {
+  const contractField = requireObject(input.contractField, 'contractField');
+  const liveField = requireObject(input.liveField, 'liveField');
+  const contractOptions = normalizeSelectOptions(contractField.property?.options);
+  if (contractOptions.length === 0) return null;
+
+  const liveType = Number(liveField.type);
+  const contractType = Number(contractField.type);
+  if (liveType === 1) {
+    // Existing Text fields already accept extensible WooCommerce status values.
+    // Do not perform an in-place type conversion on populated tenant data.
+    return null;
+  }
+  if (liveType !== contractType || contractType !== 3) {
+    throw operatorError(
+      'WooCommerce Lark Select field type is incompatible with the additive contract',
+      'WOOCOMMERCE_FINAL_LARK_SELECT_TYPE_INVALID',
+      {
+        fieldName: contractField.fieldName,
+        expectedType: contractType,
+        observedType: liveType,
+      },
+    );
+  }
+
+  const liveOptions = normalizeSelectOptions(liveField.property?.options);
+  const liveNames = new Set(liveOptions.map((option) => option.name));
+  const missing = contractOptions.filter((option) => !liveNames.has(option.name));
+  if (missing.length === 0) return null;
+
+  const merged = [
+    ...liveOptions,
+    ...missing.map((option, index) => Object.freeze({
+      name: option.name,
+      color: option.color ?? (liveOptions.length + index) % 8,
+    })),
+  ];
+  return Object.freeze({
+    fieldId: requireText(liveField.fieldId, 'liveField.fieldId'),
+    field: Object.freeze({
+      fieldName: requireText(liveField.fieldName, 'liveField.fieldName'),
+      type: liveType,
+      ...(optionalText(liveField.uiType) ? { uiType: liveField.uiType.trim() } : {}),
+      ...(optionalText(liveField.description)
+        ? { description: liveField.description.trim() }
+        : {}),
+      property: Object.freeze({
+        ...(liveField.property && typeof liveField.property === 'object'
+          && !Array.isArray(liveField.property)
+          ? structuredClone(liveField.property)
+          : {}),
+        options: Object.freeze(merged),
+      }),
+    }),
+    addedOptionNames: Object.freeze(missing.map((option) => option.name)),
+    existingOptionNames: Object.freeze(liveOptions.map((option) => option.name)),
+  });
+}
+
+export function verifyWooCommerceLarkSelectOptionRepair(input = {}) {
+  const beforeField = requireObject(input.beforeField, 'beforeField');
+  const afterField = requireObject(input.afterField, 'afterField');
+  const repair = requireObject(input.repair, 'repair');
+  const beforeNames = normalizeSelectOptions(beforeField.property?.options)
+    .map((option) => option.name);
+  const beforeOptions = normalizeSelectOptions(beforeField.property?.options);
+  const afterOptions = normalizeSelectOptions(afterField.property?.options);
+  const afterNames = afterOptions.map((option) => option.name);
+  const afterSet = new Set(afterNames);
+  const afterByName = new Map(afterOptions.map((option) => [option.name, option]));
+  const requiredNames = [
+    ...beforeNames,
+    ...repair.addedOptionNames,
+  ];
+  const accepted = afterField.fieldId === beforeField.fieldId
+    && Number(afterField.type) === Number(beforeField.type)
+    && afterNames.length >= beforeNames.length
+    && requiredNames.every((name) => afterSet.has(name))
+    && beforeOptions.every((option) => (
+      !option.id || afterByName.get(option.name)?.id === option.id
+    ));
+  if (!accepted) {
+    throw operatorError(
+      'WooCommerce Lark Select option repair did not converge',
+      'WOOCOMMERCE_FINAL_LARK_SELECT_REPAIR_VERIFY_FAILED',
+      {
+        fieldName: beforeField.fieldName,
+        beforeOptionCount: beforeNames.length,
+        afterOptionCount: afterNames.length,
+        expectedAddedOptionCount: repair.addedOptionNames.length,
+      },
+    );
+  }
+  return Object.freeze({
+    accepted: true,
+    fieldIdPreserved: true,
+    existingOptionIdsPreserved: true,
+    existingOptionsPreserved: true,
+    addedOptionCount: repair.addedOptionNames.length,
+  });
 }
 
 export function buildWooCommerceConfigWindows(input = {}) {
@@ -143,6 +261,7 @@ export function buildWooCommerceFinalSnapshotSql(input = {}) {
       (SELECT status FROM sync_runs WHERE sync_run_id = ${syncRunId}) AS sync_run_status,
       (SELECT finished_at FROM sync_runs WHERE sync_run_id = ${syncRunId}) AS sync_run_finished_at,
       (SELECT error_code FROM sync_runs WHERE sync_run_id = ${syncRunId}) AS sync_run_error_code,
+      (SELECT json_extract(details_json, '$.retryable') FROM sync_runs WHERE sync_run_id = ${syncRunId}) AS sync_run_retryable,
       (SELECT lifecycle_status FROM sync_work_runs WHERE work_key = ${workKey}) AS work_lifecycle_status,
       (SELECT generation FROM sync_work_runs WHERE work_key = ${workKey}) AS work_generation,
       (SELECT requested_at FROM sync_work_runs WHERE work_key = ${workKey}) AS work_requested_at,
@@ -180,6 +299,9 @@ export function normalizeWooCommerceFinalSnapshot(value = {}) {
     syncRunErrorCode: optionalText(
       value.sync_run_error_code ?? value.syncRunErrorCode,
     ),
+    syncRunRetryable: nullableBoolean(
+      value.sync_run_retryable ?? value.syncRunRetryable,
+    ),
     workLifecycleStatus: optionalText(
       value.work_lifecycle_status ?? value.workLifecycleStatus,
     ),
@@ -211,6 +333,7 @@ export function isWooCommerceExactContinuationSnapshotEmpty(value = {}) {
   return snapshot.syncRunStatus === null
     && snapshot.syncRunFinishedAt === null
     && snapshot.syncRunErrorCode === null
+    && snapshot.syncRunRetryable === null
     && snapshot.workLifecycleStatus === null
     && snapshot.workGeneration === null
     && snapshot.workRequestedAt === null
@@ -241,7 +364,7 @@ export function selectWooCommerceFullOperation(input = {}) {
     && snapshot.workRequestedAt === requestedAt;
   const partialRows = Object.values(snapshot.counts).reduce((sum, value) => sum + value, 0);
   if (snapshot.syncRunStatus !== 'failed'
-    || snapshot.syncRunErrorCode !== 'WOOCOMMERCE_D1_READ_FAILED'
+    || !EXACT_RESUME_ERROR_CODES.has(snapshot.syncRunErrorCode)
     || snapshot.workLifecycleStatus !== 'active'
     || snapshot.workCompletedAt !== null
     || snapshot.phaseComplete
@@ -293,7 +416,19 @@ export function classifyWooCommerceFinalCompletion(snapshotInput, options = {}) 
     && Number(state.datasetIndex ?? -1) === 6
     && Number(state.counts?.failedRows ?? -1) === 0
     && datasetsComplete;
-  return Object.freeze({ complete, snapshot, reason: complete ? 'woocommerce_complete' : 'incomplete_or_invalid' });
+  const terminalFailure = snapshot.syncRunStatus === 'failed'
+    && snapshot.syncRunFinishedAt !== null
+    && snapshot.syncRunErrorCode !== null
+    && snapshot.syncRunRetryable === false
+    && snapshot.activeLockCount === 0;
+  return Object.freeze({
+    complete,
+    terminalFailure,
+    snapshot,
+    reason: complete
+      ? 'woocommerce_complete'
+      : (terminalFailure ? 'woocommerce_terminal_failure' : 'incomplete_or_invalid'),
+  });
 }
 
 export function compareWooCommerceRerun(beforeInput, afterInput) {
@@ -335,11 +470,42 @@ export function sha256(value) { return createHash('sha256').update(value).digest
 export function listWooCommerceTableBindings() { return TABLE_BINDINGS; }
 
 function tableBinding(tableKey, tableName, d1Table) { return Object.freeze({ tableKey, tableName, d1Table }); }
-function inferLarkFieldType(fieldName, primary) {
-  if (primary) return 1;
-  return /(?:_at|_micros|_count|_quantity|_rows|_order|_decimals|_attempts)$/u.test(fieldName)
+function createLarkFieldContract(binding, fieldName, primary) {
+  if (binding.tableKey === 'mktCommerceOrders' && fieldName === 'status') {
+    return Object.freeze({
+      fieldName,
+      type: 3,
+      uiType: 'SingleSelect',
+      property: Object.freeze({
+        options: Object.freeze(WOOCOMMERCE_ORDER_STATUS_OPTIONS.map(
+          (name, index) => Object.freeze({ name, color: index % 8 }),
+        )),
+      }),
+    });
+  }
+  const type = primary
+    ? 1
+    : (/(?:_at|_micros|_count|_quantity|_rows|_order|_decimals|_attempts)$/u.test(fieldName)
     || new Set(['quantity', 'manage_stock', 'individual_use', 'free_shipping', 'menu_order', 'product_count', 'recognized_orders', 'provisional_orders', 'cancelled_orders', 'failed_orders', 'refunded_orders']).has(fieldName)
-    ? 2 : 1;
+      ? 2 : 1);
+  return Object.freeze({ fieldName, type });
+}
+function normalizeSelectOptions(value) {
+  if (!Array.isArray(value)) return [];
+  const names = new Set();
+  const options = [];
+  for (const item of value) {
+    const name = optionalText(item?.name);
+    if (!name || names.has(name)) continue;
+    names.add(name);
+    const color = Number(item?.color);
+    options.push(Object.freeze({
+      name,
+      ...(optionalText(item?.id) ? { id: optionalText(item.id) } : {}),
+      ...(Number.isSafeInteger(color) && color >= 0 ? { color } : {}),
+    }));
+  }
+  return options;
 }
 function parseWooCommerceConfig(text) {
   try {
@@ -371,6 +537,12 @@ function requireOperationId(value) { const text = requireText(value, 'operationI
 function requireTimestamp(value, fieldName) { const number = typeof value === 'number' ? value : Date.parse(value); if (!Number.isSafeInteger(number) || number < Date.UTC(2020, 0, 1)) throw operatorError(`${fieldName} is invalid`, 'WOOCOMMERCE_FINAL_TIMESTAMP_INVALID'); return number; }
 function count(value) { const number = Number(value ?? 0); if (!Number.isSafeInteger(number) || number < 0) throw operatorError('WooCommerce count is invalid', 'WOOCOMMERCE_FINAL_COUNT_INVALID'); return number; }
 function nullableNumber(value) { if (value === null || value === undefined || value === '') return null; const number = Number(value); return Number.isFinite(number) ? number : null; }
+function nullableBoolean(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (value === true || value === 1 || value === '1' || String(value).toLowerCase() === 'true') return true;
+  if (value === false || value === 0 || value === '0' || String(value).toLowerCase() === 'false') return false;
+  return null;
+}
 function optionalText(value) { if (value === null || value === undefined || value === '') return null; return String(value); }
 function parseNullableJson(value) { if (value === null || value === undefined || value === '') return null; if (typeof value === 'object') return value; try { return JSON.parse(String(value)); } catch { throw operatorError('WooCommerce evidence JSON is invalid', 'WOOCOMMERCE_FINAL_JSON_INVALID'); } }
 function requireObject(value, fieldName) { if (!value || typeof value !== 'object' || Array.isArray(value)) throw operatorError(`${fieldName} must be an object`, 'WOOCOMMERCE_FINAL_CONTRACT_INVALID'); return value; }
