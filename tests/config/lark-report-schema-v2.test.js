@@ -21,15 +21,27 @@ test('multichannel Lark schema includes Top Ads and platform-neutral options', (
   const settingsPlatforms = settingsTable.fields.find((field) => field.fieldName === 'platforms');
   assert.deepEqual(settingsPlatforms.property.options.map((option) => option.name), [
     'facebook', 'instagram', 'tiktok', 'youtube', 'meta_ads', 'google_ads', 'tiktok_ads',
+    'woocommerce',
   ]);
   const topAdsLimit = settingsTable.fields.find((field) => field.fieldName === 'top_ads_limit');
   assert.ok(topAdsLimit);
   assert.equal(topAdsLimit.type, 2);
 
+  const snapshotTable = LARK_REPORT_SCHEMA_V2.find((table) => table.key === 'mktReportSnapshots');
+  const snapshotPlatform = snapshotTable.fields.find((field) => field.fieldName === 'platform');
+  assert.equal(snapshotPlatform.property.options.some((option) => option.name === 'woocommerce'), true);
+
   const metricTable = LARK_REPORT_SCHEMA_V2.find((table) => table.key === 'mktReportMetricValues');
   const metricPlatform = metricTable.fields.find((field) => field.fieldName === 'platform');
   assert.equal(metricPlatform.property.options.some((option) => option.name === 'youtube'), true);
   assert.equal(metricPlatform.property.options.some((option) => option.name === 'google_ads'), true);
+  assert.equal(metricPlatform.property.options.some((option) => option.name === 'woocommerce'), true);
   const statusField = metricTable.fields.find((field) => field.fieldName === 'data_status');
   assert.equal(statusField.property.options.some((option) => option.name === 'source_unavailable'), true);
+
+  const topContent = LARK_REPORT_SCHEMA_V2.find((table) => table.key === 'mktReportTopContent');
+  const topContentPlatform = topContent.fields.find((field) => field.fieldName === 'platform');
+  assert.deepEqual(topContentPlatform.property.options.map((option) => option.name), [
+    'facebook', 'instagram', 'tiktok', 'youtube',
+  ]);
 });

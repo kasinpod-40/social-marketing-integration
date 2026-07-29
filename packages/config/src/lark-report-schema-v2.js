@@ -8,7 +8,9 @@ import {
 } from './lark-report-materialization-schema.js';
 
 const PLATFORM_OPTIONS = LARK_REPORT_MATERIALIZATION_SCHEMA.sharedOptionExtensions.platforms;
-const ORGANIC_OPTIONS = PLATFORM_OPTIONS.filter((value) => !value.endsWith('_ads'));
+const ORGANIC_OPTIONS = PLATFORM_OPTIONS.filter(
+  (value) => !value.endsWith('_ads') && value !== 'woocommerce',
+);
 const DATA_STATUS_OPTIONS = LARK_REPORT_MATERIALIZATION_SCHEMA.sharedOptionExtensions.dataStatuses;
 const EXTENDED_TABLE_KEYS = new Set([
   'mktReportSettings',

@@ -64,12 +64,81 @@ export function assertReportSchemaPreviewSafe(preview, options = {}) {
     throw failure('Report schema preview is not safe to apply', 'REPORT_RUNTIME_FINALIZE_SCHEMA_PREVIEW_UNSAFE', {
       readyToApply: preview.readyToApply === true,
       conflictCount: Array.isArray(preview.conflicts) ? preview.conflicts.length : null,
+      conflicts: safeSchemaConflicts(preview.conflicts),
     });
   }
   if (options.requireClean === true && Array.isArray(preview.actions) && preview.actions.length !== 0) {
     throw failure('Report schema read-back still contains write actions', 'REPORT_RUNTIME_FINALIZE_SCHEMA_READBACK_DIRTY', {
       actionCount: preview.actions.length,
     });
+  }
+  return true;
+}
+
+export function assertReportSchemaConflictRepairPreviewSafe(preview, expectedConflictCount) {
+  if (!preview || preview.ok !== true || preview.mode !== 'preview') {
+    throw failure(
+      'Report schema conflict recovery preview is invalid',
+      'REPORT_RUNTIME_FINALIZE_CONFLICT_RECOVERY_PREVIEW_INVALID',
+    );
+  }
+  const expected = Number(expectedConflictCount);
+  const actual = Number(preview.conflictCount);
+  if (!Number.isSafeInteger(expected) || expected <= 0 || actual !== expected) {
+    throw failure(
+      'Report schema conflict recovery preview does not match the schema preview',
+      'REPORT_RUNTIME_FINALIZE_CONFLICT_RECOVERY_SCOPE_MISMATCH',
+      { expectedConflictCount: expectedConflictCount ?? null, actualConflictCount: preview.conflictCount ?? null },
+    );
+  }
+  if (preview.repairable !== true
+    || Number(preview.repairConflictCount ?? 0) !== expected
+    || Number(preview.repairActionCount ?? 0) < expected
+    || Number(preview.blockerCount ?? 0) !== 0
+    || Number(preview.remoteMutationCount ?? 0) !== 0
+    || Number(preview.businessValueMutationCount ?? 0) !== 0
+    || Number(preview.deleteCount ?? 0) !== 0) {
+    throw failure(
+      'Report schema conflicts cannot be repaired within the empty-field safety boundary',
+      'REPORT_RUNTIME_FINALIZE_CONFLICT_RECOVERY_UNSAFE',
+      {
+        conflictCount: preview.conflictCount ?? null,
+        repairConflictCount: preview.repairConflictCount ?? null,
+        repairActionCount: preview.repairActionCount ?? null,
+        blockerCount: preview.blockerCount ?? null,
+        blockers: preview.blockers ?? [],
+      },
+    );
+  }
+  return true;
+}
+
+export function assertReportSchemaConflictRepairApplySafe(result, expectedConflictCount) {
+  if (!result || result.ok !== true || result.mode !== 'apply') {
+    throw failure(
+      'Report schema conflict recovery apply result is invalid',
+      'REPORT_RUNTIME_FINALIZE_CONFLICT_RECOVERY_APPLY_INVALID',
+    );
+  }
+  const expected = Number(expectedConflictCount);
+  if (Number(result.conflictCount) !== expected
+    || Number(result.repairedConflictCount) !== expected
+    || Number(result.appliedRepairCount ?? 0) < expected
+    || Number(result.remainingConflictCount ?? -1) !== 0
+    || Number(result.businessValueMutationCount ?? -1) !== 0
+    || Number(result.deleteCount ?? -1) !== 0
+    || Number(result.remoteMutationCount ?? 0) !== Number(result.appliedRepairCount ?? -1)) {
+    throw failure(
+      'Report schema conflict recovery did not verify a safe zero-conflict result',
+      'REPORT_RUNTIME_FINALIZE_CONFLICT_RECOVERY_APPLY_UNSAFE',
+      {
+        expectedConflictCount: expected,
+        conflictCount: result.conflictCount ?? null,
+        repairedConflictCount: result.repairedConflictCount ?? null,
+        appliedRepairCount: result.appliedRepairCount ?? null,
+        remainingConflictCount: result.remainingConflictCount ?? null,
+      },
+    );
   }
   return true;
 }
@@ -126,6 +195,17 @@ export function safeReportRuntimeFinalizeEvidence(value) {
     output[key] = safeReportRuntimeFinalizeEvidence(nested);
   }
   return output;
+}
+
+function safeSchemaConflicts(conflicts) {
+  if (!Array.isArray(conflicts)) return [];
+  return conflicts.map((conflict) => Object.freeze({
+    code: conflict?.code ?? null,
+    tableKey: conflict?.tableKey ?? null,
+    fieldName: conflict?.fieldName ?? null,
+    expectedType: conflict?.expectedType ?? null,
+    actualType: conflict?.actualType ?? null,
+  }));
 }
 
 function readBoolean(value) {
