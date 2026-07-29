@@ -5,17 +5,17 @@ import { parseJsoncObject } from '../../scripts/lib/chatwoot-safe-wrangler-confi
 import {
   WOOCOMMERCE_PROVIDER_DIAGNOSTICS_FLAG,
   WOOCOMMERCE_PROVIDER_DIAGNOSTICS_TOKEN_SHA256_ENV,
+  WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_VERSION_METADATA_BINDING,
   buildWooCommerceWorkerProviderDiagnosticConfigs,
   parseWooCommerceWorkerSecretNames,
   validateWooCommerceWorkerProviderDiagnosticResponse,
 } from '../../scripts/lib/woocommerce-worker-provider-diagnostics.js';
 
 const TOKEN_SHA256 = 'a'.repeat(64);
-const CONFIG = JSON.stringify({
+const CONFIG_OBJECT = {
   name: 'social-mkt-sync-worker',
   main: 'apps/sync-worker/src/index.js',
   compatibility_date: '2026-07-01',
-  version_metadata: { binding: 'CF_VERSION_METADATA' },
   vars: {
     MKT_ENV: 'development',
     MKT_CUSTOMER_PROFILE: 'integration_workspace',
@@ -28,14 +28,19 @@ const CONFIG = JSON.stringify({
     MKT_TIKTOK_AUDIT_HTTP_ENABLED: 'true',
     [WOOCOMMERCE_PROVIDER_DIAGNOSTICS_TOKEN_SHA256_ENV]: 'b'.repeat(64),
   },
-}, null, 2);
+};
+const CONFIG = JSON.stringify(CONFIG_OBJECT, null, 2);
 
-test('builds one ephemeral-auth diagnostic config and one all-false Safe config', () => {
-  const result = buildWooCommerceWorkerProviderDiagnosticConfigs(CONFIG, {
+function build(sourceText = CONFIG) {
+  return buildWooCommerceWorkerProviderDiagnosticConfigs(sourceText, {
     repositoryRoot: '/repo',
     sourceConfigPath: 'wrangler.sync.jsonc',
     diagnosticTokenSha256: TOKEN_SHA256,
   });
+}
+
+test('builds one ephemeral-auth diagnostic config and one all-false Safe config', () => {
+  const result = build();
   const safe = parseJsoncObject(result.safe);
   const active = parseJsoncObject(result.active);
 
@@ -59,6 +64,44 @@ test('builds one ephemeral-auth diagnostic config and one all-false Safe config'
   assert.equal(result.secretValuesCopied, 0);
   assert.equal(result.active.includes('ck_'), false);
   assert.equal(result.active.includes('cs_'), false);
+});
+
+test('materializes exact Worker version metadata in both generated configs when source omits it', () => {
+  const result = build();
+  const safe = parseJsoncObject(result.safe);
+  const active = parseJsoncObject(result.active);
+
+  assert.equal(
+    result.runtimeVersionMetadataBinding,
+    WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_VERSION_METADATA_BINDING,
+  );
+  assert.deepEqual(safe.version_metadata, {
+    binding: WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_VERSION_METADATA_BINDING,
+  });
+  assert.deepEqual(active.version_metadata, {
+    binding: WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_VERSION_METADATA_BINDING,
+  });
+});
+
+test('accepts the exact existing version metadata binding and rejects a conflicting binding', () => {
+  const exact = build(JSON.stringify({
+    ...CONFIG_OBJECT,
+    version_metadata: {
+      binding: WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_VERSION_METADATA_BINDING,
+    },
+  }));
+  assert.equal(
+    parseJsoncObject(exact.active).version_metadata.binding,
+    WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_VERSION_METADATA_BINDING,
+  );
+
+  assert.throws(
+    () => build(JSON.stringify({
+      ...CONFIG_OBJECT,
+      version_metadata: { binding: 'OTHER_VERSION_METADATA' },
+    })),
+    (error) => error?.code === 'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_VERSION_METADATA_INVALID',
+  );
 });
 
 test('requires only WooCommerce Worker Secret names without reading their values', () => {
