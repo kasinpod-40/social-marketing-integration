@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { resolve } from 'node:path';
 import {
   WORKER_VERSION_METADATA_BINDING,
 } from '../../packages/shared/src/cloudflare/worker-version.js';
@@ -22,6 +23,8 @@ export const WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_REQUIRED_SECRETS = Object.f
 ]);
 export const WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_VERSION_METADATA_BINDING =
   WORKER_VERSION_METADATA_BINDING;
+export const WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_PREVIEW_ENTRYPOINT =
+  'apps/sync-worker/src/woocommerce-provider-diagnostics-entry.js';
 export {
   WOOCOMMERCE_PROVIDER_DIAGNOSTICS_ATTESTATION_ENV,
   WOOCOMMERCE_PROVIDER_DIAGNOSTICS_ATTESTATION_HEADER,
@@ -33,12 +36,28 @@ export {
 const EXECUTION_FLAG_PATTERN = /^MKT_[A-Z0-9_]+_ENABLED$/u;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
 const ALLOWED_HTTP_STATUSES = new Set([200, 422]);
+const PREVIEW_FORBIDDEN_KEYS = Object.freeze([
+  'routes',
+  'route',
+  'triggers',
+  'queues',
+  'd1_databases',
+  'durable_objects',
+  'kv_namespaces',
+  'r2_buckets',
+  'services',
+  'workflows',
+  'analytics_engine_datasets',
+  'assets',
+]);
 
-/** Build exact Safe and diagnostic-only configs from the same source contract as Final rollout. */
+/** Build isolated Safe and diagnostic-only Preview Version configs without Production deployment. */
 export function buildWooCommerceWorkerProviderDiagnosticConfigs(sourceText, input = {}) {
+  const repositoryRoot = requireText(input.repositoryRoot, 'repositoryRoot');
+  const sourceConfigPath = requireText(input.sourceConfigPath, 'sourceConfigPath');
   const source = buildWooCommerceFinalSourceConfig(sourceText, {
-    repositoryRoot: requireText(input.repositoryRoot, 'repositoryRoot'),
-    sourceConfigPath: requireText(input.sourceConfigPath, 'sourceConfigPath'),
+    repositoryRoot,
+    sourceConfigPath,
   });
   const diagnosticTokenSha256 = requireSha256(
     input.diagnosticTokenSha256
@@ -54,9 +73,18 @@ export function buildWooCommerceWorkerProviderDiagnosticConfigs(sourceText, inpu
     );
   }
 
-  const config = parseJsoncObject(source.text);
-  const vars = requireObject(config.vars, 'vars');
-  const versionMetadata = materializeVersionMetadata(config.version_metadata);
+  const sourceConfig = parseJsoncObject(source.text);
+  const vars = requireObject(sourceConfig.vars, 'vars');
+  const versionMetadata = materializeVersionMetadata(sourceConfig.version_metadata);
+  const previewEntrypoint = resolve(
+    repositoryRoot,
+    input.previewEntrypointPath ?? WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_PREVIEW_ENTRYPOINT,
+  );
+  const previewBase = materializeIsolatedPreviewConfig(sourceConfig, {
+    previewEntrypoint,
+    versionMetadata,
+  });
+
   const safeVars = closeExecutionFlags(vars);
   safeVars[WOOCOMMERCE_PROVIDER_DIAGNOSTICS_FLAG] = 'false';
   safeVars[WOOCOMMERCE_PROVIDER_DIAGNOSTICS_ATTESTATION_ENV] = safeAttestation;
@@ -68,26 +96,30 @@ export function buildWooCommerceWorkerProviderDiagnosticConfigs(sourceText, inpu
     [WOOCOMMERCE_PROVIDER_DIAGNOSTICS_ATTESTATION_ENV]: activeAttestation,
   };
 
-  const safe = serialize({ ...config, version_metadata: versionMetadata, vars: safeVars });
-  const active = serialize({ ...config, version_metadata: versionMetadata, vars: activeVars });
+  const safe = serialize({ ...previewBase, vars: safeVars });
+  const active = serialize({ ...previewBase, vars: activeVars });
+  const safeParsed = parseJsoncObject(safe);
+  const activeParsed = parseJsoncObject(active);
   const safeTrueFlags = readTrueFlags(safe);
   const activeTrueFlags = readTrueFlags(active);
   assertExactList(safeTrueFlags, [], 'safeTrueFlags');
   assertExactList(activeTrueFlags, [WOOCOMMERCE_PROVIDER_DIAGNOSTICS_FLAG], 'activeTrueFlags');
-  assertVersionMetadataBinding(parseJsoncObject(safe).version_metadata);
-  assertVersionMetadataBinding(parseJsoncObject(active).version_metadata);
-  assertConfigAttestation(parseJsoncObject(safe).vars, safeAttestation);
-  assertConfigAttestation(parseJsoncObject(active).vars, activeAttestation);
+  assertVersionMetadataBinding(safeParsed.version_metadata);
+  assertVersionMetadataBinding(activeParsed.version_metadata);
+  assertConfigAttestation(safeParsed.vars, safeAttestation);
+  assertConfigAttestation(activeParsed.vars, activeAttestation);
+  assertPreviewIsolation(safeParsed, previewEntrypoint);
+  assertPreviewIsolation(activeParsed, previewEntrypoint);
 
-  const origin = requireHttpsOrigin(activeVars.MKT_CONNECTION_PUBLIC_ORIGIN);
   return Object.freeze({
     safe,
     active,
     safeSha256: sha256(safe),
     activeSha256: sha256(active),
     bundleSourceSha256: source.sha256,
-    origin,
     pathname: WOOCOMMERCE_PROVIDER_DIAGNOSTICS_PATH,
+    workerName: previewBase.name,
+    previewEntrypoint,
     safeTrueFlags: Object.freeze(safeTrueFlags),
     activeTrueFlags: Object.freeze(activeTrueFlags),
     safeAttestation,
@@ -95,6 +127,9 @@ export function buildWooCommerceWorkerProviderDiagnosticConfigs(sourceText, inpu
     runtimeVersionMetadataBinding: WORKER_VERSION_METADATA_BINDING,
     ephemeralAuthDigestConfigured: true,
     deploymentAttestationConfigured: true,
+    previewUrlsEnabled: true,
+    productionRoutesCopied: 0,
+    productionBindingsCopied: 0,
     secretValuesCopied: source.secretValuesCopied,
   });
 }
@@ -174,10 +209,16 @@ export function validateWooCommerceWorkerProviderDiagnosticResponse(status, body
     );
   }
   if (Number(status) === 200 && body.ok !== true) {
-    throw diagnosticError('WooCommerce diagnostics success response is invalid', 'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_RESPONSE_INVALID');
+    throw diagnosticError(
+      'WooCommerce diagnostics success response is invalid',
+      'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_RESPONSE_INVALID',
+    );
   }
   if (Number(status) === 422 && (body.ok !== false || body.code !== 'WOOCOMMERCE_INVALID_JSON')) {
-    throw diagnosticError('WooCommerce invalid-JSON response is invalid', 'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_RESPONSE_INVALID');
+    throw diagnosticError(
+      'WooCommerce invalid-JSON response is invalid',
+      'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_RESPONSE_INVALID',
+    );
   }
   return Object.freeze(body);
 }
@@ -190,7 +231,7 @@ export function validateWooCommerceDiagnosticsAttestation(response, expectedInpu
   const observed = SHA256_PATTERN.test(observedRaw ?? '') ? observedRaw.toLowerCase() : null;
   if (observed !== expected) {
     throw diagnosticError(
-      'Worker response did not match the generated diagnostic deployment attestation',
+      'Worker response did not match the generated diagnostic Preview Version attestation',
       'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_ATTESTATION_MISMATCH',
       {
         expectedAttestationFingerprint: sha256(expected),
@@ -204,11 +245,62 @@ export function validateWooCommerceDiagnosticsAttestation(response, expectedInpu
         responseCfRayPresent: response instanceof Response
           ? Boolean(response.headers.get('cf-ray'))
           : false,
-        safeCloseRequired: true,
+        previewSafeCloseRequired: true,
       },
     );
   }
   return expected;
+}
+
+function materializeIsolatedPreviewConfig(sourceConfig, input) {
+  const name = requireText(sourceConfig.name, 'name');
+  const compatibilityDate = requireText(sourceConfig.compatibility_date, 'compatibility_date');
+  const compatibilityFlags = Array.isArray(sourceConfig.compatibility_flags)
+    ? [...sourceConfig.compatibility_flags]
+    : [];
+  const output = {
+    name,
+    main: requireText(input.previewEntrypoint, 'previewEntrypoint'),
+    compatibility_date: compatibilityDate,
+    compatibility_flags: compatibilityFlags,
+    workers_dev: false,
+    preview_urls: true,
+    version_metadata: input.versionMetadata,
+    secrets: {
+      required: [...WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_REQUIRED_SECRETS],
+    },
+  };
+  if (sourceConfig.account_id !== undefined) {
+    output.account_id = requireText(sourceConfig.account_id, 'account_id');
+  }
+  return output;
+}
+
+function assertPreviewIsolation(config, expectedEntrypoint) {
+  requireObject(config, 'config');
+  if (config.main !== expectedEntrypoint
+    || config.workers_dev !== false
+    || config.preview_urls !== true) {
+    throw diagnosticError(
+      'WooCommerce diagnostics Preview Version isolation is invalid',
+      'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_PREVIEW_CONFIG_INVALID',
+    );
+  }
+  const forbidden = PREVIEW_FORBIDDEN_KEYS.filter((key) => config[key] !== undefined);
+  if (forbidden.length > 0) {
+    throw diagnosticError(
+      'WooCommerce diagnostics Preview Version contains forbidden Production bindings or routes',
+      'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_PREVIEW_CONFIG_INVALID',
+      { forbidden },
+    );
+  }
+  const requiredSecrets = config.secrets?.required;
+  assertExactList(
+    Array.isArray(requiredSecrets) ? requiredSecrets : [],
+    WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_REQUIRED_SECRETS,
+    'requiredSecrets',
+  );
+  return true;
 }
 
 function closeExecutionFlags(vars) {
@@ -252,7 +344,7 @@ function assertConfigAttestation(varsInput, expected) {
   const vars = requireObject(varsInput, 'vars');
   if (vars[WOOCOMMERCE_PROVIDER_DIAGNOSTICS_ATTESTATION_ENV] !== expected) {
     throw diagnosticError(
-      'WooCommerce diagnostics generated config has an invalid deployment attestation',
+      'WooCommerce diagnostics generated config has an invalid Preview Version attestation',
       'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_ATTESTATION_INVALID',
     );
   }
@@ -276,25 +368,6 @@ function serialize(value) {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
-function requireHttpsOrigin(value) {
-  let url;
-  try {
-    url = new URL(requireText(value, 'MKT_CONNECTION_PUBLIC_ORIGIN'));
-  } catch {
-    throw diagnosticError(
-      'MKT_CONNECTION_PUBLIC_ORIGIN must be an HTTPS origin',
-      'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_ORIGIN_INVALID',
-    );
-  }
-  if (url.protocol !== 'https:' || url.pathname !== '/' || url.search || url.hash || url.username || url.password) {
-    throw diagnosticError(
-      'MKT_CONNECTION_PUBLIC_ORIGIN must be an HTTPS origin',
-      'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_ORIGIN_INVALID',
-    );
-  }
-  return url.origin;
-}
-
 function assertExactList(actual, expected, fieldName) {
   const left = [...actual].sort();
   const right = [...expected].sort();
@@ -309,7 +382,11 @@ function assertExactList(actual, expected, fieldName) {
 
 function requireObject(value, fieldName) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw diagnosticError(`${fieldName} must be an object`, 'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_CONFIG_INVALID', { fieldName });
+    throw diagnosticError(
+      `${fieldName} must be an object`,
+      'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_CONFIG_INVALID',
+      { fieldName },
+    );
   }
   return value;
 }
@@ -317,14 +394,22 @@ function requireObject(value, fieldName) {
 function requireSha256(value, fieldName) {
   const text = requireText(value, fieldName).toLowerCase();
   if (!SHA256_PATTERN.test(text)) {
-    throw diagnosticError(`${fieldName} must be a SHA-256 digest`, 'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_CONFIG_INVALID', { fieldName });
+    throw diagnosticError(
+      `${fieldName} must be a SHA-256 digest`,
+      'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_CONFIG_INVALID',
+      { fieldName },
+    );
   }
   return text;
 }
 
 function requireText(value, fieldName) {
   if (typeof value !== 'string' || value.trim() === '') {
-    throw diagnosticError(`${fieldName} is required`, 'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_CONFIG_INVALID', { fieldName });
+    throw diagnosticError(
+      `${fieldName} is required`,
+      'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_CONFIG_INVALID',
+      { fieldName },
+    );
   }
   return value.trim();
 }
