@@ -15,6 +15,7 @@ import {
   LARK_DASHBOARD_BACKFILL_VERIFICATION_DELAYS_MS,
   LARK_DASHBOARD_BACKFILL_VERIFICATION_MAX_ELAPSED_MS,
   LARK_DASHBOARD_SHARED_DIMENSIONS_BACKFILL_CONFIRMATION,
+  LARK_DASHBOARD_SHARED_DIMENSIONS_BACKFILL_OPERATOR_VERSION,
   assertBoundedMaterializationRows,
   assertLarkDashboardSharedDimensionsBackfillConfirmation,
   buildLarkDashboardSharedDimensionsBackfillSql,
@@ -29,7 +30,7 @@ import {
 
 const execFileAsync = promisify(execFile);
 const repositoryRoot = resolve(process.cwd());
-const OPERATOR_VERSION = 'lark-dashboard-shared-dimensions-backfill-v1.2';
+const OPERATOR_VERSION = LARK_DASHBOARD_SHARED_DIMENSIONS_BACKFILL_OPERATOR_VERSION;
 const REQUIRED_TABLE_KEYS = Object.freeze([
   'mktReportSnapshots',
   'mktReportMetricValues',

@@ -12,6 +12,34 @@ Historical Root Project Brain ก่อน TikTok post-Lark implementation ถ�
 docs/archive/PROJECT_BRAIN-before-tiktok-post-lark-parity-2026-07-26.md
 ```
 
+## Lark Number formatter precision canonicalization — 2026-07-30
+
+Live read-only evidence ยืนยัน `coverage_rate` ครบ 32 Lark rows: exact raw comparison ไม่ตรง
+ทั้ง 32 แต่ตรงทั้งหมดหลังปัดตาม formatter `0.0000`; ไม่มี unit mismatch และ Remote writes เป็น
+zero. Root cause คือ Lark storage/read precision ต่างจาก D1 full-precision Business value
+ขณะที่ `TableSyncEngine` ใช้ exact equality.
+
+Lark serializer canonicalize incoming และ existing Number ด้วย helper เดียวตาม explicit
+formatter precision โดยไม่เพิ่ม global tolerance. Shared formatter normalizer รองรับทั้ง
+official `0`/`0.0`/`0.00`/`0.000`/`0.0000`/`1,000`/`1,000.00` และ spreadsheet aliases
+ที่มี mapping อยู่แล้ว. Unsupported formatter คง exact behavior; null/missing ยังต่างจาก zero
+และ NaN/Infinity fail closed.
+
+PR `#248` Merge source correction หลักบน `main@78aaf14`. Follow-up branch ปิด gap ที่ audit พบ:
+implementation เดิม recognize spreadsheet `#,##0.00` แต่ไม่ recognize official
+`1,000.00` หลัง Shared normalization, และ Backfill operator ยังเป็น v1.2. Operator v1.3
+แยก Recovery evidence โดยไม่เปลี่ยน Apply confirmation, Allowed fields, Stable keys,
+D1 materialization หรือ checksum.
+
+Implementation/CI ไม่มี Backfill Apply, Remote Lark/D1, Worker, Queue/DLQ, Provider, Schedule,
+Secret หรือ Production/UAT action.
+
+รายละเอียด:
+
+```text
+docs/tasks/lark-number-formatter-precision-v1.md
+```
+
 ## WooCommerce diagnostics Queue sentinel — 2026-07-29
 
 Live diagnostics ยืนยันว่า Cloudflare ปฏิเสธทั้ง Active และ automatic Safe Preview Version

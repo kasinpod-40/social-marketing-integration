@@ -1,4 +1,159 @@
-# Current Task — Lark Dashboard Shared Dimensions Backfill Post-Apply Verification Hotfix
+# Current Task — Lark Number Formatter Precision Canonicalization Hotfix
+
+## Authoritative status
+
+```text
+TASK_STATUS                         = REPOSITORY_IMPLEMENTATION_VALIDATED
+CURRENT_PROGRAM                     = LARK_NUMBER_FORMATTER_PRECISION_V1
+INCIDENT_MAIN_SHA                   = 142d742fd27df9fdd1728a371836dd395dcc88ea
+MERGED_SOURCE_FIX                   = PR #248 / 78aaf1416f5f7fc528c0c4bbfc2da409bb169a34
+IMPLEMENTATION_BASE_MAIN_SHA        = 78aaf1416f5f7fc528c0c4bbfc2da409bb169a34
+BRANCH                              = hotfix/lark-number-formatter-precision-v1-followup
+OPERATOR                            = scripts/lark-dashboard-shared-dimensions-backfill.mjs
+OPERATOR_VERSION                    = lark-dashboard-shared-dimensions-backfill-v1.3
+REMOTE_ACTION_DURING_IMPLEMENTATION = NONE
+LARK_APPLY                          = NOT_RUN
+D1_WRITE                            = NONE
+WORKER_DEPLOYMENT                   = NOT_RUN
+QUEUE_MESSAGE                       = NOT_SENT
+PROVIDER_CALL                       = NONE
+SCHEDULE_MUTATION                   = NONE
+PRODUCTION_UAT                      = BLOCKED
+```
+
+ชื่อ branch เดิม `hotfix/lark-number-formatter-precision-v1` ถูกใช้และ Merge ผ่าน PR `#248`
+ระหว่างเริ่มงานแล้ว จึงใช้ follow-up branch จาก Current Remote Main เพื่อไม่แก้ประวัติ branch
+ที่ Merge ไปแล้ว. PR `#248` วาง serializer correction หลัก; workstream นี้ปิด requirements
+ที่ยังขาด ได้แก่ official grouped formatter contract, operator v1.3 และ authoritative docs.
+
+## Objective
+
+หยุด false update ของ Lark Number fields เมื่อ Lark เก็บ/คืนค่าตาม precision ของ formatter
+เช่น `coverage_rate` formatter `0.0000` แต่ D1 materialization เก็บ Business value แบบ
+full precision. Canonicalization ต้องอยู่เฉพาะ Lark serializer/storage-comparison boundary
+และห้ามเพิ่ม global epsilon/tolerance ใน `TableSyncEngine`.
+
+## Confirmed root cause
+
+Live read-only evidence:
+
+```text
+materializations                         2
+matching Lark records                   32
+coverage_rate present                   32/32
+source nonzero                           2/2
+Lark nonzero                            32/32
+exact_equal                              0
+equal_after_formatter_precision         32
+0-1 vs 0-100 unit mismatch               0
+formatter                           0.0000
+Remote writes during diagnostics         0
+```
+
+`serializeNumber()` และ existing Number normalization เดิมคืน raw finite numbers ขณะที่
+`TableSyncEngine` ใช้ exact `Object.is`/deep equality. ตัวอย่าง incoming
+`0.833333333333` จึงต่างจาก Lark `0.8333` ทั้งที่เท่ากันตาม storage formatter.
+
+Source fix ที่ Merge แล้วผ่าน PR `#248` ใช้
+`canonicalizeNumberForLarkFormatter(value, field)` ทั้ง incoming serialization และ existing
+normalization. Follow-up audit พบว่า helper เดิม recognize spreadsheet alias `#,##0.00`
+แต่ไม่ recognize official formatter `1,000.00` ที่ Shared Field contract แปลง alias ไปใช้จริง.
+
+## Canonicalization contract
+
+```text
+0             precision 0
+0.0           precision 1
+0.00          precision 2
+0.000         precision 3
+0.0000        precision 4
+1,000         precision 0
+1,000.00      precision 2
+```
+
+Spreadsheet aliases ที่ Shared Lark Field contract รู้จักถูก normalize ก่อนอ่าน precision.
+Formatter อื่น เช่น percent/currency/custom หรือจำนวน decimal ที่ไม่ใช่ enum ที่อนุมัติ
+คง exact behavior เดิมและไม่ถูกปัดโดยเดา.
+
+Canonicalization ใช้เฉพาะ Lark payload/comparison:
+
+- D1 materialization, payload และ checksum ไม่เปลี่ยน;
+- Stable keys, Allowed fields และ Apply confirmation ไม่เปลี่ยน;
+- null/missing ยังคงต่างจาก observed zero;
+- NaN/Infinity fail closed;
+- URL/Text/Select/Date behavior ไม่เปลี่ยน;
+- persistent difference หลัง canonicalization ยังสร้าง Update plan.
+
+## Recovery
+
+หลัง Merge ให้รัน read-only Preview จาก clean Current `main`:
+
+```bash
+node scripts/lark-dashboard-shared-dimensions-backfill.mjs
+```
+
+Expected:
+
+```text
+ok               true
+mode             preview
+operatorVersion  lark-dashboard-shared-dimensions-backfill-v1.3
+createRows       0
+updateRows       0
+recoveryDecision previous_apply_converged_no_apply_needed
+```
+
+หาก `updateRows=0` ห้ามเสนอหรือรัน Apply ซ้ำ.
+
+## Required validation
+
+```text
+Focused Lark formatter / serializer / repository / sync / backfill tests
+npm ci
+npm run check
+npm test
+npm run test:report-reliability
+npm audit
+npm run deploy:dry-run
+npx wrangler deploy --dry-run --config wrangler.sync.jsonc --env development
+Branch Verification CI
+```
+
+## Safety boundary
+
+ห้าม Backfill Apply, Remote Lark/D1 mutation, Worker deploy, Queue/DLQ send, Provider call,
+Schedule/Secret change, Production/UAT หรือ PR merge. Remote action count ระหว่าง
+Implementation ต้องเป็น `0`.
+
+รายละเอียด:
+
+```text
+docs/tasks/lark-number-formatter-precision-v1.md
+```
+
+## Implementation result
+
+- Source fix จาก PR `#248` ถูกตรวจบน Current Main และคงไว้โดยไม่สร้าง duplicate helper.
+- Follow-up รองรับ official grouped formatters `1,000`/`1,000.00` ผ่าน Shared formatter
+  normalizer เดิม และไม่ recognize unsupported `0.00000`/`1,000.000`.
+- Backfill operator bump เป็น v1.3 โดยไม่เปลี่ยน confirmation หรือ Allowed fields.
+- Focused formatter/serializer/repository/sync/backfill regressions ผ่าน `39/39`.
+- `npm ci` ผ่าน (`80` packages).
+- `npm run check` ผ่าน: Architecture audit `399` source files, `1027` local dependencies,
+  `0` cycles และ Repository hygiene ผ่าน.
+- `npm test` ผ่าน: Unit `1444/1444`, Workers runtime `15/15`.
+- `npm run test:report-reliability` ผ่าน `100/100`.
+- `npm audit` ผ่าน: `0 vulnerabilities`.
+- `npm run deploy:dry-run` ผ่านทั้ง example Worker configs.
+- `npx wrangler deploy --dry-run --config wrangler.sync.jsonc --env development` ผ่านและ
+  จบด้วย `--dry-run: exiting now`; Wrangler แจ้ง warning เดิมว่า config ไม่มี
+  `[env.development]` แต่ไม่เกิด deployment.
+- Commit, Draft PR และ final-head Branch Verification CI ยัง pending.
+- Remote action count = `0`.
+
+---
+
+# Previous Task Context — Lark Dashboard Shared Dimensions Backfill Post-Apply Verification Hotfix
 
 ## Authoritative status
 
