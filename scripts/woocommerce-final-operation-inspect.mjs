@@ -5,7 +5,6 @@ import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { readDevVars } from './lib/dev-vars.js';
 import {
-  buildWooCommerceFinalSnapshotSql,
   safeWooCommerceFinalEvidence,
 } from './lib/woocommerce-final-rollout-operator.js';
 import {
@@ -14,7 +13,9 @@ import {
   wooCommerceD1ReadRetryDelay,
 } from './lib/woocommerce-d1-read-retry.js';
 import {
+  buildWooCommerceFinalOperationInspectionSql,
   classifyWooCommerceFinalOperationInspection,
+  extractWooCommerceFinalNetworkDiagnostics,
 } from './lib/woocommerce-final-operation-inspector.js';
 
 const repositoryRoot = resolve(process.cwd());
@@ -65,7 +66,7 @@ async function main() {
   );
   const databaseName = env.MKT_WOOCOMMERCE_ROLLOUT_DATABASE_NAME
     ?? 'social-mkt-state-dev';
-  const sql = buildWooCommerceFinalSnapshotSql({
+  const sql = buildWooCommerceFinalOperationInspectionSql({
     accountKey: 'chemistry_k',
     operationId: options.operationId,
   });
@@ -95,6 +96,9 @@ async function main() {
     fullReconciliation: options.operationId.startsWith('woo-final-full-'),
   });
   const snapshot = inspection.snapshot;
+  const networkDiagnostics = extractWooCommerceFinalNetworkDiagnostics(
+    row.sync_run_details_json,
+  );
 
   process.stdout.write(`${JSON.stringify({
     ok: true,
@@ -103,6 +107,7 @@ async function main() {
     operationId: options.operationId,
     decision: inspection.decision,
     complete: inspection.complete,
+    staleActiveFailure: inspection.staleActiveFailure,
     nextAction: inspection.nextAction,
     syncRunStatus: snapshot.syncRunStatus,
     syncRunFinishedAt: snapshot.syncRunFinishedAt,
@@ -117,6 +122,7 @@ async function main() {
     counts: snapshot.counts,
     state: safeWooCommerceFinalEvidence(snapshot.state),
     completion: safeWooCommerceFinalEvidence(snapshot.completion),
+    networkDiagnostics,
     remoteReadAttempts: execution.attempts,
     businessMutationCount: 0,
     queueMessageCount: 0,
@@ -132,7 +138,7 @@ function printPlan(operationId) {
     stage: 'woocommerce-final-operation-inspection-plan',
     operationId,
     command: `node scripts/woocommerce-final-operation-inspect.mjs --operation-id ${operationId} --execute`,
-    remoteAction: 'one bounded read-only D1 snapshot with retry',
+    remoteAction: 'one bounded read-only D1 snapshot with retry and allowlisted diagnostics',
     businessMutationCount: 0,
     queueMessageCount: 0,
     workerDeploymentCount: 0,
