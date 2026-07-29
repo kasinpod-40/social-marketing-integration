@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   REPORT_RUNTIME_CLOSEOUT_ACTIVE_TRUE_FLAGS,
+  REPORT_RUNTIME_CLOSEOUT_CANONICAL_SETTING_COUNT,
   REPORT_RUNTIME_CLOSEOUT_CONFIRMATION,
   assertReportRuntimeCloseoutCompletion,
   assertReportRuntimeCloseoutConfirmation,
@@ -74,7 +75,7 @@ function validFinalizerEvidence() {
     gates: Array.from({ length: 6 }, (_, index) => ({ command: String(index), status: 'pass' })),
     schema: { readbackActions: 0, conflicts: 0 },
     settings: {
-      canonicalActive: 51,
+      canonicalActive: REPORT_RUNTIME_CLOSEOUT_CANONICAL_SETTING_COUNT,
       activeLegacySettings: 0,
       readbackCreates: 0,
       readbackUpdates: 0,
@@ -119,23 +120,45 @@ test('Report closeout selects a fresh deterministic preset identity', () => {
     periodEnd: '2026-07-27',
     sourceWatermark: 'coverage-watermark',
   });
-  assert.equal(candidates.length, 6);
-  assert.equal(candidates[0].windowDays, 3);
+  assert.equal(candidates.length, 7);
+  assert.equal(candidates[0].windowDays, 1);
   assert.equal(candidates[0].job.type, 'report.materialization.generate');
   assert.equal(candidates[0].job.trigger, 'dashboard_preset');
   const selected = selectFreshReportRuntimeCloseoutCandidate(candidates, [candidates[0].reportId]);
-  assert.equal(selected.windowDays, 7);
+  assert.equal(selected.windowDays, 3);
   assert.throws(() => selectFreshReportRuntimeCloseoutCandidate(
     candidates,
     candidates.map((candidate) => candidate.reportId),
   ));
 });
 
+test('Report closeout can target fresh 1D and 30D presets explicitly', () => {
+  const candidates = buildReportRuntimeCloseoutCandidates({
+    requestedAt: Date.parse('2026-07-28T12:00:00Z'),
+    periodEnd: '2026-07-27',
+    sourceWatermark: 'coverage-watermark',
+  });
+  assert.equal(selectFreshReportRuntimeCloseoutCandidate(candidates, [], {
+    MKT_REPORT_RUNTIME_CLOSEOUT_WINDOW_DAYS: '1',
+  }).windowDays, 1);
+  assert.equal(selectFreshReportRuntimeCloseoutCandidate(candidates, [], {
+    MKT_REPORT_RUNTIME_CLOSEOUT_WINDOW_DAYS: '30',
+  }).windowDays, 30);
+  const thirty = candidates.find((candidate) => candidate.windowDays === 30);
+  assert.throws(() => selectFreshReportRuntimeCloseoutCandidate(candidates, [thirty.reportId], {
+    MKT_REPORT_RUNTIME_CLOSEOUT_WINDOW_DAYS: '30',
+  }), (error) => error.code === 'REPORT_RUNTIME_CLOSEOUT_FRESH_PRESET_UNAVAILABLE');
+  assert.throws(() => selectFreshReportRuntimeCloseoutCandidate(candidates, [], {
+    MKT_REPORT_RUNTIME_CLOSEOUT_WINDOW_DAYS: '31',
+  }), (error) => error.code === 'REPORT_RUNTIME_CLOSEOUT_WINDOW_INVALID');
+});
+
 test('Report closeout requires validated finalizer and D1 readiness evidence', () => {
+  assert.equal(REPORT_RUNTIME_CLOSEOUT_CANONICAL_SETTING_COUNT, 58);
   assert.equal(assertReportRuntimeFinalizerEvidence(validFinalizerEvidence()), true);
   assert.throws(() => assertReportRuntimeFinalizerEvidence({
     ...validFinalizerEvidence(),
-    settings: { ...validFinalizerEvidence().settings, canonicalActive: 50 },
+    settings: { ...validFinalizerEvidence().settings, canonicalActive: 57 },
   }));
   assert.equal(assertReportRuntimeCloseoutPreflight({
     coverage_status: 'complete',
@@ -172,6 +195,7 @@ test('Report closeout verifies completed materialization and stable replay', () 
   assert.equal(assertReportRuntimeCloseoutCompletion(first, { reportId: 'report-id' }), true);
   assert.equal(assertReportRuntimeCloseoutReplay(first, replay), true);
   assert.throws(() => assertReportRuntimeCloseoutReplay(first, { ...replay, payload_checksum: 'changed' }));
+  assert.throws(() => assertReportRuntimeCloseoutCompletion({ ...first, materialization_count: 2 }, { reportId: 'report-id' }));
 });
 
 test('Report closeout evidence strips credential-shaped keys', () => {
