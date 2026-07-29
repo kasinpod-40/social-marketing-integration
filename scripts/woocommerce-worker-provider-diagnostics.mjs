@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import {
   chmod,
@@ -11,11 +11,6 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { dirname, relative, resolve } from 'node:path';
-import {
-  CLOUDFLARE_WORKERS_VERSION_OVERRIDES_HEADER,
-  buildWorkerVersionOverrideHeader,
-  validateWorkerResponseRuntimeVersion,
-} from '../packages/shared/src/cloudflare/worker-version.js';
 import { readDevVars } from './lib/dev-vars.js';
 import {
   WOOCOMMERCE_PROVIDER_DIAGNOSTICS_FLAG,
@@ -24,8 +19,12 @@ import {
   buildWooCommerceWorkerProviderDiagnosticConfigs,
   parseWooCommerceWorkerProviderDiagnosticsArgs,
   parseWooCommerceWorkerSecretNames,
+  validateWooCommerceDiagnosticsAttestation,
   validateWooCommerceWorkerProviderDiagnosticResponse,
 } from './lib/woocommerce-worker-provider-diagnostics.js';
+import {
+  createWooCommerceDiagnosticsAttestedFetch,
+} from './lib/woocommerce-diagnostics-attested-fetch.js';
 
 const repositoryRoot = resolve(process.cwd());
 const evidenceRoot = resolve(
@@ -35,9 +34,12 @@ const evidenceRoot = resolve(
 const RESPONSE_MAX_BYTES = 64 * 1024;
 const WORKER_NAME_DEFAULT = 'social-mkt-sync-worker';
 const TRUE_FLAG_PATTERN = /^MKT_[A-Z0-9_]+_ENABLED$/u;
+const attestedFetch = createWooCommerceDiagnosticsAttestedFetch(globalThis.fetch.bind(globalThis));
 let target = null;
 let configs = null;
 let activeDeploymentAttempted = false;
+let workerDeploymentCount = 0;
+let providerRequestCount = 0;
 
 try {
   await main();
@@ -50,12 +52,20 @@ try {
         configText: configs.safe,
         expectedStatus: 404,
         expectedTrueFlags: [],
+        expectedAttestation: configs.safeAttestation,
       });
     } catch (restoreError) {
+      const details = sanitize(restoreError?.details ?? {});
       automaticSafeRestore = {
         ok: false,
         code: restoreError?.code ?? 'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_RESTORE_FAILED',
         message: restoreError instanceof Error ? restoreError.message : String(restoreError),
+        controlPlaneSafeRestored:
+          details.controlPlaneVersionVerified === true
+          && details.controlPlaneTrueFlagsVerified === true,
+        httpClosureAttested: false,
+        restoredSafeVersion: details.deployedVersionId ?? null,
+        details,
       };
     }
   }
@@ -66,9 +76,11 @@ try {
     message: error instanceof Error ? error.message : String(error),
     details: sanitize(error?.details ?? {}),
     automaticSafeRestore,
+    providerRequestCount,
     providerMutationCount: 0,
     businessMutationCount: 0,
     queueMessageCount: 0,
+    workerDeploymentCount,
     larkRequestCount: 0,
     scheduleMutationCount: 0,
   }, null, 2)}\n`);
@@ -99,6 +111,8 @@ async function main() {
   configs = buildWooCommerceWorkerProviderDiagnosticConfigs(sourceText, {
     repositoryRoot,
     sourceConfigPath: relative(repositoryRoot, configPath),
+    activeAttestation: randomBytes(32).toString('hex'),
+    safeAttestation: randomBytes(32).toString('hex'),
   });
   target = Object.freeze({
     repositoryHead: repository.head,
@@ -119,12 +133,14 @@ async function main() {
     configText: configs.active,
     expectedStatus: 401,
     expectedTrueFlags: [WOOCOMMERCE_PROVIDER_DIAGNOSTICS_FLAG],
+    expectedAttestation: configs.activeAttestation,
   });
   await writeEvidence('02-active-deployment', active);
 
-  const response = await fetchAuthenticatedDiagnostic(active.versionId);
+  const response = await fetchAuthenticatedDiagnostic(configs.activeAttestation);
   const body = await readBoundedJson(response, RESPONSE_MAX_BYTES);
   const diagnostic = validateWooCommerceWorkerProviderDiagnosticResponse(response.status, body);
+  providerRequestCount = Number(diagnostic.providerRequestCount);
   await writeEvidence('03-provider-diagnostic', {
     versionId: active.versionId,
     httpStatus: response.status,
@@ -136,6 +152,7 @@ async function main() {
     configText: configs.safe,
     expectedStatus: 404,
     expectedTrueFlags: [],
+    expectedAttestation: configs.safeAttestation,
   });
   activeDeploymentAttempted = false;
   await writeEvidence('04-safe-restore', safe);
@@ -148,14 +165,16 @@ async function main() {
     restoredSafeVersion: safe.versionId,
     diagnosticHttpStatus: response.status,
     diagnostic,
-    providerRequestCount: 1,
+    providerRequestCount,
     providerMutationCount: 0,
     businessMutationCount: 0,
     queueMessageCount: 0,
-    workerDeploymentCount: 2,
+    workerDeploymentCount,
     larkRequestCount: 0,
     scheduleMutationCount: 0,
     safeRestored: true,
+    safeControlPlaneVerified: true,
+    safeHttpClosureAttested: true,
     evidenceRoot: relative(repositoryRoot, evidenceRoot),
   }, null, 2)}\n`);
 }
@@ -169,10 +188,10 @@ function printPlan() {
     phases: [
       'local-and-remote-read-only-preflight',
       'deploy-diagnostic-only-window',
-      'unauthenticated-route-proof',
+      'control-plane-and-config-attestation-proof',
       'one-authenticated-system-status-get',
       'automatic-all-false-safe-restore',
-      'safe-route-closure-proof',
+      'attested-safe-route-closure-proof',
     ],
     remoteMutations: {
       workerDeployments: 2,
@@ -211,6 +230,8 @@ async function runPreflight() {
     safeConfigSha256: configs.safeSha256,
     activeConfigSha256: configs.activeSha256,
     sourceConfigSha256: configs.bundleSourceSha256,
+    activeAttestationFingerprint: sha256(configs.activeAttestation),
+    safeAttestationFingerprint: sha256(configs.safeAttestation),
     secretValuesCopied: configs.secretValuesCopied,
     providerRequestCount: 0,
     workerDeploymentCount: 0,
@@ -231,6 +252,7 @@ async function deployAndProbe(input) {
       'wrangler', 'deploy', '--config', configPath,
       '--message', `woocommerce_worker_provider_diagnostics stage=${input.label} git=${target.repositoryHead}`,
     ], { label: input.label });
+    workerDeploymentCount += 1;
     return { stdout, versionId: extractVersionId(stdout) };
   });
   const status = JSON.parse(runText('npx', [
@@ -243,33 +265,53 @@ async function deployAndProbe(input) {
     '--name', target.workerName, '--config', target.configPath, '--json',
   ]));
   assertExactFlags(readTrueFlags(view), input.expectedTrueFlags);
-  const routeStatuses = [];
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const response = await exactVersionFetch(deployment.versionId, { authenticated: false });
-    routeStatuses.push(response.status);
-  }
-  if (!routeStatuses.every((statusCode) => statusCode === input.expectedStatus)) {
-    throw failure(
-      'WooCommerce diagnostics route did not reach the expected stable status',
-      'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_ROUTE_UNSTABLE',
-      { expectedStatus: input.expectedStatus, routeStatuses },
-    );
-  }
-  return Object.freeze({
-    ok: true,
-    label: input.label,
-    versionId: deployment.versionId,
-    configSha256: sha256(input.configText),
+  const controlPlaneEvidence = Object.freeze({
+    deployedVersionId: deployment.versionId,
+    controlPlaneVersionVerified: true,
+    controlPlaneTrueFlagsVerified: true,
     expectedTrueFlags: Object.freeze([...input.expectedTrueFlags].sort()),
-    routeStatuses: Object.freeze(routeStatuses),
   });
+
+  try {
+    const routeStatuses = [];
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const response = await attestedRouteFetch(input.expectedAttestation, { authenticated: false });
+      routeStatuses.push(response.status);
+    }
+    if (!routeStatuses.every((statusCode) => statusCode === input.expectedStatus)) {
+      throw failure(
+        'WooCommerce diagnostics route did not reach the expected stable status',
+        'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_ROUTE_UNSTABLE',
+        { expectedStatus: input.expectedStatus, routeStatuses },
+      );
+    }
+    return Object.freeze({
+      ok: true,
+      label: input.label,
+      versionId: deployment.versionId,
+      configSha256: sha256(input.configText),
+      expectedTrueFlags: Object.freeze([...input.expectedTrueFlags].sort()),
+      routeStatuses: Object.freeze(routeStatuses),
+      controlPlaneVersionVerified: true,
+      controlPlaneTrueFlagsVerified: true,
+      httpDeploymentAttested: true,
+    });
+  } catch (error) {
+    error.details = {
+      ...sanitize(error?.details ?? {}),
+      ...controlPlaneEvidence,
+      expectedStatus: input.expectedStatus,
+      expectedAttestationFingerprint: sha256(input.expectedAttestation),
+    };
+    throw error;
+  }
 }
 
-async function fetchAuthenticatedDiagnostic(versionId) {
-  return exactVersionFetch(versionId, { authenticated: true });
+async function fetchAuthenticatedDiagnostic(expectedAttestation) {
+  return attestedRouteFetch(expectedAttestation, { authenticated: true });
 }
 
-async function exactVersionFetch(versionId, options = {}) {
+async function attestedRouteFetch(expectedAttestation, options = {}) {
   const url = new URL(target.pathname, `${target.origin}/`);
   url.searchParams.set('mkt_woo_diag', randomUUID());
   const headers = new Headers({
@@ -277,21 +319,14 @@ async function exactVersionFetch(versionId, options = {}) {
     'Cache-Control': 'no-cache, no-store',
     Pragma: 'no-cache',
   });
-  headers.set(
-    CLOUDFLARE_WORKERS_VERSION_OVERRIDES_HEADER,
-    buildWorkerVersionOverrideHeader(target.workerName, versionId),
-  );
   if (options.authenticated) headers.set('Authorization', `Bearer ${target.operatorToken}`);
-  const response = await fetch(url, {
+  const response = await attestedFetch(url, {
     method: 'GET',
     redirect: 'manual',
     headers,
     signal: AbortSignal.timeout(60_000),
-  });
-  validateWorkerResponseRuntimeVersion(response, versionId, {
-    errorCode: 'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_RUNTIME_VERSION_MISMATCH',
-    safeCloseRequired: true,
-  });
+  }, expectedAttestation);
+  validateWooCommerceDiagnosticsAttestation(response, expectedAttestation);
   return response;
 }
 
@@ -528,7 +563,7 @@ function requireText(value, fieldName) {
 }
 
 function sha256(value) {
-  return createHash('sha256').update(value).digest('hex');
+  return createHash('sha256').update(String(value)).digest('hex');
 }
 
 function failure(message, code, details = {}) {
