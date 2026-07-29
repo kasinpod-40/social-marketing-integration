@@ -7,9 +7,11 @@ import {
   EncryptedCustomerCredentialRepository,
 } from '../../../packages/connectors/src/encrypted-customer-credential-repository.js';
 
-const REDIRECT_ENV_KEYS = Object.freeze({
+const REQUIRED_REDIRECT_ENV_KEYS = Object.freeze({
   [CUSTOMER_CONNECTION_CONNECTORS.GOOGLE_ADS]: 'MKT_GOOGLE_ADS_REDIRECT_URI',
   [CUSTOMER_CONNECTION_CONNECTORS.YOUTUBE]: 'MKT_YOUTUBE_REDIRECT_URI',
+});
+const OPTIONAL_REDIRECT_ENV_KEYS = Object.freeze({
   [CUSTOMER_CONNECTION_CONNECTORS.TIKTOK_ADS]: 'MKT_TIKTOK_ADS_REDIRECT_URI',
 });
 
@@ -38,6 +40,17 @@ export function loadCustomerConnectionRuntimeConfig(env = {}) {
     env.MKT_CONNECTION_ENCRYPTION_KEY_VERSION ?? 'v1',
     'MKT_CONNECTION_ENCRYPTION_KEY_VERSION',
   );
+  const requiredRedirectUris = Object.fromEntries(
+    Object.entries(REQUIRED_REDIRECT_ENV_KEYS).map(([connectorKey, envKey]) => [
+      connectorKey,
+      requireHttpsUrl(env[envKey], envKey),
+    ]),
+  );
+  const optionalRedirectUris = Object.fromEntries(
+    Object.entries(OPTIONAL_REDIRECT_ENV_KEYS)
+      .filter(([, envKey]) => hasText(env[envKey]))
+      .map(([connectorKey, envKey]) => [connectorKey, requireHttpsUrl(env[envKey], envKey)]),
+  );
   return Object.freeze({
     environment,
     customerProfile: 'integration_workspace',
@@ -65,12 +78,7 @@ export function loadCustomerConnectionRuntimeConfig(env = {}) {
       env[`MKT_CONNECTION_ENCRYPTION_KEY_${encryptionKeyVersion.toUpperCase()}`],
       `MKT_CONNECTION_ENCRYPTION_KEY_${encryptionKeyVersion.toUpperCase()}`,
     ),
-    redirectUris: Object.freeze(Object.fromEntries(
-      Object.entries(REDIRECT_ENV_KEYS).map(([connectorKey, envKey]) => [
-        connectorKey,
-        requireHttpsUrl(env[envKey], envKey),
-      ]),
-    )),
+    redirectUris: Object.freeze({ ...requiredRedirectUris, ...optionalRedirectUris }),
   });
 }
 
@@ -102,6 +110,7 @@ export function loadTikTokAdsRuntimeConfig(env = {}) {
     appId: requireText(env.TIKTOK_ADS_APP_ID, 'TIKTOK_ADS_APP_ID'),
     appSecret: requireSecret(env.TIKTOK_ADS_APP_SECRET, 'TIKTOK_ADS_APP_SECRET'),
     advertiserId: requireDigits(env.MKT_TIKTOK_ADS_ADVERTISER_ID, 'MKT_TIKTOK_ADS_ADVERTISER_ID'),
+    redirectUri: requireHttpsUrl(env.MKT_TIKTOK_ADS_REDIRECT_URI, 'MKT_TIKTOK_ADS_REDIRECT_URI'),
   });
 }
 
@@ -140,6 +149,9 @@ function requireHttpsUrl(value, fieldName) {
   }
   url.hash = '';
   return url.toString();
+}
+function hasText(value) {
+  return typeof value === 'string' && value.trim() !== '';
 }
 function requireText(value, fieldName) {
   if (typeof value !== 'string' || value.trim() === '') throw new TypeError(`${fieldName} is required`);
