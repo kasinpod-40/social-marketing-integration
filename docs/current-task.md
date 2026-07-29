@@ -3,7 +3,7 @@
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = APPROVED_FOR_REPOSITORY_IMPLEMENTATION
+TASK_STATUS                         = REPOSITORY_IMPLEMENTED_AWAITING_CI_REVIEW
 CURRENT_PROGRAM                     = TIKTOK_ADS_CUSTOMER_CONNECT_READINESS
 BRANCH                              = integration/tiktok-ads-customer-connect-readiness
 BASE_REF                            = main
@@ -20,104 +20,92 @@ PRODUCTION                          = BLOCKED
 ## Objective
 
 เตรียม TikTok Ads Customer Connect ให้พร้อมทั้งหมดใน Repository โดยใช้ Shared Customer Connect,
-OAuth, credential encryption, connection lifecycle, Reliability, Queue/DLQ, D1 writer และ Lark
-engine ที่มีอยู่แล้วให้มากที่สุด จนเหลือเพียง:
-
-1. ลูกค้าสมัคร/เปิด TikTok for Business, Business Center, Advertiser และอนุมัติ App ตามข้อกำหนดของ TikTok;
-2. ผู้ปฏิบัติงานกรอก non-secret customer identifiers/mappings ที่ได้รับจากลูกค้า;
-3. ผู้ปฏิบัติงานตั้ง App ID/App Secret และ runtime secrets ผ่าน local Terminal;
-4. ผู้ปฏิบัติงานรัน guarded Terminal operator หลังได้รับ authorization แยกต่างหาก.
+OAuth, credential encryption และ connection lifecycle ที่มีอยู่แล้ว จนเหลือเพียงลูกค้าสมัคร/เปิด
+TikTok for Business และส่ง Advertiser ID, ผู้ปฏิบัติงานตั้ง App ID/App Secret/Redirect URI ผ่าน
+Terminal และรัน guarded invitation operator หลังได้รับ authorization แยกต่างหาก.
 
 งานนี้ไม่ทำ Customer authorization จริง, ไม่แลก token จริง, ไม่เรียก Provider จริง, ไม่ deploy,
 ไม่ apply Remote migration, ไม่แก้ Remote Lark, ไม่ส่ง Queue message และไม่เปิด Schedule.
 
-## Provider contract
-
-ใช้ TikTok API for Business / Marketing API v1.3 สำหรับ Advertiser authorization และ read-only
-reporting. Authorization URL ต้องมี exact callback URL, cryptographically random signed state และ scope
-ที่จำเป็นเท่านั้น. Callback รับ `auth_code` และ `state`; `auth_code` เป็น single-use/short-lived และต้องถูก
-แลกที่ server side เท่านั้น. Token และ App Secret ห้ามอยู่ใน URL, log, D1 plaintext, evidence หรือ Source.
-
-Required provider operations for final Customer Connect:
+## Implemented architecture
 
 ```text
-Advertiser authorization URL
-POST /open_api/v1.3/oauth2/access_token/
-GET  /open_api/v1.3/oauth2/advertiser/get/
-GET  /open_api/v1.3/advertiser/info/
-Read-only campaign/adgroup/ad/report endpoints approved by the locked source contract
+existing signed retry-safe invitation
+→ existing one-time signed OAuth state
+→ TikTok Ads authorization route
+→ server-side auth-code exchange
+→ exact authorized advertiser set check
+→ read-only advertiser/info validation
+→ existing AES-256-GCM credential repository
+→ existing D1 connection status authority
 ```
 
-Write-capable Campaign Management permissions and endpoints are out of scope.
+No new OAuth framework, D1 connection store, Queue, Reliability, Lark engine or schedule path was created.
 
-## In scope
+## Provider contract
 
-- Full repository audit before coding: duplicate logic, dead code, architecture, migrations, open PRs,
-  shared Customer Connect/OAuth/credential modules, runtime routing, tests and operator patterns.
-- TikTok Ads provider definition and exact read-only permission/scope contract.
-- Reuse of existing signed invitation, state verification, callback routing, credential encryption,
-  reconnect/token replacement lifecycle and exact provider identity validation.
-- Additive TikTok Ads connection metadata/mapping support only where Shared Core cannot already express it.
-- Advertiser allow-list and exact advertiser identity pinning; fail closed on zero, multiple unexpected or
-  mismatched advertisers.
-- Token redaction and sanitized error classification.
-- Read-only connection validation with no Business fact writes.
-- Customer input template containing only non-secret identifiers and mappings.
-- Guarded local Terminal operator that defaults to plan/read-only and requires explicit confirmation per
-  mutating phase.
-- Unit, integration, Workers-runtime and focused regression tests.
-- Documentation and final operator handoff commands.
+```text
+GET/POST /connect/tiktok-ads
+GET      /oauth/tiktok-ads/callback
+POST     /open_api/v1.3/oauth2/access_token/
+GET      /open_api/v1.3/advertiser/info/
+```
 
-## Out of scope
+Campaign, Ad Group, Ad, budget and other write-capable operations are out of scope.
 
-- TikTok Ads campaign/ad group/ad creation, update, pause, delete or budget mutation.
-- TikTok Organic, TikTok Shop, TikTok One or Spark Ads post authorization implementation.
-- New Reliability engine, Queue framework, DLQ, D1 generic writer, Lark sync engine or OAuth framework.
-- Remote D1 migration/apply, Remote Lark schema/data mutation, Worker deployment, Queue message,
-  Cron/Schedule activation, Production or Customer LIVE UAT.
-- Storing App Secret, access token, auth code, refresh token or customer personal data in Source.
-
-## Customer inputs remaining at final handoff
+## Customer inputs remaining
 
 ```text
 customer_key              = chemistry_k
-provider                  = tiktok_ads
-business_center_id        = supplied by customer when available
 advertiser_id             = supplied by customer and exact-pinned
-advertiser_display_name   = optional non-secret verification hint
-reporting_timezone        = Asia/Bangkok unless customer account proves otherwise
-currency                  = provider-returned and exact-validated
-app_id                    = runtime secret/config input; never committed
-app_secret                = runtime secret only; never committed
-callback_origin           = deployed customer-connect origin supplied at execution time
+app_id                    = TikTok for Business app ID
+app_secret                = Worker/local secret only
+callback_uri              = https://<worker-host>/oauth/tiktok-ads/callback
 ```
 
-The customer must complete TikTok for Business registration and required Business Center/Advertiser/App
-approval before live authorization can succeed.
+Optional Business Center ID and display name remain verification metadata only. Currency and timezone are
+accepted only from the validated Provider response.
+
+## Repository implementation
+
+- Registered `tiktok_ads` in the shared Customer Connection connector catalog and route-slug mapping.
+- Added `TikTokAdsOAuthClient` for authorization URL construction and server-side code exchange.
+- Added `TikTokAdsApiClient` for exact allow-listed advertiser validation through read-only advertiser info.
+- Added `TikTokAdsCustomerOAuthFlow` using the existing invitation/state lifecycle, D1 store and encrypted
+  credential replacement path.
+- Added `provider_access_token` as an encrypted credential kind; plaintext is never persisted or returned.
+- Added preview-safe GET, exact confirmation POST and callback routes to the existing HTTP composition.
+- Added isolated runtime config for TikTok App ID/App Secret, redirect URI and approved Advertiser ID.
+- Added plan-only-by-default Terminal operator:
+
+```bash
+node scripts/tiktok-ads-customer-connect-readiness.mjs
+node scripts/tiktok-ads-customer-connect-readiness.mjs --execute
+```
+
+The execute mode creates one seven-day, three-attempt invitation only. It performs no Provider call, Queue
+send, Lark write, Business sync or schedule mutation.
 
 ## Safety invariants
 
-- All TikTok Ads execution, D1-write, Lark-write and Schedule flags remain false in committed configs.
-- Callback state is signed, expiring, single-use and provider/customer/connection scoped.
-- Authorization code and token exchange are server-side only.
-- Exact advertiser ID is verified before marking a connection validated.
-- Any missing/mismatched advertiser, scope, provider identity, callback state or secret fails closed.
-- Reconnect replaces the encrypted credential atomically without retaining plaintext or stale active tokens.
-- Logs/evidence contain only sanitized codes, fingerprints and non-secret identifiers.
-- No Provider mutation endpoint exists in the implementation.
+- Exact advertiser mismatch fails before credential persistence.
+- Provider token is encrypted with existing AES-256-GCM authenticated-context binding.
+- Callback result returns only masked advertiser identity and sanitized status.
+- Queue and Lark outcomes remain explicitly false.
+- No TikTok Ads mutation endpoint or schedule path exists.
+- No secrets, signed invitation URLs or provider tokens are committed.
 
-## Acceptance criteria
+## Tests added
 
-1. Repository audit documents reused Shared modules and proves no duplicate OAuth/credential framework.
-2. TikTok Ads Customer Connect invitation and callback route are provider-specific but use Shared Core.
-3. Token exchange, advertiser discovery and advertiser validation are typed, bounded and read-only.
-4. Exact advertiser mismatch and unexpected advertiser set fail closed.
-5. Secrets/tokens/auth codes are redacted from logs, errors, health/admin responses and evidence.
-6. Reconnect/token replacement lifecycle is idempotent and tested.
-7. All committed TikTok Ads runtime flags are false; no Schedule or Provider mutation path exists.
-8. Customer input template and Terminal operator reduce final work to entering customer data/secrets and
-   running separately authorized commands.
-9. Required gates pass:
+```text
+tests/connectors/tiktok-ads-oauth-client.test.js
+tests/connectors/tiktok-ads-api-client.test.js
+```
+
+Coverage includes authorization URL secret isolation, token exchange normalization, duplicate advertiser
+boundedness, exact advertiser validation and mismatch fail-closed behavior.
+
+## Required CI/review gates
 
 ```bash
 npm ci
@@ -128,8 +116,12 @@ npm audit
 npm run deploy:dry-run
 ```
 
-10. No Remote action occurs during Implementation.
+These gates must run through Draft PR CI before merge readiness can be claimed. Repository implementation
+does not authorize Remote deployment, secret provisioning, invitation execution or Customer OAuth.
 
 ## Implementation result
 
-Pending repository audit and implementation.
+Repository implementation is committed on the isolated branch. Remote action count remains zero. The only
+operational work intentionally left is customer TikTok registration/approval, entering the exact customer
+Advertiser ID and App secrets through Terminal/Worker Secrets, separately reviewed Worker deployment with all
+Business/Schedule flags false, and running the guarded invitation command.
