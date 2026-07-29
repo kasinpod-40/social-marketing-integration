@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased — WooCommerce Preview Alias/Version Pair Classifier — 2026-07-30
+
+### Repository correction
+
+- Classified Wrangler Preview URL evidence as aliased, versioned or invalid/foreign instead of
+  rejecting one valid alias plus one valid versioned origin as ambiguous.
+- Kept the deterministic alias origin as the only probe and Provider request target.
+- Limited extraction to the six declared Preview fields/containers and supported their nested
+  target/URL shapes without recursively scanning the whole upload record.
+- Rejected malformed URLs, foreign Worker/account identity, custom domains, HTTP, credentials,
+  ports, paths, queries, hashes, multiple distinct versioned origins and invalid Version IDs.
+- Preserved only redacted fingerprints/counts in diagnostics evidence.
+
+### Safety
+
+- Active/Safe Preview configs, Queue sentinel and at-most-one Provider GET contracts are unchanged.
+- Repository implementation performed no Worker Version upload/deployment, Provider request,
+  Queue, D1/Lark, Schedule, Secret or Production action.
+
 ## Unreleased — WooCommerce Diagnostics Deterministic Preview Origin — 2026-07-30
 
 ### Repository correction

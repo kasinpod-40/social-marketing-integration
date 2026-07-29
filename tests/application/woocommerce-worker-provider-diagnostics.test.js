@@ -262,6 +262,19 @@ test('operator uploads isolated Preview Versions and never deploys Production', 
   assert.match(operator, /WRANGLER_OUTPUT_FILE_PATH/u);
   assert.match(operator, /MKT_WOOCOMMERCE_WORKERS_DEV_SUBDOMAIN/u);
   assert.match(operator, /buildWooCommerceDiagnosticsPreviewOrigin/u);
+  assert.match(
+    operator,
+    /label:\s*'provider-diagnostics-active-preview'[\s\S]*alias:\s*previewAlias/u,
+  );
+  assert.match(
+    operator,
+    /label:\s*'provider-diagnostics-safe-preview'[\s\S]*alias:\s*previewAlias/u,
+  );
+  assert.match(
+    operator,
+    /fetchAuthenticatedDiagnostic\(\s*activeUpload\.previewOrigin/u,
+  );
+  assert.match(operator, /providerRequestAttemptCount\s*=\s*1/u);
   assert.match(operator, /productionDeploymentUnchanged/u);
   assert.match(operator, /workerDeploymentCount:\s*0/u);
   assert.match(operator, /workerVersionUploadCount/u);

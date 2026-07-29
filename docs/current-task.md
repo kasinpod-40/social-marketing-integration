@@ -98,6 +98,22 @@ docs/tasks/lark-dashboard-backfill-post-verify-hotfix-v1.md
 
 ## Implementation result
 
+### WooCommerce End-to-End D1 + Lark Closeout v1 — Preview pair classifier — 2026-07-30
+
+- Branch `codex/woocommerce-end-to-end-lark-closeout-v1` เริ่มจาก
+  `main@2f8d62928dc2329b06d275a3bef927fe506dba30` และมี required ancestor
+  `1002cc9cfad0f07fdd1103f2601d642339e08686`.
+- Preview upload parser จำแนก `aliased_preview`, `versioned_preview` และ
+  `invalid_or_foreign`; alias+versioned หนึ่งคู่ไม่ถูกถือเป็น ambiguity อีกต่อไป.
+- Candidate extraction จำกัดเฉพาะ six declared Preview fields/containers. Deterministic alias
+  ยังคงเป็น probe/Provider target เสมอ; Versioned URL ใช้เป็น bounded cross-check เท่านั้น.
+- Focused classifier/runtime tests ผ่าน `36/36`; full Unit `1460/1460`, Workers runtime
+  `15/15`, Report reliability `100/100`, repository check, dependency audit 0 vulnerabilities
+  และ repository deploy dry-runs ผ่าน.
+- Repository implementation Remote action count = `0`. Live diagnostics, recovery, D1/Lark UAT
+  และ Safe restore จะดำเนินต่อหลัง exact-head CI/Squash Merge ภายใต้ scoped authorization ล่าสุด.
+- รายละเอียด: `docs/tasks/woocommerce-end-to-end-lark-closeout-v1.md`.
+
 ### WooCommerce Diagnostics Deterministic Preview Origin Hotfix v1 — 2026-07-30
 
 - Branch `codex/woocommerce-diagnostics-preview-origin-v1` starts from latest
