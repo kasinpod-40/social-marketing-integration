@@ -11,6 +11,9 @@ IMPLEMENTATION_BASE_MAIN_SHA        = 78aaf1416f5f7fc528c0c4bbfc2da409bb169a34
 BRANCH                              = hotfix/lark-number-formatter-precision-v1-followup
 OPERATOR                            = scripts/lark-dashboard-shared-dimensions-backfill.mjs
 OPERATOR_VERSION                    = lark-dashboard-shared-dimensions-backfill-v1.3
+IMPLEMENTATION_PR                   = #249 / DRAFT / DO_NOT_MERGE
+IMPLEMENTATION_COMMIT               = 16bdf664d1b95d77a053e69324bca7d8fcdda1b5
+BRANCH_VERIFICATION                 = #30480675876 / PASS
 REMOTE_ACTION_DURING_IMPLEMENTATION = NONE
 LARK_APPLY                          = NOT_RUN
 D1_WRITE                            = NONE
@@ -148,7 +151,9 @@ docs/tasks/lark-number-formatter-precision-v1.md
 - `npx wrangler deploy --dry-run --config wrangler.sync.jsonc --env development` ผ่านและ
   จบด้วย `--dry-run: exiting now`; Wrangler แจ้ง warning เดิมว่า config ไม่มี
   `[env.development]` แต่ไม่เกิด deployment.
-- Commit, Draft PR และ final-head Branch Verification CI ยัง pending.
+- Implementation Commit `16bdf664d1b95d77a053e69324bca7d8fcdda1b5` ถูก Push ไปที่
+  Draft PR `#249`; Branch Verification run `30480675876` ผ่านทุกขั้น.
+- Final-head CI หลัง documentation closeout ยัง pending.
 - Remote action count = `0`.
 
 ---

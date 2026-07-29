@@ -8,6 +8,9 @@ Merged source correction            PR #248 / 78aaf1416f5f7fc528c0c4bbfc2da409bb
 Follow-up base                      78aaf1416f5f7fc528c0c4bbfc2da409bb169a34
 Follow-up branch                    hotfix/lark-number-formatter-precision-v1-followup
 Backfill operator                   lark-dashboard-shared-dimensions-backfill-v1.3
+Draft PR                            #249 / DO NOT MERGE
+Implementation commit               16bdf664d1b95d77a053e69324bca7d8fcdda1b5
+Branch Verification                 #30480675876 / PASS
 Remote action count                 0
 ```
 
@@ -103,7 +106,9 @@ npx wrangler deploy --dry-run
 
 Wrangler exact-config dry-run แสดง warning เดิมว่าไม่มี `[env.development]` section แต่
 build สำเร็จและจบด้วย `--dry-run: exiting now`; ไม่มี Worker deployment หรือ Remote mutation.
-Final-head Branch Verification CI ยัง pending จนกว่าจะ Push Draft PR.
+Draft PR `#249` Branch Verification run `30480675876` ผ่านทุกขั้นบน Implementation commit
+`16bdf664d1b95d77a053e69324bca7d8fcdda1b5`. Final-head CI หลัง documentation closeout
+ยัง pending.
 
 ## Safety boundary
 
