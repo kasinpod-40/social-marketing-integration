@@ -33,6 +33,7 @@ import {
   normalizeWooCommerceFinalSnapshot,
   parseWooCommerceFinalArgs,
   safeWooCommerceFinalEvidence,
+  selectWooCommerceFullOperation,
   sha256,
 } from './lib/woocommerce-final-rollout-operator.js';
 
@@ -126,6 +127,23 @@ async function executeFinalRollout() {
   const remote = await remotePreflight(target);
   await writeEvidence('01-remote-preflight', { target: safeTarget(target), remote });
 
+  const resumeOperationId = optionalText(env.MKT_WOOCOMMERCE_FINAL_RESUME_OPERATION_ID);
+  let exactFull = null;
+  let exactBefore = null;
+  if (resumeOperationId) {
+    currentStage = 'exact-continuation-preflight';
+    exactBefore = await readSnapshot(resumeOperationId);
+    exactFull = selectWooCommerceFullOperation({
+      resumeOperationId,
+      snapshot: exactBefore,
+    });
+    await writeEvidence('01b-exact-continuation-preflight', {
+      operation: exactFull,
+      snapshot: exactBefore,
+      businessMutationCount: 0,
+    });
+  }
+
   currentStage = 'lark-schema-additive-repair';
   const lark = createLarkBitableClientFromEnv(env);
   const schema = await ensureLarkSchema(lark, env);
@@ -156,15 +174,17 @@ async function executeFinalRollout() {
   const uatDeployment = await deployAndVerify(windows.uat, windows.uatTrueFlags, 'manual-uat-window');
   await writeEvidence('05-uat-deployment', uatDeployment);
 
-  const full = createOperation('full');
   currentStage = 'full-reconciliation';
-  const fullBefore = await readSnapshot(full.operationId);
+  const full = exactFull ?? createOperation('full');
+  const fullBefore = exactBefore ?? await readSnapshot(full.operationId);
   await sendQueueMessage(buildWooCommerceFinalJob({
     operationId: full.operationId,
     requestedAt: full.requestedAt,
     trigger: 'manual_uat',
     fullReconciliation: true,
-  }));
+  }), full.resumedExactOperation
+    ? { attemptKey: `${full.operationId}:exact-continuation:${full.priorQueueAttempts + 1}` }
+    : undefined);
   const fullAfter = await pollCompletion(full.operationId, true);
   await writeEvidence('06-full-reconciliation', { operation: full, before: fullBefore, after: fullAfter });
 
@@ -221,6 +241,7 @@ async function executeFinalRollout() {
     d1Backup: backup,
     larkSchema: { tableCount: schema.tableCount, createdTables: schema.createdTables, createdFields: schema.createdFields },
     fullReconciliation: { operationId: full.operationId, totalRows: sumCounts(fullAfter.counts) },
+    resumedExactOperation: full.resumedExactOperation === true,
     parityVerified: true,
     idempotentRerunVerified: true,
     incrementalVerified: true,

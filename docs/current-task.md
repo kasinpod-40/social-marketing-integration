@@ -98,6 +98,21 @@ docs/tasks/lark-dashboard-backfill-post-verify-hotfix-v1.md
 
 ## Implementation result
 
+### WooCommerce exact durable continuation operator — 2026-07-30
+
+- Final rollout can pin the already-admitted partial operation through
+  `MKT_WOOCOMMERCE_FINAL_RESUME_OPERATION_ID`.
+- The read-only preflight runs before Lark schema or Worker mutation and requires the exact
+  D1-read failure, active incomplete work, zero live locks, existing Queue attempts, partial
+  Business facts and matching work/Queue generation plus original requested-at.
+- The continuation sends the original stable job identity once, completes the existing full
+  operation, then preserves the existing parity, same-operation replay, incremental UAT and
+  all-false Safe closeout stages.
+- Queue attempt verification now uses durable `main_queue_attempts` rather than row count.
+- Verification passed: focused `17/17`, unit `1467/1467`, Workers runtime `15/15`, report
+  reliability `101/101`, architecture/hygiene with `0` cycles, audit `0` and deploy dry-run.
+- Repository implementation has no Remote action.
+
 ### WooCommerce D1 100-bound-parameter continuation hotfix — 2026-07-30
 
 - Final operation `woo-final-full-e2372e56d52d` was admitted once and wrote partial Store/Orders

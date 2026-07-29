@@ -12,6 +12,7 @@ import {
   compareWooCommerceRerun,
   createWooCommerceLarkSchemaContract,
   parseWooCommerceFinalArgs,
+  selectWooCommerceFullOperation,
 } from '../../scripts/lib/woocommerce-final-rollout-operator.js';
 
 function configText() {
@@ -33,11 +34,15 @@ function completedSnapshot(attempts = 1) {
     sync_run_finished_at: 1,
     sync_run_error_code: null,
     work_lifecycle_status: 'completed',
+    work_generation: 1785000000000,
+    work_requested_at: 1785000000000,
     work_completed_at: 1,
     completion_json: JSON.stringify({ ok: true }),
     phase_complete: 1,
     state_json: JSON.stringify(state),
     active_lock_count: 0,
+    queue_generation: 1785000000000,
+    queue_original_requested_at: 1785000000000,
     queue_operation_attempts: attempts,
     coverage_run_count: 6,
     invalid_coverage_count: 0,
@@ -124,7 +129,42 @@ test('snapshot SQL is SELECT-only and scopes operation/account', () => {
   assert.match(sql, /^SELECT /u);
   assert.match(sql, /woocommerce:woo-final-full-12345678/u);
   assert.match(sql, /commerce_daily_sales_facts/u);
+  assert.match(sql, /MAX\(main_queue_attempts\)/u);
   assert.doesNotMatch(sql, /\b(?:INSERT|UPDATE|DELETE|DROP|ALTER|REPLACE)\b/iu);
+});
+
+test('exact continuation accepts only the existing partial failed durable identity', () => {
+  const partial = {
+    ...completedSnapshot(3),
+    sync_run_status: 'failed',
+    sync_run_finished_at: 1785000005000,
+    sync_run_error_code: 'WOOCOMMERCE_D1_READ_FAILED',
+    work_lifecycle_status: 'active',
+    work_completed_at: null,
+    phase_complete: 0,
+    coverage_run_count: 2,
+    invalid_coverage_count: 1,
+  };
+  const selected = selectWooCommerceFullOperation({
+    resumeOperationId: 'woo-final-full-e2372e56d52d',
+    snapshot: partial,
+  });
+  assert.equal(selected.operationId, 'woo-final-full-e2372e56d52d');
+  assert.equal(selected.requestedAt, 1785000000000);
+  assert.equal(selected.priorQueueAttempts, 3);
+  assert.equal(selected.resumedExactOperation, true);
+  assert.equal(selectWooCommerceFullOperation({}), null);
+
+  assert.throws(() => selectWooCommerceFullOperation({
+    resumeOperationId: 'woo-final-full-e2372e56d52d',
+    snapshot: { ...partial, work_generation: 1785000000001 },
+  }), /preflight rejected/u);
+  const emptyPartial = { ...partial };
+  for (const item of createWooCommerceLarkSchemaContract()) emptyPartial[item.d1Table] = 0;
+  assert.throws(() => selectWooCommerceFullOperation({
+    resumeOperationId: 'woo-final-full-e2372e56d52d',
+    snapshot: emptyPartial,
+  }), /preflight rejected/u);
 });
 
 test('completion requires durable work, six Coverage datasets and zero failures', () => {
@@ -158,4 +198,8 @@ test('final CLI deploys all-false Safe closeout and never deploys a scheduled wi
   assert.match(source, /executionFlagsAllFalse: true/u);
   assert.match(source, /scheduleEnabled: false/u);
   assert.doesNotMatch(source, /deploy-scheduled-window|scheduled-active-window/u);
+  assert.ok(
+    source.indexOf("currentStage = 'exact-continuation-preflight'")
+      < source.indexOf("currentStage = 'lark-schema-additive-repair'"),
+  );
 });
