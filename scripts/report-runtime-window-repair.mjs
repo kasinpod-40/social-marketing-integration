@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
-import { chmod, lstat, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import {
   REPORT_RUNTIME_WINDOW_REPAIR_CONFIRMATION,
@@ -9,6 +9,7 @@ import {
   assertReportRuntimeWindowRepairConfirmation,
   parseReportRuntimeWindowRepairArgs,
 } from './lib/report-runtime-window-repair.js';
+import { secureLocalSecretFile } from './lib/local-secret-file-policy.js';
 
 const repositoryRoot = resolve(process.cwd());
 const outputRoot = resolve(
@@ -45,6 +46,7 @@ function printPlan() {
     safety: {
       exactMainOnly: true,
       localDevVarsMode: '0600',
+      localDevVarsWorktreeSymlinkSupported: true,
       remoteD1BackupBeforeEveryWindow: true,
       stableReportIds: true,
       manualD1OrLarkEditing: false,
@@ -60,7 +62,7 @@ function printPlan() {
 
 async function executeRepair() {
   assertReportRuntimeWindowRepairConfirmation(process.env);
-  await ensureDevVarsPermissions();
+  const devVars = await ensureDevVarsPermissions();
   await mkdir(outputRoot, { recursive: true, mode: 0o700 });
   const finalizerRoot = join(outputRoot, 'finalizer');
   const finalizerEvidence = join(finalizerRoot, 'report-runtime-finalize-summary.json');
@@ -107,7 +109,8 @@ async function executeRepair() {
     finalizerEvidence,
     windows: Object.freeze(windows),
     safety: Object.freeze({
-      localDevVarsMode: process.platform === 'win32' ? 'platform-managed' : '0600',
+      localDevVarsMode: devVars.mode,
+      localDevVarsSymbolicLink: devVars.symbolicLink,
       stableReportIds: true,
       manualD1OrLarkEditing: false,
       businessFactsDeleted: false,
@@ -124,30 +127,22 @@ async function executeRepair() {
 }
 
 async function ensureDevVarsPermissions() {
-  const devVarsPath = resolve(repositoryRoot, '.dev.vars');
-  let before;
   try {
-    before = await lstat(devVarsPath);
+    return await secureLocalSecretFile(resolve(repositoryRoot, '.dev.vars'), {
+      expectedBasename: '.dev.vars',
+    });
   } catch (error) {
-    if (error?.code === 'ENOENT') return Object.freeze({ exists: false, mode: null });
-    throw error;
-  }
-  if (!before.isFile() || before.isSymbolicLink()) {
+    const permissionFailure = [
+      'LOCAL_SECRET_FILE_PERMISSION_FAILED',
+      'LOCAL_SECRET_FILE_TARGET_CHANGED',
+    ].includes(error?.code);
     throw repairFailure(
-      '.dev.vars must be a regular non-symlink file before Report repair execution',
-      'REPORT_RUNTIME_WINDOW_REPAIR_DEV_VARS_INVALID',
+      error instanceof Error ? error.message : 'Unable to validate .dev.vars',
+      permissionFailure
+        ? 'REPORT_RUNTIME_WINDOW_REPAIR_DEV_VARS_PERMISSION_FAILED'
+        : 'REPORT_RUNTIME_WINDOW_REPAIR_DEV_VARS_INVALID',
     );
   }
-  if (process.platform === 'win32') return Object.freeze({ exists: true, mode: 'platform-managed' });
-  await chmod(devVarsPath, 0o600);
-  const after = await lstat(devVarsPath);
-  if ((after.mode & 0o077) !== 0) {
-    throw repairFailure(
-      'Unable to restrict .dev.vars permissions to owner-only access',
-      'REPORT_RUNTIME_WINDOW_REPAIR_DEV_VARS_PERMISSION_FAILED',
-    );
-  }
-  return Object.freeze({ exists: true, mode: '0600' });
 }
 
 function runRequiredStep(name, args, env) {

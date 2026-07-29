@@ -1,8 +1,9 @@
-import { access, lstat, readFile, readdir } from 'node:fs/promises';
+import { access, readFile, readdir } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { findBlockedReleasePaths } from './lib/release-archive-policy.js';
+import { inspectLocalSecretFile } from './lib/local-secret-file-policy.js';
 
 const root = process.cwd();
 const issues = [];
@@ -51,7 +52,6 @@ async function scanForMacMetadata(directory) {
   }
 }
 
-
 async function checkGeneratedRootArtifacts() {
   if (!isRepositorySourceRoot()) return;
 
@@ -90,17 +90,17 @@ function checkTrackedLocalOnlyFiles() {
 }
 
 async function checkDevVarsPermission() {
-  const path = join(root, '.dev.vars');
   try {
-    const stat = await lstat(path);
-    if (process.platform !== 'win32' && (stat.mode & 0o077) !== 0) {
-      issues.push('.dev.vars permissions are too open; run chmod 600 .dev.vars');
+    const inspection = await inspectLocalSecretFile(join(root, '.dev.vars'), {
+      expectedBasename: '.dev.vars',
+    });
+    if (inspection.exists && !inspection.ownerOnly) {
+      issues.push('.dev.vars target permissions are too open; run chmod 600 on the target file');
     }
   } catch (error) {
-    if (error?.code !== 'ENOENT') throw error;
+    issues.push(`Invalid .dev.vars local secret: ${error?.message ?? String(error)}`);
   }
 }
-
 
 async function checkPortablePackageLock() {
   const path = join(root, 'package-lock.json');

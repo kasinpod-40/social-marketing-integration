@@ -124,20 +124,26 @@ test('Incomplete Organic baseline requires null aggregate KPIs in D1 and Lark', 
   }), (error) => error.code === 'REPORT_RUNTIME_WINDOW_REPAIR_PARTIAL_AGGREGATE_NUMERIC');
 });
 
-test('One-command wrapper secures local secrets before gates and keeps unsafe features disabled', () => {
-  const source = readFileSync(
+test('One-command wrapper and hygiene gate share the worktree-safe local secret policy', () => {
+  const wrapperSource = readFileSync(
     new URL('../../scripts/report-runtime-window-repair.mjs', import.meta.url),
     'utf8',
   );
-  assert.match(source, /REPORT_RUNTIME_WINDOW_REPAIR_SEQUENCE/u);
-  assert.match(source, /MKT_REPORT_RUNTIME_CLOSEOUT_OPERATION/u);
-  assert.match(source, /MKT_REPORT_RUNTIME_CLOSEOUT_WINDOW_DAYS/u);
-  assert.match(source, /CONFIRM_REPORT_RUNTIME_FINALIZE/u);
-  assert.match(source, /CONFIRM_REPORT_RUNTIME_CLOSEOUT/u);
-  assert.match(source, /await ensureDevVarsPermissions\(\);[\s\S]*runRequiredStep\('report-runtime-finalizer'/u);
-  assert.match(source, /before\.isSymbolicLink\(\)/u);
-  assert.match(source, /chmod\(devVarsPath, 0o600\)/u);
-  assert.match(source, /\(after\.mode & 0o077\) !== 0/u);
-  assert.doesNotMatch(source, /MKT_SCHEDULE_DAILY_REPORT_ENABLED\s*:\s*['"]true['"]/u);
-  assert.doesNotMatch(source, /MKT_REPORT_AI_SUMMARY_ENABLED\s*:\s*['"]true['"]/u);
+  const hygieneSource = readFileSync(
+    new URL('../../scripts/check-repository-hygiene.mjs', import.meta.url),
+    'utf8',
+  );
+  assert.match(wrapperSource, /REPORT_RUNTIME_WINDOW_REPAIR_SEQUENCE/u);
+  assert.match(wrapperSource, /MKT_REPORT_RUNTIME_CLOSEOUT_OPERATION/u);
+  assert.match(wrapperSource, /MKT_REPORT_RUNTIME_CLOSEOUT_WINDOW_DAYS/u);
+  assert.match(wrapperSource, /CONFIRM_REPORT_RUNTIME_FINALIZE/u);
+  assert.match(wrapperSource, /CONFIRM_REPORT_RUNTIME_CLOSEOUT/u);
+  assert.match(wrapperSource, /secureLocalSecretFile/u);
+  assert.match(wrapperSource, /localDevVarsWorktreeSymlinkSupported:\s*true/u);
+  assert.match(wrapperSource, /await ensureDevVarsPermissions\(\);[\s\S]*runRequiredStep\('report-runtime-finalizer'/u);
+  assert.doesNotMatch(wrapperSource, /regular non-symlink file/u);
+  assert.match(hygieneSource, /inspectLocalSecretFile/u);
+  assert.doesNotMatch(hygieneSource, /await lstat\(path\)/u);
+  assert.doesNotMatch(wrapperSource, /MKT_SCHEDULE_DAILY_REPORT_ENABLED\s*:\s*['"]true['"]/u);
+  assert.doesNotMatch(wrapperSource, /MKT_REPORT_AI_SUMMARY_ENABLED\s*:\s*['"]true['"]/u);
 });
