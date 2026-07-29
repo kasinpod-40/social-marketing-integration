@@ -20,16 +20,15 @@ export async function writeDashboardMaterializationToLark(input = {}) {
   const topContentLimit = boundedLimit(input.topContentLimit ?? Math.max(payload.topContent.length, 5));
   const topAdsLimit = boundedLimit(input.topAdsLimit ?? Math.max(payload.topAds.length, 5));
   const sourceSnapshotCount = nonNegativeInteger(input.sourceSnapshotCount ?? 0, 'sourceSnapshotCount');
+  const sharedDimensions = buildSharedDimensions({
+    row,
+    payload,
+    customerProfile,
+    utcOffset,
+  });
   const snapshotRow = Object.freeze({
     report_id: row.report_id,
-    report_setting_key: row.report_setting_key,
-    customer_profile: customerProfile,
-    account_id: row.account_key,
-    report_type: row.report_type,
-    period_kind: row.period_kind,
-    window_days: row.window_days,
-    period_start: dateOnlyToEpochMilliseconds(row.period_start, { utcOffset }),
-    period_end: dateOnlyToEpochMilliseconds(row.period_end, { utcOffset }),
+    ...sharedDimensions,
     compare_start: row.compare_start ? dateOnlyToEpochMilliseconds(row.compare_start, { utcOffset }) : null,
     compare_end: row.compare_end ? dateOnlyToEpochMilliseconds(row.compare_end, { utcOffset }) : null,
     comparison_mode: payload.period.comparisonMode,
@@ -42,7 +41,7 @@ export async function writeDashboardMaterializationToLark(input = {}) {
     data_status: payload.dataStatus,
     formula_version: row.formula_version,
     source_snapshot_count: sourceSnapshotCount,
-    baseline_coverage_rate: payload.coverageRate,
+    baseline_coverage_rate: payload.capability === 'organic' ? payload.coverageRate : null,
   });
   const metricRows = buildReportMetricValueRows({
     reportId: row.report_id,
@@ -57,6 +56,7 @@ export async function writeDashboardMaterializationToLark(input = {}) {
     period: payload.period,
     generatedAt: row.generated_at,
     utcOffset,
+    sharedDimensions,
   });
   const topContentRows = payload.capability === 'organic' ? buildReportTopContentRows({
     reportId: row.report_id,
@@ -70,6 +70,7 @@ export async function writeDashboardMaterializationToLark(input = {}) {
     period: payload.period,
     generatedAt: row.generated_at,
     utcOffset,
+    sharedDimensions,
   }) : Object.freeze([]);
   const topAdsRows = payload.capability === 'paid_ads' ? buildReportTopAdsRows({
     reportId: row.report_id,
@@ -83,6 +84,7 @@ export async function writeDashboardMaterializationToLark(input = {}) {
     period: payload.period,
     generatedAt: row.generated_at,
     utcOffset,
+    sharedDimensions,
   }) : Object.freeze([]);
   const planEntries = [
     ['reportSnapshot', tables.mktReportSnapshots, 'report_id', [snapshotRow]],
@@ -108,6 +110,31 @@ export async function writeDashboardMaterializationToLark(input = {}) {
     source: 'report_materializations',
     rows: Object.freeze({ snapshots: 1, metrics: metricRows.length, topContent: topContentRows.length, topAds: topAdsRows.length }),
     results: Object.freeze(results),
+  });
+}
+
+function buildSharedDimensions(input) {
+  return Object.freeze({
+    customer_key: requireText(input.row.customer_key, 'materialization.customer_key'),
+    customer_profile: requireText(input.customerProfile, 'customerProfile'),
+    capability: requireText(input.payload.capability, 'materialization.capability'),
+    account_id: requireText(input.row.account_key, 'materialization.account_key'),
+    report_setting_key: requireText(
+      input.row.report_setting_key,
+      'materialization.report_setting_key',
+    ),
+    report_type: requireText(input.row.report_type, 'materialization.report_type'),
+    period_kind: requireText(input.row.period_kind, 'materialization.period_kind'),
+    window_days: input.row.window_days ?? null,
+    period_start: dateOnlyToEpochMilliseconds(input.row.period_start, {
+      utcOffset: input.utcOffset,
+    }),
+    period_end: dateOnlyToEpochMilliseconds(input.row.period_end, {
+      utcOffset: input.utcOffset,
+    }),
+    data_status: requireText(input.row.data_status, 'materialization.data_status'),
+    coverage_rate: input.row.coverage_rate ?? null,
+    generated_at: input.row.generated_at,
   });
 }
 

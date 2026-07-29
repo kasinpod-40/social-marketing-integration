@@ -46,6 +46,12 @@ function extendExistingTable(table) {
     if (field.fieldName === 'data_status') return withSelectOptions(field, DATA_STATUS_OPTIONS);
     return clone(field);
   });
+  const materializationContract = LARK_REPORT_MATERIALIZATION_SCHEMA.tables[table.key];
+  for (const additiveField of materializationContract?.additiveFields ?? []) {
+    if (!fields.some((field) => field.fieldName === additiveField.fieldName)) {
+      fields.push(toExecutableField(additiveField));
+    }
+  }
 
   if (table.key === 'mktReportSettings'
     && !fields.some((field) => field.fieldName === 'top_ads_limit')) {
@@ -75,16 +81,21 @@ function buildTopAdsTable() {
     defaultViewName: source.defaultViewName,
     logicalName: source.logicalName,
     fields: source.fields.map((field) => {
-      const base = {
-        fieldName: field.fieldName,
-        type: field.type,
-        uiType: field.uiType,
-        primary: field.primary === true,
-        description: topAdsDescription(field.fieldName),
-      };
-      return Array.isArray(field.options) ? withSelectOptions(base, field.options) : base;
+      return toExecutableField(field, topAdsDescription(field.fieldName));
     }),
   };
+}
+
+function toExecutableField(field, description = sharedDimensionDescription(field.fieldName)) {
+  const base = {
+    fieldName: field.fieldName,
+    type: field.type,
+    uiType: field.uiType,
+    primary: field.primary === true,
+    description,
+    ...(field.property ? { property: clone(field.property) } : {}),
+  };
+  return Array.isArray(field.options) ? withSelectOptions(base, field.options) : base;
 }
 
 function withSelectOptions(field, names) {
@@ -96,15 +107,29 @@ function withSelectOptions(field, names) {
   };
 }
 
+function sharedDimensionDescription(fieldName) {
+  return ({
+    customer_key: 'Customer business identity',
+    capability: 'Extensible lowercase capability key',
+    period_kind: 'rolling_days หรือ custom_range',
+    window_days: 'จำนวนวันแบบ Inclusive; Custom range เว้นว่าง',
+    coverage_rate: 'Coverage รวมของ Report materialization',
+  })[fieldName] ?? fieldName;
+}
+
 function topAdsDescription(fieldName) {
   return ({
     report_ad_key: 'Fixed rank key',
     report_id: 'อ้าง Report Snapshot',
     report_setting_key: 'อ้าง Report Setting',
+    customer_key: 'Customer business identity',
     customer_profile: 'Canonical customer profile',
+    capability: 'Extensible lowercase capability key',
     report_type: 'ชนิดรายงาน',
     platform: 'Paid Ads platform',
     account_id: 'Canonical account key',
+    period_kind: 'rolling_days หรือ custom_range',
+    window_days: 'จำนวนวันแบบ Inclusive; Custom range เว้นว่าง',
     rank: 'อันดับคงที่',
     external_ad_id: 'Provider Ad ID',
     external_campaign_id: 'Provider Campaign ID',
@@ -124,6 +149,7 @@ function topAdsDescription(fieldName) {
     cpa_micros: 'Spend / conversions หลัง SUM',
     roas: 'Conversion value / spend หลัง SUM',
     data_status: 'Coverage/data status',
+    coverage_rate: 'Coverage รวมของ Report materialization',
     period_start: 'เริ่มช่วงรายงาน',
     period_end: 'จบช่วงรายงาน',
     generated_at: 'เวลาสร้าง materialization',
