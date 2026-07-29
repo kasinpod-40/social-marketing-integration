@@ -112,7 +112,7 @@ async function main() {
       nextCommand: [
         'CONFIRM_WRITE=YES',
         `CONFIRM_LARK_DASHBOARD_SHARED_DIMENSIONS_BACKFILL=${LARK_DASHBOARD_SHARED_DIMENSIONS_BACKFILL_CONFIRMATION}`,
-        'npm run backfill:lark-dashboard-shared-dimensions:apply',
+        'node scripts/lark-dashboard-shared-dimensions-backfill.mjs --apply',
       ].join(' '),
     });
     return;
@@ -274,11 +274,11 @@ function assertIntegrationWorkspace(runtimeConfig) {
 function printHelp() {
   printJson({
     operatorVersion: 'lark-dashboard-shared-dimensions-backfill-v1',
-    preview: 'npm run backfill:lark-dashboard-shared-dimensions',
+    preview: 'node scripts/lark-dashboard-shared-dimensions-backfill.mjs',
     apply: [
       'CONFIRM_WRITE=YES',
       `CONFIRM_LARK_DASHBOARD_SHARED_DIMENSIONS_BACKFILL=${LARK_DASHBOARD_SHARED_DIMENSIONS_BACKFILL_CONFIRMATION}`,
-      'npm run backfill:lark-dashboard-shared-dimensions:apply',
+      'node scripts/lark-dashboard-shared-dimensions-backfill.mjs --apply',
     ].join(' '),
     remoteD1Mutation: false,
     workerDeployment: false,
