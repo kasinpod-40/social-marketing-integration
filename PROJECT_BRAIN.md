@@ -41,6 +41,11 @@ WordPress `6.9.4`, currency `THB`, Preview URLs ถูก restore disabled แ�
 ไม่เปลี่ยน. Exact inspector ของ `woo-final-full-6f43ac8ee857` ยืนยัน failed/stale-active,
 no lock, one Queue attempt และ zero Coverage/Commerce rows จึงอนุญาตเฉพาะ guarded
 lifecycle-only recovery ที่ pin operation นี้ก่อน Final rollout.
+PR #253 ต่อมา Squash Merged ที่ `67a82551749569d74b9e4b66a32c82e5715b1d40`
+และ exact recovery สำเร็จ: stale-active false, active lock 0, Queue attempt คง 1,
+Coverage/Commerce rows คง 0. ก่อน admit operation ใหม่ต้องแก้ Final operator รุ่นเดิมที่จบด้วย
+scheduled-active deployment ให้จบด้วย verified all-false `safe-closeout` แทน เพราะ
+Integration Workspace authorization ล่าสุดห้ามเปิด Schedule/Cron ตลอด Workstream.
 
 ## WooCommerce diagnostics deterministic Preview origin — 2026-07-30
 

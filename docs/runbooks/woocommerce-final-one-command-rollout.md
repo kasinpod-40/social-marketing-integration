@@ -74,7 +74,7 @@ LARK_APP_SECRET
 10. ตรวจ Work/Coverage และ D1/Lark parity ครบ 14 mappings.
 11. ส่ง operation เดิมซ้ำหนึ่งครั้งและพิสูจน์ idempotency.
 12. รัน incremental UAT จาก conservative Orders/Products watermark.
-13. Deploy Scheduled window หลังทุก Gate ผ่าน.
+13. Deploy Safe closeout ที่ execution flags ทั้งหมดเป็น false หลังทุก Gate ผ่าน.
 14. เขียน SHA-chained evidence ลง `outputs/woocommerce-final-rollout/` โดยไม่เก็บ Account ID หรือ token แบบ plaintext.
 
 ## Fail-closed behavior
@@ -100,7 +100,8 @@ LARK_APP_SECRET
   "parityVerified": true,
   "idempotentRerunVerified": true,
   "incrementalVerified": true,
-  "scheduleEnabled": true,
+  "executionFlagsAllFalse": true,
+  "scheduleEnabled": false,
   "nextStep": "none_for_integration_workspace_woocommerce"
 }
 ```

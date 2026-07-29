@@ -14,7 +14,7 @@ Remote contract preflight
 → 14-table D1/Lark parity
 → same-operation idempotent rerun
 → incremental UAT
-→ scheduled active deployment
+→ all-false Safe closeout deployment
 → SHA-chained evidence summary
 ```
 
@@ -23,7 +23,7 @@ Remote contract preflight
 - WooCommerce Connector และ Queue job เป็น `active` หลัง implementation merge.
 - Trigger ที่รับได้มีเฉพาะ `manual_uat` และ `scheduled`.
 - Manual UAT ต้องเปิด Connector + D1 + Lark และปิด Schedule.
-- Scheduled runtime ต้องเปิด Connector + D1 + Lark + Schedule และบังคับ incremental.
+- Workstream นี้ไม่ deploy Scheduled runtime; Schedule/Cron ต้อง disabled ตลอด.
 - Continuation ใช้ operation ID, work key, generation และ original requested time เดิม.
 - Scheduled producer สร้าง operation เดียวต่อวัน/เวลาตาม Asia/Bangkok.
 - Incremental watermark ใช้ค่าที่เก่ากว่าระหว่าง Orders และ Products เพื่อไม่ข้ามการแก้ไข.
@@ -55,7 +55,7 @@ Final terminal operator จึงเป็นผู้ถือ mutation chain �
 - ไม่ลบ/rename/type-change ตารางหรือ Field เดิม.
 - Deploy safe all-false ก่อน UAT.
 - Restore safe all-false อัตโนมัติเมื่อเกิดข้อผิดพลาดหลัง safe config พร้อม.
-- เปิด Schedule หลัง Full, parity, rerun และ incremental UAT ผ่านเท่านั้น.
+- Deploy verified all-false Safe closeout หลัง Full, parity, rerun และ incremental UAT ผ่าน.
 
 ## Acceptance
 
@@ -65,5 +65,5 @@ Final terminal operator จึงเป็นผู้ถือ mutation chain �
 - D1/Lark account-scoped row count เท่ากันครบ 14 mappings.
 - Same-operation rerun เพิ่ม Queue attempt แต่ Business/Coverage counts ไม่เปลี่ยน.
 - Incremental UAT completed และ parity ผ่าน.
-- Final active Worker มีเฉพาะ WooCommerce Connector/D1/Lark/Schedule gates เป็น true.
+- Final active Worker มี execution flags ทั้งหมดเป็น false และ Schedule disabled.
 - Production ยังคง blocked; scope นี้ปิด Integration Workspace WooCommerce เท่านั้น.

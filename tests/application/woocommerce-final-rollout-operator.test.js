@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import {
   WOOCOMMERCE_FINAL_FLAGS,
@@ -66,7 +67,7 @@ test('Lark schema contract covers exact 14 mappings and matching key fields', ()
   }
 });
 
-test('config windows are exact safe, UAT and scheduled flag sets', () => {
+test('config windows are exact safe, UAT and all-false closeout flag sets', () => {
   const tableIds = Object.fromEntries(createWooCommerceLarkSchemaContract().map((item, index) => [item.tableKey, `tbl_${index}`]));
   const windows = buildWooCommerceConfigWindows({ configText: configText(), tableIds });
   assert.deepEqual(windows.safeTrueFlags, []);
@@ -76,13 +77,9 @@ test('config windows are exact safe, UAT and scheduled flag sets', () => {
     'MKT_WOOCOMMERCE_FULL_RECONCILIATION_ENABLED',
     'MKT_WOOCOMMERCE_LARK_WRITE_ENABLED',
   ]);
-  assert.deepEqual(windows.scheduledTrueFlags, [
-    'MKT_CONNECTOR_WOOCOMMERCE_ENABLED',
-    'MKT_SCHEDULE_WOOCOMMERCE_ENABLED',
-    'MKT_WOOCOMMERCE_D1_WRITE_ENABLED',
-    'MKT_WOOCOMMERCE_LARK_WRITE_ENABLED',
-  ]);
-  assert.match(windows.scheduled, /"LARK_TABLE_RAW_COMMERCE_STORES": "tbl_0"/u);
+  assert.deepEqual(windows.closeoutTrueFlags, []);
+  assert.match(windows.closeout, /"LARK_TABLE_RAW_COMMERCE_STORES": "tbl_0"/u);
+  assert.equal(windows.closeoutSha256, windows.safeSha256);
 });
 
 test('config windows safely materialize omitted default-false gates and Lark mappings', () => {
@@ -100,7 +97,7 @@ test('config windows safely materialize omitted default-false gates and Lark map
   const windows = buildWooCommerceConfigWindows({ configText: source, tableIds });
   const safe = JSON.parse(windows.safe);
   const uat = JSON.parse(windows.uat);
-  const scheduled = JSON.parse(windows.scheduled);
+  const closeout = JSON.parse(windows.closeout);
 
   assert.equal(safe.vars.UNRELATED_NON_SECRET_VALUE, 'preserve-me');
   for (const flag of WOOCOMMERCE_FINAL_FLAGS) assert.equal(safe.vars[flag], 'false', flag);
@@ -109,8 +106,9 @@ test('config windows safely materialize omitted default-false gates and Lark map
   }
   assert.equal(uat.vars.MKT_WOOCOMMERCE_D1_WRITE_ENABLED, 'true');
   assert.equal(uat.vars.MKT_SCHEDULE_WOOCOMMERCE_ENABLED, 'false');
-  assert.equal(scheduled.vars.MKT_SCHEDULE_WOOCOMMERCE_ENABLED, 'true');
+  for (const flag of WOOCOMMERCE_FINAL_FLAGS) assert.equal(closeout.vars[flag], 'false', flag);
   assert.deepEqual(windows.safeTrueFlags, []);
+  assert.deepEqual(windows.closeoutTrueFlags, []);
 });
 
 test('full and incremental Queue jobs use stable WooCommerce identity', () => {
@@ -148,4 +146,16 @@ test('D1/Lark parity checks all 14 table mappings exactly', () => {
   assert.equal(compareWooCommerceParity({ d1Counts, larkCounts }).tableCount, 14);
   larkCounts.rawCommerceOrders = 3;
   assert.throws(() => compareWooCommerceParity({ d1Counts, larkCounts }), /parity mismatch/u);
+});
+
+test('final CLI deploys all-false Safe closeout and never deploys a scheduled window', async () => {
+  const source = await readFile(
+    new URL('../../scripts/woocommerce-final-rollout-operator.mjs', import.meta.url),
+    'utf8',
+  );
+  assert.match(source, /currentStage = 'deploy-safe-closeout'/u);
+  assert.match(source, /windows\.closeoutTrueFlags/u);
+  assert.match(source, /executionFlagsAllFalse: true/u);
+  assert.match(source, /scheduleEnabled: false/u);
+  assert.doesNotMatch(source, /deploy-scheduled-window|scheduled-active-window/u);
 });
