@@ -59,7 +59,7 @@ test('same custom request and watermark claims and enqueues only one determinist
 });
 
 test('every rolling preset uses the same materialization job type and period contract', () => {
-  const jobs = [3, 7, 9, 15, 30, 90].map((windowDays) => buildDashboardPresetJob({
+  const jobs = [1, 3, 7, 9, 15, 30, 90].map((windowDays) => buildDashboardPresetJob({
     windowDays,
     periodEnd: '2026-07-26',
     timeZone: 'Asia/Bangkok',
@@ -69,7 +69,7 @@ test('every rolling preset uses the same materialization job type and period con
     sourceWatermark: 'watermark',
   }));
   assert.deepEqual(new Set(jobs.map((job) => job.type)), new Set(['report.materialization.generate']));
-  assert.deepEqual(jobs.map((job) => job.windowDays), [3, 7, 9, 15, 30, 90]);
+  assert.deepEqual(jobs.map((job) => job.windowDays), [1, 3, 7, 9, 15, 30, 90]);
   assert.equal(jobs.every((job) => job.trigger === 'dashboard_preset'), true);
 });
 
@@ -104,6 +104,6 @@ test('materialization stable key ignores watermark while checksum/no-op dimensio
   const second = await saveDashboardReportMaterialization({ ...base, sourceWatermark: 'b', generatedAt: 2 });
   assert.equal(first.reportId, second.reportId);
   assert.equal(writes[0].window_days, null);
-  assert.equal(writes[0].payload_json.includes('\"current\":0'), true);
-  assert.equal(writes[0].payload_json.includes('\"compare\":null'), true);
+  assert.equal(writes[0].payload_json.includes('"current":0'), true);
+  assert.equal(writes[0].payload_json.includes('"compare":null'), true);
 });
