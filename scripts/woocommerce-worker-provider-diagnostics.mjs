@@ -25,6 +25,9 @@ import {
 import {
   createWooCommerceDiagnosticsAttestedFetch,
 } from './lib/woocommerce-diagnostics-attested-fetch.js';
+import {
+  parseWooCommerceDiagnosticsPreviewUpload,
+} from './lib/woocommerce-diagnostics-preview-upload.js';
 
 const repositoryRoot = resolve(process.cwd());
 const evidenceRoot = resolve(
@@ -36,46 +39,21 @@ const WORKER_NAME_DEFAULT = 'social-mkt-sync-worker';
 const TRUE_FLAG_PATTERN = /^MKT_[A-Z0-9_]+_ENABLED$/u;
 const PREVIEW_ALIAS_PREFIX = 'woo-provider-diag';
 const attestedFetch = createWooCommerceDiagnosticsAttestedFetch(globalThis.fetch.bind(globalThis));
+
 let target = null;
 let configs = null;
 let productionBaselineVersion = null;
 let previewAlias = null;
-let activePreviewUploaded = false;
+let activePreviewUploadAttempted = false;
 let workerVersionUploadCount = 0;
-let providerRequestCount = 0;
 let providerRequestAttemptCount = 0;
+let providerRequestCount = 0;
 
 try {
   await main();
 } catch (error) {
-  let automaticPreviewSafeClose = null;
-  if (activePreviewUploaded && target && configs && previewAlias) {
-    try {
-      const safeUpload = await uploadPreviewVersion({
-        label: 'automatic-preview-safe-close',
-        configText: configs.safe,
-        alias: previewAlias,
-      });
-      automaticPreviewSafeClose = await verifyPreviewVersionAndProbe({
-        label: 'automatic-preview-safe-close',
-        upload: safeUpload,
-        expectedStatus: 404,
-        expectedTrueFlags: [],
-        expectedAttestation: configs.safeAttestation,
-      });
-      activePreviewUploaded = false;
-    } catch (closeError) {
-      automaticPreviewSafeClose = {
-        ok: false,
-        code: closeError?.code
-          ?? 'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_PREVIEW_SAFE_CLOSE_FAILED',
-        message: closeError instanceof Error ? closeError.message : String(closeError),
-        productionDeploymentUnchanged: await productionDeploymentUnchangedOrFalse(),
-        details: sanitize(closeError?.details ?? {}),
-      };
-    }
-  }
-  const productionDeploymentUnchanged = await productionDeploymentUnchangedOrFalse();
+  const automaticPreviewSafeClose = await attemptAutomaticPreviewSafeClose();
+  const productionDeploymentUnchanged = productionDeploymentUnchangedOrFalse();
   process.stderr.write(`${JSON.stringify({
     ok: false,
     stage: 'woocommerce-worker-provider-diagnostics',
@@ -113,7 +91,6 @@ async function main() {
   requireExact(env.MKT_ENV, 'development', 'MKT_ENV');
   requireExact(env.MKT_CUSTOMER_PROFILE, 'integration_workspace', 'MKT_CUSTOMER_PROFILE');
   requireExact(env.MKT_CONNECTION_CUSTOMER_KEY, 'chemistry_k', 'MKT_CONNECTION_CUSTOMER_KEY');
-  const operatorToken = requireSecret(env.MKT_CONNECTION_OPERATOR_TOKEN, 'MKT_CONNECTION_OPERATOR_TOKEN');
   const repository = assertRepositoryState();
   const configPath = resolveRepositoryFile(
     env.MKT_WOOCOMMERCE_ROLLOUT_WRANGLER_CONFIG ?? 'wrangler.sync.jsonc',
@@ -132,7 +109,7 @@ async function main() {
     repositoryHead: repository.head,
     workerName,
     configPath,
-    operatorToken,
+    operatorToken: requireSecret(env.MKT_CONNECTION_OPERATOR_TOKEN, 'MKT_CONNECTION_OPERATOR_TOKEN'),
     pathname: configs.pathname,
   });
 
@@ -141,12 +118,12 @@ async function main() {
   productionBaselineVersion = preflight.productionActiveVersion;
   await writeEvidence('01-preflight', preflight);
 
+  activePreviewUploadAttempted = true;
   const activeUpload = await uploadPreviewVersion({
     label: 'provider-diagnostics-active-preview',
     configText: configs.active,
     alias: previewAlias,
   });
-  activePreviewUploaded = true;
   const active = await verifyPreviewVersionAndProbe({
     label: 'provider-diagnostics-active-preview',
     upload: activeUpload,
@@ -182,7 +159,7 @@ async function main() {
     expectedTrueFlags: [],
     expectedAttestation: configs.safeAttestation,
   });
-  activePreviewUploaded = false;
+  activePreviewUploadAttempted = false;
   await writeEvidence('04-safe-preview-close', safe);
 
   assertProductionDeploymentUnchanged();
@@ -209,6 +186,35 @@ async function main() {
     safeHttpClosureAttested: true,
     evidenceRoot: relative(repositoryRoot, evidenceRoot),
   }, null, 2)}\n`);
+}
+
+async function attemptAutomaticPreviewSafeClose() {
+  if (!activePreviewUploadAttempted || !target || !configs || !previewAlias) return null;
+  try {
+    const safeUpload = await uploadPreviewVersion({
+      label: 'automatic-preview-safe-close',
+      configText: configs.safe,
+      alias: previewAlias,
+    });
+    const result = await verifyPreviewVersionAndProbe({
+      label: 'automatic-preview-safe-close',
+      upload: safeUpload,
+      expectedStatus: 404,
+      expectedTrueFlags: [],
+      expectedAttestation: configs.safeAttestation,
+    });
+    activePreviewUploadAttempted = false;
+    return result;
+  } catch (closeError) {
+    return {
+      ok: false,
+      code: closeError?.code
+        ?? 'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_PREVIEW_SAFE_CLOSE_FAILED',
+      message: closeError instanceof Error ? closeError.message : String(closeError),
+      productionDeploymentUnchanged: productionDeploymentUnchangedOrFalse(),
+      details: sanitize(closeError?.details ?? {}),
+    };
+  }
 }
 
 function printPlan() {
@@ -248,8 +254,7 @@ async function runPreflight() {
     '--config', target.configPath, '--format', 'json',
   ]));
   const productionActiveVersion = readProductionActiveVersion();
-  const view = readVersionView(productionActiveVersion);
-  assertExactFlags(readTrueFlags(view), []);
+  assertExactFlags(readTrueFlags(readVersionView(productionActiveVersion)), []);
   return Object.freeze({
     repositoryHead: target.repositoryHead,
     productionActiveVersion,
@@ -280,31 +285,29 @@ async function dryRunConfig(configText, label) {
 }
 
 async function uploadPreviewVersion(input) {
-  return withGeneratedConfig(input.configText, async (configPath) => {
-    return withWranglerOutput(async (outputPath) => {
+  return withGeneratedConfig(input.configText, async (configPath) => (
+    withWranglerOutput(async (outputPath) => {
       const stdout = runText('npx', [
         'wrangler', 'versions', 'upload', '--config', configPath,
         '--preview-alias', input.alias,
         '--message', `woocommerce_worker_provider_diagnostics stage=${input.label} git=${target.repositoryHead}`,
       ], {
         label: input.label,
-        env: { WRANGLER_OUTPUT_FILE: outputPath },
+        env: { WRANGLER_OUTPUT_FILE_PATH: outputPath },
       });
       workerVersionUploadCount += 1;
       const outputText = await readFile(outputPath, 'utf8').catch(() => '');
-      const parsed = extractVersionUploadResult(`${outputText}\n${stdout}`, input.alias);
       return Object.freeze({
-        ...parsed,
+        ...parseWooCommerceDiagnosticsPreviewUpload(outputText, stdout, input.alias),
         label: input.label,
         configSha256: sha256(input.configText),
       });
-    });
-  });
+    })
+  ));
 }
 
 async function verifyPreviewVersionAndProbe(input) {
-  const view = readVersionView(input.upload.versionId);
-  assertExactFlags(readTrueFlags(view), input.expectedTrueFlags);
+  assertExactFlags(readTrueFlags(readVersionView(input.upload.versionId)), input.expectedTrueFlags);
   assertProductionDeploymentUnchanged();
   const routeStatuses = [];
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -478,67 +481,6 @@ function runText(file, args, options = {}) {
   return String(result.stdout ?? '').trim();
 }
 
-function extractVersionUploadResult(output, alias) {
-  const text = String(output);
-  const objects = text.split(/\r?\n/u)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .flatMap((line) => {
-      try {
-        return [JSON.parse(line)];
-      } catch {
-        return [];
-      }
-    });
-  const strings = [];
-  for (const object of objects) walk(object, (value) => {
-    if (typeof value === 'string') strings.push(value);
-  });
-  strings.push(...(text.match(/https:\/\/[^\s"'<>]+/giu) ?? []));
-  const versionCandidates = [...new Set([
-    ...strings.filter(isWorkerVersionId),
-    ...(text.match(/\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/giu) ?? [])
-      .map((value) => value.toLowerCase()),
-  ])];
-  if (versionCandidates.length !== 1) {
-    throw failure(
-      'Preview Version upload output did not contain exactly one Worker version ID',
-      'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_VERSION_UPLOAD_INVALID',
-      { versionIdCount: versionCandidates.length },
-    );
-  }
-  const urls = [...new Set(strings
-    .filter((value) => /^https:\/\//iu.test(value))
-    .map((value) => value.replace(/[),.;]+$/u, '')))]
-    .map((value) => {
-      try {
-        return new URL(value);
-      } catch {
-        return null;
-      }
-    })
-    .filter((url) => url?.protocol === 'https:' && url.hostname.endsWith('.workers.dev'));
-  const aliased = urls.filter((url) => url.hostname.includes(alias));
-  const selected = aliased.length === 1 ? aliased[0] : (urls.length === 1 ? urls[0] : null);
-  if (!selected) {
-    throw failure(
-      'Preview Version upload output did not contain one unambiguous Preview URL',
-      'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_PREVIEW_URL_INVALID',
-      { previewUrlCount: urls.length, aliasedPreviewUrlCount: aliased.length },
-    );
-  }
-  return Object.freeze({
-    versionId: versionCandidates[0],
-    previewOrigin: selected.origin,
-    previewOriginFingerprint: sha256(selected.origin),
-  });
-}
-
-function isWorkerVersionId(value) {
-  return typeof value === 'string'
-    && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value);
-}
-
 function readProductionActiveVersion() {
   const status = JSON.parse(runText('npx', [
     'wrangler', 'deployments', 'status', '--name', target.workerName,
@@ -566,12 +508,11 @@ function assertProductionDeploymentUnchanged() {
       },
     );
   }
-  const view = readVersionView(observed);
-  assertExactFlags(readTrueFlags(view), []);
+  assertExactFlags(readTrueFlags(readVersionView(observed)), []);
   return true;
 }
 
-async function productionDeploymentUnchangedOrFalse() {
+function productionDeploymentUnchangedOrFalse() {
   if (!target || !productionBaselineVersion) return null;
   try {
     return assertProductionDeploymentUnchanged();
