@@ -59,7 +59,10 @@ try {
     secretValuesCopied: source.secretValuesCopied,
   })}\n`);
 
-  if (options.execute) {
+  const resumeOperationId = optionalText(
+    process.env.MKT_WOOCOMMERCE_FINAL_RESUME_OPERATION_ID,
+  );
+  if (options.execute && !resumeOperationId) {
     const recovery = recoverFailedWooCommerceWork();
     process.stderr.write(`${JSON.stringify({
       ok: true,
@@ -68,6 +71,19 @@ try {
       recoveredWorkFingerprints: recovery.recovered.map((item) => item.workKeyFingerprint),
       activeWorkCount: recovery.activeWorkCount,
       activeLockCount: recovery.activeLockCount,
+      businessRowMutationCount: 0,
+      phaseDeletionCount: 0,
+      generationFenceMutationCount: 0,
+    })}\n`);
+  } else if (options.execute) {
+    process.stderr.write(`${JSON.stringify({
+      ok: true,
+      stage: 'woocommerce-final-failed-work-recovery-skipped',
+      reason: 'exact_continuation_pinned',
+      operationIdFingerprint: createHash('sha256')
+        .update(resumeOperationId)
+        .digest('hex'),
+      recoveredWorkCount: 0,
       businessRowMutationCount: 0,
       phaseDeletionCount: 0,
       generationFenceMutationCount: 0,
@@ -178,4 +194,8 @@ function launcherError(message, code, details = undefined) {
   error.code = code;
   error.details = details;
   return error;
+}
+
+function optionalText(value) {
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
 }

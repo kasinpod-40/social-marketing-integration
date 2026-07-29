@@ -153,6 +153,39 @@ test('pre-Migration state accepts empty or exact schema only while 0017 is pendi
   }, { migration0017Pending: false }), /Active work/u);
 });
 
+test('pre-Migration state permits only the one pinned active exact continuation', () => {
+  const row = {
+    active_work: 1,
+    pinned_active_work: 1,
+    other_active_work: 0,
+    active_locks: 0,
+    commerce_table_count: 17,
+    commerce_index_count: 13,
+  };
+  const result = validateWooCommercePreMigrationState(
+    row,
+    { migration0017Pending: false },
+    { resumeOperationId: 'woo-final-full-e2372e56d52d' },
+  );
+  assert.equal(result.pinnedActiveWork, 1);
+  assert.throws(
+    () => validateWooCommercePreMigrationState(
+      { ...row, other_active_work: 1, active_work: 2 },
+      { migration0017Pending: false },
+      { resumeOperationId: 'woo-final-full-e2372e56d52d' },
+    ),
+    (error) => error?.code === 'WOOCOMMERCE_FINAL_ACTIVE_WORK_BLOCKED',
+  );
+  assert.throws(
+    () => validateWooCommercePreMigrationState(
+      row,
+      { migration0017Pending: true },
+      { resumeOperationId: 'woo-final-full-e2372e56d52d' },
+    ),
+    (error) => error?.code === 'WOOCOMMERCE_FINAL_ACTIVE_WORK_BLOCKED',
+  );
+});
+
 test('one-command wrapper discovers Wrangler account and auth session instead of requiring env values', async () => {
   const source = await readFile(
     new URL('../../scripts/woocommerce-final-one-command.mjs', import.meta.url),

@@ -111,13 +111,18 @@ async function main() {
       '--remote', '--config', configPath,
     ], { env: authenticatedEnv }),
   );
+  const resumeOperationId = optionalText(
+    env.MKT_WOOCOMMERCE_FINAL_RESUME_OPERATION_ID,
+  );
   const beforeState = readD1Row({
     databaseName,
     configPath,
     env: authenticatedEnv,
-    sql: buildPreMigrationSql(),
+    sql: buildPreMigrationSql(resumeOperationId),
   });
-  validateWooCommercePreMigrationState(beforeState, migrationState);
+  validateWooCommercePreMigrationState(beforeState, migrationState, {
+    resumeOperationId,
+  });
 
   let migrationEvidence = {
     applied: false,
@@ -292,7 +297,10 @@ async function applyIsolatedMigration0017(input) {
   };
 }
 
-function buildPreMigrationSql() {
+function buildPreMigrationSql(resumeOperationId = null) {
+  const pinnedWorkKey = resumeOperationId
+    ? `'woocommerce:${sqlText(requireOperationId(resumeOperationId))}'`
+    : 'NULL';
   return `SELECT
     (SELECT COUNT(*) FROM sqlite_master
       WHERE (type='table' AND name LIKE 'raw_commerce_%')
@@ -302,10 +310,31 @@ function buildPreMigrationSql() {
          OR (type='index' AND name LIKE 'idx_commerce_%')) AS commerce_index_count,
     (SELECT COUNT(*) FROM sync_work_runs
       WHERE lifecycle_status='active') AS active_work,
+    (SELECT COUNT(*) FROM sync_work_runs
+      WHERE lifecycle_status='active'
+        AND work_key=${pinnedWorkKey}) AS pinned_active_work,
+    (SELECT COUNT(*) FROM sync_work_runs
+      WHERE lifecycle_status='active'
+        AND (${pinnedWorkKey} IS NULL OR work_key<>${pinnedWorkKey})) AS other_active_work,
     (SELECT COUNT(*) FROM sync_locks
       WHERE expires_at > unixepoch('now') * 1000) AS active_locks;`
     .replace(/\s+/gu, ' ')
     .trim();
+}
+
+function requireOperationId(value) {
+  const text = requireText(value, 'MKT_WOOCOMMERCE_FINAL_RESUME_OPERATION_ID');
+  if (!/^woo-final-(?:full|incremental)-[0-9a-f]{12}$/u.test(text)) {
+    throw commandError(
+      'MKT_WOOCOMMERCE_FINAL_RESUME_OPERATION_ID is invalid',
+      'WOOCOMMERCE_FINAL_RESUME_OPERATION_INVALID',
+    );
+  }
+  return text;
+}
+
+function sqlText(value) {
+  return String(value).replaceAll("'", "''");
 }
 
 function readD1Row(input) {

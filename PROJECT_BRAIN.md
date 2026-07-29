@@ -12,6 +12,30 @@ Historical Root Project Brain ก่อน TikTok post-Lark implementation ถ�
 docs/archive/PROJECT_BRAIN-before-tiktok-post-lark-parity-2026-07-26.md
 ```
 
+## WooCommerce exact-resume lifecycle reactivation — 2026-07-30
+
+Exact continuation ของ `woo-final-full-e2372e56d52d` ถูก source-safe launcher รุ่นเดิมเรียก
+generic failed-work recovery ก่อนอ่าน exact-resume env จึงเปลี่ยน lifecycle เป็น terminal
+หลังมี partial D1/Lark writes แล้ว. Attempt นี้ไม่ Deploy Worker, ไม่ส่ง Queue และไม่เปลี่ยน
+Business/Coverage/Lark facts; Final operator หยุดต่อด้วย defect `optionalText is not defined`.
+
+Live read-only inspection บน
+`main@b10458e3873a16481264fa4889a88620b9669c3d` ยืนยัน failed code
+`WOOCOMMERCE_D1_READ_FAILED`, incomplete phase ที่ dataset 1/page 2, Queue attempts 7,
+Coverage 2/invalid 1, Business rows 897 และ active lock 0.
+
+Current correction ข้าม generic recovery เมื่อ exact operation ถูก pin, ปิด generic
+recovery ทั้ง discovery และ mutation สำหรับ work ที่มี Coverage/Commerce rows, อนุญาต
+preflight active work เฉพาะ pinned identity หนึ่งรายการ และเพิ่ม exact lifecycle reactivation
+แถวเดียวพร้อม immutable pre/post verification. หลัง merge ต้อง re-activate และ resume
+operation เดิมเท่านั้น; ห้าม abandon หรือ admit replacement full operation.
+
+รายละเอียด:
+
+```text
+docs/tasks/woocommerce-exact-resume-reactivation-hotfix-v1.md
+```
+
 ## WooCommerce Preview alias/version pair classifier — 2026-07-30
 
 Wrangler `version-upload` สามารถคืนทั้ง Aliased และ Versioned Preview URL ใน upload เดียว.

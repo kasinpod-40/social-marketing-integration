@@ -124,10 +124,12 @@ async function executeFinalRollout() {
   currentStage = 'repository-and-remote-preflight';
   const configText = await readFile(target.configPath, 'utf8');
   await runLocalVerification();
-  const remote = await remotePreflight(target);
+  const resumeOperationId = optionalText(
+    env.MKT_WOOCOMMERCE_FINAL_RESUME_OPERATION_ID,
+  );
+  const remote = await remotePreflight(target, resumeOperationId);
   await writeEvidence('01-remote-preflight', { target: safeTarget(target), remote });
 
-  const resumeOperationId = optionalText(env.MKT_WOOCOMMERCE_FINAL_RESUME_OPERATION_ID);
   let exactFull = null;
   let exactBefore = null;
   if (resumeOperationId) {
@@ -254,6 +256,10 @@ async function executeFinalRollout() {
   process.stdout.write(`${JSON.stringify({ ok: true, ...summary, evidenceRoot: relative(repositoryRoot, outputRoot) }, null, 2)}\n`);
 }
 
+function optionalText(value) {
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
+}
+
 function loadTarget(env) {
   const exact = (name, value) => {
     if (env[name] !== value) throw failure(`${name} must equal ${value}`, 'WOOCOMMERCE_FINAL_TARGET_INVALID', { name });
@@ -292,7 +298,13 @@ async function runLocalVerification() {
   await command('npm', ['run', 'deploy:dry-run']);
 }
 
-async function remotePreflight(currentTarget) {
+async function remotePreflight(currentTarget, resumeOperationId = null) {
+  const resumeWorkKey = resumeOperationId
+    ? `woocommerce:${requireResumeOperationId(resumeOperationId)}`
+    : null;
+  const resumeWorkSql = resumeWorkKey
+    ? `'${resumeWorkKey.replaceAll("'", "''")}'`
+    : 'NULL';
   await wrangler(['whoami']);
   const [deployment, migrations, secrets, schema] = await Promise.all([
     readDeploymentStatus(),
@@ -302,6 +314,13 @@ async function remotePreflight(currentTarget) {
       (SELECT COUNT(*) FROM sqlite_master WHERE (type='table' AND name LIKE 'raw_commerce_%') OR (type='table' AND name LIKE 'commerce_%')) AS commerce_table_count,
       (SELECT COUNT(*) FROM sqlite_master WHERE (type='index' AND name LIKE 'idx_raw_commerce_%') OR (type='index' AND name LIKE 'idx_commerce_%')) AS commerce_index_count,
       (SELECT COUNT(*) FROM sync_work_runs WHERE lifecycle_status='active') AS active_work,
+      (SELECT COUNT(*) FROM sync_work_runs
+        WHERE lifecycle_status='active'
+          AND work_key=${resumeWorkSql}) AS pinned_active_work,
+      (SELECT COUNT(*) FROM sync_work_runs
+        WHERE lifecycle_status='active'
+          AND (${resumeWorkSql} IS NULL OR work_key<>${resumeWorkSql}))
+        AS other_active_work,
       (SELECT COUNT(*) FROM sync_locks WHERE expires_at > unixepoch('now') * 1000) AS active_locks;`),
   ]);
   const pendingMigrations = [...new Set([...migrations.matchAll(/\b\d{4}_[A-Za-z0-9_.-]+\.sql\b/gu)].map((match) => match[0]))];
@@ -313,7 +332,12 @@ async function remotePreflight(currentTarget) {
   if (Number(schema.commerce_table_count) !== EXPECTED_TABLE_COUNT || Number(schema.commerce_index_count) !== EXPECTED_INDEX_COUNT) {
     throw failure('Remote WooCommerce D1 schema is incomplete', 'WOOCOMMERCE_FINAL_D1_SCHEMA_INCOMPLETE', { schema });
   }
-  if (Number(schema.active_work) !== 0 || Number(schema.active_locks) !== 0) {
+  const activeWorkValid = resumeWorkKey
+    ? Number(schema.active_work) === 1
+      && Number(schema.pinned_active_work) === 1
+      && Number(schema.other_active_work) === 0
+    : Number(schema.active_work) === 0;
+  if (!activeWorkValid || Number(schema.active_locks) !== 0) {
     throw failure('Active work or lock blocks WooCommerce final rollout', 'WOOCOMMERCE_FINAL_ACTIVE_WORK_BLOCKED', { schema });
   }
   const secretNames = parseSecretNames(secrets);
@@ -321,6 +345,17 @@ async function remotePreflight(currentTarget) {
   if (missingSecrets.length > 0) throw failure('Required Worker Secret names are missing', 'WOOCOMMERCE_FINAL_SECRET_MISSING', { missingSecrets });
   const activeVersion = requireActiveVersion(deployment);
   return { activeVersion, pendingMigrations, schema, secretNameFingerprint: sha256(JSON.stringify(secretNames)) };
+}
+
+function requireResumeOperationId(value) {
+  const text = required(value, 'MKT_WOOCOMMERCE_FINAL_RESUME_OPERATION_ID');
+  if (!/^woo-final-(?:full|incremental)-[0-9a-f]{12}$/u.test(text)) {
+    throw failure(
+      'MKT_WOOCOMMERCE_FINAL_RESUME_OPERATION_ID is invalid',
+      'WOOCOMMERCE_FINAL_RESUME_OPERATION_INVALID',
+    );
+  }
+  return text;
 }
 
 async function ensureLarkSchema(client, env) {

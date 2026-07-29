@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased — WooCommerce Exact-resume Reactivation — 2026-07-30
+
+### Reliability
+
+- Prevented the source-safe launcher from running generic failed-work recovery when an exact
+  continuation operation is pinned.
+- Restricted generic WooCommerce failed-work recovery to zero-Coverage, zero-Commerce-row work
+  at both discovery and guarded mutation time.
+- Allowed one-command and Final remote preflight to accept only one pinned active work identity
+  with no other active work, no live locks and no pending WooCommerce migration.
+- Restored the missing Final operator text helper that previously stopped exact continuation
+  before any deployment or Queue send.
+
+### Exact incident repair
+
+- Added a one-row lifecycle reactivation operator pinned to
+  `woo-final-full-e2372e56d52d` and the accidental recovery audit identity.
+- Guarded the update with the exact failed code, incomplete phase/page, Work/Queue/Fence
+  generation, Coverage state and 14 Commerce table counts.
+- Preserved phases, work units, generation fences, Queue evidence, Coverage, Business facts and
+  Lark records through immutable pre/post verification.
+
+### Safety
+
+- Repository implementation and Live incident inspection performed no Worker, Queue, D1
+  lifecycle/Business, Lark, Provider, Schedule, Secret or Production mutation.
+- The only authorized post-merge repair is the exact guarded lifecycle row; the existing
+  operation must then be resumed without admitting a replacement full operation.
+
 ## Unreleased — Platform-neutral Commerce Report Runtime — 2026-07-30
 
 ### Report integration
