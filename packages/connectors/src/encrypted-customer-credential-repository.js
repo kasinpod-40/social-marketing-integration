@@ -113,7 +113,7 @@ export class EncryptedCustomerCredentialRepository {
 }
 
 function requireCredentialKind(value) {
-  if (!new Set(['refresh_token', 'pkce_verifier']).has(value)) {
+  if (!new Set(['refresh_token', 'pkce_verifier', 'provider_access_token']).has(value)) {
     throw new TypeError('credentialKind is unsupported');
   }
   return value;

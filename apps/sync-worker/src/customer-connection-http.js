@@ -10,6 +10,10 @@ import {
   GOOGLE_ADS_CONNECTION_PATHS,
 } from './google-ads-customer-connection-http.js';
 import {
+  createTikTokAdsCustomerConnectionHttpHandler,
+  TIKTOK_ADS_CONNECTION_PATHS,
+} from './tiktok-ads-customer-connection-http.js';
+import {
   createTikTokPostLarkAuditHttpHandler,
   TIKTOK_POST_LARK_AUDIT_PATH,
 } from './tiktok-post-lark-audit-http.js';
@@ -31,6 +35,8 @@ KNOWN_METHODS.set(GOOGLE_ADS_CONNECTION_PATHS.callback, Object.freeze(['GET']));
 KNOWN_METHODS.set(YOUTUBE_CONNECTION_PATHS.connect, Object.freeze(['GET', 'POST']));
 KNOWN_METHODS.set(YOUTUBE_CONNECTION_PATHS.callback, Object.freeze(['GET']));
 KNOWN_METHODS.set(YOUTUBE_CONNECTION_PATHS.select, Object.freeze(['POST']));
+KNOWN_METHODS.set(TIKTOK_ADS_CONNECTION_PATHS.connect, Object.freeze(['GET', 'POST']));
+KNOWN_METHODS.set(TIKTOK_ADS_CONNECTION_PATHS.callback, Object.freeze(['GET']));
 
 /** Explicit HTTP boundary; guarded diagnostics and Connector handlers are composed independently. */
 export function createCustomerConnectionHttpHandler(dependencies = {}) {
@@ -40,6 +46,7 @@ export function createCustomerConnectionHttpHandler(dependencies = {}) {
       createTikTokPostLarkAuditHttpHandler(dependencies.tiktokAuditDependencies),
       createGoogleAdsCustomerConnectionHttpHandler({ createRuntime: runtimeFactory }),
       createYouTubeCustomerConnectionHttpHandler({ createRuntime: runtimeFactory }),
+      createTikTokAdsCustomerConnectionHttpHandler({ createRuntime: runtimeFactory }),
     ]);
 
   return async function handleCustomerConnectionHttp(request, env, ctx) {
@@ -139,10 +146,6 @@ function statusForError(code) {
   if (code?.endsWith('_ATTEMPT_ACTIVE') || code?.endsWith('_ATTEMPT_INACTIVE')) return 409;
   if (code?.endsWith('_REPLAYED')) return 409;
   if (code?.endsWith('_EXPIRED')) return 410;
-  if (
-    code?.includes('_INVALID')
-    || code?.includes('_MISMATCH')
-    || code?.includes('_UNSUPPORTED')
-  ) return 400;
+  if (code?.includes('_INVALID') || code?.includes('_MISMATCH') || code?.includes('_UNSUPPORTED')) return 400;
   return 500;
 }

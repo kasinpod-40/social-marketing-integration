@@ -3,6 +3,7 @@ import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 export const CUSTOMER_CONNECTION_CONNECTORS = Object.freeze({
   GOOGLE_ADS: 'google_ads',
   YOUTUBE: 'youtube',
+  TIKTOK_ADS: 'tiktok_ads',
 });
 
 export const CUSTOMER_CONNECTION_STATUSES = Object.freeze({
@@ -41,6 +42,7 @@ export const GOOGLE_OAUTH_SCOPES = Object.freeze({
 export const CONNECTOR_ROUTE_SLUGS = Object.freeze({
   [CUSTOMER_CONNECTION_CONNECTORS.GOOGLE_ADS]: 'google-ads',
   [CUSTOMER_CONNECTION_CONNECTORS.YOUTUBE]: 'youtube',
+  [CUSTOMER_CONNECTION_CONNECTORS.TIKTOK_ADS]: 'tiktok-ads',
 });
 
 export const DEFAULT_INVITATION_TTL_MS = 24 * 60 * 60 * 1000;
@@ -88,6 +90,9 @@ export function requireExactGrantedScopes(connectorKey, grantedScopes) {
       code: 'CONNECTION_GRANTED_SCOPES_INVALID',
     });
   }
+  if (connector === CUSTOMER_CONNECTION_CONNECTORS.TIKTOK_ADS) {
+    return Object.freeze([...new Set(grantedScopes.map((scope) => requireText(scope, 'grantedScope')))].sort());
+  }
   const normalized = [...new Set(grantedScopes.map((scope) => requireText(scope, 'grantedScope')))].sort();
   const required = [...GOOGLE_OAUTH_SCOPES[connector]].sort();
   const missing = required.filter((scope) => !normalized.includes(scope));
@@ -101,29 +106,15 @@ export function requireExactGrantedScopes(connectorKey, grantedScopes) {
 }
 
 export function readInvitationTtlMs(value) {
-  return readBoundedTtl(
-    value,
-    DEFAULT_INVITATION_TTL_MS,
-    5 * 60 * 1000,
-    7 * 24 * 60 * 60 * 1000,
-    'invitationTtlMs',
-  );
+  return readBoundedTtl(value, DEFAULT_INVITATION_TTL_MS, 5 * 60 * 1000, 7 * 24 * 60 * 60 * 1000, 'invitationTtlMs');
 }
 
 export function readOAuthStateTtlMs(value) {
-  return readBoundedTtl(
-    value,
-    DEFAULT_OAUTH_STATE_TTL_MS,
-    60 * 1000,
-    30 * 60 * 1000,
-    'oauthStateTtlMs',
-  );
+  return readBoundedTtl(value, DEFAULT_OAUTH_STATE_TTL_MS, 60 * 1000, 30 * 60 * 1000, 'oauthStateTtlMs');
 }
 
 export function readInvitationMaxAttempts(value) {
-  if (value === null || value === undefined || value === '') {
-    return DEFAULT_INVITATION_MAX_ATTEMPTS;
-  }
+  if (value === null || value === undefined || value === '') return DEFAULT_INVITATION_MAX_ATTEMPTS;
   const number = Number(value);
   if (!Number.isSafeInteger(number) || number < 1 || number > 5) {
     throw permanentError('invitationMaxAttempts is outside the approved range', {
