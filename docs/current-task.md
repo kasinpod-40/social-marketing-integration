@@ -98,6 +98,19 @@ docs/tasks/lark-dashboard-backfill-post-verify-hotfix-v1.md
 
 ## Implementation result
 
+### WooCommerce snapshot idempotent normalization — 2026-07-30
+
+- ยืนยัน root cause ของ semantic-empty exact preflight: `readSnapshot()` normalize D1 row แล้ว
+  downstream selector/classifier normalize ซ้ำด้วย snake_case-only contract ทำให้ identity/state/
+  Queue/Coverage/Commerce counts กลายเป็น null/zero.
+- Normalizer ใหม่รองรับ raw snake_case และ normalized camelCase แบบ idempotent; exact selector
+  ให้ identity เดียวกันทั้งสองรูปแบบ.
+- Verification ผ่าน focused `25/25`, Unit `1499/1499`, Workers runtime `16/16`,
+  Report reliability `101/101`, architecture/hygiene `406` modules / `0` cycles,
+  audit `0` vulnerabilities และ deploy dry-run.
+- Repository implementation ไม่มี Remote mutation; failed attempts ก่อนหน้านี้หยุดก่อน
+  Lark schema, backup, Deploy และ Queue.
+
 ### WooCommerce exact snapshot semantic retry — 2026-07-30
 
 - หลัง lifecycle reactivation สำเร็จ Final remote preflight เห็น pinned active work ถูกต้อง
