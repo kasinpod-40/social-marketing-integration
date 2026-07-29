@@ -1,6 +1,5 @@
 import {
   classifyWooCommerceFinalCompletion,
-  normalizeWooCommerceFinalSnapshot,
 } from './woocommerce-final-rollout-operator.js';
 
 const TERMINAL_FAILED_SYNC_STATUSES = new Set([
@@ -28,7 +27,7 @@ export function classifyWooCommerceFinalOperationInspection(
   const completion = classifyWooCommerceFinalCompletion(snapshotInput, {
     fullReconciliation,
   });
-  const snapshot = normalizeWooCommerceFinalSnapshot(completion.snapshot);
+  const snapshot = completion.snapshot;
 
   let decision = 'INDETERMINATE';
   let nextAction = 'do_not_rerun_investigate_missing_terminal_evidence';
