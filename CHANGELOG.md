@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased — WooCommerce Exact Snapshot Semantic Retry — 2026-07-30
+
+### Reliability
+
+- Added bounded read-only retry for successful-but-semantically-empty D1 snapshots during exact
+  WooCommerce continuation preflight.
+- Reused the existing D1 retry delays and limited retry eligibility to a fully empty
+  Sync/Work/Queue/Coverage/Commerce snapshot.
+- Kept populated contract mismatches fail-closed without retry.
+
+### Safety
+
+- Semantic retry runs before Lark schema, D1 backup, Worker deployment or Queue submission.
+- No Remote mutation occurred during implementation; the same admitted operation remains the
+  only continuation target.
+
 ## Unreleased — WooCommerce Exact-resume Reactivation — 2026-07-30
 
 ### Reliability
