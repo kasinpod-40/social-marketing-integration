@@ -9,7 +9,7 @@ export const DASHBOARD_REPORT_BLUEPRINT = Object.freeze({
   platformAuthority: 'report_platform_adapter_registry',
   platformDiscovery: 'validated_materializations',
   periodKinds: Object.freeze(['rolling_days', 'custom_range']),
-  rollingPresetDays: Object.freeze([3, 7, 9, 15, 30, 90]),
+  rollingPresetDays: Object.freeze([1, 3, 7, 9, 15, 30, 90]),
   defaultPeriodEnd: 'last_completed_reporting_day',
   inclusiveRanges: true,
   defaultComparisonMode: 'previous_period',

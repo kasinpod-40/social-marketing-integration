@@ -25,7 +25,7 @@ test('registry covers every Organic and Paid Ads platform without pretending pla
   assert.equal(contracts.find((item) => item.platformScope === 'tiktok').sourceStatus, REPORT_SOURCE_STATUS.ACTIVE);
 });
 
-test('Organic cumulative calculation preserves new-content zero baseline, partial old content and negative correction', () => {
+test('Organic cumulative calculation preserves new-content zero baseline and nulls uncovered partial deltas', () => {
   const contents = [
     content('old', '2026-06-01'),
     content('new', '2026-07-11'),
@@ -50,9 +50,48 @@ test('Organic cumulative calculation preserves new-content zero baseline, partia
   assert.equal(byId.get('old').performanceStatus, 'corrected_down');
   assert.equal(byId.get('new').periodViews, 12);
   assert.equal(byId.get('new').baselineMode, 'new_content');
-  assert.equal(byId.get('missing').periodViews, 3);
+  assert.equal(byId.get('missing').periodViews, null);
   assert.equal(byId.get('missing').dataStatus, 'partial');
   assert.equal(result.dataStatus, 'partial');
+  assert.equal(result.metrics.period_views, null);
+  assert.equal(result.metrics.period_likes, null);
+  assert.equal(result.metrics.period_comments, null);
+  assert.equal(result.metrics.period_shares, null);
+  assert.equal(result.metrics.period_engagement, null);
+  assert.equal(result.metrics.period_engagement_rate, null);
+  assert.equal(result.metrics.latest_total_views, 110);
+  assert.equal(result.baselineCoverageRate, 2 / 3);
+});
+
+test('complete cumulative observations keep 1D, 3D, 7D and 30D totals monotonic', () => {
+  const contents = [content('video-1', '2026-01-01')];
+  const observations = [
+    observation('video-1', '2026-06-27', 10),
+    observation('video-1', '2026-07-20', 100),
+    observation('video-1', '2026-07-24', 150),
+    observation('video-1', '2026-07-26', 180),
+    observation('video-1', '2026-07-27', 200),
+  ];
+  const windows = [
+    ['2026-07-27', 20],
+    ['2026-07-25', 50],
+    ['2026-07-21', 100],
+    ['2026-06-28', 190],
+  ];
+  const values = windows.map(([periodStart, expected]) => {
+    const result = calculateOrganicPeriodMetrics({
+      platform: 'youtube',
+      contents,
+      observations,
+      periodStart,
+      periodEnd: '2026-07-27',
+      coverageStatus: 'complete',
+    });
+    assert.equal(result.dataStatus, 'complete');
+    assert.equal(result.metrics.period_views, expected);
+    return result.metrics.period_views;
+  });
+  assert.deepEqual(values, [20, 50, 100, 190]);
 });
 
 test('source-unavailable platform materializes honestly without calling its adapter', async () => {

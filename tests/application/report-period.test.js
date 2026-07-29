@@ -25,7 +25,7 @@ test('daily report defaults to the last completed Bangkok day', () => {
   });
 });
 
-for (const windowDays of [3, 7, 9, 15, 30, 90]) {
+for (const windowDays of [1, 3, 7, 9, 15, 30, 90]) {
   test(`${windowDays}D is an inclusive rolling completed-day preset`, () => {
     const period = resolveReportPeriod({
       periodKind: 'rolling_days',

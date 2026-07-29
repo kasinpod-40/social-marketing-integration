@@ -7,7 +7,7 @@ import {
 import { TableSyncEngine } from '../../packages/sync-engine/src/table-sync-engine.js';
 import { DASHBOARD_REPORT_PLATFORM_SCOPES } from '../../packages/config/src/report-settings.seed.js';
 
-const EXPECTED_CANONICAL_COUNT = 2 + (DASHBOARD_REPORT_PLATFORM_SCOPES.length * 7);
+const EXPECTED_CANONICAL_COUNT = 2 + (DASHBOARD_REPORT_PLATFORM_SCOPES.length * 8);
 
 function legacyRecord(key, profile = 'dev_ft_pumkin') {
   return {

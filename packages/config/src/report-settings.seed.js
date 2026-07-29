@@ -9,7 +9,7 @@ const REPORT_SETTING_PROFILE_ALIASES = Object.freeze({
 });
 
 export const DASHBOARD_REPORT_TYPE = 'dashboard_performance_report';
-export const DASHBOARD_REPORT_PRESET_DAYS = Object.freeze([3, 7, 9, 15, 30, 90]);
+export const DASHBOARD_REPORT_PRESET_DAYS = Object.freeze([1, 3, 7, 9, 15, 30, 90]);
 export const DASHBOARD_REPORT_PLATFORM_SCOPES = Object.freeze([
   'facebook', 'instagram', 'tiktok', 'youtube', 'meta_ads', 'google_ads', 'tiktok_ads',
 ]);
@@ -20,7 +20,7 @@ export const LEGACY_REPORT_SETTING_KEYS = Object.freeze([
   'uat_chemistry_k:tiktok:weekly',
 ]);
 
-/** Canonical Integration Workspace settings plus TikTok 1D/7D compatibility rows. */
+/** Canonical Integration Workspace Dashboard settings plus TikTok 1D/7D compatibility rows. */
 export function createReportSettingRowsForProfile(profileKey) {
   const requestedProfileKey = requireText(profileKey, 'profileKey');
   const canonicalProfileKey = REPORT_SETTING_PROFILE_ALIASES[requestedProfileKey] ?? requestedProfileKey;
@@ -123,8 +123,8 @@ function requirePeriodKind(value) {
 }
 function requireWindowDays(value) {
   const number = Number(value);
-  if (!Number.isSafeInteger(number) || ![1, ...DASHBOARD_REPORT_PRESET_DAYS].includes(number)) {
-    throw new TypeError(`Report setting windowDays must be one of ${[1, ...DASHBOARD_REPORT_PRESET_DAYS].join(', ')}`);
+  if (!Number.isSafeInteger(number) || !DASHBOARD_REPORT_PRESET_DAYS.includes(number)) {
+    throw new TypeError(`Report setting windowDays must be one of ${DASHBOARD_REPORT_PRESET_DAYS.join(', ')}`);
   }
   return number;
 }
