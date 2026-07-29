@@ -13,7 +13,7 @@ test('evidence launcher observes only ephemeral Wrangler output and delegates Li
   assert.match(source, /CONFIRM_WOOCOMMERCE_WRANGLER_FAILURE_EVIDENCE/u);
   assert.match(source, /CAPTURE_REDACTED_WRANGLER_FAILURE_EVIDENCE/u);
   assert.match(source, /woocommerce-worker-provider-diagnostics-preview-window\.mjs/u);
-  assert.match(source, /parseWooCommerceDiagnosticsWranglerFailure/u);
+  assert.match(source, /summarizeWooCommerceDiagnosticsWranglerEvidence/u);
   assert.match(source, /watch\(repositoryRoot/u);
   assert.match(source, /rawOutputPersisted:\s*false/u);
   assert.match(source, /remoteActionsAddedByEvidenceLauncher:\s*0/u);

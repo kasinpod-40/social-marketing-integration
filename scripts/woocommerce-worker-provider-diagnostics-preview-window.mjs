@@ -2,6 +2,7 @@
 
 import { spawnSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { readDevVars } from './lib/dev-vars.js';
 import {
@@ -18,6 +19,7 @@ import {
 
 const repositoryRoot = resolve(process.cwd());
 const workerNameDefault = 'social-mkt-sync-worker';
+const workersDevSubdomainEnv = 'MKT_WOOCOMMERCE_WORKERS_DEV_SUBDOMAIN';
 const confirmation = Object.freeze({
   envName: 'CONFIRM_WOOCOMMERCE_PREVIEW_URL_WINDOW',
   value: 'OPEN_AND_RESTORE_WOOCOMMERCE_PREVIEW_URLS',
@@ -37,55 +39,59 @@ let primaryError = null;
 let restoreError = null;
 let restored = false;
 
-try {
-  await main();
-} catch (error) {
-  primaryError = error;
-} finally {
-  if (previewMutationAttempted && target && baseline) {
-    try {
-      await restorePreviewUrls();
-      restored = true;
-    } catch (error) {
-      restoreError = error;
+if (fileURLToPath(import.meta.url) === resolve(process.argv[1] ?? '')) await runCli();
+
+async function runCli() {
+  try {
+    await main();
+  } catch (error) {
+    primaryError = error;
+  } finally {
+    if (previewMutationAttempted && target && baseline) {
+      try {
+        await restorePreviewUrls();
+        restored = true;
+      } catch (error) {
+        restoreError = error;
+      }
     }
   }
-}
 
-if (primaryError || restoreError || diagnosticExitStatus !== 0) {
-  process.stderr.write(`${JSON.stringify({
-    ok: false,
-    stage: 'woocommerce-worker-provider-diagnostics-preview-window',
-    code: restoreError?.code
-      ?? primaryError?.code
-      ?? 'WOOCOMMERCE_PREVIEW_URL_WINDOW_DIAGNOSTIC_FAILED',
-    message: restoreError instanceof Error
-      ? restoreError.message
-      : primaryError instanceof Error
-        ? primaryError.message
-        : 'WooCommerce Preview diagnostics did not complete successfully',
-    diagnosticExitStatus,
-    previewUrlsRestored: restored,
-    workersDevRestoredDisabled: restored,
-    previewSettingMutationAttemptCount,
-    previewSettingMutationCount,
-    productionTrafficChange: false,
-    tokenPrinted: false,
-    details: sanitize(restoreError?.details ?? primaryError?.details ?? {}),
-  }, null, 2)}\n`);
-  process.exitCode = 1;
-} else {
-  process.stdout.write(`${JSON.stringify({
-    ok: true,
-    stage: 'woocommerce-worker-provider-diagnostics-preview-window',
-    diagnosticExitStatus,
-    previewUrlsRestored: true,
-    workersDevRestoredDisabled: true,
-    previewSettingMutationAttemptCount,
-    previewSettingMutationCount,
-    productionTrafficChange: false,
-    tokenPrinted: false,
-  }, null, 2)}\n`);
+  if (primaryError || restoreError || diagnosticExitStatus !== 0) {
+    process.stderr.write(`${JSON.stringify({
+      ok: false,
+      stage: 'woocommerce-worker-provider-diagnostics-preview-window',
+      code: restoreError?.code
+        ?? primaryError?.code
+        ?? 'WOOCOMMERCE_PREVIEW_URL_WINDOW_DIAGNOSTIC_FAILED',
+      message: restoreError instanceof Error
+        ? restoreError.message
+        : primaryError instanceof Error
+          ? primaryError.message
+          : 'WooCommerce Preview diagnostics did not complete successfully',
+      diagnosticExitStatus,
+      previewUrlsRestored: restored,
+      workersDevRestoredDisabled: restored,
+      previewSettingMutationAttemptCount,
+      previewSettingMutationCount,
+      productionTrafficChange: false,
+      tokenPrinted: false,
+      details: sanitize(restoreError?.details ?? primaryError?.details ?? {}),
+    }, null, 2)}\n`);
+    process.exitCode = 1;
+  } else {
+    process.stdout.write(`${JSON.stringify({
+      ok: true,
+      stage: 'woocommerce-worker-provider-diagnostics-preview-window',
+      diagnosticExitStatus,
+      previewUrlsRestored: true,
+      workersDevRestoredDisabled: true,
+      previewSettingMutationAttemptCount,
+      previewSettingMutationCount,
+      productionTrafficChange: false,
+      tokenPrinted: false,
+    }, null, 2)}\n`);
+  }
 }
 
 async function main() {
@@ -128,12 +134,19 @@ async function main() {
   });
   const workerName = selectedEnv.MKT_WOOCOMMERCE_ROLLOUT_WORKER_NAME ?? workerNameDefault;
   requireWorkerName(workerName);
+  const accountWorkersDevSubdomain = await readAccountWorkersDevSubdomain({
+    accountId,
+    bearerToken: auth.token,
+  });
 
   target = Object.freeze({
     accountId,
     token: auth.token,
     workerName,
-    childEnv: selectedEnv,
+    childEnv: Object.freeze({
+      ...selectedEnv,
+      [workersDevSubdomainEnv]: accountWorkersDevSubdomain,
+    }),
   });
   baseline = assertWooCommercePreviewUrlBaseline(await readPreviewUrlState('baseline'));
 
@@ -160,6 +173,61 @@ async function main() {
     );
   }
   diagnosticExitStatus = child.status ?? 1;
+}
+
+export async function readAccountWorkersDevSubdomain(input, fetchImpl = globalThis.fetch) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    throw windowError(
+      'Cloudflare account workers.dev subdomain lookup input is invalid',
+      'WOOCOMMERCE_PREVIEW_URL_WINDOW_ACCOUNT_SUBDOMAIN_INPUT_INVALID',
+    );
+  }
+  const accountId = requireOpaqueText(input.accountId, 'accountId');
+  const bearerToken = requireOpaqueText(input.bearerToken, 'bearerToken');
+  if (typeof fetchImpl !== 'function') {
+    throw windowError(
+      'Cloudflare account workers.dev subdomain fetch implementation is invalid',
+      'WOOCOMMERCE_PREVIEW_URL_WINDOW_ACCOUNT_SUBDOMAIN_INPUT_INVALID',
+    );
+  }
+  const response = await fetchImpl(
+    `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/workers/subdomain`,
+    {
+      method: 'GET',
+      headers: {
+        authorization: `Bearer ${bearerToken}`,
+        accept: 'application/json',
+      },
+      redirect: 'error',
+      signal: AbortSignal.timeout(30_000),
+    },
+  );
+  const body = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw windowError(
+      `Cloudflare account workers.dev subdomain read failed (HTTP ${response.status})`,
+      'WOOCOMMERCE_PREVIEW_URL_WINDOW_ACCOUNT_SUBDOMAIN_READ_FAILED',
+      { httpStatus: response.status, errorCodes: readErrorCodes(body) },
+    );
+  }
+  return parseAccountWorkersDevSubdomain(body);
+}
+
+export function parseAccountWorkersDevSubdomain(payload) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)
+    || payload.success !== true
+    || !payload.result
+    || typeof payload.result !== 'object'
+    || Array.isArray(payload.result)
+    || Object.keys(payload.result).length !== 1
+    || typeof payload.result.subdomain !== 'string'
+    || !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u.test(payload.result.subdomain)) {
+    throw windowError(
+      'Cloudflare account workers.dev subdomain response was invalid',
+      'WOOCOMMERCE_PREVIEW_URL_WINDOW_ACCOUNT_SUBDOMAIN_INVALID',
+    );
+  }
+  return payload.result.subdomain;
 }
 
 async function restorePreviewUrls() {
@@ -270,6 +338,17 @@ function requireWorkerName(value) {
   return value;
 }
 
+function requireOpaqueText(value, fieldName) {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw windowError(
+      `Cloudflare account workers.dev subdomain ${fieldName} is required`,
+      'WOOCOMMERCE_PREVIEW_URL_WINDOW_ACCOUNT_SUBDOMAIN_INPUT_INVALID',
+      { fieldName },
+    );
+  }
+  return value.trim();
+}
+
 function readErrorCodes(body) {
   return Array.isArray(body?.errors)
     ? body.errors.map((item) => item?.code ?? null).filter((value) => value !== null)
@@ -301,7 +380,7 @@ function sanitize(value) {
   if (!value || typeof value !== 'object') return value;
   const output = {};
   for (const [key, nested] of Object.entries(value)) {
-    if (/token|authorization|accountId|url|credential|secret/iu.test(key)) continue;
+    if (/token|authorization|accountId|subdomain|url|credential|secret/iu.test(key)) continue;
     output[key] = sanitize(nested);
   }
   return output;

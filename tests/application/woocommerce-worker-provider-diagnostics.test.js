@@ -260,6 +260,8 @@ test('operator uploads isolated Preview Versions and never deploys Production', 
   assert.match(operator, /wrangler', 'versions', 'upload/u);
   assert.match(operator, /--preview-alias/u);
   assert.match(operator, /WRANGLER_OUTPUT_FILE_PATH/u);
+  assert.match(operator, /MKT_WOOCOMMERCE_WORKERS_DEV_SUBDOMAIN/u);
+  assert.match(operator, /buildWooCommerceDiagnosticsPreviewOrigin/u);
   assert.match(operator, /productionDeploymentUnchanged/u);
   assert.match(operator, /workerDeploymentCount:\s*0/u);
   assert.match(operator, /workerVersionUploadCount/u);

@@ -98,6 +98,41 @@ docs/tasks/lark-dashboard-backfill-post-verify-hotfix-v1.md
 
 ## Implementation result
 
+### WooCommerce Diagnostics Deterministic Preview Origin Hotfix v1 — 2026-07-30
+
+- Branch `codex/woocommerce-diagnostics-preview-origin-v1` starts from latest
+  `main@78aaf1416f5f7fc528c0c4bbfc2da409bb169a34` and contains required ancestor
+  `1002cc9cfad0f07fdd1103f2601d642339e08686`.
+- Confirmed repository defect: structured upload parsing required a Preview URL array even after
+  exactly one valid `version-upload`; latest retained Live evidence had two successful Preview
+  uploads but zero Provider requests and a safely restored Preview setting/unchanged Production
+  deployment.
+- Existing Preview URL wrapper now performs the read-only Cloudflare account subdomain GET after
+  existing account/auth resolution, validates the exact DNS label and forwards only
+  `MKT_WOOCOMMERCE_WORKERS_DEV_SUBDOMAIN`.
+- Operator constructs the exact deterministic origin from alias, Worker name and account
+  subdomain. Wrangler structured upload/version ID remains authoritative; URL evidence is optional
+  but matching is mandatory if present. Raw origin/account subdomain/account ID/auth is not
+  printed or persisted.
+- Command-failed evidence now keeps `capturedOutputFileCount` independent and includes only files
+  with a real `command-failed` record; successful uploads and application-level child exits do not
+  fabricate Wrangler failures.
+- Preview Queue sentinel, production deployment checks, at-most-one Provider GET, all-zero
+  Queue/D1/Lark/Schedule/mutation counters and Active/Safe config isolation are unchanged.
+- Focused Node behavior tests passed `33/33`; focused Workers-runtime Queue sentinel regression
+  passed `12/12`.
+- Full verification passed: `npm ci`, `npm run check`, Unit `1456/1456`, Workers runtime
+  `15/15`, Report reliability `100/100`, dependency audit `0 vulnerabilities`, generated
+  Active/Safe Preview config dry-runs and both repository deployment dry-runs.
+- Implementation/CI Remote actions are `0`; Live rerun, Preview setting mutation, Worker Version
+  upload/deploy, Provider request, Remote D1/Lark, Queue, Schedule, Secret, Production and Merge
+  remain unauthorized.
+- Implementation head `80e9dacc902d9e47b9086db09d1ebaa4a62f8fbd` ถูก Push และเปิด
+  Draft PR `#250`; Branch Verification `#1082 / 30482310910` ผ่านทุก step.
+- Docs-only closeout head ต้องผ่าน Branch Verification รอบสุดท้ายก่อน Mark Ready for Review.
+- Detailed handoff:
+  `docs/tasks/woocommerce-diagnostics-preview-origin-v1.md`.
+
 - Focused backfill, serializer และ sync-engine regressions ผ่าน `30/30`.
 - Full existing backfill/table-discovery tests ผ่าน `16/16`.
 - `npm ci`, Architecture/Repository hygiene, Unit `1436/1436`, Workers runtime `14/14`,

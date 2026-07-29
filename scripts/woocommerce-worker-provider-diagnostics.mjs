@@ -26,6 +26,7 @@ import {
   createWooCommerceDiagnosticsAttestedFetch,
 } from './lib/woocommerce-diagnostics-attested-fetch.js';
 import {
+  buildWooCommerceDiagnosticsPreviewOrigin,
   parseWooCommerceDiagnosticsPreviewUpload,
 } from './lib/woocommerce-diagnostics-preview-upload.js';
 
@@ -36,6 +37,7 @@ const evidenceRoot = resolve(
 );
 const RESPONSE_MAX_BYTES = 64 * 1024;
 const WORKER_NAME_DEFAULT = 'social-mkt-sync-worker';
+const WORKERS_DEV_SUBDOMAIN_ENV = 'MKT_WOOCOMMERCE_WORKERS_DEV_SUBDOMAIN';
 const TRUE_FLAG_PATTERN = /^MKT_[A-Z0-9_]+_ENABLED$/u;
 const PREVIEW_ALIAS_PREFIX = 'woo-provider-diag';
 const attestedFetch = createWooCommerceDiagnosticsAttestedFetch(globalThis.fetch.bind(globalThis));
@@ -58,7 +60,7 @@ try {
     ok: false,
     stage: 'woocommerce-worker-provider-diagnostics',
     code: error?.code ?? 'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_FAILED',
-    message: error instanceof Error ? error.message : String(error),
+    message: redactDiagnosticMessage(error instanceof Error ? error.message : String(error)),
     details: sanitize(error?.details ?? {}),
     automaticPreviewSafeClose,
     productionDeploymentUnchanged,
@@ -104,13 +106,23 @@ async function main() {
   });
   const workerName = env.MKT_WOOCOMMERCE_ROLLOUT_WORKER_NAME ?? WORKER_NAME_DEFAULT;
   requireExact(configs.workerName, workerName, 'Worker config name');
+  const accountWorkersDevSubdomain = requireText(
+    env[WORKERS_DEV_SUBDOMAIN_ENV],
+    WORKERS_DEV_SUBDOMAIN_ENV,
+  );
   previewAlias = `${PREVIEW_ALIAS_PREFIX}-${randomBytes(5).toString('hex')}`;
+  buildWooCommerceDiagnosticsPreviewOrigin({
+    previewAlias,
+    workerName,
+    accountWorkersDevSubdomain,
+  });
   target = Object.freeze({
     repositoryHead: repository.head,
     workerName,
     configPath,
     operatorToken: requireSecret(env.MKT_CONNECTION_OPERATOR_TOKEN, 'MKT_CONNECTION_OPERATOR_TOKEN'),
     pathname: configs.pathname,
+    accountWorkersDevSubdomain,
   });
 
   await mkdir(evidenceRoot, { recursive: true, mode: 0o700 });
@@ -135,7 +147,7 @@ async function main() {
 
   providerRequestAttemptCount = 1;
   const response = await fetchAuthenticatedDiagnostic(
-    active.previewOrigin,
+    activeUpload.previewOrigin,
     configs.activeAttestation,
   );
   const body = await readBoundedJson(response, RESPONSE_MAX_BYTES);
@@ -210,7 +222,9 @@ async function attemptAutomaticPreviewSafeClose() {
       ok: false,
       code: closeError?.code
         ?? 'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_PREVIEW_SAFE_CLOSE_FAILED',
-      message: closeError instanceof Error ? closeError.message : String(closeError),
+      message: redactDiagnosticMessage(
+        closeError instanceof Error ? closeError.message : String(closeError),
+      ),
       productionDeploymentUnchanged: productionDeploymentUnchangedOrFalse(),
       details: sanitize(closeError?.details ?? {}),
     };
@@ -298,7 +312,11 @@ async function uploadPreviewVersion(input) {
       workerVersionUploadCount += 1;
       const outputText = await readFile(outputPath, 'utf8').catch(() => '');
       return Object.freeze({
-        ...parseWooCommerceDiagnosticsPreviewUpload(outputText, stdout, input.alias),
+        ...parseWooCommerceDiagnosticsPreviewUpload(outputText, stdout, {
+          previewAlias: input.alias,
+          workerName: target.workerName,
+          accountWorkersDevSubdomain: target.accountWorkersDevSubdomain,
+        }),
         label: input.label,
         configSha256: sha256(input.configText),
       });
@@ -333,7 +351,8 @@ async function verifyPreviewVersionAndProbe(input) {
     ok: true,
     label: input.label,
     versionId: input.upload.versionId,
-    previewOrigin: input.upload.previewOrigin,
+    previewOriginFingerprint: input.upload.previewOriginFingerprint,
+    wranglerPreviewUrlCrossCheckCount: input.upload.wranglerPreviewUrlCrossCheckCount,
     configSha256: input.upload.configSha256,
     expectedTrueFlags: Object.freeze([...input.expectedTrueFlags].sort()),
     routeStatuses: Object.freeze(routeStatuses),
@@ -592,10 +611,16 @@ function sanitize(value) {
   if (!value || typeof value !== 'object') return value;
   const output = {};
   for (const [key, nested] of Object.entries(value)) {
-    if (/token|secret|authorization|cookie|credential|previewOrigin/iu.test(key)) continue;
+    if (/token|secret|authorization|cookie|credential|subdomain|previewOrigin/iu.test(key)) continue;
     output[key] = sanitize(nested);
   }
   return output;
+}
+
+function redactDiagnosticMessage(value) {
+  return String(value ?? '')
+    .replace(/https?:\/\/[^\s"'<>]+/giu, '[REDACTED_URL]')
+    .slice(0, 2_000);
 }
 
 function requireExact(value, expected, fieldName) {
