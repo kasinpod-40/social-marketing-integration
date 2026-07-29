@@ -5,6 +5,13 @@ import {
 
 const OPERATION_ID = /^woo-final-(?:full|incremental)-[0-9a-f]{12}$/u;
 const DIAGNOSTIC_TEXT_LIMIT = 500;
+const RESPONSE_BODY_SHAPES = new Set([
+  'empty',
+  'html_or_xml',
+  'json_object_like',
+  'json_array_like',
+  'other',
+]);
 const TERMINAL_FAILED_SYNC_STATUSES = new Set([
   'cancelled',
   'error',
@@ -92,7 +99,7 @@ export function classifyWooCommerceFinalOperationInspection(
   });
 }
 
-/** Return only the allowlisted Worker network diagnostics persisted by the runtime hotfix. */
+/** Return only allowlisted bounded Worker failure diagnostics persisted by the runtime. */
 export function extractWooCommerceFinalNetworkDiagnostics(detailsJson) {
   const details = parseObject(detailsJson);
   const errorDetails = objectOrNull(details?.errorDetails)
@@ -100,6 +107,24 @@ export function extractWooCommerceFinalNetworkDiagnostics(detailsJson) {
   if (!errorDetails) return null;
   const networkCause = objectOrNull(errorDetails.networkCause)
     ?? objectOrNull(errorDetails.network_cause);
+  const responseDiagnostics = {
+    responseStatus: diagnosticNumber(
+      errorDetails.responseStatus ?? errorDetails.response_status ?? errorDetails.status,
+    ),
+    contentType: diagnosticText(errorDetails.contentType ?? errorDetails.content_type),
+    contentEncoding: diagnosticText(
+      errorDetails.contentEncoding ?? errorDetails.content_encoding,
+    ),
+    contentLengthHeader: diagnosticNumber(
+      errorDetails.contentLengthHeader ?? errorDetails.content_length_header,
+    ),
+    bodyByteLength: diagnosticNumber(
+      errorDetails.bodyByteLength ?? errorDetails.body_byte_length,
+    ),
+    bodySha256: diagnosticSha256(errorDetails.bodySha256 ?? errorDetails.body_sha256),
+    bodyShape: diagnosticBodyShape(errorDetails.bodyShape ?? errorDetails.body_shape),
+    bomRemoved: diagnosticBoolean(errorDetails.bomRemoved ?? errorDetails.bom_removed),
+  };
   const output = {
     resource: diagnosticText(errorDetails.resource),
     timeoutMs: diagnosticNumber(errorDetails.timeoutMs ?? errorDetails.timeout_ms),
@@ -113,10 +138,14 @@ export function extractWooCommerceFinalNetworkDiagnostics(detailsJson) {
       nestedCode: diagnosticText(networkCause.nestedCode ?? networkCause.nested_code),
     } : null,
   };
+  if (hasDiagnosticValue(responseDiagnostics)) {
+    output.responseDiagnostics = responseDiagnostics;
+  }
   if (output.resource === null
     && output.timeoutMs === null
     && output.elapsedMs === null
-    && output.networkCause === null) {
+    && output.networkCause === null
+    && output.responseDiagnostics === undefined) {
     return null;
   }
   return deepFreeze(output);
@@ -154,6 +183,24 @@ function diagnosticNumber(value) {
   if (value === null || value === undefined || value === '') return null;
   const number = Number(value);
   return Number.isFinite(number) && number >= 0 ? number : null;
+}
+
+function diagnosticSha256(value) {
+  const text = diagnosticText(value);
+  return text && /^[0-9a-f]{64}$/u.test(text) ? text : null;
+}
+
+function diagnosticBodyShape(value) {
+  const text = diagnosticText(value);
+  return text && RESPONSE_BODY_SHAPES.has(text) ? text : null;
+}
+
+function diagnosticBoolean(value) {
+  return value === true || value === false ? value : null;
+}
+
+function hasDiagnosticValue(value) {
+  return Object.values(value).some((item) => item !== null);
 }
 
 function deepFreeze(value) {

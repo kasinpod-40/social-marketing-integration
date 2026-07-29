@@ -5,6 +5,7 @@ const DEFAULT_PAGE_SIZE = 100;
 const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_PAGE_SIZE = 100;
 const NETWORK_DIAGNOSTIC_TEXT_LIMIT = 500;
+const RESPONSE_HEADER_TEXT_LIMIT = 200;
 const ALLOWED_COLLECTIONS = new Set([
   'orders',
   'products',
@@ -300,11 +301,79 @@ function createBasicAuthorization(consumerKey, consumerSecret) {
 
 async function parseJsonResponse(response, resource) {
   if (response.status === 204) return [];
-  try { return await response.json(); } catch (cause) {
-    throw permanentError('WooCommerce returned invalid JSON', {
-      code: 'WOOCOMMERCE_INVALID_JSON', cause, details: { resource },
+  let body;
+  try {
+    body = await response.text();
+  } catch (cause) {
+    throw transientError('WooCommerce response body could not be read', {
+      code: 'WOOCOMMERCE_RESPONSE_READ_FAILED',
+      cause,
+      details: responseMetadata(response, resource),
     });
   }
+  const bomRemoved = body.charCodeAt(0) === 0xfeff;
+  const normalizedBody = bomRemoved ? body.slice(1) : body;
+  try {
+    return JSON.parse(normalizedBody);
+  } catch {
+    throw permanentError('WooCommerce returned invalid JSON', {
+      code: 'WOOCOMMERCE_INVALID_JSON',
+      details: await describeInvalidJsonResponse(response, resource, body, bomRemoved),
+    });
+  }
+}
+
+async function describeInvalidJsonResponse(response, resource, body, bomRemoved) {
+  const bytes = new TextEncoder().encode(body);
+  return Object.freeze({
+    ...responseMetadata(response, resource),
+    bodyByteLength: bytes.byteLength,
+    bodySha256: await sha256Hex(bytes),
+    bodyShape: classifyResponseBody(body, bomRemoved),
+    bomRemoved,
+  });
+}
+
+function responseMetadata(response, resource) {
+  return Object.freeze({
+    resource,
+    responseStatus: Number.isSafeInteger(response?.status) ? response.status : null,
+    contentType: readBoundedHeader(response?.headers, 'content-type'),
+    contentEncoding: readBoundedHeader(response?.headers, 'content-encoding'),
+    contentLengthHeader: readOptionalHeaderInteger(response?.headers, 'content-length'),
+  });
+}
+
+function classifyResponseBody(body, bomRemoved) {
+  const normalized = bomRemoved ? body.slice(1) : body;
+  const trimmed = normalized.trimStart();
+  if (trimmed === '') return 'empty';
+  if (trimmed.startsWith('<')) return 'html_or_xml';
+  if (trimmed.startsWith('{')) return 'json_object_like';
+  if (trimmed.startsWith('[')) return 'json_array_like';
+  return 'other';
+}
+
+async function sha256Hex(bytes) {
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle || typeof subtle.digest !== 'function') return null;
+  const digest = await subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function readBoundedHeader(headers, name) {
+  const raw = headers?.get?.(name);
+  if (raw === null || raw === undefined) return null;
+  const text = String(raw).trim();
+  return text === '' ? null : text.slice(0, RESPONSE_HEADER_TEXT_LIMIT);
+}
+
+function readOptionalHeaderInteger(headers, name) {
+  const raw = headers?.get?.(name);
+  if (raw === null || raw === undefined || raw === '') return null;
+  if (!/^\d+$/u.test(String(raw).trim())) return null;
+  const number = Number(raw);
+  return Number.isSafeInteger(number) && number >= 0 ? number : null;
 }
 
 async function readProviderError(response) {
