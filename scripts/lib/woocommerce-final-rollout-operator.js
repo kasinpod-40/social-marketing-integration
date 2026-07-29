@@ -144,12 +144,16 @@ export function buildWooCommerceFinalSnapshotSql(input = {}) {
       (SELECT finished_at FROM sync_runs WHERE sync_run_id = ${syncRunId}) AS sync_run_finished_at,
       (SELECT error_code FROM sync_runs WHERE sync_run_id = ${syncRunId}) AS sync_run_error_code,
       (SELECT lifecycle_status FROM sync_work_runs WHERE work_key = ${workKey}) AS work_lifecycle_status,
+      (SELECT generation FROM sync_work_runs WHERE work_key = ${workKey}) AS work_generation,
+      (SELECT requested_at FROM sync_work_runs WHERE work_key = ${workKey}) AS work_requested_at,
       (SELECT completed_at FROM sync_work_runs WHERE work_key = ${workKey}) AS work_completed_at,
       (SELECT completion_json FROM sync_work_runs WHERE work_key = ${workKey}) AS completion_json,
       (SELECT complete FROM sync_work_phases WHERE work_key = ${workKey} AND phase = 'woocommerce_commerce_pages_v1') AS phase_complete,
       (SELECT state_json FROM sync_work_phases WHERE work_key = ${workKey} AND phase = 'woocommerce_commerce_pages_v1') AS state_json,
       (SELECT COUNT(*) FROM sync_locks WHERE owner_id = ${syncRunId} AND expires_at > unixepoch('now') * 1000) AS active_lock_count,
-      (SELECT COUNT(*) FROM queue_operation_attempts WHERE operation_id = ${operationId} AND work_key = ${workKey}) AS queue_operation_attempts,
+      (SELECT generation FROM queue_operation_attempts WHERE operation_id = ${operationId} AND work_key = ${workKey}) AS queue_generation,
+      (SELECT original_requested_at FROM queue_operation_attempts WHERE operation_id = ${operationId} AND work_key = ${workKey}) AS queue_original_requested_at,
+      (SELECT COALESCE(MAX(main_queue_attempts), 0) FROM queue_operation_attempts WHERE operation_id = ${operationId} AND work_key = ${workKey}) AS queue_operation_attempts,
       (SELECT COUNT(*) FROM data_coverage_runs WHERE sync_run_id = ${syncRunId}) AS coverage_run_count,
       (SELECT COUNT(*) FROM data_coverage_runs WHERE sync_run_id = ${syncRunId} AND (failed_rows <> 0 OR status NOT IN ('complete','no_data_confirmed','revisable'))) AS invalid_coverage_count,
       ${counts};
@@ -170,15 +174,65 @@ export function normalizeWooCommerceFinalSnapshot(value = {}) {
     syncRunFinishedAt: nullableNumber(value.sync_run_finished_at),
     syncRunErrorCode: optionalText(value.sync_run_error_code),
     workLifecycleStatus: optionalText(value.work_lifecycle_status),
+    workGeneration: nullableNumber(value.work_generation),
+    workRequestedAt: nullableNumber(value.work_requested_at),
     workCompletedAt: nullableNumber(value.work_completed_at),
     completion: parseNullableJson(value.completion_json),
     phaseComplete: Number(value.phase_complete ?? 0) === 1,
     state: parseNullableJson(value.state_json),
     activeLockCount: count(value.active_lock_count),
+    queueGeneration: nullableNumber(value.queue_generation),
+    queueOriginalRequestedAt: nullableNumber(value.queue_original_requested_at),
     queueOperationAttempts: count(value.queue_operation_attempts),
     coverageRunCount: count(value.coverage_run_count),
     invalidCoverageCount: count(value.invalid_coverage_count),
     counts: Object.freeze(counts),
+  });
+}
+
+export function selectWooCommerceFullOperation(input = {}) {
+  const resumeOperationId = optionalText(input.resumeOperationId);
+  if (!resumeOperationId) return null;
+  const operationId = requireOperationId(resumeOperationId);
+  const snapshot = normalizeWooCommerceFinalSnapshot(input.snapshot);
+  const requestedAt = snapshot.queueOriginalRequestedAt === null
+    ? null
+    : requireTimestamp(snapshot.queueOriginalRequestedAt, 'queueOriginalRequestedAt');
+  const generationsAgree = requestedAt !== null
+    && snapshot.queueGeneration === requestedAt
+    && snapshot.workGeneration === requestedAt
+    && snapshot.workRequestedAt === requestedAt;
+  const partialRows = Object.values(snapshot.counts).reduce((sum, value) => sum + value, 0);
+  if (snapshot.syncRunStatus !== 'failed'
+    || snapshot.syncRunErrorCode !== 'WOOCOMMERCE_D1_READ_FAILED'
+    || snapshot.workLifecycleStatus !== 'active'
+    || snapshot.workCompletedAt !== null
+    || snapshot.phaseComplete
+    || snapshot.activeLockCount !== 0
+    || snapshot.queueOperationAttempts < 1
+    || partialRows < 1
+    || !generationsAgree) {
+    throw operatorError(
+      'WooCommerce exact continuation preflight rejected the durable operation',
+      'WOOCOMMERCE_FINAL_EXACT_CONTINUATION_INVALID',
+      {
+        operationId,
+        syncRunStatus: snapshot.syncRunStatus,
+        syncRunErrorCode: snapshot.syncRunErrorCode,
+        workLifecycleStatus: snapshot.workLifecycleStatus,
+        phaseComplete: snapshot.phaseComplete,
+        activeLockCount: snapshot.activeLockCount,
+        queueOperationAttempts: snapshot.queueOperationAttempts,
+        partialRows,
+        generationsAgree,
+      },
+    );
+  }
+  return Object.freeze({
+    operationId,
+    requestedAt,
+    resumedExactOperation: true,
+    priorQueueAttempts: snapshot.queueOperationAttempts,
   });
 }
 

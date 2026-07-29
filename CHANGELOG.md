@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased — WooCommerce Exact Durable Continuation — 2026-07-30
+
+### Reliability
+
+- Added a read-only, fail-closed preflight for resuming an already-admitted partial WooCommerce
+  operation through its original operation ID, work key, generation and requested-at identity.
+- Corrected final-rollout Queue attempt evidence to read `main_queue_attempts` instead of counting
+  the single durable operation row.
+- Exact continuation is checked before any Lark or Worker mutation, reuses the original full
+  reconciliation job and still finishes with the all-false Safe deployment.
+
+### Safety
+
+- The continuation path never abandons durable work or admits a replacement full operation.
+- Schedule/Cron remains disabled and Production remains out of scope.
+
 ## Unreleased — WooCommerce D1 Bound-parameter Continuation — 2026-07-30
 
 ### Repository correction

@@ -51,6 +51,10 @@ writes ก่อน retry ที่ Orders page 2 ล้มด้วย `WOOCOMM
 `commerce_customer_aggregates`. Live boundary คือ 99 value binds + account bind ผ่าน แต่
 100 value binds + account bind รวม 101 เกิน D1 maximum 100 bound parameters. Current correction
 ต้อง chunk derived-row value reads เป็น 99 และ resume exact durable operation เดิมเท่านั้น.
+Final operator รองรับการ pin `MKT_WOOCOMMERCE_FINAL_RESUME_OPERATION_ID` โดยตรวจ failed sync
+code, active durable work, no active lock, partial Business rows และความตรงกันของ work/Queue
+generation กับ original requested-at แบบ read-only ก่อน Remote mutation ทุกชนิด.
+Queue-attempt evidence ใช้ `main_queue_attempts` เพราะหนึ่ง operation มี durable row เดียว.
 
 ## WooCommerce diagnostics deterministic Preview origin — 2026-07-30
 
