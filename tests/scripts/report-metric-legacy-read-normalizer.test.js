@@ -14,8 +14,11 @@ test('normalizes only unambiguous canonical Report preset-day labels', () => {
   }
 });
 
-test('leaves ambiguous or unsupported labels unchanged so migration fails closed', () => {
-  for (const input of ['0', '03', '3 weeks', 'rolling_days', 'custom', '365D']) {
+test('leaves ambiguous, unsupported and multi-entry labels unchanged so migration fails closed', () => {
+  for (const input of [
+    '0', '03', '3 weeks', 'rolling_days', 'custom', '365D',
+    ['3', '0'], [{ text: '3' }, { text: '0' }],
+  ]) {
     assert.deepEqual(normalizeLegacyReportWindowDays(input), input);
   }
   assert.equal(normalizeLegacyReportWindowDays(null), null);
