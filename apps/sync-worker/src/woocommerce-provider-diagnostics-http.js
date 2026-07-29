@@ -11,8 +11,10 @@ import { createWooCommerceWorkerFetch } from './woocommerce-job-router.js';
 
 export const WOOCOMMERCE_PROVIDER_DIAGNOSTICS_PATH = '/operator/woocommerce/provider-response-diagnostics';
 export const WOOCOMMERCE_PROVIDER_DIAGNOSTICS_FLAG = 'MKT_WOOCOMMERCE_PROVIDER_DIAGNOSTICS_HTTP_ENABLED';
+export const WOOCOMMERCE_PROVIDER_DIAGNOSTICS_TOKEN_SHA256_ENV = 'MKT_WOOCOMMERCE_PROVIDER_DIAGNOSTICS_TOKEN_SHA256';
 
 const EXECUTION_FLAG_PATTERN = /^MKT_[A-Z0-9_]+_ENABLED$/u;
+const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
 const RESPONSE_BODY_SHAPES = new Set([
   'empty',
   'html_or_xml',
@@ -57,7 +59,10 @@ export function createWooCommerceProviderDiagnosticsHttpHandler(dependencies = {
         }), runtimeVersionId);
       }
 
-      await requireOperatorAuthorization(request, env?.MKT_CONNECTION_OPERATOR_TOKEN);
+      await requireEphemeralAuthorization(
+        request,
+        env?.[WOOCOMMERCE_PROVIDER_DIAGNOSTICS_TOKEN_SHA256_ENV],
+      );
       assertTarget(env);
       assertDiagnosticOnlyFlags(env);
 
@@ -140,16 +145,39 @@ function assertDiagnosticOnlyFlags(env) {
   }
 }
 
-async function requireOperatorAuthorization(request, expectedToken) {
+async function requireEphemeralAuthorization(request, expectedDigestInput) {
+  const expectedDigest = requireSha256(
+    expectedDigestInput,
+    WOOCOMMERCE_PROVIDER_DIAGNOSTICS_TOKEN_SHA256_ENV,
+  );
   const authorization = request.headers.get('authorization') ?? '';
   const match = /^Bearer[ \t]+(.+)$/iu.exec(authorization);
   const supplied = match?.[1]?.trim() ?? '';
-  const valid = await timingSafeEqualText(supplied, requireSecret(expectedToken, 'MKT_CONNECTION_OPERATOR_TOKEN'));
+  const suppliedDigest = supplied.length >= 32 && supplied.length <= 256
+    ? await sha256Text(supplied)
+    : null;
+  const valid = suppliedDigest !== null
+    && await timingSafeEqualText(suppliedDigest, expectedDigest);
   if (!match || !valid) {
     const error = new Error('WooCommerce Provider diagnostics authorization was rejected');
     error.code = 'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_UNAUTHORIZED';
     throw error;
   }
+}
+
+async function sha256Text(value) {
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle || typeof subtle.digest !== 'function') {
+    const error = new Error('SHA-256 runtime is unavailable for WooCommerce diagnostics authorization');
+    error.code = 'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_CONFIG_INVALID';
+    throw error;
+  }
+  const bytes = new TextEncoder().encode(value);
+  const digest = await subtle.digest('SHA-256', bytes);
+  return Array.from(
+    new Uint8Array(digest),
+    (byte) => byte.toString(16).padStart(2, '0'),
+  ).join('');
 }
 
 function extractFailureDiagnostics(error) {
@@ -216,10 +244,10 @@ function requireExact(value, expected, fieldName) {
   return text;
 }
 
-function requireSecret(value, fieldName) {
-  const text = requireText(value, fieldName);
-  if (text.length < 16 || /^(?:replace-with-|example|changeme)/iu.test(text)) {
-    const error = new Error(`${fieldName} is not configured safely`);
+function requireSha256(value, fieldName) {
+  const text = requireText(value, fieldName).toLowerCase();
+  if (!SHA256_PATTERN.test(text)) {
+    const error = new Error(`${fieldName} must be a SHA-256 digest`);
     error.code = 'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_CONFIG_INVALID';
     error.details = { fieldName };
     throw error;
