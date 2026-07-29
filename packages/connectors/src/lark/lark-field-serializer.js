@@ -14,6 +14,8 @@ const LARK_FIELD_TYPES = Object.freeze({
 });
 
 const OMIT_FIELD = Symbol('omit-field');
+const FIXED_NUMBER_FORMATTER_PATTERN = /^(?:#,##)?0(?:\.(0+))?$/;
+const MAX_FIXED_NUMBER_PRECISION = 15;
 
 /**
  * Serialize แถว Domain ทั้งชุดตาม Schema จริงของ Lark ก่อนเริ่ม Write
@@ -113,7 +115,7 @@ function serializeValue(value, field, context) {
     case LARK_FIELD_TYPES.TEXT:
       return serializeText(value, field.fieldName, context);
     case LARK_FIELD_TYPES.NUMBER:
-      return serializeNumber(value, field.fieldName, context);
+      return serializeNumber(value, field, context);
     case LARK_FIELD_TYPES.SINGLE_SELECT:
       return serializeSingleSelect(value, field, context);
     case LARK_FIELD_TYPES.MULTI_SELECT:
@@ -141,7 +143,7 @@ function normalizeExistingValue(value, field, context) {
       }
       case LARK_FIELD_TYPES.NUMBER: {
         const number = readLarkNumber(value, { allowNull: true, label: field.fieldName });
-        return number === null ? OMIT_FIELD : number;
+        return number === null ? OMIT_FIELD : canonicalizeNumberForLarkFormatter(number, field);
       }
       case LARK_FIELD_TYPES.SINGLE_SELECT: {
         const text = readSelectText(value);
@@ -183,13 +185,50 @@ function serializeUrl(value, fieldName, context) {
   return Object.freeze({ link, text: link });
 }
 
-/** Serialize Number โดยไม่ยอมให้ NaN/Infinity หลุดเข้า Lark */
-function serializeNumber(value, fieldName, context) {
+/** Serialize Number และ Canonicalize ตาม fixed precision ของ Lark formatter ที่รองรับ */
+function serializeNumber(value, field, context) {
   try {
-    return toFiniteNumber(value, { label: `Lark field ${fieldName}` });
+    const number = toFiniteNumber(value, { label: `Lark field ${field.fieldName}` });
+    return canonicalizeNumberForLarkFormatter(number, field);
   } catch (error) {
-    throw fieldError(context, fieldName, error instanceof Error ? error.message : 'expected a finite number');
+    throw fieldError(
+      context,
+      field.fieldName,
+      error instanceof Error ? error.message : 'expected a finite number',
+    );
   }
+}
+
+/**
+ * Canonicalize Number เฉพาะ formatter แบบ fixed decimal ที่ระบุแน่ชัด เช่น 0, 0.0000, #,##0.00
+ * Formatter อื่นคงค่า exact เดิมเพื่อไม่เดา precision หรือ semantic ของ Lark.
+ */
+export function canonicalizeNumberForLarkFormatter(value, field = {}) {
+  const fieldName = field?.fieldName ?? field?.field_name ?? 'number';
+  const number = toFiniteNumber(value, { label: `Lark field ${fieldName}` });
+  const precision = readFixedNumberFormatterPrecision(field?.property?.formatter);
+  if (precision === null) return normalizeNegativeZero(number);
+
+  const canonical = Number(number.toFixed(precision));
+  if (!Number.isFinite(canonical)) {
+    throw new TypeError(`Lark field ${fieldName} cannot be canonicalized to fixed precision`);
+  }
+  return normalizeNegativeZero(canonical);
+}
+
+/** คืนจำนวนทศนิยมของ fixed formatter ที่รองรับ หรือ null เมื่อไม่ควรเดา */
+export function readFixedNumberFormatterPrecision(formatter) {
+  if (typeof formatter !== 'string') return null;
+  const normalized = formatter.trim();
+  const match = FIXED_NUMBER_FORMATTER_PATTERN.exec(normalized);
+  if (!match) return null;
+  const precision = match[1]?.length ?? 0;
+  return precision <= MAX_FIXED_NUMBER_PRECISION ? precision : null;
+}
+
+/** ป้องกัน -0 ทำให้ Object.is มองว่าต่างจาก 0 ทั้งที่ Lark เก็บเป็นศูนย์เดียวกัน */
+function normalizeNegativeZero(value) {
+  return Object.is(value, -0) ? 0 : value;
 }
 
 /** Serialize DateTime ทุก Shape ให้เป็น Epoch Milliseconds */
