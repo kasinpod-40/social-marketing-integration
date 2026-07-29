@@ -12,6 +12,10 @@ import { createWooCommerceWorkerFetch } from './woocommerce-job-router.js';
 export const WOOCOMMERCE_PROVIDER_DIAGNOSTICS_PATH = '/operator/woocommerce/provider-response-diagnostics';
 export const WOOCOMMERCE_PROVIDER_DIAGNOSTICS_FLAG = 'MKT_WOOCOMMERCE_PROVIDER_DIAGNOSTICS_HTTP_ENABLED';
 export const WOOCOMMERCE_PROVIDER_DIAGNOSTICS_TOKEN_SHA256_ENV = 'MKT_WOOCOMMERCE_PROVIDER_DIAGNOSTICS_TOKEN_SHA256';
+export const WOOCOMMERCE_PROVIDER_DIAGNOSTICS_ATTESTATION_ENV =
+  'MKT_WOOCOMMERCE_PROVIDER_DIAGNOSTICS_ATTESTATION';
+export const WOOCOMMERCE_PROVIDER_DIAGNOSTICS_ATTESTATION_HEADER =
+  'x-mkt-woocommerce-diagnostics-attestation';
 
 const EXECUTION_FLAG_PATTERN = /^MKT_[A-Z0-9_]+_ENABLED$/u;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
@@ -44,19 +48,24 @@ export function createWooCommerceProviderDiagnosticsHttpHandler(dependencies = {
     if (url.pathname !== WOOCOMMERCE_PROVIDER_DIAGNOSTICS_PATH) return null;
 
     let runtimeVersionId = null;
+    let deploymentAttestation = null;
     try {
+      deploymentAttestation = requireSha256(
+        env?.[WOOCOMMERCE_PROVIDER_DIAGNOSTICS_ATTESTATION_ENV],
+        WOOCOMMERCE_PROVIDER_DIAGNOSTICS_ATTESTATION_ENV,
+      );
       runtimeVersionId = runtimeVersionReader(env, { allowMissing: true });
       if (request.method !== 'GET') {
-        return versioned(json({ ok: false, error: 'Method not allowed' }, {
+        return attested(json({ ok: false, error: 'Method not allowed' }, {
           status: 405,
           headers: { allow: 'GET', 'cache-control': 'no-store' },
-        }), runtimeVersionId);
+        }), deploymentAttestation, runtimeVersionId);
       }
       if (!readBoolean(env?.[WOOCOMMERCE_PROVIDER_DIAGNOSTICS_FLAG], false)) {
-        return versioned(json({ ok: false, error: 'Route not found' }, {
+        return attested(json({ ok: false, error: 'Route not found' }, {
           status: 404,
           headers: { 'cache-control': 'no-store' },
-        }), runtimeVersionId);
+        }), deploymentAttestation, runtimeVersionId);
       }
 
       await requireEphemeralAuthorization(
@@ -76,7 +85,7 @@ export function createWooCommerceProviderDiagnosticsHttpHandler(dependencies = {
         MKT_SCHEDULE_WOOCOMMERCE_ENABLED: 'false',
       });
       const store = await clientFactory(config, env).getStoreIdentity();
-      return versioned(json({
+      return attested(json({
         ok: true,
         stage: 'woocommerce-worker-provider-response-diagnostics',
         providerRequestCount: 1,
@@ -96,7 +105,7 @@ export function createWooCommerceProviderDiagnosticsHttpHandler(dependencies = {
       }, {
         status: 200,
         headers: noStoreHeaders(),
-      }), runtimeVersionId);
+      }), deploymentAttestation, runtimeVersionId);
     } catch (error) {
       const operational = sanitizeOperationalError(error);
       const code = operational.code ?? 'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_FAILED';
@@ -105,7 +114,7 @@ export function createWooCommerceProviderDiagnosticsHttpHandler(dependencies = {
         : code === 'WOOCOMMERCE_INVALID_JSON'
           ? 422
           : 400;
-      return versioned(json({
+      return attested(json({
         ok: false,
         stage: 'woocommerce-worker-provider-response-diagnostics',
         error: status === 401 ? 'Unauthorized' : 'WooCommerce Provider diagnostics failed',
@@ -121,7 +130,7 @@ export function createWooCommerceProviderDiagnosticsHttpHandler(dependencies = {
       }, {
         status,
         headers: noStoreHeaders(),
-      }), runtimeVersionId);
+      }), deploymentAttestation, runtimeVersionId);
     }
   };
 }
@@ -218,8 +227,16 @@ function noStoreHeaders() {
   };
 }
 
-function versioned(response, runtimeVersionId) {
-  return addWorkerRuntimeVersionHeader(response, runtimeVersionId);
+function attested(response, deploymentAttestation, runtimeVersionId) {
+  const versionedResponse = addWorkerRuntimeVersionHeader(response, runtimeVersionId);
+  if (deploymentAttestation === null) return versionedResponse;
+  const headers = new Headers(versionedResponse.headers);
+  headers.set(WOOCOMMERCE_PROVIDER_DIAGNOSTICS_ATTESTATION_HEADER, deploymentAttestation);
+  return new Response(versionedResponse.body, {
+    status: versionedResponse.status,
+    statusText: versionedResponse.statusText,
+    headers,
+  });
 }
 
 function readBoolean(value, fallback) {
