@@ -4,6 +4,7 @@ import {
   loadGoogleAdsRuntimeConfig,
   loadGoogleOAuthRuntimeConfig,
   loadCustomerConnectionRuntimeConfig,
+  loadTikTokAdsRuntimeConfig,
 } from '../../apps/sync-worker/src/customer-connection-runtime.js';
 
 test('connection runtime locks Integration Workspace and reads exact redirect/key contracts', () => {
@@ -13,6 +14,7 @@ test('connection runtime locks Integration Workspace and reads exact redirect/ke
   assert.equal(config.customerKey, 'chemistry_k');
   assert.equal(config.redirectUris.google_ads, 'https://worker.example/oauth/google-ads/callback');
   assert.equal(config.redirectUris.youtube, 'https://worker.example/oauth/youtube/callback');
+  assert.equal(config.redirectUris.tiktok_ads, undefined);
   assert.equal(config.encryptionKeyVersion, 'v1');
   assert.equal(loadGoogleAdsRuntimeConfig(validEnv()).managerCustomerId, '9463570541');
   assert.equal(loadGoogleAdsRuntimeConfig(validEnv()).advertiserCustomerId, '5662332033');
@@ -36,14 +38,43 @@ test('connection runtime rejects historical profiles and placeholder secrets', (
   );
 });
 
-test('shared/YouTube runtime does not require a Google Ads Developer Token', () => {
+test('shared/YouTube runtime does not require Google Ads or TikTok Ads provider secrets', () => {
   const env = validEnv();
   delete env.GOOGLE_ADS_DEVELOPER_TOKEN;
   delete env.MKT_GOOGLE_ADS_MANAGER_CUSTOMER_ID;
   delete env.MKT_GOOGLE_ADS_ADVERTISER_CUSTOMER_ID;
+  delete env.TIKTOK_ADS_APP_ID;
+  delete env.TIKTOK_ADS_APP_SECRET;
+  delete env.MKT_TIKTOK_ADS_ADVERTISER_ID;
+  delete env.MKT_TIKTOK_ADS_REDIRECT_URI;
   assert.equal(loadCustomerConnectionRuntimeConfig(env).customerKey, 'chemistry_k');
   assert.equal(loadGoogleOAuthRuntimeConfig(env).clientId, 'google-client-id');
   assert.throws(() => loadGoogleAdsRuntimeConfig(env), /GOOGLE_ADS_DEVELOPER_TOKEN/u);
+  assert.throws(() => loadTikTokAdsRuntimeConfig(env), /TIKTOK_ADS_APP_ID/u);
+});
+
+test('TikTok Ads runtime requires exact isolated app, advertiser and redirect configuration', () => {
+  const config = loadTikTokAdsRuntimeConfig({
+    TIKTOK_ADS_APP_ID: '123456',
+    TIKTOK_ADS_APP_SECRET: 'provider-secret',
+    MKT_TIKTOK_ADS_ADVERTISER_ID: '9988',
+    MKT_TIKTOK_ADS_REDIRECT_URI: 'https://worker.example/oauth/tiktok-ads/callback',
+  });
+  assert.deepEqual(config, {
+    appId: '123456',
+    appSecret: 'provider-secret',
+    advertiserId: '9988',
+    redirectUri: 'https://worker.example/oauth/tiktok-ads/callback',
+  });
+  assert.throws(
+    () => loadTikTokAdsRuntimeConfig({
+      TIKTOK_ADS_APP_ID: '123456',
+      TIKTOK_ADS_APP_SECRET: 'provider-secret',
+      MKT_TIKTOK_ADS_ADVERTISER_ID: 'wrong-id',
+      MKT_TIKTOK_ADS_REDIRECT_URI: 'https://worker.example/oauth/tiktok-ads/callback',
+    }),
+    /digits only/u,
+  );
 });
 
 function validEnv() {
