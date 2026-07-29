@@ -1,9 +1,13 @@
+import {
+  UNIVERSAL_MARKETING_DASHBOARD_CONTRACT,
+  UNIVERSAL_MARKETING_DASHBOARD_VERSION,
+} from './universal-marketing-dashboard-contract.js';
+
 export const DASHBOARD_REPORT_BLUEPRINT = Object.freeze({
-  schemaVersion: 'dashboard-report-blueprint-v2',
+  schemaVersion: 'dashboard-report-blueprint-v3',
   customerProfile: 'integration_workspace',
-  platformScopes: Object.freeze([
-    'facebook', 'instagram', 'tiktok', 'youtube', 'meta_ads', 'google_ads', 'tiktok_ads',
-  ]),
+  platformAuthority: 'report_platform_adapter_registry',
+  platformDiscovery: 'validated_materializations',
   periodKinds: Object.freeze(['rolling_days', 'custom_range']),
   rollingPresetDays: Object.freeze([3, 7, 9, 15, 30, 90]),
   defaultPeriodEnd: 'last_completed_reporting_day',
@@ -20,6 +24,13 @@ export const DASHBOARD_REPORT_BLUEPRINT = Object.freeze({
     dashboard: 'validated_report_materialization_only',
     lark: 'validated_report_materialization_only',
     ai: 'validated_report_materialization_only_no_calculation',
+  }),
+  universalRenderer: Object.freeze({
+    version: UNIVERSAL_MARKETING_DASHBOARD_VERSION,
+    contract: UNIVERSAL_MARKETING_DASHBOARD_CONTRACT,
+    platformSpecificCodeAllowed: false,
+    accountSpecificCodeAllowed: false,
+    metricSpecificColumnsRequired: false,
   }),
   aiSummary: Object.freeze({
     featureFlag: 'MKT_REPORT_AI_SUMMARY_ENABLED',
