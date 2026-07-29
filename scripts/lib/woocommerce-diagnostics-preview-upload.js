@@ -2,21 +2,13 @@ import { createHash } from 'node:crypto';
 
 const WORKER_VERSION_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
+const MAX_FAILURE_MESSAGE_LENGTH = 2_000;
 
 /** Parse only Wrangler's structured version-upload record; stdout is bounded fallback evidence. */
 export function parseWooCommerceDiagnosticsPreviewUpload(outputText, stdoutText, expectedAlias) {
   const alias = requireText(expectedAlias, 'expectedAlias');
-  const records = String(outputText ?? '')
-    .split(/\r?\n/u)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .flatMap((line) => {
-      try {
-        return [JSON.parse(line)];
-      } catch {
-        return [];
-      }
-    });
+  const records = parseNdjson(outputText);
   const uploads = records.filter((record) => record?.type === 'version-upload');
   if (uploads.length !== 1) {
     throw previewError(
@@ -56,6 +48,119 @@ export function parseWooCommerceDiagnosticsPreviewUpload(outputText, stdoutText,
     previewOrigin: selected.origin,
     previewOriginFingerprint: sha256(selected.origin),
   });
+}
+
+/**
+ * Extract a bounded, redacted Wrangler command-failed record before the temporary output is removed.
+ * Raw stdout/stderr and untrusted nested records are never returned.
+ */
+export function parseWooCommerceDiagnosticsWranglerFailure(
+  outputText,
+  stdoutText,
+  stderrText,
+  statusInput,
+) {
+  const records = parseNdjson(outputText);
+  const failures = records.filter((record) => record?.type === 'command-failed');
+  const failureRecord = failures.length === 1 ? failures[0] : null;
+  const rawMessage = firstText(failureRecord, [
+    'message',
+    'error_message',
+    'errorMessage',
+    'error',
+    'cause',
+  ]) ?? firstUsefulLine(stderrText) ?? 'Wrangler command failed without a structured message';
+  const rawCode = firstPrimitive(failureRecord, [
+    'code',
+    'error_code',
+    'errorCode',
+    'status',
+    'exit_code',
+    'exitCode',
+  ]);
+  const status = Number.isInteger(Number(statusInput)) ? Number(statusInput) : null;
+  const message = redactFailureText(rawMessage).slice(0, MAX_FAILURE_MESSAGE_LENGTH);
+  const code = normalizeCode(rawCode);
+  return Object.freeze({
+    commandFailedRecordCount: failures.length,
+    code,
+    message,
+    status,
+    outputSha256: sha256(outputText ?? ''),
+    stdoutSha256: sha256(stdoutText ?? ''),
+    stderrSha256: sha256(stderrText ?? ''),
+    messageRedacted: true,
+    rawOutputPersisted: false,
+  });
+}
+
+function parseNdjson(value) {
+  return String(value ?? '')
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .flatMap((line) => {
+      try {
+        const parsed = JSON.parse(line);
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? [parsed] : [];
+      } catch {
+        return [];
+      }
+    });
+}
+
+function firstText(value, preferredKeys) {
+  if (!value || typeof value !== 'object') return null;
+  for (const key of preferredKeys) {
+    const candidate = value[key];
+    if (typeof candidate === 'string' && candidate.trim() !== '') return candidate.trim();
+  }
+  for (const nested of Object.values(value)) {
+    const candidate = firstText(nested, preferredKeys);
+    if (candidate) return candidate;
+  }
+  return null;
+}
+
+function firstPrimitive(value, preferredKeys) {
+  if (!value || typeof value !== 'object') return null;
+  for (const key of preferredKeys) {
+    const candidate = value[key];
+    if (typeof candidate === 'string' || typeof candidate === 'number') return candidate;
+  }
+  for (const nested of Object.values(value)) {
+    const candidate = firstPrimitive(nested, preferredKeys);
+    if (candidate !== null) return candidate;
+  }
+  return null;
+}
+
+function firstUsefulLine(value) {
+  return String(value ?? '')
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .find((line) => line !== '' && !/^🪵|^⛅|^─+$/u.test(line)) ?? null;
+}
+
+function normalizeCode(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  if (typeof value !== 'string' || value.trim() === '') return null;
+  const text = value.trim();
+  if (/^[A-Za-z0-9_.:-]{1,120}$/u.test(text)) return text;
+  return sha256(text);
+}
+
+function redactFailureText(value) {
+  return String(value ?? '')
+    .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/giu, 'Bearer [REDACTED]')
+    .replace(/\bck_[A-Za-z0-9_-]+\b/giu, 'ck_[REDACTED]')
+    .replace(/\bcs_[A-Za-z0-9_-]+\b/giu, 'cs_[REDACTED]')
+    .replace(/\b[0-9a-f]{32}\b/giu, '[REDACTED_ACCOUNT_ID]')
+    .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/giu, '[REDACTED_UUID]')
+    .replace(/https?:\/\/[^\s"'<>]+/giu, '[REDACTED_URL]')
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/giu, '[REDACTED_EMAIL]')
+    .replace(/\b[A-Za-z0-9_-]{48,}\b/gu, '[REDACTED_LONG_VALUE]')
+    .trim();
 }
 
 function readTargets(upload) {
