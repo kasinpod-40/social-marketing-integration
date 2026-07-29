@@ -3,7 +3,7 @@
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = REPOSITORY_IMPLEMENTED_AWAITING_CI_REVIEW
+TASK_STATUS                         = REPOSITORY_IMPLEMENTED_CI_PASS_AWAITING_CUSTOMER_INPUTS
 CURRENT_PROGRAM                     = TIKTOK_ADS_CUSTOMER_CONNECT_READINESS
 BRANCH                              = integration/tiktok-ads-customer-connect-readiness
 BASE_REF                            = main
@@ -15,6 +15,8 @@ D1_WRITE                            = NONE
 LARK_WRITE                          = NONE
 SCHEDULE_MUTATION                   = NONE
 PRODUCTION                          = BLOCKED
+DRAFT_PR                            = 220
+BRANCH_VERIFICATION                 = PASS
 ```
 
 ## Objective
@@ -76,6 +78,7 @@ accepted only from the validated Provider response.
 - Added `provider_access_token` as an encrypted credential kind; plaintext is never persisted or returned.
 - Added preview-safe GET, exact confirmation POST and callback routes to the existing HTTP composition.
 - Added isolated runtime config for TikTok App ID/App Secret, redirect URI and approved Advertiser ID.
+- Preserved Google Ads/YouTube runtime independence when TikTok Ads secrets are absent.
 - Added plan-only-by-default Terminal operator:
 
 ```bash
@@ -92,36 +95,36 @@ send, Lark write, Business sync or schedule mutation.
 - Provider token is encrypted with existing AES-256-GCM authenticated-context binding.
 - Callback result returns only masked advertiser identity and sanitized status.
 - Queue and Lark outcomes remain explicitly false.
+- TikTok provider secrets load only on TikTok Ads routes.
 - No TikTok Ads mutation endpoint or schedule path exists.
 - No secrets, signed invitation URLs or provider tokens are committed.
 
-## Tests added
+## Tests and CI
+
+Focused coverage includes authorization URL secret isolation, token exchange normalization, duplicate advertiser
+boundedness, exact advertiser validation, mismatch fail-closed behavior and provider runtime isolation.
+
+Draft PR #220 Branch Verification passed all repository gates:
 
 ```text
-tests/connectors/tiktok-ads-oauth-client.test.js
-tests/connectors/tiktok-ads-api-client.test.js
+Syntax architecture and hygiene  PASS
+Focused staged TikTok tests      PASS
+Unit and Workers runtime tests   PASS
+Report reliability regression    PASS
+Dependency audit                 PASS
+Wrangler dry run                 PASS
 ```
 
-Coverage includes authorization URL secret isolation, token exchange normalization, duplicate advertiser
-boundedness, exact advertiser validation and mismatch fail-closed behavior.
+## Operator documents
 
-## Required CI/review gates
-
-```bash
-npm ci
-npm run check
-npm test
-npm run test:report-reliability
-npm audit
-npm run deploy:dry-run
+```text
+docs/runbooks/tiktok-ads-customer-connect.md
+docs/runbooks/tiktok-ads-customer-intake.md
 ```
-
-These gates must run through Draft PR CI before merge readiness can be claimed. Repository implementation
-does not authorize Remote deployment, secret provisioning, invitation execution or Customer OAuth.
 
 ## Implementation result
 
-Repository implementation is committed on the isolated branch. Remote action count remains zero. The only
-operational work intentionally left is customer TikTok registration/approval, entering the exact customer
-Advertiser ID and App secrets through Terminal/Worker Secrets, separately reviewed Worker deployment with all
-Business/Schedule flags false, and running the guarded invitation command.
+Repository implementation and CI verification are complete on the isolated Draft PR branch. Remote action
+count remains zero. The only operational work intentionally left is customer TikTok registration/approval,
+entering the exact customer Advertiser ID and App secrets through Terminal/Worker Secrets, separately reviewed
+Worker deployment with all Business/Schedule flags false, and running the guarded invitation command.
