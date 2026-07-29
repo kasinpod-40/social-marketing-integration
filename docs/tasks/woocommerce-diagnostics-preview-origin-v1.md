@@ -3,10 +3,13 @@
 ## Status
 
 ```text
-TASK_STATUS                     = READY_FOR_CI
+TASK_STATUS                     = READY_FOR_FINAL_CI
 BASE_MAIN_SHA                   = 78aaf1416f5f7fc528c0c4bbfc2da409bb169a34
 REQUIRED_ANCESTOR               = 1002cc9cfad0f07fdd1103f2601d642339e08686
 BRANCH                          = codex/woocommerce-diagnostics-preview-origin-v1
+IMPLEMENTATION_HEAD             = 80e9dacc902d9e47b9086db09d1ebaa4a62f8fbd
+IMPLEMENTATION_PR               = #250 / DRAFT
+BRANCH_VERIFICATION             = #1082 / 30482310910 / PASS
 REMOTE_ACTION_DURING_IMPL       = 0
 LIVE_RERUN                      = NOT_AUTHORIZED
 PRODUCTION_DEPLOYMENT           = UNCHANGED
@@ -128,6 +131,10 @@ Safe generated Preview config dry-run
 npm run deploy:dry-run
 Branch Verification on exact PR head
 ```
+
+Implementation head `80e9dacc902d9e47b9086db09d1ebaa4a62f8fbd` ผ่าน Branch
+Verification `#1082 / 30482310910` ทุก step. Docs-only closeout head ต้องผ่าน
+Branch Verification รอบสุดท้ายก่อน Mark Ready for Review.
 
 ## Remote boundary
 

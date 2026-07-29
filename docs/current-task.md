@@ -127,7 +127,9 @@ docs/tasks/lark-dashboard-backfill-post-verify-hotfix-v1.md
 - Implementation/CI Remote actions are `0`; Live rerun, Preview setting mutation, Worker Version
   upload/deploy, Provider request, Remote D1/Lark, Queue, Schedule, Secret, Production and Merge
   remain unauthorized.
-- Exact-head Branch Verification and PR publication are pending.
+- Implementation head `80e9dacc902d9e47b9086db09d1ebaa4a62f8fbd` ถูก Push และเปิด
+  Draft PR `#250`; Branch Verification `#1082 / 30482310910` ผ่านทุก step.
+- Docs-only closeout head ต้องผ่าน Branch Verification รอบสุดท้ายก่อน Mark Ready for Review.
 - Detailed handoff:
   `docs/tasks/woocommerce-diagnostics-preview-origin-v1.md`.
 
