@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased — WooCommerce Diagnostics Queue Sentinel Hotfix — 2026-07-29
+
+### Repository correction
+
+- Added a fail-closed `queue(batch)` handler to the Preview-only WooCommerce diagnostics
+  entrypoint after Cloudflare rejected both Active and Safe Preview Versions with
+  `11001 Queue handler is missing`.
+- The sentinel calls `batch.retryAll()` exactly once and never acknowledges, reads or processes
+  a Queue message.
+- Kept Business Queue routing, `createSyncWorker`, Infrastructure, Provider, D1, Lark, Queue
+  producer and Schedule code outside the Preview sentinel.
+- Reduced generated Active/Safe vars to the exact diagnostics target/source/auth/attestation
+  allowlist while retaining no Queue, routes, triggers, D1 or Production bindings.
+- Added Node and Workers-runtime regressions for handler exports, retry/no-ack semantics,
+  no message/runtime access, fetch isolation, config isolation and Production Queue regression.
+
+### Safety
+
+- Production Worker entrypoint, Queue consumer runtime, deployment and traffic remain unchanged.
+- Implementation performed zero Preview URL, Worker Version, Provider, Queue, D1, Lark, Secret,
+  Schedule or Production action.
+- Live diagnostics rerun remains separately unauthorized.
+
 ## Unreleased — Lark Dashboard Backfill Post-Apply Verification Hotfix — 2026-07-29
 
 ### Repository correction

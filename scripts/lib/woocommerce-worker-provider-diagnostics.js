@@ -36,6 +36,15 @@ export {
 const EXECUTION_FLAG_PATTERN = /^MKT_[A-Z0-9_]+_ENABLED$/u;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
 const ALLOWED_HTTP_STATUSES = new Set([200, 422]);
+const PREVIEW_DIAGNOSTIC_VAR_NAMES = Object.freeze([
+  'MKT_ENV',
+  'MKT_CUSTOMER_PROFILE',
+  'MKT_CONNECTION_CUSTOMER_KEY',
+  'WOOCOMMERCE_BASE_URL',
+  'WOOCOMMERCE_API_VERSION',
+  'WOOCOMMERCE_API_TIMEOUT_MS',
+  'WOOCOMMERCE_DEFAULT_CURRENCY',
+]);
 const PREVIEW_FORBIDDEN_KEYS = Object.freeze([
   'routes',
   'route',
@@ -85,7 +94,7 @@ export function buildWooCommerceWorkerProviderDiagnosticConfigs(sourceText, inpu
     versionMetadata,
   });
 
-  const safeVars = closeExecutionFlags(vars);
+  const safeVars = materializePreviewDiagnosticVars(vars);
   safeVars[WOOCOMMERCE_PROVIDER_DIAGNOSTICS_FLAG] = 'false';
   safeVars[WOOCOMMERCE_PROVIDER_DIAGNOSTICS_ATTESTATION_ENV] = safeAttestation;
   delete safeVars[WOOCOMMERCE_PROVIDER_DIAGNOSTICS_TOKEN_SHA256_ENV];
@@ -303,10 +312,10 @@ function assertPreviewIsolation(config, expectedEntrypoint) {
   return true;
 }
 
-function closeExecutionFlags(vars) {
-  const output = { ...vars };
-  for (const name of Object.keys(output)) {
-    if (EXECUTION_FLAG_PATTERN.test(name)) output[name] = 'false';
+function materializePreviewDiagnosticVars(vars) {
+  const output = {};
+  for (const name of PREVIEW_DIAGNOSTIC_VAR_NAMES) {
+    output[name] = requireText(vars[name], name);
   }
   return output;
 }
