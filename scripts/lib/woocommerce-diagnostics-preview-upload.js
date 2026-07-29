@@ -26,42 +26,53 @@ export function parseWooCommerceDiagnosticsPreviewUpload(outputText, stdoutText,
     'version-upload.version_id',
   );
   const urlCandidates = readUrlCandidates(upload);
-  const parsedUrls = [];
-  for (const candidate of urlCandidates) {
-    const parsed = parsePreviewUrl(candidate);
-    if (!parsed) {
+  const classifiedUrls = [];
+  for (const [candidateIndex, candidate] of urlCandidates.entries()) {
+    const classified = classifyPreviewUrl(candidate, {
+      ...input,
+      previewOrigin,
+    });
+    if (classified.kind === 'invalid_or_foreign') {
       throw previewError(
         'Wrangler version-upload Preview URL cross-check was invalid',
         'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_PREVIEW_URL_INVALID',
         {
           previewUrlCandidateCount: urlCandidates.length,
-          parsedPreviewUrlCount: parsedUrls.length,
+          classifiedPreviewUrlCount: classifiedUrls.length,
+          invalidCandidateIndex: candidateIndex,
+          invalidCandidateSha256: sha256(candidate),
           stdoutSha256: sha256(stdoutText ?? ''),
         },
       );
     }
-    parsedUrls.push(parsed);
+    classifiedUrls.push(classified);
   }
-  const distinctOrigins = [...new Set(parsedUrls.map((url) => url.origin))];
-  if (distinctOrigins.length > 1) {
+  const aliasedUrls = classifiedUrls.filter((item) => item.kind === 'aliased_preview');
+  const versionedUrls = classifiedUrls.filter((item) => item.kind === 'versioned_preview');
+  const distinctAliasedOrigins = [...new Set(aliasedUrls.map((item) => item.origin))];
+  const distinctVersionedOrigins = [...new Set(versionedUrls.map((item) => item.origin))];
+  if (distinctAliasedOrigins.length > 1 || distinctVersionedOrigins.length > 1) {
     throw previewError(
       'Wrangler version-upload Preview URL cross-check was ambiguous',
       'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_PREVIEW_URL_INVALID',
       {
         previewUrlCandidateCount: urlCandidates.length,
-        distinctPreviewUrlCount: distinctOrigins.length,
+        aliasedPreviewUrlCount: aliasedUrls.length,
+        versionedPreviewUrlCount: versionedUrls.length,
+        distinctAliasedPreviewUrlCount: distinctAliasedOrigins.length,
+        distinctVersionedPreviewUrlCount: distinctVersionedOrigins.length,
         stdoutSha256: sha256(stdoutText ?? ''),
       },
     );
   }
-  if (distinctOrigins.length === 1 && distinctOrigins[0] !== previewOrigin) {
+  if (distinctAliasedOrigins.length === 1 && distinctAliasedOrigins[0] !== previewOrigin) {
     throw previewError(
       'Wrangler version-upload Preview URL did not match the deterministic origin',
       'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_PREVIEW_URL_MISMATCH',
       {
         previewUrlCandidateCount: urlCandidates.length,
         constructedOriginSha256: sha256(previewOrigin),
-        observedOriginSha256: sha256(distinctOrigins[0]),
+        observedOriginSha256: sha256(distinctAliasedOrigins[0]),
         stdoutSha256: sha256(stdoutText ?? ''),
       },
     );
@@ -70,7 +81,11 @@ export function parseWooCommerceDiagnosticsPreviewUpload(outputText, stdoutText,
     versionId,
     previewOrigin,
     previewOriginFingerprint: sha256(previewOrigin),
-    wranglerPreviewUrlCrossCheckCount: parsedUrls.length,
+    wranglerPreviewUrlCrossCheckCount: classifiedUrls.length,
+    aliasedPreviewUrlCount: aliasedUrls.length,
+    versionedPreviewUrlCount: versionedUrls.length,
+    distinctAliasedPreviewUrlCount: distinctAliasedOrigins.length,
+    distinctVersionedPreviewUrlCount: distinctVersionedOrigins.length,
   });
 }
 
@@ -245,58 +260,68 @@ function stripAnsi(value) {
 }
 
 function readUrlCandidates(upload) {
-  const candidates = [
-    upload.preview_url,
-    upload.previewUrl,
-    upload.preview_urls,
-    upload.previewUrls,
-    upload.targets,
-    upload.urls,
-  ];
-  const declared = candidates.flatMap((candidate) => collectUrlCandidateStrings(candidate));
-  const additional = collectStructuredHttpUrlStrings(upload)
-    .filter((candidate) => !declared.includes(candidate));
-  return [...declared, ...additional];
+  return [
+    'preview_url',
+    'previewUrl',
+    'preview_urls',
+    'previewUrls',
+    'targets',
+    'urls',
+  ].flatMap((key) => (
+    Object.hasOwn(upload, key)
+      ? collectUrlCandidateStrings(upload[key], true)
+      : []
+  ));
 }
 
-function collectUrlCandidateStrings(value) {
-  if (typeof value === 'string') return value.trim() === '' ? [] : [value.trim()];
-  if (Array.isArray(value)) return value.flatMap(collectUrlCandidateStrings);
-  if (!value || typeof value !== 'object') return [];
+function collectUrlCandidateStrings(value, acceptString = false) {
+  if (typeof value === 'string') {
+    return acceptString || /^https?:\/\//iu.test(value.trim()) ? [value.trim()] : [];
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap((nested) => collectUrlCandidateStrings(nested, acceptString));
+  }
+  if (!value || typeof value !== 'object') return acceptString ? [''] : [];
   return Object.entries(value).flatMap(([key, nested]) => {
-    if (typeof nested === 'string') {
-      return /url/iu.test(key) || /^https?:\/\//iu.test(nested.trim())
-        ? collectUrlCandidateStrings(nested)
-        : [];
-    }
-    return collectUrlCandidateStrings(nested);
+    const nestedIsHttpUrl = typeof nested === 'string' && /^https?:\/\//iu.test(nested.trim());
+    return collectUrlCandidateStrings(nested, /url/iu.test(key) || nestedIsHttpUrl);
   });
 }
 
-function collectStructuredHttpUrlStrings(value) {
-  if (typeof value === 'string') {
-    return /^https?:\/\//iu.test(value.trim()) ? [value.trim()] : [];
-  }
-  if (Array.isArray(value)) return value.flatMap(collectStructuredHttpUrlStrings);
-  if (!value || typeof value !== 'object') return [];
-  return Object.values(value).flatMap(collectStructuredHttpUrlStrings);
-}
-
-function parsePreviewUrl(value) {
+function classifyPreviewUrl(value, input) {
   try {
     const url = new URL(value);
+    const rawAuthority = String(value).slice('https://'.length).split(/[/?#]/u, 1)[0];
     if (url.protocol !== 'https:'
       || !url.hostname.endsWith('.workers.dev')
+      || rawAuthority !== url.hostname
       || url.username !== ''
       || url.password !== ''
       || url.port !== ''
       || url.pathname !== '/'
       || url.search !== ''
-      || url.hash !== '') return null;
-    return url;
+      || url.hash !== '') return invalidOrForeignPreview();
+    const accountSuffix = `.${input.accountWorkersDevSubdomain}.workers.dev`;
+    if (!url.hostname.endsWith(accountSuffix)) return invalidOrForeignPreview();
+    const previewLabel = url.hostname.slice(0, -accountSuffix.length);
+    const workerSuffix = `-${input.workerName}`;
+    if (!DNS_LABEL_PATTERN.test(previewLabel)
+      || !previewLabel.endsWith(workerSuffix)) return invalidOrForeignPreview();
+    const prefix = previewLabel.slice(0, -workerSuffix.length);
+    if (!DNS_LABEL_PATTERN.test(prefix)) return invalidOrForeignPreview();
+    if (prefix === input.previewAlias) {
+      return url.origin === input.previewOrigin
+        ? Object.freeze({ kind: 'aliased_preview', origin: url.origin })
+        : invalidOrForeignPreview();
+    }
+    return Object.freeze({ kind: 'versioned_preview', origin: url.origin });
   } catch {
-    return null;
+    return invalidOrForeignPreview();
   }
+}
+
+function invalidOrForeignPreview() {
+  return Object.freeze({ kind: 'invalid_or_foreign' });
 }
 
 function requireVersionId(value, fieldName) {

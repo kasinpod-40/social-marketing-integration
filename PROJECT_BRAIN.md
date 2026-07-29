@@ -12,6 +12,24 @@ Historical Root Project Brain ก่อน TikTok post-Lark implementation ถ�
 docs/archive/PROJECT_BRAIN-before-tiktok-post-lark-parity-2026-07-26.md
 ```
 
+## WooCommerce Preview alias/version pair classifier — 2026-07-30
+
+Wrangler `version-upload` สามารถคืนทั้ง Aliased และ Versioned Preview URL ใน upload เดียว.
+Parser แยกทั้งสองชนิดด้วย exact Worker/account workers.dev identity แทนการถือ distinct origins
+สองค่าเป็น ambiguity. Deterministic alias ยังคงเป็น request target เสมอ; Versioned URL เป็น
+cross-check เท่านั้น. Extraction จำกัดที่ six declared Preview containers และ fail closed สำหรับ
+malformed/foreign/unsafe URL โดย evidence ไม่มี raw origin.
+
+Focused tests ผ่าน `36/36`; full Unit `1460/1460`, Workers runtime `15/15`, Report reliability
+`100/100`, repository check, audit และ dry-runs ผ่าน. Repository implementation ไม่มี Remote
+action. Live diagnostics และ D1/Lark rollout ดำเนินต่อหลัง merge ภายใต้ scoped authorization.
+
+รายละเอียด:
+
+```text
+docs/tasks/woocommerce-end-to-end-lark-closeout-v1.md
+```
+
 ## WooCommerce diagnostics deterministic Preview origin — 2026-07-30
 
 Live diagnostics หลัง Queue sentinel fix ยืนยัน Active และ automatic Safe Preview upload สำเร็จ

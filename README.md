@@ -78,6 +78,11 @@ Command-failed evidence รายงานเฉพาะ output file ที่�
 Hotfix นี้เป็น Repository/CI only, ไม่มี Remote action และไม่อนุญาต Live rerun.
 ดู `docs/tasks/woocommerce-diagnostics-preview-origin-v1.md`.
 
+Wrangler อาจคืน Aliased และ Versioned Preview URL พร้อมกัน. Parser ปัจจุบันจำแนกทั้งสองชนิด
+แยกกันและยอมรับหนึ่ง alias + หนึ่ง versioned origin โดย request target ยังคงเป็น deterministic
+alias เท่านั้น. URL evidence นอก six declared Preview containers ไม่ถูกสแกน และ foreign/unsafe
+URL ต้อง fail closed. ดู `docs/tasks/woocommerce-end-to-end-lark-closeout-v1.md`.
+
 ## WooCommerce diagnostics Preview Queue sentinel
 
 Preview-only WooCommerce diagnostics entrypoint มี fail-closed Queue sentinel เพื่อให้ Cloudflare

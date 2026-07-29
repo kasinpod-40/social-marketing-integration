@@ -15,6 +15,8 @@ const INPUT = Object.freeze({
 });
 const ORIGIN =
   'https://woo-provider-diag-a1b2c3d4e5-social-mkt-sync-worker.account-preview-fixture.workers.dev';
+const VERSIONED_ORIGIN =
+  'https://a1b2c3d4-social-mkt-sync-worker.account-preview-fixture.workers.dev';
 
 function output(records) {
   return records.map((record) => JSON.stringify(record)).join('\n');
@@ -37,29 +39,65 @@ test('accepts exactly one structured upload when Wrangler emits no Preview URL',
   assert.equal(result.versionId, VERSION_ID);
   assert.equal(result.previewOrigin, ORIGIN);
   assert.equal(result.wranglerPreviewUrlCrossCheckCount, 0);
+  assert.equal(result.aliasedPreviewUrlCount, 0);
+  assert.equal(result.versionedPreviewUrlCount, 0);
   assert.match(result.previewOriginFingerprint, /^[0-9a-f]{64}$/u);
 });
 
-test('accepts matching singular, array and nested Wrangler Preview URL shapes', () => {
+test('accepts alias-only singular, array and nested declared Preview URL shapes', () => {
   for (const shape of [
     { preview_url: ORIGIN },
+    { previewUrl: ORIGIN },
     { preview_urls: [ORIGIN] },
+    { previewUrls: [ORIGIN] },
     { targets: [{ preview: { url: ORIGIN }, name: 'ignored-target-name' }] },
     { urls: { alias: ORIGIN } },
-    { metadata: { preview_endpoint: ORIGIN } },
   ]) {
     const result = parseWooCommerceDiagnosticsPreviewUpload(upload(shape), '', INPUT);
     assert.equal(result.previewOrigin, ORIGIN);
     assert.equal(result.wranglerPreviewUrlCrossCheckCount, 1);
+    assert.equal(result.aliasedPreviewUrlCount, 1);
+    assert.equal(result.versionedPreviewUrlCount, 0);
+  }
+});
+
+test('accepts versioned-only and alias-plus-versioned evidence while retaining alias authority', () => {
+  for (const shape of [
+    { preview_url: VERSIONED_ORIGIN },
+    { targets: [{ url: ORIGIN }, { url: VERSIONED_ORIGIN }] },
+    { urls: { aliased: { url: ORIGIN }, versioned: { url: VERSIONED_ORIGIN } } },
+  ]) {
+    const result = parseWooCommerceDiagnosticsPreviewUpload(upload(shape), '', INPUT);
+    assert.equal(result.previewOrigin, ORIGIN);
+    assert.equal(
+      result.wranglerPreviewUrlCrossCheckCount,
+      shape.preview_url ? 1 : 2,
+    );
+    assert.equal(result.aliasedPreviewUrlCount, shape.preview_url ? 0 : 1);
+    assert.equal(result.versionedPreviewUrlCount, 1);
+    assert.equal(result.distinctVersionedPreviewUrlCount, 1);
   }
 });
 
 test('accepts duplicate matching URL evidence without changing origin authority', () => {
   const result = parseWooCommerceDiagnosticsPreviewUpload(upload({
-    preview_urls: [ORIGIN, ORIGIN],
+    preview_urls: [ORIGIN, ORIGIN, VERSIONED_ORIGIN, VERSIONED_ORIGIN],
   }), '', INPUT);
   assert.equal(result.previewOrigin, ORIGIN);
-  assert.equal(result.wranglerPreviewUrlCrossCheckCount, 2);
+  assert.equal(result.wranglerPreviewUrlCrossCheckCount, 4);
+  assert.equal(result.aliasedPreviewUrlCount, 2);
+  assert.equal(result.versionedPreviewUrlCount, 2);
+  assert.equal(result.distinctAliasedPreviewUrlCount, 1);
+  assert.equal(result.distinctVersionedPreviewUrlCount, 1);
+});
+
+test('does not scan URL-looking values outside declared Preview containers', () => {
+  const result = parseWooCommerceDiagnosticsPreviewUpload(upload({
+    metadata: {
+      preview_endpoint: 'https://foreign-worker.foreign-account.workers.dev',
+    },
+  }), '', INPUT);
+  assert.equal(result.wranglerPreviewUrlCrossCheckCount, 0);
 });
 
 test('rejects missing and duplicate structured upload records', () => {
@@ -88,45 +126,80 @@ test('rejects malformed Worker version IDs', () => {
   );
 });
 
-test('fails closed when Wrangler URL differs from the deterministic origin', () => {
-  const observed = ORIGIN.replace('a1b2c3d4e5', 'ffffffffff');
+test('accepts a distinct DNS-safe version prefix without changing deterministic target', () => {
+  const observed = ORIGIN.replace('woo-provider-diag-a1b2c3d4e5', 'ffffffffff');
+  const result = parseWooCommerceDiagnosticsPreviewUpload(upload({
+    preview_url: observed,
+  }), 'stdout fixture', INPUT);
+  assert.equal(result.previewOrigin, ORIGIN);
+  assert.equal(result.versionedPreviewUrlCount, 1);
+  assert.equal(result.aliasedPreviewUrlCount, 0);
+});
+
+test('rejects a configured alias URL that is not the deterministic origin', () => {
+  const observed = `${ORIGIN}/unexpected-path`;
   assert.throws(
     () => parseWooCommerceDiagnosticsPreviewUpload(upload({
       preview_url: observed,
     }), 'stdout fixture', INPUT),
     (error) => (
-      error?.code === 'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_PREVIEW_URL_MISMATCH'
-      && error?.details?.constructedOriginSha256?.length === 64
-      && error?.details?.observedOriginSha256?.length === 64
+      error?.code === 'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_PREVIEW_URL_INVALID'
+      && error?.details?.invalidCandidateSha256?.length === 64
       && !JSON.stringify(error).includes(ORIGIN)
       && !JSON.stringify(error).includes(observed)
     ),
   );
 });
 
-test('rejects ambiguous Wrangler URL evidence', () => {
-  const other = ORIGIN.replace('a1b2c3d4e5', 'ffffffffff');
+test('rejects more than one distinct versioned Preview origin', () => {
+  const other = VERSIONED_ORIGIN.replace('a1b2c3d4', 'ffffeeee');
   assert.throws(
     () => parseWooCommerceDiagnosticsPreviewUpload(upload({
-      targets: [ORIGIN, other],
+      targets: [ORIGIN, VERSIONED_ORIGIN, other],
     }), '', INPUT),
     (error) => (
       error?.code === 'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_PREVIEW_URL_INVALID'
-      && error?.details?.distinctPreviewUrlCount === 2
+      && error?.details?.distinctAliasedPreviewUrlCount === 1
+      && error?.details?.distinctVersionedPreviewUrlCount === 2
     ),
   );
 });
 
-test('rejects malformed, custom-domain and HTTP Wrangler URL evidence', () => {
-  for (const invalid of [
-    'not-a-url',
-    'https://custom.example.test',
-    ORIGIN.replace('https://', 'http://'),
-    `${ORIGIN}/unexpected-path`,
+test('rejects malformed, foreign, custom-domain and structurally unsafe URL evidence', () => {
+  for (const [fieldName, invalid] of [
+    ['preview_url', ''],
+    ['previewUrl', null],
+    ['preview_urls', 42],
+    ['preview_url', 'not-a-url'],
+    ['preview_url', 'https://custom.example.test'],
+    ['preview_url', ORIGIN.replace('https://', 'http://')],
+    ['preview_url', ORIGIN.replace('social-mkt-sync-worker', 'foreign-worker')],
+    ['preview_url', ORIGIN.replace('account-preview-fixture', 'foreign-account')],
+    ['preview_url', `${ORIGIN}/unexpected-path`],
+    ['preview_url', `${ORIGIN}?unexpected=true`],
+    ['preview_url', `${ORIGIN}#unexpected`],
+    ['preview_url', ORIGIN.replace('https://', 'https://user:password@')],
+    ['preview_url', ORIGIN.replace('.workers.dev', '.workers.dev:8443')],
+    ['preview_url', ORIGIN.replace('woo-provider-diag', 'Woo-provider-diag')],
   ]) {
     assert.throws(
       () => parseWooCommerceDiagnosticsPreviewUpload(upload({
-        preview_url: invalid,
+        [fieldName]: invalid,
+      }), '', INPUT),
+      (error) => error?.code === 'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_PREVIEW_URL_INVALID',
+    );
+  }
+});
+
+test('rejects malformed URL values nested under declared URL fields', () => {
+  for (const invalid of [
+    'not-a-url',
+    '',
+    null,
+  ]) {
+    assert.throws(
+      () => parseWooCommerceDiagnosticsPreviewUpload(upload({
+        targets: [{ preview: { preview_url: invalid } }],
       }), '', INPUT),
       (error) => error?.code === 'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_PREVIEW_URL_INVALID',
     );
