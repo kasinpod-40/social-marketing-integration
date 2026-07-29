@@ -34,53 +34,64 @@ const evidenceRoot = resolve(
 const RESPONSE_MAX_BYTES = 64 * 1024;
 const WORKER_NAME_DEFAULT = 'social-mkt-sync-worker';
 const TRUE_FLAG_PATTERN = /^MKT_[A-Z0-9_]+_ENABLED$/u;
+const PREVIEW_ALIAS_PREFIX = 'woo-provider-diag';
 const attestedFetch = createWooCommerceDiagnosticsAttestedFetch(globalThis.fetch.bind(globalThis));
 let target = null;
 let configs = null;
-let activeDeploymentAttempted = false;
-let workerDeploymentCount = 0;
+let productionBaselineVersion = null;
+let previewAlias = null;
+let activePreviewUploaded = false;
+let workerVersionUploadCount = 0;
 let providerRequestCount = 0;
+let providerRequestAttemptCount = 0;
 
 try {
   await main();
 } catch (error) {
-  let automaticSafeRestore = null;
-  if (activeDeploymentAttempted && target && configs) {
+  let automaticPreviewSafeClose = null;
+  if (activePreviewUploaded && target && configs && previewAlias) {
     try {
-      automaticSafeRestore = await deployAndProbe({
-        label: 'automatic-safe-restore',
+      const safeUpload = await uploadPreviewVersion({
+        label: 'automatic-preview-safe-close',
         configText: configs.safe,
+        alias: previewAlias,
+      });
+      automaticPreviewSafeClose = await verifyPreviewVersionAndProbe({
+        label: 'automatic-preview-safe-close',
+        upload: safeUpload,
         expectedStatus: 404,
         expectedTrueFlags: [],
         expectedAttestation: configs.safeAttestation,
       });
-    } catch (restoreError) {
-      const details = sanitize(restoreError?.details ?? {});
-      automaticSafeRestore = {
+      activePreviewUploaded = false;
+    } catch (closeError) {
+      automaticPreviewSafeClose = {
         ok: false,
-        code: restoreError?.code ?? 'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_RESTORE_FAILED',
-        message: restoreError instanceof Error ? restoreError.message : String(restoreError),
-        controlPlaneSafeRestored:
-          details.controlPlaneVersionVerified === true
-          && details.controlPlaneTrueFlagsVerified === true,
-        httpClosureAttested: false,
-        restoredSafeVersion: details.deployedVersionId ?? null,
-        details,
+        code: closeError?.code
+          ?? 'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_PREVIEW_SAFE_CLOSE_FAILED',
+        message: closeError instanceof Error ? closeError.message : String(closeError),
+        productionDeploymentUnchanged: await productionDeploymentUnchangedOrFalse(),
+        details: sanitize(closeError?.details ?? {}),
       };
     }
   }
+  const productionDeploymentUnchanged = await productionDeploymentUnchangedOrFalse();
   process.stderr.write(`${JSON.stringify({
     ok: false,
     stage: 'woocommerce-worker-provider-diagnostics',
     code: error?.code ?? 'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_FAILED',
     message: error instanceof Error ? error.message : String(error),
     details: sanitize(error?.details ?? {}),
-    automaticSafeRestore,
-    providerRequestCount,
+    automaticPreviewSafeClose,
+    productionDeploymentUnchanged,
+    productionBaselineVersion,
+    providerRequestAttemptCount,
+    providerRequestCount: providerRequestAttemptCount === 0 ? 0 : providerRequestCount || null,
     providerMutationCount: 0,
     businessMutationCount: 0,
     queueMessageCount: 0,
-    workerDeploymentCount,
+    workerDeploymentCount: 0,
+    workerVersionUploadCount,
     larkRequestCount: 0,
     scheduleMutationCount: 0,
   }, null, 2)}\n`);
@@ -114,66 +125,87 @@ async function main() {
     activeAttestation: randomBytes(32).toString('hex'),
     safeAttestation: randomBytes(32).toString('hex'),
   });
+  const workerName = env.MKT_WOOCOMMERCE_ROLLOUT_WORKER_NAME ?? WORKER_NAME_DEFAULT;
+  requireExact(configs.workerName, workerName, 'Worker config name');
+  previewAlias = `${PREVIEW_ALIAS_PREFIX}-${randomBytes(5).toString('hex')}`;
   target = Object.freeze({
     repositoryHead: repository.head,
-    workerName: env.MKT_WOOCOMMERCE_ROLLOUT_WORKER_NAME ?? WORKER_NAME_DEFAULT,
+    workerName,
     configPath,
     operatorToken,
-    origin: configs.origin,
     pathname: configs.pathname,
   });
 
   await mkdir(evidenceRoot, { recursive: true, mode: 0o700 });
   const preflight = await runPreflight();
+  productionBaselineVersion = preflight.productionActiveVersion;
   await writeEvidence('01-preflight', preflight);
 
-  activeDeploymentAttempted = true;
-  const active = await deployAndProbe({
-    label: 'provider-diagnostics-active',
+  const activeUpload = await uploadPreviewVersion({
+    label: 'provider-diagnostics-active-preview',
     configText: configs.active,
+    alias: previewAlias,
+  });
+  activePreviewUploaded = true;
+  const active = await verifyPreviewVersionAndProbe({
+    label: 'provider-diagnostics-active-preview',
+    upload: activeUpload,
     expectedStatus: 401,
     expectedTrueFlags: [WOOCOMMERCE_PROVIDER_DIAGNOSTICS_FLAG],
     expectedAttestation: configs.activeAttestation,
   });
-  await writeEvidence('02-active-deployment', active);
+  await writeEvidence('02-active-preview-version', active);
 
-  const response = await fetchAuthenticatedDiagnostic(configs.activeAttestation);
+  providerRequestAttemptCount = 1;
+  const response = await fetchAuthenticatedDiagnostic(
+    active.previewOrigin,
+    configs.activeAttestation,
+  );
   const body = await readBoundedJson(response, RESPONSE_MAX_BYTES);
   const diagnostic = validateWooCommerceWorkerProviderDiagnosticResponse(response.status, body);
   providerRequestCount = Number(diagnostic.providerRequestCount);
   await writeEvidence('03-provider-diagnostic', {
-    versionId: active.versionId,
+    previewVersionId: active.versionId,
     httpStatus: response.status,
     result: diagnostic,
   });
 
-  const safe = await deployAndProbe({
-    label: 'provider-diagnostics-safe-restore',
+  const safeUpload = await uploadPreviewVersion({
+    label: 'provider-diagnostics-safe-preview',
     configText: configs.safe,
+    alias: previewAlias,
+  });
+  const safe = await verifyPreviewVersionAndProbe({
+    label: 'provider-diagnostics-safe-preview',
+    upload: safeUpload,
     expectedStatus: 404,
     expectedTrueFlags: [],
     expectedAttestation: configs.safeAttestation,
   });
-  activeDeploymentAttempted = false;
-  await writeEvidence('04-safe-restore', safe);
+  activePreviewUploaded = false;
+  await writeEvidence('04-safe-preview-close', safe);
 
+  assertProductionDeploymentUnchanged();
   process.stdout.write(`${JSON.stringify({
     ok: true,
     stage: 'woocommerce-worker-provider-diagnostics',
     repositoryHead: target.repositoryHead,
-    activeDiagnosticVersion: active.versionId,
-    restoredSafeVersion: safe.versionId,
+    productionBaselineVersion,
+    productionDeploymentUnchanged: true,
+    activeDiagnosticPreviewVersion: active.versionId,
+    closedSafePreviewVersion: safe.versionId,
     diagnosticHttpStatus: response.status,
     diagnostic,
+    providerRequestAttemptCount,
     providerRequestCount,
     providerMutationCount: 0,
     businessMutationCount: 0,
     queueMessageCount: 0,
-    workerDeploymentCount,
+    workerDeploymentCount: 0,
+    workerVersionUploadCount,
     larkRequestCount: 0,
     scheduleMutationCount: 0,
-    safeRestored: true,
-    safeControlPlaneVerified: true,
+    previewAliasClosedSafe: true,
     safeHttpClosureAttested: true,
     evidenceRoot: relative(repositoryRoot, evidenceRoot),
   }, null, 2)}\n`);
@@ -187,14 +219,17 @@ function printPlan() {
     confirmation: WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_CONFIRMATION,
     phases: [
       'local-and-remote-read-only-preflight',
-      'deploy-diagnostic-only-window',
-      'control-plane-and-config-attestation-proof',
+      'upload-isolated-diagnostic-preview-version-without-deployment',
+      'attested-preview-401-proof',
       'one-authenticated-system-status-get',
-      'automatic-all-false-safe-restore',
-      'attested-safe-route-closure-proof',
+      'upload-isolated-safe-preview-version-to-same-alias',
+      'attested-preview-404-closure-proof',
+      'verify-production-deployment-unchanged',
     ],
     remoteMutations: {
-      workerDeployments: 2,
+      workerDeployments: 0,
+      workerVersionUploads: 2,
+      productionTrafficChanges: 0,
       queueMessages: 0,
       d1Writes: 0,
       larkRequests: 0,
@@ -205,114 +240,112 @@ function printPlan() {
 }
 
 async function runPreflight() {
-  await dryRunConfig(configs.safe, 'safe');
-  await dryRunConfig(configs.active, 'active');
+  await dryRunConfig(configs.safe, 'safe-preview');
+  await dryRunConfig(configs.active, 'active-preview');
   runText('npx', ['wrangler', 'whoami']);
   const secretNames = parseWooCommerceWorkerSecretNames(runText('npx', [
     'wrangler', 'secret', 'list', '--name', target.workerName,
     '--config', target.configPath, '--format', 'json',
   ]));
-  const status = JSON.parse(runText('npx', [
-    'wrangler', 'deployments', 'status', '--name', target.workerName,
-    '--config', target.configPath, '--json',
-  ]));
-  const activeVersion = requireActiveVersion(Array.isArray(status) ? status[0] : status);
-  const view = JSON.parse(runText('npx', [
-    'wrangler', 'versions', 'view', activeVersion,
-    '--name', target.workerName, '--config', target.configPath, '--json',
-  ]));
+  const productionActiveVersion = readProductionActiveVersion();
+  const view = readVersionView(productionActiveVersion);
   assertExactFlags(readTrueFlags(view), []);
   return Object.freeze({
     repositoryHead: target.repositoryHead,
-    activeVersion,
-    currentTrueFlags: [],
+    productionActiveVersion,
+    productionCurrentTrueFlags: [],
     secretNameFingerprint: sha256(JSON.stringify(secretNames)),
-    safeConfigSha256: configs.safeSha256,
-    activeConfigSha256: configs.activeSha256,
+    safePreviewConfigSha256: configs.safeSha256,
+    activePreviewConfigSha256: configs.activeSha256,
     sourceConfigSha256: configs.bundleSourceSha256,
+    previewEntrypointFingerprint: sha256(configs.previewEntrypoint),
     activeAttestationFingerprint: sha256(configs.activeAttestation),
     safeAttestationFingerprint: sha256(configs.safeAttestation),
+    previewUrlsEnabled: configs.previewUrlsEnabled,
+    productionRoutesCopied: configs.productionRoutesCopied,
+    productionBindingsCopied: configs.productionBindingsCopied,
     secretValuesCopied: configs.secretValuesCopied,
     providerRequestCount: 0,
     workerDeploymentCount: 0,
+    workerVersionUploadCount: 0,
   });
 }
 
 async function dryRunConfig(configText, label) {
   await withGeneratedConfig(configText, async (configPath) => {
-    runText('npx', ['wrangler', 'deploy', '--dry-run', '--config', configPath], {
-      label: `dry-run-${label}`,
+    runText('npx', [
+      'wrangler', 'versions', 'upload', '--dry-run', '--config', configPath,
+    ], { label: `dry-run-${label}` });
+  });
+}
+
+async function uploadPreviewVersion(input) {
+  return withGeneratedConfig(input.configText, async (configPath) => {
+    return withWranglerOutput(async (outputPath) => {
+      const stdout = runText('npx', [
+        'wrangler', 'versions', 'upload', '--config', configPath,
+        '--preview-alias', input.alias,
+        '--message', `woocommerce_worker_provider_diagnostics stage=${input.label} git=${target.repositoryHead}`,
+      ], {
+        label: input.label,
+        env: { WRANGLER_OUTPUT_FILE: outputPath },
+      });
+      workerVersionUploadCount += 1;
+      const outputText = await readFile(outputPath, 'utf8').catch(() => '');
+      const parsed = extractVersionUploadResult(`${outputText}\n${stdout}`, input.alias);
+      return Object.freeze({
+        ...parsed,
+        label: input.label,
+        configSha256: sha256(input.configText),
+      });
     });
   });
 }
 
-async function deployAndProbe(input) {
-  const deployment = await withGeneratedConfig(input.configText, async (configPath) => {
-    const stdout = runText('npx', [
-      'wrangler', 'deploy', '--config', configPath,
-      '--message', `woocommerce_worker_provider_diagnostics stage=${input.label} git=${target.repositoryHead}`,
-    ], { label: input.label });
-    workerDeploymentCount += 1;
-    return { stdout, versionId: extractVersionId(stdout) };
-  });
-  const status = JSON.parse(runText('npx', [
-    'wrangler', 'deployments', 'status', '--name', target.workerName,
-    '--config', target.configPath, '--json',
-  ]));
-  requireActiveVersion(Array.isArray(status) ? status[0] : status, deployment.versionId);
-  const view = JSON.parse(runText('npx', [
-    'wrangler', 'versions', 'view', deployment.versionId,
-    '--name', target.workerName, '--config', target.configPath, '--json',
-  ]));
+async function verifyPreviewVersionAndProbe(input) {
+  const view = readVersionView(input.upload.versionId);
   assertExactFlags(readTrueFlags(view), input.expectedTrueFlags);
-  const controlPlaneEvidence = Object.freeze({
-    deployedVersionId: deployment.versionId,
-    controlPlaneVersionVerified: true,
-    controlPlaneTrueFlagsVerified: true,
-    expectedTrueFlags: Object.freeze([...input.expectedTrueFlags].sort()),
-  });
-
-  try {
-    const routeStatuses = [];
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      const response = await attestedRouteFetch(input.expectedAttestation, { authenticated: false });
-      routeStatuses.push(response.status);
-    }
-    if (!routeStatuses.every((statusCode) => statusCode === input.expectedStatus)) {
-      throw failure(
-        'WooCommerce diagnostics route did not reach the expected stable status',
-        'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_ROUTE_UNSTABLE',
-        { expectedStatus: input.expectedStatus, routeStatuses },
-      );
-    }
-    return Object.freeze({
-      ok: true,
-      label: input.label,
-      versionId: deployment.versionId,
-      configSha256: sha256(input.configText),
-      expectedTrueFlags: Object.freeze([...input.expectedTrueFlags].sort()),
-      routeStatuses: Object.freeze(routeStatuses),
-      controlPlaneVersionVerified: true,
-      controlPlaneTrueFlagsVerified: true,
-      httpDeploymentAttested: true,
-    });
-  } catch (error) {
-    error.details = {
-      ...sanitize(error?.details ?? {}),
-      ...controlPlaneEvidence,
-      expectedStatus: input.expectedStatus,
-      expectedAttestationFingerprint: sha256(input.expectedAttestation),
-    };
-    throw error;
+  assertProductionDeploymentUnchanged();
+  const routeStatuses = [];
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const response = await attestedRouteFetch(
+      input.upload.previewOrigin,
+      input.expectedAttestation,
+      { authenticated: false },
+    );
+    routeStatuses.push(response.status);
   }
+  if (!routeStatuses.every((statusCode) => statusCode === input.expectedStatus)) {
+    throw failure(
+      'WooCommerce diagnostics Preview route did not reach the expected stable status',
+      'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_ROUTE_UNSTABLE',
+      {
+        expectedStatus: input.expectedStatus,
+        routeStatuses,
+        previewVersionId: input.upload.versionId,
+      },
+    );
+  }
+  return Object.freeze({
+    ok: true,
+    label: input.label,
+    versionId: input.upload.versionId,
+    previewOrigin: input.upload.previewOrigin,
+    configSha256: input.upload.configSha256,
+    expectedTrueFlags: Object.freeze([...input.expectedTrueFlags].sort()),
+    routeStatuses: Object.freeze(routeStatuses),
+    previewVersionFlagsVerified: true,
+    previewHttpAttested: true,
+    productionDeploymentUnchanged: true,
+  });
 }
 
-async function fetchAuthenticatedDiagnostic(expectedAttestation) {
-  return attestedRouteFetch(expectedAttestation, { authenticated: true });
+async function fetchAuthenticatedDiagnostic(previewOrigin, expectedAttestation) {
+  return attestedRouteFetch(previewOrigin, expectedAttestation, { authenticated: true });
 }
 
-async function attestedRouteFetch(expectedAttestation, options = {}) {
-  const url = new URL(target.pathname, `${target.origin}/`);
+async function attestedRouteFetch(previewOrigin, expectedAttestation, options = {}) {
+  const url = new URL(target.pathname, `${previewOrigin}/`);
   url.searchParams.set('mkt_woo_diag', randomUUID());
   const headers = new Headers({
     Accept: 'application/json',
@@ -386,6 +419,19 @@ async function withGeneratedConfig(text, callback) {
   }
 }
 
+async function withWranglerOutput(callback) {
+  const path = resolve(
+    repositoryRoot,
+    `.woocommerce-worker-provider-diagnostics-output-${process.pid}-${Date.now()}-${randomUUID()}.jsonl`,
+  );
+  try {
+    await writeFile(path, '', { mode: 0o600 });
+    return await callback(path);
+  } finally {
+    await rm(path, { force: true });
+  }
+}
+
 function assertRepositoryState() {
   const branch = runText('git', ['branch', '--show-current']).trim();
   const head = runText('git', ['rev-parse', 'HEAD']).trim();
@@ -403,7 +449,10 @@ function assertRepositoryState() {
 function resolveRepositoryFile(value) {
   const path = resolve(repositoryRoot, requireText(value, 'configPath'));
   if (!path.startsWith(`${repositoryRoot}/`) && path !== repositoryRoot) {
-    throw failure('Config path must remain inside Repository', 'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_PATH_INVALID');
+    throw failure(
+      'Config path must remain inside Repository',
+      'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_PATH_INVALID',
+    );
   }
   return path;
 }
@@ -411,7 +460,7 @@ function resolveRepositoryFile(value) {
 function runText(file, args, options = {}) {
   const result = spawnSync(file, args, {
     cwd: repositoryRoot,
-    env: process.env,
+    env: { ...process.env, ...(options.env ?? {}) },
     encoding: 'utf8',
     maxBuffer: 64 * 1024 * 1024,
   });
@@ -420,7 +469,7 @@ function runText(file, args, options = {}) {
       `${file} command failed during ${options.label ?? 'WooCommerce Worker Provider diagnostics'}`,
       'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_COMMAND_FAILED',
       {
-        command: `${file} ${args.slice(0, 5).join(' ')}`,
+        command: `${file} ${args.slice(0, 6).join(' ')}`,
         status: result.status ?? null,
         stderrSha256: sha256(String(result.stderr ?? '')),
       },
@@ -429,35 +478,115 @@ function runText(file, args, options = {}) {
   return String(result.stdout ?? '').trim();
 }
 
-function extractVersionId(output) {
+function extractVersionUploadResult(output, alias) {
   const text = String(output);
-  const labeled = /Version ID:\s*([0-9a-f-]{36})/iu.exec(text)?.[1]?.toLowerCase();
-  if (labeled) return labeled;
-  const values = [...new Set((text.match(/\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/giu) ?? [])
-    .map((value) => value.toLowerCase()))];
-  if (values.length !== 1) {
+  const objects = text.split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line)];
+      } catch {
+        return [];
+      }
+    });
+  const strings = [];
+  for (const object of objects) walk(object, (value) => {
+    if (typeof value === 'string') strings.push(value);
+  });
+  strings.push(...(text.match(/https:\/\/[^\s"'<>]+/giu) ?? []));
+  const versionCandidates = [...new Set([
+    ...strings.filter(isWorkerVersionId),
+    ...(text.match(/\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/giu) ?? [])
+      .map((value) => value.toLowerCase()),
+  ])];
+  if (versionCandidates.length !== 1) {
     throw failure(
-      'Deployment output did not contain exactly one Worker version ID',
-      'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_DEPLOYMENT_INVALID',
-      { count: values.length },
+      'Preview Version upload output did not contain exactly one Worker version ID',
+      'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_VERSION_UPLOAD_INVALID',
+      { versionIdCount: versionCandidates.length },
     );
   }
-  return values[0];
+  const urls = [...new Set(strings
+    .filter((value) => /^https:\/\//iu.test(value))
+    .map((value) => value.replace(/[),.;]+$/u, '')))]
+    .map((value) => {
+      try {
+        return new URL(value);
+      } catch {
+        return null;
+      }
+    })
+    .filter((url) => url?.protocol === 'https:' && url.hostname.endsWith('.workers.dev'));
+  const aliased = urls.filter((url) => url.hostname.includes(alias));
+  const selected = aliased.length === 1 ? aliased[0] : (urls.length === 1 ? urls[0] : null);
+  if (!selected) {
+    throw failure(
+      'Preview Version upload output did not contain one unambiguous Preview URL',
+      'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_PREVIEW_URL_INVALID',
+      { previewUrlCount: urls.length, aliasedPreviewUrlCount: aliased.length },
+    );
+  }
+  return Object.freeze({
+    versionId: versionCandidates[0],
+    previewOrigin: selected.origin,
+    previewOriginFingerprint: sha256(selected.origin),
+  });
 }
 
-function requireActiveVersion(status, expected = null) {
+function isWorkerVersionId(value) {
+  return typeof value === 'string'
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value);
+}
+
+function readProductionActiveVersion() {
+  const status = JSON.parse(runText('npx', [
+    'wrangler', 'deployments', 'status', '--name', target.workerName,
+    '--config', target.configPath, '--json',
+  ]));
+  return requireActiveVersion(Array.isArray(status) ? status[0] : status);
+}
+
+function readVersionView(versionId) {
+  return JSON.parse(runText('npx', [
+    'wrangler', 'versions', 'view', versionId,
+    '--name', target.workerName, '--config', target.configPath, '--json',
+  ]));
+}
+
+function assertProductionDeploymentUnchanged() {
+  const observed = readProductionActiveVersion();
+  if (!productionBaselineVersion || observed !== productionBaselineVersion) {
+    throw failure(
+      'Production Worker deployment changed during Preview diagnostics',
+      'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_PRODUCTION_DEPLOYMENT_CHANGED',
+      {
+        expectedProductionVersion: productionBaselineVersion,
+        observedProductionVersion: observed,
+      },
+    );
+  }
+  const view = readVersionView(observed);
+  assertExactFlags(readTrueFlags(view), []);
+  return true;
+}
+
+async function productionDeploymentUnchangedOrFalse() {
+  if (!target || !productionBaselineVersion) return null;
+  try {
+    return assertProductionDeploymentUnchanged();
+  } catch {
+    return false;
+  }
+}
+
+function requireActiveVersion(status) {
   const versions = Array.isArray(status?.versions) ? status.versions : [];
   const active = versions.filter((version) => Number(version?.percentage) === 100);
   if (active.length !== 1 || typeof active[0]?.version_id !== 'string') {
     throw failure(
-      'Worker does not have exactly one 100% active version',
+      'Worker does not have exactly one 100% active Production version',
       'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_ACTIVE_VERSION_INVALID',
-    );
-  }
-  if (expected && active[0].version_id !== expected) {
-    throw failure(
-      'Worker active version differs from the just-deployed diagnostics version',
-      'WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_ACTIVE_VERSION_MISMATCH',
     );
   }
   return active[0].version_id;
@@ -522,7 +651,7 @@ function sanitize(value) {
   if (!value || typeof value !== 'object') return value;
   const output = {};
   for (const [key, nested] of Object.entries(value)) {
-    if (/token|secret|authorization|cookie|credential/iu.test(key)) continue;
+    if (/token|secret|authorization|cookie|credential|previewOrigin/iu.test(key)) continue;
     output[key] = sanitize(nested);
   }
   return output;
