@@ -18,9 +18,9 @@ test('invalid-JSON recovery chain follows the proven diagnostics recovery comple
   assert.ok(completion > recovery);
   assert.match(source, new RegExp(OPERATION_ID, 'u'));
   assert.match(source, /RECOVER_WOO_FINAL_FULL_5B56469100A9_AND_COMPLETE/u);
-  assert.match(source, /RUN_WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS/u);
-  assert.match(source, /RECOVER_WOO_FINAL_FULL_5B56469100A9_ONLY/u);
-  assert.match(source, /EXECUTE_WOOCOMMERCE_2026_COMPLETION/u);
+  assert.match(source, /WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_CONFIRMATION/u);
+  assert.match(source, /WOOCOMMERCE_FINAL_RECOVERY_ONLY_CONFIRMATION/u);
+  assert.match(source, /WOOCOMMERCE_2026_COMPLETION_CONFIRMATION/u);
 });
 
 test('invalid-JSON recovery chain is resumable after exact lifecycle recovery', async () => {
