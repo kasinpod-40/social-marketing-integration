@@ -28,6 +28,7 @@ export async function discoverWooCommerceQueueId(input = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let response;
+  let body;
   try {
     response = await fetchImpl(
       `${CLOUDFLARE_API_BASE_URL}/accounts/${accountId}/queues`,
@@ -41,7 +42,27 @@ export async function discoverWooCommerceQueueId(input = {}) {
         signal: controller.signal,
       },
     );
+    if (!response || typeof response.text !== 'function') {
+      throw queueDiscoveryError(
+        'Cloudflare Queue inventory returned an invalid response object',
+        'WOOCOMMERCE_FINAL_QUEUE_API_RESPONSE_INVALID',
+      );
+    }
+    try {
+      body = await response.text();
+    } catch (cause) {
+      throw queueDiscoveryError(
+        'Cloudflare Queue inventory response body could not be read',
+        'WOOCOMMERCE_FINAL_QUEUE_API_BODY_READ_FAILED',
+        {
+          status: response.status ?? null,
+          errorName: cause?.name ?? 'Error',
+          timedOut: controller.signal.aborted,
+        },
+      );
+    }
   } catch (cause) {
+    if (cause?.name === 'WooCommerceFinalQueueDiscoveryError') throw cause;
     throw queueDiscoveryError(
       'Cloudflare Queue inventory request failed',
       'WOOCOMMERCE_FINAL_QUEUE_API_REQUEST_FAILED',
@@ -54,14 +75,6 @@ export async function discoverWooCommerceQueueId(input = {}) {
     clearTimeout(timer);
   }
 
-  if (!response || typeof response.text !== 'function') {
-    throw queueDiscoveryError(
-      'Cloudflare Queue inventory returned an invalid response object',
-      'WOOCOMMERCE_FINAL_QUEUE_API_RESPONSE_INVALID',
-    );
-  }
-
-  const body = await response.text();
   const bodySha256 = sha256(body);
   if (response.redirected === true) {
     throw queueDiscoveryError(
