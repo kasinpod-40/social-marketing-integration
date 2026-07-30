@@ -9,4 +9,7 @@
 - Recorded the Live `d1-read` incident as a pre-mutation failure: no cleanup backup, Lark delete, D1 write, Worker deployment, Queue message or Meta finalization occurred.
 - Added a canonical temporary-directory launcher that collapses macOS `/var` and `/private/var` aliases before sealed clone creation while preserving existing Final Repository-containment guards.
 - Recorded the successful pre-2026 D1/Lark cleanup and the subsequent pre-Final `WOOCOMMERCE_FINAL_PATH_INVALID` stop; the next resumable run verifies and skips cleanup before Final reconciliation.
+- Replaced unsupported top-level Wrangler `queues list --json` discovery in the canonical delivery path with one bounded Cloudflare Queue REST GET and exact-name Queue ID resolution.
+- Injected the resolved Queue ID before sealed execution so nested Final wrappers never need to parse human-readable Wrangler Queue output.
+- Added timeout, redirect, HTTP, JSON, Cloudflare contract, pagination and duplicate-identity fail-closed regression coverage without exposing bearer tokens or Queue IDs in evidence.
 - Implementation performs no Remote mutation, Worker deployment, Queue message, Lark write, Schedule change or Production action.
