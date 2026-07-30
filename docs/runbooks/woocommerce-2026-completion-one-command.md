@@ -6,12 +6,12 @@ Run only after this implementation is merged to `main`:
 
 ```bash
 CONFIRM_WOOCOMMERCE_2026_COMPLETION=EXECUTE_WOOCOMMERCE_2026_COMPLETION \
-node scripts/woocommerce-2026-completion-safe-launcher.mjs --execute
+node scripts/woocommerce-2026-completion-canonical-launcher.mjs --execute
 ```
 
-The Safe Launcher snapshots the current `origin/main` once and performs all work in an isolated sealed clone. The invoking checkout may be on another branch or dirty; it is not used for execution.
+The Canonical Launcher resolves the operating-system temporary directory to its filesystem-canonical identity before delegating to the reviewed Safe Launcher. The Safe Launcher then snapshots the current `origin/main` once and performs all work in an isolated sealed clone. The invoking checkout may be on another branch or dirty; it is not used for execution.
 
-Do not invoke `scripts/woocommerce-2026-completion-one-command.mjs` directly from the source checkout. That file is the sealed child and is launched only after the Safe Launcher has prepared canonical private runtime inputs.
+Do not invoke `scripts/woocommerce-2026-completion-one-command.mjs` directly from the source checkout. That file is the sealed child and is launched only after the Canonical Launcher and Safe Launcher have prepared canonical private runtime inputs.
 
 ## Required local input
 
@@ -31,7 +31,9 @@ The first path is passed explicitly to current operators. The second is a clone-
 
 The launcher fails closed if the exact sealed `main` snapshot begins tracking or otherwise already contains `wrangler.sync.jsonc`; it never overwrites a tracked file.
 
-## Incident fixed — missing legacy config in sealed clone
+## Incidents fixed
+
+### Missing legacy config in sealed clone
 
 A Live completion attempt on `2026-07-30` stopped at the first cleanup D1 read with:
 
@@ -40,16 +42,27 @@ WOOCOMMERCE_2026_CLEANUP_WRANGLER_FAILED
 stage=d1-read
 ```
 
-The Safe Launcher had copied the local Wrangler config only to the modern private filename, while the nested cleanup operator still resolved `wrangler.sync.jsonc`. The repository intentionally does not track that local config, so Wrangler exited before a successful D1 read. The attempt stopped before cleanup backup, Lark delete, D1 delete, Worker deployment, Queue admission or Meta finalization.
+The Safe Launcher had copied the local Wrangler config only to the modern private filename, while the nested cleanup operator still resolved `wrangler.sync.jsonc`. The repository intentionally does not track that local config, so Wrangler exited before a successful D1 read. The compatibility snapshot fixes this path without committing the local config.
 
-After this compatibility bridge is merged, rerun the same Safe Launcher command. Completion remains resumable and the existing operation identity is preserved.
+### macOS `/var` versus `/private/var` path identity
+
+The next resumable attempt completed the pre-2026 D1/Lark cleanup, then stopped before Final reconciliation with:
+
+```text
+WOOCOMMERCE_FINAL_PATH_INVALID
+Wrangler config path must remain inside Repository
+```
+
+The config was inside the sealed clone, but macOS represented the same temporary directory once as `/var/...` and once as `/private/var/...`. Legacy string-prefix path guards therefore rejected one filesystem identity under two textual names. The Canonical Launcher sets `TMPDIR`, `TMP` and `TEMP` to the real filesystem path before any sealed clone is created, so every nested operator receives one stable path identity without weakening its containment guard.
+
+The completed cleanup is verified and skipped on the next run. It is not repeated as a destructive blind retry.
 
 ## Controlled sequence
 
 ```text
 full local verification
 → Remote Worker all-false preflight
-→ resume/complete pre-2026 cleanup
+→ verify or complete pre-2026 cleanup
 → zero-old-row + old-operation closure verification
 → new or exact-resumed 2026 Final operation
 → Full D1/Lark reconciliation
@@ -62,7 +75,7 @@ full local verification
 
 ## Resume behavior
 
-Rerun the exact same Safe Launcher command after a bounded failure.
+Rerun the exact same Canonical Launcher command after a bounded failure.
 
 - completed cleanup is verified and skipped;
 - a valid same-Head Final summary is verified and reused;
