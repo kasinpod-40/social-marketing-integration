@@ -16,17 +16,14 @@ import { readDevVars } from './lib/dev-vars.js';
 import {
   FINAL_DELIVERY_META_HEAD,
   FINAL_DELIVERY_META_OPERATION_ID,
-  FINAL_DELIVERY_READINESS_CONFIRMATION,
   assertFinalDeliveryReadinessManifest,
   inspectMetaSession,
 } from './lib/final-delivery-readiness.js';
-import {
-  validateWooCommerce2026FinalSummary,
-} from './lib/woocommerce-2026-completion-one-command.js';
 
 const repositoryRoot = resolve(process.cwd());
 const confirmationName = 'CONFIRM_MKT_FINAL_DELIVERY_EXECUTION';
 const confirmationValue = 'EXECUTE_FROM_READY_MANIFEST';
+const approvedHistoryStart = '2026-01-01T00:00:00.000Z';
 let currentStage = 'init';
 
 try {
@@ -206,24 +203,39 @@ async function executeFromManifest() {
   process.stdout.write('ALL_DELIVERY_WORK_COMPLETED\n');
 }
 
-function validateCompletionSummary(value, repositoryHead) {
-  if (value?.ok !== true
-    || value?.decision !== 'WOOCOMMERCE_2026_COMPLETED_SAFE') {
+export function validateCompletionSummary(value, repositoryHead) {
+  const checks = {
+    ok: value?.ok === true,
+    decision: value?.decision === 'WOOCOMMERCE_2026_COMPLETED_SAFE',
+    repositoryHead: value?.repositoryHead === repositoryHead,
+    cleanupOldRows: Number(value?.cleanup?.oldRows) === 0,
+    cleanupClosed: value?.cleanup?.replacedOperationClosed === true,
+    historyStart: value?.final?.historyStart === approvedHistoryStart,
+    operationId: /^woo-final-full-[0-9a-f]{12}$/u.test(
+      String(value?.final?.operationId ?? ''),
+    ),
+    parity: value?.final?.parityVerified === true,
+    rerun: value?.final?.idempotentRerunVerified === true,
+    incremental: value?.final?.incrementalVerified === true,
+    activeWork: Number(value?.remote?.activeWork) === 0,
+    activeLocks: Number(value?.remote?.activeLocks) === 0,
+    activeQueue: Number(value?.remote?.activeQueueOperations) === 0,
+    flags: value?.remote?.executionFlagsAllFalse === true,
+    scheduleFlags: value?.remote?.scheduleExecutionFlagsFalse === true,
+    sealedMain: value?.safety?.sealedMain === true,
+    workerSafe: value?.safety?.workerSafeAfterFinal === true,
+    schedule: value?.safety?.scheduleEnabled === false,
+    production: value?.safety?.production === false,
+    nextStep: value?.nextStep === 'resume_pinned_meta_finalizer',
+  };
+  const failed = Object.entries(checks)
+    .filter(([, passed]) => !passed)
+    .map(([name]) => name);
+  if (failed.length > 0) {
     throw executionError(
-      'WooCommerce completion summary wrapper is invalid',
+      'WooCommerce completion did not reach the exact Safe wrapper contract',
       'FINAL_DELIVERY_EXECUTION_WOO_SUMMARY_INVALID',
-    );
-  }
-  validateWooCommerce2026FinalSummary(value.final ?? value, repositoryHead);
-  if (Number(value.remote?.activeWork) !== 0
-    || Number(value.remote?.activeLocks) !== 0
-    || Number(value.remote?.activeQueueOperations) !== 0
-    || value.remote?.executionFlagsAllFalse !== true
-    || value.remote?.scheduleExecutionFlagsFalse !== true
-    || value.safety?.production !== false) {
-    throw executionError(
-      'WooCommerce completion did not reach the exact Safe remote state',
-      'FINAL_DELIVERY_EXECUTION_WOO_REMOTE_INVALID',
+      { failed },
     );
   }
   return true;
