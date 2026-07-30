@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   REPORT_METRIC_VALUE_FIELD_MIGRATION_CONFIRMATION,
+  REPORT_METRIC_VALUE_FIELD_MIGRATION_RECOVERY_VERSION,
   applyReportMetricValueFieldMigration,
   planReportMetricValueFieldMigration,
   safeReportMetricValueFieldMigrationEvidence,
@@ -118,8 +119,35 @@ test('apply archives both Select sources, creates Number canonical and preserves
     assert.deepEqual(after.get(fieldId), before.get(fieldId));
   }
   const readback = await planReportMetricValueFieldMigration(options(statefulClient(state)));
+  assert.equal(readback.contractVersion, REPORT_METRIC_VALUE_FIELD_MIGRATION_RECOVERY_VERSION);
   assert.equal(readback.pendingMigrationCount, 0);
   assert.equal(readback.convergedMigrationCount, 2);
+  assert.equal(readback.migrations.find((item) => item.fieldName === 'window_days').sourceFieldCount, 2);
+});
+
+test('resume after the archive phase keeps the v2 source in the lossless union', async () => {
+  const state = exactState();
+  const archived = state.fields.find((item) => item.fieldId === 'fldWindowLegacySource');
+  archived.fieldName = LEGACY_WINDOW_V2;
+  for (const item of state.records) {
+    item.fields[LEGACY_WINDOW_V2] = item.fields[LEGACY_WINDOW_V1] ?? null;
+    delete item.fields[LEGACY_WINDOW_V1];
+  }
+  state.records[2].fields[LEGACY_WINDOW_V2] = '30';
+  state.records[2].fields.window_days = null;
+
+  const preview = await planReportMetricValueFieldMigration(options(statefulClient(state)));
+  assert.equal(preview.contractVersion, REPORT_METRIC_VALUE_FIELD_MIGRATION_RECOVERY_VERSION);
+  assert.equal(preview.migrations.find((item) => item.fieldName === 'window_days').state, 'needs_rename');
+
+  const result = await applyReportMetricValueFieldMigration(options(statefulClient(state), {
+    env: CONFIRMED_ENV,
+    sleepImpl: async () => undefined,
+  }));
+  assert.equal(result.fieldMutationCount, 2);
+  assert.equal(result.canonicalValueWriteCount, 3);
+  assert.deepEqual(state.records.map((item) => item.fields.window_days), [3, 7, 30]);
+  assert.deepEqual(state.records.map((item) => item.fields[LEGACY_WINDOW_V2] ?? null), ['3', null, '30']);
 });
 
 test('recovery backfills legacy-only display rows while preserving canonical-only rows', async () => {
