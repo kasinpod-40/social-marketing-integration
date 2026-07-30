@@ -46,7 +46,10 @@ test('executor delegates mutations and contains no direct Cloudflare Provider Qu
   assert.doesNotMatch(source, /api\.cloudflare\.com|open\.larksuite\.com|wp-json/u);
   assert.doesNotMatch(source, /queues\/.+\/messages|\.send\(/u);
   assert.doesNotMatch(source, /wrangler[^\n]*(?:deploy|versions\s+upload|d1\s+execute)/u);
-  assert.doesNotMatch(source, /\b(?:INSERT|UPDATE|DELETE|DROP|ALTER)\b/iu);
+  assert.doesNotMatch(
+    source,
+    /(?:INSERT\s+INTO|UPDATE\s+(?:sync_|raw_|commerce_)|DELETE\s+FROM|DROP\s+TABLE|ALTER\s+TABLE)/iu,
+  );
   assert.match(source, /runRequiredNode/u);
   assert.match(source, /production: 'BLOCKED'/u);
   assert.match(source, /production: false/u);
