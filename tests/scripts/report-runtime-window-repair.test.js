@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import {
   REPORT_RUNTIME_WINDOW_REPAIR_CONFIRMATION,
   REPORT_RUNTIME_WINDOW_REPAIR_SEQUENCE,
+  assertReportRuntimeMetricIntegrity,
   assertReportRuntimeOrganicIntegrity,
   assertReportRuntimeWindowChanged,
   assertReportRuntimeWindowRepairConfirmation,
@@ -122,6 +123,32 @@ test('Incomplete Organic baseline requires null aggregate KPIs in D1 and Lark', 
     },
     larkMetrics: { ...Object.fromEntries(Object.keys(metricPayload).map((key) => [key, null])), 'tiktok:period_views': 123 },
   }), (error) => error.code === 'REPORT_RUNTIME_WINDOW_REPAIR_PARTIAL_AGGREGATE_NUMERIC');
+});
+
+test('Platform-neutral metric integrity verifies WooCommerce D1 and Lark values exactly', () => {
+  const payload = {
+    metricPayload: {
+      'woocommerce:net_sales_micros': { current: 123_000_000 },
+      'woocommerce:recognized_orders': { current: 42 },
+      'woocommerce:refund_micros': { current: 0 },
+    },
+  };
+  assert.deepEqual(assertReportRuntimeMetricIntegrity({
+    payload,
+    larkMetrics: {
+      'woocommerce:net_sales_micros': 123_000_000,
+      'woocommerce:recognized_orders': 42,
+      'woocommerce:refund_micros': 0,
+    },
+  }), { metricCount: 3, mismatchCount: 0 });
+  assert.throws(() => assertReportRuntimeMetricIntegrity({
+    payload,
+    larkMetrics: {
+      'woocommerce:net_sales_micros': 123_000_001,
+      'woocommerce:recognized_orders': 42,
+      'woocommerce:refund_micros': 0,
+    },
+  }), (error) => error.code === 'REPORT_RUNTIME_WINDOW_REPAIR_METRIC_VALUE_DRIFT');
 });
 
 test('One-command wrapper and hygiene gate share the worktree-safe local secret policy', () => {

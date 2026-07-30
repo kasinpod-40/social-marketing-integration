@@ -98,6 +98,23 @@ docs/tasks/lark-dashboard-backfill-post-verify-hotfix-v1.md
 
 ## Implementation result
 
+### WooCommerce Commerce Report guarded Live closeout — 2026-07-30
+
+- ขยาย Shared Report closeout operator ให้เลือก `woocommerce` แบบ explicit โดยคง TikTok
+  Organic เป็น default เดิม และเพิ่ม exact WooCommerce confirmation/wrapper แยก.
+- Active window เปิดเฉพาะ `MKT_REPORT_D1_READ_ENABLED`,
+  `MKT_REPORT_PRESET_MATERIALIZATION_ENABLED` และ
+  `MKT_WOOCOMMERCE_REPORT_READ_ENABLED`; Connector ingestion, D1/Lark ingestion write,
+  full reconciliation, AI และทุก Schedule ยังคง false.
+- Reuse Finalizer, D1 backup, Queue admission, shared materialization/Lark writer,
+  same-job replay และ automatic all-false restore เดิม; เพิ่ม platform-neutral D1/Lark
+  metric parity assertion โดยไม่สร้าง Dashboard/Writer framework ใหม่.
+- Verification ผ่าน focused `21/21`, Unit `1520/1520`, Workers runtime `16/16`,
+  Report reliability `101/101`, architecture/hygiene `411` modules / `0` cycles,
+  audit `0` vulnerabilities และ deploy dry-run.
+- Repository implementation ไม่มี Remote mutation; Live execution ต้องทำจาก clean current
+  `main` หลัง WooCommerce Final ingestion/replay ผ่านและ PR นี้ Merge แล้วเท่านั้น.
+
 ### WooCommerce snapshot idempotent normalization — 2026-07-30
 
 - ยืนยัน root cause ของ semantic-empty exact preflight: `readSnapshot()` normalize D1 row แล้ว

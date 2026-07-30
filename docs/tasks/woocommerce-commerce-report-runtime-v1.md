@@ -43,6 +43,31 @@ Commerce materialization requires:
 
 AI summary, Daily Report schedule and Weekly Report schedule remain disabled.
 
+## Guarded Live closeout
+
+หลัง WooCommerce Final ingestion และ same-operation replay ผ่าน ให้รัน one-command operator
+บน clean current `main`:
+
+```bash
+CONFIRM_WOOCOMMERCE_REPORT_RUNTIME_CLOSEOUT=EXECUTE_WOOCOMMERCE_REPORT_RUNTIME_CLOSEOUT \
+node scripts/woocommerce-report-runtime-closeout.mjs --execute
+```
+
+Wrapper ใช้ Report Schema/Settings finalizer เดิมก่อน แล้วจึง reuse Report closeout operator
+เดิมใน explicit `woocommerce` mode. Active window เปิดจริงเพียง:
+
+```text
+MKT_REPORT_D1_READ_ENABLED
+MKT_REPORT_PRESET_MATERIALIZATION_ENABLED
+MKT_WOOCOMMERCE_REPORT_READ_ENABLED
+```
+
+ทุก Connector, WooCommerce ingestion/D1-write/Lark-ingestion/full/schedule, AI และ Report
+schedule flags เป็น false. Operator ตรวจ Commerce Coverage/facts, D1 backup, exact Worker
+bindings, fresh deterministic Report ID, D1/Lark metric parity และ exact same-job replay ก่อน
+คืน Worker เป็น all-false Safe state ใน `finally`. Evidence แยกอยู่ที่
+`outputs/woocommerce-report-runtime-closeout/`.
+
 ## Verification
 
 - Focused application tests: `32/32`
