@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
 import { basename } from 'node:path';
 import { promisify } from 'node:util';
+import { attachExecFilePromiseContract } from './lib/exec-file-promise-contract.js';
 import {
   assertReportRuntimeStableActiveDeployment,
 } from './lib/report-runtime-fresh-config-dlq-recovery.js';
@@ -14,7 +15,7 @@ const originalExecFileAsync = promisify(originalExecFile);
 const DEFAULT_DELAYS_MS = Object.freeze([0, 10_000, 20_000]);
 let pendingBarrierError = null;
 
-childProcess.execFile = function stabilizedExecFile(file, args, options, callback) {
+function stabilizedExecFile(file, args, options, callback) {
   const normalized = normalizeExecArguments(args, options, callback);
   const commandArgs = normalized.args;
 
@@ -43,8 +44,9 @@ childProcess.execFile = function stabilizedExecFile(file, args, options, callbac
         normalized.callback(null, stdout, stderr);
       });
   });
-};
+}
 
+childProcess.execFile = attachExecFilePromiseContract(stabilizedExecFile);
 syncBuiltinESMExports();
 await import('./report-runtime-closeout-operator.mjs');
 
