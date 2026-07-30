@@ -20,7 +20,6 @@ import { createLarkBitableClientFromEnv } from '../packages/connectors/src/lark/
 import { readDevVars } from './lib/dev-vars.js';
 import { rebaseGeneratedWranglerConfigPaths } from './lib/rebase-generated-wrangler-config-paths.js';
 import {
-  REPORT_RUNTIME_CLOSEOUT_ACTIVE_TRUE_FLAGS,
   REPORT_RUNTIME_CLOSEOUT_CONFIRMATION,
   REPORT_RUNTIME_CLOSEOUT_CONTRACT_VERSION,
   REPORT_RUNTIME_CLOSEOUT_REQUIRED_TABLES,
@@ -29,13 +28,17 @@ import {
   assertReportRuntimeCloseoutPreflight,
   assertReportRuntimeCloseoutReplay,
   assertReportRuntimeFinalizerEvidence,
+  assertWooCommerceReportRuntimeCloseoutConfirmation,
+  assertWooCommerceReportRuntimeCloseoutPreflight,
   buildReportRuntimeCloseoutCandidates,
   buildReportRuntimeCloseoutConfigWindow,
   parseReportRuntimeCloseoutArgs,
+  resolveReportRuntimeCloseoutTarget,
   safeReportRuntimeCloseoutEvidence,
 } from './lib/report-runtime-closeout-operator.js';
 import {
   assertReportRuntimeOrganicIntegrity,
+  assertReportRuntimeMetricIntegrity,
   assertReportRuntimeWindowChanged,
   assertReportRuntimeWindowTargetPrestate,
   selectReportRuntimeWindowTarget,
@@ -47,8 +50,11 @@ import {
 
 const execFileAsync = promisify(execFile);
 const repositoryRoot = resolve(process.cwd());
+const target = resolveReportRuntimeCloseoutTarget(process.env);
 const configPath = resolve(process.env.MKT_REPORT_RUNTIME_CLOSEOUT_WRANGLER_CONFIG ?? 'wrangler.sync.jsonc');
-const outputRoot = resolve(process.env.MKT_REPORT_RUNTIME_CLOSEOUT_EVIDENCE_DIR ?? 'outputs/report-runtime-closeout');
+const outputRoot = resolve(
+  process.env.MKT_REPORT_RUNTIME_CLOSEOUT_EVIDENCE_DIR ?? target.outputDirectory,
+);
 const finalizerEvidencePath = resolve(
   process.env.MKT_REPORT_RUNTIME_FINALIZER_EVIDENCE
     ?? 'outputs/report-runtime-finalize/report-runtime-finalize-summary.json',
@@ -88,8 +94,10 @@ function printPlan() {
     ok: true,
     planOnly: true,
     contractVersion: REPORT_RUNTIME_CLOSEOUT_CONTRACT_VERSION,
-    command: `CONFIRM_REPORT_RUNTIME_CLOSEOUT=${REPORT_RUNTIME_CLOSEOUT_CONFIRMATION} node scripts/report-runtime-closeout-operator.mjs --execute`,
-    scope: 'TikTok Organic rolling preset materialization from D1 to Lark',
+    command: target.platformScope === 'woocommerce'
+      ? 'CONFIRM_WOOCOMMERCE_REPORT_RUNTIME_CLOSEOUT=EXECUTE_WOOCOMMERCE_REPORT_RUNTIME_CLOSEOUT node scripts/woocommerce-report-runtime-closeout.mjs --execute'
+      : `CONFIRM_REPORT_RUNTIME_CLOSEOUT=${REPORT_RUNTIME_CLOSEOUT_CONFIRMATION} node scripts/report-runtime-closeout-operator.mjs --execute`,
+    scope: `${target.platformScope} ${target.capability} rolling preset materialization from D1 to Lark`,
     target: {
       operation: process.env.MKT_REPORT_RUNTIME_CLOSEOUT_OPERATION ?? 'fresh',
       windowDays: process.env.MKT_REPORT_RUNTIME_CLOSEOUT_WINDOW_DAYS ?? null,
@@ -106,7 +114,7 @@ function printPlan() {
       'restore-all-false',
       'closeout-summary',
     ],
-    activeTrueFlags: REPORT_RUNTIME_CLOSEOUT_ACTIVE_TRUE_FLAGS,
+    activeTrueFlags: target.activeTrueFlags,
     safety: {
       connectorsEnabled: false,
       providerCalls: false,
@@ -123,7 +131,11 @@ function printPlan() {
 async function executeCloseout() {
   const fileEnv = await readDevVars(process.env.DEV_VARS_FILE ?? '.dev.vars');
   const env = Object.freeze({ ...fileEnv, ...process.env });
-  assertReportRuntimeCloseoutConfirmation(env);
+  if (target.platformScope === 'woocommerce') {
+    assertWooCommerceReportRuntimeCloseoutConfirmation(env);
+  } else {
+    assertReportRuntimeCloseoutConfirmation(env);
+  }
   await mkdir(outputRoot, { recursive: true, mode: 0o700 });
 
   currentStage = 'repository-and-finalizer-evidence';
@@ -137,7 +149,9 @@ async function executeCloseout() {
   );
 
   const sourceText = await readFile(configPath, 'utf8');
-  const config = buildReportRuntimeCloseoutConfigWindow(sourceText);
+  const config = buildReportRuntimeCloseoutConfigWindow(sourceText, {
+    activeTrueFlags: target.activeTrueFlags,
+  });
   const auth = await resolveCloudflareSession(env, sourceText);
   const queue = await resolveQueue(auth.accountId, auth.token, config.mainQueueName);
   loaded = Object.freeze({ repository, env, config, auth, queue });
@@ -146,13 +160,20 @@ async function executeCloseout() {
   const client = createLarkBitableClientFromEnv(env);
   const larkPreflight = await verifyLarkInventory(client, config.tableIds);
   const d1Preflight = await readD1Preflight(config);
-  assertReportRuntimeCloseoutPreflight(d1Preflight);
+  if (target.platformScope === 'woocommerce') {
+    assertWooCommerceReportRuntimeCloseoutPreflight(d1Preflight);
+  } else {
+    assertReportRuntimeCloseoutPreflight(d1Preflight);
+  }
   const requestedAt = Date.now();
   const candidates = buildReportRuntimeCloseoutCandidates({
     requestedAt,
     periodEnd: d1Preflight.period_end,
     sourceWatermark: d1Preflight.source_watermark,
     timeZone: 'Asia/Bangkok',
+    platformScope: target.platformScope,
+    accountKey: target.accountKey,
+    formulaVersion: target.formulaVersion,
   });
   const existingIds = await readExistingReportIds(config, candidates.map((candidate) => candidate.reportId));
   const selected = selectReportRuntimeWindowTarget(candidates, existingIds, env);
@@ -219,7 +240,7 @@ async function executeCloseout() {
     });
     firstLark = await pollLarkCompletion(client, config.tableIds, selected.reportId);
     assertLarkCompletion(firstLark);
-    firstIntegrity = assertD1LarkOrganicIntegrity(firstCompletion, firstLark);
+    firstIntegrity = assertD1LarkIntegrity(firstCompletion, firstLark);
 
     currentStage = 'replay-same-job';
     await writeAttempt('send-replay', {
@@ -236,9 +257,9 @@ async function executeCloseout() {
     assertReportRuntimeCloseoutReplay(firstCompletion, replayCompletion);
     replayLark = await pollLarkCompletion(client, config.tableIds, selected.reportId);
     assertLarkReplay(firstLark, replayLark);
-    replayIntegrity = assertD1LarkOrganicIntegrity(replayCompletion, replayLark);
+    replayIntegrity = assertD1LarkIntegrity(replayCompletion, replayLark);
     if (stableJson(firstIntegrity) !== stableJson(replayIntegrity)) throw failure(
-      'Report closeout replay changed Organic KPI integrity evidence',
+      'Report closeout replay changed D1/Lark metric integrity evidence',
       'REPORT_RUNTIME_CLOSEOUT_REPLAY_INTEGRITY_DRIFT',
     );
   } catch (error) {
@@ -289,8 +310,8 @@ async function executeCloseout() {
     target: {
       environment: 'development',
       customerProfile: 'integration_workspace',
-      platform: 'tiktok',
-      accountKey: 'chemistry_k',
+      platform: target.platformScope,
+      accountKey: target.accountKey,
       operation: selected.operation,
       reportSettingKey: selected.reportSettingKey,
       reportId: selected.reportId,
@@ -303,8 +324,14 @@ async function executeCloseout() {
       targetRows: summarizeTargetState(snapshotBefore, larkBefore),
       d1: {
         coverageStatus: d1Preflight.coverage_status,
-        contentStateCount: Number(d1Preflight.content_state_count),
-        observationCount: Number(d1Preflight.observation_count),
+        ...(target.platformScope === 'woocommerce' ? {
+          coverageScopeMode: d1Preflight.coverage_scope_mode,
+          dailyFactCount: Number(d1Preflight.daily_fact_count),
+          orderStateCount: Number(d1Preflight.order_state_count),
+        } : {
+          contentStateCount: Number(d1Preflight.content_state_count),
+          observationCount: Number(d1Preflight.observation_count),
+        }),
       },
       pendingMigrations,
       safeBundleSha256: safeBundle.sha256,
@@ -328,7 +355,7 @@ async function executeCloseout() {
       integrityUnchanged: stableJson(firstIntegrity) === stableJson(replayIntegrity),
     },
     runtime: {
-      activeTrueFlags: REPORT_RUNTIME_CLOSEOUT_ACTIVE_TRUE_FLAGS,
+      activeTrueFlags: target.activeTrueFlags,
       restoredAllFalse: true,
       finalWorkerVersion: restoreDeployment.versionId,
       aiSummaryEnabled: false,
@@ -344,7 +371,7 @@ async function executeCloseout() {
   process.stdout.write(`${JSON.stringify({ ...summary, evidencePath }, null, 2)}\n`);
 }
 
-function assertD1LarkOrganicIntegrity(d1, lark) {
+function assertD1LarkIntegrity(d1, lark) {
   let payload;
   try {
     payload = JSON.parse(String(d1.payload_json ?? ''));
@@ -359,7 +386,9 @@ function assertD1LarkOrganicIntegrity(d1, lark) {
     'REPORT_RUNTIME_CLOSEOUT_LARK_METRIC_DUPLICATE',
     { duplicateMetricKeys: lark.duplicateMetricKeys },
   );
-  return assertReportRuntimeOrganicIntegrity({ payload, larkMetrics: lark.metricValues });
+  return target.platformScope === 'woocommerce'
+    ? assertReportRuntimeMetricIntegrity({ payload, larkMetrics: lark.metricValues })
+    : assertReportRuntimeOrganicIntegrity({ payload, larkMetrics: lark.metricValues });
 }
 
 function summarizeTargetState(d1, lark) {
@@ -481,6 +510,34 @@ async function verifyLarkInventory(client, tableIds) {
 }
 
 async function readD1Preflight() {
+  if (target.platformScope === 'woocommerce') return readD1Row(compactSql(`
+    WITH coverage AS (
+      SELECT status, scope_mode, source_watermark, completed_at
+      FROM data_coverage_runs
+      WHERE account_key = '${sqlText(target.accountKey)}'
+        AND platform = 'woocommerce'
+        AND dataset_key = 'woocommerce_orders'
+        AND completed_at IS NOT NULL
+      ORDER BY completed_at DESC, updated_at DESC, coverage_run_id ASC LIMIT 1
+    )
+    SELECT
+      (SELECT status FROM coverage) AS coverage_status,
+      (SELECT scope_mode FROM coverage) AS coverage_scope_mode,
+      (SELECT source_watermark FROM coverage) AS source_watermark,
+      (SELECT MAX(metric_date) FROM commerce_daily_sales_facts
+        WHERE account_key = '${sqlText(target.accountKey)}') AS period_end,
+      (SELECT COUNT(*) FROM commerce_daily_sales_facts
+        WHERE account_key = '${sqlText(target.accountKey)}') AS daily_fact_count,
+      (SELECT COUNT(*) FROM commerce_order_state
+        WHERE account_key = '${sqlText(target.accountKey)}') AS order_state_count,
+      (SELECT COUNT(*) FROM sync_locks l
+        JOIN sync_runs r ON r.sync_run_id = l.owner_id
+        WHERE r.platform = 'woocommerce' AND r.account_key = '${sqlText(target.accountKey)}'
+          AND r.sync_type = 'dashboard_performance_report'
+          AND l.expires_at > (unixepoch() * 1000)) AS active_report_locks,
+      (SELECT COUNT(*) FROM dead_letter_jobs
+        WHERE job_type = 'report.materialization.generate' AND status IN ('open', 'redrive_pending')) AS open_report_dlq;
+  `));
   return readD1Row(compactSql(`
     WITH coverage AS (
       SELECT status, source_watermark, completed_at
@@ -519,6 +576,8 @@ async function readExistingReportIds(_config, reportIds) {
 
 async function readD1Snapshot(_config, selected, requestedAt) {
   const reportId = sqlText(selected.reportId);
+  const platformScope = sqlText(target.platformScope);
+  const accountKey = sqlText(target.accountKey);
   return readD1Row(compactSql(`
     SELECT
       (SELECT report_id FROM report_materializations WHERE report_id = '${reportId}') AS report_id,
@@ -528,16 +587,16 @@ async function readD1Snapshot(_config, selected, requestedAt) {
       (SELECT generated_at FROM report_materializations WHERE report_id = '${reportId}') AS generated_at,
       (SELECT COUNT(*) FROM report_materializations WHERE report_id = '${reportId}') AS materialization_count,
       (SELECT status FROM sync_runs
-        WHERE platform = 'tiktok' AND account_key = 'chemistry_k'
+        WHERE platform = '${platformScope}' AND account_key = '${accountKey}'
           AND sync_type = 'dashboard_performance_report' AND started_at >= ${requestedAt}
         ORDER BY started_at DESC, sync_run_id DESC LIMIT 1) AS sync_status,
       (SELECT COUNT(*) FROM sync_runs
-        WHERE platform = 'tiktok' AND account_key = 'chemistry_k'
+        WHERE platform = '${platformScope}' AND account_key = '${accountKey}'
           AND sync_type = 'dashboard_performance_report' AND status = 'success'
           AND started_at >= ${requestedAt}) AS successful_sync_count,
       (SELECT COUNT(*) FROM sync_locks l
         JOIN sync_runs r ON r.sync_run_id = l.owner_id
-        WHERE r.platform = 'tiktok' AND r.account_key = 'chemistry_k'
+        WHERE r.platform = '${platformScope}' AND r.account_key = '${accountKey}'
           AND r.sync_type = 'dashboard_performance_report'
           AND r.started_at >= ${requestedAt}
           AND l.expires_at > (unixepoch() * 1000)) AS active_lock_count,
@@ -717,7 +776,7 @@ async function verifyRemoteDeployment(config, mode, expectedVersionId = null) {
     .filter(([name, enabled]) => name && /^MKT_[A-Z0-9_]+_ENABLED$/u.test(name) && enabled)
     .map(([name]) => name)
     .sort();
-  const expectedTrue = mode === 'active' ? [...REPORT_RUNTIME_CLOSEOUT_ACTIVE_TRUE_FLAGS].sort() : [];
+  const expectedTrue = mode === 'active' ? [...target.activeTrueFlags].sort() : [];
   if (stableJson(trueFlags) !== stableJson(expectedTrue)) throw failure(
     'Remote Worker execution flags differ from the reviewed Report closeout window',
     'REPORT_RUNTIME_CLOSEOUT_REMOTE_FLAG_MISMATCH',

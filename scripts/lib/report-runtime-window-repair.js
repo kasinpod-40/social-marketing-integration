@@ -157,6 +157,7 @@ export function assertReportRuntimeWindowChanged(input = {}) {
 export function assertReportRuntimeOrganicIntegrity(input = {}) {
   const payload = requireObject(input.payload, 'payload');
   const larkMetrics = requireObject(input.larkMetrics, 'larkMetrics');
+  const metricIntegrity = assertReportRuntimeMetricIntegrity({ payload, larkMetrics });
   const metricPayload = requireObject(payload.metricPayload, 'payload.metricPayload');
   const aggregateMetricKeys = [
     'tiktok:period_views',
@@ -166,6 +167,26 @@ export function assertReportRuntimeOrganicIntegrity(input = {}) {
     'tiktok:period_engagement',
     'tiktok:period_engagement_rate',
   ];
+  const coverageRate = optionalFinite(payload.coverageRate);
+  const incompleteBaseline = coverageRate !== null && coverageRate < 1;
+  const aggregateNullCount = aggregateMetricKeys.filter((key) => optionalFinite(metricPayload[key]?.current) === null).length;
+  if (incompleteBaseline && aggregateNullCount !== aggregateMetricKeys.length) throw repairError(
+    'Incomplete Organic baseline exposed numeric aggregate KPI values',
+    'REPORT_RUNTIME_WINDOW_REPAIR_PARTIAL_AGGREGATE_NUMERIC',
+    { aggregateMetricCount: aggregateMetricKeys.length, aggregateNullCount },
+  );
+  return Object.freeze({
+    ...metricIntegrity,
+    incompleteBaseline,
+    aggregateMetricCount: aggregateMetricKeys.length,
+    aggregateNullCount,
+  });
+}
+
+export function assertReportRuntimeMetricIntegrity(input = {}) {
+  const payload = requireObject(input.payload, 'payload');
+  const larkMetrics = requireObject(input.larkMetrics, 'larkMetrics');
+  const metricPayload = requireObject(payload.metricPayload, 'payload.metricPayload');
   const expectedMetricKeys = Object.keys(metricPayload).sort();
   const observedMetricKeys = Object.keys(larkMetrics).sort();
   if (JSON.stringify(expectedMetricKeys) !== JSON.stringify(observedMetricKeys)) throw repairError(
@@ -185,21 +206,9 @@ export function assertReportRuntimeOrganicIntegrity(input = {}) {
     'REPORT_RUNTIME_WINDOW_REPAIR_METRIC_VALUE_DRIFT',
     { mismatchCount: mismatches },
   );
-
-  const coverageRate = optionalFinite(payload.coverageRate);
-  const incompleteBaseline = coverageRate !== null && coverageRate < 1;
-  const aggregateNullCount = aggregateMetricKeys.filter((key) => optionalFinite(metricPayload[key]?.current) === null).length;
-  if (incompleteBaseline && aggregateNullCount !== aggregateMetricKeys.length) throw repairError(
-    'Incomplete Organic baseline exposed numeric aggregate KPI values',
-    'REPORT_RUNTIME_WINDOW_REPAIR_PARTIAL_AGGREGATE_NUMERIC',
-    { aggregateMetricCount: aggregateMetricKeys.length, aggregateNullCount },
-  );
   return Object.freeze({
     metricCount: expectedMetricKeys.length,
     mismatchCount: mismatches,
-    incompleteBaseline,
-    aggregateMetricCount: aggregateMetricKeys.length,
-    aggregateNullCount,
   });
 }
 

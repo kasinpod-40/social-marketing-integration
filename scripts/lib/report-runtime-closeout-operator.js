@@ -10,9 +10,15 @@ import { parseJsoncObject } from './chatwoot-safe-wrangler-config.js';
 
 export const REPORT_RUNTIME_CLOSEOUT_CONTRACT_VERSION = 'report_runtime_closeout_uat_v1';
 export const REPORT_RUNTIME_CLOSEOUT_CONFIRMATION = 'EXECUTE_REPORT_RUNTIME_CLOSEOUT';
+export const WOOCOMMERCE_REPORT_RUNTIME_CLOSEOUT_CONFIRMATION =
+  'EXECUTE_WOOCOMMERCE_REPORT_RUNTIME_CLOSEOUT';
 export const REPORT_RUNTIME_CLOSEOUT_ACTIVE_TRUE_FLAGS = Object.freeze([
   'MKT_REPORT_D1_READ_ENABLED',
   'MKT_REPORT_PRESET_MATERIALIZATION_ENABLED',
+]);
+export const WOOCOMMERCE_REPORT_RUNTIME_CLOSEOUT_ACTIVE_TRUE_FLAGS = Object.freeze([
+  ...REPORT_RUNTIME_CLOSEOUT_ACTIVE_TRUE_FLAGS,
+  'MKT_WOOCOMMERCE_REPORT_READ_ENABLED',
 ]);
 export const REPORT_RUNTIME_CLOSEOUT_WINDOW_DAYS = DASHBOARD_REPORT_PRESET_DAYS;
 export const REPORT_RUNTIME_CLOSEOUT_CANONICAL_SETTING_COUNT = 2
@@ -52,6 +58,44 @@ export function assertReportRuntimeCloseoutConfirmation(env = {}) {
   return true;
 }
 
+export function assertWooCommerceReportRuntimeCloseoutConfirmation(env = {}) {
+  if (env.CONFIRM_WOOCOMMERCE_REPORT_RUNTIME_CLOSEOUT
+    !== WOOCOMMERCE_REPORT_RUNTIME_CLOSEOUT_CONFIRMATION) {
+    throw closeoutError(
+      `Execution requires CONFIRM_WOOCOMMERCE_REPORT_RUNTIME_CLOSEOUT=${WOOCOMMERCE_REPORT_RUNTIME_CLOSEOUT_CONFIRMATION}`,
+      'WOOCOMMERCE_REPORT_RUNTIME_CLOSEOUT_CONFIRMATION_REQUIRED',
+    );
+  }
+  return true;
+}
+
+export function resolveReportRuntimeCloseoutTarget(env = {}) {
+  const platformScope = String(env.MKT_REPORT_RUNTIME_CLOSEOUT_PLATFORM_SCOPE ?? 'tiktok')
+    .trim()
+    .toLowerCase();
+  if (platformScope === 'tiktok') return Object.freeze({
+    platformScope,
+    accountKey: 'chemistry_k',
+    formulaVersion: 'tiktok-organic-v1',
+    capability: 'organic',
+    activeTrueFlags: REPORT_RUNTIME_CLOSEOUT_ACTIVE_TRUE_FLAGS,
+    outputDirectory: 'outputs/report-runtime-closeout',
+  });
+  if (platformScope === 'woocommerce') return Object.freeze({
+    platformScope,
+    accountKey: 'chemistry_k',
+    formulaVersion: 'woocommerce-commerce-v1',
+    capability: 'commerce',
+    activeTrueFlags: WOOCOMMERCE_REPORT_RUNTIME_CLOSEOUT_ACTIVE_TRUE_FLAGS,
+    outputDirectory: 'outputs/woocommerce-report-runtime-closeout',
+  });
+  throw closeoutError(
+    `Unsupported Report closeout platform scope: ${platformScope}`,
+    'REPORT_RUNTIME_CLOSEOUT_PLATFORM_UNSUPPORTED',
+    { platformScope },
+  );
+}
+
 export function assertReportRuntimeFinalizerEvidence(value = {}) {
   const gates = Array.isArray(value.gates) ? value.gates : [];
   const allGatesPassed = gates.length >= 6 && gates.every((gate) => gate?.status === 'pass');
@@ -78,8 +122,11 @@ export function assertReportRuntimeFinalizerEvidence(value = {}) {
   return true;
 }
 
-export function buildReportRuntimeCloseoutConfigWindow(sourceText) {
+export function buildReportRuntimeCloseoutConfigWindow(sourceText, options = {}) {
   const source = parseJsoncObject(requireText(sourceText, 'sourceText'));
+  const reviewedActiveTrueFlags = normalizeActiveTrueFlags(
+    options.activeTrueFlags ?? REPORT_RUNTIME_CLOSEOUT_ACTIVE_TRUE_FLAGS,
+  );
   if (source.name !== EXPECTED_WORKER_NAME
     || source.workers_dev !== false
     || source.vars?.MKT_ENV !== 'development'
@@ -93,7 +140,7 @@ export function buildReportRuntimeCloseoutConfigWindow(sourceText) {
     .filter((name) => /^MKT_[A-Z0-9_]+_ENABLED$/u.test(name))
     .sort();
   for (const required of [
-    ...REPORT_RUNTIME_CLOSEOUT_ACTIVE_TRUE_FLAGS,
+    ...reviewedActiveTrueFlags,
     'MKT_REPORT_AI_SUMMARY_ENABLED',
     'MKT_SCHEDULE_DAILY_REPORT_ENABLED',
     'MKT_SCHEDULE_WEEKLY_REPORT_ENABLED',
@@ -109,7 +156,7 @@ export function buildReportRuntimeCloseoutConfigWindow(sourceText) {
   safe.workers_dev = false;
   safe.vars = { ...safe.vars, ...Object.fromEntries(flagNames.map((name) => [name, 'false'])) };
   const active = structuredClone(safe);
-  for (const name of REPORT_RUNTIME_CLOSEOUT_ACTIVE_TRUE_FLAGS) active.vars[name] = 'true';
+  for (const name of reviewedActiveTrueFlags) active.vars[name] = 'true';
 
   const safeTrueFlags = readTrueFlags(safe);
   const activeTrueFlags = readTrueFlags(active);
@@ -117,11 +164,11 @@ export function buildReportRuntimeCloseoutConfigWindow(sourceText) {
     'Report closeout Safe config contains an enabled execution flag',
     'REPORT_RUNTIME_CLOSEOUT_SAFE_FLAG_INVALID',
   );
-  if (stableJson(activeTrueFlags) !== stableJson([...REPORT_RUNTIME_CLOSEOUT_ACTIVE_TRUE_FLAGS].sort())) {
+  if (stableJson(activeTrueFlags) !== stableJson(reviewedActiveTrueFlags)) {
     throw closeoutError(
       'Report closeout Active config contains an unapproved execution flag',
       'REPORT_RUNTIME_CLOSEOUT_ACTIVE_FLAG_INVALID',
-      { activeTrueFlags },
+      { activeTrueFlags: readTrueFlags(active) },
     );
   }
   if (active.vars.MKT_REPORT_AI_SUMMARY_ENABLED !== 'false'
@@ -174,8 +221,8 @@ export function buildReportRuntimeCloseoutConfigWindow(sourceText) {
     safeSha256: sha256(safeText),
     activeSha256: sha256(activeText),
     safeTrueFlags: Object.freeze(safeTrueFlags),
-    activeTrueFlags: Object.freeze(activeTrueFlags),
-    falseFlagNames: Object.freeze(flagNames.filter((name) => !REPORT_RUNTIME_CLOSEOUT_ACTIVE_TRUE_FLAGS.includes(name))),
+    activeTrueFlags: Object.freeze(readTrueFlags(active)),
+    falseFlagNames: Object.freeze(flagNames.filter((name) => !activeTrueFlags.includes(name))),
     tableIds,
     tableIdFingerprint: sha256(stableJson(tableIds)),
     databaseName: requireExact(d1.database_name, EXPECTED_DATABASE_NAME, 'database_name'),
@@ -197,6 +244,9 @@ export function buildReportRuntimeCloseoutCandidates(input = {}) {
   const requestedAt = requireTimestamp(input.requestedAt, 'requestedAt');
   const sourceWatermark = requireText(input.sourceWatermark, 'sourceWatermark');
   const timeZone = requireExact(input.timeZone ?? 'Asia/Bangkok', 'Asia/Bangkok', 'timeZone');
+  const platformScope = requireText(input.platformScope ?? 'tiktok', 'platformScope');
+  const accountKey = requireText(input.accountKey ?? 'chemistry_k', 'accountKey');
+  const formulaVersion = requireText(input.formulaVersion ?? 'tiktok-organic-v1', 'formulaVersion');
   return Object.freeze(REPORT_RUNTIME_CLOSEOUT_WINDOW_DAYS.map((windowDays) => {
     const period = resolveReportPeriod({
       periodKind: 'rolling_days',
@@ -206,11 +256,11 @@ export function buildReportRuntimeCloseoutCandidates(input = {}) {
       timeZone,
       now: new Date(requestedAt),
     });
-    const reportSettingKey = `integration_workspace:tiktok:rolling:${windowDays}d`;
+    const reportSettingKey = `integration_workspace:${platformScope}:rolling:${windowDays}d`;
     const job = buildDashboardPresetJob({
       requestedAt,
       reportSettingKey,
-      platformScope: 'tiktok',
+      platformScope,
       windowDays,
       periodEnd,
       comparisonMode: 'previous_period',
@@ -219,11 +269,11 @@ export function buildReportRuntimeCloseoutCandidates(input = {}) {
     });
     const reportId = createReportId({
       report_setting_key: reportSettingKey,
-      account_key: 'chemistry_k',
+      account_key: accountKey,
       period_kind: 'rolling_days',
       period_start: period.periodStart,
       period_end: period.periodEnd,
-      formula_version: 'tiktok-organic-v1',
+      formula_version: formulaVersion,
     });
     return Object.freeze({ windowDays, reportSettingKey, reportId, period, job });
   }));
@@ -276,6 +326,32 @@ export function assertReportRuntimeCloseoutPreflight(row = {}) {
         coverageStatus: row.coverage_status ?? null,
         contentStateCount: Number(row.content_state_count ?? 0),
         observationCount: Number(row.observation_count ?? 0),
+        activeReportLocks: Number(row.active_report_locks ?? 0),
+        openReportDlq: Number(row.open_report_dlq ?? 0),
+      },
+    );
+  }
+  return true;
+}
+
+export function assertWooCommerceReportRuntimeCloseoutPreflight(row = {}) {
+  if (!['complete', 'partial', 'revisable', 'no_data_confirmed'].includes(String(row.coverage_status))
+    || !['full_inventory', 'recent_window'].includes(String(row.coverage_scope_mode))
+    || typeof row.source_watermark !== 'string'
+    || row.source_watermark.trim() === ''
+    || !/^\d{4}-\d{2}-\d{2}$/u.test(String(row.period_end ?? ''))
+    || Number(row.daily_fact_count ?? 0) <= 0
+    || Number(row.order_state_count ?? 0) <= 0
+    || Number(row.active_report_locks ?? 0) !== 0
+    || Number(row.open_report_dlq ?? 0) !== 0) {
+    throw closeoutError(
+      'WooCommerce D1 Commerce facts are not ready for Report closeout materialization',
+      'WOOCOMMERCE_REPORT_RUNTIME_CLOSEOUT_D1_PREFLIGHT_NOT_READY',
+      {
+        coverageStatus: row.coverage_status ?? null,
+        coverageScopeMode: row.coverage_scope_mode ?? null,
+        dailyFactCount: Number(row.daily_fact_count ?? 0),
+        orderStateCount: Number(row.order_state_count ?? 0),
         activeReportLocks: Number(row.active_report_locks ?? 0),
         openReportDlq: Number(row.open_report_dlq ?? 0),
       },
@@ -344,6 +420,20 @@ function optionalWindowDays(value) {
     { windowDays: value },
   );
   return number;
+}
+
+function normalizeActiveTrueFlags(value) {
+  if (!Array.isArray(value) || value.length === 0) throw closeoutError(
+    'Report closeout requires at least one reviewed active execution flag',
+    'REPORT_RUNTIME_CLOSEOUT_ACTIVE_FLAG_INVALID',
+  );
+  const normalized = [...new Set(value.map((name) => requireText(name, 'activeTrueFlag')))].sort();
+  if (normalized.some((name) => !/^MKT_[A-Z0-9_]+_ENABLED$/u.test(name))) throw closeoutError(
+    'Report closeout active execution flag name is invalid',
+    'REPORT_RUNTIME_CLOSEOUT_ACTIVE_FLAG_INVALID',
+    { activeTrueFlags: normalized },
+  );
+  return normalized;
 }
 
 function assertQueueSettings(actual, expected) {

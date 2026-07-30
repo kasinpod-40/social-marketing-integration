@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased — WooCommerce Commerce Report Live Closeout — 2026-07-30
+
+### Report reliability
+
+- Extended the existing Report runtime closeout operator with an explicit WooCommerce Commerce
+  target while preserving TikTok Organic as the unchanged default.
+- Added a guarded one-command wrapper that reuses the shared finalizer, D1 materialization,
+  Lark Snapshot/Metric writer, same-job replay and automatic all-false restore.
+- Added platform-neutral D1/Lark metric integrity verification for Commerce materializations.
+
+### Safety
+
+- The WooCommerce report-only window enables exactly global D1 Report read, preset
+  materialization and WooCommerce Report read.
+- Connector ingestion, D1/Lark ingestion writes, full reconciliation, AI and all schedules remain
+  disabled; Production remains blocked.
+
 ## Unreleased — WooCommerce Snapshot Idempotent Normalization — 2026-07-30
 
 ### Reliability
