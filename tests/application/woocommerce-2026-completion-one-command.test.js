@@ -74,11 +74,12 @@ test('remote Worker safety requires one active version and zero enabled MKT flag
   );
 });
 
-test('cleanup preflight accepts only exact pending cleanup or completed cleanup', () => {
+test('cleanup preflight accepts exact pending cleanup and completed cleanup', () => {
   const pending = validateWooCommerce2026CleanupPreflight({
     ...CLEANUP_ZERO,
     old_raw_orders: 7_800,
     old_raw_order_items: 7_809,
+    old_customer_aggregates: 510,
     active_work: 1,
     replaced_active_work: 1,
     other_active_work: 0,
@@ -104,6 +105,7 @@ test('cleanup preflight accepts only exact pending cleanup or completed cleanup'
 
   const cleanWithExactResume = validateWooCommerce2026CleanupPreflight({
     ...CLEANUP_ZERO,
+    old_customer_aggregates: 23,
     active_work: 1,
     replaced_active_work: 0,
     other_active_work: 1,
@@ -114,6 +116,7 @@ test('cleanup preflight accepts only exact pending cleanup or completed cleanup'
   });
   assert.equal(cleanWithExactResume.alreadyClean, true);
   assert.equal(cleanWithExactResume.otherActiveWork, 1);
+  assert.equal(cleanWithExactResume.aggregateRows, 23);
 
   assert.throws(
     () => validateWooCommerce2026CleanupPreflight({
@@ -130,7 +133,7 @@ test('cleanup preflight accepts only exact pending cleanup or completed cleanup'
   );
 });
 
-test('cleanup post-state requires zero old rows, work, locks and exact old-operation closure', () => {
+test('cleanup post-state requires zero old rows, aggregates, work and locks', () => {
   assert.equal(validateWooCommerce2026CleanupPostState({
     ...CLEANUP_ZERO,
     active_work: 0,
@@ -145,6 +148,21 @@ test('cleanup post-state requires zero old rows, work, locks and exact old-opera
     () => validateWooCommerce2026CleanupPostState({
       ...CLEANUP_ZERO,
       old_order_state: 1,
+      active_work: 0,
+      replaced_active_work: 0,
+      other_active_work: 0,
+      active_locks: 0,
+      replaced_work_status: 'terminal',
+      replaced_sync_status: 'failed',
+      replaced_sync_error_code: 'WOOCOMMERCE_HISTORY_SCOPE_REPLACED',
+    }),
+    (error) => error?.code
+      === 'WOOCOMMERCE_2026_COMPLETION_CLEANUP_POSTSTATE_INVALID',
+  );
+  assert.throws(
+    () => validateWooCommerce2026CleanupPostState({
+      ...CLEANUP_ZERO,
+      old_customer_aggregates: 1,
       active_work: 0,
       replaced_active_work: 0,
       other_active_work: 0,
@@ -227,6 +245,9 @@ test('one command seals main and orders cleanup before Final rollout', async () 
     'utf8',
   );
   assert.match(source, /buildReportRuntimeSealedCloneArgs/u);
+  assert.match(source, /buildReportRuntimeSealedChildEnvironment/u);
+  assert.match(source, /readReportRuntimeSealedContext/u);
+  assert.match(source, /assertReportRuntimeSealedHead/u);
   assert.match(source, /remote', 'set-url', 'origin', '\.'/u);
   assert.match(source, /snapshotPrivateFile\(devVars\.resolvedPath/u);
   assert.match(source, /\['npm-ci', 'npm', \['ci'\]\]/u);
