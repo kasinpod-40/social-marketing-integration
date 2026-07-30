@@ -3,7 +3,9 @@
 import { spawnSync } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { REPORT_RUNTIME_CLOSEOUT_RECOVERY_MODE } from './lib/report-runtime-lark-integrity-recovery.js';
+import {
+  REPORT_RUNTIME_CONFIG_DLQ_RECOVERY_CONFIRMATION,
+} from './lib/report-runtime-config-dlq-recovery.js';
 import { REPORT_RUNTIME_WINDOW_REPAIR_CONFIRMATION } from './lib/report-runtime-window-repair.js';
 
 const RECOVERY_CONFIRMATION = 'RECOVER_REPORT_RUNTIME_3D_AND_CONTINUE';
@@ -31,21 +33,11 @@ try {
     CONFIRM_REPORT_RUNTIME_FINALIZE: 'EXECUTE_REPORT_RUNTIME_FINALIZE',
   });
 
-  runRequired('3d-exact-metric-null-repair', ['scripts/report-runtime-lark-metric-null-repair.mjs'], {
+  runRequired('3d-exact-config-dlq-recovery', ['scripts/report-runtime-config-dlq-recovery.mjs'], {
     ...process.env,
     MKT_REPORT_RUNTIME_FINALIZER_EVIDENCE: finalizerEvidence,
     MKT_REPORT_RUNTIME_CLOSEOUT_EVIDENCE_DIR: threeDayEvidence,
-    CONFIRM_REPORT_RUNTIME_METRIC_NULL_REPAIR: 'EXECUTE_EXACT_REPORT_METRIC_NULL_REPAIR',
-  });
-
-  runRequired('3d-exact-recovery', ['scripts/report-runtime-closeout-operator.mjs', '--execute'], {
-    ...process.env,
-    MKT_REPORT_RUNTIME_FINALIZER_EVIDENCE: finalizerEvidence,
-    MKT_REPORT_RUNTIME_CLOSEOUT_EVIDENCE_DIR: threeDayEvidence,
-    MKT_REPORT_RUNTIME_CLOSEOUT_WINDOW_DAYS: '3',
-    MKT_REPORT_RUNTIME_CLOSEOUT_OPERATION: 'refresh',
-    MKT_REPORT_RUNTIME_CLOSEOUT_RECOVERY_MODE: REPORT_RUNTIME_CLOSEOUT_RECOVERY_MODE,
-    CONFIRM_REPORT_RUNTIME_CLOSEOUT: 'EXECUTE_REPORT_RUNTIME_CLOSEOUT',
+    CONFIRM_REPORT_RUNTIME_CONFIG_DLQ_RECOVERY: REPORT_RUNTIME_CONFIG_DLQ_RECOVERY_CONFIRMATION,
   });
 
   runRequired('remaining-window-sequence', ['scripts/report-runtime-window-repair.mjs', '--execute'], {
