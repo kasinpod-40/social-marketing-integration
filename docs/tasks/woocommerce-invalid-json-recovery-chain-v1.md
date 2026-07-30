@@ -33,9 +33,10 @@ The failed operation was not resumed and invalid JSON was not reclassified as ge
 - Repin the existing recovery-only operator to `woo-final-full-5b56469100a9`.
 - Require exact `WOOCOMMERCE_INVALID_JSON`, failed Sync, stale active Work, zero completion/phase,
   zero active lock, exactly one Queue attempt and zero Coverage.
-- Count all 14 Commerce tables by the exact incident `sync_run_id` / `last_sync_run_id` and require
-  those incident-attributed rows to be zero; retained Store/Product/Category and other pre-existing
-  Business facts are allowed and must not be deleted or changed.
+- Count all 17 WooCommerce D1 write tables by the exact incident `sync_run_id` /
+  `last_sync_run_id`, including D1-only Store state, Order status observations and Order line facts.
+- Require those incident-attributed rows to be zero; retained Store/Product/Category and other
+  pre-existing Business facts are allowed and must not be deleted or changed.
 - Run the existing Worker Preview Provider diagnostics before authorizing lifecycle recovery.
 - Permit only the existing guarded `sync_work_runs` lifecycle mutation.
 - Verify the exact terminal post-state and unchanged incident-attributed row counts.
