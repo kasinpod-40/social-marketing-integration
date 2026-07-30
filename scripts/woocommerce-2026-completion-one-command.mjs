@@ -6,16 +6,20 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  rename,
   rm,
   stat,
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { readDevVars } from './lib/dev-vars.js';
 import { secureLocalSecretFile } from './lib/local-secret-file-policy.js';
 import {
+  assertReportRuntimeSealedHead,
+  buildReportRuntimeSealedChildEnvironment,
   buildReportRuntimeSealedCloneArgs,
+  readReportRuntimeSealedContext,
   sanitizeReportRuntimeGitEnvironment,
 } from './lib/report-runtime-sealed-execution.js';
 import {
@@ -27,7 +31,6 @@ import {
   WOOCOMMERCE_2026_COMPLETION_CONTRACT_VERSION,
   WOOCOMMERCE_2026_COMPLETION_SEALED_HEAD,
   WOOCOMMERCE_2026_COMPLETION_SEALED_MARKER,
-  WOOCOMMERCE_2026_COMPLETION_SEALED_ROOT,
   WOOCOMMERCE_2026_COMPLETION_SEALED_VALUE,
   WOOCOMMERCE_2026_HISTORY_START,
   assertWooCommerce2026CompletionConfirmation,
@@ -77,7 +80,7 @@ function printPlan() {
     stages: [
       'secure-local-secret-input',
       'snapshot-current-origin-main',
-      'execute-in-sealed-main-clone',
+      'execute-in-canonical-sealed-main-clone',
       'full-local-verification',
       'verify-worker-all-false',
       'resume-or-complete-pre-2026-cleanup',
@@ -92,6 +95,7 @@ function printPlan() {
     ],
     safety: {
       exactMainPinnedAtStart: true,
+      canonicalMacOsPathIdentity: true,
       mutableSourceCheckoutUsedForExecution: false,
       cleanupBackupFirst: true,
       cleanupStatementsIdempotent: true,
@@ -148,13 +152,22 @@ async function executeOuter() {
     await snapshotPrivateFile(sourceConfigPath, sealedConfig, 'wrangler.sync.jsonc');
     assertSealedRepository(cloneRoot, pinnedHead, gitEnv);
 
+    const reportSealedEnv = buildReportRuntimeSealedChildEnvironment(
+      process.env,
+      {
+        root: cloneRoot,
+        head: pinnedHead,
+        evidenceDir: evidenceRoot,
+        devVarsFile: sealedDevVars,
+        wranglerConfigFile: sealedConfig,
+      },
+    );
     const childEnv = sanitizeReportRuntimeGitEnvironment({
-      ...process.env,
+      ...reportSealedEnv,
       CONFIRM_WOOCOMMERCE_2026_COMPLETION:
         WOOCOMMERCE_2026_COMPLETION_CONFIRMATION,
       [WOOCOMMERCE_2026_COMPLETION_SEALED_MARKER]:
         WOOCOMMERCE_2026_COMPLETION_SEALED_VALUE,
-      [WOOCOMMERCE_2026_COMPLETION_SEALED_ROOT]: cloneRoot,
       [WOOCOMMERCE_2026_COMPLETION_SEALED_HEAD]: pinnedHead,
       DEV_VARS_FILE: sealedDevVars,
       MKT_WOOCOMMERCE_ROLLOUT_WRANGLER_CONFIG: sealedConfig,
@@ -178,15 +191,20 @@ async function executeOuter() {
 
 async function executeSealed() {
   assertWooCommerce2026CompletionConfirmation(process.env);
-  const sealedRoot = resolve(requiredEnv(WOOCOMMERCE_2026_COMPLETION_SEALED_ROOT));
+  const sealedContext = readReportRuntimeSealedContext(process.env, repositoryRoot);
+  if (!sealedContext) throw failure(
+    'WooCommerce completion requires the canonical sealed execution context',
+    'WOOCOMMERCE_2026_COMPLETION_SEALED_CONTEXT_MISSING',
+  );
   const pinnedHead = requireWooCommerce2026CompletionHead(
     requiredEnv(WOOCOMMERCE_2026_COMPLETION_SEALED_HEAD),
   );
-  if (sealedRoot !== repositoryRoot) throw failure(
-    'WooCommerce completion sealed root differs from the current checkout',
-    'WOOCOMMERCE_2026_COMPLETION_SEALED_ROOT_MISMATCH',
+  if (sealedContext.expectedHead !== pinnedHead) throw failure(
+    'WooCommerce and shared sealed contexts disagree on the pinned main SHA',
+    'WOOCOMMERCE_2026_COMPLETION_SEALED_HEAD_MISMATCH',
+    { expectedHead: pinnedHead, sharedExpectedHead: sealedContext.expectedHead },
   );
-  assertSealedRepository(repositoryRoot, pinnedHead, process.env);
+  assertSealedRepository(repositoryRoot, pinnedHead, process.env, sealedContext);
 
   const evidenceRoot = resolve(requiredEnv(
     'MKT_WOOCOMMERCE_2026_COMPLETION_EVIDENCE_DIR',
@@ -202,7 +220,7 @@ async function executeSealed() {
   await mkdir(finalEvidenceRoot, { recursive: true, mode: 0o700 });
 
   runLocalVerification();
-  assertSealedRepository(repositoryRoot, pinnedHead, process.env);
+  assertSealedRepository(repositoryRoot, pinnedHead, process.env, sealedContext);
 
   const env = Object.freeze({
     ...await readDevVars(process.env.DEV_VARS_FILE),
@@ -211,8 +229,13 @@ async function executeSealed() {
   requireExact(env.MKT_ENV, 'development', 'MKT_ENV');
   requireExact(env.MKT_CUSTOMER_PROFILE, 'integration_workspace', 'MKT_CUSTOMER_PROFILE');
   requireExact(env.MKT_CONNECTION_CUSTOMER_KEY, 'chemistry_k', 'MKT_CONNECTION_CUSTOMER_KEY');
+  const historyStart = new Date(env.MKT_WOOCOMMERCE_ORDER_HISTORY_START);
+  if (!Number.isFinite(historyStart.getTime())) throw failure(
+    'MKT_WOOCOMMERCE_ORDER_HISTORY_START is not a valid timestamp',
+    'WOOCOMMERCE_2026_COMPLETION_HISTORY_START_INVALID',
+  );
   requireExact(
-    new Date(env.MKT_WOOCOMMERCE_ORDER_HISTORY_START).toISOString(),
+    historyStart.toISOString(),
     WOOCOMMERCE_2026_HISTORY_START,
     'MKT_WOOCOMMERCE_ORDER_HISTORY_START',
   );
@@ -292,7 +315,7 @@ async function executeSealed() {
     readFinalRemoteState({ env, configPath, databaseName }),
   );
   const safeFinal = readRemoteWorkerSafe({ env, configPath, workerName });
-  assertSealedRepository(repositoryRoot, pinnedHead, process.env);
+  assertSealedRepository(repositoryRoot, pinnedHead, process.env, sealedContext);
 
   const summary = Object.freeze({
     ok: true,
@@ -325,6 +348,7 @@ async function executeSealed() {
     }),
     safety: Object.freeze({
       sealedMain: true,
+      canonicalRootIdentity: true,
       sourceCheckoutUsedForExecution: false,
       workerSafeBeforeCleanup: safeBefore.allFalse,
       workerSafeAfterCleanup: safeAfterCleanup.allFalse,
@@ -527,7 +551,7 @@ function firstRow(value) {
   return row;
 }
 
-function assertSealedRepository(root, expectedHead, env) {
+function assertSealedRepository(root, expectedHead, env, sealedContext = null) {
   const branch = runGitText(['branch', '--show-current'], { cwd: root, env });
   const head = runGitText(['rev-parse', 'HEAD'], { cwd: root, env });
   const originMain = runGitText(['rev-parse', 'origin/main'], { cwd: root, env });
@@ -535,6 +559,7 @@ function assertSealedRepository(root, expectedHead, env) {
     ['status', '--porcelain', '--untracked-files=all'],
     { cwd: root, env, trim: false },
   );
+  if (sealedContext) assertReportRuntimeSealedHead(sealedContext, head);
   if (branch !== 'main'
     || head !== expectedHead
     || originMain !== expectedHead
@@ -671,8 +696,10 @@ async function readRequiredJson(path) {
 }
 
 async function writePrivateJson(path, value) {
-  await mkdir(resolve(path, '..'), { recursive: true, mode: 0o700 });
-  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  const temporary = `${path}.${process.pid}.tmp`;
+  await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
+  await rename(temporary, path);
   await chmod(path, 0o600);
 }
 
