@@ -18,4 +18,6 @@
 - Normalized current Wrangler/Cloudflare consumer fields `settings.batch_size` and `settings.max_wait_time_ms` to the reviewed legacy aliases only for the exact `wrangler queues consumer list ... --json` command; all other `npx` commands pass through unchanged.
 - Added modern/legacy/conflict topology tests, direct/result/consumers output-shape tests and a Git-blob identity assertion for the immutable Final core.
 - Normalized Cloudflare's empty-string `dead_letter_queue` response to `null` before the reviewed Final core compares DLQ topology, while preserving non-empty main-Queue DLQ identity.
+- Reused the proven Codex incident sequence for `woo-final-full-5b56469100a9`: guarded Provider GET-only diagnostics, exact zero-fact lifecycle-only recovery, then the existing canonical 2026 completion path.
+- Kept `WOOCOMMERCE_INVALID_JSON` fail-closed for normal Queue processing; the recovery chain cannot resume the terminal operation or mutate Business/Coverage/Lark facts.
 - Implementation performs no Remote mutation, Worker deployment, Queue message, Lark write, Schedule change or Production action.
