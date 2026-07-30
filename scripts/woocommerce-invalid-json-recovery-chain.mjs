@@ -113,8 +113,8 @@ async function main() {
   });
 
   runRequiredNodeStep(
-    'woocommerce-worker-provider-diagnostics',
-    ['scripts/woocommerce-worker-provider-diagnostics.mjs', '--execute'],
+    'woocommerce-worker-provider-diagnostics-ephemeral',
+    ['scripts/woocommerce-worker-provider-diagnostics-ephemeral.mjs', '--execute'],
     {
       ...env,
       [WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_CONFIRMATION.envName]:
