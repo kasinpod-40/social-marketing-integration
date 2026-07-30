@@ -13,6 +13,7 @@ import {
 } from '../../scripts/lib/woocommerce-final-recovery-only.js';
 
 const OPERATION_ID = 'woo-final-full-5b56469100a9';
+const GENERATION = 1785395464000;
 const COUNT_KEYS = Object.freeze([
   'raw_commerce_stores',
   'raw_commerce_orders',
@@ -55,14 +56,19 @@ const INCIDENT_COUNT_KEYS = Object.freeze(
 function snapshotRow(overrides = {}) {
   return {
     sync_run_status: 'failed',
-    sync_run_finished_at: 1785395464000,
+    sync_run_finished_at: GENERATION + 1_000,
     sync_run_error_code: 'WOOCOMMERCE_INVALID_JSON',
+    sync_run_retryable: 0,
     work_lifecycle_status: 'active',
+    work_generation: GENERATION,
+    work_requested_at: GENERATION,
     work_completed_at: null,
     completion_json: null,
     phase_complete: 0,
     state_json: JSON.stringify({ datasetIndex: 0, page: 1 }),
     active_lock_count: 0,
+    queue_generation: GENERATION,
+    queue_original_requested_at: GENERATION,
     queue_operation_attempts: 1,
     coverage_run_count: 0,
     invalid_coverage_count: 0,
@@ -108,15 +114,26 @@ test('exact preflight snapshot is read-only and operation-scoped across every D1
   assert.doesNotMatch(sql, /\b(?:UPDATE|DELETE|INSERT|DROP|ALTER|CREATE)\b/iu);
 });
 
-test('exact mutation closes one lifecycle row and guards all incident-attributed tables', () => {
+test('exact mutation closes one lifecycle row and repeats every race-sensitive guard', () => {
   const sql = buildWooCommerceFinalRecoveryOnlyMutationSql({
     operationId: OPERATION_ID,
     auditReference: `woocommerce-final-recovery:${'a'.repeat(40)}`,
   });
   assert.match(sql, /^UPDATE sync_work_runs SET lifecycle_status = 'terminal'/u);
   assert.match(sql, /work_key = 'woocommerce:woo-final-full-5b56469100a9'/u);
+  assert.match(sql, /completed_at IS NULL/u);
+  assert.match(sql, /completion_json IS NULL/u);
+  assert.match(sql, /generation = requested_at/u);
+  assert.match(sql, /sr\.status = 'failed'/u);
+  assert.match(sql, /sr\.finished_at IS NOT NULL/u);
   assert.match(sql, /sr\.error_code = 'WOOCOMMERCE_INVALID_JSON'/u);
+  assert.match(sql, /json_extract\(sr\.details_json, '\$\.retryable'\)/u);
   assert.match(sql, /sr\.account_key = 'chemistry_k'/u);
+  assert.match(sql, /swp\.phase = 'woocommerce_commerce_pages_v1'/u);
+  assert.match(sql, /swp\.complete = 1/u);
+  assert.match(sql, /qoa\.generation = sync_work_runs\.generation/u);
+  assert.match(sql, /qoa\.original_requested_at = sync_work_runs\.requested_at/u);
+  assert.match(sql, /MAX\(qoa\.main_queue_attempts\)/u);
   assert.match(sql, /NOT EXISTS \( SELECT 1 FROM data_coverage_runs/u);
   assert.match(sql, /NOT EXISTS \( SELECT 1 FROM sync_locks/u);
   for (const table of INCIDENT_TABLE_KEYS) {
@@ -133,7 +150,7 @@ test('exact mutation closes one lifecycle row and guards all incident-attributed
   assert.doesNotMatch(sql, /DELETE FROM/u);
 });
 
-test('eligibility accepts retained master facts but requires zero facts from the failed operation', () => {
+test('eligibility accepts retained master facts but requires exact permanent incident identity', () => {
   const result = verifyWooCommerceFinalRecoveryOnlyEligibility(snapshotRow({
     raw_commerce_stores: 1,
     raw_commerce_products: 250,
@@ -146,10 +163,16 @@ test('eligibility accepts retained master facts but requires zero facts from the
   assert.equal(result.businessRows, 0);
   assert.equal(result.incidentBusinessRows, 0);
   assert.equal(result.retainedBusinessRows, 501);
+  assert.equal(result.generationsAgree, true);
 
   const rejected = [
     snapshotRow({ sync_run_status: 'running' }),
     snapshotRow({ sync_run_error_code: 'WOOCOMMERCE_NETWORK_ERROR' }),
+    snapshotRow({ sync_run_retryable: 1 }),
+    snapshotRow({ work_generation: GENERATION + 1 }),
+    snapshotRow({ work_requested_at: GENERATION + 1 }),
+    snapshotRow({ queue_generation: GENERATION + 1 }),
+    snapshotRow({ queue_original_requested_at: GENERATION + 1 }),
     snapshotRow({ active_lock_count: 1 }),
     snapshotRow({ queue_operation_attempts: 2 }),
     snapshotRow({ coverage_run_count: 1 }),
@@ -190,7 +213,7 @@ test('state classifier distinguishes active recovery from already terminal recov
   );
 });
 
-test('post-state requires terminal lifecycle without incident, queue, coverage or phase drift', () => {
+test('post-state requires terminal lifecycle without identity, incident or reliability drift', () => {
   const result = verifyWooCommerceFinalRecoveryOnlyPostState(snapshotRow({
     work_lifecycle_status: 'terminal',
     raw_commerce_products: 250,
@@ -199,6 +222,7 @@ test('post-state requires terminal lifecycle without incident, queue, coverage o
   assert.equal(result.verified, true);
   assert.equal(result.businessRows, 0);
   assert.equal(result.retainedBusinessRows, 500);
+  assert.equal(result.generationsAgree, true);
 
   assert.throws(
     () => verifyWooCommerceFinalRecoveryOnlyPostState(snapshotRow({
@@ -211,6 +235,13 @@ test('post-state requires terminal lifecycle without incident, queue, coverage o
     () => verifyWooCommerceFinalRecoveryOnlyPostState(snapshotRow({
       work_lifecycle_status: 'terminal',
       sync_run_error_code: 'WOOCOMMERCE_NETWORK_ERROR',
+    }), { operationId: OPERATION_ID }),
+    (error) => error?.code === 'WOOCOMMERCE_RECOVERY_ONLY_POST_VERIFY_FAILED',
+  );
+  assert.throws(
+    () => verifyWooCommerceFinalRecoveryOnlyPostState(snapshotRow({
+      work_lifecycle_status: 'terminal',
+      queue_generation: GENERATION + 1,
     }), { operationId: OPERATION_ID }),
     (error) => error?.code === 'WOOCOMMERCE_RECOVERY_ONLY_POST_VERIFY_FAILED',
   );
