@@ -13,6 +13,8 @@ export const REPORT_RUNTIME_WINDOW_REPAIR_SEQUENCE = Object.freeze([
   Object.freeze({ windowDays: 30, operation: REPORT_RUNTIME_WINDOW_REPAIR_OPERATIONS.FRESH }),
 ]);
 
+const LARK_REPORT_METRIC_DECIMAL_PLACES = 4;
+
 export function parseReportRuntimeWindowRepairArgs(argv = []) {
   const unknown = argv.filter((argument) => argument !== '--execute');
   if (unknown.length > 0) throw repairError(
@@ -196,20 +198,38 @@ export function assertReportRuntimeMetricIntegrity(input = {}) {
   );
 
   let mismatches = 0;
+  let staleNullableMismatchCount = 0;
+  let nonRepairableMismatchCount = 0;
   for (const metricKey of expectedMetricKeys) {
-    const expected = optionalFinite(metricPayload[metricKey]?.current);
-    const observed = optionalFinite(larkMetrics[metricKey]);
-    if (expected !== observed) mismatches += 1;
+    const expected = canonicalizeLarkMetric(metricPayload[metricKey]?.current);
+    const observed = canonicalizeLarkMetric(larkMetrics[metricKey]);
+    if (expected !== observed) {
+      mismatches += 1;
+      if (expected === null && observed !== null) staleNullableMismatchCount += 1;
+      else nonRepairableMismatchCount += 1;
+    }
   }
   if (mismatches !== 0) throw repairError(
     'D1 and Lark Report metric values differ',
     'REPORT_RUNTIME_WINDOW_REPAIR_METRIC_VALUE_DRIFT',
-    { mismatchCount: mismatches },
+    {
+      metricCount: expectedMetricKeys.length,
+      mismatchCount: mismatches,
+      staleNullableMismatchCount,
+      nonRepairableMismatchCount,
+    },
   );
   return Object.freeze({
     metricCount: expectedMetricKeys.length,
     mismatchCount: mismatches,
   });
+}
+
+function canonicalizeLarkMetric(value) {
+  const number = optionalFinite(value);
+  if (number === null) return null;
+  const canonical = Number(number.toFixed(LARK_REPORT_METRIC_DECIMAL_PLACES));
+  return Object.is(canonical, -0) ? 0 : canonical;
 }
 
 function readWindowDays(value) {
