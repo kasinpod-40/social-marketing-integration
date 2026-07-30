@@ -24,4 +24,8 @@
 - Kept `WOOCOMMERCE_INVALID_JSON` fail-closed for normal Queue processing; the recovery chain cannot resume the terminal operation or mutate Business/Coverage/Lark facts.
 - Corrected the recovery chain to invoke the supported ephemeral diagnostics entrypoint, which creates a one-time 256-bit token in process memory and supplies only its SHA-256 digest to the isolated Preview config.
 - Added regression coverage that rejects direct low-level diagnostics invocation from the recovery chain and proves the ephemeral launcher does not print or persist authorization material.
+- Replaced repeated all-in-one terminal launchers with a two-phase readiness-manifest architecture: one aggregated read-only audit followed by an expiring manifest-gated executor.
+- The audit discovers the account workers.dev subdomain through the existing GET-only Cloudflare API wrapper, verifies Worker all-false state, Preview baseline, Queue, Secret names, exact Woo incident/cleanup, read-only Lark schema and the pinned Meta session before execution is allowed.
+- The executor rejects stale manifests or changed local input hashes, resumes from a private checkpoint, verifies WooCommerce Safe completion before starting Meta and preserves the exact Meta Head and Instagram operation ID.
+- Routed the Woo invalid-JSON recovery through the reviewed Preview URL window wrapper so account subdomain discovery, ephemeral authorization, isolated Preview enablement and automatic disabled-state restore remain one owned contract.
 - Implementation performs no Remote mutation, Worker deployment, Queue message, Lark write, Schedule change or Production action.
