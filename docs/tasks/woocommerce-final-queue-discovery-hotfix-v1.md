@@ -32,26 +32,32 @@ GET /client/v4/accounts/{account_id}/queues
 Authorization: Bearer <resolved Wrangler API-token or OAuth token>
 ```
 
+The Canonical Launcher now installs locked dependencies before Queue discovery and invokes only the repository-local Wrangler binary from `node_modules/.bin`. It never allows `npx` to select or download a different Wrangler version for this gate.
+
 The helper:
 
 - performs GET only;
 - requires an exact 32-character account identity;
 - uses the already resolved bearer token without logging it;
-- applies a bounded timeout;
+- applies one bounded timeout across request and response-body read;
 - validates HTTP status, Cloudflare `success`, JSON shape and exact Queue name;
-- rejects ambiguous or missing Queue identities;
+- rejects redirects, ambiguous or missing Queue identities;
 - records only status/count/error fingerprints;
 - does not fall back to human-readable Wrangler table parsing;
 - does not send Queue messages.
+
+The exact Queue ID is injected into `MKT_WOOCOMMERCE_FINAL_QUEUE_ID` before the Safe Launcher creates sealed children. Existing Final wrappers therefore use the explicit identity and never execute the legacy Queue-list command.
 
 ## Regression
 
 - exact endpoint and GET method;
 - bearer header is supplied to injected fetch but never exposed in errors;
 - valid Cloudflare response resolves one exact Queue ID;
-- non-2xx, invalid JSON, `success=false`, pagination ambiguity and duplicate name fail closed;
-- wrapper source contains no `queues list --json` or human-table parsing path;
-- existing explicit `MKT_WOOCOMMERCE_FINAL_QUEUE_ID` override remains supported.
+- non-2xx, invalid JSON, body-read failure, `success=false`, pagination ambiguity and duplicate name fail closed;
+- `npm ci` occurs before Queue bootstrap;
+- default bootstrap uses only `node_modules/.bin/wrangler` and never `npx`;
+- canonical path source contains no `queues list --json` or human-table parsing path;
+- existing explicit `MKT_WOOCOMMERCE_FINAL_QUEUE_ID` override remains supported and performs zero discovery requests.
 
 ## Safety
 
