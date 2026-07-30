@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   WOOCOMMERCE_FINAL_RECOVERY_ONLY_CONFIRMATION,
   assertWooCommerceFinalRecoveryOnlyConfirmation,
+  buildWooCommerceFinalRecoveryOnlyMutationSql,
   buildWooCommerceFinalRecoveryOnlySnapshotSql,
   classifyWooCommerceFinalRecoveryOnlyState,
   parseWooCommerceFinalRecoveryOnlyArgs,
@@ -107,6 +108,31 @@ test('exact preflight snapshot is read-only and operation-scoped across every D1
   assert.doesNotMatch(sql, /\b(?:UPDATE|DELETE|INSERT|DROP|ALTER|CREATE)\b/iu);
 });
 
+test('exact mutation closes one lifecycle row and guards all incident-attributed tables', () => {
+  const sql = buildWooCommerceFinalRecoveryOnlyMutationSql({
+    operationId: OPERATION_ID,
+    auditReference: `woocommerce-final-recovery:${'a'.repeat(40)}`,
+  });
+  assert.match(sql, /^UPDATE sync_work_runs SET lifecycle_status = 'terminal'/u);
+  assert.match(sql, /work_key = 'woocommerce:woo-final-full-5b56469100a9'/u);
+  assert.match(sql, /sr\.error_code = 'WOOCOMMERCE_INVALID_JSON'/u);
+  assert.match(sql, /sr\.account_key = 'chemistry_k'/u);
+  assert.match(sql, /NOT EXISTS \( SELECT 1 FROM data_coverage_runs/u);
+  assert.match(sql, /NOT EXISTS \( SELECT 1 FROM sync_locks/u);
+  for (const table of INCIDENT_TABLE_KEYS) {
+    assert.match(sql, new RegExp(`SELECT COUNT\\(\\*\\) FROM ${table}`, 'u'));
+  }
+  assert.match(sql, /raw_commerce_stores[^;]+sync_run_id = sr\.sync_run_id/u);
+  assert.match(sql, /commerce_store_state[^;]+last_sync_run_id = sr\.sync_run_id/u);
+  assert.match(sql, /commerce_order_status_observations[^;]+sync_run_id = sr\.sync_run_id/u);
+  assert.match(sql, /commerce_order_line_facts[^;]+last_sync_run_id = sr\.sync_run_id/u);
+  assert.doesNotMatch(
+    sql,
+    /UPDATE (?:raw_commerce_|commerce_store_state|commerce_order_|commerce_product_state|commerce_customer_aggregates|commerce_daily_sales_facts|commerce_product_daily_facts)/u,
+  );
+  assert.doesNotMatch(sql, /DELETE FROM/u);
+});
+
 test('eligibility accepts retained master facts but requires zero facts from the failed operation', () => {
   const result = verifyWooCommerceFinalRecoveryOnlyEligibility(snapshotRow({
     raw_commerce_stores: 1,
@@ -190,13 +216,16 @@ test('post-state requires terminal lifecycle without incident, queue, coverage o
   );
 });
 
-test('CLI has one recovery mutation path and no rollout, Queue, deploy or Lark path', async () => {
+test('CLI uses the exact incident mutation and contains no rollout, Queue, deploy or Lark path', async () => {
   const source = await readFile(
     new URL('../../scripts/woocommerce-final-recovery-only.mjs', import.meta.url),
     'utf8',
   );
-  assert.match(source, /buildWooCommerceFailedWorkRecoverySql/u);
+  assert.match(source, /buildWooCommerceFinalRecoveryOnlyMutationSql/u);
+  assert.doesNotMatch(source, /buildWooCommerceFailedWorkRecoverySql/u);
   assert.match(source, /runMutationOnce/u);
+  assert.match(source, /incidentBusinessRowsBefore/u);
+  assert.match(source, /retainedBusinessRowsAfter/u);
   assert.match(source, /durableLifecycleMutationCount: 1/u);
   assert.match(source, /businessMutationCount: 0/u);
   assert.match(source, /queueMessageCount: 0/u);
