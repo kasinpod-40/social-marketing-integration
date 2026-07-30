@@ -122,7 +122,7 @@ export function validateWooCommerce2026CleanupPreflight(row = {}) {
   const syncErrorCode = nullableText(row.replaced_sync_error_code);
   const oldRows = sumFields(row, REQUIRED_ZERO_CLEANUP_FIELDS);
 
-  if (activeLocks !== 0 || otherActiveWork !== 0) throw completionError(
+  if (activeLocks !== 0 || otherActiveWork > 1) throw completionError(
     'Foreign active work or lock blocks WooCommerce 2026 cleanup',
     'WOOCOMMERCE_2026_COMPLETION_CLEANUP_BLOCKED',
     { activeWork, replacedActiveWork, otherActiveWork, activeLocks },
@@ -130,10 +130,11 @@ export function validateWooCommerce2026CleanupPreflight(row = {}) {
 
   const pendingExactCleanup = activeWork === 1
     && replacedActiveWork === 1
+    && otherActiveWork === 0
     && workStatus === 'active'
     && syncStatus === 'running';
-  const alreadyClean = activeWork === 0
-    && replacedActiveWork === 0
+  const alreadyClean = replacedActiveWork === 0
+    && activeWork === otherActiveWork
     && workStatus === 'terminal'
     && syncStatus === 'failed'
     && syncErrorCode === 'WOOCOMMERCE_HISTORY_SCOPE_REPLACED'
@@ -158,6 +159,7 @@ export function validateWooCommerce2026CleanupPreflight(row = {}) {
     pendingExactCleanup,
     alreadyClean,
     activeWork,
+    otherActiveWork,
     activeLocks,
     oldRows,
   });
