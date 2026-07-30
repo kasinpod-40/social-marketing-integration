@@ -48,6 +48,22 @@ The outer wrapper now:
 The inner process requires sealed root + pinned Head environment values to match its actual checkout.
 It cannot be redirected to another repository by inherited Git context.
 
+## macOS canonical-root follow-up
+
+The first merged sealed-clone run stopped before Finalizer/3D Remote action with
+`REPORT_RUNTIME_SEALED_ROOT_MISMATCH` on pinned Head
+`76a417eede942e5f721c2cbcd6f881e27ece4fb5`. On macOS the same temporary directory can be exposed
+through aliases such as `/var/...` and `/private/var/...`. The original guard compared normalized path
+strings, so it rejected the same filesystem directory.
+
+The root guard now preserves the security boundary while accepting only paths that resolve to the same
+canonical directory or the same filesystem device/inode. A different directory remains fail-closed.
+The regression suite creates a real directory symlink alias, proves the alias is accepted, and proves
+an unrelated directory still raises `REPORT_RUNTIME_SEALED_ROOT_MISMATCH`.
+
+This failure occurred before Report Finalizer reuse/apply, D1 backup, Worker deploy, Queue send, D1
+materialization or Lark Report write. Production remained blocked.
+
 ## Existing resume and Remote safety
 
 The prior resume contract remains unchanged:
@@ -58,7 +74,7 @@ The prior resume contract remains unchanged:
 - never override a foreign active Worker execution window automatically;
 - preserve stable Report IDs and all Business facts.
 
-This incident stopped at `repository-and-finalizer-evidence` with
+The worktree-collision incident stopped at `repository-and-finalizer-evidence` with
 `activeDeploymentAttempted=false`. No 3D backup, Report deployment, Queue message, D1
 materialization or Report Lark write occurred.
 
@@ -77,7 +93,8 @@ Branch Verification CI
 
 ## Live command after merge
 
-The user command remains unchanged and may be launched even when another local worktree is active:
+Run the wrapper directly from the existing repository. A separate manual temporary clone is no longer
+needed because the wrapper creates and destroys its own sealed clone:
 
 ```bash
 CONFIRM_REPORT_RUNTIME_WINDOW_REPAIR=EXECUTE_REPORT_RUNTIME_WINDOW_REPAIR \

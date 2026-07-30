@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import {
@@ -57,6 +57,35 @@ test('sealed child environment pins root, HEAD and private runtime inputs', () =
     root,
     expectedHead: HEAD,
   });
+});
+
+test('sealed context accepts a canonical alias of the same directory only', async (t) => {
+  if (process.platform === 'win32') {
+    t.skip('Directory symlink identity is platform-managed on Windows');
+    return;
+  }
+
+  const root = await mkdtemp(join(tmpdir(), 'report-runtime-sealed-root-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const alias = join(root, 'root-alias');
+  const other = join(root, 'other-root');
+  await symlink(root, alias, 'dir');
+  await mkdir(other);
+
+  const env = {
+    [REPORT_RUNTIME_SEALED_MARKER]: '1',
+    [REPORT_RUNTIME_SEALED_ROOT]: alias,
+    [REPORT_RUNTIME_SEALED_HEAD]: HEAD,
+  };
+  assert.deepEqual(readReportRuntimeSealedContext(env, root), {
+    sealed: true,
+    root,
+    expectedHead: HEAD,
+  });
+  assert.throws(
+    () => readReportRuntimeSealedContext(env, other),
+    (error) => error.code === 'REPORT_RUNTIME_SEALED_ROOT_MISMATCH',
+  );
 });
 
 test('sealed context rejects another checkout or malformed pinned SHA', () => {
