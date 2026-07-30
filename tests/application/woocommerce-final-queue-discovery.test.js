@@ -194,7 +194,7 @@ test('canonical launcher bootstraps Queue ID before importing Safe Launcher', as
     'utf8',
   );
   const canonicalizeIndex = source.indexOf('canonicalizeTemporaryDirectoryEnvironment(process.env)');
-  const bootstrapIndex = source.indexOf('bootstrapWooCommerceFinalQueueId');
+  const bootstrapIndex = source.indexOf('await bootstrapWooCommerceFinalQueueId({');
   const injectIndex = source.indexOf('process.env.MKT_WOOCOMMERCE_FINAL_QUEUE_ID');
   const safeLauncherIndex = source.indexOf("await import('./woocommerce-2026-completion-safe-launcher.mjs')");
 
