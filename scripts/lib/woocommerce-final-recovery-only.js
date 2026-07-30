@@ -59,14 +59,7 @@ export function parseWooCommerceFinalRecoveryOnlyArgs(args = []) {
       'WOOCOMMERCE_RECOVERY_ONLY_ARGUMENT_INVALID',
     );
   }
-  const exactOperationId = requireOperationId(operationId);
-  if (exactOperationId !== EXACT_INCIDENT_OPERATION_ID) {
-    throw recoveryOnlyError(
-      'Recovery-only operator is pinned to the approved incident operation',
-      'WOOCOMMERCE_RECOVERY_ONLY_OPERATION_NOT_APPROVED',
-      { operationIdFingerprint: sha256(exactOperationId) },
-    );
-  }
+  const exactOperationId = requireApprovedOperationId(operationId);
   return Object.freeze({ execute, operationId: exactOperationId });
 }
 
@@ -113,12 +106,21 @@ export function buildWooCommerceFinalRecoveryOnlyMutationSql(input = {}) {
         updated_at = ${now}
     WHERE work_key = '${workKey}'
       AND lifecycle_status = 'active'
+      AND completed_at IS NULL
+      AND completion_json IS NULL
+      AND generation = requested_at
+      AND (terminal_reason IS NULL
+        OR terminal_reason = '${sqlText(WOOCOMMERCE_FINAL_FAILED_WORK_REASON)}')
+      AND (audit_reference IS NULL
+        OR audit_reference = '${sqlText(auditReference)}')
       AND EXISTS (
         SELECT 1
         FROM sync_runs sr
         WHERE sr.sync_run_id = sync_work_runs.work_key
           AND sr.status = 'failed'
+          AND sr.finished_at IS NOT NULL
           AND sr.error_code = '${EXACT_INCIDENT_ERROR_CODE}'
+          AND COALESCE(json_extract(sr.details_json, '$.retryable'), 0) = 0
           AND sr.platform = 'woocommerce'
           AND sr.account_key = 'chemistry_k'
           AND NOT EXISTS (
@@ -127,6 +129,26 @@ export function buildWooCommerceFinalRecoveryOnlyMutationSql(input = {}) {
           )
           AND (${incidentCount}) = 0
       )
+      AND NOT EXISTS (
+        SELECT 1 FROM sync_work_phases swp
+        WHERE swp.work_key = sync_work_runs.work_key
+          AND swp.phase = 'woocommerce_commerce_pages_v1'
+          AND swp.complete = 1
+      )
+      AND (
+        SELECT COUNT(*)
+        FROM queue_operation_attempts qoa
+        WHERE qoa.operation_id = '${operationId}'
+          AND qoa.work_key = sync_work_runs.work_key
+          AND qoa.generation = sync_work_runs.generation
+          AND qoa.original_requested_at = sync_work_runs.requested_at
+      ) = 1
+      AND (
+        SELECT COALESCE(MAX(qoa.main_queue_attempts), 0)
+        FROM queue_operation_attempts qoa
+        WHERE qoa.operation_id = '${operationId}'
+          AND qoa.work_key = sync_work_runs.work_key
+      ) = 1
       AND NOT EXISTS (
         SELECT 1 FROM sync_locks sl
         WHERE sl.owner_id = sync_work_runs.work_key
@@ -175,6 +197,7 @@ export function verifyWooCommerceFinalRecoveryOnlyEligibility(row, input = {}) {
   const snapshot = normalizeWooCommerceFinalSnapshot(row);
   const incidentBusinessRows = countIncidentBusinessRows(row);
   const retainedBusinessRows = totalBusinessRows(snapshot.counts);
+  const generationsAgree = exactGenerationsAgree(snapshot);
   const violations = [];
 
   if (snapshot.syncRunStatus !== 'failed') violations.push('sync_run_not_failed');
@@ -182,10 +205,12 @@ export function verifyWooCommerceFinalRecoveryOnlyEligibility(row, input = {}) {
   if (snapshot.syncRunErrorCode !== EXACT_INCIDENT_ERROR_CODE) {
     violations.push('sync_run_error_not_invalid_json');
   }
+  if (snapshot.syncRunRetryable !== false) violations.push('sync_run_not_permanent');
   if (snapshot.workLifecycleStatus !== 'active') violations.push('work_not_active');
   if (snapshot.workCompletedAt !== null) violations.push('work_already_completed');
   if (snapshot.completion !== null) violations.push('completion_present');
   if (snapshot.phaseComplete) violations.push('phase_complete');
+  if (!generationsAgree) violations.push('operation_generation_mismatch');
   if (snapshot.activeLockCount !== 0) violations.push('active_lock_present');
   if (snapshot.queueOperationAttempts !== 1) violations.push('queue_attempt_count_not_one');
   if (snapshot.coverageRunCount !== 0) violations.push('coverage_present');
@@ -201,6 +226,7 @@ export function verifyWooCommerceFinalRecoveryOnlyEligibility(row, input = {}) {
         violations: Object.freeze(violations),
         incidentBusinessRows,
         retainedBusinessRows,
+        generationsAgree,
         activeLockCount: snapshot.activeLockCount,
         queueOperationAttempts: snapshot.queueOperationAttempts,
         coverageRunCount: snapshot.coverageRunCount,
@@ -217,6 +243,7 @@ export function verifyWooCommerceFinalRecoveryOnlyEligibility(row, input = {}) {
     businessRows: incidentBusinessRows,
     incidentBusinessRows,
     retainedBusinessRows,
+    generationsAgree,
     snapshot,
   });
 }
@@ -226,16 +253,20 @@ export function verifyWooCommerceFinalRecoveryOnlyPostState(row, input = {}) {
   const snapshot = normalizeWooCommerceFinalSnapshot(row);
   const incidentBusinessRows = countIncidentBusinessRows(row);
   const retainedBusinessRows = totalBusinessRows(snapshot.counts);
+  const generationsAgree = exactGenerationsAgree(snapshot);
   const violations = [];
 
   if (snapshot.syncRunStatus !== 'failed') violations.push('sync_run_changed');
+  if (snapshot.syncRunFinishedAt === null) violations.push('sync_run_finish_changed');
   if (snapshot.syncRunErrorCode !== EXACT_INCIDENT_ERROR_CODE) {
     violations.push('sync_run_error_changed');
   }
+  if (snapshot.syncRunRetryable !== false) violations.push('sync_run_retryability_changed');
   if (snapshot.workLifecycleStatus !== 'terminal') violations.push('work_not_terminal');
   if (snapshot.workCompletedAt !== null) violations.push('work_completed_at_changed');
   if (snapshot.completion !== null) violations.push('completion_changed');
   if (snapshot.phaseComplete) violations.push('phase_changed');
+  if (!generationsAgree) violations.push('operation_generation_changed');
   if (snapshot.activeLockCount !== 0) violations.push('active_lock_present');
   if (snapshot.queueOperationAttempts !== 1) violations.push('queue_attempt_count_changed');
   if (snapshot.coverageRunCount !== 0) violations.push('coverage_changed');
@@ -251,6 +282,7 @@ export function verifyWooCommerceFinalRecoveryOnlyPostState(row, input = {}) {
         violations: Object.freeze(violations),
         incidentBusinessRows,
         retainedBusinessRows,
+        generationsAgree,
       },
     );
   }
@@ -262,8 +294,18 @@ export function verifyWooCommerceFinalRecoveryOnlyPostState(row, input = {}) {
     businessRows: incidentBusinessRows,
     incidentBusinessRows,
     retainedBusinessRows,
+    generationsAgree,
     snapshot,
   });
+}
+
+function exactGenerationsAgree(snapshot) {
+  const generation = snapshot.workGeneration;
+  return Number.isSafeInteger(generation)
+    && generation >= 0
+    && snapshot.workRequestedAt === generation
+    && snapshot.queueGeneration === generation
+    && snapshot.queueOriginalRequestedAt === generation;
 }
 
 function countIncidentBusinessRows(row = {}) {
