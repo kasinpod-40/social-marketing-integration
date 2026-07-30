@@ -1,5 +1,10 @@
 import { validateReportMaterializationPayload } from '../reports/report-materialization-payload.js';
 import {
+  dashboardMetricAvailabilityMessage,
+  normalizeDashboardMetricAvailability,
+  normalizeDashboardMetricScope,
+} from '../../../config/src/dashboard-metric-readiness.js';
+import {
   UNIVERSAL_MARKETING_DASHBOARD_CONTRACT,
   UNIVERSAL_MARKETING_DASHBOARD_VERSION,
   validateUniversalMarketingDashboardContract,
@@ -17,7 +22,7 @@ export function buildUniversalMarketingDashboardModel(input = {}) {
     .map((item, index) => normalizeMaterialization(item, index));
   const selection = normalizeSelection(input.selection ?? {});
   const selected = materializations.filter((item) => matchesSelection(item, selection));
-  const reports = selected.sort(compareMaterializations).map(buildReportModel);
+  const reports = selected.sort(compareMaterializations).map((item) => buildReportModel(item, selection));
   const sections = buildSections(reports);
   const warnings = reports.flatMap((report) => report.dataQuality.warnings);
 
@@ -58,13 +63,15 @@ function normalizeMaterialization(value, index) {
   });
 }
 
-function buildReportModel(item) {
+function buildReportModel(item, selection) {
   const cards = Object.entries(item.payload.metricPayload)
-    .map(([fallbackKey, metric]) => normalizeMetric(metric, fallbackKey))
+    .map(([fallbackKey, metric]) => normalizeMetric(metric, fallbackKey, item.payload.dataStatus))
     .filter((metric) => metric.clientVisible)
+    .filter((metric) => !selection.metricScope || metric.metricScope === selection.metricScope)
     .sort(compareMetrics);
+  const cardGroups = buildCardGroups(cards);
   const collections = buildCollections(item.payload);
-  const warnings = buildDataQualityWarnings(item);
+  const warnings = buildDataQualityWarnings(item, cards);
 
   return Object.freeze({
     reportId: item.reportId,
@@ -78,30 +85,60 @@ function buildReportModel(item) {
     period: item.payload.period,
     generatedAt: item.generatedAt,
     cards,
+    cardGroups,
     collections,
     rankings: collections,
     dataQuality: Object.freeze({
       dataStatus: item.payload.dataStatus,
       coverageRate: item.payload.coverageRate,
+      unavailableMetricCount: cards.filter((card) => card.availabilityStatus !== 'available').length,
       warnings,
     }),
   });
 }
 
-function normalizeMetric(value, fallbackKey) {
+function normalizeMetric(value, fallbackKey, dataStatus) {
   const metric = requireObject(value, `metricPayload.${fallbackKey}`);
+  const current = optionalFinite(metric.current, 'metric.current');
+  const metricScope = normalizeDashboardMetricScope(metric.metricScope);
+  const availabilityStatus = normalizeDashboardMetricAvailability({
+    status: metric.availabilityStatus,
+    currentValue: current,
+    dataStatus,
+  });
   return Object.freeze({
     metricKey: requireText(metric.metricKey ?? fallbackKey, 'metric.metricKey'),
     displayName: requireText(metric.displayName ?? metric.metricKey ?? fallbackKey, 'metric.displayName'),
     unit: requireText(metric.unit ?? 'count', 'metric.unit'),
-    current: optionalFinite(metric.current, 'metric.current'),
+    current,
     compare: optionalFinite(metric.compare, 'metric.compare'),
     change: optionalFinite(metric.change, 'metric.change'),
     changePercent: optionalFinite(metric.changePercent, 'metric.changePercent'),
+    metricScope,
+    availabilityStatus,
+    availabilityMessage: optionalText(metric.availabilityMessage)
+      ?? dashboardMetricAvailabilityMessage(availabilityStatus),
     sortOrder: finiteOrDefault(metric.sortOrder, 1_000),
     clientVisible: metric.clientVisible === true,
     formulaVersion: optionalText(metric.formulaVersion),
   });
+}
+
+function buildCardGroups(cards) {
+  const grouped = new Map();
+  for (const card of cards) {
+    const list = grouped.get(card.metricScope) ?? [];
+    list.push(card);
+    grouped.set(card.metricScope, list);
+  }
+  return Object.freeze([...grouped.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([metricScope, scopeCards]) => Object.freeze({
+      metricScope,
+      cardCount: scopeCards.length,
+      availableCardCount: scopeCards.filter((card) => card.availabilityStatus === 'available').length,
+      cards: Object.freeze(scopeCards),
+    })));
 }
 
 function buildCollections(payload) {
@@ -140,6 +177,7 @@ function buildSections(reports) {
       reportCount: capabilityReports.length,
       platforms: uniqueSorted(capabilityReports.map((report) => report.platform)),
       accountIds: uniqueSorted(capabilityReports.map((report) => report.accountId)),
+      metricScopes: uniqueSorted(capabilityReports.flatMap((report) => report.cardGroups.map((item) => item.metricScope))),
       collectionKinds: uniqueSorted(capabilityReports.flatMap((report) => report.collections.map((item) => item.kind))),
       reports: Object.freeze(capabilityReports),
     })));
@@ -155,6 +193,8 @@ function buildDiscovery(materializations) {
     periodKinds: uniqueSorted(materializations.map((item) => item.payload.period.periodKind)),
     windowDays: uniqueNumbers(materializations.map((item) => item.payload.period.windowDays).filter((value) => value !== null)),
     reportSettingKeys: uniqueSorted(materializations.map((item) => item.reportSettingKey)),
+    metricScopes: uniqueSorted(materializations.flatMap((item) => Object.values(item.payload.metricPayload)
+      .map((metric) => normalizeDashboardMetricScope(metric?.metricScope)))),
     collectionKinds: uniqueSorted(materializations.flatMap((item) => discoverCollectionKinds(item.payload))),
   });
 }
@@ -166,7 +206,7 @@ function discoverCollectionKinds(payload) {
   return kinds;
 }
 
-function buildDataQualityWarnings(item) {
+function buildDataQualityWarnings(item, cards) {
   const warnings = [];
   if (item.payload.dataStatus !== COMPLETE_STATUS) {
     warnings.push(Object.freeze({
@@ -184,6 +224,17 @@ function buildDataQualityWarnings(item) {
       coverageRate: item.payload.coverageRate,
     }));
   }
+  const unavailable = cards.filter((card) => card.availabilityStatus !== 'available');
+  if (unavailable.length > 0) {
+    warnings.push(Object.freeze({
+      code: 'DASHBOARD_METRICS_UNAVAILABLE',
+      reportId: item.reportId,
+      platform: item.payload.platformScope,
+      unavailableMetricCount: unavailable.length,
+      metricScopes: uniqueSorted(unavailable.map((card) => card.metricScope)),
+      availabilityStatuses: uniqueSorted(unavailable.map((card) => card.availabilityStatus)),
+    }));
+  }
   return Object.freeze(warnings);
 }
 
@@ -198,6 +249,9 @@ function normalizeSelection(value) {
     periodKind: optionalText(selection.periodKind),
     windowDays: optionalPositiveInteger(selection.windowDays),
     reportSettingKey: optionalText(selection.reportSettingKey),
+    metricScope: selection.metricScope == null || selection.metricScope === ''
+      ? null
+      : normalizeDashboardMetricScope(selection.metricScope),
   });
 }
 
