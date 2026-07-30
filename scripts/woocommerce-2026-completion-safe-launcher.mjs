@@ -30,6 +30,7 @@ import {
 
 const repositoryRoot = resolve(process.cwd());
 const PRIVATE_CONFIG_NAME = '.mkt-woocommerce-2026-completion-wrangler.jsonc';
+const LEGACY_CONFIG_NAME = 'wrangler.sync.jsonc';
 
 try {
   const args = process.argv.slice(2);
@@ -63,7 +64,8 @@ function printPlan() {
       'create-independent-sealed-clone',
       'pin-local-origin-main',
       'copy-dev-vars-as-private-ignored-file',
-      'copy-wrangler-config-as-distinct-private-ignored-file',
+      'copy-wrangler-config-as-modern-private-ignored-file',
+      'copy-wrangler-config-as-legacy-private-ignored-file',
       'verify-clean-exact-sealed-clone',
       'delegate-to-reviewed-completion-child',
       'destroy-sealed-clone',
@@ -71,6 +73,8 @@ function printPlan() {
     safety: {
       trackedWranglerConfigOverwritten: false,
       privateConfigName: PRIVATE_CONFIG_NAME,
+      legacyConfigName: LEGACY_CONFIG_NAME,
+      legacyConfigCompatibilitySnapshot: true,
       privateFilesMode: '0600',
       canonicalMacOsPathIdentity: true,
       inheritedGitContextRemoved: true,
@@ -87,9 +91,9 @@ async function execute() {
   const devVars = await secureDevVars();
   const sourceConfigPath = resolve(
     repositoryRoot,
-    process.env.MKT_WOOCOMMERCE_ROLLOUT_WRANGLER_CONFIG ?? 'wrangler.sync.jsonc',
+    process.env.MKT_WOOCOMMERCE_ROLLOUT_WRANGLER_CONFIG ?? LEGACY_CONFIG_NAME,
   );
-  await assertRegularFile(sourceConfigPath, 'wrangler.sync.jsonc');
+  await assertRegularFile(sourceConfigPath, LEGACY_CONFIG_NAME);
 
   runGit(['fetch', 'origin', 'main', '--quiet'], { env: gitEnv });
   const originUrl = runGitText(['remote', 'get-url', 'origin'], { env: gitEnv });
@@ -132,15 +136,23 @@ async function execute() {
 
     const sealedDevVars = join(cloneRoot, '.dev.vars');
     const sealedConfig = join(cloneRoot, PRIVATE_CONFIG_NAME);
+    const sealedLegacyConfig = join(cloneRoot, LEGACY_CONFIG_NAME);
+    await assertPathMissing(sealedLegacyConfig, LEGACY_CONFIG_NAME);
     await ensureLocalExclude(cloneRoot, [
       '/.dev.vars',
       `/${PRIVATE_CONFIG_NAME}`,
+      `/${LEGACY_CONFIG_NAME}`,
     ], gitEnv);
     await snapshotPrivateFile(devVars.resolvedPath, sealedDevVars, '.dev.vars');
     await snapshotPrivateFile(
       sourceConfigPath,
       sealedConfig,
       'private Wrangler config',
+    );
+    await snapshotPrivateFile(
+      sealedConfig,
+      sealedLegacyConfig,
+      'legacy Wrangler compatibility config',
     );
     assertExactClone(cloneRoot, pinnedHead, gitEnv);
 
@@ -233,6 +245,20 @@ async function assertRegularFile(path, label) {
   if (!inspected.isFile()) throw failure(
     `Required ${label} must be a regular file`,
     'WOOCOMMERCE_2026_COMPLETION_LOCAL_INPUT_INVALID',
+    { label },
+  );
+}
+
+async function assertPathMissing(path, label) {
+  try {
+    await stat(path);
+  } catch (error) {
+    if (error?.code === 'ENOENT') return;
+    throw error;
+  }
+  throw failure(
+    `Sealed clone already contains ${label}`,
+    'WOOCOMMERCE_2026_COMPLETION_LEGACY_CONFIG_COLLISION',
     { label },
   );
 }
