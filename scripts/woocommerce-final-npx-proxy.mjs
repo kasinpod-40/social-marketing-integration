@@ -3,7 +3,10 @@
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { isAbsolute } from 'node:path';
-import { adaptWooCommerceQueueConsumerCliOutput } from './lib/woocommerce-queue-consumer-cli-output.js';
+import {
+  adaptWooCommerceQueueConsumerCliOutput,
+  isWooCommerceQueueConsumerJsonCommand,
+} from './lib/woocommerce-queue-consumer-cli-output.js';
 
 const args = process.argv.slice(2);
 const realNpx = requireAbsolutePath(
@@ -30,7 +33,7 @@ if (result.error || result.status !== 0) {
     })}\n`);
   }
   process.exitCode = result.status ?? 1;
-} else if (isQueueConsumerJsonCommand(args)) {
+} else if (isWooCommerceQueueConsumerJsonCommand(args)) {
   try {
     write(
       adaptWooCommerceQueueConsumerCliOutput(result.stdout ?? ''),
@@ -50,15 +53,6 @@ if (result.error || result.status !== 0) {
 } else {
   write(result.stdout, process.stdout);
   write(result.stderr, process.stderr);
-}
-
-export function isQueueConsumerJsonCommand(value) {
-  return Array.isArray(value)
-    && value[0] === 'wrangler'
-    && value[1] === 'queues'
-    && value[2] === 'consumer'
-    && value[3] === 'list'
-    && value.includes('--json');
 }
 
 function requireAbsolutePath(value, fieldName) {
