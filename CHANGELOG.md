@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased — WooCommerce Exact DLQ Completion Closure — 2026-07-30
+
+### Reliability
+
+- Added a completion-only operator pinned to the three retained DLQ incidents for
+  `woo-final-full-e2372e56d52d`.
+- Required the successful Final summary, exact completed Remote snapshot, zero lock, fresh D1
+  backup and immutable incident metadata before any closure write.
+- Made interrupted exact-reference closure resumable and verified zero exact-operation snapshot
+  drift after metadata completion.
+
+### Safety
+
+- The operator updates only retained dead-letter status/recovery metadata; it cannot deploy a
+  Worker, send/redrive/delete Queue work, or mutate Work, Sync, Coverage, Business or Lark rows.
+- Schedule and Production remain blocked.
+
 ## Unreleased — WooCommerce Commerce Report Live Closeout — 2026-07-30
 
 ### Report reliability
