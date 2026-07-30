@@ -5,7 +5,6 @@ import { spawnSync } from 'node:child_process';
 import {
   chmod,
   mkdir,
-  readFile,
   rename,
   writeFile,
 } from 'node:fs/promises';
@@ -87,6 +86,10 @@ async function main() {
     env.MKT_WOOCOMMERCE_INVALID_JSON_RECOVERY_EVIDENCE_DIR
       ?? join('outputs', 'woocommerce-invalid-json-recovery-chain', repositoryHead),
   );
+  const completionEvidenceRoot = resolve(
+    env.MKT_WOOCOMMERCE_2026_COMPLETION_EVIDENCE_DIR
+      ?? join(evidenceRoot, 'completion'),
+  );
   await mkdir(evidenceRoot, { recursive: true, mode: 0o700 });
 
   const before = readIncidentState({ env, configPath, databaseName });
@@ -103,7 +106,8 @@ async function main() {
     activeLockCount: classified.result.snapshot.activeLockCount,
     queueOperationAttempts: classified.result.snapshot.queueOperationAttempts,
     coverageRunCount: classified.result.snapshot.coverageRunCount,
-    businessRows: classified.result.businessRows,
+    incidentBusinessRows: classified.result.incidentBusinessRows,
+    retainedBusinessRows: classified.result.retainedBusinessRows,
     remoteReadAttempts: before.attempts,
     production: false,
   });
@@ -161,7 +165,8 @@ async function main() {
     activeLockCount: recovered.result.snapshot.activeLockCount,
     queueOperationAttempts: recovered.result.snapshot.queueOperationAttempts,
     coverageRunCount: recovered.result.snapshot.coverageRunCount,
-    businessRows: recovered.result.businessRows,
+    incidentBusinessRows: recovered.result.incidentBusinessRows,
+    retainedBusinessRows: recovered.result.retainedBusinessRows,
     remoteReadAttempts: after.attempts,
     providerDiagnosticsPassed: true,
     production: false,
@@ -175,7 +180,7 @@ async function main() {
       CONFIRM_WOOCOMMERCE_2026_COMPLETION:
         WOOCOMMERCE_2026_COMPLETION_CONFIRMATION,
       MKT_WOOCOMMERCE_2026_COMPLETION_EVIDENCE_DIR:
-        join(evidenceRoot, 'completion'),
+        completionEvidenceRoot,
     },
   );
 
@@ -191,6 +196,7 @@ async function main() {
     nextStep: 'verify_woocommerce_completion_then_resume_pinned_meta',
     production: false,
     evidenceRoot,
+    completionEvidenceRoot,
   }, null, 2)}\n`);
 }
 
