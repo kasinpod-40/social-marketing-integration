@@ -7,6 +7,12 @@ const RETRYABLE_LARK_INTEGRITY_CODES = new Set([
 const SHA_40 = /^[0-9a-f]{40}$/u;
 
 export const REPORT_RUNTIME_CLOSEOUT_RECOVERY_MODE = 'exact_first_materialization_v1';
+export const REPORT_RUNTIME_FRESH_CONFIG_DLQ_RECOVERY_MODE =
+  'exact_fresh_materialization_config_dlq_v1';
+const SUPPORTED_RECOVERY_MODES = new Set([
+  REPORT_RUNTIME_CLOSEOUT_RECOVERY_MODE,
+  REPORT_RUNTIME_FRESH_CONFIG_DLQ_RECOVERY_MODE,
+]);
 
 export async function pollReportRuntimeLarkIntegrity(input = {}) {
   const readState = requireFunction(input.readState, 'readState');
@@ -57,7 +63,7 @@ export async function pollReportRuntimeLarkIntegrity(input = {}) {
 export function resolveReportRuntimeCloseoutRecoveryMode(env = {}) {
   const mode = optionalText(env.MKT_REPORT_RUNTIME_CLOSEOUT_RECOVERY_MODE);
   if (mode === null) return null;
-  if (mode !== REPORT_RUNTIME_CLOSEOUT_RECOVERY_MODE) throw recoveryError(
+  if (!SUPPORTED_RECOVERY_MODES.has(mode)) throw recoveryError(
     'Report closeout recovery mode is unsupported',
     'REPORT_RUNTIME_CLOSEOUT_RECOVERY_MODE_INVALID',
     { mode },
