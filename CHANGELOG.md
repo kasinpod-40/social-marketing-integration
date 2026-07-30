@@ -13,6 +13,9 @@
 - Cleanup tolerates an observed partial-write gap only by inventorying and backing up each
   side independently, persisting sanitized gap counts/fingerprints, and verifying both targets
   are empty after their scoped deletes.
+- Replaced unsupported Remote D1 SQL `BEGIN/COMMIT` with ordered idempotent statements,
+  per-step progress evidence, stdout/stderr fingerprints, and unique non-overwriting backup
+  names after Cloudflare returned D1 code `7500`.
 - Stopped the prior Full-history rollout at 7,800 Orders from 2022–2023 and restored the
   Development Worker to all-false Safe state; Schedule and Production remain unchanged.
 

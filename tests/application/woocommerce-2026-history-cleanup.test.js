@@ -5,6 +5,7 @@ import {
   WOOCOMMERCE_2026_CLEANUP_CONFIRMATION,
   WOOCOMMERCE_2026_CLEANUP_TABLES,
   assertWooCommerce2026CleanupConfirmation,
+  buildWooCommerce2026CleanupDeleteStatements,
   buildWooCommerce2026CleanupDeleteSql,
   buildWooCommerce2026CleanupKeysSql,
   buildWooCommerce2026CleanupVerifySql,
@@ -124,10 +125,11 @@ test('cleanup records partial-write parity gaps without requiring missing Lark r
   );
 });
 
-test('cleanup delete SQL is transaction-bound and cannot delete current master tables', () => {
+test('cleanup D1 deletes are ordered idempotent statements without unsupported SQL transactions', () => {
+  const statements = buildWooCommerce2026CleanupDeleteStatements();
   const sql = buildWooCommerce2026CleanupDeleteSql();
-  assert.match(sql, /^BEGIN;/u);
-  assert.match(sql, /COMMIT;$/u);
+  assert.equal(statements.length, 11);
+  assert.doesNotMatch(sql, /\b(?:BEGIN|COMMIT|SAVEPOINT)\b/iu);
   assert.equal((sql.match(/\bDELETE FROM\b/gu) ?? []).length, 9);
   assert.equal((sql.match(/\bUPDATE\b/gu) ?? []).length, 2);
   for (const preserved of [
@@ -198,9 +200,12 @@ test('cleanup operator is backup-first and has no Worker deploy or Queue path', 
     'utf8',
   );
   const backup = source.indexOf("'d1', 'export'");
-  const attempt = source.indexOf("'cleanup-attempt.json'");
+  const attempt = source.indexOf('`cleanup-attempt-${attemptId}.json`');
   const deleteCall = source.indexOf('await batchDelete(');
   assert.ok(backup >= 0 && attempt > backup && deleteCall > attempt);
+  assert.match(source, /`lark-before-cleanup-\$\{attemptId\}\.json`/u);
+  assert.match(source, /buildWooCommerce2026CleanupDeleteStatements/u);
+  assert.match(source, /completedD1Statements/u);
   assert.match(source, /parityBeforeCleanup/u);
   assert.doesNotMatch(source, /WOOCOMMERCE_2026_CLEANUP_PARITY_FAILED/u);
   assert.doesNotMatch(source, /wrangler',\s*'deploy|queues.*send|MKT_SYNC_QUEUE/u);
