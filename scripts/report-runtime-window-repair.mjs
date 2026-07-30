@@ -1,7 +1,17 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import {
   REPORT_RUNTIME_WINDOW_REPAIR_CONFIRMATION,
@@ -14,6 +24,13 @@ import {
   summarizeReusableReportWindow,
   validateReusableReportFinalizerEvidence,
 } from './lib/report-runtime-window-repair-resume.js';
+import {
+  assertReportRuntimeSealedHead,
+  buildReportRuntimeSealedChildEnvironment,
+  buildReportRuntimeSealedCloneArgs,
+  readReportRuntimeSealedContext,
+  sanitizeReportRuntimeGitEnvironment,
+} from './lib/report-runtime-sealed-execution.js';
 import { secureLocalSecretFile } from './lib/local-secret-file-policy.js';
 
 const repositoryRoot = resolve(process.cwd());
@@ -24,8 +41,13 @@ const outputRoot = resolve(
 
 try {
   const options = parseReportRuntimeWindowRepairArgs(process.argv.slice(2));
-  if (!options.execute) printPlan();
-  else await executeRepair();
+  if (!options.execute) {
+    printPlan();
+  } else {
+    const sealedContext = readReportRuntimeSealedContext(process.env, repositoryRoot);
+    if (sealedContext) await executeRepair(sealedContext);
+    else await executeInSealedClone();
+  }
 } catch (error) {
   process.stderr.write(`${JSON.stringify({
     ok: false,
@@ -45,15 +67,25 @@ function printPlan() {
     sequence: REPORT_RUNTIME_WINDOW_REPAIR_SEQUENCE,
     stages: [
       'secure-local-dev-vars-permissions',
-      'validate-clean-current-main',
+      'snapshot-current-origin-main-into-sealed-clone',
+      'pin-sealed-origin-to-local-main',
+      'copy-private-runtime-inputs',
+      'validate-clean-pinned-main',
       'reuse-valid-finalizer-evidence-or-finalize',
       ...REPORT_RUNTIME_WINDOW_REPAIR_SEQUENCE.map((step) => (
         `reuse-complete-or-run-${step.operation}-${step.windowDays}d`
       )),
       'aggregate-sanitized-evidence',
+      'destroy-sealed-clone',
     ],
     safety: {
       exactMainOnly: true,
+      originMainPinnedAtCommandStart: true,
+      sealedOriginMainClone: true,
+      sealedOriginFetchIsLocal: true,
+      dynamicOriginMainDriftIsolated: true,
+      mutableInvocationCheckoutUsedForExecution: false,
+      inheritedGitContextRemoved: true,
       localDevVarsMode: '0600',
       localDevVarsWorktreeSymlinkSupported: true,
       sameHeadFinalizerReuse: true,
@@ -73,11 +105,94 @@ function printPlan() {
   }, null, 2)}\n`);
 }
 
-async function executeRepair() {
+async function executeInSealedClone() {
   assertReportRuntimeWindowRepairConfirmation(process.env);
   const devVars = await ensureDevVarsPermissions();
   await mkdir(outputRoot, { recursive: true, mode: 0o700 });
-  const repository = readRepositoryState();
+
+  const sourceConfigPath = resolve(
+    repositoryRoot,
+    process.env.MKT_REPORT_RUNTIME_WINDOW_REPAIR_WRANGLER_CONFIG ?? 'wrangler.sync.jsonc',
+  );
+  const gitEnv = sanitizeReportRuntimeGitEnvironment(process.env);
+  runGit(['fetch', 'origin', 'main', '--quiet'], { env: gitEnv });
+  const originUrl = runGitText(['remote', 'get-url', 'origin'], { env: gitEnv });
+  const pinnedHead = runGitText(['rev-parse', 'origin/main'], { env: gitEnv });
+
+  const sandboxRoot = await mkdtemp(join(tmpdir(), 'mkt-report-window-repair-sealed-'));
+  const cloneRoot = join(sandboxRoot, 'repository');
+  try {
+    runCommand('git', buildReportRuntimeSealedCloneArgs(originUrl, cloneRoot), {
+      cwd: repositoryRoot,
+      env: gitEnv,
+      code: 'REPORT_RUNTIME_WINDOW_REPAIR_SEALED_CLONE_FAILED',
+    });
+    runGit(['checkout', '--force', '-B', 'main', pinnedHead], { cwd: cloneRoot, env: gitEnv });
+    runGit(['remote', 'set-url', 'origin', '.'], { cwd: cloneRoot, env: gitEnv });
+    runGit(['fetch', 'origin', 'main', '--quiet'], { cwd: cloneRoot, env: gitEnv });
+
+    const cloneBranch = runGitText(['branch', '--show-current'], { cwd: cloneRoot, env: gitEnv });
+    const cloneHead = runGitText(['rev-parse', 'HEAD'], { cwd: cloneRoot, env: gitEnv });
+    const cloneOriginMainHead = runGitText(['rev-parse', 'origin/main'], { cwd: cloneRoot, env: gitEnv });
+    const cloneDirty = runGitText(
+      ['status', '--porcelain', '--untracked-files=all'],
+      { cwd: cloneRoot, env: gitEnv, trim: false },
+    );
+    if (cloneBranch !== 'main'
+      || cloneHead !== pinnedHead
+      || cloneOriginMainHead !== pinnedHead
+      || cloneDirty.trim() !== '') {
+      throw repairFailure(
+        'Sealed Report runtime clone does not match the pinned origin/main snapshot',
+        'REPORT_RUNTIME_WINDOW_REPAIR_SEALED_CLONE_INVALID',
+        {
+          branch: cloneBranch,
+          head: cloneHead,
+          originMainHead: cloneOriginMainHead,
+          expectedHead: pinnedHead,
+          clean: cloneDirty.trim() === '',
+        },
+      );
+    }
+
+    const sealedDevVarsPath = join(cloneRoot, '.dev.vars');
+    const sealedConfigPath = join(cloneRoot, 'wrangler.sync.jsonc');
+    await snapshotPrivateFile(devVars.resolvedPath, sealedDevVarsPath, '.dev.vars');
+    await snapshotPrivateFile(sourceConfigPath, sealedConfigPath, 'wrangler.sync.jsonc');
+
+    const childEnv = buildReportRuntimeSealedChildEnvironment(process.env, {
+      root: cloneRoot,
+      head: pinnedHead,
+      evidenceDir: outputRoot,
+      devVarsFile: sealedDevVarsPath,
+      wranglerConfigFile: sealedConfigPath,
+    });
+    const result = spawnSync(
+      process.execPath,
+      ['scripts/report-runtime-window-repair.mjs', '--execute'],
+      {
+        cwd: cloneRoot,
+        stdio: 'inherit',
+        env: childEnv,
+      },
+    );
+    if (result.error || result.status !== 0) {
+      throw repairFailure(
+        'Sealed Report runtime execution did not complete successfully',
+        'REPORT_RUNTIME_WINDOW_REPAIR_SEALED_CHILD_FAILED',
+        { exitCode: result.status ?? 1, pinnedHead },
+      );
+    }
+  } finally {
+    await rm(sandboxRoot, { recursive: true, force: true });
+  }
+}
+
+async function executeRepair(sealedContext) {
+  assertReportRuntimeWindowRepairConfirmation(process.env);
+  const devVars = await ensureDevVarsPermissions();
+  await mkdir(outputRoot, { recursive: true, mode: 0o700 });
+  const repository = readRepositoryState(sealedContext);
   const finalizerRoot = join(outputRoot, 'finalizer');
   const finalizerEvidencePath = join(finalizerRoot, 'report-runtime-finalize-summary.json');
   const finalizer = await ensureFinalizerEvidence({
@@ -125,6 +240,8 @@ async function executeRepair() {
     finalizerEvidence: finalizerEvidencePath,
     execution: Object.freeze({
       repositoryHead: repository.head,
+      sealedOriginMainClone: repository.sealed === true,
+      originMainPinnedAtCommandStart: repository.sealed === true,
       finalizerReused: finalizer.reused,
       reusedWindowCount: windows.filter((window) => window.reused).length,
       executedWindowCount: windows.filter((window) => !window.reused).length,
@@ -133,6 +250,11 @@ async function executeRepair() {
     safety: Object.freeze({
       localDevVarsMode: devVars.mode,
       localDevVarsSymbolicLink: devVars.symbolicLink,
+      sealedOriginMainClone: repository.sealed === true,
+      sealedOriginFetchIsLocal: repository.sealed === true,
+      dynamicOriginMainDriftIsolated: repository.sealed === true,
+      mutableInvocationCheckoutUsedForExecution: false,
+      inheritedGitContextRemoved: true,
       stableReportIds: true,
       manualD1OrLarkEditing: false,
       businessFactsDeleted: false,
@@ -171,28 +293,57 @@ async function ensureFinalizerEvidence(input) {
   return Object.freeze({ reused: false, evidence });
 }
 
-function readRepositoryState() {
-  runGit(['fetch', 'origin', 'main', '--quiet']);
-  const branch = runGitText(['branch', '--show-current']);
-  const head = runGitText(['rev-parse', 'HEAD']);
-  const originMainHead = runGitText(['rev-parse', 'origin/main']);
-  const dirty = runGitText(['status', '--porcelain', '--untracked-files=all'], false);
-  if (branch !== 'main' || head !== originMainHead || dirty.trim() !== '') {
+function readRepositoryState(sealedContext) {
+  const gitEnv = sanitizeReportRuntimeGitEnvironment(process.env);
+  const branch = runGitText(['branch', '--show-current'], { env: gitEnv });
+  const head = runGitText(['rev-parse', 'HEAD'], { env: gitEnv });
+  const dirty = runGitText(
+    ['status', '--porcelain', '--untracked-files=all'],
+    { env: gitEnv, trim: false },
+  );
+  if (branch !== 'main' || dirty.trim() !== '') {
     throw repairFailure(
-      'Report window repair requires a clean current main checkout equal to origin/main',
+      'Report window repair requires a clean main checkout',
       'REPORT_RUNTIME_WINDOW_REPAIR_REPOSITORY_STATE_INVALID',
-      { branch, head, originMainHead, clean: dirty.trim() === '' },
+      { branch, head, clean: dirty.trim() === '' },
     );
   }
-  return Object.freeze({ branch, head, originMainHead, clean: true });
+
+  if (sealedContext) {
+    assertReportRuntimeSealedHead(sealedContext, head);
+    return Object.freeze({
+      branch,
+      head,
+      originMainHead: sealedContext.expectedHead,
+      clean: true,
+      sealed: true,
+    });
+  }
+
+  runGit(['fetch', 'origin', 'main', '--quiet'], { env: gitEnv });
+  const originMainHead = runGitText(['rev-parse', 'origin/main'], { env: gitEnv });
+  if (head !== originMainHead) {
+    throw repairFailure(
+      'Report window repair requires current main equal to origin/main',
+      'REPORT_RUNTIME_WINDOW_REPAIR_REPOSITORY_STATE_INVALID',
+      { branch, head, originMainHead, clean: true },
+    );
+  }
+  return Object.freeze({ branch, head, originMainHead, clean: true, sealed: false });
 }
 
 async function ensureDevVarsPermissions() {
   try {
-    return await secureLocalSecretFile(resolve(repositoryRoot, '.dev.vars'), {
+    const inspected = await secureLocalSecretFile(resolve(repositoryRoot, '.dev.vars'), {
       expectedBasename: '.dev.vars',
     });
+    if (!inspected.exists || !inspected.resolvedPath) throw repairFailure(
+      'Required local .dev.vars file is missing',
+      'REPORT_RUNTIME_WINDOW_REPAIR_DEV_VARS_INVALID',
+    );
+    return inspected;
   } catch (error) {
+    if (error?.name === 'ReportRuntimeWindowRepairError') throw error;
     const permissionFailure = [
       'LOCAL_SECRET_FILE_PERMISSION_FAILED',
       'LOCAL_SECRET_FILE_TARGET_CHANGED',
@@ -206,13 +357,49 @@ async function ensureDevVarsPermissions() {
   }
 }
 
+async function snapshotPrivateFile(sourcePath, destinationPath, label) {
+  let before;
+  try {
+    before = await stat(sourcePath, { bigint: true });
+  } catch {
+    throw repairFailure(
+      `Required local ${label} file cannot be read`,
+      'REPORT_RUNTIME_WINDOW_REPAIR_LOCAL_INPUT_INVALID',
+      { label },
+    );
+  }
+  if (!before.isFile()) throw repairFailure(
+    `Required local ${label} target must be a regular file`,
+    'REPORT_RUNTIME_WINDOW_REPAIR_LOCAL_INPUT_INVALID',
+    { label },
+  );
+
+  const bytes = await readFile(sourcePath);
+  const after = await stat(sourcePath, { bigint: true });
+  if (before.dev !== after.dev
+    || before.ino !== after.ino
+    || before.size !== after.size
+    || before.mtimeNs !== after.mtimeNs
+    || before.ctimeNs !== after.ctimeNs) {
+    throw repairFailure(
+      `Required local ${label} changed while the sealed snapshot was being created`,
+      'REPORT_RUNTIME_WINDOW_REPAIR_LOCAL_INPUT_CHANGED',
+      { label },
+    );
+  }
+
+  await writeFile(destinationPath, bytes, { mode: 0o600, flag: 'wx' });
+  await chmod(destinationPath, 0o600);
+  return Object.freeze({ label, bytes: bytes.length });
+}
+
 function runRequiredStep(name, args, env) {
   const result = spawnSync(process.execPath, args, {
     cwd: repositoryRoot,
     stdio: 'inherit',
     env,
   });
-  if (result.status !== 0) {
+  if (result.error || result.status !== 0) {
     throw repairFailure(
       `Required Report window repair step failed: ${name}`,
       'REPORT_RUNTIME_WINDOW_REPAIR_STEP_FAILED',
@@ -221,19 +408,33 @@ function runRequiredStep(name, args, env) {
   }
 }
 
-function runGit(args) {
-  const result = spawnSync('git', args, { cwd: repositoryRoot, encoding: 'utf8' });
-  if (result.status !== 0) throw repairFailure(
-    `Git command failed: git ${args.join(' ')}`,
-    'REPORT_RUNTIME_WINDOW_REPAIR_GIT_FAILED',
+function runCommand(command, args, options = {}) {
+  const result = spawnSync(command, args, {
+    cwd: options.cwd ?? repositoryRoot,
+    env: options.env ?? sanitizeReportRuntimeGitEnvironment(process.env),
+    stdio: options.stdio ?? 'inherit',
+    encoding: options.stdio === 'inherit' ? undefined : 'utf8',
+  });
+  if (result.error || result.status !== 0) throw repairFailure(
+    `Command failed: ${command}`,
+    options.code ?? 'REPORT_RUNTIME_WINDOW_REPAIR_COMMAND_FAILED',
     { exitCode: result.status ?? 1 },
   );
   return result;
 }
 
-function runGitText(args, trim = true) {
-  const text = String(runGit(args).stdout ?? '');
-  return trim ? text.trim() : text;
+function runGit(args, options = {}) {
+  return runCommand('git', args, {
+    ...options,
+    env: sanitizeReportRuntimeGitEnvironment(options.env ?? process.env),
+    stdio: options.stdio ?? 'pipe',
+    code: 'REPORT_RUNTIME_WINDOW_REPAIR_GIT_FAILED',
+  });
+}
+
+function runGitText(args, options = {}) {
+  const text = String(runGit(args, options).stdout ?? '');
+  return options.trim === false ? text : text.trim();
 }
 
 async function readJsonIfExists(path) {
@@ -273,7 +474,7 @@ function sanitizeDetails(value) {
   if (Array.isArray(value)) return value.map(sanitizeDetails);
   if (!value || typeof value !== 'object') return value;
   return Object.fromEntries(Object.entries(value)
-    .filter(([key]) => !/(?:token|secret|authorization|cookie|password|tableId|fieldId|recordId)/iu.test(key))
+    .filter(([key]) => !/(?:token|secret|authorization|cookie|password|tableId|fieldId|recordId|originUrl)/iu.test(key))
     .map(([key, nested]) => [key, sanitizeDetails(nested)]));
 }
 
