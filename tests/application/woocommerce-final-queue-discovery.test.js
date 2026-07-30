@@ -22,6 +22,7 @@ function response(payload, options = {}) {
     status: options.status ?? 200,
     redirected: options.redirected ?? false,
     async text() {
+      if (options.bodyError) throw options.bodyError;
       return typeof payload === 'string' ? payload : JSON.stringify(payload);
     },
   };
@@ -120,6 +121,26 @@ test('Queue discovery fails closed for HTTP, contract, pagination and duplicate 
   );
 });
 
+test('Queue discovery bounds and sanitizes response body read failures', async () => {
+  await assert.rejects(
+    discoverWooCommerceQueueId({
+      accountId: ACCOUNT_ID,
+      apiToken: TOKEN,
+      queueName: QUEUE_NAME,
+      fetchImpl: async () => response('', {
+        status: 200,
+        bodyError: Object.assign(new Error(`body failed with ${TOKEN}`), {
+          name: 'BodyReadError',
+        }),
+      }),
+    }),
+    (error) => error?.code === 'WOOCOMMERCE_FINAL_QUEUE_API_BODY_READ_FAILED'
+      && error.details?.status === 200
+      && error.details?.errorName === 'BodyReadError'
+      && !JSON.stringify(error).includes(TOKEN),
+  );
+});
+
 test('Queue bootstrap injects exact ID without calling removed Wrangler Queue JSON output', async () => {
   const root = await mkdtemp(join(tmpdir(), 'woo-queue-bootstrap-'));
   try {
@@ -188,19 +209,34 @@ test('explicit Queue ID bootstrap performs zero Provider or Wrangler requests', 
   assert.equal(requestCount, 0);
 });
 
-test('canonical launcher bootstraps Queue ID before importing Safe Launcher', async () => {
+test('canonical launcher installs locked dependencies and bootstraps Queue before Safe Launcher', async () => {
   const source = await readFile(
     new URL('../../scripts/woocommerce-2026-completion-canonical-launcher.mjs', import.meta.url),
     'utf8',
   );
   const canonicalizeIndex = source.indexOf('canonicalizeTemporaryDirectoryEnvironment(process.env)');
+  const installIndex = source.indexOf('installLockedDependencies();');
   const bootstrapIndex = source.indexOf('await bootstrapWooCommerceFinalQueueId({');
   const injectIndex = source.indexOf('process.env.MKT_WOOCOMMERCE_FINAL_QUEUE_ID');
   const safeLauncherIndex = source.indexOf("await import('./woocommerce-2026-completion-safe-launcher.mjs')");
 
   assert.ok(canonicalizeIndex >= 0);
-  assert.ok(bootstrapIndex > canonicalizeIndex);
+  assert.ok(installIndex > canonicalizeIndex);
+  assert.ok(bootstrapIndex > installIndex);
   assert.ok(injectIndex > bootstrapIndex);
   assert.ok(safeLauncherIndex > injectIndex);
+  assert.match(source, /spawnSync\(\s*'npm',\s*\[\s*'ci'\s*\]/u);
+  assert.doesNotMatch(source, /queues\s+list\s+--json/u);
+});
+
+test('default Queue bootstrap uses only lockfile-installed Wrangler binary', async () => {
+  const source = await readFile(
+    new URL('../../scripts/lib/woocommerce-final-queue-bootstrap.js', import.meta.url),
+    'utf8',
+  );
+  assert.match(source, /'node_modules',\s*'\.bin'/u);
+  assert.match(source, /process\.platform === 'win32' \? 'wrangler\.cmd' : 'wrangler'/u);
+  assert.doesNotMatch(source, /spawnSync\(\s*'npx'/u);
+  assert.doesNotMatch(source, /\['wrangler',\s*\.\.\.args\]/u);
   assert.doesNotMatch(source, /queues\s+list\s+--json/u);
 });
