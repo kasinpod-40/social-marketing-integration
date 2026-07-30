@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import {
   resolveCloudflareAccountId,
   resolveCloudflareBearerAuth,
@@ -73,10 +73,16 @@ export async function bootstrapWooCommerceFinalQueueId(input = {}) {
 }
 
 function createWranglerRunner(repositoryRoot) {
+  const executable = join(
+    repositoryRoot,
+    'node_modules',
+    '.bin',
+    process.platform === 'win32' ? 'wrangler.cmd' : 'wrangler',
+  );
   return (args, env) => {
     const result = spawnSync(
-      'npx',
-      ['wrangler', ...args],
+      executable,
+      args,
       {
         cwd: repositoryRoot,
         env: { ...process.env, ...env },
@@ -87,11 +93,12 @@ function createWranglerRunner(repositoryRoot) {
     );
     if (result.error || result.status !== 0) {
       throw bootstrapError(
-        'Wrangler authentication command failed during Queue bootstrap',
+        'Pinned Wrangler authentication command failed during Queue bootstrap',
         'WOOCOMMERCE_FINAL_QUEUE_BOOTSTRAP_WRANGLER_FAILED',
         {
           command: args.slice(0, 2).join(' '),
           status: result.status ?? 1,
+          errorCode: result.error?.code ?? null,
           stderrSha256: sha256(result.stderr ?? ''),
         },
       );
