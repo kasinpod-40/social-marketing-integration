@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readFile } from 'node:fs/promises';
+import {
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { discoverWooCommerceQueueId } from '../../scripts/lib/woocommerce-final-queue-discovery.js';
 import { bootstrapWooCommerceFinalQueueId } from '../../scripts/lib/woocommerce-final-queue-bootstrap.js';
 
@@ -114,40 +121,48 @@ test('Queue discovery fails closed for HTTP, contract, pagination and duplicate 
 });
 
 test('Queue bootstrap injects exact ID without calling removed Wrangler Queue JSON output', async () => {
-  const commands = [];
-  const requests = [];
-  const env = {
-    MKT_MAIN_QUEUE_NAME: QUEUE_NAME,
-    CLOUDFLARE_ACCOUNT_ID: ACCOUNT_ID,
-    CLOUDFLARE_API_TOKEN: TOKEN,
-  };
-  const result = await bootstrapWooCommerceFinalQueueId({
-    env,
-    repositoryRoot: process.cwd(),
-    runWrangler(args) {
-      commands.push(args);
-      return JSON.stringify({
-        accounts: [{ id: ACCOUNT_ID, name: 'Integration Workspace' }],
-      });
-    },
-    fetchImpl: async (url, options) => {
-      requests.push({ url, options });
-      return response(queuePayload());
-    },
-  });
+  const root = await mkdtemp(join(tmpdir(), 'woo-queue-bootstrap-'));
+  try {
+    const configPath = join(root, 'wrangler.sync.jsonc');
+    await writeFile(configPath, JSON.stringify({ account_id: ACCOUNT_ID }), 'utf8');
+    const commands = [];
+    const requests = [];
+    const env = {
+      MKT_MAIN_QUEUE_NAME: QUEUE_NAME,
+      MKT_WOOCOMMERCE_ROLLOUT_WRANGLER_CONFIG: configPath,
+      CLOUDFLARE_ACCOUNT_ID: ACCOUNT_ID,
+      CLOUDFLARE_API_TOKEN: TOKEN,
+    };
+    const result = await bootstrapWooCommerceFinalQueueId({
+      env,
+      repositoryRoot: root,
+      runWrangler(args) {
+        commands.push(args);
+        return JSON.stringify({
+          accounts: [{ id: ACCOUNT_ID, name: 'Integration Workspace' }],
+        });
+      },
+      fetchImpl: async (url, options) => {
+        requests.push({ url, options });
+        return response(queuePayload());
+      },
+    });
 
-  assert.equal(result.source, 'cloudflare_queue_rest');
-  assert.equal(result.providerRequests, 1);
-  assert.equal(env.MKT_WOOCOMMERCE_FINAL_QUEUE_ID, QUEUE_ID);
-  assert.deepEqual(commands, [
-    ['whoami', '--json'],
-    ['whoami', '--account', ACCOUNT_ID, '--json'],
-  ]);
-  assert.equal(
-    commands.some((args) => args.join(' ') === 'queues list --json'),
-    false,
-  );
-  assert.equal(requests.length, 1);
+    assert.equal(result.source, 'cloudflare_queue_rest');
+    assert.equal(result.providerRequests, 1);
+    assert.equal(env.MKT_WOOCOMMERCE_FINAL_QUEUE_ID, QUEUE_ID);
+    assert.deepEqual(commands, [
+      ['whoami', '--json'],
+      ['whoami', '--account', ACCOUNT_ID, '--json'],
+    ]);
+    assert.equal(
+      commands.some((args) => args.join(' ') === 'queues list --json'),
+      false,
+    );
+    assert.equal(requests.length, 1);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('explicit Queue ID bootstrap performs zero Provider or Wrangler requests', async () => {
