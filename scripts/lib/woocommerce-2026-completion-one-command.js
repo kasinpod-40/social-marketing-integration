@@ -136,9 +136,10 @@ export function validateWooCommerce2026CleanupPreflight(row = {}) {
     && otherActiveWork === 0
     && workStatus === 'active'
     && syncStatus === 'running';
+  const replacedWorkClosed = workStatus === 'terminal' || workStatus === null;
   const alreadyClean = replacedActiveWork === 0
     && activeWork === otherActiveWork
-    && workStatus === 'terminal'
+    && replacedWorkClosed
     && syncStatus === 'failed'
     && syncErrorCode === 'WOOCOMMERCE_HISTORY_SCOPE_REPLACED'
     && oldRows === 0;
@@ -162,6 +163,8 @@ export function validateWooCommerce2026CleanupPreflight(row = {}) {
   return Object.freeze({
     pendingExactCleanup,
     alreadyClean,
+    replacedWorkRetained: workStatus === 'terminal',
+    replacedWorkArchived: workStatus === null,
     activeWork,
     otherActiveWork,
     activeLocks,
@@ -186,6 +189,7 @@ export function validateWooCommerce2026CleanupPostState(row = {}) {
   const workStatus = nullableText(row.replaced_work_status);
   const syncStatus = nullableText(row.replaced_sync_status);
   const syncErrorCode = nullableText(row.replaced_sync_error_code);
+  const replacedWorkClosed = workStatus === 'terminal' || workStatus === null;
 
   if (oldRows !== 0
     || aggregateRows !== 0
@@ -193,7 +197,7 @@ export function validateWooCommerce2026CleanupPostState(row = {}) {
     || replacedActiveWork !== 0
     || otherActiveWork !== 0
     || activeLocks !== 0
-    || workStatus !== 'terminal'
+    || !replacedWorkClosed
     || syncStatus !== 'failed'
     || syncErrorCode !== 'WOOCOMMERCE_HISTORY_SCOPE_REPLACED') {
     throw completionError(
@@ -218,6 +222,8 @@ export function validateWooCommerce2026CleanupPostState(row = {}) {
     aggregateRows: 0,
     activeWork: 0,
     activeLocks: 0,
+    replacedWorkRetained: workStatus === 'terminal',
+    replacedWorkArchived: workStatus === null,
     exactReplacedOperationClosed: true,
   });
 }
