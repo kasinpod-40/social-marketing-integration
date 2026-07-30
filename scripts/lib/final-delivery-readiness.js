@@ -132,7 +132,11 @@ export function buildFinalDeliveryReadinessManifest(input = {}) {
     lark: {
       reachable: lark.reachable === true,
       tableCount: requirePositiveInteger(lark.tableCount, 'lark.tableCount'),
-      schemaRepairRequired: lark.schemaRepairRequired === false,
+      schemaRepairRequired: requireExact(
+        lark.schemaRepairRequired,
+        false,
+        'lark.schemaRepairRequired',
+      ),
       tableIdentityFingerprint: requireSha256(
         lark.tableIdentityFingerprint,
         'lark.tableIdentityFingerprint',
