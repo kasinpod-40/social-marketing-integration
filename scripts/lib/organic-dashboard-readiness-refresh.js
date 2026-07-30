@@ -171,7 +171,7 @@ export function assertOrganicDashboardReadinessWindow(input = {}) {
 
   for (const metricKey of CURRENT_TOTAL_KEYS) {
     const metric = metricPayload[metricKey];
-    if (!Number.isFinite(Number(metric.current))
+    if (!isObservedFinite(metric.current)
       || metric.availabilityStatus !== 'available'
       || metric.availabilityMessage !== 'พร้อมใช้งาน') {
       throw readinessError(
@@ -183,7 +183,7 @@ export function assertOrganicDashboardReadinessWindow(input = {}) {
   }
   for (const metricKey of DATA_QUALITY_KEYS) {
     const metric = metricPayload[metricKey];
-    if (!Number.isFinite(Number(metric.current)) || metric.availabilityStatus !== 'available') {
+    if (!isObservedFinite(metric.current) || metric.availabilityStatus !== 'available') {
       throw readinessError(
         'Data-readiness Organic metric is not available after refresh',
         'ORGANIC_DASHBOARD_READINESS_DATA_QUALITY_UNAVAILABLE',
@@ -256,6 +256,12 @@ function canonicalNumber(value) {
   if (number === null) return null;
   const canonical = Number(number.toFixed(LARK_DECIMAL_PLACES));
   return Object.is(canonical, -0) ? 0 : canonical;
+}
+function isObservedFinite(value) {
+  return value !== null
+    && value !== undefined
+    && value !== ''
+    && Number.isFinite(Number(value));
 }
 function requireWindowDays(value) {
   const number = Number(value);
