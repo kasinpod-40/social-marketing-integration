@@ -32,10 +32,13 @@ The failed operation was not resumed and invalid JSON was not reclassified as ge
 
 - Repin the existing recovery-only operator to `woo-final-full-5b56469100a9`.
 - Require exact `WOOCOMMERCE_INVALID_JSON`, failed Sync, stale active Work, zero completion/phase,
-  zero active lock, exactly one Queue attempt, zero Coverage and zero rows in all 14 Commerce tables.
+  zero active lock, exactly one Queue attempt and zero Coverage.
+- Count all 14 Commerce tables by the exact incident `sync_run_id` / `last_sync_run_id` and require
+  those incident-attributed rows to be zero; retained Store/Product/Category and other pre-existing
+  Business facts are allowed and must not be deleted or changed.
 - Run the existing Worker Preview Provider diagnostics before authorizing lifecycle recovery.
 - Permit only the existing guarded `sync_work_runs` lifecycle mutation.
-- Verify the exact terminal post-state.
+- Verify the exact terminal post-state and unchanged incident-attributed row counts.
 - Delegate to the existing canonical WooCommerce 2026 completion launcher, which creates a new
   operation rather than resuming the terminal invalid-JSON operation.
 
@@ -43,15 +46,16 @@ The failed operation was not resumed and invalid JSON was not reclassified as ge
 
 - Active exact incident: diagnostics → recovery → completion.
 - Already terminal exact incident: diagnostics → verify terminal state → completion.
-- Any different operation, error code, Queue attempt count, Coverage, Business facts, lock or
-  lifecycle state fails closed.
+- Any different operation, error code, Queue attempt count, Coverage, incident-attributed Business
+  facts, lock or lifecycle state fails closed.
 
 ## Safety
 
 ```text
 Invalid JSON generic retry classification   unchanged / permanent
 Terminal operation resume                   forbidden
-Business/Coverage/Lark mutation by recovery 0
+Retained Business facts                     preserved
+Incident Business/Coverage/Lark mutation    0
 Queue message by recovery                   0
 Production deployment                       0
 Schedule                                    disabled
