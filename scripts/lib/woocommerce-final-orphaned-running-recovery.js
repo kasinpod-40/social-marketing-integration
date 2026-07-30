@@ -14,8 +14,8 @@ export const WOOCOMMERCE_ORPHANED_RUNNING_CONFIRMATION = Object.freeze({
   value: 'RECOVER_WOO_FINAL_FULL_011368480910_ONLY',
 });
 
-// Final exact continuation already treats this retryable class as resumable.
-// The actual orphan cause remains explicit in details_json/error_message.
+// Compatibility class already accepted by the exact-continuation selector.
+// The real cause is retained separately and never represented as a Provider/D1 fact.
 export const WOOCOMMERCE_ORPHANED_RUNNING_RESUME_ERROR_CODE =
   'WOOCOMMERCE_D1_READ_FAILED';
 export const WOOCOMMERCE_ORPHANED_RUNNING_CAUSE_CODE =
@@ -45,9 +45,8 @@ export function parseWooCommerceOrphanedRunningRecoveryArgs(args = []) {
   let operationId = null;
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
-    if (arg === '--execute') {
-      execute = true;
-    } else if (arg === '--operation-id') {
+    if (arg === '--execute') execute = true;
+    else if (arg === '--operation-id') {
       operationId = args[index + 1] ?? null;
       index += 1;
     } else if (arg.startsWith('--operation-id=')) {
@@ -59,15 +58,15 @@ export function parseWooCommerceOrphanedRunningRecoveryArgs(args = []) {
       );
     }
   }
-  const exactOperationId = requireOperationId(operationId);
-  if (exactOperationId !== WOOCOMMERCE_ORPHANED_RUNNING_OPERATION_ID) {
+  const exact = requireOperationId(operationId);
+  if (exact !== WOOCOMMERCE_ORPHANED_RUNNING_OPERATION_ID) {
     throw recoveryError(
       'Orphaned-running recovery is pinned to the approved operation',
       'WOOCOMMERCE_ORPHANED_RUNNING_OPERATION_NOT_APPROVED',
-      { operationIdFingerprint: sha256(exactOperationId) },
+      { operationIdFingerprint: sha256(exact) },
     );
   }
-  return Object.freeze({ execute, operationId: exactOperationId });
+  return Object.freeze({ execute, operationId: exact });
 }
 
 export function assertWooCommerceOrphanedRunningRecoveryConfirmation(env = {}) {
@@ -97,64 +96,32 @@ export function buildWooCommerceOrphanedRunningSnapshotSql(input = {}) {
     WITH base AS (${base})
     SELECT
       base.*,
-      (SELECT started_at FROM sync_runs WHERE sync_run_id = ${workKey})
-        AS sync_run_started_at,
-      (SELECT updated_at FROM sync_runs WHERE sync_run_id = ${workKey})
-        AS sync_run_updated_at,
-      (SELECT details_json FROM sync_runs WHERE sync_run_id = ${workKey})
-        AS sync_run_details_json,
-      (SELECT records_pulled FROM sync_runs WHERE sync_run_id = ${workKey})
-        AS sync_run_records_pulled,
-      (SELECT records_created FROM sync_runs WHERE sync_run_id = ${workKey})
-        AS sync_run_records_created,
-      (SELECT records_updated FROM sync_runs WHERE sync_run_id = ${workKey})
-        AS sync_run_records_updated,
-      (SELECT records_skipped FROM sync_runs WHERE sync_run_id = ${workKey})
-        AS sync_run_records_skipped,
-      (SELECT records_written FROM sync_runs WHERE sync_run_id = ${workKey})
-        AS sync_run_records_written,
-      (SELECT retry_count FROM sync_runs WHERE sync_run_id = ${workKey})
-        AS sync_run_retry_count,
-      (SELECT updated_at FROM sync_work_runs WHERE work_key = ${workKey})
-        AS work_updated_at,
-      (SELECT terminal_reason FROM sync_work_runs WHERE work_key = ${workKey})
-        AS work_terminal_reason,
-      (SELECT abandoned_at FROM sync_work_runs WHERE work_key = ${workKey})
-        AS work_abandoned_at,
-      (SELECT expires_at FROM sync_work_runs WHERE work_key = ${workKey})
-        AS work_expires_at,
-      (SELECT audit_reference FROM sync_work_runs WHERE work_key = ${workKey})
-        AS work_audit_reference,
-      (SELECT COUNT(*) FROM sync_work_phases WHERE work_key = ${workKey})
-        AS phase_count,
-      (SELECT expected_items FROM sync_work_phases
-        WHERE work_key = ${workKey} AND phase = 'woocommerce_commerce_pages_v1')
-        AS phase_expected_items,
-      (SELECT processed_items FROM sync_work_phases
-        WHERE work_key = ${workKey} AND phase = 'woocommerce_commerce_pages_v1')
-        AS phase_processed_items,
-      (SELECT pages_processed FROM sync_work_phases
-        WHERE work_key = ${workKey} AND phase = 'woocommerce_commerce_pages_v1')
-        AS phase_pages_processed,
-      (SELECT chunks_processed FROM sync_work_phases
-        WHERE work_key = ${workKey} AND phase = 'woocommerce_commerce_pages_v1')
-        AS phase_chunks_processed,
-      (SELECT COUNT(*) FROM sync_work_units WHERE work_key = ${workKey})
-        AS work_unit_count,
-      (SELECT COUNT(*) FROM sync_generation_fences WHERE work_key = ${workKey})
-        AS generation_fence_count,
-      (SELECT generation FROM sync_generation_fences WHERE work_key = ${workKey})
-        AS fence_generation,
-      (SELECT requested_at FROM sync_generation_fences WHERE work_key = ${workKey})
-        AS fence_requested_at,
-      (SELECT COUNT(*) FROM queue_operation_attempts
-        WHERE operation_id = ${operationId} AND work_key = ${workKey})
-        AS queue_operation_row_count,
-      (SELECT COUNT(*) FROM sync_work_runs WHERE lifecycle_status = 'active')
-        AS active_work_count,
-      (SELECT COUNT(*) FROM sync_work_runs
-        WHERE lifecycle_status = 'active' AND work_key <> ${workKey})
-        AS other_active_work_count,
+      (SELECT started_at FROM sync_runs WHERE sync_run_id = ${workKey}) AS sync_run_started_at,
+      (SELECT updated_at FROM sync_runs WHERE sync_run_id = ${workKey}) AS sync_run_updated_at,
+      (SELECT details_json FROM sync_runs WHERE sync_run_id = ${workKey}) AS sync_run_details_json,
+      (SELECT records_pulled FROM sync_runs WHERE sync_run_id = ${workKey}) AS sync_run_records_pulled,
+      (SELECT records_created FROM sync_runs WHERE sync_run_id = ${workKey}) AS sync_run_records_created,
+      (SELECT records_updated FROM sync_runs WHERE sync_run_id = ${workKey}) AS sync_run_records_updated,
+      (SELECT records_skipped FROM sync_runs WHERE sync_run_id = ${workKey}) AS sync_run_records_skipped,
+      (SELECT records_written FROM sync_runs WHERE sync_run_id = ${workKey}) AS sync_run_records_written,
+      (SELECT retry_count FROM sync_runs WHERE sync_run_id = ${workKey}) AS sync_run_retry_count,
+      (SELECT updated_at FROM sync_work_runs WHERE work_key = ${workKey}) AS work_updated_at,
+      (SELECT terminal_reason FROM sync_work_runs WHERE work_key = ${workKey}) AS work_terminal_reason,
+      (SELECT abandoned_at FROM sync_work_runs WHERE work_key = ${workKey}) AS work_abandoned_at,
+      (SELECT expires_at FROM sync_work_runs WHERE work_key = ${workKey}) AS work_expires_at,
+      (SELECT audit_reference FROM sync_work_runs WHERE work_key = ${workKey}) AS work_audit_reference,
+      (SELECT COUNT(*) FROM sync_work_phases WHERE work_key = ${workKey}) AS phase_count,
+      (SELECT expected_items FROM sync_work_phases WHERE work_key = ${workKey} AND phase = 'woocommerce_commerce_pages_v1') AS phase_expected_items,
+      (SELECT processed_items FROM sync_work_phases WHERE work_key = ${workKey} AND phase = 'woocommerce_commerce_pages_v1') AS phase_processed_items,
+      (SELECT pages_processed FROM sync_work_phases WHERE work_key = ${workKey} AND phase = 'woocommerce_commerce_pages_v1') AS phase_pages_processed,
+      (SELECT chunks_processed FROM sync_work_phases WHERE work_key = ${workKey} AND phase = 'woocommerce_commerce_pages_v1') AS phase_chunks_processed,
+      (SELECT COUNT(*) FROM sync_work_units WHERE work_key = ${workKey}) AS work_unit_count,
+      (SELECT COUNT(*) FROM sync_generation_fences WHERE work_key = ${workKey}) AS generation_fence_count,
+      (SELECT generation FROM sync_generation_fences WHERE work_key = ${workKey}) AS fence_generation,
+      (SELECT requested_at FROM sync_generation_fences WHERE work_key = ${workKey}) AS fence_requested_at,
+      (SELECT COUNT(*) FROM queue_operation_attempts WHERE operation_id = ${operationId} AND work_key = ${workKey}) AS queue_operation_row_count,
+      (SELECT COUNT(*) FROM sync_work_runs WHERE lifecycle_status = 'active') AS active_work_count,
+      (SELECT COUNT(*) FROM sync_work_runs WHERE lifecycle_status = 'active' AND work_key <> ${workKey}) AS other_active_work_count,
       unixepoch('now') * 1000 AS observed_at
     FROM base;
   `);
@@ -177,6 +144,7 @@ export function verifyWooCommerceOrphanedRunningEligibility(row) {
     operationId: WOOCOMMERCE_ORPHANED_RUNNING_OPERATION_ID,
     workKey: WOOCOMMERCE_ORPHANED_RUNNING_WORK_KEY,
     immutableFingerprint: evidence.immutableFingerprint,
+    stabilityFingerprint: evidence.stabilityFingerprint,
     evidence,
   });
 }
@@ -192,13 +160,13 @@ export function verifyWooCommerceOrphanedRunningStable(beforeInput, afterInput) 
       { elapsedMs, minimumElapsedMs: STABILITY_WINDOW_MS },
     );
   }
-  if (before.immutableFingerprint !== after.immutableFingerprint) {
+  if (before.stabilityFingerprint !== after.stabilityFingerprint) {
     throw recoveryError(
       'WooCommerce operation changed during orphan stability verification',
       'WOOCOMMERCE_ORPHANED_RUNNING_PROGRESS_OBSERVED',
       {
-        beforeFingerprint: before.immutableFingerprint,
-        afterFingerprint: after.immutableFingerprint,
+        beforeFingerprint: before.stabilityFingerprint,
+        afterFingerprint: after.stabilityFingerprint,
         elapsedMs,
       },
     );
@@ -207,6 +175,7 @@ export function verifyWooCommerceOrphanedRunningStable(beforeInput, afterInput) 
     stable: true,
     elapsedMs,
     immutableFingerprint: after.immutableFingerprint,
+    stabilityFingerprint: after.stabilityFingerprint,
     evidence: after.evidence,
   });
 }
@@ -215,7 +184,8 @@ export function buildWooCommerceOrphanedRunningRecoverySql(input = {}) {
   const stability = input.stability;
   const auditReference = requireAuditReference(input.auditReference);
   if (!stability?.stable
-    || stability.immutableFingerprint !== stability.evidence?.immutableFingerprint) {
+    || stability.immutableFingerprint !== stability.evidence?.immutableFingerprint
+    || stability.stabilityFingerprint !== stability.evidence?.stabilityFingerprint) {
     throw recoveryError(
       'Verified orphan stability evidence is required',
       'WOOCOMMERCE_ORPHANED_RUNNING_STABILITY_REQUIRED',
@@ -227,18 +197,14 @@ export function buildWooCommerceOrphanedRunningRecoverySql(input = {}) {
   const operationId = sqlQuote(WOOCOMMERCE_ORPHANED_RUNNING_OPERATION_ID);
   const now = "unixepoch('now') * 1000";
   const countGuards = Object.entries(EXPECTED_COUNTS)
-    .map(([table, expected]) => (
-      `(SELECT COUNT(*) FROM ${table} WHERE account_key = 'chemistry_k') = ${expected}`
-    ))
+    .map(([table, expected]) => `(SELECT COUNT(*) FROM ${table} WHERE account_key = 'chemistry_k') = ${expected}`)
     .join(' AND ');
-  const errorMessage =
-    'WooCommerce execution became orphaned after bounded verification timeout; exact durable continuation required';
   return compactSql(`
     UPDATE sync_runs
     SET status = 'failed',
         finished_at = ${now},
         error_code = ${sqlQuote(WOOCOMMERCE_ORPHANED_RUNNING_RESUME_ERROR_CODE)},
-        error_message = ${sqlQuote(errorMessage)},
+        error_message = 'WooCommerce execution became orphaned after bounded verification timeout; exact durable continuation required',
         details_json = json_set(
           details_json,
           '$.retryable', json('true'),
@@ -279,18 +245,15 @@ export function buildWooCommerceOrphanedRunningRecoverySql(input = {}) {
           AND swp.pages_processed = ${evidence.phasePagesProcessed}
           AND swp.chunks_processed = ${evidence.phaseChunksProcessed}
       )
-      AND (SELECT COUNT(*) FROM sync_work_phases WHERE work_key = ${workKey})
-        = ${evidence.phaseCount}
-      AND (SELECT COUNT(*) FROM sync_work_units WHERE work_key = ${workKey})
-        = ${evidence.workUnitCount}
+      AND (SELECT COUNT(*) FROM sync_work_phases WHERE work_key = ${workKey}) = ${evidence.phaseCount}
+      AND (SELECT COUNT(*) FROM sync_work_units WHERE work_key = ${workKey}) = ${evidence.workUnitCount}
       AND EXISTS (
         SELECT 1 FROM sync_generation_fences sgf
         WHERE sgf.work_key = ${workKey}
           AND sgf.generation = ${evidence.fenceGeneration}
           AND sgf.requested_at = ${evidence.fenceRequestedAt}
       )
-      AND (SELECT COUNT(*) FROM sync_generation_fences WHERE work_key = ${workKey})
-        = ${evidence.generationFenceCount}
+      AND (SELECT COUNT(*) FROM sync_generation_fences WHERE work_key = ${workKey}) = ${evidence.generationFenceCount}
       AND EXISTS (
         SELECT 1 FROM queue_operation_attempts qoa
         WHERE qoa.operation_id = ${operationId}
@@ -299,27 +262,13 @@ export function buildWooCommerceOrphanedRunningRecoverySql(input = {}) {
           AND qoa.original_requested_at = ${snapshot.queueOriginalRequestedAt}
           AND qoa.main_queue_attempts = ${snapshot.queueOperationAttempts}
       )
-      AND (SELECT COUNT(*) FROM queue_operation_attempts
-        WHERE operation_id = ${operationId} AND work_key = ${workKey})
-        = ${evidence.queueOperationRowCount}
-      AND (SELECT COUNT(*) FROM data_coverage_runs WHERE sync_run_id = ${workKey})
-        = ${snapshot.coverageRunCount}
-      AND (SELECT COUNT(*) FROM data_coverage_runs
-        WHERE sync_run_id = ${workKey}
-          AND (failed_rows <> 0
-            OR status NOT IN ('complete','no_data_confirmed','revisable')))
-        = ${snapshot.invalidCoverageCount}
+      AND (SELECT COUNT(*) FROM queue_operation_attempts WHERE operation_id = ${operationId} AND work_key = ${workKey}) = ${evidence.queueOperationRowCount}
+      AND (SELECT COUNT(*) FROM data_coverage_runs WHERE sync_run_id = ${workKey}) = ${snapshot.coverageRunCount}
+      AND (SELECT COUNT(*) FROM data_coverage_runs WHERE sync_run_id = ${workKey} AND (failed_rows <> 0 OR status NOT IN ('complete','no_data_confirmed','revisable'))) = ${snapshot.invalidCoverageCount}
       AND ${countGuards}
-      AND NOT EXISTS (
-        SELECT 1 FROM sync_locks
-        WHERE owner_id = ${workKey}
-          AND expires_at > ${now}
-      )
+      AND NOT EXISTS (SELECT 1 FROM sync_locks WHERE owner_id = ${workKey} AND expires_at > ${now})
       AND (SELECT COUNT(*) FROM sync_work_runs WHERE lifecycle_status = 'active') = 1
-      AND NOT EXISTS (
-        SELECT 1 FROM sync_work_runs
-        WHERE lifecycle_status = 'active' AND work_key <> ${workKey}
-      );
+      AND NOT EXISTS (SELECT 1 FROM sync_work_runs WHERE lifecycle_status = 'active' AND work_key <> ${workKey});
     SELECT
       changes() AS recovered_rows,
       sync_run_id,
@@ -358,32 +307,21 @@ export function verifyWooCommerceOrphanedRunningMutation(row, input = {}) {
 }
 
 export function verifyWooCommerceOrphanedRunningPostState(row, input = {}) {
-  const expectedFingerprint = requireText(
-    input.immutableFingerprint,
-    'immutableFingerprint',
-  );
+  const expectedFingerprint = requireText(input.immutableFingerprint, 'immutableFingerprint');
   const auditReference = requireAuditReference(input.auditReference);
   const evidence = normalizeEvidence(row);
   const violations = validateImmutableIncident(evidence);
   const snapshot = evidence.snapshot;
   if (snapshot.syncRunStatus !== 'failed') violations.push('sync_run_not_failed');
   if (snapshot.syncRunFinishedAt === null) violations.push('sync_run_not_finished');
-  if (snapshot.syncRunErrorCode !== WOOCOMMERCE_ORPHANED_RUNNING_RESUME_ERROR_CODE) {
-    violations.push('sync_run_error_code_invalid');
-  }
+  if (snapshot.syncRunErrorCode !== WOOCOMMERCE_ORPHANED_RUNNING_RESUME_ERROR_CODE) violations.push('sync_run_error_code_invalid');
   if (snapshot.syncRunRetryable !== true) violations.push('sync_run_not_retryable');
-  if (evidence.recoveryCauseCode !== WOOCOMMERCE_ORPHANED_RUNNING_CAUSE_CODE) {
-    violations.push('recovery_cause_changed');
-  }
-  if (evidence.recoveryAuditReference !== auditReference) {
-    violations.push('recovery_audit_changed');
-  }
+  if (evidence.recoveryCauseCode !== WOOCOMMERCE_ORPHANED_RUNNING_CAUSE_CODE) violations.push('recovery_cause_changed');
+  if (evidence.recoveryAuditReference !== auditReference) violations.push('recovery_audit_changed');
   if (snapshot.workLifecycleStatus !== 'active') violations.push('work_not_active');
   if (evidence.activeWorkCount !== 1) violations.push('active_work_count_not_one');
   if (evidence.otherActiveWorkCount !== 0) violations.push('other_active_work_present');
-  if (evidence.immutableFingerprint !== expectedFingerprint) {
-    violations.push('immutable_state_changed');
-  }
+  if (evidence.immutableFingerprint !== expectedFingerprint) violations.push('immutable_state_changed');
   rejectViolations(violations, evidence, 'POST_VERIFY_FAILED');
   return Object.freeze({
     verified: true,
@@ -395,10 +333,7 @@ export function verifyWooCommerceOrphanedRunningPostState(row, input = {}) {
 
 function normalizeEvidence(row = {}) {
   const snapshot = normalizeWooCommerceFinalSnapshot(row);
-  const detailsJson = requireJsonObjectText(
-    row.sync_run_details_json,
-    'sync_run_details_json',
-  );
+  const detailsJson = requireJsonObjectText(row.sync_run_details_json, 'sync_run_details_json');
   const details = JSON.parse(detailsJson);
   const stateJson = requireJsonObjectText(row.state_json, 'state_json');
   const evidence = {
@@ -434,9 +369,19 @@ function normalizeEvidence(row = {}) {
     recoveryCauseCode: optionalText(details.recoveryCauseCode),
     recoveryAuditReference: optionalText(details.recoveryAuditReference),
   };
+  const immutableFingerprint = durableFingerprint(evidence);
   return Object.freeze({
     ...evidence,
-    immutableFingerprint: immutableFingerprint(evidence),
+    immutableFingerprint,
+    stabilityFingerprint: sha256(JSON.stringify({
+      immutableFingerprint,
+      syncRunUpdatedAt: evidence.syncRunUpdatedAt,
+      syncRunDetailsJson: evidence.syncRunDetailsJson,
+      syncRunStatus: snapshot.syncRunStatus,
+      syncRunFinishedAt: snapshot.syncRunFinishedAt,
+      syncRunErrorCode: snapshot.syncRunErrorCode,
+      syncRunRetryable: snapshot.syncRunRetryable,
+    })),
   });
 }
 
@@ -463,20 +408,14 @@ function validateImmutableIncident(evidence) {
     || snapshot.queueGeneration !== WOOCOMMERCE_ORPHANED_RUNNING_GENERATION
     || snapshot.queueOriginalRequestedAt !== WOOCOMMERCE_ORPHANED_RUNNING_GENERATION
     || evidence.fenceGeneration !== WOOCOMMERCE_ORPHANED_RUNNING_GENERATION
-    || evidence.fenceRequestedAt !== WOOCOMMERCE_ORPHANED_RUNNING_GENERATION) {
-    violations.push('durable_identity_changed');
-  }
-  if (state.datasetIndex !== 1 || state.page !== 10) {
-    violations.push('phase_cursor_changed');
-  }
+    || evidence.fenceRequestedAt !== WOOCOMMERCE_ORPHANED_RUNNING_GENERATION) violations.push('durable_identity_changed');
+  if (state.datasetIndex !== 1 || state.page !== 10) violations.push('phase_cursor_changed');
   if (!exactScope(state.scope)) violations.push('scope_changed');
   if (!exactStoreContext(state.storeContext)) violations.push('store_context_changed');
   if (!exactStateCounts(state.counts)) violations.push('state_counts_changed');
   if (!exactDatasetCounts(state.datasetCounts)) violations.push('dataset_counts_changed');
   for (const [table, expected] of Object.entries(EXPECTED_COUNTS)) {
-    if (snapshot.counts[table] !== expected) {
-      violations.push(`business_count_changed:${table}`);
-    }
+    if (snapshot.counts[table] !== expected) violations.push(`business_count_changed:${table}`);
   }
   return violations;
 }
@@ -497,60 +436,42 @@ function exactScope(scope = {}) {
     && scope.revisionLookbackMs === 2_592_000_000;
 }
 
-function exactStoreContext(context = {}) {
-  return context.reportingTimezone === 'Asia/Bangkok'
-    && context.defaultCurrency === 'THB';
+function exactStoreContext(value = {}) {
+  return value.reportingTimezone === 'Asia/Bangkok'
+    && value.defaultCurrency === 'THB';
 }
 
-function exactStateCounts(counts = {}) {
-  return counts.pages === 10
-    && counts.sourceRows === 901
-    && counts.d1Rows === 4_501
-    && counts.derivedRows === 1_203
-    && counts.larkRows === 3_904
-    && counts.failedRows === 0;
+function exactStateCounts(value = {}) {
+  return value.pages === 10
+    && value.sourceRows === 901
+    && value.d1Rows === 4_501
+    && value.derivedRows === 1_203
+    && value.larkRows === 3_904
+    && value.failedRows === 0;
 }
 
-function exactDatasetCounts(datasets = {}) {
-  return exactDataset(datasets.store, {
-    pages: 1,
-    sourceRows: 1,
-    expectedRows: 1,
-    d1Rows: 1,
-    derivedRows: 0,
-    larkRows: 1,
-    sourceWatermark: 1785405639860,
-  })
-    && exactDataset(datasets.orders, {
-      pages: 9,
-      sourceRows: 900,
-      expectedRows: 3_433,
-      d1Rows: 4_500,
-      derivedRows: 1_203,
-      larkRows: 3_903,
-      sourceWatermark: 1772037938000,
-    })
+function exactDatasetCounts(value = {}) {
+  return exactDataset(value.store, [1, 1, 1, 1, 0, 1, 1785405639860])
+    && exactDataset(value.orders, [9, 900, 3_433, 4_500, 1_203, 3_903, 1772037938000])
     && ['products', 'categories', 'customers', 'coupons']
-      .every((key) => exactDataset(datasets[key], {
-        pages: 0,
-        sourceRows: 0,
-        expectedRows: 0,
-        d1Rows: 0,
-        derivedRows: 0,
-        larkRows: 0,
-        sourceWatermark: null,
-      }));
+      .every((key) => exactDataset(value[key], [0, 0, 0, 0, 0, 0, null]));
 }
 
 function exactDataset(value = {}, expected) {
-  return Object.entries(expected).every(([key, item]) => value?.[key] === item);
+  return [
+    value.pages,
+    value.sourceRows,
+    value.expectedRows,
+    value.d1Rows,
+    value.derivedRows,
+    value.larkRows,
+    value.sourceWatermark,
+  ].every((item, index) => item === expected[index]);
 }
 
-function immutableFingerprint(evidence) {
+function durableFingerprint(evidence) {
   return sha256(JSON.stringify({
     syncRunStartedAt: evidence.syncRunStartedAt,
-    syncRunUpdatedAt: evidence.syncRunUpdatedAt,
-    syncRunDetailsJson: evidence.syncRunDetailsJson,
     syncRunRecordsPulled: evidence.syncRunRecordsPulled,
     syncRunRecordsCreated: evidence.syncRunRecordsCreated,
     syncRunRecordsUpdated: evidence.syncRunRecordsUpdated,
@@ -589,7 +510,8 @@ function immutableFingerprint(evidence) {
 }
 
 function requireEligibility(value, fieldName) {
-  if (!value?.eligible || !value.evidence || !value.immutableFingerprint) {
+  if (!value?.eligible || !value.evidence
+    || !value.immutableFingerprint || !value.stabilityFingerprint) {
     throw recoveryError(
       `${fieldName} eligibility is required`,
       'WOOCOMMERCE_ORPHANED_RUNNING_ELIGIBILITY_REQUIRED',
