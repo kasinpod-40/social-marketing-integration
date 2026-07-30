@@ -98,6 +98,21 @@ docs/tasks/lark-dashboard-backfill-post-verify-hotfix-v1.md
 
 ## Implementation result
 
+### WooCommerce exact DLQ completion closure — 2026-07-30
+
+- เพิ่ม completion-only operator pin exact operation `woo-final-full-e2372e56d52d` และ 3
+  immutable DLQ incidents (`QUEUE_RETRY_EXHAUSTED`, `LARK_PREFLIGHT_FAILED`,
+  `WOOCOMMERCE_CONNECTOR_INVALID`).
+- Guard บังคับ Final summary PASS, exact completed full snapshot, 6 valid Coverage rows,
+  zero active lock, immutable Queue/Work/generation/requested-at และ fresh Remote D1 backup.
+- Mutation allowlist มีเฉพาะ retained `dead_letter_jobs.status=redriven` และ
+  `dead_letter_operation_metadata.recovery_status=completed`; ไม่มี deploy, Queue send/redrive/
+  delete หรือ Work/Sync/Coverage/Business/Lark mutation.
+- Verification ผ่าน focused `6/6`, Unit `1526/1526`, Workers runtime `16/16`,
+  Report reliability `101/101`, architecture/hygiene `413` modules / `0` cycles,
+  audit `0` vulnerabilities และ deploy dry-run; Live closure ยังไม่ execute จน
+  WooCommerce Final `11-summary` ผ่านจริง.
+
 ### WooCommerce Commerce Report guarded Live closeout — 2026-07-30
 
 - ขยาย Shared Report closeout operator ให้เลือก `woocommerce` แบบ explicit โดยคง TikTok

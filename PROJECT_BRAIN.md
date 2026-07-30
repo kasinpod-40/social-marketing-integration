@@ -121,6 +121,10 @@ Guarded Live path ใช้ `scripts/woocommerce-report-runtime-closeout.mjs` �
 finalizer/closeout เดิมใน explicit WooCommerce mode, เปิดเพียง global D1 Report read,
 preset materialization และ WooCommerce Report read, พิสูจน์ D1/Lark metric parity กับ
 same-job replay แล้วคืน all-false Safe state ใน `finally`.
+DLQ incident ของ exact Final operation ปิดได้เฉพาะหลัง Final summary ผ่านครบด้วย
+`scripts/woocommerce-dlq-closure-operator.mjs`; operator pin 3 immutable rows, สำรอง D1,
+ตรวจ completed full snapshot/zero lock และเปลี่ยนเฉพาะ retained DLQ/recovery metadata โดย
+ห้าม Queue redrive/delete หรือ Work/Sync/Coverage/Business/Lark mutation.
 
 ## WooCommerce diagnostics deterministic Preview origin — 2026-07-30
 
