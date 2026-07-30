@@ -54,3 +54,24 @@ test('operator requires the public launcher marker before Remote readiness', asy
   assert.ok(markerGate >= 0);
   assert.ok(readiness > markerGate);
 });
+
+test('D1 reads and completion polling remain bounded', async () => {
+  const source = await readFile(operatorUrl, 'utf8');
+  assert.match(source, /Object\.freeze\(\[0, 1_000, 2_000, 5_000, 10_000\]\)/u);
+  assert.match(source, /const VERIFY_INTERVAL_MS = 5_000/u);
+  assert.match(source, /const VERIFY_MAX_POLLS = 2_160/u);
+  assert.match(source, /timeout:\s*120_000/u);
+  assert.match(source, /WOOCOMMERCE_COMPLETED_STATE_D1_READ_FAILED/u);
+  assert.match(source, /WOOCOMMERCE_COMPLETED_STATE_VERIFY_TIMEOUT/u);
+});
+
+test('mutable Worker ownership always retains automatic all-false restore', async () => {
+  const source = await readFile(operatorUrl, 'utf8');
+  const safeOwned = source.indexOf('latestSafeConfig = windows.safe');
+  const uatDeploy = source.indexOf("currentStage = 'manual-uat-window'");
+  const safeReleased = source.indexOf('latestSafeConfig = null');
+  assert.match(source, /automatic-safe-restore/u);
+  assert.ok(safeOwned >= 0);
+  assert.ok(uatDeploy > safeOwned);
+  assert.ok(safeReleased > uatDeploy);
+});
