@@ -14,17 +14,18 @@ import { fileURLToPath } from 'node:url';
 /*
  * Public entry for WooCommerce completed-state closeout.
  *
- * The closeout operator reuses the reviewed Final Queue topology contract. Current Wrangler emits
- * `settings.batch_size` and `settings.max_wait_time_ms`, while the immutable Final-compatible
- * verification reads the reviewed legacy aliases. The existing narrowly scoped npx proxy adapts only
- * `wrangler queues consumer list ... --json`; every other npx command passes through byte-for-byte.
+ * Current Wrangler emits `settings.batch_size` and `settings.max_wait_time_ms`. The dedicated proxy
+ * first reuses the shared Woo Queue normalization, then exposes its normalized DLQ identity through
+ * `settings.dead_letter_queue` for this closeout verifier. Only the exact
+ * `wrangler queues consumer list ... --json` command is adapted; every other npx command passes
+ * through byte-for-byte.
  */
 
 const operatorPath = fileURLToPath(
   new URL('./woocommerce-final-completed-state-closeout.mjs', import.meta.url),
 );
 const proxyModulePath = fileURLToPath(
-  new URL('./woocommerce-final-npx-proxy.mjs', import.meta.url),
+  new URL('./woocommerce-final-completed-state-npx-proxy.mjs', import.meta.url),
 );
 const realNpx = resolveRealNpx();
 const proxyDirectory = await mkdtemp(
