@@ -41,16 +41,20 @@ test('exact config-DLQ recovery permits only retained DLQ metadata mutation afte
   assert.doesNotMatch(operator, /UPDATE\s+data_coverage_/iu);
 });
 
-test('one-command recovery finalizes, bridges retry evidence, verifies exact config DLQ, then resumes windows', () => {
+test('one-command recovery conditionally reuses exact 3D closure before 1D recovery and stabilized 30D', () => {
   const finalizer = wrapper.indexOf("runRequired('report-runtime-finalizer'");
   const bridge = wrapper.indexOf("'3d-config-dlq-evidence-head-bridge'");
   const exactRecovery = wrapper.indexOf("runRequired('3d-exact-config-dlq-recovery'");
-  const remaining = wrapper.indexOf("runRequired('remaining-window-sequence'");
-  assert.ok(finalizer >= 0 && bridge > finalizer && exactRecovery > bridge && remaining > exactRecovery);
+  const oneDay = wrapper.indexOf("'1d-exact-config-dlq-recovery'");
+  const thirtyDay = wrapper.indexOf("'30d-stabilized-fresh-closeout'");
+  const aggregate = wrapper.indexOf("'aggregate-verified-window-sequence'");
+  assert.ok(finalizer >= 0 && bridge > finalizer && exactRecovery > bridge);
+  assert.ok(oneDay > exactRecovery && thirtyDay > oneDay && aggregate > thirtyDay);
   assert.match(wrapper, /REPORT_RUNTIME_CONFIG_DLQ_EVIDENCE_HEAD_BRIDGE_CONFIRMATION/u);
   assert.match(wrapper, /CONFIRM_REPORT_RUNTIME_CONFIG_DLQ_EVIDENCE_HEAD_BRIDGE/u);
   assert.match(wrapper, /REPORT_RUNTIME_CONFIG_DLQ_RECOVERY_CONFIRMATION/u);
   assert.match(wrapper, /CONFIRM_REPORT_RUNTIME_CONFIG_DLQ_RECOVERY/u);
   assert.doesNotMatch(wrapper, /report-runtime-lark-metric-null-repair\.mjs/u);
-  assert.doesNotMatch(wrapper, /report-runtime-closeout-operator\.mjs/u);
+  assert.match(wrapper, /report-runtime-fresh-config-dlq-recovery\.mjs/u);
+  assert.match(wrapper, /report-runtime-stabilized-closeout\.mjs/u);
 });

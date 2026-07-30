@@ -19,13 +19,15 @@ const writer = readFileSync(
   'utf8',
 );
 
-test('current recovery reuses the completed metric repair summary before exact config-DLQ replay recovery', () => {
+test('current recovery reuses the completed metric repair and 3D config-DLQ summary before exact 1D recovery', () => {
   const finalizer = wrapper.indexOf("runRequired('report-runtime-finalizer'");
-  const recovery = wrapper.indexOf("runRequired('3d-exact-config-dlq-recovery'");
-  const remaining = wrapper.indexOf("runRequired('remaining-window-sequence'");
-  assert.ok(finalizer >= 0 && recovery > finalizer && remaining > recovery);
+  const legacyRecovery = wrapper.indexOf("runRequired('3d-exact-config-dlq-recovery'");
+  const oneDay = wrapper.indexOf("'1d-exact-config-dlq-recovery'");
+  const aggregate = wrapper.indexOf("'aggregate-verified-window-sequence'");
+  assert.ok(finalizer >= 0 && legacyRecovery > finalizer && oneDay > legacyRecovery && aggregate > oneDay);
   assert.match(configDlqOperator, /metric-null-repair-summary\.json/u);
   assert.match(configDlqOperator, /assertReportRuntimeConfigDlqMetricRepairSummary/u);
+  assert.match(wrapper, /fileExists\(join\(threeDayEvidence, 'report-runtime-closeout-summary\.json'\)\)/u);
   assert.doesNotMatch(wrapper, /report-runtime-lark-metric-null-repair\.mjs/u);
   assert.doesNotMatch(wrapper, /EXECUTE_EXACT_REPORT_METRIC_NULL_REPAIR/u);
 });

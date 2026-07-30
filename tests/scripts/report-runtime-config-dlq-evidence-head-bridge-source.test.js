@@ -37,12 +37,15 @@ test('evidence bridge is local-only and contains no runtime or provider mutation
   assert.match(operator, /larkMutated:\s*false/u);
 });
 
-test('one-command wrapper bridges exact retry evidence before verification-only recovery and remaining windows', () => {
+test('one-command wrapper conditionally bridges exact 3D evidence before 1D recovery, stabilized 30D and aggregate', () => {
   const finalizer = wrapper.indexOf("runRequired('report-runtime-finalizer'");
   const bridge = wrapper.indexOf("'3d-config-dlq-evidence-head-bridge'");
   const recovery = wrapper.indexOf("runRequired('3d-exact-config-dlq-recovery'");
-  const remaining = wrapper.indexOf("runRequired('remaining-window-sequence'");
-  assert.ok(finalizer >= 0 && bridge > finalizer && recovery > bridge && remaining > recovery);
+  const oneDay = wrapper.indexOf("'1d-exact-config-dlq-recovery'");
+  const thirtyDay = wrapper.indexOf("'30d-stabilized-fresh-closeout'");
+  const aggregate = wrapper.indexOf("'aggregate-verified-window-sequence'");
+  assert.ok(finalizer >= 0 && bridge > finalizer && recovery > bridge);
+  assert.ok(oneDay > recovery && thirtyDay > oneDay && aggregate > thirtyDay);
   assert.match(wrapper, /REPORT_RUNTIME_CONFIG_DLQ_EVIDENCE_HEAD_BRIDGE_CONFIRMATION/u);
   assert.match(wrapper, /CONFIRM_REPORT_RUNTIME_CONFIG_DLQ_EVIDENCE_HEAD_BRIDGE/u);
   assert.match(wrapper, /report-runtime-config-dlq-evidence-head-bridge\.mjs/u);
