@@ -60,6 +60,7 @@ function adaptConsumer(entry) {
     : {};
   return {
     ...entry,
+    dead_letter_queue: normalized.deadLetterQueue,
     settings: {
       ...settings,
       max_batch_size: normalized.maxBatchSize,

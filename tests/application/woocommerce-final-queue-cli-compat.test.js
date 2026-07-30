@@ -15,18 +15,38 @@ test('adapts current Wrangler result shape to reviewed legacy aliases', () => {
   const adapted = JSON.parse(adaptWooCommerceQueueConsumerCliOutput(JSON.stringify({
     result: [{
       queue_name: MAIN_QUEUE,
+      dead_letter_queue: DLQ,
       settings: {
         max_concurrency: 1,
         batch_size: 10,
         max_wait_time_ms: 30_000,
         max_retries: 5,
-        dead_letter_queue: DLQ,
       },
     }],
   })));
 
+  assert.equal(adapted.result[0].dead_letter_queue, DLQ);
   assert.equal(adapted.result[0].settings.batch_size, 10);
   assert.equal(adapted.result[0].settings.max_wait_time_ms, 30_000);
+  assert.equal(adapted.result[0].settings.max_batch_size, 10);
+  assert.equal(adapted.result[0].settings.max_batch_timeout, 30);
+});
+
+test('normalizes Cloudflare empty dead-letter Queue identity to null for reviewed core', () => {
+  const adapted = JSON.parse(adaptWooCommerceQueueConsumerCliOutput(JSON.stringify({
+    result: [{
+      queue_name: DLQ,
+      dead_letter_queue: '',
+      settings: {
+        max_concurrency: 1,
+        batch_size: 10,
+        max_wait_time_ms: 30_000,
+        max_retries: 10,
+      },
+    }],
+  })));
+
+  assert.equal(adapted.result[0].dead_letter_queue, null);
   assert.equal(adapted.result[0].settings.max_batch_size, 10);
   assert.equal(adapted.result[0].settings.max_batch_timeout, 30);
 });
@@ -34,6 +54,7 @@ test('adapts current Wrangler result shape to reviewed legacy aliases', () => {
 test('supports direct arrays and consumers containers without changing identity', () => {
   const entry = {
     queue_name: DLQ,
+    dead_letter_queue: '',
     settings: {
       max_concurrency: 1,
       batch_size: 10,
@@ -49,8 +70,10 @@ test('supports direct arrays and consumers containers without changing identity'
   ));
 
   assert.equal(direct[0].queue_name, DLQ);
+  assert.equal(direct[0].dead_letter_queue, null);
   assert.equal(direct[0].settings.max_batch_timeout, 30);
   assert.equal(wrapped.metadata.retained, true);
+  assert.equal(wrapped.consumers[0].dead_letter_queue, null);
   assert.equal(wrapped.consumers[0].settings.max_batch_size, 10);
 });
 
