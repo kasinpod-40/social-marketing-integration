@@ -4,7 +4,9 @@ import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { isAbsolute } from 'node:path';
 import {
-  adaptWooCommerceQueueConsumerCliOutput,
+  adaptWooCommerceCompletedStateQueueConsumerCliOutput,
+} from './lib/woocommerce-completed-state-queue-consumer-cli-output.js';
+import {
   isWooCommerceQueueConsumerJsonCommand,
 } from './lib/woocommerce-queue-consumer-cli-output.js';
 
@@ -35,10 +37,10 @@ if (result.error || result.status !== 0) {
   process.exitCode = result.status ?? 1;
 } else if (isWooCommerceQueueConsumerJsonCommand(args)) {
   try {
-    const sharedAdapted = JSON.parse(
-      adaptWooCommerceQueueConsumerCliOutput(result.stdout ?? ''),
+    write(
+      adaptWooCommerceCompletedStateQueueConsumerCliOutput(result.stdout ?? ''),
+      process.stdout,
     );
-    write(`${JSON.stringify(addCloseoutSettingsDlqAlias(sharedAdapted))}\n`, process.stdout);
     write(result.stderr, process.stderr);
   } catch (error) {
     process.stderr.write(`${JSON.stringify({
@@ -55,49 +57,14 @@ if (result.error || result.status !== 0) {
   write(result.stderr, process.stderr);
 }
 
-export function addCloseoutSettingsDlqAlias(value) {
-  if (Array.isArray(value)) return value.map(adaptConsumer);
-  if (!value || typeof value !== 'object') {
-    throw proxyError('WooCommerce completed-state Queue output has no container');
-  }
-  if (Array.isArray(value.result)) {
-    return { ...value, result: value.result.map(adaptConsumer) };
-  }
-  if (Array.isArray(value.consumers)) {
-    return { ...value, consumers: value.consumers.map(adaptConsumer) };
-  }
-  throw proxyError('WooCommerce completed-state Queue output has no consumer collection');
-}
-
-function adaptConsumer(entry) {
-  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
-    throw proxyError('WooCommerce completed-state Queue consumer is invalid');
-  }
-  const settings = entry.settings && typeof entry.settings === 'object'
-    && !Array.isArray(entry.settings)
-    ? entry.settings
-    : {};
-  const deadLetterQueue = optionalText(
-    entry.dead_letter_queue ?? settings.dead_letter_queue,
-  );
-  return {
-    ...entry,
-    settings: {
-      ...settings,
-      dead_letter_queue: deadLetterQueue,
-    },
-  };
-}
-
 function requireAbsolutePath(value, fieldName) {
   if (typeof value !== 'string' || value.trim() === '' || !isAbsolute(value)) {
-    throw proxyError(`${fieldName} must be an absolute executable path`);
+    const error = new Error(`${fieldName} must be an absolute executable path`);
+    error.name = 'WooCommerceCompletedStateNpxProxyError';
+    error.code = 'WOOCOMMERCE_COMPLETED_STATE_REAL_NPX_INVALID';
+    throw error;
   }
   return value.trim();
-}
-
-function optionalText(value) {
-  return typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
 }
 
 function write(value, stream) {
@@ -114,12 +81,4 @@ function sanitize(value) {
   return Object.fromEntries(Object.entries(value)
     .filter(([key]) => !/(?:token|secret|authorization|cookie|password|accountId|queueId)$/iu.test(key))
     .map(([key, nested]) => [key, sanitize(nested)]));
-}
-
-function proxyError(message, details = {}) {
-  const error = new Error(message);
-  error.name = 'WooCommerceCompletedStateNpxProxyError';
-  error.code = 'WOOCOMMERCE_COMPLETED_STATE_QUEUE_SHAPE_INVALID';
-  error.details = details;
-  return error;
 }
