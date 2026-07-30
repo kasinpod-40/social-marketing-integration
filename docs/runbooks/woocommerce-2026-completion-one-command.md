@@ -20,13 +20,29 @@ Do not invoke `scripts/woocommerce-2026-completion-one-command.mjs` directly fro
 - local `wrangler.sync.jsonc`;
 - existing Worker Secrets remain in Cloudflare and are never copied back locally.
 
-The launcher secures the resolved `.dev.vars` target to owner-only mode and copies both runtime inputs into the sealed clone as private regular files. The Wrangler snapshot uses the distinct ignored name:
+The launcher secures the resolved `.dev.vars` target to owner-only mode and creates two owner-only Wrangler snapshots inside the sealed clone:
 
 ```text
 .mkt-woocommerce-2026-completion-wrangler.jsonc
+wrangler.sync.jsonc
 ```
 
-It never overwrites the tracked `wrangler.sync.jsonc`, so the sealed Working Tree remains exact and clean.
+The first path is passed explicitly to current operators. The second is a clone-local compatibility snapshot for reviewed nested operators that still resolve the historical default filename. Both paths are added only to the sealed clone's `.git/info/exclude`, remain mode `0600`, are destroyed with the clone and are never committed or copied back to the source checkout.
+
+The launcher fails closed if the exact sealed `main` snapshot begins tracking or otherwise already contains `wrangler.sync.jsonc`; it never overwrites a tracked file.
+
+## Incident fixed — missing legacy config in sealed clone
+
+A Live completion attempt on `2026-07-30` stopped at the first cleanup D1 read with:
+
+```text
+WOOCOMMERCE_2026_CLEANUP_WRANGLER_FAILED
+stage=d1-read
+```
+
+The Safe Launcher had copied the local Wrangler config only to the modern private filename, while the nested cleanup operator still resolved `wrangler.sync.jsonc`. The repository intentionally does not track that local config, so Wrangler exited before a successful D1 read. The attempt stopped before cleanup backup, Lark delete, D1 delete, Worker deployment, Queue admission or Meta finalization.
+
+After this compatibility bridge is merged, rerun the same Safe Launcher command. Completion remains resumable and the existing operation identity is preserved.
 
 ## Controlled sequence
 
