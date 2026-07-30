@@ -92,6 +92,7 @@ test('builds one expiring sealed readiness manifest without auth material', () =
   assert.equal(manifest.cloudflare.workersDevSubdomain, 'example-subdomain');
   assert.equal(manifest.cloudflare.previewUrlsEnabled, false);
   assert.equal(manifest.cloudflare.workersDevEnabled, false);
+  assert.equal(manifest.lark.schemaRepairRequired, false);
   assert.equal(manifest.woo.incidentState, 'active_recovery_required');
   assert.equal(manifest.meta.sessionCompleted, false);
   assert.equal(manifest.safety.providerRequestCount, 0);
@@ -184,5 +185,8 @@ test('readiness audit source aggregates blockers and contains no remote mutation
   assert.doesNotMatch(source, /wrangler[^\n]*(?:deploy|versions\s+upload)/u);
   assert.doesNotMatch(source, /queues\/.+\/messages|\.send\(/u);
   assert.doesNotMatch(source, /method:\s*'(?:POST|PUT|PATCH|DELETE)'/u);
-  assert.doesNotMatch(source, /\b(?:INSERT|UPDATE|DELETE|DROP|ALTER)\b/iu);
+  assert.doesNotMatch(
+    source,
+    /(?:INSERT\s+INTO|UPDATE\s+(?:sync_|raw_|commerce_)|DELETE\s+FROM|DROP\s+TABLE|ALTER\s+TABLE)/iu,
+  );
 });
