@@ -27,6 +27,8 @@ guarded Worker Preview Provider diagnostics
 ```
 
 The failed operation was not resumed and invalid JSON was not reclassified as generically retryable.
+The old incident also proved this response class can be intermittent: Final received HTTP 200 JSON-declared
+HTML/XML, while the later guarded Provider diagnostic returned valid Store identity.
 
 ## Correction
 
@@ -42,6 +44,11 @@ The failed operation was not resumed and invalid JSON was not reclassified as ge
 - Verify the exact terminal post-state and unchanged incident-attributed row counts.
 - Delegate to the existing canonical WooCommerce 2026 completion launcher, which creates a new
   operation rather than resuming the terminal invalid-JSON operation.
+- In the ingestion Worker only, retry at most twice after `250ms` and `1000ms` when the exact
+  confirmed contamination shape occurs: direct HTTP 200, declared JSON Content-Type, no followed
+  redirect and HTML/XML body. The diagnostic path keeps its existing one-request default.
+- Persistent HTML/XML or every other invalid-JSON shape is returned to the existing parser and
+  remains permanent `WOOCOMMERCE_INVALID_JSON`; no contaminated response is accepted as success.
 
 ## Resumability
 
@@ -53,7 +60,8 @@ The failed operation was not resumed and invalid JSON was not reclassified as ge
 ## Safety
 
 ```text
-Invalid JSON generic retry classification   unchanged / permanent
+Invalid JSON final classification           unchanged / permanent
+Contaminated response accepted as success   never
 Terminal operation resume                   forbidden
 Retained Business facts                     preserved
 Incident Business/Coverage/Lark mutation    0
@@ -66,7 +74,7 @@ Meta                                         blocked until Woo completion PASS
 ## Required validation
 
 ```text
-Focused recovery-chain tests
+Focused recovery-chain and Worker fetch tests
 npm ci
 npm run check
 npm test
