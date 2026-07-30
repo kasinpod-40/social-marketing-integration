@@ -31,8 +31,13 @@ import { fileURLToPath } from 'node:url';
  * minimumQueueAttempts
  * buildWooCommerceLarkSelectOptionRepair
  * larkFieldValueFingerprint
+ * MKT_WOOCOMMERCE_FINAL_VERIFY_MAX_POLLS
+ * MKT_WOOCOMMERCE_FINAL_VERIFY_INTERVAL_MS
+ * bounded long-running verification
  */
 
+const DEFAULT_VERIFY_MAX_POLLS = '2160';
+const DEFAULT_VERIFY_INTERVAL_MS = '5000';
 const corePath = fileURLToPath(
   new URL('./woocommerce-final-rollout-operator-core.mjs', import.meta.url),
 );
@@ -54,7 +59,7 @@ try {
     {
       cwd: process.cwd(),
       env: {
-        ...process.env,
+        ...buildVerificationEnvironment(process.env),
         PATH: `${proxyDirectory}${delimiter}${process.env.PATH ?? ''}`,
         MKT_WOOCOMMERCE_FINAL_REAL_NPX: realNpx,
         MKT_WOOCOMMERCE_FINAL_NODE: process.execPath,
@@ -82,6 +87,21 @@ try {
   }
 } finally {
   await rm(proxyDirectory, { recursive: true, force: true });
+}
+
+export function buildVerificationEnvironment(env = {}) {
+  const output = { ...env };
+  if (!optionalText(output.MKT_WOOCOMMERCE_FINAL_VERIFY_MAX_POLLS)) {
+    output.MKT_WOOCOMMERCE_FINAL_VERIFY_MAX_POLLS = DEFAULT_VERIFY_MAX_POLLS;
+  }
+  if (!optionalText(output.MKT_WOOCOMMERCE_FINAL_VERIFY_INTERVAL_MS)) {
+    output.MKT_WOOCOMMERCE_FINAL_VERIFY_INTERVAL_MS = DEFAULT_VERIFY_INTERVAL_MS;
+  }
+  return output;
+}
+
+function optionalText(value) {
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
 }
 
 function resolveRealNpx() {
