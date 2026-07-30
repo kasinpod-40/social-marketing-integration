@@ -17,4 +17,5 @@
 - Preserved the reviewed Final rollout operator byte-for-byte as an immutable core and added a narrow entry wrapper for Queue consumer CLI compatibility.
 - Normalized current Wrangler/Cloudflare consumer fields `settings.batch_size` and `settings.max_wait_time_ms` to the reviewed legacy aliases only for the exact `wrangler queues consumer list ... --json` command; all other `npx` commands pass through unchanged.
 - Added modern/legacy/conflict topology tests, direct/result/consumers output-shape tests and a Git-blob identity assertion for the immutable Final core.
+- Normalized Cloudflare's empty-string `dead_letter_queue` response to `null` before the reviewed Final core compares DLQ topology, while preserving non-empty main-Queue DLQ identity.
 - Implementation performs no Remote mutation, Worker deployment, Queue message, Lark write, Schedule change or Production action.
