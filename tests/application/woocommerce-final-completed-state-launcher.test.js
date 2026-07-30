@@ -21,6 +21,15 @@ test('completed-state public launcher delegates through the closeout Queue CLI a
   assert.match(source, /every other npx command passes/u);
 });
 
+test('completed-state launcher binds private evidence to exact Repository Head', async () => {
+  const source = await readFile(launcherUrl, 'utf8');
+  assert.match(source, /resolveRepositoryHead\(\)/u);
+  assert.match(source, /git', \['rev-parse', 'HEAD'\]/u);
+  assert.match(source, /\^\[0-9a-f\]\{40\}\$/u);
+  assert.match(source, /join\(evidenceBase, repositoryHead\)/u);
+  assert.match(source, /MKT_WOOCOMMERCE_COMPLETED_STATE_EVIDENCE_DIR:\s*evidenceDirectory/u);
+});
+
 test('completed-state launcher never contains Remote execution logic itself', async () => {
   const source = await readFile(launcherUrl, 'utf8');
   assert.doesNotMatch(source, /api\.cloudflare\.com/u);
