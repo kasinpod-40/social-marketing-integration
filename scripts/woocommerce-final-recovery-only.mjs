@@ -5,13 +5,13 @@ import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { readDevVars } from './lib/dev-vars.js';
 import {
-  buildWooCommerceFailedWorkRecoverySql,
   parseWranglerD1Rows,
   verifyWooCommerceFailedWorkRecovery,
 } from './lib/woocommerce-final-failed-work-recovery.js';
 import {
   WOOCOMMERCE_FINAL_RECOVERY_ONLY_CONFIRMATION,
   assertWooCommerceFinalRecoveryOnlyConfirmation,
+  buildWooCommerceFinalRecoveryOnlyMutationSql,
   buildWooCommerceFinalRecoveryOnlySnapshotSql,
   parseWooCommerceFinalRecoveryOnlyArgs,
   verifyWooCommerceFinalRecoveryOnlyEligibility,
@@ -86,8 +86,8 @@ async function main() {
   });
 
   const auditReference = `woocommerce-final-recovery:${repositoryHead}`;
-  const mutationSql = buildWooCommerceFailedWorkRecoverySql({
-    workKey: eligibility.workKey,
+  const mutationSql = buildWooCommerceFinalRecoveryOnlyMutationSql({
+    operationId: options.operationId,
     auditReference,
   });
   const mutation = runMutationOnce({ databaseName, configPath, sql: mutationSql, env });
@@ -116,8 +116,10 @@ async function main() {
     activeLockCount: post.snapshot.activeLockCount,
     queueOperationAttempts: post.snapshot.queueOperationAttempts,
     coverageRunCount: post.snapshot.coverageRunCount,
-    businessRowsBefore: eligibility.businessRows,
-    businessRowsAfter: post.businessRows,
+    incidentBusinessRowsBefore: eligibility.incidentBusinessRows,
+    incidentBusinessRowsAfter: post.incidentBusinessRows,
+    retainedBusinessRowsBefore: eligibility.retainedBusinessRows,
+    retainedBusinessRowsAfter: post.retainedBusinessRows,
     workKeyFingerprint: recovery.workKeyFingerprint,
     auditReferenceFingerprint: recovery.auditReferenceFingerprint,
     remoteReadAttempts: beforeRead.attempts + afterRead.attempts,

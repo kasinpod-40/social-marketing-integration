@@ -24,6 +24,8 @@ import {
   sanitizeReliabilityEvent,
 } from './worker-runtime-support.js';
 
+const WOOCOMMERCE_INVALID_JSON_RETRY_DELAYS_MS = Object.freeze([250, 1_000]);
+
 /**
  * Chemistry K Integration Workspace route สำหรับ Manual UAT และ Scheduled incremental.
  * ทุก Trigger ใช้ Shared Reliability/Queue/DLQ เดิม และ Fail ก่อน Provider เมื่อ Gate ใดปิด.
@@ -59,7 +61,9 @@ export async function processWooCommerceCommerceJob(input = {}) {
     apiVersion: wooConfig.source.apiVersion,
     pageSize: wooConfig.limits.pageSize,
     timeoutMs: wooConfig.source.timeoutMs,
-    fetchImpl: createWooCommerceWorkerFetch(),
+    fetchImpl: createWooCommerceWorkerFetch(globalThis, {
+      invalidJsonRetryDelaysMs: WOOCOMMERCE_INVALID_JSON_RETRY_DELAYS_MS,
+    }),
   });
   const reliability = infrastructure.getReliability();
   const resumableWorkStore = infrastructure.getResumableWorkStore();
@@ -208,15 +212,66 @@ function requireStableOperation(value) {
   return value;
 }
 
-/** Preserve the Cloudflare runtime receiver when invoking the global fetch method. */
-export function createWooCommerceWorkerFetch(target = globalThis) {
+/** Preserve the Cloudflare runtime receiver and optionally retry only known HTML contamination. */
+export function createWooCommerceWorkerFetch(target = globalThis, options = {}) {
   const fetchImpl = target?.fetch;
   if (typeof fetchImpl !== 'function') {
     throw permanentError('WooCommerce Worker fetch implementation is unavailable', {
       code: 'WOOCOMMERCE_FETCH_RUNTIME_UNAVAILABLE',
     });
   }
-  return (...args) => Reflect.apply(fetchImpl, target, args);
+  const retryDelays = normalizeInvalidJsonRetryDelays(options.invalidJsonRetryDelaysMs);
+  const sleep = typeof options.sleep === 'function' ? options.sleep : sleepMs;
+  return async (...args) => {
+    for (let attempt = 0; ; attempt += 1) {
+      const response = await Reflect.apply(fetchImpl, target, args);
+      if (attempt >= retryDelays.length
+        || !await isKnownWooCommerceHtmlContamination(response)) {
+        return response;
+      }
+      await sleep(retryDelays[attempt]);
+    }
+  };
+}
+
+async function isKnownWooCommerceHtmlContamination(response) {
+  if (response?.status !== 200
+    || response?.ok !== true
+    || response?.redirected === true
+    || !String(response?.headers?.get?.('content-type') ?? '')
+      .toLowerCase()
+      .includes('application/json')) {
+    return false;
+  }
+  try {
+    const body = await response.clone().text();
+    const normalized = body.charCodeAt(0) === 0xfeff ? body.slice(1) : body;
+    return normalized.trimStart().startsWith('<');
+  } catch {
+    return false;
+  }
+}
+
+function normalizeInvalidJsonRetryDelays(value) {
+  if (value === undefined || value === null) return Object.freeze([]);
+  if (!Array.isArray(value) || value.length > 2) {
+    throw permanentError('WooCommerce invalid-JSON retry delays are invalid', {
+      code: 'WOOCOMMERCE_INVALID_JSON_RETRY_CONFIG_INVALID',
+    });
+  }
+  return Object.freeze(value.map((delay) => {
+    const milliseconds = Number(delay);
+    if (!Number.isSafeInteger(milliseconds) || milliseconds < 0 || milliseconds > 5_000) {
+      throw permanentError('WooCommerce invalid-JSON retry delay is invalid', {
+        code: 'WOOCOMMERCE_INVALID_JSON_RETRY_CONFIG_INVALID',
+      });
+    }
+    return milliseconds;
+  }));
+}
+
+function sleepMs(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 function createWooCommerceContinuationQueue(input, operation) {

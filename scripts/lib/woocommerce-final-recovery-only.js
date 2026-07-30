@@ -3,13 +3,37 @@ import {
   buildWooCommerceFinalSnapshotSql,
   normalizeWooCommerceFinalSnapshot,
 } from './woocommerce-final-rollout-operator.js';
+import {
+  WOOCOMMERCE_FINAL_FAILED_WORK_REASON,
+} from './woocommerce-final-failed-work-recovery.js';
 
 const OPERATION_ID = /^woo-final-(?:full|incremental)-[0-9a-f]{12}$/u;
-const EXACT_INCIDENT_OPERATION_ID = 'woo-final-full-6f43ac8ee857';
+const EXACT_INCIDENT_OPERATION_ID = 'woo-final-full-5b56469100a9';
+const EXACT_INCIDENT_ERROR_CODE = 'WOOCOMMERCE_INVALID_JSON';
+const RECOVERY_RETENTION_MS = 7 * 86_400_000;
+const INCIDENT_TABLES = Object.freeze([
+  Object.freeze(['raw_commerce_stores', 'sync_run_id']),
+  Object.freeze(['raw_commerce_orders', 'sync_run_id']),
+  Object.freeze(['raw_commerce_order_items', 'sync_run_id']),
+  Object.freeze(['raw_commerce_products', 'sync_run_id']),
+  Object.freeze(['raw_commerce_product_variations', 'sync_run_id']),
+  Object.freeze(['raw_commerce_categories', 'sync_run_id']),
+  Object.freeze(['raw_commerce_customers', 'sync_run_id']),
+  Object.freeze(['raw_commerce_coupons', 'sync_run_id']),
+  Object.freeze(['raw_commerce_refunds', 'sync_run_id']),
+  Object.freeze(['commerce_store_state', 'last_sync_run_id']),
+  Object.freeze(['commerce_order_state', 'last_sync_run_id']),
+  Object.freeze(['commerce_order_status_observations', 'sync_run_id']),
+  Object.freeze(['commerce_order_line_facts', 'last_sync_run_id']),
+  Object.freeze(['commerce_product_state', 'last_sync_run_id']),
+  Object.freeze(['commerce_customer_aggregates', 'last_sync_run_id']),
+  Object.freeze(['commerce_daily_sales_facts', 'sync_run_id']),
+  Object.freeze(['commerce_product_daily_facts', 'sync_run_id']),
+]);
 
 export const WOOCOMMERCE_FINAL_RECOVERY_ONLY_CONFIRMATION = Object.freeze({
   envName: 'CONFIRM_WOOCOMMERCE_RECOVERY_ONLY',
-  value: 'RECOVER_WOO_FINAL_FULL_6F43AC8EE857_ONLY',
+  value: 'RECOVER_WOO_FINAL_FULL_5B56469100A9_ONLY',
 });
 
 export function parseWooCommerceFinalRecoveryOnlyArgs(args = []) {
@@ -35,14 +59,7 @@ export function parseWooCommerceFinalRecoveryOnlyArgs(args = []) {
       'WOOCOMMERCE_RECOVERY_ONLY_ARGUMENT_INVALID',
     );
   }
-  const exactOperationId = requireOperationId(operationId);
-  if (exactOperationId !== EXACT_INCIDENT_OPERATION_ID) {
-    throw recoveryOnlyError(
-      'Recovery-only operator is pinned to the approved incident operation',
-      'WOOCOMMERCE_RECOVERY_ONLY_OPERATION_NOT_APPROVED',
-      { operationIdFingerprint: sha256(exactOperationId) },
-    );
-  }
+  const exactOperationId = requireApprovedOperationId(operationId);
   return Object.freeze({ execute, operationId: exactOperationId });
 }
 
@@ -58,30 +75,147 @@ export function assertWooCommerceFinalRecoveryOnlyConfirmation(env = {}) {
 }
 
 export function buildWooCommerceFinalRecoveryOnlySnapshotSql(input = {}) {
-  return buildWooCommerceFinalSnapshotSql({
-    accountKey: requireText(input.accountKey, 'accountKey'),
-    operationId: requireOperationId(input.operationId),
-  });
+  const accountKey = requireText(input.accountKey, 'accountKey');
+  const operationId = requireApprovedOperationId(input.operationId);
+  const syncRunId = `woocommerce:${operationId}`;
+  const base = buildWooCommerceFinalSnapshotSql({
+    accountKey,
+    operationId,
+  }).replace(/;\s*$/u, '');
+  const incidentCounts = INCIDENT_TABLES.map(([table, column]) => (
+    `(SELECT COUNT(*) FROM ${table} WHERE account_key = '${sqlText(accountKey)}' AND ${column} = '${syncRunId}') AS ${incidentAlias(table)}`
+  )).join(', ');
+  return compactSql(`SELECT base.*, ${incidentCounts} FROM (${base}) AS base;`);
+}
+
+export function buildWooCommerceFinalRecoveryOnlyMutationSql(input = {}) {
+  const operationId = requireApprovedOperationId(input.operationId);
+  const workKey = `woocommerce:${operationId}`;
+  const auditReference = requireAuditReference(input.auditReference);
+  const now = "unixepoch('now') * 1000";
+  const incidentCount = INCIDENT_TABLES.map(([table, column]) => (
+    `(SELECT COUNT(*) FROM ${table} WHERE account_key = sr.account_key AND ${column} = sr.sync_run_id)`
+  )).join(' + ');
+  return compactSql(`
+    UPDATE sync_work_runs
+    SET lifecycle_status = 'terminal',
+        terminal_reason = COALESCE(terminal_reason, '${sqlText(WOOCOMMERCE_FINAL_FAILED_WORK_REASON)}'),
+        abandoned_at = COALESCE(abandoned_at, ${now}),
+        expires_at = COALESCE(expires_at, ${now} + ${RECOVERY_RETENTION_MS}),
+        audit_reference = COALESCE(audit_reference, '${sqlText(auditReference)}'),
+        updated_at = ${now}
+    WHERE work_key = '${workKey}'
+      AND lifecycle_status = 'active'
+      AND completed_at IS NULL
+      AND completion_json IS NULL
+      AND generation = requested_at
+      AND (terminal_reason IS NULL
+        OR terminal_reason = '${sqlText(WOOCOMMERCE_FINAL_FAILED_WORK_REASON)}')
+      AND (audit_reference IS NULL
+        OR audit_reference = '${sqlText(auditReference)}')
+      AND EXISTS (
+        SELECT 1
+        FROM sync_runs sr
+        WHERE sr.sync_run_id = sync_work_runs.work_key
+          AND sr.status = 'failed'
+          AND sr.finished_at IS NOT NULL
+          AND sr.error_code = '${EXACT_INCIDENT_ERROR_CODE}'
+          AND COALESCE(json_extract(sr.details_json, '$.retryable'), 0) = 0
+          AND sr.platform = 'woocommerce'
+          AND sr.account_key = 'chemistry_k'
+          AND NOT EXISTS (
+            SELECT 1 FROM data_coverage_runs dcr
+            WHERE dcr.sync_run_id = sync_work_runs.work_key
+          )
+          AND (${incidentCount}) = 0
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM sync_work_phases swp
+        WHERE swp.work_key = sync_work_runs.work_key
+          AND swp.phase = 'woocommerce_commerce_pages_v1'
+          AND swp.complete = 1
+      )
+      AND (
+        SELECT COUNT(*)
+        FROM queue_operation_attempts qoa
+        WHERE qoa.operation_id = '${operationId}'
+          AND qoa.work_key = sync_work_runs.work_key
+          AND qoa.generation = sync_work_runs.generation
+          AND qoa.original_requested_at = sync_work_runs.requested_at
+      ) = 1
+      AND (
+        SELECT COALESCE(MAX(qoa.main_queue_attempts), 0)
+        FROM queue_operation_attempts qoa
+        WHERE qoa.operation_id = '${operationId}'
+          AND qoa.work_key = sync_work_runs.work_key
+      ) = 1
+      AND NOT EXISTS (
+        SELECT 1 FROM sync_locks sl
+        WHERE sl.owner_id = sync_work_runs.work_key
+          AND sl.expires_at > ${now}
+      );
+    SELECT
+      changes() AS recovered_rows,
+      work_key,
+      lifecycle_status,
+      terminal_reason,
+      audit_reference
+    FROM sync_work_runs
+    WHERE work_key = '${workKey}';
+  `);
+}
+
+export function classifyWooCommerceFinalRecoveryOnlyState(row, input = {}) {
+  const operationId = requireApprovedOperationId(input.operationId);
+  const snapshot = normalizeWooCommerceFinalSnapshot(row);
+  if (snapshot.workLifecycleStatus === 'active') {
+    return Object.freeze({
+      state: 'active_recovery_required',
+      result: verifyWooCommerceFinalRecoveryOnlyEligibility(row, { operationId }),
+    });
+  }
+  if (snapshot.workLifecycleStatus === 'terminal') {
+    return Object.freeze({
+      state: 'terminal_recovery_complete',
+      result: verifyWooCommerceFinalRecoveryOnlyPostState(row, { operationId }),
+    });
+  }
+  throw recoveryOnlyError(
+    'WooCommerce invalid-JSON incident is neither active-recoverable nor terminal-recovered',
+    'WOOCOMMERCE_RECOVERY_ONLY_STATE_INVALID',
+    {
+      operationIdFingerprint: sha256(operationId),
+      workLifecycleStatus: snapshot.workLifecycleStatus,
+      syncRunStatus: snapshot.syncRunStatus,
+      syncRunErrorCode: snapshot.syncRunErrorCode,
+    },
+  );
 }
 
 export function verifyWooCommerceFinalRecoveryOnlyEligibility(row, input = {}) {
-  const operationId = requireOperationId(input.operationId);
+  const operationId = requireApprovedOperationId(input.operationId);
   const snapshot = normalizeWooCommerceFinalSnapshot(row);
-  const businessRows = totalBusinessRows(snapshot.counts);
+  const incidentBusinessRows = countIncidentBusinessRows(row);
+  const retainedBusinessRows = totalBusinessRows(snapshot.counts);
+  const generationsAgree = exactGenerationsAgree(snapshot);
   const violations = [];
 
   if (snapshot.syncRunStatus !== 'failed') violations.push('sync_run_not_failed');
   if (snapshot.syncRunFinishedAt === null) violations.push('sync_run_not_finished');
-  if (snapshot.syncRunErrorCode === null) violations.push('sync_run_error_missing');
+  if (snapshot.syncRunErrorCode !== EXACT_INCIDENT_ERROR_CODE) {
+    violations.push('sync_run_error_not_invalid_json');
+  }
+  if (snapshot.syncRunRetryable !== false) violations.push('sync_run_not_permanent');
   if (snapshot.workLifecycleStatus !== 'active') violations.push('work_not_active');
   if (snapshot.workCompletedAt !== null) violations.push('work_already_completed');
   if (snapshot.completion !== null) violations.push('completion_present');
   if (snapshot.phaseComplete) violations.push('phase_complete');
+  if (!generationsAgree) violations.push('operation_generation_mismatch');
   if (snapshot.activeLockCount !== 0) violations.push('active_lock_present');
   if (snapshot.queueOperationAttempts !== 1) violations.push('queue_attempt_count_not_one');
   if (snapshot.coverageRunCount !== 0) violations.push('coverage_present');
   if (snapshot.invalidCoverageCount !== 0) violations.push('invalid_coverage_present');
-  if (businessRows !== 0) violations.push('business_rows_present');
+  if (incidentBusinessRows !== 0) violations.push('incident_business_rows_present');
 
   if (violations.length > 0) {
     throw recoveryOnlyError(
@@ -90,7 +224,9 @@ export function verifyWooCommerceFinalRecoveryOnlyEligibility(row, input = {}) {
       {
         operationIdFingerprint: sha256(operationId),
         violations: Object.freeze(violations),
-        businessRows,
+        incidentBusinessRows,
+        retainedBusinessRows,
+        generationsAgree,
         activeLockCount: snapshot.activeLockCount,
         queueOperationAttempts: snapshot.queueOperationAttempts,
         coverageRunCount: snapshot.coverageRunCount,
@@ -104,27 +240,38 @@ export function verifyWooCommerceFinalRecoveryOnlyEligibility(row, input = {}) {
     workKey: `woocommerce:${operationId}`,
     operationIdFingerprint: sha256(operationId),
     workKeyFingerprint: sha256(`woocommerce:${operationId}`),
-    businessRows,
+    businessRows: incidentBusinessRows,
+    incidentBusinessRows,
+    retainedBusinessRows,
+    generationsAgree,
     snapshot,
   });
 }
 
 export function verifyWooCommerceFinalRecoveryOnlyPostState(row, input = {}) {
-  const operationId = requireOperationId(input.operationId);
+  const operationId = requireApprovedOperationId(input.operationId);
   const snapshot = normalizeWooCommerceFinalSnapshot(row);
-  const businessRows = totalBusinessRows(snapshot.counts);
+  const incidentBusinessRows = countIncidentBusinessRows(row);
+  const retainedBusinessRows = totalBusinessRows(snapshot.counts);
+  const generationsAgree = exactGenerationsAgree(snapshot);
   const violations = [];
 
   if (snapshot.syncRunStatus !== 'failed') violations.push('sync_run_changed');
+  if (snapshot.syncRunFinishedAt === null) violations.push('sync_run_finish_changed');
+  if (snapshot.syncRunErrorCode !== EXACT_INCIDENT_ERROR_CODE) {
+    violations.push('sync_run_error_changed');
+  }
+  if (snapshot.syncRunRetryable !== false) violations.push('sync_run_retryability_changed');
   if (snapshot.workLifecycleStatus !== 'terminal') violations.push('work_not_terminal');
   if (snapshot.workCompletedAt !== null) violations.push('work_completed_at_changed');
   if (snapshot.completion !== null) violations.push('completion_changed');
   if (snapshot.phaseComplete) violations.push('phase_changed');
+  if (!generationsAgree) violations.push('operation_generation_changed');
   if (snapshot.activeLockCount !== 0) violations.push('active_lock_present');
   if (snapshot.queueOperationAttempts !== 1) violations.push('queue_attempt_count_changed');
   if (snapshot.coverageRunCount !== 0) violations.push('coverage_changed');
   if (snapshot.invalidCoverageCount !== 0) violations.push('invalid_coverage_changed');
-  if (businessRows !== 0) violations.push('business_rows_changed');
+  if (incidentBusinessRows !== 0) violations.push('incident_business_rows_changed');
 
   if (violations.length > 0) {
     throw recoveryOnlyError(
@@ -133,7 +280,9 @@ export function verifyWooCommerceFinalRecoveryOnlyPostState(row, input = {}) {
       {
         operationIdFingerprint: sha256(operationId),
         violations: Object.freeze(violations),
-        businessRows,
+        incidentBusinessRows,
+        retainedBusinessRows,
+        generationsAgree,
       },
     );
   }
@@ -142,9 +291,38 @@ export function verifyWooCommerceFinalRecoveryOnlyPostState(row, input = {}) {
     verified: true,
     operationIdFingerprint: sha256(operationId),
     workKeyFingerprint: sha256(`woocommerce:${operationId}`),
-    businessRows,
+    businessRows: incidentBusinessRows,
+    incidentBusinessRows,
+    retainedBusinessRows,
+    generationsAgree,
     snapshot,
   });
+}
+
+function exactGenerationsAgree(snapshot) {
+  const generation = snapshot.workGeneration;
+  return Number.isSafeInteger(generation)
+    && generation >= 0
+    && snapshot.workRequestedAt === generation
+    && snapshot.queueGeneration === generation
+    && snapshot.queueOriginalRequestedAt === generation;
+}
+
+function countIncidentBusinessRows(row = {}) {
+  let total = 0;
+  for (const [table] of INCIDENT_TABLES) {
+    const alias = incidentAlias(table);
+    const value = Number(row[alias]);
+    if (!Number.isSafeInteger(value) || value < 0) {
+      throw recoveryOnlyError(
+        'WooCommerce recovery-only incident count is invalid',
+        'WOOCOMMERCE_RECOVERY_ONLY_INCIDENT_COUNT_INVALID',
+        { table },
+      );
+    }
+    total += value;
+  }
+  return total;
 }
 
 function totalBusinessRows(counts = {}) {
@@ -152,7 +330,7 @@ function totalBusinessRows(counts = {}) {
   for (const [table, value] of Object.entries(counts)) {
     if (!Number.isSafeInteger(value) || value < 0) {
       throw recoveryOnlyError(
-        'WooCommerce recovery-only business count is invalid',
+        'WooCommerce recovery-only retained business count is invalid',
         'WOOCOMMERCE_RECOVERY_ONLY_COUNT_INVALID',
         { table },
       );
@@ -162,12 +340,43 @@ function totalBusinessRows(counts = {}) {
   return total;
 }
 
+function incidentAlias(table) {
+  return `incident_${table}`;
+}
+
+function compactSql(value) {
+  return String(value).replace(/\s+/gu, ' ').trim();
+}
+
+function requireApprovedOperationId(value) {
+  const operationId = requireOperationId(value);
+  if (operationId !== EXACT_INCIDENT_OPERATION_ID) {
+    throw recoveryOnlyError(
+      'Recovery-only operator is pinned to the approved incident operation',
+      'WOOCOMMERCE_RECOVERY_ONLY_OPERATION_NOT_APPROVED',
+      { operationIdFingerprint: sha256(operationId) },
+    );
+  }
+  return operationId;
+}
+
 function requireOperationId(value) {
   const text = requireText(value, 'operationId');
   if (!OPERATION_ID.test(text)) {
     throw recoveryOnlyError(
       'WooCommerce recovery-only operation ID is invalid',
       'WOOCOMMERCE_RECOVERY_ONLY_OPERATION_INVALID',
+    );
+  }
+  return text;
+}
+
+function requireAuditReference(value) {
+  const text = requireText(value, 'auditReference');
+  if (!/^woocommerce-final-recovery:[0-9a-f]{40,64}$/u.test(text)) {
+    throw recoveryOnlyError(
+      'WooCommerce recovery-only audit reference is invalid',
+      'WOOCOMMERCE_RECOVERY_ONLY_AUDIT_INVALID',
     );
   }
   return text;
@@ -182,6 +391,10 @@ function requireText(value, fieldName) {
     );
   }
   return value.trim();
+}
+
+function sqlText(value) {
+  return String(value).replaceAll("'", "''");
 }
 
 function sha256(value) {
