@@ -57,14 +57,16 @@ test('exact 1D recovery closes only retained DLQ metadata after replay success a
   assert.match(operator, /retainedDlqRecoveryStatus/u);
 });
 
-test('stability barrier delays the deploy callback until three direct samples and surfaces instability through the core verification call', () => {
-  const patch = barrier.indexOf('childProcess.execFile = function stabilizedExecFile');
-  const deploy = barrier.indexOf('isLiveWranglerDeploy');
+test('stability barrier preserves execFile Promise shape, waits for three samples and surfaces instability through core verification', () => {
+  const patch = barrier.indexOf('function stabilizedExecFile');
   const stabilize = barrier.indexOf('stabilizeDeployment(commandArgs', patch);
   const pending = barrier.indexOf('pendingBarrierError = barrierError', stabilize);
-  const coreImport = barrier.indexOf("await import('./report-runtime-closeout-operator.mjs')");
-  assert.ok(patch >= 0 && deploy >= 0 && stabilize > patch && pending > stabilize && coreImport > patch);
-  assert.match(barrier, /syncBuiltinESMExports/u);
+  const promiseContract = barrier.indexOf('attachExecFilePromiseContract(stabilizedExecFile)');
+  const sync = barrier.indexOf('syncBuiltinESMExports()', promiseContract);
+  const coreImport = barrier.indexOf("await import('./report-runtime-closeout-operator.mjs')", sync);
+  assert.ok(patch >= 0 && stabilize > patch && pending > stabilize);
+  assert.ok(promiseContract > patch && sync > promiseContract && coreImport > sync);
+  assert.match(barrier, /exec-file-promise-contract\.js/u);
   assert.match(barrier, /DEFAULT_DELAYS_MS = Object\.freeze\(\[0, 10_000, 20_000\]\)/u);
   assert.match(barrier, /assertReportRuntimeStableActiveDeployment/u);
   assert.match(barrier, /pendingBarrierError && isDeploymentStatusCommand/u);
