@@ -36,6 +36,9 @@ import {
   selectExactlyOneActiveWorkerVersion,
 } from './lib/woocommerce-2026-completion-one-command.js';
 import {
+  assertWooCommerceQueueConsumerTopology,
+} from './lib/woocommerce-queue-consumer-topology.js';
+import {
   WOOCOMMERCE_COMPLETED_STATE_CLOSEOUT_CONFIRMATION,
   WOOCOMMERCE_COMPLETED_STATE_CLOSEOUT_CONTRACT_VERSION,
   WOOCOMMERCE_COMPLETED_STATE_HISTORY_START,
@@ -64,6 +67,8 @@ const REQUIRED_SECRET_NAMES = Object.freeze([
 const D1_READ_DELAYS_MS = Object.freeze([0, 1_000, 2_000, 5_000, 10_000]);
 const VERIFY_INTERVAL_MS = 5_000;
 const VERIFY_MAX_POLLS = 2_160;
+const REPLAY_CHECKPOINT = '05-idempotent-replay';
+const INCREMENTAL_CHECKPOINT = '06-incremental-uat';
 let target = null;
 let latestSafeConfig = null;
 let currentStage = 'init';
@@ -110,6 +115,7 @@ function printPlan() {
     executed: false,
     contractVersion: WOOCOMMERCE_COMPLETED_STATE_CLOSEOUT_CONTRACT_VERSION,
     operationId: WOOCOMMERCE_COMPLETED_STATE_OPERATION_ID,
+    requiredEntry: 'scripts/woocommerce-final-completed-state-closeout-launcher.mjs',
     confirmation: {
       envName: 'CONFIRM_WOOCOMMERCE_COMPLETED_STATE_CLOSEOUT',
       value: WOOCOMMERCE_COMPLETED_STATE_CLOSEOUT_CONFIRMATION,
@@ -126,12 +132,14 @@ function printPlan() {
       'zero-active-reliability-verification',
     ],
     safety: {
+      exactHeadEvidence: true,
       replacementFullOperation: false,
       initialFullQueueMessage: false,
       orphanRecoveryRepeated: false,
       businessFactDelete: false,
       directD1Mutation: false,
       directLarkMutation: false,
+      queueAcceptedWithoutCheckpointResend: false,
       scheduleEnabled: false,
       metaStarted: false,
       production: false,
@@ -145,6 +153,11 @@ async function executeCloseout() {
     ...process.env,
   });
   assertWooCommerceCompletedStateCloseoutConfirmation(env);
+  requireExact(
+    env.MKT_WOOCOMMERCE_COMPLETED_STATE_PUBLIC_LAUNCHER,
+    '1',
+    'MKT_WOOCOMMERCE_COMPLETED_STATE_PUBLIC_LAUNCHER',
+  );
   requireExact(env.MKT_ENV, 'development', 'MKT_ENV');
   requireExact(env.MKT_CUSTOMER_PROFILE, 'integration_workspace', 'MKT_CUSTOMER_PROFILE');
   requireExact(env.MKT_CONNECTION_CUSTOMER_KEY, 'chemistry_k', 'MKT_CONNECTION_CUSTOMER_KEY');
@@ -215,6 +228,7 @@ async function executeCloseout() {
     accountKey: 'chemistry_k',
     orderHistoryStart: Date.parse(WOOCOMMERCE_COMPLETED_STATE_HISTORY_START),
   });
+  assertEvidenceHeadBinding(target.repositoryHead);
 
   currentStage = 'local-and-remote-readiness';
   const readiness = await readRemoteReadiness();
@@ -290,85 +304,14 @@ async function executeCloseout() {
   await writeEvidence('04-d1-lark-parity', parity);
 
   currentStage = 'same-completed-operation-idempotent-replay';
-  const replayMinimumAttempts = completedBefore.priorQueueAttempts + 1;
-  const replayJob = buildWooCommerceFinalJob({
-    operationId: completedBefore.operationId,
-    requestedAt: completedBefore.requestedAt,
-    trigger: 'manual_uat',
-    fullReconciliation: true,
-    orderCreatedAfter: target.orderHistoryStart,
-    orderCreatedBefore: completedBefore.requestedAt,
-  });
-  const replaySend = await sendQueueMessage(replayJob, {
-    attemptKey: `${completedBefore.operationId}:completed-state-replay`,
-    minimumQueueAttempts: replayMinimumAttempts,
-  });
-  const completedAfterReplay = await pollCompletedState({
-    operationId: completedBefore.operationId,
-    fullReconciliation: true,
-    requireCurrentSourceParity: true,
-    minimumQueueAttempts: replayMinimumAttempts,
-  });
-  const replay = compareWooCommerceCompletedStateReplay(
-    {
-      operationId: completedBefore.operationId,
-      snapshot: completedBefore.snapshot,
-      fullReconciliation: true,
-      requireCurrentSourceParity: true,
-    },
-    {
-      operationId: completedBefore.operationId,
-      snapshot: completedAfterReplay.snapshot,
-      fullReconciliation: true,
-      requireCurrentSourceParity: true,
-    },
-  );
-  const replayParity = await verifyParity(
+  const replay = await ensureIdempotentReplay({
     lark,
     tableIds,
-    completedAfterReplay.snapshot.counts,
-  );
-  await writeEvidence('05-idempotent-replay', {
-    operationId: completedBefore.operationId,
-    send: replaySend,
-    replay,
-    parity: replayParity,
+    completedBefore,
   });
 
   currentStage = 'incremental-uat';
-  const watermark = await readWatermark();
-  const incremental = await readOrCreateIncrementalOperation();
-  const incrementalJob = buildWooCommerceFinalJob({
-    operationId: incremental.operationId,
-    requestedAt: incremental.requestedAt,
-    trigger: 'manual_uat',
-    fullReconciliation: false,
-    modifiedAfter: watermark,
-    orderCreatedAfter: target.orderHistoryStart,
-    orderCreatedBefore: incremental.requestedAt,
-  });
-  const incrementalSend = await sendQueueMessage(incrementalJob, {
-    attemptKey: `${incremental.operationId}:incremental-uat`,
-    minimumQueueAttempts: incremental.minimumQueueAttempts,
-  });
-  const incrementalCompleted = await pollCompletedState({
-    operationId: incremental.operationId,
-    fullReconciliation: false,
-    requireCurrentSourceParity: false,
-    minimumQueueAttempts: incremental.minimumQueueAttempts,
-  });
-  const incrementalParity = await verifyParity(
-    lark,
-    tableIds,
-    incrementalCompleted.snapshot.counts,
-  );
-  await writeEvidence('06-incremental-uat', {
-    operationId: incremental.operationId,
-    modifiedAfter: watermark,
-    send: incrementalSend,
-    completionFingerprint: incrementalCompleted.completionFingerprint,
-    parity: incrementalParity,
-  });
+  const incremental = await ensureIncrementalUat({ lark, tableIds });
 
   currentStage = 'all-false-safe-closeout';
   const safeCloseout = await deployAndVerify(
@@ -423,8 +366,10 @@ async function executeCloseout() {
       scopeMode: 'report_range',
     }),
     parityVerified: true,
-    idempotentRerunVerified: true,
-    incrementalVerified: true,
+    idempotentRerunVerified: replay.verified,
+    idempotentRerunReusedCheckpoint: replay.reusedCheckpoint,
+    incrementalVerified: incremental.verified,
+    incrementalReusedCheckpoint: incremental.reusedCheckpoint,
     executionFlagsAllFalse: finalSafe.allFalse,
     scheduleEnabled: false,
     production: false,
@@ -434,6 +379,7 @@ async function executeCloseout() {
       orphanRecoveryRepeated: false,
       businessFactDelete: false,
       manualD1OrLarkEditing: false,
+      queueAcceptedWithoutCheckpointResend: false,
       metaExecutionCount: 0,
     }),
     nextStep: 'resume_pinned_meta_finalizer',
@@ -450,6 +396,200 @@ async function executeCloseout() {
   }, null, 2)}\n`);
 }
 
+async function ensureIdempotentReplay(input) {
+  const checkpoint = await readEvidenceData(REPLAY_CHECKPOINT);
+  if (checkpoint) {
+    assertCheckpointHead(checkpoint);
+    requireExact(
+      checkpoint.operationId,
+      input.completedBefore.operationId,
+      'replayCheckpoint.operationId',
+    );
+    requireExact(
+      checkpoint.completionFingerprint,
+      input.completedBefore.completionFingerprint,
+      'replayCheckpoint.completionFingerprint',
+    );
+    const minimumQueueAttempts = requirePositiveInteger(
+      checkpoint.minimumQueueAttempts,
+      'replayCheckpoint.minimumQueueAttempts',
+    );
+    const current = selectWooCommerceCompletedState({
+      operationId: input.completedBefore.operationId,
+      snapshot: await readSnapshot(input.completedBefore.operationId),
+      fullReconciliation: true,
+      requireCurrentSourceParity: false,
+    });
+    if (current.priorQueueAttempts < minimumQueueAttempts
+      || current.completionFingerprint !== checkpoint.completionFingerprint) {
+      throw closeoutError(
+        'WooCommerce replay checkpoint no longer matches durable state',
+        'WOOCOMMERCE_COMPLETED_STATE_REPLAY_CHECKPOINT_INVALID',
+        {
+          currentQueueAttempts: current.priorQueueAttempts,
+          minimumQueueAttempts,
+          completionFingerprintMatches:
+            current.completionFingerprint === checkpoint.completionFingerprint,
+        },
+      );
+    }
+    const parity = await verifyParity(input.lark, input.tableIds, current.snapshot.counts);
+    return Object.freeze({
+      verified: true,
+      reusedCheckpoint: true,
+      minimumQueueAttempts,
+      parity,
+    });
+  }
+
+  const minimumQueueAttempts = input.completedBefore.priorQueueAttempts + 1;
+  const job = buildWooCommerceFinalJob({
+    operationId: input.completedBefore.operationId,
+    requestedAt: input.completedBefore.requestedAt,
+    trigger: 'manual_uat',
+    fullReconciliation: true,
+    orderCreatedAfter: target.orderHistoryStart,
+    orderCreatedBefore: input.completedBefore.requestedAt,
+  });
+  const send = await sendQueueMessage(job, {
+    attemptKey: `${input.completedBefore.operationId}:completed-state-replay`,
+    operationId: input.completedBefore.operationId,
+    minimumQueueAttempts,
+  });
+  if (send.reusedEvidence) {
+    throw closeoutError(
+      'WooCommerce replay Queue acceptance exists without a verified stage checkpoint',
+      'WOOCOMMERCE_COMPLETED_STATE_QUEUE_ACCEPTED_REVIEW_REQUIRED',
+      { stage: REPLAY_CHECKPOINT, operationId: input.completedBefore.operationId },
+    );
+  }
+  const after = await pollCompletedState({
+    operationId: input.completedBefore.operationId,
+    fullReconciliation: true,
+    requireCurrentSourceParity: true,
+    minimumQueueAttempts,
+  });
+  const replay = compareWooCommerceCompletedStateReplay(
+    {
+      operationId: input.completedBefore.operationId,
+      snapshot: input.completedBefore.snapshot,
+      fullReconciliation: true,
+      requireCurrentSourceParity: true,
+    },
+    {
+      operationId: input.completedBefore.operationId,
+      snapshot: after.snapshot,
+      fullReconciliation: true,
+      requireCurrentSourceParity: true,
+    },
+  );
+  const parity = await verifyParity(input.lark, input.tableIds, after.snapshot.counts);
+  await writeEvidence(REPLAY_CHECKPOINT, {
+    accepted: true,
+    repositoryHead: target.repositoryHead,
+    operationId: input.completedBefore.operationId,
+    minimumQueueAttempts,
+    completionFingerprint: input.completedBefore.completionFingerprint,
+    businessCountsFingerprint: fingerprint(after.snapshot.counts),
+    coverageRunCount: after.snapshot.coverageRunCount,
+    invalidCoverageCount: after.snapshot.invalidCoverageCount,
+    replay,
+    parity,
+  });
+  return Object.freeze({
+    verified: true,
+    reusedCheckpoint: false,
+    minimumQueueAttempts,
+    parity,
+  });
+}
+
+async function ensureIncrementalUat(input) {
+  const checkpoint = await readEvidenceData(INCREMENTAL_CHECKPOINT);
+  if (checkpoint) {
+    assertCheckpointHead(checkpoint);
+    const operationId = requireOperationId(checkpoint.operationId);
+    const minimumQueueAttempts = requirePositiveInteger(
+      checkpoint.minimumQueueAttempts,
+      'incrementalCheckpoint.minimumQueueAttempts',
+    );
+    const current = selectWooCommerceCompletedState({
+      operationId,
+      snapshot: await readSnapshot(operationId),
+      fullReconciliation: false,
+      requireCurrentSourceParity: false,
+    });
+    if (current.priorQueueAttempts < minimumQueueAttempts
+      || current.completionFingerprint !== checkpoint.completionFingerprint) {
+      throw closeoutError(
+        'WooCommerce Incremental checkpoint no longer matches durable state',
+        'WOOCOMMERCE_COMPLETED_STATE_INCREMENTAL_CHECKPOINT_INVALID',
+        {
+          operationId,
+          currentQueueAttempts: current.priorQueueAttempts,
+          minimumQueueAttempts,
+          completionFingerprintMatches:
+            current.completionFingerprint === checkpoint.completionFingerprint,
+        },
+      );
+    }
+    const parity = await verifyParity(input.lark, input.tableIds, current.snapshot.counts);
+    return Object.freeze({
+      verified: true,
+      reusedCheckpoint: true,
+      operationId,
+      parity,
+    });
+  }
+
+  const currentWatermark = await readWatermark();
+  const operation = await readOrCreateIncrementalOperation(currentWatermark);
+  const job = buildWooCommerceFinalJob({
+    operationId: operation.operationId,
+    requestedAt: operation.requestedAt,
+    trigger: 'manual_uat',
+    fullReconciliation: false,
+    modifiedAfter: operation.modifiedAfter,
+    orderCreatedAfter: target.orderHistoryStart,
+    orderCreatedBefore: operation.requestedAt,
+  });
+  const send = await sendQueueMessage(job, {
+    attemptKey: `${operation.operationId}:incremental-uat`,
+    operationId: operation.operationId,
+    minimumQueueAttempts: operation.minimumQueueAttempts,
+  });
+  if (send.reusedEvidence) {
+    throw closeoutError(
+      'WooCommerce Incremental Queue acceptance exists without a verified stage checkpoint',
+      'WOOCOMMERCE_COMPLETED_STATE_QUEUE_ACCEPTED_REVIEW_REQUIRED',
+      { stage: INCREMENTAL_CHECKPOINT, operationId: operation.operationId },
+    );
+  }
+  const completed = await pollCompletedState({
+    operationId: operation.operationId,
+    fullReconciliation: false,
+    requireCurrentSourceParity: false,
+    minimumQueueAttempts: operation.minimumQueueAttempts,
+  });
+  const parity = await verifyParity(input.lark, input.tableIds, completed.snapshot.counts);
+  await writeEvidence(INCREMENTAL_CHECKPOINT, {
+    accepted: true,
+    repositoryHead: target.repositoryHead,
+    operationId: operation.operationId,
+    requestedAt: operation.requestedAt,
+    modifiedAfter: operation.modifiedAfter,
+    minimumQueueAttempts: operation.minimumQueueAttempts,
+    completionFingerprint: completed.completionFingerprint,
+    parity,
+  });
+  return Object.freeze({
+    verified: true,
+    reusedCheckpoint: false,
+    operationId: operation.operationId,
+    parity,
+  });
+}
+
 async function runLocalVerification() {
   const steps = [
     ['npm', ['ci']],
@@ -457,6 +597,7 @@ async function runLocalVerification() {
     ['node', [
       '--test',
       'tests/application/woocommerce-final-completed-state-closeout.test.js',
+      'tests/application/woocommerce-final-completed-state-launcher.test.js',
       'tests/application/woocommerce-final-rollout-operator.test.js',
       'tests/application/woocommerce-runtime-wiring.test.js',
     ]],
@@ -485,6 +626,17 @@ async function assertRepositoryState() {
         headMatchesOriginMain: head === originMain,
         workingTreeClean: status.trim() === '',
       },
+    );
+  }
+}
+
+function assertEvidenceHeadBinding(repositoryHead) {
+  const relativeOutput = relative(repositoryRoot, outputRoot).split('\\').join('/');
+  if (!relativeOutput.split('/').includes(repositoryHead)) {
+    throw closeoutError(
+      'WooCommerce completed-state evidence directory is not bound to exact Repository Head',
+      'WOOCOMMERCE_COMPLETED_STATE_EVIDENCE_HEAD_MISMATCH',
+      { repositoryHead },
     );
   }
 }
@@ -633,13 +785,15 @@ async function readWatermark() {
   return Math.min(order, product);
 }
 
-async function readOrCreateIncrementalOperation() {
+async function readOrCreateIncrementalOperation(currentWatermark) {
   const path = join(outputRoot, 'incremental-operation.json');
   const existing = await readJsonIfExists(path);
   if (existing) {
+    assertCheckpointHead(existing);
     return Object.freeze({
       operationId: requireOperationId(existing.operationId),
       requestedAt: requireTimestamp(existing.requestedAt, 'incremental.requestedAt'),
+      modifiedAfter: requireTimestamp(existing.modifiedAfter, 'incremental.modifiedAfter'),
       minimumQueueAttempts: requirePositiveInteger(
         existing.minimumQueueAttempts,
         'incremental.minimumQueueAttempts',
@@ -652,8 +806,10 @@ async function readOrCreateIncrementalOperation() {
     .digest('hex')
     .slice(0, 12);
   const operation = Object.freeze({
+    repositoryHead: target.repositoryHead,
     operationId: `woo-final-incremental-${suffix}`,
     requestedAt,
+    modifiedAfter: requireTimestamp(currentWatermark, 'currentWatermark'),
     minimumQueueAttempts: 1,
   });
   await writePrivateJson(path, operation);
@@ -662,31 +818,48 @@ async function readOrCreateIncrementalOperation() {
 
 async function sendQueueMessage(job, options = {}) {
   const attemptKey = requireText(options.attemptKey, 'attemptKey');
+  const operationId = requireOperationId(options.operationId);
+  const minimumQueueAttempts = requirePositiveInteger(
+    options.minimumQueueAttempts,
+    'minimumQueueAttempts',
+  );
+  const jobSha256 = fingerprint(job);
   const path = join(outputRoot, 'queue-attempts', `${safeFile(attemptKey)}.json`);
   const existing = await readJsonIfExists(path);
   if (existing) {
+    assertCheckpointHead(existing);
+    const matches = existing.attemptKey === attemptKey
+      && existing.operationId === operationId
+      && Number(existing.minimumQueueAttempts) === minimumQueueAttempts
+      && existing.jobSha256 === jobSha256;
+    if (!matches) {
+      throw closeoutError(
+        'WooCommerce Queue attempt evidence differs from the current exact job',
+        'WOOCOMMERCE_COMPLETED_STATE_QUEUE_EVIDENCE_DRIFT',
+        { attemptKey, operationId },
+      );
+    }
     if (existing.accepted !== true) {
       throw closeoutError(
         'A prior Queue attempt was recorded without verified acceptance; blind resend is blocked',
         'WOOCOMMERCE_COMPLETED_STATE_QUEUE_ATTEMPT_UNCERTAIN',
-        { attemptKey },
+        { attemptKey, operationId },
       );
     }
     return Object.freeze({
       accepted: true,
       reusedEvidence: true,
-      minimumQueueAttempts: existing.minimumQueueAttempts,
-      jobSha256: existing.jobSha256,
+      minimumQueueAttempts,
+      jobSha256,
     });
   }
   const evidence = {
+    repositoryHead: target.repositoryHead,
     attemptKey,
+    operationId,
     accepted: false,
-    minimumQueueAttempts: requirePositiveInteger(
-      options.minimumQueueAttempts,
-      'minimumQueueAttempts',
-    ),
-    jobSha256: sha256(JSON.stringify(job)),
+    minimumQueueAttempts,
+    jobSha256,
     attemptedAt: new Date().toISOString(),
   };
   await writePrivateJson(path, evidence);
@@ -707,6 +880,7 @@ async function sendQueueMessage(job, options = {}) {
     throw closeoutError(
       `Cloudflare Queue rejected WooCommerce closeout operation (HTTP ${response.status})`,
       'WOOCOMMERCE_COMPLETED_STATE_QUEUE_SEND_FAILED',
+      { operationId },
     );
   }
   const accepted = Object.freeze({ ...evidence, accepted: true });
@@ -714,8 +888,8 @@ async function sendQueueMessage(job, options = {}) {
   return Object.freeze({
     accepted: true,
     reusedEvidence: false,
-    minimumQueueAttempts: accepted.minimumQueueAttempts,
-    jobSha256: accepted.jobSha256,
+    minimumQueueAttempts,
+    jobSha256,
   });
 }
 
@@ -772,28 +946,36 @@ async function deployAndVerify(configText, expectedTrueFlags, label) {
   if (expectedTrueFlags.length === 0) {
     assertWooCommerce2026RemoteSafeFlags(versionView);
   }
-  const [mainConsumers, dlqConsumers] = await Promise.all([
+  const [mainConsumersRaw, dlqConsumersRaw] = await Promise.all([
     wranglerJson(['queues', 'consumer', 'list', target.mainQueueName, '--json']),
     wranglerJson(['queues', 'consumer', 'list', target.dlqName, '--json']),
   ]);
-  assertQueueConsumer(mainConsumers, target.mainQueueName, {
-    maxConcurrency: 1,
-    maxBatchSize: 10,
-    maxBatchTimeout: 30,
-    maxRetries: 5,
-    deadLetterQueue: target.dlqName,
-  });
-  assertQueueConsumer(dlqConsumers, target.dlqName, {
-    maxConcurrency: 1,
-    maxBatchSize: 10,
-    maxBatchTimeout: 30,
-    maxRetries: 10,
-    deadLetterQueue: null,
-  });
+  assertWooCommerceQueueConsumerTopology(
+    consumerEntries(mainConsumersRaw),
+    target.mainQueueName,
+    {
+      maxConcurrency: 1,
+      maxBatchSize: 10,
+      maxBatchTimeout: 30,
+      maxRetries: 5,
+      deadLetterQueue: target.dlqName,
+    },
+  );
+  assertWooCommerceQueueConsumerTopology(
+    consumerEntries(dlqConsumersRaw),
+    target.dlqName,
+    {
+      maxConcurrency: 1,
+      maxBatchSize: 10,
+      maxBatchTimeout: 30,
+      maxRetries: 10,
+      deadLetterQueue: null,
+    },
+  );
   return Object.freeze({
     label,
     activeVersion,
-    configSha256: sha256(configText),
+    configSha256: fingerprint(configText),
     expectedTrueFlags: Object.freeze([...expectedTrueFlags].sort()),
   });
 }
@@ -896,6 +1078,16 @@ async function gitText(args) {
   return commandText('git', args, { timeout: 60_000 });
 }
 
+function consumerEntries(value) {
+  if (Array.isArray(value)) return value;
+  if (Array.isArray(value?.result)) return value.result;
+  if (Array.isArray(value?.consumers)) return value.consumers;
+  throw closeoutError(
+    'WooCommerce completed-state Queue consumer output has no supported collection',
+    'WOOCOMMERCE_COMPLETED_STATE_QUEUE_CONSUMER_SHAPE_INVALID',
+  );
+}
+
 function parseSecretNames(value) {
   const entries = Array.isArray(value) ? value : (value?.result ?? []);
   return Object.freeze(entries.map((item) => item?.name).filter(Boolean).sort());
@@ -912,36 +1104,6 @@ function assertExactFlags(actual, expected) {
     );
   }
   return true;
-}
-
-function assertQueueConsumer(value, queueName, expected) {
-  const entries = Array.isArray(value) ? value : (value?.result ?? value?.consumers ?? []);
-  const matches = entries.filter((item) => (
-    (item?.queue_name ?? item?.queueName ?? queueName) === queueName
-  ));
-  const consumer = matches.length === 1
-    ? matches[0]
-    : entries.length === 1 ? entries[0] : null;
-  const settings = consumer?.settings ?? consumer ?? {};
-  const deadLetter = settings.dead_letter_queue
-    ?? settings.deadLetterQueue
-    ?? settings.dead_letter_queue_name
-    ?? null;
-  const accepted = consumer
-    && Number(settings.max_concurrency ?? settings.maxConcurrency) === expected.maxConcurrency
-    && Number(settings.max_batch_size ?? settings.maxBatchSize) === expected.maxBatchSize
-    && Number(settings.max_batch_timeout ?? settings.maxBatchTimeout) === expected.maxBatchTimeout
-    && Number(settings.max_retries ?? settings.maxRetries) === expected.maxRetries
-    && (expected.deadLetterQueue === null
-      ? deadLetter === null || deadLetter === undefined || deadLetter === ''
-      : String(deadLetter) === expected.deadLetterQueue);
-  if (!accepted) {
-    throw closeoutError(
-      'WooCommerce completed-state Queue consumer contract drifted',
-      'WOOCOMMERCE_COMPLETED_STATE_QUEUE_CONSUMER_INVALID',
-      { queueName, matchCount: matches.length },
-    );
-  }
 }
 
 function compactCloudflareEnv(env) {
@@ -976,6 +1138,24 @@ async function writeEvidence(name, value) {
     writtenAt: new Date().toISOString(),
     data: sanitizeWooCommerceCompletedStateEvidence(value),
   });
+}
+
+async function readEvidenceData(name) {
+  const value = await readJsonIfExists(join(outputRoot, `${name}.json`));
+  if (!value) return null;
+  if (value.contractVersion !== WOOCOMMERCE_COMPLETED_STATE_CLOSEOUT_CONTRACT_VERSION
+    || !value.data || typeof value.data !== 'object' || Array.isArray(value.data)) {
+    throw closeoutError(
+      'WooCommerce completed-state stage checkpoint has invalid contract metadata',
+      'WOOCOMMERCE_COMPLETED_STATE_CHECKPOINT_INVALID',
+      { stage: name },
+    );
+  }
+  return value.data;
+}
+
+function assertCheckpointHead(value) {
+  requireExact(value.repositoryHead, target.repositoryHead, 'checkpoint.repositoryHead');
 }
 
 async function writePrivateJson(path, value) {
@@ -1075,8 +1255,18 @@ function sumCounts(value = {}) {
   return Object.values(value).reduce((sum, item) => sum + Number(item ?? 0), 0);
 }
 
-function sha256(value) {
-  return createHash('sha256').update(String(value)).digest('hex');
+function fingerprint(value) {
+  return createHash('sha256').update(stableJson(value)).digest('hex');
+}
+
+function stableJson(value) {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map((key) => (
+      `${JSON.stringify(key)}:${stableJson(value[key])}`
+    )).join(',')}}`;
+  }
+  return JSON.stringify(value);
 }
 
 function safeFile(value) {
