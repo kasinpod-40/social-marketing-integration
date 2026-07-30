@@ -1,3 +1,4 @@
+import { realpathSync, statSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
 
 export const REPORT_RUNTIME_SEALED_MARKER = 'MKT_REPORT_RUNTIME_WINDOW_REPAIR_SEALED';
@@ -36,7 +37,7 @@ export function readReportRuntimeSealedContext(env = {}, repositoryRoot = proces
 
   const expectedRoot = requireAbsolutePath(env[REPORT_RUNTIME_SEALED_ROOT], REPORT_RUNTIME_SEALED_ROOT);
   const actualRoot = resolve(repositoryRoot);
-  if (resolve(expectedRoot) !== actualRoot) throw sealedFailure(
+  if (!sameDirectoryIdentity(expectedRoot, actualRoot)) throw sealedFailure(
     'Report runtime sealed execution root differs from the current checkout',
     'REPORT_RUNTIME_SEALED_ROOT_MISMATCH',
   );
@@ -89,6 +90,27 @@ export function buildReportRuntimeSealedCloneArgs(originUrl, clonePath) {
     remote,
     destination,
   ]);
+}
+
+function sameDirectoryIdentity(leftPath, rightPath) {
+  const left = resolve(leftPath);
+  const right = resolve(rightPath);
+  if (left === right) return true;
+
+  try {
+    const leftReal = realpathSync.native(left);
+    const rightReal = realpathSync.native(right);
+    if (leftReal === rightReal) return true;
+
+    const leftStat = statSync(leftReal);
+    const rightStat = statSync(rightReal);
+    return leftStat.isDirectory()
+      && rightStat.isDirectory()
+      && leftStat.dev === rightStat.dev
+      && leftStat.ino === rightStat.ino;
+  } catch {
+    return false;
+  }
 }
 
 function requireAbsolutePath(value, fieldName) {
