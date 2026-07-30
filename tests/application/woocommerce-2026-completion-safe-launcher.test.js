@@ -38,7 +38,7 @@ test('safe launcher delegates only to the sealed completion child', () => {
   );
   assert.match(
     source,
-    /MKT_WOOCOMMERCE_2026_COMPLETION_SEALED_MARKER/u,
+    /WOOCOMMERCE_2026_COMPLETION_SEALED_MARKER/u,
   );
   assert.match(
     source,
