@@ -3,10 +3,14 @@ import {
   buildWooCommerceFinalSnapshotSql,
   normalizeWooCommerceFinalSnapshot,
 } from './woocommerce-final-rollout-operator.js';
+import {
+  WOOCOMMERCE_FINAL_FAILED_WORK_REASON,
+} from './woocommerce-final-failed-work-recovery.js';
 
 const OPERATION_ID = /^woo-final-(?:full|incremental)-[0-9a-f]{12}$/u;
 const EXACT_INCIDENT_OPERATION_ID = 'woo-final-full-5b56469100a9';
 const EXACT_INCIDENT_ERROR_CODE = 'WOOCOMMERCE_INVALID_JSON';
+const RECOVERY_RETENTION_MS = 7 * 86_400_000;
 const INCIDENT_TABLES = Object.freeze([
   Object.freeze(['raw_commerce_stores', 'sync_run_id']),
   Object.freeze(['raw_commerce_orders', 'sync_run_id']),
@@ -79,20 +83,68 @@ export function assertWooCommerceFinalRecoveryOnlyConfirmation(env = {}) {
 
 export function buildWooCommerceFinalRecoveryOnlySnapshotSql(input = {}) {
   const accountKey = requireText(input.accountKey, 'accountKey');
-  const operationId = requireOperationId(input.operationId);
+  const operationId = requireApprovedOperationId(input.operationId);
   const syncRunId = `woocommerce:${operationId}`;
   const base = buildWooCommerceFinalSnapshotSql({
     accountKey,
     operationId,
   }).replace(/;\s*$/u, '');
   const incidentCounts = INCIDENT_TABLES.map(([table, column]) => (
-    `(SELECT COUNT(*) FROM ${table} WHERE account_key = '${accountKey.replaceAll("'", "''")}' AND ${column} = '${syncRunId}') AS ${incidentAlias(table)}`
+    `(SELECT COUNT(*) FROM ${table} WHERE account_key = '${sqlText(accountKey)}' AND ${column} = '${syncRunId}') AS ${incidentAlias(table)}`
   )).join(', ');
   return compactSql(`SELECT base.*, ${incidentCounts} FROM (${base}) AS base;`);
 }
 
+export function buildWooCommerceFinalRecoveryOnlyMutationSql(input = {}) {
+  const operationId = requireApprovedOperationId(input.operationId);
+  const workKey = `woocommerce:${operationId}`;
+  const auditReference = requireAuditReference(input.auditReference);
+  const now = "unixepoch('now') * 1000";
+  const incidentCount = INCIDENT_TABLES.map(([table, column]) => (
+    `(SELECT COUNT(*) FROM ${table} WHERE account_key = sr.account_key AND ${column} = sr.sync_run_id)`
+  )).join(' + ');
+  return compactSql(`
+    UPDATE sync_work_runs
+    SET lifecycle_status = 'terminal',
+        terminal_reason = COALESCE(terminal_reason, '${sqlText(WOOCOMMERCE_FINAL_FAILED_WORK_REASON)}'),
+        abandoned_at = COALESCE(abandoned_at, ${now}),
+        expires_at = COALESCE(expires_at, ${now} + ${RECOVERY_RETENTION_MS}),
+        audit_reference = COALESCE(audit_reference, '${sqlText(auditReference)}'),
+        updated_at = ${now}
+    WHERE work_key = '${workKey}'
+      AND lifecycle_status = 'active'
+      AND EXISTS (
+        SELECT 1
+        FROM sync_runs sr
+        WHERE sr.sync_run_id = sync_work_runs.work_key
+          AND sr.status = 'failed'
+          AND sr.error_code = '${EXACT_INCIDENT_ERROR_CODE}'
+          AND sr.platform = 'woocommerce'
+          AND sr.account_key = 'chemistry_k'
+          AND NOT EXISTS (
+            SELECT 1 FROM data_coverage_runs dcr
+            WHERE dcr.sync_run_id = sync_work_runs.work_key
+          )
+          AND (${incidentCount}) = 0
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM sync_locks sl
+        WHERE sl.owner_id = sync_work_runs.work_key
+          AND sl.expires_at > ${now}
+      );
+    SELECT
+      changes() AS recovered_rows,
+      work_key,
+      lifecycle_status,
+      terminal_reason,
+      audit_reference
+    FROM sync_work_runs
+    WHERE work_key = '${workKey}';
+  `);
+}
+
 export function classifyWooCommerceFinalRecoveryOnlyState(row, input = {}) {
-  const operationId = requireOperationId(input.operationId);
+  const operationId = requireApprovedOperationId(input.operationId);
   const snapshot = normalizeWooCommerceFinalSnapshot(row);
   if (snapshot.workLifecycleStatus === 'active') {
     return Object.freeze({
@@ -119,7 +171,7 @@ export function classifyWooCommerceFinalRecoveryOnlyState(row, input = {}) {
 }
 
 export function verifyWooCommerceFinalRecoveryOnlyEligibility(row, input = {}) {
-  const operationId = requireOperationId(input.operationId);
+  const operationId = requireApprovedOperationId(input.operationId);
   const snapshot = normalizeWooCommerceFinalSnapshot(row);
   const incidentBusinessRows = countIncidentBusinessRows(row);
   const retainedBusinessRows = totalBusinessRows(snapshot.counts);
@@ -170,7 +222,7 @@ export function verifyWooCommerceFinalRecoveryOnlyEligibility(row, input = {}) {
 }
 
 export function verifyWooCommerceFinalRecoveryOnlyPostState(row, input = {}) {
-  const operationId = requireOperationId(input.operationId);
+  const operationId = requireApprovedOperationId(input.operationId);
   const snapshot = normalizeWooCommerceFinalSnapshot(row);
   const incidentBusinessRows = countIncidentBusinessRows(row);
   const retainedBusinessRows = totalBusinessRows(snapshot.counts);
@@ -254,12 +306,35 @@ function compactSql(value) {
   return String(value).replace(/\s+/gu, ' ').trim();
 }
 
+function requireApprovedOperationId(value) {
+  const operationId = requireOperationId(value);
+  if (operationId !== EXACT_INCIDENT_OPERATION_ID) {
+    throw recoveryOnlyError(
+      'Recovery-only operator is pinned to the approved incident operation',
+      'WOOCOMMERCE_RECOVERY_ONLY_OPERATION_NOT_APPROVED',
+      { operationIdFingerprint: sha256(operationId) },
+    );
+  }
+  return operationId;
+}
+
 function requireOperationId(value) {
   const text = requireText(value, 'operationId');
   if (!OPERATION_ID.test(text)) {
     throw recoveryOnlyError(
       'WooCommerce recovery-only operation ID is invalid',
       'WOOCOMMERCE_RECOVERY_ONLY_OPERATION_INVALID',
+    );
+  }
+  return text;
+}
+
+function requireAuditReference(value) {
+  const text = requireText(value, 'auditReference');
+  if (!/^woocommerce-final-recovery:[0-9a-f]{40,64}$/u.test(text)) {
+    throw recoveryOnlyError(
+      'WooCommerce recovery-only audit reference is invalid',
+      'WOOCOMMERCE_RECOVERY_ONLY_AUDIT_INVALID',
     );
   }
   return text;
@@ -274,6 +349,10 @@ function requireText(value, fieldName) {
     );
   }
   return value.trim();
+}
+
+function sqlText(value) {
+  return String(value).replaceAll("'", "''");
 }
 
 function sha256(value) {
