@@ -1,3 +1,5 @@
+import { DASHBOARD_METRIC_SCOPE_OPTIONS } from './dashboard-metric-readiness.js';
+
 const DASHBOARD_NAME_MAX_LENGTH = 100;
 
 /**
@@ -20,7 +22,11 @@ export const LARK_NATIVE_DASHBOARDS = deepFreeze([
       '🧭 Dashboard Top Content',
       '🧭 Dashboard Top Ads',
     ],
-    sections: ['filters', 'kpi_cards', 'comparison', 'trend', 'top_content', 'top_ads', 'data_quality'],
+    metricScopes: DASHBOARD_METRIC_SCOPE_OPTIONS,
+    sections: [
+      'filters', 'kpi_cards', 'current_total_kpis', 'period_delta_kpis', 'comparison', 'trend',
+      'top_content', 'top_ads', 'data_readiness', 'data_quality',
+    ],
   },
   {
     key: 'organic_performance',
@@ -28,7 +34,11 @@ export const LARK_NATIVE_DASHBOARDS = deepFreeze([
     audience: 'client',
     capability: 'organic',
     sourceViews: ['🧭 Dashboard Reports', '🧭 Dashboard Metrics', '🧭 Dashboard Top Content'],
-    sections: ['filters', 'kpi_cards', 'comparison', 'trend', 'platform_comparison', 'top_content', 'data_quality'],
+    metricScopes: DASHBOARD_METRIC_SCOPE_OPTIONS,
+    sections: [
+      'filters', 'kpi_cards', 'current_total_kpis', 'period_delta_kpis', 'comparison', 'trend',
+      'platform_comparison', 'top_content', 'data_readiness', 'data_quality',
+    ],
   },
   {
     key: 'paid_ads_performance',
@@ -73,6 +83,7 @@ export const LARK_NATIVE_DASHBOARD_INVARIANTS = deepFreeze({
   detailedD1ReadsAllowed: false,
   preserveNull: true,
   observedZero: 0,
+  unavailableMetricDisplay: 'N/A_with_availability_message',
   publicApiMutationMode: 'manual_ui_for_chart_and_layout',
   publicApiVerificationMode: 'list_dashboards',
 });
@@ -106,13 +117,22 @@ export function validateLarkNativeDashboardContract(
     if (dashboard.capability !== null) requireKey(dashboard.capability, 'dashboard.capability');
     requireNonEmptyTextArray(dashboard.sourceViews, 'dashboard.sourceViews');
     requireNonEmptyTextArray(dashboard.sections, 'dashboard.sections');
+    if (dashboard.metricScopes !== undefined) {
+      requireNonEmptyTextArray(dashboard.metricScopes, 'dashboard.metricScopes');
+      for (const scope of dashboard.metricScopes) {
+        if (!DASHBOARD_METRIC_SCOPE_OPTIONS.includes(scope)) {
+          throw new TypeError(`Unsupported dashboard metric scope: ${scope}`);
+        }
+      }
+    }
   }
   if (invariants?.surface !== 'lark_base_native_dashboard'
     || invariants?.externalWebDashboardAllowed !== false
     || invariants?.platformSpecificDashboardAllowed !== false
     || invariants?.accountSpecificDashboardAllowed !== false
     || invariants?.sourceOfTruth !== 'validated_report_materializations'
-    || invariants?.detailedD1ReadsAllowed !== false) {
+    || invariants?.detailedD1ReadsAllowed !== false
+    || invariants?.unavailableMetricDisplay !== 'N/A_with_availability_message') {
     throw new TypeError('Lark native dashboard invariants are unsafe');
   }
   return true;
