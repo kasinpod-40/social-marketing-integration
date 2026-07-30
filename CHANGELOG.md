@@ -10,6 +10,9 @@
   operator for pre-2026 Order and derived facts.
 - Cleanup retains Reliability audit rows and terminalizes only the replaced Full-history
   Work/Sync identity after backup, exact parity and a zero-active-lock guard.
+- Cleanup tolerates an observed partial-write gap only by inventorying and backing up each
+  side independently, persisting sanitized gap counts/fingerprints, and verifying both targets
+  are empty after their scoped deletes.
 - Stopped the prior Full-history rollout at 7,800 Orders from 2022–2023 and restored the
   Development Worker to all-false Safe state; Schedule and Production remain unchanged.
 

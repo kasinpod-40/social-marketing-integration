@@ -37,9 +37,10 @@ CONFIRM_WOOCOMMERCE_2026_HISTORY_CLEANUP=DELETE_WOOCOMMERCE_PRE_2026_ONLY \
 node scripts/woocommerce-2026-history-cleanup.mjs --execute
 ```
 
-Operator ยืนยัน Development target และ zero lock, ตรวจ D1/Lark Stable-key parity 7 ตาราง,
-Export D1 + Lark backups, Batch delete Lark, Transactional delete D1 และ verify ว่า pre-2026
-rows เป็นศูนย์.
+Operator ยืนยัน Development target และ zero lock, อ่าน target Stable keys ครบทั้ง D1/Lark
+7 ตาราง, บันทึก exact parity หรือ partial-write gap เป็น count/fingerprint, Export D1 + Lark
+backups, Batch delete Lark ตาม Lark target, Transactional delete D1 ตาม D1 target และ verify
+ว่า pre-2026 rows เป็นศูนย์. Gap ไม่ถูกซ่อนและไม่ทำให้ลบทิ้งโดยไม่มี backup.
 
 ไม่ลบ Store, Product, Variation, Category, raw Customer, raw Coupon, Coverage หรือ DLQ audit
 metadata. หลัง backup แล้วจะปิดเฉพาะ Work/Sync identity ของ Full-history operation เดิมเป็น

@@ -21,6 +21,7 @@ import {
   buildWooCommerce2026CleanupKeysSql,
   buildWooCommerce2026CleanupVerifySql,
   selectWooCommerce2026CleanupLarkRecords,
+  summarizeWooCommerce2026CleanupParity,
   validateWooCommerce2026CleanupFinal,
   validateWooCommerce2026CleanupKeys,
 } from './lib/woocommerce-2026-history-cleanup.js';
@@ -95,8 +96,7 @@ async function execute() {
       contract,
     ),
   ]));
-  const oldOrderKeys = new Set(d1KeysByTable.get('rawCommerceOrders'));
-  const plans = [];
+  const liveByTable = new Map();
   for (const contract of WOOCOMMERCE_2026_CLEANUP_TABLES) {
     const schema = schemaByKey.get(contract.tableKey);
     const tableId = tableIdByName.get(schema?.tableName);
@@ -107,26 +107,39 @@ async function execute() {
         { tableKey: contract.tableKey },
       );
     }
+    liveByTable.set(contract.tableKey, Object.freeze({
+      schema,
+      tableId,
+      records: await lark.listRecords({ tableId, pageSize: 500 }),
+    }));
+  }
+  const rawOrderContract = WOOCOMMERCE_2026_CLEANUP_TABLES.find(
+    (contract) => contract.tableKey === 'rawCommerceOrders',
+  );
+  const larkOldOrders = selectWooCommerce2026CleanupLarkRecords(
+    liveByTable.get('rawCommerceOrders').records,
+    rawOrderContract,
+  );
+  const oldOrderKeys = new Set([
+    ...d1KeysByTable.get('rawCommerceOrders'),
+    ...larkOldOrders.map((record) => String(
+      record.fields?.[rawOrderContract.keyField] ?? '',
+    ).trim()),
+  ]);
+  const plans = [];
+  for (const contract of WOOCOMMERCE_2026_CLEANUP_TABLES) {
+    const { tableId, records: liveRecords } = liveByTable.get(contract.tableKey);
     const keys = d1KeysByTable.get(contract.tableKey);
     const records = selectWooCommerce2026CleanupLarkRecords(
-      await lark.listRecords({ tableId, pageSize: 500 }),
+      liveRecords,
       contract,
       { oldOrderKeys },
     );
     const larkKeys = records.map((record) => String(
       record.fields?.[contract.keyField] ?? '',
     ).trim());
-    const found = new Set(larkKeys);
-    if (records.length !== keys.length
-      || found.size !== larkKeys.length
-      || keys.some((key) => !found.has(key))) {
-      throw cleanupError(
-        'WooCommerce cleanup D1/Lark Stable-key parity failed before delete',
-        'WOOCOMMERCE_2026_CLEANUP_PARITY_FAILED',
-        { tableKey: contract.tableKey, d1Count: keys.length, larkCount: records.length },
-      );
-    }
-    plans.push(Object.freeze({ contract, tableId, keys, records }));
+    const parity = summarizeWooCommerce2026CleanupParity(keys, larkKeys, contract);
+    plans.push(Object.freeze({ contract, tableId, keys, records, larkKeys, parity }));
   }
 
   const backupPath = join(outputRoot, `d1-before-cleanup-${Date.now()}.sql`);
@@ -157,6 +170,11 @@ async function execute() {
       sha256: digest(backupBytes),
     },
     plannedLarkDeletes: plans.reduce((sum, plan) => sum + plan.records.length, 0),
+    parity: plans.map((plan) => ({
+      ...plan.parity,
+      d1KeySetSha256: digest(JSON.stringify([...plan.keys].sort())),
+      larkKeySetSha256: digest(JSON.stringify([...plan.larkKeys].sort())),
+    })),
   });
 
   const larkDeleted = {};
@@ -172,12 +190,11 @@ async function execute() {
   validateWooCommerce2026CleanupFinal(after);
 
   for (const plan of plans) {
-    const remaining = await lark.searchRecordsByFieldValues({
-      tableId: plan.tableId,
-      fieldName: plan.contract.keyField,
-      values: plan.keys,
-      pageSize: 500,
-    });
+    const remaining = selectWooCommerce2026CleanupLarkRecords(
+      await lark.listRecords({ tableId: plan.tableId, pageSize: 500 }),
+      plan.contract,
+      { oldOrderKeys },
+    );
     if (remaining.length !== 0) throw cleanupError(
       'WooCommerce pre-2026 Lark rows remain after cleanup',
       'WOOCOMMERCE_2026_CLEANUP_LARK_VERIFY_FAILED',
@@ -191,6 +208,7 @@ async function execute() {
     d1Verified: true,
     larkVerified: true,
     larkDeleted,
+    parityBeforeCleanup: plans.map((plan) => plan.parity),
     d1BackupSha256: digest(backupBytes),
     executionFlagsAllFalse: true,
     schedule: false,
