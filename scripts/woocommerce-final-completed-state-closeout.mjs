@@ -11,18 +11,17 @@ import {
   stat,
   writeFile,
 } from 'node:fs/promises';
-import { join, relative, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { promisify } from 'node:util';
+import { createLarkBitableClientFromEnv } from '../packages/connectors/src/lark/lark-bitable.client.js';
 import { readDevVars } from './lib/dev-vars.js';
 import { parseJsoncObject } from './lib/chatwoot-safe-wrangler-config.js';
-import { createLarkBitableClientFromEnv } from '../packages/connectors/src/lark/lark-bitable.client.js';
 import {
   buildWooCommerceConfigWindows,
   buildWooCommerceFinalJob,
   buildWooCommerceFinalSnapshotSql,
   buildWooCommerceWatermarkSql,
   compareWooCommerceParity,
-  createWooCommerceLarkSchemaContract,
   listWooCommerceTableBindings,
 } from './lib/woocommerce-final-rollout-operator.js';
 import {
@@ -33,6 +32,7 @@ import {
 } from './lib/woocommerce-final-one-command.js';
 import {
   assertWooCommerce2026RemoteSafeFlags,
+  collectEnabledMktFlags,
   selectExactlyOneActiveWorkerVersion,
 } from './lib/woocommerce-2026-completion-one-command.js';
 import {
@@ -148,16 +148,19 @@ async function executeCloseout() {
   requireExact(env.MKT_ENV, 'development', 'MKT_ENV');
   requireExact(env.MKT_CUSTOMER_PROFILE, 'integration_workspace', 'MKT_CUSTOMER_PROFILE');
   requireExact(env.MKT_CONNECTION_CUSTOMER_KEY, 'chemistry_k', 'MKT_CONNECTION_CUSTOMER_KEY');
+
+  currentStage = 'repository-and-local-verification';
   await assertRepositoryState();
   await mkdir(outputRoot, { recursive: true, mode: 0o700 });
   await runLocalVerification();
+  await assertRepositoryState();
 
   const configPath = resolveRepositoryFile(
     env.MKT_WOOCOMMERCE_ROLLOUT_WRANGLER_CONFIG ?? 'wrangler.sync.jsonc',
   );
   const configText = await readFile(configPath, 'utf8');
-  const config = parseJsoncObject(configText);
-  const runtimeConfig = Object.freeze({ ...(config.vars ?? {}), ...env });
+  const parsedConfig = parseJsoncObject(configText);
+  const runtimeConfig = Object.freeze({ ...(parsedConfig.vars ?? {}), ...env });
   const databaseName = env.MKT_WOOCOMMERCE_ROLLOUT_DATABASE_NAME
     ?? 'social-mkt-state-dev';
   const workerName = env.MKT_WOOCOMMERCE_ROLLOUT_WORKER_NAME
@@ -196,6 +199,7 @@ async function executeCloseout() {
       await wranglerText(['queues', 'list', '--json'], { env: authenticatedEnv }),
       mainQueueName,
     );
+
   target = Object.freeze({
     env: authenticatedEnv,
     runtimeConfig,
@@ -240,6 +244,7 @@ async function executeCloseout() {
     operationId: WOOCOMMERCE_COMPLETED_STATE_OPERATION_ID,
     snapshot: await readSnapshot(WOOCOMMERCE_COMPLETED_STATE_OPERATION_ID),
     fullReconciliation: true,
+    requireCurrentSourceParity: true,
   });
   const lark = createLarkBitableClientFromEnv(env);
   const tableIds = validateWooCommerceCompletedStateLarkTables({
@@ -266,11 +271,11 @@ async function executeCloseout() {
     'MKT_WOOCOMMERCE_LARK_WRITE_ENABLED',
   ]);
   assertExactFlags(windows.closeoutTrueFlags, []);
-  latestSafeConfig = windows.safe;
 
   currentStage = 'fresh-d1-backup';
   const backup = await backupD1();
   await writeEvidence('02-d1-backup', backup);
+  latestSafeConfig = windows.safe;
 
   currentStage = 'manual-uat-window';
   const uatDeployment = await deployAndVerify(
@@ -301,6 +306,7 @@ async function executeCloseout() {
   const completedAfterReplay = await pollCompletedState({
     operationId: completedBefore.operationId,
     fullReconciliation: true,
+    requireCurrentSourceParity: true,
     minimumQueueAttempts: replayMinimumAttempts,
   });
   const replay = compareWooCommerceCompletedStateReplay(
@@ -308,11 +314,13 @@ async function executeCloseout() {
       operationId: completedBefore.operationId,
       snapshot: completedBefore.snapshot,
       fullReconciliation: true,
+      requireCurrentSourceParity: true,
     },
     {
       operationId: completedBefore.operationId,
       snapshot: completedAfterReplay.snapshot,
       fullReconciliation: true,
+      requireCurrentSourceParity: true,
     },
   );
   const replayParity = await verifyParity(
@@ -330,7 +338,6 @@ async function executeCloseout() {
   currentStage = 'incremental-uat';
   const watermark = await readWatermark();
   const incremental = await readOrCreateIncrementalOperation();
-  const incrementalMinimumAttempts = incremental.minimumQueueAttempts;
   const incrementalJob = buildWooCommerceFinalJob({
     operationId: incremental.operationId,
     requestedAt: incremental.requestedAt,
@@ -342,12 +349,13 @@ async function executeCloseout() {
   });
   const incrementalSend = await sendQueueMessage(incrementalJob, {
     attemptKey: `${incremental.operationId}:incremental-uat`,
-    minimumQueueAttempts: incrementalMinimumAttempts,
+    minimumQueueAttempts: incremental.minimumQueueAttempts,
   });
   const incrementalCompleted = await pollCompletedState({
     operationId: incremental.operationId,
     fullReconciliation: false,
-    minimumQueueAttempts: incrementalMinimumAttempts,
+    requireCurrentSourceParity: false,
+    minimumQueueAttempts: incremental.minimumQueueAttempts,
   });
   const incrementalParity = await verifyParity(
     lark,
@@ -383,6 +391,7 @@ async function executeCloseout() {
     operationId: completedBefore.operationId,
     snapshot: await readSnapshot(completedBefore.operationId),
     fullReconciliation: true,
+    requireCurrentSourceParity: false,
   });
   if (finalCompleted.completionFingerprint !== completedBefore.completionFingerprint) {
     throw closeoutError(
@@ -442,21 +451,31 @@ async function executeCloseout() {
 }
 
 async function runLocalVerification() {
-  await command('npm', ['run', 'check'], { timeout: 600_000 });
-  await command('node', [
-    '--test',
-    'tests/application/woocommerce-final-completed-state-closeout.test.js',
-    'tests/application/woocommerce-final-rollout-operator.test.js',
-    'tests/application/woocommerce-runtime-wiring.test.js',
-  ], { timeout: 600_000 });
-  await command('npm', ['run', 'deploy:dry-run'], { timeout: 600_000 });
+  const steps = [
+    ['npm', ['ci']],
+    ['npm', ['run', 'check']],
+    ['node', [
+      '--test',
+      'tests/application/woocommerce-final-completed-state-closeout.test.js',
+      'tests/application/woocommerce-final-rollout-operator.test.js',
+      'tests/application/woocommerce-runtime-wiring.test.js',
+    ]],
+    ['npm', ['test']],
+    ['npm', ['run', 'test:report-reliability']],
+    ['npm', ['audit', '--audit-level=high']],
+    ['npm', ['run', 'deploy:dry-run']],
+  ];
+  for (const [commandName, args] of steps) {
+    await command(commandName, args, { timeout: 900_000 });
+  }
 }
 
 async function assertRepositoryState() {
+  await gitText(['fetch', 'origin', 'main', '--quiet']);
   const branch = await gitText(['branch', '--show-current']);
   const head = await gitText(['rev-parse', 'HEAD']);
   const originMain = await gitText(['rev-parse', 'origin/main']);
-  const status = await gitText(['status', '--porcelain', '--untracked-files=all'], false);
+  const status = await gitText(['status', '--porcelain', '--untracked-files=all']);
   if (branch !== 'main' || head !== originMain || status.trim() !== '') {
     throw closeoutError(
       'WooCommerce completed-state closeout requires clean current main',
@@ -555,12 +574,11 @@ async function readSnapshot(operationId) {
 }
 
 async function pollCompletedState(input) {
-  let latest = null;
   for (let poll = 0; poll < VERIFY_MAX_POLLS; poll += 1) {
-    latest = await readSnapshot(input.operationId);
+    const snapshot = await readSnapshot(input.operationId);
     const classification = classifyWooCommerceCompletedStatePoll({
       ...input,
-      snapshot: latest,
+      snapshot,
     });
     if (classification.complete) return classification.selected;
     if (classification.terminalFailure) {
@@ -606,7 +624,10 @@ async function readWatermark() {
     throw closeoutError(
       'WooCommerce incremental watermark is unavailable',
       'WOOCOMMERCE_COMPLETED_STATE_WATERMARK_MISSING',
-      { orderWatermarkAvailable: Number.isSafeInteger(order), productWatermarkAvailable: Number.isSafeInteger(product) },
+      {
+        orderWatermarkAvailable: Number.isSafeInteger(order),
+        productWatermarkAvailable: Number.isSafeInteger(product),
+      },
     );
   }
   return Math.min(order, product);
@@ -701,7 +722,10 @@ async function sendQueueMessage(job, options = {}) {
 async function backupD1() {
   const directory = join(outputRoot, 'backups');
   await mkdir(directory, { recursive: true, mode: 0o700 });
-  const path = join(directory, `social-mkt-state-dev-before-completed-state-${Date.now()}.sql`);
+  const path = join(
+    directory,
+    `social-mkt-state-dev-before-completed-state-${Date.now()}.sql`,
+  );
   await wranglerText([
     'd1', 'export', target.databaseName,
     '--remote', '--config', target.configPath,
@@ -743,10 +767,11 @@ async function deployAndVerify(configText, expectedTrueFlags, label) {
     '--config', target.configPath,
     '--json',
   ]);
-  assertExactFlags(
-    assertWooCommerce2026RemoteSafeFlagsOrExpected(versionView, expectedTrueFlags),
-    expectedTrueFlags,
-  );
+  const observedTrueFlags = collectEnabledMktFlags(versionView);
+  assertExactFlags(observedTrueFlags, expectedTrueFlags);
+  if (expectedTrueFlags.length === 0) {
+    assertWooCommerce2026RemoteSafeFlags(versionView);
+  }
   const [mainConsumers, dlqConsumers] = await Promise.all([
     wranglerJson(['queues', 'consumer', 'list', target.mainQueueName, '--json']),
     wranglerJson(['queues', 'consumer', 'list', target.dlqName, '--json']),
@@ -771,15 +796,6 @@ async function deployAndVerify(configText, expectedTrueFlags, label) {
     configSha256: sha256(configText),
     expectedTrueFlags: Object.freeze([...expectedTrueFlags].sort()),
   });
-}
-
-function assertWooCommerce2026RemoteSafeFlagsOrExpected(versionView, expected) {
-  if (expected.length === 0) {
-    assertWooCommerce2026RemoteSafeFlags(versionView);
-    return [];
-  }
-  const flags = collectRemoteTrueFlags(versionView);
-  return flags;
 }
 
 async function withGeneratedConfig(configText, callback) {
@@ -841,13 +857,14 @@ async function wranglerJson(args, options = {}) {
 
 async function wranglerText(args, options = {}) {
   return commandText('npx', ['wrangler', ...args], {
-    env: target?.env ?? options.env ?? process.env,
+    env: options.env ?? target?.env ?? process.env,
     timeout: options.timeout ?? 180_000,
   });
 }
 
 async function command(commandName, args, options = {}) {
-  await commandText(commandName, args, { ...options, inherit: true });
+  const result = await commandText(commandName, args, options);
+  if (result) process.stdout.write(`${result}\n`);
 }
 
 async function commandText(commandName, args, options = {}) {
@@ -858,12 +875,8 @@ async function commandText(commandName, args, options = {}) {
       encoding: 'utf8',
       timeout: options.timeout ?? 180_000,
       maxBuffer: 128 * 1024 * 1024,
-      ...(options.inherit ? {} : {}),
     });
-    if (options.inherit) {
-      if (result.stdout) process.stdout.write(result.stdout);
-      if (result.stderr) process.stderr.write(result.stderr);
-    }
+    if (result.stderr) process.stderr.write(result.stderr);
     return String(result.stdout ?? '').trim();
   } catch (cause) {
     throw closeoutError(
@@ -879,45 +892,13 @@ async function commandText(commandName, args, options = {}) {
   }
 }
 
-async function gitText(args, requireSuccess = true) {
-  try {
-    return await commandText('git', args, { timeout: 60_000 });
-  } catch (error) {
-    if (requireSuccess) throw error;
-    return '';
-  }
+async function gitText(args) {
+  return commandText('git', args, { timeout: 60_000 });
 }
 
 function parseSecretNames(value) {
   const entries = Array.isArray(value) ? value : (value?.result ?? []);
   return Object.freeze(entries.map((item) => item?.name).filter(Boolean).sort());
-}
-
-function collectRemoteTrueFlags(value) {
-  const flags = new Map();
-  visit(value);
-  return Object.freeze([...flags.entries()]
-    .filter(([, enabled]) => enabled)
-    .map(([name]) => name)
-    .sort());
-
-  function visit(node) {
-    if (Array.isArray(node)) {
-      for (const item of node) visit(item);
-      return;
-    }
-    if (!node || typeof node !== 'object') return;
-    for (const [key, nested] of Object.entries(node)) {
-      if (/^MKT_[A-Z0-9_]+_ENABLED$/u.test(key)) {
-        flags.set(key, booleanLike(nested));
-      }
-      visit(nested);
-    }
-    if (typeof node.name === 'string'
-      && /^MKT_[A-Z0-9_]+_ENABLED$/u.test(node.name)) {
-      flags.set(node.name, booleanLike(node.text ?? node.value ?? node.json ?? node.data));
-    }
-  }
 }
 
 function assertExactFlags(actual, expected) {
@@ -938,7 +919,9 @@ function assertQueueConsumer(value, queueName, expected) {
   const matches = entries.filter((item) => (
     (item?.queue_name ?? item?.queueName ?? queueName) === queueName
   ));
-  const consumer = matches.length === 1 ? matches[0] : entries.length === 1 ? entries[0] : null;
+  const consumer = matches.length === 1
+    ? matches[0]
+    : entries.length === 1 ? entries[0] : null;
   const settings = consumer?.settings ?? consumer ?? {};
   const deadLetter = settings.dead_letter_queue
     ?? settings.deadLetterQueue
@@ -996,9 +979,7 @@ async function writeEvidence(name, value) {
 }
 
 async function writePrivateJson(path, value) {
-  await mkdir(resolve(path, '..'), { recursive: true, mode: 0o700 }).catch(async () => {
-    await mkdir(join(path, '..'), { recursive: true, mode: 0o700 });
-  });
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   const temporary = `${path}.${process.pid}.${Date.now()}.tmp`;
   await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, {
     mode: 0o600,
@@ -1088,12 +1069,6 @@ function requirePositiveInteger(value, fieldName) {
     );
   }
   return number;
-}
-
-function booleanLike(value) {
-  return value === true
-    || value === 1
-    || String(value ?? '').trim().toLowerCase() === 'true';
 }
 
 function sumCounts(value = {}) {
