@@ -1,3 +1,8 @@
+import {
+  DASHBOARD_METRIC_AVAILABILITY_OPTIONS,
+  DASHBOARD_METRIC_SCOPE_OPTIONS,
+} from './dashboard-metric-readiness.js';
+
 /**
  * Universal Dashboard contract.
  *
@@ -13,6 +18,9 @@ export const UNIVERSAL_MARKETING_DASHBOARD_CONTRACT = deepFreeze({
   capabilityDiscovery: 'materialization.capability',
   accountDiscovery: 'materialization.accountId',
   metricDiscovery: 'materialization.metricPayload.clientVisible',
+  metricScopeDiscovery: 'materialization.metricPayload.metricScope',
+  metricScopeOptions: DASHBOARD_METRIC_SCOPE_OPTIONS,
+  metricAvailabilityOptions: DASHBOARD_METRIC_AVAILABILITY_OPTIONS,
   collectionDiscovery: 'materialization.collections',
   periodDiscovery: 'materialization.period',
   filterKeys: [
@@ -24,13 +32,17 @@ export const UNIVERSAL_MARKETING_DASHBOARD_CONTRACT = deepFreeze({
     'periodKind',
     'windowDays',
     'reportSettingKey',
+    'metricScope',
   ],
   sectionStrategy: 'group_by_discovered_capability',
+  metricCardStrategy: 'group_by_discovered_metric_scope',
   collectionStrategy: 'render_discovered_collection_kinds',
   legacyCollectionCompatibility: ['topContent', 'topAds'],
   dataQuality: {
     preserveNull: true,
     observedZero: 0,
+    unavailableValueDisplay: 'N/A',
+    availabilityMetadataMode: 'payload_or_safe_derived',
     warnWhenStatusIsNot: 'complete',
     exposeCoverageRate: true,
   },
@@ -38,6 +50,7 @@ export const UNIVERSAL_MARKETING_DASHBOARD_CONTRACT = deepFreeze({
     platformSpecificDashboardCode: false,
     capabilitySpecificDashboardCode: false,
     collectionSpecificDashboardCode: false,
+    metricSpecificDashboardCode: false,
     platformSpecificLarkView: false,
     metricSpecificColumnRequired: false,
     accountSpecificDashboardCode: false,
@@ -57,6 +70,9 @@ export function validateUniversalMarketingDashboardContract(
   if (value.sourceOfTruth !== 'validated_report_materializations') {
     throw new TypeError('Universal Marketing Dashboard must read validated materializations only');
   }
+  if (value.metricCardStrategy !== 'group_by_discovered_metric_scope') {
+    throw new TypeError('Universal Marketing Dashboard metrics must be grouped by discovered scope');
+  }
   if (value.collectionStrategy !== 'render_discovered_collection_kinds') {
     throw new TypeError('Universal Marketing Dashboard collections must be dynamically discovered');
   }
@@ -66,9 +82,14 @@ export function validateUniversalMarketingDashboardContract(
   if (new Set(value.filterKeys).size !== value.filterKeys.length) {
     throw new TypeError('Universal Marketing Dashboard filter keys must be unique');
   }
+  if (!sameOptions(value.metricScopeOptions, DASHBOARD_METRIC_SCOPE_OPTIONS)
+    || !sameOptions(value.metricAvailabilityOptions, DASHBOARD_METRIC_AVAILABILITY_OPTIONS)) {
+    throw new TypeError('Universal Marketing Dashboard metric readiness options mismatch');
+  }
   if (value.invariants?.platformSpecificDashboardCode !== false
     || value.invariants?.capabilitySpecificDashboardCode !== false
     || value.invariants?.collectionSpecificDashboardCode !== false
+    || value.invariants?.metricSpecificDashboardCode !== false
     || value.invariants?.platformSpecificLarkView !== false
     || value.invariants?.metricSpecificColumnRequired !== false
     || value.invariants?.accountSpecificDashboardCode !== false
@@ -76,6 +97,12 @@ export function validateUniversalMarketingDashboardContract(
     throw new TypeError('Universal Marketing Dashboard invariants are unsafe');
   }
   return true;
+}
+
+function sameOptions(left, right) {
+  return Array.isArray(left)
+    && left.length === right.length
+    && left.every((value, index) => value === right[index]);
 }
 
 function deepFreeze(value) {
