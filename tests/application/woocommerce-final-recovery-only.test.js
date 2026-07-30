@@ -28,6 +28,9 @@ const COUNT_KEYS = Object.freeze([
   'commerce_daily_sales_facts',
   'commerce_product_daily_facts',
 ]);
+const INCIDENT_COUNT_KEYS = Object.freeze(
+  COUNT_KEYS.map((key) => `incident_${key}`),
+);
 
 function snapshotRow(overrides = {}) {
   return {
@@ -44,6 +47,7 @@ function snapshotRow(overrides = {}) {
     coverage_run_count: 0,
     invalid_coverage_count: 0,
     ...Object.fromEntries(COUNT_KEYS.map((key) => [key, 0])),
+    ...Object.fromEntries(INCIDENT_COUNT_KEYS.map((key) => [key, 0])),
     ...overrides,
   };
 }
@@ -75,16 +79,24 @@ test('exact preflight snapshot is read-only and operation-scoped', () => {
   assert.match(sql, /^SELECT /u);
   assert.match(sql, /woocommerce:woo-final-full-5b56469100a9/u);
   assert.match(sql, /account_key = 'chemistry_k'/u);
+  assert.match(sql, /incident_raw_commerce_stores/u);
+  assert.match(sql, /last_sync_run_id = 'woocommerce:woo-final-full-5b56469100a9'/u);
   assert.doesNotMatch(sql, /\b(?:UPDATE|DELETE|INSERT|DROP|ALTER|CREATE)\b/iu);
 });
 
-test('eligibility accepts only exact invalid-json unlocked zero-fact single-attempt stale work', () => {
-  const result = verifyWooCommerceFinalRecoveryOnlyEligibility(snapshotRow(), {
+test('eligibility accepts retained master facts but requires zero facts from the failed operation', () => {
+  const result = verifyWooCommerceFinalRecoveryOnlyEligibility(snapshotRow({
+    raw_commerce_stores: 1,
+    raw_commerce_products: 250,
+    commerce_product_state: 250,
+  }), {
     operationId: OPERATION_ID,
   });
   assert.equal(result.eligible, true);
   assert.equal(result.workKey, `woocommerce:${OPERATION_ID}`);
   assert.equal(result.businessRows, 0);
+  assert.equal(result.incidentBusinessRows, 0);
+  assert.equal(result.retainedBusinessRows, 501);
 
   const rejected = [
     snapshotRow({ sync_run_status: 'running' }),
@@ -93,7 +105,7 @@ test('eligibility accepts only exact invalid-json unlocked zero-fact single-atte
     snapshotRow({ queue_operation_attempts: 2 }),
     snapshotRow({ coverage_run_count: 1 }),
     snapshotRow({ completion_json: JSON.stringify({ complete: true }) }),
-    snapshotRow({ raw_commerce_orders: 1 }),
+    snapshotRow({ incident_raw_commerce_orders: 1 }),
   ];
   for (const row of rejected) {
     assert.throws(
@@ -126,17 +138,20 @@ test('state classifier distinguishes active recovery from already terminal recov
   );
 });
 
-test('post-state requires terminal lifecycle without business, queue, coverage or phase drift', () => {
+test('post-state requires terminal lifecycle without incident, queue, coverage or phase drift', () => {
   const result = verifyWooCommerceFinalRecoveryOnlyPostState(snapshotRow({
     work_lifecycle_status: 'terminal',
+    raw_commerce_products: 250,
+    commerce_product_state: 250,
   }), { operationId: OPERATION_ID });
   assert.equal(result.verified, true);
   assert.equal(result.businessRows, 0);
+  assert.equal(result.retainedBusinessRows, 500);
 
   assert.throws(
     () => verifyWooCommerceFinalRecoveryOnlyPostState(snapshotRow({
       work_lifecycle_status: 'terminal',
-      commerce_order_state: 1,
+      incident_commerce_order_state: 1,
     }), { operationId: OPERATION_ID }),
     (error) => error?.code === 'WOOCOMMERCE_RECOVERY_ONLY_POST_VERIFY_FAILED',
   );
