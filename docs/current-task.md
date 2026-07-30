@@ -8,7 +8,7 @@ CURRENT_PROGRAM                     = WOOCOMMERCE_COMPLETED_STATE_CLOSEOUT_V1
 BASE_MAIN_SHA                       = 05ddfd8f30bdb5ea01d6e604fba501b02413b934
 BRANCH                              = hotfix/woocommerce-completed-state-closeout-v1
 IMPLEMENTATION_PR                   = #308 / DRAFT / DO_NOT_MERGE
-BRANCH_VERIFICATION                 = IN_PROGRESS
+BRANCH_VERIFICATION                 = REQUIRED_ON_FINAL_EXACT_HEAD
 REMOTE_ACTION_DURING_IMPLEMENTATION = NONE
 WORKER_DEPLOYMENT                   = NOT_RUN
 QUEUE_MESSAGE                       = NOT_SENT
@@ -76,6 +76,8 @@ completed-state admission from completion_json
 - Run one separately persisted incremental UAT operation.
 - Persist Queue attempt evidence and block blind resend after uncertain acceptance.
 - Return Worker to exact all-false state on success and failure.
+- Use the public launcher to reuse shared modern/legacy Queue consumer normalization and expose the
+  normalized DLQ identity to the completed-state verifier.
 
 ## Out of scope
 
@@ -107,6 +109,17 @@ admission. Raw Customer/Coupon rows are intentionally excluded because the 2026 
 retained older Raw rows. Incremental completion contains delta counters and must not be compared with
 current total Raw counts.
 
+## Live entry after Review and Merge
+
+```text
+CONFIRM_WOOCOMMERCE_COMPLETED_STATE_CLOSEOUT=\
+CLOSE_WOO_FINAL_FULL_011368480910_FROM_COMPLETED_STATE_ONLY \
+node scripts/woocommerce-final-completed-state-closeout-launcher.mjs --execute
+```
+
+Direct operator execution is not the approved handoff. The launcher installs the narrowly scoped npx
+proxy that adapts only `wrangler queues consumer list ... --json`; all other commands pass through.
+
 ## Acceptance criteria
 
 ```text
@@ -116,6 +129,7 @@ Same-operation Queue attempt increased                  PASS required
 Full completion fingerprint unchanged                   PASS required
 Business and Coverage counts unchanged by replay        PASS required
 Incremental UAT completed and parity verified            PASS required
+Queue modern/legacy/DLQ topology bridge                 PASS required
 Active Work / Lock / Queue operation                    0 / 0 / 0
 Worker execution flags                                  all false
 Schedule / Production                                   disabled / blocked
@@ -128,7 +142,7 @@ Success markers                                         WOOCOMMERCE_2026_COMPLET
 ```text
 npm ci
 npm run check
-focused completed-state / Final / runtime tests
+focused completed-state / Final / runtime / Queue adapter tests
 npm test
 npm run test:report-reliability
 npm audit --audit-level=high
@@ -143,8 +157,11 @@ Branch Verification on exact PR Head
 - Added guarded closeout operator with clean-current-main enforcement, full local gates, bounded D1
   reads, fresh backup, exact Worker windows, parity, same-operation replay, incremental UAT and
   automatic all-false restore.
+- Added a public launcher, closeout-specific npx proxy and pure Queue-output adapter that reuse the
+  shared Queue topology normalization, bridge `batch_size` / `max_wait_time_ms`, normalize empty DLQ
+  identity and expose `settings.dead_letter_queue` without changing the reviewed shared adapter.
 - Added focused regressions for retired phase admission, retained Raw Customer/Coupon semantics,
   incremental delta semantics, Source drift, identity/scope/Coverage drift, replay drift, remote
-  preflight and no replacement Full admission.
+  preflight, Queue output containers/conflicts and no replacement Full admission.
 - Added detailed contract at `docs/tasks/woocommerce-completed-state-closeout-v1.md`.
 - Repository implementation has performed no Remote action.
