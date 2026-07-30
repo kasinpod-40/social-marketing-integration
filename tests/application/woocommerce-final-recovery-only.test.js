@@ -28,8 +28,27 @@ const COUNT_KEYS = Object.freeze([
   'commerce_daily_sales_facts',
   'commerce_product_daily_facts',
 ]);
+const INCIDENT_TABLE_KEYS = Object.freeze([
+  'raw_commerce_stores',
+  'raw_commerce_orders',
+  'raw_commerce_order_items',
+  'raw_commerce_products',
+  'raw_commerce_product_variations',
+  'raw_commerce_categories',
+  'raw_commerce_customers',
+  'raw_commerce_coupons',
+  'raw_commerce_refunds',
+  'commerce_store_state',
+  'commerce_order_state',
+  'commerce_order_status_observations',
+  'commerce_order_line_facts',
+  'commerce_product_state',
+  'commerce_customer_aggregates',
+  'commerce_daily_sales_facts',
+  'commerce_product_daily_facts',
+]);
 const INCIDENT_COUNT_KEYS = Object.freeze(
-  COUNT_KEYS.map((key) => `incident_${key}`),
+  INCIDENT_TABLE_KEYS.map((key) => `incident_${key}`),
 );
 
 function snapshotRow(overrides = {}) {
@@ -71,7 +90,7 @@ test('recovery-only arguments and confirmation are pinned to the current exact i
   }), true);
 });
 
-test('exact preflight snapshot is read-only and operation-scoped', () => {
+test('exact preflight snapshot is read-only and operation-scoped across every D1 write table', () => {
   const sql = buildWooCommerceFinalRecoveryOnlySnapshotSql({
     accountKey: 'chemistry_k',
     operationId: OPERATION_ID,
@@ -79,8 +98,12 @@ test('exact preflight snapshot is read-only and operation-scoped', () => {
   assert.match(sql, /^SELECT /u);
   assert.match(sql, /woocommerce:woo-final-full-5b56469100a9/u);
   assert.match(sql, /account_key = 'chemistry_k'/u);
-  assert.match(sql, /incident_raw_commerce_stores/u);
-  assert.match(sql, /last_sync_run_id = 'woocommerce:woo-final-full-5b56469100a9'/u);
+  for (const table of INCIDENT_TABLE_KEYS) {
+    assert.match(sql, new RegExp(`incident_${table}`, 'u'));
+  }
+  assert.match(sql, /commerce_store_state[^;]+last_sync_run_id = 'woocommerce:woo-final-full-5b56469100a9'/u);
+  assert.match(sql, /commerce_order_status_observations[^;]+sync_run_id = 'woocommerce:woo-final-full-5b56469100a9'/u);
+  assert.match(sql, /commerce_order_line_facts[^;]+last_sync_run_id = 'woocommerce:woo-final-full-5b56469100a9'/u);
   assert.doesNotMatch(sql, /\b(?:UPDATE|DELETE|INSERT|DROP|ALTER|CREATE)\b/iu);
 });
 
@@ -106,6 +129,9 @@ test('eligibility accepts retained master facts but requires zero facts from the
     snapshotRow({ coverage_run_count: 1 }),
     snapshotRow({ completion_json: JSON.stringify({ complete: true }) }),
     snapshotRow({ incident_raw_commerce_orders: 1 }),
+    snapshotRow({ incident_commerce_store_state: 1 }),
+    snapshotRow({ incident_commerce_order_status_observations: 1 }),
+    snapshotRow({ incident_commerce_order_line_facts: 1 }),
   ];
   for (const row of rejected) {
     assert.throws(
