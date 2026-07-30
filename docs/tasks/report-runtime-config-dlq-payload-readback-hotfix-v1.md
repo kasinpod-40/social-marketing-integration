@@ -9,7 +9,7 @@ REPORT_RUNTIME_CONFIG_DLQ_RECOVERY_PAYLOAD_INVALID
 Report payload_json is invalid
 ```
 
-The failure occurred after the retry completion assertion and before retained DLQ metadata closure or the canonical 3D summary.
+The failure occurred after the retry completion assertion and before retained DLQ metadata closure or the canonical 3D summary. Live evidence reported `activeDeploymentAttempted=true` and `safeRestoreVerified=true`.
 
 ## Root cause
 
