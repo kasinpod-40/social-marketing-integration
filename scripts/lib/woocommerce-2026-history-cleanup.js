@@ -199,6 +199,29 @@ export function selectWooCommerce2026CleanupLarkRecords(
   }));
 }
 
+export function summarizeWooCommerce2026CleanupParity(
+  d1Keys,
+  larkKeys,
+  contract,
+) {
+  const selected = requireContract(contract);
+  const d1 = uniqueCleanupKeys(d1Keys, selected.tableKey, 'D1');
+  const lark = uniqueCleanupKeys(larkKeys, selected.tableKey, 'Lark');
+  const d1Set = new Set(d1);
+  const larkSet = new Set(lark);
+  let matchedCount = 0;
+  for (const key of d1Set) if (larkSet.has(key)) matchedCount += 1;
+  return Object.freeze({
+    tableKey: selected.tableKey,
+    d1Count: d1.length,
+    larkCount: lark.length,
+    matchedCount,
+    d1OnlyCount: d1.length - matchedCount,
+    larkOnlyCount: lark.length - matchedCount,
+    exact: d1.length === matchedCount && lark.length === matchedCount,
+  });
+}
+
 export function validateWooCommerce2026CleanupFinal(row = {}) {
   const fields = [
     'old_raw_orders',
@@ -260,6 +283,25 @@ function textField(value) {
 function numberField(value) {
   const number = Number(textField(value) || value);
   return Number.isFinite(number) ? number : Number.POSITIVE_INFINITY;
+}
+
+function uniqueCleanupKeys(values, tableKey, source) {
+  if (!Array.isArray(values)) {
+    throw cleanupError(
+      `WooCommerce cleanup ${source} Stable keys are invalid`,
+      'WOOCOMMERCE_2026_CLEANUP_KEYS_INVALID',
+      { tableKey, source },
+    );
+  }
+  const keys = values.map((value) => String(value ?? '').trim());
+  if (keys.some((key) => key === '') || new Set(keys).size !== keys.length) {
+    throw cleanupError(
+      `WooCommerce cleanup ${source} Stable keys are invalid or duplicated`,
+      'WOOCOMMERCE_2026_CLEANUP_KEYS_INVALID',
+      { tableKey, source },
+    );
+  }
+  return keys;
 }
 
 function cleanupError(message, code, details = undefined) {

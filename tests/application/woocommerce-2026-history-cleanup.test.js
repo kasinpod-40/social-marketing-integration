@@ -9,6 +9,7 @@ import {
   buildWooCommerce2026CleanupKeysSql,
   buildWooCommerce2026CleanupVerifySql,
   selectWooCommerce2026CleanupLarkRecords,
+  summarizeWooCommerce2026CleanupParity,
   validateWooCommerce2026CleanupFinal,
   validateWooCommerce2026CleanupKeys,
 } from '../../scripts/lib/woocommerce-2026-history-cleanup.js';
@@ -93,6 +94,36 @@ test('cleanup selects every pre-2026 Lark target and excludes current or foreign
   );
 });
 
+test('cleanup records partial-write parity gaps without requiring missing Lark rows', () => {
+  const contract = WOOCOMMERCE_2026_CLEANUP_TABLES.find(
+    (item) => item.tableKey === 'rawCommerceOrderItems',
+  );
+  assert.deepEqual(
+    summarizeWooCommerce2026CleanupParity(
+      ['item-1', 'item-2'],
+      ['item-1'],
+      contract,
+    ),
+    {
+      tableKey: 'rawCommerceOrderItems',
+      d1Count: 2,
+      larkCount: 1,
+      matchedCount: 1,
+      d1OnlyCount: 1,
+      larkOnlyCount: 0,
+      exact: false,
+    },
+  );
+  assert.throws(
+    () => summarizeWooCommerce2026CleanupParity(
+      ['item-1'],
+      ['item-1', 'item-1'],
+      contract,
+    ),
+    (error) => error?.code === 'WOOCOMMERCE_2026_CLEANUP_KEYS_INVALID',
+  );
+});
+
 test('cleanup delete SQL is transaction-bound and cannot delete current master tables', () => {
   const sql = buildWooCommerce2026CleanupDeleteSql();
   assert.match(sql, /^BEGIN;/u);
@@ -170,6 +201,8 @@ test('cleanup operator is backup-first and has no Worker deploy or Queue path', 
   const attempt = source.indexOf("'cleanup-attempt.json'");
   const deleteCall = source.indexOf('await batchDelete(');
   assert.ok(backup >= 0 && attempt > backup && deleteCall > attempt);
+  assert.match(source, /parityBeforeCleanup/u);
+  assert.doesNotMatch(source, /WOOCOMMERCE_2026_CLEANUP_PARITY_FAILED/u);
   assert.doesNotMatch(source, /wrangler',\s*'deploy|queues.*send|MKT_SYNC_QUEUE/u);
   assert.match(source, /production:\s*false/u);
 });

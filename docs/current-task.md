@@ -44,6 +44,14 @@ incremental/Safe closeout. ห้ามเปิด Schedule, Production หร�
 - Live cleanup, merged-HEAD bounded reconciliation/parity/rerun/incremental และ Safe closeout
   จะทำหลัง PR ผ่าน CI. Schedule/Production ยังไม่เปลี่ยน.
 
+### Live cleanup partial-write gap — 2026-07-30
+
+Merged cleanup preflight หยุดก่อน backup/delete เพราะ `rawCommerceOrderItems` มี D1 `7809`
+แต่ Lark `7709` (D1-only gap 100) จาก operation เดิม. Hotfix เปลี่ยนจากการบังคับ pre-delete
+parity เป็น inventory + backup แต่ละฝั่ง, เก็บ sanitized gap counts/fingerprints, ลบเฉพาะ
+target set ของฝั่งนั้น และบังคับ post-delete zero verification ทั้ง D1/Lark. Duplicate/invalid
+Stable keys, active lock, target drift หรือ backup failure ยัง fail closed.
+
 ## Authoritative status
 
 ```text
