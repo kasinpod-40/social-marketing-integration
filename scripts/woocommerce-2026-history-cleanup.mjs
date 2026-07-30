@@ -17,7 +17,7 @@ import {
   WOOCOMMERCE_2026_CLEANUP_TABLES,
   WOOCOMMERCE_2026_CLEANUP_CONFIRMATION,
   assertWooCommerce2026CleanupConfirmation,
-  buildWooCommerce2026CleanupDeleteSql,
+  buildWooCommerce2026CleanupDeleteStatements,
   buildWooCommerce2026CleanupKeysSql,
   buildWooCommerce2026CleanupVerifySql,
   selectWooCommerce2026CleanupLarkRecords,
@@ -142,7 +142,8 @@ async function execute() {
     plans.push(Object.freeze({ contract, tableId, keys, records, larkKeys, parity }));
   }
 
-  const backupPath = join(outputRoot, `d1-before-cleanup-${Date.now()}.sql`);
+  const attemptId = Date.now();
+  const backupPath = join(outputRoot, `d1-before-cleanup-${attemptId}.sql`);
   wrangler([
     'd1', 'export', databaseName, '--remote', '--config', configPath,
     '--output', backupPath, '--skip-confirmation',
@@ -153,14 +154,17 @@ async function execute() {
     'WooCommerce cleanup D1 backup is empty',
     'WOOCOMMERCE_2026_CLEANUP_BACKUP_EMPTY',
   );
-  await writePrivateJson(join(outputRoot, 'lark-before-cleanup.json'), {
+  const larkBackupPath = join(outputRoot, `lark-before-cleanup-${attemptId}.json`);
+  await writePrivateJson(larkBackupPath, {
     capturedAt: new Date().toISOString(),
     tables: plans.map((plan) => ({
       tableKey: plan.contract.tableKey,
       records: plan.records,
     })),
   });
-  await writePrivateJson(join(outputRoot, 'cleanup-attempt.json'), {
+  const attemptPath = join(outputRoot, `cleanup-attempt-${attemptId}.json`);
+  const progressPath = join(outputRoot, `cleanup-progress-${attemptId}.json`);
+  await writePrivateJson(attemptPath, {
     attemptedAt: new Date().toISOString(),
     repositoryHead: git(['rev-parse', 'HEAD']).trim(),
     cutoff: '2026-01-01T00:00:00.000Z',
@@ -168,6 +172,9 @@ async function execute() {
       file: relative(repositoryRoot, backupPath),
       bytes: backupBytes.length,
       sha256: digest(backupBytes),
+    },
+    larkBackup: {
+      file: relative(repositoryRoot, larkBackupPath),
     },
     plannedLarkDeletes: plans.reduce((sum, plan) => sum + plan.records.length, 0),
     parity: plans.map((plan) => ({
@@ -185,7 +192,21 @@ async function execute() {
       plan.records.map((record) => record.recordId),
     );
   }
-  runD1(buildWooCommerce2026CleanupDeleteSql(), env);
+  await writePrivateJson(progressPath, {
+    stage: 'lark-delete-complete',
+    larkDeleted,
+    completedD1Statements: 0,
+  });
+  const deleteStatements = buildWooCommerce2026CleanupDeleteStatements();
+  for (let index = 0; index < deleteStatements.length; index += 1) {
+    runD1(`${deleteStatements[index]};`, env, `d1-delete-${index + 1}`);
+    await writePrivateJson(progressPath, {
+      stage: 'd1-delete-in-progress',
+      larkDeleted,
+      completedD1Statements: index + 1,
+      totalD1Statements: deleteStatements.length,
+    });
+  }
   const after = firstRow(runD1(buildWooCommerce2026CleanupVerifySql(), env));
   validateWooCommerce2026CleanupFinal(after);
 
@@ -214,6 +235,7 @@ async function execute() {
     schedule: false,
     production: false,
   };
+  await writePrivateJson(join(outputRoot, `summary-${attemptId}.json`), summary);
   await writePrivateJson(join(outputRoot, 'summary.json'), summary);
   process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
 }
@@ -243,14 +265,14 @@ async function batchDelete(client, tableId, recordIds) {
   return deleted;
 }
 
-function runD1(sql, env) {
+function runD1(sql, env, stage = 'd1-read') {
   return wrangler([
     'd1', 'execute', databaseName, '--remote', '--json', '--config', configPath,
     '--command', sql,
-  ], env);
+  ], env, stage);
 }
 
-function wrangler(args, env) {
+function wrangler(args, env, stage = 'wrangler') {
   const result = spawnSync('npx', ['wrangler', ...args], {
     cwd: repositoryRoot,
     env,
@@ -260,7 +282,12 @@ function wrangler(args, env) {
   if (result.error || result.status !== 0) throw cleanupError(
     'Wrangler command failed during WooCommerce 2026 cleanup',
     'WOOCOMMERCE_2026_CLEANUP_WRANGLER_FAILED',
-    { status: result.status, stderrSha256: digest(String(result.stderr ?? '')) },
+    {
+      stage,
+      status: result.status,
+      stdoutSha256: digest(String(result.stdout ?? '')),
+      stderrSha256: digest(String(result.stderr ?? '')),
+    },
   );
   return String(result.stdout ?? '');
 }

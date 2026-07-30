@@ -84,44 +84,43 @@ export function buildWooCommerce2026CleanupVerifySql() {
       WHERE sync_run_id='${REPLACED_WORK_KEY}') AS replaced_sync_error_code;`);
 }
 
-export function buildWooCommerce2026CleanupDeleteSql() {
-  return compactSql(`
-    BEGIN;
-    DELETE FROM raw_commerce_order_items
+export function buildWooCommerce2026CleanupDeleteStatements() {
+  return Object.freeze([
+    compactSql(`DELETE FROM raw_commerce_order_items
       WHERE account_key='chemistry_k' AND raw_order_key IN (
         SELECT raw_order_key FROM raw_commerce_orders
         WHERE account_key='chemistry_k'
-          AND source_created_at < ${WOOCOMMERCE_2026_HISTORY_START});
-    DELETE FROM raw_commerce_refunds
+          AND source_created_at < ${WOOCOMMERCE_2026_HISTORY_START})`),
+    compactSql(`DELETE FROM raw_commerce_refunds
       WHERE account_key='chemistry_k' AND raw_order_key IN (
         SELECT raw_order_key FROM raw_commerce_orders
         WHERE account_key='chemistry_k'
-          AND source_created_at < ${WOOCOMMERCE_2026_HISTORY_START});
-    DELETE FROM commerce_order_status_observations
+          AND source_created_at < ${WOOCOMMERCE_2026_HISTORY_START})`),
+    compactSql(`DELETE FROM commerce_order_status_observations
       WHERE account_key='chemistry_k' AND order_key IN (
         SELECT order_key FROM commerce_order_state
         WHERE account_key='chemistry_k'
-          AND source_created_at < ${WOOCOMMERCE_2026_HISTORY_START});
-    DELETE FROM commerce_order_line_facts
+          AND source_created_at < ${WOOCOMMERCE_2026_HISTORY_START})`),
+    compactSql(`DELETE FROM commerce_order_line_facts
       WHERE account_key='chemistry_k' AND order_key IN (
         SELECT order_key FROM commerce_order_state
         WHERE account_key='chemistry_k'
-          AND source_created_at < ${WOOCOMMERCE_2026_HISTORY_START});
-    DELETE FROM commerce_product_daily_facts
+          AND source_created_at < ${WOOCOMMERCE_2026_HISTORY_START})`),
+    compactSql(`DELETE FROM commerce_product_daily_facts
       WHERE account_key='chemistry_k'
-        AND metric_date < '${WOOCOMMERCE_2026_HISTORY_DATE}';
-    DELETE FROM commerce_daily_sales_facts
+        AND metric_date < '${WOOCOMMERCE_2026_HISTORY_DATE}'`),
+    compactSql(`DELETE FROM commerce_daily_sales_facts
       WHERE account_key='chemistry_k'
-        AND metric_date < '${WOOCOMMERCE_2026_HISTORY_DATE}';
-    DELETE FROM commerce_customer_aggregates
-      WHERE account_key='chemistry_k';
-    DELETE FROM commerce_order_state
+        AND metric_date < '${WOOCOMMERCE_2026_HISTORY_DATE}'`),
+    compactSql(`DELETE FROM commerce_customer_aggregates
+      WHERE account_key='chemistry_k'`),
+    compactSql(`DELETE FROM commerce_order_state
       WHERE account_key='chemistry_k'
-        AND source_created_at < ${WOOCOMMERCE_2026_HISTORY_START};
-    DELETE FROM raw_commerce_orders
+        AND source_created_at < ${WOOCOMMERCE_2026_HISTORY_START}`),
+    compactSql(`DELETE FROM raw_commerce_orders
       WHERE account_key='chemistry_k'
-        AND source_created_at < ${WOOCOMMERCE_2026_HISTORY_START};
-    UPDATE sync_runs
+        AND source_created_at < ${WOOCOMMERCE_2026_HISTORY_START}`),
+    compactSql(`UPDATE sync_runs
       SET status='failed',
           finished_at=unixepoch('now') * 1000,
           error_code='WOOCOMMERCE_HISTORY_SCOPE_REPLACED',
@@ -133,8 +132,8 @@ export function buildWooCommerce2026CleanupDeleteSql() {
         AND NOT EXISTS (
           SELECT 1 FROM sync_locks
           WHERE owner_id='${REPLACED_WORK_KEY}'
-            AND expires_at > unixepoch('now') * 1000);
-    UPDATE sync_work_runs
+            AND expires_at > unixepoch('now') * 1000)`),
+    compactSql(`UPDATE sync_work_runs
       SET lifecycle_status='terminal',
           terminal_reason='woocommerce_history_scope_replaced',
           abandoned_at=unixepoch('now') * 1000,
@@ -149,9 +148,14 @@ export function buildWooCommerce2026CleanupDeleteSql() {
         AND NOT EXISTS (
           SELECT 1 FROM sync_locks
           WHERE owner_id='${REPLACED_WORK_KEY}'
-            AND expires_at > unixepoch('now') * 1000);
-    COMMIT;
-  `);
+            AND expires_at > unixepoch('now') * 1000)`),
+  ]);
+}
+
+export function buildWooCommerce2026CleanupDeleteSql() {
+  return buildWooCommerce2026CleanupDeleteStatements()
+    .map((statement) => `${statement};`)
+    .join(' ');
 }
 
 export function validateWooCommerce2026CleanupKeys(rows, contract) {

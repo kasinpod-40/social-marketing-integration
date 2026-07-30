@@ -52,6 +52,15 @@ parity เป็น inventory + backup แต่ละฝั่ง, เก็บ
 target set ของฝั่งนั้น และบังคับ post-delete zero verification ทั้ง D1/Lark. Duplicate/invalid
 Stable keys, active lock, target drift หรือ backup failure ยัง fail closed.
 
+### Live cleanup D1 transaction blocker — 2026-07-30
+
+รอบ merged parity-gap hotfix สำรอง D1 `69,836,520` bytes และ Lark `52,935,961` bytes ก่อน
+ลบ Lark targets แล้วหยุดก่อน D1 mutation เพราะ Cloudflare D1 code `7500` ปฏิเสธ SQL
+`BEGIN/COMMIT` ผ่าน Wrangler. Read-only inspector ยืนยัน D1 ยังมี Orders `7800`, Work active,
+Sync running และ active lock `0`; backup เดิมยังอยู่. Hotfix ถัดไปใช้ ordered idempotent
+scoped statements, per-step progress, post-zero verification และ unique evidence filenames
+เพื่อไม่ overwrite Lark backup รอบแรก.
+
 ## Authoritative status
 
 ```text

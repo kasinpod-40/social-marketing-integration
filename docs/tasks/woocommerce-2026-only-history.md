@@ -39,14 +39,18 @@ node scripts/woocommerce-2026-history-cleanup.mjs --execute
 
 Operator ยืนยัน Development target และ zero lock, อ่าน target Stable keys ครบทั้ง D1/Lark
 7 ตาราง, บันทึก exact parity หรือ partial-write gap เป็น count/fingerprint, Export D1 + Lark
-backups, Batch delete Lark ตาม Lark target, Transactional delete D1 ตาม D1 target และ verify
-ว่า pre-2026 rows เป็นศูนย์. Gap ไม่ถูกซ่อนและไม่ทำให้ลบทิ้งโดยไม่มี backup.
+backups, Batch delete Lark ตาม Lark target, รัน ordered idempotent D1 statements ตาม D1 target
+พร้อม progress evidence และ verify ว่า pre-2026 rows เป็นศูนย์. Remote D1 ไม่รองรับ SQL
+`BEGIN/COMMIT` ผ่าน Wrangler; ทุก statement จึง scoped, rerun-safe และต้องผ่าน final zero
+verification. Gap ไม่ถูกซ่อนและไม่ทำให้ลบทิ้งโดยไม่มี backup.
 
 ไม่ลบ Store, Product, Variation, Category, raw Customer, raw Coupon, Coverage หรือ DLQ audit
 metadata. หลัง backup แล้วจะปิดเฉพาะ Work/Sync identity ของ Full-history operation เดิมเป็น
 terminal/failed ด้วยเหตุผล `WOOCOMMERCE_HISTORY_SCOPE_REPLACED`; ไม่ลบ Reliability audit rows
 และไม่แตะ Work/Sync อื่น. ไม่มี Worker deploy, Queue send, Schedule หรือ Production mutation
 ใน cleanup operator.
+
+Backup/attempt/progress ใช้ unique attempt ID และไม่ overwrite evidence ของรอบก่อนหน้า.
 
 ## Acceptance
 
