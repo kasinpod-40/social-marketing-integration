@@ -1,10 +1,18 @@
 import { dateOnlyToEpochMilliseconds } from '../../../shared/src/date/date-only.js';
+import { createExplicitNullUpdateRepository } from '../../../sync-engine/src/explicit-null-update-repository.js';
 import {
   buildReportMetricValueRows,
   buildReportTopAdsRows,
   buildReportTopContentRows,
 } from '../reports/build-report-output-rows.js';
 import { stableStringify } from './build-report-snapshot.js';
+
+const REPORT_METRIC_NULLABLE_FIELDS = Object.freeze([
+  'current_value',
+  'compare_value',
+  'change_value',
+  'change_percent',
+]);
 
 /** Dashboard/Lark binding that reads materializations only, never detailed historical facts. */
 export async function writeDashboardMaterializationToLark(input = {}) {
@@ -86,15 +94,42 @@ export async function writeDashboardMaterializationToLark(input = {}) {
     utcOffset,
     sharedDimensions,
   }) : Object.freeze([]);
+  const metricRepository = createExplicitNullUpdateRepository({
+    repository,
+    fieldNames: REPORT_METRIC_NULLABLE_FIELDS,
+  });
   const planEntries = [
-    ['reportSnapshot', tables.mktReportSnapshots, 'report_id', [snapshotRow]],
-    ['reportMetricValues', tables.mktReportMetricValues, 'report_metric_key', metricRows],
-    ...(topContentRows.length > 0 ? [['reportTopContent', tables.mktReportTopContent, 'report_content_key', topContentRows]] : []),
-    ...(topAdsRows.length > 0 ? [['reportTopAds', tables.mktReportTopAds, 'report_ad_key', topAdsRows]] : []),
+    { name: 'reportSnapshot', repository, tableId: tables.mktReportSnapshots, keyField: 'report_id', rows: [snapshotRow] },
+    {
+      name: 'reportMetricValues',
+      repository: metricRepository,
+      tableId: tables.mktReportMetricValues,
+      keyField: 'report_metric_key',
+      rows: metricRows,
+    },
+    ...(topContentRows.length > 0 ? [{
+      name: 'reportTopContent',
+      repository,
+      tableId: tables.mktReportTopContent,
+      keyField: 'report_content_key',
+      rows: topContentRows,
+    }] : []),
+    ...(topAdsRows.length > 0 ? [{
+      name: 'reportTopAds',
+      repository,
+      tableId: tables.mktReportTopAds,
+      keyField: 'report_ad_key',
+      rows: topAdsRows,
+    }] : []),
   ];
   const plans = {};
-  for (const [name, tableId, keyField, rows] of planEntries) {
-    plans[name] = await syncEngine.planByKey({ repository, tableId, keyField, rows });
+  for (const entry of planEntries) {
+    plans[entry.name] = await syncEngine.planByKey({
+      repository: entry.repository,
+      tableId: entry.tableId,
+      keyField: entry.keyField,
+      rows: entry.rows,
+    });
   }
   const results = {};
   for (const [name, plan] of Object.entries(plans)) {
