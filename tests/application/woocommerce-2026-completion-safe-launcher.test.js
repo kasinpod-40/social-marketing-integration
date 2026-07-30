@@ -7,18 +7,22 @@ const source = await readFile(
   'utf8',
 );
 
-test('safe launcher uses a distinct ignored private Wrangler config', () => {
+test('safe launcher creates modern and legacy ignored private Wrangler configs', () => {
   assert.match(
     source,
     /PRIVATE_CONFIG_NAME\s*=\s*'\.mkt-woocommerce-2026-completion-wrangler\.jsonc'/u,
   );
+  assert.match(
+    source,
+    /LEGACY_CONFIG_NAME\s*=\s*'wrangler\.sync\.jsonc'/u,
+  );
   assert.match(source, /ensureLocalExclude\(cloneRoot/u);
   assert.match(source, /`\/\$\{PRIVATE_CONFIG_NAME\}`/u);
+  assert.match(source, /`\/\$\{LEGACY_CONFIG_NAME\}`/u);
   assert.match(source, /snapshotPrivateFile\(\s*sourceConfigPath,\s*sealedConfig/u);
-  assert.doesNotMatch(
-    source,
-    /const sealedConfig = join\(cloneRoot, 'wrangler\.sync\.jsonc'\)/u,
-  );
+  assert.match(source, /snapshotPrivateFile\(\s*sealedConfig,\s*sealedLegacyConfig/u);
+  assert.match(source, /assertPathMissing\(sealedLegacyConfig, LEGACY_CONFIG_NAME\)/u);
+  assert.match(source, /legacyConfigCompatibilitySnapshot:\s*true/u);
 });
 
 test('safe launcher pins and canonicalizes an independent current-main clone', () => {
