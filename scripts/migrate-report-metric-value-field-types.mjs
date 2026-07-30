@@ -5,7 +5,7 @@ import {
   applyReportMetricValueFieldMigration,
   planReportMetricValueFieldMigration,
   safeReportMetricValueFieldMigrationEvidence,
-} from './lib/report-metric-value-field-migration.js';
+} from './lib/report-metric-value-field-migration-recovery.js';
 import { createLarkBitableClientFromEnv } from '../packages/connectors/src/lark/lark-bitable.client.js';
 import { createVerifiedFieldMutationClient } from './lib/lark-verified-field-mutation-client.js';
 import { createReportMetricLegacyReadNormalizer } from './lib/report-metric-legacy-read-normalizer.js';
