@@ -20,7 +20,6 @@ const REQUIRED_ZERO_CLEANUP_FIELDS = Object.freeze([
   'old_order_status_observations',
   'old_order_line_facts',
   'old_order_state',
-  'old_customer_aggregates',
   'old_daily',
   'old_product_daily',
 ]);
@@ -121,6 +120,10 @@ export function validateWooCommerce2026CleanupPreflight(row = {}) {
   const syncStatus = nullableText(row.replaced_sync_status);
   const syncErrorCode = nullableText(row.replaced_sync_error_code);
   const oldRows = sumFields(row, REQUIRED_ZERO_CLEANUP_FIELDS);
+  const aggregateRows = integer(
+    row.old_customer_aggregates,
+    'old_customer_aggregates',
+  );
 
   if (activeLocks !== 0 || otherActiveWork > 1) throw completionError(
     'Foreign active work or lock blocks WooCommerce 2026 cleanup',
@@ -152,6 +155,7 @@ export function validateWooCommerce2026CleanupPreflight(row = {}) {
       syncStatus,
       syncErrorCode,
       oldRows,
+      aggregateRows,
     },
   );
 
@@ -162,6 +166,7 @@ export function validateWooCommerce2026CleanupPreflight(row = {}) {
     otherActiveWork,
     activeLocks,
     oldRows,
+    aggregateRows,
   });
 }
 
@@ -174,11 +179,16 @@ export function validateWooCommerce2026CleanupPostState(row = {}) {
   const otherActiveWork = integer(row.other_active_work, 'other_active_work');
   const activeLocks = integer(row.active_locks, 'active_locks');
   const oldRows = sumFields(row, REQUIRED_ZERO_CLEANUP_FIELDS);
+  const aggregateRows = integer(
+    row.old_customer_aggregates,
+    'old_customer_aggregates',
+  );
   const workStatus = nullableText(row.replaced_work_status);
   const syncStatus = nullableText(row.replaced_sync_status);
   const syncErrorCode = nullableText(row.replaced_sync_error_code);
 
   if (oldRows !== 0
+    || aggregateRows !== 0
     || activeWork !== 0
     || replacedActiveWork !== 0
     || otherActiveWork !== 0
@@ -191,6 +201,7 @@ export function validateWooCommerce2026CleanupPostState(row = {}) {
       'WOOCOMMERCE_2026_COMPLETION_CLEANUP_POSTSTATE_INVALID',
       {
         oldRows,
+        aggregateRows,
         activeWork,
         replacedActiveWork,
         otherActiveWork,
@@ -204,6 +215,7 @@ export function validateWooCommerce2026CleanupPostState(row = {}) {
 
   return Object.freeze({
     oldRows: 0,
+    aggregateRows: 0,
     activeWork: 0,
     activeLocks: 0,
     exactReplacedOperationClosed: true,
