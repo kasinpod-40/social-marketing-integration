@@ -19,7 +19,7 @@ test('normal Report closeout polls exact Lark integrity instead of row existence
   assert.match(operator, /replayLarkIntegrityPollAttempts/u);
 });
 
-test('3D recovery validates prior evidence before the missing replay send', () => {
+test('legacy 3D recovery still validates prior evidence before the missing replay send', () => {
   const validation = operator.indexOf('assertReportRuntimeCloseoutRecoveryEvidence');
   const readOnlyParity = operator.indexOf("currentStage = 'verify-current-d1-lark-integrity-read-only'");
   const recoveryBackup = operator.indexOf("currentStage = 'backup-before-missing-replay'");
@@ -34,7 +34,7 @@ test('3D recovery validates prior evidence before the missing replay send', () =
   assert.match(operator, /replayAttemptedBeforeRecovery/u);
 });
 
-test('recorded replay recovery is verification-only and cannot send again', () => {
+test('recorded legacy replay recovery is verification-only and cannot send again', () => {
   const branch = operator.match(/if \(recoveryEvidence\.replayAttempted\) \{([\s\S]*?)\n  \} else \{/u)?.[1] ?? '';
   assert.match(branch, /pollD1Completion/u);
   assert.match(branch, /pollLarkIntegrity/u);
@@ -42,12 +42,13 @@ test('recorded replay recovery is verification-only and cannot send again', () =
   assert.doesNotMatch(branch, /deployConfig/u);
 });
 
-test('recovery wrapper finalizes, recovers 3D, then resumes remaining windows', () => {
+test('current recovery wrapper finalizes, closes exact config DLQ, then resumes remaining windows', () => {
   const finalizer = wrapper.indexOf("runRequired('report-runtime-finalizer'");
-  const recovery = wrapper.indexOf("runRequired('3d-exact-recovery'");
+  const recovery = wrapper.indexOf("runRequired('3d-exact-config-dlq-recovery'");
   const remaining = wrapper.indexOf("runRequired('remaining-window-sequence'");
   assert.ok(finalizer >= 0 && recovery > finalizer && remaining > recovery);
-  assert.match(wrapper, /MKT_REPORT_RUNTIME_CLOSEOUT_RECOVERY_MODE/u);
+  assert.match(wrapper, /REPORT_RUNTIME_CONFIG_DLQ_RECOVERY_CONFIRMATION/u);
   assert.match(wrapper, /RECOVER_REPORT_RUNTIME_3D_AND_CONTINUE/u);
+  assert.doesNotMatch(wrapper, /report-runtime-closeout-operator\.mjs/u);
   assert.doesNotMatch(wrapper, /queues.*send|wrangler.*deploy/iu);
 });

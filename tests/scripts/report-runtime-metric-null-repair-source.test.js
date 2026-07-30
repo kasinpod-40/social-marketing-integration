@@ -10,21 +10,27 @@ const repairOperator = readFileSync(
   new URL('../../scripts/report-runtime-lark-metric-null-repair.mjs', import.meta.url),
   'utf8',
 );
+const configDlqOperator = readFileSync(
+  new URL('../../scripts/report-runtime-config-dlq-recovery.mjs', import.meta.url),
+  'utf8',
+);
 const writer = readFileSync(
   new URL('../../packages/application/src/use-cases/write-dashboard-materialization-to-lark.js', import.meta.url),
   'utf8',
 );
 
-test('recovery finalizes, repairs exact stale metric nulls, replays 3D, then resumes windows', () => {
+test('current recovery reuses the completed metric repair summary before exact config-DLQ replay recovery', () => {
   const finalizer = wrapper.indexOf("runRequired('report-runtime-finalizer'");
-  const metricRepair = wrapper.indexOf("runRequired('3d-exact-metric-null-repair'");
-  const recovery = wrapper.indexOf("runRequired('3d-exact-recovery'");
+  const recovery = wrapper.indexOf("runRequired('3d-exact-config-dlq-recovery'");
   const remaining = wrapper.indexOf("runRequired('remaining-window-sequence'");
-  assert.ok(finalizer >= 0 && metricRepair > finalizer && recovery > metricRepair && remaining > recovery);
-  assert.match(wrapper, /EXECUTE_EXACT_REPORT_METRIC_NULL_REPAIR/u);
+  assert.ok(finalizer >= 0 && recovery > finalizer && remaining > recovery);
+  assert.match(configDlqOperator, /metric-null-repair-summary\.json/u);
+  assert.match(configDlqOperator, /assertReportRuntimeConfigDlqMetricRepairSummary/u);
+  assert.doesNotMatch(wrapper, /report-runtime-lark-metric-null-repair\.mjs/u);
+  assert.doesNotMatch(wrapper, /EXECUTE_EXACT_REPORT_METRIC_NULL_REPAIR/u);
 });
 
-test('exact stale-null repair is backup-first and records attempt before the only Lark write', () => {
+test('exact stale-null repair remains backup-first and records attempt before the only Lark write', () => {
   const remoteSafe = repairOperator.indexOf('await verifyRemoteSafe');
   const plan = repairOperator.indexOf("currentStage = 'plan-exact-stale-null-repair'");
   const backup = repairOperator.indexOf("currentStage = 'backup-exact-lark-metric-rows'");
