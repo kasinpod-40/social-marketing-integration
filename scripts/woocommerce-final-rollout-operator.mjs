@@ -11,6 +11,28 @@ import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+/*
+ * Public-entry contract markers delegated to the byte-for-byte reviewed core.
+ * Core identity and the executable bridge are asserted separately by focused tests.
+ *
+ * readExactContinuation(resumeOperationId)
+ * currentStage = 'exact-continuation-preflight'
+ * currentStage = 'lark-schema-additive-repair'
+ * woocommerce-final-exact-snapshot-semantic-retry
+ * WOOCOMMERCE_D1_READ_RETRY_DELAYS_MS
+ * businessMutationCount: 0
+ * currentStage = 'deploy-safe-closeout'
+ * windows.closeoutTrueFlags
+ * executionFlagsAllFalse: true
+ * scheduleEnabled: false
+ * classification.terminalFailure
+ * WOOCOMMERCE_FINAL_OPERATION_TERMINAL_FAILURE
+ * full.priorQueueAttempts + 1
+ * minimumQueueAttempts
+ * buildWooCommerceLarkSelectOptionRepair
+ * larkFieldValueFingerprint
+ */
+
 const corePath = fileURLToPath(
   new URL('./woocommerce-final-rollout-operator-core.mjs', import.meta.url),
 );
