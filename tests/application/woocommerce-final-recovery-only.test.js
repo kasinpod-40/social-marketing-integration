@@ -5,12 +5,13 @@ import {
   WOOCOMMERCE_FINAL_RECOVERY_ONLY_CONFIRMATION,
   assertWooCommerceFinalRecoveryOnlyConfirmation,
   buildWooCommerceFinalRecoveryOnlySnapshotSql,
+  classifyWooCommerceFinalRecoveryOnlyState,
   parseWooCommerceFinalRecoveryOnlyArgs,
   verifyWooCommerceFinalRecoveryOnlyEligibility,
   verifyWooCommerceFinalRecoveryOnlyPostState,
 } from '../../scripts/lib/woocommerce-final-recovery-only.js';
 
-const OPERATION_ID = 'woo-final-full-6f43ac8ee857';
+const OPERATION_ID = 'woo-final-full-5b56469100a9';
 const COUNT_KEYS = Object.freeze([
   'raw_commerce_stores',
   'raw_commerce_orders',
@@ -31,8 +32,8 @@ const COUNT_KEYS = Object.freeze([
 function snapshotRow(overrides = {}) {
   return {
     sync_run_status: 'failed',
-    sync_run_finished_at: 1785262407705,
-    sync_run_error_code: 'WOOCOMMERCE_NETWORK_ERROR',
+    sync_run_finished_at: 1785395464000,
+    sync_run_error_code: 'WOOCOMMERCE_INVALID_JSON',
     work_lifecycle_status: 'active',
     work_completed_at: null,
     completion_json: null,
@@ -47,7 +48,7 @@ function snapshotRow(overrides = {}) {
   };
 }
 
-test('recovery-only arguments and confirmation are pinned to the exact approved incident', () => {
+test('recovery-only arguments and confirmation are pinned to the current exact incident', () => {
   assert.deepEqual(
     parseWooCommerceFinalRecoveryOnlyArgs(['--operation-id', OPERATION_ID]),
     { execute: false, operationId: OPERATION_ID },
@@ -72,12 +73,12 @@ test('exact preflight snapshot is read-only and operation-scoped', () => {
     operationId: OPERATION_ID,
   });
   assert.match(sql, /^SELECT /u);
-  assert.match(sql, /woocommerce:woo-final-full-6f43ac8ee857/u);
+  assert.match(sql, /woocommerce:woo-final-full-5b56469100a9/u);
   assert.match(sql, /account_key = 'chemistry_k'/u);
   assert.doesNotMatch(sql, /\b(?:UPDATE|DELETE|INSERT|DROP|ALTER|CREATE)\b/iu);
 });
 
-test('eligibility accepts only failed unlocked zero-fact single-attempt stale work', () => {
+test('eligibility accepts only exact invalid-json unlocked zero-fact single-attempt stale work', () => {
   const result = verifyWooCommerceFinalRecoveryOnlyEligibility(snapshotRow(), {
     operationId: OPERATION_ID,
   });
@@ -87,6 +88,7 @@ test('eligibility accepts only failed unlocked zero-fact single-attempt stale wo
 
   const rejected = [
     snapshotRow({ sync_run_status: 'running' }),
+    snapshotRow({ sync_run_error_code: 'WOOCOMMERCE_NETWORK_ERROR' }),
     snapshotRow({ active_lock_count: 1 }),
     snapshotRow({ queue_operation_attempts: 2 }),
     snapshotRow({ coverage_run_count: 1 }),
@@ -101,6 +103,29 @@ test('eligibility accepts only failed unlocked zero-fact single-attempt stale wo
   }
 });
 
+test('state classifier distinguishes active recovery from already terminal recovery', () => {
+  assert.equal(
+    classifyWooCommerceFinalRecoveryOnlyState(snapshotRow(), {
+      operationId: OPERATION_ID,
+    }).state,
+    'active_recovery_required',
+  );
+  assert.equal(
+    classifyWooCommerceFinalRecoveryOnlyState(snapshotRow({
+      work_lifecycle_status: 'terminal',
+    }), {
+      operationId: OPERATION_ID,
+    }).state,
+    'terminal_recovery_complete',
+  );
+  assert.throws(
+    () => classifyWooCommerceFinalRecoveryOnlyState(snapshotRow({
+      work_lifecycle_status: 'completed',
+    }), { operationId: OPERATION_ID }),
+    (error) => error?.code === 'WOOCOMMERCE_RECOVERY_ONLY_STATE_INVALID',
+  );
+});
+
 test('post-state requires terminal lifecycle without business, queue, coverage or phase drift', () => {
   const result = verifyWooCommerceFinalRecoveryOnlyPostState(snapshotRow({
     work_lifecycle_status: 'terminal',
@@ -112,6 +137,13 @@ test('post-state requires terminal lifecycle without business, queue, coverage o
     () => verifyWooCommerceFinalRecoveryOnlyPostState(snapshotRow({
       work_lifecycle_status: 'terminal',
       commerce_order_state: 1,
+    }), { operationId: OPERATION_ID }),
+    (error) => error?.code === 'WOOCOMMERCE_RECOVERY_ONLY_POST_VERIFY_FAILED',
+  );
+  assert.throws(
+    () => verifyWooCommerceFinalRecoveryOnlyPostState(snapshotRow({
+      work_lifecycle_status: 'terminal',
+      sync_run_error_code: 'WOOCOMMERCE_NETWORK_ERROR',
     }), { operationId: OPERATION_ID }),
     (error) => error?.code === 'WOOCOMMERCE_RECOVERY_ONLY_POST_VERIFY_FAILED',
   );
