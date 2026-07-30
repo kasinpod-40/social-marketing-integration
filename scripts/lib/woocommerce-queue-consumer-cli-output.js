@@ -1,6 +1,15 @@
 import { createHash } from 'node:crypto';
 import { normalizeWooCommerceQueueConsumer } from './woocommerce-queue-consumer-topology.js';
 
+export function isWooCommerceQueueConsumerJsonCommand(value) {
+  return Array.isArray(value)
+    && value[0] === 'wrangler'
+    && value[1] === 'queues'
+    && value[2] === 'consumer'
+    && value[3] === 'list'
+    && value.includes('--json');
+}
+
 export function adaptWooCommerceQueueConsumerCliOutput(output) {
   const source = requireText(output, 'output');
   let parsed;
