@@ -23,6 +23,7 @@ try {
   await mkdir(outputRoot, { recursive: true, mode: 0o700 });
   const finalizerRoot = join(outputRoot, 'finalizer');
   const finalizerEvidence = join(finalizerRoot, 'report-runtime-finalize-summary.json');
+  const threeDayEvidence = join(outputRoot, '3d-refresh');
 
   runRequired('report-runtime-finalizer', ['scripts/report-runtime-finalize-operator.mjs', '--execute'], {
     ...process.env,
@@ -30,10 +31,17 @@ try {
     CONFIRM_REPORT_RUNTIME_FINALIZE: 'EXECUTE_REPORT_RUNTIME_FINALIZE',
   });
 
+  runRequired('3d-exact-metric-null-repair', ['scripts/report-runtime-lark-metric-null-repair.mjs'], {
+    ...process.env,
+    MKT_REPORT_RUNTIME_FINALIZER_EVIDENCE: finalizerEvidence,
+    MKT_REPORT_RUNTIME_CLOSEOUT_EVIDENCE_DIR: threeDayEvidence,
+    CONFIRM_REPORT_RUNTIME_METRIC_NULL_REPAIR: 'EXECUTE_EXACT_REPORT_METRIC_NULL_REPAIR',
+  });
+
   runRequired('3d-exact-recovery', ['scripts/report-runtime-closeout-operator.mjs', '--execute'], {
     ...process.env,
     MKT_REPORT_RUNTIME_FINALIZER_EVIDENCE: finalizerEvidence,
-    MKT_REPORT_RUNTIME_CLOSEOUT_EVIDENCE_DIR: join(outputRoot, '3d-refresh'),
+    MKT_REPORT_RUNTIME_CLOSEOUT_EVIDENCE_DIR: threeDayEvidence,
     MKT_REPORT_RUNTIME_CLOSEOUT_WINDOW_DAYS: '3',
     MKT_REPORT_RUNTIME_CLOSEOUT_OPERATION: 'refresh',
     MKT_REPORT_RUNTIME_CLOSEOUT_RECOVERY_MODE: REPORT_RUNTIME_CLOSEOUT_RECOVERY_MODE,
