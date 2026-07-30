@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { WooCommerceRestClient } from '../../packages/connectors/src/woocommerce/woocommerce-rest-client.js';
+import { createWooCommerceWorkerFetch } from '../../apps/sync-worker/src/woocommerce-job-router.js';
 
 const KEY = 'ck_' + 'k'.repeat(40);
 const SECRET = 'cs_' + 's'.repeat(40);
@@ -138,4 +139,95 @@ test('WooCommerce client paginates nested refunds and variations without leaking
   assert.match(urls[0], /orders\/42\/refunds/u);
   assert.match(urls[1], /products\/99\/variations/u);
   assert.equal(urls.some((url) => url.includes(KEY) || url.includes(SECRET)), false);
+});
+
+test('ingestion fetch retries bounded HTTP 200 JSON-declared HTML contamination', async () => {
+  let calls = 0;
+  const delays = [];
+  const target = {
+    async fetch() {
+      calls += 1;
+      if (calls < 3) {
+        return new Response('<html>temporary upstream page</html>', {
+          status: 200,
+          headers: { 'content-type': 'application/json; charset=UTF-8' },
+        });
+      }
+      return new Response(JSON.stringify({ environment: {}, settings: {} }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    },
+  };
+  const fetchImpl = createWooCommerceWorkerFetch(target, {
+    invalidJsonRetryDelaysMs: [250, 1_000],
+    sleep: async (delay) => delays.push(delay),
+  });
+  const client = createClient(fetchImpl);
+  await client.getStoreIdentity();
+
+  assert.equal(calls, 3);
+  assert.deepEqual(delays, [250, 1_000]);
+});
+
+test('ingestion fetch returns final contaminated response after its exact retry bound', async () => {
+  let calls = 0;
+  const target = {
+    async fetch() {
+      calls += 1;
+      return new Response('<html>persistent upstream page</html>', {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    },
+  };
+  const client = createClient(createWooCommerceWorkerFetch(target, {
+    invalidJsonRetryDelaysMs: [0, 0],
+    sleep: async () => undefined,
+  }));
+
+  await assert.rejects(
+    client.getStoreIdentity(),
+    (error) => error?.code === 'WOOCOMMERCE_INVALID_JSON'
+      && error.retryable === false
+      && error.details.bodyShape === 'html_or_xml',
+  );
+  assert.equal(calls, 3);
+});
+
+test('diagnostic/default fetch remains one request and object-like invalid JSON is not retried', async () => {
+  let defaultCalls = 0;
+  const defaultClient = createClient(createWooCommerceWorkerFetch({
+    async fetch() {
+      defaultCalls += 1;
+      return new Response('<html>diagnostic evidence</html>', {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    },
+  }));
+  await assert.rejects(
+    defaultClient.getStoreIdentity(),
+    (error) => error?.code === 'WOOCOMMERCE_INVALID_JSON',
+  );
+  assert.equal(defaultCalls, 1);
+
+  let objectLikeCalls = 0;
+  const ingestionClient = createClient(createWooCommerceWorkerFetch({
+    async fetch() {
+      objectLikeCalls += 1;
+      return new Response('{invalid', {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    },
+  }, {
+    invalidJsonRetryDelaysMs: [0, 0],
+    sleep: async () => undefined,
+  }));
+  await assert.rejects(
+    ingestionClient.getStoreIdentity(),
+    (error) => error?.code === 'WOOCOMMERCE_INVALID_JSON',
+  );
+  assert.equal(objectLikeCalls, 1);
 });
