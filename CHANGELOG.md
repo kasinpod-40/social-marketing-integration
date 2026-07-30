@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased — WooCommerce 2026-only bounded history — 2026-07-30
+
+- Replaced unbounded Order history with an immutable `2026-01-01` through operation-time source
+  window persisted across durable continuations.
+- Customer/Coupon rows created before 2026 are filtered before D1/Lark writes; current
+  Store/Product/Category master snapshots remain available for reporting.
+- Added `report_range` Coverage/report validation and a backup-first exact Stable-key cleanup
+  operator for pre-2026 Order and derived facts.
+- Cleanup retains Reliability audit rows and terminalizes only the replaced Full-history
+  Work/Sync identity after backup, exact parity and a zero-active-lock guard.
+- Stopped the prior Full-history rollout at 7,800 Orders from 2022–2023 and restored the
+  Development Worker to all-false Safe state; Schedule and Production remain unchanged.
+
 ## Unreleased — WooCommerce Exact DLQ Completion Closure — 2026-07-30
 
 ### Reliability

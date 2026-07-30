@@ -248,7 +248,7 @@ test('Report closeout requires validated finalizer and D1 readiness evidence', (
   }));
 });
 
-test('WooCommerce Report closeout accepts reviewed full or recent Commerce coverage', () => {
+test('WooCommerce Report closeout accepts reviewed full, recent or bounded Commerce coverage', () => {
   const ready = {
     coverage_status: 'complete',
     coverage_scope_mode: 'full_inventory',
@@ -263,6 +263,10 @@ test('WooCommerce Report closeout accepts reviewed full or recent Commerce cover
   assert.equal(assertWooCommerceReportRuntimeCloseoutPreflight({
     ...ready,
     coverage_scope_mode: 'recent_window',
+  }), true);
+  assert.equal(assertWooCommerceReportRuntimeCloseoutPreflight({
+    ...ready,
+    coverage_scope_mode: 'report_range',
   }), true);
   assert.throws(
     () => assertWooCommerceReportRuntimeCloseoutPreflight({

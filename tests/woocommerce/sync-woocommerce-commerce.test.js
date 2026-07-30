@@ -41,12 +41,13 @@ function customerFixture() {
 
 function createDependencies(options = {}) {
   const events = [];
+  const sourceRequests = [];
   const resources = new Map([
-    ['orders', [orderFixture()]],
+    ['orders', options.orders ?? [orderFixture()]],
     ['products', [productFixture()]],
     ['products/categories', []],
-    ['customers', [customerFixture()]],
-    ['coupons', []],
+    ['customers', [options.customer ?? customerFixture()]],
+    ['coupons', options.coupons ?? []],
   ]);
   const client = {
     async getStoreIdentity() {
@@ -58,6 +59,7 @@ function createDependencies(options = {}) {
     },
     async listPage(resource, input) {
       events.push(`source:${resource}:${input.page}`);
+      sourceRequests.push(structuredClone({ resource, ...input }));
       const records = resources.get(resource) ?? [];
       return {
         resource, page: input.page, perPage: input.perPage,
@@ -132,6 +134,7 @@ function createDependencies(options = {}) {
   };
   return {
     events,
+    sourceRequests,
     phaseState,
     coverageRuns,
     coverageEntities,
@@ -213,6 +216,123 @@ test('bounded invocation queues a reference-only continuation without Source pay
   assert.deepEqual(Object.keys(fixture.queued[0]).sort(), [
     'cursorKey', 'generation', 'originalRequestedAt', 'schemaVersion', 'syncRunId', 'type', 'workKey',
   ]);
+});
+
+test('bounded Order history persists a closed 2026 Provider window and report-range Coverage', async () => {
+  const fixture = createDependencies();
+  const result = await syncWooCommerceCommerce({
+    ...fixture.input,
+    orderCreatedAfter: '2026-01-01T00:00:00.000Z',
+    orderCreatedBefore: '2026-07-26T03:00:00.000Z',
+  });
+
+  assert.equal(result.status, 'completed');
+  assert.equal(result.reconciliation.scopeMode, 'report_range');
+  assert.deepEqual(result.reconciliation.sourceScope, {
+    modifiedAfter: null,
+    incrementalBoundary: null,
+    orderCreatedAfter: Date.parse('2026-01-01T00:00:00.000Z'),
+    orderCreatedBefore: Date.parse('2026-07-26T03:00:00.000Z'),
+    reportingTimezone: 'Asia/Bangkok',
+    defaultCurrency: 'THB',
+  });
+
+  const orders = fixture.sourceRequests.find((request) => request.resource === 'orders');
+  assert.equal(orders.params.after, '2025-12-31T23:59:59.999Z');
+  assert.equal(orders.params.before, '2026-07-26T03:00:00.000Z');
+  assert.equal(orders.params.dates_are_gmt, true);
+  const products = fixture.sourceRequests.find((request) => request.resource === 'products');
+  assert.equal(products.params.after, undefined);
+  assert.equal(products.params.before, undefined);
+
+  const orderCoverage = fixture.coverageRuns.find(
+    (run) => run.dataset_key === 'woocommerce_orders',
+  );
+  assert.equal(orderCoverage.scope_mode, 'report_range');
+  assert.equal(orderCoverage.period_start, '2026-01-01');
+  assert.equal(orderCoverage.period_end, '2026-07-26');
+  assert.equal(fixture.coverageRuns
+    .filter((run) => ['woocommerce_orders', 'woocommerce_customers', 'woocommerce_coupons']
+      .includes(run.dataset_key))
+    .every((run) => run.scope_mode === 'report_range'), true);
+  assert.equal(fixture.coverageRuns
+    .filter((run) => ['woocommerce_store', 'woocommerce_products', 'woocommerce_categories']
+      .includes(run.dataset_key))
+    .every((run) => run.scope_mode === 'full_inventory'), true);
+});
+
+test('bounded history excludes pre-2026 Customer and Coupon rows from storage', async () => {
+  const oldCustomer = {
+    ...customerFixture(),
+    date_created_gmt: '2025-12-31T23:59:59',
+  };
+  const oldCoupon = {
+    id: 9,
+    code: 'OLD',
+    discount_type: 'fixed_cart',
+    amount: '100.000000',
+    usage_count: 1,
+    individual_use: false,
+    free_shipping: false,
+    date_created_gmt: '2025-01-01T00:00:00',
+    date_modified_gmt: '2025-01-02T00:00:00',
+  };
+  const fixture = createDependencies({
+    customer: oldCustomer,
+    coupons: [oldCoupon],
+  });
+  const result = await syncWooCommerceCommerce({
+    ...fixture.input,
+    orderCreatedAfter: '2026-01-01T00:00:00.000Z',
+    orderCreatedBefore: '2026-07-26T03:00:00.000Z',
+  });
+  assert.equal(result.status, 'completed');
+  for (const dataset of ['woocommerce_customers', 'woocommerce_coupons']) {
+    const coverage = fixture.coverageRuns.find((run) => run.dataset_key === dataset);
+    assert.equal(coverage.status, 'no_data_confirmed');
+    assert.equal(coverage.expected_entities, 0);
+    assert.equal(coverage.observed_entities, 0);
+    assert.equal(coverage.scope_mode, 'report_range');
+  }
+});
+
+test('bounded history applies the exact 2026 floor to Order rows locally', async () => {
+  const oldOrder = {
+    ...orderFixture(),
+    date_created_gmt: '2025-12-31T23:59:59.999Z',
+  };
+  const boundaryOrder = {
+    ...orderFixture(),
+    id: 43,
+    number: '1043',
+    date_created_gmt: '2026-01-01T00:00:00.000Z',
+  };
+  const fixture = createDependencies({ orders: [oldOrder, boundaryOrder] });
+  const result = await syncWooCommerceCommerce({
+    ...fixture.input,
+    orderCreatedAfter: '2026-01-01T00:00:00.000Z',
+    orderCreatedBefore: '2026-07-26T03:00:00.000Z',
+  });
+  assert.equal(result.status, 'completed');
+  const coverage = fixture.coverageRuns.find(
+    (run) => run.dataset_key === 'woocommerce_orders',
+  );
+  assert.equal(coverage.expected_entities, 1);
+  assert.equal(coverage.observed_entities, 1);
+  assert.equal(coverage.status, 'complete');
+});
+
+test('invalid bounded Order history fails before Source, D1 or Lark activity', async () => {
+  const fixture = createDependencies();
+  await assert.rejects(
+    syncWooCommerceCommerce({
+      ...fixture.input,
+      orderCreatedAfter: '2026-01-02T00:00:00.000Z',
+      orderCreatedBefore: '2026-01-01T00:00:00.000Z',
+    }),
+    /orderCreatedAfter must be earlier/u,
+  );
+  assert.deepEqual(fixture.events, []);
 });
 
 test('disabled runtime flags fail before schema, Source, D1 or Lark activity', async () => {

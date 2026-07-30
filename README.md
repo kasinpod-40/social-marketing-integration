@@ -61,6 +61,14 @@ Google Ads actual Script DRY_RUN   pass / six datasets / no changes
 Google Ads Secret provisioning     completed / route safely closed
 ```
 
+## WooCommerce 2026-only history
+
+Integration Workspace เก็บ WooCommerce Orders, Customers และ Coupons เฉพาะตั้งแต่
+`2026-01-01T00:00:00.000Z` ถึง operation boundary แบบ immutable `report_range`.
+Store, Products และ Categories เป็น current master snapshots. Full-history ก่อนปี 2026
+ถูกยกเลิก; Schedule และ Production ปิด. Cleanup runbook อยู่ที่
+`docs/tasks/woocommerce-2026-only-history.md`.
+
 ## WooCommerce diagnostics deterministic Preview origin
 
 WooCommerce Preview diagnostics ใช้ deterministic origin:
@@ -369,7 +377,7 @@ Backfill requires D1 write. Retention requires the D1 Report reader. Enabling St
 | Meta Ads | Token preflight implemented / Live UAT blocked | All Meta parallel Workstream; empty Ads data remains valid-no-data |
 | Google Ads | Signed delivery and LIVE UAT completed / safely closed | No new implementation unless a separate incident or enhancement is approved |
 | TikTok Ads | Access/design preflight | Controlled API/Worker connector later |
-| WooCommerce | Planned | Separate parallel Workstream |
+| WooCommerce | 2026-only Runtime verified; Live cleanup/reconciliation pending merged HEAD | Bounded Integration Workspace closeout; Schedule/Production remain closed |
 | Chatwoot | Planned | Separate parallel Workstream |
 
 Draft PR #11 is obsolete/superseded and must not be merged.

@@ -512,7 +512,7 @@ async function verifyLarkInventory(client, tableIds) {
 async function readD1Preflight() {
   if (target.platformScope === 'woocommerce') return readD1Row(compactSql(`
     WITH coverage AS (
-      SELECT status, scope_mode, source_watermark, completed_at
+      SELECT status, scope_mode, period_start, period_end, source_watermark, completed_at
       FROM data_coverage_runs
       WHERE account_key = '${sqlText(target.accountKey)}'
         AND platform = 'woocommerce'
@@ -523,6 +523,8 @@ async function readD1Preflight() {
     SELECT
       (SELECT status FROM coverage) AS coverage_status,
       (SELECT scope_mode FROM coverage) AS coverage_scope_mode,
+      (SELECT period_start FROM coverage) AS coverage_period_start,
+      (SELECT period_end FROM coverage) AS coverage_period_end,
       (SELECT source_watermark FROM coverage) AS source_watermark,
       (SELECT MAX(metric_date) FROM commerce_daily_sales_facts
         WHERE account_key = '${sqlText(target.accountKey)}') AS period_end,

@@ -53,7 +53,7 @@ export class D1WooCommerceReportSource {
       `, [accountKey, currency, periodStart, periodEnd, MAX_ORDER_ROWS + 1], 'WOOCOMMERCE_REPORT_ORDER_READ_FAILED'),
       this.#all(`
         SELECT
-          coverage_run_id, status, scope_mode, source_watermark,
+          coverage_run_id, status, scope_mode, period_start, period_end, source_watermark,
           revisable_until, completed_at, updated_at
         FROM data_coverage_runs
         WHERE account_key = ?

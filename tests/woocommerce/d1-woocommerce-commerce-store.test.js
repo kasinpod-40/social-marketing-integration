@@ -39,6 +39,8 @@ async function fixture() {
       dataset_key TEXT NOT NULL,
       status TEXT NOT NULL,
       scope_mode TEXT NOT NULL,
+      period_start TEXT,
+      period_end TEXT,
       source_watermark TEXT,
       revisable_until INTEGER,
       completed_at INTEGER,
