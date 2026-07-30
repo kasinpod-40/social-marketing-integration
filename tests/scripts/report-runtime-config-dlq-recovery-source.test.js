@@ -41,11 +41,14 @@ test('exact config-DLQ recovery permits only retained DLQ metadata mutation afte
   assert.doesNotMatch(operator, /UPDATE\s+data_coverage_/iu);
 });
 
-test('one-command recovery finalizes current head, closes exact config DLQ, then resumes remaining windows', () => {
+test('one-command recovery finalizes, bridges retry evidence, verifies exact config DLQ, then resumes windows', () => {
   const finalizer = wrapper.indexOf("runRequired('report-runtime-finalizer'");
+  const bridge = wrapper.indexOf("'3d-config-dlq-evidence-head-bridge'");
   const exactRecovery = wrapper.indexOf("runRequired('3d-exact-config-dlq-recovery'");
   const remaining = wrapper.indexOf("runRequired('remaining-window-sequence'");
-  assert.ok(finalizer >= 0 && exactRecovery > finalizer && remaining > exactRecovery);
+  assert.ok(finalizer >= 0 && bridge > finalizer && exactRecovery > bridge && remaining > exactRecovery);
+  assert.match(wrapper, /REPORT_RUNTIME_CONFIG_DLQ_EVIDENCE_HEAD_BRIDGE_CONFIRMATION/u);
+  assert.match(wrapper, /CONFIRM_REPORT_RUNTIME_CONFIG_DLQ_EVIDENCE_HEAD_BRIDGE/u);
   assert.match(wrapper, /REPORT_RUNTIME_CONFIG_DLQ_RECOVERY_CONFIRMATION/u);
   assert.match(wrapper, /CONFIRM_REPORT_RUNTIME_CONFIG_DLQ_RECOVERY/u);
   assert.doesNotMatch(wrapper, /report-runtime-lark-metric-null-repair\.mjs/u);
