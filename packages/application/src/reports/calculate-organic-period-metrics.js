@@ -1,5 +1,10 @@
 import { calculateRate } from '../../../domain/src/value-objects/metric-value.js';
 import { requireDateOnly } from '../../../shared/src/date/date-only.js';
+import {
+  dashboardMetricAvailabilityMessage,
+  normalizeDashboardMetricAvailability,
+  normalizeDashboardMetricScope,
+} from '../../../config/src/dashboard-metric-readiness.js';
 
 const DELTA_FIELDS = Object.freeze([
   ['views', 'periodViews'],
@@ -8,6 +13,26 @@ const DELTA_FIELDS = Object.freeze([
   ['shares', 'periodShares'],
   ['uniqueViewers', 'periodUniqueViewers'],
   ['totalWatchTimeSeconds', 'periodTotalWatchTimeSeconds'],
+]);
+
+const ORGANIC_METRIC_DEFINITIONS = Object.freeze([
+  metricDefinition('period_views', 'Views gained', 'count', 'period_delta'),
+  metricDefinition('period_likes', 'Likes gained', 'count', 'period_delta'),
+  metricDefinition('period_comments', 'Comments gained', 'count', 'period_delta'),
+  metricDefinition('period_shares', 'Shares gained', 'count', 'period_delta'),
+  metricDefinition('period_engagement', 'Engagement gained', 'count', 'period_delta'),
+  metricDefinition('period_engagement_rate', 'Engagement rate (period)', 'ratio', 'period_delta'),
+  metricDefinition('latest_total_views', 'Total views', 'count', 'current_total'),
+  metricDefinition('latest_total_likes', 'Total likes', 'count', 'current_total'),
+  metricDefinition('latest_total_comments', 'Total comments', 'count', 'current_total'),
+  metricDefinition('latest_total_shares', 'Total shares', 'count', 'current_total'),
+  metricDefinition('latest_total_engagement', 'Total engagement', 'count', 'current_total'),
+  metricDefinition('latest_engagement_rate', 'Engagement rate (total)', 'ratio', 'current_total'),
+  metricDefinition('new_content_count', 'New content', 'count', 'data_quality'),
+  metricDefinition('tracked_content_count', 'Tracked content', 'count', 'data_quality'),
+  metricDefinition('baseline_covered_content_count', 'Baseline covered content', 'count', 'data_quality'),
+  metricDefinition('baseline_missing_content_count', 'Baseline missing content', 'count', 'data_quality'),
+  metricDefinition('baseline_coverage_rate', 'Baseline coverage', 'ratio', 'data_quality'),
 ]);
 
 /** Platform-neutral cumulative Organic calculation with explicit baseline and null semantics. */
@@ -73,12 +98,18 @@ export function calculateOrganicPeriodMetrics(input = {}) {
 
   const trackedContentCount = rows.length;
   const coveredContentCount = rows.filter((row) => row.baselineCovered).length;
+  const missingBaselineContentCount = trackedContentCount - coveredContentCount;
   const coverageRate = trackedContentCount === 0 ? null : coveredContentCount / trackedContentCount;
   const dataStatus = trackedContentCount === 0
     ? (input.coverageStatus === 'complete' ? 'no_data_confirmed' : normalizeCoverageStatus(input.coverageStatus))
     : (coveredContentCount === trackedContentCount ? normalizeCompleteStatus(input.coverageStatus) : 'partial');
   const periodViews = sumField(rows, 'periodViews');
   const periodEngagement = sumField(rows, 'periodEngagement');
+  const latestTotalViews = sumCurrentField(rows, 'views');
+  const latestTotalLikes = sumCurrentField(rows, 'likes');
+  const latestTotalComments = sumCurrentField(rows, 'comments');
+  const latestTotalShares = sumCurrentField(rows, 'shares');
+  const latestTotalEngagement = sumField(rows, 'latestEngagement');
   const metrics = Object.freeze({
     period_views: periodViews,
     period_likes: sumField(rows, 'periodLikes'),
@@ -86,11 +117,17 @@ export function calculateOrganicPeriodMetrics(input = {}) {
     period_shares: sumField(rows, 'periodShares'),
     period_engagement: periodEngagement,
     period_engagement_rate: calculateRate(periodEngagement, periodViews),
+    latest_total_views: latestTotalViews,
+    latest_total_likes: latestTotalLikes,
+    latest_total_comments: latestTotalComments,
+    latest_total_shares: latestTotalShares,
+    latest_total_engagement: latestTotalEngagement,
+    latest_engagement_rate: calculateRate(latestTotalEngagement, latestTotalViews),
     new_content_count: rows.filter((row) => row.baselineMode === 'new_content').length,
     tracked_content_count: trackedContentCount,
+    baseline_covered_content_count: coveredContentCount,
+    baseline_missing_content_count: missingBaselineContentCount,
     baseline_coverage_rate: coverageRate,
-    latest_total_views: sumCurrentField(rows, 'views'),
-    latest_total_engagement: sumField(rows, 'latestEngagement'),
     latest_weighted_avg_watch_time_seconds: weightedAverageStrict(rows, 'avgWatchTimeSeconds', 'views'),
     latest_weighted_completion_rate: weightedAverageStrict(rows, 'completionRate', 'views'),
   });
@@ -103,6 +140,8 @@ export function calculateOrganicPeriodMetrics(input = {}) {
     sourceSnapshotCount: usedObservationIds.size,
     trackedContentCount,
     coveredContentCount,
+    missingBaselineContentCount,
+    baselineModeCounts: summarizeBaselineModes(rows),
     metrics,
     contentRows: Object.freeze(sortTopContentRows(rows)),
   });
@@ -113,30 +152,26 @@ export function buildOrganicMetricPayload(input = {}) {
   const formulaVersion = requireText(input.formulaVersion, 'formulaVersion');
   const current = requireObject(input.current, 'current');
   const compare = input.compare == null ? null : requireObject(input.compare, 'compare');
-  const definitions = [
-    ['period_views', 'Views', 'count'],
-    ['period_likes', 'Likes', 'count'],
-    ['period_comments', 'Comments', 'count'],
-    ['period_shares', 'Shares', 'count'],
-    ['period_engagement', 'Engagement', 'count'],
-    ['period_engagement_rate', 'Engagement rate', 'ratio'],
-    ['new_content_count', 'New content', 'count'],
-    ['tracked_content_count', 'Tracked content', 'count'],
-    ['baseline_coverage_rate', 'Baseline coverage', 'ratio'],
-    ['latest_total_views', 'Latest total views', 'count'],
-  ];
-  return Object.freeze(Object.fromEntries(definitions.map(([key, displayName, unit], index) => {
-    const currentValue = normalizeMetric(current.metrics?.[key]);
-    const compareValue = compare ? normalizeMetric(compare.metrics?.[key]) : null;
+  return Object.freeze(Object.fromEntries(ORGANIC_METRIC_DEFINITIONS.map((definition, index) => {
+    const currentValue = normalizeMetric(current.metrics?.[definition.key]);
+    const compareValue = compare ? normalizeMetric(compare.metrics?.[definition.key]) : null;
     const change = currentValue === null || compareValue === null ? null : currentValue - compareValue;
-    return [`${platform}:${key}`, Object.freeze({
-      metricKey: `${platform}:${key}`,
-      displayName,
-      unit,
+    const availabilityStatus = resolveMetricAvailability({
+      definition,
+      currentValue,
+      current,
+    });
+    return [`${platform}:${definition.key}`, Object.freeze({
+      metricKey: `${platform}:${definition.key}`,
+      displayName: definition.displayName,
+      unit: definition.unit,
       current: currentValue,
       compare: compareValue,
       change,
       changePercent: change === null || compareValue === 0 ? null : change / Math.abs(compareValue),
+      metricScope: definition.metricScope,
+      availabilityStatus,
+      availabilityMessage: dashboardMetricAvailabilityMessage(availabilityStatus),
       clientVisible: true,
       sortOrder: index + 1,
       formulaVersion,
@@ -165,6 +200,41 @@ export function buildOrganicTopContentPayload(rows, limit = 5) {
     performance_status: row.performanceStatus,
     data_status: row.dataStatus,
   })));
+}
+
+function resolveMetricAvailability(input) {
+  if (input.currentValue !== null) {
+    return normalizeDashboardMetricAvailability({ status: 'available' });
+  }
+  if (input.current.dataStatus === 'source_unavailable') {
+    return normalizeDashboardMetricAvailability({ status: 'source_unavailable' });
+  }
+  if (input.definition.metricScope === 'period_delta'
+    && input.current.trackedContentCount > 0
+    && input.current.coveredContentCount < input.current.trackedContentCount) {
+    return normalizeDashboardMetricAvailability({ status: 'baseline_incomplete' });
+  }
+  return normalizeDashboardMetricAvailability({ status: 'not_observed' });
+}
+
+function metricDefinition(key, displayName, unit, metricScope) {
+  return Object.freeze({
+    key,
+    displayName,
+    unit,
+    metricScope: normalizeDashboardMetricScope(metricScope),
+  });
+}
+
+function summarizeBaselineModes(rows) {
+  const counts = {
+    actual: 0,
+    new_content: 0,
+    partial_first_snapshot: 0,
+    missing_baseline: 0,
+  };
+  for (const row of rows) counts[row.baselineMode] += 1;
+  return Object.freeze(counts);
 }
 
 function resolveBaseline(input) {

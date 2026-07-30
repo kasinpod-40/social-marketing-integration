@@ -1,3 +1,8 @@
+import {
+  DASHBOARD_METRIC_AVAILABILITY_OPTIONS,
+  DASHBOARD_METRIC_SCOPE_OPTIONS,
+} from './dashboard-metric-readiness.js';
+
 const PLATFORM_OPTIONS = Object.freeze([
   'facebook', 'instagram', 'tiktok', 'youtube', 'meta_ads', 'google_ads', 'tiktok_ads',
   'woocommerce',
@@ -18,6 +23,8 @@ export const LARK_REPORT_MATERIALIZATION_SCHEMA = deepFreeze({
     platforms: PLATFORM_OPTIONS,
     dataStatuses: DATA_STATUS_OPTIONS,
     periodKinds: PERIOD_KIND_OPTIONS,
+    metricScopes: DASHBOARD_METRIC_SCOPE_OPTIONS,
+    metricAvailabilityStatuses: DASHBOARD_METRIC_AVAILABILITY_OPTIONS,
     reportTypes: ['daily_organic_report', 'weekly_organic_report', 'dashboard_performance_report'],
   },
   tables: {
@@ -34,7 +41,12 @@ export const LARK_REPORT_MATERIALIZATION_SCHEMA = deepFreeze({
     },
     mktReportMetricValues: {
       keyField: 'report_metric_key',
-      additiveFields: sharedRowAdditiveFields(),
+      additiveFields: [
+        ...sharedRowAdditiveFields(),
+        select('metric_scope', DASHBOARD_METRIC_SCOPE_OPTIONS),
+        select('availability_status', DASHBOARD_METRIC_AVAILABILITY_OPTIONS),
+        text('availability_message'),
+      ],
       platformField: { fieldName: 'platform', type: 3, uiType: 'SingleSelect', options: PLATFORM_OPTIONS },
       dataStatusField: { fieldName: 'data_status', type: 3, uiType: 'SingleSelect', options: DATA_STATUS_OPTIONS },
       sourceContract: 'validated materialization.metricPayload',

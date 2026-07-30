@@ -1,4 +1,9 @@
 import { dateOnlyToEpochMilliseconds } from '../../../shared/src/date/date-only.js';
+import {
+  dashboardMetricAvailabilityMessage,
+  normalizeDashboardMetricAvailability,
+  normalizeDashboardMetricScope,
+} from '../../../config/src/dashboard-metric-readiness.js';
 import { escapeReportIdentityPart } from '../use-cases/build-report-snapshot.js';
 
 const MAX_RANK_LIMIT = 100;
@@ -17,6 +22,13 @@ export function buildReportMetricValueRows(input = {}) {
     .map((metric, index) => {
       const dimensionType = 'summary';
       const dimensionValue = 'all';
+      const currentValue = optionalFinite(metric.current);
+      const metricScope = normalizeDashboardMetricScope(metric.metricScope);
+      const availabilityStatus = normalizeDashboardMetricAvailability({
+        status: metric.availabilityStatus,
+        currentValue,
+        dataStatus: input.dataStatus,
+      });
       return freezeWithSharedDimensions({
         report_metric_key: [reportId, escapeReportIdentityPart(metric.metricKey), dimensionType, dimensionValue].join('::'),
         report_id: reportId,
@@ -27,11 +39,15 @@ export function buildReportMetricValueRows(input = {}) {
         account_id: requireText(input.accountId, 'accountId'),
         metric_key: requireText(metric.metricKey, 'metricKey'),
         display_name: requireText(metric.displayName, 'displayName'),
-        current_value: optionalFinite(metric.current),
+        current_value: currentValue,
         compare_value: optionalFinite(metric.compare),
         change_value: optionalFinite(metric.change),
         change_percent: optionalFinite(metric.changePercent),
         unit: requireText(metric.unit, 'unit'),
+        metric_scope: metricScope,
+        availability_status: availabilityStatus,
+        availability_message: optionalText(metric.availabilityMessage)
+          ?? dashboardMetricAvailabilityMessage(availabilityStatus),
         data_status: requireText(input.dataStatus, 'dataStatus'),
         dimension_type: dimensionType,
         dimension_value: dimensionValue,
@@ -177,6 +193,9 @@ function optionalFinite(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) throw new TypeError('Report output metric must be finite');
   return number;
+}
+function optionalText(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 function requireEpoch(value, fieldName) {
   const number = Number(value);
