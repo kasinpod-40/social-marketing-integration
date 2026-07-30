@@ -25,13 +25,15 @@ const DATASET_KEYS = Object.freeze([
   'customers',
   'coupons',
 ]);
-const DATASET_TO_D1_COUNT = Object.freeze({
+
+// Customer and Coupon Raw rows from the replaced pre-2026 scope are intentionally retained.
+// They cannot be compared with the bounded 2026 Source counters. The four datasets below are
+// current-snapshot or exact cleaned-range inventories and may be cross-checked at initial admission.
+const FULL_SOURCE_PARITY_FIELDS = Object.freeze({
   store: 'raw_commerce_stores',
   orders: 'raw_commerce_orders',
   products: 'raw_commerce_products',
   categories: 'raw_commerce_categories',
-  customers: 'raw_commerce_customers',
-  coupons: 'raw_commerce_coupons',
 });
 
 export function parseWooCommerceCompletedStateCloseoutArgs(argv = []) {
@@ -63,6 +65,7 @@ export function selectWooCommerceCompletedState(input = {}) {
   );
   const snapshot = normalizeWooCommerceFinalSnapshot(input.snapshot);
   const fullReconciliation = input.fullReconciliation !== false;
+  const requireCurrentSourceParity = input.requireCurrentSourceParity !== false;
   const requestedAt = requireTimestamp(
     snapshot.queueOriginalRequestedAt,
     'queueOriginalRequestedAt',
@@ -75,6 +78,8 @@ export function selectWooCommerceCompletedState(input = {}) {
   const expectedDatasetKeys = [...DATASET_KEYS].sort();
   const datasetKeySetExact = stableJson(observedDatasetKeys)
     === stableJson(expectedDatasetKeys);
+  const exactFullIdentity = !fullReconciliation
+    || operationId === WOOCOMMERCE_COMPLETED_STATE_OPERATION_ID;
   const generationsAgree = snapshot.queueGeneration === requestedAt
     && snapshot.workGeneration === requestedAt
     && snapshot.workRequestedAt === requestedAt
@@ -86,7 +91,7 @@ export function selectWooCommerceCompletedState(input = {}) {
       ? sourceScope.modifiedAfter === null
         && sourceScope.incrementalBoundary === null
       : Number.isSafeInteger(Number(sourceScope.modifiedAfter))
-        && requireOptionalText(sourceScope.incrementalBoundary) !== null);
+        && optionalText(sourceScope.incrementalBoundary) !== null);
   const identityMatches = completion.schemaVersion === COMPLETION_SCHEMA
     && completion.workKey === `woocommerce:${operationId}`;
   const phaseRetiredAfterCompletion = snapshot.phaseComplete === false
@@ -95,6 +100,7 @@ export function selectWooCommerceCompletedState(input = {}) {
     datasets,
     counts: snapshot.counts,
     fullReconciliation,
+    requireCurrentSourceParity,
   });
   const completionValid = snapshot.syncRunStatus === 'success'
     && snapshot.syncRunFinishedAt !== null
@@ -106,6 +112,7 @@ export function selectWooCommerceCompletedState(input = {}) {
     && snapshot.queueOperationAttempts >= 1
     && snapshot.coverageRunCount === DATASET_KEYS.length
     && snapshot.invalidCoverageCount === 0
+    && exactFullIdentity
     && generationsAgree
     && scopeMatches
     && identityMatches
@@ -127,11 +134,13 @@ export function selectWooCommerceCompletedState(input = {}) {
         queueOperationAttempts: snapshot.queueOperationAttempts,
         coverageRunCount: snapshot.coverageRunCount,
         invalidCoverageCount: snapshot.invalidCoverageCount,
+        exactFullIdentity,
         generationsAgree,
         scopeMatches,
         identityMatches,
         datasetKeySetExact,
         fullReconciliation,
+        requireCurrentSourceParity,
       },
     );
   }
@@ -176,7 +185,11 @@ export function classifyWooCommerceCompletedStatePoll(input = {}) {
       selected,
     });
   } catch (error) {
-    if (error?.code !== 'WOOCOMMERCE_COMPLETED_STATE_INVALID') throw error;
+    if (![
+      'WOOCOMMERCE_COMPLETED_STATE_INVALID',
+      'WOOCOMMERCE_COMPLETED_STATE_DATASET_INCOMPLETE',
+      'WOOCOMMERCE_COMPLETED_STATE_SOURCE_COUNT_DRIFT',
+    ].includes(error?.code)) throw error;
     return Object.freeze({ complete: false, terminalFailure: false, snapshot });
   }
 }
@@ -184,9 +197,17 @@ export function classifyWooCommerceCompletedStatePoll(input = {}) {
 export function compareWooCommerceCompletedStateReplay(beforeInput, afterInput) {
   const before = selectWooCommerceCompletedState(beforeInput);
   const after = selectWooCommerceCompletedState(afterInput);
+  const businessCountsMatch = stableJson(before.snapshot.counts)
+    === stableJson(after.snapshot.counts);
+  const coverageMatches = before.snapshot.coverageRunCount
+      === after.snapshot.coverageRunCount
+    && before.snapshot.invalidCoverageCount
+      === after.snapshot.invalidCoverageCount;
   if (before.operationId !== after.operationId
     || after.priorQueueAttempts < before.priorQueueAttempts + 1
-    || before.completionFingerprint !== after.completionFingerprint) {
+    || before.completionFingerprint !== after.completionFingerprint
+    || !businessCountsMatch
+    || !coverageMatches) {
     throw closeoutError(
       'WooCommerce completed-state replay changed durable completion or missed the Queue attempt',
       'WOOCOMMERCE_COMPLETED_STATE_REPLAY_INVALID',
@@ -196,6 +217,8 @@ export function compareWooCommerceCompletedStateReplay(beforeInput, afterInput) 
         afterQueueAttempts: after.priorQueueAttempts,
         completionFingerprintMatches:
           before.completionFingerprint === after.completionFingerprint,
+        businessCountsMatch,
+        coverageMatches,
       },
     );
   }
@@ -266,18 +289,14 @@ export function completedStateFingerprint(input = {}) {
   const snapshot = normalizeWooCommerceFinalSnapshot(input.snapshot);
   return sha256(stableJson({
     operationId,
-    syncRunStatus: snapshot.syncRunStatus,
-    syncRunFinishedAt: snapshot.syncRunFinishedAt,
     workLifecycleStatus: snapshot.workLifecycleStatus,
     workGeneration: snapshot.workGeneration,
     workRequestedAt: snapshot.workRequestedAt,
-    workCompletedAt: snapshot.workCompletedAt,
     completion: snapshot.completion,
     queueGeneration: snapshot.queueGeneration,
     queueOriginalRequestedAt: snapshot.queueOriginalRequestedAt,
     coverageRunCount: snapshot.coverageRunCount,
     invalidCoverageCount: snapshot.invalidCoverageCount,
-    counts: snapshot.counts,
   }));
 }
 
@@ -306,14 +325,16 @@ function validateDatasets(input) {
     const derived = nonNegativeInteger(dataset.derivedRows ?? 0, `${key}.derivedRows`);
     const lark = nonNegativeInteger(dataset.larkRows ?? 0, `${key}.larkRows`);
     const failed = nonNegativeInteger(dataset.failedRows ?? 0, `${key}.failedRows`);
-    const d1CountField = DATASET_TO_D1_COUNT[key];
-    const currentCount = nonNegativeInteger(input.counts[d1CountField], d1CountField);
-    if (currentCount !== observed) {
-      throw closeoutError(
-        'WooCommerce completed-state Source rows differ from current D1 Raw counts',
-        'WOOCOMMERCE_COMPLETED_STATE_SOURCE_COUNT_DRIFT',
-        { dataset: key, sourceRows: observed, d1RawRows: currentCount },
-      );
+    const d1CountField = FULL_SOURCE_PARITY_FIELDS[key] ?? null;
+    if (input.fullReconciliation && input.requireCurrentSourceParity && d1CountField) {
+      const currentCount = nonNegativeInteger(input.counts[d1CountField], d1CountField);
+      if (currentCount !== observed) {
+        throw closeoutError(
+          'WooCommerce completed-state Source rows differ from current D1 Raw counts',
+          'WOOCOMMERCE_COMPLETED_STATE_SOURCE_COUNT_DRIFT',
+          { dataset: key, sourceRows: observed, d1RawRows: currentCount },
+        );
+      }
     }
     sourceRows += observed;
     d1Rows += d1;
@@ -377,7 +398,7 @@ function requireText(value, fieldName) {
   return value.trim();
 }
 
-function requireOptionalText(value) {
+function optionalText(value) {
   return typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
 }
 
