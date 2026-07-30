@@ -22,4 +22,6 @@
 - Preserved retained Store/Product/Category and other pre-existing Business facts; the recovery mutation can update only the exact stale `sync_work_runs` row.
 - Added at most two ingestion-only retries for the confirmed intermittent response shape: direct HTTP 200, declared JSON Content-Type and HTML/XML body. Provider diagnostics remains one request by default; persistent or other invalid JSON remains permanent and fail-closed.
 - Kept `WOOCOMMERCE_INVALID_JSON` fail-closed for normal Queue processing; the recovery chain cannot resume the terminal operation or mutate Business/Coverage/Lark facts.
+- Corrected the recovery chain to invoke the supported ephemeral diagnostics entrypoint, which creates a one-time 256-bit token in process memory and supplies only its SHA-256 digest to the isolated Preview config.
+- Added regression coverage that rejects direct low-level diagnostics invocation from the recovery chain and proves the ephemeral launcher does not print or persist authorization material.
 - Implementation performs no Remote mutation, Worker deployment, Queue message, Lark write, Schedule change or Production action.
