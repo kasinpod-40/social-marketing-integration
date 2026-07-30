@@ -7,6 +7,22 @@ import {
 const OPERATION_ID = /^woo-final-(?:full|incremental)-[0-9a-f]{12}$/u;
 const EXACT_INCIDENT_OPERATION_ID = 'woo-final-full-5b56469100a9';
 const EXACT_INCIDENT_ERROR_CODE = 'WOOCOMMERCE_INVALID_JSON';
+const INCIDENT_TABLES = Object.freeze([
+  Object.freeze(['raw_commerce_stores', 'sync_run_id']),
+  Object.freeze(['raw_commerce_orders', 'sync_run_id']),
+  Object.freeze(['raw_commerce_order_items', 'sync_run_id']),
+  Object.freeze(['raw_commerce_products', 'sync_run_id']),
+  Object.freeze(['raw_commerce_product_variations', 'sync_run_id']),
+  Object.freeze(['raw_commerce_categories', 'sync_run_id']),
+  Object.freeze(['raw_commerce_customers', 'sync_run_id']),
+  Object.freeze(['raw_commerce_coupons', 'sync_run_id']),
+  Object.freeze(['raw_commerce_refunds', 'sync_run_id']),
+  Object.freeze(['commerce_order_state', 'last_sync_run_id']),
+  Object.freeze(['commerce_product_state', 'last_sync_run_id']),
+  Object.freeze(['commerce_customer_aggregates', 'last_sync_run_id']),
+  Object.freeze(['commerce_daily_sales_facts', 'sync_run_id']),
+  Object.freeze(['commerce_product_daily_facts', 'sync_run_id']),
+]);
 
 export const WOOCOMMERCE_FINAL_RECOVERY_ONLY_CONFIRMATION = Object.freeze({
   envName: 'CONFIRM_WOOCOMMERCE_RECOVERY_ONLY',
@@ -59,10 +75,17 @@ export function assertWooCommerceFinalRecoveryOnlyConfirmation(env = {}) {
 }
 
 export function buildWooCommerceFinalRecoveryOnlySnapshotSql(input = {}) {
-  return buildWooCommerceFinalSnapshotSql({
-    accountKey: requireText(input.accountKey, 'accountKey'),
-    operationId: requireOperationId(input.operationId),
-  });
+  const accountKey = requireText(input.accountKey, 'accountKey');
+  const operationId = requireOperationId(input.operationId);
+  const syncRunId = `woocommerce:${operationId}`;
+  const base = buildWooCommerceFinalSnapshotSql({
+    accountKey,
+    operationId,
+  }).replace(/;\s*$/u, '');
+  const incidentCounts = INCIDENT_TABLES.map(([table, column]) => (
+    `(SELECT COUNT(*) FROM ${table} WHERE account_key = '${accountKey.replaceAll("'", "''")}' AND ${column} = '${syncRunId}') AS ${incidentAlias(table)}`
+  )).join(', ');
+  return compactSql(`SELECT base.*, ${incidentCounts} FROM (${base}) AS base;`);
 }
 
 export function classifyWooCommerceFinalRecoveryOnlyState(row, input = {}) {
@@ -95,7 +118,8 @@ export function classifyWooCommerceFinalRecoveryOnlyState(row, input = {}) {
 export function verifyWooCommerceFinalRecoveryOnlyEligibility(row, input = {}) {
   const operationId = requireOperationId(input.operationId);
   const snapshot = normalizeWooCommerceFinalSnapshot(row);
-  const businessRows = totalBusinessRows(snapshot.counts);
+  const incidentBusinessRows = countIncidentBusinessRows(row);
+  const retainedBusinessRows = totalBusinessRows(snapshot.counts);
   const violations = [];
 
   if (snapshot.syncRunStatus !== 'failed') violations.push('sync_run_not_failed');
@@ -111,7 +135,7 @@ export function verifyWooCommerceFinalRecoveryOnlyEligibility(row, input = {}) {
   if (snapshot.queueOperationAttempts !== 1) violations.push('queue_attempt_count_not_one');
   if (snapshot.coverageRunCount !== 0) violations.push('coverage_present');
   if (snapshot.invalidCoverageCount !== 0) violations.push('invalid_coverage_present');
-  if (businessRows !== 0) violations.push('business_rows_present');
+  if (incidentBusinessRows !== 0) violations.push('incident_business_rows_present');
 
   if (violations.length > 0) {
     throw recoveryOnlyError(
@@ -120,7 +144,8 @@ export function verifyWooCommerceFinalRecoveryOnlyEligibility(row, input = {}) {
       {
         operationIdFingerprint: sha256(operationId),
         violations: Object.freeze(violations),
-        businessRows,
+        incidentBusinessRows,
+        retainedBusinessRows,
         activeLockCount: snapshot.activeLockCount,
         queueOperationAttempts: snapshot.queueOperationAttempts,
         coverageRunCount: snapshot.coverageRunCount,
@@ -134,7 +159,9 @@ export function verifyWooCommerceFinalRecoveryOnlyEligibility(row, input = {}) {
     workKey: `woocommerce:${operationId}`,
     operationIdFingerprint: sha256(operationId),
     workKeyFingerprint: sha256(`woocommerce:${operationId}`),
-    businessRows,
+    businessRows: incidentBusinessRows,
+    incidentBusinessRows,
+    retainedBusinessRows,
     snapshot,
   });
 }
@@ -142,7 +169,8 @@ export function verifyWooCommerceFinalRecoveryOnlyEligibility(row, input = {}) {
 export function verifyWooCommerceFinalRecoveryOnlyPostState(row, input = {}) {
   const operationId = requireOperationId(input.operationId);
   const snapshot = normalizeWooCommerceFinalSnapshot(row);
-  const businessRows = totalBusinessRows(snapshot.counts);
+  const incidentBusinessRows = countIncidentBusinessRows(row);
+  const retainedBusinessRows = totalBusinessRows(snapshot.counts);
   const violations = [];
 
   if (snapshot.syncRunStatus !== 'failed') violations.push('sync_run_changed');
@@ -157,7 +185,7 @@ export function verifyWooCommerceFinalRecoveryOnlyPostState(row, input = {}) {
   if (snapshot.queueOperationAttempts !== 1) violations.push('queue_attempt_count_changed');
   if (snapshot.coverageRunCount !== 0) violations.push('coverage_changed');
   if (snapshot.invalidCoverageCount !== 0) violations.push('invalid_coverage_changed');
-  if (businessRows !== 0) violations.push('business_rows_changed');
+  if (incidentBusinessRows !== 0) violations.push('incident_business_rows_changed');
 
   if (violations.length > 0) {
     throw recoveryOnlyError(
@@ -166,7 +194,8 @@ export function verifyWooCommerceFinalRecoveryOnlyPostState(row, input = {}) {
       {
         operationIdFingerprint: sha256(operationId),
         violations: Object.freeze(violations),
-        businessRows,
+        incidentBusinessRows,
+        retainedBusinessRows,
       },
     );
   }
@@ -175,9 +204,28 @@ export function verifyWooCommerceFinalRecoveryOnlyPostState(row, input = {}) {
     verified: true,
     operationIdFingerprint: sha256(operationId),
     workKeyFingerprint: sha256(`woocommerce:${operationId}`),
-    businessRows,
+    businessRows: incidentBusinessRows,
+    incidentBusinessRows,
+    retainedBusinessRows,
     snapshot,
   });
+}
+
+function countIncidentBusinessRows(row = {}) {
+  let total = 0;
+  for (const [table] of INCIDENT_TABLES) {
+    const alias = incidentAlias(table);
+    const value = Number(row[alias]);
+    if (!Number.isSafeInteger(value) || value < 0) {
+      throw recoveryOnlyError(
+        'WooCommerce recovery-only incident count is invalid',
+        'WOOCOMMERCE_RECOVERY_ONLY_INCIDENT_COUNT_INVALID',
+        { table },
+      );
+    }
+    total += value;
+  }
+  return total;
 }
 
 function totalBusinessRows(counts = {}) {
@@ -185,7 +233,7 @@ function totalBusinessRows(counts = {}) {
   for (const [table, value] of Object.entries(counts)) {
     if (!Number.isSafeInteger(value) || value < 0) {
       throw recoveryOnlyError(
-        'WooCommerce recovery-only business count is invalid',
+        'WooCommerce recovery-only retained business count is invalid',
         'WOOCOMMERCE_RECOVERY_ONLY_COUNT_INVALID',
         { table },
       );
@@ -193,6 +241,14 @@ function totalBusinessRows(counts = {}) {
     total += value;
   }
   return total;
+}
+
+function incidentAlias(table) {
+  return `incident_${table}`;
+}
+
+function compactSql(value) {
+  return String(value).replace(/\s+/gu, ' ').trim();
 }
 
 function requireOperationId(value) {
