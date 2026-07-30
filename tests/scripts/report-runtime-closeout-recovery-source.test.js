@@ -42,11 +42,13 @@ test('recorded legacy replay recovery is verification-only and cannot send again
   assert.doesNotMatch(branch, /deployConfig/u);
 });
 
-test('current recovery wrapper finalizes, closes exact config DLQ, then resumes remaining windows', () => {
+test('current recovery wrapper finalizes, bridges retry evidence, closes exact config DLQ, then resumes windows', () => {
   const finalizer = wrapper.indexOf("runRequired('report-runtime-finalizer'");
+  const bridge = wrapper.indexOf("'3d-config-dlq-evidence-head-bridge'");
   const recovery = wrapper.indexOf("runRequired('3d-exact-config-dlq-recovery'");
   const remaining = wrapper.indexOf("runRequired('remaining-window-sequence'");
-  assert.ok(finalizer >= 0 && recovery > finalizer && remaining > recovery);
+  assert.ok(finalizer >= 0 && bridge > finalizer && recovery > bridge && remaining > recovery);
+  assert.match(wrapper, /REPORT_RUNTIME_CONFIG_DLQ_EVIDENCE_HEAD_BRIDGE_CONFIRMATION/u);
   assert.match(wrapper, /REPORT_RUNTIME_CONFIG_DLQ_RECOVERY_CONFIRMATION/u);
   assert.match(wrapper, /RECOVER_REPORT_RUNTIME_3D_AND_CONTINUE/u);
   assert.doesNotMatch(wrapper, /report-runtime-closeout-operator\.mjs/u);

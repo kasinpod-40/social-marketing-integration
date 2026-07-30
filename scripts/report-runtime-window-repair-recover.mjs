@@ -4,6 +4,9 @@ import { spawnSync } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import {
+  REPORT_RUNTIME_CONFIG_DLQ_EVIDENCE_HEAD_BRIDGE_CONFIRMATION,
+} from './lib/report-runtime-config-dlq-evidence-head-bridge.js';
+import {
   REPORT_RUNTIME_CONFIG_DLQ_RECOVERY_CONFIRMATION,
 } from './lib/report-runtime-config-dlq-recovery.js';
 import { REPORT_RUNTIME_WINDOW_REPAIR_CONFIRMATION } from './lib/report-runtime-window-repair.js';
@@ -32,6 +35,17 @@ try {
     MKT_REPORT_RUNTIME_FINALIZE_EVIDENCE_DIR: finalizerRoot,
     CONFIRM_REPORT_RUNTIME_FINALIZE: 'EXECUTE_REPORT_RUNTIME_FINALIZE',
   });
+
+  runRequired(
+    '3d-config-dlq-evidence-head-bridge',
+    ['scripts/report-runtime-config-dlq-evidence-head-bridge.mjs'],
+    {
+      ...process.env,
+      MKT_REPORT_RUNTIME_CLOSEOUT_EVIDENCE_DIR: threeDayEvidence,
+      CONFIRM_REPORT_RUNTIME_CONFIG_DLQ_EVIDENCE_HEAD_BRIDGE:
+        REPORT_RUNTIME_CONFIG_DLQ_EVIDENCE_HEAD_BRIDGE_CONFIRMATION,
+    },
+  );
 
   runRequired('3d-exact-config-dlq-recovery', ['scripts/report-runtime-config-dlq-recovery.mjs'], {
     ...process.env,
