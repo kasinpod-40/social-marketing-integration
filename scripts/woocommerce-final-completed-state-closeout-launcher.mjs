@@ -16,13 +16,13 @@ import { fileURLToPath } from 'node:url';
  *
  * Current Wrangler emits `settings.batch_size` and `settings.max_wait_time_ms`. The dedicated proxy
  * first reuses the shared Woo Queue normalization, then exposes its normalized DLQ identity through
- * `settings.dead_letter_queue` for this closeout verifier. Only the exact
+ * `settings.dead_letter_queue` for the immutable closeout core. Only the exact
  * `wrangler queues consumer list ... --json` command is adapted; every other npx command passes
  * through byte-for-byte.
  */
 
-const operatorPath = fileURLToPath(
-  new URL('./woocommerce-final-completed-state-closeout.mjs', import.meta.url),
+const corePath = fileURLToPath(
+  new URL('./woocommerce-final-completed-state-closeout-core.mjs', import.meta.url),
 );
 const proxyModulePath = fileURLToPath(
   new URL('./woocommerce-final-completed-state-npx-proxy.mjs', import.meta.url),
@@ -40,7 +40,7 @@ try {
   await writeProxyExecutable(proxyExecutable);
   const child = spawnSync(
     process.execPath,
-    [operatorPath, ...process.argv.slice(2)],
+    [corePath, ...process.argv.slice(2)],
     {
       cwd: process.cwd(),
       env: {
