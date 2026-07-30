@@ -28,7 +28,14 @@ export async function generateWooCommerceCommerceReport(input = {}) {
     currency: range.currency,
     period_start: range.periodStart,
     period_end: range.periodEnd,
-    data_status: resolveDataStatus(range.daily, products, range.coverage, now),
+    data_status: resolveDataStatus(
+      range.daily,
+      products,
+      range.coverage,
+      now,
+      range.periodStart,
+      range.periodEnd,
+    ),
     source_watermark: latestText([
       ...range.daily.map((row) => row.source_revision),
       ...range.products.map((row) => row.source_revision),
@@ -38,6 +45,8 @@ export async function generateWooCommerceCommerceReport(input = {}) {
       coverage_run_id: range.coverage.coverage_run_id,
       status: range.coverage.status,
       scope_mode: range.coverage.scope_mode,
+      period_start: nullableText(range.coverage.period_start),
+      period_end: nullableText(range.coverage.period_end),
       revisable_until: nullableInteger(range.coverage.revisable_until),
       completed_at: nullableInteger(range.coverage.completed_at),
     }) : null,
@@ -133,10 +142,11 @@ function sortSummaries(byKey, keyField) {
       || left[keyField].localeCompare(right[keyField]));
 }
 
-function resolveDataStatus(daily, products, coverage, now) {
+function resolveDataStatus(daily, products, coverage, now, periodStart, periodEnd) {
+  const coverageComplete = coverageSupportsRange(coverage, periodStart, periodEnd);
   if (coverage?.status === 'source_unavailable') return 'source_unavailable';
   if (daily.length === 0) {
-    return coverage?.status === 'no_data_confirmed' && coverage?.scope_mode === 'full_inventory'
+    return coverage?.status === 'no_data_confirmed' && coverageComplete
       ? 'no_data_confirmed'
       : 'partial';
   }
@@ -147,12 +157,21 @@ function resolveDataStatus(daily, products, coverage, now) {
   if (statuses.has('source_unavailable')) return 'source_unavailable';
   if (statuses.has('partial')) return 'partial';
   if (statuses.has('revisable')) return 'revisable';
-  if (!coverage || coverage.status !== 'complete' || coverage.scope_mode !== 'full_inventory') {
+  if (!coverage || coverage.status !== 'complete' || !coverageComplete) {
     return 'partial';
   }
   const revisableUntil = nullableInteger(coverage.revisable_until);
   if (revisableUntil !== null && revisableUntil > now) return 'revisable';
   return 'complete';
+}
+
+function coverageSupportsRange(coverage, periodStart, periodEnd) {
+  if (coverage?.scope_mode === 'full_inventory') return true;
+  if (coverage?.scope_mode !== 'report_range') return false;
+  return typeof coverage.period_start === 'string'
+    && typeof coverage.period_end === 'string'
+    && coverage.period_start <= periodStart
+    && coverage.period_end >= periodEnd;
 }
 
 function parseTextArray(value) {

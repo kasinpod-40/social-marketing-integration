@@ -336,7 +336,7 @@ export function assertReportRuntimeCloseoutPreflight(row = {}) {
 
 export function assertWooCommerceReportRuntimeCloseoutPreflight(row = {}) {
   if (!['complete', 'partial', 'revisable', 'no_data_confirmed'].includes(String(row.coverage_status))
-    || !['full_inventory', 'recent_window'].includes(String(row.coverage_scope_mode))
+    || !['full_inventory', 'recent_window', 'report_range'].includes(String(row.coverage_scope_mode))
     || typeof row.source_watermark !== 'string'
     || row.source_watermark.trim() === ''
     || !/^\d{4}-\d{2}-\d{2}$/u.test(String(row.period_end ?? ''))

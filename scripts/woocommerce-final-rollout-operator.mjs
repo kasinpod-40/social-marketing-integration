@@ -54,6 +54,7 @@ const REQUIRED_SECRET_NAMES = Object.freeze([
 ]);
 const EXPECTED_TABLE_COUNT = 17;
 const EXPECTED_INDEX_COUNT = 13;
+const APPROVED_ORDER_HISTORY_START = '2026-01-01T00:00:00.000Z';
 const LARK_SCHEMA_VERIFY_DELAYS_MS = Object.freeze([0, 1_000, 2_000, 4_000, 8_000]);
 let latestSafeConfig = null;
 let target = null;
@@ -189,6 +190,8 @@ async function executeFinalRollout() {
     requestedAt: full.requestedAt,
     trigger: 'manual_uat',
     fullReconciliation: true,
+    orderCreatedAfter: target.orderHistoryStart,
+    orderCreatedBefore: full.requestedAt,
   }), full.resumedExactOperation
     ? { attemptKey: `${full.operationId}:exact-continuation:${full.priorQueueAttempts + 1}` }
     : undefined);
@@ -209,6 +212,8 @@ async function executeFinalRollout() {
     requestedAt: full.requestedAt,
     trigger: 'manual_uat',
     fullReconciliation: true,
+    orderCreatedAfter: target.orderHistoryStart,
+    orderCreatedBefore: full.requestedAt,
   }), { attemptKey: `${full.operationId}:rerun` });
   const rerunAfter = await pollQueueAttempt(full.operationId, fullAfter.queueOperationAttempts + 1);
   const rerun = compareWooCommerceRerun(fullAfter, rerunAfter);
@@ -224,6 +229,8 @@ async function executeFinalRollout() {
     trigger: 'manual_uat',
     fullReconciliation: false,
     modifiedAfter: watermark,
+    orderCreatedAfter: target.orderHistoryStart,
+    orderCreatedBefore: incremental.requestedAt,
   }));
   const incrementalAfter = await pollCompletion(incremental.operationId, false, 1);
   const incrementalParity = await verifyParity(lark, schema.tableIds, incrementalAfter.counts);
@@ -252,6 +259,11 @@ async function executeFinalRollout() {
     d1Backup: backup,
     larkSchema: { tableCount: schema.tableCount, createdTables: schema.createdTables, createdFields: schema.createdFields },
     fullReconciliation: { operationId: full.operationId, totalRows: sumCounts(fullAfter.counts) },
+    orderHistoryWindow: {
+      start: new Date(target.orderHistoryStart).toISOString(),
+      end: new Date(full.requestedAt).toISOString(),
+      scopeMode: 'report_range',
+    },
     resumedExactOperation: full.resumedExactOperation === true,
     parityVerified: true,
     idempotentRerunVerified: true,
@@ -279,6 +291,9 @@ function loadTarget(env) {
     customerProfile: exact('MKT_CUSTOMER_PROFILE', 'integration_workspace'),
     customerKey: exact('MKT_CONNECTION_CUSTOMER_KEY', 'chemistry_k'),
     accountKey: 'chemistry_k',
+    orderHistoryStart: requireApprovedHistoryStart(
+      env.MKT_WOOCOMMERCE_ORDER_HISTORY_START,
+    ),
     repositoryHead: required(env.MKT_WOOCOMMERCE_FINAL_REPOSITORY_HEAD, 'MKT_WOOCOMMERCE_FINAL_REPOSITORY_HEAD'),
     databaseName: env.MKT_WOOCOMMERCE_ROLLOUT_DATABASE_NAME ?? 'social-mkt-state-dev',
     workerName: env.MKT_WOOCOMMERCE_ROLLOUT_WORKER_NAME ?? 'social-mkt-sync-worker',
@@ -289,6 +304,17 @@ function loadTarget(env) {
     queueId: required(env.MKT_WOOCOMMERCE_FINAL_QUEUE_ID, 'MKT_WOOCOMMERCE_FINAL_QUEUE_ID'),
     apiToken: required(env.CLOUDFLARE_API_TOKEN, 'CLOUDFLARE_API_TOKEN'),
   });
+}
+
+function requireApprovedHistoryStart(value) {
+  const text = optionalText(value) ?? APPROVED_ORDER_HISTORY_START;
+  if (new Date(text).toISOString() !== APPROVED_ORDER_HISTORY_START) {
+    throw failure(
+      `MKT_WOOCOMMERCE_ORDER_HISTORY_START must equal ${APPROVED_ORDER_HISTORY_START}`,
+      'WOOCOMMERCE_FINAL_HISTORY_WINDOW_INVALID',
+    );
+  }
+  return Date.parse(APPROVED_ORDER_HISTORY_START);
 }
 
 async function loadEnvironment() {
@@ -517,6 +543,7 @@ async function readExactContinuation(resumeOperationId) {
         operation: selectWooCommerceFullOperation({
           resumeOperationId,
           snapshot,
+          orderHistoryStart: target.orderHistoryStart,
         }),
       });
     } catch (error) {

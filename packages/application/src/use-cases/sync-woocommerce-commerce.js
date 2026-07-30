@@ -95,12 +95,18 @@ export async function syncWooCommerceCommerce(input = {}) {
 
     const contract = DATASET_PLAN[state.datasetIndex];
     const coverageRunId = `${reference.syncRunId}:woocommerce:${contract.dataset}`;
-    const pageResult = await fetchDatasetPage({
+    const sourcePage = await fetchDatasetPage({
       contract,
       state,
       scope: state.scope,
       client: dependencies.client,
       now: runtime.now,
+    });
+    const pageResult = applyBoundedHistoryFilter({
+      contract,
+      pageResult: sourcePage,
+      state,
+      scope: state.scope,
     });
     const enriched = await enrichNestedResources({
       contract,
@@ -301,8 +307,47 @@ function buildSourceParams(dataset, scope) {
   if (dataset === WOOCOMMERCE_DATASETS.ORDERS) {
     params.status = 'any';
     params.dp = 6;
+    if (scope.orderCreatedAfter !== null) {
+      // WooCommerce/WordPress date queries are strictly "after". Ask from the
+      // preceding millisecond, then enforce the exact immutable boundary locally.
+      params.after = new Date(Math.max(0, scope.orderCreatedAfter - 1)).toISOString();
+    }
+    if (scope.orderCreatedBefore !== null) {
+      params.before = new Date(scope.orderCreatedBefore).toISOString();
+    }
   }
   return params;
+}
+
+function applyBoundedHistoryFilter(input) {
+  if (input.scope.orderCreatedAfter === null
+    || ![
+      WOOCOMMERCE_DATASETS.ORDERS,
+      WOOCOMMERCE_DATASETS.CUSTOMERS,
+      WOOCOMMERCE_DATASETS.COUPONS,
+    ]
+      .includes(input.contract.dataset)) {
+    return input.pageResult;
+  }
+  const records = input.pageResult.records.filter((record) => {
+    const createdAt = nullableTimestamp(
+      record?.date_created_gmt ?? record?.date_created,
+      `${input.contract.dataset}.date_created`,
+    );
+    return createdAt !== null
+      && createdAt >= input.scope.orderCreatedAfter
+      && (input.scope.orderCreatedBefore === null
+        || createdAt < input.scope.orderCreatedBefore);
+  });
+  const current = input.state.datasetCounts[input.contract.dataset]
+    ?? emptyDatasetCount();
+  return Object.freeze({
+    ...input.pageResult,
+    records: Object.freeze(records),
+    totalRows: input.pageResult.nextPage === null
+      ? current.sourceRows + records.length
+      : input.pageResult.totalRows,
+  });
 }
 
 async function enrichNestedResources(input) {
@@ -450,6 +495,12 @@ function buildCoverageRun(input) {
   const datasetState = input.state.datasetCounts[input.contract.dataset] ?? emptyDatasetCount();
   const expected = input.pageResult.totalRows;
   const observed = datasetState.sourceRows;
+  const boundedDataset = [
+    WOOCOMMERCE_DATASETS.ORDERS,
+    WOOCOMMERCE_DATASETS.CUSTOMERS,
+    WOOCOMMERCE_DATASETS.COUPONS,
+  ].includes(input.contract.dataset)
+    && input.scope.orderCreatedAfter !== null;
   const status = input.complete
     ? (expected === 0 ? 'no_data_confirmed' : observed === expected ? 'complete' : 'partial')
     : 'partial';
@@ -462,9 +513,13 @@ function buildCoverageRun(input) {
     account_key: input.accountKey,
     dataset_key: `woocommerce_${input.contract.dataset}`,
     metric_semantics: 'snapshot',
-    scope_mode: input.scope.fullReconciliation ? 'full_inventory' : 'recent_window',
-    period_start: null,
-    period_end: null,
+    scope_mode: boundedDataset
+      ? 'report_range'
+      : input.scope.fullReconciliation ? 'full_inventory' : 'recent_window',
+    period_start: boundedDataset ? utcDate(input.scope.orderCreatedAfter) : null,
+    period_end: boundedDataset && input.scope.orderCreatedBefore !== null
+      ? utcDate(input.scope.orderCreatedBefore)
+      : null,
     source_timezone: input.state.storeContext.reportingTimezone ?? input.scope.reportingTimezone,
     status,
     expected_entities: expected,
@@ -552,6 +607,8 @@ function createExecutionScope(runtime) {
     fullReconciliation: runtime.fullReconciliation,
     modifiedAfter: runtime.modifiedAfter,
     incrementalBoundary: runtime.incrementalBoundary,
+    orderCreatedAfter: runtime.orderCreatedAfter,
+    orderCreatedBefore: runtime.orderCreatedBefore,
     reportingTimezone: runtime.reportingTimezone,
     defaultCurrency: runtime.defaultCurrency,
     pageSize: runtime.pageSize,
@@ -563,12 +620,23 @@ function createExecutionScope(runtime) {
 
 function normalizeExecutionScope(value, fallback) {
   const source = value && typeof value === 'object' ? value : fallback;
+  const orderCreatedAfter = nullableTimestamp(
+    source.orderCreatedAfter,
+    'scope.orderCreatedAfter',
+  );
+  const orderCreatedBefore = nullableTimestamp(
+    source.orderCreatedBefore,
+    'scope.orderCreatedBefore',
+  );
+  assertOrderHistoryWindow(orderCreatedAfter, orderCreatedBefore);
   return Object.freeze({
     customerKey: requireText(source.customerKey, 'scope.customerKey'),
     accountKey: requireText(source.accountKey, 'scope.accountKey'),
     fullReconciliation: source.fullReconciliation === true,
-    modifiedAfter: nullableTimestamp(source.modifiedAfter),
+    modifiedAfter: nullableTimestamp(source.modifiedAfter, 'scope.modifiedAfter'),
     incrementalBoundary: optionalText(source.incrementalBoundary),
+    orderCreatedAfter,
+    orderCreatedBefore,
     reportingTimezone: requireText(source.reportingTimezone ?? 'Asia/Bangkok', 'scope.reportingTimezone'),
     defaultCurrency: optionalCurrency(source.defaultCurrency),
     pageSize: boundedInteger(source.pageSize ?? 100, 'scope.pageSize', 1, 100),
@@ -621,7 +689,16 @@ function normalizeReference(input) {
 function normalizeRuntime(input) {
   const now = typeof input.now === 'function' ? input.now : () => Date.now();
   const fullReconciliation = input.fullReconciliation === true;
-  const modifiedAfter = nullableTimestamp(input.modifiedAfter);
+  const modifiedAfter = nullableTimestamp(input.modifiedAfter, 'modifiedAfter');
+  const orderCreatedAfter = nullableTimestamp(
+    input.orderCreatedAfter,
+    'orderCreatedAfter',
+  );
+  const orderCreatedBefore = nullableTimestamp(
+    input.orderCreatedBefore,
+    'orderCreatedBefore',
+  );
+  assertOrderHistoryWindow(orderCreatedAfter, orderCreatedBefore);
   return Object.freeze({
     customerKey: requireText(input.customerKey, 'customerKey'),
     accountKey: requireText(input.accountKey, 'accountKey'),
@@ -632,6 +709,8 @@ function normalizeRuntime(input) {
     larkWriteEnabled: input.larkWriteEnabled === true,
     fullReconciliation,
     modifiedAfter,
+    orderCreatedAfter,
+    orderCreatedBefore,
     incrementalBoundary: fullReconciliation ? null : createWooCommerceIncrementalBoundary({
       sourceWatermark: modifiedAfter,
       overlapSeconds: input.overlapSeconds ?? 300,
@@ -731,10 +810,14 @@ function createReconciliation(reference, state) {
     schemaVersion: 'woocommerce_commerce_reconciliation_v1',
     workKey: reference.workKey,
     generation: reference.generation,
-    scopeMode: state.scope.fullReconciliation ? 'full_inventory' : 'recent_window',
+    scopeMode: state.scope.orderCreatedAfter !== null
+      ? 'report_range'
+      : state.scope.fullReconciliation ? 'full_inventory' : 'recent_window',
     sourceScope: Object.freeze({
       modifiedAfter: state.scope.modifiedAfter,
       incrementalBoundary: state.scope.incrementalBoundary,
+      orderCreatedAfter: state.scope.orderCreatedAfter,
+      orderCreatedBefore: state.scope.orderCreatedBefore,
       reportingTimezone: state.storeContext.reportingTimezone,
       defaultCurrency: state.storeContext.defaultCurrency,
     }),
@@ -748,7 +831,9 @@ function summarizeProgress(state) {
   return Object.freeze({
     datasetIndex: state.datasetIndex,
     page: state.page,
-    scopeMode: state.scope.fullReconciliation ? 'full_inventory' : 'recent_window',
+    scopeMode: state.scope.orderCreatedAfter !== null
+      ? 'report_range'
+      : state.scope.fullReconciliation ? 'full_inventory' : 'recent_window',
     counts: state.counts,
   });
 }
@@ -888,12 +973,22 @@ function boundedInteger(value, fieldName, minimum, maximum) {
   return number;
 }
 
-function nullableTimestamp(value) {
+function nullableTimestamp(value, fieldName = 'timestamp') {
   if (value === null || value === undefined || value === '') return null;
   if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) return value;
   const timestamp = Date.parse(String(value));
   if (!Number.isFinite(timestamp)) {
-    throw new TypeError('modifiedAfter must be an ISO timestamp or epoch milliseconds');
+    throw new TypeError(`${fieldName} must be an ISO timestamp or epoch milliseconds`);
   }
   return timestamp;
+}
+
+function assertOrderHistoryWindow(after, before) {
+  if (after !== null && before !== null && after >= before) {
+    throw new TypeError('orderCreatedAfter must be earlier than orderCreatedBefore');
+  }
+}
+
+function utcDate(timestamp) {
+  return new Date(timestamp).toISOString().slice(0, 10);
 }

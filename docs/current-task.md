@@ -1,4 +1,48 @@
-# Current Task — Lark Dashboard Shared Dimensions Backfill Post-Apply Verification Hotfix
+# Current Task — WooCommerce 2026-only History
+
+## Latest user-authorized override — WooCommerce 2026-only history
+
+คำสั่งล่าสุดวันที่ 2026-07-30 ลด WooCommerce transaction history เหลือเฉพาะปี 2026:
+
+```text
+Order history start                2026-01-01T00:00:00.000Z
+Order history end                  operation requested_at
+Orders / Customers / Coupons       report_range
+Store / Products / Categories      current master snapshot
+Schedule                           disabled
+Production                         blocked
+```
+
+Full-history operation `woo-final-full-e2372e56d52d` ถูกหยุดที่ Orders ปี 2022–2023:
+7,800 Orders, หน้า 78, zero failed rows. Development Worker คืน Safe version
+`d96091e4-f939-4886-af52-9863a203af94` พร้อม exact true execution flags = 0,
+active lock = 0 และ local rollout process ถูกปิดครบ.
+
+Implementation ใหม่ต้องส่ง WooCommerce `after`/`before` สำหรับ Orders, persist boundary ใน
+durable phase, กรอง Customer/Coupon ก่อนปี 2026, ใช้ `report_range` Coverage, backup และลบ
+เฉพาะ pre-2026 Order/derived rows จาก D1/Lark แล้วรัน bounded reconciliation/parity/rerun/
+incremental/Safe closeout. ห้ามเปิด Schedule, Production หรือเก็บธุรกรรมก่อนปี 2026.
+
+รายละเอียด: `docs/tasks/woocommerce-2026-only-history.md`
+
+### Implementation result — Repository phase
+
+- Orders ใช้ immutable GMT window ตั้งแต่ `2026-01-01T00:00:00.000Z` ถึง
+  `operation requested_at`; exact boundary ถูกกรองซ้ำใน Runtime และ continuation rehydrate
+  scope เดิม.
+- Customers/Coupons ก่อนปี 2026 ถูกตัดก่อน normalization/write. Coverage/Commerce Report
+  รองรับ `report_range` เฉพาะช่วงที่ครอบคลุม requested period.
+- Cleanup operator เป็น backup-first, full-table target scan + exact Stable-key parity 7 Lark
+  tables, transaction-bound D1 deletes 9 tables และปิดเฉพาะ Full-history Work/Sync เดิมแบบ
+  no-active-lock guard. Store/Product/Category master, raw Customer/Coupon, Coverage และ DLQ
+  audit metadata ไม่ถูกลบ.
+- Exact resume ของ durable operation เก่าที่ไม่มี 2026 boundary ถูกปฏิเสธก่อน Lark/Worker
+  mutation.
+- Verification: focused `44/44`, Unit `1537/1537`, Workers runtime `16/16`, Report reliability
+  `101/101`, Architecture `416 files / 1078 dependencies / 0 cycles`, Repository hygiene,
+  `npm audit` 0 vulnerabilities และ deploy dry-run ทั้งสอง Worker ผ่าน.
+- Live cleanup, merged-HEAD bounded reconciliation/parity/rerun/incremental และ Safe closeout
+  จะทำหลัง PR ผ่าน CI. Schedule/Production ยังไม่เปลี่ยน.
 
 ## Authoritative status
 

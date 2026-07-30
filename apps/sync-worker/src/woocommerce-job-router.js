@@ -102,6 +102,8 @@ export async function processWooCommerceCommerceJob(input = {}) {
       larkWriteEnabled: wooConfig.flags.larkWrite,
       fullReconciliation,
       modifiedAfter: input.job.body?.modifiedAfter ?? null,
+      orderCreatedAfter: input.job.body?.orderCreatedAfter ?? null,
+      orderCreatedBefore: input.job.body?.orderCreatedBefore ?? null,
       overlapSeconds: wooConfig.limits.overlapSeconds,
       pageSize: wooConfig.limits.pageSize,
       maxPagesPerInvocation: wooConfig.limits.maxPagesPerInvocation,
@@ -235,6 +237,8 @@ function createWooCommerceContinuationQueue(input, operation) {
           ? false
           : input.job.body?.fullReconciliation === true,
         modifiedAfter: input.job.body?.modifiedAfter ?? null,
+        orderCreatedAfter: input.job.body?.orderCreatedAfter ?? null,
+        orderCreatedBefore: input.job.body?.orderCreatedBefore ?? null,
         commerceSchemaVersion: reference.schemaVersion ?? null,
         cursorKey: reference.cursorKey ?? null,
         syncRunId: reference.syncRunId ?? null,

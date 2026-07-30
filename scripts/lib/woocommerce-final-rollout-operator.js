@@ -242,6 +242,26 @@ export function buildWooCommerceFinalJob(input = {}) {
   if (input.modifiedAfter !== null && input.modifiedAfter !== undefined) {
     body.modifiedAfter = requireTimestamp(input.modifiedAfter, 'modifiedAfter');
   }
+  if (input.orderCreatedAfter !== null && input.orderCreatedAfter !== undefined) {
+    body.orderCreatedAfter = requireTimestamp(
+      input.orderCreatedAfter,
+      'orderCreatedAfter',
+    );
+  }
+  if (input.orderCreatedBefore !== null && input.orderCreatedBefore !== undefined) {
+    body.orderCreatedBefore = requireTimestamp(
+      input.orderCreatedBefore,
+      'orderCreatedBefore',
+    );
+  }
+  if (body.orderCreatedAfter !== undefined
+    && body.orderCreatedBefore !== undefined
+    && body.orderCreatedAfter >= body.orderCreatedBefore) {
+    throw operatorError(
+      'WooCommerce Order history start must be earlier than its end',
+      'WOOCOMMERCE_FINAL_HISTORY_WINDOW_INVALID',
+    );
+  }
   return createStableQueueOperationBody(body, {
     operationId: requireOperationId(input.operationId),
     originalRequestedAt: requireTimestamp(input.requestedAt, 'requestedAt'),
@@ -362,6 +382,12 @@ export function selectWooCommerceFullOperation(input = {}) {
     && snapshot.queueGeneration === requestedAt
     && snapshot.workGeneration === requestedAt
     && snapshot.workRequestedAt === requestedAt;
+  const requiredHistoryStart = input.orderHistoryStart === undefined
+    ? null
+    : requireTimestamp(input.orderHistoryStart, 'orderHistoryStart');
+  const historyWindowMatches = requiredHistoryStart === null
+    || (Number(snapshot.state?.scope?.orderCreatedAfter) === requiredHistoryStart
+      && Number(snapshot.state?.scope?.orderCreatedBefore) === requestedAt);
   const partialRows = Object.values(snapshot.counts).reduce((sum, value) => sum + value, 0);
   if (snapshot.syncRunStatus !== 'failed'
     || !EXACT_RESUME_ERROR_CODES.has(snapshot.syncRunErrorCode)
@@ -371,7 +397,8 @@ export function selectWooCommerceFullOperation(input = {}) {
     || snapshot.activeLockCount !== 0
     || snapshot.queueOperationAttempts < 1
     || partialRows < 1
-    || !generationsAgree) {
+    || !generationsAgree
+    || !historyWindowMatches) {
     throw operatorError(
       'WooCommerce exact continuation preflight rejected the durable operation',
       'WOOCOMMERCE_FINAL_EXACT_CONTINUATION_INVALID',
@@ -385,6 +412,7 @@ export function selectWooCommerceFullOperation(input = {}) {
         queueOperationAttempts: snapshot.queueOperationAttempts,
         partialRows,
         generationsAgree,
+        historyWindowMatches,
       },
     );
   }

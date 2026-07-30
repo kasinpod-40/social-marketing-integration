@@ -216,11 +216,38 @@ test('config windows safely materialize omitted default-false gates and Lark map
 });
 
 test('full and incremental Queue jobs use stable WooCommerce identity', () => {
-  const full = buildWooCommerceFinalJob({ operationId: 'woo-final-full-12345678', requestedAt: 1785000000000, fullReconciliation: true });
+  const full = buildWooCommerceFinalJob({
+    operationId: 'woo-final-full-12345678',
+    requestedAt: 1785000000000,
+    fullReconciliation: true,
+    orderCreatedAfter: '2026-01-01T00:00:00.000Z',
+    orderCreatedBefore: 1785000000000,
+  });
   assert.equal(full.workKey, 'woocommerce:woo-final-full-12345678');
   assert.equal(full.fullReconciliation, true);
-  const incremental = buildWooCommerceFinalJob({ operationId: 'woo-final-incremental-12345678', requestedAt: 1785000001000, fullReconciliation: false, modifiedAfter: 1784000000000 });
+  assert.equal(full.orderCreatedAfter, Date.parse('2026-01-01T00:00:00.000Z'));
+  assert.equal(full.orderCreatedBefore, 1785000000000);
+  const incremental = buildWooCommerceFinalJob({
+    operationId: 'woo-final-incremental-12345678',
+    requestedAt: 1785000001000,
+    fullReconciliation: false,
+    modifiedAfter: 1784000000000,
+    orderCreatedAfter: '2026-01-01T00:00:00.000Z',
+    orderCreatedBefore: 1785000001000,
+  });
   assert.equal(incremental.modifiedAfter, 1784000000000);
+  assert.equal(incremental.orderCreatedAfter, Date.parse('2026-01-01T00:00:00.000Z'));
+  assert.equal(incremental.orderCreatedBefore, 1785000001000);
+  assert.throws(
+    () => buildWooCommerceFinalJob({
+      operationId: 'woo-final-full-12345679',
+      requestedAt: 1785000000000,
+      fullReconciliation: true,
+      orderCreatedAfter: 1785000000000,
+      orderCreatedBefore: 1785000000000,
+    }),
+    (error) => error?.code === 'WOOCOMMERCE_FINAL_HISTORY_WINDOW_INVALID',
+  );
 });
 
 test('snapshot SQL is SELECT-only and scopes operation/account', () => {
@@ -295,6 +322,40 @@ test('exact continuation accepts only the existing partial failed durable identi
     resumeOperationId: 'woo-final-full-e2372e56d52d',
     snapshot: emptyPartial,
   }), /preflight rejected/u);
+});
+
+test('2026-only exact continuation rejects an unbounded durable scope', () => {
+  const snapshot = {
+    ...completedSnapshot(3),
+    sync_run_status: 'failed',
+    sync_run_finished_at: 1785000005000,
+    sync_run_error_code: 'WOOCOMMERCE_D1_READ_FAILED',
+    work_lifecycle_status: 'active',
+    work_completed_at: null,
+    phase_complete: 0,
+    coverage_run_count: 2,
+    invalid_coverage_count: 1,
+  };
+  assert.throws(
+    () => selectWooCommerceFullOperation({
+      resumeOperationId: 'woo-final-full-e2372e56d52d',
+      snapshot,
+      orderHistoryStart: '2026-01-01T00:00:00.000Z',
+    }),
+    (error) => error?.code === 'WOOCOMMERCE_FINAL_EXACT_CONTINUATION_INVALID'
+      && error?.details?.historyWindowMatches === false,
+  );
+  const state = JSON.parse(snapshot.state_json);
+  state.scope = {
+    orderCreatedAfter: Date.parse('2026-01-01T00:00:00.000Z'),
+    orderCreatedBefore: snapshot.queue_original_requested_at,
+  };
+  snapshot.state_json = JSON.stringify(state);
+  assert.equal(selectWooCommerceFullOperation({
+    resumeOperationId: 'woo-final-full-e2372e56d52d',
+    snapshot,
+    orderHistoryStart: '2026-01-01T00:00:00.000Z',
+  }).resumedExactOperation, true);
 });
 
 test('exact continuation classifies only a fully empty semantic snapshot as retryable', () => {

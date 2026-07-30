@@ -1,5 +1,14 @@
 # Project Brain — Social Marketing Data Integration
 
+## WooCommerce 2026-only history decision — 2026-07-30
+
+คำสั่งล่าสุดแทนที่ Full-history WooCommerce ด้วย Order history ตั้งแต่
+`2026-01-01T00:00:00.000Z` ถึง operation boundary. Orders/Customers/Coupons ใช้
+`report_range`; Store/Products/Categories เป็น current master snapshot. Pre-2026 Business rows
+ต้อง backup, exact-key reconcile และลบจาก D1/Lark ก่อน bounded rerun. Worker ต้องคืน all-false
+และ Schedule/Production ปิดตลอด. Full-history durable operation เดิมห้าม resume เพราะไม่มี
+2026 boundary; หลัง backup ให้ปิดเฉพาะ exact Work/Sync identity เป็น scope-replaced.
+
 ## Purpose
 
 ระบบรวมข้อมูล Social Organic, Paid Ads, Commerce และ Conversation เข้าสู่ Lark Base เพื่อทำ Dashboard, Reporting, AI Summary, Insight, Alert และ Notification โดยใช้ Cloudflare Workers, D1, Queues และ JavaScript ES Modules
