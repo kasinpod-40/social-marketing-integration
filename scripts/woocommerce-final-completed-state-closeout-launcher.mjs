@@ -8,7 +8,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { delimiter, join } from 'node:path';
+import { delimiter, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /*
@@ -19,6 +19,9 @@ import { fileURLToPath } from 'node:url';
  * `settings.dead_letter_queue` for this closeout verifier. Only the exact
  * `wrangler queues consumer list ... --json` command is adapted; every other npx command passes
  * through byte-for-byte.
+ *
+ * Private Queue-attempt/checkpoint evidence is always nested under the exact Repository Head so an
+ * accepted attempt from different code can never be reused by a later closeout implementation.
  */
 
 const operatorPath = fileURLToPath(
@@ -27,6 +30,12 @@ const operatorPath = fileURLToPath(
 const proxyModulePath = fileURLToPath(
   new URL('./woocommerce-final-completed-state-npx-proxy.mjs', import.meta.url),
 );
+const repositoryHead = resolveRepositoryHead();
+const evidenceBase = resolve(
+  process.env.MKT_WOOCOMMERCE_COMPLETED_STATE_EVIDENCE_DIR
+    ?? join(process.cwd(), 'outputs', 'woocommerce-completed-state-closeout-v1'),
+);
+const evidenceDirectory = join(evidenceBase, repositoryHead);
 const realNpx = resolveRealNpx();
 const proxyDirectory = await mkdtemp(
   join(tmpdir(), 'mkt-woocommerce-completed-state-npx-'),
@@ -50,6 +59,7 @@ try {
         MKT_WOOCOMMERCE_FINAL_NODE: process.execPath,
         MKT_WOOCOMMERCE_FINAL_NPX_PROXY: proxyModulePath,
         MKT_WOOCOMMERCE_COMPLETED_STATE_PUBLIC_LAUNCHER: '1',
+        MKT_WOOCOMMERCE_COMPLETED_STATE_EVIDENCE_DIR: evidenceDirectory,
       },
       stdio: 'inherit',
     },
@@ -75,6 +85,23 @@ try {
   }
 } finally {
   await rm(proxyDirectory, { recursive: true, force: true });
+}
+
+function resolveRepositoryHead() {
+  const result = spawnSync('git', ['rev-parse', 'HEAD'], {
+    cwd: process.cwd(),
+    env: process.env,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  const value = String(result.stdout ?? '').trim().toLowerCase();
+  if (result.error || result.status !== 0 || !/^[0-9a-f]{40}$/u.test(value)) {
+    const error = new Error('Unable to resolve the exact Repository Head');
+    error.name = 'WooCommerceCompletedStateLauncherError';
+    error.code = 'WOOCOMMERCE_COMPLETED_STATE_HEAD_UNRESOLVED';
+    throw error;
+  }
+  return value;
 }
 
 function resolveRealNpx() {
