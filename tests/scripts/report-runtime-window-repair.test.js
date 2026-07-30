@@ -151,7 +151,7 @@ test('Platform-neutral metric integrity verifies WooCommerce D1 and Lark values 
   }), (error) => error.code === 'REPORT_RUNTIME_WINDOW_REPAIR_METRIC_VALUE_DRIFT');
 });
 
-test('One-command wrapper and hygiene gate share the worktree-safe local secret policy', () => {
+test('One-command uses a sealed pinned clone and the shared local secret policy', () => {
   const wrapperSource = readFileSync(
     new URL('../../scripts/report-runtime-window-repair.mjs', import.meta.url),
     'utf8',
@@ -166,9 +166,18 @@ test('One-command wrapper and hygiene gate share the worktree-safe local secret 
   assert.match(wrapperSource, /CONFIRM_REPORT_RUNTIME_FINALIZE/u);
   assert.match(wrapperSource, /CONFIRM_REPORT_RUNTIME_CLOSEOUT/u);
   assert.match(wrapperSource, /secureLocalSecretFile/u);
+  assert.match(wrapperSource, /buildReportRuntimeSealedCloneArgs/u);
+  assert.match(wrapperSource, /buildReportRuntimeSealedChildEnvironment/u);
+  assert.match(wrapperSource, /sanitizeReportRuntimeGitEnvironment/u);
+  assert.match(wrapperSource, /mkdtemp/u);
+  assert.match(wrapperSource, /remote', 'set-url', 'origin', '\.'/u);
+  assert.match(wrapperSource, /sealedOriginMainClone:\s*true/u);
+  assert.match(wrapperSource, /dynamicOriginMainDriftIsolated:\s*true/u);
+  assert.match(wrapperSource, /mutableInvocationCheckoutUsedForExecution:\s*false/u);
   assert.match(wrapperSource, /localDevVarsWorktreeSymlinkSupported:\s*true/u);
   assert.match(wrapperSource, /await ensureDevVarsPermissions\(\);[\s\S]*runRequiredStep\('report-runtime-finalizer'/u);
   assert.doesNotMatch(wrapperSource, /regular non-symlink file/u);
+  assert.doesNotMatch(wrapperSource, /git', \['switch'/u);
   assert.match(hygieneSource, /inspectLocalSecretFile/u);
   assert.doesNotMatch(hygieneSource, /await lstat\(path\)/u);
   assert.doesNotMatch(wrapperSource, /MKT_SCHEDULE_DAILY_REPORT_ENABLED\s*:\s*['"]true['"]/u);
