@@ -36,6 +36,10 @@ const CHAIN_CONFIRMATION = Object.freeze({
   envName: 'CONFIRM_WOOCOMMERCE_INVALID_JSON_RECOVERY_CHAIN',
   value: 'RECOVER_WOO_FINAL_FULL_5B56469100A9_AND_COMPLETE',
 });
+const PREVIEW_WINDOW_CONFIRMATION = Object.freeze({
+  envName: 'CONFIRM_WOOCOMMERCE_PREVIEW_URL_WINDOW',
+  value: 'OPEN_AND_RESTORE_WOOCOMMERCE_PREVIEW_URLS',
+});
 const DEFAULT_DATABASE = 'social-mkt-state-dev';
 
 try {
@@ -113,10 +117,11 @@ async function main() {
   });
 
   runRequiredNodeStep(
-    'woocommerce-worker-provider-diagnostics-ephemeral',
-    ['scripts/woocommerce-worker-provider-diagnostics-ephemeral.mjs', '--execute'],
+    'woocommerce-worker-provider-diagnostics-preview-window',
+    ['scripts/woocommerce-worker-provider-diagnostics-preview-window.mjs'],
     {
       ...env,
+      [PREVIEW_WINDOW_CONFIRMATION.envName]: PREVIEW_WINDOW_CONFIRMATION.value,
       [WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_CONFIRMATION.envName]:
         WOOCOMMERCE_WORKER_PROVIDER_DIAGNOSTICS_CONFIRMATION.value,
       MKT_WOOCOMMERCE_WORKER_DIAGNOSTICS_EVIDENCE_DIR:
@@ -169,6 +174,7 @@ async function main() {
     retainedBusinessRows: recovered.result.retainedBusinessRows,
     remoteReadAttempts: after.attempts,
     providerDiagnosticsPassed: true,
+    previewWindowRestored: true,
     production: false,
   });
 
@@ -190,6 +196,7 @@ async function main() {
     repositoryHead,
     operationId: INCIDENT_OPERATION_ID,
     providerDiagnosticsPassed: true,
+    previewWindowRestored: true,
     recoveryExecuted,
     incidentTerminalized: true,
     completionDelegated: true,
@@ -221,12 +228,17 @@ function printPlan() {
     exactOperationId: INCIDENT_OPERATION_ID,
     phases: [
       'exact-read-only-incident-preflight',
-      'guarded-provider-get-only-diagnostics',
+      'auto-discover-account-workers-dev-subdomain',
+      'open-isolated-preview-url-window',
+      'ephemeral-auth-provider-get-only-diagnostics',
+      'restore-preview-url-window',
       'exact-zero-fact-lifecycle-only-recovery',
       'verified-terminal-post-state',
       'existing-woocommerce-2026-canonical-completion',
     ],
     forbidden: [
+      'manual-workers-dev-subdomain-input',
+      'direct-low-level-diagnostics-entrypoint',
       'resume-terminal-invalid-json-operation',
       'generic-invalid-json-retry-classification',
       'manual-business-row-edit',
