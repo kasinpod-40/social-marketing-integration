@@ -14,4 +14,7 @@
 - Added timeout, redirect, HTTP, JSON, Cloudflare contract, pagination and duplicate-identity fail-closed regression coverage without exposing bearer tokens or Queue IDs in evidence.
 - Accepted the verified completed-cleanup variant where the exact scope-replaced `sync_runs` closure remains but the terminal `sync_work_runs` row has already been archived; acceptance still requires zero old rows, zero active work/locks and the exact `WOOCOMMERCE_HISTORY_SCOPE_REPLACED` code.
 - Added regression coverage proving archived Work state does not weaken pending-cleanup, foreign-work, old-row or Sync-closure gates.
+- Preserved the reviewed Final rollout operator byte-for-byte as an immutable core and added a narrow entry wrapper for Queue consumer CLI compatibility.
+- Normalized current Wrangler/Cloudflare consumer fields `settings.batch_size` and `settings.max_wait_time_ms` to the reviewed legacy aliases only for the exact `wrangler queues consumer list ... --json` command; all other `npx` commands pass through unchanged.
+- Added modern/legacy/conflict topology tests, direct/result/consumers output-shape tests and a Git-blob identity assertion for the immutable Final core.
 - Implementation performs no Remote mutation, Worker deployment, Queue message, Lark write, Schedule change or Production action.
