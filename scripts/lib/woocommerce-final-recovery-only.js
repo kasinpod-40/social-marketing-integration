@@ -5,11 +5,12 @@ import {
 } from './woocommerce-final-rollout-operator.js';
 
 const OPERATION_ID = /^woo-final-(?:full|incremental)-[0-9a-f]{12}$/u;
-const EXACT_INCIDENT_OPERATION_ID = 'woo-final-full-6f43ac8ee857';
+const EXACT_INCIDENT_OPERATION_ID = 'woo-final-full-5b56469100a9';
+const EXACT_INCIDENT_ERROR_CODE = 'WOOCOMMERCE_INVALID_JSON';
 
 export const WOOCOMMERCE_FINAL_RECOVERY_ONLY_CONFIRMATION = Object.freeze({
   envName: 'CONFIRM_WOOCOMMERCE_RECOVERY_ONLY',
-  value: 'RECOVER_WOO_FINAL_FULL_6F43AC8EE857_ONLY',
+  value: 'RECOVER_WOO_FINAL_FULL_5B56469100A9_ONLY',
 });
 
 export function parseWooCommerceFinalRecoveryOnlyArgs(args = []) {
@@ -64,6 +65,33 @@ export function buildWooCommerceFinalRecoveryOnlySnapshotSql(input = {}) {
   });
 }
 
+export function classifyWooCommerceFinalRecoveryOnlyState(row, input = {}) {
+  const operationId = requireOperationId(input.operationId);
+  const snapshot = normalizeWooCommerceFinalSnapshot(row);
+  if (snapshot.workLifecycleStatus === 'active') {
+    return Object.freeze({
+      state: 'active_recovery_required',
+      result: verifyWooCommerceFinalRecoveryOnlyEligibility(row, { operationId }),
+    });
+  }
+  if (snapshot.workLifecycleStatus === 'terminal') {
+    return Object.freeze({
+      state: 'terminal_recovery_complete',
+      result: verifyWooCommerceFinalRecoveryOnlyPostState(row, { operationId }),
+    });
+  }
+  throw recoveryOnlyError(
+    'WooCommerce invalid-JSON incident is neither active-recoverable nor terminal-recovered',
+    'WOOCOMMERCE_RECOVERY_ONLY_STATE_INVALID',
+    {
+      operationIdFingerprint: sha256(operationId),
+      workLifecycleStatus: snapshot.workLifecycleStatus,
+      syncRunStatus: snapshot.syncRunStatus,
+      syncRunErrorCode: snapshot.syncRunErrorCode,
+    },
+  );
+}
+
 export function verifyWooCommerceFinalRecoveryOnlyEligibility(row, input = {}) {
   const operationId = requireOperationId(input.operationId);
   const snapshot = normalizeWooCommerceFinalSnapshot(row);
@@ -72,7 +100,9 @@ export function verifyWooCommerceFinalRecoveryOnlyEligibility(row, input = {}) {
 
   if (snapshot.syncRunStatus !== 'failed') violations.push('sync_run_not_failed');
   if (snapshot.syncRunFinishedAt === null) violations.push('sync_run_not_finished');
-  if (snapshot.syncRunErrorCode === null) violations.push('sync_run_error_missing');
+  if (snapshot.syncRunErrorCode !== EXACT_INCIDENT_ERROR_CODE) {
+    violations.push('sync_run_error_not_invalid_json');
+  }
   if (snapshot.workLifecycleStatus !== 'active') violations.push('work_not_active');
   if (snapshot.workCompletedAt !== null) violations.push('work_already_completed');
   if (snapshot.completion !== null) violations.push('completion_present');
@@ -116,6 +146,9 @@ export function verifyWooCommerceFinalRecoveryOnlyPostState(row, input = {}) {
   const violations = [];
 
   if (snapshot.syncRunStatus !== 'failed') violations.push('sync_run_changed');
+  if (snapshot.syncRunErrorCode !== EXACT_INCIDENT_ERROR_CODE) {
+    violations.push('sync_run_error_changed');
+  }
   if (snapshot.workLifecycleStatus !== 'terminal') violations.push('work_not_terminal');
   if (snapshot.workCompletedAt !== null) violations.push('work_completed_at_changed');
   if (snapshot.completion !== null) violations.push('completion_changed');
