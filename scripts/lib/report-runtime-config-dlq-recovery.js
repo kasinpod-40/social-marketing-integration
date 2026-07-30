@@ -220,6 +220,7 @@ export function buildReportRuntimeConfigDlqRetryStateSql(retryRequestedAt) {
     SELECT
       (SELECT report_id FROM report_materializations WHERE report_id = ${sqlText(incident.reportId)}) AS report_id,
       (SELECT payload_checksum FROM report_materializations WHERE report_id = ${sqlText(incident.reportId)}) AS payload_checksum,
+      (SELECT payload_json FROM report_materializations WHERE report_id = ${sqlText(incident.reportId)}) AS payload_json,
       (SELECT COUNT(*) FROM report_materializations WHERE report_id = ${sqlText(incident.reportId)}) AS materialization_count,
       (SELECT COUNT(*) FROM sync_runs
         WHERE platform = 'tiktok' AND account_key = 'chemistry_k'
