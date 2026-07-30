@@ -12,4 +12,6 @@
 - Replaced unsupported top-level Wrangler `queues list --json` discovery in the canonical delivery path with one bounded Cloudflare Queue REST GET and exact-name Queue ID resolution.
 - Injected the resolved Queue ID before sealed execution so nested Final wrappers never need to parse human-readable Wrangler Queue output.
 - Added timeout, redirect, HTTP, JSON, Cloudflare contract, pagination and duplicate-identity fail-closed regression coverage without exposing bearer tokens or Queue IDs in evidence.
+- Accepted the verified completed-cleanup variant where the exact scope-replaced `sync_runs` closure remains but the terminal `sync_work_runs` row has already been archived; acceptance still requires zero old rows, zero active work/locks and the exact `WOOCOMMERCE_HISTORY_SCOPE_REPLACED` code.
+- Added regression coverage proving archived Work state does not weaken pending-cleanup, foreign-work, old-row or Sync-closure gates.
 - Implementation performs no Remote mutation, Worker deployment, Queue message, Lark write, Schedule change or Production action.
