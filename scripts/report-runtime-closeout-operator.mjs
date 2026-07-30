@@ -37,6 +37,12 @@ import {
   safeReportRuntimeCloseoutEvidence,
 } from './lib/report-runtime-closeout-operator.js';
 import {
+  REPORT_RUNTIME_CLOSEOUT_RECOVERY_MODE,
+  assertReportRuntimeCloseoutRecoveryEvidence,
+  pollReportRuntimeLarkIntegrity,
+  resolveReportRuntimeCloseoutRecoveryMode,
+} from './lib/report-runtime-lark-integrity-recovery.js';
+import {
   assertReportRuntimeOrganicIntegrity,
   assertReportRuntimeMetricIntegrity,
   assertReportRuntimeWindowChanged,
@@ -51,6 +57,7 @@ import {
 const execFileAsync = promisify(execFile);
 const repositoryRoot = resolve(process.cwd());
 const target = resolveReportRuntimeCloseoutTarget(process.env);
+const recoveryMode = resolveReportRuntimeCloseoutRecoveryMode(process.env);
 const configPath = resolve(process.env.MKT_REPORT_RUNTIME_CLOSEOUT_WRANGLER_CONFIG ?? 'wrangler.sync.jsonc');
 const outputRoot = resolve(
   process.env.MKT_REPORT_RUNTIME_CLOSEOUT_EVIDENCE_DIR ?? target.outputDirectory,
@@ -94,6 +101,7 @@ function printPlan() {
     ok: true,
     planOnly: true,
     contractVersion: REPORT_RUNTIME_CLOSEOUT_CONTRACT_VERSION,
+    recoveryMode,
     command: target.platformScope === 'woocommerce'
       ? 'CONFIRM_WOOCOMMERCE_REPORT_RUNTIME_CLOSEOUT=EXECUTE_WOOCOMMERCE_REPORT_RUNTIME_CLOSEOUT node scripts/woocommerce-report-runtime-closeout.mjs --execute'
       : `CONFIRM_REPORT_RUNTIME_CLOSEOUT=${REPORT_RUNTIME_CLOSEOUT_CONFIRMATION} node scripts/report-runtime-closeout-operator.mjs --execute`,
@@ -102,18 +110,31 @@ function printPlan() {
       operation: process.env.MKT_REPORT_RUNTIME_CLOSEOUT_OPERATION ?? 'fresh',
       windowDays: process.env.MKT_REPORT_RUNTIME_CLOSEOUT_WINDOW_DAYS ?? null,
     },
-    stages: [
-      'repository-and-finalizer-evidence',
-      'lark-and-d1-preflight',
-      'remote-safe-preflight-and-backup',
-      'deploy-report-only-window',
-      'send-one-materialization',
-      'verify-d1-lark-and-kpi-integrity',
-      'replay-same-job',
-      'verify-idempotency',
-      'restore-all-false',
-      'closeout-summary',
-    ],
+    stages: recoveryMode
+      ? [
+        'repository-and-finalizer-evidence',
+        'lark-and-d1-preflight',
+        'validate-exact-first-materialization-evidence',
+        'verify-current-d1-lark-integrity-read-only',
+        'backup-before-missing-replay',
+        'deploy-report-only-window-if-replay-not-recorded',
+        'send-exact-missing-replay-once',
+        'verify-idempotency',
+        'restore-all-false',
+        'closeout-summary',
+      ]
+      : [
+        'repository-and-finalizer-evidence',
+        'lark-and-d1-preflight',
+        'remote-safe-preflight-and-backup',
+        'deploy-report-only-window',
+        'send-one-materialization',
+        'verify-d1-lark-and-kpi-integrity',
+        'replay-same-job',
+        'verify-idempotency',
+        'restore-all-false',
+        'closeout-summary',
+      ],
     activeTrueFlags: target.activeTrueFlags,
     safety: {
       connectorsEnabled: false,
@@ -124,11 +145,22 @@ function printPlan() {
       businessFactDeletion: false,
       manualLarkEditing: false,
       automaticSafeRestore: true,
+      firstMaterializationRetry: false,
+      replaySendAfterRecordedAttempt: false,
     },
   }, null, 2)}\n`);
 }
 
 async function executeCloseout() {
+  const context = await prepareCloseoutContext();
+  if (recoveryMode === REPORT_RUNTIME_CLOSEOUT_RECOVERY_MODE) {
+    await executeRecoveryCloseout(context);
+    return;
+  }
+  await executeNormalCloseout(context);
+}
+
+async function prepareCloseoutContext() {
   const fileEnv = await readDevVars(process.env.DEV_VARS_FILE ?? '.dev.vars');
   const env = Object.freeze({ ...fileEnv, ...process.env });
   if (target.platformScope === 'woocommerce') {
@@ -165,26 +197,6 @@ async function executeCloseout() {
   } else {
     assertReportRuntimeCloseoutPreflight(d1Preflight);
   }
-  const requestedAt = Date.now();
-  const candidates = buildReportRuntimeCloseoutCandidates({
-    requestedAt,
-    periodEnd: d1Preflight.period_end,
-    sourceWatermark: d1Preflight.source_watermark,
-    timeZone: 'Asia/Bangkok',
-    platformScope: target.platformScope,
-    accountKey: target.accountKey,
-    formulaVersion: target.formulaVersion,
-  });
-  const existingIds = await readExistingReportIds(config, candidates.map((candidate) => candidate.reportId));
-  const selected = selectReportRuntimeWindowTarget(candidates, existingIds, env);
-  const snapshotBefore = await readD1Snapshot(config, selected, requestedAt);
-  const larkBefore = await readLarkReportState(client, config.tableIds, selected.reportId);
-  assertReportRuntimeWindowTargetPrestate({
-    operation: selected.operation,
-    reportId: selected.reportId,
-    d1: snapshotBefore,
-    lark: larkBefore,
-  });
 
   currentStage = 'remote-safe-preflight-and-backup';
   const pendingMigrations = await readPendingMigrations();
@@ -196,30 +208,70 @@ async function executeCloseout() {
   const safeBundle = await buildBundle(config.safeText, 'safe-preflight');
   const activeBundle = await buildBundle(config.activeText, 'active-preflight');
   const remoteSafe = await verifyRemoteDeployment(config, 'safe');
+
+  return Object.freeze({
+    repository,
+    finalizerEvidence,
+    config,
+    auth,
+    queue,
+    client,
+    larkPreflight,
+    d1Preflight,
+    pendingMigrations,
+    safeBundle,
+    activeBundle,
+    remoteSafe,
+  });
+}
+
+async function executeNormalCloseout(context) {
+  const requestedAt = Date.now();
+  const candidates = buildReportRuntimeCloseoutCandidates({
+    requestedAt,
+    periodEnd: context.d1Preflight.period_end,
+    sourceWatermark: context.d1Preflight.source_watermark,
+    timeZone: 'Asia/Bangkok',
+    platformScope: target.platformScope,
+    accountKey: target.accountKey,
+    formulaVersion: target.formulaVersion,
+  });
+  const existingIds = await readExistingReportIds(context.config, candidates.map((candidate) => candidate.reportId));
+  const selected = selectReportRuntimeWindowTarget(candidates, existingIds, process.env);
+  const snapshotBefore = await readD1Snapshot(context.config, selected, requestedAt);
+  const larkBefore = await readLarkReportState(context.client, context.config.tableIds, selected.reportId);
+  assertReportRuntimeWindowTargetPrestate({
+    operation: selected.operation,
+    reportId: selected.reportId,
+    d1: snapshotBefore,
+    lark: larkBefore,
+  });
   const backup = await createD1Backup(selected);
 
   let firstCompletion = null;
   let firstLark = null;
   let firstIntegrity = null;
+  let firstLarkIntegrityPollAttempts = null;
   let replayCompletion = null;
   let replayLark = null;
   let replayIntegrity = null;
+  let replayLarkIntegrityPollAttempts = null;
   let activeDeployment = null;
   let restoreDeployment = null;
   let primaryError = null;
   try {
     currentStage = 'deploy-report-only-window';
     await writeAttempt('deploy-active', {
-      repositoryHead: repository.head,
-      expectedActiveVersion: remoteSafe.activeVersion,
-      configSha256: config.activeSha256,
+      repositoryHead: context.repository.head,
+      expectedActiveVersion: context.remoteSafe.activeVersion,
+      configSha256: context.config.activeSha256,
       selectedReportId: selected.reportId,
       operation: selected.operation,
       windowDays: selected.windowDays,
     });
-    activeDeployment = await deployConfig(config.activeText, 'report-closeout-active');
+    activeDeployment = await deployConfig(context.config.activeText, 'report-closeout-active');
     activeDeploymentAttempted = true;
-    await verifyRemoteDeployment(config, 'active', activeDeployment.versionId);
+    await verifyRemoteDeployment(context.config, 'active', activeDeployment.versionId);
 
     currentStage = 'send-one-materialization';
     await writeAttempt('send-first', {
@@ -228,19 +280,25 @@ async function executeCloseout() {
       jobSha256: sha256(stableJson(selected.job)),
       requestedAt,
     });
-    await sendQueueMessage(auth, queue.queueId, selected.job);
+    await sendQueueMessage(context.auth, context.queue.queueId, selected.job);
 
     currentStage = 'verify-d1-lark-and-kpi-integrity';
-    firstCompletion = await pollD1Completion(config, selected, requestedAt, 1);
+    firstCompletion = await pollD1Completion(context.config, selected, requestedAt, 1);
     assertReportRuntimeCloseoutCompletion(firstCompletion, { reportId: selected.reportId });
     assertReportRuntimeWindowChanged({
       operation: selected.operation,
       before: snapshotBefore,
       after: firstCompletion,
     });
-    firstLark = await pollLarkCompletion(client, config.tableIds, selected.reportId);
-    assertLarkCompletion(firstLark);
-    firstIntegrity = assertD1LarkIntegrity(firstCompletion, firstLark);
+    const firstVerified = await pollLarkIntegrity(
+      context.client,
+      context.config.tableIds,
+      selected.reportId,
+      firstCompletion,
+    );
+    firstLark = firstVerified.state;
+    firstIntegrity = firstVerified.integrity;
+    firstLarkIntegrityPollAttempts = firstVerified.attemptCount;
 
     currentStage = 'replay-same-job';
     await writeAttempt('send-replay', {
@@ -249,15 +307,22 @@ async function executeCloseout() {
       jobSha256: sha256(stableJson(selected.job)),
       requestedAt,
     });
-    await sendQueueMessage(auth, queue.queueId, selected.job);
+    await sendQueueMessage(context.auth, context.queue.queueId, selected.job);
 
     currentStage = 'verify-idempotency';
-    replayCompletion = await pollD1Completion(config, selected, requestedAt, 2);
+    replayCompletion = await pollD1Completion(context.config, selected, requestedAt, 2);
     assertReportRuntimeCloseoutCompletion(replayCompletion, { reportId: selected.reportId });
     assertReportRuntimeCloseoutReplay(firstCompletion, replayCompletion);
-    replayLark = await pollLarkCompletion(client, config.tableIds, selected.reportId);
+    const replayVerified = await pollLarkIntegrity(
+      context.client,
+      context.config.tableIds,
+      selected.reportId,
+      replayCompletion,
+    );
+    replayLark = replayVerified.state;
+    replayIntegrity = replayVerified.integrity;
+    replayLarkIntegrityPollAttempts = replayVerified.attemptCount;
     assertLarkReplay(firstLark, replayLark);
-    replayIntegrity = assertD1LarkIntegrity(replayCompletion, replayLark);
     if (stableJson(firstIntegrity) !== stableJson(replayIntegrity)) throw failure(
       'Report closeout replay changed D1/Lark metric integrity evidence',
       'REPORT_RUNTIME_CLOSEOUT_REPLAY_INTEGRITY_DRIFT',
@@ -269,12 +334,12 @@ async function executeCloseout() {
       currentStage = 'restore-all-false';
       try {
         await writeAttempt('restore-safe', {
-          repositoryHead: repository.head,
-          configSha256: config.safeSha256,
+          repositoryHead: context.repository.head,
+          configSha256: context.config.safeSha256,
           activeVersion: activeDeployment?.versionId ?? null,
         });
-        restoreDeployment = await deployConfig(config.safeText, 'report-closeout-safe-restore');
-        await verifyRemoteDeployment(config, 'safe', restoreDeployment.versionId);
+        restoreDeployment = await deployConfig(context.config.safeText, 'report-closeout-safe-restore');
+        await verifyRemoteDeployment(context.config, 'safe', restoreDeployment.versionId);
         safeRestoreVerified = true;
       } catch (restoreError) {
         if (primaryError) throw failure(
@@ -295,69 +360,304 @@ async function executeCloseout() {
     'REPORT_RUNTIME_CLOSEOUT_RESTORE_NOT_VERIFIED',
   );
 
+  await writeCloseoutSummary({
+    context,
+    selected,
+    snapshotBefore,
+    larkBefore,
+    requestedAt,
+    backup,
+    firstCompletion,
+    firstLark,
+    firstIntegrity,
+    firstLarkIntegrityPollAttempts,
+    replayCompletion,
+    replayLark,
+    replayIntegrity,
+    replayLarkIntegrityPollAttempts,
+    restoreDeployment,
+    recovery: null,
+  });
+}
+
+async function executeRecoveryCloseout(context) {
+  if (target.platformScope !== 'tiktok') throw failure(
+    'Exact first-materialization recovery is approved only for the Organic TikTok 3D incident',
+    'REPORT_RUNTIME_CLOSEOUT_RECOVERY_TARGET_INVALID',
+  );
+
+  currentStage = 'validate-exact-first-materialization-evidence';
+  const deployAttempt = await readRequiredJson(join(outputRoot, 'deploy-active.attempt.json'));
+  const sendFirstAttempt = await readRequiredJson(join(outputRoot, 'send-first.attempt.json'));
+  const restoreAttempt = await readRequiredJson(join(outputRoot, 'restore-safe.attempt.json'));
+  const replayAttempt = await readJsonIfExists(join(outputRoot, 'send-replay.attempt.json'));
+  const summaryExists = (await readJsonIfExists(join(outputRoot, 'report-runtime-closeout-summary.json'))) !== null;
+  const requestedAt = Number(sendFirstAttempt.requestedAt);
+  const candidates = buildReportRuntimeCloseoutCandidates({
+    requestedAt,
+    periodEnd: context.d1Preflight.period_end,
+    sourceWatermark: context.d1Preflight.source_watermark,
+    timeZone: 'Asia/Bangkok',
+    platformScope: target.platformScope,
+    accountKey: target.accountKey,
+    formulaVersion: target.formulaVersion,
+  });
+  const candidate = candidates.find((item) => item.reportId === deployAttempt.selectedReportId);
+  if (!candidate) throw failure(
+    'Exact failed Report ID cannot be regenerated from current D1 coverage evidence',
+    'REPORT_RUNTIME_CLOSEOUT_RECOVERY_CANDIDATE_MISSING',
+  );
+  const selected = Object.freeze({ ...candidate, operation: 'refresh' });
+  const recoveryEvidence = assertReportRuntimeCloseoutRecoveryEvidence({
+    deployAttempt,
+    sendFirstAttempt,
+    restoreAttempt,
+    replayAttempt,
+    summaryExists,
+    candidate: selected,
+    activeConfigSha256: context.config.activeSha256,
+    safeConfigSha256: context.config.safeSha256,
+    jobSha256: sha256(stableJson(selected.job)),
+  });
+
+  if (!recoveryEvidence.replayAttempted) {
+    const priorRecoveryDeploy = await readJsonIfExists(join(outputRoot, 'recover-deploy-active.attempt.json'));
+    const priorRecoveryRestore = await readJsonIfExists(join(outputRoot, 'recover-restore-safe.attempt.json'));
+    if (priorRecoveryDeploy || priorRecoveryRestore) throw failure(
+      'A prior recovery deployment attempt exists without a recorded replay; automatic repetition is disabled',
+      'REPORT_RUNTIME_CLOSEOUT_RECOVERY_PARTIAL_MUTATION_BLOCKED',
+      {
+        recoveryDeployAttemptExists: priorRecoveryDeploy !== null,
+        recoveryRestoreAttemptExists: priorRecoveryRestore !== null,
+      },
+    );
+  }
+
+  const originalBackup = await readExistingD1Backup(selected);
+  const snapshotBefore = await readD1Snapshot(context.config, selected, requestedAt);
+  const larkBefore = await readLarkReportState(context.client, context.config.tableIds, selected.reportId);
+
+  currentStage = 'verify-current-d1-lark-integrity-read-only';
+  const firstCompletion = await pollD1Completion(context.config, selected, requestedAt, 1);
+  assertReportRuntimeCloseoutCompletion(firstCompletion, { reportId: selected.reportId });
+  const firstVerified = await pollLarkIntegrity(
+    context.client,
+    context.config.tableIds,
+    selected.reportId,
+    firstCompletion,
+  );
+  const firstLark = firstVerified.state;
+  const firstIntegrity = firstVerified.integrity;
+
+  let backup = originalBackup;
+  let replayCompletion = null;
+  let replayLark = null;
+  let replayIntegrity = null;
+  let replayLarkIntegrityPollAttempts = null;
+  let activeDeployment = null;
+  let restoreDeployment = null;
+  let replayMessageSent = false;
+  let primaryError = null;
+
+  if (recoveryEvidence.replayAttempted) {
+    currentStage = 'verify-idempotency';
+    replayCompletion = await pollD1Completion(context.config, selected, requestedAt, 2);
+    assertReportRuntimeCloseoutCompletion(replayCompletion, { reportId: selected.reportId });
+    assertReportRuntimeCloseoutReplay(firstCompletion, replayCompletion);
+    const replayVerified = await pollLarkIntegrity(
+      context.client,
+      context.config.tableIds,
+      selected.reportId,
+      replayCompletion,
+    );
+    replayLark = replayVerified.state;
+    replayIntegrity = replayVerified.integrity;
+    replayLarkIntegrityPollAttempts = replayVerified.attemptCount;
+    assertLarkReplay(firstLark, replayLark);
+    if (stableJson(firstIntegrity) !== stableJson(replayIntegrity)) throw failure(
+      'Recovered Report replay changed D1/Lark metric integrity evidence',
+      'REPORT_RUNTIME_CLOSEOUT_REPLAY_INTEGRITY_DRIFT',
+    );
+    safeRestoreVerified = true;
+    restoreDeployment = Object.freeze({ versionId: context.remoteSafe.activeVersion });
+  } else {
+    currentStage = 'backup-before-missing-replay';
+    backup = await createD1Backup(selected, { label: 'recovery-before-replay', unique: true });
+    try {
+      currentStage = 'deploy-report-only-window-if-replay-not-recorded';
+      await writeAttempt('recover-deploy-active', {
+        repositoryHead: context.repository.head,
+        originalRepositoryHead: recoveryEvidence.originalRepositoryHead,
+        expectedActiveVersion: context.remoteSafe.activeVersion,
+        configSha256: context.config.activeSha256,
+        selectedReportId: selected.reportId,
+        operation: selected.operation,
+        windowDays: selected.windowDays,
+      });
+      activeDeployment = await deployConfig(context.config.activeText, 'report-closeout-recovery-active');
+      activeDeploymentAttempted = true;
+      await verifyRemoteDeployment(context.config, 'active', activeDeployment.versionId);
+
+      currentStage = 'send-exact-missing-replay-once';
+      await writeAttempt('send-replay', {
+        reportId: selected.reportId,
+        operation: selected.operation,
+        jobSha256: recoveryEvidence.jobSha256,
+        requestedAt,
+        recoveryMode,
+      });
+      await sendQueueMessage(context.auth, context.queue.queueId, selected.job);
+      replayMessageSent = true;
+
+      currentStage = 'verify-idempotency';
+      replayCompletion = await pollD1Completion(context.config, selected, requestedAt, 2);
+      assertReportRuntimeCloseoutCompletion(replayCompletion, { reportId: selected.reportId });
+      assertReportRuntimeCloseoutReplay(firstCompletion, replayCompletion);
+      const replayVerified = await pollLarkIntegrity(
+        context.client,
+        context.config.tableIds,
+        selected.reportId,
+        replayCompletion,
+      );
+      replayLark = replayVerified.state;
+      replayIntegrity = replayVerified.integrity;
+      replayLarkIntegrityPollAttempts = replayVerified.attemptCount;
+      assertLarkReplay(firstLark, replayLark);
+      if (stableJson(firstIntegrity) !== stableJson(replayIntegrity)) throw failure(
+        'Recovered Report replay changed D1/Lark metric integrity evidence',
+        'REPORT_RUNTIME_CLOSEOUT_REPLAY_INTEGRITY_DRIFT',
+      );
+    } catch (error) {
+      primaryError = error;
+    } finally {
+      if (activeDeploymentAttempted) {
+        currentStage = 'restore-all-false';
+        try {
+          await writeAttempt('recover-restore-safe', {
+            repositoryHead: context.repository.head,
+            originalRepositoryHead: recoveryEvidence.originalRepositoryHead,
+            configSha256: context.config.safeSha256,
+            activeVersion: activeDeployment?.versionId ?? null,
+          });
+          restoreDeployment = await deployConfig(context.config.safeText, 'report-closeout-recovery-safe-restore');
+          await verifyRemoteDeployment(context.config, 'safe', restoreDeployment.versionId);
+          safeRestoreVerified = true;
+        } catch (restoreError) {
+          if (primaryError) throw failure(
+            'Report recovery failed and automatic all-false restore also failed',
+            'REPORT_RUNTIME_CLOSEOUT_RESTORE_FAILED_AFTER_PRIMARY_ERROR',
+            {
+              primaryCode: primaryError?.code ?? 'UNKNOWN',
+              restoreCode: restoreError?.code ?? 'UNKNOWN',
+            },
+          );
+          throw restoreError;
+        }
+      }
+    }
+    if (primaryError) throw primaryError;
+  }
+
+  if (!safeRestoreVerified) throw failure(
+    'Report recovery requires verified all-false restore',
+    'REPORT_RUNTIME_CLOSEOUT_RESTORE_NOT_VERIFIED',
+  );
+
+  await writeCloseoutSummary({
+    context,
+    selected,
+    snapshotBefore,
+    larkBefore,
+    requestedAt,
+    backup,
+    firstCompletion,
+    firstLark,
+    firstIntegrity,
+    firstLarkIntegrityPollAttempts: firstVerified.attemptCount,
+    replayCompletion,
+    replayLark,
+    replayIntegrity,
+    replayLarkIntegrityPollAttempts,
+    restoreDeployment,
+    recovery: Object.freeze({
+      mode: recoveryMode,
+      originalRepositoryHead: recoveryEvidence.originalRepositoryHead,
+      replayAttemptedBeforeRecovery: recoveryEvidence.replayAttempted,
+      verificationOnly: recoveryEvidence.replayAttempted,
+      replayMessageSent,
+      firstMaterializationRetried: false,
+      originalBackup,
+    }),
+  });
+}
+
+async function writeCloseoutSummary(input) {
   currentStage = 'closeout-summary';
   const summary = safeReportRuntimeCloseoutEvidence({
     ok: true,
     contractVersion: REPORT_RUNTIME_CLOSEOUT_CONTRACT_VERSION,
-    decision: selected.operation === 'refresh' ? 'REPORT_WINDOW_REFRESHED' : 'REPORT_WINDOW_CREATED',
-    repository,
+    decision: input.selected.operation === 'refresh' ? 'REPORT_WINDOW_REFRESHED' : 'REPORT_WINDOW_CREATED',
+    repository: input.context.repository,
     finalizerEvidence: {
-      contractVersion: finalizerEvidence.contractVersion,
-      schemaReadbackActions: finalizerEvidence.schema.readbackActions,
-      schemaConflicts: finalizerEvidence.schema.conflicts,
-      canonicalSettingsActive: finalizerEvidence.settings.canonicalActive,
+      contractVersion: input.context.finalizerEvidence.contractVersion,
+      schemaReadbackActions: input.context.finalizerEvidence.schema.readbackActions,
+      schemaConflicts: input.context.finalizerEvidence.schema.conflicts,
+      canonicalSettingsActive: input.context.finalizerEvidence.settings.canonicalActive,
     },
     target: {
       environment: 'development',
       customerProfile: 'integration_workspace',
       platform: target.platformScope,
       accountKey: target.accountKey,
-      operation: selected.operation,
-      reportSettingKey: selected.reportSettingKey,
-      reportId: selected.reportId,
-      windowDays: selected.windowDays,
-      period: selected.period,
-      sourceWatermark: d1Preflight.source_watermark,
+      operation: input.selected.operation,
+      reportSettingKey: input.selected.reportSettingKey,
+      reportId: input.selected.reportId,
+      windowDays: input.selected.windowDays,
+      period: input.selected.period,
+      sourceWatermark: input.context.d1Preflight.source_watermark,
     },
     preflight: {
-      lark: larkPreflight,
-      targetRows: summarizeTargetState(snapshotBefore, larkBefore),
+      lark: input.context.larkPreflight,
+      targetRows: summarizeTargetState(input.snapshotBefore, input.larkBefore),
       d1: {
-        coverageStatus: d1Preflight.coverage_status,
+        coverageStatus: input.context.d1Preflight.coverage_status,
         ...(target.platformScope === 'woocommerce' ? {
-          coverageScopeMode: d1Preflight.coverage_scope_mode,
-          dailyFactCount: Number(d1Preflight.daily_fact_count),
-          orderStateCount: Number(d1Preflight.order_state_count),
+          coverageScopeMode: input.context.d1Preflight.coverage_scope_mode,
+          dailyFactCount: Number(input.context.d1Preflight.daily_fact_count),
+          orderStateCount: Number(input.context.d1Preflight.order_state_count),
         } : {
-          contentStateCount: Number(d1Preflight.content_state_count),
-          observationCount: Number(d1Preflight.observation_count),
+          contentStateCount: Number(input.context.d1Preflight.content_state_count),
+          observationCount: Number(input.context.d1Preflight.observation_count),
         }),
       },
-      pendingMigrations,
-      safeBundleSha256: safeBundle.sha256,
-      activeBundleSha256: activeBundle.sha256,
-      backup,
+      pendingMigrations: input.context.pendingMigrations,
+      safeBundleSha256: input.context.safeBundle.sha256,
+      activeBundleSha256: input.context.activeBundle.sha256,
+      backup: input.backup,
     },
     materialization: {
-      dataStatus: firstCompletion.data_status,
-      payloadChecksum: firstCompletion.payload_checksum,
-      d1MaterializationCount: Number(firstCompletion.materialization_count),
-      firstSyncRunCount: Number(firstCompletion.successful_sync_count),
-      larkRows: summarizeLarkState(firstLark),
-      integrity: firstIntegrity,
+      dataStatus: input.firstCompletion.data_status,
+      payloadChecksum: input.firstCompletion.payload_checksum,
+      d1MaterializationCount: Number(input.firstCompletion.materialization_count),
+      firstSyncRunCount: Number(input.firstCompletion.successful_sync_count),
+      larkRows: summarizeLarkState(input.firstLark),
+      larkIntegrityPollAttempts: input.firstLarkIntegrityPollAttempts,
+      integrity: input.firstIntegrity,
     },
     replay: {
-      sameReportId: firstCompletion.report_id === replayCompletion.report_id,
-      samePayloadChecksum: firstCompletion.payload_checksum === replayCompletion.payload_checksum,
-      d1MaterializationCount: Number(replayCompletion.materialization_count),
-      successfulSyncRunCount: Number(replayCompletion.successful_sync_count),
-      larkRowsUnchanged: stableJson(firstLark) === stableJson(replayLark),
-      integrityUnchanged: stableJson(firstIntegrity) === stableJson(replayIntegrity),
+      sameReportId: input.firstCompletion.report_id === input.replayCompletion.report_id,
+      samePayloadChecksum: input.firstCompletion.payload_checksum === input.replayCompletion.payload_checksum,
+      d1MaterializationCount: Number(input.replayCompletion.materialization_count),
+      successfulSyncRunCount: Number(input.replayCompletion.successful_sync_count),
+      larkRowsUnchanged: stableJson(input.firstLark) === stableJson(input.replayLark),
+      integrityUnchanged: stableJson(input.firstIntegrity) === stableJson(input.replayIntegrity),
+      larkIntegrityPollAttempts: input.replayLarkIntegrityPollAttempts,
     },
+    ...(input.recovery ? { recovery: input.recovery } : {}),
     runtime: {
       activeTrueFlags: target.activeTrueFlags,
       restoredAllFalse: true,
-      finalWorkerVersion: restoreDeployment.versionId,
+      finalWorkerVersion: input.restoreDeployment.versionId,
       aiSummaryEnabled: false,
       dailyScheduleEnabled: false,
       weeklyScheduleEnabled: false,
@@ -369,6 +669,14 @@ async function executeCloseout() {
   const evidencePath = join(outputRoot, 'report-runtime-closeout-summary.json');
   await writePrivateJson(evidencePath, summary);
   process.stdout.write(`${JSON.stringify({ ...summary, evidencePath }, null, 2)}\n`);
+}
+
+async function pollLarkIntegrity(client, tableIds, reportId, d1) {
+  return pollReportRuntimeLarkIntegrity({
+    readState: () => readLarkReportState(client, tableIds, reportId),
+    assertComplete: assertLarkCompletion,
+    assertIntegrity: (state) => assertD1LarkIntegrity(d1, state),
+  });
 }
 
 function assertD1LarkIntegrity(d1, lark) {
@@ -666,28 +974,6 @@ async function readLarkReportState(client, tableIds, reportId) {
   });
 }
 
-async function pollLarkCompletion(client, tableIds, reportId) {
-  const maxPolls = positiveInteger(
-    process.env.MKT_REPORT_RUNTIME_CLOSEOUT_LARK_MAX_POLLS ?? 12,
-    'larkMaxPolls',
-  );
-  const intervalMs = positiveInteger(
-    process.env.MKT_REPORT_RUNTIME_CLOSEOUT_LARK_POLL_INTERVAL_MS ?? 2_500,
-    'larkPollIntervalMs',
-  );
-  let state = null;
-  for (let attempt = 1; attempt <= maxPolls; attempt += 1) {
-    state = await readLarkReportState(client, tableIds, reportId);
-    if (state.snapshots === 1 && state.metrics > 0 && state.duplicateMetricKeys === 0) return state;
-    if (attempt < maxPolls) await sleep(intervalMs);
-  }
-  throw failure(
-    'Bounded verification did not observe Report rows in Lark',
-    'REPORT_RUNTIME_CLOSEOUT_LARK_VERIFY_TIMEOUT',
-    { state: summarizeLarkState(state ?? {}) },
-  );
-}
-
 function assertLarkCompletion(state) {
   if (state.snapshots !== 1 || state.metrics <= 0 || state.topContent < 0 || state.duplicateMetricKeys !== 0) {
     throw failure(
@@ -714,10 +1000,14 @@ async function readPendingMigrations() {
     .map((match) => match[0]))].sort();
 }
 
-async function createD1Backup(selected) {
+async function createD1Backup(selected, options = {}) {
   const backupDir = join(outputRoot, 'backups');
   await mkdir(backupDir, { recursive: true, mode: 0o700 });
-  const path = join(backupDir, `report-closeout-before-${selected.operation}-${selected.windowDays}d.sql`);
+  const label = String(options.label ?? 'before').replace(/[^a-z0-9-]/giu, '-');
+  const suffix = options.unique === true ? `-${Date.now()}` : '';
+  const path = options.unique === true
+    ? join(backupDir, `report-closeout-${label}-${selected.operation}-${selected.windowDays}d${suffix}.sql`)
+    : join(backupDir, `report-closeout-before-${selected.operation}-${selected.windowDays}d.sql`);
   await run('npx', [
     'wrangler', 'd1', 'export', 'MKT_STATE_DB', '--remote', '--config', configPath, '--output', path,
   ], { env: loaded?.env });
@@ -726,6 +1016,34 @@ async function createD1Backup(selected) {
   if (bytes.length === 0) throw failure(
     'Report closeout D1 backup is empty',
     'REPORT_RUNTIME_CLOSEOUT_BACKUP_EMPTY',
+  );
+  return Object.freeze({
+    file: relative(repositoryRoot, path),
+    bytes: bytes.length,
+    sha256: sha256(bytes),
+    remoteMutationCount: 0,
+  });
+}
+
+async function readExistingD1Backup(selected) {
+  const path = join(
+    outputRoot,
+    'backups',
+    `report-closeout-before-${selected.operation}-${selected.windowDays}d.sql`,
+  );
+  let bytes;
+  try {
+    bytes = await readFile(path);
+  } catch (error) {
+    if (error?.code === 'ENOENT') throw failure(
+      'Original Report closeout D1 backup is missing',
+      'REPORT_RUNTIME_CLOSEOUT_RECOVERY_BACKUP_MISSING',
+    );
+    throw error;
+  }
+  if (bytes.length === 0) throw failure(
+    'Original Report closeout D1 backup is empty',
+    'REPORT_RUNTIME_CLOSEOUT_RECOVERY_BACKUP_INVALID',
   );
   return Object.freeze({
     file: relative(repositoryRoot, path),
@@ -882,6 +1200,30 @@ async function writeAttempt(name, value) {
     if (error?.code !== 'ENOENT') throw error;
   }
   await writePrivateJson(path, { ...value, attemptedAt: new Date().toISOString() });
+}
+
+async function readRequiredJson(path) {
+  const value = await readJsonIfExists(path);
+  if (value === null) throw failure(
+    'Required Report closeout recovery evidence is missing',
+    'REPORT_RUNTIME_CLOSEOUT_RECOVERY_EVIDENCE_MISSING',
+    { fileName: path.split('/').at(-1) ?? null },
+  );
+  return value;
+}
+
+async function readJsonIfExists(path) {
+  try {
+    return JSON.parse(await readFile(path, 'utf8'));
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null;
+    if (error instanceof SyntaxError) throw failure(
+      'Report closeout recovery evidence JSON is invalid',
+      'REPORT_RUNTIME_CLOSEOUT_RECOVERY_EVIDENCE_JSON_INVALID',
+      { fileName: path.split('/').at(-1) ?? null },
+    );
+    throw error;
+  }
 }
 
 async function writePrivateJson(path, value) {
