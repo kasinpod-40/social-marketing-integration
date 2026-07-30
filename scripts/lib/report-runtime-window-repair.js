@@ -1,11 +1,15 @@
 import { REPORT_RUNTIME_CLOSEOUT_WINDOW_DAYS } from './report-runtime-closeout-operator.js';
+import {
+  REPORT_RUNTIME_LEGACY_REFRESH_DAYS,
+  resolveReportRuntimeApprovedRefreshDays,
+} from './report-runtime-refresh-authorization.js';
 
 export const REPORT_RUNTIME_WINDOW_REPAIR_CONFIRMATION = 'EXECUTE_REPORT_RUNTIME_WINDOW_REPAIR';
 export const REPORT_RUNTIME_WINDOW_REPAIR_OPERATIONS = Object.freeze({
   FRESH: 'fresh',
   REFRESH: 'refresh',
 });
-export const REPORT_RUNTIME_WINDOW_REPAIR_REFRESH_DAYS = Object.freeze([3, 7]);
+export const REPORT_RUNTIME_WINDOW_REPAIR_REFRESH_DAYS = REPORT_RUNTIME_LEGACY_REFRESH_DAYS;
 export const REPORT_RUNTIME_WINDOW_REPAIR_SEQUENCE = Object.freeze([
   Object.freeze({ windowDays: 3, operation: REPORT_RUNTIME_WINDOW_REPAIR_OPERATIONS.REFRESH }),
   Object.freeze({ windowDays: 7, operation: REPORT_RUNTIME_WINDOW_REPAIR_OPERATIONS.REFRESH }),
@@ -70,10 +74,11 @@ export function selectReportRuntimeWindowTarget(candidates, existingReportIds = 
     { windowDays },
   );
   if (operation === REPORT_RUNTIME_WINDOW_REPAIR_OPERATIONS.REFRESH) {
-    if (!REPORT_RUNTIME_WINDOW_REPAIR_REFRESH_DAYS.includes(windowDays)) throw repairError(
-      `Refresh is approved only for ${REPORT_RUNTIME_WINDOW_REPAIR_REFRESH_DAYS.join('D, ')}D`,
+    const approvedRefreshDays = resolveReportRuntimeApprovedRefreshDays(env);
+    if (!approvedRefreshDays.includes(windowDays)) throw repairError(
+      `Refresh is approved only for ${approvedRefreshDays.join('D, ')}D`,
       'REPORT_RUNTIME_WINDOW_REPAIR_REFRESH_WINDOW_NOT_APPROVED',
-      { windowDays },
+      { windowDays, approvedRefreshDays },
     );
     if (!exists) throw repairError(
       `Refresh target does not exist for the selected period: ${windowDays}D`,
