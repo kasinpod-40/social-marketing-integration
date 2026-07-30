@@ -1,11 +1,15 @@
 import { REPORT_RUNTIME_CLOSEOUT_WINDOW_DAYS } from './report-runtime-closeout-operator.js';
+import {
+  REPORT_RUNTIME_LEGACY_REFRESH_DAYS,
+  resolveReportRuntimeApprovedRefreshDays,
+} from './report-runtime-refresh-authorization.js';
 
 export const REPORT_RUNTIME_WINDOW_REPAIR_CONFIRMATION = 'EXECUTE_REPORT_RUNTIME_WINDOW_REPAIR';
 export const REPORT_RUNTIME_WINDOW_REPAIR_OPERATIONS = Object.freeze({
   FRESH: 'fresh',
   REFRESH: 'refresh',
 });
-export const REPORT_RUNTIME_WINDOW_REPAIR_REFRESH_DAYS = Object.freeze([3, 7]);
+export const REPORT_RUNTIME_WINDOW_REPAIR_REFRESH_DAYS = REPORT_RUNTIME_LEGACY_REFRESH_DAYS;
 export const REPORT_RUNTIME_WINDOW_REPAIR_SEQUENCE = Object.freeze([
   Object.freeze({ windowDays: 3, operation: REPORT_RUNTIME_WINDOW_REPAIR_OPERATIONS.REFRESH }),
   Object.freeze({ windowDays: 7, operation: REPORT_RUNTIME_WINDOW_REPAIR_OPERATIONS.REFRESH }),
@@ -70,10 +74,11 @@ export function selectReportRuntimeWindowTarget(candidates, existingReportIds = 
     { windowDays },
   );
   if (operation === REPORT_RUNTIME_WINDOW_REPAIR_OPERATIONS.REFRESH) {
-    if (!REPORT_RUNTIME_WINDOW_REPAIR_REFRESH_DAYS.includes(windowDays)) throw repairError(
-      `Refresh is approved only for ${REPORT_RUNTIME_WINDOW_REPAIR_REFRESH_DAYS.join('D, ')}D`,
+    const approvedRefreshDays = resolveReportRuntimeApprovedRefreshDays(env);
+    if (!approvedRefreshDays.includes(windowDays)) throw repairError(
+      `Refresh is approved only for ${approvedRefreshDays.join('D, ')}D`,
       'REPORT_RUNTIME_WINDOW_REPAIR_REFRESH_WINDOW_NOT_APPROVED',
-      { windowDays },
+      { windowDays, approvedRefreshDays },
     );
     if (!exists) throw repairError(
       `Refresh target does not exist for the selected period: ${windowDays}D`,
@@ -159,7 +164,11 @@ export function assertReportRuntimeWindowChanged(input = {}) {
 export function assertReportRuntimeOrganicIntegrity(input = {}) {
   const payload = requireObject(input.payload, 'payload');
   const larkMetrics = requireObject(input.larkMetrics, 'larkMetrics');
-  const metricIntegrity = assertReportRuntimeMetricIntegrity({ payload, larkMetrics });
+  const metricIntegrity = assertReportRuntimeMetricIntegrity({
+    payload,
+    larkMetrics,
+    larkMetricMetadata: input.larkMetricMetadata,
+  });
   const metricPayload = requireObject(payload.metricPayload, 'payload.metricPayload');
   const aggregateMetricKeys = [
     'tiktok:period_views',
@@ -219,9 +228,59 @@ export function assertReportRuntimeMetricIntegrity(input = {}) {
       nonRepairableMismatchCount,
     },
   );
+
+  const metadata = assertMetricMetadataIntegrity({
+    metricPayload,
+    larkMetricMetadata: input.larkMetricMetadata,
+    expectedMetricKeys,
+  });
   return Object.freeze({
     metricCount: expectedMetricKeys.length,
     mismatchCount: mismatches,
+    ...metadata,
+  });
+}
+
+function assertMetricMetadataIntegrity(input) {
+  const metadataRequired = input.expectedMetricKeys.some((metricKey) => {
+    const metric = input.metricPayload[metricKey];
+    return typeof metric?.metricScope === 'string'
+      || typeof metric?.availabilityStatus === 'string'
+      || typeof metric?.availabilityMessage === 'string';
+  });
+  if (!metadataRequired) return Object.freeze({ metadataRequired: false, metadataMismatchCount: 0 });
+
+  const observed = requireObject(input.larkMetricMetadata, 'larkMetricMetadata');
+  let metadataMismatchCount = 0;
+  const metricScopeCounts = {};
+  const availabilityStatusCounts = {};
+  for (const metricKey of input.expectedMetricKeys) {
+    const expectedMetric = input.metricPayload[metricKey];
+    const observedMetric = observed[metricKey] ?? {};
+    const expectedMetadata = {
+      metricScope: requireText(expectedMetric.metricScope, `${metricKey}.metricScope`),
+      availabilityStatus: requireText(expectedMetric.availabilityStatus, `${metricKey}.availabilityStatus`),
+      availabilityMessage: requireText(expectedMetric.availabilityMessage, `${metricKey}.availabilityMessage`),
+    };
+    if (expectedMetadata.metricScope !== observedMetric.metricScope
+      || expectedMetadata.availabilityStatus !== observedMetric.availabilityStatus
+      || expectedMetadata.availabilityMessage !== observedMetric.availabilityMessage) {
+      metadataMismatchCount += 1;
+    }
+    metricScopeCounts[expectedMetadata.metricScope] = (metricScopeCounts[expectedMetadata.metricScope] ?? 0) + 1;
+    availabilityStatusCounts[expectedMetadata.availabilityStatus]
+      = (availabilityStatusCounts[expectedMetadata.availabilityStatus] ?? 0) + 1;
+  }
+  if (metadataMismatchCount !== 0) throw repairError(
+    'D1 and Lark Report metric readiness metadata differ',
+    'REPORT_RUNTIME_WINDOW_REPAIR_METRIC_METADATA_DRIFT',
+    { metricCount: input.expectedMetricKeys.length, metadataMismatchCount },
+  );
+  return Object.freeze({
+    metadataRequired: true,
+    metadataMismatchCount,
+    metricScopeCounts: Object.freeze(metricScopeCounts),
+    availabilityStatusCounts: Object.freeze(availabilityStatusCounts),
   });
 }
 
