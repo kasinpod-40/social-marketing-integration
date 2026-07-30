@@ -37,5 +37,7 @@
 - Added a guarded completed-state closeout path that performs fresh backup, current D1/Lark parity, one exact same-operation idempotent replay, bounded incremental UAT and all-false Safe closeout without admitting a replacement Full operation or repeating orphan recovery.
 - Preserved retained historical Raw Customer/Coupon semantics, separated Incremental delta counters from current total Raw counts, and added an immutable Full completion fingerprint that allows current totals to move only after verified Incremental processing.
 - Added Queue-attempt evidence that blocks blind resend after uncertain acceptance, automatic Safe restore after mutable Worker ownership and exact final markers `WOOCOMMERCE_2026_COMPLETED_SAFE` / `WOO_EXACT_COMPLETED_STATE_CLOSED_SAFE`.
-- Added a required public closeout launcher and closeout-specific npx proxy that reuse shared Queue modern/legacy normalization and bridge the normalized DLQ identity into `settings.dead_letter_queue` only for exact consumer-list JSON verification.
+- Bound completed-state checkpoints and Queue-attempt evidence to the exact Repository Head; persisted stable job hashes, operation identities, minimum attempts and the original Incremental watermark.
+- Added stage-aware Replay and Incremental checkpoints. Confirmed Queue acceptance without a verified stage checkpoint now stops for review instead of resending.
+- Reused the shared Woo Queue topology validator directly in completed-state closeout; no duplicate closeout proxy or compatibility normalizer remains.
 - Implementation performs no Remote mutation, Worker deployment, Queue message, Lark write, Schedule change or Production action.

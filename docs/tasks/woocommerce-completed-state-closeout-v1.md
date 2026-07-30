@@ -99,7 +99,7 @@ current Raw D1 counts. Raw Customer and Coupon rows are excluded from that compa
 2026 cleanup contract intentionally retained older Raw Customer/Coupon rows. Incremental completion
 uses delta counters and is never compared with current total Raw counts.
 
-## Replay and incremental safety
+## Replay, Incremental and checkpoint safety
 
 Same-operation replay must:
 
@@ -110,10 +110,24 @@ Same-operation replay must:
 - preserve the immutable completion fingerprint;
 - pass fresh D1/Lark parity.
 
-Incremental UAT uses a separately persisted exact operation identity and watermark. A recorded Queue
-attempt without confirmed HTTP acceptance blocks blind resend. Final verification allows current
-Business counts to move after Incremental while still requiring the original Full completion
-fingerprint to remain unchanged.
+Incremental UAT uses a separately persisted exact operation identity, requested-at and original
+watermark. Final verification allows current Business counts to move after Incremental while still
+requiring the original Full completion fingerprint to remain unchanged.
+
+All private evidence is nested under the exact Repository Head. Replay and Incremental stage
+checkpoints record the exact Head, operation, minimum Queue attempt and completion fingerprint. Queue
+attempt evidence additionally records the stable job SHA-256. Any evidence drift fails closed.
+
+A Queue request recorded before HTTP acceptance is uncertain and cannot be resent. A confirmed Queue
+acceptance without the corresponding verified stage checkpoint also cannot be resent; the operator
+returns `WOOCOMMERCE_COMPLETED_STATE_QUEUE_ACCEPTED_REVIEW_REQUIRED` for read-only incident review.
+
+## Shared Queue topology
+
+The closeout operator calls the Repository's existing `assertWooCommerceQueueConsumerTopology`
+directly. That shared contract already validates current and legacy Cloudflare fields, whole-second
+wait conversion, alias conflicts and DLQ identity. No closeout-specific proxy or duplicate topology
+normalizer is retained.
 
 ## Mutation allowlist
 
@@ -129,11 +143,23 @@ Business-fact delete                  0
 Work/Sync/Phase repair                0
 Orphan recovery                       0
 Replacement Full operation            0
+Blind Queue resend                    0
 Meta execution                        0
 Schedule / Production                 blocked
 ```
 
 Automatic all-false restore runs after every failure once a mutable Worker window is owned.
+
+## Approved Live entry after Review and Merge
+
+```text
+CONFIRM_WOOCOMMERCE_COMPLETED_STATE_CLOSEOUT=\
+CLOSE_WOO_FINAL_FULL_011368480910_FROM_COMPLETED_STATE_ONLY \
+node scripts/woocommerce-final-completed-state-closeout-launcher.mjs --execute
+```
+
+The launcher binds evidence to the exact Git Head and sets the required public-entry marker. Direct
+operator execution fails closed.
 
 ## Success markers
 
@@ -150,7 +176,10 @@ Meta remains blocked until these markers and final zero-active/all-false verific
 ```text
 scripts/lib/woocommerce-final-completed-state-closeout.js
 scripts/woocommerce-final-completed-state-closeout.mjs
+scripts/woocommerce-final-completed-state-closeout-launcher.mjs
 tests/application/woocommerce-final-completed-state-closeout.test.js
+tests/application/woocommerce-final-completed-state-launcher.test.js
+tests/application/woocommerce-final-completed-state-checkpoint-source.test.js
 docs/tasks/woocommerce-completed-state-closeout-v1.md
 ```
 
@@ -159,9 +188,7 @@ docs/tasks/woocommerce-completed-state-closeout-v1.md
 ```text
 npm ci
 npm run check
-node --test tests/application/woocommerce-final-completed-state-closeout.test.js \
-  tests/application/woocommerce-final-rollout-operator.test.js \
-  tests/application/woocommerce-runtime-wiring.test.js
+focused completed-state / Final / runtime / checkpoint tests
 npm test
 npm run test:report-reliability
 npm audit --audit-level=high

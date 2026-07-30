@@ -35,6 +35,10 @@ the resumable Work store retires the phase row.
 - Incremental completion counters are deltas and must not be compared with current total Raw counts.
 - Live execution must use `woocommerce-final-completed-state-closeout-launcher.mjs`; direct operator
   invocation is not the approved handoff.
+- Private evidence is exact-head scoped. Queue-attempt records must match the exact job hash,
+  operation, minimum attempt and Repository Head.
+- An accepted Queue message without the corresponding verified stage checkpoint is review-required;
+  it is never authorized for blind resend.
 
 ## Closeout path
 
@@ -49,12 +53,12 @@ completed-state admission from completion_json
 ```
 
 The initial completed Full operation is not resent. The only Full Queue action is the same-operation
-idempotent replay after parity admission. A separately persisted operation identity is used for
-Incremental UAT. Queue attempt evidence blocks blind resend after uncertain HTTP acceptance.
+idempotent replay after parity admission. A separately persisted operation identity and immutable
+watermark are used for Incremental UAT.
 
-The public launcher installs a private temporary npx proxy. The proxy reuses shared modern/legacy
-Queue normalization and adds only the completed-state DLQ settings alias for the exact
-`wrangler queues consumer list ... --json` command. Every other npx command passes through.
+The launcher resolves the exact Git Head and binds the evidence directory to it. The operator uses the
+shared Woo Queue topology validator directly for modern/legacy fields and DLQ identity; no separate
+closeout compatibility proxy is allowed.
 
 ## Success markers
 
@@ -73,12 +77,10 @@ all-false plus zero active reliability state are freshly verified.
 docs/current-task.md
 docs/tasks/woocommerce-completed-state-closeout-v1.md
 scripts/lib/woocommerce-final-completed-state-closeout.js
-scripts/lib/woocommerce-completed-state-queue-consumer-cli-output.js
 scripts/woocommerce-final-completed-state-closeout.mjs
 scripts/woocommerce-final-completed-state-closeout-launcher.mjs
-scripts/woocommerce-final-completed-state-npx-proxy.mjs
 tests/application/woocommerce-final-completed-state-closeout.test.js
 tests/application/woocommerce-final-completed-state-launcher.test.js
-tests/application/woocommerce-completed-state-queue-consumer-cli-output.test.js
+tests/application/woocommerce-final-completed-state-checkpoint-source.test.js
 PR #308
 ```

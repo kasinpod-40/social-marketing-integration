@@ -70,14 +70,14 @@ completed-state admission from completion_json
 - Pin Full operation `woo-final-full-011368480910` and its original generation/history window.
 - Accept retired phase only when Sync Run, Work, `completion_json`, Coverage, generations and failed
   counters prove exact completion.
-- Reuse existing Woo job contract, D1 snapshot, D1/Lark parity, Worker config windows and reliability
-  state.
+- Reuse existing Woo job contract, D1 snapshot, D1/Lark parity, Worker config windows, shared Queue
+  topology validator and reliability state.
 - Send only one same-operation completed-idempotent replay after parity admission.
 - Run one separately persisted incremental UAT operation.
-- Persist Queue attempt evidence and block blind resend after uncertain acceptance.
+- Bind every private checkpoint and Queue-attempt record to the exact Repository Head.
+- Persist exact Queue job hash, operation identity, minimum attempt and original Incremental watermark.
+- Block blind resend when Queue acceptance exists without a verified stage checkpoint.
 - Return Worker to exact all-false state on success and failure.
-- Use the public launcher to reuse shared modern/legacy Queue consumer normalization and expose the
-  normalized DLQ identity to the completed-state verifier.
 
 ## Out of scope
 
@@ -117,8 +117,9 @@ CLOSE_WOO_FINAL_FULL_011368480910_FROM_COMPLETED_STATE_ONLY \
 node scripts/woocommerce-final-completed-state-closeout-launcher.mjs --execute
 ```
 
-Direct operator execution is not the approved handoff. The launcher installs the narrowly scoped npx
-proxy that adapts only `wrangler queues consumer list ... --json`; all other commands pass through.
+Direct operator execution is not the approved handoff. The launcher resolves the exact Git Head,
+places all private evidence under an exact-head directory and sets the required public-entry marker.
+The operator uses the Repository's shared Queue topology validator directly.
 
 ## Acceptance criteria
 
@@ -129,7 +130,9 @@ Same-operation Queue attempt increased                  PASS required
 Full completion fingerprint unchanged                   PASS required
 Business and Coverage counts unchanged by replay        PASS required
 Incremental UAT completed and parity verified            PASS required
-Queue modern/legacy/DLQ topology bridge                 PASS required
+Exact-head stage and Queue checkpoints                  PASS required
+Accepted Queue evidence without checkpoint              fail closed / no resend
+Shared Queue topology validation                        PASS required
 Active Work / Lock / Queue operation                    0 / 0 / 0
 Worker execution flags                                  all false
 Schedule / Production                                   disabled / blocked
@@ -142,7 +145,7 @@ Success markers                                         WOOCOMMERCE_2026_COMPLET
 ```text
 npm ci
 npm run check
-focused completed-state / Final / runtime / Queue adapter tests
+focused completed-state / Final / runtime / checkpoint tests
 npm test
 npm run test:report-reliability
 npm audit --audit-level=high
@@ -157,11 +160,14 @@ Branch Verification on exact PR Head
 - Added guarded closeout operator with clean-current-main enforcement, full local gates, bounded D1
   reads, fresh backup, exact Worker windows, parity, same-operation replay, incremental UAT and
   automatic all-false restore.
-- Added a public launcher, closeout-specific npx proxy and pure Queue-output adapter that reuse the
-  shared Queue topology normalization, bridge `batch_size` / `max_wait_time_ms`, normalize empty DLQ
-  identity and expose `settings.dead_letter_queue` without changing the reviewed shared adapter.
+- Added stage-aware exact-head checkpoints. Queue acceptance without the corresponding verified Replay
+  or Incremental checkpoint stops for review and cannot be resent blindly.
+- Persisted the exact Incremental operation, requested-at and original watermark so resumed execution
+  cannot silently move the UAT boundary.
+- Reused the shared Queue topology validator directly; no closeout-specific compatibility proxy or
+  duplicate normalization layer remains.
 - Added focused regressions for retired phase admission, retained Raw Customer/Coupon semantics,
-  incremental delta semantics, Source drift, identity/scope/Coverage drift, replay drift, remote
-  preflight, Queue output containers/conflicts and no replacement Full admission.
+  Incremental delta semantics, Source drift, identity/scope/Coverage drift, Replay drift, remote
+  preflight, checkpoint safety, exact-head evidence and no replacement Full admission.
 - Added detailed contract at `docs/tasks/woocommerce-completed-state-closeout-v1.md`.
 - Repository implementation has performed no Remote action.
