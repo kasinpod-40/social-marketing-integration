@@ -50,13 +50,15 @@ const RECOVERABLE_BLOCKERS = Object.freeze(new Set([
 ]));
 
 /**
- * Preserve the unchanged v1 migration for normal states. The recovery path is entered only when
- * every v1 blocker belongs to the exact reviewed transitional-state allowlist.
+ * Preserve the unchanged v1 migration for normal states. Recovery remains authoritative after its
+ * deterministic v2 marker exists, so an interrupted phase can never fall back to a single-source
+ * v1 read and silently ignore the retained secondary legacy field.
  */
 export async function planReportMetricValueFieldMigration(input = {}) {
   const base = await planBaseMigration(input);
-  if (base.repairable === true || !isRecoverableBasePlan(base)) return base;
+  if (base.repairable !== true && !isRecoverableBasePlan(base)) return base;
   const inspected = await inspectTransitionalState(input);
+  if (base.repairable === true && inspected.recoveryMarkerPresent !== true) return base;
   return buildPublicPlan(inspected);
 }
 
@@ -71,12 +73,16 @@ export async function applyReportMetricValueFieldMigration(input = {}) {
   }
 
   const base = await planBaseMigration(input);
-  if (base.repairable === true) return applyBaseMigration(input);
-  if (!isRecoverableBasePlan(base)) return applyBaseMigration(input);
+  if (base.repairable !== true && !isRecoverableBasePlan(base)) return applyBaseMigration(input);
+
+  const inspectedCandidate = await inspectTransitionalState(input);
+  if (base.repairable === true && inspectedCandidate.recoveryMarkerPresent !== true) {
+    return applyBaseMigration(input);
+  }
 
   const client = requireClient(input.client);
   const sleep = input.sleepImpl ?? sleepMs;
-  let inspected = await inspectTransitionalState(input);
+  let inspected = inspectedCandidate;
   assertRecoveryRepairable(inspected);
   const initialRecordCount = inspected.recordCount;
   const initialLegacyFingerprints = new Map(inspected.legacyFieldFingerprints);
@@ -240,6 +246,9 @@ async function inspectTransitionalState(input = {}) {
     schemaVersion,
     tableId: resolution.tableId,
     recordCount: records.length,
+    recoveryMarkerPresent: fields.some(
+      (field) => normalizeName(field.fieldName) === normalizeName(WINDOW_FIELD.secondaryLegacyName),
+    ),
     display,
     window,
     blockers,
@@ -648,6 +657,7 @@ function blockedInspection(schemaVersion, blockers) {
     schemaVersion,
     tableId: null,
     recordCount: 0,
+    recoveryMarkerPresent: false,
     display: blockedMigration(DISPLAY_FIELD, blockers[0]),
     window: blockedMigration(WINDOW_FIELD, blockers[0]),
     blockers,
@@ -676,6 +686,7 @@ function blockedMigration(contract, blocker) {
 function stateSignature(inspected) {
   return JSON.stringify({
     recordCount: inspected.recordCount,
+    recoveryMarkerPresent: inspected.recoveryMarkerPresent,
     displayState: inspected.display.state,
     displayPending: inspected.display.pendingRecordCount,
     windowState: inspected.window.state,
