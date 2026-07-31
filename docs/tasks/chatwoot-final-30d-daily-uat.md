@@ -8,8 +8,8 @@ SCOPE                               = REPOSITORY_ONLY
 BASE_MAIN                           = 95fe279d6ef46978d95acb1611ec859ae35cba64
 BRANCH                              = integration/chatwoot-final-30d-daily-uat
 DRAFT_PR                            = #311
-CODE_VERIFIED_HEAD                  = 3431760f769308cf52c0568e7cf4f6236213751e
-BRANCH_VERIFICATION                 = #1335 / 30602618460 / PASS
+CODE_VERIFIED_HEAD                  = c7d0f4c9104ae52722f6b7a5f502713d5f0ea740
+BRANCH_VERIFICATION                 = #1340 / 30603113157 / PASS
 REMOTE_PROVIDER_REQUEST             = 0
 REMOTE_D1_QUERY_WRITE               = 0
 REMOTE_LARK_REQUEST_MUTATION        = 0
@@ -188,7 +188,7 @@ npm audit --audit-level=high
 npm run deploy:dry-run
 ```
 
-Branch Verification `#1335 / 30602618460` passed the exact code Head `3431760f769308cf52c0568e7cf4f6236213751e`: install, architecture/hygiene, focused Chatwoot tests, TikTok regression, full Unit/Workers runtime, Report reliability, dependency audit and Wrangler dry-run all passed. This documentation closeout Head must pass the same exact Gate chain before Ready/Merge.
+Branch Verification `#1340 / 30603113157` passed the exact code Head `c7d0f4c9104ae52722f6b7a5f502713d5f0ea740`: install, architecture/hygiene, focused Chatwoot tests including executable plan-only launcher, TikTok regression, full Unit/Workers runtime, Report reliability, dependency audit and Wrangler dry-run all passed. This documentation-only closeout Head must pass the same exact Gate chain before Ready/Merge.
 
 ## Out of scope
 
