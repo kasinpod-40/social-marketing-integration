@@ -141,7 +141,7 @@ test('Queue discovery bounds and sanitizes response body read failures', async (
   );
 });
 
-test('Queue bootstrap injects exact ID without calling removed Wrangler Queue JSON output', async () => {
+test('Queue bootstrap injects exact ID without unnecessary Wrangler authentication commands', async () => {
   const root = await mkdtemp(join(tmpdir(), 'woo-queue-bootstrap-'));
   try {
     const configPath = join(root, 'wrangler.sync.jsonc');
@@ -159,9 +159,7 @@ test('Queue bootstrap injects exact ID without calling removed Wrangler Queue JS
       repositoryRoot: root,
       runWrangler(args) {
         commands.push(args);
-        return JSON.stringify({
-          accounts: [{ id: ACCOUNT_ID, name: 'Integration Workspace' }],
-        });
+        throw new Error('Wrangler authentication must not run for exact account and token');
       },
       fetchImpl: async (url, options) => {
         requests.push({ url, options });
@@ -171,15 +169,10 @@ test('Queue bootstrap injects exact ID without calling removed Wrangler Queue JS
 
     assert.equal(result.source, 'cloudflare_queue_rest');
     assert.equal(result.providerRequests, 1);
+    assert.equal(result.accountSource, 'explicit_environment');
+    assert.equal(result.authSource, 'environment');
     assert.equal(env.MKT_WOOCOMMERCE_FINAL_QUEUE_ID, QUEUE_ID);
-    assert.deepEqual(commands, [
-      ['whoami', '--json'],
-      ['whoami', '--account', ACCOUNT_ID, '--json'],
-    ]);
-    assert.equal(
-      commands.some((args) => args.join(' ') === 'queues list --json'),
-      false,
-    );
+    assert.deepEqual(commands, []);
     assert.equal(requests.length, 1);
   } finally {
     await rm(root, { recursive: true, force: true });

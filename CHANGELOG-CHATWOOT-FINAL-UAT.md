@@ -1,5 +1,12 @@
 # Chatwoot Final UAT Changelog
 
+## Unreleased — Queue Bootstrap Authentication Ordering Hotfix
+
+- Fixed the shared Queue bootstrap invoking `wrangler whoami --json` before checking whether the exact Cloudflare Account ID was already supplied by Environment or Wrangler config.
+- Explicit API-token authentication now bypasses Wrangler authentication commands; the reviewed Queue REST request validates the token against the exact account and Queue inventory.
+- OAuth sessions use the official `wrangler auth token --json` command first, and `whoami --json` is retained only when account membership discovery is genuinely required.
+- Account-scoped credentials no longer need unrelated user-membership permission merely to resolve the already-known Queue account.
+- The failed Chatwoot attempt stopped before D1 backup, Active Worker deployment, Queue send, Provider access or D1/Lark Business writes; Safe restore was not required.
 
 ## Unreleased — Queue Topology Normalization Hotfix
 
