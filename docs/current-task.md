@@ -5,7 +5,8 @@
 ```text
 TASK_STATUS                    = REPOSITORY_HOTFIX_IN_REVIEW
 CURRENT_PROGRAM                = META_HISTORY_CLOUDFLARE_ACCOUNT_RESOLUTION_V4
-BASE_MAIN_SHA                  = a339a06afc57e6ee17c4413b2700e79235ceb3be
+BASE_MAIN_SHA                  = 2d63fd58cfee7710cded74ff3a0dd86f85345038
+SHARED_QUEUE_AUTHORITY         = #343 / SQUASH_MERGED
 BRANCH                         = hotfix/meta-history-cloudflare-account-resolution-v4
 IMPLEMENTATION_PR              = PENDING
 ORIGINAL_IMPLEMENTATION_PR     = #319 / SQUASH_MERGED
@@ -32,35 +33,51 @@ cause  npx wrangler whoami --json exited 1
 
 The failure occurred after local gates and private safe-config generation but before Remote Worker/D1
 inspection, fresh Meta identity validation, Queue admission, Provider reads, D1/Lark Business writes or any
-of the six history operations. The restore child repeated the same unnecessary `whoami` dependency and
-therefore could not independently re-read Remote safe state. No Remote mutation path had been entered.
+of the six history operations. The restore child repeated the same unnecessary `whoami` dependency. No
+Remote mutation path had been entered.
 
 ## Established Cloudflare authority
-
-The Integration Workspace already has stable non-secret account authority:
 
 ```text
 Cloudflare account     Social MKT Data Hub DEV
 CLOUDFLARE_ACCOUNT_ID  present in local .dev.vars
-Wrangler source config copies account_id into the generated safe config
+Wrangler account_id    copied into generated private config when present
 Cloudflare API token   present in local .dev.vars / never committed
 ```
 
-The launcher nevertheless executed `wrangler whoami --json` unconditionally before asking the existing
-shared resolver to use `CLOUDFLARE_ACCOUNT_ID` or config `account_id`. This made a proven API-token/config
-path depend on a separate user-session membership command.
+Account selection and authentication are separate. A known Account ID plus explicit API token must not
+depend on a Wrangler user-membership command.
 
-## Root cause and correction
+## Shared authority now on main
 
-- Resolve `CLOUDFLARE_ACCOUNT_ID` from the explicit environment first.
-- Otherwise resolve top-level Wrangler `account_id` from the already generated private config.
-- Only when neither stable source exists may the launcher call `wrangler whoami --json` as fallback.
+PR #343 merged the repository-wide Queue bootstrap ordering contract at
+`main@2d63fd58cfee7710cded74ff3a0dd86f85345038`:
+
+```text
+explicit API token      → no Wrangler authentication command
+Environment account ID  → first account authority
+Wrangler config ID       → second account authority
+whoami                   → fallback only when Account ID is absent
+exact Queue REST GET     → account/token/Queue permission gate
+```
+
+Meta v4 is rebased onto that Main and uses the same existing shared
+`resolveCloudflareAccountId()` / `resolveCloudflareBearerAuth()` authority. It does not add another Queue,
+Authentication or Account-resolution engine.
+
+## Meta correction
+
+- Read the generated private config first.
+- Ask the shared Account-ID resolver to use explicit `CLOUDFLARE_ACCOUNT_ID` or config `account_id` without
+  running `whoami`.
+- Run `wrangler whoami --json` only when the shared resolver reports that membership discovery is genuinely
+  required.
 - Preserve fail-closed handling for invalid explicit/config Account IDs.
-- Preserve `wrangler auth token --json` only as fallback when no explicit API token exists.
-- Keep Queue discovery, Worker all-false verification, Reliability-idle checks and all operation contracts
-  unchanged.
-- Add a regression that proves static Account ID resolution occurs before the only remaining `whoami`
-  invocation and rejects a return to unconditional `whoami`.
+- Use explicit `CLOUDFLARE_API_TOKEN` directly; keep `wrangler auth token --json` only as missing-token
+  fallback.
+- Keep Queue discovery, Worker all-false verification, Reliability-idle checks and all six operation
+  contracts unchanged.
+- Add a focused regression that rejects unconditional `whoami` ordering.
 
 ## Safety boundary
 
@@ -73,6 +90,7 @@ Do not rerun the public Terminal command while this Hotfix is unmerged.
 
 ```text
 Focused Meta public-launcher regression       PASS required
+Shared Queue auth-order regression            PASS required through current main
 Meta End-to-End Verification                  PASS required
 Branch Verification                           PASS required
 Full Unit / Workers runtime                   PASS required
