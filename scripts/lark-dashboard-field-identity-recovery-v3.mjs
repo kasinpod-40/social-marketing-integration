@@ -57,6 +57,8 @@ const MAX_PAGES = 100;
 const PAGE_SIZE = 100;
 const args = new Set(process.argv.slice(2));
 const execute = args.has('--execute');
+const statisticsProbeOnly = args.has('--statistics-probe-only');
+const STATISTICS_PROBE_BLOCK_NAME = 'Baseline Coverage Rate';
 let currentStage = 'init';
 let currentAction = null;
 let confirmedBlockMutations = 0;
@@ -126,6 +128,11 @@ try {
     dashboardPlan: safeDashboardPlan(dashboardPlan),
     windowPlan,
   });
+  const statisticsRequestPlan = buildStatisticsRequestPlan(dashboardPlan.actions);
+  await writePrivateJson(
+    join(attemptRoot, 'statistics-request-plan.json'),
+    statisticsRequestPlan,
+  );
 
   const preview = Object.freeze({
     ok: true,
@@ -138,6 +145,11 @@ try {
     organicMetricBlockCount: dashboardPlan.organicMetricBlockCount,
     pendingStatisticsUpdateCount: dashboardPlan.pendingStatisticsUpdateCount,
     convergedStatisticsCount: dashboardPlan.convergedStatisticsCount,
+    statisticsRequestShapeViolationCount:
+      statisticsRequestPlan.requestShapeViolationCount,
+    statisticsResponseMetadataRemovalCount:
+      statisticsRequestPlan.responseMetadataRemovalCount,
+    statisticsProbeOnly,
     preservedSlicerCount: dashboardPlan.preservedSlicerCount,
     preservedWindowChartCount: dashboardPlan.preservedWindowChartCount,
     alreadyPreservedWindowChartCount: dashboardPlan.alreadyPreservedWindowChartCount,
@@ -185,10 +197,22 @@ try {
     })),
   });
 
-  currentStage = 'rebind-organic-statistics';
+  currentStage = statisticsProbeOnly
+    ? 'probe-first-organic-statistics-request'
+    : 'rebind-organic-statistics';
   const blockCheckpoints = [];
-  for (let index = 0; index < dashboardPlan.actions.length; index += 1) {
-    const planned = dashboardPlan.actions[index];
+  const statisticsActions = statisticsProbeOnly
+    ? dashboardPlan.actions.filter((action) => action.blockName === STATISTICS_PROBE_BLOCK_NAME)
+    : dashboardPlan.actions;
+  if (statisticsProbeOnly && statisticsActions.length !== 1) {
+    throw operatorError(
+      'Statistics request probe target is not unique',
+      'LARK_DASHBOARD_STATISTICS_PROBE_TARGET_INVALID',
+      { blockName: STATISTICS_PROBE_BLOCK_NAME, matchCount: statisticsActions.length },
+    );
+  }
+  for (let index = 0; index < statisticsActions.length; index += 1) {
+    const planned = statisticsActions[index];
     currentAction = safeActionIdentity(planned, index);
     const liveBlock = await getDashboardBlock({
       client: rawClient,
@@ -221,6 +245,8 @@ try {
       beforeChecksum,
       targetChecksum,
       changedTopLevelKeys: Object.keys(rewrite.patch).sort(),
+      responseMetadataRemovalCount: rewrite.filterResponseMetadataRemovalCount,
+      requestFilter: rewrite.patch.filter ?? null,
       slicerPatch: false,
     });
 
@@ -290,6 +316,37 @@ try {
     contractVersion: LARK_DASHBOARD_FIELD_IDENTITY_RECOVERY_VERSION,
     checkpoints: blockCheckpoints,
   });
+
+  if (statisticsProbeOnly) {
+    const probeDashboards = await readDashboardState({ client: rawClient, baseToken });
+    const probePlan = buildDashboardPlan(probeDashboards, fieldStateBefore);
+    const probeAction = probePlan.actions.find(
+      (action) => action.blockName === STATISTICS_PROBE_BLOCK_NAME,
+    );
+    if (!probeAction || probeAction.changed) {
+      throw operatorError(
+        'Statistics request probe did not converge on readback',
+        'LARK_DASHBOARD_STATISTICS_PROBE_NOT_CONVERGED',
+        { blockName: STATISTICS_PROBE_BLOCK_NAME },
+      );
+    }
+    const probeSummary = Object.freeze({
+      ok: true,
+      contractVersion: LARK_DASHBOARD_FIELD_IDENTITY_RECOVERY_VERSION,
+      decision: 'LARK_DASHBOARD_STATISTICS_REQUEST_PROBE_CONVERGED',
+      blockName: STATISTICS_PROBE_BLOCK_NAME,
+      confirmedStatisticsMutationCount: confirmedStatisticsMutations,
+      confirmedWindowChartMutationCount: 0,
+      confirmedRecordUpdateCount: 0,
+      confirmedFieldMutationCount: 0,
+      slicerPatchCount: 0,
+      production: 'BLOCKED',
+      evidenceRoot: attemptRoot,
+    });
+    await writePrivateJson(join(attemptRoot, 'statistics-probe-summary.json'), probeSummary);
+    process.stdout.write(`${JSON.stringify(probeSummary, null, 2)}\n`);
+    process.exit(0);
+  }
 
   currentStage = 'rebind-number-window-charts';
   const windowChartCheckpoints = [];
@@ -787,6 +844,12 @@ function buildDashboardPlan(dashboards, fieldState) {
           blockName: block.name,
           dataConfig: block.dataConfig,
         });
+        if (rewrite.changed) {
+          assertStatisticsPatchRequestShape(rewrite.patch, {
+            dashboardName: dashboard.name,
+            blockName: block.name,
+          });
+        }
         actions.push(Object.freeze({
           dashboardId: dashboard.dashboardId,
           dashboardName: dashboard.name,
@@ -794,6 +857,7 @@ function buildDashboardPlan(dashboards, fieldState) {
           blockName: block.name,
           blockType: block.type,
           metricKey: rewrite.metricKey,
+          filterResponseMetadataRemovalCount: rewrite.filterResponseMetadataRemovalCount,
           changed: rewrite.changed,
           patch: rewrite.patch,
           dataConfig: rewrite.dataConfig,
@@ -913,6 +977,76 @@ function buildDashboardPlan(dashboards, fieldState) {
     reviewedExecutiveWindowChartNames,
     legacyReferenceCount,
   });
+}
+
+function buildStatisticsRequestPlan(actions) {
+  const planned = actions.map((action, index) => Object.freeze({
+    actionIndex: index + 1,
+    dashboardId: action.dashboardId,
+    dashboardName: action.dashboardName,
+    blockId: action.blockId,
+    blockName: action.blockName,
+    blockType: action.blockType,
+    metricKey: action.metricKey,
+    changed: action.changed,
+    responseMetadataRemovalCount: action.filterResponseMetadataRemovalCount,
+    changedTopLevelKeys: Object.keys(action.patch).sort(),
+    requestFilter: action.patch.filter ?? null,
+  }));
+  return Object.freeze({
+    contractVersion: LARK_DASHBOARD_FIELD_IDENTITY_RECOVERY_VERSION,
+    actionCount: planned.length,
+    requestShapeViolationCount: 0,
+    responseMetadataRemovalCount: planned.reduce(
+      (sum, action) => sum + Number(action.responseMetadataRemovalCount ?? 0),
+      0,
+    ),
+    actions: Object.freeze(planned),
+  });
+}
+
+function assertStatisticsPatchRequestShape(patch, details = {}) {
+  const keys = Object.keys(patch).sort();
+  if (keys.length !== 1 || keys[0] !== 'filter') {
+    throw operatorError(
+      'Statistics mutation must replace only the filter top-level key',
+      'LARK_DASHBOARD_STATISTICS_REQUEST_SHAPE_INVALID',
+      { ...details, changedTopLevelKeys: keys },
+    );
+  }
+  const filter = patch.filter;
+  if (!filter || typeof filter !== 'object' || Array.isArray(filter)) {
+    throw operatorError(
+      'Statistics mutation filter must be an object',
+      'LARK_DASHBOARD_STATISTICS_REQUEST_SHAPE_INVALID',
+      details,
+    );
+  }
+  const filterKeys = Object.keys(filter).sort();
+  if (filterKeys.length !== 2
+    || filterKeys[0] !== 'conditions'
+    || filterKeys[1] !== 'conjunction'
+    || !Array.isArray(filter.conditions)) {
+    throw operatorError(
+      'Statistics mutation filter contains response-only metadata',
+      'LARK_DASHBOARD_STATISTICS_REQUEST_SHAPE_INVALID',
+      { ...details, filterKeys },
+    );
+  }
+  for (const [index, condition] of filter.conditions.entries()) {
+    const conditionKeys = Object.keys(condition).sort();
+    const allowed = condition.value === undefined
+      ? ['field_name', 'operator']
+      : ['field_name', 'operator', 'value'];
+    if (JSON.stringify(conditionKeys) !== JSON.stringify(allowed.sort())) {
+      throw operatorError(
+        'Statistics mutation condition contains response-only metadata',
+        'LARK_DASHBOARD_STATISTICS_REQUEST_SHAPE_INVALID',
+        { ...details, index, conditionKeys },
+      );
+    }
+  }
+  return true;
 }
 
 function containsText(value, expected) {

@@ -8,6 +8,7 @@ import {
   hasComputedDashboardValue,
   hasDashboardProtocol,
   rewriteDashboardBlockDataConfig,
+  sanitizeDashboardFilterForMutation,
 } from '../../scripts/lib/lark-dashboard-canonical-rebind-v1.js';
 
 test('rebinds an Organic KPI from Legacy display Select to exact metric_key', () => {
@@ -46,6 +47,96 @@ test('rebinds an Organic KPI from Legacy display Select to exact metric_key', ()
     blockName: 'Total Views',
     dataConfig: result.dataConfig,
   }), true);
+});
+
+
+test('strips response-only Dashboard filter metadata before PATCH', () => {
+  const result = rewriteDashboardBlockDataConfig({
+    dashboardName: ORGANIC_DASHBOARD_NAME,
+    blockName: 'Baseline Coverage Rate',
+    dataConfig: {
+      table_name: '📊 MKT_Report_Metric_Values',
+      filter: {
+        type: 1,
+        conjunction: 'and',
+        condition_omitted: false,
+        conditions: [
+          {
+            condition_id: 'legacy-condition',
+            field_name: '__mkt_legacy_display_name_single_select_v2',
+            field_type: 3,
+            operator: 'is',
+            value: 'Baseline coverage rate',
+          },
+          {
+            condition_id: 'platform-condition',
+            field_name: 'platform',
+            field_type: 1,
+            operator: 'is',
+            value: 'tiktok',
+          },
+        ],
+      },
+    },
+  });
+
+  assert.equal(result.filterResponseMetadataRemovalCount, 6);
+  assert.deepEqual(result.patch.filter, {
+    conjunction: 'and',
+    conditions: [
+      { field_name: 'platform', operator: 'is', value: 'tiktok' },
+      {
+        field_name: 'metric_key',
+        operator: 'is',
+        value: 'tiktok:baseline_coverage_rate',
+      },
+    ],
+  });
+  assert.doesNotMatch(
+    JSON.stringify(result.patch.filter),
+    /condition_id|field_type|condition_omitted|"type"/u,
+  );
+});
+
+test('filter sanitizer keeps business conditions and omits valueless response values', () => {
+  const result = sanitizeDashboardFilterForMutation({
+    conjunction: 'or',
+    response_revision: 42,
+    conditions: [
+      {
+        condition_id: 'empty-condition',
+        fieldName: 'display_name',
+        fieldType: 1,
+        operator: 'isEmpty',
+        value: ['response-only-placeholder'],
+      },
+      {
+        condition_id: 'window-condition',
+        field_name: 'window_days',
+        field_type: 2,
+        operator: 'is',
+        value: [30],
+      },
+    ],
+  });
+
+  assert.deepEqual(result, {
+    conjunction: 'or',
+    conditions: [
+      { field_name: 'display_name', operator: 'isEmpty' },
+      { field_name: 'window_days', operator: 'is', value: [30] },
+    ],
+  });
+});
+
+test('filter sanitizer fails closed when a valued condition has no value', () => {
+  assert.throws(
+    () => sanitizeDashboardFilterForMutation({
+      conjunction: 'and',
+      conditions: [{ field_name: 'metric_key', operator: 'is' }],
+    }),
+    (error) => error.code === 'LARK_DASHBOARD_CANONICAL_REBIND_FILTER_VALUE_REQUIRED',
+  );
 });
 
 test('fixes Baseline Covered Content by stable key instead of ambiguous display label', () => {
