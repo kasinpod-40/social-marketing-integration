@@ -2,50 +2,69 @@
 
 ## Current decision
 
-`MKT_Report_Metric_Values.display_name` และ `window_days` ใน Integration Workspace มี
-Historical records อยู่ใน SingleSelect fields แต่ Canonical Report contract ต้องเป็น Text และ
-Number ตามลำดับ. ห้ามใช้ in-place type conversion และห้ามลบ Historical fields.
-
-Canonical migration ใช้ side-by-side contract:
+`📊 MKT_Report_Metric_Values` uses one canonical field per concept:
 
 ```text
-display_name legacy  __mkt_legacy_display_name_single_select_v1
-window_days legacy   __mkt_legacy_window_days_single_select_v1
+metric_key    Text
+display_name  Text
+window_days   SingleSelect: 1 / 3 / 7 / 30
 ```
 
-Field เดิมต้องคง `field_id`, Select properties/options และ Record values. Field canonical ใหม่
-รับเฉพาะ lossless values และ Finalizer เดินต่อได้เมื่อ fresh read ยืนยัน parity ครบทุก Record.
+The Metric table keeps `window_days` as SingleSelect because the existing Dashboard Slicers are bound to the
+physical Field identity `fldMlTUP3Z`. Snapshot, Top Content and Top Ads tables continue to use numeric
+`window_days`; their schemas are independent and have no inherited Slicer binding.
+
+The 24 period-metric rows whose baseline is incomplete remain present with `current_value=null`. They are
+valid N/A Business facts and are not deleted.
+
+## Historical migration ownership
+
+The earlier value-preserving migration remains responsible for `display_name` SingleSelect → Text recovery.
+For current Schema v4, `window_days` is a read-only ownership assertion in that migration and must not be
+converted back to Number.
+
+Dashboard Field-Identity Recovery owns the Metric-table window transition:
+
+```text
+Number window source             fldbPCldTL
+preserved slicer Select          fldMlTUP3Z
+window Select v2                 fldraj0QP8
+```
+
+It losslessly backfills the preserved Select, retires the Number field, promotes `fldMlTUP3Z` to canonical
+`window_days`, verifies Dashboard bindings and computed data, then removes retained Legacy fields.
+
+## Audited Integration Workspace identities
+
+```text
+metric_key                       fldGvd3tw8 / Text
+display_name                     fldE4Nezjd / Text
+Number window_days               fldbPCldTL / Number
+preserved window Select          fldMlTUP3Z / SingleSelect
+window Select v2                 fldraj0QP8 / SingleSelect
+display Select v1                fldZB452Z2 / SingleSelect
+display Select v2                fldHNUhCfl / SingleSelect
+```
+
+The initial v3 preview used stale IDs `flduyym9cs`, `fldvLDwEHo` and `fldczhcM6r`; it stopped read-only before
+any mutation. Recovery contract v3.1 replaces those IDs and contains a regression that rejects their return.
 
 ## Durable operator behavior
 
-- Preview อ่าน metadata และ Records ไม่เกิน 500 rows; ไม่มี write.
-- Apply ส่ง Rename/Create write ครั้งเดียวต่อขั้น แล้วรอ bounded fresh metadata read.
-- ห้าม retry Create เมื่อ metadata ยัง stale เพื่อไม่สร้าง Field ซ้ำ.
-- Batch update เขียนเฉพาะ Canonical values ที่ยังขาดครั้งเดียวต่อ Field.
-- Rerun resume จาก Live state หลัง Rename/Create/partial record write ได้.
-- Canonical conflict, conversion ambiguity, Primary Field, duplicate identity และ record bound
-  mismatch ต้อง Fail closed.
-- Evidence ใช้ counts/fingerprints เท่านั้น; ไม่แสดง IDs หรือ Business values.
-
-## Integration order
-
-```text
-repository gates
--> Report Metric value-preserving migration
--> Report schema preview
--> empty-field conflict recovery (ถ้ายังมี conflict อื่น)
--> Report schema apply
--> Dashboard settings reconcile
--> Report window materialization
-```
+- Preview reads metadata, Records and Dashboard Blocks without mutation.
+- Exact Field identities, six Dashboards, 17 Organic Statistics, five Slicers and four window charts fail closed.
+- Slicers are never PATCHed.
+- Statistics changes, Record batches and Field changes are checkpointed and freshly read back.
+- Legacy fields are deleted only after canonical Dashboard binding and computed-data verification pass.
+- No Report record or Business fact is deleted.
 
 ## Safety state
 
-Implementation/CI ไม่มี Live Lark/D1/Queue/Worker/Provider/Schedule/Production action. Live write
-อนุญาตเฉพาะ confirmed one-command operator หลัง exact-main CI และ merge.
+Implementation and CI perform no Live Lark/D1/Queue/Worker/Provider/Schedule/Production action. Live write is
+allowed only through the exact confirmed operator after reviewed-main CI and a successful read-only preview.
 
 Detailed contract:
 
 ```text
-docs/tasks/report-metric-value-field-migration-v1.md
+docs/tasks/lark-dashboard-field-identity-recovery-v3.md
 ```
