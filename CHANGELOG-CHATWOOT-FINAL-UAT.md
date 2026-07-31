@@ -1,6 +1,21 @@
 # Chatwoot Final UAT Changelog
 
-## Unreleased — Guarded 30-Day Initial + Daily Incremental Closeout
+## Unreleased — Lark Table Auto-Mapping Hotfix
+
+### Incident correction
+
+- Fixed the final Launcher stopping before Remote execution when the ignored local config did not contain `LARK_TABLE_RAW_CHATWOOT_ACCOUNTS` and the other 14 Chatwoot Table IDs.
+- The failure occurred before Provider, D1, Queue, Worker deployment or Lark record mutation; Safe restore was not required.
+
+### Automatic mapping
+
+- The Launcher now performs one read-only Lark table inventory and reuses the existing Chatwoot metadata discovery contract.
+- All 15 Table IDs are resolved from the exact reviewed Blueprint names/aliases.
+- Missing, ambiguous or identity-mismatched tables fail closed using logical table keys only; raw Table IDs are never printed or stored in public evidence.
+- Resolved IDs are written only to the ignored private generated Wrangler config, which is permission-restricted and deleted after execution.
+- Stale local mapping values are repaired only in the temporary config; `.dev.vars` and `wrangler.sync.jsonc` remain unchanged.
+
+## Guarded 30-Day Initial + Daily Incremental Closeout
 
 ### Runtime closeout
 
