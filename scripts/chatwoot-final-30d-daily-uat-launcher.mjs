@@ -16,6 +16,10 @@ import {
 const ROOT = resolve(process.cwd());
 const EXECUTE_ARGUMENT = '--execute';
 const LOCK_SCOPE = 'integration_workspace:chatwoot:chemistry_k:%';
+const SAFE_COMPATIBILITY_LIMITS = Object.freeze({
+  CHATWOOT_API_MAX_PAGES: '1000',
+  CHATWOOT_MAX_REPORTING_EVENTS: '100000',
+});
 let normalizedConfigPath = null;
 
 try {
@@ -115,6 +119,11 @@ async function createNormalizedRuntimeConfig(env) {
     }
     config.vars[name] = expected;
   }
+
+  // Replace retired local pagination limits in the private generated config only. These exact
+  // bounds are already reviewed in the merged Runtime examples and are required by the verified
+  // 304 Conversation / 1,125 Reporting page inventories.
+  Object.assign(config.vars, SAFE_COMPATIBILITY_LIMITS);
 
   for (const [name, expected] of [
     ['MKT_SCHEDULE_CHATWOOT_ENABLED', 'false'],
