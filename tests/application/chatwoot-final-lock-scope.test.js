@@ -30,6 +30,32 @@ test('launcher pins exact D1 name and removes unsafe D1/Queue identity overrides
   assert.match(source, /exactQueueResolvedByName:\s*true/u);
 });
 
+test('launcher resolves the exact main Queue through the reviewed Cloudflare REST bootstrap', async () => {
+  const source = await readFile(launcherUrl, 'utf8');
+  const installIndex = source.indexOf('await ensurePinnedWranglerInstalled()');
+  const configIndex = source.indexOf('normalizedConfigPath = await createNormalizedRuntimeConfig(sourceEnv, larkMappings)');
+  const bootstrapIndex = source.indexOf('const queueBootstrap = await bootstrapWooCommerceFinalQueueId({');
+  const injectionIndex = source.indexOf('MKT_CHATWOOT_FINAL_UAT_QUEUE_ID: queueBootstrap.queueId');
+  const lockIndex = source.indexOf('const before = readExactActiveLockCount(env)');
+
+  assert.ok(installIndex >= 0);
+  assert.ok(configIndex > installIndex);
+  assert.ok(bootstrapIndex > configIndex);
+  assert.ok(injectionIndex > bootstrapIndex);
+  assert.ok(lockIndex > injectionIndex);
+  assert.match(source, /const MAIN_QUEUE_NAME = 'social-mkt-sync-jobs'/u);
+  assert.match(source, /const QUEUE_DISCOVERY_SOURCE = 'cloudflare_queue_rest'/u);
+  assert.match(source, /delete queueBootstrapEnv\.MKT_WOOCOMMERCE_FINAL_QUEUE_ID/u);
+  assert.match(source, /queueBootstrap\.source !== QUEUE_DISCOVERY_SOURCE/u);
+  assert.match(source, /MKT_WOOCOMMERCE_ROLLOUT_WRANGLER_CONFIG:\s*normalizedConfigPath/u);
+  assert.match(source, /queueDiscoverySource:\s*QUEUE_DISCOVERY_SOURCE/u);
+  assert.match(source, /'node_modules',\s*'\.bin'/u);
+  assert.match(source, /run\('npm', \['ci'\], \{ stdio: 'inherit' \}\)/u);
+  assert.match(source, /CHATWOOT_FINAL_UAT_PINNED_WRANGLER_MISSING/u);
+  assert.doesNotMatch(source, /queues['"],\s*['"]list['"],\s*['"]--json/u);
+  assert.doesNotMatch(source, /queueBootstrap\.queueId[^\n]*process\.stdout/u);
+});
+
 test('final launcher emits the authoritative success marker only after post-closeout lock verification', async () => {
   const source = await readFile(launcherUrl, 'utf8');
   const afterIndex = source.indexOf('const after = readExactActiveLockCount(env)');
@@ -95,6 +121,7 @@ test('launcher plan executes without credentials or Remote action', () => {
   assert.match(result.stdout, /"executed": false/u);
   assert.match(result.stdout, /"remoteActionsPerformed": false/u);
   assert.match(result.stdout, /"autoResolveChatwootLarkMappings": true/u);
+  assert.match(result.stdout, /"queueDiscovery": "cloudflare_queue_rest"/u);
   assert.match(result.stdout, /chatwoot-final-30d-daily-uat-launcher\.mjs --execute/u);
   assert.doesNotMatch(result.stderr, /CHATWOOT_FINAL_UAT_/u);
 });

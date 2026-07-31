@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 
 import { execFileSync } from 'node:child_process';
-import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, relative, resolve } from 'node:path';
 import { createLarkBitableClientFromEnv } from '../packages/connectors/src/lark/lark-bitable.client.js';
 import { readDevVars } from './lib/dev-vars.js';
 import { parseJsoncObject } from './lib/chatwoot-safe-wrangler-config.js';
 import { resolveChatwootFinalLarkAutoMappings } from './lib/chatwoot-final-lark-auto-mapping.js';
 import { rebaseGeneratedWranglerConfigPaths } from './lib/rebase-generated-wrangler-config-paths.js';
+import { bootstrapWooCommerceFinalQueueId } from './lib/woocommerce-final-queue-bootstrap.js';
 import {
   CHATWOOT_FINAL_UAT_ACTIVE_TRUE_FLAGS,
   CHATWOOT_FINAL_UAT_CONFIRMATION,
@@ -20,6 +21,8 @@ const ROOT = resolve(process.cwd());
 const EXECUTE_ARGUMENT = '--execute';
 const LOCK_SCOPE = 'integration_workspace:chatwoot:chemistry_k:%';
 const DATABASE_NAME = 'social-mkt-state-dev';
+const MAIN_QUEUE_NAME = 'social-mkt-sync-jobs';
+const QUEUE_DISCOVERY_SOURCE = 'cloudflare_queue_rest';
 const UNSAFE_TARGET_OVERRIDES = new Set([
   'MKT_CHATWOOT_FINAL_UAT_DATABASE_NAME',
   'MKT_CHATWOOT_FINAL_UAT_QUEUE_ID',
@@ -56,6 +59,8 @@ async function main() {
       authoritativeCommand: `${CHATWOOT_FINAL_UAT_CONFIRMATION.envName}=${CHATWOOT_FINAL_UAT_CONFIRMATION.value} node scripts/chatwoot-final-30d-daily-uat-launcher.mjs --execute`,
       exactLockScope: LOCK_SCOPE,
       exactDatabaseName: DATABASE_NAME,
+      exactQueueName: MAIN_QUEUE_NAME,
+      queueDiscovery: QUEUE_DISCOVERY_SOURCE,
       ignoredConfigNormalization: true,
       autoResolveChatwootLarkMappings: true,
       remoteActionsPerformed: false,
@@ -74,14 +79,35 @@ async function main() {
     );
   }
 
+  await ensurePinnedWranglerInstalled();
   const larkMappings = await resolveLarkTableMappings(sourceEnv);
   normalizedConfigPath = await createNormalizedRuntimeConfig(sourceEnv, larkMappings);
   const safeSourceEnv = Object.fromEntries(
     Object.entries(sourceEnv).filter(([name]) => !UNSAFE_TARGET_OVERRIDES.has(name)),
   );
+  const queueBootstrapEnv = {
+    ...safeSourceEnv,
+    MKT_WOOCOMMERCE_ROLLOUT_WRANGLER_CONFIG: normalizedConfigPath,
+    MKT_MAIN_QUEUE_NAME: MAIN_QUEUE_NAME,
+  };
+  // The shared bootstrap supports a Woo-specific explicit override for its own operator. This
+  // Chatwoot entrypoint never accepts it: exact-name REST discovery remains authoritative.
+  delete queueBootstrapEnv.MKT_WOOCOMMERCE_FINAL_QUEUE_ID;
+  const queueBootstrap = await bootstrapWooCommerceFinalQueueId({
+    env: queueBootstrapEnv,
+    repositoryRoot: ROOT,
+  });
+  if (queueBootstrap.source !== QUEUE_DISCOVERY_SOURCE) {
+    throw launcherError(
+      'Chatwoot final UAT Queue must be resolved by the reviewed Cloudflare REST discovery',
+      'CHATWOOT_FINAL_UAT_QUEUE_DISCOVERY_INVALID',
+      { source: queueBootstrap.source ?? null },
+    );
+  }
   const env = Object.freeze({
     ...safeSourceEnv,
     MKT_CHATWOOT_FINAL_UAT_WRANGLER_CONFIG: normalizedConfigPath,
+    MKT_CHATWOOT_FINAL_UAT_QUEUE_ID: queueBootstrap.queueId,
   });
 
   const before = readExactActiveLockCount(env);
@@ -110,6 +136,7 @@ async function main() {
     exactLockScopeVerified: true,
     exactDatabaseVerified: true,
     exactQueueResolvedByName: true,
+    queueDiscoverySource: QUEUE_DISCOVERY_SOURCE,
     larkTableMappingsResolved: larkMappings.tableCount,
     larkStaleMappingRepairs: larkMappings.staleMappingRepairCount,
     activeLockCount: 0,
@@ -118,6 +145,35 @@ async function main() {
     webhookEnabled: false,
     production: false,
   }, null, 2)}\n`);
+}
+
+async function ensurePinnedWranglerInstalled() {
+  const executable = inside(join(
+    'node_modules',
+    '.bin',
+    process.platform === 'win32' ? 'wrangler.cmd' : 'wrangler',
+  ));
+  if (await isRegularFile(executable)) return;
+  run('npm', ['ci'], { stdio: 'inherit' });
+  if (!await isRegularFile(executable)) {
+    throw launcherError(
+      'Repository-pinned Wrangler is unavailable after locked dependency installation',
+      'CHATWOOT_FINAL_UAT_PINNED_WRANGLER_MISSING',
+    );
+  }
+}
+
+async function isRegularFile(path) {
+  try {
+    return (await stat(path)).isFile();
+  } catch (error) {
+    if (error?.code === 'ENOENT') return false;
+    throw launcherError(
+      'Repository-pinned Wrangler could not be inspected',
+      'CHATWOOT_FINAL_UAT_PINNED_WRANGLER_INVALID',
+      { errorCode: error?.code ?? null },
+    );
+  }
 }
 
 async function resolveLarkTableMappings(env) {
