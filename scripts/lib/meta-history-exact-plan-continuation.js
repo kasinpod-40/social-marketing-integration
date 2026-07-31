@@ -30,6 +30,7 @@ export const META_HISTORY_EXACT_CONTINUATION_ALLOWED_DELTA = Object.freeze([
   'scripts/lark-dashboard-field-identity-recovery-v3.mjs',
   'scripts/lib/lark-dashboard-compatibility-freeze-v1.js',
   'scripts/lib/meta-history-exact-plan-continuation.js',
+  'scripts/meta-history-2026-exact-plan-continuation-terminal.mjs',
   'scripts/meta-history-2026-exact-plan-continuation.mjs',
   'tests/application/meta-history-exact-plan-continuation.test.js',
   'tests/application/meta-history-exact-plan-continuation-wiring.test.js',
