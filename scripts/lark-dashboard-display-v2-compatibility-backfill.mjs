@@ -6,17 +6,16 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { createLarkBitableClientFromEnv } from '../packages/connectors/src/lark/lark-bitable.client.js';
-import {
-  LARK_DASHBOARD_DISPLAY_V2_FIELD,
-} from '../packages/config/src/lark-dashboard-display-v2-compatibility.js';
+import { LARK_DASHBOARD_DISPLAY_V2_FIELD } from '../packages/config/src/lark-dashboard-display-v2-compatibility.js';
 import { readDevVars } from './lib/dev-vars.js';
-import {
-  LARK_DASHBOARD_COMPATIBILITY_FIELD_IDENTITIES,
-} from './lib/lark-dashboard-compatibility-freeze-v1.js';
+import { LARK_DASHBOARD_COMPATIBILITY_FIELD_IDENTITIES } from './lib/lark-dashboard-compatibility-freeze-v1.js';
 import {
   EXPECTED_BASELINE_INCOMPLETE_NULL_COUNT,
   EXPECTED_DASHBOARD_RECORD_COUNT,
+  EXPECTED_MISSING_DISPLAY_V2_UPDATE_COUNT,
+  EXPECTED_PENDING_DISPLAY_V2_UPDATE_COUNT,
   EXPECTED_REPORT_RECORD_COUNT,
+  EXPECTED_REVIEWED_ALIAS_CORRECTION_COUNT,
   LARK_DASHBOARD_DISPLAY_V2_BACKFILL_VERSION,
   assertLarkDashboardDisplayV2BackfillConfirmation,
   assertLarkDashboardDisplayV2Options,
@@ -25,7 +24,6 @@ import {
 
 const execFileAsync = promisify(execFile);
 const REPORT_TABLE_NAME = '📊 MKT_Report_Metric_Values';
-const MAXIMUM_REVIEWED_RECORD_UPDATES = 50;
 const args = new Set(process.argv.slice(2));
 const execute = args.has('--execute');
 let currentStage = 'init';
@@ -35,7 +33,6 @@ let confirmedRecordUpdates = 0;
 const REQUIRED_FIELD_IDENTITIES = Object.freeze({
   ...LARK_DASHBOARD_COMPATIBILITY_FIELD_IDENTITIES,
   currentValue: { fieldId: 'fldCoOy2IP', fieldName: 'current_value', type: 2 },
-  reportMetricKey: { fieldId: 'fldzra54XS', fieldName: 'report_metric_key', type: 1 },
   reportType: { fieldId: 'fldLwgMcgx', fieldName: 'report_type', type: 3 },
   platform: { fieldId: 'fldnCTMjx1', fieldName: 'platform', type: 3 },
   capability: { fieldId: 'fldrHiZzHt', fieldName: 'capability', type: 1 },
@@ -86,12 +83,12 @@ try {
     includeRecordMetadata: false,
   });
   const plan = buildPlan(records, fieldState);
-  const nullCount = countCurrentValueNullRows(records, fieldState.currentValue.fieldName);
-  const immutableFingerprint = fingerprintRecordsExcludingDisplayV2(
+  const nullCount = countNullRows(records, fieldState.currentValue.fieldName);
+  const immutableFingerprint = fingerprintRecordsExcludingField(
     records,
     fieldState.displaySelectV2.fieldName,
   );
-  assertReviewedBoundary({ records, plan, nullCount });
+  assertReviewedBoundary({ execute, records, plan, nullCount });
 
   const preview = Object.freeze({
     ok: true,
@@ -111,7 +108,7 @@ try {
     reviewedAliasCorrectionCount: plan.reviewedAliasCorrectionCount,
     pendingRecordUpdateCount: plan.pendingUpdateCount,
     displayV2ConflictCount: plan.conflictCount,
-    maximumReviewedRecordUpdateCount: MAXIMUM_REVIEWED_RECORD_UPDATES,
+    maximumReviewedRecordUpdateCount: EXPECTED_PENDING_DISPLAY_V2_UPDATE_COUNT,
     updatedFieldId: fieldState.displaySelectV2.fieldId,
     updatedFieldName: fieldState.displaySelectV2.fieldName,
     immutableRecordFingerprint: immutableFingerprint,
@@ -124,7 +121,6 @@ try {
     production: 'BLOCKED',
     evidenceRoot: attemptRoot,
   });
-
   await writePrivateJson(join(attemptRoot, 'display-v2-backfill-plan.json'), {
     ...preview,
     updates: plan.updates.map((update) => ({
@@ -140,6 +136,7 @@ try {
   if (!execute) process.exit(0);
 
   currentStage = 'backup-reviewed-record-values';
+  const recordsById = new Map(records.map((record) => [record.recordId, record]));
   await writePrivateJson(join(attemptRoot, 'display-v2-backfill-before.json'), {
     contractVersion: LARK_DASHBOARD_DISPLAY_V2_BACKFILL_VERSION,
     tableId,
@@ -148,7 +145,7 @@ try {
     baselineIncompleteNullRecordCount: nullCount,
     immutableRecordFingerprint: immutableFingerprint,
     rows: plan.expectedByRecord.map((expected) => {
-      const record = records.find((candidate) => candidate.recordId === expected.recordId);
+      const record = recordsById.get(expected.recordId);
       return {
         ...expected,
         currentValue: record?.fields?.[fieldState.currentValue.fieldName] ?? null,
@@ -158,21 +155,23 @@ try {
   });
 
   currentStage = 'update-display-v2-records';
+  const reviewedUpdates = plan.updates.map((update) => ({
+    recordId: update.recordId,
+    fields: update.fields,
+  }));
   try {
     const result = await client.batchUpdateRecords({
       tableId,
-      records: plan.updates.map((update) => ({
-        recordId: update.recordId,
-        fields: update.fields,
-      })),
+      records: reviewedUpdates,
       beforeChunk: async (chunk) => {
         await writePrivateJson(
           join(attemptRoot, `display-v2-update-chunk-${chunk.chunk}-before.json`),
           {
             contractVersion: LARK_DASHBOARD_DISPLAY_V2_BACKFILL_VERSION,
             chunk: chunk.chunk,
-            totalChunks: chunk.totalChunks,
-            recordIds: chunk.records.map((record) => record.recordId),
+            totalChunks: chunk.chunks,
+            rowCount: chunk.rows,
+            plannedRecordUpdateCount: reviewedUpdates.length,
             dashboardPatchCount: 0,
             fieldMutationCount: 0,
             currentValueMutationCount: 0,
@@ -188,12 +187,12 @@ try {
     throw error;
   }
 
-  if (confirmedRecordUpdates !== plan.pendingUpdateCount) {
+  if (confirmedRecordUpdates !== EXPECTED_PENDING_DISPLAY_V2_UPDATE_COUNT) {
     throw operatorError(
-      'Display v2 backfill response count did not match the reviewed plan',
+      'Display v2 backfill response count did not match the reviewed 50-row plan',
       'LARK_DASHBOARD_DISPLAY_V2_BACKFILL_COUNT_MISMATCH',
       {
-        plannedRecordUpdates: plan.pendingUpdateCount,
+        plannedRecordUpdates: EXPECTED_PENDING_DISPLAY_V2_UPDATE_COUNT,
         confirmedRecordUpdates,
       },
     );
@@ -205,35 +204,18 @@ try {
     includeRecordMetadata: false,
   });
   const finalPlan = buildPlan(recordsAfter, fieldState);
-  const finalNullCount = countCurrentValueNullRows(
-    recordsAfter,
-    fieldState.currentValue.fieldName,
-  );
-  const finalImmutableFingerprint = fingerprintRecordsExcludingDisplayV2(
+  const finalNullCount = countNullRows(recordsAfter, fieldState.currentValue.fieldName);
+  const finalImmutableFingerprint = fingerprintRecordsExcludingField(
     recordsAfter,
     fieldState.displaySelectV2.fieldName,
   );
-
-  if (recordsAfter.length !== EXPECTED_REPORT_RECORD_COUNT
-    || finalPlan.targetRecordCount !== EXPECTED_DASHBOARD_RECORD_COUNT
-    || finalNullCount !== EXPECTED_BASELINE_INCOMPLETE_NULL_COUNT
-    || finalPlan.conflictCount !== 0
-    || finalPlan.pendingUpdateCount !== 0
-    || finalImmutableFingerprint !== immutableFingerprint) {
-    throw operatorError(
-      'Display v2 compatibility backfill did not converge without unrelated Record drift',
-      'LARK_DASHBOARD_DISPLAY_V2_BACKFILL_NOT_CONVERGED',
-      {
-        recordCount: recordsAfter.length,
-        dashboardRecordCount: finalPlan.targetRecordCount,
-        baselineIncompleteNullRecordCount: finalNullCount,
-        pendingRecordUpdateCount: finalPlan.pendingUpdateCount,
-        displayV2ConflictCount: finalPlan.conflictCount,
-        immutableRecordFingerprintMatches:
-          finalImmutableFingerprint === immutableFingerprint,
-      },
-    );
-  }
+  assertConvergedBoundary({
+    recordsAfter,
+    finalPlan,
+    finalNullCount,
+    immutableFingerprint,
+    finalImmutableFingerprint,
+  });
 
   const summary = Object.freeze({
     ok: true,
@@ -298,15 +280,14 @@ function inspectRequiredFields(fields) {
       );
     }
     const field = matches[0];
-    const expectedName = identity.fieldName;
-    if (field.fieldName !== expectedName || field.type !== identity.type) {
+    if (field.fieldName !== identity.fieldName || field.type !== identity.type) {
       throw operatorError(
         `Required field ${key} does not match the reviewed name/type`,
         'LARK_DASHBOARD_DISPLAY_V2_FIELD_IDENTITY_INVALID',
         {
           key,
           fieldId: identity.fieldId,
-          expectedFieldName: expectedName,
+          expectedFieldName: identity.fieldName,
           actualFieldName: field.fieldName,
           expectedType: identity.type,
           actualType: field.type,
@@ -320,7 +301,6 @@ function inspectRequiredFields(fields) {
       source: field,
     });
   }
-
   if (resolved.displaySelectV2.fieldId !== LARK_DASHBOARD_DISPLAY_V2_FIELD.fieldId) {
     throw operatorError(
       'Display v2 physical Field identity changed from the reviewed contract',
@@ -330,101 +310,118 @@ function inspectRequiredFields(fields) {
   return Object.freeze(resolved);
 }
 
-function buildPlan(records, fieldState) {
+function buildPlan(records, fields) {
   return planLarkDashboardDisplayV2Backfill({
     records,
     fieldNames: {
-      metricKey: fieldState.metricKey.fieldName,
-      numberWindow: fieldState.numberWindow.fieldName,
-      preservedWindowSelect: fieldState.preservedWindowSelect.fieldName,
-      displaySelectV2: fieldState.displaySelectV2.fieldName,
-      currentValue: fieldState.currentValue.fieldName,
-      reportType: fieldState.reportType.fieldName,
-      platform: fieldState.platform.fieldName,
-      capability: fieldState.capability.fieldName,
-      periodKind: fieldState.periodKind.fieldName,
-      customerProfile: fieldState.customerProfile.fieldName,
-      customerKey: fieldState.customerKey.fieldName,
-      accountId: fieldState.accountId.fieldName,
+      metricKey: fields.metricKey.fieldName,
+      numberWindow: fields.numberWindow.fieldName,
+      preservedWindowSelect: fields.preservedWindowSelect.fieldName,
+      displaySelectV2: fields.displaySelectV2.fieldName,
+      currentValue: fields.currentValue.fieldName,
+      reportType: fields.reportType.fieldName,
+      platform: fields.platform.fieldName,
+      capability: fields.capability.fieldName,
+      periodKind: fields.periodKind.fieldName,
+      customerProfile: fields.customerProfile.fieldName,
+      customerKey: fields.customerKey.fieldName,
+      accountId: fields.accountId.fieldName,
     },
   });
 }
 
-function assertReviewedBoundary({ records, plan, nullCount }) {
-  if (records.length !== EXPECTED_REPORT_RECORD_COUNT) {
+function assertReviewedBoundary({ execute: executing, records, plan, nullCount }) {
+  if (records.length !== EXPECTED_REPORT_RECORD_COUNT
+    || plan.targetRecordCount !== EXPECTED_DASHBOARD_RECORD_COUNT
+    || nullCount !== EXPECTED_BASELINE_INCOMPLETE_NULL_COUNT
+    || plan.targetCurrentValueNullCount !== EXPECTED_BASELINE_INCOMPLETE_NULL_COUNT
+    || plan.conflictCount !== 0) {
     throw operatorError(
-      'Report Metric record count changed from the reviewed boundary',
-      'LARK_DASHBOARD_DISPLAY_V2_RECORD_COUNT_DRIFT',
+      'Live Report Metric state changed from the reviewed 86/68/24 boundary',
+      'LARK_DASHBOARD_DISPLAY_V2_LIVE_BOUNDARY_DRIFT',
       {
-        expectedRecordCount: EXPECTED_REPORT_RECORD_COUNT,
-        actualRecordCount: records.length,
+        recordCount: records.length,
+        dashboardRecordCount: plan.targetRecordCount,
+        baselineIncompleteNullRecordCount: nullCount,
+        targetCurrentValueNullCount: plan.targetCurrentValueNullCount,
+        displayV2ConflictCount: plan.conflictCount,
+        conflicts: plan.conflicts,
       },
     );
   }
-  if (plan.targetRecordCount !== EXPECTED_DASHBOARD_RECORD_COUNT) {
+  const initialState = plan.pendingUpdateCount === EXPECTED_PENDING_DISPLAY_V2_UPDATE_COUNT
+    && plan.missingValueUpdateCount === EXPECTED_MISSING_DISPLAY_V2_UPDATE_COUNT
+    && plan.reviewedAliasCorrectionCount === EXPECTED_REVIEWED_ALIAS_CORRECTION_COUNT
+    && plan.convergedDisplayV2Count === 18
+    && plan.populatedDisplayV2Count === 20;
+  const convergedState = plan.pendingUpdateCount === 0
+    && plan.missingValueUpdateCount === 0
+    && plan.reviewedAliasCorrectionCount === 0
+    && plan.convergedDisplayV2Count === EXPECTED_DASHBOARD_RECORD_COUNT
+    && plan.populatedDisplayV2Count === EXPECTED_DASHBOARD_RECORD_COUNT;
+  if (!initialState && !convergedState) {
     throw operatorError(
-      'Dashboard Record matrix changed from the reviewed 17 metrics x 4 windows boundary',
-      'LARK_DASHBOARD_DISPLAY_V2_TARGET_COUNT_DRIFT',
+      'Display v2 state is neither the reviewed pre-apply state nor the converged state',
+      'LARK_DASHBOARD_DISPLAY_V2_STATE_DRIFT',
       {
-        expectedDashboardRecordCount: EXPECTED_DASHBOARD_RECORD_COUNT,
-        actualDashboardRecordCount: plan.targetRecordCount,
-      },
-    );
-  }
-  if (nullCount !== EXPECTED_BASELINE_INCOMPLETE_NULL_COUNT) {
-    throw operatorError(
-      'Baseline-incomplete null count changed from the reviewed boundary',
-      'LARK_DASHBOARD_DISPLAY_V2_NULL_BOUNDARY_DRIFT',
-      {
-        expectedNullCount: EXPECTED_BASELINE_INCOMPLETE_NULL_COUNT,
-        actualNullCount: nullCount,
-      },
-    );
-  }
-  if (plan.targetCurrentValueNullCount !== EXPECTED_BASELINE_INCOMPLETE_NULL_COUNT) {
-    throw operatorError(
-      'Dashboard current_value null distribution changed from the reviewed boundary',
-      'LARK_DASHBOARD_DISPLAY_V2_CURRENT_VALUE_BOUNDARY_DRIFT',
-      {
-        expectedNullCount: EXPECTED_BASELINE_INCOMPLETE_NULL_COUNT,
-        actualNullCount: plan.targetCurrentValueNullCount,
-      },
-    );
-  }
-  if (plan.conflictCount !== 0) {
-    throw operatorError(
-      'Display v2 compatibility plan contains unexpected values or matrix conflicts',
-      'LARK_DASHBOARD_DISPLAY_V2_CONFLICT',
-      { conflicts: plan.conflicts },
-    );
-  }
-  if (plan.pendingUpdateCount > MAXIMUM_REVIEWED_RECORD_UPDATES) {
-    throw operatorError(
-      'Pending display v2 updates exceed the reviewed maximum',
-      'LARK_DASHBOARD_DISPLAY_V2_UPDATE_BOUNDARY_EXCEEDED',
-      {
-        maximumReviewedRecordUpdates: MAXIMUM_REVIEWED_RECORD_UPDATES,
         pendingRecordUpdateCount: plan.pendingUpdateCount,
+        missingValueUpdateCount: plan.missingValueUpdateCount,
+        reviewedAliasCorrectionCount: plan.reviewedAliasCorrectionCount,
+        convergedDisplayV2Count: plan.convergedDisplayV2Count,
+        populatedDisplayV2Count: plan.populatedDisplayV2Count,
+      },
+    );
+  }
+  if (executing && !initialState) {
+    throw operatorError(
+      'Live execution requires the exact reviewed 50-row pre-apply state',
+      'LARK_DASHBOARD_DISPLAY_V2_EXECUTION_STATE_INVALID',
+      { pendingRecordUpdateCount: plan.pendingUpdateCount },
+    );
+  }
+}
+
+function assertConvergedBoundary(input) {
+  const fingerprintMatches = input.finalImmutableFingerprint === input.immutableFingerprint;
+  if (input.recordsAfter.length !== EXPECTED_REPORT_RECORD_COUNT
+    || input.finalPlan.targetRecordCount !== EXPECTED_DASHBOARD_RECORD_COUNT
+    || input.finalNullCount !== EXPECTED_BASELINE_INCOMPLETE_NULL_COUNT
+    || input.finalPlan.targetCurrentValueNullCount !== EXPECTED_BASELINE_INCOMPLETE_NULL_COUNT
+    || input.finalPlan.conflictCount !== 0
+    || input.finalPlan.pendingUpdateCount !== 0
+    || input.finalPlan.convergedDisplayV2Count !== EXPECTED_DASHBOARD_RECORD_COUNT
+    || !fingerprintMatches) {
+    throw operatorError(
+      'Display v2 backfill did not converge without unrelated Record drift',
+      'LARK_DASHBOARD_DISPLAY_V2_BACKFILL_NOT_CONVERGED',
+      {
+        recordCount: input.recordsAfter.length,
+        dashboardRecordCount: input.finalPlan.targetRecordCount,
+        baselineIncompleteNullRecordCount: input.finalNullCount,
+        pendingRecordUpdateCount: input.finalPlan.pendingUpdateCount,
+        displayV2ConflictCount: input.finalPlan.conflictCount,
+        convergedDisplayV2Count: input.finalPlan.convergedDisplayV2Count,
+        immutableRecordFingerprintMatches: fingerprintMatches,
       },
     );
   }
 }
 
-function countCurrentValueNullRows(records, fieldName) {
+function countNullRows(records, fieldName) {
   return records.filter((record) => {
     const value = record.fields?.[fieldName];
     return value === null || value === undefined || value === '';
   }).length;
 }
 
-function fingerprintRecordsExcludingDisplayV2(records, displayV2FieldName) {
+function fingerprintRecordsExcludingField(records, excludedFieldName) {
   const projection = [...records]
     .sort((left, right) => left.recordId.localeCompare(right.recordId))
     .map((record) => ({
       recordId: record.recordId,
       fields: Object.fromEntries(
         Object.entries(record.fields ?? {})
-          .filter(([fieldName]) => fieldName !== displayV2FieldName)
+          .filter(([fieldName]) => fieldName !== excludedFieldName)
           .sort(([left], [right]) => left.localeCompare(right))
           .map(([fieldName, value]) => [fieldName, normalizeFingerprintValue(value)]),
       ),
@@ -467,7 +464,7 @@ async function assertExactMain(repositoryRoot) {
   const status = await git(repositoryRoot, ['status', '--porcelain']);
   if (status.trim()) {
     throw operatorError(
-      'Repository must be clean before Live display v2 compatibility backfill',
+      'Repository must be clean before Live display v2 backfill',
       'LARK_DASHBOARD_DISPLAY_V2_REPOSITORY_DIRTY',
     );
   }
