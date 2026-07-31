@@ -66,17 +66,21 @@ export function isConversationInChatwootWindow(row, window) {
   return timestamps.some((value) => value >= startAt && value <= endAt);
 }
 
+/** Event time, creation or later correction can independently make the row relevant. */
 export function isChatwootEventInWindow(row, window) {
   const startAt = requireTimestamp(window?.startAt, 'window.startAt');
   const endAt = requireTimestamp(window?.endAt, 'window.endAt');
-  const value = readTimestamp(
-    row?.event_end_at
-      ?? row?.eventEndAt
-      ?? row?.created_at
-      ?? row?.source_created_at
-      ?? row?.updated_at,
-  );
-  return value !== null && value >= startAt && value <= endAt;
+  const timestamps = [
+    row?.event_end_at,
+    row?.eventEndAt,
+    row?.event_end_time,
+    row?.eventEndTime,
+    row?.created_at,
+    row?.source_created_at,
+    row?.updated_at,
+    row?.source_updated_at,
+  ].map(readTimestamp).filter((value) => value !== null);
+  return timestamps.some((value) => value >= startAt && value <= endAt);
 }
 
 export function readChatwootContinuationSequence(value) {
