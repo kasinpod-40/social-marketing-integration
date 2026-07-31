@@ -8,13 +8,11 @@ Runtime-preflight recovery              PR #330 / Squash Merged
 Pinned-continuity recovery              PR #342 / Squash Merged
 Shared Queue auth ordering              PR #343 / Squash Merged
 Meta Cloudflare account recovery        PR #348 / Squash Merged
-Cloudflare recovery main SHA            51edf7fd33f8302d96c8cf986940cc9e6b9523cc
-Meta verification                       #110 / PASS
-Branch verification                     #1424 / PASS
+Explicit Safe flags recovery            in review
 Live history completion                 pending accepted Terminal evidence
 ```
 
-The only public entrypoint is:
+The only public entrypoint remains:
 
 ```bash
 CONFIRM_META_HISTORY_2026_FINALIZER=RUN_META_HISTORY_2026_ONE_COMMAND \
@@ -35,6 +33,51 @@ operator commands.
 - Completion requires D1/Lark parity, same-operation idempotency, all-false Worker flags and active
   Work/Lock/Queue counts `0/0/0`.
 
+## Explicit Safe environment authority
+
+The public Terminal owns the environment passed to every guarded child. It must not forward raw
+`process.env` directly.
+
+Before child execution it must:
+
+```text
+copy caller environment
+→ close every existing MKT_*_ENABLED key
+→ materialize every META_D1_ONLY_REQUIRED_FALSE_FLAGS key as false
+→ freeze the child environment
+→ spawn the guarded child with that exact environment
+```
+
+This Shared required-false list is a superset of the Meta read-only flags and is the same authority used by
+the D1 safe-config contract. Missing flags are therefore explicit `false`; explicit or stale `true` values
+are also closed before any read-only, D1 or Lark phase begins.
+
+This rule does not weaken fail-closed validation. The child operators still require explicit false values,
+and later active windows enable only the reviewed connector/source/write flags through private generated
+Wrangler configs.
+
+## Fifth attempt incident
+
+The Terminal attempt on `main@a0bbef75b0185ac55dba3a272eb925cfb1ea056b` stopped at
+`fresh-read-only-validation` because `MKT_CONNECTOR_META_ADS_ENABLED` was absent from the inherited local
+environment. The finalizer closed only enabled keys that already existed, while the read-only operator
+correctly required every reviewed Safe flag to be explicit `false`.
+
+The attempt stopped before Provider validation and before all current history operations:
+
+```text
+Meta operations             0
+Meta Queue messages         0
+Meta Provider requests      0
+Remote D1 Business writes   0
+Remote Lark Business writes 0
+Worker deployments          0
+Schedule mutations          0
+Worker safe restore         verified
+```
+
+All prior evidence remains retained.
+
 ## Cloudflare account authority
 
 The Integration Workspace has stable private Cloudflare identity and authentication:
@@ -49,7 +92,7 @@ CLOUDFLARE_API_TOKEN      local .dev.vars secret authority
 Account selection and authentication are independent. A valid API-token/config path must never be blocked
 by an expired or unavailable Wrangler user-membership command.
 
-The merged ordering contract is:
+The ordering contract is:
 
 ```text
 explicit CLOUDFLARE_API_TOKEN
@@ -60,31 +103,6 @@ explicit CLOUDFLARE_API_TOKEN
 → exact bounded Queue REST inventory
 → Worker all-false and Reliability-idle checks
 ```
-
-PR #348 reuses the shared PR #343 Account-ID and bearer resolvers. It adds no second Queue bootstrap,
-Authentication layer or Cloudflare identity engine. Invalid explicit/config Account IDs remain fail-closed
-and never fall back to another account.
-
-## Fourth attempt incident
-
-The Terminal attempt on `main@a339a06afc57e6ee17c4413b2700e79235ceb3be` stopped at
-`cloudflare-readiness` because the Meta finalizer ran `npx wrangler whoami --json` unconditionally before
-using its already-known Account ID.
-
-The attempt stopped before Remote Worker/D1 inspection, Meta Provider validation, Queue admission or any
-D1/Lark Business write:
-
-```text
-Meta operations             0
-Meta Queue messages         0
-Meta Provider requests      0
-Remote D1 Business writes   0
-Remote Lark Business writes 0
-Worker deployments          0
-Schedule mutations          0
-```
-
-All prior evidence remains retained.
 
 ## Runtime-preflight authority
 

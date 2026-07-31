@@ -34,6 +34,22 @@ test('Meta history docs expose only the ISO-plan Terminal entrypoint', async () 
   );
 });
 
+test('Meta history Terminal materializes Shared required false flags before spawning the child', async () => {
+  const terminal = await readFile(terminalEntrypoint, 'utf8');
+  const executeStart = terminal.indexOf('async function executeTerminalEntry');
+  const safeStart = terminal.indexOf('export function buildMetaHistorySafeEnvironment');
+  const safeEnd = terminal.indexOf('export async function loadOrCreateIsoPlan');
+  assert.ok(executeStart >= 0 && safeStart > executeStart && safeEnd > safeStart);
+  const childExecution = terminal.slice(executeStart, safeStart);
+  const safeEnvironment = terminal.slice(safeStart, safeEnd);
+  assert.match(terminal, /META_D1_ONLY_REQUIRED_FALSE_FLAGS/u);
+  assert.match(childExecution, /const childEnvironment = buildMetaHistorySafeEnvironment\(process\.env\)/u);
+  assert.match(childExecution, /env: childEnvironment/u);
+  assert.doesNotMatch(childExecution, /env: process\.env/u);
+  assert.match(safeEnvironment, /for \(const key of META_D1_ONLY_REQUIRED_FALSE_FLAGS\)/u);
+  assert.match(safeEnvironment, /result\[key\] = 'false'/u);
+});
+
 test('Meta history closeout restores only proven active Worker flags and uses active Work queue state', async () => {
   const source = await readFile(closeoutChild, 'utf8');
   const finalizer = await readFile(finalizerChild, 'utf8');

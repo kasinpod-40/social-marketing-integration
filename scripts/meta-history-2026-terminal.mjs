@@ -11,6 +11,9 @@ import {
 } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import {
+  META_D1_ONLY_REQUIRED_FALSE_FLAGS,
+} from './lib/meta-d1-only-rollout-operator.js';
+import {
   META_HISTORY_2026_CONTRACT_VERSION,
   assertMetaHistory2026Confirmation,
   createMetaHistory2026Plan,
@@ -62,10 +65,13 @@ async function executeTerminalEntry() {
   );
   const plan = await loadOrCreateIsoPlan(planPath, repositoryHead);
 
+  currentStage = 'materialize-safe-child-environment';
+  const childEnvironment = buildMetaHistorySafeEnvironment(process.env);
+
   currentStage = 'execute-guarded-one-command';
   const child = spawnSync(process.execPath, [childPath, '--execute'], {
     cwd: repositoryRoot,
-    env: process.env,
+    env: childEnvironment,
     encoding: 'utf8',
     maxBuffer: 512 * 1024 * 1024,
     stdio: 'inherit',
@@ -81,6 +87,15 @@ async function executeTerminalEntry() {
       },
     );
   }
+}
+
+export function buildMetaHistorySafeEnvironment(env = {}) {
+  const result = { ...env };
+  for (const key of Object.keys(result)) {
+    if (/^MKT_[A-Z0-9_]+_ENABLED$/u.test(key)) result[key] = 'false';
+  }
+  for (const key of META_D1_ONLY_REQUIRED_FALSE_FLAGS) result[key] = 'false';
+  return Object.freeze(result);
 }
 
 export async function loadOrCreateIsoPlan(path, repositoryHead, options = {}) {
@@ -215,6 +230,7 @@ function printPlan() {
     contractVersion: META_HISTORY_2026_CONTRACT_VERSION,
     confirmation: 'CONFIRM_META_HISTORY_2026_FINALIZER=RUN_META_HISTORY_2026_ONE_COMMAND',
     persistsIsoRequestedAtBeforeRemoteAction: true,
+    materializesExplicitAllFalseChildEnvironment: true,
     child: 'scripts/meta-history-2026-one-command.mjs',
     scheduleEnabled: false,
     production: false,
