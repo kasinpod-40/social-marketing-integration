@@ -7,8 +7,9 @@ TASK_STATUS                    = REPOSITORY_HOTFIX_IN_REVIEW
 CURRENT_PROGRAM                = META_HISTORY_CLOUDFLARE_ACCOUNT_RESOLUTION_V4
 BASE_MAIN_SHA                  = 2d63fd58cfee7710cded74ff3a0dd86f85345038
 SHARED_QUEUE_AUTHORITY         = #343 / SQUASH_MERGED
-BRANCH                         = hotfix/meta-history-cloudflare-account-resolution-v4
-IMPLEMENTATION_PR              = #346 / DRAFT / DO_NOT_MERGE
+BRANCH                         = hotfix/meta-history-2026-cloudflare-account-resolution-v4
+IMPLEMENTATION_PR              = #348 / DRAFT / DO_NOT_MERGE
+SUPERSEDED_PR                  = #346 / CLOSED_NOT_MERGED / RUNNER_PREFIX_INVALID
 ORIGINAL_IMPLEMENTATION_PR     = #319 / SQUASH_MERGED
 RUNTIME_PREFLIGHT_HOTFIX_PR    = #330 / SQUASH_MERGED
 PINNED_CONTINUITY_HOTFIX_PR    = #342 / SQUASH_MERGED
@@ -78,6 +79,12 @@ Authentication or Account-resolution engine.
 - Keep Queue discovery, Worker all-false verification, Reliability-idle checks and all six operation
   contracts unchanged.
 - Add a focused regression that rejects unconditional `whoami` ordering.
+
+## Runner routing correction
+
+PR #346 used a Branch name outside the repository-approved `hotfix/meta-history-2026-` prefix. GitHub sent
+both workflows to exhausted hosted capacity and they failed before `Set up job`; no Source/Test verdict was
+produced. PR #348 points to the same reviewed Runtime/Test content under the exact self-hosted runner prefix.
 
 ## Safety boundary
 
