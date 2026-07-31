@@ -7,6 +7,7 @@ import { readDevVars } from './lib/dev-vars.js';
 import { parseJsoncObject } from './lib/chatwoot-safe-wrangler-config.js';
 import { rebaseGeneratedWranglerConfigPaths } from './lib/rebase-generated-wrangler-config-paths.js';
 import {
+  CHATWOOT_FINAL_UAT_ACTIVE_TRUE_FLAGS,
   CHATWOOT_FINAL_UAT_CONFIRMATION,
   CHATWOOT_FINAL_UAT_LOCKED_VARS,
   CHATWOOT_FINAL_UAT_SUCCESS_MARKER,
@@ -107,6 +108,10 @@ async function createNormalizedRuntimeConfig(env) {
   const sourceText = await readFile(sourcePath, 'utf8');
   const config = parseJsoncObject(sourceText);
   config.vars ??= {};
+
+  // The ignored local config may predate the merged Runtime wiring. Populate the reviewed Safe
+  // names in the private generated config only; the inner operator later opens exactly these four.
+  for (const name of CHATWOOT_FINAL_UAT_ACTIVE_TRUE_FLAGS) config.vars[name] = 'false';
 
   for (const [name, expected] of Object.entries(CHATWOOT_FINAL_UAT_LOCKED_VARS)) {
     const existing = config.vars[name];
