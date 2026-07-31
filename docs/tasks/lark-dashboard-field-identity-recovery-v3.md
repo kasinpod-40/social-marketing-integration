@@ -1,6 +1,8 @@
-# Lark Dashboard Field-Identity Recovery v3
+# Lark Dashboard Field-Identity Recovery v3.1
 
-## Incident
+## Incidents
+
+### Unsupported Slicer mutation
 
 The Dashboard canonical-rebind attempt failed on the first `slicer` Block with Lark HTTP 200 and business `code=1`.
 Readback confirmed:
@@ -11,6 +13,40 @@ currentBlockMayHaveWritten = false
 ```
 
 No Dashboard Block, Report record or Legacy field changed in that attempt.
+
+### Stale canonical Field IDs in v3 preview
+
+The first read-only Field-Identity v3 preview stopped at `read-live-state` before any mutation because the
+reviewed contract contained stale IDs for three canonical fields:
+
+```text
+stale metric_key ID             flduyym9cs
+stale display_name ID           fldvLDwEHo
+stale Number window_days ID     fldczhcM6r
+```
+
+The audited Integration Workspace Base uses:
+
+```text
+metric_key                      fldGvd3tw8 / Text
+display_name                    fldE4Nezjd / Text
+Number window_days              fldbPCldTL / Number
+preserved slicer window         fldMlTUP3Z / SingleSelect
+window Select v2                fldraj0QP8 / SingleSelect
+display Select v1               fldZB452Z2 / SingleSelect
+display Select v2               fldHNUhCfl / SingleSelect
+```
+
+The failed preview confirmed:
+
+```text
+confirmedBlockMutations = 0
+confirmedRecordUpdates  = 0
+confirmedFieldMutations = 0
+```
+
+v3.1 changes only the audited identity contract and adds regression coverage that rejects the three stale IDs.
+The recovery sequence and safety boundary remain unchanged.
 
 ## Confirmed API boundary
 
@@ -33,7 +69,6 @@ Lark Dashboard bindings follow the Field identity. Therefore the recovery promot
 
 ```text
 metric_key    Text
-
 display_name  Text
 window_days   SingleSelect: 1 / 3 / 7 / 30
 ```
@@ -48,7 +83,7 @@ The 24 baseline-incomplete metric records remain present with `current_value=nul
 4. Rebind only the 17 Organic `statistics` blocks from Legacy display labels to stable `metric_key` filters.
 5. Never PATCH a Slicer; `slicerPatchCount` must remain zero.
 6. Backfill missing values in `fldMlTUP3Z` from the authoritative Number `window_days`, accepting only 1/3/7/30 and exact agreement with any retained v2 value.
-7. Rename the Number Field to `__mkt_retired_window_days_number_v3` while preserving its values.
+7. Rename the Number Field `fldbPCldTL` to `__mkt_retired_window_days_number_v3` while preserving its values.
 8. Rename `fldMlTUP3Z` to canonical `window_days` without changing its ID, type, options or values.
 9. Re-read all Dashboard Blocks and verify zero Legacy-name references plus canonical Organic metric bindings.
 10. Verify Organic computed-data protocol and all current-total numeric KPIs.
@@ -83,13 +118,14 @@ base:record:update
 ## Safety invariants
 
 ```text
-slicerPatchCount          = 0
-recordDeleteCount         = 0
-businessFactDeleteCount   = 0
-layoutMutationCount       = 0
-dashboardIdsPreserved     = true
-blockIdsPreserved         = true
-remainingLegacyFieldCount = 0
+contractVersion               = lark_dashboard_field_identity_recovery_v3_1
+slicerPatchCount              = 0
+recordDeleteCount             = 0
+businessFactDeleteCount       = 0
+layoutMutationCount           = 0
+dashboardIdsPreserved         = true
+blockIdsPreserved             = true
+remainingLegacyFieldCount     = 0
 remainingLegacyReferenceCount = 0
 ```
 
