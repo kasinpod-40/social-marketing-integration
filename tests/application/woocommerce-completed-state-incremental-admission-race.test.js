@@ -122,6 +122,7 @@ function recoveredIncident(overrides = {}) {
     queue_attempts: 2,
     recovery_status: 'completed',
     terminal_dlq_status: 'redriven',
+    message_identity_matches: 0,
     sync_rows: 1,
     sync_status: 'success',
     work_rows: 1,
@@ -267,6 +268,7 @@ test('recovered contract requires the same operation, completion, Coverage and e
   assert.equal(accepted.accepted, true);
   assert.equal(accepted.state.queueAttempts, 2);
   assert.equal(accepted.state.coverageRows, 6);
+  assert.equal(accepted.state.messageIdentityMatches, false);
   assert.throws(
     () => validateWooCommerceIncrementalAdmissionRaceRecovered({
       operationId: OPERATION_ID,
@@ -301,13 +303,12 @@ test('incident SQL is exact and closure mutates only DLQ recovery metadata', () 
     completedAt: REQUESTED_AT + 100_000,
     recoveryReference: 'recovery:test',
   });
-  assert.match(closureSql, /^BEGIN IMMEDIATE;/u);
-  assert.match(closureSql, /UPDATE dead_letter_jobs/u);
+  assert.match(closureSql, /^UPDATE dead_letter_jobs/u);
   assert.match(closureSql, /UPDATE dead_letter_operation_metadata/u);
   assert.match(closureSql, /WOOCOMMERCE_CONNECTOR_INVALID/u);
   assert.match(closureSql, /job_type='woocommerce\.commerce\.sync'/u);
   assert.match(closureSql, /retry_count=1/u);
-  assert.doesNotMatch(closureSql, /\bDELETE\b/iu);
+  assert.doesNotMatch(closureSql, /\b(?:BEGIN|COMMIT|DELETE)\b/iu);
   assert.doesNotMatch(
     closureSql,
     /(?:raw_commerce_|commerce_order_|commerce_product_|commerce_daily_)/u,
