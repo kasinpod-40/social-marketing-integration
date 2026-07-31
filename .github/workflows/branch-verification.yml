@@ -18,9 +18,9 @@ concurrency:
 
 jobs:
   verify:
-    # PR #308 and Chatwoot final hotfix branches use the repository-scoped Mac runner
+    # Woo completed-state and Chatwoot final hotfixes use the repository-scoped Mac runner
     # while GitHub-hosted minutes are exhausted. Other PRs keep the normal runner.
-    runs-on: ${{ (github.event.pull_request.number == 308 || startsWith(github.head_ref, 'hotfix/chatwoot-final-')) && 'mkt-ci' || 'ubuntu-latest' }}
+    runs-on: ${{ (github.event.pull_request.number == 308 || startsWith(github.head_ref, 'hotfix/chatwoot-final-') || startsWith(github.head_ref, 'hotfix/woocommerce-completed-state-incremental-admission-race')) && 'mkt-ci' || 'ubuntu-latest' }}
     timeout-minutes: 30
     steps:
       - name: Checkout
@@ -37,6 +37,17 @@ jobs:
 
       - name: Syntax architecture and hygiene
         run: npm run check
+
+      - name: Focused Woo completed-state race recovery tests
+        shell: bash
+        run: |
+          set -o pipefail
+          node --test \
+            tests/application/woocommerce-final-completed-state-closeout.test.js \
+            tests/application/woocommerce-completed-state-incremental-admission-race.test.js \
+            tests/application/woocommerce-final-rollout-operator.test.js \
+            tests/application/woocommerce-runtime-wiring.test.js \
+            2>&1 | tee focused-woocommerce-test.log
 
       - name: Focused Chatwoot final UAT tests
         shell: bash
