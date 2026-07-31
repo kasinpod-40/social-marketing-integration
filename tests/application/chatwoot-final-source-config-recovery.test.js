@@ -271,7 +271,7 @@ test('incident closure is gated by the fully accepted Final UAT summary', () => 
   );
 });
 
-test('public recovery launcher delegates Queue ownership and resumes from persisted summary', async () => {
+test('public recovery launcher performs exact GET-only Provider gate before delegated Queue ownership', async () => {
   const source = await readFile(
     new URL('../../scripts/chatwoot-final-source-config-recovery-launcher.mjs', import.meta.url),
     'utf8',
@@ -280,7 +280,13 @@ test('public recovery launcher delegates Queue ownership and resumes from persis
   assert.match(source, /materializeChatwootFinalSourceConfig/u);
   assert.match(source, /CHATWOOT_BASE_URL/u);
   assert.match(source, /CHATWOOT_ACCOUNT_ID/u);
+  assert.match(source, /inside\('wrangler\.sync\.jsonc'\)/u);
   assert.match(source, /MKT_CHATWOOT_FINAL_UAT_EVIDENCE_DIR/u);
+  assert.match(source, /MKT_CHATWOOT_PROVIDER_PREFLIGHT_EVIDENCE_DIR/u);
+  assert.match(source, /chatwoot-provider-preflight\.mjs/u);
+  assert.match(source, /PASS_CHATWOOT_PROVIDER_GET_ONLY/u);
+  assert.match(source, /providerGetOnlyPreflightVerified:\s*true/u);
+  assert.match(source, /providerMutationCount:\s*0/u);
   assert.match(source, /summaryExists/u);
   assert.match(source, /chatwoot-final-30d-daily-uat-launcher\.mjs/u);
   assert.match(source, /assertChatwootFinalSourceRecoverySummary/u);
