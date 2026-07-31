@@ -7,7 +7,7 @@ export const META_HISTORY_2026_CONFIRMATION = Object.freeze({
 });
 export const META_HISTORY_2026_DECISION = 'META_HISTORY_2026_COMPLETED_SAFE';
 export const META_HISTORY_2026_WINDOWS = Object.freeze({
-  instagram: Object.freeze({ since: '2026-07-01', until: '2026-07-31' }),
+  organic: Object.freeze({ since: '2026-07-01', until: '2026-07-31' }),
   adsBaseline: Object.freeze({ since: '2026-05-01', until: '2026-07-31' }),
   adsExpansion: Object.freeze({ since: '2026-01-01', until: '2026-04-30' }),
 });
@@ -31,7 +31,8 @@ export function assertMetaHistory2026Confirmation(env = {}) {
 export function createMetaHistory2026Plan(repositoryHead) {
   const head = requireSha(repositoryHead);
   const operations = [
-    operation('instagram', META_HISTORY_2026_WINDOWS.instagram, head, 'required'),
+    operation('facebook', META_HISTORY_2026_WINDOWS.organic, head, 'required'),
+    operation('instagram', META_HISTORY_2026_WINDOWS.organic, head, 'required'),
     operation('chemistry_k2', META_HISTORY_2026_WINDOWS.adsBaseline, head, 'required'),
     operation('chemistry_k3', META_HISTORY_2026_WINDOWS.adsBaseline, head, 'required'),
     operation('chemistry_k2', META_HISTORY_2026_WINDOWS.adsExpansion, head, 'conditional'),
@@ -41,8 +42,10 @@ export function createMetaHistory2026Plan(repositoryHead) {
     contractVersion: META_HISTORY_2026_CONTRACT_VERSION,
     repositoryHead: head,
     facebook: {
-      action: 'verify_existing_pinned_finalizer_and_lark_parity',
-      providerReplay: false,
+      pinnedCompletionAction: 'verify_existing_pinned_finalizer_and_lark_parity',
+      supplementalHistoryAction: 'run_new_idempotent_july_operation',
+      existingOperationReplay: false,
+      replacementOperation: false,
     },
     operations,
     adsExpansionLimits: META_HISTORY_2026_ADS_EXPANSION_LIMITS,
@@ -81,7 +84,7 @@ export function shouldExpandMetaAdsHistory(summaries = []) {
   return deepFreeze({ allowed, totals, limits: META_HISTORY_2026_ADS_EXPANSION_LIMITS });
 }
 
-export function injectMetaHistoryConfig(configText, range = META_HISTORY_2026_WINDOWS.instagram) {
+export function injectMetaHistoryConfig(configText, range = META_HISTORY_2026_WINDOWS.organic) {
   let text = requireText(configText, 'configText');
   for (const [key, value] of [
     ['MKT_META_INSTAGRAM_CONTENT_SINCE', requireDate(range.since, 'since')],
@@ -105,7 +108,10 @@ export function validateMetaHistory2026Summary(value = {}) {
   const checks = {
     ok: value.ok === true,
     decision: value.decision === META_HISTORY_2026_DECISION,
-    facebookVerified: value.facebook?.verified === true,
+    facebookPinnedVerified: value.facebook?.pinnedVerified === true,
+    facebookHistoryCompleted: value.facebook?.historyCompleted === true,
+    facebookExistingOperationReplay: value.facebook?.existingOperationReplay === false,
+    facebookReplacementOperation: value.facebook?.replacementOperation === false,
     instagramCompleted: value.instagram?.completed === true,
     adsBaselineCompleted: value.metaAds?.baselineCompleted === true,
     parity: value.parityVerified === true,
@@ -147,7 +153,7 @@ function readD1Snapshot(summary) {
 
 function requireTarget(value) {
   const target = requireText(value, 'target').toLowerCase();
-  if (!['instagram', 'chemistry_k2', 'chemistry_k3'].includes(target)) {
+  if (!['facebook', 'instagram', 'chemistry_k2', 'chemistry_k3'].includes(target)) {
     throw historyError('Meta history target is invalid', 'META_HISTORY_2026_TARGET_INVALID');
   }
   return target;
