@@ -9,7 +9,6 @@ import { createLarkBitableClientFromEnv } from '../packages/connectors/src/lark/
 import { readDevVars } from './lib/dev-vars.js';
 import { createVerifiedFieldMutationClient } from './lib/lark-verified-field-mutation-client.js';
 import {
-  CANONICAL_REPORT_FIELD_NAMES,
   LEGACY_REPORT_FIELD_NAMES,
   ORGANIC_DASHBOARD_NAME,
   ORGANIC_METRIC_BINDINGS,
@@ -106,10 +105,7 @@ try {
   const dashboardsBefore = await readDashboardState({ client: rawClient, baseToken });
   assertDashboardSet(dashboardsBefore);
   const dashboardPlan = buildDashboardPlan(dashboardsBefore);
-  const windowPlan = buildWindowPlan({
-    records: recordsBefore,
-    fieldState: fieldStateBefore,
-  });
+  const windowPlan = buildWindowPlan({ records: recordsBefore, fieldState: fieldStateBefore });
 
   await writePrivateJson(join(attemptRoot, 'field-state-before.json'), safeFieldState(fieldStateBefore));
   await writePrivateJson(join(attemptRoot, 'dashboard-state-before.json'), {
@@ -167,14 +163,8 @@ try {
       recordId: record.recordId,
       metricKey: record.fields?.metric_key ?? null,
       displayName: record.fields?.display_name ?? null,
-      canonicalWindowNumber: readNamedField(
-        record.fields,
-        fieldStateBefore.numberWindow?.fieldName,
-      ),
-      preservedWindowSelect: readNamedField(
-        record.fields,
-        fieldStateBefore.preservedWindow.fieldName,
-      ),
+      canonicalWindowNumber: readNamedField(record.fields, fieldStateBefore.numberWindow?.fieldName),
+      preservedWindowSelect: readNamedField(record.fields, fieldStateBefore.preservedWindow.fieldName),
       windowSelectV2: readNamedField(record.fields, fieldStateBefore.windowV2?.fieldName),
       displaySelectV1: readNamedField(record.fields, fieldStateBefore.displayV1?.fieldName),
       displaySelectV2: readNamedField(record.fields, fieldStateBefore.displayV2?.fieldName),
@@ -288,18 +278,12 @@ try {
 
   currentStage = 'backfill-preserved-window-select';
   if (windowPlan.pendingUpdateCount > 0) {
-    const result = await rawClient.batchUpdateRecords({
-      tableId,
-      records: windowPlan.updates,
-    });
+    const result = await rawClient.batchUpdateRecords({ tableId, records: windowPlan.updates });
     if (Number(result?.updated) !== windowPlan.pendingUpdateCount) {
       throw operatorError(
         'Lark did not confirm every preserved window Select backfill',
         'LARK_DASHBOARD_FIELD_IDENTITY_WINDOW_BATCH_COUNT_MISMATCH',
-        {
-          expected: windowPlan.pendingUpdateCount,
-          actual: result?.updated ?? null,
-        },
+        { expected: windowPlan.pendingUpdateCount, actual: result?.updated ?? null },
       );
     }
     confirmedRecordUpdates += windowPlan.pendingUpdateCount;
@@ -308,13 +292,15 @@ try {
     tableId,
     includeRecordMetadata: false,
   });
-  const convergedWindowPlan = assertPreservedWindowSelectConverged({
-    records: recordsAfterBackfill,
-    numberFieldName: fieldStateBefore.numberWindow.fieldName,
-    preservedFieldName: fieldStateBefore.preservedWindow.fieldName,
-    v2FieldName: fieldStateBefore.windowV2?.fieldName
-      ?? REPORT_METRIC_FIELD_IDENTITIES.windowSelectV2.fieldName,
-  });
+  const convergedWindowPlan = fieldStateBefore.numberWindow
+    ? assertPreservedWindowSelectConverged({
+      records: recordsAfterBackfill,
+      numberFieldName: fieldStateBefore.numberWindow.fieldName,
+      preservedFieldName: fieldStateBefore.preservedWindow.fieldName,
+      v2FieldName: fieldStateBefore.windowV2?.fieldName
+        ?? REPORT_METRIC_FIELD_IDENTITIES.windowSelectV2.fieldName,
+    })
+    : windowPlan;
   await writePrivateJson(join(attemptRoot, 'window-backfill-verification.json'), convergedWindowPlan);
 
   currentStage = 'promote-slicer-field-identity';
@@ -378,12 +364,7 @@ try {
   );
 
   currentStage = 'delete-retired-fields';
-  const deletionOrder = [
-    'displayV1',
-    'displayV2',
-    'windowV2',
-    'numberWindow',
-  ];
+  const deletionOrder = ['displayV1', 'displayV2', 'windowV2', 'numberWindow'];
   const deletedFields = [];
   for (const key of deletionOrder) {
     fieldState = inspectFieldState(await rawClient.listFields({ tableId }));
@@ -532,11 +513,18 @@ function inspectFieldState(fields) {
   }
 
   const canonicalWindowByName = fields.filter((field) => field.fieldName === 'window_days');
-  if (canonicalWindowByName.length !== 1) {
+  const isBoundedPromotionGap = canonicalWindowByName.length === 0
+    && numberWindow?.fieldName === identity.canonicalWindowNumber.retiredName
+    && preservedWindow.fieldName === identity.preservedWindowSelect.legacyName;
+  if (canonicalWindowByName.length !== 1 && !isBoundedPromotionGap) {
     throw operatorError(
-      'Exactly one field must currently use the window_days name',
+      'Window field naming is outside the reviewed initial/transitional/final states',
       'LARK_DASHBOARD_FIELD_IDENTITY_WINDOW_NAME_AMBIGUOUS',
-      { matchCount: canonicalWindowByName.length },
+      {
+        matchCount: canonicalWindowByName.length,
+        numberWindowName: numberWindow?.fieldName ?? null,
+        preservedWindowName: preservedWindow.fieldName,
+      },
     );
   }
   if (preservedWindow.fieldName === 'window_days' && numberWindow
@@ -604,6 +592,7 @@ function buildDashboardPlan(dashboards) {
         && Object.hasOwn(ORGANIC_METRIC_BINDINGS, block.name);
       const hasDisplayLegacy = legacyReferences.some((name) => name.includes('display_name'));
       const hasWindowLegacy = legacyReferences.some((name) => name.includes('window_days'));
+      const hasCanonicalWindow = containsText(block.dataConfig, 'window_days');
 
       if (isOrganicMetric) {
         assertSupportedOrganicMetricBlockType(block.type, {
@@ -636,13 +625,13 @@ function buildDashboardPlan(dashboards) {
           { dashboardName: dashboard.name, blockName: block.name, blockType: block.type },
         );
       }
-      if (hasWindowLegacy) {
+      if (hasWindowLegacy || hasCanonicalWindow) {
         const type = String(block.type).trim().toLowerCase();
         if (type === 'slicer') preservedSlicerCount += 1;
         else if (type === 'column') preservedWindowChartCount += 1;
         else {
           throw operatorError(
-            'Legacy window reference exists on an unreviewed block type',
+            'Window binding exists on an unreviewed block type',
             'LARK_DASHBOARD_FIELD_IDENTITY_WINDOW_REFERENCE_UNSUPPORTED',
             { dashboardName: dashboard.name, blockName: block.name, blockType: block.type },
           );
@@ -655,11 +644,7 @@ function buildDashboardPlan(dashboards) {
     throw operatorError(
       'Dashboard field-identity plan does not match the reviewed 17/5/4 block contract',
       'LARK_DASHBOARD_FIELD_IDENTITY_PLAN_SCOPE_MISMATCH',
-      {
-        organicMetricBlockCount: actions.length,
-        preservedSlicerCount,
-        preservedWindowChartCount,
-      },
+      { organicMetricBlockCount: actions.length, preservedSlicerCount, preservedWindowChartCount },
     );
   }
 
@@ -672,6 +657,15 @@ function buildDashboardPlan(dashboards) {
     preservedWindowChartCount,
     legacyReferenceCount,
   });
+}
+
+function containsText(value, expected) {
+  if (typeof value === 'string') return value.trim() === expected;
+  if (Array.isArray(value)) return value.some((item) => containsText(item, expected));
+  if (value && typeof value === 'object') {
+    return Object.values(value).some((item) => containsText(item, expected));
+  }
+  return false;
 }
 
 async function readDashboardState({ client, baseToken }) {
