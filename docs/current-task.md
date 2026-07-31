@@ -3,12 +3,14 @@
 ## Status
 
 ```text
-TASK_STATUS                   = REPOSITORY_HOTFIX_IN_REVIEW
+TASK_STATUS                   = REPOSITORY_HOTFIX_VERIFIED
 CURRENT_PROGRAM               = META_HISTORY_RUNTIME_PREFLIGHT_RECOVERY_V2
 BASE_MAIN_SHA                 = 17c59e1196a1713aa19bacac41e8d101dfe7ceb0
-BRANCH                        = hotfix/meta-history-runtime-preflight-v2
-IMPLEMENTATION_PR             = PENDING
+BRANCH                        = hotfix/meta-history-2026-runtime-preflight-v2
+IMPLEMENTATION_PR             = #330 / DRAFT / READY_FOR_REVIEW
 PREVIOUS_IMPLEMENTATION_PR    = #319 / SQUASH_MERGED
+META_VERIFICATION_RUN         = #97 / PASS
+BRANCH_VERIFICATION_RUN       = #1389 / PASS
 FACEBOOK_SUPPLEMENTAL_RANGE   = 2026-07-01..2026-07-31
 INSTAGRAM_RANGE               = 2026-07-01..2026-07-31
 META_ADS_REQUIRED_RANGE       = 2026-05-01..2026-07-31
@@ -18,7 +20,7 @@ REMOTE_ACTION_DURING_HOTFIX   = NONE
 WORKER_FLAGS_BEFORE_INCIDENT  = ALL_FALSE_VERIFIED
 SCHEDULE                      = DISABLED
 PRODUCTION                    = BLOCKED
-NEXT_STEP                     = VERIFY_AND_MERGE_HOTFIX
+NEXT_STEP                     = REVIEW_AND_SQUASH_MERGE_HOTFIX
 ```
 
 ## Live failures retained
@@ -58,6 +60,23 @@ That deploy failed because a generated config under `outputs/` retained the rela
 - Preserve all six deterministic Meta operations, stable keys and retained evidence. No Business fact is
   deleted or replaced.
 
+## Verified gates
+
+The exact implementation Head before this documentation-only status update passed:
+
+```text
+Meta End-to-End Verification  run 30625556561 / #97 / PASS
+Branch Verification           run 30625556573 / #1389 / PASS
+Focused Meta regressions      PASS
+Full Unit/Workers             PASS
+Report reliability            PASS
+Dependency audit              PASS
+Wrangler dry-run              PASS
+Remote action during CI       0
+```
+
+The final exact documentation Head must pass Branch Verification again before Merge.
+
 ## Acceptance
 
 ```text
@@ -69,8 +88,8 @@ Worker flag and Reliability checks                  separated
 Historical queued/running sync_runs                 not active Queue by itself
 Active Queue operation                              tied to active durable Work
 Emergency deploy                                    exact active-flag error only
-Meta End-to-End Verification                        PASS required
-Branch Verification                                 PASS required
+Meta End-to-End Verification                        PASS
+Branch Verification                                 PASS
 Remote action during Repository work                0
 Schedule / Production                               disabled / blocked
 ```
