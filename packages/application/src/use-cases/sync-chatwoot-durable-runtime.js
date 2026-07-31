@@ -1,8 +1,6 @@
 import {
-  CHATWOOT_LARK_WRITE_TARGETS,
   finalizeChatwootCoverageRuns,
   prepareChatwootAnalyticsSync,
-  readChatwootWriteSetPath,
 } from './prepare-chatwoot-analytics-sync.js';
 import { syncChatwootAnalytics } from './sync-chatwoot-analytics.js';
 import {
@@ -27,6 +25,11 @@ import {
 import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 
 const ROLLUP_PAGE_SIZE = 500;
+const REPORTING_DATASET_KEY = 'chatwoot.reporting_events';
+const REPORTING_LARK_TARGET = Object.freeze({
+  tableKey: 'rawChatwootReportingEvents',
+  keyField: 'reporting_event_key',
+});
 
 /**
  * Execute at most one bounded durable Chatwoot unit per Queue delivery. Durable phase state contains
@@ -326,52 +329,35 @@ async function writeReportingPage(context, sourceRows, unitSyncRunId) {
     reportingEvents,
     previousConversationLabels: [],
   });
-  await executePreparedUnit(context, prepared, false);
+  await executeReportingPreparedUnit(context, prepared);
 }
 
-async function executePreparedUnit(context, prepared, reportWriteEnabled) {
-  const coverageRuns = prepared.d1.coverageRuns.filter((row) => row.observed_rows > 0);
+/** Reporting pages must never rewrite the latest-state Account with the synthetic normalization row. */
+async function executeReportingPreparedUnit(context, prepared) {
+  const coverageRuns = prepared.d1.coverageRuns.filter((row) => (
+    row.dataset_key === REPORTING_DATASET_KEY && row.observed_rows > 0
+  ));
   const runIds = new Set(coverageRuns.map((row) => row.coverage_run_id));
   for (const row of coverageRuns) {
     await context.assertCurrent();
     await context.coverageStore.saveCoverageRun(row);
   }
-  const specifications = [
-    [[prepared.d1.account], 'upsertAccountState'],
-    [prepared.d1.inboxes, 'upsertInboxState'],
-    [prepared.d1.resolvedContacts, 'upsertContactState'],
-    [prepared.d1.agents, 'upsertAgentState'],
-    [prepared.d1.teams, 'upsertTeamState'],
-    [prepared.d1.labels, 'upsertLabelState'],
-    [prepared.d1.conversations, 'upsertConversationState'],
-    [prepared.d1.conversationLabels, 'upsertConversationLabelState'],
-    [prepared.d1.messages, 'upsertMessageAnalyticsState'],
-    [prepared.d1.reportingEvents, 'upsertReportingEventFact'],
-    [prepared.d1.conversationDaily, 'upsertConversationDailyFact'],
-    [prepared.d1.agentDaily, 'upsertAgentDailyFact'],
-    [prepared.d1.inboxDaily, 'upsertInboxDailyFact'],
-    [prepared.d1.accountDaily, 'upsertAccountDailyFact'],
-  ];
-  for (const [rows, method] of specifications) {
-    for (const row of rows) {
-      await context.assertCurrent();
-      await context.chatwootStore[method](row);
-    }
+  for (const row of prepared.d1.reportingEvents) {
+    await context.assertCurrent();
+    await context.chatwootStore.upsertReportingEventFact(row);
   }
-  if (context.flags.larkWrite) {
-    for (const target of CHATWOOT_LARK_WRITE_TARGETS) {
-      if (target.requiresReport && !reportWriteEnabled) continue;
-      const rows = readChatwootWriteSetPath(prepared.lark, target.path);
-      if (rows.length === 0) continue;
-      const plan = await context.syncEngine.planByKey({
-        repository: context.repository,
-        tableId: requireText(context.tables[target.tableKey], `tables.${target.tableKey}`),
-        keyField: target.keyField,
-        rows,
-      });
-      await context.assertCurrent();
-      await context.syncEngine.executePlan(plan, { beforeWriteChunk: context.assertCurrent });
-    }
+  if (context.flags.larkWrite && prepared.lark.raw.reportingEvents.length > 0) {
+    const plan = await context.syncEngine.planByKey({
+      repository: context.repository,
+      tableId: requireText(
+        context.tables[REPORTING_LARK_TARGET.tableKey],
+        `tables.${REPORTING_LARK_TARGET.tableKey}`,
+      ),
+      keyField: REPORTING_LARK_TARGET.keyField,
+      rows: prepared.lark.raw.reportingEvents,
+    });
+    await context.assertCurrent();
+    await context.syncEngine.executePlan(plan, { beforeWriteChunk: context.assertCurrent });
   }
   const entities = prepared.d1.coverageEntities.filter((row) => runIds.has(row.coverage_run_id));
   if (entities.length > 0) {
