@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   REPORT_METRIC_VALUE_FIELD_MIGRATION_CONFIRMATION,
+  REPORT_METRIC_VALUE_FIELD_MIGRATION_VERSION,
   applyReportMetricValueFieldMigration,
   planReportMetricValueFieldMigration,
   safeReportMetricValueFieldMigrationEvidence,
@@ -20,10 +21,12 @@ const SCHEMA = Object.freeze([
       Object.freeze({ fieldName: 'display_name', type: 1, uiType: 'Text', primary: false }),
       Object.freeze({
         fieldName: 'window_days',
-        type: 2,
-        uiType: 'Number',
+        type: 3,
+        uiType: 'SingleSelect',
         primary: false,
-        property: Object.freeze({ formatter: '0' }),
+        property: Object.freeze({
+          options: Object.freeze(['1', '3', '7', '30'].map((name) => Object.freeze({ name }))),
+        }),
       }),
     ]),
   }),
@@ -45,7 +48,13 @@ function initialState() {
         type: 3,
         uiType: 'SingleSelect',
         isPrimary: false,
-        property: { options: [{ id: 'optViews', name: 'Views', color: 0 }, { id: 'optReach', name: 'Reach', color: 1 }, { id: 'optClicks', name: 'Clicks', color: 2 }] },
+        property: {
+          options: [
+            { id: 'optViews', name: 'Views', color: 0 },
+            { id: 'optReach', name: 'Reach', color: 1 },
+            { id: 'optClicks', name: 'Clicks', color: 2 },
+          ],
+        },
       },
       {
         fieldId: 'fldWindow',
@@ -53,7 +62,13 @@ function initialState() {
         type: 3,
         uiType: 'SingleSelect',
         isPrimary: false,
-        property: { options: [{ id: 'opt3', name: '3', color: 0 }, { id: 'opt7', name: '7', color: 1 }] },
+        property: {
+          options: ['1', '3', '7', '30'].map((name, color) => ({
+            id: `opt${name}`,
+            name,
+            color,
+          })),
+        },
       },
     ],
     records: [
@@ -71,74 +86,78 @@ function migrationOptions(client, overrides = {}) {
   return {
     client,
     schema: SCHEMA,
-    schemaVersion: 'test-v1',
+    schemaVersion: 'test-v2',
     validateSchema: VALIDATE,
     ...overrides,
   };
 }
 
-test('plans and applies a lossless populated SingleSelect to Text/Number migration', async () => {
+test('v2 migrates only display_name and preserves the canonical slicer window field untouched', async () => {
   const state = initialState();
   const client = statefulClient(state);
+  const originalWindowField = structuredClone(state.fields.find((field) => field.fieldId === 'fldWindow'));
+  const originalWindowValues = structuredClone(state.records.map((record) => record.fields.window_days ?? null));
   const preview = await planReportMetricValueFieldMigration(migrationOptions(client));
 
+  assert.equal(REPORT_METRIC_VALUE_FIELD_MIGRATION_VERSION, 'report_metric_value_field_migration_v2');
   assert.equal(preview.repairable, true);
-  assert.equal(preview.migrationCount, 2);
-  assert.equal(preview.pendingMigrationCount, 2);
-  assert.equal(preview.plannedFieldMutationCount, 4);
-  assert.equal(preview.plannedCanonicalValueWriteCount, 5);
-  assert.deepEqual(preview.migrations.map((item) => item.nextStep), [
-    'rename_legacy',
-    'rename_legacy',
-  ]);
+  assert.equal(preview.migrationCount, 1);
+  assert.equal(preview.pendingMigrationCount, 1);
+  assert.equal(preview.plannedFieldMutationCount, 2);
+  assert.equal(preview.plannedCanonicalValueWriteCount, 3);
+  assert.deepEqual(preview.migrations.map((item) => item.fieldName), ['display_name']);
+  assert.deepEqual(preview.migrations.map((item) => item.nextStep), ['rename_legacy']);
 
-  const beforeLegacyValues = structuredClone(state.records.map((record) => record.fields));
   const result = await applyReportMetricValueFieldMigration(migrationOptions(client, {
     env: CONFIRMED_ENV,
     sleepImpl: async () => undefined,
   }));
 
   assert.equal(result.pendingMigrationCount, 0);
-  assert.equal(result.convergedMigrationCount, 2);
-  assert.equal(result.fieldMutationCount, 4);
-  assert.equal(result.canonicalValueWriteCount, 5);
-  assert.equal(result.recordBatchWriteCount, 2);
-  assert.equal(result.remoteMutationCount, 6);
+  assert.equal(result.convergedMigrationCount, 1);
+  assert.equal(result.fieldMutationCount, 2);
+  assert.equal(result.canonicalValueWriteCount, 3);
+  assert.equal(result.recordBatchWriteCount, 1);
+  assert.equal(result.remoteMutationCount, 3);
   assert.equal(result.legacyValueMutationCount, 0);
   assert.equal(result.deleteCount, 0);
 
-  const displayLegacy = state.fields.find((field) => field.fieldName === '__mkt_legacy_display_name_single_select_v1');
-  const windowLegacy = state.fields.find((field) => field.fieldName === '__mkt_legacy_window_days_single_select_v1');
+  const displayLegacy = state.fields.find(
+    (field) => field.fieldName === '__mkt_legacy_display_name_single_select_v1',
+  );
   const displayCanonical = state.fields.find((field) => field.fieldName === 'display_name');
-  const windowCanonical = state.fields.find((field) => field.fieldName === 'window_days');
   assert.equal(displayLegacy.fieldId, 'fldDisplay');
   assert.equal(displayLegacy.type, 3);
-  assert.deepEqual(displayLegacy.property.options.map((option) => option.id), ['optViews', 'optReach', 'optClicks']);
-  assert.equal(windowLegacy.fieldId, 'fldWindow');
-  assert.equal(windowLegacy.type, 3);
-  assert.equal(displayCanonical.type, 1);
-  assert.equal(windowCanonical.type, 2);
-  assert.deepEqual(windowCanonical.property, { formatter: '0' });
-
-  assert.deepEqual(state.records.map((record) => record.fields.display_name), ['Views', 'Reach', 'Clicks']);
-  assert.deepEqual(state.records.map((record) => record.fields.window_days ?? null), [3, 7, null]);
   assert.deepEqual(
-    state.records.map((record) => ({
-      display: record.fields.__mkt_legacy_display_name_single_select_v1,
-      window: record.fields.__mkt_legacy_window_days_single_select_v1 ?? null,
-    })),
-    beforeLegacyValues.map((fields) => ({
-      display: fields.display_name,
-      window: fields.window_days ?? null,
-    })),
+    displayLegacy.property.options.map((option) => option.id),
+    ['optViews', 'optReach', 'optClicks'],
+  );
+  assert.equal(displayCanonical.type, 1);
+  assert.deepEqual(state.records.map((record) => record.fields.display_name), [
+    'Views',
+    'Reach',
+    'Clicks',
+  ]);
+
+  assert.deepEqual(
+    state.fields.find((field) => field.fieldId === 'fldWindow'),
+    originalWindowField,
+  );
+  assert.deepEqual(
+    state.records.map((record) => record.fields.window_days ?? null),
+    originalWindowValues,
+  );
+  assert.equal(
+    state.fields.some((field) => field.fieldName.includes('legacy_window_days')),
+    false,
   );
 
   const readback = await planReportMetricValueFieldMigration(migrationOptions(client));
   assert.equal(readback.pendingMigrationCount, 0);
-  assert.equal(readback.convergedMigrationCount, 2);
+  assert.equal(readback.convergedMigrationCount, 1);
 });
 
-test('resumes from renamed/canonical partial state and writes only missing canonical values', async () => {
+test('resumes from renamed/canonical display partial state and writes only missing text values', async () => {
   const state = initialState();
   state.fields = [
     state.fields[0],
@@ -146,8 +165,15 @@ test('resumes from renamed/canonical partial state and writes only missing canon
       ...state.fields[1],
       fieldName: '__mkt_legacy_display_name_single_select_v1',
     },
-    { fieldId: 'fldDisplayNew', fieldName: 'display_name', type: 1, uiType: 'Text', isPrimary: false, property: null },
-    { fieldId: 'fldWindowNew', fieldName: 'window_days', type: 2, uiType: 'Number', isPrimary: false, property: { formatter: '0' } },
+    {
+      fieldId: 'fldDisplayNew',
+      fieldName: 'display_name',
+      type: 1,
+      uiType: 'Text',
+      isPrimary: false,
+      property: null,
+    },
+    state.fields[2],
   ];
   state.records = [
     {
@@ -156,7 +182,7 @@ test('resumes from renamed/canonical partial state and writes only missing canon
         report_metric_key: 'one',
         __mkt_legacy_display_name_single_select_v1: 'Views',
         display_name: 'Views',
-        window_days: 3,
+        window_days: '3',
       },
     },
     {
@@ -164,17 +190,16 @@ test('resumes from renamed/canonical partial state and writes only missing canon
       fields: {
         report_metric_key: 'two',
         __mkt_legacy_display_name_single_select_v1: 'Reach',
-        window_days: 7,
+        window_days: '7',
       },
     },
   ];
   const client = statefulClient(state);
   const preview = await planReportMetricValueFieldMigration(migrationOptions(client));
-  const display = preview.migrations.find((item) => item.fieldName === 'display_name');
-  const window = preview.migrations.find((item) => item.fieldName === 'window_days');
+  const display = preview.migrations[0];
+  assert.equal(display.fieldName, 'display_name');
   assert.equal(display.state, 'needs_backfill');
   assert.equal(display.pendingRecordCount, 1);
-  assert.equal(window.state, 'not_required');
 
   const result = await applyReportMetricValueFieldMigration(migrationOptions(client, {
     env: CONFIRMED_ENV,
@@ -185,46 +210,58 @@ test('resumes from renamed/canonical partial state and writes only missing canon
   assert.equal(result.recordBatchWriteCount, 1);
   assert.equal(state.records[1].fields.display_name, 'Reach');
   assert.equal(state.records[0].fields.__mkt_legacy_display_name_single_select_v1, 'Views');
+  assert.deepEqual(state.records.map((record) => record.fields.window_days), ['3', '7']);
 });
 
-test('blocks non-lossless window labels before any remote mutation', async () => {
+test('window values are outside this migration scope even when malformed', async () => {
   const state = initialState();
   state.records[0].fields.window_days = '3D';
-  const client = statefulClient(state);
-  const preview = await planReportMetricValueFieldMigration(migrationOptions(client));
-  assert.equal(preview.repairable, false);
-  assert.equal(preview.blockers.some((blocker) => blocker.code === 'REPORT_METRIC_FIELD_MIGRATION_VALUE_NOT_LOSSLESS'), true);
-
-  await assert.rejects(
-    applyReportMetricValueFieldMigration(migrationOptions(client, {
-      env: CONFIRMED_ENV,
-      sleepImpl: async () => undefined,
-    })),
-    (error) => error.code === 'REPORT_METRIC_FIELD_MIGRATION_BLOCKED',
+  const preview = await planReportMetricValueFieldMigration(
+    migrationOptions(statefulClient(state)),
   );
-  assert.equal(state.fieldUpdates.length, 0);
-  assert.equal(state.fieldCreates.length, 0);
-  assert.equal(state.recordBatches.length, 0);
+  assert.equal(preview.repairable, true);
+  assert.equal(preview.migrationCount, 1);
+  assert.deepEqual(preview.migrations.map((item) => item.fieldName), ['display_name']);
+  assert.equal(
+    preview.blockers.some((blocker) => blocker.fieldName === 'window_days'),
+    false,
+  );
 });
 
-test('blocks conflicting canonical values instead of overwriting them', async () => {
+test('blocks conflicting canonical display values instead of overwriting them', async () => {
   const state = initialState();
   state.fields[1] = {
     ...state.fields[1],
     fieldName: '__mkt_legacy_display_name_single_select_v1',
   };
-  state.fields.push({ fieldId: 'fldDisplayNew', fieldName: 'display_name', type: 1, uiType: 'Text', isPrimary: false, property: null });
+  state.fields.push({
+    fieldId: 'fldDisplayNew',
+    fieldName: 'display_name',
+    type: 1,
+    uiType: 'Text',
+    isPrimary: false,
+    property: null,
+  });
   for (const record of state.records) {
     record.fields.__mkt_legacy_display_name_single_select_v1 = record.fields.display_name;
   }
   state.records[0].fields.display_name = 'Different';
-  const preview = await planReportMetricValueFieldMigration(migrationOptions(statefulClient(state)));
+  const preview = await planReportMetricValueFieldMigration(
+    migrationOptions(statefulClient(state)),
+  );
   assert.equal(preview.repairable, false);
-  assert.equal(preview.blockers.some((blocker) => blocker.code === 'REPORT_METRIC_FIELD_MIGRATION_CANONICAL_VALUE_MISMATCH'), true);
+  assert.equal(
+    preview.blockers.some(
+      (blocker) => blocker.code === 'REPORT_METRIC_FIELD_MIGRATION_CANONICAL_VALUE_MISMATCH',
+    ),
+    true,
+  );
 });
 
 test('safe evidence removes physical IDs and row payloads while retaining counts and fingerprints', async () => {
-  const preview = await planReportMetricValueFieldMigration(migrationOptions(statefulClient(initialState())));
+  const preview = await planReportMetricValueFieldMigration(
+    migrationOptions(statefulClient(initialState())),
+  );
   const safe = safeReportMetricValueFieldMigrationEvidence(preview);
   const serialized = JSON.stringify(safe);
   assert.equal(serialized.includes('tblMetric'), false);
