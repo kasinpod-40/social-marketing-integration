@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import { parseJsoncObject } from './chatwoot-safe-wrangler-config.js';
 import {
   resolveCloudflareAccountId,
   resolveCloudflareBearerAuth,
@@ -30,29 +31,29 @@ export async function bootstrapWooCommerceFinalQueueId(input = {}) {
   const configText = await readFile(configPath, 'utf8');
   const runWrangler = input.runWrangler ?? createWranglerRunner(repositoryRoot);
   const baseWranglerEnv = compactCloudflareEnv(env);
-  const whoamiOutput = runWrangler(['whoami', '--json'], baseWranglerEnv);
-  const accountId = resolveCloudflareAccountId({
-    explicitAccountId: env.CLOUDFLARE_ACCOUNT_ID,
-    configText,
-    whoamiOutput,
-    preferredAccount: env.MKT_WOOCOMMERCE_ROLLOUT_ACCOUNT,
-  });
-  const selectedWranglerEnv = {
-    ...baseWranglerEnv,
-    CLOUDFLARE_ACCOUNT_ID: accountId,
-  };
-  runWrangler(
-    ['whoami', '--account', accountId, '--json'],
-    selectedWranglerEnv,
-  );
 
   const explicitApiToken = optionalText(env.CLOUDFLARE_API_TOKEN);
   const auth = resolveCloudflareBearerAuth({
     explicitApiToken,
     authOutput: explicitApiToken
       ? null
-      : runWrangler(['auth', 'token', '--json'], selectedWranglerEnv),
+      : runWrangler(['auth', 'token', '--json'], baseWranglerEnv),
   });
+  const authenticatedWranglerEnv = {
+    ...baseWranglerEnv,
+    CLOUDFLARE_API_TOKEN: auth.token,
+  };
+  delete authenticatedWranglerEnv.CLOUDFLARE_API_KEY;
+  delete authenticatedWranglerEnv.CLOUDFLARE_EMAIL;
+
+  const configuredAccount = resolveConfiguredAccountId({ env, configText });
+  const accountId = configuredAccount?.accountId ?? resolveCloudflareAccountId({
+    configText,
+    whoamiOutput: runWrangler(['whoami', '--json'], authenticatedWranglerEnv),
+    preferredAccount: env.MKT_WOOCOMMERCE_ROLLOUT_ACCOUNT,
+  });
+  const accountSource = configuredAccount?.source ?? 'wrangler_whoami';
+
   const queueId = await discoverWooCommerceQueueId({
     accountId,
     apiToken: auth.token,
@@ -66,9 +67,28 @@ export async function bootstrapWooCommerceFinalQueueId(input = {}) {
     queueId,
     source: 'cloudflare_queue_rest',
     queueIdFingerprint: sha256(queueId),
+    accountSource,
     authType: auth.type,
     authSource: auth.source,
     providerRequests: 1,
+  });
+}
+
+function resolveConfiguredAccountId({ env, configText }) {
+  const explicitAccountId = optionalText(env.CLOUDFLARE_ACCOUNT_ID);
+  if (explicitAccountId) {
+    return Object.freeze({
+      accountId: resolveCloudflareAccountId({ explicitAccountId }),
+      source: 'explicit_environment',
+    });
+  }
+
+  const config = parseJsoncObject(configText);
+  const configuredAccountId = optionalText(config.account_id);
+  if (!configuredAccountId) return null;
+  return Object.freeze({
+    accountId: resolveCloudflareAccountId({ configText }),
+    source: 'wrangler_config',
   });
 }
 
