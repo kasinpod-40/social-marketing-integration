@@ -137,3 +137,9 @@ Every Statistics PATCH, Record batch and Field mutation is read back before cont
 ## Repository boundary
 
 This workstream does not edit `docs/current-task.md`, which remains owned by the Meta History workstream. Implementation and CI perform no Remote Lark/D1 mutation, Worker deployment, Queue send, Provider request, Schedule activation, Secret change or Production action.
+
+## v3.2 continuation
+
+The v3.1 preview discovered seven window charts: four already bound to the preserved Select and three Executive
+columns bound to the retiring Number field. The field-identity recovery now continues under
+`docs/tasks/lark-dashboard-window-chart-rebind-v3-2.md`; no Slicer PATCH is introduced.

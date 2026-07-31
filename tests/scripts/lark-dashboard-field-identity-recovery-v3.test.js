@@ -52,7 +52,7 @@ test('scope contract declares every read and write used by field-identity recove
 test('field identity contract matches the audited live Report Metric table', () => {
   assert.equal(
     LARK_DASHBOARD_FIELD_IDENTITY_RECOVERY_VERSION,
-    'lark_dashboard_field_identity_recovery_v3_1',
+    'lark_dashboard_field_identity_recovery_v3_2',
   );
   assert.deepEqual(REPORT_METRIC_FIELD_IDENTITIES, {
     metricKey: { fieldId: 'fldGvd3tw8', fieldName: 'metric_key', type: 1 },
