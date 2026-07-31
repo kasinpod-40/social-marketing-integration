@@ -7,6 +7,7 @@ import {
   chmod,
   mkdir,
   readFile,
+  rename,
   rm,
   stat,
   writeFile,
@@ -46,6 +47,12 @@ const WORKER_NAME = 'social-mkt-sync-worker';
 const LOCK_LOWER = 'integration_workspace:chatwoot:chemistry_k:';
 const LOCK_UPPER = 'integration_workspace:chatwoot:chemistry_k;';
 const EXECUTE_ARGUMENT = '--execute';
+const WRANGLER_METRIC_KEYS = new Set([
+  'Database size (MB)',
+  'Rows read',
+  'Rows written',
+  'Total queries executed',
+]);
 let generatedConfigPath = null;
 
 try {
@@ -85,30 +92,30 @@ async function main() {
   const sourceIdentity = resolveChatwootFinalSourceIdentity(sourceEnv);
   generatedConfigPath = await createSourceCompleteConfig(sourceEnv, sourceIdentity);
 
-  const env = Object.freeze({
-    ...sourceEnv,
-    [CHATWOOT_FINAL_UAT_CONFIRMATION.envName]: CHATWOOT_FINAL_UAT_CONFIRMATION.value,
-    MKT_CHATWOOT_FINAL_UAT_WRANGLER_CONFIG: generatedConfigPath,
-  });
   const evidenceDirectory = inside(join(
     'outputs',
     'chatwoot-final-source-config-recovery',
     repository.head,
   ));
-  await mkdir(evidenceDirectory, { recursive: true, mode: 0o700 });
   const uatDirectory = inside(join(
     'outputs',
     'chatwoot-final-30d-daily-uat',
     repository.head,
   ));
+  const env = Object.freeze({
+    ...sourceEnv,
+    [CHATWOOT_FINAL_UAT_CONFIRMATION.envName]: CHATWOOT_FINAL_UAT_CONFIRMATION.value,
+    MKT_CHATWOOT_FINAL_UAT_WRANGLER_CONFIG: generatedConfigPath,
+    MKT_CHATWOOT_FINAL_UAT_EVIDENCE_DIR: uatDirectory,
+  });
+  await mkdir(evidenceDirectory, { recursive: true, mode: 0o700 });
   const summaryPath = join(uatDirectory, 'summary.json');
   const summaryExists = await regularFile(summaryPath);
 
   let incidentBefore = readIncident(env);
   if (isIncidentResolved(incidentBefore)) {
-    const reference = recoveryReference(repository.head);
     assertChatwootFinalSourceIncidentResolved(incidentBefore, {
-      recoveryReference: reference,
+      recoveryReference: recoveryReference(repository.head),
     });
   } else if (!summaryExists) {
     assertChatwootFinalSourceIncidentOpen(incidentBefore);
@@ -126,6 +133,7 @@ async function main() {
       ),
       attemptedAt: new Date().toISOString(),
       queueAdmissionOwnedBy: 'chatwoot-final-30d-daily-uat-launcher',
+      evidenceDirectory: relative(ROOT, uatDirectory),
       scheduleEnabled: false,
       webhookEnabled: false,
       production: false,
@@ -155,6 +163,7 @@ async function main() {
   assertSafeRestoreEvidence(safeRestoreEvidence, repository.head);
   const session = await readPrivateJson(join(uatDirectory, 'session.json'), 'Final UAT session');
   assertSession(session, repository.head);
+
   const remoteSafe = assertRemoteWorkerAllFlagsFalse(env, generatedConfigPath);
   const activeLockCount = readExactActiveLockCount(env);
   if (activeLockCount !== 0) {
@@ -230,6 +239,7 @@ async function main() {
       'CHATWOOT_FINAL_SOURCE_CONFIG_CLOSURE_DRIFT',
     );
   }
+
   const remoteSafeAfter = assertRemoteWorkerAllFlagsFalse(env, generatedConfigPath);
   const finalLockCount = readExactActiveLockCount(env);
   if (finalLockCount !== 0) {
@@ -295,6 +305,7 @@ function printPlan() {
     ],
     sourceFieldsMaterialized: ['CHATWOOT_BASE_URL', 'CHATWOOT_ACCOUNT_ID'],
     secretValuesMaterialized: 0,
+    evidenceDirectoryBoundToRepositoryHead: true,
     queueRedrive: false,
     scheduleEnabled: false,
     webhookEnabled: false,
@@ -572,11 +583,19 @@ function extractD1Rows(output) {
     for (const candidate of candidates) {
       if (!Array.isArray(candidate)) continue;
       for (const row of candidate) {
-        if (row && typeof row === 'object' && !Array.isArray(row)) rows.push(row);
+        if (row && typeof row === 'object' && !Array.isArray(row)
+            && !isWranglerMetricRow(row)) {
+          rows.push(row);
+        }
       }
     }
   }
   return rows;
+}
+
+function isWranglerMetricRow(row) {
+  const keys = Object.keys(row ?? {});
+  return keys.length > 0 && keys.every((key) => WRANGLER_METRIC_KEYS.has(key));
 }
 
 function runInherited(command, args, env) {
@@ -641,9 +660,7 @@ async function writePrivateJson(path, value) {
   const temporary = `${path}.tmp-${process.pid}`;
   await writeFile(temporary, `${JSON.stringify(scrub(value), null, 2)}\n`, { mode: 0o600 });
   await chmod(temporary, 0o600);
-  await rm(path, { force: true });
-  await writeFile(path, await readFile(temporary), { mode: 0o600 });
-  await rm(temporary, { force: true });
+  await rename(temporary, path);
 }
 
 async function regularFile(path) {
