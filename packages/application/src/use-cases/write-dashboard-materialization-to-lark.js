@@ -13,6 +13,7 @@ const REPORT_METRIC_NULLABLE_FIELDS = Object.freeze([
   'change_value',
   'change_percent',
 ]);
+const DASHBOARD_WINDOW_DAY_OPTIONS = new Set(['1', '3', '7', '30']);
 
 /** Dashboard/Lark binding that reads materializations only, never detailed historical facts. */
 export async function writeDashboardMaterializationToLark(input = {}) {
@@ -64,7 +65,7 @@ export async function writeDashboardMaterializationToLark(input = {}) {
     period: payload.period,
     generatedAt: row.generated_at,
     utcOffset,
-    sharedDimensions,
+    sharedDimensions: buildMetricSharedDimensions(sharedDimensions),
   });
   const topContentRows = payload.capability === 'organic' ? buildReportTopContentRows({
     reportId: row.report_id,
@@ -171,6 +172,22 @@ function buildSharedDimensions(input) {
     coverage_rate: input.row.coverage_rate ?? null,
     generated_at: input.row.generated_at,
   });
+}
+
+/** Metric table preserves the existing slicer-bound SingleSelect identity. */
+function buildMetricSharedDimensions(sharedDimensions) {
+  const periodKind = requireText(sharedDimensions.period_kind, 'sharedDimensions.period_kind');
+  if (periodKind === 'custom_range') {
+    if (sharedDimensions.window_days !== null) {
+      throw new TypeError('custom_range metric dimensions must keep window_days null');
+    }
+    return Object.freeze({ ...sharedDimensions, window_days: null });
+  }
+  const value = String(sharedDimensions.window_days ?? '').trim();
+  if (!DASHBOARD_WINDOW_DAY_OPTIONS.has(value)) {
+    throw new TypeError('rolling_days metric window_days must be one of 1, 3, 7, 30');
+  }
+  return Object.freeze({ ...sharedDimensions, window_days: value });
 }
 
 function requireReader(value) {

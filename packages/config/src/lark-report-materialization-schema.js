@@ -12,17 +12,19 @@ const DATA_STATUS_OPTIONS = Object.freeze([
   'source_unavailable', 'not_observed', 'revisable',
 ]);
 const PERIOD_KIND_OPTIONS = Object.freeze(['rolling_days', 'custom_range']);
+export const DASHBOARD_WINDOW_DAY_OPTIONS = Object.freeze(['1', '3', '7', '30']);
 
 /**
  * Additive repository contract for the materialization consumer tables.
  * It is intentionally plan-only; applying it to a Live Base requires a separate authorization.
  */
-export const LARK_REPORT_MATERIALIZATION_SCHEMA_VERSION = 'report-materialization-schema-v3';
+export const LARK_REPORT_MATERIALIZATION_SCHEMA_VERSION = 'report-materialization-schema-v4';
 export const LARK_REPORT_MATERIALIZATION_SCHEMA = deepFreeze({
   sharedOptionExtensions: {
     platforms: PLATFORM_OPTIONS,
     dataStatuses: DATA_STATUS_OPTIONS,
     periodKinds: PERIOD_KIND_OPTIONS,
+    dashboardWindowDays: DASHBOARD_WINDOW_DAY_OPTIONS,
     metricScopes: DASHBOARD_METRIC_SCOPE_OPTIONS,
     metricAvailabilityStatuses: DASHBOARD_METRIC_AVAILABILITY_OPTIONS,
     reportTypes: ['daily_organic_report', 'weekly_organic_report', 'dashboard_performance_report'],
@@ -42,7 +44,9 @@ export const LARK_REPORT_MATERIALIZATION_SCHEMA = deepFreeze({
     mktReportMetricValues: {
       keyField: 'report_metric_key',
       additiveFields: [
-        ...sharedRowAdditiveFields(),
+        ...sharedRowAdditiveFields({
+          windowDaysField: select('window_days', DASHBOARD_WINDOW_DAY_OPTIONS),
+        }),
         select('metric_scope', DASHBOARD_METRIC_SCOPE_OPTIONS),
         select('availability_status', DASHBOARD_METRIC_AVAILABILITY_OPTIONS),
         text('availability_message'),
@@ -104,12 +108,12 @@ function dateTime(fieldName) { return { fieldName, type: 5, uiType: 'DateTime', 
 function select(fieldName, options) {
   return { fieldName, type: 3, uiType: 'SingleSelect', primary: false, options: [...options] };
 }
-function sharedRowAdditiveFields() {
+function sharedRowAdditiveFields(input = {}) {
   return [
     text('customer_key'),
     text('capability'),
     select('period_kind', PERIOD_KIND_OPTIONS),
-    number('window_days', '0'),
+    input.windowDaysField ?? number('window_days', '0'),
     number('coverage_rate', '0.0000'),
   ];
 }

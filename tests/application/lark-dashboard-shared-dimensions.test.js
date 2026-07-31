@@ -64,11 +64,23 @@ test('all four executable Report schemas expose additive Shared dimensions with 
   for (const tableKey of ['mktReportMetricValues', 'mktReportTopContent', 'mktReportTopAds']) {
     const table = LARK_REPORT_SCHEMA_V2.find((candidate) => candidate.key === tableKey);
     const periodKind = table.fields.find((field) => field.fieldName === 'period_kind');
-    const windowDays = table.fields.find((field) => field.fieldName === 'window_days');
     assert.deepEqual(periodKind.property.options.map((option) => option.name), [
       'rolling_days',
       'custom_range',
     ]);
+  }
+
+  const metricWindow = LARK_REPORT_SCHEMA_V2
+    .find((table) => table.key === 'mktReportMetricValues')
+    .fields.find((field) => field.fieldName === 'window_days');
+  assert.equal(metricWindow.type, 3);
+  assert.deepEqual(metricWindow.property.options.map((option) => option.name), ['1', '3', '7', '30']);
+
+  for (const tableKey of ['mktReportTopContent', 'mktReportTopAds']) {
+    const windowDays = LARK_REPORT_SCHEMA_V2
+      .find((table) => table.key === tableKey)
+      .fields.find((field) => field.fieldName === 'window_days');
+    assert.equal(windowDays.type, 2);
     assert.equal(windowDays.property.formatter, '0');
   }
 
@@ -153,7 +165,7 @@ test('capability is an extensible lowercase key and Dashboard Views contain no c
   }
 });
 
-test('materialization writer maps identical Shared dimensions to Snapshot, Metric and Top Content rows', async () => {
+test('materialization writer maps Shared dimensions to Snapshot, Metric and Top Content rows', async () => {
   const materialization = organicMaterialization();
   const captured = await captureWrite(materialization);
   const snapshot = captured.get('snapshots')[0];
@@ -176,7 +188,7 @@ test('materialization writer maps identical Shared dimensions to Snapshot, Metri
   assert.equal(topContent.report_content_key, `${materialization.row.report_id}::rank:1`);
 });
 
-test('materialization writer maps Shared dimensions to Top Ads and preserves legacy Snapshot coverage plus observed zero', async () => {
+test('materialization writer maps Shared dimensions to Top Ads and uses select text only for Metric window', async () => {
   const materialization = paidAdsMaterialization();
   const captured = await captureWrite(materialization);
   const snapshot = captured.get('snapshots')[0];
@@ -189,6 +201,9 @@ test('materialization writer maps Shared dimensions to Top Ads and preserves leg
     windowDays: 3,
     coverageRate: 0,
   });
+  assert.equal(snapshot.window_days, 3);
+  assert.equal(metric.window_days, '3');
+  assert.equal(topAd.window_days, 3);
   assert.deepEqual(snapshot.platform, ['meta_ads']);
   assert.equal(snapshot.baseline_coverage_rate, materialization.payload.coverageRate);
   assert.equal(metric.current_value, 0);
@@ -232,6 +247,7 @@ test('Commerce materialization writes only shared Snapshot and Metric tables', a
   const captured = await captureWrite(materialization);
   assert.deepEqual([...captured.keys()].sort(), ['metrics', 'snapshots']);
   assert.equal(captured.get('metrics')[0].capability, 'commerce');
+  assert.equal(captured.get('metrics')[0].window_days, '3');
   assert.equal(captured.get('metrics')[0].current_value, 1_000_000);
 });
 
@@ -326,7 +342,7 @@ async function captureWrite(materialization) {
 
 function assertSharedDimensions(rows, expected) {
   const reference = Object.fromEntries(SHARED_FIELDS
-    .filter((field) => field !== 'platform')
+    .filter((field) => field !== 'platform' && field !== 'window_days')
     .map((field) => [field, rows[0][field]]));
   for (const row of rows) {
     for (const [field, value] of Object.entries(reference)) assert.equal(row[field], value, field);
@@ -338,7 +354,10 @@ function assertSharedDimensions(rows, expected) {
     assert.equal(row.report_setting_key, 'setting-new');
     assert.equal(row.report_type, 'dashboard_performance_report');
     assert.equal(row.period_kind, expected.windowDays === null ? 'custom_range' : 'rolling_days');
-    assert.equal(row.window_days, expected.windowDays);
+    const expectedWindow = row.report_metric_key && expected.windowDays !== null
+      ? String(expected.windowDays)
+      : expected.windowDays;
+    assert.equal(row.window_days, expectedWindow);
     assert.equal(row.data_status, 'partial');
     assert.equal(row.coverage_rate, expected.coverageRate);
     assert.equal(row.generated_at, GENERATED_AT);
