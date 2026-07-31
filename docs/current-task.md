@@ -1,125 +1,98 @@
-# Current Task — Meta History Execution After Pinned Continuity Recovery v3
+# Current Task — Meta History Cloudflare Account Resolution Recovery v4
 
 ## Status
 
 ```text
-TASK_STATUS                   = META_HISTORY_2026_EXECUTION_READY
-CURRENT_PROGRAM               = META_HISTORY_2026_FINALIZER_V1
-ORIGINAL_IMPLEMENTATION_PR    = #319 / SQUASH_MERGED
-RUNTIME_PREFLIGHT_HOTFIX_PR   = #330 / SQUASH_MERGED
-PINNED_CONTINUITY_HOTFIX_PR   = #342 / SQUASH_MERGED
-PINNED_CONTINUITY_MAIN_SHA    = ce59437dbb9e9325f743805af0f67ce5cf192c04
-META_VERIFICATION_RUN         = 30629702372 / #105 / PASS
-BRANCH_VERIFICATION_RUN       = 30629702378 / #1412 / PASS
-LEGACY_LOCAL_META_ARTIFACTS   = NOT_REQUIRED
-FACEBOOK_SUPPLEMENTAL_RANGE   = 2026-07-01..2026-07-31
-INSTAGRAM_RANGE               = 2026-07-01..2026-07-31
-META_ADS_REQUIRED_RANGE       = 2026-05-01..2026-07-31
-META_ADS_CONDITIONAL_RANGE    = 2026-01-01..2026-04-30
-PLANNED_OPERATION_COUNT       = 6
-PREVIOUS_ATTEMPT_META_OPS     = 0
-PREVIOUS_ATTEMPT_REMOTE_WRITE = 0
-WORKER_FLAGS                  = ALL_FALSE_VERIFIED
-SCHEDULE                      = DISABLED
-PRODUCTION                    = BLOCKED
-NEXT_STEP                     = RUN_META_HISTORY_2026_TERMINAL_ONCE
+TASK_STATUS                    = REPOSITORY_HOTFIX_IN_REVIEW
+CURRENT_PROGRAM                = META_HISTORY_CLOUDFLARE_ACCOUNT_RESOLUTION_V4
+BASE_MAIN_SHA                  = a339a06afc57e6ee17c4413b2700e79235ceb3be
+BRANCH                         = hotfix/meta-history-cloudflare-account-resolution-v4
+IMPLEMENTATION_PR              = PENDING
+ORIGINAL_IMPLEMENTATION_PR     = #319 / SQUASH_MERGED
+RUNTIME_PREFLIGHT_HOTFIX_PR    = #330 / SQUASH_MERGED
+PINNED_CONTINUITY_HOTFIX_PR    = #342 / SQUASH_MERGED
+PREVIOUS_HANDOFF_PR            = #344 / SQUASH_MERGED
+PLANNED_OPERATION_COUNT        = 6
+FOURTH_ATTEMPT_META_OPERATIONS = 0
+FOURTH_ATTEMPT_REMOTE_WRITES   = 0
+SCHEDULE                       = DISABLED
+PRODUCTION                     = BLOCKED
+NEXT_STEP                      = VERIFY_REVIEW_AND_MERGE_V4
 ```
 
-## Authority
+## Fourth Terminal failure retained
 
-PR #342 replaced the missing historical local clone/session dependency with exact current continuity
-evidence and was Squash Merged at:
+The one-time command on `main@a339a06afc57e6ee17c4413b2700e79235ceb3be` stopped at:
 
 ```text
-ce59437dbb9e9325f743805af0f67ce5cf192c04
+stage  cloudflare-readiness
+code   META_HISTORY_2026_COMMAND_FAILED
+cause  npx wrangler whoami --json exited 1
 ```
 
-The exact PR Head `df2abaeda080441ed5f8faf306719d1cf07f2352` passed:
+The failure occurred after local gates and private safe-config generation but before Remote Worker/D1
+inspection, fresh Meta identity validation, Queue admission, Provider reads, D1/Lark Business writes or any
+of the six history operations. The restore child repeated the same unnecessary `whoami` dependency and
+therefore could not independently re-read Remote safe state. No Remote mutation path had been entered.
+
+## Established Cloudflare authority
+
+The Integration Workspace already has stable non-secret account authority:
 
 ```text
-Meta End-to-End Verification  run 30629702372 / #105 / PASS
-Branch Verification           run 30629702378 / #1412 / PASS
-Review threads                0
-Branch behind main            0 before merge
-Changed files                 7 / Meta scope only
-Remote action during hotfix   0
+Cloudflare account     Social MKT Data Hub DEV
+CLOUDFLARE_ACCOUNT_ID  present in local .dev.vars
+Wrangler source config copies account_id into the generated safe config
+Cloudflare API token   present in local .dev.vars / never committed
 ```
 
-The failed Terminal attempt that reported `META_HISTORY_2026_PINNED_FILES_MISSING` stopped before fresh
-Meta identity validation and before all six history operations. It sent no Meta Queue message, made no
-Meta Provider request, wrote no Remote D1/Lark Business fact and deployed no Worker. The Worker remained
-all-false.
+The launcher nevertheless executed `wrangler whoami --json` unconditionally before asking the existing
+shared resolver to use `CLOUDFLARE_ACCOUNT_ID` or config `account_id`. This made a proven API-token/config
+path depend on a separate user-session membership command.
 
-## Continuity contract now merged
+## Root cause and correction
 
-The Terminal no longer requires or reads:
+- Resolve `CLOUDFLARE_ACCOUNT_ID` from the explicit environment first.
+- Otherwise resolve top-level Wrangler `account_id` from the already generated private config.
+- Only when neither stable source exists may the launcher call `wrangler whoami --json` as fallback.
+- Preserve fail-closed handling for invalid explicit/config Account IDs.
+- Preserve `wrangler auth token --json` only as fallback when no explicit API token exists.
+- Keep Queue discovery, Worker all-false verification, Reliability-idle checks and all operation contracts
+  unchanged.
+- Add a regression that proves static Account ID resolution occurs before the only remaining `whoami`
+  invocation and rejects a return to unconditional `whoami`.
+
+## Safety boundary
+
+Repository implementation and CI perform no Cloudflare Remote query/write, Worker deployment, Queue/DLQ
+send, Provider request, D1/Lark Business mutation, Schedule activation, Secret change or Production action.
+
+Do not rerun the public Terminal command while this Hotfix is unmerged.
+
+## Required verification
 
 ```text
-MKT_META_FINALIZE_CLONE
-MKT_META_FINALIZE_SESSION_FILE
-MKT_META_FINALIZE_OVERLAY
-MKT_META_FINALIZER_FILE
+Focused Meta public-launcher regression       PASS required
+Meta End-to-End Verification                  PASS required
+Branch Verification                           PASS required
+Full Unit / Workers runtime                   PASS required
+Report reliability                            PASS required
+Dependency audit                              PASS required
+Wrangler dry-run                              PASS required
+Changed files                                 Meta scope only
+Remote action during implementation and CI    0
 ```
 
-Instead it requires:
+## Public command boundary after merge and handoff
 
-- a current read-only Summary with the expected contract, `status=passed`, no mutation, zero Business
-  writes and zero Queue messages;
-- exactly four current identity validations: Facebook, Instagram and both Meta Ads accounts;
-- an exact six-operation target/range/mode/operation-ID plan bound to the current merged Head;
-- no legacy operation ID, no old-operation replay and no replacement operation;
-- one deterministic Facebook July supplemental operation;
-- existing Shared D1-only then Lark parity continuation;
-- canonical `larkParityVerified` and same-operation idempotency evidence;
-- final all-false Worker flags and active Work/Lock/Queue counts `0/0/0`.
-
-The old operation is retained only as a non-secret SHA-256 fingerprint. It is not recreated or executed.
-Stable Business keys preserve existing Facebook and Lark facts.
-
-## Execution scope
-
-```text
-Facebook continuity  fresh identity + exact no-replay plan
-Facebook July        2026-07-01..2026-07-31
-Instagram            2026-07-01..2026-07-31
-Meta Ads required    2026-05-01..2026-07-31 for chemistry_k2 and chemistry_k3
-Meta Ads optional    2026-01-01..2026-04-30 only under bounded baseline volume
-```
-
-The public Terminal entrypoint creates or reuses evidence under the exact current merged Head. Retain all
-previous output directories; do not copy, delete or edit historical evidence.
-
-## Public Terminal command
-
-Run only from exact clean current `main`:
+The only public entrypoint remains:
 
 ```bash
 CONFIRM_META_HISTORY_2026_FINALIZER=RUN_META_HISTORY_2026_ONE_COMMAND \
 node scripts/meta-history-2026-terminal.mjs --execute
 ```
 
-Do not invoke `scripts/meta-history-2026-one-command.mjs`,
-`scripts/meta-history-2026-finalizer.mjs`, D1/Lark phase launchers or manual Queue sends.
+Do not invoke the one-command child, finalizer child, phase launchers or manual Queue sends. Retain all
+previous output/evidence directories.
 
-## Expected accepted result
-
-```text
-META_HISTORY_2026_COMPLETED_SAFE
-Facebook continuity             fresh identity / no old replay
-Facebook July supplemental      complete
-Instagram July                  complete
-Meta Ads May-July               complete for both accounts
-Meta Ads January-April          conditional on bounded baseline volume
-D1/Lark parity                  pass
-Same-operation replay           pass
-Active Work / Lock / Queue      0 / 0 / 0
-Worker flags                    all false
-Schedule                        disabled
-Production                      blocked
-```
-
-Live completion is not declared until the Terminal emits the accepted decision and final safe-state
-evidence.
-
-Detailed implementation contract: `docs/tasks/meta-history-2026-one-command-v1.md`.
-Pinned continuity recovery contract: `docs/tasks/meta-history-pinned-continuity-recovery-v3.md`.
+Detailed contract: `docs/tasks/meta-history-cloudflare-account-resolution-v4.md`.

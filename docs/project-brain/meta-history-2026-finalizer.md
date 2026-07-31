@@ -1,104 +1,90 @@
 # Project Brain — Meta History 2026 Finalizer
 
-## Repository decision
-
-The Meta history execution chain is merged and ready for one controlled Terminal run:
+## Program authority
 
 ```text
-Initial history implementation   PR #319 / Squash Merged
-Runtime-preflight recovery       PR #330 / Squash Merged
-Pinned-continuity recovery       PR #342 / Squash Merged
-Current continuity main SHA      ce59437dbb9e9325f743805af0f67ce5cf192c04
-Meta verification                #105 / PASS
-Branch verification              #1412 / PASS
-Live history completion          pending Terminal evidence
+Initial history implementation          PR #319 / Squash Merged
+Runtime-preflight recovery              PR #330 / Squash Merged
+Pinned-continuity recovery              PR #342 / Squash Merged
+Cloudflare account-resolution recovery  v4 / in review
+Live history completion                 pending accepted Terminal evidence
 ```
 
-PR #342 removed the historical local clone/session/overlay/finalizer bundle from the execution contract.
-Those files are not durable Business-data authority and are no longer searched, reconstructed or run.
-
-Repository implementation and CI performed no Meta Provider request, Queue send, Remote D1/Lark Business
-write, Worker deployment, Schedule activation or Production action.
-
-## Runtime-preflight authority
-
-- The non-secret Wrangler source may be a readable regular file or a symlink resolving to one.
-- The generated execution config is private `0600` with absolute Repository paths for `main` and
-  `migrations_dir`.
-- Active Queue execution requires a Queue attempt linked to active durable Work. Historical `sync_runs`
-  rows without active Work are not current Queue execution.
-- Worker-flag verification is independent from Reliability-idle verification.
-- Emergency Safe deployment is permitted only when the exact active-flag assertion proves a Worker
-  execution flag is enabled. Other inspection errors never authorize deploy.
-
-## Pinned continuity authority
-
-The historical Meta delivery remains protected from replay or replacement through current, Head-bound
-evidence rather than old local files.
-
-The finalizer writes private `pinned-facebook-continuity.json`. It is accepted only when:
-
-- the read-only Summary has the expected contract, phase and `status=passed`;
-- `mutationPerformed=false`, `businessWrites=0` and `queueMessages=0`;
-- exactly four validations occur in order: Facebook, Instagram, `chemistry_k2`, `chemistry_k3`;
-- every identity has `status=identity_validated` and at least one request attempt;
-- all six expected target/range/mode/deterministic-operation-ID tuples match the current Head;
-- exactly one required Facebook operation covers July 1–31, 2026;
-- no current operation uses the historical operation identity;
-- `existingOperationReplay=false`;
-- `replacementOperation=false`;
-- `legacyLocalArtifactsRequired=false`.
-
-The historical operation identity is retained only as a SHA-256 fingerprint. The accepted read-only
-evidence is fingerprinted separately. The old finalizer is never executed.
-
-## Data authority
-
-Existing Facebook and Lark rows remain authoritative. A separate deterministic Facebook July operation
-fills missing monthly history through the existing Shared pipeline and Stable Business keys. Existing
-facts are upserted or skipped idempotently; they are not deleted or replaced.
-
-## History scope
-
-```text
-Facebook continuity  fresh identity + exact no-replay plan
-Facebook July        2026-07-01..2026-07-31 supplemental operation
-Instagram            2026-07-01..2026-07-31
-Meta Ads required    2026-05-01..2026-07-31
-Meta Ads optional    2026-01-01..2026-04-30 under bounded baseline volume
-```
-
-## Durable source behavior
-
-- Facebook supplemental history uses bounded `since`/`until` reads and a deterministic current operation.
-- Instagram pagination remains newest-first and stops after crossing the lower date boundary.
-- Meta Ads long ranges use an internal compound cursor while each Provider request remains at most 31
-  inclusive days.
-- Existing <=31-day Ads and unbounded Instagram source calls keep their prior contracts.
-- Meta Lark completion reads canonical `larkParityVerified`; stale `larkVerified` is rejected.
-
-## Execution ownership
-
-The only public entrypoint is:
+The only public entrypoint remains:
 
 ```bash
 CONFIRM_META_HISTORY_2026_FINALIZER=RUN_META_HISTORY_2026_ONE_COMMAND \
 node scripts/meta-history-2026-terminal.mjs --execute
 ```
 
-It owns exact clean-main validation, six ISO generation values, fresh identity proof, pinned Facebook
-continuity, D1/Lark chains, adaptive Ads expansion, checkpoint reuse, uncertain-admission blocking and
-automatic all-false restore.
+The one-command child, finalizer child, D1/Lark phase launchers and manual Queue sends are not public
+operator commands.
 
-The one-command, finalizer, D1 and Lark launchers are implementation children. Operators must not invoke
-them directly.
+## Retained history and data authority
 
-The implementation reuses existing phase operators and compatibility shims. No second Connector, Queue,
-Reliability, D1 writer, Coverage engine or Lark sync engine is introduced.
+- Historical local Meta clone/session/overlay/finalizer files are not required and are never executed.
+- Existing Facebook and Lark facts remain authoritative and are never deleted or replaced.
+- One deterministic Facebook July operation fills missing history with Stable Business keys.
+- Instagram covers July 1–31, 2026.
+- Meta Ads covers May 1–July 31, 2026 for both accounts, with January–April conditional on bounded volume.
+- D1 completes before same-operation Lark continuation.
+- Completion requires D1/Lark parity, same-operation idempotency, all-false Worker flags and active
+  Work/Lock/Queue counts `0/0/0`.
+
+## Cloudflare account authority
+
+The Integration Workspace has a stable non-secret Cloudflare identity:
+
+```text
+Account name              Social MKT Data Hub DEV
+CLOUDFLARE_ACCOUNT_ID     local .dev.vars authority
+Wrangler account_id       copied into generated private safe config when present
+CLOUDFLARE_API_TOKEN      local .dev.vars secret authority
+```
+
+Account ID and API-token authentication are independent concerns:
+
+- Account selection must prefer explicit `CLOUDFLARE_ACCOUNT_ID`.
+- If absent, it must use Wrangler config `account_id`.
+- `wrangler whoami --json` is only a last-resort membership fallback when neither stable Account ID source
+  exists.
+- Explicit `CLOUDFLARE_API_TOKEN` must be used directly; `wrangler auth token --json` remains fallback only.
+
+A valid API-token/config path must never be blocked by an expired or unavailable Wrangler user-session
+`whoami` command.
+
+## Fourth attempt incident
+
+The Terminal attempt on `main@a339a06afc57e6ee17c4413b2700e79235ceb3be` stopped at
+`cloudflare-readiness` because the finalizer ran `npx wrangler whoami --json` unconditionally. It had not
+entered Remote Worker/D1 inspection, Meta Provider validation, Queue admission or any D1/Lark Business
+write. The restore child hit the same read-only command dependency. No Remote mutation path had started.
+
+## Runtime-preflight authority
+
+- The source Wrangler config may be a readable regular file or symlink resolving to one.
+- The generated execution config is private `0600` with absolute runtime paths.
+- Remote Worker safety and Reliability idle are separate checks.
+- Emergency all-false deployment is allowed only when exact evidence proves an active Worker execution
+  flag; authentication/read/config failures never authorize deployment.
+- Active Queue execution requires an attempt linked to active durable Work; historical `sync_runs` rows do
+  not count as current execution.
+- Blind Queue resend is blocked whenever an attempt file exists without accepted admission evidence.
+
+## Pinned continuity authority
+
+The finalizer writes Head-bound `pinned-facebook-continuity.json` and accepts it only when:
+
+- the read-only Summary has the expected contract and no mutation;
+- exactly four identities validate in order: Facebook, Instagram, `chemistry_k2`, `chemistry_k3`;
+- all six target/range/mode/deterministic-operation-ID tuples match current Head;
+- no historical operation ID is used;
+- replay and replacement flags are false;
+- canonical `larkParityVerified` and idempotency evidence pass.
 
 ## Final safe decision
 
-Only accepted Terminal evidence can establish:
+Only accepted Terminal output can establish:
 
 ```text
 META_HISTORY_2026_COMPLETED_SAFE
@@ -114,5 +100,4 @@ Schedule                        disabled
 Production                      blocked
 ```
 
-Until that output exists, the authoritative state is `META_HISTORY_2026_EXECUTION_READY`, not Live
-completed.
+Until then, Live completion is not declared.
