@@ -105,13 +105,17 @@ export function injectMetaHistoryConfig(configText, range = META_HISTORY_2026_WI
 }
 
 export function validateMetaHistory2026Summary(value = {}) {
+  const facebookOperation = completedFacebookOperation(value.operations);
   const checks = {
     ok: value.ok === true,
     decision: value.decision === META_HISTORY_2026_DECISION,
-    facebookPinnedVerified: value.facebook?.pinnedVerified === true,
-    facebookHistoryCompleted: value.facebook?.historyCompleted === true,
-    facebookExistingOperationReplay: value.facebook?.existingOperationReplay === false,
-    facebookReplacementOperation: value.facebook?.replacementOperation === false,
+    facebookPinnedVerified: value.facebook?.pinnedVerified === true
+      || (value.facebook?.verified === true && value.facebook?.pinnedSessionCompleted === true),
+    facebookHistoryCompleted: value.facebook?.historyCompleted === true || facebookOperation !== null,
+    facebookExistingOperationReplay: value.facebook?.existingOperationReplay === false
+      || value.facebook?.providerReplay === false,
+    facebookReplacementOperation: value.facebook?.replacementOperation !== true
+      && facebookOperation !== null,
     instagramCompleted: value.instagram?.completed === true,
     adsBaselineCompleted: value.metaAds?.baselineCompleted === true,
     parity: value.parityVerified === true,
@@ -128,6 +132,18 @@ export function validateMetaHistory2026Summary(value = {}) {
     throw historyError('Meta history summary is incomplete', 'META_HISTORY_2026_SUMMARY_INVALID', { failed });
   }
   return true;
+}
+
+function completedFacebookOperation(value) {
+  if (!Array.isArray(value)) return null;
+  const matches = value.filter((item) => item?.target === 'facebook'
+    && item?.mode === 'required'
+    && item?.periodStart === META_HISTORY_2026_WINDOWS.organic.since
+    && item?.periodEnd === META_HISTORY_2026_WINDOWS.organic.until
+    && item?.d1Completed === true
+    && item?.larkCompleted === true
+    && /^meta-facebook-history-20260701-20260731-[0-9a-f]{12}$/u.test(String(item?.operationId ?? '')));
+  return matches.length === 1 ? matches[0] : null;
 }
 
 function operation(target, range, head, mode) {
