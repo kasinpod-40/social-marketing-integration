@@ -1,11 +1,15 @@
 import { createHash } from 'node:crypto';
 import { planLarkSchema } from '../../packages/application/src/use-cases/install-lark-report-schema.js';
+import { DASHBOARD_REPORT_PRESET_DAYS } from '../../packages/config/src/report-settings.seed.js';
 import {
   LARK_REPORT_SCHEMA_V2,
   LARK_REPORT_SCHEMA_V2_VERSION,
   validateReportSchemaV2,
 } from '../../packages/config/src/lark-report-schema-v2.js';
-import { readLarkText } from '../../packages/connectors/src/shared/lark-cell-value.js';
+import {
+  readLarkNumber,
+  readLarkText,
+} from '../../packages/connectors/src/shared/lark-cell-value.js';
 import { permanentError } from '../../packages/shared/src/errors/runtime-error.js';
 
 export const REPORT_METRIC_VALUE_FIELD_MIGRATION_VERSION =
@@ -16,31 +20,54 @@ export const REPORT_METRIC_VALUE_FIELD_MIGRATION_CONFIRMATION =
 const TABLE_KEY = 'mktReportMetricValues';
 const MAX_RECORDS = 500;
 const VERIFY_DELAYS_MS = Object.freeze([0, 1_000, 2_000, 4_000, 8_000]);
-
-/**
- * display_name retains the historical lossless Select -> Text migration.
- * window_days remains visible in the plan only as a read-only ownership assertion so
- * existing Finalizer scope accounting stays exact. Dashboard field-identity recovery v3
- * is the only workflow allowed to promote the slicer-bound SingleSelect Field ID.
- */
-const MIGRATIONS = Object.freeze([
+const MIGRATION_IDENTITIES = Object.freeze([
   Object.freeze({
     fieldName: 'display_name',
     legacyName: '__mkt_legacy_display_name_single_select_v1',
-    sourceType: 3,
-    targetType: 1,
-    conversion: 'single_select_to_text',
-    ownershipOnly: false,
   }),
   Object.freeze({
     fieldName: 'window_days',
     legacyName: '__mkt_legacy_window_days_single_select_v1',
-    sourceType: 3,
-    targetType: 3,
-    conversion: 'managed_by_field_identity_recovery_v3',
-    ownershipOnly: true,
   }),
 ]);
+
+/**
+ * The executable schema selects the migration behavior:
+ * - current schema v4 keeps window_days as the slicer-bound SingleSelect and this module
+ *   performs a read-only ownership assertion;
+ * - historical recovery schemas that explicitly require Number retain the previous
+ *   lossless Select -> Number conversion for deterministic resume/rollback coverage.
+ */
+function resolveMigrationContract(identity, desired) {
+  if (identity.fieldName === 'display_name' && Number(desired?.type) === 1) {
+    return Object.freeze({
+      ...identity,
+      sourceType: 3,
+      targetType: 1,
+      conversion: 'single_select_to_text',
+      ownershipOnly: false,
+    });
+  }
+  if (identity.fieldName === 'window_days' && Number(desired?.type) === 3) {
+    return Object.freeze({
+      ...identity,
+      sourceType: 3,
+      targetType: 3,
+      conversion: 'managed_by_field_identity_recovery_v3',
+      ownershipOnly: true,
+    });
+  }
+  if (identity.fieldName === 'window_days' && Number(desired?.type) === 2) {
+    return Object.freeze({
+      ...identity,
+      sourceType: 3,
+      targetType: 2,
+      conversion: 'single_select_to_preset_number',
+      ownershipOnly: false,
+    });
+  }
+  return null;
+}
 
 export async function planReportMetricValueFieldMigration(input = {}) {
   const client = requireClient(input.client);
@@ -92,15 +119,16 @@ export async function planReportMetricValueFieldMigration(input = {}) {
 
   const migrations = [];
   const blockers = [];
-  for (const contract of MIGRATIONS) {
+  for (const identity of MIGRATION_IDENTITIES) {
     const desired = tableContract.fields.find(
-      (field) => normalizeName(field.fieldName) === normalizeName(contract.fieldName),
+      (field) => normalizeName(field.fieldName) === normalizeName(identity.fieldName),
     );
-    if (!desired || Number(desired.type) !== contract.targetType || desired.primary === true) {
+    const contract = resolveMigrationContract(identity, desired);
+    if (!contract || desired?.primary === true) {
       blockers.push(safeBlocker('REPORT_METRIC_FIELD_MIGRATION_TARGET_CONTRACT_INVALID', {
         tableKey: TABLE_KEY,
-        fieldName: contract.fieldName,
-        expectedType: contract.targetType,
+        fieldName: identity.fieldName,
+        expectedTypes: identity.fieldName === 'window_days' ? [2, 3] : [1],
         actualType: desired?.type ?? null,
       }));
       continue;
@@ -325,9 +353,7 @@ function analyzeOwnershipAssertion(input) {
     && legacyMatches.length === 0
     && canonical?.isPrimary !== true
     && Number(canonical?.type) === input.contract.targetType) {
-    return {
-      migration: buildNotRequiredMigration(input, canonical),
-    };
+    return { migration: buildNotRequiredMigration(input, canonical) };
   }
   return {
     blocker: safeBlocker('REPORT_METRIC_FIELD_MIGRATION_WINDOW_OWNERSHIP_NOT_CONVERGED', {
@@ -408,6 +434,8 @@ function analyzeMigrationField(input) {
     records: input.records,
     sourceField,
     targetField,
+    desired: input.desired,
+    contract: input.contract,
   });
   if (analysis.blocker) return { blocker: analysis.blocker };
 
@@ -457,34 +485,48 @@ function analyzeRecordValues(input) {
     } catch {
       return { blocker: safeBlocker('REPORT_METRIC_FIELD_MIGRATION_SOURCE_VALUE_INVALID', {
         tableKey: TABLE_KEY,
-        fieldName: 'display_name',
+        fieldName: input.contract.fieldName,
         recordCount: input.records.length,
       }) };
     }
 
-    if (sourceText !== null) populatedSourceCount += 1;
+    let converted = null;
+    if (sourceText !== null) {
+      populatedSourceCount += 1;
+      try {
+        converted = convertValue(sourceText, input.contract);
+      } catch {
+        return { blocker: safeBlocker('REPORT_METRIC_FIELD_MIGRATION_VALUE_NOT_LOSSLESS', {
+          tableKey: TABLE_KEY,
+          fieldName: input.contract.fieldName,
+          recordCount: input.records.length,
+          populatedSourceCount,
+        }) };
+      }
+    }
+
     const canonicalValue = input.targetField
-      ? readTextValue(readFieldValue(record.fields, input.targetField.fieldName))
+      ? readCanonicalValue(readFieldValue(record.fields, input.targetField.fieldName), input.desired)
       : null;
-    if (sourceText === null && canonicalValue !== null) {
+    if (converted === null && canonicalValue !== null) {
       return { blocker: safeBlocker('REPORT_METRIC_FIELD_MIGRATION_CANONICAL_WITHOUT_SOURCE', {
         tableKey: TABLE_KEY,
-        fieldName: 'display_name',
+        fieldName: input.contract.fieldName,
         recordCount: input.records.length,
       }) };
     }
-    if (sourceText !== null && canonicalValue !== null && canonicalValue !== sourceText) {
+    if (converted !== null && canonicalValue !== null && canonicalValue !== converted) {
       return { blocker: safeBlocker('REPORT_METRIC_FIELD_MIGRATION_CANONICAL_VALUE_MISMATCH', {
         tableKey: TABLE_KEY,
-        fieldName: 'display_name',
+        fieldName: input.contract.fieldName,
         recordCount: input.records.length,
       }) };
     }
-    if (sourceText !== null && canonicalValue === null) {
-      pendingUpdates.push(deepFreeze({ recordId, value: sourceText }));
+    if (converted !== null && canonicalValue === null) {
+      pendingUpdates.push(deepFreeze({ recordId, value: converted }));
     }
 
-    sourceRows.push([recordId, sourceText]);
+    sourceRows.push([recordId, converted]);
     canonicalRows.push([recordId, canonicalValue]);
   }
 
@@ -636,8 +678,31 @@ function readSingleSelectValue(value) {
   return readLarkText(value, { allowNull: true, label: 'legacy SingleSelect' });
 }
 
-function readTextValue(value) {
-  return readLarkText(value, { allowNull: true, label: 'display_name' });
+function readCanonicalValue(value, desired) {
+  if (value === null || value === undefined || value === '') return null;
+  if (Number(desired.type) === 1) {
+    return readLarkText(value, { allowNull: true, label: desired.fieldName });
+  }
+  if (Number(desired.type) === 2) {
+    return readLarkNumber(value, { allowNull: true, label: desired.fieldName });
+  }
+  throw new TypeError(`Unsupported canonical field type ${desired.type}`);
+}
+
+function convertValue(text, contract) {
+  if (contract.conversion === 'single_select_to_text') return text;
+  if (contract.conversion === 'single_select_to_preset_number') {
+    const normalized = text.trim();
+    if (!/^(?:0|[1-9]\d*)$/u.test(normalized)) throw new TypeError('not an integer');
+    const number = Number(normalized);
+    if (!Number.isSafeInteger(number)
+      || String(number) !== normalized
+      || !DASHBOARD_REPORT_PRESET_DAYS.includes(number)) {
+      throw new TypeError('not a canonical Report preset day');
+    }
+    return number;
+  }
+  throw new TypeError(`Unknown conversion ${contract.conversion}`);
 }
 
 function readFieldValue(fields, fieldName) {
