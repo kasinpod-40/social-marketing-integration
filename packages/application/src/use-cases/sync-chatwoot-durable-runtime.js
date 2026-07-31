@@ -115,7 +115,7 @@ async function processMastersUnit(context, state) {
 }
 
 async function processConversationUnit(context, state) {
-  let next = { ...state };
+  const next = { ...state };
   for (let index = 0; index < context.limits.conversationPagesPerInvocation; index += 1) {
     const pageNumber = next.conversationPage;
     await context.assertCurrent();
@@ -158,7 +158,7 @@ async function processConversationUnit(context, state) {
 }
 
 async function processReportingUnit(context, state) {
-  let next = { ...state };
+  const next = { ...state };
   for (let index = 0; index < context.limits.reportingPagesPerInvocation; index += 1) {
     const pageNumber = next.reportingPage;
     await context.assertCurrent();
@@ -386,6 +386,10 @@ async function executePreparedUnit(context, prepared, reportWriteEnabled) {
 }
 
 async function writeRollupRows(context, rows) {
+  for (const coverageRun of rows.coverageRuns) {
+    await context.assertCurrent();
+    await context.coverageStore.saveCoverageRun(coverageRun);
+  }
   const specs = [
     [rows.agents, 'upsertAgentDailyFact'],
     [rows.inboxes, 'upsertInboxDailyFact'],
@@ -397,22 +401,32 @@ async function writeRollupRows(context, rows) {
       await context.chatwootStore[method](row);
     }
   }
-  if (!context.flags.larkWrite) return;
-  const targets = [
-    ['mktAgentDaily', 'agent_daily_key', rows.agents],
-    ['mktInboxDaily', 'inbox_daily_key', rows.inboxes],
-    ['mktConversationAccountDaily', 'account_daily_key', rows.account],
-  ];
-  for (const [tableKey, keyField, values] of targets) {
-    if (values.length === 0) continue;
-    const plan = await context.syncEngine.planByKey({
-      repository: context.repository,
-      tableId: requireText(context.tables[tableKey], `tables.${tableKey}`),
-      keyField,
-      rows: values,
-    });
+  if (context.flags.larkWrite) {
+    const targets = [
+      ['mktAgentDaily', 'agent_daily_key', rows.agents],
+      ['mktInboxDaily', 'inbox_daily_key', rows.inboxes],
+      ['mktConversationAccountDaily', 'account_daily_key', rows.account],
+    ];
+    for (const [tableKey, keyField, values] of targets) {
+      if (values.length === 0) continue;
+      const plan = await context.syncEngine.planByKey({
+        repository: context.repository,
+        tableId: requireText(context.tables[tableKey], `tables.${tableKey}`),
+        keyField,
+        rows: values,
+      });
+      await context.assertCurrent();
+      await context.syncEngine.executePlan(plan, { beforeWriteChunk: context.assertCurrent });
+    }
+  }
+  if (rows.coverageEntities.length > 0) {
     await context.assertCurrent();
-    await context.syncEngine.executePlan(plan, { beforeWriteChunk: context.assertCurrent });
+    await context.coverageStore.saveCoverageEntities(rows.coverageEntities);
+  }
+  const completed = finalizeChatwootCoverageRuns(rows.coverageRuns, context.requestedAt);
+  for (const coverageRun of completed) {
+    await context.assertCurrent();
+    await context.coverageStore.saveCoverageRun(coverageRun);
   }
 }
 
@@ -561,6 +575,31 @@ function readContext(input) {
   const incrementalStateStore = requireMethods(input.incrementalStateStore, [
     'loadCheckpoint', 'saveCheckpoint',
   ], 'incrementalStateStore');
+  const sourceLimits = requireObject(input.limits, 'limits');
+  const limits = Object.freeze({
+    conversationPagesPerInvocation: positiveInteger(
+      sourceLimits.conversationPagesPerInvocation,
+      'limits.conversationPagesPerInvocation',
+    ),
+    reportingPagesPerInvocation: positiveInteger(
+      sourceLimits.reportingPagesPerInvocation,
+      'limits.reportingPagesPerInvocation',
+    ),
+    maxConversations: positiveInteger(sourceLimits.maxConversations, 'limits.maxConversations'),
+    maxContacts: positiveInteger(sourceLimits.maxContacts, 'limits.maxContacts'),
+    maxReportingEvents: positiveInteger(
+      sourceLimits.maxReportingEvents,
+      'limits.maxReportingEvents',
+    ),
+    maxMessagePagesPerConversation: positiveInteger(
+      sourceLimits.maxMessagePagesPerConversation,
+      'limits.maxMessagePagesPerConversation',
+    ),
+    maxMessagesPerConversation: positiveInteger(
+      sourceLimits.maxMessagesPerConversation,
+      'limits.maxMessagesPerConversation',
+    ),
+  });
   const flags = Object.freeze({
     reportWrite: input.flags?.reportWrite === true,
     larkWrite: input.flags?.larkWrite === true,
@@ -586,7 +625,7 @@ function readContext(input) {
     accountKey: requireText(input.accountKey, 'accountKey'),
     externalAccountId: positiveInteger(input.externalAccountId, 'externalAccountId'),
     reportingTimezone: requireText(input.reportingTimezone, 'reportingTimezone'),
-    limits: requireObject(input.limits, 'limits'),
+    limits,
     flags,
     client,
     chatwootStore,
@@ -714,8 +753,9 @@ function processedItems(state) {
 function sanitizeCheckpointResult(value) {
   if (!value || typeof value !== 'object') return null;
   return Object.freeze({
-    cursorSaved: value.cursorSaved !== false,
-    recordCount: Number(value.recordCount ?? 0),
+    cursorSaved: true,
+    recordsSaved: Number(value.recordsSaved ?? 0),
+    fullSnapshot: value.fullSnapshot === true,
   });
 }
 
