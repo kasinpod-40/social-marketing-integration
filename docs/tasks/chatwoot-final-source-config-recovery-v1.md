@@ -50,12 +50,16 @@ The recovery path:
 5. never edits `.dev.vars` or `wrangler.sync.jsonc` and never persists or prints the raw identity;
 6. delegates Secret staging, Lark table discovery, Queue discovery and the complete UAT to the existing reviewed launcher;
 7. creates a new Head-bound Initial/Daily identity rather than redriving the failed message;
-8. supports verification/closure-only resume when the current-head UAT summary already exists;
+8. binds the current UAT evidence directory to the exact Repository Head and supports verification/closure-only resume when its accepted summary already exists;
 9. requires accepted Initial, replay, Daily, replay, D1/Lark parity, all-false restore and zero exact lock;
 10. creates a fresh D1 backup, then resolves only the pinned old `dead_letter_jobs`,
     `dead_letter_operation_metadata` and `system_alerts` records;
-11. never deletes or redrives a Queue message and never changes old Queue-attempt identity;
-12. proves the current UAT Initial/Daily snapshots are unchanged across incident closure.
+11. records and validates one exact affected row from each of the three closure statements;
+12. accepts only exact same-reference partial closure state after an interruption and resumes without another Queue send;
+13. rejects any conflicting recovery/audit reference or old Work/Sync/Coverage/Lock activity;
+14. verifies the all-false Worker version remains unchanged throughout closure;
+15. never deletes or redrives a Queue message and never changes old Queue-attempt identity;
+16. proves the current UAT Initial/Daily snapshots are unchanged across incident closure.
 
 The existing Worker Secret contract remains `CHATWOOT_API_ACCESS_TOKEN`. No Token value is copied into Wrangler
 vars, evidence, command arguments or Repository source.
@@ -76,6 +80,11 @@ Chatwoot alert, zero exact old Sync/Work/Phase/Coverage, zero active exact lock 
 After a successful new UAT, Business rows may exist but the exact old operational identity must remain unchanged
 until completion-only closure.
 
+A command interruption during the three-record closure may leave an exact subset already resolved. A later run is
+allowed to continue only when every immutable incident field still matches and every non-null recovery/audit
+reference equals the current recovery Head. A resolved incident without the current-head accepted UAT summary is
+rejected.
+
 ## Public command after Review and Merge
 
 ```bash
@@ -90,22 +99,24 @@ this recovery command is reviewed and merged.
 ## Accepted final result
 
 ```text
-marker                       CHATWOOT_SOURCE_CONFIG_RECOVERY_COMPLETED_SAFE
-innerMarker                  CHATWOOT_30D_DAILY_UAT_COMPLETED_SAFE
-sourceIdentityVerified       true
-initial30DayVerified         true
-initialReplayVerified        true
-daily3DayVerified            true
-dailyReplayVerified          true
-retainedIncidentResolved     true
-currentUatSnapshotDrift      false
-restoredAllFlagsFalse        true
-exactLockScopeVerified       true
-activeLockCount              0
-queueRedrive                 false
-scheduleEnabled              false
-webhookEnabled               false
-production                   false
+marker                         CHATWOOT_SOURCE_CONFIG_RECOVERY_COMPLETED_SAFE
+innerMarker                    CHATWOOT_30D_DAILY_UAT_COMPLETED_SAFE
+sourceIdentityVerified         true
+initial30DayVerified           true
+initialReplayVerified          true
+daily3DayVerified              true
+dailyReplayVerified            true
+retainedIncidentResolved       true
+closureMutationCount           3 on first closure / 0 on resolved verification-only resume
+currentUatSnapshotDrift        false
+restoredAllFlagsFalse          true
+safeVersionStableAcrossClosure true
+exactLockScopeVerified         true
+activeLockCount                0
+queueRedrive                   false
+scheduleEnabled                false
+webhookEnabled                 false
+production                     false
 ```
 
 Live completion must not be declared until the exact post-merge Terminal output contains both accepted markers
