@@ -93,13 +93,13 @@ async function main() {
   await generatedDryRun(target, config.activeText, 'active');
   target.cf = cloudflareTarget(target, sourceText);
 
-  const preflight = await preflight(target);
-  await evidence(target, 'read-only-preflight', preflight);
+  const preflightResult = await preflight(target);
+  await evidence(target, 'read-only-preflight', preflightResult);
   const backup = d1Backup(target);
   await evidence(target, 'd1-backup', backup);
 
   const activeVersion = deploy(target, config.activeText, 'active');
-  safeRestore = { target, baselineVersion: preflight.activeVersion, activeVersion };
+  safeRestore = { target, baselineVersion: preflightResult.activeVersion, activeVersion };
   verifyDeployment(target, activeVersion, 'active');
   await evidence(target, 'active-deployment', { activeVersion, trueFlags: CHATWOOT_FINAL_UAT_ACTIVE_TRUE_FLAGS });
 
