@@ -46,20 +46,25 @@ The recovery path:
 1. requires clean exact current `main` and exact confirmation;
 2. reads the approved source identity only from private `.dev.vars`/Environment;
 3. validates a non-placeholder credential-free HTTPS origin and positive Account ID;
-4. materializes both non-secret fields into one private mode-0600 generated Wrangler config;
-5. never edits `.dev.vars` or `wrangler.sync.jsonc` and never persists or prints the raw identity;
-6. delegates Secret staging, Lark table discovery, Queue discovery and the complete UAT to the existing reviewed launcher;
-7. creates a new Head-bound Initial/Daily identity rather than redriving the failed message;
-8. binds the current UAT evidence directory to the exact Repository Head and supports verification/closure-only resume when its accepted summary already exists;
-9. requires accepted Initial, replay, Daily, replay, D1/Lark parity, all-false restore and zero exact lock;
-10. creates a fresh D1 backup, then resolves only the pinned old `dead_letter_jobs`,
+4. pins the public config authority to Repository-root `wrangler.sync.jsonc` and ignores any stale source-config override;
+5. materializes both non-secret fields into one private mode-0600 generated Wrangler config;
+6. never edits `.dev.vars` or `wrangler.sync.jsonc` and never persists or prints the raw identity;
+7. reuses the existing Chatwoot Provider preflight before Queue admission and accepts only exact Account
+   `PASS_CHATWOOT_PROVIDER_GET_ONLY` across Profile, Inboxes, Agents, Teams, Labels, Contacts,
+   Conversations and Reporting Events;
+8. records only fingerprinted GET-only Provider evidence with zero Provider/D1/Queue/Lark/Worker/Schedule mutation;
+9. delegates Secret staging, Lark table discovery, Queue discovery and the complete UAT to the existing reviewed launcher;
+10. creates a new Head-bound Initial/Daily identity rather than redriving the failed message;
+11. binds the current UAT evidence directory to the exact Repository Head and supports verification/closure-only resume when its accepted summary already exists;
+12. requires accepted Initial, replay, Daily, replay, D1/Lark parity, all-false restore and zero exact lock;
+13. creates a fresh D1 backup, then resolves only the pinned old `dead_letter_jobs`,
     `dead_letter_operation_metadata` and `system_alerts` records;
-11. records and validates one exact affected row from each of the three closure statements;
-12. accepts only exact same-reference partial closure state after an interruption and resumes without another Queue send;
-13. rejects any conflicting recovery/audit reference or old Work/Sync/Coverage/Lock activity;
-14. verifies the all-false Worker version remains unchanged throughout closure;
-15. never deletes or redrives a Queue message and never changes old Queue-attempt identity;
-16. proves the current UAT Initial/Daily snapshots are unchanged across incident closure.
+14. records and validates one exact affected row from each of the three closure statements;
+15. accepts only exact same-reference partial closure state after an interruption and resumes without another Queue send;
+16. rejects any conflicting recovery/audit reference or old Work/Sync/Coverage/Lock activity;
+17. verifies the all-false Worker version remains unchanged throughout closure;
+18. never deletes or redrives a Queue message and never changes old Queue-attempt identity;
+19. proves the current UAT Initial/Daily snapshots are unchanged across incident closure.
 
 The existing Worker Secret contract remains `CHATWOOT_API_ACCESS_TOKEN`. No Token value is copied into Wrangler
 vars, evidence, command arguments or Repository source.
@@ -102,6 +107,8 @@ this recovery command is reviewed and merged.
 marker                         CHATWOOT_SOURCE_CONFIG_RECOVERY_COMPLETED_SAFE
 innerMarker                    CHATWOOT_30D_DAILY_UAT_COMPLETED_SAFE
 sourceIdentityVerified         true
+providerGetOnlyPreflightVerified true
+providerMutationCount          0
 initial30DayVerified           true
 initialReplayVerified          true
 daily3DayVerified              true
