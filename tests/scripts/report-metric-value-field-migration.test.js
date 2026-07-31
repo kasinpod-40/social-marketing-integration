@@ -92,7 +92,7 @@ function migrationOptions(client, overrides = {}) {
   };
 }
 
-test('v2 migrates only display_name and preserves the canonical slicer window field untouched', async () => {
+test('v2 migrates display_name while window_days remains a read-only ownership assertion', async () => {
   const state = initialState();
   const client = statefulClient(state);
   const originalWindowField = structuredClone(state.fields.find((field) => field.fieldId === 'fldWindow'));
@@ -101,12 +101,21 @@ test('v2 migrates only display_name and preserves the canonical slicer window fi
 
   assert.equal(REPORT_METRIC_VALUE_FIELD_MIGRATION_VERSION, 'report_metric_value_field_migration_v2');
   assert.equal(preview.repairable, true);
-  assert.equal(preview.migrationCount, 1);
+  assert.equal(preview.migrationCount, 2);
   assert.equal(preview.pendingMigrationCount, 1);
+  assert.equal(preview.notRequiredMigrationCount, 1);
   assert.equal(preview.plannedFieldMutationCount, 2);
   assert.equal(preview.plannedCanonicalValueWriteCount, 3);
-  assert.deepEqual(preview.migrations.map((item) => item.fieldName), ['display_name']);
-  assert.deepEqual(preview.migrations.map((item) => item.nextStep), ['rename_legacy']);
+  assert.deepEqual(preview.migrations.map((item) => item.fieldName), [
+    'display_name',
+    'window_days',
+  ]);
+  assert.deepEqual(preview.migrations.map((item) => item.nextStep), [
+    'rename_legacy',
+    null,
+  ]);
+  assert.equal(preview.migrations[1].state, 'not_required');
+  assert.equal(preview.migrations[1].conversion, 'managed_by_field_identity_recovery_v3');
 
   const result = await applyReportMetricValueFieldMigration(migrationOptions(client, {
     env: CONFIRMED_ENV,
@@ -115,6 +124,7 @@ test('v2 migrates only display_name and preserves the canonical slicer window fi
 
   assert.equal(result.pendingMigrationCount, 0);
   assert.equal(result.convergedMigrationCount, 1);
+  assert.equal(result.notRequiredMigrationCount, 1);
   assert.equal(result.fieldMutationCount, 2);
   assert.equal(result.canonicalValueWriteCount, 3);
   assert.equal(result.recordBatchWriteCount, 1);
@@ -155,6 +165,7 @@ test('v2 migrates only display_name and preserves the canonical slicer window fi
   const readback = await planReportMetricValueFieldMigration(migrationOptions(client));
   assert.equal(readback.pendingMigrationCount, 0);
   assert.equal(readback.convergedMigrationCount, 1);
+  assert.equal(readback.notRequiredMigrationCount, 1);
 });
 
 test('resumes from renamed/canonical display partial state and writes only missing text values', async () => {
@@ -196,10 +207,11 @@ test('resumes from renamed/canonical display partial state and writes only missi
   ];
   const client = statefulClient(state);
   const preview = await planReportMetricValueFieldMigration(migrationOptions(client));
-  const display = preview.migrations[0];
-  assert.equal(display.fieldName, 'display_name');
+  const display = preview.migrations.find((item) => item.fieldName === 'display_name');
+  const window = preview.migrations.find((item) => item.fieldName === 'window_days');
   assert.equal(display.state, 'needs_backfill');
   assert.equal(display.pendingRecordCount, 1);
+  assert.equal(window.state, 'not_required');
 
   const result = await applyReportMetricValueFieldMigration(migrationOptions(client, {
     env: CONFIRMED_ENV,
@@ -213,18 +225,34 @@ test('resumes from renamed/canonical display partial state and writes only missi
   assert.deepEqual(state.records.map((record) => record.fields.window_days), ['3', '7']);
 });
 
-test('window values are outside this migration scope even when malformed', async () => {
+test('window values are never converted by the legacy migration', async () => {
   const state = initialState();
   state.records[0].fields.window_days = '3D';
   const preview = await planReportMetricValueFieldMigration(
     migrationOptions(statefulClient(state)),
   );
   assert.equal(preview.repairable, true);
-  assert.equal(preview.migrationCount, 1);
-  assert.deepEqual(preview.migrations.map((item) => item.fieldName), ['display_name']);
+  assert.equal(preview.migrationCount, 2);
+  const window = preview.migrations.find((item) => item.fieldName === 'window_days');
+  assert.equal(window.state, 'not_required');
+  assert.equal(window.pending, false);
+});
+
+test('blocks noncanonical window field identity and delegates recovery to v3', async () => {
+  const state = initialState();
+  state.fields.find((field) => field.fieldId === 'fldWindow').type = 2;
+  state.fields.find((field) => field.fieldId === 'fldWindow').uiType = 'Number';
+  state.fields.find((field) => field.fieldId === 'fldWindow').property = { formatter: '0' };
+  const preview = await planReportMetricValueFieldMigration(
+    migrationOptions(statefulClient(state)),
+  );
+  assert.equal(preview.repairable, false);
   assert.equal(
-    preview.blockers.some((blocker) => blocker.fieldName === 'window_days'),
-    false,
+    preview.blockers.some(
+      (blocker) => blocker.code === 'REPORT_METRIC_FIELD_MIGRATION_WINDOW_OWNERSHIP_NOT_CONVERGED'
+        && blocker.recoveryContract === 'lark_dashboard_field_identity_recovery_v3',
+    ),
+    true,
   );
 });
 
@@ -270,6 +298,7 @@ test('safe evidence removes physical IDs and row payloads while retaining counts
   assert.equal(serialized.includes('Views'), false);
   assert.equal(safe.migrations[0].recordCount, 3);
   assert.equal(typeof safe.migrations[0].sourceFingerprint, 'string');
+  assert.equal(safe.migrations[1].sourceFingerprint, null);
 });
 
 function statefulClient(state) {
