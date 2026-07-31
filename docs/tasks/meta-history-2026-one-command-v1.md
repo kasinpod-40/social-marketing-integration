@@ -53,26 +53,30 @@ Existing operations no longer than 31 days preserve the previous raw Provider-cu
 
 ```bash
 CONFIRM_META_HISTORY_2026_FINALIZER=RUN_META_HISTORY_2026_ONE_COMMAND \
-node scripts/meta-history-2026-one-command.mjs --execute
+node scripts/meta-history-2026-terminal.mjs --execute
 ```
 
-The public launcher delegates to the guarded finalizer and owns fail-closed closeout. It:
+The Terminal entrypoint owns the first pre-mutation boundary. It requires clean `main == origin/main`,
+creates or validates the private persisted operation plan and guarantees every operation has a unique ISO
+`originalRequestedAt` value accepted by the existing D1/Lark rollout contracts. Epoch-millisecond strings
+are rejected before any Remote action.
 
-1. requires clean `main == origin/main` and private local inputs;
-2. runs the full Repository gate before Remote mutation;
-3. persists deterministic operation IDs and requested-at generations;
-4. verifies the current all-false Worker and idle Reliability state;
-5. resumes the exact pinned Meta finalizer;
-6. refreshes all four GET-only identity validations;
-7. executes required Instagram and three-month Ads D1/Lark operations;
-8. expands Ads to January 1 only when the reviewed limits permit;
-9. verifies same-operation replay, D1/Lark parity and all-false restore;
-10. blocks uncertain Queue resends;
-11. restores the reviewed Safe Worker configuration after a failed active window;
-12. emits `META_HISTORY_2026_COMPLETED_SAFE` only after final active Work/Lock/Queue counts are `0/0/0`.
+It then delegates to the guarded one-command launcher, which:
 
-The lower-level `scripts/meta-history-2026-finalizer.mjs` is an implementation child and is not the public
-operator command.
+1. runs the full Repository gate before Remote mutation;
+2. reuses deterministic operation IDs and ISO requested-at generations from the persisted plan;
+3. verifies the current all-false Worker and idle Reliability state;
+4. resumes the exact pinned Meta finalizer;
+5. refreshes all four GET-only identity validations;
+6. executes required Instagram and three-month Ads D1/Lark operations;
+7. expands Ads to January 1 only when the reviewed limits permit;
+8. verifies same-operation replay, D1/Lark parity and all-false restore;
+9. blocks uncertain Queue resends;
+10. restores the reviewed Safe Worker configuration after a failed active window;
+11. emits `META_HISTORY_2026_COMPLETED_SAFE` only after final active Work/Lock/Queue counts are `0/0/0`.
+
+`scripts/meta-history-2026-one-command.mjs` and
+`scripts/meta-history-2026-finalizer.mjs` are implementation children and are not public operator commands.
 
 ## Adaptive Ads limits
 
@@ -91,9 +95,9 @@ If a limit is exceeded, the accepted three-month history is final and no older o
 
 ## Exact closeout correction
 
-The authoritative Lark operator summary field is `larkParityVerified`. The public launcher verifies that
-field directly together with `idempotentRerunVerified`, `restoredAllFalse` and zero Provider requests in
-the Lark continuation. It never treats a missing or differently named field as success.
+The authoritative Lark operator summary field is `larkParityVerified`. The closeout verifies that field
+directly together with `idempotentRerunVerified`, `restoredAllFalse` and zero Provider requests in the Lark
+continuation. It never treats a missing or differently named field as success.
 
 Only a final summary field-name mismatch can be recovered from evidence. Earlier-stage failures remain
 failures after the Safe Worker restore and are never converted to success.
@@ -106,6 +110,7 @@ Business fact deletion           forbidden
 Direct Business-table mutation   forbidden
 New Queue/Writer framework       none
 Uncertain Queue resend           forbidden
+Epoch-string generation          rejected before Remote action
 Schedule activation              forbidden
 Production                       blocked
 Secrets in evidence              none
@@ -117,7 +122,7 @@ Final Worker flags               all false
 ```text
 npm ci
 npm run check
-focused Meta history source/finalizer/closeout tests
+focused Meta history source/finalizer/Terminal/closeout tests
 focused Meta D1/Lark rollout tests
 npm test
 npm run test:report-reliability
