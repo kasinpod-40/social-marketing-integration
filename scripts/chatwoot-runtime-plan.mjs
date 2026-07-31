@@ -65,20 +65,35 @@ function parseArgs(values) {
   return Object.freeze({
     mode,
     requestedAt,
-    conversationPages: integer(options.get('conversation-pages') ?? 0, 'conversation-pages'),
-    reportingPages: integer(options.get('reporting-pages') ?? 0, 'reporting-pages'),
-    conversationPagesPerInvocation: integer(
+    conversationPages: nonNegativeInteger(
+      options.get('conversation-pages') ?? 0,
+      'conversation-pages',
+    ),
+    reportingPages: nonNegativeInteger(
+      options.get('reporting-pages') ?? 0,
+      'reporting-pages',
+    ),
+    rollupPages: nonNegativeInteger(options.get('rollup-pages') ?? 0, 'rollup-pages'),
+    conversationPagesPerInvocation: positiveInteger(
       options.get('conversation-pages-per-invocation') ?? 1,
       'conversation-pages-per-invocation',
     ),
-    reportingPagesPerInvocation: integer(
+    reportingPagesPerInvocation: positiveInteger(
       options.get('reporting-pages-per-invocation') ?? 5,
       'reporting-pages-per-invocation',
     ),
   });
 }
 
-function integer(value, fieldName) {
+function positiveInteger(value, fieldName) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number <= 0) {
+    throw new TypeError(`--${fieldName} must be a positive integer`);
+  }
+  return number;
+}
+
+function nonNegativeInteger(value, fieldName) {
   const number = Number(value);
   if (!Number.isSafeInteger(number) || number < 0) {
     throw new TypeError(`--${fieldName} must be a non-negative integer`);
