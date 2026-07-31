@@ -7,8 +7,9 @@ TASK_STATUS                         = IMPLEMENTED_PENDING_EXACT_HEAD_VERIFICATIO
 SCOPE                               = REPOSITORY_ONLY
 CONTRACT_VERSION                    = chatwoot_runtime_30d_daily_v1
 BASE_MAIN                           = 05ddfd8f30bdb5ea01d6e604fba501b02413b934
-BRANCH                              = agent/chatwoot-runtime-all-flags-false-wiring
-DRAFT_PR                            = #309
+BRANCH                              = codex/chatwoot-runtime-all-flags-false-wiring
+DRAFT_PR                            = #310
+SUPERSEDED_DRAFT_PR                 = #309 (closed, unmerged)
 REMOTE_PROVIDER_REQUEST             = 0
 REMOTE_D1_QUERY_WRITE_MIGRATION     = 0
 REMOTE_LARK_READ_WRITE_SCHEMA       = 0
@@ -57,10 +58,10 @@ No second Reliability engine, Queue framework, D1 writer or Lark sync engine is 
 ## Locked runtime contract
 
 ```text
-CHATWOOT_INITIAL_BACKFILL_DAYS              = 30
-CHATWOOT_INCREMENTAL_OVERLAP_DAYS           = 3
-CHATWOOT_SYNC_FREQUENCY                     = daily
-CHATWOOT_AUTO_EXPAND_BACKFILL               = false
+CHATWOOT_INITIAL_BACKFILL_DAYS               = 30
+CHATWOOT_INCREMENTAL_OVERLAP_DAYS            = 3
+CHATWOOT_SYNC_FREQUENCY                      = daily
+CHATWOOT_AUTO_EXPAND_BACKFILL                = false
 CHATWOOT_INCLUDE_UPDATED_OLDER_CONVERSATIONS = true
 ```
 
@@ -76,6 +77,8 @@ MKT_CHATWOOT_REPORT_WRITE_ENABLED    = false
 MKT_SCHEDULE_CHATWOOT_ENABLED        = false
 MKT_CHATWOOT_WEBHOOK_ENABLED         = false
 ```
+
+Both `.dev.vars.example` and `wrangler.sync.example.jsonc` publish the exact contract above and no longer expose the retired 48-hour overlap input.
 
 ## Durable unit model
 
@@ -110,11 +113,11 @@ Raw Provider payloads, Message content, Contact PII, names, email, phone, tokens
 - Account Reporting pagination has a separate durable upper bound of 5,000 pages, safely above the verified 1,125-page inventory.
 - Message and Conversation pagination remain bounded by the existing Provider and per-conversation limits.
 
-## Partial failure and idempotency
+## Partial failure, retry, DLQ and idempotency
 
 A durable phase advances only after the current bounded unit completes its D1/Lark/coverage writes. A retry before phase advance reruns the same unit through existing Stable-key upserts. A duplicate or late continuation below `nextSequence` returns a stale-continuation result without Provider or Business writes.
 
-The final incremental checkpoint is committed only after Conversation, Reporting and optional Rollup stages finish. `completeWork` is called only after that checkpoint. The existing Queue router continues to classify transient/permanent failures and persists terminal failures to DLQ without adding a Chatwoot-specific DLQ framework.
+The final incremental checkpoint is committed only after Conversation, Reporting and optional Rollup stages finish. `completeWork` is called only after that checkpoint. The Shared Queue router now recognizes Chatwoot for existing terminal-work abandonment and platform classification; it still persists terminal failures through the existing DLQ/System Alert path without adding a Chatwoot-specific framework.
 
 ## Plan-only operator
 
@@ -157,4 +160,4 @@ npm audit --audit-level=high
 npm run deploy:dry-run
 ```
 
-The Draft PR must remain open and unmerged until the final branch head passes every gate and review threads are resolved.
+GitHub Actions runs on both the original and active branches have failed at workflow startup before Checkout, with no job steps and no logs. This is recorded as `BLOCKED_BY_GITHUB_ACTIONS_STARTUP`, not as code PASS or code failure. Draft PR #310 must remain open and unmerged until a final exact head executes every gate successfully and review threads are resolved.
