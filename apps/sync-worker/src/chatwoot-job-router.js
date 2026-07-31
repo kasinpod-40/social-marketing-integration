@@ -80,6 +80,11 @@ export async function processChatwootAnalyticsJob(input = {}) {
       window.endAt,
       chatwootConfig.flags.reportWrite ? 'report' : 'state',
       chatwootConfig.flags.larkWrite ? 'lark' : 'd1',
+      chatwootConfig.limits.conversationPagesPerInvocation,
+      chatwootConfig.limits.reportingPagesPerInvocation,
+      chatwootConfig.limits.maxReportingPages,
+      chatwootConfig.limits.maxMessagePagesPerConversation,
+      chatwootConfig.limits.maxMessagesPerConversation,
     ].join(':'),
     generation: operation.generation,
     requestedAt: operation.originalRequestedAt,
@@ -270,7 +275,7 @@ function assertChatwootJobDefinition(definition, job, trigger) {
 
 function normalizeChatwootTrigger(trigger) {
   // Backward-compatible repository tests/manual payloads map to the locked 30-day mode.
-  if (trigger === JOB_TRIGGERS.WOOCOMMERCE_MANUAL_UAT) {
+  if (trigger === JOB_TRIGGERS.CHATWOOT_LEGACY_MANUAL_UAT) {
     return JOB_TRIGGERS.CHATWOOT_INITIAL_30_DAY_UAT;
   }
   return trigger;
