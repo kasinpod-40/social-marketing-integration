@@ -1,8 +1,8 @@
-import { JOB_TRIGGERS } from '../jobs/job-catalog.js';
+import { JOB_SCHEMA_VERSIONS, JOB_TRIGGERS } from '../jobs/job-catalog.js';
 import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 
 export const CHATWOOT_RUNTIME_CONTRACT_VERSION = 'chatwoot_runtime_30d_daily_v1';
-export const CHATWOOT_RUNTIME_JOB_SCHEMA_VERSION = 1;
+export const CHATWOOT_RUNTIME_JOB_SCHEMA_VERSION = JOB_SCHEMA_VERSIONS.CHATWOOT_RUNTIME;
 
 export const CHATWOOT_RUNTIME_MODES = Object.freeze({
   INITIAL_30_DAY_UAT: 'initial_30_day_uat',
