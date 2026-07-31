@@ -2,28 +2,33 @@
 
 ## Current decision
 
-`📊 MKT_Report_Metric_Values` uses one canonical field per concept:
+`📊 MKT_Report_Metric_Values` remains under a Dashboard Compatibility Freeze. The physical Field identities
+already used by the six Lark Dashboards are preserved; this Repository no longer attempts Dashboard Block
+PATCH, Field-identity promotion or Legacy-field deletion.
 
 ```text
-metric_key    Text
-display_name  Text
-window_days   SingleSelect: 1 / 3 / 7 / 30
+metric_key                       fldGvd3tw8 / Text
+display_name                     fldE4Nezjd / Text
+Number window_days               fldbPCldTL / Number
+preserved window Select          fldMlTUP3Z / SingleSelect
+window Select v2                 fldraj0QP8 / SingleSelect
+display Select v1                fldZB452Z2 / SingleSelect
+display Select v2                fldHNUhCfl / SingleSelect
 ```
 
-The Metric table keeps `window_days` as SingleSelect because the existing Dashboard Slicers are bound to the
-physical Field identity `fldMlTUP3Z`. Snapshot, Top Content and Top Ads tables continue to use numeric
-`window_days`; their schemas are independent and have no inherited Slicer binding.
+Snapshot, Top Content and Top Ads tables continue to use their existing numeric `window_days`; their schemas
+are independent from the Report Metric Dashboard bindings.
 
 The 24 period-metric rows whose baseline is incomplete remain present with `current_value=null`. They are
-valid N/A Business facts and are not deleted.
+valid N/A Business facts and are not deleted. All 86 Report Metric records are preserved.
 
 ## Historical migration ownership
 
-The earlier value-preserving migration remains responsible for `display_name` SingleSelect → Text recovery.
-For current Schema v4, `window_days` is a read-only ownership assertion in that migration and must not be
-converted back to Number.
+The earlier value-preserving migration and Dashboard Field-Identity Recovery v3.x remain historical evidence.
+Their planners may still be tested for deterministic behavior, but their public mutation entrypoints are
+retired.
 
-Dashboard Field-Identity Recovery owns the Metric-table window transition:
+The former transition intended to:
 
 ```text
 Number window source             fldbPCldTL
@@ -31,8 +36,9 @@ preserved slicer Select          fldMlTUP3Z
 window Select v2                 fldraj0QP8
 ```
 
-It losslessly backfills the preserved Select, retires the Number field, promotes `fldMlTUP3Z` to canonical
-`window_days`, verifies Dashboard bindings and computed data, then removes retained Legacy fields.
+backfill the preserved Select, retire the Number field, promote `fldMlTUP3Z` to canonical `window_days`, then
+remove retained Legacy fields. This transition is superseded because Dashboard Block/filter PATCH has no
+supported public Lark OpenAPI write contract in the verified operating boundary.
 
 ## Audited Integration Workspace identities
 
@@ -47,52 +53,59 @@ display Select v2                fldHNUhCfl / SingleSelect
 ```
 
 The initial v3 preview used stale IDs `flduyym9cs`, `fldvLDwEHo` and `fldczhcM6r`; it stopped read-only before
-any mutation. Recovery contract v3.1 replaces those IDs and contains a regression that rejects their return.
+any mutation. Recovery v3.1 corrected those IDs. v3.2 and the bounded v3.3 probe both stopped on the first
+Statistics PATCH with immediate unchanged readback and zero confirmed mutation.
 
-## Durable operator behavior
+## Compatibility Freeze behavior
 
-- Preview reads metadata, Records and Dashboard Blocks without mutation.
-- Exact Field identities, six Dashboards, 17 Organic Statistics, five Slicers and seven window charts fail closed.
-- Slicers are never PATCHed.
-- Statistics changes, Record batches and Field changes are checkpointed and freshly read back.
-- Legacy fields are deleted only after canonical Dashboard binding and computed-data verification pass.
-- No Report record or Business fact is deleted.
+- Public v3 Terminal and Operator entrypoints are fail-closed tombstones.
+- `--execute` and `--statistics-probe-only` are rejected before `.dev.vars` or Lark client access.
+- Dashboard Statistics, Column and Slicer PATCH are unavailable.
+- Field rename/delete and Record delete are unavailable.
+- All Dashboard IDs, Block IDs, layouts and existing physical Field identities are preserved.
+- All 86 Report records remain present.
+- The 24 baseline-incomplete `current_value=null` rows remain N/A.
+- No manual Dashboard UI repair is required or authorized.
+- A future compatibility Record writer requires a separate reviewed Record-API contract and parity audit.
 
 ## Safety state
 
-Implementation and verification perform no Live Lark/D1/Queue/Worker/Provider/Schedule/Production action. Live write is
-allowed only through the exact confirmed operator after reviewed-main verification and a successful read-only preview.
+Implementation and verification perform no Live Lark/D1/Queue/Worker/Provider/Schedule/Production action.
+The only public command for this scope is a local static audit:
 
-Detailed contract:
-
-```text
-docs/tasks/lark-dashboard-field-identity-recovery-v3.md
+```bash
+node scripts/lark-dashboard-compatibility-freeze-audit.mjs
 ```
 
-## v3.2 seven-window-chart correction
+Detailed current contract:
 
-The exported Integration Workspace Base revision 140 contains seven window charts, not four. Four Commerce/Chatwoot
-columns and all five Slicers already bind the preserved Select identity `fldMlTUP3Z`. Three Executive columns
-(`Net Sales by Window`, `Ad Spend by Window`, `Organic Views by Window`) bind Number `fldbPCldTL` and
-must be PATCHed to the preserved Select before Number retirement. Recovery v3.2 requires the exact 17/5/7 inventory,
-updates only those three reviewed `column` Blocks with immediate readback, keeps `slicerPatchCount=0`, and blocks
-Record/Field mutation until no Number-window chart remains. Detailed contract:
+```text
+docs/tasks/lark-dashboard-compatibility-freeze-v1.md
+```
+
+## Historical v3.2 seven-window-chart correction
+
+The exported Integration Workspace Base revision 140 contains seven window charts, not four. Four
+Commerce/Chatwoot columns and all five Slicers bind the preserved Select identity `fldMlTUP3Z`. Three
+Executive columns (`Net Sales by Window`, `Ad Spend by Window`, `Organic Views by Window`) bind Number
+`fldbPCldTL`. v3.2 attempted to PATCH those three columns before Number retirement; the PATCH mutation path is
+now retired and both physical identities remain preserved.
+
+Historical contract:
 
 `docs/tasks/lark-dashboard-window-chart-rebind-v3-2.md`.
 
-## v3.3 Statistics request-contract recovery
+## Historical v3.3 Statistics request-contract recovery
 
 The first v3.2 Live Statistics PATCH (`Baseline Coverage Rate`) was rejected with Lark `code=1`; immediate
-readback was unchanged and all confirmed Block, Record and Field mutation counters remained zero. The failure
-proved that the Update request path still required contract hardening, but the generic response did not prove
-one exact root cause.
+readback was unchanged and all confirmed Block, Record and Field mutation counters remained zero. v3.3 then
+serialized the Organic `filter` into request shape only, removed response metadata and retained the reviewed
+Dashboard/Block scope union. Its bounded one-Block probe received the same rejection with unchanged readback
+and zero confirmed mutation.
 
-Recovery v3.3 serializes the Organic `filter` into request shape only and removes Read-response metadata such as
-`condition_id`, `field_type`, `condition_omitted` and response `type`. It adds `base:dashboard:update` while
-retaining `base:block:read/update`, emits a private `statistics-request-plan.json`, and provides a bounded
-one-Block probe for `Baseline Coverage Rate`.
-The probe stops before Window charts, Records or Fields and must converge on readback before full Recovery resumes.
+The repeated result disproved the expectation that request metadata or scope declaration alone would provide
+a supported Dashboard write path. No further Live Dashboard PATCH attempts are allowed.
 
-Detailed contract:
+Historical contract:
 
 `docs/tasks/lark-dashboard-statistics-request-contract-v3-3.md`.
