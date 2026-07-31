@@ -118,9 +118,11 @@ async function executeHistory() {
       ?? baseEnv.MKT_WOOCOMMERCE_ROLLOUT_WRANGLER_CONFIG
       ?? 'wrangler.sync.jsonc',
   );
-  await assertPrivateRegularFile(sourceConfigPath, 'Meta Wrangler config');
+  const sourceConfigText = await readRegularSourceText(sourceConfigPath, 'Meta Wrangler config');
   const safeConfigPath = join(outputRoot, repositoryHead, 'wrangler.meta-history.safe.jsonc');
-  const safeConfigText = injectMetaHistoryConfig(await readFile(sourceConfigPath, 'utf8'));
+  const safeConfigText = injectMetaHistoryConfig(sourceConfigText, undefined, {
+    baseDirectory: repositoryRoot,
+  });
   await writePrivateText(safeConfigPath, safeConfigText);
   const configRelativePath = relative(repositoryRoot, safeConfigPath);
 
@@ -455,7 +457,9 @@ async function assertRemoteSafe(env, configPath, cloudflare) {
   const row = readD1Row(env, configPath, `SELECT
     (SELECT COUNT(*) FROM sync_work_runs WHERE lifecycle_status = 'active') AS active_work,
     (SELECT COUNT(*) FROM sync_locks WHERE expires_at > (unixepoch() * 1000)) AS active_locks,
-    (SELECT COUNT(*) FROM sync_runs WHERE status IN ('queued', 'running')) AS active_queue_operations;`);
+    (SELECT COUNT(DISTINCT q.operation_id) FROM queue_operation_attempts q
+      JOIN sync_work_runs w ON w.work_key = q.work_key
+      WHERE w.lifecycle_status = 'active') AS active_queue_operations;`);
   const remote = {
     activeWork: Number(row.active_work ?? 0),
     activeLocks: Number(row.active_locks ?? 0),
@@ -651,6 +655,26 @@ async function assertPrivateRegularFile(path, label) {
   const info = await lstat(path).catch(() => null);
   if (!info || !info.isFile() || info.isSymbolicLink() || (info.mode & 0o077) !== 0) {
     throw historyError(`${label} must be a private regular non-symlink file`, 'META_HISTORY_2026_PRIVATE_FILE_INVALID', { label });
+  }
+}
+
+async function readRegularSourceText(path, label) {
+  const info = await stat(path).catch(() => null);
+  if (!info || !info.isFile()) {
+    throw historyError(
+      `${label} must resolve to a readable regular file`,
+      'META_HISTORY_2026_SOURCE_FILE_INVALID',
+      { label },
+    );
+  }
+  try {
+    return await readFile(path, 'utf8');
+  } catch {
+    throw historyError(
+      `${label} must resolve to a readable regular file`,
+      'META_HISTORY_2026_SOURCE_FILE_INVALID',
+      { label },
+    );
   }
 }
 
