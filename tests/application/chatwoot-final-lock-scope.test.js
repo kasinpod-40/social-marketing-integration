@@ -24,7 +24,11 @@ test('launcher pins exact D1 name and removes unsafe D1/Queue identity overrides
   assert.match(source, /UNSAFE_TARGET_OVERRIDES/u);
   assert.match(source, /MKT_CHATWOOT_FINAL_UAT_DATABASE_NAME/u);
   assert.match(source, /MKT_CHATWOOT_FINAL_UAT_QUEUE_ID/u);
-  assert.match(source, /Object\.entries\(sourceEnv\)\.filter\(\(\[name\]\) => !UNSAFE_TARGET_OVERRIDES\.has\(name\)\)/u);
+  assert.match(
+    source,
+    /Object\.entries\(sourceEnv\)\.filter\(\(\[name\]\) => !UNSAFE_TARGET_OVERRIDES\.has\(name\)/u,
+  );
+  assert.match(source, /name !== 'CHATWOOT_API_ACCESS_TOKEN'/u);
   assert.match(source, /'execute', DATABASE_NAME/u);
   assert.doesNotMatch(source, /env\.MKT_CHATWOOT_FINAL_UAT_DATABASE_NAME/u);
   assert.match(source, /exactQueueResolvedByName:\s*true/u);
