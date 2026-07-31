@@ -52,7 +52,7 @@ any mutation. Recovery contract v3.1 replaces those IDs and contains a regressio
 ## Durable operator behavior
 
 - Preview reads metadata, Records and Dashboard Blocks without mutation.
-- Exact Field identities, six Dashboards, 17 Organic Statistics, five Slicers and four window charts fail closed.
+- Exact Field identities, six Dashboards, 17 Organic Statistics, five Slicers and seven window charts fail closed.
 - Slicers are never PATCHed.
 - Statistics changes, Record batches and Field changes are checkpointed and freshly read back.
 - Legacy fields are deleted only after canonical Dashboard binding and computed-data verification pass.
@@ -60,8 +60,8 @@ any mutation. Recovery contract v3.1 replaces those IDs and contains a regressio
 
 ## Safety state
 
-Implementation and CI perform no Live Lark/D1/Queue/Worker/Provider/Schedule/Production action. Live write is
-allowed only through the exact confirmed operator after reviewed-main CI and a successful read-only preview.
+Implementation and verification perform no Live Lark/D1/Queue/Worker/Provider/Schedule/Production action. Live write is
+allowed only through the exact confirmed operator after reviewed-main verification and a successful read-only preview.
 
 Detailed contract:
 
@@ -79,3 +79,19 @@ updates only those three reviewed `column` Blocks with immediate readback, keeps
 Record/Field mutation until no Number-window chart remains. Detailed contract:
 
 `docs/tasks/lark-dashboard-window-chart-rebind-v3-2.md`.
+
+## v3.3 Statistics request-contract recovery
+
+The first v3.2 Live Statistics PATCH (`Baseline Coverage Rate`) was rejected with Lark `code=1`; immediate
+readback was unchanged and all confirmed Block, Record and Field mutation counters remained zero. The failure
+proved that the Update request path still required contract hardening, but the generic response did not prove
+one exact root cause.
+
+Recovery v3.3 serializes the Organic `filter` into request shape only and removes Read-response metadata such as
+`condition_id`, `field_type`, `condition_omitted` and response `type`. It declares `base:dashboard:update`, emits
+a private `statistics-request-plan.json`, and provides a bounded one-Block probe for `Baseline Coverage Rate`.
+The probe stops before Window charts, Records or Fields and must converge on readback before full Recovery resumes.
+
+Detailed contract:
+
+`docs/tasks/lark-dashboard-statistics-request-contract-v3-3.md`.
