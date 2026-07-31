@@ -12,6 +12,7 @@ import {
   isChatwootEventInWindow,
   resolveChatwootRuntimeWindow,
 } from '../../packages/application/src/use-cases/chatwoot-runtime-contract.js';
+import { ChatwootDurableApiClient } from '../../packages/connectors/src/chatwoot/chatwoot-durable-api.client.js';
 
 const OBSERVED_AT = Date.parse('2026-07-31T01:00:00Z');
 const DAY_MS = 86_400_000;
@@ -69,6 +70,31 @@ test('late-updated Reporting Event remains in the daily overlap', () => {
     created_at: Math.floor((OBSERVED_AT - 30 * DAY_MS) / 1_000),
     updated_at: Math.floor((OBSERVED_AT - 2 * DAY_MS) / 1_000),
   }, window), true);
+});
+
+test('empty Reporting window with zero total pages completes without continuation', async () => {
+  const client = new ChatwootDurableApiClient({
+    baseUrl: 'https://chatwoot.example.test',
+    accountId: 1,
+    accessToken: 'test-token',
+    maxReportingPages: 5_000,
+    fetchImpl: async () => new Response(JSON.stringify({
+      payload: [],
+      meta: { current_page: 1, total_pages: 0, count: 0 },
+    }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }),
+  });
+  const page = await client.listAccountReportingEventsPage({
+    page: 1,
+    since: OBSERVED_AT - 3 * DAY_MS,
+    until: OBSERVED_AT,
+  });
+  assert.equal(page.totalPages, 0);
+  assert.equal(page.totalCount, 0);
+  assert.equal(page.hasMore, false);
+  assert.deepEqual(page.rows, []);
 });
 
 test('bounded rollup writes reconciled Coverage runs and entities for every materialized row', () => {
