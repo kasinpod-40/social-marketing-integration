@@ -22,6 +22,7 @@ on:
 permissions:
   contents: read
 
+# A PR needs only its newest exact Head; stale runs must not consume the repository runner.
 concurrency:
   group: meta-end-to-end-verification-${{ github.ref }}
   cancel-in-progress: true
