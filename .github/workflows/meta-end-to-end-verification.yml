@@ -10,17 +10,26 @@ on:
     paths:
       - 'apps/sync-worker/src/meta-end-to-end-job-router.js'
       - 'packages/application/src/use-cases/*meta*'
+      - 'packages/connectors/src/meta/*'
       - 'packages/config/src/meta-end-to-end-runtime-config.js'
+      - 'scripts/*meta*'
+      - 'scripts/lib/*meta*'
       - 'tests/application/*meta*'
-      - 'docs/tasks/meta-end-to-end.md'
+      - 'tests/connectors/*meta*'
+      - 'docs/tasks/meta-*'
       - '.github/workflows/meta-end-to-end-verification.yml'
 
 permissions:
   contents: read
 
+# A PR needs only its newest exact Head; stale runs must not consume the repository runner.
+concurrency:
+  group: meta-end-to-end-verification-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    runs-on: ${{ startsWith(github.head_ref, 'hotfix/meta-history-2026-') && 'mkt-ci' || 'ubuntu-latest' }}
     timeout-minutes: 30
     steps:
       - name: Checkout
@@ -49,6 +58,12 @@ jobs:
         run: |
           set -o pipefail
           node --test \
+            tests/connectors/meta-history-range-adapters.test.js \
+            tests/connectors/meta-business-source-adapters.test.js \
+            tests/application/meta-history-2026-finalizer.test.js \
+            tests/application/meta-history-2026-closeout.test.js \
+            tests/application/meta-history-2026-public-launcher.test.js \
+            tests/application/meta-history-2026-terminal.test.js \
             tests/application/meta-end-to-end-source.test.js \
             tests/application/meta-organic-write-set.test.js \
             tests/application/meta-ads-write-set.test.js \

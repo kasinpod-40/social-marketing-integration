@@ -7,7 +7,7 @@ import {
   rebaseGeneratedWranglerConfigPaths,
 } from './rebase-generated-wrangler-config-paths.js';
 
-const GENERATED_OPERATOR_CONFIG = /^\.meta-d1-only-/u;
+const GENERATED_OPERATOR_CONFIG = /^\.meta-(?:d1-only|lark)-/u;
 
 export async function prepareMetaD1OnlyWranglerInvocation(args = [], options = {}) {
   if (!Array.isArray(args)) {

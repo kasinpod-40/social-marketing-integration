@@ -90,7 +90,7 @@ test('Instagram source adapter enforces /me identity authority', async () => {
   );
 });
 
-test('Meta Ads source adapter keeps Insights reads daily, bounded and account-scoped', async () => {
+test('Meta Ads source adapter keeps Insights reads daily, chunk-bounded and account-scoped', async () => {
   const calls = [];
   const adapter = new MetaAdsSourceAdapter({
     client: fakeReadClient({
@@ -122,13 +122,32 @@ test('Meta Ads source adapter keeps Insights reads daily, bounded and account-sc
   assert.equal(result.sourceAccountId, '987650001');
   assert.equal(adapter.updateCampaign, undefined);
 
+  const historyCalls = [];
+  const historyAdapter = new MetaAdsSourceAdapter({
+    client: fakeReadClient({
+      calls: historyCalls,
+      pageResult: { rows: [], hasMore: false, nextCursor: null },
+    }),
+  });
+  const history = await historyAdapter.fetchDailyInsightsPage({
+    adAccountId: '987650001',
+    since: '2026-01-01',
+    until: '2026-02-01',
+  });
+  assert.deepEqual(JSON.parse(historyCalls[0].query.time_range), {
+    since: '2026-01-01',
+    until: '2026-01-31',
+  });
+  assert.equal(history.hasMore, true);
+  assert.match(history.nextCursor, /^mkt_meta_ads_history_v1\?/u);
+
   await assert.rejects(
-    adapter.fetchDailyInsightsPage({
+    historyAdapter.fetchDailyInsightsPage({
       adAccountId: '987650001',
-      since: '2026-01-01',
+      since: '2025-01-01',
       until: '2026-02-01',
     }),
-    /exceeds 31 inclusive days/u,
+    /exceeds 366 inclusive days/u,
   );
 });
 
