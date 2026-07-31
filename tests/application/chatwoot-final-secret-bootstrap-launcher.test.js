@@ -9,9 +9,11 @@ test('public launcher stages a missing Secret only through a Safe private deploy
   );
   assert.match(source, /ensureChatwootWorkerSecret/u);
   assert.match(source, /--secrets-file/u);
+  assert.match(source, /'--strict'/u);
   assert.match(source, /secret-bootstrap\.attempt\.json/u);
   assert.match(source, /assertRemoteWorkerAllFlagsFalse/u);
   assert.match(source, /CHATWOOT_API_ACCESS_TOKEN/u);
+  assert.match(source, /name !== 'CHATWOOT_API_ACCESS_TOKEN'/u);
   assert.match(source, /serializeChatwootFinalSecretsFile/u);
   assert.match(source, /finally\s*\{[\s\S]*rm\(secretFilePath/u);
   assert.doesNotMatch(source, /wrangler['"],\s*'secret',\s*'put'/u);

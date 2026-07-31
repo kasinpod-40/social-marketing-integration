@@ -92,7 +92,8 @@ async function main() {
   const larkMappings = await resolveLarkTableMappings(sourceEnv);
   normalizedConfigPath = await createNormalizedRuntimeConfig(sourceEnv, larkMappings);
   const safeSourceEnv = Object.fromEntries(
-    Object.entries(sourceEnv).filter(([name]) => !UNSAFE_TARGET_OVERRIDES.has(name)),
+    Object.entries(sourceEnv).filter(([name]) => !UNSAFE_TARGET_OVERRIDES.has(name)
+      && name !== 'CHATWOOT_API_ACCESS_TOKEN'),
   );
   const queueBootstrapEnv = {
     ...safeSourceEnv,
@@ -375,6 +376,7 @@ async function ensureChatwootWorkerSecret({ env, sourceEnv, configPath }) {
       'wrangler', 'deploy',
       '--config', configPath,
       '--secrets-file', secretFilePath,
+      '--strict',
       '--message', `${SECRET_BOOTSTRAP_MESSAGE} git=${head}`,
     ], {
       env,
