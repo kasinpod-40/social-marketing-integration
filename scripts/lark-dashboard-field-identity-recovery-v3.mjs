@@ -34,7 +34,9 @@ import {
   planPreservedWindowSelectBackfill,
 } from './lib/lark-dashboard-field-identity-recovery-v3.js';
 import {
+  EXECUTIVE_DASHBOARD_NAME,
   EXECUTIVE_NUMBER_WINDOW_CHART_NAMES,
+  assertReviewedExecutiveWindowChartSet,
   hasNumberWindowReference,
   hasPreservedWindowReference,
   rewriteNumberWindowChartToPreservedSelect,
@@ -763,6 +765,7 @@ function buildDashboardPlan(dashboards, fieldState) {
   let preservedSlicerCount = 0;
   let alreadyPreservedWindowChartCount = 0;
   let numberWindowChartCount = 0;
+  const executiveWindowChartNames = [];
 
   for (const dashboard of dashboards) {
     for (const block of dashboard.blocks) {
@@ -828,6 +831,9 @@ function buildDashboardPlan(dashboards, fieldState) {
           continue;
         }
       } else if (type === 'column') {
+        if (dashboard.name === EXECUTIVE_DASHBOARD_NAME) {
+          executiveWindowChartNames.push(block.name);
+        }
         if (hasWindowLegacy || (hasCanonicalWindow && canonicalWindowTargetsPreserved)) {
           alreadyPreservedWindowChartCount += 1;
           continue;
@@ -862,6 +868,8 @@ function buildDashboardPlan(dashboards, fieldState) {
     }
   }
 
+  const reviewedExecutiveWindowChartNames =
+    assertReviewedExecutiveWindowChartSet(executiveWindowChartNames);
   const preservedWindowChartCount = alreadyPreservedWindowChartCount + numberWindowChartCount;
   const pendingNames = windowChartActions.map((action) => action.blockName);
   const unexpectedPendingNames = pendingNames.filter(
@@ -901,6 +909,8 @@ function buildDashboardPlan(dashboards, fieldState) {
     numberWindowChartCount,
     pendingWindowChartRebindCount: windowChartActions.length,
     convergedWindowChartCount: preservedWindowChartCount - windowChartActions.length,
+    reviewedExecutiveWindowChartCount: reviewedExecutiveWindowChartNames.length,
+    reviewedExecutiveWindowChartNames,
     legacyReferenceCount,
   });
 }
@@ -1214,6 +1224,8 @@ function safeDashboardPlan(plan) {
     numberWindowChartCount: plan.numberWindowChartCount,
     pendingWindowChartRebindCount: plan.pendingWindowChartRebindCount,
     convergedWindowChartCount: plan.convergedWindowChartCount,
+    reviewedExecutiveWindowChartCount: plan.reviewedExecutiveWindowChartCount,
+    reviewedExecutiveWindowChartNames: plan.reviewedExecutiveWindowChartNames,
     legacyReferenceCount: plan.legacyReferenceCount,
     actions: plan.actions.map((action, index) => safeActionIdentity(action, index)),
     windowChartActions: plan.windowChartActions.map(
