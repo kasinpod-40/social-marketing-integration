@@ -32,12 +32,14 @@ test('launcher pins exact D1 name and removes unsafe D1/Queue identity overrides
 
 test('launcher resolves the exact main Queue through the reviewed Cloudflare REST bootstrap', async () => {
   const source = await readFile(launcherUrl, 'utf8');
+  const installIndex = source.indexOf('await ensurePinnedWranglerInstalled()');
   const configIndex = source.indexOf('normalizedConfigPath = await createNormalizedRuntimeConfig(sourceEnv, larkMappings)');
   const bootstrapIndex = source.indexOf('const queueBootstrap = await bootstrapWooCommerceFinalQueueId({');
   const injectionIndex = source.indexOf('MKT_CHATWOOT_FINAL_UAT_QUEUE_ID: queueBootstrap.queueId');
   const lockIndex = source.indexOf('const before = readExactActiveLockCount(env)');
 
-  assert.ok(configIndex >= 0);
+  assert.ok(installIndex >= 0);
+  assert.ok(configIndex > installIndex);
   assert.ok(bootstrapIndex > configIndex);
   assert.ok(injectionIndex > bootstrapIndex);
   assert.ok(lockIndex > injectionIndex);
@@ -47,6 +49,9 @@ test('launcher resolves the exact main Queue through the reviewed Cloudflare RES
   assert.match(source, /queueBootstrap\.source !== QUEUE_DISCOVERY_SOURCE/u);
   assert.match(source, /MKT_WOOCOMMERCE_ROLLOUT_WRANGLER_CONFIG:\s*normalizedConfigPath/u);
   assert.match(source, /queueDiscoverySource:\s*QUEUE_DISCOVERY_SOURCE/u);
+  assert.match(source, /'node_modules',\s*'\.bin'/u);
+  assert.match(source, /run\('npm', \['ci'\], \{ stdio: 'inherit' \}\)/u);
+  assert.match(source, /CHATWOOT_FINAL_UAT_PINNED_WRANGLER_MISSING/u);
   assert.doesNotMatch(source, /queues['"],\s*['"]list['"],\s*['"]--json/u);
   assert.doesNotMatch(source, /queueBootstrap\.queueId[^\n]*process\.stdout/u);
 });
