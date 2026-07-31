@@ -35,6 +35,14 @@ export const JOB_TRIGGERS = Object.freeze({
   YOUTUBE_LARK_FULL_SYNC_UAT: 'youtube_lark_full_sync_uat',
   WOOCOMMERCE_MANUAL_UAT: 'manual_uat',
   WOOCOMMERCE_SCHEDULED: 'scheduled',
+  CHATWOOT_INITIAL_30_DAY_UAT: 'chatwoot_initial_30_day_uat',
+  CHATWOOT_DAILY_INCREMENTAL: 'chatwoot_daily_incremental',
+});
+
+/** Schema version ของ Job payload ที่มี Contract เฉพาะ Connector */
+export const JOB_SCHEMA_VERSIONS = Object.freeze({
+  CURRENT: 1,
+  CHATWOOT_RUNTIME: 1,
 });
 
 export const JOB_IMPLEMENTATION_STATUS = Object.freeze({
@@ -123,9 +131,14 @@ const JOB_CATALOG = Object.freeze({
   }),
   [JOB_TYPES.CHATWOOT_CONVERSATIONS_SYNC]: freezeJob({
     type: JOB_TYPES.CHATWOOT_CONVERSATIONS_SYNC,
+    schemaVersion: JOB_SCHEMA_VERSIONS.CHATWOOT_RUNTIME,
     implementationStatus: JOB_IMPLEMENTATION_STATUS.UAT_PENDING,
     connectorKey: CONNECTOR_KEYS.CHATWOOT,
     manualOnly: true,
+    allowedTriggers: [
+      JOB_TRIGGERS.CHATWOOT_INITIAL_30_DAY_UAT,
+      JOB_TRIGGERS.CHATWOOT_DAILY_INCREMENTAL,
+    ],
   }),
 
   [JOB_TYPES.SYNC_RECONCILE]: freezeJob({
