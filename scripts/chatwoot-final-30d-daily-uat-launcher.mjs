@@ -17,6 +17,11 @@ import {
 const ROOT = resolve(process.cwd());
 const EXECUTE_ARGUMENT = '--execute';
 const LOCK_SCOPE = 'integration_workspace:chatwoot:chemistry_k:%';
+const DATABASE_NAME = 'social-mkt-state-dev';
+const UNSAFE_TARGET_OVERRIDES = new Set([
+  'MKT_CHATWOOT_FINAL_UAT_DATABASE_NAME',
+  'MKT_CHATWOOT_FINAL_UAT_QUEUE_ID',
+]);
 const SAFE_COMPATIBILITY_LIMITS = Object.freeze({
   CHATWOOT_API_MAX_PAGES: '1000',
   CHATWOOT_MAX_REPORTING_EVENTS: '100000',
@@ -48,6 +53,7 @@ async function main() {
     process.stdout.write(`${JSON.stringify({
       authoritativeCommand: `${CHATWOOT_FINAL_UAT_CONFIRMATION.envName}=${CHATWOOT_FINAL_UAT_CONFIRMATION.value} node scripts/chatwoot-final-30d-daily-uat-launcher.mjs --execute`,
       exactLockScope: LOCK_SCOPE,
+      exactDatabaseName: DATABASE_NAME,
       ignoredConfigNormalization: true,
       remoteActionsPerformed: false,
     }, null, 2)}\n`);
@@ -66,8 +72,11 @@ async function main() {
   }
 
   normalizedConfigPath = await createNormalizedRuntimeConfig(sourceEnv);
+  const safeSourceEnv = Object.fromEntries(
+    Object.entries(sourceEnv).filter(([name]) => !UNSAFE_TARGET_OVERRIDES.has(name)),
+  );
   const env = Object.freeze({
-    ...sourceEnv,
+    ...safeSourceEnv,
     MKT_CHATWOOT_FINAL_UAT_WRANGLER_CONFIG: normalizedConfigPath,
   });
 
@@ -95,6 +104,8 @@ async function main() {
     ok: true,
     marker: CHATWOOT_FINAL_UAT_SUCCESS_MARKER,
     exactLockScopeVerified: true,
+    exactDatabaseVerified: true,
+    exactQueueResolvedByName: true,
     activeLockCount: 0,
     ignoredConfigNormalized: true,
     scheduleEnabled: false,
@@ -163,7 +174,6 @@ async function createNormalizedRuntimeConfig(env) {
 
 function readExactActiveLockCount(env) {
   const configPath = env.MKT_CHATWOOT_FINAL_UAT_WRANGLER_CONFIG ?? 'wrangler.sync.jsonc';
-  const databaseName = env.MKT_CHATWOOT_FINAL_UAT_DATABASE_NAME ?? 'social-mkt-state-dev';
   const sql = [
     'SELECT COUNT(*) AS active_chatwoot_locks',
     'FROM sync_locks',
@@ -171,7 +181,7 @@ function readExactActiveLockCount(env) {
     "AND expires_at > unixepoch('now') * 1000;",
   ].join(' ');
   const output = run('npx', [
-    'wrangler', 'd1', 'execute', databaseName,
+    'wrangler', 'd1', 'execute', DATABASE_NAME,
     '--remote', '--json', '--config', configPath,
     '--command', sql,
   ], { env });
