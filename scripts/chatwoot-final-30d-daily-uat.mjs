@@ -11,6 +11,7 @@ import {
   resolveCloudflareBearerAuth,
   resolveWooCommerceQueueId,
 } from './lib/woocommerce-final-one-command.js';
+import { assertWooCommerceQueueConsumerTopology } from './lib/woocommerce-queue-consumer-topology.js';
 import {
   CHATWOOT_FINAL_UAT_ACTIVE_TRUE_FLAGS,
   CHATWOOT_FINAL_UAT_CONFIRMATION,
@@ -448,12 +449,17 @@ function assertFlags(view, mode) {
 function assertQueue(target, queueName, expected) {
   const value = JSON.parse(text('npx', ['wrangler', 'queues', 'consumer', 'list', queueName, '--json'], { env: target.cf.env }));
   const items = Array.isArray(value) ? value : value.result ?? value.consumers ?? [];
-  if (items.length !== 1) fail('Queue consumer topology is ambiguous', 'CHATWOOT_FINAL_UAT_QUEUE_TOPOLOGY_INVALID', { queueName });
-  const settings = items[0].settings ?? items[0];
-  const observed = { maxConcurrency: Number(settings.max_concurrency), maxBatchSize: Number(settings.max_batch_size),
-    maxBatchTimeout: Number(settings.max_batch_timeout), maxRetries: Number(settings.max_retries),
-    deadLetterQueue: textOrNull(settings.dead_letter_queue ?? items[0].dead_letter_queue) };
-  if (stableJson(observed) !== stableJson(expected)) fail('Queue topology differs', 'CHATWOOT_FINAL_UAT_QUEUE_TOPOLOGY_INVALID', { queueName, observed });
+  try {
+    return assertWooCommerceQueueConsumerTopology(items, queueName, expected);
+  } catch (error) {
+    fail('Queue topology differs', 'CHATWOOT_FINAL_UAT_QUEUE_TOPOLOGY_INVALID', {
+      queueName,
+      field: error?.details?.field ?? null,
+      observed: error?.details?.observed ?? null,
+      expected: error?.details?.expected ?? null,
+      causeCode: error?.code ?? null,
+    });
+  }
 }
 
 async function assertTriggers(target) {
@@ -523,7 +529,6 @@ function configName(target, name) { return target.config[name]; }
 function inside(value) { const path = resolve(ROOT, value); if (relative(ROOT, path).startsWith('..')) fail('Path leaves Repository', 'CHATWOOT_FINAL_UAT_PATH_INVALID'); return path; }
 function exact(value, expected, name) { if (value !== expected) fail(`${name} must equal ${expected}`, 'CHATWOOT_FINAL_UAT_TARGET_INVALID', { name }); }
 function positive(value, name) { const number = Number(value); if (!Number.isSafeInteger(number) || number <= 0) fail(`${name} must be positive`, 'CHATWOOT_FINAL_UAT_VALUE_INVALID'); return number; }
-function textOrNull(value) { return typeof value === 'string' && value.trim() ? value.trim() : null; }
 function scrub(value) { if (value === null || value === undefined) return value; if (Array.isArray(value)) return value.map(scrub);
   if (typeof value !== 'object') return value; return Object.fromEntries(Object.entries(value)
     .filter(([key]) => !/token|secret|authorization|tableId|accountId$|queueId$/iu.test(key)).map(([key, nested]) => [key, scrub(nested)])); }
