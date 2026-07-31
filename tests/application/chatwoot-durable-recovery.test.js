@@ -126,6 +126,9 @@ test('partial failure reruns the same durable Reporting unit without duplicate S
   let failAfterBusinessWrite = true;
   let phaseWrites = 0;
   const store = noOpStore();
+  store.upsertAccountState = async () => {
+    throw new Error('Reporting unit must not rewrite latest-state Account');
+  };
   store.upsertReportingEventFact = async (row) => {
     stableBusinessKeys.add(row.reporting_event_key);
     if (failAfterBusinessWrite) {
@@ -176,5 +179,5 @@ test('partial failure reruns the same durable Reporting unit without duplicate S
   assert.equal(recovered.nextSequence, 3);
   assert.equal(phaseWrites, 1);
   assert.equal(stableBusinessKeys.size, 1);
-  assert.equal(stableCoverageKeys.size, 2);
+  assert.equal(stableCoverageKeys.size, 1);
 });
