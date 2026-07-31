@@ -55,3 +55,18 @@ test('Meta history source config may be readable while generated execution confi
   assert.match(source, /writePrivateText\(safeConfigPath, safeConfigText\)/u);
   assert.doesNotMatch(source, /assertPrivateRegularFile\(sourceConfigPath, 'Meta Wrangler config'\)/u);
 });
+
+test('Meta history finalizer proves pinned continuity without legacy local artifacts', async () => {
+  const source = await readFile(finalizerChild, 'utf8');
+  assert.match(source, /verify-pinned-facebook-continuity/u);
+  assert.match(source, /createMetaHistoryPinnedContinuity/u);
+  assert.match(source, /pinned-facebook-continuity\.json/u);
+  assert.match(source, /readMetaLarkSummaryCompletion/u);
+  assert.doesNotMatch(source, /resolvePinnedMetaFiles/u);
+  assert.doesNotMatch(source, /resumePinnedFinalizer/u);
+  assert.doesNotMatch(source, /MKT_META_FINALIZE_CLONE/u);
+  assert.doesNotMatch(source, /MKT_META_FINALIZE_SESSION_FILE/u);
+  assert.doesNotMatch(source, /MKT_META_FINALIZE_OVERLAY/u);
+  assert.doesNotMatch(source, /MKT_META_FINALIZER_FILE/u);
+  assert.doesNotMatch(source, /\.data\?\.larkVerified/u);
+});

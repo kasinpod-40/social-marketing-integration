@@ -3,11 +3,9 @@
 import { spawnSync } from 'node:child_process';
 import {
   chmod,
-  copyFile,
   lstat,
   mkdir,
   readFile,
-  readdir,
   rename,
   stat,
   writeFile,
@@ -26,11 +24,6 @@ import {
   META_READ_ONLY_VALIDATION_CONFIRMATIONS,
 } from './lib/meta-read-only-validation-operator.js';
 import {
-  FINAL_DELIVERY_META_HEAD,
-  FINAL_DELIVERY_META_OPERATION_ID,
-  inspectMetaSession,
-} from './lib/final-delivery-readiness.js';
-import {
   assertWooCommerce2026RemoteSafeFlags,
   selectExactlyOneActiveWorkerVersion,
 } from './lib/woocommerce-2026-completion-one-command.js';
@@ -44,9 +37,12 @@ import {
   META_HISTORY_2026_DECISION,
   assertMetaHistory2026Confirmation,
   createMetaHistory2026Plan,
+  createMetaHistoryPinnedContinuity,
   injectMetaHistoryConfig,
+  readMetaLarkSummaryCompletion,
   shouldExpandMetaAdsHistory,
   validateMetaHistory2026Summary,
+  validateMetaHistoryPinnedContinuity,
 } from './lib/meta-history-2026-finalizer.js';
 
 const repositoryRoot = resolve(process.cwd());
@@ -95,7 +91,8 @@ async function executeHistory() {
   requireExact(baseEnv.MKT_CUSTOMER_PROFILE, 'integration_workspace', 'MKT_CUSTOMER_PROFILE');
   requireExact(baseEnv.MKT_CONNECTION_CUSTOMER_KEY, 'chemistry_k', 'MKT_CONNECTION_CUSTOMER_KEY');
 
-  await mkdir(join(outputRoot, repositoryHead), { recursive: true, mode: 0o700 });
+  const evidenceRoot = join(outputRoot, repositoryHead);
+  await mkdir(evidenceRoot, { recursive: true, mode: 0o700 });
   const runtimePlan = await loadOrCreateRuntimePlan(repositoryHead);
 
   currentStage = 'local-full-gates';
@@ -119,7 +116,7 @@ async function executeHistory() {
       ?? 'wrangler.sync.jsonc',
   );
   const sourceConfigText = await readRegularSourceText(sourceConfigPath, 'Meta Wrangler config');
-  const safeConfigPath = join(outputRoot, repositoryHead, 'wrangler.meta-history.safe.jsonc');
+  const safeConfigPath = join(evidenceRoot, 'wrangler.meta-history.safe.jsonc');
   const safeConfigText = injectMetaHistoryConfig(sourceConfigText, undefined, {
     baseDirectory: repositoryRoot,
   });
@@ -130,18 +127,25 @@ async function executeHistory() {
   const cloudflare = await resolveCloudflareContext(baseEnv, safeConfigPath);
   await assertRemoteSafe(baseEnv, safeConfigPath, cloudflare);
 
-  currentStage = 'resume-pinned-meta-finalizer';
-  const pinned = await resolvePinnedMetaFiles(baseEnv);
-  const facebook = await resumePinnedFinalizer({
-    ...pinned,
-    env: baseEnv,
-    devVarsPath,
-  });
-  await assertRemoteSafe(baseEnv, safeConfigPath, cloudflare);
-
   currentStage = 'fresh-read-only-validation';
-  const readOnlyRoot = join(outputRoot, repositoryHead, 'read-only-validation');
+  const readOnlyRoot = join(evidenceRoot, 'read-only-validation');
   const readOnlySummaryPath = await runFreshReadOnlyValidation(baseEnv, readOnlyRoot);
+  const readOnlySummary = JSON.parse(await readFile(readOnlySummaryPath, 'utf8'));
+
+  currentStage = 'verify-pinned-facebook-continuity';
+  const facebookContinuity = validateMetaHistoryPinnedContinuity(
+    createMetaHistoryPinnedContinuity({
+      repositoryHead,
+      plan: runtimePlan,
+      readOnlySummary,
+    }),
+    repositoryHead,
+  );
+  await writePrivateJson(
+    join(evidenceRoot, 'pinned-facebook-continuity.json'),
+    facebookContinuity,
+  );
+  await assertRemoteSafe(baseEnv, safeConfigPath, cloudflare);
 
   const completed = [];
   const baselineSnapshots = [];
@@ -176,6 +180,7 @@ async function executeHistory() {
 
   currentStage = 'final-safe-verification';
   const safe = await assertRemoteSafe(baseEnv, safeConfigPath, cloudflare);
+  const facebookResult = completed.find((item) => item.target === 'facebook');
   const instagramResult = completed.find((item) => item.target === 'instagram');
   const adsBaselineResults = completed.filter((item) => item.mode === 'required' && item.target.startsWith('chemistry_k'));
   const summary = {
@@ -184,7 +189,10 @@ async function executeHistory() {
     contractVersion: META_HISTORY_2026_CONTRACT_VERSION,
     decision: META_HISTORY_2026_DECISION,
     repositoryHead,
-    facebook,
+    facebook: {
+      ...facebookContinuity,
+      historyCompleted: Boolean(facebookResult?.larkCompleted),
+    },
     instagram: {
       completed: Boolean(instagramResult?.larkCompleted),
       periodStart: '2026-07-01',
@@ -220,7 +228,7 @@ async function executeHistory() {
     marker: META_HISTORY_2026_DECISION,
   };
   validateMetaHistory2026Summary(summary);
-  const summaryPath = join(outputRoot, repositoryHead, 'meta-history-2026-summary.json');
+  const summaryPath = join(evidenceRoot, 'meta-history-2026-summary.json');
   await writePrivateJson(summaryPath, summary);
   process.stdout.write(`${JSON.stringify({ ...summary, evidenceRoot: dirname(summaryPath) }, null, 2)}\n`);
   process.stdout.write(`${META_HISTORY_2026_DECISION}\n`);
@@ -276,12 +284,13 @@ async function runMetaOperation(input) {
       operationId: operation.operationId,
     });
   }
+  const larkCompletion = readMetaLarkSummaryCompletion(larkSummary);
   return {
     ...operation,
     d1Completed: d1Summary.data.d1OnlyVerified === true,
-    larkCompleted: larkSummary.data.larkVerified === true,
+    larkCompleted: larkCompletion.larkCompleted,
     idempotentRerunVerified: d1Summary.data.idempotentRerunVerified === true
-      && larkSummary.data.idempotentRerunVerified === true,
+      && larkCompletion.idempotentRerunVerified,
     d1Verification,
   };
 }
@@ -350,80 +359,6 @@ async function runFreshReadOnlyValidation(baseEnv, evidenceRoot) {
     throw historyError('Fresh Meta read-only validation is not accepted', 'META_HISTORY_2026_READ_ONLY_INVALID');
   }
   return summaryPath;
-}
-
-async function resumePinnedFinalizer({ clonePath, sessionPath, overlayPath, finalizerPath, env, devVarsPath }) {
-  for (const [path, label] of [
-    [sessionPath, 'Meta pinned session'],
-    [overlayPath, 'Meta pinned overlay'],
-    [finalizerPath, 'Meta pinned finalizer'],
-  ]) await assertPrivateRegularFile(path, label);
-  const head = gitText(['-C', clonePath, 'rev-parse', 'HEAD']);
-  const originMain = gitText(['-C', clonePath, 'rev-parse', 'origin/main']);
-  const branch = gitText(['-C', clonePath, 'branch', '--show-current']);
-  const dirty = gitText(['-C', clonePath, 'status', '--porcelain', '--untracked-files=all'], false);
-  if (head !== FINAL_DELIVERY_META_HEAD || originMain !== FINAL_DELIVERY_META_HEAD
-    || branch !== 'main' || dirty.trim() !== '') {
-    throw historyError('Pinned Meta clone changed', 'META_HISTORY_2026_PINNED_CLONE_INVALID');
-  }
-  const sessionBefore = inspectMetaSession(
-    JSON.parse(await readFile(sessionPath, 'utf8')),
-    { repositoryHead: FINAL_DELIVERY_META_HEAD, operationId: FINAL_DELIVERY_META_OPERATION_ID },
-  );
-  if (!sessionBefore.sessionCompleted) {
-    await copyFile(devVarsPath, join(clonePath, '.dev.vars'));
-    await chmod(join(clonePath, '.dev.vars'), 0o600);
-    runVisible(process.execPath, [finalizerPath], {
-      ...env,
-      DEV_VARS_FILE: join(clonePath, '.dev.vars'),
-      MKT_META_SAFE_CONFIG: overlayPath,
-      MKT_META_FINALIZE_SESSION_FILE: sessionPath,
-      CONFIRM_META_FINALIZE_ALL: 'RUN_AUTHORIZED_META_REMAINING_LANES',
-    }, clonePath);
-  }
-  const sessionAfter = inspectMetaSession(
-    JSON.parse(await readFile(sessionPath, 'utf8')),
-    { repositoryHead: FINAL_DELIVERY_META_HEAD, operationId: FINAL_DELIVERY_META_OPERATION_ID },
-  );
-  if (!sessionAfter.sessionCompleted) {
-    throw historyError('Pinned Meta finalizer did not complete', 'META_HISTORY_2026_PINNED_FINALIZER_INCOMPLETE');
-  }
-  return {
-    verified: true,
-    providerReplay: false,
-    pinnedSessionCompleted: true,
-    pinnedRepositoryHead: FINAL_DELIVERY_META_HEAD,
-  };
-}
-
-async function resolvePinnedMetaFiles(env) {
-  const direct = {
-    clonePath: optionalPath(env.MKT_META_FINALIZE_CLONE),
-    sessionPath: optionalPath(env.MKT_META_FINALIZE_SESSION_FILE),
-    overlayPath: optionalPath(env.MKT_META_FINALIZE_OVERLAY),
-    finalizerPath: optionalPath(env.MKT_META_FINALIZER_FILE),
-  };
-  if (Object.values(direct).every(Boolean)) return direct;
-  const manifests = await findJsonFiles(join(repositoryRoot, 'outputs'), 6);
-  for (const path of manifests.reverse()) {
-    try {
-      const value = JSON.parse(await readFile(path, 'utf8'));
-      const meta = value?.meta;
-      const candidate = {
-        clonePath: optionalPath(meta?.clonePath),
-        sessionPath: optionalPath(meta?.sessionPath),
-        overlayPath: optionalPath(meta?.overlayPath),
-        finalizerPath: optionalPath(meta?.finalizerPath),
-      };
-      if (Object.values(candidate).every(Boolean)) return candidate;
-    } catch {
-      // Ignore unrelated/private JSON artifacts while searching for the exact readiness manifest.
-    }
-  }
-  throw historyError(
-    'Pinned Meta files were not found in .dev.vars or an existing readiness manifest',
-    'META_HISTORY_2026_PINNED_FILES_MISSING',
-  );
 }
 
 async function resolveCloudflareContext(env, configPath) {
@@ -581,7 +516,7 @@ function printPlan() {
     planOnly: true,
     contractVersion: META_HISTORY_2026_CONTRACT_VERSION,
     confirmation: 'CONFIRM_META_HISTORY_2026_FINALIZER=RUN_META_HISTORY_2026_ONE_COMMAND',
-    facebook: 'verify existing completed pinned lane; no Provider replay',
+    facebook: 'fresh identity continuity plus new July operation; legacy local files not required; no old operation replay',
     instagram: '2026-07-01..2026-07-31',
     metaAds: '2026-05-01..2026-07-31, then 2026-01-01..2026-04-30 when bounded volume is safe',
     d1BeforeLark: true,
@@ -628,17 +563,6 @@ function gitText(args, trim = true) {
   return trim ? output.trim() : `${output}\n`;
 }
 
-async function findJsonFiles(root, depth) {
-  if (depth < 0 || !(await fileExists(root))) return [];
-  const result = [];
-  for (const entry of await readdir(root, { withFileTypes: true })) {
-    const path = join(root, entry.name);
-    if (entry.isDirectory()) result.push(...await findJsonFiles(path, depth - 1));
-    else if (entry.isFile() && entry.name.endsWith('.json')) result.push(path);
-  }
-  return result.sort((left, right) => left.localeCompare(right));
-}
-
 async function writePrivateJson(path, value) {
   await writePrivateText(path, `${JSON.stringify(value, null, 2)}\n`);
 }
@@ -680,10 +604,6 @@ async function readRegularSourceText(path, label) {
 
 async function fileExists(path) {
   return stat(path).then((info) => info.isFile() || info.isDirectory()).catch(() => false);
-}
-
-function optionalPath(value) {
-  return optionalText(value) ? resolve(value.trim()) : null;
 }
 
 function optionalText(value) {
