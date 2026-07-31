@@ -171,16 +171,56 @@ export function classifyWooCommerceCompletedStatePoll(input = {}) {
     && snapshot.activeLockCount === 0
     && snapshot.queueOperationAttempts >= minimumQueueAttempts;
   if (terminalFailure) {
-    return Object.freeze({ complete: false, terminalFailure: true, snapshot });
+    return Object.freeze({
+      complete: false,
+      terminalFailure: true,
+      pendingAdmission: false,
+      pendingExecution: false,
+      snapshot,
+    });
   }
+
+  // Cloudflare Queue acceptance and D1 visibility are not atomic. Keep the temporary UAT window
+  // active while the exact operation has not reached durable admission instead of interpreting
+  // missing Queue/Sync/Work fields as an invalid completed-state timestamp.
+  const pendingAdmission = snapshot.queueOperationAttempts < minimumQueueAttempts
+    || (snapshot.queueOriginalRequestedAt === null
+      && snapshot.queueGeneration === null
+      && snapshot.syncRunStatus === null
+      && snapshot.workLifecycleStatus === null
+      && snapshot.completion === null);
+  const pendingExecution = pendingAdmission
+    || snapshot.syncRunStatus === null
+    || snapshot.syncRunStatus === 'running'
+    || snapshot.workLifecycleStatus === null
+    || snapshot.workLifecycleStatus === 'active'
+    || snapshot.completion === null;
+  if (pendingExecution) {
+    return Object.freeze({
+      complete: false,
+      terminalFailure: false,
+      pendingAdmission,
+      pendingExecution: true,
+      snapshot,
+    });
+  }
+
   try {
     const selected = selectWooCommerceCompletedState(input);
     if (selected.priorQueueAttempts < minimumQueueAttempts) {
-      return Object.freeze({ complete: false, terminalFailure: false, snapshot });
+      return Object.freeze({
+        complete: false,
+        terminalFailure: false,
+        pendingAdmission: true,
+        pendingExecution: true,
+        snapshot,
+      });
     }
     return Object.freeze({
       complete: true,
       terminalFailure: false,
+      pendingAdmission: false,
+      pendingExecution: false,
       snapshot,
       selected,
     });
@@ -190,7 +230,13 @@ export function classifyWooCommerceCompletedStatePoll(input = {}) {
       'WOOCOMMERCE_COMPLETED_STATE_DATASET_INCOMPLETE',
       'WOOCOMMERCE_COMPLETED_STATE_SOURCE_COUNT_DRIFT',
     ].includes(error?.code)) throw error;
-    return Object.freeze({ complete: false, terminalFailure: false, snapshot });
+    return Object.freeze({
+      complete: false,
+      terminalFailure: false,
+      pendingAdmission: false,
+      pendingExecution: false,
+      snapshot,
+    });
   }
 }
 
