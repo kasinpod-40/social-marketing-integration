@@ -362,13 +362,25 @@ async function runFreshReadOnlyValidation(baseEnv, evidenceRoot) {
 }
 
 async function resolveCloudflareContext(env, configPath) {
-  const whoami = runText('npx', ['wrangler', 'whoami', '--json'], env);
-  const accountId = resolveCloudflareAccountId({
+  const configText = await readFile(configPath, 'utf8');
+  const accountInput = {
     explicitAccountId: env.CLOUDFLARE_ACCOUNT_ID,
-    configText: await readFile(configPath, 'utf8'),
-    whoamiOutput: whoami,
+    configText,
     preferredAccount: env.MKT_WOOCOMMERCE_ROLLOUT_ACCOUNT,
-  });
+  };
+  let accountId;
+  try {
+    accountId = resolveCloudflareAccountId({
+      ...accountInput,
+      whoamiOutput: null,
+    });
+  } catch (error) {
+    if (error?.code !== 'WOOCOMMERCE_FINAL_WHOAMI_JSON_INVALID') throw error;
+    accountId = resolveCloudflareAccountId({
+      ...accountInput,
+      whoamiOutput: runText('npx', ['wrangler', 'whoami', '--json'], env),
+    });
+  }
   const explicitToken = optionalText(env.CLOUDFLARE_API_TOKEN);
   const auth = resolveCloudflareBearerAuth({
     explicitApiToken: explicitToken,
