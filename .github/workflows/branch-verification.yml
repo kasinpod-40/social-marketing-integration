@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: branch-verification-${{ github.ref }}
@@ -24,6 +24,21 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Apply Chatwoot secret staging patch
+        if: github.head_ref == 'hotfix/chatwoot-final-secret-staging'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/apply-chatwoot-secret-staging-patch.py
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add scripts/chatwoot-final-30d-daily-uat-launcher.mjs
+          git commit -m "fix: stage Chatwoot Secret in safe launcher"
+          git push origin HEAD:${{ github.head_ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -69,6 +84,8 @@ jobs:
           set -o pipefail
           node --test \
             tests/application/chatwoot-final-30d-daily-uat.test.js \
+            tests/application/chatwoot-final-secret-bootstrap.test.js \
+            tests/application/chatwoot-final-secret-bootstrap-launcher.test.js \
             tests/application/chatwoot-final-preflight-initialization.test.js \
             tests/application/chatwoot-final-queue-topology-normalization.test.js \
             tests/application/woocommerce-final-queue-bootstrap-auth-order.test.js \
