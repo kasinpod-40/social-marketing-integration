@@ -200,6 +200,9 @@ export function buildChatwootFinalUatJob(operation = {}) {
 
 export function buildChatwootFinalUatPreflightSql(input = {}) {
   const accountKey = sqlText(requireExact(input.accountKey ?? 'chemistry_k', 'chemistry_k', 'accountKey'));
+  const priorOperationRange = sqlPrefixRange('operation_id', 'chatwoot-');
+  const tableNameRange = sqlPrefixRange('name', 'chatwoot_');
+  const indexNameRange = sqlPrefixRange('name', 'idx_chatwoot_');
   const businessCounts = uniqueD1Tables().map((name) => (
     `(SELECT COUNT(*) FROM ${name} WHERE account_key = '${accountKey}') AS ${name}`
   )).join(', ');
@@ -207,9 +210,9 @@ export function buildChatwootFinalUatPreflightSql(input = {}) {
     SELECT
       (SELECT COUNT(*) FROM sync_work_runs WHERE work_type = 'chatwoot.conversations.sync' AND lifecycle_status = 'active') AS active_chatwoot_work,
       (SELECT COUNT(*) FROM sync_locks WHERE lock_key = 'chatwoot:chemistry_k:analytics' AND expires_at > unixepoch('now') * 1000) AS active_chatwoot_locks,
-      (SELECT COUNT(*) FROM queue_operation_attempts WHERE operation_id LIKE 'chatwoot-%') AS prior_chatwoot_operations,
-      (SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name LIKE 'chatwoot_%') AS chatwoot_table_count,
-      (SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name LIKE 'idx_chatwoot_%') AS chatwoot_index_count,
+      (SELECT COUNT(*) FROM queue_operation_attempts WHERE ${priorOperationRange}) AS prior_chatwoot_operations,
+      (SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND ${tableNameRange}) AS chatwoot_table_count,
+      (SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND ${indexNameRange}) AS chatwoot_index_count,
       ${businessCounts};
   `);
 }
@@ -217,7 +220,9 @@ export function buildChatwootFinalUatPreflightSql(input = {}) {
 export function buildChatwootFinalUatSnapshotSql(operation = {}) {
   const operationId = sqlText(requireOperationId(operation.operationId));
   const workKey = sqlText(requireExact(operation.workKey, `chatwoot:chemistry_k:${operation.operationId}`, 'workKey'));
-  const syncRunId = sqlText(requireExact(operation.syncRunId, `chatwoot:chemistry_k:${operation.operationId}`, 'syncRunId'));
+  const rawSyncRunId = requireExact(operation.syncRunId, `chatwoot:chemistry_k:${operation.operationId}`, 'syncRunId');
+  const syncRunId = sqlText(rawSyncRunId);
+  const unitSyncRunRange = sqlPrefixRange('sync_run_id', `${rawSyncRunId}:unit:`);
   const requestedAt = requireTimestamp(operation.originalRequestedAt, 'originalRequestedAt');
   const counts = CHATWOOT_FINAL_UAT_TABLES.map((spec) => (
     `(SELECT COUNT(*) FROM ${spec.d1Table} WHERE account_key = 'chemistry_k') AS ${spec.key}`
@@ -245,11 +250,11 @@ export function buildChatwootFinalUatSnapshotSql(operation = {}) {
       COALESCE((SELECT json_extract(state_json, '$.rollupPagesProcessed') FROM sync_work_phases WHERE work_key = '${workKey}' AND phase = 'chatwoot_runtime_30d_daily_v1'), 0) AS active_rollup_pages,
       (SELECT COUNT(*) FROM sync_locks WHERE lock_key = 'chatwoot:chemistry_k:analytics' AND expires_at > unixepoch('now') * 1000) AS active_lock_count,
       COALESCE((SELECT MAX(main_queue_attempts) FROM queue_operation_attempts WHERE operation_id = '${operationId}' AND work_key = '${workKey}'), 0) AS main_queue_attempts,
-      (SELECT COUNT(*) FROM sync_runs WHERE sync_run_id LIKE '${syncRunId}:unit:%') AS unit_sync_runs,
-      (SELECT COUNT(*) FROM sync_runs WHERE sync_run_id LIKE '${syncRunId}:unit:%' AND status NOT IN ('success', 'completed')) AS failed_unit_sync_runs,
-      (SELECT COUNT(*) FROM data_coverage_runs WHERE sync_run_id LIKE '${syncRunId}:unit:%') AS coverage_runs,
-      (SELECT COUNT(*) FROM data_coverage_runs WHERE sync_run_id LIKE '${syncRunId}:unit:%' AND failed_rows > 0) AS failed_coverage_runs,
-      (SELECT COALESCE(SUM(failed_rows), 0) FROM data_coverage_runs WHERE sync_run_id LIKE '${syncRunId}:unit:%') AS failed_coverage_rows,
+      (SELECT COUNT(*) FROM sync_runs WHERE ${unitSyncRunRange}) AS unit_sync_runs,
+      (SELECT COUNT(*) FROM sync_runs WHERE ${unitSyncRunRange} AND status NOT IN ('success', 'completed')) AS failed_unit_sync_runs,
+      (SELECT COUNT(*) FROM data_coverage_runs WHERE ${unitSyncRunRange}) AS coverage_runs,
+      (SELECT COUNT(*) FROM data_coverage_runs WHERE ${unitSyncRunRange} AND failed_rows > 0) AS failed_coverage_runs,
+      (SELECT COALESCE(SUM(failed_rows), 0) FROM data_coverage_runs WHERE ${unitSyncRunRange}) AS failed_coverage_rows,
       (SELECT COUNT(*) FROM dead_letter_operation_metadata WHERE operation_id = '${operationId}') AS dlq_records,
       (SELECT COUNT(*) FROM system_alerts WHERE platform = 'chatwoot' AND status = 'open' AND created_at >= ${requestedAt}) AS open_chatwoot_alerts,
       (SELECT sync_type FROM sync_cursors WHERE cursor_key = 'chatwoot:chemistry_k:analytics') AS cursor_sync_type,
@@ -572,6 +577,26 @@ function optionalText(value) {
 }
 function sqlText(value) {
   return String(value).replaceAll("'", "''");
+}
+function sqlPrefixRange(columnName, prefixValue) {
+  const column = requireSqlIdentifier(columnName);
+  const prefix = requireText(prefixValue, 'prefixValue');
+  if (!/^[a-z0-9:_-]+$/u.test(prefix)) {
+    throw uatError('SQL prefix contains unsupported characters', 'CHATWOOT_FINAL_UAT_SQL_PREFIX_INVALID');
+  }
+  const lastCode = prefix.charCodeAt(prefix.length - 1);
+  if (!Number.isSafeInteger(lastCode) || lastCode >= 0x7f) {
+    throw uatError('SQL prefix cannot form a bounded upper range', 'CHATWOOT_FINAL_UAT_SQL_PREFIX_INVALID');
+  }
+  const upper = `${prefix.slice(0, -1)}${String.fromCharCode(lastCode + 1)}`;
+  return `${column} >= '${sqlText(prefix)}' AND ${column} < '${sqlText(upper)}'`;
+}
+function requireSqlIdentifier(value) {
+  const text = requireText(value, 'sqlIdentifier');
+  if (!/^[a-z_][a-z0-9_]*$/u.test(text)) {
+    throw uatError('SQL identifier has an unsafe format', 'CHATWOOT_FINAL_UAT_SQL_PREFIX_INVALID');
+  }
+  return text;
 }
 function compactSql(value) {
   return String(value).replace(/\s+/gu, ' ').trim();
