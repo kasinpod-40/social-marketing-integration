@@ -279,8 +279,9 @@ export function buildWooCommerceIncrementalAdmissionRaceClosureSql(input = {}) {
   const operation = sqlText(operationId);
   const work = sqlText(workKey);
   const reference = sqlText(recoveryReference);
+  // Wrangler maps semicolon-delimited commands into D1's statement batch. Explicit BEGIN/COMMIT is
+  // intentionally omitted because Remote D1 imports already run inside a transaction boundary.
   return compactSql(`
-    BEGIN IMMEDIATE;
     UPDATE dead_letter_jobs
     SET status='redriven',
         redrive_requested_at=COALESCE(redrive_requested_at,${completedAt}),
@@ -312,7 +313,6 @@ export function buildWooCommerceIncrementalAdmissionRaceClosureSql(input = {}) {
       AND generation=${requestedAt}
       AND original_requested_at=${requestedAt}
       AND recovery_status IN ('not_started','in_progress','completed');
-    COMMIT;
   `);
 }
 
