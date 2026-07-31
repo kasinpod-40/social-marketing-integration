@@ -30,6 +30,8 @@ test('final launcher emits the authoritative success marker only after post-clos
 test('launcher normalizes missing locked runtime vars without editing ignored local config', async () => {
   const source = await readFile(launcherUrl, 'utf8');
   assert.match(source, /createNormalizedRuntimeConfig/u);
+  assert.match(source, /CHATWOOT_FINAL_UAT_ACTIVE_TRUE_FLAGS/u);
+  assert.match(source, /for \(const name of CHATWOOT_FINAL_UAT_ACTIVE_TRUE_FLAGS\) config\.vars\[name\] = 'false'/u);
   assert.match(source, /CHATWOOT_FINAL_UAT_LOCKED_VARS/u);
   assert.match(source, /SAFE_COMPATIBILITY_LIMITS/u);
   assert.match(source, /CHATWOOT_API_MAX_PAGES:\s*'1000'/u);
@@ -44,14 +46,11 @@ test('launcher normalizes missing locked runtime vars without editing ignored lo
   assert.match(source, /CHATWOOT_FINAL_UAT_LOCAL_CONFIG_CONFLICT/u);
 });
 
-test('launcher delegates execution to the reviewed core and does not implement deployment or Queue submission', async () => {
+test('launcher delegates deployment and Queue submission to the reviewed core', async () => {
   const source = await readFile(launcherUrl, 'utf8');
   assert.match(source, /scripts\/chatwoot-final-30d-daily-uat\.mjs/u);
   assert.doesNotMatch(source, /wrangler[^\n]+deploy/u);
   assert.doesNotMatch(source, /queues\/.+\/messages/u);
   assert.doesNotMatch(source, /api\.cloudflare\.com/u);
-  assert.doesNotMatch(source, /MKT_CONNECTOR_CHATWOOT_ENABLED/u);
-  assert.doesNotMatch(source, /MKT_CHATWOOT_D1_WRITE_ENABLED/u);
-  assert.doesNotMatch(source, /MKT_CHATWOOT_LARK_WRITE_ENABLED/u);
-  assert.doesNotMatch(source, /MKT_CHATWOOT_REPORT_WRITE_ENABLED/u);
+  assert.doesNotMatch(source, /config\.vars\[name\] = 'true'/u);
 });
