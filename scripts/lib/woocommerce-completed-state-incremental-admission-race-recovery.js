@@ -222,6 +222,9 @@ export function validateWooCommerceIncrementalAdmissionRaceRecovered(input = {})
     && state.queueOriginalMax === requestedAt
     && state.metadataGeneration === requestedAt
     && state.metadataOriginalRequestedAt === requestedAt;
+  // The second accepted delivery intentionally replaces queue_operation_attempts.last_main_message_id.
+  // The original Terminal message identity is therefore an admission-only invariant, while the exact
+  // DLQ row/error and immutable operation generation remain authoritative after recovery.
   const valid = state.queueRows === 1
     && state.queueAttempts >= 2
     && state.metadataRows === 1
@@ -231,7 +234,6 @@ export function validateWooCommerceIncrementalAdmissionRaceRecovered(input = {})
     && state.terminalErrorCode === WOOCOMMERCE_INCREMENTAL_ADMISSION_RACE_ERROR_CODE
     && state.terminalRetryCount === 1
     && state.terminalJobType === JOB_TYPE
-    && state.messageIdentityMatches
     && state.syncRows === 1
     && state.syncStatus === 'success'
     && state.syncErrorCode === null
