@@ -24,6 +24,8 @@ test('scope contract declares every read and write used by field-identity recove
   assert.deepEqual(REQUIRED_LARK_DASHBOARD_FIELD_IDENTITY_SCOPES, [
     'base:dashboard:read',
     'base:dashboard:update',
+    'base:block:read',
+    'base:block:update',
     'base:field:read',
     'base:field:update',
     'base:field:delete',
@@ -34,8 +36,8 @@ test('scope contract declares every read and write used by field-identity recove
     assertFieldIdentityScopeConfirmation(LARK_DASHBOARD_FIELD_IDENTITY_SCOPE_CONFIRMATION),
     true,
   );
-  assert.equal(REQUIRED_LARK_DASHBOARD_FIELD_IDENTITY_SCOPES.includes('base:block:update'), false);
-  assert.equal(REQUIRED_LARK_DASHBOARD_FIELD_IDENTITY_SCOPES.includes('base:block:read'), false);
+  assert.equal(REQUIRED_LARK_DASHBOARD_FIELD_IDENTITY_SCOPES.includes('base:block:update'), true);
+  assert.equal(REQUIRED_LARK_DASHBOARD_FIELD_IDENTITY_SCOPES.includes('base:block:read'), true);
   assert.equal(
     assertFieldIdentityRecoveryConfirmation(LARK_DASHBOARD_FIELD_IDENTITY_RECOVERY_CONFIRMATION),
     true,

@@ -88,8 +88,9 @@ proved that the Update request path still required contract hardening, but the g
 one exact root cause.
 
 Recovery v3.3 serializes the Organic `filter` into request shape only and removes Read-response metadata such as
-`condition_id`, `field_type`, `condition_omitted` and response `type`. It declares `base:dashboard:update`, emits
-a private `statistics-request-plan.json`, and provides a bounded one-Block probe for `Baseline Coverage Rate`.
+`condition_id`, `field_type`, `condition_omitted` and response `type`. It adds `base:dashboard:update` while
+retaining `base:block:read/update`, emits a private `statistics-request-plan.json`, and provides a bounded
+one-Block probe for `Baseline Coverage Rate`.
 The probe stops before Window charts, Records or Fields and must converge on readback before full Recovery resumes.
 
 Detailed contract:

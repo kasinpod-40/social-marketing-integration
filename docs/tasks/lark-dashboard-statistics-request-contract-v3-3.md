@@ -22,7 +22,7 @@ No Remote Lark mutation was confirmed. Retain the complete evidence directory fr
 
 The existing Organic filter rewrite cloned the Dashboard Read response and sent the resulting `filter` object back as a replacement top-level key. This could reflect response-only metadata such as `condition_id`, `field_type`, `condition_omitted` or response `type` into the Update request.
 
-The required scope contract also named `base:block:update`; Dashboard chart Block mutation belongs to the Dashboard update authority and must declare `base:dashboard:update`.
+The required scope contract named the component authorities but omitted `base:dashboard:update`. Official Lark scope metadata still lists `base:block:read` and `base:block:update`, so v3.3 adds the Dashboard authority while retaining the component scopes until the bounded Live probe confirms endpoint enforcement.
 
 Lark's generic `code=1` response does not prove which defect caused the rejection. The exact cause remains a hypothesis until a bounded Live Statistics request probe converges.
 
@@ -35,9 +35,11 @@ Lark's generic `code=1` response does not prove which defect caused the rejectio
   - preserve reviewed business conditions;
   - remove all response-only metadata;
   - fail closed on malformed valued conditions.
-- Replace obsolete Block scopes with:
+- Declare the fail-closed union required by the reviewed request path:
   - `base:dashboard:read`;
-  - `base:dashboard:update`.
+  - `base:dashboard:update`;
+  - `base:block:read`;
+  - `base:block:update`.
 - Write a private `statistics-request-plan.json` before mutation.
 - Assert that every changed Statistics patch replaces only the `filter` top-level key and contains no unreviewed condition keys.
 - Add `--statistics-probe-only`:

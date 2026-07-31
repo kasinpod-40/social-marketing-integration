@@ -10,6 +10,8 @@ export const LARK_DASHBOARD_FIELD_IDENTITY_SCOPE_CONFIRMATION =
 export const REQUIRED_LARK_DASHBOARD_FIELD_IDENTITY_SCOPES = Object.freeze([
   'base:dashboard:read',
   'base:dashboard:update',
+  'base:block:read',
+  'base:block:update',
   'base:field:read',
   'base:field:update',
   'base:field:delete',
