@@ -3,11 +3,13 @@
 ## Status
 
 ```text
-TASK_STATUS                         = REPOSITORY_IMPLEMENTATION_VALIDATED_PENDING_FINAL_CI
+TASK_STATUS                         = REPOSITORY_IMPLEMENTATION_VALIDATED
 SCOPE                               = REPOSITORY_ONLY
 BASE_MAIN                           = 95fe279d6ef46978d95acb1611ec859ae35cba64
 BRANCH                              = integration/chatwoot-final-30d-daily-uat
 DRAFT_PR                            = #311
+CODE_VERIFIED_HEAD                  = 3431760f769308cf52c0568e7cf4f6236213751e
+BRANCH_VERIFICATION                 = #1335 / 30602618460 / PASS
 REMOTE_PROVIDER_REQUEST             = 0
 REMOTE_D1_QUERY_WRITE               = 0
 REMOTE_LARK_REQUEST_MUTATION        = 0
@@ -48,6 +50,8 @@ The launcher is the only approved public execution entrypoint:
 CONFIRM_CHATWOOT_FINAL_UAT=EXECUTE_CHATWOOT_30D_DAILY_UAT \
 node scripts/chatwoot-final-30d-daily-uat-launcher.mjs --execute
 ```
+
+The launcher creates a private temporary config from the existing ignored `wrangler.sync.jsonc`. Missing reviewed Chatwoot Safe flags, locked 30-day/three-day values and the 1,000/100,000 pagination bounds are supplied automatically. The retired 48-hour overlap variable is removed from the temporary file. Conflicting locked values fail closed, paths are rebased, the user's ignored config is never edited and the temporary file is removed afterward.
 
 The inner operator remains plan-only by default. The launcher independently verifies the actual Shared Reliability lock prefix before execution and again after Safe closeout:
 
@@ -184,7 +188,7 @@ npm audit --audit-level=high
 npm run deploy:dry-run
 ```
 
-Branch Verification run `30601895105` passed the initial implementation head. The exact final Head after lock-scope hardening must pass the same complete Gate chain before Ready/Merge.
+Branch Verification `#1335 / 30602618460` passed the exact code Head `3431760f769308cf52c0568e7cf4f6236213751e`: install, architecture/hygiene, focused Chatwoot tests, TikTok regression, full Unit/Workers runtime, Report reliability, dependency audit and Wrangler dry-run all passed. This documentation closeout Head must pass the same exact Gate chain before Ready/Merge.
 
 ## Out of scope
 
