@@ -2,12 +2,28 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 
+const TERMINAL = new URL(
+  '../../scripts/meta-history-2026-exact-plan-continuation-terminal.mjs',
+  import.meta.url,
+);
 const SOURCE = new URL(
   '../../scripts/meta-history-2026-exact-plan-continuation.mjs',
   import.meta.url,
 );
 
-test('exact-plan continuation is the public guarded boundary and does not replay Facebook Provider or D1 Queue', async () => {
+test('exact-plan public Terminal supplies the retained private Safe config', async () => {
+  const source = await readFile(TERMINAL, 'utf8');
+
+  assert.match(source, /wrangler\.meta-history\.safe\.jsonc/u);
+  assert.match(source, /MKT_META_D1_ONLY_WRANGLER_CONFIG:\s*retainedSafeConfig/u);
+  assert.match(source, /MKT_WOOCOMMERCE_ROLLOUT_WRANGLER_CONFIG:\s*retainedSafeConfig/u);
+  assert.match(source, /meta-history-2026-exact-plan-continuation\.mjs/u);
+  assert.doesNotMatch(source, /wrangler\.sync\.jsonc/u);
+  assert.doesNotMatch(source, /meta-lark-parity-rollout-launcher\.mjs/u);
+  assert.doesNotMatch(source, /meta-d1-only-rollout-launcher\.mjs/u);
+});
+
+test('exact-plan continuation is guarded and does not replay Facebook Provider or D1 Queue', async () => {
   const source = await readFile(SOURCE, 'utf8');
 
   assert.match(source, /validateStableMetaHistoryFacebookBoundary/u);
