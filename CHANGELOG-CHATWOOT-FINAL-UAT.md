@@ -1,6 +1,20 @@
 # Chatwoot Final UAT Changelog
 
-## Unreleased — Queue REST Discovery Hotfix
+## Unreleased — Preflight Initialization Hotfix
+
+### Incident correction
+
+- Fixed the inner Final operator failing with `Cannot access 'preflight' before initialization` after local gates, Lark mapping and Queue REST discovery.
+- The local preflight result binding shadowed the `preflight()` function and triggered JavaScript temporal-dead-zone semantics before the read-only preflight call.
+- The failed execution stopped before Worker activation, Queue submission, D1/Lark Business writes or Chatwoot Provider access; Safe restore was not required.
+
+### Initialization safety
+
+- Renamed the local result to `preflightResult` while keeping the existing preflight function and operation sequence unchanged.
+- Read-only evidence and Safe-restore baseline ownership now consume the renamed result.
+- Added focused regression for function/result non-shadowing and preflight → backup → Active deployment ordering.
+
+## Queue REST Discovery Hotfix
 
 ### Incident correction
 
