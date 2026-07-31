@@ -152,6 +152,7 @@ export function buildChatwootRuntimePlan(input = {}) {
   const requestedAt = requireTimestamp(input.requestedAt, 'requestedAt');
   const conversationPages = nonNegativeInteger(input.conversationPages ?? 0, 'conversationPages');
   const reportingPages = nonNegativeInteger(input.reportingPages ?? 0, 'reportingPages');
+  const rollupPages = nonNegativeInteger(input.rollupPages ?? 0, 'rollupPages');
   const conversationPagesPerInvocation = positiveInteger(
     input.conversationPagesPerInvocation ?? 1,
     'conversationPagesPerInvocation',
@@ -163,6 +164,8 @@ export function buildChatwootRuntimePlan(input = {}) {
   const window = resolveChatwootRuntimeWindow({ mode, requestedAt });
   const conversationUnits = Math.ceil(conversationPages / conversationPagesPerInvocation);
   const reportingUnits = Math.ceil(reportingPages / reportingPagesPerInvocation);
+  // Runtime processes one bounded 500-row D1 rollup page per continuation.
+  const rollupUnits = rollupPages;
   return Object.freeze({
     contractVersion: CHATWOOT_RUNTIME_CONTRACT_VERSION,
     schemaVersion: CHATWOOT_RUNTIME_JOB_SCHEMA_VERSION,
@@ -176,10 +179,12 @@ export function buildChatwootRuntimePlan(input = {}) {
     mastersUnits: 1,
     conversationUnits,
     reportingUnits,
+    rollupUnits,
     finalizationUnits: 1,
-    totalUnits: 2 + conversationUnits + reportingUnits,
+    totalUnits: 2 + conversationUnits + reportingUnits + rollupUnits,
     conversationPagesPerInvocation,
     reportingPagesPerInvocation,
+    rollupPagesPerInvocation: 1,
     queueMessagesSent: 0,
     remoteD1Mutations: 0,
     remoteLarkMutations: 0,
