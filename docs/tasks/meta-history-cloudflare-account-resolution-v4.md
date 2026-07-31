@@ -17,8 +17,6 @@ Business writes or any of the six history operations. The restore child repeated
 
 ## Existing authority
 
-The Integration Workspace already has stable Cloudflare authority:
-
 ```text
 Account name              Social MKT Data Hub DEV
 CLOUDFLARE_ACCOUNT_ID     stored locally in .dev.vars
@@ -29,6 +27,22 @@ CLOUDFLARE_API_TOKEN      stored locally in .dev.vars
 The Account ID is non-secret routing identity. The API token is secret authentication. Neither requires a
 successful Wrangler user-membership `whoami` command when both are already available.
 
+## Shared Main authority
+
+PR #343 merged the shared Queue bootstrap authentication-order correction before this Meta hotfix:
+
+```text
+explicit API token
+→ no Wrangler authentication command
+→ explicit Environment Account ID
+→ otherwise config account_id
+→ whoami only when Account ID is absent
+→ exact Queue REST inventory
+```
+
+Meta v4 is rebased onto that Main and uses the same shared `resolveCloudflareAccountId()` and
+`resolveCloudflareBearerAuth()` contracts. It does not introduce another Queue or authentication engine.
+
 ## Root cause
 
 `resolveCloudflareContext()` executed `wrangler whoami --json` before calling the existing shared
@@ -38,7 +52,7 @@ successful Wrangler user-membership `whoami` command when both are already avail
 2. top-level Wrangler `account_id`;
 3. parsed `whoami` memberships.
 
-The finalizer therefore defeated the shared precedence contract by eagerly running step 3 first.
+The Meta finalizer therefore defeated the shared precedence contract by eagerly running step 3 first.
 
 ## Correction
 
@@ -66,6 +80,12 @@ The focused public-launcher regression must prove:
 - exactly one `whoami` invocation remains;
 - no unconditional `const whoami = runText(...)` pattern exists.
 
+Current Main also retains the shared functional Queue-bootstrap tests proving:
+
+- explicit Account ID + API token execute zero Wrangler auth commands;
+- config Account ID uses only bearer retrieval when needed;
+- `whoami` remains only for genuine account discovery.
+
 ## Unchanged safety contracts
 
 - no new Connector, Queue, Reliability, D1 writer or Lark engine;
@@ -84,6 +104,7 @@ The focused public-launcher regression must prove:
 npm ci
 npm run check
 focused Meta workstream tests
+shared Queue bootstrap authentication-order tests
 npm test
 npm run test:report-reliability
 npm audit --audit-level=high
