@@ -62,7 +62,7 @@ test('Meta runtime authority materializes customer mappings and the complete Sha
   assert.match(source, /META_HISTORY_RUNTIME_CONFIG_ENV/u);
   assert.match(source, /Object\.entries\(META_HISTORY_RUNTIME_CONFIG_ENV\)/u);
   assert.match(source, /values\.length !== stringValues\.length/u);
-  assert.match(source, /\(true\|false\)/u);
+  assert.match(source, /\|true\|false\)/u);
   assert.doesNotMatch(source, /MKT_WOOCOMMERCE_D1_WRITE_ENABLED:\s*'false'/u);
 });
 
