@@ -6,7 +6,7 @@
 TASK_STATUS                   = REPOSITORY_IMPLEMENTATION_IN_REVIEW
 CURRENT_PROGRAM               = META_HISTORY_2026_FINALIZER_V1
 IMPLEMENTATION_PR             = #319 / OPEN
-BASE_MAIN_SHA                 = a1b04a02627db22a47ba1e83e9e445a6a2043258
+BASE_MAIN_SHA                 = a6abb815467dbf4d452f6a6fc37f13294c875306
 WOOCOMMERCE                   = WOOCOMMERCE_2026_COMPLETED_SAFE
 FACEBOOK                      = VERIFY_EXISTING_D1_LARK_NO_PROVIDER_REPLAY
 INSTAGRAM_RANGE               = 2026-07-01..2026-07-31
@@ -39,12 +39,14 @@ TableSyncEngine. Do not create a replacement Facebook operation or duplicate sha
 
 ```bash
 CONFIRM_META_HISTORY_2026_FINALIZER=RUN_META_HISTORY_2026_ONE_COMMAND \
-node scripts/meta-history-2026-one-command.mjs --execute
+node scripts/meta-history-2026-terminal.mjs --execute
 ```
 
-The public launcher runs the guarded finalizer, verifies authoritative D1 and Lark summaries, blocks
-uncertain Queue resends, restores the safe Worker configuration after a failed active window and accepts
-completion only when Lark parity, idempotent replay and zero active reliability state are proven.
+The Terminal entrypoint requires exact clean `main`, persists deterministic operation IDs with unique ISO
+`originalRequestedAt` generations before any Remote action, then delegates to the guarded one-command
+finalizer. The child verifies authoritative D1 and Lark summaries, blocks uncertain Queue resends,
+restores the safe Worker configuration after a failed active window and accepts completion only when Lark
+parity, idempotent replay and zero active reliability state are proven.
 
 Expected result:
 
@@ -60,6 +62,7 @@ Production                           = blocked
 
 ```text
 Exact merged main                    required
+ISO requested-at generations         persisted before Remote action
 Meta End-to-End Verification         pass
 Branch Verification                  pass
 Facebook existing completion         verified
