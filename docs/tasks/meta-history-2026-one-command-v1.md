@@ -2,11 +2,11 @@
 
 ## Objective
 
-Complete the existing Chemistry K Meta delivery without replacing the reviewed Shared Meta runtime or
-replaying the already-completed Facebook lane unnecessarily.
+Complete the existing Chemistry K Meta delivery without replacing Shared Meta infrastructure or replaying
+the already-completed Facebook lane.
 
 ```text
-Facebook Organic     verify existing pinned completion and Lark parity; Provider replay forbidden
+Facebook Organic     verify pinned completion and Lark parity; no Provider replay
 Instagram Organic    2026-07-01 through 2026-07-31 inclusive
 Meta Ads baseline    2026-05-01 through 2026-07-31 inclusive, both Ads accounts
 Meta Ads expansion   2026-01-01 through 2026-04-30 when baseline volume is bounded
@@ -14,62 +14,65 @@ Meta Ads expansion   2026-01-01 through 2026-04-30 when baseline volume is bound
 
 ## Existing authority retained
 
-- Facebook already passed D1/Lark delivery and must be verified, not replaced.
+- Facebook already passed D1/Lark delivery and is verified rather than replaced.
 - The pinned Meta session at Head `e069380a544575ce0fc9bca53f1fb56944d26c09` and Instagram operation
-  `meta-instagram-d1-20260729t065939687z-1ad3c9` must resume before supplemental history.
+  `meta-instagram-d1-20260729t065939687z-1ad3c9` resume before supplemental history.
 - Existing Meta Graph transport, active Worker router, Shared Queue/Reliability, D1 stores,
   Organic History Writer, Coverage and TableSyncEngine remain authoritative.
 - Stable keys, D1-first processing, same-operation Lark continuation and idempotent replay remain unchanged.
 
-## Source corrections
+## Instagram inventory
 
-### Instagram inventory
-
-Instagram `/me/media` does not use the Facebook `since/until` inventory query. The source adapter now:
+Instagram `/me/media` does not use the Facebook inventory date query. The source adapter now:
 
 - accepts an exact configured content-history range;
-- keeps provider pagination newest-first;
+- keeps Provider pagination newest-first;
 - filters content to the inclusive range;
 - continues while pages are newer than the requested range;
 - retires pagination after the first row older than the lower boundary;
-- fails closed on missing/invalid timestamps or non-monotonic provider order.
+- fails closed on missing/invalid timestamps or non-monotonic order.
 
-Existing operations without configured history bounds preserve the previous behavior.
+Operations without configured history bounds preserve the previous behavior.
 
-### Meta Ads history
+## Meta Ads history
 
-The Marketing API adapter still issues no request longer than 31 inclusive days. For a longer operation it
-uses an internal opaque durable cursor containing the current date chunk and provider cursor:
+Every Marketing API request remains at most 31 inclusive days. A longer operation uses an opaque durable
+cursor containing the exact root range, current date chunk and current Provider cursor:
 
 ```text
-requested multi-month range
+multi-month operation
 → one <=31-day Provider page
 → persist compound cursor
-→ finish Provider pagination for that chunk
+→ finish pagination for that chunk
 → advance to the next <=31-day chunk
 ```
 
-Single-window operations preserve the prior raw provider-cursor contract exactly.
+Existing operations no longer than 31 days preserve the previous raw Provider-cursor contract.
 
-## One-command execution
+## Public command
 
 ```bash
 CONFIRM_META_HISTORY_2026_FINALIZER=RUN_META_HISTORY_2026_ONE_COMMAND \
-node scripts/meta-history-2026-finalizer.mjs --execute
+node scripts/meta-history-2026-one-command.mjs --execute
 ```
 
-The command:
+The public launcher delegates to the guarded finalizer and owns fail-closed closeout. It:
 
 1. requires clean `main == origin/main` and private local inputs;
-2. runs the complete Repository gate before Remote mutation;
-3. creates an exact private persisted operation plan;
-4. verifies current all-false Worker and zero active Reliability state;
-5. resumes the pinned Meta finalizer and requires its session to complete;
+2. runs the full Repository gate before Remote mutation;
+3. persists deterministic operation IDs and requested-at generations;
+4. verifies the current all-false Worker and idle Reliability state;
+5. resumes the exact pinned Meta finalizer;
 6. refreshes all four GET-only identity validations;
 7. executes required Instagram and three-month Ads D1/Lark operations;
-8. expands Ads to January 1 only when the two baseline operations remain below exact row/Coverage limits;
-9. verifies same-operation replay, D1/Lark parity and all-false restore for every operation;
-10. requires final active Work/Lock/Queue counts `0/0/0` and emits `META_HISTORY_2026_COMPLETED_SAFE`.
+8. expands Ads to January 1 only when the reviewed limits permit;
+9. verifies same-operation replay, D1/Lark parity and all-false restore;
+10. blocks uncertain Queue resends;
+11. restores the reviewed Safe Worker configuration after a failed active window;
+12. emits `META_HISTORY_2026_COMPLETED_SAFE` only after final active Work/Lock/Queue counts are `0/0/0`.
+
+The lower-level `scripts/meta-history-2026-finalizer.mjs` is an implementation child and is not the public
+operator command.
 
 ## Adaptive Ads limits
 
@@ -84,16 +87,16 @@ active Lock                         0
 Sync status                    success
 ```
 
-If the baseline exceeds a limit, the accepted three-month history remains final and no older operation is
-created.
+If a limit is exceeded, the accepted three-month history is final and no older operation is created.
 
-## Recovery and rerun
+## Exact closeout correction
 
-- Operation IDs and requested-at generations are persisted before the first Queue send.
-- Completed D1/Lark summaries are reused on a launcher rerun.
-- An existing Queue attempt without its accepted phase evidence is never resent automatically.
-- Any failure after an active deployment invokes the exact all-false restore and verifies it before returning.
-- The pinned historical Meta operation is never replaced.
+The authoritative Lark operator summary field is `larkParityVerified`. The public launcher verifies that
+field directly together with `idempotentRerunVerified`, `restoredAllFalse` and zero Provider requests in
+the Lark continuation. It never treats a missing or differently named field as success.
+
+Only a final summary field-name mismatch can be recovered from evidence. Earlier-stage failures remain
+failures after the Safe Worker restore and are never converted to success.
 
 ## Safety
 
@@ -102,6 +105,7 @@ Facebook Provider replay         forbidden
 Business fact deletion           forbidden
 Direct Business-table mutation   forbidden
 New Queue/Writer framework       none
+Uncertain Queue resend           forbidden
 Schedule activation              forbidden
 Production                       blocked
 Secrets in evidence              none
@@ -113,10 +117,12 @@ Final Worker flags               all false
 ```text
 npm ci
 npm run check
-focused Meta history/rollout/Lark tests
+focused Meta history source/finalizer/closeout tests
+focused Meta D1/Lark rollout tests
 npm test
 npm run test:report-reliability
 npm audit --audit-level=high
 npm run deploy:dry-run
+Meta End-to-End Verification on exact PR Head
 Branch Verification on exact PR Head
 ```
