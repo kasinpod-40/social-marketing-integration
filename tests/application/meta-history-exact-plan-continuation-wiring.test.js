@@ -10,6 +10,10 @@ const SOURCE = new URL(
   '../../scripts/meta-history-2026-exact-plan-continuation.mjs',
   import.meta.url,
 );
+const LOCAL_VERIFIER = new URL(
+  '../../scripts/verify-meta-history-exact-plan-continuation-local.mjs',
+  import.meta.url,
+);
 
 test('exact-plan public Terminal supplies the retained private Safe config', async () => {
   const source = await readFile(TERMINAL, 'utf8');
@@ -53,4 +57,26 @@ test('exact-plan continuation completes Facebook Lark before resuming the retain
   assert.match(source, /Queue acceptance is uncertain; blind resend is blocked/u);
   assert.match(source, /restore-all-false/u);
   assert.match(source, /verify-restore/u);
+});
+
+test('local verifier runs repository-only gates and no Live continuation command', async () => {
+  const source = await readFile(LOCAL_VERIFIER, 'utf8');
+
+  assert.match(source, /EXPECTED_META_CONTINUATION_HEAD/u);
+  assert.match(source, /npm', \['ci'\]/u);
+  assert.match(source, /npm', \['run', 'check'\]/u);
+  assert.match(source, /npm', \['test'\]/u);
+  assert.match(source, /test:report-reliability/u);
+  assert.match(source, /audit-level=high|--audit-level=high/u);
+  assert.match(source, /deploy:dry-run/u);
+  assert.match(source, /remoteProviderRequestCount:\s*0/u);
+  assert.match(source, /remoteQueueSendCount:\s*0/u);
+  assert.match(source, /remoteD1MutationCount:\s*0/u);
+  assert.match(source, /remoteLarkMutationCount:\s*0/u);
+  assert.match(source, /workerDeploymentCount:\s*0/u);
+
+  assert.doesNotMatch(source, /meta-history-2026-exact-plan-continuation-terminal\.mjs/u);
+  assert.doesNotMatch(source, /CONFIRM_META_HISTORY_EXACT_CONTINUATION/u);
+  assert.doesNotMatch(source, /wrangler', 'd1', 'execute/u);
+  assert.doesNotMatch(source, /--remote/u);
 });
