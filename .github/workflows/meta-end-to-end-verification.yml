@@ -22,6 +22,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: meta-end-to-end-verification-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   verify:
     runs-on: ${{ startsWith(github.head_ref, 'hotfix/meta-history-2026-') && 'mkt-ci' || 'ubuntu-latest' }}
