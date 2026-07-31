@@ -1,0 +1,144 @@
+name: Apply Chatwoot D1 Snapshot File Preflight Hotfix
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.head_ref == 'hotfix/chatwoot-final-d1-snapshot-file-preflight'
+    runs-on: mkt-ci
+    timeout-minutes: 10
+    steps:
+      - name: Checkout hotfix branch
+        uses: actions/checkout@v4
+        with:
+          ref: hotfix/chatwoot-final-d1-snapshot-file-preflight
+          fetch-depth: 0
+
+      - name: Apply bounded D1 read correction
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source_path = Path('scripts/chatwoot-final-30d-daily-uat.mjs')
+          source = source_path.read_text()
+
+          old_preflight = """  const d1 = assertChatwootFinalUatPreflight(normalizeChatwootFinalUatPreflight(
+            d1Row(target, buildChatwootFinalUatPreflightSql()),
+          ));
+          const lark = await larkCounts(target, true);
+          """
+          new_preflight = """  const d1 = assertChatwootFinalUatPreflight(normalizeChatwootFinalUatPreflight(
+            d1Row(target, buildChatwootFinalUatPreflightSql()),
+          ));
+          d1Row(target, buildChatwootFinalUatSnapshotSql(target.session.initial));
+          const lark = await larkCounts(target, true);
+          """
+          if source.count(old_preflight) != 1:
+              raise SystemExit('unexpected preflight block count')
+          source = source.replace(old_preflight, new_preflight, 1)
+
+          old_return = """    requiredSecretNames: REQUIRED_SECRETS.length,
+            d1,
+            larkTableCount: CHATWOOT_FINAL_UAT_TABLES.length,
+          """
+          new_return = """    requiredSecretNames: REQUIRED_SECRETS.length,
+            d1,
+            snapshotSqlVerified: true,
+            larkTableCount: CHATWOOT_FINAL_UAT_TABLES.length,
+          """
+          if source.count(old_return) != 1:
+              raise SystemExit('unexpected preflight return count')
+          source = source.replace(old_return, new_return, 1)
+
+          old_d1 = """function d1Row(target, sql) {
+            const parsed = JSON.parse(text('npx', ['wrangler', 'd1', 'execute', configName(target, 'databaseName'), '--remote', '--json',
+              '--config', target.sourcePath, '--command', sql], { env: target.cf.env }));
+            const row = Array.isArray(parsed) ? parsed.flatMap((item) => item.results ?? [])[0] : parsed.results?.[0];
+            if (!row) fail('D1 query returned no row', 'CHATWOOT_FINAL_UAT_D1_EMPTY');
+            return row;
+          }
+          """
+          new_d1 = """function d1Row(target, sql) {
+            const directory = inside(join('outputs', 'chatwoot-final-30d-daily-uat', '.generated'));
+            execFileSync('mkdir', ['-p', directory]);
+            const sqlPath = join(directory, `d1-read-${Date.now()}-${process.pid}-${process.hrtime.bigint()}.sql`);
+            execFileSync('sh', ['-c', 'umask 077; cat > \"$1\"', 'sh', sqlPath], {
+              input: `${String(sql).trim()}\\n`,
+            });
+            try {
+              const parsed = JSON.parse(text('npx', ['wrangler', 'd1', 'execute', configName(target, 'databaseName'), '--remote', '--json',
+                '--config', target.sourcePath, '--file', sqlPath], { env: target.cf.env }));
+              const row = Array.isArray(parsed) ? parsed.flatMap((item) => item.results ?? [])[0] : parsed.results?.[0];
+              if (!row) fail('D1 query returned no row', 'CHATWOOT_FINAL_UAT_D1_EMPTY');
+              return row;
+            } finally {
+              try { execFileSync('rm', ['-f', sqlPath]); } catch {}
+            }
+          }
+          """
+          if source.count(old_d1) != 1:
+              raise SystemExit('unexpected d1Row block count')
+          source = source.replace(old_d1, new_d1, 1)
+
+          old_error = """      command, exitCode: error?.status ?? null, stderrFingerprint: error?.stderr ? sha256(String(error.stderr)) : null,
+          """
+          new_error = """      command,
+              exitCode: error?.status ?? null,
+              stdoutFingerprint: error?.stdout ? sha256(String(error.stdout)) : null,
+              stderrFingerprint: error?.stderr ? sha256(String(error.stderr)) : null,
+          """
+          if source.count(old_error) != 1:
+              raise SystemExit('unexpected command error details count')
+          source = source.replace(old_error, new_error, 1)
+          source_path.write_text(source)
+
+          final_test_path = Path('tests/application/chatwoot-final-30d-daily-uat.test.js')
+          tests = final_test_path.read_text()
+          marker = "test('D1 Snapshot reads use private files and are preflighted before Active deployment', async () => {"
+          if marker not in tests:
+              tests += r'''
+
+test('D1 Snapshot reads use private files and are preflighted before Active deployment', async () => {
+  const source = await readFile(
+    new URL('../../scripts/chatwoot-final-30d-daily-uat.mjs', import.meta.url),
+    'utf8',
+  );
+  assert.match(source, /d1Row\(target, buildChatwootFinalUatSnapshotSql\(target\.session\.initial\)\)/u);
+  assert.match(source, /umask 077; cat > \\"\$1\\"/u);
+  assert.match(source, /'--file', sqlPath/u);
+  assert.match(source, /finally \{\s*try \{ execFileSync\('rm', \['-f', sqlPath\]\); \} catch \{\}/u);
+  assert.match(source, /stdoutFingerprint: error\?\.stdout \? sha256\(String\(error\.stdout\)\) : null/u);
+  assert.doesNotMatch(source, /'--command', sql/u);
+});
+'''
+          final_test_path.write_text(tests)
+
+          ordering_path = Path('tests/application/chatwoot-final-preflight-initialization.test.js')
+          ordering = ordering_path.read_text()
+          old_assertion = """  assert.match(source, /baselineVersion: preflightResult\\.activeVersion/u);
+          });
+          """
+          new_assertion = """  assert.match(source, /baselineVersion: preflightResult\\.activeVersion/u);
+            assert.match(source, /d1Row\\(target, buildChatwootFinalUatSnapshotSql\\(target\\.session\\.initial\\)\\)/u);
+          });
+          """
+          if ordering.count(old_assertion) != 1:
+              raise SystemExit('unexpected preflight assertion count')
+          ordering = ordering.replace(old_assertion, new_assertion, 1)
+          ordering_path.write_text(ordering)
+          PY
+
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add scripts/chatwoot-final-30d-daily-uat.mjs \
+            tests/application/chatwoot-final-30d-daily-uat.test.js \
+            tests/application/chatwoot-final-preflight-initialization.test.js
+          git commit -m "fix: preflight Chatwoot D1 snapshots from private files"
+          git push origin HEAD:hotfix/chatwoot-final-d1-snapshot-file-preflight
