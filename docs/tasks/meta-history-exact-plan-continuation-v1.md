@@ -45,20 +45,28 @@ plan identity. Manual child-launcher phase execution is also not a public recove
 
 ## Repository-head boundary
 
-Current main is exactly one reviewed commit after the retained Meta Head. The delta is limited to the Lark
-Dashboard compatibility freeze and Record-only backfill files. Every Meta finalizer, Meta D1/Lark operator,
-Shared Worker, Queue contract, Meta runtime config and Lark connector path is byte-unchanged.
+Current main is two reviewed commits after the retained Meta Head. The path delta is limited to the Lark
+Dashboard compatibility freeze, Record-only backfill, its closeout documentation and the exact continuation
+Release files. Every existing Meta finalizer, Meta D1/Lark operator, Shared Worker, Queue contract, Meta runtime
+config and Lark connector path remains byte-unchanged.
 
-The continuation must fail closed if the delta differs from the exact reviewed path set or if any critical Meta
-path changes.
+The continuation must fail closed if the path set differs from the exact reviewed Release set or if any
+critical Meta path changes.
 
 ## Public continuation contract
 
-`scripts/meta-history-2026-exact-plan-continuation.mjs` is the only public recovery entrypoint. It must:
+The only public recovery entrypoint is:
+
+```text
+scripts/meta-history-2026-exact-plan-continuation-terminal.mjs
+```
+
+It supplies the retained private Safe config to the guarded implementation
+`scripts/meta-history-2026-exact-plan-continuation.mjs`. The guarded implementation must:
 
 1. require clean current `main == origin/main` and an explicit one-time confirmation;
 2. validate the exact retained Head, operation, generation, period and persisted runtime plan;
-3. validate the exact unrelated current-main delta and zero critical Meta drift;
+3. validate the exact reviewed current-main Release path set and zero critical Meta drift;
 4. validate the retained D1 summary through the existing Lark acceptance contract;
 5. verify the active Worker is all false;
 6. read the exact Remote boundary twice and require byte-stable normalized state;
@@ -94,8 +102,9 @@ never copied into Source or emitted in evidence.
 ```text
 Exact operation identity locked                         PASS
 Exact originalRequestedAt locked                        PASS
-Reviewed current-main delta only                        PASS
+Reviewed current-main Release paths                     PASS
 Critical Meta path drift                                0
+Retained private Safe config                            PASS
 D1 summary accepted for Lark                            PASS
 Two stable read-only Remote snapshots                   PASS
 D1 complete / Lark pending / active Work                PASS
@@ -124,5 +133,17 @@ npm audit
 npm run deploy:dry-run
 ```
 
-Implementation and CI perform no Remote Provider, Queue, D1, Lark, Worker deployment, Schedule or Production
-action.
+GitHub Meta and Branch workflows remain the preferred authority. If both workflows repeatedly fail before
+`Set up job` with zero steps and no usable log blob, the exact branch Head may use the repository-only Local
+Mac verifier:
+
+```text
+scripts/verify-meta-history-exact-plan-continuation-local.mjs
+```
+
+The verifier requires an explicit expected Head, clean branch state, `behind main = 0`, runs the full Gate set
+above and emits `META_HISTORY_EXACT_PLAN_CONTINUATION_V1_LOCAL_MACOS_PASS`. It contains no public continuation
+confirmation, Provider invocation, Remote D1 command, Queue send, Lark write or Worker deployment path.
+
+Implementation, CI and Local verification perform no Remote Provider, Queue, D1, Lark, Worker deployment,
+Schedule or Production action.
