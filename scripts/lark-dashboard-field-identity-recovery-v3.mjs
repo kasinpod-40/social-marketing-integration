@@ -33,6 +33,12 @@ import {
   buildRetiredNumberFieldMutation,
   planPreservedWindowSelectBackfill,
 } from './lib/lark-dashboard-field-identity-recovery-v3.js';
+import {
+  EXECUTIVE_NUMBER_WINDOW_CHART_NAMES,
+  hasNumberWindowReference,
+  hasPreservedWindowReference,
+  rewriteNumberWindowChartToPreservedSelect,
+} from './lib/lark-dashboard-window-chart-rebind-v3-2.js';
 
 const execFileAsync = promisify(execFile);
 const EXPECTED_DASHBOARD_NAMES = Object.freeze([
@@ -52,6 +58,8 @@ const execute = args.has('--execute');
 let currentStage = 'init';
 let currentAction = null;
 let confirmedBlockMutations = 0;
+let confirmedStatisticsMutations = 0;
+let confirmedWindowChartMutations = 0;
 let confirmedRecordUpdates = 0;
 let confirmedFieldMutations = 0;
 
@@ -104,7 +112,7 @@ try {
   });
   const dashboardsBefore = await readDashboardState({ client: rawClient, baseToken });
   assertDashboardSet(dashboardsBefore);
-  const dashboardPlan = buildDashboardPlan(dashboardsBefore);
+  const dashboardPlan = buildDashboardPlan(dashboardsBefore, fieldStateBefore);
   const windowPlan = buildWindowPlan({ records: recordsBefore, fieldState: fieldStateBefore });
 
   await writePrivateJson(join(attemptRoot, 'field-state-before.json'), safeFieldState(fieldStateBefore));
@@ -130,6 +138,10 @@ try {
     convergedStatisticsCount: dashboardPlan.convergedStatisticsCount,
     preservedSlicerCount: dashboardPlan.preservedSlicerCount,
     preservedWindowChartCount: dashboardPlan.preservedWindowChartCount,
+    alreadyPreservedWindowChartCount: dashboardPlan.alreadyPreservedWindowChartCount,
+    numberWindowChartCount: dashboardPlan.numberWindowChartCount,
+    pendingWindowChartRebindCount: dashboardPlan.pendingWindowChartRebindCount,
+    convergedWindowChartCount: dashboardPlan.convergedWindowChartCount,
     legacyReferenceCount: dashboardPlan.legacyReferenceCount,
     recordCount: recordsBefore.length,
     pendingWindowBackfillCount: windowPlan.pendingUpdateCount,
@@ -268,6 +280,7 @@ try {
     }
     verifyMetricBlock(planned, readback);
     confirmedBlockMutations += 1;
+    confirmedStatisticsMutations += 1;
     blockCheckpoints.push(checkpoint);
   }
   currentAction = null;
@@ -275,6 +288,150 @@ try {
     contractVersion: LARK_DASHBOARD_FIELD_IDENTITY_RECOVERY_VERSION,
     checkpoints: blockCheckpoints,
   });
+
+  currentStage = 'rebind-number-window-charts';
+  const windowChartCheckpoints = [];
+  for (let index = 0; index < dashboardPlan.windowChartActions.length; index += 1) {
+    const planned = dashboardPlan.windowChartActions[index];
+    currentAction = safeWindowActionIdentity(planned, index);
+    const liveBlock = await getDashboardBlock({
+      client: rawClient,
+      baseToken,
+      dashboardId: planned.dashboardId,
+      blockId: planned.blockId,
+    });
+
+    if (!hasNumberWindowReference(liveBlock.dataConfig)) {
+      if (!hasPreservedWindowReference(liveBlock.dataConfig)) {
+        throw operatorError(
+          'Executive window chart no longer references either reviewed window field',
+          'LARK_DASHBOARD_WINDOW_CHART_STATE_DRIFT',
+          currentAction,
+        );
+      }
+      const checkpoint = {
+        ...currentAction,
+        outcome: 'already_converged',
+        patchAttempted: false,
+      };
+      windowChartCheckpoints.push(checkpoint);
+      await writePrivateJson(windowActionPath(attemptRoot, index, 'converged'), checkpoint);
+      continue;
+    }
+
+    const rewrite = rewriteNumberWindowChartToPreservedSelect({
+      dashboardName: planned.dashboardName,
+      blockName: planned.blockName,
+      blockType: liveBlock.type,
+      dataConfig: liveBlock.dataConfig,
+    });
+    const beforeChecksum = checksum(liveBlock.dataConfig);
+    const targetChecksum = checksum(rewrite.dataConfig);
+    await writePrivateJson(windowActionPath(attemptRoot, index, 'before'), {
+      ...currentAction,
+      beforeChecksum,
+      targetChecksum,
+      sourceReferenceCount: rewrite.sourceReferenceCount,
+      numericPresetConversionCount: rewrite.numericPresetConversionCount,
+      changedTopLevelKeys: Object.keys(rewrite.patch).sort(),
+      slicerPatch: false,
+    });
+
+    let patchError = null;
+    try {
+      await rawClient.requestBitableJson(
+        blockPath(baseToken, planned.dashboardId, planned.blockId),
+        {
+          method: 'PATCH',
+          retryMode: 'none',
+          body: { data_config: rewrite.patch },
+        },
+      );
+    } catch (error) {
+      patchError = error;
+    }
+
+    const readback = await getDashboardBlock({
+      client: rawClient,
+      baseToken,
+      dashboardId: planned.dashboardId,
+      blockId: planned.blockId,
+    });
+    const outcome = classifyConfig({
+      before: liveBlock.dataConfig,
+      target: rewrite.dataConfig,
+      after: readback.dataConfig,
+    });
+    const checkpoint = {
+      ...currentAction,
+      outcome,
+      patchAttempted: true,
+      patchReturnedError: patchError !== null,
+      patchErrorCode: patchError?.code ?? null,
+      patchLarkCode: patchError?.details?.larkCode ?? null,
+      beforeChecksum,
+      targetChecksum,
+      afterChecksum: checksum(readback.dataConfig),
+    };
+    await writePrivateJson(windowActionPath(attemptRoot, index, 'after'), checkpoint);
+
+    if (outcome !== 'target_converged') {
+      throw operatorError(
+        outcome === 'rejected_unchanged'
+          ? 'Lark rejected a reviewed Executive Column window-field update without changing the Block'
+          : 'Executive window chart drifted to an unreviewed configuration',
+        outcome === 'rejected_unchanged'
+          ? 'LARK_DASHBOARD_WINDOW_CHART_PATCH_REJECTED'
+          : 'LARK_DASHBOARD_WINDOW_CHART_STATE_DRIFT',
+        {
+          ...currentAction,
+          patchErrorCode: patchError?.code ?? null,
+          patchErrorMessage: patchError instanceof Error ? patchError.message : null,
+          larkCode: patchError?.details?.larkCode ?? null,
+          currentBlockMayHaveWritten: outcome !== 'rejected_unchanged',
+          confirmedBlockMutations,
+        },
+      );
+    }
+    if (hasNumberWindowReference(readback.dataConfig)
+      || !hasPreservedWindowReference(readback.dataConfig)) {
+      throw operatorError(
+        'Executive window chart readback did not retain the preserved Select identity',
+        'LARK_DASHBOARD_WINDOW_CHART_READBACK_INVALID',
+        currentAction,
+      );
+    }
+    confirmedBlockMutations += 1;
+    confirmedWindowChartMutations += 1;
+    windowChartCheckpoints.push(checkpoint);
+  }
+  currentAction = null;
+  await writePrivateJson(join(attemptRoot, 'window-chart-checkpoints.json'), {
+    contractVersion: LARK_DASHBOARD_FIELD_IDENTITY_RECOVERY_VERSION,
+    checkpoints: windowChartCheckpoints,
+  });
+
+  const dashboardsAfterWindowChartRebind = await readDashboardState({
+    client: rawClient,
+    baseToken,
+  });
+  const windowChartRebindPlan = buildDashboardPlan(
+    dashboardsAfterWindowChartRebind,
+    fieldStateBefore,
+  );
+  if (windowChartRebindPlan.pendingWindowChartRebindCount !== 0
+    || windowChartRebindPlan.numberWindowChartCount !== 0
+    || windowChartRebindPlan.alreadyPreservedWindowChartCount !== 7) {
+    throw operatorError(
+      'Executive Number-window charts did not converge before Record or Field mutation',
+      'LARK_DASHBOARD_WINDOW_CHART_REBIND_NOT_CONVERGED',
+      safeDashboardPlan(windowChartRebindPlan),
+    );
+  }
+  await writePrivateJson(
+    join(attemptRoot, 'window-chart-rebind-verification.json'),
+    safeDashboardPlan(windowChartRebindPlan),
+  );
 
   currentStage = 'backfill-preserved-window-select';
   if (windowPlan.pendingUpdateCount > 0) {
@@ -339,14 +496,18 @@ try {
 
   currentStage = 'verify-dashboard-field-identity';
   const reboundDashboards = await readDashboardState({ client: rawClient, baseToken });
-  const reboundPlan = buildDashboardPlan(reboundDashboards);
+  const reboundPlan = buildDashboardPlan(reboundDashboards, fieldState);
   if (reboundPlan.pendingStatisticsUpdateCount !== 0
+    || reboundPlan.pendingWindowChartRebindCount !== 0
+    || reboundPlan.numberWindowChartCount !== 0
     || reboundPlan.legacyReferenceCount !== 0) {
     throw operatorError(
       'Dashboard did not converge after preserving the slicer-bound Field ID',
       'LARK_DASHBOARD_FIELD_IDENTITY_DASHBOARD_NOT_CONVERGED',
       {
         pendingStatisticsUpdateCount: reboundPlan.pendingStatisticsUpdateCount,
+        pendingWindowChartRebindCount: reboundPlan.pendingWindowChartRebindCount,
+        numberWindowChartCount: reboundPlan.numberWindowChartCount,
         legacyReferenceCount: reboundPlan.legacyReferenceCount,
       },
     );
@@ -413,8 +574,10 @@ try {
     );
   }
   const finalDashboards = await readDashboardState({ client: rawClient, baseToken });
-  const finalDashboardPlan = buildDashboardPlan(finalDashboards);
+  const finalDashboardPlan = buildDashboardPlan(finalDashboards, finalFieldState);
   if (finalDashboardPlan.pendingStatisticsUpdateCount !== 0
+    || finalDashboardPlan.pendingWindowChartRebindCount !== 0
+    || finalDashboardPlan.numberWindowChartCount !== 0
     || finalDashboardPlan.legacyReferenceCount !== 0) {
     throw operatorError(
       'Dashboard binding drifted after retired-field deletion',
@@ -437,12 +600,16 @@ try {
     decision: 'LARK_DASHBOARD_FIELD_IDENTITY_RECOVERY_COMPLETED_SAFE',
     dashboardCount: finalDashboards.length,
     organicMetricBlockCount: finalDashboardPlan.organicMetricBlockCount,
-    confirmedStatisticsMutationCount: confirmedBlockMutations,
+    confirmedStatisticsMutationCount: confirmedStatisticsMutations,
+    confirmedWindowChartMutationCount: confirmedWindowChartMutations,
+    confirmedBlockMutationCount: confirmedBlockMutations,
     alreadyConvergedStatisticsCount: blockCheckpoints.filter(
       (checkpoint) => checkpoint.outcome === 'already_converged',
     ).length,
     preservedSlicerCount: finalDashboardPlan.preservedSlicerCount,
     preservedWindowChartCount: finalDashboardPlan.preservedWindowChartCount,
+    pendingWindowChartRebindCount: finalDashboardPlan.pendingWindowChartRebindCount,
+    numberWindowChartCount: finalDashboardPlan.numberWindowChartCount,
     preservedWindowFieldId: finalFieldState.preservedWindow.fieldId,
     canonicalWindowFieldType: finalFieldState.preservedWindow.type,
     recordCount: finalRecords.length,
@@ -475,6 +642,8 @@ try {
       ...(error?.details ?? {}),
       currentAction,
       confirmedBlockMutations,
+      confirmedStatisticsMutations,
+      confirmedWindowChartMutations,
       confirmedRecordUpdates,
       confirmedFieldMutations,
     },
@@ -576,13 +745,24 @@ function buildWindowPlan({ records, fieldState }) {
   });
 }
 
-function buildDashboardPlan(dashboards) {
+function buildDashboardPlan(dashboards, fieldState) {
   const organic = uniqueByName(dashboards, ORGANIC_DASHBOARD_NAME, 'Organic dashboard');
   assertOrganicMetricBlockNames(organic.blocks.map((block) => block.name));
+  if (!fieldState?.preservedWindow) {
+    throw operatorError(
+      'Dashboard planning requires the current Report Metric field state',
+      'LARK_DASHBOARD_FIELD_IDENTITY_FIELD_STATE_REQUIRED',
+    );
+  }
+
+  const canonicalWindowTargetsPreserved = fieldState.preservedWindow.fieldName === 'window_days';
+  const canonicalWindowTargetsNumber = fieldState.numberWindow?.fieldName === 'window_days';
   const actions = [];
+  const windowChartActions = [];
   let legacyReferenceCount = 0;
   let preservedSlicerCount = 0;
-  let preservedWindowChartCount = 0;
+  let alreadyPreservedWindowChartCount = 0;
+  let numberWindowChartCount = 0;
 
   for (const dashboard of dashboards) {
     for (const block of dashboard.blocks) {
@@ -625,36 +805,102 @@ function buildDashboardPlan(dashboards) {
           { dashboardName: dashboard.name, blockName: block.name, blockType: block.type },
         );
       }
-      if (hasWindowLegacy || hasCanonicalWindow) {
-        const type = String(block.type).trim().toLowerCase();
-        if (type === 'slicer') preservedSlicerCount += 1;
-        else if (type === 'column') preservedWindowChartCount += 1;
-        else {
+      if (!hasWindowLegacy && !hasCanonicalWindow) continue;
+      if (hasWindowLegacy && hasCanonicalWindow) {
+        throw operatorError(
+          'A Dashboard block references both Legacy and canonical window fields',
+          'LARK_DASHBOARD_WINDOW_CHART_REFERENCE_AMBIGUOUS',
+          { dashboardName: dashboard.name, blockName: block.name, blockType: block.type },
+        );
+      }
+
+      const type = String(block.type).trim().toLowerCase();
+      if (type === 'slicer') {
+        if (hasCanonicalWindow && canonicalWindowTargetsNumber) {
           throw operatorError(
-            'Window binding exists on an unreviewed block type',
-            'LARK_DASHBOARD_FIELD_IDENTITY_WINDOW_REFERENCE_UNSUPPORTED',
-            { dashboardName: dashboard.name, blockName: block.name, blockType: block.type },
+            'A Slicer is bound to the retiring Number window field',
+            'LARK_DASHBOARD_WINDOW_NUMBER_SLICER_UNSUPPORTED',
+            { dashboardName: dashboard.name, blockName: block.name },
           );
         }
+        if (hasWindowLegacy || (hasCanonicalWindow && canonicalWindowTargetsPreserved)) {
+          preservedSlicerCount += 1;
+          continue;
+        }
+      } else if (type === 'column') {
+        if (hasWindowLegacy || (hasCanonicalWindow && canonicalWindowTargetsPreserved)) {
+          alreadyPreservedWindowChartCount += 1;
+          continue;
+        }
+        if (hasCanonicalWindow && canonicalWindowTargetsNumber) {
+          const rewrite = rewriteNumberWindowChartToPreservedSelect({
+            dashboardName: dashboard.name,
+            blockName: block.name,
+            blockType: block.type,
+            dataConfig: block.dataConfig,
+          });
+          numberWindowChartCount += 1;
+          windowChartActions.push(Object.freeze({
+            dashboardId: dashboard.dashboardId,
+            dashboardName: dashboard.name,
+            blockId: block.blockId,
+            blockName: block.name,
+            blockType: block.type,
+            changed: rewrite.changed,
+            patch: rewrite.patch,
+            dataConfig: rewrite.dataConfig,
+          }));
+          continue;
+        }
       }
+
+      throw operatorError(
+        'Window binding exists on an unreviewed block or field state',
+        'LARK_DASHBOARD_FIELD_IDENTITY_WINDOW_REFERENCE_UNSUPPORTED',
+        { dashboardName: dashboard.name, blockName: block.name, blockType: block.type },
+      );
     }
   }
 
-  if (actions.length !== 17 || preservedSlicerCount !== 5 || preservedWindowChartCount !== 4) {
+  const preservedWindowChartCount = alreadyPreservedWindowChartCount + numberWindowChartCount;
+  const pendingNames = windowChartActions.map((action) => action.blockName);
+  const unexpectedPendingNames = pendingNames.filter(
+    (name) => !EXECUTIVE_NUMBER_WINDOW_CHART_NAMES.includes(name),
+  );
+  const duplicatePendingCount = pendingNames.length - new Set(pendingNames).size;
+  if (actions.length !== 17
+    || preservedSlicerCount !== 5
+    || preservedWindowChartCount !== 7
+    || unexpectedPendingNames.length > 0
+    || duplicatePendingCount !== 0) {
     throw operatorError(
-      'Dashboard field-identity plan does not match the reviewed 17/5/4 block contract',
+      'Dashboard field-identity plan does not match the reviewed 17/5/7 block contract',
       'LARK_DASHBOARD_FIELD_IDENTITY_PLAN_SCOPE_MISMATCH',
-      { organicMetricBlockCount: actions.length, preservedSlicerCount, preservedWindowChartCount },
+      {
+        organicMetricBlockCount: actions.length,
+        preservedSlicerCount,
+        preservedWindowChartCount,
+        alreadyPreservedWindowChartCount,
+        numberWindowChartCount,
+        pendingNames,
+        unexpectedPendingNames,
+        duplicatePendingCount,
+      },
     );
   }
 
   return Object.freeze({
     actions: Object.freeze(actions),
+    windowChartActions: Object.freeze(windowChartActions),
     organicMetricBlockCount: actions.length,
     pendingStatisticsUpdateCount: actions.filter((action) => action.changed).length,
     convergedStatisticsCount: actions.filter((action) => !action.changed).length,
     preservedSlicerCount,
     preservedWindowChartCount,
+    alreadyPreservedWindowChartCount,
+    numberWindowChartCount,
+    pendingWindowChartRebindCount: windowChartActions.length,
+    convergedWindowChartCount: preservedWindowChartCount - windowChartActions.length,
     legacyReferenceCount,
   });
 }
@@ -906,8 +1152,21 @@ function safeActionIdentity(action, index) {
     metricKey: action.metricKey,
   });
 }
+function safeWindowActionIdentity(action, index) {
+  return Object.freeze({
+    actionIndex: index + 1,
+    dashboardId: action.dashboardId,
+    dashboardName: action.dashboardName,
+    blockId: action.blockId,
+    blockName: action.blockName,
+    blockType: action.blockType,
+  });
+}
 function actionPath(root, index, suffix) {
   return join(root, `statistics-${String(index + 1).padStart(2, '0')}-${suffix}.json`);
+}
+function windowActionPath(root, index, suffix) {
+  return join(root, `window-chart-${String(index + 1).padStart(2, '0')}-${suffix}.json`);
 }
 function safeFieldState(state) {
   return Object.freeze({
@@ -951,8 +1210,15 @@ function safeDashboardPlan(plan) {
     convergedStatisticsCount: plan.convergedStatisticsCount,
     preservedSlicerCount: plan.preservedSlicerCount,
     preservedWindowChartCount: plan.preservedWindowChartCount,
+    alreadyPreservedWindowChartCount: plan.alreadyPreservedWindowChartCount,
+    numberWindowChartCount: plan.numberWindowChartCount,
+    pendingWindowChartRebindCount: plan.pendingWindowChartRebindCount,
+    convergedWindowChartCount: plan.convergedWindowChartCount,
     legacyReferenceCount: plan.legacyReferenceCount,
     actions: plan.actions.map((action, index) => safeActionIdentity(action, index)),
+    windowChartActions: plan.windowChartActions.map(
+      (action, index) => safeWindowActionIdentity(action, index),
+    ),
   });
 }
 function readNamedField(fields, name) {

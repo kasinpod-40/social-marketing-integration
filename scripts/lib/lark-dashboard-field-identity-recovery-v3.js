@@ -1,5 +1,5 @@
 export const LARK_DASHBOARD_FIELD_IDENTITY_RECOVERY_VERSION =
-  'lark_dashboard_field_identity_recovery_v3_1';
+  'lark_dashboard_field_identity_recovery_v3_2';
 
 export const LARK_DASHBOARD_FIELD_IDENTITY_RECOVERY_CONFIRMATION =
   'PRESERVE_SLICER_FIELD_ID_REBIND_STATISTICS_AND_REMOVE_LEGACY_FIELDS';

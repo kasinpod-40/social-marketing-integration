@@ -107,9 +107,6 @@ export function hasPreservedWindowReference(value) {
     REPORT_METRIC_FIELD_IDENTITIES.preservedWindowSelect.legacyName,
   ) || containsExact(
     value,
-    REPORT_METRIC_FIELD_IDENTITIES.preservedWindowSelect.canonicalName,
-  ) || containsExact(
-    value,
     REPORT_METRIC_FIELD_IDENTITIES.preservedWindowSelect.fieldId,
   );
 }

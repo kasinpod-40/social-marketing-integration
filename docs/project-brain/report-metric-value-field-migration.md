@@ -68,3 +68,14 @@ Detailed contract:
 ```text
 docs/tasks/lark-dashboard-field-identity-recovery-v3.md
 ```
+
+## v3.2 seven-window-chart correction
+
+The exported Integration Workspace Base revision 140 contains seven window charts, not four. Four Commerce/Chatwoot
+columns and all five Slicers already bind the preserved Select identity `fldMlTUP3Z`. Three Executive columns
+(`Net Sales by Window`, `Ad Spend by Window`, `Organic Views by Window`) bind Number `fldbPCldTL` and
+must be PATCHed to the preserved Select before Number retirement. Recovery v3.2 requires the exact 17/5/7 inventory,
+updates only those three reviewed `column` Blocks with immediate readback, keeps `slicerPatchCount=0`, and blocks
+Record/Field mutation until no Number-window chart remains. Detailed contract:
+
+`docs/tasks/lark-dashboard-window-chart-rebind-v3-2.md`.
