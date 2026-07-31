@@ -57,7 +57,8 @@ Therefore:
 - failure after phase commit resumes at `nextSequence`;
 - duplicate/stale continuation performs no Provider or Business write;
 - the final incremental checkpoint is written once after all stages;
-- completed work replays its completion without another backfill.
+- completed work replays its completion without another backfill;
+- terminal Queue/DLQ handling abandons Chatwoot work through the Shared terminal-safe resumable store.
 
 ## Daily metric decision
 
@@ -67,12 +68,19 @@ Per-Conversation daily facts remain the atomic date-level source. Agent, Inbox a
 
 Repository examples and defaults remain all false. This Workstream does not add a Chatwoot Cron producer and does not activate Webhooks. `daily` is a Runtime contract for a later reviewed Schedule activation, not an authorization to enqueue jobs now.
 
+The example configs expose the exact five locked Runtime variables and remove the retired 48-hour overlap variable. Secret values remain placeholders and no Secret is committed.
+
+## Verification decision
+
+The active Draft PR requires exact-head Node, Workers-runtime, report reliability, audit and Wrangler dry-run gates. GitHub Actions currently fails before Checkout with `steps=null` and no logs on this Workstream and another active PR. This is an infrastructure blocker and is never treated as code PASS or code failure.
+
 ## Current workstream record
 
 ```text
 Base main           = 05ddfd8f30bdb5ea01d6e604fba501b02413b934
-Branch              = agent/chatwoot-runtime-all-flags-false-wiring
-Draft PR            = #309
+Branch              = codex/chatwoot-runtime-all-flags-false-wiring
+Draft PR            = #310
+Superseded PR       = #309 (closed, unmerged)
 Migration authority = 0018_chatwoot_analytics.sql (unchanged)
 Lark schema         = 15 / 15 existing; no Apply rerun
 Remote actions      = 0
