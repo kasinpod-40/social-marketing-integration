@@ -1,6 +1,6 @@
 # Report Metric Value Field Migration
 
-## Current decision
+## Current verified decision
 
 `📊 MKT_Report_Metric_Values` remains under a Dashboard Compatibility Freeze. The physical Field identities
 already used by the six Lark Dashboards are preserved; this Repository no longer attempts Dashboard Block
@@ -19,8 +19,40 @@ display Select v2                fldHNUhCfl / SingleSelect
 Snapshot, Top Content and Top Ads tables continue to use their existing numeric `window_days`; their schemas
 are independent from the Report Metric Dashboard bindings.
 
-The 24 period-metric rows whose baseline is incomplete remain present with `current_value=null`. They are
-valid N/A Business facts and are not deleted. All 86 Report Metric records are preserved.
+All 86 Report Metric records remain present. The 24 period-metric rows whose baseline is incomplete remain
+present with `current_value=null`; they are valid N/A Business facts and are not deleted.
+
+## Live Record compatibility closeout — 2026-08-01
+
+The guarded Record-only backfill completed at `2026-07-31T19:33:19Z`
+(`2026-08-01 02:33 ICT`) through the Public Bitable Record batch-update path.
+
+```text
+Decision                            LARK_DASHBOARD_COMPATIBILITY_RECORD_BACKFILL_FINAL_CONVERGENCE_PASS
+Confirmed Record updates            28
+Pending Record updates               0
+Window conflicts                     0
+Dashboard PATCH operations           0
+Field/schema mutations               0
+Record create/delete operations      0
+Remote D1 mutations                  0
+Worker deployments                   0
+Queue sends                          0
+Production                          BLOCKED
+```
+
+The operation populated only the preserved slicer-bound Select `fldMlTUP3Z` on existing rows where Number
+`window_days` was authoritative and the Select cell was empty. Final read-only verification reconfirmed
+86 records, 24 N/A rows, zero pending updates and zero conflicts.
+
+No further Record-backfill execution is required or authorized for this closed scope. The operator remains
+available for preview-only convergence checks unless a new reviewed drift incident opens a separate task.
+
+Closeout record:
+
+```text
+docs/tasks/lark-dashboard-compatibility-record-backfill-closeout-2026-08-01.md
+```
 
 ## Historical migration ownership
 
@@ -40,9 +72,9 @@ backfill the preserved Select, retire the Number field, promote `fldMlTUP3Z` to 
 remove retained Legacy fields. Field promotion and Legacy cleanup are superseded because Dashboard
 Block/filter PATCH has no supported public Lark OpenAPI write contract in the verified operating boundary.
 
-The lossless missing-cell portion is retained separately as a Record-only operation: Number remains
-canonical for compatibility planning, and only an empty preserved Select cell may be populated with the same
-`1/3/7/30` value.
+Only the lossless missing-cell portion was retained as a Record-only operation. Number remains canonical for
+compatibility planning, while the preserved Select now carries the same `1/3/7/30` value on all applicable
+records.
 
 ## Audited Integration Workspace identities
 
@@ -73,12 +105,8 @@ Statistics PATCH with immediate unchanged readback and zero confirmed mutation.
 
 ## Record-only compatibility behavior
 
-The reviewed live plan contains at most 28 records whose Number `window_days` is valid while the preserved
-slicer-bound Select is empty. `scripts/lark-dashboard-compatibility-record-backfill.mjs` owns only that gap.
-It uses the existing Public Bitable Record batch-update path and may write only
-`__mkt_legacy_window_days_single_select_v1` on existing rows.
-
-Before execution it requires:
+`scripts/lark-dashboard-compatibility-record-backfill.mjs` owns only the preserved Select compatibility gap.
+Its planner requires:
 
 ```text
 record count                         86
@@ -88,22 +116,22 @@ pending updates                      <= 28
 all seven Field IDs/names/types      exact
 ```
 
-It writes a private backup, performs no Dashboard/View/Field/schema operation, then reads all records again and
-requires pending updates/conflicts to reach zero while preserving the 86/24 boundaries. Already-populated rows
-make reruns idempotent.
+The completed operation wrote a private backup, performed no Dashboard/View/Field/schema operation, then read
+all records again and reached pending updates `0` and conflicts `0`. Already-populated rows make preview reruns
+idempotent.
 
 ## Safety state
 
-Implementation and verification perform no Live Lark/D1/Queue/Worker/Provider/Schedule/Production action.
-Public commands are:
+The closed live operation changed exactly 28 existing Lark Record cells. It performed no Dashboard PATCH,
+Field mutation, Record create/delete, D1 mutation, Worker deployment, Queue send, Schedule change or
+Production action.
+
+Public commands after closeout are read-only:
 
 ```bash
 node scripts/lark-dashboard-compatibility-freeze-audit.mjs
 node scripts/lark-dashboard-compatibility-record-backfill.mjs
 ```
-
-The second command is read-only unless exact Record-backfill confirmation and `--execute` are supplied after
-merge and reviewed preview.
 
 Detailed current contract:
 
