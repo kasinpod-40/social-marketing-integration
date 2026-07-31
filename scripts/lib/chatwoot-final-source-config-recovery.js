@@ -156,7 +156,7 @@ export function normalizeChatwootFinalSourceIncident(row = {}) {
     [...new Set(CHATWOOT_FINAL_UAT_TABLES.map((spec) => spec.d1Table))]
       .map((tableName) => [tableName, count(row[tableName], tableName)]),
   );
-  return Object.freeze({
+  return deepFreeze({
     queueRows: count(row.queue_rows, 'queue_rows'),
     queueAttempts: count(row.queue_attempts, 'queue_attempts'),
     queueGenerationMin: nullableTimestamp(row.queue_generation_min),
@@ -187,44 +187,21 @@ export function normalizeChatwootFinalSourceIncident(row = {}) {
     phaseRows: count(row.phase_rows, 'phase_rows'),
     coverageRows: count(row.coverage_rows, 'coverage_rows'),
     activeLocks: count(row.active_locks, 'active_locks'),
-    businessCounts: Object.freeze(businessCounts),
+    businessCounts,
     totalBusinessRows: Object.values(businessCounts).reduce((sum, value) => sum + value, 0),
   });
 }
 
 export function assertChatwootFinalSourceIncidentOpen(row = {}) {
   const state = normalizeChatwootFinalSourceIncident(row);
+  const exactIdentity = hasExactIncidentIdentity(state);
   const incident = CHATWOOT_FINAL_SOURCE_CONFIG_INCIDENT;
-  const exactIdentity = state.queueGenerationMin === incident.generation
-    && state.queueGenerationMax === incident.generation
-    && state.queueRequestedMin === incident.requestedAt
-    && state.queueRequestedMax === incident.requestedAt
-    && state.metadataGeneration === incident.generation
-    && state.metadataRequestedAt === incident.requestedAt
-    && state.queueMessageId === incident.messageId;
-  const accepted = state.queueRows === 1
-    && state.queueAttempts === 1
-    && state.metadataRows === 1
+  const accepted = hasExactImmutableFailure(state)
     && state.recoveryStatus === 'not_started'
     && state.recoveryReference === null
     && state.auditReference === null
-    && state.terminalRows === 1
     && state.terminalStatus === 'open'
-    && state.terminalErrorCode === incident.errorCode
-    && state.terminalErrorMessage === incident.errorMessage
-    && state.terminalRetryCount === 1
-    && state.terminalJobType === incident.jobType
-    && state.alertRows === 1
     && state.alertStatus === 'open'
-    && state.alertType === 'queue_permanent_failure'
-    && state.alertSeverity === 'critical'
-    && state.alertPlatform === 'chatwoot'
-    && state.alertErrorCode === incident.errorCode
-    && state.syncRows === 0
-    && state.workRows === 0
-    && state.phaseRows === 0
-    && state.coverageRows === 0
-    && state.activeLocks === 0
     && state.totalBusinessRows === 0
     && exactIdentity;
   if (!accepted) {
@@ -234,7 +211,29 @@ export function assertChatwootFinalSourceIncidentOpen(row = {}) {
       incidentSummary(state, exactIdentity),
     );
   }
-  return Object.freeze({ accepted: true, state });
+  return Object.freeze({ accepted: true, incident, state });
+}
+
+export function assertChatwootFinalSourceIncidentClosable(row = {}, input = {}) {
+  const state = normalizeChatwootFinalSourceIncident(row);
+  const reference = requireReference(input.recoveryReference);
+  const exactIdentity = hasExactIncidentIdentity(state);
+  const referenceSafe = [null, reference].includes(state.recoveryReference)
+    && [null, reference].includes(state.auditReference);
+  const accepted = hasExactImmutableFailure(state)
+    && ['open', 'resolved'].includes(state.terminalStatus)
+    && ['not_started', 'in_progress', 'completed'].includes(state.recoveryStatus)
+    && ['open', 'acknowledged', 'resolved'].includes(state.alertStatus)
+    && referenceSafe
+    && exactIdentity;
+  if (!accepted) {
+    throw recoveryError(
+      'Retained Chatwoot source-config incident is not safely resumable for closure',
+      'CHATWOOT_FINAL_SOURCE_CONFIG_INCIDENT_INVALID',
+      incidentSummary(state, exactIdentity),
+    );
+  }
+  return Object.freeze({ accepted: true, reference, state });
 }
 
 export function buildChatwootFinalSourceIncidentClosureSql(input = {}) {
@@ -261,6 +260,8 @@ export function buildChatwootFinalSourceIncidentClosureSql(input = {}) {
       AND error_message=${errorMessage}
       AND retry_count=1
       AND status IN ('open','resolved');
+    SELECT changes() AS dead_letter_rows;
+
     UPDATE dead_letter_operation_metadata
     SET recovery_status='completed',
         recovery_reference=COALESCE(recovery_reference,${recoveryReference}),
@@ -273,7 +274,11 @@ export function buildChatwootFinalSourceIncidentClosureSql(input = {}) {
       AND original_work_key=${work}
       AND generation=${incident.generation}
       AND original_requested_at=${incident.requestedAt}
-      AND recovery_status IN ('not_started','in_progress','completed');
+      AND recovery_status IN ('not_started','in_progress','completed')
+      AND (recovery_reference IS NULL OR recovery_reference=${recoveryReference})
+      AND (audit_reference IS NULL OR audit_reference=${recoveryReference});
+    SELECT changes() AS metadata_rows;
+
     UPDATE system_alerts
     SET status='resolved', updated_at=${completedAt}
     WHERE alert_id=${alert}
@@ -281,43 +286,43 @@ export function buildChatwootFinalSourceIncidentClosureSql(input = {}) {
       AND alert_type='queue_permanent_failure'
       AND error_code=${errorCode}
       AND status IN ('open','acknowledged','resolved');
+    SELECT changes() AS alert_rows;
   `);
+}
+
+export function validateChatwootFinalSourceIncidentClosureResults(rows = []) {
+  if (!Array.isArray(rows) || rows.length !== 3) {
+    throw recoveryError(
+      'Chatwoot source-config closure returned an unexpected result count',
+      'CHATWOOT_FINAL_SOURCE_CONFIG_CLOSURE_RESULT_INVALID',
+      { rowCount: Array.isArray(rows) ? rows.length : null },
+    );
+  }
+  const counts = [
+    Number(rows[0]?.dead_letter_rows),
+    Number(rows[1]?.metadata_rows),
+    Number(rows[2]?.alert_rows),
+  ];
+  if (counts.some((value) => value !== 1)) {
+    throw recoveryError(
+      'Chatwoot source-config closure did not update every exact incident record',
+      'CHATWOOT_FINAL_SOURCE_CONFIG_CLOSURE_RESULT_INVALID',
+      { counts },
+    );
+  }
+  return Object.freeze({ statementCount: counts.length, updatedRows: 3 });
 }
 
 export function assertChatwootFinalSourceIncidentResolved(row = {}, input = {}) {
   const state = normalizeChatwootFinalSourceIncident(row);
-  const incident = CHATWOOT_FINAL_SOURCE_CONFIG_INCIDENT;
   const reference = requireReference(input.recoveryReference);
-  const exactIdentity = state.queueGenerationMin === incident.generation
-    && state.queueGenerationMax === incident.generation
-    && state.queueRequestedMin === incident.requestedAt
-    && state.queueRequestedMax === incident.requestedAt
-    && state.metadataGeneration === incident.generation
-    && state.metadataRequestedAt === incident.requestedAt
-    && state.queueMessageId === incident.messageId;
-  const accepted = state.queueRows === 1
-    && state.queueAttempts === 1
-    && state.metadataRows === 1
+  const exactIdentity = hasExactIncidentIdentity(state);
+  const accepted = hasExactImmutableFailure(state)
     && state.recoveryStatus === 'completed'
     && state.recoveryReference === reference
     && state.auditReference === reference
-    && state.terminalRows === 1
     && state.terminalStatus === 'resolved'
-    && state.terminalErrorCode === incident.errorCode
-    && state.terminalErrorMessage === incident.errorMessage
-    && state.terminalRetryCount === 1
-    && state.terminalJobType === incident.jobType
-    && state.alertRows === 1
     && state.alertStatus === 'resolved'
-    && state.alertType === 'queue_permanent_failure'
-    && state.alertSeverity === 'critical'
-    && state.alertPlatform === 'chatwoot'
-    && state.alertErrorCode === incident.errorCode
-    && state.syncRows === 0
-    && state.workRows === 0
-    && state.phaseRows === 0
-    && state.coverageRows === 0
-    && state.activeLocks === 0
     && exactIdentity;
   if (!accepted) {
     throw recoveryError(
@@ -326,7 +331,7 @@ export function assertChatwootFinalSourceIncidentResolved(row = {}, input = {}) 
       incidentSummary(state, exactIdentity),
     );
   }
-  return Object.freeze({ accepted: true, state });
+  return Object.freeze({ accepted: true, reference, state });
 }
 
 export function assertChatwootFinalSourceRecoverySummary(summary = {}) {
@@ -351,6 +356,39 @@ export function assertChatwootFinalSourceRecoverySummary(summary = {}) {
 
 export function fingerprintChatwootFinalSourceRecovery(value) {
   return sha256(stableJson(value));
+}
+
+function hasExactIncidentIdentity(state) {
+  const incident = CHATWOOT_FINAL_SOURCE_CONFIG_INCIDENT;
+  return state.queueGenerationMin === incident.generation
+    && state.queueGenerationMax === incident.generation
+    && state.queueRequestedMin === incident.requestedAt
+    && state.queueRequestedMax === incident.requestedAt
+    && state.metadataGeneration === incident.generation
+    && state.metadataRequestedAt === incident.requestedAt
+    && state.queueMessageId === incident.messageId;
+}
+
+function hasExactImmutableFailure(state) {
+  const incident = CHATWOOT_FINAL_SOURCE_CONFIG_INCIDENT;
+  return state.queueRows === 1
+    && state.queueAttempts === 1
+    && state.metadataRows === 1
+    && state.terminalRows === 1
+    && state.terminalErrorCode === incident.errorCode
+    && state.terminalErrorMessage === incident.errorMessage
+    && state.terminalRetryCount === 1
+    && state.terminalJobType === incident.jobType
+    && state.alertRows === 1
+    && state.alertType === 'queue_permanent_failure'
+    && state.alertSeverity === 'critical'
+    && state.alertPlatform === 'chatwoot'
+    && state.alertErrorCode === incident.errorCode
+    && state.syncRows === 0
+    && state.workRows === 0
+    && state.phaseRows === 0
+    && state.coverageRows === 0
+    && state.activeLocks === 0;
 }
 
 function incidentSummary(state, exactIdentity) {
@@ -496,6 +534,13 @@ function sqlText(value) {
 
 function compactSql(value) {
   return value.replace(/\s+/gu, ' ').trim();
+}
+
+function deepFreeze(value) {
+  if (!value || typeof value !== 'object' || Object.isFrozen(value)) return value;
+  Object.freeze(value);
+  for (const nested of Object.values(value)) deepFreeze(nested);
+  return value;
 }
 
 function recoveryError(message, code, details = {}) {
