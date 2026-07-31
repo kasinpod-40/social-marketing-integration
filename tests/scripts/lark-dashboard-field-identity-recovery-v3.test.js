@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import {
   LARK_DASHBOARD_FIELD_IDENTITY_RECOVERY_CONFIRMATION,
+  LARK_DASHBOARD_FIELD_IDENTITY_RECOVERY_VERSION,
   LARK_DASHBOARD_FIELD_IDENTITY_SCOPE_CONFIRMATION,
+  REPORT_METRIC_FIELD_IDENTITIES,
   REQUIRED_LARK_DASHBOARD_FIELD_IDENTITY_SCOPES,
   assertFieldIdentityRecoveryConfirmation,
   assertFieldIdentityScopeConfirmation,
@@ -45,6 +47,49 @@ test('scope contract declares every read and write used by field-identity recove
     () => assertFieldIdentityRecoveryConfirmation('wrong'),
     (error) => error.code === 'LARK_DASHBOARD_FIELD_IDENTITY_RECOVERY_CONFIRMATION_REQUIRED',
   );
+});
+
+test('field identity contract matches the audited live Report Metric table', () => {
+  assert.equal(
+    LARK_DASHBOARD_FIELD_IDENTITY_RECOVERY_VERSION,
+    'lark_dashboard_field_identity_recovery_v3_1',
+  );
+  assert.deepEqual(REPORT_METRIC_FIELD_IDENTITIES, {
+    metricKey: { fieldId: 'fldGvd3tw8', fieldName: 'metric_key', type: 1 },
+    displayName: { fieldId: 'fldE4Nezjd', fieldName: 'display_name', type: 1 },
+    canonicalWindowNumber: {
+      fieldId: 'fldbPCldTL',
+      fieldName: 'window_days',
+      type: 2,
+      retiredName: '__mkt_retired_window_days_number_v3',
+    },
+    preservedWindowSelect: {
+      fieldId: 'fldMlTUP3Z',
+      legacyName: '__mkt_legacy_window_days_single_select_v1',
+      canonicalName: 'window_days',
+      type: 3,
+    },
+    windowSelectV2: {
+      fieldId: 'fldraj0QP8',
+      fieldName: '__mkt_legacy_window_days_single_select_v2',
+      type: 3,
+    },
+    displaySelectV1: {
+      fieldId: 'fldZB452Z2',
+      fieldName: '__mkt_legacy_display_name_single_select_v1',
+      type: 3,
+    },
+    displaySelectV2: {
+      fieldId: 'fldHNUhCfl',
+      fieldName: '__mkt_legacy_display_name_single_select_v2',
+      type: 3,
+    },
+  });
+
+  const serialized = JSON.stringify(REPORT_METRIC_FIELD_IDENTITIES);
+  assert.doesNotMatch(serialized, /flduyym9cs|fldvLDwEHo|fldczhcM6r/u);
+  const ids = Object.values(REPORT_METRIC_FIELD_IDENTITIES).map((identity) => identity.fieldId);
+  assert.equal(new Set(ids).size, ids.length);
 });
 
 test('Number window values backfill only missing slicer-bound Select cells', () => {

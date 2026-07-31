@@ -1,5 +1,5 @@
 export const LARK_DASHBOARD_FIELD_IDENTITY_RECOVERY_VERSION =
-  'lark_dashboard_field_identity_recovery_v3';
+  'lark_dashboard_field_identity_recovery_v3_1';
 
 export const LARK_DASHBOARD_FIELD_IDENTITY_RECOVERY_CONFIRMATION =
   'PRESERVE_SLICER_FIELD_ID_REBIND_STATISTICS_AND_REMOVE_LEGACY_FIELDS';
@@ -19,10 +19,10 @@ export const REQUIRED_LARK_DASHBOARD_FIELD_IDENTITY_SCOPES = Object.freeze([
 ]);
 
 export const REPORT_METRIC_FIELD_IDENTITIES = Object.freeze({
-  metricKey: Object.freeze({ fieldId: 'flduyym9cs', fieldName: 'metric_key', type: 1 }),
-  displayName: Object.freeze({ fieldId: 'fldvLDwEHo', fieldName: 'display_name', type: 1 }),
+  metricKey: Object.freeze({ fieldId: 'fldGvd3tw8', fieldName: 'metric_key', type: 1 }),
+  displayName: Object.freeze({ fieldId: 'fldE4Nezjd', fieldName: 'display_name', type: 1 }),
   canonicalWindowNumber: Object.freeze({
-    fieldId: 'fldczhcM6r',
+    fieldId: 'fldbPCldTL',
     fieldName: 'window_days',
     type: 2,
     retiredName: '__mkt_retired_window_days_number_v3',
