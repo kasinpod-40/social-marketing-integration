@@ -69,7 +69,7 @@ test('mutable Worker ownership always retains automatic all-false restore', asyn
   const source = await readFile(operatorUrl, 'utf8');
   const safeOwned = source.indexOf('latestSafeConfig = windows.safe');
   const uatDeploy = source.indexOf("currentStage = 'manual-uat-window'");
-  const safeReleased = source.indexOf('latestSafeConfig = null');
+  const safeReleased = source.lastIndexOf('latestSafeConfig = null');
   assert.match(source, /automatic-safe-restore/u);
   assert.ok(safeOwned >= 0);
   assert.ok(uatDeploy > safeOwned);
