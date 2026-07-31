@@ -5,9 +5,9 @@
 ```text
 TASK_STATUS                    = REPOSITORY_HOTFIX_IN_REVIEW
 CURRENT_PROGRAM                = META_HISTORY_EXPLICIT_SAFE_FLAGS_RECOVERY_V5
-BASE_MAIN_SHA                  = a0bbef75b0185ac55dba3a272eb925cfb1ea056b
+BASE_MAIN_SHA                  = 34de702ae9c3b7f6952687ae97338cc50a4aedad
 BRANCH                         = hotfix/meta-history-2026-explicit-safe-flags-v5
-IMPLEMENTATION_PR              = PENDING
+IMPLEMENTATION_PR              = #353 / DRAFT / DO_NOT_MERGE
 ORIGINAL_IMPLEMENTATION_PR     = #319 / SQUASH_MERGED
 RUNTIME_PREFLIGHT_HOTFIX_PR    = #330 / SQUASH_MERGED
 PINNED_CONTINUITY_HOTFIX_PR    = #342 / SQUASH_MERGED
@@ -77,6 +77,11 @@ continuation sequence.
 Explicit Safe materialization does not enable any connector or mutation path. Later D1/Lark phases still
 activate only their exact reviewed config window and restore all flags false.
 
+## Main alignment
+
+PR #353 is based directly on `main@34de702ae9c3b7f6952687ae97338cc50a4aedad` and retains the concurrent
+Chatwoot Worker Secret staging hotfix unchanged. The Meta PR changes only its six scoped files.
+
 ## Acceptance criteria
 
 ```text
@@ -96,8 +101,8 @@ Remote action during implementation/CI        0
 
 ## Public command boundary
 
-Do not rerun the Terminal command while this Hotfix is unmerged. After exact-head CI, review, Squash Merge
-and a docs-only execution handoff, the only public entrypoint remains:
+Do not rerun the Terminal command while PR #353 is unmerged. After exact-head CI, review, Squash Merge and
+a docs-only execution handoff, the only public entrypoint remains:
 
 ```bash
 CONFIRM_META_HISTORY_2026_FINALIZER=RUN_META_HISTORY_2026_ONE_COMMAND \
