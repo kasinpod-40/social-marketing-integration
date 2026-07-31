@@ -61,11 +61,17 @@ const WINDOW_VALUES = new Set(['1', '3', '7', '30']);
 const VALUE_KEYS = new Set([
   'value', 'values', 'default_value', 'defaultValue', 'selected_value', 'selectedValue',
 ]);
+const VALUELESS_FILTER_OPERATORS = new Set(['isEmpty', 'isNotEmpty']);
+const FILTER_REQUEST_KEYS = new Set(['conjunction', 'conditions']);
+const FILTER_CONDITION_REQUEST_KEYS = new Set([
+  'field_name', 'fieldName', 'operator', 'value',
+]);
 
 /**
  * เปลี่ยนเฉพาะ data_config ของ Block เดิม โดยรักษา Block ID, Chart type และ Layout ไว้
  * - KPI ของ Organic ใช้ metric_key เป็น Stable binding
  * - ทุก Dashboard ใช้ window_days Number แทน Legacy Select
+ * - Filter PATCH ส่งเฉพาะ Request fields; ห้ามสะท้อน response metadata กลับเข้า API
  */
 export function rewriteDashboardBlockDataConfig(input = {}) {
   const dashboardName = requireText(input.dashboardName, 'dashboardName');
@@ -75,6 +81,9 @@ export function rewriteDashboardBlockDataConfig(input = {}) {
     ? ORGANIC_METRIC_BINDINGS[blockName] ?? null
     : null;
   const legacyReferencesBefore = collectLegacyFieldReferences(before);
+  const filterResponseMetadataRemovalCount = metricKey
+    ? countFilterResponseMetadata(before.filter)
+    : 0;
   let after = clone(before);
 
   if (metricKey) after = bindOrganicMetric(after, metricKey);
@@ -97,11 +106,26 @@ export function rewriteDashboardBlockDataConfig(input = {}) {
     blockName,
     metricKey,
     changed,
+    filterResponseMetadataRemovalCount,
     legacyReferencesBefore,
     legacyReferencesAfter,
     dataConfig: after,
     patch: changedTopLevelKeys(before, after),
   });
+}
+
+/**
+ * แปลง Filter ที่อ่านจาก Dashboard response เป็นรูป Request contract เท่านั้น
+ * โดยเก็บ Business conditions เดิม แต่ตัด condition_id, field_type และ metadata อื่นออก
+ */
+export function sanitizeDashboardFilterForMutation(value) {
+  const source = value === null || value === undefined
+    ? { conjunction: 'and', conditions: [] }
+    : requireObject(value, 'filter');
+  const conjunction = source.conjunction === 'or' ? 'or' : 'and';
+  const conditions = requireArray(source.conditions ?? [], 'filter.conditions')
+    .map((condition, index) => sanitizeDashboardFilterCondition(condition, index));
+  return deepFreeze({ conjunction, conditions });
 }
 
 /** ตรวจว่า Organic KPI ครบ 17 ชื่อและไม่มีชื่อซ้ำ */
@@ -177,13 +201,9 @@ export function hasDashboardProtocol(protocol) {
 }
 
 function bindOrganicMetric(config, metricKey) {
-  const currentFilter = config.filter && typeof config.filter === 'object'
-    ? clone(config.filter)
-    : { conjunction: 'and', conditions: [] };
-  const conditions = Array.isArray(currentFilter.conditions) ? currentFilter.conditions : [];
-  const retained = conditions.filter((condition) => {
-    const source = condition && typeof condition === 'object' ? condition : {};
-    const fieldName = source.field_name ?? source.fieldName;
+  const currentFilter = sanitizeDashboardFilterForMutation(config.filter);
+  const retained = currentFilter.conditions.filter((condition) => {
+    const fieldName = condition.field_name;
     return !LEGACY_DISPLAY_FIELD_NAME_SET.has(fieldName)
       && fieldName !== CANONICAL_REPORT_FIELD_NAMES.metricKey;
   });
@@ -195,11 +215,45 @@ function bindOrganicMetric(config, metricKey) {
   return {
     ...config,
     filter: {
-      ...currentFilter,
       conjunction: 'and',
       conditions: retained,
     },
   };
+}
+
+function sanitizeDashboardFilterCondition(condition, index) {
+  const source = requireObject(condition, `filter.conditions[${index}]`);
+  const fieldName = requireText(
+    source.field_name ?? source.fieldName,
+    `filter.conditions[${index}].field_name`,
+  );
+  const operator = requireText(source.operator, `filter.conditions[${index}].operator`);
+  const result = { field_name: fieldName, operator };
+  if (!VALUELESS_FILTER_OPERATORS.has(operator)) {
+    if (source.value === undefined || source.value === null) {
+      throw contractError(
+        'Dashboard filter condition requires value for its operator',
+        'LARK_DASHBOARD_CANONICAL_REBIND_FILTER_VALUE_REQUIRED',
+        { index, fieldName, operator },
+      );
+    }
+    result.value = clone(source.value);
+  }
+  return result;
+}
+
+function countFilterResponseMetadata(value) {
+  if (value === null || value === undefined) return 0;
+  const source = requireObject(value, 'filter');
+  let count = Object.keys(source).filter((key) => !FILTER_REQUEST_KEYS.has(key)).length;
+  const conditions = requireArray(source.conditions ?? [], 'filter.conditions');
+  for (const condition of conditions) {
+    const normalized = requireObject(condition, 'filter condition');
+    count += Object.keys(normalized).filter(
+      (key) => !FILTER_CONDITION_REQUEST_KEYS.has(key),
+    ).length;
+  }
+  return count;
 }
 
 function replaceLegacyWindowField(value, parentKey = '') {
