@@ -1,25 +1,28 @@
 import { createHash } from 'node:crypto';
 import { planLarkSchema } from '../../packages/application/src/use-cases/install-lark-report-schema.js';
-import { DASHBOARD_REPORT_PRESET_DAYS } from '../../packages/config/src/report-settings.seed.js';
 import {
   LARK_REPORT_SCHEMA_V2,
   LARK_REPORT_SCHEMA_V2_VERSION,
   validateReportSchemaV2,
 } from '../../packages/config/src/lark-report-schema-v2.js';
-import {
-  readLarkNumber,
-  readLarkText,
-} from '../../packages/connectors/src/shared/lark-cell-value.js';
+import { readLarkText } from '../../packages/connectors/src/shared/lark-cell-value.js';
 import { permanentError } from '../../packages/shared/src/errors/runtime-error.js';
 
 export const REPORT_METRIC_VALUE_FIELD_MIGRATION_VERSION =
-  'report_metric_value_field_migration_v1';
+  'report_metric_value_field_migration_v2';
 export const REPORT_METRIC_VALUE_FIELD_MIGRATION_CONFIRMATION =
   'MIGRATE_REPORT_METRIC_VALUES_PRESERVE_LEGACY';
 
 const TABLE_KEY = 'mktReportMetricValues';
 const MAX_RECORDS = 500;
 const VERIFY_DELAYS_MS = Object.freeze([0, 1_000, 2_000, 4_000, 8_000]);
+
+/**
+ * window_days is intentionally absent from this migration.
+ * Dashboard field-identity recovery v3 owns the slicer-bound SingleSelect identity and
+ * the executable schema keeps that one field canonical. Reintroducing the historical
+ * Select -> Number migration would recreate the incident this recovery closes.
+ */
 const MIGRATIONS = Object.freeze([
   Object.freeze({
     fieldName: 'display_name',
@@ -27,13 +30,6 @@ const MIGRATIONS = Object.freeze([
     sourceType: 3,
     targetType: 1,
     conversion: 'single_select_to_text',
-  }),
-  Object.freeze({
-    fieldName: 'window_days',
-    legacyName: '__mkt_legacy_window_days_single_select_v1',
-    sourceType: 3,
-    targetType: 2,
-    conversion: 'single_select_to_preset_number',
   }),
 ]);
 
@@ -143,13 +139,11 @@ export async function applyReportMetricValueFieldMigration(input = {}) {
   const appliedMigrations = [];
 
   for (const initial of plan.migrations.filter((migration) => migration.pending === true)) {
-    const sourceFingerprint = initial.sourceFingerprint;
-    const recordCount = initial.recordCount;
     const result = await applyOneMigration({
       ...options,
       fieldName: initial.fieldName,
-      sourceFingerprint,
-      recordCount,
+      sourceFingerprint: initial.sourceFingerprint,
+      recordCount: initial.recordCount,
       sleep,
     });
     fieldMutationCount += result.fieldMutationCount;
@@ -274,7 +268,6 @@ async function verifyMigrationAfterWrite(input, fieldName, sleep) {
     if (delayMs > 0) await sleep(delayMs);
     latest = await readMigration(input, fieldName);
     if (latest.state === 'converged') return latest;
-    if (latest.blocker) break;
   }
   throw migrationError(
     'Canonical Report Metric values did not converge after one write',
@@ -369,8 +362,6 @@ function analyzeMigrationField(input) {
     records: input.records,
     sourceField,
     targetField,
-    desired: input.desired,
-    contract: input.contract,
   });
   if (analysis.blocker) return { blocker: analysis.blocker };
 
@@ -420,48 +411,34 @@ function analyzeRecordValues(input) {
     } catch {
       return { blocker: safeBlocker('REPORT_METRIC_FIELD_MIGRATION_SOURCE_VALUE_INVALID', {
         tableKey: TABLE_KEY,
-        fieldName: input.contract.fieldName,
+        fieldName: 'display_name',
         recordCount: input.records.length,
       }) };
     }
 
-    let converted = null;
-    if (sourceText !== null) {
-      populatedSourceCount += 1;
-      try {
-        converted = convertValue(sourceText, input.contract);
-      } catch {
-        return { blocker: safeBlocker('REPORT_METRIC_FIELD_MIGRATION_VALUE_NOT_LOSSLESS', {
-          tableKey: TABLE_KEY,
-          fieldName: input.contract.fieldName,
-          recordCount: input.records.length,
-          populatedSourceCount,
-        }) };
-      }
-    }
-
+    if (sourceText !== null) populatedSourceCount += 1;
     const canonicalValue = input.targetField
-      ? readCanonicalValue(readFieldValue(record.fields, input.targetField.fieldName), input.desired)
+      ? readTextValue(readFieldValue(record.fields, input.targetField.fieldName))
       : null;
-    if (converted === null && canonicalValue !== null) {
+    if (sourceText === null && canonicalValue !== null) {
       return { blocker: safeBlocker('REPORT_METRIC_FIELD_MIGRATION_CANONICAL_WITHOUT_SOURCE', {
         tableKey: TABLE_KEY,
-        fieldName: input.contract.fieldName,
+        fieldName: 'display_name',
         recordCount: input.records.length,
       }) };
     }
-    if (converted !== null && canonicalValue !== null && canonicalValue !== converted) {
+    if (sourceText !== null && canonicalValue !== null && canonicalValue !== sourceText) {
       return { blocker: safeBlocker('REPORT_METRIC_FIELD_MIGRATION_CANONICAL_VALUE_MISMATCH', {
         tableKey: TABLE_KEY,
-        fieldName: input.contract.fieldName,
+        fieldName: 'display_name',
         recordCount: input.records.length,
       }) };
     }
-    if (converted !== null && canonicalValue === null) {
-      pendingUpdates.push(deepFreeze({ recordId, value: converted }));
+    if (sourceText !== null && canonicalValue === null) {
+      pendingUpdates.push(deepFreeze({ recordId, value: sourceText }));
     }
 
-    sourceRows.push([recordId, converted]);
+    sourceRows.push([recordId, sourceText]);
     canonicalRows.push([recordId, canonicalValue]);
   }
 
@@ -613,31 +590,8 @@ function readSingleSelectValue(value) {
   return readLarkText(value, { allowNull: true, label: 'legacy SingleSelect' });
 }
 
-function readCanonicalValue(value, desired) {
-  if (value === null || value === undefined || value === '') return null;
-  if (Number(desired.type) === 1) {
-    return readLarkText(value, { allowNull: true, label: desired.fieldName });
-  }
-  if (Number(desired.type) === 2) {
-    return readLarkNumber(value, { allowNull: true, label: desired.fieldName });
-  }
-  throw new TypeError(`Unsupported canonical field type ${desired.type}`);
-}
-
-function convertValue(text, contract) {
-  if (contract.conversion === 'single_select_to_text') return text;
-  if (contract.conversion === 'single_select_to_preset_number') {
-    const normalized = text.trim();
-    if (!/^(?:0|[1-9]\d*)$/u.test(normalized)) throw new TypeError('not an integer');
-    const number = Number(normalized);
-    if (!Number.isSafeInteger(number)
-      || String(number) !== normalized
-      || !DASHBOARD_REPORT_PRESET_DAYS.includes(number)) {
-      throw new TypeError('not a canonical Report preset day');
-    }
-    return number;
-  }
-  throw new TypeError(`Unknown conversion ${contract.conversion}`);
+function readTextValue(value) {
+  return readLarkText(value, { allowNull: true, label: 'display_name' });
 }
 
 function readFieldValue(fields, fieldName) {
