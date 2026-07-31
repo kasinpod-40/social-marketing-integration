@@ -109,6 +109,8 @@ Raw Provider payloads, Message content, Contact PII, names, email, phone, tokens
 - Initial Conversations, Messages and Reporting Events are bounded to the exact rolling 30-day interval anchored to stable `originalRequestedAt`.
 - Daily incremental rereads the exact rolling three-day interval.
 - Conversation selection considers `updated_at`, `last_activity_at` and `created_at`; therefore a Conversation created before the window remains included when activity/update intersects the window.
+- Reporting Event selection considers event, create and update timestamps independently so late corrections in the overlap are included.
+- A Reporting-only page writes only Reporting Events and their Coverage lineage; its synthetic normalization Account never rewrites latest-state Account data.
 - Missing duration metrics remain `null`; the rollup never converts missing values to zero.
 - Account Reporting pagination has a separate durable upper bound of 5,000 pages, safely above the verified 1,125-page inventory.
 - Message and Conversation pagination remain bounded by the existing Provider and per-conversation limits.
@@ -127,11 +129,12 @@ node scripts/chatwoot-runtime-plan.mjs \
   --requested-at=2026-07-31T01:00:00Z \
   --conversation-pages=304 \
   --reporting-pages=1125 \
+  --rollup-pages=31 \
   --conversation-pages-per-invocation=1 \
   --reporting-pages-per-invocation=5
 ```
 
-The operator imports only the pure Runtime contract. It performs zero Provider requests, Queue sends, D1 reads/writes, Lark reads/writes, deployment, Schedule/Webhook action or Secret access.
+The example resolves to `562` bounded units: one Masters unit, `304` Conversation units, `225` Reporting units, `31` supplied Rollup-page units and one Checkpoint/finalization unit. The operator imports only the pure Runtime contract and performs zero Provider requests, Queue sends, D1 reads/writes, Lark reads/writes, deployment, Schedule/Webhook action or Secret access.
 
 ## Controlled UAT left for Terminal
 
@@ -152,8 +155,11 @@ No such Terminal, Queue, Remote D1/Lark, deployment or live UAT action is perfor
 ```bash
 npm ci
 npm run check
-node --test tests/application/chatwoot-runtime-wiring.test.js \
-  tests/application/chatwoot-runtime-30d-daily.test.js
+node --test \
+  tests/application/chatwoot-runtime-wiring.test.js \
+  tests/application/chatwoot-runtime-30d-daily.test.js \
+  tests/application/chatwoot-runtime-contract-examples.test.js \
+  tests/application/chatwoot-durable-recovery.test.js
 npm test
 npm run test:report-reliability
 npm audit --audit-level=high
