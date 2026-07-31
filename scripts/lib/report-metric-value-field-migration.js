@@ -18,10 +18,10 @@ const MAX_RECORDS = 500;
 const VERIFY_DELAYS_MS = Object.freeze([0, 1_000, 2_000, 4_000, 8_000]);
 
 /**
- * window_days is intentionally absent from this migration.
- * Dashboard field-identity recovery v3 owns the slicer-bound SingleSelect identity and
- * the executable schema keeps that one field canonical. Reintroducing the historical
- * Select -> Number migration would recreate the incident this recovery closes.
+ * display_name retains the historical lossless Select -> Text migration.
+ * window_days remains visible in the plan only as a read-only ownership assertion so
+ * existing Finalizer scope accounting stays exact. Dashboard field-identity recovery v3
+ * is the only workflow allowed to promote the slicer-bound SingleSelect Field ID.
  */
 const MIGRATIONS = Object.freeze([
   Object.freeze({
@@ -30,6 +30,15 @@ const MIGRATIONS = Object.freeze([
     sourceType: 3,
     targetType: 1,
     conversion: 'single_select_to_text',
+    ownershipOnly: false,
+  }),
+  Object.freeze({
+    fieldName: 'window_days',
+    legacyName: '__mkt_legacy_window_days_single_select_v1',
+    sourceType: 3,
+    targetType: 3,
+    conversion: 'managed_by_field_identity_recovery_v3',
+    ownershipOnly: true,
   }),
 ]);
 
@@ -97,13 +106,21 @@ export async function planReportMetricValueFieldMigration(input = {}) {
       continue;
     }
 
-    const result = analyzeMigrationField({
-      contract,
-      desired,
-      tableId: resolution.tableId,
-      fields,
-      records,
-    });
+    const result = contract.ownershipOnly === true
+      ? analyzeOwnershipAssertion({
+        contract,
+        desired,
+        tableId: resolution.tableId,
+        fields,
+        records,
+      })
+      : analyzeMigrationField({
+        contract,
+        desired,
+        tableId: resolution.tableId,
+        fields,
+        records,
+      });
     if (result.blocker) blockers.push(result.blocker);
     else migrations.push(result.migration);
   }
@@ -294,6 +311,35 @@ async function readMigration(input, fieldName) {
     );
   }
   return migration;
+}
+
+function analyzeOwnershipAssertion(input) {
+  const canonicalMatches = input.fields.filter(
+    (field) => normalizeName(field.fieldName) === normalizeName(input.contract.fieldName),
+  );
+  const legacyMatches = input.fields.filter(
+    (field) => normalizeName(field.fieldName) === normalizeName(input.contract.legacyName),
+  );
+  const canonical = canonicalMatches[0] ?? null;
+  if (canonicalMatches.length === 1
+    && legacyMatches.length === 0
+    && canonical?.isPrimary !== true
+    && Number(canonical?.type) === input.contract.targetType) {
+    return {
+      migration: buildNotRequiredMigration(input, canonical),
+    };
+  }
+  return {
+    blocker: safeBlocker('REPORT_METRIC_FIELD_MIGRATION_WINDOW_OWNERSHIP_NOT_CONVERGED', {
+      tableKey: TABLE_KEY,
+      fieldName: input.contract.fieldName,
+      expectedType: input.contract.targetType,
+      canonicalFieldCount: canonicalMatches.length,
+      canonicalType: canonical?.type ?? null,
+      legacyFieldCount: legacyMatches.length,
+      recoveryContract: 'lark_dashboard_field_identity_recovery_v3',
+    }),
+  };
 }
 
 function analyzeMigrationField(input) {
