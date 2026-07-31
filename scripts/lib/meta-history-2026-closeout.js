@@ -24,10 +24,11 @@ export function reconcileMetaHistory2026Evidence(input = {}) {
     }
   }
 
+  const facebook = completed.find((item) => item.target === 'facebook') ?? null;
   const instagram = completed.find((item) => item.target === 'instagram') ?? null;
   const adsBaseline = completed.filter((item) => item.mode === 'required'
     && String(item.target).startsWith('chemistry_k'));
-  if (!instagram || adsBaseline.length !== 2) {
+  if (!facebook || !instagram || adsBaseline.length !== 2) {
     throw closeoutError(
       'Meta history required operation evidence is incomplete',
       'META_HISTORY_2026_CLOSEOUT_REQUIRED_EVIDENCE_MISSING',
@@ -37,6 +38,7 @@ export function reconcileMetaHistory2026Evidence(input = {}) {
   return deepFreeze({
     completed,
     expansion,
+    facebookHistoryCompleted: facebook.larkCompleted,
     instagramCompleted: instagram.larkCompleted,
     adsBaselineCompleted: adsBaseline.every((item) => item.larkCompleted),
     parityVerified: completed.every((item) => item.larkCompleted),
@@ -46,7 +48,12 @@ export function reconcileMetaHistory2026Evidence(input = {}) {
 
 export function isRecoverableMetaHistoryFinalSummaryFailure(value = {}) {
   const failed = Array.isArray(value?.details?.failed) ? value.details.failed : [];
-  const allowed = new Set(['instagramCompleted', 'adsBaselineCompleted', 'parity']);
+  const allowed = new Set([
+    'facebookHistoryCompleted',
+    'instagramCompleted',
+    'adsBaselineCompleted',
+    'parity',
+  ]);
   return value?.stage === 'final-safe-verification'
     && value?.code === 'META_HISTORY_2026_SUMMARY_INVALID'
     && failed.length > 0
