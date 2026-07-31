@@ -165,9 +165,7 @@ function normalizeOptionalSharedDimensions(value) {
   if (value === null || value === undefined) return null;
   const dimensions = requireObject(value, 'sharedDimensions');
   const periodKind = requireText(dimensions.period_kind, 'sharedDimensions.period_kind');
-  const windowDays = dimensions.window_days === null
-    ? null
-    : positiveInteger(dimensions.window_days, 'sharedDimensions.window_days');
+  const windowDays = normalizeSharedWindowDays(dimensions.window_days);
   if (periodKind === 'custom_range' && windowDays !== null) {
     throw new TypeError('custom_range shared dimensions must keep window_days null');
   }
@@ -187,6 +185,11 @@ function normalizeOptionalSharedDimensions(value) {
     generated_at: requireEpoch(dimensions.generated_at, 'sharedDimensions.generated_at'),
   });
 }
+function normalizeSharedWindowDays(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const normalized = positiveInteger(value, 'sharedDimensions.window_days');
+  return typeof value === 'string' ? String(normalized) : normalized;
+}
 function normalizeTopContentPayload(row) { return row && typeof row === 'object' ? row : null; }
 function optionalFinite(value) {
   if (value === null || value === undefined || value === '') return null;
@@ -204,7 +207,7 @@ function requireEpoch(value, fieldName) {
 }
 function nonNegativeInteger(value, fieldName) {
   const number = Number(value);
-  if (!Number.isSafeInteger(number) || number < 0) throw new TypeError(`Report output ${fieldName} must be non-negative`);
+  if (!Number.isSafeInteger(number) || number < 0) throw new TypeError(`${fieldName} must be non-negative`);
   return number;
 }
 function positiveInteger(value, fieldName) {
