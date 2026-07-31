@@ -42,6 +42,10 @@ import {
   resolveChatwootFinalSourceIdentity,
   validateChatwootFinalSourceIncidentClosureResults,
 } from './lib/chatwoot-final-source-config-recovery.js';
+import {
+  CHATWOOT_PROVIDER_PREFLIGHT_CONFIRMATION,
+  CHATWOOT_PROVIDER_PREFLIGHT_CONTRACT_VERSION,
+} from './lib/chatwoot-provider-preflight.js';
 
 const ROOT = resolve(process.cwd());
 const DATABASE_NAME = 'social-mkt-state-dev';
@@ -92,7 +96,7 @@ async function main() {
   assertChatwootFinalSourceConfigRecoveryConfirmation(sourceEnv);
   const repository = assertRepositoryState();
   const sourceIdentity = resolveChatwootFinalSourceIdentity(sourceEnv);
-  generatedConfigPath = await createSourceCompleteConfig(sourceEnv, sourceIdentity);
+  generatedConfigPath = await createSourceCompleteConfig(sourceIdentity);
 
   const evidenceDirectory = inside(join(
     'outputs',
@@ -104,11 +108,14 @@ async function main() {
     'chatwoot-final-30d-daily-uat',
     repository.head,
   ));
+  const providerEvidenceDirectory = join(evidenceDirectory, 'provider-get-only');
   const env = Object.freeze({
     ...sourceEnv,
     [CHATWOOT_FINAL_UAT_CONFIRMATION.envName]: CHATWOOT_FINAL_UAT_CONFIRMATION.value,
+    CONFIRM_CHATWOOT_PROVIDER_GET_ONLY: CHATWOOT_PROVIDER_PREFLIGHT_CONFIRMATION,
     MKT_CHATWOOT_FINAL_UAT_WRANGLER_CONFIG: generatedConfigPath,
     MKT_CHATWOOT_FINAL_UAT_EVIDENCE_DIR: uatDirectory,
+    MKT_CHATWOOT_PROVIDER_PREFLIGHT_EVIDENCE_DIR: providerEvidenceDirectory,
   });
   await mkdir(evidenceDirectory, { recursive: true, mode: 0o700 });
   const summaryPath = join(uatDirectory, 'summary.json');
@@ -135,11 +142,18 @@ async function main() {
     });
   }
 
+  const providerEvidence = await ensureProviderPreflight({
+    env,
+    evidenceDirectory: providerEvidenceDirectory,
+    sourceIdentity,
+  });
+
   if (!summaryExists) {
     await writePrivateJson(join(evidenceDirectory, '01-uat-attempt.json'), {
       contractVersion: CHATWOOT_FINAL_SOURCE_CONFIG_RECOVERY_CONTRACT_VERSION,
       repositoryHead: repository.head,
       sourceIdentityFingerprint: sourceIdentity.fingerprint,
+      providerEvidenceFingerprint: fingerprintChatwootFinalSourceRecovery(providerEvidence),
       retainedIncidentFingerprint: fingerprintChatwootFinalSourceRecovery(
         normalizeChatwootFinalSourceIncident(incidentBefore),
       ),
@@ -212,6 +226,7 @@ async function main() {
         normalizeChatwootFinalSourceIncident(incidentBefore),
       ),
       uatSummaryFingerprint: fingerprintChatwootFinalSourceRecovery(summary),
+      providerEvidenceFingerprint: fingerprintChatwootFinalSourceRecovery(providerEvidence),
       snapshotsFingerprint: fingerprintChatwootFinalSourceRecovery(snapshotsBefore),
       backup,
       mutationScope: [
@@ -278,6 +293,8 @@ async function main() {
     repositoryHead: repository.head,
     sourceIdentityVerified: true,
     sourceIdentityFingerprint: sourceIdentity.fingerprint,
+    providerGetOnlyPreflightVerified: true,
+    providerMutationCount: 0,
     initial30DayVerified: true,
     initialReplayVerified: true,
     daily3DayVerified: true,
@@ -317,6 +334,7 @@ function printPlan() {
       'exact clean current main',
       'materialize private non-secret Chatwoot source identity',
       'verify exact retained terminal incident',
+      'fresh exact-account Chatwoot Provider GET-only preflight',
       'run or resume guarded Final UAT',
       'verify all-false Safe state and zero exact lock',
       'backup Remote D1',
@@ -326,6 +344,8 @@ function printPlan() {
     sourceFieldsMaterialized: ['CHATWOOT_BASE_URL', 'CHATWOOT_ACCOUNT_ID'],
     secretValuesMaterialized: 0,
     evidenceDirectoryBoundToRepositoryHead: true,
+    providerTransport: 'GET_only',
+    providerMutationCount: 0,
     closureInterruptionResumable: true,
     queueRedrive: false,
     scheduleEnabled: false,
@@ -335,8 +355,8 @@ function printPlan() {
   }, null, 2)}\n`);
 }
 
-async function createSourceCompleteConfig(env, identity) {
-  const sourcePath = inside(env.MKT_CHATWOOT_FINAL_UAT_WRANGLER_CONFIG ?? 'wrangler.sync.jsonc');
+async function createSourceCompleteConfig(identity) {
+  const sourcePath = inside('wrangler.sync.jsonc');
   const sourceText = await readFile(sourcePath, 'utf8');
   const materialized = materializeChatwootFinalSourceConfig(sourceText, identity);
   const directory = inside(join(
@@ -353,6 +373,71 @@ async function createSourceCompleteConfig(env, identity) {
   await writeFile(path, rebased.text, { mode: 0o600 });
   await chmod(path, 0o600);
   return path;
+}
+
+async function ensureProviderPreflight({ env, evidenceDirectory, sourceIdentity }) {
+  const path = join(evidenceDirectory, 'summary.json');
+  let evidence;
+  if (await regularFile(path)) {
+    evidence = await readPrivateJson(path, 'Chatwoot Provider GET-only evidence');
+  } else {
+    await mkdir(evidenceDirectory, { recursive: true, mode: 0o700 });
+    runInherited(
+      'node',
+      ['scripts/chatwoot-provider-preflight.mjs', EXECUTE_ARGUMENT],
+      env,
+    );
+    evidence = await readPrivateJson(path, 'Chatwoot Provider GET-only evidence');
+  }
+  assertProviderPreflightEvidence(evidence, sourceIdentity);
+  return evidence;
+}
+
+function assertProviderPreflightEvidence(evidence, sourceIdentity) {
+  const endpointChecks = evidence?.endpointChecks ?? {};
+  const endpointNames = [
+    'profile',
+    'inboxes',
+    'agents',
+    'teams',
+    'labels',
+    'contacts',
+    'conversations',
+    'reportingEvents',
+  ];
+  const boundaries = evidence?.boundaries ?? {};
+  const accepted = evidence?.contractVersion === CHATWOOT_PROVIDER_PREFLIGHT_CONTRACT_VERSION
+    && evidence?.phase === 'provider-get-only-preflight'
+    && evidence?.status === 'passed'
+    && evidence?.accepted === true
+    && evidence?.decision === 'PASS_CHATWOOT_PROVIDER_GET_ONLY'
+    && evidence?.target?.baseUrlFingerprint === sha256(sourceIdentity.baseUrl)
+    && evidence?.target?.accountFingerprint
+      === sha256(`${sourceIdentity.baseUrl}|${sourceIdentity.accountId}`)
+    && evidence?.identity?.profileValidated === true
+    && evidence?.identity?.exactAccountMatch === true
+    && endpointNames.every((name) => endpointChecks?.[name]?.status === 'passed')
+    && boundaries.transport === 'GET_only'
+    && boundaries.providerMutationCount === 0
+    && boundaries.d1MutationCount === 0
+    && boundaries.queueActionCount === 0
+    && boundaries.larkMutationCount === 0
+    && boundaries.workerDeploymentCount === 0
+    && boundaries.scheduleWebhookActionCount === 0
+    && boundaries.tokenPersisted === false
+    && boundaries.rawProviderPayloadPersisted === false;
+  if (!accepted) {
+    throw recoveryError(
+      'Chatwoot Provider GET-only preflight is not accepted for Queue admission',
+      'CHATWOOT_FINAL_SOURCE_CONFIG_PROVIDER_PREFLIGHT_INVALID',
+      {
+        status: evidence?.status ?? null,
+        decision: evidence?.decision ?? null,
+        accepted: evidence?.accepted ?? null,
+      },
+    );
+  }
+  return true;
 }
 
 function assertRepositoryState() {
