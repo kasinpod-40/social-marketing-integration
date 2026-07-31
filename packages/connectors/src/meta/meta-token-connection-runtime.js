@@ -49,6 +49,7 @@ export function createMetaTokenConnectionRuntime(env = {}, options = {}) {
       baseUrl: INSTAGRAM_GRAPH_BASE_URL,
     })
     : null;
+  const instagramContentDateRange = readInstagramContentDateRange(env);
 
   return deepFreeze({
     facebook: facebookClient
@@ -65,7 +66,10 @@ export function createMetaTokenConnectionRuntime(env = {}, options = {}) {
         ? new FacebookOrganicSourceAdapter({ client: facebookPageClient })
         : null,
       instagram: instagramClient
-        ? new InstagramOrganicSourceAdapter({ client: instagramClient })
+        ? new InstagramOrganicSourceAdapter({
+          client: instagramClient,
+          contentDateRange: instagramContentDateRange,
+        })
         : null,
       meta_ads: facebookClient
         ? new MetaAdsSourceAdapter({ client: facebookClient })
@@ -73,6 +77,24 @@ export function createMetaTokenConnectionRuntime(env = {}, options = {}) {
     },
     mappings: config.mappings,
   });
+}
+
+function readInstagramContentDateRange(env) {
+  const since = optionalText(env.MKT_META_INSTAGRAM_CONTENT_SINCE);
+  const until = optionalText(env.MKT_META_INSTAGRAM_CONTENT_UNTIL);
+  if (since === null && until === null) return null;
+  if (since === null || until === null) {
+    throw new TypeError(
+      'Instagram content history requires both MKT_META_INSTAGRAM_CONTENT_SINCE and MKT_META_INSTAGRAM_CONTENT_UNTIL',
+    );
+  }
+  return Object.freeze({ since, until });
+}
+
+function optionalText(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value !== 'string') throw new TypeError('Meta runtime optional value must be text');
+  return value.trim() || null;
 }
 
 function deepFreeze(value) {
