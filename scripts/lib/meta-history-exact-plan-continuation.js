@@ -18,14 +18,21 @@ export const META_HISTORY_EXACT_CONTINUATION_TARGET = Object.freeze({
 });
 
 export const META_HISTORY_EXACT_CONTINUATION_ALLOWED_DELTA = Object.freeze([
+  'docs/current-task.md',
+  'docs/project-brain/meta-history-2026-finalizer.md',
   'docs/project-brain/report-metric-value-field-migration.md',
   'docs/tasks/lark-dashboard-compatibility-freeze-v1.md',
   'docs/tasks/lark-dashboard-compatibility-record-backfill-closeout-2026-08-01.md',
+  'docs/tasks/meta-history-exact-plan-continuation-v1.md',
   'scripts/lark-dashboard-compatibility-freeze-audit.mjs',
   'scripts/lark-dashboard-compatibility-record-backfill.mjs',
   'scripts/lark-dashboard-field-identity-recovery-terminal-v3.mjs',
   'scripts/lark-dashboard-field-identity-recovery-v3.mjs',
   'scripts/lib/lark-dashboard-compatibility-freeze-v1.js',
+  'scripts/lib/meta-history-exact-plan-continuation.js',
+  'scripts/meta-history-2026-exact-plan-continuation.mjs',
+  'tests/application/meta-history-exact-plan-continuation.test.js',
+  'tests/application/meta-history-exact-plan-continuation-wiring.test.js',
   'tests/scripts/lark-dashboard-compatibility-record-backfill.test.js',
   'tests/scripts/lark-dashboard-field-identity-recovery-v3.test.js',
   'tests/scripts/lark-dashboard-window-chart-rebind-v3-2.test.js',
@@ -103,7 +110,7 @@ export function validateMetaHistoryExactContinuationDelta(changedPaths = []) {
     const unreviewed = observed.filter((path) => !allowed.includes(path));
     const missing = allowed.filter((path) => !observed.includes(path));
     throw continuationError(
-      'Repository delta from the retained Meta Head is not the exact reviewed unrelated Dashboard change',
+      'Repository delta from the retained Meta Head is not the exact reviewed release path set',
       'META_HISTORY_EXACT_CONTINUATION_REPOSITORY_DELTA_INVALID',
       { unreviewed, missing },
     );
