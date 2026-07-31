@@ -9,6 +9,7 @@ import {
 } from '../../packages/application/src/jobs/job-catalog.js';
 import {
   CHATWOOT_RUNTIME_CONTRACT,
+  CHATWOOT_RUNTIME_JOB_SCHEMA_VERSION,
   CHATWOOT_RUNTIME_MODES,
   buildChatwootRuntimePlan,
   createInitialChatwootDurableState,
@@ -23,6 +24,7 @@ import {
 } from '../../packages/application/src/use-cases/chatwoot-daily-rollup.js';
 import { syncChatwootDurableRuntime } from '../../packages/application/src/use-cases/sync-chatwoot-durable-runtime.js';
 import { readChatwootRuntimeConfig } from '../../packages/config/src/chatwoot-runtime-config.js';
+import { ChatwootDurableApiClient } from '../../packages/connectors/src/chatwoot/chatwoot-durable-api.client.js';
 
 const REQUESTED_AT = Date.parse('2026-07-31T01:00:00Z');
 const DAY_MS = 86_400_000;
@@ -58,6 +60,8 @@ test('Chatwoot runtime contract is locked to 30d initial and daily 3d overlap', 
 test('Chatwoot catalog centralizes triggers and schema version', () => {
   const definition = getJobDefinition(JOB_TYPES.CHATWOOT_CONVERSATIONS_SYNC);
   assert.equal(definition.schemaVersion, JOB_SCHEMA_VERSIONS.CHATWOOT_RUNTIME);
+  assert.equal(CHATWOOT_RUNTIME_JOB_SCHEMA_VERSION, JOB_SCHEMA_VERSIONS.CHATWOOT_RUNTIME);
+  assert.equal(JOB_TRIGGERS.CHATWOOT_LEGACY_MANUAL_UAT, 'manual_uat');
   assert.deepEqual(definition.allowedTriggers, [
     JOB_TRIGGERS.CHATWOOT_INITIAL_30_DAY_UAT,
     JOB_TRIGGERS.CHATWOOT_DAILY_INCREMENTAL,
@@ -122,6 +126,37 @@ test('plan supports at least 1,125 Reporting pages with bounded resumable units 
   assert.equal(plan.automaticBackfillExpansion, false);
 });
 
+test('durable Provider client accepts verified Reporting page 1,125 without raising generic limit', async () => {
+  let requestedUrl = null;
+  const client = new ChatwootDurableApiClient({
+    baseUrl: 'https://chatwoot.example.test',
+    accountId: 1,
+    accessToken: 'test-token',
+    maxPages: 1_000,
+    maxReportingPages: 5_000,
+    fetchImpl: async (url) => {
+      requestedUrl = String(url);
+      return new Response(JSON.stringify({
+        payload: [],
+        meta: { current_page: 1_125, total_pages: 1_125, count: 28_103 },
+      }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    },
+  });
+  const page = await client.listAccountReportingEventsPage({
+    page: 1_125,
+    since: REQUESTED_AT - 30 * DAY_MS,
+    until: REQUESTED_AT,
+  });
+  assert.equal(page.page, 1_125);
+  assert.equal(page.totalPages, 1_125);
+  assert.equal(page.totalCount, 28_103);
+  assert.equal(page.hasMore, false);
+  assert.match(requestedUrl, /page=1125/u);
+});
+
 test('daily rollup preserves missing metrics as null and stable keys on rerun', () => {
   const seed = createChatwootDailyRollupState({
     customerKey: 'chemistry_k',
@@ -148,13 +183,16 @@ test('daily rollup preserves missing metrics as null and stable keys on rerun', 
     replySeconds: null,
     sourceRevision: '100',
   }]);
-  const rows = buildChatwootDailyRollupRows({
+  const input = {
     state: merged,
     reportingTimezone: 'Asia/Bangkok',
     syncRunId: 'sync-1',
     coverageRunIdPrefix: 'coverage-1',
     fetchedAt: REQUESTED_AT,
-  });
+  };
+  const rows = buildChatwootDailyRollupRows(input);
+  const rerun = buildChatwootDailyRollupRows(input);
+  assert.deepEqual(rerun, rows);
   assert.equal(rows.agents[0].avg_first_response_seconds, null);
   assert.equal(rows.account[0].avg_resolution_seconds, null);
   assert.equal(rows.inboxes[0].incoming_message_count, 2);
@@ -218,6 +256,16 @@ test('stale continuation resumes from durable sequence without Provider or Busin
   assert.equal(result.nextSequence, 2);
   assert.equal(result.needsContinuation, true);
   assert.equal(phaseWrites, 0);
+});
+
+test('shared Queue/DLQ terminal path includes Chatwoot durable work', async () => {
+  const source = await readFile(
+    new URL('../../apps/sync-worker/src/queue-batch-router.js', import.meta.url),
+    'utf8',
+  );
+  assert.match(source, /new Set\(\['youtube', 'tiktok', 'chatwoot'\]\)/u);
+  assert.match(source, /\['facebook', 'instagram', 'tiktok', 'youtube', 'chatwoot'\]/u);
+  assert.match(source, /queue-terminal-safe-d1-resumable-work-store/u);
 });
 
 test('plan-only operator contains no Queue, D1, Lark, deployment or schedule execution', async () => {
