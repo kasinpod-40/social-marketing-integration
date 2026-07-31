@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
@@ -53,4 +54,20 @@ test('launcher delegates deployment and Queue submission to the reviewed core', 
   assert.doesNotMatch(source, /queues\/.+\/messages/u);
   assert.doesNotMatch(source, /api\.cloudflare\.com/u);
   assert.doesNotMatch(source, /config\.vars\[name\] = 'true'/u);
+});
+
+test('launcher plan executes without credentials or Remote action', () => {
+  const result = spawnSync(process.execPath, [
+    'scripts/chatwoot-final-30d-daily-uat-launcher.mjs',
+  ], {
+    cwd: new URL('../..', import.meta.url),
+    encoding: 'utf8',
+    env: { ...process.env },
+    timeout: 30_000,
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /"executed": false/u);
+  assert.match(result.stdout, /"remoteActionsPerformed": false/u);
+  assert.match(result.stdout, /chatwoot-final-30d-daily-uat-launcher\.mjs --execute/u);
+  assert.doesNotMatch(result.stderr, /CHATWOOT_FINAL_UAT_/u);
 });
