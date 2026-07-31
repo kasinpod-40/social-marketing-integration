@@ -17,6 +17,7 @@ const REQUIRED_RELEASE_PATHS = Object.freeze([
   'docs/project-brain/meta-history-2026-finalizer.md',
   'docs/tasks/meta-history-exact-plan-continuation-v1.md',
   'scripts/lib/meta-history-exact-plan-continuation.js',
+  'scripts/meta-history-2026-exact-plan-continuation-terminal.mjs',
   'scripts/meta-history-2026-exact-plan-continuation.mjs',
   'tests/application/meta-history-exact-plan-continuation.test.js',
   'tests/application/meta-history-exact-plan-continuation-wiring.test.js',
