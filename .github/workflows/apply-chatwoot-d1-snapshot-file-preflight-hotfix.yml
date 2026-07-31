@@ -1,28 +1,32 @@
 name: Apply Chatwoot D1 Snapshot File Preflight Hotfix
 
 on:
-  pull_request:
+  push:
     branches:
-      - main
+      - codex/chatwoot-final-d1-snapshot-file-preflight
 
 permissions:
   contents: write
 
 jobs:
   apply:
-    if: github.head_ref == 'hotfix/chatwoot-final-d1-snapshot-file-preflight'
     runs-on: mkt-ci
     timeout-minutes: 10
     steps:
-      - name: Checkout hotfix branch
+      - name: Checkout temporary Codex branch
         uses: actions/checkout@v4
         with:
-          ref: hotfix/chatwoot-final-d1-snapshot-file-preflight
+          ref: codex/chatwoot-final-d1-snapshot-file-preflight
           fetch-depth: 0
 
       - name: Apply bounded D1 read correction
         shell: bash
         run: |
+          if grep -Fq "'--file', sqlPath" scripts/chatwoot-final-30d-daily-uat.mjs; then
+            echo 'Hotfix already applied.'
+            exit 0
+          fi
+
           python3 - <<'PY'
           from pathlib import Path
 
@@ -141,4 +145,4 @@ test('D1 Snapshot reads use private files and are preflighted before Active depl
             tests/application/chatwoot-final-30d-daily-uat.test.js \
             tests/application/chatwoot-final-preflight-initialization.test.js
           git commit -m "fix: preflight Chatwoot D1 snapshots from private files"
-          git push origin HEAD:hotfix/chatwoot-final-d1-snapshot-file-preflight
+          git push origin HEAD:codex/chatwoot-final-d1-snapshot-file-preflight
