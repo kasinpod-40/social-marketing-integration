@@ -56,6 +56,22 @@ test('Meta history source config may be readable while generated execution confi
   assert.doesNotMatch(source, /assertPrivateRegularFile\(sourceConfigPath, 'Meta Wrangler config'\)/u);
 });
 
+test('Meta history Cloudflare readiness resolves stable account authority before optional whoami', async () => {
+  const source = await readFile(finalizerChild, 'utf8');
+  const start = source.indexOf('async function resolveCloudflareContext');
+  const end = source.indexOf('async function assertRemoteSafe');
+  assert.ok(start >= 0 && end > start);
+  const context = source.slice(start, end);
+  const staticResolution = context.indexOf('whoamiOutput: null');
+  const whoamiFallback = context.indexOf("runText('npx', ['wrangler', 'whoami', '--json'], env)");
+  assert.ok(staticResolution >= 0);
+  assert.ok(whoamiFallback > staticResolution);
+  assert.match(context, /const accountInput = \{[\s\S]+explicitAccountId: env\.CLOUDFLARE_ACCOUNT_ID[\s\S]+configText/u);
+  assert.match(context, /error\?\.code !== 'WOOCOMMERCE_FINAL_WHOAMI_JSON_INVALID'/u);
+  assert.equal((context.match(/wrangler', 'whoami'/gu) ?? []).length, 1);
+  assert.doesNotMatch(context, /const whoami = runText/u);
+});
+
 test('Meta history finalizer proves pinned continuity without legacy local artifacts', async () => {
   const source = await readFile(finalizerChild, 'utf8');
   assert.match(source, /verify-pinned-facebook-continuity/u);
