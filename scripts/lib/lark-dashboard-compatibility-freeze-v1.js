@@ -4,6 +4,9 @@ export const LARK_DASHBOARD_COMPATIBILITY_FREEZE_VERSION =
 export const LARK_DASHBOARD_WRITE_CONTRACT_STATUS =
   'unsupported_public_openapi_contract';
 
+export const LARK_DASHBOARD_COMPATIBILITY_RECORD_BACKFILL_CONFIRMATION =
+  'BACKFILL_WINDOW_SELECT_WITHOUT_DASHBOARD_OR_FIELD_MUTATION';
+
 export const LARK_DASHBOARD_RETIRED_MUTATION_FLAGS = Object.freeze([
   '--execute',
   '--statistics-probe-only',
@@ -60,7 +63,9 @@ export function buildLarkDashboardCompatibilityFreezeAudit({
     slicerCountPreserved: 5,
     windowChartCountPreserved: 7,
     compatibilityFields: LARK_DASHBOARD_COMPATIBILITY_FIELD_IDENTITIES,
-    compatibilityRecordWriteStatus: 'separate_review_required',
+    compatibilityRecordWriteStatus: 'guarded_window_select_backfill_available',
+    compatibilityRecordWriteEntrypoint:
+      'scripts/lark-dashboard-compatibility-record-backfill.mjs',
     remoteLarkMutationCount: 0,
     remoteD1MutationCount: 0,
     workerDeploymentCount: 0,
@@ -93,6 +98,26 @@ export function buildLarkDashboardMutationBlockedFailure({
     },
     production: 'BLOCKED',
   });
+}
+
+export function assertLarkDashboardCompatibilityRecordBackfillConfirmation(value) {
+  if (value !== LARK_DASHBOARD_COMPATIBILITY_RECORD_BACKFILL_CONFIRMATION) {
+    const error = new Error(
+      'Explicit confirmation of the Record-only Dashboard compatibility backfill is required',
+    );
+    error.name = 'LarkDashboardCompatibilityFreezeError';
+    error.code = 'LARK_DASHBOARD_COMPATIBILITY_RECORD_BACKFILL_CONFIRMATION_REQUIRED';
+    error.details = Object.freeze({
+      envName: 'CONFIRM_LARK_DASHBOARD_COMPATIBILITY_RECORD_BACKFILL',
+      requiredValue: LARK_DASHBOARD_COMPATIBILITY_RECORD_BACKFILL_CONFIRMATION,
+      dashboardPatchAllowed: false,
+      fieldMutationAllowed: false,
+      recordDeleteAllowed: false,
+      remoteMutationCount: 0,
+    });
+    throw error;
+  }
+  return true;
 }
 
 export function hasRetiredDashboardMutationArgument(args = []) {
