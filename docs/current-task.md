@@ -3,12 +3,15 @@
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = REPOSITORY_IMPLEMENTATION_IN_REVIEW
+TASK_STATUS                         = REPOSITORY_IMPLEMENTATION_VERIFIED
 CURRENT_PROGRAM                     = WOOCOMMERCE_INCREMENTAL_ADMISSION_RACE_RECOVERY_V1
-BASE_MAIN_SHA                       = 52b437af017d6bb59738ff79adfe7f6d5df5bbe5
+BASE_MAIN_SHA                       = 74a4a5178ba372332dc0720fbf08c66c1e6df9f5
 BRANCH                              = hotfix/woocommerce-completed-state-incremental-admission-race-v1
-IMPLEMENTATION_PR                   = DRAFT_PENDING
-BRANCH_VERIFICATION                 = REQUIRED_ON_FINAL_EXACT_HEAD
+IMPLEMENTATION_PR                   = #315 / DRAFT / READY_FOR_REVIEW
+CODE_VERIFICATION_HEAD              = 7ddb77abc5d18f2664f2d1a36204989c47004cd2
+CODE_BRANCH_VERIFICATION            = #1349 / 30608026461 / PASS
+FINAL_DOCUMENTATION_HEAD            = CURRENT_BRANCH_HEAD
+FINAL_HEAD_VERIFICATION             = REQUIRED_BEFORE_MERGE
 REMOTE_ACTION_DURING_IMPLEMENTATION = NONE
 WORKER_DEPLOYMENT                   = NOT_RUN
 QUEUE_MESSAGE                       = NOT_SENT
@@ -99,7 +102,7 @@ pending Queue / Sync / Work visibility remains pending
 
 ## Root correction contract
 
-`classifyWooCommerceCompletedStatePoll()` must return a pending classification without throwing when:
+`classifyWooCommerceCompletedStatePoll()` returns a pending classification without throwing when:
 
 - Queue acceptance is recorded locally but the D1 Queue row has not appeared;
 - the Queue row exists but Sync Run and Work have not appeared;
@@ -186,16 +189,17 @@ Success marker                                     WOO_INCREMENTAL_ADMISSION_RAC
 ## Required validation
 
 ```text
-npm ci
-npm run check
-focused Woo completed-state/race/runtime tests
-focused Chatwoot final tests
-focused TikTok staged regression
-npm test
-npm run test:report-reliability
-npm audit --audit-level=high
-npm run deploy:dry-run
-Branch Verification on exact PR Head
+npm ci                                             PASS on code Head
+npm run check                                      PASS on code Head
+focused Woo completed-state/race/runtime tests     PASS on code Head
+focused Chatwoot final tests                       PASS on code Head
+focused TikTok staged regression                   PASS on code Head
+npm test                                           PASS on code Head
+npm run test:report-reliability                    PASS on code Head
+npm audit --audit-level=high                       PASS on code Head
+npm run deploy:dry-run                             PASS on code Head
+Branch Verification #1349 / 30608026461            PASS on 7ddb77abc5d18f2664f2d1a36204989c47004cd2
+Final documentation Head verification             REQUIRED before merge
 ```
 
 ## Implementation result
@@ -203,10 +207,18 @@ Branch Verification on exact PR Head
 - Added pending-admission and pending-execution classifications before completed-state timestamp
   validation.
 - Added a pure exact-incident/recovered-state contract and guarded metadata-only closure SQL.
+- Removed explicit `BEGIN/COMMIT` from the Wrangler D1 command; semicolon-delimited statements use
+  Wrangler's Remote D1 batch mapping while focused tests forbid transaction wrappers and Business SQL.
 - Added a public exact-head launcher and plan-only guarded recovery operator.
 - Added previous-head evidence/job-hash binding, fresh backup, same-operation one-send evidence,
   verification-only rerun behavior, D1/Lark parity, exact DLQ closure and all-false Safe restore.
+- Preserved first Terminal message identity as a pre-recovery invariant while allowing the successful
+  second Queue delivery to become `last_main_message_id`.
 - Added focused regressions for Queue propagation, active durable execution, exact incident drift,
   recovered-state proof, metadata mutation scope and operator ordering.
+- Aligned with current `main@74a4a5178ba372332dc0720fbf08c66c1e6df9f5` through PR #316.
 - Routed this hotfix through the repository-scoped `mkt-ci` Branch Verification runner.
-- Repository implementation has performed no Remote action. Exact-head CI and Review remain required.
+- Branch Verification #1349 passed every code/test/audit/dry-run step on code Head
+  `7ddb77abc5d18f2664f2d1a36204989c47004cd2`.
+- Repository implementation and CI performed no Remote action. Review, final exact-head verification,
+  merge and controlled Terminal recovery remain separate.
