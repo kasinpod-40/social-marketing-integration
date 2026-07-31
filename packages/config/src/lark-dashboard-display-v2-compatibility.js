@@ -42,12 +42,12 @@ export const TIKTOK_ORGANIC_DASHBOARD_DISPLAY_V2_OPTIONS = Object.freeze(
 );
 
 export function resolveTikTokOrganicDashboardDisplayV2(input = {}) {
+  if (normalizeText(input.customerProfile) !== 'integration_workspace') return null;
+  if (normalizeText(input.accountId) !== 'chemistry_k') return null;
   if (normalizeText(input.platform) !== 'tiktok') return null;
   if (normalizeText(input.capability) !== 'organic') return null;
   if (normalizeText(input.reportType) !== 'dashboard_performance_report') return null;
-  return TIKTOK_ORGANIC_DASHBOARD_DISPLAY_V2_BY_METRIC_KEY[
-    normalizeText(input.metricKey)
-  ] ?? null;
+  return resolveTikTokOrganicDashboardDisplayV2ByMetricKey(input.metricKey);
 }
 
 export function resolveTikTokOrganicDashboardDisplayV2ByMetricKey(metricKey) {
