@@ -11,7 +11,8 @@ test('Meta history public launcher delegates to the guarded child and exact evid
   assert.match(source, /reconcileMetaHistory2026Evidence/u);
   assert.match(source, /isRecoverableMetaHistoryFinalSummaryFailure/u);
   assert.match(source, /ensureRemoteAllFalse/u);
-  assert.match(source, /META_HISTORY_2026_COMPLETED_SAFE/u);
+  assert.match(source, /META_HISTORY_2026_DECISION/u);
+  assert.match(source, /process\.stdout\.write\(`\$\{META_HISTORY_2026_DECISION\}/u);
   assert.doesNotMatch(source, /larkSummary\.data\.larkVerified/u);
 });
 
