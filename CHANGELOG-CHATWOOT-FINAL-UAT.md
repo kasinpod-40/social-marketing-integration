@@ -1,5 +1,15 @@
 # Chatwoot Final UAT Changelog
 
+## Unreleased — Worker Secret Staging Hotfix
+
+- Fixed Final UAT stopping because the Integration Workspace Worker did not yet contain `CHATWOOT_API_ACCESS_TOKEN`.
+- The exact runtime Secret name remains authoritative; the legacy `CHATWOOT_API_TOKEN` alias is not accepted.
+- When the remote Secret is absent, the public launcher stages the approved private local value through an ephemeral mode-0600 `--secrets-file` during an all-flags-false Worker deployment.
+- The Secret value is excluded from Git, logs, command arguments and persistent evidence; the ephemeral file is deleted in `finally`.
+- Existing `LARK_APP_ID` and `LARK_APP_SECRET` remain mandatory, and all three required Secret names are verified after deployment.
+- A value-free attempt marker prevents blind repetition after uncertain deployment acceptance.
+- The failed live attempt stopped before D1 backup, Active Worker deployment, Queue send, Provider access or D1/Lark Business writes; Safe restore was not required.
+
 ## Unreleased — Queue Bootstrap Authentication Ordering Hotfix
 
 - Fixed the shared Queue bootstrap invoking `wrangler whoami --json` before checking whether the exact Cloudflare Account ID was already supplied by Environment or Wrangler config.
