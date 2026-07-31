@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { isAbsolute, resolve } from 'node:path';
 
 export const META_HISTORY_2026_CONTRACT_VERSION = 'meta_history_2026_finalizer_v1';
 export const META_HISTORY_2026_CONFIRMATION = Object.freeze({
@@ -84,8 +85,14 @@ export function shouldExpandMetaAdsHistory(summaries = []) {
   return deepFreeze({ allowed, totals, limits: META_HISTORY_2026_ADS_EXPANSION_LIMITS });
 }
 
-export function injectMetaHistoryConfig(configText, range = META_HISTORY_2026_WINDOWS.organic) {
-  let text = requireText(configText, 'configText');
+export function injectMetaHistoryConfig(
+  configText,
+  range = META_HISTORY_2026_WINDOWS.organic,
+  options = {},
+) {
+  const baseDirectory = resolve(requireText(options.baseDirectory ?? process.cwd(), 'baseDirectory'));
+  let text = absolutizeWranglerPath(configText, 'main', baseDirectory);
+  text = absolutizeWranglerPath(text, 'migrations_dir', baseDirectory);
   for (const [key, value] of [
     ['MKT_META_INSTAGRAM_CONTENT_SINCE', requireDate(range.since, 'since')],
     ['MKT_META_INSTAGRAM_CONTENT_UNTIL', requireDate(range.until, 'until')],
@@ -165,6 +172,16 @@ function readD1Snapshot(summary) {
     throw historyError('Meta D1 summary snapshot is missing', 'META_HISTORY_2026_D1_SUMMARY_INVALID');
   }
   return snapshot;
+}
+
+function absolutizeWranglerPath(configText, key, baseDirectory) {
+  const text = requireText(configText, 'configText');
+  const pattern = new RegExp(`(["']${key}["']\\s*:\\s*)(["'])([^"']+)\\2`, 'gu');
+  return text.replace(pattern, (match, prefix, quote, value) => {
+    const trimmed = String(value).trim();
+    if (trimmed === '' || isAbsolute(trimmed) || /^[a-z]+:\/\//iu.test(trimmed)) return match;
+    return `${prefix}${quote}${resolve(baseDirectory, trimmed)}${quote}`;
+  });
 }
 
 function requireTarget(value) {

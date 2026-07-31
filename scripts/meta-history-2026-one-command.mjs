@@ -194,20 +194,30 @@ async function executeOneCommand() {
 
 async function ensureRemoteAllFalse(env, configPath, repositoryHead) {
   const cloudflare = await resolveCloudflareContext(env, configPath);
-  let verified = await inspectRemoteSafe(env, configPath, cloudflare).catch(() => null);
-  if (!verified?.executionFlagsAllFalse) {
+  let worker;
+  try {
+    worker = inspectWorkerSafe(env, configPath, cloudflare);
+  } catch (error) {
+    if (error?.code !== 'WOOCOMMERCE_2026_COMPLETION_REMOTE_FLAGS_ACTIVE') throw error;
     currentStage = 'automatic-all-false-restore';
     runRequired('npx', [
       'wrangler', 'deploy',
       '--config', configPath,
       '--message', `${META_HISTORY_2026_CONTRACT_VERSION} emergency-safe-restore git=${repositoryHead}`,
     ], { ...env, CLOUDFLARE_ACCOUNT_ID: cloudflare.accountId });
-    verified = await inspectRemoteSafe(env, configPath, cloudflare);
+    worker = inspectWorkerSafe(env, configPath, cloudflare);
   }
-  return verified;
+  const remote = inspectReliabilityIdle(env, configPath);
+  return { ...worker, remote };
 }
 
-async function inspectRemoteSafe(env, configPath, cloudflare) {
+function inspectRemoteSafe(env, configPath, cloudflare) {
+  const worker = inspectWorkerSafe(env, configPath, cloudflare);
+  const remote = inspectReliabilityIdle(env, configPath);
+  return { ...worker, remote };
+}
+
+function inspectWorkerSafe(env, configPath, cloudflare) {
   const deployment = JSON.parse(runText('npx', [
     'wrangler', 'deployments', 'status',
     '--name', workerName,
@@ -224,10 +234,16 @@ async function inspectRemoteSafe(env, configPath, cloudflare) {
     '--json',
   ], { ...env, CLOUDFLARE_ACCOUNT_ID: cloudflare.accountId }));
   assertWooCommerce2026RemoteSafeFlags(version);
+  return { executionFlagsAllFalse: true, activeVersion };
+}
+
+function inspectReliabilityIdle(env, configPath) {
   const row = readD1Row(env, configPath, `SELECT
     (SELECT COUNT(*) FROM sync_work_runs WHERE lifecycle_status = 'active') AS active_work,
     (SELECT COUNT(*) FROM sync_locks WHERE expires_at > (unixepoch() * 1000)) AS active_locks,
-    (SELECT COUNT(*) FROM sync_runs WHERE status IN ('queued', 'running')) AS active_queue_operations;`);
+    (SELECT COUNT(DISTINCT q.operation_id) FROM queue_operation_attempts q
+      JOIN sync_work_runs w ON w.work_key = q.work_key
+      WHERE w.lifecycle_status = 'active') AS active_queue_operations;`);
   const remote = {
     activeWork: Number(row.active_work ?? 0),
     activeLocks: Number(row.active_locks ?? 0),
@@ -240,7 +256,7 @@ async function inspectRemoteSafe(env, configPath, cloudflare) {
       remote,
     );
   }
-  return { executionFlagsAllFalse: true, activeVersion, remote };
+  return remote;
 }
 
 async function verifyPinnedFacebook(env) {
