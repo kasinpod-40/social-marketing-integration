@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The merged Chatwoot durable runtime is completed by one separately reviewed Terminal closeout operator. Repository defaults remain all false. The operator temporarily opens only the exact four Chatwoot ingestion/report flags, runs controlled Initial and Daily operations, then restores the Shared Worker to verified all-false state.
+The merged Chatwoot durable runtime is completed by one separately reviewed Terminal closeout path. Repository defaults remain all false. The inner operator temporarily opens only the exact four Chatwoot ingestion/report flags, runs controlled Initial and Daily operations, then restores the Shared Worker to verified all-false state. A public launcher independently verifies the actual Shared Reliability lock scope before execution and after closeout.
 
 ## Locked source window
 
@@ -35,19 +35,28 @@ No replacement runtime, writer or reliability framework is introduced.
 
 ## One-command decision
 
-The final command is plan-only unless it receives the exact confirmation:
+The authoritative public command is plan-only unless it receives the exact confirmation:
 
 ```bash
 CONFIRM_CHATWOOT_FINAL_UAT=EXECUTE_CHATWOOT_30D_DAILY_UAT \
-node scripts/chatwoot-final-30d-daily-uat.mjs --execute
+node scripts/chatwoot-final-30d-daily-uat-launcher.mjs --execute
 ```
 
-It requires clean exact current `main`; detached HEAD is allowed when it equals `origin/main`. The command resolves the authenticated Cloudflare account, bearer session and exact main Queue, while secrets remain in `.dev.vars`/Wrangler Secret storage and are never persisted in evidence.
+The launcher delegates the reviewed action sequence to `scripts/chatwoot-final-30d-daily-uat.mjs`. It requires clean exact current `main`; detached HEAD is allowed when it equals `origin/main`. The command resolves the authenticated Cloudflare account, bearer session and exact main Queue, while secrets remain in `.dev.vars`/Wrangler Secret storage and are never persisted in evidence.
+
+The exact Shared Reliability lock authority is:
+
+```text
+integration_workspace:chatwoot:chemistry_k:%
+```
+
+The launcher requires zero active rows under this prefix before delegation and again after the inner operator has restored Safe state.
 
 ## Safety sequence
 
 ```text
-exact-head local gates
+exact Shared lock preflight
+→ exact-head local gates
 → generated Safe/Active bundle dry-runs
 → Remote all-false / D1 / Queue / Cron / Lark read-only preflight
 → private D1 export
@@ -59,6 +68,7 @@ exact-head local gates
 → D1/Lark parity
 → same-operation Daily replay
 → automatic all-false Safe deployment and verification
+→ exact Shared lock closeout
 ```
 
 Only one original Initial message and one original Daily message are admitted. Continuations are created by the Worker runtime and preserve Stable Queue identity. Replay sends the exact completed identity and must produce no Business, Coverage, cursor or Lark count drift.
@@ -73,17 +83,19 @@ outputs/chatwoot-final-30d-daily-uat/<repository-head>/
 
 Every stage is SHA-bound to Repository Head and session fingerprint. Deployment and Queue attempt records are persisted before the remote action. An uncertain Queue attempt is never blindly repeated; durable D1 identity must prove acceptance first.
 
-After Active deployment ownership, the operator attempts Safe restore in `finally`. It restores only when the current version is still the reviewed baseline or the operator-owned Active version. Concurrent version drift blocks overwrite and requires review.
+After Active deployment ownership, the inner operator attempts Safe restore in `finally`. It restores only when the current version is still the reviewed baseline or the operator-owned Active version. Concurrent version drift blocks overwrite and requires review.
 
 ## Completion authority
 
-Final success requires marker:
+Final success requires the last launcher result to contain:
 
 ```text
-CHATWOOT_30D_DAILY_UAT_COMPLETED_SAFE
+marker                 CHATWOOT_30D_DAILY_UAT_COMPLETED_SAFE
+exactLockScopeVerified true
+activeLockCount        0
 ```
 
-The marker proves:
+This proves:
 
 - exact Initial 30-day completion and checkpoint;
 - exact Daily three-day completion and one cursor advance;
@@ -92,13 +104,16 @@ The marker proves:
 - exact D1/Lark parity across 15 targets;
 - idempotent Initial and Daily same-operation replay;
 - zero true execution flags after Safe restore;
+- zero active exact Chatwoot Shared Reliability locks;
 - Schedule, Webhook and Production remain disabled.
 
 ## Current implementation record
 
 ```text
-Base main       = 95fe279d6ef46978d95acb1611ec859ae35cba64
-Branch          = integration/chatwoot-final-30d-daily-uat
-Draft PR        = #311
-Remote actions  = 0 during Repository implementation
+Base main        = 95fe279d6ef46978d95acb1611ec859ae35cba64
+Branch           = integration/chatwoot-final-30d-daily-uat
+Draft PR         = #311
+Initial CI       = #1323 / 30601895105 / PASS
+Final exact CI   = pending after lock-scope hardening
+Remote actions   = 0 during Repository implementation
 ```
