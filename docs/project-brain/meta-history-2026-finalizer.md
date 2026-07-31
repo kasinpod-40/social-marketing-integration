@@ -2,18 +2,33 @@
 
 ## Repository decision
 
-The guarded implementation is merged through PR #319 at
-`0ae80e3809cda0a582d8cfc0715313f8ac191a45`. Exact-head Meta End-to-End Verification #95 and Branch
-Verification #1383 passed after alignment with the concurrent Report readiness recovery.
+The guarded history implementation was merged through PR #319. Runtime-preflight recovery PR #330 was
+then Squash Merged at `f88cc46e33889386bc4593c118e28681e6c86ff1` after exact-head Meta End-to-End
+Verification #98 and Branch Verification #1390 passed.
 
-Repository work performed no Remote action. Live history execution remains a separate one-time Terminal
-step.
+Repository implementation, hotfix and CI performed no Meta Provider request, Queue send, Remote D1/Lark
+Business write, Worker deployment, Schedule activation or Production action. Live history execution
+remains a separate one-time Terminal step.
+
+## Runtime-preflight authority
+
+- The non-secret Wrangler source may be a readable regular file or a symlink resolving to one.
+- The generated execution config is private `0600` with absolute Repository paths for `main` and
+  `migrations_dir`.
+- Active Queue execution requires a Queue attempt linked to active durable Work. A historical
+  `sync_runs` status without active Work is not current Queue execution.
+- Worker-flag verification is independent from Reliability-idle verification.
+- Emergency Safe deployment is permitted only when the exact active-flag assertion proves a Worker
+  execution flag is enabled. Other inspection errors never authorize deploy.
+
+The previous two Terminal attempts stopped before the first Meta operation. Existing runtime evidence and
+historical Reliability rows remain retained; they are not deleted or directly edited.
 
 ## Data authority
 
 The existing pinned Meta delivery remains authoritative. Its completed Facebook operation is verified and
-never replayed or replaced. A separate deterministic Facebook July operation fills missing monthly
-history through the existing Shared pipeline and Stable Business keys.
+never replayed or replaced. A separate deterministic Facebook July operation fills missing monthly history
+through the existing Shared pipeline and Stable Business keys.
 
 ## History scope
 
