@@ -1,10 +1,14 @@
 #!/usr/bin/env node
 
 import { execFileSync } from 'node:child_process';
-import { resolve } from 'node:path';
+import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { dirname, join, relative, resolve } from 'node:path';
 import { readDevVars } from './lib/dev-vars.js';
+import { parseJsoncObject } from './lib/chatwoot-safe-wrangler-config.js';
+import { rebaseGeneratedWranglerConfigPaths } from './lib/rebase-generated-wrangler-config-paths.js';
 import {
   CHATWOOT_FINAL_UAT_CONFIRMATION,
+  CHATWOOT_FINAL_UAT_LOCKED_VARS,
   CHATWOOT_FINAL_UAT_SUCCESS_MARKER,
   sha256,
 } from './lib/chatwoot-final-30d-daily-uat.js';
@@ -12,6 +16,7 @@ import {
 const ROOT = resolve(process.cwd());
 const EXECUTE_ARGUMENT = '--execute';
 const LOCK_SCOPE = 'integration_workspace:chatwoot:chemistry_k:%';
+let normalizedConfigPath = null;
 
 try {
   await main();
@@ -24,6 +29,8 @@ try {
     production: 'BLOCKED',
   }, null, 2)}\n`);
   process.exitCode = 1;
+} finally {
+  if (normalizedConfigPath) await rm(normalizedConfigPath, { force: true }).catch(() => undefined);
 }
 
 async function main() {
@@ -36,21 +43,28 @@ async function main() {
     process.stdout.write(`${JSON.stringify({
       authoritativeCommand: `${CHATWOOT_FINAL_UAT_CONFIRMATION.envName}=${CHATWOOT_FINAL_UAT_CONFIRMATION.value} node scripts/chatwoot-final-30d-daily-uat-launcher.mjs --execute`,
       exactLockScope: LOCK_SCOPE,
+      ignoredConfigNormalization: true,
       remoteActionsPerformed: false,
     }, null, 2)}\n`);
     return;
   }
 
-  const env = Object.freeze({
+  const sourceEnv = Object.freeze({
     ...await readDevVars(process.env.DEV_VARS_FILE ?? '.dev.vars'),
     ...process.env,
   });
-  if (env[CHATWOOT_FINAL_UAT_CONFIRMATION.envName] !== CHATWOOT_FINAL_UAT_CONFIRMATION.value) {
+  if (sourceEnv[CHATWOOT_FINAL_UAT_CONFIRMATION.envName] !== CHATWOOT_FINAL_UAT_CONFIRMATION.value) {
     throw launcherError(
       `Chatwoot final UAT requires ${CHATWOOT_FINAL_UAT_CONFIRMATION.envName}=${CHATWOOT_FINAL_UAT_CONFIRMATION.value}`,
       'CHATWOOT_FINAL_UAT_CONFIRMATION_REQUIRED',
     );
   }
+
+  normalizedConfigPath = await createNormalizedRuntimeConfig(sourceEnv);
+  const env = Object.freeze({
+    ...sourceEnv,
+    MKT_CHATWOOT_FINAL_UAT_WRANGLER_CONFIG: normalizedConfigPath,
+  });
 
   const before = readExactActiveLockCount(env);
   if (before !== 0) {
@@ -77,10 +91,60 @@ async function main() {
     marker: CHATWOOT_FINAL_UAT_SUCCESS_MARKER,
     exactLockScopeVerified: true,
     activeLockCount: 0,
+    ignoredConfigNormalized: true,
     scheduleEnabled: false,
     webhookEnabled: false,
     production: false,
   }, null, 2)}\n`);
+}
+
+async function createNormalizedRuntimeConfig(env) {
+  const sourcePath = inside(env.MKT_CHATWOOT_FINAL_UAT_WRANGLER_CONFIG ?? 'wrangler.sync.jsonc');
+  const sourceText = await readFile(sourcePath, 'utf8');
+  const config = parseJsoncObject(sourceText);
+  config.vars ??= {};
+
+  for (const [name, expected] of Object.entries(CHATWOOT_FINAL_UAT_LOCKED_VARS)) {
+    const existing = config.vars[name];
+    if (existing !== null && existing !== undefined && existing !== '' && String(existing) !== expected) {
+      throw launcherError(
+        `${name} conflicts with the locked Chatwoot runtime contract`,
+        'CHATWOOT_FINAL_UAT_LOCAL_CONFIG_CONFLICT',
+        { fieldName: name },
+      );
+    }
+    config.vars[name] = expected;
+  }
+
+  for (const [name, expected] of [
+    ['MKT_SCHEDULE_CHATWOOT_ENABLED', 'false'],
+    ['MKT_CHATWOOT_WEBHOOK_ENABLED', 'false'],
+  ]) {
+    const existing = config.vars[name];
+    if (existing !== null && existing !== undefined && existing !== ''
+        && String(existing).toLowerCase() !== expected) {
+      throw launcherError(
+        `${name} must remain false`,
+        'CHATWOOT_FINAL_UAT_LOCAL_CONFIG_CONFLICT',
+        { fieldName: name },
+      );
+    }
+    config.vars[name] = expected;
+  }
+
+  delete config.vars.CHATWOOT_INCREMENTAL_OVERLAP_HOURS;
+
+  const directory = inside(join('outputs', 'chatwoot-final-30d-daily-uat', '.launcher'));
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  const path = join(directory, `wrangler-normalized-${Date.now()}-${process.pid}.json`);
+  const normalizedText = `${JSON.stringify(config, null, 2)}\n`;
+  const rebased = rebaseGeneratedWranglerConfigPaths(normalizedText, {
+    sourceDirectory: dirname(sourcePath),
+    outputDirectory: directory,
+  });
+  await writeFile(path, rebased.text, { mode: 0o600 });
+  await chmod(path, 0o600);
+  return path;
 }
 
 function readExactActiveLockCount(env) {
@@ -144,6 +208,14 @@ function run(command, args, options = {}) {
       },
     );
   }
+}
+
+function inside(value) {
+  const path = resolve(ROOT, value);
+  if (relative(ROOT, path).startsWith('..')) {
+    throw launcherError('Path leaves Repository', 'CHATWOOT_FINAL_UAT_PATH_INVALID');
+  }
+  return path;
 }
 
 function launcherError(message, code, details = {}) {
