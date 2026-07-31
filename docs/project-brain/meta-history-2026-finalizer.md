@@ -9,9 +9,10 @@ Pinned-continuity recovery              PR #342 / Squash Merged
 Shared Queue auth ordering              PR #343 / Squash Merged
 Meta Cloudflare account recovery        PR #348 / Squash Merged
 Explicit Safe flags recovery            PR #353 / Squash Merged
-Explicit Safe flags main SHA            1548ea1c16bcc1283ddc49334af4929d566bb162
-Meta verification                       #113 / PASS
-Branch verification                     #1459 / PASS
+Customer runtime config recovery        PR #359 / Squash Merged
+Customer runtime config main SHA        339b72d8b950caffc78efaf513e6e6abf9bf4b0e
+Meta verification                       #115 / PASS
+Branch verification                     #1470 / PASS
 Live history completion                 pending accepted Terminal evidence
 ```
 
@@ -25,12 +26,51 @@ node scripts/meta-history-2026-terminal.mjs --execute
 The one-command child, finalizer child, D1/Lark phase launchers and manual Queue sends are not public
 operator commands.
 
+## Shared customer runtime authority
+
+The Meta history public Terminal, D1 launcher and Lark launcher share one non-secret Integration Workspace
+authority:
+
+```text
+MKT_ENV                     development
+MKT_CUSTOMER_PROFILE        integration_workspace
+MKT_CONNECTION_CUSTOMER_KEY chemistry_k
+META_GRAPH_API_VERSION      v25.0
+Facebook mapping            approved Chemistry K Page
+Instagram mapping           approved Chemistry K Professional Account
+Meta Ads mappings           chemistry_k2 and chemistry_k3
+META_AD_ACCOUNT_ID          empty
+```
+
+The approved mappings are the same authority that completed the ordered Chemistry K GET-only identity and
+permission validation on 2026-07-27. Raw identity values remain in Source only where required for exact
+runtime mapping and are excluded from sanitized evidence. Tokens and credentials remain in `.dev.vars` or
+Worker Secret storage and are never written into generated config, Source logs or evidence.
+
+The runtime sequence is:
+
+```text
+caller environment
+→ apply exact customer runtime authority
+→ close all reviewed execution flags false
+→ guarded child
+→ read Head-bound Safe Wrangler config
+→ replace stale customer vars and insert missing vars
+→ validate exact runtime authority
+→ write private 0600 runtime config under ignored outputs/
+→ D1 and Lark operators use that reviewed runtime config
+```
+
+The runtime config remains inside the Repository path boundary required by the D1/Lark operators without
+making the Working Tree dirty. The operator does not modify `.dev.vars`, and the user does not manually
+supply API version or customer identities on the public command.
+
 ## Explicit Safe environment authority
 
 The public Terminal owns the environment passed to the guarded child. Before child execution it must:
 
 ```text
-copy caller environment
+apply exact customer runtime authority
 → close every existing MKT_*_ENABLED key
 → materialize every META_D1_ONLY_REQUIRED_FALSE_FLAGS key as false
 → freeze the child environment
@@ -39,31 +79,34 @@ copy caller environment
 
 This Shared list is a superset of the Meta read-only requirements and is also the D1 safe-config authority.
 A missing execution flag is explicit `false`; a stale `true` or a future `MKT_*_ENABLED` key is also closed.
-Non-flag values and exact confirmations remain preserved without mutating the caller environment.
 
 The child operators continue to fail closed, and later D1/Lark active windows enable only the reviewed
 private-config flags before restoring all execution flags false.
 
-## Fifth attempt incident
+## Seventh attempt incident
 
-The Terminal attempt on `main@a0bbef75b0185ac55dba3a272eb925cfb1ea056b` stopped at
-`fresh-read-only-validation` because `MKT_CONNECTOR_META_ADS_ENABLED` was absent from the inherited local
-environment rather than explicit `false`.
+The Terminal attempt on `main@2ddc9cef8262f768d1b589e5b7bc069d861d80a4` passed local gates, Cloudflare
+readiness, Remote all-false verification and the fresh ordered Provider GET-only validation. It then stopped
+while loading the first Facebook July D1 target because the generated Safe config did not contain
+`META_GRAPH_API_VERSION`.
 
-It stopped before Provider validation and before every current history operation:
+The failure occurred before Remote D1 inspection, backup, Worker deployment and Queue admission:
 
 ```text
-Meta operations             0
-Meta Queue messages         0
-Meta Provider requests      0
-Remote D1 Business writes   0
-Remote Lark Business writes 0
-Worker deployments          0
-Schedule mutations          0
-Worker safe restore         verified
+Current Meta operations       0
+D1 backup                     0
+Worker deployments            0
+Meta Queue messages           0
+Remote D1 Business writes     0
+Remote Lark Business writes   0
+Provider validation           GET-only passed
+Emergency restore             not required
+Worker safe restore           verified
+Schedule mutations            0
+Production                    blocked
 ```
 
-All prior evidence remains retained.
+All previous evidence remains retained.
 
 ## Retained history and data authority
 
@@ -102,7 +145,7 @@ explicit CLOUDFLARE_API_TOKEN
 ## Runtime-preflight authority
 
 - The source Wrangler config may be a readable regular file or symlink resolving to one.
-- The generated execution config is private `0600` with absolute runtime paths.
+- Generated Safe and customer-runtime configs are private `0600` with absolute runtime paths.
 - Remote Worker safety and Reliability idle are separate checks.
 - Emergency all-false deployment is allowed only when exact evidence proves an active Worker execution
   flag; authentication/read/config failures never authorize deployment.

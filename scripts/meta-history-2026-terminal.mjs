@@ -14,6 +14,9 @@ import {
   META_D1_ONLY_REQUIRED_FALSE_FLAGS,
 } from './lib/meta-d1-only-rollout-operator.js';
 import {
+  applyMetaHistoryCustomerRuntimeEnvironment,
+} from './lib/meta-history-runtime-authority.js';
+import {
   META_HISTORY_2026_CONTRACT_VERSION,
   assertMetaHistory2026Confirmation,
   createMetaHistory2026Plan,
@@ -90,7 +93,9 @@ async function executeTerminalEntry() {
 }
 
 export function buildMetaHistorySafeEnvironment(env = {}) {
-  const result = { ...env };
+  const result = {
+    ...applyMetaHistoryCustomerRuntimeEnvironment(env),
+  };
   for (const key of Object.keys(result)) {
     if (/^MKT_[A-Z0-9_]+_ENABLED$/u.test(key)) result[key] = 'false';
   }
@@ -231,6 +236,7 @@ function printPlan() {
     confirmation: 'CONFIRM_META_HISTORY_2026_FINALIZER=RUN_META_HISTORY_2026_ONE_COMMAND',
     persistsIsoRequestedAtBeforeRemoteAction: true,
     materializesExplicitAllFalseChildEnvironment: true,
+    materializesExactCustomerRuntimeAuthority: true,
     child: 'scripts/meta-history-2026-one-command.mjs',
     scheduleEnabled: false,
     production: false,
