@@ -44,6 +44,7 @@ jobs:
           set -o pipefail
           node --test \
             tests/application/chatwoot-final-30d-daily-uat.test.js \
+            tests/application/chatwoot-final-lock-scope.test.js \
             tests/application/chatwoot-runtime-wiring.test.js \
             tests/application/chatwoot-runtime-30d-daily.test.js \
             tests/application/chatwoot-runtime-contract-examples.test.js \
