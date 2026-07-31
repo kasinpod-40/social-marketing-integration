@@ -69,10 +69,12 @@ test('Record-only operator exposes no Dashboard, Field mutation or Record delete
   assert.match(source, /EXPECTED_RECORD_COUNT = 86/u);
   assert.match(source, /EXPECTED_BASELINE_INCOMPLETE_NULL_COUNT = 24/u);
   assert.match(source, /MAXIMUM_REVIEWED_RECORD_UPDATES = 28/u);
+  assert.match(source, /error\?\.writeProgress\?\.confirmedRows/u);
   assert.match(source, /dashboardPatchCount:\s*0/u);
   assert.match(source, /fieldMutationCount:\s*0/u);
   assert.match(source, /recordDeleteCount:\s*0/u);
 
+  assert.doesNotMatch(source, /error\?\.details\?\.completedRows/u);
   assert.doesNotMatch(source, /\/dashboards/u);
   assert.doesNotMatch(source, /updateField\(/u);
   assert.doesNotMatch(source, /deleteField\(/u);
