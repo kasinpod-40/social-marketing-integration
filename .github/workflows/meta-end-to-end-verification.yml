@@ -54,8 +54,10 @@ jobs:
           set -o pipefail
           node --test \
             tests/connectors/meta-history-range-adapters.test.js \
+            tests/connectors/meta-business-source-adapters.test.js \
             tests/application/meta-history-2026-finalizer.test.js \
             tests/application/meta-history-2026-closeout.test.js \
+            tests/application/meta-history-2026-public-launcher.test.js \
             tests/application/meta-end-to-end-source.test.js \
             tests/application/meta-organic-write-set.test.js \
             tests/application/meta-ads-write-set.test.js \
