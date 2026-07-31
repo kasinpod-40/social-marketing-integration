@@ -4,13 +4,18 @@ import { execFile, spawn } from 'node:child_process';
 import {
   chmod,
   mkdtemp,
+  readFile,
   rm,
   writeFile,
 } from 'node:fs/promises';
-import { delimiter, join, resolve } from 'node:path';
+import { delimiter, dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
+import {
+  applyMetaHistoryCustomerRuntimeEnvironment,
+  materializeMetaHistoryCustomerRuntimeConfig,
+} from './lib/meta-history-runtime-authority.js';
 
 const execFileAsync = promisify(execFile);
 const repositoryRoot = resolve(process.cwd());
@@ -41,13 +46,29 @@ try {
   const originalConfig = process.env.MKT_META_D1_ONLY_WRANGLER_CONFIG
     ? resolve(repositoryRoot, process.env.MKT_META_D1_ONLY_WRANGLER_CONFIG)
     : null;
+  const runtimeConfig = originalConfig
+    ? join(dirname(originalConfig), 'wrangler.meta-history.runtime.jsonc')
+    : null;
+  if (originalConfig && runtimeConfig) {
+    const sourceText = await readFile(originalConfig, 'utf8');
+    await writeFile(
+      runtimeConfig,
+      materializeMetaHistoryCustomerRuntimeConfig(sourceText),
+      { encoding: 'utf8', mode: 0o600 },
+    );
+    await chmod(runtimeConfig, 0o600);
+  }
+
   const childEnv = {
-    ...process.env,
+    ...applyMetaHistoryCustomerRuntimeEnvironment(process.env),
     PATH: `${tempDirectory}${delimiter}${process.env.PATH ?? ''}`,
     MKT_META_D1_ONLY_REAL_NPX: realNpx,
     MKT_META_D1_ONLY_COMPAT_TEMP_DIR: tempDirectory,
-    ...(originalConfig
-      ? { MKT_META_D1_ONLY_COMPAT_ORIGINAL_CONFIG: originalConfig }
+    ...(runtimeConfig
+      ? {
+          MKT_META_D1_ONLY_WRANGLER_CONFIG: runtimeConfig,
+          MKT_META_D1_ONLY_COMPAT_ORIGINAL_CONFIG: runtimeConfig,
+        }
       : {}),
   };
 
