@@ -277,3 +277,15 @@ test('one-command operator is plan-only by default and owns automatic Safe resto
   assert.doesNotMatch(source, /MKT_CHATWOOT_WEBHOOK_ENABLED[^\n]*['"]true['"]/u);
   assert.doesNotMatch(source, /production:\s*true/u);
 });
+
+test('D1 backup integrity is streamed without child-process buffering', async () => {
+  const source = await readFile(
+    new URL('../../scripts/chatwoot-final-30d-daily-uat.mjs', import.meta.url),
+    'utf8',
+  );
+  assert.match(source, /const backup = await d1Backup\(target\)/u);
+  assert.match(source, /for await \(const chunk of createReadStream\(path\)\)/u);
+  assert.match(source, /backupBytes: metadata\.size/u);
+  assert.match(source, /CHATWOOT_FINAL_UAT_BACKUP_HASH_FAILED/u);
+  assert.doesNotMatch(source, /execFileSync\('cat'/u);
+});
