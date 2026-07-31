@@ -359,7 +359,7 @@ async function recordPermanentQueueFailure(input) {
 
 async function markQueueWorkTerminal(input) {
   const platform = platformFromJobType(input.jobType);
-  if (!new Set(['youtube', 'tiktok']).has(platform)) return false;
+  if (!new Set(['youtube', 'tiktok', 'chatwoot']).has(platform)) return false;
   if (!input.env?.MKT_STATE_DB) return false;
   let workKey = input.workKey;
   if (!workKey && input.stableOperation !== true && !isStableOperationJobType(input.jobType)) {
@@ -397,7 +397,7 @@ function platformFromJobType(type) {
   if (typeof type !== 'string') return 'system';
   if (type.startsWith('report.')) return 'tiktok';
   const prefix = type.split('.')[0];
-  return new Set(['facebook', 'instagram', 'tiktok', 'youtube']).has(prefix)
+  return new Set(['facebook', 'instagram', 'tiktok', 'youtube', 'chatwoot']).has(prefix)
     ? prefix
     : 'system';
 }
