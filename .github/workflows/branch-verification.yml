@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: branch-verification-${{ github.ref }}
@@ -24,60 +24,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref }}
-          fetch-depth: 0
-
-      - name: Finalize Chatwoot Secret subprocess isolation
-        if: github.head_ref == 'hotfix/chatwoot-final-secret-staging'
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 <<'PY'
-          from pathlib import Path
-
-          launcher = Path('scripts/chatwoot-final-30d-daily-uat-launcher.mjs')
-          source = launcher.read_text()
-          old_filter = "Object.entries(sourceEnv).filter(([name]) => !UNSAFE_TARGET_OVERRIDES.has(name)),"
-          new_filter = "Object.entries(sourceEnv).filter(([name]) => !UNSAFE_TARGET_OVERRIDES.has(name)\n      && name !== 'CHATWOOT_API_ACCESS_TOKEN'),"
-          if old_filter in source:
-              source = source.replace(old_filter, new_filter, 1)
-          elif new_filter not in source:
-              raise SystemExit('subprocess Secret isolation anchor missing')
-
-          old_deploy = "      '--secrets-file', secretFilePath,\n      '--message',"
-          new_deploy = "      '--secrets-file', secretFilePath,\n      '--strict',\n      '--message',"
-          if old_deploy in source:
-              source = source.replace(old_deploy, new_deploy, 1)
-          elif new_deploy not in source:
-              raise SystemExit('strict Secret deployment anchor missing')
-          launcher.write_text(source)
-
-          test_file = Path('tests/application/chatwoot-final-secret-bootstrap-launcher.test.js')
-          test_source = test_file.read_text()
-          strict_old = "  assert.match(source, /--secrets-file/u);\n"
-          strict_new = "  assert.match(source, /--secrets-file/u);\n  assert.match(source, /'--strict'/u);\n"
-          if strict_new not in test_source:
-              if strict_old not in test_source:
-                  raise SystemExit('strict regression anchor missing')
-              test_source = test_source.replace(strict_old, strict_new, 1)
-          isolation_old = "  assert.match(source, /CHATWOOT_API_ACCESS_TOKEN/u);\n"
-          isolation_new = "  assert.match(source, /CHATWOOT_API_ACCESS_TOKEN/u);\n  assert.match(source, /name !== 'CHATWOOT_API_ACCESS_TOKEN'/u);\n"
-          if isolation_new not in test_source:
-              if isolation_old not in test_source:
-                  raise SystemExit('isolation regression anchor missing')
-              test_source = test_source.replace(isolation_old, isolation_new, 1)
-          test_file.write_text(test_source)
-          PY
-
-          if git diff --quiet; then
-            exit 0
-          fi
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add scripts/chatwoot-final-30d-daily-uat-launcher.mjs tests/application/chatwoot-final-secret-bootstrap-launcher.test.js
-          git commit -m "fix: isolate Chatwoot Secret during strict bootstrap deploy"
-          git push origin HEAD:${{ github.head_ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
