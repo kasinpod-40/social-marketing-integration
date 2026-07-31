@@ -13,29 +13,61 @@ import {
 import { permanentError } from '../../packages/shared/src/errors/runtime-error.js';
 
 export const REPORT_METRIC_VALUE_FIELD_MIGRATION_VERSION =
-  'report_metric_value_field_migration_v1';
+  'report_metric_value_field_migration_v2';
 export const REPORT_METRIC_VALUE_FIELD_MIGRATION_CONFIRMATION =
   'MIGRATE_REPORT_METRIC_VALUES_PRESERVE_LEGACY';
 
 const TABLE_KEY = 'mktReportMetricValues';
 const MAX_RECORDS = 500;
 const VERIFY_DELAYS_MS = Object.freeze([0, 1_000, 2_000, 4_000, 8_000]);
-const MIGRATIONS = Object.freeze([
+const MIGRATION_IDENTITIES = Object.freeze([
   Object.freeze({
     fieldName: 'display_name',
     legacyName: '__mkt_legacy_display_name_single_select_v1',
-    sourceType: 3,
-    targetType: 1,
-    conversion: 'single_select_to_text',
   }),
   Object.freeze({
     fieldName: 'window_days',
     legacyName: '__mkt_legacy_window_days_single_select_v1',
-    sourceType: 3,
-    targetType: 2,
-    conversion: 'single_select_to_preset_number',
   }),
 ]);
+
+/**
+ * The executable schema selects the migration behavior:
+ * - current schema v4 keeps window_days as the slicer-bound SingleSelect and this module
+ *   performs a read-only ownership assertion;
+ * - historical recovery schemas that explicitly require Number retain the previous
+ *   lossless Select -> Number conversion for deterministic resume/rollback coverage.
+ */
+function resolveMigrationContract(identity, desired) {
+  if (identity.fieldName === 'display_name' && Number(desired?.type) === 1) {
+    return Object.freeze({
+      ...identity,
+      sourceType: 3,
+      targetType: 1,
+      conversion: 'single_select_to_text',
+      ownershipOnly: false,
+    });
+  }
+  if (identity.fieldName === 'window_days' && Number(desired?.type) === 3) {
+    return Object.freeze({
+      ...identity,
+      sourceType: 3,
+      targetType: 3,
+      conversion: 'managed_by_field_identity_recovery_v3',
+      ownershipOnly: true,
+    });
+  }
+  if (identity.fieldName === 'window_days' && Number(desired?.type) === 2) {
+    return Object.freeze({
+      ...identity,
+      sourceType: 3,
+      targetType: 2,
+      conversion: 'single_select_to_preset_number',
+      ownershipOnly: false,
+    });
+  }
+  return null;
+}
 
 export async function planReportMetricValueFieldMigration(input = {}) {
   const client = requireClient(input.client);
@@ -87,27 +119,36 @@ export async function planReportMetricValueFieldMigration(input = {}) {
 
   const migrations = [];
   const blockers = [];
-  for (const contract of MIGRATIONS) {
+  for (const identity of MIGRATION_IDENTITIES) {
     const desired = tableContract.fields.find(
-      (field) => normalizeName(field.fieldName) === normalizeName(contract.fieldName),
+      (field) => normalizeName(field.fieldName) === normalizeName(identity.fieldName),
     );
-    if (!desired || Number(desired.type) !== contract.targetType || desired.primary === true) {
+    const contract = resolveMigrationContract(identity, desired);
+    if (!contract || desired?.primary === true) {
       blockers.push(safeBlocker('REPORT_METRIC_FIELD_MIGRATION_TARGET_CONTRACT_INVALID', {
         tableKey: TABLE_KEY,
-        fieldName: contract.fieldName,
-        expectedType: contract.targetType,
+        fieldName: identity.fieldName,
+        expectedTypes: identity.fieldName === 'window_days' ? [2, 3] : [1],
         actualType: desired?.type ?? null,
       }));
       continue;
     }
 
-    const result = analyzeMigrationField({
-      contract,
-      desired,
-      tableId: resolution.tableId,
-      fields,
-      records,
-    });
+    const result = contract.ownershipOnly === true
+      ? analyzeOwnershipAssertion({
+        contract,
+        desired,
+        tableId: resolution.tableId,
+        fields,
+        records,
+      })
+      : analyzeMigrationField({
+        contract,
+        desired,
+        tableId: resolution.tableId,
+        fields,
+        records,
+      });
     if (result.blocker) blockers.push(result.blocker);
     else migrations.push(result.migration);
   }
@@ -143,13 +184,11 @@ export async function applyReportMetricValueFieldMigration(input = {}) {
   const appliedMigrations = [];
 
   for (const initial of plan.migrations.filter((migration) => migration.pending === true)) {
-    const sourceFingerprint = initial.sourceFingerprint;
-    const recordCount = initial.recordCount;
     const result = await applyOneMigration({
       ...options,
       fieldName: initial.fieldName,
-      sourceFingerprint,
-      recordCount,
+      sourceFingerprint: initial.sourceFingerprint,
+      recordCount: initial.recordCount,
       sleep,
     });
     fieldMutationCount += result.fieldMutationCount;
@@ -274,7 +313,6 @@ async function verifyMigrationAfterWrite(input, fieldName, sleep) {
     if (delayMs > 0) await sleep(delayMs);
     latest = await readMigration(input, fieldName);
     if (latest.state === 'converged') return latest;
-    if (latest.blocker) break;
   }
   throw migrationError(
     'Canonical Report Metric values did not converge after one write',
@@ -301,6 +339,33 @@ async function readMigration(input, fieldName) {
     );
   }
   return migration;
+}
+
+function analyzeOwnershipAssertion(input) {
+  const canonicalMatches = input.fields.filter(
+    (field) => normalizeName(field.fieldName) === normalizeName(input.contract.fieldName),
+  );
+  const legacyMatches = input.fields.filter(
+    (field) => normalizeName(field.fieldName) === normalizeName(input.contract.legacyName),
+  );
+  const canonical = canonicalMatches[0] ?? null;
+  if (canonicalMatches.length === 1
+    && legacyMatches.length === 0
+    && canonical?.isPrimary !== true
+    && Number(canonical?.type) === input.contract.targetType) {
+    return { migration: buildNotRequiredMigration(input, canonical) };
+  }
+  return {
+    blocker: safeBlocker('REPORT_METRIC_FIELD_MIGRATION_WINDOW_OWNERSHIP_NOT_CONVERGED', {
+      tableKey: TABLE_KEY,
+      fieldName: input.contract.fieldName,
+      expectedType: input.contract.targetType,
+      canonicalFieldCount: canonicalMatches.length,
+      canonicalType: canonical?.type ?? null,
+      legacyFieldCount: legacyMatches.length,
+      recoveryContract: 'lark_dashboard_field_identity_recovery_v3',
+    }),
+  };
 }
 
 function analyzeMigrationField(input) {
