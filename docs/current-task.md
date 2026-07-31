@@ -6,9 +6,9 @@
 TASK_STATUS                          = REPOSITORY_HOTFIX_IN_REVIEW
 CURRENT_PROGRAM                      = META_HISTORY_EXACT_PLAN_CONTINUATION_V1
 BRANCH                               = hotfix/meta-facebook-lark-continuation-v1
-IMPLEMENTATION_PR                    = pending
+IMPLEMENTATION_PR                    = #372 / DRAFT / DO_NOT_MERGE
 RETAINED_REPOSITORY_HEAD             = 5ff8e2cfb1f890ac2a8f2867a904b477c6456d91
-CURRENT_MAIN_AT_DIAGNOSTIC           = f93dcca29c5770b74a3dc6e41f2aac3489ebc8d1
+CURRENT_MAIN_BASE                    = c03ca9af7ddc0b8f72527419fc193eb49e1c590d
 FACEBOOK_OPERATION_ID                = meta-facebook-history-20260701-20260731-1d12a5ec4fef
 FACEBOOK_ORIGINAL_REQUESTED_AT       = 2026-07-31T16:51:11.017Z
 FACEBOOK_D1_PHASE                    = COMPLETE
@@ -22,6 +22,9 @@ FACEBOOK_D1_QUEUE_RESEND_ALLOWED     = NO
 WORKER_FLAGS                         = ALL_FALSE_VERIFIED
 SCHEDULE                             = DISABLED
 PRODUCTION                           = BLOCKED
+FIRST_CI_HEAD                        = ba2aec24f71f1f1d045755fda24abd6049c623f8
+FIRST_META_CI                        = #118 / INFRA_FAILURE_BEFORE_SETUP
+FIRST_BRANCH_CI                      = #1504 / INFRA_FAILURE_BEFORE_SETUP
 NEXT_STEP                            = EXACT_HEAD_CI_REVIEW_AND_MERGE
 ```
 
@@ -58,8 +61,8 @@ Lark phase count              0
 Completion phase count        0
 ```
 
-The state did not change during the stability interval. Existing D1 facts and Queue admission are
-therefore authoritative. Do not restart, replace, abandon or terminalize the Work.
+The state did not change during the stability interval. Existing D1 facts and Queue admission are therefore
+authoritative. Do not restart, replace, abandon or terminalize the Work.
 
 ## Recovery decision
 
@@ -76,17 +79,19 @@ The Hotfix adds:
 
 ```text
 scripts/lib/meta-history-exact-plan-continuation.js
+scripts/meta-history-2026-exact-plan-continuation-terminal.mjs
 scripts/meta-history-2026-exact-plan-continuation.mjs
 tests/application/meta-history-exact-plan-continuation.test.js
 tests/application/meta-history-exact-plan-continuation-wiring.test.js
 docs/tasks/meta-history-exact-plan-continuation-v1.md
 ```
 
-The public continuation:
+The public Terminal supplies the retained private Safe config to the guarded continuation. The guarded
+continuation:
 
 1. requires clean current `main == origin/main` and explicit confirmation;
 2. validates the exact retained Head, operation, generation, range and runtime plan;
-3. permits only the reviewed unrelated Lark Dashboard compatibility delta;
+3. permits only the exact reviewed Lark Dashboard and continuation release path set;
 4. rejects any critical Meta/Worker/Queue/Lark-connector drift;
 5. validates the retained D1 summary with the existing Lark contract;
 6. verifies all-false Worker state and two stable Remote boundary reads;
@@ -102,12 +107,27 @@ The public continuation:
 The implementation does not modify the current main Working Tree, `.dev.vars`, Remote D1, Lark, Queue,
 Worker, Schedule or Production during Repository work and CI.
 
+## Verification state
+
+The first exact Head `ba2aec24f71f1f1d045755fda24abd6049c623f8` triggered Meta #118 and Branch
+#1504. Both original jobs and one failed-job retry ended before `Set up job`; the Actions API returned zero
+steps and no usable log blob. These are runner/infrastructure failures, not Source verdicts.
+
+Manual review of that Head found and corrected two fail-closed release defects before Live execution:
+
+1. the post-merge Repository delta must include the continuation Release files themselves; and
+2. the public Terminal must use the retained private Safe config rather than depend on local
+   `wrangler.sync.jsonc` file permissions.
+
+A new exact Head must receive fresh Meta and Branch verification. No prior failed job is accepted as PASS.
+
 ## Acceptance criteria
 
 ```text
 Exact retained operation/generation                    locked
-Current-main reviewed delta                            exact
+Current-main reviewed release delta                    exact
 Critical Meta Source drift                             0
+Retained private Safe config                           public Terminal authority
 Facebook Provider replay                               0
 Facebook D1 Queue resend                               0
 Facebook same-operation Lark continuation              accepted
@@ -133,5 +153,5 @@ npm audit
 npm run deploy:dry-run
 ```
 
-No Live continuation may run before exact-head CI, review, Squash Merge and a docs-only execution handoff.
-Detailed contract: `docs/tasks/meta-history-exact-plan-continuation-v1.md`.
+No Live continuation may run before exact-head verification, review, Squash Merge and a docs-only execution
+handoff. Detailed contract: `docs/tasks/meta-history-exact-plan-continuation-v1.md`.
