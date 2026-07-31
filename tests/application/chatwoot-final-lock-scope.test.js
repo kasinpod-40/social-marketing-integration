@@ -18,6 +18,18 @@ test('final launcher verifies the exact Shared Reliability Chatwoot lock prefix 
   assert.match(source, /expires_at > unixepoch\('now'\) \* 1000/u);
 });
 
+test('launcher pins exact D1 name and removes unsafe D1/Queue identity overrides', async () => {
+  const source = await readFile(launcherUrl, 'utf8');
+  assert.match(source, /const DATABASE_NAME = 'social-mkt-state-dev'/u);
+  assert.match(source, /UNSAFE_TARGET_OVERRIDES/u);
+  assert.match(source, /MKT_CHATWOOT_FINAL_UAT_DATABASE_NAME/u);
+  assert.match(source, /MKT_CHATWOOT_FINAL_UAT_QUEUE_ID/u);
+  assert.match(source, /Object\.entries\(sourceEnv\)\.filter\(\(\[name\]\) => !UNSAFE_TARGET_OVERRIDES\.has\(name\)\)/u);
+  assert.match(source, /'execute', DATABASE_NAME/u);
+  assert.doesNotMatch(source, /env\.MKT_CHATWOOT_FINAL_UAT_DATABASE_NAME/u);
+  assert.match(source, /exactQueueResolvedByName:\s*true/u);
+});
+
 test('final launcher emits the authoritative success marker only after post-closeout lock verification', async () => {
   const source = await readFile(launcherUrl, 'utf8');
   const afterIndex = source.indexOf('const after = readExactActiveLockCount(env)');
