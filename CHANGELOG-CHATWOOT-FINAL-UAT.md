@@ -1,5 +1,13 @@
 # Chatwoot Final UAT Changelog
 
+
+## Unreleased — Queue Topology Normalization Hotfix
+
+- Fixed false Queue drift when current Wrangler emits `batch_size` and `max_wait_time_ms` instead of legacy aliases.
+- Chatwoot Final UAT now reuses the shared WooCommerce Queue consumer topology validator.
+- Modern and legacy aliases remain fail-closed when missing, conflicting, ambiguous or different from the reviewed Queue contract.
+- The failed live attempt stopped before D1 backup, Active deployment, Queue send, Provider access or D1/Lark Business writes; Safe restore was not required.
+
 ## Unreleased — Preflight Initialization Hotfix
 
 ### Incident correction
