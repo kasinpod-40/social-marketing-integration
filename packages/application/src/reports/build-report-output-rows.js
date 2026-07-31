@@ -16,6 +16,8 @@ const GENERIC_NO_DATA_URL = 'https://invalid.example/';
 export function buildReportMetricValueRows(input = {}) {
   const reportId = requireText(input.reportId, 'reportId');
   const platform = requireText(input.platform ?? 'tiktok', 'platform');
+  const customerProfile = requireText(input.customerProfile, 'customerProfile');
+  const accountId = requireText(input.accountId, 'accountId');
   const reportType = requireText(input.reportType, 'reportType');
   const sharedDimensions = normalizeOptionalSharedDimensions(input.sharedDimensions);
   const metrics = requireObject(input.metrics, 'metrics');
@@ -37,6 +39,8 @@ export function buildReportMetricValueRows(input = {}) {
       });
       const displayV2Compatibility = resolveTikTokOrganicDashboardDisplayV2({
         metricKey,
+        customerProfile,
+        accountId,
         platform,
         capability: sharedDimensions?.capability,
         reportType,
@@ -45,10 +49,10 @@ export function buildReportMetricValueRows(input = {}) {
         report_metric_key: [reportId, escapeReportIdentityPart(metricKey), dimensionType, dimensionValue].join('::'),
         report_id: reportId,
         report_setting_key: requireText(input.reportSettingKey, 'reportSettingKey'),
-        customer_profile: requireText(input.customerProfile, 'customerProfile'),
+        customer_profile: customerProfile,
         report_type: reportType,
         platform,
-        account_id: requireText(input.accountId, 'accountId'),
+        account_id: accountId,
         metric_key: metricKey,
         display_name: requireText(metric.displayName, 'displayName'),
         ...(displayV2Compatibility ? {
