@@ -6,8 +6,15 @@ import {
   createChatwootDailyRollupState,
   mergeChatwootDailyRollupState,
 } from '../../packages/application/src/use-cases/chatwoot-daily-rollup.js';
+import {
+  CHATWOOT_RUNTIME_MODES,
+  buildChatwootRuntimePlan,
+  isChatwootEventInWindow,
+  resolveChatwootRuntimeWindow,
+} from '../../packages/application/src/use-cases/chatwoot-runtime-contract.js';
 
 const OBSERVED_AT = Date.parse('2026-07-31T01:00:00Z');
+const DAY_MS = 86_400_000;
 
 async function readRepositoryFile(path) {
   return readFile(new URL(`../../${path}`, import.meta.url), 'utf8');
@@ -31,6 +38,37 @@ test('release examples expose the exact locked Chatwoot window contract', async 
   }
   assert.equal(vars.includes('CHATWOOT_INCREMENTAL_OVERLAP_HOURS'), false);
   assert.equal(wrangler.includes('CHATWOOT_INCREMENTAL_OVERLAP_HOURS'), false);
+});
+
+test('plan counts every bounded source, rollup and finalization unit without execution', () => {
+  const plan = buildChatwootRuntimePlan({
+    mode: CHATWOOT_RUNTIME_MODES.INITIAL_30_DAY_UAT,
+    requestedAt: OBSERVED_AT,
+    conversationPages: 304,
+    reportingPages: 1_125,
+    rollupPages: 31,
+    conversationPagesPerInvocation: 1,
+    reportingPagesPerInvocation: 5,
+  });
+  assert.equal(plan.mastersUnits, 1);
+  assert.equal(plan.conversationUnits, 304);
+  assert.equal(plan.reportingUnits, 225);
+  assert.equal(plan.rollupUnits, 31);
+  assert.equal(plan.finalizationUnits, 1);
+  assert.equal(plan.totalUnits, 562);
+  assert.equal(plan.queueMessagesSent, 0);
+});
+
+test('late-updated Reporting Event remains in the daily overlap', () => {
+  const window = resolveChatwootRuntimeWindow({
+    mode: CHATWOOT_RUNTIME_MODES.DAILY_INCREMENTAL,
+    requestedAt: OBSERVED_AT,
+  });
+  assert.equal(isChatwootEventInWindow({
+    event_end_time: Math.floor((OBSERVED_AT - 30 * DAY_MS) / 1_000),
+    created_at: Math.floor((OBSERVED_AT - 30 * DAY_MS) / 1_000),
+    updated_at: Math.floor((OBSERVED_AT - 2 * DAY_MS) / 1_000),
+  }, window), true);
 });
 
 test('bounded rollup writes reconciled Coverage runs and entities for every materialized row', () => {
