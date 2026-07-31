@@ -4,6 +4,14 @@ import { execFile } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
+import {
+  planLarkReportSchema,
+} from '../packages/application/src/use-cases/install-lark-report-schema.js';
+import {
+  LARK_REPORT_SCHEMA_V2,
+  LARK_REPORT_SCHEMA_V2_VERSION,
+  validateReportSchemaV2,
+} from '../packages/config/src/lark-report-schema-v2.js';
 import { createLarkBitableClientFromEnv } from '../packages/connectors/src/lark/lark-bitable.client.js';
 import { readLarkNumber, readLarkText } from '../packages/connectors/src/shared/lark-cell-value.js';
 import { readDevVars } from './lib/dev-vars.js';
@@ -14,6 +22,7 @@ import {
 } from './lib/organic-dashboard-readiness-refresh.js';
 
 const execFileAsync = promisify(execFile);
+const REPORT_METRIC_VALUES_ENV_NAME = 'LARK_TABLE_MKT_REPORT_METRIC_VALUES';
 const evidenceRoot = resolve(
   process.env.MKT_REPORT_RUNTIME_CLOSEOUT_EVIDENCE_DIR
     ?? 'outputs/organic-dashboard-readiness-refresh/window',
@@ -60,12 +69,11 @@ try {
     );
   }
 
-  currentStage = 'read-lark-metric-rows';
-  const tableId = requireText(
-    env.LARK_TABLE_MKT_REPORT_METRIC_VALUES,
-    'LARK_TABLE_MKT_REPORT_METRIC_VALUES',
-  );
   const client = createLarkBitableClientFromEnv(env);
+  currentStage = 'resolve-lark-report-schema';
+  const tableId = await resolveReportMetricValuesTableId({ client, env });
+
+  currentStage = 'read-lark-metric-rows';
   const records = await client.searchRecords({
     tableId,
     filter: {
@@ -133,6 +141,29 @@ async function readD1Rows(reportId, env) {
   const parsed = JSON.parse(String(result.stdout ?? ''));
   const containers = Array.isArray(parsed) ? parsed : [parsed];
   return containers.flatMap((item) => Array.isArray(item?.results) ? item.results : []);
+}
+
+async function resolveReportMetricValuesTableId({ client, env }) {
+  const preview = await planLarkReportSchema({
+    client,
+    env,
+    schema: LARK_REPORT_SCHEMA_V2,
+    schemaVersion: LARK_REPORT_SCHEMA_V2_VERSION,
+    validateSchema: validateReportSchemaV2,
+  });
+  const actionCount = Array.isArray(preview?.actions) ? preview.actions.length : -1;
+  const conflictCount = Array.isArray(preview?.conflicts) ? preview.conflicts.length : -1;
+  if (preview?.readyToApply !== true || actionCount !== 0 || conflictCount !== 0) {
+    throw verifierError(
+      'Lark Report schema must be clean before readiness verification',
+      'ORGANIC_DASHBOARD_READINESS_VERIFY_SCHEMA_NOT_CONVERGED',
+      { actionCount, conflictCount },
+    );
+  }
+  return requireText(
+    preview.environmentUpdates?.[REPORT_METRIC_VALUES_ENV_NAME],
+    REPORT_METRIC_VALUES_ENV_NAME,
+  );
 }
 
 function normalizeLarkMetricRow(record) {
