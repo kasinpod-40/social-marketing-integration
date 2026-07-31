@@ -1,41 +1,58 @@
-# Current Task — Meta History Pinned Continuity Recovery v3
+# Current Task — Meta History Execution After Pinned Continuity Recovery v3
 
 ## Status
 
 ```text
-TASK_STATUS                   = REPOSITORY_HOTFIX_IN_REVIEW
-CURRENT_PROGRAM               = META_HISTORY_PINNED_CONTINUITY_RECOVERY_V3
-BASE_MAIN_SHA                 = 9d79e45676600831e1cc2fd7ca358a3176c55295
-BRANCH                        = hotfix/meta-history-2026-pinned-continuity-v3
-IMPLEMENTATION_PR             = #342 / DRAFT / DO_NOT_MERGE
-REBASE_PR                     = #336 / CLOSED_NOT_MERGED_DURING_ATOMIC_REBASE
+TASK_STATUS                   = META_HISTORY_2026_EXECUTION_READY
+CURRENT_PROGRAM               = META_HISTORY_2026_FINALIZER_V1
 ORIGINAL_IMPLEMENTATION_PR    = #319 / SQUASH_MERGED
 RUNTIME_PREFLIGHT_HOTFIX_PR   = #330 / SQUASH_MERGED
-PREVIOUS_HANDOFF_PR           = #333 / SQUASH_MERGED
+PINNED_CONTINUITY_HOTFIX_PR   = #342 / SQUASH_MERGED
+PINNED_CONTINUITY_MAIN_SHA    = ce59437dbb9e9325f743805af0f67ce5cf192c04
+META_VERIFICATION_RUN         = 30629702372 / #105 / PASS
+BRANCH_VERIFICATION_RUN       = 30629702378 / #1412 / PASS
+LEGACY_LOCAL_META_ARTIFACTS   = NOT_REQUIRED
 FACEBOOK_SUPPLEMENTAL_RANGE   = 2026-07-01..2026-07-31
 INSTAGRAM_RANGE               = 2026-07-01..2026-07-31
 META_ADS_REQUIRED_RANGE       = 2026-05-01..2026-07-31
 META_ADS_CONDITIONAL_RANGE    = 2026-01-01..2026-04-30
 PLANNED_OPERATION_COUNT       = 6
-THIRD_ATTEMPT_META_OPERATIONS = 0
-THIRD_ATTEMPT_REMOTE_WRITES   = 0
-WORKER_FLAGS_AFTER_ATTEMPT    = ALL_FALSE_VERIFIED
+PREVIOUS_ATTEMPT_META_OPS     = 0
+PREVIOUS_ATTEMPT_REMOTE_WRITE = 0
+WORKER_FLAGS                  = ALL_FALSE_VERIFIED
 SCHEDULE                      = DISABLED
 PRODUCTION                    = BLOCKED
-NEXT_STEP                     = EXACT_HEAD_VERIFICATION_REVIEW_AND_MERGE
+NEXT_STEP                     = RUN_META_HISTORY_2026_TERMINAL_ONCE
 ```
 
-## Third Live failure retained
+## Authority
 
-The one-time Terminal command on `main@e94ae9078cb4900f1876c933e11f7a2796913979`
-passed local gates, generated-config preparation and Cloudflare safe-state readiness, then stopped at:
+PR #342 replaced the missing historical local clone/session dependency with exact current continuity
+evidence and was Squash Merged at:
 
 ```text
-stage   resume-pinned-meta-finalizer
-code    META_HISTORY_2026_PINNED_FILES_MISSING
+ce59437dbb9e9325f743805af0f67ce5cf192c04
 ```
 
-The finalizer required four historical local artifacts:
+The exact PR Head `df2abaeda080441ed5f8faf306719d1cf07f2352` passed:
+
+```text
+Meta End-to-End Verification  run 30629702372 / #105 / PASS
+Branch Verification           run 30629702378 / #1412 / PASS
+Review threads                0
+Branch behind main            0 before merge
+Changed files                 7 / Meta scope only
+Remote action during hotfix   0
+```
+
+The failed Terminal attempt that reported `META_HISTORY_2026_PINNED_FILES_MISSING` stopped before fresh
+Meta identity validation and before all six history operations. It sent no Meta Queue message, made no
+Meta Provider request, wrote no Remote D1/Lark Business fact and deployed no Worker. The Worker remained
+all-false.
+
+## Continuity contract now merged
+
+The Terminal no longer requires or reads:
 
 ```text
 MKT_META_FINALIZE_CLONE
@@ -44,107 +61,65 @@ MKT_META_FINALIZE_OVERLAY
 MKT_META_FINALIZER_FILE
 ```
 
-None was present in `.dev.vars` or a retained readiness manifest. The child failed before fresh Meta
-identity validation and before the first of the six history operations. The outer wrapper verified the
-Worker all-false state. No Meta Queue message, Provider request, Remote D1/Lark Business write, Worker
-deployment, Schedule activation or Production action occurred.
+Instead it requires:
 
-## Root cause
+- a current read-only Summary with the expected contract, `status=passed`, no mutation, zero Business
+  writes and zero Queue messages;
+- exactly four current identity validations: Facebook, Instagram and both Meta Ads accounts;
+- an exact six-operation target/range/mode/operation-ID plan bound to the current merged Head;
+- no legacy operation ID, no old-operation replay and no replacement operation;
+- one deterministic Facebook July supplemental operation;
+- existing Shared D1-only then Lark parity continuation;
+- canonical `larkParityVerified` and same-operation idempotency evidence;
+- final all-false Worker flags and active Work/Lock/Queue counts `0/0/0`.
 
-The current history finalizer treated a historical local clone/session bundle as the authority for
-preserving the old Meta delivery. That bundle was an execution artifact from a previous Head and is not a
-durable Business-data contract. Requiring it made a new idempotent July backfill depend on local files that
-may legitimately no longer exist.
+The old operation is retained only as a non-secret SHA-256 fingerprint. It is not recreated or executed.
+Stable Business keys preserve existing Facebook and Lark facts.
 
-The actual continuity requirements are:
-
-- never replay or replace the historical operation;
-- freshly validate the current Facebook source identity;
-- use exactly one new deterministic Facebook July operation;
-- complete that operation through existing Shared D1 and Lark phases;
-- prove parity, same-operation idempotency and final all-false Reliability state.
-
-## Corrections
-
-- Remove `resolvePinnedMetaFiles()` and `resumePinnedFinalizer()` from the public history execution path.
-- Do not require any `MKT_META_FINALIZE_*` environment variable or historical local clone/session file.
-- Create a private `pinned-facebook-continuity.json` bound to the exact current Repository Head.
-- Require a valid read-only Summary envelope with no mutation, exactly four validated identities and one
-  valid Facebook identity request.
-- Require the exact six-operation plan across every target, range, mode and deterministic operation ID.
-- Require one deterministic Facebook July operation, no legacy operation ID,
-  `existingOperationReplay=false`, `replacementOperation=false` and
-  `legacyLocalArtifactsRequired=false`.
-- Preserve the historical operation only as a non-secret fingerprint in continuity evidence.
-- Continue through the existing Meta D1-only and Lark parity operators; no second Connector, Queue,
-  Reliability, D1 writer or Lark sync engine is introduced.
-- Read the canonical Meta Lark summary field `larkParityVerified`; reject the stale alias
-  `larkVerified`.
-- Preserve all prior Business facts and stable keys. No historical row is deleted or replaced.
-
-## Main alignment
-
-PR #342 is based directly on `main@9d79e45676600831e1cc2fd7ca358a3176c55295`. It retains concurrent
-mainline corrections unchanged:
-
-- Lark Dashboard scope and full-block recovery through `9d79e45676600831e1cc2fd7ca358a3176c55295`;
-- Chatwoot Queue topology normalization at `b86d5fb36ad8f5e15c3e6d1b61507db4b0fe9694`.
-
-PR #336 was automatically closed without merge when the Branch was temporarily moved to a Main commit
-during the first atomic rebase. The prior Meta #102 `Diff hygiene` failure was caused by a shallow
-`origin/main` fetch after Main advanced and did not represent a source formatting or test failure.
-
-## Execution sequence after merge
+## Execution scope
 
 ```text
-exact clean current main
-→ local full gates
-→ private safe config with absolute paths
-→ Worker all-false and Reliability idle
-→ fresh Facebook / Instagram / two Meta Ads identity validation
-→ exact pinned Facebook continuity proof
-→ Facebook July D1 then Lark parity/idempotency
-→ Instagram July D1 then Lark parity/idempotency
-→ Meta Ads May-July for both accounts
-→ optional January-April Ads expansion under bounded volume
-→ final all-false and zero active Work/Lock/Queue
-→ META_HISTORY_2026_COMPLETED_SAFE
+Facebook continuity  fresh identity + exact no-replay plan
+Facebook July        2026-07-01..2026-07-31
+Instagram            2026-07-01..2026-07-31
+Meta Ads required    2026-05-01..2026-07-31 for chemistry_k2 and chemistry_k3
+Meta Ads optional    2026-01-01..2026-04-30 only under bounded baseline volume
 ```
 
-## Acceptance criteria
+The public Terminal entrypoint creates or reuses evidence under the exact current merged Head. Retain all
+previous output directories; do not copy, delete or edit historical evidence.
 
-```text
-Historical local Meta artifact dependency              0
-Fresh Facebook identity validation                     required
-Read-only Summary envelope                             passed / no mutation
-Read-only identity validation count                    exactly 4
-Current six-operation plan                             exact match
-Legacy operation replay/replacement                    false / false
-New Facebook July operation                            exactly 1
-Legacy operation ID in current plan                    forbidden
-Canonical Lark summary field                           larkParityVerified
-Stale Lark alias                                       rejected
-D1 before same-operation Lark continuation             required
-D1/Lark parity and idempotent rerun                    required
-Worker execution flags after every window              all false
-Active Work / Lock / Queue at completion               0 / 0 / 0
-Schedule / Production                                  disabled / blocked
-Meta End-to-End Verification                           PASS required
-Branch Verification                                    PASS required
-Remote action during Repository implementation and CI  0
-```
+## Public Terminal command
 
-## Public command boundary
-
-Do not rerun the Terminal command while PR #342 is unmerged. After exact-head verification, Review,
-Squash Merge and a docs-only execution handoff, the only public entrypoint remains:
+Run only from exact clean current `main`:
 
 ```bash
 CONFIRM_META_HISTORY_2026_FINALIZER=RUN_META_HISTORY_2026_ONE_COMMAND \
 node scripts/meta-history-2026-terminal.mjs --execute
 ```
 
-Do not invoke the one-command child, finalizer child, D1/Lark phase launchers or manual Queue sends.
-Retain all previous output/evidence directories.
+Do not invoke `scripts/meta-history-2026-one-command.mjs`,
+`scripts/meta-history-2026-finalizer.mjs`, D1/Lark phase launchers or manual Queue sends.
 
-Detailed contract: `docs/tasks/meta-history-pinned-continuity-recovery-v3.md`.
+## Expected accepted result
+
+```text
+META_HISTORY_2026_COMPLETED_SAFE
+Facebook continuity             fresh identity / no old replay
+Facebook July supplemental      complete
+Instagram July                  complete
+Meta Ads May-July               complete for both accounts
+Meta Ads January-April          conditional on bounded baseline volume
+D1/Lark parity                  pass
+Same-operation replay           pass
+Active Work / Lock / Queue      0 / 0 / 0
+Worker flags                    all false
+Schedule                        disabled
+Production                      blocked
+```
+
+Live completion is not declared until the Terminal emits the accepted decision and final safe-state
+evidence.
+
+Detailed implementation contract: `docs/tasks/meta-history-2026-one-command-v1.md`.
+Pinned continuity recovery contract: `docs/tasks/meta-history-pinned-continuity-recovery-v3.md`.
