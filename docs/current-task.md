@@ -1,109 +1,130 @@
-# Current Task — WooCommerce Incremental Admission Race Controlled Recovery
+# Current Task — WooCommerce 2026 Completed Safe / Meta Finalizer Handoff
 
 ## Authoritative status
 
 ```text
-TASK_STATUS                         = MERGED_AWAITING_CONTROLLED_RECOVERY
+TASK_STATUS                         = WOOCOMMERCE_2026_COMPLETED_SAFE
 CURRENT_PROGRAM                     = WOOCOMMERCE_INCREMENTAL_ADMISSION_RACE_RECOVERY_V1
+RECOVERY_EXECUTION                  = PASS
+RECOVERY_REPOSITORY_HEAD            = 2f66b7b139c192ebb964e8e7f520a30940acee7b
+SOURCE_EVIDENCE_HEAD                = d3592b256d52bf72e4a3d9d33ab707cb5bca4961
 IMPLEMENTATION_PR                   = #315 / SQUASH_MERGED
-MERGED_MAIN_SHA                     = c750a1655a91b64c2aa069d020a7044fa5e27a3a
-IMPLEMENTATION_HEAD                 = ad0a16584d63094e2f518e34e3cc650a08b62ef7
-FINAL_BRANCH_VERIFICATION           = #1350 / 30608174704 / PASS
-REMOTE_ACTION_DURING_IMPLEMENTATION = NONE
+IMPLEMENTATION_MAIN_SHA             = c750a1655a91b64c2aa069d020a7044fa5e27a3a
+HANDOFF_DOC_PR                       = #317 / SQUASH_MERGED
+HANDOFF_DOC_MAIN_SHA                 = 2f66b7b139c192ebb964e8e7f520a30940acee7b
+DECISION                            = WOOCOMMERCE_2026_COMPLETED_SAFE
+CLOSEOUT_MARKER                     = WOO_EXACT_COMPLETED_STATE_CLOSED_SAFE
+RECOVERY_MARKER                     = WOO_INCREMENTAL_ADMISSION_RACE_RECOVERED_SAFE
+SAME_INCREMENTAL_OPERATION          = RECOVERED
+REPLACEMENT_INCREMENTAL_OPERATION   = FALSE
+QUEUE_ATTEMPTS                      = 4
+D1_LARK_PARITY                      = PASS
+EXACT_TERMINAL_DLQ                  = CLOSED
 WORKER_EXECUTION_FLAGS              = ALL_FALSE
-TERMINAL_DLQ                        = EXACT_INCIDENT_OPEN
+ACTIVE_WORK                         = 0
+ACTIVE_LOCKS                        = 0
+ACTIVE_QUEUE_OPERATIONS             = 0
+OLD_PRE_2026_ROWS                   = 0
 SCHEDULE                            = DISABLED
 META_EXECUTION                      = 0
 PRODUCTION                          = BLOCKED
+NEXT_STEP                           = RESUME_PINNED_META_FINALIZER
 ```
 
-PR #315 corrected the WooCommerce completed-state Incremental admission race and added the guarded exact-operation recovery. The Repository implementation is merged. The incident itself has not yet been mutated or recovered on Live DEV infrastructure.
+## Verified controlled-recovery result
 
-## Incident retained for recovery
+The exact Incremental operation retained from the completed-state incident was recovered successfully on
+2026-07-31. The guarded recovery ran from current `main@2f66b7b139c192ebb964e8e7f520a30940acee7b`
+and returned all required success decisions and markers.
 
 ```text
-Original Incremental operation      persisted exact operation from private evidence
-Queue rows / attempts               1 / 1
-Terminal DLQ                        1 / open
-Terminal error                      WOOCOMMERCE_CONNECTOR_INVALID
-Terminal retry                      1
-Sync / Work / Phase / Coverage      0 / 0 / 0 / 0
-Active lock                         0
-Provider request                    0
-Incremental Business write          0
-Worker flags                        all false
+ok / accepted                       true / true
+Same Incremental operation          true
+Replacement Incremental operation   false
+Queue attempts                      4
+Incremental durable completion      PASS
+D1/Lark parity                      PASS
+Exact Terminal DLQ                  closed
+Recovery metadata                   completed
+Worker execution flags              all false
+Active Work / Lock / Queue op        0 / 0 / 0
+Old pre-2026 rows                    0
+Schedule / Meta / Production         disabled / 0 / blocked
 ```
 
-The accepted Queue message was consumed after automatic Safe restore. The Queue router recorded the stable operation attempt, then the disabled WooCommerce connector gate rejected the message before Shared Reliability admitted Sync/Work state.
+No replacement Full or Incremental operation was created. The recovery did not directly edit or delete
+Business facts. The only direct metadata mutation was the guarded closeout of the exact
+`dead_letter_jobs` and `dead_letter_operation_metadata` rows after durable completion and parity passed.
 
-## Merged correction
-
-- Queue acceptance not yet visible in D1 is bounded `pendingAdmission`.
-- Queue visible before Sync/Work, running Sync and active Work are bounded `pendingExecution`.
-- Completed-state timestamp and completion validation do not run before durable admission.
-- Permanent terminal failures and exact identity, scope, generation, Coverage and failed-row checks remain fail-closed.
-- Recovery is pinned to the original Incremental operation, requested-at, watermark and job SHA-256.
-- A fresh Remote D1 backup is required before temporary Woo UAT activation or metadata mutation.
-- Only the same Incremental job may be submitted; replacement Full/Incremental operations are forbidden.
-- Accepted recovery evidence makes reruns verification-only and blocks blind resend.
-- Recovery must complete through existing Shared Reliability, D1/Lark writers and parity checks.
-- Only the exact DLQ and recovery metadata rows may close after durable completion.
-- Success and failure paths restore and verify all Worker execution flags false.
-
-## Only remaining operator action
-
-Run from a clean local checkout of current `main` on the authorized Mac:
-
-```bash
-cd /Users/wasanjantawong/Git/social-marketing-integration-woo-diag
-
-git fetch origin main
-git switch main
-git pull --ff-only origin main
-
-CONFIRM_WOOCOMMERCE_INCREMENTAL_ADMISSION_RACE_RECOVERY=\
-RECOVER_WOO_INCREMENTAL_ADMISSION_RACE_EXACT_OPERATION_ONLY \
-node scripts/woocommerce-completed-state-incremental-admission-race-recovery-launcher.mjs --execute
-```
-
-Do not run the previous completed-state closeout launcher. Do not manually redrive the DLQ, create a replacement operation, edit Remote D1/Lark Business rows, send another Queue message or enable Schedule.
-
-## Recovery acceptance
+## Recovery evidence
 
 ```text
-Same Incremental operation          required
-Queue attempts                      >= 2
+Evidence root
+outputs/woocommerce-completed-state-closeout-v1/2f66b7b139c192ebb964e8e7f520a30940acee7b
+
+Fresh D1 backup
+outputs/woocommerce-completed-state-closeout-v1/2f66b7b139c192ebb964e8e7f520a30940acee7b/backups/social-mkt-state-dev-before-incremental-race-1785478493614.sql
+
+Backup bytes                       46590401
+Backup SHA-256                     1de97c8c1906bc6efc0877b1e49cad4ffe58fd098ee32d39743c23bd63ba934d
+Full completion fingerprint        64705bde96a6c7aee9793c7a1b5fba65afbbe9f97986394bbaf8661fc54fa74f
+Incremental completion fingerprint 0caf61eadfb4a016dcb151b6422391c465463c4e4fc0470d6fdc1130bb1b98d2
+Final safe Worker version           7bd10941-a97a-4c5c-bc95-6f3424ee25aa
+```
+
+The backup and exact-head evidence remain private local artifacts and must not be committed.
+
+## Closed incident
+
+The previous incident state is closed:
+
+```text
+Original Queue attempt              retained
+Connector-disabled Terminal DLQ     redriven / closed
+Recovery metadata                   completed
 Sync Run                            success
 Durable Work                        completed
 Completed Phase                     retired
 Coverage                            6 / invalid 0
-D1/Lark parity                      PASS
-Exact Terminal DLQ                  redriven
-Recovery metadata                   completed
-Worker execution flags              all false
-Active Work / Lock / Queue op       0 / 0 / 0
-Schedule / Meta / Production        disabled / 0 / blocked
-Decision                            WOOCOMMERCE_2026_COMPLETED_SAFE
-Closeout marker                     WOO_EXACT_COMPLETED_STATE_CLOSED_SAFE
-Recovery marker                     WOO_INCREMENTAL_ADMISSION_RACE_RECOVERED_SAFE
+D1/Lark parity                      pass
+Worker flags                        all false
+Active reliability state            zero
 ```
 
-If execution fails after Queue acceptance or temporary UAT deployment, do not blindly rerun. Preserve the complete JSON error and the exact-head private evidence for stage-aware diagnosis.
+Do not run the completed-state closeout launcher again. Do not manually redrive the closed DLQ, create a
+replacement WooCommerce operation, edit Remote D1/Lark Business rows or enable WooCommerce Schedule.
 
-## Verification already completed
+## Next work boundary
+
+The recovery operator returned:
 
 ```text
-npm ci                              PASS
-npm run check                       PASS
-Focused Woo recovery tests          PASS
-Focused Chatwoot tests              PASS
-Focused TikTok regression           PASS
-npm test                            PASS
-npm run test:report-reliability     PASS
-npm audit --audit-level=high        PASS
-npm run deploy:dry-run              PASS
-Branch Verification #1350           PASS
-Unresolved review threads           0
+nextStep = resume_pinned_meta_finalizer
 ```
 
-Historical implementation detail is retained in Git history, `CHANGELOG-WOOCOMMERCE-COMPLETED-STATE.md`, `docs/tasks/woocommerce-completed-state-incremental-admission-race-recovery-v1.md` and the corresponding Project Brain document.
+This is a separate controlled workstream. Before any Meta execution, read the current Repository authority,
+locate and verify the pinned Meta finalizer contract/evidence, confirm current `main`, Remote all-false
+state and zero active reliability state, then run only the exact reviewed entrypoint. Do not infer or create
+a replacement Meta operation from this WooCommerce result.
+
+Until that separate workstream is explicitly opened and verified:
+
+```text
+Meta execution     0
+Meta flags         false
+Schedule           disabled
+Production         blocked
+```
+
+## Repository closeout required
+
+This live-result documentation update is Repository-only. It performs no additional Provider call, Remote
+D1/Lark mutation, Queue/DLQ send, Worker deployment, Schedule activation, Meta execution, Secret change or
+Production action. It must pass exact-head Branch Verification before merge.
+
+Historical implementation and incident details remain in:
+
+- `CHANGELOG-WOOCOMMERCE-COMPLETED-STATE.md`
+- `docs/tasks/woocommerce-completed-state-incremental-admission-race-recovery-v1.md`
+- `docs/project-brain/woocommerce-completed-state-incremental-admission-race-2026-07-31.md`
+- Git history for PRs #315 and #317
