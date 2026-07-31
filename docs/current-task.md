@@ -25,7 +25,11 @@ PRODUCTION                           = BLOCKED
 FIRST_CI_HEAD                        = ba2aec24f71f1f1d045755fda24abd6049c623f8
 FIRST_META_CI                        = #118 / INFRA_FAILURE_BEFORE_SETUP
 FIRST_BRANCH_CI                      = #1504 / INFRA_FAILURE_BEFORE_SETUP
-NEXT_STEP                            = EXACT_HEAD_CI_REVIEW_AND_MERGE
+LATEST_RUNNER_ATTEMPT_HEAD           = a253ed22a39200ef61dab129ad3a29bec1186e7a
+LATEST_META_CI                       = #126 / INFRA_FAILURE_BEFORE_SETUP
+LATEST_BRANCH_CI                     = #1512 / INFRA_FAILURE_BEFORE_SETUP
+LOCAL_MAC_VERIFICATION               = REQUIRED_ON_FINAL_EXACT_HEAD
+NEXT_STEP                            = FINALIZE_HEAD_AND_RUN_LOCAL_REPOSITORY_GATES
 ```
 
 ## Retained live evidence
@@ -81,6 +85,7 @@ The Hotfix adds:
 scripts/lib/meta-history-exact-plan-continuation.js
 scripts/meta-history-2026-exact-plan-continuation-terminal.mjs
 scripts/meta-history-2026-exact-plan-continuation.mjs
+scripts/verify-meta-history-exact-plan-continuation-local.mjs
 tests/application/meta-history-exact-plan-continuation.test.js
 tests/application/meta-history-exact-plan-continuation-wiring.test.js
 docs/tasks/meta-history-exact-plan-continuation-v1.md
@@ -91,7 +96,7 @@ continuation:
 
 1. requires clean current `main == origin/main` and explicit confirmation;
 2. validates the exact retained Head, operation, generation, range and runtime plan;
-3. permits only the exact reviewed Lark Dashboard and continuation release path set;
+3. permits only the exact reviewed Lark Dashboard and continuation Release path set;
 4. rejects any critical Meta/Worker/Queue/Lark-connector drift;
 5. validates the retained D1 summary with the existing Lark contract;
 6. verifies all-false Worker state and two stable Remote boundary reads;
@@ -105,27 +110,36 @@ continuation:
 13. accepts success only from the existing `META_HISTORY_2026_COMPLETED_SAFE` final summary.
 
 The implementation does not modify the current main Working Tree, `.dev.vars`, Remote D1, Lark, Queue,
-Worker, Schedule or Production during Repository work and CI.
+Worker, Schedule or Production during Repository work and verification.
 
 ## Verification state
 
-The first exact Head `ba2aec24f71f1f1d045755fda24abd6049c623f8` triggered Meta #118 and Branch
-#1504. Both original jobs and one failed-job retry ended before `Set up job`; the Actions API returned zero
-steps and no usable log blob. These are runner/infrastructure failures, not Source verdicts.
+Every Meta and Branch workflow created for PR #372 has failed before `Set up job`. The Actions API returned
+zero steps and no usable log blob for the original jobs and retries. These are runner/infrastructure failures,
+not Source verdicts, and none is accepted as PASS.
 
-Manual review of that Head found and corrected two fail-closed release defects before Live execution:
+Manual review found and corrected two fail-closed Release defects before Live execution:
 
 1. the post-merge Repository delta must include the continuation Release files themselves; and
 2. the public Terminal must use the retained private Safe config rather than depend on local
    `wrangler.sync.jsonc` file permissions.
 
-A new exact Head must receive fresh Meta and Branch verification. No prior failed job is accepted as PASS.
+Because the GitHub runner has repeatedly produced no executable job, final verification authority must come
+from `scripts/verify-meta-history-exact-plan-continuation-local.mjs` on the exact final branch Head. The verifier:
+
+- requires the exact pushed branch Head and clean Working Tree;
+- requires `behind origin/main = 0`;
+- runs install, syntax/architecture/hygiene, both focused regressions, full Unit/Workers, Report reliability,
+  dependency audit and Wrangler dry-run;
+- contains no continuation confirmation, Provider request, Remote D1 command, Queue send, Lark write or Worker
+  deployment path;
+- emits `META_HISTORY_EXACT_PLAN_CONTINUATION_V1_LOCAL_MACOS_PASS` only after every Gate passes.
 
 ## Acceptance criteria
 
 ```text
 Exact retained operation/generation                    locked
-Current-main reviewed release delta                    exact
+Current-main reviewed Release delta                    exact
 Critical Meta Source drift                             0
 Retained private Safe config                           public Terminal authority
 Facebook Provider replay                               0
@@ -142,14 +156,29 @@ Production                                             blocked
 
 ## Required verification
 
+Preferred GitHub gates:
+
+```text
+Meta End-to-End Verification
+Branch Verification
+```
+
+Required exact-head Local Mac fallback while GitHub jobs fail before Setup:
+
+```bash
+EXPECTED_META_CONTINUATION_HEAD=<FINAL_EXACT_HEAD> \
+node scripts/verify-meta-history-exact-plan-continuation-local.mjs
+```
+
+The verifier runs:
+
 ```text
 npm ci
 npm run check
-node --test tests/application/meta-history-exact-plan-continuation.test.js
-node --test tests/application/meta-history-exact-plan-continuation-wiring.test.js
+node --test tests/application/meta-history-exact-plan-continuation.test.js tests/application/meta-history-exact-plan-continuation-wiring.test.js
 npm test
 npm run test:report-reliability
-npm audit
+npm audit --audit-level=high
 npm run deploy:dry-run
 ```
 
