@@ -44,6 +44,7 @@ jobs:
           node --test \
             tests/connectors/meta-history-range-adapters.test.js \
             tests/application/meta-history-2026-finalizer.test.js \
+            tests/application/meta-history-2026-closeout.test.js \
             tests/application/meta-d1-only-rollout-operator.test.js \
             tests/application/meta-lark-parity-rollout-operator.test.js \
             2>&1 | tee focused-meta-history-test.log
