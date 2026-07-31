@@ -10,9 +10,10 @@ Shared Queue auth ordering              PR #343 / Squash Merged
 Meta Cloudflare account recovery        PR #348 / Squash Merged
 Explicit Safe flags recovery            PR #353 / Squash Merged
 Customer runtime config recovery        PR #359 / Squash Merged
-Customer runtime config main SHA        339b72d8b950caffc78efaf513e6e6abf9bf4b0e
-Meta verification                       #115 / PASS
-Branch verification                     #1470 / PASS
+Runtime Safe config recovery            PR #364 / Squash Merged
+Runtime Safe config main SHA            8d5dd8733bf6f3ff23a23b650f612cc200db3d19
+Meta verification                       #117 / PASS
+Branch verification                     #1484 / PASS
 Live history completion                 pending accepted Terminal evidence
 ```
 
@@ -26,10 +27,9 @@ node scripts/meta-history-2026-terminal.mjs --execute
 The one-command child, finalizer child, D1/Lark phase launchers and manual Queue sends are not public
 operator commands.
 
-## Shared customer runtime authority
+## Shared runtime authority
 
-The Meta history public Terminal, D1 launcher and Lark launcher share one non-secret Integration Workspace
-authority:
+The Meta history public Terminal, D1 launcher and Lark launcher use one reviewed runtime authority containing:
 
 ```text
 MKT_ENV                     development
@@ -40,6 +40,7 @@ Facebook mapping            approved Chemistry K Page
 Instagram mapping           approved Chemistry K Professional Account
 Meta Ads mappings           chemistry_k2 and chemistry_k3
 META_AD_ACCOUNT_ID          empty
+Shared Safe flags           every META_D1_ONLY_REQUIRED_FALSE_FLAGS key = "false"
 ```
 
 The approved mappings are the same authority that completed the ordered Chemistry K GET-only identity and
@@ -52,48 +53,38 @@ The runtime sequence is:
 ```text
 caller environment
 → apply exact customer runtime authority
-→ close all reviewed execution flags false
+→ materialize every Shared required flag false
 → guarded child
 → read Head-bound Safe Wrangler config
-→ replace stale customer vars and insert missing vars
-→ validate exact runtime authority
+→ replace stale string and boolean runtime values
+→ insert all missing customer and Safe vars
+→ validate all observed values are exact reviewed strings
 → write private 0600 runtime config under ignored outputs/
 → D1 and Lark operators use that reviewed runtime config
 ```
 
+`META_D1_ONLY_REQUIRED_FALSE_FLAGS` is the single source for both process and private-config Safe state. No
+connector-specific one-off list is maintained. Future additions to that Shared list are inherited by the
+runtime config automatically.
+
 The runtime config remains inside the Repository path boundary required by the D1/Lark operators without
 making the Working Tree dirty. The operator does not modify `.dev.vars`, and the user does not manually
-supply API version or customer identities on the public command.
+supply API version, customer identities or Safe flags on the public command.
 
-## Explicit Safe environment authority
+## Eighth attempt incident
 
-The public Terminal owns the environment passed to the guarded child. Before child execution it must:
+The Terminal attempt on `main@761123b079a17ce8be4683d548f81d5b87802c8c` passed local gates, Cloudflare
+readiness, Remote all-false verification and fresh ordered Provider GET-only validation. It then stopped
+while loading the first Facebook July D1 target because the private runtime config did not contain
+`MKT_WOOCOMMERCE_D1_WRITE_ENABLED=false`.
 
-```text
-apply exact customer runtime authority
-→ close every existing MKT_*_ENABLED key
-→ materialize every META_D1_ONLY_REQUIRED_FALSE_FLAGS key as false
-→ freeze the child environment
-→ spawn the guarded child with that exact environment
-```
-
-This Shared list is a superset of the Meta read-only requirements and is also the D1 safe-config authority.
-A missing execution flag is explicit `false`; a stale `true` or a future `MKT_*_ENABLED` key is also closed.
-
-The child operators continue to fail closed, and later D1/Lark active windows enable only the reviewed
-private-config flags before restoring all execution flags false.
-
-## Seventh attempt incident
-
-The Terminal attempt on `main@2ddc9cef8262f768d1b589e5b7bc069d861d80a4` passed local gates, Cloudflare
-readiness, Remote all-false verification and the fresh ordered Provider GET-only validation. It then stopped
-while loading the first Facebook July D1 target because the generated Safe config did not contain
-`META_GRAPH_API_VERSION`.
-
-The failure occurred before Remote D1 inspection, backup, Worker deployment and Queue admission:
+The process Environment already contained the full Shared all-false set, but PR #359 had materialized only
+customer/API mappings in config text. The failure occurred before Remote D1 inspection, backup, Worker
+deployment or Queue admission:
 
 ```text
 Current Meta operations       0
+Remote D1 inspection          0
 D1 backup                     0
 Worker deployments            0
 Meta Queue messages           0
@@ -106,7 +97,8 @@ Schedule mutations            0
 Production                    blocked
 ```
 
-All previous evidence remains retained.
+PR #364 closed the complete config-layer defect by deriving all required-false config values from the Shared
+operator export. It did not patch only the reported WooCommerce flag. All previous evidence remains retained.
 
 ## Retained history and data authority
 
@@ -145,7 +137,7 @@ explicit CLOUDFLARE_API_TOKEN
 ## Runtime-preflight authority
 
 - The source Wrangler config may be a readable regular file or symlink resolving to one.
-- Generated Safe and customer-runtime configs are private `0600` with absolute runtime paths.
+- Generated Safe and runtime configs are private `0600` with absolute runtime paths.
 - Remote Worker safety and Reliability idle are separate checks.
 - Emergency all-false deployment is allowed only when exact evidence proves an active Worker execution
   flag; authentication/read/config failures never authorize deployment.
