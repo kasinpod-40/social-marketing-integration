@@ -101,7 +101,11 @@ test('Live operator source wires exact 17/5/7 planning and never PATCHes a slice
   assert.match(source, /pendingWindowChartRebindCount/);
   assert.match(source, /rebind-number-window-charts/);
   assert.match(source, /rewriteNumberWindowChartToPreservedSelect/);
-  assert.match(source, /preservedWindowChartCount\s*\+\s*numberWindowChartCount\s*!==\s*7/);
+  assert.match(
+    source,
+    /const preservedWindowChartCount\s*=\s*alreadyPreservedWindowChartCount\s*\+\s*numberWindowChartCount/,
+  );
+  assert.match(source, /preservedWindowChartCount\s*!==\s*7/);
   assert.match(source, /slicerPatchCount:\s*0/);
   assert.doesNotMatch(source, /blockType:\s*['"]slicer['"][\s\S]{0,500}method:\s*['"]PATCH['"]/);
 });
