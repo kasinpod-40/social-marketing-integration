@@ -1,17 +1,27 @@
 import {
   JOB_IMPLEMENTATION_STATUS,
+  JOB_SCHEMA_VERSIONS,
+  JOB_TRIGGERS,
   JOB_TYPES,
   getJobDefinition,
 } from '../../../packages/application/src/jobs/job-catalog.js';
-import { syncChatwootAnalytics } from '../../../packages/application/src/use-cases/sync-chatwoot-analytics.js';
+import { withQueueOperation } from '../../../packages/application/src/jobs/queue-operation.js';
+import {
+  CHATWOOT_RUNTIME_CONTRACT_VERSION,
+  assertLockedChatwootRuntimeConfig,
+  readChatwootContinuationSequence,
+  resolveChatwootRuntimeMode,
+  resolveChatwootRuntimeWindow,
+} from '../../../packages/application/src/use-cases/chatwoot-runtime-contract.js';
+import { syncChatwootDurableRuntime } from '../../../packages/application/src/use-cases/sync-chatwoot-durable-runtime.js';
 import {
   CHATWOOT_LARK_TABLE_KEYS,
   readChatwootRuntimeConfig,
 } from '../../../packages/config/src/chatwoot-runtime-config.js';
 import { readLarkTableIdsFromEnv } from '../../../packages/config/src/lark-table-config.js';
-import { ChatwootApiClient } from '../../../packages/connectors/src/chatwoot/chatwoot-api.client.js';
+import { ChatwootDurableApiClient } from '../../../packages/connectors/src/chatwoot/chatwoot-durable-api.client.js';
 import { runReliableSync } from '../../../packages/reliability/src/reliable-sync-runner.js';
-import { permanentError } from '../../../packages/shared/src/errors/runtime-error.js';
+import { permanentError, transientError } from '../../../packages/shared/src/errors/runtime-error.js';
 import {
   DEFAULT_LOCK_LEASE_MS,
   DEFAULT_LOCK_RENEW_INTERVAL_MS,
@@ -22,7 +32,10 @@ import {
   sanitizeReliabilityEvent,
 } from './worker-runtime-support.js';
 
-/** Protected, manual-only Chatwoot route. No producer, schedule or webhook path is added. */
+/**
+ * Protected Chatwoot route. Every delivery processes one bounded durable unit. No Cron or Webhook
+ * producer is added; continuation messages preserve the original Stable Queue identity.
+ */
 export async function processChatwootAnalyticsJob(input = {}) {
   if (input.job?.body?.type !== JOB_TYPES.CHATWOOT_CONVERSATIONS_SYNC) {
     throw permanentError('Dedicated Chatwoot router received an unsupported job type', {
@@ -31,8 +44,11 @@ export async function processChatwootAnalyticsJob(input = {}) {
   }
 
   const definition = getJobDefinition(input.job.body.type);
-  assertChatwootJobDefinition(definition, input.job.body);
+  const normalizedTrigger = normalizeChatwootTrigger(input.job.body.trigger);
+  assertChatwootJobDefinition(definition, input.job, normalizedTrigger);
+  const mode = resolveChatwootRuntimeMode(normalizedTrigger);
   const chatwootConfig = readChatwootRuntimeConfig(input.env);
+  assertLockedChatwootRuntimeConfig(chatwootConfig.contract);
   const runtimeConfig = input.getRuntimeConfig();
   const connector = assertChatwootManualRuntime(runtimeConfig, chatwootConfig);
   const operation = requireStableOperation(input.operation);
@@ -42,24 +58,26 @@ export async function processChatwootAnalyticsJob(input = {}) {
     });
   }
 
-  const fullSnapshot = input.job.body.fullSnapshot === true;
-  if (chatwootConfig.flags.reportWrite && !fullSnapshot) {
-    throw permanentError('Chatwoot report writes require fullSnapshot=true', {
-      code: 'CHATWOOT_REPORT_REQUIRES_FULL_SNAPSHOT',
-    });
-  }
-
+  const continuationSequence = readChatwootContinuationSequence(
+    input.job.body.continuationSequence,
+  );
   const infrastructure = input.getInfrastructure();
   const resumableWorkStore = infrastructure.getResumableWorkStore();
   const cursorKey = `chatwoot:${connector.accountKey}:analytics`;
+  const window = resolveChatwootRuntimeWindow({
+    mode,
+    requestedAt: operation.originalRequestedAt,
+  });
   const work = await resumableWorkStore.beginWork({
     workKey: operation.workKey,
     cursorKey,
     workType: JOB_TYPES.CHATWOOT_CONVERSATIONS_SYNC,
     operationFingerprint: [
-      'chatwoot_analytics_v1',
+      CHATWOOT_RUNTIME_CONTRACT_VERSION,
       connector.accountKey,
-      fullSnapshot ? 'full' : 'incremental',
+      mode,
+      window.startAt,
+      window.endAt,
       chatwootConfig.flags.reportWrite ? 'report' : 'state',
       chatwootConfig.flags.larkWrite ? 'lark' : 'd1',
     ].join(':'),
@@ -77,7 +95,7 @@ export async function processChatwootAnalyticsJob(input = {}) {
   const tableIds = chatwootConfig.flags.larkWrite
     ? readLarkTableIdsFromEnv(input.env, CHATWOOT_LARK_TABLE_KEYS)
     : null;
-  const client = new ChatwootApiClient({
+  const client = new ChatwootDurableApiClient({
     baseUrl: chatwootConfig.source.baseUrl,
     accountId: chatwootConfig.source.externalAccountId,
     accessToken: chatwootConfig.source.accessToken,
@@ -86,20 +104,23 @@ export async function processChatwootAnalyticsJob(input = {}) {
     maxPages: chatwootConfig.source.maxPages,
     maxRows: chatwootConfig.source.maxRows,
     maxResponseBytes: chatwootConfig.source.maxResponseBytes,
+    maxReportingPages: chatwootConfig.limits.maxReportingPages,
   });
   const reliability = infrastructure.getReliability();
   const deterministicSyncRunId = `chatwoot:${connector.accountKey}:${operation.operationId}`;
+  const unitSyncRunId = `${deterministicSyncRunId}:unit:${continuationSequence}`;
 
   const syncResult = await runReliableSync({
-    syncRunId: deterministicSyncRunId,
+    syncRunId: unitSyncRunId,
     store: reliability.store,
     lockManager: reliability.lockManager,
     customerProfile: runtimeConfig.profileKey,
     accountKey: connector.accountKey,
     platform: 'chatwoot',
     source: 'chatwoot_application_api',
-    syncType: fullSnapshot ? 'conversations_full_snapshot' : 'conversations_incremental',
-    retryCount: Math.max(0, Number(input.mainQueueAttempts ?? readAttempts(input.message)) - 1),
+    syncType: `${mode}_unit`,
+    // Each continuation is a new Queue delivery; retry count must not grow with completed units.
+    retryCount: Math.max(0, readAttempts(input.message) - 1),
     leaseMs: readPositiveInteger(input.env?.MKT_SYNC_LOCK_LEASE_MS, DEFAULT_LOCK_LEASE_MS),
     renewIntervalMs: readPositiveInteger(
       input.env?.MKT_SYNC_LOCK_RENEW_INTERVAL_MS,
@@ -111,7 +132,7 @@ export async function processChatwootAnalyticsJob(input = {}) {
       scope: 'chatwoot_reliability',
       ...sanitizeReliabilityEvent(event),
     }),
-    execute: async ({ syncRunId, assertLockActive }) => {
+    execute: async ({ assertLockActive }) => {
       const assertCurrent = async () => {
         await assertLockActive();
         await resumableWorkStore.assertCurrentGeneration({
@@ -120,45 +141,38 @@ export async function processChatwootAnalyticsJob(input = {}) {
           generation: operation.generation,
         });
       };
-      return syncChatwootAnalytics({
+      return syncChatwootDurableRuntime({
+        mode,
+        continuationSequence,
+        requestedAt: operation.originalRequestedAt,
+        generation: operation.generation,
+        workKey: operation.workKey,
+        cursorKey,
+        syncRunId: deterministicSyncRunId,
         customerProfile: runtimeConfig.profileKey,
         customerKey: requireJobText(runtimeConfig.customerKey, 'runtimeConfig.customerKey'),
         accountKey: connector.accountKey,
         externalAccountId: chatwootConfig.source.externalAccountId,
         reportingTimezone: chatwootConfig.reportingTimezone,
-        syncRunId,
-        coverageRunIdPrefix: syncRunId,
-        observedAt: operation.originalRequestedAt,
-        cursorKey,
-        fullSnapshot,
-        connectorEnabled: chatwootConfig.flags.connector,
-        d1WriteEnabled: chatwootConfig.flags.d1Write,
-        larkWriteEnabled: chatwootConfig.flags.larkWrite,
-        reportWriteEnabled: chatwootConfig.flags.reportWrite,
-        checkpointWriteEnabled: true,
-        webhookEnabled: chatwootConfig.flags.webhook,
-        incrementalOverlapHours: chatwootConfig.limits.incrementalOverlapHours,
-        maxConversations: chatwootConfig.limits.maxConversations,
-        maxContacts: chatwootConfig.limits.maxContacts,
-        maxReportingEvents: chatwootConfig.limits.maxReportingEvents,
-        maxMessagePagesPerConversation: chatwootConfig.limits.maxMessagePagesPerConversation,
-        maxMessagesPerConversation: chatwootConfig.limits.maxMessagesPerConversation,
+        limits: chatwootConfig.limits,
+        flags: {
+          reportWrite: chatwootConfig.flags.reportWrite,
+          larkWrite: chatwootConfig.flags.larkWrite,
+        },
         client,
         chatwootStore: infrastructure.getChatwootAnalyticsStore(),
         coverageStore: infrastructure.getMarketingHistoryStore(),
         incrementalStateStore: infrastructure.getIncrementalStateStore(),
+        workStore: resumableWorkStore,
+        ...(chatwootConfig.flags.reportWrite
+          ? { rollupSource: infrastructure.getChatwootDailyRollupSource() }
+          : {}),
         ...(chatwootConfig.flags.larkWrite ? {
           repository: infrastructure.repository,
           syncEngine: infrastructure.syncEngine,
           tables: tableIds,
         } : {}),
-        generationGuard: {
-          cursorKey,
-          generation: operation.generation,
-          workKey: operation.workKey,
-          requestedAt: operation.originalRequestedAt,
-        },
-        assertLockActive: assertCurrent,
+        assertCurrent,
       });
     },
   });
@@ -167,16 +181,30 @@ export async function processChatwootAnalyticsJob(input = {}) {
     syncRunId: deterministicSyncRunId,
   });
 
-  await resumableWorkStore.completeWork({
-    workKey: operation.workKey,
-    completion: {
-      status: result.status,
-      syncRunId: result.syncRunId,
-      accountKey: connector.accountKey,
-      reconciliation: result.reconciliation,
-    },
-  });
-  await resumableWorkStore.cleanupExpiredWork({ limit: 25 });
+  if (result.complete === true) {
+    await resumableWorkStore.completeWork({
+      workKey: operation.workKey,
+      completion: {
+        status: result.status,
+        syncRunId: result.syncRunId,
+        accountKey: connector.accountKey,
+        reconciliation: result.reconciliation,
+      },
+    });
+    await resumableWorkStore.cleanupExpiredWork({ limit: 25 });
+    return result;
+  }
+
+  if (result.needsContinuation === true) {
+    await enqueueChatwootContinuation({
+      env: input.env,
+      body: input.job.body,
+      operation,
+      trigger: normalizedTrigger,
+      nextSequence: result.nextSequence,
+    });
+    return Object.freeze({ ...result, continuationEnqueued: true });
+  }
   return result;
 }
 
@@ -212,7 +240,8 @@ export function assertChatwootManualRuntime(runtimeConfig, chatwootConfig) {
   return connector;
 }
 
-function assertChatwootJobDefinition(definition, body) {
+function assertChatwootJobDefinition(definition, job, trigger) {
+  const body = job?.body;
   if (definition?.connectorKey !== 'chatwoot'
     || definition?.implementationStatus !== JOB_IMPLEMENTATION_STATUS.UAT_PENDING
     || definition?.manualOnly !== true) {
@@ -220,17 +249,47 @@ function assertChatwootJobDefinition(definition, body) {
       code: 'CHATWOOT_JOB_UNSUPPORTED',
     });
   }
-  if (body?.trigger !== 'manual_uat') {
-    throw permanentError('Chatwoot jobs accept manual_uat trigger only', {
+  if (Number(job?.schemaVersion ?? body?.schemaVersion ?? 1) !== JOB_SCHEMA_VERSIONS.CHATWOOT_RUNTIME) {
+    throw permanentError('Chatwoot Queue schema version is unsupported', {
+      code: 'INVALID_SYNC_JOB_SCHEMA_VERSION',
+    });
+  }
+  if (!definition.allowedTriggers.includes(trigger)) {
+    throw permanentError('Chatwoot job trigger is outside the locked runtime contract', {
       code: 'CHATWOOT_MANUAL_ONLY',
+      details: { trigger: body?.trigger ?? null },
     });
   }
   if (body?.dryRun === true) {
-    throw permanentError('Chatwoot credential preflight is a separate operator gate', {
+    throw permanentError('Chatwoot Provider preflight remains a separate operator gate', {
       code: 'CHATWOOT_DRY_RUN_UNSUPPORTED',
     });
   }
   requireJobText(body?.accountKey, 'job.body.accountKey');
+}
+
+function normalizeChatwootTrigger(trigger) {
+  // Backward-compatible repository tests/manual payloads map to the locked 30-day mode.
+  if (trigger === JOB_TRIGGERS.WOOCOMMERCE_MANUAL_UAT) {
+    return JOB_TRIGGERS.CHATWOOT_INITIAL_30_DAY_UAT;
+  }
+  return trigger;
+}
+
+async function enqueueChatwootContinuation(input) {
+  const queue = input.env?.MKT_SYNC_QUEUE;
+  if (typeof queue?.send !== 'function') {
+    throw transientError('Chatwoot continuation requires Queue producer binding', {
+      code: 'CHATWOOT_CONTINUATION_QUEUE_UNAVAILABLE',
+    });
+  }
+  const body = withQueueOperation({
+    ...input.body,
+    schemaVersion: JOB_SCHEMA_VERSIONS.CHATWOOT_RUNTIME,
+    trigger: input.trigger,
+    continuationSequence: input.nextSequence,
+  }, input.operation);
+  await queue.send(body);
 }
 
 function requireStableOperation(value) {
