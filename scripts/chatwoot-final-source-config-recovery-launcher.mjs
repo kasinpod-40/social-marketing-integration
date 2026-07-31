@@ -30,6 +30,7 @@ import {
   CHATWOOT_FINAL_SOURCE_CONFIG_RECOVERY_CONTRACT_VERSION,
   CHATWOOT_FINAL_SOURCE_CONFIG_RECOVERY_SUCCESS_MARKER,
   assertChatwootFinalSourceConfigRecoveryConfirmation,
+  assertChatwootFinalSourceIncidentClosable,
   assertChatwootFinalSourceIncidentOpen,
   assertChatwootFinalSourceIncidentResolved,
   assertChatwootFinalSourceRecoverySummary,
@@ -39,6 +40,7 @@ import {
   materializeChatwootFinalSourceConfig,
   normalizeChatwootFinalSourceIncident,
   resolveChatwootFinalSourceIdentity,
+  validateChatwootFinalSourceIncidentClosureResults,
 } from './lib/chatwoot-final-source-config-recovery.js';
 
 const ROOT = resolve(process.cwd());
@@ -111,16 +113,26 @@ async function main() {
   await mkdir(evidenceDirectory, { recursive: true, mode: 0o700 });
   const summaryPath = join(uatDirectory, 'summary.json');
   const summaryExists = await regularFile(summaryPath);
+  const reference = recoveryReference(repository.head);
 
   let incidentBefore = readIncident(env);
   if (isIncidentResolved(incidentBefore)) {
+    if (!summaryExists) {
+      throw recoveryError(
+        'Resolved retained incident requires the current-head Final UAT summary',
+        'CHATWOOT_FINAL_SOURCE_CONFIG_EVIDENCE_MISSING',
+        { label: 'Final UAT summary' },
+      );
+    }
     assertChatwootFinalSourceIncidentResolved(incidentBefore, {
-      recoveryReference: recoveryReference(repository.head),
+      recoveryReference: reference,
     });
   } else if (!summaryExists) {
     assertChatwootFinalSourceIncidentOpen(incidentBefore);
   } else {
-    assertIncidentReadyForClosure(incidentBefore);
+    assertChatwootFinalSourceIncidentClosable(incidentBefore, {
+      recoveryReference: reference,
+    });
   }
 
   if (!summaryExists) {
@@ -178,7 +190,6 @@ async function main() {
     initial: readSnapshot(env, session.initial),
     daily: readSnapshot(env, session.daily),
   });
-  const reference = recoveryReference(repository.head);
   incidentBefore = readIncident(env);
 
   let closureMutationCount = 0;
@@ -188,7 +199,9 @@ async function main() {
       recoveryReference: reference,
     });
   } else {
-    assertIncidentReadyForClosure(incidentBefore);
+    assertChatwootFinalSourceIncidentClosable(incidentBefore, {
+      recoveryReference: reference,
+    });
     backup = await createBackup(env, evidenceDirectory);
     await writePrivateJson(join(evidenceDirectory, '02-closure-attempt.json'), {
       contractVersion: CHATWOOT_FINAL_SOURCE_CONFIG_RECOVERY_CONTRACT_VERSION,
@@ -215,14 +228,16 @@ async function main() {
       webhookEnabled: false,
       production: false,
     });
-    executeD1(
-      env,
-      buildChatwootFinalSourceIncidentClosureSql({
-        completedAt: Date.now(),
-        recoveryReference: reference,
-      }),
+    const closureResult = validateChatwootFinalSourceIncidentClosureResults(
+      executeD1(
+        env,
+        buildChatwootFinalSourceIncidentClosureSql({
+          completedAt: Date.now(),
+          recoveryReference: reference,
+        }),
+      ),
     );
-    closureMutationCount = 1;
+    closureMutationCount = closureResult.updatedRows;
   }
 
   const incidentAfter = readIncident(env);
@@ -241,6 +256,12 @@ async function main() {
   }
 
   const remoteSafeAfter = assertRemoteWorkerAllFlagsFalse(env, generatedConfigPath);
+  if (remoteSafeAfter.versionFingerprint !== remoteSafe.versionFingerprint) {
+    throw recoveryError(
+      'Safe Worker version changed during retained incident closure',
+      'CHATWOOT_FINAL_SOURCE_CONFIG_CONCURRENT_DEPLOYMENT',
+    );
+  }
   const finalLockCount = readExactActiveLockCount(env);
   if (finalLockCount !== 0) {
     throw recoveryError(
@@ -270,8 +291,7 @@ async function main() {
     currentUatSnapshotDrift: false,
     restoredAllFlagsFalse: true,
     safeVersionFingerprint: remoteSafeAfter.versionFingerprint,
-    safeVersionStableAcrossClosure:
-      remoteSafe.versionFingerprint === remoteSafeAfter.versionFingerprint,
+    safeVersionStableAcrossClosure: true,
     exactLockScopeVerified: true,
     activeLockCount: 0,
     queueRedrive: false,
@@ -301,11 +321,12 @@ function printPlan() {
       'verify all-false Safe state and zero exact lock',
       'backup Remote D1',
       'resolve exact retained DLQ metadata and alert only',
-      'verify zero current-UAT snapshot drift',
+      'verify exact closure row counts and zero current-UAT snapshot drift',
     ],
     sourceFieldsMaterialized: ['CHATWOOT_BASE_URL', 'CHATWOOT_ACCOUNT_ID'],
     secretValuesMaterialized: 0,
     evidenceDirectoryBoundToRepositoryHead: true,
+    closureInterruptionResumable: true,
     queueRedrive: false,
     scheduleEnabled: false,
     webhookEnabled: false,
@@ -351,61 +372,6 @@ function assertRepositoryState() {
 
 function readIncident(env) {
   return readOneD1Row(env, buildChatwootFinalSourceIncidentSql());
-}
-
-function assertIncidentReadyForClosure(row) {
-  const state = normalizeChatwootFinalSourceIncident(row);
-  const incident = CHATWOOT_FINAL_SOURCE_CONFIG_INCIDENT;
-  const exactIdentity = state.queueRows === 1
-    && state.queueAttempts === 1
-    && state.queueGenerationMin === incident.generation
-    && state.queueGenerationMax === incident.generation
-    && state.queueRequestedMin === incident.requestedAt
-    && state.queueRequestedMax === incident.requestedAt
-    && state.queueMessageId === incident.messageId
-    && state.metadataRows === 1
-    && state.metadataGeneration === incident.generation
-    && state.metadataRequestedAt === incident.requestedAt
-    && state.recoveryStatus === 'not_started'
-    && state.recoveryReference === null
-    && state.auditReference === null
-    && state.terminalRows === 1
-    && state.terminalStatus === 'open'
-    && state.terminalErrorCode === incident.errorCode
-    && state.terminalErrorMessage === incident.errorMessage
-    && state.terminalRetryCount === 1
-    && state.terminalJobType === incident.jobType
-    && state.alertRows === 1
-    && state.alertStatus === 'open'
-    && state.alertType === 'queue_permanent_failure'
-    && state.alertSeverity === 'critical'
-    && state.alertPlatform === 'chatwoot'
-    && state.alertErrorCode === incident.errorCode
-    && state.syncRows === 0
-    && state.workRows === 0
-    && state.phaseRows === 0
-    && state.coverageRows === 0
-    && state.activeLocks === 0;
-  if (!exactIdentity) {
-    throw recoveryError(
-      'Retained Chatwoot incident is not safe for completion-only closure',
-      'CHATWOOT_FINAL_SOURCE_CONFIG_INCIDENT_INVALID',
-      {
-        queueRows: state.queueRows,
-        queueAttempts: state.queueAttempts,
-        recoveryStatus: state.recoveryStatus,
-        terminalStatus: state.terminalStatus,
-        terminalErrorCode: state.terminalErrorCode,
-        alertStatus: state.alertStatus,
-        syncRows: state.syncRows,
-        workRows: state.workRows,
-        phaseRows: state.phaseRows,
-        coverageRows: state.coverageRows,
-        activeLocks: state.activeLocks,
-      },
-    );
-  }
-  return state;
 }
 
 function isIncidentResolved(row) {
