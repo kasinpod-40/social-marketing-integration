@@ -85,6 +85,7 @@ may update only the preserved Select field on those missing rows. It:
 - creates no records and deletes no records;
 - performs no Dashboard, View, Field or schema mutation;
 - reads back all records and requires pending updates/conflicts to reach zero;
+- preserves confirmed partial-write progress from `error.writeProgress.confirmedRows`;
 - is resumable because already-populated rows produce no update.
 
 Execution requires:
@@ -103,6 +104,8 @@ BACKFILL_WINDOW_SELECT_WITHOUT_DASHBOARD_OR_FIELD_MUTATION
 - Add the guarded Record-only compatibility backfill described above.
 - Keep historical v3 planners/helpers for retained evidence and deterministic regression only; they are no
   longer connected to a Dashboard/Field mutation entrypoint.
+- Keep the historical window-chart planner regression while asserting that the public operator contains no
+  window-chart PATCH wiring.
 - Leave `docs/current-task.md` untouched because the Meta workstream owns it.
 
 ## Public commands
@@ -139,6 +142,7 @@ Record-only missing Select update path      guarded and bounded <= 28
 86 Report records preserved                 yes
 24 current_value=null rows preserved        yes
 Legacy physical Field identities preserved  yes
+Partial/unknown write progress truthful      yes
 Manual Dashboard UI work required           no
 Remote action during Implementation         0
 Production                                  blocked
@@ -149,7 +153,8 @@ Required verification:
 ```text
 node --test \
   tests/scripts/lark-dashboard-field-identity-recovery-v3.test.js \
-  tests/scripts/lark-dashboard-compatibility-record-backfill.test.js
+  tests/scripts/lark-dashboard-compatibility-record-backfill.test.js \
+  tests/scripts/lark-dashboard-window-chart-rebind-v3-2.test.js
 npm run check
 npm test
 npm run test:report-reliability
