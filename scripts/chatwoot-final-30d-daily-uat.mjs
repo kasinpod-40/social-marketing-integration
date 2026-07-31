@@ -2,6 +2,7 @@
 
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
+import { createReadStream } from 'node:fs';
 import { chmod, mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, relative, resolve } from 'node:path';
 import { readDevVars } from './lib/dev-vars.js';
@@ -96,7 +97,7 @@ async function main() {
 
   const preflightResult = await preflight(target);
   await evidence(target, 'read-only-preflight', preflightResult);
-  const backup = d1Backup(target);
+  const backup = await d1Backup(target);
   await evidence(target, 'd1-backup', backup);
 
   const activeVersion = deploy(target, config.activeText, 'active');
@@ -255,14 +256,34 @@ async function preflight(target) {
   };
 }
 
-function d1Backup(target) {
+async function d1Backup(target) {
   const path = join(target.evidenceDir, `chatwoot-before-uat-${Date.now()}.sql`);
   run('npx', ['wrangler', 'd1', 'export', configName(target, 'databaseName'), '--remote',
     '--config', target.sourcePath, '--output', path, '--skip-confirmation'], { env: target.cf.env });
-  const bytes = execFileSync('cat', [path]);
-  if (!bytes.length) fail('D1 backup is empty', 'CHATWOOT_FINAL_UAT_BACKUP_EMPTY');
-  return { backupFile: relative(ROOT, path), backupBytes: bytes.length,
-    backupSha256: createHash('sha256').update(bytes).digest('hex') };
+  let metadata;
+  try {
+    metadata = await stat(path);
+  } catch (cause) {
+    fail('D1 backup could not be inspected', 'CHATWOOT_FINAL_UAT_BACKUP_INSPECTION_FAILED', {
+      errorCode: cause?.code ?? null,
+    });
+  }
+  if (!metadata.isFile() || metadata.size <= 0) {
+    fail('D1 backup is empty', 'CHATWOOT_FINAL_UAT_BACKUP_EMPTY');
+  }
+  const hash = createHash('sha256');
+  try {
+    for await (const chunk of createReadStream(path)) hash.update(chunk);
+  } catch (cause) {
+    fail('D1 backup could not be hashed', 'CHATWOOT_FINAL_UAT_BACKUP_HASH_FAILED', {
+      errorCode: cause?.code ?? null,
+    });
+  }
+  return {
+    backupFile: relative(ROOT, path),
+    backupBytes: metadata.size,
+    backupSha256: hash.digest('hex'),
+  };
 }
 
 async function operationFlow(target, operation, label, previous = null) {
