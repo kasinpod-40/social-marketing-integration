@@ -133,7 +133,7 @@ try {
     });
     confirmedRecordUpdates = result.updated;
   } catch (error) {
-    confirmedRecordUpdates = Number(error?.details?.completedRows ?? 0);
+    confirmedRecordUpdates = Number(error?.writeProgress?.confirmedRows ?? 0);
     throw error;
   }
 
