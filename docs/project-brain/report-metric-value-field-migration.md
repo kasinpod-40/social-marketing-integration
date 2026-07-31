@@ -25,8 +25,8 @@ valid N/A Business facts and are not deleted. All 86 Report Metric records are p
 ## Historical migration ownership
 
 The earlier value-preserving migration and Dashboard Field-Identity Recovery v3.x remain historical evidence.
-Their planners may still be tested for deterministic behavior, but their public mutation entrypoints are
-retired.
+Their planners may still be tested for deterministic behavior, but their public Dashboard/Field mutation
+entrypoints are retired.
 
 The former transition intended to:
 
@@ -37,8 +37,12 @@ window Select v2                 fldraj0QP8
 ```
 
 backfill the preserved Select, retire the Number field, promote `fldMlTUP3Z` to canonical `window_days`, then
-remove retained Legacy fields. This transition is superseded because Dashboard Block/filter PATCH has no
-supported public Lark OpenAPI write contract in the verified operating boundary.
+remove retained Legacy fields. Field promotion and Legacy cleanup are superseded because Dashboard
+Block/filter PATCH has no supported public Lark OpenAPI write contract in the verified operating boundary.
+
+The lossless missing-cell portion is retained separately as a Record-only operation: Number remains
+canonical for compatibility planning, and only an empty preserved Select cell may be populated with the same
+`1/3/7/30` value.
 
 ## Audited Integration Workspace identities
 
@@ -61,21 +65,45 @@ Statistics PATCH with immediate unchanged readback and zero confirmed mutation.
 - Public v3 Terminal and Operator entrypoints are fail-closed tombstones.
 - `--execute` and `--statistics-probe-only` are rejected before `.dev.vars` or Lark client access.
 - Dashboard Statistics, Column and Slicer PATCH are unavailable.
-- Field rename/delete and Record delete are unavailable.
+- Field rename/delete and Record create/delete are unavailable.
 - All Dashboard IDs, Block IDs, layouts and existing physical Field identities are preserved.
 - All 86 Report records remain present.
 - The 24 baseline-incomplete `current_value=null` rows remain N/A.
 - No manual Dashboard UI repair is required or authorized.
-- A future compatibility Record writer requires a separate reviewed Record-API contract and parity audit.
+
+## Record-only compatibility behavior
+
+The reviewed live plan contains at most 28 records whose Number `window_days` is valid while the preserved
+slicer-bound Select is empty. `scripts/lark-dashboard-compatibility-record-backfill.mjs` owns only that gap.
+It uses the existing Public Bitable Record batch-update path and may write only
+`__mkt_legacy_window_days_single_select_v1` on existing rows.
+
+Before execution it requires:
+
+```text
+record count                         86
+baseline-incomplete null count       24
+window conflicts                      0
+pending updates                      <= 28
+all seven Field IDs/names/types      exact
+```
+
+It writes a private backup, performs no Dashboard/View/Field/schema operation, then reads all records again and
+requires pending updates/conflicts to reach zero while preserving the 86/24 boundaries. Already-populated rows
+make reruns idempotent.
 
 ## Safety state
 
 Implementation and verification perform no Live Lark/D1/Queue/Worker/Provider/Schedule/Production action.
-The only public command for this scope is a local static audit:
+Public commands are:
 
 ```bash
 node scripts/lark-dashboard-compatibility-freeze-audit.mjs
+node scripts/lark-dashboard-compatibility-record-backfill.mjs
 ```
+
+The second command is read-only unless exact Record-backfill confirmation and `--execute` are supplied after
+merge and reviewed preview.
 
 Detailed current contract:
 
