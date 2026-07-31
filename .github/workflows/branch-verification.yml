@@ -18,9 +18,8 @@ concurrency:
 
 jobs:
   verify:
-    # Woo, Chatwoot and Report hotfixes use the repository-scoped Mac runner
-    # while GitHub-hosted minutes are exhausted. Other PRs keep the normal runner.
-    runs-on: ${{ (github.event.pull_request.number == 308 || startsWith(github.head_ref, 'hotfix/chatwoot-final-') || startsWith(github.head_ref, 'hotfix/woocommerce-completed-state-incremental-admission-race') || startsWith(github.head_ref, 'hotfix/report-')) && 'mkt-ci' || 'ubuntu-latest' }}
+    # Final integration hotfixes use the repository-scoped Mac runner while hosted minutes are exhausted.
+    runs-on: ${{ (github.event.pull_request.number == 308 || startsWith(github.head_ref, 'hotfix/chatwoot-final-') || startsWith(github.head_ref, 'hotfix/woocommerce-completed-state-incremental-admission-race') || startsWith(github.head_ref, 'hotfix/report-') || startsWith(github.head_ref, 'hotfix/meta-history-2026-')) && 'mkt-ci' || 'ubuntu-latest' }}
     timeout-minutes: 30
     steps:
       - name: Checkout
@@ -37,6 +36,20 @@ jobs:
 
       - name: Syntax architecture and hygiene
         run: npm run check
+
+      - name: Focused Meta history finalizer tests
+        shell: bash
+        run: |
+          set -o pipefail
+          node --test \
+            tests/connectors/meta-history-range-adapters.test.js \
+            tests/connectors/meta-business-source-adapters.test.js \
+            tests/application/meta-history-2026-finalizer.test.js \
+            tests/application/meta-history-2026-closeout.test.js \
+            tests/application/meta-history-2026-public-launcher.test.js \
+            tests/application/meta-d1-only-rollout-operator.test.js \
+            tests/application/meta-lark-parity-rollout-operator.test.js \
+            2>&1 | tee focused-meta-history-test.log
 
       - name: Focused Woo completed-state race recovery tests
         shell: bash
