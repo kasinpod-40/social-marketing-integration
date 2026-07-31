@@ -7,11 +7,14 @@ Initial history implementation          PR #319 / Squash Merged
 Runtime-preflight recovery              PR #330 / Squash Merged
 Pinned-continuity recovery              PR #342 / Squash Merged
 Shared Queue auth ordering              PR #343 / Squash Merged
-Meta Cloudflare account recovery        v4 / in review
+Meta Cloudflare account recovery        PR #348 / Squash Merged
+Cloudflare recovery main SHA            51edf7fd33f8302d96c8cf986940cc9e6b9523cc
+Meta verification                       #110 / PASS
+Branch verification                     #1424 / PASS
 Live history completion                 pending accepted Terminal evidence
 ```
 
-The only public entrypoint remains:
+The only public entrypoint is:
 
 ```bash
 CONFIRM_META_HISTORY_2026_FINALIZER=RUN_META_HISTORY_2026_ONE_COMMAND \
@@ -34,7 +37,7 @@ operator commands.
 
 ## Cloudflare account authority
 
-The Integration Workspace has stable Cloudflare identity and authentication:
+The Integration Workspace has stable private Cloudflare identity and authentication:
 
 ```text
 Account name              Social MKT Data Hub DEV
@@ -43,42 +46,45 @@ Wrangler account_id       generated private config authority when present
 CLOUDFLARE_API_TOKEN      local .dev.vars secret authority
 ```
 
-Account selection and authentication are independent concerns. A valid API-token/config path must never
-be blocked by an expired or unavailable Wrangler user-membership command.
+Account selection and authentication are independent. A valid API-token/config path must never be blocked
+by an expired or unavailable Wrangler user-membership command.
 
-## Shared Queue bootstrap authority
-
-PR #343 established the repository-wide ordering contract:
+The merged ordering contract is:
 
 ```text
 explicit CLOUDFLARE_API_TOKEN
 → no Wrangler authentication command
 → explicit CLOUDFLARE_ACCOUNT_ID when present
-→ otherwise Wrangler config account_id
+→ otherwise generated Wrangler config account_id
 → whoami --json only when no Account ID is available
 → exact bounded Queue REST inventory
+→ Worker all-false and Reliability-idle checks
 ```
 
-Meta v4 is based on this Main and reuses the existing shared Account-ID and bearer resolvers. It does not
-create another Queue bootstrap, Authentication layer or Cloudflare identity engine.
+PR #348 reuses the shared PR #343 Account-ID and bearer resolvers. It adds no second Queue bootstrap,
+Authentication layer or Cloudflare identity engine. Invalid explicit/config Account IDs remain fail-closed
+and never fall back to another account.
 
 ## Fourth attempt incident
 
 The Terminal attempt on `main@a339a06afc57e6ee17c4413b2700e79235ceb3be` stopped at
 `cloudflare-readiness` because the Meta finalizer ran `npx wrangler whoami --json` unconditionally before
-using its already-known Account ID. It had not entered Remote Worker/D1 inspection, Meta Provider
-validation, Queue admission or any D1/Lark Business write. The restore child hit the same read-only command
-dependency. No Remote mutation path had started.
+using its already-known Account ID.
 
-## Meta v4 correction
+The attempt stopped before Remote Worker/D1 inspection, Meta Provider validation, Queue admission or any
+D1/Lark Business write:
 
-- Read generated private Wrangler config once.
-- Attempt exact Account-ID resolution with `whoamiOutput=null` so explicit Environment/config authority can
-  short-circuit membership discovery.
-- Fall back to `whoami --json` only when the shared resolver reports missing membership input.
-- Invalid explicit/config Account IDs remain fail-closed and never fall back to another account.
-- Explicit API token remains authoritative; `wrangler auth token --json` is only a missing-token fallback.
-- Exact Queue REST discovery remains the Queue identity and permission gate.
+```text
+Meta operations             0
+Meta Queue messages         0
+Meta Provider requests      0
+Remote D1 Business writes   0
+Remote Lark Business writes 0
+Worker deployments          0
+Schedule mutations          0
+```
+
+All prior evidence remains retained.
 
 ## Runtime-preflight authority
 
