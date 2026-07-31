@@ -44,6 +44,7 @@ jobs:
           set -o pipefail
           node --test \
             tests/application/chatwoot-final-30d-daily-uat.test.js \
+            tests/application/chatwoot-final-preflight-initialization.test.js \
             tests/application/chatwoot-final-lark-auto-mapping.test.js \
             tests/application/chatwoot-final-lock-scope.test.js \
             tests/application/chatwoot-runtime-wiring.test.js \
