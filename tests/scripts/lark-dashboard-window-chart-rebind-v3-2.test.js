@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import {
   EXECUTIVE_DASHBOARD_NAME,
   EXECUTIVE_NUMBER_WINDOW_CHART_NAMES,
+  assertReviewedExecutiveWindowChartSet,
   assertReviewedNumberWindowChart,
   hasNumberWindowReference,
   hasPreservedWindowReference,
@@ -16,6 +17,14 @@ test('window chart scope is exactly the three audited Executive columns', () => 
     'Ad Spend by Window',
     'Organic Views by Window',
   ]);
+  assert.deepEqual(
+    assertReviewedExecutiveWindowChartSet([
+      'Organic Views by Window',
+      'Net Sales by Window',
+      'Ad Spend by Window',
+    ]),
+    EXECUTIVE_NUMBER_WINDOW_CHART_NAMES,
+  );
   for (const blockName of EXECUTIVE_NUMBER_WINDOW_CHART_NAMES) {
     assert.deepEqual(assertReviewedNumberWindowChart({
       dashboardName: EXECUTIVE_DASHBOARD_NAME,
@@ -27,6 +36,22 @@ test('window chart scope is exactly the three audited Executive columns', () => 
       blockType: 'column',
     });
   }
+  assert.throws(
+    () => assertReviewedExecutiveWindowChartSet([
+      'Net Sales by Window',
+      'Ad Spend by Window',
+      'Ad Spend by Window',
+    ]),
+    (error) => error.code === 'LARK_DASHBOARD_WINDOW_CHART_SET_INVALID',
+  );
+  assert.throws(
+    () => assertReviewedExecutiveWindowChartSet([
+      'Net Sales by Window',
+      'Ad Spend by Window',
+      'Orders by Window',
+    ]),
+    (error) => error.code === 'LARK_DASHBOARD_WINDOW_CHART_SET_INVALID',
+  );
   assert.throws(
     () => assertReviewedNumberWindowChart({
       dashboardName: EXECUTIVE_DASHBOARD_NAME,
@@ -79,6 +104,38 @@ test('Number window chart rewrites field identity, field type and preset values 
   assert.deepEqual(Object.keys(result.patch).sort(), ['filter', 'group', 'nested']);
 });
 
+test('rewrite leaves unrelated numeric presets and field types unchanged', () => {
+  const before = {
+    group: [{ field_name: 'window_days', field_type: 2 }],
+    filter: {
+      conjunction: 'and',
+      conditions: [
+        { field_name: 'window_days', field_type: 2, operator: 'is', value: [30] },
+        { field_name: 'days_since_order', field_type: 2, operator: 'is', value: [30] },
+      ],
+    },
+    appearance: {
+      defaultValue: 7,
+      limit: { value: 30 },
+      fieldType: 2,
+    },
+  };
+  const result = rewriteNumberWindowChartToPreservedSelect({
+    dashboardName: EXECUTIVE_DASHBOARD_NAME,
+    blockName: 'Organic Views by Window',
+    blockType: 'column',
+    dataConfig: before,
+  });
+
+  assert.deepEqual(result.dataConfig.filter.conditions[0].value, ['30']);
+  assert.equal(result.dataConfig.filter.conditions[0].field_type, 3);
+  assert.deepEqual(result.dataConfig.filter.conditions[1].value, [30]);
+  assert.equal(result.dataConfig.filter.conditions[1].field_type, 2);
+  assert.equal(result.dataConfig.appearance.defaultValue, 7);
+  assert.equal(result.dataConfig.appearance.limit.value, 30);
+  assert.equal(result.dataConfig.appearance.fieldType, 2);
+});
+
 test('rewrite fails closed when the reviewed chart no longer references Number window_days', () => {
   assert.throws(
     () => rewriteNumberWindowChartToPreservedSelect({
@@ -101,6 +158,7 @@ test('Live operator source wires exact 17/5/7 planning and never PATCHes a slice
   assert.match(source, /pendingWindowChartRebindCount/);
   assert.match(source, /rebind-number-window-charts/);
   assert.match(source, /rewriteNumberWindowChartToPreservedSelect/);
+  assert.match(source, /assertReviewedExecutiveWindowChartSet/);
   assert.match(
     source,
     /const preservedWindowChartCount\s*=\s*alreadyPreservedWindowChartCount\s*\+\s*numberWindowChartCount/,
