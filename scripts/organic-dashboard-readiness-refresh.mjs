@@ -52,6 +52,7 @@ try {
   const windows = [];
   let reusedWindowCount = 0;
   let executedWindowCount = 0;
+  let verificationOnlyRecoveryCount = 0;
   for (const windowDays of ORGANIC_DASHBOARD_READINESS_REFRESH_WINDOWS) {
     const evidenceDir = join(outputRoot, `${windowDays}d-refresh`);
     await mkdir(evidenceDir, { recursive: true, mode: 0o700 });
@@ -60,14 +61,30 @@ try {
     const closeoutExists = await fileExists(closeoutPath);
     const verificationExists = await fileExists(verificationPath);
 
-    if (closeoutExists !== verificationExists) throw refreshError(
-      `Partial ${windowDays}D readiness evidence requires manual diagnosis`,
+    if (!closeoutExists && verificationExists) throw refreshError(
+      `Verification exists without a ${windowDays}D closeout summary`,
       'ORGANIC_DASHBOARD_READINESS_PARTIAL_EVIDENCE',
       { windowDays, closeoutExists, verificationExists },
     );
 
     let reused = false;
-    if (!closeoutExists) {
+    if (closeoutExists && !verificationExists) {
+      const recordedCloseout = JSON.parse(await readFile(closeoutPath, 'utf8'));
+      assertOrganicDashboardReadinessCloseoutSummary(recordedCloseout, windowDays);
+
+      currentStage = `${windowDays}d-readiness-verification-recovery`;
+      runRequired(
+        `${windowDays}d-readiness-verification-recovery`,
+        ['scripts/verify-organic-dashboard-readiness-window.mjs'],
+        {
+          ...process.env,
+          MKT_REPORT_RUNTIME_CLOSEOUT_EVIDENCE_DIR: evidenceDir,
+          MKT_ORGANIC_DASHBOARD_READINESS_WINDOW_DAYS: String(windowDays),
+        },
+      );
+      executedWindowCount += 1;
+      verificationOnlyRecoveryCount += 1;
+    } else if (!closeoutExists) {
       const files = await readdir(evidenceDir);
       if (files.length !== 0) throw refreshError(
         `Recorded ${windowDays}D attempt blocks automatic repetition`,
@@ -163,6 +180,7 @@ try {
       windowCount: windows.length,
       executedWindowCount,
       reusedWindowCount,
+      verificationOnlyRecoveryCount,
       totalMetricRows: windows.reduce((sum, window) => sum + window.metricCount, 0),
     },
     windows,

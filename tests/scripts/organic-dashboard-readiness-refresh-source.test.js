@@ -35,9 +35,12 @@ test('wrapper never contains a direct Worker, Queue, D1 or Lark mutation path', 
 
 test('post-closeout verifier performs fresh read-only D1 and Lark reads only', () => {
   const d1Read = verifier.indexOf("'wrangler', 'd1', 'execute'");
+  const schemaResolution = verifier.indexOf('planLarkReportSchema');
   const larkRead = verifier.indexOf('client.searchRecords');
   const parity = verifier.indexOf('assertOrganicDashboardReadinessWindow');
-  assert.ok(d1Read >= 0 && larkRead >= 0 && parity >= 0);
+  assert.ok(d1Read >= 0 && schemaResolution >= 0 && larkRead >= 0 && parity >= 0);
+  assert.match(verifier, /LARK_REPORT_SCHEMA_V2/u);
+  assert.match(verifier, /environmentUpdates\?\.\[REPORT_METRIC_VALUES_ENV_NAME\]/u);
   assert.match(verifier, /SELECT report_id, payload_json, payload_checksum FROM report_materializations/u);
   assert.doesNotMatch(verifier, /DELETE\s+FROM|INSERT\s+INTO|UPDATE\s+/iu);
   assert.doesNotMatch(verifier, /wrangler[^\n]+deploy|queues\/.+messages/iu);
@@ -45,11 +48,19 @@ test('post-closeout verifier performs fresh read-only D1 and Lark reads only', (
   assert.match(verifier, /remoteMutationDuringVerification:\s*false/u);
 });
 
-test('partial evidence and recorded attempts fail closed instead of resending automatically', () => {
-  const partial = wrapper.indexOf('closeoutExists !== verificationExists');
-  const recorded = wrapper.indexOf('files.length !== 0');
-  const closeout = wrapper.indexOf("['scripts/report-runtime-stabilized-closeout.mjs', '--execute']");
-  assert.ok(partial >= 0 && recorded > partial && closeout > recorded);
-  assert.match(wrapper, /ORGANIC_DASHBOARD_READINESS_PARTIAL_EVIDENCE/u);
-  assert.match(wrapper, /ORGANIC_DASHBOARD_READINESS_RECORDED_ATTEMPT/u);
+test('closeout-only partial evidence resumes verification without resending while unsafe partials still fail closed', () => {
+  const recovery = wrapper.indexOf('if (closeoutExists && !verificationExists)');
+  const recoveryVerification = wrapper.indexOf(
+    "['scripts/verify-organic-dashboard-readiness-window.mjs']",
+    recovery,
+  );
+  const normalCloseout = wrapper.indexOf(
+    "['scripts/report-runtime-stabilized-closeout.mjs', '--execute']",
+    recovery,
+  );
+  assert.ok(recovery >= 0 && recoveryVerification > recovery && normalCloseout > recoveryVerification);
+  assert.match(wrapper, /assertOrganicDashboardReadinessCloseoutSummary\(recordedCloseout, windowDays\)/u);
+  assert.match(wrapper, /verificationOnlyRecoveryCount \+= 1/u);
+  assert.match(wrapper, /if \(!closeoutExists && verificationExists\)[\s\S]+ORGANIC_DASHBOARD_READINESS_PARTIAL_EVIDENCE/u);
+  assert.match(wrapper, /files\.length !== 0[\s\S]+ORGANIC_DASHBOARD_READINESS_RECORDED_ATTEMPT/u);
 });
