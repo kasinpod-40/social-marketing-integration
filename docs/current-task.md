@@ -1,114 +1,122 @@
-# Current Task — Meta History Execution After Customer Runtime Config Recovery v6
+# Current Task — Meta History Runtime Safe Config Recovery v7
 
 ## Status
 
 ```text
-TASK_STATUS                         = META_HISTORY_2026_EXECUTION_READY
-CURRENT_PROGRAM                     = META_HISTORY_2026_FINALIZER_V1
-ORIGINAL_IMPLEMENTATION_PR          = #319 / SQUASH_MERGED
-RUNTIME_PREFLIGHT_HOTFIX_PR         = #330 / SQUASH_MERGED
-PINNED_CONTINUITY_HOTFIX_PR         = #342 / SQUASH_MERGED
-SHARED_QUEUE_AUTHORITY_PR           = #343 / SQUASH_MERGED
-CLOUDFLARE_ACCOUNT_HOTFIX_PR        = #348 / SQUASH_MERGED
-EXPLICIT_SAFE_FLAGS_HOTFIX_PR       = #353 / SQUASH_MERGED
-CUSTOMER_RUNTIME_CONFIG_HOTFIX_PR   = #359 / SQUASH_MERGED
-CUSTOMER_RUNTIME_CONFIG_MAIN_SHA    = 339b72d8b950caffc78efaf513e6e6abf9bf4b0e
-META_VERIFICATION_RUN               = 30641268623 / #115 / PASS
-BRANCH_VERIFICATION_RUN             = 30641268627 / #1470 / PASS
-PLANNED_OPERATION_COUNT             = 6
-PREVIOUS_ATTEMPT_CURRENT_OPS        = 0
-PREVIOUS_ATTEMPT_D1_BACKUP          = 0
-PREVIOUS_ATTEMPT_WORKER_DEPLOY      = 0
-PREVIOUS_ATTEMPT_QUEUE_MESSAGES     = 0
-PREVIOUS_ATTEMPT_BUSINESS_WRITES    = 0
-PREVIOUS_ATTEMPT_PROVIDER_GATE      = GET_ONLY_PASSED
-WORKER_FLAGS                        = ALL_FALSE_VERIFIED
-SCHEDULE                            = DISABLED
-PRODUCTION                          = BLOCKED
-NEXT_STEP                           = RUN_META_HISTORY_2026_TERMINAL_ONCE
+TASK_STATUS                          = REPOSITORY_HOTFIX_IN_REVIEW
+CURRENT_PROGRAM                      = META_HISTORY_RUNTIME_SAFE_CONFIG_RECOVERY_V7
+BASE_MAIN_SHA                        = 761123b079a17ce8be4683d548f81d5b87802c8c
+BRANCH                               = hotfix/meta-history-2026-runtime-safe-config-v7
+IMPLEMENTATION_PR                    = #364 / DRAFT / DO_NOT_MERGE
+ORIGINAL_IMPLEMENTATION_PR           = #319 / SQUASH_MERGED
+RUNTIME_PREFLIGHT_HOTFIX_PR          = #330 / SQUASH_MERGED
+PINNED_CONTINUITY_HOTFIX_PR          = #342 / SQUASH_MERGED
+SHARED_QUEUE_AUTHORITY_PR            = #343 / SQUASH_MERGED
+CLOUDFLARE_ACCOUNT_HOTFIX_PR         = #348 / SQUASH_MERGED
+EXPLICIT_SAFE_FLAGS_HOTFIX_PR        = #353 / SQUASH_MERGED
+CUSTOMER_RUNTIME_CONFIG_HOTFIX_PR    = #359 / SQUASH_MERGED
+PLANNED_OPERATION_COUNT              = 6
+EIGHTH_ATTEMPT_CURRENT_OPS           = 0
+EIGHTH_ATTEMPT_D1_BACKUP             = 0
+EIGHTH_ATTEMPT_WORKER_DEPLOY         = 0
+EIGHTH_ATTEMPT_QUEUE_MESSAGES        = 0
+EIGHTH_ATTEMPT_BUSINESS_WRITES       = 0
+EIGHTH_ATTEMPT_PROVIDER_GATE         = GET_ONLY_PASSED
+WORKER_FLAGS_AFTER_ATTEMPT           = ALL_FALSE_VERIFIED
+SCHEDULE                             = DISABLED
+PRODUCTION                           = BLOCKED
+NEXT_STEP                            = EXACT_HEAD_VERIFICATION_REVIEW_AND_MERGE
 ```
 
-## Authority
+## Eighth live attempt retained
 
-PR #359 was Squash Merged at:
-
-```text
-339b72d8b950caffc78efaf513e6e6abf9bf4b0e
-```
-
-The exact reviewed Head `0244029eff2e89bbf762dd9d54771f82ec1511ea` passed:
-
-```text
-Meta End-to-End Verification  run 30641268623 / #115 / PASS
-Branch Verification           run 30641268627 / #1470 / PASS
-Review threads                0
-Branch behind main            0 before merge
-Changed files                 8 / Meta scope only
-Terminal executable mode      100755
-D1 launcher executable mode   100755
-Lark launcher executable mode 100755
-Remote action during Hotfix   0
-```
-
-## Seventh attempt retained
-
-The Terminal attempt on `main@2ddc9cef8262f768d1b589e5b7bc069d861d80a4` passed:
-
-```text
-Local full gates                   PASS
-Cloudflare readiness               PASS
-Remote Worker all-false            PASS
-Fresh ordered Provider validation  PASS / GET-only
-```
-
-It entered the first required Facebook July operation and stopped while loading the D1 target because the
-reviewed generated Wrangler config did not contain a pinned Meta Graph API version:
+The Terminal attempt on `main@761123b079a17ce8be4683d548f81d5b87802c8c` passed the retained local,
+Cloudflare, Remote-safe and ordered GET-only customer identity gates. It entered the first required Facebook
+July operation and stopped while loading the D1 target:
 
 ```text
 stage    operation-facebook-2026-07-01-2026-07-31
-code     META_D1_ONLY_SOURCE_MAPPING_INVALID
-message  Meta D1-only config requires a pinned Meta Graph API version
+code     META_D1_ONLY_CONFIG_INVALID
+message  Meta D1-only config requires MKT_WOOCOMMERCE_D1_WRITE_ENABLED=false
 ```
 
-The target loader stopped before Remote D1 inspection, backup, Worker deployment and Queue admission.
+The failure occurred inside `buildMetaD1OnlyConfigWindow()` while validating the private runtime Wrangler
+config. It happened before Remote D1 inspection, backup, Worker deployment or Queue admission.
 `emergencyRestoreRequired=false`, and the outer closeout verified the Worker all-false state.
 
 ```text
 Current operation accepted       0
-D1 backup                       0
-Worker deployments              0
-Queue messages                  0
-Remote D1 Business writes       0
-Remote Lark writes              0
-Schedule mutations              0
-Production                      blocked
+Remote D1 inspection             0
+D1 backup                        0
+Worker deployments               0
+Queue messages                   0
+Remote D1 Business writes        0
+Remote Lark writes               0
+Schedule mutations               0
+Production                       blocked
 ```
 
 Retain every prior evidence directory. Do not delete, copy or edit prior output.
 
-## Customer runtime authority now merged
+## Root cause
 
-The public Terminal, D1 launcher and Lark launcher now use one Shared non-secret authority:
+The public Terminal already materialized every `META_D1_ONLY_REQUIRED_FALSE_FLAGS` key as string `false` in
+the child process environment. PR #359 subsequently materialized only the customer/API/mapping authority in
+the private D1/Lark Wrangler config.
+
+The D1 and Lark operators intentionally validate deployment config text independently of process environment.
+Therefore the same execution had:
 
 ```text
-MKT_ENV                     development
-MKT_CUSTOMER_PROFILE        integration_workspace
-MKT_CONNECTION_CUSTOMER_KEY chemistry_k
-META_GRAPH_API_VERSION      v25.0
-Facebook mapping            approved Chemistry K Page
-Instagram mapping           approved Chemistry K Professional Account
-Meta Ads mappings           chemistry_k2 and chemistry_k3
-Legacy single Ad mapping    explicitly empty
+child process environment     all required Safe flags explicit false
+private runtime config        customer mappings exact, Shared Safe flags incomplete
 ```
 
-Before the guarded child starts, Terminal materializes this authority and closes every reviewed execution
-flag to explicit `false`. D1 and Lark each create a private `0600` runtime Wrangler config beside the
-Head-bound Safe config under ignored `outputs/`, replace stale non-secret values, insert missing values and
-fail closed unless every exact value is present.
+The first missing config key surfaced as `MKT_WOOCOMMERCE_D1_WRITE_ENABLED`, but the defect applies to the
+complete Shared required-false set. Fixing one named flag would leave the next missing flag waiting behind it.
 
-Credentials remain in `.dev.vars` and Worker Secret storage. The operator does not modify `.dev.vars`, does
-not place tokens in generated config or evidence and does not require the operator to supply API version or
-identity mappings on the command line.
+## Correction
+
+The existing Shared runtime authority now owns both:
+
+1. exact non-secret Chemistry K customer/API mappings; and
+2. every key exported by `META_D1_ONLY_REQUIRED_FALSE_FLAGS`, each with string value `false`.
+
+The runtime-config materializer must:
+
+```text
+read the Head-bound private Safe config
+→ replace stale string values
+→ replace stale boolean true/false values with reviewed strings
+→ insert every missing Customer/Safe key
+→ validate all observed occurrences are exact strings
+→ write private 0600 runtime config under ignored outputs/
+→ give identical authority to D1 and Lark operators
+```
+
+The source of the Safe flag list remains the existing Meta D1-only operator contract. No second manually
+maintained list and no connector-specific one-off flag patch is allowed.
+
+## Acceptance criteria
+
+```text
+META_D1_ONLY_REQUIRED_FALSE_FLAGS source              Shared operator export
+Every required flag in child Environment             string false
+Every required flag in D1 runtime config              string false
+Every required flag in Lark runtime config            string false
+Missing config flags                                  inserted
+Existing string true                                  replaced
+Existing boolean true/false                           replaced with reviewed string
+Customer/API mappings                                 unchanged exact authority
+Runtime config rerun                                  byte-identical
+Legacy META_AD_ACCOUNT_ID                             empty
+Credentials in generated config/evidence              0
+.dev.vars mutation                                    0
+Remote action during implementation/CI                0
+Meta End-to-End Verification                          PASS required
+Branch Verification                                   PASS required
+full Unit/Workers, Report, audit, Wrangler dry-run     PASS required
+```
 
 ## Retained execution scope
 
@@ -124,35 +132,16 @@ Existing Business facts remain authoritative and are preserved through Stable ke
 same-operation Lark continuation. Historical local Meta clone/session/overlay/finalizer files remain
 unnecessary.
 
-## Public Terminal command
+## Public command boundary
 
-Run only from exact clean current `main`:
+Do not rerun the Terminal while this Hotfix is unmerged. After exact-head CI, review, Squash Merge and a
+docs-only execution handoff, the only public entrypoint remains:
 
 ```bash
 CONFIRM_META_HISTORY_2026_FINALIZER=RUN_META_HISTORY_2026_ONE_COMMAND \
 node scripts/meta-history-2026-terminal.mjs --execute
 ```
 
-Do not manually supply Meta API version or customer IDs. Do not modify `.dev.vars`, invoke child launchers or
-send Queue messages manually.
+Do not modify `.dev.vars`, invoke D1/Lark child launchers or send Queue messages manually.
 
-## Expected accepted result
-
-```text
-META_HISTORY_2026_COMPLETED_SAFE
-Facebook continuity             fresh identity / no old replay
-Facebook July supplemental      complete
-Instagram July                  complete
-Meta Ads required               complete for both accounts
-D1/Lark parity                  pass
-Same-operation replay           pass
-Active Work / Lock / Queue      0 / 0 / 0
-Worker flags                    all false
-Schedule                        disabled
-Production                      blocked
-```
-
-Live completion is not declared until the Terminal emits the accepted decision and final safe-state
-evidence.
-
-Detailed recovery contract: `docs/tasks/meta-history-customer-runtime-config-recovery-v6.md`.
+Detailed recovery contract: `docs/tasks/meta-history-runtime-safe-config-recovery-v7.md`.
