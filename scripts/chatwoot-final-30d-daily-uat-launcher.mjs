@@ -3,8 +3,10 @@
 import { execFileSync } from 'node:child_process';
 import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, relative, resolve } from 'node:path';
+import { createLarkBitableClientFromEnv } from '../packages/connectors/src/lark/lark-bitable.client.js';
 import { readDevVars } from './lib/dev-vars.js';
 import { parseJsoncObject } from './lib/chatwoot-safe-wrangler-config.js';
+import { resolveChatwootFinalLarkAutoMappings } from './lib/chatwoot-final-lark-auto-mapping.js';
 import { rebaseGeneratedWranglerConfigPaths } from './lib/rebase-generated-wrangler-config-paths.js';
 import {
   CHATWOOT_FINAL_UAT_ACTIVE_TRUE_FLAGS,
@@ -55,6 +57,7 @@ async function main() {
       exactLockScope: LOCK_SCOPE,
       exactDatabaseName: DATABASE_NAME,
       ignoredConfigNormalization: true,
+      autoResolveChatwootLarkMappings: true,
       remoteActionsPerformed: false,
     }, null, 2)}\n`);
     return;
@@ -71,7 +74,8 @@ async function main() {
     );
   }
 
-  normalizedConfigPath = await createNormalizedRuntimeConfig(sourceEnv);
+  const larkMappings = await resolveLarkTableMappings(sourceEnv);
+  normalizedConfigPath = await createNormalizedRuntimeConfig(sourceEnv, larkMappings);
   const safeSourceEnv = Object.fromEntries(
     Object.entries(sourceEnv).filter(([name]) => !UNSAFE_TARGET_OVERRIDES.has(name)),
   );
@@ -106,6 +110,8 @@ async function main() {
     exactLockScopeVerified: true,
     exactDatabaseVerified: true,
     exactQueueResolvedByName: true,
+    larkTableMappingsResolved: larkMappings.tableCount,
+    larkStaleMappingRepairs: larkMappings.staleMappingRepairCount,
     activeLockCount: 0,
     ignoredConfigNormalized: true,
     scheduleEnabled: false,
@@ -114,11 +120,31 @@ async function main() {
   }, null, 2)}\n`);
 }
 
-async function createNormalizedRuntimeConfig(env) {
+async function resolveLarkTableMappings(env) {
+  const sourcePath = inside(env.MKT_CHATWOOT_FINAL_UAT_WRANGLER_CONFIG ?? 'wrangler.sync.jsonc');
+  const sourceText = await readFile(sourcePath, 'utf8');
+  const sourceConfig = parseJsoncObject(sourceText);
+  const discoveryEnv = Object.freeze({
+    ...(sourceConfig.vars ?? {}),
+    ...env,
+  });
+  const client = createLarkBitableClientFromEnv(discoveryEnv);
+  const remoteTables = await client.listTables();
+  return resolveChatwootFinalLarkAutoMappings({
+    env: discoveryEnv,
+    remoteTables,
+  });
+}
+
+async function createNormalizedRuntimeConfig(env, larkMappings) {
   const sourcePath = inside(env.MKT_CHATWOOT_FINAL_UAT_WRANGLER_CONFIG ?? 'wrangler.sync.jsonc');
   const sourceText = await readFile(sourcePath, 'utf8');
   const config = parseJsoncObject(sourceText);
   config.vars ??= {};
+
+  // Table IDs are resolved from exact reviewed Blueprint names/aliases and written only into this
+  // private ignored config. The user's .dev.vars and wrangler.sync.jsonc are never edited.
+  Object.assign(config.vars, larkMappings.values);
 
   // The ignored local config may predate the merged Runtime wiring. Populate the reviewed Safe
   // names in the private generated config only; the inner operator later opens exactly these four.

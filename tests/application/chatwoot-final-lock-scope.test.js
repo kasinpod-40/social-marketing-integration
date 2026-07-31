@@ -40,6 +40,20 @@ test('final launcher emits the authoritative success marker only after post-clos
   assert.match(source, /activeLockCount:\s*0/u);
 });
 
+test('launcher discovers exact Chatwoot Lark tables before creating the private runtime config', async () => {
+  const source = await readFile(launcherUrl, 'utf8');
+  const discoveryIndex = source.indexOf('const larkMappings = await resolveLarkTableMappings(sourceEnv)');
+  const configIndex = source.indexOf('normalizedConfigPath = await createNormalizedRuntimeConfig(sourceEnv, larkMappings)');
+  assert.ok(discoveryIndex >= 0);
+  assert.ok(configIndex > discoveryIndex);
+  assert.match(source, /createLarkBitableClientFromEnv/u);
+  assert.match(source, /await client\.listTables\(\)/u);
+  assert.match(source, /resolveChatwootFinalLarkAutoMappings/u);
+  assert.match(source, /Object\.assign\(config\.vars, larkMappings\.values\)/u);
+  assert.match(source, /larkTableMappingsResolved:\s*larkMappings\.tableCount/u);
+  assert.doesNotMatch(source, /console\.log\([^\n]*tableId/u);
+});
+
 test('launcher normalizes missing locked runtime vars without editing ignored local config', async () => {
   const source = await readFile(launcherUrl, 'utf8');
   assert.match(source, /createNormalizedRuntimeConfig/u);
@@ -80,6 +94,7 @@ test('launcher plan executes without credentials or Remote action', () => {
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /"executed": false/u);
   assert.match(result.stdout, /"remoteActionsPerformed": false/u);
+  assert.match(result.stdout, /"autoResolveChatwootLarkMappings": true/u);
   assert.match(result.stdout, /chatwoot-final-30d-daily-uat-launcher\.mjs --execute/u);
   assert.doesNotMatch(result.stderr, /CHATWOOT_FINAL_UAT_/u);
 });
