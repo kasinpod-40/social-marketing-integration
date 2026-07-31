@@ -10,6 +10,13 @@ import { resolveChatwootFinalLarkAutoMappings } from './lib/chatwoot-final-lark-
 import { rebaseGeneratedWranglerConfigPaths } from './lib/rebase-generated-wrangler-config-paths.js';
 import { bootstrapWooCommerceFinalQueueId } from './lib/woocommerce-final-queue-bootstrap.js';
 import {
+  assertChatwootFinalWorkerSecrets,
+  parseChatwootWorkerSecretNames,
+  resolveChatwootFinalSecretBootstrap,
+  serializeChatwootFinalSecretsFile,
+  summarizeChatwootFinalSecretPlan,
+} from './lib/chatwoot-final-secret-bootstrap.js';
+import {
   CHATWOOT_FINAL_UAT_ACTIVE_TRUE_FLAGS,
   CHATWOOT_FINAL_UAT_CONFIRMATION,
   CHATWOOT_FINAL_UAT_LOCKED_VARS,
@@ -23,6 +30,7 @@ const LOCK_SCOPE = 'integration_workspace:chatwoot:chemistry_k:%';
 const DATABASE_NAME = 'social-mkt-state-dev';
 const MAIN_QUEUE_NAME = 'social-mkt-sync-jobs';
 const QUEUE_DISCOVERY_SOURCE = 'cloudflare_queue_rest';
+const SECRET_BOOTSTRAP_MESSAGE = 'chatwoot-final-secret-bootstrap-safe';
 const UNSAFE_TARGET_OVERRIDES = new Set([
   'MKT_CHATWOOT_FINAL_UAT_DATABASE_NAME',
   'MKT_CHATWOOT_FINAL_UAT_QUEUE_ID',
@@ -63,6 +71,7 @@ async function main() {
       queueDiscovery: QUEUE_DISCOVERY_SOURCE,
       ignoredConfigNormalization: true,
       autoResolveChatwootLarkMappings: true,
+      autoStageMissingChatwootSecret: true,
       remoteActionsPerformed: false,
     }, null, 2)}\n`);
     return;
@@ -119,6 +128,12 @@ async function main() {
     );
   }
 
+  const secretBootstrap = await ensureChatwootWorkerSecret({
+    env,
+    sourceEnv,
+    configPath: normalizedConfigPath,
+  });
+
   runCore([EXECUTE_ARGUMENT], { env, stdio: 'inherit' });
 
   const after = readExactActiveLockCount(env);
@@ -139,6 +154,8 @@ async function main() {
     queueDiscoverySource: QUEUE_DISCOVERY_SOURCE,
     larkTableMappingsResolved: larkMappings.tableCount,
     larkStaleMappingRepairs: larkMappings.staleMappingRepairCount,
+    chatwootWorkerSecretVerified: true,
+    chatwootSecretBootstrap: secretBootstrap,
     activeLockCount: 0,
     ignoredConfigNormalized: true,
     scheduleEnabled: false,
@@ -290,15 +307,179 @@ function readExactActiveLockCount(env) {
   return count;
 }
 
+
+async function ensureChatwootWorkerSecret({ env, sourceEnv, configPath }) {
+  const config = parseJsoncObject(await readFile(configPath, 'utf8'));
+  const workerName = requiredText(config.name, 'Worker name is missing from normalized config');
+  const localTrueFlags = Object.entries(config.vars ?? {})
+    .filter(([name, value]) => /^MKT_[A-Z0-9_]+_ENABLED$/u.test(name)
+      && (value === true || String(value).toLowerCase() === 'true'))
+    .map(([name]) => name)
+    .sort();
+  if (localTrueFlags.length) {
+    throw launcherError(
+      'Secret bootstrap config must keep every execution flag false',
+      'CHATWOOT_FINAL_UAT_SECRET_BOOTSTRAP_CONFIG_UNSAFE',
+      { trueFlags: localTrueFlags },
+    );
+  }
+
+  const safeVersionBefore = assertRemoteWorkerAllFlagsFalse(env, configPath, workerName);
+  const remoteSecretNames = readWorkerSecretNames(env, configPath, workerName);
+  const plan = resolveChatwootFinalSecretBootstrap({
+    remoteSecretNames,
+    readLocalAccessToken: () => sourceEnv.CHATWOOT_API_ACCESS_TOKEN,
+  });
+  const summary = summarizeChatwootFinalSecretPlan(plan);
+  if (!plan.provision) {
+    assertChatwootFinalWorkerSecrets(remoteSecretNames);
+    return Object.freeze({
+      ...summary,
+      safeVersion: safeVersionBefore,
+      remoteMutationCount: 0,
+    });
+  }
+
+  const head = run('git', ['rev-parse', 'HEAD']).trim();
+  const evidenceDirectory = inside(join('outputs', 'chatwoot-final-30d-daily-uat', head));
+  await mkdir(evidenceDirectory, { recursive: true, mode: 0o700 });
+  const attemptPath = join(evidenceDirectory, 'secret-bootstrap.attempt.json');
+  if (await isRegularFile(attemptPath)) {
+    throw launcherError(
+      'A prior Secret bootstrap attempt exists while the remote Secret is still absent',
+      'CHATWOOT_FINAL_UAT_SECRET_BOOTSTRAP_UNCERTAIN',
+      { secretName: plan.secretName },
+    );
+  }
+  await writePrivateLauncherJson(attemptPath, {
+    contract: SECRET_BOOTSTRAP_MESSAGE,
+    repositoryHead: head,
+    secretName: plan.secretName,
+    safeVersionBefore,
+    attemptedAt: new Date().toISOString(),
+    executionFlags: 'all_false',
+    scheduleEnabled: false,
+    webhookEnabled: false,
+    production: false,
+  });
+
+  const secretDirectory = inside(join('outputs', 'chatwoot-final-30d-daily-uat', '.launcher'));
+  await mkdir(secretDirectory, { recursive: true, mode: 0o700 });
+  const secretFilePath = join(secretDirectory, `chatwoot-secrets-${Date.now()}-${process.pid}.json`);
+  await writeFile(secretFilePath, serializeChatwootFinalSecretsFile(plan), { mode: 0o600 });
+  await chmod(secretFilePath, 0o600);
+
+  let deployOutput;
+  try {
+    deployOutput = run('npx', [
+      'wrangler', 'deploy',
+      '--config', configPath,
+      '--secrets-file', secretFilePath,
+      '--message', `${SECRET_BOOTSTRAP_MESSAGE} git=${head}`,
+    ], {
+      env,
+      unsetEnv: ['CHATWOOT_API_ACCESS_TOKEN'],
+    });
+  } finally {
+    await rm(secretFilePath, { force: true });
+  }
+
+  const remoteAfter = readWorkerSecretNames(env, configPath, workerName);
+  assertChatwootFinalWorkerSecrets(remoteAfter);
+  const safeVersion = assertRemoteWorkerAllFlagsFalse(env, configPath, workerName);
+  const completed = {
+    ...summary,
+    safeVersion,
+    remoteMutationCount: 1,
+    deployOutputFingerprint: sha256(deployOutput),
+  };
+  await writePrivateLauncherJson(
+    join(evidenceDirectory, 'secret-bootstrap.json'),
+    completed,
+  );
+  return Object.freeze(completed);
+}
+
+function readWorkerSecretNames(env, configPath, workerName) {
+  const output = run('npx', [
+    'wrangler', 'secret', 'list',
+    '--name', workerName,
+    '--config', configPath,
+    '--format', 'json',
+  ], { env });
+  return parseChatwootWorkerSecretNames(output);
+}
+
+function assertRemoteWorkerAllFlagsFalse(env, configPath, workerName) {
+  const status = JSON.parse(run('npx', [
+    'wrangler', 'deployments', 'status',
+    '--name', workerName,
+    '--config', configPath,
+    '--json',
+  ], { env }));
+  const statusItem = Array.isArray(status) ? status[0] : status;
+  const active = (statusItem?.versions ?? [])
+    .filter((version) => Number(version.percentage) === 100);
+  if (active.length !== 1) {
+    throw launcherError(
+      'Secret bootstrap requires one 100% active Worker version',
+      'CHATWOOT_FINAL_UAT_SECRET_BOOTSTRAP_ACTIVE_VERSION_INVALID',
+    );
+  }
+  const versionId = String(active[0].version_id ?? active[0].id ?? '');
+  if (!/^[0-9a-f-]{36}$/u.test(versionId)) {
+    throw launcherError(
+      'Secret bootstrap active Worker version ID is invalid',
+      'CHATWOOT_FINAL_UAT_SECRET_BOOTSTRAP_ACTIVE_VERSION_INVALID',
+    );
+  }
+  const view = JSON.parse(run('npx', [
+    'wrangler', 'versions', 'view', versionId,
+    '--name', workerName,
+    '--config', configPath,
+    '--json',
+  ], { env }));
+  const viewItem = Array.isArray(view) ? view[0] : view;
+  const bindings = viewItem?.bindings ?? viewItem?.resources?.bindings ?? [];
+  const trueFlags = bindings.filter((binding) => {
+    const name = String(binding.name ?? binding.binding ?? '');
+    const value = binding.text ?? binding.value;
+    return /^MKT_[A-Z0-9_]+_ENABLED$/u.test(name)
+      && (value === true || String(value).toLowerCase() === 'true');
+  }).map((binding) => String(binding.name ?? binding.binding)).sort();
+  if (trueFlags.length) {
+    throw launcherError(
+      'Secret bootstrap requires an all-flags-false Worker',
+      'CHATWOOT_FINAL_UAT_SECRET_BOOTSTRAP_REMOTE_UNSAFE',
+      { trueFlags },
+    );
+  }
+  return versionId;
+}
+
+async function writePrivateLauncherJson(path, value) {
+  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
+  await chmod(path, 0o600);
+}
+
+function requiredText(value, message) {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw launcherError(message, 'CHATWOOT_FINAL_UAT_SECRET_BOOTSTRAP_CONFIG_INVALID');
+  }
+  return value.trim();
+}
+
 function runCore(args, options = {}) {
   return run('node', ['scripts/chatwoot-final-30d-daily-uat.mjs', ...args], options);
 }
 
 function run(command, args, options = {}) {
+  const commandEnv = { ...process.env, ...(options.env ?? {}) };
+  for (const name of options.unsetEnv ?? []) delete commandEnv[name];
   try {
     return execFileSync(command, args, {
       cwd: ROOT,
-      env: { ...process.env, ...(options.env ?? {}) },
+      env: commandEnv,
       encoding: 'utf8',
       maxBuffer: 256 * 1024 * 1024,
       stdio: options.stdio ?? ['ignore', 'pipe', 'pipe'],
