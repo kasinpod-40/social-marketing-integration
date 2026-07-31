@@ -25,6 +25,9 @@ stale display_name ID           fldvLDwEHo
 stale Number window_days ID     fldczhcM6r
 ```
 
+The identity audit is grounded in the exported Integration Workspace Base schema revision `140` and exact
+Report Metric table `tbl7rJypEU2ryAcr`, not in a separately generated schema snapshot.
+
 The audited Integration Workspace Base uses:
 
 ```text
