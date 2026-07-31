@@ -18,9 +18,9 @@ concurrency:
 
 jobs:
   verify:
-    # PR #308 uses the repository-scoped Mac runner while GitHub-hosted minutes are exhausted.
-    # Every other PR and manual/push run keeps the normal GitHub-hosted runner.
-    runs-on: ${{ github.event.pull_request.number == 308 && 'mkt-ci' || 'ubuntu-latest' }}
+    # PR #308 and Chatwoot final UAT PR #311 use the repository-scoped Mac runner
+    # while GitHub-hosted minutes are exhausted. Other PRs keep the normal runner.
+    runs-on: ${{ (github.event.pull_request.number == 308 || github.event.pull_request.number == 311) && 'mkt-ci' || 'ubuntu-latest' }}
     timeout-minutes: 30
     steps:
       - name: Checkout
@@ -37,6 +37,18 @@ jobs:
 
       - name: Syntax architecture and hygiene
         run: npm run check
+
+      - name: Focused Chatwoot final UAT tests
+        shell: bash
+        run: |
+          set -o pipefail
+          node --test \
+            tests/application/chatwoot-final-30d-daily-uat.test.js \
+            tests/application/chatwoot-runtime-wiring.test.js \
+            tests/application/chatwoot-runtime-30d-daily.test.js \
+            tests/application/chatwoot-runtime-contract-examples.test.js \
+            tests/application/chatwoot-durable-recovery.test.js \
+            2>&1 | tee focused-chatwoot-test.log
 
       - name: Focused staged TikTok tests
         shell: bash
