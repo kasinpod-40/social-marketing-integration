@@ -6,7 +6,8 @@
 Initial history implementation          PR #319 / Squash Merged
 Runtime-preflight recovery              PR #330 / Squash Merged
 Pinned-continuity recovery              PR #342 / Squash Merged
-Cloudflare account-resolution recovery  v4 / in review
+Shared Queue auth ordering              PR #343 / Squash Merged
+Meta Cloudflare account recovery        v4 / in review
 Live history completion                 pending accepted Terminal evidence
 ```
 
@@ -33,32 +34,51 @@ operator commands.
 
 ## Cloudflare account authority
 
-The Integration Workspace has a stable non-secret Cloudflare identity:
+The Integration Workspace has stable Cloudflare identity and authentication:
 
 ```text
 Account name              Social MKT Data Hub DEV
 CLOUDFLARE_ACCOUNT_ID     local .dev.vars authority
-Wrangler account_id       copied into generated private safe config when present
+Wrangler account_id       generated private config authority when present
 CLOUDFLARE_API_TOKEN      local .dev.vars secret authority
 ```
 
-Account ID and API-token authentication are independent concerns:
+Account selection and authentication are independent concerns. A valid API-token/config path must never
+be blocked by an expired or unavailable Wrangler user-membership command.
 
-- Account selection must prefer explicit `CLOUDFLARE_ACCOUNT_ID`.
-- If absent, it must use Wrangler config `account_id`.
-- `wrangler whoami --json` is only a last-resort membership fallback when neither stable Account ID source
-  exists.
-- Explicit `CLOUDFLARE_API_TOKEN` must be used directly; `wrangler auth token --json` remains fallback only.
+## Shared Queue bootstrap authority
 
-A valid API-token/config path must never be blocked by an expired or unavailable Wrangler user-session
-`whoami` command.
+PR #343 established the repository-wide ordering contract:
+
+```text
+explicit CLOUDFLARE_API_TOKEN
+→ no Wrangler authentication command
+→ explicit CLOUDFLARE_ACCOUNT_ID when present
+→ otherwise Wrangler config account_id
+→ whoami --json only when no Account ID is available
+→ exact bounded Queue REST inventory
+```
+
+Meta v4 is based on this Main and reuses the existing shared Account-ID and bearer resolvers. It does not
+create another Queue bootstrap, Authentication layer or Cloudflare identity engine.
 
 ## Fourth attempt incident
 
 The Terminal attempt on `main@a339a06afc57e6ee17c4413b2700e79235ceb3be` stopped at
-`cloudflare-readiness` because the finalizer ran `npx wrangler whoami --json` unconditionally. It had not
-entered Remote Worker/D1 inspection, Meta Provider validation, Queue admission or any D1/Lark Business
-write. The restore child hit the same read-only command dependency. No Remote mutation path had started.
+`cloudflare-readiness` because the Meta finalizer ran `npx wrangler whoami --json` unconditionally before
+using its already-known Account ID. It had not entered Remote Worker/D1 inspection, Meta Provider
+validation, Queue admission or any D1/Lark Business write. The restore child hit the same read-only command
+dependency. No Remote mutation path had started.
+
+## Meta v4 correction
+
+- Read generated private Wrangler config once.
+- Attempt exact Account-ID resolution with `whoamiOutput=null` so explicit Environment/config authority can
+  short-circuit membership discovery.
+- Fall back to `whoami --json` only when the shared resolver reports missing membership input.
+- Invalid explicit/config Account IDs remain fail-closed and never fall back to another account.
+- Explicit API token remains authoritative; `wrangler auth token --json` is only a missing-token fallback.
+- Exact Queue REST discovery remains the Queue identity and permission gate.
 
 ## Runtime-preflight authority
 
