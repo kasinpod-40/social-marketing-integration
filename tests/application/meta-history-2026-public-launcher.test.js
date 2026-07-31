@@ -7,6 +7,7 @@ const closeoutChild = 'scripts/meta-history-2026-one-command.mjs';
 const finalizerChild = 'scripts/meta-history-2026-finalizer.mjs';
 const d1Launcher = 'scripts/meta-d1-only-rollout-launcher.mjs';
 const larkLauncher = 'scripts/meta-lark-parity-rollout-launcher.mjs';
+const runtimeAuthority = 'scripts/lib/meta-history-runtime-authority.js';
 
 test('Meta history closeout child delegates to the guarded finalizer and exact evidence closeout', async () => {
   const source = await readFile(closeoutChild, 'utf8');
@@ -52,6 +53,17 @@ test('Meta history Terminal materializes Shared required false flags and custome
   assert.match(safeEnvironment, /applyMetaHistoryCustomerRuntimeEnvironment\(env\)/u);
   assert.match(safeEnvironment, /for \(const key of META_D1_ONLY_REQUIRED_FALSE_FLAGS\)/u);
   assert.match(safeEnvironment, /result\[key\] = 'false'/u);
+});
+
+test('Meta runtime authority materializes customer mappings and the complete Shared safe-config set', async () => {
+  const source = await readFile(runtimeAuthority, 'utf8');
+  assert.match(source, /META_D1_ONLY_REQUIRED_FALSE_FLAGS/u);
+  assert.match(source, /META_HISTORY_REQUIRED_FALSE_CONFIG_ENV/u);
+  assert.match(source, /META_HISTORY_RUNTIME_CONFIG_ENV/u);
+  assert.match(source, /Object\.entries\(META_HISTORY_RUNTIME_CONFIG_ENV\)/u);
+  assert.match(source, /values\.length !== stringValues\.length/u);
+  assert.match(source, /\|true\|false\)/u);
+  assert.doesNotMatch(source, /MKT_WOOCOMMERCE_D1_WRITE_ENABLED:\s*'false'/u);
 });
 
 test('Meta D1 and Lark launchers materialize the same private reviewed runtime config', async () => {
