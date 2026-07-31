@@ -8,11 +8,14 @@ Runtime-preflight recovery              PR #330 / Squash Merged
 Pinned-continuity recovery              PR #342 / Squash Merged
 Shared Queue auth ordering              PR #343 / Squash Merged
 Meta Cloudflare account recovery        PR #348 / Squash Merged
-Explicit Safe flags recovery            in review
+Explicit Safe flags recovery            PR #353 / Squash Merged
+Explicit Safe flags main SHA            1548ea1c16bcc1283ddc49334af4929d566bb162
+Meta verification                       #113 / PASS
+Branch verification                     #1459 / PASS
 Live history completion                 pending accepted Terminal evidence
 ```
 
-The only public entrypoint remains:
+The only public entrypoint is:
 
 ```bash
 CONFIRM_META_HISTORY_2026_FINALIZER=RUN_META_HISTORY_2026_ONE_COMMAND \
@@ -22,23 +25,9 @@ node scripts/meta-history-2026-terminal.mjs --execute
 The one-command child, finalizer child, D1/Lark phase launchers and manual Queue sends are not public
 operator commands.
 
-## Retained history and data authority
-
-- Historical local Meta clone/session/overlay/finalizer files are not required and are never executed.
-- Existing Facebook and Lark facts remain authoritative and are never deleted or replaced.
-- One deterministic Facebook July operation fills missing history with Stable Business keys.
-- Instagram covers July 1–31, 2026.
-- Meta Ads covers May 1–July 31, 2026 for both accounts, with January–April conditional on bounded volume.
-- D1 completes before same-operation Lark continuation.
-- Completion requires D1/Lark parity, same-operation idempotency, all-false Worker flags and active
-  Work/Lock/Queue counts `0/0/0`.
-
 ## Explicit Safe environment authority
 
-The public Terminal owns the environment passed to every guarded child. It must not forward raw
-`process.env` directly.
-
-Before child execution it must:
+The public Terminal owns the environment passed to the guarded child. Before child execution it must:
 
 ```text
 copy caller environment
@@ -48,22 +37,20 @@ copy caller environment
 → spawn the guarded child with that exact environment
 ```
 
-This Shared required-false list is a superset of the Meta read-only flags and is the same authority used by
-the D1 safe-config contract. Missing flags are therefore explicit `false`; explicit or stale `true` values
-are also closed before any read-only, D1 or Lark phase begins.
+This Shared list is a superset of the Meta read-only requirements and is also the D1 safe-config authority.
+A missing execution flag is explicit `false`; a stale `true` or a future `MKT_*_ENABLED` key is also closed.
+Non-flag values and exact confirmations remain preserved without mutating the caller environment.
 
-This rule does not weaken fail-closed validation. The child operators still require explicit false values,
-and later active windows enable only the reviewed connector/source/write flags through private generated
-Wrangler configs.
+The child operators continue to fail closed, and later D1/Lark active windows enable only the reviewed
+private-config flags before restoring all execution flags false.
 
 ## Fifth attempt incident
 
 The Terminal attempt on `main@a0bbef75b0185ac55dba3a272eb925cfb1ea056b` stopped at
 `fresh-read-only-validation` because `MKT_CONNECTOR_META_ADS_ENABLED` was absent from the inherited local
-environment. The finalizer closed only enabled keys that already existed, while the read-only operator
-correctly required every reviewed Safe flag to be explicit `false`.
+environment rather than explicit `false`.
 
-The attempt stopped before Provider validation and before all current history operations:
+It stopped before Provider validation and before every current history operation:
 
 ```text
 Meta operations             0
@@ -78,6 +65,17 @@ Worker safe restore         verified
 
 All prior evidence remains retained.
 
+## Retained history and data authority
+
+- Historical local Meta clone/session/overlay/finalizer files are not required and are never executed.
+- Existing Facebook and Lark facts remain authoritative and are never deleted or replaced.
+- One deterministic Facebook July operation fills missing history with Stable Business keys.
+- Instagram covers July 1–31, 2026.
+- Meta Ads covers May 1–July 31, 2026 for both accounts, with January–April conditional on bounded volume.
+- D1 completes before same-operation Lark continuation.
+- Completion requires D1/Lark parity, same-operation idempotency, all-false Worker flags and active
+  Work/Lock/Queue counts `0/0/0`.
+
 ## Cloudflare account authority
 
 The Integration Workspace has stable private Cloudflare identity and authentication:
@@ -89,10 +87,7 @@ Wrangler account_id       generated private config authority when present
 CLOUDFLARE_API_TOKEN      local .dev.vars secret authority
 ```
 
-Account selection and authentication are independent. A valid API-token/config path must never be blocked
-by an expired or unavailable Wrangler user-membership command.
-
-The ordering contract is:
+The ordering contract remains:
 
 ```text
 explicit CLOUDFLARE_API_TOKEN
