@@ -17,6 +17,7 @@ import {
 const execFileAsync = promisify(execFile);
 const args = new Set(process.argv.slice(2));
 const execute = args.has('--execute');
+const statisticsProbeOnly = args.has('--statistics-probe-only');
 let currentStage = 'init';
 let attemptRoot = null;
 
@@ -111,7 +112,11 @@ async function runOperator({ repositoryRoot, evidenceRoot }) {
   return new Promise((resolvePromise, rejectPromise) => {
     const child = spawn(
       process.execPath,
-      [join(repositoryRoot, 'scripts', 'lark-dashboard-field-identity-recovery-v3.mjs'), '--execute'],
+      [
+        join(repositoryRoot, 'scripts', 'lark-dashboard-field-identity-recovery-v3.mjs'),
+        '--execute',
+        ...(statisticsProbeOnly ? ['--statistics-probe-only'] : []),
+      ],
       {
         cwd: repositoryRoot,
         env: {

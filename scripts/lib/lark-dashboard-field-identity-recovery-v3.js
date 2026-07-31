@@ -1,5 +1,5 @@
 export const LARK_DASHBOARD_FIELD_IDENTITY_RECOVERY_VERSION =
-  'lark_dashboard_field_identity_recovery_v3_2';
+  'lark_dashboard_field_identity_recovery_v3_3';
 
 export const LARK_DASHBOARD_FIELD_IDENTITY_RECOVERY_CONFIRMATION =
   'PRESERVE_SLICER_FIELD_ID_REBIND_STATISTICS_AND_REMOVE_LEGACY_FIELDS';
@@ -9,6 +9,7 @@ export const LARK_DASHBOARD_FIELD_IDENTITY_SCOPE_CONFIRMATION =
 
 export const REQUIRED_LARK_DASHBOARD_FIELD_IDENTITY_SCOPES = Object.freeze([
   'base:dashboard:read',
+  'base:dashboard:update',
   'base:block:read',
   'base:block:update',
   'base:field:read',

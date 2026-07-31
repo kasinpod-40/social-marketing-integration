@@ -23,6 +23,7 @@ const V2 = '__mkt_legacy_window_days_single_select_v2';
 test('scope contract declares every read and write used by field-identity recovery', () => {
   assert.deepEqual(REQUIRED_LARK_DASHBOARD_FIELD_IDENTITY_SCOPES, [
     'base:dashboard:read',
+    'base:dashboard:update',
     'base:block:read',
     'base:block:update',
     'base:field:read',
@@ -35,6 +36,8 @@ test('scope contract declares every read and write used by field-identity recove
     assertFieldIdentityScopeConfirmation(LARK_DASHBOARD_FIELD_IDENTITY_SCOPE_CONFIRMATION),
     true,
   );
+  assert.equal(REQUIRED_LARK_DASHBOARD_FIELD_IDENTITY_SCOPES.includes('base:block:update'), true);
+  assert.equal(REQUIRED_LARK_DASHBOARD_FIELD_IDENTITY_SCOPES.includes('base:block:read'), true);
   assert.equal(
     assertFieldIdentityRecoveryConfirmation(LARK_DASHBOARD_FIELD_IDENTITY_RECOVERY_CONFIRMATION),
     true,
@@ -52,7 +55,7 @@ test('scope contract declares every read and write used by field-identity recove
 test('field identity contract matches the audited live Report Metric table', () => {
   assert.equal(
     LARK_DASHBOARD_FIELD_IDENTITY_RECOVERY_VERSION,
-    'lark_dashboard_field_identity_recovery_v3_2',
+    'lark_dashboard_field_identity_recovery_v3_3',
   );
   assert.deepEqual(REPORT_METRIC_FIELD_IDENTITIES, {
     metricKey: { fieldId: 'fldGvd3tw8', fieldName: 'metric_key', type: 1 },
