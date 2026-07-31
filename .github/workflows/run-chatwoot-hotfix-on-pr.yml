@@ -1,0 +1,52 @@
+name: Run Chatwoot Queue Topology Hotfix On PR
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.head_ref == 'hotfix/chatwoot-final-queue-topology-normalization'
+    runs-on: mkt-ci
+    timeout-minutes: 10
+    steps:
+      - name: Checkout hotfix branch
+        uses: actions/checkout@v4
+        with:
+          ref: hotfix/chatwoot-final-queue-topology-normalization
+          fetch-depth: 0
+
+      - name: Extract and run guarded apply script
+        shell: bash
+        run: |
+          python3 - <<'EXTRACT'
+          from pathlib import Path
+          text = Path('.github/workflows/apply-chatwoot-queue-topology-hotfix.yml').read_text()
+          marker = "          python3 - <<'PY'\n"
+          start = text.index(marker) + len(marker)
+          end = text.index("\n          PY\n", start)
+          lines = text[start:end].splitlines()
+          script = '\n'.join(line[10:] if line.startswith('          ') else line for line in lines) + '\n'
+          Path('/tmp/apply-chatwoot-queue-topology-hotfix.py').write_text(script)
+          EXTRACT
+          python3 /tmp/apply-chatwoot-queue-topology-hotfix.py
+
+      - name: Remove temporary workflows and commit hotfix
+        shell: bash
+        run: |
+          git rm .github/workflows/apply-chatwoot-queue-topology-hotfix.yml \
+            .github/workflows/run-chatwoot-hotfix-on-pr.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add scripts/chatwoot-final-30d-daily-uat.mjs \
+            tests/application/chatwoot-final-queue-topology-normalization.test.js \
+            .github/workflows/branch-verification.yml \
+            CHANGELOG-CHATWOOT-FINAL-UAT.md \
+            docs/tasks/chatwoot-final-queue-topology-normalization-hotfix.md \
+            docs/project-brain/chatwoot-final-queue-topology-normalization-hotfix-2026-07-31.md
+          git commit -m "fix: normalize Chatwoot Queue topology output"
+          git push origin HEAD:hotfix/chatwoot-final-queue-topology-normalization
