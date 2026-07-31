@@ -33,7 +33,7 @@ export class ChatwootDurableApiClient extends ChatwootApiClient {
       ...(input.name ? { name: requireText(input.name, 'name') } : {}),
     }, { operationName: 'list_reporting_events' });
     const rows = requireArray(payload?.payload, 'list_reporting_events.payload');
-    const totalPages = nullablePositiveInteger(
+    const totalPages = nullableNonNegativeInteger(
       payload?.meta?.total_pages,
       'list_reporting_events.meta.total_pages',
     );
@@ -54,7 +54,10 @@ export class ChatwootDurableApiClient extends ChatwootApiClient {
         details: { totalPages, maxReportingPages: this.maxReportingPages },
       });
     }
-    if (totalPages !== null && page > totalPages) {
+    if (totalPages === 0 && rows.length > 0) {
+      throw pageContractError('rows with zero total pages', { page, rowCount: rows.length });
+    }
+    if (totalPages !== null && totalPages > 0 && page > totalPages) {
       throw pageContractError('page exceeds declared total', { page, totalPages });
     }
     return Object.freeze({
@@ -62,7 +65,7 @@ export class ChatwootDurableApiClient extends ChatwootApiClient {
       rows: Object.freeze(rows.map((row) => Object.freeze({ ...row }))),
       totalCount,
       totalPages,
-      hasMore: totalPages === null ? rows.length > 0 : page < totalPages,
+      hasMore: totalPages === null ? rows.length > 0 : totalPages > 0 && page < totalPages,
     });
   }
 }
