@@ -14,6 +14,8 @@ import {
 } from '../../scripts/lib/meta-d1-only-rollout-operator.js';
 import {
   META_HISTORY_CUSTOMER_RUNTIME_ENV,
+  META_HISTORY_REQUIRED_FALSE_CONFIG_ENV,
+  META_HISTORY_RUNTIME_CONFIG_ENV,
   materializeMetaHistoryCustomerRuntimeConfig,
 } from '../../scripts/lib/meta-history-runtime-authority.js';
 import {
@@ -55,26 +57,48 @@ test('Meta history Terminal materializes every required safe flag and customer i
   assert.equal(Object.isFrozen(safe), true);
 });
 
-test('Meta history runtime config replaces stale mappings and inserts missing pinned values idempotently', () => {
+test('Meta history runtime config replaces stale mappings and materializes every required false flag idempotently', () => {
   const input = `{
   main: "apps/sync-worker/src/index.js",
   vars: {
     META_FACEBOOK_PAGE_ID: "developer-page",
     "META_INSTAGRAM_ACCOUNT_ID": "developer-instagram",
     META_AD_ACCOUNT_ID: "legacy-account",
-    META_AD_ACCOUNT_MAPPINGS: "developer=1"
+    META_AD_ACCOUNT_MAPPINGS: "developer=1",
+    MKT_WOOCOMMERCE_D1_WRITE_ENABLED: "true",
+    MKT_CHATWOOT_D1_WRITE_ENABLED: true,
+    MKT_CONNECTOR_TIKTOK_ENABLED: "false"
   }
 }`;
   const first = materializeMetaHistoryCustomerRuntimeConfig(input);
   const second = materializeMetaHistoryCustomerRuntimeConfig(first);
 
   assert.equal(second, first);
-  assert.doesNotMatch(first, /developer-page|developer-instagram|legacy-account|developer=1/u);
-  for (const [key, value] of Object.entries(META_HISTORY_CUSTOMER_RUNTIME_ENV)) {
-    assert.match(first, new RegExp(`${key}[^\n]+${String(value).replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')}`, 'u'));
+  assert.doesNotMatch(
+    first,
+    /developer-page|developer-instagram|legacy-account|developer=1/u,
+  );
+  assert.doesNotMatch(
+    first,
+    /MKT_WOOCOMMERCE_D1_WRITE_ENABLED[^\n]+true|MKT_CHATWOOT_D1_WRITE_ENABLED[^\n]+true/u,
+  );
+  assert.deepEqual(
+    Object.keys(META_HISTORY_REQUIRED_FALSE_CONFIG_ENV),
+    [...META_D1_ONLY_REQUIRED_FALSE_FLAGS],
+  );
+  for (const [key, value] of Object.entries(META_HISTORY_RUNTIME_CONFIG_ENV)) {
+    const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+    const escapedValue = String(value).replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+    assert.match(
+      first,
+      new RegExp(`(?:["']?${escapedKey}["']?)\\s*:\\s*["']${escapedValue}["']`, 'u'),
+      key,
+    );
   }
   assert.match(first, /META_GRAPH_API_VERSION[^\n]+v25\.0/u);
   assert.match(first, /META_AD_ACCOUNT_ID[^\n]+""/u);
+  assert.match(first, /MKT_WOOCOMMERCE_D1_WRITE_ENABLED[^\n]+"false"/u);
+  assert.match(first, /MKT_CHATWOOT_D1_WRITE_ENABLED[^\n]+"false"/u);
 });
 
 test('Meta history Terminal persists unique ISO requested-at generations before execution', async () => {
