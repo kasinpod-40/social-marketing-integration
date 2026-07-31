@@ -31,6 +31,10 @@ test('launcher normalizes missing locked runtime vars without editing ignored lo
   const source = await readFile(launcherUrl, 'utf8');
   assert.match(source, /createNormalizedRuntimeConfig/u);
   assert.match(source, /CHATWOOT_FINAL_UAT_LOCKED_VARS/u);
+  assert.match(source, /SAFE_COMPATIBILITY_LIMITS/u);
+  assert.match(source, /CHATWOOT_API_MAX_PAGES:\s*'1000'/u);
+  assert.match(source, /CHATWOOT_MAX_REPORTING_EVENTS:\s*'100000'/u);
+  assert.match(source, /Object\.assign\(config\.vars, SAFE_COMPATIBILITY_LIMITS\)/u);
   assert.match(source, /delete config\.vars\.CHATWOOT_INCREMENTAL_OVERLAP_HOURS/u);
   assert.match(source, /MKT_SCHEDULE_CHATWOOT_ENABLED/u);
   assert.match(source, /MKT_CHATWOOT_WEBHOOK_ENABLED/u);
