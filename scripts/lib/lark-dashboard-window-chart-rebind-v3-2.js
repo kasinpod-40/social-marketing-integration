@@ -36,6 +36,34 @@ export function assertReviewedNumberWindowChart(input = {}) {
   return Object.freeze({ dashboardName, blockName, blockType });
 }
 
+export function assertReviewedExecutiveWindowChartSet(names = []) {
+  if (!Array.isArray(names)) {
+    throw chartError(
+      'Executive window chart identities must be an array',
+      'LARK_DASHBOARD_WINDOW_CHART_SET_INVALID',
+    );
+  }
+  const normalized = names.map((name) => requireText(name, 'blockName'));
+  const counts = Object.fromEntries(EXECUTIVE_NUMBER_WINDOW_CHART_NAMES.map((name) => [
+    name,
+    normalized.filter((candidate) => candidate === name).length,
+  ]));
+  const missing = EXECUTIVE_NUMBER_WINDOW_CHART_NAMES.filter((name) => counts[name] === 0);
+  const duplicates = EXECUTIVE_NUMBER_WINDOW_CHART_NAMES.filter((name) => counts[name] > 1);
+  const unexpected = normalized.filter((name) => !EXECUTIVE_NUMBER_WINDOW_CHART_SET.has(name));
+  if (normalized.length !== EXECUTIVE_NUMBER_WINDOW_CHART_NAMES.length
+    || missing.length > 0
+    || duplicates.length > 0
+    || unexpected.length > 0) {
+    throw chartError(
+      'Executive window chart set does not match the reviewed three identities',
+      'LARK_DASHBOARD_WINDOW_CHART_SET_INVALID',
+      { names: normalized, counts, missing, duplicates, unexpected },
+    );
+  }
+  return Object.freeze([...EXECUTIVE_NUMBER_WINDOW_CHART_NAMES]);
+}
+
 export function rewriteNumberWindowChartToPreservedSelect(input = {}) {
   const identity = assertReviewedNumberWindowChart(input);
   const before = requireObject(input.dataConfig, 'dataConfig');
@@ -111,9 +139,9 @@ export function hasPreservedWindowReference(value) {
   );
 }
 
-function rewriteNode(value, context, parentKey = '') {
+function rewriteNode(value, context) {
   if (Array.isArray(value)) {
-    return value.map((item) => rewriteNode(item, context, parentKey));
+    return value.map((item) => rewriteNode(item, context));
   }
   if (!value || typeof value !== 'object') {
     if (typeof value === 'string') {
@@ -126,21 +154,11 @@ function rewriteNode(value, context, parentKey = '') {
         return context.targetId;
       }
     }
-    if (VALUE_KEYS.has(parentKey)) {
-      const preset = normalizePreset(value);
-      if (preset !== null && typeof value !== 'string') {
-        context.counters.numericPreset += 1;
-        return preset;
-      }
-    }
     return value;
   }
 
   const output = {};
-  const sourceObject = Object.values(value).some((nested) => (
-    (typeof nested === 'string' && nested.trim() === context.sourceName)
-    || (typeof nested === 'string' && nested.trim() === context.sourceId)
-  ));
+  const sourceObject = objectContainsSourceFieldReference(value, context);
   for (const [key, nested] of Object.entries(value)) {
     if (sourceObject && FIELD_TYPE_KEYS.has(key) && Number(nested) === 2) {
       output[key] = 3;
@@ -150,9 +168,16 @@ function rewriteNode(value, context, parentKey = '') {
       output[key] = rewritePresetValue(nested, context);
       continue;
     }
-    output[key] = rewriteNode(nested, context, key);
+    output[key] = rewriteNode(nested, context);
   }
   return output;
+}
+
+function objectContainsSourceFieldReference(value, context) {
+  return Object.entries(value).some(([key, nested]) => {
+    if (!key.toLowerCase().includes('field')) return false;
+    return containsExact(nested, context.sourceName) || containsExact(nested, context.sourceId);
+  });
 }
 
 function rewritePresetValue(value, context) {
@@ -162,7 +187,7 @@ function rewritePresetValue(value, context) {
     if (typeof value !== 'string') context.counters.numericPreset += 1;
     return preset;
   }
-  return rewriteNode(value, context, 'value');
+  return rewriteNode(value, context);
 }
 
 function normalizePreset(value) {
