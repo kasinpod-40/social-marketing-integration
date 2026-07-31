@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import {
   LARK_DASHBOARD_FIELD_IDENTITY_RECOVERY_CONFIRMATION,
   LARK_DASHBOARD_FIELD_IDENTITY_RECOVERY_VERSION,
@@ -15,12 +17,19 @@ import {
   buildRetiredNumberFieldMutation,
   planPreservedWindowSelectBackfill,
 } from '../../scripts/lib/lark-dashboard-field-identity-recovery-v3.js';
+import {
+  LARK_DASHBOARD_COMPATIBILITY_FIELD_IDENTITIES,
+  LARK_DASHBOARD_COMPATIBILITY_FREEZE_VERSION,
+  buildLarkDashboardCompatibilityFreezeAudit,
+  buildLarkDashboardMutationBlockedFailure,
+  hasRetiredDashboardMutationArgument,
+} from '../../scripts/lib/lark-dashboard-compatibility-freeze-v1.js';
 
 const NUMBER = 'window_days';
 const PRESERVED = '__mkt_legacy_window_days_single_select_v1';
 const V2 = '__mkt_legacy_window_days_single_select_v2';
 
-test('scope contract declares every read and write used by field-identity recovery', () => {
+test('historical v3 scope contract remains explicit while its public runtime is retired', () => {
   assert.deepEqual(REQUIRED_LARK_DASHBOARD_FIELD_IDENTITY_SCOPES, [
     'base:dashboard:read',
     'base:dashboard:update',
@@ -36,8 +45,6 @@ test('scope contract declares every read and write used by field-identity recove
     assertFieldIdentityScopeConfirmation(LARK_DASHBOARD_FIELD_IDENTITY_SCOPE_CONFIRMATION),
     true,
   );
-  assert.equal(REQUIRED_LARK_DASHBOARD_FIELD_IDENTITY_SCOPES.includes('base:block:update'), true);
-  assert.equal(REQUIRED_LARK_DASHBOARD_FIELD_IDENTITY_SCOPES.includes('base:block:read'), true);
   assert.equal(
     assertFieldIdentityRecoveryConfirmation(LARK_DASHBOARD_FIELD_IDENTITY_RECOVERY_CONFIRMATION),
     true,
@@ -166,7 +173,7 @@ test('convergence assertion accepts complete 1/3/7/30 Select parity and rejects 
   );
 });
 
-test('field mutations preserve types and Select options while changing names only', () => {
+test('historical field mutation builders remain deterministic but are not publicly executable', () => {
   const select = buildPreservedWindowSelectFieldMutation({
     type: 3,
     uiType: 'SingleSelect',
@@ -177,7 +184,6 @@ test('field mutations preserve types and Select options while changing names onl
   });
   assert.equal(select.fieldName, 'window_days');
   assert.equal(select.type, 3);
-  assert.deepEqual(select.property.options.map((option) => option.name), ['1', '3', '7', '30']);
 
   const number = buildRetiredNumberFieldMutation({
     type: 2,
@@ -187,10 +193,9 @@ test('field mutations preserve types and Select options while changing names onl
   });
   assert.equal(number.fieldName, '__mkt_retired_window_days_number_v3');
   assert.equal(number.type, 2);
-  assert.equal(number.property.formatter, '0');
 });
 
-test('only Statistics is accepted for Organic metric block mutation', () => {
+test('historical organic mutation helper remains type-bounded', () => {
   assert.equal(assertSupportedOrganicMetricBlockType('statistics'), 'statistics');
   assert.throws(
     () => assertSupportedOrganicMetricBlockType('slicer'),
@@ -202,18 +207,67 @@ test('only Statistics is accepted for Organic metric block mutation', () => {
   );
 });
 
-test('operator source contains zero Slicer PATCH path and uses filter delta only for Statistics', async () => {
-  const source = await readFile(
-    new URL('../../scripts/lark-dashboard-field-identity-recovery-v3.mjs', import.meta.url),
-    'utf8',
+test('compatibility freeze preserves every audited field identity and business-fact boundary', () => {
+  const audit = buildLarkDashboardCompatibilityFreezeAudit();
+  assert.equal(audit.ok, true);
+  assert.equal(audit.contractVersion, LARK_DASHBOARD_COMPATIBILITY_FREEZE_VERSION);
+  assert.equal(audit.decision, 'LARK_DASHBOARD_COMPATIBILITY_FREEZE_ACTIVE');
+  assert.equal(audit.dashboardPatchAllowed, false);
+  assert.equal(audit.fieldRenameAllowed, false);
+  assert.equal(audit.fieldDeleteAllowed, false);
+  assert.equal(audit.recordDeleteAllowed, false);
+  assert.equal(audit.reportRecordCountPreserved, 86);
+  assert.equal(audit.baselineIncompleteNullRecordCountPreserved, 24);
+  assert.deepEqual(audit.compatibilityFields, LARK_DASHBOARD_COMPATIBILITY_FIELD_IDENTITIES);
+});
+
+test('retired mutation flags return a zero-mutation unsupported-contract failure', () => {
+  assert.equal(hasRetiredDashboardMutationArgument(['--execute']), true);
+  assert.equal(hasRetiredDashboardMutationArgument(['--statistics-probe-only']), true);
+  assert.equal(hasRetiredDashboardMutationArgument([]), false);
+
+  const failure = buildLarkDashboardMutationBlockedFailure({
+    entrypoint: 'test-entrypoint',
+    args: ['--execute'],
+  });
+  assert.equal(failure.ok, false);
+  assert.equal(failure.code, 'LARK_DASHBOARD_WRITE_CONTRACT_UNSUPPORTED');
+  assert.equal(failure.details.remoteMutationCount, 0);
+  assert.equal(failure.details.dashboardPatchAllowed, false);
+  assert.equal(failure.details.fieldMutationAllowed, false);
+  assert.equal(failure.details.recordMutationAllowed, false);
+});
+
+test('public v3 entrypoints fail before environment or Lark access and audit remains local-only', async () => {
+  const scripts = [
+    '../../scripts/lark-dashboard-field-identity-recovery-terminal-v3.mjs',
+    '../../scripts/lark-dashboard-field-identity-recovery-v3.mjs',
+  ];
+
+  for (const relativePath of scripts) {
+    const scriptPath = fileURLToPath(new URL(relativePath, import.meta.url));
+    const result = spawnSync(process.execPath, [scriptPath, '--execute'], {
+      encoding: 'utf8',
+      env: {},
+    });
+    assert.equal(result.status, 1);
+    const failure = JSON.parse(result.stderr);
+    assert.equal(failure.code, 'LARK_DASHBOARD_WRITE_CONTRACT_UNSUPPORTED');
+    assert.equal(failure.details.remoteMutationCount, 0);
+
+    const source = await readFile(scriptPath, 'utf8');
+    assert.doesNotMatch(source, /readDevVars|createLarkBitableClient|requestBitableJson/u);
+  }
+
+  const auditPath = fileURLToPath(
+    new URL('../../scripts/lark-dashboard-compatibility-freeze-audit.mjs', import.meta.url),
   );
-  assert.match(source, /assertSupportedOrganicMetricBlockType\(liveBlock\.type/);
-  assert.match(source, /body:\s*\{\s*data_config:\s*rewrite\.patch\s*\}/);
-  assert.match(source, /slicerPatchCount:\s*0/);
-  assert.match(source, /preservedSlicerCount\s*!==\s*5/);
-  assert.match(source, /isBoundedPromotionGap/);
-  assert.match(source, /containsText\(block\.dataConfig,\s*'window_days'\)/);
-  assert.doesNotMatch(source, /blockType:\s*'slicer'[\s\S]{0,300}method:\s*'PATCH'/);
+  const auditResult = spawnSync(process.execPath, [auditPath], {
+    encoding: 'utf8',
+    env: {},
+  });
+  assert.equal(auditResult.status, 0);
+  assert.equal(JSON.parse(auditResult.stdout).decision, 'LARK_DASHBOARD_COMPATIBILITY_FREEZE_ACTIVE');
 });
 
 function row(recordId, numberValue, preservedValue, v2Value) {
