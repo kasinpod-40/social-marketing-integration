@@ -35,6 +35,7 @@ export const JOB_TRIGGERS = Object.freeze({
   YOUTUBE_LARK_FULL_SYNC_UAT: 'youtube_lark_full_sync_uat',
   WOOCOMMERCE_MANUAL_UAT: 'manual_uat',
   WOOCOMMERCE_SCHEDULED: 'scheduled',
+  CHATWOOT_LEGACY_MANUAL_UAT: 'manual_uat',
   CHATWOOT_INITIAL_30_DAY_UAT: 'chatwoot_initial_30_day_uat',
   CHATWOOT_DAILY_INCREMENTAL: 'chatwoot_daily_incremental',
 });
@@ -223,7 +224,7 @@ function requireJobType(value) {
   return value.trim();
 }
 
-/** Freeze Job definition เพื่อป้องกัน Test หรือ Runtime แก้ Registry กลาง */
+/** Freeze Job definition เพื่อป้องกัน Test หรือ Runtime แก้ Registry */
 function freezeJob(definition) {
   return Object.freeze({
     ...definition,
