@@ -44,6 +44,8 @@ node scripts/chatwoot-final-30d-daily-uat-launcher.mjs --execute
 
 The launcher delegates the reviewed action sequence to `scripts/chatwoot-final-30d-daily-uat.mjs`. It requires clean exact current `main`; detached HEAD is allowed when it equals `origin/main`. The command resolves the authenticated Cloudflare account, bearer session and exact main Queue, while secrets remain in `.dev.vars`/Wrangler Secret storage and are never persisted in evidence.
 
+The launcher also removes the need for a manual ignored-config edit. It creates a private temporary config, supplies missing reviewed Chatwoot Safe flags, the locked 30-day/three-day contract and the reviewed 1,000/100,000 pagination bounds, removes the retired 48-hour overlap input, rebases local paths and deletes the temporary file afterward. Conflicting locked values fail closed.
+
 The exact Shared Reliability lock authority is:
 
 ```text
@@ -110,10 +112,11 @@ This proves:
 ## Current implementation record
 
 ```text
-Base main        = 95fe279d6ef46978d95acb1611ec859ae35cba64
-Branch           = integration/chatwoot-final-30d-daily-uat
-Draft PR         = #311
-Initial CI       = #1323 / 30601895105 / PASS
-Final exact CI   = pending after lock-scope hardening
-Remote actions   = 0 during Repository implementation
+Base main          = 95fe279d6ef46978d95acb1611ec859ae35cba64
+Branch             = integration/chatwoot-final-30d-daily-uat
+Draft PR           = #311
+Code verified head = 3431760f769308cf52c0568e7cf4f6236213751e
+Code CI            = #1335 / 30602618460 / PASS
+Docs closeout CI   = required on final exact Head
+Remote actions     = 0 during Repository implementation
 ```
