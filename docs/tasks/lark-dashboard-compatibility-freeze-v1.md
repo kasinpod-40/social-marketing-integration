@@ -14,7 +14,7 @@ Field mutations              0
 ```
 
 The v3.3 request serializer removed response-only metadata and declared the reviewed Dashboard/Block scope
-union, but the same PATCH remained rejected. Repeating Live mutation attempts is therefore prohibited.
+union, but the same PATCH remained rejected. Repeating Live Dashboard mutation attempts is prohibited.
 
 ## Confirmed operating boundary
 
@@ -59,9 +59,40 @@ Window charts                      7
 Record deletions                   0
 ```
 
-The Number and Legacy Select/Text compatibility fields remain present. They are not renamed or deleted by
-this Hotfix. Any future Record compatibility write requires a separate reviewed Record-API contract and exact
-read-only parity evidence; it is not authorized here.
+The Number and Legacy Select/Text compatibility fields remain present. They are not renamed or deleted.
+
+## Record-only compatibility backfill
+
+The reviewed v3.2/v3.3 read-only evidence found exactly 28 Report records where authoritative Number
+`window_days` is one of `1/3/7/30` while the preserved slicer-bound Select `fldMlTUP3Z` is empty. Public
+Bitable Record batch-update is supported independently from Dashboard Block mutation.
+
+The bounded operator:
+
+```text
+scripts/lark-dashboard-compatibility-record-backfill.mjs
+```
+
+may update only the preserved Select field on those missing rows. It:
+
+- resolves all seven audited Field IDs and exact types before planning;
+- requires exactly 86 Report records and 24 `current_value=null` rows;
+- treats Number `window_days` as authoritative;
+- rejects disagreement, unsupported presets and Legacy-only values;
+- allows at most 28 pending updates;
+- writes a private backup before mutation;
+- uses only `batchUpdateRecords()` with `{recordId, fields}`;
+- creates no records and deletes no records;
+- performs no Dashboard, View, Field or schema mutation;
+- reads back all records and requires pending updates/conflicts to reach zero;
+- is resumable because already-populated rows produce no update.
+
+Execution requires:
+
+```text
+CONFIRM_LARK_DASHBOARD_COMPATIBILITY_RECORD_BACKFILL=
+BACKFILL_WINDOW_SELECT_WITHOUT_DASHBOARD_OR_FIELD_MUTATION
+```
 
 ## Repository correction
 
@@ -69,23 +100,33 @@ read-only parity evidence; it is not authorized here.
 - Reject `--execute` and `--statistics-probe-only` before reading `.dev.vars` or importing a Lark client.
 - Emit `LARK_DASHBOARD_WRITE_CONTRACT_UNSUPPORTED` with `remoteMutationCount=0`.
 - Add a local-only Compatibility Freeze audit that requires no credentials and performs no network access.
+- Add the guarded Record-only compatibility backfill described above.
 - Keep historical v3 planners/helpers for retained evidence and deterministic regression only; they are no
-  longer connected to a public mutation entrypoint.
+  longer connected to a Dashboard/Field mutation entrypoint.
 - Leave `docs/current-task.md` untouched because the Meta workstream owns it.
 
-## Public command
+## Public commands
+
+Local-only Freeze audit:
 
 ```bash
 node scripts/lark-dashboard-compatibility-freeze-audit.mjs
 ```
 
-Expected decision:
+Read-only live Record plan:
+
+```bash
+node scripts/lark-dashboard-compatibility-record-backfill.mjs
+```
+
+Expected decisions:
 
 ```text
 LARK_DASHBOARD_COMPATIBILITY_FREEZE_ACTIVE
+LARK_DASHBOARD_COMPATIBILITY_RECORD_BACKFILL_PREVIEW_READY
 ```
 
-Any command containing `--execute` or `--statistics-probe-only` must fail before External access.
+The retired v3 commands containing `--execute` or `--statistics-probe-only` must fail before External access.
 
 ## Acceptance criteria
 
@@ -93,7 +134,8 @@ Any command containing `--execute` or `--statistics-probe-only` must fail before
 Public Dashboard mutation entrypoints       fail closed before env/Lark access
 Dashboard PATCH path reachable              no
 Field rename/delete path reachable          no
-Record delete path reachable                no
+Record delete/create path reachable         no
+Record-only missing Select update path      guarded and bounded <= 28
 86 Report records preserved                 yes
 24 current_value=null rows preserved        yes
 Legacy physical Field identities preserved  yes
@@ -105,7 +147,9 @@ Production                                  blocked
 Required verification:
 
 ```text
-node --test tests/scripts/lark-dashboard-field-identity-recovery-v3.test.js
+node --test \
+  tests/scripts/lark-dashboard-field-identity-recovery-v3.test.js \
+  tests/scripts/lark-dashboard-compatibility-record-backfill.test.js
 npm run check
 npm test
 npm run test:report-reliability
