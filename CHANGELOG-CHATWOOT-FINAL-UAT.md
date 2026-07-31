@@ -1,6 +1,22 @@
 # Chatwoot Final UAT Changelog
 
-## Unreleased — Lark Table Auto-Mapping Hotfix
+## Unreleased — Queue REST Discovery Hotfix
+
+### Incident correction
+
+- Fixed the final Launcher stopping after local gates at unsupported `wrangler queues list --json`.
+- The repository-pinned Wrangler does not expose JSON output for the top-level Queue list command.
+- The failed execution stopped before Worker activation, Queue submission, D1/Lark Business writes or Chatwoot Provider access; Safe restore was not required.
+
+### Shared Queue discovery
+
+- Reused the existing reviewed WooCommerce Cloudflare Queue REST bootstrap instead of adding another Queue parser.
+- The Launcher now resolves exactly one `social-mkt-sync-jobs` Queue through bounded GET-only `GET /accounts/{account_id}/queues` discovery.
+- User-supplied Chatwoot and WooCommerce final Queue-ID overrides are removed before discovery; exact Queue-name identity remains authoritative.
+- The resolved Queue ID is injected only into the child process environment and is never printed or placed in public evidence.
+- Missing, duplicated, paginated, redirected, invalid or unsuccessful Queue inventory responses remain fail-closed.
+
+## Lark Table Auto-Mapping Hotfix
 
 ### Incident correction
 
