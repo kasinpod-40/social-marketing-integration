@@ -5,6 +5,8 @@ import { readFile } from 'node:fs/promises';
 const terminalEntrypoint = 'scripts/meta-history-2026-terminal.mjs';
 const closeoutChild = 'scripts/meta-history-2026-one-command.mjs';
 const finalizerChild = 'scripts/meta-history-2026-finalizer.mjs';
+const d1Launcher = 'scripts/meta-d1-only-rollout-launcher.mjs';
+const larkLauncher = 'scripts/meta-lark-parity-rollout-launcher.mjs';
 
 test('Meta history closeout child delegates to the guarded finalizer and exact evidence closeout', async () => {
   const source = await readFile(closeoutChild, 'utf8');
@@ -34,7 +36,7 @@ test('Meta history docs expose only the ISO-plan Terminal entrypoint', async () 
   );
 });
 
-test('Meta history Terminal materializes Shared required false flags before spawning the child', async () => {
+test('Meta history Terminal materializes Shared required false flags and customer runtime authority before spawning the child', async () => {
   const terminal = await readFile(terminalEntrypoint, 'utf8');
   const executeStart = terminal.indexOf('async function executeTerminalEntry');
   const safeStart = terminal.indexOf('export function buildMetaHistorySafeEnvironment');
@@ -43,11 +45,31 @@ test('Meta history Terminal materializes Shared required false flags before spaw
   const childExecution = terminal.slice(executeStart, safeStart);
   const safeEnvironment = terminal.slice(safeStart, safeEnd);
   assert.match(terminal, /META_D1_ONLY_REQUIRED_FALSE_FLAGS/u);
+  assert.match(terminal, /applyMetaHistoryCustomerRuntimeEnvironment/u);
   assert.match(childExecution, /const childEnvironment = buildMetaHistorySafeEnvironment\(process\.env\)/u);
   assert.match(childExecution, /env: childEnvironment/u);
   assert.doesNotMatch(childExecution, /env: process\.env/u);
+  assert.match(safeEnvironment, /applyMetaHistoryCustomerRuntimeEnvironment\(env\)/u);
   assert.match(safeEnvironment, /for \(const key of META_D1_ONLY_REQUIRED_FALSE_FLAGS\)/u);
   assert.match(safeEnvironment, /result\[key\] = 'false'/u);
+});
+
+test('Meta D1 and Lark launchers materialize the same private reviewed runtime config', async () => {
+  const [d1, lark] = await Promise.all([
+    readFile(d1Launcher, 'utf8'),
+    readFile(larkLauncher, 'utf8'),
+  ]);
+  for (const source of [d1, lark]) {
+    assert.match(source, /materializeMetaHistoryCustomerRuntimeConfig/u);
+    assert.match(source, /applyMetaHistoryCustomerRuntimeEnvironment\(process\.env\)/u);
+    assert.match(source, /join\(dirname\(originalConfig\), 'wrangler\.meta-history\.runtime\.jsonc'\)/u);
+    assert.match(source, /writeFile\([\s\S]+runtimeConfig[\s\S]+materializeMetaHistoryCustomerRuntimeConfig\(sourceText\)/u);
+    assert.match(source, /chmod\(runtimeConfig, 0o600\)/u);
+    assert.match(source, /MKT_META_D1_ONLY_COMPAT_ORIGINAL_CONFIG: runtimeConfig/u);
+    assert.doesNotMatch(source, /join\(tempDirectory, 'wrangler\.meta-history\.runtime/u);
+  }
+  assert.match(d1, /MKT_META_D1_ONLY_WRANGLER_CONFIG: runtimeConfig/u);
+  assert.match(lark, /MKT_META_LARK_WRANGLER_CONFIG: runtimeConfig/u);
 });
 
 test('Meta history closeout restores only proven active Worker flags and uses active Work queue state', async () => {
