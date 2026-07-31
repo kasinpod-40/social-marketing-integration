@@ -69,6 +69,8 @@ jobs:
           set -o pipefail
           node --test \
             tests/application/chatwoot-final-30d-daily-uat.test.js \
+            tests/application/chatwoot-final-secret-bootstrap.test.js \
+            tests/application/chatwoot-final-secret-bootstrap-launcher.test.js \
             tests/application/chatwoot-final-preflight-initialization.test.js \
             tests/application/chatwoot-final-queue-topology-normalization.test.js \
             tests/application/woocommerce-final-queue-bootstrap-auth-order.test.js \
