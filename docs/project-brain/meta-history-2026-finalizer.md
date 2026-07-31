@@ -8,9 +8,10 @@ Runtime-preflight recovery              PR #330 / Squash Merged
 Pinned-continuity recovery              PR #342 / Squash Merged
 Shared Queue auth ordering              PR #343 / Squash Merged
 Meta Cloudflare account recovery        PR #348 / Squash Merged
-Cloudflare recovery main SHA            51edf7fd33f8302d96c8cf986940cc9e6b9523cc
-Meta verification                       #110 / PASS
-Branch verification                     #1424 / PASS
+Explicit Safe flags recovery            PR #353 / Squash Merged
+Explicit Safe flags main SHA            1548ea1c16bcc1283ddc49334af4929d566bb162
+Meta verification                       #113 / PASS
+Branch verification                     #1459 / PASS
 Live history completion                 pending accepted Terminal evidence
 ```
 
@@ -23,6 +24,46 @@ node scripts/meta-history-2026-terminal.mjs --execute
 
 The one-command child, finalizer child, D1/Lark phase launchers and manual Queue sends are not public
 operator commands.
+
+## Explicit Safe environment authority
+
+The public Terminal owns the environment passed to the guarded child. Before child execution it must:
+
+```text
+copy caller environment
+→ close every existing MKT_*_ENABLED key
+→ materialize every META_D1_ONLY_REQUIRED_FALSE_FLAGS key as false
+→ freeze the child environment
+→ spawn the guarded child with that exact environment
+```
+
+This Shared list is a superset of the Meta read-only requirements and is also the D1 safe-config authority.
+A missing execution flag is explicit `false`; a stale `true` or a future `MKT_*_ENABLED` key is also closed.
+Non-flag values and exact confirmations remain preserved without mutating the caller environment.
+
+The child operators continue to fail closed, and later D1/Lark active windows enable only the reviewed
+private-config flags before restoring all execution flags false.
+
+## Fifth attempt incident
+
+The Terminal attempt on `main@a0bbef75b0185ac55dba3a272eb925cfb1ea056b` stopped at
+`fresh-read-only-validation` because `MKT_CONNECTOR_META_ADS_ENABLED` was absent from the inherited local
+environment rather than explicit `false`.
+
+It stopped before Provider validation and before every current history operation:
+
+```text
+Meta operations             0
+Meta Queue messages         0
+Meta Provider requests      0
+Remote D1 Business writes   0
+Remote Lark Business writes 0
+Worker deployments          0
+Schedule mutations          0
+Worker safe restore         verified
+```
+
+All prior evidence remains retained.
 
 ## Retained history and data authority
 
@@ -46,10 +87,7 @@ Wrangler account_id       generated private config authority when present
 CLOUDFLARE_API_TOKEN      local .dev.vars secret authority
 ```
 
-Account selection and authentication are independent. A valid API-token/config path must never be blocked
-by an expired or unavailable Wrangler user-membership command.
-
-The merged ordering contract is:
+The ordering contract remains:
 
 ```text
 explicit CLOUDFLARE_API_TOKEN
@@ -60,31 +98,6 @@ explicit CLOUDFLARE_API_TOKEN
 → exact bounded Queue REST inventory
 → Worker all-false and Reliability-idle checks
 ```
-
-PR #348 reuses the shared PR #343 Account-ID and bearer resolvers. It adds no second Queue bootstrap,
-Authentication layer or Cloudflare identity engine. Invalid explicit/config Account IDs remain fail-closed
-and never fall back to another account.
-
-## Fourth attempt incident
-
-The Terminal attempt on `main@a339a06afc57e6ee17c4413b2700e79235ceb3be` stopped at
-`cloudflare-readiness` because the Meta finalizer ran `npx wrangler whoami --json` unconditionally before
-using its already-known Account ID.
-
-The attempt stopped before Remote Worker/D1 inspection, Meta Provider validation, Queue admission or any
-D1/Lark Business write:
-
-```text
-Meta operations             0
-Meta Queue messages         0
-Meta Provider requests      0
-Remote D1 Business writes   0
-Remote Lark Business writes 0
-Worker deployments          0
-Schedule mutations          0
-```
-
-All prior evidence remains retained.
 
 ## Runtime-preflight authority
 

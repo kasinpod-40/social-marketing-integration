@@ -24,7 +24,11 @@ test('launcher pins exact D1 name and removes unsafe D1/Queue identity overrides
   assert.match(source, /UNSAFE_TARGET_OVERRIDES/u);
   assert.match(source, /MKT_CHATWOOT_FINAL_UAT_DATABASE_NAME/u);
   assert.match(source, /MKT_CHATWOOT_FINAL_UAT_QUEUE_ID/u);
-  assert.match(source, /Object\.entries\(sourceEnv\)\.filter\(\(\[name\]\) => !UNSAFE_TARGET_OVERRIDES\.has\(name\)\)/u);
+  assert.match(
+    source,
+    /Object\.entries\(sourceEnv\)\.filter\(\(\[name\]\) => !UNSAFE_TARGET_OVERRIDES\.has\(name\)/u,
+  );
+  assert.match(source, /name !== 'CHATWOOT_API_ACCESS_TOKEN'/u);
   assert.match(source, /'execute', DATABASE_NAME/u);
   assert.doesNotMatch(source, /env\.MKT_CHATWOOT_FINAL_UAT_DATABASE_NAME/u);
   assert.match(source, /exactQueueResolvedByName:\s*true/u);
@@ -99,10 +103,19 @@ test('launcher normalizes missing locked runtime vars without editing ignored lo
   assert.match(source, /CHATWOOT_FINAL_UAT_LOCAL_CONFIG_CONFLICT/u);
 });
 
-test('launcher delegates deployment and Queue submission to the reviewed core', async () => {
+test('launcher delegates Active UAT deployment and Queue submission to the reviewed core', async () => {
   const source = await readFile(launcherUrl, 'utf8');
   assert.match(source, /scripts\/chatwoot-final-30d-daily-uat\.mjs/u);
-  assert.doesNotMatch(source, /wrangler[^\n]+deploy/u);
+
+  const deployCommands = [...source.matchAll(/run\('npx', \[([\s\S]*?)\], \{[\s\S]*?\}\);/gu)]
+    .map((match) => match[1])
+    .filter((args) => /'wrangler', 'deploy'/u.test(args));
+  assert.equal(deployCommands.length, 1);
+  assert.match(deployCommands[0], /'--secrets-file', secretFilePath/u);
+  assert.match(deployCommands[0], /SECRET_BOOTSTRAP_MESSAGE/u);
+  assert.match(source, /assertRemoteWorkerAllFlagsFalse\(env, configPath, workerName\)/u);
+  assert.match(source, /unsetEnv:\s*\['CHATWOOT_API_ACCESS_TOKEN'\]/u);
+  assert.doesNotMatch(source, /wrangler['"],\s*['"]secret['"],\s*['"]put/u);
   assert.doesNotMatch(source, /queues\/.+\/messages/u);
   assert.doesNotMatch(source, /api\.cloudflare\.com/u);
   assert.doesNotMatch(source, /config\.vars\[name\] = 'true'/u);
@@ -121,6 +134,7 @@ test('launcher plan executes without credentials or Remote action', () => {
   assert.match(result.stdout, /"executed": false/u);
   assert.match(result.stdout, /"remoteActionsPerformed": false/u);
   assert.match(result.stdout, /"autoResolveChatwootLarkMappings": true/u);
+  assert.match(result.stdout, /"autoStageMissingChatwootSecret": true/u);
   assert.match(result.stdout, /"queueDiscovery": "cloudflare_queue_rest"/u);
   assert.match(result.stdout, /chatwoot-final-30d-daily-uat-launcher\.mjs --execute/u);
   assert.doesNotMatch(result.stderr, /CHATWOOT_FINAL_UAT_/u);

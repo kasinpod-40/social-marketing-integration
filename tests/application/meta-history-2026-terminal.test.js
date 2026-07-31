@@ -10,12 +10,36 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 import {
+  META_D1_ONLY_REQUIRED_FALSE_FLAGS,
+} from '../../scripts/lib/meta-d1-only-rollout-operator.js';
+import {
+  buildMetaHistorySafeEnvironment,
   loadOrCreateIsoPlan,
   validateIsoPlan,
 } from '../../scripts/meta-history-2026-terminal.mjs';
 
 const HEAD = 'b'.repeat(40);
 const NOW = Date.UTC(2026, 6, 31, 8, 30, 0, 123);
+
+test('Meta history Terminal materializes every required safe flag before child execution', () => {
+  const input = {
+    MKT_ENV: 'development',
+    MKT_CONNECTOR_FACEBOOK_ENABLED: 'true',
+    MKT_FUTURE_FEATURE_ENABLED: 'true',
+  };
+  const safe = buildMetaHistorySafeEnvironment(input);
+
+  assert.notEqual(safe, input);
+  assert.equal(input.MKT_CONNECTOR_FACEBOOK_ENABLED, 'true');
+  assert.equal(input.MKT_FUTURE_FEATURE_ENABLED, 'true');
+  assert.equal(safe.MKT_ENV, 'development');
+  assert.equal(safe.MKT_FUTURE_FEATURE_ENABLED, 'false');
+  assert.equal(safe.MKT_CONNECTOR_META_ADS_ENABLED, 'false');
+  for (const flag of META_D1_ONLY_REQUIRED_FALSE_FLAGS) {
+    assert.equal(safe[flag], 'false', flag);
+  }
+  assert.equal(Object.isFrozen(safe), true);
+});
 
 test('Meta history Terminal persists unique ISO requested-at generations before execution', async () => {
   const root = await mkdtemp(join(tmpdir(), 'meta-history-terminal-'));
