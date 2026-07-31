@@ -2,11 +2,17 @@ import { createHash } from 'node:crypto';
 import { isAbsolute, resolve } from 'node:path';
 
 export const META_HISTORY_2026_CONTRACT_VERSION = 'meta_history_2026_finalizer_v1';
+export const META_HISTORY_2026_PINNED_CONTINUITY_CONTRACT_VERSION =
+  'meta_history_2026_pinned_continuity_v1';
 export const META_HISTORY_2026_CONFIRMATION = Object.freeze({
   envName: 'CONFIRM_META_HISTORY_2026_FINALIZER',
   value: 'RUN_META_HISTORY_2026_ONE_COMMAND',
 });
 export const META_HISTORY_2026_DECISION = 'META_HISTORY_2026_COMPLETED_SAFE';
+export const META_HISTORY_2026_LEGACY_SESSION = Object.freeze({
+  repositoryHead: 'e069380a544575ce0fc9bca53f1fb56944d26c09',
+  operationId: 'meta-instagram-d1-20260729t065939687z-1ad3c9',
+});
 export const META_HISTORY_2026_WINDOWS = Object.freeze({
   organic: Object.freeze({ since: '2026-07-01', until: '2026-07-31' }),
   adsBaseline: Object.freeze({ since: '2026-05-01', until: '2026-07-31' }),
@@ -17,6 +23,22 @@ export const META_HISTORY_2026_ADS_EXPANSION_LIMITS = Object.freeze({
   operationAdsEntities: 5_000,
   coverageEntities: 20_000,
 });
+
+const META_READ_ONLY_CONTRACT_VERSION = 'meta_read_only_validation_v1';
+const META_READ_ONLY_IDENTITIES = Object.freeze([
+  Object.freeze({ phase: 'facebook', connectorKey: 'facebook', sourceAccountKey: null }),
+  Object.freeze({ phase: 'instagram', connectorKey: 'instagram', sourceAccountKey: null }),
+  Object.freeze({
+    phase: 'meta-ads-chemistry-k2',
+    connectorKey: 'meta_ads',
+    sourceAccountKey: 'chemistry_k2',
+  }),
+  Object.freeze({
+    phase: 'meta-ads-chemistry-k3',
+    connectorKey: 'meta_ads',
+    sourceAccountKey: 'chemistry_k3',
+  }),
+]);
 
 export function assertMetaHistory2026Confirmation(env = {}) {
   const expected = META_HISTORY_2026_CONFIRMATION;
@@ -43,10 +65,11 @@ export function createMetaHistory2026Plan(repositoryHead) {
     contractVersion: META_HISTORY_2026_CONTRACT_VERSION,
     repositoryHead: head,
     facebook: {
-      pinnedCompletionAction: 'verify_existing_pinned_finalizer_and_lark_parity',
+      pinnedCompletionAction: 'verify_fresh_facebook_identity_and_no_replay_continuity',
       supplementalHistoryAction: 'run_new_idempotent_july_operation',
       existingOperationReplay: false,
       replacementOperation: false,
+      legacyLocalArtifactsRequired: false,
     },
     operations,
     adsExpansionLimits: META_HISTORY_2026_ADS_EXPANSION_LIMITS,
@@ -61,6 +84,148 @@ export function createMetaHistoryOperationId(target, range, repositoryHead) {
   const until = requireDate(range?.until, 'until');
   const digest = sha256(`${repositoryHead}:${safeTarget}:${since}:${until}`).slice(0, 12);
   return `meta-${safeTarget}-history-${since.replaceAll('-', '')}-${until.replaceAll('-', '')}-${digest}`;
+}
+
+export function createMetaHistoryPinnedContinuity(input = {}) {
+  const repositoryHead = requireSha(input.repositoryHead);
+  const plan = input.plan;
+  const expectedPlan = createMetaHistory2026Plan(repositoryHead);
+  const exactOperations = Array.isArray(plan?.operations)
+    && stableJson(plan.operations.map(operationIdentity))
+      === stableJson(expectedPlan.operations.map(operationIdentity));
+  if (!plan || typeof plan !== 'object'
+    || plan.contractVersion !== META_HISTORY_2026_CONTRACT_VERSION
+    || plan.repositoryHead !== repositoryHead
+    || plan.facebook?.pinnedCompletionAction
+      !== expectedPlan.facebook.pinnedCompletionAction
+    || plan.facebook?.supplementalHistoryAction
+      !== expectedPlan.facebook.supplementalHistoryAction
+    || plan.facebook?.existingOperationReplay !== false
+    || plan.facebook?.replacementOperation !== false
+    || plan.facebook?.legacyLocalArtifactsRequired !== false
+    || exactOperations !== true
+    || plan.schedules !== false
+    || plan.production !== false) {
+    throw historyError(
+      'Meta history pinned continuity plan is invalid',
+      'META_HISTORY_2026_PINNED_CONTINUITY_PLAN_INVALID',
+    );
+  }
+
+  const facebookOperation = plan.operations[0];
+  if (facebookOperation.operationId === META_HISTORY_2026_LEGACY_SESSION.operationId
+    || plan.operations.some((item) => item?.operationId === META_HISTORY_2026_LEGACY_SESSION.operationId)) {
+    throw historyError(
+      'Meta history pinned continuity operation identity is invalid',
+      'META_HISTORY_2026_PINNED_CONTINUITY_OPERATION_INVALID',
+    );
+  }
+
+  const readOnlySummary = input.readOnlySummary;
+  const details = readOnlySummary?.details;
+  const validations = Array.isArray(details?.validations) ? details.validations : [];
+  const validEnvelope = readOnlySummary?.phase === 'summary'
+    && readOnlySummary?.status === 'passed'
+    && readOnlySummary?.contractVersion === META_READ_ONLY_CONTRACT_VERSION
+    && readOnlySummary?.mutationPerformed === false
+    && Number(readOnlySummary?.businessWrites) === 0
+    && Number(readOnlySummary?.queueMessages) === 0;
+  const normalizedValidations = validations.map((item) => ({
+    phase: item?.phase ?? null,
+    connectorKey: item?.connectorKey ?? null,
+    sourceAccountKey: item?.sourceAccountKey ?? null,
+  }));
+  const exactIdentities = stableJson(normalizedValidations) === stableJson(META_READ_ONLY_IDENTITIES);
+  const allIdentityRequestsAccepted = validations.every((item) => item?.status === 'identity_validated'
+    && Number.isSafeInteger(Number(item?.requestAttempts))
+    && Number(item.requestAttempts) > 0);
+  if (!validEnvelope
+    || details?.accepted !== true
+    || Number(details?.validationCount) !== META_READ_ONLY_IDENTITIES.length
+    || validations.length !== META_READ_ONLY_IDENTITIES.length
+    || exactIdentities !== true
+    || allIdentityRequestsAccepted !== true) {
+    throw historyError(
+      'Fresh Meta identity evidence does not satisfy pinned continuity',
+      'META_HISTORY_2026_PINNED_CONTINUITY_IDENTITY_INVALID',
+      {
+        envelopeValid: validEnvelope,
+        accepted: details?.accepted === true,
+        validationCount: Number(details?.validationCount ?? 0),
+        exactIdentities,
+        allIdentityRequestsAccepted,
+      },
+    );
+  }
+
+  return deepFreeze({
+    contractVersion: META_HISTORY_2026_PINNED_CONTINUITY_CONTRACT_VERSION,
+    repositoryHead,
+    pinnedVerified: true,
+    verificationMode: 'fresh_facebook_identity_and_exact_no_replay_plan',
+    freshFacebookIdentityValidated: true,
+    existingOperationReplay: false,
+    replacementOperation: false,
+    legacyLocalArtifactsRequired: false,
+    legacyRepositoryHead: META_HISTORY_2026_LEGACY_SESSION.repositoryHead,
+    legacyOperationIdFingerprint: sha256(META_HISTORY_2026_LEGACY_SESSION.operationId),
+    supplementalOperationId: facebookOperation.operationId,
+    periodStart: facebookOperation.periodStart,
+    periodEnd: facebookOperation.periodEnd,
+    readOnlyEvidenceFingerprint: sha256(stableJson({
+      contractVersion: readOnlySummary.contractVersion,
+      phase: readOnlySummary.phase,
+      status: readOnlySummary.status,
+      validations,
+      mutationPerformed: readOnlySummary.mutationPerformed,
+      businessWrites: Number(readOnlySummary.businessWrites),
+      queueMessages: Number(readOnlySummary.queueMessages),
+    })),
+  });
+}
+
+export function validateMetaHistoryPinnedContinuity(value = {}, expectedHead) {
+  const repositoryHead = requireSha(expectedHead);
+  const expectedOperationId = createMetaHistoryOperationId(
+    'facebook',
+    META_HISTORY_2026_WINDOWS.organic,
+    repositoryHead,
+  );
+  if (value.contractVersion !== META_HISTORY_2026_PINNED_CONTINUITY_CONTRACT_VERSION
+    || value.repositoryHead !== repositoryHead
+    || value.pinnedVerified !== true
+    || value.verificationMode !== 'fresh_facebook_identity_and_exact_no_replay_plan'
+    || value.freshFacebookIdentityValidated !== true
+    || value.existingOperationReplay !== false
+    || value.replacementOperation !== false
+    || value.legacyLocalArtifactsRequired !== false
+    || value.legacyRepositoryHead !== META_HISTORY_2026_LEGACY_SESSION.repositoryHead
+    || value.legacyOperationIdFingerprint !== sha256(META_HISTORY_2026_LEGACY_SESSION.operationId)
+    || value.supplementalOperationId !== expectedOperationId
+    || value.periodStart !== META_HISTORY_2026_WINDOWS.organic.since
+    || value.periodEnd !== META_HISTORY_2026_WINDOWS.organic.until
+    || !/^[0-9a-f]{64}$/u.test(String(value.readOnlyEvidenceFingerprint ?? ''))) {
+    throw historyError(
+      'Meta history pinned continuity evidence is invalid',
+      'META_HISTORY_2026_PINNED_CONTINUITY_INVALID',
+    );
+  }
+  return deepFreeze(structuredClone(value));
+}
+
+export function readMetaLarkSummaryCompletion(summary = {}) {
+  const data = summary?.data;
+  if (data?.accepted !== true) {
+    throw historyError(
+      'Meta Lark summary is not accepted',
+      'META_HISTORY_2026_LARK_SUMMARY_INVALID',
+    );
+  }
+  return deepFreeze({
+    larkCompleted: data.larkParityVerified === true,
+    idempotentRerunVerified: data.idempotentRerunVerified === true,
+    restoredAllFalse: data.restoredAllFalse === true,
+  });
 }
 
 export function shouldExpandMetaAdsHistory(summaries = []) {
@@ -113,10 +278,15 @@ export function injectMetaHistoryConfig(
 
 export function validateMetaHistory2026Summary(value = {}) {
   const facebookOperation = completedFacebookOperation(value.operations);
+  const modernPinnedContinuity = value.facebook?.pinnedVerified === true
+    && value.facebook?.freshFacebookIdentityValidated === true
+    && value.facebook?.existingOperationReplay === false
+    && value.facebook?.replacementOperation === false
+    && value.facebook?.legacyLocalArtifactsRequired === false;
   const checks = {
     ok: value.ok === true,
     decision: value.decision === META_HISTORY_2026_DECISION,
-    facebookPinnedVerified: value.facebook?.pinnedVerified === true
+    facebookPinnedVerified: modernPinnedContinuity
       || (value.facebook?.verified === true && value.facebook?.pinnedSessionCompleted === true),
     facebookHistoryCompleted: value.facebook?.historyCompleted === true || facebookOperation !== null,
     facebookExistingOperationReplay: value.facebook?.existingOperationReplay === false
@@ -161,6 +331,16 @@ function operation(target, range, head, mode) {
     operationId: createMetaHistoryOperationId(target, range, head),
     mode,
   });
+}
+
+function operationIdentity(value = {}) {
+  return {
+    target: value.target ?? null,
+    periodStart: value.periodStart ?? null,
+    periodEnd: value.periodEnd ?? null,
+    operationId: value.operationId ?? null,
+    mode: value.mode ?? null,
+  };
 }
 
 function readD1Snapshot(summary) {
@@ -219,6 +399,10 @@ function requireText(value, fieldName) {
     throw historyError(`${fieldName} is required`, 'META_HISTORY_2026_VALUE_REQUIRED', { fieldName });
   }
   return value.trim();
+}
+
+function stableJson(value) {
+  return JSON.stringify(value);
 }
 
 function sha256(value) {
