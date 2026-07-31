@@ -26,11 +26,14 @@ test('Meta history plan includes Facebook and Instagram July plus adaptive Ads w
   assert.equal(new Set(plan.operations.map((item) => item.operationId)).size, 6);
 });
 
-test('Meta history config injects exact Instagram inventory bounds idempotently', () => {
-  const initial = '{\n  "vars": {\n    "MKT_ENV": "development"\n  }\n}\n';
-  const once = injectMetaHistoryConfig(initial);
-  const twice = injectMetaHistoryConfig(once);
+test('Meta history config injects inventory bounds and absolute runtime paths idempotently', () => {
+  const initial = '{\n  "main": "apps/sync-worker/src/index.js",\n  "migrations_dir": "migrations",\n  "vars": {\n    "MKT_ENV": "development"\n  }\n}\n';
+  const options = { baseDirectory: '/tmp/social-marketing-integration' };
+  const once = injectMetaHistoryConfig(initial, undefined, options);
+  const twice = injectMetaHistoryConfig(once, undefined, options);
   assert.equal(once, twice);
+  assert.match(once, /"main": "\/tmp\/social-marketing-integration\/apps\/sync-worker\/src\/index\.js"/u);
+  assert.match(once, /"migrations_dir": "\/tmp\/social-marketing-integration\/migrations"/u);
   assert.match(once, /"MKT_META_INSTAGRAM_CONTENT_SINCE": "2026-07-01"/u);
   assert.match(once, /"MKT_META_INSTAGRAM_CONTENT_UNTIL": "2026-07-31"/u);
 });
