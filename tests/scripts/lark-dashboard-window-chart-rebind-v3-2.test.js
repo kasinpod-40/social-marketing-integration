@@ -150,20 +150,18 @@ test('rewrite fails closed when the reviewed chart no longer references Number w
   );
 });
 
-test('Live operator source wires exact 17/5/7 planning and never PATCHes a slicer', async () => {
+test('historical window-chart planner remains deterministic while the public operator is retired', async () => {
   const source = await readFile(
     new URL('../../scripts/lark-dashboard-field-identity-recovery-v3.mjs', import.meta.url),
     'utf8',
   );
-  assert.match(source, /pendingWindowChartRebindCount/);
-  assert.match(source, /rebind-number-window-charts/);
-  assert.match(source, /rewriteNumberWindowChartToPreservedSelect/);
-  assert.match(source, /assertReviewedExecutiveWindowChartSet/);
-  assert.match(
-    source,
-    /const preservedWindowChartCount\s*=\s*alreadyPreservedWindowChartCount\s*\+\s*numberWindowChartCount/,
-  );
-  assert.match(source, /preservedWindowChartCount\s*!==\s*7/);
-  assert.match(source, /slicerPatchCount:\s*0/);
-  assert.doesNotMatch(source, /blockType:\s*['"]slicer['"][\s\S]{0,500}method:\s*['"]PATCH['"]/);
+
+  assert.match(source, /buildLarkDashboardMutationBlockedFailure/);
+  assert.match(source, /hasRetiredDashboardMutationArgument/);
+  assert.match(source, /LARK_DASHBOARD_COMPATIBILITY_FREEZE_ACTIVE|buildLarkDashboardCompatibilityFreezeAudit/);
+  assert.doesNotMatch(source, /pendingWindowChartRebindCount/);
+  assert.doesNotMatch(source, /rebind-number-window-charts/);
+  assert.doesNotMatch(source, /rewriteNumberWindowChartToPreservedSelect/);
+  assert.doesNotMatch(source, /requestBitableJson/);
+  assert.doesNotMatch(source, /method:\s*['"]PATCH['"]/);
 });
