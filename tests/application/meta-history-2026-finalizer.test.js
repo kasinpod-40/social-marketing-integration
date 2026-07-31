@@ -11,17 +11,19 @@ import {
 
 const HEAD = 'a'.repeat(40);
 
-test('Meta history plan locks Instagram month and adaptive Ads windows', () => {
+test('Meta history plan includes Facebook and Instagram July plus adaptive Ads windows', () => {
   const plan = createMetaHistory2026Plan(HEAD);
-  assert.equal(plan.facebook.providerReplay, false);
+  assert.equal(plan.facebook.existingOperationReplay, false);
+  assert.equal(plan.facebook.replacementOperation, false);
   assert.deepEqual(plan.operations.map((item) => [item.target, item.periodStart, item.periodEnd, item.mode]), [
+    ['facebook', '2026-07-01', '2026-07-31', 'required'],
     ['instagram', '2026-07-01', '2026-07-31', 'required'],
     ['chemistry_k2', '2026-05-01', '2026-07-31', 'required'],
     ['chemistry_k3', '2026-05-01', '2026-07-31', 'required'],
     ['chemistry_k2', '2026-01-01', '2026-04-30', 'conditional'],
     ['chemistry_k3', '2026-01-01', '2026-04-30', 'conditional'],
   ]);
-  assert.equal(new Set(plan.operations.map((item) => item.operationId)).size, 5);
+  assert.equal(new Set(plan.operations.map((item) => item.operationId)).size, 6);
 });
 
 test('Meta history config injects exact Instagram inventory bounds idempotently', () => {
@@ -49,13 +51,22 @@ test('Meta Ads expansion rejects incomplete or invalid Coverage summaries', () =
   );
 });
 
-test('Meta history final summary requires parity idempotency and safe restore', () => {
+test('Meta final summary requires completed Facebook supplemental operation', () => {
   const value = {
     ok: true,
     decision: META_HISTORY_2026_DECISION,
-    facebook: { verified: true },
+    facebook: { verified: true, pinnedSessionCompleted: true, providerReplay: false },
     instagram: { completed: true },
     metaAds: { baselineCompleted: true },
+    operations: [{
+      target: 'facebook',
+      operationId: 'meta-facebook-history-20260701-20260731-aaaaaaaaaaaa',
+      periodStart: '2026-07-01',
+      periodEnd: '2026-07-31',
+      mode: 'required',
+      d1Completed: true,
+      larkCompleted: true,
+    }],
     parityVerified: true,
     idempotentRerunsVerified: true,
     executionFlagsAllFalse: true,
@@ -65,7 +76,7 @@ test('Meta history final summary requires parity idempotency and safe restore', 
   };
   assert.equal(validateMetaHistory2026Summary(value), true);
   assert.throws(
-    () => validateMetaHistory2026Summary({ ...value, parityVerified: false }),
+    () => validateMetaHistory2026Summary({ ...value, operations: [] }),
     (error) => error?.code === 'META_HISTORY_2026_SUMMARY_INVALID',
   );
 });
