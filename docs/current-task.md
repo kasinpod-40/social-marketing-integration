@@ -1,107 +1,109 @@
-# Current Task — Meta History 2026 One-Command Execution
+# Current Task — Meta History Runtime Preflight Recovery v2
 
 ## Status
 
 ```text
-TASK_STATUS                   = META_HISTORY_2026_EXECUTION_READY
-CURRENT_PROGRAM               = META_HISTORY_2026_FINALIZER_V1
-IMPLEMENTATION_PR             = #319 / SQUASH_MERGED
-IMPLEMENTATION_MAIN_SHA       = 0ae80e3809cda0a582d8cfc0715313f8ac191a45
-IMPLEMENTATION_REVIEW         = PASS_FOR_MERGE
-META_VERIFICATION_RUN         = #95 / PASS
-BRANCH_VERIFICATION_RUN       = #1383 / PASS
-WOOCOMMERCE                   = WOOCOMMERCE_2026_COMPLETED_SAFE
-FACEBOOK_PINNED               = VERIFY_EXISTING_D1_LARK_NO_OPERATION_REPLAY
+TASK_STATUS                   = REPOSITORY_HOTFIX_VERIFIED
+CURRENT_PROGRAM               = META_HISTORY_RUNTIME_PREFLIGHT_RECOVERY_V2
+BASE_MAIN_SHA                 = 17c59e1196a1713aa19bacac41e8d101dfe7ceb0
+BRANCH                        = hotfix/meta-history-2026-runtime-preflight-v2
+IMPLEMENTATION_PR             = #330 / DRAFT / READY_FOR_REVIEW
+PREVIOUS_IMPLEMENTATION_PR    = #319 / SQUASH_MERGED
+META_VERIFICATION_RUN         = #97 / PASS
+BRANCH_VERIFICATION_RUN       = #1389 / PASS
 FACEBOOK_SUPPLEMENTAL_RANGE   = 2026-07-01..2026-07-31
 INSTAGRAM_RANGE               = 2026-07-01..2026-07-31
 META_ADS_REQUIRED_RANGE       = 2026-05-01..2026-07-31
 META_ADS_CONDITIONAL_RANGE    = 2026-01-01..2026-04-30
 PLANNED_OPERATION_COUNT       = 6
-PINNED_META_HEAD              = e069380a544575ce0fc9bca53f1fb56944d26c09
-PINNED_INSTAGRAM_OPERATION    = meta-instagram-d1-20260729t065939687z-1ad3c9
-REPOSITORY_REMOTE_ACTIONS     = 0
-WORKER_FLAGS                  = ALL_FALSE
+REMOTE_ACTION_DURING_HOTFIX   = NONE
+WORKER_FLAGS_BEFORE_INCIDENT  = ALL_FALSE_VERIFIED
 SCHEDULE                      = DISABLED
 PRODUCTION                    = BLOCKED
-NEXT_STEP                     = RUN_META_HISTORY_2026_TERMINAL_ONCE
+NEXT_STEP                     = REVIEW_AND_SQUASH_MERGE_HOTFIX
 ```
 
-## Authority
+## Live failures retained
 
-PR #319 is merged. The reviewed implementation is available on `main` and passed both exact-head
-workflows after alignment with the concurrent Report readiness recovery:
+The first execution stopped at `prepare-safe-config` because the launcher incorrectly required the
+non-secret Wrangler source config to be a private `0600` non-symlink file.
+
+A temporary private-copy workaround passed that boundary. The second execution then stopped at
+`cloudflare-readiness` with:
 
 ```text
-Meta End-to-End Verification  run 30619391809 / #95 / PASS
-Branch Verification           run 30619391794 / #1383 / PASS
-Review threads                0
-Branch behind main            0 before Squash Merge
-Squash Merge SHA              0ae80e3809cda0a582d8cfc0715313f8ac191a45
+active Work                         0
+active Lock                         0
+sync_runs queued/running rows       2
+reported active Queue operations    2
 ```
 
-Repository implementation and CI performed no Provider mutation, Queue send, Remote D1/Lark write,
-Worker deployment, Schedule activation, Secret change or Production action.
+The active Worker version had already passed the all-false flag check. No Meta operation, Queue message,
+Remote D1/Lark write or Provider request had started. The outer closeout nevertheless caught the
+Reliability-idle error as a generic inspection failure and attempted an unnecessary emergency Safe deploy.
+That deploy failed because a generated config under `outputs/` retained the relative Worker entry point
+`apps/sync-worker/src/index.js`, which Wrangler resolved relative to the generated config directory.
 
-## Execution scope
+## Root corrections
 
-The single public Terminal entrypoint performs the remaining controlled Live work:
+- Treat the Wrangler source as a readable regular file; symlinks resolving to a regular file are valid.
+- Keep `.dev.vars`, pinned evidence and generated execution config private and non-symlinked.
+- Rewrite relative `main` and `migrations_dir` paths to absolute Repository paths before writing the
+  generated private config.
+- Define active Queue operations by `queue_operation_attempts` joined to active durable
+  `sync_work_runs`, matching the existing completed-state Reliability contract.
+- Do not treat historical `sync_runs` rows without active Work as active Queue execution.
+- Split Worker-flag verification from Reliability-idle verification.
+- Run an emergency all-false deploy only when the exact
+  `WOOCOMMERCE_2026_COMPLETION_REMOTE_FLAGS_ACTIVE` condition proves execution flags are enabled.
+- Authentication, config, D1-read or Reliability-idle failures never trigger a blind deploy.
+- Preserve all six deterministic Meta operations, stable keys and retained evidence. No Business fact is
+  deleted or replaced.
 
-- verify the completed pinned Facebook D1/Lark lane without replaying that operation;
-- run one separate deterministic Facebook supplemental operation for July 1–31, 2026;
-- run Instagram history for July 1–31, 2026;
-- run Meta Ads history for May 1–July 31, 2026 for `chemistry_k2` and `chemistry_k3`;
-- expand both Ads accounts to January 1–April 30 only when the reviewed baseline volume gate permits;
-- use the existing Shared Queue/Reliability, D1 writers, Coverage, Organic History Writer and
-  TableSyncEngine;
-- complete D1 before the same-operation Lark continuation;
-- prove D1/Lark parity and idempotent replay;
-- restore every Worker execution flag to false and require active Work/Lock/Queue counts `0/0/0`.
+## Verified gates
 
-Stable Business keys preserve existing Facebook rows. The supplemental operation is not a replacement
-operation and Business facts must not be deleted or directly mutated.
+The exact implementation Head before this documentation-only status update passed:
 
-## Public Terminal command
+```text
+Meta End-to-End Verification  run 30625556561 / #97 / PASS
+Branch Verification           run 30625556573 / #1389 / PASS
+Focused Meta regressions      PASS
+Full Unit/Workers             PASS
+Report reliability            PASS
+Dependency audit              PASS
+Wrangler dry-run              PASS
+Remote action during CI       0
+```
 
-Run only from the Repository root after updating to the exact current `origin/main`:
+The final exact documentation Head must pass Branch Verification again before Merge.
+
+## Acceptance
+
+```text
+Readable 0644/symlink source config accepted       required
+Generated execution config mode                    private 0600
+Generated Worker entry point                       absolute Repository path
+Generated migrations directory                     absolute Repository path
+Worker flag and Reliability checks                  separated
+Historical queued/running sync_runs                 not active Queue by itself
+Active Queue operation                              tied to active durable Work
+Emergency deploy                                    exact active-flag error only
+Meta End-to-End Verification                        PASS
+Branch Verification                                 PASS
+Remote action during Repository work                0
+Schedule / Production                               disabled / blocked
+```
+
+## Public command after merge
+
+The public entrypoint remains unchanged:
 
 ```bash
 CONFIRM_META_HISTORY_2026_FINALIZER=RUN_META_HISTORY_2026_ONE_COMMAND \
 node scripts/meta-history-2026-terminal.mjs --execute
 ```
 
-Only `scripts/meta-history-2026-terminal.mjs` is the public entrypoint. Do not run
-`scripts/meta-history-2026-one-command.mjs`, `scripts/meta-history-2026-finalizer.mjs`, a D1/Lark phase
-launcher or a Queue send command manually.
+Do not run the previous command again until this hotfix is reviewed, merged and the new exact `main` SHA
+is provided. Do not delete the prior runtime plan or evidence directories.
 
-The Terminal entrypoint fails closed unless:
-
-- the active branch is clean `main`;
-- local `main` equals `origin/main` exactly;
-- the private environment file is valid;
-- the Worker is all-false and Reliability is idle;
-- six deterministic operations have unique persisted ISO `originalRequestedAt` generations.
-
-A recorded Queue attempt with uncertain acceptance blocks automatic resend. Do not delete evidence or
-blindly rerun a child phase after a failure; retain the complete output for exact diagnosis.
-
-## Expected accepted result
-
-```text
-META_HISTORY_2026_COMPLETED_SAFE
-Facebook pinned completion        verified / no replay
-Facebook July supplemental        complete
-Instagram July                    complete
-Meta Ads May-July                 complete for both accounts
-Meta Ads January-April            conditional on safe baseline volume
-D1/Lark parity                    pass
-Same-operation replay             pass
-Active Work / Lock / Queue        0 / 0 / 0
-Worker flags                      all false
-Schedule                          disabled
-Production                        blocked
-```
-
-Live completion is not declared until the Terminal output contains the accepted decision and its final
-safe-state evidence.
-
-Detailed contract: `docs/tasks/meta-history-2026-one-command-v1.md`.
+Detailed incident contract: `docs/tasks/meta-history-runtime-preflight-recovery-v2.md`.
