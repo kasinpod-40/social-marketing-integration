@@ -153,6 +153,7 @@ async function inspectCanonicalAuthorityState(input = {}) {
 
   const legacyRowsByFieldId = new Map(legacyFields.map((field) => [field.fieldId, []]));
   const stateRows = [];
+  const canonicalAuthoritativeRecordIds = [];
   let canonicalPopulatedCount = 0;
   let legacyPopulatedCount = 0;
   let canonicalOnlyRecordCount = 0;
@@ -187,7 +188,10 @@ async function inspectCanonicalAuthorityState(input = {}) {
       { allowNull: true, label: CANONICAL_FIELD_NAME },
     );
     if (legacyValue !== null) legacyPopulatedCount += 1;
-    if (canonicalValue !== null) canonicalPopulatedCount += 1;
+    if (canonicalValue !== null) {
+      canonicalPopulatedCount += 1;
+      canonicalAuthoritativeRecordIds.push(recordId);
+    }
     if (legacyValue === null && canonicalValue !== null) canonicalOnlyRecordCount += 1;
     if (legacyValue !== null && canonicalValue === null) pendingBackfillCount += 1;
     if (legacyValue !== null && canonicalValue !== null && legacyValue !== canonicalValue) {
@@ -205,6 +209,7 @@ async function inspectCanonicalAuthorityState(input = {}) {
     canonicalField: clone(canonical.field),
     legacyFields: Object.freeze(legacyFields.map(clone)),
     canonicalPopulatedCount,
+    canonicalAuthoritativeRecordIds: Object.freeze(canonicalAuthoritativeRecordIds),
     legacyPopulatedCount,
     canonicalOnlyRecordCount,
     divergenceCount,
@@ -218,8 +223,8 @@ async function inspectCanonicalAuthorityState(input = {}) {
 }
 
 function createCanonicalAuthoritativeReadClient(client, inspection) {
-  const canonicalName = inspection.canonicalField.fieldName;
   const legacyNames = inspection.legacyFields.map((field) => field.fieldName);
+  const canonicalAuthoritativeRecordIds = new Set(inspection.canonicalAuthoritativeRecordIds);
   return Object.freeze({
     async listTables(args) { return client.listTables(args); },
     async listFields(args) { return client.listFields(args); },
@@ -227,11 +232,7 @@ function createCanonicalAuthoritativeReadClient(client, inspection) {
       const records = await client.listRecords(args);
       return records.map((record) => {
         const output = clone(record);
-        const canonicalValue = readLarkText(
-          readFieldValue(output.fields, canonicalName),
-          { allowNull: true, label: CANONICAL_FIELD_NAME },
-        );
-        if (canonicalValue !== null) {
+        if (canonicalAuthoritativeRecordIds.has(String(record?.recordId ?? ''))) {
           for (const legacyName of legacyNames) setFieldValue(output.fields, legacyName, null);
         }
         return output;
@@ -322,6 +323,7 @@ function blockedInspection(schemaVersion, blockers) {
     canonicalField: null,
     legacyFields: Object.freeze([]),
     canonicalPopulatedCount: 0,
+    canonicalAuthoritativeRecordIds: Object.freeze([]),
     legacyPopulatedCount: 0,
     canonicalOnlyRecordCount: 0,
     divergenceCount: 0,
