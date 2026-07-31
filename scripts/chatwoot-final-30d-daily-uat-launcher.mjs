@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execFileSync } from 'node:child_process';
-import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, relative, resolve } from 'node:path';
 import { createLarkBitableClientFromEnv } from '../packages/connectors/src/lark/lark-bitable.client.js';
 import { readDevVars } from './lib/dev-vars.js';
@@ -79,6 +79,7 @@ async function main() {
     );
   }
 
+  await ensurePinnedWranglerInstalled();
   const larkMappings = await resolveLarkTableMappings(sourceEnv);
   normalizedConfigPath = await createNormalizedRuntimeConfig(sourceEnv, larkMappings);
   const safeSourceEnv = Object.fromEntries(
@@ -144,6 +145,35 @@ async function main() {
     webhookEnabled: false,
     production: false,
   }, null, 2)}\n`);
+}
+
+async function ensurePinnedWranglerInstalled() {
+  const executable = inside(join(
+    'node_modules',
+    '.bin',
+    process.platform === 'win32' ? 'wrangler.cmd' : 'wrangler',
+  ));
+  if (await isRegularFile(executable)) return;
+  run('npm', ['ci'], { stdio: 'inherit' });
+  if (!await isRegularFile(executable)) {
+    throw launcherError(
+      'Repository-pinned Wrangler is unavailable after locked dependency installation',
+      'CHATWOOT_FINAL_UAT_PINNED_WRANGLER_MISSING',
+    );
+  }
+}
+
+async function isRegularFile(path) {
+  try {
+    return (await stat(path)).isFile();
+  } catch (error) {
+    if (error?.code === 'ENOENT') return false;
+    throw launcherError(
+      'Repository-pinned Wrangler could not be inspected',
+      'CHATWOOT_FINAL_UAT_PINNED_WRANGLER_INVALID',
+      { errorCode: error?.code ?? null },
+    );
+  }
 }
 
 async function resolveLarkTableMappings(env) {
