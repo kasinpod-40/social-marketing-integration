@@ -1,122 +1,57 @@
-# Current Task — Chatwoot Arbitration Pinned Origin v1
+# Current Task — Chatwoot Final UAT Closeout and Meta Handoff
 
 ## Status
 
 ```text
-TASK_STATUS                          = REPOSITORY_HOTFIX_IN_REVIEW
-CURRENT_PROGRAM                      = CHATWOOT_ARBITRATION_PINNED_ORIGIN_V1
-BRANCH                               = hotfix/chatwoot-arbitration-pinned-origin-v1
-BASE_MAIN_SHA                        = ee5c6ce2450ee052669edc24e7af75e1b47cfc4f
-CHATWOOT_INCOMPLETE_IDENTITIES       = 2
-CHATWOOT_REMOTE_ACTIVE_WINDOW        = EXACT_FOUR_FLAG_FINAL_UAT
-CHATWOOT_CONTROLLER_PROCESS          = ABSENT
+TASK_STATUS                          = DOCUMENTATION_CLOSEOUT_IN_REVIEW
+CURRENT_PROGRAM                      = CHATWOOT_FINAL_UAT_CLOSEOUT_META_HANDOFF_V1
+BRANCH                               = docs/chatwoot-final-uat-closeout-2026-08-01
+BASE_MAIN_SHA                        = f212c5110573ef0af5012e8385d6ee25e67041cd
+CHATWOOT_FINAL_UAT                   = COMPLETED_SAFE
+CHATWOOT_COMPLETION_MARKER           = CHATWOOT_30D_DAILY_UAT_COMPLETED_SAFE
+CHATWOOT_EXACT_LOCK_SCOPE_VERIFIED   = TRUE
+CHATWOOT_ACTIVE_LOCK_COUNT           = 0
+CHATWOOT_SAFE_RESTORE_VERIFIED       = TRUE
+CHATWOOT_SCHEDULE_WEBHOOK            = DISABLED
 META_FACEBOOK_D1_PHASE               = COMPLETE
 META_FACEBOOK_LARK_PHASE             = PENDING
 META_PROVIDER_REPLAY_ALLOWED         = NO
 META_D1_QUEUE_RESEND_ALLOWED         = NO
-LATEST_REMOTE_MUTATIONS              = 0
-SCHEDULE_WEBHOOK                     = DISABLED
 PRODUCTION                           = BLOCKED
-NEXT_STEP                            = VERIFY_AND_MERGE_PINNED_ORIGIN
+NEXT_STEP                            = REVIEW_AND_MERGE_CLOSEOUT_THEN_RUN_META_REVIEWED_RELEASE_CONTINUATION
 ```
 
-## Pre-handoff finding
+## Accepted Chatwoot completion evidence
 
-PR #411 added current-active-Worker evidence arbitration and passed Branch Verification #1596. Before issuing its
-operator command, final execution-path review found that the isolated arbitration clone still used the source local
-workspace as its Git `origin`.
+The user supplied the successful Terminal result from the guarded Chatwoot controller-evidence recovery path after
+PR #412 was Squash Merged into `main@f212c5110573ef0af5012e8385d6ee25e67041cd`.
 
-The delegated recovery launcher runs:
+The accepted completion output reports:
 
 ```text
-git fetch origin main
+contractVersion         chatwoot-initial-terminal-failure-recovery-v1
+status                  completed_safe
+marker                  CHATWOOT_30D_DAILY_UAT_COMPLETED_SAFE
+exactLockScopeVerified  true
+activeLockCount         0
+safeRestoreVerified     true
 ```
 
-If the operator checks out the reviewed wrapper in detached mode while the source local `main` branch remains on an
-older commit, that fetch can replace the clone's pinned `origin/main` with the stale local branch. The recovery would
-then stop at its exact-main gate even though the reviewed wrapper itself is valid.
+The output also shows completion of the retained Initial/Daily controller sequence and restoration of the Worker to
+the reviewed all-false state. Schedule and Webhook remain disabled. Production remains blocked.
 
-No operator command using PR #411's wrapper was issued. This finding caused zero Provider request, Queue action,
-Remote D1/Lark mutation, Worker deployment, incident closure, Schedule/Webhook action or Production action.
+This documentation closeout does not independently rerun Remote D1/Lark/Worker inspection. It records the accepted
+operator result supplied by the user and performs no Live or Remote action.
 
-## Objective
+## Chatwoot closeout decision
 
-Keep every nested Chatwoot recovery `git fetch origin main` bound to the exact reviewed wrapper commit without
-modifying the existing arbitration wrapper, core recovery launcher, retained evidence or Business facts.
+Chatwoot is no longer an active blocker for the Integration Workspace sequence.
 
-## Correction
+Do not run any previous Chatwoot recovery, Queue-exhaustion recovery, evidence-arbitration or pinned-origin command
+again. Do not send a second Initial/Daily admission, manually redrive a Chatwoot DLQ or edit retained Chatwoot
+evidence. Any later Chatwoot work must start as a new explicitly scoped task from the completed-safe baseline.
 
-Add a small outer authority:
-
-```text
-scripts/chatwoot-controller-evidence-pinned-origin-terminal.mjs
-```
-
-It must:
-
-1. require the exact reviewed outer-wrapper commit and existing Chatwoot recovery confirmation;
-2. require a clean checkout whose commit remains an ancestor of current public `origin/main`;
-3. reject caller-provided `GIT_CONFIG_*` overrides;
-4. create a temporary bare repository whose `refs/heads/main` and symbolic `HEAD` equal the exact reviewed commit;
-5. create an exact `main` worktree from that temporary origin;
-6. copy `.dev.vars` and `wrangler.sync.jsonc` as private regular files;
-7. link local `outputs` and `node_modules` under exact clone-local excludes;
-8. perform a real `git fetch origin main` and reverify exact `HEAD`, `origin/main`, branch and cleanliness;
-9. invoke the existing
-   `scripts/chatwoot-controller-evidence-arbitration-terminal.mjs` inside the pinned repository;
-10. leave all evidence selection, D1 boundary, Queue, Lark, parity, Safe restore and incident closure authority with
-    the existing reviewed inner launchers.
-
-## Fail-closed boundaries
-
-- No remote Worker, Queue, D1 or Lark action occurs before the existing inner arbitration wrapper starts.
-- No retained evidence is renamed, deleted or rewritten by the outer wrapper.
-- The outer wrapper does not inspect or choose between controller evidence candidates itself.
-- A stale or advanced source local `main` cannot alter the nested synthetic `origin/main`.
-- Any existing inner failure remains visible and must not be blindly rerun after mutation begins.
-- Schedule and Webhook remain disabled; Production remains blocked.
-
-## Real-Git regression
-
-The regression creates a source repository with reviewed commit A and later commit B. It leaves source `main` on B,
-creates the synthetic origin pinned to A, runs `git fetch origin main` in the generated clone and requires:
-
-```text
-clone HEAD             = A
-clone origin/main      = A
-bare refs/heads/main   = A
-source main            = B
-```
-
-## Changed files
-
-```text
-scripts/lib/exact-pinned-git-origin.js
-scripts/chatwoot-controller-evidence-pinned-origin-terminal.mjs
-tests/application/chatwoot-controller-evidence-pinned-origin.test.js
-docs/tasks/chatwoot-arbitration-pinned-origin-v1.md
-docs/current-task.md
-```
-
-## Required verification
-
-```bash
-npm ci
-npm run check
-node --test tests/application/chatwoot-controller-evidence-pinned-origin.test.js
-node --test tests/application/chatwoot-controller-evidence-arbitration.test.js
-node --test tests/application/chatwoot-initial-terminal-failure-recovery.test.js
-npm test
-npm run test:report-reliability
-npm audit --audit-level=high
-npm run deploy:dry-run
-git diff --check
-```
-
-Focused Meta, WooCommerce, Chatwoot and TikTok regressions remain required through Branch Verification. Repository
-gates must perform zero Live or Remote mutation.
-
-## Meta continuation boundary
+## Restored Meta continuation authority
 
 The retained Meta operation remains unchanged:
 
@@ -129,22 +64,63 @@ provider replay    forbidden
 D1 Queue resend    forbidden
 ```
 
-The preserved public Meta continuation authority remains:
+The only preserved public continuation authority is:
 
 ```text
 scripts/meta-history-2026-reviewed-release-terminal.mjs
 ```
 
-Inside the immutable reviewed release clone, it delegates only to:
+Inside the immutable reviewed release clone it may delegate only to:
 
 ```text
 scripts/meta-history-2026-exact-plan-continuation-terminal.mjs
 ```
 
-Meta must not resume until Chatwoot completes Safe restore and the Worker is verified all-false.
+The continuation must reuse the retained Facebook operation and existing D1 completion. It must not replay the Meta
+Provider, resend the original D1 Queue admission, synthesize evidence, modify Business facts, enable Schedule or
+perform Production work.
+
+Live Meta execution remains a separate explicit operational action. This documentation branch does not run it.
+
+## Parallel Report boundary
+
+Repository-only Report audits and implementations may continue on isolated branches without editing this Current
+Task or touching retained Meta/Chatwoot evidence. Remote Report materialization, Lark writes, Queue sends, Worker
+deployment and Schedule activation remain separately gated.
+
+The next Report sequence remains:
+
+1. WooCommerce Report Live Readiness Audit v1 — read-only first;
+2. YouTube Report readiness/materialization planning from the proven 837-row source baseline;
+3. Instagram and Google Ads source-promotion blocker audit;
+4. Chatwoot generic Report contract implementation from the completed-safe source baseline.
+
+## Changed files
+
+```text
+docs/current-task.md
+docs/tasks/chatwoot-final-uat-closeout-2026-08-01.md
+docs/project-brain/chatwoot-final-uat-closeout-2026-08-01.md
+```
+
+## Required verification
+
+Documentation-only verification must confirm:
+
+```bash
+git diff --check
+npm run check
+npm test
+npm run test:report-reliability
+npm audit --audit-level=high
+npm run deploy:dry-run
+```
+
+Repository verification must perform zero Provider request, Queue/DLQ action, Remote D1/Lark action, Worker
+deployment, Secret/config mutation, Schedule/Webhook action or Production action.
 
 ## Implementation result
 
-The pinned Git-origin helper, outer wrapper, real-Git regression and task documentation are implemented on
-`hotfix/chatwoot-arbitration-pinned-origin-v1`. CI is pending. Repository implementation has performed no Live or
-Remote mutation.
+The Chatwoot completed-safe operator result is recorded, prior recovery commands are retired and the Meta reviewed
+release continuation is restored as the next operational gate. This branch performs documentation changes only and
+has executed no Live or Remote action.
