@@ -19,7 +19,9 @@ import {
 
 const execFileAsync = promisify(execFile);
 const repositoryRoot = resolve(process.cwd());
-const operatorPath = join(repositoryRoot, 'scripts', 'meta-lark-parity-rollout-operator.mjs');
+const operatorPath = process.env.MKT_META_LARK_OPERATOR_PATH
+  ? resolve(process.env.MKT_META_LARK_OPERATOR_PATH)
+  : join(repositoryRoot, 'scripts', 'meta-lark-parity-rollout-operator.mjs');
 const shimModulePath = join(
   repositoryRoot,
   'scripts',

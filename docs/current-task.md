@@ -18,8 +18,8 @@ META_D1_QUEUE_RESEND                 = FORBIDDEN_FOR_RETAINED_FACEBOOK_OPERATION
 SCHEDULE_WEBHOOK                     = DISABLED_REQUIRED
 PRODUCTION                           = BLOCKED
 REMOTE_MUTATION_COUNT_THIS_TASK      = 0
-META_LATEST_STOP                     = META_LARK_TABLE_MAPPING_DRIFT
-NEXT_STEP                            = ROOT_CAUSE_META_LARK_MAPPING_DRIFT
+META_LATEST_STOP                     = META_LARK_VERIFY_TIMEOUT_AFTER_REMOTE_COMPLETION
+NEXT_STEP                            = LATE_COMPLETION_READ_ONLY_CLOSEOUT
 ```
 
 ## Objective
@@ -137,3 +137,10 @@ runtime ชั่วคราว พร้อม fail-closed validation; ไม�
 Reviewed wrapper ยังคง clone immutable release `29de2303fa311c4a13fac4725699416cfdc04386` และ operator
 checkout `5ff8e2cfb1f890ac2a8f2867a904b477c6456d91` แต่ pin exact PR branch Head เพื่อใช้เฉพาะ reviewed
 Terminal/Lark launcher จาก Head ที่ผ่าน CI; private retained assets ถูกอ่านจาก explicit absolute asset root.
+
+Live exact continuation ผ่าน Lark inventory และส่ง Lark continuation เดิมหนึ่งครั้งโดยไม่มี Provider replay
+หรือ D1 resend. Remote Work จบสำเร็จหลัง bounded verifier timeout เล็กน้อยและ cleared phase rows ตาม
+`completeWork()` contract; verifier รุ่นเดิมจึงพลาด durable `completion_json`. Automatic all-false restore
+ผ่านแล้ว. Hotfix ปัจจุบันเพิ่ม exact cleared-phase completion proof และ late read-only closeout ที่ต้องเห็น
+same-operation attempts อย่างน้อยสองครั้ง, exact operation/connector, final reconciliation และ verified
+safe restore โดยไม่ resend.

@@ -71,6 +71,7 @@ test('reviewed release wrapper isolates the approved release from moving main', 
   assert.match(source, /meta-history-2026-exact-plan-continuation-terminal\.mjs/u);
   assert.match(source, /MKT_META_HISTORY_EXACT_CONTINUATION_CHILD/u);
   assert.match(source, /MKT_META_HISTORY_LARK_LAUNCHER_PATH/u);
+  assert.match(source, /MKT_META_LARK_OPERATOR_PATH/u);
   assert.match(source, /MKT_META_HISTORY_REVIEW_ASSET_ROOT/u);
   assert.match(source, /assets\.exactTerminal/u);
   assert.match(source, /status', '--porcelain', '--untracked-files=all/u);

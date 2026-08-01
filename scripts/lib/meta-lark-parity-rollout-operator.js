@@ -28,6 +28,7 @@ export const META_LARK_OPERATOR_PHASES = Object.freeze([
   'verify-idempotent-rerun',
   'restore-all-false',
   'verify-restore',
+  'verify-late-completion',
   'summary',
 ]);
 
@@ -45,6 +46,10 @@ export const META_LARK_CONFIRMATIONS = deepFreeze({
   'verify-idempotent-rerun': confirmation('CONFIRM_META_LARK_VERIFY_RERUN', 'VERIFY_META_LARK_IDEMPOTENT_RERUN'),
   'restore-all-false': confirmation('CONFIRM_META_LARK_RESTORE', 'RESTORE_META_LARK_ALL_FALSE'),
   'verify-restore': confirmation('CONFIRM_META_LARK_VERIFY_RESTORE', 'VERIFY_META_LARK_RESTORE'),
+  'verify-late-completion': confirmation(
+    'CONFIRM_META_LARK_VERIFY_LATE_COMPLETION',
+    'VERIFY_META_LARK_LATE_COMPLETION_AFTER_RESTORE',
+  ),
   summary: confirmation('CONFIRM_META_LARK_SUMMARY', 'SUMMARIZE_META_LARK_ROLLOUT'),
 });
 
@@ -264,6 +269,7 @@ export function buildMetaLarkSnapshotSql(target = {}) {
       (SELECT status FROM sync_work_runs WHERE work_key = ${workKey}) AS work_status,
       (SELECT lifecycle_status FROM sync_work_runs WHERE work_key = ${workKey}) AS work_lifecycle_status,
       (SELECT completed_at FROM sync_work_runs WHERE work_key = ${workKey}) AS work_completed_at,
+      (SELECT completion_json FROM sync_work_runs WHERE work_key = ${workKey}) AS work_completion_json,
       (SELECT complete FROM sync_work_phases WHERE work_key = ${workKey} AND phase = '${D1_PHASE}') AS d1_phase_complete,
       (SELECT complete FROM sync_work_phases WHERE work_key = ${workKey} AND phase = '${PREFLIGHT_PHASE}') AS preflight_phase_complete,
       (SELECT state_json FROM sync_work_phases WHERE work_key = ${workKey} AND phase = '${PREFLIGHT_PHASE}') AS preflight_state_json,
@@ -296,6 +302,18 @@ export function normalizeMetaLarkSnapshot(value = {}) {
   const preflightState = parseNullableJson(value.preflight_state_json, 'preflight_state_json');
   const larkState = parseNullableJson(value.lark_state_json, 'lark_state_json');
   const completionState = parseNullableJson(value.completion_state_json, 'completion_state_json');
+  const durableCompletion = parseNullableJson(
+    value.work_completion_json,
+    'work_completion_json',
+  );
+  const clearedPhaseCompletion = value.work_lifecycle_status === 'completed'
+    && durableCompletion?.schemaVersion === 'meta_end_to_end_reconciliation_v1'
+    && durableCompletion?.failed === 0
+    && Number(durableCompletion?.d1?.expectedOperations) >= 0
+    && Number(durableCompletion?.d1?.processedOperations)
+      === Number(durableCompletion?.d1?.expectedOperations)
+    && Array.isArray(durableCompletion?.preflight)
+    && Array.isArray(durableCompletion?.lark);
   return deepFreeze({
     syncRunStatus: optionalText(value.sync_run_status),
     syncRunFinishedAt: nullableNumber(value.sync_run_finished_at),
@@ -303,13 +321,26 @@ export function normalizeMetaLarkSnapshot(value = {}) {
     workStatus: optionalText(value.work_status),
     workLifecycleStatus: optionalText(value.work_lifecycle_status),
     workCompletedAt: nullableNumber(value.work_completed_at),
-    d1PhaseComplete: Number(value.d1_phase_complete ?? 0) === 1,
-    preflightPhaseComplete: Number(value.preflight_phase_complete ?? 0) === 1,
-    preflightSummaries: Array.isArray(preflightState?.summaries) ? preflightState.summaries : [],
-    larkPhaseComplete: Number(value.lark_phase_complete ?? 0) === 1,
-    larkResults: Array.isArray(larkState?.results) ? larkState.results : [],
-    completionPhaseComplete: Number(value.completion_phase_complete ?? 0) === 1,
-    completionReconciliation: completionState?.reconciliation ?? null,
+    d1PhaseComplete: Number(value.d1_phase_complete ?? 0) === 1 || clearedPhaseCompletion,
+    preflightPhaseComplete: Number(value.preflight_phase_complete ?? 0) === 1
+      || clearedPhaseCompletion,
+    preflightSummaries: Array.isArray(preflightState?.summaries)
+      ? preflightState.summaries
+      : (clearedPhaseCompletion ? durableCompletion.preflight : []),
+    larkPhaseComplete: Number(value.lark_phase_complete ?? 0) === 1
+      || clearedPhaseCompletion,
+    larkResults: Array.isArray(larkState?.results)
+      ? larkState.results
+      : (clearedPhaseCompletion ? durableCompletion.lark : []),
+    completionPhaseComplete: Number(value.completion_phase_complete ?? 0) === 1
+      || clearedPhaseCompletion,
+    completionReconciliation: completionState?.reconciliation
+      ?? (clearedPhaseCompletion ? durableCompletion : null),
+    clearedPhaseCompletion,
+    completionOperationId: clearedPhaseCompletion ? optionalText(durableCompletion.operationId) : null,
+    completionConnectorKey: clearedPhaseCompletion
+      ? optionalText(durableCompletion.connectorKey)
+      : null,
     activeLockCount: count(value.active_lock_count),
     queueOperationAttempts: count(value.queue_operation_attempts),
     mainQueueAttempts: count(value.main_queue_attempts),
@@ -346,6 +377,9 @@ export function classifyMetaLarkCompletion(snapshot = {}, target = {}) {
     && value.invalidCoverageCount === 0
     && value.workLifecycleStatus === 'completed'
     && value.workCompletedAt !== null
+    && (!value.clearedPhaseCompletion
+      || (value.completionOperationId === target.operationId
+        && value.completionConnectorKey === target.connectorKey))
     && resultsValid
     && Array.isArray(reconciliationResults)
     && reconciliationResults.length === expectedCount;

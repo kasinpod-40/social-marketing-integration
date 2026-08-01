@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   META_LARK_OPERATOR_CONTRACT_VERSION,
+  META_LARK_OPERATOR_PHASES,
   assertMetaLarkConfirmation,
   buildMetaLarkConfigWindow,
   buildMetaLarkContinuationJob,
@@ -11,6 +12,7 @@ import {
   createMetaLarkEvidence,
   expectedLarkContracts,
   loadMetaLarkTarget,
+  normalizeMetaLarkSnapshot,
   parseMetaLarkOperatorArgs,
   validateMetaD1OnlySummaryForLark,
   validateMetaLarkEvidenceSequence,
@@ -43,6 +45,11 @@ test('Meta Lark operator is plan-only by default and requires exact confirmation
   );
   assert.equal(assertMetaLarkConfirmation('lark-preflight', {
     CONFIRM_META_LARK_PREFLIGHT: 'READ_ONLY_META_LARK_PREFLIGHT',
+  }), true);
+  assert.equal(META_LARK_OPERATOR_PHASES.includes('verify-late-completion'), true);
+  assert.equal(assertMetaLarkConfirmation('verify-late-completion', {
+    CONFIRM_META_LARK_VERIFY_LATE_COMPLETION:
+      'VERIFY_META_LARK_LATE_COMPLETION_AFTER_RESTORE',
   }), true);
 });
 
@@ -147,7 +154,45 @@ test('snapshot SQL binds the same operation and reads D1, preflight, Lark and co
   assert.match(sql, /meta_end_to_end_destination_preflight_v1/u);
   assert.match(sql, /meta_end_to_end_lark_write_v1/u);
   assert.match(sql, /meta_end_to_end_completion_v1/u);
+  assert.match(sql, /completion_json/u);
   assert.match(sql, /meta:meta_ads:chemistry_k2:meta-lark-chemistry_k2/u);
+});
+
+test('completion survives durable phase cleanup without fabricating a different operation', () => {
+  const current = target('facebook');
+  const results = larkResults(current);
+  const cleared = {
+    ...larkCompleteSnapshot(current),
+    d1_phase_complete: null,
+    preflight_phase_complete: null,
+    preflight_state_json: null,
+    lark_phase_complete: null,
+    lark_state_json: null,
+    completion_phase_complete: null,
+    completion_state_json: null,
+    work_completion_json: JSON.stringify({
+      schemaVersion: 'meta_end_to_end_reconciliation_v1',
+      operationId: current.operationId,
+      connectorKey: current.connectorKey,
+      preflight: results,
+      d1: { expectedOperations: 2, processedOperations: 2 },
+      lark: results,
+      failed: 0,
+    }),
+  };
+
+  const normalized = normalizeMetaLarkSnapshot(cleared);
+  assert.equal(normalized.clearedPhaseCompletion, true);
+  assert.equal(classifyMetaLarkCompletion(normalized, current).complete, true);
+
+  const wrongOperation = {
+    ...cleared,
+    work_completion_json: cleared.work_completion_json.replace(
+      current.operationId,
+      'different-operation',
+    ),
+  };
+  assert.equal(classifyMetaLarkCompletion(wrongOperation, current).complete, false);
 });
 
 test('completion requires Lark parity, final reconciliation, completed work and no D1 drift', () => {

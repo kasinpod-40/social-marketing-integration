@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import {
   chmod,
@@ -39,6 +40,8 @@ import {
   META_LARK_CONFIRMATIONS,
   META_LARK_OPERATOR_PHASES,
   buildMetaLarkSnapshotSql,
+  classifyMetaLarkCompletion,
+  normalizeMetaLarkSnapshot,
   validateMetaD1OnlySummaryForLark,
 } from './lib/meta-lark-parity-rollout-operator.js';
 import {
@@ -198,7 +201,7 @@ async function executeContinuation() {
   const firstBoundary = readD1Row(baseEnv, safeConfigPath, snapshotSql);
   await sleep(5_000);
   const secondBoundary = readD1Row(baseEnv, safeConfigPath, snapshotSql);
-  const stableBoundary = validateStableMetaHistoryFacebookBoundary(
+  const stableBoundary = validatePendingOrLateFacebookBoundary(
     firstBoundary,
     secondBoundary,
   );
@@ -312,9 +315,28 @@ async function runLarkPhaseChain({ cloneRoot, evidenceRoot, env }) {
   const restorePhase = 'restore-all-false';
   const verifyRestorePhase = 'verify-restore';
   const summaryPhase = 'summary';
+  const latePhase = 'verify-late-completion';
+  const restored = await fileExists(join(evidenceRoot, `${restorePhase}.json`))
+    && await fileExists(join(evidenceRoot, `${verifyRestorePhase}.json`));
+  const timedOutBeforeVerification = restored
+    && !(await fileExists(join(evidenceRoot, 'verify-lark.json')));
+  if (timedOutBeforeVerification) {
+    if (!(await fileExists(join(evidenceRoot, `${latePhase}.json`)))) {
+      runLarkPhase(cloneRoot, latePhase, env);
+    }
+    if (!(await fileExists(join(evidenceRoot, `${summaryPhase}.json`)))) {
+      runLarkPhase(cloneRoot, summaryPhase, env);
+    }
+    return;
+  }
   const executable = META_LARK_OPERATOR_PHASES
     .slice(1)
-    .filter((phase) => ![restorePhase, verifyRestorePhase, summaryPhase].includes(phase));
+    .filter((phase) => ![
+      restorePhase,
+      verifyRestorePhase,
+      latePhase,
+      summaryPhase,
+    ].includes(phase));
   let failureError = null;
   try {
     for (const phase of executable) {
@@ -346,6 +368,32 @@ async function runLarkPhaseChain({ cloneRoot, evidenceRoot, env }) {
   if (failureError) throw failureError;
   if (!(await fileExists(join(evidenceRoot, `${summaryPhase}.json`)))) {
     runLarkPhase(cloneRoot, summaryPhase, env);
+  }
+}
+
+function validatePendingOrLateFacebookBoundary(first, second) {
+  try {
+    return validateStableMetaHistoryFacebookBoundary(first, second);
+  } catch (pendingError) {
+    const firstNormalized = normalizeMetaLarkSnapshot(first);
+    const secondNormalized = normalizeMetaLarkSnapshot(second);
+    const completionTarget = {
+      operationId: target.operationId,
+      connectorKey: 'facebook',
+    };
+    const stable = JSON.stringify(firstNormalized) === JSON.stringify(secondNormalized);
+    if (!stable
+      || !classifyMetaLarkCompletion(firstNormalized, completionTarget).complete
+      || !classifyMetaLarkCompletion(secondNormalized, completionTarget).complete) {
+      throw pendingError;
+    }
+    return Object.freeze({
+      snapshot: secondNormalized,
+      fingerprint: createHash('sha256')
+        .update(JSON.stringify(secondNormalized))
+        .digest('hex'),
+      lateCompletionAfterRestore: true,
+    });
   }
 }
 

@@ -148,6 +148,8 @@ async function runPhase(loaded, phase, env) {
       return deploy(loaded, phase, 'safe');
     case 'verify-restore':
       return verifyDeployment(loaded, phase, 'safe');
+    case 'verify-late-completion':
+      return verifyLateCompletion(loaded);
     case 'summary':
       return summarize(loaded);
     default:
@@ -414,14 +416,61 @@ async function pollForRerun(loaded, minimumAttempts) {
   throw error;
 }
 
+async function verifyLateCompletion(loaded) {
+  const before = (await readEvidence(loaded, 'snapshot-before')).data?.snapshot;
+  const after = await readSnapshot(loaded);
+  const comparison = compareMetaLarkSnapshots(before, after, loaded.target);
+  const beforeAttempts = normalizeMetaLarkSnapshot(before).mainQueueAttempts;
+  const sameOperationAttemptsObserved = after.mainQueueAttempts - beforeAttempts;
+  if (!after.clearedPhaseCompletion || sameOperationAttemptsObserved < 2) {
+    throw failure(
+      'Late Meta completion lacks cleared-phase and repeated same-operation proof',
+      'META_LARK_LATE_COMPLETION_PROOF_INVALID',
+    );
+  }
+  return {
+    comparison,
+    snapshotAfter: after,
+    sameOperationAttemptsObserved,
+    clearedPhaseCompletionVerified: true,
+    providerRequestCount: 0,
+  };
+}
+
 async function summarize(loaded) {
+  const late = await readEvidence(loaded, 'verify-late-completion').catch((error) => {
+    if (error?.code === 'ENOENT') return null;
+    throw error;
+  });
+  const phases = late
+    ? [
+        'lark-preflight',
+        'd1-ready',
+        'deploy-safe-baseline',
+        'verify-safe-baseline',
+        'deploy-lark-gates',
+        'verify-lark-deployment',
+        'snapshot-before',
+        'send-lark-continuation',
+        'restore-all-false',
+        'verify-restore',
+        'verify-late-completion',
+      ]
+    : META_LARK_OPERATOR_PHASES
+        .slice(1, -1)
+        .filter((phase) => phase !== 'verify-late-completion');
   const evidence = [];
-  for (const phase of META_LARK_OPERATOR_PHASES.slice(1, -1)) {
+  for (const phase of phases) {
     evidence.push(await readEvidence(loaded, phase));
   }
   const validated = validateMetaLarkEvidenceSequence(evidence, loaded.target);
   const final = validated.at(-1);
-  if (final.phase !== 'verify-restore' || final.data?.mode !== 'safe') {
+  const restore = validated.find((item) => item.phase === 'verify-restore');
+  const lateValid = final.phase === 'verify-late-completion'
+    && final.data?.clearedPhaseCompletionVerified === true
+    && Number(final.data?.sameOperationAttemptsObserved) >= 2;
+  if (restore?.data?.mode !== 'safe'
+    || (!lateValid && final.phase !== 'verify-restore')) {
     throw failure(
       'Meta Lark summary requires verified all-false restore',
       'META_LARK_SUMMARY_RESTORE_INCOMPLETE',
@@ -468,6 +517,14 @@ async function readPriorEvidence(loaded, phase) {
       'Guarded restore requires chain-bound active evidence',
       'META_LARK_RESTORE_EVIDENCE_MISSING',
     );
+  }
+  if (phase === 'summary') {
+    try {
+      return await readEvidence(loaded, 'verify-late-completion');
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
+      return readEvidence(loaded, 'verify-restore');
+    }
   }
   const previous = previousMetaLarkPhase(phase);
   return previous === 'plan' ? null : readEvidence(loaded, previous);

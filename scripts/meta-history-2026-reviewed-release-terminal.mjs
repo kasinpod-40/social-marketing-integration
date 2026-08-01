@@ -60,6 +60,7 @@ try {
           DEV_VARS_FILE: join(releaseCloneRoot, '.dev.vars'),
           MKT_META_HISTORY_EXACT_CONTINUATION_CHILD: assets.exactContinuation,
           MKT_META_HISTORY_LARK_LAUNCHER_PATH: assets.larkLauncher,
+          MKT_META_LARK_OPERATOR_PATH: assets.larkOperator,
         },
         encoding: 'utf8',
         maxBuffer: 512 * 1024 * 1024,
@@ -227,6 +228,11 @@ async function verifyLocalAssets() {
     'scripts',
     'meta-lark-parity-rollout-launcher.mjs',
   );
+  const larkOperator = join(
+    repositoryRoot,
+    'scripts',
+    'meta-lark-parity-rollout-operator.mjs',
+  );
 
   await assertDirectory(outputs, 'outputs');
   await assertPrivateRegularFile(devVars, '.dev.vars');
@@ -234,6 +240,7 @@ async function verifyLocalAssets() {
   await assertRegularFile(exactTerminal, 'exact continuation Terminal');
   await assertRegularFile(exactContinuation, 'exact continuation child');
   await assertRegularFile(larkLauncher, 'Meta Lark launcher');
+  await assertRegularFile(larkOperator, 'Meta Lark operator');
 
   return Object.freeze({
     outputs,
@@ -242,6 +249,7 @@ async function verifyLocalAssets() {
     exactTerminal,
     exactContinuation,
     larkLauncher,
+    larkOperator,
   });
 }
 
