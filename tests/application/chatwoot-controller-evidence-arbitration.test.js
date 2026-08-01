@@ -20,6 +20,7 @@ const VERSION_C = '33333333-3333-4333-8333-333333333333';
 const SESSION = 'a'.repeat(64);
 const OTHER_SESSION = 'b'.repeat(64);
 const HEAD = 'c'.repeat(40);
+const PRIOR_HEAD = 'd'.repeat(40);
 
 function sha256(value) {
   return createHash('sha256').update(String(value)).digest('hex');
@@ -144,6 +145,8 @@ test('safe-baseline handoff remains fail closed when identity does not match', (
 test('safe-baseline handoff validator requires exact non-mutating parent contract', () => {
   const selected = validateChatwootSafeBaselineSelectionHint(handoff(), HEAD);
   assert.equal(selected.repositoryHead, HEAD);
+  assert.equal(selected.selectionAuthority, 'current_safe_baseline_version');
+  assert.equal(selected.priorAttemptHead, null);
   assert.equal(selected.sessionFingerprint, SESSION);
   assert.equal(selected.baselineVersionFingerprint, sha256(VERSION_A));
   assert.equal(selected.activeVersionFingerprint, sha256(VERSION_B));
@@ -157,6 +160,39 @@ test('safe-baseline handoff validator requires exact non-mutating parent contrac
   );
   assert.throws(
     () => validateChatwootSafeBaselineSelectionHint(handoff(), 'not-a-head'),
+    (error) => error?.code === 'CHATWOOT_CONTROLLER_EVIDENCE_SELECTION_HANDOFF_INVALID',
+  );
+});
+
+test('safe-baseline handoff validator accepts only a proven prior-attempt authority', () => {
+  const selected = validateChatwootSafeBaselineSelectionHint(handoff({
+    selectedBy: 'verified_prior_safe_baseline_attempt',
+    priorAttemptHead: PRIOR_HEAD,
+    priorAttemptValidated: true,
+  }), HEAD);
+  assert.equal(selected.selectionAuthority, 'verified_prior_safe_baseline_attempt');
+  assert.equal(selected.priorAttemptHead, PRIOR_HEAD);
+
+  assert.throws(
+    () => validateChatwootSafeBaselineSelectionHint(handoff({
+      selectedBy: 'verified_prior_safe_baseline_attempt',
+      priorAttemptHead: PRIOR_HEAD,
+    }), HEAD),
+    (error) => error?.code === 'CHATWOOT_CONTROLLER_EVIDENCE_SELECTION_HANDOFF_INVALID',
+  );
+  assert.throws(
+    () => validateChatwootSafeBaselineSelectionHint(handoff({
+      selectedBy: 'verified_prior_safe_baseline_attempt',
+      priorAttemptHead: HEAD,
+      priorAttemptValidated: true,
+    }), HEAD),
+    (error) => error?.code === 'CHATWOOT_CONTROLLER_EVIDENCE_SELECTION_HANDOFF_INVALID',
+  );
+  assert.throws(
+    () => validateChatwootSafeBaselineSelectionHint(handoff({
+      priorAttemptHead: PRIOR_HEAD,
+      priorAttemptValidated: true,
+    }), HEAD),
     (error) => error?.code === 'CHATWOOT_CONTROLLER_EVIDENCE_SELECTION_HANDOFF_INVALID',
   );
 });

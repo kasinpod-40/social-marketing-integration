@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const FINGERPRINT = /^[0-9a-f]{64}$/u;
 
@@ -5,8 +7,12 @@ export function selectChatwootControllerSafeBaselineEvidence(
   candidates = [],
   currentActiveVersion,
   enabledFlags = [],
+  verifiedPriorSelectionHint = null,
 ) {
   const baselineVersion = requireVersionId(currentActiveVersion, 'currentActiveVersion');
+  const selectionHint = verifiedPriorSelectionHint === null
+    ? null
+    : normalizeSelectionHint(verifiedPriorSelectionHint);
   if (!Array.isArray(enabledFlags) || enabledFlags.length !== 0) {
     throw safeBaselineError(
       'Current Worker must have every execution flag false before safe-baseline resume',
@@ -31,16 +37,25 @@ export function selectChatwootControllerSafeBaselineEvidence(
     );
   }
 
-  const matches = [...identities.values()].filter(
+  const values = [...identities.values()];
+  const baselineMatches = values.filter(
     (candidate) => candidate.baselineVersion === baselineVersion,
   );
+  const matches = selectionHint
+    ? values.filter((candidate) => matchesSelectionHint(candidate, selectionHint))
+    : baselineMatches;
   if (matches.length !== 1) {
     throw safeBaselineError(
-      'Incomplete Chatwoot controller evidence cannot be bound to one current safe baseline',
-      'CHATWOOT_SAFE_BASELINE_EVIDENCE_AMBIGUOUS',
+      selectionHint
+        ? 'Incomplete Chatwoot controller evidence cannot be bound to the verified prior safe-baseline attempt'
+        : 'Incomplete Chatwoot controller evidence cannot be bound to one current safe baseline',
+      selectionHint
+        ? 'CHATWOOT_SAFE_BASELINE_PRIOR_SELECTION_AMBIGUOUS'
+        : 'CHATWOOT_SAFE_BASELINE_EVIDENCE_AMBIGUOUS',
       {
         candidateCount: identities.size,
-        baselineVersionMatchCount: matches.length,
+        baselineVersionMatchCount: baselineMatches.length,
+        priorSelectionMatchCount: selectionHint ? matches.length : undefined,
       },
     );
   }
@@ -54,7 +69,38 @@ export function selectChatwootControllerSafeBaselineEvidence(
   return Object.freeze({
     ...matches[0],
     candidateCount: identities.size,
-    selectedBy: 'current_safe_baseline_version',
+    selectedBy: selectionHint
+      ? 'verified_prior_safe_baseline_attempt'
+      : 'current_safe_baseline_version',
+  });
+}
+
+function matchesSelectionHint(candidate, selectionHint) {
+  return candidate.sessionFingerprint === selectionHint.sessionFingerprint
+    && sha256(candidate.baselineVersion) === selectionHint.baselineVersionFingerprint
+    && sha256(candidate.activeVersion) === selectionHint.activeVersionFingerprint;
+}
+
+function normalizeSelectionHint(value = {}) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw safeBaselineError(
+      'verifiedPriorSelectionHint is invalid',
+      'CHATWOOT_SAFE_BASELINE_PRIOR_SELECTION_INVALID',
+    );
+  }
+  return Object.freeze({
+    sessionFingerprint: requireFingerprint(
+      value.sessionFingerprint,
+      'verifiedPriorSelectionHint.sessionFingerprint',
+    ),
+    baselineVersionFingerprint: requireFingerprint(
+      value.baselineVersionFingerprint,
+      'verifiedPriorSelectionHint.baselineVersionFingerprint',
+    ),
+    activeVersionFingerprint: requireFingerprint(
+      value.activeVersionFingerprint,
+      'verifiedPriorSelectionHint.activeVersionFingerprint',
+    ),
   });
 }
 
@@ -152,6 +198,10 @@ function requireText(value, fieldName) {
     );
   }
   return value.trim();
+}
+
+function sha256(value) {
+  return createHash('sha256').update(String(value)).digest('hex');
 }
 
 function safeBaselineError(message, code, details = {}) {

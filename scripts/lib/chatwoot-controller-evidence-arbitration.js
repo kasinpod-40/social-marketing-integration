@@ -3,6 +3,10 @@ import { createHash } from 'node:crypto';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const FINGERPRINT = /^[0-9a-f]{64}$/u;
 const SHA = /^[0-9a-f]{40}$/u;
+const SAFE_BASELINE_SELECTION_AUTHORITIES = Object.freeze([
+  'current_safe_baseline_version',
+  'verified_prior_safe_baseline_attempt',
+]);
 
 export function selectChatwootControllerEvidence(
   candidates = [],
@@ -69,10 +73,12 @@ export function validateChatwootSafeBaselineSelectionHint(value = {}, repository
       'CHATWOOT_CONTROLLER_EVIDENCE_SELECTION_HANDOFF_INVALID',
     );
   }
+  const selectionAuthority = String(value.selectedBy ?? '');
+  const verifiedPriorAttempt = selectionAuthority === 'verified_prior_safe_baseline_attempt';
   if (value.contractVersion !== 'chatwoot_controller_safe_baseline_resume_v1'
       || value.repositoryHead !== head
       || value.controllerBoundary !== 'queue_retry_exhausted_terminal_v1'
-      || value.selectedBy !== 'current_safe_baseline_version'
+      || !SAFE_BASELINE_SELECTION_AUTHORITIES.includes(selectionAuthority)
       || value.secondInitialAdmission !== false
       || value.queueAction !== false
       || value.d1Mutation !== false
@@ -85,6 +91,21 @@ export function validateChatwootSafeBaselineSelectionHint(value = {}, repository
       'CHATWOOT_CONTROLLER_EVIDENCE_SELECTION_HANDOFF_INVALID',
     );
   }
+  let priorAttemptHead = null;
+  if (verifiedPriorAttempt) {
+    priorAttemptHead = requireSha(value.priorAttemptHead, 'priorAttemptHead');
+    if (priorAttemptHead === head || value.priorAttemptValidated !== true) {
+      throw arbitrationError(
+        'Chatwoot prior-attempt selection handoff is invalid',
+        'CHATWOOT_CONTROLLER_EVIDENCE_SELECTION_HANDOFF_INVALID',
+      );
+    }
+  } else if (value.priorAttemptHead !== undefined || value.priorAttemptValidated !== undefined) {
+    throw arbitrationError(
+      'Ordinary safe-baseline selection handoff contains prior-attempt fields',
+      'CHATWOOT_CONTROLLER_EVIDENCE_SELECTION_HANDOFF_INVALID',
+    );
+  }
   const candidateCount = Number(value.candidateCount);
   if (!Number.isSafeInteger(candidateCount) || candidateCount < 1) {
     throw arbitrationError(
@@ -94,6 +115,8 @@ export function validateChatwootSafeBaselineSelectionHint(value = {}, repository
   }
   return Object.freeze({
     repositoryHead: head,
+    selectionAuthority,
+    priorAttemptHead,
     sessionFingerprint: requireFingerprint(
       value.retainedSessionFingerprint,
       'retainedSessionFingerprint',
