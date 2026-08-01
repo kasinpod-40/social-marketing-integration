@@ -1,5 +1,13 @@
 # Project Brain — Social Marketing Data Integration
 
+## Chatwoot Initial terminal recovery — 2026-08-01
+
+The current retained Initial operation was terminalized after Final UAT polling mistakenly treated a `running`
+unit as failed and restored the Worker all-false before Queue completion. Recovery is exact-session/D1-proven,
+reactivates only the guarded existing Work, sends no replacement Initial admission, preserves partial masters,
+requires 15-target D1/Lark parity plus Initial/Daily replay stability, and closes incidents only after Safe
+completion. See `docs/project-brain/chatwoot-initial-terminal-failure-recovery-2026-08-01.md`.
+
 ## WooCommerce 2026-only history decision — 2026-07-30
 
 คำสั่งล่าสุดแทนที่ Full-history WooCommerce ด้วย Order history ตั้งแต่

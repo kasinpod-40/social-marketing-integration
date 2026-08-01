@@ -357,6 +357,55 @@ export function fingerprintChatwootFinalSourceRecovery(value) {
   return sha256(stableJson(value));
 }
 
+/**
+ * Wrangler may print progress lines before a JSON result. Extract one complete top-level JSON
+ * document without weakening validation of the parsed payload or assuming stdout is JSON-only.
+ */
+export function parseChatwootWranglerJsonOutput(value, label = 'Wrangler output') {
+  const source = String(value ?? '');
+  for (let start = 0; start < source.length; start += 1) {
+    if (source[start] !== '{' && source[start] !== '[') continue;
+    const document = readJsonDocument(source, start);
+    if (!document) continue;
+    try {
+      return JSON.parse(document);
+    } catch {
+      // A progress line may itself contain braces. Continue to the next complete candidate.
+    }
+  }
+  throw recoveryError(
+    `${label} returned invalid JSON`,
+    'CHATWOOT_WRANGLER_JSON_INVALID',
+    { label },
+  );
+}
+
+function readJsonDocument(source, start) {
+  const stack = [];
+  let quoted = false;
+  let escaped = false;
+  for (let index = start; index < source.length; index += 1) {
+    const character = source[index];
+    if (quoted) {
+      if (escaped) escaped = false;
+      else if (character === '\\') escaped = true;
+      else if (character === '"') quoted = false;
+      continue;
+    }
+    if (character === '"') {
+      quoted = true;
+      continue;
+    }
+    if (character === '{' || character === '[') stack.push(character);
+    else if (character === '}' || character === ']') {
+      const expected = character === '}' ? '{' : '[';
+      if (stack.pop() !== expected) return null;
+      if (stack.length === 0) return source.slice(start, index + 1);
+    }
+  }
+  return null;
+}
+
 function hasExactIncidentIdentity(state) {
   const incident = CHATWOOT_FINAL_SOURCE_CONFIG_INCIDENT;
   return state.queueGenerationMin === incident.generation
