@@ -15,14 +15,22 @@ import {
 const REQUIRED_RELEASE_PATHS = Object.freeze([
   'docs/current-task.md',
   'docs/project-brain/meta-history-2026-finalizer.md',
+  'docs/tasks/lark-dashboard-display-v2-compatibility-v1.md',
   'docs/tasks/meta-history-exact-plan-continuation-v1.md',
+  'packages/application/src/reports/build-report-output-rows.js',
+  'packages/config/src/lark-dashboard-display-v2-compatibility.js',
+  'scripts/lark-dashboard-display-v2-compatibility-backfill.mjs',
+  'scripts/lib/lark-dashboard-display-v2-compatibility-v1.js',
   'scripts/lib/meta-history-exact-plan-continuation.js',
   'scripts/meta-history-2026-exact-plan-continuation-terminal.mjs',
   'scripts/meta-history-2026-exact-plan-continuation.mjs',
   'scripts/verify-meta-history-exact-plan-continuation-local.mjs',
+  'tests/application/lark-dashboard-display-v2-writer.test.js',
   'tests/application/meta-history-2026-public-launcher.test.js',
   'tests/application/meta-history-exact-plan-continuation.test.js',
   'tests/application/meta-history-exact-plan-continuation-wiring.test.js',
+  'tests/config/lark-dashboard-display-v2-compatibility.test.js',
+  'tests/scripts/lark-dashboard-display-v2-compatibility-backfill.test.js',
 ]);
 
 function validPlan() {
