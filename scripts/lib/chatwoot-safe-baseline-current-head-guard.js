@@ -1,4 +1,4 @@
-import { readdir, stat } from 'node:fs/promises';
+import { lstat, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const RECOVERY_OUTPUT = 'chatwoot-controller-safe-baseline-resume';
@@ -25,16 +25,16 @@ export async function assertChatwootSafeBaselineCurrentHeadClear({
   const directory = join(outputs, RECOVERY_OUTPUT, head);
   let info;
   try {
-    info = await stat(directory);
+    info = await lstat(directory);
   } catch (cause) {
     if (cause?.code === 'ENOENT') {
       return Object.freeze({ clear: true, entryCount: 0, directory });
     }
     throw cause;
   }
-  if (!info.isDirectory()) {
+  if (info.isSymbolicLink() || !info.isDirectory()) {
     throw currentHeadError(
-      'Chatwoot safe-baseline current-head evidence path is not a directory',
+      'Chatwoot safe-baseline current-head evidence path must be a real directory',
       'CHATWOOT_SAFE_BASELINE_CURRENT_HEAD_INVALID',
     );
   }
