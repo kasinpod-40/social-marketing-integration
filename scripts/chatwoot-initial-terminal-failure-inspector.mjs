@@ -1,10 +1,22 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
-import { chmod, mkdir, readFile, readdir, rename, stat, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  lstat,
+  mkdir,
+  readFile,
+  readdir,
+  rename,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
 import { dirname, join, relative, resolve } from 'node:path';
 
 import { buildWranglerOAuthEnvironment } from './lib/cloudflare-auth-environment.js';
+import {
+  validateChatwootSafeBaselineSelectionHint,
+} from './lib/chatwoot-controller-evidence-arbitration.js';
 import { readDevVars } from './lib/dev-vars.js';
 import {
   CHATWOOT_INITIAL_FAILURE_INSPECTED_MARKER,
@@ -18,6 +30,9 @@ import {
   selectLatestIncompleteChatwootSession,
 } from './lib/chatwoot-initial-terminal-failure-recovery.js';
 import {
+  classifyChatwootInitialFailureWorkerSafety,
+} from './lib/chatwoot-initial-failure-worker-safety.js';
+import {
   fingerprintChatwootFinalSourceRecovery,
   parseChatwootWranglerJsonOutput,
 } from './lib/chatwoot-final-source-config-recovery.js';
@@ -26,6 +41,8 @@ const ROOT = resolve(process.cwd());
 const DATABASE_NAME = 'social-mkt-state-dev';
 const WORKER_NAME = 'social-mkt-sync-worker';
 const OUTPUT_ROOT = join('outputs', 'chatwoot-final-30d-daily-uat');
+const SAFE_BASELINE_OUTPUT = 'chatwoot-controller-safe-baseline-resume';
+const SAFE_BASELINE_ATTEMPT = '01-active-window.attempt.json';
 
 try {
   await main();
@@ -85,8 +102,8 @@ async function main() {
   const row = readOneD1Row(wranglerEnv, configPath,
     buildChatwootInitialFailureInspectorSql(retained.session.initial));
   const inspection = normalizeChatwootInitialFailureInspection(row, retained.session.initial);
-  const worker = verifyAllFlagsFalse(wranglerEnv, configPath);
   const repositoryHead = run('git', ['rev-parse', 'HEAD'], process.env).stdout.trim();
+  const worker = await verifyWorkerSafety(wranglerEnv, configPath, repositoryHead);
   const evidenceDirectory = resolve(ROOT, 'outputs', 'chatwoot-initial-terminal-failure-inspector', repositoryHead);
   const evidence = {
     contractVersion: CHATWOOT_INITIAL_FAILURE_INSPECTOR_CONTRACT_VERSION,
@@ -157,7 +174,16 @@ function printPlan() {
     planOnly: true,
     contractVersion: CHATWOOT_INITIAL_FAILURE_INSPECTOR_CONTRACT_VERSION,
     command: `${confirmation.envName}=${confirmation.value} node scripts/chatwoot-initial-terminal-failure-inspector.mjs --execute`,
-    reads: ['latest admitted incomplete retained session', 'exact current-operation reliability rows', 'active Worker version and bindings'],
+    reads: [
+      'latest admitted incomplete retained session',
+      'exact current-operation reliability rows',
+      'active Worker version and bindings',
+      'current-head safe-baseline selection handoff only when execution flags are active',
+    ],
+    workerSafetyModes: [
+      'all_flags_false',
+      'exact_safe_baseline_resume_active_window',
+    ],
     sqlMode: 'SELECT_only',
     providerRequests: 0,
     queueActions: 0,
@@ -215,7 +241,7 @@ function readD1Rows(env, configPath, sql) {
   return rows;
 }
 
-function verifyAllFlagsFalse(env, configPath) {
+async function verifyWorkerSafety(env, configPath, repositoryHead) {
   const status = parseChatwootWranglerJsonOutput(run('npx', [
     'wrangler', 'deployments', 'status', '--name', WORKER_NAME, '--config', configPath, '--json',
   ], env).stdout, 'Worker deployment status');
@@ -225,9 +251,6 @@ function verifyAllFlagsFalse(env, configPath) {
     throw inspectorError('Worker does not have one active version', 'CHATWOOT_INITIAL_FAILURE_WORKER_UNSAFE');
   }
   const versionId = String(active[0].version_id ?? active[0].id ?? '');
-  if (!/^[0-9a-f-]{36}$/u.test(versionId)) {
-    throw inspectorError('Worker version identity is invalid', 'CHATWOOT_INITIAL_FAILURE_WORKER_UNSAFE');
-  }
   const view = parseChatwootWranglerJsonOutput(run('npx', [
     'wrangler', 'versions', 'view', versionId, '--name', WORKER_NAME, '--config', configPath, '--json',
   ], env).stdout, 'Worker version view');
@@ -239,17 +262,57 @@ function verifyAllFlagsFalse(env, configPath) {
     return /^MKT_[A-Z0-9_]+_ENABLED$/u.test(name)
       && (value === true || String(value).toLowerCase() === 'true');
   }).map((binding) => String(binding.name ?? binding.binding)).sort();
-  if (trueFlags.length > 0) {
+  const selectionHint = trueFlags.length > 0
+    ? await readSafeBaselineSelectionHint(repositoryHead)
+    : null;
+  return classifyChatwootInitialFailureWorkerSafety({
+    versionId,
+    trueFlags,
+    selectionHint,
+  });
+}
+
+async function readSafeBaselineSelectionHint(repositoryHead) {
+  const path = join(
+    ROOT,
+    'outputs',
+    SAFE_BASELINE_OUTPUT,
+    repositoryHead,
+    SAFE_BASELINE_ATTEMPT,
+  );
+  let link;
+  try {
+    link = await lstat(path);
+  } catch (cause) {
+    if (cause?.code === 'ENOENT') return null;
+    throw cause;
+  }
+  const info = await stat(path);
+  if (link.isSymbolicLink() || !info.isFile() || (info.mode & 0o077) !== 0) {
     throw inspectorError(
-      'Worker contains a true execution flag',
+      'Safe-baseline selection handoff must be a private regular file',
       'CHATWOOT_INITIAL_FAILURE_WORKER_UNSAFE',
-      { trueFlags },
     );
   }
-  return Object.freeze({
-    allFlagsFalse: true,
-    versionFingerprint: fingerprintChatwootFinalSourceRecovery(versionId),
-  });
+  let value;
+  try {
+    value = JSON.parse(await readFile(path, 'utf8'));
+  } catch (cause) {
+    throw inspectorError(
+      'Safe-baseline selection handoff is invalid JSON',
+      'CHATWOOT_INITIAL_FAILURE_WORKER_UNSAFE',
+      { errorCode: cause?.code ?? 'JSON_PARSE_FAILED' },
+    );
+  }
+  try {
+    return validateChatwootSafeBaselineSelectionHint(value, repositoryHead);
+  } catch (cause) {
+    throw inspectorError(
+      'Safe-baseline selection handoff is outside the exact reviewed contract',
+      'CHATWOOT_INITIAL_FAILURE_WORKER_UNSAFE',
+      { handoffCode: cause?.code ?? 'HANDOFF_INVALID' },
+    );
+  }
 }
 
 function run(command, args, env) {
@@ -287,7 +350,7 @@ function scrub(value) {
   if (Array.isArray(value)) return value.map(scrub);
   if (typeof value !== 'object') return value;
   return Object.fromEntries(Object.entries(value)
-    .filter(([key]) => !/token|secret|authorization|password|cookie|tableId|accountId|queueId/iu.test(key))
+    .filter(([key]) => !/token|secret|authorization|password|cookie|tableId|accountId|queueId|versionId/iu.test(key))
     .map(([key, nested]) => [key, scrub(nested)]));
 }
 
