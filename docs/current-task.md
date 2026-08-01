@@ -134,3 +134,6 @@ Root cause ที่ยืนยันจาก Source คือ Lark launcher �
 materializer เดิมเขียนเฉพาะ customer identity และ required all-false flags ลง sibling config ทำให้ retained
 table mappings ยังเก่าอยู่. Implementation ใน PR #421 จึง materialize Lark mappings ทั้ง 15 ค่าเฉพาะไฟล์
 runtime ชั่วคราว พร้อม fail-closed validation; ไม่แก้ retained safe config และไม่เปลี่ยน D1 path.
+Reviewed wrapper ยังคง clone immutable release `29de2303fa311c4a13fac4725699416cfdc04386` และ operator
+checkout `5ff8e2cfb1f890ac2a8f2867a904b477c6456d91` แต่ pin exact PR branch Head เพื่อใช้เฉพาะ reviewed
+Terminal/Lark launcher จาก Head ที่ผ่าน CI; private retained assets ถูกอ่านจาก explicit absolute asset root.

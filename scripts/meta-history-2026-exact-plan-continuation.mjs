@@ -52,6 +52,9 @@ import {
 import { discoverWooCommerceQueueId } from './lib/woocommerce-final-queue-discovery.js';
 
 const repositoryRoot = resolve(process.cwd());
+const larkLauncherPath = process.env.MKT_META_HISTORY_LARK_LAUNCHER_PATH
+  ? resolve(process.env.MKT_META_HISTORY_LARK_LAUNCHER_PATH)
+  : join(repositoryRoot, 'scripts', 'meta-lark-parity-rollout-launcher.mjs');
 const workerName = 'social-mkt-sync-worker';
 const databaseName = 'social-mkt-state-dev';
 const mainQueueName = 'social-mkt-sync-jobs';
@@ -165,6 +168,7 @@ async function executeContinuation() {
   );
   await assertPrivateRegularFile(sourceConfigPath, 'Meta source Wrangler config');
   const safeConfigText = await readFile(safeConfigPath, 'utf8');
+  await assertRegularFile(larkLauncherPath, 'Meta Lark launcher');
 
   stage = 'cloudflare-read-only-context';
   const cloudflare = await resolveCloudflareContext(baseEnv, safeConfigText);
@@ -353,7 +357,7 @@ function runLarkPhase(cloneRoot, phase, env) {
   };
   runVisible(
     process.execPath,
-    ['scripts/meta-lark-parity-rollout-launcher.mjs', `--phase=${phase}`, '--execute'],
+    [larkLauncherPath, `--phase=${phase}`, '--execute'],
     phaseEnv,
     cloneRoot,
   );
