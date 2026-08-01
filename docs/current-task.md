@@ -119,6 +119,18 @@ provider replay    forbidden
 D1 Queue resend    forbidden
 ```
 
+The preserved public Meta continuation authority remains:
+
+```text
+scripts/meta-history-2026-reviewed-release-terminal.mjs
+```
+
+Inside the immutable reviewed release clone, it delegates only to:
+
+```text
+scripts/meta-history-2026-exact-plan-continuation-terminal.mjs
+```
+
 Meta must not resume until Chatwoot completes Safe restore and the Worker is verified all-false.
 
 ## Implementation result
