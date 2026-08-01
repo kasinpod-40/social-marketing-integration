@@ -87,6 +87,39 @@ test('Chatwoot sync backfills complete message history with backward before pagi
   assert.equal(captured[0].incoming_message_count, 45);
 });
 
+test('Chatwoot sync omits an orphan label reference without fabricating a label identity', async () => {
+  const order = [];
+  const captured = [];
+  const client = clientWithConversations([conversation(71)], {
+    async listConversationLabels() { return ['retired-label']; },
+  });
+  const row = conversation(71);
+  delete row.labels;
+  client.listConversationsPage = async () => ({
+    page: 1, rows: [row], totalCount: 1, hasMore: false,
+  });
+  const result = await syncChatwootAnalytics({
+    ...baseInput(),
+    connectorEnabled: true,
+    d1WriteEnabled: true,
+    larkWriteEnabled: false,
+    reportWriteEnabled: false,
+    checkpointWriteEnabled: true,
+    fullSnapshot: true,
+    client,
+    chatwootStore: makeStore({ order, capturedConversations: captured }),
+    coverageStore: coverageStore(),
+    incrementalStateStore: checkpointStore(order),
+  });
+
+  assert.equal(result.status, 'completed');
+  assert.equal(result.source.unresolvedLabelReferences, 1);
+  assert.equal(result.reconciliation.labelReferencesComplete, false);
+  assert.equal(result.reconciliation.unresolvedLabelReferences, 1);
+  assert.equal(captured.length, 1);
+  assert.equal(order.includes('d1:conversation-label'), false);
+});
+
 test('Chatwoot sync batches D1 state and label reads above 500 conversations', async () => {
   const rows = Array.from({ length: 501 }, (_, index) => conversation(index + 1));
   const stateBatches = [];

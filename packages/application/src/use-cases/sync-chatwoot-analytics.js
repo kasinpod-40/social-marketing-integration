@@ -124,6 +124,7 @@ export async function syncChatwootAnalytics(input = {}) {
   const messages = [];
   const reportingEvents = [];
   const conversations = [];
+  let unresolvedLabelReferences = 0;
   for (const sourceConversation of sourceConversations) {
     await assertLockActive();
     const externalConversationId = requirePositiveId(sourceConversation.id, 'conversation.id');
@@ -160,9 +161,9 @@ export async function syncChatwootAnalytics(input = {}) {
       const titleHash = await hashChatwootLabelTitle(title);
       const id = labelIdsByTitleHash.get(titleHash);
       if (!id) {
-        throw permanentError('Chatwoot conversation references an unknown label', {
-          code: 'CHATWOOT_LABEL_MAPPING_MISSING',
-        });
+        // Deleted labels can remain on historical Conversations without a stable external label ID.
+        unresolvedLabelReferences += 1;
+        continue;
       }
       labelIds.push(id);
     }
@@ -265,13 +266,19 @@ export async function syncChatwootAnalytics(input = {}) {
       contactsSelected: sourceContacts.length,
       messagesSelected: messages.length,
       reportingEventsSelected: reportingEvents.length,
+      unresolvedLabelReferences,
       incrementalCutoff: cutoff,
     }),
     d1: d1Result,
     lark: larkResult,
     coverage: Object.freeze({ status: 'complete', runs: finalCoverageRuns.length }),
     checkpoint: checkpointResult,
-    reconciliation: Object.freeze({ ...writeSets.reconciliation, sinksComplete: true }),
+    reconciliation: Object.freeze({
+      ...writeSets.reconciliation,
+      sinksComplete: true,
+      labelReferencesComplete: unresolvedLabelReferences === 0,
+      unresolvedLabelReferences,
+    }),
   });
 }
 

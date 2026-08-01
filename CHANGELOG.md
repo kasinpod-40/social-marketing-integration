@@ -4,6 +4,8 @@
 
 ### Reliability
 
+- Preserved Conversations whose historical label title no longer resolves to a current external label ID,
+  omitting only that relationship and reporting an unresolved-reference reconciliation count without fabrication.
 - Treated Chatwoot's out-of-range optional `waiting_since` sentinel as missing instead of failing a Conversation,
   and added exact attempts-7/unit-2 zero-write recovery plus closure for the resulting retained incident.
 - Accepted fractional epoch seconds from the Chatwoot conversation API through the Shared date-time contract,
