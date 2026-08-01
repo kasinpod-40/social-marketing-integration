@@ -462,6 +462,15 @@ function resolveInitialRecoveryBoundary(env, recovering) {
       allowedIncidentCounts: Object.freeze({ dlqRecords: 5, openAlerts: 8 }),
     });
   }
+  if (value === CHATWOOT_INITIAL_RECOVERY_BOUNDARIES.messageOrder) {
+    return Object.freeze({
+      value,
+      nextSequence: 1,
+      mainQueueAttempts: 11,
+      allowedPreexistingFailedUnits: 1,
+      allowedIncidentCounts: Object.freeze({ dlqRecords: 6, openAlerts: 10 }),
+    });
+  }
   fail('Initial recovery boundary contract is missing or unsupported', 'CHATWOOT_INITIAL_FAILURE_BOUNDARY_DRIFT');
 }
 

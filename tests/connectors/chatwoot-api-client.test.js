@@ -77,6 +77,17 @@ test('Chatwoot message pagination rejects non-increasing cursors', async () => {
   );
 });
 
+test('Chatwoot message pagination canonicalizes a descending live page', async () => {
+  const client = makeClient(async () => jsonResponse({
+    payload: [{ id: 103 }, { id: 102 }, { id: 101 }],
+    meta: { labels: [] },
+  }));
+  const page = await client.listMessagesPage({ conversationId: 7, after: 100 });
+  assert.deepEqual(page.rows.map((row) => row.id), [101, 102, 103]);
+  assert.equal(page.nextAfter, '103');
+  assert.equal(page.nextBefore, '101');
+});
+
 test('Chatwoot account reporting events send bounded since and until seconds', async () => {
   let requested = null;
   const client = makeClient(async (url) => {
