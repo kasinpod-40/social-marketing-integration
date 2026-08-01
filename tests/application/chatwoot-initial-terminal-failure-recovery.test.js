@@ -10,12 +10,14 @@ import {
   parseChatwootWranglerJsonOutput,
 } from '../../scripts/lib/chatwoot-final-source-config-recovery.js';
 import {
+  CHATWOOT_INITIAL_RECOVERY_BOUNDARIES,
   assertChatwootInitialFailureInspectorConfirmation,
   buildChatwootCurrentIncidentClosureSql,
   buildChatwootInitialFailureReactivationSql,
   buildChatwootInitialRecoveryContinuationJob,
   buildChatwootInitialFailureCandidateSql,
   buildChatwootInitialFailureInspectorSql,
+  classifyChatwootInitialRecoveryBoundary,
   normalizeChatwootInitialFailureInspection,
   sanitizeFailureDetails,
   selectLatestIncompleteChatwootSession,
@@ -185,6 +187,51 @@ test('terminal reactivation and current incident closure are exact guarded mutat
   assert.doesNotMatch(closure, /\bDELETE\b/iu);
 });
 
+test('fractional timestamp terminal recovery preserves the durable Conversation cursor', () => {
+  const operation = session().initial;
+  const businessCounts = Object.fromEntries(
+    [...new Set(CHATWOOT_FINAL_UAT_TABLES.map((item) => item.d1Table))]
+      .map((table) => [table, table === 'chatwoot_account_state' ? 1 : 0]),
+  );
+  const inspection = {
+    operation,
+    workLifecycle: 'terminal',
+    terminalReason: 'QUEUE_PERMANENT_FAILURE',
+    abandonedAt: 1_800_000_100_000,
+    auditReference: 'terminal:fractional-timestamp',
+    workGeneration: operation.generation,
+    workRequestedAt: operation.originalRequestedAt,
+    activeChatwootWork: 0,
+    phaseRows: 1,
+    durableStage: 'conversations',
+    nextSequence: 1,
+    activeLockCount: 0,
+    queueOperationRows: 1,
+    mainQueueAttempts: 4,
+    unitSyncRuns: 2,
+    failedUnitSyncRuns: 1,
+    failedSyncRunId: `${operation.syncRunId}:unit:1`,
+    unitSyncRunStatus: 'failed',
+    errorCode: 'PERMANENT_QUEUE_FAILURE',
+    errorMessage: 'conversation.updated_at must fit a safe integer',
+    currentDlqRecords: 2,
+    currentOpenAlerts: 3,
+    failedCoverageRows: 0,
+    businessCounts,
+  };
+  assert.equal(
+    classifyChatwootInitialRecoveryBoundary(inspection),
+    CHATWOOT_INITIAL_RECOVERY_BOUNDARIES.fractionalTimestamp,
+  );
+  const sql = buildChatwootInitialFailureReactivationSql(inspection);
+  assert.match(sql, /json_extract\(state_json,'\$\.stage'\)='conversations'/u);
+  assert.match(sql, /json_extract\(state_json,'\$\.nextSequence'\)=1/u);
+  assert.match(sql, /main_queue_attempts=4/u);
+  assert.match(sql, /UNHANDLED_SYNC_ERROR/u);
+  assert.match(sql, /conversation\.updated_at must fit a safe integer/u);
+  assert.doesNotMatch(sql, /DELETE FROM sync_work_phases/iu);
+});
+
 test('public recovery is plan-only and delegates exact resume through existing Final UAT', async () => {
   const source = await readFile(
     new URL('../../scripts/chatwoot-initial-terminal-failure-recovery-launcher.mjs', import.meta.url),
@@ -193,6 +240,7 @@ test('public recovery is plan-only and delegates exact resume through existing F
   assert.match(source, /chatwoot-initial-terminal-failure-inspector\.mjs/u);
   assert.match(source, /buildChatwootInitialFailureReactivationSql/u);
   assert.match(source, /MKT_CHATWOOT_INITIAL_FAILURE_RECOVERY_SESSION_PATH/u);
+  assert.match(source, /MKT_CHATWOOT_INITIAL_FAILURE_RECOVERY_BOUNDARY/u);
   assert.match(source, /chatwoot-final-source-config-recovery-launcher\.mjs/u);
   assert.match(source, /buildChatwootCurrentIncidentClosureSql/u);
   assert.doesNotMatch(source, /sendOnce\(/u);
