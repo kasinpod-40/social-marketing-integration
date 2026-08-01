@@ -1,4 +1,5 @@
 import { buildAdsMetricPayload } from '../reports/calculate-ads-period-metrics.js';
+import { buildCommerceDimensionMetricPayload } from '../reports/build-commerce-dimension-metric-payload.js';
 import {
   buildOrganicMetricPayload,
   buildOrganicTopContentPayload,
@@ -123,6 +124,12 @@ async function buildCommerceResult(input) {
     current: current.totals,
     compare: compare?.totals ?? null,
   });
+  const collections = Object.freeze({
+    commerce_context: Object.freeze([{ currency: current.currency }]),
+    top_products: Object.freeze(current.products.slice(0, 5)),
+    payment_methods: Object.freeze(current.payment_methods.slice(0, 20)),
+    shipping_methods: Object.freeze(current.shipping_methods.slice(0, 20)),
+  });
   return Object.freeze({
     platform: input.contract.platformScope,
     capability: input.contract.capability,
@@ -142,10 +149,12 @@ async function buildCommerceResult(input) {
     source: 'd1_commerce_facts',
     metricPayload,
     collections: Object.freeze({
-      commerce_context: Object.freeze([{ currency: current.currency }]),
-      top_products: Object.freeze(current.products.slice(0, 5)),
-      payment_methods: Object.freeze(current.payment_methods.slice(0, 20)),
-      shipping_methods: Object.freeze(current.shipping_methods.slice(0, 20)),
+      ...collections,
+      dimension_metrics: buildCommerceDimensionMetricPayload({
+        platform: input.contract.platformScope,
+        formulaVersion: input.contract.formulaVersion,
+        collections,
+      }),
     }),
     topContent: Object.freeze([]),
     topAds: Object.freeze([]),
