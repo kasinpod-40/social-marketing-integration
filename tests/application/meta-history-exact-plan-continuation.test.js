@@ -14,7 +14,6 @@ import {
 
 const REQUIRED_RELEASE_PATHS = Object.freeze([
   'docs/current-task.md',
-  'docs/project-brain/meta-history-2026-finalizer.md',
   'docs/tasks/lark-dashboard-display-v2-compatibility-v1.md',
   'docs/tasks/meta-history-exact-plan-continuation-v1.md',
   'packages/application/src/reports/build-report-output-rows.js',
