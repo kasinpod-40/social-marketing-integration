@@ -1,13 +1,14 @@
-# Current Task — Meta Reviewed Release Runner v1
+# Current Task — Meta Reviewed Clone Exact Exclude Hotfix v1
 
 ## Status
 
 ```text
 TASK_STATUS                          = REPOSITORY_HOTFIX_IN_REVIEW
-CURRENT_PROGRAM                      = META_REVIEWED_RELEASE_RUNNER_V1
-BRANCH                               = hotfix/meta-reviewed-release-runner-v1
-BASE_MAIN_SHA                        = 84650187ad64bf351aab395dcc2da30d8f8e7ab4
+CURRENT_PROGRAM                      = META_REVIEWED_CLONE_EXACT_EXCLUDE_V1
+BRANCH                               = hotfix/meta-reviewed-clone-exclude-v1
+BASE_MAIN_SHA                        = a453135eb78bbea9c74d1be7dc72375334eece7a
 REVIEWED_META_RELEASE_HEAD           = 29de2303fa311c4a13fac4725699416cfdc04386
+REVIEWED_WRAPPER_PREVIOUS_HEAD       = 78b3e4f25bddf1605c58c9e7aa11084fca396810
 RETAINED_OPERATION_REPOSITORY_HEAD   = 5ff8e2cfb1f890ac2a8f2867a904b477c6456d91
 FACEBOOK_OPERATION_ID                = meta-facebook-history-20260701-20260731-1d12a5ec4fef
 FACEBOOK_D1_PHASE                    = COMPLETE
@@ -15,63 +16,68 @@ FACEBOOK_LARK_PHASE                  = PENDING
 FACEBOOK_COMPLETION_PHASE            = PENDING
 FACEBOOK_PROVIDER_REPLAY_ALLOWED     = NO
 FACEBOOK_D1_QUEUE_RESEND_ALLOWED     = NO
-LATEST_CONTINUATION_STAGE            = shell-reviewed-head-pin
-LATEST_CONTINUATION_CODE             = PINNED_MAIN_SHA_NO_LONGER_CURRENT
+LATEST_CONTINUATION_STAGE            = prepare-reviewed-release-clone
+LATEST_CONTINUATION_CODE             = META_HISTORY_REVIEWED_RELEASE_CLONE_INVALID
 LATEST_CONTINUATION_REMOTE_ACTIONS   = 0
 SCHEDULE                             = DISABLED
 PRODUCTION                           = BLOCKED
-NEXT_STEP                            = VERIFY_AND_MERGE_REVIEWED_RELEASE_RUNNER
+NEXT_STEP                            = VERIFY_AND_MERGE_REVIEWED_CLONE_EXCLUDE
 ```
 
 ## Latest guarded stop
 
-The public shell command fetched `origin/main` and then stopped at its first exact-SHA assertion. Only the fetch
-message was printed. The continuation process did not start.
+The reviewed-release wrapper successfully verified the exact wrapper checkout, current `origin/main` ancestry and
+local runtime assets. It created the temporary clone at reviewed Meta release `29de230...`, but stopped before the
+exact continuation child because the clone was not clean:
 
 ```text
-pinned command Head   29de2303fa311c4a13fac4725699416cfdc04386
-current origin/main   84650187ad64bf351aab395dcc2da30d8f8e7ab4
-commits advanced      17
-remote actions        0
+head        29de2303fa311c4a13fac4725699416cfdc04386
+origin/main 29de2303fa311c4a13fac4725699416cfdc04386
+branch      main
+clean       false
 ```
 
-The 17 intervening commits are Chatwoot recovery work. Their final delta includes Chatwoot Source, Connector,
-launcher, documentation and tests. They must not be silently added to the retained Meta release merely to chase a
-moving `main` branch.
+All emitted Remote counters were zero. No Provider request, Queue send, D1/Lark mutation, Worker deployment or
+Schedule action occurred. Production remains blocked.
 
-## Root cause
+## Confirmed root cause
 
-The exact continuation correctly required local `main` to equal `origin/main`. Parallel workstreams continued to
-merge after each reviewed Meta hotfix, so a command pinned to the last Meta merge became stale before it was run.
-Repeatedly expanding the Meta allowlist to every later unrelated change is operationally fragile and broadens the
-reviewed release unnecessarily.
+The wrapper injected three runtime assets after checking out the immutable reviewed release:
+
+```text
+outputs      symlink
+.dev.vars    symlink
+node_modules symlink
+```
+
+Directory-style ignore patterns in the reviewed release do not necessarily match repository-root symlinks. Git
+therefore reported one or more wrapper-created runtime assets as untracked and the exact cleanliness gate correctly
+failed closed.
+
+A second issue was identified before rerun: the downstream exact continuation requires `DEV_VARS_FILE` to be a
+private regular file and rejects a symlink. Leaving `.dev.vars` as a symlink would have caused the next guarded stop.
 
 ## Repository correction
 
-Add a new local-only public wrapper:
+The reviewed-release wrapper now:
+
+1. keeps `outputs` and `node_modules` as local symlinks;
+2. copies `.dev.vars` into the temporary clone as a private regular file with mode `0600`;
+3. writes the temporary clone's private `.git/info/exclude` with exactly:
 
 ```text
-scripts/meta-history-2026-reviewed-release-terminal.mjs
+/outputs
+/.dev.vars
+/node_modules
 ```
 
-The wrapper:
+4. reads the exclude file back byte-for-byte and verifies that it is a private regular file;
+5. continues to run `git status --porcelain --untracked-files=all`;
+6. reports exact dirty paths if any unrelated drift remains.
 
-1. requires the explicit existing Meta continuation confirmation;
-2. requires an exact wrapper commit supplied through `MKT_META_HISTORY_REVIEW_WRAPPER_HEAD`;
-3. requires that wrapper commit and reviewed Meta release `29de230...` remain ancestors of current `origin/main`;
-4. requires a clean checkout and rejects caller-provided `GIT_CONFIG_*` overrides;
-5. creates a temporary local clone fixed at reviewed release `29de230...`;
-6. sets that clone's local `main` and `origin/main` to the same reviewed release commit;
-7. links only the existing local `outputs`, private `.dev.vars` and `node_modules` into the clone;
-8. invokes the already reviewed exact authority:
-
-```text
-scripts/meta-history-2026-exact-plan-continuation-terminal.mjs
-```
-
-The existing exact Terminal and child operator therefore execute from the identical release tree that passed Meta
-End-to-End Verification #155 and Branch Verification #1572. Later Chatwoot or other `main` changes are neither
-executed nor added to the Meta allowlist.
+The exclude is clone-local Git metadata. It does not change the reviewed release worktree, retained evidence,
+`.gitignore`, Business facts or any Remote state. No wildcard directories, `status.showUntrackedFiles=no` or
+`--untracked-files=no` bypass is allowed.
 
 ## Changed files
 
@@ -83,15 +89,14 @@ tests/application/meta-history-reviewed-release-terminal.test.js
 
 ## Preserved invariants
 
-- Retained Repository Head and Facebook operation identity remain unchanged.
 - Reviewed Meta release remains `29de2303fa311c4a13fac4725699416cfdc04386`.
+- Retained Repository Head and Facebook operation identity remain unchanged.
 - Existing retained evidence and Business facts are not edited or synthesized.
 - Provider replay remains forbidden.
 - Existing Facebook D1 Queue admission is not resent.
-- The wrapper performs no Provider, Queue, D1, Lark, Worker deployment or Schedule action itself.
-- Any failure before the reviewed exact Terminal starts emits all-zero Remote counters.
-- Child failure output is propagated without falsely claiming all-zero actions after execution starts.
-- Production remains blocked.
+- Wrapper preparation performs only local Git/filesystem work.
+- Any unrelated untracked path remains visible and blocks execution.
+- Schedule remains disabled and Production remains blocked.
 
 ## Required verification
 
@@ -107,24 +112,22 @@ npm audit
 npm run deploy:dry-run
 ```
 
-Both Meta End-to-End Verification and Branch Verification must pass on the exact branch Head before merge.
+Both Meta End-to-End Verification and Branch Verification must pass on the exact branch Head before Squash Merge.
 Repository verification must perform zero Live or Remote action.
 
 ## Public continuation after verified merge
 
-After the wrapper Hotfix passes both workflows and is merged, fetch the exact wrapper merge commit, switch to it in
-detached mode and invoke only:
+After verified merge, fetch the exact new wrapper merge commit, switch to it in detached mode and invoke only:
 
 ```text
 scripts/meta-history-2026-reviewed-release-terminal.mjs
 ```
 
-The wrapper then invokes `scripts/meta-history-2026-exact-plan-continuation-terminal.mjs` inside the immutable
-reviewed release clone. Do not run the ordinary Meta Terminal, direct D1/Lark launchers or manual Queue commands.
+Do not run the previous wrapper commit, ordinary Meta Terminal, direct D1/Lark launchers or manual Queue commands.
 Do not edit retained evidence, `.dev.vars`, lifecycle state or Business facts.
 
 ## Implementation result
 
-The reviewed release wrapper and regression are implemented on
-`hotfix/meta-reviewed-release-runner-v1`. Verification and CI are pending. Repository implementation performed no
-Live or Remote action.
+The exact temporary-clone exclude, private `.dev.vars` copy and focused regression are implemented on
+`hotfix/meta-reviewed-clone-exclude-v1`. CI is pending. Repository implementation performed no Live or Remote
+action.
