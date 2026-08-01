@@ -19,6 +19,8 @@ import {
   CHATWOOT_FINAL_UAT_CONTRACT_VERSION,
   CHATWOOT_FINAL_UAT_SUCCESS_MARKER,
   CHATWOOT_FINAL_UAT_TABLES,
+  assertChatwootFinalUatBaselineCompatible,
+  assertChatwootFinalUatBaselinePreserved,
   assertChatwootFinalUatConfirmation,
   assertChatwootFinalUatPreflight,
   buildChatwootFinalUatConfigWindow,
@@ -29,6 +31,7 @@ import {
   compareChatwootD1LarkParity,
   compareChatwootFinalUatReplay,
   createChatwootFinalUatSession,
+  mapChatwootFinalUatD1BaselineCounts,
   normalizeChatwootFinalUatPreflight,
   normalizeChatwootFinalUatSnapshot,
   sanitizeChatwootFinalProgress,
@@ -96,6 +99,7 @@ async function main() {
   target.cf = cloudflareTarget(target, sourceText);
 
   const preflightResult = await preflight(target);
+  target.baseline = preflightResult.baseline;
   await evidence(target, 'read-only-preflight', preflightResult);
   const backup = await d1Backup(target);
   await evidence(target, 'd1-backup', backup);
@@ -120,6 +124,9 @@ async function main() {
     daily3DayVerified: true,
     dailyReplayVerified: true,
     d1LarkParityTables: CHATWOOT_FINAL_UAT_TABLES.length,
+    baselineD1Rows: target.baseline.d1Rows,
+    baselineLarkRows: target.baseline.larkRows,
+    baselinePreserved: true,
     initialRows: initial.parity.totalRows,
     dailyRows: daily.parity.totalRows,
     restoredAllFlagsFalse: true,
@@ -243,15 +250,18 @@ async function preflight(target) {
     d1Row(target, buildChatwootFinalUatPreflightSql()),
   ));
   const lark = await larkCounts(target, true);
-  const totalLark = Object.values(lark).reduce((sum, count) => sum + count, 0);
-  if (totalLark !== 0) fail('Lark Chatwoot tables must be empty before Initial UAT', 'CHATWOOT_FINAL_UAT_LARK_NOT_EMPTY', { totalLark });
+  const baseline = assertChatwootFinalUatBaselineCompatible(
+    mapChatwootFinalUatD1BaselineCounts(d1.businessCounts),
+    lark,
+  );
   return {
     activeVersion,
     pendingMigrations: 0,
     requiredSecretNames: REQUIRED_SECRETS.length,
     d1,
+    baseline,
     larkTableCount: CHATWOOT_FINAL_UAT_TABLES.length,
-    larkRows: totalLark,
+    larkRows: baseline.larkRows,
     remoteMutationCount: 0,
   };
 }
@@ -301,14 +311,38 @@ async function operationFlow(target, operation, label, previous = null) {
     fail('Daily cursor did not advance exactly once', 'CHATWOOT_FINAL_UAT_DAILY_CURSOR_INVALID');
   }
   const lark = await larkCounts(target);
+  const d1Baseline = assertChatwootFinalUatBaselinePreserved(
+    target.baseline.d1Counts,
+    completed.d1Counts,
+    `${label}:d1`,
+  );
+  const larkBaseline = assertChatwootFinalUatBaselinePreserved(
+    target.baseline.larkCounts,
+    lark,
+    `${label}:lark`,
+  );
   const parity = compareChatwootD1LarkParity(completed.d1Counts, lark);
-  await evidence(target, `${label}-completed`, { snapshot: completed, parity });
+  await evidence(target, `${label}-completed`, {
+    snapshot: completed,
+    parity,
+    baseline: { d1: d1Baseline, lark: larkBaseline },
+  });
 
   const replayAttempt = join(target.evidenceDir, `${label}-replay.attempt.json`);
   await sendOnce(target, operation, replayAttempt, completed.mainQueueAttempts);
   const replay = await poll(target, operation, completed.mainQueueAttempts + 1);
   const comparison = compareChatwootFinalUatReplay(completed, replay);
   const replayLark = await larkCounts(target);
+  assertChatwootFinalUatBaselinePreserved(
+    target.baseline.d1Counts,
+    replay.d1Counts,
+    `${label}:replay:d1`,
+  );
+  assertChatwootFinalUatBaselinePreserved(
+    target.baseline.larkCounts,
+    replayLark,
+    `${label}:replay:lark`,
+  );
   compareChatwootD1LarkParity(replay.d1Counts, replayLark);
   if (stableJson(lark) !== stableJson(replayLark)) fail('Replay changed Lark counts', 'CHATWOOT_FINAL_UAT_REPLAY_INVALID', { label });
   await evidence(target, `${label}-replay`, { comparison, snapshot: replay });
