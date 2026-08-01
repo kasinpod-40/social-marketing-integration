@@ -8,7 +8,8 @@ CURRENT_PROGRAM                      = ALL_META_END_TO_END_COMPLETION_V1
 BRANCH                               = integration/all-meta-end-to-end-completion-v1
 BASE_MAIN_SHA                        = 0d33be48f9b8ccaf6d8cea9a4c4ee31b1175b650
 BASE_MAIN_PR                         = #420_MERGED
-CHATWOOT_PREREQUISITE                = REMOTE_READ_ONLY_VERIFICATION_REQUIRED
+CHATWOOT_STATUS                      = CLOSED_ACCEPTED_PARTIAL_UAT
+CHATWOOT_META_BLOCKER                = NO
 META_RETAINED_OPERATION              = meta-facebook-history-20260701-20260731-1d12a5ec4fef
 META_RETAINED_D1_PHASE               = COMPLETE_RETAINED_EVIDENCE
 META_RETAINED_LARK_PHASE             = PENDING_RETAINED_EVIDENCE
@@ -17,7 +18,8 @@ META_D1_QUEUE_RESEND                 = FORBIDDEN_FOR_RETAINED_FACEBOOK_OPERATION
 SCHEDULE_WEBHOOK                     = DISABLED_REQUIRED
 PRODUCTION                           = BLOCKED
 REMOTE_MUTATION_COUNT_THIS_TASK      = 0
-NEXT_STEP                            = COMPLETE_AGGREGATED_READ_ONLY_PREREQUISITE_AUDIT
+META_LATEST_STOP                     = META_LARK_TABLE_MAPPING_DRIFT
+NEXT_STEP                            = ROOT_CAUSE_META_LARK_MAPPING_DRIFT
 ```
 
 ## Objective
@@ -35,8 +37,7 @@ docs/tasks/all-meta-end-to-end-completion-v1.md
 
 ## In scope
 
-- ตรวจ latest `origin/main`, open/merged PR, retained local evidence และ Remote state แบบ read-only;
-- ปิด Chatwoot prerequisite ด้วย current reviewed exact authority เท่านั้นเมื่อยังไม่ safe;
+- ตรวจ latest `origin/main`, open/merged PR, retained local evidence และ Meta Remote state แบบ read-only;
 - ทำต่อ retained Facebook July operation จาก D1-complete ไป Lark โดยไม่ Provider replay หรือ D1 resend;
 - ทำ Instagram July และ Meta Ads required/conditional history ผ่าน existing Meta finalizer;
 - ตรวจ Coverage, D1/Lark parity, same-operation replay และ all-false restore;
@@ -54,11 +55,32 @@ docs/tasks/all-meta-end-to-end-completion-v1.md
 - duplicate Connector, Queue, Reliability, D1, Lark หรือ Report engine;
 - deletion/rename ของ Business facts หรือ unsupported/speculative Dashboard mutation;
 - การนำ WooCommerce Report PR `#415` มาปน เว้นแต่ Shared contract บังคับและมีหลักฐานไม่ชนกัน.
+- Chatwoot inspector, recovery, resume, redrive, closeout หรือการเปลี่ยน DLQ 9 / Alert 15.
+
+## Chatwoot accepted closeout boundary
+
+ผู้ใช้ยืนยันและยอมรับ Chatwoot เป็น `CLOSED_ACCEPTED_PARTIAL_UAT` แล้วและไม่ใช่ Meta prerequisite
+หรือ blocker:
+
+```text
+Worker                              Safe baseline all-false / traffic 100%
+Schedule / Webhook                  false / false
+Production                          blocked
+Active lock                         0
+Additional Queue / D1 / Lark writes 0 / 0 / 0
+Retained facts                      65 Conversations / 2,071 Messages
+Work                                terminal / QUEUE_RETRY_EXHAUSTED
+DLQ / Alert                         9 / 15 retained as forensic truth
+Success fabrication                 forbidden
+```
+
+ห้ามเรียก Chatwoot-specific script เพิ่ม. Meta ใช้เฉพาะ Meta operator preflight เพื่อตรวจ current
+Worker all-false; ถ้าพบ drift ให้หยุด Meta และรายงาน drift เท่านั้นโดยไม่เปิด Chatwoot recovery.
 
 ## Contract
 
 1. Runtime ต้องคง `MKT_ENV=development` และ `MKT_CUSTOMER_PROFILE=integration_workspace`.
-2. Remote mutation เริ่มได้หลัง Chatwoot safe prerequisite, exact clean/evidence gate, Worker all-false,
+2. Remote mutation เริ่มได้หลัง Meta exact clean/evidence gate, Meta operator Worker all-false,
    Reliability idle, exact mapping และ no-blind-resend checks ผ่าน.
 3. Retained Facebook operation ใช้ identity/generation เดิม; Provider replay, D1 Queue resend,
    replacement operation และ lifecycle SQL mutation เป็นศูนย์.
@@ -79,8 +101,6 @@ node --test tests/application/meta-history-exact-plan-continuation.test.js
 node --test tests/application/meta-history-reviewed-release-terminal.test.js
 node --test tests/application/meta-end-to-end-routing-and-report.test.js
 node --test tests/application/multichannel-report-runtime.test.js
-node --test tests/application/chatwoot-controller-safe-baseline-resume.test.js
-node --test tests/application/chatwoot-safe-baseline-prior-attempt.test.js
 npm test
 npm run test:report-reliability
 npm audit --audit-level=high
@@ -100,6 +120,9 @@ shared documentation หรือ Lark serializer paths.
 ## Implementation result
 
 เริ่ม branch จาก clean `origin/main@0d33be48f9b8ccaf6d8cea9a4c4ee31b1175b650` หลัง PR `#420`
-Squash Merged แล้ว. ยืนยันว่า Current Task เดิม stale, PR `#415` ยังเปิดแบบ Draft และ retained Meta
-evidence อยู่ใน local detached checkout แยกต่างหาก. ยังไม่มี Provider, Queue, Remote D1/Lark,
-Worker deployment, Schedule/Webhook, incident closure หรือ Production mutation ในงานนี้.
+Squash Merged แล้ว. ผู้ใช้ปิด Chatwoot เป็น accepted Partial UAT และห้ามรื้อฟื้น. PR `#415` ยังเปิด
+แบบ Draft และ retained Meta evidence อยู่ใน local detached checkout แยกต่างหาก. Public reviewed
+Meta wrapper ผ่าน local gate แต่หยุดแบบ fail-closed ที่ read-only Lark preflight ด้วย
+`META_LARK_TABLE_MAPPING_DRIFT` สำหรับ `rawMetaOrganicAccounts`; `emergencyRestoreRequired=false`.
+รอบนี้ไม่มี Facebook Provider replay, D1 Queue resend, Meta Business write, Worker Active deployment,
+Schedule/Webhook หรือ Production mutation.

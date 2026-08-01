@@ -23,10 +23,10 @@ remote mutation count              0
 
 ## Execution phases
 
-1. Aggregated read-only audit: Git/GitHub, local process/evidence, Worker, Queue/Work/Lock, D1,
+1. Aggregated read-only audit: Git/GitHub, local evidence, Meta Worker/Queue/Work/Lock, D1,
    Coverage, Lark schema/mappings, Report settings/materializations และ Dashboard bindings.
-2. Chatwoot prerequisite: verify safe state; ถ้ายังไม่ผ่านให้ใช้ current reviewed exact retained recovery
-   จน parity/incident closure/all-false ผ่าน โดยห้าม second Initial admission.
+2. Chatwoot remains `CLOSED_ACCEPTED_PARTIAL_UAT`; do not inspect, recover, resume, redrive, close out or
+   mutate its retained DLQ 9 / Alert 15 forensic boundary.
 3. Meta History: use `scripts/meta-history-2026-reviewed-release-terminal.mjs` and its reviewed child only
    after retained evidence is bound without editing it; complete all six planned operations.
 4. Meta Reports: reuse generic adapters/materializer/Lark writer for supported windows `1/3/7/30`.
@@ -45,7 +45,7 @@ remote mutation count              0
 
 ## Acceptance criteria
 
-- Chatwoot prerequisite safe with Worker all-false, no active lock and no uncertain execution.
+- Chatwoot accepted Partial UAT boundary remains untouched and is not a Meta blocker.
 - Facebook completed lane verified without replay; retained July Lark continuation completes exact Work.
 - Instagram July and Meta Ads required May-July operations complete; conditional January-April operations
   complete or are bounded-deferred by the reviewed limit contract.
@@ -64,4 +64,6 @@ Queue IDs and customer payloads must not be printed or committed.
 
 ## Current result
 
-Repository/GitHub/local-evidence discovery is in progress. No Live or Remote mutation has occurred.
+Repository/GitHub/local-evidence discovery passed. The first reviewed Meta continuation stopped at
+read-only Lark preflight with `META_LARK_TABLE_MAPPING_DRIFT` before an Active window; no Facebook Provider
+replay, D1 resend or Meta Business mutation occurred.
