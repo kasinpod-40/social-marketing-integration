@@ -168,7 +168,9 @@ export class ChatwootApiClient {
       after !== null ? { after } : before !== null ? { before } : {},
       { operationName: 'list_messages' },
     );
-    const rows = requireArray(payload?.payload, 'list_messages.payload');
+    const rows = [...requireArray(payload?.payload, 'list_messages.payload')]
+      .sort((left, right) => Number(requirePositiveId(left?.id, 'message.id'))
+        - Number(requirePositiveId(right?.id, 'message.id')));
     const messageIds = rows.map((row) => Number(requirePositiveId(row?.id, 'message.id')));
     assertStrictlyIncreasing(messageIds, after === null ? null : Number(after));
     if (before !== null && messageIds.some((value) => value >= Number(before))) {

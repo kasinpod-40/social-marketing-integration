@@ -4,6 +4,8 @@
 
 ### Reliability
 
+- Canonicalized each Chatwoot message page by external message ID before cursor validation, accepting descending
+  live pages while still rejecting duplicate IDs, cross-page overlap and out-of-bound before/after cursors.
 - Preserved Conversations whose historical label title no longer resolves to a current external label ID,
   omitting only that relationship and reporting an unresolved-reference reconciliation count without fabrication.
 - Treated Chatwoot's out-of-range optional `waiting_since` sentinel as missing instead of failing a Conversation,
