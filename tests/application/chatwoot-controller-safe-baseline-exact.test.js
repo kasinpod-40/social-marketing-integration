@@ -4,6 +4,7 @@ import {
   mkdir,
   mkdtemp,
   rm,
+  symlink,
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -19,6 +20,7 @@ const WRAPPER = new URL(
   import.meta.url,
 );
 const HEAD = 'a'.repeat(40);
+const SYMLINK_HEAD = 'b'.repeat(40);
 
 test('Chatwoot safe-baseline exact terminal is plan-only by default', () => {
   const result = spawnSync(process.execPath, [WRAPPER.pathname], {
@@ -74,7 +76,7 @@ test('current-head guard allows absent and empty evidence only', async () => {
   }
 });
 
-test('current-head guard rejects invalid Head and non-directory evidence', async () => {
+test('current-head guard rejects invalid, non-directory and symlinked evidence', async () => {
   const root = await mkdtemp(join(tmpdir(), 'chatwoot-safe-baseline-invalid-'));
   try {
     await assert.rejects(
@@ -92,6 +94,17 @@ test('current-head guard rejects invalid Head and non-directory evidence', async
       assertChatwootSafeBaselineCurrentHeadClear({
         outputs: root,
         repositoryHead: HEAD,
+      }),
+      (error) => error?.code === 'CHATWOOT_SAFE_BASELINE_CURRENT_HEAD_INVALID',
+    );
+
+    const target = join(root, 'external-empty-directory');
+    await mkdir(target);
+    await symlink(target, join(recoveryRoot, SYMLINK_HEAD), 'dir');
+    await assert.rejects(
+      assertChatwootSafeBaselineCurrentHeadClear({
+        outputs: root,
+        repositoryHead: SYMLINK_HEAD,
       }),
       (error) => error?.code === 'CHATWOOT_SAFE_BASELINE_CURRENT_HEAD_INVALID',
     );
