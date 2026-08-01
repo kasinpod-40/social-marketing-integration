@@ -75,7 +75,31 @@ async function main() {
   let recoveryBoundary;
   let retainedSessionPath;
   let session;
-  if (controllerResume) {
+  if (controllerResume?.snapshot.workLifecycleStatus === 'terminal') {
+    runInherited('node', ['scripts/chatwoot-initial-terminal-failure-inspector.mjs', '--execute'], env);
+    const inspectionPath = join(
+      ROOT,
+      'outputs',
+      'chatwoot-initial-terminal-failure-inspector',
+      head,
+      'inspection.json',
+    );
+    const evidence = JSON.parse(await readFile(inspectionPath, 'utf8'));
+    inspection = evidence.inspection;
+    recoveryBoundary = classifyChatwootInitialRecoveryBoundary(inspection);
+    retainedSessionPath = controllerResume.retainedSessionPath;
+    session = controllerResume.session;
+    const inspected = validateRetainedSession(JSON.parse(await readFile(
+      resolve(ROOT, evidence.retainedSessionPath),
+      'utf8',
+    )));
+    if (inspected.sessionFingerprint !== session.sessionFingerprint) {
+      throw operatorError(
+        'Inspector/controller resume session identity drifted',
+        'CHATWOOT_INITIAL_FAILURE_SESSION_INVALID',
+      );
+    }
+  } else if (controllerResume) {
     ({ retainedSessionPath, session } = controllerResume);
     inspection = Object.freeze({
       currentDlqRecords: controllerResume.snapshot.dlqRecords,
@@ -83,7 +107,9 @@ async function main() {
       workLifecycle: controllerResume.snapshot.workLifecycleStatus,
       operation: session.initial,
     });
-    recoveryBoundary = CHATWOOT_INITIAL_RECOVERY_BOUNDARIES.reportingEventNames;
+    recoveryBoundary = controllerResume.resume.boundary === 'queue_retry_exhausted_terminal_v1'
+      ? CHATWOOT_INITIAL_RECOVERY_BOUNDARIES.queueRetryExhausted
+      : CHATWOOT_INITIAL_RECOVERY_BOUNDARIES.reportingEventNames;
   } else {
     runInherited('node', ['scripts/chatwoot-initial-terminal-failure-inspector.mjs', '--execute'], env);
     const inspectionPath = join(
@@ -263,28 +289,57 @@ async function findControllerResume(configPath, env, currentHead) {
     if (attempt.operationId !== session.initial.operationId
         || attempt.workKey !== session.initial.workKey
         || attempt.generation !== session.initial.generation) continue;
-    candidates.push({ directory, session });
+    const preflightEvidence = JSON.parse(await readFile(
+      join(directory, 'read-only-preflight.json'),
+      'utf8',
+    ));
+    const deploymentEvidence = JSON.parse(await readFile(
+      join(directory, 'active-deployment.json'),
+      'utf8',
+    ));
+    const preflight = preflightEvidence.data ?? preflightEvidence;
+    const deployment = deploymentEvidence.data ?? deploymentEvidence;
+    const evidenceIdentity = JSON.stringify({
+      sessionFingerprint: session.sessionFingerprint,
+      baselineVersion: preflight.activeVersion,
+      activeVersion: deployment.activeVersion,
+      baseline: preflight.baseline,
+    });
+    candidates.push({
+      directory,
+      session,
+      evidenceIdentity,
+      modifiedAt: (await stat(join(directory, 'initial-send.attempt.json'))).mtimeMs,
+    });
   }
   if (candidates.length === 0) return null;
-  if (candidates.length !== 1) {
+  const identities = new Map();
+  for (const candidate of candidates) {
+    const existing = identities.get(candidate.evidenceIdentity);
+    if (!existing || candidate.modifiedAt > existing.modifiedAt) {
+      identities.set(candidate.evidenceIdentity, candidate);
+    }
+  }
+  if (identities.size !== 1) {
     throw operatorError(
       'Multiple incomplete Chatwoot controller sessions are ambiguous',
       'CHATWOOT_INITIAL_FAILURE_SESSION_INVALID',
-      { candidateCount: candidates.length },
+      { candidateCount: identities.size },
     );
   }
-  const candidate = candidates[0];
+  const candidate = [...identities.values()][0];
   const snapshot = normalizeChatwootFinalUatSnapshot(readOneD1Row(
     buildWranglerOAuthEnvironment(env),
     configPath,
     buildChatwootFinalUatSnapshotSql(candidate.session.initial),
   ));
-  assertChatwootFinalUatControllerResume(snapshot, candidate.session.initial);
+  const resume = assertChatwootFinalUatControllerResume(snapshot, candidate.session.initial);
   return Object.freeze({
     evidenceDirectory: candidate.directory,
     retainedSessionPath: join(candidate.directory, 'session.json'),
     session: candidate.session,
     snapshot,
+    resume,
   });
 }
 

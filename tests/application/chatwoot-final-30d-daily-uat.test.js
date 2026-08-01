@@ -321,6 +321,29 @@ test('controller resume is poll-only for the exact advanced Initial operation', 
   );
 });
 
+test('controller resume replaces the active Worker and sends one continuation after exact retry exhaustion', () => {
+  const operation = session().initial;
+  const active = normalizeChatwootFinalUatSnapshot(completedRow(operation, {
+    work_lifecycle_status: 'active',
+    work_completed_at: null,
+    completion_json_present: 0,
+    completion_status: null,
+    completion_sync_run_id: null,
+    completion_mode: null,
+    active_stage: 'conversations',
+    active_next_sequence: 3,
+    main_queue_attempts: 25,
+    failed_unit_sync_runs: 0,
+    dlq_records: 9,
+    open_chatwoot_alerts: 15,
+  }));
+  const accepted = assertChatwootFinalUatControllerResume(active, operation);
+  assert.equal(accepted.pollOnly, false);
+  assert.equal(accepted.queueSend, true);
+  assert.equal(accepted.replaceActiveDeployment, true);
+  assert.equal(accepted.minimumAttempts, 25);
+});
+
 test('controller resume identity binds both retained Initial and Daily operations', () => {
   const value = session();
   assert.equal(assertChatwootFinalUatResumeIdentity(value.initial, { ...value.initial }), true);

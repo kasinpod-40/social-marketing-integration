@@ -82,6 +82,7 @@ test('all-false config retains exact locked runtime values and rejects expansion
   assert.equal(config.flags.webhook, false);
   assert.deepEqual(config.contract, CHATWOOT_RUNTIME_CONTRACT);
   assert.equal(config.limits.incrementalOverlapHours, 72);
+  assert.equal(config.limits.conversationRowsPerInvocation, 1);
   assert.throws(
     () => readChatwootRuntimeConfig({ CHATWOOT_INITIAL_BACKFILL_DAYS: '90' }),
     (error) => error?.code === 'CHATWOOT_RUNTIME_CONFIG_INVALID',
@@ -113,13 +114,14 @@ test('plan supports at least 1,125 Reporting pages with bounded resumable units 
     mode: CHATWOOT_RUNTIME_MODES.INITIAL_30_DAY_UAT,
     requestedAt: REQUESTED_AT,
     conversationPages: 304,
+    conversationRows: 7_600,
     reportingPages: 1_125,
     conversationPagesPerInvocation: 1,
     reportingPagesPerInvocation: 5,
   });
-  assert.equal(plan.conversationUnits, 304);
+  assert.equal(plan.conversationUnits, 7_600);
   assert.equal(plan.reportingUnits, 225);
-  assert.equal(plan.totalUnits, 531);
+  assert.equal(plan.totalUnits, 7_827);
   assert.equal(plan.queueMessagesSent, 0);
   assert.equal(plan.remoteD1Mutations, 0);
   assert.equal(plan.remoteLarkMutations, 0);

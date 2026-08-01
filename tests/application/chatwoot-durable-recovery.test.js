@@ -60,6 +60,7 @@ function runtimeInput(overrides = {}) {
     reportingTimezone: 'Asia/Bangkok',
     limits: {
       conversationPagesPerInvocation: 1,
+      conversationRowsPerInvocation: 1,
       reportingPagesPerInvocation: 5,
       maxConversations: 5_000,
       maxContacts: 5_000,
@@ -76,6 +77,115 @@ function runtimeInput(overrides = {}) {
     ...overrides,
   };
 }
+
+test('Conversation page resumes one stable row per Queue delivery', async () => {
+  let durableState = {
+    ...createInitialChatwootDurableState({
+      mode: CHATWOOT_RUNTIME_MODES.DAILY_INCREMENTAL,
+      requestedAt: REQUESTED_AT,
+    }),
+    stage: 'conversations',
+    mastersComplete: true,
+    nextSequence: 2,
+  };
+  const rows = [91, 92].map((id) => ({
+    id,
+    account_id: 1,
+    inbox_id: 3,
+    status: 'open',
+    created_at: REQUESTED_AT - DAY_MS,
+    updated_at: REQUESTED_AT - DAY_MS,
+    last_activity_at: REQUESTED_AT - DAY_MS,
+  }));
+  const written = [];
+  const store = noOpStore();
+  store.upsertConversationState = async (row) => {
+    written.push(row.external_conversation_id ?? row.externalConversationId);
+    return row;
+  };
+  const workStore = {
+    loadPhase: async () => ({ state: durableState }),
+    savePhase: async (input) => {
+      durableState = input.state;
+      return { state: input.state };
+    },
+  };
+  const input = runtimeInput({
+    continuationSequence: 2,
+    client: requiredClient({
+      listConversationsPage: async () => ({
+        page: 1, rows, totalCount: 2, hasMore: false,
+      }),
+    }),
+    chatwootStore: store,
+    coverageStore: {
+      saveCoverageRun: async (row) => row,
+      saveCoverageEntities: async (values) => values,
+    },
+    workStore,
+  });
+
+  const first = await syncChatwootDurableRuntime(input);
+  assert.deepEqual(written, ['91']);
+  assert.equal(first.stage, 'conversations');
+  assert.equal(durableState.conversationPage, 1);
+  assert.equal(durableState.conversationRowOffset, 1);
+  assert.match(durableState.conversationPageFingerprint, /^[0-9a-f]{64}$/u);
+  assert.equal(first.nextSequence, 3);
+
+  const second = await syncChatwootDurableRuntime({ ...input, continuationSequence: 3 });
+  assert.deepEqual(written, ['91', '92']);
+  assert.equal(second.stage, 'reporting');
+  assert.equal(durableState.conversationPage, 2);
+  assert.equal(durableState.conversationRowOffset, 0);
+  assert.equal(durableState.conversationPageFingerprint, null);
+  assert.equal(second.nextSequence, 4);
+});
+
+test('Conversation page resume fails closed when the selected identity order drifts', async () => {
+  const state = {
+    ...createInitialChatwootDurableState({
+      mode: CHATWOOT_RUNTIME_MODES.DAILY_INCREMENTAL,
+      requestedAt: REQUESTED_AT,
+    }),
+    stage: 'conversations',
+    mastersComplete: true,
+    nextSequence: 3,
+    conversationRowOffset: 1,
+    conversationPageFingerprint: '0'.repeat(64),
+  };
+  const input = runtimeInput({
+    continuationSequence: 3,
+    client: requiredClient({
+      listConversationsPage: async () => ({
+        page: 1,
+        rows: [{
+          id: 92,
+          account_id: 1,
+          inbox_id: 3,
+          status: 'open',
+          created_at: REQUESTED_AT - DAY_MS,
+          updated_at: REQUESTED_AT - DAY_MS,
+        }],
+        totalCount: 1,
+        hasMore: false,
+      }),
+    }),
+    chatwootStore: noOpStore(),
+    coverageStore: {
+      saveCoverageRun: async (row) => row,
+      saveCoverageEntities: async (values) => values,
+    },
+    workStore: {
+      loadPhase: async () => ({ state }),
+      savePhase: async () => assert.fail('drift must not be persisted'),
+    },
+  });
+  await assert.rejects(
+    syncChatwootDurableRuntime(input),
+    (error) => error?.code === 'CHATWOOT_CONVERSATION_PAGE_DRIFT',
+  );
+});
 
 test('daily overlap includes a late-arriving update on an older-created Conversation', () => {
   const window = resolveChatwootRuntimeWindow({

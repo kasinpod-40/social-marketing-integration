@@ -4,6 +4,14 @@
 
 ### Reliability
 
+- Split each selected Chatwoot Conversation page into one-Conversation durable continuations, retaining only a
+  row offset and SHA-256 identity-order fingerprint. This bounds Provider, D1 and Lark work per Queue delivery,
+  resumes legacy page state at offset zero and fails closed if the live page identity order changes mid-resume.
+- Added the exact attempts-25/unit-3 `QUEUE_RETRY_EXHAUSTED` boundary with page-3 cursor, Coverage 52, DLQ 9 and
+  Alert 15 guards. Recovery can replace the retained active Worker with the reviewed current version, send one
+  same-Work continuation and still automatically restore all flags false.
+- Deduplicated identical interrupted-controller evidence copies by retained session, baseline and deployment
+  identity while continuing to reject distinct candidates as ambiguous.
 - Made an interrupted long-running Final UAT controller resumable from the one exact incomplete evidence
   directory. Resume is poll-only for the already-admitted Initial operation, rejects ambiguous sessions and
   cannot submit another Initial Queue message.

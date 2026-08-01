@@ -132,16 +132,22 @@ async function main() {
   const backup = await d1Backup(target);
   await evidence(target, 'd1-backup', backup);
 
-  const activeVersion = resume
+  const replaceActiveDeployment = Boolean(
+    resume && preflightResult.resumeBoundary?.replaceActiveDeployment,
+  );
+  const activeVersion = resume && !replaceActiveDeployment
     ? preflightResult.activeVersion
     : deploy(target, config.activeText, 'active');
   if (!resume) {
     safeRestore = { target, baselineVersion: preflightResult.activeVersion, activeVersion };
+  } else if (replaceActiveDeployment) {
+    safeRestore.activeVersion = activeVersion;
   }
   verifyDeployment(target, activeVersion, 'active');
   await evidence(target, 'active-deployment', {
     activeVersion,
     resumedController: Boolean(resume),
+    replacedInterruptedActiveVersion: replaceActiveDeployment,
     trueFlags: CHATWOOT_FINAL_UAT_ACTIVE_TRUE_FLAGS,
   });
 
@@ -446,24 +452,29 @@ async function operationFlow(target, operation, label, previous = null) {
   }
   if (resumingInitial) {
     const resume = assertChatwootFinalUatControllerResume(before, operation);
-    await privateJson(firstSend, {
-      operationId: operation.operationId,
-      workKey: operation.workKey,
-      generation: operation.generation,
-      resumedFrom: relative(ROOT, target.resume.directory),
-      priorAttemptVerified: true,
-      queueSend: false,
-      minimumAttempts: resume.minimumAttempts,
-      resumedAt: new Date().toISOString(),
-    });
+    if (resume.queueSend) {
+      await sendRecoveryContinuationOnce(target, operation, firstSend, before);
+    } else {
+      await privateJson(firstSend, {
+        operationId: operation.operationId,
+        workKey: operation.workKey,
+        generation: operation.generation,
+        resumedFrom: relative(ROOT, target.resume.directory),
+        priorAttemptVerified: true,
+        queueSend: false,
+        minimumAttempts: resume.minimumAttempts,
+        resumedAt: new Date().toISOString(),
+      });
+    }
   } else if (recoveringInitial) await sendRecoveryContinuationOnce(target, operation, firstSend, before);
   else await sendOnce(target, operation, firstSend, 0);
   const completed = await poll(target, operation, resumingInitial
-    ? before.mainQueueAttempts
+    ? before.mainQueueAttempts + Number(before.workLifecycleStatus === 'active'
+      && target.recoveryBoundary?.mainQueueAttempts === before.mainQueueAttempts)
     : recoveringInitial ? before.mainQueueAttempts + 1 : 2);
   const classified = classifyChatwootFinalUatCompletion(completed, operation, {
     allowedDlqRecords: recoveringInitial ? target.allowedIncidentCounts.dlqRecords : 0,
-    allowedOpenAlerts: target.allowedIncidentCounts.openAlerts,
+    allowedOpenAlerts: recoveringInitial ? target.allowedIncidentCounts.openAlerts : 0,
   });
   if (!classified.complete) fail(`${label} completion contract failed`, 'CHATWOOT_FINAL_UAT_OPERATION_INCOMPLETE', { label, missing: classified.missing });
   if (label === 'daily' && previous
@@ -614,6 +625,14 @@ function resolveInitialRecoveryBoundary(env, recovering) {
       mainQueueAttempts: 16,
       allowedPreexistingFailedUnits: 1,
       allowedIncidentCounts: Object.freeze({ dlqRecords: 8, openAlerts: 14 }),
+    });
+  }
+  if (value === CHATWOOT_INITIAL_RECOVERY_BOUNDARIES.queueRetryExhausted) {
+    return Object.freeze({
+      value,
+      nextSequence: 3,
+      mainQueueAttempts: 25,
+      allowedIncidentCounts: Object.freeze({ dlqRecords: 9, openAlerts: 15 }),
     });
   }
   fail('Initial recovery boundary contract is missing or unsupported', 'CHATWOOT_INITIAL_FAILURE_BOUNDARY_DRIFT');

@@ -69,6 +69,10 @@ function parseArgs(values) {
       options.get('conversation-pages') ?? 0,
       'conversation-pages',
     ),
+    conversationRows: nonNegativeInteger(
+      options.get('conversation-rows') ?? 0,
+      'conversation-rows',
+    ),
     reportingPages: nonNegativeInteger(
       options.get('reporting-pages') ?? 0,
       'reporting-pages',
@@ -77,6 +81,10 @@ function parseArgs(values) {
     conversationPagesPerInvocation: positiveInteger(
       options.get('conversation-pages-per-invocation') ?? 1,
       'conversation-pages-per-invocation',
+    ),
+    conversationRowsPerInvocation: positiveInteger(
+      options.get('conversation-rows-per-invocation') ?? 1,
+      'conversation-rows-per-invocation',
     ),
     reportingPagesPerInvocation: positiveInteger(
       options.get('reporting-pages-per-invocation') ?? 5,

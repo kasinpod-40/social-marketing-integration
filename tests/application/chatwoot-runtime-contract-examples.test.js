@@ -143,8 +143,12 @@ test('bounded rollup writes reconciled Coverage runs and entities for every mate
 
 test('Worker route fences pagination limits and uses the Chatwoot legacy trigger constant', async () => {
   const source = await readRepositoryFile('apps/sync-worker/src/chatwoot-job-router.js');
+  const durableRuntime = await readRepositoryFile(
+    'packages/application/src/use-cases/sync-chatwoot-durable-runtime.js',
+  );
   assert.match(source, /CHATWOOT_LEGACY_MANUAL_UAT/u);
   assert.match(source, /limits\.conversationPagesPerInvocation/u);
+  assert.match(durableRuntime, /limits\.conversationRowsPerInvocation/u);
   assert.match(source, /limits\.reportingPagesPerInvocation/u);
   assert.match(source, /limits\.maxReportingPages/u);
 });

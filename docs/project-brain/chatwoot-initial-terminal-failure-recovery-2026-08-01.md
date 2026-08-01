@@ -44,3 +44,15 @@ source-config path remains zero-lock, and every later closure/final-state check 
 The launcher also treats Secret handling as verification-only during resume: all required remote Secret names must
 already exist, no local access token is read and no bootstrap Worker is deployed. The exact active-version binding
 remains owned by the core controller; the ordinary missing-Secret path still requires an all-false Worker.
+
+The subsequent exact state is attempt 25 / unit 3 with `QUEUE_RETRY_EXHAUSTED`, DLQ 9, open Alert 15 and no active
+lock. Page 3 was too large for one Queue delivery: Stable-key D1 rows increased across retries while the durable
+cursor correctly remained at sequence 3. Runtime now processes one selected Conversation per continuation and
+stores only a row offset plus a SHA-256 fingerprint of the page's ordered Conversation IDs. This avoids Provider
+payload/PII persistence, permits idempotent replay of partial page-3 writes and rejects live identity-order drift.
+
+Exact recovery requires page 3, two committed pages, 50 scanned rows, 40 selected Conversations, 1,270 Messages,
+281 conversation Reporting events, 52 Coverage Runs with zero failed rows, attempt 25, unit 3 still running and
+`QUEUE_RETRY_EXHAUSTED` incident evidence. The controller may replace the prior active Worker only after binding its
+version to retained evidence and must transfer Safe-restore ownership to the replacement before sending the sole
+same-Work continuation. The 30-day Initial contract remains unchanged.

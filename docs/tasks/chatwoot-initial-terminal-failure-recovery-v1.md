@@ -35,6 +35,40 @@ The resumed controller owns Safe restore before any remote preflight. Its retain
 the same one exact in-flight Chatwoot lock only in resume mode; the ordinary path continues to require zero locks.
 The original 30-day Initial, 3-day Daily, replay and 15-target parity contract is unchanged.
 
+## Queue retry exhaustion addendum
+
+The retained active Worker continued page 3 after the local controller stopped, but the prior runtime processed
+every selected Conversation in a Provider page inside one Queue delivery. Attempts 22–25 each performed partial
+Stable-key work without committing the durable cursor; Cloudflare then terminalized the same Work with
+`QUEUE_RETRY_EXHAUSTED`.
+
+The exact admitted boundary is now:
+
+```text
+Work lifecycle / reason       terminal / QUEUE_RETRY_EXHAUSTED
+main Queue attempts           25
+unit 3                        running, no unit error
+durable stage / sequence      conversations / 3
+Conversation page             3 (2 pages committed, 50 rows scanned)
+selected Conversations        40
+selected Messages             1,270
+selected Reporting events     281
+Coverage Runs                 52 (0 failed rows)
+DLQ / open Alert              9 / 15
+active lock                   0
+```
+
+Conversation processing now persists a zero-based row offset and a SHA-256 fingerprint of the selected external
+Conversation IDs for the current page. Each Queue delivery processes exactly one Conversation, advances the page
+only after all selected rows commit and rejects page identity/order drift. Legacy durable state has no offset or
+fingerprint and therefore safely resumes page 3 at offset zero; existing D1/Lark Stable keys absorb already-written
+partial facts.
+
+The controller can deduplicate identical retained evidence copies, verify and reactivate only this exact terminal
+boundary, replace the prior active Worker with the reviewed current Head and send one recovery-owned continuation.
+The pre-existing active version remains owned by automatic Safe restore until replacement succeeds. The 30-day
+window, Schedule/Webhook-disabled state and Production block are unchanged.
+
 ## Exact read-only diagnosis
 
 The repository inspector selected the latest retained session whose exact operation was proven by Remote D1,
@@ -156,3 +190,8 @@ the required remote Secret names without requiring all-false bindings and withou
 a bootstrap Worker or changing a Secret. A missing Secret remains blocked; only the ordinary all-false path may
 perform the previously reviewed one-time bootstrap. The core still binds the active version to retained evidence
 immediately afterward.
+
+The Queue-exhaustion follow-up passed `npm ci`, repository check, 74 focused Chatwoot/recovery tests, 1,942 Node
+tests, 16 Workers-runtime tests, 101 report-reliability tests, zero-vulnerability `npm audit`, deploy dry-run and
+`git diff --check`. No live recovery, Queue/DLQ action, Remote D1/Lark mutation, Worker deployment, Secret change,
+incident closure, Schedule/Webhook action or Production action was performed by these repository gates.
