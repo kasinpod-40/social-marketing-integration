@@ -17,6 +17,7 @@ import {
   validateMetaD1OnlyContinuationRepositoryState,
   validateMetaD1OnlyEvidenceSequence,
   validateMetaD1OnlyReusableRestoreSequence,
+  validateMetaD1OnlyTerminalRecoveryBaseline,
   validateMetaReadOnlySummary,
 } from '../../scripts/lib/meta-d1-only-rollout-operator.js';
 
@@ -163,6 +164,13 @@ test('target loader creates exact stable identities for all four scopes', () => 
   const k3 = target('chemistry_k3');
   assert.equal(k3.workKey, 'meta_ads:chemistry_k3:meta-d1-chemistry_k3');
   assert.notEqual(k2.targetFingerprint, k3.targetFingerprint);
+
+  const recovery = loadMetaD1OnlyTarget({
+    ...targetEnv('instagram'),
+    MKT_META_D1_ONLY_TERMINAL_RECOVERY: 'RECOVER_EXACT_FAILED_META_OPERATION',
+  });
+  assert.equal(recovery.terminalRecovery, true);
+  assert.notEqual(recovery.targetFingerprint, instagram.targetFingerprint);
 });
 
 test('target loader rejects profile, target and date drift', () => {
@@ -310,6 +318,38 @@ test('initial verification accepts scoped D1 growth and rejects Lark or Coverage
   assert.throws(
     () => compareMetaD1OnlySnapshots(before, { ...after, invalid_coverage_count: 1 }),
     (error) => error.code === 'META_D1_ONLY_COVERAGE_INVALID',
+  );
+});
+
+test('terminal recovery requires the exact failed pre-D1 boundary and a new main Queue attempt', () => {
+  const before = {
+    ...emptySnapshot(),
+    sync_run_status: 'failed',
+    sync_run_error_code: 'META_PERMANENT_API_ERROR',
+    work_status: 'active',
+    work_lifecycle_status: 'active',
+    queue_operation_attempts: 1,
+    main_queue_attempts: 3,
+  };
+  assert.equal(validateMetaD1OnlyTerminalRecoveryBaseline(before).accepted, true);
+
+  const after = { ...completeSnapshot(), main_queue_attempts: 4 };
+  const compared = compareMetaD1OnlySnapshots(before, after, { terminalRecovery: true });
+  assert.equal(compared.accepted, true);
+  assert.throws(
+    () => compareMetaD1OnlySnapshots(before, {
+      ...after,
+      main_queue_attempts: 3,
+    }, { terminalRecovery: true }),
+    (error) => error.code === 'META_D1_ONLY_RECOVERY_ATTEMPT_MISSING',
+  );
+  assert.throws(
+    () => validateMetaD1OnlyTerminalRecoveryBaseline({
+      ...before,
+      target_organic_state_count: 1,
+      operation_organic_state_count: 1,
+    }),
+    (error) => error.code === 'META_D1_ONLY_TERMINAL_RECOVERY_BASELINE_INVALID',
   );
 });
 

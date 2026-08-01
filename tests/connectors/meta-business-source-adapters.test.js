@@ -90,6 +90,29 @@ test('Instagram source adapter enforces /me identity authority', async () => {
   );
 });
 
+test('Instagram account insights apply the required daily total-value query contract', async () => {
+  const calls = [];
+  const adapter = new InstagramOrganicSourceAdapter({
+    client: fakeReadClient({
+      calls,
+      pageResult: { rows: [], hasMore: false, nextCursor: null },
+    }),
+  });
+
+  await adapter.fetchAccountInsightsPage({
+    accountId: 'ig_fixture_001',
+    since: '2026-07-01',
+    until: '2026-07-31',
+  });
+
+  assert.equal(calls[0].path, 'me/insights');
+  assert.equal(calls[0].query.period, 'day');
+  assert.equal(calls[0].query.metric_type, 'total_value');
+  assert.equal(calls[0].query.since, '2026-07-01');
+  assert.equal(calls[0].query.until, '2026-07-31');
+  assert.equal(calls[0].options.operationName, 'instagram.account.insights');
+});
+
 test('Meta Ads source adapter keeps Insights reads daily, chunk-bounded and account-scoped', async () => {
   const calls = [];
   const adapter = new MetaAdsSourceAdapter({

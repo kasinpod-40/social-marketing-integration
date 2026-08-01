@@ -259,6 +259,8 @@ export function loadMetaD1OnlyTarget(env = {}) {
     syncRunId,
     accountId: optionalText(env.CLOUDFLARE_ACCOUNT_ID),
     queueId: optionalText(env.MKT_META_D1_ONLY_QUEUE_ID),
+    terminalRecovery: env.MKT_META_D1_ONLY_TERMINAL_RECOVERY
+      === 'RECOVER_EXACT_FAILED_META_OPERATION',
   };
   return deepFreeze({ ...base, targetFingerprint: sha256(stableJson(safeTarget(base))) });
 }
@@ -431,7 +433,9 @@ export function compareMetaD1OnlySnapshots(beforeInput, afterInput, options = {}
   if (after.invalidCoverageCount !== 0) throw operatorError('Meta D1-only Coverage contains failed or unaccepted rows', 'META_D1_ONLY_COVERAGE_INVALID');
   if (!rerun) {
     if (!classifyMetaD1OnlyCompletion(after).complete) throw operatorError('Meta D1-only operation has not reached the accepted D1 boundary', 'META_D1_ONLY_COMPLETION_INVALID');
-    if (after.queueOperationAttempts < before.queueOperationAttempts + 1) throw operatorError('Meta D1-only initial Queue attempt was not observed', 'META_D1_ONLY_QUEUE_ATTEMPT_MISSING');
+    if (options.terminalRecovery === true) {
+      if (after.mainQueueAttempts < before.mainQueueAttempts + 1) throw operatorError('Meta D1-only recovery Queue attempt was not observed', 'META_D1_ONLY_RECOVERY_ATTEMPT_MISSING');
+    } else if (after.queueOperationAttempts < before.queueOperationAttempts + 1) throw operatorError('Meta D1-only initial Queue attempt was not observed', 'META_D1_ONLY_QUEUE_ATTEMPT_MISSING');
     return deepFreeze({ accepted: true, rerun: false, before, after, targetCountDelta: subtractCounts(after.targetCounts, before.targetCounts), operationCounts: after.operationCounts, coverageRunCount: after.coverageRunCount, coverageEntityCount: after.coverageEntityCount });
   }
   if (after.mainQueueAttempts < before.mainQueueAttempts + 1) throw operatorError('Meta D1-only rerun Queue attempt was not observed', 'META_D1_ONLY_RERUN_ATTEMPT_MISSING');
@@ -439,6 +443,32 @@ export function compareMetaD1OnlySnapshots(beforeInput, afterInput, options = {}
   for (const key of Object.keys(before.operationCounts)) if (after.operationCounts[key] !== before.operationCounts[key]) throw operatorError('Meta D1-only rerun changed operation-scoped Business counts', 'META_D1_ONLY_RERUN_COUNT_DRIFT', { field: key, before: before.operationCounts[key], after: after.operationCounts[key] });
   if (after.coverageRunCount !== before.coverageRunCount || after.coverageEntityCount !== before.coverageEntityCount) throw operatorError('Meta D1-only rerun changed Coverage counts', 'META_D1_ONLY_RERUN_COVERAGE_DRIFT');
   return deepFreeze({ accepted: true, rerun: true, before, after, businessCountDrift: false, coverageCountDrift: false });
+}
+
+export function validateMetaD1OnlyTerminalRecoveryBaseline(snapshotInput = {}) {
+  const snapshot = normalizeMetaD1OnlySnapshot(snapshotInput);
+  const noOperationWrites = Object.values(snapshot.operationCounts).every((count) => count === 0);
+  const valid = snapshot.syncRunStatus === 'failed'
+    && snapshot.syncRunErrorCode === 'META_PERMANENT_API_ERROR'
+    && snapshot.workStatus === 'active'
+    && snapshot.workLifecycleStatus === 'active'
+    && snapshot.workCompletedAt === null
+    && snapshot.d1PhaseComplete === false
+    && snapshot.larkPhaseCount === 0
+    && snapshot.completionPhaseCount === 0
+    && snapshot.activeLockCount === 0
+    && snapshot.queueOperationAttempts === 1
+    && snapshot.mainQueueAttempts >= 3
+    && snapshot.coverageRunCount === 0
+    && snapshot.invalidCoverageCount === 0
+    && noOperationWrites;
+  if (!valid) {
+    throw operatorError(
+      'Meta D1-only terminal recovery baseline is not the exact failed pre-D1 boundary',
+      'META_D1_ONLY_TERMINAL_RECOVERY_BASELINE_INVALID',
+    );
+  }
+  return deepFreeze({ accepted: true, snapshot });
 }
 
 export function createMetaD1OnlyEvidence(input = {}) {
@@ -498,6 +528,7 @@ function safeTarget(target) {
     operationId: target.operationId, originalRequestedAt: target.originalRequestedAt,
     generation: target.generation, periodStart: target.periodStart, periodEnd: target.periodEnd,
     workKey: target.workKey, syncRunId: target.syncRunId,
+    terminalRecovery: target.terminalRecovery === true,
   };
 }
 function confirmation(envName, value) { return Object.freeze({ envName, value }); }

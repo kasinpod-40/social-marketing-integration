@@ -3,7 +3,7 @@
 ## Status
 
 ```text
-TASK_STATUS                          = READ_ONLY_BASELINE_AUDIT_IN_PROGRESS
+TASK_STATUS                          = INSTAGRAM_TERMINAL_RECOVERY_FIX_IN_REVIEW
 CURRENT_PROGRAM                      = ALL_META_END_TO_END_COMPLETION_V1
 BRANCH                               = integration/all-meta-end-to-end-completion-v1
 BASE_MAIN_SHA                        = 0d33be48f9b8ccaf6d8cea9a4c4ee31b1175b650
@@ -12,14 +12,13 @@ CHATWOOT_STATUS                      = CLOSED_ACCEPTED_PARTIAL_UAT
 CHATWOOT_META_BLOCKER                = NO
 META_RETAINED_OPERATION              = meta-facebook-history-20260701-20260731-1d12a5ec4fef
 META_RETAINED_D1_PHASE               = COMPLETE_RETAINED_EVIDENCE
-META_RETAINED_LARK_PHASE             = PENDING_RETAINED_EVIDENCE
+META_RETAINED_LARK_PHASE             = COMPLETE_ACCEPTED_PARITY
 META_PROVIDER_REPLAY                 = FORBIDDEN_FOR_RETAINED_FACEBOOK_OPERATION
 META_D1_QUEUE_RESEND                 = FORBIDDEN_FOR_RETAINED_FACEBOOK_OPERATION
 SCHEDULE_WEBHOOK                     = DISABLED_REQUIRED
 PRODUCTION                           = BLOCKED
-REMOTE_MUTATION_COUNT_THIS_TASK      = 0
-META_LATEST_STOP                     = META_LARK_VERIFY_TIMEOUT_AFTER_REMOTE_COMPLETION
-NEXT_STEP                            = LATE_COMPLETION_READ_ONLY_CLOSEOUT
+META_LATEST_STOP                     = INSTAGRAM_ACCOUNT_INSIGHTS_PERIOD_REQUIRED
+NEXT_STEP                            = EXACT_INSTAGRAM_SAME_OPERATION_RECOVERY_AFTER_CI
 ```
 
 ## Objective
@@ -147,3 +146,16 @@ safe restore โดยไม่ resend.
 Late proof รอบแรกผ่าน Business parity แต่ summary ปฏิเสธ target fingerprint เพราะ active-version identity
 เปลี่ยนหลัง safe restore. Recovery จึง reuse original `expectedActiveVersion` จาก chain เดิมและเก็บ attempt
 ที่ target drift เป็น forensic local evidence; ไม่มี Remote mutation หรือ Queue send ในขั้นนี้.
+
+Late proof ล่าสุดผ่านครบและปิด retained Facebook July เป็น accepted D1/Lark parity โดย Provider replay = 0,
+Facebook D1 Queue resend = 0 และ Worker restore all-false. Instagram July preflight พบ Worker Secret ที่ขาด
+ก่อน mutation; ผูก `META_INSTAGRAM_ACCESS_TOKEN` จาก private local store โดยไม่เปิดเผยค่า แล้ว rerun ผ่าน
+preflight/safe/active gates และส่ง exact D1-only operation หนึ่งครั้ง. Queue delivery มาถึงช้าหลัง verifier
+timeout และจบเป็น `META_PERMANENT_API_ERROR` ที่ `instagram.account.insights`; Worker restore/readback
+all-false ผ่าน, active lock = 0, operation มี D1 Business/Coverage/Lark write = 0 และ retained Meta DLQ/Alert
+อย่างละหนึ่งรายการ.
+
+Minimal Live GET reproduction ยืนยัน request เดิมตอบ Graph code 100 เพราะขาด `period`; request เดิมเมื่อเพิ่ม
+`period=day` และ `metric_type=total_value` ตอบ 200 พร้อม metrics ทั้งห้ารายการ. Implementation เพิ่ม query
+contract นี้ใน Instagram adapter และเพิ่ม terminal-recovery guard ที่ยอม same-operation recovery เฉพาะ exact
+failed pre-D1 boundary, ต้องไม่มี lock/Business/Coverage/Lark และต้องเห็น main Queue attempt เพิ่มจริง.

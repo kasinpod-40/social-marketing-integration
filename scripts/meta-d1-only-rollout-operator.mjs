@@ -37,6 +37,7 @@ import {
   validateMetaD1OnlyContinuationRepositoryState,
   validateMetaD1OnlyEvidenceSequence,
   validateMetaD1OnlyReusableRestoreSequence,
+  validateMetaD1OnlyTerminalRecoveryBaseline,
   validateMetaReadOnlySummary,
 } from './lib/meta-d1-only-rollout-operator.js';
 
@@ -250,14 +251,18 @@ async function runPreflight(loaded) {
       'META_D1_ONLY_D1_SCHEMA_INCOMPLETE',
     );
   }
-  if (baseline.syncRunStatus !== null
-    || baseline.workStatus !== null
-    || baseline.activeLockCount !== 0
-    || baseline.queueOperationAttempts !== 0) {
-    throw operatorFailure(
-      'The proposed Meta operation identity already exists or is active',
-      'META_D1_ONLY_OPERATION_NOT_FRESH',
-    );
+  const terminalRecovery = target.terminalRecovery
+    ? validateMetaD1OnlyTerminalRecoveryBaseline(baseline)
+    : null;
+  if (!target.terminalRecovery
+    && (baseline.syncRunStatus !== null
+      || baseline.workStatus !== null
+      || baseline.activeLockCount !== 0
+      || baseline.queueOperationAttempts !== 0)) {
+      throw operatorFailure(
+        'The proposed Meta operation identity already exists or is active',
+        'META_D1_ONLY_OPERATION_NOT_FRESH',
+      );
   }
   return {
     target: safeMetaD1OnlyTarget(target),
@@ -270,6 +275,7 @@ async function runPreflight(loaded) {
     requiredSecretNamePresent: true,
     requiredTableCount: META_D1_ONLY_REQUIRED_TABLES.length,
     baseline,
+    terminalRecovery: terminalRecovery?.accepted === true,
     providerRequests: 0,
     remoteMutationCount: 0,
   };
@@ -440,7 +446,9 @@ async function verifyInitialD1Only(loaded) {
   const before = (await readEvidence(loaded, 'snapshot-before')).data?.snapshot;
   const after = await pollForD1Completion(loaded);
   return {
-    comparison: compareMetaD1OnlySnapshots(before, after),
+    comparison: compareMetaD1OnlySnapshots(before, after, {
+      terminalRecovery: loaded.target.terminalRecovery,
+    }),
     snapshotAfter: after,
     larkMutationCount: 0,
   };

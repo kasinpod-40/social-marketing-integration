@@ -228,6 +228,10 @@ export const META_BUSINESS_INGESTION_CONTRACT = deepFreeze({
           ],
           entityType: 'account',
           supportsTimePagination: true,
+          queryContract: {
+            period: 'day',
+            metricType: 'total_value',
+          },
         }),
       ],
     },
