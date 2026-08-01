@@ -16,6 +16,7 @@ import {
 import {
   META_HISTORY_EXACT_CONTINUATION_CRITICAL_PATHS,
   META_HISTORY_EXACT_CONTINUATION_TARGET,
+  assertMetaHistoryExactContinuationConfirmation,
   materializeRetainedMetaD1Summary,
   validateMetaHistoryExactContinuationDelta,
 } from './lib/meta-history-exact-plan-continuation.js';
@@ -50,6 +51,8 @@ let stage = 'init';
 try {
   const args = process.argv.slice(2);
   if (args.includes('--execute')) {
+    stage = 'confirm-local-summary-materialization';
+    assertMetaHistoryExactContinuationConfirmation(process.env);
     stage = 'verify-current-main-before-local-summary';
     assertExactCurrentMain();
     stage = 'materialize-retained-d1-summary';
