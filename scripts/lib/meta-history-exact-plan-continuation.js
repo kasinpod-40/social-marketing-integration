@@ -1,5 +1,11 @@
 import { createHash } from 'node:crypto';
 
+import {
+  META_D1_ONLY_OPERATOR_PHASES,
+  createMetaD1OnlyEvidence,
+  validateMetaD1OnlyEvidenceSequence,
+} from './meta-d1-only-rollout-operator.js';
+
 export const META_HISTORY_EXACT_CONTINUATION_CONFIRMATION = Object.freeze({
   envName: 'CONFIRM_META_HISTORY_EXACT_CONTINUATION',
   value: 'CONTINUE_META_HISTORY_FROM_FACEBOOK_LARK_BOUNDARY',
@@ -133,6 +139,95 @@ export function validateMetaHistoryExactContinuationDelta(changedPaths = []) {
   return Object.freeze({
     changedPathCount: observed.length,
     changedPathFingerprint: sha256(JSON.stringify(observed)),
+  });
+}
+
+export function materializeRetainedMetaD1Summary(evidence = [], options = {}) {
+  const target = META_HISTORY_EXACT_CONTINUATION_TARGET;
+  const expectedPhases = META_D1_ONLY_OPERATOR_PHASES.slice(0, -1);
+  const observedPhases = Array.isArray(evidence)
+    ? evidence.map((item) => item?.phase ?? null)
+    : [];
+  if (JSON.stringify(observedPhases) !== JSON.stringify(expectedPhases)) {
+    const missing = expectedPhases.filter((phase) => !observedPhases.includes(phase));
+    throw continuationError(
+      'Retained Meta D1 evidence sequence is incomplete',
+      'META_HISTORY_EXACT_CONTINUATION_D1_EVIDENCE_INCOMPLETE',
+      { expectedPhases, observedPhases, missing },
+    );
+  }
+
+  const plan = evidence[0];
+  const planTarget = plan?.data?.target ?? {};
+  const expectedRequestedAt = Date.parse(target.originalRequestedAt);
+  const exactPlanTarget = plan?.status === 'passed'
+    && plan?.repositoryHead === target.repositoryHead
+    && plan?.targetKey === target.target
+    && plan?.operationId === target.operationId
+    && planTarget?.repositoryHead === target.repositoryHead
+    && planTarget?.targetKey === target.target
+    && planTarget?.operationId === target.operationId
+    && Number(planTarget?.originalRequestedAt) === expectedRequestedAt
+    && Number(planTarget?.generation) === expectedRequestedAt
+    && planTarget?.periodStart === target.periodStart
+    && planTarget?.periodEnd === target.periodEnd
+    && planTarget?.workKey === target.workKey
+    && planTarget?.syncRunId === target.syncRunId;
+  if (!exactPlanTarget) {
+    throw continuationError(
+      'Retained Meta D1 plan evidence does not match the exact Facebook operation',
+      'META_HISTORY_EXACT_CONTINUATION_D1_EVIDENCE_TARGET_INVALID',
+    );
+  }
+
+  const validationTarget = {
+    repositoryHead: target.repositoryHead,
+    targetFingerprint: plan.targetFingerprint,
+    targetKey: target.target,
+    operationId: target.operationId,
+  };
+  const validated = validateMetaD1OnlyEvidenceSequence(evidence, validationTarget);
+  if (validated.some((item) => item?.status !== 'passed')) {
+    throw continuationError(
+      'Retained Meta D1 evidence contains a non-passed phase',
+      'META_HISTORY_EXACT_CONTINUATION_D1_EVIDENCE_STATUS_INVALID',
+    );
+  }
+
+  const final = validated.at(-1);
+  if (final?.phase !== 'verify-restore'
+    || final?.data?.mode !== 'safe'
+    || !Array.isArray(final?.data?.expectedTrueFlags)
+    || final.data.expectedTrueFlags.length !== 0) {
+    throw continuationError(
+      'Retained Meta D1 evidence does not end in a verified all-false restore',
+      'META_HISTORY_EXACT_CONTINUATION_D1_RESTORE_EVIDENCE_INVALID',
+    );
+  }
+
+  return createMetaD1OnlyEvidence({
+    phase: 'summary',
+    repositoryHead: target.repositoryHead,
+    targetFingerprint: plan.targetFingerprint,
+    targetKey: target.target,
+    operationId: target.operationId,
+    previousEvidenceSha256: final.evidenceSha256,
+    capturedAt: options.capturedAt,
+    data: {
+      accepted: true,
+      targetKey: target.target,
+      operationId: target.operationId,
+      phaseCount: validated.length,
+      evidenceChainHeadSha256: final.evidenceSha256,
+      d1OnlyVerified: true,
+      idempotentRerunVerified: true,
+      restoredAllFalse: true,
+      larkMutationCount: 0,
+      scheduleActivationCount: 0,
+      nextGate: 'separate_next_target_or_lark_parity_approval',
+    },
+    remoteMutationPerformed: false,
+    businessWritesAllowed: false,
   });
 }
 

@@ -2,15 +2,23 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  META_D1_ONLY_OPERATOR_PHASES,
+  createMetaD1OnlyEvidence,
+} from '../../scripts/lib/meta-d1-only-rollout-operator.js';
+import {
   META_HISTORY_EXACT_CONTINUATION_ALLOWED_DELTA,
   META_HISTORY_EXACT_CONTINUATION_CONFIRMATION,
   META_HISTORY_EXACT_CONTINUATION_TARGET,
   assertMetaHistoryExactContinuationConfirmation,
+  materializeRetainedMetaD1Summary,
   validateMetaHistoryExactContinuationDelta,
   validateMetaHistoryExactContinuationPlan,
   validateMetaHistoryFacebookLarkBoundary,
   validateStableMetaHistoryFacebookBoundary,
 } from '../../scripts/lib/meta-history-exact-plan-continuation.js';
+import {
+  validateMetaD1OnlySummaryForLark,
+} from '../../scripts/lib/meta-lark-parity-rollout-operator.js';
 
 const REQUIRED_RELEASE_PATHS = Object.freeze([
   '.github/workflows/branch-verification.yml',
@@ -63,6 +71,47 @@ function validBoundary(overrides = {}) {
     invalid_coverage_count: 0,
     ...overrides,
   };
+}
+
+function validD1Evidence() {
+  const target = META_HISTORY_EXACT_CONTINUATION_TARGET;
+  const targetFingerprint = 'a'.repeat(64);
+  const expectedRequestedAt = Date.parse(target.originalRequestedAt);
+  const planTarget = {
+    repositoryHead: target.repositoryHead,
+    targetKey: target.target,
+    operationId: target.operationId,
+    originalRequestedAt: expectedRequestedAt,
+    generation: expectedRequestedAt,
+    periodStart: target.periodStart,
+    periodEnd: target.periodEnd,
+    workKey: target.workKey,
+    syncRunId: target.syncRunId,
+  };
+  const result = [];
+  let previousEvidenceSha256 = null;
+  for (const phase of META_D1_ONLY_OPERATOR_PHASES.slice(0, -1)) {
+    const data = phase === 'plan'
+      ? { target: planTarget }
+      : phase === 'verify-restore'
+        ? { mode: 'safe', expectedTrueFlags: [] }
+        : {};
+    const evidence = createMetaD1OnlyEvidence({
+      phase,
+      repositoryHead: target.repositoryHead,
+      targetFingerprint,
+      targetKey: target.target,
+      operationId: target.operationId,
+      previousEvidenceSha256,
+      capturedAt: '2026-07-31T19:20:00.000Z',
+      data,
+      remoteMutationPerformed: false,
+      businessWritesAllowed: false,
+    });
+    result.push(evidence);
+    previousEvidenceSha256 = evidence.evidenceSha256;
+  }
+  return result;
 }
 
 test('exact continuation requires the explicit one-time confirmation', () => {
@@ -131,6 +180,49 @@ test('exact continuation permits only the reviewed Dashboard, Chatwoot and conti
       'scripts/meta-lark-parity-rollout-operator.mjs',
     ]),
     (error) => error?.code === 'META_HISTORY_EXACT_CONTINUATION_REPOSITORY_DELTA_INVALID',
+  );
+});
+
+test('retained D1 summary is materialized only from the complete validated evidence chain', () => {
+  const evidence = validD1Evidence();
+  const summary = materializeRetainedMetaD1Summary(evidence, {
+    capturedAt: '2026-08-01T03:30:00.000Z',
+  });
+  const accepted = validateMetaD1OnlySummaryForLark(summary, {
+    targetKey: META_HISTORY_EXACT_CONTINUATION_TARGET.target,
+    operationId: META_HISTORY_EXACT_CONTINUATION_TARGET.operationId,
+  });
+
+  assert.equal(summary.phase, 'summary');
+  assert.equal(summary.data.accepted, true);
+  assert.equal(summary.data.d1OnlyVerified, true);
+  assert.equal(summary.data.idempotentRerunVerified, true);
+  assert.equal(summary.data.restoredAllFalse, true);
+  assert.equal(summary.remoteMutationPerformed, false);
+  assert.equal(summary.businessWritesAllowed, false);
+  assert.equal(accepted.operationId, META_HISTORY_EXACT_CONTINUATION_TARGET.operationId);
+
+  assert.throws(
+    () => materializeRetainedMetaD1Summary(evidence.slice(0, -1)),
+    (error) => error?.code === 'META_HISTORY_EXACT_CONTINUATION_D1_EVIDENCE_INCOMPLETE',
+  );
+
+  const invalidRestore = [...evidence];
+  invalidRestore[invalidRestore.length - 1] = createMetaD1OnlyEvidence({
+    phase: 'verify-restore',
+    repositoryHead: META_HISTORY_EXACT_CONTINUATION_TARGET.repositoryHead,
+    targetFingerprint: evidence[0].targetFingerprint,
+    targetKey: META_HISTORY_EXACT_CONTINUATION_TARGET.target,
+    operationId: META_HISTORY_EXACT_CONTINUATION_TARGET.operationId,
+    previousEvidenceSha256: evidence.at(-2).evidenceSha256,
+    capturedAt: '2026-07-31T19:20:00.000Z',
+    data: { mode: 'active', expectedTrueFlags: ['MKT_META_D1_WRITE_ENABLED'] },
+    remoteMutationPerformed: false,
+    businessWritesAllowed: false,
+  });
+  assert.throws(
+    () => materializeRetainedMetaD1Summary(invalidRestore),
+    (error) => error?.code === 'META_HISTORY_EXACT_CONTINUATION_D1_RESTORE_EVIDENCE_INVALID',
   );
 });
 
