@@ -1,83 +1,81 @@
-# Current Task — Chatwoot Inspector Active Resume Window v1
+# Current Task — Chatwoot Safe-Baseline Prior Attempt v1
 
 ## Status
 
 ```text
 TASK_STATUS                          = REPOSITORY_HOTFIX_IN_REVIEW
-CURRENT_PROGRAM                      = CHATWOOT_INSPECTOR_ACTIVE_RESUME_WINDOW_V1
-BRANCH                               = hotfix/chatwoot-inspector-active-resume-window-v1
-BASE_MAIN_SHA                        = 0c6ddf535af10c6f031bb9a9beb553858bcbbe69
-CHATWOOT_LATEST_STOP                 = CHATWOOT_INITIAL_FAILURE_WORKER_UNSAFE
-CHATWOOT_SELECTED_PARENT_IDENTITY    = PROVEN_AND_HANDOFF_BOUND
-CHATWOOT_ISOLATED_CANDIDATE          = REAL_DIRECTORY_AND_CHILD_VISIBLE
-CHATWOOT_OBSERVED_TRUE_FLAGS         = EXACT_FINAL_UAT_FOUR_FLAG_WINDOW
-CHATWOOT_CURRENT_WORKER_FLAGS        = ALL_FALSE_AFTER_VERIFIED_SAFE_RESTORE
-LATEST_PROVIDER_QUEUE_D1_LARK_ACTION = 0
+CURRENT_PROGRAM                      = CHATWOOT_SAFE_BASELINE_PRIOR_ATTEMPT_V1
+BRANCH                               = hotfix/chatwoot-safe-baseline-prior-attempt-v1
+BASE_MAIN_SHA                        = 87d9235d7a8b5982e9bfa8a40e1fd3218a77f79c
+CHATWOOT_LATEST_STOP                 = CHATWOOT_SAFE_BASELINE_CURRENT_HEAD_PRESENT
+CHATWOOT_PRIOR_ATTEMPT_HEAD          = 87d9235d7a8b5982e9bfa8a40e1fd3218a77f79c
+CHATWOOT_PRIOR_EVIDENCE_ENTRIES      = 2
+CHATWOOT_PRIOR_SAFE_RESTORE          = PRESENT_AND_REQUIRES_EXACT_VALIDATION
+CHATWOOT_CURRENT_WORKER_FLAGS        = ALL_FALSE_REPORTED_BY_PRIOR_PARENT
+LATEST_PROVIDER_QUEUE_D1_LARK_ACTION = 0_FOR_LATEST_GUARD_STOP
 SCHEDULE_WEBHOOK                     = DISABLED
 PRODUCTION                           = BLOCKED
-NEXT_STEP                            = VERIFY_AND_MERGE_INSPECTOR_ACTIVE_RESUME_WINDOW
+NEXT_STEP                            = VERIFY_AND_MERGE_PRIOR_ATTEMPT_AUTHORITY
 ```
 
 ## Latest guarded stop
 
-The safe-baseline parent selected the exact retained controller identity, proved the retained active version and
-Remote D1 `queue_retry_exhausted_terminal_v1` boundary, promoted the retained active Worker and delegated through the
-arbitration wrapper. The selected evidence was visible to the Initial recovery child as a real directory.
-
-The Initial failure inspector then stopped before backup, Work reactivation, Queue continuation, D1/Lark mutation or
-incident closure with:
+The public exact terminal refused another invocation on repository Head
+`87d9235d7a8b5982e9bfa8a40e1fd3218a77f79c` because the current-head safe-baseline directory already contains two
+entries:
 
 ```text
-code       CHATWOOT_INITIAL_FAILURE_WORKER_UNSAFE
-trueFlags  MKT_CONNECTOR_CHATWOOT_ENABLED
-           MKT_CHATWOOT_D1_WRITE_ENABLED
-           MKT_CHATWOOT_LARK_WRITE_ENABLED
-           MKT_CHATWOOT_REPORT_WRITE_ENABLED
+stage       verify-chatwoot-safe-baseline-current-head
+code        CHATWOOT_SAFE_BASELINE_CURRENT_HEAD_PRESENT
+entryCount  2
 ```
 
-The safe-baseline parent verified every execution flag false after the child failure. Provider, Queue, Remote D1,
-Remote Lark and incident-closure actions remained zero. Schedule and Webhook remained disabled and Production remained
-blocked.
+This stop occurred before child start and reported zero Provider, Queue, Remote D1, Remote Lark, Worker deployment and
+incident-closure actions. It must not be bypassed by deleting, renaming or editing evidence.
 
-## Root cause
+## Root cause and required route
 
-`chatwoot-initial-terminal-failure-inspector.mjs` supported only an all-false Worker state. That is correct for
-ordinary standalone inspection, but the exact safe-baseline controller-resume path intentionally promotes the retained
-four-flag Final UAT active version before invoking the inspector. The inspector therefore rejected the exact active
-window already selected, version-bound and Safe-restore-owned by its parent.
+The previous reviewed run created its active-window attempt evidence and all-false safe-restore evidence. The blind-rerun
+guard has no authority to determine whether those two files form one exact resumable chain, so it correctly blocks.
+
+A new reviewed outer authority must validate the prior attempt and current Worker state before delegating to the existing
+exact terminal on a new reviewed Head. The existing exact terminal will then perform fresh retained-evidence, Worker and
+Remote D1 boundary checks before any promotion or mutation.
 
 ## Objective
 
-Preserve ordinary all-false inspection while admitting the exact controller-resume active window only when it is bound
-to the current-head safe-baseline handoff and current Worker version fingerprint. Do not change the recovery launcher,
-Queue/D1/Lark mutation authority, incident closure, retained evidence, second-Initial prohibition or Safe restore.
+Validate and bind the exact prior safe-baseline attempt without mutating it. Continue only when the prior directory has
+the exact two-file incomplete shape, the handoff and restore contracts agree, the current Worker remains all-false and
+its version fingerprint matches the prior safe restore. Preserve every existing recovery guard and mutation authority.
 
 ## Contract
 
-1. Ordinary inspector execution still accepts only zero true execution flags.
-2. An active inspector window is accepted only when the true flags equal the four exported Chatwoot Final UAT flags
-   exactly.
-3. No Schedule, Webhook or other `MKT_*_ENABLED` flag may be true.
-4. The current-head file
-   `outputs/chatwoot-controller-safe-baseline-resume/<head>/01-active-window.attempt.json` must exist as a private,
-   regular, non-symlink file.
-5. The attempt must pass `validateChatwootSafeBaselineSelectionHint` for the current repository Head.
-6. The current active Worker version must match the attempt's direct SHA-256 retained-active-version fingerprint.
-7. Missing/malformed handoff, duplicate flags, version drift and any additional true flag remain fail closed with
-   `CHATWOOT_INITIAL_FAILURE_WORKER_UNSAFE`.
-8. The inspector remains SELECT-only and performs no Provider, Queue, D1/Lark mutation, deployment or incident closure.
-9. The existing recovery launcher remains unchanged and no second Initial admission is allowed.
-10. Existing parent/inner operators retain all-false Safe restore ownership; Schedule/Webhook stay disabled and
-    Production stays blocked.
+1. The prior attempt Head is explicitly supplied and must be a strict ancestor of the reviewed wrapper Head.
+2. The prior directory must be a real directory containing exactly:
+   - `01-active-window.attempt.json`
+   - `02-safe-restore.json`
+3. `03-summary.json`, any additional entry, missing entry or symlink blocks continuation.
+4. Both evidence files must be private regular files.
+5. The attempt must pass the existing `validateChatwootSafeBaselineSelectionHint` contract for the prior Head.
+6. The safe restore must use the same contract version, repository Head and retained session fingerprint.
+7. `restoredAllFlagsFalse` must be true; Schedule/Webhook and Production must be false.
+8. The current Worker must have exactly one active version and zero enabled execution flags.
+9. The current active version's direct SHA-256 fingerprint must match the prior safe-restore fingerprint.
+10. The current reviewed Head must pass the existing empty-evidence guard before child start.
+11. The outer authority performs read-only Git, local evidence and Worker inspection only.
+12. It may not call Queue, D1 mutation, Lark, Worker deployment or incident closure directly.
+13. The child remains `scripts/chatwoot-controller-safe-baseline-exact-terminal.mjs`.
+14. The existing safe-baseline, pinned-origin, arbitration, Initial recovery, Final UAT and all-false Safe-restore chain
+    remains unchanged.
+15. A second Initial admission remains forbidden; Schedule/Webhook remain disabled and Production remains blocked.
 
 ## Changed files
 
 ```text
-scripts/lib/chatwoot-initial-failure-worker-safety.js
-scripts/chatwoot-initial-terminal-failure-inspector.mjs
-tests/application/chatwoot-initial-failure-worker-safety.test.js
-docs/tasks/chatwoot-inspector-active-resume-window-v1.md
-docs/project-brain/chatwoot-initial-terminal-failure-recovery-2026-08-01.md
+scripts/lib/chatwoot-safe-baseline-prior-attempt.js
+scripts/chatwoot-safe-baseline-prior-attempt-terminal.mjs
+tests/application/chatwoot-safe-baseline-prior-attempt.test.js
+docs/tasks/chatwoot-safe-baseline-prior-attempt-v1.md
 docs/current-task.md
 ```
 
@@ -86,12 +84,13 @@ docs/current-task.md
 ```bash
 npm ci
 npm run check
+node --test tests/application/chatwoot-safe-baseline-prior-attempt.test.js
 node --test tests/application/chatwoot-initial-failure-worker-safety.test.js
-node --test tests/application/chatwoot-initial-terminal-failure-recovery.test.js
 node --test tests/application/chatwoot-controller-evidence-isolation.test.js
 node --test tests/application/chatwoot-controller-evidence-arbitration.test.js
 node --test tests/application/chatwoot-controller-safe-baseline-resume.test.js
 node --test tests/application/chatwoot-controller-safe-baseline-exact.test.js
+node --test tests/application/chatwoot-initial-terminal-failure-recovery.test.js
 node --test tests/application/chatwoot-final-30d-daily-uat.test.js
 npm test
 npm run test:report-reliability
@@ -128,11 +127,11 @@ Inside the immutable reviewed release clone, it delegates only to:
 scripts/meta-history-2026-exact-plan-continuation-terminal.mjs
 ```
 
-Meta must not resume until Chatwoot completes its exact recovery, verifies all execution flags false, and closes the
+Meta must not resume until Chatwoot completes its exact recovery, verifies all execution flags false and closes the
 current Chatwoot incident safely.
 
 ## Implementation result
 
-The exact worker-safety classifier, current-head handoff validation, inspector integration, focused regressions and
-project documentation are implemented on `hotfix/chatwoot-inspector-active-resume-window-v1`. CI is pending.
-Repository implementation has performed zero Live or Remote mutation.
+The prior-attempt validator, read-only public terminal, real-filesystem regression and task documentation are implemented
+on `hotfix/chatwoot-safe-baseline-prior-attempt-v1`. CI is pending. Repository implementation has performed zero Live or
+Remote mutation.
