@@ -58,10 +58,21 @@ test('inspector confirmation and latest admitted incomplete session are fail clo
   ]);
   assert.equal(selected.path, '/latest/session.json');
   assert.equal(selected.session.initial.operationId, latest.initial.operationId);
+  const canonical = selectLatestIncompleteChatwootSession([
+    { path: '/copy/session.json', session: latest, hasInitialSendAttempt: true, hasAcceptedSummary: false },
+    { path: `/evidence/${HEAD}/session.json`, session: latest, hasInitialSendAttempt: true, hasAcceptedSummary: false },
+  ]);
+  assert.equal(canonical.path, `/evidence/${HEAD}/session.json`);
+  const conflicting = createChatwootFinalUatSession({
+    repositoryHead: 'b'.repeat(40),
+    createdAt: latest.createdAt,
+    initialRequestedAt: latest.createdAt,
+    dailyRequestedAt: latest.createdAt + 1_000,
+  });
   assert.throws(
     () => selectLatestIncompleteChatwootSession([
       { path: '/a/session.json', session: latest, hasInitialSendAttempt: true, hasAcceptedSummary: false },
-      { path: '/b/session.json', session: latest, hasInitialSendAttempt: true, hasAcceptedSummary: false },
+      { path: '/b/session.json', session: conflicting, hasInitialSendAttempt: true, hasAcceptedSummary: false },
     ]),
     (error) => error?.code === 'CHATWOOT_INITIAL_FAILURE_SESSION_AMBIGUOUS',
   );
