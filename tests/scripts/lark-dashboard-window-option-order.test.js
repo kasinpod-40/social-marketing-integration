@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import { LarkBitableClient } from '../../packages/connectors/src/lark/lark-bitable.client.js';
 import {
   LARK_DASHBOARD_WINDOW_DESIRED_ORDER,
   LARK_DASHBOARD_WINDOW_FIELD,
@@ -76,6 +77,72 @@ test('builds a full field update that preserves identity, description, IDs, name
     { id: 'optaGcj0mG', name: '7', color: 1 },
     { id: 'optmG5Z7M0', name: '30', color: 3 },
   ]);
+});
+
+test('Lark client serializes the exact full PUT body without dropping option IDs or order', async () => {
+  const requests = [];
+  const fetchImpl = async (url, options = {}) => {
+    requests.push({ url: String(url), options });
+    if (String(url).includes('/tenant_access_token/internal')) {
+      return new Response(JSON.stringify({
+        code: 0,
+        tenant_access_token: 'tenant-token',
+        expire: 7200,
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    return new Response(JSON.stringify({
+      code: 0,
+      msg: 'success',
+      data: {
+        field: {
+          field_id: LARK_DASHBOARD_WINDOW_FIELD.fieldId,
+          field_name: LARK_DASHBOARD_WINDOW_FIELD.fieldName,
+          type: 3,
+          ui_type: 'SingleSelect',
+          description: { text: 'จำนวนวันแบบ Inclusive; Custom range เว้นว่าง' },
+          property: { options: LARK_DASHBOARD_WINDOW_OPTIONS },
+        },
+      },
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  const client = new LarkBitableClient({
+    appId: 'app-id',
+    appSecret: 'app-secret',
+    appToken: 'base-token',
+    fetchImpl,
+    minRequestIntervalMs: 0,
+    maxAttempts: 1,
+  });
+  const plan = planLarkDashboardWindowOptionOrder(fieldWithOptions(PRE_APPLY_OPTIONS));
+  const mutation = buildLarkDashboardWindowFieldMutation(plan);
+
+  await client.updateField({
+    tableId: 'tbl7rJypEU2ryAcr',
+    fieldId: LARK_DASHBOARD_WINDOW_FIELD.fieldId,
+    field: mutation,
+  });
+
+  assert.equal(requests.length, 2);
+  const request = requests[1];
+  assert.equal(request.options.method, 'PUT');
+  assert.match(
+    request.url,
+    /\/fields\/fldMlTUP3Z$/u,
+  );
+  assert.deepEqual(JSON.parse(request.options.body), {
+    field_name: LARK_DASHBOARD_WINDOW_FIELD.fieldName,
+    type: 3,
+    ui_type: 'SingleSelect',
+    description: { text: 'จำนวนวันแบบ Inclusive; Custom range เว้นว่าง' },
+    property: {
+      options: [
+        { id: 'opt38OJLF0', name: '1', color: 2 },
+        { id: 'optGqbHePA', name: '3', color: 0 },
+        { id: 'optaGcj0mG', name: '7', color: 1 },
+        { id: 'optmG5Z7M0', name: '30', color: 3 },
+      ],
+    },
+  });
 });
 
 test('rejects unexpected order instead of guessing', () => {
