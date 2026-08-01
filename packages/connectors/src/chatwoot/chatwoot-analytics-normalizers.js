@@ -248,7 +248,7 @@ export async function normalizeChatwootConversation(value, context = {}) {
     sourceCreatedAt,
     sourceUpdatedAt,
     lastActivityAt: optionalTimestampMs(value.last_activity_at, 'conversation.last_activity_at') ?? sourceUpdatedAt,
-    waitingSince: optionalTimestampMs(value.waiting_since, 'conversation.waiting_since'),
+    waitingSince: optionalSentinelTimestampMs(value.waiting_since, 'conversation.waiting_since'),
     sourceAvailabilityStatus: normalizeConversationSourceStatus(context.sourceAvailabilityStatus),
     messageCount: messageMetrics.messageCount,
     incomingMessageCount: messageMetrics.incomingMessageCount,
@@ -478,6 +478,16 @@ function requireTimestampMs(value, fieldName) {
 
 function optionalTimestampMs(value, fieldName) {
   return toEpochMilliseconds(value, { allowNull: true, label: fieldName });
+}
+
+function optionalSentinelTimestampMs(value, fieldName) {
+  try {
+    return optionalTimestampMs(value, fieldName);
+  } catch (cause) {
+    // Chatwoot may expose zero/out-of-range sentinels for an optional waiting timestamp.
+    if (cause instanceof RangeError) return null;
+    throw cause;
+  }
 }
 
 function optionalBoolean(value, fieldName) {

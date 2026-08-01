@@ -89,6 +89,9 @@ test('candidate admission forwards only known shallow boundaries to exact inspec
     lifecycle_status: 'terminal', main_queue_attempts: 5, unit_sync_runs: 2,
   }), true);
   assert.equal(isChatwootInitialFailureCandidateAdmitted({
+    lifecycle_status: 'terminal', main_queue_attempts: 7, unit_sync_runs: 2,
+  }), true);
+  assert.equal(isChatwootInitialFailureCandidateAdmitted({
     lifecycle_status: 'terminal', main_queue_attempts: 4, unit_sync_runs: 3,
   }), false);
   assert.equal(isChatwootInitialFailureCandidateAdmitted({
@@ -214,6 +217,8 @@ test('terminal reactivation and current incident closure are exact guarded mutat
   assert.match(closure, /UPDATE dead_letter_jobs/u);
   assert.match(closure, /UPDATE dead_letter_operation_metadata/u);
   assert.match(closure, /UPDATE system_alerts/u);
+  assert.match(closure, /conversation\.waiting_since is outside the supported range 2000-2100/u);
+  assert.match(closure, /main_queue_attempts IN \(2,4,5,7\)/u);
   assert.doesNotMatch(closure, /\bDELETE\b/iu);
 });
 
@@ -304,6 +309,51 @@ test('safe-restore race boundary reactivates only the exact admitted Work', () =
   assert.match(sql, /main_queue_attempts=2/u);
   assert.match(sql, /\)=3 AND EXISTS/u);
   assert.match(sql, /\)=4/u);
+});
+
+test('waiting-since terminal recovery preserves the exact zero-write durable cursor', () => {
+  const operation = session().initial;
+  const businessCounts = Object.fromEntries(
+    [...new Set(CHATWOOT_FINAL_UAT_TABLES.map((item) => item.d1Table))]
+      .map((table) => [table, table === 'chatwoot_account_state' ? 1 : 0]),
+  );
+  const inspection = {
+    operation,
+    workLifecycle: 'terminal',
+    terminalReason: 'QUEUE_PERMANENT_FAILURE',
+    abandonedAt: 1_800_000_100_000,
+    auditReference: 'terminal:waiting-since',
+    workGeneration: operation.generation,
+    workRequestedAt: operation.originalRequestedAt,
+    activeChatwootWork: 0,
+    phaseRows: 1,
+    durableStage: 'conversations',
+    nextSequence: 1,
+    activeLockCount: 0,
+    queueOperationRows: 1,
+    mainQueueAttempts: 7,
+    unitSyncRuns: 2,
+    failedUnitSyncRuns: 1,
+    failedSyncRunId: `${operation.syncRunId}:unit:1`,
+    unitSyncRunStatus: 'failed',
+    errorCode: 'PERMANENT_QUEUE_FAILURE',
+    errorMessage: 'conversation.waiting_since is outside the supported range 2000-2100',
+    currentDlqRecords: 4,
+    currentOpenAlerts: 6,
+    failedCoverageRows: 0,
+    businessCounts,
+  };
+  assert.equal(
+    classifyChatwootInitialRecoveryBoundary(inspection),
+    CHATWOOT_INITIAL_RECOVERY_BOUNDARIES.waitingSince,
+  );
+  const sql = buildChatwootInitialFailureReactivationSql(inspection);
+  assert.match(sql, /main_queue_attempts=7/u);
+  assert.match(sql, /main_queue_attempts=5/u);
+  assert.match(sql, /conversation\.waiting_since is outside the supported range 2000-2100/u);
+  assert.match(sql, /\)=4 AND EXISTS/u);
+  assert.match(sql, /\)=6/u);
+  assert.doesNotMatch(sql, /DELETE FROM sync_work_phases/iu);
 });
 
 test('public recovery is plan-only and delegates exact resume through existing Final UAT', async () => {

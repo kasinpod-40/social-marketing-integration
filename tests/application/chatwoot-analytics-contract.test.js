@@ -56,6 +56,35 @@ test('Chatwoot conversation normalizer accepts fractional epoch seconds from the
   assert.equal(conversation.sourceUpdatedAt, 1785558008123);
 });
 
+test('Chatwoot conversation normalizer treats an out-of-range optional waiting timestamp as null', async () => {
+  const conversation = await normalizeChatwootConversation({
+    id: 71,
+    account_id: 42,
+    inbox_id: 3,
+    status: 'open',
+    created_at: 1785557000,
+    updated_at: 1785558008.123,
+    waiting_since: 0,
+  }, {
+    ...BASE_CONTEXT,
+    observedAt: OBSERVED_AT,
+  });
+
+  assert.equal(conversation.waitingSince, null);
+  await assert.rejects(
+    normalizeChatwootConversation({
+      id: 71,
+      account_id: 42,
+      inbox_id: 3,
+      status: 'open',
+      created_at: 1785557000,
+      updated_at: 1785558008.123,
+      waiting_since: 'not-a-timestamp',
+    }, { ...BASE_CONTEXT, observedAt: OBSERVED_AT }),
+    /conversation\.waiting_since must be a valid ISO-8601 date-time/u,
+  );
+});
+
 test('Chatwoot incremental source hashes exclude observation timestamps', async () => {
   const first = await buildPrepared({ observedAt: OBSERVED_AT, includeReports: false, fullSnapshot: false });
   const second = await buildPrepared({ observedAt: OBSERVED_AT + 60_000, includeReports: false, fullSnapshot: false });
