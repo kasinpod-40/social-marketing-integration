@@ -1,11 +1,13 @@
-# Current Task — Meta Retained D1 Summary Materialization Recovery v1
+# Current Task — Meta Exact-Plan Execution Handoff v3
 
 ## Status
 
 ```text
-TASK_STATUS                          = REPOSITORY_HOTFIX_IN_REVIEW
-CURRENT_PROGRAM                      = META_RETAINED_D1_SUMMARY_MATERIALIZATION_V1
-BRANCH                               = hotfix/meta-retained-d1-summary-materialization-v1
+TASK_STATUS                          = META_HISTORY_EXACT_PLAN_EXECUTION_READY
+CURRENT_PROGRAM                      = META_HISTORY_EXACT_PLAN_CONTINUATION_V1
+RETAINED_D1_SUMMARY_HOTFIX_PR        = #382 / SQUASH_MERGED
+RETAINED_D1_SUMMARY_MAIN_SHA         = de325cae3ff61bfeb39dd15b17c53bb8e48541b9
+VERIFIED_HOTFIX_HEAD                 = b52499e6bd1ce7b07b0e38f25c6bb4b7dd7b783a
 RETAINED_OPERATION_REPOSITORY_HEAD   = 5ff8e2cfb1f890ac2a8f2867a904b477c6456d91
 FACEBOOK_OPERATION_ID                = meta-facebook-history-20260701-20260731-1d12a5ec4fef
 FACEBOOK_ORIGINAL_REQUESTED_AT       = 2026-07-31T16:51:11.017Z
@@ -20,15 +22,18 @@ FACEBOOK_D1_QUEUE_RESEND_ALLOWED     = NO
 LATEST_CONTINUATION_STAGE            = load-retained-evidence
 LATEST_CONTINUATION_CODE             = ENOENT
 LATEST_CONTINUATION_REMOTE_ACTIONS   = 0
+META_VERIFICATION                    = run 30682502969 / #145 / PASS
+BRANCH_VERIFICATION                  = run 30682502976 / #1552 / PASS
+REVIEW_THREADS                       = 0
 WORKER_FLAGS                         = ALL_FALSE_VERIFIED
 SCHEDULE                             = DISABLED
 PRODUCTION                           = BLOCKED
-NEXT_STEP                            = VERIFY_AND_MERGE_LOCAL_EVIDENCE_RECOVERY
+NEXT_STEP                            = RUN_EXACT_PLAN_CONTINUATION_TERMINAL_ONCE
 ```
 
 ## Retained live boundary
 
-The deterministic Facebook July operation remains the same admitted operation:
+The exact Facebook July operation remains D1-complete and Lark-pending:
 
 ```text
 work_key      facebook:meta-facebook-history-20260701-20260731-1d12a5ec4fef
@@ -36,111 +41,56 @@ work_type     facebook.page.organic.sync
 operation_id  meta-facebook-history-20260701-20260731-1d12a5ec4fef
 lifecycle     active
 queue rows    1
+active locks  0
 ```
 
-Two prior read-only snapshots proved a stable D1-complete/Lark-pending boundary:
+Prior read-only snapshots proved `sync_run_status=success`, complete D1/source staging, valid Coverage, no Lark or
+completion phase, and a stable all-false Worker boundary. Existing D1 facts and the existing Queue admission are
+authoritative. Do not restart, replace, abandon, terminalize or resend this operation.
 
-```text
-sync_run_status               success
-sync_run_error_code           null
-D1 phase                      complete
-source staging phase          complete
-organicHistoryDone            true
-Coverage runs / invalid       2 / 0
-Active lock                   0
-Lark phase count              0
-Completion phase count        0
-```
+## Latest guarded stop and correction
 
-Existing D1 facts and the existing Queue admission are authoritative. Do not restart, replace, abandon,
-terminalize or resend this Facebook operation.
-
-## Latest guarded stop
-
-The merged exact-plan continuation passed the reviewed Repository-delta guard and then stopped at
-`load-retained-evidence` because this local file was absent:
+The preceding public continuation stopped at `load-retained-evidence` before Cloudflare context resolution or any
+Remote action because the final local D1 operator file was absent:
 
 ```text
 outputs/meta-d1-only-rollout/facebook/
 meta-facebook-history-20260701-20260731-1d12a5ec4fef/summary.json
 ```
 
-The stop occurred before Cloudflare context resolution, Provider request, Queue send, Remote D1/Lark mutation,
-Worker deployment or Schedule action.
+PR #382 extends the existing public Terminal so that, only when this summary is absent, it:
 
-The missing file is the final local D1 operator summary. It cannot be replaced with a JSON assembled only from
-the Remote D1 snapshot because the Lark gate requires the original evidence-chain head, accepted idempotent
-rerun and verified all-false restore.
+1. requires the exact continuation confirmation before any local write;
+2. requires clean current `main == origin/main`;
+3. verifies the exact retained-Head release path set and zero Meta-critical drift;
+4. reads the ordered retained chain from `plan.json` through `verify-restore.json`;
+5. validates every evidence hash, previous-evidence link, exact operation/generation/range, Work key and Sync-run ID;
+6. requires the chain to end at verified all-false `safe` restore;
+7. creates the missing `summary` through the existing `createMetaD1OnlyEvidence()` contract;
+8. validates it through `validateMetaD1OnlySummaryForLark()`;
+9. writes only the private local `summary.json` atomically; and
+10. delegates to the unchanged guarded exact-plan continuation.
 
-## Repository correction
+If any phase file is missing, invalid or chain-broken, the command stops with the exact evidence failure before
+Cloudflare, Provider, Queue, D1, Lark or Worker activity.
 
-The exact-plan public Terminal is extended to recover only the missing local summary when all retained D1 phase
-evidence files are present:
+## Verification authority
 
-```text
-plan.json
-preflight.json
-backup.json
-deploy-safe-baseline.json
-verify-safe-baseline.json
-deploy-d1-only-gates.json
-verify-d1-only-deployment.json
-snapshot-before.json
-send-one-d1-only.json
-verify-d1-only.json
-resend-same-operation.json
-verify-idempotent-rerun.json
-restore-all-false.json
-verify-restore.json
-```
-
-The recovery:
-
-1. requires clean current `main == origin/main`;
-2. validates the exact retained-Head release delta and zero Meta-critical drift before writing local evidence;
-3. requires the complete ordered phase list;
-4. validates every evidence hash and previous-evidence link with the existing D1 operator contract;
-5. requires exact Facebook operation, generation, period, Work key and Sync-run identity from `plan.json`;
-6. requires the chain to end at `verify-restore` with mode `safe` and zero expected true flags;
-7. creates the final `summary` through `createMetaD1OnlyEvidence()` using the validated chain head;
-8. validates the generated summary through `validateMetaD1OnlySummaryForLark()`;
-9. writes `summary.json` atomically as a private local file; and
-10. then delegates to the existing guarded exact-plan continuation.
-
-The materialization path contains no `fetch`, Wrangler command, Provider read, Queue send, D1 command, Lark
-request, Worker deployment or Schedule mutation. If any phase file is missing, invalid or chain-broken, it stops
-and reports the exact missing/invalid evidence before the continuation child starts.
-
-## Scope
-
-Changed files:
+The exact Hotfix Head `b52499e6bd1ce7b07b0e38f25c6bb4b7dd7b783a` passed:
 
 ```text
-scripts/lib/meta-history-exact-plan-continuation.js
-scripts/meta-history-2026-exact-plan-continuation-terminal.mjs
-tests/application/meta-history-exact-plan-continuation.test.js
-tests/application/meta-history-exact-plan-continuation-wiring.test.js
-docs/current-task.md
+Meta End-to-End Verification  run 30682502969 / #145 / PASS
+Branch Verification           run 30682502976 / #1552 / PASS
+Review threads                0
+Branch behind main            0 before merge
+Changed files                 5 / exact recovery scope
 ```
 
-No new public script, Runtime flag, Queue operation, migration, Worker route, Lark schema or Production path is
-introduced.
+Passed gates include syntax/architecture/repository hygiene, focused exact-plan and confirmation-order tests,
+focused Woo/Chatwoot/TikTok regressions, full Unit and Workers runtime tests, Report reliability, dependency
+audit and Wrangler dry-run.
 
-## Required verification
-
-```text
-Syntax / architecture / Repository hygiene
-Focused exact-plan contract tests
-Focused exact-plan wiring tests
-Full Unit and Workers runtime tests
-Report reliability regression
-Dependency audit
-Wrangler deployment dry-run
-Review threads = 0
-Branch behind main = 0
-```
-
-Repository implementation and CI must perform:
+Repository work and CI performed:
 
 ```text
 Provider requests          0
@@ -152,22 +102,19 @@ Schedule mutations         0
 Production                 BLOCKED
 ```
 
-## Public command after review and merge
+## Authorized public execution
 
-Only after the exact Hotfix Head passes all gates and is Squash Merged, run the same public entrypoint once from
-clean current `main`:
+Run exactly once from a clean current `main` checkout:
 
 ```bash
 CONFIRM_META_HISTORY_EXACT_CONTINUATION=CONTINUE_META_HISTORY_FROM_FACEBOOK_LARK_BOUNDARY \
 node scripts/meta-history-2026-exact-plan-continuation-terminal.mjs --execute
 ```
 
-Do not run the ordinary Meta Terminal, D1/Lark child launchers or manual Queue commands. Do not edit
-`.dev.vars`, prior evidence, lifecycle state or Business facts.
+Do not run the ordinary Meta Terminal, D1/Lark child launchers or manual Queue commands. Do not edit `.dev.vars`,
+retained phase evidence, lifecycle state or Business facts.
 
-## Expected local recovery marker
-
-When the D1 summary was absent and the retained chain is complete, the Terminal must emit:
+If the retained phase chain is complete, the command first emits:
 
 ```text
 META_HISTORY_RETAINED_D1_SUMMARY_MATERIALIZED
@@ -178,8 +125,7 @@ remoteLarkMutationCount    0
 workerDeploymentCount      0
 ```
 
-It must then continue through the existing guarded path. Live completion is not declared until the final output
-contains:
+It then continues through the existing guarded recovery. Live completion requires:
 
 ```text
 META_HISTORY_2026_EXACT_PLAN_CONTINUATION_COMPLETED_SAFE
