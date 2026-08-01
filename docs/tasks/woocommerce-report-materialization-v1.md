@@ -1,6 +1,6 @@
 # WooCommerce Report Dimensioned Output v1
 
-Status: `IMPLEMENTED_CI_PENDING`
+Status: `IMPLEMENTED_CI_PASS_REVIEW_REQUIRED`
 
 Branch: `feat/report-commerce-dimensioned-output-v1`
 
@@ -138,6 +138,14 @@ npm run deploy:dry-run
 
 Branch Verification on the exact PR head is the authority because the current connector
 environment cannot clone the repository locally.
+
+## Verification result
+
+Branch Verification run `30686226440` / `#1573` passed on implementation head
+`6699e75e9df65b155738ba159a5e968f121f1c7e` before this documentation-only status
+update. Passed gates included syntax/architecture/hygiene, focused Meta/Woo/Chatwoot/TikTok
+regressions, full Unit and Workers runtime tests, Report reliability, dependency audit and
+Wrangler dry-run. The final documentation head must pass the same workflow again.
 
 ## Definition of Done
 
