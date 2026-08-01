@@ -1,164 +1,186 @@
-# Current Task — Meta History Execution After Runtime Safe Config Recovery v7
+# Current Task — Meta History Exact-Plan Continuation Recovery v1
 
 ## Status
 
 ```text
-TASK_STATUS                          = META_HISTORY_2026_EXECUTION_READY
-CURRENT_PROGRAM                      = META_HISTORY_2026_FINALIZER_V1
-ORIGINAL_IMPLEMENTATION_PR           = #319 / SQUASH_MERGED
-RUNTIME_PREFLIGHT_HOTFIX_PR          = #330 / SQUASH_MERGED
-PINNED_CONTINUITY_HOTFIX_PR          = #342 / SQUASH_MERGED
-SHARED_QUEUE_AUTHORITY_PR            = #343 / SQUASH_MERGED
-CLOUDFLARE_ACCOUNT_HOTFIX_PR         = #348 / SQUASH_MERGED
-EXPLICIT_SAFE_FLAGS_HOTFIX_PR        = #353 / SQUASH_MERGED
-CUSTOMER_RUNTIME_CONFIG_HOTFIX_PR    = #359 / SQUASH_MERGED
-RUNTIME_SAFE_CONFIG_HOTFIX_PR        = #364 / SQUASH_MERGED
-RUNTIME_SAFE_CONFIG_MAIN_SHA         = 8d5dd8733bf6f3ff23a23b650f612cc200db3d19
-META_VERIFICATION_RUN                = 30645913608 / #117 / PASS
-BRANCH_VERIFICATION_RUN              = 30645913563 / #1484 / PASS
-PLANNED_OPERATION_COUNT              = 6
-PREVIOUS_ATTEMPT_CURRENT_OPS         = 0
-PREVIOUS_ATTEMPT_REMOTE_D1_INSPECTION= 0
-PREVIOUS_ATTEMPT_D1_BACKUP           = 0
-PREVIOUS_ATTEMPT_WORKER_DEPLOY       = 0
-PREVIOUS_ATTEMPT_QUEUE_MESSAGES      = 0
-PREVIOUS_ATTEMPT_BUSINESS_WRITES     = 0
-PREVIOUS_ATTEMPT_PROVIDER_GATE       = GET_ONLY_PASSED
+TASK_STATUS                          = REPOSITORY_HOTFIX_IN_REVIEW
+CURRENT_PROGRAM                      = META_HISTORY_EXACT_PLAN_CONTINUATION_V1
+BRANCH                               = hotfix/meta-facebook-lark-continuation-v1
+IMPLEMENTATION_PR                    = #372 / DRAFT / DO_NOT_MERGE
+RETAINED_REPOSITORY_HEAD             = 5ff8e2cfb1f890ac2a8f2867a904b477c6456d91
+CURRENT_MAIN_BASE                    = c03ca9af7ddc0b8f72527419fc193eb49e1c590d
+FACEBOOK_OPERATION_ID                = meta-facebook-history-20260701-20260731-1d12a5ec4fef
+FACEBOOK_ORIGINAL_REQUESTED_AT       = 2026-07-31T16:51:11.017Z
+FACEBOOK_D1_PHASE                    = COMPLETE
+FACEBOOK_LARK_PHASE                  = PENDING
+FACEBOOK_COMPLETION_PHASE            = PENDING
+FACEBOOK_WORK_LIFECYCLE              = ACTIVE
+FACEBOOK_ACTIVE_LOCKS                = 0
+FACEBOOK_QUEUE_OPERATION_ROWS        = 1
+FACEBOOK_PROVIDER_REPLAY_ALLOWED     = NO
+FACEBOOK_D1_QUEUE_RESEND_ALLOWED     = NO
 WORKER_FLAGS                         = ALL_FALSE_VERIFIED
 SCHEDULE                             = DISABLED
 PRODUCTION                           = BLOCKED
-NEXT_STEP                            = RUN_META_HISTORY_2026_TERMINAL_ONCE
+FIRST_CI_HEAD                        = ba2aec24f71f1f1d045755fda24abd6049c623f8
+FIRST_META_CI                        = #118 / INFRA_FAILURE_BEFORE_SETUP
+FIRST_BRANCH_CI                      = #1504 / INFRA_FAILURE_BEFORE_SETUP
+LATEST_RUNNER_ATTEMPT_HEAD           = a253ed22a39200ef61dab129ad3a29bec1186e7a
+LATEST_META_CI                       = #126 / INFRA_FAILURE_BEFORE_SETUP
+LATEST_BRANCH_CI                     = #1512 / INFRA_FAILURE_BEFORE_SETUP
+LOCAL_MAC_VERIFICATION               = REQUIRED_ON_FINAL_EXACT_HEAD
+NEXT_STEP                            = FINALIZE_HEAD_AND_RUN_LOCAL_REPOSITORY_GATES
 ```
 
-## Authority
+## Retained live evidence
 
-PR #364 was Squash Merged at:
+The ninth Meta Terminal execution admitted the deterministic Facebook July operation. A later Terminal call
+correctly stopped at `cloudflare-readiness` because Remote Reliability contained one active Work and one active
+Queue operation.
+
+Two read-only identity snapshots proved the exact active identity:
 
 ```text
-8d5dd8733bf6f3ff23a23b650f612cc200db3d19
+work_key      facebook:meta-facebook-history-20260701-20260731-1d12a5ec4fef
+work_type     facebook.page.organic.sync
+operation_id  meta-facebook-history-20260701-20260731-1d12a5ec4fef
+lifecycle     active
+queue rows    1
 ```
 
-The exact reviewed Head `a93dc42e9b59c79c5f463a266f5354bd69515d4e` passed:
+A separate exact-operation diagnostic performed zero writes and proved a stable D1-complete/Lark-pending
+boundary across two reads:
 
 ```text
-Meta End-to-End Verification  run 30645913608 / #117 / PASS
-Branch Verification           run 30645913563 / #1484 / PASS
-Review threads                0
-Branch behind main            0 before merge
-Changed files                 5 / Meta scope only
-Remote action during Hotfix   0
+sync_run_status               success
+sync_run_error_code           null
+D1 phase                      complete
+source staging phase          complete
+organicHistoryDone            true
+D1 written count              3
+operation account daily rows  1
+Coverage runs / invalid       2 / 0
+Active lock                   0
+Lark phase count              0
+Completion phase count        0
 ```
 
-## Eighth attempt retained
+The state did not change during the stability interval. Existing D1 facts and Queue admission are therefore
+authoritative. Do not restart, replace, abandon or terminalize the Work.
 
-The Terminal attempt on `main@761123b079a17ce8be4683d548f81d5b87802c8c` passed:
+## Recovery decision
+
+The first required action is same-operation Lark continuation with the exact operation ID and original
+requested-at generation. Facebook Provider read and Facebook D1 Queue send must not run again.
+
+After Facebook Lark completion returns Reliability to idle, the remaining Instagram and Meta Ads operations
+must continue from the persisted six-operation plan bound to the retained Head. Running the normal Terminal
+from current main would create different deterministic operation identities and is prohibited.
+
+## Implementation
+
+The Hotfix adds:
 
 ```text
-Local full gates                   PASS
-Cloudflare readiness               PASS
-Remote Worker all-false            PASS
-Fresh ordered Provider validation  PASS / GET-only
+scripts/lib/meta-history-exact-plan-continuation.js
+scripts/meta-history-2026-exact-plan-continuation-terminal.mjs
+scripts/meta-history-2026-exact-plan-continuation.mjs
+scripts/verify-meta-history-exact-plan-continuation-local.mjs
+tests/application/meta-history-exact-plan-continuation.test.js
+tests/application/meta-history-exact-plan-continuation-wiring.test.js
+docs/tasks/meta-history-exact-plan-continuation-v1.md
 ```
 
-It entered the first required Facebook July operation and stopped while validating the private D1 runtime
-config:
+The public Terminal supplies the retained private Safe config to the guarded continuation. The guarded
+continuation:
+
+1. requires clean current `main == origin/main` and explicit confirmation;
+2. validates the exact retained Head, operation, generation, range and runtime plan;
+3. permits only the exact reviewed Lark Dashboard and continuation Release path set;
+4. rejects any critical Meta/Worker/Queue/Lark-connector drift;
+5. validates the retained D1 summary with the existing Lark contract;
+6. verifies all-false Worker state and two stable Remote boundary reads;
+7. creates an isolated local clone pinned as `main == origin/main == retained Head`;
+8. reuses the retained private outputs/evidence;
+9. runs only the Facebook Lark phase chain first;
+10. blocks uncertain Queue acceptance and performs automatic all-false restore;
+11. validates accepted Lark completion and same-operation idempotent rerun;
+12. invokes the existing one-command finalizer inside the isolated retained-Head clone to resume the remaining
+    persisted operations;
+13. accepts success only from the existing `META_HISTORY_2026_COMPLETED_SAFE` final summary.
+
+The implementation does not modify the current main Working Tree, `.dev.vars`, Remote D1, Lark, Queue,
+Worker, Schedule or Production during Repository work and verification.
+
+## Verification state
+
+Every Meta and Branch workflow created for PR #372 has failed before `Set up job`. The Actions API returned
+zero steps and no usable log blob for the original jobs and retries. These are runner/infrastructure failures,
+not Source verdicts, and none is accepted as PASS.
+
+Manual review found and corrected two fail-closed Release defects before Live execution:
+
+1. the post-merge Repository delta must include the continuation Release files themselves; and
+2. the public Terminal must use the retained private Safe config rather than depend on local
+   `wrangler.sync.jsonc` file permissions.
+
+Because the GitHub runner has repeatedly produced no executable job, final verification authority must come
+from `scripts/verify-meta-history-exact-plan-continuation-local.mjs` on the exact final branch Head. The verifier:
+
+- requires the exact pushed branch Head and clean Working Tree;
+- requires `behind origin/main = 0`;
+- runs install, syntax/architecture/hygiene, both focused regressions, full Unit/Workers, Report reliability,
+  dependency audit and Wrangler dry-run;
+- contains no continuation confirmation, Provider request, Remote D1 command, Queue send, Lark write or Worker
+  deployment path;
+- emits `META_HISTORY_EXACT_PLAN_CONTINUATION_V1_LOCAL_MACOS_PASS` only after every Gate passes.
+
+## Acceptance criteria
 
 ```text
-stage    operation-facebook-2026-07-01-2026-07-31
-code     META_D1_ONLY_CONFIG_INVALID
-message  Meta D1-only config requires MKT_WOOCOMMERCE_D1_WRITE_ENABLED=false
+Exact retained operation/generation                    locked
+Current-main reviewed Release delta                    exact
+Critical Meta Source drift                             0
+Retained private Safe config                           public Terminal authority
+Facebook Provider replay                               0
+Facebook D1 Queue resend                               0
+Facebook same-operation Lark continuation              accepted
+Facebook Lark idempotent rerun                         accepted
+Remaining retained operations                          completed
+Final D1/Lark parity                                   pass
+Final active Work / Lock / Queue                       0 / 0 / 0
+Worker flags                                           all false
+Schedule                                               disabled
+Production                                             blocked
 ```
 
-The D1 target loader stopped before Remote D1 inspection, backup, Worker deployment and Queue admission.
-`emergencyRestoreRequired=false`, and the outer closeout verified the Worker all-false state.
+## Required verification
+
+Preferred GitHub gates:
 
 ```text
-Current operation accepted       0
-Remote D1 inspection             0
-D1 backup                        0
-Worker deployments               0
-Queue messages                   0
-Remote D1 Business writes        0
-Remote Lark writes               0
-Schedule mutations               0
-Production                       blocked
+Meta End-to-End Verification
+Branch Verification
 ```
 
-Retain every prior evidence directory. Do not delete, copy or edit prior output.
-
-## Shared runtime Safe authority now merged
-
-The public Terminal and the private D1/Lark Wrangler configs now derive Safe flags from the same existing
-source:
-
-```text
-META_D1_ONLY_REQUIRED_FALSE_FLAGS
-```
-
-The merged runtime authority contains:
-
-1. exact non-secret Chemistry K customer/API mappings; and
-2. every Shared required-false key with string value `false`.
-
-The runtime-config materializer now:
-
-```text
-reads the Head-bound private Safe config
-→ replaces stale quoted string values
-→ replaces stale boolean true/false values
-→ inserts every missing Customer/Safe key
-→ verifies every observed occurrence is an exact reviewed string
-→ writes private 0600 runtime config under ignored outputs/
-→ supplies identical authority to D1 and Lark operators
-```
-
-This is not a one-off WooCommerce flag patch. Future additions to the Shared required-false list are
-materialized automatically. Credentials remain in `.dev.vars` and Worker Secret storage; `.dev.vars` is not
-modified and Secrets are not written into config or evidence.
-
-## Retained execution scope
-
-```text
-Facebook continuity  fresh identity + exact no-replay plan
-Facebook July        2026-07-01..2026-07-31
-Instagram            2026-07-01..2026-07-31
-Meta Ads required    2026-05-01..2026-07-31 for chemistry_k2 and chemistry_k3
-Meta Ads optional    2026-01-01..2026-04-30 only under bounded baseline volume
-```
-
-Existing Business facts remain authoritative and are preserved through Stable keys. D1 completes before the
-same-operation Lark continuation. Historical local Meta clone/session/overlay/finalizer files remain
-unnecessary.
-
-## Public Terminal command
-
-Run only from exact clean current `main`:
+Required exact-head Local Mac fallback while GitHub jobs fail before Setup:
 
 ```bash
-CONFIRM_META_HISTORY_2026_FINALIZER=RUN_META_HISTORY_2026_ONE_COMMAND \
-node scripts/meta-history-2026-terminal.mjs --execute
+EXPECTED_META_CONTINUATION_HEAD=<FINAL_EXACT_HEAD> \
+node scripts/verify-meta-history-exact-plan-continuation-local.mjs
 ```
 
-Do not manually supply Safe flags, Meta API version or customer IDs. Do not modify `.dev.vars`, invoke child
-launchers or send Queue messages manually.
-
-## Expected accepted result
+The verifier runs:
 
 ```text
-META_HISTORY_2026_COMPLETED_SAFE
-Facebook continuity             fresh identity / no old replay
-Facebook July supplemental      complete
-Instagram July                  complete
-Meta Ads required               complete for both accounts
-D1/Lark parity                  pass
-Same-operation replay           pass
-Active Work / Lock / Queue      0 / 0 / 0
-Worker flags                    all false
-Schedule                        disabled
-Production                      blocked
+npm ci
+npm run check
+node --test tests/application/meta-history-exact-plan-continuation.test.js tests/application/meta-history-exact-plan-continuation-wiring.test.js
+npm test
+npm run test:report-reliability
+npm audit --audit-level=high
+npm run deploy:dry-run
 ```
 
-Live completion is not declared until the Terminal emits the accepted decision and final safe-state
-evidence.
-
-Detailed recovery contract: `docs/tasks/meta-history-runtime-safe-config-recovery-v7.md`.
+No Live continuation may run before exact-head verification, review, Squash Merge and a docs-only execution
+handoff. Detailed contract: `docs/tasks/meta-history-exact-plan-continuation-v1.md`.

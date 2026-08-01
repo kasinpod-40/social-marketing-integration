@@ -3,11 +3,15 @@ import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 
 const terminalEntrypoint = 'scripts/meta-history-2026-terminal.mjs';
+const exactContinuationTerminal =
+  'scripts/meta-history-2026-exact-plan-continuation-terminal.mjs';
 const closeoutChild = 'scripts/meta-history-2026-one-command.mjs';
 const finalizerChild = 'scripts/meta-history-2026-finalizer.mjs';
 const d1Launcher = 'scripts/meta-d1-only-rollout-launcher.mjs';
 const larkLauncher = 'scripts/meta-lark-parity-rollout-launcher.mjs';
 const runtimeAuthority = 'scripts/lib/meta-history-runtime-authority.js';
+const historicalTask = 'docs/tasks/meta-history-2026-one-command-v1.md';
+const exactContinuationTask = 'docs/tasks/meta-history-exact-plan-continuation-v1.md';
 
 test('Meta history closeout child delegates to the guarded finalizer and exact evidence closeout', async () => {
   const source = await readFile(closeoutChild, 'utf8');
@@ -20,21 +24,35 @@ test('Meta history closeout child delegates to the guarded finalizer and exact e
   assert.doesNotMatch(source, /larkSummary\.data\.larkVerified/u);
 });
 
-test('Meta history docs expose only the ISO-plan Terminal entrypoint', async () => {
+test('Meta history current recovery exposes only the exact-plan Terminal authority', async () => {
   const currentTask = await readFile('docs/current-task.md', 'utf8');
-  const task = await readFile('docs/tasks/meta-history-2026-one-command-v1.md', 'utf8');
+  const recoveryTask = await readFile(exactContinuationTask, 'utf8');
+  const historical = await readFile(historicalTask, 'utf8');
   const terminal = await readFile(terminalEntrypoint, 'utf8');
-  assert.match(currentTask, /node scripts\/meta-history-2026-terminal\.mjs --execute/u);
-  assert.match(task, /node scripts\/meta-history-2026-terminal\.mjs --execute/u);
+  const exactTerminal = await readFile(exactContinuationTerminal, 'utf8');
+
+  const exactTerminalPath =
+    /scripts\/meta-history-2026-exact-plan-continuation-terminal\.mjs/u;
+  const ordinaryTerminalCommand =
+    /node scripts\/meta-history-2026-terminal\.mjs --execute/u;
+
+  assert.match(currentTask, exactTerminalPath);
+  assert.match(recoveryTask, exactTerminalPath);
+  assert.match(historical, ordinaryTerminalCommand);
   assert.match(terminal, /meta-history-2026-one-command\.mjs/u);
-  assert.doesNotMatch(
-    currentTask,
-    new RegExp(`node ${closeoutChild.replaceAll('.', '\\.')} --execute`, 'u'),
-  );
-  assert.doesNotMatch(
-    currentTask,
-    new RegExp(`node ${finalizerChild.replaceAll('.', '\\.')} --execute`, 'u'),
-  );
+  assert.match(exactTerminal, /meta-history-2026-exact-plan-continuation\.mjs/u);
+
+  for (const source of [currentTask, recoveryTask]) {
+    assert.doesNotMatch(source, ordinaryTerminalCommand);
+    assert.doesNotMatch(
+      source,
+      new RegExp(`node ${closeoutChild.replaceAll('.', '\\.')} --execute`, 'u'),
+    );
+    assert.doesNotMatch(
+      source,
+      new RegExp(`node ${finalizerChild.replaceAll('.', '\\.')} --execute`, 'u'),
+    );
+  }
 });
 
 test('Meta history Terminal materializes Shared required false flags and customer runtime authority before spawning the child', async () => {
