@@ -41,3 +41,6 @@ just in time, deployment checks are periodic, and Safe restore ownership is inst
 Because the retained old source-config incident is inspected while that exact Work is still running, its open-state
 validator permits at most the same single live lock only when controller-resume evidence is present. The ordinary
 source-config path remains zero-lock, and every later closure/final-state check still requires zero active locks.
+The launcher also treats Secret handling as verification-only during resume: all required remote Secret names must
+already exist, no local access token is read and no bootstrap Worker is deployed. The exact active-version binding
+remains owned by the core controller; the ordinary missing-Secret path still requires an all-false Worker.

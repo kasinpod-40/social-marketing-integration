@@ -134,6 +134,7 @@ async function main() {
     env,
     sourceEnv,
     configPath: normalizedConfigPath,
+    controllerResume,
   });
 
   runCore([EXECUTE_ARGUMENT], { env, stdio: 'inherit' });
@@ -311,7 +312,7 @@ function readExactActiveLockCount(env) {
 }
 
 
-async function ensureChatwootWorkerSecret({ env, sourceEnv, configPath }) {
+async function ensureChatwootWorkerSecret({ env, sourceEnv, configPath, controllerResume = false }) {
   const config = parseJsoncObject(await readFile(configPath, 'utf8'));
   const workerName = requiredText(config.name, 'Worker name is missing from normalized config');
   const localTrueFlags = Object.entries(config.vars ?? {})
@@ -325,6 +326,29 @@ async function ensureChatwootWorkerSecret({ env, sourceEnv, configPath }) {
       'CHATWOOT_FINAL_UAT_SECRET_BOOTSTRAP_CONFIG_UNSAFE',
       { trueFlags: localTrueFlags },
     );
+  }
+
+  if (controllerResume) {
+    // The core immediately revalidates the exact active version against retained
+    // controller evidence. While that version owns the live window, this wrapper may
+    // verify existing Secret names but must never bootstrap or deploy a replacement.
+    const remoteSecretNames = readWorkerSecretNames(env, configPath, workerName);
+    assertChatwootFinalWorkerSecrets(remoteSecretNames);
+    const plan = resolveChatwootFinalSecretBootstrap({
+      remoteSecretNames,
+      readLocalAccessToken: () => {
+        throw launcherError(
+          'Controller resume cannot bootstrap a missing Chatwoot Worker Secret',
+          'CHATWOOT_FINAL_UAT_SECRET_BOOTSTRAP_RESUME_BLOCKED',
+        );
+      },
+    });
+    return Object.freeze({
+      ...summarizeChatwootFinalSecretPlan(plan),
+      safeVersion: null,
+      activeVersionVerification: 'exact_controller_resume',
+      remoteMutationCount: 0,
+    });
   }
 
   const safeVersionBefore = assertRemoteWorkerAllFlagsFalse(env, configPath, workerName);
