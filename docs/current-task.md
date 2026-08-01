@@ -118,8 +118,20 @@ provider replay    forbidden
 D1 Queue resend    forbidden
 ```
 
-Meta remains blocked until the exact Chatwoot recovery completes, incident closure passes and every execution flag is
-verified false.
+The preserved public Meta continuation authority remains:
+
+```text
+scripts/meta-history-2026-reviewed-release-terminal.mjs
+```
+
+Inside the immutable reviewed release clone, it delegates only to:
+
+```text
+scripts/meta-history-2026-exact-plan-continuation-terminal.mjs
+```
+
+Meta must not resume until Chatwoot completes its exact recovery, verifies all execution flags false, and closes the
+current Chatwoot incident safely.
 
 ## Implementation result
 
