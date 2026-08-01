@@ -21,6 +21,7 @@ import { buildWranglerOAuthEnvironment } from './lib/cloudflare-auth-environment
 import {
   readChatwootExecutionFlags,
   selectChatwootControllerEvidence,
+  validateChatwootSafeBaselineSelectionHint,
 } from './lib/chatwoot-controller-evidence-arbitration.js';
 import {
   CHATWOOT_FINAL_UAT_ACTIVE_TRUE_FLAGS,
@@ -39,6 +40,8 @@ const CONFIRMATION_VALUE = 'RECOVER_EXACT_CHATWOOT_INITIAL_TO_LARK_PARITY';
 const CHILD = 'scripts/chatwoot-initial-terminal-failure-recovery-launcher.mjs';
 const WORKER_NAME = 'social-mkt-sync-worker';
 const FINAL_UAT_OUTPUT = 'chatwoot-final-30d-daily-uat';
+const SAFE_BASELINE_OUTPUT = 'chatwoot-controller-safe-baseline-resume';
+const SAFE_BASELINE_ATTEMPT = '01-active-window.attempt.json';
 const SOURCE_CONFIG = 'wrangler.sync.jsonc';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const CLONE_EXCLUDES = Object.freeze([
@@ -69,6 +72,12 @@ try {
     const fileEnv = await readDevVars(assets.devVars);
     const env = Object.freeze({ ...fileEnv, ...process.env });
 
+    stage = 'read-chatwoot-safe-baseline-selection-handoff';
+    const selectionHint = await readSafeBaselineSelectionHint(
+      assets.outputs,
+      repository.currentHead,
+    );
+
     stage = 'read-current-chatwoot-worker';
     const worker = readCurrentChatwootWorker(env, assets.sourceConfig);
 
@@ -77,6 +86,7 @@ try {
       outputs: assets.outputs,
       currentHead: repository.currentHead,
       currentActiveVersion: worker.activeVersion,
+      selectionHint,
     });
 
     stage = 'prepare-chatwoot-isolated-evidence-view';
@@ -113,6 +123,7 @@ try {
         wrapperHead: repository.currentHead,
         candidateCount: selection.candidateCount,
         selectedBy: selection.selectedBy,
+        selectionHandoffUsed: selectionHint !== null,
         restoredAllFlagsFalseExpectedFromChild: true,
         scheduleEnabled: false,
         webhookEnabled: false,
@@ -168,10 +179,10 @@ function printPlan() {
   process.stdout.write(`${JSON.stringify({
     ok: true,
     planOnly: true,
-    contractVersion: 'chatwoot_controller_evidence_arbitration_v1',
+    contractVersion: 'chatwoot_controller_evidence_arbitration_v2',
     wrapperHeadEnv: WRAPPER_HEAD_ENV,
     confirmation: `${CONFIRMATION_ENV}=${CONFIRMATION_VALUE}`,
-    selectionAuthority: 'current_active_worker_version',
+    selectionAuthority: 'current_active_worker_version_or_verified_safe_baseline_handoff',
     child: CHILD,
     retainedEvidenceMutation: false,
     secondInitialAdmissionAllowed: false,
@@ -248,6 +259,33 @@ async function verifyLocalAssets() {
   return Object.freeze({ outputs, devVars, nodeModules, sourceConfig });
 }
 
+async function readSafeBaselineSelectionHint(outputs, currentHead) {
+  const path = join(
+    outputs,
+    SAFE_BASELINE_OUTPUT,
+    currentHead,
+    SAFE_BASELINE_ATTEMPT,
+  );
+  let link;
+  try {
+    link = await lstat(path);
+  } catch (cause) {
+    if (cause?.code === 'ENOENT') return null;
+    throw cause;
+  }
+  const info = await stat(path);
+  if (link.isSymbolicLink() || !info.isFile() || (info.mode & 0o077) !== 0) {
+    throw wrapperError(
+      'Chatwoot safe-baseline selection handoff must be a private regular file',
+      'CHATWOOT_CONTROLLER_EVIDENCE_SELECTION_HANDOFF_INVALID',
+    );
+  }
+  return validateChatwootSafeBaselineSelectionHint(
+    await readJson(path),
+    currentHead,
+  );
+}
+
 function readCurrentChatwootWorker(env, sourceConfig) {
   const wranglerEnv = buildWranglerOAuthEnvironment(env);
   const status = parseChatwootWranglerJsonOutput(runText('npx', [
@@ -293,6 +331,7 @@ async function selectCurrentControllerEvidence({
   outputs,
   currentHead,
   currentActiveVersion,
+  selectionHint,
 }) {
   const root = join(outputs, FINAL_UAT_OUTPUT);
   const entries = await readdir(root, { withFileTypes: true });
@@ -329,7 +368,11 @@ async function selectCurrentControllerEvidence({
       modifiedAt: (await stat(join(directory, 'initial-send.attempt.json'))).mtimeMs,
     });
   }
-  return selectChatwootControllerEvidence(candidates, currentActiveVersion);
+  return selectChatwootControllerEvidence(
+    candidates,
+    currentActiveVersion,
+    selectionHint,
+  );
 }
 
 async function prepareIsolatedEvidenceView({ assets, selection, wrapperHead }) {
