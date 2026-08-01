@@ -1,4 +1,4 @@
-# Current Task — Meta History Exact-Plan Execution Handoff v1
+# Current Task — Meta History Exact-Plan Execution Handoff v2
 
 ## Status
 
@@ -7,9 +7,9 @@ TASK_STATUS                          = META_HISTORY_EXACT_PLAN_EXECUTION_READY
 CURRENT_PROGRAM                      = META_HISTORY_EXACT_PLAN_CONTINUATION_V1
 IMPLEMENTATION_PR                    = #372 / SQUASH_MERGED
 IMPLEMENTATION_MAIN_SHA              = 4261795b648d6494c1717f26c93f9acc34b81a16
-VERIFIED_IMPLEMENTATION_HEAD         = c8efa195e25b84f43a423c16dd4be8b8460c1c23
-MAIN_ALIGNMENT_PR                    = #375 / MERGED
-CURRENT_MAIN_BEFORE_IMPLEMENTATION   = e96c082b681332ab92052f3ee732b65d6bae65b8
+CHATWOOT_DELTA_HOTFIX_PR             = #378 / SQUASH_MERGED
+CHATWOOT_DELTA_HOTFIX_MAIN_SHA       = e0ba76b54b32a7d3739e83d64ff02d2a0e75c94f
+VERIFIED_CHATWOOT_DELTA_HEAD         = 1242592676295d0c79997faa2cadd4e174d7cce4
 RETAINED_OPERATION_REPOSITORY_HEAD   = 5ff8e2cfb1f890ac2a8f2867a904b477c6456d91
 FACEBOOK_OPERATION_ID                = meta-facebook-history-20260701-20260731-1d12a5ec4fef
 FACEBOOK_ORIGINAL_REQUESTED_AT       = 2026-07-31T16:51:11.017Z
@@ -21,8 +21,10 @@ FACEBOOK_ACTIVE_LOCKS                = 0
 FACEBOOK_QUEUE_OPERATION_ROWS        = 1
 FACEBOOK_PROVIDER_REPLAY_ALLOWED     = NO
 FACEBOOK_D1_QUEUE_RESEND_ALLOWED     = NO
-META_VERIFICATION                    = run 30680848197 / #141 / PASS
-BRANCH_VERIFICATION                  = run 30680848202 / #1541 / PASS
+PREVIOUS_CONTINUATION_STAGE          = exact-clean-current-main
+PREVIOUS_CONTINUATION_REMOTE_ACTIONS = 0
+META_VERIFICATION                    = run 30681619809 / #142 / PASS
+BRANCH_VERIFICATION                  = run 30681619821 / #1547 / PASS
 REVIEW_THREADS                       = 0
 WORKER_FLAGS                         = ALL_FALSE_VERIFIED
 SCHEDULE                             = DISABLED
@@ -66,9 +68,29 @@ Completion phase count        0
 The retained D1 facts and existing Queue admission are authoritative. Do not restart, replace, abandon,
 terminalize or resend the Facebook Work.
 
+## First guarded continuation stop
+
+The first post-merge exact-plan continuation attempt stopped at `exact-clean-current-main` before any Provider,
+Queue, Remote D1, Remote Lark, Worker, Schedule or Production action.
+
+The guard correctly rejected five current-main paths introduced by the already-reviewed Chatwoot source-config
+recovery in PR #373:
+
+```text
+.github/workflows/branch-verification.yml
+docs/tasks/chatwoot-final-source-config-recovery-v1.md
+scripts/chatwoot-final-source-config-recovery-launcher.mjs
+scripts/lib/chatwoot-final-source-config-recovery.js
+tests/application/chatwoot-final-source-config-recovery.test.js
+```
+
+PR #378 adds exactly these five paths to the retained-Head release allowlist and extends the fail-closed
+regression. It does not change the Meta operation identity, original generation, D1/Lark boundary, critical
+Meta path set or execution behavior.
+
 ## Recovery decision
 
-The first required action is same-operation Lark continuation using the exact operation ID and original
+The first required action remains same-operation Lark continuation using the exact operation ID and original
 requested-at generation. Facebook Provider read and Facebook D1 Queue send must not run again.
 
 After Facebook Lark completion returns Reliability to idle, the remaining Instagram and Meta Ads operations
@@ -95,8 +117,8 @@ continuation:
 
 1. requires clean current `main == origin/main` and explicit one-time confirmation;
 2. validates the exact retained Head, operation, generation, range and persisted runtime plan;
-3. requires the exact 28-path reviewed current-main Release delta;
-4. rejects any critical Meta, Worker, Queue or Lark-connector drift;
+3. requires the exact 33-path reviewed current-main Release delta;
+4. rejects any unreviewed path or critical Meta, Worker, Queue or Lark-connector drift;
 5. validates the retained D1 summary through the existing Lark acceptance contract;
 6. verifies all-false Worker state and two stable Remote boundary reads;
 7. creates an isolated local clone pinned as `main == origin/main == retained Head`;
@@ -111,14 +133,14 @@ continuation:
 
 ## Verification authority
 
-The exact implementation Head `c8efa195e25b84f43a423c16dd4be8b8460c1c23` passed both required workflows:
+The exact Chatwoot-delta Hotfix Head `1242592676295d0c79997faa2cadd4e174d7cce4` passed both required workflows:
 
 ```text
-Meta End-to-End Verification  run 30680848197 / #141 / PASS
-Branch Verification           run 30680848202 / #1541 / PASS
+Meta End-to-End Verification  run 30681619809 / #142 / PASS
+Branch Verification           run 30681619821 / #1547 / PASS
 Review threads                0
 Branch behind main            0 before merge
-Changed files                 9 / Recovery scope only
+Changed files                 2 / allowlist and regression only
 ```
 
 Passed gates include:
@@ -129,18 +151,13 @@ Diff and Repository hygiene
 Syntax and architecture audit
 Focused Meta continuation tests
 Focused Woo completed-state race recovery tests
-Focused Chatwoot final UAT tests
+Focused Chatwoot final UAT and source-config recovery tests
 Focused staged TikTok tests
 Full Unit and Workers runtime tests
 Report reliability regression
 Dependency audit
 Wrangler deployment dry-run
 ```
-
-The earlier local failure was one obsolete Repository-wide public-launcher assertion. It required the ordinary
-Terminal in `docs/current-task.md`. The assertion was corrected to require the exact-plan Terminal for the
-current recovery while retaining the ordinary Terminal only in its historical task document. Full Unit/Workers
-then passed in both GitHub workflows.
 
 Implementation, review and CI performed no Provider request, Queue send, Remote D1 mutation, Remote Lark
 mutation, Worker deployment, Schedule change or Production action.
