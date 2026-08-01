@@ -1,8 +1,18 @@
+import { createHash } from 'node:crypto';
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const FINGERPRINT = /^[0-9a-f]{64}$/u;
+const SHA = /^[0-9a-f]{40}$/u;
 
-export function selectChatwootControllerEvidence(candidates = [], currentActiveVersion) {
+export function selectChatwootControllerEvidence(
+  candidates = [],
+  currentActiveVersion,
+  safeBaselineSelectionHint = null,
+) {
   const activeVersion = requireVersionId(currentActiveVersion, 'currentActiveVersion');
+  const selectionHint = safeBaselineSelectionHint === null
+    ? null
+    : normalizeSelectionHint(safeBaselineSelectionHint);
   const identities = new Map();
 
   for (const candidate of candidates) {
@@ -20,16 +30,24 @@ export function selectChatwootControllerEvidence(candidates = [], currentActiveV
     );
   }
 
-  const matches = [...identities.values()].filter(
+  const activeMatches = [...identities.values()].filter(
     (candidate) => candidate.activeVersion === activeVersion,
   );
+  const matches = selectionHint
+    ? activeMatches.filter((candidate) => matchesSelectionHint(candidate, selectionHint))
+    : activeMatches;
   if (matches.length !== 1) {
     throw arbitrationError(
-      'Incomplete Chatwoot controller evidence cannot be bound to one current active Worker version',
-      'CHATWOOT_CONTROLLER_EVIDENCE_ACTIVE_VERSION_AMBIGUOUS',
+      selectionHint
+        ? 'Incomplete Chatwoot controller evidence cannot be bound to the verified safe-baseline selection handoff'
+        : 'Incomplete Chatwoot controller evidence cannot be bound to one current active Worker version',
+      selectionHint
+        ? 'CHATWOOT_CONTROLLER_EVIDENCE_SELECTION_HANDOFF_AMBIGUOUS'
+        : 'CHATWOOT_CONTROLLER_EVIDENCE_ACTIVE_VERSION_AMBIGUOUS',
       {
         candidateCount: identities.size,
-        activeVersionMatchCount: matches.length,
+        activeVersionMatchCount: activeMatches.length,
+        selectionHandoffMatchCount: selectionHint ? matches.length : undefined,
       },
     );
   }
@@ -37,7 +55,58 @@ export function selectChatwootControllerEvidence(candidates = [], currentActiveV
   return Object.freeze({
     ...matches[0],
     candidateCount: identities.size,
-    selectedBy: 'current_active_worker_version',
+    selectedBy: selectionHint
+      ? 'verified_safe_baseline_handoff_and_current_active_worker_version'
+      : 'current_active_worker_version',
+  });
+}
+
+export function validateChatwootSafeBaselineSelectionHint(value = {}, repositoryHead) {
+  const head = requireSha(repositoryHead, 'repositoryHead');
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw arbitrationError(
+      'Chatwoot safe-baseline selection handoff is invalid',
+      'CHATWOOT_CONTROLLER_EVIDENCE_SELECTION_HANDOFF_INVALID',
+    );
+  }
+  if (value.contractVersion !== 'chatwoot_controller_safe_baseline_resume_v1'
+      || value.repositoryHead !== head
+      || value.controllerBoundary !== 'queue_retry_exhausted_terminal_v1'
+      || value.selectedBy !== 'current_safe_baseline_version'
+      || value.secondInitialAdmission !== false
+      || value.queueAction !== false
+      || value.d1Mutation !== false
+      || value.larkMutation !== false
+      || value.scheduleEnabled !== false
+      || value.webhookEnabled !== false
+      || value.production !== false) {
+    throw arbitrationError(
+      'Chatwoot safe-baseline selection handoff does not match the exact reviewed contract',
+      'CHATWOOT_CONTROLLER_EVIDENCE_SELECTION_HANDOFF_INVALID',
+    );
+  }
+  const candidateCount = Number(value.candidateCount);
+  if (!Number.isSafeInteger(candidateCount) || candidateCount < 1) {
+    throw arbitrationError(
+      'Chatwoot safe-baseline selection handoff candidate count is invalid',
+      'CHATWOOT_CONTROLLER_EVIDENCE_SELECTION_HANDOFF_INVALID',
+    );
+  }
+  return Object.freeze({
+    repositoryHead: head,
+    sessionFingerprint: requireFingerprint(
+      value.retainedSessionFingerprint,
+      'retainedSessionFingerprint',
+    ),
+    baselineVersionFingerprint: requireFingerprint(
+      value.baselineVersionFingerprint,
+      'baselineVersionFingerprint',
+    ),
+    activeVersionFingerprint: requireFingerprint(
+      value.retainedActiveVersionFingerprint,
+      'retainedActiveVersionFingerprint',
+    ),
+    candidateCount,
   });
 }
 
@@ -53,6 +122,35 @@ export function readChatwootExecutionFlags(versionView = {}) {
     })
     .map((binding) => String(binding?.name ?? binding?.binding))
     .sort());
+}
+
+function matchesSelectionHint(candidate, selectionHint) {
+  return candidate.sessionFingerprint === selectionHint.sessionFingerprint
+    && sha256(candidate.baselineVersion) === selectionHint.baselineVersionFingerprint
+    && sha256(candidate.activeVersion) === selectionHint.activeVersionFingerprint;
+}
+
+function normalizeSelectionHint(value = {}) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw arbitrationError(
+      'safeBaselineSelectionHint is invalid',
+      'CHATWOOT_CONTROLLER_EVIDENCE_SELECTION_HANDOFF_INVALID',
+    );
+  }
+  return Object.freeze({
+    sessionFingerprint: requireFingerprint(
+      value.sessionFingerprint,
+      'safeBaselineSelectionHint.sessionFingerprint',
+    ),
+    baselineVersionFingerprint: requireFingerprint(
+      value.baselineVersionFingerprint,
+      'safeBaselineSelectionHint.baselineVersionFingerprint',
+    ),
+    activeVersionFingerprint: requireFingerprint(
+      value.activeVersionFingerprint,
+      'safeBaselineSelectionHint.activeVersionFingerprint',
+    ),
+  });
 }
 
 function normalizeCandidate(candidate = {}) {
@@ -121,6 +219,18 @@ function requireFingerprint(value, fieldName) {
   return text;
 }
 
+function requireSha(value, fieldName) {
+  const text = requireText(value, fieldName).toLowerCase();
+  if (!SHA.test(text)) {
+    throw arbitrationError(
+      `${fieldName} is invalid`,
+      'CHATWOOT_CONTROLLER_EVIDENCE_SELECTION_HANDOFF_INVALID',
+      { fieldName },
+    );
+  }
+  return text;
+}
+
 function requireObject(value, fieldName) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw arbitrationError(
@@ -141,6 +251,10 @@ function requireText(value, fieldName) {
     );
   }
   return value.trim();
+}
+
+function sha256(value) {
+  return createHash('sha256').update(String(value)).digest('hex');
 }
 
 function arbitrationError(message, code, details = {}) {

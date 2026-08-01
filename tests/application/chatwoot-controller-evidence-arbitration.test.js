@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
@@ -6,6 +7,7 @@ import test from 'node:test';
 import {
   readChatwootExecutionFlags,
   selectChatwootControllerEvidence,
+  validateChatwootSafeBaselineSelectionHint,
 } from '../../scripts/lib/chatwoot-controller-evidence-arbitration.js';
 
 const WRAPPER = new URL(
@@ -16,6 +18,12 @@ const VERSION_A = '11111111-1111-4111-8111-111111111111';
 const VERSION_B = '22222222-2222-4222-8222-222222222222';
 const VERSION_C = '33333333-3333-4333-8333-333333333333';
 const SESSION = 'a'.repeat(64);
+const OTHER_SESSION = 'b'.repeat(64);
+const HEAD = 'c'.repeat(40);
+
+function sha256(value) {
+  return createHash('sha256').update(String(value)).digest('hex');
+}
 
 function candidate(overrides = {}) {
   return {
@@ -33,6 +41,27 @@ function candidate(overrides = {}) {
   };
 }
 
+function handoff(overrides = {}) {
+  return {
+    contractVersion: 'chatwoot_controller_safe_baseline_resume_v1',
+    repositoryHead: HEAD,
+    retainedSessionFingerprint: SESSION,
+    baselineVersionFingerprint: sha256(VERSION_A),
+    retainedActiveVersionFingerprint: sha256(VERSION_B),
+    controllerBoundary: 'queue_retry_exhausted_terminal_v1',
+    candidateCount: 2,
+    selectedBy: 'current_safe_baseline_version',
+    secondInitialAdmission: false,
+    queueAction: false,
+    d1Mutation: false,
+    larkMutation: false,
+    scheduleEnabled: false,
+    webhookEnabled: false,
+    production: false,
+    ...overrides,
+  };
+}
+
 test('Chatwoot evidence arbitration is plan-only by default', () => {
   const result = spawnSync(process.execPath, [WRAPPER.pathname], {
     cwd: process.cwd(),
@@ -41,7 +70,10 @@ test('Chatwoot evidence arbitration is plan-only by default', () => {
   assert.equal(result.status, 0, result.stderr);
   const plan = JSON.parse(result.stdout);
   assert.equal(plan.planOnly, true);
-  assert.equal(plan.selectionAuthority, 'current_active_worker_version');
+  assert.equal(
+    plan.selectionAuthority,
+    'current_active_worker_version_or_verified_safe_baseline_handoff',
+  );
   assert.equal(
     plan.child,
     'scripts/chatwoot-initial-terminal-failure-recovery-launcher.mjs',
@@ -72,6 +104,61 @@ test('current active Worker version resolves distinct controller generations', (
   assert.equal(selected.directory, '/current');
   assert.equal(selected.activeVersion, VERSION_B);
   assert.equal(selected.candidateCount, 2);
+});
+
+test('verified safe-baseline handoff resolves shared active Worker version', () => {
+  const selectionHint = validateChatwootSafeBaselineSelectionHint(handoff(), HEAD);
+  const selected = selectChatwootControllerEvidence([
+    candidate({ directory: '/selected', directoryName: 'selected' }),
+    candidate({
+      directory: '/other',
+      directoryName: 'other',
+      sessionFingerprint: OTHER_SESSION,
+      baselineVersion: VERSION_C,
+    }),
+  ], VERSION_B, selectionHint);
+  assert.equal(selected.directory, '/selected');
+  assert.equal(selected.sessionFingerprint, SESSION);
+  assert.equal(
+    selected.selectedBy,
+    'verified_safe_baseline_handoff_and_current_active_worker_version',
+  );
+  assert.equal(selected.candidateCount, 2);
+});
+
+test('safe-baseline handoff remains fail closed when identity does not match', () => {
+  const selectionHint = validateChatwootSafeBaselineSelectionHint(handoff(), HEAD);
+  assert.throws(
+    () => selectChatwootControllerEvidence([
+      candidate({
+        sessionFingerprint: OTHER_SESSION,
+        baselineVersion: VERSION_C,
+      }),
+    ], VERSION_B, selectionHint),
+    (error) => error?.code === 'CHATWOOT_CONTROLLER_EVIDENCE_SELECTION_HANDOFF_AMBIGUOUS'
+      && error?.details?.activeVersionMatchCount === 1
+      && error?.details?.selectionHandoffMatchCount === 0,
+  );
+});
+
+test('safe-baseline handoff validator requires exact non-mutating parent contract', () => {
+  const selected = validateChatwootSafeBaselineSelectionHint(handoff(), HEAD);
+  assert.equal(selected.repositoryHead, HEAD);
+  assert.equal(selected.sessionFingerprint, SESSION);
+  assert.equal(selected.baselineVersionFingerprint, sha256(VERSION_A));
+  assert.equal(selected.activeVersionFingerprint, sha256(VERSION_B));
+
+  assert.throws(
+    () => validateChatwootSafeBaselineSelectionHint(
+      handoff({ queueAction: true }),
+      HEAD,
+    ),
+    (error) => error?.code === 'CHATWOOT_CONTROLLER_EVIDENCE_SELECTION_HANDOFF_INVALID',
+  );
+  assert.throws(
+    () => validateChatwootSafeBaselineSelectionHint(handoff(), 'not-a-head'),
+    (error) => error?.code === 'CHATWOOT_CONTROLLER_EVIDENCE_SELECTION_HANDOFF_INVALID',
+  );
 });
 
 test('controller evidence remains fail closed without one active-version match', () => {
@@ -122,10 +209,13 @@ test('execution flag reader recognizes only enabled MKT gates', () => {
   ]);
 });
 
-test('wrapper keeps evidence immutable and delegates through an isolated exact-main clone', async () => {
+test('wrapper verifies parent handoff and delegates one isolated evidence identity', async () => {
   const source = await readFile(WRAPPER, 'utf8');
-  assert.match(source, /selectChatwootControllerEvidence/u);
-  assert.match(source, /current_active_worker_version/u);
+  assert.match(source, /validateChatwootSafeBaselineSelectionHint/u);
+  assert.match(source, /01-active-window\.attempt\.json/u);
+  assert.match(source, /read-chatwoot-safe-baseline-selection-handoff/u);
+  assert.match(source, /selectionHint/u);
+  assert.match(source, /current_active_worker_version_or_verified_safe_baseline_handoff/u);
   assert.match(source, /wrangler', 'deployments', 'status'/u);
   assert.match(source, /wrangler', 'versions', 'view'/u);
   assert.match(source, /clone', '--no-hardlinks', '--no-checkout'/u);
