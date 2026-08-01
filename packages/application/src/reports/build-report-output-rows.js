@@ -4,6 +4,10 @@ import {
   normalizeDashboardMetricAvailability,
   normalizeDashboardMetricScope,
 } from '../../../config/src/dashboard-metric-readiness.js';
+import {
+  LARK_DASHBOARD_DISPLAY_V2_FIELD,
+  resolveTikTokOrganicDashboardDisplayV2,
+} from '../../../config/src/lark-dashboard-display-v2-compatibility.js';
 import { escapeReportIdentityPart } from '../use-cases/build-report-snapshot.js';
 
 const MAX_RANK_LIMIT = 100;
@@ -12,6 +16,9 @@ const GENERIC_NO_DATA_URL = 'https://invalid.example/';
 export function buildReportMetricValueRows(input = {}) {
   const reportId = requireText(input.reportId, 'reportId');
   const platform = requireText(input.platform ?? 'tiktok', 'platform');
+  const customerProfile = requireText(input.customerProfile, 'customerProfile');
+  const accountId = requireText(input.accountId, 'accountId');
+  const reportType = requireText(input.reportType, 'reportType');
   const sharedDimensions = normalizeOptionalSharedDimensions(input.sharedDimensions);
   const metrics = requireObject(input.metrics, 'metrics');
   const period = requireObject(input.period, 'period');
@@ -22,6 +29,7 @@ export function buildReportMetricValueRows(input = {}) {
     .map((metric, index) => {
       const dimensionType = 'summary';
       const dimensionValue = 'all';
+      const metricKey = requireText(metric.metricKey, 'metricKey');
       const currentValue = optionalFinite(metric.current);
       const metricScope = normalizeDashboardMetricScope(metric.metricScope);
       const availabilityStatus = normalizeDashboardMetricAvailability({
@@ -29,16 +37,27 @@ export function buildReportMetricValueRows(input = {}) {
         currentValue,
         dataStatus: input.dataStatus,
       });
+      const displayV2Compatibility = resolveTikTokOrganicDashboardDisplayV2({
+        metricKey,
+        customerProfile,
+        accountId,
+        platform,
+        capability: sharedDimensions?.capability,
+        reportType,
+      });
       return freezeWithSharedDimensions({
-        report_metric_key: [reportId, escapeReportIdentityPart(metric.metricKey), dimensionType, dimensionValue].join('::'),
+        report_metric_key: [reportId, escapeReportIdentityPart(metricKey), dimensionType, dimensionValue].join('::'),
         report_id: reportId,
         report_setting_key: requireText(input.reportSettingKey, 'reportSettingKey'),
-        customer_profile: requireText(input.customerProfile, 'customerProfile'),
-        report_type: requireText(input.reportType, 'reportType'),
+        customer_profile: customerProfile,
+        report_type: reportType,
         platform,
-        account_id: requireText(input.accountId, 'accountId'),
-        metric_key: requireText(metric.metricKey, 'metricKey'),
+        account_id: accountId,
+        metric_key: metricKey,
         display_name: requireText(metric.displayName, 'displayName'),
+        ...(displayV2Compatibility ? {
+          [LARK_DASHBOARD_DISPLAY_V2_FIELD.fieldName]: displayV2Compatibility,
+        } : {}),
         current_value: currentValue,
         compare_value: optionalFinite(metric.compare),
         change_value: optionalFinite(metric.change),

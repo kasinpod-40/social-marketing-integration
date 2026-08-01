@@ -1,9 +1,27 @@
-# Lark Dashboard Compatibility Record Backfill Closeout — 2026-08-01
+# Lark Dashboard Window Compatibility Record Backfill Closeout — 2026-08-01
 
-## Result
+## Scope correction
 
-The guarded Record-only compatibility backfill completed successfully against the Integration Workspace Lark Base.
-The operation updated only the preserved slicer-bound SingleSelect field on existing Report Metric records.
+This closeout applies only to the preserved Window Slicer compatibility field:
+
+```text
+fldMlTUP3Z / __mkt_legacy_window_days_single_select_v1
+```
+
+It did not populate `fldHNUhCfl / __mkt_legacy_display_name_single_select_v2`, which is the field used by
+the 17 Organic Statistics filters. Therefore this historical operation closed the Window dimension only;
+it did not prove that the Dashboard KPI values rendered. Any earlier statement describing the complete
+Dashboard compatibility scope as closed is superseded by:
+
+```text
+docs/tasks/lark-dashboard-display-v2-compatibility-v1.md
+```
+
+## Window backfill result
+
+The guarded Record-only Window compatibility backfill completed successfully against the Integration
+Workspace Lark Base. It updated only the preserved slicer-bound SingleSelect field on existing Report Metric
+records.
 
 ```text
 Contract version                    lark_dashboard_compatibility_freeze_v1
@@ -11,8 +29,8 @@ Decision                            LARK_DASHBOARD_COMPATIBILITY_RECORD_BACKFILL
 Execution time                      2026-07-31T19:33:19Z / 2026-08-01 02:33 ICT
 Report records                      86
 Baseline-incomplete null rows       24
-Confirmed Record updates            28
-Pending Record updates               0
+Confirmed Window Record updates     28
+Pending Window Record updates        0
 Window conflicts                     0
 Dashboard PATCH operations           0
 Field/schema mutations               0
@@ -25,7 +43,7 @@ Production                          BLOCKED
 
 ## Preserved compatibility boundary
 
-The following physical Field identities remain unchanged:
+The following physical Field identities remained unchanged:
 
 ```text
 metric_key                       fldGvd3tw8 / Text
@@ -37,22 +55,22 @@ display Select v1                fldZB452Z2 / SingleSelect
 display Select v2                fldHNUhCfl / SingleSelect
 ```
 
-The 24 rows with `current_value=null` remain valid N/A Business facts. No Report record was deleted.
+The 24 rows with `current_value=null` remained valid N/A Business facts. No Report record was deleted.
 All six Dashboards, 17 Organic Statistics blocks, five Slicers, seven window charts, Dashboard IDs,
 Block IDs and layouts were preserved.
 
-## Mutation boundary
+## Window mutation boundary
 
-The successful write used the existing Public Bitable Record batch-update path only.
-It populated `fldMlTUP3Z` on the 28 rows where Number `window_days` was authoritative and the
-preserved Select cell was empty.
+The successful write used the existing Public Bitable Record batch-update path only. It populated
+`fldMlTUP3Z` on the 28 rows where Number `window_days` was authoritative and the preserved Select cell was
+empty.
 
-The operation did not call any Dashboard Block mutation path and did not rename or delete Fields.
-The retired v3 Dashboard mutation entrypoints remain fail-closed tombstones.
+The operation did not call any Dashboard Block mutation path and did not rename or delete Fields. The retired
+v3 Dashboard mutation entrypoints remain fail-closed tombstones.
 
-## Verification
+## Window verification
 
-A fresh read-only preview ran after the write and confirmed:
+A fresh read-only preview after the write confirmed:
 
 ```text
 recordCount                         86
@@ -64,13 +82,12 @@ fieldMutationCount                   0
 recordDeleteCount                    0
 ```
 
-The backfill is converged. No further `--execute` run is required or authorized for this closed scope.
-Future runs of `scripts/lark-dashboard-compatibility-record-backfill.mjs` should be preview-only unless a
-new reviewed drift incident opens a separate task.
+No further Window backfill execution is required. This does not authorize or replace the separately reviewed
+Display V2 Record recovery.
 
 ## Repository authority
 
-Implementation and guards were merged through PR #369 at:
+Window implementation and guards were merged through PR #369 at:
 
 ```text
 f93dcca29c5770b74a3dc6e41f2aac3489ebc8d1
