@@ -14,6 +14,10 @@ const LOCAL_VERIFIER = new URL(
   '../../scripts/verify-meta-history-exact-plan-continuation-local.mjs',
   import.meta.url,
 );
+const META_WORKFLOW = new URL(
+  '../../.github/workflows/meta-end-to-end-verification.yml',
+  import.meta.url,
+);
 
 test('exact-plan public Terminal supplies the retained private Safe config', async () => {
   const source = await readFile(TERMINAL, 'utf8');
@@ -39,11 +43,14 @@ test('exact-plan Terminal requires confirmation before any local D1 summary writ
   assert.match(source, /stage = 'confirm-local-summary-materialization'/u);
 });
 
-test('exact-plan Terminal materializes a missing D1 summary only from local retained evidence', async () => {
+test('exact-plan Terminal materializes from a full or valid preflight-anchored local chain', async () => {
   const source = await readFile(TERMINAL, 'utf8');
 
   assert.match(source, /materializeRetainedMetaD1Summary/u);
   assert.match(source, /META_D1_ONLY_OPERATOR_PHASES\.slice\(0, -1\)/u);
+  assert.match(source, /fullPhases\.slice\(1\)/u);
+  assert.match(source, /planEvidencePresent/u);
+  assert.match(source, /evidenceChainStartPhase/u);
   assert.match(source, /validateMetaD1OnlySummaryForLark/u);
   assert.match(source, /META_HISTORY_RETAINED_D1_SUMMARY_MATERIALIZED/u);
   assert.match(source, /remoteProviderRequestCount:\s*0/u);
@@ -56,6 +63,19 @@ test('exact-plan Terminal materializes a missing D1 summary only from local reta
   assert.doesNotMatch(source, /meta-d1-only-rollout-operator\.mjs/u);
   assert.doesNotMatch(source, /send-one-d1-only/u);
   assert.doesNotMatch(source, /resend-same-operation/u);
+});
+
+test('Meta verification preserves the PR merge base for diff hygiene', async () => {
+  const source = await readFile(META_WORKFLOW, 'utf8');
+
+  assert.match(source, /fetch-depth:\s*0/u);
+  assert.match(
+    source,
+    /git fetch --no-tags --prune origin \+refs\/heads\/main:refs\/remotes\/origin\/main/u,
+  );
+  assert.match(source, /git merge-base origin\/main HEAD >\/dev\/null/u);
+  assert.match(source, /git diff --check origin\/main\.\.\.HEAD/u);
+  assert.doesNotMatch(source, /git fetch origin main --depth=1/u);
 });
 
 test('exact-plan continuation is guarded and does not replay Facebook Provider or D1 Queue', async () => {
