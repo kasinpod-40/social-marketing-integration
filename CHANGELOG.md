@@ -4,6 +4,10 @@
 
 ### Reliability
 
+- Admitted the live `conversation_resolved` Reporting event as retained raw lifecycle evidence without treating it
+  as a first-response, resolution or reply duration, while unsupported event names still fail closed.
+- Added an exact attempts-14/unit-2 recovery boundary that preserves the committed Conversation page-1 cursor and
+  pins its 17 Conversations, 590 Messages, 122 conversation Reporting events, DLQ 7 and open-Alert 12 evidence.
 - Canonicalized each Chatwoot message page by external message ID before cursor validation, accepting descending
   live pages while still rejecting duplicate IDs, cross-page overlap and out-of-bound before/after cursors.
 - Preserved Conversations whose historical label title no longer resolves to a current external label ID,
@@ -30,8 +34,8 @@
 ### Safety
 
 - Current and retained old incidents close only after accepted UAT, parity and all-false restore evidence.
-- Repository implementation performed no Provider request, Queue action, Remote D1/Lark mutation, Worker deploy,
-  Secret mutation, Schedule/Webhook activation or Production action.
+- Each authorized live UAT failure automatically restored every Chatwoot execution flag to false and left no
+  active lock; Schedule/Webhook stayed disabled and Production stayed blocked.
 
 ## Unreleased — WooCommerce 2026-only bounded history — 2026-07-30
 

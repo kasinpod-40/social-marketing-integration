@@ -85,6 +85,37 @@ test('Chatwoot conversation normalizer treats an out-of-range optional waiting t
   );
 });
 
+test('Chatwoot conversation_resolved reporting event is retained without inventing duration metrics', async () => {
+  const context = { ...BASE_CONTEXT, observedAt: OBSERVED_AT };
+  const event = await normalizeChatwootReportingEvent({
+    id: 202,
+    name: 'conversation_resolved',
+    value: 0,
+    value_in_business_hours: null,
+    account_id: 42,
+    conversation_id: 71,
+    inbox_id: 3,
+    user_id: 11,
+    event_start_time: '2026-07-26T03:00:00Z',
+    event_end_time: '2026-07-26T03:00:00Z',
+    created_at: '2026-07-26T03:00:00Z',
+    updated_at: '2026-07-26T03:00:00Z',
+  }, context);
+  const conversation = await normalizeChatwootConversation({
+    id: 71,
+    account_id: 42,
+    inbox_id: 3,
+    status: 'resolved',
+    created_at: '2026-07-25T01:00:00Z',
+    updated_at: '2026-07-26T03:00:00Z',
+  }, { ...context, reportingEvents: [event] });
+
+  assert.equal(event.name, 'conversation_resolved');
+  assert.equal(conversation.firstResponseSeconds, null);
+  assert.equal(conversation.resolutionSeconds, null);
+  assert.equal(conversation.replySeconds, null);
+});
+
 test('Chatwoot incremental source hashes exclude observation timestamps', async () => {
   const first = await buildPrepared({ observedAt: OBSERVED_AT, includeReports: false, fullSnapshot: false });
   const second = await buildPrepared({ observedAt: OBSERVED_AT + 60_000, includeReports: false, fullSnapshot: false });
