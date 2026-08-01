@@ -13,10 +13,17 @@ import {
   META_D1_ONLY_REQUIRED_FALSE_FLAGS,
 } from '../../scripts/lib/meta-d1-only-rollout-operator.js';
 import {
+  META_END_TO_END_REQUIRED_LARK_TABLE_KEYS,
+} from '../../packages/config/src/meta-end-to-end-runtime-config.js';
+import {
+  LARK_TABLE_ENV,
+} from '../../packages/config/src/lark-table-config.js';
+import {
   META_HISTORY_CUSTOMER_RUNTIME_ENV,
   META_HISTORY_REQUIRED_FALSE_CONFIG_ENV,
   META_HISTORY_RUNTIME_CONFIG_ENV,
   materializeMetaHistoryCustomerRuntimeConfig,
+  materializeMetaHistoryLarkRuntimeConfig,
 } from '../../scripts/lib/meta-history-runtime-authority.js';
 import {
   buildMetaHistorySafeEnvironment,
@@ -100,6 +107,55 @@ test('Meta history runtime config replaces stale mappings and materializes every
   assert.match(first, /MKT_WOOCOMMERCE_D1_WRITE_ENABLED[^\n]+"false"/u);
   assert.match(first, /MKT_CHATWOOT_D1_WRITE_ENABLED[^\n]+"false"/u);
 });
+
+test('Meta history Lark runtime config synchronizes all current table mappings idempotently', () => {
+  const env = createMetaLarkTableEnvironment('current');
+  const staleMappings = META_END_TO_END_REQUIRED_LARK_TABLE_KEYS.map((tableKey, index) => (
+    `${JSON.stringify(LARK_TABLE_ENV[tableKey])}: "tbl_stale_${index}"`
+  )).join(',\n    ');
+  const input = `{
+  vars: {
+    ${staleMappings}
+  }
+}`;
+
+  const first = materializeMetaHistoryLarkRuntimeConfig(input, env);
+  const second = materializeMetaHistoryLarkRuntimeConfig(first, env);
+
+  assert.equal(second, first);
+  assert.doesNotMatch(first, /tbl_stale_/u);
+  for (const tableKey of META_END_TO_END_REQUIRED_LARK_TABLE_KEYS) {
+    const envName = LARK_TABLE_ENV[tableKey];
+    assert.match(first, new RegExp(
+      `${envName}[^\n]+${env[envName]}`,
+      'u',
+    ));
+  }
+});
+
+test('Meta history Lark runtime config fails closed on missing or duplicate table mappings', () => {
+  const missing = createMetaLarkTableEnvironment('current');
+  delete missing[LARK_TABLE_ENV[META_END_TO_END_REQUIRED_LARK_TABLE_KEYS[0]]];
+  assert.throws(
+    () => materializeMetaHistoryLarkRuntimeConfig('{ vars: {} }', missing),
+    (error) => error?.code === 'LARK_TABLE_CONFIG_INVALID',
+  );
+
+  const duplicate = createMetaLarkTableEnvironment('current');
+  const [first, second] = META_END_TO_END_REQUIRED_LARK_TABLE_KEYS;
+  duplicate[LARK_TABLE_ENV[second]] = duplicate[LARK_TABLE_ENV[first]];
+  assert.throws(
+    () => materializeMetaHistoryLarkRuntimeConfig('{ vars: {} }', duplicate),
+    (error) => error?.code === 'LARK_TABLE_CONFIG_INVALID',
+  );
+});
+
+function createMetaLarkTableEnvironment(prefix) {
+  return Object.fromEntries(META_END_TO_END_REQUIRED_LARK_TABLE_KEYS.map((tableKey, index) => [
+    LARK_TABLE_ENV[tableKey],
+    `tbl_${prefix}_${String(index + 1).padStart(2, '0')}`,
+  ]));
+}
 
 test('Meta history Terminal persists unique ISO requested-at generations before execution', async () => {
   const root = await mkdtemp(join(tmpdir(), 'meta-history-terminal-'));

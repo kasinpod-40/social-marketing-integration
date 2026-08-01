@@ -1,6 +1,13 @@
 import {
   META_D1_ONLY_REQUIRED_FALSE_FLAGS,
 } from './meta-d1-only-rollout-operator.js';
+import {
+  META_END_TO_END_REQUIRED_LARK_TABLE_KEYS,
+} from '../../packages/config/src/meta-end-to-end-runtime-config.js';
+import {
+  LARK_TABLE_ENV,
+  readLarkTableIdsFromEnv,
+} from '../../packages/config/src/lark-table-config.js';
 
 const CUSTOMER_RUNTIME_ENV = {
   MKT_ENV: 'development',
@@ -53,6 +60,29 @@ export function materializeMetaHistoryCustomerRuntimeConfig(configText) {
   return text;
 }
 
+export function materializeMetaHistoryLarkRuntimeConfig(configText, env = {}) {
+  const tableIds = readLarkTableIdsFromEnv(
+    env,
+    META_END_TO_END_REQUIRED_LARK_TABLE_KEYS,
+  );
+  const tableConfigEnv = Object.fromEntries(
+    META_END_TO_END_REQUIRED_LARK_TABLE_KEYS.map((tableKey) => [
+      LARK_TABLE_ENV[tableKey],
+      tableIds[tableKey],
+    ]),
+  );
+
+  let text = materializeMetaHistoryCustomerRuntimeConfig(configText);
+  for (const [key, value] of Object.entries(tableConfigEnv)) {
+    text = upsertStringVar(text, key, value);
+  }
+  assertExactConfigEnvironment(text, tableConfigEnv, {
+    code: 'META_HISTORY_LARK_RUNTIME_CONFIG_INVALID',
+    message: 'Meta history Lark runtime config does not contain the exact current table mappings',
+  });
+  return text;
+}
+
 function upsertStringVar(configText, key, value) {
   const escaped = escapeRegex(key);
   const existing = new RegExp(
@@ -80,15 +110,22 @@ function upsertStringVar(configText, key, value) {
 }
 
 function assertRuntimeConfig(configText) {
-  for (const [key, expected] of Object.entries(META_HISTORY_RUNTIME_CONFIG_ENV)) {
+  assertExactConfigEnvironment(configText, META_HISTORY_RUNTIME_CONFIG_ENV, {
+    code: 'META_HISTORY_RUNTIME_CONFIG_INVALID',
+    message: 'Meta history runtime config does not contain the exact runtime authority',
+  });
+}
+
+function assertExactConfigEnvironment(configText, expectedEnvironment, contract) {
+  for (const [key, expected] of Object.entries(expectedEnvironment)) {
     const values = readConfigValues(configText, key);
     const stringValues = readStringValues(configText, key);
     if (values.length === 0
       || values.length !== stringValues.length
       || values.some((value) => value !== expected)) {
       throw runtimeAuthorityError(
-        'Meta history runtime config does not contain the exact runtime authority',
-        'META_HISTORY_RUNTIME_CONFIG_INVALID',
+        contract.message,
+        contract.code,
         { key },
       );
     }

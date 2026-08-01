@@ -89,6 +89,9 @@ Worker all-false; ถ้าพบ drift ให้หยุด Meta และร�
    materializations และ supported Lark contracts เท่านั้น.
 6. Missing/unavailable metric เป็น `null`/N/A; observed zero เท่านั้นที่เป็น `0`.
 7. Merge ได้เมื่อ Live closeout, exact-head gates/CI, branch alignment และ unresolved review = 0.
+8. Retained Facebook continuation คงใช้ authority
+   `scripts/meta-history-2026-exact-plan-continuation-terminal.mjs` ผ่าน reviewed-release wrapper เท่านั้น;
+   ห้ามเรียก ordinary terminal เพื่อสร้าง operation ใหม่.
 
 ## Required verification
 
@@ -126,3 +129,8 @@ Meta wrapper ผ่าน local gate แต่หยุดแบบ fail-closed 
 `META_LARK_TABLE_MAPPING_DRIFT` สำหรับ `rawMetaOrganicAccounts`; `emergencyRestoreRequired=false`.
 รอบนี้ไม่มี Facebook Provider replay, D1 Queue resend, Meta Business write, Worker Active deployment,
 Schedule/Webhook หรือ Production mutation.
+
+Root cause ที่ยืนยันจาก Source คือ Lark launcher โหลด current private table mappings แล้ว แต่ runtime
+materializer เดิมเขียนเฉพาะ customer identity และ required all-false flags ลง sibling config ทำให้ retained
+table mappings ยังเก่าอยู่. Implementation ใน PR #421 จึง materialize Lark mappings ทั้ง 15 ค่าเฉพาะไฟล์
+runtime ชั่วคราว พร้อม fail-closed validation; ไม่แก้ retained safe config และไม่เปลี่ยน D1 path.

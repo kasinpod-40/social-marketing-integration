@@ -84,20 +84,25 @@ test('Meta runtime authority materializes customer mappings and the complete Sha
   assert.doesNotMatch(source, /MKT_WOOCOMMERCE_D1_WRITE_ENABLED:\s*'false'/u);
 });
 
-test('Meta D1 and Lark launchers materialize the same private reviewed runtime config', async () => {
+test('Meta D1 and Lark launchers materialize purpose-specific private reviewed runtime configs', async () => {
   const [d1, lark] = await Promise.all([
     readFile(d1Launcher, 'utf8'),
     readFile(larkLauncher, 'utf8'),
   ]);
   for (const source of [d1, lark]) {
-    assert.match(source, /materializeMetaHistoryCustomerRuntimeConfig/u);
     assert.match(source, /applyMetaHistoryCustomerRuntimeEnvironment\(process\.env\)/u);
     assert.match(source, /join\(dirname\(originalConfig\), 'wrangler\.meta-history\.runtime\.jsonc'\)/u);
-    assert.match(source, /writeFile\([\s\S]+runtimeConfig[\s\S]+materializeMetaHistoryCustomerRuntimeConfig\(sourceText\)/u);
     assert.match(source, /chmod\(runtimeConfig, 0o600\)/u);
     assert.match(source, /MKT_META_D1_ONLY_COMPAT_ORIGINAL_CONFIG: runtimeConfig/u);
     assert.doesNotMatch(source, /join\(tempDirectory, 'wrangler\.meta-history\.runtime/u);
   }
+  assert.match(d1, /materializeMetaHistoryCustomerRuntimeConfig/u);
+  assert.match(d1, /materializeMetaHistoryCustomerRuntimeConfig\(sourceText\)/u);
+  assert.match(lark, /materializeMetaHistoryLarkRuntimeConfig/u);
+  assert.match(
+    lark,
+    /materializeMetaHistoryLarkRuntimeConfig\(sourceText, runtimeEnvironment\)/u,
+  );
   assert.match(d1, /MKT_META_D1_ONLY_WRANGLER_CONFIG: runtimeConfig/u);
   assert.match(lark, /MKT_META_LARK_WRANGLER_CONFIG: runtimeConfig/u);
 });
