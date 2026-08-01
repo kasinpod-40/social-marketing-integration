@@ -152,14 +152,18 @@ test('read-only incident SQL pins exact retained identity and avoids LIKE/GLOB',
   assert.doesNotMatch(sql, /\b(?:LIKE|GLOB)\b/iu);
 });
 
-test('open incident validator requires exact terminal failure and zero pre-UAT business state', () => {
-  assert.equal(assertChatwootFinalSourceIncidentOpen(incidentRow()).accepted, true);
+test('open incident validator accepts pre-existing account facts but requires exact incident reliability identity', () => {
+  const accepted = assertChatwootFinalSourceIncidentOpen(incidentRow({
+    chatwoot_account_state: 12,
+  }));
+  assert.equal(accepted.accepted, true);
+  assert.equal(accepted.state.totalBusinessRows, 12);
   assert.throws(
     () => assertChatwootFinalSourceIncidentOpen(incidentRow({ queue_attempts: 2 })),
     (error) => error?.code === 'CHATWOOT_FINAL_SOURCE_CONFIG_INCIDENT_INVALID',
   );
   assert.throws(
-    () => assertChatwootFinalSourceIncidentOpen(incidentRow({ chatwoot_account_state: 1 })),
+    () => assertChatwootFinalSourceIncidentOpen(incidentRow({ work_rows: 1 })),
     (error) => error?.code === 'CHATWOOT_FINAL_SOURCE_CONFIG_INCIDENT_INVALID',
   );
 });
