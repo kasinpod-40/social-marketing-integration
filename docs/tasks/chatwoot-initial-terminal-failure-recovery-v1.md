@@ -150,3 +150,9 @@ Worker deployment, incident closure, Schedule/Webhook action or Production actio
 The source-lock follow-up keeps the default retained-incident guard at zero active locks and permits at most the
 single D1-proven in-flight lock owned by controller resume. Two locks, a non-resume invocation or any other
 retained-incident drift still fails closed before delegated mutation.
+
+The resume Secret follow-up recognizes that the retained active Worker already owns the UAT window. It verifies
+the required remote Secret names without requiring all-false bindings and without reading a local token, deploying
+a bootstrap Worker or changing a Secret. A missing Secret remains blocked; only the ordinary all-false path may
+perform the previously reviewed one-time bootstrap. The core still binds the active version to retained evidence
+immediately afterward.

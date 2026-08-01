@@ -15,6 +15,8 @@
   window; the resumed path accepts at most one exact live Chatwoot lock and requires it to close at completion.
 - Allowed that same single live lock through the retained source-config incident preflight only when the exact
   controller-resume evidence is present; ordinary source-config recovery still requires zero active locks.
+- During exact controller resume, verify that all required Worker Secret names already exist without requiring an
+  all-false active version or running Secret bootstrap; the ordinary missing-Secret bootstrap remains Safe-only.
 - Aligned Reporting-event names with Chatwoot's authoritative listener contract, retaining opened/bot lifecycle
   evidence and mapping `conversation_resolved` time-to-resolve into resolution duration/count without double-counting
   the bot-resolved companion event; unsupported names still fail closed.
