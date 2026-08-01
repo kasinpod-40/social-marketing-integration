@@ -1,6 +1,6 @@
 # WooCommerce Report Materialization
 
-Status: `IMPLEMENTED_CI_PENDING`
+Status: `IMPLEMENTED_CI_PASS_REVIEW_REQUIRED`
 
 Authority task: `docs/tasks/woocommerce-report-materialization-v1.md`
 
@@ -29,6 +29,12 @@ Branch: `feat/report-commerce-dimensioned-output-v1`
   `fldMlTUP3Z` or its option IDs.
 - Exact Base settings/filter verification and Live materialization remain separate,
   explicitly authorized operations.
+
+## Verification
+
+- Branch Verification `#1573` passed on implementation head
+  `6699e75e9df65b155738ba159a5e968f121f1c7e`.
+- The final documentation-only head must pass Branch Verification again before review closeout.
 
 ## Safety
 
