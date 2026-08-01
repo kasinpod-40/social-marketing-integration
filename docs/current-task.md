@@ -1,87 +1,77 @@
-# Current Task — Chatwoot Selected Evidence Handoff v1
+# Current Task — Chatwoot Isolated Evidence Real Directory v1
 
 ## Status
 
 ```text
 TASK_STATUS                          = REPOSITORY_HOTFIX_IN_REVIEW
-CURRENT_PROGRAM                      = CHATWOOT_SELECTED_EVIDENCE_HANDOFF_V1
-BRANCH                               = hotfix/chatwoot-selected-evidence-handoff-v1
-BASE_MAIN_SHA                        = 3a86babaea761528856d70af0dafc250c7216dd0
-CHATWOOT_LATEST_STOP                 = CHATWOOT_CONTROLLER_EVIDENCE_ACTIVE_VERSION_AMBIGUOUS
+CURRENT_PROGRAM                      = CHATWOOT_ISOLATED_EVIDENCE_REAL_DIRECTORY_V1
+BRANCH                               = hotfix/chatwoot-isolated-evidence-real-directory-v1
+BASE_MAIN_SHA                        = 07599a10326d3976fb8344fe3e4b90bdc9426aaf
+CHATWOOT_LATEST_STOP                 = CHATWOOT_INITIAL_FAILURE_SESSION_MISSING
+CHATWOOT_SELECTED_PARENT_IDENTITY    = PROVEN_AND_HANDOFF_BOUND
+CHATWOOT_ISOLATED_CANDIDATE          = SYMLINK_NOT_DIRENT_DIRECTORY
 CHATWOOT_CURRENT_WORKER_FLAGS        = ALL_FALSE_AFTER_VERIFIED_SAFE_RESTORE
-CHATWOOT_INCOMPLETE_IDENTITIES       = 2
-CHATWOOT_ACTIVE_VERSION_MATCHES      = 2
-CHATWOOT_SELECTED_PARENT_IDENTITY    = ALREADY_PROVEN_BY_SAFE_BASELINE
-META_FACEBOOK_D1_PHASE               = COMPLETE
-META_FACEBOOK_LARK_PHASE             = PENDING
-META_PROVIDER_REPLAY_ALLOWED         = NO
-META_D1_QUEUE_RESEND_ALLOWED         = NO
 LATEST_PROVIDER_QUEUE_D1_LARK_ACTION = 0
 SCHEDULE_WEBHOOK                     = DISABLED
 PRODUCTION                           = BLOCKED
-NEXT_STEP                            = VERIFY_AND_MERGE_SELECTED_EVIDENCE_HANDOFF
+NEXT_STEP                            = VERIFY_AND_MERGE_REAL_DIRECTORY_ISOLATION
 ```
 
 ## Latest guarded stop
 
-The reviewed safe-baseline operator selected one retained controller identity by its exact all-false baseline, proved
-the retained active version and exact Remote D1 `queue_retry_exhausted_terminal_v1` boundary, promoted that retained
-active version, and then delegated to the existing evidence-arbitration wrapper.
+The safe-baseline parent selected the exact retained controller identity, proved the retained active version and Remote
+D1 `queue_retry_exhausted_terminal_v1` boundary, and passed the selection fingerprints into the arbitration child.
 
-The child stopped before its recovery launcher with:
+The Initial recovery launcher then stopped with:
 
 ```text
-stage                    select-chatwoot-controller-evidence
-code                     CHATWOOT_CONTROLLER_EVIDENCE_ACTIVE_VERSION_AMBIGUOUS
-candidateCount           2
-activeVersionMatchCount  2
+code     CHATWOOT_INITIAL_FAILURE_SESSION_MISSING
+message  No retained candidate can be inspected
 ```
 
-The safe-baseline wrapper then verified all execution flags false. Provider, Queue, Remote D1, Remote Lark and incident
-closure actions remained zero. The only transient action was the recovery-owned Worker version promotion followed by
-verified all-false Safe restore.
+The child performed zero Provider request, Queue action, Remote D1/Lark mutation, Worker deployment or incident closure.
+The safe-baseline parent verified every execution flag false afterward. Schedule and Webhook remained disabled and
+Production remained blocked.
 
 ## Root cause
 
-The parent safe-baseline wrapper had already selected the correct evidence identity by exact baseline version and wrote
-`outputs/chatwoot-controller-safe-baseline-resume/<reviewed-head>/01-active-window.attempt.json` before promotion.
+The arbitration wrapper created the selected evidence entry inside its isolated clone with:
 
-The existing child arbitration wrapper did not consume that parent selection. It rescanned every incomplete retained
-controller generation and selected only by the now-current retained active Worker version. Both historical evidence
-identities reference the same retained active version, so the child correctly failed closed with two matches.
+```text
+symlink(selectedEvidenceDirectory, isolatedFinalUatRoot/<selected-head>)
+```
+
+The Initial recovery launcher enumerates that root with `readdir(..., { withFileTypes: true })` and admits only
+`entry.isDirectory()`. A directory symlink returns `isSymbolicLink()`, not `isDirectory()`, so the exact selected
+candidate was discarded before session JSON or D1 inspection.
 
 ## Objective
 
-Carry the exact non-mutating safe-baseline selection handoff into the existing arbitration authority so the child does
-not discard the parent decision or choose by recency. Preserve active Worker verification, retained evidence
-immutability, isolated exact-main execution, the existing recovery launcher, no second Initial admission and automatic
-all-false Safe restore.
+Keep the already-proven selection and isolated exact-main execution, but expose the selected evidence to the unchanged
+Initial recovery launcher as a real temporary directory. Do not edit, rename or delete retained evidence and do not move
+Queue, D1, Lark, Worker promotion, Safe restore or incident-closure authority.
 
 ## Contract
 
-The existing safe-baseline parent already writes the handoff before any Worker promotion. The arbitration wrapper must:
-
-1. look only for the exact current-head private regular file
-   `outputs/chatwoot-controller-safe-baseline-resume/<head>/01-active-window.attempt.json`;
-2. treat absence as the original active-version-only arbitration path;
-3. when present, require the exact `chatwoot_controller_safe_baseline_resume_v1` contract, current repository Head,
-   `queue_retry_exhausted_terminal_v1`, `current_safe_baseline_version`, zero parent Queue/D1/Lark actions, no second
-   Initial admission, Schedule/Webhook false and Production false;
-4. validate the retained session, baseline-version and active-version SHA-256 fingerprints;
-5. continue requiring the current Worker to expose the exact four Chatwoot Final UAT flags;
-6. select exactly one candidate matching both the current active Worker version and every verified handoff fingerprint;
-7. fail closed when the handoff matches zero or multiple identities;
-8. preserve the existing isolated evidence view and delegate unchanged to
-   `scripts/chatwoot-initial-terminal-failure-recovery-launcher.mjs`;
-9. never mutate, rename or delete retained evidence and never send Queue/D1/Lark actions itself.
+1. The selected source evidence must be a real directory rather than a symlink.
+2. The isolated destination must be absent before materialization.
+3. The wrapper copies the selected evidence into the temporary clone with dereferenced regular files.
+4. The resulting selected entry must pass `Dirent.isDirectory()`.
+5. `session.json`, `read-only-preflight.json`, `active-deployment.json` and `initial-send.attempt.json` must be regular,
+   non-symlink files in the isolated directory.
+6. The source retained evidence remains byte-preserved and unchanged.
+7. The current-head output path continues to point to the authoritative workspace for recovery output.
+8. The existing `scripts/chatwoot-initial-terminal-failure-recovery-launcher.mjs` remains the only recovery child.
+9. No second Initial admission is permitted.
+10. Schedule and Webhook remain disabled; Production remains blocked.
 
 ## Changed files
 
 ```text
-scripts/lib/chatwoot-controller-evidence-arbitration.js
+scripts/lib/chatwoot-controller-evidence-isolation.js
 scripts/chatwoot-controller-evidence-arbitration-terminal.mjs
-tests/application/chatwoot-controller-evidence-arbitration.test.js
-docs/tasks/chatwoot-selected-evidence-handoff-v1.md
+tests/application/chatwoot-controller-evidence-isolation.test.js
+docs/tasks/chatwoot-isolated-evidence-real-directory-v1.md
 docs/current-task.md
 ```
 
@@ -90,6 +80,7 @@ docs/current-task.md
 ```bash
 npm ci
 npm run check
+node --test tests/application/chatwoot-controller-evidence-isolation.test.js
 node --test tests/application/chatwoot-controller-evidence-arbitration.test.js
 node --test tests/application/chatwoot-controller-safe-baseline-resume.test.js
 node --test tests/application/chatwoot-controller-safe-baseline-exact.test.js
@@ -135,6 +126,6 @@ current Chatwoot incident safely.
 
 ## Implementation result
 
-The verified parent-handoff validator, fingerprint-bound selector, child arbitration integration, focused regressions
-and task documentation are implemented on `hotfix/chatwoot-selected-evidence-handoff-v1`. CI is pending. Repository
-implementation has performed zero Live or Remote mutation.
+The real-directory materializer, arbitration integration, real-filesystem regression and task documentation are
+implemented on `hotfix/chatwoot-isolated-evidence-real-directory-v1`. CI is pending. Repository implementation has
+performed zero Live or Remote mutation.
