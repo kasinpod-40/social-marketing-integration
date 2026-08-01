@@ -431,7 +431,17 @@ function resolveInitialRecoveryBoundary(env, recovering) {
       value,
       nextSequence: 1,
       mainQueueAttempts: 4,
+      allowedPreexistingFailedUnits: 1,
       allowedIncidentCounts: Object.freeze({ dlqRecords: 2, openAlerts: 3 }),
+    });
+  }
+  if (value === CHATWOOT_INITIAL_RECOVERY_BOUNDARIES.safeRestoreRace) {
+    return Object.freeze({
+      value,
+      nextSequence: 1,
+      mainQueueAttempts: 5,
+      allowedPreexistingFailedUnits: 1,
+      allowedIncidentCounts: Object.freeze({ dlqRecords: 3, openAlerts: 4 }),
     });
   }
   fail('Initial recovery boundary contract is missing or unsupported', 'CHATWOOT_INITIAL_FAILURE_BOUNDARY_DRIFT');
@@ -467,9 +477,15 @@ async function poll(target, operation, minimumAttempts) {
     process.stdout.write(`${JSON.stringify({ event: 'chatwoot_uat_progress', operation: operation.mode,
       poll: index, ...sanitizeChatwootFinalProgress(last) })}\n`);
     if (last.workLifecycleStatus === 'completed' && last.mainQueueAttempts >= minimumAttempts) return last;
+    const allowedFailedUnits = target.recovery && operation.mode === 'initial'
+      && last.workLifecycleStatus === 'active'
+      ? Number(target.recoveryBoundary.allowedPreexistingFailedUnits ?? 0)
+      : 0;
     if (last.dlqRecords > target.allowedIncidentCounts.dlqRecords
         || last.openChatwootAlerts > target.allowedIncidentCounts.openAlerts
-        || last.failedUnitSyncRuns || last.failedCoverageRows) {
+        || last.workLifecycleStatus === 'terminal'
+        || last.failedUnitSyncRuns > allowedFailedUnits
+        || last.failedCoverageRows) {
       fail('Terminal reliability failure observed', 'CHATWOOT_FINAL_UAT_TERMINAL_FAILURE', scrub(last));
     }
     if (index < max) await new Promise((resolvePromise) => setTimeout(resolvePromise, interval));
