@@ -6,7 +6,14 @@ const CONVERSATION_STATUSES = new Set(['open', 'resolved', 'pending', 'snoozed']
 const AGENT_AVAILABILITY = new Set(['available', 'busy', 'offline']);
 const CONTACT_AVAILABILITY = new Set(['online', 'offline', 'busy', 'unknown']);
 const AGENT_ROLES = new Set(['agent', 'administrator']);
-const REPORTING_EVENT_NAMES = new Set(['first_response', 'resolution', 'reply_time']);
+// conversation_resolved is a lifecycle evidence row from the live Reporting API.
+// It is intentionally retained raw but is not interpreted as a duration metric.
+const REPORTING_EVENT_NAMES = new Set([
+  'first_response',
+  'resolution',
+  'reply_time',
+  'conversation_resolved',
+]);
 const MESSAGE_TYPES = Object.freeze({
   0: 'incoming',
   1: 'outgoing',

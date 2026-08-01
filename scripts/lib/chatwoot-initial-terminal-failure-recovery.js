@@ -27,6 +27,7 @@ export const CHATWOOT_INITIAL_RECOVERY_BOUNDARIES = Object.freeze({
   waitingSince: 'waiting_since_terminal_v1',
   unknownLabel: 'unknown_label_terminal_v1',
   messageOrder: 'message_order_terminal_v1',
+  reportingEvent: 'reporting_event_terminal_v1',
 });
 
 const SHA = /^[0-9a-f]{40}$/u;
@@ -149,6 +150,23 @@ export function buildChatwootInitialFailureReactivationSql(inspection = {}) {
       AND EXISTS (SELECT 1 FROM dead_letter_operation_metadata m JOIN dead_letter_jobs j ON j.dlq_id=m.dlq_id WHERE m.operation_id=${sqlText(operation.operationId)} AND m.main_queue_attempts=9 AND m.recovery_status='not_started' AND j.status='open' AND j.error_code='CHATWOOT_LABEL_MAPPING_MISSING' AND j.error_message='Chatwoot conversation references an unknown label')
       AND EXISTS (SELECT 1 FROM dead_letter_operation_metadata m JOIN dead_letter_jobs j ON j.dlq_id=m.dlq_id WHERE m.operation_id=${sqlText(operation.operationId)} AND m.main_queue_attempts=11 AND m.recovery_status='not_started' AND j.status='open' AND j.error_code='CHATWOOT_MESSAGE_CURSOR_REPEATED' AND j.error_message='Chatwoot message cursor did not increase')
       AND (SELECT COUNT(*) FROM system_alerts WHERE platform='chatwoot' AND status='open' AND (json_extract(details_json,'$.operationId')=${sqlText(operation.operationId)} OR sync_run_id=${sqlText(`${operation.syncRunId}:unit:1`)}))=10`;
+  const reportingEventGuard = `
+      AND (SELECT COUNT(*) FROM sync_work_phases WHERE work_key=${sqlText(operation.workKey)})=1
+      AND EXISTS (SELECT 1 FROM sync_work_phases WHERE work_key=${sqlText(operation.workKey)} AND phase='chatwoot_runtime_30d_daily_v1' AND json_extract(state_json,'$.stage')='conversations' AND json_extract(state_json,'$.nextSequence')=2 AND json_extract(state_json,'$.conversationPage')=2 AND json_extract(state_json,'$.conversationPagesProcessed')=1 AND json_extract(state_json,'$.conversationRowsScanned')=25 AND json_extract(state_json,'$.conversationsSelected')=17 AND json_extract(state_json,'$.messagesSelected')=590 AND json_extract(state_json,'$.conversationReportingEventsSelected')=122)
+      AND EXISTS (SELECT 1 FROM queue_operation_attempts WHERE operation_id=${sqlText(operation.operationId)} AND work_key=${sqlText(operation.workKey)} AND generation=${operation.generation} AND original_requested_at=${operation.originalRequestedAt} AND main_queue_attempts=14)
+      AND (SELECT COUNT(*) FROM sync_runs WHERE sync_run_id>=${sqlText(`${operation.syncRunId}:unit:`)} AND sync_run_id<${sqlText(`${operation.syncRunId}:unit;`)})=3
+      AND EXISTS (SELECT 1 FROM sync_runs WHERE sync_run_id=${sqlText(`${operation.syncRunId}:unit:0`)} AND status='success' AND error_code IS NULL AND records_written=0)
+      AND EXISTS (SELECT 1 FROM sync_runs WHERE sync_run_id=${sqlText(`${operation.syncRunId}:unit:1`)} AND status='success' AND error_code IS NULL AND records_written=0)
+      AND EXISTS (SELECT 1 FROM sync_runs WHERE sync_run_id=${sqlText(`${operation.syncRunId}:unit:2`)} AND status='failed' AND error_code='UNHANDLED_SYNC_ERROR' AND error_message='reporting_event.name is unsupported: conversation_resolved' AND records_written=0)
+      AND (SELECT COUNT(*) FROM dead_letter_operation_metadata WHERE operation_id=${sqlText(operation.operationId)})=7
+      AND EXISTS (SELECT 1 FROM dead_letter_operation_metadata m JOIN dead_letter_jobs j ON j.dlq_id=m.dlq_id WHERE m.operation_id=${sqlText(operation.operationId)} AND m.main_queue_attempts=2 AND m.recovery_status='not_started' AND j.status='open' AND j.error_code='CHATWOOT_MANUAL_UAT_CONNECTOR_INVALID')
+      AND EXISTS (SELECT 1 FROM dead_letter_operation_metadata m JOIN dead_letter_jobs j ON j.dlq_id=m.dlq_id WHERE m.operation_id=${sqlText(operation.operationId)} AND m.main_queue_attempts=4 AND m.recovery_status='not_started' AND j.status='open' AND j.error_code='PERMANENT_QUEUE_FAILURE' AND j.error_message='conversation.updated_at must fit a safe integer')
+      AND EXISTS (SELECT 1 FROM dead_letter_operation_metadata m JOIN dead_letter_jobs j ON j.dlq_id=m.dlq_id WHERE m.operation_id=${sqlText(operation.operationId)} AND m.main_queue_attempts=5 AND m.recovery_status='not_started' AND j.status='open' AND j.error_code='CHATWOOT_MANUAL_UAT_CONNECTOR_INVALID')
+      AND EXISTS (SELECT 1 FROM dead_letter_operation_metadata m JOIN dead_letter_jobs j ON j.dlq_id=m.dlq_id WHERE m.operation_id=${sqlText(operation.operationId)} AND m.main_queue_attempts=7 AND m.recovery_status='not_started' AND j.status='open' AND j.error_code='PERMANENT_QUEUE_FAILURE' AND j.error_message='conversation.waiting_since is outside the supported range 2000-2100')
+      AND EXISTS (SELECT 1 FROM dead_letter_operation_metadata m JOIN dead_letter_jobs j ON j.dlq_id=m.dlq_id WHERE m.operation_id=${sqlText(operation.operationId)} AND m.main_queue_attempts=9 AND m.recovery_status='not_started' AND j.status='open' AND j.error_code='CHATWOOT_LABEL_MAPPING_MISSING' AND j.error_message='Chatwoot conversation references an unknown label')
+      AND EXISTS (SELECT 1 FROM dead_letter_operation_metadata m JOIN dead_letter_jobs j ON j.dlq_id=m.dlq_id WHERE m.operation_id=${sqlText(operation.operationId)} AND m.main_queue_attempts=11 AND m.recovery_status='not_started' AND j.status='open' AND j.error_code='CHATWOOT_MESSAGE_CURSOR_REPEATED' AND j.error_message='Chatwoot message cursor did not increase')
+      AND EXISTS (SELECT 1 FROM dead_letter_operation_metadata m JOIN dead_letter_jobs j ON j.dlq_id=m.dlq_id WHERE m.operation_id=${sqlText(operation.operationId)} AND m.main_queue_attempts=14 AND m.recovery_status='not_started' AND j.status='open' AND j.error_code='PERMANENT_QUEUE_FAILURE' AND j.error_message='reporting_event.name is unsupported: conversation_resolved')
+      AND (SELECT COUNT(*) FROM system_alerts WHERE platform='chatwoot' AND status='open' AND (json_extract(details_json,'$.operationId')=${sqlText(operation.operationId)} OR (sync_run_id>=${sqlText(`${operation.syncRunId}:unit:`)} AND sync_run_id<${sqlText(`${operation.syncRunId}:unit;`)})))=12`;
   const incidentGuard = {
     [CHATWOOT_INITIAL_RECOVERY_BOUNDARIES.original]: originalGuard,
     [CHATWOOT_INITIAL_RECOVERY_BOUNDARIES.fractionalTimestamp]: fractionalTimestampGuard,
@@ -156,6 +174,7 @@ export function buildChatwootInitialFailureReactivationSql(inspection = {}) {
     [CHATWOOT_INITIAL_RECOVERY_BOUNDARIES.waitingSince]: waitingSinceGuard,
     [CHATWOOT_INITIAL_RECOVERY_BOUNDARIES.unknownLabel]: unknownLabelGuard,
     [CHATWOOT_INITIAL_RECOVERY_BOUNDARIES.messageOrder]: messageOrderGuard,
+    [CHATWOOT_INITIAL_RECOVERY_BOUNDARIES.reportingEvent]: reportingEventGuard,
   }[boundary];
   return compactSql(`
     UPDATE sync_work_runs
@@ -190,7 +209,8 @@ export function buildChatwootCurrentIncidentClosureSql(identity = {}, input = {}
         error_code='CHATWOOT_MANUAL_UAT_CONNECTOR_INVALID'
         OR (error_code='PERMANENT_QUEUE_FAILURE' AND error_message IN (
           'conversation.updated_at must fit a safe integer',
-          'conversation.waiting_since is outside the supported range 2000-2100'
+          'conversation.waiting_since is outside the supported range 2000-2100',
+          'reporting_event.name is unsupported: conversation_resolved'
         ))
         OR (error_code='CHATWOOT_LABEL_MAPPING_MISSING'
           AND error_message='Chatwoot conversation references an unknown label')
@@ -200,7 +220,7 @@ export function buildChatwootCurrentIncidentClosureSql(identity = {}, input = {}
     SELECT changes() AS current_terminal_rows;
     UPDATE dead_letter_operation_metadata
     SET recovery_status='completed', recovery_reference=${referenceSql}, recovery_started_at=COALESCE(recovery_started_at,${completedAt}), recovery_completed_at=${completedAt}, audit_reference=${referenceSql}, updated_at=${completedAt}
-    WHERE operation_id=${operationId} AND main_queue_attempts IN (2,4,5,7,9,11) AND recovery_status='not_started';
+    WHERE operation_id=${operationId} AND main_queue_attempts IN (2,4,5,7,9,11,14) AND recovery_status='not_started';
     SELECT changes() AS current_metadata_rows;
     UPDATE system_alerts SET status='resolved', updated_at=${completedAt}
     WHERE platform='chatwoot' AND status='open' AND (
@@ -213,6 +233,8 @@ export function buildChatwootCurrentIncidentClosureSql(identity = {}, input = {}
         AND message=${sqlText(`รอบ Sync ล้มเหลว\nsync_run_id=${operation.syncRunId}:unit:1\nerror=Chatwoot conversation references an unknown label`)})
       OR (sync_run_id=${sqlText(`${operation.syncRunId}:unit:1`)} AND error_code='CHATWOOT_MESSAGE_CURSOR_REPEATED'
         AND message=${sqlText(`รอบ Sync ล้มเหลว\nsync_run_id=${operation.syncRunId}:unit:1\nerror=Chatwoot message cursor did not increase`)})
+      OR (sync_run_id=${sqlText(`${operation.syncRunId}:unit:2`)} AND error_code='UNHANDLED_SYNC_ERROR'
+        AND message=${sqlText(`รอบ Sync ล้มเหลว\nsync_run_id=${operation.syncRunId}:unit:2\nerror=reporting_event.name is unsupported: conversation_resolved`)})
     );
     SELECT changes() AS current_alert_rows;
   `);
@@ -291,7 +313,8 @@ export function isChatwootInitialFailureCandidateAdmitted(row = {}) {
   const attempts = Number(row.main_queue_attempts);
   const unitRuns = Number(row.unit_sync_runs);
   return ([1, 2].includes(attempts) && unitRuns === 1)
-    || ([4, 5, 7, 9, 11].includes(attempts) && unitRuns === 2);
+    || ([4, 5, 7, 9, 11].includes(attempts) && unitRuns === 2)
+    || (attempts === 14 && unitRuns === 3);
 }
 
 export function validateRetainedSession(session = {}) {
@@ -599,17 +622,54 @@ export function classifyChatwootInitialRecoveryBoundary(inspection = {}) {
     && inspection.currentOpenAlerts === 10
     && inspection.errorCode === 'CHATWOOT_MESSAGE_CURSOR_REPEATED'
     && inspection.errorMessage === 'Chatwoot message cursor did not increase';
+  const reportingEventBoundary = inspection.workLifecycle === 'terminal'
+    && inspection.activeChatwootWork === 0
+    && inspection.mainQueueAttempts === 14
+    && inspection.unitSyncRuns === 3
+    && inspection.unitSyncRunStatus === 'failed'
+    && inspection.failedUnitSyncRuns === 1
+    && inspection.failedSyncRunId === `${operation.syncRunId}:unit:2`
+    && inspection.phaseRows === 1
+    && inspection.durableStage === 'conversations'
+    && inspection.nextSequence === 2
+    && inspection.coverageRuns === 24
+    && inspection.terminalReason === 'QUEUE_PERMANENT_FAILURE'
+    && inspection.abandonedAt !== null
+    && inspection.auditReference?.startsWith('terminal:')
+    && inspection.currentDlqRecords === 7
+    && inspection.currentOpenAlerts === 12
+    && inspection.errorCode === 'PERMANENT_QUEUE_FAILURE'
+    && inspection.errorMessage === 'reporting_event.name is unsupported: conversation_resolved';
+  const reportingEventReactivated = inspection.workLifecycle === 'active'
+    && inspection.activeChatwootWork === 1
+    && inspection.mainQueueAttempts === 14
+    && inspection.unitSyncRuns === 3
+    && inspection.unitSyncRunStatus === 'failed'
+    && inspection.failedUnitSyncRuns === 1
+    && inspection.failedSyncRunId === `${operation.syncRunId}:unit:2`
+    && inspection.phaseRows === 1
+    && inspection.durableStage === 'conversations'
+    && inspection.nextSequence === 2
+    && inspection.coverageRuns === 24
+    && inspection.terminalReason === null
+    && inspection.abandonedAt === null
+    && inspection.auditReference === null
+    && inspection.currentDlqRecords === 7
+    && inspection.currentOpenAlerts === 12
+    && inspection.errorCode === 'PERMANENT_QUEUE_FAILURE'
+    && inspection.errorMessage === 'reporting_event.name is unsupported: conversation_resolved';
   const original = originalBoundary || terminalBoundary || reactivatedBoundary;
   const fractional = fractionalTimestampBoundary || fractionalTimestampReactivated;
   const race = safeRestoreRaceBoundary || safeRestoreRaceReactivated;
   const waiting = waitingSinceBoundary || waitingSinceReactivated;
   const unknownLabel = unknownLabelBoundary || unknownLabelReactivated;
   const messageOrder = messageOrderBoundary || messageOrderReactivated;
+  const reportingEvent = reportingEventBoundary || reportingEventReactivated;
   if (original && (inspection.unitSyncRuns !== 1 || inspection.phaseRows !== 0
       || inspection.durableStage !== null || inspection.nextSequence !== 0)) {
     problems.push('original_durable_boundary');
   }
-  if (!original && !fractional && !race && !waiting && !unknownLabel && !messageOrder) {
+  if (!original && !fractional && !race && !waiting && !unknownLabel && !messageOrder && !reportingEvent) {
     problems.push('incident_boundary');
   }
   if (problems.length > 0) {
@@ -619,6 +679,7 @@ export function classifyChatwootInitialRecoveryBoundary(inspection = {}) {
       { problems },
     );
   }
+  if (reportingEvent) return CHATWOOT_INITIAL_RECOVERY_BOUNDARIES.reportingEvent;
   if (messageOrder) return CHATWOOT_INITIAL_RECOVERY_BOUNDARIES.messageOrder;
   if (unknownLabel) return CHATWOOT_INITIAL_RECOVERY_BOUNDARIES.unknownLabel;
   if (waiting) return CHATWOOT_INITIAL_RECOVERY_BOUNDARIES.waitingSince;
