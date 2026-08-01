@@ -4,6 +4,8 @@
 
 ### Reliability
 
+- Treated Chatwoot's out-of-range optional `waiting_since` sentinel as missing instead of failing a Conversation,
+  and added exact attempts-7/unit-2 zero-write recovery plus closure for the resulting retained incident.
 - Accepted fractional epoch seconds from the Chatwoot conversation API through the Shared date-time contract,
   with exact durable-cursor recovery and incident closure for the observed zero-write terminal boundary.
 - Forwarded that known attempts-4/unit-2 candidate through the inspector's shallow admission gate to the existing
