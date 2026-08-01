@@ -22,6 +22,7 @@ import {
 
 const REQUIRED_RELEASE_PATHS = Object.freeze([
   '.github/workflows/branch-verification.yml',
+  '.github/workflows/meta-end-to-end-verification.yml',
   'docs/current-task.md',
   'docs/tasks/chatwoot-final-source-config-recovery-v1.md',
   'docs/tasks/lark-dashboard-display-v2-compatibility-v1.md',
@@ -73,7 +74,7 @@ function validBoundary(overrides = {}) {
   };
 }
 
-function validD1Evidence() {
+function validD1Evidence(options = {}) {
   const target = META_HISTORY_EXACT_CONTINUATION_TARGET;
   const targetFingerprint = 'a'.repeat(64);
   const expectedRequestedAt = Date.parse(target.originalRequestedAt);
@@ -87,11 +88,16 @@ function validD1Evidence() {
     periodEnd: target.periodEnd,
     workKey: target.workKey,
     syncRunId: target.syncRunId,
+    ...(options.targetOverrides ?? {}),
   };
+  const includePlan = options.includePlan !== false;
+  const phases = META_D1_ONLY_OPERATOR_PHASES.slice(includePlan ? 0 : 1, -1);
   const result = [];
-  let previousEvidenceSha256 = null;
-  for (const phase of META_D1_ONLY_OPERATOR_PHASES.slice(0, -1)) {
-    const data = phase === 'plan'
+  let previousEvidenceSha256 = includePlan
+    ? null
+    : (options.preflightPreviousEvidenceSha256 ?? null);
+  for (const phase of phases) {
+    const data = phase === 'plan' || phase === 'preflight'
       ? { target: planTarget }
       : phase === 'verify-restore'
         ? { mode: 'safe', expectedTrueFlags: [] }
@@ -183,7 +189,7 @@ test('exact continuation permits only the reviewed Dashboard, Chatwoot and conti
   );
 });
 
-test('retained D1 summary is materialized only from the complete validated evidence chain', () => {
+test('retained D1 summary is materialized from a complete plan-bound evidence chain', () => {
   const evidence = validD1Evidence();
   const summary = materializeRetainedMetaD1Summary(evidence, {
     capturedAt: '2026-08-01T03:30:00.000Z',
@@ -198,6 +204,8 @@ test('retained D1 summary is materialized only from the complete validated evide
   assert.equal(summary.data.d1OnlyVerified, true);
   assert.equal(summary.data.idempotentRerunVerified, true);
   assert.equal(summary.data.restoredAllFalse, true);
+  assert.equal(summary.data.evidenceChainStartPhase, 'plan');
+  assert.equal(summary.data.planEvidencePresent, true);
   assert.equal(summary.remoteMutationPerformed, false);
   assert.equal(summary.businessWritesAllowed, false);
   assert.equal(accepted.operationId, META_HISTORY_EXACT_CONTINUATION_TARGET.operationId);
@@ -223,6 +231,44 @@ test('retained D1 summary is materialized only from the complete validated evide
   assert.throws(
     () => materializeRetainedMetaD1Summary(invalidRestore),
     (error) => error?.code === 'META_HISTORY_EXACT_CONTINUATION_D1_RESTORE_EVIDENCE_INVALID',
+  );
+});
+
+test('retained D1 summary accepts the operator-supported preflight-anchored chain', () => {
+  const evidence = validD1Evidence({ includePlan: false });
+  const summary = materializeRetainedMetaD1Summary(evidence, {
+    capturedAt: '2026-08-01T04:00:00.000Z',
+  });
+  validateMetaD1OnlySummaryForLark(summary, {
+    targetKey: META_HISTORY_EXACT_CONTINUATION_TARGET.target,
+    operationId: META_HISTORY_EXACT_CONTINUATION_TARGET.operationId,
+  });
+
+  assert.equal(summary.data.phaseCount, META_D1_ONLY_OPERATOR_PHASES.length - 2);
+  assert.equal(summary.data.evidenceChainStartPhase, 'preflight');
+  assert.equal(summary.data.planEvidencePresent, false);
+  assert.equal(summary.data.evidenceChainHeadSha256, evidence.at(-1).evidenceSha256);
+});
+
+test('preflight-anchored recovery fails when a missing plan hash is still referenced', () => {
+  const evidence = validD1Evidence({
+    includePlan: false,
+    preflightPreviousEvidenceSha256: 'b'.repeat(64),
+  });
+  assert.throws(
+    () => materializeRetainedMetaD1Summary(evidence),
+    (error) => error?.code === 'META_HISTORY_EXACT_CONTINUATION_D1_PLAN_ANCHOR_MISSING',
+  );
+});
+
+test('preflight-anchored recovery still requires the exact retained operation identity', () => {
+  const evidence = validD1Evidence({
+    includePlan: false,
+    targetOverrides: { generation: Date.parse('2026-07-31T16:51:11.018Z') },
+  });
+  assert.throws(
+    () => materializeRetainedMetaD1Summary(evidence),
+    (error) => error?.code === 'META_HISTORY_EXACT_CONTINUATION_D1_EVIDENCE_TARGET_INVALID',
   );
 });
 

@@ -142,7 +142,9 @@ async function ensureRetainedD1Summary() {
     return;
   }
 
-  const phases = META_D1_ONLY_OPERATOR_PHASES.slice(0, -1);
+  const fullPhases = META_D1_ONLY_OPERATOR_PHASES.slice(0, -1);
+  const planEvidencePresent = await regularFile(join(retainedD1Root, 'plan.json'));
+  const phases = planEvidencePresent ? fullPhases : fullPhases.slice(1);
   const missing = [];
   const evidence = [];
   for (const phase of phases) {
@@ -165,7 +167,7 @@ async function ensureRetainedD1Summary() {
     throw terminalError(
       'Retained Meta D1 summary cannot be materialized because phase evidence is incomplete',
       'META_HISTORY_RETAINED_D1_EVIDENCE_FILES_MISSING',
-      { missing },
+      { missing, planEvidencePresent },
     );
   }
 
@@ -193,7 +195,9 @@ async function ensureRetainedD1Summary() {
     ok: true,
     decision: 'META_HISTORY_RETAINED_D1_SUMMARY_MATERIALIZED',
     operationId: target.operationId,
-    phaseCount: phases.length,
+    phaseCount: summary.data.phaseCount,
+    evidenceChainStartPhase: summary.data.evidenceChainStartPhase,
+    planEvidencePresent: summary.data.planEvidencePresent,
     providerReplay: false,
     queueResend: false,
     remoteD1MutationCount: 0,
