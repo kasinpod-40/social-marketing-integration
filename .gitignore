@@ -53,5 +53,7 @@ wrangler.sync.jsonc
 *.sqlite-wal
 
 # Generated artifact workspace และ inspection sidecars ไม่ใช่ Release source
-outputs/
+# Ignore the exact repository-root path regardless of whether runtime creates it
+# as a directory, regular file, or symlink inside an isolated retained-Head clone.
+/outputs
 *.xlsx.inspect.ndjson

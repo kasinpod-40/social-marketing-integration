@@ -18,6 +18,7 @@ const META_WORKFLOW = new URL(
   '../../.github/workflows/meta-end-to-end-verification.yml',
   import.meta.url,
 );
+const GITIGNORE = new URL('../../.gitignore', import.meta.url);
 
 test('exact-plan public Terminal supplies the retained private Safe config', async () => {
   const source = await readFile(TERMINAL, 'utf8');
@@ -108,6 +109,22 @@ test('exact-plan continuation completes Facebook Lark before resuming the retain
   assert.match(source, /Queue acceptance is uncertain; blind resend is blocked/u);
   assert.match(source, /restore-all-false/u);
   assert.match(source, /verify-restore/u);
+});
+
+test('isolated retained-Head runtime injections remain ignored without hiding other untracked files', async () => {
+  const [source, gitignore] = await Promise.all([
+    readFile(SOURCE, 'utf8'),
+    readFile(GITIGNORE, 'utf8'),
+  ]);
+
+  assert.match(source, /symlink\(originalOutputs, join\(cloneRoot, 'outputs'\), 'dir'\)/u);
+  assert.match(source, /copyFile\(sourceConfigPath, join\(cloneRoot, 'wrangler\.sync\.jsonc'\)\)/u);
+  assert.match(source, /status', '--porcelain', '--untracked-files=all/u);
+  assert.match(gitignore, /^\/outputs$/mu);
+  assert.match(gitignore, /^wrangler\.sync\.jsonc$/mu);
+  assert.doesNotMatch(gitignore, /^outputs\/$/mu);
+  assert.doesNotMatch(source, /status\.showUntrackedFiles/u);
+  assert.doesNotMatch(source, /--untracked-files=no/u);
 });
 
 test('local verifier runs repository-only gates and no Live continuation command', async () => {
