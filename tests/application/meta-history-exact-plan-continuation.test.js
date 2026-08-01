@@ -20,6 +20,7 @@ const REQUIRED_RELEASE_PATHS = Object.freeze([
   'scripts/meta-history-2026-exact-plan-continuation-terminal.mjs',
   'scripts/meta-history-2026-exact-plan-continuation.mjs',
   'scripts/verify-meta-history-exact-plan-continuation-local.mjs',
+  'tests/application/meta-history-2026-public-launcher.test.js',
   'tests/application/meta-history-exact-plan-continuation.test.js',
   'tests/application/meta-history-exact-plan-continuation-wiring.test.js',
 ]);
