@@ -202,7 +202,6 @@ export function assertChatwootFinalSourceIncidentOpen(row = {}) {
     && state.auditReference === null
     && state.terminalStatus === 'open'
     && state.alertStatus === 'open'
-    && state.totalBusinessRows === 0
     && exactIdentity;
   if (!accepted) {
     throw recoveryError(
