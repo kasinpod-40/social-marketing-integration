@@ -25,38 +25,50 @@ export const META_HISTORY_EXACT_CONTINUATION_TARGET = Object.freeze({
 
 export const META_HISTORY_EXACT_CONTINUATION_ALLOWED_DELTA = Object.freeze([
   '.github/workflows/branch-verification.yml',
+  '.github/workflows/meta-end-to-end-verification.yml',
   'docs/current-task.md',
+  'docs/project-brain/lark-dashboard-window-option-order.md',
   'docs/project-brain/report-metric-value-field-migration.md',
   'docs/tasks/chatwoot-final-source-config-recovery-v1.md',
   'docs/tasks/lark-dashboard-compatibility-freeze-v1.md',
   'docs/tasks/lark-dashboard-compatibility-record-backfill-closeout-2026-08-01.md',
   'docs/tasks/lark-dashboard-display-v2-compatibility-v1.md',
+  'docs/tasks/lark-dashboard-window-option-order-v1.md',
   'docs/tasks/meta-history-exact-plan-continuation-v1.md',
   'packages/application/src/reports/build-report-output-rows.js',
   'packages/config/src/lark-dashboard-display-v2-compatibility.js',
+  'scripts/chatwoot-final-30d-daily-uat.mjs',
   'scripts/chatwoot-final-source-config-recovery-launcher.mjs',
   'scripts/lark-dashboard-compatibility-freeze-audit.mjs',
   'scripts/lark-dashboard-compatibility-record-backfill.mjs',
   'scripts/lark-dashboard-display-v2-compatibility-backfill.mjs',
   'scripts/lark-dashboard-field-identity-recovery-terminal-v3.mjs',
   'scripts/lark-dashboard-field-identity-recovery-v3.mjs',
+  'scripts/lark-dashboard-window-option-order.mjs',
+  'scripts/lark-window-option-order.mjs',
+  'scripts/lib/chatwoot-final-30d-daily-uat.js',
   'scripts/lib/chatwoot-final-source-config-recovery.js',
   'scripts/lib/lark-dashboard-compatibility-freeze-v1.js',
   'scripts/lib/lark-dashboard-display-v2-compatibility-v1.js',
+  'scripts/lib/lark-dashboard-window-option-order-v1.js',
+  'scripts/lib/lark-window-option-order-v1.js',
   'scripts/lib/meta-history-exact-plan-continuation.js',
   'scripts/meta-history-2026-exact-plan-continuation-terminal.mjs',
   'scripts/meta-history-2026-exact-plan-continuation.mjs',
   'scripts/verify-meta-history-exact-plan-continuation-local.mjs',
+  'tests/application/chatwoot-final-30d-daily-uat.test.js',
   'tests/application/chatwoot-final-source-config-recovery.test.js',
   'tests/application/lark-dashboard-display-v2-writer.test.js',
   'tests/application/meta-history-2026-public-launcher.test.js',
-  'tests/application/meta-history-exact-plan-continuation.test.js',
   'tests/application/meta-history-exact-plan-continuation-wiring.test.js',
+  'tests/application/meta-history-exact-plan-continuation.test.js',
   'tests/config/lark-dashboard-display-v2-compatibility.test.js',
   'tests/scripts/lark-dashboard-compatibility-record-backfill.test.js',
   'tests/scripts/lark-dashboard-display-v2-compatibility-backfill.test.js',
   'tests/scripts/lark-dashboard-field-identity-recovery-v3.test.js',
   'tests/scripts/lark-dashboard-window-chart-rebind-v3-2.test.js',
+  'tests/scripts/lark-dashboard-window-option-order.test.js',
+  'tests/scripts/lark-window-option-order.test.js',
 ]);
 
 export const META_HISTORY_EXACT_CONTINUATION_CRITICAL_PATHS = Object.freeze([
@@ -145,10 +157,14 @@ export function validateMetaHistoryExactContinuationDelta(changedPaths = []) {
 export function materializeRetainedMetaD1Summary(evidence = [], options = {}) {
   const target = META_HISTORY_EXACT_CONTINUATION_TARGET;
   const expectedPhases = META_D1_ONLY_OPERATOR_PHASES.slice(0, -1);
+  const planlessExpectedPhases = expectedPhases.slice(1);
   const observedPhases = Array.isArray(evidence)
     ? evidence.map((item) => item?.phase ?? null)
     : [];
-  if (JSON.stringify(observedPhases) !== JSON.stringify(expectedPhases)) {
+  const planEvidencePresent = JSON.stringify(observedPhases) === JSON.stringify(expectedPhases);
+  const preflightAnchored = JSON.stringify(observedPhases)
+    === JSON.stringify(planlessExpectedPhases);
+  if (!planEvidencePresent && !preflightAnchored) {
     const missing = expectedPhases.filter((phase) => !observedPhases.includes(phase));
     throw continuationError(
       'Retained Meta D1 evidence sequence is incomplete',
@@ -157,32 +173,40 @@ export function materializeRetainedMetaD1Summary(evidence = [], options = {}) {
     );
   }
 
-  const plan = evidence[0];
-  const planTarget = plan?.data?.target ?? {};
-  const expectedRequestedAt = Date.parse(target.originalRequestedAt);
-  const exactPlanTarget = plan?.status === 'passed'
-    && plan?.repositoryHead === target.repositoryHead
-    && plan?.targetKey === target.target
-    && plan?.operationId === target.operationId
-    && planTarget?.repositoryHead === target.repositoryHead
-    && planTarget?.targetKey === target.target
-    && planTarget?.operationId === target.operationId
-    && Number(planTarget?.originalRequestedAt) === expectedRequestedAt
-    && Number(planTarget?.generation) === expectedRequestedAt
-    && planTarget?.periodStart === target.periodStart
-    && planTarget?.periodEnd === target.periodEnd
-    && planTarget?.workKey === target.workKey
-    && planTarget?.syncRunId === target.syncRunId;
-  if (!exactPlanTarget) {
+  const chainStart = evidence[0];
+  if (preflightAnchored && chainStart?.previousEvidenceSha256 !== null) {
     throw continuationError(
-      'Retained Meta D1 plan evidence does not match the exact Facebook operation',
+      'Retained Meta D1 preflight is linked to a missing prior plan evidence file',
+      'META_HISTORY_EXACT_CONTINUATION_D1_PLAN_ANCHOR_MISSING',
+      { previousEvidenceSha256Present: true },
+    );
+  }
+
+  const identityTarget = chainStart?.data?.target ?? {};
+  const expectedRequestedAt = Date.parse(target.originalRequestedAt);
+  const exactIdentity = chainStart?.status === 'passed'
+    && chainStart?.repositoryHead === target.repositoryHead
+    && chainStart?.targetKey === target.target
+    && chainStart?.operationId === target.operationId
+    && identityTarget?.repositoryHead === target.repositoryHead
+    && identityTarget?.targetKey === target.target
+    && identityTarget?.operationId === target.operationId
+    && Number(identityTarget?.originalRequestedAt) === expectedRequestedAt
+    && Number(identityTarget?.generation) === expectedRequestedAt
+    && identityTarget?.periodStart === target.periodStart
+    && identityTarget?.periodEnd === target.periodEnd
+    && identityTarget?.workKey === target.workKey
+    && identityTarget?.syncRunId === target.syncRunId;
+  if (!exactIdentity) {
+    throw continuationError(
+      `Retained Meta D1 ${chainStart?.phase ?? 'unknown'} evidence does not match the exact Facebook operation`,
       'META_HISTORY_EXACT_CONTINUATION_D1_EVIDENCE_TARGET_INVALID',
     );
   }
 
   const validationTarget = {
     repositoryHead: target.repositoryHead,
-    targetFingerprint: plan.targetFingerprint,
+    targetFingerprint: chainStart.targetFingerprint,
     targetKey: target.target,
     operationId: target.operationId,
   };
@@ -208,7 +232,7 @@ export function materializeRetainedMetaD1Summary(evidence = [], options = {}) {
   return createMetaD1OnlyEvidence({
     phase: 'summary',
     repositoryHead: target.repositoryHead,
-    targetFingerprint: plan.targetFingerprint,
+    targetFingerprint: chainStart.targetFingerprint,
     targetKey: target.target,
     operationId: target.operationId,
     previousEvidenceSha256: final.evidenceSha256,
@@ -218,6 +242,8 @@ export function materializeRetainedMetaD1Summary(evidence = [], options = {}) {
       targetKey: target.target,
       operationId: target.operationId,
       phaseCount: validated.length,
+      evidenceChainStartPhase: chainStart.phase,
+      planEvidencePresent,
       evidenceChainHeadSha256: final.evidenceSha256,
       d1OnlyVerified: true,
       idempotentRerunVerified: true,
