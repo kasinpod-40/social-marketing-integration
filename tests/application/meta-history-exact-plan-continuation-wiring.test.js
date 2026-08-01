@@ -27,6 +27,25 @@ test('exact-plan public Terminal supplies the retained private Safe config', asy
   assert.doesNotMatch(source, /meta-d1-only-rollout-launcher\.mjs/u);
 });
 
+test('exact-plan Terminal materializes a missing D1 summary only from local retained evidence', async () => {
+  const source = await readFile(TERMINAL, 'utf8');
+
+  assert.match(source, /materializeRetainedMetaD1Summary/u);
+  assert.match(source, /META_D1_ONLY_OPERATOR_PHASES\.slice\(0, -1\)/u);
+  assert.match(source, /validateMetaD1OnlySummaryForLark/u);
+  assert.match(source, /META_HISTORY_RETAINED_D1_SUMMARY_MATERIALIZED/u);
+  assert.match(source, /remoteProviderRequestCount:\s*0/u);
+  assert.match(source, /remoteQueueSendCount:\s*0/u);
+  assert.match(source, /remoteD1MutationCount:\s*0/u);
+  assert.match(source, /remoteLarkMutationCount:\s*0/u);
+  assert.match(source, /workerDeploymentCount:\s*0/u);
+  assert.doesNotMatch(source, /fetch\s*\(/u);
+  assert.doesNotMatch(source, /'wrangler'/u);
+  assert.doesNotMatch(source, /meta-d1-only-rollout-operator\.mjs/u);
+  assert.doesNotMatch(source, /send-one-d1-only/u);
+  assert.doesNotMatch(source, /resend-same-operation/u);
+});
+
 test('exact-plan continuation is guarded and does not replay Facebook Provider or D1 Queue', async () => {
   const source = await readFile(SOURCE, 'utf8');
 
