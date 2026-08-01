@@ -4,6 +4,15 @@
 
 ### Reliability
 
+- Made an interrupted long-running Final UAT controller resumable from the one exact incomplete evidence
+  directory. Resume is poll-only for the already-admitted Initial operation, rejects ambiguous sessions and
+  cannot submit another Initial Queue message.
+- Stopped pinning a short-lived Cloudflare OAuth bearer into long-running Wrangler commands; Wrangler now uses
+  its refreshable OAuth session and Queue REST authorization is resolved just in time for each mutation.
+- Reduced active-deployment polling to a bounded cadence while retaining first, periodic and completion checks,
+  preventing authentication churn during multi-hour durable work.
+- Bound Safe restore before resumed remote preflight so any controller exit still owns the existing active flag
+  window; the resumed path accepts at most one exact live Chatwoot lock and requires it to close at completion.
 - Aligned Reporting-event names with Chatwoot's authoritative listener contract, retaining opened/bot lifecycle
   evidence and mapping `conversation_resolved` time-to-resolve into resolution duration/count without double-counting
   the bot-resolved companion event; unsupported names still fail closed.

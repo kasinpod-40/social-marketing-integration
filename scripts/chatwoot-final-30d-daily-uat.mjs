@@ -6,6 +6,7 @@ import { createReadStream } from 'node:fs';
 import { chmod, mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, relative, resolve } from 'node:path';
 import { readDevVars } from './lib/dev-vars.js';
+import { buildWranglerOAuthEnvironment } from './lib/cloudflare-auth-environment.js';
 import { rebaseGeneratedWranglerConfigPaths } from './lib/rebase-generated-wrangler-config-paths.js';
 import {
   resolveCloudflareAccountId,
@@ -21,8 +22,10 @@ import {
   CHATWOOT_FINAL_UAT_TABLES,
   assertChatwootFinalUatBaselineCompatible,
   assertChatwootFinalUatBaselinePreserved,
+  assertChatwootFinalUatControllerResume,
   assertChatwootFinalUatConfirmation,
   assertChatwootFinalUatPreflight,
+  assertChatwootFinalUatResumeIdentity,
   buildChatwootFinalUatConfigWindow,
   buildChatwootFinalUatJob,
   buildChatwootFinalUatPreflightSql,
@@ -97,10 +100,12 @@ async function main() {
   await mkdir(evidenceDir, { recursive: true, mode: 0o700 });
   const recoverySessionPath = env.MKT_CHATWOOT_INITIAL_FAILURE_RECOVERY_SESSION_PATH ?? null;
   const session = await sessionFor(evidenceDir, head, recoverySessionPath);
+  const resume = await loadControllerResume(env, session);
   const recoveryBoundary = resolveInitialRecoveryBoundary(env, recoverySessionPath !== null);
   const target = {
     head, sourcePath, config, evidenceDir, session, env,
     recovery: recoverySessionPath !== null,
+    resume,
     recoveryBoundary,
     allowedIncidentCounts: recoveryBoundary?.allowedIncidentCounts
       ?? Object.freeze({ dlqRecords: 0, openAlerts: 0 }),
@@ -111,16 +116,34 @@ async function main() {
   await generatedDryRun(target, config.activeText, 'active');
   target.cf = cloudflareTarget(target, sourceText);
 
+  if (resume) {
+    // The interrupted controller already opened the active flag window. Own Safe restore before
+    // any resumed remote preflight so every exit path closes that existing window.
+    safeRestore = {
+      target,
+      baselineVersion: resume.baselineVersion,
+      activeVersion: resume.activeVersion,
+    };
+  }
+
   const preflightResult = await preflight(target);
   target.baseline = preflightResult.baseline;
   await evidence(target, 'read-only-preflight', preflightResult);
   const backup = await d1Backup(target);
   await evidence(target, 'd1-backup', backup);
 
-  const activeVersion = deploy(target, config.activeText, 'active');
-  safeRestore = { target, baselineVersion: preflightResult.activeVersion, activeVersion };
+  const activeVersion = resume
+    ? preflightResult.activeVersion
+    : deploy(target, config.activeText, 'active');
+  if (!resume) {
+    safeRestore = { target, baselineVersion: preflightResult.activeVersion, activeVersion };
+  }
   verifyDeployment(target, activeVersion, 'active');
-  await evidence(target, 'active-deployment', { activeVersion, trueFlags: CHATWOOT_FINAL_UAT_ACTIVE_TRUE_FLAGS });
+  await evidence(target, 'active-deployment', {
+    activeVersion,
+    resumedController: Boolean(resume),
+    trueFlags: CHATWOOT_FINAL_UAT_ACTIVE_TRUE_FLAGS,
+  });
 
   const initial = await operationFlow(target, session.initial, 'initial');
   const daily = await operationFlow(target, session.daily, 'daily', initial.replaySnapshot);
@@ -214,6 +237,65 @@ async function sessionFor(directory, head, recoverySessionPath = null) {
   return value;
 }
 
+async function loadControllerResume(env, session) {
+  const configured = env.MKT_CHATWOOT_FINAL_UAT_RESUME_EVIDENCE_DIR;
+  if (!configured) return null;
+  const directory = inside(configured);
+  for (const forbidden of ['summary.json', 'safe-restore.json']) {
+    if (await exists(join(directory, forbidden))) {
+      fail(
+        'Completed or safely restored evidence cannot enter controller resume',
+        'CHATWOOT_FINAL_UAT_CONTROLLER_RESUME_BLOCKED',
+        { forbidden },
+      );
+    }
+  }
+  const retainedSession = validateRetainedSession(await readJson(join(directory, 'session.json')));
+  assertChatwootFinalUatResumeIdentity(session.initial, retainedSession.initial);
+  assertChatwootFinalUatResumeIdentity(session.daily, retainedSession.daily);
+  const preflight = unwrapEvidence(await readJson(join(directory, 'read-only-preflight.json')));
+  const activeDeployment = unwrapEvidence(await readJson(join(directory, 'active-deployment.json')));
+  const initialAttempt = await readJson(join(directory, 'initial-send.attempt.json'));
+  if (initialAttempt.operationId !== session.initial.operationId
+      || initialAttempt.workKey !== session.initial.workKey
+      || initialAttempt.generation !== session.initial.generation) {
+    fail(
+      'Prior Initial attempt marker identity drifted',
+      'CHATWOOT_FINAL_UAT_CONTROLLER_RESUME_BLOCKED',
+    );
+  }
+  const baselineVersion = requireVersionId(preflight.activeVersion, 'resume.preflight.activeVersion');
+  const activeVersion = requireVersionId(
+    activeDeployment.activeVersion,
+    'resume.activeDeployment.activeVersion',
+  );
+  const baseline = preflight.baseline;
+  if (!baseline?.d1Counts || !baseline?.larkCounts) {
+    fail('Prior baseline evidence is missing', 'CHATWOOT_FINAL_UAT_CONTROLLER_RESUME_BLOCKED');
+  }
+  return Object.freeze({
+    directory,
+    baselineVersion,
+    activeVersion,
+    baseline,
+  });
+}
+
+async function readJson(path) {
+  try {
+    return JSON.parse(await readFile(path, 'utf8'));
+  } catch (cause) {
+    fail('Controller resume evidence is missing or invalid', 'CHATWOOT_FINAL_UAT_CONTROLLER_RESUME_BLOCKED', {
+      fileName: relative(ROOT, path),
+      errorCode: cause?.code ?? 'JSON_PARSE_FAILED',
+    });
+  }
+}
+
+function unwrapEvidence(value) {
+  return value?.data && typeof value.data === 'object' ? value.data : value;
+}
+
 async function localGates() {
   const commands = [
     ['npm', ['ci']],
@@ -233,29 +315,46 @@ async function localGates() {
 
 function cloudflareTarget(target, sourceText) {
   const baseEnv = pickEnv(target.env);
-  const whoami = text('npx', ['wrangler', 'whoami', '--json'], { env: baseEnv });
+  const wranglerEnv = buildWranglerOAuthEnvironment(baseEnv);
+  const whoami = text('npx', ['wrangler', 'whoami', '--json'], { env: wranglerEnv });
   const accountId = resolveCloudflareAccountId({
     explicitAccountId: target.env.CLOUDFLARE_ACCOUNT_ID,
     preferredAccount: target.env.MKT_CHATWOOT_FINAL_UAT_ACCOUNT,
     configText: sourceText,
     whoamiOutput: whoami,
   });
-  const selected = { ...baseEnv, CLOUDFLARE_ACCOUNT_ID: accountId };
+  const selected = { ...wranglerEnv, CLOUDFLARE_ACCOUNT_ID: accountId };
   const auth = resolveCloudflareBearerAuth({
-    explicitApiToken: target.env.CLOUDFLARE_API_TOKEN,
-    authOutput: target.env.CLOUDFLARE_API_TOKEN ? null
-      : text('npx', ['wrangler', 'auth', 'token', '--json'], { env: selected }),
+    authOutput: text('npx', ['wrangler', 'auth', 'token', '--json'], { env: selected }),
   });
-  const env = { ...selected, CLOUDFLARE_API_TOKEN: auth.token };
+  const queueEnv = { ...selected, CLOUDFLARE_API_TOKEN: auth.token };
   const queueId = target.env.MKT_CHATWOOT_FINAL_UAT_QUEUE_ID
-    ?? resolveWooCommerceQueueId(text('npx', ['wrangler', 'queues', 'list', '--json'], { env }), configName(target, 'mainQueueName'));
-  return { accountId, queueId, env, authType: auth.type };
+    ?? resolveWooCommerceQueueId(text('npx', ['wrangler', 'queues', 'list', '--json'], {
+      env: queueEnv,
+    }), configName(target, 'mainQueueName'));
+  return { accountId, queueId, wranglerEnv: selected, authType: auth.type };
+}
+
+function freshQueueBearer(target) {
+  const auth = resolveCloudflareBearerAuth({
+    authOutput: text('npx', ['wrangler', 'auth', 'token', '--json'], {
+      env: target.cf.wranglerEnv,
+    }),
+  });
+  if (auth.type !== target.cf.authType) {
+    fail('Cloudflare authentication type changed during UAT', 'CHATWOOT_FINAL_UAT_AUTH_DRIFT');
+  }
+  return auth.token;
 }
 
 async function preflight(target) {
-  const env = target.cf.env;
+  const env = target.cf.wranglerEnv;
   const activeVersion = activeVersionId(deploymentStatus(target));
-  assertFlags(versionView(target, activeVersion), 'safe');
+  if (target.resume && activeVersion !== target.resume.activeVersion) {
+    fail('Active Worker version drifted from interrupted controller evidence',
+      'CHATWOOT_FINAL_UAT_CONCURRENT_DEPLOYMENT');
+  }
+  assertFlags(versionView(target, activeVersion), target.resume ? 'active' : 'safe');
   assertQueue(target, configName(target, 'mainQueueName'), {
     maxConcurrency: 1, maxBatchSize: 10, maxBatchTimeout: 30, maxRetries: 5,
     deadLetterQueue: configName(target, 'dlqName'),
@@ -273,15 +372,24 @@ async function preflight(target) {
     '--config', target.sourcePath, '--format', 'json'], { env })).map((item) => String(item.name));
   const missing = REQUIRED_SECRETS.filter((name) => !secrets.includes(name));
   if (missing.length) fail('Required Worker Secret names are missing', 'CHATWOOT_FINAL_UAT_SECRET_MISSING', { missing });
+  const resumeSnapshot = target.resume ? snapshot(target, target.session.initial) : null;
+  const resumeBoundary = resumeSnapshot
+    ? assertChatwootFinalUatControllerResume(resumeSnapshot, target.session.initial)
+    : null;
   const d1 = assertChatwootFinalUatPreflight(
     normalizeChatwootFinalUatPreflight(d1Row(target, buildChatwootFinalUatPreflightSql())),
-    { expectedActiveWork: target.recovery ? 1 : 0 },
+    { expectedActiveWork: resumeSnapshot
+      ? Number(resumeSnapshot.workLifecycleStatus === 'active')
+      : target.recovery ? 1 : 0 },
   );
   const lark = await larkCounts(target, true);
-  const baseline = assertChatwootFinalUatBaselineCompatible(
-    mapChatwootFinalUatD1BaselineCounts(d1.businessCounts),
-    lark,
-  );
+  const currentD1 = mapChatwootFinalUatD1BaselineCounts(d1.businessCounts);
+  const baseline = target.resume?.baseline ?? assertChatwootFinalUatBaselineCompatible(currentD1, lark);
+  if (target.resume) {
+    assertChatwootFinalUatBaselinePreserved(baseline.d1Counts, currentD1, 'resume:d1');
+    assertChatwootFinalUatBaselinePreserved(baseline.larkCounts, lark, 'resume:lark');
+    assertChatwootFinalUatBaselineCompatible(currentD1, lark);
+  }
   return {
     activeVersion,
     pendingMigrations: 0,
@@ -290,6 +398,7 @@ async function preflight(target) {
     baseline,
     larkTableCount: CHATWOOT_FINAL_UAT_TABLES.length,
     larkRows: baseline.larkRows,
+    resumeBoundary,
     remoteMutationCount: 0,
   };
 }
@@ -297,7 +406,9 @@ async function preflight(target) {
 async function d1Backup(target) {
   const path = join(target.evidenceDir, `chatwoot-before-uat-${Date.now()}.sql`);
   run('npx', ['wrangler', 'd1', 'export', configName(target, 'databaseName'), '--remote',
-    '--config', target.sourcePath, '--output', path, '--skip-confirmation'], { env: target.cf.env });
+    '--config', target.sourcePath, '--output', path, '--skip-confirmation'], {
+    env: target.cf.wranglerEnv,
+  });
   let metadata;
   try {
     metadata = await stat(path);
@@ -328,12 +439,28 @@ async function operationFlow(target, operation, label, previous = null) {
   const firstSend = join(target.evidenceDir, `${label}-send.attempt.json`);
   const before = snapshot(target, operation);
   const recoveringInitial = target.recovery && label === 'initial';
-  if (!recoveringInitial && !await exists(firstSend) && (before.workLifecycleStatus || before.mainQueueAttempts)) {
+  const resumingInitial = Boolean(target.resume) && label === 'initial';
+  if (!recoveringInitial && !resumingInitial && !await exists(firstSend)
+      && (before.workLifecycleStatus || before.mainQueueAttempts)) {
     fail('Stable operation identity already exists', 'CHATWOOT_FINAL_UAT_OPERATION_COLLISION', { label });
   }
-  if (recoveringInitial) await sendRecoveryContinuationOnce(target, operation, firstSend, before);
+  if (resumingInitial) {
+    const resume = assertChatwootFinalUatControllerResume(before, operation);
+    await privateJson(firstSend, {
+      operationId: operation.operationId,
+      workKey: operation.workKey,
+      generation: operation.generation,
+      resumedFrom: relative(ROOT, target.resume.directory),
+      priorAttemptVerified: true,
+      queueSend: false,
+      minimumAttempts: resume.minimumAttempts,
+      resumedAt: new Date().toISOString(),
+    });
+  } else if (recoveringInitial) await sendRecoveryContinuationOnce(target, operation, firstSend, before);
   else await sendOnce(target, operation, firstSend, 0);
-  const completed = await poll(target, operation, recoveringInitial ? before.mainQueueAttempts + 1 : 2);
+  const completed = await poll(target, operation, resumingInitial
+    ? before.mainQueueAttempts
+    : recoveringInitial ? before.mainQueueAttempts + 1 : 2);
   const classified = classifyChatwootFinalUatCompletion(completed, operation, {
     allowedDlqRecords: recoveringInitial ? target.allowedIncidentCounts.dlqRecords : 0,
     allowedOpenAlerts: target.allowedIncidentCounts.openAlerts,
@@ -407,7 +534,7 @@ async function sendRecoveryContinuationOnce(target, operation, attemptPath, befo
   const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(target.cf.accountId)}`
     + `/queues/${encodeURIComponent(target.cf.queueId)}/messages`, {
     method: 'POST',
-    headers: { authorization: `Bearer ${target.cf.env.CLOUDFLARE_API_TOKEN}`, 'content-type': 'application/json' },
+    headers: { authorization: `Bearer ${freshQueueBearer(target)}`, 'content-type': 'application/json' },
     body: JSON.stringify({ body: job, content_type: 'json' }),
     signal: AbortSignal.timeout(30_000),
   });
@@ -504,7 +631,7 @@ async function sendOnce(target, operation, attemptPath, priorAttempts) {
   const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(target.cf.accountId)}`
     + `/queues/${encodeURIComponent(target.cf.queueId)}/messages`, {
     method: 'POST',
-    headers: { authorization: `Bearer ${target.cf.env.CLOUDFLARE_API_TOKEN}`, 'content-type': 'application/json' },
+    headers: { authorization: `Bearer ${freshQueueBearer(target)}`, 'content-type': 'application/json' },
     body: JSON.stringify({ body: job, content_type: 'json' }),
     signal: AbortSignal.timeout(30_000),
   });
@@ -515,13 +642,22 @@ async function sendOnce(target, operation, attemptPath, priorAttempts) {
 async function poll(target, operation, minimumAttempts) {
   const max = positive(target.env.MKT_CHATWOOT_FINAL_UAT_MAX_POLLS ?? 2_400, 'maxPolls');
   const interval = positive(target.env.MKT_CHATWOOT_FINAL_UAT_POLL_INTERVAL_MS ?? 10_000, 'pollInterval');
+  const deploymentCheckEvery = positive(
+    target.env.MKT_CHATWOOT_FINAL_UAT_DEPLOYMENT_CHECK_EVERY_POLLS ?? 30,
+    'deploymentCheckEveryPolls',
+  );
   let last;
   for (let index = 1; index <= max; index += 1) {
-    activeVersionId(deploymentStatus(target), safeRestore?.activeVersion);
+    if (index === 1 || index % deploymentCheckEvery === 0) {
+      activeVersionId(deploymentStatus(target), safeRestore?.activeVersion);
+    }
     last = snapshot(target, operation);
     process.stdout.write(`${JSON.stringify({ event: 'chatwoot_uat_progress', operation: operation.mode,
       poll: index, ...sanitizeChatwootFinalProgress(last) })}\n`);
-    if (last.workLifecycleStatus === 'completed' && last.mainQueueAttempts >= minimumAttempts) return last;
+    if (last.workLifecycleStatus === 'completed' && last.mainQueueAttempts >= minimumAttempts) {
+      activeVersionId(deploymentStatus(target), safeRestore?.activeVersion);
+      return last;
+    }
     const allowedFailedUnits = target.recovery && operation.mode === 'initial'
       && last.workLifecycleStatus === 'active'
       ? Number(target.recoveryBoundary.allowedPreexistingFailedUnits ?? 0)
@@ -588,7 +724,7 @@ function deploy(target, content, mode) {
   try {
     const output = text('npx', ['wrangler', 'deploy', '--config', generated,
       '--message', `${CHATWOOT_FINAL_UAT_CONTRACT_VERSION} mode=${mode} git=${target.head}`],
-    { env: target.cf.env, raw: true });
+    { env: target.cf.wranglerEnv, raw: true });
     const ids = output.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/giu) ?? [];
     if (!ids.length) fail('Deploy output lacks version ID', 'CHATWOOT_FINAL_UAT_DEPLOY_VERSION_MISSING');
     return ids.at(-1).toLowerCase();
@@ -625,11 +761,11 @@ function verifyDeployment(target, expectedVersion, mode) {
 
 function deploymentStatus(target) {
   return JSON.parse(text('npx', ['wrangler', 'deployments', 'status', '--name', configName(target, 'workerName'),
-    '--config', target.sourcePath, '--json'], { env: target.cf.env }));
+    '--config', target.sourcePath, '--json'], { env: target.cf.wranglerEnv }));
 }
 function versionView(target, version) {
   return JSON.parse(text('npx', ['wrangler', 'versions', 'view', version, '--name', configName(target, 'workerName'),
-    '--config', target.sourcePath, '--json'], { env: target.cf.env }));
+    '--config', target.sourcePath, '--json'], { env: target.cf.wranglerEnv }));
 }
 function activeVersionId(status, expected = null) {
   const item = Array.isArray(status) ? status[0] : status;
@@ -653,7 +789,9 @@ function assertFlags(view, mode) {
   if (stableJson(trueFlags) !== stableJson(expected)) fail('Remote execution flag window is invalid', 'CHATWOOT_FINAL_UAT_REMOTE_FLAG_INVALID', { mode, trueFlags });
 }
 function assertQueue(target, queueName, expected) {
-  const value = JSON.parse(text('npx', ['wrangler', 'queues', 'consumer', 'list', queueName, '--json'], { env: target.cf.env }));
+  const value = JSON.parse(text('npx', ['wrangler', 'queues', 'consumer', 'list', queueName, '--json'], {
+    env: target.cf.wranglerEnv,
+  }));
   const items = Array.isArray(value) ? value : value.result ?? value.consumers ?? [];
   try {
     return assertWooCommerceQueueConsumerTopology(items, queueName, expected);
@@ -683,7 +821,8 @@ async function assertTriggers(target) {
 }
 async function cfJson(target, path) {
   const response = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
-    headers: { authorization: `Bearer ${target.cf.env.CLOUDFLARE_API_TOKEN}` }, signal: AbortSignal.timeout(30_000),
+    headers: { authorization: `Bearer ${freshQueueBearer(target)}` },
+    signal: AbortSignal.timeout(30_000),
   });
   const body = await response.json().catch(() => null);
   if (!response.ok || body?.success !== true) fail('Cloudflare read failed', 'CHATWOOT_FINAL_UAT_CLOUDFLARE_READ_FAILED', { status: response.status });
@@ -692,7 +831,7 @@ async function cfJson(target, path) {
 
 function d1Row(target, sql) {
   const parsed = JSON.parse(text('npx', ['wrangler', 'd1', 'execute', configName(target, 'databaseName'), '--remote', '--json',
-    '--config', target.sourcePath, '--command', sql], { env: target.cf.env }));
+    '--config', target.sourcePath, '--command', sql], { env: target.cf.wranglerEnv }));
   const row = Array.isArray(parsed) ? parsed.flatMap((item) => item.results ?? [])[0] : parsed.results?.[0];
   if (!row) fail('D1 query returned no row', 'CHATWOOT_FINAL_UAT_D1_EMPTY');
   return row;
@@ -735,6 +874,13 @@ function configName(target, name) { return target.config[name]; }
 function inside(value) { const path = resolve(ROOT, value); if (relative(ROOT, path).startsWith('..')) fail('Path leaves Repository', 'CHATWOOT_FINAL_UAT_PATH_INVALID'); return path; }
 function exact(value, expected, name) { if (value !== expected) fail(`${name} must equal ${expected}`, 'CHATWOOT_FINAL_UAT_TARGET_INVALID', { name }); }
 function positive(value, name) { const number = Number(value); if (!Number.isSafeInteger(number) || number <= 0) fail(`${name} must be positive`, 'CHATWOOT_FINAL_UAT_VALUE_INVALID'); return number; }
+function requireVersionId(value, name) {
+  const id = String(value ?? '');
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(id)) {
+    fail(`${name} is invalid`, 'CHATWOOT_FINAL_UAT_CONTROLLER_RESUME_BLOCKED');
+  }
+  return id.toLowerCase();
+}
 function scrub(value) { if (value === null || value === undefined) return value; if (Array.isArray(value)) return value.map(scrub);
   if (typeof value !== 'object') return value; return Object.fromEntries(Object.entries(value)
     .filter(([key]) => !/token|secret|authorization|tableId|accountId$|queueId$/iu.test(key)).map(([key, nested]) => [key, scrub(nested)])); }

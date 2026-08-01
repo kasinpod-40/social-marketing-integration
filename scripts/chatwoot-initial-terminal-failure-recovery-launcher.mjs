@@ -3,13 +3,14 @@
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { createReadStream } from 'node:fs';
-import { chmod, mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, readdir, rename, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, relative, resolve } from 'node:path';
 
 import { buildWranglerOAuthEnvironment } from './lib/cloudflare-auth-environment.js';
 import { readDevVars } from './lib/dev-vars.js';
 import {
   CHATWOOT_FINAL_UAT_SUCCESS_MARKER,
+  assertChatwootFinalUatControllerResume,
   buildChatwootFinalUatSnapshotSql,
   classifyChatwootFinalUatCompletion,
   normalizeChatwootFinalUatSnapshot,
@@ -18,6 +19,7 @@ import {
   CHATWOOT_INITIAL_FAILURE_INSPECTOR_CONFIRMATION,
   CHATWOOT_INITIAL_FAILURE_RECOVERY_CONFIRMATION,
   CHATWOOT_INITIAL_FAILURE_RECOVERY_CONTRACT_VERSION,
+  CHATWOOT_INITIAL_RECOVERY_BOUNDARIES,
   assertChatwootInitialFailureRecoveryConfirmation,
   buildChatwootCurrentIncidentClosureSql,
   buildChatwootInitialFailureReactivationSql,
@@ -68,19 +70,35 @@ async function main() {
     [CHATWOOT_INITIAL_FAILURE_INSPECTOR_CONFIRMATION.envName]:
       CHATWOOT_INITIAL_FAILURE_INSPECTOR_CONFIRMATION.value,
   });
-  runInherited('node', ['scripts/chatwoot-initial-terminal-failure-inspector.mjs', '--execute'], env);
-  const inspectionPath = join(
-    ROOT,
-    'outputs',
-    'chatwoot-initial-terminal-failure-inspector',
-    head,
-    'inspection.json',
-  );
-  const evidence = JSON.parse(await readFile(inspectionPath, 'utf8'));
-  const inspection = evidence.inspection;
-  const recoveryBoundary = classifyChatwootInitialRecoveryBoundary(inspection);
-  const retainedSessionPath = resolve(ROOT, evidence.retainedSessionPath);
-  const session = validateRetainedSession(JSON.parse(await readFile(retainedSessionPath, 'utf8')));
+  const controllerResume = await findControllerResume(configPath, env, head);
+  let inspection;
+  let recoveryBoundary;
+  let retainedSessionPath;
+  let session;
+  if (controllerResume) {
+    ({ retainedSessionPath, session } = controllerResume);
+    inspection = Object.freeze({
+      currentDlqRecords: controllerResume.snapshot.dlqRecords,
+      currentOpenAlerts: controllerResume.snapshot.openChatwootAlerts,
+      workLifecycle: controllerResume.snapshot.workLifecycleStatus,
+      operation: session.initial,
+    });
+    recoveryBoundary = CHATWOOT_INITIAL_RECOVERY_BOUNDARIES.reportingEventNames;
+  } else {
+    runInherited('node', ['scripts/chatwoot-initial-terminal-failure-inspector.mjs', '--execute'], env);
+    const inspectionPath = join(
+      ROOT,
+      'outputs',
+      'chatwoot-initial-terminal-failure-inspector',
+      head,
+      'inspection.json',
+    );
+    const evidence = JSON.parse(await readFile(inspectionPath, 'utf8'));
+    inspection = evidence.inspection;
+    recoveryBoundary = classifyChatwootInitialRecoveryBoundary(inspection);
+    retainedSessionPath = resolve(ROOT, evidence.retainedSessionPath);
+    session = validateRetainedSession(JSON.parse(await readFile(retainedSessionPath, 'utf8')));
+  }
   if (inspection?.operation?.operationId !== session.initial.operationId) {
     throw operatorError('Inspector/session identity drifted', 'CHATWOOT_INITIAL_FAILURE_SESSION_INVALID');
   }
@@ -111,7 +129,8 @@ async function main() {
       throw operatorError('Exact Work reactivation did not update one row', 'CHATWOOT_INITIAL_FAILURE_REACTIVATION_FAILED');
     }
     reactivatedRows = 1;
-  } else if (inspection.workLifecycle !== 'active') {
+  } else if (inspection.workLifecycle !== 'active'
+      && !(controllerResume && inspection.workLifecycle === 'completed')) {
     throw operatorError('Recovery Work is neither terminal nor reactivated', 'CHATWOOT_INITIAL_FAILURE_BOUNDARY_DRIFT');
   }
 
@@ -121,6 +140,9 @@ async function main() {
       CHATWOOT_FINAL_SOURCE_CONFIG_RECOVERY_CONFIRMATION.value,
     MKT_CHATWOOT_INITIAL_FAILURE_RECOVERY_SESSION_PATH: retainedSessionPath,
     MKT_CHATWOOT_INITIAL_FAILURE_RECOVERY_BOUNDARY: recoveryBoundary,
+    ...(controllerResume ? {
+      MKT_CHATWOOT_FINAL_UAT_RESUME_EVIDENCE_DIR: controllerResume.evidenceDirectory,
+    } : {}),
   });
   runInherited('node', ['scripts/chatwoot-final-source-config-recovery-launcher.mjs', '--execute'], childEnv);
 
@@ -210,6 +232,69 @@ async function main() {
   };
   await writePrivateJson(join(recoveryDirectory, '03-summary.json'), final);
   process.stdout.write(`${JSON.stringify(final, null, 2)}\n`);
+}
+
+async function findControllerResume(configPath, env, currentHead) {
+  const root = join(ROOT, 'outputs', 'chatwoot-final-30d-daily-uat');
+  let entries;
+  try {
+    entries = await readdir(root, { withFileTypes: true });
+  } catch (cause) {
+    if (cause?.code === 'ENOENT') return null;
+    throw cause;
+  }
+  const candidates = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === currentHead) continue;
+    const directory = join(root, entry.name);
+    const required = [
+      'session.json', 'read-only-preflight.json', 'active-deployment.json',
+      'initial-send.attempt.json',
+    ];
+    if (!(await Promise.all(required.map((name) => regularFile(join(directory, name)))))
+      .every(Boolean)) continue;
+    if (await regularFile(join(directory, 'summary.json'))
+        || await regularFile(join(directory, 'safe-restore.json'))) continue;
+    const session = validateRetainedSession(JSON.parse(await readFile(
+      join(directory, 'session.json'),
+      'utf8',
+    )));
+    const attempt = JSON.parse(await readFile(join(directory, 'initial-send.attempt.json'), 'utf8'));
+    if (attempt.operationId !== session.initial.operationId
+        || attempt.workKey !== session.initial.workKey
+        || attempt.generation !== session.initial.generation) continue;
+    candidates.push({ directory, session });
+  }
+  if (candidates.length === 0) return null;
+  if (candidates.length !== 1) {
+    throw operatorError(
+      'Multiple incomplete Chatwoot controller sessions are ambiguous',
+      'CHATWOOT_INITIAL_FAILURE_SESSION_INVALID',
+      { candidateCount: candidates.length },
+    );
+  }
+  const candidate = candidates[0];
+  const snapshot = normalizeChatwootFinalUatSnapshot(readOneD1Row(
+    buildWranglerOAuthEnvironment(env),
+    configPath,
+    buildChatwootFinalUatSnapshotSql(candidate.session.initial),
+  ));
+  assertChatwootFinalUatControllerResume(snapshot, candidate.session.initial);
+  return Object.freeze({
+    evidenceDirectory: candidate.directory,
+    retainedSessionPath: join(candidate.directory, 'session.json'),
+    session: candidate.session,
+    snapshot,
+  });
+}
+
+async function regularFile(path) {
+  try {
+    return (await stat(path)).isFile();
+  } catch (cause) {
+    if (cause?.code === 'ENOENT') return false;
+    throw cause;
+  }
 }
 
 function printPlan() {

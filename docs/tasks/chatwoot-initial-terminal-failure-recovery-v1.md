@@ -19,6 +19,21 @@ PRODUCTION                     = blocked
 
 `docs/current-task.md` is owned by the concurrent Meta workstream and is intentionally unchanged.
 
+## Long-running controller resume addendum
+
+The authorized live recovery advanced the same Initial operation through Conversation page 2, but the local Final
+UAT controller stopped after its Cloudflare bearer expired during prolonged polling. Remote inspection proved the
+Work remained active, unit 2 completed successfully, unit 3 was running, the durable cursor advanced to sequence 3,
+and no ninth DLQ or fifteenth Alert was created.
+
+The guarded command now detects exactly one prior incomplete Final UAT evidence directory and resumes it without
+an Initial Queue send. It binds the retained Initial and Daily identities, the original baseline, safe/active Worker
+versions, attempts >= 17, DLQ 8, Alerts 14, zero failed Coverage and the advanced durable cursor. Ambiguous,
+completed, safely restored or drifted evidence is rejected. Wrangler uses refreshable OAuth while direct Queue REST
+authorization is obtained just in time, and deployment status is checked first, periodically and at completion.
+The resumed controller owns Safe restore before any remote preflight and preserves the original 30-day Initial,
+3-day Daily, replay and 15-target parity contract.
+
 ## Exact read-only diagnosis
 
 The repository inspector selected the latest retained session whose exact operation was proven by Remote D1,
@@ -125,3 +140,8 @@ The SELECT-only inspector was executed against the exact current incident and al
 reported zero rows written. Repository implementation and tests performed no Provider request, Queue action,
 Remote D1/Lark mutation, Worker deployment, Secret mutation, incident closure, Schedule/Webhook action or
 Production action. Exact commit Head and Draft PR URL are recorded in the delivery report.
+
+The controller-resume hotfix subsequently passed `npm ci`, `npm run check`, 30 focused recovery tests,
+1,936 Node tests, 16 Workers-runtime tests, 101 report-reliability tests, zero-high `npm audit`, deploy dry-run and
+`git diff --check`. Its repository implementation performed no additional Queue send, Remote D1/Lark mutation,
+Worker deployment, incident closure, Schedule/Webhook action or Production action.

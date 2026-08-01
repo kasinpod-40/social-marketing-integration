@@ -9,6 +9,12 @@ export const CHATWOOT_FINAL_UAT_CONFIRMATION = Object.freeze({
   value: 'EXECUTE_CHATWOOT_30D_DAILY_UAT',
 });
 export const CHATWOOT_FINAL_UAT_SUCCESS_MARKER = 'CHATWOOT_30D_DAILY_UAT_COMPLETED_SAFE';
+export const CHATWOOT_FINAL_UAT_CONTROLLER_RESUME_BOUNDARY = Object.freeze({
+  minimumMainQueueAttempts: 17,
+  minimumNextSequence: 2,
+  dlqRecords: 8,
+  openChatwootAlerts: 14,
+});
 export const CHATWOOT_FINAL_UAT_ACTIVE_TRUE_FLAGS = Object.freeze([
   'MKT_CONNECTOR_CHATWOOT_ENABLED',
   'MKT_CHATWOOT_D1_WRITE_ENABLED',
@@ -360,6 +366,66 @@ export function assertChatwootFinalUatBaselinePreserved(
     );
   }
   return deepFreeze({ accepted: true, label, baseline, current });
+}
+
+/**
+ * Accept only the one already-admitted Initial operation after the local controller stopped.
+ * This boundary authorizes polling only: it never authorizes another Initial Queue send.
+ */
+export function assertChatwootFinalUatControllerResume(snapshot = {}, operation = {}) {
+  const boundary = CHATWOOT_FINAL_UAT_CONTROLLER_RESUME_BOUNDARY;
+  const expectedWorkKey = `chatwoot:chemistry_k:${requireOperationId(operation.operationId)}`;
+  requireExact(operation.mode, 'initial', 'operation.mode');
+  requireExact(operation.workKey, expectedWorkKey, 'operation.workKey');
+  requireExact(operation.syncRunId, expectedWorkKey, 'operation.syncRunId');
+  requireTimestamp(operation.originalRequestedAt, 'operation.originalRequestedAt');
+  const active = snapshot.workLifecycleStatus === 'active';
+  const completed = snapshot.workLifecycleStatus === 'completed';
+  const invalid = [];
+  if (!active && !completed) invalid.push('work_lifecycle');
+  if (snapshot.mainQueueAttempts < boundary.minimumMainQueueAttempts) invalid.push('queue_attempts');
+  if (snapshot.dlqRecords !== boundary.dlqRecords) invalid.push('dlq_records');
+  if (snapshot.openChatwootAlerts !== boundary.openChatwootAlerts) invalid.push('open_alerts');
+  if (snapshot.failedCoverageRuns !== 0 || snapshot.failedCoverageRows !== 0) {
+    invalid.push('coverage_failure');
+  }
+  if (active && snapshot.activeNextSequence < boundary.minimumNextSequence) invalid.push('durable_sequence');
+  if (active && snapshot.failedUnitSyncRuns !== 0) invalid.push('failed_unit');
+  if (invalid.length > 0) {
+    throw uatError(
+      'Chatwoot controller resume boundary drifted',
+      'CHATWOOT_FINAL_UAT_CONTROLLER_RESUME_BLOCKED',
+      { invalid },
+    );
+  }
+  return deepFreeze({
+    accepted: true,
+    pollOnly: true,
+    queueSend: false,
+    minimumAttempts: snapshot.mainQueueAttempts,
+    lifecycle: snapshot.workLifecycleStatus,
+  });
+}
+
+export function assertChatwootFinalUatResumeIdentity(current = {}, retained = {}) {
+  for (const field of [
+    'operationId', 'workKey', 'syncRunId', 'originalRequestedAt', 'generation',
+  ]) {
+    if (current?.[field] !== retained?.[field]) {
+      throw uatError(
+        'Chatwoot controller resume session identity drifted',
+        'CHATWOOT_FINAL_UAT_CONTROLLER_RESUME_BLOCKED',
+        { field },
+      );
+    }
+  }
+  if (!['initial', 'daily'].includes(current.mode) || current.mode !== retained.mode) {
+    throw uatError(
+      'Chatwoot controller resume session mode drifted',
+      'CHATWOOT_FINAL_UAT_CONTROLLER_RESUME_BLOCKED',
+    );
+  }
+  return true;
 }
 
 function normalizeChatwootFinalUatLogicalCounts(values = {}, label = 'counts') {

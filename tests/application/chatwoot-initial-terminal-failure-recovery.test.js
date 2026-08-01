@@ -592,6 +592,10 @@ test('public recovery is plan-only and delegates exact resume through existing F
   assert.match(source, /buildChatwootInitialFailureReactivationSql/u);
   assert.match(source, /MKT_CHATWOOT_INITIAL_FAILURE_RECOVERY_SESSION_PATH/u);
   assert.match(source, /MKT_CHATWOOT_INITIAL_FAILURE_RECOVERY_BOUNDARY/u);
+  assert.match(source, /findControllerResume/u);
+  assert.match(source, /MKT_CHATWOOT_FINAL_UAT_RESUME_EVIDENCE_DIR/u);
+  assert.match(source, /Multiple incomplete Chatwoot controller sessions are ambiguous/u);
+  assert.match(source, /assertChatwootFinalUatControllerResume/u);
   assert.match(source, /chatwoot-final-source-config-recovery-launcher\.mjs/u);
   assert.match(source, /buildChatwootCurrentIncidentClosureSql/u);
   assert.doesNotMatch(source, /sendOnce\(/u);

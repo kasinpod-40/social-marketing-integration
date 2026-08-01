@@ -121,11 +121,12 @@ async function main() {
   });
 
   const before = readExactActiveLockCount(env);
-  if (before !== 0) {
+  const controllerResume = Boolean(sourceEnv.MKT_CHATWOOT_FINAL_UAT_RESUME_EVIDENCE_DIR);
+  if ((!controllerResume && before !== 0) || (controllerResume && before > 1)) {
     throw launcherError(
       'Exact Chatwoot Shared Reliability lock scope is active before UAT',
       'CHATWOOT_FINAL_UAT_ACTIVE_LOCK_BLOCKED',
-      { activeLockCount: before },
+      { activeLockCount: before, controllerResume },
     );
   }
 
@@ -159,6 +160,7 @@ async function main() {
     chatwootSecretBootstrap: secretBootstrap,
     activeLockCount: 0,
     ignoredConfigNormalized: true,
+    controllerResumed: controllerResume,
     scheduleEnabled: false,
     webhookEnabled: false,
     production: false,
