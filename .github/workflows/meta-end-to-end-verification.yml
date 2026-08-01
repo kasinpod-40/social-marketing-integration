@@ -48,7 +48,8 @@ jobs:
 
       - name: Diff hygiene
         run: |
-          git fetch origin main --depth=1
+          git fetch --no-tags --prune origin +refs/heads/main:refs/remotes/origin/main
+          git merge-base origin/main HEAD >/dev/null
           git diff --check origin/main...HEAD
 
       - name: Syntax architecture and repository hygiene
