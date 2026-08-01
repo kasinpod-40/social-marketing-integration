@@ -192,11 +192,12 @@ export function normalizeChatwootFinalSourceIncident(row = {}) {
   });
 }
 
-export function assertChatwootFinalSourceIncidentOpen(row = {}) {
+export function assertChatwootFinalSourceIncidentOpen(row = {}, options = {}) {
   const state = normalizeChatwootFinalSourceIncident(row);
   const exactIdentity = hasExactIncidentIdentity(state);
   const incident = CHATWOOT_FINAL_SOURCE_CONFIG_INCIDENT;
-  const accepted = hasExactImmutableFailure(state)
+  const maximumActiveLocks = count(options.maximumActiveLocks ?? 0, 'maximumActiveLocks');
+  const accepted = hasExactImmutableFailure(state, { maximumActiveLocks })
     && state.recoveryStatus === 'not_started'
     && state.recoveryReference === null
     && state.auditReference === null
@@ -417,8 +418,9 @@ function hasExactIncidentIdentity(state) {
     && state.queueMessageId === incident.messageId;
 }
 
-function hasExactImmutableFailure(state) {
+function hasExactImmutableFailure(state, options = {}) {
   const incident = CHATWOOT_FINAL_SOURCE_CONFIG_INCIDENT;
+  const maximumActiveLocks = count(options.maximumActiveLocks ?? 0, 'maximumActiveLocks');
   return state.queueRows === 1
     && state.queueAttempts === 1
     && state.metadataRows === 1
@@ -436,7 +438,7 @@ function hasExactImmutableFailure(state) {
     && state.workRows === 0
     && state.phaseRows === 0
     && state.coverageRows === 0
-    && state.activeLocks === 0;
+    && state.activeLocks <= maximumActiveLocks;
 }
 
 function incidentSummary(state, exactIdentity) {

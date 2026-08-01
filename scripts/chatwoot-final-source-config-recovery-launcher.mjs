@@ -120,6 +120,10 @@ async function main() {
   await mkdir(evidenceDirectory, { recursive: true, mode: 0o700 });
   const summaryPath = join(uatDirectory, 'summary.json');
   const summaryExists = await regularFile(summaryPath);
+  // The exact-resume controller validates the retained evidence and live Work identity
+  // before this launcher can delegate any mutation. Its one in-flight Work lock is
+  // therefore expected here; every ordinary source-config recovery still requires zero.
+  const controllerResume = Boolean(sourceEnv.MKT_CHATWOOT_FINAL_UAT_RESUME_EVIDENCE_DIR);
   const reference = recoveryReference(repository.head);
 
   let incidentBefore = readIncident(env);
@@ -135,7 +139,9 @@ async function main() {
       recoveryReference: reference,
     });
   } else if (!summaryExists) {
-    assertChatwootFinalSourceIncidentOpen(incidentBefore);
+    assertChatwootFinalSourceIncidentOpen(incidentBefore, {
+      maximumActiveLocks: controllerResume ? 1 : 0,
+    });
   } else {
     assertChatwootFinalSourceIncidentClosable(incidentBefore, {
       recoveryReference: reference,

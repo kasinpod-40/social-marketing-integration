@@ -168,6 +168,24 @@ test('open incident validator accepts pre-existing account facts but requires ex
   );
 });
 
+test('controller resume alone permits at most one existing Chatwoot lock', () => {
+  assert.throws(
+    () => assertChatwootFinalSourceIncidentOpen(incidentRow({ active_locks: 1 })),
+    (error) => error?.code === 'CHATWOOT_FINAL_SOURCE_CONFIG_INCIDENT_INVALID',
+  );
+  assert.equal(assertChatwootFinalSourceIncidentOpen(
+    incidentRow({ active_locks: 1 }),
+    { maximumActiveLocks: 1 },
+  ).accepted, true);
+  assert.throws(
+    () => assertChatwootFinalSourceIncidentOpen(
+      incidentRow({ active_locks: 2 }),
+      { maximumActiveLocks: 1 },
+    ),
+    (error) => error?.code === 'CHATWOOT_FINAL_SOURCE_CONFIG_INCIDENT_INVALID',
+  );
+});
+
 test('closure validator accepts only exact same-reference partial progress', () => {
   const partial = incidentRow({
     terminal_status: 'resolved',
@@ -292,6 +310,7 @@ test('public recovery launcher performs exact GET-only Provider gate before dele
   assert.match(source, /providerGetOnlyPreflightVerified:\s*true/u);
   assert.match(source, /providerMutationCount:\s*0/u);
   assert.match(source, /summaryExists/u);
+  assert.match(source, /maximumActiveLocks:\s*controllerResume \? 1 : 0/u);
   assert.match(source, /chatwoot-final-30d-daily-uat-launcher\.mjs/u);
   assert.match(source, /assertChatwootFinalSourceRecoverySummary/u);
   assert.match(source, /assertChatwootFinalSourceIncidentClosable/u);

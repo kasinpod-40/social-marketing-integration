@@ -31,8 +31,9 @@ an Initial Queue send. It binds the retained Initial and Daily identities, the o
 versions, attempts >= 17, DLQ 8, Alerts 14, zero failed Coverage and the advanced durable cursor. Ambiguous,
 completed, safely restored or drifted evidence is rejected. Wrangler uses refreshable OAuth while direct Queue REST
 authorization is obtained just in time, and deployment status is checked first, periodically and at completion.
-The resumed controller owns Safe restore before any remote preflight and preserves the original 30-day Initial,
-3-day Daily, replay and 15-target parity contract.
+The resumed controller owns Safe restore before any remote preflight. Its retained source-config preflight accepts
+the same one exact in-flight Chatwoot lock only in resume mode; the ordinary path continues to require zero locks.
+The original 30-day Initial, 3-day Daily, replay and 15-target parity contract is unchanged.
 
 ## Exact read-only diagnosis
 
@@ -145,3 +146,7 @@ The controller-resume hotfix subsequently passed `npm ci`, `npm run check`, 30 f
 1,936 Node tests, 16 Workers-runtime tests, 101 report-reliability tests, zero-high `npm audit`, deploy dry-run and
 `git diff --check`. Its repository implementation performed no additional Queue send, Remote D1/Lark mutation,
 Worker deployment, incident closure, Schedule/Webhook action or Production action.
+
+The source-lock follow-up keeps the default retained-incident guard at zero active locks and permits at most the
+single D1-proven in-flight lock owned by controller resume. Two locks, a non-resume invocation or any other
+retained-incident drift still fails closed before delegated mutation.

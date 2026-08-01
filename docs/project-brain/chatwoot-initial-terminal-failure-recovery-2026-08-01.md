@@ -38,3 +38,6 @@ expired even though the remote Worker continued normally. Controller resume ther
 prior evidence directory as authority, verifies attempts >= 17 with the unchanged DLQ 8 / Alert 14 incident set,
 and performs no Initial Queue send. Wrangler commands retain refreshable OAuth, Queue REST bearer resolution is
 just in time, deployment checks are periodic, and Safe restore ownership is installed before resumed preflight.
+Because the retained old source-config incident is inspected while that exact Work is still running, its open-state
+validator permits at most the same single live lock only when controller-resume evidence is present. The ordinary
+source-config path remains zero-lock, and every later closure/final-state check still requires zero active locks.
