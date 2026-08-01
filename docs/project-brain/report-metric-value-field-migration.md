@@ -3,7 +3,7 @@
 ## Current verified decision
 
 `📊 MKT_Report_Metric_Values` remains under a Dashboard Compatibility Freeze. The physical Field identities
-already used by the six Lark Dashboards are preserved; this Repository no longer attempts Dashboard Block
+already used by the six Lark Dashboards are preserved; this Repository does not attempt Dashboard Block
 PATCH, Field-identity promotion or Legacy-field deletion.
 
 ```text
@@ -22,15 +22,66 @@ are independent from the Report Metric Dashboard bindings.
 All 86 Report Metric records remain present. The 24 period-metric rows whose baseline is incomplete remain
 present with `current_value=null`; they are valid N/A Business facts and are not deleted.
 
-## Live Record compatibility closeout — 2026-08-01
+## Corrected Dashboard compatibility state — 2026-08-01
 
-The guarded Record-only backfill completed at `2026-07-31T19:33:19Z`
+The completed 28-row Record backfill closed only the Window Slicer compatibility gap in `fldMlTUP3Z`.
+It did not populate Display V2 `fldHNUhCfl`, which is the field used by all 17 Organic Statistics filters.
+The Dashboard therefore remained blank. The prior complete-closeout statement was incorrect.
+
+The audited Display V2 state is:
+
+```text
+Dashboard performance rows                 68
+Dashboard matrix                           17 metrics x 4 windows
+Display V2 correct                         18
+Display V2 blank                           48
+Reviewed alias corrections                  2
+Required Display V2 updates                50
+Display V2 conflicts outside review         0
+Baseline-incomplete current_value=null     24
+```
+
+The two reviewed alias corrections are the 3-day and 7-day
+`tiktok:baseline_coverage_rate` rows:
+
+```text
+current V2   Baseline coverage
+required V2  Baseline Coverage Rate
+```
+
+`Baseline coverage` remains correct for `tiktok:baseline_covered_content_count`.
+
+Current recovery contract:
+
+```text
+docs/tasks/lark-dashboard-display-v2-compatibility-v1.md
+```
+
+## Permanent writer correction
+
+Future Report materializations must write Display V2 from one exact Metric-key mapping so the gap does not
+return after a successful backfill. Legacy V2 output is restricted to the current Integration Workspace:
+
+```text
+customer_profile  integration_workspace
+account_id        chemistry_k
+platform          tiktok
+capability        organic
+report_type       dashboard_performance_report
+```
+
+Production and other customer/profile rows do not inherit this Integration Workspace physical-field
+compatibility layer.
+
+## Historical Window Record closeout
+
+The guarded Window-only backfill completed at `2026-07-31T19:33:19Z`
 (`2026-08-01 02:33 ICT`) through the Public Bitable Record batch-update path.
 
 ```text
 Decision                            LARK_DASHBOARD_COMPATIBILITY_RECORD_BACKFILL_FINAL_CONVERGENCE_PASS
-Confirmed Record updates            28
-Pending Record updates               0
+Confirmed Window Record updates     28
+Pending Window Record updates        0
 Window conflicts                     0
 Dashboard PATCH operations           0
 Field/schema mutations               0
@@ -41,14 +92,10 @@ Queue sends                          0
 Production                          BLOCKED
 ```
 
-The operation populated only the preserved slicer-bound Select `fldMlTUP3Z` on existing rows where Number
-`window_days` was authoritative and the Select cell was empty. Final read-only verification reconfirmed
-86 records, 24 N/A rows, zero pending updates and zero conflicts.
+That operation populated only the preserved slicer-bound Select `fldMlTUP3Z` on existing rows where Number
+`window_days` was authoritative and the Select cell was empty. It preserved 86 records and 24 N/A rows.
 
-No further Record-backfill execution is required or authorized for this closed scope. The operator remains
-available for preview-only convergence checks unless a new reviewed drift incident opens a separate task.
-
-Closeout record:
+Corrected historical record:
 
 ```text
 docs/tasks/lark-dashboard-compatibility-record-backfill-closeout-2026-08-01.md
@@ -72,15 +119,15 @@ backfill the preserved Select, retire the Number field, promote `fldMlTUP3Z` to 
 remove retained Legacy fields. Field promotion and Legacy cleanup are superseded because Dashboard
 Block/filter PATCH has no supported public Lark OpenAPI write contract in the verified operating boundary.
 
-Only the lossless missing-cell portion was retained as a Record-only operation. Number remains canonical for
-compatibility planning, while the preserved Select now carries the same `1/3/7/30` value on all applicable
-records.
+Only lossless Record-level compatibility operations are retained. Number remains authoritative for Window
+planning; Display V2 is derived from the reviewed Metric-key mapping used by the existing Statistics filters.
 
 ## Audited Integration Workspace identities
 
 ```text
 metric_key                       fldGvd3tw8 / Text
 display_name                     fldE4Nezjd / Text
+current_value                    fldCoOy2IP / Number
 Number window_days               fldbPCldTL / Number
 preserved window Select          fldMlTUP3Z / SingleSelect
 window Select v2                 fldraj0QP8 / SingleSelect
@@ -103,41 +150,32 @@ Statistics PATCH with immediate unchanged readback and zero confirmed mutation.
 - The 24 baseline-incomplete `current_value=null` rows remain N/A.
 - No manual Dashboard UI repair is required or authorized.
 
-## Record-only compatibility behavior
+## Display V2 Record-only behavior
 
-`scripts/lark-dashboard-compatibility-record-backfill.mjs` owns only the preserved Select compatibility gap.
-Its planner requires:
+`scripts/lark-dashboard-display-v2-compatibility-backfill.mjs` owns only the existing Display V2 compatibility
+gap. Its planner requires:
 
 ```text
 record count                         86
+Dashboard matrix                     68 / 17x4
 baseline-incomplete null count       24
-window conflicts                      0
-pending updates                      <= 28
-all seven Field IDs/names/types      exact
+Window compatibility conflicts        0
+Display V2 unexpected conflicts       0
+initial pending updates              50 exactly
 ```
 
-The completed operation wrote a private backup, performed no Dashboard/View/Field/schema operation, then read
-all records again and reached pending updates `0` and conflicts `0`. Already-populated rows make preview reruns
-idempotent.
+The operator may update only `fldHNUhCfl`. It fingerprints every other Record field before and after,
+prohibits `current_value` mutation, backs up reviewed values and requires all 68 Dashboard rows converged on
+readback.
+
+No Live Display V2 execution is authorized until the merged exact-main read-only preview confirms the reviewed
+`48 blank + 2 alias = 50` boundary.
 
 ## Safety state
 
-The closed live operation changed exactly 28 existing Lark Record cells. It performed no Dashboard PATCH,
-Field mutation, Record create/delete, D1 mutation, Worker deployment, Queue send, Schedule change or
-Production action.
-
-Public commands after closeout are read-only:
-
-```bash
-node scripts/lark-dashboard-compatibility-freeze-audit.mjs
-node scripts/lark-dashboard-compatibility-record-backfill.mjs
-```
-
-Detailed current contract:
-
-```text
-docs/tasks/lark-dashboard-compatibility-freeze-v1.md
-```
+The Window operation changed exactly 28 existing Lark Record cells. The Display V2 hotfix implementation
+performs no Live action. Neither scope permits Dashboard PATCH, Field mutation, Record create/delete, D1
+mutation, Worker deployment, Queue send, Schedule change or Production action.
 
 ## Historical v3.2 seven-window-chart correction
 
@@ -145,7 +183,7 @@ The exported Integration Workspace Base revision 140 contains seven window chart
 Commerce/Chatwoot columns and all five Slicers bind the preserved Select identity `fldMlTUP3Z`. Three
 Executive columns (`Net Sales by Window`, `Ad Spend by Window`, `Organic Views by Window`) bind Number
 `fldbPCldTL`. v3.2 attempted to PATCH those three columns before Number retirement; the PATCH mutation path is
-now retired and both physical identities remain preserved.
+retired and both physical identities remain preserved.
 
 Historical contract:
 
