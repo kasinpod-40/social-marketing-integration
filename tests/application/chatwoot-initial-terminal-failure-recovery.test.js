@@ -170,6 +170,8 @@ test('terminal reactivation and current incident closure are exact guarded mutat
   assert.match(reactivation, /SET lifecycle_status='active'/u);
   assert.match(reactivation, /main_queue_attempts=2/u);
   assert.match(reactivation, /CHATWOOT_MANUAL_UAT_CONNECTOR_INVALID/u);
+  assert.match(reactivation, /work_type='chatwoot\.conversations\.sync' AND lifecycle_status='active'/u);
+  assert.doesNotMatch(reactivation, /sync_work_runs WHERE lifecycle_status='active'/u);
   assert.match(reactivation, /SELECT changes\(\) AS reactivated_rows/u);
   assert.doesNotMatch(reactivation, /UPDATE (?:chatwoot_|data_coverage)/u);
 

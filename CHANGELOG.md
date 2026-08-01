@@ -9,6 +9,7 @@
   inspector with sanitized diagnostics and all-false Worker verification.
 - Added exact guarded reactivation and one recovery-owned continuation for the same Initial operation, Work,
   generation and requested-at identity; replacement Initial admission remains impossible.
+- Scoped the reactivation idle guard to Chatwoot Work so unrelated active connector Work cannot block recovery.
 - Reused the existing Stable-key writers and Final UAT flow to preserve partial masters, reconcile Lark lag, verify
   all 15 D1/Lark targets, and prove Initial/Daily replay stability.
 

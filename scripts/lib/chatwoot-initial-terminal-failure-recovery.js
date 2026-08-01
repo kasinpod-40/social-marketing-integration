@@ -88,7 +88,7 @@ export function buildChatwootInitialFailureReactivationSql(inspection = {}) {
       AND EXISTS (SELECT 1 FROM dead_letter_operation_metadata m JOIN dead_letter_jobs j ON j.dlq_id=m.dlq_id WHERE m.operation_id=${sqlText(operation.operationId)} AND m.main_queue_attempts=2 AND m.recovery_status='not_started' AND j.status='open' AND j.error_code='CHATWOOT_MANUAL_UAT_CONNECTOR_INVALID')
       AND EXISTS (SELECT 1 FROM system_alerts WHERE platform='chatwoot' AND status='open' AND error_code='CHATWOOT_MANUAL_UAT_CONNECTOR_INVALID' AND json_extract(details_json,'$.operationId')=${sqlText(operation.operationId)})
       AND NOT EXISTS (SELECT 1 FROM sync_locks WHERE lock_key>='integration_workspace:chatwoot:chemistry_k:' AND lock_key<'integration_workspace:chatwoot:chemistry_k;' AND expires_at>unixepoch('now')*1000)
-      AND NOT EXISTS (SELECT 1 FROM sync_work_runs WHERE lifecycle_status='active')
+      AND NOT EXISTS (SELECT 1 FROM sync_work_runs WHERE work_type='chatwoot.conversations.sync' AND lifecycle_status='active')
       AND ${counts};
     SELECT changes() AS reactivated_rows;
   `);
