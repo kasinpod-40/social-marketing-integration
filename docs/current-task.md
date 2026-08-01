@@ -1,15 +1,16 @@
-# Current Task — Chatwoot Arbitration Pinned Origin v1
+# Current Task — Chatwoot Safe Baseline Resume v1
 
 ## Status
 
 ```text
 TASK_STATUS                          = REPOSITORY_HOTFIX_IN_REVIEW
-CURRENT_PROGRAM                      = CHATWOOT_ARBITRATION_PINNED_ORIGIN_V1
-BRANCH                               = hotfix/chatwoot-arbitration-pinned-origin-v1
-BASE_MAIN_SHA                        = ee5c6ce2450ee052669edc24e7af75e1b47cfc4f
+CURRENT_PROGRAM                      = CHATWOOT_SAFE_BASELINE_RESUME_V1
+BRANCH                               = hotfix/chatwoot-safe-baseline-resume-v1
+BASE_MAIN_SHA                        = f212c5110573ef0af5012e8385d6ee25e67041cd
+CHATWOOT_LATEST_STOP                 = CHATWOOT_CONTROLLER_EVIDENCE_WORKER_FLAGS_INVALID
+CHATWOOT_CURRENT_WORKER_FLAGS        = ALL_FALSE
 CHATWOOT_INCOMPLETE_IDENTITIES       = 2
-CHATWOOT_REMOTE_ACTIVE_WINDOW        = EXACT_FOUR_FLAG_FINAL_UAT
-CHATWOOT_CONTROLLER_PROCESS          = ABSENT
+CHATWOOT_EXPECTED_BOUNDARY           = QUEUE_RETRY_EXHAUSTED_TERMINAL_V1
 META_FACEBOOK_D1_PHASE               = COMPLETE
 META_FACEBOOK_LARK_PHASE             = PENDING
 META_PROVIDER_REPLAY_ALLOWED         = NO
@@ -17,84 +18,77 @@ META_D1_QUEUE_RESEND_ALLOWED         = NO
 LATEST_REMOTE_MUTATIONS              = 0
 SCHEDULE_WEBHOOK                     = DISABLED
 PRODUCTION                           = BLOCKED
-NEXT_STEP                            = VERIFY_AND_MERGE_PINNED_ORIGIN
+NEXT_STEP                            = VERIFY_AND_MERGE_SAFE_BASELINE_RESUME
 ```
 
-## Pre-handoff finding
+## Latest guarded stop
 
-PR #411 added current-active-Worker evidence arbitration and passed Branch Verification #1596. Before issuing its
-operator command, final execution-path review found that the isolated arbitration clone still used the source local
-workspace as its Git `origin`.
-
-The delegated recovery launcher runs:
+The exact pinned Chatwoot evidence-arbitration command stopped at:
 
 ```text
-git fetch origin main
+stage          read-current-chatwoot-worker
+code           CHATWOOT_CONTROLLER_EVIDENCE_WORKER_FLAGS_INVALID
+enabledFlags   []
 ```
 
-If the operator checks out the reviewed wrapper in detached mode while the source local `main` branch remains on an
-older commit, that fetch can replace the clone's pinned `origin/main` with the stale local branch. The recovery would
-then stop at its exact-main gate even though the reviewed wrapper itself is valid.
+This was a safe read-only stop before the child recovery launcher. It performed zero Provider request, Queue action,
+Remote D1/Lark mutation, Worker deployment or incident closure. Schedule and Webhook remained disabled and Production
+remained blocked.
 
-No operator command using PR #411's wrapper was issued. This finding caused zero Provider request, Queue action,
-Remote D1/Lark mutation, Worker deployment, incident closure, Schedule/Webhook action or Production action.
+The current Worker is already all-false rather than the retained four-flag Final UAT active window. The previous
+arbitration selector therefore cannot bind the two incomplete evidence generations by retained active version.
+
+## Root cause
+
+The controller recovery chain supports the exact queue-retry-exhausted operation and can replace an interrupted active
+deployment under Safe-restore ownership. However, the public evidence-arbitration wrapper assumed that the retained
+active version must still be the current 100% Worker version.
+
+When an earlier failure path has already returned the Worker to its proven all-false baseline, that assumption is no
+longer true. Relaxing the active flag check alone would be unsafe because the inner Final UAT preflight still requires
+the retained active version and because a new active window must only open after the exact D1 boundary is proven.
 
 ## Objective
 
-Keep every nested Chatwoot recovery `git fetch origin main` bound to the exact reviewed wrapper commit without
-modifying the existing arbitration wrapper, core recovery launcher, retained evidence or Business facts.
+Resume the one exact Chatwoot controller operation from the current all-false baseline without deleting or rewriting
+retained evidence, choosing by recency, creating another Initial admission, weakening D1/Queue/Lark boundaries or
+moving incident-closure authority out of the existing reviewed recovery launchers.
 
-## Correction
-
-Add a small outer authority:
-
-```text
-scripts/chatwoot-controller-evidence-pinned-origin-terminal.mjs
-```
-
-It must:
-
-1. require the exact reviewed outer-wrapper commit and existing Chatwoot recovery confirmation;
-2. require a clean checkout whose commit remains an ancestor of current public `origin/main`;
-3. reject caller-provided `GIT_CONFIG_*` overrides;
-4. create a temporary bare repository whose `refs/heads/main` and symbolic `HEAD` equal the exact reviewed commit;
-5. create an exact `main` worktree from that temporary origin;
-6. copy `.dev.vars` and `wrangler.sync.jsonc` as private regular files;
-7. link local `outputs` and `node_modules` under exact clone-local excludes;
-8. perform a real `git fetch origin main` and reverify exact `HEAD`, `origin/main`, branch and cleanliness;
-9. invoke the existing
-   `scripts/chatwoot-controller-evidence-arbitration-terminal.mjs` inside the pinned repository;
-10. leave all evidence selection, D1 boundary, Queue, Lark, parity, Safe restore and incident closure authority with
-    the existing reviewed inner launchers.
-
-## Fail-closed boundaries
-
-- No remote Worker, Queue, D1 or Lark action occurs before the existing inner arbitration wrapper starts.
-- No retained evidence is renamed, deleted or rewritten by the outer wrapper.
-- The outer wrapper does not inspect or choose between controller evidence candidates itself.
-- A stale or advanced source local `main` cannot alter the nested synthetic `origin/main`.
-- Any existing inner failure remains visible and must not be blindly rerun after mutation begins.
-- Schedule and Webhook remain disabled; Production remains blocked.
-
-## Real-Git regression
-
-The regression creates a source repository with reviewed commit A and later commit B. It leaves source `main` on B,
-creates the synthetic origin pinned to A, runs `git fetch origin main` in the generated clone and requires:
+## New public authority
 
 ```text
-clone HEAD             = A
-clone origin/main      = A
-bare refs/heads/main   = A
-source main            = B
+scripts/chatwoot-controller-safe-baseline-pinned-origin-terminal.mjs
 ```
+
+The pinned wrapper creates a temporary bare `origin/main` fixed to the exact reviewed commit and delegates only to:
+
+```text
+scripts/chatwoot-controller-safe-baseline-resume-terminal.mjs
+```
+
+The inner wrapper must:
+
+1. require the exact clean reviewed Head and existing recovery confirmation;
+2. require exactly one current 100% Worker version with every execution flag false;
+3. scan incomplete retained controller evidence without mutation;
+4. select exactly one evidence identity whose retained baseline version equals the current safe Worker version;
+5. verify the selected retained active version still exposes exactly the four approved Chatwoot Final UAT flags;
+6. read the exact selected operation snapshot from Remote D1;
+7. require `queue_retry_exhausted_terminal_v1`, replacement-deployment authority and zero active lock;
+8. promote only the retained reviewed active version to 100%;
+9. delegate to the existing evidence arbitration and recovery chain;
+10. verify all flags false after completion and automatically restore the proven baseline only when the observed
+    active version belongs to the selected/current-head recovery chain;
+11. fail for review on any unknown concurrent deployment.
 
 ## Changed files
 
 ```text
-scripts/lib/exact-pinned-git-origin.js
-scripts/chatwoot-controller-evidence-pinned-origin-terminal.mjs
-tests/application/chatwoot-controller-evidence-pinned-origin.test.js
-docs/tasks/chatwoot-arbitration-pinned-origin-v1.md
+scripts/lib/chatwoot-controller-safe-baseline-resume.js
+scripts/chatwoot-controller-safe-baseline-resume-terminal.mjs
+scripts/chatwoot-controller-safe-baseline-pinned-origin-terminal.mjs
+tests/application/chatwoot-controller-safe-baseline-resume.test.js
+docs/tasks/chatwoot-safe-baseline-resume-v1.md
 docs/current-task.md
 ```
 
@@ -103,9 +97,10 @@ docs/current-task.md
 ```bash
 npm ci
 npm run check
-node --test tests/application/chatwoot-controller-evidence-pinned-origin.test.js
+node --test tests/application/chatwoot-controller-safe-baseline-resume.test.js
 node --test tests/application/chatwoot-controller-evidence-arbitration.test.js
 node --test tests/application/chatwoot-initial-terminal-failure-recovery.test.js
+node --test tests/application/chatwoot-final-30d-daily-uat.test.js
 npm test
 npm run test:report-reliability
 npm audit --audit-level=high
@@ -114,7 +109,24 @@ git diff --check
 ```
 
 Focused Meta, WooCommerce, Chatwoot and TikTok regressions remain required through Branch Verification. Repository
-gates must perform zero Live or Remote mutation.
+implementation and CI must perform zero Live or Remote mutation.
+
+## Existing Chatwoot authority preservation
+
+After the safe-baseline wrapper proves the current baseline and exact D1 boundary, it delegates to the unchanged:
+
+```text
+scripts/chatwoot-controller-evidence-arbitration-terminal.mjs
+```
+
+That authority still delegates exact selected evidence to:
+
+```text
+scripts/chatwoot-initial-terminal-failure-recovery-launcher.mjs
+```
+
+All Work reactivation, Queue continuation, Lark parity, replacement active deployment, ordinary Safe restore and
+incident closure remain owned by those reviewed launchers.
 
 ## Meta continuation boundary
 
@@ -141,10 +153,11 @@ Inside the immutable reviewed release clone, it delegates only to:
 scripts/meta-history-2026-exact-plan-continuation-terminal.mjs
 ```
 
-Meta must not resume until Chatwoot completes Safe restore and the Worker is verified all-false.
+Meta must not resume until Chatwoot completes its exact recovery, verifies all execution flags false, and closes the
+current Chatwoot incident safely.
 
 ## Implementation result
 
-The pinned Git-origin helper, outer wrapper, real-Git regression and task documentation are implemented on
-`hotfix/chatwoot-arbitration-pinned-origin-v1`. CI is pending. Repository implementation has performed no Live or
-Remote mutation.
+The safe-baseline selector, guarded resume wrapper, exact pinned-origin entrypoint, focused tests and task documentation
+are implemented on `hotfix/chatwoot-safe-baseline-resume-v1`. CI is pending. Repository implementation has performed
+zero Live or Remote mutation.
