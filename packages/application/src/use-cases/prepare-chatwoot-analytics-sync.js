@@ -508,7 +508,7 @@ function buildDailyFacts(conversations, messages, reportingEvents, context) {
     if (event.name === 'first_response') {
       row.firstResponse.push(event.valueSeconds);
       pushNullable(row.firstResponseBusiness, event.valueBusinessSeconds);
-    } else if (event.name === 'resolution') {
+    } else if (event.name === 'resolution' || event.name === 'conversation_resolved') {
       row.resolvedCount += 1;
       row.resolution.push(event.valueSeconds);
       pushNullable(row.resolutionBusiness, event.valueBusinessSeconds);

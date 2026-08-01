@@ -101,6 +101,9 @@ test('candidate admission forwards only known shallow boundaries to exact inspec
     lifecycle_status: 'terminal', main_queue_attempts: 14, unit_sync_runs: 3,
   }), true);
   assert.equal(isChatwootInitialFailureCandidateAdmitted({
+    lifecycle_status: 'terminal', main_queue_attempts: 16, unit_sync_runs: 3,
+  }), true);
+  assert.equal(isChatwootInitialFailureCandidateAdmitted({
     lifecycle_status: 'terminal', main_queue_attempts: 4, unit_sync_runs: 3,
   }), false);
   assert.equal(isChatwootInitialFailureCandidateAdmitted({
@@ -230,7 +233,8 @@ test('terminal reactivation and current incident closure are exact guarded mutat
   assert.match(closure, /CHATWOOT_LABEL_MAPPING_MISSING/u);
   assert.match(closure, /CHATWOOT_MESSAGE_CURSOR_REPEATED/u);
   assert.match(closure, /reporting_event\.name is unsupported: conversation_resolved/u);
-  assert.match(closure, /main_queue_attempts IN \(2,4,5,7,9,11,14\)/u);
+  assert.match(closure, /reporting_event\.name is unsupported: conversation_opened/u);
+  assert.match(closure, /main_queue_attempts IN \(2,4,5,7,9,11,14,16\)/u);
   assert.doesNotMatch(closure, /\bDELETE\b/iu);
 });
 
@@ -516,6 +520,66 @@ test('reporting-event terminal recovery preserves the committed page-1 cursor', 
   assert.match(sql, /reporting_event\.name is unsupported: conversation_resolved/u);
   assert.match(sql, /\)=7 AND EXISTS/u);
   assert.match(sql, /\)=12/u);
+  assert.doesNotMatch(sql, /DELETE FROM sync_work_phases/iu);
+});
+
+test('reporting-event-name terminal recovery admits the exact attempts-16 incident', () => {
+  const operation = session().initial;
+  const businessCounts = Object.fromEntries(
+    [...new Set(CHATWOOT_FINAL_UAT_TABLES.map((item) => item.d1Table))]
+      .map((table) => [table, 0]),
+  );
+  Object.assign(businessCounts, {
+    chatwoot_account_state: 1,
+    chatwoot_inbox_state: 3,
+    chatwoot_agent_state: 12,
+    chatwoot_team_state: 3,
+    chatwoot_label_state: 47,
+    chatwoot_conversation_state: 17,
+    chatwoot_conversation_label_state: 22,
+    chatwoot_message_analytics_state: 590,
+    chatwoot_reporting_event_facts: 122,
+    chatwoot_conversation_daily_facts: 29,
+    chatwoot_agent_daily_facts: 14,
+    chatwoot_inbox_daily_facts: 8,
+    chatwoot_account_daily_facts: 8,
+  });
+  const inspection = {
+    operation,
+    workLifecycle: 'terminal',
+    terminalReason: 'QUEUE_PERMANENT_FAILURE',
+    abandonedAt: 1_800_000_100_000,
+    auditReference: 'terminal:reporting-event-names',
+    workGeneration: operation.generation,
+    workRequestedAt: operation.originalRequestedAt,
+    activeChatwootWork: 0,
+    phaseRows: 1,
+    durableStage: 'conversations',
+    nextSequence: 2,
+    activeLockCount: 0,
+    queueOperationRows: 1,
+    mainQueueAttempts: 16,
+    unitSyncRuns: 3,
+    failedUnitSyncRuns: 1,
+    failedSyncRunId: `${operation.syncRunId}:unit:2`,
+    unitSyncRunStatus: 'failed',
+    errorCode: 'PERMANENT_QUEUE_FAILURE',
+    errorMessage: 'reporting_event.name is unsupported: conversation_opened',
+    coverageRuns: 24,
+    currentDlqRecords: 8,
+    currentOpenAlerts: 14,
+    failedCoverageRows: 0,
+    businessCounts,
+  };
+  assert.equal(
+    classifyChatwootInitialRecoveryBoundary(inspection),
+    CHATWOOT_INITIAL_RECOVERY_BOUNDARIES.reportingEventNames,
+  );
+  const sql = buildChatwootInitialFailureReactivationSql(inspection);
+  assert.match(sql, /main_queue_attempts=16/u);
+  assert.match(sql, /reporting_event\.name is unsupported: conversation_opened/u);
+  assert.match(sql, /\)=8 AND EXISTS/u);
+  assert.match(sql, /\)=14/u);
   assert.doesNotMatch(sql, /DELETE FROM sync_work_phases/iu);
 });
 
