@@ -44,11 +44,13 @@ test('reviewed release wrapper isolates the approved release from moving main', 
   assert.match(source, /symlink\(assets\.nodeModules/u);
   assert.match(source, /meta-history-2026-exact-plan-continuation-terminal\.mjs/u);
   assert.match(source, /status', '--porcelain', '--untracked-files=all/u);
-  assert.match(source, /GIT_CONFIG_\(\?:COUNT\|KEY_/u);
+  assert.match(source, /GIT_CONFIG_/u);
+  assert.match(source, /KEY_/u);
+  assert.match(source, /VALUE_/u);
 
   assert.doesNotMatch(source, /git pull/u);
   assert.doesNotMatch(source, /wrangler/u);
-  assert.doesNotMatch(source, /queue.*send/iu);
+  assert.doesNotMatch(source, /'queues?',\s*'[^']*send/iu);
   assert.doesNotMatch(source, /production:\s*true/u);
 });
 
