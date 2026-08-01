@@ -18,8 +18,9 @@ concurrency:
 
 jobs:
   verify:
-    # Final integration hotfixes use the repository-scoped Mac runner while hosted minutes are exhausted.
-    runs-on: ${{ (github.event.pull_request.number == 308 || startsWith(github.head_ref, 'hotfix/chatwoot-final-') || startsWith(github.head_ref, 'hotfix/woocommerce-completed-state-incremental-admission-race') || startsWith(github.head_ref, 'hotfix/report-') || startsWith(github.head_ref, 'hotfix/meta-history-2026-')) && 'mkt-ci' || 'ubuntu-latest' }}
+    # This recovery PR uses the hosted runner because no repository-scoped mkt-ci runner is registered.
+    # Other integration hotfixes retain the existing repository-scoped Mac runner routing.
+    runs-on: ${{ (github.head_ref != 'hotfix/chatwoot-final-source-config-recovery' && (github.event.pull_request.number == 308 || startsWith(github.head_ref, 'hotfix/chatwoot-final-') || startsWith(github.head_ref, 'hotfix/woocommerce-completed-state-incremental-admission-race') || startsWith(github.head_ref, 'hotfix/report-') || startsWith(github.head_ref, 'hotfix/meta-history-2026-'))) && 'mkt-ci' || 'ubuntu-latest' }}
     timeout-minutes: 30
     steps:
       - name: Checkout
@@ -69,6 +70,7 @@ jobs:
           set -o pipefail
           node --test \
             tests/application/chatwoot-final-30d-daily-uat.test.js \
+            tests/application/chatwoot-final-source-config-recovery.test.js \
             tests/application/chatwoot-final-secret-bootstrap.test.js \
             tests/application/chatwoot-final-secret-bootstrap-launcher.test.js \
             tests/application/chatwoot-final-preflight-initialization.test.js \
