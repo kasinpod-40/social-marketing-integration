@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
@@ -20,6 +21,10 @@ const VERSION_B = '22222222-2222-4222-8222-222222222222';
 const VERSION_C = '33333333-3333-4333-8333-333333333333';
 const SESSION = 'a'.repeat(64);
 
+function sha256(value) {
+  return createHash('sha256').update(String(value)).digest('hex');
+}
+
 function candidate(overrides = {}) {
   return {
     directory: '/outputs/chatwoot-final-30d-daily-uat/head-a',
@@ -36,6 +41,15 @@ function candidate(overrides = {}) {
   };
 }
 
+function priorSelectionHint(overrides = {}) {
+  return {
+    sessionFingerprint: SESSION,
+    baselineVersionFingerprint: sha256(VERSION_A),
+    activeVersionFingerprint: sha256(VERSION_B),
+    ...overrides,
+  };
+}
+
 test('Chatwoot safe-baseline wrapper is plan-only by default', () => {
   const result = spawnSync(process.execPath, [WRAPPER.pathname], {
     cwd: process.cwd(),
@@ -44,7 +58,14 @@ test('Chatwoot safe-baseline wrapper is plan-only by default', () => {
   assert.equal(result.status, 0, result.stderr);
   const plan = JSON.parse(result.stdout);
   assert.equal(plan.planOnly, true);
-  assert.equal(plan.selectionAuthority, 'current_safe_baseline_version');
+  assert.equal(
+    plan.selectionAuthority,
+    'current_safe_baseline_version_or_verified_prior_safe_baseline_attempt',
+  );
+  assert.equal(
+    plan.priorAttemptHeadEnv,
+    'MKT_CHATWOOT_SAFE_BASELINE_PRIOR_ATTEMPT_HEAD',
+  );
   assert.equal(plan.requiredBoundary, 'queue_retry_exhausted_terminal_v1');
   assert.equal(plan.activeWindowSource, 'retained_reviewed_active_version');
   assert.equal(
@@ -106,6 +127,42 @@ test('current all-false baseline resolves distinct controller generations', () =
   assert.equal(selected.candidateCount, 2);
 });
 
+test('verified prior attempt resolves evidence when current safe version is a replacement', () => {
+  const selected = selectChatwootControllerSafeBaselineEvidence([
+    candidate({ directory: '/selected', directoryName: 'selected' }),
+    candidate({
+      directory: '/other',
+      directoryName: 'other',
+      sessionFingerprint: 'b'.repeat(64),
+      baselineVersion: VERSION_B,
+      activeVersion: VERSION_A,
+    }),
+  ], VERSION_C, [], priorSelectionHint());
+  assert.equal(selected.directory, '/selected');
+  assert.equal(selected.baselineVersion, VERSION_A);
+  assert.equal(selected.activeVersion, VERSION_B);
+  assert.equal(selected.candidateCount, 2);
+  assert.equal(selected.selectedBy, 'verified_prior_safe_baseline_attempt');
+});
+
+test('verified prior attempt remains fail closed without one fingerprint match', () => {
+  assert.throws(
+    () => selectChatwootControllerSafeBaselineEvidence([
+      candidate({ sessionFingerprint: 'b'.repeat(64) }),
+      candidate({
+        directory: '/other',
+        directoryName: 'other',
+        baselineVersion: VERSION_B,
+        activeVersion: VERSION_A,
+      }),
+    ], VERSION_C, [], priorSelectionHint()),
+    (error) => error?.code === 'CHATWOOT_SAFE_BASELINE_PRIOR_SELECTION_AMBIGUOUS'
+      && error?.details?.candidateCount === 2
+      && error?.details?.baselineVersionMatchCount === 0
+      && error?.details?.priorSelectionMatchCount === 0,
+  );
+});
+
 test('safe-baseline selector fails closed without one baseline match', () => {
   assert.throws(
     () => selectChatwootControllerSafeBaselineEvidence([
@@ -154,6 +211,10 @@ test('safe-baseline selector rejects enabled flags and same active version', () 
 test('safe-baseline wrapper proves boundary before promotion and delegates existing authority', async () => {
   const source = await readFile(WRAPPER, 'utf8');
   assert.match(source, /selectChatwootControllerSafeBaselineEvidence/u);
+  assert.match(source, /loadChatwootSafeBaselinePriorAttempt/u);
+  assert.match(source, /MKT_CHATWOOT_SAFE_BASELINE_PRIOR_ATTEMPT_HEAD/u);
+  assert.match(source, /verified_prior_safe_baseline_attempt/u);
+  assert.match(source, /priorAttemptValidated/u);
   assert.match(source, /assertChatwootFinalUatControllerResume/u);
   assert.match(source, /buildChatwootFinalUatSnapshotSql/u);
   assert.match(source, /queue_retry_exhausted_terminal_v1/u);
@@ -161,7 +222,7 @@ test('safe-baseline wrapper proves boundary before promotion and delegates exist
   assert.match(source, /wrangler', 'versions', 'deploy'/u);
   assert.match(source, /chatwoot-controller-evidence-arbitration-terminal\.mjs/u);
   assert.match(source, /ensureSafeRestore/u);
-  assert.match(source, /current_safe_baseline_version/u);
+  assert.match(source, /current_safe_baseline_version_or_verified_prior_safe_baseline_attempt/u);
   assert.match(source, /status', '--porcelain', '--untracked-files=all/u);
   assert.doesNotMatch(source, /queues\/.+\/messages/u);
   assert.doesNotMatch(source, /UPDATE\s+sync_work_runs/iu);
