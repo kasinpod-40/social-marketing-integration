@@ -26,6 +26,7 @@ export const META_HISTORY_EXACT_CONTINUATION_TARGET = Object.freeze({
 export const META_HISTORY_EXACT_CONTINUATION_ALLOWED_DELTA = Object.freeze([
   '.github/workflows/branch-verification.yml',
   '.github/workflows/meta-end-to-end-verification.yml',
+  '.gitignore',
   'docs/current-task.md',
   'docs/project-brain/lark-dashboard-window-option-order.md',
   'docs/project-brain/report-metric-value-field-migration.md',
