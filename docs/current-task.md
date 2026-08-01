@@ -1,139 +1,140 @@
-# Current Task — Meta Reviewed Clone Exact Exclude Hotfix v1
+# Current Task — Chatwoot Controller Evidence Arbitration v1
 
 ## Status
 
 ```text
 TASK_STATUS                          = REPOSITORY_HOTFIX_IN_REVIEW
-CURRENT_PROGRAM                      = META_REVIEWED_CLONE_EXACT_EXCLUDE_V1
-BRANCH                               = hotfix/meta-reviewed-clone-exclude-v1
-BASE_MAIN_SHA                        = a453135eb78bbea9c74d1be7dc72375334eece7a
-REVIEWED_META_RELEASE_HEAD           = 29de2303fa311c4a13fac4725699416cfdc04386
-REVIEWED_WRAPPER_PREVIOUS_HEAD       = 78b3e4f25bddf1605c58c9e7aa11084fca396810
-RETAINED_OPERATION_REPOSITORY_HEAD   = 5ff8e2cfb1f890ac2a8f2867a904b477c6456d91
-FACEBOOK_OPERATION_ID                = meta-facebook-history-20260701-20260731-1d12a5ec4fef
-FACEBOOK_D1_PHASE                    = COMPLETE
-FACEBOOK_LARK_PHASE                  = PENDING
-FACEBOOK_COMPLETION_PHASE            = PENDING
-FACEBOOK_PROVIDER_REPLAY_ALLOWED     = NO
-FACEBOOK_D1_QUEUE_RESEND_ALLOWED     = NO
-LATEST_CONTINUATION_STAGE            = prepare-reviewed-release-clone
-LATEST_CONTINUATION_CODE             = META_HISTORY_REVIEWED_RELEASE_CLONE_INVALID
-LATEST_CONTINUATION_REMOTE_ACTIONS   = 0
-SCHEDULE                             = DISABLED
+CURRENT_PROGRAM                      = CHATWOOT_CONTROLLER_EVIDENCE_ARBITRATION_V1
+BRANCH                               = hotfix/chatwoot-controller-evidence-arbitration-v1
+BASE_MAIN_SHA                        = 6d71c19376b24c1baf64eb31aa191a24ad3d27fd
+CHATWOOT_LATEST_STOP                 = CHATWOOT_INITIAL_FAILURE_SESSION_INVALID
+CHATWOOT_INCOMPLETE_IDENTITIES       = 2
+CHATWOOT_REMOTE_ACTIVE_WINDOW        = EXACT_FOUR_FLAG_FINAL_UAT
+META_FACEBOOK_D1_PHASE               = COMPLETE
+META_FACEBOOK_LARK_PHASE             = PENDING
+META_PROVIDER_REPLAY_ALLOWED         = NO
+META_D1_QUEUE_RESEND_ALLOWED         = NO
+LATEST_REMOTE_MUTATIONS              = 0
+SCHEDULE_WEBHOOK                     = DISABLED
 PRODUCTION                           = BLOCKED
-NEXT_STEP                            = VERIFY_AND_MERGE_REVIEWED_CLONE_EXCLUDE
+NEXT_STEP                            = VERIFY_AND_MERGE_EVIDENCE_ARBITRATION
 ```
 
 ## Latest guarded stop
 
-The reviewed-release wrapper successfully verified the exact wrapper checkout, current `origin/main` ancestry and
-local runtime assets. It created the temporary clone at reviewed Meta release `29de230...`, but stopped before the
-exact continuation child because the clone was not clean:
+The authorized Chatwoot recovery command stopped before D1 backup, Work reactivation, Queue send, Lark mutation,
+Worker deployment or incident closure because two distinct incomplete local controller evidence identities were
+visible:
 
 ```text
-head        29de2303fa311c4a13fac4725699416cfdc04386
-origin/main 29de2303fa311c4a13fac4725699416cfdc04386
-branch      main
-clean       false
+code            CHATWOOT_INITIAL_FAILURE_SESSION_INVALID
+candidateCount  2
 ```
 
-All emitted Remote counters were zero. No Provider request, Queue send, D1/Lark mutation, Worker deployment or
-Schedule action occurred. Production remains blocked.
+No Chatwoot controller process remained active. The Worker still exposed exactly the four reviewed Chatwoot Final
+UAT execution flags, so Meta continuation correctly remained blocked to avoid cross-workstream deployment and Safe
+restore collisions.
 
-## Confirmed root cause
+## Objective
 
-The wrapper injected three runtime assets after checking out the immutable reviewed release:
+Resolve the local evidence ambiguity without deleting, renaming or rewriting retained evidence and without weakening
+the existing core recovery guard. The current active Worker deployment must be the sole arbitration authority.
 
-```text
-outputs      symlink
-.dev.vars    symlink
-node_modules symlink
-```
+## In scope
 
-Directory-style ignore patterns in the reviewed release do not necessarily match repository-root symlinks. Git
-therefore reported one or more wrapper-created runtime assets as untracked and the exact cleanliness gate correctly
-failed closed.
+- Add a pure evidence-arbitration helper.
+- Add an exact-head public wrapper that performs read-only Worker status/version inspection.
+- Select one controller evidence identity only when its recorded active deployment equals the current active Worker
+  version.
+- Run the existing recovery launcher inside an isolated exact-main clone whose Final UAT evidence view contains only
+  the proven candidate.
+- Preserve current-head output evidence in the original workspace.
+- Add focused regression coverage and an operator task document.
 
-A second issue was identified before rerun: the downstream exact continuation requires `DEV_VARS_FILE` to be a
-private regular file and rejects a symlink. Leaving `.dev.vars` as a symlink would have caused the next guarded stop.
+## Out of scope
 
-## Repository correction
+- Editing or deleting retained controller evidence.
+- Choosing a candidate by timestamp, directory name or newest Repository Head alone.
+- Changing Chatwoot Business facts, stable keys, operation identity, requested-at or generation.
+- Adding a second Initial admission, manual Queue send/redrive or direct Work mutation.
+- Weakening the existing D1 boundary, active-version, baseline, parity, Safe restore or incident-closure checks.
+- Running Meta continuation before Chatwoot restores all flags false.
+- Schedule, Webhook or Production activation.
 
-The reviewed-release wrapper now:
+## Contract
 
-1. keeps `outputs` and `node_modules` as local symlinks;
-2. copies `.dev.vars` into the temporary clone as a private regular file with mode `0600`;
-3. writes the temporary clone's private `.git/info/exclude` with exactly:
+The wrapper must:
 
-```text
-/outputs
-/.dev.vars
-/node_modules
-```
-
-4. reads the exclude file back byte-for-byte and verifies that it is a private regular file;
-5. continues to run `git status --porcelain --untracked-files=all`;
-6. reports exact dirty paths if any unrelated drift remains.
-
-The exclude is clone-local Git metadata. It does not change the reviewed release worktree, retained evidence,
-`.gitignore`, Business facts or any Remote state. No wildcard directories, `status.showUntrackedFiles=no` or
-`--untracked-files=no` bypass is allowed.
+1. require an exact reviewed wrapper Head and the existing Chatwoot recovery confirmation;
+2. require a clean checkout whose commit remains an ancestor of current `origin/main`;
+3. reject caller-provided `GIT_CONFIG_*` overrides;
+4. read one current 100% Worker version and verify exactly the four Chatwoot Final UAT flags;
+5. deduplicate exact local evidence copies but keep distinct baselines/deployments separate;
+6. select exactly one identity bound to the current active Worker version;
+7. fail closed for zero or multiple active-version matches;
+8. expose no Worker version ID, Secret or customer data in failure output;
+9. delegate all mutation and Safe restore behavior to
+   `scripts/chatwoot-initial-terminal-failure-recovery-launcher.mjs`;
+10. block blind rerun when current-head Final UAT evidence is already non-empty.
 
 ## Changed files
 
 ```text
+scripts/lib/chatwoot-controller-evidence-arbitration.js
+scripts/chatwoot-controller-evidence-arbitration-terminal.mjs
+tests/application/chatwoot-controller-evidence-arbitration.test.js
+docs/tasks/chatwoot-controller-evidence-arbitration-v1.md
 docs/current-task.md
-scripts/meta-history-2026-reviewed-release-terminal.mjs
-tests/application/meta-history-reviewed-release-terminal.test.js
 ```
-
-## Preserved invariants
-
-- Reviewed Meta release remains `29de2303fa311c4a13fac4725699416cfdc04386`.
-- Retained Repository Head and Facebook operation identity remain unchanged.
-- Existing retained evidence and Business facts are not edited or synthesized.
-- Provider replay remains forbidden.
-- Existing Facebook D1 Queue admission is not resent.
-- Wrapper preparation performs only local Git/filesystem work.
-- Any unrelated untracked path remains visible and blocks execution.
-- Schedule remains disabled and Production remains blocked.
 
 ## Required verification
 
-```text
+```bash
 npm ci
 npm run check
-node --test tests/application/meta-history-reviewed-release-terminal.test.js
-node --test tests/application/meta-history-exact-plan-continuation.test.js
-node --test tests/application/meta-history-exact-plan-continuation-wiring.test.js
+node --test tests/application/chatwoot-controller-evidence-arbitration.test.js
+node --test tests/application/chatwoot-initial-terminal-failure-recovery.test.js
+node --test tests/application/chatwoot-final-30d-daily-uat.test.js
 npm test
 npm run test:report-reliability
-npm audit
+npm audit --audit-level=high
 npm run deploy:dry-run
+git diff --check
 ```
 
-Both Meta End-to-End Verification and Branch Verification must pass on the exact branch Head before Squash Merge.
-Repository verification must perform zero Live or Remote action.
+Focused Meta, WooCommerce and TikTok regressions remain required through Branch Verification. Repository gates must
+perform zero Provider mutation, Queue action, Remote D1/Lark mutation, Worker deployment, incident closure,
+Schedule/Webhook action or Production action.
 
-## Public continuation after verified merge
+## Meta continuation boundary
 
-After verified merge, fetch the exact new wrapper merge commit, switch to it in detached mode and invoke only:
+The retained Meta operation remains unchanged:
+
+```text
+operation ID       meta-facebook-history-20260701-20260731-1d12a5ec4fef
+retained Head      5ff8e2cfb1f890ac2a8f2867a904b477c6456d91
+D1 phase           complete
+Lark phase         pending
+provider replay    forbidden
+D1 Queue resend    forbidden
+```
+
+The preserved public Meta continuation authority remains:
 
 ```text
 scripts/meta-history-2026-reviewed-release-terminal.mjs
 ```
 
-Inside the immutable reviewed release clone, that wrapper delegates only to the existing exact child authority:
+Inside the immutable reviewed release clone, it delegates only to:
 
 ```text
 scripts/meta-history-2026-exact-plan-continuation-terminal.mjs
 ```
 
-Do not run the previous wrapper commit, ordinary Meta Terminal, direct D1/Lark launchers or manual Queue commands.
-Do not edit retained evidence, `.dev.vars`, lifecycle state or Business facts.
+Meta must not resume until Chatwoot completes Safe restore and the Worker is verified all-false.
 
 ## Implementation result
 
-The exact temporary-clone exclude, private `.dev.vars` copy and focused regression are implemented on
-`hotfix/meta-reviewed-clone-exclude-v1`. CI is pending. Repository implementation performed no Live or Remote
-action.
+The arbitration helper, isolated wrapper, focused tests and task documentation are implemented on
+`hotfix/chatwoot-controller-evidence-arbitration-v1`. CI is pending. Repository implementation has performed no Live
+or Remote mutation.
