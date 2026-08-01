@@ -13,17 +13,22 @@ import {
 } from '../../scripts/lib/meta-history-exact-plan-continuation.js';
 
 const REQUIRED_RELEASE_PATHS = Object.freeze([
+  '.github/workflows/branch-verification.yml',
   'docs/current-task.md',
+  'docs/tasks/chatwoot-final-source-config-recovery-v1.md',
   'docs/tasks/lark-dashboard-display-v2-compatibility-v1.md',
   'docs/tasks/meta-history-exact-plan-continuation-v1.md',
   'packages/application/src/reports/build-report-output-rows.js',
   'packages/config/src/lark-dashboard-display-v2-compatibility.js',
+  'scripts/chatwoot-final-source-config-recovery-launcher.mjs',
   'scripts/lark-dashboard-display-v2-compatibility-backfill.mjs',
+  'scripts/lib/chatwoot-final-source-config-recovery.js',
   'scripts/lib/lark-dashboard-display-v2-compatibility-v1.js',
   'scripts/lib/meta-history-exact-plan-continuation.js',
   'scripts/meta-history-2026-exact-plan-continuation-terminal.mjs',
   'scripts/meta-history-2026-exact-plan-continuation.mjs',
   'scripts/verify-meta-history-exact-plan-continuation-local.mjs',
+  'tests/application/chatwoot-final-source-config-recovery.test.js',
   'tests/application/lark-dashboard-display-v2-writer.test.js',
   'tests/application/meta-history-2026-public-launcher.test.js',
   'tests/application/meta-history-exact-plan-continuation.test.js',
@@ -87,7 +92,7 @@ test('exact continuation locks the retained Head, operation ID, generation and r
   );
 });
 
-test('exact continuation permits only the reviewed Dashboard and continuation release paths', () => {
+test('exact continuation permits only the reviewed Dashboard, Chatwoot and continuation release paths', () => {
   for (const path of REQUIRED_RELEASE_PATHS) {
     assert.equal(
       META_HISTORY_EXACT_CONTINUATION_ALLOWED_DELTA.includes(path),
@@ -109,6 +114,14 @@ test('exact continuation permits only the reviewed Dashboard and continuation re
   );
   assert.throws(
     () => validateMetaHistoryExactContinuationDelta(missingOwnSource),
+    (error) => error?.code === 'META_HISTORY_EXACT_CONTINUATION_REPOSITORY_DELTA_INVALID',
+  );
+
+  const missingReviewedChatwootPath = META_HISTORY_EXACT_CONTINUATION_ALLOWED_DELTA.filter(
+    (path) => path !== 'scripts/chatwoot-final-source-config-recovery-launcher.mjs',
+  );
+  assert.throws(
+    () => validateMetaHistoryExactContinuationDelta(missingReviewedChatwootPath),
     (error) => error?.code === 'META_HISTORY_EXACT_CONTINUATION_REPOSITORY_DELTA_INVALID',
   );
 
