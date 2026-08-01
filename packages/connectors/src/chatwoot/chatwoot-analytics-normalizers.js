@@ -1,5 +1,6 @@
 import { createStableFingerprint } from '../../../shared/src/hash/stable-fingerprint.js';
 import { permanentError } from '../../../shared/src/errors/runtime-error.js';
+import { toEpochMilliseconds } from '../../../shared/src/date/date-time.js';
 
 const CONVERSATION_STATUSES = new Set(['open', 'resolved', 'pending', 'snoozed']);
 const AGENT_AVAILABILITY = new Set(['available', 'busy', 'offline']);
@@ -476,19 +477,7 @@ function requireTimestampMs(value, fieldName) {
 }
 
 function optionalTimestampMs(value, fieldName) {
-  if (value === null || value === undefined || value === '') return null;
-  if (typeof value === 'number' || /^\d+$/u.test(String(value))) {
-    const number = Number(value);
-    if (!Number.isFinite(number) || number <= 0) {
-      throw new TypeError(`${fieldName} must be a positive timestamp`);
-    }
-    const milliseconds = number < 100_000_000_000 ? number * 1_000 : number;
-    if (!Number.isSafeInteger(milliseconds)) throw new TypeError(`${fieldName} must fit a safe integer`);
-    return milliseconds;
-  }
-  const parsed = Date.parse(String(value));
-  if (!Number.isFinite(parsed) || parsed <= 0) throw new TypeError(`${fieldName} must be a timestamp`);
-  return parsed;
+  return toEpochMilliseconds(value, { allowNull: true, label: fieldName });
 }
 
 function optionalBoolean(value, fieldName) {

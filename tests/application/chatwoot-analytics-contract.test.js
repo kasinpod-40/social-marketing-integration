@@ -40,6 +40,22 @@ test('Chatwoot normalizers discard direct PII, message bodies, and label text', 
   assert.equal(rows.conversation.firstResponseSeconds, 120);
 });
 
+test('Chatwoot conversation normalizer accepts fractional epoch seconds from the live API', async () => {
+  const conversation = await normalizeChatwootConversation({
+    id: 71,
+    account_id: 42,
+    inbox_id: 3,
+    status: 'open',
+    created_at: 1785557000,
+    updated_at: 1785558008.123,
+  }, {
+    ...BASE_CONTEXT,
+    observedAt: OBSERVED_AT,
+  });
+
+  assert.equal(conversation.sourceUpdatedAt, 1785558008123);
+});
+
 test('Chatwoot incremental source hashes exclude observation timestamps', async () => {
   const first = await buildPrepared({ observedAt: OBSERVED_AT, includeReports: false, fullSnapshot: false });
   const second = await buildPrepared({ observedAt: OBSERVED_AT + 60_000, includeReports: false, fullSnapshot: false });

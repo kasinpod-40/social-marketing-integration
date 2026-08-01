@@ -4,6 +4,7 @@
 
 ### Reliability
 
+- Accepted fractional epoch seconds from the Chatwoot conversation API through the Shared date-time contract.
 - Stopped Final UAT polling from classifying a normal `running` unit as terminally failed.
 - Added progress-prefix-safe Wrangler JSON parsing and a SELECT-only, retained-session/D1-proven incident
   inspector with sanitized diagnostics and all-false Worker verification.
