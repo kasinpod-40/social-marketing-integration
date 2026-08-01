@@ -38,6 +38,10 @@ import {
   sha256,
   stableJson,
 } from './lib/chatwoot-final-30d-daily-uat.js';
+import {
+  buildChatwootInitialRecoveryContinuationJob,
+  validateRetainedSession,
+} from './lib/chatwoot-initial-terminal-failure-recovery.js';
 import { createLarkBitableClientFromEnv } from '../packages/connectors/src/lark/lark-bitable.client.js';
 
 const ROOT = resolve(process.cwd());
@@ -90,8 +94,15 @@ async function main() {
   const evidenceDir = resolve(env.MKT_CHATWOOT_FINAL_UAT_EVIDENCE_DIR
     ?? join('outputs', 'chatwoot-final-30d-daily-uat', head));
   await mkdir(evidenceDir, { recursive: true, mode: 0o700 });
-  const session = await sessionFor(evidenceDir, head);
-  const target = { head, sourcePath, config, evidenceDir, session, env };
+  const recoverySessionPath = env.MKT_CHATWOOT_INITIAL_FAILURE_RECOVERY_SESSION_PATH ?? null;
+  const session = await sessionFor(evidenceDir, head, recoverySessionPath);
+  const target = {
+    head, sourcePath, config, evidenceDir, session, env,
+    recovery: recoverySessionPath !== null,
+    allowedIncidentCounts: recoverySessionPath !== null
+      ? Object.freeze({ dlqRecords: 1, openAlerts: 1 })
+      : Object.freeze({ dlqRecords: 0, openAlerts: 0 }),
+  };
 
   await localGates();
   await generatedDryRun(target, config.safeText, 'safe');
@@ -167,8 +178,22 @@ function repositoryHead() {
   return head;
 }
 
-async function sessionFor(directory, head) {
+async function sessionFor(directory, head, recoverySessionPath = null) {
   const path = join(directory, 'session.json');
+  if (recoverySessionPath) {
+    const retained = validateRetainedSession(JSON.parse(await readFile(
+      inside(recoverySessionPath),
+      'utf8',
+    )));
+    try {
+      const existing = JSON.parse(await readFile(path, 'utf8'));
+      if (existing.sessionFingerprint !== retained.sessionFingerprint) {
+        fail('Recovery evidence is bound to another retained session', 'CHATWOOT_FINAL_UAT_SESSION_INVALID');
+      }
+    } catch (error) { if (error?.code !== 'ENOENT') throw error; }
+    if (!await exists(path)) await privateJson(path, retained);
+    return retained;
+  }
   try {
     const value = JSON.parse(await readFile(path, 'utf8'));
     if (value.repositoryHead !== head || value.contractVersion !== CHATWOOT_FINAL_UAT_CONTRACT_VERSION) {
@@ -246,9 +271,10 @@ async function preflight(target) {
     '--config', target.sourcePath, '--format', 'json'], { env })).map((item) => String(item.name));
   const missing = REQUIRED_SECRETS.filter((name) => !secrets.includes(name));
   if (missing.length) fail('Required Worker Secret names are missing', 'CHATWOOT_FINAL_UAT_SECRET_MISSING', { missing });
-  const d1 = assertChatwootFinalUatPreflight(normalizeChatwootFinalUatPreflight(
-    d1Row(target, buildChatwootFinalUatPreflightSql()),
-  ));
+  const d1 = assertChatwootFinalUatPreflight(
+    normalizeChatwootFinalUatPreflight(d1Row(target, buildChatwootFinalUatPreflightSql())),
+    { expectedActiveWork: target.recovery ? 1 : 0 },
+  );
   const lark = await larkCounts(target, true);
   const baseline = assertChatwootFinalUatBaselineCompatible(
     mapChatwootFinalUatD1BaselineCounts(d1.businessCounts),
@@ -299,12 +325,17 @@ async function d1Backup(target) {
 async function operationFlow(target, operation, label, previous = null) {
   const firstSend = join(target.evidenceDir, `${label}-send.attempt.json`);
   const before = snapshot(target, operation);
-  if (!await exists(firstSend) && (before.workLifecycleStatus || before.mainQueueAttempts)) {
+  const recoveringInitial = target.recovery && label === 'initial';
+  if (!recoveringInitial && !await exists(firstSend) && (before.workLifecycleStatus || before.mainQueueAttempts)) {
     fail('Stable operation identity already exists', 'CHATWOOT_FINAL_UAT_OPERATION_COLLISION', { label });
   }
-  await sendOnce(target, operation, firstSend, 0);
-  const completed = await poll(target, operation, 2);
-  const classified = classifyChatwootFinalUatCompletion(completed, operation);
+  if (recoveringInitial) await sendRecoveryContinuationOnce(target, operation, firstSend, before);
+  else await sendOnce(target, operation, firstSend, 0);
+  const completed = await poll(target, operation, recoveringInitial ? before.mainQueueAttempts + 1 : 2);
+  const classified = classifyChatwootFinalUatCompletion(completed, operation, {
+    allowedDlqRecords: recoveringInitial ? target.allowedIncidentCounts.dlqRecords : 0,
+    allowedOpenAlerts: target.allowedIncidentCounts.openAlerts,
+  });
   if (!classified.complete) fail(`${label} completion contract failed`, 'CHATWOOT_FINAL_UAT_OPERATION_INCOMPLETE', { label, missing: classified.missing });
   if (label === 'daily' && previous
       && completed.cursorIncrementalRunCount !== previous.cursorIncrementalRunCount + 1) {
@@ -349,6 +380,37 @@ async function operationFlow(target, operation, label, previous = null) {
   return { completedSnapshot: completed, replaySnapshot: replay, parity };
 }
 
+async function sendRecoveryContinuationOnce(target, operation, attemptPath, before) {
+  if (before.workLifecycleStatus !== 'active' || before.activeNextSequence !== 0
+      || before.mainQueueAttempts !== 2 || before.activeLockCount !== 0) {
+    fail('Exact Initial recovery boundary changed before continuation', 'CHATWOOT_INITIAL_FAILURE_BOUNDARY_DRIFT');
+  }
+  if (await exists(attemptPath)) {
+    const current = snapshot(target, operation);
+    if (current.mainQueueAttempts > before.mainQueueAttempts) return;
+    fail('Recovery continuation attempt is uncertain', 'CHATWOOT_FINAL_UAT_QUEUE_ATTEMPT_UNCERTAIN');
+  }
+  const job = buildChatwootInitialRecoveryContinuationJob(operation);
+  await privateJson(attemptPath, {
+    operationId: operation.operationId,
+    workKey: operation.workKey,
+    generation: operation.generation,
+    continuationSequence: 0,
+    recoveryOwned: true,
+    jobSha256: sha256(stableJson(job)),
+    attemptedAt: new Date().toISOString(),
+  });
+  const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(target.cf.accountId)}`
+    + `/queues/${encodeURIComponent(target.cf.queueId)}/messages`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${target.cf.env.CLOUDFLARE_API_TOKEN}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ body: job, content_type: 'json' }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok || body?.success !== true) fail('Recovery Queue continuation was not accepted', 'CHATWOOT_FINAL_UAT_QUEUE_SEND_FAILED', { status: response.status });
+}
+
 async function sendOnce(target, operation, attemptPath, priorAttempts) {
   if (await exists(attemptPath)) {
     const current = snapshot(target, operation);
@@ -379,7 +441,9 @@ async function poll(target, operation, minimumAttempts) {
     process.stdout.write(`${JSON.stringify({ event: 'chatwoot_uat_progress', operation: operation.mode,
       poll: index, ...sanitizeChatwootFinalProgress(last) })}\n`);
     if (last.workLifecycleStatus === 'completed' && last.mainQueueAttempts >= minimumAttempts) return last;
-    if (last.dlqRecords || last.openChatwootAlerts || last.failedUnitSyncRuns || last.failedCoverageRows) {
+    if (last.dlqRecords > target.allowedIncidentCounts.dlqRecords
+        || last.openChatwootAlerts > target.allowedIncidentCounts.openAlerts
+        || last.failedUnitSyncRuns || last.failedCoverageRows) {
       fail('Terminal reliability failure observed', 'CHATWOOT_FINAL_UAT_TERMINAL_FAILURE', scrub(last));
     }
     if (index < max) await new Promise((resolvePromise) => setTimeout(resolvePromise, interval));

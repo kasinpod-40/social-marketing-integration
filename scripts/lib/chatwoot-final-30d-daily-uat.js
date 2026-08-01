@@ -251,7 +251,7 @@ export function buildChatwootFinalUatSnapshotSql(operation = {}) {
       (SELECT COUNT(*) FROM sync_locks WHERE lock_key = 'chatwoot:chemistry_k:analytics' AND expires_at > unixepoch('now') * 1000) AS active_lock_count,
       COALESCE((SELECT MAX(main_queue_attempts) FROM queue_operation_attempts WHERE operation_id = '${operationId}' AND work_key = '${workKey}'), 0) AS main_queue_attempts,
       (SELECT COUNT(*) FROM sync_runs WHERE ${unitSyncRunRange}) AS unit_sync_runs,
-      (SELECT COUNT(*) FROM sync_runs WHERE ${unitSyncRunRange} AND status NOT IN ('success', 'completed')) AS failed_unit_sync_runs,
+      (SELECT COUNT(*) FROM sync_runs WHERE ${unitSyncRunRange} AND status IN ('failed', 'partial_success')) AS failed_unit_sync_runs,
       (SELECT COUNT(*) FROM data_coverage_runs WHERE ${unitSyncRunRange}) AS coverage_runs,
       (SELECT COUNT(*) FROM data_coverage_runs WHERE ${unitSyncRunRange} AND failed_rows > 0) AS failed_coverage_runs,
       (SELECT COALESCE(SUM(failed_rows), 0) FROM data_coverage_runs WHERE ${unitSyncRunRange}) AS failed_coverage_rows,
@@ -284,9 +284,10 @@ export function normalizeChatwootFinalUatPreflight(row = {}) {
   });
 }
 
-export function assertChatwootFinalUatPreflight(snapshot = {}) {
+export function assertChatwootFinalUatPreflight(snapshot = {}, options = {}) {
   const totalBusinessRows = Object.values(snapshot.businessCounts ?? {}).reduce((sum, value) => sum + count(value, 'businessCount'), 0);
-  if (snapshot.activeChatwootWork !== 0 || snapshot.activeChatwootLocks !== 0
+  const expectedActiveWork = count(options.expectedActiveWork ?? 0, 'expectedActiveWork');
+  if (snapshot.activeChatwootWork !== expectedActiveWork || snapshot.activeChatwootLocks !== 0
       || snapshot.chatwootTableCount !== 14 || snapshot.chatwootIndexCount !== 15) {
     throw uatError('Remote D1 is not a valid Chatwoot Initial-UAT target', 'CHATWOOT_FINAL_UAT_PREFLIGHT_BLOCKED', {
       activeChatwootWork: snapshot.activeChatwootWork,
@@ -414,7 +415,7 @@ export function normalizeChatwootFinalUatSnapshot(row = {}) {
   });
 }
 
-export function classifyChatwootFinalUatCompletion(snapshot = {}, operation = {}) {
+export function classifyChatwootFinalUatCompletion(snapshot = {}, operation = {}, options = {}) {
   const requestedAt = requireTimestamp(operation.originalRequestedAt, 'originalRequestedAt');
   const days = operation.mode === 'initial' ? 30 : operation.mode === 'daily' ? 3 : null;
   const expectedMode = operation.mode === 'initial' ? 'initial_30_day_uat' : 'daily_incremental';
@@ -432,7 +433,10 @@ export function classifyChatwootFinalUatCompletion(snapshot = {}, operation = {}
   if (snapshot.activeLockCount !== 0) missing.push('zero_active_lock');
   if (snapshot.failedUnitSyncRuns !== 0) missing.push('zero_failed_unit_sync');
   if (snapshot.failedCoverageRuns !== 0 || snapshot.failedCoverageRows !== 0) missing.push('zero_failed_coverage');
-  if (snapshot.dlqRecords !== 0 || snapshot.openChatwootAlerts !== 0) missing.push('zero_terminal_incidents');
+  const allowedDlqRecords = count(options.allowedDlqRecords ?? 0, 'allowedDlqRecords');
+  const allowedOpenAlerts = count(options.allowedOpenAlerts ?? 0, 'allowedOpenAlerts');
+  if (snapshot.dlqRecords !== allowedDlqRecords
+      || snapshot.openChatwootAlerts !== allowedOpenAlerts) missing.push('terminal_incident_boundary');
   if (snapshot.mainQueueAttempts < 2 || snapshot.unitSyncRuns < 2) missing.push('bounded_multi_unit_runtime');
   if (snapshot.cursorLastSyncRunId !== expectedSyncRunId
       || snapshot.cursorGeneration !== requestedAt

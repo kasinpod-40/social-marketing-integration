@@ -188,7 +188,9 @@ async function main() {
   );
   assertSafeRestoreEvidence(safeRestoreEvidence, repository.head);
   const session = await readPrivateJson(join(uatDirectory, 'session.json'), 'Final UAT session');
-  assertSession(session, repository.head);
+  assertSession(session, repository.head, {
+    recoverySessionPath: sourceEnv.MKT_CHATWOOT_INITIAL_FAILURE_RECOVERY_SESSION_PATH ?? null,
+  });
 
   const remoteSafe = assertRemoteWorkerAllFlagsFalse(env, generatedConfigPath);
   const activeLockCount = readExactActiveLockCount(env);
@@ -481,8 +483,10 @@ function assertSafeRestoreEvidence(evidence, head) {
   }
 }
 
-function assertSession(session, head) {
-  const accepted = session?.repositoryHead === head
+function assertSession(session, head, options = {}) {
+  const recovery = typeof options.recoverySessionPath === 'string'
+    && options.recoverySessionPath.trim() !== '';
+  const accepted = (session?.repositoryHead === head || recovery)
     && session?.initial?.mode === 'initial'
     && session?.daily?.mode === 'daily'
     && Number.isSafeInteger(session?.initial?.originalRequestedAt)

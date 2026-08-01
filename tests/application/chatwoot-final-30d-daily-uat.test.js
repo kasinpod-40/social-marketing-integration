@@ -260,6 +260,8 @@ test('D1 SQL is read-only, scoped and covers every Chatwoot target', () => {
   assert.match(snapshot, /chatwoot_runtime_30d_daily_v1/u);
   assert.match(snapshot, /queue_operation_attempts/u);
   assert.match(snapshot, /sync_cursors/u);
+  assert.match(snapshot, /status IN \('failed', 'partial_success'\)/u);
+  assert.doesNotMatch(snapshot, /status NOT IN \('success', 'completed'\)/u);
   for (const spec of CHATWOOT_FINAL_UAT_TABLES) assert.match(snapshot, new RegExp(spec.d1Table, 'u'));
 });
 

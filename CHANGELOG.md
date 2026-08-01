@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased — Chatwoot Initial Terminal Failure Recovery — 2026-08-01
+
+### Reliability
+
+- Stopped Final UAT polling from classifying a normal `running` unit as terminally failed.
+- Added progress-prefix-safe Wrangler JSON parsing and a SELECT-only, retained-session/D1-proven incident
+  inspector with sanitized diagnostics and all-false Worker verification.
+- Added exact guarded reactivation and one recovery-owned continuation for the same Initial operation, Work,
+  generation and requested-at identity; replacement Initial admission remains impossible.
+- Reused the existing Stable-key writers and Final UAT flow to preserve partial masters, reconcile Lark lag, verify
+  all 15 D1/Lark targets, and prove Initial/Daily replay stability.
+
+### Safety
+
+- Current and retained old incidents close only after accepted UAT, parity and all-false restore evidence.
+- Repository implementation performed no Provider request, Queue action, Remote D1/Lark mutation, Worker deploy,
+  Secret mutation, Schedule/Webhook activation or Production action.
+
 ## Unreleased — WooCommerce 2026-only bounded history — 2026-07-30
 
 - Replaced unbounded Order history with an immutable `2026-01-01` through operation-time source
