@@ -39,6 +39,7 @@ import {
   stableJson,
 } from './lib/chatwoot-final-30d-daily-uat.js';
 import {
+  CHATWOOT_INITIAL_RECOVERY_BOUNDARIES,
   buildChatwootInitialRecoveryContinuationJob,
   validateRetainedSession,
 } from './lib/chatwoot-initial-terminal-failure-recovery.js';
@@ -96,12 +97,13 @@ async function main() {
   await mkdir(evidenceDir, { recursive: true, mode: 0o700 });
   const recoverySessionPath = env.MKT_CHATWOOT_INITIAL_FAILURE_RECOVERY_SESSION_PATH ?? null;
   const session = await sessionFor(evidenceDir, head, recoverySessionPath);
+  const recoveryBoundary = resolveInitialRecoveryBoundary(env, recoverySessionPath !== null);
   const target = {
     head, sourcePath, config, evidenceDir, session, env,
     recovery: recoverySessionPath !== null,
-    allowedIncidentCounts: recoverySessionPath !== null
-      ? Object.freeze({ dlqRecords: 1, openAlerts: 1 })
-      : Object.freeze({ dlqRecords: 0, openAlerts: 0 }),
+    recoveryBoundary,
+    allowedIncidentCounts: recoveryBoundary?.allowedIncidentCounts
+      ?? Object.freeze({ dlqRecords: 0, openAlerts: 0 }),
   };
 
   await localGates();
@@ -381,8 +383,10 @@ async function operationFlow(target, operation, label, previous = null) {
 }
 
 async function sendRecoveryContinuationOnce(target, operation, attemptPath, before) {
-  if (before.workLifecycleStatus !== 'active' || before.activeNextSequence !== 0
-      || before.mainQueueAttempts !== 2 || before.activeLockCount !== 0) {
+  if (before.workLifecycleStatus !== 'active'
+      || before.activeNextSequence !== target.recoveryBoundary.nextSequence
+      || before.mainQueueAttempts !== target.recoveryBoundary.mainQueueAttempts
+      || before.activeLockCount !== 0) {
     fail('Exact Initial recovery boundary changed before continuation', 'CHATWOOT_INITIAL_FAILURE_BOUNDARY_DRIFT');
   }
   if (await exists(attemptPath)) {
@@ -409,6 +413,28 @@ async function sendRecoveryContinuationOnce(target, operation, attemptPath, befo
   });
   const body = await response.json().catch(() => null);
   if (!response.ok || body?.success !== true) fail('Recovery Queue continuation was not accepted', 'CHATWOOT_FINAL_UAT_QUEUE_SEND_FAILED', { status: response.status });
+}
+
+function resolveInitialRecoveryBoundary(env, recovering) {
+  if (!recovering) return null;
+  const value = env.MKT_CHATWOOT_INITIAL_FAILURE_RECOVERY_BOUNDARY;
+  if (value === CHATWOOT_INITIAL_RECOVERY_BOUNDARIES.original) {
+    return Object.freeze({
+      value,
+      nextSequence: 0,
+      mainQueueAttempts: 2,
+      allowedIncidentCounts: Object.freeze({ dlqRecords: 1, openAlerts: 1 }),
+    });
+  }
+  if (value === CHATWOOT_INITIAL_RECOVERY_BOUNDARIES.fractionalTimestamp) {
+    return Object.freeze({
+      value,
+      nextSequence: 1,
+      mainQueueAttempts: 4,
+      allowedIncidentCounts: Object.freeze({ dlqRecords: 2, openAlerts: 3 }),
+    });
+  }
+  fail('Initial recovery boundary contract is missing or unsupported', 'CHATWOOT_INITIAL_FAILURE_BOUNDARY_DRIFT');
 }
 
 async function sendOnce(target, operation, attemptPath, priorAttempts) {

@@ -21,6 +21,7 @@ import {
   assertChatwootInitialFailureRecoveryConfirmation,
   buildChatwootCurrentIncidentClosureSql,
   buildChatwootInitialFailureReactivationSql,
+  classifyChatwootInitialRecoveryBoundary,
   validateRetainedSession,
 } from './lib/chatwoot-initial-terminal-failure-recovery.js';
 import {
@@ -77,6 +78,7 @@ async function main() {
   );
   const evidence = JSON.parse(await readFile(inspectionPath, 'utf8'));
   const inspection = evidence.inspection;
+  const recoveryBoundary = classifyChatwootInitialRecoveryBoundary(inspection);
   const retainedSessionPath = resolve(ROOT, evidence.retainedSessionPath);
   const session = validateRetainedSession(JSON.parse(await readFile(retainedSessionPath, 'utf8')));
   if (inspection?.operation?.operationId !== session.initial.operationId) {
@@ -118,6 +120,7 @@ async function main() {
     [CHATWOOT_FINAL_SOURCE_CONFIG_RECOVERY_CONFIRMATION.envName]:
       CHATWOOT_FINAL_SOURCE_CONFIG_RECOVERY_CONFIRMATION.value,
     MKT_CHATWOOT_INITIAL_FAILURE_RECOVERY_SESSION_PATH: retainedSessionPath,
+    MKT_CHATWOOT_INITIAL_FAILURE_RECOVERY_BOUNDARY: recoveryBoundary,
   });
   runInherited('node', ['scripts/chatwoot-final-source-config-recovery-launcher.mjs', '--execute'], childEnv);
 
@@ -161,7 +164,10 @@ async function main() {
   ));
   for (const field of ['current_terminal_rows', 'current_metadata_rows', 'current_alert_rows']) {
     const row = closureRows.find((value) => Object.hasOwn(value, field));
-    if (Number(row?.[field]) !== 1) {
+    const expectedRows = field === 'current_alert_rows'
+      ? inspection.currentOpenAlerts
+      : inspection.currentDlqRecords;
+    if (Number(row?.[field]) !== expectedRows) {
       throw operatorError('Current incident closure did not update the exact row set', 'CHATWOOT_INITIAL_FAILURE_CLOSURE_FAILED', { field });
     }
   }
@@ -172,7 +178,7 @@ async function main() {
     buildChatwootFinalUatSnapshotSql(session.initial),
   ));
   const finalClassification = classifyChatwootFinalUatCompletion(finalSnapshot, session.initial, {
-    allowedDlqRecords: 1,
+    allowedDlqRecords: inspection.currentDlqRecords,
     allowedOpenAlerts: 0,
   });
   if (!finalClassification.complete) {
@@ -195,7 +201,7 @@ async function main() {
     restoredAllFlagsFalse: true,
     activeLockCount: 0,
     reactivatedRows,
-    currentIncidentClosureRows: 3,
+    currentIncidentClosureRows: inspection.currentDlqRecords * 2 + inspection.currentOpenAlerts,
     secondInitialAdmission: false,
     exactExistingWorkContinuation: true,
     scheduleEnabled: false,
