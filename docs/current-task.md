@@ -123,6 +123,12 @@ After verified merge, fetch the exact new wrapper merge commit, switch to it in 
 scripts/meta-history-2026-reviewed-release-terminal.mjs
 ```
 
+Inside the immutable reviewed release clone, that wrapper delegates only to the existing exact child authority:
+
+```text
+scripts/meta-history-2026-exact-plan-continuation-terminal.mjs
+```
+
 Do not run the previous wrapper commit, ordinary Meta Terminal, direct D1/Lark launchers or manual Queue commands.
 Do not edit retained evidence, `.dev.vars`, lifecycle state or Business facts.
 
