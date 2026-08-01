@@ -27,6 +27,18 @@ test('exact-plan public Terminal supplies the retained private Safe config', asy
   assert.doesNotMatch(source, /meta-d1-only-rollout-launcher\.mjs/u);
 });
 
+test('exact-plan Terminal requires confirmation before any local D1 summary write', async () => {
+  const source = await readFile(TERMINAL, 'utf8');
+  const confirmation = source.indexOf(
+    'assertMetaHistoryExactContinuationConfirmation(process.env)',
+  );
+  const materialization = source.indexOf('await ensureRetainedD1Summary()');
+
+  assert.ok(confirmation >= 0);
+  assert.ok(materialization > confirmation);
+  assert.match(source, /stage = 'confirm-local-summary-materialization'/u);
+});
+
 test('exact-plan Terminal materializes a missing D1 summary only from local retained evidence', async () => {
   const source = await readFile(TERMINAL, 'utf8');
 
