@@ -52,21 +52,29 @@ export async function writeDashboardMaterializationToLark(input = {}) {
     source_snapshot_count: sourceSnapshotCount,
     baseline_coverage_rate: payload.coverageRate,
   });
-  const metricRows = buildReportMetricValueRows({
+  const metricInput = {
     reportId: row.report_id,
     reportSettingKey: row.report_setting_key,
     customerProfile,
     reportType: row.report_type,
     platform: payload.platformScope,
     accountId: row.account_key,
-    metrics: payload.metricPayload,
     dataStatus: payload.dataStatus,
     sourceSnapshotCount,
     period: payload.period,
     generatedAt: row.generated_at,
     utcOffset,
     sharedDimensions: buildMetricSharedDimensions(sharedDimensions),
+  };
+  const summaryMetricRows = buildReportMetricValueRows({
+    ...metricInput,
+    metrics: payload.metricPayload,
   });
+  const dimensionMetricRows = buildReportMetricValueRows({
+    ...metricInput,
+    metrics: payload.collections?.dimension_metrics ?? [],
+  });
+  const metricRows = Object.freeze([...summaryMetricRows, ...dimensionMetricRows]);
   const topContentRows = payload.capability === 'organic' ? buildReportTopContentRows({
     reportId: row.report_id,
     reportSettingKey: row.report_setting_key,
