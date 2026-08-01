@@ -4,7 +4,6 @@ import { spawnSync } from 'node:child_process';
 import {
   chmod,
   mkdtemp,
-  mkdir,
   readFile,
   rm,
   symlink,
@@ -103,7 +102,6 @@ test('prior Chatwoot attempt validates exact attempt, restore and Worker identit
 test('real filesystem loader accepts only private regular evidence files', async () => {
   const root = await mkdtemp(join(tmpdir(), 'chatwoot-prior-attempt-'));
   try {
-    await mkdir(root, { mode: 0o700 });
     await writePrivateJson(join(root, FILES[0]), attempt());
     await writePrivateJson(join(root, FILES[1]), restore());
     const result = await loadChatwootSafeBaselinePriorAttempt({
