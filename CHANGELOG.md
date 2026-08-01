@@ -10,6 +10,8 @@
   exact phase, error, DLQ, Alert, lock and Business-count validation.
 - Deduplicated byte-identical retained UAT session fingerprints and preferred the canonical repository-head path;
   distinct latest fingerprints remain ambiguous and fail closed.
+- Added an exact attempts-5 safe-restore race boundary and allowed only its pre-existing failed unit while the Work
+  remains active; terminal lifecycle or any incident-count growth still fails immediately.
 - Stopped Final UAT polling from classifying a normal `running` unit as terminally failed.
 - Added progress-prefix-safe Wrangler JSON parsing and a SELECT-only, retained-session/D1-proven incident
   inspector with sanitized diagnostics and all-false Worker verification.

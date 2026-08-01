@@ -86,6 +86,9 @@ test('candidate admission forwards only known shallow boundaries to exact inspec
     lifecycle_status: 'terminal', main_queue_attempts: 4, unit_sync_runs: 2,
   }), true);
   assert.equal(isChatwootInitialFailureCandidateAdmitted({
+    lifecycle_status: 'terminal', main_queue_attempts: 5, unit_sync_runs: 2,
+  }), true);
+  assert.equal(isChatwootInitialFailureCandidateAdmitted({
     lifecycle_status: 'terminal', main_queue_attempts: 4, unit_sync_runs: 3,
   }), false);
   assert.equal(isChatwootInitialFailureCandidateAdmitted({
@@ -259,6 +262,50 @@ test('fractional timestamp terminal recovery preserves the durable Conversation 
   assert.doesNotMatch(sql, /DELETE FROM sync_work_phases/iu);
 });
 
+test('safe-restore race boundary reactivates only the exact admitted Work', () => {
+  const operation = session().initial;
+  const businessCounts = Object.fromEntries(
+    [...new Set(CHATWOOT_FINAL_UAT_TABLES.map((item) => item.d1Table))]
+      .map((table) => [table, table === 'chatwoot_account_state' ? 1 : 0]),
+  );
+  const inspection = {
+    operation,
+    workLifecycle: 'terminal',
+    terminalReason: 'QUEUE_PERMANENT_FAILURE',
+    abandonedAt: 1_800_000_100_000,
+    auditReference: 'terminal:safe-restore-race',
+    workGeneration: operation.generation,
+    workRequestedAt: operation.originalRequestedAt,
+    activeChatwootWork: 0,
+    phaseRows: 1,
+    durableStage: 'conversations',
+    nextSequence: 1,
+    activeLockCount: 0,
+    queueOperationRows: 1,
+    mainQueueAttempts: 5,
+    unitSyncRuns: 2,
+    failedUnitSyncRuns: 1,
+    failedSyncRunId: `${operation.syncRunId}:unit:1`,
+    unitSyncRunStatus: 'failed',
+    errorCode: 'CHATWOOT_MANUAL_UAT_CONNECTOR_INVALID',
+    errorMessage: 'Chatwoot connector is disabled or outside the protected UAT runtime',
+    currentDlqRecords: 3,
+    currentOpenAlerts: 4,
+    failedCoverageRows: 0,
+    businessCounts,
+  };
+  assert.equal(
+    classifyChatwootInitialRecoveryBoundary(inspection),
+    CHATWOOT_INITIAL_RECOVERY_BOUNDARIES.safeRestoreRace,
+  );
+  const sql = buildChatwootInitialFailureReactivationSql(inspection);
+  assert.match(sql, /main_queue_attempts=5/u);
+  assert.match(sql, /main_queue_attempts=4/u);
+  assert.match(sql, /main_queue_attempts=2/u);
+  assert.match(sql, /\)=3 AND EXISTS/u);
+  assert.match(sql, /\)=4/u);
+});
+
 test('public recovery is plan-only and delegates exact resume through existing Final UAT', async () => {
   const source = await readFile(
     new URL('../../scripts/chatwoot-initial-terminal-failure-recovery-launcher.mjs', import.meta.url),
@@ -271,4 +318,10 @@ test('public recovery is plan-only and delegates exact resume through existing F
   assert.match(source, /chatwoot-final-source-config-recovery-launcher\.mjs/u);
   assert.match(source, /buildChatwootCurrentIncidentClosureSql/u);
   assert.doesNotMatch(source, /sendOnce\(/u);
+  const finalUat = await readFile(
+    new URL('../../scripts/chatwoot-final-30d-daily-uat.mjs', import.meta.url),
+    'utf8',
+  );
+  assert.match(finalUat, /allowedPreexistingFailedUnits/u);
+  assert.match(finalUat, /last\.workLifecycleStatus === 'terminal'/u);
 });
