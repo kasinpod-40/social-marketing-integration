@@ -1,15 +1,11 @@
-# Current Task — Meta History Exact-Plan Execution Handoff v2
+# Current Task — Meta Retained D1 Summary Materialization Recovery v1
 
 ## Status
 
 ```text
-TASK_STATUS                          = META_HISTORY_EXACT_PLAN_EXECUTION_READY
-CURRENT_PROGRAM                      = META_HISTORY_EXACT_PLAN_CONTINUATION_V1
-IMPLEMENTATION_PR                    = #372 / SQUASH_MERGED
-IMPLEMENTATION_MAIN_SHA              = 4261795b648d6494c1717f26c93f9acc34b81a16
-CHATWOOT_DELTA_HOTFIX_PR             = #378 / SQUASH_MERGED
-CHATWOOT_DELTA_HOTFIX_MAIN_SHA       = e0ba76b54b32a7d3739e83d64ff02d2a0e75c94f
-VERIFIED_CHATWOOT_DELTA_HEAD         = 1242592676295d0c79997faa2cadd4e174d7cce4
+TASK_STATUS                          = REPOSITORY_HOTFIX_IN_REVIEW
+CURRENT_PROGRAM                      = META_RETAINED_D1_SUMMARY_MATERIALIZATION_V1
+BRANCH                               = hotfix/meta-retained-d1-summary-materialization-v1
 RETAINED_OPERATION_REPOSITORY_HEAD   = 5ff8e2cfb1f890ac2a8f2867a904b477c6456d91
 FACEBOOK_OPERATION_ID                = meta-facebook-history-20260701-20260731-1d12a5ec4fef
 FACEBOOK_ORIGINAL_REQUESTED_AT       = 2026-07-31T16:51:11.017Z
@@ -21,24 +17,18 @@ FACEBOOK_ACTIVE_LOCKS                = 0
 FACEBOOK_QUEUE_OPERATION_ROWS        = 1
 FACEBOOK_PROVIDER_REPLAY_ALLOWED     = NO
 FACEBOOK_D1_QUEUE_RESEND_ALLOWED     = NO
-PREVIOUS_CONTINUATION_STAGE          = exact-clean-current-main
-PREVIOUS_CONTINUATION_REMOTE_ACTIONS = 0
-META_VERIFICATION                    = run 30681619809 / #142 / PASS
-BRANCH_VERIFICATION                  = run 30681619821 / #1547 / PASS
-REVIEW_THREADS                       = 0
+LATEST_CONTINUATION_STAGE            = load-retained-evidence
+LATEST_CONTINUATION_CODE             = ENOENT
+LATEST_CONTINUATION_REMOTE_ACTIONS   = 0
 WORKER_FLAGS                         = ALL_FALSE_VERIFIED
 SCHEDULE                             = DISABLED
 PRODUCTION                           = BLOCKED
-NEXT_STEP                            = RUN_EXACT_PLAN_CONTINUATION_TERMINAL_ONCE
+NEXT_STEP                            = VERIFY_AND_MERGE_LOCAL_EVIDENCE_RECOVERY
 ```
 
-## Retained live evidence
+## Retained live boundary
 
-The ninth Meta history execution admitted the deterministic Facebook July operation. A later ordinary Terminal
-call correctly stopped at `cloudflare-readiness` because Remote Reliability contained one active Work and one
-active Queue operation.
-
-Two read-only identity snapshots proved the exact active identity:
+The deterministic Facebook July operation remains the same admitted operation:
 
 ```text
 work_key      facebook:meta-facebook-history-20260701-20260731-1d12a5ec4fef
@@ -48,8 +38,7 @@ lifecycle     active
 queue rows    1
 ```
 
-A separate exact-operation diagnostic performed zero writes and proved a stable D1-complete/Lark-pending
-boundary across two reads:
+Two prior read-only snapshots proved a stable D1-complete/Lark-pending boundary:
 
 ```text
 sync_run_status               success
@@ -57,133 +46,143 @@ sync_run_error_code           null
 D1 phase                      complete
 source staging phase          complete
 organicHistoryDone            true
-D1 written count              3
-operation account daily rows  1
 Coverage runs / invalid       2 / 0
 Active lock                   0
 Lark phase count              0
 Completion phase count        0
 ```
 
-The retained D1 facts and existing Queue admission are authoritative. Do not restart, replace, abandon,
-terminalize or resend the Facebook Work.
+Existing D1 facts and the existing Queue admission are authoritative. Do not restart, replace, abandon,
+terminalize or resend this Facebook operation.
 
-## First guarded continuation stop
+## Latest guarded stop
 
-The first post-merge exact-plan continuation attempt stopped at `exact-clean-current-main` before any Provider,
-Queue, Remote D1, Remote Lark, Worker, Schedule or Production action.
-
-The guard correctly rejected five current-main paths introduced by the already-reviewed Chatwoot source-config
-recovery in PR #373:
+The merged exact-plan continuation passed the reviewed Repository-delta guard and then stopped at
+`load-retained-evidence` because this local file was absent:
 
 ```text
-.github/workflows/branch-verification.yml
-docs/tasks/chatwoot-final-source-config-recovery-v1.md
-scripts/chatwoot-final-source-config-recovery-launcher.mjs
-scripts/lib/chatwoot-final-source-config-recovery.js
-tests/application/chatwoot-final-source-config-recovery.test.js
+outputs/meta-d1-only-rollout/facebook/
+meta-facebook-history-20260701-20260731-1d12a5ec4fef/summary.json
 ```
 
-PR #378 adds exactly these five paths to the retained-Head release allowlist and extends the fail-closed
-regression. It does not change the Meta operation identity, original generation, D1/Lark boundary, critical
-Meta path set or execution behavior.
+The stop occurred before Cloudflare context resolution, Provider request, Queue send, Remote D1/Lark mutation,
+Worker deployment or Schedule action.
 
-## Recovery decision
+The missing file is the final local D1 operator summary. It cannot be replaced with a JSON assembled only from
+the Remote D1 snapshot because the Lark gate requires the original evidence-chain head, accepted idempotent
+rerun and verified all-false restore.
 
-The first required action remains same-operation Lark continuation using the exact operation ID and original
-requested-at generation. Facebook Provider read and Facebook D1 Queue send must not run again.
+## Repository correction
 
-After Facebook Lark completion returns Reliability to idle, the remaining Instagram and Meta Ads operations
-must resume from the persisted six-operation plan bound to the retained Repository Head. The ordinary Meta
-Terminal would create a different deterministic plan identity and remains prohibited for this incident.
+The exact-plan public Terminal is extended to recover only the missing local summary when all retained D1 phase
+evidence files are present:
 
-## Merged implementation
+```text
+plan.json
+preflight.json
+backup.json
+deploy-safe-baseline.json
+verify-safe-baseline.json
+deploy-d1-only-gates.json
+verify-d1-only-deployment.json
+snapshot-before.json
+send-one-d1-only.json
+verify-d1-only.json
+resend-same-operation.json
+verify-idempotent-rerun.json
+restore-all-false.json
+verify-restore.json
+```
 
-PR #372 adds the guarded recovery boundary:
+The recovery:
+
+1. requires clean current `main == origin/main`;
+2. validates the exact retained-Head release delta and zero Meta-critical drift before writing local evidence;
+3. requires the complete ordered phase list;
+4. validates every evidence hash and previous-evidence link with the existing D1 operator contract;
+5. requires exact Facebook operation, generation, period, Work key and Sync-run identity from `plan.json`;
+6. requires the chain to end at `verify-restore` with mode `safe` and zero expected true flags;
+7. creates the final `summary` through `createMetaD1OnlyEvidence()` using the validated chain head;
+8. validates the generated summary through `validateMetaD1OnlySummaryForLark()`;
+9. writes `summary.json` atomically as a private local file; and
+10. then delegates to the existing guarded exact-plan continuation.
+
+The materialization path contains no `fetch`, Wrangler command, Provider read, Queue send, D1 command, Lark
+request, Worker deployment or Schedule mutation. If any phase file is missing, invalid or chain-broken, it stops
+and reports the exact missing/invalid evidence before the continuation child starts.
+
+## Scope
+
+Changed files:
 
 ```text
 scripts/lib/meta-history-exact-plan-continuation.js
 scripts/meta-history-2026-exact-plan-continuation-terminal.mjs
-scripts/meta-history-2026-exact-plan-continuation.mjs
-scripts/verify-meta-history-exact-plan-continuation-local.mjs
-tests/application/meta-history-2026-public-launcher.test.js
 tests/application/meta-history-exact-plan-continuation.test.js
 tests/application/meta-history-exact-plan-continuation-wiring.test.js
-docs/tasks/meta-history-exact-plan-continuation-v1.md
+docs/current-task.md
 ```
 
-The public Terminal supplies the retained private Safe config to the guarded continuation. The guarded
-continuation:
+No new public script, Runtime flag, Queue operation, migration, Worker route, Lark schema or Production path is
+introduced.
 
-1. requires clean current `main == origin/main` and explicit one-time confirmation;
-2. validates the exact retained Head, operation, generation, range and persisted runtime plan;
-3. requires the exact 33-path reviewed current-main Release delta;
-4. rejects any unreviewed path or critical Meta, Worker, Queue or Lark-connector drift;
-5. validates the retained D1 summary through the existing Lark acceptance contract;
-6. verifies all-false Worker state and two stable Remote boundary reads;
-7. creates an isolated local clone pinned as `main == origin/main == retained Head`;
-8. reuses the retained private outputs and evidence without editing prior evidence;
-9. runs only the Facebook same-operation Lark chain first;
-10. blocks blind resend when Queue acceptance is uncertain;
-11. restores and verifies all Worker execution flags false after an active Lark window;
-12. validates accepted Facebook Lark completion and same-operation idempotent rerun;
-13. invokes the retained one-command finalizer inside the isolated retained-Head clone to resume the remaining
-    persisted operations; and
-14. accepts completion only from the existing `META_HISTORY_2026_COMPLETED_SAFE` final summary.
-
-## Verification authority
-
-The exact Chatwoot-delta Hotfix Head `1242592676295d0c79997faa2cadd4e174d7cce4` passed both required workflows:
+## Required verification
 
 ```text
-Meta End-to-End Verification  run 30681619809 / #142 / PASS
-Branch Verification           run 30681619821 / #1547 / PASS
-Review threads                0
-Branch behind main            0 before merge
-Changed files                 2 / allowlist and regression only
-```
-
-Passed gates include:
-
-```text
-Locked dependency install
-Diff and Repository hygiene
-Syntax and architecture audit
-Focused Meta continuation tests
-Focused Woo completed-state race recovery tests
-Focused Chatwoot final UAT and source-config recovery tests
-Focused staged TikTok tests
+Syntax / architecture / Repository hygiene
+Focused exact-plan contract tests
+Focused exact-plan wiring tests
 Full Unit and Workers runtime tests
 Report reliability regression
 Dependency audit
 Wrangler deployment dry-run
+Review threads = 0
+Branch behind main = 0
 ```
 
-Implementation, review and CI performed no Provider request, Queue send, Remote D1 mutation, Remote Lark
-mutation, Worker deployment, Schedule change or Production action.
+Repository implementation and CI must perform:
 
-## Public execution command
+```text
+Provider requests          0
+Queue sends                0
+Remote D1 mutations        0
+Remote Lark mutations      0
+Worker deployments         0
+Schedule mutations         0
+Production                 BLOCKED
+```
 
-Run exactly once from the clean current `main` checkout:
+## Public command after review and merge
+
+Only after the exact Hotfix Head passes all gates and is Squash Merged, run the same public entrypoint once from
+clean current `main`:
 
 ```bash
 CONFIRM_META_HISTORY_EXACT_CONTINUATION=CONTINUE_META_HISTORY_FROM_FACEBOOK_LARK_BOUNDARY \
 node scripts/meta-history-2026-exact-plan-continuation-terminal.mjs --execute
 ```
 
-Do not run the ordinary Meta Terminal, D1/Lark child launchers or a manual Queue command. Do not modify
-`.dev.vars`, prior evidence, lifecycle state or business facts.
+Do not run the ordinary Meta Terminal, D1/Lark child launchers or manual Queue commands. Do not edit
+`.dev.vars`, prior evidence, lifecycle state or Business facts.
 
-If the command stops after any deployment, Queue-attempt marker or confirmed Lark write, do not blindly rerun.
-Inspect the exact emitted stage, code and retained evidence first. The continuation itself is responsible for
-same-operation resume and automatic all-false restoration.
+## Expected local recovery marker
 
-## Expected accepted result
+When the D1 summary was absent and the retained chain is complete, the Terminal must emit:
+
+```text
+META_HISTORY_RETAINED_D1_SUMMARY_MATERIALIZED
+providerReplay             false
+queueResend                false
+remoteD1MutationCount      0
+remoteLarkMutationCount    0
+workerDeploymentCount      0
+```
+
+It must then continue through the existing guarded path. Live completion is not declared until the final output
+contains:
 
 ```text
 META_HISTORY_2026_EXACT_PLAN_CONTINUATION_COMPLETED_SAFE
-retainedRepositoryHead       5ff8e2cfb1f890ac2a8f2867a904b477c6456d91
-operationId                  meta-facebook-history-20260701-20260731-1d12a5ec4fef
 providerReplayForFacebook    false
 d1QueueResendForFacebook     false
 facebookLarkCompleted        true
@@ -195,6 +194,3 @@ activeQueueOperations        0
 scheduleEnabled              false
 production                   BLOCKED
 ```
-
-Live completion is not declared until the command emits the accepted decision and final safe-state evidence.
-Detailed contract: `docs/tasks/meta-history-exact-plan-continuation-v1.md`.
