@@ -1,13 +1,11 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import {
   CHATWOOT_FINAL_UAT_ACTIVE_TRUE_FLAGS,
 } from '../../scripts/lib/chatwoot-final-30d-daily-uat.js';
-import {
-  fingerprintChatwootFinalSourceRecovery,
-} from '../../scripts/lib/chatwoot-final-source-config-recovery.js';
 import {
   CHATWOOT_INITIAL_FAILURE_WORKER_SAFETY_MODES,
   classifyChatwootInitialFailureWorkerSafety,
@@ -20,9 +18,13 @@ const INSPECTOR = new URL(
 const VERSION_A = '11111111-1111-4111-8111-111111111111';
 const VERSION_B = '22222222-2222-4222-8222-222222222222';
 
+function sha256(value) {
+  return createHash('sha256').update(String(value)).digest('hex');
+}
+
 function selectionHint(versionId = VERSION_A) {
   return Object.freeze({
-    activeVersionFingerprint: fingerprintChatwootFinalSourceRecovery(versionId),
+    activeVersionFingerprint: sha256(versionId),
   });
 }
 
@@ -37,6 +39,7 @@ test('inspector worker safety keeps ordinary all-false behavior', () => {
   );
   assert.equal(result.allFlagsFalse, true);
   assert.equal(result.exactActiveResumeWindow, false);
+  assert.equal(result.versionFingerprint, sha256(VERSION_A));
 });
 
 test('exact Chatwoot active window requires the verified handoff fingerprint', () => {
@@ -52,6 +55,7 @@ test('exact Chatwoot active window requires the verified handoff fingerprint', (
   );
   assert.equal(result.allFlagsFalse, false);
   assert.equal(result.exactActiveResumeWindow, true);
+  assert.equal(result.versionFingerprint, sha256(VERSION_A));
   assert.deepEqual(
     result.trueFlags,
     [...CHATWOOT_FINAL_UAT_ACTIVE_TRUE_FLAGS].sort(),
