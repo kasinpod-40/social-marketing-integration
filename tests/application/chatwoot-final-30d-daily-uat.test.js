@@ -9,8 +9,10 @@ import {
   CHATWOOT_FINAL_UAT_TABLES,
   assertChatwootFinalUatBaselineCompatible,
   assertChatwootFinalUatBaselinePreserved,
+  assertChatwootFinalUatControllerResume,
   assertChatwootFinalUatConfirmation,
   assertChatwootFinalUatPreflight,
+  assertChatwootFinalUatResumeIdentity,
   buildChatwootFinalUatConfigWindow,
   buildChatwootFinalUatJob,
   buildChatwootFinalUatPreflightSql,
@@ -289,6 +291,49 @@ test('same-operation replay requires attempt growth and no Business/Coverage/cur
   assert.throws(() => compareChatwootFinalUatReplay(before, drift), (error) => error?.code === 'CHATWOOT_FINAL_UAT_REPLAY_INVALID');
 });
 
+test('controller resume is poll-only for the exact advanced Initial operation', () => {
+  const operation = session().initial;
+  const active = normalizeChatwootFinalUatSnapshot(completedRow(operation, {
+    work_lifecycle_status: 'active',
+    work_completed_at: null,
+    completion_json_present: 0,
+    completion_status: null,
+    completion_sync_run_id: null,
+    completion_mode: null,
+    active_stage: 'conversations',
+    active_next_sequence: 3,
+    main_queue_attempts: 20,
+    failed_unit_sync_runs: 0,
+    dlq_records: 8,
+    open_chatwoot_alerts: 14,
+  }));
+  const accepted = assertChatwootFinalUatControllerResume(active, operation);
+  assert.equal(accepted.pollOnly, true);
+  assert.equal(accepted.queueSend, false);
+  assert.equal(accepted.minimumAttempts, 20);
+  assert.throws(
+    () => assertChatwootFinalUatControllerResume({ ...active, mainQueueAttempts: 16 }, operation),
+    (error) => error?.code === 'CHATWOOT_FINAL_UAT_CONTROLLER_RESUME_BLOCKED',
+  );
+  assert.throws(
+    () => assertChatwootFinalUatControllerResume({ ...active, failedCoverageRows: 1 }, operation),
+    (error) => error?.code === 'CHATWOOT_FINAL_UAT_CONTROLLER_RESUME_BLOCKED',
+  );
+});
+
+test('controller resume identity binds both retained Initial and Daily operations', () => {
+  const value = session();
+  assert.equal(assertChatwootFinalUatResumeIdentity(value.initial, { ...value.initial }), true);
+  assert.equal(assertChatwootFinalUatResumeIdentity(value.daily, { ...value.daily }), true);
+  assert.throws(
+    () => assertChatwootFinalUatResumeIdentity(value.initial, {
+      ...value.initial,
+      operationId: `${value.initial.operationId}-drift`,
+    }),
+    (error) => error?.code === 'CHATWOOT_FINAL_UAT_CONTROLLER_RESUME_BLOCKED',
+  );
+});
+
 test('D1/Lark parity validates all 15 targets and preserves duplicate logical sinks', () => {
   const counts = Object.fromEntries(CHATWOOT_FINAL_UAT_TABLES.map((spec) => [spec.key, 2]));
   const parity = compareChatwootD1LarkParity(counts, counts);
@@ -316,6 +361,11 @@ test('one-command operator is plan-only by default and owns automatic Safe resto
   assert.match(source, /assertChatwootFinalUatBaselinePreserved/u);
   assert.doesNotMatch(source, /CHATWOOT_FINAL_UAT_LARK_NOT_EMPTY/u);
   assert.match(source, /CHATWOOT_FINAL_UAT_SUCCESS_MARKER/u);
+  assert.match(source, /freshQueueBearer\(target\)/u);
+  assert.match(source, /target\.cf\.wranglerEnv/u);
+  assert.match(source, /MKT_CHATWOOT_FINAL_UAT_DEPLOYMENT_CHECK_EVERY_POLLS/u);
+  assert.match(source, /queueSend:\s*false/u);
+  assert.doesNotMatch(source, /target\.cf\.env\.CLOUDFLARE_API_TOKEN/u);
   assert.doesNotMatch(source, /MKT_SCHEDULE_CHATWOOT_ENABLED[^\n]*['"]true['"]/u);
   assert.doesNotMatch(source, /MKT_CHATWOOT_WEBHOOK_ENABLED[^\n]*['"]true['"]/u);
   assert.doesNotMatch(source, /production:\s*true/u);

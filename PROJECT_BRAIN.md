@@ -8,6 +8,13 @@ reactivates only the guarded existing Work, sends no replacement Initial admissi
 requires 15-target D1/Lark parity plus Initial/Daily replay stability, and closes incidents only after Safe
 completion. See `docs/project-brain/chatwoot-initial-terminal-failure-recovery-2026-08-01.md`.
 
+The live recovery later proved that durable Queue work can outlive the local controller. The exact Initial
+operation advanced beyond the attempts-16 boundary while the controller's cached Cloudflare OAuth bearer expired;
+the Worker and Queue remained healthy, but controller polling and automatic Safe restore stopped. The recovery
+operator now selects exactly one incomplete prior evidence directory, resumes by polling without another Initial
+send, refreshes Queue REST bearer authorization just in time, keeps Wrangler on its refreshable OAuth session and
+checks active deployment at a bounded cadence. The original 30-day/3-day/parity contract remains unchanged.
+
 ## WooCommerce 2026-only history decision — 2026-07-30
 
 คำสั่งล่าสุดแทนที่ Full-history WooCommerce ด้วย Order history ตั้งแต่

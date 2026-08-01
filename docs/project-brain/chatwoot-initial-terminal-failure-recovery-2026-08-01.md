@@ -31,3 +31,10 @@ then the unchanged Final UAT verifies Initial/Daily replay stability and parity 
 Current and retained old incidents close only after accepted current-UAT, Safe restore and parity evidence.
 Schedule and Webhook remain disabled; Production remains blocked. See
 `docs/tasks/chatwoot-initial-terminal-failure-recovery-v1.md`.
+
+After the attempt-16 correction, the same Work advanced to sequence 3 and Conversation page 3. The local
+controller then stopped because it reused one Cloudflare OAuth bearer throughout a long polling window; the token
+expired even though the remote Worker continued normally. Controller resume therefore uses the sole incomplete
+prior evidence directory as authority, verifies attempts >= 17 with the unchanged DLQ 8 / Alert 14 incident set,
+and performs no Initial Queue send. Wrangler commands retain refreshable OAuth, Queue REST bearer resolution is
+just in time, deployment checks are periodic, and Safe restore ownership is installed before resumed preflight.

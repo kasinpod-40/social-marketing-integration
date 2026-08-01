@@ -17,14 +17,17 @@ test('Final operator keeps the preflight function callable without TDZ shadowing
   assert.match(source, /baselineVersion: preflightResult\.activeVersion/u);
 });
 
-test('read-only preflight still precedes streamed backup, Active deployment and Safe-restore ownership', async () => {
+test('new runs preserve preflight ordering while resume owns Safe restore before preflight', async () => {
   const source = await readFile(operatorUrl, 'utf8');
+  const resumeRestoreIndex = source.indexOf('if (resume) {\n    // The interrupted controller');
   const preflightIndex = source.indexOf('const preflightResult = await preflight(target)');
   const evidenceIndex = source.indexOf("await evidence(target, 'read-only-preflight', preflightResult)");
   const backupIndex = source.indexOf('const backup = await d1Backup(target)');
-  const deployIndex = source.indexOf("const activeVersion = deploy(target, config.activeText, 'active')");
-  const restoreIndex = source.indexOf('safeRestore = { target, baselineVersion: preflightResult.activeVersion, activeVersion }');
+  const deployIndex = source.indexOf('const activeVersion = resume');
+  const restoreIndex = source.indexOf('if (!resume) {\n    safeRestore = { target, baselineVersion: preflightResult.activeVersion, activeVersion }');
 
+  assert.ok(resumeRestoreIndex >= 0);
+  assert.ok(resumeRestoreIndex < preflightIndex);
   assert.ok(preflightIndex >= 0);
   assert.ok(evidenceIndex > preflightIndex);
   assert.ok(backupIndex > evidenceIndex);
