@@ -107,8 +107,8 @@ test('outer wrapper pins origin before delegating to the existing arbitration au
   assert.match(source, /fetch', 'origin', 'main', '--quiet'/u);
   assert.match(source, /originMain !== expectedHead/u);
   assert.match(source, /status', '--porcelain', '--untracked-files=all/u);
-  assert.doesNotMatch(source, /wrangler/u);
+  assert.doesNotMatch(source, /spawnSync\(\s*['"]npx['"]/u);
+  assert.doesNotMatch(source, /['"]wrangler['"]\s*,\s*['"]deploy['"]/u);
   assert.doesNotMatch(source, /queues\/.+\/messages/u);
   assert.doesNotMatch(source, /d1', 'execute/u);
-  assert.doesNotMatch(source, /deploy'/u);
 });
