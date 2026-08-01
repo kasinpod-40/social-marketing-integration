@@ -24,6 +24,9 @@ import {
   validateChatwootSafeBaselineSelectionHint,
 } from './lib/chatwoot-controller-evidence-arbitration.js';
 import {
+  materializeChatwootControllerEvidenceDirectory,
+} from './lib/chatwoot-controller-evidence-isolation.js';
+import {
   CHATWOOT_FINAL_UAT_ACTIVE_TRUE_FLAGS,
 } from './lib/chatwoot-final-30d-daily-uat.js';
 import {
@@ -124,6 +127,7 @@ try {
         candidateCount: selection.candidateCount,
         selectedBy: selection.selectedBy,
         selectionHandoffUsed: selectionHint !== null,
+        selectedEvidenceRealDirectory: true,
         restoredAllFlagsFalseExpectedFromChild: true,
         scheduleEnabled: false,
         webhookEnabled: false,
@@ -179,10 +183,11 @@ function printPlan() {
   process.stdout.write(`${JSON.stringify({
     ok: true,
     planOnly: true,
-    contractVersion: 'chatwoot_controller_evidence_arbitration_v2',
+    contractVersion: 'chatwoot_controller_evidence_arbitration_v3',
     wrapperHeadEnv: WRAPPER_HEAD_ENV,
     confirmation: `${CONFIRMATION_ENV}=${CONFIRMATION_VALUE}`,
     selectionAuthority: 'current_active_worker_version_or_verified_safe_baseline_handoff',
+    selectedEvidenceView: 'temporary_real_directory_copy',
     child: CHILD,
     retainedEvidenceMutation: false,
     secondInitialAdmissionAllowed: false,
@@ -438,11 +443,11 @@ async function prepareOutputsView({
   const sourceFinalRoot = join(sourceOutputs, FINAL_UAT_OUTPUT);
   const cloneFinalRoot = join(cloneOutputs, FINAL_UAT_OUTPUT);
   await mkdir(cloneFinalRoot, { recursive: true, mode: 0o700 });
-  await symlink(
-    selection.directory,
-    join(cloneFinalRoot, selection.directoryName),
-    'dir',
-  );
+  await materializeChatwootControllerEvidenceDirectory({
+    sourceDirectory: selection.directory,
+    destinationRoot: cloneFinalRoot,
+    directoryName: selection.directoryName,
+  });
 
   const currentEvidence = join(sourceFinalRoot, wrapperHead);
   const existing = await lstat(currentEvidence).catch(() => null);
