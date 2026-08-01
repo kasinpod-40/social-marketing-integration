@@ -8,6 +8,7 @@ BRANCH                    = hotfix/chatwoot-safe-baseline-resume-v1
 BASE_MAIN                 = f212c5110573ef0af5012e8385d6ee25e67041cd
 LATEST_GUARDED_STOP       = CHATWOOT_CONTROLLER_EVIDENCE_WORKER_FLAGS_INVALID
 CURRENT_WORKER_FLAGS      = ALL_FALSE
+BLIND_RERUN               = BLOCKED_BY_CURRENT_HEAD_EVIDENCE
 LIVE_ACTIONS_THIS_HOTFIX  = 0
 SCHEDULE_WEBHOOK          = disabled
 PRODUCTION                = blocked
@@ -31,7 +32,22 @@ moving mutation authority out of the existing reviewed recovery chain.
 
 ## Contract
 
-The new public entrypoint is:
+The only public entrypoint is:
+
+```text
+scripts/chatwoot-controller-safe-baseline-exact-terminal.mjs
+```
+
+Before any child starts, it requires the exact clean reviewed Head and checks:
+
+```text
+outputs/chatwoot-controller-safe-baseline-resume/<reviewed-head>
+```
+
+The directory must be absent or empty. Any attempt, Safe-restore, temporary or summary evidence blocks blind rerun
+before Worker inspection, Queue, D1, Lark, deployment or incident-closure action.
+
+The exact terminal delegates to:
 
 ```text
 scripts/chatwoot-controller-safe-baseline-pinned-origin-terminal.mjs
@@ -54,13 +70,14 @@ The inner safe-baseline wrapper must:
 6. read the exact operation snapshot from Remote D1 without mutation;
 7. require the reviewed `queue_retry_exhausted_terminal_v1` boundary, replacement-deployment authority and zero
    active lock;
-8. promote the retained reviewed active version to 100% using Wrangler Versions only after all read-only gates pass;
-9. delegate evidence arbitration, Work reactivation, Queue continuation, Lark parity, active replacement, final
-   incident closure and ordinary Safe restore to the existing reviewed launchers;
-10. verify every execution flag false on completion;
-11. restore the proven baseline version automatically when the current Worker remains in one known exact Chatwoot
+8. write current-head attempt evidence before any retained-active promotion;
+9. promote the retained reviewed active version to 100% using Wrangler Versions only after all read-only gates pass;
+10. delegate evidence arbitration, Work reactivation, Queue continuation, Lark parity, active replacement, final
+    incident closure and ordinary Safe restore to the existing reviewed launchers;
+11. verify every execution flag false on completion;
+12. restore the proven baseline version automatically when the current Worker remains in one known exact Chatwoot
     active version after an interrupted child;
-12. fail for manual review rather than overwrite an unknown concurrent Worker version.
+13. fail for manual review rather than overwrite an unknown concurrent Worker version.
 
 ## Safety boundaries
 
@@ -72,6 +89,7 @@ The inner safe-baseline wrapper must:
 - The wrapper never sends a second Initial admission.
 - Schedule and Webhook remain false; Production remains blocked.
 - A failure before retained-active promotion has zero remote mutation.
+- Attempt evidence is atomic and precedes promotion, so an interrupted mutation path cannot be blindly rerun.
 - After promotion, the wrapper owns all-false verification and only restores when the active version belongs to the
   proven retained/current-head recovery chain.
 
@@ -79,9 +97,12 @@ The inner safe-baseline wrapper must:
 
 ```text
 scripts/lib/chatwoot-controller-safe-baseline-resume.js
+scripts/lib/chatwoot-safe-baseline-current-head-guard.js
 scripts/chatwoot-controller-safe-baseline-resume-terminal.mjs
 scripts/chatwoot-controller-safe-baseline-pinned-origin-terminal.mjs
+scripts/chatwoot-controller-safe-baseline-exact-terminal.mjs
 tests/application/chatwoot-controller-safe-baseline-resume.test.js
+tests/application/chatwoot-controller-safe-baseline-exact.test.js
 docs/tasks/chatwoot-safe-baseline-resume-v1.md
 docs/current-task.md
 ```
@@ -91,6 +112,7 @@ docs/current-task.md
 ```bash
 npm ci
 npm run check
+node --test tests/application/chatwoot-controller-safe-baseline-exact.test.js
 node --test tests/application/chatwoot-controller-safe-baseline-resume.test.js
 node --test tests/application/chatwoot-controller-evidence-arbitration.test.js
 node --test tests/application/chatwoot-initial-terminal-failure-recovery.test.js
