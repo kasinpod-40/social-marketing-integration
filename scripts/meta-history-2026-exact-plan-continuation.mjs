@@ -318,13 +318,13 @@ async function executeContinuation() {
 
 async function readRestoredLarkEvidenceTarget(evidenceRoot) {
   const restorePath = join(evidenceRoot, 'verify-restore.json');
-  const readyPath = join(evidenceRoot, 'd1-ready.json');
-  if (!(await fileExists(restorePath)) || !(await fileExists(readyPath))) return null;
-  const [restore, ready] = await Promise.all([
+  const preflightPath = join(evidenceRoot, 'lark-preflight.json');
+  if (!(await fileExists(restorePath)) || !(await fileExists(preflightPath))) return null;
+  const [restore, preflight] = await Promise.all([
     readFile(restorePath, 'utf8').then(JSON.parse),
-    readFile(readyPath, 'utf8').then(JSON.parse),
+    readFile(preflightPath, 'utf8').then(JSON.parse),
   ]);
-  const expectedActiveVersion = ready?.data?.target?.expectedActiveVersion;
+  const expectedActiveVersion = preflight?.data?.target?.expectedActiveVersion;
   if (typeof expectedActiveVersion !== 'string' || expectedActiveVersion.trim() === '') {
     throw continuationError(
       'Restored Meta Lark evidence lacks the original active-version identity',
