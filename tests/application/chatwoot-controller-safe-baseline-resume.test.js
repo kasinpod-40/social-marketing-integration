@@ -176,7 +176,8 @@ test('safe-baseline outer wrapper keeps nested origin exact', async () => {
   assert.match(source, /chatwoot-controller-safe-baseline-resume-terminal\.mjs/u);
   assert.match(source, /fetch', 'origin', 'main', '--quiet'/u);
   assert.match(source, /status', '--porcelain', '--untracked-files=all/u);
-  assert.doesNotMatch(source, /wrangler/u);
+  assert.doesNotMatch(source, /spawnSync\(\s*['"]npx['"]/u);
+  assert.doesNotMatch(source, /versions', 'deploy/u);
   assert.doesNotMatch(source, /queues\/.+\/messages/u);
   assert.doesNotMatch(source, /d1', 'execute/u);
 });
