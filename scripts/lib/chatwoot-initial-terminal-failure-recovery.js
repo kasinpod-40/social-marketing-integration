@@ -198,6 +198,14 @@ export function buildChatwootInitialFailureCandidateSql(candidates = []) {
   `);
 }
 
+export function isChatwootInitialFailureCandidateAdmitted(row = {}) {
+  if (!['active', 'terminal'].includes(row.lifecycle_status)) return false;
+  const attempts = Number(row.main_queue_attempts);
+  const unitRuns = Number(row.unit_sync_runs);
+  return ([1, 2].includes(attempts) && unitRuns === 1)
+    || (attempts === 4 && unitRuns === 2);
+}
+
 export function validateRetainedSession(session = {}) {
   const repositoryHead = requirePattern(session.repositoryHead, SHA, 'repositoryHead');
   const createdAt = positiveInteger(session.createdAt, 'createdAt');
