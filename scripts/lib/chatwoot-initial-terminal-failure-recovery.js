@@ -151,14 +151,25 @@ export function selectLatestIncompleteChatwootSession(candidates = []) {
   }
   const latestCreatedAt = retained[0].session.createdAt;
   const latest = retained.filter((candidate) => candidate.session.createdAt === latestCreatedAt);
-  if (latest.length !== 1) {
+  const identities = new Map();
+  for (const candidate of latest) {
+    const fingerprint = candidate.session.sessionFingerprint;
+    const current = identities.get(fingerprint);
+    if (!current || isCanonicalRetainedSessionPath(candidate)) identities.set(fingerprint, candidate);
+  }
+  if (identities.size !== 1) {
     throw incidentError(
       'Latest incomplete Chatwoot Final UAT session is ambiguous',
       'CHATWOOT_INITIAL_FAILURE_SESSION_AMBIGUOUS',
-      { candidateCount: latest.length },
+      { candidateCount: identities.size },
     );
   }
-  return latest[0];
+  return [...identities.values()][0];
+}
+
+function isCanonicalRetainedSessionPath(candidate) {
+  const suffix = `/${candidate.session.repositoryHead}/session.json`;
+  return candidate.path.replaceAll('\\', '/').endsWith(suffix);
 }
 
 export function listIncompleteChatwootSessions(candidates = []) {
