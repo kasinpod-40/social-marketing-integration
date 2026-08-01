@@ -13,6 +13,7 @@ import {
   assertChatwootInitialFailureInspectorConfirmation,
   buildChatwootInitialFailureCandidateSql,
   buildChatwootInitialFailureInspectorSql,
+  isChatwootInitialFailureCandidateAdmitted,
   normalizeChatwootInitialFailureInspection,
   selectLatestIncompleteChatwootSession,
 } from './lib/chatwoot-initial-terminal-failure-recovery.js';
@@ -70,9 +71,7 @@ async function main() {
     buildChatwootInitialFailureCandidateSql(candidates),
   );
   const admitted = new Set(admittedRows
-    .filter((row) => ['active', 'terminal'].includes(row.lifecycle_status)
-      && [1, 2].includes(Number(row.main_queue_attempts))
-      && Number(row.unit_sync_runs) === 1)
+    .filter(isChatwootInitialFailureCandidateAdmitted)
     .map((row) => `${row.operation_id}\n${row.work_key}\n${row.generation}\n${row.original_requested_at}`));
   const retained = selectLatestIncompleteChatwootSession(candidates.map((candidate) => ({
     ...candidate,

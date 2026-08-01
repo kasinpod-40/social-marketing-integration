@@ -6,6 +6,8 @@
 
 - Accepted fractional epoch seconds from the Chatwoot conversation API through the Shared date-time contract,
   with exact durable-cursor recovery and incident closure for the observed zero-write terminal boundary.
+- Forwarded that known attempts-4/unit-2 candidate through the inspector's shallow admission gate to the existing
+  exact phase, error, DLQ, Alert, lock and Business-count validation.
 - Stopped Final UAT polling from classifying a normal `running` unit as terminally failed.
 - Added progress-prefix-safe Wrangler JSON parsing and a SELECT-only, retained-session/D1-proven incident
   inspector with sanitized diagnostics and all-false Worker verification.

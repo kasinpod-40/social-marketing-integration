@@ -18,6 +18,7 @@ import {
   buildChatwootInitialFailureCandidateSql,
   buildChatwootInitialFailureInspectorSql,
   classifyChatwootInitialRecoveryBoundary,
+  isChatwootInitialFailureCandidateAdmitted,
   normalizeChatwootInitialFailureInspection,
   sanitizeFailureDetails,
   selectLatestIncompleteChatwootSession,
@@ -64,6 +65,21 @@ test('inspector confirmation and latest admitted incomplete session are fail clo
     ]),
     (error) => error?.code === 'CHATWOOT_INITIAL_FAILURE_SESSION_AMBIGUOUS',
   );
+});
+
+test('candidate admission forwards only known shallow boundaries to exact inspection', () => {
+  assert.equal(isChatwootInitialFailureCandidateAdmitted({
+    lifecycle_status: 'terminal', main_queue_attempts: 2, unit_sync_runs: 1,
+  }), true);
+  assert.equal(isChatwootInitialFailureCandidateAdmitted({
+    lifecycle_status: 'terminal', main_queue_attempts: 4, unit_sync_runs: 2,
+  }), true);
+  assert.equal(isChatwootInitialFailureCandidateAdmitted({
+    lifecycle_status: 'terminal', main_queue_attempts: 4, unit_sync_runs: 3,
+  }), false);
+  assert.equal(isChatwootInitialFailureCandidateAdmitted({
+    lifecycle_status: 'completed', main_queue_attempts: 4, unit_sync_runs: 2,
+  }), false);
 });
 
 test('inspector SQL is SELECT-only and exact-session scoped', () => {
