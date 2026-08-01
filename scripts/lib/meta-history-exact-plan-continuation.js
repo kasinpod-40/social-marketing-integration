@@ -19,7 +19,6 @@ export const META_HISTORY_EXACT_CONTINUATION_TARGET = Object.freeze({
 
 export const META_HISTORY_EXACT_CONTINUATION_ALLOWED_DELTA = Object.freeze([
   'docs/current-task.md',
-  'docs/project-brain/meta-history-2026-finalizer.md',
   'docs/project-brain/report-metric-value-field-migration.md',
   'docs/tasks/lark-dashboard-compatibility-freeze-v1.md',
   'docs/tasks/lark-dashboard-compatibility-record-backfill-closeout-2026-08-01.md',
