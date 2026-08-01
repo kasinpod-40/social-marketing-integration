@@ -91,6 +91,9 @@ test('exact-plan continuation is guarded and does not replay Facebook Provider o
   assert.match(source, /meta-lark-parity-rollout-launcher\.mjs/u);
   assert.match(source, /MKT_META_HISTORY_LARK_LAUNCHER_PATH/u);
   assert.match(source, /verify-late-completion/u);
+  assert.match(source, /readRestoredLarkEvidenceTarget/u);
+  assert.match(source, /verify-late-completion\.target-drift/u);
+  assert.match(source, /restoredLateEvidence\?\.expectedActiveVersion \?\? activeVersion/u);
   assert.match(source, /\[larkLauncherPath, `--phase=\$\{phase\}`, '--execute'\]/u);
   assert.match(source, /meta-history-2026-one-command\.mjs/u);
   assert.match(source, /providerReplayForFacebook:\s*false/u);

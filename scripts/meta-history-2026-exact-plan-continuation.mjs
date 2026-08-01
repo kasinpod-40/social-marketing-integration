@@ -9,6 +9,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  rename,
   rm,
   stat,
   symlink,
@@ -213,6 +214,9 @@ async function executeContinuation() {
   });
   isolatedRoot = isolated.root;
 
+  const restoredLateEvidence = await readRestoredLarkEvidenceTarget(larkRoot);
+  await quarantineMismatchedLateCompletionEvidence(larkRoot, restoredLateEvidence);
+
   const larkEnv = {
     ...baseEnv,
     DEV_VARS_FILE: devVarsPath,
@@ -230,7 +234,8 @@ async function executeContinuation() {
     MKT_META_LARK_DATABASE_NAME: databaseName,
     MKT_META_LARK_MAIN_QUEUE: mainQueueName,
     MKT_META_LARK_DLQ: dlqName,
-    MKT_META_LARK_EXPECTED_ACTIVE_VERSION: activeVersion,
+    MKT_META_LARK_EXPECTED_ACTIVE_VERSION:
+      restoredLateEvidence?.expectedActiveVersion ?? activeVersion,
     MKT_META_LARK_WRANGLER_CONFIG: isolated.safeConfigRelativePath,
     MKT_META_LARK_READ_ONLY_SUMMARY: readOnlySummaryPath,
     MKT_META_LARK_D1_SUMMARY: d1SummaryPath,
@@ -309,6 +314,49 @@ async function executeContinuation() {
     evidenceRoot: targetRoot,
   }, null, 2)}\n`);
   process.stdout.write('META_HISTORY_2026_EXACT_PLAN_CONTINUATION_COMPLETED_SAFE\n');
+}
+
+async function readRestoredLarkEvidenceTarget(evidenceRoot) {
+  const restorePath = join(evidenceRoot, 'verify-restore.json');
+  const readyPath = join(evidenceRoot, 'd1-ready.json');
+  if (!(await fileExists(restorePath)) || !(await fileExists(readyPath))) return null;
+  const [restore, ready] = await Promise.all([
+    readFile(restorePath, 'utf8').then(JSON.parse),
+    readFile(readyPath, 'utf8').then(JSON.parse),
+  ]);
+  const expectedActiveVersion = ready?.data?.target?.expectedActiveVersion;
+  if (typeof expectedActiveVersion !== 'string' || expectedActiveVersion.trim() === '') {
+    throw continuationError(
+      'Restored Meta Lark evidence lacks the original active-version identity',
+      'META_HISTORY_LATE_COMPLETION_TARGET_INVALID',
+    );
+  }
+  return Object.freeze({
+    targetFingerprint: restore.targetFingerprint,
+    expectedActiveVersion: expectedActiveVersion.trim(),
+  });
+}
+
+async function quarantineMismatchedLateCompletionEvidence(evidenceRoot, restoredTarget) {
+  if (!restoredTarget) return;
+  const path = join(evidenceRoot, 'verify-late-completion.json');
+  if (!(await fileExists(path))) return;
+  const evidence = JSON.parse(await readFile(path, 'utf8'));
+  if (evidence?.targetFingerprint === restoredTarget.targetFingerprint) return;
+  const fingerprint = typeof evidence?.evidenceSha256 === 'string'
+    ? evidence.evidenceSha256.slice(0, 16)
+    : 'unknown';
+  const destination = join(
+    evidenceRoot,
+    `verify-late-completion.target-drift.${fingerprint}.json`,
+  );
+  if (await fileExists(destination)) {
+    throw continuationError(
+      'Late completion target-drift evidence was already quarantined',
+      'META_HISTORY_LATE_COMPLETION_EVIDENCE_CONFLICT',
+    );
+  }
+  await rename(path, destination);
 }
 
 async function runLarkPhaseChain({ cloneRoot, evidenceRoot, env }) {

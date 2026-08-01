@@ -144,3 +144,6 @@ Live exact continuation ผ่าน Lark inventory และส่ง Lark cont
 ผ่านแล้ว. Hotfix ปัจจุบันเพิ่ม exact cleared-phase completion proof และ late read-only closeout ที่ต้องเห็น
 same-operation attempts อย่างน้อยสองครั้ง, exact operation/connector, final reconciliation และ verified
 safe restore โดยไม่ resend.
+Late proof รอบแรกผ่าน Business parity แต่ summary ปฏิเสธ target fingerprint เพราะ active-version identity
+เปลี่ยนหลัง safe restore. Recovery จึง reuse original `expectedActiveVersion` จาก chain เดิมและเก็บ attempt
+ที่ target drift เป็น forensic local evidence; ไม่มี Remote mutation หรือ Queue send ในขั้นนี้.
