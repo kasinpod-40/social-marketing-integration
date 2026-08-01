@@ -238,7 +238,8 @@ async function executeContinuation() {
       restoredLateEvidence?.expectedActiveVersion ?? activeVersion,
     MKT_META_LARK_WRANGLER_CONFIG: isolated.safeConfigRelativePath,
     MKT_META_LARK_READ_ONLY_SUMMARY: readOnlySummaryPath,
-    MKT_META_LARK_D1_SUMMARY: d1SummaryPath,
+    MKT_META_LARK_D1_SUMMARY:
+      restoredLateEvidence?.d1SummaryPath ?? d1SummaryPath,
     MKT_META_LARK_EVIDENCE_DIR: larkBaseRoot,
   };
 
@@ -325,15 +326,23 @@ async function readRestoredLarkEvidenceTarget(evidenceRoot) {
     readFile(preflightPath, 'utf8').then(JSON.parse),
   ]);
   const expectedActiveVersion = preflight?.data?.target?.expectedActiveVersion;
+  const originalD1SummaryPath = preflight?.data?.target?.d1SummaryPath;
   if (typeof expectedActiveVersion !== 'string' || expectedActiveVersion.trim() === '') {
     throw continuationError(
       'Restored Meta Lark evidence lacks the original active-version identity',
       'META_HISTORY_LATE_COMPLETION_TARGET_INVALID',
     );
   }
+  if (typeof originalD1SummaryPath !== 'string' || originalD1SummaryPath.trim() === '') {
+    throw continuationError(
+      'Restored Meta Lark evidence lacks the original D1 summary path identity',
+      'META_HISTORY_LATE_COMPLETION_TARGET_INVALID',
+    );
+  }
   return Object.freeze({
     targetFingerprint: restore.targetFingerprint,
     expectedActiveVersion: expectedActiveVersion.trim(),
+    d1SummaryPath: originalD1SummaryPath.trim(),
   });
 }
 
