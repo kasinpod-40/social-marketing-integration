@@ -20,15 +20,16 @@ export function buildReportMetricValueRows(input = {}) {
   const accountId = requireText(input.accountId, 'accountId');
   const reportType = requireText(input.reportType, 'reportType');
   const sharedDimensions = normalizeOptionalSharedDimensions(input.sharedDimensions);
-  const metrics = requireObject(input.metrics, 'metrics');
+  const metrics = normalizeMetricDefinitions(input.metrics);
   const period = requireObject(input.period, 'period');
   const generatedAt = requireEpoch(input.generatedAt, 'generatedAt');
   const utcOffset = requireText(input.utcOffset, 'utcOffset');
-  const rows = Object.values(metrics)
+  const rows = metrics
     .sort((left, right) => Number(left.sortOrder ?? 1_000) - Number(right.sortOrder ?? 1_000))
     .map((metric, index) => {
-      const dimensionType = 'summary';
-      const dimensionValue = 'all';
+      const dimensionType = optionalText(metric.dimensionType ?? metric.dimension_type) ?? 'summary';
+      const dimensionValue = optionalText(metric.dimensionValue ?? metric.dimension_value) ?? 'all';
+      const rank = positiveInteger(metric.rank ?? index + 1, 'metric.rank');
       const metricKey = requireText(metric.metricKey, 'metricKey');
       const currentValue = optionalFinite(metric.current);
       const metricScope = normalizeDashboardMetricScope(metric.metricScope);
@@ -46,7 +47,12 @@ export function buildReportMetricValueRows(input = {}) {
         reportType,
       });
       return freezeWithSharedDimensions({
-        report_metric_key: [reportId, escapeReportIdentityPart(metricKey), dimensionType, dimensionValue].join('::'),
+        report_metric_key: [
+          reportId,
+          escapeReportIdentityPart(metricKey),
+          escapeReportIdentityPart(dimensionType),
+          escapeReportIdentityPart(dimensionValue),
+        ].join('::'),
         report_id: reportId,
         report_setting_key: requireText(input.reportSettingKey, 'reportSettingKey'),
         customer_profile: customerProfile,
@@ -70,7 +76,7 @@ export function buildReportMetricValueRows(input = {}) {
         data_status: requireText(input.dataStatus, 'dataStatus'),
         dimension_type: dimensionType,
         dimension_value: dimensionValue,
-        rank: index + 1,
+        rank,
         period_start: dateOnlyToEpochMilliseconds(period.periodStart, { utcOffset }),
         period_end: dateOnlyToEpochMilliseconds(period.periodEnd, { utcOffset }),
         compare_start: period.compareStart ? dateOnlyToEpochMilliseconds(period.compareStart, { utcOffset }) : null,
@@ -208,6 +214,10 @@ function normalizeSharedWindowDays(value) {
   if (value === null || value === undefined || value === '') return null;
   const normalized = positiveInteger(value, 'sharedDimensions.window_days');
   return typeof value === 'string' ? String(normalized) : normalized;
+}
+function normalizeMetricDefinitions(value) {
+  if (Array.isArray(value)) return value.map((metric) => requireObject(metric, 'metric'));
+  return Object.values(requireObject(value, 'metrics'));
 }
 function normalizeTopContentPayload(row) { return row && typeof row === 'object' ? row : null; }
 function optionalFinite(value) {
