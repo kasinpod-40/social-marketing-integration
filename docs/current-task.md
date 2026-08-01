@@ -102,7 +102,13 @@ deployments or Schedule activations.
 
 ## Public continuation after verified merge
 
-After the exact Hotfix Head passes both workflows and is Squash Merged, run the public exact-plan command once
+The only public authority remains:
+
+```text
+scripts/meta-history-2026-exact-plan-continuation-terminal.mjs
+```
+
+After the exact Hotfix Head passes both workflows and is Squash Merged, run that public exact-plan command once
 from clean current `main`. Do not run the ordinary Meta Terminal, D1/Lark child launchers or manual Queue
 commands. Do not edit retained evidence, `.dev.vars`, lifecycle state or Business facts.
 
