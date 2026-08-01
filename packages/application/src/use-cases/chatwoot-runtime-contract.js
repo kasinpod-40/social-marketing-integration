@@ -108,6 +108,8 @@ export function createInitialChatwootDurableState(input = {}) {
     stage: 'masters',
     mastersComplete: false,
     conversationPage: 1,
+    conversationRowOffset: 0,
+    conversationPageFingerprint: null,
     conversationPagesProcessed: 0,
     conversationRowsScanned: 0,
     conversationsSelected: 0,
@@ -144,7 +146,22 @@ export function assertChatwootDurableState(value, expected = {}) {
     });
   }
   readChatwootContinuationSequence(value.nextSequence);
-  return value;
+  const conversationRowOffset = nonNegativeInteger(
+    value.conversationRowOffset ?? 0,
+    'conversationRowOffset',
+  );
+  const conversationPageFingerprint = value.conversationPageFingerprint ?? null;
+  if (conversationPageFingerprint !== null
+      && !/^[0-9a-f]{64}$/u.test(conversationPageFingerprint)) {
+    throw permanentError('Chatwoot durable Conversation page fingerprint is invalid', {
+      code: 'CHATWOOT_DURABLE_STATE_INVALID',
+    });
+  }
+  return Object.freeze({
+    ...value,
+    conversationRowOffset,
+    conversationPageFingerprint,
+  });
 }
 
 export function buildChatwootRuntimePlan(input = {}) {
@@ -157,12 +174,19 @@ export function buildChatwootRuntimePlan(input = {}) {
     input.conversationPagesPerInvocation ?? 1,
     'conversationPagesPerInvocation',
   );
+  const conversationRows = nonNegativeInteger(input.conversationRows ?? 0, 'conversationRows');
+  const conversationRowsPerInvocation = positiveInteger(
+    input.conversationRowsPerInvocation ?? 1,
+    'conversationRowsPerInvocation',
+  );
   const reportingPagesPerInvocation = positiveInteger(
     input.reportingPagesPerInvocation ?? 5,
     'reportingPagesPerInvocation',
   );
   const window = resolveChatwootRuntimeWindow({ mode, requestedAt });
-  const conversationUnits = Math.ceil(conversationPages / conversationPagesPerInvocation);
+  const conversationUnits = conversationRows > 0
+    ? Math.ceil(conversationRows / conversationRowsPerInvocation)
+    : Math.ceil(conversationPages / conversationPagesPerInvocation);
   const reportingUnits = Math.ceil(reportingPages / reportingPagesPerInvocation);
   // Runtime processes one bounded 500-row D1 rollup page per continuation.
   const rollupUnits = rollupPages;
@@ -183,6 +207,7 @@ export function buildChatwootRuntimePlan(input = {}) {
     finalizationUnits: 1,
     totalUnits: 2 + conversationUnits + reportingUnits + rollupUnits,
     conversationPagesPerInvocation,
+    conversationRowsPerInvocation,
     reportingPagesPerInvocation,
     rollupPagesPerInvocation: 1,
     queueMessagesSent: 0,

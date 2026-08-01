@@ -23,6 +23,7 @@ import {
   normalizeChatwootReportingEvent,
 } from '../../../connectors/src/chatwoot/chatwoot-analytics-normalizers.js';
 import { permanentError } from '../../../shared/src/errors/runtime-error.js';
+import { createStableFingerprint } from '../../../shared/src/hash/stable-fingerprint.js';
 
 const ROLLUP_PAGE_SIZE = 500;
 const REPORTING_DATASET_KEY = 'chatwoot.reporting_events';
@@ -128,11 +129,34 @@ async function processConversationUnit(context, state) {
       assigneeType: 'all',
     });
     const selected = page.rows.filter((row) => isConversationInChatwootWindow(row, context.window));
-    if (selected.length > 0) {
-      const unitSyncRunId = unitRunId(context, next.nextSequence, `conversations:${pageNumber}`);
+    const pageFingerprint = await createStableFingerprint(selected.map((row) => row?.id));
+    if (next.conversationPageFingerprint !== null
+        && next.conversationPageFingerprint !== pageFingerprint) {
+      throw permanentError('Chatwoot Conversation page changed during durable processing', {
+        code: 'CHATWOOT_CONVERSATION_PAGE_DRIFT',
+        details: { page: pageNumber },
+      });
+    }
+    next.conversationPageFingerprint = pageFingerprint;
+    if (next.conversationRowOffset > selected.length) {
+      throw permanentError('Chatwoot durable Conversation row offset is invalid', {
+        code: 'CHATWOOT_DURABLE_STATE_INVALID',
+        details: { page: pageNumber, offset: next.conversationRowOffset },
+      });
+    }
+    const rows = selected.slice(
+      next.conversationRowOffset,
+      next.conversationRowOffset + context.limits.conversationRowsPerInvocation,
+    );
+    if (rows.length > 0) {
+      const unitSyncRunId = unitRunId(
+        context,
+        next.nextSequence,
+        `conversations:${pageNumber}:${next.conversationRowOffset}`,
+      );
       const client = createConversationPageClient({
         client: context.client,
-        rows: selected,
+        rows,
         window: context.window,
       });
       const result = await syncChatwootAnalytics({
@@ -145,10 +169,14 @@ async function processConversationUnit(context, state) {
       next.conversationsSelected += result.source.conversationsSelected;
       next.messagesSelected += result.source.messagesSelected;
       next.conversationReportingEventsSelected += result.source.reportingEventsSelected;
+      next.conversationRowOffset += rows.length;
     }
+    if (next.conversationRowOffset < selected.length) break;
     next.conversationRowsScanned += page.rows.length;
     next.conversationPagesProcessed += 1;
     next.conversationPage += 1;
+    next.conversationRowOffset = 0;
+    next.conversationPageFingerprint = null;
     const complete = page.rows.length === 0 || page.hasMore === false;
     if (complete) {
       next.conversationsComplete = true;
@@ -566,6 +594,10 @@ function readContext(input) {
     conversationPagesPerInvocation: positiveInteger(
       sourceLimits.conversationPagesPerInvocation,
       'limits.conversationPagesPerInvocation',
+    ),
+    conversationRowsPerInvocation: positiveInteger(
+      sourceLimits.conversationRowsPerInvocation ?? 1,
+      'limits.conversationRowsPerInvocation',
     ),
     reportingPagesPerInvocation: positiveInteger(
       sourceLimits.reportingPagesPerInvocation,

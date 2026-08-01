@@ -15,6 +15,12 @@ export const CHATWOOT_FINAL_UAT_CONTROLLER_RESUME_BOUNDARY = Object.freeze({
   dlqRecords: 8,
   openChatwootAlerts: 14,
 });
+export const CHATWOOT_FINAL_UAT_QUEUE_EXHAUSTED_RESUME_BOUNDARY = Object.freeze({
+  mainQueueAttempts: 25,
+  nextSequence: 3,
+  dlqRecords: 9,
+  openChatwootAlerts: 15,
+});
 export const CHATWOOT_FINAL_UAT_ACTIVE_TRUE_FLAGS = Object.freeze([
   'MKT_CONNECTOR_CHATWOOT_ENABLED',
   'MKT_CHATWOOT_D1_WRITE_ENABLED',
@@ -28,6 +34,7 @@ export const CHATWOOT_FINAL_UAT_LOCKED_VARS = Object.freeze({
   CHATWOOT_AUTO_EXPAND_BACKFILL: 'false',
   CHATWOOT_INCLUDE_UPDATED_OLDER_CONVERSATIONS: 'true',
   CHATWOOT_CONVERSATION_PAGES_PER_INVOCATION: '1',
+  CHATWOOT_CONVERSATION_ROWS_PER_INVOCATION: '1',
   CHATWOOT_REPORTING_PAGES_PER_INVOCATION: '5',
   CHATWOOT_MAX_REPORTING_PAGES: '5000',
 });
@@ -370,10 +377,12 @@ export function assertChatwootFinalUatBaselinePreserved(
 
 /**
  * Accept only the one already-admitted Initial operation after the local controller stopped.
- * This boundary authorizes polling only: it never authorizes another Initial Queue send.
+ * The ordinary boundary is poll-only. The exact retry-exhausted boundary may send one reviewed
+ * same-Work continuation after guarded reactivation; it never authorizes another Initial admission.
  */
 export function assertChatwootFinalUatControllerResume(snapshot = {}, operation = {}) {
   const boundary = CHATWOOT_FINAL_UAT_CONTROLLER_RESUME_BOUNDARY;
+  const exhausted = CHATWOOT_FINAL_UAT_QUEUE_EXHAUSTED_RESUME_BOUNDARY;
   const expectedWorkKey = `chatwoot:chemistry_k:${requireOperationId(operation.operationId)}`;
   requireExact(operation.mode, 'initial', 'operation.mode');
   requireExact(operation.workKey, expectedWorkKey, 'operation.workKey');
@@ -381,16 +390,27 @@ export function assertChatwootFinalUatControllerResume(snapshot = {}, operation 
   requireTimestamp(operation.originalRequestedAt, 'operation.originalRequestedAt');
   const active = snapshot.workLifecycleStatus === 'active';
   const completed = snapshot.workLifecycleStatus === 'completed';
+  const terminal = snapshot.workLifecycleStatus === 'terminal';
+  const queueExhausted = (active || terminal || completed)
+    && snapshot.mainQueueAttempts === exhausted.mainQueueAttempts
+    && snapshot.dlqRecords === exhausted.dlqRecords
+    && snapshot.openChatwootAlerts === exhausted.openChatwootAlerts
+    && snapshot.failedCoverageRuns === 0
+    && snapshot.failedCoverageRows === 0
+    && snapshot.failedUnitSyncRuns === 0
+    && (terminal || completed || snapshot.activeNextSequence === exhausted.nextSequence);
   const invalid = [];
-  if (!active && !completed) invalid.push('work_lifecycle');
-  if (snapshot.mainQueueAttempts < boundary.minimumMainQueueAttempts) invalid.push('queue_attempts');
-  if (snapshot.dlqRecords !== boundary.dlqRecords) invalid.push('dlq_records');
-  if (snapshot.openChatwootAlerts !== boundary.openChatwootAlerts) invalid.push('open_alerts');
-  if (snapshot.failedCoverageRuns !== 0 || snapshot.failedCoverageRows !== 0) {
-    invalid.push('coverage_failure');
+  if (!queueExhausted) {
+    if (!active && !completed) invalid.push('work_lifecycle');
+    if (snapshot.mainQueueAttempts < boundary.minimumMainQueueAttempts) invalid.push('queue_attempts');
+    if (snapshot.dlqRecords !== boundary.dlqRecords) invalid.push('dlq_records');
+    if (snapshot.openChatwootAlerts !== boundary.openChatwootAlerts) invalid.push('open_alerts');
+    if (snapshot.failedCoverageRuns !== 0 || snapshot.failedCoverageRows !== 0) {
+      invalid.push('coverage_failure');
+    }
+    if (active && snapshot.activeNextSequence < boundary.minimumNextSequence) invalid.push('durable_sequence');
+    if (active && snapshot.failedUnitSyncRuns !== 0) invalid.push('failed_unit');
   }
-  if (active && snapshot.activeNextSequence < boundary.minimumNextSequence) invalid.push('durable_sequence');
-  if (active && snapshot.failedUnitSyncRuns !== 0) invalid.push('failed_unit');
   if (invalid.length > 0) {
     throw uatError(
       'Chatwoot controller resume boundary drifted',
@@ -400,8 +420,10 @@ export function assertChatwootFinalUatControllerResume(snapshot = {}, operation 
   }
   return deepFreeze({
     accepted: true,
-    pollOnly: true,
-    queueSend: false,
+    pollOnly: !queueExhausted,
+    queueSend: queueExhausted && active,
+    replaceActiveDeployment: queueExhausted,
+    boundary: queueExhausted ? 'queue_retry_exhausted_terminal_v1' : 'controller_interrupted_v1',
     minimumAttempts: snapshot.mainQueueAttempts,
     lifecycle: snapshot.workLifecycleStatus,
   });

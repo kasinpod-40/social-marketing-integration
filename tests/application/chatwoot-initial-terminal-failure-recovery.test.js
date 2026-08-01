@@ -104,6 +104,9 @@ test('candidate admission forwards only known shallow boundaries to exact inspec
     lifecycle_status: 'terminal', main_queue_attempts: 16, unit_sync_runs: 3,
   }), true);
   assert.equal(isChatwootInitialFailureCandidateAdmitted({
+    lifecycle_status: 'terminal', main_queue_attempts: 25, unit_sync_runs: 4,
+  }), true);
+  assert.equal(isChatwootInitialFailureCandidateAdmitted({
     lifecycle_status: 'terminal', main_queue_attempts: 4, unit_sync_runs: 3,
   }), false);
   assert.equal(isChatwootInitialFailureCandidateAdmitted({
@@ -234,7 +237,8 @@ test('terminal reactivation and current incident closure are exact guarded mutat
   assert.match(closure, /CHATWOOT_MESSAGE_CURSOR_REPEATED/u);
   assert.match(closure, /reporting_event\.name is unsupported: conversation_resolved/u);
   assert.match(closure, /reporting_event\.name is unsupported: conversation_opened/u);
-  assert.match(closure, /main_queue_attempts IN \(2,4,5,7,9,11,14,16\)/u);
+  assert.match(closure, /main_queue_attempts IN \(2,4,5,7,9,11,14,16,25\)/u);
+  assert.match(closure, /QUEUE_RETRY_EXHAUSTED/u);
   assert.doesNotMatch(closure, /\bDELETE\b/iu);
 });
 
@@ -580,6 +584,68 @@ test('reporting-event-name terminal recovery admits the exact attempts-16 incide
   assert.match(sql, /reporting_event\.name is unsupported: conversation_opened/u);
   assert.match(sql, /\)=8 AND EXISTS/u);
   assert.match(sql, /\)=14/u);
+  assert.doesNotMatch(sql, /DELETE FROM sync_work_phases/iu);
+});
+
+test('Queue retry exhaustion recovery preserves page 3 and admits only attempt 25', () => {
+  const operation = session().initial;
+  const businessCounts = Object.fromEntries(
+    [...new Set(CHATWOOT_FINAL_UAT_TABLES.map((item) => item.d1Table))]
+      .map((table) => [table, 0]),
+  );
+  Object.assign(businessCounts, {
+    chatwoot_account_state: 1,
+    chatwoot_inbox_state: 3,
+    chatwoot_agent_state: 12,
+    chatwoot_team_state: 3,
+    chatwoot_label_state: 47,
+    chatwoot_conversation_state: 65,
+    chatwoot_conversation_label_state: 126,
+    chatwoot_message_analytics_state: 2071,
+    chatwoot_reporting_event_facts: 448,
+    chatwoot_conversation_daily_facts: 200,
+    chatwoot_agent_daily_facts: 81,
+    chatwoot_inbox_daily_facts: 54,
+    chatwoot_account_daily_facts: 42,
+  });
+  const inspection = {
+    operation,
+    workLifecycle: 'terminal',
+    terminalReason: 'QUEUE_RETRY_EXHAUSTED',
+    abandonedAt: 1_800_000_100_000,
+    auditReference: 'dlq:retry-exhausted',
+    workGeneration: operation.generation,
+    workRequestedAt: operation.originalRequestedAt,
+    activeChatwootWork: 0,
+    phaseRows: 1,
+    durableStage: 'conversations',
+    nextSequence: 3,
+    activeLockCount: 0,
+    queueOperationRows: 1,
+    mainQueueAttempts: 25,
+    unitSyncRuns: 4,
+    failedUnitSyncRuns: 0,
+    failedSyncRunId: `${operation.syncRunId}:unit:3`,
+    unitSyncRunStatus: 'running',
+    errorCode: 'QUEUE_RETRY_EXHAUSTED',
+    errorMessage: 'Queue retry exhausted',
+    coverageRuns: 52,
+    currentDlqRecords: 9,
+    currentOpenAlerts: 15,
+    failedCoverageRows: 0,
+    businessCounts,
+  };
+  assert.equal(
+    classifyChatwootInitialRecoveryBoundary(inspection),
+    CHATWOOT_INITIAL_RECOVERY_BOUNDARIES.queueRetryExhausted,
+  );
+  const sql = buildChatwootInitialFailureReactivationSql(inspection);
+  assert.match(sql, /terminal_reason='QUEUE_RETRY_EXHAUSTED'/u);
+  assert.match(sql, /main_queue_attempts=25/u);
+  assert.match(sql, /json_extract\(state_json,'\$\.conversationPage'\)=3/u);
+  assert.match(sql, /json_extract\(state_json,'\$\.messagesSelected'\)=1270/u);
+  assert.match(sql, /COUNT\(\*\) FROM data_coverage_runs/u);
+  assert.match(sql, /QUEUE_RETRY_EXHAUSTED/u);
   assert.doesNotMatch(sql, /DELETE FROM sync_work_phases/iu);
 });
 
