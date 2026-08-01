@@ -2,6 +2,7 @@
 
 import { spawnSync } from 'node:child_process';
 import {
+  chmod,
   mkdir,
   readFile,
   rename,
@@ -31,13 +32,24 @@ const childPath = join(
   'scripts',
   'meta-history-2026-exact-plan-continuation.mjs',
 );
-const retainedSafeConfig = join(
+const retainedHistoryRoot = join(
   repositoryRoot,
   'outputs',
   'meta-history-2026',
   target.repositoryHead,
+);
+const retainedSafeConfig = join(
+  retainedHistoryRoot,
   'wrangler.meta-history.safe.jsonc',
 );
+const isolatedCloneGitExclude = join(
+  retainedHistoryRoot,
+  'isolated-clone.git-exclude',
+);
+const ISOLATED_CLONE_GIT_EXCLUDE_PATTERNS = Object.freeze([
+  '/outputs',
+  '/wrangler.sync.jsonc',
+]);
 const retainedD1Root = join(
   repositoryRoot,
   'outputs',
@@ -50,13 +62,16 @@ let stage = 'init';
 
 try {
   const args = process.argv.slice(2);
-  if (args.includes('--execute')) {
+  const execute = args.includes('--execute');
+  if (execute) {
     stage = 'confirm-local-summary-materialization';
     assertMetaHistoryExactContinuationConfirmation(process.env);
     stage = 'verify-current-main-before-local-summary';
     assertExactCurrentMain();
     stage = 'materialize-retained-d1-summary';
     await ensureRetainedD1Summary();
+    stage = 'prepare-isolated-clone-git-exclude';
+    await ensureIsolatedCloneGitExclude();
   }
 
   stage = 'run-exact-plan-continuation';
@@ -65,11 +80,7 @@ try {
     [childPath, ...args],
     {
       cwd: repositoryRoot,
-      env: {
-        ...process.env,
-        MKT_META_D1_ONLY_WRANGLER_CONFIG: retainedSafeConfig,
-        MKT_WOOCOMMERCE_ROLLOUT_WRANGLER_CONFIG: retainedSafeConfig,
-      },
+      env: buildChildEnvironment({ execute }),
       encoding: 'utf8',
       maxBuffer: 512 * 1024 * 1024,
       stdio: 'inherit',
@@ -206,6 +217,54 @@ async function ensureRetainedD1Summary() {
     scheduleEnabled: false,
     production: 'BLOCKED',
   }, null, 2)}\n`);
+}
+
+async function ensureIsolatedCloneGitExclude() {
+  const expected = `${ISOLATED_CLONE_GIT_EXCLUDE_PATTERNS.join('\n')}\n`;
+  await mkdir(dirname(isolatedCloneGitExclude), { recursive: true, mode: 0o700 });
+  const temporary = join(
+    dirname(isolatedCloneGitExclude),
+    `.isolated-clone-git-exclude.${process.pid}.${Date.now()}.tmp`,
+  );
+  await writeFile(temporary, expected, { mode: 0o600 });
+  await rename(temporary, isolatedCloneGitExclude);
+  await chmod(isolatedCloneGitExclude, 0o600);
+
+  const info = await stat(isolatedCloneGitExclude);
+  const observed = await readFile(isolatedCloneGitExclude, 'utf8');
+  if (!info.isFile() || (info.mode & 0o077) !== 0 || observed !== expected) {
+    throw terminalError(
+      'Isolated clone Git exclude file is not exact and private',
+      'META_HISTORY_EXACT_CONTINUATION_GIT_EXCLUDE_INVALID',
+    );
+  }
+}
+
+function buildChildEnvironment({ execute }) {
+  const base = {
+    ...process.env,
+    MKT_META_D1_ONLY_WRANGLER_CONFIG: retainedSafeConfig,
+    MKT_WOOCOMMERCE_ROLLOUT_WRANGLER_CONFIG: retainedSafeConfig,
+  };
+  if (!execute) return base;
+
+  const conflicts = Object.keys(process.env).filter(
+    (key) => /^GIT_CONFIG_(?:COUNT|KEY_\d+|VALUE_\d+)$/u.test(key),
+  );
+  if (conflicts.length > 0) {
+    throw terminalError(
+      'Exact isolated clone Git configuration is already overridden by the caller',
+      'META_HISTORY_EXACT_CONTINUATION_GIT_CONFIG_ENV_INVALID',
+      { conflicts: conflicts.sort() },
+    );
+  }
+
+  return {
+    ...base,
+    GIT_CONFIG_COUNT: '1',
+    GIT_CONFIG_KEY_0: 'core.excludesFile',
+    GIT_CONFIG_VALUE_0: isolatedCloneGitExclude,
+  };
 }
 
 async function regularFile(path) {

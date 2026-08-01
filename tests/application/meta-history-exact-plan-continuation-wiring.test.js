@@ -18,7 +18,6 @@ const META_WORKFLOW = new URL(
   '../../.github/workflows/meta-end-to-end-verification.yml',
   import.meta.url,
 );
-const GITIGNORE = new URL('../../.gitignore', import.meta.url);
 
 test('exact-plan public Terminal supplies the retained private Safe config', async () => {
   const source = await readFile(TERMINAL, 'utf8');
@@ -27,7 +26,6 @@ test('exact-plan public Terminal supplies the retained private Safe config', asy
   assert.match(source, /MKT_META_D1_ONLY_WRANGLER_CONFIG:\s*retainedSafeConfig/u);
   assert.match(source, /MKT_WOOCOMMERCE_ROLLOUT_WRANGLER_CONFIG:\s*retainedSafeConfig/u);
   assert.match(source, /meta-history-2026-exact-plan-continuation\.mjs/u);
-  assert.doesNotMatch(source, /wrangler\.sync\.jsonc/u);
   assert.doesNotMatch(source, /meta-lark-parity-rollout-launcher\.mjs/u);
   assert.doesNotMatch(source, /meta-d1-only-rollout-launcher\.mjs/u);
 });
@@ -38,10 +36,15 @@ test('exact-plan Terminal requires confirmation before any local D1 summary writ
     'assertMetaHistoryExactContinuationConfirmation(process.env)',
   );
   const materialization = source.indexOf('await ensureRetainedD1Summary()');
+  const cloneExclude = source.indexOf('await ensureIsolatedCloneGitExclude()');
+  const child = source.indexOf('const child = spawnSync(');
 
   assert.ok(confirmation >= 0);
   assert.ok(materialization > confirmation);
+  assert.ok(cloneExclude > materialization);
+  assert.ok(child > cloneExclude);
   assert.match(source, /stage = 'confirm-local-summary-materialization'/u);
+  assert.match(source, /stage = 'prepare-isolated-clone-git-exclude'/u);
 });
 
 test('exact-plan Terminal materializes from a full or valid preflight-anchored local chain', async () => {
@@ -111,20 +114,27 @@ test('exact-plan continuation completes Facebook Lark before resuming the retain
   assert.match(source, /verify-restore/u);
 });
 
-test('isolated retained-Head runtime injections remain ignored without hiding other untracked files', async () => {
-  const [source, gitignore] = await Promise.all([
+test('isolated retained-Head runtime injections use an exact child-only Git exclude', async () => {
+  const [terminal, source] = await Promise.all([
+    readFile(TERMINAL, 'utf8'),
     readFile(SOURCE, 'utf8'),
-    readFile(GITIGNORE, 'utf8'),
   ]);
 
   assert.match(source, /symlink\(originalOutputs, join\(cloneRoot, 'outputs'\), 'dir'\)/u);
   assert.match(source, /copyFile\(sourceConfigPath, join\(cloneRoot, 'wrangler\.sync\.jsonc'\)\)/u);
   assert.match(source, /status', '--porcelain', '--untracked-files=all/u);
-  assert.match(gitignore, /^\/outputs$/mu);
-  assert.match(gitignore, /^wrangler\.sync\.jsonc$/mu);
-  assert.doesNotMatch(gitignore, /^outputs\/$/mu);
+  assert.match(terminal, /isolated-clone\.git-exclude/u);
+  assert.match(terminal, /ISOLATED_CLONE_GIT_EXCLUDE_PATTERNS/u);
+  assert.match(terminal, /'\/outputs'/u);
+  assert.match(terminal, /'\/wrangler\.sync\.jsonc'/u);
+  assert.match(terminal, /GIT_CONFIG_COUNT:\s*'1'/u);
+  assert.match(terminal, /GIT_CONFIG_KEY_0:\s*'core\.excludesFile'/u);
+  assert.match(terminal, /GIT_CONFIG_VALUE_0:\s*isolatedCloneGitExclude/u);
+  assert.match(terminal, /META_HISTORY_EXACT_CONTINUATION_GIT_CONFIG_ENV_INVALID/u);
+  assert.match(terminal, /observed !== expected/u);
   assert.doesNotMatch(source, /status\.showUntrackedFiles/u);
   assert.doesNotMatch(source, /--untracked-files=no/u);
+  assert.doesNotMatch(terminal, /core\.excludesFile.*\.gitignore/u);
 });
 
 test('local verifier runs repository-only gates and no Live continuation command', async () => {
