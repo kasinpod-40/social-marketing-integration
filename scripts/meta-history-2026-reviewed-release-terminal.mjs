@@ -2,11 +2,15 @@
 
 import { spawnSync } from 'node:child_process';
 import {
+  chmod,
+  copyFile,
   lstat,
   mkdtemp,
+  readFile,
   rm,
   stat,
   symlink,
+  writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -16,6 +20,11 @@ const WRAPPER_HEAD_ENV = 'MKT_META_HISTORY_REVIEW_WRAPPER_HEAD';
 const CONFIRMATION_ENV = 'CONFIRM_META_HISTORY_EXACT_CONTINUATION';
 const CONFIRMATION_VALUE = 'CONTINUE_META_HISTORY_FROM_FACEBOOK_LARK_BOUNDARY';
 const EXACT_TERMINAL = 'scripts/meta-history-2026-exact-plan-continuation-terminal.mjs';
+const REVIEWED_CLONE_EXCLUDE_PATTERNS = Object.freeze([
+  '/outputs',
+  '/.dev.vars',
+  '/node_modules',
+]);
 
 const repositoryRoot = resolve(process.cwd());
 let stage = 'init';
@@ -208,8 +217,9 @@ async function prepareReviewedReleaseClone(assets) {
   runGit(root, ['update-ref', 'refs/remotes/origin/main', REVIEWED_RELEASE_HEAD]);
 
   await symlink(assets.outputs, join(root, 'outputs'), 'dir');
-  await symlink(assets.devVars, join(root, '.dev.vars'), 'file');
+  await copyPrivateDevVars(assets.devVars, join(root, '.dev.vars'));
   await symlink(assets.nodeModules, join(root, 'node_modules'), 'dir');
+  await ensureReviewedCloneExclude(root);
 
   const head = gitText(root, ['rev-parse', 'HEAD']);
   const originMain = gitText(root, ['rev-parse', 'origin/main']);
@@ -229,11 +239,44 @@ async function prepareReviewedReleaseClone(assets) {
         originMain,
         branch,
         clean: dirty.trim() === '',
+        dirtyPaths: dirty.split('\n').filter(Boolean),
       },
     );
   }
 
   return root;
+}
+
+async function copyPrivateDevVars(source, destination) {
+  await copyFile(source, destination);
+  await chmod(destination, 0o600);
+  await assertPrivateRegularFile(destination, 'reviewed clone .dev.vars');
+}
+
+async function ensureReviewedCloneExclude(root) {
+  const excludePath = join(root, '.git', 'info', 'exclude');
+  const existing = await lstat(excludePath).catch(() => null);
+  if (existing?.isSymbolicLink()) {
+    throw wrapperError(
+      'Reviewed clone Git exclude path must not be a symlink',
+      'META_HISTORY_REVIEWED_RELEASE_CLONE_EXCLUDE_INVALID',
+    );
+  }
+
+  const expected = `${REVIEWED_CLONE_EXCLUDE_PATTERNS.join('\n')}\n`;
+  await writeFile(excludePath, expected, { mode: 0o600 });
+  await chmod(excludePath, 0o600);
+
+  const [info, observed] = await Promise.all([
+    stat(excludePath),
+    readFile(excludePath, 'utf8'),
+  ]);
+  if (!info.isFile() || (info.mode & 0o077) !== 0 || observed !== expected) {
+    throw wrapperError(
+      'Reviewed clone Git exclude is not exact and private',
+      'META_HISTORY_REVIEWED_RELEASE_CLONE_EXCLUDE_INVALID',
+    );
+  }
 }
 
 async function assertDirectory(path, field) {
