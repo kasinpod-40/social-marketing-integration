@@ -32,10 +32,14 @@ import {
 import {
   parseChatwootWranglerJsonOutput,
 } from './lib/chatwoot-final-source-config-recovery.js';
+import {
+  loadChatwootSafeBaselinePriorAttempt,
+} from './lib/chatwoot-safe-baseline-prior-attempt.js';
 import { readDevVars } from './lib/dev-vars.js';
 
 const WRAPPER_HEAD_ENV = 'MKT_CHATWOOT_SAFE_BASELINE_WRAPPER_HEAD';
 const ARBITRATION_HEAD_ENV = 'MKT_CHATWOOT_EVIDENCE_ARBITRATION_WRAPPER_HEAD';
+const PRIOR_HEAD_ENV = 'MKT_CHATWOOT_SAFE_BASELINE_PRIOR_ATTEMPT_HEAD';
 const CONFIRMATION_ENV = 'CONFIRM_CHATWOOT_INITIAL_FAILURE_RECOVERY';
 const CONFIRMATION_VALUE = 'RECOVER_EXACT_CHATWOOT_INITIAL_TO_LARK_PARITY';
 const CHILD = 'scripts/chatwoot-controller-evidence-arbitration-terminal.mjs';
@@ -55,6 +59,7 @@ let repository = null;
 let assets = null;
 let runtimeEnv = null;
 let selection = null;
+let priorAttempt = null;
 let boundary = null;
 let evidenceDirectory = null;
 let promotionAttempted = false;
@@ -89,12 +94,36 @@ try {
       );
     }
 
+    const priorHeadValue = String(runtimeEnv[PRIOR_HEAD_ENV] ?? '').trim();
+    if (priorHeadValue) {
+      stage = 'verify-chatwoot-safe-baseline-prior-selection-handoff';
+      const priorHead = requireSha(priorHeadValue, PRIOR_HEAD_ENV);
+      if (priorHead === repository.currentHead
+          || !gitSuccess(['merge-base', '--is-ancestor', priorHead, repository.currentHead])) {
+        throw operatorError(
+          'Prior Chatwoot safe-baseline attempt must be a strict ancestor of the current wrapper Head',
+          'CHATWOOT_SAFE_BASELINE_PRIOR_HEAD_INVALID',
+          { priorHead, currentHead: repository.currentHead },
+        );
+      }
+      priorAttempt = await loadChatwootSafeBaselinePriorAttempt({
+        directory: join(assets.outputs, RECOVERY_OUTPUT, priorHead),
+        priorHead,
+        currentWorker: current,
+      });
+    }
+
     stage = 'select-chatwoot-safe-baseline-evidence';
     const candidates = await loadControllerEvidence(assets.outputs, repository.currentHead);
     selection = selectChatwootControllerSafeBaselineEvidence(
       candidates,
       current.activeVersion,
       current.enabledFlags,
+      priorAttempt ? {
+        sessionFingerprint: priorAttempt.retainedSessionFingerprint,
+        baselineVersionFingerprint: priorAttempt.baselineVersionFingerprint,
+        activeVersionFingerprint: priorAttempt.retainedActiveVersionFingerprint,
+      } : null,
     );
 
     stage = 'verify-chatwoot-retained-active-version';
@@ -145,6 +174,10 @@ try {
       controllerBoundary: boundary.boundary,
       candidateCount: selection.candidateCount,
       selectedBy: selection.selectedBy,
+      ...(priorAttempt ? {
+        priorAttemptHead: priorAttempt.priorHead,
+        priorAttemptValidated: true,
+      } : {}),
       secondInitialAdmission: false,
       queueAction: false,
       d1Mutation: false,
@@ -259,6 +292,7 @@ if (primaryError) {
     repositoryHead: repository.currentHead,
     candidateCount: selection.candidateCount,
     selectedBy: selection.selectedBy,
+    priorAttemptHead: priorAttempt?.priorHead ?? null,
     controllerBoundary: boundary.boundary,
     retainedEvidenceMutation: false,
     secondInitialAdmission: false,
@@ -290,8 +324,10 @@ function printPlan() {
     planOnly: true,
     contractVersion: CONTRACT_VERSION,
     wrapperHeadEnv: WRAPPER_HEAD_ENV,
+    priorAttemptHeadEnv: PRIOR_HEAD_ENV,
     confirmation: `${CONFIRMATION_ENV}=${CONFIRMATION_VALUE}`,
-    selectionAuthority: 'current_safe_baseline_version',
+    selectionAuthority:
+      'current_safe_baseline_version_or_verified_prior_safe_baseline_attempt',
     requiredBoundary: 'queue_retry_exhausted_terminal_v1',
     activeWindowSource: 'retained_reviewed_active_version',
     child: CHILD,
