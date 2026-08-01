@@ -6,13 +6,16 @@ const CONVERSATION_STATUSES = new Set(['open', 'resolved', 'pending', 'snoozed']
 const AGENT_AVAILABILITY = new Set(['available', 'busy', 'offline']);
 const CONTACT_AVAILABILITY = new Set(['online', 'offline', 'busy', 'unknown']);
 const AGENT_ROLES = new Set(['agent', 'administrator']);
-// conversation_resolved is a lifecycle evidence row from the live Reporting API.
-// It is intentionally retained raw but is not interpreted as a duration metric.
+// Keep this aligned with Chatwoot ReportingEventListener. `resolution` is the
+// legacy API name; conversation_resolved is the current time-to-resolve event.
 const REPORTING_EVENT_NAMES = new Set([
   'first_response',
   'resolution',
   'reply_time',
   'conversation_resolved',
+  'conversation_opened',
+  'conversation_bot_handoff',
+  'conversation_bot_resolved',
 ]);
 const MESSAGE_TYPES = Object.freeze({
   0: 'incoming',
@@ -322,7 +325,7 @@ export function summarizeReportingEvents(events) {
     if (event.name === 'first_response') {
       metrics.firstResponseSeconds = event.valueSeconds;
       metrics.firstResponseBusinessSeconds = event.valueBusinessSeconds;
-    } else if (event.name === 'resolution') {
+    } else if (event.name === 'resolution' || event.name === 'conversation_resolved') {
       metrics.resolutionSeconds = event.valueSeconds;
       metrics.resolutionBusinessSeconds = event.valueBusinessSeconds;
     } else if (event.name === 'reply_time') {

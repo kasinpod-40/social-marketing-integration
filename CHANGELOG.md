@@ -4,8 +4,11 @@
 
 ### Reliability
 
-- Admitted the live `conversation_resolved` Reporting event as retained raw lifecycle evidence without treating it
-  as a first-response, resolution or reply duration, while unsupported event names still fail closed.
+- Aligned Reporting-event names with Chatwoot's authoritative listener contract, retaining opened/bot lifecycle
+  evidence and mapping `conversation_resolved` time-to-resolve into resolution duration/count without double-counting
+  the bot-resolved companion event; unsupported names still fail closed.
+- Added an exact attempts-16/unit-2 boundary for the subsequently observed `conversation_opened` failure while
+  preserving the same committed page-1 cursor, Business counts, DLQ 8 and open-Alert 14 evidence.
 - Added an exact attempts-14/unit-2 recovery boundary that preserves the committed Conversation page-1 cursor and
   pins its 17 Conversations, 590 Messages, 122 conversation Reporting events, DLQ 7 and open-Alert 12 evidence.
 - Canonicalized each Chatwoot message page by external message ID before cursor validation, accepting descending

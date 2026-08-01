@@ -85,13 +85,9 @@ test('Chatwoot conversation normalizer treats an out-of-range optional waiting t
   );
 });
 
-test('Chatwoot conversation_resolved reporting event is retained without inventing duration metrics', async () => {
+test('Chatwoot ReportingEventListener names retain evidence and map only resolved duration', async () => {
   const context = { ...BASE_CONTEXT, observedAt: OBSERVED_AT };
-  const event = await normalizeChatwootReportingEvent({
-    id: 202,
-    name: 'conversation_resolved',
-    value: 0,
-    value_in_business_hours: null,
+  const source = {
     account_id: 42,
     conversation_id: 71,
     inbox_id: 3,
@@ -100,7 +96,19 @@ test('Chatwoot conversation_resolved reporting event is retained without inventi
     event_end_time: '2026-07-26T03:00:00Z',
     created_at: '2026-07-26T03:00:00Z',
     updated_at: '2026-07-26T03:00:00Z',
-  }, context);
+  };
+  const [resolved, opened, botHandoff, botResolved] = await Promise.all([
+    ['conversation_resolved', 202, 42, 21],
+    ['conversation_opened', 203, 0, 0],
+    ['conversation_bot_handoff', 204, 12, 6],
+    ['conversation_bot_resolved', 205, 42, 21],
+  ].map(([name, id, value, businessValue]) => normalizeChatwootReportingEvent({
+    ...source,
+    id,
+    name,
+    value,
+    value_in_business_hours: businessValue,
+  }, context)));
   const conversation = await normalizeChatwootConversation({
     id: 71,
     account_id: 42,
@@ -108,12 +116,20 @@ test('Chatwoot conversation_resolved reporting event is retained without inventi
     status: 'resolved',
     created_at: '2026-07-25T01:00:00Z',
     updated_at: '2026-07-26T03:00:00Z',
-  }, { ...context, reportingEvents: [event] });
+  }, { ...context, reportingEvents: [resolved, opened, botHandoff, botResolved] });
 
-  assert.equal(event.name, 'conversation_resolved');
+  assert.equal(resolved.name, 'conversation_resolved');
+  assert.equal(opened.name, 'conversation_opened');
+  assert.equal(botHandoff.name, 'conversation_bot_handoff');
+  assert.equal(botResolved.name, 'conversation_bot_resolved');
   assert.equal(conversation.firstResponseSeconds, null);
-  assert.equal(conversation.resolutionSeconds, null);
+  assert.equal(conversation.resolutionSeconds, 42);
+  assert.equal(conversation.resolutionBusinessSeconds, 21);
   assert.equal(conversation.replySeconds, null);
+  await assert.rejects(
+    normalizeChatwootReportingEvent({ ...source, id: 206, name: 'unknown_event', value: 0 }, context),
+    /reporting_event\.name is unsupported/u,
+  );
 });
 
 test('Chatwoot incremental source hashes exclude observation timestamps', async () => {
@@ -144,6 +160,54 @@ test('Chatwoot daily facts use message and event dates, not conversation update 
   assert.equal(dates.includes('2026-07-27'), false);
   assert.equal(result.d1.accountDaily.every((row) => row.data_status === 'partial'), true);
   assert.equal(result.d1.accountDaily.every((row) => row.active_agent_count === null), true);
+});
+
+test('conversation_resolved feeds resolution duration and count in daily facts', async () => {
+  const context = { ...BASE_CONTEXT, observedAt: OBSERVED_AT };
+  const account = await normalizeChatwootAccount({ id: 42 }, context);
+  const event = await normalizeChatwootReportingEvent({
+    id: 207,
+    name: 'conversation_resolved',
+    value: 42,
+    value_in_business_hours: 21,
+    account_id: 42,
+    conversation_id: 71,
+    inbox_id: 3,
+    user_id: 11,
+    event_start_time: '2026-07-26T02:59:18Z',
+    event_end_time: '2026-07-26T03:00:00Z',
+    created_at: '2026-07-26T03:00:00Z',
+    updated_at: '2026-07-26T03:00:00Z',
+  }, context);
+  const conversation = await normalizeChatwootConversation({
+    id: 71,
+    account_id: 42,
+    inbox_id: 3,
+    status: 'resolved',
+    created_at: '2026-07-25T01:00:00Z',
+    updated_at: '2026-07-26T03:00:00Z',
+  }, { ...context, reportingEvents: [event] });
+  const prepared = await prepareChatwootAnalyticsSync({
+    customerProfile: 'integration_workspace',
+    ...context,
+    reportingTimezone: 'Asia/Bangkok',
+    syncRunId: 'sync:conversation-resolved',
+    fullSnapshot: true,
+    includeReports: true,
+    account,
+    inboxes: [],
+    contacts: [],
+    agents: [],
+    teams: [],
+    labels: [],
+    conversations: [conversation],
+    messages: [],
+    reportingEvents: [event],
+  });
+  const eventDay = prepared.d1.conversationDaily.find((row) => row.metric_date === '2026-07-26');
+  assert.equal(eventDay.resolved_count, 1);
+  assert.equal(eventDay.resolution_seconds, 42);
+  assert.equal(eventDay.resolution_business_seconds, 21);
 });
 
 test('Chatwoot report preparation does not invent empty zero daily rows', async () => {

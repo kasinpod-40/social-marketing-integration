@@ -10,16 +10,18 @@ reference missing from the current label master, descending Message page order, 
 `conversation_resolved` Reporting event name. Every terminal boundary is admitted by exact Work, Queue, unit,
 phase, error, DLQ, Alert, lock and Business-count proof; no generic terminal state is recoverable.
 
-The latest retained boundary is attempt 14 / unit 2. Conversation page 1 committed before that failure, so the
+The latest retained boundary is attempt 16 / unit 2. Conversation page 1 committed before that failure, so the
 durable state is `stage=conversations`, `nextSequence=2`, `conversationPage=2` and
 `conversationPagesProcessed=1`. Its materialized evidence is 17 Conversations, 22 Conversation-label links,
 590 Message analytics rows and 122 conversation Reporting events. Recovery must preserve those Stable-key rows
 and resume page 2 rather than replaying or replacing the Initial operation.
 
-`conversation_resolved` is a supported raw lifecycle-evidence event from the live Reporting API. It is retained
-in the Reporting-event fact table but deliberately contributes no first-response, resolution or reply duration;
-those metrics continue to come only from `first_response`, `resolution` and `reply_time` respectively. Other
-unknown event names remain Permanent failures.
+Chatwoot's authoritative `ReportingEventListener` emits `first_response`, `reply_time`,
+`conversation_resolved`, `conversation_opened`, `conversation_bot_handoff` and
+`conversation_bot_resolved`; the connector also retains legacy `resolution`. Every event is preserved in the raw
+Reporting-event fact table. `conversation_resolved` is the current time-to-resolve event and contributes resolution
+duration/count alongside legacy `resolution`; opened and bot lifecycle events remain evidence-only so the duplicated
+bot-resolved companion cannot double-count resolution. Other unknown event names remain Permanent failures.
 
 Recovery must reuse the same operation ID, Work key, Sync Run ID, original requested-at and generation. One
 sequence-zero recovery continuation is allowed only after exact guarded lifecycle reactivation and an attempt
