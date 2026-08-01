@@ -1,9 +1,8 @@
+import { createHash } from 'node:crypto';
+
 import {
   CHATWOOT_FINAL_UAT_ACTIVE_TRUE_FLAGS,
 } from './chatwoot-final-30d-daily-uat.js';
-import {
-  fingerprintChatwootFinalSourceRecovery,
-} from './chatwoot-final-source-config-recovery.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
@@ -15,7 +14,7 @@ export const CHATWOOT_INITIAL_FAILURE_WORKER_SAFETY_MODES = Object.freeze({
 export function classifyChatwootInitialFailureWorkerSafety(input = {}) {
   const versionId = requireVersionId(input.versionId);
   const trueFlags = normalizeTrueFlags(input.trueFlags);
-  const versionFingerprint = fingerprintChatwootFinalSourceRecovery(versionId);
+  const versionFingerprint = sha256(versionId);
 
   if (trueFlags.length === 0) {
     return Object.freeze({
@@ -79,6 +78,10 @@ function requireVersionId(value) {
     throw workerSafetyError('Worker version identity is invalid');
   }
   return text;
+}
+
+function sha256(value) {
+  return createHash('sha256').update(String(value)).digest('hex');
 }
 
 function stableJson(value) {
