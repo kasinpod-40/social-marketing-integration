@@ -90,6 +90,39 @@ test('Instagram fixture preserves structured total_value and authoritative user_
   assert.equal(metrics.rawRows[0].response_shape, 'total_value');
 });
 
+test('Instagram unavailable insight descriptor becomes explicit null without accepting malformed rows', () => {
+  const input = {
+    platform: 'instagram',
+    entityType: 'account',
+    sourceAccountId: 'ig_fixture_001',
+    sourceEntityId: 'ig_fixture_001',
+    fetchedAt: FETCHED_AT,
+    syncRunId: SYNC_RUN_ID,
+  };
+  const normalized = normalizeMetaOrganicInsightsFixture({
+    ...input,
+    insights: [{
+      name: 'follows_and_unfollows',
+      period: 'day',
+      id: 'ig_fixture_001/insights/follows_and_unfollows/day',
+      title: 'Follows and unfollows',
+      description: 'Unavailable for the selected range',
+    }],
+  });
+  assert.equal(normalized.rawRows.length, 1);
+  assert.equal(normalized.rawRows[0].value_number, null);
+  assert.equal(normalized.rawRows[0].value_json, null);
+  assert.equal(normalized.rawRows[0].response_shape, 'unavailable');
+
+  assert.throws(
+    () => normalizeMetaOrganicInsightsFixture({
+      ...input,
+      insights: [{ name: 'follows_and_unfollows', period: 'day' }],
+    }),
+    /response shape is unsupported/u,
+  );
+});
+
 test('Meta Ads fixture maps exact money micros and keeps actions unmapped', async () => {
   const fixture = await readFixture('meta-ads.json');
   const account = normalizeMetaAdsEntityFixture({

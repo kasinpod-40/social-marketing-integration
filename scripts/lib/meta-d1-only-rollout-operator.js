@@ -448,8 +448,12 @@ export function compareMetaD1OnlySnapshots(beforeInput, afterInput, options = {}
 export function validateMetaD1OnlyTerminalRecoveryBaseline(snapshotInput = {}) {
   const snapshot = normalizeMetaD1OnlySnapshot(snapshotInput);
   const noOperationWrites = Object.values(snapshot.operationCounts).every((count) => count === 0);
+  const acceptedPreWriteErrors = new Set([
+    'META_PERMANENT_API_ERROR',
+    'UNHANDLED_SYNC_ERROR',
+  ]);
   const valid = snapshot.syncRunStatus === 'failed'
-    && snapshot.syncRunErrorCode === 'META_PERMANENT_API_ERROR'
+    && acceptedPreWriteErrors.has(snapshot.syncRunErrorCode)
     && snapshot.workStatus === 'active'
     && snapshot.workLifecycleStatus === 'active'
     && snapshot.workCompletedAt === null

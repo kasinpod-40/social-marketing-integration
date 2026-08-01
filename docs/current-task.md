@@ -159,3 +159,8 @@ Minimal Live GET reproduction ยืนยัน request เดิมตอบ G
 `period=day` และ `metric_type=total_value` ตอบ 200 พร้อม metrics ทั้งห้ารายการ. Implementation เพิ่ม query
 contract นี้ใน Instagram adapter และเพิ่ม terminal-recovery guard ที่ยอม same-operation recovery เฉพาะ exact
 failed pre-D1 boundary, ต้องไม่มี lock/Business/Coverage/Lark และต้องเห็น main Queue attempt เพิ่มจริง.
+
+Recovery ด้วย current Worker entry ผ่าน account/content insights ครบ 29 source units แต่ provider ส่ง
+`follows_and_unfollows` ที่ unavailable เป็น descriptor ไม่มี `values`/`total_value`; normalizer รุ่นเดิมหยุด
+pre-write ด้วย `UNHANDLED_SYNC_ERROR`. Implementation รองรับเฉพาะ descriptor ที่มี identity/period/title/
+description ครบเป็น explicit `null` (`response_shape=unavailable`) และยัง fail-closed สำหรับ malformed row.
