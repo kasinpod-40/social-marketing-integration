@@ -287,9 +287,8 @@ export function normalizeChatwootFinalUatPreflight(row = {}) {
 export function assertChatwootFinalUatPreflight(snapshot = {}) {
   const totalBusinessRows = Object.values(snapshot.businessCounts ?? {}).reduce((sum, value) => sum + count(value, 'businessCount'), 0);
   if (snapshot.activeChatwootWork !== 0 || snapshot.activeChatwootLocks !== 0
-      || snapshot.chatwootTableCount !== 14 || snapshot.chatwootIndexCount !== 15
-      || totalBusinessRows !== 0) {
-    throw uatError('Remote D1 is not a clean Chatwoot Initial-UAT target', 'CHATWOOT_FINAL_UAT_PREFLIGHT_BLOCKED', {
+      || snapshot.chatwootTableCount !== 14 || snapshot.chatwootIndexCount !== 15) {
+    throw uatError('Remote D1 is not a valid Chatwoot Initial-UAT target', 'CHATWOOT_FINAL_UAT_PREFLIGHT_BLOCKED', {
       activeChatwootWork: snapshot.activeChatwootWork,
       activeChatwootLocks: snapshot.activeChatwootLocks,
       chatwootTableCount: snapshot.chatwootTableCount,
@@ -298,6 +297,75 @@ export function assertChatwootFinalUatPreflight(snapshot = {}) {
     });
   }
   return Object.freeze({ ...snapshot, totalBusinessRows });
+}
+
+export function mapChatwootFinalUatD1BaselineCounts(businessCounts = {}) {
+  return deepFreeze(Object.fromEntries(CHATWOOT_FINAL_UAT_TABLES.map((spec) => [
+    spec.key,
+    count(businessCounts?.[spec.d1Table], spec.d1Table),
+  ])));
+}
+
+export function assertChatwootFinalUatBaselineCompatible(d1Counts = {}, larkCounts = {}) {
+  const d1 = normalizeChatwootFinalUatLogicalCounts(d1Counts, 'd1');
+  const lark = normalizeChatwootFinalUatLogicalCounts(larkCounts, 'lark');
+  const larkExcess = CHATWOOT_FINAL_UAT_TABLES
+    .filter((spec) => lark[spec.key] > d1[spec.key])
+    .map((spec) => ({
+      tableKey: spec.key,
+      d1Rows: d1[spec.key],
+      larkRows: lark[spec.key],
+    }));
+  if (larkExcess.length > 0) {
+    throw uatError(
+      'Lark Chatwoot baseline contains rows that are not present in D1',
+      'CHATWOOT_FINAL_UAT_BASELINE_MISMATCH',
+      { larkExcess },
+    );
+  }
+  return deepFreeze({
+    d1Counts: d1,
+    larkCounts: lark,
+    d1Rows: Object.values(d1).reduce((sum, value) => sum + value, 0),
+    larkRows: Object.values(lark).reduce((sum, value) => sum + value, 0),
+  });
+}
+
+export function assertChatwootFinalUatBaselinePreserved(
+  baselineCounts = {},
+  currentCounts = {},
+  label = 'baseline',
+) {
+  const baseline = normalizeChatwootFinalUatLogicalCounts(
+    baselineCounts,
+    `${label}:baseline`,
+  );
+  const current = normalizeChatwootFinalUatLogicalCounts(
+    currentCounts,
+    `${label}:current`,
+  );
+  const decreases = CHATWOOT_FINAL_UAT_TABLES
+    .filter((spec) => current[spec.key] < baseline[spec.key])
+    .map((spec) => ({
+      tableKey: spec.key,
+      baselineRows: baseline[spec.key],
+      currentRows: current[spec.key],
+    }));
+  if (decreases.length > 0) {
+    throw uatError(
+      'Chatwoot Final UAT reduced an existing business baseline',
+      'CHATWOOT_FINAL_UAT_BASELINE_REGRESSION',
+      { label, decreases },
+    );
+  }
+  return deepFreeze({ accepted: true, label, baseline, current });
+}
+
+function normalizeChatwootFinalUatLogicalCounts(values = {}, label = 'counts') {
+  return deepFreeze(Object.fromEntries(CHATWOOT_FINAL_UAT_TABLES.map((spec) => [
+    spec.key,
+    count(values?.[spec.key], `${label}:${spec.key}`),
+  ])));
 }
 
 export function normalizeChatwootFinalUatSnapshot(row = {}) {

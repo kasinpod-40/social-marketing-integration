@@ -7,6 +7,8 @@ import {
   CHATWOOT_FINAL_UAT_LOCKED_VARS,
   CHATWOOT_FINAL_UAT_SUCCESS_MARKER,
   CHATWOOT_FINAL_UAT_TABLES,
+  assertChatwootFinalUatBaselineCompatible,
+  assertChatwootFinalUatBaselinePreserved,
   assertChatwootFinalUatConfirmation,
   assertChatwootFinalUatPreflight,
   buildChatwootFinalUatConfigWindow,
@@ -17,6 +19,7 @@ import {
   compareChatwootD1LarkParity,
   compareChatwootFinalUatReplay,
   createChatwootFinalUatSession,
+  mapChatwootFinalUatD1BaselineCounts,
   normalizeChatwootFinalUatPreflight,
   normalizeChatwootFinalUatSnapshot,
 } from '../../scripts/lib/chatwoot-final-30d-daily-uat.js';
@@ -196,21 +199,56 @@ test('Initial and Daily Queue jobs use shared schema and trigger contracts', () 
   assert.equal(daily.continuationSequence, 0);
 });
 
-test('preflight requires exact 14 tables, 15 indexes, no active state and zero Business rows', () => {
+test('preflight accepts existing Business baseline while retaining exact schema and idle-state gates', () => {
   const row = {
     active_chatwoot_work: 0,
     active_chatwoot_locks: 0,
-    prior_chatwoot_operations: 0,
+    prior_chatwoot_operations: 1,
     chatwoot_table_count: 14,
     chatwoot_index_count: 15,
   };
   for (const spec of CHATWOOT_FINAL_UAT_TABLES) row[spec.d1Table] = 0;
+  row.chatwoot_account_state = 4;
+  row.chatwoot_conversation_state = 8;
   const normalized = normalizeChatwootFinalUatPreflight(row);
-  assert.equal(assertChatwootFinalUatPreflight(normalized).totalBusinessRows, 0);
-  row.chatwoot_conversation_state = 1;
+  assert.equal(assertChatwootFinalUatPreflight(normalized).totalBusinessRows, 12);
+  row.active_chatwoot_work = 1;
   assert.throws(
     () => assertChatwootFinalUatPreflight(normalizeChatwootFinalUatPreflight(row)),
     (error) => error?.code === 'CHATWOOT_FINAL_UAT_PREFLIGHT_BLOCKED',
+  );
+});
+
+test('baseline contract allows Lark to lag D1, blocks Lark excess and prevents row loss', () => {
+  const d1Business = Object.fromEntries(
+    [...new Set(CHATWOOT_FINAL_UAT_TABLES.map((spec) => spec.d1Table))]
+      .map((tableName) => [tableName, 2]),
+  );
+  const d1 = mapChatwootFinalUatD1BaselineCounts(d1Business);
+  const lark = Object.fromEntries(CHATWOOT_FINAL_UAT_TABLES.map((spec) => [spec.key, 1]));
+  const compatible = assertChatwootFinalUatBaselineCompatible(d1, lark);
+  assert.ok(compatible.d1Rows > compatible.larkRows);
+  assert.equal(assertChatwootFinalUatBaselinePreserved(
+    d1,
+    Object.fromEntries(CHATWOOT_FINAL_UAT_TABLES.map((spec) => [
+      spec.key,
+      d1[spec.key] + 1,
+    ])),
+    'initial:d1',
+  ).accepted, true);
+  assert.throws(
+    () => assertChatwootFinalUatBaselineCompatible(d1, {
+      ...lark,
+      rawChatwootAccounts: d1.rawChatwootAccounts + 1,
+    }),
+    (error) => error?.code === 'CHATWOOT_FINAL_UAT_BASELINE_MISMATCH',
+  );
+  assert.throws(
+    () => assertChatwootFinalUatBaselinePreserved(d1, {
+      ...d1,
+      rawChatwootAccounts: d1.rawChatwootAccounts - 1,
+    }, 'initial:d1'),
+    (error) => error?.code === 'CHATWOOT_FINAL_UAT_BASELINE_REGRESSION',
   );
 });
 
@@ -272,6 +310,9 @@ test('one-command operator is plan-only by default and owns automatic Safe resto
   assert.match(source, /operationFlow\(target, session\.initial/u);
   assert.match(source, /operationFlow\(target, session\.daily/u);
   assert.match(source, /compareChatwootD1LarkParity/u);
+  assert.match(source, /assertChatwootFinalUatBaselineCompatible/u);
+  assert.match(source, /assertChatwootFinalUatBaselinePreserved/u);
+  assert.doesNotMatch(source, /CHATWOOT_FINAL_UAT_LARK_NOT_EMPTY/u);
   assert.match(source, /CHATWOOT_FINAL_UAT_SUCCESS_MARKER/u);
   assert.doesNotMatch(source, /MKT_SCHEDULE_CHATWOOT_ENABLED[^\n]*['"]true['"]/u);
   assert.doesNotMatch(source, /MKT_CHATWOOT_WEBHOOK_ENABLED[^\n]*['"]true['"]/u);
