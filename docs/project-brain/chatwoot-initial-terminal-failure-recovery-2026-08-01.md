@@ -56,3 +56,11 @@ Exact recovery requires page 3, two committed pages, 50 scanned rows, 40 selecte
 `QUEUE_RETRY_EXHAUSTED` incident evidence. The controller may replace the prior active Worker only after binding its
 version to retained evidence and must transfer Safe-restore ownership to the replacement before sending the sole
 same-Work continuation. The 30-day Initial contract remains unchanged.
+
+The safe-baseline recovery path now carries one exact retained evidence identity into an isolated current-main clone
+as a real temporary directory. The inspector accepts the promoted four-flag Chatwoot active window only when the
+current-head safe-baseline attempt passes the existing handoff contract and the current Worker version SHA-256
+fingerprint matches the retained-active-version fingerprint. Ordinary inspection remains all-false only; missing or
+malformed handoff, version drift or any additional true flag remains fail closed. The recovery launcher, Queue/D1/Lark
+mutation authority, incident closure and all-false Safe restore ownership remain unchanged. See
+`docs/tasks/chatwoot-inspector-active-resume-window-v1.md`.

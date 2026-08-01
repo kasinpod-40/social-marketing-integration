@@ -1,77 +1,83 @@
-# Current Task — Chatwoot Isolated Evidence Real Directory v1
+# Current Task — Chatwoot Inspector Active Resume Window v1
 
 ## Status
 
 ```text
 TASK_STATUS                          = REPOSITORY_HOTFIX_IN_REVIEW
-CURRENT_PROGRAM                      = CHATWOOT_ISOLATED_EVIDENCE_REAL_DIRECTORY_V1
-BRANCH                               = hotfix/chatwoot-isolated-evidence-real-directory-v1
-BASE_MAIN_SHA                        = 07599a10326d3976fb8344fe3e4b90bdc9426aaf
-CHATWOOT_LATEST_STOP                 = CHATWOOT_INITIAL_FAILURE_SESSION_MISSING
+CURRENT_PROGRAM                      = CHATWOOT_INSPECTOR_ACTIVE_RESUME_WINDOW_V1
+BRANCH                               = hotfix/chatwoot-inspector-active-resume-window-v1
+BASE_MAIN_SHA                        = 0c6ddf535af10c6f031bb9a9beb553858bcbbe69
+CHATWOOT_LATEST_STOP                 = CHATWOOT_INITIAL_FAILURE_WORKER_UNSAFE
 CHATWOOT_SELECTED_PARENT_IDENTITY    = PROVEN_AND_HANDOFF_BOUND
-CHATWOOT_ISOLATED_CANDIDATE          = SYMLINK_NOT_DIRENT_DIRECTORY
+CHATWOOT_ISOLATED_CANDIDATE          = REAL_DIRECTORY_AND_CHILD_VISIBLE
+CHATWOOT_OBSERVED_TRUE_FLAGS         = EXACT_FINAL_UAT_FOUR_FLAG_WINDOW
 CHATWOOT_CURRENT_WORKER_FLAGS        = ALL_FALSE_AFTER_VERIFIED_SAFE_RESTORE
 LATEST_PROVIDER_QUEUE_D1_LARK_ACTION = 0
 SCHEDULE_WEBHOOK                     = DISABLED
 PRODUCTION                           = BLOCKED
-NEXT_STEP                            = VERIFY_AND_MERGE_REAL_DIRECTORY_ISOLATION
+NEXT_STEP                            = VERIFY_AND_MERGE_INSPECTOR_ACTIVE_RESUME_WINDOW
 ```
 
 ## Latest guarded stop
 
-The safe-baseline parent selected the exact retained controller identity, proved the retained active version and Remote
-D1 `queue_retry_exhausted_terminal_v1` boundary, and passed the selection fingerprints into the arbitration child.
+The safe-baseline parent selected the exact retained controller identity, proved the retained active version and
+Remote D1 `queue_retry_exhausted_terminal_v1` boundary, promoted the retained active Worker and delegated through the
+arbitration wrapper. The selected evidence was visible to the Initial recovery child as a real directory.
 
-The Initial recovery launcher then stopped with:
+The Initial failure inspector then stopped before backup, Work reactivation, Queue continuation, D1/Lark mutation or
+incident closure with:
 
 ```text
-code     CHATWOOT_INITIAL_FAILURE_SESSION_MISSING
-message  No retained candidate can be inspected
+code       CHATWOOT_INITIAL_FAILURE_WORKER_UNSAFE
+trueFlags  MKT_CONNECTOR_CHATWOOT_ENABLED
+           MKT_CHATWOOT_D1_WRITE_ENABLED
+           MKT_CHATWOOT_LARK_WRITE_ENABLED
+           MKT_CHATWOOT_REPORT_WRITE_ENABLED
 ```
 
-The child performed zero Provider request, Queue action, Remote D1/Lark mutation, Worker deployment or incident closure.
-The safe-baseline parent verified every execution flag false afterward. Schedule and Webhook remained disabled and
-Production remained blocked.
+The safe-baseline parent verified every execution flag false after the child failure. Provider, Queue, Remote D1,
+Remote Lark and incident-closure actions remained zero. Schedule and Webhook remained disabled and Production remained
+blocked.
 
 ## Root cause
 
-The arbitration wrapper created the selected evidence entry inside its isolated clone with:
-
-```text
-symlink(selectedEvidenceDirectory, isolatedFinalUatRoot/<selected-head>)
-```
-
-The Initial recovery launcher enumerates that root with `readdir(..., { withFileTypes: true })` and admits only
-`entry.isDirectory()`. A directory symlink returns `isSymbolicLink()`, not `isDirectory()`, so the exact selected
-candidate was discarded before session JSON or D1 inspection.
+`chatwoot-initial-terminal-failure-inspector.mjs` supported only an all-false Worker state. That is correct for
+ordinary standalone inspection, but the exact safe-baseline controller-resume path intentionally promotes the retained
+four-flag Final UAT active version before invoking the inspector. The inspector therefore rejected the exact active
+window already selected, version-bound and Safe-restore-owned by its parent.
 
 ## Objective
 
-Keep the already-proven selection and isolated exact-main execution, but expose the selected evidence to the unchanged
-Initial recovery launcher as a real temporary directory. Do not edit, rename or delete retained evidence and do not move
-Queue, D1, Lark, Worker promotion, Safe restore or incident-closure authority.
+Preserve ordinary all-false inspection while admitting the exact controller-resume active window only when it is bound
+to the current-head safe-baseline handoff and current Worker version fingerprint. Do not change the recovery launcher,
+Queue/D1/Lark mutation authority, incident closure, retained evidence, second-Initial prohibition or Safe restore.
 
 ## Contract
 
-1. The selected source evidence must be a real directory rather than a symlink.
-2. The isolated destination must be absent before materialization.
-3. The wrapper copies the selected evidence into the temporary clone with dereferenced regular files.
-4. The resulting selected entry must pass `Dirent.isDirectory()`.
-5. `session.json`, `read-only-preflight.json`, `active-deployment.json` and `initial-send.attempt.json` must be regular,
-   non-symlink files in the isolated directory.
-6. The source retained evidence remains byte-preserved and unchanged.
-7. The current-head output path continues to point to the authoritative workspace for recovery output.
-8. The existing `scripts/chatwoot-initial-terminal-failure-recovery-launcher.mjs` remains the only recovery child.
-9. No second Initial admission is permitted.
-10. Schedule and Webhook remain disabled; Production remains blocked.
+1. Ordinary inspector execution still accepts only zero true execution flags.
+2. An active inspector window is accepted only when the true flags equal the four exported Chatwoot Final UAT flags
+   exactly.
+3. No Schedule, Webhook or other `MKT_*_ENABLED` flag may be true.
+4. The current-head file
+   `outputs/chatwoot-controller-safe-baseline-resume/<head>/01-active-window.attempt.json` must exist as a private,
+   regular, non-symlink file.
+5. The attempt must pass `validateChatwootSafeBaselineSelectionHint` for the current repository Head.
+6. The current active Worker version must match the attempt's direct SHA-256 retained-active-version fingerprint.
+7. Missing/malformed handoff, duplicate flags, version drift and any additional true flag remain fail closed with
+   `CHATWOOT_INITIAL_FAILURE_WORKER_UNSAFE`.
+8. The inspector remains SELECT-only and performs no Provider, Queue, D1/Lark mutation, deployment or incident closure.
+9. The existing recovery launcher remains unchanged and no second Initial admission is allowed.
+10. Existing parent/inner operators retain all-false Safe restore ownership; Schedule/Webhook stay disabled and
+    Production stays blocked.
 
 ## Changed files
 
 ```text
-scripts/lib/chatwoot-controller-evidence-isolation.js
-scripts/chatwoot-controller-evidence-arbitration-terminal.mjs
-tests/application/chatwoot-controller-evidence-isolation.test.js
-docs/tasks/chatwoot-isolated-evidence-real-directory-v1.md
+scripts/lib/chatwoot-initial-failure-worker-safety.js
+scripts/chatwoot-initial-terminal-failure-inspector.mjs
+tests/application/chatwoot-initial-failure-worker-safety.test.js
+docs/tasks/chatwoot-inspector-active-resume-window-v1.md
+docs/project-brain/chatwoot-initial-terminal-failure-recovery-2026-08-01.md
 docs/current-task.md
 ```
 
@@ -80,11 +86,12 @@ docs/current-task.md
 ```bash
 npm ci
 npm run check
+node --test tests/application/chatwoot-initial-failure-worker-safety.test.js
+node --test tests/application/chatwoot-initial-terminal-failure-recovery.test.js
 node --test tests/application/chatwoot-controller-evidence-isolation.test.js
 node --test tests/application/chatwoot-controller-evidence-arbitration.test.js
 node --test tests/application/chatwoot-controller-safe-baseline-resume.test.js
 node --test tests/application/chatwoot-controller-safe-baseline-exact.test.js
-node --test tests/application/chatwoot-initial-terminal-failure-recovery.test.js
 node --test tests/application/chatwoot-final-30d-daily-uat.test.js
 npm test
 npm run test:report-reliability
@@ -126,6 +133,6 @@ current Chatwoot incident safely.
 
 ## Implementation result
 
-The real-directory materializer, arbitration integration, real-filesystem regression and task documentation are
-implemented on `hotfix/chatwoot-isolated-evidence-real-directory-v1`. CI is pending. Repository implementation has
-performed zero Live or Remote mutation.
+The exact worker-safety classifier, current-head handoff validation, inspector integration, focused regressions and
+project documentation are implemented on `hotfix/chatwoot-inspector-active-resume-window-v1`. CI is pending.
+Repository implementation has performed zero Live or Remote mutation.
