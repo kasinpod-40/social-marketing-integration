@@ -11,6 +11,7 @@ CHATWOOT_LATEST_STOP                 = CHATWOOT_CONTROLLER_EVIDENCE_WORKER_FLAGS
 CHATWOOT_CURRENT_WORKER_FLAGS        = ALL_FALSE
 CHATWOOT_INCOMPLETE_IDENTITIES       = 2
 CHATWOOT_EXPECTED_BOUNDARY           = QUEUE_RETRY_EXHAUSTED_TERMINAL_V1
+CHATWOOT_BLIND_RERUN                 = BLOCKED_BY_CURRENT_HEAD_EVIDENCE
 META_FACEBOOK_D1_PHASE               = COMPLETE
 META_FACEBOOK_LARK_PHASE             = PENDING
 META_PROVIDER_REPLAY_ALLOWED         = NO
@@ -56,6 +57,23 @@ moving incident-closure authority out of the existing reviewed recovery launcher
 
 ## New public authority
 
+Operators must invoke only:
+
+```text
+scripts/chatwoot-controller-safe-baseline-exact-terminal.mjs
+```
+
+Before starting any child, the exact terminal requires an exact clean reviewed checkout and verifies that:
+
+```text
+outputs/chatwoot-controller-safe-baseline-resume/<reviewed-head>
+```
+
+is absent or empty. Any attempt, Safe-restore or summary evidence blocks blind rerun before Worker, Queue, D1, Lark or
+incident-closure action.
+
+The exact terminal delegates only to:
+
 ```text
 scripts/chatwoot-controller-safe-baseline-pinned-origin-terminal.mjs
 ```
@@ -75,19 +93,23 @@ The inner wrapper must:
 5. verify the selected retained active version still exposes exactly the four approved Chatwoot Final UAT flags;
 6. read the exact selected operation snapshot from Remote D1;
 7. require `queue_retry_exhausted_terminal_v1`, replacement-deployment authority and zero active lock;
-8. promote only the retained reviewed active version to 100%;
-9. delegate to the existing evidence arbitration and recovery chain;
-10. verify all flags false after completion and automatically restore the proven baseline only when the observed
+8. write current-head attempt evidence before promoting any Worker version;
+9. promote only the retained reviewed active version to 100%;
+10. delegate to the existing evidence arbitration and recovery chain;
+11. verify all flags false after completion and automatically restore the proven baseline only when the observed
     active version belongs to the selected/current-head recovery chain;
-11. fail for review on any unknown concurrent deployment.
+12. fail for review on any unknown concurrent deployment.
 
 ## Changed files
 
 ```text
 scripts/lib/chatwoot-controller-safe-baseline-resume.js
+scripts/lib/chatwoot-safe-baseline-current-head-guard.js
 scripts/chatwoot-controller-safe-baseline-resume-terminal.mjs
 scripts/chatwoot-controller-safe-baseline-pinned-origin-terminal.mjs
+scripts/chatwoot-controller-safe-baseline-exact-terminal.mjs
 tests/application/chatwoot-controller-safe-baseline-resume.test.js
+tests/application/chatwoot-controller-safe-baseline-exact.test.js
 docs/tasks/chatwoot-safe-baseline-resume-v1.md
 docs/current-task.md
 ```
@@ -97,6 +119,7 @@ docs/current-task.md
 ```bash
 npm ci
 npm run check
+node --test tests/application/chatwoot-controller-safe-baseline-exact.test.js
 node --test tests/application/chatwoot-controller-safe-baseline-resume.test.js
 node --test tests/application/chatwoot-controller-evidence-arbitration.test.js
 node --test tests/application/chatwoot-initial-terminal-failure-recovery.test.js
@@ -158,6 +181,6 @@ current Chatwoot incident safely.
 
 ## Implementation result
 
-The safe-baseline selector, guarded resume wrapper, exact pinned-origin entrypoint, focused tests and task documentation
-are implemented on `hotfix/chatwoot-safe-baseline-resume-v1`. CI is pending. Repository implementation has performed
-zero Live or Remote mutation.
+The safe-baseline selector, current-head rerun guard, exact public terminal, pinned-origin wrapper, guarded resume
+wrapper, focused tests and task documentation are implemented on `hotfix/chatwoot-safe-baseline-resume-v1`. CI is
+pending. Repository implementation has performed zero Live or Remote mutation.
