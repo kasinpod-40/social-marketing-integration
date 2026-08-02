@@ -36,6 +36,7 @@ import {
   safeMetaLarkTarget,
   validateMetaD1OnlySummaryForLark,
   validateMetaLarkD1ReadyBoundary,
+  validateMetaLarkOrphanedRunningStability,
   validateMetaLarkEvidenceSequence,
   validateMetaLarkInventory,
 } from './lib/meta-lark-parity-rollout-operator.js';
@@ -220,8 +221,20 @@ async function runLarkPreflight(loaded, env) {
 async function runD1Ready(loaded) {
   const summary = JSON.parse(await readFile(loaded.target.d1SummaryPath, 'utf8'));
   const d1Summary = validateMetaD1OnlySummaryForLark(summary, loaded.target);
-  const snapshot = await readSnapshot(loaded);
-  const boundary = validateMetaLarkD1ReadyBoundary(snapshot, loaded.target);
+  let snapshot = await readSnapshot(loaded);
+  let boundary = validateMetaLarkD1ReadyBoundary(snapshot, loaded.target);
+  let orphanedRunningStability = null;
+  if (boundary.orphanedRunningRecovery) {
+    await sleep(30_000);
+    const stableSnapshot = await readSnapshot(loaded);
+    orphanedRunningStability = validateMetaLarkOrphanedRunningStability(
+      snapshot,
+      stableSnapshot,
+      loaded.target,
+    );
+    snapshot = stableSnapshot;
+    boundary = validateMetaLarkD1ReadyBoundary(snapshot, loaded.target);
+  }
 
   const secretNames = await readSecretNames(loaded.target);
   for (const name of [loaded.target.requiredSecretName, 'LARK_APP_SECRET']) {
@@ -233,6 +246,8 @@ async function runD1Ready(loaded) {
     d1Summary,
     snapshot,
     terminalRecovery: boundary.terminalRecovery,
+    orphanedRunningRecovery: boundary.orphanedRunningRecovery,
+    orphanedRunningStability,
     requiredSecretNamesPresent: true,
     providerRequests: 0,
     larkMutationCount: 0,

@@ -3,7 +3,7 @@
 ## Status
 
 ```text
-TASK_STATUS                          = INSTAGRAM_D1_IDENTITY_RECOVERY_FIX_IN_REVIEW
+TASK_STATUS                          = INSTAGRAM_LARK_ORPHAN_RECOVERY_GUARD_IN_REVIEW
 CURRENT_PROGRAM                      = ALL_META_END_TO_END_COMPLETION_V1
 BRANCH                               = integration/all-meta-end-to-end-completion-v1
 BASE_MAIN_SHA                        = 0d33be48f9b8ccaf6d8cea9a4c4ee31b1175b650
@@ -17,8 +17,8 @@ META_PROVIDER_REPLAY                 = FORBIDDEN_FOR_RETAINED_FACEBOOK_OPERATION
 META_D1_QUEUE_RESEND                 = FORBIDDEN_FOR_RETAINED_FACEBOOK_OPERATION
 SCHEDULE_WEBHOOK                     = DISABLED_REQUIRED
 PRODUCTION                           = BLOCKED
-META_LATEST_STOP                     = INSTAGRAM_D1_CANONICAL_ACCOUNT_IDENTITY_MISMATCH
-NEXT_STEP                            = EXACT_INSTAGRAM_SAME_OPERATION_RECOVERY_AFTER_CI
+META_LATEST_STOP                     = INSTAGRAM_LARK_INVOCATION_ORPHANED_BY_EARLY_RESTORE
+NEXT_STEP                            = EXACT_CI_THEN_FENCED_INSTAGRAM_LARK_CONTINUATION
 ```
 
 ## Objective
@@ -206,3 +206,11 @@ work ยัง active และ lock = 0; error ชนิดอื่นหร�
 Polling terminal detection ต้องเห็นทั้ง Queue attempt ใหม่และ `finished_at` ใหม่กว่าก่อนส่ง เพื่อไม่ตีความ
 failed status เก่าระหว่าง Queue admission กับ Worker เปลี่ยน sync row เป็น running. หาก invocation ยัง running
 ให้รอ terminal/read-only ต่อและห้าม restore/deploy ซ้อน.
+
+หลัง stale-status race ส่งผลให้ restore Worker ขณะ Queue invocation เพิ่งเริ่ม, durable Instagram Sync Run
+ค้าง `running` โดย attempts คงที่ 38, lock = 0, records written = 0 และยังมีเฉพาะ source-staging/D1 phases;
+ไม่มี destination-preflight/Lark/completion phase. Cloudflare กำหนด Queue consumer wall time สูงสุด 15 นาที
+จึงยืนยันได้ว่า invocation เดิมสิ้นสุดแล้ว. Recovery guard ใหม่ยอม boundary นี้เฉพาะเมื่อเปิด explicit
+Meta orphaned-running recovery, ทั้ง Sync Run และ Queue attempt ไม่มี update เกิน 16 นาที, lock = 0, D1/
+Coverage เดิม valid และ snapshot ทุก field คงที่ตลอดอีก 30 วินาที; หาก attempt, phase, count หรือ status
+ขยับจะ fail closed. Guard ไม่แก้ durable row, ไม่ replay Provider และใช้ same-operation Lark continuation เดิม.

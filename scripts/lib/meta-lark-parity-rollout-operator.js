@@ -115,6 +115,7 @@ export function loadMetaLarkTarget(env = {}) {
     contractVersion: META_LARK_OPERATOR_CONTRACT_VERSION,
     d1SummaryPath: requireText(env.MKT_META_LARK_D1_SUMMARY, 'MKT_META_LARK_D1_SUMMARY'),
     expectedLarkTableCount: expectedLarkContracts(base.connectorKey).length,
+    orphanedRunningRecovery: env.MKT_META_LARK_ORPHANED_RUNNING_RECOVERY === 'true',
   };
   return deepFreeze({
     ...target,
@@ -131,6 +132,7 @@ export function safeMetaLarkTarget(target = {}) {
     contractVersion: META_LARK_OPERATOR_CONTRACT_VERSION,
     d1SummaryPath: requireText(target.d1SummaryPath, 'd1SummaryPath'),
     expectedLarkTableCount: positiveInteger(target.expectedLarkTableCount, 'expectedLarkTableCount'),
+    orphanedRunningRecovery: target.orphanedRunningRecovery === true,
   });
 }
 
@@ -264,7 +266,19 @@ export function validateMetaLarkD1ReadyBoundary(snapshotInput = {}, target = {})
     && snapshot.syncRunStatus === 'failed'
     && snapshot.syncRunFinishedAt !== null
     && snapshot.syncRunErrorCode === 'LARK_PREFLIGHT_FAILED';
-  const ready = (normalStatus || terminalRecovery)
+  const orphanedRunningRecovery = target.orphanedRunningRecovery === true
+    && snapshot.syncRunStatus === 'running'
+    && snapshot.syncRunStartedAt !== null
+    && snapshot.syncRunFinishedAt === null
+    && snapshot.syncRunErrorCode === null
+    && snapshot.observedAt - snapshot.syncRunStartedAt >= 16 * 60 * 1000
+    && snapshot.syncRunUpdatedAt !== null
+    && snapshot.observedAt - snapshot.syncRunUpdatedAt >= 16 * 60 * 1000
+    && snapshot.queueOperationAttempts === 1
+    && snapshot.mainQueueAttempts > 0
+    && snapshot.queueOperationUpdatedAt !== null
+    && snapshot.observedAt - snapshot.queueOperationUpdatedAt >= 16 * 60 * 1000;
+  const ready = (normalStatus || terminalRecovery || orphanedRunningRecovery)
     && snapshot.d1PhaseComplete
     && !snapshot.preflightPhaseComplete
     && !snapshot.larkPhaseComplete
@@ -280,7 +294,40 @@ export function validateMetaLarkD1ReadyBoundary(snapshotInput = {}, target = {})
       'META_LARK_D1_BOUNDARY_INVALID',
     );
   }
-  return deepFreeze({ accepted: true, terminalRecovery, snapshot });
+  return deepFreeze({
+    accepted: true,
+    terminalRecovery,
+    orphanedRunningRecovery,
+    snapshot,
+  });
+}
+
+export function validateMetaLarkOrphanedRunningStability(beforeInput = {}, afterInput = {}, target = {}) {
+  if (target.orphanedRunningRecovery !== true) {
+    throw operatorError(
+      'Meta orphaned-running recovery is not explicitly enabled',
+      'META_LARK_ORPHANED_RUNNING_RECOVERY_NOT_ENABLED',
+    );
+  }
+  const before = validateMetaLarkD1ReadyBoundary(beforeInput, target);
+  const after = validateMetaLarkD1ReadyBoundary(afterInput, target);
+  if (!before.orphanedRunningRecovery || !after.orphanedRunningRecovery) {
+    throw operatorError(
+      'Meta snapshots do not prove an orphaned running invocation',
+      'META_LARK_ORPHANED_RUNNING_RECOVERY_INVALID',
+    );
+  }
+  const elapsedMs = after.snapshot.observedAt - before.snapshot.observedAt;
+  const stableBefore = { ...before.snapshot, observedAt: 0 };
+  const stableAfter = { ...after.snapshot, observedAt: 0 };
+  if (elapsedMs < 30_000 || stableJson(stableBefore) !== stableJson(stableAfter)) {
+    throw operatorError(
+      'Meta orphaned running state changed during the stability window',
+      'META_LARK_ORPHANED_RUNNING_PROGRESS_OBSERVED',
+      { elapsedMs },
+    );
+  }
+  return deepFreeze({ accepted: true, elapsedMs, snapshot: after.snapshot });
 }
 
 export function buildMetaLarkSnapshotSql(target = {}) {
@@ -293,8 +340,10 @@ export function buildMetaLarkSnapshotSql(target = {}) {
   return compactSql(`
     SELECT
       (SELECT status FROM sync_runs WHERE sync_run_id = ${syncRunId}) AS sync_run_status,
+      (SELECT started_at FROM sync_runs WHERE sync_run_id = ${syncRunId}) AS sync_run_started_at,
       (SELECT finished_at FROM sync_runs WHERE sync_run_id = ${syncRunId}) AS sync_run_finished_at,
       (SELECT error_code FROM sync_runs WHERE sync_run_id = ${syncRunId}) AS sync_run_error_code,
+      (SELECT updated_at FROM sync_runs WHERE sync_run_id = ${syncRunId}) AS sync_run_updated_at,
       (SELECT status FROM sync_work_runs WHERE work_key = ${workKey}) AS work_status,
       (SELECT lifecycle_status FROM sync_work_runs WHERE work_key = ${workKey}) AS work_lifecycle_status,
       (SELECT completed_at FROM sync_work_runs WHERE work_key = ${workKey}) AS work_completed_at,
@@ -309,6 +358,7 @@ export function buildMetaLarkSnapshotSql(target = {}) {
       (SELECT COUNT(*) FROM sync_locks WHERE owner_id = ${syncRunId} AND expires_at > (unixepoch() * 1000)) AS active_lock_count,
       (SELECT COUNT(*) FROM queue_operation_attempts WHERE operation_id = ${operationId} AND work_key = ${workKey}) AS queue_operation_attempts,
       (SELECT COALESCE(MAX(main_queue_attempts), 0) FROM queue_operation_attempts WHERE operation_id = ${operationId} AND work_key = ${workKey}) AS main_queue_attempts,
+      (SELECT MAX(updated_at) FROM queue_operation_attempts WHERE operation_id = ${operationId} AND work_key = ${workKey}) AS queue_operation_updated_at,
       (SELECT COUNT(*) FROM data_coverage_runs WHERE sync_run_id = ${syncRunId}) AS coverage_run_count,
       (SELECT COUNT(*) FROM data_coverage_runs WHERE sync_run_id = ${syncRunId} AND (failed_rows <> 0 OR status NOT IN ('complete', 'no_data_confirmed', 'revisable'))) AS invalid_coverage_count,
       (SELECT COUNT(*) FROM data_coverage_entities WHERE coverage_run_id IN (SELECT coverage_run_id FROM data_coverage_runs WHERE sync_run_id = ${syncRunId})) AS coverage_entity_count,
@@ -316,7 +366,8 @@ export function buildMetaLarkSnapshotSql(target = {}) {
       (SELECT COUNT(*) FROM organic_content_observations WHERE customer_key = ${customerKey} AND platform = ${platform} AND account_key = ${accountKey}) AS target_organic_observation_count,
       (SELECT COUNT(*) FROM organic_account_daily_facts WHERE customer_key = ${customerKey} AND platform = ${platform} AND account_key = ${accountKey}) AS target_account_daily_count,
       (SELECT COUNT(*) FROM ads_entity_state WHERE customer_key = ${customerKey} AND platform = ${platform} AND account_key = ${accountKey}) AS target_ads_entity_count,
-      (SELECT COUNT(*) FROM ads_daily_facts WHERE customer_key = ${customerKey} AND platform = ${platform} AND account_key = ${accountKey}) AS target_ads_daily_count;
+      (SELECT COUNT(*) FROM ads_daily_facts WHERE customer_key = ${customerKey} AND platform = ${platform} AND account_key = ${accountKey}) AS target_ads_daily_count,
+      (unixepoch('subsec') * 1000) AS observed_at;
   `);
 }
 
@@ -345,8 +396,10 @@ export function normalizeMetaLarkSnapshot(value = {}) {
     && Array.isArray(durableCompletion?.lark);
   return deepFreeze({
     syncRunStatus: optionalText(value.sync_run_status),
+    syncRunStartedAt: nullableNumber(value.sync_run_started_at),
     syncRunFinishedAt: nullableNumber(value.sync_run_finished_at),
     syncRunErrorCode: optionalText(value.sync_run_error_code),
+    syncRunUpdatedAt: nullableNumber(value.sync_run_updated_at),
     workStatus: optionalText(value.work_status),
     workLifecycleStatus: optionalText(value.work_lifecycle_status),
     workCompletedAt: nullableNumber(value.work_completed_at),
@@ -373,6 +426,8 @@ export function normalizeMetaLarkSnapshot(value = {}) {
     activeLockCount: count(value.active_lock_count),
     queueOperationAttempts: count(value.queue_operation_attempts),
     mainQueueAttempts: count(value.main_queue_attempts),
+    queueOperationUpdatedAt: nullableNumber(value.queue_operation_updated_at),
+    observedAt: nullableNumber(value.observed_at) ?? 0,
     coverageRunCount: count(value.coverage_run_count),
     invalidCoverageCount: count(value.invalid_coverage_count),
     coverageEntityCount: count(value.coverage_entity_count),

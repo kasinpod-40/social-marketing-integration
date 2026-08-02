@@ -17,6 +17,7 @@ import {
   parseMetaLarkOperatorArgs,
   validateMetaD1OnlySummaryForLark,
   validateMetaLarkD1ReadyBoundary,
+  validateMetaLarkOrphanedRunningStability,
   validateMetaLarkEvidenceSequence,
   validateMetaLarkInventory,
 } from '../../scripts/lib/meta-lark-parity-rollout-operator.js';
@@ -181,6 +182,55 @@ test('D1-ready recovery accepts only an exact failed Lark preflight boundary', (
   );
 });
 
+test('D1-ready recovery accepts an orphaned running invocation only after a stable platform-limit window', () => {
+  const current = {
+    ...target('instagram'),
+    orphanedRunningRecovery: true,
+  };
+  const observedAt = 1785082800000;
+  const orphaned = {
+    ...d1ReadySnapshot(),
+    sync_run_status: 'running',
+    sync_run_started_at: observedAt - (17 * 60 * 1000),
+    sync_run_finished_at: null,
+    sync_run_error_code: null,
+    sync_run_updated_at: observedAt - (17 * 60 * 1000),
+    queue_operation_updated_at: observedAt - (16 * 60 * 1000),
+    observed_at: observedAt,
+  };
+  const boundary = validateMetaLarkD1ReadyBoundary(orphaned, current);
+  assert.equal(boundary.orphanedRunningRecovery, true);
+  const stable = validateMetaLarkOrphanedRunningStability(orphaned, {
+    ...orphaned,
+    observed_at: observedAt + 30_000,
+  }, current);
+  assert.equal(stable.accepted, true);
+  assert.equal(stable.elapsedMs, 30_000);
+
+  assert.throws(
+    () => validateMetaLarkD1ReadyBoundary(orphaned, {
+      ...current,
+      orphanedRunningRecovery: false,
+    }),
+    (error) => error.code === 'META_LARK_D1_BOUNDARY_INVALID',
+  );
+  assert.throws(
+    () => validateMetaLarkOrphanedRunningStability(orphaned, {
+      ...orphaned,
+      main_queue_attempts: 39,
+      observed_at: observedAt + 30_000,
+    }, current),
+    (error) => error.code === 'META_LARK_ORPHANED_RUNNING_PROGRESS_OBSERVED',
+  );
+  assert.throws(
+    () => validateMetaLarkD1ReadyBoundary({
+      ...orphaned,
+      queue_operation_updated_at: observedAt - (15 * 60 * 1000),
+    }, current),
+    (error) => error.code === 'META_LARK_D1_BOUNDARY_INVALID',
+  );
+});
+
 test('snapshot SQL binds the same operation and reads D1, preflight, Lark and completion phases', () => {
   const sql = buildMetaLarkSnapshotSql(target('chemistry_k2'));
   assert.match(sql, /meta_end_to_end_d1_write_v1/u);
@@ -188,6 +238,10 @@ test('snapshot SQL binds the same operation and reads D1, preflight, Lark and co
   assert.match(sql, /meta_end_to_end_lark_write_v1/u);
   assert.match(sql, /meta_end_to_end_completion_v1/u);
   assert.match(sql, /completion_json/u);
+  assert.match(sql, /sync_run_started_at/u);
+  assert.match(sql, /sync_run_updated_at/u);
+  assert.match(sql, /queue_operation_updated_at/u);
+  assert.match(sql, /observed_at/u);
   assert.match(sql, /meta:meta_ads:chemistry_k2:meta-lark-chemistry_k2/u);
 });
 
@@ -438,8 +492,10 @@ function d1Summary(current) {
 function d1ReadySnapshot() {
   return {
     sync_run_status: 'success',
+    sync_run_started_at: 1785081500000,
     sync_run_finished_at: 1785081600000,
     sync_run_error_code: null,
+    sync_run_updated_at: 1785081600000,
     work_status: 'active',
     work_lifecycle_status: 'active',
     work_completed_at: null,
@@ -453,6 +509,8 @@ function d1ReadySnapshot() {
     active_lock_count: 0,
     queue_operation_attempts: 1,
     main_queue_attempts: 1,
+    queue_operation_updated_at: 1785081600000,
+    observed_at: 1785081700000,
     coverage_run_count: 2,
     invalid_coverage_count: 0,
     coverage_entity_count: 2,
