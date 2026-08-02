@@ -5,11 +5,15 @@ import {
   META_K2_EXACT_RECOVERY_PATH,
 } from '../../packages/config/src/meta-k2-exact-recovery-contract.js';
 import {
+  META_D1_ONLY_REQUIRED_FALSE_FLAGS,
+} from '../../scripts/lib/meta-d1-only-rollout-operator.js';
+import {
   createMetaK2RecoveryEvidence,
 } from '../../scripts/lib/meta-k2-partial-staging-finalizer.js';
 import {
   META_K2_PREACTIVATION_FAILURE_FILES,
   META_K2_PREACTIVATION_RETRY_CONFIRMATION,
+  injectMetaK2ReviewedRuntimeConfig,
   injectMetaK2ReviewedSourceMappings,
   resolveMetaK2ExactRecoveryUrl,
   validateMetaK2PreactivationRetry,
@@ -93,6 +97,28 @@ test('materializes only the reviewed non-secret Meta source mappings', () => {
   assert.match(result.configText, /"META_AD_ACCOUNT_MAPPINGS": "chemistry_k2=act_123,chemistry_k3=act_456"/u);
   assert.doesNotMatch(result.configText, /must-not-be-materialized/u);
   assert.match(result.sourceMappingFingerprint, /^[0-9a-f]{64}$/u);
+});
+
+test('materializes the complete all-false safe baseline instead of failing one flag at a time', () => {
+  const result = injectMetaK2ReviewedRuntimeConfig(
+    '{\n  "vars": {\n    "MKT_ENV": "development",\n    "MKT_CONNECTOR_META_ADS_ENABLED": true,\n    "MKT_WOOCOMMERCE_D1_WRITE_ENABLED": true\n  },\n  "env": {\n    "development": {\n      "vars": {\n        "MKT_CONNECTOR_META_ADS_ENABLED": true\n      }\n    }\n  }\n}\n',
+    {
+      META_GRAPH_API_VERSION: 'v23.0',
+      META_AD_ACCOUNT_MAPPINGS: 'chemistry_k2=act_123,chemistry_k3=act_456',
+      META_ACCESS_TOKEN: 'must-not-be-materialized',
+    },
+  );
+  assert.equal(result.allFalseFlagCount, META_D1_ONLY_REQUIRED_FALSE_FLAGS.length);
+  assert.match(result.allFalseFlagFingerprint, /^[0-9a-f]{64}$/u);
+  assert.doesNotMatch(result.configText, /must-not-be-materialized/u);
+  for (const flag of META_D1_ONLY_REQUIRED_FALSE_FLAGS) {
+    const matches = [...result.configText.matchAll(new RegExp(
+      `["']?${escapeRegex(flag)}["']?\\s*:\\s*(true|false)`,
+      'gu',
+    ))];
+    assert.ok(matches.length > 0, flag);
+    assert.ok(matches.every((match) => match[1] === 'false'), flag);
+  }
 });
 
 test('rejects an unpinned version or a mapping without chemistry_k2', () => {
@@ -187,4 +213,8 @@ test('blocks preactivation retry without exact confirmation or with an extra fil
 
 function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
+}
+
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
 }
