@@ -285,11 +285,8 @@ Meta End-to-End Verification
 Branch Verification
 ```
 
-Final reviewed execution Head:
-
-```text
-PENDING_FINAL_CI_HEAD
-```
+The exact reviewed execution Head is recorded in Draft PR #421 and its GitHub Actions runs. It is not embedded
+in this file because changing this file changes the repository Head.
 
 ## Failure behavior
 
