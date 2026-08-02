@@ -30,11 +30,12 @@ test('Chatwoot Report remains UAT pending while the shared capability is impleme
   assert.match(generatorSource, /buildCustomerServiceResult/u);
 });
 
-test('Chatwoot settings are present but cannot bypass the source-status gate', () => {
+test('Chatwoot settings use the shared Dashboard report identity and cannot bypass the source-status gate', () => {
   const rows = createReportSettingRowsForProfile('integration_workspace')
     .filter((row) => row.platforms?.[0] === 'chatwoot');
   assert.deepEqual(rows.map((row) => row.window_days), [1, 3, 7, 9, 15, 30, 90, null]);
   assert.equal(rows.every((row) => row.enabled === true), true);
+  assert.equal(rows.every((row) => row.report_type === 'dashboard_performance_report'), true);
   assert.equal(getReportPlatformContract('chatwoot').sourceStatus, 'uat_pending');
 });
 
@@ -46,7 +47,14 @@ test('Chatwoot D1 Report reader selects only PII-minimized fact fields', () => {
   assert.doesNotMatch(d1Source, /\bINSERT\b|\bUPDATE\b|\bDELETE\b/iu);
 });
 
-test('Chatwoot Report adapter is deliberately not wired into the Worker composition boundary yet', () => {
-  assert.doesNotMatch(workerRouterSource, /chatwoot:\s*new D1ChatwootReportSource/u);
-  assert.doesNotMatch(workerRouterSource, /D1ChatwootReportSource/u);
+test('Chatwoot D1 Report reader is wired into the shared Worker registry without promoting Catalog state', () => {
+  assert.match(workerRouterSource, /import \{ D1ChatwootReportSource \}/u);
+  assert.match(workerRouterSource, /chatwoot:\s*new D1ChatwootReportSource\(\{ db \}\)/u);
+  assert.equal(getReportPlatformContract('chatwoot').sourceStatus, REPORT_SOURCE_STATUS.UAT_PENDING);
+});
+
+test('runtime wiring does not invent Chatwoot-specific report ID aliases', () => {
+  assert.doesNotMatch(workerRouterSource, /CHATWOOT_REPORT_ID|chatwoot_report_id/u);
+  assert.match(generatorSource, /reportType:\s*REPORT_TYPE/u);
+  assert.match(generatorSource, /platform:\s*input\.contract\.platformScope/u);
 });
