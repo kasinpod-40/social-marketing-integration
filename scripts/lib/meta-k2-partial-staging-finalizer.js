@@ -133,10 +133,10 @@ export function validateMetaK2RetainedEvidence(input = {}) {
     accepted: true,
     operationId: EXACT.operationId,
     workKey: EXACT.workKey,
-    originalRequestedAt: timestamp(
+    originalRequestedAt: new Date(timestamp(
       attempt.generation ?? attempt.originalRequestedAt,
       'sendAttempt.generation',
-    ),
+    )).toISOString(),
     queueSendCommandCount: 1,
     automaticResend: false,
     retainedEvidenceSha256: verifyRestore.evidenceSha256,
