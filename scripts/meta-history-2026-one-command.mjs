@@ -304,11 +304,13 @@ async function resolvePinnedMetaFiles(env) {
 }
 
 async function resolveCloudflareContext(env, configPath) {
-  const whoami = runText('npx', ['wrangler', 'whoami', '--json'], env);
+  const explicitAccountId = optionalText(env.CLOUDFLARE_ACCOUNT_ID);
   const accountId = resolveCloudflareAccountId({
-    explicitAccountId: env.CLOUDFLARE_ACCOUNT_ID,
+    explicitAccountId,
     configText: await readFile(configPath, 'utf8'),
-    whoamiOutput: whoami,
+    whoamiOutput: explicitAccountId
+      ? null
+      : runText('npx', ['wrangler', 'whoami', '--json'], env),
     preferredAccount: env.MKT_WOOCOMMERCE_ROLLOUT_ACCOUNT,
   });
   const explicitToken = optionalText(env.CLOUDFLARE_API_TOKEN);

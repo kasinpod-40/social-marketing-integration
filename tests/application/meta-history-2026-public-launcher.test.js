@@ -21,6 +21,13 @@ test('Meta history closeout child delegates to the guarded finalizer and exact e
   assert.match(source, /ensureRemoteAllFalse/u);
   assert.match(source, /META_HISTORY_2026_DECISION/u);
   assert.match(source, /process\.stdout\.write\(`\$\{META_HISTORY_2026_DECISION\}/u);
+  const cloudflareContext = source.slice(
+    source.indexOf('async function resolveCloudflareContext'),
+    source.indexOf('async function loadPrivateEnvironment'),
+  );
+  assert.match(cloudflareContext, /const explicitAccountId = optionalText\(env\.CLOUDFLARE_ACCOUNT_ID\)/u);
+  assert.match(cloudflareContext, /whoamiOutput: explicitAccountId[\s\S]+\? null[\s\S]+wrangler', 'whoami'/u);
+  assert.doesNotMatch(cloudflareContext, /const whoami = runText/u);
   assert.doesNotMatch(source, /larkSummary\.data\.larkVerified/u);
 });
 
