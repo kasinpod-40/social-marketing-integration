@@ -8,6 +8,7 @@ import {
   META_HISTORY_REVIEWED_BASE_MAIN_ENV,
   META_HISTORY_REVIEWED_BRANCH,
   META_HISTORY_REVIEWED_HEAD_ENV,
+  createMetaHistoryOneShotGitShim,
   validateMetaHistoryReviewedTargetBoundary,
 } from './lib/meta-history-reviewed-target-launcher.js';
 
@@ -55,9 +56,15 @@ try {
 
     tempDirectory = await mkdtemp(join(tmpdir(), 'meta-reviewed-target-git-'));
     const shimPath = join(tempDirectory, 'git');
+    const markerPath = join(tempDirectory, 'origin-main-read.used');
     await writeFile(
       shimPath,
-      createGitShim(realGit, reviewedBaseMainHead),
+      createMetaHistoryOneShotGitShim({
+        realGit,
+        reviewedBaseMainHead,
+        repositoryRoot,
+        markerPath,
+      }),
       { encoding: 'utf8', mode: 0o700 },
     );
     await chmod(shimPath, 0o700);
@@ -145,10 +152,6 @@ function gitSuccess(realGit, args) {
     stdio: 'ignore',
   });
   return !result.error && result.status === 0;
-}
-
-function createGitShim(realGit, reviewedBaseMainHead) {
-  return `#!/usr/bin/env node\n\nimport { spawnSync } from 'node:child_process';\n\nconst args = process.argv.slice(2);\nif (args.length === 2 && args[0] === 'rev-parse' && args[1] === 'origin/main') {\n  process.stdout.write(${JSON.stringify(`${reviewedBaseMainHead}\n`)});\n  process.exit(0);\n}\nconst result = spawnSync(${JSON.stringify(realGit)}, args, {\n  env: process.env,\n  stdio: 'inherit',\n});\nif (result.error) throw result.error;\nif (result.signal) process.kill(process.pid, result.signal);\nelse process.exitCode = result.status ?? 1;\n`;
 }
 
 function sanitize(value) {
