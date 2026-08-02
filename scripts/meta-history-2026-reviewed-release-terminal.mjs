@@ -59,6 +59,7 @@ try {
           ...process.env,
           DEV_VARS_FILE: join(releaseCloneRoot, '.dev.vars'),
           MKT_META_HISTORY_EXACT_CONTINUATION_CHILD: assets.exactContinuation,
+          MKT_META_HISTORY_ONE_COMMAND_PATH: assets.oneCommand,
           MKT_META_HISTORY_LARK_LAUNCHER_PATH: assets.larkLauncher,
           MKT_META_LARK_OPERATOR_PATH: assets.larkOperator,
         },
@@ -223,6 +224,11 @@ async function verifyLocalAssets() {
     'scripts',
     'meta-history-2026-exact-plan-continuation.mjs',
   );
+  const oneCommand = join(
+    repositoryRoot,
+    'scripts',
+    'meta-history-2026-one-command.mjs',
+  );
   const larkLauncher = join(
     repositoryRoot,
     'scripts',
@@ -239,6 +245,7 @@ async function verifyLocalAssets() {
   await assertDirectory(nodeModules, 'node_modules');
   await assertRegularFile(exactTerminal, 'exact continuation Terminal');
   await assertRegularFile(exactContinuation, 'exact continuation child');
+  await assertRegularFile(oneCommand, 'Meta history one-command closeout');
   await assertRegularFile(larkLauncher, 'Meta Lark launcher');
   await assertRegularFile(larkOperator, 'Meta Lark operator');
 
@@ -248,6 +255,7 @@ async function verifyLocalAssets() {
     nodeModules,
     exactTerminal,
     exactContinuation,
+    oneCommand,
     larkLauncher,
     larkOperator,
   });

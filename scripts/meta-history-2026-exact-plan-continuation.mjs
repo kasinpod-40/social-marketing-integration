@@ -59,6 +59,9 @@ const repositoryRoot = resolve(process.cwd());
 const larkLauncherPath = process.env.MKT_META_HISTORY_LARK_LAUNCHER_PATH
   ? resolve(process.env.MKT_META_HISTORY_LARK_LAUNCHER_PATH)
   : join(repositoryRoot, 'scripts', 'meta-lark-parity-rollout-launcher.mjs');
+const oneCommandPath = process.env.MKT_META_HISTORY_ONE_COMMAND_PATH
+  ? resolve(process.env.MKT_META_HISTORY_ONE_COMMAND_PATH)
+  : join(repositoryRoot, 'scripts', 'meta-history-2026-one-command.mjs');
 const workerName = 'social-mkt-sync-worker';
 const databaseName = 'social-mkt-state-dev';
 const mainQueueName = 'social-mkt-sync-jobs';
@@ -173,6 +176,7 @@ async function executeContinuation() {
   await assertPrivateRegularFile(sourceConfigPath, 'Meta source Wrangler config');
   const safeConfigText = await readFile(safeConfigPath, 'utf8');
   await assertRegularFile(larkLauncherPath, 'Meta Lark launcher');
+  await assertRegularFile(oneCommandPath, 'Meta history one-command closeout');
 
   stage = 'cloudflare-read-only-context';
   const cloudflare = await resolveCloudflareContext(baseEnv, safeConfigText);
@@ -274,7 +278,7 @@ async function executeContinuation() {
   };
   runVisible(
     process.execPath,
-    ['scripts/meta-history-2026-one-command.mjs', '--execute'],
+    [oneCommandPath, '--execute'],
     finalEnv,
     isolated.cloneRoot,
   );
