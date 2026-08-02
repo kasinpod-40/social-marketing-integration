@@ -46,7 +46,7 @@ function target() {
     MKT_META_D1_ONLY_WRANGLER_CONFIG: 'wrangler.sync.jsonc',
     MKT_META_D1_ONLY_READ_ONLY_SUMMARY: 'outputs/meta-read-only-validation/summary.json',
     MKT_META_D1_ONLY_OPERATION_ID: OPERATION_ID,
-    MKT_META_D1_ONLY_ORIGINAL_REQUESTED_AT: String(ORIGINAL_REQUESTED_AT),
+    MKT_META_D1_ONLY_ORIGINAL_REQUESTED_AT: ORIGINAL_REQUESTED_AT,
     MKT_META_D1_ONLY_PERIOD_START: '2026-07-01',
     MKT_META_D1_ONLY_PERIOD_END: '2026-07-31',
     MKT_META_D1_ONLY_WORKER_NAME: 'social-mkt-sync-worker',
@@ -275,6 +275,7 @@ test('retained Queue acceptance and all-false evidence are hash-bound', () => {
   const retained = retainedEvidence();
   const accepted = validateMetaK2RetainedEvidence(retained);
   assert.equal(accepted.accepted, true);
+  assert.equal(accepted.originalRequestedAt, new Date(ORIGINAL_REQUESTED_AT).toISOString());
   assert.equal(accepted.queueSendCommandCount, 1);
   assert.equal(accepted.automaticResend, false);
   assert.equal(accepted.retainedEvidenceSha256, retained.verifyRestore.evidenceSha256);
