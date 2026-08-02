@@ -26,13 +26,14 @@ test('discovers every current Report platform and a future capability without Da
   const model = buildUniversalMarketingDashboardModel({ materializations: [...current, future] });
 
   assert.deepEqual(model.discovery.platforms, [
-    'facebook', 'future_network', 'google_ads', 'instagram',
+    'chatwoot', 'facebook', 'future_network', 'google_ads', 'instagram',
     'meta_ads', 'tiktok', 'tiktok_ads', 'woocommerce', 'youtube',
   ]);
-  assert.equal(model.reportCount, 9);
-  assert.deepEqual(model.discovery.capabilities, ['commerce', 'organic', 'paid_ads']);
+  assert.equal(model.reportCount, 10);
+  assert.deepEqual(model.discovery.capabilities, ['commerce', 'customer_service', 'organic', 'paid_ads']);
   assert.deepEqual(model.discovery.collectionKinds, ['top_products']);
   assert.equal(model.sections.find((section) => section.capability === 'commerce').platforms.includes('future_network'), true);
+  assert.equal(model.sections.find((section) => section.capability === 'customer_service').platforms.includes('chatwoot'), true);
   assert.deepEqual(model.sections.find((section) => section.capability === 'commerce').collectionKinds, ['top_products']);
 });
 
@@ -144,7 +145,7 @@ test('Dashboard model source contains no current platform, capability or metric 
   );
   for (const literal of [
     'facebook', 'instagram', 'tiktok', 'youtube', 'meta_ads', 'google_ads', 'tiktok_ads',
-    'woocommerce',
+    'woocommerce', 'chatwoot',
     'organic', 'paid_ads', 'commerce', 'customer_service',
     'views', 'likes', 'spend', 'impressions',
   ]) {

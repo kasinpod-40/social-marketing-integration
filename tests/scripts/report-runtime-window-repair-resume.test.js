@@ -23,7 +23,7 @@ function finalizerEvidence(head = 'abc123') {
       },
     },
     settings: {
-      canonicalActive: 66,
+      canonicalActive: 74,
       activeLegacySettings: 0,
       readbackCreates: 0,
       readbackUpdates: 0,
@@ -76,7 +76,7 @@ test('reuses only safe Finalizer evidence from the exact current repository Head
     reusable: true,
     repositoryHead: 'abc123',
     schemaVersion: 'report-materialization-schema-v3',
-    canonicalSettingsActive: 66,
+    canonicalSettingsActive: 74,
   });
   assert.throws(
     () => validateReusableReportFinalizerEvidence(finalizerEvidence('old'), 'new'),
