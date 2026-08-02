@@ -61,10 +61,10 @@ function readyInput() {
       windowOptions: [1, 3, 7, 30],
     },
     windows: [
-      windowState(1, { d1MaterializationCount: 0, larkSnapshotCount: 0 }),
+      missingWindowState(1),
       windowState(3),
       windowState(7, { parity: false, larkMetricCount: 16 }),
-      windowState(30, { d1MaterializationCount: 0, larkSnapshotCount: 0, baselineComplete: false }),
+      missingWindowState(30),
     ],
   };
 }
@@ -83,6 +83,21 @@ function windowState(windowDays, overrides = {}) {
     parity: true,
     ...overrides,
   };
+}
+
+function missingWindowState(windowDays, overrides = {}) {
+  return windowState(windowDays, {
+    d1MaterializationCount: 0,
+    larkSnapshotCount: 0,
+    d1MetricCount: 0,
+    larkMetricCount: 0,
+    d1TopContentCount: 0,
+    larkTopContentCount: 0,
+    baselineComplete: false,
+    payloadValid: false,
+    parity: false,
+    ...overrides,
+  });
 }
 
 test('YouTube Report readiness is plan-only and exact-confirmation gated', () => {
@@ -108,6 +123,24 @@ test('YouTube Report readiness classifies create, reuse and repair independently
     'create_materialization',
   ]);
   assert.equal(result.windows[3].baselineComplete, false);
+});
+
+test('collector-shaped missing YouTube window is create, not invalid payload', () => {
+  const input = readyInput();
+  input.windows = [1, 3, 7, 30].map((windowDays) => missingWindowState(windowDays));
+  const result = assessYouTubeReportLiveReadiness(input);
+  assert.equal(result.readyForLive, true);
+  assert.ok(result.windows.every((window) => window.action === 'create_materialization'));
+  assert.ok(result.windows.every((window) => window.blockers.length === 0));
+});
+
+test('existing YouTube materialization with invalid payload remains blocked', () => {
+  const input = readyInput();
+  input.windows[1] = windowState(3, { payloadValid: false });
+  const result = assessYouTubeReportLiveReadiness(input);
+  assert.equal(result.readyForLive, false);
+  assert.equal(result.windows[1].action, 'blocked');
+  assert.ok(result.windows[1].blockers.some((entry) => entry.code === 'materialization_payload_invalid'));
 });
 
 test('YouTube readiness blocks dirty, non-main or stale repository evidence', () => {
@@ -165,7 +198,7 @@ test('YouTube accepted 837-entity baseline may grow but cannot regress or diverg
 test('YouTube readiness rejects orphan Lark rows, duplicate identities and window-field drift', () => {
   const input = readyInput();
   input.lark.windowOptions = [3, 7, 1, 30];
-  input.windows[0] = windowState(1, { d1MaterializationCount: 0, larkSnapshotCount: 1 });
+  input.windows[0] = missingWindowState(1, { larkSnapshotCount: 1 });
   input.windows[1] = windowState(3, { d1MaterializationCount: 2 });
   const result = assessYouTubeReportLiveReadiness(input);
   assert.equal(result.readyForLive, false);
