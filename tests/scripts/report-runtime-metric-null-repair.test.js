@@ -95,7 +95,12 @@ test('D1/Lark integrity compares numbers at the four-decimal Lark formatter prec
   assert.deepEqual(assertReportRuntimeMetricIntegrity({
     payload: { metricPayload: { ratio: { current: 1 / 3 } } },
     larkMetrics: { ratio: 0.3333 },
-  }), { metricCount: 1, mismatchCount: 0 });
+  }), {
+    metricCount: 1,
+    summaryMetricCount: 1,
+    dimensionMetricCount: 0,
+    mismatchCount: 0,
+  });
 });
 
 test('D1/Lark integrity classifies stale nullable values separately from non-repairable drift', () => {

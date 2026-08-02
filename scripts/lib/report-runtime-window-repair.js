@@ -190,27 +190,40 @@ export function assertReportRuntimeOrganicIntegrity(input = {}) {
   });
 }
 
+/**
+ * Verify every metric row projected from one materialization.
+ *
+ * Organic/Ads payloads use metricPayload only. Commerce additionally stores 45 fixed-rank
+ * rows in collections.dimension_metrics. Those rows must participate in the same exact key
+ * and value parity check; validating only the 13 summary metrics can hide stale or missing
+ * Product/Payment/Shipping rows.
+ */
 export function assertReportRuntimeMetricIntegrity(input = {}) {
   const payload = requireObject(input.payload, 'payload');
   const larkMetrics = requireObject(input.larkMetrics, 'larkMetrics');
-  const metricPayload = requireObject(payload.metricPayload, 'payload.metricPayload');
-  const expectedMetricKeys = Object.keys(metricPayload).sort();
+  const expected = collectExpectedMetricValues(payload);
+  const expectedMetricKeys = Object.keys(expected.values).sort();
   const observedMetricKeys = Object.keys(larkMetrics).sort();
   if (JSON.stringify(expectedMetricKeys) !== JSON.stringify(observedMetricKeys)) throw repairError(
     'D1 and Lark Report metric key sets differ',
     'REPORT_RUNTIME_WINDOW_REPAIR_METRIC_KEY_DRIFT',
-    { expectedCount: expectedMetricKeys.length, observedCount: observedMetricKeys.length },
+    {
+      expectedCount: expectedMetricKeys.length,
+      observedCount: observedMetricKeys.length,
+      summaryMetricCount: expected.summaryMetricCount,
+      dimensionMetricCount: expected.dimensionMetricCount,
+    },
   );
 
   let mismatches = 0;
   let staleNullableMismatchCount = 0;
   let nonRepairableMismatchCount = 0;
   for (const metricKey of expectedMetricKeys) {
-    const expected = canonicalizeLarkMetric(metricPayload[metricKey]?.current);
+    const expectedValue = canonicalizeLarkMetric(expected.values[metricKey]);
     const observed = canonicalizeLarkMetric(larkMetrics[metricKey]);
-    if (expected !== observed) {
+    if (expectedValue !== observed) {
       mismatches += 1;
-      if (expected === null && observed !== null) staleNullableMismatchCount += 1;
+      if (expectedValue === null && observed !== null) staleNullableMismatchCount += 1;
       else nonRepairableMismatchCount += 1;
     }
   }
@@ -222,12 +235,57 @@ export function assertReportRuntimeMetricIntegrity(input = {}) {
       mismatchCount: mismatches,
       staleNullableMismatchCount,
       nonRepairableMismatchCount,
+      summaryMetricCount: expected.summaryMetricCount,
+      dimensionMetricCount: expected.dimensionMetricCount,
     },
   );
   return Object.freeze({
     metricCount: expectedMetricKeys.length,
+    summaryMetricCount: expected.summaryMetricCount,
+    dimensionMetricCount: expected.dimensionMetricCount,
     mismatchCount: mismatches,
   });
+}
+
+function collectExpectedMetricValues(payload) {
+  const metricPayload = requireObject(payload.metricPayload, 'payload.metricPayload');
+  const values = {};
+  let summaryMetricCount = 0;
+  let dimensionMetricCount = 0;
+
+  for (const [fallbackKey, value] of Object.entries(metricPayload)) {
+    const metric = requireObject(value, `payload.metricPayload.${fallbackKey}`);
+    const metricKey = optionalText(metric.metricKey) ?? requireText(fallbackKey, 'summary metric key');
+    addExpectedMetric(values, metricKey, metric.current);
+    summaryMetricCount += 1;
+  }
+
+  const dimensionMetrics = payload.collections?.dimension_metrics ?? [];
+  if (!Array.isArray(dimensionMetrics)) throw repairError(
+    'payload.collections.dimension_metrics must be an array',
+    'REPORT_RUNTIME_WINDOW_REPAIR_DIMENSION_METRICS_INVALID',
+  );
+  for (const value of dimensionMetrics) {
+    const metric = requireObject(value, 'payload.collections.dimension_metrics row');
+    const metricKey = requireText(metric.metricKey, 'dimension metric key');
+    addExpectedMetric(values, metricKey, metric.current);
+    dimensionMetricCount += 1;
+  }
+
+  return Object.freeze({
+    values: Object.freeze(values),
+    summaryMetricCount,
+    dimensionMetricCount,
+  });
+}
+
+function addExpectedMetric(values, metricKey, current) {
+  if (Object.hasOwn(values, metricKey)) throw repairError(
+    'Report payload contains duplicate metricKey values',
+    'REPORT_RUNTIME_WINDOW_REPAIR_PAYLOAD_METRIC_KEY_DUPLICATE',
+    { metricKey },
+  );
+  values[metricKey] = optionalFinite(current);
 }
 
 function canonicalizeLarkMetric(value) {
@@ -268,6 +326,10 @@ function optionalFinite(value) {
     'REPORT_RUNTIME_WINDOW_REPAIR_METRIC_INVALID',
   );
   return number;
+}
+
+function optionalText(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
 function requireObject(value, fieldName) {
