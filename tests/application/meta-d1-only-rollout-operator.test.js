@@ -11,6 +11,7 @@ import {
   buildMetaD1OnlySchemaSql,
   buildMetaD1OnlySnapshotSql,
   classifyMetaD1OnlyCompletion,
+  classifyMetaD1OnlyOrphanedRunningRecoveryBaseline,
   compareMetaD1OnlySnapshots,
   createMetaD1OnlyEvidence,
   isMetaRemoteReadTransientError,
@@ -18,6 +19,7 @@ import {
   parseMetaD1OnlyOperatorArgs,
   validateMetaD1OnlyContinuationRepositoryState,
   validateMetaD1OnlyEvidenceSequence,
+  validateMetaD1OnlyOrphanedRunningStability,
   validateMetaD1OnlyReusableRestoreSequence,
   validateMetaD1OnlySummarySequence,
   validateMetaD1OnlyTerminalRecoveryBaseline,
@@ -174,6 +176,20 @@ test('target loader creates exact stable identities for all four scopes', () => 
   });
   assert.equal(recovery.terminalRecovery, true);
   assert.notEqual(recovery.targetFingerprint, instagram.targetFingerprint);
+  const orphaned = loadMetaD1OnlyTarget({
+    ...targetEnv('chemistry_k2'),
+    MKT_META_D1_ONLY_ORPHANED_RUNNING_RECOVERY: 'true',
+  });
+  assert.equal(orphaned.orphanedRunningRecovery, true);
+  assert.notEqual(orphaned.targetFingerprint, k2.targetFingerprint);
+  assert.throws(
+    () => loadMetaD1OnlyTarget({
+      ...targetEnv('chemistry_k2'),
+      MKT_META_D1_ONLY_TERMINAL_RECOVERY: 'RECOVER_EXACT_FAILED_META_OPERATION',
+      MKT_META_D1_ONLY_ORPHANED_RUNNING_RECOVERY: 'true',
+    }),
+    (error) => error.code === 'META_D1_ONLY_RECOVERY_MODE_INVALID',
+  );
 });
 
 test('target loader rejects profile, target and date drift', () => {
@@ -281,6 +297,9 @@ test('schema and snapshot SQL are scoped and contain no Lark write path', () => 
   assert.match(snapshotSql, /meta_end_to_end_lark_write_v1/u);
   assert.match(snapshotSql, /meta_end_to_end_completion_v1/u);
   assert.match(snapshotSql, /invalid_coverage_count/u);
+  assert.match(snapshotSql, /sync_run_updated_at/u);
+  assert.match(snapshotSql, /queue_operation_updated_at/u);
+  assert.match(snapshotSql, /observed_at/u);
   assert.match(snapshotSql, /meta:meta_ads:chemistry_k3:meta-d1-chemistry_k3/u);
 });
 
@@ -361,6 +380,45 @@ test('terminal recovery requires the exact failed pre-D1 boundary and a new main
       operation_organic_state_count: 1,
     }),
     (error) => error.code === 'META_D1_ONLY_TERMINAL_RECOVERY_BASELINE_INVALID',
+  );
+});
+
+test('orphaned running recovery requires expired activity and a stable 30-second snapshot', () => {
+  const observedAt = 1785646000000;
+  const before = {
+    ...emptySnapshot(),
+    sync_run_status: 'running',
+    sync_run_started_at: observedAt - (20 * 60 * 1000),
+    sync_run_updated_at: observedAt - (17 * 60 * 1000),
+    work_status: 'active',
+    work_lifecycle_status: 'active',
+    queue_operation_attempts: 1,
+    main_queue_attempts: 6,
+    queue_operation_updated_at: observedAt - (16 * 60 * 1000),
+    observed_at: observedAt,
+  };
+  assert.equal(
+    classifyMetaD1OnlyOrphanedRunningRecoveryBaseline(before).accepted,
+    true,
+  );
+  const after = { ...before, observed_at: observedAt + 30_000 };
+  assert.equal(
+    validateMetaD1OnlyOrphanedRunningStability(before, after).accepted,
+    true,
+  );
+  assert.equal(
+    classifyMetaD1OnlyOrphanedRunningRecoveryBaseline({
+      ...before,
+      active_lock_count: 1,
+    }).accepted,
+    false,
+  );
+  assert.throws(
+    () => validateMetaD1OnlyOrphanedRunningStability(before, {
+      ...after,
+      main_queue_attempts: 7,
+    }),
+    (error) => error.code === 'META_D1_ONLY_ORPHANED_RUNNING_PROGRESS_OBSERVED',
   );
 });
 

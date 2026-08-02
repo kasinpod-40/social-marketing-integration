@@ -37,6 +37,7 @@ import {
   safeMetaD1OnlyTarget,
   validateMetaD1OnlyContinuationRepositoryState,
   validateMetaD1OnlyEvidenceSequence,
+  validateMetaD1OnlyOrphanedRunningStability,
   validateMetaD1OnlyReusableRestoreSequence,
   validateMetaD1OnlySummarySequence,
   validateMetaD1OnlyTerminalRecoveryBaseline,
@@ -257,7 +258,17 @@ async function runPreflight(loaded) {
   const terminalRecovery = target.terminalRecovery
     ? validateMetaD1OnlyTerminalRecoveryBaseline(baseline)
     : null;
+  const orphanedRunningRecovery = target.orphanedRunningRecovery
+    ? validateMetaD1OnlyOrphanedRunningStability(
+        baseline,
+        await (async () => {
+          await sleep(30_000);
+          return readSnapshot(loaded);
+        })(),
+      )
+    : null;
   if (!target.terminalRecovery
+    && !target.orphanedRunningRecovery
     && (baseline.syncRunStatus !== null
       || baseline.workStatus !== null
       || baseline.activeLockCount !== 0
@@ -277,8 +288,9 @@ async function runPreflight(loaded) {
     pendingMigrations,
     requiredSecretNamePresent: true,
     requiredTableCount: META_D1_ONLY_REQUIRED_TABLES.length,
-    baseline,
+    baseline: orphanedRunningRecovery?.snapshot ?? baseline,
     terminalRecovery: terminalRecovery?.accepted === true,
+    orphanedRunningRecovery: orphanedRunningRecovery?.accepted === true,
     providerRequests: 0,
     remoteMutationCount: 0,
   };
@@ -450,7 +462,8 @@ async function verifyInitialD1Only(loaded) {
   const after = await pollForD1Completion(loaded);
   return {
     comparison: compareMetaD1OnlySnapshots(before, after, {
-      terminalRecovery: loaded.target.terminalRecovery,
+      terminalRecovery: loaded.target.terminalRecovery
+        || loaded.target.orphanedRunningRecovery,
     }),
     snapshotAfter: after,
     larkMutationCount: 0,

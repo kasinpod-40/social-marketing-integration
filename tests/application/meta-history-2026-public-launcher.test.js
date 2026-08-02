@@ -111,6 +111,7 @@ test('Meta D1 and Lark launchers materialize purpose-specific private reviewed r
     /materializeMetaHistoryLarkRuntimeConfig\(sourceText, runtimeEnvironment\)/u,
   );
   assert.match(d1, /MKT_META_D1_ONLY_WRANGLER_CONFIG: runtimeConfig/u);
+  assert.match(d1, /MKT_META_D1_ONLY_OPERATOR_PATH/u);
   assert.match(lark, /MKT_META_LARK_WRANGLER_CONFIG: runtimeConfig/u);
 });
 

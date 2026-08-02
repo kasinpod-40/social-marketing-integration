@@ -310,7 +310,14 @@ export function loadMetaD1OnlyTarget(env = {}) {
     queueId: optionalText(env.MKT_META_D1_ONLY_QUEUE_ID),
     terminalRecovery: env.MKT_META_D1_ONLY_TERMINAL_RECOVERY
       === 'RECOVER_EXACT_FAILED_META_OPERATION',
+    orphanedRunningRecovery: env.MKT_META_D1_ONLY_ORPHANED_RUNNING_RECOVERY === 'true',
   };
+  if (base.terminalRecovery && base.orphanedRunningRecovery) {
+    throw operatorError(
+      'Meta D1-only recovery modes are mutually exclusive',
+      'META_D1_ONLY_RECOVERY_MODE_INVALID',
+    );
+  }
   return deepFreeze({ ...base, targetFingerprint: sha256(stableJson(safeTarget(base))) });
 }
 
@@ -401,8 +408,10 @@ export function buildMetaD1OnlySnapshotSql(target = {}) {
   return compactSql(`
     SELECT
       (SELECT status FROM sync_runs WHERE sync_run_id = ${syncRunId}) AS sync_run_status,
+      (SELECT started_at FROM sync_runs WHERE sync_run_id = ${syncRunId}) AS sync_run_started_at,
       (SELECT finished_at FROM sync_runs WHERE sync_run_id = ${syncRunId}) AS sync_run_finished_at,
       (SELECT error_code FROM sync_runs WHERE sync_run_id = ${syncRunId}) AS sync_run_error_code,
+      (SELECT updated_at FROM sync_runs WHERE sync_run_id = ${syncRunId}) AS sync_run_updated_at,
       (SELECT status FROM sync_work_runs WHERE work_key = ${workKey}) AS work_status,
       (SELECT lifecycle_status FROM sync_work_runs WHERE work_key = ${workKey}) AS work_lifecycle_status,
       (SELECT completed_at FROM sync_work_runs WHERE work_key = ${workKey}) AS work_completed_at,
@@ -413,6 +422,7 @@ export function buildMetaD1OnlySnapshotSql(target = {}) {
       (SELECT COUNT(*) FROM sync_locks WHERE owner_id = ${syncRunId} AND expires_at > (unixepoch() * 1000)) AS active_lock_count,
       (SELECT COUNT(*) FROM queue_operation_attempts WHERE operation_id = ${operationId} AND work_key = ${workKey}) AS queue_operation_attempts,
       (SELECT COALESCE(MAX(main_queue_attempts), 0) FROM queue_operation_attempts WHERE operation_id = ${operationId} AND work_key = ${workKey}) AS main_queue_attempts,
+      (SELECT MAX(updated_at) FROM queue_operation_attempts WHERE operation_id = ${operationId} AND work_key = ${workKey}) AS queue_operation_updated_at,
       (SELECT COUNT(*) FROM data_coverage_runs WHERE sync_run_id = ${syncRunId}) AS coverage_run_count,
       (SELECT COUNT(*) FROM data_coverage_runs WHERE sync_run_id = ${syncRunId} AND (failed_rows <> 0 OR status NOT IN ('complete', 'no_data_confirmed', 'revisable'))) AS invalid_coverage_count,
       (SELECT COUNT(*) FROM data_coverage_entities WHERE coverage_run_id IN (SELECT coverage_run_id FROM data_coverage_runs WHERE sync_run_id = ${syncRunId})) AS coverage_entity_count,
@@ -425,7 +435,8 @@ export function buildMetaD1OnlySnapshotSql(target = {}) {
       (SELECT COUNT(*) FROM organic_content_observations WHERE sync_run_id = ${syncRunId}) AS operation_organic_observation_count,
       (SELECT COUNT(*) FROM organic_account_daily_facts WHERE sync_run_id = ${syncRunId}) AS operation_account_daily_count,
       (SELECT COUNT(*) FROM ads_entity_state WHERE last_sync_run_id = ${syncRunId}) AS operation_ads_entity_count,
-      (SELECT COUNT(*) FROM ads_daily_facts WHERE sync_run_id = ${syncRunId}) AS operation_ads_daily_count;
+      (SELECT COUNT(*) FROM ads_daily_facts WHERE sync_run_id = ${syncRunId}) AS operation_ads_daily_count,
+      (unixepoch('subsec') * 1000) AS observed_at;
   `);
 }
 
@@ -436,8 +447,10 @@ export function normalizeMetaD1OnlySnapshot(value = {}) {
   const d1State = parseNullableJson(value.d1_state_json, 'd1_state_json');
   return deepFreeze({
     syncRunStatus: optionalText(value.sync_run_status),
+    syncRunStartedAt: nullableNumber(value.sync_run_started_at),
     syncRunFinishedAt: nullableNumber(value.sync_run_finished_at),
     syncRunErrorCode: optionalText(value.sync_run_error_code),
+    syncRunUpdatedAt: nullableNumber(value.sync_run_updated_at),
     workStatus: optionalText(value.work_status),
     workLifecycleStatus: optionalText(value.work_lifecycle_status),
     workCompletedAt: nullableNumber(value.work_completed_at),
@@ -448,6 +461,8 @@ export function normalizeMetaD1OnlySnapshot(value = {}) {
     activeLockCount: count(value.active_lock_count),
     queueOperationAttempts: count(value.queue_operation_attempts),
     mainQueueAttempts: count(value.main_queue_attempts),
+    queueOperationUpdatedAt: nullableNumber(value.queue_operation_updated_at),
+    observedAt: nullableNumber(value.observed_at) ?? 0,
     coverageRunCount: count(value.coverage_run_count),
     invalidCoverageCount: count(value.invalid_coverage_count),
     coverageEntityCount: count(value.coverage_entity_count),
@@ -532,6 +547,57 @@ export function validateMetaD1OnlyTerminalRecoveryBaseline(snapshotInput = {}) {
   return deepFreeze({ accepted: true, snapshot });
 }
 
+export function classifyMetaD1OnlyOrphanedRunningRecoveryBaseline(snapshotInput = {}) {
+  const snapshot = normalizeMetaD1OnlySnapshot(snapshotInput);
+  const noOperationWrites = Object.values(snapshot.operationCounts)
+    .every((value) => value === 0);
+  const latestActivityAt = Math.max(
+    snapshot.syncRunUpdatedAt ?? 0,
+    snapshot.queueOperationUpdatedAt ?? 0,
+  );
+  const accepted = snapshot.syncRunStatus === 'running'
+    && snapshot.syncRunStartedAt !== null
+    && snapshot.syncRunFinishedAt === null
+    && snapshot.syncRunErrorCode === null
+    && snapshot.workStatus === 'active'
+    && snapshot.workLifecycleStatus === 'active'
+    && snapshot.workCompletedAt === null
+    && snapshot.d1PhaseComplete === false
+    && snapshot.larkPhaseCount === 0
+    && snapshot.completionPhaseCount === 0
+    && snapshot.activeLockCount === 0
+    && snapshot.queueOperationAttempts === 1
+    && snapshot.mainQueueAttempts >= 1
+    && snapshot.coverageRunCount === 0
+    && snapshot.invalidCoverageCount === 0
+    && noOperationWrites
+    && latestActivityAt > 0
+    && snapshot.observedAt - latestActivityAt >= 16 * 60 * 1000;
+  return deepFreeze({ accepted, snapshot });
+}
+
+export function validateMetaD1OnlyOrphanedRunningStability(
+  beforeInput = {},
+  afterInput = {},
+) {
+  const before = classifyMetaD1OnlyOrphanedRunningRecoveryBaseline(beforeInput);
+  const after = classifyMetaD1OnlyOrphanedRunningRecoveryBaseline(afterInput);
+  const elapsedMs = after.snapshot.observedAt - before.snapshot.observedAt;
+  const stableBefore = { ...before.snapshot, observedAt: 0 };
+  const stableAfter = { ...after.snapshot, observedAt: 0 };
+  if (!before.accepted
+    || !after.accepted
+    || elapsedMs < 30_000
+    || stableJson(stableBefore) !== stableJson(stableAfter)) {
+    throw operatorError(
+      'Meta D1-only orphaned running state changed during the stability window',
+      'META_D1_ONLY_ORPHANED_RUNNING_PROGRESS_OBSERVED',
+      { elapsedMs },
+    );
+  }
+  return deepFreeze({ accepted: true, elapsedMs, snapshot: after.snapshot });
+}
+
 export function createMetaD1OnlyEvidence(input = {}) {
   const evidence = {
     phase: requirePhase(input.phase),
@@ -590,6 +656,7 @@ function safeTarget(target) {
     generation: target.generation, periodStart: target.periodStart, periodEnd: target.periodEnd,
     workKey: target.workKey, syncRunId: target.syncRunId,
     terminalRecovery: target.terminalRecovery === true,
+    orphanedRunningRecovery: target.orphanedRunningRecovery === true,
   };
 }
 function confirmation(envName, value) { return Object.freeze({ envName, value }); }
