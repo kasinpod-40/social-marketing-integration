@@ -8,12 +8,15 @@ export const META_END_TO_END_FLAG_ENV = Object.freeze({
   reportRead: 'MKT_META_REPORT_READ_ENABLED',
 });
 
+/**
+ * Active Lark projection only. Detailed Meta Ads RAW, Creative and daily facts remain durable in D1
+ * and are intentionally excluded from Lark. Meta Ads Lark stores Account plus report-range activity
+ * Campaign, AdSet and Ad only.
+ */
 export const META_END_TO_END_LARK_TABLES = Object.freeze([
   table('raw.organicAccounts', 'rawMetaOrganicAccounts', 'raw_account_key'),
   table('raw.organicContent', 'rawMetaOrganicContent', 'raw_content_key'),
   table('raw.organicMetrics', 'rawMetaOrganicMetrics', 'raw_metric_key'),
-  table('raw.adsEntities', 'rawAdsEntities', 'raw_ads_entity_key'),
-  table('raw.adsDaily', 'rawAdsDaily', 'raw_ads_daily_key'),
   table('canonical.accounts', 'mktAccounts', 'account_key'),
   table('canonical.accountDaily', 'mktAccountDaily', 'account_daily_key'),
   table('canonical.content', 'mktContent', 'content_key'),
@@ -22,13 +25,18 @@ export const META_END_TO_END_LARK_TABLES = Object.freeze([
   table('canonical.adsCampaigns', 'mktAdsCampaigns', 'ads_campaign_key'),
   table('canonical.adsAdGroups', 'mktAdsAdGroups', 'ads_ad_group_key'),
   table('canonical.adsAds', 'mktAdsAds', 'ads_ad_key'),
-  table('canonical.adsCreatives', 'mktAdsCreatives', 'ads_creative_key'),
-  table('canonical.adsDaily', 'mktAdsDaily', 'ads_daily_key'),
 ]);
 
 export const META_END_TO_END_REQUIRED_LARK_TABLE_KEYS = Object.freeze(
   [...new Set(META_END_TO_END_LARK_TABLES.map((entry) => entry.tableKey))],
 );
+
+export const META_ADS_JULY_ACTIVITY_LARK_TABLE_KEYS = Object.freeze([
+  'mktAdsAccounts',
+  'mktAdsCampaigns',
+  'mktAdsAdGroups',
+  'mktAdsAds',
+]);
 
 /**
  * Workstream-local fail-closed gates. Connector flags in the central catalog remain an
