@@ -450,10 +450,7 @@ export function classifyMetaLarkCompletion(snapshot = {}, target = {}) {
       return expected === count(result?.created) + count(result?.updated) + count(result?.skipped);
     });
   const reconciliationResults = value.completionReconciliation?.lark;
-  const complete = value.syncRunStatus === 'success'
-    && value.syncRunFinishedAt !== null
-    && value.syncRunErrorCode === null
-    && value.d1PhaseComplete
+  const durableComplete = value.d1PhaseComplete
     && value.preflightPhaseComplete
     && value.larkPhaseComplete
     && value.completionPhaseComplete
@@ -467,12 +464,57 @@ export function classifyMetaLarkCompletion(snapshot = {}, target = {}) {
     && resultsValid
     && Array.isArray(reconciliationResults)
     && reconciliationResults.length === expectedCount;
+  const complete = value.syncRunStatus === 'success'
+    && value.syncRunFinishedAt !== null
+    && value.syncRunErrorCode === null
+    && durableComplete;
   return deepFreeze({
     complete,
+    durableComplete,
     reason: complete ? 'lark_complete_and_reconciled' : 'incomplete_or_invalid',
     expectedLarkTableCount: expectedCount,
     snapshot: value,
   });
+}
+
+export function classifyMetaLarkPostCompletionOrphan(snapshot = {}, target = {}) {
+  const value = normalizeMetaLarkSnapshot(snapshot);
+  const durable = classifyMetaLarkCompletion(value, target);
+  const latestActivityAt = Math.max(
+    value.syncRunUpdatedAt ?? 0,
+    value.queueOperationUpdatedAt ?? 0,
+  );
+  const accepted = target.orphanedRunningRecovery === true
+    && durable.durableComplete
+    && value.syncRunStatus === 'running'
+    && value.syncRunStartedAt !== null
+    && value.syncRunFinishedAt === null
+    && value.syncRunErrorCode === null
+    && value.workCompletedAt !== null
+    && value.syncRunStartedAt > value.workCompletedAt
+    && value.activeLockCount === 0
+    && latestActivityAt > 0
+    && value.observedAt - latestActivityAt >= 16 * 60 * 1000;
+  return deepFreeze({ accepted, snapshot: value });
+}
+
+export function validateMetaLarkPostCompletionOrphanStability(beforeInput = {}, afterInput = {}, target = {}) {
+  const before = classifyMetaLarkPostCompletionOrphan(beforeInput, target);
+  const after = classifyMetaLarkPostCompletionOrphan(afterInput, target);
+  const elapsedMs = after.snapshot.observedAt - before.snapshot.observedAt;
+  const stableBefore = { ...before.snapshot, observedAt: 0 };
+  const stableAfter = { ...after.snapshot, observedAt: 0 };
+  if (!before.accepted
+    || !after.accepted
+    || elapsedMs < 30_000
+    || stableJson(stableBefore) !== stableJson(stableAfter)) {
+    throw operatorError(
+      'Meta post-completion orphan changed during the stability window',
+      'META_LARK_POST_COMPLETION_ORPHAN_PROGRESS_OBSERVED',
+      { elapsedMs },
+    );
+  }
+  return deepFreeze({ accepted: true, elapsedMs, snapshot: after.snapshot });
 }
 
 export function classifyMetaLarkPollingSnapshot(
@@ -529,7 +571,9 @@ export function compareMetaLarkSnapshots(beforeInput, afterInput, target = {}, o
     throw operatorError('Meta Lark Queue attempt was not observed', 'META_LARK_QUEUE_ATTEMPT_MISSING');
   }
   const classified = classifyMetaLarkCompletion(after, target);
-  if (!classified.complete) {
+  const postCompletionOrphanAccepted = options.postCompletionOrphanVerified === true
+    && classifyMetaLarkPostCompletionOrphan(after, target).accepted;
+  if (!classified.complete && !postCompletionOrphanAccepted) {
     throw operatorError('Meta Lark continuation has not completed', 'META_LARK_COMPLETION_INVALID');
   }
   if (options.rerun === true) {
@@ -544,6 +588,7 @@ export function compareMetaLarkSnapshots(beforeInput, afterInput, target = {}, o
       larkReconciliationDrift: false,
       d1CountDrift: false,
       coverageCountDrift: false,
+      postCompletionOrphanAccepted,
     });
   }
   return deepFreeze({
@@ -553,6 +598,7 @@ export function compareMetaLarkSnapshots(beforeInput, afterInput, target = {}, o
     larkResults: after.larkResults,
     d1CountDrift: false,
     coverageCountDrift: false,
+    postCompletionOrphanAccepted,
   });
 }
 

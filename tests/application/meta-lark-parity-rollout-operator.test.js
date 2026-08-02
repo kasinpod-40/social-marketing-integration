@@ -8,6 +8,7 @@ import {
   buildMetaLarkContinuationJob,
   buildMetaLarkSnapshotSql,
   classifyMetaLarkCompletion,
+  classifyMetaLarkPostCompletionOrphan,
   classifyMetaLarkPollingSnapshot,
   compareMetaLarkSnapshots,
   createMetaLarkEvidence,
@@ -18,6 +19,7 @@ import {
   validateMetaD1OnlySummaryForLark,
   validateMetaLarkD1ReadyBoundary,
   validateMetaLarkOrphanedRunningStability,
+  validateMetaLarkPostCompletionOrphanStability,
   validateMetaLarkEvidenceSequence,
   validateMetaLarkInventory,
 } from '../../scripts/lib/meta-lark-parity-rollout-operator.js';
@@ -301,6 +303,48 @@ test('completion requires Lark parity, final reconciliation, completed work and 
       target_organic_state_count: 3,
     }, current),
     (error) => error.code === 'META_LARK_D1_COUNT_DRIFT',
+  );
+});
+
+test('late proof accepts a stable post-completion orphan without fabricating Sync success', () => {
+  const current = { ...target('instagram'), orphanedRunningRecovery: true };
+  const completed = larkCompleteSnapshot(current);
+  const observedAt = 1785082800000;
+  const orphaned = {
+    ...completed,
+    sync_run_status: 'running',
+    sync_run_started_at: observedAt - (17 * 60 * 1000),
+    sync_run_finished_at: null,
+    sync_run_error_code: null,
+    sync_run_updated_at: observedAt - (17 * 60 * 1000),
+    queue_operation_updated_at: observedAt - (16 * 60 * 1000),
+    observed_at: observedAt,
+  };
+  assert.equal(classifyMetaLarkCompletion(orphaned, current).complete, false);
+  assert.equal(classifyMetaLarkCompletion(orphaned, current).durableComplete, true);
+  assert.equal(classifyMetaLarkPostCompletionOrphan(orphaned, current).accepted, true);
+  const stableAfter = { ...orphaned, observed_at: observedAt + 30_000 };
+  assert.equal(
+    validateMetaLarkPostCompletionOrphanStability(orphaned, stableAfter, current).accepted,
+    true,
+  );
+  const compared = compareMetaLarkSnapshots(d1ReadySnapshot(), stableAfter, current, {
+    postCompletionOrphanVerified: true,
+  });
+  assert.equal(compared.accepted, true);
+  assert.equal(compared.postCompletionOrphanAccepted, true);
+  assert.equal(compared.snapshotAfter, undefined);
+
+  assert.equal(classifyMetaLarkPostCompletionOrphan({
+    ...orphaned,
+    active_lock_count: 1,
+  }, current).accepted, false);
+  assert.throws(
+    () => validateMetaLarkPostCompletionOrphanStability(orphaned, {
+      ...stableAfter,
+      main_queue_attempts: completed.main_queue_attempts + 2,
+    }, current),
+    (error) => error.code === 'META_LARK_POST_COMPLETION_ORPHAN_PROGRESS_OBSERVED',
   );
 });
 

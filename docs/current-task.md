@@ -241,3 +241,9 @@ Instagram Lark completion ผ่าน 7/7 destinations และ final reconcil
 เขียน Sync Run รอบใหม่; restore จึงตัด invocation หลังเริ่มและทำให้ late proof เห็น `running`/lock แทน success.
 Implementation แก้ polling ให้ completion หลัง resend ต้องเห็น `finished_at` ใหม่กว่าก่อนส่งด้วย ไม่ใช่เพียง
 attempt increment + durable completion เดิม; ห้าม restore จน invocation ใหม่ settle จริง.
+
+Invocation attempt 50 ที่ถูก restore ตัดทิ้ง Sync Run เป็น `running`; automatic attempt 51 ไม่เปลี่ยน
+Business/Completion และ lease หมดโดย lock = 0. Closeout จะไม่ mutate Sync Run หรือส่ง Queue เพิ่ม: late proof
+ยอม post-completion orphan เฉพาะ exact durable completion/parity เดิม, Sync started หลัง completed_at,
+ไม่มี error/lock, latest Sync/Queue activity เกิน Cloudflare 15-minute limit พร้อม margin 1 นาที และ snapshot
+ทุก field คงที่อีก 30 วินาที. Evidence บันทึก orphan ตามจริงและไม่ปลอม Sync status เป็น success.

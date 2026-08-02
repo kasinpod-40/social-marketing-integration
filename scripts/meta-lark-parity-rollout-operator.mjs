@@ -24,6 +24,7 @@ import {
   buildMetaLarkConfigWindow,
   buildMetaLarkContinuationJob,
   buildMetaLarkSnapshotSql,
+  classifyMetaLarkPostCompletionOrphan,
   classifyMetaLarkCompletion,
   classifyMetaLarkPollingSnapshot,
   compareMetaLarkSnapshots,
@@ -37,6 +38,7 @@ import {
   validateMetaD1OnlySummaryForLark,
   validateMetaLarkD1ReadyBoundary,
   validateMetaLarkOrphanedRunningStability,
+  validateMetaLarkPostCompletionOrphanStability,
   validateMetaLarkEvidenceSequence,
   validateMetaLarkInventory,
 } from './lib/meta-lark-parity-rollout-operator.js';
@@ -472,8 +474,21 @@ async function readPollingSnapshot(loaded) {
 
 async function verifyLateCompletion(loaded) {
   const before = (await readEvidence(loaded, 'snapshot-before')).data?.snapshot;
-  const after = await readSnapshot(loaded);
-  const comparison = compareMetaLarkSnapshots(before, after, loaded.target);
+  let after = await readSnapshot(loaded);
+  let postCompletionOrphan = null;
+  if (classifyMetaLarkPostCompletionOrphan(after, loaded.target).accepted) {
+    await sleep(30_000);
+    const stableAfter = await readSnapshot(loaded);
+    postCompletionOrphan = validateMetaLarkPostCompletionOrphanStability(
+      after,
+      stableAfter,
+      loaded.target,
+    );
+    after = stableAfter;
+  }
+  const comparison = compareMetaLarkSnapshots(before, after, loaded.target, {
+    postCompletionOrphanVerified: postCompletionOrphan?.accepted === true,
+  });
   const beforeAttempts = normalizeMetaLarkSnapshot(before).mainQueueAttempts;
   const sameOperationAttemptsObserved = after.mainQueueAttempts - beforeAttempts;
   if (!after.clearedPhaseCompletion || sameOperationAttemptsObserved < 2) {
@@ -487,6 +502,7 @@ async function verifyLateCompletion(loaded) {
     snapshotAfter: after,
     sameOperationAttemptsObserved,
     clearedPhaseCompletionVerified: true,
+    postCompletionOrphan,
     providerRequestCount: 0,
   };
 }
