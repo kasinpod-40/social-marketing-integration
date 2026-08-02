@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased — Meta Ads July Activity Scope — 2026-08-02
+
+### Changed
+
+- Replaced the active Meta Ads full-inventory source plan with bounded account plus ad-level daily Insights for
+  one inclusive period of at most 31 days.
+- Derived Campaign, Ad Set and Ad identities only from activity observed in that report range; the active path no
+  longer enumerates full-history Campaign, Ad Set, Ad or Creative inventories.
+- Retained validated detailed daily facts in D1 while projecting only Account and activity entities to Lark.
+  Shared checksummed report materializations remain the customer-facing path for 1D/3D/7D/30D and Top Ads.
+- Added report-range Coverage for activity entities and daily facts while preserving full-inventory Coverage for
+  the exact Account identity.
+
+### Safety
+
+- Rejects Meta Ads periods longer than 31 inclusive days before Provider access and rejects hierarchy drift for
+  any repeated activity identity.
+- Uses a new operation fingerprint schema so prior full-inventory operations cannot be resumed under the new
+  source contract. The prior k2 page-limit operation remains an immutable forensic failure.
+- Makes no Provider, Queue, D1, Lark, deployment, Schedule or Production mutation during this implementation.
+
 ## Unreleased — Meta Ads Active-progress D1 Verification — 2026-08-02
 
 ### Reliability

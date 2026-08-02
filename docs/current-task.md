@@ -3,7 +3,7 @@
 ## Status
 
 ```text
-TASK_STATUS                          = META_ADS_K2_ACTIVE_PROGRESS_GUARD_LOCAL_PASS
+TASK_STATUS                          = META_ADS_JULY_ACTIVITY_SCOPE_GATES
 CURRENT_PROGRAM                      = ALL_META_END_TO_END_COMPLETION_V1
 BRANCH                               = integration/all-meta-end-to-end-completion-v1
 BASE_MAIN_SHA                        = 0d33be48f9b8ccaf6d8cea9a4c4ee31b1175b650
@@ -17,8 +17,8 @@ META_PROVIDER_REPLAY                 = FORBIDDEN_FOR_RETAINED_FACEBOOK_OPERATION
 META_D1_QUEUE_RESEND                 = FORBIDDEN_FOR_RETAINED_FACEBOOK_OPERATION
 SCHEDULE_WEBHOOK                     = DISABLED_REQUIRED
 PRODUCTION                           = BLOCKED
-META_LATEST_STOP                     = K2_PARTIAL_STAGING_RECOVERY_GUARD_LOCAL_PASS_SAFE_ALL_FALSE
-NEXT_STEP                            = COMMIT_PUSH_EXACT_HEAD_CI_THEN_K2_GUARDED_SAME_OPERATION_RECOVERY
+META_LATEST_STOP                     = K2_FULL_INVENTORY_FORENSIC_PAGE_LIMIT_SAFE_ALL_FALSE
+NEXT_STEP                            = EXACT_HEAD_CI_THEN_FRESH_K2_JULY
 ```
 
 ## Objective
@@ -38,7 +38,8 @@ docs/tasks/all-meta-end-to-end-completion-v1.md
 
 - ตรวจ latest `origin/main`, open/merged PR, retained local evidence และ Meta Remote state แบบ read-only;
 - ทำต่อ retained Facebook July operation จาก D1-complete ไป Lark โดยไม่ Provider replay หรือ D1 resend;
-- ทำ Instagram July และ Meta Ads required/conditional history ผ่าน existing Meta finalizer;
+- ทำ Instagram July และ Meta Ads July activity-scoped สำหรับ `chemistry_k2`/`chemistry_k3`
+  ผ่าน existing Meta finalizer;
 - ตรวจ Coverage, D1/Lark parity, same-operation replay และ all-false restore;
 - ใช้ generic Report architecture สำหรับ Facebook Organic, Instagram Organic และ Meta Ads ที่ windows
   `1/3/7/30` เท่าที่ current writer รองรับ;
@@ -91,6 +92,35 @@ Worker all-false; ถ้าพบ drift ให้หยุด Meta และร�
 8. Retained Facebook continuation คงใช้ authority
    `scripts/meta-history-2026-exact-plan-continuation-terminal.mjs` ผ่าน reviewed-release wrapper เท่านั้น;
    ห้ามเรียก ordinary terminal เพื่อสร้าง operation ใหม่.
+9. Meta Ads รับช่วงข้อมูลไม่เกิน 31 วันและใช้ `report_range_activity`: ดึง Account กับ ad-level Daily
+   Insights ก่อน แล้ว derive เฉพาะ Campaign/Ad Set/Ad identity ที่ปรากฏในช่วงนั้น; ห้าม enumerate
+   Full-history Campaign/Ad Set/Ad/Creative inventory.
+10. Meta Ads D1 เก็บ activity entities และ Daily facts ตามช่วงพร้อม Coverage `report_range`.
+    Lark ingestion ไม่ mirror Raw/Daily detailed rows; ส่งเฉพาะ current Account + activity entities.
+    Customer-facing 1D/3D/7D/30D และ Top Ads ต้องมาจาก checksummed Report materializations ผ่าน
+    Shared Report tables/Native Dashboards.
+11. Operation k2 May–July ที่จบด้วย `META_END_TO_END_PAGE_LIMIT` เก็บเป็น forensic failure,
+    ห้าม resume, replacement-under-same-identity, ลบ staging หรือปลอมเป็น success. July ต้องเป็น
+    fresh operation identity หลัง exact-head CI และ Meta all-false preflight เท่านั้น.
+
+## Meta Ads July data model
+
+```text
+Source window                  2026-07-01..2026-07-31 / maximum 31 inclusive days
+Source order                   account → ad-level daily insights → complete
+Activity entity derivation     unique campaign_id / adset_id / ad_id from July insights
+Creative inventory             not fetched; unavailable creative metadata remains null/absent
+D1 ads_entity_state            current account + July activity Campaign/Ad Set/Ad
+D1 ads_daily_facts             all validated July ad/day/publisher-platform facts
+Coverage                       full_inventory only for exact Account; report_range for activity entities/daily
+Lark RAW Ads detailed rows     0 for activity-scoped operation
+Lark MKT_Ads_Daily             0 for activity-scoped operation
+Lark current entities          Account + July activity Campaign/Ad Set/Ad only
+Lark report display            Shared Snapshots / Metric Values / Top Ads, windows 1D/3D/7D/30D
+Stable keys                    existing platform/account/entity/date/breakdown keys unchanged
+Missing metric                 null; observed zero remains 0
+Retention/delete               none
+```
 
 ## Required verification
 
@@ -302,3 +332,23 @@ fail-closed และเข้าสู่ all-false restore เดิม. Focus
 full `npm test`, Report reliability 101/101, `npm run check`, dependency audit 0 vulnerabilities,
 Wrangler deploy dry-run และ `git diff --check` ผ่าน. Repository implementation ยังไม่มี Remote action และ
 Worker คง verified all-false; ต้องผ่าน exact-head CI ก่อน recovery operation เดิม.
+
+ผู้ใช้ลด Meta Ads scope เป็น July 2026 เท่านั้นหลังยืนยันว่า Full-history inventory ใหญ่เกินความจำเป็นและ
+พื้นที่ Lark ไม่เหมาะกับ detailed mirror ของทั้ง `chemistry_k2`/`chemistry_k3`. Operation เดิม
+`meta-chemistry_k2-history-20260501-20260731-a22a21bea8ba` จบตามจริงด้วย
+`META_END_TO_END_PAGE_LIMIT` ที่ Ads page 101, source staging 145 units / 14,306 rows, main attempts 149,
+lock 0, operation Business/Coverage/Lark writes 0 และ Worker restore all-false. หลักฐานนี้เป็น forensic
+failure เท่านั้น; ห้าม resume, ลบ, redrive หรือเปลี่ยนเป็น success.
+
+Implementation ใหม่เปลี่ยน active Meta Ads source plan เป็น `account → ad-level daily → complete`, จำกัด
+ช่วงไม่เกิน 31 วัน และ derive Campaign/Ad Set/Ad เฉพาะ identity ที่ปรากฏใน Daily Insights ของช่วงนั้นโดย
+ไม่ enumerate Campaign/AdSet/Ad/Creative inventory. D1 คง July activity entities และ detailed daily facts;
+Lark รับ Account + activity entities แต่ไม่รับ RAW Ads Daily หรือ MKT Ads Daily detailed rows. Coverage
+แยก Account แบบ `full_inventory` กับ activity entities/daily แบบ exact `report_range`; customer-facing
+1D/3D/7D/30D และ Top Ads ใช้ Shared checksummed report materializations. Operation fingerprint schema ใหม่
+ทำให้ operation full-inventory เก่าใช้ต่อกับ runtime นี้ไม่ได้แบบ fail-closed.
+
+Local verification ปัจจุบันผ่าน focused Meta 37/37, Meta regression 198/198, `npm run check`, full unit
+2024/2024 และ Workers-runtime 16/16; ไม่มี Provider, Queue, D1, Lark, deploy, Schedule หรือ Production
+mutation ในการเปลี่ยนนี้. ขั้นต่อไปคือ Gate ที่เหลือ, exact-head CI แล้วจึงเริ่ม fresh k2 July operation
+หลัง Meta operator ยืนยัน Worker all-false เท่านั้น; k3 ยังไม่เริ่ม.

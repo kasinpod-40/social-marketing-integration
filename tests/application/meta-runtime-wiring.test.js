@@ -58,6 +58,9 @@ function createWorkStore() {
 
 function createAdapter() {
   const empty = async () => ({ rows: [], hasMore: false, nextCursor: null });
+  const inventoryForbidden = async () => {
+    throw new Error('full inventory must not be called by report-range activity sync');
+  };
   return {
     async fetchAccount() {
       return {
@@ -71,10 +74,10 @@ function createAdapter() {
         },
       };
     },
-    fetchCampaignsPage: empty,
-    fetchAdSetsPage: empty,
-    fetchAdsPage: empty,
-    fetchCreativesPage: empty,
+    fetchCampaignsPage: inventoryForbidden,
+    fetchAdSetsPage: inventoryForbidden,
+    fetchAdsPage: inventoryForbidden,
+    fetchCreativesPage: inventoryForbidden,
     fetchDailyInsightsPage: empty,
   };
 }
@@ -313,4 +316,77 @@ test('fails before another Provider call when the durable source-unit limit is r
     (error) => error.code === 'META_END_TO_END_SOURCE_UNIT_LIMIT',
   );
   assert.equal(calls, 1);
+});
+
+test('Meta Ads stages account then July insights and derives only activity entities', async () => {
+  const workStore = createWorkStore();
+  const calls = [];
+  const adapter = createAdapter();
+  adapter.fetchDailyInsightsPage = async (input) => {
+    calls.push(input);
+    return {
+      rows: [{
+        account_id: '123456',
+        account_currency: 'THB',
+        campaign_id: 'campaign_1',
+        campaign_name: 'July Campaign',
+        objective: 'OUTCOME_TRAFFIC',
+        adset_id: 'adset_1',
+        adset_name: 'July Ad Set',
+        ad_id: 'ad_1',
+        ad_name: 'July Ad',
+        date_start: '2026-07-25',
+        date_stop: '2026-07-25',
+        publisher_platform: 'facebook',
+        spend: '1.000000',
+        impressions: '10',
+        reach: '8',
+        clicks: '2',
+      }],
+      hasMore: false,
+      nextCursor: null,
+    };
+  };
+  const input = baseInput({
+    adapter,
+    resumableWorkStore: workStore,
+    sourceReadOnly: true,
+    d1WriteEnabled: false,
+    larkWriteEnabled: false,
+  });
+
+  assert.equal((await processMetaEndToEndSync(input)).status, 'source_continuation');
+  const result = await processMetaEndToEndSync(input);
+  assert.equal(result.status, 'source_validated');
+  assert.deepEqual(result.sourceSummary, {
+    accountRows: 1,
+    campaignRows: 1,
+    adSetRows: 1,
+    adRows: 1,
+    creativeRows: 0,
+    dailyRows: 1,
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].since, '2026-07-25');
+  assert.equal(calls[0].until, '2026-07-25');
+});
+
+test('Meta Ads rejects more than 31 inclusive days before Provider access', async () => {
+  let calls = 0;
+  const adapter = createAdapter();
+  adapter.fetchAccount = async () => {
+    calls += 1;
+    return { resource: {} };
+  };
+  await assert.rejects(
+    processMetaEndToEndSync(baseInput({
+      adapter,
+      resumableWorkStore: createWorkStore(),
+      sourceReadOnly: true,
+      d1WriteEnabled: false,
+      dateRange: { since: '2026-05-01', until: '2026-07-31' },
+    })),
+    (error) => error.code === 'META_ADS_REPORT_RANGE_TOO_LARGE',
+  );
+  assert.equal(calls, 0);
 });

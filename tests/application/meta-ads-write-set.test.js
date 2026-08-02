@@ -134,3 +134,52 @@ test('empty Meta Ads inventory and spend are no_data_confirmed, not failure', as
     row.dataset_key === 'meta_ads.performance.daily' && row.status === 'no_data_confirmed'
   )));
 });
+
+test('July activity scope keeps detailed daily facts in D1 and omits detailed Lark daily rows', async () => {
+  const writeSet = await buildMetaAdsWriteSet({
+    ...baseInput(),
+    entityScopeMode: 'report_range',
+    larkProjectionMode: 'curated_reports',
+    periodStart: '2026-07-01',
+    periodEnd: '2026-07-31',
+    campaigns: [{ id: 'campaign_1', name: 'July Campaign' }],
+    adSets: [{ id: 'adset_1', campaign_id: 'campaign_1', name: 'July Ad Set' }],
+    ads: [{ id: 'ad_1', campaign_id: 'campaign_1', adset_id: 'adset_1', name: 'July Ad' }],
+    creatives: [],
+    dailyInsights: [{
+      account_id: '987650001',
+      account_currency: 'THB',
+      campaign_id: 'campaign_1',
+      campaign_name: 'July Campaign',
+      adset_id: 'adset_1',
+      adset_name: 'July Ad Set',
+      ad_id: 'ad_1',
+      ad_name: 'July Ad',
+      date_start: '2026-07-31',
+      date_stop: '2026-07-31',
+      publisher_platform: 'facebook',
+      spend: '1.000000',
+      impressions: '10',
+      reach: '8',
+      clicks: '2',
+    }],
+  });
+
+  assert.equal(writeSet.d1.adsEntities.length, 4);
+  assert.equal(writeSet.d1.adsDailyFacts.length, 1);
+  assert.equal(writeSet.raw.adsEntities.length, 4);
+  assert.equal(writeSet.raw.adsDaily.length, 0);
+  assert.equal(writeSet.canonical.adsDaily.length, 0);
+  assert.equal(writeSet.reconciliation.entityScopeMode, 'report_range');
+  assert.equal(writeSet.reconciliation.larkProjectionMode, 'curated_reports');
+  assert.equal(writeSet.reconciliation.detailedDailyRows, 1);
+  assert.equal(writeSet.d1.coverageRuns.length, 5);
+  assert.equal(writeSet.d1.coverageRuns.some((row) => row.dataset_key.includes('creatives')), false);
+  assert.equal(writeSet.d1.coverageRuns
+    .filter((row) => row.dataset_key.endsWith('.activity'))
+    .every((row) => (
+      row.scope_mode === 'report_range'
+      && row.period_start === '2026-07-01'
+      && row.period_end === '2026-07-31'
+    )), true);
+});

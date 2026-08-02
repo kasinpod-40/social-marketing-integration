@@ -47,8 +47,11 @@ remote mutation count              0
 
 - Chatwoot accepted Partial UAT boundary remains untouched and is not a Meta blocker.
 - Facebook completed lane verified without replay; retained July Lark continuation completes exact Work.
-- Instagram July and Meta Ads required May-July operations complete; conditional January-April operations
-  complete or are bounded-deferred by the reviewed limit contract.
+- Instagram July and Meta Ads July activity-scoped operations for `chemistry_k2`/`chemistry_k3`
+  complete. Meta Ads full-inventory May-July and conditional January-April were superseded by the
+  user's bounded latest-month decision and must not be resumed.
+- Meta Ads detailed July facts remain in D1; Lark contains only July activity entities and Shared
+  `1/3/7/30` Report materializations/Top Ads, never a full Raw/Daily mirror.
 - History Coverage, D1/Lark parity, replay/idempotency and `META_HISTORY_2026_COMPLETED_SAFE` pass.
 - Meta Report materializations for `1/3/7/30` pass D1/Lark key/value parity with correct null/zero semantics.
 - Organic, Paid Ads, Executive and Data Quality Dashboard readback truthfully exposes the Meta results.

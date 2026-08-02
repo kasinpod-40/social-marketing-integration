@@ -91,6 +91,9 @@ test('Meta Ads daily contract preserves breakdown, action arrays and revision gr
   });
   assert.ok(daily.fields.includes('actions'));
   assert.ok(daily.fields.includes('action_values'));
+  assert.ok(daily.fields.includes('campaign_name'));
+  assert.ok(daily.fields.includes('adset_name'));
+  assert.ok(daily.fields.includes('ad_name'));
   assert.doesNotMatch(
     META_BUSINESS_INGESTION_CONTRACT.stableKeys.rawAdsDaily,
     /segment_key/u,

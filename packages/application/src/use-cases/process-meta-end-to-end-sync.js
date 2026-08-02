@@ -10,6 +10,7 @@ import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 const SOURCE_PHASE = 'meta_end_to_end_source_staging_v1';
 const ORGANIC_CONNECTORS = new Set(['facebook', 'instagram']);
 const ADS_CONNECTOR = 'meta_ads';
+const META_ADS_MAX_REPORT_RANGE_DAYS = 31;
 const ORGANIC_STAGES = Object.freeze([
   'account',
   'content',
@@ -19,10 +20,6 @@ const ORGANIC_STAGES = Object.freeze([
 ]);
 const ADS_STAGES = Object.freeze([
   'account',
-  'campaigns',
-  'ad_sets',
-  'ads',
-  'creatives',
   'daily',
   'complete',
 ]);
@@ -52,7 +49,9 @@ export async function processMetaEndToEndSync(input = {}) {
     : async () => undefined;
 
   const fingerprint = await createStableFingerprint({
-    schemaVersion: 'meta_end_to_end_runtime_operation_v1',
+    schemaVersion: connectorKey === ADS_CONNECTOR
+      ? 'meta_ads_report_range_activity_operation_v1'
+      : 'meta_end_to_end_runtime_operation_v1',
     connectorKey,
     sourceAccountId,
     accountKey,
@@ -182,6 +181,7 @@ export async function processMetaEndToEndSync(input = {}) {
     operation,
     sourceTimezone,
     sourceWatermark: state.sourceWatermark,
+    dateRange,
   });
 
   const result = await processMetaEndToEndGeneration({
@@ -298,10 +298,6 @@ function resolveSourceRequest({ connectorKey, state, dateRange }) {
   }
   const adsDatasets = {
     account: 'meta_ads.account.latest',
-    campaigns: 'meta_ads.campaigns.inventory',
-    ad_sets: 'meta_ads.ad_sets.inventory',
-    ads: 'meta_ads.ads.inventory',
-    creatives: 'meta_ads.creatives.inventory',
     daily: 'meta_ads.performance.daily',
   };
   return {
@@ -346,15 +342,19 @@ function assembleSourceSnapshot({ connectorKey, sourceAccountId, staged, state }
       code: 'META_END_TO_END_SOURCE_ACCOUNT_INVALID',
     });
   }
+  const dailyInsights = rowsFor('meta_ads.performance.daily');
+  const activity = deriveMetaAdsActivityEntities(dailyInsights);
   return deepFreeze({
     connectorKey,
     sourceAccountId,
     accountResource: account[0],
-    campaigns: rowsFor('meta_ads.campaigns.inventory'),
-    adSets: rowsFor('meta_ads.ad_sets.inventory'),
-    ads: rowsFor('meta_ads.ads.inventory'),
-    creatives: rowsFor('meta_ads.creatives.inventory'),
-    dailyInsights: rowsFor('meta_ads.performance.daily'),
+    campaigns: activity.campaigns,
+    adSets: activity.adSets,
+    ads: activity.ads,
+    creatives: [],
+    dailyInsights,
+    entityScopeMode: 'report_range',
+    larkProjectionMode: 'curated_reports',
     sourceWatermark: state.sourceWatermark,
   });
 }
@@ -401,7 +401,86 @@ async function buildWriteSet(input) {
     ads: input.sourceSnapshot.ads,
     creatives: input.sourceSnapshot.creatives,
     dailyInsights: input.sourceSnapshot.dailyInsights,
+    entityScopeMode: input.sourceSnapshot.entityScopeMode,
+    larkProjectionMode: input.sourceSnapshot.larkProjectionMode,
+    periodStart: input.dateRange.since,
+    periodEnd: input.dateRange.until,
   });
+}
+
+function deriveMetaAdsActivityEntities(rows) {
+  const campaigns = new Map();
+  const adSets = new Map();
+  const ads = new Map();
+  const ordered = requireArray(rows, 'Meta Ads activity insights')
+    .map((row) => requireObject(row, 'Meta Ads activity insight'))
+    .sort((left, right) => activityRowSortKey(left).localeCompare(activityRowSortKey(right)));
+
+  for (const row of ordered) {
+    const campaignId = requireText(row.campaign_id, 'Meta Ads activity campaign_id');
+    const adSetId = requireText(row.adset_id, 'Meta Ads activity adset_id');
+    const adId = requireText(row.ad_id, 'Meta Ads activity ad_id');
+    const metricDate = requireDate(row.date_start, 'Meta Ads activity date_start');
+    upsertActivityEntity(campaigns, campaignId, {
+      id: campaignId,
+      name: optionalText(row.campaign_name),
+      objective: optionalText(row.objective),
+      metricDate,
+    }, []);
+    upsertActivityEntity(adSets, adSetId, {
+      id: adSetId,
+      campaign_id: campaignId,
+      name: optionalText(row.adset_name),
+      metricDate,
+    }, ['campaign_id']);
+    upsertActivityEntity(ads, adId, {
+      id: adId,
+      campaign_id: campaignId,
+      adset_id: adSetId,
+      name: optionalText(row.ad_name),
+      metricDate,
+    }, ['campaign_id', 'adset_id']);
+  }
+
+  return deepFreeze({
+    campaigns: activityValues(campaigns),
+    adSets: activityValues(adSets),
+    ads: activityValues(ads),
+  });
+}
+
+function upsertActivityEntity(target, id, candidate, parentFields) {
+  const existing = target.get(id);
+  if (existing) {
+    for (const field of parentFields) {
+      if (existing[field] !== candidate[field]) {
+        throw permanentError('Meta Ads activity hierarchy changed inside one report range', {
+          code: 'META_ADS_ACTIVITY_IDENTITY_DRIFT',
+          details: { entityId: id, field },
+        });
+      }
+    }
+  }
+  if (!existing || candidate.metricDate >= existing.metricDate) target.set(id, candidate);
+}
+
+function activityValues(values) {
+  return Object.freeze([...values.values()]
+    .sort((left, right) => left.id.localeCompare(right.id))
+    .map(({ metricDate: _metricDate, ...value }) => Object.freeze(value)));
+}
+
+function activityRowSortKey(row) {
+  return [
+    optionalText(row.date_start) ?? '',
+    optionalText(row.campaign_id) ?? '',
+    optionalText(row.adset_id) ?? '',
+    optionalText(row.ad_id) ?? '',
+    optionalText(row.publisher_platform) ?? '',
+    optionalText(row.campaign_name) ?? '',
+    optionalText(row.adset_name) ?? '',
+    optionalText(row.ad_name) ?? '',
+  ].join(':');
 }
 
 async function readAllStagedUnits({ workStore, workKey, expectedUnits, maximum }) {
@@ -556,7 +635,19 @@ function normalizeDateRange(value, required) {
   const since = requireDate(source.since, 'dateRange.since');
   const until = requireDate(source.until, 'dateRange.until');
   if (since > until) throw new TypeError('dateRange.since cannot be after dateRange.until');
+  if (required && inclusiveDateCount(since, until) > META_ADS_MAX_REPORT_RANGE_DAYS) {
+    throw permanentError('Meta Ads report range exceeds the approved latest-month boundary', {
+      code: 'META_ADS_REPORT_RANGE_TOO_LARGE',
+      details: { maximumDays: META_ADS_MAX_REPORT_RANGE_DAYS },
+    });
+  }
   return Object.freeze({ since, until });
+}
+
+function inclusiveDateCount(since, until) {
+  return Math.floor(
+    (Date.parse(`${until}T00:00:00Z`) - Date.parse(`${since}T00:00:00Z`)) / 86_400_000,
+  ) + 1;
 }
 
 function requireOperation(value) {
