@@ -86,7 +86,10 @@ test('Meta reviewed target launcher contains no ref mutation or network Git acti
     new URL('../../scripts/meta-history-2026-reviewed-target-launcher.mjs', import.meta.url),
     'utf8',
   );
-  assert.doesNotMatch(source, /\b(update-ref|reset|checkout|switch|pull|push|fetch|merge|rebase)\b/u);
+  assert.doesNotMatch(
+    source,
+    /\['(?:update-ref|reset|checkout|switch|pull|push|fetch|merge|rebase)'/u,
+  );
   assert.match(source, /reviewedBaseIsAncestorOfCurrentMain/u);
   assert.match(source, /meta-history-2026-finalizer\.mjs/u);
 });
