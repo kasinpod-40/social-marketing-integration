@@ -5,6 +5,9 @@ import {
 } from '../../packages/config/src/meta-k2-exact-recovery-contract.js';
 import { permanentError } from '../../packages/shared/src/errors/runtime-error.js';
 import {
+  META_D1_ONLY_REQUIRED_FALSE_FLAGS,
+} from './meta-d1-only-rollout-operator.js';
+import {
   validateMetaK2RecoveryEvidenceSequence,
 } from './meta-k2-partial-staging-finalizer.js';
 
@@ -38,6 +41,37 @@ export function resolveMetaK2ExactRecoveryUrl(input = {}) {
     );
   }
   return value.toString();
+}
+
+/** Materialize the reviewed non-secret source mappings and the complete all-false safety baseline. */
+export function injectMetaK2ReviewedRuntimeConfig(configText, env = {}) {
+  const source = injectMetaK2ReviewedSourceMappings(configText, env);
+  let text = source.configText;
+  for (const flag of META_D1_ONLY_REQUIRED_FALSE_FLAGS) {
+    text = upsertJsoncBoolean(text, flag, false);
+  }
+  const invalidFlags = META_D1_ONLY_REQUIRED_FALSE_FLAGS.filter((flag) => {
+    const values = readJsoncBooleans(text, flag);
+    return values.length === 0 || values.some((value) => value !== false);
+  });
+  if (invalidFlags.length > 0) {
+    throw launcherError(
+      'Meta K2 reviewed launcher could not materialize the complete all-false baseline',
+      'META_K2_REVIEWED_LAUNCHER_SAFE_BASELINE_INVALID',
+      { invalidFlags },
+    );
+  }
+  return Object.freeze({
+    configText: text,
+    sourceMappingKeys: source.materializedKeys,
+    sourceMappingFingerprint: source.sourceMappingFingerprint,
+    allFalseFlagCount: META_D1_ONLY_REQUIRED_FALSE_FLAGS.length,
+    allFalseFlagFingerprint: sha256(stableJson(META_D1_ONLY_REQUIRED_FALSE_FLAGS)),
+    materializedKeys: Object.freeze([
+      ...source.materializedKeys,
+      ...META_D1_ONLY_REQUIRED_FALSE_FLAGS,
+    ]),
+  });
 }
 
 /** Materialize only the reviewed non-secret Meta source mappings into the temporary Wrangler config. */
@@ -189,14 +223,37 @@ function readJsoncString(text, key) {
   return text.match(pattern)?.[1]?.trim() ?? null;
 }
 
+function readJsoncBooleans(text, key) {
+  const pattern = new RegExp(
+    `["']?${escapeRegex(key)}["']?\\s*:\\s*(true|false)`,
+    'gu',
+  );
+  return [...text.matchAll(pattern)].map((match) => match[1] === 'true');
+}
+
 function upsertJsoncString(text, key, value) {
   const pattern = new RegExp(
     `(["']?${escapeRegex(key)}["']?\\s*:\\s*)["'][^"']*["']`,
-    'u',
+    'gu',
   );
   if (pattern.test(text)) {
     return text.replace(pattern, (_match, prefix) => `${prefix}${JSON.stringify(value)}`);
   }
+  return insertIntoVars(text, key, JSON.stringify(value));
+}
+
+function upsertJsoncBoolean(text, key, value) {
+  const pattern = new RegExp(
+    `(["']?${escapeRegex(key)}["']?\\s*:\\s*)(true|false)`,
+    'gu',
+  );
+  if (pattern.test(text)) {
+    return text.replace(pattern, (_match, prefix) => `${prefix}${value}`);
+  }
+  return insertIntoVars(text, key, String(value));
+}
+
+function insertIntoVars(text, key, serializedValue) {
   const varsPattern = /(["']?vars["']?\s*:\s*\{)/u;
   if (!varsPattern.test(text)) {
     throw launcherError(
@@ -206,7 +263,7 @@ function upsertJsoncString(text, key, value) {
   }
   return text.replace(
     varsPattern,
-    (_match, prefix) => `${prefix}\n    ${JSON.stringify(key)}: ${JSON.stringify(value)},`,
+    (_match, prefix) => `${prefix}\n    ${JSON.stringify(key)}: ${serializedValue},`,
   );
 }
 
