@@ -105,8 +105,12 @@ const RESTORE_REUSE_PHASES = Object.freeze([
   'verify-restore',
 ]);
 const D1_PHASE = 'meta_end_to_end_d1_write_v1';
+const SOURCE_STAGING_PHASE = 'meta_end_to_end_source_staging_v1';
 const LARK_PHASE = 'meta_end_to_end_lark_write_v1';
 const COMPLETION_PHASE = 'meta_end_to_end_completion_v1';
+const META_ADS_SOURCE_STAGES = new Set([
+  'account', 'campaigns', 'ad_sets', 'ads', 'creatives', 'daily', 'complete',
+]);
 
 export function parseMetaD1OnlyOperatorArgs(args = []) {
   let phase = 'plan';
@@ -311,10 +315,18 @@ export function loadMetaD1OnlyTarget(env = {}) {
     terminalRecovery: env.MKT_META_D1_ONLY_TERMINAL_RECOVERY
       === 'RECOVER_EXACT_FAILED_META_OPERATION',
     orphanedRunningRecovery: env.MKT_META_D1_ONLY_ORPHANED_RUNNING_RECOVERY === 'true',
+    partialStagingRecovery: env.MKT_META_D1_ONLY_PARTIAL_STAGING_RECOVERY
+      === 'RECOVER_EXACT_PARTIAL_META_ADS_STAGING',
   };
-  if (base.terminalRecovery && base.orphanedRunningRecovery) {
+  const recoveryModeCount = [
+    base.terminalRecovery,
+    base.orphanedRunningRecovery,
+    base.partialStagingRecovery,
+  ].filter(Boolean).length;
+  if (recoveryModeCount > 1
+    || (base.partialStagingRecovery && base.connectorKey !== 'meta_ads')) {
     throw operatorError(
-      'Meta D1-only recovery modes are mutually exclusive',
+      'Meta D1-only recovery mode is invalid for this target',
       'META_D1_ONLY_RECOVERY_MODE_INVALID',
     );
   }
@@ -411,12 +423,21 @@ export function buildMetaD1OnlySnapshotSql(target = {}) {
       (SELECT started_at FROM sync_runs WHERE sync_run_id = ${syncRunId}) AS sync_run_started_at,
       (SELECT finished_at FROM sync_runs WHERE sync_run_id = ${syncRunId}) AS sync_run_finished_at,
       (SELECT error_code FROM sync_runs WHERE sync_run_id = ${syncRunId}) AS sync_run_error_code,
+      (SELECT records_written FROM sync_runs WHERE sync_run_id = ${syncRunId}) AS sync_run_records_written,
       (SELECT updated_at FROM sync_runs WHERE sync_run_id = ${syncRunId}) AS sync_run_updated_at,
       (SELECT status FROM sync_work_runs WHERE work_key = ${workKey}) AS work_status,
       (SELECT lifecycle_status FROM sync_work_runs WHERE work_key = ${workKey}) AS work_lifecycle_status,
       (SELECT completed_at FROM sync_work_runs WHERE work_key = ${workKey}) AS work_completed_at,
       (SELECT complete FROM sync_work_phases WHERE work_key = ${workKey} AND phase = '${D1_PHASE}') AS d1_phase_complete,
       (SELECT state_json FROM sync_work_phases WHERE work_key = ${workKey} AND phase = '${D1_PHASE}') AS d1_state_json,
+      (SELECT updated_at FROM sync_work_phases WHERE work_key = ${workKey} AND phase = '${D1_PHASE}') AS d1_phase_updated_at,
+      (SELECT complete FROM sync_work_phases WHERE work_key = ${workKey} AND phase = '${SOURCE_STAGING_PHASE}') AS source_staging_complete,
+      (SELECT updated_at FROM sync_work_phases WHERE work_key = ${workKey} AND phase = '${SOURCE_STAGING_PHASE}') AS source_staging_updated_at,
+      (SELECT json_extract(state_json, '$.stage') FROM sync_work_phases WHERE work_key = ${workKey} AND phase = '${SOURCE_STAGING_PHASE}') AS source_staging_stage,
+      (SELECT json_extract(state_json, '$.unitCount') FROM sync_work_phases WHERE work_key = ${workKey} AND phase = '${SOURCE_STAGING_PHASE}') AS source_staging_unit_count,
+      (SELECT json_extract(state_json, '$.rowCount') FROM sync_work_phases WHERE work_key = ${workKey} AND phase = '${SOURCE_STAGING_PHASE}') AS source_staging_row_count,
+      (SELECT json_extract(state_json, '$.pageState.pageNumber') FROM sync_work_phases WHERE work_key = ${workKey} AND phase = '${SOURCE_STAGING_PHASE}') AS source_staging_page_number,
+      (SELECT json_extract(state_json, '$.contentIndex') FROM sync_work_phases WHERE work_key = ${workKey} AND phase = '${SOURCE_STAGING_PHASE}') AS source_staging_content_index,
       (SELECT COUNT(*) FROM sync_work_phases WHERE work_key = ${workKey} AND phase = '${LARK_PHASE}') AS lark_phase_count,
       (SELECT COUNT(*) FROM sync_work_phases WHERE work_key = ${workKey} AND phase = '${COMPLETION_PHASE}') AS completion_phase_count,
       (SELECT COUNT(*) FROM sync_locks WHERE owner_id = ${syncRunId} AND expires_at > (unixepoch() * 1000)) AS active_lock_count,
@@ -442,7 +463,14 @@ export function buildMetaD1OnlySnapshotSql(target = {}) {
 
 export function normalizeMetaD1OnlySnapshot(value = {}) {
   if (isNormalizedSnapshot(value)) {
-    return deepFreeze({ ...value, targetCounts: deepFreeze({ ...value.targetCounts }), operationCounts: deepFreeze({ ...value.operationCounts }) });
+    return deepFreeze({
+      ...value,
+      syncRunRecordsWritten: count(value.syncRunRecordsWritten),
+      d1PhaseUpdatedAt: nullableNumber(value.d1PhaseUpdatedAt),
+      sourceStaging: normalizeSourceStaging(value.sourceStaging),
+      targetCounts: deepFreeze({ ...value.targetCounts }),
+      operationCounts: deepFreeze({ ...value.operationCounts }),
+    });
   }
   const d1State = parseNullableJson(value.d1_state_json, 'd1_state_json');
   return deepFreeze({
@@ -450,12 +478,23 @@ export function normalizeMetaD1OnlySnapshot(value = {}) {
     syncRunStartedAt: nullableNumber(value.sync_run_started_at),
     syncRunFinishedAt: nullableNumber(value.sync_run_finished_at),
     syncRunErrorCode: optionalText(value.sync_run_error_code),
+    syncRunRecordsWritten: count(value.sync_run_records_written),
     syncRunUpdatedAt: nullableNumber(value.sync_run_updated_at),
     workStatus: optionalText(value.work_status),
     workLifecycleStatus: optionalText(value.work_lifecycle_status),
     workCompletedAt: nullableNumber(value.work_completed_at),
     d1PhaseComplete: Number(value.d1_phase_complete ?? 0) === 1,
     d1State,
+    d1PhaseUpdatedAt: nullableNumber(value.d1_phase_updated_at),
+    sourceStaging: normalizeSourceStaging({
+      complete: Number(value.source_staging_complete ?? 0) === 1,
+      updatedAt: value.source_staging_updated_at,
+      stage: value.source_staging_stage,
+      unitCount: value.source_staging_unit_count,
+      rowCount: value.source_staging_row_count,
+      pageNumber: value.source_staging_page_number,
+      contentIndex: value.source_staging_content_index,
+    }),
     larkPhaseCount: count(value.lark_phase_count),
     completionPhaseCount: count(value.completion_phase_count),
     activeLockCount: count(value.active_lock_count),
@@ -487,6 +526,47 @@ export function classifyMetaD1OnlyCompletion(snapshot = {}) {
   const value = normalizeMetaD1OnlySnapshot(snapshot);
   const complete = value.syncRunStatus === 'success' && value.syncRunFinishedAt !== null && value.syncRunErrorCode === null && value.d1PhaseComplete === true && value.larkPhaseCount === 0 && value.completionPhaseCount === 0 && value.activeLockCount === 0 && value.coverageRunCount > 0 && value.invalidCoverageCount === 0 && value.workLifecycleStatus === 'active' && value.workCompletedAt === null;
   return deepFreeze({ complete, snapshot: value, reason: complete ? 'd1_complete_lark_gate_disabled' : 'incomplete_or_invalid' });
+}
+
+export function classifyMetaD1OnlyActiveProgressWindow(snapshotInput = {}, options = {}) {
+  const snapshot = normalizeMetaD1OnlySnapshot(snapshotInput);
+  const elapsedPolls = Number(options.elapsedPolls);
+  const hardMaxPolls = Number(options.hardMaxPolls);
+  const progressLeaseMs = Number(options.progressLeaseMs);
+  const latestActivityAt = Math.max(
+    snapshot.sourceStaging.updatedAt ?? 0,
+    snapshot.d1PhaseUpdatedAt ?? 0,
+    snapshot.syncRunUpdatedAt ?? 0,
+    snapshot.queueOperationUpdatedAt ?? 0,
+  );
+  const progressAgeMs = snapshot.observedAt - latestActivityAt;
+  const accepted = options.connectorKey === 'meta_ads'
+    && Number.isSafeInteger(elapsedPolls)
+    && Number.isSafeInteger(hardMaxPolls)
+    && Number.isSafeInteger(progressLeaseMs)
+    && elapsedPolls < hardMaxPolls
+    && progressLeaseMs > 0
+    && latestActivityAt > 0
+    && progressAgeMs >= 0
+    && progressAgeMs <= progressLeaseMs
+    && snapshot.sourceStaging.unitCount > 0
+    && META_ADS_SOURCE_STAGES.has(snapshot.sourceStaging.stage)
+    && ['running', 'success'].includes(snapshot.syncRunStatus)
+    && snapshot.syncRunErrorCode === null
+    && snapshot.workStatus === 'active'
+    && snapshot.workLifecycleStatus === 'active'
+    && snapshot.workCompletedAt === null
+    && snapshot.d1PhaseComplete === false
+    && snapshot.larkPhaseCount === 0
+    && snapshot.completionPhaseCount === 0
+    && snapshot.invalidCoverageCount === 0;
+  return deepFreeze({
+    accepted,
+    latestActivityAt: latestActivityAt || null,
+    progressAgeMs: latestActivityAt > 0 ? progressAgeMs : null,
+    remainingLeaseMs: accepted ? progressLeaseMs - progressAgeMs : 0,
+    snapshot,
+  });
 }
 
 export function isMetaRemoteReadTransientError(error = {}) {
@@ -598,6 +678,66 @@ export function validateMetaD1OnlyOrphanedRunningStability(
   return deepFreeze({ accepted: true, elapsedMs, snapshot: after.snapshot });
 }
 
+export function classifyMetaD1OnlyPartialStagingRecoveryBaseline(snapshotInput = {}) {
+  const snapshot = normalizeMetaD1OnlySnapshot(snapshotInput);
+  const noOperationWrites = Object.values(snapshot.operationCounts)
+    .every((value) => value === 0);
+  const latestActivityAt = Math.max(
+    snapshot.sourceStaging.updatedAt ?? 0,
+    snapshot.syncRunUpdatedAt ?? 0,
+    snapshot.queueOperationUpdatedAt ?? 0,
+  );
+  const accepted = snapshot.syncRunStatus === 'success'
+    && snapshot.syncRunStartedAt !== null
+    && snapshot.syncRunFinishedAt !== null
+    && snapshot.syncRunErrorCode === null
+    && snapshot.syncRunRecordsWritten === 0
+    && snapshot.workStatus === 'active'
+    && snapshot.workLifecycleStatus === 'active'
+    && snapshot.workCompletedAt === null
+    && snapshot.sourceStaging.complete === false
+    && META_ADS_SOURCE_STAGES.has(snapshot.sourceStaging.stage)
+    && snapshot.sourceStaging.stage !== 'complete'
+    && snapshot.sourceStaging.updatedAt !== null
+    && snapshot.sourceStaging.unitCount > 0
+    && snapshot.sourceStaging.rowCount > 0
+    && snapshot.d1PhaseComplete === false
+    && snapshot.d1PhaseUpdatedAt === null
+    && snapshot.larkPhaseCount === 0
+    && snapshot.completionPhaseCount === 0
+    && snapshot.activeLockCount === 0
+    && snapshot.queueOperationAttempts === 1
+    && snapshot.mainQueueAttempts >= 1
+    && snapshot.coverageRunCount === 0
+    && snapshot.invalidCoverageCount === 0
+    && noOperationWrites
+    && latestActivityAt > 0
+    && snapshot.observedAt - latestActivityAt >= 16 * 60 * 1000;
+  return deepFreeze({ accepted, latestActivityAt, snapshot });
+}
+
+export function validateMetaD1OnlyPartialStagingStability(
+  beforeInput = {},
+  afterInput = {},
+) {
+  const before = classifyMetaD1OnlyPartialStagingRecoveryBaseline(beforeInput);
+  const after = classifyMetaD1OnlyPartialStagingRecoveryBaseline(afterInput);
+  const elapsedMs = after.snapshot.observedAt - before.snapshot.observedAt;
+  const stableBefore = { ...before.snapshot, observedAt: 0 };
+  const stableAfter = { ...after.snapshot, observedAt: 0 };
+  if (!before.accepted
+    || !after.accepted
+    || elapsedMs < 30_000
+    || stableJson(stableBefore) !== stableJson(stableAfter)) {
+    throw operatorError(
+      'Meta D1-only partial staging changed during the stability window',
+      'META_D1_ONLY_PARTIAL_STAGING_PROGRESS_OBSERVED',
+      { elapsedMs },
+    );
+  }
+  return deepFreeze({ accepted: true, elapsedMs, snapshot: after.snapshot });
+}
+
 export function createMetaD1OnlyEvidence(input = {}) {
   const evidence = {
     phase: requirePhase(input.phase),
@@ -657,6 +797,7 @@ function safeTarget(target) {
     workKey: target.workKey, syncRunId: target.syncRunId,
     terminalRecovery: target.terminalRecovery === true,
     orphanedRunningRecovery: target.orphanedRunningRecovery === true,
+    ...(target.partialStagingRecovery === true ? { partialStagingRecovery: true } : {}),
   };
 }
 function confirmation(envName, value) { return Object.freeze({ envName, value }); }
@@ -786,6 +927,18 @@ function sanitizeEvidenceValue(value) {
 }
 function isNormalizedSnapshot(value) {
   return Boolean(value && typeof value === 'object' && typeof value.d1PhaseComplete === 'boolean' && value.targetCounts && typeof value.targetCounts === 'object' && value.operationCounts && typeof value.operationCounts === 'object');
+}
+function normalizeSourceStaging(value = {}) {
+  const source = value && typeof value === 'object' ? value : {};
+  return deepFreeze({
+    complete: source.complete === true || Number(source.complete ?? 0) === 1,
+    updatedAt: nullableNumber(source.updatedAt),
+    stage: optionalText(source.stage),
+    unitCount: count(source.unitCount),
+    rowCount: count(source.rowCount),
+    pageNumber: count(source.pageNumber),
+    contentIndex: count(source.contentIndex),
+  });
 }
 function subtractCounts(after, before) { return deepFreeze(Object.fromEntries(Object.keys(after).map((key) => [key, after[key] - before[key]]))); }
 function parseNullableJson(value, fieldName) {

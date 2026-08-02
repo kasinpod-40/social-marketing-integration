@@ -25,6 +25,7 @@ import {
   buildMetaD1OnlyJob,
   buildMetaD1OnlySchemaSql,
   buildMetaD1OnlySnapshotSql,
+  classifyMetaD1OnlyActiveProgressWindow,
   classifyMetaD1OnlyCompletion,
   compareMetaD1OnlySnapshots,
   createMetaD1OnlyEvidence,
@@ -38,6 +39,7 @@ import {
   validateMetaD1OnlyContinuationRepositoryState,
   validateMetaD1OnlyEvidenceSequence,
   validateMetaD1OnlyOrphanedRunningStability,
+  validateMetaD1OnlyPartialStagingStability,
   validateMetaD1OnlyReusableRestoreSequence,
   validateMetaD1OnlySummarySequence,
   validateMetaD1OnlyTerminalRecoveryBaseline,
@@ -267,8 +269,18 @@ async function runPreflight(loaded) {
         })(),
       )
     : null;
+  const partialStagingRecovery = target.partialStagingRecovery
+    ? validateMetaD1OnlyPartialStagingStability(
+        baseline,
+        await (async () => {
+          await sleep(30_000);
+          return readSnapshot(loaded);
+        })(),
+      )
+    : null;
   if (!target.terminalRecovery
     && !target.orphanedRunningRecovery
+    && !target.partialStagingRecovery
     && (baseline.syncRunStatus !== null
       || baseline.workStatus !== null
       || baseline.activeLockCount !== 0
@@ -288,9 +300,12 @@ async function runPreflight(loaded) {
     pendingMigrations,
     requiredSecretNamePresent: true,
     requiredTableCount: META_D1_ONLY_REQUIRED_TABLES.length,
-    baseline: orphanedRunningRecovery?.snapshot ?? baseline,
+    baseline: partialStagingRecovery?.snapshot
+      ?? orphanedRunningRecovery?.snapshot
+      ?? baseline,
     terminalRecovery: terminalRecovery?.accepted === true,
     orphanedRunningRecovery: orphanedRunningRecovery?.accepted === true,
+    partialStagingRecovery: partialStagingRecovery?.accepted === true,
     providerRequests: 0,
     remoteMutationCount: 0,
   };
@@ -463,7 +478,8 @@ async function verifyInitialD1Only(loaded) {
   return {
     comparison: compareMetaD1OnlySnapshots(before, after, {
       terminalRecovery: loaded.target.terminalRecovery
-        || loaded.target.orphanedRunningRecovery,
+        || loaded.target.orphanedRunningRecovery
+        || loaded.target.partialStagingRecovery,
     }),
     snapshotAfter: after,
     larkMutationCount: 0,
@@ -483,16 +499,47 @@ async function verifyIdempotentRerun(loaded) {
 
 async function pollForD1Completion(loaded) {
   const maxPolls = positiveInteger(process.env.MKT_META_D1_ONLY_VERIFY_MAX_POLLS, 120);
+  const hardMaxPolls = positiveInteger(
+    process.env.MKT_META_D1_ONLY_VERIFY_ACTIVE_PROGRESS_HARD_MAX_POLLS,
+    maxPolls,
+  );
+  if (hardMaxPolls < maxPolls) {
+    throw operatorFailure(
+      'Meta D1-only active-progress hard polling limit is below the base limit',
+      'META_D1_ONLY_POLLING_LIMIT_INVALID',
+    );
+  }
+  const progressLeasePolls = positiveInteger(
+    process.env.MKT_META_D1_ONLY_VERIFY_ACTIVE_PROGRESS_LEASE_POLLS,
+    120,
+  );
   const intervalMs = positiveInteger(process.env.MKT_META_D1_ONLY_VERIFY_POLL_INTERVAL_MS, 5_000);
+  const progressLeaseMs = progressLeasePolls * intervalMs;
+  let extensionLeaseDeadline = 0;
   let snapshot;
-  for (let index = 0; index < maxPolls; index += 1) {
+  for (let index = 0; index < hardMaxPolls; index += 1) {
     snapshot = await readPollingSnapshot(loaded);
     if (!snapshot) {
-      if (index + 1 < maxPolls) await sleep(intervalMs);
+      const insideBaseWindow = index + 1 < maxPolls;
+      const insideActiveLease = Date.now() < extensionLeaseDeadline;
+      if (!insideBaseWindow && !insideActiveLease) break;
+      await sleep(intervalMs);
       continue;
     }
     if (classifyMetaD1OnlyCompletion(snapshot).complete) return snapshot;
-    if (index + 1 < maxPolls) await sleep(intervalMs);
+    const elapsedPolls = index + 1;
+    const activeProgress = classifyMetaD1OnlyActiveProgressWindow(snapshot, {
+      connectorKey: loaded.target.connectorKey,
+      elapsedPolls,
+      hardMaxPolls,
+      progressLeaseMs,
+    });
+    if (activeProgress.accepted) {
+      extensionLeaseDeadline = Date.now() + activeProgress.remainingLeaseMs;
+    }
+    const insideBaseWindow = elapsedPolls < maxPolls;
+    if (!insideBaseWindow && !activeProgress.accepted) break;
+    await sleep(intervalMs);
   }
   const error = operatorFailure(
     'Bounded verification did not observe the accepted Meta D1-only boundary',

@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased — Meta Ads Active-progress D1 Verification — 2026-08-02
+
+### Reliability
+
+- Added an explicit same-operation recovery guard for stale, stable Meta Ads partial source staging with
+  zero D1/Coverage/Business/Lark writes and no active lock.
+- Added sanitized source/D1 phase progress metadata without persisting source cursors, content identities or
+  raw Provider payloads.
+- Extended the base D1 verifier only while exact durable activity remains fresh, with a configurable progress
+  lease and mandatory hard poll cap.
+- Kept recovery modes mutually exclusive and target-fingerprint-bound.
+
+### Safety
+
+- Stale progress, terminal errors, invalid Coverage, Lark/full-completion phases, non-Ads targets and the hard
+  cap all stop fail-closed through the existing all-false restore path.
+- Repository implementation makes no Remote call, deployment, Queue send, D1/Lark write, Schedule or Production
+  change; the current Worker remains verified all-false until exact-head CI passes.
+
 ## Unreleased — Chatwoot Initial Terminal Failure Recovery — 2026-08-01
 
 ### Reliability

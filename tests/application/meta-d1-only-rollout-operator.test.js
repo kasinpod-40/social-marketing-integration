@@ -10,8 +10,10 @@ import {
   buildMetaD1OnlyJob,
   buildMetaD1OnlySchemaSql,
   buildMetaD1OnlySnapshotSql,
+  classifyMetaD1OnlyActiveProgressWindow,
   classifyMetaD1OnlyCompletion,
   classifyMetaD1OnlyOrphanedRunningRecoveryBaseline,
+  classifyMetaD1OnlyPartialStagingRecoveryBaseline,
   compareMetaD1OnlySnapshots,
   createMetaD1OnlyEvidence,
   isMetaRemoteReadTransientError,
@@ -20,6 +22,7 @@ import {
   validateMetaD1OnlyContinuationRepositoryState,
   validateMetaD1OnlyEvidenceSequence,
   validateMetaD1OnlyOrphanedRunningStability,
+  validateMetaD1OnlyPartialStagingStability,
   validateMetaD1OnlyReusableRestoreSequence,
   validateMetaD1OnlySummarySequence,
   validateMetaD1OnlyTerminalRecoveryBaseline,
@@ -182,11 +185,26 @@ test('target loader creates exact stable identities for all four scopes', () => 
   });
   assert.equal(orphaned.orphanedRunningRecovery, true);
   assert.notEqual(orphaned.targetFingerprint, k2.targetFingerprint);
+  const partialStaging = loadMetaD1OnlyTarget({
+    ...targetEnv('chemistry_k2'),
+    MKT_META_D1_ONLY_PARTIAL_STAGING_RECOVERY:
+      'RECOVER_EXACT_PARTIAL_META_ADS_STAGING',
+  });
+  assert.equal(partialStaging.partialStagingRecovery, true);
+  assert.notEqual(partialStaging.targetFingerprint, k2.targetFingerprint);
   assert.throws(
     () => loadMetaD1OnlyTarget({
       ...targetEnv('chemistry_k2'),
       MKT_META_D1_ONLY_TERMINAL_RECOVERY: 'RECOVER_EXACT_FAILED_META_OPERATION',
       MKT_META_D1_ONLY_ORPHANED_RUNNING_RECOVERY: 'true',
+    }),
+    (error) => error.code === 'META_D1_ONLY_RECOVERY_MODE_INVALID',
+  );
+  assert.throws(
+    () => loadMetaD1OnlyTarget({
+      ...targetEnv('facebook'),
+      MKT_META_D1_ONLY_PARTIAL_STAGING_RECOVERY:
+        'RECOVER_EXACT_PARTIAL_META_ADS_STAGING',
     }),
     (error) => error.code === 'META_D1_ONLY_RECOVERY_MODE_INVALID',
   );
@@ -294,12 +312,16 @@ test('schema and snapshot SQL are scoped and contain no Lark write path', () => 
 
   const snapshotSql = buildMetaD1OnlySnapshotSql(target('chemistry_k3'));
   assert.match(snapshotSql, /meta_end_to_end_d1_write_v1/u);
+  assert.match(snapshotSql, /meta_end_to_end_source_staging_v1/u);
   assert.match(snapshotSql, /meta_end_to_end_lark_write_v1/u);
   assert.match(snapshotSql, /meta_end_to_end_completion_v1/u);
   assert.match(snapshotSql, /invalid_coverage_count/u);
   assert.match(snapshotSql, /sync_run_updated_at/u);
   assert.match(snapshotSql, /queue_operation_updated_at/u);
   assert.match(snapshotSql, /observed_at/u);
+  assert.match(snapshotSql, /source_staging_unit_count/u);
+  assert.match(snapshotSql, /source_staging_row_count/u);
+  assert.doesNotMatch(snapshotSql, /visitedCursors|contentIds|sourceWatermark/u);
   assert.match(snapshotSql, /meta:meta_ads:chemistry_k3:meta-d1-chemistry_k3/u);
 });
 
@@ -420,6 +442,105 @@ test('orphaned running recovery requires expired activity and a stable 30-second
     }),
     (error) => error.code === 'META_D1_ONLY_ORPHANED_RUNNING_PROGRESS_OBSERVED',
   );
+});
+
+test('partial Meta Ads staging recovery requires stale zero-write state and stable progress', () => {
+  const observedAt = 1785649200000;
+  const before = {
+    ...emptySnapshot(),
+    sync_run_status: 'success',
+    sync_run_started_at: observedAt - (30 * 60 * 1000),
+    sync_run_finished_at: observedAt - (20 * 60 * 1000),
+    sync_run_updated_at: observedAt - (20 * 60 * 1000),
+    sync_run_records_written: 0,
+    work_status: 'active',
+    work_lifecycle_status: 'active',
+    source_staging_complete: 0,
+    source_staging_updated_at: observedAt - (20 * 60 * 1000),
+    source_staging_stage: 'ads',
+    source_staging_unit_count: 66,
+    source_staging_row_count: 6406,
+    source_staging_page_number: 22,
+    queue_operation_attempts: 1,
+    main_queue_attempts: 69,
+    queue_operation_updated_at: observedAt - (16 * 60 * 1000),
+    observed_at: observedAt,
+  };
+  assert.equal(
+    classifyMetaD1OnlyPartialStagingRecoveryBaseline(before).accepted,
+    true,
+  );
+  const after = { ...before, observed_at: observedAt + 30_000 };
+  assert.equal(
+    validateMetaD1OnlyPartialStagingStability(before, after).accepted,
+    true,
+  );
+  for (const invalid of [
+    { source_staging_complete: 1, source_staging_stage: 'complete' },
+    { sync_run_records_written: 1 },
+    { coverage_run_count: 1 },
+    { operation_ads_entity_count: 1 },
+    { active_lock_count: 1 },
+  ]) {
+    assert.equal(
+      classifyMetaD1OnlyPartialStagingRecoveryBaseline({ ...before, ...invalid }).accepted,
+      false,
+    );
+  }
+  assert.throws(
+    () => validateMetaD1OnlyPartialStagingStability(before, {
+      ...after,
+      source_staging_unit_count: 67,
+    }),
+    (error) => error.code === 'META_D1_ONLY_PARTIAL_STAGING_PROGRESS_OBSERVED',
+  );
+});
+
+test('Meta Ads verification extends only for fresh exact durable progress within hard bound', () => {
+  const observedAt = 1785649200000;
+  const progressing = {
+    ...emptySnapshot(),
+    sync_run_status: 'success',
+    sync_run_error_code: null,
+    sync_run_updated_at: observedAt - 30_000,
+    work_status: 'active',
+    work_lifecycle_status: 'active',
+    source_staging_complete: 0,
+    source_staging_updated_at: observedAt - 15_000,
+    source_staging_stage: 'ads',
+    source_staging_unit_count: 66,
+    source_staging_row_count: 6406,
+    queue_operation_updated_at: observedAt - 10_000,
+    observed_at: observedAt,
+  };
+  const accepted = classifyMetaD1OnlyActiveProgressWindow(progressing, {
+    connectorKey: 'meta_ads',
+    elapsedPolls: 240,
+    hardMaxPolls: 5000,
+    progressLeaseMs: 10 * 60 * 1000,
+  });
+  assert.equal(accepted.accepted, true);
+  assert.equal(accepted.progressAgeMs, 10_000);
+  assert.equal(accepted.remainingLeaseMs, (10 * 60 * 1000) - 10_000);
+
+  for (const [snapshot, options] of [
+    [progressing, { connectorKey: 'instagram', elapsedPolls: 240, hardMaxPolls: 5000 }],
+    [progressing, { connectorKey: 'meta_ads', elapsedPolls: 5000, hardMaxPolls: 5000 }],
+    [{ ...progressing, observed_at: observedAt + (11 * 60 * 1000) }, {
+      connectorKey: 'meta_ads', elapsedPolls: 241, hardMaxPolls: 5000,
+    }],
+    [{ ...progressing, lark_phase_count: 1 }, {
+      connectorKey: 'meta_ads', elapsedPolls: 241, hardMaxPolls: 5000,
+    }],
+    [{ ...progressing, sync_run_error_code: 'META_PERMANENT_API_ERROR' }, {
+      connectorKey: 'meta_ads', elapsedPolls: 241, hardMaxPolls: 5000,
+    }],
+  ]) {
+    assert.equal(classifyMetaD1OnlyActiveProgressWindow(snapshot, {
+      progressLeaseMs: 10 * 60 * 1000,
+      ...options,
+    }).accepted, false);
+  }
 });
 
 test('bounded Meta polling retries child-process and network failures only', () => {
@@ -670,18 +791,31 @@ ${flags}
 function emptySnapshot() {
   return {
     sync_run_status: null,
+    sync_run_started_at: null,
     sync_run_finished_at: null,
     sync_run_error_code: null,
+    sync_run_records_written: 0,
+    sync_run_updated_at: null,
     work_status: null,
     work_lifecycle_status: null,
     work_completed_at: null,
     d1_phase_complete: 0,
     d1_state_json: null,
+    d1_phase_updated_at: null,
+    source_staging_complete: 0,
+    source_staging_updated_at: null,
+    source_staging_stage: null,
+    source_staging_unit_count: 0,
+    source_staging_row_count: 0,
+    source_staging_page_number: 0,
+    source_staging_content_index: 0,
     lark_phase_count: 0,
     completion_phase_count: 0,
     active_lock_count: 0,
     queue_operation_attempts: 0,
     main_queue_attempts: 0,
+    queue_operation_updated_at: null,
+    observed_at: 0,
     coverage_run_count: 0,
     invalid_coverage_count: 0,
     coverage_entity_count: 0,

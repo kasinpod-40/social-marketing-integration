@@ -3,7 +3,7 @@
 ## Status
 
 ```text
-TASK_STATUS                          = META_ADS_K2_LONG_STAGING_PARTIAL_SAFE_ALL_FALSE
+TASK_STATUS                          = META_ADS_K2_ACTIVE_PROGRESS_GUARD_LOCAL_PASS
 CURRENT_PROGRAM                      = ALL_META_END_TO_END_COMPLETION_V1
 BRANCH                               = integration/all-meta-end-to-end-completion-v1
 BASE_MAIN_SHA                        = 0d33be48f9b8ccaf6d8cea9a4c4ee31b1175b650
@@ -17,8 +17,8 @@ META_PROVIDER_REPLAY                 = FORBIDDEN_FOR_RETAINED_FACEBOOK_OPERATION
 META_D1_QUEUE_RESEND                 = FORBIDDEN_FOR_RETAINED_FACEBOOK_OPERATION
 SCHEDULE_WEBHOOK                     = DISABLED_REQUIRED
 PRODUCTION                           = BLOCKED
-META_LATEST_STOP                     = K2_STAGE_ADS_PARTIAL_66_UNITS_6406_ROWS_SAFE_ALL_FALSE
-NEXT_STEP                            = K2_ADD_ACTIVE_PROGRESS_VERIFY_WINDOW_THEN_GUARDED_SAME_OPERATION_RECOVERY
+META_LATEST_STOP                     = K2_PARTIAL_STAGING_RECOVERY_GUARD_LOCAL_PASS_SAFE_ALL_FALSE
+NEXT_STEP                            = COMMIT_PUSH_EXACT_HEAD_CI_THEN_K2_GUARDED_SAME_OPERATION_RECOVERY
 ```
 
 ## Objective
@@ -288,3 +288,17 @@ verifier จบก่อน long-running staging เสร็จ แล้ว co
 contract เป็น `META_END_TO_END_GATES_DISABLED` ที่ main attempt 69 และเก็บ open DLQ ตาม forensic truth;
 operation-scoped Meta alert ไม่เพิ่ม. รอบถัดไปต้องแก้ verifier ให้ต่ออายุเฉพาะเมื่อ exact staging progress
 เดินจริงภายใน hard bound แล้วผ่าน exact-head tests/CI ก่อน guarded same-operation recovery; ห้าม blind resend.
+
+Implementation ปัจจุบันเพิ่ม explicit partial-staging recovery เฉพาะ Meta Ads ซึ่งต้องยืนยัน invocation-level
+Sync success แบบ zero-write, source phase incomplete ที่มี durable rows, ไม่มี D1 phase/Coverage/Business/Lark,
+lock 0, activity เกิน 16 นาที และ snapshot ทุก field คงที่อีก 30 วินาที. Recovery modes ทั้งสามแบบยัง mutually
+exclusive และ target fingerprint แยกกัน. Snapshot SQL อ่านเฉพาะ stage/count/update metadata; ไม่อ่าน cursor,
+content identity หรือ raw source payload.
+
+D1 verifier ใช้ base window เดิมและขยายเวลาเฉพาะเมื่อ exact Meta Ads Work ยัง active, Sync ไม่มี error,
+ไม่มี Lark/full-completion/invalid Coverage และ source/D1/Sync/Queue activity ยังสดภายใน progress lease.
+Extension มี explicit hard poll cap; stale progress, non-Ads target, terminal error หรือ hard cap หยุดแบบ
+fail-closed และเข้าสู่ all-false restore เดิม. Focused operator tests ผ่าน 23/23, Meta regressions 26/26,
+full `npm test`, Report reliability 101/101, `npm run check`, dependency audit 0 vulnerabilities,
+Wrangler deploy dry-run และ `git diff --check` ผ่าน. Repository implementation ยังไม่มี Remote action และ
+Worker คง verified all-false; ต้องผ่าน exact-head CI ก่อน recovery operation เดิม.
