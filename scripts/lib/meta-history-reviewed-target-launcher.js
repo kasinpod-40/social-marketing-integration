@@ -1,3 +1,4 @@
+import { realpathSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
 
 export const META_HISTORY_REVIEWED_BRANCH =
@@ -73,14 +74,17 @@ export function isPinnedOriginMainRead(args = []) {
 
 export function createMetaHistoryOneShotGitShim(input = {}) {
   const realGit = requireAbsolutePath(input.realGit, 'realGit');
-  const repositoryRoot = requireAbsolutePath(input.repositoryRoot, 'repositoryRoot');
+  const repositoryRoot = requireCanonicalDirectoryPath(
+    input.repositoryRoot,
+    'repositoryRoot',
+  );
   const markerPath = requireAbsolutePath(input.markerPath, 'markerPath');
   const reviewedBaseMainHead = requireSha(
     input.reviewedBaseMainHead,
     'reviewedBaseMainHead',
   );
 
-  return `#!/usr/bin/env node\n\nimport { spawnSync } from 'node:child_process';\nimport { openSync, closeSync } from 'node:fs';\nimport { resolve } from 'node:path';\n\nconst args = process.argv.slice(2);\nconst exactPinnedRead = args.length === 2\n  && args[0] === 'rev-parse'\n  && args[1] === 'origin/main'\n  && resolve(process.cwd()) === ${JSON.stringify(repositoryRoot)};\n\nif (exactPinnedRead) {\n  try {\n    const descriptor = openSync(${JSON.stringify(markerPath)}, 'wx', 0o600);\n    closeSync(descriptor);\n    process.stdout.write(${JSON.stringify(`${reviewedBaseMainHead}\n`)});\n    process.exit(0);\n  } catch (error) {\n    if (error?.code !== 'EEXIST') throw error;\n  }\n}\n\nconst result = spawnSync(${JSON.stringify(realGit)}, args, {\n  env: process.env,\n  stdio: 'inherit',\n});\nif (result.error) throw result.error;\nif (result.signal) process.kill(process.pid, result.signal);\nelse process.exitCode = result.status ?? 1;\n`;
+  return `#!/usr/bin/env node\n\nimport { spawnSync } from 'node:child_process';\nimport { openSync, closeSync, realpathSync } from 'node:fs';\nimport { resolve } from 'node:path';\n\nconst args = process.argv.slice(2);\nlet currentRoot = resolve(process.cwd());\ntry {\n  currentRoot = realpathSync.native(currentRoot);\n} catch {\n  // Missing or inaccessible cwd must delegate to real Git and fail naturally.\n}\nconst exactPinnedRead = args.length === 2\n  && args[0] === 'rev-parse'\n  && args[1] === 'origin/main'\n  && currentRoot === ${JSON.stringify(repositoryRoot)};\n\nif (exactPinnedRead) {\n  try {\n    const descriptor = openSync(${JSON.stringify(markerPath)}, 'wx', 0o600);\n    closeSync(descriptor);\n    process.stdout.write(${JSON.stringify(`${reviewedBaseMainHead}\n`)});\n    process.exit(0);\n  } catch (error) {\n    if (error?.code !== 'EEXIST') throw error;\n  }\n}\n\nconst result = spawnSync(${JSON.stringify(realGit)}, args, {\n  env: process.env,\n  stdio: 'inherit',\n});\nif (result.error) throw result.error;\nif (result.signal) process.kill(process.pid, result.signal);\nelse process.exitCode = result.status ?? 1;\n`;
 }
 
 function requireSha(value, fieldName) {
@@ -93,6 +97,19 @@ function requireSha(value, fieldName) {
     );
   }
   return text;
+}
+
+function requireCanonicalDirectoryPath(value, fieldName) {
+  const path = requireAbsolutePath(value, fieldName);
+  try {
+    return realpathSync.native(path);
+  } catch {
+    throw launcherError(
+      `${fieldName} must resolve to an existing directory`,
+      'META_HISTORY_2026_REVIEWED_TARGET_PATH_INVALID',
+      { fieldName },
+    );
+  }
 }
 
 function requireAbsolutePath(value, fieldName) {
