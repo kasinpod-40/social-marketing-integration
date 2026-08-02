@@ -315,6 +315,18 @@ test('polling waits for a new attempt and then surfaces terminal sync failure', 
     classifyMetaLarkPollingSnapshot(stale, current, 6).state,
     'pending',
   );
+  assert.equal(
+    classifyMetaLarkPollingSnapshot({ ...stale, main_queue_attempts: 6 }, current, 6, 123).state,
+    'pending',
+  );
+  assert.equal(
+    classifyMetaLarkPollingSnapshot({
+      ...stale,
+      sync_run_finished_at: 124,
+      main_queue_attempts: 6,
+    }, current, 6, 123).state,
+    'complete',
+  );
   const failed = {
     ...stale,
     sync_run_status: 'failed',

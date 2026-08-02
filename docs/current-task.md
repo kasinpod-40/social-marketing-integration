@@ -234,3 +234,10 @@ Read-only inventory ของ Select fields ทั้ง 7 Organic destinations 
 ครบ แต่ Canonical `MKT_Content` ใช้ shared taxonomy `live|post|reel|short|story|video`. Implementation รักษา
 RAW type เดิมและ map Canonical `image|carousel|status|link -> post`; `video|reel|story|live` คงค่าเดิม;
 unknown/other ถูก omit แทนการปลอม classification. Select field อื่นของ Organic write-set ตรง Live options แล้ว.
+
+Instagram Lark completion ผ่าน 7/7 destinations และ final reconciliation: RAW accounts/content/metrics
+`1/26/187`, Canonical account/account-daily/content/content-daily `1/1/26/26`, failed 0, D1/Coverage drift 0
+และ Provider request 0. Idempotent verifier เห็น attempt 50 และ completion เดิมจึงผ่านก่อน invocation นั้น
+เขียน Sync Run รอบใหม่; restore จึงตัด invocation หลังเริ่มและทำให้ late proof เห็น `running`/lock แทน success.
+Implementation แก้ polling ให้ completion หลัง resend ต้องเห็น `finished_at` ใหม่กว่าก่อนส่งด้วย ไม่ใช่เพียง
+attempt increment + durable completion เดิม; ห้าม restore จน invocation ใหม่ settle จริง.

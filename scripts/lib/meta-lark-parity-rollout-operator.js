@@ -486,7 +486,10 @@ export function classifyMetaLarkPollingSnapshot(
   if (value.mainQueueAttempts < attempts) {
     return deepFreeze({ state: 'pending', snapshot: value });
   }
-  if (classifyMetaLarkCompletion(value, target).complete) {
+  const newFinishedRunObserved = previousFinishedAt === null
+    || (value.syncRunFinishedAt !== null
+      && value.syncRunFinishedAt > Number(previousFinishedAt));
+  if (newFinishedRunObserved && classifyMetaLarkCompletion(value, target).complete) {
     return deepFreeze({ state: 'complete', snapshot: value });
   }
   const terminalFailureObserved = value.syncRunStatus === 'failed'
