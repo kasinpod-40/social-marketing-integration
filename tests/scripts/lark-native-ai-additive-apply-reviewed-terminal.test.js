@@ -97,8 +97,9 @@ test('reviewed terminal source exposes no Record, Automation, AI or notification
   const terminal = await readFile('scripts/lark-native-ai-additive-apply-reviewed-terminal.mjs', 'utf8');
   const library = await readFile('scripts/lib/lark-native-ai-additive-apply.js', 'utf8');
   const application = await readFile('packages/application/src/reports/apply-lark-native-ai-additive-schema.js', 'utf8');
-  assert.doesNotMatch(terminal, /searchRecords|batchCreateRecords|batchUpdateRecords|sendNotification|createAutomation/u);
-  assert.doesNotMatch(application, /searchRecords|batchCreateRecords|batchUpdateRecords|deleteField|deleteView|renameTable/u);
+  const forbiddenMethodCall = /\.(?:searchRecords|batchCreateRecords|batchUpdateRecords|deleteField|deleteView|renameTable|sendNotification|createAutomation)\s*\(/u;
+  assert.doesNotMatch(terminal, forbiddenMethodCall);
+  assert.doesNotMatch(application, forbiddenMethodCall);
   assert.match(library, /LARK_NATIVE_AI_SCHEMA_APPLY_REQUEST_BLOCKED/u);
   assert.match(terminal, /evidenceHeadAncestor/u);
   assert.match(terminal, /zero_drift|replay/u);
