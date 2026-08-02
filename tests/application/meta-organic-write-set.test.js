@@ -156,7 +156,7 @@ test('does not overwrite Organic latest metrics with null when content insights 
     platform: 'instagram',
     account_id: 'ig_fixture_001',
     account_name: 'Fixture Instagram',
-    account_type: 'business',
+    account_type: 'business_account',
     last_sync_at: FETCHED_AT,
   });
   assert.equal(writeSet.raw.organicAccounts[0].username, 'fixture.instagram');
@@ -241,4 +241,30 @@ test('keeps Instagram Provider identity in Canonical rows and account_key in D1 
     writeSet.d1.organicHistoryBatch.dailySnapshotRows[0].account_id,
     'chemistry_k_instagram',
   );
+});
+
+test('maps Instagram creator source classification to the shared canonical profile option', () => {
+  const writeSet = buildMetaOrganicWriteSet({
+    connectorKey: 'instagram',
+    accountId: 'ig_creator_001',
+    accountKey: 'chemistry_k_instagram',
+    customerProfile: 'chemistry_k',
+    customerKey: 'chemistry_k',
+    syncRunId: 'sync_meta_creator',
+    operationId: 'operation_meta_creator',
+    fetchedAt: FETCHED_AT,
+    accountResource: {
+      user_id: 'ig_creator_001',
+      id: 'scoped_creator_001',
+      username: 'fixture.creator',
+      name: 'Fixture Creator',
+      account_type: 'MEDIA_CREATOR',
+    },
+    contentResources: [],
+    contentInsights: [],
+    accountInsights: [],
+  });
+
+  assert.equal(writeSet.raw.organicAccounts[0].account_type, 'creator');
+  assert.equal(writeSet.canonical.accounts[0].account_type, 'profile');
 });

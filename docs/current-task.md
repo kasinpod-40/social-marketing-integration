@@ -221,3 +221,10 @@ RAW Lark contract (`values|total_value|scalar|other`). Worker restore/readback a
 records written = 0. Implementation map เฉพาะ Lark write-set ของ descriptor นี้เป็น `other`; ค่า metric ยังคง
 null และ original descriptor ยังคงอยู่ใน `source_payload_json`, ส่วน internal normalizer ยังรักษา
 `unavailable` เพื่อไม่ทำข้อมูลต้นทางสูญหาย.
+
+Attempt 40 ผ่าน RAW metric shape แล้วแต่หยุดก่อน Lark write ที่ canonical `MKT_Accounts.account_type`:
+internal Instagram classification เป็น `creator` ขณะที่ Live Shared table รองรับเฉพาะ
+`business_account|channel|page|profile`. Read-only Live inventory ยืนยัน records ปัจจุบันใช้ Facebook
+`page` และ YouTube `channel`. Implementation จึงรักษา RAW source classification เดิม แต่ map Canonical
+Instagram `business -> business_account`, `creator -> profile`, Facebook เป็น `page` และ omit unknown;
+ไม่มีการสร้าง Select option หรือเปลี่ยน Live schema.

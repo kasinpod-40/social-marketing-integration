@@ -146,7 +146,7 @@ export function buildMetaOrganicWriteSet(input = {}) {
     platform,
     account_id: accountId,
     account_name: accountNormalized.accountCandidate.accountName,
-    account_type: accountNormalized.accountCandidate.accountType,
+    account_type: canonicalAccountType(platform, accountNormalized.accountCandidate.accountType),
     last_sync_at: completedAt,
   });
 
@@ -399,6 +399,13 @@ function larkRawMetricRow(row, sourceTimezone) {
     response_shape: row.response_shape === 'unavailable' ? 'other' : row.response_shape,
     metric_date: dateOnlyToEpoch(row.metric_date, sourceTimezone),
   });
+}
+
+function canonicalAccountType(platform, sourceAccountType) {
+  if (platform === 'facebook') return 'page';
+  if (sourceAccountType === 'business') return 'business_account';
+  if (sourceAccountType === 'creator') return 'profile';
+  return null;
 }
 
 function dateOnlyInTimeZone(epochMs, timeZone) {
