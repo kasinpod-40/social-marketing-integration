@@ -477,6 +477,31 @@ export function classifyMetaLarkCompletion(snapshot = {}, target = {}) {
   });
 }
 
+export function validateMetaLarkCompletedStability(
+  beforeInput = {},
+  afterInput = {},
+  target = {},
+  minimumElapsedMs = 5_000,
+) {
+  const before = classifyMetaLarkCompletion(beforeInput, target);
+  const after = classifyMetaLarkCompletion(afterInput, target);
+  const elapsedMs = after.snapshot.observedAt - before.snapshot.observedAt;
+  const requiredElapsedMs = Math.max(0, Number(minimumElapsedMs) || 0);
+  const stableBefore = { ...before.snapshot, observedAt: 0 };
+  const stableAfter = { ...after.snapshot, observedAt: 0 };
+  if (!before.complete
+    || !after.complete
+    || elapsedMs < requiredElapsedMs
+    || stableJson(stableBefore) !== stableJson(stableAfter)) {
+    throw operatorError(
+      'Meta completed state changed during the stability window',
+      'META_LARK_COMPLETED_PROGRESS_OBSERVED',
+      { elapsedMs, requiredElapsedMs },
+    );
+  }
+  return deepFreeze({ accepted: true, elapsedMs, snapshot: after.snapshot });
+}
+
 export function classifyMetaLarkPostCompletionOrphan(snapshot = {}, target = {}) {
   const value = normalizeMetaLarkSnapshot(snapshot);
   const durable = classifyMetaLarkCompletion(value, target);

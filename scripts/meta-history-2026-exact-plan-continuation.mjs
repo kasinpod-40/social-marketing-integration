@@ -41,8 +41,8 @@ import {
   META_LARK_CONFIRMATIONS,
   META_LARK_OPERATOR_PHASES,
   buildMetaLarkSnapshotSql,
-  classifyMetaLarkCompletion,
   normalizeMetaLarkSnapshot,
+  validateMetaLarkCompletedStability,
   validateMetaD1OnlySummaryForLark,
 } from './lib/meta-lark-parity-rollout-operator.js';
 import {
@@ -438,16 +438,21 @@ function validatePendingOrLateFacebookBoundary(first, second) {
       operationId: target.operationId,
       connectorKey: 'facebook',
     };
-    const stable = JSON.stringify(firstNormalized) === JSON.stringify(secondNormalized);
-    if (!stable
-      || !classifyMetaLarkCompletion(firstNormalized, completionTarget).complete
-      || !classifyMetaLarkCompletion(secondNormalized, completionTarget).complete) {
+    let stableCompletion;
+    try {
+      stableCompletion = validateMetaLarkCompletedStability(
+        firstNormalized,
+        secondNormalized,
+        completionTarget,
+      );
+    } catch {
       throw pendingError;
     }
+    const stableSnapshot = { ...stableCompletion.snapshot, observedAt: 0 };
     return Object.freeze({
-      snapshot: secondNormalized,
+      snapshot: stableCompletion.snapshot,
       fingerprint: createHash('sha256')
-        .update(JSON.stringify(secondNormalized))
+        .update(JSON.stringify(stableSnapshot))
         .digest('hex'),
       lateCompletionAfterRestore: true,
     });

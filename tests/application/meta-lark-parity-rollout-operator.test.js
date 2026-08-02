@@ -17,6 +17,7 @@ import {
   normalizeMetaLarkSnapshot,
   parseMetaLarkOperatorArgs,
   validateMetaD1OnlySummaryForLark,
+  validateMetaLarkCompletedStability,
   validateMetaLarkD1ReadyBoundary,
   validateMetaLarkOrphanedRunningStability,
   validateMetaLarkPostCompletionOrphanStability,
@@ -303,6 +304,26 @@ test('completion requires Lark parity, final reconciliation, completed work and 
       target_organic_state_count: 3,
     }, current),
     (error) => error.code === 'META_LARK_D1_COUNT_DRIFT',
+  );
+});
+
+test('completed stability ignores only the observation timestamp', () => {
+  const current = target('facebook');
+  const before = {
+    ...larkCompleteSnapshot(current),
+    observed_at: 10_000,
+  };
+  const after = { ...before, observed_at: 15_000 };
+  assert.equal(
+    validateMetaLarkCompletedStability(before, after, current).accepted,
+    true,
+  );
+  assert.throws(
+    () => validateMetaLarkCompletedStability(before, {
+      ...after,
+      main_queue_attempts: Number(after.main_queue_attempts) + 1,
+    }, current),
+    (error) => error.code === 'META_LARK_COMPLETED_PROGRESS_OBSERVED',
   );
 });
 
