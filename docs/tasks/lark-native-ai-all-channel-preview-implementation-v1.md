@@ -5,7 +5,9 @@
 ```text
 WORKSTREAM                         = LARK_NATIVE_AI_ALL_CHANNEL_PREVIEW_IMPLEMENTATION_V1
 BRANCH                             = implementation/lark-native-ai-all-channel-preview-v1
-STACKED_BASE                       = design/lark-native-ai-notification-v1
+DRAFT_PR                           = 431
+BASE                               = main
+SUPERSEDES_DESIGN_PR               = 430
 DESIGN_HEAD                        = 9cc04ce0c223877f43e32e2dd8eeba33ecc5b62f
 CONTRACT_VERSION                   = report_to_lark_ai_v1
 IMPLEMENTATION_MODE                = REPOSITORY_ONLY_PREVIEW_BUILDER
@@ -36,6 +38,8 @@ Channels with validated Report evidence expose only Report values. Channels with
 ## Files
 
 ```text
+docs/tasks/lark-native-ai-notification-v1.md
+docs/project-brain/lark-native-ai-notification.md
 packages/config/src/lark-native-ai-all-channel-contract.js
 packages/application/src/reports/build-all-channel-ai-preview.js
 tests/application/lark-native-ai-all-channel-preview.test.js
@@ -183,4 +187,4 @@ Notification sends        = 0
 - no existing Report materializer/writer/Metric Matrix files change;
 - no current-task, Meta continuation or retained evidence files change;
 - no Remote action occurs;
-- Stacked Draft PR remains blocked from Live activation.
+- Draft PR #431 remains blocked from Live activation.
