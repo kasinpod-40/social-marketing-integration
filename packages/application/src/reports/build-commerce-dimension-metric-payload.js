@@ -40,6 +40,9 @@ const COLLECTION_CONTRACTS = Object.freeze([
  * Fixed rank identities are required because TableSyncEngine is upsert-only. Empty ranks are
  * emitted as non-visible null placeholders so a later rerun clears stale values instead of
  * leaving a former Product/Payment/Shipping rank visible in Lark.
+ *
+ * metricKey includes rank for lossless Lark parity verification. stableMetricKey preserves the
+ * original PR #393 report_metric_key identity together with dimensionType/dimensionValue.
  */
 export function buildCommerceDimensionMetricPayload(input = {}) {
   const platform = requireText(input.platform ?? 'woocommerce', 'platform');
@@ -62,7 +65,8 @@ export function buildCommerceDimensionMetricPayload(input = {}) {
       const current = source ? optionalFinite(source[contract.valueField]) : null;
       const dimensionValue = `rank:${rank}`;
       output.push(Object.freeze({
-        metricKey: `${platform}:dimension:${contract.dimensionType}:${contract.valueField}`,
+        metricKey: `${platform}:dimension:${contract.dimensionType}:${contract.valueField}:rank:${rank}`,
+        stableMetricKey: `${platform}:dimension:${contract.dimensionType}:${contract.valueField}`,
         displayName: sourceLabel
           ? `${contract.displayPrefix} #${rank} · ${sourceLabel}`
           : `${contract.displayPrefix} #${rank} · ไม่มีข้อมูล`,

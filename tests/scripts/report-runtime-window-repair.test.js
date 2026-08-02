@@ -140,7 +140,12 @@ test('Platform-neutral metric integrity verifies WooCommerce D1 and Lark values 
       'woocommerce:recognized_orders': 42,
       'woocommerce:refund_micros': 0,
     },
-  }), { metricCount: 3, mismatchCount: 0 });
+  }), {
+    metricCount: 3,
+    summaryMetricCount: 3,
+    dimensionMetricCount: 0,
+    mismatchCount: 0,
+  });
   assert.throws(() => assertReportRuntimeMetricIntegrity({
     payload,
     larkMetrics: {
