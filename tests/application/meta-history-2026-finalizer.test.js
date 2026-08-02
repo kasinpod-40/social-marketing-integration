@@ -8,12 +8,22 @@ import {
   createMetaHistoryCloudflarePhaseEnvironment,
   createMetaHistoryPinnedContinuity,
   injectMetaHistoryConfig,
+  normalizeMetaHistoryExecutionTarget,
   readMetaLarkSummaryCompletion,
   validateMetaHistory2026Summary,
   validateMetaHistoryPinnedContinuity,
 } from '../../scripts/lib/meta-history-2026-finalizer.js';
 
 const HEAD = 'a'.repeat(40);
+
+test('Meta targeted execution accepts only the two July Ads accounts', () => {
+  assert.equal(normalizeMetaHistoryExecutionTarget('chemistry_k2'), 'chemistry_k2');
+  assert.equal(normalizeMetaHistoryExecutionTarget('chemistry_k3'), 'chemistry_k3');
+  assert.throws(
+    () => normalizeMetaHistoryExecutionTarget('facebook'),
+    (error) => error?.code === 'META_HISTORY_2026_EXECUTION_TARGET_INVALID',
+  );
+});
 
 test('Cloudflare phase environment keeps explicit tokens and preserves refreshable OAuth sessions', () => {
   assert.deepEqual(createMetaHistoryCloudflarePhaseEnvironment({ KEEP: 'yes' }, {

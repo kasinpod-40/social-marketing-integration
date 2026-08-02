@@ -21,6 +21,9 @@
   source contract. The prior k2 page-limit operation remains an immutable forensic failure.
 - Updated the reviewed Meta history planner to emit only July operations and removed the conditional January–April
   expansion path, so the operator contract cannot recreate the superseded full-history scope.
+- Added exact-reviewed-Head targeted execution for `chemistry_k2`/`chemistry_k3`. Target mode executes one July
+  operation only, records zero retained Facebook replay/resend, and permits only the exact retained k2 forensic
+  Work identity while still requiring zero active locks and no other active Reliability state.
 - Makes no Provider, Queue, D1, Lark, deployment, Schedule or Production mutation during this implementation.
 
 ## Unreleased — Meta Ads Active-progress D1 Verification — 2026-08-02

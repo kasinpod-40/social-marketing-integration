@@ -359,3 +359,11 @@ mutation จึงยก contract เป็น `meta_history_2026_finalizer_v2`,
 `2026-07-01..2026-07-31` และลบ expansion decision/path ทั้งหมด. Plan-only readback ยืนยัน July activity
 scope เท่านั้น; focused history tests 30/30, full unit 2020/2020, Workers-runtime 16/16, architecture/hygiene
 ผ่าน. ต้องรอ exact-head CI ของ safety fix นี้ใหม่ก่อนส่งคำสั่ง fresh k2 July ให้ผู้ใช้รัน.
+
+Finalizer target mode รับเฉพาะ `chemistry_k2`/`chemistry_k3` บน exact clean reviewed PR Head และเลือก
+operation July ของ target เดียว; ไม่ execute Facebook/Instagram operation. Meta preflight ยังคงอ่าน identity
+และ Worker flags แบบ read-only. Reliability gate ยอมเฉพาะ exact retained k2 forensic Work หนึ่งรายการ
+พร้อม active lock 0 และปฏิเสธ active Work/Queue scope อื่นทั้งหมด. Target summary ต้องยืนยัน D1/Lark parity,
+idempotent rerun, all-false restore, retained Facebook Provider replay 0 และ D1 Queue resend 0.
+Target-mode local verification ผ่าน plan-only readback, focused history 22/22, full unit 2021/2021,
+Workers-runtime 16/16 และ `npm run check`; ยังไม่มี Remote action จาก safety fix นี้.

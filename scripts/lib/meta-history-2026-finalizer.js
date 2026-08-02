@@ -89,6 +89,17 @@ export function createMetaHistory2026Plan(repositoryHead) {
   });
 }
 
+export function normalizeMetaHistoryExecutionTarget(value) {
+  const target = requireTarget(value);
+  if (!['chemistry_k2', 'chemistry_k3'].includes(target)) {
+    throw historyError(
+      'Meta history targeted execution supports only chemistry_k2 or chemistry_k3',
+      'META_HISTORY_2026_EXECUTION_TARGET_INVALID',
+    );
+  }
+  return target;
+}
+
 export function createMetaHistoryOperationId(target, range, repositoryHead) {
   const safeTarget = requireTarget(target);
   const since = requireDate(range?.since, 'since');

@@ -40,6 +40,7 @@ import {
   createMetaHistoryCloudflarePhaseEnvironment,
   createMetaHistoryPinnedContinuity,
   injectMetaHistoryConfig,
+  normalizeMetaHistoryExecutionTarget,
   readMetaLarkSummaryCompletion,
   validateMetaHistory2026Summary,
   validateMetaHistoryPinnedContinuity,
@@ -51,12 +52,16 @@ const workerName = 'social-mkt-sync-worker';
 const databaseName = 'social-mkt-state-dev';
 const mainQueueName = 'social-mkt-sync-jobs';
 const dlqName = 'social-mkt-sync-dlq';
+const reviewedBranch = 'integration/all-meta-end-to-end-completion-v1';
+const reviewedHeadEnv = 'MKT_META_HISTORY_REVIEW_WRAPPER_HEAD';
+const retainedForensicWorkKey =
+  'meta_ads:chemistry_k2:meta-chemistry_k2-history-20260501-20260731-a22a21bea8ba';
 let currentStage = 'init';
 
 try {
-  const execute = parseArgs(process.argv.slice(2));
-  if (!execute) printPlan();
-  else await executeHistory();
+  const options = parseArgs(process.argv.slice(2));
+  if (!options.execute) printPlan(options.target);
+  else await executeHistory(options.target);
 } catch (error) {
   process.stderr.write(`${JSON.stringify({
     ok: false,
@@ -70,17 +75,41 @@ try {
   process.exitCode = 1;
 }
 
-async function executeHistory() {
+async function executeHistory(selectedTarget) {
   assertMetaHistory2026Confirmation(process.env);
   currentStage = 'exact-clean-main';
   const repositoryHead = gitText(['rev-parse', 'HEAD']);
-  const originMain = gitText(['rev-parse', 'origin/main']);
   const branch = gitText(['branch', '--show-current']);
   const dirty = gitText(['status', '--porcelain', '--untracked-files=all'], false);
-  if (branch !== 'main' || repositoryHead !== originMain || dirty.trim() !== '') {
-    throw historyError('Meta history requires exact clean main equal to origin/main', 'META_HISTORY_2026_REPOSITORY_INVALID', {
-      branch, repositoryHead, originMain, clean: dirty.trim() === '',
-    });
+  const originMain = gitText(['rev-parse', 'origin/main']);
+  if (selectedTarget) {
+    const expectedHead = requireSha(process.env[reviewedHeadEnv], reviewedHeadEnv);
+    const originReviewed = gitText(['rev-parse', `origin/${reviewedBranch}`]);
+    if (branch !== reviewedBranch
+      || repositoryHead !== expectedHead
+      || originReviewed !== repositoryHead
+      || dirty.trim() !== ''
+      || !gitSuccess(['merge-base', '--is-ancestor', originMain, repositoryHead])) {
+      throw historyError(
+        'Targeted Meta history requires the exact clean reviewed PR Head',
+        'META_HISTORY_2026_REVIEWED_TARGET_REPOSITORY_INVALID',
+        {
+          branch,
+          expectedBranch: reviewedBranch,
+          repositoryHead,
+          expectedHead,
+          originReviewedMatches: originReviewed === repositoryHead,
+          originMainIsAncestor: gitSuccess(['merge-base', '--is-ancestor', originMain, repositoryHead]),
+          clean: dirty.trim() === '',
+        },
+      );
+    }
+  } else if (branch !== 'main' || repositoryHead !== originMain || dirty.trim() !== '') {
+    throw historyError(
+      'Meta history requires exact clean main equal to origin/main',
+      'META_HISTORY_2026_REPOSITORY_INVALID',
+      { branch, repositoryHead, originMain, clean: dirty.trim() === '' },
+    );
   }
 
   const devVarsPath = resolve(process.env.DEV_VARS_FILE ?? '.dev.vars');
@@ -125,30 +154,50 @@ async function executeHistory() {
 
   currentStage = 'cloudflare-readiness';
   const cloudflare = await resolveCloudflareContext(baseEnv, safeConfigPath);
-  await assertRemoteSafe(baseEnv, safeConfigPath, cloudflare);
+  await assertRemoteSafe(baseEnv, safeConfigPath, cloudflare, {
+    allowRetainedForensicK2: Boolean(selectedTarget),
+  });
 
   currentStage = 'fresh-read-only-validation';
-  const readOnlyRoot = join(evidenceRoot, 'read-only-validation');
+  const readOnlyRoot = join(
+    evidenceRoot,
+    selectedTarget ? `read-only-validation-${selectedTarget}` : 'read-only-validation',
+  );
   const readOnlySummaryPath = await runFreshReadOnlyValidation(baseEnv, readOnlyRoot);
   const readOnlySummary = JSON.parse(await readFile(readOnlySummaryPath, 'utf8'));
 
-  currentStage = 'verify-pinned-facebook-continuity';
-  const facebookContinuity = validateMetaHistoryPinnedContinuity(
-    createMetaHistoryPinnedContinuity({
+  let facebookContinuity = null;
+  if (!selectedTarget) {
+    currentStage = 'verify-pinned-facebook-continuity';
+    facebookContinuity = validateMetaHistoryPinnedContinuity(
+      createMetaHistoryPinnedContinuity({
+        repositoryHead,
+        plan: runtimePlan,
+        readOnlySummary,
+      }),
       repositoryHead,
-      plan: runtimePlan,
-      readOnlySummary,
-    }),
-    repositoryHead,
-  );
-  await writePrivateJson(
-    join(evidenceRoot, 'pinned-facebook-continuity.json'),
-    facebookContinuity,
-  );
-  await assertRemoteSafe(baseEnv, safeConfigPath, cloudflare);
+    );
+    await writePrivateJson(
+      join(evidenceRoot, 'pinned-facebook-continuity.json'),
+      facebookContinuity,
+    );
+  }
+  await assertRemoteSafe(baseEnv, safeConfigPath, cloudflare, {
+    allowRetainedForensicK2: Boolean(selectedTarget),
+  });
 
   const completed = [];
-  for (const operation of runtimePlan.operations.filter((item) => item.mode === 'required')) {
+  const selectedOperations = runtimePlan.operations.filter((item) => (
+    item.mode === 'required' && (!selectedTarget || item.target === selectedTarget)
+  ));
+  if (selectedTarget && selectedOperations.length !== 1) {
+    throw historyError(
+      'Targeted Meta history requires exactly one July operation',
+      'META_HISTORY_2026_TARGET_OPERATION_INVALID',
+      { selectedTarget, operationCount: selectedOperations.length },
+    );
+  }
+  for (const operation of selectedOperations) {
     currentStage = `operation-${operation.target}-${operation.periodStart}-${operation.periodEnd}`;
     const result = await runMetaOperation({
       operation,
@@ -162,7 +211,54 @@ async function executeHistory() {
   }
 
   currentStage = 'final-safe-verification';
-  const safe = await assertRemoteSafe(baseEnv, safeConfigPath, cloudflare);
+  const safe = await assertRemoteSafe(baseEnv, safeConfigPath, cloudflare, {
+    allowRetainedForensicK2: Boolean(selectedTarget),
+  });
+  if (selectedTarget) {
+    const operation = completed[0];
+    const targetSummary = {
+      ok: true,
+      accepted: operation?.d1Completed === true
+        && operation?.larkCompleted === true
+        && operation?.idempotentRerunVerified === true,
+      contractVersion: META_HISTORY_2026_CONTRACT_VERSION,
+      decision: 'META_HISTORY_2026_TARGET_COMPLETED_SAFE',
+      repositoryHead,
+      target: selectedTarget,
+      operation: {
+        target: operation?.target ?? null,
+        operationId: operation?.operationId ?? null,
+        periodStart: operation?.periodStart ?? null,
+        periodEnd: operation?.periodEnd ?? null,
+        d1Completed: operation?.d1Completed === true,
+        larkCompleted: operation?.larkCompleted === true,
+        idempotentRerunVerified: operation?.idempotentRerunVerified === true,
+      },
+      retainedFacebookProviderReplay: 0,
+      retainedFacebookD1QueueResend: 0,
+      executionFlagsAllFalse: safe.executionFlagsAllFalse,
+      remote: safe.remote,
+      scheduleEnabled: false,
+      production: false,
+    };
+    if (!targetSummary.accepted || !targetSummary.executionFlagsAllFalse) {
+      throw historyError(
+        'Targeted Meta history did not reach accepted D1/Lark parity and safe restore',
+        'META_HISTORY_2026_TARGET_SUMMARY_INVALID',
+      );
+    }
+    const targetSummaryPath = join(
+      evidenceRoot,
+      `meta-history-2026-${selectedTarget}-summary.json`,
+    );
+    await writePrivateJson(targetSummaryPath, targetSummary);
+    process.stdout.write(`${JSON.stringify({
+      ...targetSummary,
+      evidenceRoot: dirname(targetSummaryPath),
+    }, null, 2)}\n`);
+    process.stdout.write('META_HISTORY_2026_TARGET_COMPLETED_SAFE\n');
+    return;
+  }
   const facebookResult = completed.find((item) => item.target === 'facebook');
   const instagramResult = completed.find((item) => item.target === 'instagram');
   const adsJulyResults = completed.filter((item) => item.mode === 'required' && item.target.startsWith('chemistry_k'));
@@ -374,25 +470,38 @@ async function resolveCloudflareContext(env, configPath) {
   return { accountId, apiToken: auth.token, authSource: auth.source, queueId };
 }
 
-async function assertRemoteSafe(env, configPath, cloudflare) {
+async function assertRemoteSafe(env, configPath, cloudflare, options = {}) {
   const activeVersion = await readActiveVersion(env, configPath);
   const version = JSON.parse(runText('npx', [
     'wrangler', 'versions', 'view', activeVersion,
     '--name', workerName, '--config', configPath, '--json',
   ], { ...env, CLOUDFLARE_ACCOUNT_ID: cloudflare.accountId }));
   assertWooCommerce2026RemoteSafeFlags(version);
+  const forensicWorkExclusion = options.allowRetainedForensicK2
+    ? ` AND work_key <> '${retainedForensicWorkKey}'`
+    : '';
+  const forensicJoinedWorkExclusion = options.allowRetainedForensicK2
+    ? ` AND w.work_key <> '${retainedForensicWorkKey}'`
+    : '';
   const row = readD1Row(env, configPath, `SELECT
-    (SELECT COUNT(*) FROM sync_work_runs WHERE lifecycle_status = 'active') AS active_work,
+    (SELECT COUNT(*) FROM sync_work_runs WHERE lifecycle_status = 'active'${forensicWorkExclusion}) AS active_work,
     (SELECT COUNT(*) FROM sync_locks WHERE expires_at > (unixepoch() * 1000)) AS active_locks,
     (SELECT COUNT(DISTINCT q.operation_id) FROM queue_operation_attempts q
       JOIN sync_work_runs w ON w.work_key = q.work_key
-      WHERE w.lifecycle_status = 'active') AS active_queue_operations;`);
+      WHERE w.lifecycle_status = 'active'${forensicJoinedWorkExclusion}) AS active_queue_operations,
+    (SELECT COUNT(*) FROM sync_work_runs
+      WHERE lifecycle_status = 'active'
+        AND work_key = '${retainedForensicWorkKey}') AS retained_forensic_work;`);
   const remote = {
     activeWork: Number(row.active_work ?? 0),
     activeLocks: Number(row.active_locks ?? 0),
     activeQueueOperations: Number(row.active_queue_operations ?? 0),
+    retainedForensicWork: Number(row.retained_forensic_work ?? 0),
   };
-  if (Object.values(remote).some((value) => value !== 0)) {
+  if (remote.activeWork !== 0
+    || remote.activeLocks !== 0
+    || remote.activeQueueOperations !== 0
+    || ![0, 1].includes(remote.retainedForensicWork)) {
     throw historyError('Remote Reliability state is not idle', 'META_HISTORY_2026_REMOTE_NOT_IDLE', remote);
   }
   return { executionFlagsAllFalse: true, activeVersion, remote };
@@ -493,20 +602,39 @@ function closeExecutionFlags(env) {
 }
 
 function parseArgs(args) {
-  const unknown = args.filter((arg) => arg !== '--execute');
-  if (unknown.length > 0) throw historyError('Unsupported Meta history arguments', 'META_HISTORY_2026_ARGUMENT_INVALID', { unknown });
-  return args.includes('--execute');
+  let execute = false;
+  let target = null;
+  const unknown = [];
+  for (const arg of args) {
+    if (arg === '--execute') execute = true;
+    else if (arg.startsWith('--target=')) {
+      if (target !== null) unknown.push(arg);
+      else target = normalizeMetaHistoryExecutionTarget(arg.slice('--target='.length));
+    } else unknown.push(arg);
+  }
+  if (unknown.length > 0) {
+    throw historyError(
+      'Unsupported Meta history arguments',
+      'META_HISTORY_2026_ARGUMENT_INVALID',
+      { unknown },
+    );
+  }
+  return Object.freeze({ execute, target });
 }
 
-function printPlan() {
+function printPlan(target = null) {
   process.stdout.write(`${JSON.stringify({
     ok: true,
     planOnly: true,
     contractVersion: META_HISTORY_2026_CONTRACT_VERSION,
     confirmation: 'CONFIRM_META_HISTORY_2026_FINALIZER=RUN_META_HISTORY_2026_ONE_COMMAND',
-    facebook: 'fresh identity continuity plus new July operation; legacy local files not required; no old operation replay',
-    instagram: '2026-07-01..2026-07-31',
+    facebook: target
+      ? 'retained completion is not executed; identity validation only'
+      : 'fresh identity continuity plus new July operation; legacy local files not required',
+    instagram: target ? 'retained completion is not executed; identity validation only' : '2026-07-01..2026-07-31',
     metaAds: '2026-07-01..2026-07-31 activity-scoped only; no historical inventory expansion',
+    executionTarget: target,
+    retainedOrganicReplay: false,
     d1BeforeLark: true,
     parityAndIdempotencyRequired: true,
     automaticAllFalseRestore: true,
@@ -549,6 +677,28 @@ function runText(command, args, env, cwd = repositoryRoot) {
 function gitText(args, trim = true) {
   const output = runText('git', args, process.env);
   return trim ? output.trim() : `${output}\n`;
+}
+
+function gitSuccess(args) {
+  const result = spawnSync('git', args, {
+    cwd: repositoryRoot,
+    env: process.env,
+    encoding: 'utf8',
+    stdio: 'ignore',
+  });
+  return !result.error && result.status === 0;
+}
+
+function requireSha(value, fieldName) {
+  const text = String(value ?? '').trim();
+  if (!/^[0-9a-f]{40}$/u.test(text)) {
+    throw historyError(
+      `${fieldName} must be a full Git SHA`,
+      'META_HISTORY_2026_REVIEWED_TARGET_HEAD_INVALID',
+      { fieldName },
+    );
+  }
+  return text;
 }
 
 async function writePrivateJson(path, value) {
