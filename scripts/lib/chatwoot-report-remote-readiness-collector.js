@@ -58,6 +58,30 @@ export function parseChatwootRemoteJson(value) {
   );
 }
 
+/**
+ * Parse the internal collector's structured stderr without exposing raw stderr. The reviewed
+ * terminal uses this to retain the exact fail-closed stage/code while the normal sanitizer still
+ * removes infrastructure identities and credentials.
+ */
+export function parseChatwootCollectorFailure(value) {
+  const text = String(value ?? '').trim();
+  if (!text) return null;
+  const starts = [...text.matchAll(/\{/gu)].map((match) => match.index);
+  for (const start of starts) {
+    try {
+      const parsed = JSON.parse(text.slice(start));
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) continue;
+      return Object.freeze({
+        stage: optionalText(parsed.stage),
+        code: optionalText(parsed.code),
+        message: optionalText(parsed.message),
+        details: sanitizeChatwootRemoteEvidence(parsed.details ?? {}),
+      });
+    } catch { /* continue */ }
+  }
+  return null;
+}
+
 export function unwrapChatwootRemoteRows(value) {
   if (Array.isArray(value)) return value.flatMap((entry) => entry?.results ?? []);
   return Array.isArray(value?.results) ? value.results : [];
@@ -91,6 +115,9 @@ export function sanitizeChatwootRemoteEvidence(value) {
 function freezeObject(value, field) {
   const object = requireObject(value, field);
   return Object.freeze({ ...object });
+}
+function optionalText(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 function requireText(value, field) {
   if (typeof value !== 'string' || value.trim() === '') throw collectorError(

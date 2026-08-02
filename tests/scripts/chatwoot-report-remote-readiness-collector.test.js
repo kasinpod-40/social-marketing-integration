@@ -6,6 +6,7 @@ import {
   assertChatwootReportRemoteCollectorConfirmation,
   assertChatwootSelectOnlySql,
   buildChatwootReportRemoteEvidence,
+  parseChatwootCollectorFailure,
   parseChatwootRemoteJson,
   sanitizeChatwootRemoteEvidence,
   unwrapChatwootRemoteRows,
@@ -36,6 +37,27 @@ test('blocks non-read-only SQL including mutation CTEs', () => {
 test('parses prefixed remote JSON and unwraps D1 result pages', () => {
   const parsed = parseChatwootRemoteJson('notice\n[{"results":[{"count":2}]}]');
   assert.deepEqual(unwrapChatwootRemoteRows(parsed), [{ count: 2 }]);
+});
+
+test('preserves structured internal failure while redacting sensitive identities', () => {
+  const parsed = parseChatwootCollectorFailure(`warning\n${JSON.stringify({
+    ok: false,
+    stage: 'local-contracts-and-config',
+    code: 'CHATWOOT_FINAL_UAT_TABLE_MAPPING_INVALID',
+    message: 'Required mapping is missing',
+    details: {
+      field: 'LARK_TABLE_RAW_CHATWOOT_ACCOUNTS',
+      tableId: 'tbl-secret',
+      authorization: 'Bearer secret',
+    },
+  })}`);
+  assert.deepEqual(parsed, {
+    stage: 'local-contracts-and-config',
+    code: 'CHATWOOT_FINAL_UAT_TABLE_MAPPING_INVALID',
+    message: 'Required mapping is missing',
+    details: { field: 'LARK_TABLE_RAW_CHATWOOT_ACCOUNTS' },
+  });
+  assert.equal(parseChatwootCollectorFailure('plain stderr only'), null);
 });
 
 test('builds fixed Chatwoot target and redacts infrastructure identities', () => {
