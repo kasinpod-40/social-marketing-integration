@@ -402,7 +402,12 @@ function requireExact(value, expected, fieldName) {
 }
 
 function requireTimestamp(value, fieldName) {
-  const number = typeof value === 'number' ? value : Date.parse(value);
+  const text = typeof value === 'string' ? value.trim() : '';
+  const number = typeof value === 'number'
+    ? value
+    : /^[0-9]+$/u.test(text)
+      ? Number(text)
+      : Date.parse(text);
   if (!Number.isSafeInteger(number) || number < Date.UTC(2000, 0, 1)) {
     throw recoveryError(
       `${fieldName} must be a valid timestamp`,
