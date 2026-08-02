@@ -1,3 +1,5 @@
+import { isAbsolute, resolve } from 'node:path';
+
 export const META_HISTORY_REVIEWED_BRANCH =
   'integration/all-meta-end-to-end-completion-v1';
 export const META_HISTORY_REVIEWED_HEAD_ENV =
@@ -69,6 +71,18 @@ export function isPinnedOriginMainRead(args = []) {
     && args[1] === 'origin/main';
 }
 
+export function createMetaHistoryOneShotGitShim(input = {}) {
+  const realGit = requireAbsolutePath(input.realGit, 'realGit');
+  const repositoryRoot = requireAbsolutePath(input.repositoryRoot, 'repositoryRoot');
+  const markerPath = requireAbsolutePath(input.markerPath, 'markerPath');
+  const reviewedBaseMainHead = requireSha(
+    input.reviewedBaseMainHead,
+    'reviewedBaseMainHead',
+  );
+
+  return `#!/usr/bin/env node\n\nimport { spawnSync } from 'node:child_process';\nimport { openSync, closeSync } from 'node:fs';\nimport { resolve } from 'node:path';\n\nconst args = process.argv.slice(2);\nconst exactPinnedRead = args.length === 2\n  && args[0] === 'rev-parse'\n  && args[1] === 'origin/main'\n  && resolve(process.cwd()) === ${JSON.stringify(repositoryRoot)};\n\nif (exactPinnedRead) {\n  try {\n    const descriptor = openSync(${JSON.stringify(markerPath)}, 'wx', 0o600);\n    closeSync(descriptor);\n    process.stdout.write(${JSON.stringify(`${reviewedBaseMainHead}\n`)});\n    process.exit(0);\n  } catch (error) {\n    if (error?.code !== 'EEXIST') throw error;\n  }\n}\n\nconst result = spawnSync(${JSON.stringify(realGit)}, args, {\n  env: process.env,\n  stdio: 'inherit',\n});\nif (result.error) throw result.error;\nif (result.signal) process.kill(process.pid, result.signal);\nelse process.exitCode = result.status ?? 1;\n`;
+}
+
 function requireSha(value, fieldName) {
   const text = requireText(value, fieldName);
   if (!FULL_SHA.test(text)) {
@@ -79,6 +93,18 @@ function requireSha(value, fieldName) {
     );
   }
   return text;
+}
+
+function requireAbsolutePath(value, fieldName) {
+  const text = requireText(value, fieldName);
+  if (!isAbsolute(text)) {
+    throw launcherError(
+      `${fieldName} must be an absolute path`,
+      'META_HISTORY_2026_REVIEWED_TARGET_PATH_INVALID',
+      { fieldName },
+    );
+  }
+  return resolve(text);
 }
 
 function requireText(value, fieldName) {
