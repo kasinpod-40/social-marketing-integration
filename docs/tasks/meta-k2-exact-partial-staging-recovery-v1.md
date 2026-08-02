@@ -4,7 +4,7 @@
 
 ```text
 IMPLEMENTATION_STATUS                 = REVIEWED_IMPLEMENTED
-LIVE_STATUS                           = NOT_RUN
+LIVE_STATUS                           = PREACTIVATION_ONLY
 TARGET                                = chemistry_k2
 PERIOD                                = 2026-07-01..2026-07-31
 PRODUCTION                            = BLOCKED
@@ -167,6 +167,11 @@ evidence must prove all-false, zero remote mutation, zero active deployment, zer
 Queue send. Each accepted failed footprint is renamed to a timestamped local archive and is never deleted or
 overwritten.
 
+Observed pre-activation attempts stopped before active deployment because the generated config first lacked
+Meta source mappings and then lacked newer required-false flags. Each attempt performed read-only stability
+and D1 export backup only. No continuation endpoint call, Provider read, Queue send, D1 Business write, Lark
+write, lifecycle SQL repair or Schedule activation occurred.
+
 The finalizer is plan-only by default. Execution additionally requires:
 
 ```text
@@ -278,6 +283,12 @@ Both GitHub workflows must conclude `success` on that same Head:
 ```text
 Meta End-to-End Verification
 Branch Verification
+```
+
+Final reviewed execution Head:
+
+```text
+PENDING_FINAL_CI_HEAD
 ```
 
 ## Failure behavior
