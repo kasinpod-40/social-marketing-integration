@@ -155,6 +155,18 @@ makes `main` and `migrations_dir` absolute, invokes the exact finalizer and remo
 `finally`. An explicit `MKT_META_K2_EXACT_RECOVERY_URL` is optional and is accepted only when it uses HTTPS,
 the exact reviewed path, and has no query or fragment.
 
+Before any recovery evidence is archived or any remote action can begin, the launcher materializes the two
+required non-secret Meta source mappings and every flag in the shared
+`META_D1_ONLY_REQUIRED_FALSE_FLAGS` contract into the temporary Wrangler config. All occurrences, including
+nested environment blocks, must be `false`. This prevents configuration drift from surfacing one missing or
+stale execution flag at a time and does not copy provider tokens or other secrets into the generated config.
+
+A failed attempt may be retried only when the current recovery root is exactly the pre-activation footprint:
+retained admission, read-only stability, non-empty remote D1 export backup and backup evidence. The hash-linked
+evidence must prove all-false, zero remote mutation, zero active deployment, zero continuation call and zero
+Queue send. Each accepted failed footprint is renamed to a timestamped local archive and is never deleted or
+overwritten.
+
 The finalizer is plan-only by default. Execution additionally requires:
 
 ```text
@@ -231,10 +243,13 @@ The implementation includes regressions for:
 - D1 writes starting only after source staging completion;
 - D1/Coverage and Lark idempotency without count drift;
 - all-false execution flag enforcement;
+- complete temporary materialization of every shared required-false flag;
+- replacement of stale `true` occurrences in nested Wrangler environment blocks;
 - Meta Ads Lark projection limited to Account/Campaign/AdSet/Ad;
 - retained evidence hash linkage and reviewed-head ancestry;
 - generated private Wrangler path rebasing and cleanup;
-- exact recovery URL derivation from the HTTPS public origin and rejection of protocol/path/query/fragment drift.
+- exact recovery URL derivation from the HTTPS public origin and rejection of protocol/path/query/fragment drift;
+- repeated exact pre-activation archives without deletion or remote mutation.
 
 ## Verification gates
 
