@@ -22,6 +22,9 @@ import {
 import {
   META_K2_PARTIAL_STAGING_FINALIZER_CONFIRMATION,
 } from './lib/meta-k2-partial-staging-finalizer.js';
+import {
+  resolveMetaK2ExactRecoveryUrl,
+} from './lib/meta-k2-partial-staging-reviewed-launcher.js';
 import { readDevVars } from './lib/dev-vars.js';
 import {
   META_K2_EXACT_RECOVERY_MODE,
@@ -79,7 +82,7 @@ try {
   );
   await assertPrivateFile(devVarsPath, 'DEV_VARS_FILE');
   const devVars = await readDevVars(devVarsPath);
-  const recoveryUrl = resolveRecoveryUrl({
+  const recoveryUrl = resolveMetaK2ExactRecoveryUrl({
     explicitUrl: process.env.MKT_META_K2_EXACT_RECOVERY_URL,
     publicOrigin:
       process.env.MKT_CONNECTION_PUBLIC_ORIGIN
@@ -144,40 +147,6 @@ function parseArgs(args) {
     throw error;
   }
   return args.includes('--execute');
-}
-
-function resolveRecoveryUrl({ explicitUrl, publicOrigin }) {
-  const value = explicitUrl
-    ? new URL(requireText(explicitUrl, 'MKT_META_K2_EXACT_RECOVERY_URL'))
-    : new URL(
-      META_K2_EXACT_RECOVERY_PATH,
-      requireHttpsOrigin(publicOrigin, 'MKT_CONNECTION_PUBLIC_ORIGIN'),
-    );
-  if (value.protocol !== 'https:'
-    || value.pathname !== META_K2_EXACT_RECOVERY_PATH
-    || value.search !== ''
-    || value.hash !== '') {
-    const error = new Error(
-      'Meta K2 exact recovery URL must use HTTPS and the reviewed recovery path',
-    );
-    error.code = 'META_K2_REVIEWED_LAUNCHER_RECOVERY_URL_INVALID';
-    throw error;
-  }
-  return value.toString();
-}
-
-function requireHttpsOrigin(value, fieldName) {
-  const url = new URL(requireText(value, fieldName));
-  if (url.protocol !== 'https:'
-    || url.pathname !== '/'
-    || url.search !== ''
-    || url.hash !== '') {
-    const error = new Error(`${fieldName} must be an HTTPS origin`);
-    error.code = 'META_K2_REVIEWED_LAUNCHER_PUBLIC_ORIGIN_INVALID';
-    error.details = { fieldName };
-    throw error;
-  }
-  return url;
 }
 
 async function resolveRepositoryFile(value, fieldName) {
