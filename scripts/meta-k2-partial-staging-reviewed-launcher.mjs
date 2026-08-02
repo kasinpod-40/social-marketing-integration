@@ -26,11 +26,14 @@ import {
 import {
   META_K2_PREACTIVATION_FAILURE_FILES,
   META_K2_PREACTIVATION_RETRY_CONFIRMATION,
-  injectMetaK2ReviewedSourceMappings,
+  injectMetaK2ReviewedRuntimeConfig,
   resolveMetaK2ExactRecoveryUrl,
   validateMetaK2PreactivationRetry,
 } from './lib/meta-k2-partial-staging-reviewed-launcher.js';
 import { readDevVars } from './lib/dev-vars.js';
+import {
+  META_D1_ONLY_REQUIRED_FALSE_FLAGS,
+} from './lib/meta-d1-only-rollout-operator.js';
 import {
   META_K2_EXACT_RECOVERY_IDENTITY,
   META_K2_EXACT_RECOVERY_MODE,
@@ -72,8 +75,10 @@ if (!execute) {
     defaultBaseWranglerConfig: 'wrangler.sync.jsonc',
     generatedRuntimeConfig: relative(repositoryRoot, runtimeConfigPath),
     runtimePathsAbsolutized: ['main', 'migrations_dir'],
-    sourceMappingMaterialization: {
-      keys: ['META_GRAPH_API_VERSION', 'META_AD_ACCOUNT_MAPPINGS'],
+    runtimeConfigMaterialization: {
+      sourceMappingKeys: ['META_GRAPH_API_VERSION', 'META_AD_ACCOUNT_MAPPINGS'],
+      allFalseFlagCount: META_D1_ONLY_REQUIRED_FALSE_FLAGS.length,
+      allFalseFlags: META_D1_ONLY_REQUIRED_FALSE_FLAGS,
       secretsIncluded: false,
     },
     recoveryUrl: {
@@ -125,12 +130,26 @@ try {
     META_HISTORY_2026_WINDOWS.ads,
     { baseDirectory: dirname(baseConfigPath) },
   );
-  const materializedSourceMappings = injectMetaK2ReviewedSourceMappings(
+  const reviewedRuntime = injectMetaK2ReviewedRuntimeConfig(
     absoluteConfig,
     mergedEnv,
   );
-  await writePrivateText(runtimeConfigPath, materializedSourceMappings.configText);
+  await writePrivateText(runtimeConfigPath, reviewedRuntime.configText);
   materialized = true;
+
+  process.stdout.write(`${JSON.stringify({
+    ok: true,
+    stage: 'materialize-runtime-config',
+    sourceMappingKeys: reviewedRuntime.sourceMappingKeys,
+    allFalseFlagCount: reviewedRuntime.allFalseFlagCount,
+    allFalseFlagFingerprint: reviewedRuntime.allFalseFlagFingerprint,
+    secretsIncluded: false,
+    remoteMutationCount: 0,
+    queueMessageCount: 0,
+    lifecycleSqlRepairCount: 0,
+    scheduleEnabled: false,
+    production: 'BLOCKED',
+  }, null, 2)}\n`);
 
   preactivationArchive = await archiveExactPreactivationFailureIfPresent(mergedEnv);
   if (preactivationArchive) {
