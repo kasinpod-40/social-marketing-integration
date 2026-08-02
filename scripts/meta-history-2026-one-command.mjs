@@ -158,13 +158,10 @@ async function executeOneCommand() {
       operationId: instagram?.operationId ?? null,
     },
     metaAds: {
-      baselineCompleted: reconciled.adsBaselineCompleted,
-      baselinePeriodStart: '2026-05-01',
-      baselinePeriodEnd: '2026-07-31',
-      expandedToYearStart: reconciled.expansion.allowed,
-      expansionPeriodStart: reconciled.expansion.allowed ? '2026-01-01' : null,
-      expansionPeriodEnd: reconciled.expansion.allowed ? '2026-04-30' : null,
-      expansionDecision: reconciled.expansion,
+      julyCompleted: reconciled.metaAdsJulyCompleted,
+      periodStart: '2026-07-01',
+      periodEnd: '2026-07-31',
+      scopeMode: 'report_range_activity',
     },
     operations: reconciled.completed.map((item) => ({
       target: item.target,

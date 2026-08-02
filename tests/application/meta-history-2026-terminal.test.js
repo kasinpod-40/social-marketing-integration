@@ -163,12 +163,10 @@ test('Meta history Terminal persists unique ISO requested-at generations before 
     const path = join(root, 'runtime-plan.json');
     const plan = await loadOrCreateIsoPlan(path, HEAD, { now: () => NOW });
     assert.equal(plan.createdAt, '2026-07-31T08:30:00.123Z');
-    assert.equal(plan.operations.length, 6);
+    assert.equal(plan.operations.length, 4);
     assert.deepEqual(plan.operations.map((item) => item.target), [
       'facebook',
       'instagram',
-      'chemistry_k2',
-      'chemistry_k3',
       'chemistry_k2',
       'chemistry_k3',
     ]);
@@ -177,10 +175,8 @@ test('Meta history Terminal persists unique ISO requested-at generations before 
       '2026-07-31T08:30:00.124Z',
       '2026-07-31T08:30:00.125Z',
       '2026-07-31T08:30:00.126Z',
-      '2026-07-31T08:30:00.127Z',
-      '2026-07-31T08:30:00.128Z',
     ]);
-    assert.equal(new Set(plan.operations.map((item) => item.originalRequestedAt)).size, 6);
+    assert.equal(new Set(plan.operations.map((item) => item.originalRequestedAt)).size, 4);
     const persisted = JSON.parse(await readFile(path, 'utf8'));
     assert.deepEqual(persisted, plan);
     assert.equal((await stat(path)).mode & 0o077, 0);

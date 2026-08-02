@@ -1,34 +1,19 @@
-import {
-  shouldExpandMetaAdsHistory,
-} from './meta-history-2026-finalizer.js';
-
 export function reconcileMetaHistory2026Evidence(input = {}) {
   const plan = requireObject(input.plan, 'plan');
   const operations = requireArray(plan.operations, 'plan.operations');
   const evidenceByOperation = requireObject(input.evidenceByOperation, 'evidenceByOperation');
   const completed = [];
-  const baselineD1Evidence = [];
 
   for (const operation of operations.filter((item) => item?.mode === 'required')) {
     const result = reconcileOperation(operation, evidenceByOperation[operation.operationId]);
     completed.push(result);
-    if (String(operation.target).startsWith('chemistry_k')) {
-      baselineD1Evidence.push(result.d1Verification);
-    }
-  }
-
-  const expansion = shouldExpandMetaAdsHistory(baselineD1Evidence);
-  if (expansion.allowed) {
-    for (const operation of operations.filter((item) => item?.mode === 'conditional')) {
-      completed.push(reconcileOperation(operation, evidenceByOperation[operation.operationId]));
-    }
   }
 
   const facebook = completed.find((item) => item.target === 'facebook') ?? null;
   const instagram = completed.find((item) => item.target === 'instagram') ?? null;
-  const adsBaseline = completed.filter((item) => item.mode === 'required'
+  const adsJuly = completed.filter((item) => item.mode === 'required'
     && String(item.target).startsWith('chemistry_k'));
-  if (!facebook || !instagram || adsBaseline.length !== 2) {
+  if (!facebook || !instagram || adsJuly.length !== 2) {
     throw closeoutError(
       'Meta history required operation evidence is incomplete',
       'META_HISTORY_2026_CLOSEOUT_REQUIRED_EVIDENCE_MISSING',
@@ -37,10 +22,9 @@ export function reconcileMetaHistory2026Evidence(input = {}) {
 
   return deepFreeze({
     completed,
-    expansion,
     facebookHistoryCompleted: facebook.larkCompleted,
     instagramCompleted: instagram.larkCompleted,
-    adsBaselineCompleted: adsBaseline.every((item) => item.larkCompleted),
+    metaAdsJulyCompleted: adsJuly.every((item) => item.larkCompleted),
     parityVerified: completed.every((item) => item.larkCompleted),
     idempotentRerunsVerified: completed.every((item) => item.idempotentRerunVerified),
   });
@@ -51,7 +35,7 @@ export function isRecoverableMetaHistoryFinalSummaryFailure(value = {}) {
   const allowed = new Set([
     'facebookHistoryCompleted',
     'instagramCompleted',
-    'adsBaselineCompleted',
+    'adsJulyCompleted',
     'parity',
   ]);
   return value?.stage === 'final-safe-verification'

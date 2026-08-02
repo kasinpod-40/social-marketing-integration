@@ -41,7 +41,6 @@ import {
   createMetaHistoryPinnedContinuity,
   injectMetaHistoryConfig,
   readMetaLarkSummaryCompletion,
-  shouldExpandMetaAdsHistory,
   validateMetaHistory2026Summary,
   validateMetaHistoryPinnedContinuity,
 } from './lib/meta-history-2026-finalizer.js';
@@ -149,7 +148,6 @@ async function executeHistory() {
   await assertRemoteSafe(baseEnv, safeConfigPath, cloudflare);
 
   const completed = [];
-  const baselineSnapshots = [];
   for (const operation of runtimePlan.operations.filter((item) => item.mode === 'required')) {
     currentStage = `operation-${operation.target}-${operation.periodStart}-${operation.periodEnd}`;
     const result = await runMetaOperation({
@@ -161,29 +159,13 @@ async function executeHistory() {
       cloudflare,
     });
     completed.push(result);
-    if (operation.target.startsWith('chemistry_k')) baselineSnapshots.push(result.d1Verification);
-  }
-
-  const expansion = shouldExpandMetaAdsHistory(baselineSnapshots);
-  if (expansion.allowed) {
-    for (const operation of runtimePlan.operations.filter((item) => item.mode === 'conditional')) {
-      currentStage = `operation-${operation.target}-${operation.periodStart}-${operation.periodEnd}`;
-      completed.push(await runMetaOperation({
-        operation,
-        repositoryHead,
-        baseEnv,
-        configRelativePath,
-        readOnlySummaryPath,
-        cloudflare,
-      }));
-    }
   }
 
   currentStage = 'final-safe-verification';
   const safe = await assertRemoteSafe(baseEnv, safeConfigPath, cloudflare);
   const facebookResult = completed.find((item) => item.target === 'facebook');
   const instagramResult = completed.find((item) => item.target === 'instagram');
-  const adsBaselineResults = completed.filter((item) => item.mode === 'required' && item.target.startsWith('chemistry_k'));
+  const adsJulyResults = completed.filter((item) => item.mode === 'required' && item.target.startsWith('chemistry_k'));
   const summary = {
     ok: true,
     accepted: true,
@@ -201,14 +183,11 @@ async function executeHistory() {
       operationId: instagramResult?.operationId ?? null,
     },
     metaAds: {
-      baselineCompleted: adsBaselineResults.length === 2
-        && adsBaselineResults.every((item) => item.larkCompleted),
-      baselinePeriodStart: '2026-05-01',
-      baselinePeriodEnd: '2026-07-31',
-      expandedToYearStart: expansion.allowed,
-      expansionPeriodStart: expansion.allowed ? '2026-01-01' : null,
-      expansionPeriodEnd: expansion.allowed ? '2026-04-30' : null,
-      expansionDecision: expansion,
+      julyCompleted: adsJulyResults.length === 2
+        && adsJulyResults.every((item) => item.larkCompleted),
+      periodStart: '2026-07-01',
+      periodEnd: '2026-07-31',
+      scopeMode: 'report_range_activity',
     },
     operations: completed.map((item) => ({
       target: item.target,
@@ -527,7 +506,7 @@ function printPlan() {
     confirmation: 'CONFIRM_META_HISTORY_2026_FINALIZER=RUN_META_HISTORY_2026_ONE_COMMAND',
     facebook: 'fresh identity continuity plus new July operation; legacy local files not required; no old operation replay',
     instagram: '2026-07-01..2026-07-31',
-    metaAds: '2026-05-01..2026-07-31, then 2026-01-01..2026-04-30 when bounded volume is safe',
+    metaAds: '2026-07-01..2026-07-31 activity-scoped only; no historical inventory expansion',
     d1BeforeLark: true,
     parityAndIdempotencyRequired: true,
     automaticAllFalseRestore: true,

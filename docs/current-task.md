@@ -3,7 +3,7 @@
 ## Status
 
 ```text
-TASK_STATUS                          = META_ADS_JULY_ACTIVITY_SCOPE_GATES
+TASK_STATUS                          = META_ADS_JULY_ACTIVITY_SCOPE_FINAL_CI
 CURRENT_PROGRAM                      = ALL_META_END_TO_END_COMPLETION_V1
 BRANCH                               = integration/all-meta-end-to-end-completion-v1
 BASE_MAIN_SHA                        = 0d33be48f9b8ccaf6d8cea9a4c4ee31b1175b650
@@ -18,7 +18,7 @@ META_D1_QUEUE_RESEND                 = FORBIDDEN_FOR_RETAINED_FACEBOOK_OPERATION
 SCHEDULE_WEBHOOK                     = DISABLED_REQUIRED
 PRODUCTION                           = BLOCKED
 META_LATEST_STOP                     = K2_FULL_INVENTORY_FORENSIC_PAGE_LIMIT_SAFE_ALL_FALSE
-NEXT_STEP                            = EXACT_HEAD_CI_THEN_FRESH_K2_JULY
+NEXT_STEP                            = FINAL_EXACT_HEAD_CI_THEN_FRESH_K2_JULY
 ```
 
 ## Objective
@@ -352,3 +352,10 @@ Local verification ปัจจุบันผ่าน focused Meta 37/37, Meta
 2024/2024 และ Workers-runtime 16/16; ไม่มี Provider, Queue, D1, Lark, deploy, Schedule หรือ Production
 mutation ในการเปลี่ยนนี้. ขั้นต่อไปคือ Gate ที่เหลือ, exact-head CI แล้วจึงเริ่ม fresh k2 July operation
 หลัง Meta operator ยืนยัน Worker all-false เท่านั้น; k3 ยังไม่เริ่ม.
+
+Exact-head CI ที่ `c3b2edbaf2264f7da3c6f58d2a6aacaa883ee8ce` ผ่านแล้ว แต่ pre-Live command audit พบ
+reviewed history planner ยังคงสร้าง May–July baseline และ Jan–Apr conditional operations. ก่อน Remote
+mutation จึงยก contract เป็น `meta_history_2026_finalizer_v2`, จำกัด Ads operations ทั้งสองบัญชีเป็น
+`2026-07-01..2026-07-31` และลบ expansion decision/path ทั้งหมด. Plan-only readback ยืนยัน July activity
+scope เท่านั้น; focused history tests 30/30, full unit 2020/2020, Workers-runtime 16/16, architecture/hygiene
+ผ่าน. ต้องรอ exact-head CI ของ safety fix นี้ใหม่ก่อนส่งคำสั่ง fresh k2 July ให้ผู้ใช้รัน.
