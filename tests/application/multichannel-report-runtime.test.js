@@ -16,15 +16,17 @@ import { generateReportAiSummary } from '../../packages/application/src/use-case
 
 const GENERATED_AT = Date.parse('2026-07-28T00:00:00Z');
 
-test('registry covers every Organic and Paid Ads platform without pretending planned sources are active', () => {
+test('registry covers every Organic, Paid Ads, Commerce and Customer Service platform without pretending non-active sources are active', () => {
   const contracts = listReportPlatformContracts();
   assert.deepEqual(contracts.map((item) => item.platformScope), [
     'facebook', 'instagram', 'tiktok', 'youtube', 'meta_ads', 'google_ads', 'tiktok_ads',
-    'woocommerce',
+    'woocommerce', 'chatwoot',
   ]);
   assert.equal(contracts.find((item) => item.platformScope === 'tiktok_ads').sourceStatus, REPORT_SOURCE_STATUS.PLANNED);
   assert.equal(contracts.find((item) => item.platformScope === 'tiktok').sourceStatus, REPORT_SOURCE_STATUS.ACTIVE);
   assert.equal(contracts.find((item) => item.platformScope === 'woocommerce').capability, 'commerce');
+  assert.equal(contracts.find((item) => item.platformScope === 'chatwoot').sourceStatus, REPORT_SOURCE_STATUS.UAT_PENDING);
+  assert.equal(contracts.find((item) => item.platformScope === 'chatwoot').capability, 'customer_service');
 });
 
 test('Organic cumulative calculation preserves new-content zero baseline and nulls uncovered partial deltas', () => {
