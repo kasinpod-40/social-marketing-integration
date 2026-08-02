@@ -23,6 +23,7 @@ import { readTikTokPostLarkRuntimeConfig } from '../../../packages/config/src/ti
 import { readWooCommerceRuntimeConfig } from '../../../packages/config/src/woocommerce-runtime-config.js';
 import { DASHBOARD_REPORT_TYPE } from '../../../packages/config/src/report-settings.seed.js';
 import { D1AdsReportSource } from '../../../packages/connectors/src/d1-ads-report-source.js';
+import { D1ChatwootReportSource } from '../../../packages/connectors/src/d1-chatwoot-report-source.js';
 import { D1MarketingHistoryStore } from '../../../packages/connectors/src/d1-marketing-history-store.js';
 import { D1OrganicReportSource } from '../../../packages/connectors/src/d1-organic-report-source.js';
 import { D1ReportMaterializationReader } from '../../../packages/connectors/src/d1-report-materialization-reader.js';
@@ -303,6 +304,7 @@ function createD1ReportRegistry(db, options = {}) {
       meta_ads: new D1AdsReportSource({ db, platform: 'meta_ads' }),
       google_ads: new D1AdsReportSource({ db, platform: 'google_ads' }),
       tiktok_ads: new D1AdsReportSource({ db, platform: 'tiktok_ads' }),
+      chatwoot: new D1ChatwootReportSource({ db }),
       ...(options.commerceCurrency ? {
         woocommerce: {
           async load(input) {
