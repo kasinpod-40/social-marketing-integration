@@ -149,8 +149,11 @@ The reviewed launcher is:
 scripts/meta-k2-partial-staging-reviewed-launcher.mjs
 ```
 
-It materializes a private temporary Wrangler config under ignored `outputs/`, makes `main` and
-`migrations_dir` absolute, invokes the exact finalizer and removes the temporary config in `finally`.
+It reads the private `.dev.vars`, derives the exact continuation URL from the existing
+`MKT_CONNECTION_PUBLIC_ORIGIN`, materializes a private temporary Wrangler config under ignored `outputs/`,
+makes `main` and `migrations_dir` absolute, invokes the exact finalizer and removes the temporary config in
+`finally`. An explicit `MKT_META_K2_EXACT_RECOVERY_URL` is optional and is accepted only when it uses HTTPS,
+the exact reviewed path, and has no query or fragment.
 
 The finalizer is plan-only by default. Execution additionally requires:
 
@@ -161,7 +164,6 @@ MKT_META_HISTORY_REVIEW_WRAPPER_HEAD=<exact reviewed PR Head>
 MKT_META_HISTORY_REVIEW_BASE_MAIN_HEAD=<reviewed base main Head>
 MKT_META_K2_EXACT_HEAD_CI=PASS
 MKT_META_K2_EXACT_HEAD_CI_SHA=<same exact reviewed PR Head>
-MKT_META_K2_EXACT_RECOVERY_URL=<exact HTTPS continuation route>
 ```
 
 The executable command must be shown to the operator with all exact values before it is run. This document
@@ -231,7 +233,8 @@ The implementation includes regressions for:
 - all-false execution flag enforcement;
 - Meta Ads Lark projection limited to Account/Campaign/AdSet/Ad;
 - retained evidence hash linkage and reviewed-head ancestry;
-- generated private Wrangler path rebasing and cleanup.
+- generated private Wrangler path rebasing and cleanup;
+- exact recovery URL derivation from the HTTPS public origin and rejection of protocol/path/query/fragment drift.
 
 ## Verification gates
 
@@ -246,7 +249,8 @@ node --test \
   tests/application/meta-k2-partial-staging-running.test.js \
   tests/application/meta-d1-only-partial-staging-recovery-http.test.js \
   tests/application/meta-ads-lark-scope.test.js \
-  tests/application/meta-k2-partial-staging-finalizer.test.js
+  tests/application/meta-k2-partial-staging-finalizer.test.js \
+  tests/application/meta-k2-partial-staging-reviewed-launcher.test.js
 npm test
 npm run test:report-reliability
 npm audit --audit-level=high
