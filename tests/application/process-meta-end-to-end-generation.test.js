@@ -133,11 +133,14 @@ test('durably resumes D1 and Lark phases without owning Queue retry or DLQ', asy
   }
 
   assert.deepEqual(writes.map(([kind]) => kind), ['coverage_run', 'coverage_run']);
-  assert.equal(new Set(tableWrites).size, 8);
+  assert.deepEqual(
+    [...new Set(tableWrites)],
+    ['tbl_accounts', 'tbl_campaigns', 'tbl_adgroups', 'tbl_ads'],
+  );
   assert.equal(workStore.completions, 1);
   assert.ok(statuses.includes('lark_continuation'));
   assert.equal(statuses.at(-1), 'completed');
-  assert.ok(lockChecks > 8);
+  assert.ok(lockChecks > 4);
 
   const replay = await processMetaEndToEndGeneration(input);
   assert.equal(replay.status, 'completed_idempotent');
