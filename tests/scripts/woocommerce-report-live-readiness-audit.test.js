@@ -177,6 +177,25 @@ test('remote all-false drift and pending migrations are hard blockers', () => {
   assert.ok(result.blockers.some((blocker) => blocker.code === 'PENDING_D1_MIGRATIONS'));
 });
 
+test('invalid finalizer and config blockers expose the observed authority instead of cascade-only output', () => {
+  const input = baseInput();
+  input.finalizerEvidence.settings.canonicalActive = REPORT_RUNTIME_CLOSEOUT_CANONICAL_SETTING_COUNT - 8;
+  input.config = {
+    valid: false,
+    safeTrueFlags: null,
+    activeTrueFlags: null,
+    tableMappingsReady: false,
+    errorCode: 'REPORT_RUNTIME_CLOSEOUT_TABLE_MAPPING_INVALID',
+  };
+  const result = assessWooCommerceReportLiveReadiness(input);
+  const finalizer = result.blockers.find((blocker) => blocker.code === 'REPORT_FINALIZER_EVIDENCE_INVALID');
+  const config = result.blockers.find((blocker) => blocker.code === 'REPORT_CONFIG_NOT_READY');
+  assert.equal(finalizer.details.observedCanonicalActive, REPORT_RUNTIME_CLOSEOUT_CANONICAL_SETTING_COUNT - 8);
+  assert.equal(finalizer.details.expectedCanonicalActive, REPORT_RUNTIME_CLOSEOUT_CANONICAL_SETTING_COUNT);
+  assert.equal(finalizer.details.evidenceHeadMatchesCurrent, true);
+  assert.equal(config.details.sourceCode, 'REPORT_RUNTIME_CLOSEOUT_TABLE_MAPPING_INVALID');
+});
+
 test('readiness evidence removes credential and target identifier shaped values', () => {
   assert.deepEqual(safeWooCommerceReportReadinessEvidence({
     ok: true,
