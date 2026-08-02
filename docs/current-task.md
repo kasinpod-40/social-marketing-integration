@@ -247,3 +247,5 @@ Business/Completion และ lease หมดโดย lock = 0. Closeout จะ
 ยอม post-completion orphan เฉพาะ exact durable completion/parity เดิม, Sync started หลัง completed_at,
 ไม่มี error/lock, latest Sync/Queue activity เกิน Cloudflare 15-minute limit พร้อม margin 1 นาที และ snapshot
 ทุก field คงที่อีก 30 วินาที. Evidence บันทึก orphan ตามจริงและไม่ปลอม Sync status เป็น success.
+Read-only `verify-late-completion`/`summary` อนุญาต explicit exact-head closeout operator ที่ผ่าน CI
+เพื่ออ่าน evidence chain ของ execution Head เดิม; phase อื่นห้าม cross-head และไม่มี Remote mutation.

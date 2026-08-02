@@ -89,7 +89,8 @@ async function main() {
   assertMetaLarkConfirmation(options.phase, env);
   const loaded = await loadReviewedTarget(env);
   const state = await repositoryState();
-  if (state.head !== loaded.target.repositoryHead || !state.clean) {
+  const expectedOperatorHead = resolveExpectedOperatorHead(options.phase, env, loaded.target);
+  if (state.head !== expectedOperatorHead || !state.clean) {
     throw failure(
       'Meta Lark rollout requires exact reviewed HEAD and a clean Working Tree',
       'META_LARK_REPOSITORY_STATE_INVALID',
@@ -503,8 +504,23 @@ async function verifyLateCompletion(loaded) {
     sameOperationAttemptsObserved,
     clearedPhaseCompletionVerified: true,
     postCompletionOrphan,
+    closeoutOperatorHead: process.env.MKT_META_LARK_CLOSEOUT_OPERATOR_HEAD
+      ?? loaded.target.repositoryHead,
     providerRequestCount: 0,
   };
+}
+
+function resolveExpectedOperatorHead(phase, env, target) {
+  const closeoutHead = env.MKT_META_LARK_CLOSEOUT_OPERATOR_HEAD;
+  if (closeoutHead === undefined || closeoutHead === '') return target.repositoryHead;
+  if (!['verify-late-completion', 'summary'].includes(phase)
+    || !/^[a-f0-9]{40}$/u.test(closeoutHead)) {
+    throw failure(
+      'Cross-head Meta Lark operator is allowed only for read-only late completion and summary',
+      'META_LARK_CLOSEOUT_OPERATOR_HEAD_INVALID',
+    );
+  }
+  return closeoutHead;
 }
 
 async function summarize(loaded) {
