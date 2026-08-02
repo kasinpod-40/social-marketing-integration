@@ -3,7 +3,7 @@
 ## Status
 
 ```text
-TASK_STATUS                          = INSTAGRAM_LARK_ORPHAN_RECOVERY_GUARD_IN_REVIEW
+TASK_STATUS                          = META_ADS_REQUIRED_MAY_JULY_READY
 CURRENT_PROGRAM                      = ALL_META_END_TO_END_COMPLETION_V1
 BRANCH                               = integration/all-meta-end-to-end-completion-v1
 BASE_MAIN_SHA                        = 0d33be48f9b8ccaf6d8cea9a4c4ee31b1175b650
@@ -17,8 +17,8 @@ META_PROVIDER_REPLAY                 = FORBIDDEN_FOR_RETAINED_FACEBOOK_OPERATION
 META_D1_QUEUE_RESEND                 = FORBIDDEN_FOR_RETAINED_FACEBOOK_OPERATION
 SCHEDULE_WEBHOOK                     = DISABLED_REQUIRED
 PRODUCTION                           = BLOCKED
-META_LATEST_STOP                     = INSTAGRAM_LARK_INVOCATION_ORPHANED_BY_EARLY_RESTORE
-NEXT_STEP                            = EXACT_CI_THEN_FENCED_INSTAGRAM_LARK_CONTINUATION
+META_LATEST_STOP                     = NONE_INSTAGRAM_COMPLETE_ACCEPTED_PARITY
+NEXT_STEP                            = META_ADS_CHEMISTRY_K2_K3_REQUIRED_MAY_JULY
 ```
 
 ## Objective
@@ -253,3 +253,10 @@ Instagram late proof ผ่าน post-completion orphan stability 31 วิน�
 chain ทุกครั้งที่มี late proof จึงข้าม full `verify-lark/resend/verify-idempotent` evidence และพบ hash gap.
 Summary จะเลือก full chain เมื่อ idempotent evidence มีอยู่ และใช้ shortened chain เฉพาะ late-only recovery
 ที่ไม่มี idempotent phase เท่านั้น.
+
+Exact-head CI ของ summary fix ผ่านครบทั้ง Branch Verification และ Meta End-to-End Verification. Instagram
+summary ปิดเป็น accepted แล้วด้วย evidence chain 14 phases: Lark parity และ idempotent rerun ผ่าน, Worker
+restore/readback all-false, Provider request เพิ่ม 0, Schedule activation 0 และ Remote mutation ใน closeout 0.
+ชุดหลักฐาน successful chain ถูกคัดลอกไป asset checkout และตรวจ `diff -qr` ตรงกันทุกไฟล์; failure chains
+ก่อนหน้าคงไว้เป็น forensic truth. Instagram July จึงเสร็จและไม่เป็น blocker; ขั้นถัดไปคือ Meta Ads required
+May–July สำหรับ `chemistry_k2` และ `chemistry_k3` ผ่าน reviewed wrapper เดิม.
