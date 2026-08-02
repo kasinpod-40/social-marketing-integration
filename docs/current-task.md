@@ -367,3 +367,11 @@ operation July ของ target เดียว; ไม่ execute Facebook/Inst
 idempotent rerun, all-false restore, retained Facebook Provider replay 0 และ D1 Queue resend 0.
 Target-mode local verification ผ่าน plan-only readback, focused history 22/22, full unit 2021/2021,
 Workers-runtime 16/16 และ `npm run check`; ยังไม่มี Remote action จาก safety fix นี้.
+
+Targeted k2 invocation บน Head `870ed257d4ea44f0b3680ee0c1c8957e26655c49` หยุดก่อน mutation ที่
+read-only preflight เพราะ caller Environment ไม่มี explicit `MKT_CONNECTOR_META_ADS_ENABLED=false`;
+Business writes 0 และ Queue messages 0. Root cause คือ target mode ข้าม Terminal เดิมที่ materialize complete
+Shared false-flag set. Fix ใช้ `applyMetaHistoryCustomerRuntimeEnvironment()` ก่อน
+`closeExecutionFlags()` จึงเติมทั้ง missing และ existing required flags เป็น string `false` ก่อน Meta preflight.
+Fix verification ผ่าน focused Meta launcher/finalizer/preflight 28/28, full unit 2022/2022,
+Workers-runtime 16/16, `npm run check` และ `git diff --check`; ยังไม่มี Remote action จาก fix นี้.

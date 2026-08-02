@@ -24,6 +24,8 @@
 - Added exact-reviewed-Head targeted execution for `chemistry_k2`/`chemistry_k3`. Target mode executes one July
   operation only, records zero retained Facebook replay/resend, and permits only the exact retained k2 forensic
   Work identity while still requiring zero active locks and no other active Reliability state.
+- Materialized the complete Shared all-false runtime authority before targeted Meta read-only validation, including
+  required flags absent from the caller's private Environment, so missing values cannot be mistaken for unsafe drift.
 - Makes no Provider, Queue, D1, Lark, deployment, Schedule or Production mutation during this implementation.
 
 ## Unreleased — Meta Ads Active-progress D1 Verification — 2026-08-02

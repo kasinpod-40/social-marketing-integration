@@ -80,6 +80,16 @@ test('Meta history Terminal materializes Shared required false flags and custome
   assert.match(safeEnvironment, /result\[key\] = 'false'/u);
 });
 
+test('Targeted Meta finalizer materializes the same all-false runtime authority before read-only preflight', async () => {
+  const finalizer = await readFile(finalizerChild, 'utf8');
+  assert.match(finalizer, /applyMetaHistoryCustomerRuntimeEnvironment/u);
+  assert.match(
+    finalizer,
+    /closeExecutionFlags\(applyMetaHistoryCustomerRuntimeEnvironment\(\{/u,
+  );
+  assert.match(finalizer, /fresh-read-only-validation/u);
+});
+
 test('Meta runtime authority materializes customer mappings and the complete Shared safe-config set', async () => {
   const source = await readFile(runtimeAuthority, 'utf8');
   assert.match(source, /META_D1_ONLY_REQUIRED_FALSE_FLAGS/u);

@@ -24,6 +24,9 @@ import {
   META_READ_ONLY_VALIDATION_CONFIRMATIONS,
 } from './lib/meta-read-only-validation-operator.js';
 import {
+  applyMetaHistoryCustomerRuntimeEnvironment,
+} from './lib/meta-history-runtime-authority.js';
+import {
   assertWooCommerce2026RemoteSafeFlags,
   selectExactlyOneActiveWorkerVersion,
 } from './lib/woocommerce-2026-completion-one-command.js';
@@ -115,7 +118,11 @@ async function executeHistory(selectedTarget) {
   const devVarsPath = resolve(process.env.DEV_VARS_FILE ?? '.dev.vars');
   await assertPrivateRegularFile(devVarsPath, 'DEV_VARS_FILE');
   const fileEnv = await readDevVars(devVarsPath);
-  const baseEnv = closeExecutionFlags({ ...fileEnv, ...process.env, DEV_VARS_FILE: devVarsPath });
+  const baseEnv = closeExecutionFlags(applyMetaHistoryCustomerRuntimeEnvironment({
+    ...fileEnv,
+    ...process.env,
+    DEV_VARS_FILE: devVarsPath,
+  }));
   requireExact(baseEnv.MKT_ENV, 'development', 'MKT_ENV');
   requireExact(baseEnv.MKT_CUSTOMER_PROFILE, 'integration_workspace', 'MKT_CUSTOMER_PROFILE');
   requireExact(baseEnv.MKT_CONNECTION_CUSTOMER_KEY, 'chemistry_k', 'MKT_CONNECTION_CUSTOMER_KEY');
