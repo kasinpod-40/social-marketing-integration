@@ -3,7 +3,7 @@
 ## Status
 
 ```text
-TASK_STATUS                          = META_ADS_REQUIRED_MAY_JULY_READY
+TASK_STATUS                          = META_ADS_K2_ORPHAN_RECOVERY_WAITING
 CURRENT_PROGRAM                      = ALL_META_END_TO_END_COMPLETION_V1
 BRANCH                               = integration/all-meta-end-to-end-completion-v1
 BASE_MAIN_SHA                        = 0d33be48f9b8ccaf6d8cea9a4c4ee31b1175b650
@@ -17,8 +17,8 @@ META_PROVIDER_REPLAY                 = FORBIDDEN_FOR_RETAINED_FACEBOOK_OPERATION
 META_D1_QUEUE_RESEND                 = FORBIDDEN_FOR_RETAINED_FACEBOOK_OPERATION
 SCHEDULE_WEBHOOK                     = DISABLED_REQUIRED
 PRODUCTION                           = BLOCKED
-META_LATEST_STOP                     = NONE_INSTAGRAM_COMPLETE_ACCEPTED_PARITY
-NEXT_STEP                            = META_ADS_CHEMISTRY_K2_K3_REQUIRED_MAY_JULY
+META_LATEST_STOP                     = K2_SOURCE_STAGING_ORPHAN_SAFE_ALL_FALSE
+NEXT_STEP                            = K2_WAIT_16M_STABLE_30S_THEN_GUARDED_SAME_OPERATION_RECOVERY
 ```
 
 ## Objective
@@ -260,3 +260,14 @@ restore/readback all-false, Provider request เพิ่ม 0, Schedule activat
 ชุดหลักฐาน successful chain ถูกคัดลอกไป asset checkout และตรวจ `diff -qr` ตรงกันทุกไฟล์; failure chains
 ก่อนหน้าคงไว้เป็น forensic truth. Instagram July จึงเสร็จและไม่เป็น blocker; ขั้นถัดไปคือ Meta Ads required
 May–July สำหรับ `chemistry_k2` และ `chemistry_k3` ผ่าน reviewed wrapper เดิม.
+
+Meta Ads required May–July เริ่ม `chemistry_k2` แล้วหนึ่ง exact Queue send. Source staging คงอยู่ 4 units /
+301 rows (`account` 1 และ `campaigns` 300) แต่ closeout OAuth เรียก `whoami` โดยไม่จำเป็นและ automatic
+restore เดิมล้มเหลว. Meta D1-only restore authority ถูกเรียกทันทีและ verify Worker all-false ผ่าน; Schedule,
+Lark และ Production ยังปิด. Exact operation ปัจจุบันเป็น honest orphan `running`, main attempts 6, lock = 0,
+operation-scoped Ads Business rows 0, Coverage runs 0 และ Lark writes 0; ห้ามส่งซ้ำแบบ blind.
+
+Implementation ปัจจุบัน pin reviewed one-command closeout จาก exact PR Head, ข้าม `whoami` เมื่อมี verified
+account authority และเพิ่ม Meta D1 orphan guard ที่ต้อง inactivity อย่างน้อย 16 นาทีพร้อม stable snapshot อีก
+30 วินาที, lock 0 และ Business/Coverage/Lark 0 ก่อน same-operation recovery. Exact-head CI ผ่านทั้งสอง
+workflow ที่ `7e806d37`. จุดนี้เป็น safe account-switch checkpoint; `chemistry_k3` ยังไม่เริ่ม.
