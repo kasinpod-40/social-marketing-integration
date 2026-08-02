@@ -191,3 +191,10 @@ all-false ผ่านและ active lock = 0. Remote work เสร็จแ�
 preflight รองรับ evidence chain ที่เริ่มโดยไม่มี plan แต่ summary บังคับอ่าน `plan.json`. Implementation จึงยอม
 เฉพาะ complete planless chain ที่ preflight มี null prior hash, ทุก hash/status ผ่าน และจบด้วย verified
 all-false restore; ไม่ต้อง Provider replay, Queue resend หรือ Remote mutation เพิ่ม.
+
+Instagram Lark continuation preflight ผ่าน 15-table inventory และ exact D1 boundary แต่ same-operation attempt
+36 หยุดก่อน Lark write ด้วย `LARK_PREFLIGHT_FAILED`: RAW Meta `metric_date` ยังเป็น date-only string ขณะที่
+Lark Date field contract ต้องเป็น epoch milliseconds. Active lock = 0, ไม่มี Lark phase write และ Worker
+restore/readback all-false ผ่าน. Implementation จึงแปลงเฉพาะ RAW Lark write-set เป็น Bangkok day epoch โดย
+ไม่เปลี่ยน source normalizer หรือ D1 date-only contract และทำ polling ให้หยุดทันทีเมื่อ attempt ใหม่เป็น
+terminal failed เพื่อ restore โดยไม่รอ bounded timeout เต็ม.

@@ -54,6 +54,10 @@ test('builds Facebook Raw, Canonical, account daily and Organic history inputs w
     'facebook:page_fixture_001:post_fixture_001',
   );
   assert.equal(writeSet.raw.organicMetrics[0].value_number, 0);
+  assert.equal(
+    writeSet.raw.organicMetrics[0].metric_date,
+    Date.parse('2026-07-24T00:00:00+07:00'),
+  );
   assert.equal(writeSet.canonical.content[0].latest_views, 0);
   assert.equal(writeSet.canonical.content[0].content_key, 'facebook:page_fixture_001:post_fixture_001');
   assert.equal(writeSet.canonical.contentDaily[0].views, 0);

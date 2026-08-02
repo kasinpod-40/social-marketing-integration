@@ -8,6 +8,7 @@ import {
   buildMetaLarkContinuationJob,
   buildMetaLarkSnapshotSql,
   classifyMetaLarkCompletion,
+  classifyMetaLarkPollingSnapshot,
   compareMetaLarkSnapshots,
   createMetaLarkEvidence,
   expectedLarkContracts,
@@ -215,6 +216,25 @@ test('completion requires Lark parity, final reconciliation, completed work and 
     }, current),
     (error) => error.code === 'META_LARK_D1_COUNT_DRIFT',
   );
+});
+
+test('polling waits for a new attempt and then surfaces terminal sync failure', () => {
+  const current = target('instagram');
+  const stale = { ...larkCompleteSnapshot(current), main_queue_attempts: 5 };
+  assert.equal(
+    classifyMetaLarkPollingSnapshot(stale, current, 6).state,
+    'pending',
+  );
+  const failed = {
+    ...stale,
+    sync_run_status: 'failed',
+    sync_run_finished_at: 123,
+    sync_run_error_code: 'LARK_PREFLIGHT_FAILED',
+    main_queue_attempts: 6,
+  };
+  const classified = classifyMetaLarkPollingSnapshot(failed, current, 6);
+  assert.equal(classified.state, 'terminal_failure');
+  assert.equal(classified.errorCode, 'LARK_PREFLIGHT_FAILED');
 });
 
 test('same-operation rerun requires another Queue attempt and immutable reconciliation', () => {

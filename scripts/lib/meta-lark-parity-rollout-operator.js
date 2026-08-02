@@ -391,6 +391,25 @@ export function classifyMetaLarkCompletion(snapshot = {}, target = {}) {
   });
 }
 
+export function classifyMetaLarkPollingSnapshot(snapshot = {}, target = {}, minimumAttempts = 0) {
+  const attempts = count(minimumAttempts);
+  const value = normalizeMetaLarkSnapshot(snapshot);
+  if (value.mainQueueAttempts < attempts) {
+    return deepFreeze({ state: 'pending', snapshot: value });
+  }
+  if (classifyMetaLarkCompletion(value, target).complete) {
+    return deepFreeze({ state: 'complete', snapshot: value });
+  }
+  if (value.syncRunStatus === 'failed') {
+    return deepFreeze({
+      state: 'terminal_failure',
+      errorCode: value.syncRunErrorCode,
+      snapshot: value,
+    });
+  }
+  return deepFreeze({ state: 'pending', snapshot: value });
+}
+
 export function compareMetaLarkSnapshots(beforeInput, afterInput, target = {}, options = {}) {
   const before = normalizeMetaLarkSnapshot(beforeInput);
   const after = normalizeMetaLarkSnapshot(afterInput);

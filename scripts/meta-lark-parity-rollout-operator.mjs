@@ -25,6 +25,7 @@ import {
   buildMetaLarkContinuationJob,
   buildMetaLarkSnapshotSql,
   classifyMetaLarkCompletion,
+  classifyMetaLarkPollingSnapshot,
   compareMetaLarkSnapshots,
   createMetaLarkEvidence,
   evidenceFileForMetaLarkPhase,
@@ -363,7 +364,8 @@ async function sendQueuePhase(loaded, phase) {
 
 async function verifyInitialLark(loaded) {
   const before = (await readEvidence(loaded, 'snapshot-before')).data?.snapshot;
-  const after = await pollForCompletion(loaded);
+  const minimumAttempts = normalizeMetaLarkSnapshot(before).mainQueueAttempts + 1;
+  const after = await pollForCompletion(loaded, minimumAttempts);
   return {
     comparison: compareMetaLarkSnapshots(before, after, loaded.target),
     snapshotAfter: after,
@@ -382,7 +384,7 @@ async function verifyLarkRerun(loaded) {
   };
 }
 
-async function pollForCompletion(loaded) {
+async function pollForCompletion(loaded, minimumAttempts) {
   const maxPolls = boundedInteger(process.env.MKT_META_LARK_VERIFY_MAX_POLLS, 120);
   const intervalMs = boundedInteger(process.env.MKT_META_LARK_VERIFY_POLL_INTERVAL_MS, 5_000);
   for (let index = 0; index < maxPolls; index += 1) {
@@ -391,7 +393,21 @@ async function pollForCompletion(loaded) {
       if (index + 1 < maxPolls) await sleep(intervalMs);
       continue;
     }
-    if (classifyMetaLarkCompletion(snapshot, loaded.target).complete) return snapshot;
+    const classified = classifyMetaLarkPollingSnapshot(
+      snapshot,
+      loaded.target,
+      minimumAttempts,
+    );
+    if (classified.state === 'complete') return classified.snapshot;
+    if (classified.state === 'terminal_failure') {
+      const error = failure(
+        'Meta Lark continuation reached a terminal failed sync run',
+        'META_LARK_TERMINAL_FAILURE',
+        { errorCode: classified.errorCode },
+      );
+      error.emergencyRestoreRequired = true;
+      throw error;
+    }
     if (index + 1 < maxPolls) await sleep(intervalMs);
   }
   const error = failure(
@@ -411,10 +427,22 @@ async function pollForRerun(loaded, minimumAttempts) {
       if (index + 1 < maxPolls) await sleep(intervalMs);
       continue;
     }
-    const normalized = normalizeMetaLarkSnapshot(snapshot);
-    if (normalized.mainQueueAttempts >= minimumAttempts
-      && classifyMetaLarkCompletion(normalized, loaded.target).complete) {
-      return normalized;
+    const classified = classifyMetaLarkPollingSnapshot(
+      snapshot,
+      loaded.target,
+      minimumAttempts,
+    );
+    if (classified.state === 'complete') {
+      return classified.snapshot;
+    }
+    if (classified.state === 'terminal_failure') {
+      const error = failure(
+        'Meta Lark idempotent rerun reached a terminal failed sync run',
+        'META_LARK_TERMINAL_FAILURE',
+        { errorCode: classified.errorCode },
+      );
+      error.emergencyRestoreRequired = true;
+      throw error;
     }
     if (index + 1 < maxPolls) await sleep(intervalMs);
   }

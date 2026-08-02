@@ -73,7 +73,9 @@ export function buildMetaOrganicWriteSet(input = {}) {
       syncRunId,
       reportingTimezone: sourceTimezone,
     });
-    rawMetrics.push(...normalizedInsights.rawRows);
+    rawMetrics.push(...normalizedInsights.rawRows.map(
+      (row) => larkRawMetricRow(row, sourceTimezone),
+    ));
     const metrics = contentMetricSnapshot(normalizedInsights.metricCandidates);
     const hasObservedMetric = Object.values(metrics).some((value) => value !== null);
     const metricDate = latestMetricDate(normalizedInsights.metricCandidates)
@@ -116,7 +118,9 @@ export function buildMetaOrganicWriteSet(input = {}) {
     syncRunId,
     reportingTimezone: sourceTimezone,
   });
-  rawMetrics.push(...normalizedAccountInsights.rawRows);
+  rawMetrics.push(...normalizedAccountInsights.rawRows.map(
+    (row) => larkRawMetricRow(row, sourceTimezone),
+  ));
 
   const accountDaily = buildAccountDailyRows({
     platform,
@@ -383,6 +387,13 @@ function normalizeInsightEntries(values, fieldName) {
 function latestMetricDate(candidates) {
   const dates = candidates.map((candidate) => candidate.metricDate).filter(Boolean).sort();
   return dates.at(-1) ?? null;
+}
+
+function larkRawMetricRow(row, sourceTimezone) {
+  return Object.freeze({
+    ...row,
+    metric_date: dateOnlyToEpoch(row.metric_date, sourceTimezone),
+  });
 }
 
 function dateOnlyInTimeZone(epochMs, timeZone) {
