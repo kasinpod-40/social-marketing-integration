@@ -268,3 +268,34 @@ test('maps Instagram creator source classification to the shared canonical profi
   assert.equal(writeSet.raw.organicAccounts[0].account_type, 'creator');
   assert.equal(writeSet.canonical.accounts[0].account_type, 'profile');
 });
+
+test('keeps carousel in RAW and maps it to the shared canonical post taxonomy', () => {
+  const writeSet = buildMetaOrganicWriteSet({
+    connectorKey: 'instagram',
+    accountId: 'ig_fixture_001',
+    accountKey: 'chemistry_k_instagram',
+    customerProfile: 'chemistry_k',
+    customerKey: 'chemistry_k',
+    syncRunId: 'sync_meta_carousel',
+    operationId: 'operation_meta_carousel',
+    fetchedAt: FETCHED_AT,
+    accountResource: {
+      user_id: 'ig_fixture_001',
+      id: 'scoped_fixture_001',
+      username: 'fixture.instagram',
+      name: 'Fixture Instagram',
+      account_type: 'BUSINESS',
+    },
+    contentResources: [{
+      id: 'media_carousel_001',
+      media_type: 'CAROUSEL_ALBUM',
+      media_product_type: 'FEED',
+      timestamp: '2026-07-23T23:30:00+0000',
+    }],
+    contentInsights: [],
+    accountInsights: [],
+  });
+
+  assert.equal(writeSet.raw.organicContent[0].content_type, 'carousel');
+  assert.equal(writeSet.canonical.content[0].content_type, 'post');
+});

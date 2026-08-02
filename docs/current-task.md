@@ -228,3 +228,9 @@ internal Instagram classification เป็น `creator` ขณะที่ Live
 `page` และ YouTube `channel`. Implementation จึงรักษา RAW source classification เดิม แต่ map Canonical
 Instagram `business -> business_account`, `creator -> profile`, Facebook เป็น `page` และ omit unknown;
 ไม่มีการสร้าง Select option หรือเปลี่ยน Live schema.
+
+Attempt 41 ผ่าน account mapping แล้วและหยุดก่อน Lark write ที่ `MKT_Content.content_type=carousel`.
+Read-only inventory ของ Select fields ทั้ง 7 Organic destinations ยืนยัน RAW options ตรงกับ source taxonomy
+ครบ แต่ Canonical `MKT_Content` ใช้ shared taxonomy `live|post|reel|short|story|video`. Implementation รักษา
+RAW type เดิมและ map Canonical `image|carousel|status|link -> post`; `video|reel|story|live` คงค่าเดิม;
+unknown/other ถูก omit แทนการปลอม classification. Select field อื่นของ Organic write-set ตรง Live options แล้ว.

@@ -96,7 +96,10 @@ export function buildMetaOrganicWriteSet(input = {}) {
       metrics,
     };
     const rows = createOrganicContentRows(rowInput);
-    canonicalContent.push(compact(rows.content, hasObservedMetric ? [] : LATEST_METRIC_FIELDS));
+    canonicalContent.push(compact({
+      ...rows.content,
+      content_type: canonicalContentType(rows.content.content_type),
+    }, hasObservedMetric ? [] : LATEST_METRIC_FIELDS));
     if (hasObservedMetric) {
       canonicalContentDaily.push(rows.dailySnapshot);
       // Canonical Lark rows retain the approved Provider account identity, while
@@ -405,6 +408,12 @@ function canonicalAccountType(platform, sourceAccountType) {
   if (platform === 'facebook') return 'page';
   if (sourceAccountType === 'business') return 'business_account';
   if (sourceAccountType === 'creator') return 'profile';
+  return null;
+}
+
+function canonicalContentType(sourceContentType) {
+  if (['post', 'image', 'carousel', 'status', 'link'].includes(sourceContentType)) return 'post';
+  if (['video', 'reel', 'story', 'live'].includes(sourceContentType)) return sourceContentType;
   return null;
 }
 
