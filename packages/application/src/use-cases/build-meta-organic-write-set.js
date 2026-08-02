@@ -392,6 +392,11 @@ function latestMetricDate(candidates) {
 function larkRawMetricRow(row, sourceTimezone) {
   return Object.freeze({
     ...row,
+    // Provider descriptors without values are an explicit internal "unavailable"
+    // shape. The approved Shared RAW Lark select contract represents every
+    // non-values/total_value/scalar shape as "other" while the null value and
+    // original descriptor remain preserved in source_payload_json.
+    response_shape: row.response_shape === 'unavailable' ? 'other' : row.response_shape,
     metric_date: dateOnlyToEpoch(row.metric_date, sourceTimezone),
   });
 }

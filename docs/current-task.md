@@ -214,3 +214,10 @@ failed status เก่าระหว่าง Queue admission กับ Worker
 Meta orphaned-running recovery, ทั้ง Sync Run และ Queue attempt ไม่มี update เกิน 16 นาที, lock = 0, D1/
 Coverage เดิม valid และ snapshot ทุก field คงที่ตลอดอีก 30 วินาที; หาก attempt, phase, count หรือ status
 ขยับจะ fail closed. Guard ไม่แก้ durable row, ไม่ replay Provider และใช้ same-operation Lark continuation เดิม.
+
+Fenced continuation ผ่านและเพิ่ม main Queue attempt เป็น 39 แต่หยุดก่อน destination-preflight/Lark write ด้วย
+`LARK_PREFLIGHT_FAILED`: internal null descriptor ใช้ `response_shape=unavailable` ซึ่งไม่ใช่ option ของ Shared
+RAW Lark contract (`values|total_value|scalar|other`). Worker restore/readback all-false ผ่าน, lock = 0 และ
+records written = 0. Implementation map เฉพาะ Lark write-set ของ descriptor นี้เป็น `other`; ค่า metric ยังคง
+null และ original descriptor ยังคงอยู่ใน `source_payload_json`, ส่วน internal normalizer ยังรักษา
+`unavailable` เพื่อไม่ทำข้อมูลต้นทางสูญหาย.

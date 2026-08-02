@@ -162,6 +162,40 @@ test('does not overwrite Organic latest metrics with null when content insights 
   assert.equal(writeSet.raw.organicAccounts[0].username, 'fixture.instagram');
 });
 
+test('maps an unavailable Provider descriptor to the approved Lark other shape without inventing a value', () => {
+  const writeSet = buildMetaOrganicWriteSet({
+    connectorKey: 'instagram',
+    accountId: 'ig_fixture_001',
+    accountKey: 'chemistry_k_instagram',
+    customerProfile: 'chemistry_k',
+    customerKey: 'chemistry_k',
+    syncRunId: 'sync_meta_unavailable',
+    operationId: 'operation_meta_unavailable',
+    fetchedAt: FETCHED_AT,
+    accountResource: {
+      user_id: 'ig_fixture_001',
+      id: 'scoped_fixture_001',
+      username: 'fixture.instagram',
+      name: 'Fixture Instagram',
+      account_type: 'BUSINESS',
+    },
+    contentResources: [],
+    contentInsights: [],
+    accountInsights: [{
+      name: 'follows_and_unfollows',
+      period: 'day',
+      id: 'ig_fixture_001/insights/follows_and_unfollows/day',
+      title: 'Follows and unfollows',
+      description: 'Unavailable for the selected range',
+    }],
+  });
+
+  assert.equal(writeSet.raw.organicMetrics[0].response_shape, 'other');
+  assert.equal(writeSet.raw.organicMetrics[0].value_number, null);
+  assert.equal(writeSet.raw.organicMetrics[0].value_json, null);
+  assert.match(writeSet.raw.organicMetrics[0].source_payload_json, /Unavailable for the selected range/u);
+});
+
 test('keeps Instagram Provider identity in Canonical rows and account_key in D1 history', () => {
   const writeSet = buildMetaOrganicWriteSet({
     connectorKey: 'instagram',
