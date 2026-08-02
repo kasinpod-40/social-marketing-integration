@@ -425,6 +425,13 @@ export function classifyMetaD1OnlyCompletion(snapshot = {}) {
   return deepFreeze({ complete, snapshot: value, reason: complete ? 'd1_complete_lark_gate_disabled' : 'incomplete_or_invalid' });
 }
 
+export function isMetaRemoteReadTransientError(error = {}) {
+  const code = error?.code;
+  return (Number.isSafeInteger(code) && code > 0)
+    || ['ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN', 'ENETUNREACH'].includes(code)
+    || (typeof error?.signal === 'string' && error.signal !== '');
+}
+
 export function compareMetaD1OnlySnapshots(beforeInput, afterInput, options = {}) {
   const before = normalizeMetaD1OnlySnapshot(beforeInput);
   const after = normalizeMetaD1OnlySnapshot(afterInput);

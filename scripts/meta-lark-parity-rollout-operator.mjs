@@ -38,6 +38,7 @@ import {
   validateMetaLarkInventory,
 } from './lib/meta-lark-parity-rollout-operator.js';
 import { resolveCloudflareBearerAuth } from './lib/woocommerce-final-one-command.js';
+import { isMetaRemoteReadTransientError } from './lib/meta-d1-only-rollout-operator.js';
 import {
   META_END_TO_END_REQUIRED_LARK_TABLE_KEYS,
 } from '../packages/config/src/meta-end-to-end-runtime-config.js';
@@ -385,7 +386,11 @@ async function pollForCompletion(loaded) {
   const maxPolls = boundedInteger(process.env.MKT_META_LARK_VERIFY_MAX_POLLS, 120);
   const intervalMs = boundedInteger(process.env.MKT_META_LARK_VERIFY_POLL_INTERVAL_MS, 5_000);
   for (let index = 0; index < maxPolls; index += 1) {
-    const snapshot = await readSnapshot(loaded);
+    const snapshot = await readPollingSnapshot(loaded);
+    if (!snapshot) {
+      if (index + 1 < maxPolls) await sleep(intervalMs);
+      continue;
+    }
     if (classifyMetaLarkCompletion(snapshot, loaded.target).complete) return snapshot;
     if (index + 1 < maxPolls) await sleep(intervalMs);
   }
@@ -401,7 +406,11 @@ async function pollForRerun(loaded, minimumAttempts) {
   const maxPolls = boundedInteger(process.env.MKT_META_LARK_RERUN_MAX_POLLS, 30);
   const intervalMs = boundedInteger(process.env.MKT_META_LARK_VERIFY_POLL_INTERVAL_MS, 5_000);
   for (let index = 0; index < maxPolls; index += 1) {
-    const snapshot = await readSnapshot(loaded);
+    const snapshot = await readPollingSnapshot(loaded);
+    if (!snapshot) {
+      if (index + 1 < maxPolls) await sleep(intervalMs);
+      continue;
+    }
     const normalized = normalizeMetaLarkSnapshot(snapshot);
     if (normalized.mainQueueAttempts >= minimumAttempts
       && classifyMetaLarkCompletion(normalized, loaded.target).complete) {
@@ -415,6 +424,15 @@ async function pollForRerun(loaded, minimumAttempts) {
   );
   error.emergencyRestoreRequired = true;
   throw error;
+}
+
+async function readPollingSnapshot(loaded) {
+  try {
+    return await readSnapshot(loaded);
+  } catch (error) {
+    if (!isMetaRemoteReadTransientError(error)) throw error;
+    return null;
+  }
 }
 
 async function verifyLateCompletion(loaded) {

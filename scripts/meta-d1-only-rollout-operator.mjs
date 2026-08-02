@@ -29,6 +29,7 @@ import {
   compareMetaD1OnlySnapshots,
   createMetaD1OnlyEvidence,
   evidenceFileForMetaD1OnlyPhase,
+  isMetaRemoteReadTransientError,
   loadMetaD1OnlyTarget,
   normalizeMetaD1OnlySnapshot,
   parseMetaD1OnlyOperatorArgs,
@@ -471,7 +472,11 @@ async function pollForD1Completion(loaded) {
   const intervalMs = positiveInteger(process.env.MKT_META_D1_ONLY_VERIFY_POLL_INTERVAL_MS, 5_000);
   let snapshot;
   for (let index = 0; index < maxPolls; index += 1) {
-    snapshot = await readSnapshot(loaded);
+    snapshot = await readPollingSnapshot(loaded);
+    if (!snapshot) {
+      if (index + 1 < maxPolls) await sleep(intervalMs);
+      continue;
+    }
     if (classifyMetaD1OnlyCompletion(snapshot).complete) return snapshot;
     if (index + 1 < maxPolls) await sleep(intervalMs);
   }
@@ -488,7 +493,11 @@ async function pollForRerun(loaded, minimumAttempts) {
   const intervalMs = positiveInteger(process.env.MKT_META_D1_ONLY_VERIFY_POLL_INTERVAL_MS, 5_000);
   let snapshot;
   for (let index = 0; index < maxPolls; index += 1) {
-    snapshot = await readSnapshot(loaded);
+    snapshot = await readPollingSnapshot(loaded);
+    if (!snapshot) {
+      if (index + 1 < maxPolls) await sleep(intervalMs);
+      continue;
+    }
     const normalized = normalizeMetaD1OnlySnapshot(snapshot);
     if (normalized.mainQueueAttempts >= minimumAttempts
       && normalized.activeLockCount === 0
@@ -503,6 +512,15 @@ async function pollForRerun(loaded, minimumAttempts) {
   );
   error.emergencyRestoreRequired = true;
   throw error;
+}
+
+async function readPollingSnapshot(loaded) {
+  try {
+    return await readSnapshot(loaded);
+  } catch (error) {
+    if (!isMetaRemoteReadTransientError(error)) throw error;
+    return null;
+  }
 }
 
 async function summarize(loaded) {

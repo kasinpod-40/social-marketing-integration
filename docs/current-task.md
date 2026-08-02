@@ -177,3 +177,9 @@ emergency Meta operator restore/readback all-false ผ่านโดยไม�
 Wrangler OAuth session แบบ refreshable ระหว่าง polling และ resolve bearer ใหม่ทันทีเฉพาะ Queue REST send;
 explicit long-lived API token contract ยังคงรองรับเหมือนเดิม. Focused tests ผ่าน 53/53, `npm run check` และ
 `git diff --check` ผ่าน; รอ exact-head CI ก่อน same-operation recovery รอบถัดไป.
+
+Exact-head CI ผ่านแล้วทั้ง Branch Verification และ Meta End-to-End Verification. Same-operation attempt 33
+ถูก Queue รับ แต่ controller เจอ Wrangler D1 read failure ครั้งแรกแล้ว restore all-false ทันที; durable DLQ
+ยืนยัน attempt นี้จบเป็น `META_END_TO_END_GATES_DISABLED` หลัง restore, ไม่มี Business/Coverage/Lark write
+และ lock = 0. Controller จึง retry เฉพาะ child-process/network failure ของ read-only polling แบบ bounded;
+semantic/contract error ยัง fail closed ทันที และไม่มี blind resend ก่อน attempt 33 settle.

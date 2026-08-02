@@ -12,6 +12,7 @@ import {
   classifyMetaD1OnlyCompletion,
   compareMetaD1OnlySnapshots,
   createMetaD1OnlyEvidence,
+  isMetaRemoteReadTransientError,
   loadMetaD1OnlyTarget,
   parseMetaD1OnlyOperatorArgs,
   validateMetaD1OnlyContinuationRepositoryState,
@@ -359,6 +360,14 @@ test('terminal recovery requires the exact failed pre-D1 boundary and a new main
     }),
     (error) => error.code === 'META_D1_ONLY_TERMINAL_RECOVERY_BASELINE_INVALID',
   );
+});
+
+test('bounded Meta polling retries child-process and network failures only', () => {
+  assert.equal(isMetaRemoteReadTransientError({ code: 1 }), true);
+  assert.equal(isMetaRemoteReadTransientError({ code: 'ETIMEDOUT' }), true);
+  assert.equal(isMetaRemoteReadTransientError({ signal: 'SIGTERM' }), true);
+  assert.equal(isMetaRemoteReadTransientError({ code: 'META_D1_ONLY_D1_QUERY_EMPTY' }), false);
+  assert.equal(isMetaRemoteReadTransientError(new TypeError('invalid JSON')), false);
 });
 
 test('same-operation rerun requires a new Queue attempt with zero Business and Coverage drift', () => {
