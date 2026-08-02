@@ -3,7 +3,7 @@
 ## Status
 
 ```text
-TASK_STATUS                          = META_ADS_K2_ORPHAN_RECOVERY_WAITING
+TASK_STATUS                          = META_ADS_K2_LONG_STAGING_PARTIAL_SAFE_ALL_FALSE
 CURRENT_PROGRAM                      = ALL_META_END_TO_END_COMPLETION_V1
 BRANCH                               = integration/all-meta-end-to-end-completion-v1
 BASE_MAIN_SHA                        = 0d33be48f9b8ccaf6d8cea9a4c4ee31b1175b650
@@ -17,8 +17,8 @@ META_PROVIDER_REPLAY                 = FORBIDDEN_FOR_RETAINED_FACEBOOK_OPERATION
 META_D1_QUEUE_RESEND                 = FORBIDDEN_FOR_RETAINED_FACEBOOK_OPERATION
 SCHEDULE_WEBHOOK                     = DISABLED_REQUIRED
 PRODUCTION                           = BLOCKED
-META_LATEST_STOP                     = K2_SOURCE_STAGING_ORPHAN_SAFE_ALL_FALSE
-NEXT_STEP                            = K2_WAIT_16M_STABLE_30S_THEN_GUARDED_SAME_OPERATION_RECOVERY
+META_LATEST_STOP                     = K2_STAGE_ADS_PARTIAL_66_UNITS_6406_ROWS_SAFE_ALL_FALSE
+NEXT_STEP                            = K2_ADD_ACTIVE_PROGRESS_VERIFY_WINDOW_THEN_GUARDED_SAME_OPERATION_RECOVERY
 ```
 
 ## Objective
@@ -271,3 +271,20 @@ Implementation ปัจจุบัน pin reviewed one-command closeout จา
 account authority และเพิ่ม Meta D1 orphan guard ที่ต้อง inactivity อย่างน้อย 16 นาทีพร้อม stable snapshot อีก
 30 วินาที, lock 0 และ Business/Coverage/Lark 0 ก่อน same-operation recovery. Exact-head CI ผ่านทั้งสอง
 workflow ที่ `7e806d37`. จุดนี้เป็น safe account-switch checkpoint; `chemistry_k3` ยังไม่เริ่ม.
+
+Same-operation orphan recovery ผ่าน stable preflight, backup, safe baseline deployment/readback และ D1-only
+deployment/readback แล้วส่ง recovery job เดียวโดย `automaticResend=false`; Facebook retained operation ไม่ถูก
+แตะ. Bounded verifier ไม่พบ accepted D1 boundary ภายใน 240 polls และจบตามจริงเป็น
+`META_D1_ONLY_VERIFY_TIMEOUT` โดยไม่สร้าง summary หรือปลอม success. Failure path deploy safe baseline และ
+verify read-back ผ่าน: Worker flags all-false, Lark/Schedule/Production ปิด และ Queue topology ตรง contract.
+หลักฐาน active recovery กับ failure chain ก่อนหน้าถูกเก็บแยกกันครบ. ห้ามส่ง k2 ซ้ำจนกว่า read-only durable
+diagnosis จะยืนยันสถานะหลัง timeout; `chemistry_k3` ยังไม่เริ่มและไม่ควรเริ่มขณะ k2 ยัง unresolved.
+
+Post-restore exact-key read-only D1 diagnosis ยืนยันว่า recovery ไม่ได้หยุดนิ่ง: source staging เดินต่อจาก
+4 units / 301 rows ไปถึง 66 units / 6,406 rows ที่ ads page 22 แต่ staging phase ยัง `complete=0`.
+Sync Run ล่าสุดเป็น invocation-level `success` กับ `records_written=0`; durable accepted boundary ยังไม่มี
+เพราะ Coverage, operation-scoped Ads entities/daily และ Lark rows ยังเป็นศูนย์, lock = 0. Fixed 240-poll
+verifier จบก่อน long-running staging เสร็จ แล้ว continuation หลัง intentional all-false restore ถูกปิดตาม
+contract เป็น `META_END_TO_END_GATES_DISABLED` ที่ main attempt 69 และเก็บ open DLQ ตาม forensic truth;
+operation-scoped Meta alert ไม่เพิ่ม. รอบถัดไปต้องแก้ verifier ให้ต่ออายุเฉพาะเมื่อ exact staging progress
+เดินจริงภายใน hard bound แล้วผ่าน exact-head tests/CI ก่อน guarded same-operation recovery; ห้าม blind resend.
