@@ -22,9 +22,11 @@ import {
 import {
   META_K2_PARTIAL_STAGING_FINALIZER_CONFIRMATION,
 } from './lib/meta-k2-partial-staging-finalizer.js';
+import { readDevVars } from './lib/dev-vars.js';
 import {
   META_K2_EXACT_RECOVERY_MODE,
   META_K2_EXACT_RECOVERY_MODE_ENV,
+  META_K2_EXACT_RECOVERY_PATH,
 } from '../packages/config/src/meta-k2-exact-recovery-contract.js';
 
 const repositoryRoot = realpathSync.native(process.cwd());
@@ -47,10 +49,17 @@ if (!execute) {
     planOnly: true,
     launcher: relative(repositoryRoot, launcherPath),
     finalizer: relative(repositoryRoot, finalizerPath),
+    devVarsFileEnv: 'DEV_VARS_FILE',
+    defaultDevVarsFile: '.dev.vars',
     baseWranglerConfigEnv: 'MKT_META_K2_RECOVERY_BASE_WRANGLER_CONFIG',
     defaultBaseWranglerConfig: 'wrangler.sync.jsonc',
     generatedRuntimeConfig: relative(repositoryRoot, runtimeConfigPath),
     runtimePathsAbsolutized: ['main', 'migrations_dir'],
+    recoveryUrl: {
+      explicitOverrideEnv: 'MKT_META_K2_EXACT_RECOVERY_URL',
+      defaultOriginEnv: 'MKT_CONNECTION_PUBLIC_ORIGIN',
+      exactPath: META_K2_EXACT_RECOVERY_PATH,
+    },
     executeArgument: '--execute',
     confirmation: META_K2_PARTIAL_STAGING_FINALIZER_CONFIRMATION,
     recoveryConfirmation: {
@@ -64,6 +73,19 @@ if (!execute) {
 
 let materialized = false;
 try {
+  const devVarsPath = await resolveRepositoryFile(
+    process.env.DEV_VARS_FILE ?? '.dev.vars',
+    'DEV_VARS_FILE',
+  );
+  await assertPrivateFile(devVarsPath, 'DEV_VARS_FILE');
+  const devVars = await readDevVars(devVarsPath);
+  const recoveryUrl = resolveRecoveryUrl({
+    explicitUrl: process.env.MKT_META_K2_EXACT_RECOVERY_URL,
+    publicOrigin:
+      process.env.MKT_CONNECTION_PUBLIC_ORIGIN
+      ?? devVars.MKT_CONNECTION_PUBLIC_ORIGIN,
+  });
+
   const baseConfigPath = await resolveRepositoryFile(
     process.env.MKT_META_K2_RECOVERY_BASE_WRANGLER_CONFIG ?? 'wrangler.sync.jsonc',
     'MKT_META_K2_RECOVERY_BASE_WRANGLER_CONFIG',
@@ -81,6 +103,8 @@ try {
     cwd: repositoryRoot,
     env: {
       ...process.env,
+      DEV_VARS_FILE: devVarsPath,
+      MKT_META_K2_EXACT_RECOVERY_URL: recoveryUrl,
       MKT_META_K2_RECOVERY_WRANGLER_CONFIG: runtimeConfigPath,
     },
     stdio: 'inherit',
@@ -122,6 +146,40 @@ function parseArgs(args) {
   return args.includes('--execute');
 }
 
+function resolveRecoveryUrl({ explicitUrl, publicOrigin }) {
+  const value = explicitUrl
+    ? new URL(requireText(explicitUrl, 'MKT_META_K2_EXACT_RECOVERY_URL'))
+    : new URL(
+      META_K2_EXACT_RECOVERY_PATH,
+      requireHttpsOrigin(publicOrigin, 'MKT_CONNECTION_PUBLIC_ORIGIN'),
+    );
+  if (value.protocol !== 'https:'
+    || value.pathname !== META_K2_EXACT_RECOVERY_PATH
+    || value.search !== ''
+    || value.hash !== '') {
+    const error = new Error(
+      'Meta K2 exact recovery URL must use HTTPS and the reviewed recovery path',
+    );
+    error.code = 'META_K2_REVIEWED_LAUNCHER_RECOVERY_URL_INVALID';
+    throw error;
+  }
+  return value.toString();
+}
+
+function requireHttpsOrigin(value, fieldName) {
+  const url = new URL(requireText(value, fieldName));
+  if (url.protocol !== 'https:'
+    || url.pathname !== '/'
+    || url.search !== ''
+    || url.hash !== '') {
+    const error = new Error(`${fieldName} must be an HTTPS origin`);
+    error.code = 'META_K2_REVIEWED_LAUNCHER_PUBLIC_ORIGIN_INVALID';
+    error.details = { fieldName };
+    throw error;
+  }
+  return url;
+}
+
 async function resolveRepositoryFile(value, fieldName) {
   const input = requireText(value, fieldName);
   const candidate = resolve(repositoryRoot, input);
@@ -140,6 +198,16 @@ async function resolveRepositoryFile(value, fieldName) {
     throw error;
   }
   return canonical;
+}
+
+async function assertPrivateFile(path, fieldName) {
+  const valueStat = await stat(path);
+  if ((valueStat.mode & 0o077) !== 0) {
+    const error = new Error(`${fieldName} must not be readable by group or others`);
+    error.code = 'META_K2_REVIEWED_LAUNCHER_PRIVATE_FILE_INVALID';
+    error.details = { fieldName };
+    throw error;
+  }
 }
 
 async function writePrivateText(path, value) {
