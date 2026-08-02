@@ -1,4 +1,9 @@
 import { buildAdsMetricPayload } from '../reports/calculate-ads-period-metrics.js';
+import { buildChatwootDimensionMetricPayload } from '../reports/build-chatwoot-dimension-metric-payload.js';
+import {
+  buildChatwootMetricPayload,
+  calculateChatwootPeriodMetrics,
+} from '../reports/calculate-chatwoot-period-metrics.js';
 import { buildCommerceDimensionMetricPayload } from '../reports/build-commerce-dimension-metric-payload.js';
 import {
   buildOrganicMetricPayload,
@@ -95,9 +100,75 @@ async function buildActiveResult(input) {
   if (input.contract.capability === REPORT_PLATFORM_CAPABILITY.ORGANIC) return buildOrganicResult(input);
   if (input.contract.capability === REPORT_PLATFORM_CAPABILITY.PAID_ADS) return buildAdsResult(input);
   if (input.contract.capability === REPORT_PLATFORM_CAPABILITY.COMMERCE) return buildCommerceResult(input);
+  if (input.contract.capability === REPORT_PLATFORM_CAPABILITY.CUSTOMER_SERVICE) {
+    return buildCustomerServiceResult(input);
+  }
   throw permanentError('Dashboard report capability is unsupported', {
     code: 'DASHBOARD_REPORT_CAPABILITY_UNSUPPORTED',
     details: { capability: input.contract.capability },
+  });
+}
+
+async function buildCustomerServiceResult(input) {
+  const [currentSource, compareSource] = await Promise.all([
+    input.adapter.load({
+      customerKey: input.customerKey,
+      accountKey: input.accountKey,
+      periodStart: input.period.periodStart,
+      periodEnd: input.period.periodEnd,
+      maxFactRows: input.maxFactRows,
+    }),
+    input.period.comparisonMode === 'none' ? Promise.resolve(null) : input.adapter.load({
+      customerKey: input.customerKey,
+      accountKey: input.accountKey,
+      periodStart: input.period.compareStart,
+      periodEnd: input.period.compareEnd,
+      maxFactRows: input.maxFactRows,
+    }),
+  ]);
+  assertWatermark(
+    input.sourceWatermark,
+    currentSource.readSummary?.sourceWatermark,
+    input.contract.platformScope,
+  );
+  if (compareSource) {
+    assertWatermark(
+      input.sourceWatermark,
+      compareSource.readSummary?.sourceWatermark,
+      input.contract.platformScope,
+    );
+  }
+  const current = calculateChatwootPeriodMetrics(currentSource);
+  const compare = compareSource ? calculateChatwootPeriodMetrics(compareSource) : null;
+  return Object.freeze({
+    platform: input.contract.platformScope,
+    capability: input.contract.capability,
+    reportSettingKey: input.reportSettingKey,
+    reportType: REPORT_TYPE,
+    period: input.period,
+    dataStatus: current.dataStatus,
+    coverageRate: current.coverageRate,
+    sourceWatermark: currentSource.readSummary?.sourceWatermark ?? null,
+    sourceRead: currentSource.readSummary,
+    source: 'd1_chatwoot_customer_service_facts',
+    metricPayload: buildChatwootMetricPayload({
+      platform: input.contract.platformScope,
+      formulaVersion: input.contract.formulaVersion,
+      current,
+      compare,
+    }),
+    collections: Object.freeze({
+      dimension_metrics: buildChatwootDimensionMetricPayload({
+        platform: input.contract.platformScope,
+        formulaVersion: input.contract.formulaVersion,
+        facts: currentSource.facts,
+        coverageComplete: currentSource.coverage?.complete === true,
+      }),
+    }),
+    topContent: Object.freeze([]),
+    topAds: Object.freeze([]),
+    topContentCount: 0,
+    topAdsCount: 0,
   });
 }
 

@@ -4,6 +4,7 @@ export const REPORT_PLATFORM_CAPABILITY = Object.freeze({
   ORGANIC: 'organic',
   PAID_ADS: 'paid_ads',
   COMMERCE: 'commerce',
+  CUSTOMER_SERVICE: 'customer_service',
 });
 
 export const REPORT_SOURCE_STATUS = Object.freeze({
@@ -74,6 +75,13 @@ const PLATFORM_CONTRACTS = Object.freeze({
     sourceStatus: REPORT_SOURCE_STATUS.ACTIVE,
     datasetKey: 'commerce_daily_sales_facts',
     formulaVersion: 'woocommerce-commerce-v1',
+  }),
+  chatwoot: freezeContract({
+    platformScope: 'chatwoot',
+    capability: REPORT_PLATFORM_CAPABILITY.CUSTOMER_SERVICE,
+    sourceStatus: REPORT_SOURCE_STATUS.UAT_PENDING,
+    datasetKey: 'chatwoot_conversation_daily_facts',
+    formulaVersion: 'chatwoot-customer-service-v1',
   }),
 });
 
