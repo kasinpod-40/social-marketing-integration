@@ -1,5 +1,15 @@
 import { createHash } from 'node:crypto';
 import {
+  META_K2_EXACT_LARK_TABLE_KEYS,
+  META_K2_EXACT_RECOVERY_ATTESTATION_ENV,
+  META_K2_EXACT_RECOVERY_IDENTITY,
+  META_K2_EXACT_RECOVERY_MODE,
+  META_K2_EXACT_RECOVERY_MODE_ENV,
+  META_K2_EXACT_RECOVERY_PHASE_ENV,
+  META_K2_EXACT_RECOVERY_TOKEN_SHA256_ENV,
+} from '../../packages/config/src/meta-k2-exact-recovery-contract.js';
+import { permanentError } from '../../packages/shared/src/errors/runtime-error.js';
+import {
   META_D1_ONLY_OPERATOR_CONTRACT_VERSION,
   buildMetaD1OnlyConfigWindow,
   createMetaD1OnlyEvidence,
@@ -9,16 +19,6 @@ import {
   classifyMetaLarkCompletion,
   normalizeMetaLarkSnapshot,
 } from './meta-lark-parity-rollout-operator.js';
-import {
-  META_K2_PARTIAL_STAGING_EXACT_IDENTITY,
-} from './meta-d1-only-partial-staging-recovery.js';
-import {
-  META_D1_ONLY_PARTIAL_STAGING_RECOVERY_ATTESTATION_ENV,
-  META_D1_ONLY_PARTIAL_STAGING_RECOVERY_MODE,
-  META_D1_ONLY_PARTIAL_STAGING_RECOVERY_PHASE_ENV,
-  META_D1_ONLY_PARTIAL_STAGING_RECOVERY_TOKEN_SHA256_ENV,
-} from '../../apps/sync-worker/src/meta-d1-only-partial-staging-recovery-http.js';
-import { permanentError } from '../../packages/shared/src/errors/runtime-error.js';
 
 export const META_K2_PARTIAL_STAGING_FINALIZER_CONTRACT_VERSION =
   'meta_k2_partial_staging_finalizer_v1';
@@ -51,24 +51,14 @@ export const META_K2_PARTIAL_STAGING_FINALIZER_PHASES = Object.freeze([
   'verify-restore-after-lark',
   'summary',
 ]);
-export const META_K2_EXACT_LARK_TABLE_KEYS = Object.freeze([
-  'mktAdsAccounts',
-  'mktAdsCampaigns',
-  'mktAdsAdGroups',
-  'mktAdsAds',
-]);
+export { META_K2_EXACT_LARK_TABLE_KEYS };
 
+const EXACT = META_K2_EXACT_RECOVERY_IDENTITY;
 const FULL_SHA = /^[0-9a-f]{40}$/u;
 const SHA256 = /^[0-9a-f]{64}$/u;
-const EXACT = META_K2_PARTIAL_STAGING_EXACT_IDENTITY;
 
 export function parseMetaK2PartialStagingFinalizerArgs(args = []) {
-  let execute = false;
-  const unknown = [];
-  for (const arg of args) {
-    if (arg === '--execute') execute = true;
-    else unknown.push(arg);
-  }
+  const unknown = args.filter((arg) => arg !== '--execute');
   if (unknown.length > 0) {
     throw finalizerError(
       'Unsupported Meta K2 partial-staging finalizer argument',
@@ -76,14 +66,13 @@ export function parseMetaK2PartialStagingFinalizerArgs(args = []) {
       { unknown },
     );
   }
-  return Object.freeze({ execute });
+  return Object.freeze({ execute: args.includes('--execute') });
 }
 
 export function assertMetaK2PartialStagingFinalizerConfirmation(env = {}) {
   const expected = META_K2_PARTIAL_STAGING_FINALIZER_CONFIRMATION;
   if (env?.[expected.envName] !== expected.value
-    || env?.MKT_META_D1_ONLY_PARTIAL_STAGING_RECOVERY
-      !== META_D1_ONLY_PARTIAL_STAGING_RECOVERY_MODE) {
+    || env?.[META_K2_EXACT_RECOVERY_MODE_ENV] !== META_K2_EXACT_RECOVERY_MODE) {
     throw finalizerError(
       'Meta K2 partial-staging finalizer requires exact confirmations',
       'META_K2_PARTIAL_STAGING_FINALIZER_CONFIRMATION_REQUIRED',
@@ -93,17 +82,16 @@ export function assertMetaK2PartialStagingFinalizerConfirmation(env = {}) {
 }
 
 export function validateMetaK2ReviewedRepositoryState(input = {}) {
-  const repositoryHead = requireFullSha(input.repositoryHead, 'repositoryHead');
-  const reviewedHead = requireFullSha(input.reviewedHead, 'reviewedHead');
-  const retainedHead = requireFullSha(input.retainedHead, 'retainedHead');
-  const valid = input.branch === 'integration/all-meta-end-to-end-completion-v1'
-    && repositoryHead === reviewedHead
-    && input.originReviewedHead === repositoryHead
+  const repositoryHead = fullSha(input.repositoryHead, 'repositoryHead');
+  const retainedHead = fullSha(input.retainedHead, 'retainedHead');
+  const accepted = input.branch === 'integration/all-meta-end-to-end-completion-v1'
+    && repositoryHead === fullSha(input.reviewedHead, 'reviewedHead')
+    && repositoryHead === fullSha(input.originReviewedHead, 'originReviewedHead')
     && retainedHead === META_K2_RETAINED_OPERATION_HEAD
     && input.retainedHeadIsAncestor === true
     && input.reviewBaseIsAncestor === true
     && input.clean === true;
-  if (!valid) {
+  if (!accepted) {
     throw finalizerError(
       'Meta K2 recovery requires the exact clean reviewed PR Head and retained operation ancestry',
       'META_K2_PARTIAL_STAGING_REPOSITORY_INVALID',
@@ -118,23 +106,24 @@ export function validateMetaK2ReviewedRepositoryState(input = {}) {
 }
 
 export function validateMetaK2RetainedEvidence(input = {}) {
-  const sendAttempt = requireObject(input.sendAttempt, 'sendAttempt');
-  const send = validateEvidence(input.send, 'send-one-d1-only');
-  const restore = validateEvidence(input.restore, 'restore-all-false');
-  const verifyRestore = validateEvidence(input.verifyRestore, 'verify-restore');
-  requireExact(send.operationId, EXACT.operationId, 'send.operationId');
-  requireExact(restore.operationId, EXACT.operationId, 'restore.operationId');
-  requireExact(verifyRestore.operationId, EXACT.operationId, 'verifyRestore.operationId');
-  requireExact(sendAttempt.operationId, EXACT.operationId, 'sendAttempt.operationId');
-  requireExact(sendAttempt.workKey, EXACT.workKey, 'sendAttempt.workKey');
-  if (send.data?.accepted !== true
+  const attempt = object(input.sendAttempt, 'sendAttempt');
+  const send = validateD1Evidence(input.send, 'send-one-d1-only');
+  const restore = validateD1Evidence(input.restore, 'restore-all-false');
+  const verifyRestore = validateD1Evidence(input.verifyRestore, 'verify-restore');
+  for (const evidence of [send, restore, verifyRestore]) {
+    exact(evidence.operationId, EXACT.operationId, `${evidence.phase}.operationId`);
+  }
+  exact(attempt.operationId, EXACT.operationId, 'sendAttempt.operationId');
+  exact(attempt.workKey, EXACT.workKey, 'sendAttempt.workKey');
+  if (restore.previousEvidenceSha256 !== send.evidenceSha256
+    || verifyRestore.previousEvidenceSha256 !== restore.evidenceSha256
+    || send.data?.accepted !== true
     || Number(send.data?.queueSendCommandCount) !== 1
     || send.data?.automaticResend !== false
     || restore.data?.mode !== 'safe'
     || verifyRestore.data?.mode !== 'safe'
     || !Array.isArray(verifyRestore.data?.expectedTrueFlags)
-    || verifyRestore.data.expectedTrueFlags.length !== 0
-    || verifyRestore.previousEvidenceSha256 !== restore.evidenceSha256) {
+    || verifyRestore.data.expectedTrueFlags.length !== 0) {
     throw finalizerError(
       'Retained Meta K2 Queue acceptance or all-false restore evidence is invalid',
       'META_K2_RETAINED_EVIDENCE_INVALID',
@@ -144,6 +133,10 @@ export function validateMetaK2RetainedEvidence(input = {}) {
     accepted: true,
     operationId: EXACT.operationId,
     workKey: EXACT.workKey,
+    originalRequestedAt: timestamp(
+      attempt.generation ?? attempt.originalRequestedAt,
+      'sendAttempt.generation',
+    ),
     queueSendCommandCount: 1,
     automaticResend: false,
     retainedEvidenceSha256: verifyRestore.evidenceSha256,
@@ -154,19 +147,17 @@ export function validateMetaK2RetainedEvidence(input = {}) {
 }
 
 export function buildMetaK2ExactContinuationConfig(safeText, target = {}, input = {}) {
-  const phase = requireChoice(input.phase, ['d1', 'lark'], 'phase');
-  const tokenSha256 = requireSha256(input.tokenSha256, 'tokenSha256');
-  const attestation = requireSha256(input.attestation, 'attestation');
+  const phase = choice(input.phase, ['d1', 'lark'], 'phase');
+  const tokenSha256 = fingerprint(input.tokenSha256, 'tokenSha256');
+  const attestation = fingerprint(input.attestation, 'attestation');
   const base = phase === 'd1'
     ? buildMetaD1OnlyConfigWindow(safeText, target)
     : buildMetaLarkConfigWindow(safeText, target);
-  let activeText = base.activeText;
   const values = {
-    MKT_META_D1_ONLY_PARTIAL_STAGING_RECOVERY:
-      META_D1_ONLY_PARTIAL_STAGING_RECOVERY_MODE,
-    [META_D1_ONLY_PARTIAL_STAGING_RECOVERY_PHASE_ENV]: phase,
-    [META_D1_ONLY_PARTIAL_STAGING_RECOVERY_TOKEN_SHA256_ENV]: tokenSha256,
-    [META_D1_ONLY_PARTIAL_STAGING_RECOVERY_ATTESTATION_ENV]: attestation,
+    [META_K2_EXACT_RECOVERY_MODE_ENV]: META_K2_EXACT_RECOVERY_MODE,
+    [META_K2_EXACT_RECOVERY_PHASE_ENV]: phase,
+    [META_K2_EXACT_RECOVERY_TOKEN_SHA256_ENV]: tokenSha256,
+    [META_K2_EXACT_RECOVERY_ATTESTATION_ENV]: attestation,
     MKT_META_D1_ONLY_TARGET: EXACT.targetKey,
     MKT_META_D1_ONLY_OPERATION_ID: EXACT.operationId,
     MKT_META_D1_ONLY_WORK_KEY: EXACT.workKey,
@@ -175,15 +166,16 @@ export function buildMetaK2ExactContinuationConfig(safeText, target = {}, input 
     MKT_META_D1_ONLY_PERIOD_START: EXACT.periodStart,
     MKT_META_D1_ONLY_PERIOD_END: EXACT.periodEnd,
     MKT_META_D1_ONLY_ORIGINAL_REQUESTED_AT: String(
-      requireTimestamp(target.originalRequestedAt, 'target.originalRequestedAt'),
+      timestamp(target.originalRequestedAt, 'target.originalRequestedAt'),
     ),
     MKT_META_D1_ONLY_MAIN_QUEUE_ATTEMPTS: String(EXACT.mainQueueAttempts),
   };
+  let activeText = base.activeText;
   for (const [key, value] of Object.entries(values)) {
     activeText = upsertJsoncString(activeText, key, value);
   }
-  const observedTrueFlags = extractTrueFlags(activeText);
-  if (JSON.stringify(observedTrueFlags) !== JSON.stringify(base.activeTrueFlags)) {
+  const observedTrueFlags = trueFlags(activeText);
+  if (stableJson(observedTrueFlags) !== stableJson(base.activeTrueFlags)) {
     throw finalizerError(
       'Meta K2 continuation config contains unapproved enabled flags',
       'META_K2_PARTIAL_STAGING_CONFIG_FLAGS_INVALID',
@@ -204,7 +196,7 @@ export function buildMetaK2ExactContinuationConfig(safeText, target = {}, input 
 }
 
 export function validateMetaK2ContinuationHttpResponse(value = {}, input = {}) {
-  const phase = requireChoice(input.phase, ['d1', 'lark'], 'phase');
+  const phase = choice(input.phase, ['d1', 'lark'], 'phase');
   const accepted = value.ok === true
     && value.stage === 'meta-exact-operation-continuation'
     && value.phase === phase
@@ -229,16 +221,169 @@ export function validateMetaK2ContinuationHttpResponse(value = {}, input = {}) {
   return deepFreeze({
     accepted: true,
     phase,
-    status: requireText(value.status, 'status'),
+    status: text(value.status, 'status'),
     continuationSuppressed: value.continuationSuppressed === true,
     queueMessageCount: 0,
     queueOperationAttemptMutationCount: 0,
   });
 }
 
-export function compareMetaK2DirectLarkSnapshots(beforeInput = {}, afterInput = {}, target = {}, options = {}) {
+export function compareMetaK2DirectLarkSnapshots(
+  beforeInput = {},
+  afterInput = {},
+  target = {},
+  options = {},
+) {
   const before = normalizeMetaLarkSnapshot(beforeInput);
   const after = normalizeMetaLarkSnapshot(afterInput);
+  assertLarkNoD1OrQueueDrift(before, after);
+  const classified = classifyMetaLarkCompletion(after, target);
+  if (!classified.complete) {
+    throw finalizerError(
+      'Meta K2 direct Lark continuation is incomplete',
+      'META_K2_DIRECT_LARK_INCOMPLETE',
+    );
+  }
+  const tableKeys = after.larkResults.map((entry) => entry?.tableKey);
+  if (stableJson(tableKeys) !== stableJson(META_K2_EXACT_LARK_TABLE_KEYS)) {
+    throw finalizerError(
+      'Meta K2 Lark results exceed the Account/Campaign/AdSet/Ad scope',
+      'META_K2_DIRECT_LARK_SCOPE_INVALID',
+      { tableKeys },
+    );
+  }
+  const rerun = options.rerun === true;
+  if (rerun && stableJson(larkDurableSignature(before)) !== stableJson(larkDurableSignature(after))) {
+    throw finalizerError(
+      'Meta K2 direct Lark idempotent rerun changed completed state',
+      'META_K2_DIRECT_LARK_RERUN_DRIFT',
+    );
+  }
+  return deepFreeze({
+    accepted: true,
+    rerun,
+    queueAttemptsUnchanged: true,
+    d1CountDrift: false,
+    coverageCountDrift: false,
+    larkTableKeys: tableKeys,
+    snapshot: after,
+  });
+}
+
+export function createMetaK2RecoveryEvidence(input = {}) {
+  const unsigned = {
+    phase: choice(input.phase, META_K2_PARTIAL_STAGING_FINALIZER_PHASES, 'phase'),
+    status: 'passed',
+    capturedAt: new Date(input.capturedAt ?? Date.now()).toISOString(),
+    contractVersion: META_K2_PARTIAL_STAGING_FINALIZER_CONTRACT_VERSION,
+    repositoryHead: fullSha(input.repositoryHead, 'repositoryHead'),
+    retainedOperationHead: META_K2_RETAINED_OPERATION_HEAD,
+    targetKey: EXACT.targetKey,
+    operationId: EXACT.operationId,
+    workKey: EXACT.workKey,
+    syncRunId: EXACT.syncRunId,
+    previousEvidenceSha256: input.previousEvidenceSha256
+      ? fingerprint(input.previousEvidenceSha256, 'previousEvidenceSha256')
+      : null,
+    data: sanitize(input.data ?? {}),
+    queueSendAllowed: false,
+    lifecycleSqlRepairAllowed: false,
+    providerReplayAllowed: false,
+    scheduleActivationAllowed: false,
+    productionAllowed: false,
+  };
+  return deepFreeze({ ...unsigned, evidenceSha256: sha256(stableJson(unsigned)) });
+}
+
+export function validateMetaK2RecoveryEvidenceSequence(evidence = [], retainedAnchorSha256) {
+  const anchor = fingerprint(retainedAnchorSha256, 'retainedAnchorSha256');
+  if (!Array.isArray(evidence) || evidence.length === 0) {
+    throw finalizerError(
+      'Meta K2 recovery evidence is empty',
+      'META_K2_PARTIAL_STAGING_EVIDENCE_MISSING',
+    );
+  }
+  let previousSha256 = anchor;
+  let previousIndex = -1;
+  for (const item of evidence) {
+    const index = META_K2_PARTIAL_STAGING_FINALIZER_PHASES.indexOf(item?.phase);
+    const unsigned = { ...item };
+    delete unsigned.evidenceSha256;
+    const accepted = item?.contractVersion === META_K2_PARTIAL_STAGING_FINALIZER_CONTRACT_VERSION
+      && item?.repositoryHead && FULL_SHA.test(item.repositoryHead)
+      && item?.retainedOperationHead === META_K2_RETAINED_OPERATION_HEAD
+      && item?.targetKey === EXACT.targetKey
+      && item?.operationId === EXACT.operationId
+      && item?.workKey === EXACT.workKey
+      && item?.syncRunId === EXACT.syncRunId
+      && item?.previousEvidenceSha256 === previousSha256
+      && index > previousIndex
+      && item?.evidenceSha256 === sha256(stableJson(unsigned))
+      && item?.queueSendAllowed === false
+      && item?.lifecycleSqlRepairAllowed === false
+      && item?.providerReplayAllowed === false
+      && item?.scheduleActivationAllowed === false
+      && item?.productionAllowed === false;
+    if (!accepted) {
+      throw finalizerError(
+        'Meta K2 recovery evidence chain is invalid',
+        'META_K2_PARTIAL_STAGING_EVIDENCE_INVALID',
+      );
+    }
+    previousSha256 = item.evidenceSha256;
+    previousIndex = index;
+  }
+  return deepFreeze({
+    accepted: true,
+    retainedAnchorSha256: anchor,
+    evidenceChainHeadSha256: previousSha256,
+    evidence: [...evidence],
+  });
+}
+
+export function createMetaK2CanonicalD1Summary(input = {}) {
+  const target = object(input.target, 'target');
+  const recovery = object(input.recovery, 'recovery');
+  const summary = createMetaD1OnlyEvidence({
+    phase: 'summary',
+    repositoryHead: fullSha(target.repositoryHead, 'target.repositoryHead'),
+    targetFingerprint: fingerprint(target.targetFingerprint, 'target.targetFingerprint'),
+    targetKey: EXACT.targetKey,
+    operationId: EXACT.operationId,
+    previousEvidenceSha256: fingerprint(
+      recovery.evidenceChainHeadSha256,
+      'recovery.evidenceChainHeadSha256',
+    ),
+    data: {
+      accepted: true,
+      targetKey: EXACT.targetKey,
+      operationId: EXACT.operationId,
+      d1OnlyVerified: true,
+      idempotentRerunVerified: true,
+      restoredAllFalse: true,
+      queueSendCommandCount: 0,
+      queueAttemptsUnchanged: true,
+      larkMutationCount: 0,
+      scheduleActivationCount: 0,
+      recoveryContractVersion: META_K2_PARTIAL_STAGING_FINALIZER_CONTRACT_VERSION,
+      retainedOperationHead: META_K2_RETAINED_OPERATION_HEAD,
+      retainedEvidenceSha256: recovery.retainedAnchorSha256,
+      evidenceChainHeadSha256: recovery.evidenceChainHeadSha256,
+      nextGate: 'exact_queue_free_lark_continuation',
+    },
+    remoteMutationPerformed: false,
+    businessWritesAllowed: false,
+  });
+  if (summary.contractVersion !== META_D1_ONLY_OPERATOR_CONTRACT_VERSION) {
+    throw finalizerError(
+      'Meta K2 canonical D1 summary contract is invalid',
+      'META_K2_CANONICAL_D1_SUMMARY_INVALID',
+    );
+  }
+  return summary;
+}
+
+function assertLarkNoD1OrQueueDrift(before, after) {
   if (after.queueOperationAttempts !== before.queueOperationAttempts
     || after.mainQueueAttempts !== before.mainQueueAttempts) {
     throw finalizerError(
@@ -263,184 +408,68 @@ export function compareMetaK2DirectLarkSnapshots(beforeInput = {}, afterInput = 
       'META_K2_DIRECT_LARK_COVERAGE_DRIFT',
     );
   }
-  const classified = classifyMetaLarkCompletion(after, target);
-  if (!classified.complete) {
-    throw finalizerError(
-      'Meta K2 direct Lark continuation is incomplete',
-      'META_K2_DIRECT_LARK_INCOMPLETE',
-    );
-  }
-  const observedKeys = after.larkResults.map((entry) => entry?.tableKey);
-  if (JSON.stringify(observedKeys) !== JSON.stringify(META_K2_EXACT_LARK_TABLE_KEYS)) {
-    throw finalizerError(
-      'Meta K2 Lark results exceed the Account/Campaign/AdSet/Ad scope',
-      'META_K2_DIRECT_LARK_SCOPE_INVALID',
-      { observedKeys },
-    );
-  }
-  const rerun = options.rerun === true;
-  if (rerun && stableJson({ ...before, observedAt: 0 }) !== stableJson({ ...after, observedAt: 0 })) {
-    throw finalizerError(
-      'Meta K2 direct Lark idempotent rerun changed completed state',
-      'META_K2_DIRECT_LARK_RERUN_DRIFT',
-    );
-  }
-  return deepFreeze({
-    accepted: true,
-    rerun,
-    queueAttemptsUnchanged: true,
-    d1CountDrift: false,
-    coverageCountDrift: false,
-    larkTableKeys: observedKeys,
-    snapshot: after,
-  });
 }
 
-export function createMetaK2RecoveryEvidence(input = {}) {
-  const unsigned = {
-    phase: requireChoice(input.phase, META_K2_PARTIAL_STAGING_FINALIZER_PHASES, 'phase'),
-    status: 'passed',
-    capturedAt: new Date(input.capturedAt ?? Date.now()).toISOString(),
-    contractVersion: META_K2_PARTIAL_STAGING_FINALIZER_CONTRACT_VERSION,
-    repositoryHead: requireFullSha(input.repositoryHead, 'repositoryHead'),
-    retainedOperationHead: META_K2_RETAINED_OPERATION_HEAD,
-    targetKey: EXACT.targetKey,
-    operationId: EXACT.operationId,
-    workKey: EXACT.workKey,
-    syncRunId: EXACT.syncRunId,
-    previousEvidenceSha256: input.previousEvidenceSha256
-      ? requireSha256(input.previousEvidenceSha256, 'previousEvidenceSha256')
-      : null,
-    data: sanitize(input.data ?? {}),
-    queueSendAllowed: false,
-    lifecycleSqlRepairAllowed: false,
-    providerReplayAllowed: false,
-    scheduleActivationAllowed: false,
-    productionAllowed: false,
+function larkDurableSignature(snapshot) {
+  return {
+    workStatus: snapshot.workStatus,
+    workLifecycleStatus: snapshot.workLifecycleStatus,
+    workCompletedAt: snapshot.workCompletedAt,
+    d1PhaseComplete: snapshot.d1PhaseComplete,
+    preflightPhaseComplete: snapshot.preflightPhaseComplete,
+    preflightSummaries: snapshot.preflightSummaries,
+    larkPhaseComplete: snapshot.larkPhaseComplete,
+    larkResults: snapshot.larkResults,
+    completionPhaseComplete: snapshot.completionPhaseComplete,
+    completionReconciliation: snapshot.completionReconciliation,
+    clearedPhaseCompletion: snapshot.clearedPhaseCompletion,
+    completionOperationId: snapshot.completionOperationId,
+    completionConnectorKey: snapshot.completionConnectorKey,
+    activeLockCount: snapshot.activeLockCount,
+    queueOperationAttempts: snapshot.queueOperationAttempts,
+    mainQueueAttempts: snapshot.mainQueueAttempts,
+    coverageRunCount: snapshot.coverageRunCount,
+    invalidCoverageCount: snapshot.invalidCoverageCount,
+    coverageEntityCount: snapshot.coverageEntityCount,
+    targetCounts: snapshot.targetCounts,
   };
-  return deepFreeze({ ...unsigned, evidenceSha256: sha256(stableJson(unsigned)) });
 }
 
-export function validateMetaK2RecoveryEvidenceSequence(evidence = [], retainedAnchorSha256) {
-  const anchor = requireSha256(retainedAnchorSha256, 'retainedAnchorSha256');
-  if (!Array.isArray(evidence) || evidence.length === 0) {
-    throw finalizerError(
-      'Meta K2 recovery evidence is empty',
-      'META_K2_PARTIAL_STAGING_EVIDENCE_MISSING',
-    );
-  }
-  let previousSha256 = anchor;
-  let previousPhaseIndex = -1;
-  for (const item of evidence) {
-    const phaseIndex = META_K2_PARTIAL_STAGING_FINALIZER_PHASES.indexOf(item?.phase);
-    const unsigned = { ...item };
-    delete unsigned.evidenceSha256;
-    if (item?.contractVersion !== META_K2_PARTIAL_STAGING_FINALIZER_CONTRACT_VERSION
-      || item?.retainedOperationHead !== META_K2_RETAINED_OPERATION_HEAD
-      || item?.targetKey !== EXACT.targetKey
-      || item?.operationId !== EXACT.operationId
-      || item?.workKey !== EXACT.workKey
-      || item?.syncRunId !== EXACT.syncRunId
-      || item?.previousEvidenceSha256 !== previousSha256
-      || phaseIndex <= previousPhaseIndex
-      || item?.evidenceSha256 !== sha256(stableJson(unsigned))
-      || item?.queueSendAllowed !== false
-      || item?.lifecycleSqlRepairAllowed !== false
-      || item?.providerReplayAllowed !== false
-      || item?.scheduleActivationAllowed !== false
-      || item?.productionAllowed !== false) {
-      throw finalizerError(
-        'Meta K2 recovery evidence chain is invalid',
-        'META_K2_PARTIAL_STAGING_EVIDENCE_INVALID',
-      );
-    }
-    previousSha256 = item.evidenceSha256;
-    previousPhaseIndex = phaseIndex;
-  }
-  return deepFreeze({
-    accepted: true,
-    retainedAnchorSha256: anchor,
-    evidenceChainHeadSha256: previousSha256,
-    evidence: [...evidence],
-  });
-}
-
-export function createMetaK2CanonicalD1Summary(input = {}) {
-  const target = requireObject(input.target, 'target');
-  const recovery = requireObject(input.recovery, 'recovery');
-  const evidence = createMetaD1OnlyEvidence({
-    phase: 'summary',
-    repositoryHead: requireFullSha(target.repositoryHead, 'target.repositoryHead'),
-    targetFingerprint: requireSha256(target.targetFingerprint, 'target.targetFingerprint'),
-    targetKey: EXACT.targetKey,
-    operationId: EXACT.operationId,
-    previousEvidenceSha256: requireSha256(
-      recovery.evidenceChainHeadSha256,
-      'recovery.evidenceChainHeadSha256',
-    ),
-    data: {
-      accepted: true,
-      targetKey: EXACT.targetKey,
-      operationId: EXACT.operationId,
-      d1OnlyVerified: true,
-      idempotentRerunVerified: true,
-      restoredAllFalse: true,
-      queueSendCommandCount: 0,
-      queueAttemptsUnchanged: true,
-      larkMutationCount: 0,
-      scheduleActivationCount: 0,
-      recoveryContractVersion: META_K2_PARTIAL_STAGING_FINALIZER_CONTRACT_VERSION,
-      retainedOperationHead: META_K2_RETAINED_OPERATION_HEAD,
-      retainedEvidenceSha256: recovery.retainedAnchorSha256,
-      evidenceChainHeadSha256: recovery.evidenceChainHeadSha256,
-      nextGate: 'exact_queue_free_lark_continuation',
-    },
-    remoteMutationPerformed: false,
-    providerRequestMode: null,
-    businessWritesAllowed: false,
-  });
-  if (evidence.contractVersion !== META_D1_ONLY_OPERATOR_CONTRACT_VERSION) {
-    throw finalizerError(
-      'Meta K2 canonical D1 summary contract is invalid',
-      'META_K2_CANONICAL_D1_SUMMARY_INVALID',
-    );
-  }
-  return evidence;
-}
-
-function validateEvidence(input, expectedPhase) {
-  const evidence = requireObject(input, expectedPhase);
+function validateD1Evidence(input, phase) {
+  const evidence = object(input, phase);
   const unsigned = { ...evidence };
   delete unsigned.evidenceSha256;
-  if (evidence.phase !== expectedPhase
+  if (evidence.phase !== phase
     || evidence.status !== 'passed'
     || evidence.contractVersion !== META_D1_ONLY_OPERATOR_CONTRACT_VERSION
     || evidence.evidenceSha256 !== sha256(stableJson(unsigned))) {
     throw finalizerError(
-      `Retained Meta evidence is invalid: ${expectedPhase}`,
+      `Retained Meta evidence is invalid: ${phase}`,
       'META_K2_RETAINED_EVIDENCE_INVALID',
     );
   }
   return evidence;
 }
 
-function upsertJsoncString(text, key, value) {
-  const escaped = escapeRegex(key);
-  const pattern = new RegExp(`(["']?${escaped}["']?\\s*:\\s*)["'][^"']*["']`, 'u');
-  if (pattern.test(text)) return text.replace(pattern, `$1${JSON.stringify(String(value))}`);
-  const varsPattern = /(["']?vars["']?\s*:\s*\{)/u;
-  if (!varsPattern.test(text)) {
+function upsertJsoncString(source, key, value) {
+  const pattern = new RegExp(
+    `(["']?${escapeRegex(key)}["']?\\s*:\\s*)["'][^"']*["']`,
+    'u',
+  );
+  if (pattern.test(source)) return source.replace(pattern, `$1${JSON.stringify(String(value))}`);
+  const vars = /(["']?vars["']?\s*:\s*\{)/u;
+  if (!vars.test(source)) {
     throw finalizerError(
       'Meta K2 Wrangler config has no vars object',
       'META_K2_PARTIAL_STAGING_CONFIG_VARS_MISSING',
     );
   }
-  return text.replace(varsPattern, `$1\n    ${JSON.stringify(key)}: ${JSON.stringify(String(value))},`);
+  return source.replace(vars, `$1\n    ${JSON.stringify(key)}: ${JSON.stringify(String(value))},`);
 }
 
-function extractTrueFlags(text) {
+function trueFlags(source) {
   return Object.freeze([
-    ...text.matchAll(/["']?(MKT_[A-Z0-9_]+_ENABLED)["']?\s*:\s*(?:"true"|true)/gu),
+    ...source.matchAll(/["']?(MKT_[A-Z0-9_]+_ENABLED)["']?\s*:\s*(?:"true"|true)/gu),
   ].map((match) => match[1]).sort());
 }
 
@@ -456,66 +485,7 @@ function sanitize(value, key = '') {
   ]));
 }
 
-function requireChoice(value, choices, fieldName) {
-  const text = requireText(value, fieldName);
-  if (!choices.includes(text)) {
-    throw finalizerError(
-      `${fieldName} is invalid`,
-      'META_K2_PARTIAL_STAGING_FINALIZER_INPUT_INVALID',
-      { fieldName },
-    );
-  }
-  return text;
-}
-
-function requireFullSha(value, fieldName) {
-  const text = requireText(value, fieldName);
-  if (!FULL_SHA.test(text)) {
-    throw finalizerError(
-      `${fieldName} must be a full SHA`,
-      'META_K2_PARTIAL_STAGING_FINALIZER_INPUT_INVALID',
-      { fieldName },
-    );
-  }
-  return text;
-}
-
-function requireSha256(value, fieldName) {
-  const text = requireText(value, fieldName).toLowerCase();
-  if (!SHA256.test(text)) {
-    throw finalizerError(
-      `${fieldName} must be a SHA-256 digest`,
-      'META_K2_PARTIAL_STAGING_FINALIZER_INPUT_INVALID',
-      { fieldName },
-    );
-  }
-  return text;
-}
-
-function requireTimestamp(value, fieldName) {
-  const number = typeof value === 'number' ? value : Date.parse(value);
-  if (!Number.isSafeInteger(number) || number < Date.UTC(2000, 0, 1)) {
-    throw finalizerError(
-      `${fieldName} must be a timestamp`,
-      'META_K2_PARTIAL_STAGING_FINALIZER_INPUT_INVALID',
-      { fieldName },
-    );
-  }
-  return number;
-}
-
-function requireExact(value, expected, fieldName) {
-  if (value !== expected) {
-    throw finalizerError(
-      `${fieldName} does not match the exact retained operation`,
-      'META_K2_PARTIAL_STAGING_FINALIZER_INPUT_INVALID',
-      { fieldName },
-    );
-  }
-  return value;
-}
-
-function requireObject(value, fieldName) {
+function object(value, fieldName) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw finalizerError(
       `${fieldName} must be an object`,
@@ -526,7 +496,19 @@ function requireObject(value, fieldName) {
   return value;
 }
 
-function requireText(value, fieldName) {
+function choice(value, choices, fieldName) {
+  const result = text(value, fieldName);
+  if (!choices.includes(result)) {
+    throw finalizerError(
+      `${fieldName} is invalid`,
+      'META_K2_PARTIAL_STAGING_FINALIZER_INPUT_INVALID',
+      { fieldName },
+    );
+  }
+  return result;
+}
+
+function text(value, fieldName) {
   if (typeof value !== 'string' || value.trim() === '') {
     throw finalizerError(
       `${fieldName} is required`,
@@ -535,6 +517,53 @@ function requireText(value, fieldName) {
     );
   }
   return value.trim();
+}
+
+function fullSha(value, fieldName) {
+  const result = text(value, fieldName);
+  if (!FULL_SHA.test(result)) {
+    throw finalizerError(
+      `${fieldName} must be a full SHA`,
+      'META_K2_PARTIAL_STAGING_FINALIZER_INPUT_INVALID',
+      { fieldName },
+    );
+  }
+  return result;
+}
+
+function fingerprint(value, fieldName) {
+  const result = text(value, fieldName).toLowerCase();
+  if (!SHA256.test(result)) {
+    throw finalizerError(
+      `${fieldName} must be a SHA-256 digest`,
+      'META_K2_PARTIAL_STAGING_FINALIZER_INPUT_INVALID',
+      { fieldName },
+    );
+  }
+  return result;
+}
+
+function timestamp(value, fieldName) {
+  const result = typeof value === 'number' ? value : Date.parse(value);
+  if (!Number.isSafeInteger(result) || result < Date.UTC(2000, 0, 1)) {
+    throw finalizerError(
+      `${fieldName} must be a timestamp`,
+      'META_K2_PARTIAL_STAGING_FINALIZER_INPUT_INVALID',
+      { fieldName },
+    );
+  }
+  return result;
+}
+
+function exact(value, expected, fieldName) {
+  if (value !== expected) {
+    throw finalizerError(
+      `${fieldName} does not match the exact retained operation`,
+      'META_K2_PARTIAL_STAGING_FINALIZER_INPUT_INVALID',
+      { fieldName },
+    );
+  }
+  return value;
 }
 
 function optionalText(value) {
@@ -548,7 +577,9 @@ function escapeRegex(value) {
 function stableJson(value) {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
   if (value && typeof value === 'object') {
-    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(',')}}`;
+    return `{${Object.keys(value).sort().map((key) => (
+      `${JSON.stringify(key)}:${stableJson(value[key])}`
+    )).join(',')}}`;
   }
   return JSON.stringify(value);
 }
