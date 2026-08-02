@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import {
   CHATWOOT_REPORT_REMOTE_COLLECTOR_CONFIRMATION,
   CHATWOOT_REPORT_REMOTE_COLLECTOR_INTERNAL_HANDOFF,
+  parseChatwootCollectorFailure,
   parseChatwootReportRemoteCollectorArgs,
   sanitizeChatwootRemoteEvidence,
 } from './lib/chatwoot-report-remote-readiness-collector.js';
@@ -105,11 +106,21 @@ async function executeReviewedCollector() {
     'Unable to run the internal Chatwoot Report read-only collector',
     'CHATWOOT_REPORT_REMOTE_INTERNAL_COLLECTOR_START_FAILED',
   );
-  if (![0, 2].includes(child.status)) throw terminalError(
-    'Internal Chatwoot Report collector failed before producing assessable evidence',
-    'CHATWOOT_REPORT_REMOTE_INTERNAL_COLLECTOR_FAILED',
-    { status: child.status, stderrPresent: String(child.stderr ?? '').trim() !== '' },
-  );
+  if (![0, 2].includes(child.status)) {
+    const childFailure = parseChatwootCollectorFailure(child.stderr);
+    throw terminalError(
+      'Internal Chatwoot Report collector failed before producing assessable evidence',
+      'CHATWOOT_REPORT_REMOTE_INTERNAL_COLLECTOR_FAILED',
+      {
+        status: child.status,
+        childStage: childFailure?.stage ?? null,
+        childCode: childFailure?.code ?? null,
+        childMessage: childFailure?.message ?? null,
+        childDetails: childFailure?.details ?? {},
+        structuredFailurePresent: childFailure !== null,
+      },
+    );
+  }
   const internalSummary = parseJsonObject(child.stdout);
   if (!internalSummary.evidence || !internalSummary.assessment) throw terminalError(
     'Internal Chatwoot Report collector output did not contain evidence and assessment',
