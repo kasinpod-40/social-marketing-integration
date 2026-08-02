@@ -78,7 +78,7 @@ export function buildMetaOrganicWriteSet(input = {}) {
     const hasObservedMetric = Object.values(metrics).some((value) => value !== null);
     const metricDate = latestMetricDate(normalizedInsights.metricCandidates)
       ?? dateOnlyInTimeZone(fetchedAt, sourceTimezone);
-    const rows = createOrganicContentRows({
+    const rowInput = {
       platform,
       accountId,
       externalContentId: normalized.contentCandidate.externalContentId,
@@ -92,12 +92,17 @@ export function buildMetaOrganicWriteSet(input = {}) {
       durationSeconds: null,
       classification: {},
       metrics,
-    });
+    };
+    const rows = createOrganicContentRows(rowInput);
     canonicalContent.push(compact(rows.content, hasObservedMetric ? [] : LATEST_METRIC_FIELDS));
     if (hasObservedMetric) {
       canonicalContentDaily.push(rows.dailySnapshot);
-      historyContent.push(rows.content);
-      historyDaily.push(rows.dailySnapshot);
+      // Canonical Lark rows retain the approved Provider account identity, while
+      // D1 history is keyed by the configured account_key and keeps the Provider
+      // identity separately as source_account_id in OrganicHistoryWriter.
+      const historyRows = createOrganicContentRows({ ...rowInput, accountId: accountKey });
+      historyContent.push(historyRows.content);
+      historyDaily.push(historyRows.dailySnapshot);
     }
   }
 

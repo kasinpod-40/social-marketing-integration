@@ -451,6 +451,7 @@ export function validateMetaD1OnlyTerminalRecoveryBaseline(snapshotInput = {}) {
   const acceptedPreWriteErrors = new Set([
     'META_PERMANENT_API_ERROR',
     'UNHANDLED_SYNC_ERROR',
+    'MKT_ORGANIC_HISTORY_INPUT_INVALID',
   ]);
   const valid = snapshot.syncRunStatus === 'failed'
     && acceptedPreWriteErrors.has(snapshot.syncRunErrorCode)

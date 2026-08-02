@@ -3,7 +3,7 @@
 ## Status
 
 ```text
-TASK_STATUS                          = INSTAGRAM_TERMINAL_RECOVERY_FIX_IN_REVIEW
+TASK_STATUS                          = INSTAGRAM_D1_IDENTITY_RECOVERY_FIX_IN_REVIEW
 CURRENT_PROGRAM                      = ALL_META_END_TO_END_COMPLETION_V1
 BRANCH                               = integration/all-meta-end-to-end-completion-v1
 BASE_MAIN_SHA                        = 0d33be48f9b8ccaf6d8cea9a4c4ee31b1175b650
@@ -17,7 +17,7 @@ META_PROVIDER_REPLAY                 = FORBIDDEN_FOR_RETAINED_FACEBOOK_OPERATION
 META_D1_QUEUE_RESEND                 = FORBIDDEN_FOR_RETAINED_FACEBOOK_OPERATION
 SCHEDULE_WEBHOOK                     = DISABLED_REQUIRED
 PRODUCTION                           = BLOCKED
-META_LATEST_STOP                     = INSTAGRAM_ACCOUNT_INSIGHTS_PERIOD_REQUIRED
+META_LATEST_STOP                     = INSTAGRAM_D1_CANONICAL_ACCOUNT_IDENTITY_MISMATCH
 NEXT_STEP                            = EXACT_INSTAGRAM_SAME_OPERATION_RECOVERY_AFTER_CI
 ```
 
@@ -164,3 +164,16 @@ Recovery ด้วย current Worker entry ผ่าน account/content insights
 `follows_and_unfollows` ที่ unavailable เป็น descriptor ไม่มี `values`/`total_value`; normalizer รุ่นเดิมหยุด
 pre-write ด้วย `UNHANDLED_SYNC_ERROR`. Implementation รองรับเฉพาะ descriptor ที่มี identity/period/title/
 description ครบเป็น explicit `null` (`response_shape=unavailable`) และยัง fail-closed สำหรับ malformed row.
+
+Same-operation attempt ถัดมาถึง Worker จริงและหยุด pre-write ด้วย
+`MKT_ORGANIC_HISTORY_INPUT_INVALID: Organic Daily identity does not match Runtime context`; attempt = 32,
+active lock = 0 และ D1 Business/Coverage/Lark rows = 0. Read-only D1 proof ยืนยันว่า Canonical row ใช้ Provider
+account ID แต่ D1 Organic history contract ต้องใช้ configured `account_key`. Implementation แยก row identities
+ให้ Canonical คง Provider identity และ D1 ใช้ `account_key` โดย OrganicHistoryWriter ยังคง Provider ID ใน
+`source_account_id`. Terminal recovery guard ยอม error นี้เฉพาะ exact failed pre-D1 boundary เท่านั้น.
+
+รอบ polling เดิมยังพบว่า OAuth bearer ที่ pin เป็น `CLOUDFLARE_API_TOKEN` หมดอายุระหว่าง bounded verify;
+emergency Meta operator restore/readback all-false ผ่านโดยไม่มี Queue resend. Current implementation จึงรักษา
+Wrangler OAuth session แบบ refreshable ระหว่าง polling และ resolve bearer ใหม่ทันทีเฉพาะ Queue REST send;
+explicit long-lived API token contract ยังคงรองรับเหมือนเดิม. Focused tests ผ่าน 53/53, `npm run check` และ
+`git diff --check` ผ่าน; รอ exact-head CI ก่อน same-operation recovery รอบถัดไป.

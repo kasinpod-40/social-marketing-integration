@@ -336,6 +336,10 @@ test('terminal recovery requires the exact failed pre-D1 boundary and a new main
     ...before,
     sync_run_error_code: 'UNHANDLED_SYNC_ERROR',
   }).accepted, true);
+  assert.equal(validateMetaD1OnlyTerminalRecoveryBaseline({
+    ...before,
+    sync_run_error_code: 'MKT_ORGANIC_HISTORY_INPUT_INVALID',
+  }).accepted, true);
 
   const after = { ...completeSnapshot(), main_queue_attempts: 4 };
   const compared = compareMetaD1OnlySnapshots(before, after, { terminalRecovery: true });

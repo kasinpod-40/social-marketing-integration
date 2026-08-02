@@ -37,6 +37,7 @@ import {
   META_HISTORY_2026_DECISION,
   assertMetaHistory2026Confirmation,
   createMetaHistory2026Plan,
+  createMetaHistoryCloudflarePhaseEnvironment,
   createMetaHistoryPinnedContinuity,
   injectMetaHistoryConfig,
   readMetaLarkSummaryCompletion,
@@ -391,7 +392,7 @@ async function resolveCloudflareContext(env, configPath) {
     apiToken: auth.token,
     queueName: mainQueueName,
   });
-  return { accountId, apiToken: auth.token, queueId };
+  return { accountId, apiToken: auth.token, authSource: auth.source, queueId };
 }
 
 async function assertRemoteSafe(env, configPath, cloudflare) {
@@ -440,9 +441,7 @@ function readD1Row(env, configPath, sql) {
 
 function d1Environment({ baseEnv, operation, repositoryHead, configRelativePath, readOnlySummaryPath, activeVersion, cloudflare }) {
   return {
-    ...baseEnv,
-    CLOUDFLARE_ACCOUNT_ID: cloudflare.accountId,
-    CLOUDFLARE_API_TOKEN: cloudflare.apiToken,
+    ...createMetaHistoryCloudflarePhaseEnvironment(baseEnv, cloudflare),
     MKT_META_D1_ONLY_QUEUE_ID: cloudflare.queueId,
     MKT_META_D1_ONLY_TARGET: operation.target,
     MKT_META_D1_ONLY_REPOSITORY_HEAD: repositoryHead,
@@ -463,9 +462,7 @@ function d1Environment({ baseEnv, operation, repositoryHead, configRelativePath,
 
 function larkEnvironment({ baseEnv, operation, repositoryHead, configRelativePath, readOnlySummaryPath, activeVersion, cloudflare, d1SummaryPath }) {
   return {
-    ...baseEnv,
-    CLOUDFLARE_ACCOUNT_ID: cloudflare.accountId,
-    CLOUDFLARE_API_TOKEN: cloudflare.apiToken,
+    ...createMetaHistoryCloudflarePhaseEnvironment(baseEnv, cloudflare),
     MKT_META_LARK_QUEUE_ID: cloudflare.queueId,
     MKT_META_LARK_TARGET: operation.target,
     MKT_META_LARK_REPOSITORY_HEAD: repositoryHead,

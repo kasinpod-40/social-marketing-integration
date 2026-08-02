@@ -37,6 +37,7 @@ import {
   validateMetaLarkEvidenceSequence,
   validateMetaLarkInventory,
 } from './lib/meta-lark-parity-rollout-operator.js';
+import { resolveCloudflareBearerAuth } from './lib/woocommerce-final-one-command.js';
 import {
   META_END_TO_END_REQUIRED_LARK_TABLE_KEYS,
 } from '../packages/config/src/meta-end-to-end-runtime-config.js';
@@ -767,7 +768,7 @@ function assertQueueConsumer(consumers, queueName, expected) {
 }
 
 async function sendQueueMessage(job, target) {
-  const token = requiredEnv('CLOUDFLARE_API_TOKEN');
+  const token = await resolveQueueBearerToken(target);
   const accountId = target.accountId ?? requiredEnv('CLOUDFLARE_ACCOUNT_ID');
   const queueId = target.queueId ?? requiredEnv('MKT_META_LARK_QUEUE_ID');
   const response = await fetch(
@@ -792,6 +793,15 @@ async function sendQueueMessage(job, target) {
     error.emergencyRestoreRequired = true;
     throw error;
   }
+}
+
+async function resolveQueueBearerToken(target) {
+  const explicit = process.env.CLOUDFLARE_API_TOKEN;
+  if (typeof explicit === 'string' && explicit.trim() !== '') return explicit.trim();
+  const auth = resolveCloudflareBearerAuth({
+    authOutput: await wranglerText(target, ['auth', 'token', '--json']),
+  });
+  return auth.token;
 }
 
 async function writeEvidence(loaded, phase, evidence) {

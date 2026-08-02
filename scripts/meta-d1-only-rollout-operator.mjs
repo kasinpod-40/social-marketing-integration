@@ -40,6 +40,7 @@ import {
   validateMetaD1OnlyTerminalRecoveryBaseline,
   validateMetaReadOnlySummary,
 } from './lib/meta-d1-only-rollout-operator.js';
+import { resolveCloudflareBearerAuth } from './lib/woocommerce-final-one-command.js';
 
 const execFileAsync = promisify(execFile);
 const repositoryRoot = resolve(process.cwd());
@@ -798,7 +799,7 @@ function assertQueueConsumer(consumers, queueName, expected) {
 }
 
 async function sendQueueMessage(job, target) {
-  const token = requiredEnv('CLOUDFLARE_API_TOKEN');
+  const token = await resolveQueueBearerToken(target);
   const accountId = target.accountId ?? requiredEnv('CLOUDFLARE_ACCOUNT_ID');
   const queueId = target.queueId ?? requiredEnv('MKT_META_D1_ONLY_QUEUE_ID');
   const response = await fetch(
@@ -823,6 +824,15 @@ async function sendQueueMessage(job, target) {
     error.emergencyRestoreRequired = true;
     throw error;
   }
+}
+
+async function resolveQueueBearerToken(target) {
+  const explicit = process.env.CLOUDFLARE_API_TOKEN;
+  if (typeof explicit === 'string' && explicit.trim() !== '') return explicit.trim();
+  const auth = resolveCloudflareBearerAuth({
+    authOutput: await wranglerText(target, ['auth', 'token', '--json']),
+  });
+  return auth.token;
 }
 
 async function writeEvidence(loaded, phase, evidence) {

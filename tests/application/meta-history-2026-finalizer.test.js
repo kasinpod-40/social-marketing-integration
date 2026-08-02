@@ -5,6 +5,7 @@ import {
   META_HISTORY_2026_DECISION,
   META_HISTORY_2026_LEGACY_SESSION,
   createMetaHistory2026Plan,
+  createMetaHistoryCloudflarePhaseEnvironment,
   createMetaHistoryPinnedContinuity,
   injectMetaHistoryConfig,
   readMetaLarkSummaryCompletion,
@@ -14,6 +15,29 @@ import {
 } from '../../scripts/lib/meta-history-2026-finalizer.js';
 
 const HEAD = 'a'.repeat(40);
+
+test('Cloudflare phase environment keeps explicit tokens and preserves refreshable OAuth sessions', () => {
+  assert.deepEqual(createMetaHistoryCloudflarePhaseEnvironment({ KEEP: 'yes' }, {
+    accountId: 'account-1',
+    apiToken: 'explicit-token',
+    authSource: 'environment',
+  }), {
+    KEEP: 'yes',
+    CLOUDFLARE_ACCOUNT_ID: 'account-1',
+    CLOUDFLARE_API_TOKEN: 'explicit-token',
+  });
+  assert.deepEqual(createMetaHistoryCloudflarePhaseEnvironment({
+    KEEP: 'yes',
+    CLOUDFLARE_API_TOKEN: 'stale-oauth-token',
+  }, {
+    accountId: 'account-1',
+    apiToken: 'fresh-oauth-token',
+    authSource: 'wrangler_auth_session',
+  }), {
+    KEEP: 'yes',
+    CLOUDFLARE_ACCOUNT_ID: 'account-1',
+  });
+});
 
 test('Meta history plan includes Facebook and Instagram July plus adaptive Ads windows', () => {
   const plan = createMetaHistory2026Plan(HEAD);

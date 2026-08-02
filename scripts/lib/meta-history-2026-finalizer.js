@@ -24,6 +24,26 @@ export const META_HISTORY_2026_ADS_EXPANSION_LIMITS = Object.freeze({
   coverageEntities: 20_000,
 });
 
+export function createMetaHistoryCloudflarePhaseEnvironment(baseEnv = {}, cloudflare = {}) {
+  const accountId = requireText(cloudflare.accountId, 'cloudflare.accountId');
+  const authSource = requireText(cloudflare.authSource, 'cloudflare.authSource');
+  if (!['environment', 'wrangler_auth_session'].includes(authSource)) {
+    throw historyError(
+      'cloudflare.authSource is invalid',
+      'META_HISTORY_2026_CLOUDFLARE_AUTH_SOURCE_INVALID',
+    );
+  }
+  const env = { ...baseEnv, CLOUDFLARE_ACCOUNT_ID: accountId };
+  if (authSource === 'environment') {
+    env.CLOUDFLARE_API_TOKEN = requireText(cloudflare.apiToken, 'cloudflare.apiToken');
+  } else {
+    // Wrangler must retain its refreshable OAuth session during bounded polling.
+    // Queue operators obtain a fresh bearer immediately before each REST send.
+    delete env.CLOUDFLARE_API_TOKEN;
+  }
+  return Object.freeze(env);
+}
+
 const META_READ_ONLY_CONTRACT_VERSION = 'meta_read_only_validation_v1';
 const META_READ_ONLY_IDENTITIES = Object.freeze([
   Object.freeze({ phase: 'facebook', connectorKey: 'facebook', sourceAccountKey: null }),
