@@ -18,6 +18,8 @@ export const META_D1_ONLY_PARTIAL_STAGING_RECOVERY_PATH =
   '/operator/meta/d1-only-partial-staging-continuation';
 export const META_D1_ONLY_PARTIAL_STAGING_RECOVERY_MODE =
   'RECOVER_EXACT_PARTIAL_META_ADS_STAGING';
+export const META_D1_ONLY_PARTIAL_STAGING_RECOVERY_PHASE_ENV =
+  'MKT_META_K2_EXACT_CONTINUATION_PHASE';
 export const META_D1_ONLY_PARTIAL_STAGING_RECOVERY_TOKEN_SHA256_ENV =
   'MKT_META_D1_ONLY_PARTIAL_STAGING_RECOVERY_TOKEN_SHA256';
 export const META_D1_ONLY_PARTIAL_STAGING_RECOVERY_ATTESTATION_ENV =
@@ -39,11 +41,19 @@ const EXACT_TARGET = Object.freeze({
   periodStart: '2026-07-01',
   periodEnd: '2026-07-31',
 });
-const APPROVED_TRUE_FLAGS = Object.freeze([
-  'MKT_CONNECTOR_META_ADS_ENABLED',
-  'MKT_META_D1_WRITE_ENABLED',
-  'MKT_META_SOURCE_READ_ENABLED',
-]);
+const APPROVED_TRUE_FLAGS_BY_PHASE = Object.freeze({
+  d1: Object.freeze([
+    'MKT_CONNECTOR_META_ADS_ENABLED',
+    'MKT_META_D1_WRITE_ENABLED',
+    'MKT_META_SOURCE_READ_ENABLED',
+  ]),
+  lark: Object.freeze([
+    'MKT_CONNECTOR_META_ADS_ENABLED',
+    'MKT_META_D1_WRITE_ENABLED',
+    'MKT_META_LARK_WRITE_ENABLED',
+    'MKT_META_SOURCE_READ_ENABLED',
+  ]),
+});
 const EXECUTION_FLAG_PATTERN = /^MKT_[A-Z0-9_]+_ENABLED$/u;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
 const CONTINUATION_STATUSES = new Set([
@@ -53,9 +63,10 @@ const CONTINUATION_STATUSES = new Set([
 ]);
 
 /**
- * Exact, ephemeral continuation surface for the accepted Chemistry K2 partial Meta Ads staging.
- * It invokes the existing Meta Queue use-case with a local continuation Queue stub, so no Cloudflare
- * Queue message or queue_operation_attempt is created by this route.
+ * Exact, ephemeral continuation surface for the accepted Chemistry K2 Meta Ads operation.
+ * D1 and Lark are separate reviewed windows. Both invoke the existing Meta Queue use-case with
+ * a local continuation Queue stub, so no Cloudflare Queue message or queue_operation_attempt is
+ * created by this route.
  */
 export function createMetaD1OnlyPartialStagingRecoveryHttpHandler(dependencies = {}) {
   const runtimeVersionReader = dependencies.readRuntimeVersionId ?? readWorkerRuntimeVersionId;
@@ -69,6 +80,7 @@ export function createMetaD1OnlyPartialStagingRecoveryHttpHandler(dependencies =
 
     let runtimeVersionId = null;
     let deploymentAttestation = null;
+    let continuationPhase = null;
     try {
       deploymentAttestation = requireSha256(
         env?.[META_D1_ONLY_PARTIAL_STAGING_RECOVERY_ATTESTATION_ENV],
@@ -93,8 +105,11 @@ export function createMetaD1OnlyPartialStagingRecoveryHttpHandler(dependencies =
         request,
         env?.[META_D1_ONLY_PARTIAL_STAGING_RECOVERY_TOKEN_SHA256_ENV],
       );
+      continuationPhase = requireContinuationPhase(
+        env?.[META_D1_ONLY_PARTIAL_STAGING_RECOVERY_PHASE_ENV],
+      );
       const target = assertExactTarget(env);
-      assertExactExecutionFlags(env);
+      assertExactExecutionFlags(env, continuationPhase);
 
       let continuationSuppressedCount = 0;
       const continuationQueue = Object.freeze({
@@ -114,7 +129,7 @@ export function createMetaD1OnlyPartialStagingRecoveryHttpHandler(dependencies =
         type: JOB_TYPES.META_ADS_SYNC,
         trigger: 'manual_uat',
         dryRun: false,
-        d1Only: true,
+        d1Only: continuationPhase === 'd1',
         periodStart: target.periodStart,
         periodEnd: target.periodEnd,
         sourceAccountKey: target.sourceAccountKey,
@@ -131,7 +146,10 @@ export function createMetaD1OnlyPartialStagingRecoveryHttpHandler(dependencies =
       });
       const result = await processJob({
         job: Object.freeze({ schemaVersion: 1, body }),
-        message: Object.freeze({ id: 'direct-meta-partial-staging-recovery', attempts: 1 }),
+        message: Object.freeze({
+          id: `direct-meta-k2-${continuationPhase}-continuation`,
+          attempts: 1,
+        }),
         operation,
         mainQueueAttempts: target.mainQueueAttempts,
         env: directEnv,
@@ -148,11 +166,12 @@ export function createMetaD1OnlyPartialStagingRecoveryHttpHandler(dependencies =
       if ((continuationExpected && continuationSuppressedCount !== 1)
         || (!continuationExpected && continuationSuppressedCount !== 0)) {
         throw recoveryError(
-          'Meta partial-staging continuation Queue suppression did not match the use-case result',
+          'Meta exact continuation Queue suppression did not match the use-case result',
           'META_PARTIAL_STAGING_CONTINUATION_SUPPRESSION_INVALID',
           {
             continuationExpected,
             continuationSuppressedCount,
+            phase: continuationPhase,
             status: result?.status ?? null,
           },
         );
@@ -160,7 +179,8 @@ export function createMetaD1OnlyPartialStagingRecoveryHttpHandler(dependencies =
 
       return attested(json({
         ok: true,
-        stage: 'meta-d1-only-partial-staging-continuation',
+        stage: 'meta-exact-operation-continuation',
+        phase: continuationPhase,
         target: EXACT_TARGET.targetKey,
         operationId: EXACT_TARGET.operationId,
         workKey: EXACT_TARGET.workKey,
@@ -171,7 +191,8 @@ export function createMetaD1OnlyPartialStagingRecoveryHttpHandler(dependencies =
         directUseCaseInvocationCount: 1,
         queueMessageCount: 0,
         queueOperationAttemptMutationCount: 0,
-        larkWriteEnabled: false,
+        d1WriteEnabled: true,
+        larkWriteEnabled: continuationPhase === 'lark',
         scheduleEnabled: false,
         production: false,
       }, {
@@ -187,19 +208,21 @@ export function createMetaD1OnlyPartialStagingRecoveryHttpHandler(dependencies =
           : 400;
       console.error(JSON.stringify(sanitizeOperationalValue({
         timestamp: new Date().toISOString(),
-        scope: 'meta_partial_staging_recovery_http',
+        scope: 'meta_exact_operation_continuation_http',
+        phase: continuationPhase,
         code: operational.code,
         error: operational.message,
       })));
       return attested(json({
         ok: false,
-        stage: 'meta-d1-only-partial-staging-continuation',
-        error: status === 401 ? 'Unauthorized' : 'Meta partial-staging continuation failed',
+        stage: 'meta-exact-operation-continuation',
+        phase: continuationPhase,
+        error: status === 401 ? 'Unauthorized' : 'Meta exact continuation failed',
         code: operational.code ?? 'META_PARTIAL_STAGING_CONTINUATION_FAILED',
         directUseCaseInvocationCount: 0,
         queueMessageCount: 0,
         queueOperationAttemptMutationCount: 0,
-        larkWriteEnabled: false,
+        larkWriteEnabled: continuationPhase === 'lark',
         scheduleEnabled: false,
         production: false,
       }, {
@@ -266,16 +289,17 @@ function assertExactTarget(env) {
   });
 }
 
-function assertExactExecutionFlags(env) {
+function assertExactExecutionFlags(env, phase) {
+  const expected = APPROVED_TRUE_FLAGS_BY_PHASE[phase];
   const trueFlags = Object.entries(env ?? {})
     .filter(([name, value]) => EXECUTION_FLAG_PATTERN.test(name) && readBoolean(value, false))
     .map(([name]) => name)
     .sort();
-  if (JSON.stringify(trueFlags) !== JSON.stringify(APPROVED_TRUE_FLAGS)) {
+  if (JSON.stringify(trueFlags) !== JSON.stringify(expected)) {
     throw recoveryError(
-      'Meta partial-staging continuation requires the exact D1-only execution flag window',
+      'Meta exact continuation requires the approved execution flag window',
       'META_PARTIAL_STAGING_RECOVERY_FLAGS_UNSAFE',
-      { trueFlags },
+      { phase, trueFlags, expectedTrueFlags: expected },
     );
   }
 }
@@ -311,7 +335,7 @@ async function requireEphemeralAuthorization(request, expectedDigestInput) {
     && await timingSafeEqualText(suppliedDigest, expectedDigest);
   if (!match || !valid) {
     throw recoveryError(
-      'Meta partial-staging continuation authorization was rejected',
+      'Meta exact continuation authorization was rejected',
       'META_PARTIAL_STAGING_RECOVERY_UNAUTHORIZED',
     );
   }
@@ -321,7 +345,7 @@ async function sha256Text(value) {
   const subtle = globalThis.crypto?.subtle;
   if (!subtle || typeof subtle.digest !== 'function') {
     throw recoveryError(
-      'SHA-256 runtime is unavailable for Meta partial-staging authorization',
+      'SHA-256 runtime is unavailable for Meta exact continuation authorization',
       'META_PARTIAL_STAGING_RECOVERY_CONFIG_INVALID',
     );
   }
@@ -353,6 +377,17 @@ function noStoreHeaders() {
     'cache-control': 'no-store',
     'referrer-policy': 'no-referrer',
   });
+}
+
+function requireContinuationPhase(value) {
+  const phase = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  if (!Object.hasOwn(APPROVED_TRUE_FLAGS_BY_PHASE, phase)) {
+    throw recoveryError(
+      `${META_D1_ONLY_PARTIAL_STAGING_RECOVERY_PHASE_ENV} must be d1 or lark`,
+      'META_PARTIAL_STAGING_RECOVERY_PHASE_INVALID',
+    );
+  }
+  return phase;
 }
 
 function requireExact(value, expected, fieldName) {
