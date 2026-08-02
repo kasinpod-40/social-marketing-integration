@@ -4,7 +4,7 @@
 
 ```text
 IMPLEMENTATION_STATUS                 = REVIEWED_IMPLEMENTED
-LIVE_STATUS                           = PREACTIVATION_ONLY
+LIVE_STATUS                           = RECOVERY_PENDING_AFTER_VERIFIED_SAFE_RESTORE
 TARGET                                = chemistry_k2
 PERIOD                                = 2026-07-01..2026-07-31
 PRODUCTION                            = BLOCKED
@@ -49,7 +49,7 @@ Recovery admission requires two read-only snapshots at least 30 seconds apart an
 remain identical:
 
 ```text
-sync_run_status           = running or the bounded successful invocation form allowed by the contract
+sync_run_status           = running/success only in the bounded form allowed by this contract
 work_status               = active
 work_lifecycle_status     = active
 records_written           = 0
@@ -141,7 +141,7 @@ mktAdsAds
 Detailed RAW Ads rows, Creative inventory and `mktAdsDaily` are not mirrored to Lark. July daily detail and
 July activity entities remain durable in D1.
 
-## One-command finalizer
+## Reviewed launcher and runtime authority
 
 The reviewed launcher is:
 
@@ -149,46 +149,59 @@ The reviewed launcher is:
 scripts/meta-k2-partial-staging-reviewed-launcher.mjs
 ```
 
-It reads the private `.dev.vars`, derives the exact continuation URL from the existing
-`MKT_CONNECTION_PUBLIC_ORIGIN`, materializes a private temporary Wrangler config under ignored `outputs/`,
-makes `main` and `migrations_dir` absolute, invokes the exact finalizer and removes the temporary config in
-`finally`. An explicit `MKT_META_K2_EXACT_RECOVERY_URL` is optional and is accepted only when it uses HTTPS,
-the exact reviewed path, and has no query or fragment.
+It reads the private `.dev.vars`, materializes the two required non-secret Meta source mappings, forces the
+complete shared execution-flag set to all-false in a private temporary Wrangler config, and makes `main` and
+`migrations_dir` absolute.
 
-Before any recovery evidence is archived or any remote action can begin, the launcher materializes the two
-required non-secret Meta source mappings and every flag in the shared
-`META_D1_ONLY_REQUIRED_FALSE_FLAGS` contract into the temporary Wrangler config. All occurrences, including
-nested environment blocks, must be `false`. This prevents configuration drift from surfacing one missing or
-stale execution flag at a time and does not copy provider tokens or other secrets into the generated config.
-
-A failed attempt may be retried only when the current recovery root is exactly the pre-activation footprint:
-retained admission, read-only stability, non-empty remote D1 export backup and backup evidence. The hash-linked
-evidence must prove all-false, zero remote mutation, zero active deployment, zero continuation call and zero
-Queue send. Each accepted failed footprint is renamed to a timestamped local archive and is never deleted or
-overwritten.
-
-Observed pre-activation attempts stopped before active deployment because the generated config first lacked
-Meta source mappings and then lacked newer required-false flags. Each attempt performed read-only stability
-and D1 export backup only. No continuation endpoint call, Provider read, Queue send, D1 Business write, Lark
-write, lifecycle SQL repair or Schedule activation occurred.
-
-The finalizer is plan-only by default. Execution additionally requires:
+The launcher does not trust a guessed Worker hostname. It resolves one Worker origin from all available
+runtime authority inputs and requires them to agree:
 
 ```text
-CONFIRM_META_K2_PARTIAL_STAGING_RECOVERY=RECOVER_AND_COMPLETE_EXACT_META_K2_PARTIAL_STAGING
-MKT_META_D1_ONLY_PARTIAL_STAGING_RECOVERY=RECOVER_EXACT_PARTIAL_META_ADS_STAGING
-MKT_META_HISTORY_REVIEW_WRAPPER_HEAD=<exact reviewed PR Head>
-MKT_META_HISTORY_REVIEW_BASE_MAIN_HEAD=<reviewed base main Head>
-MKT_META_K2_EXACT_HEAD_CI=PASS
-MKT_META_K2_EXACT_HEAD_CI_SHA=<same exact reviewed PR Head>
+MKT_CONNECTION_PUBLIC_ORIGIN
+MKT_GOOGLE_ADS_REDIRECT_URI
+MKT_YOUTUBE_REDIRECT_URI
+MKT_META_K2_EXACT_RECOVERY_URL (optional exact override)
 ```
 
-The executable command must be shown to the operator with all exact values before it is run. This document
-intentionally does not authorize a live execution by itself.
+Before archiving evidence or deploying an active window, it sends a no-Business POST probe to the exact
+route while the Worker is all-false. The probe is accepted only when the response proves the exact recovery
+handler, zero direct use-case invocation, zero Queue mutation and zero Business mutation. Generic 404,
+redirects, conflicting origins and unknown endpoints fail closed.
+
+## Reviewed retry classes
+
+### Pre-activation no-mutation failure
+
+```text
+MKT_META_K2_PREACTIVATION_RETRY=ARCHIVE_AND_RETRY_EXACT_PREACTIVATION_FAILURE
+```
+
+The root may be archived only when it contains the exact retained-admission, stability and non-empty backup
+footprint and proves zero active deployment, zero continuation call and zero mutation.
+
+### Post-activation no-Business failure
+
+```text
+MKT_META_K2_POST_ACTIVATION_RETRY=ARCHIVE_AND_RETRY_EXACT_POST_ACTIVATION_NO_BUSINESS_FAILURE
+```
+
+This class covers the retained HTTP 404 incident where the D1 active window deployed but the direct endpoint
+call was not accepted, followed by a verified emergency all-false restore. Before archiving this footprint,
+the launcher additionally verifies:
+
+- the current Worker has no true execution flags;
+- the exact D1 checkpoint remains `daily / 27 / 2601 / page 27 / content 0`;
+- D1 Business and Coverage counts remain zero;
+- Queue attempts remain `1 / 29`;
+- one active D1 deployment and one safe restore are hash-linked in evidence;
+- the current Worker origin passes the exact safe-route probe;
+- no direct use-case invocation was accepted.
+
+All prior evidence and backup SQL files are renamed to timestamped archives, never deleted.
 
 ## Finalizer phases
 
-1. Verify the exact clean reviewed branch/head and retained-head ancestry.
+1. Verify the exact clean reviewed branch/head and retained operation ancestry.
 2. Verify exact-head CI attestation.
 3. Read and hash-validate retained Queue acceptance and all-false restore evidence.
 4. Run local focused/full gates before remote mutation.
@@ -239,7 +252,7 @@ production                  = false
 The implementation includes regressions for:
 
 - the exact `daily / 27 / 2601 / page 27 / content 0` checkpoint;
-- the stale orphaned `running` state with no lock or writes;
+- the stale orphaned state with no lock or writes;
 - the 30-second stability and 16-minute idle gates;
 - exact operation/work/sync-run/account/period binding;
 - epoch numeric-string and ISO timestamp handling;
@@ -248,17 +261,17 @@ The implementation includes regressions for:
 - D1 writes starting only after source staging completion;
 - D1/Coverage and Lark idempotency without count drift;
 - all-false execution flag enforcement;
-- complete temporary materialization of every shared required-false flag;
-- replacement of stale `true` occurrences in nested Wrangler environment blocks;
 - Meta Ads Lark projection limited to Account/Campaign/AdSet/Ad;
 - retained evidence hash linkage and reviewed-head ancestry;
 - generated private Wrangler path rebasing and cleanup;
-- exact recovery URL derivation from the HTTPS public origin and rejection of protocol/path/query/fragment drift;
-- repeated exact pre-activation archives without deletion or remote mutation.
+- exact Worker-origin consensus across public origin and OAuth callback URIs;
+- safe-handler probing that rejects generic HTTP 404 and redirects;
+- exact post-activation/no-Business retry after verified emergency restore;
+- blocking retry when Worker flags, D1 counts, Coverage or Queue checkpoint drift.
 
 ## Verification gates
 
-Before live execution, the exact final documentation Head must pass:
+Before live execution, the exact final Head must pass:
 
 ```bash
 npm ci
@@ -285,13 +298,10 @@ Meta End-to-End Verification
 Branch Verification
 ```
 
-The exact reviewed execution Head is recorded in Draft PR #421 and its GitHub Actions runs. It is not embedded
-in this file because changing this file changes the repository Head.
-
 ## Failure behavior
 
-Any identity drift, unknown mapping, unexpected enabled Worker flag, active lock, Queue attempt increase,
-Business/Coverage drift, Lark scope expansion, attestation mismatch, incomplete parity or evidence hash failure
-stops the operation fail-closed. After an activated window, the finalizer attempts safe all-false restore and
-verifies the exact active Worker version. It never authorizes a blind resend, replacement operation,
+Any identity drift, origin conflict, unknown route, generic 404, unsafe Worker flag, checkpoint/count drift,
+active lock, Queue attempt increase, Lark scope expansion, attestation mismatch, incomplete parity or evidence
+hash failure stops the operation fail-closed. After an activated window, the finalizer attempts safe all-false
+restore and verifies the active Worker version. It never authorizes a blind resend, replacement operation,
 lifecycle SQL repair, Schedule activation or Production execution.
