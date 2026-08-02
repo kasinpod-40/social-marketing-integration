@@ -1,4 +1,5 @@
 import {
+  REPORT_RUNTIME_CLOSEOUT_CANONICAL_SETTING_COUNT,
   WOOCOMMERCE_REPORT_RUNTIME_CLOSEOUT_ACTIVE_TRUE_FLAGS,
   assertReportRuntimeFinalizerEvidence,
   assertWooCommerceReportRuntimeCloseoutPreflight,
@@ -108,6 +109,10 @@ function assessFinalizer(finalizerEvidence, repository, blockers) {
   } catch (error) {
     addBlocker(blockers, 'REPORT_FINALIZER_EVIDENCE_INVALID', {
       sourceCode: error?.code ?? null,
+      observedCanonicalActive: finiteOrNull(finalizerEvidence?.settings?.canonicalActive),
+      expectedCanonicalActive: REPORT_RUNTIME_CLOSEOUT_CANONICAL_SETTING_COUNT,
+      observedActiveLegacySettings: finiteOrNull(finalizerEvidence?.settings?.activeLegacySettings),
+      evidenceHeadMatchesCurrent: finalizerEvidence?.repository?.head === repository?.head,
     });
     return;
   }
@@ -129,6 +134,7 @@ function assessConfig(config, blockers) {
     || JSON.stringify(observedActive) !== JSON.stringify(expectedActive)
     || config?.tableMappingsReady !== true) {
     addBlocker(blockers, 'REPORT_CONFIG_NOT_READY', {
+      sourceCode: config?.errorCode ?? null,
       configValid: config?.valid === true,
       safeTrueFlagCount: Array.isArray(config?.safeTrueFlags) ? config.safeTrueFlags.length : null,
       activeFlagsMatch: JSON.stringify(observedActive) === JSON.stringify(expectedActive),
@@ -281,6 +287,11 @@ function findWindow(values, windowDays) {
 
 function addBlocker(blockers, code, details = {}) {
   blockers.push(Object.freeze({ code, details: Object.freeze({ ...details }) }));
+}
+
+function finiteOrNull(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 
 function isFullSha(value) {
