@@ -1,45 +1,51 @@
 import {
   classifyMetaD1OnlyCompletion,
   normalizeMetaD1OnlySnapshot,
-  validateMetaD1OnlyPartialStagingStability,
 } from './meta-d1-only-rollout-operator.js';
+import {
+  META_K2_EXACT_RECOVERY_IDENTITY,
+  META_K2_EXACT_RECOVERY_MODE,
+  META_K2_EXACT_RECOVERY_MODE_ENV,
+} from '../../packages/config/src/meta-k2-exact-recovery-contract.js';
 import { permanentError } from '../../packages/shared/src/errors/runtime-error.js';
 
 export const META_K2_PARTIAL_STAGING_RECOVERY_CONTRACT_VERSION =
   'meta_k2_partial_staging_recovery_v1';
 export const META_K2_PARTIAL_STAGING_RECOVERY_CONFIRMATION = Object.freeze({
-  envName: 'MKT_META_D1_ONLY_PARTIAL_STAGING_RECOVERY',
-  value: 'RECOVER_EXACT_PARTIAL_META_ADS_STAGING',
+  envName: META_K2_EXACT_RECOVERY_MODE_ENV,
+  value: META_K2_EXACT_RECOVERY_MODE,
 });
-export const META_K2_PARTIAL_STAGING_EXACT_IDENTITY = Object.freeze({
-  targetKey: 'chemistry_k2',
-  sourceAccountKey: 'chemistry_k2',
-  operationId: 'meta-chemistry_k2-history-20260701-20260731-f741090d1d8a',
-  workKey:
-    'meta_ads:chemistry_k2:meta-chemistry_k2-history-20260701-20260731-f741090d1d8a',
-  syncRunId:
-    'meta:meta_ads:chemistry_k2:meta-chemistry_k2-history-20260701-20260731-f741090d1d8a',
-  periodStart: '2026-07-01',
-  periodEnd: '2026-07-31',
-  sourceStage: 'daily',
-  sourceUnitCount: 27,
-  sourceRowCount: 2601,
-  sourcePageNumber: 27,
-  sourceContentIndex: 0,
-  queueOperationAttempts: 1,
-  mainQueueAttempts: 29,
-});
+export const META_K2_PARTIAL_STAGING_EXACT_IDENTITY = META_K2_EXACT_RECOVERY_IDENTITY;
 
-/** Bind generic stability proof to the exact accepted Chemistry K2 incident. */
+/**
+ * Bind the recovery to the exact retained Chemistry K2 incident. The retained sync run may be
+ * either a finished successful bounded invocation or the proven orphaned `running` record. A
+ * running record is accepted only when it is stale, lock-free, zero-write and stable for 30 seconds.
+ */
 export function validateMetaK2ExactPartialStagingStability(beforeInput = {}, afterInput = {}) {
-  const stability = validateMetaD1OnlyPartialStagingStability(beforeInput, afterInput);
-  assertExactPartialSnapshot(stability.snapshot);
+  const before = classifyExactPartialSnapshot(beforeInput);
+  const after = classifyExactPartialSnapshot(afterInput);
+  const elapsedMs = after.snapshot.observedAt - before.snapshot.observedAt;
+  const stableBefore = { ...before.snapshot, observedAt: 0 };
+  const stableAfter = { ...after.snapshot, observedAt: 0 };
+  if (!before.accepted
+    || !after.accepted
+    || elapsedMs < 30_000
+    || stableJson(stableBefore) !== stableJson(stableAfter)) {
+    throw recoveryError(
+      'Meta K2 exact partial staging changed during the stability window',
+      'META_D1_ONLY_PARTIAL_STAGING_PROGRESS_OBSERVED',
+      { elapsedMs },
+    );
+  }
   return deepFreeze({
     accepted: true,
     decision: 'META_K2_PARTIAL_STAGING_STABLE_SAFE_TO_PREPARE_RECOVERY',
     contractVersion: META_K2_PARTIAL_STAGING_RECOVERY_CONTRACT_VERSION,
-    elapsedMs: stability.elapsedMs,
-    snapshot: stability.snapshot,
+    elapsedMs,
+    orphanedRunningRecovery: after.orphanedRunningRecovery,
+    successfulInvocationRecovery: after.successfulInvocationRecovery,
+    snapshot: after.snapshot,
   });
 }
 
@@ -127,7 +133,42 @@ export function assertMetaK2PartialStagingRecoveryConfirmation(env = {}) {
   return true;
 }
 
-function assertExactPartialSnapshot(snapshot) {
+function classifyExactPartialSnapshot(snapshotInput) {
+  const snapshot = normalizeMetaD1OnlySnapshot(snapshotInput);
+  const latestActivityAt = Math.max(
+    snapshot.sourceStaging.updatedAt ?? 0,
+    snapshot.syncRunUpdatedAt ?? 0,
+    snapshot.queueOperationUpdatedAt ?? 0,
+  );
+  const successfulInvocationRecovery = snapshot.syncRunStatus === 'success'
+    && snapshot.syncRunStartedAt !== null
+    && snapshot.syncRunFinishedAt !== null
+    && snapshot.syncRunErrorCode === null;
+  const orphanedRunningRecovery = snapshot.syncRunStatus === 'running'
+    && snapshot.syncRunStartedAt !== null
+    && snapshot.syncRunFinishedAt === null
+    && snapshot.syncRunErrorCode === null;
+  const exactState = assertExactPartialSnapshot(snapshot, { throwOnFailure: false });
+  const accepted = (successfulInvocationRecovery || orphanedRunningRecovery)
+    && snapshot.syncRunRecordsWritten === 0
+    && snapshot.workStatus === 'active'
+    && snapshot.workLifecycleStatus === 'active'
+    && snapshot.workCompletedAt === null
+    && snapshot.sourceStaging.complete === false
+    && latestActivityAt > 0
+    && snapshot.observedAt - latestActivityAt >= 16 * 60 * 1000
+    && exactState.accepted;
+  return deepFreeze({
+    accepted,
+    successfulInvocationRecovery,
+    orphanedRunningRecovery,
+    latestActivityAt,
+    snapshot,
+    failed: exactState.failed,
+  });
+}
+
+function assertExactPartialSnapshot(snapshot, options = {}) {
   const exact = META_K2_PARTIAL_STAGING_EXACT_IDENTITY;
   const checks = {
     sourceStage: snapshot.sourceStaging.stage === exact.sourceStage,
@@ -139,7 +180,9 @@ function assertExactPartialSnapshot(snapshot) {
     mainQueueAttempts: snapshot.mainQueueAttempts === exact.mainQueueAttempts,
     activeLocks: snapshot.activeLockCount === 0,
     d1NotStarted: snapshot.d1PhaseComplete === false && snapshot.d1PhaseUpdatedAt === null,
-    coverageNotStarted: snapshot.coverageRunCount === 0 && snapshot.coverageEntityCount === 0,
+    coverageNotStarted: snapshot.coverageRunCount === 0
+      && snapshot.coverageEntityCount === 0
+      && snapshot.invalidCoverageCount === 0,
     larkNotStarted: snapshot.larkPhaseCount === 0,
     completionNotStarted: snapshot.completionPhaseCount === 0,
     operationWritesZero: Object.values(snapshot.operationCounts).every((value) => value === 0),
@@ -147,13 +190,14 @@ function assertExactPartialSnapshot(snapshot) {
   const failed = Object.entries(checks)
     .filter(([, accepted]) => !accepted)
     .map(([name]) => name);
-  if (failed.length > 0) {
+  if (failed.length > 0 && options.throwOnFailure !== false) {
     throw recoveryError(
       'Meta K2 partial-staging snapshot does not match the exact retained incident',
       'META_K2_PARTIAL_STAGING_EXACT_STATE_INVALID',
       { failed },
     );
   }
+  return deepFreeze({ accepted: failed.length === 0, failed });
 }
 
 function assertQueueAttemptsUnchanged(before, after) {
@@ -188,6 +232,16 @@ function subtractCounts(after, before) {
   return deepFreeze(Object.fromEntries(
     Object.keys(after).map((key) => [key, after[key] - before[key]]),
   ));
+}
+
+function stableJson(value) {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map((key) => (
+      `${JSON.stringify(key)}:${stableJson(value[key])}`
+    )).join(',')}}`;
+  }
+  return JSON.stringify(value);
 }
 
 function recoveryError(message, code, details = {}) {
