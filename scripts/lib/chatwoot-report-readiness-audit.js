@@ -221,6 +221,8 @@ function collectReport(report, blockers) {
   if (report.settingsReady !== true) blockers.push(blocker('report_settings_missing', 'report'));
   if (report.materializerCompatible !== true) blockers.push(blocker('report_contract_missing', 'report'));
   if (report.larkWriterCompatible !== true) blockers.push(blocker('report_lark_contract_missing', 'report'));
+  if (report.tablesReady !== true) blockers.push(blocker('report_lark_tables_missing', 'report'));
+  if (report.stableKeysReady !== true) blockers.push(blocker('report_lark_stable_keys_missing', 'report'));
   if (report.nullZeroSemanticsVerified !== true) blockers.push(blocker('report_null_zero_contract_pending', 'report'));
   if (report.weightedDurationVerified !== true) blockers.push(blocker('weighted_duration_contract_pending', 'report'));
   const previewWindows = Array.isArray(report.previewWindows) ? report.previewWindows.map(Number) : [];
