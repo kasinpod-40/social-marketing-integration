@@ -252,7 +252,11 @@ test('completion requires Lark parity, final reconciliation, completed work and 
 
 test('polling waits for a new attempt and then surfaces terminal sync failure', () => {
   const current = target('instagram');
-  const stale = { ...larkCompleteSnapshot(current), main_queue_attempts: 5 };
+  const stale = {
+    ...larkCompleteSnapshot(current),
+    sync_run_finished_at: 123,
+    main_queue_attempts: 5,
+  };
   assert.equal(
     classifyMetaLarkPollingSnapshot(stale, current, 6).state,
     'pending',
@@ -264,7 +268,16 @@ test('polling waits for a new attempt and then surfaces terminal sync failure', 
     sync_run_error_code: 'LARK_PREFLIGHT_FAILED',
     main_queue_attempts: 6,
   };
-  const classified = classifyMetaLarkPollingSnapshot(failed, current, 6);
+  assert.equal(
+    classifyMetaLarkPollingSnapshot(failed, current, 6, 123).state,
+    'pending',
+  );
+  const classified = classifyMetaLarkPollingSnapshot(
+    { ...failed, sync_run_finished_at: 124 },
+    current,
+    6,
+    123,
+  );
   assert.equal(classified.state, 'terminal_failure');
   assert.equal(classified.errorCode, 'LARK_PREFLIGHT_FAILED');
 });

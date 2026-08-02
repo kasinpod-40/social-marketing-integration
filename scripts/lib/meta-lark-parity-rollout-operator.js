@@ -420,7 +420,12 @@ export function classifyMetaLarkCompletion(snapshot = {}, target = {}) {
   });
 }
 
-export function classifyMetaLarkPollingSnapshot(snapshot = {}, target = {}, minimumAttempts = 0) {
+export function classifyMetaLarkPollingSnapshot(
+  snapshot = {},
+  target = {},
+  minimumAttempts = 0,
+  previousFinishedAt = null,
+) {
   const attempts = count(minimumAttempts);
   const value = normalizeMetaLarkSnapshot(snapshot);
   if (value.mainQueueAttempts < attempts) {
@@ -429,7 +434,11 @@ export function classifyMetaLarkPollingSnapshot(snapshot = {}, target = {}, mini
   if (classifyMetaLarkCompletion(value, target).complete) {
     return deepFreeze({ state: 'complete', snapshot: value });
   }
-  if (value.syncRunStatus === 'failed') {
+  const terminalFailureObserved = value.syncRunStatus === 'failed'
+    && value.syncRunFinishedAt !== null
+    && (previousFinishedAt === null
+      || value.syncRunFinishedAt > Number(previousFinishedAt));
+  if (terminalFailureObserved) {
     return deepFreeze({
       state: 'terminal_failure',
       errorCode: value.syncRunErrorCode,

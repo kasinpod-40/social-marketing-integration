@@ -202,3 +202,7 @@ terminal failed เพื่อ restore โดยไม่รอ bounded timeout
 การ retry Lark หลัง failure ต้องตั้ง explicit terminal-recovery และยอมเฉพาะ durable boundary ที่ error เป็น
 `LARK_PREFLIGHT_FAILED`, D1 complete, ไม่มี destination-preflight/Lark/completion phase, Coverage valid,
 work ยัง active และ lock = 0; error ชนิดอื่นหรือมี partial Lark phase จะ fail closed.
+
+Polling terminal detection ต้องเห็นทั้ง Queue attempt ใหม่และ `finished_at` ใหม่กว่าก่อนส่ง เพื่อไม่ตีความ
+failed status เก่าระหว่าง Queue admission กับ Worker เปลี่ยน sync row เป็น running. หาก invocation ยัง running
+ให้รอ terminal/read-only ต่อและห้าม restore/deploy ซ้อน.

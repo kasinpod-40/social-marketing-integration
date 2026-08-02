@@ -344,8 +344,13 @@ async function sendQueuePhase(loaded, phase) {
 
 async function verifyInitialLark(loaded) {
   const before = (await readEvidence(loaded, 'snapshot-before')).data?.snapshot;
-  const minimumAttempts = normalizeMetaLarkSnapshot(before).mainQueueAttempts + 1;
-  const after = await pollForCompletion(loaded, minimumAttempts);
+  const normalizedBefore = normalizeMetaLarkSnapshot(before);
+  const minimumAttempts = normalizedBefore.mainQueueAttempts + 1;
+  const after = await pollForCompletion(
+    loaded,
+    minimumAttempts,
+    normalizedBefore.syncRunFinishedAt,
+  );
   return {
     comparison: compareMetaLarkSnapshots(before, after, loaded.target),
     snapshotAfter: after,
@@ -355,8 +360,13 @@ async function verifyInitialLark(loaded) {
 
 async function verifyLarkRerun(loaded) {
   const before = (await readEvidence(loaded, 'verify-lark')).data?.snapshotAfter;
-  const minimumAttempts = normalizeMetaLarkSnapshot(before).mainQueueAttempts + 1;
-  const after = await pollForRerun(loaded, minimumAttempts);
+  const normalizedBefore = normalizeMetaLarkSnapshot(before);
+  const minimumAttempts = normalizedBefore.mainQueueAttempts + 1;
+  const after = await pollForRerun(
+    loaded,
+    minimumAttempts,
+    normalizedBefore.syncRunFinishedAt,
+  );
   return {
     comparison: compareMetaLarkSnapshots(before, after, loaded.target, { rerun: true }),
     snapshotAfter: after,
@@ -364,7 +374,7 @@ async function verifyLarkRerun(loaded) {
   };
 }
 
-async function pollForCompletion(loaded, minimumAttempts) {
+async function pollForCompletion(loaded, minimumAttempts, previousFinishedAt) {
   const maxPolls = boundedInteger(process.env.MKT_META_LARK_VERIFY_MAX_POLLS, 120);
   const intervalMs = boundedInteger(process.env.MKT_META_LARK_VERIFY_POLL_INTERVAL_MS, 5_000);
   for (let index = 0; index < maxPolls; index += 1) {
@@ -377,6 +387,7 @@ async function pollForCompletion(loaded, minimumAttempts) {
       snapshot,
       loaded.target,
       minimumAttempts,
+      previousFinishedAt,
     );
     if (classified.state === 'complete') return classified.snapshot;
     if (classified.state === 'terminal_failure') {
@@ -398,7 +409,7 @@ async function pollForCompletion(loaded, minimumAttempts) {
   throw error;
 }
 
-async function pollForRerun(loaded, minimumAttempts) {
+async function pollForRerun(loaded, minimumAttempts, previousFinishedAt) {
   const maxPolls = boundedInteger(process.env.MKT_META_LARK_RERUN_MAX_POLLS, 30);
   const intervalMs = boundedInteger(process.env.MKT_META_LARK_VERIFY_POLL_INTERVAL_MS, 5_000);
   for (let index = 0; index < maxPolls; index += 1) {
@@ -411,6 +422,7 @@ async function pollForRerun(loaded, minimumAttempts) {
       snapshot,
       loaded.target,
       minimumAttempts,
+      previousFinishedAt,
     );
     if (classified.state === 'complete') {
       return classified.snapshot;
