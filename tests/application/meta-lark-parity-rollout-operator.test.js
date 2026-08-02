@@ -16,6 +16,7 @@ import {
   normalizeMetaLarkSnapshot,
   parseMetaLarkOperatorArgs,
   validateMetaD1OnlySummaryForLark,
+  validateMetaLarkD1ReadyBoundary,
   validateMetaLarkEvidenceSequence,
   validateMetaLarkInventory,
 } from '../../scripts/lib/meta-lark-parity-rollout-operator.js';
@@ -146,6 +147,37 @@ test('D1 summary must prove accepted idempotent D1-only processing and all-false
   assert.throws(
     () => validateMetaD1OnlySummaryForLark(invalid, current),
     (error) => error.code === 'META_LARK_D1_SUMMARY_INVALID',
+  );
+});
+
+test('D1-ready recovery accepts only an exact failed Lark preflight boundary', () => {
+  const normalTarget = target('instagram');
+  const failed = {
+    ...d1ReadySnapshot(),
+    sync_run_status: 'failed',
+    sync_run_finished_at: 123,
+    sync_run_error_code: 'LARK_PREFLIGHT_FAILED',
+  };
+  assert.throws(
+    () => validateMetaLarkD1ReadyBoundary(failed, normalTarget),
+    (error) => error.code === 'META_LARK_D1_BOUNDARY_INVALID',
+  );
+  const recoveryTarget = { ...normalTarget, terminalRecovery: true };
+  const accepted = validateMetaLarkD1ReadyBoundary(failed, recoveryTarget);
+  assert.equal(accepted.terminalRecovery, true);
+  assert.throws(
+    () => validateMetaLarkD1ReadyBoundary({
+      ...failed,
+      sync_run_error_code: 'UNHANDLED_SYNC_ERROR',
+    }, recoveryTarget),
+    (error) => error.code === 'META_LARK_D1_BOUNDARY_INVALID',
+  );
+  assert.throws(
+    () => validateMetaLarkD1ReadyBoundary({
+      ...failed,
+      lark_phase_complete: 1,
+    }, recoveryTarget),
+    (error) => error.code === 'META_LARK_D1_BOUNDARY_INVALID',
   );
 });
 

@@ -35,6 +35,7 @@ import {
   previousMetaLarkPhase,
   safeMetaLarkTarget,
   validateMetaD1OnlySummaryForLark,
+  validateMetaLarkD1ReadyBoundary,
   validateMetaLarkEvidenceSequence,
   validateMetaLarkInventory,
 } from './lib/meta-lark-parity-rollout-operator.js';
@@ -220,7 +221,7 @@ async function runD1Ready(loaded) {
   const summary = JSON.parse(await readFile(loaded.target.d1SummaryPath, 'utf8'));
   const d1Summary = validateMetaD1OnlySummaryForLark(summary, loaded.target);
   const snapshot = await readSnapshot(loaded);
-  assertD1Ready(snapshot);
+  const boundary = validateMetaLarkD1ReadyBoundary(snapshot, loaded.target);
 
   const secretNames = await readSecretNames(loaded.target);
   for (const name of [loaded.target.requiredSecretName, 'LARK_APP_SECRET']) {
@@ -231,32 +232,11 @@ async function runD1Ready(loaded) {
   return {
     d1Summary,
     snapshot,
+    terminalRecovery: boundary.terminalRecovery,
     requiredSecretNamesPresent: true,
     providerRequests: 0,
     larkMutationCount: 0,
   };
-}
-
-function assertD1Ready(snapshotInput) {
-  const snapshot = normalizeMetaLarkSnapshot(snapshotInput);
-  const ready = snapshot.syncRunStatus === 'success'
-    && snapshot.syncRunFinishedAt !== null
-    && snapshot.syncRunErrorCode === null
-    && snapshot.d1PhaseComplete
-    && !snapshot.preflightPhaseComplete
-    && !snapshot.larkPhaseComplete
-    && !snapshot.completionPhaseComplete
-    && snapshot.activeLockCount === 0
-    && snapshot.coverageRunCount > 0
-    && snapshot.invalidCoverageCount === 0
-    && snapshot.workLifecycleStatus === 'active'
-    && snapshot.workCompletedAt === null;
-  if (!ready) {
-    throw failure(
-      'Meta target has not reached the accepted D1-only boundary',
-      'META_LARK_D1_BOUNDARY_INVALID',
-    );
-  }
 }
 
 async function deploy(loaded, phase, mode) {

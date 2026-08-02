@@ -198,3 +198,7 @@ Lark Date field contract ต้องเป็น epoch milliseconds. Active loc
 restore/readback all-false ผ่าน. Implementation จึงแปลงเฉพาะ RAW Lark write-set เป็น Bangkok day epoch โดย
 ไม่เปลี่ยน source normalizer หรือ D1 date-only contract และทำ polling ให้หยุดทันทีเมื่อ attempt ใหม่เป็น
 terminal failed เพื่อ restore โดยไม่รอ bounded timeout เต็ม.
+
+การ retry Lark หลัง failure ต้องตั้ง explicit terminal-recovery และยอมเฉพาะ durable boundary ที่ error เป็น
+`LARK_PREFLIGHT_FAILED`, D1 complete, ไม่มี destination-preflight/Lark/completion phase, Coverage valid,
+work ยัง active และ lock = 0; error ชนิดอื่นหรือมี partial Lark phase จะ fail closed.

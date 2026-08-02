@@ -108,6 +108,7 @@ export function loadMetaLarkTarget(env = {}) {
     MKT_META_D1_ONLY_WRANGLER_CONFIG: env.MKT_META_LARK_WRANGLER_CONFIG,
     MKT_META_D1_ONLY_READ_ONLY_SUMMARY: env.MKT_META_LARK_READ_ONLY_SUMMARY,
     MKT_META_D1_ONLY_QUEUE_ID: env.MKT_META_LARK_QUEUE_ID,
+    MKT_META_D1_ONLY_TERMINAL_RECOVERY: env.MKT_META_LARK_TERMINAL_RECOVERY,
   });
   const target = {
     ...base,
@@ -252,6 +253,34 @@ export function validateMetaD1OnlySummaryForLark(value = {}, target = {}) {
     targetKey: value.targetKey,
     operationId: value.operationId,
   });
+}
+
+export function validateMetaLarkD1ReadyBoundary(snapshotInput = {}, target = {}) {
+  const snapshot = normalizeMetaLarkSnapshot(snapshotInput);
+  const normalStatus = snapshot.syncRunStatus === 'success'
+    && snapshot.syncRunFinishedAt !== null
+    && snapshot.syncRunErrorCode === null;
+  const terminalRecovery = target.terminalRecovery === true
+    && snapshot.syncRunStatus === 'failed'
+    && snapshot.syncRunFinishedAt !== null
+    && snapshot.syncRunErrorCode === 'LARK_PREFLIGHT_FAILED';
+  const ready = (normalStatus || terminalRecovery)
+    && snapshot.d1PhaseComplete
+    && !snapshot.preflightPhaseComplete
+    && !snapshot.larkPhaseComplete
+    && !snapshot.completionPhaseComplete
+    && snapshot.activeLockCount === 0
+    && snapshot.coverageRunCount > 0
+    && snapshot.invalidCoverageCount === 0
+    && snapshot.workLifecycleStatus === 'active'
+    && snapshot.workCompletedAt === null;
+  if (!ready) {
+    throw operatorError(
+      'Meta target has not reached the accepted D1-only boundary',
+      'META_LARK_D1_BOUNDARY_INVALID',
+    );
+  }
+  return deepFreeze({ accepted: true, terminalRecovery, snapshot });
 }
 
 export function buildMetaLarkSnapshotSql(target = {}) {
