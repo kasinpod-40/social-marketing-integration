@@ -5,6 +5,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  realpath,
   rm,
   writeFile,
 } from 'node:fs/promises';
@@ -99,6 +100,8 @@ test('Meta reviewed target git shim is one-shot and repository-scoped', async ()
     const otherRoot = join(root, 'other-repository');
     await mkdir(repositoryRoot);
     await mkdir(otherRoot);
+    const canonicalRepositoryRoot = await realpath(repositoryRoot);
+    const canonicalOtherRoot = await realpath(otherRoot);
 
     const realGit = join(root, 'real-git.mjs');
     await writeFile(realGit, `#!/usr/bin/env node\nprocess.stdout.write(\`delegated:\${process.argv.slice(2).join('|')}:\${process.cwd()}\\n\`);\n`, 'utf8');
@@ -128,7 +131,7 @@ test('Meta reviewed target git shim is one-shot and repository-scoped', async ()
     assert.equal(second.status, 0, second.stderr);
     assert.equal(
       second.stdout.trim(),
-      `delegated:rev-parse|origin/main:${repositoryRoot}`,
+      `delegated:rev-parse|origin/main:${canonicalRepositoryRoot}`,
     );
 
     const outsideMarker = join(root, 'outside-origin-main-read.used');
@@ -147,7 +150,7 @@ test('Meta reviewed target git shim is one-shot and repository-scoped', async ()
     assert.equal(outside.status, 0, outside.stderr);
     assert.equal(
       outside.stdout.trim(),
-      `delegated:rev-parse|origin/main:${otherRoot}`,
+      `delegated:rev-parse|origin/main:${canonicalOtherRoot}`,
     );
   } finally {
     await rm(root, { recursive: true, force: true });
