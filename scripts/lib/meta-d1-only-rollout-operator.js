@@ -217,6 +217,55 @@ export function validateMetaD1OnlyReusableRestoreSequence(evidence = [], target 
   });
 }
 
+export function validateMetaD1OnlySummarySequence(evidence = [], target = {}) {
+  const expectedPhases = META_D1_ONLY_OPERATOR_PHASES.slice(0, -1);
+  const planlessExpectedPhases = expectedPhases.slice(1);
+  const observedPhases = Array.isArray(evidence)
+    ? evidence.map((item) => item?.phase ?? null)
+    : [];
+  const planEvidencePresent = JSON.stringify(observedPhases)
+    === JSON.stringify(expectedPhases);
+  const preflightAnchored = JSON.stringify(observedPhases)
+    === JSON.stringify(planlessExpectedPhases);
+  if (!planEvidencePresent && !preflightAnchored) {
+    throw operatorError(
+      'Meta D1-only summary evidence sequence is incomplete',
+      'META_D1_ONLY_SUMMARY_EVIDENCE_INCOMPLETE',
+      { expectedPhases, observedPhases },
+    );
+  }
+  if (preflightAnchored && evidence[0]?.previousEvidenceSha256 !== null) {
+    throw operatorError(
+      'Meta D1-only planless summary must start at an unlinked preflight',
+      'META_D1_ONLY_SUMMARY_PLAN_ANCHOR_MISSING',
+    );
+  }
+
+  const validated = validateMetaD1OnlyEvidenceSequence(evidence, target);
+  if (validated.some((item) => item?.status !== 'passed')) {
+    throw operatorError(
+      'Meta D1-only summary evidence contains a non-passed phase',
+      'META_D1_ONLY_SUMMARY_EVIDENCE_STATUS_INVALID',
+    );
+  }
+  const final = validated.at(-1);
+  if (final?.phase !== 'verify-restore'
+    || final?.data?.mode !== 'safe'
+    || !Array.isArray(final?.data?.expectedTrueFlags)
+    || final.data.expectedTrueFlags.length !== 0) {
+    throw operatorError(
+      'Meta D1-only summary requires a verified all-false restore',
+      'META_D1_ONLY_SUMMARY_RESTORE_INCOMPLETE',
+    );
+  }
+  return deepFreeze({
+    evidence: validated,
+    chainStartPhase: validated[0].phase,
+    planEvidencePresent,
+    final,
+  });
+}
+
 export function loadMetaD1OnlyTarget(env = {}) {
   const targetKey = requireTargetKey(env.MKT_META_D1_ONLY_TARGET);
   const definition = META_D1_ONLY_TARGETS[targetKey];

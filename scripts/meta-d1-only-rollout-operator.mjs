@@ -38,6 +38,7 @@ import {
   validateMetaD1OnlyContinuationRepositoryState,
   validateMetaD1OnlyEvidenceSequence,
   validateMetaD1OnlyReusableRestoreSequence,
+  validateMetaD1OnlySummarySequence,
   validateMetaD1OnlyTerminalRecoveryBaseline,
   validateMetaReadOnlySummary,
 } from './lib/meta-d1-only-rollout-operator.js';
@@ -526,22 +527,21 @@ async function readPollingSnapshot(loaded) {
 async function summarize(loaded) {
   const evidence = [];
   for (const phase of META_D1_ONLY_OPERATOR_PHASES.slice(0, -1)) {
-    evidence.push(await readEvidence(loaded, phase));
+    try {
+      evidence.push(await readEvidence(loaded, phase));
+    } catch (error) {
+      if (phase !== 'plan' || error?.code !== 'ENOENT') throw error;
+    }
   }
-  const validated = validateMetaD1OnlyEvidenceSequence(evidence, loaded.target);
-  const final = validated.at(-1);
-  if (final.phase !== 'verify-restore' || final.data?.mode !== 'safe') {
-    throw operatorFailure(
-      'Meta D1-only summary requires a verified all-false restore',
-      'META_D1_ONLY_SUMMARY_RESTORE_INCOMPLETE',
-    );
-  }
+  const validated = validateMetaD1OnlySummarySequence(evidence, loaded.target);
   return {
     accepted: true,
     targetKey: loaded.target.targetKey,
     operationId: loaded.target.operationId,
-    phaseCount: validated.length,
-    evidenceChainHeadSha256: final.evidenceSha256,
+    phaseCount: validated.evidence.length,
+    evidenceChainStartPhase: validated.chainStartPhase,
+    planEvidencePresent: validated.planEvidencePresent,
+    evidenceChainHeadSha256: validated.final.evidenceSha256,
     d1OnlyVerified: true,
     idempotentRerunVerified: true,
     restoredAllFalse: true,

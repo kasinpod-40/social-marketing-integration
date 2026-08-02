@@ -183,3 +183,11 @@ Exact-head CI ผ่านแล้วทั้ง Branch Verification และ
 ยืนยัน attempt นี้จบเป็น `META_END_TO_END_GATES_DISABLED` หลัง restore, ไม่มี Business/Coverage/Lark write
 และ lock = 0. Controller จึง retry เฉพาะ child-process/network failure ของ read-only polling แบบ bounded;
 semantic/contract error ยัง fail closed ทันที และไม่มี blind resend ก่อน attempt 33 settle.
+
+Instagram same-operation recovery ล่าสุดผ่าน D1 และ idempotent rerun ครบ: Organic state 26,
+observations 26, account-daily 1, Coverage runs 2/entities 27, invalid Coverage 0 และ Lark phase 0;
+rerun ทำให้ main Queue attempts เพิ่มเป็น 35 โดย Business/Coverage counts ไม่เปลี่ยน. Worker restore/readback
+all-false ผ่านและ active lock = 0. Remote work เสร็จแล้ว แต่ local summary พบ contract ไม่สอดคล้องกัน:
+preflight รองรับ evidence chain ที่เริ่มโดยไม่มี plan แต่ summary บังคับอ่าน `plan.json`. Implementation จึงยอม
+เฉพาะ complete planless chain ที่ preflight มี null prior hash, ทุก hash/status ผ่าน และจบด้วย verified
+all-false restore; ไม่ต้อง Provider replay, Queue resend หรือ Remote mutation เพิ่ม.

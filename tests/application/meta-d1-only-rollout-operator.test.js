@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   META_D1_ONLY_OPERATOR_CONTRACT_VERSION,
+  META_D1_ONLY_OPERATOR_PHASES,
   META_D1_ONLY_REQUIRED_FALSE_FLAGS,
   META_D1_ONLY_REQUIRED_TABLES,
   assertMetaD1OnlyConfirmation,
@@ -18,6 +19,7 @@ import {
   validateMetaD1OnlyContinuationRepositoryState,
   validateMetaD1OnlyEvidenceSequence,
   validateMetaD1OnlyReusableRestoreSequence,
+  validateMetaD1OnlySummarySequence,
   validateMetaD1OnlyTerminalRecoveryBaseline,
   validateMetaReadOnlySummary,
 } from '../../scripts/lib/meta-d1-only-rollout-operator.js';
@@ -428,6 +430,45 @@ test('evidence chain is hash-bound and rejects tampering', () => {
   assert.throws(
     () => validateMetaD1OnlyEvidenceSequence([plan, tampered], current),
     (error) => error.code === 'META_D1_ONLY_EVIDENCE_HASH_INVALID',
+  );
+});
+
+test('summary accepts only a complete planless chain anchored at preflight', () => {
+  const current = target('instagram');
+  const evidence = [];
+  let previousEvidenceSha256 = null;
+  for (const phase of META_D1_ONLY_OPERATOR_PHASES.slice(1, -1)) {
+    const item = createMetaD1OnlyEvidence({
+      phase,
+      capturedAt: '2026-07-27T00:00:00Z',
+      repositoryHead: current.repositoryHead,
+      targetFingerprint: current.targetFingerprint,
+      targetKey: current.targetKey,
+      operationId: current.operationId,
+      previousEvidenceSha256,
+      data: phase === 'verify-restore'
+        ? { mode: 'safe', expectedTrueFlags: [] }
+        : {},
+    });
+    evidence.push(item);
+    previousEvidenceSha256 = item.evidenceSha256;
+  }
+
+  const accepted = validateMetaD1OnlySummarySequence(evidence, current);
+  assert.equal(accepted.chainStartPhase, 'preflight');
+  assert.equal(accepted.planEvidencePresent, false);
+  assert.equal(accepted.final.phase, 'verify-restore');
+
+  assert.throws(
+    () => validateMetaD1OnlySummarySequence([
+      { ...evidence[0], previousEvidenceSha256: 'c'.repeat(64) },
+      ...evidence.slice(1),
+    ], current),
+    (error) => error.code === 'META_D1_ONLY_SUMMARY_PLAN_ANCHOR_MISSING',
+  );
+  assert.throws(
+    () => validateMetaD1OnlySummarySequence(evidence.slice(1), current),
+    (error) => error.code === 'META_D1_ONLY_SUMMARY_EVIDENCE_INCOMPLETE',
   );
 });
 
