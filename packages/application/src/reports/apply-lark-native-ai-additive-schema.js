@@ -1,8 +1,4 @@
-import {
-  buildLarkNativeAiSchemaPreview,
-  LARK_NATIVE_AI_PREVIEW_VIEW_CONTRACTS,
-  LARK_NATIVE_AI_TARGET_TABLE,
-} from '../../../config/src/lark-native-ai-schema-preview.js';
+import { LARK_NATIVE_AI_TARGET_TABLE } from '../../../config/src/lark-native-ai-schema-preview.js';
 import { collectLarkNativeAiSchemaInventory } from './collect-lark-native-ai-schema-inventory.js';
 
 export const LARK_NATIVE_AI_ADDITIVE_APPLY_VERSION = 'lark_native_ai_additive_apply_v1';
@@ -337,10 +333,15 @@ async function ensureView({ client, tableId, fields, views, action }) {
 
   const filterInfo = buildViewFilter(action.logicalFilter, fields);
   const viewId = requireText(view.viewId ?? view.view_id, `${action.viewName}.viewId`);
+  const hydratedBefore = await client.getView({ tableId, viewId });
+  if (viewFilterMatches(hydratedBefore, filterInfo)) {
+    return { views: replaceView(views, view, hydratedBefore) };
+  }
+
   await client.updateView({ tableId, viewId, filterInfo });
-  const hydrated = await client.getView({ tableId, viewId });
-  assertViewFilterMatches(hydrated, filterInfo, action.viewName);
-  return { views: views.map((item) => item === view ? hydrated : item) };
+  const hydratedAfter = await client.getView({ tableId, viewId });
+  assertViewFilterMatches(hydratedAfter, filterInfo, action.viewName);
+  return { views: replaceView(views, view, hydratedAfter) };
 }
 
 function buildViewFilter(logicalFilter, fields) {
@@ -362,28 +363,43 @@ function buildViewFilter(logicalFilter, fields) {
   return { conjunction, conditions };
 }
 
-function assertViewFilterMatches(view, expected, viewName) {
+function viewFilterMatches(view, expected) {
   const actual = view?.property?.filterInfo;
   if (!actual || actual.conjunction !== expected.conjunction
     || !Array.isArray(actual.conditions) || actual.conditions.length !== expected.conditions.length) {
-    throw applyError(
-      `View filter verification failed: ${viewName}`,
-      'LARK_NATIVE_AI_APPLY_VIEW_FILTER_VERIFY_FAILED',
-      { viewName },
-    );
+    return false;
   }
-  for (let index = 0; index < expected.conditions.length; index += 1) {
+  return expected.conditions.every((right, index) => {
     const left = actual.conditions[index];
-    const right = expected.conditions[index];
-    if (left.fieldId !== right.fieldId || Number(left.fieldType) !== Number(right.fieldType)
-      || left.operator !== right.operator || left.value !== JSON.stringify(right.value)) {
-      throw applyError(
-        `View filter condition verification failed: ${viewName}`,
-        'LARK_NATIVE_AI_APPLY_VIEW_FILTER_VERIFY_FAILED',
-        { viewName, conditionIndex: index },
-      );
-    }
+    return left?.fieldId === right.fieldId
+      && Number(left?.fieldType) === Number(right.fieldType)
+      && left?.operator === right.operator
+      && normalizeFilterValue(left?.value) === JSON.stringify(right.value);
+  });
+}
+
+function assertViewFilterMatches(view, expected, viewName) {
+  if (!viewFilterMatches(view, expected)) throw applyError(
+    `View filter verification failed: ${viewName}`,
+    'LARK_NATIVE_AI_APPLY_VIEW_FILTER_VERIFY_FAILED',
+    { viewName },
+  );
+}
+
+function normalizeFilterValue(value) {
+  if (value === null || value === undefined) return null;
+  if (Array.isArray(value)) return JSON.stringify(value);
+  const text = String(value);
+  try {
+    const parsed = JSON.parse(text);
+    return JSON.stringify(Array.isArray(parsed) ? parsed : [parsed]);
+  } catch {
+    return JSON.stringify([text]);
   }
+}
+
+function replaceView(views, previous, next) {
+  return views.map((item) => item === previous ? next : item);
 }
 
 function fieldMutation(action) {
@@ -478,8 +494,23 @@ function fieldTypeName(typeValue, uiTypeValue) {
   const uiKey = typeof uiTypeValue === 'string'
     ? uiTypeValue.toLowerCase().replace(/[^a-z0-9]/gu, '')
     : '';
-  const fromUi = ({ text: 'Text', number: 'Number', singleselect: 'SingleSelect', multiselect: 'MultiSelect', date: 'DateTime', datetime: 'DateTime', checkbox: 'Checkbox' })[uiKey];
-  return fromUi ?? ({ 1: 'Text', 2: 'Number', 3: 'SingleSelect', 4: 'MultiSelect', 5: 'DateTime', 7: 'Checkbox' })[Number(typeValue)] ?? null;
+  const fromUi = ({
+    text: 'Text',
+    number: 'Number',
+    singleselect: 'SingleSelect',
+    multiselect: 'MultiSelect',
+    date: 'DateTime',
+    datetime: 'DateTime',
+    checkbox: 'Checkbox',
+  })[uiKey];
+  return fromUi ?? ({
+    1: 'Text',
+    2: 'Number',
+    3: 'SingleSelect',
+    4: 'MultiSelect',
+    5: 'DateTime',
+    7: 'Checkbox',
+  })[Number(typeValue)] ?? null;
 }
 function duplicateError(resource, name, count) {
   return applyError(
