@@ -6,6 +6,7 @@ import {
   META_D1_ONLY_PARTIAL_STAGING_RECOVERY_ATTESTATION_HEADER,
   META_D1_ONLY_PARTIAL_STAGING_RECOVERY_MODE,
   META_D1_ONLY_PARTIAL_STAGING_RECOVERY_PATH,
+  META_D1_ONLY_PARTIAL_STAGING_RECOVERY_PHASE_ENV,
   META_D1_ONLY_PARTIAL_STAGING_RECOVERY_TOKEN_SHA256_ENV,
   createMetaD1OnlyPartialStagingRecoveryHttpHandler,
 } from '../../apps/sync-worker/src/meta-d1-only-partial-staging-recovery-http.js';
@@ -23,6 +24,7 @@ const BASE_ENV = Object.freeze({
   MKT_CUSTOMER_PROFILE: 'integration_workspace',
   MKT_CONNECTION_CUSTOMER_KEY: 'chemistry_k',
   MKT_META_D1_ONLY_PARTIAL_STAGING_RECOVERY: META_D1_ONLY_PARTIAL_STAGING_RECOVERY_MODE,
+  [META_D1_ONLY_PARTIAL_STAGING_RECOVERY_PHASE_ENV]: 'd1',
   MKT_META_D1_ONLY_TARGET: 'chemistry_k2',
   MKT_META_D1_ONLY_OPERATION_ID: OPERATION_ID,
   MKT_META_D1_ONLY_WORK_KEY: WORK_KEY,
@@ -114,7 +116,7 @@ test('Meta partial-staging route rejects wrong bearer before use-case invocation
   assert.equal(processCalls, 0);
 });
 
-test('exact Meta partial-staging continuation invokes existing use-case and suppresses Queue continuation', async () => {
+test('exact Meta D1 continuation invokes existing use-case and suppresses Queue continuation', async () => {
   let processCalls = 0;
   let observedInput = null;
   const handle = handler(async (input) => {
@@ -127,6 +129,7 @@ test('exact Meta partial-staging continuation invokes existing use-case and supp
     assert.equal(input.job.body.operationId, OPERATION_ID);
     assert.equal(input.job.body.workKey, WORK_KEY);
     assert.equal(input.job.body.sourceAccountKey, 'chemistry_k2');
+    assert.equal(input.job.body.d1Only, true);
     await input.env.MKT_SYNC_QUEUE.send({
       ...input.job.body,
       continuation: true,
@@ -147,6 +150,7 @@ test('exact Meta partial-staging continuation invokes existing use-case and supp
   assert.equal(processCalls, 1);
   assert.equal(observedInput.getRuntimeConfig().fixture, 'runtime');
   assert.equal(observedInput.getInfrastructure().fixture, 'infrastructure');
+  assert.equal(body.phase, 'd1');
   assert.equal(body.operationId, OPERATION_ID);
   assert.equal(body.workKey, WORK_KEY);
   assert.equal(body.syncRunId, SYNC_RUN_ID);
@@ -155,6 +159,7 @@ test('exact Meta partial-staging continuation invokes existing use-case and supp
   assert.equal(body.directUseCaseInvocationCount, 1);
   assert.equal(body.queueMessageCount, 0);
   assert.equal(body.queueOperationAttemptMutationCount, 0);
+  assert.equal(body.d1WriteEnabled, true);
   assert.equal(body.larkWriteEnabled, false);
   assert.equal(body.scheduleEnabled, false);
   assert.equal(body.production, false);
@@ -163,11 +168,46 @@ test('exact Meta partial-staging continuation invokes existing use-case and supp
   assert.equal(serialized.includes(DEPLOYMENT_ATTESTATION), false);
 });
 
+test('exact Meta Lark continuation reuses the same operation and suppresses Queue continuation', async () => {
+  let processCalls = 0;
+  const larkEnv = {
+    ...BASE_ENV,
+    [META_D1_ONLY_PARTIAL_STAGING_RECOVERY_PHASE_ENV]: 'lark',
+    MKT_META_LARK_WRITE_ENABLED: 'true',
+  };
+  const response = await invoke(handler(async (input) => {
+    processCalls += 1;
+    assert.equal(input.mainQueueAttempts, 29);
+    assert.equal(input.operation.operationId, OPERATION_ID);
+    assert.equal(input.job.body.d1Only, false);
+    await input.env.MKT_SYNC_QUEUE.send({
+      ...input.job.body,
+      continuation: true,
+      continuationStatus: 'lark_continuation',
+      continuationPhase: 'lark',
+    });
+    return {
+      status: 'lark_continuation',
+      continuationPhase: 'lark',
+    };
+  }), larkEnv);
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assertAttested(response);
+  assert.equal(processCalls, 1);
+  assert.equal(body.phase, 'lark');
+  assert.equal(body.operationId, OPERATION_ID);
+  assert.equal(body.continuationSuppressed, true);
+  assert.equal(body.queueMessageCount, 0);
+  assert.equal(body.queueOperationAttemptMutationCount, 0);
+  assert.equal(body.larkWriteEnabled, true);
+});
+
 test('terminal D1-only result requires no continuation suppression and still sends no Queue message', async () => {
   let processCalls = 0;
   const response = await invoke(handler(async () => {
     processCalls += 1;
-    return { status: 'd1_complete_lark_gate_disabled' };
+    return { status: 'lark_gate_disabled' };
   }));
   const body = await response.json();
   assert.equal(response.status, 200);
@@ -175,6 +215,23 @@ test('terminal D1-only result requires no continuation suppression and still sen
   assert.equal(body.continuationSuppressed, false);
   assert.equal(body.queueMessageCount, 0);
   assert.equal(body.queueOperationAttemptMutationCount, 0);
+});
+
+test('terminal Lark result requires no continuation suppression and still sends no Queue message', async () => {
+  const response = await invoke(handler(async (input) => {
+    assert.equal(input.job.body.d1Only, false);
+    return { status: 'completed' };
+  }), {
+    ...BASE_ENV,
+    [META_D1_ONLY_PARTIAL_STAGING_RECOVERY_PHASE_ENV]: 'lark',
+    MKT_META_LARK_WRITE_ENABLED: 'true',
+  });
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.phase, 'lark');
+  assert.equal(body.status, 'completed');
+  assert.equal(body.continuationSuppressed, false);
+  assert.equal(body.queueMessageCount, 0);
 });
 
 test('operation identity drift blocks before use-case invocation', async () => {
@@ -194,6 +251,23 @@ test('operation identity drift blocks before use-case invocation', async () => {
   assert.equal(processCalls, 0);
 });
 
+test('missing or invalid continuation phase blocks before use-case invocation', async () => {
+  let processCalls = 0;
+  for (const phase of [undefined, 'full']) {
+    const env = { ...BASE_ENV };
+    if (phase === undefined) delete env[META_D1_ONLY_PARTIAL_STAGING_RECOVERY_PHASE_ENV];
+    else env[META_D1_ONLY_PARTIAL_STAGING_RECOVERY_PHASE_ENV] = phase;
+    const response = await invoke(handler(async () => {
+      processCalls += 1;
+      return { status: 'source_continuation' };
+    }), env);
+    const body = await response.json();
+    assert.equal(response.status, 400);
+    assert.equal(body.code, 'META_PARTIAL_STAGING_RECOVERY_PHASE_INVALID');
+  }
+  assert.equal(processCalls, 0);
+});
+
 test('additional true execution flag blocks before use-case invocation', async () => {
   let processCalls = 0;
   const response = await invoke(handler(async () => {
@@ -208,6 +282,21 @@ test('additional true execution flag blocks before use-case invocation', async (
   assertAttested(response);
   assert.equal(body.code, 'META_PARTIAL_STAGING_RECOVERY_FLAGS_UNSAFE');
   assert.deepEqual(body.queueMessageCount, 0);
+  assert.equal(processCalls, 0);
+});
+
+test('Lark phase without exact Lark flag blocks before use-case invocation', async () => {
+  let processCalls = 0;
+  const response = await invoke(handler(async () => {
+    processCalls += 1;
+    return { status: 'lark_continuation' };
+  }), {
+    ...BASE_ENV,
+    [META_D1_ONLY_PARTIAL_STAGING_RECOVERY_PHASE_ENV]: 'lark',
+  });
+  const body = await response.json();
+  assert.equal(response.status, 400);
+  assert.equal(body.code, 'META_PARTIAL_STAGING_RECOVERY_FLAGS_UNSAFE');
   assert.equal(processCalls, 0);
 });
 
