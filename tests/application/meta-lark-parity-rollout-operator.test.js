@@ -28,6 +28,7 @@ import {
   META_D1_ONLY_REQUIRED_FALSE_FLAGS,
 } from '../../scripts/lib/meta-d1-only-rollout-operator.js';
 import {
+  META_ADS_JULY_ACTIVITY_LARK_TABLE_KEYS,
   META_END_TO_END_LARK_TABLES,
 } from '../../packages/config/src/meta-end-to-end-runtime-config.js';
 
@@ -71,11 +72,11 @@ test('target loader preserves the exact D1 operation identity for each target', 
 
   const k2 = target('chemistry_k2');
   assert.equal(k2.workKey, 'meta_ads:chemistry_k2:meta-lark-chemistry_k2');
-  assert.equal(k2.expectedLarkTableCount, 8);
+  assert.equal(k2.expectedLarkTableCount, 4);
 
   const k3 = target('chemistry_k3');
   assert.equal(k3.workKey, 'meta_ads:chemistry_k3:meta-lark-chemistry_k3');
-  assert.equal(k3.expectedLarkTableCount, 8);
+  assert.equal(k3.expectedLarkTableCount, 4);
   assert.notEqual(k2.targetFingerprint, k3.targetFingerprint);
 });
 
@@ -111,7 +112,7 @@ test('continuation job reuses the same stable operation without d1Only or a prov
   assert.equal(ads.workKey, 'meta_ads:chemistry_k3:meta-lark-chemistry_k3');
 });
 
-test('Lark inventory requires all 15 unique destinations and every stable key field', () => {
+test('Lark inventory requires all 11 unique destinations and every stable key field', () => {
   const tableIds = {};
   const remoteTables = [];
   const fieldsByKey = {};
@@ -122,7 +123,7 @@ test('Lark inventory requires all 15 unique destinations and every stable key fi
     fieldsByKey[contract.tableKey] = [{ fieldName: contract.keyField }];
   }
   const result = validateMetaLarkInventory({ tableIds, remoteTables, fieldsByKey });
-  assert.equal(result.tableCount, 15);
+  assert.equal(result.tableCount, 11);
   assert.equal(result.allTablesPresent, true);
   assert.equal(result.allStableKeyFieldsPresent, true);
 
@@ -468,11 +469,26 @@ test('evidence chain is target-bound, hash-bound and never authorizes Provider o
 });
 
 test('organic and Ads contracts remain isolated', () => {
-  assert.equal(expectedLarkContracts('facebook').length, 7);
-  assert.equal(expectedLarkContracts('instagram').length, 7);
-  assert.equal(expectedLarkContracts('meta_ads').length, 8);
-  assert.equal(expectedLarkContracts('facebook').every((entry) => !entry.path.startsWith('raw.ads')), true);
-  assert.equal(expectedLarkContracts('meta_ads').every((entry) => !entry.path.startsWith('raw.organic')), true);
+  const facebookContracts = expectedLarkContracts('facebook');
+  const instagramContracts = expectedLarkContracts('instagram');
+  const adsContracts = expectedLarkContracts('meta_ads');
+  assert.equal(facebookContracts.length, 7);
+  assert.equal(instagramContracts.length, 7);
+  assert.deepEqual(
+    adsContracts.map((entry) => entry.tableKey),
+    META_ADS_JULY_ACTIVITY_LARK_TABLE_KEYS,
+  );
+  assert.equal(
+    facebookContracts.every((entry) => !entry.path.startsWith('raw.ads')),
+    true,
+  );
+  assert.equal(
+    adsContracts.every((entry) => !entry.path.startsWith('raw.organic')),
+    true,
+  );
+  assert.equal(adsContracts.some((entry) => entry.path.startsWith('raw.ads')), false);
+  assert.equal(adsContracts.some((entry) => entry.path.endsWith('adsCreatives')), false);
+  assert.equal(adsContracts.some((entry) => entry.path.endsWith('adsDaily')), false);
 });
 
 function target(targetKey) {
