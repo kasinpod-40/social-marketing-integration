@@ -1,0 +1,37 @@
+export const LARK_NATIVE_AI_SCHEMA_APPLY_CONTRACT_VERSION =
+  'lark_native_ai_schema_additive_apply_v1';
+
+export const LARK_NATIVE_AI_SCHEMA_APPLY_ACCEPTED_EVIDENCE_CONTRACT =
+  'lark_native_ai_remote_inventory_reviewed_terminal_v1';
+
+export const LARK_NATIVE_AI_SCHEMA_APPLY_CONFIRMATION =
+  'APPLY_LARK_NATIVE_AI_SCHEMA_31_ACTIONS';
+
+export const LARK_NATIVE_AI_SCHEMA_APPLY_ACCEPTED_INVENTORY_HEAD =
+  'f12a88e00417e76749e0f8ca9b314f7ee39e0117';
+
+export const LARK_NATIVE_AI_SCHEMA_APPLY_ACCEPTED_INVENTORY_SHA256 =
+  'c25ac907bb7112d6dc4d712966aa1f1ce5f64ac91d01f51e486b1d7db6a7ad23';
+
+export const LARK_NATIVE_AI_SCHEMA_APPLY_ACCEPTED_BASE_IDENTITY_HASH =
+  '7ad3bb5438302abcb6b198fe591abb33e142c2ed4919053d2b537961265cb56c';
+
+export const LARK_NATIVE_AI_SCHEMA_APPLY_EXPECTED_COUNTS = Object.freeze({
+  addField: 23,
+  extendSelectOptions: 2,
+  createView: 6,
+  blockers: 0,
+  totalActions: 31,
+});
+
+export const LARK_NATIVE_AI_SCHEMA_APPLY_MAX_REMOTE_WRITE_REQUESTS = 36;
+
+export const LARK_NATIVE_AI_SCHEMA_APPLY_ACCEPTED_REMOTE_COUNTS = Object.freeze({
+  tokenRequestCount: 1,
+  metadataReadCount: 3,
+  blockedRequestCount: 0,
+});
+
+export const LARK_NATIVE_AI_SCHEMA_APPLY_EXPECTED_TABLE_COUNT = 72;
+export const LARK_NATIVE_AI_SCHEMA_APPLY_EXPECTED_TARGET_FIELD_COUNT = 16;
+export const LARK_NATIVE_AI_SCHEMA_APPLY_EXPECTED_TARGET_VIEW_COUNT = 5;
