@@ -528,7 +528,13 @@ async function summarize(loaded) {
     if (error?.code === 'ENOENT') return null;
     throw error;
   });
-  const phases = late
+  const idempotent = await readEvidence(loaded, 'verify-idempotent-rerun').catch((error) => {
+    if (error?.code === 'ENOENT') return null;
+    throw error;
+  });
+  const phases = late && idempotent
+    ? META_LARK_OPERATOR_PHASES.slice(1, -1)
+    : late
     ? [
         'lark-preflight',
         'd1-ready',

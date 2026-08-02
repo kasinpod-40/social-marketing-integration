@@ -249,3 +249,7 @@ Business/Completion และ lease หมดโดย lock = 0. Closeout จะ
 ทุก field คงที่อีก 30 วินาที. Evidence บันทึก orphan ตามจริงและไม่ปลอม Sync status เป็น success.
 Read-only `verify-late-completion`/`summary` อนุญาต explicit exact-head closeout operator ที่ผ่าน CI
 เพื่ออ่าน evidence chain ของ execution Head เดิม; phase อื่นห้าม cross-head และไม่มี Remote mutation.
+Instagram late proof ผ่าน post-completion orphan stability 31 วินาทีแล้ว แต่ summary รุ่นเดิมเลือก shortened
+chain ทุกครั้งที่มี late proof จึงข้าม full `verify-lark/resend/verify-idempotent` evidence และพบ hash gap.
+Summary จะเลือก full chain เมื่อ idempotent evidence มีอยู่ และใช้ shortened chain เฉพาะ late-only recovery
+ที่ไม่มี idempotent phase เท่านั้น.
