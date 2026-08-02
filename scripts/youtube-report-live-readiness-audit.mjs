@@ -8,9 +8,11 @@ import {
   YOUTUBE_REPORT_LIVE_READINESS_CONFIRMATION,
   YOUTUBE_REPORT_WINDOWS,
   assertYouTubeReportReadinessConfirmation,
-  assessYouTubeReportLiveReadiness,
   parseYouTubeReportReadinessArgs,
 } from './lib/youtube-report-live-readiness-audit.js';
+import {
+  assessYouTubeReportLiveReadiness,
+} from './lib/youtube-report-live-readiness-reviewed-audit.js';
 
 let stage = 'init';
 
@@ -50,7 +52,7 @@ function printPlan() {
     expectedMetricRowsPerWindow: YOUTUBE_ORGANIC_METRIC_COUNT,
     expectedMetricRowsTotal: YOUTUBE_ORGANIC_METRIC_COUNT * YOUTUBE_REPORT_WINDOWS.length,
     acceptedSourceEntityFloor: YOUTUBE_ACCEPTED_SOURCE_ENTITY_FLOOR,
-    inputContract: 'sanitized read-only Repository/Worker/D1/Lark evidence only',
+    inputContract: 'sanitized exact reviewed-main Repository/Worker/D1/Lark evidence only',
     remoteCollectorImplemented: false,
     remoteExecutionAuthorized: false,
     liveMaterializationAuthorized: false,
