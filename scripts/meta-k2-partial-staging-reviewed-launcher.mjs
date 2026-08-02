@@ -5,6 +5,7 @@ import {
   chmod,
   mkdir,
   readFile,
+  readdir,
   realpath,
   rename,
   rm,
@@ -23,10 +24,15 @@ import {
   META_K2_PARTIAL_STAGING_FINALIZER_CONFIRMATION,
 } from './lib/meta-k2-partial-staging-finalizer.js';
 import {
+  META_K2_PREACTIVATION_FAILURE_FILES,
+  META_K2_PREACTIVATION_RETRY_CONFIRMATION,
+  injectMetaK2ReviewedSourceMappings,
   resolveMetaK2ExactRecoveryUrl,
+  validateMetaK2PreactivationRetry,
 } from './lib/meta-k2-partial-staging-reviewed-launcher.js';
 import { readDevVars } from './lib/dev-vars.js';
 import {
+  META_K2_EXACT_RECOVERY_IDENTITY,
   META_K2_EXACT_RECOVERY_MODE,
   META_K2_EXACT_RECOVERY_MODE_ENV,
   META_K2_EXACT_RECOVERY_PATH,
@@ -44,6 +50,14 @@ const runtimeRoot = join(
   'meta-k2-partial-staging-reviewed-runtime',
 );
 const runtimeConfigPath = join(runtimeRoot, 'wrangler.safe.absolute.jsonc');
+const exactRecoveryRoot = join(
+  repositoryRoot,
+  'outputs',
+  'meta-d1-only-rollout',
+  META_K2_EXACT_RECOVERY_IDENTITY.targetKey,
+  META_K2_EXACT_RECOVERY_IDENTITY.operationId,
+  'exact-partial-staging-recovery-v1',
+);
 
 const execute = parseArgs(process.argv.slice(2));
 if (!execute) {
@@ -58,10 +72,20 @@ if (!execute) {
     defaultBaseWranglerConfig: 'wrangler.sync.jsonc',
     generatedRuntimeConfig: relative(repositoryRoot, runtimeConfigPath),
     runtimePathsAbsolutized: ['main', 'migrations_dir'],
+    sourceMappingMaterialization: {
+      keys: ['META_GRAPH_API_VERSION', 'META_AD_ACCOUNT_MAPPINGS'],
+      secretsIncluded: false,
+    },
     recoveryUrl: {
       explicitOverrideEnv: 'MKT_META_K2_EXACT_RECOVERY_URL',
       defaultOriginEnv: 'MKT_CONNECTION_PUBLIC_ORIGIN',
       exactPath: META_K2_EXACT_RECOVERY_PATH,
+    },
+    preactivationRetry: {
+      confirmation: META_K2_PREACTIVATION_RETRY_CONFIRMATION,
+      exactFiles: META_K2_PREACTIVATION_FAILURE_FILES,
+      action: 'archive_local_evidence_then_retry',
+      remoteMutationAllowed: false,
     },
     executeArgument: '--execute',
     confirmation: META_K2_PARTIAL_STAGING_FINALIZER_CONFIRMATION,
@@ -75,6 +99,7 @@ if (!execute) {
 }
 
 let materialized = false;
+let preactivationArchive = null;
 try {
   const devVarsPath = await resolveRepositoryFile(
     process.env.DEV_VARS_FILE ?? '.dev.vars',
@@ -82,6 +107,7 @@ try {
   );
   await assertPrivateFile(devVarsPath, 'DEV_VARS_FILE');
   const devVars = await readDevVars(devVarsPath);
+  const mergedEnv = { ...devVars, ...process.env };
   const recoveryUrl = resolveMetaK2ExactRecoveryUrl({
     explicitUrl: process.env.MKT_META_K2_EXACT_RECOVERY_URL,
     publicOrigin:
@@ -99,8 +125,30 @@ try {
     META_HISTORY_2026_WINDOWS.ads,
     { baseDirectory: dirname(baseConfigPath) },
   );
-  await writePrivateText(runtimeConfigPath, absoluteConfig);
+  const materializedSourceMappings = injectMetaK2ReviewedSourceMappings(
+    absoluteConfig,
+    mergedEnv,
+  );
+  await writePrivateText(runtimeConfigPath, materializedSourceMappings.configText);
   materialized = true;
+
+  preactivationArchive = await archiveExactPreactivationFailureIfPresent(mergedEnv);
+  if (preactivationArchive) {
+    process.stdout.write(`${JSON.stringify({
+      ok: true,
+      stage: 'archive-preactivation-failure',
+      archived: true,
+      archivePath: preactivationArchive.archivePath,
+      backupSha256: preactivationArchive.backupSha256,
+      remoteMutationCount: 0,
+      activeDeploymentCount: 0,
+      continuationCallCount: 0,
+      queueMessageCount: 0,
+      lifecycleSqlRepairCount: 0,
+      scheduleEnabled: false,
+      production: 'BLOCKED',
+    }, null, 2)}\n`);
+  }
 
   const child = spawnSync(process.execPath, [finalizerPath, '--execute'], {
     cwd: repositoryRoot,
@@ -126,6 +174,7 @@ try {
     code: error?.code ?? 'META_K2_REVIEWED_LAUNCHER_FAILED',
     message: error instanceof Error ? error.message : String(error),
     details: error?.details ?? {},
+    preactivationArchive: preactivationArchive?.archivePath ?? null,
     runtimeConfigRemoved: false,
     queueMessageCount: 0,
     lifecycleSqlRepairCount: 0,
@@ -147,6 +196,59 @@ function parseArgs(args) {
     throw error;
   }
   return args.includes('--execute');
+}
+
+async function archiveExactPreactivationFailureIfPresent(env) {
+  try {
+    const value = await stat(exactRecoveryRoot);
+    if (!value.isDirectory()) {
+      const error = new Error('Exact Meta K2 recovery root must be a directory');
+      error.code = 'META_K2_REVIEWED_LAUNCHER_PREACTIVATION_RETRY_INVALID';
+      throw error;
+    }
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null;
+    throw error;
+  }
+
+  const entries = await readdir(exactRecoveryRoot, { withFileTypes: true });
+  if (entries.some((entry) => !entry.isFile())) {
+    const error = new Error('Exact Meta K2 recovery root contains a non-file entry');
+    error.code = 'META_K2_REVIEWED_LAUNCHER_PREACTIVATION_RETRY_INVALID';
+    error.details = { fileNames: entries.map((entry) => entry.name).sort() };
+    throw error;
+  }
+  const fileNames = entries.map((entry) => entry.name).sort();
+  const retainedEvidence = await readJson(join(
+    exactRecoveryRoot,
+    'retained-evidence-admission.json',
+  ));
+  const stabilityEvidence = await readJson(join(
+    exactRecoveryRoot,
+    'read-only-stability.json',
+  ));
+  const backupEvidence = await readJson(join(exactRecoveryRoot, 'backup.json'));
+  const backupPath = join(exactRecoveryRoot, 'meta-k2-before-recovery.sql');
+  const backupBytes = await readFile(backupPath);
+  const validation = validateMetaK2PreactivationRetry({
+    fileNames,
+    retainedEvidence,
+    stabilityEvidence,
+    backupEvidence,
+    backupBytes,
+    expectedBackupFile: relative(repositoryRoot, backupPath),
+  }, env);
+
+  const archivePath = `${exactRecoveryRoot}-preactivation-failed-${Date.now()}`;
+  await rename(exactRecoveryRoot, archivePath);
+  return Object.freeze({
+    ...validation,
+    archivePath: relative(repositoryRoot, archivePath),
+  });
+}
+
+async function readJson(path) {
+  return JSON.parse(await readFile(path, 'utf8'));
 }
 
 async function resolveRepositoryFile(value, fieldName) {
