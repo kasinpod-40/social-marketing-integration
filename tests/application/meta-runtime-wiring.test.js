@@ -226,7 +226,10 @@ test('durably stages one Meta page per invocation, completes D1-only, then resum
   }
 
   assert.equal(result.status, 'completed');
-  assert.equal(new Set(tableWrites).size, 8);
+  assert.deepEqual(
+    [...new Set(tableWrites)],
+    ['tbl_ads_accounts', 'tbl_ads_campaigns', 'tbl_ads_adgroups', 'tbl_ads'],
+  );
   const replay = await processMetaEndToEndSync(baseInput({
     resumableWorkStore: workStore,
     historyStore,
