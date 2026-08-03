@@ -105,7 +105,7 @@ test('finalizer reuses the exact retained pre-Preview backup and cannot export a
   );
 });
 
-test('finalizer skips completed D1 and waits for exact Preview alias before Lark write', async () => {
+test('finalizer skips completed D1 and retains complete safe Lark preflight diagnostics', async () => {
   const { source } = await transformedSource(
     '../../scripts/meta-k2-partial-staging-preview-finalizer.mjs',
   );
@@ -122,6 +122,16 @@ test('finalizer skips completed D1 and waits for exact Preview alias before Lark
   assert.match(source, /const larkAliasReadiness = await waitForExactPreviewAlias/u);
   assert.match(source, /aliasReadiness: larkAliasReadiness/u);
   assert.match(source, /responseFieldName/u);
+  assert.match(source, /responseIssueCount/u);
+  assert.match(source, /responseTablesChecked/u);
+  assert.match(source, /responseRowsChecked/u);
+  assert.match(source, /responseFieldsChecked/u);
+  assert.match(source, /responseIssues/u);
+  assert.match(source, /responseIssuesTruncated/u);
+  assert.match(source, /reasonCode/u);
+  assert.match(source, /destinationType/u);
+  assert.match(source, /incomingType/u);
+  assert.match(source, /affectedRows/u);
   assert.match(source, /observedWorkerVersion/u);
   assert.match(source, /attestationMatched/u);
 
@@ -152,6 +162,7 @@ test('v4 wiring remains additive and delegates to the reviewed hash-pinned trans
   assert.match(terminal, /meta-k2-source-complete-preview-loader-v4\.mjs/u);
   assert.match(contract, /META_K2_PREVIEW_BACKUP_REUSE_INVALID/u);
   assert.match(contract, /META_K2_PREVIEW_ALIAS_NOT_READY/u);
+  assert.match(contract, /responseIssueCount/u);
 
   for (const source of [loader, bootstrap, terminal]) {
     assert.doesNotMatch(source, /queue\s*\.\s*send\s*\(/iu);
