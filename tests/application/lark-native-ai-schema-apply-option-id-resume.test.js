@@ -6,7 +6,11 @@ import {
   applyLarkNativeAiSchemaAdditive,
 } from '../../packages/application/src/reports/apply-lark-native-ai-schema.js';
 import {
+  buildLarkNativeAiSchemaViewFilter,
+} from '../../packages/application/src/reports/lark-native-ai-schema-view-filters.js';
+import {
   buildLarkNativeAiSchemaPreview,
+  LARK_NATIVE_AI_PREVIEW_VIEW_CONTRACTS,
   LARK_NATIVE_AI_TARGET_TABLE,
 } from '../../packages/config/src/lark-native-ai-schema-preview.js';
 import {
@@ -93,6 +97,57 @@ test('resume Apply sends live Select option IDs and never repeats completed Fiel
   assert.ok(checkboxValues.includes(false));
 });
 
+test('executes one bounded collapsed predecessor update and reaches exact zero drift', async () => {
+  const client = new CollapsedPredecessorRemoteClient(inventory);
+  const result = await applyLarkNativeAiSchemaAdditive({
+    client,
+    retainedEvidence: evidence(),
+    baseName: null,
+  });
+
+  assert.equal(result.mode, 'resume_apply');
+  assert.equal(result.plannedLogicalActionCount, 1);
+  assert.equal(result.appliedLogicalActionCount, 1);
+  assert.equal(result.verification.status, 'zero_drift');
+  assert.equal(result.verification.remainingLogicalActionCount, 0);
+  assert.equal(result.verification.requiredViewCount, 6);
+  assert.equal(result.verification.exactViewFilterCount, 6);
+  assert.deepEqual(client.writeCounts, {
+    fieldCreate: 0,
+    fieldUpdate: 0,
+    viewCreate: 0,
+    viewUpdate: 1,
+  });
+
+  assert.equal(client.viewPatchBodies.length, 1);
+  const patch = client.viewPatchBodies[0];
+  assert.equal(patch.viewName, '⚠️ Missing / Partial Data');
+  assert.equal(patch.filterInfo.conjunction, 'or');
+  assert.equal(patch.filterInfo.conditions.length, 6);
+  assert.ok(patch.filterInfo.conditions.every(({ value }) => value.length === 1));
+});
+
+test('rechecks the collapsed predecessor immediately before PATCH and blocks changed drift', async () => {
+  const client = new CollapsedPredecessorRemoteClient(inventory, { raceToOutsideValue: true });
+
+  await assert.rejects(
+    applyLarkNativeAiSchemaAdditive({
+      client,
+      retainedEvidence: evidence(),
+      baseName: null,
+    }),
+    (error) => error?.code === 'LARK_NATIVE_AI_SCHEMA_APPLY_VIEW_FILTER_CONFLICT',
+  );
+
+  assert.deepEqual(client.writeCounts, {
+    fieldCreate: 0,
+    fieldUpdate: 0,
+    viewCreate: 0,
+    viewUpdate: 0,
+  });
+  assert.equal(client.viewPatchBodies.length, 0);
+});
+
 class PartialRemoteClient {
   constructor(sourceInventory) {
     this.tableId = 'tbl_target_ai';
@@ -153,16 +208,61 @@ class PartialRemoteClient {
     assert.equal(tableId, this.tableId);
     this.writeCounts.viewUpdate += 1;
     const view = this.views.find((item) => item.viewId === viewId);
-    view.property.filterInfo = {
-      conjunction: filterInfo.conjunction,
-      conditions: filterInfo.conditions.map((condition) => ({
-        fieldId: condition.fieldId,
-        fieldType: condition.fieldType,
-        operator: condition.operator,
-        value: JSON.stringify(condition.value),
-      })),
-    };
+    view.property.filterInfo = toRawFilter(filterInfo);
     this.viewPatchBodies.push({ viewName: view.viewName, filterInfo: structuredClone(filterInfo) });
+    return structuredClone(view);
+  }
+}
+
+class CollapsedPredecessorRemoteClient extends PartialRemoteClient {
+  constructor(sourceInventory, options = {}) {
+    super(sourceInventory);
+    this.raceToOutsideValue = options.raceToOutsideValue === true;
+    this.missingReadCount = 0;
+    this.views = LARK_NATIVE_AI_PREVIEW_VIEW_CONTRACTS.map((contract, index) => {
+      const view = rawView(`vew_complete_${index}`, contract.viewName);
+      const expected = buildLarkNativeAiSchemaViewFilter(contract, this.fields);
+      if (expected !== null) view.property.filterInfo = toRawFilter(expected.mutation);
+      return view;
+    });
+
+    const missingContract = LARK_NATIVE_AI_PREVIEW_VIEW_CONTRACTS.find(
+      ({ viewName }) => viewName === '⚠️ Missing / Partial Data',
+    );
+    const expected = buildLarkNativeAiSchemaViewFilter(missingContract, this.fields);
+    const missingView = this.views.find(({ viewName }) => viewName === missingContract.viewName);
+    missingView.property.filterInfo = toRawFilter({
+      conjunction: 'and',
+      conditions: [expected.mutation.conditions[0]],
+    });
+    this.missingViewId = missingView.viewId;
+    this.outsideOptionId = this.fields
+      .find(({ fieldName }) => fieldName === 'readiness_status')
+      .property.options.find(({ name }) => name === 'report_available').id;
+    this.writeCounts = { fieldCreate: 0, fieldUpdate: 0, viewCreate: 0, viewUpdate: 0 };
+    this.viewPatchBodies = [];
+  }
+
+  async getView({ tableId, viewId }) {
+    assert.equal(tableId, this.tableId);
+    const view = this.views.find((item) => item.viewId === viewId);
+    assert.ok(view);
+    if (viewId === this.missingViewId) {
+      this.missingReadCount += 1;
+      if (this.raceToOutsideValue && this.missingReadCount >= 3) {
+        const raced = structuredClone(view);
+        raced.property.filterInfo = toRawFilter({
+          conjunction: 'and',
+          conditions: [{
+            fieldId: this.fields.find(({ fieldName }) => fieldName === 'readiness_status').fieldId,
+            fieldType: 3,
+            operator: 'is',
+            value: [this.outsideOptionId],
+          }],
+        });
+        return raced;
+      }
+    }
     return structuredClone(view);
   }
 }
@@ -173,6 +273,18 @@ function rawView(viewId, viewName, viewType = 'grid') {
     viewName,
     viewType,
     property: { hiddenFields: [], filterInfo: null },
+  };
+}
+
+function toRawFilter(filterInfo) {
+  return {
+    conjunction: filterInfo.conjunction,
+    conditions: filterInfo.conditions.map((condition) => ({
+      fieldId: condition.fieldId,
+      fieldType: condition.fieldType,
+      operator: condition.operator,
+      value: JSON.stringify(condition.value),
+    })),
   };
 }
 

@@ -27,6 +27,7 @@ import {
 import {
   buildLarkNativeAiSchemaViewFilter,
   buildLarkNativeAiSchemaViewPlans,
+  normalizeLarkNativeAiSchemaComparableViewFilter,
 } from './lark-native-ai-schema-view-filters.js';
 
 export { assertAcceptedLarkNativeAiSchemaApplyEvidence, calculateInventorySha256 };
@@ -139,11 +140,16 @@ export async function applyLarkNativeAiSchemaAdditive(input = {}) {
       const viewId = requireText(view?.viewId, `${item.viewName}.viewId`);
       const expected = buildLarkNativeAiSchemaViewFilter(item.contract, raw.fields);
       const hydrated = await client.getView({ tableId: raw.table.tableId, viewId });
-      const actual = normalizeComparableFilter(hydrated?.property?.filterInfo);
+      const actual = normalizeLarkNativeAiSchemaComparableViewFilter(
+        normalizeComparableFilter(hydrated?.property?.filterInfo),
+      );
       if (expected === null) {
         if (!isEmptyFilter(actual)) throw schemaViewConflict(item.viewName);
       } else if (canonicalSchemaValue(actual) !== canonicalSchemaValue(expected.comparable)) {
-        if (!isEmptyFilter(actual)) throw schemaViewConflict(item.viewName);
+        if (!isEmptyFilter(actual)
+          && !isAcceptedSingleSelectCollapsedPredecessor(actual, expected.comparable)) {
+          throw schemaViewConflict(item.viewName);
+        }
         await client.updateView({
           tableId: raw.table.tableId,
           viewId,
@@ -198,6 +204,30 @@ export async function applyLarkNativeAiSchemaAdditive(input = {}) {
       exactViewFilterCount: finalViews.length,
     },
   });
+}
+
+function isAcceptedSingleSelectCollapsedPredecessor(actual, expected) {
+  if (actual.conditions.length !== 1
+    || expected.conditions.length <= 1
+    || expected.conjunction !== 'or') return false;
+
+  const actualCondition = actual.conditions[0];
+  if (actualCondition.fieldType !== 3
+    || actualCondition.operator !== 'is'
+    || actualCondition.values.length !== 1) return false;
+
+  const expectedValues = [];
+  for (const condition of expected.conditions) {
+    if (condition.fieldId !== actualCondition.fieldId
+      || condition.fieldType !== 3
+      || condition.operator !== 'is'
+      || condition.values.length !== 1) return false;
+    expectedValues.push(condition.values[0]);
+  }
+
+  const uniqueExpected = new Set(expectedValues.map(canonicalSchemaValue));
+  if (uniqueExpected.size !== expectedValues.length) return false;
+  return uniqueExpected.has(canonicalSchemaValue(actualCondition.values[0]));
 }
 
 function requireClient(value, apply) {
