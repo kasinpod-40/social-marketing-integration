@@ -87,6 +87,32 @@ function partialSnapshot(overrides = {}) {
   });
 }
 
+function d1CompleteSnapshot(overrides = {}) {
+  const counts = {
+    organicState: 0,
+    organicObservations: 0,
+    accountDaily: 0,
+    adsEntities: 26,
+    adsDaily: 4103,
+  };
+  return exactSnapshot({
+    syncRunStatus: 'success',
+    syncRunStartedAt: 1785757855080,
+    syncRunFinishedAt: 1785759100000,
+    syncRunErrorCode: null,
+    syncRunRecordsWritten: 4103,
+    syncRunUpdatedAt: 1785759100000,
+    d1PhaseComplete: true,
+    d1PhaseUpdatedAt: 1785759099000,
+    coverageRunCount: 1,
+    coverageEntityCount: 4103,
+    targetCounts: counts,
+    operationCounts: { ...counts },
+    observedAt: 1785759496790,
+    ...overrides,
+  });
+}
+
 test('accepts the stable exact source-complete pre-D1 failed boundary', () => {
   const result = validateMetaK2ExactSourceCompleteFailureStability(
     exactSnapshot(),
@@ -118,6 +144,24 @@ test('accepts only the exact stable 26-entity partial D1 resume boundary', () =>
   assert.equal(result.snapshot.targetCounts.adsDaily, 0);
 });
 
+test('accepts exact stable D1-complete Lark-pending boundary and skips D1', () => {
+  const before = d1CompleteSnapshot();
+  const after = d1CompleteSnapshot({ observedAt: before.observedAt + 22_991 });
+  const result = validateMetaK2ExactSourceCompleteFailureStability(before, after);
+  assert.equal(result.accepted, true);
+  assert.equal(result.boundary, 'd1_complete_lark_pending');
+  assert.equal(result.d1AlreadyComplete, true);
+  assert.equal(result.existingBusinessFactsRetained, true);
+  assert.equal(
+    result.decision,
+    'META_K2_D1_COMPLETE_LARK_PENDING_STABLE_SAFE_TO_RESUME_EXACT_OPERATION',
+  );
+  assert.equal(result.snapshot.targetCounts.adsEntities, 26);
+  assert.equal(result.snapshot.targetCounts.adsDaily, 4103);
+  assert.equal(result.providerReplayAuthorized, false);
+  assert.equal(result.queueSendAuthorized, false);
+});
+
 test('rejects exact-state drift, unsupported partial facts and a short stability window', () => {
   assert.throws(
     () => validateMetaK2ExactSourceCompleteFailureStability(
@@ -135,6 +179,19 @@ test('rejects exact-state drift, unsupported partial facts and a short stability
         operationCounts: {
           ...partialSnapshot().operationCounts,
           adsDaily: 1,
+        },
+      }),
+    ),
+    (error) => error?.code === 'META_K2_SOURCE_COMPLETE_PROGRESS_OBSERVED',
+  );
+  assert.throws(
+    () => validateMetaK2ExactSourceCompleteFailureStability(
+      d1CompleteSnapshot(),
+      d1CompleteSnapshot({
+        observedAt: d1CompleteSnapshot().observedAt + 22_991,
+        operationCounts: {
+          ...d1CompleteSnapshot().operationCounts,
+          adsDaily: 4102,
         },
       }),
     ),
@@ -187,7 +244,7 @@ test('hash-pinned transform reuses existing controllers without changing disk so
   );
   assert.match(outer.source, /exact-source-complete-pre-d1-recovery-v1/u);
   assert.match(outer.source, /source-complete-recovery-boundary/u);
-  assert.match(outer.source, /source_complete_or_exact_d1_partial/u);
+  assert.match(outer.source, /d1_complete_lark_pending/u);
   assert.doesNotMatch(outer.source, /currentStage = 'archive-retryable-failure'/u);
 
   assert.equal(finalizer.changed, true);
