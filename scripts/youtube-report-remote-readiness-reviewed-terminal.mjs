@@ -19,6 +19,11 @@ import {
   YOUTUBE_REPORT_REMOTE_LOCK_RELEASE_ENV,
   loadYouTubeReportRemoteLockReleaseEvidence,
 } from './lib/youtube-report-remote-lock-release.js';
+import {
+  OPERATOR_TERMINAL_EXIT_CODES,
+  OPERATOR_TERMINAL_RELIABILITY_CONTRACT,
+  classifyOperatorTerminalExit,
+} from './lib/operator-terminal-reliability.js';
 
 const repositoryRoot = resolve(process.cwd());
 const internalCollectorPath = fileURLToPath(
@@ -31,25 +36,29 @@ const evidencePath = resolve(
 
 let stage = 'init';
 let temporaryDirectory = null;
+let remoteReadExecuted = false;
 
 try {
   const options = parseYouTubeReportRemoteCollectorArgs(process.argv.slice(2));
   if (!options.execute) printPlan();
   else await executeReviewedCollector();
 } catch (error) {
+  const exit = classifyOperatorTerminalExit(stage, error);
   process.stderr.write(`${JSON.stringify({
     ok: false,
     stage,
     code: error?.code ?? 'YOUTUBE_REPORT_REMOTE_REVIEWED_TERMINAL_FAILED',
     message: error instanceof Error ? error.message : String(error),
     details: sanitizeYouTubeRemoteEvidence(error?.details ?? {}),
+    exitClass: exit.exitClass,
+    remoteReadExecuted,
     providerRequestCount: 0,
     queueActionCount: 0,
     remoteMutationCount: 0,
     workerDeploymentCount: 0,
     production: 'BLOCKED',
   }, null, 2)}\n`);
-  process.exitCode = 1;
+  process.exitCode = exit.exitCode;
 } finally {
   if (temporaryDirectory) await rm(temporaryDirectory, { recursive: true, force: true });
 }
@@ -59,7 +68,13 @@ function printPlan() {
     ok: true,
     planOnly: true,
     contractVersion: 'youtube_report_remote_readiness_reviewed_terminal_v1',
+    reliabilityContractVersion: OPERATOR_TERMINAL_RELIABILITY_CONTRACT,
+    acceptanceCommand: 'node scripts/youtube-report-terminal-acceptance.mjs',
     command: `CONFIRM_YOUTUBE_REPORT_REMOTE_READINESS_COLLECTOR=${YOUTUBE_REPORT_REMOTE_COLLECTOR_CONFIRMATION} MKT_YOUTUBE_REPORT_REMOTE_REVIEWED_HEAD=<exact-reviewed-main-sha> ${YOUTUBE_REPORT_REMOTE_LOCK_RELEASE_ENV}=<retained-lock-release-evidence.json> node scripts/youtube-report-remote-readiness-reviewed-terminal.mjs --execute`,
+    commandTransport: {
+      shell: false,
+      recommended: 'executable_plus_argument_array_and_environment_object',
+    },
     repositoryGate: {
       branch: 'main',
       clean: true,
@@ -69,9 +84,18 @@ function printPlan() {
       required: true,
       evidenceEnv: YOUTUBE_REPORT_REMOTE_LOCK_RELEASE_ENV,
       contractVersion: YOUTUBE_REPORT_REMOTE_LOCK_RELEASE_CONTRACT,
+      privateMode: '0600',
+      digestVerified: true,
+      auditHeadEqualsReviewedHead: true,
       callerBooleanAccepted: false,
     },
+    exitCodeContract: {
+      [OPERATOR_TERMINAL_EXIT_CODES.success]: 'success_with_retained_evidence',
+      [OPERATOR_TERMINAL_EXIT_CODES.precheckBlocked]: 'precheck_or_readiness_blocked_without_remote_mutation',
+      [OPERATOR_TERMINAL_EXIT_CODES.executionFailed]: 'execution_failure_with_failure_evidence',
+    },
     internalCollectorDirectExecutionBlocked: true,
+    remoteReadExecuted: false,
     providerRequestCount: 0,
     queueActionCount: 0,
     remoteMutationCount: 0,
@@ -96,11 +120,13 @@ async function executeReviewedCollector() {
   stage = 'meta-remote-lock-release-preflight';
   const metaRemoteLock = await loadYouTubeReportRemoteLockReleaseEvidence({
     env: process.env,
+    expectedHead: repository.head,
   });
 
   stage = 'run-internal-read-only-collector';
   temporaryDirectory = await mkdtemp(resolve(tmpdir(), 'youtube-report-readiness-'));
   const internalEvidencePath = resolve(temporaryDirectory, 'internal-summary.json');
+  remoteReadExecuted = true;
   const child = spawnSync(process.execPath, [internalCollectorPath, '--execute'], {
     cwd: repositoryRoot,
     env: {
@@ -111,10 +137,12 @@ async function executeReviewedCollector() {
     },
     encoding: 'utf8',
     maxBuffer: 32 * 1024 * 1024,
+    shell: false,
   });
   if (child.error) throw terminalError(
     'Unable to run the internal YouTube read-only collector',
     'YOUTUBE_REPORT_REMOTE_INTERNAL_COLLECTOR_START_FAILED',
+    { sourceCode: child.error.code ?? null },
   );
   if (![0, 2].includes(child.status)) throw terminalError(
     'Internal YouTube read-only collector failed before producing assessable evidence',
@@ -137,8 +165,11 @@ async function executeReviewedCollector() {
   const summary = sanitizeYouTubeRemoteEvidence({
     ok: assessment.readyForLive,
     contractVersion: 'youtube_report_remote_readiness_reviewed_terminal_v1',
+    reliabilityContractVersion: OPERATOR_TERMINAL_RELIABILITY_CONTRACT,
     evidence,
     assessment,
+    exitClass: assessment.readyForLive ? 'SUCCESS' : 'PRECHECK_BLOCKED',
+    remoteReadExecuted,
     providerRequestCount: 0,
     queueActionCount: 0,
     remoteMutationCount: 0,
@@ -152,7 +183,7 @@ async function executeReviewedCollector() {
   await writeFile(evidencePath, `${JSON.stringify(summary, null, 2)}\n`, { mode: 0o600 });
   await chmod(evidencePath, 0o600);
   process.stdout.write(`${JSON.stringify({ ...summary, evidencePath }, null, 2)}\n`);
-  if (!assessment.readyForLive) process.exitCode = 2;
+  if (!assessment.readyForLive) process.exitCode = OPERATOR_TERMINAL_EXIT_CODES.precheckBlocked;
 }
 
 function assertPublicConfirmation(env) {
@@ -196,11 +227,12 @@ function runGit(args, trim = true) {
     cwd: repositoryRoot,
     encoding: 'utf8',
     maxBuffer: 4 * 1024 * 1024,
+    shell: false,
   });
   if (result.error || result.status !== 0) throw terminalError(
     `Unable to read repository state: git ${args.join(' ')}`,
     'YOUTUBE_REPORT_REMOTE_REPOSITORY_READ_FAILED',
-    { status: result.status },
+    { status: result.status, sourceCode: result.error?.code ?? null },
   );
   const value = String(result.stdout ?? '');
   return trim ? value.trim() : value;
