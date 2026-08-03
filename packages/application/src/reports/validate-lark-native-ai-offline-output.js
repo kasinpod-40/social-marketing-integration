@@ -48,12 +48,16 @@ export function validateLarkNativeAiSectionSuppression(bundle, output) {
   for (let index = 0; index < sections.length; index += 1) {
     const section = requireObject(sections[index], `output.sections[${index}]`);
     const policy = policies[index];
+    if (section.title !== policy.title) {
+      fail('AI_OUTPUT_SECTION_TITLE_INVALID', `${section.sectionId} title must be ${policy.title}`);
+    }
     if (section.status !== policy.expectedStatus) {
       fail('AI_SECTION_SUPPRESSION_INVALID', `${section.sectionId} must be ${policy.expectedStatus}`);
     }
     const statements = requireArray(section.statements, `${section.sectionId}.statements`);
     const recommendations = requireArray(section.recommendations, `${section.sectionId}.recommendations`);
     const warnings = requireArray(section.warnings, `${section.sectionId}.warnings`);
+    validateSectionTopology(section.sectionId, statements, recommendations, warnings);
     if (section.status === 'suppressed') {
       if (section.suppressionReason !== policy.suppressionReason) {
         fail('AI_SECTION_SUPPRESSION_INVALID', `${section.sectionId} suppression reason is invalid`);
@@ -72,6 +76,7 @@ export function validateLarkNativeAiNumericTraces(bundle, output) {
   for (const item of collectItems(output)) {
     const text = requireText(item.text, 'output item.text');
     const claims = requireArray(item.claims, 'output item.claims');
+    const evidenceRefs = new Set(requireArray(item.evidenceRefs, 'output item.evidenceRefs'));
     const platform = optionalText(item.platform);
     const channel = platform
       ? bundle.channels.find((candidate) => candidate.platform === platform)
@@ -92,6 +97,23 @@ export function validateLarkNativeAiNumericTraces(bundle, output) {
         || normalized.unit !== trace.unit) {
         fail('AI_NUMERIC_TRACE_MISMATCH', `Numeric claim does not match trace ${traceId}`);
       }
+      const traceChannel = resolveTraceChannel(bundle, trace);
+      if (platform && traceChannel.platform !== platform) {
+        fail(
+          'AI_NUMERIC_TRACE_PLATFORM_MISMATCH',
+          `${platform} output cannot cite ${traceChannel.platform} numeric evidence`,
+        );
+      }
+      const metric = resolveTraceMetric(traceChannel, trace.metricIdentity);
+      if (!metric || metric.observed !== true) {
+        fail('AI_NUMERIC_TRACE_UNOBSERVED', `Numeric trace ${traceId} is not observed evidence`);
+      }
+      if (!evidenceRefs.has(trace.reportId) || !evidenceRefs.has(trace.traceId)) {
+        fail(
+          'AI_NUMERIC_EVIDENCE_REF_MISSING',
+          `Numeric claim ${traceId} requires both Report and trace evidenceRefs`,
+        );
+      }
       return normalizeNumericToken(requireText(normalized.renderedValue, `claim[${index}].renderedValue`));
     }));
     if (!sameTokenCounts(tokenCounts, claimCounts)) {
@@ -100,6 +122,12 @@ export function validateLarkNativeAiNumericTraces(bundle, output) {
     const currencies = new Set(claims.map(({ traceId }) => bundle.traceIndex[traceId]?.currency).filter(Boolean));
     if (currencies.size > 1) {
       fail('AI_MULTI_CURRENCY_AGGREGATION_FORBIDDEN', 'A numeric statement cannot combine different currencies');
+    }
+    if (claims.length > 1) {
+      fail(
+        'AI_MULTI_CLAIM_STATEMENT_UNSUPPORTED',
+        'Offline v1 requires one independently traceable numeric claim per output item',
+      );
     }
     if (TREND_LANGUAGE.test(text)) {
       if (claims.length === 0 || claims.some(({ traceId }) => bundle.traceIndex[traceId]?.trendEligible !== true)) {
@@ -150,6 +178,17 @@ export function validateLarkNativeAiAntiFabrication(bundle, output) {
       if (item.platform && !allowedPlatforms.has(item.platform)) {
         fail('AI_SECTION_PLATFORM_INVALID', `${item.platform} is not eligible for ${section.sectionId}`);
       }
+      if (item.platform) {
+        const channel = bundle.channels.find((candidate) => candidate.platform === item.platform);
+        if (!channel) fail('AI_OUTPUT_PLATFORM_UNKNOWN', `Unknown output platform: ${item.platform}`);
+        const allowedRefs = buildChannelEvidenceRefs(bundle, channel);
+        if (refs.some((reference) => !allowedRefs.has(reference))) {
+          fail(
+            'AI_OUTPUT_EVIDENCE_PLATFORM_MISMATCH',
+            `${item.platform} output contains evidence from another platform`,
+          );
+        }
+      }
       const text = requireText(item.text, `${section.sectionId}.text`);
       if (/<\/?UNTRUSTED_REPORT_DATA>/iu.test(text)) {
         fail('AI_PROMPT_BOUNDARY_LEAK', 'Output cannot reproduce prompt boundary markers');
@@ -162,8 +201,13 @@ export function validateLarkNativeAiAntiFabrication(bundle, output) {
 export function validateLarkNativeAiRecommendationEligibility(bundle, output) {
   const recommendationSection = output.sections.find(({ sectionId }) => sectionId === 'recommendations');
   if (!recommendationSection) fail('AI_RECOMMENDATION_SECTION_MISSING', 'Recommendations section is required');
+  const seenPlatforms = new Set();
   for (const recommendation of recommendationSection.recommendations) {
     const platform = requireText(recommendation.platform, 'recommendation.platform');
+    if (seenPlatforms.has(platform)) {
+      fail('AI_RECOMMENDATION_PLATFORM_DUPLICATE', `Duplicate recommendation platform: ${platform}`);
+    }
+    seenPlatforms.add(platform);
     const channel = bundle.channels.find((candidate) => candidate.platform === platform);
     if (!channel) fail('AI_OUTPUT_PLATFORM_UNKNOWN', `Unknown recommendation platform: ${platform}`);
     const level = requireText(recommendation.evidenceLevel, 'recommendation.evidenceLevel');
@@ -177,6 +221,44 @@ export function validateLarkNativeAiRecommendationEligibility(bundle, output) {
     }
   }
   return true;
+}
+
+function validateSectionTopology(sectionId, statements, recommendations, warnings) {
+  if (sectionId === 'recommendations') {
+    if (statements.length || warnings.length) {
+      fail('AI_SECTION_TOPOLOGY_INVALID', 'recommendations section may contain recommendations only');
+    }
+    return;
+  }
+  if (sectionId === 'warnings_missing_data') {
+    if (statements.length || recommendations.length) {
+      fail('AI_SECTION_TOPOLOGY_INVALID', 'warnings_missing_data section may contain warnings only');
+    }
+    return;
+  }
+  if (recommendations.length || warnings.length) {
+    fail('AI_SECTION_TOPOLOGY_INVALID', `${sectionId} may contain statements only`);
+  }
+}
+
+function resolveTraceChannel(bundle, trace) {
+  const channel = bundle.channels.find((candidate) => candidate.reportIdentity?.reportId === trace.reportId);
+  if (!channel) fail('AI_NUMERIC_TRACE_REPORT_UNKNOWN', `Trace Report is not present in bundle: ${trace.reportId}`);
+  return channel;
+}
+
+function resolveTraceMetric(channel, metricIdentity) {
+  return [...channel.summaryMetrics, ...channel.dimensionedMetrics]
+    .find((metric) => metric.metricIdentity === metricIdentity) ?? null;
+}
+
+function buildChannelEvidenceRefs(bundle, channel) {
+  const refs = new Set([channel.evidenceIdentity]);
+  if (channel.reportIdentity?.reportId) refs.add(channel.reportIdentity.reportId);
+  for (const trace of Object.values(bundle.traceIndex)) {
+    if (trace.reportId === channel.reportIdentity?.reportId) refs.add(trace.traceId);
+  }
+  return refs;
 }
 
 function validateExecutionBoundary(value) {
