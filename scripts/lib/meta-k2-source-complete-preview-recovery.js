@@ -318,6 +318,12 @@ function transformFinalizer(sourceInput) {
     '  const stability = validateMetaK2ExactSourceCompleteFailureStability(',
     'finalizer stability validator',
   );
+  source = replaceExactlyOnce(
+    source,
+    '  const timer = setTimeout(() => controller.abort(), 120_000);',
+    '  const timer = setTimeout(() => controller.abort(), 300_000);',
+    'exact continuation timeout',
+  );
   return source;
 }
 
