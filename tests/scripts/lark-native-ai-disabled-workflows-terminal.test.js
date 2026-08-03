@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import test from 'node:test';
 
-test('plan-only terminal prints one exact disabled Workflow command', () => {
+test('plan-only terminal prints one exact inactive Workflow command', () => {
   const script = resolve('scripts/lark-native-ai-disabled-workflows-terminal.mjs');
   const result = spawnSync(process.execPath, [script], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
@@ -14,7 +14,7 @@ test('plan-only terminal prints one exact disabled Workflow command', () => {
   assert.equal(output.mutationBoundary, 'workflow_create_only');
   assert.equal(output.maximumWorkflowCreates, 2);
   assert.equal(output.workflows.length, 2);
-  assert.equal(output.workflows.every(({ stepCount }) => stepCount === 0), true);
+  assert.equal(output.workflows.every(({ stepCount }) => stepCount === 2), true);
   assert.equal(output.workflows.every(({ expectedStatus }) => expectedStatus === 'disabled'), true);
   assert.match(output.exactCommand, /social-marketing-integration-woo-diag/u);
   assert.match(output.exactCommand, /MKT_CONNECTOR_TIKTOK_ENABLED=false/u);
@@ -39,6 +39,5 @@ test('terminal source has no status-change, Record-write or message-send allowli
   assert.doesNotMatch(source, /records\/batch_(?:create|update|delete)/u);
   assert.doesNotMatch(source, /\/open-apis\/im\/v1\/messages/u);
   assert.match(source, /workflowCollectionPath/u);
-  assert.match(source, /steps:\s*\[\]/u);
   assert.match(source, /retryMode:\s*'none'/u);
 });
