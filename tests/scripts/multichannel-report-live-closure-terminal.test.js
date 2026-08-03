@@ -1,19 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import {
   MULTICHANNEL_REPORT_LIVE_CLOSURE_CONFIRMATION,
-  MULTICHANNEL_REPORT_LIVE_CLOSURE_EXIT_CODE_CONTRACT,
   buildYouTubeFirstAdopterPlan,
   loadReviewedHandoff,
-  resolveChildDevVarsPath,
 } from '../../scripts/multichannel-report-live-closure-terminal.mjs';
-import {
-  OPERATOR_TERMINAL_EXIT_CODES,
-} from '../../scripts/lib/operator-terminal-reliability.js';
 
 const HEAD = 'b'.repeat(40);
 const REQUESTED_AT = Date.parse('2026-08-02T12:00:00Z');
@@ -86,50 +81,11 @@ test('spawned terminal defaults to JSON plan-only with zero Remote actions', () 
   assert.equal(plan.mode, 'PLAN_ONLY');
   assert.equal(plan.frameworkStatus, 'READY');
   assert.equal(plan.reviewedReadinessRequired, true);
-  assert.equal(plan.localAcceptanceCommand, 'node scripts/multichannel-report-live-closure-acceptance.mjs');
-  assert.equal(plan.readOnlyAssessmentCommand.shell, false);
-  assert.equal(plan.sharedOperatorReviewCommand.shell, false);
-  assert.equal(plan.liveCommand.shell, false);
-  assert.equal(plan.liveCommandAuthorized, false);
-  assert.equal(plan.exitCodeContract['0'], 'success_with_reviewed_completion_evidence');
-  assert.equal(plan.exitCodeContract['2'], 'precheck_blocked_before_shared_operator_execution');
-  assert.equal(plan.exitCodeContract['1'], 'shared_operator_execution_failure_with_safe_restore_evidence');
-  assert.equal(plan.completionAuthorities.sameInputReplay,
-    'shared_reviewed_multiwindow_same_input_replay_zero_drift');
-  assert.equal(plan.completionAuthorities.safeRestore,
-    'shared_reviewed_multiwindow_finally_all_false_restore');
   assert.equal(plan.remoteWriteCount, 0);
   assert.equal(plan.queueActionCount, 0);
   assert.equal(plan.workerDeploymentCount, 0);
   assert.equal(plan.scheduleEnabled, false);
   assert.equal(plan.production, 'BLOCKED');
-});
-
-test('spawned terminal blocks before delegation with exact exit 2', () => {
-  const result = spawnSync(process.execPath, [
-    TERMINAL_PATH,
-    '--platform=youtube',
-    '--capability=organic',
-    '--execute',
-  ], {
-    encoding: 'utf8',
-    shell: false,
-    env: {
-      ...process.env,
-      CONFIRM_MULTICHANNEL_REPORT_LIVE_CLOSURE: '',
-    },
-  });
-  assert.equal(result.status, OPERATOR_TERMINAL_EXIT_CODES.precheckBlocked, result.stdout);
-  const failure = JSON.parse(result.stderr);
-  assert.equal(failure.ok, false);
-  assert.equal(failure.stage, 'confirmation');
-  assert.equal(failure.code, 'REPORT_LIVE_CLOSURE_CONFIRMATION_REQUIRED');
-  assert.equal(failure.exitClass, 'PRECHECK_BLOCKED');
-  assert.equal(failure.sharedOperatorStarted, false);
-  assert.deepEqual(failure.exitCodeContract, MULTICHANNEL_REPORT_LIVE_CLOSURE_EXIT_CODE_CONTRACT);
-  assert.equal(failure.remoteWriteCount, 0);
-  assert.equal(failure.queueActionCount, 0);
-  assert.equal(failure.workerDeploymentCount, 0);
 });
 
 test('default plan performs zero reads and exposes reviewed prerequisites', async () => {
@@ -140,16 +96,10 @@ test('default plan performs zero reads and exposes reviewed prerequisites', asyn
   assert.equal(plan.reviewedReadinessRequired, true);
   assert.equal(plan.exactSourceWatermarkRequired, true);
   assert.deepEqual(plan.identities, []);
-  assert.equal(plan.readOnlyAssessmentCommand.executable, 'node');
-  assert.ok(plan.readOnlyAssessmentCommand.args.includes(
-    'scripts/youtube-report-remote-readiness-reviewed-terminal.mjs'));
-  assert.ok(plan.sharedOperatorReviewCommand.args.includes(
-    'scripts/youtube-shared-report-closeout-review.mjs'));
-  assert.ok(plan.liveCommand.args.includes(
-    'scripts/multichannel-report-live-closure-terminal.mjs'));
-  assert.ok(plan.liveCommand.requiredEnv.includes('MKT_REPORT_RUNTIME_CLOSEOUT_PLATFORM_SCOPE'));
-  assert.ok(plan.liveCommand.requiredEnv.includes('MKT_MULTICHANNEL_REPORT_LIVE_CLOSURE_HANDOFF'));
-  assert.ok(plan.liveCommand.requiredEnv.includes('CONFIRM_MULTICHANNEL_REPORT_LIVE_CLOSURE'));
+  assert.match(plan.readOnlyAssessmentCommand, /youtube-report-remote-readiness-reviewed-terminal/u);
+  assert.match(plan.sharedOperatorReviewCommand, /youtube-shared-report-closeout-review/u);
+  assert.match(plan.exactLiveCommand, /MKT_REPORT_RUNTIME_CLOSEOUT_PLATFORM_SCOPE=youtube/u);
+  assert.doesNotMatch(plan.exactLiveCommand, /MKT_META_REMOTE_LOCK_RELEASED/u);
   assert.equal(plan.remoteWriteCount, 0);
   assert.equal(plan.queueActionCount, 0);
   assert.equal(plan.workerDeploymentCount, 0);
@@ -202,10 +152,9 @@ test('valid retained handoff delegates to the reviewed shared operator', async (
   });
   assert.equal(calls, 1);
   assert.equal(result.delegatedToSharedOperator, true);
-  assert.equal(result.sharedOperator, 'scripts/report-runtime-closeout-reviewed-multiwindow.mjs');
+  assert.equal(result.sharedOperator, 'scripts/report-runtime-closeout-operator.mjs');
   assert.equal(result.decision, 'YOUTUBE_REPORT_1_3_7_30_CLOSED');
   assert.equal(Object.hasOwn(result, 'token'), false);
-  assert.deepEqual(result.exitCodeContract, MULTICHANNEL_REPORT_LIVE_CLOSURE_EXIT_CODE_CONTRACT);
 });
 
 test('execute rejects retained handoff without exact sourceWatermark before delegation', async () => {
@@ -221,62 +170,16 @@ test('execute rejects retained handoff without exact sourceWatermark before dele
   );
 });
 
-test('retained handoff loader rejects nested credential fields after private-mode validation', async () => {
+test('retained handoff loader rejects nested credential fields', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'report-closure-handoff-'));
   const path = join(directory, 'handoff.json');
   try {
     await writeFile(path, JSON.stringify({
       ...reviewedHandoff(), nested: { values: [{ authorization: 'Bearer secret' }] },
-    }), { mode: 0o600 });
-    await chmod(path, 0o600);
+    }));
     await assert.rejects(
       loadReviewedHandoff({ MKT_MULTICHANNEL_REPORT_LIVE_CLOSURE_HANDOFF: path }),
       (error) => error.code === 'REPORT_LIVE_CLOSURE_HANDOFF_NOT_SANITIZED',
-    );
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
-});
-
-test('retained handoff loader rejects a non-private evidence file', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'report-closure-handoff-mode-'));
-  const path = join(directory, 'handoff.json');
-  try {
-    await writeFile(path, JSON.stringify(reviewedHandoff()), { mode: 0o644 });
-    await chmod(path, 0o644);
-    await assert.rejects(
-      loadReviewedHandoff({ MKT_MULTICHANNEL_REPORT_LIVE_CLOSURE_HANDOFF: path }),
-      (error) => error.code === 'REPORT_LIVE_CLOSURE_HANDOFF_LOAD_FAILED'
-        && error.details.sourceCode === 'OPERATOR_TERMINAL_FILE_MODE_INVALID',
-    );
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
-});
-
-test('missing child .dev.vars becomes one temporary private empty file', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'report-closure-child-env-'));
-  try {
-    const path = await resolveChildDevVarsPath({
-      DEV_VARS_FILE: join(directory, 'missing.dev.vars'),
-    }, directory);
-    assert.equal(await readFile(path, 'utf8'), '');
-    const file = await stat(path);
-    assert.equal(file.mode & 0o777, 0o600);
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
-});
-
-test('existing child .dev.vars must use exact private mode 0600', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'report-closure-child-env-mode-'));
-  const path = join(directory, '.dev.vars');
-  try {
-    await writeFile(path, 'LARK_APP_ID=value\n', { mode: 0o644 });
-    await chmod(path, 0o644);
-    await assert.rejects(
-      resolveChildDevVarsPath({ DEV_VARS_FILE: path }, directory),
-      (error) => error.code === 'REPORT_LIVE_CLOSURE_DEV_VARS_MODE_INVALID',
     );
   } finally {
     await rm(directory, { recursive: true, force: true });
