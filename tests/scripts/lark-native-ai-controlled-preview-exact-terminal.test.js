@@ -25,7 +25,7 @@ import {
 const HEAD = 'a'.repeat(40);
 const HASH = 'b'.repeat(64);
 
-test('plan-only terminal prints one exact command with zero hidden source prerequisites', () => {
+test('plan-only terminal prints one self-refreshing command with zero hidden prerequisites', () => {
   const result = spawnSync(
     process.execPath,
     [resolve('scripts/lark-native-ai-controlled-preview-exact-terminal.mjs')],
@@ -40,7 +40,9 @@ test('plan-only terminal prints one exact command with zero hidden source prereq
   assert.equal(output.visibleRows.total, 40);
   assert.equal(output.visibleRows.tiktokGoldenDataset, 4);
   assert.match(output.exactCommand, /^cd \/Users\/wasanjantawong\/Git\/social-marketing-integration && /u);
-  assert.match(output.exactCommand, /--execute$/u);
+  assert.match(output.exactCommand, /git fetch --quiet origin main && git switch main && git pull --ff-only origin main &&/u);
+  assert.match(output.exactCommand, /CONFIRM_LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXACT_TERMINAL=RUN_LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXACT_TERMINAL/u);
+  assert.match(output.exactCommand, /node scripts\/lark-native-ai-controlled-preview-exact-terminal\.mjs --execute$/u);
   assert.doesNotMatch(output.exactCommand, /<[^>]+>/u);
   assert.doesNotMatch(output.exactCommand, /retained-real-report-source\.json/u);
   assert.equal(output.executed, false);
