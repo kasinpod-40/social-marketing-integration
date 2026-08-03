@@ -9,6 +9,7 @@ import { resolve } from 'node:path';
 import { readDevVars } from './lib/dev-vars.js';
 import {
   describeMetaK2PersistedError,
+  replayMetaK2CompleteLarkPayloadPreflight,
   replayMetaK2SourceCompleteValidation,
   selectMetaK2AuditColumn,
   summarizeMetaK2StagedUnits,
@@ -24,6 +25,8 @@ import {
 import {
   META_K2_EXACT_RECOVERY_IDENTITY,
 } from '../packages/config/src/meta-k2-exact-recovery-contract.js';
+import { createLarkBitableClientFromEnv } from '../packages/connectors/src/lark/lark-bitable.client.js';
+import { LarkRecordRepository } from '../packages/connectors/src/lark/lark-record-repository.js';
 
 const repositoryRoot = realpathSync.native(process.cwd());
 const branchName = 'integration/all-meta-end-to-end-completion-v1';
@@ -41,6 +44,8 @@ if (!execute) {
       d1Schema: true,
       d1ExactOperation: true,
       stagedPayloadReplayInMemory: true,
+      larkLiveFieldSchema: true,
+      completeLarkPayloadPreflight: true,
       productionWorker: true,
       previewUrlState: true,
     },
@@ -48,6 +53,7 @@ if (!execute) {
     providerRequestCount: 0,
     queueActionCount: 0,
     d1WriteCount: 0,
+    larkRecordReadCount: 0,
     larkWriteCount: 0,
     workerVersionUploadCount: 0,
     productionDeploymentCount: 0,
@@ -100,6 +106,16 @@ try {
     generation: exact.generation,
     originalRequestedAt: exact.originalRequestedAt,
   });
+  const larkAudit = createReadOnlyLarkAuditContext(authContext.env);
+  const larkPayloadPreflight = await replayMetaK2CompleteLarkPayloadPreflight({
+    payloads,
+    sourceState: exact.sourceState,
+    identity: META_K2_EXACT_RECOVERY_IDENTITY,
+    generation: exact.generation,
+    originalRequestedAt: exact.originalRequestedAt,
+    repository: larkAudit.repository,
+    tables: readExactLarkTableIds(authContext.env),
+  });
 
   const productionAfter = readProductionState(authContext.env, configPath);
   const previewAfter = assertWooCommercePreviewUrlBaseline(
@@ -125,11 +141,12 @@ try {
     repository,
     targetKey: META_K2_EXACT_RECOVERY_IDENTITY.targetKey,
     operationId: META_K2_EXACT_RECOVERY_IDENTITY.operationId,
-    boundary: 'source_complete_pre_d1_failed',
+    boundary: 'retained_source_complete_exact_operation',
     persistedSyncRun: exact.syncRunSummary,
     persistedError: describeMetaK2PersistedError(exact.syncRunErrorRow),
     stagedSummary,
     replay,
+    larkPayloadPreflight,
     productionWorker: {
       versionId: productionAfter.versionId,
       versionUnchanged: true,
@@ -144,11 +161,14 @@ try {
       workersDevRestoredDisabled: true,
     },
     rawPayloadPrinted: false,
-    providerRequestCount: replay.providerRequestCount,
+    providerRequestCount: replay.providerRequestCount
+      + larkPayloadPreflight.providerRequestCount,
     queueActionCount: 0,
     d1ReadCount: 8,
     d1WriteCount: 0,
-    larkWriteCount: 0,
+    larkSchemaReadCount: larkAudit.fieldReadCount,
+    larkRecordReadCount: larkAudit.recordReadCount,
+    larkWriteCount: larkAudit.writeCount,
     workerVersionUploadCount: 0,
     productionDeploymentCount: 0,
     productionTrafficChangeCount: 0,
@@ -168,6 +188,7 @@ try {
     providerRequestCount: 0,
     queueActionCount: 0,
     d1WriteCount: 0,
+    larkRecordReadCount: 0,
     larkWriteCount: 0,
     workerVersionUploadCount: 0,
     productionDeploymentCount: 0,
@@ -178,6 +199,65 @@ try {
     production: 'BLOCKED',
   }, null, 2)}\n`);
   process.exitCode = 1;
+}
+
+function createReadOnlyLarkAuditContext(env) {
+  const client = createLarkBitableClientFromEnv(env);
+  let fieldReadCount = 0;
+  let recordReadCount = 0;
+  let writeCount = 0;
+  const blocked = (kind) => {
+    if (kind === 'record_read') recordReadCount += 1;
+    else writeCount += 1;
+    throw auditError(
+      `Meta K2 read-only Lark audit blocked ${kind}`,
+      'META_K2_FAILURE_AUDIT_LARK_MUTATION_ATTEMPTED',
+      { kind },
+    );
+  };
+  const guardedClient = {
+    async listFields(input) {
+      fieldReadCount += 1;
+      return client.listFields(input);
+    },
+    async listRecords() {
+      return blocked('record_read');
+    },
+    async batchCreateRecords() {
+      return blocked('batch_create');
+    },
+    async batchUpdateRecords() {
+      return blocked('batch_update');
+    },
+  };
+  const repository = new LarkRecordRepository({ client: guardedClient });
+  return Object.freeze({
+    repository,
+    get fieldReadCount() { return fieldReadCount; },
+    get recordReadCount() { return recordReadCount; },
+    get writeCount() { return writeCount; },
+  });
+}
+
+function readExactLarkTableIds(env) {
+  return Object.freeze({
+    mktAdsAccounts: requireText(
+      env.LARK_TABLE_MKT_ADS_ACCOUNTS,
+      'LARK_TABLE_MKT_ADS_ACCOUNTS',
+    ),
+    mktAdsCampaigns: requireText(
+      env.LARK_TABLE_MKT_ADS_CAMPAIGNS,
+      'LARK_TABLE_MKT_ADS_CAMPAIGNS',
+    ),
+    mktAdsAdGroups: requireText(
+      env.LARK_TABLE_MKT_ADS_AD_GROUPS,
+      'LARK_TABLE_MKT_ADS_AD_GROUPS',
+    ),
+    mktAdsAds: requireText(
+      env.LARK_TABLE_MKT_ADS_ADS,
+      'LARK_TABLE_MKT_ADS_ADS',
+    ),
+  });
 }
 
 function readSchemas(env, configPath) {
