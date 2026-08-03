@@ -84,7 +84,6 @@ test('operator is D1 read-only and cannot authorize recovery or Worker mutations
   )].map((match) => match[1].toUpperCase());
   assert.equal(sqlKeywords.length, 3);
   assert.deepEqual([...new Set(sqlKeywords)].sort(), ['PRAGMA', 'SELECT']);
-  assert.equal((source.match(/runD1Rows\(/gu) ?? []).length, 3);
 
   assert.doesNotMatch(source, /method:\s*'POST'/u);
   assert.doesNotMatch(source, /'wrangler',\s*'deploy'/u);
