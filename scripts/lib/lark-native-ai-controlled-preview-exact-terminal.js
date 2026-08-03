@@ -192,7 +192,9 @@ export async function buildLarkNativeAiControlledPreviewExactTerminalReadiness(i
     approvedHeadSha: repository.exactHeadSha,
   });
   const readinessPlans = [];
+  const windowResults = [];
   for (const offlineInput of sourcePackage.offlineInputs) {
+    const windowDays = offlineInput.window?.windowDays ?? offlineInput.window?.window_days ?? null;
     const plan = await buildReadiness({
       offlineInput,
       repository,
@@ -200,20 +202,28 @@ export async function buildLarkNativeAiControlledPreviewExactTerminalReadiness(i
       remoteAuthority: sourcePackage.remoteAuthority,
       approval,
     });
-    if (plan?.status !== 'ready_for_controlled_preview'
-      || !Array.isArray(plan.blockers)
-      || plan.blockers.length !== 0) {
-      throw exactTerminalError(
-        'A retained Offline input did not produce ready Controlled Preview authority',
-        'LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXACT_TERMINAL_READINESS_NOT_READY',
-        {
-          windowDays: offlineInput.window?.windowDays ?? offlineInput.window?.window_days ?? null,
-          status: plan?.status ?? null,
-          blockers: plan?.blockers ?? [],
-        },
-      );
-    }
-    readinessPlans.push(plan);
+    const blockers = Array.isArray(plan?.blockers) ? plan.blockers : [];
+    const ready = plan?.status === 'ready_for_controlled_preview' && blockers.length === 0;
+    windowResults.push(Object.freeze({
+      windowDays,
+      status: plan?.status ?? null,
+      blockers,
+      goldenDatasetAuthority: plan?.goldenDatasetAuthority ?? null,
+      ready,
+    }));
+    if (ready) readinessPlans.push(plan);
+  }
+  const blockedWindows = windowResults.filter(({ ready }) => !ready);
+  if (blockedWindows.length > 0) {
+    throw exactTerminalError(
+      'One or more retained Offline inputs did not produce ready Controlled Preview authority',
+      'LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXACT_TERMINAL_READINESS_NOT_READY',
+      {
+        blockedWindowCount: blockedWindows.length,
+        blockedWindows,
+        windowResults,
+      },
+    );
   }
   return deepFreeze(readinessPlans);
 }
