@@ -27,7 +27,7 @@ test('Preview recovery path uploads versions and never deploys Production Worker
     assert.match(source, /productionTrafficChange:\s*false/u);
     assert.match(source, /workerDeploymentCount:\s*0/u);
   }
-  assert.match(recovery, /buildWooCommercePreviewUrlMutation\(true\)/u);
+  assert.match(recovery, /writePreviewState\(true,\s*['"]enable['"]\)/u);
   assert.match(recovery, /buildWooCommercePreviewUrlMutation\(previewsEnabled\)/u);
   assert.match(recovery, /automatic-preview-safe-close/u);
   assert.match(recovery, /assertProductionVersionUnchanged/u);
