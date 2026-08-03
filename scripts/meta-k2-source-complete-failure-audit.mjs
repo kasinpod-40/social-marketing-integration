@@ -25,6 +25,7 @@ import {
 import {
   META_K2_EXACT_RECOVERY_IDENTITY,
 } from '../packages/config/src/meta-k2-exact-recovery-contract.js';
+import { readLarkTableIdsFromEnv } from '../packages/config/src/lark-table-config.js';
 import { createLarkBitableClientFromEnv } from '../packages/connectors/src/lark/lark-bitable.client.js';
 import { LarkRecordRepository } from '../packages/connectors/src/lark/lark-record-repository.js';
 
@@ -240,24 +241,12 @@ function createReadOnlyLarkAuditContext(env) {
 }
 
 function readExactLarkTableIds(env) {
-  return Object.freeze({
-    mktAdsAccounts: requireText(
-      env.LARK_TABLE_MKT_ADS_ACCOUNTS,
-      'LARK_TABLE_MKT_ADS_ACCOUNTS',
-    ),
-    mktAdsCampaigns: requireText(
-      env.LARK_TABLE_MKT_ADS_CAMPAIGNS,
-      'LARK_TABLE_MKT_ADS_CAMPAIGNS',
-    ),
-    mktAdsAdGroups: requireText(
-      env.LARK_TABLE_MKT_ADS_AD_GROUPS,
-      'LARK_TABLE_MKT_ADS_AD_GROUPS',
-    ),
-    mktAdsAds: requireText(
-      env.LARK_TABLE_MKT_ADS_ADS,
-      'LARK_TABLE_MKT_ADS_ADS',
-    ),
-  });
+  return readLarkTableIdsFromEnv(env, [
+    'mktAdsAccounts',
+    'mktAdsCampaigns',
+    'mktAdsAdGroups',
+    'mktAdsAds',
+  ]);
 }
 
 function readSchemas(env, configPath) {
