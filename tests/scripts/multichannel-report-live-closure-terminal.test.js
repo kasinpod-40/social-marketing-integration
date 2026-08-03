@@ -12,7 +12,7 @@ import {
 const HEAD = 'b'.repeat(40);
 const REQUESTED_AT = Date.parse('2026-08-02T12:00:00Z');
 
-function reviewedReadiness() {
+function reviewedReadiness({ includeSourceWatermark = true } = {}) {
   return Object.freeze({
     contractVersion: 'youtube_report_remote_readiness_reviewed_terminal_v1',
     ok: true,
@@ -36,6 +36,7 @@ function reviewedReadiness() {
         failureCount: 0,
         contentEntityCount: 837,
         watermarkDate: '2026-08-01',
+        ...(includeSourceWatermark ? { sourceWatermark: 'youtube-watermark-2026-08-01' } : {}),
         reportingTimezone: 'Asia/Bangkok',
       }),
     }),
@@ -51,14 +52,14 @@ function reviewedReadiness() {
   });
 }
 
-function reviewedHandoff() {
+function reviewedHandoff({ includeSourceWatermark = true } = {}) {
   return Object.freeze({
     contractVersion: 'multichannel_report_live_closure_handoff_v1',
     liveMaterializationAuthorized: true,
     repository: Object.freeze({ branch: 'main', clean: true, head: HEAD, reviewedHead: HEAD }),
     metaRemoteLock: Object.freeze({ released: true, auditHead: HEAD }),
     youtubeIdentity: Object.freeze({ accountId: 'UCAwEENovvqZWosKhJWTS5Kg' }),
-    youtubeReadiness: reviewedReadiness(),
+    youtubeReadiness: reviewedReadiness({ includeSourceWatermark }),
     closeoutAuthority: Object.freeze({
       operator: 'scripts/report-runtime-closeout-operator.mjs',
       contractVersion: 'report_runtime_closeout_uat_v1',
@@ -68,14 +69,16 @@ function reviewedHandoff() {
   });
 }
 
-test('default plan performs zero reads and exposes the reviewed read-only prerequisite', async () => {
+test('default plan performs zero reads and exposes reviewed prerequisites', async () => {
   const plan = await buildYouTubeFirstAdopterPlan({ env: {}, argv: [] });
   assert.equal(plan.frameworkStatus, 'READY');
   assert.equal(plan.firstAdopter, 'youtube');
   assert.equal(plan.youtubeStatus, 'READY_FOR_LIVE_AUDIT');
   assert.equal(plan.reviewedReadinessRequired, true);
+  assert.equal(plan.exactSourceWatermarkRequired, true);
   assert.deepEqual(plan.identities, []);
   assert.match(plan.readOnlyAssessmentCommand, /youtube-report-remote-readiness-reviewed-terminal/u);
+  assert.match(plan.sharedOperatorReviewCommand, /youtube-shared-report-closeout-review/u);
   assert.doesNotMatch(plan.exactLiveCommand, /MKT_META_REMOTE_LOCK_RELEASED/u);
   assert.match(plan.exactLiveCommand, /MKT_MULTICHANNEL_REPORT_LIVE_CLOSURE_HANDOFF/u);
   assert.equal(plan.remoteWriteCount, 0);
@@ -93,7 +96,6 @@ test('reviewed readiness produces exact existing 1/3/7/30 identities without wri
     accountId: 'UCAwEENovvqZWosKhJWTS5Kg',
     requestedAt: REQUESTED_AT,
     periodEnd: '2026-08-01',
-    sourceWatermark: 'youtube-watermark-2026-08-01',
   });
   assert.equal(plan.youtubeStatus, 'READY_FOR_LIVE_AUDIT');
   assert.deepEqual(plan.identities.map((identity) => identity.windowDays), [1, 3, 7, 30]);
@@ -103,6 +105,21 @@ test('reviewed readiness produces exact existing 1/3/7/30 identities without wri
     'integration_workspace:youtube:rolling:7d',
     'integration_workspace:youtube:rolling:30d',
   ]);
+});
+
+test('watermarkDate is never substituted for exact sourceWatermark', async () => {
+  await assert.rejects(
+    buildYouTubeFirstAdopterPlan({
+      env: {},
+      argv: [],
+      reviewedReadiness: reviewedReadiness({ includeSourceWatermark: false }),
+      accountId: 'UCAwEENovvqZWosKhJWTS5Kg',
+      requestedAt: REQUESTED_AT,
+      periodEnd: '2026-08-01',
+    }),
+    (error) => error.code === 'REPORT_LIVE_CLOSURE_TARGET_INVALID'
+      && error.details.field === 'source.sourceWatermark',
+  );
 });
 
 test('execute requires explicit confirmation before reading retained handoff', async () => {
@@ -116,7 +133,7 @@ test('execute requires explicit confirmation before reading retained handoff', a
   );
 });
 
-test('valid retained handoff still blocks Live until shared YouTube closeout authority is reviewed', async () => {
+test('valid retained handoff still blocks Live until shared YouTube closeout authority is extended', async () => {
   await assert.rejects(
     buildYouTubeFirstAdopterPlan({
       env: {
@@ -126,6 +143,20 @@ test('valid retained handoff still blocks Live until shared YouTube closeout aut
       reviewedHandoff: reviewedHandoff(),
     }),
     (error) => error.code === 'REPORT_LIVE_CLOSURE_SHARED_OPERATOR_YOUTUBE_NOT_REVIEWED',
+  );
+});
+
+test('execute rejects retained handoff without exact sourceWatermark before operator binding', async () => {
+  await assert.rejects(
+    buildYouTubeFirstAdopterPlan({
+      env: {
+        CONFIRM_MULTICHANNEL_REPORT_LIVE_CLOSURE: MULTICHANNEL_REPORT_LIVE_CLOSURE_CONFIRMATION,
+      },
+      argv: ['--platform=youtube', '--capability=organic', '--execute'],
+      reviewedHandoff: reviewedHandoff({ includeSourceWatermark: false }),
+    }),
+    (error) => error.code === 'REPORT_LIVE_CLOSURE_TARGET_INVALID'
+      && error.details.field === 'youtubeReadiness.evidence.source.sourceWatermark',
   );
 });
 
