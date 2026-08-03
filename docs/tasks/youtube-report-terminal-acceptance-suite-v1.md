@@ -3,8 +3,10 @@
 ## Status
 
 ```text
-TASK_STATUS                  = REPOSITORY_IMPLEMENTED_CI_PENDING
+TASK_STATUS                  = REPOSITORY_IMPLEMENTED_VERIFIED
 MODE                         = REPOSITORY_ONLY
+VERIFIED_IMPLEMENTATION_HEAD = 816db33fab08a712e1145039f3c92e91e1f17ce4
+BRANCH_VERIFICATION          = #1920 / 30798649526 / SUCCESS
 REMOTE_READ_COUNT            = 0
 REMOTE_WRITE_COUNT           = 0
 PROVIDER_REQUEST_COUNT       = 0
@@ -40,6 +42,7 @@ recovery flags ซ้อน, exact runtime identity drift และ Lark mapping
 - Meta clock preload: canonicalize digit-string timestamp ที่ child-process boundary และทดสอบด้วย spawned Node
 - Lark Controlled Preview Live Pilot: private input mode `0600`, exact Head, bounded Remote allowlist/counters,
   success/failure evidence และ optional `.dev.vars`
+- Meta latest-main guard: strict Shell mode อยู่ใน subshell ไม่รั่วไป host session saver
 - Chatwoot/Woo reviewed controllers: exact retained identity, no replacement admission, safe restore/readback
 - Google Ads Manager Script: graceful no-data/not-selectable result แทน crash หรือ fake success
 
@@ -51,7 +54,7 @@ recovery flags ซ้อน, exact runtime identity drift และ Lark mapping
 
 - shell-free executable/argv command spec;
 - JSON child-process parsing;
-- private regular JSON files;
+- exact private regular JSON files mode `0600`;
 - writable evidence path;
 - acceptance gate aggregation;
 - recursive sanitized evidence;
@@ -88,7 +91,7 @@ Acceptance ไม่เรียก Wrangler, D1, Lark, Provider, Queue หร�
 
 ### Retained lock evidence
 
-- input is a regular JSON file mode `0600`;
+- input is a regular JSON file exact mode `0600`;
 - recursive sanitized equality;
 - canonical SHA-256 recomputation;
 - exact audit/repository/reviewed Head equality;
@@ -118,26 +121,28 @@ docs/project-brain/operator-terminal-reliability-ledger.md
 docs/tasks/youtube-report-terminal-acceptance-suite-v1.md
 ```
 
-## Required verification
+## Verification result
 
-```bash
-node --check scripts/lib/operator-terminal-reliability.js
-node --check scripts/lib/youtube-report-remote-lock-release.js
-node --check scripts/youtube-report-remote-readiness-reviewed-terminal.mjs
-node --check scripts/youtube-report-terminal-acceptance.mjs
-node --test tests/scripts/youtube-report-remote-lock-release.test.js
-node --test tests/scripts/youtube-report-terminal-acceptance.test.js
-node --test tests/scripts/youtube-report-remote-readiness-reviewed-terminal.test.js
-npm run check
-npm test
-npm run test:report-reliability
-npm audit --audit-level=high
-npm run deploy:dry-run
-git diff --check
+Branch Verification #1920 on exact implementation Head
+`816db33fab08a712e1145039f3c92e91e1f17ce4` passed:
+
+```text
+locked dependencies              PASS
+syntax / architecture / hygiene  PASS
+focused Meta                     PASS
+focused WooCommerce              PASS
+focused Chatwoot                 PASS
+focused staged TikTok            PASS
+full Unit and Workers runtime    PASS
+Report reliability               PASS
+dependency audit                 PASS
+Wrangler dry-run                 PASS
+diagnostics upload               PASS
 ```
 
-Branch Verification ต้องผ่าน focused Meta, WooCommerce, Chatwoot, TikTok, full Unit/Workers runtime,
-Report reliability, audit และ Wrangler dry-run บน exact Head
+The Unit suite includes spawned execution of the reviewed terminal and local acceptance runner. It verifies
+shell-free argv transport, all-blocker aggregation, path names containing spaces, exact private lock evidence,
+digest tamper rejection, stale Head rejection and exit `2` before Remote read.
 
 ## Acceptance
 
