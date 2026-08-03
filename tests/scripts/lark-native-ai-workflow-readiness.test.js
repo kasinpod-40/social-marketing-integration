@@ -76,6 +76,10 @@ const notificationPlanner = async () => ({
   views: Array.from({ length: 6 }, (_, index) => ({ viewName: `v${index}` })),
 });
 
+test('locks the user-approved exact Lark group name', () => {
+  assert.equal(LARK_NATIVE_AI_TARGET_GROUP_NAME, 'Social MKT Executive Reports');
+});
+
 test('reports exact readiness to create both approved workflows disabled', async () => {
   const result = await inspectLarkNativeAiWorkflowReadiness({
     client: new FakeClient(),
