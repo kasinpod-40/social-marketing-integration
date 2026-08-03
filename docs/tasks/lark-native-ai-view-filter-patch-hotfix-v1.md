@@ -8,7 +8,8 @@ BASE_MAIN_SHA                      = 5bdad6d930751a9e91351433309e76f364be92c4
 LIVE_ATTEMPT                       = FAIL_CLOSED
 LIVE_STAGE                         = remote-additive-schema-apply
 LIVE_ACTION                        = create_view / 📊 Executive Summaries
-CONFIRMED_REMOTE_SCHEMA_WRITES     = 1 View PATCH request
+REMOTE_VIEW_PATCH_REQUESTS         = 1
+REMOTE_VIEW_PATCH_SUCCESS_PROOF    = 0
 FIELD_CREATE                       = 0
 FIELD_UPDATE                       = 0
 VIEW_CREATE                        = 0
@@ -45,6 +46,8 @@ view updates                1
 blocked requests            0
 total writes                1
 ```
+
+`viewUpdateCount=1` proves that one PATCH request was attempted. Because Lark returned a permanent API error, it is not evidence that the View filter mutation succeeded. A fresh metadata read during the next reviewed resume must determine the actual state.
 
 All Record, Table create/rename, Field delete, View delete, Automation, notification, AI, D1, Queue, Worker, Provider and Production counters remained zero.
 
