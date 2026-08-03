@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseDevVars } from '../../scripts/lib/dev-vars.js';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { parseDevVars, readDevVars } from '../../scripts/lib/dev-vars.js';
 
 test('parses .dev.vars style values safely', () => {
   const result = parseDevVars(`
@@ -46,4 +49,22 @@ BACKSLASH="one\\two"
     REGEX: String.raw`\d+\s+items`,
     BACKSLASH: String.raw`one\two`,
   });
+});
+
+test('allows process environment authority when .dev.vars is absent', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mkt-dev-vars-'));
+  try {
+    assert.deepEqual(await readDevVars(join(root, '.dev.vars')), {});
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('does not suppress non-ENOENT read failures', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mkt-dev-vars-'));
+  try {
+    await assert.rejects(readDevVars(root), (error) => error?.code !== 'ENOENT');
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
