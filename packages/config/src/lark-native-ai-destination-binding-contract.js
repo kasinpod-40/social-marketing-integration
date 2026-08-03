@@ -26,6 +26,6 @@ export const LARK_NATIVE_AI_DESTINATION_BINDING_LIMITS = Object.freeze({
   maximumChatListReads: 5,
   maximumBatchUpdateRequests: 1,
   maximumSettingsRecords: 500,
-  maximumRecordWrites: 500,
+  maximumRecordWrites: 100,
   readAfterWriteDelayMs: 10_000,
 });
