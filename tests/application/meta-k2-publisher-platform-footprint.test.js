@@ -77,9 +77,15 @@ test('operator is D1 read-only and cannot authorize recovery or Worker mutations
     'utf8',
   );
   assert.match(source, /'--remote', '--json'/u);
-  assert.match(source, /PRAGMA table_info/u);
-  assert.match(source, /SELECT state_json, complete/u);
-  assert.doesNotMatch(source, /\b(?:INSERT|UPDATE|DELETE|REPLACE)\b/iu);
+  assert.match(source, /'--command', compactSql\(sql\)/u);
+
+  const sqlKeywords = [...source.matchAll(
+    /`\s*(PRAGMA|SELECT|INSERT|UPDATE|DELETE|REPLACE)\b[\s\S]*?`/giu,
+  )].map((match) => match[1].toUpperCase());
+  assert.equal(sqlKeywords.length, 3);
+  assert.deepEqual([...new Set(sqlKeywords)].sort(), ['PRAGMA', 'SELECT']);
+  assert.equal((source.match(/runD1Rows\(/gu) ?? []).length, 3);
+
   assert.doesNotMatch(source, /method:\s*'POST'/u);
   assert.doesNotMatch(source, /'wrangler',\s*'deploy'/u);
   assert.doesNotMatch(source, /'versions',\s*'upload'/u);
