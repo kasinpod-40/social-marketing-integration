@@ -25,7 +25,7 @@ import {
 const HEAD = 'a'.repeat(40);
 const HASH = 'b'.repeat(64);
 
-test('plan-only terminal prints one command without shell placeholders', () => {
+test('plan-only terminal prints one exact command with zero hidden source prerequisites', () => {
   const result = spawnSync(
     process.execPath,
     [resolve('scripts/lark-native-ai-controlled-preview-exact-terminal.mjs')],
@@ -34,10 +34,15 @@ test('plan-only terminal prints one command without shell placeholders', () => {
   assert.equal(result.status, 0, result.stderr);
   const output = JSON.parse(result.stdout);
   assert.equal(output.planOnly, true);
+  assert.equal(output.hiddenPrerequisiteFiles, 0);
   assert.equal(output.maximumFirstPassWrites, 40);
   assert.equal(output.replayWritesRequired, 0);
+  assert.equal(output.visibleRows.total, 40);
+  assert.equal(output.visibleRows.tiktokGoldenDataset, 4);
+  assert.match(output.exactCommand, /^cd \/Users\/wasanjantawong\/Git\/social-marketing-integration && /u);
   assert.match(output.exactCommand, /--execute$/u);
   assert.doesNotMatch(output.exactCommand, /<[^>]+>/u);
+  assert.doesNotMatch(output.exactCommand, /retained-real-report-source\.json/u);
   assert.equal(output.executed, false);
   assert.equal(output.production, 'BLOCKED');
 });
@@ -200,7 +205,7 @@ async function makeSourcePackage(mutator = () => undefined) {
       evidenceSha256: HASH,
     },
     remoteAuthority: {
-      source: 'retained-safe-state',
+      source: 'explicit_sequential_lark_only_handoff',
       validationStatus: 'validated',
       frozen: true,
       evidenceSha256: HASH,
@@ -210,6 +215,7 @@ async function makeSourcePackage(mutator = () => undefined) {
       previewUrlsDisabled: true,
       productionBlocked: true,
       scheduleEnabled: false,
+      authorityMode: 'isolated_lark_ai_table_only',
     },
     offlineInputs: [1, 3, 7, 30].map((windowDays) => ({
       customer: { customerKey: 'integration_workspace' },
