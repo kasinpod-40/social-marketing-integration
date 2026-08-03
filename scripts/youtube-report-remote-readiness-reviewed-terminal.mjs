@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
-import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -89,6 +89,10 @@ function printPlan() {
       auditHeadEqualsReviewedHead: true,
       callerBooleanAccepted: false,
     },
+    localCredentialSource: {
+      devVarsOptionalWhenProcessEnvironmentIsComplete: true,
+      missingDevVarsDoesNotCauseENOENT: true,
+    },
     exitCodeContract: {
       [OPERATOR_TERMINAL_EXIT_CODES.success]: 'success_with_retained_evidence',
       [OPERATOR_TERMINAL_EXIT_CODES.precheckBlocked]: 'precheck_or_readiness_blocked_without_remote_mutation',
@@ -126,11 +130,13 @@ async function executeReviewedCollector() {
   stage = 'run-internal-read-only-collector';
   temporaryDirectory = await mkdtemp(resolve(tmpdir(), 'youtube-report-readiness-'));
   const internalEvidencePath = resolve(temporaryDirectory, 'internal-summary.json');
+  const childDevVarsPath = await resolveChildDevVarsPath(temporaryDirectory);
   remoteReadExecuted = true;
   const child = spawnSync(process.execPath, [internalCollectorPath, '--execute'], {
     cwd: repositoryRoot,
     env: {
       ...process.env,
+      DEV_VARS_FILE: childDevVarsPath,
       MKT_YOUTUBE_REPORT_REMOTE_INTERNAL_HANDOFF:
         YOUTUBE_REPORT_REMOTE_COLLECTOR_INTERNAL_HANDOFF,
       MKT_YOUTUBE_REPORT_REMOTE_COLLECTOR_EVIDENCE: internalEvidencePath,
@@ -184,6 +190,24 @@ async function executeReviewedCollector() {
   await chmod(evidencePath, 0o600);
   process.stdout.write(`${JSON.stringify({ ...summary, evidencePath }, null, 2)}\n`);
   if (!assessment.readyForLive) process.exitCode = OPERATOR_TERMINAL_EXIT_CODES.precheckBlocked;
+}
+
+async function resolveChildDevVarsPath(temporaryRoot) {
+  const configuredPath = resolve(process.env.DEV_VARS_FILE ?? '.dev.vars');
+  try {
+    const file = await stat(configuredPath);
+    if (!file.isFile()) throw terminalError(
+      'DEV_VARS_FILE must be a regular file when present',
+      'YOUTUBE_REPORT_REMOTE_DEV_VARS_INVALID',
+    );
+    return configuredPath;
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+    const emptyPath = resolve(temporaryRoot, 'empty.dev.vars');
+    await writeFile(emptyPath, '', { encoding: 'utf8', mode: 0o600 });
+    await chmod(emptyPath, 0o600);
+    return emptyPath;
+  }
 }
 
 function assertPublicConfirmation(env) {
