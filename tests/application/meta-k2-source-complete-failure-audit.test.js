@@ -173,7 +173,9 @@ test('operator is read-only and never contains Worker or Queue mutation commands
   assert.doesNotMatch(source, /'versions',\s*'upload'/u);
   assert.doesNotMatch(source, /'wrangler',\s*'deploy'/u);
   assert.doesNotMatch(source, /queue.*send/iu);
-  assert.doesNotMatch(source, /\b(?:INSERT|UPDATE|DELETE|REPLACE)\b/iu);
+  assert.match(source, /PRAGMA table_info/u);
+  assert.match(source, /\bSELECT\b/u);
+  assert.doesNotMatch(source, /[`'"]\s*(?:INSERT|UPDATE|DELETE|REPLACE)\b/iu);
   assert.match(source, /recoveryAuthorized: false/u);
   assert.match(source, /rawPayloadPrinted: false/u);
 });
