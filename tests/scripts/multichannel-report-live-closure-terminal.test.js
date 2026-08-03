@@ -9,7 +9,7 @@ test('builds a zero-write YouTube first-adopter plan', () => {
   const plan = buildYouTubeFirstAdopterPlan({}, []);
   assert.equal(plan.frameworkStatus, 'READY');
   assert.equal(plan.firstAdopter, 'youtube');
-  assert.equal(plan.youtubeStatus, 'READY_FOR_LIVE');
+  assert.equal(plan.youtubeStatus, 'READY_FOR_LIVE_AUDIT');
   assert.deepEqual(plan.identities.map((identity) => identity.window_days), [1, 3, 7, 30]);
   assert.equal(plan.remoteWriteCount, 0);
   assert.equal(plan.queueActionCount, 0);
