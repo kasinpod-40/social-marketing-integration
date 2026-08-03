@@ -111,14 +111,20 @@ export function validateMetaK2ExactSourceCompleteFailureStability(
     );
   }
   const partialResume = after.boundary === 'd1_partial_entities_complete';
-  const d1CompleteResume = after.boundary === 'd1_complete_lark_pending';
+  const d1CompleteResume = [
+    'd1_complete_lark_pending',
+    'd1_complete_lark_preflight_failed',
+  ].includes(after.boundary);
+  const larkPreflightRecovery = after.boundary === 'd1_complete_lark_preflight_failed';
   return deepFreeze({
     accepted: true,
-    decision: d1CompleteResume
-      ? 'META_K2_D1_COMPLETE_LARK_PENDING_STABLE_SAFE_TO_RESUME_EXACT_OPERATION'
-      : partialResume
-        ? 'META_K2_D1_PARTIAL_ENTITIES_STABLE_SAFE_TO_RESUME_EXACT_OPERATION'
-        : 'META_K2_SOURCE_COMPLETE_FAILED_STABLE_SAFE_TO_PREPARE_PREVIEW_RECOVERY',
+    decision: larkPreflightRecovery
+      ? 'META_K2_D1_COMPLETE_LARK_PREFLIGHT_FAILED_STABLE_SAFE_TO_RESUME_EXACT_OPERATION'
+      : d1CompleteResume
+        ? 'META_K2_D1_COMPLETE_LARK_PENDING_STABLE_SAFE_TO_RESUME_EXACT_OPERATION'
+        : partialResume
+          ? 'META_K2_D1_PARTIAL_ENTITIES_STABLE_SAFE_TO_RESUME_EXACT_OPERATION'
+          : 'META_K2_SOURCE_COMPLETE_FAILED_STABLE_SAFE_TO_PREPARE_PREVIEW_RECOVERY',
     contractVersion: META_K2_SOURCE_COMPLETE_RECOVERY_CONTRACT_VERSION,
     boundary: after.boundary,
     elapsedMs,
@@ -127,6 +133,7 @@ export function validateMetaK2ExactSourceCompleteFailureStability(
     lifecycleSqlRepairAuthorized: false,
     existingBusinessFactsRetained: partialResume || d1CompleteResume,
     d1AlreadyComplete: d1CompleteResume,
+    larkPreflightRecovery,
     snapshot: after.snapshot,
   });
 }
@@ -220,8 +227,14 @@ function classifyExactSourceCompleteBoundary(snapshotInput) {
   };
   const operationWriteCount = Object.values(snapshot.operationCounts)
     .reduce((sum, value) => sum + Number(value ?? 0), 0);
+  const normalD1Complete = classifyMetaD1OnlyCompletion(snapshot).complete;
+  const terminalLarkPreflightFailure = snapshot.syncRunStatus === 'failed'
+    && Number.isSafeInteger(snapshot.syncRunStartedAt)
+    && Number.isSafeInteger(snapshot.syncRunFinishedAt)
+    && snapshot.syncRunErrorCode === 'LARK_PREFLIGHT_FAILED'
+    && Number.isSafeInteger(snapshot.syncRunUpdatedAt);
   const d1CompleteChecks = {
-    classifiedComplete: classifyMetaD1OnlyCompletion(snapshot).complete,
+    acceptedSyncRunStatus: normalD1Complete || terminalLarkPreflightFailure,
     d1PhaseComplete: snapshot.d1PhaseComplete === true,
     d1PhaseUpdatedAt: Number.isSafeInteger(snapshot.d1PhaseUpdatedAt),
     coverageRunCount: snapshot.coverageRunCount > 0,
@@ -247,13 +260,15 @@ function classifyExactSourceCompleteBoundary(snapshotInput) {
     : partialAccepted
       ? 'd1_partial_entities_complete'
       : d1CompleteAccepted
-        ? 'd1_complete_lark_pending'
+        ? terminalLarkPreflightFailure
+          ? 'd1_complete_lark_preflight_failed'
+          : 'd1_complete_lark_pending'
         : null;
   const selectedChecks = originalAccepted
     ? { ...commonChecks, ...originalChecks }
     : partialAccepted
       ? { ...commonChecks, ...partialChecks }
-      : d1CompleteAccepted || classifyMetaD1OnlyCompletion(snapshot).complete
+      : d1CompleteAccepted || normalD1Complete || terminalLarkPreflightFailure
         ? { ...commonChecks, ...d1CompleteChecks }
         : { ...commonChecks, ...originalChecks };
   const failedChecks = Object.entries(selectedChecks)
