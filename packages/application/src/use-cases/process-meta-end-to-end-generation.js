@@ -8,6 +8,7 @@ const PREFLIGHT_PHASE = 'meta_end_to_end_destination_preflight_v1';
 const D1_PHASE = 'meta_end_to_end_d1_write_v1';
 const LARK_PHASE = 'meta_end_to_end_lark_write_v1';
 const COMPLETION_PHASE = 'meta_end_to_end_completion_v1';
+const D1_STORE_BATCH_ROWS = 100;
 
 /**
  * Durable business processor for an already authenticated/staged Meta generation.
@@ -327,7 +328,22 @@ function d1Operations(writeSet) {
 
 async function executeD1Operations(store, operations) {
   if (typeof store.writeMetaD1Operations === 'function') {
-    return store.writeMetaD1Operations(operations);
+    const results = [];
+    for (let offset = 0; offset < operations.length; offset += D1_STORE_BATCH_ROWS) {
+      const batch = operations.slice(offset, offset + D1_STORE_BATCH_ROWS);
+      const batchResults = await store.writeMetaD1Operations(batch);
+      if (!Array.isArray(batchResults) || batchResults.length !== batch.length) {
+        throw permanentError('Meta D1 store batch returned an invalid result count', {
+          code: 'META_END_TO_END_D1_BATCH_RECONCILIATION_FAILED',
+          details: {
+            expectedResults: batch.length,
+            observedResults: Array.isArray(batchResults) ? batchResults.length : null,
+          },
+        });
+      }
+      results.push(...batchResults);
+    }
+    return results;
   }
   const results = [];
   for (const operation of operations) {
