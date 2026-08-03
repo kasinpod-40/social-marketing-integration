@@ -7,6 +7,7 @@ import {
 } from './build-lark-native-ai-controlled-preview-execution-plan.js';
 
 const READ_AFTER_WRITE_DELAY_MS = 10_000;
+const RECORD_INVENTORY_PAGE_SIZE = 500;
 
 export async function planLarkNativeAiControlledPreviewLivePilot(input = {}) {
   const client = requireClient(input.client);
@@ -141,7 +142,7 @@ async function buildPlanForTable({ client, repository, readinessPlans, table }) 
       'LARK_NATIVE_AI_CONTROLLED_PREVIEW_LIVE_PILOT_IDENTITY_SET_INVALID',
     );
   }
-  const existingRecords = await loadExistingRecords(client, table.tableId, aiRunKeys, dedupeKeys);
+  const existingRecords = await loadExistingRecords(client, table.tableId);
   const plan = await buildLarkNativeAiControlledPreviewExecutionPlan({
     repository,
     readinessPlans,
@@ -150,21 +151,14 @@ async function buildPlanForTable({ client, repository, readinessPlans, table }) 
   return Object.freeze({ plan, existingRecords });
 }
 
-async function loadExistingRecords(client, tableId, aiRunKeys, dedupeKeys) {
-  const [byAiRunKey, byDedupeKey] = await Promise.all([
-    client.searchRecordsByFieldValues({
-      tableId,
-      fieldName: 'ai_run_key',
-      values: aiRunKeys,
-    }),
-    client.searchRecordsByFieldValues({
-      tableId,
-      fieldName: 'dedupe_key',
-      values: dedupeKeys,
-    }),
-  ]);
+async function loadExistingRecords(client, tableId) {
+  const inventory = await client.listRecords({
+    tableId,
+    pageSize: RECORD_INVENTORY_PAGE_SIZE,
+    includeRecordMetadata: false,
+  });
   const byRecordId = new Map();
-  for (const record of [...byAiRunKey, ...byDedupeKey]) {
+  for (const record of inventory) {
     const recordId = requireText(record?.recordId, 'record.recordId');
     byRecordId.set(recordId, deepFreeze({
       recordId,
@@ -253,7 +247,7 @@ export function pilotError(message, code, details = {}) {
 function requireClient(value) {
   for (const method of [
     'listTables',
-    'searchRecordsByFieldValues',
+    'listRecords',
     'batchCreateRecords',
     'batchUpdateRecords',
   ]) {
