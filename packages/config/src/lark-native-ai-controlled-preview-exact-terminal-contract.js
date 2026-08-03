@@ -6,6 +6,8 @@ import {
   LARK_NATIVE_AI_CONTROLLED_PREVIEW_LIVE_PILOT_INPUT_SCHEMA_VERSION,
 } from './lark-native-ai-controlled-preview-live-pilot-contract.js';
 
+export { LARK_NATIVE_AI_CONTROLLED_PREVIEW_LIVE_PILOT_INPUT_SCHEMA_VERSION };
+
 export const LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXACT_TERMINAL_CONTRACT_VERSION =
   'lark_native_ai_controlled_preview_exact_terminal_v1';
 
