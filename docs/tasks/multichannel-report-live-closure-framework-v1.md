@@ -7,6 +7,9 @@ FRAMEWORK_STATUS=READY
 FIRST_ADOPTER=youtube
 CHANNEL_DESCRIPTORS=ALL_SUPPORTED
 YOUTUBE_STATUS=READY_FOR_LIVE_AUDIT
+SHARED_OPERATOR_REVIEW=OPERATOR_EXTENSION_REQUIRED
+EXACT_SOURCE_WATERMARK=REQUIRED
+REMOTE_READ_EXECUTED=0
 REMOTE_WRITE_COUNT=0
 QUEUE_ACTION_COUNT=0
 WORKER_DEPLOYMENT_COUNT=0
@@ -14,18 +17,23 @@ SCHEDULE_ENABLED=false
 PRODUCTION=BLOCKED
 ```
 
-The repository framework and reviewed plan-only Terminal are implemented. `READY_FOR_LIVE_AUDIT` is intentionally narrower than `READY_FOR_LIVE`: the authorized read-only YouTube assessment has not been executed in this workstream, Meta PR #421 still owns the Remote lock, and the existing shared Report closeout operator has not yet been reviewed for YouTube Organic Live execution.
+The repository framework, plan-only Terminal, exact-source-watermark contract and zero-Remote shared-operator compatibility review are implemented.
+
+`READY_FOR_LIVE_AUDIT` is intentionally narrower than `READY_FOR_LIVE`:
+
+- Meta PR #421 still owns the Remote lock;
+- the authorized read-only YouTube assessment has not been executed in this workstream;
+- the existing executable shared Report closeout operator still requires bounded YouTube extensions;
+- no retained Audit handoff exists yet for the current exact reviewed `main` Head.
 
 ## Ownership and overlap gate
 
-The branch starts from and remains aligned with:
-
 ```text
-main = fac11f0f95b56ab0944da02dcb0360d2f5c43710
-behind_by = 0
+main       fac11f0f95b56ab0944da02dcb0360d2f5c43710
+behind_by  0
 ```
 
-PR #421 changed-file inventory was inspected before implementation and rechecked after the reviewed corrections. This workstream changes only new framework, binding, Terminal, test and task-document paths. It does not modify:
+PR #421 changed-file inventory was inspected before implementation and rechecked after the operator review. This workstream does not modify:
 
 - PR #421 files;
 - Meta connectors, use cases, operators or tests;
@@ -35,9 +43,9 @@ PR #421 changed-file inventory was inspected before implementation and rechecked
 - README, CHANGELOG or PROJECT_BRAIN;
 - numbered migrations.
 
-No migration is added. Existing D1 readers, `report_materializations`, Report finalizer, output-row builders, Lark writer, Coverage, Reliability/Lock/Queue/DLQ and Stable-key authorities remain authoritative.
+No migration is added. Existing Report registry, candidate builder, deterministic Report IDs, output-row builders, D1 readers, `report_materializations`, Report finalizer, Lark writer, Coverage, Reliability/Lock/Queue/DLQ and Safe restore authorities remain authoritative.
 
-## Shared pipeline
+## Shared closure pipeline
 
 ```text
 Repository gate
@@ -61,7 +69,7 @@ After any active D1/Lark/parity/replay/zero-drift attempt, Safe restore runs fro
 
 ## Descriptor authority
 
-Source-channel descriptors are derived from the merged shared Report platform registry:
+Source descriptors are derived from the merged shared Report platform registry:
 
 - `tiktok / organic`
 - `youtube / organic`
@@ -73,18 +81,9 @@ Source-channel descriptors are derived from the merged shared Report platform re
 - `woocommerce / commerce`
 - `chatwoot / customer_service`
 
-Operations and Executive aggregation are explicit derived descriptors and do not create channel-specific Report tables.
+Operations and Executive aggregation remain explicit derived descriptors and do not create channel-specific Report tables.
 
-Every descriptor validates:
-
-- registry platform/capability/dataset/formula identity;
-- exact supported windows `1/3/7/30`;
-- existing generic output builders;
-- existing generic Lark outputs only;
-- nonempty reviewed runtime flags;
-- AI and schedule flags that must remain false.
-
-Allowed existing Lark outputs are:
+Allowed existing Lark outputs are limited to:
 
 - `mktReportSnapshots`
 - `mktReportMetricValues`
@@ -95,7 +94,7 @@ Allowed existing Lark outputs are:
 
 The framework does not create a second Report identity system.
 
-Report candidates come from the existing `buildReportRuntimeCloseoutCandidates`, which delegates to the existing Dashboard preset, Report period and Report ID authorities. The closure validator accepts only four exact candidates:
+Report candidates come from `buildReportRuntimeCloseoutCandidates`, which delegates to the existing Dashboard preset, Report period and Report ID authorities. The closure validator accepts only:
 
 ```text
 integration_workspace:<platform>:rolling:1d
@@ -104,11 +103,11 @@ integration_workspace:<platform>:rolling:7d
 integration_workspace:<platform>:rolling:30d
 ```
 
-Each candidate must retain:
+Each candidate retains:
 
-- `period_kind=rolling_days`
-- exact `window_days`
-- the existing deterministic `report_id`
+- `period_kind=rolling_days`;
+- exact `window_days`;
+- the existing deterministic `report_id`;
 - the existing closeout job contract.
 
 Stable output keys remain owned by the existing output builders:
@@ -117,57 +116,78 @@ Stable output keys remain owned by the existing output builders:
 - Top Content: `<report_id>::rank:<rank>`
 - Top Ad: `<report_id>::rank:<rank>`
 
-Dimension fields remain `dimension_type`, `dimension_value` and `rank`.
-
 ## Window and missing-value contract
 
-Shared Report presets may continue to include other windows for other workflows. This closure framework filters to and validates exactly:
+This closure path validates exactly:
 
 ```text
 1, 3, 7, 30
 ```
 
-The current Lark Metric closure path rejects `9`, `15` and `90` without changing the shared preset seed.
+It rejects `9`, `15` and `90` without changing the shared preset seed.
 
 Missing-value semantics remain:
 
-- unavailable/missing → `null` + `N/A`
-- incomplete → `null` + partial metadata
-- covered empty → `no_data_confirmed`
-- observed zero → `0`
+- unavailable/missing → `null` + `N/A`;
+- incomplete → `null` + partial metadata;
+- covered empty → `no_data_confirmed`;
+- observed zero → `0`.
 
-The framework maps these states through the existing Dashboard availability contract instead of treating `null` as zero.
+## Exact source-watermark contract
 
-## Reviewed adapter contract
+`watermarkDate` and `sourceWatermark` are different authorities:
 
-A bare function returning `{ ok: true }` cannot satisfy a stage. Each adapter must declare its exact reviewed authority and return stage-specific evidence.
+- `watermarkDate` is the maximum observed business date;
+- `sourceWatermark` is the exact Coverage lineage used by deterministic candidate/job/replay authority.
 
-Plan-only bindings reuse:
+The Terminal and shared-operator review now reject readiness evidence that lacks exact `sourceWatermark`. They never substitute `watermarkDate`.
 
-- reviewed repository evidence;
-- Report all-false runtime evidence;
-- shared Report platform registry;
-- `data_coverage_runs` status;
-- `buildReportRuntimeCloseoutCandidates`;
-- existing materialization actions.
+The reviewed collector evidence schema now retains `sourceWatermark` when supplied and regression coverage proves that a missing value remains explicit `null`.
 
-Active execution additionally requires reviewed bindings for:
+The current executable collector caller still needs a bounded reviewed projection of its already-read `source_watermark` into `buildYouTubeRemoteReadinessEvidence`. Until that caller binding exists, a new Audit handoff remains fail-closed with:
 
-- existing D1 materialization persistence;
-- existing `writeDashboardMaterializationToLark` writer;
-- D1/Lark parity;
-- same-input replay;
-- zero-drift verification;
-- verified all-false Safe restore;
-- sanitized evidence persistence.
+```text
+REPORT_RUNTIME_CLOSEOUT_REVIEWED_SOURCE_WATERMARK_MISSING
+```
 
-## YouTube first adopter
+No caller-controlled watermark is accepted.
 
-The public Terminal has two safe modes.
+## Shared operator compatibility review
 
-### Default plan
+The zero-Remote review command is:
 
-The default command performs no Remote read and emits only the next reviewed commands and safety state:
+```bash
+node scripts/youtube-shared-report-closeout-review.mjs
+```
+
+The review reuses the retained handoff, existing candidate builder, exact four windows, Report operator contract, Organic integrity/replay authorities and Safe restore contract. It performs zero Provider, D1, Lark, Queue, Worker or Production action.
+
+Result:
+
+```text
+CONTRACT_COMPATIBLE=true     # when exact retained sourceWatermark is present
+EXECUTABLE_READY=false
+REVIEW_STATUS=OPERATOR_EXTENSION_REQUIRED
+```
+
+The executable shared operator has these bounded blockers:
+
+1. `REPORT_RUNTIME_CLOSEOUT_YOUTUBE_TARGET_SELECTOR_UNBOUND`
+   - target selector currently accepts TikTok and WooCommerce only.
+2. `REPORT_RUNTIME_CLOSEOUT_YOUTUBE_D1_PREFLIGHT_UNBOUND`
+   - non-WooCommerce preflight currently uses TikTok source/Coverage SQL.
+3. `REPORT_RUNTIME_CLOSEOUT_REVIEWED_HANDOFF_UNBOUND`
+   - executable operator does not yet consume retained exact-head lock/readiness handoff.
+4. `REPORT_RUNTIME_CLOSEOUT_MULTIWINDOW_EXECUTION_UNBOUND`
+   - executable operator selects one window while closure requires a bounded reviewed `1/3/7/30` action plan.
+5. `REPORT_RUNTIME_CLOSEOUT_REVIEWED_SOURCE_WATERMARK_MISSING`
+   - applies when retained collector evidence lacks exact Coverage lineage.
+
+These findings prove that direct execution must remain blocked. They do not justify a YouTube-only D1 writer, Lark writer, Queue framework or finalizer.
+
+## YouTube first adopter commands
+
+### Default zero-Remote plan
 
 ```bash
 node scripts/multichannel-report-live-closure-terminal.mjs
@@ -175,26 +195,15 @@ node scripts/multichannel-report-live-closure-terminal.mjs
 
 ### Separately authorized read-only assessment
 
-The existing reviewed YouTube collector remains the only Remote readiness authority:
-
 ```bash
 CONFIRM_YOUTUBE_REPORT_REMOTE_READINESS_COLLECTOR=RUN_YOUTUBE_REPORT_REMOTE_READINESS_COLLECTOR \
 MKT_YOUTUBE_REPORT_REMOTE_REVIEWED_HEAD=<exact-reviewed-main-sha> \
 node scripts/youtube-report-remote-readiness-reviewed-terminal.mjs --execute
 ```
 
-This workstream did not execute that command because no explicit read-only authorization was supplied after implementation.
+This command was not executed in this workstream because PR #421 still owns the Remote lock and no new explicit read-only authorization was supplied.
 
-### Future retained-handoff command
-
-A caller-controlled Boolean such as `MKT_META_REMOTE_LOCK_RELEASED=true` is not accepted. Future execution requires a retained sanitized handoff that proves:
-
-- exact clean reviewed `main` Head;
-- Audit-confirmed Meta Remote lock release;
-- successful reviewed YouTube readiness evidence;
-- exact four-window assessment;
-- exact YouTube account identity;
-- reviewed shared closeout authority.
+### Future retained-handoff execution
 
 ```bash
 MKT_MULTICHANNEL_REPORT_LIVE_CLOSURE_HANDOFF=<retained-sanitized-handoff.json> \
@@ -205,13 +214,7 @@ node scripts/multichannel-report-live-closure-terminal.mjs \
   --execute
 ```
 
-Even with a valid retained handoff, the current Terminal stops with:
-
-```text
-REPORT_LIVE_CLOSURE_SHARED_OPERATOR_YOUTUBE_NOT_REVIEWED
-```
-
-This prevents a new unreviewed Live path. Audit/Integration must first review the existing shared `scripts/report-runtime-closeout-operator.mjs` for YouTube Organic rather than creating a YouTube-only execution engine.
+Even with a syntactically valid retained handoff, the Terminal remains blocked until exact source watermark and all shared-operator extensions are reviewed.
 
 ## Sanitized evidence
 
@@ -219,35 +222,37 @@ The evidence sanitizer recursively traverses nested objects and arrays and remov
 
 Retained handoff loading rejects the whole handoff when recursive sanitization would change it.
 
-## Reviewed corrections
+## Review corrections completed
 
-The `CHANGES_REQUIRED` review was addressed by:
+The prior `CHANGES_REQUIRED` review was addressed by:
 
-1. removing the new identity and Stable-key construction;
+1. removing new identity and Stable-key construction;
 2. deriving source descriptors from the shared registry;
 3. limiting outputs to existing generic Report tables/builders;
 4. enforcing typed reviewed adapter authorities and stage evidence;
 5. moving Safe restore and evidence into the active-operation `finally` path;
 6. preserving primary plus restore error codes;
 7. removing the caller-controlled Meta lock-release Boolean;
-8. requiring retained sanitized exact-head handoff evidence;
-9. keeping direct Live blocked until the existing shared operator is reviewed for YouTube;
-10. adding recursive sanitizer and stage-failure regression coverage.
+8. requiring retained recursively sanitized exact-head handoff evidence;
+9. keeping direct Live blocked until the shared operator is extended for YouTube;
+10. adding recursive sanitizer and every-active-stage failure coverage;
+11. adding zero-Remote shared-operator compatibility review;
+12. separating exact source watermark from watermark date.
 
 ## Verification
 
 Reviewed code Head before this documentation evidence commit:
 
 ```text
-7a5b6532c36d8b9d38ea6a47edd71e2e76e6f2ee
+b01248c3b371e35c54cc819839d949d6afcd8fda
 ```
 
 Branch Verification:
 
 ```text
 workflow       Branch Verification
-run number     1834
-run ID         30785897526
+run number     1850
+run ID         30787151139
 conclusion     success
 ```
 
@@ -269,7 +274,7 @@ Focused framework coverage includes:
 
 - all supported descriptors;
 - existing candidate/Report ID/Stable-key authorities;
-- exact 1/3/7/30 and rejection of 9/15/90;
+- exact `1/3/7/30` and rejection of `9/15/90`;
 - null/partial/no-data/zero semantics;
 - Organic, Paid Ads, Commerce and Chatwoot plan bindings;
 - no-op adapter rejection;
@@ -277,20 +282,8 @@ Focused framework coverage includes:
 - failure at every active stage followed by Safe restore and sanitized evidence;
 - combined primary/restore failure preservation;
 - recursive nested sanitizer;
-- retained handoff validation and direct-Live blocking.
-
-Required command contract:
-
-```bash
-npm ci
-npm run check
-node --test tests/application/report-live-closure-framework.test.js
-node --test tests/scripts/multichannel-report-live-closure-terminal.test.js
-npm test
-npm run test:report-reliability
-npm audit --audit-level=high
-npm run deploy:dry-run
-git diff --check
-```
+- retained handoff validation and direct-Live blocking;
+- shared operator compatibility/blocker detection;
+- exact source-watermark retention and no date substitution.
 
 Repository and CI execution preserved zero Provider, Remote readiness, Queue, Remote D1, Remote Lark, Worker upload/deployment, Schedule and Production actions.
