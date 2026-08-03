@@ -19,6 +19,15 @@ import {
 } from '../../../connectors/src/meta/meta-business-normalization.helpers.js';
 
 const ENTITY_TYPES = new Set(['account', 'campaign', 'ad_group', 'ad', 'creative']);
+const PUBLISHER_PLATFORM_AD_CHANNELS = Object.freeze({
+  audience_network: 'audience_network_ads',
+  facebook: 'facebook_ads',
+  instagram: 'instagram_ads',
+  messenger: 'messenger_ads',
+  threads: 'threads_ads',
+  unknown: null,
+  whatsapp: 'whatsapp_ads',
+});
 
 /** แปลง Marketing API entity เป็น Shared Raw entity + D1 candidate โดยไม่เขียน */
 export function normalizeMetaAdsEntityFixture(input = {}) {
@@ -109,9 +118,7 @@ export function normalizeMetaAdsDailyFixture(input = {}) {
   const campaignId = optionalIdentity(resource.campaign_id, 'campaign_id');
   const adGroupId = optionalIdentity(resource.adset_id, 'adset_id');
   const publisherPlatform = requirePublisherPlatform(resource.publisher_platform);
-  const adChannel = publisherPlatform === 'facebook'
-    ? 'facebook_ads'
-    : 'instagram_ads';
+  const adChannel = PUBLISHER_PLATFORM_AD_CHANNELS[publisherPlatform];
   const breakdownKey = `publisher_platform=${publisherPlatform}`;
   const segmentKey = 'none';
   const fetchedAt = requireMetaTimestamp(input.fetchedAt, 'fetchedAt');
@@ -229,7 +236,7 @@ function optionalDatePrefix(value, fieldName) {
 
 function requirePublisherPlatform(value) {
   const platform = requireMetaText(value, 'publisher_platform').toLowerCase();
-  if (!['facebook', 'instagram'].includes(platform)) {
+  if (!Object.hasOwn(PUBLISHER_PLATFORM_AD_CHANNELS, platform)) {
     throw new TypeError('Meta Ads publisher_platform is unsupported');
   }
   return platform;
