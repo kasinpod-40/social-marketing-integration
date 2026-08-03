@@ -105,6 +105,34 @@ test('finalizer reuses the exact retained pre-Preview backup and cannot export a
   );
 });
 
+test('finalizer skips completed D1 and waits for exact Preview alias before Lark write', async () => {
+  const { source } = await transformedSource(
+    '../../scripts/meta-k2-partial-staging-preview-finalizer.mjs',
+  );
+
+  assert.match(source, /stability\.d1AlreadyComplete === true/u);
+  assert.match(source, /currentStage = 'reuse-d1-complete'/u);
+  assert.match(source, /validateMetaD1OnlySummaryForLark/u);
+  assert.match(source, /invocationCount: 0/u);
+  assert.match(source, /boundary: 'd1_complete_lark_pending'/u);
+  assert.match(source, /async function waitForExactPreviewAlias/u);
+  assert.match(source, /META_PARTIAL_STAGING_RECOVERY_UNAUTHORIZED/u);
+  assert.match(source, /unauthorizedProbeOnly: true/u);
+  assert.match(source, /directUseCaseInvocationCount: 0/u);
+  assert.match(source, /const larkAliasReadiness = await waitForExactPreviewAlias/u);
+  assert.match(source, /aliasReadiness: larkAliasReadiness/u);
+  assert.match(source, /responseFieldName/u);
+  assert.match(source, /observedWorkerVersion/u);
+  assert.match(source, /attestationMatched/u);
+
+  const d1Reuse = source.indexOf("currentStage = 'reuse-d1-complete'");
+  const larkPreflight = source.indexOf("currentStage = 'lark-preflight'");
+  const larkDeploy = source.indexOf("currentStage = 'deploy-lark-continuation'");
+  assert.ok(d1Reuse >= 0);
+  assert.ok(d1Reuse < larkPreflight);
+  assert.ok(larkPreflight < larkDeploy);
+});
+
 test('v4 wiring remains additive and delegates to the reviewed hash-pinned transforms', async () => {
   const paths = [
     '../../scripts/lib/meta-k2-source-complete-preview-recovery-v4.js',
@@ -123,6 +151,7 @@ test('v4 wiring remains additive and delegates to the reviewed hash-pinned trans
   assert.match(bootstrap, /meta-k2-source-complete-preview-loader-v4\.mjs/u);
   assert.match(terminal, /meta-k2-source-complete-preview-loader-v4\.mjs/u);
   assert.match(contract, /META_K2_PREVIEW_BACKUP_REUSE_INVALID/u);
+  assert.match(contract, /META_K2_PREVIEW_ALIAS_NOT_READY/u);
 
   for (const source of [loader, bootstrap, terminal]) {
     assert.doesNotMatch(source, /queue\s*\.\s*send\s*\(/iu);
