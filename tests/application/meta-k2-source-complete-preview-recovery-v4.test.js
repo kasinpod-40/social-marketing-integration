@@ -42,7 +42,7 @@ test('requires a new explicit v4 confirmation', () => {
   );
 });
 
-test('moves the one-shot D1 backup before any Preview setting or Version mutation', async () => {
+test('prepares or reuses one verified D1 backup before any Preview mutation', async () => {
   const { original, source } = await transformedSource(
     '../../scripts/meta-k2-partial-staging-preview-recovery.mjs',
   );
@@ -56,9 +56,18 @@ test('moves the one-shot D1 backup before any Preview setting or Version mutatio
   assert.match(source, /currentStage = 'backup-before-preview-window'/u);
   assert.match(source, /'--skip-confirmation'/u);
   assert.match(source, /MKT_META_K2_PREVIEW_BACKUP_PATH: previewBackup\.backupPath/u);
+  assert.match(source, /reusedExistingBackup: true/u);
+  assert.match(source, /META_K2_PREVIEW_BACKUP_REUSE_INVALID/u);
+  assert.match(source, /summaryPath/u);
   assert.match(source, /previewSettingMutationCount: 0/u);
   assert.match(source, /workerVersionUploadCount: 0/u);
-  assert.match(source, /automatic rerun is blocked/u);
+
+  const existingCheck = source.indexOf('const existing = await stat(backupRoot)');
+  const existingReuse = source.indexOf('if (existing)');
+  const exportCommand = source.indexOf("result = spawnSync('npx'");
+  assert.ok(existingCheck >= 0);
+  assert.ok(existingCheck < existingReuse);
+  assert.ok(existingReuse < exportCommand);
 
   const backupStage = source.indexOf("currentStage = 'backup-before-preview-window'");
   const previewBaseline = source.indexOf("currentStage = 'preview-url-window-baseline'");
@@ -113,7 +122,7 @@ test('v4 wiring remains additive and delegates to the reviewed hash-pinned trans
   assert.match(loader, /finalizeMetaK2SourceCompleteV4ControllerTransform/u);
   assert.match(bootstrap, /meta-k2-source-complete-preview-loader-v4\.mjs/u);
   assert.match(terminal, /meta-k2-source-complete-preview-loader-v4\.mjs/u);
-  assert.match(contract, /META_K2_PREVIEW_BACKUP_ALREADY_ATTEMPTED/u);
+  assert.match(contract, /META_K2_PREVIEW_BACKUP_REUSE_INVALID/u);
 
   for (const source of [loader, bootstrap, terminal]) {
     assert.doesNotMatch(source, /queue\s*\.\s*send\s*\(/iu);
