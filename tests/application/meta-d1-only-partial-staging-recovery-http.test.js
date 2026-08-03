@@ -317,3 +317,37 @@ test('suppressed continuation identity drift fails closed without external Queue
   assert.equal(body.queueMessageCount, 0);
   assert.equal(body.queueOperationAttemptMutationCount, 0);
 });
+
+test('false-like disabled execution flags remain false in the exact D1 window', async () => {
+  let processCalls = 0;
+  const response = await invoke(handler(async () => {
+    processCalls += 1;
+    return { status: 'lark_gate_disabled' };
+  }), {
+    ...BASE_ENV,
+    MKT_META_LARK_WRITE_ENABLED: 'disabled',
+    MKT_META_REPORT_READ_ENABLED: '0',
+    MKT_META_AI_ENABLED: 'off',
+  });
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(processCalls, 1);
+  assert.equal(body.status, 'lark_gate_disabled');
+  assert.equal(body.queueMessageCount, 0);
+});
+
+test('unsupported execution flag value reports the exact field without invoking the use-case', async () => {
+  let processCalls = 0;
+  const response = await invoke(handler(async () => {
+    processCalls += 1;
+    return { status: 'source_continuation' };
+  }), {
+    ...BASE_ENV,
+    MKT_META_REPORT_READ_ENABLED: 'sometimes',
+  });
+  const body = await response.json();
+  assert.equal(response.status, 400);
+  assert.equal(body.code, 'META_PARTIAL_STAGING_RECOVERY_CONFIG_INVALID');
+  assert.equal(body.details.fieldName, 'MKT_META_REPORT_READ_ENABLED');
+  assert.equal(processCalls, 0);
+});
