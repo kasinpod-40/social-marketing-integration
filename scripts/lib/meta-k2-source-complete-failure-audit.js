@@ -198,6 +198,183 @@ export async function replayMetaK2SourceCompleteValidation(input = {}) {
   }
 }
 
+export async function replayMetaK2CompleteLarkPayloadPreflight(input = {}) {
+  const payloads = requireArray(input.payloads, 'payloads');
+  const sourceState = requireObject(input.sourceState, 'sourceState');
+  const identity = requireObject(input.identity, 'identity');
+  const repository = requireObject(input.repository, 'repository');
+  const tables = requireObject(input.tables, 'tables');
+  const generation = requireTimestamp(input.generation, 'generation');
+  const originalRequestedAt = requireTimestamp(
+    input.originalRequestedAt,
+    'originalRequestedAt',
+  );
+  const sourceAccountId = deriveSourceAccountId(payloads);
+  let providerRequestCount = 0;
+  let localWriteSentinelCount = 0;
+
+  const sentinel = (boundary) => {
+    localWriteSentinelCount += 1;
+    const error = new Error('Meta K2 Lark payload diagnostic reached a blocked boundary');
+    error.code = LOCAL_WRITE_SENTINEL;
+    error.details = { boundary };
+    throw error;
+  };
+  const workStore = {
+    async beginWork() {
+      return { superseded: false, completed: false };
+    },
+    async loadPhase({ phase }) {
+      if (phase === SOURCE_PHASE) return { complete: true, state: sourceState };
+      return null;
+    },
+    async listPhaseUnits() {
+      return {
+        units: payloads.map((payload, sequence) => ({ sequence, payload })),
+      };
+    },
+    async savePhase({ phase }) {
+      return sentinel(`workStore.savePhase:${phase}`);
+    },
+    async completeWork() {
+      return sentinel('workStore.completeWork');
+    },
+  };
+  const historyStore = Object.fromEntries([
+    'upsertOrganicAccountDailyFact',
+    'upsertAdsEntityState',
+    'upsertAdsDailyFact',
+    'saveCoverageRun',
+    'saveCoverageEntities',
+  ].map((method) => [method, async () => sentinel(`historyStore.${method}`)]));
+  const adapter = new Proxy({}, {
+    get() {
+      providerRequestCount += 1;
+      throw auditError(
+        'Meta K2 Lark diagnostic attempted a Provider read after source completion',
+        'META_K2_FAILURE_AUDIT_PROVIDER_READ_ATTEMPTED',
+      );
+    },
+  });
+  const syncEngine = {
+    async planByKey() {
+      return sentinel('syncEngine.planByKey:lark_payload_preflight_complete');
+    },
+    async executePlan() {
+      return sentinel('syncEngine.executePlan');
+    },
+  };
+
+  try {
+    const result = await processMetaEndToEndSync({
+      connectorKey: identity.connectorKey,
+      operation: {
+        stable: true,
+        operationId: identity.operationId,
+        workKey: identity.workKey,
+        generation,
+        originalRequestedAt,
+      },
+      resumableWorkStore: workStore,
+      adapter,
+      sourceAccountId,
+      accountKey: identity.accountKey,
+      customerProfile: identity.customerProfile,
+      customerKey: identity.customerKey,
+      syncRunId: identity.syncRunId,
+      sourceTimezone: 'Asia/Bangkok',
+      dateRange: {
+        since: identity.periodStart,
+        until: identity.periodEnd,
+      },
+      limits: {
+        sourceMaxPages: 100,
+        sourceMaxUnits: 500,
+        sourceMaxRows: 50_000,
+        sourceMaxUnitBytes: 1_048_576,
+        d1RowsPerInvocation: 250,
+        larkTablesPerInvocation: 4,
+      },
+      d1WriteEnabled: true,
+      larkWriteEnabled: true,
+      historyStore,
+      repository,
+      syncEngine,
+      tables,
+      assertLockActive: async () => undefined,
+    });
+    return deepFreeze({
+      accepted: false,
+      unexpectedTerminalResult: result?.status ?? null,
+      tablesChecked: 0,
+      rowsChecked: 0,
+      fieldsChecked: 0,
+      issueCount: 0,
+      issues: [],
+      issuesTruncated: false,
+      providerRequestCount,
+      localWriteSentinelCount,
+      d1WriteCount: 0,
+      larkWriteCount: 0,
+      remoteMutationCount: 0,
+    });
+  } catch (error) {
+    if (error?.code === LOCAL_WRITE_SENTINEL
+      && error?.details?.boundary === 'syncEngine.planByKey:lark_payload_preflight_complete') {
+      return deepFreeze({
+        accepted: true,
+        unexpectedTerminalResult: null,
+        tablesChecked: 4,
+        rowsChecked: null,
+        fieldsChecked: null,
+        issueCount: 0,
+        issues: [],
+        issuesTruncated: false,
+        providerRequestCount,
+        localWriteSentinelCount,
+        d1WriteCount: 0,
+        larkWriteCount: 0,
+        remoteMutationCount: 0,
+      });
+    }
+    if (error?.code === 'LARK_PREFLIGHT_FAILED') {
+      return deepFreeze({
+        accepted: false,
+        unexpectedTerminalResult: null,
+        ...safeLarkPreflightDiagnostics(error?.details),
+        providerRequestCount,
+        localWriteSentinelCount,
+        d1WriteCount: 0,
+        larkWriteCount: 0,
+        remoteMutationCount: 0,
+      });
+    }
+    return deepFreeze({
+      accepted: false,
+      unexpectedTerminalResult: null,
+      tablesChecked: 0,
+      rowsChecked: 0,
+      fieldsChecked: 0,
+      issueCount: 1,
+      issues: [{
+        tableKey: null,
+        fieldName: null,
+        reasonCode: 'SOURCE_ASSEMBLY_OR_RUNTIME_INVALID',
+        destinationType: null,
+        incomingType: null,
+        affectedRows: 0,
+      }],
+      issuesTruncated: false,
+      replayError: describeReplayError(error),
+      providerRequestCount,
+      localWriteSentinelCount,
+      d1WriteCount: 0,
+      larkWriteCount: 0,
+      remoteMutationCount: 0,
+    });
+  }
+}
+
 export function selectMetaK2AuditColumn(columns, candidates, fieldName) {
   const available = new Set(requireArray(columns, 'columns').map((value) => requireText(value, 'column')));
   const selected = requireArray(candidates, 'candidates').find((candidate) => available.has(candidate));
@@ -224,6 +401,30 @@ function deriveSourceAccountId(payloads) {
   }
   const row = requireObject(accountRows[0], 'Meta Ads account row');
   return requireText(row.account_id ?? row.id, 'Meta Ads account identity');
+}
+
+function safeLarkPreflightDiagnostics(value = {}) {
+  const details = value && typeof value === 'object' ? value : {};
+  const issues = Array.isArray(details.issues)
+    ? details.issues.map((issue) => Object.freeze({
+      tableKey: safeNullableText(issue?.tableKey),
+      fieldName: safeNullableText(issue?.fieldName),
+      reasonCode: safeNullableText(issue?.reasonCode) ?? 'SERIALIZATION_INVALID',
+      destinationType: Number.isInteger(issue?.destinationType)
+        ? issue.destinationType
+        : null,
+      incomingType: safeNullableText(issue?.incomingType),
+      affectedRows: safeNonNegativeInteger(issue?.affectedRows),
+    }))
+    : [];
+  return deepFreeze({
+    tablesChecked: safeNonNegativeInteger(details.tablesChecked),
+    rowsChecked: safeNonNegativeInteger(details.rowsChecked),
+    fieldsChecked: safeNonNegativeInteger(details.fieldsChecked),
+    issueCount: safeNonNegativeInteger(details.issueCount ?? issues.length),
+    issues,
+    issuesTruncated: details.issuesTruncated === true,
+  });
 }
 
 function describeReplayError(error) {
@@ -287,6 +488,17 @@ function safeScalar(value) {
   if (value === null || typeof value === 'number' || typeof value === 'boolean') return value;
   if (typeof value === 'string') return sanitizeMessage(value);
   return Object.freeze({ sha256: sha256(stableJson(value)) });
+}
+
+function safeNullableText(value) {
+  if (typeof value !== 'string') return null;
+  const text = value.trim();
+  return text === '' ? null : text.slice(0, 160);
+}
+
+function safeNonNegativeInteger(value) {
+  const number = Number(value ?? 0);
+  return Number.isSafeInteger(number) && number >= 0 ? number : 0;
 }
 
 function requireTimestamp(value, fieldName) {
