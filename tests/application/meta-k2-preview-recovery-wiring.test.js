@@ -35,10 +35,13 @@ test('Preview recovery path uploads versions and never deploys Production Worker
   assert.match(finalizer, /MKT_META_K2_PRODUCTION_BASELINE_VERSION/u);
 });
 
-test('Preview entrypoint exposes only the exact POST recovery route', async () => {
+test('Preview entrypoint exposes only the exact POST recovery route and lazy-loads its delegate', async () => {
   const source = await readFile(entrypoint, 'utf8');
+  assert.doesNotMatch(source, /^import worker from ['"]\.\/index\.js['"];?$/mu);
+  assert.match(source, /import\(['"]\.\/index\.js['"]\)/u);
   assert.match(source, /request\.method !== 'POST'/u);
   assert.match(source, /url\.pathname !== META_K2_EXACT_RECOVERY_PATH/u);
+  assert.match(source, /const worker = await loadRecoveryWorker\(\)/u);
   assert.match(source, /META_K2_PREVIEW_ROUTE_NOT_FOUND/u);
   assert.match(source, /batch\.retryAll\(\)/u);
   assert.match(source, /Preview-only entrypoint: schedules are intentionally disabled/u);
