@@ -59,11 +59,12 @@ export function buildLarkNativeAiOfflinePrompt(bundle) {
     'A numeric statement is allowed only when it includes a claim that points to an exact traceId from traceIndex and uses the exact rendered value.',
     'Do not combine different currencies. Do not average averages without a validated weight. Paid Ads ratios must already be marked sum_before_ratio.',
     'Observed zero is valid. Missing, unavailable, pending, incomplete coverage, and missing baseline are not zero.',
-    'Do not create trends when trendEligible is false. Keep no_data_confirmed distinct from unavailable and source_pending.',
+    'Do not create trends when trendEligible is false. Partial or coverage-incomplete evidence never authorizes trend language.',
+    'Keep no_data_confirmed distinct from unavailable and source_pending.',
     'Suppress sections exactly as sectionPolicy requires. Recommendations must obey each channel recommendationEligibility.',
     `Return JSON using schemaVersion=${LARK_NATIVE_AI_OUTPUT_SCHEMA_VERSION} and exactly these sections: ${LARK_NATIVE_AI_SECTIONS.map(({ sectionId }) => sectionId).join(', ')}.`,
     '<UNTRUSTED_REPORT_DATA>',
-    JSON.stringify(promptInput),
+    serializeUntrustedReportData(promptInput),
     '</UNTRUSTED_REPORT_DATA>',
   ].join('\n');
 }
@@ -189,6 +190,15 @@ function formatUnit(unit, currency) {
   if (!unit || unit === 'count') return '';
   if (unit === 'percent' || unit === 'percentage') return '%';
   return ` ${unit}`;
+}
+
+function serializeUntrustedReportData(value) {
+  return JSON.stringify(value)
+    .replaceAll('&', '\\u0026')
+    .replaceAll('<', '\\u003c')
+    .replaceAll('>', '\\u003e')
+    .replaceAll('\u2028', '\\u2028')
+    .replaceAll('\u2029', '\\u2029');
 }
 
 function deepFreeze(value, seen = new WeakSet()) {
