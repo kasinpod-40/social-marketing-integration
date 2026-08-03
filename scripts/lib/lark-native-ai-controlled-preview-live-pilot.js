@@ -6,6 +6,7 @@ import { pilotError } from '../../packages/application/src/reports/apply-lark-na
 
 const AUTH_PATH = '/open-apis/auth/v3/tenant_access_token/internal';
 const TABLES_PATH = /^\/open-apis\/bitable\/v1\/apps\/[^/]+\/tables$/u;
+const RECORD_LIST_PATH = /^\/open-apis\/bitable\/v1\/apps\/[^/]+\/tables\/[^/]+\/records$/u;
 const RECORD_SEARCH_PATH = /^\/open-apis\/bitable\/v1\/apps\/[^/]+\/tables\/[^/]+\/records\/search$/u;
 const BATCH_CREATE_PATH = /^\/open-apis\/bitable\/v1\/apps\/[^/]+\/tables\/[^/]+\/records\/batch_create$/u;
 const BATCH_UPDATE_PATH = /^\/open-apis\/bitable\/v1\/apps\/[^/]+\/tables\/[^/]+\/records\/batch_update$/u;
@@ -85,6 +86,7 @@ export function createLarkNativeAiControlledPreviewLivePilotFetchGuard(fetchImpl
 
     if (method === 'POST' && path === AUTH_PATH) kind = 'token';
     else if (method === 'GET' && TABLES_PATH.test(path)) kind = 'table_read';
+    else if (method === 'GET' && RECORD_LIST_PATH.test(path)) kind = 'record_search';
     else if (method === 'POST' && RECORD_SEARCH_PATH.test(path)) kind = 'record_search';
     else if (method === 'POST' && BATCH_CREATE_PATH.test(path)) {
       kind = 'batch_create';
@@ -156,7 +158,7 @@ export function assertLarkNativeAiControlledPreviewLivePilotRemoteCounters(value
   const limits = LARK_NATIVE_AI_CONTROLLED_PREVIEW_LIVE_PILOT_LIMITS;
   if (Number(value.blockedRequestCount) !== 0
     || Number(value.tableReadRequestCount) !== 1
-    || Number(value.recordSearchRequestCount) < 2
+    || Number(value.recordSearchRequestCount) < 1
     || Number(value.recordSearchRequestCount) > limits.maximumRecordSearchRequests
     || Number(value.totalBatchWriteRequests) > limits.maximumBatchWriteRequests
     || Number(value.totalRecordWrites) > limits.maximumRecordWrites) {
