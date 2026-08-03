@@ -116,7 +116,7 @@ function printPlan() {
     contractVersion: LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXACT_TERMINAL_CONTRACT_VERSION,
     objective: 'collect_real_lark_report_outputs_then_apply_and_replay_exact_40_preview_rows',
     exactCommand: [
-      `cd /Users/wasanjantawong/Git/social-marketing-integration &&`,
+      'cd /Users/wasanjantawong/Git/social-marketing-integration &&',
       `CONFIRM_LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXACT_TERMINAL=${LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXACT_TERMINAL_CONFIRMATION}`,
       'node scripts/lark-native-ai-controlled-preview-exact-terminal.mjs --execute',
     ].join(' '),
@@ -125,8 +125,8 @@ function printPlan() {
       'fetch origin/main and require clean exact local main',
       'validate all local config, credentials and mappings before Remote read',
       'acquire one local exact-terminal lock',
-      'read Lark schema and TikTok 1D/3D/7D/30D Report outputs through a read-only allowlist',
-      'create and revalidate a private retained source package automatically',
+      'read one cached Lark table inventory plus AI schema and TikTok 1D/3D/7D/30D Report outputs',
+      'create and revalidate a private checksummed source package automatically',
       'build exact approved all-channel readiness plans',
       'run bounded first pass with at most 40 Record writes',
       'run a separate same-input replay',
@@ -195,13 +195,14 @@ async function executeExactTerminal() {
     LARK_REQUEST_TIMEOUT_MS: '30000',
     LARK_MIN_REQUEST_INTERVAL_MS: '150',
   });
-  const sourceClient = createLarkBitableClientFromEnv(sourceEnv, {
+  const rawSourceClient = createLarkBitableClientFromEnv(sourceEnv, {
     fetchImpl: sourceRead.fetchImpl,
     onRequest: (event) => process.stderr.write(`${JSON.stringify({
       stage: 'source_read',
       ...sanitizeLarkNativeAiControlledPreviewExactTerminalValue(event),
     })}\n`),
   });
+  const sourceClient = withCachedTableInventory(rawSourceClient);
   const collected = await collectLarkNativeAiControlledPreviewRealSource({
     client: sourceClient,
     sourceGuard: sourceRead,
@@ -213,7 +214,8 @@ async function executeExactTerminal() {
     collected,
     repository,
   );
-  await writePrivateJson(sourcePath, sourcePackage);
+  // Retain the exact collected package because packageSha256 covers every original metadata field.
+  await writePrivateJson(sourcePath, collected);
 
   stage = 'build-exact-four-window-readiness';
   const readinessPlans = await buildLarkNativeAiControlledPreviewExactTerminalReadiness({
@@ -401,6 +403,20 @@ async function runLivePilotChild({ inputPath, evidencePath, passName }) {
       },
     );
   }
+}
+
+function withCachedTableInventory(client) {
+  let tablePromise = null;
+  return Object.freeze({
+    listTables() {
+      if (!tablePromise) tablePromise = client.listTables();
+      return tablePromise;
+    },
+    listFields: client.listFields.bind(client),
+    listViews: client.listViews.bind(client),
+    getView: client.getView.bind(client),
+    searchRecordsByFieldValues: client.searchRecordsByFieldValues.bind(client),
+  });
 }
 
 async function acquireExecutionLock() {
