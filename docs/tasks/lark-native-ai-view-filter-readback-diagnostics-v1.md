@@ -11,6 +11,7 @@ FAILED_CODE                        = LARK_NATIVE_AI_SCHEMA_APPLY_VIEW_FILTER_CON
 FAILED_VIEW                        = ⚠️ Missing / Partial Data
 ROOT_CAUSE                         = UNPROVEN
 REPAIR_AUTHORITY                   = NONE
+DIAGNOSTIC_NETWORK_MODE            = HARD_READ_ONLY
 PRODUCTION                         = BLOCKED
 ```
 
@@ -66,17 +67,33 @@ Never retain:
 - credentials or access tokens;
 - Record data.
 
-## Mutation boundary
+## Hard read-only diagnostic mode
 
-This Hotfix adds no mutation path. The post-merge diagnostic execution must remain metadata-read-only. If the View is still conflicting, the operator must stop with zero writes and the sanitized structural evidence.
+The reviewed terminal accepts:
 
-No repair, delete, recreate, rename or filter rewrite is authorized by this workstream.
+```text
+MKT_LARK_NATIVE_AI_SCHEMA_APPLY_DIAGNOSTIC_ONLY=true
+```
+
+In this mode:
+
+1. the application calls only `planLarkNativeAiSchemaAdditiveApply`;
+2. the Fetch guard permits tenant token plus Table/Field/View metadata reads;
+3. every Field or View write is blocked before `fetch` with
+   `LARK_NATIVE_AI_SCHEMA_APPLY_DIAGNOSTIC_WRITE_BLOCKED`;
+4. successful completion requires `totalWriteCount=0` and `blockedRequestCount=0`;
+5. pending accepted actions cause a fail-closed diagnostic result and are never applied.
+
+The post-merge diagnostic execution must use this mode. No repair, delete, recreate, rename or filter rewrite is authorized by this workstream.
 
 ## Changed files
 
 ```text
 packages/application/src/reports/lark-native-ai-schema-view-filters.js
+scripts/lib/lark-native-ai-schema-apply.js
+scripts/lark-native-ai-schema-apply-reviewed-terminal.mjs
 tests/application/lark-native-ai-schema-view-filters.test.js
+tests/scripts/lark-native-ai-schema-apply-reviewed-terminal.test.js
 docs/tasks/lark-native-ai-view-filter-readback-diagnostics-v1.md
 docs/project-brain/lark-native-ai-schema-select-filter-recovery.md
 ```
