@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  LARK_NATIVE_AI_DISABLED_WORKFLOW_DEFINITIONS,
+} from '../../packages/config/src/lark-native-ai-disabled-workflows-contract.js';
+import {
   applyLarkNativeAiDisabledWorkflows,
+  inspectLarkNativeAiInactivePlaceholderSteps,
   planLarkNativeAiDisabledWorkflows,
 } from '../../scripts/lib/lark-native-ai-disabled-workflows.js';
 
@@ -41,7 +45,18 @@ class FakeClient {
 
 const HEAD = '18bb72741821a4068da0ef0b985b13502a6fd793';
 
-test('creates exactly two empty disabled Workflow shells and verifies zero drift', async () => {
+function workflowFromDefinition(index, overrides = {}) {
+  const definition = LARK_NATIVE_AI_DISABLED_WORKFLOW_DEFINITIONS[index];
+  return {
+    workflowId: `wkf_${index + 1}`,
+    title: definition.title,
+    status: 'inactive',
+    steps: structuredClone(definition.steps),
+    ...overrides,
+  };
+}
+
+test('creates exactly two inactive placeholders and verifies zero drift', async () => {
   const client = new FakeClient();
   const result = await applyLarkNativeAiDisabledWorkflows({
     client,
@@ -57,7 +72,13 @@ test('creates exactly two empty disabled Workflow shells and verifies zero drift
     'AI Materialization → MKT_AI_Report_Runs',
     'Eligible AI Run → Lark Group Notification',
   ]);
-  assert.equal(client.createCalls.every(({ steps }) => steps.length === 0), true);
+  assert.equal(client.createCalls.every(({ steps }) => steps.length === 2), true);
+  assert.equal(client.createCalls.every(({ steps }, index) => (
+    inspectLarkNativeAiInactivePlaceholderSteps({
+      steps,
+      definition: LARK_NATIVE_AI_DISABLED_WORKFLOW_DEFINITIONS[index],
+    }).ok
+  )), true);
   assert.equal(client.createCalls.every(({ clientToken }) => /^mkt-[a-f0-9]{48}$/u.test(clientToken)), true);
   assert.equal(new Set(client.createCalls.map(({ clientToken }) => clientToken)).size, 2);
   assert.equal(client.workflows.every(({ status }) => status === 'disabled'), true);
@@ -66,14 +87,11 @@ test('creates exactly two empty disabled Workflow shells and verifies zero drift
   assert.equal(result.scheduleEnabled, false);
 });
 
-test('same-input replay performs zero creates', async () => {
-  const client = new FakeClient();
-  await applyLarkNativeAiDisabledWorkflows({
-    client,
-    repositoryHead: HEAD,
-    sleep: async () => undefined,
-  });
-  client.createCalls = [];
+test('same-input replay performs zero creates for UI-style placeholders', async () => {
+  const client = new FakeClient([
+    workflowFromDefinition(0),
+    workflowFromDefinition(1),
+  ]);
 
   const replay = await applyLarkNativeAiDisabledWorkflows({
     client,
@@ -83,15 +101,27 @@ test('same-input replay performs zero creates', async () => {
   assert.equal(replay.mode, 'already_zero_drift');
   assert.equal(replay.createdWorkflowCount, 0);
   assert.equal(client.createCalls.length, 0);
+  assert.equal(replay.items.every(({ placeholderExact }) => placeholderExact === true), true);
 });
 
-test('resumes a partial prior create by creating only the missing shell', async () => {
-  const client = new FakeClient([{
-    workflowId: 'wkf_existing',
-    title: 'AI Materialization → MKT_AI_Report_Runs',
-    status: 'draft',
-    steps: [],
-  }]);
+test('accepts UI-generated step IDs while preserving exact semantic shape', async () => {
+  const workflows = [0, 1].map((index) => {
+    const workflow = workflowFromDefinition(index);
+    workflow.steps[0].id = `ui_trigger_${index}`;
+    workflow.steps[0].next = `ui_delay_${index}`;
+    workflow.steps[1].id = `ui_delay_${index}`;
+    delete workflow.steps[0].data.watched_field_name;
+    return workflow;
+  });
+  const plan = await planLarkNativeAiDisabledWorkflows({
+    client: new FakeClient(workflows),
+  });
+  assert.equal(plan.status, 'zero_drift');
+  assert.equal(plan.existingInactivePlaceholderCount, 2);
+});
+
+test('resumes a partial prior create by creating only the missing placeholder', async () => {
+  const client = new FakeClient([workflowFromDefinition(0)]);
   const result = await applyLarkNativeAiDisabledWorkflows({
     client,
     repositoryHead: HEAD,
@@ -103,33 +133,19 @@ test('resumes a partial prior create by creating only the missing shell', async 
   ]);
 });
 
-test('blocks enabled, duplicate or configured target Workflows before create', async () => {
+test('blocks enabled, duplicate or action-bearing Workflow drift before create', async () => {
+  const unsafeMessageStep = {
+    id: 'send',
+    type: 'LarkMessageAction',
+    next: null,
+    data: { receiver: [], send_to_everyone: false, content: [], btn_list: [] },
+  };
   const scenarios = [
-    [{
-      workflowId: 'wkf_enabled',
-      title: 'AI Materialization → MKT_AI_Report_Runs',
-      status: 'enabled',
-      steps: [],
-    }],
-    [{
-      workflowId: 'wkf_configured',
-      title: 'AI Materialization → MKT_AI_Report_Runs',
-      status: 'disabled',
-      steps: [{ id: 'unsafe' }],
-    }],
+    [workflowFromDefinition(0, { status: 'enabled' })],
+    [workflowFromDefinition(0, { steps: [unsafeMessageStep] })],
     [
-      {
-        workflowId: 'wkf_a',
-        title: 'AI Materialization → MKT_AI_Report_Runs',
-        status: 'disabled',
-        steps: [],
-      },
-      {
-        workflowId: 'wkf_b',
-        title: 'AI Materialization → MKT_AI_Report_Runs',
-        status: 'disabled',
-        steps: [],
-      },
+      workflowFromDefinition(0, { workflowId: 'wkf_a' }),
+      workflowFromDefinition(0, { workflowId: 'wkf_b' }),
     ],
   ];
 
