@@ -36,6 +36,34 @@ For each exact window `1/3/7/30`, the collector selects one unique latest Report
 
 All other business channels remain visible as status-only rows. Their missing/pending state is not converted to zero and no unaligned historical Report is reused.
 
+## TikTok baseline-only partial Golden Dataset
+
+A live 1D attempt proved a valid Report can be `partial` only because a very small number of Content records lack the comparison-period baseline while current cumulative metrics remain complete. The confirmed evidence was:
+
+```text
+tracked content          2024
+baseline covered         2021
+baseline missing         3
+baseline coverage rate   0.9985
+current-total metrics    6/6 available
+period-delta metrics     6/6 baseline_incomplete
+freshness                fresh
+```
+
+Controlled Preview readiness therefore admits a narrow baseline-only partial class without relabeling it complete. Admission requires:
+
+- exact TikTok availability/coverage remain `partial`;
+- freshness is `fresh` and no critical Data Quality issue exists;
+- all six locked current-total metrics are available, observed and numeric;
+- all six locked period-delta metrics are `baseline_incomplete`, null and unobserved;
+- all five locked Data Quality metrics are available, observed and numeric;
+- baseline coverage is at least `0.99` and below `1`;
+- tracked, covered and missing counts reconcile exactly;
+- reported coverage reconciles to `covered / tracked` within `0.0001`;
+- no other unsupported unavailable summary metric exists.
+
+Current-data gaps, stale evidence, coverage below 99%, inconsistent counts or any non-baseline missing metric remain blocked. The resulting TikTok Preview row still reports partial readiness and does not fabricate period deltas or trend recommendations.
+
 ## Sequential Terminal rule
 
 The user runs this command only after the preceding Meta or Chatwoot Terminal command has ended; the commands are not run simultaneously. PR closure is not used as the runtime mutex.
