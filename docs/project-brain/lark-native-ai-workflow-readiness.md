@@ -15,17 +15,9 @@ Schedule                    disabled
 Production                  blocked
 ```
 
-Live evidence:
+## Live UI Automation authority
 
-```text
-outputs/lark-notification-log-schema/20260803T171919260Z-e37a98b24bc1-79714
-outputs/lark-native-ai-destination-binding/20260803T182132508Z-18bb72741821-82088
-outputs/lark-native-ai-workflow-readiness/20260803T182338227Z-18bb72741821-82191
-```
-
-## Live Automation authority
-
-Because the app lacked `base:workflow:create` and the Base UI would not save empty Workflows, the user created the two exact identities manually as inactive placeholders:
+The user created the two exact Automations manually in Lark Base:
 
 ```text
 AI Materialization → MKT_AI_Report_Runs
@@ -40,36 +32,52 @@ Active            0
 Inactive          2
 ```
 
-Exact accepted placeholder shape:
+Each has exactly one new-record Trigger and one one-minute Delay. There is no Native AI, Record write or Message action.
+
+## API inventory boundary
+
+The current Base List Workflows call returns zero items even while the UI shows the two inactive Automations. Lark documents List automations and List Workflows as separate read APIs under `base:workflow:read`; therefore zero Workflow inventory is not evidence that the UI Automations are missing.
+
+Incident evidence from 2026-08-04:
 
 ```text
-one AddRecordTrigger on the approved table
-→ one Delay action for 1 minute
-→ no other Step or action
+workflowListRead            2
+workflowGetRead             0
+workflowCreate              0
+recordWriteCount            0
+workflowUpdateCount         0
+workflowStatusChangeCount   0
+notificationCount           0
+scheduleEnabled             false
+production                  BLOCKED
 ```
 
-Trigger tables:
+The old operator attempted to enter the missing-Workflow path but stopped locally before any HTTP create request. No Remote mutation occurred.
+
+## Corrected operator authority
+
+`scripts/lark-native-ai-disabled-workflows-terminal.mjs` is read-only and delegates to the existing Workflow Readiness audit. It requires the current exact API boundary and emits:
 
 ```text
-AI Materialization → MKT_AI_Report_Runs       🧾 MKT_Report_Snapshots
-Eligible AI Run → Lark Group Notification    🧠 MKT_AI_Report_Runs
+status  manual_ui_automations_locked_api_workflow_inventory_empty
+mode    read_only_reconciliation
 ```
 
-The previous empty `steps=[]` proposal is historical and is no longer the current live authority. UI-generated Step IDs are not stable; semantic shape, exact table, one-minute delay and inactive status are authoritative.
+It has no Workflow create, update, enable, disable, delete, Record write or Message route.
 
 ## Safety boundary
 
 - every `MKT_*_ENABLED` flag remains false;
 - `ai_enabled` and `notification_enabled` remain false;
-- Workflow update/status change is zero;
+- Workflow create/update/status change is zero;
 - Native AI execution is zero;
 - Record writes and messages are zero;
 - no Webhook, D1, Queue, Worker, Provider, Schedule or Production action occurs;
 - raw Workflow, Chat, Record and Field identifiers are excluded from evidence.
 
-## Remaining permission bundle
+## Complete remaining permission bundle
 
-All remaining Workflow API permissions must be disclosed together before a new approval request:
+Before any future API mutation, disclose the complete remaining bundle together:
 
 ```text
 base:workflow:read
@@ -78,11 +86,11 @@ base:workflow:update
 base:workflow:write
 ```
 
-`base:workflow:delete` is not part of the current plan. Current inactive-placeholder reconciliation uses only read access and must produce `workflowCreateCount=0`.
+`base:workflow:delete` is not part of the current plan.
 
 ## Next phase
 
-1. Run exact read-only semantic reconciliation of the two inactive placeholders.
+1. Record the read-only UI/API boundary.
 2. Prepare the complete disabled Workflow Step mapping and notification payload Preview in Repository only.
 3. Do not update, enable or test-send either Automation until the full mapping and complete permission bundle are reviewed together.
 

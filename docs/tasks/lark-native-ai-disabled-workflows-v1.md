@@ -1,8 +1,8 @@
-# Lark Native AI Inactive Workflow Placeholders v1
+# Lark Native AI Inactive UI Automations v1
 
 ## Current live state
 
-The two exact Automations were created manually in the Lark Base UI because the app did not yet have `base:workflow:create` and the UI would not save an empty Workflow.
+The two exact Automations were created manually in the Lark Base UI and remain inactive:
 
 ```text
 AI Materialization → MKT_AI_Report_Runs       inactive
@@ -17,47 +17,65 @@ Each Automation contains only:
 When a new record is added → Delay 1 minute
 ```
 
-Exact trigger tables:
+Trigger tables:
 
 ```text
-AI Materialization → MKT_AI_Report_Runs
-trigger table: 🧾 MKT_Report_Snapshots
-
-Eligible AI Run → Lark Group Notification
-trigger table: 🧠 MKT_AI_Report_Runs
+AI Materialization → MKT_AI_Report_Runs       🧾 MKT_Report_Snapshots
+Eligible AI Run → Lark Group Notification    🧠 MKT_AI_Report_Runs
 ```
 
-There is no Native AI action, Record write, message action, Webhook, Schedule or status activation.
+There is no Native AI action, Record write, message action, Webhook, Schedule or activation.
 
-## Corrected authority
+## 2026-08-04 reconciliation incident
 
-The empty `steps=[]` API shell from the original Phase 6 plan is no longer the live authority. The user-approved UI placeholder is now the exact accepted shape:
+The previous reconciliation operator called the Base **List Workflows** API. That inventory returned zero items even though the Lark UI showed the two inactive Automations. The operator then entered its missing-Workflow create path, but stopped locally before any HTTP create request because the UI placeholders contain two Steps and the old create validator accepted only `steps=[]`.
 
-1. one `AddRecordTrigger` bound to the exact table;
-2. one `Delay` action with duration `1` minute;
-3. the Trigger points directly to the Delay;
-4. no branch, loop or additional action;
-5. Workflow status is disabled/inactive/off/draft.
+Observed safe result:
 
-UI-generated Step IDs are not stable and are not compared literally. The semantic shape, exact table, one-minute delay and inactive status are authoritative.
+```text
+stage                       create-and-verify-disabled-shells
+workflowListRead            2
+workflowGetRead             0
+workflowCreate              0
+recordWriteCount            0
+workflowUpdateCount         0
+workflowStatusChangeCount   0
+notificationCount           0
+scheduleEnabled             false
+production                  BLOCKED
+```
 
-The optional watched field may be present as `report_id` or `ai_run_key`; Lark UI may omit it from returned Workflow JSON. A conflicting non-empty watched field blocks.
+No Remote mutation occurred.
 
-## Reconciliation behavior
+## API boundary
 
-The existing guarded operator now treats the exact UI placeholders as zero drift. On the current live state it performs only Workflow list/get and the existing readiness reads; `workflowCreateCount` remains zero, so `base:workflow:create` is not required for this readback.
+Lark exposes **List automations** and **List Workflows** as separate read APIs under `base:workflow:read`. The current repository integration calls only List Workflows. Therefore, a zero Workflow inventory must not be interpreted as permission to recreate UI Automations.
 
-Any of the following blocks:
+The user-confirmed UI state is the current authority until a separately reviewed List automations integration is available.
 
-- title missing or duplicated;
-- Workflow enabled;
-- wrong trigger table;
-- delay not exactly one minute;
-- more or fewer than two Steps;
-- Trigger not connected to Delay;
-- Message, AI, Record, HTTP, branch, loop or other action present.
+## Corrected operator behavior
 
-No Workflow update, status change, Record write or message route exists in this phase.
+`scripts/lark-native-ai-disabled-workflows-terminal.mjs` is now read-only:
+
+1. runs the existing exact Workflow Readiness operator;
+2. requires destination/settings/schema readiness to remain clean;
+3. requires the current List Workflows inventory boundary to remain exactly zero;
+4. records that the UI Automations are not exposed by the current Workflow List call;
+5. performs no create, update, enable, disable or delete request.
+
+Expected result:
+
+```text
+status                       manual_ui_automations_locked_api_workflow_inventory_empty
+mode                         read_only_reconciliation
+workflowCreateCount          0
+workflowUpdateCount          0
+workflowStatusChangeCount    0
+automationEnabled            false
+notificationCount            0
+scheduleEnabled              false
+production                   BLOCKED
+```
 
 ## Exact Terminal after merge
 
@@ -71,40 +89,24 @@ CONFIRM_LARK_NATIVE_AI_DISABLED_WORKFLOWS=CREATE_LARK_NATIVE_AI_DISABLED_WORKFLO
 node scripts/lark-native-ai-disabled-workflows-terminal.mjs --execute
 ```
 
-Expected current-live result:
+This command requires only the already-approved read permissions. It has no Workflow create route.
+
+## Complete remaining permission bundle
+
+Before any future API mutation, disclose and approve the complete remaining bundle together:
 
 ```text
-status                       zero_drift
-workflowCreateCount          0
-workflowCount                2
-observedStepCount            2 per Workflow
-placeholderExact             true
-workflowUpdateCount          0
-workflowStatusChangeCount    0
-automationEnabled            false
-notificationCount            0
-scheduleEnabled              false
-production                   BLOCKED
-```
-
-## Permissions required for all remaining API phases
-
-The remaining API path must be approved as one bundle before any future Remote Workflow mutation:
-
-```text
-base:workflow:read     inspect/list/get
-base:workflow:create   only if a missing Workflow must be created
-base:workflow:update   install or change disabled Steps
-base:workflow:write    enable/disable status in a separately authorized activation phase
+base:workflow:read     inspect List automations / List Workflows / Get
+base:workflow:create   create only if a reviewed missing identity genuinely exists
+base:workflow:update   install or replace disabled Steps
+base:workflow:write    status change in a separately authorized activation phase
 base:workflow:delete   not required by the current plan
 ```
-
-Current reconciliation uses only `base:workflow:read`. No future phase may request permissions piecemeal without listing the complete remaining bundle first.
 
 ## Safety boundary
 
 ```text
-Workflow create          0 on current live state
+Workflow create          0
 Workflow update          0
 Workflow status change   0
 Record write             0
@@ -116,20 +118,6 @@ Schedule                 disabled
 Production               blocked
 ```
 
-## Required verification
-
-```bash
-npm ci
-npm run check
-node --test tests/scripts/lark-native-ai-disabled-workflows.test.js
-node --test tests/scripts/lark-native-ai-disabled-workflows-terminal.test.js
-npm test
-npm run test:report-reliability
-npm audit --audit-level=high
-npm run deploy:dry-run
-git diff --check
-```
-
 ## Next phase
 
-After read-only zero drift, prepare the complete disabled Workflow configuration and notification payload Preview in Repository only. Do not update the live Workflows, activate them or send a message until the full Step mapping and the complete required permission bundle have been reviewed together.
+After this read-only boundary is recorded, prepare the complete disabled Workflow Step mapping and notification payload Preview in Repository only. Do not modify or activate the two live UI Automations and do not send a message.
