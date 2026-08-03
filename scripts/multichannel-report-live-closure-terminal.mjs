@@ -42,7 +42,10 @@ export async function buildYouTubeFirstAdopterPlan(input = {}) {
       reviewedReadiness,
       requestedAt: requireTimestamp(input.requestedAt, 'requestedAt'),
       periodEnd: requireDate(input.periodEnd ?? source.watermarkDate, 'periodEnd'),
-      sourceWatermark: requireText(input.sourceWatermark ?? source.watermarkDate, 'sourceWatermark'),
+      sourceWatermark: requireText(
+        input.sourceWatermark ?? source.sourceWatermark,
+        'source.sourceWatermark',
+      ),
       timeZone: input.timeZone ?? source.reportingTimezone ?? 'Asia/Bangkok',
     });
     framework = await runReportLiveClosureFramework({
@@ -59,19 +62,24 @@ export async function buildYouTubeFirstAdopterPlan(input = {}) {
     const handoff = input.reviewedHandoff ?? await loadReviewedHandoff(env);
     const repository = handoff.repository ?? {};
     assertReviewedReportLiveClosureHandoff(handoff, { descriptor, repository });
+    requireText(
+      handoff.youtubeReadiness?.evidence?.source?.sourceWatermark,
+      'youtubeReadiness.evidence.source.sourceWatermark',
+    );
     throw terminalError(
-      'The retained handoff is valid, but direct Live execution remains blocked until the shared Report closeout operator is reviewed for YouTube Organic',
+      'The retained handoff is valid, but direct Live execution remains blocked until the shared Report closeout operator is extended and reviewed for YouTube Organic',
       'REPORT_LIVE_CLOSURE_SHARED_OPERATOR_YOUTUBE_NOT_REVIEWED',
       {
         reviewedHandoff: true,
         requiredOperator: 'scripts/report-runtime-closeout-operator.mjs',
+        reviewCommand: 'node scripts/youtube-shared-report-closeout-review.mjs',
       },
     );
   }
 
   return Object.freeze({
     ok: true,
-    contractVersion: 'multichannel_report_live_closure_terminal_v2',
+    contractVersion: 'multichannel_report_live_closure_terminal_v3',
     mode: 'PLAN_ONLY',
     frameworkStatus: 'READY',
     firstAdopter: 'youtube',
@@ -84,11 +92,13 @@ export async function buildYouTubeFirstAdopterPlan(input = {}) {
     materializationPlan: framework?.plan ?? null,
     reviewedReadinessRequired: reviewedReadiness === null,
     reviewedHandoffRequired: true,
+    exactSourceWatermarkRequired: true,
     readOnlyAssessmentCommand: [
       'CONFIRM_YOUTUBE_REPORT_REMOTE_READINESS_COLLECTOR=RUN_YOUTUBE_REPORT_REMOTE_READINESS_COLLECTOR',
       'MKT_YOUTUBE_REPORT_REMOTE_REVIEWED_HEAD=<exact-reviewed-main-sha>',
       'node scripts/youtube-report-remote-readiness-reviewed-terminal.mjs --execute',
     ].join(' \\\n'),
+    sharedOperatorReviewCommand: 'node scripts/youtube-shared-report-closeout-review.mjs',
     exactLiveCommand: [
       'MKT_MULTICHANNEL_REPORT_LIVE_CLOSURE_HANDOFF=<retained-sanitized-handoff.json>',
       `CONFIRM_MULTICHANNEL_REPORT_LIVE_CLOSURE=${MULTICHANNEL_REPORT_LIVE_CLOSURE_CONFIRMATION}`,
