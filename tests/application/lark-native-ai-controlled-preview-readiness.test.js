@@ -35,9 +35,13 @@ for (const windowDays of [1, 3, 7, 30]) {
       'meta_ads', 'google_ads', 'tiktok_ads', 'woocommerce', 'chatwoot', 'executive',
     ]);
     assert.equal(channelKeys.includes('operations'), false);
+    const instagram = plan.larkPlan.rows.find(({ channelKey }) => channelKey === 'instagram_organic');
     const executive = plan.larkPlan.rows.at(-1);
     const vector = JSON.parse(executive.fields.channel_status_vector_json);
     assert.equal(vector.some(({ platform }) => platform === 'operations'), true);
+    assert.equal(instagram.fields.readiness_status, 'report_partial');
+    assert.equal(instagram.fields.coverage_rate, null);
+    assert.equal(executive.fields.coverage_rate, null);
     assert.equal(executive.fields.notification_eligible, false);
     assert.equal(executive.fields.preview_mode, true);
     assert.equal(executive.fields.sent_to_group, false);
@@ -119,6 +123,7 @@ test('observed zero remains zero and unavailable channels remain skipped', async
   assert.equal(metrics[0].currentValue, 0);
   assert.equal(youtubeRow.fields.generation_status, 'skipped');
   assert.equal(youtubeRow.fields.data_status, 'report_missing');
+  assert.equal(youtubeRow.fields.coverage_rate, null);
 });
 
 function controlledInput({ windowDays = 30, lockReleased, approved }) {
