@@ -336,7 +336,6 @@ function appendCanonicalEntity(canonical, input) {
       manager_account_id: null,
       is_test_account: null,
       account_link_status: 'selectable',
-      last_sync_at: fetchedAt,
     }));
   } else if (dataset.entityType === 'campaign') {
     canonical.adsCampaigns.push(compact({
