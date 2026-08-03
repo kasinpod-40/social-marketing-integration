@@ -46,7 +46,7 @@ export function buildYouTubeFirstAdopterPlan(env = {}, argv = []) {
     mode: 'PLAN_ONLY',
     frameworkStatus: 'READY',
     firstAdopter: 'youtube',
-    youtubeStatus: 'READY_FOR_LIVE',
+    youtubeStatus: 'READY_FOR_LIVE_AUDIT',
     descriptor,
     identities,
     exactLiveCommand: [
