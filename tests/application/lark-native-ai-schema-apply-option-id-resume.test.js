@@ -71,6 +71,13 @@ test('resume Apply sends live Select option IDs and never repeats completed Fiel
   assert.deepEqual(executive.filterInfo.conditions[0].value, ['opt_scope_type_executive']);
   assert.equal(executive.filterInfo.conditions[0].value.includes('executive'), false);
 
+  const missing = client.viewPatchBodies.find(({ viewName }) => viewName === '⚠️ Missing / Partial Data');
+  assert.equal(missing.filterInfo.conjunction, 'or');
+  assert.equal(missing.filterInfo.conditions.length, 6);
+  assert.ok(missing.filterInfo.conditions.every(({ value }) => value.length === 1));
+  assert.equal(new Set(missing.filterInfo.conditions.map(({ value }) => value[0])).size, 6);
+  assert.equal(JSON.stringify(missing.filterInfo).includes('report_partial'), false);
+
   const notification = client.viewPatchBodies.find(({ viewName }) => viewName === '✅ Notification Eligible');
   const checkboxValues = notification.filterInfo.conditions.map(({ value }) => value[0]);
   assert.ok(checkboxValues.includes(true));
