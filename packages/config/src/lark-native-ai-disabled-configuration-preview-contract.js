@@ -113,6 +113,7 @@ export const LARK_NATIVE_AI_DISABLED_CONFIGURATION_WORKFLOWS = Object.freeze([
       type: 'new_or_updated_record_matches_conditions',
       table: AI_RUN_TABLE,
       watchedFields: Object.freeze([
+        'report_id',
         'scope_type',
         'generation_status',
         'notification_eligible',
@@ -121,6 +122,7 @@ export const LARK_NATIVE_AI_DISABLED_CONFIGURATION_WORKFLOWS = Object.freeze([
         'dedupe_key',
       ]),
       conditions: Object.freeze([
+        condition('report_id', 'is_not_empty', true),
         condition('scope_type', 'equals', 'executive'),
         condition('generation_status', 'equals', 'generated'),
         condition('notification_eligible', 'equals', true),
@@ -131,7 +133,19 @@ export const LARK_NATIVE_AI_DISABLED_CONFIGURATION_WORKFLOWS = Object.freeze([
     }),
     actions: Object.freeze([
       action('find_exact_record', Object.freeze({
+        table: REPORT_SNAPSHOT_TABLE,
+        matchFields: Object.freeze(['report_id']),
+        requireCount: 1,
+        readFields: Object.freeze([
+          'report_setting_key',
+          'customer_profile',
+          'period_start',
+          'period_end',
+        ]),
+      })),
+      action('find_exact_record', Object.freeze({
         table: REPORT_SETTINGS_TABLE,
+        identitySource: REPORT_SNAPSHOT_TABLE,
         matchFields: Object.freeze([
           'report_setting_key',
           'customer_profile',
@@ -140,12 +154,6 @@ export const LARK_NATIVE_AI_DISABLED_CONFIGURATION_WORKFLOWS = Object.freeze([
           'group_id is not empty',
         ]),
         requireCount: 1,
-      })),
-      action('find_exact_record', Object.freeze({
-        table: REPORT_SNAPSHOT_TABLE,
-        matchFields: Object.freeze(['report_id']),
-        requireCount: 1,
-        readFields: Object.freeze(['period_start', 'period_end']),
       })),
       action('find_exact_record', Object.freeze({
         table: NOTIFICATION_LOG_TABLE,
