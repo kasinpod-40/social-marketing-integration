@@ -200,6 +200,8 @@ test('hash-pinned transform reuses existing controllers without changing disk so
     finalizer.source,
     /MKT_META_D1_ONLY_TERMINAL_RECOVERY: 'RECOVER_EXACT_FAILED_META_OPERATION'/u,
   );
+  assert.match(finalizer.source, /controller\.abort\(\), 300_000/u);
+  assert.doesNotMatch(finalizer.source, /controller\.abort\(\), 120_000/u);
   assert.doesNotMatch(
     finalizer.source,
     /const stability = validateMetaK2ExactPartialStagingStability\(/u,
