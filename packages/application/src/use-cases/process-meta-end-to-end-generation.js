@@ -215,13 +215,26 @@ async function executeD1Phase(input) {
   }
 
   const operations = d1Operations(input.writeSet);
-  const stop = Math.min(operations.length, state.nextIndex + input.maxD1Rows);
-  while (state.nextIndex < stop) {
+  const start = state.nextIndex;
+  const stop = Math.min(operations.length, start + input.maxD1Rows);
+  const batch = operations.slice(start, stop);
+  if (batch.length > 0) {
     await input.assertLockActive();
-    const operation = operations[state.nextIndex];
-    const result = await executeD1Operation(input.historyStore, operation);
-    accumulateD1(state.counts, operation.kind, result);
-    state.nextIndex += 1;
+    const results = await executeD1Operations(input.historyStore, batch);
+    await input.assertLockActive();
+    if (!Array.isArray(results) || results.length !== batch.length) {
+      throw permanentError('Meta D1 batch result does not match the requested operation count', {
+        code: 'META_END_TO_END_D1_BATCH_RECONCILIATION_FAILED',
+        details: {
+          expectedResults: batch.length,
+          observedResults: Array.isArray(results) ? results.length : null,
+        },
+      });
+    }
+    for (let index = 0; index < batch.length; index += 1) {
+      accumulateD1(state.counts, batch[index].kind, results[index]);
+      state.nextIndex += 1;
+    }
   }
   const complete = state.nextIndex >= operations.length;
   const saved = await input.workStore.savePhase({
@@ -233,9 +246,9 @@ async function executeD1Phase(input) {
     pagesProcessed: 0,
     chunksProcessed: Math.ceil(Math.max(1, state.nextIndex) / input.maxD1Rows),
     complete,
-    unit: stop > 0 ? {
-      unitKey: `rows:${Math.max(0, stop - input.maxD1Rows)}-${stop}`,
-      sequence: Math.max(0, stop - 1),
+    unit: batch.length > 0 ? {
+      unitKey: `rows:${start}-${stop}`,
+      sequence: stop - 1,
       payload: { nextIndex: state.nextIndex, complete },
     } : undefined,
   });
@@ -310,6 +323,17 @@ function d1Operations(writeSet) {
     ...writeSet.d1.coverageRuns.map((row) => Object.freeze({ kind: 'coverage_run', row })),
     ...writeSet.d1.coverageEntities.map((row) => Object.freeze({ kind: 'coverage_entity', row })),
   ]);
+}
+
+async function executeD1Operations(store, operations) {
+  if (typeof store.writeMetaD1Operations === 'function') {
+    return store.writeMetaD1Operations(operations);
+  }
+  const results = [];
+  for (const operation of operations) {
+    results.push(await executeD1Operation(store, operation));
+  }
+  return results;
 }
 
 async function executeD1Operation(store, operation) {
