@@ -10,7 +10,7 @@ import {
   OPERATOR_TERMINAL_STRICT_PASS_PATHS,
 } from './operator-terminal-channel-policy.js';
 
-const ENTRYPOINT_NAME_PATTERN = /(?:terminal|operator|preflight|closeout|acceptance)[^/]*\.mjs$/u;
+const ENTRYPOINT_NAME_PATTERN = /(?:terminal|operator|preflight|closeout)[^/]*\.mjs$/u;
 const PACKAGE_SCRIPT_PATTERN = /\bnode\s+(scripts\/[A-Za-z0-9_./-]+\.mjs)\b/gu;
 const SOURCE_EXTENSIONS = new Set(['.js', '.mjs']);
 const TEST_PROCESS_PATTERN = /\b(?:spawnSync|spawn|execFile|execFileSync)\s*\(/u;
@@ -96,18 +96,13 @@ export function inspectOperatorTerminalSource(input = {}) {
   ));
   const companionAllBlocker = Boolean(companion?.allBlockerPreflightPath);
   const companionSpawnedTest = Boolean(companion?.spawnedTestPath);
-  const companionCompletion = companion?.completionAuthority === 'exit_code_contract';
-  const companionReplay = Boolean(companion?.sameInputReplayAuthority);
-  const companionSafeRestore = Boolean(companion?.safeRestoreAuthority);
-  const companionPrivateEvidence = Boolean(companion?.privateEvidencePath);
-  const hasReplay = companionReplay || (/\b(?:same[-_ ]?input[-_ ]?replay|replay)\b/iu.test(source)
-    && /\b(?:no[_ -]?op|zero[_ -]?drift|writes?\.total|idempotent)\b/iu.test(source));
-  const hasSafeRestore = companionSafeRestore || (/\bfinally\b/u.test(source)
-    && /\b(?:restore|safe[-_ ]?(?:close|baseline|state)|all[-_ ]?false|previewUrlsDisabled)\b/iu.test(source));
+  const hasReplay = /\b(?:same[-_ ]?input[-_ ]?replay|replay)\b/iu.test(source)
+    && /\b(?:no[_ -]?op|zero[_ -]?drift|writes?\.total|idempotent)\b/iu.test(source);
+  const hasSafeRestore = /\bfinally\b/u.test(source)
+    && /\b(?:restore|safe[-_ ]?(?:close|baseline|state)|all[-_ ]?false|previewUrlsDisabled)\b/iu.test(source);
   const hasRetainedCompletion = /\b(?:summary\.json|evidencePath|writePrivateJson|retained)\b/u.test(source)
     && /\b(?:verification|completed|complete|zero_drift|safe)\b/iu.test(source);
-  const hasExitCodeContract = companionCompletion
-    || /\bOPERATOR_TERMINAL_EXIT_CODES\b/u.test(source)
+  const hasExitCodeContract = /\bOPERATOR_TERMINAL_EXIT_CODES\b/u.test(source)
     || /\bexitCodeContract\b/u.test(source)
     || (/process\.exitCode\s*=\s*1\b/u.test(source)
       && /process\.exitCode\s*=\s*2\b/u.test(source));
@@ -117,10 +112,10 @@ export function inspectOperatorTerminalSource(input = {}) {
   const hasSpawnedTest = companionSpawnedTest || spawnedTests.length > 0;
   const hasExactRepositoryGate = /\b(?:origin\/main|reviewedHead|reviewed[_-]?head|exactHead|exact[_-]?head)\b/iu.test(source)
     && /\b(?:rev-parse|merge-base|branch|repository)\b/iu.test(source);
-  const hasPlanOnly = /\b(?:planOnly|printPlan|executed\s*:\s*false|PLAN_ONLY)\b/u.test(source)
+  const hasPlanOnly = /\b(?:planOnly|printPlan|executed\s*:\s*false)\b/u.test(source)
     && /--execute/u.test(source);
-  const hasPrivateEvidence = companionPrivateEvidence || (/0o600/u.test(source)
-    && /\b(?:chmod|writeFile|open|copyFile)\b/u.test(source));
+  const hasPrivateEvidence = /0o600/u.test(source)
+    && /\b(?:chmod|writeFile|open|copyFile)\b/u.test(source);
   const hasLocalLock = /\b(?:lockPath|acquire[A-Za-z]*Lock|\.lock)\b/u.test(source);
   const usesShellFreeChildProcess = childProcessImports.length === 0
     || unsafeChildProcessImports.length === 0;
