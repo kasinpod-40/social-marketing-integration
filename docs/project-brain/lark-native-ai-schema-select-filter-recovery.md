@@ -18,17 +18,9 @@ The first Remote Apply retained a safe partial result:
 
 It stopped while configuring `📊 Executive Summaries` with `LARK_PERMANENT_API_ERROR`.
 
-PR #440 corrected the confirmed Select-filter translation defect by resolving accepted stable option names to exact current live option IDs before View PATCH.
+PR #440 corrected Select-filter identity by resolving accepted stable option names to exact current live option IDs before View PATCH.
 
-## Second resume result
-
-The option-ID recovery ran on clean exact:
-
-```text
-main@cd92d61997aff9fac2ad44309c8e7cb74ce5ad73
-```
-
-It preserved all prior mutations and completed the exact remaining write envelope:
+The second resume preserved all prior mutations and completed the remaining write envelope:
 
 ```text
 Field create/update     0 / 0
@@ -37,77 +29,97 @@ Total schema writes         9
 Record read/write       0 / 0
 ```
 
-All nine remaining accepted View requests returned success. Final read-back then stopped with:
+Final read-back stopped at `⚠️ Missing / Partial Data`. PR #441 added semantic comparison for one-condition conjunction and value ordering. PR #442 then added sanitized hard-read-only diagnostics.
+
+## Proven Live root cause
+
+The PR #442 diagnostic ran on clean exact:
 
 ```text
-LARK_NATIVE_AI_SCHEMA_APPLY_VIEW_FILTER_CONFLICT
-⚠️ Missing / Partial Data
+main@17ef82692405eec9f25b07b4cf9e0afc8c5a06e2
 ```
 
-PR #441 added semantic comparison for one-condition conjunction and unordered condition values.
-
-## Third verification result
-
-The post-PR #441 verification ran on clean exact:
+It performed nine metadata reads and zero writes. The sanitized read-back proved:
 
 ```text
-main@78c1947fa525afb38b229c39f909e661d1a32e19
+View                     ⚠️ Missing / Partial Data
+Field                    readiness_status
+Field type               SingleSelect / 3
+Operator                 is
+Actual conditions        1
+Actual total values      1
+Expected conditions      1
+Expected total values    6
+Field/type/operator      exact match
+Value membership         mismatch
 ```
 
-It performed metadata reads only and stopped at the same View:
+Lark retained only one option ID from a six-value `SingleSelect is` condition. The defect is therefore the mutation representation, not option identity, conjunction presentation or value ordering.
+
+## Correct representation
+
+The stable business contract remains:
 
 ```text
-metadataReadCount      9
-fieldCreateCount       0
-fieldUpdateCount       0
-viewCreateCount        0
-viewUpdateCount        0
-totalWriteCount        0
-code                   LARK_NATIVE_AI_SCHEMA_APPLY_VIEW_FILTER_CONFLICT
-viewName               ⚠️ Missing / Partial Data
+readiness_status in {
+  report_partial,
+  report_missing,
+  configuration_missing,
+  source_unavailable,
+  not_observed,
+  validation_failed
+}
 ```
 
-Therefore conjunction normalization and value ordering alone do not explain the Live read-back. The exact remaining mismatch is not yet proven.
-
-## Current recovery rule
-
-Preserve every successful additive mutation. Do not delete, recreate, rename or rewrite any Field, option or View until the exact read-back difference is observed.
-
-The next Repository change is diagnostic-only. On a conflict it may retain only sanitized structural facts:
-
-- conjunction;
-- condition count;
-- accepted Field name, never Field ID;
-- Field type;
-- operator;
-- value count and scalar types;
-- Boolean comparisons for field set, condition multiplicity, total value count, flattened value membership and condition grouping.
-
-It must not retain Table/Field/View/option IDs or raw filter values.
-
-## Hard read-only diagnostic authority
-
-The next exact-main execution must set:
+The Lark View mutation must encode this as:
 
 ```text
-MKT_LARK_NATIVE_AI_SCHEMA_APPLY_DIAGNOSTIC_ONLY=true
+conjunction = or
+condition 1 = readiness_status is [option A]
+condition 2 = readiness_status is [option B]
+condition 3 = readiness_status is [option C]
+condition 4 = readiness_status is [option D]
+condition 5 = readiness_status is [option E]
+condition 6 = readiness_status is [option F]
 ```
 
-This mode calls the planner only and configures the network guard as read-only. Tenant token and Table/Field/View metadata reads are allowed. Every Field or View write is blocked before `fetch`, and successful completion requires both `totalWriteCount=0` and `blockedRequestCount=0`.
+Each condition contains exactly one live option ID. Stable option names remain the repository contract and are resolved against current Field metadata immediately before mutation.
 
-If pending accepted actions are discovered, the diagnostic fails closed and does not Apply them. No View repair is authorized from an unproven hypothesis.
+## Recovery rule
+
+Preserve every successful Field, option and View mutation. The next reviewed Apply may configure only the exact collapsed predecessor:
+
+- one existing condition;
+- same accepted Field;
+- SingleSelect type;
+- `is` operator;
+- exactly one value;
+- that value is a member of the six accepted option IDs;
+- expected target is six unique one-value conditions joined by `or`.
+
+Any wrong Field, type, operator, outside value, duplicate expected value, different grouping or unrelated non-empty filter remains a hard conflict.
+
+Expected next write envelope:
+
+```text
+Field create/update      0 / 0
+View create              0
+View update              1 maximum
+Record read/write        0 / 0
+```
+
+Final success requires planner `zero_drift`, all six required Views, exact filter parity and zero remaining logical actions.
 
 ## Safety
 
 ```text
 Record read/write                  0 / 0
 Table create/rename/delete         0
-Field delete/type change           0
+Field create/update/delete         0 / 0 / 0
 Select option removal              0
-View delete                        0
+View create/delete                 0 / 0
+View update                        1 maximum
 AI/Automation/Notification         0
 D1/Queue/Worker/Provider           0
 Production                         BLOCKED
 ```
-
-Final success still requires planner `zero_drift` and exact semantic filter parity for all six required Views.

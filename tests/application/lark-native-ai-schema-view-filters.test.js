@@ -70,7 +70,36 @@ function checkboxField(fieldId, fieldName) {
   };
 }
 
-test('resolves name-based Select contracts to exact live option IDs', () => {
+function rawView(viewId, viewName, conjunction, conditions) {
+  return {
+    viewId,
+    viewName,
+    viewType: 'grid',
+    property: {
+      hiddenFields: [],
+      filterInfo: {
+        conjunction,
+        conditions: conditions.map((condition) => ({
+          fieldId: condition.fieldId,
+          fieldType: condition.fieldType,
+          operator: condition.operator,
+          value: JSON.stringify(condition.value),
+        })),
+      },
+    },
+  };
+}
+
+function planClient(view) {
+  return {
+    getView: async ({ viewId }) => {
+      assert.equal(viewId, view.viewId);
+      return structuredClone(view);
+    },
+  };
+}
+
+test('resolves Select names and expands SingleSelect any-of into one OR condition per option ID', () => {
   const executive = buildLarkNativeAiSchemaViewFilter(executiveContract, rawFields());
   assert.deepEqual(executive.mutation.conditions, [{
     fieldId: 'fld_scope',
@@ -80,15 +109,21 @@ test('resolves name-based Select contracts to exact live option IDs', () => {
   }]);
 
   const missing = buildLarkNativeAiSchemaViewFilter(missingContract, rawFields());
-  assert.deepEqual(missing.mutation.conditions[0].value, [
-    'opt_partial',
-    'opt_missing',
-    'opt_config',
-    'opt_source',
-    'opt_not_observed',
-    'opt_invalid',
-  ]);
-  assert.equal(missing.mutation.conditions[0].value.includes('report_partial'), false);
+  assert.equal(missing.mutation.conjunction, 'or');
+  assert.equal(missing.mutation.conditions.length, 6);
+  assert.ok(missing.mutation.conditions.every(({ value }) => value.length === 1));
+  assert.deepEqual(
+    missing.mutation.conditions.map(({ value }) => value[0]).sort(),
+    [
+      'opt_partial',
+      'opt_missing',
+      'opt_config',
+      'opt_source',
+      'opt_not_observed',
+      'opt_invalid',
+    ].sort(),
+  );
+  assert.equal(JSON.stringify(missing.mutation).includes('report_partial'), false);
 });
 
 test('preserves JSON Boolean values for Checkbox View filters', () => {
@@ -103,30 +138,13 @@ test('preserves JSON Boolean values for Checkbox View filters', () => {
 
 test('treats an exact option-ID read-back as complete during partial retry', async () => {
   const fields = rawFields();
-  const view = {
-    viewId: 'vew_executive',
-    viewName: executiveContract.viewName,
-    viewType: 'grid',
-    property: {
-      hiddenFields: [],
-      filterInfo: {
-        conjunction: 'and',
-        conditions: [{
-          fieldId: 'fld_scope',
-          fieldType: 3,
-          operator: 'is',
-          value: JSON.stringify(['opt_scope_executive']),
-        }],
-      },
-    },
-  };
-  const client = {
-    getView: async ({ viewId }) => {
-      assert.equal(viewId, 'vew_executive');
-      return structuredClone(view);
-    },
-  };
-  const plans = await buildLarkNativeAiSchemaViewPlans(client, {
+  const view = rawView('vew_executive', executiveContract.viewName, 'and', [{
+    fieldId: 'fld_scope',
+    fieldType: 3,
+    operator: 'is',
+    value: ['opt_scope_executive'],
+  }]);
+  const plans = await buildLarkNativeAiSchemaViewPlans(planClient(view), {
     table: { tableId: 'tbl_ai' },
     fields,
     views: [view],
@@ -139,36 +157,13 @@ test('treats an exact option-ID read-back as complete during partial retry', asy
   assert.equal(plans.filter((item) => item.state === 'create').length, 5);
 });
 
-test('accepts Lark canonical read-back for one-condition OR with reordered option IDs', async () => {
+test('accepts exact six-condition SingleSelect OR read-back as complete', async () => {
   const fields = rawFields();
   const expected = buildLarkNativeAiSchemaViewFilter(missingContract, fields);
-  const reversed = [...expected.mutation.conditions[0].value].reverse();
-  const view = {
-    viewId: 'vew_missing',
-    viewName: missingContract.viewName,
-    viewType: 'grid',
-    property: {
-      hiddenFields: [],
-      filterInfo: {
-        // Lark may normalize a one-condition OR to AND; conjunction is semantically irrelevant here.
-        conjunction: 'and',
-        conditions: [{
-          fieldId: 'fld_readiness',
-          fieldType: 3,
-          operator: 'is',
-          value: JSON.stringify(reversed),
-        }],
-      },
-    },
-  };
-  const client = {
-    getView: async ({ viewId }) => {
-      assert.equal(viewId, 'vew_missing');
-      return structuredClone(view);
-    },
-  };
+  const reversed = [...expected.mutation.conditions].reverse();
+  const view = rawView('vew_missing', missingContract.viewName, 'or', reversed);
 
-  const plans = await buildLarkNativeAiSchemaViewPlans(client, {
+  const plans = await buildLarkNativeAiSchemaViewPlans(planClient(view), {
     table: { tableId: 'tbl_ai' },
     fields,
     views: [view],
@@ -178,7 +173,47 @@ test('accepts Lark canonical read-back for one-condition OR with reordered optio
     plans.find((item) => item.viewName === missingContract.viewName).state,
     'complete',
   );
-  assert.equal(plans.filter((item) => item.state === 'create').length, 5);
+});
+
+test('repairs only the exact collapsed one-value SingleSelect predecessor', async () => {
+  const fields = rawFields();
+  const expected = buildLarkNativeAiSchemaViewFilter(missingContract, fields);
+  const predecessor = expected.mutation.conditions[0];
+  const view = rawView('vew_missing', missingContract.viewName, 'and', [predecessor]);
+
+  const plans = await buildLarkNativeAiSchemaViewPlans(planClient(view), {
+    table: { tableId: 'tbl_ai' },
+    fields,
+    views: [view],
+  });
+
+  assert.equal(
+    plans.find((item) => item.viewName === missingContract.viewName).state,
+    'configure',
+  );
+  assert.equal(plans.filter((item) => item.state === 'configure').length, 1);
+});
+
+test('fails closed when the collapsed predecessor value is outside the accepted set', async () => {
+  const fields = rawFields();
+  const view = rawView('vew_missing', missingContract.viewName, 'and', [{
+    fieldId: 'fld_readiness',
+    fieldType: 3,
+    operator: 'is',
+    value: ['opt_available'],
+  }]);
+
+  await assert.rejects(
+    buildLarkNativeAiSchemaViewPlans(planClient(view), {
+      table: { tableId: 'tbl_ai' },
+      fields,
+      views: [view],
+    }),
+    (error) => error?.code === 'LARK_NATIVE_AI_SCHEMA_APPLY_VIEW_FILTER_CONFLICT'
+      && error.details?.viewName === missingContract.viewName
+      && error.details?.readback?.actual?.totalValueCount === 1
+      && error.details?.readback?.expected?.totalValueCount === 6,
+  );
 });
 
 test('normalizes only semantically irrelevant presentation differences', () => {
@@ -204,32 +239,31 @@ test('normalizes only semantically irrelevant presentation differences', () => {
   assert.equal(multiple.conjunction, 'or');
 });
 
-test('emits structural conflict diagnostics without raw IDs or values', () => {
+test('emits structural diagnostics matching the proven one-of-six Live collapse', () => {
   const fields = rawFields();
   const expected = buildLarkNativeAiSchemaViewFilter(missingContract, fields).comparable;
-  const values = expected.conditions[0].values;
   const actual = normalizeLarkNativeAiSchemaComparableViewFilter({
-    conjunction: 'or',
-    conditions: values.map((value) => ({
+    conjunction: 'and',
+    conditions: [{
       fieldId: 'fld_readiness',
       fieldType: 3,
       operator: 'is',
-      values: [value],
-    })),
+      values: [expected.conditions[0].values[0]],
+    }],
   });
 
   const details = buildLarkNativeAiSchemaViewFilterConflictDetails(actual, expected, fields);
 
-  assert.equal(details.actual.conditionCount, 6);
-  assert.equal(details.actual.totalValueCount, 6);
-  assert.equal(details.expected.conditionCount, 1);
+  assert.equal(details.actual.conditionCount, 1);
+  assert.equal(details.actual.totalValueCount, 1);
+  assert.equal(details.expected.conditionCount, 6);
   assert.equal(details.expected.totalValueCount, 6);
   assert.equal(details.actual.conditions[0].fieldName, 'readiness_status');
   assert.equal(details.comparison.fieldSetMatches, true);
   assert.equal(details.comparison.conditionCountMatches, false);
   assert.equal(details.comparison.conditionFieldMultiplicityMatches, false);
-  assert.equal(details.comparison.totalValueCountMatches, true);
-  assert.equal(details.comparison.flattenedValueMembershipMatches, true);
+  assert.equal(details.comparison.totalValueCountMatches, false);
+  assert.equal(details.comparison.flattenedValueMembershipMatches, false);
   assert.equal(details.comparison.conditionGroupingMatches, false);
 
   const serialized = JSON.stringify(details);
@@ -241,27 +275,15 @@ test('emits structural conflict diagnostics without raw IDs or values', () => {
 test('keeps conjunction strict when multiple conditions are present', async () => {
   const fields = rawFields();
   const expected = buildLarkNativeAiSchemaViewFilter(notificationContract, fields);
-  const view = {
-    viewId: 'vew_notification',
-    viewName: notificationContract.viewName,
-    viewType: 'grid',
-    property: {
-      hiddenFields: [],
-      filterInfo: {
-        conjunction: 'or',
-        conditions: expected.mutation.conditions.map((condition) => ({
-          fieldId: condition.fieldId,
-          fieldType: condition.fieldType,
-          operator: condition.operator,
-          value: JSON.stringify(condition.value),
-        })),
-      },
-    },
-  };
-  const client = { getView: async () => structuredClone(view) };
+  const view = rawView(
+    'vew_notification',
+    notificationContract.viewName,
+    'or',
+    expected.mutation.conditions,
+  );
 
   await assert.rejects(
-    buildLarkNativeAiSchemaViewPlans(client, {
+    buildLarkNativeAiSchemaViewPlans(planClient(view), {
       table: { tableId: 'tbl_ai' },
       fields,
       views: [view],
@@ -269,6 +291,25 @@ test('keeps conjunction strict when multiple conditions are present', async () =
     (error) => error?.code === 'LARK_NATIVE_AI_SCHEMA_APPLY_VIEW_FILTER_CONFLICT'
       && error.details?.viewName === notificationContract.viewName
       && error.details?.readback?.comparison?.conjunctionMatches === false,
+  );
+});
+
+test('fails closed for unsupported SingleSelect multi-value all-of contracts', () => {
+  const unsupported = {
+    viewName: 'Unsupported',
+    logicalFilter: {
+      mode: 'all_of',
+      conditions: [{
+        fieldName: 'readiness_status',
+        operator: 'in',
+        values: ['report_partial', 'report_missing'],
+      }],
+    },
+  };
+
+  assert.throws(
+    () => buildLarkNativeAiSchemaViewFilter(unsupported, rawFields()),
+    (error) => error?.code === 'LARK_NATIVE_AI_SCHEMA_APPLY_SINGLE_SELECT_MULTI_VALUE_UNSUPPORTED',
   );
 });
 

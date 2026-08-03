@@ -70,7 +70,8 @@ export async function buildLarkNativeAiSchemaViewPlans(client, raw) {
         state: 'complete',
         view,
       }));
-    } else if (isEmptyFilter(actual)) {
+    } else if (isEmptyFilter(actual)
+      || isAcceptedSingleSelectCollapsedPredecessor(actual, expected.comparable)) {
       plans.push(freezeSchemaValue({
         viewName: contract.viewName,
         contract,
@@ -92,13 +93,15 @@ export async function buildLarkNativeAiSchemaViewPlans(client, raw) {
 
 /**
  * Resolve the logical name-based filter contract to the exact OpenAPI values.
- * SingleSelect/MultiSelect conditions must use option IDs returned by live Field metadata.
+ * SingleSelect/MultiSelect conditions use option IDs returned by live Field metadata.
+ * A SingleSelect `in` under `any_of` is encoded as one OR condition per option because
+ * Lark retains only one value for a SingleSelect `is` condition.
  */
 export function buildLarkNativeAiSchemaViewFilter(contract, rawFields) {
   const logical = contract.logicalFilter;
   if (logical.mode === 'all_rows') return null;
 
-  const conditions = logical.conditions.map((condition) => {
+  const conditions = logical.conditions.flatMap((condition) => {
     const field = requireUniqueRawField(rawFields, condition.fieldName);
     const operator = ['equals', 'in'].includes(condition.operator) ? 'is' : null;
     if (!operator) {
@@ -109,12 +112,37 @@ export function buildLarkNativeAiSchemaViewFilter(contract, rawFields) {
       );
     }
 
-    return {
+    const resolved = {
       fieldId: requireText(field.fieldId, `${condition.fieldName}.fieldId`),
       fieldType: Number(field.type),
       operator,
       values: resolveFilterValues(field, condition.values),
     };
+
+    if (condition.operator === 'equals' && resolved.values.length !== 1) {
+      throw schemaApplyFailure(
+        'View filter equals requires exactly one value',
+        'LARK_NATIVE_AI_SCHEMA_APPLY_VIEW_FILTER_VALUE_CARDINALITY_INVALID',
+        { fieldName: condition.fieldName, operator: condition.operator },
+      );
+    }
+
+    if (resolved.fieldType === 3 && resolved.values.length > 1) {
+      if (condition.operator !== 'in' || logical.mode !== 'any_of') {
+        throw schemaApplyFailure(
+          'SingleSelect multi-value View filter requires any_of with in',
+          'LARK_NATIVE_AI_SCHEMA_APPLY_SINGLE_SELECT_MULTI_VALUE_UNSUPPORTED',
+          {
+            fieldName: condition.fieldName,
+            operator: condition.operator,
+            mode: logical.mode,
+          },
+        );
+      }
+      return resolved.values.map((value) => ({ ...resolved, values: [value] }));
+    }
+
+    return [resolved];
   }).sort(compareFilterConditions);
 
   const conjunction = logical.mode === 'any_of' ? 'or' : 'and';
@@ -134,8 +162,8 @@ export function buildLarkNativeAiSchemaViewFilter(contract, rawFields) {
 
 /**
  * Compare View filters by meaning rather than unstable OpenAPI presentation details.
- * Conjunction is irrelevant for zero/one condition, and values inside one `is` condition
- * are a set whose order may be rewritten by Lark during read-back.
+ * Conjunction is irrelevant for zero/one condition, and values inside one condition
+ * are sorted because Lark may reorder them during read-back.
  */
 export function normalizeLarkNativeAiSchemaComparableViewFilter(value) {
   const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
@@ -189,6 +217,30 @@ export function buildLarkNativeAiSchemaViewFilterConflictDetails(actual, expecte
         === canonicalSchemaValue(groupedConditionValueCounts(expected)),
     },
   });
+}
+
+function isAcceptedSingleSelectCollapsedPredecessor(actual, expected) {
+  if (actual.conditions.length !== 1
+    || expected.conditions.length <= 1
+    || expected.conjunction !== 'or') return false;
+
+  const actualCondition = actual.conditions[0];
+  if (actualCondition.fieldType !== 3
+    || actualCondition.operator !== 'is'
+    || actualCondition.values.length !== 1) return false;
+
+  const expectedValues = [];
+  for (const condition of expected.conditions) {
+    if (condition.fieldId !== actualCondition.fieldId
+      || condition.fieldType !== 3
+      || condition.operator !== 'is'
+      || condition.values.length !== 1) return false;
+    expectedValues.push(condition.values[0]);
+  }
+
+  const uniqueExpected = new Set(expectedValues.map(canonicalSchemaValue));
+  if (uniqueExpected.size !== expectedValues.length) return false;
+  return uniqueExpected.has(canonicalSchemaValue(actualCondition.values[0]));
 }
 
 function buildLarkNativeAiSchemaViewFilterConflict(viewName, actual, expected, rawFields) {
