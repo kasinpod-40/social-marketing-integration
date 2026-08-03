@@ -283,6 +283,9 @@ test('operator is read-only and never contains Worker or Queue mutation commands
   assert.match(source, /PRAGMA table_info/u);
   assert.match(source, /\bSELECT\b/u);
   assert.doesNotMatch(source, /[`'"]\s*(?:INSERT|UPDATE|DELETE|REPLACE)\b/iu);
+  assert.match(source, /readLarkTableIdsFromEnv/u);
+  assert.match(source, /'mktAdsAdGroups'/u);
+  assert.doesNotMatch(source, /LARK_TABLE_MKT_ADS_AD_GROUPS/u);
   assert.match(source, /d1ReadCount: 8/u);
   assert.match(source, /larkSchemaReadCount/u);
   assert.match(source, /larkRecordReadCount: larkAudit\.recordReadCount/u);
