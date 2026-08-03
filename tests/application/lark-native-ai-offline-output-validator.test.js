@@ -157,6 +157,8 @@ test('multi-currency aggregation is rejected without conversion evidence', async
   const fixture = createLarkNativeAiOfflineFixture('multi_currency_rejection');
   const bundle = await buildLarkNativeAiOfflineBundle(fixture.input);
   const output = fixture.outputMutator(renderLarkNativeAiOfflinePreview(bundle), bundle);
+  const executive = output.sections.find(({ sectionId }) => sectionId === 'executive_summary');
+  delete executive.statements[0].platform;
   assert.throws(
     () => validateLarkNativeAiOfflineOutput(bundle, output),
     (error) => error?.code === 'AI_MULTI_CURRENCY_AGGREGATION_FORBIDDEN',
