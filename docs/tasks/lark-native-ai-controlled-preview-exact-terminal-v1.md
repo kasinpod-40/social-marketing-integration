@@ -2,76 +2,89 @@
 
 ## Objective
 
-Provide one reviewed Terminal entrypoint that consumes one private retained real-data package, builds the exact approved `1D / 3D / 7D / 30D` readiness set, applies at most 40 Preview Records to `🧠 MKT_AI_Report_Runs`, and performs a separate same-input replay that must converge to `40 no_op / 0 writes`.
+Provide one reviewed Terminal entrypoint that automatically reads the existing validated TikTok Organic Report outputs for `1D / 3D / 7D / 30D`, builds the all-channel Controlled Preview authority, applies at most 40 Preview Records to `🧠 MKT_AI_Report_Runs`, and performs a separate same-input replay that must converge to `40 no_op / 0 writes`.
 
-The operator removes pasted heredocs, caller-entered SHA values, manual approval JSON and manually assembled Live Pilot input from the user workflow.
+The user does not prepare JSON, enter a SHA, construct approval evidence, locate retained files or paste a heredoc.
 
-## Command
-
-Run from the repository root on `main`:
+## Exact user command
 
 ```bash
-CONFIRM_LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXACT_TERMINAL=RUN_LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXACT_TERMINAL node scripts/lark-native-ai-controlled-preview-exact-terminal.mjs --execute
+cd /Users/wasanjantawong/Git/social-marketing-integration && CONFIRM_LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXACT_TERMINAL=RUN_LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXACT_TERMINAL node scripts/lark-native-ai-controlled-preview-exact-terminal.mjs --execute
 ```
 
-There are no placeholders in this command. The operator discovers the exact local Head and binds approval itself.
+The command contains no placeholder and uses the user's locked repository path.
 
-## Required retained source package
-
-Default path:
+## Visible Lark result
 
 ```text
-outputs/lark-native-ai-controlled-preview/retained-real-report-source.json
+TikTok Organic Golden Dataset  × 1D/3D/7D/30D = 4 rows
+Other eight business channels × 1D/3D/7D/30D = 32 truthful status rows
+Executive                     × 1D/3D/7D/30D = 4 rows
+Total                                                  40 rows
 ```
 
-Optional path override is accepted only through:
+Only TikTok Report values already validated in `MKT_Report_Snapshots` and `MKT_Report_Metric_Values` are admitted in this first proof. Other channels remain `source_pending` or `unavailable`; the operator does not infer values, reuse an unaligned period or convert missing data to zero.
 
-```text
-MKT_LARK_NATIVE_AI_CONTROLLED_PREVIEW_SOURCE_PACKAGE
-```
+## Local preflight before any Remote read
 
-The file must:
+The operator reports all detected local blockers together:
 
-- be a regular non-symlink file inside the repository working tree;
-- use mode `0600`;
-- be no larger than 16 MiB;
-- use schema `lark_native_ai_controlled_preview_retained_source_package_v1`;
-- use contract `lark_native_ai_controlled_preview_exact_terminal_v1`;
-- bind the exact current `main` Head;
-- contain a recomputable package SHA-256;
-- prove `retained_real_validated_report_evidence` with `fixtureData=false`;
-- contain exact Offline inputs for unique windows `1, 3, 7, 30`;
-- contain schema zero-drift authority with exact `6/6` View filters;
-- contain a retained safe-state authority captured after the prior Terminal stopped;
-- prove Remote lock released, all Worker flags false, Preview URLs disabled, Schedule disabled and Production blocked.
+- Node.js 22 or newer;
+- `git fetch origin main` succeeds;
+- branch exactly `main`;
+- clean working tree;
+- local Head exactly equals fetched `origin/main`;
+- `wrangler.sync.jsonc` loads and targets `social-mkt-sync-worker`;
+- `workers_dev=false`;
+- `MKT_ENV=development`;
+- `MKT_CUSTOMER_PROFILE=integration_workspace`;
+- every `MKT_*_ENABLED` flag is false;
+- Lark App ID, App Secret and Base token exist;
+- Report Snapshot and Metric table mappings exist;
+- `.dev.vars`, when present, is a regular non-symlink private file with mode `0600`.
 
-Fixture, dummy, placeholder and sample generation identities are rejected before any Lark request.
+A missing `.dev.vars` is allowed when the complete credentials are already present in process Environment.
 
 ## Exact execution sequence
 
 ```text
-explicit confirmation
-→ Node.js >= 22
-→ git fetch origin main
-→ local branch=main / clean / HEAD=origin/main
-→ acquire private local execution lock
-→ validate source path/type/mode/size/JSON/checksum/Head
-→ validate schema and Remote safe-state authority
-→ validate exact 1D/3D/7D/30D real-data topology
+explicit sequential Terminal confirmation
+→ Node and repository preflight
+→ local config/credential/mapping preflight
+→ acquire private exclusive local lock
 → create a new immutable attempt directory
-→ build four readiness plans with deterministic Head-bound approval
-→ write private Live Pilot input
-→ run bounded first pass
+→ read Lark table/field/view metadata through a read-only allowlist
+→ require AI schema zero drift and exact View filters 6/6
+→ read TikTok Report Snapshots for exact setting keys 1D/3D/7D/30D
+→ select one unique latest snapshot per window, no older than seven days
+→ read Metric rows for those four exact report_id values
+→ reject missing/duplicate/conflicting Report evidence
+→ build and checksum the retained real-data source package automatically
+→ build four exact Head-bound readiness plans
+→ run bounded first-pass create/update
 → require fresh zero-drift read-back
 → run a separate same-input replay
 → require 40 no-op / 0 writes
 → write private summary
-→ release local execution lock
+→ release the local lock
 ```
 
-## Client boundary locked by the parent operator
+## Source read-only allowlist
 
-The child Live Pilot receives fixed values regardless of local Environment overrides:
+Before any AI-table write, the parent operator permits only:
+
+- tenant token;
+- List Tables;
+- List Fields for the AI table;
+- List/Get the six AI Views;
+- Search Report Snapshots by four exact `report_setting_key` values;
+- Search Report Metric rows by four exact `report_id` values.
+
+No Record create/update/delete is reachable from the source collector. Any other path or method is blocked before fetch.
+
+## Write boundary
+
+The existing merged Live Pilot remains the sole writer. Its child Environment is fixed regardless of local overrides:
 
 ```text
 LARK_MAX_ATTEMPTS=1
@@ -81,68 +94,62 @@ LARK_REQUEST_TIMEOUT_MS=30000
 LARK_MIN_REQUEST_INTERVAL_MS=150
 ```
 
-This prevents hidden retry and pagination drift. A failed or ambiguous write is not retried automatically. A new reviewed run must search Stable keys again.
+The first pass permits only stable-key reads and at most 40 create/update writes to `🧠 MKT_AI_Report_Runs`. Delete, Schema, View, AI, Automation, notification, D1, Queue, Worker, Provider, Schedule and Production actions remain forbidden.
 
-## Remote allowlist
+A failed or ambiguous write is never retried automatically. A new explicit run starts by searching the Stable keys again.
 
-The existing Live Pilot guard remains authoritative:
+## Sequential Terminal authority
 
-- tenant token;
-- one Table inventory read;
-- Stable-key Record search by `ai_run_key` and `dedupe_key`;
-- at most one batch create and one batch update;
-- maximum 40 first-pass Record writes;
-- fresh verification read-back.
+PR closure is not used as the runtime mutex. The user explicitly runs this command only after the preceding Meta/Chatwoot Terminal command has ended and does not run both commands simultaneously.
 
-The exact Terminal adds a second child run that must perform zero Record writes.
+This exact operator additionally requires:
 
-Forbidden:
+- one exclusive local exact-terminal lock;
+- all local Integration Workspace execution flags false;
+- an isolated mutation surface limited to records in `🧠 MKT_AI_Report_Runs`;
+- no Worker, D1, Queue, Provider, Schedule or Production action.
 
-- Record delete;
-- Schema or View mutation;
-- AI call;
-- Automation or Group notification;
-- D1, Queue, Worker deployment or Provider action;
-- Schedule activation;
-- Production activation.
+The retained source package records this as `explicit_sequential_lark_only_handoff`; it does not claim that the source collector observed or changed a Worker deployment.
 
 ## Attempt evidence
 
-Each execution creates a new private `0700` directory under:
+Every execution creates a new private `0700` directory under:
 
 ```text
 outputs/lark-native-ai-controlled-preview/exact-terminal/
 ```
 
-Files are written with mode `0600` and never overwritten:
+Files use mode `0600` and are never overwritten:
 
 ```text
+00-retained-real-report-source.json
 live-pilot-input.json
 01-first-pass.json
 02-same-input-replay.json
 summary.json
 ```
 
-A stopped run writes `failure-summary.json` when an attempt directory already exists.
+A stopped run writes `failure-summary.json` after the attempt directory exists.
 
-The local lock file is:
+The exclusive lock is:
 
 ```text
 outputs/lark-native-ai-controlled-preview/exact-terminal/.exact-terminal.lock
 ```
 
-A pre-existing lock is never deleted automatically. The operator stops with `LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXACT_TERMINAL_LOCK_EXISTS` so the prior process/evidence can be inspected first.
+A pre-existing lock is never deleted automatically. The operator stops so the previous process/evidence can be inspected rather than assuming that the lock is stale.
 
 ## Expected success
 
-The first pass is accepted only as one of:
+First pass:
 
 ```text
-applied_and_verified  with 1..40 writes
-already_zero_drift    with 0 writes
+mode     applied_and_verified with 1..40 writes
+or       already_zero_drift   with 0 writes
+readback zero_drift
 ```
 
-The second pass must be exactly:
+Independent replay:
 
 ```text
 mode                 already_zero_drift
@@ -154,36 +161,40 @@ writes.total          0
 ## Important failure codes
 
 ```text
-..._MAIN_REQUIRED                 wrong branch
-..._CLEAN_REQUIRED                working tree changed
-..._MAIN_NOT_CURRENT              local main differs from fetched origin/main
-..._LOCK_EXISTS                   another exact-terminal attempt or retained stale lock exists
-..._SOURCE_PACKAGE_NOT_FOUND      exact source path missing
-..._SOURCE_PACKAGE_MODE_INVALID   source file is not mode 0600
-..._SOURCE_PACKAGE_CHECKSUM_INVALID content changed after retention
-..._SOURCE_PACKAGE_HEAD_MISMATCH  source evidence is stale for current main
-..._SOURCE_PACKAGE_REMOTE_AUTHORITY_INVALID prior Terminal did not prove safe release
-..._READINESS_NOT_READY           a real-data window failed readiness validation
-..._CHILD_FAILED                  Live Pilot stopped; no automatic retry occurred
-..._FIRST_PASS_INVALID            first pass exceeded or misreported reviewed boundaries
-..._REPLAY_INVALID                same-input rerun was not 40 no-op / zero writes
+..._LOCAL_PREFLIGHT_BLOCKED          all local blockers are returned together
+..._MAIN_NOT_CURRENT                 local main differs from fetched origin/main
+..._LOCK_EXISTS                      a prior exact-terminal process/lock remains
+..._SOURCE_READ_REQUEST_BLOCKED      collector attempted a non-read path
+..._SOURCE_READ_LIMIT_EXCEEDED       read footprint exceeded the reviewed bound
+..._SOURCE_SCHEMA_NOT_ZERO_DRIFT     AI table fields/options/views are not ready
+..._SOURCE_VIEW_FILTER_DRIFT         six required Views are not exact
+..._SOURCE_TABLE_MAPPING_INVALID     configured Report Table ID is not in the Base
+..._SOURCE_TIKTOK_REPORT_MISSING     an exact 1D/3D/7D/30D Report is missing
+..._SOURCE_TIKTOK_REPORT_AMBIGUOUS   latest identity is duplicated
+..._SOURCE_TIKTOK_REPORT_STALE       selected Report is older than seven days
+..._SOURCE_METRICS_MISSING           a selected Report has no Metric rows
+..._SOURCE_METRIC_DUPLICATE          report_metric_key is duplicated
+..._READINESS_NOT_READY              one generated readiness plan failed closed
+..._CHILD_FAILED                     Live Pilot stopped; no automatic retry occurred
+..._FIRST_PASS_INVALID               first pass exceeded/misreported its boundary
+..._REPLAY_INVALID                   replay was not 40 no-op / zero writes
 ```
 
-## Historical failure prevention
+## Recurring failure classes explicitly prevented
 
-This operator directly prevents recurring failure classes:
-
-- no shell heredoc or quoting-sensitive pasted JSON;
-- no manually typed SHA or approval timestamp;
-- no relative retained-evidence path guessed by the user;
-- no source file symlink or permissive mode;
+- no heredoc, shell quoting or pasted JSON;
+- no caller-entered SHA or approval timestamp;
+- no guessed retained-evidence path;
+- no hidden prerequisite source file;
 - no stale local main;
+- no permissive `.dev.vars`;
+- no missing Table mapping discovered after write starts;
 - no hidden Lark retry/page/filter override;
-- no input overwrite across attempts;
+- no overwrite of prior attempt evidence;
 - no automatic retry after partial/unknown write;
-- no success without an independent same-input replay;
-- no Fixture data written for demonstration.
+- no declared success without an independent same-input replay;
+- no Fixture, dummy, placeholder or sample data written for demonstration.
 
-## Current Live status
+## Current implementation status
 
-Repository implementation and CI perform zero Remote action. A Live run remains blocked until the retained source package exists and proves a safe sequential handoff after the prior Terminal stopped.
+Repository implementation and CI perform zero Remote request. Live Lark reads/writes occur only when the user runs the exact command after merge from a clean current `main`.
