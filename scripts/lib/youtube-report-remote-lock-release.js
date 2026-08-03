@@ -1,5 +1,5 @@
-import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { createHash } from 'node:crypto';
+import { inspectPrivateJsonFile } from './operator-terminal-reliability.js';
 
 export const YOUTUBE_REPORT_REMOTE_LOCK_RELEASE_ENV =
   'MKT_YOUTUBE_REPORT_REMOTE_LOCK_RELEASE_EVIDENCE';
@@ -16,20 +16,48 @@ export async function loadYouTubeReportRemoteLockReleaseEvidence(input = {}) {
     env[YOUTUBE_REPORT_REMOTE_LOCK_RELEASE_ENV],
     YOUTUBE_REPORT_REMOTE_LOCK_RELEASE_ENV,
   );
-  let evidence;
+  let retained;
   try {
-    evidence = JSON.parse(await readFile(resolve(configuredPath), 'utf8'));
+    retained = await inspectPrivateJsonFile(configuredPath, {
+      field: YOUTUBE_REPORT_REMOTE_LOCK_RELEASE_ENV,
+      label: 'Retained Meta Remote lock-release evidence',
+      requiredMode: 0o600,
+    });
   } catch (error) {
     throw lockReleaseError(
       'Unable to load retained Meta Remote lock-release evidence',
       'YOUTUBE_REPORT_REMOTE_LOCK_RELEASE_LOAD_FAILED',
-      { sourceCode: error?.code ?? null },
+      {
+        sourceCode: error?.code ?? null,
+        sourceDetails: sanitizeLockReleaseEvidence(error?.details ?? {}),
+      },
     );
   }
-  return assertYouTubeReportRemoteLockReleaseEvidence(evidence);
+  return assertYouTubeReportRemoteLockReleaseEvidence(retained.value, {
+    expectedHead: input.expectedHead ?? null,
+  });
 }
 
-export function assertYouTubeReportRemoteLockReleaseEvidence(value) {
+export function createYouTubeReportRemoteLockReleaseEvidence(input = {}) {
+  const auditHead = requireSha(input.auditHead, GIT_SHA, 'auditHead');
+  const capturedAt = nonNegativeInteger(input.capturedAt, 'capturedAt');
+  const repository = requireObject(input.repository, 'repository');
+  const runtime = requireObject(input.runtime, 'runtime');
+  const core = Object.freeze({
+    contractVersion: YOUTUBE_REPORT_REMOTE_LOCK_RELEASE_CONTRACT,
+    released: true,
+    auditHead,
+    capturedAt,
+    repository: Object.freeze({ ...repository }),
+    runtime: Object.freeze({ ...runtime }),
+  });
+  return Object.freeze({
+    ...core,
+    evidenceSha256: sha256(stableJson(core)),
+  });
+}
+
+export function assertYouTubeReportRemoteLockReleaseEvidence(value, options = {}) {
   const evidence = requireObject(value, 'lockReleaseEvidence');
   if (stableJson(sanitizeLockReleaseEvidence(evidence)) !== stableJson(evidence)) {
     throw lockReleaseError(
@@ -43,12 +71,20 @@ export function assertYouTubeReportRemoteLockReleaseEvidence(value) {
   const auditHead = requireSha(evidence.auditHead, GIT_SHA, 'auditHead');
   const evidenceSha256 = requireSha(evidence.evidenceSha256, SHA256, 'evidenceSha256');
   const capturedAt = nonNegativeInteger(evidence.capturedAt, 'capturedAt');
+  const expectedHead = options.expectedHead === null || options.expectedHead === undefined
+    ? null
+    : requireSha(options.expectedHead, GIT_SHA, 'expectedHead');
+  const { evidenceSha256: ignoredDigest, ...digestInput } = evidence;
+  void ignoredDigest;
+  const computedSha256 = sha256(stableJson(digestInput));
 
   if (evidence.contractVersion !== YOUTUBE_REPORT_REMOTE_LOCK_RELEASE_CONTRACT
     || evidence.released !== true
     || repository.clean !== true
     || repository.head !== auditHead
     || repository.reviewedHead !== auditHead
+    || (expectedHead !== null && auditHead !== expectedHead)
+    || evidenceSha256 !== computedSha256
     || runtime.allExecutionFlagsFalse !== true
     || runtime.previewUrlsDisabled !== true
     || runtime.scheduleEnabled !== false
@@ -59,6 +95,10 @@ export function assertYouTubeReportRemoteLockReleaseEvidence(value) {
     throw lockReleaseError(
       'Retained evidence does not prove an exact safe Meta Remote lock release',
       'YOUTUBE_REPORT_REMOTE_LOCK_RELEASE_INVALID',
+      {
+        exactHeadMatch: expectedHead === null ? null : auditHead === expectedHead,
+        evidenceDigestMatch: evidenceSha256 === computedSha256,
+      },
     );
   }
 
@@ -76,6 +116,10 @@ export function sanitizeLockReleaseEvidence(value) {
   return Object.fromEntries(Object.entries(value)
     .filter(([key]) => !BLOCKED_EVIDENCE_KEY.test(key))
     .map(([key, nested]) => [key, sanitizeLockReleaseEvidence(nested)]));
+}
+
+function sha256(value) {
+  return createHash('sha256').update(value).digest('hex');
 }
 
 function stableJson(value) {
