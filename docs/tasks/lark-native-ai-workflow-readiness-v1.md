@@ -50,10 +50,10 @@ Eligible AI Run → Lark Group Notification
 
 ## Exact destination contract
 
-กลุ่มเป้าหมาย:
+ผู้ใช้ยืนยันชื่อกลุ่มจริงที่ต้องใช้:
 
 ```text
-📊 Social MKT Executive Reports — Integration Workspace
+Social MKT Executive Reports
 ```
 
 Readiness ต้อง resolve exact group name ได้หนึ่งรายการจาก Lark Chat inventory และเทียบ SHA-256 ของ Chat ID กับ `group_id` ที่ไม่ว่างและไม่กำกวมใน `⚙️ MKT_Report_Settings` สำหรับ `integration_workspace`

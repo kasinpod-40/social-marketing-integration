@@ -11,8 +11,7 @@ export const LARK_NATIVE_AI_WORKFLOW_READINESS_OUTPUT_ROOT =
 export { LARK_NATIVE_AI_TARGET_TABLE, LARK_NOTIFICATION_LOG_TABLE_NAME };
 
 export const LARK_NATIVE_AI_SETTINGS_TABLE = '⚙️ MKT_Report_Settings';
-export const LARK_NATIVE_AI_TARGET_GROUP_NAME =
-  '📊 Social MKT Executive Reports — Integration Workspace';
+export const LARK_NATIVE_AI_TARGET_GROUP_NAME = 'Social MKT Executive Reports';
 
 export const LARK_NATIVE_AI_DISABLED_WORKFLOW_TITLES = Object.freeze([
   'AI Materialization → MKT_AI_Report_Runs',
