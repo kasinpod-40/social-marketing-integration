@@ -40,8 +40,8 @@ export async function applyLarkNativeAiControlledPreviewLivePilot(input = {}) {
     );
   }
 
-  assertBoundedPlan(executionPlan);
   if (executionPlan.status === 'zero_drift') {
+    assertZeroDriftPlan(executionPlan);
     return deepFreeze({
       ok: true,
       mode: 'already_zero_drift',
@@ -54,6 +54,7 @@ export async function applyLarkNativeAiControlledPreviewLivePilot(input = {}) {
     });
   }
 
+  assertBoundedWritePlan(executionPlan);
   const creates = executionPlan.actions
     .filter(({ action }) => action === 'create')
     .map(({ fields }) => structuredClone(fields));
@@ -93,19 +94,7 @@ export async function applyLarkNativeAiControlledPreviewLivePilot(input = {}) {
   }
 
   const verification = await buildPlanForTable({ client, repository, readinessPlans, table });
-  if (verification.plan.status !== 'zero_drift'
-    || verification.plan.counts.write !== 0
-    || verification.plan.counts.noOp !== LARK_NATIVE_AI_CONTROLLED_PREVIEW_LIVE_PILOT_LIMITS.expectedRows) {
-    throw pilotError(
-      'Controlled Preview Live Pilot did not converge to exact zero drift',
-      'LARK_NATIVE_AI_CONTROLLED_PREVIEW_LIVE_PILOT_ZERO_DRIFT_REQUIRED',
-      {
-        status: verification.plan.status,
-        counts: verification.plan.counts,
-        blockers: verification.plan.blockers,
-      },
-    );
-  }
+  assertZeroDriftPlan(verification.plan);
 
   return deepFreeze({
     ok: true,
@@ -187,7 +176,7 @@ async function resolveTargetTable(client) {
   return Object.freeze({ name: matches[0].name, tableId: matches[0].tableId });
 }
 
-function assertBoundedPlan(plan) {
+function assertBoundedWritePlan(plan) {
   const counts = plan?.counts ?? {};
   if (plan.status !== 'ready_to_apply'
     || counts.total !== LARK_NATIVE_AI_CONTROLLED_PREVIEW_LIVE_PILOT_LIMITS.expectedRows
@@ -197,9 +186,26 @@ function assertBoundedPlan(plan) {
     || plan.safety?.executionAuthorized !== false
     || plan.safety?.deleteActionCount !== 0) {
     throw pilotError(
-      'Controlled Preview execution plan is outside the reviewed Live Pilot boundary',
+      'Controlled Preview execution plan is outside the reviewed Live Pilot write boundary',
       'LARK_NATIVE_AI_CONTROLLED_PREVIEW_LIVE_PILOT_PLAN_INVALID',
       { status: plan?.status ?? null, counts },
+    );
+  }
+}
+
+function assertZeroDriftPlan(plan) {
+  const counts = plan?.counts ?? {};
+  if (plan.status !== 'zero_drift'
+    || counts.total !== LARK_NATIVE_AI_CONTROLLED_PREVIEW_LIVE_PILOT_LIMITS.expectedRows
+    || counts.write !== 0
+    || counts.noOp !== LARK_NATIVE_AI_CONTROLLED_PREVIEW_LIVE_PILOT_LIMITS.expectedRows
+    || counts.delete !== 0
+    || plan.safety?.executionAuthorized !== false
+    || plan.safety?.deleteActionCount !== 0) {
+    throw pilotError(
+      'Controlled Preview Live Pilot did not converge to exact zero drift',
+      'LARK_NATIVE_AI_CONTROLLED_PREVIEW_LIVE_PILOT_ZERO_DRIFT_REQUIRED',
+      { status: plan?.status ?? null, counts, blockers: plan?.blockers ?? [] },
     );
   }
 }
