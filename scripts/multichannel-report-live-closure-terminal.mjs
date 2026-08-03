@@ -75,11 +75,22 @@ export async function buildYouTubeFirstAdopterPlan(input = {}) {
       'Shared Report closeout operator did not return successful reviewed evidence',
       'REPORT_LIVE_CLOSURE_SHARED_OPERATOR_FAILED',
     );
-    return Object.freeze({
-      ...sanitizeReportLiveClosureEvidence(execution),
-      delegatedToSharedOperator: true,
-      sharedOperator: 'scripts/report-runtime-closeout-operator.mjs',
+    const result = sanitizeReportLiveClosureEvidence(execution);
+    Object.defineProperties(result, {
+      delegatedToSharedOperator: {
+        value: true,
+        enumerable: true,
+        writable: false,
+        configurable: false,
+      },
+      sharedOperator: {
+        value: 'scripts/report-runtime-closeout-operator.mjs',
+        enumerable: true,
+        writable: false,
+        configurable: false,
+      },
     });
+    return Object.freeze(result);
   }
 
   return Object.freeze({
