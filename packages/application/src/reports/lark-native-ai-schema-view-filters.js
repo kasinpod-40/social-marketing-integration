@@ -8,7 +8,6 @@ import {
   normalizeComparableFilter,
   requireUniqueRawField,
   schemaApplyFailure,
-  schemaViewConflict,
 } from './lark-native-ai-schema-apply-model.js';
 
 /**
@@ -50,7 +49,14 @@ export async function buildLarkNativeAiSchemaViewPlans(client, raw) {
     const expected = buildLarkNativeAiSchemaViewFilter(contract, raw.fields);
 
     if (expected === null) {
-      if (!isEmptyFilter(actual)) throw schemaViewConflict(contract.viewName);
+      if (!isEmptyFilter(actual)) {
+        throw buildLarkNativeAiSchemaViewFilterConflict(
+          contract.viewName,
+          actual,
+          normalizeLarkNativeAiSchemaComparableViewFilter(null),
+          raw.fields,
+        );
+      }
       plans.push(freezeSchemaValue({
         viewName: contract.viewName,
         contract,
@@ -72,7 +78,12 @@ export async function buildLarkNativeAiSchemaViewPlans(client, raw) {
         view,
       }));
     } else {
-      throw schemaViewConflict(contract.viewName);
+      throw buildLarkNativeAiSchemaViewFilterConflict(
+        contract.viewName,
+        actual,
+        expected.comparable,
+        raw.fields,
+      );
     }
   }
 
@@ -142,6 +153,137 @@ export function normalizeLarkNativeAiSchemaComparableViewFilter(value) {
       : (source.conjunction === 'or' ? 'or' : 'and'),
     conditions,
   });
+}
+
+/**
+ * Return only safe structural diagnostics for a conflicting View filter.
+ * Raw Table/Field/View/option IDs and raw filter values are intentionally excluded.
+ */
+export function buildLarkNativeAiSchemaViewFilterConflictDetails(actual, expected, rawFields) {
+  const fieldsById = new Map(rawFields.map((field) => [
+    field?.fieldId,
+    field?.fieldName ?? null,
+  ]));
+  const actualSummary = summarizeComparableFilter(actual, fieldsById);
+  const expectedSummary = summarizeComparableFilter(expected, fieldsById);
+
+  return freezeSchemaValue({
+    actual: actualSummary,
+    expected: expectedSummary,
+    comparison: {
+      conjunctionMatches: actual.conjunction === expected.conjunction,
+      conditionCountMatches: actual.conditions.length === expected.conditions.length,
+      conditionCountDelta: actual.conditions.length - expected.conditions.length,
+      fieldSetMatches: canonicalSchemaValue(uniqueConditionFieldIds(actual))
+        === canonicalSchemaValue(uniqueConditionFieldIds(expected)),
+      conditionFieldMultiplicityMatches: canonicalSchemaValue(conditionFieldMultiplicity(actual))
+        === canonicalSchemaValue(conditionFieldMultiplicity(expected)),
+      fieldTypeSequenceMatches: canonicalSchemaValue(conditionFieldTypes(actual))
+        === canonicalSchemaValue(conditionFieldTypes(expected)),
+      operatorSequenceMatches: canonicalSchemaValue(conditionOperators(actual))
+        === canonicalSchemaValue(conditionOperators(expected)),
+      totalValueCountMatches: countFilterValues(actual) === countFilterValues(expected),
+      flattenedValueMembershipMatches: canonicalSchemaValue(flattenValuesByConditionIdentity(actual))
+        === canonicalSchemaValue(flattenValuesByConditionIdentity(expected)),
+      conditionGroupingMatches: canonicalSchemaValue(groupedConditionValueCounts(actual))
+        === canonicalSchemaValue(groupedConditionValueCounts(expected)),
+    },
+  });
+}
+
+function buildLarkNativeAiSchemaViewFilterConflict(viewName, actual, expected, rawFields) {
+  return schemaApplyFailure(
+    'Existing required View filter conflicts with the accepted contract',
+    'LARK_NATIVE_AI_SCHEMA_APPLY_VIEW_FILTER_CONFLICT',
+    {
+      viewName,
+      readback: buildLarkNativeAiSchemaViewFilterConflictDetails(actual, expected, rawFields),
+    },
+  );
+}
+
+function summarizeComparableFilter(filter, fieldsById) {
+  return freezeSchemaValue({
+    conjunction: filter.conjunction,
+    conditionCount: filter.conditions.length,
+    totalValueCount: countFilterValues(filter),
+    conditions: filter.conditions.map((condition) => ({
+      fieldName: fieldsById.get(condition.fieldId) ?? 'unknown_field',
+      fieldType: normalizeDiagnosticFieldType(condition.fieldType),
+      operator: typeof condition.operator === 'string' ? condition.operator : null,
+      valueCount: Array.isArray(condition.values) ? condition.values.length : 0,
+      scalarTypes: summarizeScalarTypes(condition.values),
+    })),
+  });
+}
+
+function uniqueConditionFieldIds(filter) {
+  return [...new Set(filter.conditions.map((condition) => String(condition.fieldId)))].sort();
+}
+
+function conditionFieldMultiplicity(filter) {
+  const counts = new Map();
+  for (const condition of filter.conditions) {
+    const key = String(condition.fieldId);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return [...counts.entries()].sort(([left], [right]) => left.localeCompare(right));
+}
+
+function conditionFieldTypes(filter) {
+  return filter.conditions.map((condition) => normalizeDiagnosticFieldType(condition.fieldType));
+}
+
+function conditionOperators(filter) {
+  return filter.conditions.map((condition) => (
+    typeof condition.operator === 'string' ? condition.operator : null
+  ));
+}
+
+function countFilterValues(filter) {
+  return filter.conditions.reduce((total, condition) => (
+    total + (Array.isArray(condition.values) ? condition.values.length : 0)
+  ), 0);
+}
+
+function flattenValuesByConditionIdentity(filter) {
+  const grouped = new Map();
+  for (const condition of filter.conditions) {
+    const key = canonicalSchemaValue({
+      fieldId: condition.fieldId,
+      fieldType: normalizeDiagnosticFieldType(condition.fieldType),
+      operator: condition.operator ?? null,
+    });
+    const values = grouped.get(key) ?? [];
+    values.push(...sortFilterValues(condition.values));
+    grouped.set(key, values);
+  }
+  return [...grouped.entries()]
+    .map(([key, values]) => [key, sortFilterValues(values)])
+    .sort(([left], [right]) => left.localeCompare(right));
+}
+
+function groupedConditionValueCounts(filter) {
+  return filter.conditions.map((condition) => ({
+    fieldId: condition.fieldId,
+    fieldType: normalizeDiagnosticFieldType(condition.fieldType),
+    operator: condition.operator ?? null,
+    valueCount: Array.isArray(condition.values) ? condition.values.length : 0,
+  })).sort((left, right) => canonicalSchemaValue(left).localeCompare(canonicalSchemaValue(right)));
+}
+
+function summarizeScalarTypes(values) {
+  if (!Array.isArray(values)) return [];
+  return [...new Set(values.map((value) => {
+    if (value === null) return 'null';
+    if (Array.isArray(value)) return 'array';
+    return typeof value;
+  }))].sort();
+}
+
+function normalizeDiagnosticFieldType(value) {
+  const number = Number(value);
+  return Number.isInteger(number) && number > 0 ? number : null;
 }
 
 function resolveFilterValues(field, values) {
