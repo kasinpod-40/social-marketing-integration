@@ -36,6 +36,7 @@ function completeInput() {
       contentStateCount: 837,
       observationCount: 837,
       accountFactCount: 1,
+      sourceWatermark: 'youtube-coverage-2026-07-31',
       watermarkDate: '2026-07-31',
       reportingTimezone: 'Asia/Bangkok',
     },
@@ -80,8 +81,18 @@ test('builds the exact evidence shape consumed by the existing YouTube assessor'
   assert.equal(evidence.runtime.bindingsMatch, true);
   assert.equal(evidence.source.contentCoverageStatus, 'completed');
   assert.equal(evidence.source.contentEntityCount, 837);
+  assert.equal(evidence.source.sourceWatermark, 'youtube-coverage-2026-07-31');
+  assert.equal(evidence.source.watermarkDate, '2026-07-31');
   assert.deepEqual(evidence.lark.windowOptions, [1, 3, 7, 30]);
   assert.deepEqual(evidence.windows.map((row) => row.windowDays), [1, 3, 7, 30]);
+});
+
+test('keeps missing exact source watermark explicit instead of substituting watermark date', () => {
+  const input = completeInput();
+  delete input.source.sourceWatermark;
+  const evidence = buildYouTubeRemoteReadinessEvidence(input);
+  assert.equal(evidence.source.sourceWatermark, null);
+  assert.equal(evidence.source.watermarkDate, '2026-07-31');
 });
 
 test('fails closed when execution flags are present', () => {
