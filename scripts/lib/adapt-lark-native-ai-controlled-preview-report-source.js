@@ -64,9 +64,21 @@ export async function adaptLarkNativeAiControlledPreviewReportSource(value) {
           );
         }
         const currentValue = finiteOrNull(row.current_value ?? row.currentValue, `${label}.current_value`);
-        const observed = currentValue !== null
-          && reportAvailability !== 'source_unavailable'
-          && reportAvailability !== 'not_observed';
+        if (aiAvailability === 'available' && currentValue === null) {
+          throw exactTerminalError(
+            'An available Report Metric must contain a current value',
+            'LARK_NATIVE_AI_CONTROLLED_PREVIEW_SOURCE_METRIC_VALUE_MISSING',
+            { reportAvailability, label },
+          );
+        }
+        if (aiAvailability === 'not_available' && currentValue !== null) {
+          throw exactTerminalError(
+            'A non-available Report Metric cannot retain a stale current value',
+            'LARK_NATIVE_AI_CONTROLLED_PREVIEW_SOURCE_METRIC_STALE_VALUE',
+            { reportAvailability, label },
+          );
+        }
+        const observed = currentValue !== null && aiAvailability !== 'not_available';
 
         row.source_metric_scope = sourceMetricScope;
         row.metric_scope = dimensionType === 'summary' ? 'summary' : sourceMetricScope;
