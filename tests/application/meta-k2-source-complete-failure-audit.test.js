@@ -176,6 +176,7 @@ test('operator is read-only and never contains Worker or Queue mutation commands
   assert.match(source, /PRAGMA table_info/u);
   assert.match(source, /\bSELECT\b/u);
   assert.doesNotMatch(source, /[`'"]\s*(?:INSERT|UPDATE|DELETE|REPLACE)\b/iu);
+  assert.match(source, /d1ReadCount: 8/u);
   assert.match(source, /recoveryAuthorized: false/u);
   assert.match(source, /rawPayloadPrinted: false/u);
 });
