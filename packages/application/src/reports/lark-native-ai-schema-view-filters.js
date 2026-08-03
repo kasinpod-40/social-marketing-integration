@@ -44,7 +44,9 @@ export async function buildLarkNativeAiSchemaViewPlans(client, raw) {
       tableId: requireText(raw.table?.tableId, 'tableId'),
       viewId: requireText(view.viewId, `${contract.viewName}.viewId`),
     });
-    const actual = normalizeComparableFilter(hydrated?.property?.filterInfo);
+    const actual = normalizeLarkNativeAiSchemaComparableViewFilter(
+      normalizeComparableFilter(hydrated?.property?.filterInfo),
+    );
     const expected = buildLarkNativeAiSchemaViewFilter(contract, raw.fields);
 
     if (expected === null) {
@@ -106,7 +108,7 @@ export function buildLarkNativeAiSchemaViewFilter(contract, rawFields) {
 
   const conjunction = logical.mode === 'any_of' ? 'or' : 'and';
   return freezeSchemaValue({
-    comparable: { conjunction, conditions },
+    comparable: normalizeLarkNativeAiSchemaComparableViewFilter({ conjunction, conditions }),
     mutation: {
       conjunction,
       conditions: conditions.map((condition) => ({
@@ -116,6 +118,29 @@ export function buildLarkNativeAiSchemaViewFilter(contract, rawFields) {
         value: condition.values,
       })),
     },
+  });
+}
+
+/**
+ * Compare View filters by meaning rather than unstable OpenAPI presentation details.
+ * Conjunction is irrelevant for zero/one condition, and values inside one `is` condition
+ * are a set whose order may be rewritten by Lark during read-back.
+ */
+export function normalizeLarkNativeAiSchemaComparableViewFilter(value) {
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const conditions = Array.isArray(source.conditions)
+    ? source.conditions.map((condition) => ({
+      fieldId: condition?.fieldId ?? null,
+      fieldType: Number(condition?.fieldType),
+      operator: condition?.operator ?? null,
+      values: sortFilterValues(condition?.values),
+    })).sort(compareFilterConditions)
+    : [];
+  return freezeSchemaValue({
+    conjunction: conditions.length <= 1
+      ? 'and'
+      : (source.conjunction === 'or' ? 'or' : 'and'),
+    conditions,
   });
 }
 
@@ -191,6 +216,13 @@ function resolveSelectOptionId(field, logicalValue) {
   }
 
   return requireText(matches[0].id, `${field.fieldName}.${optionName}.optionId`);
+}
+
+function sortFilterValues(value) {
+  if (!Array.isArray(value)) return [];
+  return [...value].sort((left, right) => (
+    canonicalSchemaValue(left).localeCompare(canonicalSchemaValue(right))
+  ));
 }
 
 function groupBy(items, key) {
