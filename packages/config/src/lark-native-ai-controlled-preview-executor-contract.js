@@ -1,6 +1,7 @@
 import {
   LARK_NATIVE_AI_CONTROLLED_PREVIEW_PLAN_SCHEMA_VERSION,
   LARK_NATIVE_AI_CONTROLLED_PREVIEW_REQUIRED_LARK_FIELDS,
+  LARK_NATIVE_AI_CONTROLLED_PREVIEW_ROW_CHANNELS,
   LARK_NATIVE_AI_CONTROLLED_PREVIEW_SUPPORTED_WINDOWS,
   LARK_NATIVE_AI_CONTROLLED_PREVIEW_TARGET_TABLE,
 } from './lark-native-ai-controlled-preview-contract.js';
@@ -15,6 +16,11 @@ export const LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_TARGET_TABLE =
   LARK_NATIVE_AI_CONTROLLED_PREVIEW_TARGET_TABLE;
 export const LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_WINDOWS =
   LARK_NATIVE_AI_CONTROLLED_PREVIEW_SUPPORTED_WINDOWS;
+
+export const LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_CHANNEL_KEYS = Object.freeze([
+  ...LARK_NATIVE_AI_CONTROLLED_PREVIEW_ROW_CHANNELS.map(({ channelKey }) => channelKey),
+  'executive',
+]);
 
 export const LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_STATUSES = Object.freeze([
   'blocked',
@@ -48,6 +54,27 @@ const excluded = new Set([
 export const LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_MANAGED_FIELDS = Object.freeze(
   LARK_NATIVE_AI_CONTROLLED_PREVIEW_REQUIRED_LARK_FIELDS.filter((field) => !excluded.has(field)),
 );
+
+export const LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_OUTPUT_INVALIDATING_FIELDS = Object.freeze([
+  'report_id',
+  'platforms',
+  'report_type',
+  'metric_summary_json',
+  'scope_type',
+  'channel_key',
+  'capability',
+  'account_id',
+  'window_days',
+  'data_status',
+  'readiness_status',
+  'coverage_rate',
+  'source_report_ids_json',
+  'source_report_checksum',
+  'channel_status_vector_json',
+  'severity',
+  'template_version',
+  'generated_at',
+]);
 
 export const LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_REQUIRED_FIELDS =
   LARK_NATIVE_AI_CONTROLLED_PREVIEW_REQUIRED_LARK_FIELDS;
