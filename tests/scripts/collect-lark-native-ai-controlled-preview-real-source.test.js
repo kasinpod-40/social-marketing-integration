@@ -131,9 +131,8 @@ test('collector and taxonomy adapter pass the real four-window readiness stack',
     assert.equal(plan.blockers.length, 0);
     assert.equal(plan.schemaAuthority.status, 'zero_drift');
     assert.equal(plan.remoteAuthority.metaRemoteLockReleased, true);
-    assert.equal(plan.goldenDataset.platform, 'tiktok');
-    assert.equal(plan.goldenDataset.complete, true);
-    assert.equal(plan.goldenDataset.fresh, true);
+    assert.equal(plan.larkPlan.rowCount, 10);
+    assert.equal(plan.larkPlan.expectedRowCount, 10);
   }
 });
 
