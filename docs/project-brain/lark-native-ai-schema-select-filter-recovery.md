@@ -44,26 +44,48 @@ LARK_NATIVE_AI_SCHEMA_APPLY_VIEW_FILTER_CONFLICT
 ⚠️ Missing / Partial Data
 ```
 
-## Current root cause
+PR #441 added semantic comparison for one-condition conjunction and unordered condition values.
 
-The remaining defect is comparator-only, not a failed schema mutation.
+## Third verification result
 
-`⚠️ Missing / Partial Data` has one logical `any_of` condition containing multiple accepted Select option IDs. For one condition, `and` and `or` are semantically equivalent, and option IDs inside one `is` condition are unordered. Lark may canonicalize either presentation during read-back.
+The post-PR #441 verification ran on clean exact:
 
-The prior comparator required exact conjunction text and exact value-array order, producing a false conflict after all remaining writes completed.
+```text
+main@78c1947fa525afb38b229c39f909e661d1a32e19
+```
 
-## Recovery rule
+It performed metadata reads only and stopped at the same View:
 
-Preserve all successful additive mutations. Never delete or recreate the 23 Fields, remove the two option extensions, roll back Views or rewrite accepted filters merely to match presentation order.
+```text
+metadataReadCount      9
+fieldCreateCount       0
+fieldUpdateCount       0
+viewCreateCount        0
+viewUpdateCount        0
+totalWriteCount        0
+code                   LARK_NATIVE_AI_SCHEMA_APPLY_VIEW_FILTER_CONFLICT
+viewName               ⚠️ Missing / Partial Data
+```
 
-Comparison must:
+Therefore conjunction normalization and value ordering alone do not explain the Live read-back. The exact remaining mismatch is not yet proven.
 
-- canonicalize zero/one-condition conjunction to `and`;
-- sort values inside each condition;
-- retain strict Field ID, Field type, operator and exact value membership checks;
-- retain strict conjunction checks for two or more conditions.
+## Current recovery rule
 
-The next post-merge exact-main run is expected to be metadata-read-only and return `already_zero_drift` with zero Remote writes. Live preflight remains authoritative and real semantic drift must still fail closed.
+Preserve every successful additive mutation. Do not delete, recreate, rename or rewrite any Field, option or View until the exact read-back difference is observed.
+
+The next Repository change is diagnostic-only. On a conflict it may retain only sanitized structural facts:
+
+- conjunction;
+- condition count;
+- accepted Field name, never Field ID;
+- Field type;
+- operator;
+- value count and scalar types;
+- Boolean comparisons for field set, condition multiplicity, total value count, flattened value membership and condition grouping.
+
+It must not retain Table/Field/View/option IDs or raw filter values.
+
+The next exact-main execution must remain metadata-read-only and is authorized only to collect this sanitized conflict evidence. No View repair is authorized from an unproven hypothesis.
 
 ## Safety
 
@@ -78,4 +100,4 @@ D1/Queue/Worker/Provider           0
 Production                         BLOCKED
 ```
 
-Success still requires final planner `zero_drift` and exact semantic filter parity for all six required Views.
+Final success still requires planner `zero_drift` and exact semantic filter parity for all six required Views.
