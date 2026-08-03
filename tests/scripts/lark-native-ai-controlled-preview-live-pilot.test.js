@@ -58,11 +58,11 @@ test('argument, confirmation and exact-main repository gates fail closed', () =>
   );
 });
 
-test('Remote guard permits only bounded Preview Record reads and writes', async () => {
+test('Remote guard permits bounded Preview Record inventory reads and writes', async () => {
   let underlyingCalls = 0;
   const guard = createLarkNativeAiControlledPreviewLivePilotFetchGuard(async () => {
     underlyingCalls += 1;
-    return new Response(JSON.stringify({ code: 0, data: { records: [] } }), {
+    return new Response(JSON.stringify({ code: 0, data: { records: [], items: [] } }), {
       status: 200,
       headers: { 'content-type': 'application/json' },
     });
@@ -71,11 +71,8 @@ test('Remote guard permits only bounded Preview Record reads and writes', async 
   const table = 'table-id';
   await guard.fetchImpl(`${BASE}/open-apis/auth/v3/tenant_access_token/internal`, { method: 'POST' });
   await guard.fetchImpl(`${BASE}/open-apis/bitable/v1/apps/${app}/tables`, { method: 'GET' });
-  await guard.fetchImpl(`${BASE}/open-apis/bitable/v1/apps/${app}/tables/${table}/records/search`, {
-    method: 'POST', body: JSON.stringify({ filter: {} }),
-  });
-  await guard.fetchImpl(`${BASE}/open-apis/bitable/v1/apps/${app}/tables/${table}/records/search`, {
-    method: 'POST', body: JSON.stringify({ filter: {} }),
+  await guard.fetchImpl(`${BASE}/open-apis/bitable/v1/apps/${app}/tables/${table}/records?page_size=500`, {
+    method: 'GET',
   });
   await guard.fetchImpl(`${BASE}/open-apis/bitable/v1/apps/${app}/tables/${table}/records/batch_create`, {
     method: 'POST', body: JSON.stringify({ records: Array.from({ length: 20 }, () => ({ fields: {} })) }),
@@ -84,7 +81,8 @@ test('Remote guard permits only bounded Preview Record reads and writes', async 
     method: 'POST', body: JSON.stringify({ records: Array.from({ length: 20 }, () => ({ record_id: 'x', fields: {} })) }),
   });
   const counters = guard.snapshot();
-  assert.equal(underlyingCalls, 6);
+  assert.equal(underlyingCalls, 5);
+  assert.equal(counters.recordSearchRequestCount, 1);
   assert.equal(counters.totalBatchWriteRequests, 2);
   assert.equal(counters.totalRecordWrites, 40);
   assert.equal(counters.blockedRequestCount, 0);
@@ -104,11 +102,17 @@ test('Remote guard blocks schema, delete and writes above forty before fetch', a
     (error) => error.code === 'LARK_NATIVE_AI_CONTROLLED_PREVIEW_LIVE_PILOT_REQUEST_BLOCKED',
   );
   await assert.rejects(
+    () => guard.fetchImpl(`${BASE}/open-apis/bitable/v1/apps/app/tables/tbl/records/batch_delete`, {
+      method: 'POST', body: JSON.stringify({ records: ['rec1'] }),
+    }),
+    (error) => error.code === 'LARK_NATIVE_AI_CONTROLLED_PREVIEW_LIVE_PILOT_REQUEST_BLOCKED',
+  );
+  await assert.rejects(
     () => guard.fetchImpl(`${BASE}/open-apis/bitable/v1/apps/app/tables/tbl/records/batch_create`, {
       method: 'POST', body: JSON.stringify({ records: Array.from({ length: 41 }, () => ({ fields: {} })) }),
     }),
     (error) => error.code === 'LARK_NATIVE_AI_CONTROLLED_PREVIEW_LIVE_PILOT_REMOTE_LIMIT_EXCEEDED',
   );
   assert.equal(underlyingCalls, 0);
-  assert.equal(guard.snapshot().blockedRequestCount, 2);
+  assert.equal(guard.snapshot().blockedRequestCount, 3);
 });
