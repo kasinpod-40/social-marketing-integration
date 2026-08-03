@@ -280,7 +280,7 @@ class FakeLarkClient {
       revision: table.tableName === LARK_NATIVE_AI_TARGET_TABLE ? 0 : null,
     }));
     const target = sourceInventory.tables.find(
-      ({ tableName }) => table.tableName === LARK_NATIVE_AI_TARGET_TABLE,
+      ({ tableName }) => tableName === LARK_NATIVE_AI_TARGET_TABLE,
     );
     this.fields = target.fields.map((field, index) => toRawField(field, index));
     this.views = target.views.map((view, index) => ({
