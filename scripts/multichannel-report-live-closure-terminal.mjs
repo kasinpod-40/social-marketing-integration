@@ -1,15 +1,19 @@
 #!/usr/bin/env node
 
+import { execFile } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { promisify } from 'node:util';
 import { getReportLiveClosureDescriptor } from '../packages/application/src/report-live-closure/channel-descriptors.js';
 import {
   assertReviewedReportLiveClosureHandoff,
   runReportLiveClosureFramework,
   sanitizeReportLiveClosureEvidence,
 } from '../packages/application/src/report-live-closure/report-live-closure-framework.js';
+import { REPORT_RUNTIME_CLOSEOUT_CONFIRMATION } from './lib/report-runtime-closeout-operator.js';
 import { createReportLiveClosurePlanAdapters } from './lib/multichannel-report-live-closure-adapters.js';
 
+const execFileAsync = promisify(execFile);
 export const MULTICHANNEL_REPORT_LIVE_CLOSURE_CONFIRMATION = 'RUN_MULTICHANNEL_REPORT_LIVE_CLOSURE';
 export const MULTICHANNEL_REPORT_LIVE_CLOSURE_HANDOFF_CONTRACT =
   'multichannel_report_live_closure_handoff_v1';
@@ -27,8 +31,7 @@ export function parseReportLiveClosureArgs(argv = []) {
 
 export async function buildYouTubeFirstAdopterPlan(input = {}) {
   const env = input.env ?? {};
-  const argv = input.argv ?? [];
-  const args = parseReportLiveClosureArgs(argv);
+  const args = parseReportLiveClosureArgs(input.argv ?? []);
   const descriptor = getReportLiveClosureDescriptor('youtube', 'organic');
   const reviewedReadiness = input.reviewedReadiness ?? null;
   const target = reviewedReadiness ? resolveExactTarget(input, reviewedReadiness) : null;
@@ -66,25 +69,27 @@ export async function buildYouTubeFirstAdopterPlan(input = {}) {
       handoff.youtubeReadiness?.evidence?.source?.sourceWatermark,
       'youtubeReadiness.evidence.source.sourceWatermark',
     );
-    throw terminalError(
-      'The retained handoff is valid, but direct Live execution remains blocked until the shared Report closeout operator is extended and reviewed for YouTube Organic',
-      'REPORT_LIVE_CLOSURE_SHARED_OPERATOR_YOUTUBE_NOT_REVIEWED',
-      {
-        reviewedHandoff: true,
-        requiredOperator: 'scripts/report-runtime-closeout-operator.mjs',
-        reviewCommand: 'node scripts/youtube-shared-report-closeout-review.mjs',
-      },
+    const executeSharedOperator = input.executeSharedOperator ?? executeReviewedSharedOperator;
+    const execution = await executeSharedOperator({ env, handoff });
+    if (!execution || typeof execution !== 'object' || execution.ok !== true) throw terminalError(
+      'Shared Report closeout operator did not return successful reviewed evidence',
+      'REPORT_LIVE_CLOSURE_SHARED_OPERATOR_FAILED',
     );
+    return Object.freeze({
+      ...sanitizeReportLiveClosureEvidence(execution),
+      delegatedToSharedOperator: true,
+      sharedOperator: 'scripts/report-runtime-closeout-operator.mjs',
+    });
   }
 
   return Object.freeze({
     ok: true,
-    contractVersion: 'multichannel_report_live_closure_terminal_v3',
+    contractVersion: 'multichannel_report_live_closure_terminal_v4',
     mode: 'PLAN_ONLY',
     frameworkStatus: 'READY',
     firstAdopter: 'youtube',
     youtubeStatus: framework?.status === 'READY_FOR_LIVE'
-      ? 'READY_FOR_LIVE_HANDOFF'
+      ? 'READY_FOR_RETAINED_HANDOFF_EXECUTION'
       : 'READY_FOR_LIVE_AUDIT',
     descriptor,
     target,
@@ -100,6 +105,7 @@ export async function buildYouTubeFirstAdopterPlan(input = {}) {
     ].join(' \\\n'),
     sharedOperatorReviewCommand: 'node scripts/youtube-shared-report-closeout-review.mjs',
     exactLiveCommand: [
+      'MKT_REPORT_RUNTIME_CLOSEOUT_PLATFORM_SCOPE=youtube',
       'MKT_MULTICHANNEL_REPORT_LIVE_CLOSURE_HANDOFF=<retained-sanitized-handoff.json>',
       `CONFIRM_MULTICHANNEL_REPORT_LIVE_CLOSURE=${MULTICHANNEL_REPORT_LIVE_CLOSURE_CONFIRMATION}`,
       'node scripts/multichannel-report-live-closure-terminal.mjs --platform=youtube --capability=organic --execute',
@@ -117,10 +123,9 @@ export async function loadReviewedHandoff(env = {}) {
     env.MKT_MULTICHANNEL_REPORT_LIVE_CLOSURE_HANDOFF,
     'MKT_MULTICHANNEL_REPORT_LIVE_CLOSURE_HANDOFF',
   );
-  const handoffPath = resolve(configuredPath);
   let parsed;
   try {
-    parsed = JSON.parse(await readFile(handoffPath, 'utf8'));
+    parsed = JSON.parse(await readFile(resolve(configuredPath), 'utf8'));
   } catch (error) {
     throw terminalError(
       'Unable to load retained Multichannel Report Live Closure handoff evidence',
@@ -138,6 +143,41 @@ export async function loadReviewedHandoff(env = {}) {
     'REPORT_LIVE_CLOSURE_HANDOFF_NOT_SANITIZED',
   );
   return Object.freeze(parsed);
+}
+
+async function executeReviewedSharedOperator({ env }) {
+  const handoffPath = requireText(
+    env.MKT_MULTICHANNEL_REPORT_LIVE_CLOSURE_HANDOFF,
+    'MKT_MULTICHANNEL_REPORT_LIVE_CLOSURE_HANDOFF',
+  );
+  const result = await execFileAsync(process.execPath, [
+    'scripts/report-runtime-closeout-operator.mjs', '--execute',
+  ], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      ...env,
+      MKT_REPORT_RUNTIME_CLOSEOUT_PLATFORM_SCOPE: 'youtube',
+      MKT_MULTICHANNEL_REPORT_LIVE_CLOSURE_HANDOFF: handoffPath,
+      CONFIRM_REPORT_RUNTIME_CLOSEOUT: REPORT_RUNTIME_CLOSEOUT_CONFIRMATION,
+    },
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  return parseOperatorJson(result.stdout);
+}
+
+function parseOperatorJson(value) {
+  const text = String(value ?? '').trim();
+  const starts = [text.indexOf('{'), text.indexOf('[')]
+    .filter((index) => index >= 0)
+    .sort((left, right) => left - right);
+  for (const start of starts) {
+    try { return JSON.parse(text.slice(start)); } catch { /* continue */ }
+  }
+  throw terminalError(
+    'Shared Report closeout operator returned invalid JSON evidence',
+    'REPORT_LIVE_CLOSURE_SHARED_OPERATOR_JSON_INVALID',
+  );
 }
 
 function resolveExactTarget(input, readiness) {
@@ -164,7 +204,6 @@ function assertExecutionConfirmation(env) {
     );
   }
 }
-
 function requireExact(value, expected, field) {
   const text = requireText(value, field);
   if (text !== expected) throw terminalError(
@@ -200,7 +239,6 @@ function requireText(value, field) {
   );
   return value.trim();
 }
-
 function terminalError(message, code, details = {}) {
   const error = new Error(message);
   error.name = 'MultichannelReportLiveClosureTerminalError';

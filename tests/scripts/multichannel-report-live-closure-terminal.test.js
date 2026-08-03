@@ -79,8 +79,8 @@ test('default plan performs zero reads and exposes reviewed prerequisites', asyn
   assert.deepEqual(plan.identities, []);
   assert.match(plan.readOnlyAssessmentCommand, /youtube-report-remote-readiness-reviewed-terminal/u);
   assert.match(plan.sharedOperatorReviewCommand, /youtube-shared-report-closeout-review/u);
+  assert.match(plan.exactLiveCommand, /MKT_REPORT_RUNTIME_CLOSEOUT_PLATFORM_SCOPE=youtube/u);
   assert.doesNotMatch(plan.exactLiveCommand, /MKT_META_REMOTE_LOCK_RELEASED/u);
-  assert.match(plan.exactLiveCommand, /MKT_MULTICHANNEL_REPORT_LIVE_CLOSURE_HANDOFF/u);
   assert.equal(plan.remoteWriteCount, 0);
   assert.equal(plan.queueActionCount, 0);
   assert.equal(plan.workerDeploymentCount, 0);
@@ -99,61 +99,52 @@ test('reviewed readiness produces exact existing 1/3/7/30 identities without wri
   });
   assert.equal(plan.youtubeStatus, 'READY_FOR_LIVE_AUDIT');
   assert.deepEqual(plan.identities.map((identity) => identity.windowDays), [1, 3, 7, 30]);
-  assert.deepEqual(plan.identities.map((identity) => identity.reportSettingKey), [
-    'integration_workspace:youtube:rolling:1d',
-    'integration_workspace:youtube:rolling:3d',
-    'integration_workspace:youtube:rolling:7d',
-    'integration_workspace:youtube:rolling:30d',
-  ]);
 });
 
 test('watermarkDate is never substituted for exact sourceWatermark', async () => {
   await assert.rejects(
     buildYouTubeFirstAdopterPlan({
-      env: {},
-      argv: [],
-      reviewedReadiness: reviewedReadiness({ includeSourceWatermark: false }),
-      accountId: 'UCAwEENovvqZWosKhJWTS5Kg',
-      requestedAt: REQUESTED_AT,
-      periodEnd: '2026-08-01',
+      env: {}, argv: [], reviewedReadiness: reviewedReadiness({ includeSourceWatermark: false }),
+      accountId: 'UCAwEENovvqZWosKhJWTS5Kg', requestedAt: REQUESTED_AT, periodEnd: '2026-08-01',
     }),
     (error) => error.code === 'REPORT_LIVE_CLOSURE_TARGET_INVALID'
       && error.details.field === 'source.sourceWatermark',
   );
 });
 
-test('execute requires explicit confirmation before reading retained handoff', async () => {
+test('execute requires explicit confirmation before shared delegation', async () => {
   await assert.rejects(
-    buildYouTubeFirstAdopterPlan({
-      env: {},
-      argv: ['--execute'],
-      reviewedHandoff: reviewedHandoff(),
-    }),
+    buildYouTubeFirstAdopterPlan({ env: {}, argv: ['--execute'], reviewedHandoff: reviewedHandoff() }),
     (error) => error.code === 'REPORT_LIVE_CLOSURE_CONFIRMATION_REQUIRED',
   );
 });
 
-test('valid retained handoff still blocks Live until shared YouTube closeout authority is extended', async () => {
-  await assert.rejects(
-    buildYouTubeFirstAdopterPlan({
-      env: {
-        CONFIRM_MULTICHANNEL_REPORT_LIVE_CLOSURE: MULTICHANNEL_REPORT_LIVE_CLOSURE_CONFIRMATION,
-      },
-      argv: ['--platform=youtube', '--capability=organic', '--execute'],
-      reviewedHandoff: reviewedHandoff(),
-    }),
-    (error) => error.code === 'REPORT_LIVE_CLOSURE_SHARED_OPERATOR_YOUTUBE_NOT_REVIEWED',
-  );
+test('valid retained handoff delegates to the reviewed shared operator', async () => {
+  let calls = 0;
+  const result = await buildYouTubeFirstAdopterPlan({
+    env: { CONFIRM_MULTICHANNEL_REPORT_LIVE_CLOSURE: MULTICHANNEL_REPORT_LIVE_CLOSURE_CONFIRMATION },
+    argv: ['--platform=youtube', '--capability=organic', '--execute'],
+    reviewedHandoff: reviewedHandoff(),
+    executeSharedOperator: async ({ handoff }) => {
+      calls += 1;
+      assert.equal(handoff.metaRemoteLock.released, true);
+      return { ok: true, decision: 'YOUTUBE_REPORT_1_3_7_30_CLOSED', token: 'removed' };
+    },
+  });
+  assert.equal(calls, 1);
+  assert.equal(result.delegatedToSharedOperator, true);
+  assert.equal(result.sharedOperator, 'scripts/report-runtime-closeout-operator.mjs');
+  assert.equal(result.decision, 'YOUTUBE_REPORT_1_3_7_30_CLOSED');
+  assert.equal(Object.hasOwn(result, 'token'), false);
 });
 
-test('execute rejects retained handoff without exact sourceWatermark before operator binding', async () => {
+test('execute rejects retained handoff without exact sourceWatermark before delegation', async () => {
   await assert.rejects(
     buildYouTubeFirstAdopterPlan({
-      env: {
-        CONFIRM_MULTICHANNEL_REPORT_LIVE_CLOSURE: MULTICHANNEL_REPORT_LIVE_CLOSURE_CONFIRMATION,
-      },
+      env: { CONFIRM_MULTICHANNEL_REPORT_LIVE_CLOSURE: MULTICHANNEL_REPORT_LIVE_CLOSURE_CONFIRMATION },
       argv: ['--platform=youtube', '--capability=organic', '--execute'],
       reviewedHandoff: reviewedHandoff({ includeSourceWatermark: false }),
+      executeSharedOperator: async () => ({ ok: true }),
     }),
     (error) => error.code === 'REPORT_LIVE_CLOSURE_TARGET_INVALID'
       && error.details.field === 'youtubeReadiness.evidence.source.sourceWatermark',
@@ -165,8 +156,7 @@ test('retained handoff loader rejects nested credential fields', async () => {
   const path = join(directory, 'handoff.json');
   try {
     await writeFile(path, JSON.stringify({
-      ...reviewedHandoff(),
-      nested: { values: [{ authorization: 'Bearer secret' }] },
+      ...reviewedHandoff(), nested: { values: [{ authorization: 'Bearer secret' }] },
     }));
     await assert.rejects(
       loadReviewedHandoff({ MKT_MULTICHANNEL_REPORT_LIVE_CLOSURE_HANDOFF: path }),

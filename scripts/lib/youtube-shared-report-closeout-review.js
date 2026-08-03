@@ -2,10 +2,16 @@ import {
   REPORT_RUNTIME_CLOSEOUT_ACTIVE_TRUE_FLAGS,
   REPORT_RUNTIME_CLOSEOUT_CONTRACT_VERSION,
   REPORT_RUNTIME_CLOSEOUT_REQUIRED_TABLES,
-  assertReportRuntimeCloseoutPreflight,
   buildReportRuntimeCloseoutCandidates,
-  resolveReportRuntimeCloseoutTarget,
 } from './report-runtime-closeout-operator.js';
+import {
+  assertYouTubeReportRuntimeCloseoutPreflight,
+  resolveReviewedReportRuntimeCloseoutTarget,
+} from './report-runtime-closeout-channel-binding.js';
+import {
+  buildReportRuntimeOrganicPreflightSql,
+  buildReviewedReportRuntimeMultiwindowPlan,
+} from './report-runtime-closeout-reviewed-binding.js';
 import {
   REPORT_LIVE_CLOSURE_WINDOWS,
   getReportLiveClosureDescriptor,
@@ -16,7 +22,7 @@ import {
 } from '../../packages/application/src/report-live-closure/report-live-closure-framework.js';
 
 export const YOUTUBE_SHARED_REPORT_CLOSEOUT_REVIEW_CONTRACT =
-  'youtube_shared_report_closeout_review_v1';
+  'youtube_shared_report_closeout_review_v2';
 
 const REVIEWED_ACTIONS = new Set([
   'create_materialization',
@@ -24,12 +30,6 @@ const REVIEWED_ACTIONS = new Set([
   'reuse_or_idempotent_verify',
 ]);
 
-/**
- * Review the existing shared Report closeout authorities against the retained YouTube handoff.
- * This function performs no Provider, D1, Lark, Queue, Worker or Production action. It proves
- * contract compatibility and explicitly retains the executable gaps that still require a shared
- * operator extension instead of silently creating a YouTube-only execution path.
- */
 export function reviewYouTubeSharedReportCloseoutOperator(input = {}) {
   const handoff = requireObject(input.handoff, 'handoff');
   const descriptor = getReportLiveClosureDescriptor('youtube', 'organic');
@@ -41,7 +41,7 @@ export function reviewYouTubeSharedReportCloseoutOperator(input = {}) {
   const source = requireObject(evidence.source, 'handoff.youtubeReadiness.evidence.source');
   const runtime = requireObject(evidence.runtime, 'handoff.youtubeReadiness.evidence.runtime');
   const assessment = requireObject(readiness.assessment, 'handoff.youtubeReadiness.assessment');
-
+  const reviewedWindows = normalizeReviewedWindows(assessment.windows);
   const requestedAt = requireTimestamp(input.requestedAt, 'requestedAt');
   const periodEnd = requireDate(source.watermarkDate, 'source.watermarkDate');
   const sourceWatermark = optionalText(source.sourceWatermark);
@@ -49,7 +49,28 @@ export function reviewYouTubeSharedReportCloseoutOperator(input = {}) {
 
   if (!sourceWatermark) blockers.push(blocker(
     'REPORT_RUNTIME_CLOSEOUT_REVIEWED_SOURCE_WATERMARK_MISSING',
-    'The reviewed collector must retain the exact Coverage source_watermark; watermarkDate is not a substitute.',
+    'The retained collector evidence must contain exact Coverage source_watermark.',
+  ));
+
+  const target = resolveReviewedReportRuntimeCloseoutTarget({
+    MKT_REPORT_RUNTIME_CLOSEOUT_PLATFORM_SCOPE: 'youtube',
+  });
+  if (target.platformScope !== 'youtube'
+    || target.capability !== 'organic'
+    || target.formulaVersion !== descriptor.formulaVersion
+    || target.reviewedHandoffRequired !== true
+    || target.multiwindowRequired !== true) blockers.push(blocker(
+    'REPORT_RUNTIME_CLOSEOUT_YOUTUBE_TARGET_SELECTOR_INVALID',
+    'The shared target selector does not expose the reviewed YouTube Organic contract.',
+  ));
+
+  const preflightSql = buildReportRuntimeOrganicPreflightSql({
+    target: { ...target, customerKey: 'chemistry_k' },
+  });
+  if (!preflightSql.includes("platform = 'youtube'")
+    || !preflightSql.includes("dataset_key = 'organic_content_cumulative'")) blockers.push(blocker(
+    'REPORT_RUNTIME_CLOSEOUT_YOUTUBE_D1_PREFLIGHT_INVALID',
+    'The shared Organic preflight is not bound to YouTube Coverage and facts.',
   ));
 
   const preflight = Object.freeze({
@@ -61,9 +82,8 @@ export function reviewYouTubeSharedReportCloseoutOperator(input = {}) {
     active_report_locks: nonNegativeInteger(runtime.activeReportLockCount, 'runtime.activeReportLockCount'),
     open_report_dlq: nonNegativeInteger(runtime.openReportDlqCount, 'runtime.openReportDlqCount'),
   });
-  if (sourceWatermark) assertReportRuntimeCloseoutPreflight(preflight);
+  if (sourceWatermark) assertYouTubeReportRuntimeCloseoutPreflight(preflight);
 
-  const reviewedWindows = normalizeReviewedWindows(assessment.windows);
   const candidates = sourceWatermark
     ? Object.freeze(buildReportRuntimeCloseoutCandidates({
       requestedAt,
@@ -75,38 +95,29 @@ export function reviewYouTubeSharedReportCloseoutOperator(input = {}) {
         'source.reportingTimezone',
       ),
       platformScope: 'youtube',
-      accountKey: 'chemistry_k',
+      accountKey: target.accountKey,
       formulaVersion: descriptor.formulaVersion,
     }).filter((candidate) => REPORT_LIVE_CLOSURE_WINDOWS.includes(candidate.windowDays)))
     : Object.freeze([]);
 
-  let targetSelectorSupportsYouTube = false;
-  try {
-    const target = resolveReportRuntimeCloseoutTarget({
-      MKT_REPORT_RUNTIME_CLOSEOUT_PLATFORM_SCOPE: 'youtube',
+  let executionPlan = Object.freeze([]);
+  if (candidates.length === REPORT_LIVE_CLOSURE_WINDOWS.length) {
+    const existingReportIds = candidates
+      .filter((candidate) => reviewedWindows.find((row) => row.windowDays === candidate.windowDays)?.action
+        !== 'create_materialization')
+      .map((candidate) => candidate.reportId);
+    executionPlan = buildReviewedReportRuntimeMultiwindowPlan({
+      candidates,
+      existingReportIds,
+      reviewedHandoff: handoff,
     });
-    targetSelectorSupportsYouTube = target.platformScope === 'youtube'
-      && target.capability === 'organic'
-      && target.formulaVersion === descriptor.formulaVersion;
-  } catch (error) {
-    if (error?.code !== 'REPORT_RUNTIME_CLOSEOUT_PLATFORM_UNSUPPORTED') throw error;
   }
-  if (!targetSelectorSupportsYouTube) blockers.push(blocker(
-    'REPORT_RUNTIME_CLOSEOUT_YOUTUBE_TARGET_SELECTOR_UNBOUND',
-    'The existing shared operator target selector currently accepts TikTok and WooCommerce only.',
-  ));
 
-  blockers.push(blocker(
-    'REPORT_RUNTIME_CLOSEOUT_YOUTUBE_D1_PREFLIGHT_UNBOUND',
-    'The executable operator still reads TikTok source/Coverage SQL for every non-WooCommerce target.',
-  ));
-  blockers.push(blocker(
-    'REPORT_RUNTIME_CLOSEOUT_REVIEWED_HANDOFF_UNBOUND',
-    'The executable shared operator does not yet consume the retained exact-head lock/readiness handoff.',
-  ));
-  blockers.push(blocker(
-    'REPORT_RUNTIME_CLOSEOUT_MULTIWINDOW_EXECUTION_UNBOUND',
-    'The executable shared operator selects one window; the closure contract requires a bounded reviewed 1/3/7/30 action plan.',
+  const exactPlan = executionPlan.length === REPORT_LIVE_CLOSURE_WINDOWS.length
+    && executionPlan.every((row, index) => row.windowDays === REPORT_LIVE_CLOSURE_WINDOWS[index]);
+  if (sourceWatermark && !exactPlan) blockers.push(blocker(
+    'REPORT_RUNTIME_CLOSEOUT_MULTIWINDOW_PLAN_INVALID',
+    'The shared operator did not build the exact reviewed 1/3/7/30 execution plan.',
   ));
 
   const result = {
@@ -119,20 +130,32 @@ export function reviewYouTubeSharedReportCloseoutOperator(input = {}) {
       && reviewedWindows.length === REPORT_LIVE_CLOSURE_WINDOWS.length
       && candidates.length === REPORT_LIVE_CLOSURE_WINDOWS.length,
     executableReady: blockers.length === 0,
-    reviewStatus: blockers.length === 0 ? 'READY_FOR_EXECUTION_BINDING' : 'OPERATOR_EXTENSION_REQUIRED',
+    reviewStatus: blockers.length === 0
+      ? 'READY_FOR_RETAINED_HANDOFF_EXECUTION'
+      : 'OPERATOR_EXTENSION_REQUIRED',
     existingAuthorities: Object.freeze({
       activeTrueFlags: REPORT_RUNTIME_CLOSEOUT_ACTIVE_TRUE_FLAGS,
       requiredLarkOutputs: Object.freeze(Object.keys(REPORT_RUNTIME_CLOSEOUT_REQUIRED_TABLES)),
       identityAuthority: 'buildReportRuntimeCloseoutCandidates',
-      organicIntegrityAuthority: 'assertReportRuntimeOrganicIntegrity',
+      d1PreflightAuthority: 'buildReportRuntimeOrganicPreflightSql',
+      handoffAuthority: 'loadReviewedReportRuntimeCloseoutHandoff',
+      multiwindowAuthority: 'buildReviewedReportRuntimeMultiwindowPlan',
+      metricIntegrityAuthority: 'assertReportRuntimeMetricIntegrity',
       replayAuthority: 'assertReportRuntimeCloseoutReplay',
-      restoreAuthority: 'report-runtime-closeout-operator finally',
+      restoreAuthority: 'reviewed multiwindow executor finally',
     }),
     reviewedWindows,
     candidateWindows: Object.freeze(candidates.map((candidate) => Object.freeze({
       windowDays: candidate.windowDays,
       reportSettingKey: candidate.reportSettingKey,
       reportId: candidate.reportId,
+    }))),
+    executionPlan: Object.freeze(executionPlan.map((row) => Object.freeze({
+      windowDays: row.windowDays,
+      action: row.action,
+      operation: row.operation,
+      reportSettingKey: row.reportSettingKey,
+      reportId: row.reportId,
     }))),
     blockers: Object.freeze(blockers),
     providerRequestCount: 0,
@@ -171,16 +194,12 @@ function normalizeReviewedWindows(value) {
   return Object.freeze(ordered);
 }
 
-function blocker(code, message) {
-  return Object.freeze({ code, message });
-}
+function blocker(code, message) { return Object.freeze({ code, message }); }
 function normalizeCoverageStatus(value) {
   const normalized = optionalText(value)?.toLowerCase() ?? null;
   return normalized === 'completed' ? 'complete' : normalized;
 }
-function optionalText(value) {
-  return typeof value === 'string' && value.trim() ? value.trim() : null;
-}
+function optionalText(value) { return typeof value === 'string' && value.trim() ? value.trim() : null; }
 function requireExact(value, expected, field) {
   const text = optionalText(value);
   if (text !== expected) throw reviewError(
