@@ -113,6 +113,18 @@ function d1CompleteSnapshot(overrides = {}) {
   });
 }
 
+function larkPreflightFailedSnapshot(overrides = {}) {
+  return d1CompleteSnapshot({
+    syncRunStatus: 'failed',
+    syncRunStartedAt: 1785771000000,
+    syncRunFinishedAt: 1785771003000,
+    syncRunErrorCode: 'LARK_PREFLIGHT_FAILED',
+    syncRunUpdatedAt: 1785771003000,
+    observedAt: 1785772000000,
+    ...overrides,
+  });
+}
+
 test('accepts the stable exact source-complete pre-D1 failed boundary', () => {
   const result = validateMetaK2ExactSourceCompleteFailureStability(
     exactSnapshot(),
@@ -164,6 +176,27 @@ test('accepts exact stable D1-complete Lark-pending facts without hardcoded enti
   assert.equal(result.queueSendAuthorized, false);
 });
 
+test('accepts exact terminal Lark preflight failure without reopening D1', () => {
+  const before = larkPreflightFailedSnapshot();
+  const after = larkPreflightFailedSnapshot({ observedAt: before.observedAt + 34_052 });
+  const result = validateMetaK2ExactSourceCompleteFailureStability(before, after);
+
+  assert.equal(result.accepted, true);
+  assert.equal(result.boundary, 'd1_complete_lark_preflight_failed');
+  assert.equal(result.d1AlreadyComplete, true);
+  assert.equal(result.larkPreflightRecovery, true);
+  assert.equal(result.existingBusinessFactsRetained, true);
+  assert.equal(
+    result.decision,
+    'META_K2_D1_COMPLETE_LARK_PREFLIGHT_FAILED_STABLE_SAFE_TO_RESUME_EXACT_OPERATION',
+  );
+  assert.equal(result.snapshot.operationCounts.adsEntities, 182);
+  assert.equal(result.snapshot.operationCounts.adsDaily, 4103);
+  assert.equal(result.providerReplayAuthorized, false);
+  assert.equal(result.queueSendAuthorized, false);
+  assert.equal(result.lifecycleSqlRepairAuthorized, false);
+});
+
 test('rejects exact-state drift, unsupported facts and a short stability window', () => {
   assert.throws(
     () => validateMetaK2ExactSourceCompleteFailureStability(
@@ -210,6 +243,17 @@ test('rejects exact-state drift, unsupported facts and a short stability window'
     ),
     (error) => error?.code === 'META_K2_SOURCE_COMPLETE_PROGRESS_OBSERVED'
       && error?.details?.afterFailedChecks?.includes('coverageEntityParity'),
+  );
+  assert.throws(
+    () => validateMetaK2ExactSourceCompleteFailureStability(
+      larkPreflightFailedSnapshot(),
+      larkPreflightFailedSnapshot({
+        observedAt: larkPreflightFailedSnapshot().observedAt + 34_052,
+        syncRunErrorCode: 'OTHER_FAILURE',
+      }),
+    ),
+    (error) => error?.code === 'META_K2_SOURCE_COMPLETE_PROGRESS_OBSERVED'
+      && error?.details?.afterFailedChecks?.includes('acceptedSyncRunStatus'),
   );
   assert.throws(
     () => validateMetaK2ExactSourceCompleteFailureStability(
