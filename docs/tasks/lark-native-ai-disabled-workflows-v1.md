@@ -1,121 +1,63 @@
-# Lark Native AI Disabled Workflow Shells v1
+# Lark Native AI Inactive Workflow Placeholders v1
 
-## Status
+## Current live state
 
-```text
-WORKSTREAM                    = LARK_NATIVE_AI_DISABLED_WORKFLOWS_V1
-BRANCH                        = work/lark-native-ai-disabled-workflows-v1
-BASE_MAIN_SHA                 = 18bb72741821a4068da0ef0b985b13502a6fd793
-MODE                          = REMOTE_LARK_WORKFLOW_CREATE_ONLY
-WORKFLOW_CREATE_MAX           = 2
-WORKFLOW_UPDATE               = 0
-WORKFLOW_STATUS_CHANGE        = 0
-RECORD_WRITE                  = 0
-NOTIFICATION                  = 0
-WEBHOOK                       = 0
-SCHEDULE                      = DISABLED
-PRODUCTION                    = BLOCKED
-```
-
-## Live authority
-
-Fresh readiness evidence:
+The two exact Automations were created manually in the Lark Base UI because the app did not yet have `base:workflow:create` and the UI would not save an empty Workflow.
 
 ```text
-attempt                  outputs/lark-native-ai-workflow-readiness/20260803T182338227Z-18bb72741821-82191
-status                   ready_to_create_disabled_workflows
-blockerCount             0
-settingsMatch            true
-notification log         zero_drift
-workflow inventory       0
-planned disabled creates 2
+AI Materialization → MKT_AI_Report_Runs       inactive
+Eligible AI Run → Lark Group Notification    inactive
+Active automation count                       0
+Inactive automation count                     2
 ```
 
-Exact target titles:
+Each Automation contains only:
+
+```text
+When a new record is added → Delay 1 minute
+```
+
+Exact trigger tables:
 
 ```text
 AI Materialization → MKT_AI_Report_Runs
+trigger table: 🧾 MKT_Report_Snapshots
+
 Eligible AI Run → Lark Group Notification
+trigger table: 🧠 MKT_AI_Report_Runs
 ```
 
-## Objective
+There is no Native AI action, Record write, message action, Webhook, Schedule or status activation.
 
-สร้าง Workflow identity สองรายการใน Base จริงแบบ disabled โดยใช้ Lark Workflow Create API เท่านั้น และไม่วาง Trigger/Action ที่อาจทำงานก่อนการ Review ขั้นถัดไป
+## Corrected authority
 
-V1 จึงสร้าง **disabled shells** แบบตั้งใจ:
+The empty `steps=[]` API shell from the original Phase 6 plan is no longer the live authority. The user-approved UI placeholder is now the exact accepted shape:
 
-```json
-{
-  "title": "<exact approved title>",
-  "steps": []
-}
-```
+1. one `AddRecordTrigger` bound to the exact table;
+2. one `Delay` action with duration `1` minute;
+3. the Trigger points directly to the Delay;
+4. no branch, loop or additional action;
+5. Workflow status is disabled/inactive/off/draft.
 
-Lark รองรับ Workflow ที่ `steps=[]` และ Workflow ใหม่ถูกสร้างเป็น disabled โดยปริยาย การ Enable ใช้ API คนละเส้นทางและไม่อยู่ใน allowlist ของ Operator นี้
+UI-generated Step IDs are not stable and are not compared literally. The semantic shape, exact table, one-minute delay and inactive status are authoritative.
 
-## Why empty shells are authoritative
+The optional watched field may be present as `report_id` or `ai_run_key`; Lark UI may omit it from returned Workflow JSON. A conflicting non-empty watched field blocks.
 
-Phase นี้มีหน้าที่ล็อก Workflow identity และป้องกัน duplicate ก่อน Config payload จริง ไม่ใช่ Activation และไม่ใช่ Notification Preview
+## Reconciliation behavior
 
-การสร้าง Trigger, Native AI prompt actions, Message action, Notification Log action และ sent-state action ต้องผ่าน Phase แยก เพราะต้อง Review field IDs, conditions, payload, dedupe, failure semantics และ Group receiver โดยยังคง disabled ตลอด
+The existing guarded operator now treats the exact UI placeholders as zero drift. On the current live state it performs only Workflow list/get and the existing readiness reads; `workflowCreateCount` remains zero, so `base:workflow:create` is not required for this readback.
 
-การใช้ shell ว่างทำให้:
+Any of the following blocks:
 
-- ไม่มี Trigger ที่รับ Record ใหม่หรือ Record update;
-- ไม่มี Native AI call;
-- ไม่มี Lark Message action;
-- ไม่มี Record write หรือ Notification Log write;
-- ไม่มี Schedule;
-- ไม่มี latent action ที่อาจเริ่มทำงานหากมีการเปลี่ยนสถานะผิดพลาดนอก Operator.
+- title missing or duplicated;
+- Workflow enabled;
+- wrong trigger table;
+- delay not exactly one minute;
+- more or fewer than two Steps;
+- Trigger not connected to Delay;
+- Message, AI, Record, HTTP, branch, loop or other action present.
 
-## Exact behavior
-
-1. ตรวจ clean current `main` ตรง `origin/main`;
-2. ตรวจทุก `MKT_*_ENABLED=false`;
-3. อ่าน readiness สดทั้ง Tables, Fields, Views, Settings, Chat และ Workflow inventory;
-4. require `blockerCount=0` และ destination/settings match;
-5. ตรวจ target title แบบ exact;
-6. ถ้าไม่พบ สร้างเฉพาะ shell ที่ขาด สูงสุด 2 รายการ;
-7. body มีเพียง `client_token`, `title`, `steps=[]`;
-8. ไม่ส่ง `status` และไม่เรียก enable/disable/update API;
-9. รอ 10 วินาที;
-10. List/Get readback ต้องพบแต่ละ title หนึ่งรายการ, status disabled/draft และ `steps=[]`;
-11. rerun ต้องเป็น `already_zero_drift` และ create 0;
-12. partial prior create อนุญาตให้สร้างเฉพาะ shell ที่ยังขาดใน explicit rerun ถัดไป.
-
-## Failure semantics
-
-กรณีต่อไปนี้หยุดก่อน create:
-
-- readiness มี blocker;
-- destination หรือ Settings ไม่ตรง;
-- target title ซ้ำ;
-- target Workflow เปิดอยู่;
-- target Workflow มี status ไม่รู้จัก;
-- target Workflow ที่มีอยู่แล้วมี Step ใด ๆ;
-- local execution flag เปิด;
-- Repository ไม่ใช่ clean current main.
-
-Create เรียงทีละรายการและไม่ retry อัตโนมัติ หากผลลัพธ์กำกวมให้รัน explicit attempt ใหม่ ซึ่งจะเริ่มจาก inventory และ deterministic client token เดิม
-
-## Remote allowlist
-
-อนุญาตเฉพาะ:
-
-- tenant token;
-- List Tables / Fields / Views และ Get View;
-- bounded Settings Record read;
-- Chat list read;
-- Workflow list/get;
-- `POST /open-apis/base/v3/bases/{base}/workflows` สูงสุด 2 ครั้ง โดย exact body validator.
-
-ห้าม:
-
-- Workflow update/delete/enable/disable;
-- Record create/update/delete;
-- Message send;
-- Webhook;
-- D1, Queue, Worker, Provider, Schedule หรือ Production action.
+No Workflow update, status change, Record write or message route exists in this phase.
 
 ## Exact Terminal after merge
 
@@ -129,29 +71,50 @@ CONFIRM_LARK_NATIVE_AI_DISABLED_WORKFLOWS=CREATE_LARK_NATIVE_AI_DISABLED_WORKFLO
 node scripts/lark-native-ai-disabled-workflows-terminal.mjs --execute
 ```
 
-## Expected result
+Expected current-live result:
 
 ```text
 status                       zero_drift
-workflowCreateCount          0..2
+workflowCreateCount          0
 workflowCount                2
-stepCount per workflow       0
+observedStepCount            2 per Workflow
+placeholderExact             true
 workflowUpdateCount          0
 workflowStatusChangeCount    0
 automationEnabled            false
 notificationCount            0
-recordWriteCount             0
 scheduleEnabled              false
 production                   BLOCKED
 ```
 
-Evidence:
+## Permissions required for all remaining API phases
+
+The remaining API path must be approved as one bundle before any future Remote Workflow mutation:
 
 ```text
-outputs/lark-native-ai-disabled-workflows/<attempt>/summary.json
+base:workflow:read     inspect/list/get
+base:workflow:create   only if a missing Workflow must be created
+base:workflow:update   install or change disabled Steps
+base:workflow:write    enable/disable status in a separately authorized activation phase
+base:workflow:delete   not required by the current plan
 ```
 
-Evidence ไม่เก็บ Workflow ID, Chat ID, Record ID, field ID, token หรือ client token
+Current reconciliation uses only `base:workflow:read`. No future phase may request permissions piecemeal without listing the complete remaining bundle first.
+
+## Safety boundary
+
+```text
+Workflow create          0 on current live state
+Workflow update          0
+Workflow status change   0
+Record write             0
+Native AI execution      0
+Notification/message     0
+Webhook                  0
+D1 / Queue / Worker      0
+Schedule                 disabled
+Production               blocked
+```
 
 ## Required verification
 
@@ -167,8 +130,6 @@ npm run deploy:dry-run
 git diff --check
 ```
 
-Branch Verification ต้องผ่าน focused Meta, WooCommerce, Chatwoot และ TikTok regressions บน Exact Head
-
 ## Next phase
 
-หลัง Live readback เป็น zero drift จึงเปิดงานใหม่สำหรับ **disabled Workflow configuration and payload preview** โดย update เฉพาะสอง Workflow identities นี้และยังห้าม Enable/Send จนได้รับคำสั่งแยกต่างหาก
+After read-only zero drift, prepare the complete disabled Workflow configuration and notification payload Preview in Repository only. Do not update the live Workflows, activate them or send a message until the full Step mapping and the complete required permission bundle have been reviewed together.

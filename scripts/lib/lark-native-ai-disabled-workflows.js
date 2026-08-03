@@ -1,6 +1,7 @@
 import {
   LARK_NATIVE_AI_DISABLED_WORKFLOW_DEFINITIONS,
   LARK_NATIVE_AI_DISABLED_WORKFLOWS_VERSION,
+  LARK_NATIVE_AI_INACTIVE_PLACEHOLDER_DELAY_MINUTES,
 } from '../../packages/config/src/lark-native-ai-disabled-workflows-contract.js';
 
 const DISABLED_STATUSES = new Set(['disabled', 'inactive', 'off', 'draft']);
@@ -20,9 +21,11 @@ export async function planLarkNativeAiDisabledWorkflows(input = {}) {
       items.push(freeze({
         title: definition.title,
         intent: definition.intent,
-        state: 'create_disabled_shell',
+        state: 'create_inactive_placeholder',
         count: 0,
-        expectedStepCount: 0,
+        expectedStepCount: definition.steps.length,
+        triggerTable: definition.triggerTable,
+        delayMinutes: LARK_NATIVE_AI_INACTIVE_PLACEHOLDER_DELAY_MINUTES,
       }));
       continue;
     }
@@ -36,7 +39,7 @@ export async function planLarkNativeAiDisabledWorkflows(input = {}) {
         intent: definition.intent,
         state: 'duplicate',
         count: matches.length,
-        expectedStepCount: 0,
+        expectedStepCount: definition.steps.length,
       }));
       continue;
     }
@@ -46,6 +49,10 @@ export async function planLarkNativeAiDisabledWorkflows(input = {}) {
     });
     const status = normalizeStatus(hydrated?.status ?? matches[0].status);
     const steps = requireArray(hydrated?.steps ?? [], `${definition.title}.steps`);
+    const placeholder = inspectLarkNativeAiInactivePlaceholderSteps({
+      steps,
+      definition,
+    });
     if (ENABLED_STATUSES.has(status)) blockers.push(blocker(
       'TARGET_WORKFLOW_ALREADY_ENABLED',
       { title: definition.title, status },
@@ -54,34 +61,41 @@ export async function planLarkNativeAiDisabledWorkflows(input = {}) {
       'TARGET_WORKFLOW_STATUS_UNSUPPORTED',
       { title: definition.title, status },
     ));
-    if (steps.length !== 0) blockers.push(blocker(
-      'TARGET_WORKFLOW_SHELL_DRIFT',
-      { title: definition.title, observedStepCount: steps.length },
+    if (!placeholder.ok) blockers.push(blocker(
+      'TARGET_WORKFLOW_PLACEHOLDER_DRIFT',
+      {
+        title: definition.title,
+        observedStepCount: steps.length,
+        reasons: placeholder.reasons,
+      },
     ));
     items.push(freeze({
       title: definition.title,
       intent: definition.intent,
-      state: 'existing_disabled_shell',
+      state: placeholder.ok ? 'existing_inactive_placeholder' : 'configured_drift',
       status,
       count: 1,
-      expectedStepCount: 0,
+      expectedStepCount: definition.steps.length,
       observedStepCount: steps.length,
+      triggerTable: definition.triggerTable,
+      delayMinutes: LARK_NATIVE_AI_INACTIVE_PLACEHOLDER_DELAY_MINUTES,
+      placeholderExact: placeholder.ok,
     }));
   }
 
   blockers.sort(compareBlockers);
-  const createCount = items.filter(({ state }) => state === 'create_disabled_shell').length;
+  const createCount = items.filter(({ state }) => state === 'create_inactive_placeholder').length;
+  const existingCount = items.filter(({ state }) => state === 'existing_inactive_placeholder').length;
   return freeze({
     ok: blockers.length === 0,
     contractVersion: LARK_NATIVE_AI_DISABLED_WORKFLOWS_VERSION,
     status: blockers.length > 0
       ? 'blocked'
-      : (createCount === 0 ? 'zero_drift' : 'ready_to_create_disabled_shells'),
+      : (createCount === 0 ? 'zero_drift' : 'ready_to_create_inactive_placeholders'),
     workflowCount: definitions.length,
     plannedCreateCount: createCount,
-    existingDisabledShellCount: items.filter(({ state }) => (
-      state === 'existing_disabled_shell'
-    )).length,
+    existingInactivePlaceholderCount: existingCount,
+    existingDisabledShellCount: existingCount,
     items,
     blockerCount: blockers.length,
     blockers,
@@ -98,7 +112,7 @@ export async function applyLarkNativeAiDisabledWorkflows(input = {}) {
 
   const before = await planLarkNativeAiDisabledWorkflows({ client, definitions });
   if (!before.ok) throw workflowError(
-    'Disabled Lark Workflow creation is blocked by live inventory drift',
+    'Inactive Lark Workflow placeholders are blocked by live inventory drift',
     'LARK_NATIVE_AI_DISABLED_WORKFLOWS_BLOCKED',
     { blockerCount: before.blockerCount, blockers: before.blockers },
   );
@@ -118,7 +132,7 @@ export async function applyLarkNativeAiDisabledWorkflows(input = {}) {
   });
 
   const missingTitles = new Set(before.items
-    .filter(({ state }) => state === 'create_disabled_shell')
+    .filter(({ state }) => state === 'create_inactive_placeholder')
     .map(({ title }) => title));
   let createdWorkflowCount = 0;
   const createdTitles = [];
@@ -129,13 +143,13 @@ export async function applyLarkNativeAiDisabledWorkflows(input = {}) {
       await client.createWorkflow({
         clientToken,
         title: definition.title,
-        steps: [],
+        steps: definition.steps,
       });
       createdWorkflowCount += 1;
       createdTitles.push(definition.title);
     } catch (cause) {
       throw workflowError(
-        'Lark Workflow create stopped; no automatic retry was attempted',
+        'Lark Workflow placeholder create stopped; no automatic retry was attempted',
         'LARK_NATIVE_AI_DISABLED_WORKFLOW_CREATE_FAILED',
         {
           createdWorkflowCount,
@@ -151,15 +165,15 @@ export async function applyLarkNativeAiDisabledWorkflows(input = {}) {
   await sleep(READ_AFTER_CREATE_DELAY_MS);
   const after = await planLarkNativeAiDisabledWorkflows({ client, definitions });
   if (!after.ok || after.status !== 'zero_drift'
-    || after.existingDisabledShellCount !== definitions.length) throw workflowError(
-    'Created Lark Workflows did not reach exact disabled-shell zero drift',
+    || after.existingInactivePlaceholderCount !== definitions.length) throw workflowError(
+    'Lark Workflows did not reach exact inactive-placeholder zero drift',
     'LARK_NATIVE_AI_DISABLED_WORKFLOW_READBACK_INVALID',
     {
       createdWorkflowCount,
       status: after.status,
       blockerCount: after.blockerCount,
       blockers: after.blockers,
-      existingDisabledShellCount: after.existingDisabledShellCount,
+      existingInactivePlaceholderCount: after.existingInactivePlaceholderCount,
     },
   );
 
@@ -176,6 +190,50 @@ export async function applyLarkNativeAiDisabledWorkflows(input = {}) {
     notificationCount: 0,
     scheduleEnabled: false,
     production: 'BLOCKED',
+  });
+}
+
+export function inspectLarkNativeAiInactivePlaceholderSteps(input = {}) {
+  const steps = Array.isArray(input.steps) ? input.steps : [];
+  const definition = input.definition ?? {};
+  const reasons = [];
+  if (steps.length !== 2) reasons.push('STEP_COUNT');
+
+  const triggers = steps.filter((step) => normalizeStepType(step?.type) === 'addrecordtrigger');
+  const delays = steps.filter((step) => normalizeStepType(step?.type) === 'delay');
+  if (triggers.length !== 1) reasons.push('TRIGGER_COUNT');
+  if (delays.length !== 1) reasons.push('DELAY_COUNT');
+
+  const trigger = triggers.length === 1 ? triggers[0] : null;
+  const delay = delays.length === 1 ? delays[0] : null;
+  if (trigger) {
+    const tableName = optionalText(trigger?.data?.table_name ?? trigger?.data?.tableName);
+    if (tableName !== definition.triggerTable) reasons.push('TRIGGER_TABLE');
+    const watchedField = optionalText(
+      trigger?.data?.watched_field_name ?? trigger?.data?.watchedFieldName,
+    );
+    if (watchedField && watchedField !== definition.watchedField) reasons.push('WATCHED_FIELD');
+    if (hasChildren(trigger)) reasons.push('TRIGGER_CHILDREN');
+  }
+  if (delay) {
+    const duration = Number(delay?.data?.duration);
+    if (duration !== LARK_NATIVE_AI_INACTIVE_PLACEHOLDER_DELAY_MINUTES) {
+      reasons.push('DELAY_DURATION');
+    }
+    if (hasChildren(delay)) reasons.push('DELAY_CHILDREN');
+  }
+  if (trigger && delay) {
+    const triggerNext = optionalText(trigger.next);
+    const delayId = optionalText(delay.id);
+    if (!triggerNext || !delayId || triggerNext !== delayId) reasons.push('TRIGGER_NEXT');
+    if (delay.next !== null && delay.next !== undefined && optionalText(delay.next)) {
+      reasons.push('DELAY_NEXT');
+    }
+  }
+
+  return freeze({
+    ok: reasons.length === 0,
+    reasons: Object.freeze([...new Set(reasons)].sort()),
   });
 }
 
@@ -200,10 +258,21 @@ function normalizeDefinitions(value) {
   const definitions = requireArray(source, 'definitions').map((item, index) => freeze({
     title: requireText(item?.title, `definitions[${index}].title`),
     intent: requireText(item?.intent, `definitions[${index}].intent`),
+    triggerTable: requireText(item?.triggerTable, `definitions[${index}].triggerTable`),
+    watchedField: requireText(item?.watchedField, `definitions[${index}].watchedField`),
     steps: requireArray(item?.steps ?? [], `definitions[${index}].steps`),
   }));
-  if (definitions.length !== 2 || definitions.some(({ steps }) => steps.length !== 0)) {
-    throw new TypeError('Exactly two empty disabled Workflow shell definitions are required');
+  if (definitions.length !== 2 || definitions.some(({ steps }) => steps.length !== 2)) {
+    throw new TypeError('Exactly two two-step inactive Workflow placeholder definitions are required');
+  }
+  for (const definition of definitions) {
+    const inspection = inspectLarkNativeAiInactivePlaceholderSteps({
+      steps: definition.steps,
+      definition,
+    });
+    if (!inspection.ok) throw new TypeError(
+      `Invalid inactive Workflow placeholder definition: ${inspection.reasons.join(',')}`,
+    );
   }
   const titles = new Set(definitions.map(({ title }) => title));
   if (titles.size !== definitions.length) throw new TypeError('Workflow titles must be unique');
@@ -223,6 +292,17 @@ function requireClient(value, createRequired) {
   return value;
 }
 
+function normalizeStepType(value) {
+  return optionalText(value)?.toLowerCase().replace(/[^a-z0-9]/gu, '') ?? '';
+}
+function hasChildren(step) {
+  const children = step?.children;
+  if (children === null || children === undefined) return false;
+  if (Array.isArray(children)) return children.length > 0;
+  if (typeof children !== 'object') return true;
+  const links = children.links;
+  return Array.isArray(links) ? links.length > 0 : Object.keys(children).length > 0;
+}
 function normalizeStatus(value) {
   return optionalText(value)?.toLowerCase() ?? 'unknown';
 }
