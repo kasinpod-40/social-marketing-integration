@@ -22,6 +22,7 @@ import {
   LARK_NATIVE_AI_CONTROLLED_PREVIEW_LIVE_PILOT_INPUT_SCHEMA_VERSION,
 } from '../packages/config/src/lark-native-ai-controlled-preview-exact-terminal-contract.js';
 import { createLarkBitableClientFromEnv } from '../packages/connectors/src/lark/lark-bitable.client.js';
+import { adaptLarkNativeAiControlledPreviewReportSource } from './lib/adapt-lark-native-ai-controlled-preview-report-source.js';
 import { parseJsoncObject } from './lib/chatwoot-safe-wrangler-config.js';
 import { readDevVars } from './lib/dev-vars.js';
 import {
@@ -126,6 +127,7 @@ function printPlan() {
       'validate all local config, credentials and mappings before Remote read',
       'acquire one local exact-terminal lock',
       'read one cached Lark table inventory plus AI schema and TikTok 1D/3D/7D/30D Report outputs',
+      'adapt Shared Report metric taxonomy without changing numeric values',
       'create and revalidate a private checksummed source package automatically',
       'build exact approved all-channel readiness plans',
       'run bounded first pass with at most 40 Record writes',
@@ -203,18 +205,23 @@ async function executeExactTerminal() {
     })}\n`),
   });
   const sourceClient = withCachedTableInventory(rawSourceClient);
-  const collected = await collectLarkNativeAiControlledPreviewRealSource({
+  const collectedReportSource = await collectLarkNativeAiControlledPreviewRealSource({
     client: sourceClient,
     sourceGuard: sourceRead,
     repository,
     env: runtime.env,
     generatedAt: Date.now(),
   });
+
+  stage = 'adapt-report-metric-taxonomy';
+  const collected = await adaptLarkNativeAiControlledPreviewReportSource(
+    collectedReportSource,
+  );
   sourcePackage = await validateLarkNativeAiControlledPreviewSourcePackage(
     collected,
     repository,
   );
-  // Retain the exact collected package because packageSha256 covers every original metadata field.
+  // Retain the exact adapted package because packageSha256 covers every metadata field.
   await writePrivateJson(sourcePath, collected);
 
   stage = 'build-exact-four-window-readiness';
