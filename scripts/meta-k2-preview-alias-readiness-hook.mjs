@@ -2,6 +2,7 @@
 
 import {
   META_K2_PREVIEW_ALIAS_READINESS,
+  resolveMetaK2PreviewAliasExpectation,
   shouldGuardMetaK2ContinuationFetch,
   waitForAttestedMetaK2PreviewAlias,
 } from './lib/meta-k2-preview-alias-readiness.js';
@@ -21,18 +22,30 @@ if (process.env[META_K2_PREVIEW_ALIAS_READINESS.envName]
     const url = typeof input === 'string' || input instanceof URL
       ? String(input)
       : input.url;
+    const expectation = await resolveMetaK2PreviewAliasExpectation({
+      requestInput: input,
+      requestInit: init,
+      env: process.env,
+      repositoryRoot: process.cwd(),
+    });
     const readiness = await waitForAttestedMetaK2PreviewAlias({
       fetchImpl: originalFetch,
       url,
+      expectedAttestation: expectation.expectedAttestation,
+      expectedVersionId: expectation.expectedVersionId,
     });
     process.stdout.write(`${JSON.stringify({
       ok: true,
       stage: 'preview-alias-attested-active',
+      phase: expectation.phase,
       attemptCount: readiness.attemptCount,
       status: readiness.status,
       code: readiness.code,
       attestationFingerprint: readiness.attestationFingerprint,
       workerVersionFingerprint: readiness.workerVersionFingerprint,
+      expectedAttestationFingerprint:
+        expectation.expectedAttestationFingerprint,
+      expectedVersionFingerprint: expectation.expectedVersionFingerprint,
       directUseCaseInvocationCount: 0,
       queueMessageCount: 0,
       remoteMutationCount: 0,
