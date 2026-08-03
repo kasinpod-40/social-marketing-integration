@@ -10,18 +10,24 @@ import {
   unlink,
   writeFile,
 } from 'node:fs/promises';
-import { dirname, isAbsolute, relative, resolve } from 'node:path';
+import { dirname, relative, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { buildLarkNativeAiControlledPreviewReadiness } from '../packages/application/src/reports/build-lark-native-ai-controlled-preview-readiness.js';
 import {
   LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXACT_TERMINAL_CONFIRMATION,
   LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXACT_TERMINAL_CONTRACT_VERSION,
-  LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXACT_TERMINAL_DEFAULT_SOURCE_PATH,
   LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXACT_TERMINAL_EVIDENCE_SCHEMA_VERSION,
   LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXACT_TERMINAL_LIMITS,
   LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXACT_TERMINAL_OUTPUT_ROOT,
   LARK_NATIVE_AI_CONTROLLED_PREVIEW_LIVE_PILOT_INPUT_SCHEMA_VERSION,
 } from '../packages/config/src/lark-native-ai-controlled-preview-exact-terminal-contract.js';
+import { createLarkBitableClientFromEnv } from '../packages/connectors/src/lark/lark-bitable.client.js';
+import { parseJsoncObject } from './lib/chatwoot-safe-wrangler-config.js';
+import { readDevVars } from './lib/dev-vars.js';
+import {
+  collectLarkNativeAiControlledPreviewRealSource,
+  createLarkNativeAiControlledPreviewSourceReadGuard,
+} from './lib/collect-lark-native-ai-controlled-preview-real-source.js';
 import {
   assertLarkNativeAiControlledPreviewExactTerminalConfirmation,
   assertLarkNativeAiControlledPreviewExactTerminalFirstPass,
@@ -38,10 +44,11 @@ import {
 
 const execFileAsync = promisify(execFile);
 const repositoryRoot = resolve(process.cwd());
-const sourcePath = resolve(
-  process.env.MKT_LARK_NATIVE_AI_CONTROLLED_PREVIEW_SOURCE_PACKAGE
-    ?? LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXACT_TERMINAL_DEFAULT_SOURCE_PATH,
+const configPath = resolve(
+  process.env.MKT_LARK_NATIVE_AI_CONTROLLED_PREVIEW_WRANGLER_CONFIG
+    ?? 'wrangler.sync.jsonc',
 );
+const devVarsPath = resolve(process.env.DEV_VARS_FILE ?? '.dev.vars');
 const outputRoot = resolve(
   process.env.MKT_LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXACT_TERMINAL_OUTPUT_ROOT
     ?? LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXACT_TERMINAL_OUTPUT_ROOT,
@@ -51,6 +58,7 @@ const lockPath = resolve(outputRoot, '.exact-terminal.lock');
 let stage = 'init';
 let repository = null;
 let sourcePackage = null;
+let sourceRead = null;
 let attemptDirectory = null;
 let lockHandle = null;
 let summaryWritten = false;
@@ -72,6 +80,7 @@ try {
     details: sanitizeLarkNativeAiControlledPreviewExactTerminalValue(error?.details ?? {}),
     repository,
     sourcePackageSha256: sourcePackage?.packageSha256 ?? null,
+    sourceRead: sourceRead?.snapshot?.() ?? null,
     attemptDirectory: attemptDirectory ? relative(repositoryRoot, attemptDirectory) : null,
     aiCallCount: 0,
     remoteD1ActionCount: 0,
@@ -88,7 +97,7 @@ try {
       await writePrivateJson(resolve(attemptDirectory, 'failure-summary.json'), failure);
       summaryWritten = true;
     } catch {
-      // Preserve the primary failure. The stderr JSON still contains the exact stage and code.
+      // Preserve the primary failure and keep stderr as the final authority.
     }
   }
   process.stderr.write(`${JSON.stringify(failure, null, 2)}\n`);
@@ -105,31 +114,31 @@ function printPlan() {
     ok: true,
     planOnly: true,
     contractVersion: LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXACT_TERMINAL_CONTRACT_VERSION,
-    objective: 'validate_retained_real_report_evidence_then_apply_and_replay_exact_40_lark_preview_rows',
-    defaultSourcePackage: LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXACT_TERMINAL_DEFAULT_SOURCE_PATH,
-    sourcePackageRequirements: [
-      'private regular file mode 0600; symlink forbidden',
-      'exact current main Head and retained package checksum',
-      'exact validated real-data Offline inputs for 1D/3D/7D/30D',
-      'Lark schema zero drift with exact 6/6 View filters',
-      'released all-false Remote authority captured after the prior Terminal stopped',
-      'Fixture, dummy, placeholder and sample generation identities forbidden',
-    ],
+    objective: 'collect_real_lark_report_outputs_then_apply_and_replay_exact_40_preview_rows',
     exactCommand: [
+      `cd /Users/wasanjantawong/Git/social-marketing-integration &&`,
       `CONFIRM_LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXACT_TERMINAL=${LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXACT_TERMINAL_CONFIRMATION}`,
       'node scripts/lark-native-ai-controlled-preview-exact-terminal.mjs --execute',
     ].join(' '),
+    hiddenPrerequisiteFiles: 0,
     executionSequence: [
       'fetch origin/main and require clean exact local main',
-      'acquire one local exact-terminal lock without stale-lock deletion',
-      'validate retained source package before any Lark request',
-      'build exact approved readiness plans for 1D/3D/7D/30D',
-      'write private head-bound Live Pilot input',
-      'run bounded Lark apply with fixed client limits',
+      'validate all local config, credentials and mappings before Remote read',
+      'acquire one local exact-terminal lock',
+      'read Lark schema and TikTok 1D/3D/7D/30D Report outputs through a read-only allowlist',
+      'create and revalidate a private retained source package automatically',
+      'build exact approved all-channel readiness plans',
+      'run bounded first pass with at most 40 Record writes',
       'run a separate same-input replay',
-      'require 40 no-op / zero writes',
+      'require 40 no-op / zero replay writes',
       'write immutable private attempt evidence',
     ],
+    visibleRows: {
+      tiktokGoldenDataset: 4,
+      otherChannelStatusRows: 32,
+      executiveRows: 4,
+      total: 40,
+    },
     maximumFirstPassWrites:
       LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXACT_TERMINAL_LIMITS.maximumFirstPassWrites,
     replayWritesRequired: 0,
@@ -159,35 +168,52 @@ async function executeExactTerminal() {
     clean: (await gitText(['status', '--porcelain'])) === '',
   });
 
+  stage = 'local-preflight';
+  const runtime = await loadAndValidateRuntime();
+
   stage = 'acquire-local-execution-lock';
   await mkdir(outputRoot, { recursive: true, mode: 0o700 });
   await chmod(outputRoot, 0o700);
   lockHandle = await acquireExecutionLock();
 
-  stage = 'load-private-retained-source-package';
-  await assertPrivateRegularRepositoryFile(sourcePath);
-  const sourceBytes = await readFile(sourcePath);
-  if (sourceBytes.byteLength > LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXACT_TERMINAL_LIMITS.maximumSourcePackageBytes) {
-    throw exactTerminalError(
-      'Retained source package exceeds the reviewed byte limit',
-      'LARK_NATIVE_AI_CONTROLLED_PREVIEW_SOURCE_PACKAGE_TOO_LARGE',
-      {
-        maximumBytes:
-          LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXACT_TERMINAL_LIMITS.maximumSourcePackageBytes,
-        observedBytes: sourceBytes.byteLength,
-      },
-    );
-  }
-  sourcePackage = await validateLarkNativeAiControlledPreviewSourcePackage(
-    parseJson(sourceBytes.toString('utf8'), 'retained source package'),
-    repository,
-  );
-
   stage = 'create-immutable-attempt-directory';
-  attemptDirectory = await createAttemptDirectory(sourcePackage.packageSha256);
+  attemptDirectory = await createAttemptDirectory();
+  const sourcePath = resolve(attemptDirectory, '00-retained-real-report-source.json');
   const inputPath = resolve(attemptDirectory, 'live-pilot-input.json');
   const firstEvidencePath = resolve(attemptDirectory, '01-first-pass.json');
   const replayEvidencePath = resolve(attemptDirectory, '02-same-input-replay.json');
+
+  stage = 'collect-real-lark-report-source';
+  sourceRead = createLarkNativeAiControlledPreviewSourceReadGuard(
+    globalThis.fetch.bind(globalThis),
+  );
+  const sourceEnv = Object.freeze({
+    ...runtime.env,
+    LARK_MAX_ATTEMPTS: '1',
+    LARK_MAX_PAGES: '2',
+    LARK_MAX_FILTER_CONDITIONS: '50',
+    LARK_REQUEST_TIMEOUT_MS: '30000',
+    LARK_MIN_REQUEST_INTERVAL_MS: '150',
+  });
+  const sourceClient = createLarkBitableClientFromEnv(sourceEnv, {
+    fetchImpl: sourceRead.fetchImpl,
+    onRequest: (event) => process.stderr.write(`${JSON.stringify({
+      stage: 'source_read',
+      ...sanitizeLarkNativeAiControlledPreviewExactTerminalValue(event),
+    })}\n`),
+  });
+  const collected = await collectLarkNativeAiControlledPreviewRealSource({
+    client: sourceClient,
+    sourceGuard: sourceRead,
+    repository,
+    env: runtime.env,
+    generatedAt: Date.now(),
+  });
+  sourcePackage = await validateLarkNativeAiControlledPreviewSourcePackage(
+    collected,
+    repository,
+  );
+  await writePrivateJson(sourcePath, sourcePackage);
 
   stage = 'build-exact-four-window-readiness';
   const readinessPlans = await buildLarkNativeAiControlledPreviewExactTerminalReadiness({
@@ -201,20 +227,22 @@ async function executeExactTerminal() {
   });
 
   stage = 'lark-first-pass';
-  const firstPassRaw = await runLivePilotChild({
-    inputPath,
-    evidencePath: firstEvidencePath,
-    passName: 'first-pass',
-  });
-  const firstPass = assertLarkNativeAiControlledPreviewExactTerminalFirstPass(firstPassRaw);
+  const firstPass = assertLarkNativeAiControlledPreviewExactTerminalFirstPass(
+    await runLivePilotChild({
+      inputPath,
+      evidencePath: firstEvidencePath,
+      passName: 'first-pass',
+    }),
+  );
 
   stage = 'lark-same-input-replay';
-  const replayRaw = await runLivePilotChild({
-    inputPath,
-    evidencePath: replayEvidencePath,
-    passName: 'same-input-replay',
-  });
-  const replay = assertLarkNativeAiControlledPreviewExactTerminalReplay(replayRaw);
+  const replay = assertLarkNativeAiControlledPreviewExactTerminalReplay(
+    await runLivePilotChild({
+      inputPath,
+      evidencePath: replayEvidencePath,
+      passName: 'same-input-replay',
+    }),
+  );
 
   stage = 'write-exact-terminal-summary';
   const summary = Object.freeze({
@@ -225,6 +253,7 @@ async function executeExactTerminal() {
     repository,
     sourcePackageSha256: sourcePackage.packageSha256,
     sourceEvidenceSha256: sourcePackage.provenance.sourceEvidenceSha256,
+    sourceRead: sourceRead.snapshot(),
     windows: sourcePackage.offlineInputs.map((item) => item.window.windowDays),
     firstPass: {
       mode: firstPass.mode,
@@ -258,6 +287,81 @@ async function executeExactTerminal() {
   process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
 }
 
+async function loadAndValidateRuntime() {
+  let config;
+  const blockers = [];
+  try {
+    config = parseJsoncObject(await readFile(configPath, 'utf8'));
+  } catch (error) {
+    throw exactTerminalError(
+      'Reviewed wrangler.sync.jsonc could not be loaded',
+      'LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXACT_TERMINAL_CONFIG_INVALID',
+      { code: error?.code ?? null },
+    );
+  }
+  const devVars = await readOptionalPrivateDevVars(devVarsPath, blockers);
+  const env = Object.freeze({ ...(config.vars ?? {}), ...devVars, ...process.env });
+  if (config.name !== 'social-mkt-sync-worker') blockers.push({
+    code: 'WORKER_NAME_INVALID', field: 'name',
+  });
+  if (config.workers_dev !== false) blockers.push({
+    code: 'WORKERS_DEV_NOT_DISABLED', field: 'workers_dev',
+  });
+  if (env.MKT_ENV !== 'development') blockers.push({
+    code: 'MKT_ENV_INVALID', field: 'MKT_ENV',
+  });
+  if (env.MKT_CUSTOMER_PROFILE !== 'integration_workspace') blockers.push({
+    code: 'CUSTOMER_PROFILE_INVALID', field: 'MKT_CUSTOMER_PROFILE',
+  });
+  for (const field of [
+    'LARK_APP_ID',
+    'LARK_APP_SECRET',
+    'LARK_TABLE_MKT_REPORT_SNAPSHOTS',
+    'LARK_TABLE_MKT_REPORT_METRIC_VALUES',
+  ]) {
+    if (typeof env[field] !== 'string' || env[field].trim() === '') blockers.push({
+      code: 'REQUIRED_ENV_MISSING', field,
+    });
+  }
+  if (typeof (env.LARK_APP_TOKEN ?? env.LARK_BASE_APP_TOKEN) !== 'string'
+    || (env.LARK_APP_TOKEN ?? env.LARK_BASE_APP_TOKEN).trim() === '') blockers.push({
+    code: 'REQUIRED_ENV_MISSING', field: 'LARK_APP_TOKEN|LARK_BASE_APP_TOKEN',
+  });
+  const enabledFlags = Object.entries(env)
+    .filter(([name, value]) => /^MKT_[A-Z0-9_]+_ENABLED$/u.test(name)
+      && String(value).toLowerCase() === 'true')
+    .map(([name]) => name)
+    .sort();
+  if (enabledFlags.length > 0) blockers.push({
+    code: 'LOCAL_EXECUTION_FLAGS_NOT_ALL_FALSE', fields: enabledFlags,
+  });
+  if (blockers.length > 0) throw exactTerminalError(
+    'Controlled Preview Exact Terminal local preflight found blockers',
+    'LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXACT_TERMINAL_LOCAL_PREFLIGHT_BLOCKED',
+    { blockerCount: blockers.length, blockers },
+  );
+  return Object.freeze({ config, env });
+}
+
+async function readOptionalPrivateDevVars(path, blockers) {
+  try {
+    const metadata = await lstat(path);
+    if (!metadata.isFile() || metadata.isSymbolicLink()) {
+      blockers.push({ code: 'DEV_VARS_FILE_TYPE_INVALID', field: '.dev.vars' });
+      return {};
+    }
+    if ((metadata.mode & 0o077) !== 0) blockers.push({
+      code: 'DEV_VARS_MODE_INVALID', field: '.dev.vars',
+      observedMode: (metadata.mode & 0o777).toString(8),
+    });
+    return await readDevVars(path);
+  } catch (error) {
+    if (error?.code === 'ENOENT') return {};
+    blockers.push({ code: 'DEV_VARS_READ_FAILED', field: '.dev.vars', sourceCode: error?.code ?? null });
+    return {};
+  }
+}
+
 async function runLivePilotChild({ inputPath, evidencePath, passName }) {
   const env = buildLarkNativeAiControlledPreviewExactTerminalChildEnv(process.env, {
     head: repository.exactHeadSha,
@@ -274,6 +378,7 @@ async function runLivePilotChild({ inputPath, evidencePath, passName }) {
       encoding: 'utf8',
       timeout: LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXACT_TERMINAL_LIMITS.childTimeoutMs,
       maxBuffer: LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXACT_TERMINAL_LIMITS.childMaxBufferBytes,
+      windowsHide: true,
     });
     return parseChildJson(result.stdout, passName);
   } catch (error) {
@@ -319,35 +424,9 @@ async function acquireExecutionLock() {
   }
 }
 
-async function assertPrivateRegularRepositoryFile(path) {
-  const location = relative(repositoryRoot, path);
-  if (location === '' || location.startsWith('..') || isAbsolute(location)) throw exactTerminalError(
-    'Retained source package must be inside the repository working tree',
-    'LARK_NATIVE_AI_CONTROLLED_PREVIEW_SOURCE_PACKAGE_PATH_INVALID',
-  );
-  let metadata;
-  try { metadata = await lstat(path); } catch (error) {
-    throw exactTerminalError(
-      'Retained source package was not found at the exact configured path',
-      'LARK_NATIVE_AI_CONTROLLED_PREVIEW_SOURCE_PACKAGE_NOT_FOUND',
-      { sourcePath: location, sourceCode: error?.code ?? null },
-    );
-  }
-  if (!metadata.isFile() || metadata.isSymbolicLink()) throw exactTerminalError(
-    'Retained source package must be a regular non-symlink file',
-    'LARK_NATIVE_AI_CONTROLLED_PREVIEW_SOURCE_PACKAGE_FILE_TYPE_INVALID',
-    { sourcePath: location },
-  );
-  if ((metadata.mode & 0o077) !== 0) throw exactTerminalError(
-    'Retained source package must use private mode 0600',
-    'LARK_NATIVE_AI_CONTROLLED_PREVIEW_SOURCE_PACKAGE_MODE_INVALID',
-    { sourcePath: location, observedMode: (metadata.mode & 0o777).toString(8) },
-  );
-}
-
-async function createAttemptDirectory(packageSha256) {
-  const timestamp = new Date().toISOString().replace(/[-:.]/gu, '').replace('Z', 'Z');
-  const path = resolve(outputRoot, `${timestamp}-${packageSha256.slice(0, 12)}-${process.pid}`);
+async function createAttemptDirectory() {
+  const timestamp = new Date().toISOString().replace(/[-:.]/gu, '');
+  const path = resolve(outputRoot, `${timestamp}-${repository.exactHeadSha.slice(0, 12)}-${process.pid}`);
   await mkdir(path, { recursive: false, mode: 0o700 });
   await chmod(path, 0o700);
   return path;
@@ -364,11 +443,8 @@ async function writePrivateJson(path, value) {
 }
 
 async function readOptionalJson(path) {
-  try { return parseJson(await readFile(path, 'utf8'), 'retained child evidence'); }
-  catch (error) {
-    if (error?.code === 'ENOENT') return null;
-    return null;
-  }
+  try { return JSON.parse(await readFile(path, 'utf8')); }
+  catch { return null; }
 }
 
 function parseChildJson(value, label) {
@@ -392,17 +468,6 @@ function parseOptionalChildJson(value) {
   return null;
 }
 
-function parseJson(value, label) {
-  try { return JSON.parse(String(value)); } catch (cause) {
-    const error = exactTerminalError(
-      `${label} is not valid JSON`,
-      'LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXACT_TERMINAL_JSON_INVALID',
-    );
-    error.cause = cause;
-    throw error;
-  }
-}
-
 async function runGit(args) {
   try {
     await execFileAsync('git', args, {
@@ -410,6 +475,7 @@ async function runGit(args) {
       encoding: 'utf8',
       timeout: 60_000,
       maxBuffer: 4 * 1024 * 1024,
+      windowsHide: true,
     });
   } catch (error) {
     throw exactTerminalError(
@@ -427,6 +493,7 @@ async function gitText(args) {
       encoding: 'utf8',
       timeout: 60_000,
       maxBuffer: 4 * 1024 * 1024,
+      windowsHide: true,
     });
     return String(result.stdout ?? '').trim();
   } catch (error) {
