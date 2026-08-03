@@ -245,7 +245,7 @@ async function executeReviewedSharedOperator({ env }) {
   }
 }
 
-async function resolveChildDevVarsPath(env, temporaryDirectory) {
+export async function resolveChildDevVarsPath(env = {}, temporaryDirectory) {
   const configuredPath = resolve(env.DEV_VARS_FILE ?? '.dev.vars');
   try {
     const file = await stat(configuredPath);
@@ -253,10 +253,19 @@ async function resolveChildDevVarsPath(env, temporaryDirectory) {
       'DEV_VARS_FILE must be a regular file when present',
       'REPORT_LIVE_CLOSURE_DEV_VARS_INVALID',
     );
+    if ((file.mode & 0o777) !== 0o600) throw terminalError(
+      'DEV_VARS_FILE must use exact private mode 0600',
+      'REPORT_LIVE_CLOSURE_DEV_VARS_MODE_INVALID',
+      {
+        expectedMode: '0600',
+        observedMode: (file.mode & 0o777).toString(8).padStart(4, '0'),
+      },
+    );
     return configuredPath;
   } catch (error) {
     if (error?.code !== 'ENOENT') throw error;
-    const emptyPath = resolve(temporaryDirectory, 'empty.dev.vars');
+    const root = requireText(temporaryDirectory, 'temporaryDirectory');
+    const emptyPath = resolve(root, 'empty.dev.vars');
     await writeFile(emptyPath, '', { encoding: 'utf8', mode: 0o600 });
     await chmod(emptyPath, 0o600);
     return emptyPath;
