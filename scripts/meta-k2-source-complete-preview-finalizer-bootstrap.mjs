@@ -18,7 +18,7 @@ try {
     './lib/meta-k2-source-complete-preview-loader.mjs',
     import.meta.url,
   );
-  await import('./meta-k2-partial-staging-preview-finalizer.mjs?source-complete-v1');
+  await import('./meta-k2-partial-staging-preview-finalizer.mjs');
 } catch (error) {
   process.stderr.write(`${JSON.stringify({
     ok: false,
