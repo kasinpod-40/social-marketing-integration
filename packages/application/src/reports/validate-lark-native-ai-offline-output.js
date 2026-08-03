@@ -102,11 +102,22 @@ export function validateLarkNativeAiNumericTraces(bundle, output) {
       fail('AI_MULTI_CURRENCY_AGGREGATION_FORBIDDEN', 'A numeric statement cannot combine different currencies');
     }
     if (TREND_LANGUAGE.test(text)) {
-      if (channel && (channel.availabilityStatus !== 'complete' || channel.coverageStatus !== 'complete')) {
-        fail('AI_TREND_INCOMPLETE_EVIDENCE', `${platform} trend language requires complete availability and coverage`);
-      }
       if (claims.length === 0 || claims.some(({ traceId }) => bundle.traceIndex[traceId]?.trendEligible !== true)) {
         fail('AI_TREND_WITHOUT_BASELINE', 'Trend language requires exact trend-eligible Report traces');
+      }
+      const trendChannels = claims.map(({ traceId }) => {
+        const trace = bundle.traceIndex[traceId];
+        return bundle.channels.find((candidate) => candidate.reportIdentity?.reportId === trace?.reportId);
+      });
+      if (trendChannels.some((candidate) => !candidate
+        || candidate.availabilityStatus !== 'complete'
+        || candidate.coverageStatus !== 'complete'
+        || candidate.freshness.status !== 'fresh'
+        || candidate.dataQualityIssues.length > 0)) {
+        fail(
+          'AI_TREND_INCOMPLETE_EVIDENCE',
+          'Trend language requires complete availability, coverage, freshness and data-quality evidence',
+        );
       }
     }
     if (channel && NON_NUMERIC_STATUSES.has(channel.availabilityStatus) && claims.length > 0) {
@@ -127,7 +138,7 @@ export function validateLarkNativeAiAntiFabrication(bundle, output) {
   const policies = new Map(resolveAllLarkNativeAiSectionPolicies(bundle).map((policy) => [policy.sectionId, policy]));
   for (const section of output.sections) {
     const policy = policies.get(section.sectionId);
-    const allowedPlatforms = new Set(policy.channels.map((channel) => channel.platform));
+    const allowedPlatforms = new Set(policy.channels.map((candidate) => candidate.platform));
     for (const item of [...section.statements, ...section.recommendations, ...section.warnings]) {
       const refs = requireArray(item.evidenceRefs, `${section.sectionId}.evidenceRefs`);
       if (refs.length === 0) fail('AI_OUTPUT_EVIDENCE_REF_MISSING', `${section.sectionId} output item requires evidenceRefs`);
