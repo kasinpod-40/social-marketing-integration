@@ -212,6 +212,7 @@ export function createMetaD1OnlyPartialStagingRecoveryHttpHandler(dependencies =
         phase: continuationPhase,
         code: operational.code,
         error: operational.message,
+        details: operational.details ?? {},
       })));
       return attested(json({
         ok: false,
@@ -219,6 +220,7 @@ export function createMetaD1OnlyPartialStagingRecoveryHttpHandler(dependencies =
         phase: continuationPhase,
         error: status === 401 ? 'Unauthorized' : 'Meta exact continuation failed',
         code: operational.code ?? 'META_PARTIAL_STAGING_CONTINUATION_FAILED',
+        details: sanitizeOperationalValue(operational.details ?? {}),
         directUseCaseInvocationCount: 0,
         queueMessageCount: 0,
         queueOperationAttemptMutationCount: 0,
@@ -292,7 +294,9 @@ function assertExactTarget(env) {
 function assertExactExecutionFlags(env, phase) {
   const expected = APPROVED_TRUE_FLAGS_BY_PHASE[phase];
   const trueFlags = Object.entries(env ?? {})
-    .filter(([name, value]) => EXECUTION_FLAG_PATTERN.test(name) && readBoolean(value, false))
+    .filter(([name, value]) => (
+      EXECUTION_FLAG_PATTERN.test(name) && readBoolean(value, false, name)
+    ))
     .map(([name]) => name)
     .sort();
   if (JSON.stringify(trueFlags) !== JSON.stringify(expected)) {
@@ -347,6 +351,7 @@ async function sha256Text(value) {
     throw recoveryError(
       'SHA-256 runtime is unavailable for Meta exact continuation authorization',
       'META_PARTIAL_STAGING_RECOVERY_CONFIG_INVALID',
+      { fieldName: 'globalThis.crypto.subtle' },
     );
   }
   const digest = await subtle.digest('SHA-256', new TextEncoder().encode(value));
@@ -442,15 +447,16 @@ function requireSha256(value, fieldName) {
   return text;
 }
 
-function readBoolean(value, fallback) {
+function readBoolean(value, fallback, fieldName = 'execution flag') {
   if (value === undefined || value === null || value === '') return fallback;
   if (value === true || value === false) return value;
   const normalized = String(value).trim().toLowerCase();
-  if (normalized === 'true') return true;
-  if (normalized === 'false') return false;
+  if (['true', '1', 'yes', 'on', 'enabled'].includes(normalized)) return true;
+  if (['false', '0', 'no', 'off', 'disabled'].includes(normalized)) return false;
   throw recoveryError(
-    'Meta execution flag must be true or false',
+    `${fieldName} must be a supported boolean value`,
     'META_PARTIAL_STAGING_RECOVERY_CONFIG_INVALID',
+    { fieldName },
   );
 }
 
