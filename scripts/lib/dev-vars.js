@@ -10,19 +10,6 @@ export async function readDevVars(filePath = '.dev.vars') {
 }
 
 /**
- * อ่าน .dev.vars เมื่อมีไฟล์อยู่จริง และคืน object ว่างเมื่อไม่มีไฟล์
- * Process environment ยังคงเป็น authority หลักของ caller และไม่มีการ execute shell
- */
-export async function readOptionalDevVars(filePath = '.dev.vars') {
-  try {
-    return await readDevVars(filePath);
-  } catch (error) {
-    if (error?.code === 'ENOENT') return Object.freeze({});
-    throw error;
-  }
-}
-
-/**
  * Parse เนื้อหา .dev.vars โดยให้ค่าบรรทัดหลังสุดชนะเมื่อ Key ซ้ำ
  * Parser นี้ไม่ Expand ตัวแปรและไม่ Execute shell เพื่อป้องกัน Code injection จากไฟล์ Config
  */
