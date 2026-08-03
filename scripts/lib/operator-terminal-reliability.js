@@ -99,10 +99,14 @@ export async function inspectPrivateJsonFile(path, options = {}) {
     'OPERATOR_TERMINAL_FILE_INVALID',
     { field: options.field ?? 'path' },
   );
-  if ((file.mode & 0o077) !== (requiredMode & 0o077)) throw reliabilityError(
+  if ((file.mode & 0o777) !== requiredMode) throw reliabilityError(
     `${options.label ?? 'Evidence'} file must use private mode 0600`,
     'OPERATOR_TERMINAL_FILE_MODE_INVALID',
-    { field: options.field ?? 'path', expectedMode: '0600' },
+    {
+      field: options.field ?? 'path',
+      expectedMode: requiredMode.toString(8).padStart(4, '0'),
+      observedMode: (file.mode & 0o777).toString(8).padStart(4, '0'),
+    },
   );
   let parsed;
   try {
