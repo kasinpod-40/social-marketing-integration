@@ -14,6 +14,11 @@ import {
   parseYouTubeReportRemoteCollectorArgs,
   sanitizeYouTubeRemoteEvidence,
 } from './lib/youtube-report-remote-readiness-collector.js';
+import {
+  YOUTUBE_REPORT_REMOTE_LOCK_RELEASE_CONTRACT,
+  YOUTUBE_REPORT_REMOTE_LOCK_RELEASE_ENV,
+  loadYouTubeReportRemoteLockReleaseEvidence,
+} from './lib/youtube-report-remote-lock-release.js';
 
 const repositoryRoot = resolve(process.cwd());
 const internalCollectorPath = fileURLToPath(
@@ -54,11 +59,17 @@ function printPlan() {
     ok: true,
     planOnly: true,
     contractVersion: 'youtube_report_remote_readiness_reviewed_terminal_v1',
-    command: `CONFIRM_YOUTUBE_REPORT_REMOTE_READINESS_COLLECTOR=${YOUTUBE_REPORT_REMOTE_COLLECTOR_CONFIRMATION} MKT_YOUTUBE_REPORT_REMOTE_REVIEWED_HEAD=<exact-reviewed-main-sha> node scripts/youtube-report-remote-readiness-reviewed-terminal.mjs --execute`,
+    command: `CONFIRM_YOUTUBE_REPORT_REMOTE_READINESS_COLLECTOR=${YOUTUBE_REPORT_REMOTE_COLLECTOR_CONFIRMATION} MKT_YOUTUBE_REPORT_REMOTE_REVIEWED_HEAD=<exact-reviewed-main-sha> ${YOUTUBE_REPORT_REMOTE_LOCK_RELEASE_ENV}=<retained-lock-release-evidence.json> node scripts/youtube-report-remote-readiness-reviewed-terminal.mjs --execute`,
     repositoryGate: {
       branch: 'main',
       clean: true,
       headEqualsReviewedHead: true,
+    },
+    metaRemoteLockGate: {
+      required: true,
+      evidenceEnv: YOUTUBE_REPORT_REMOTE_LOCK_RELEASE_ENV,
+      contractVersion: YOUTUBE_REPORT_REMOTE_LOCK_RELEASE_CONTRACT,
+      callerBooleanAccepted: false,
     },
     internalCollectorDirectExecutionBlocked: true,
     providerRequestCount: 0,
@@ -81,6 +92,11 @@ async function executeReviewedCollector() {
   );
   const repository = collectRepositoryState(reviewedHead);
   assertReviewedRepository(repository);
+
+  stage = 'meta-remote-lock-release-preflight';
+  const metaRemoteLock = await loadYouTubeReportRemoteLockReleaseEvidence({
+    env: process.env,
+  });
 
   stage = 'run-internal-read-only-collector';
   temporaryDirectory = await mkdtemp(resolve(tmpdir(), 'youtube-report-readiness-'));
@@ -115,6 +131,7 @@ async function executeReviewedCollector() {
   const evidence = Object.freeze({
     ...internalSummary.evidence,
     repository,
+    metaRemoteLock,
   });
   const assessment = assessYouTubeReportLiveReadiness(evidence);
   const summary = sanitizeYouTubeRemoteEvidence({
