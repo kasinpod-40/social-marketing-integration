@@ -92,23 +92,23 @@ function d1CompleteSnapshot(overrides = {}) {
     organicState: 0,
     organicObservations: 0,
     accountDaily: 0,
-    adsEntities: 26,
+    adsEntities: 182,
     adsDaily: 4103,
   };
   return exactSnapshot({
     syncRunStatus: 'success',
-    syncRunStartedAt: 1785757855080,
-    syncRunFinishedAt: 1785759100000,
+    syncRunStartedAt: 1785766562039,
+    syncRunFinishedAt: 1785766564114,
     syncRunErrorCode: null,
-    syncRunRecordsWritten: 4103,
-    syncRunUpdatedAt: 1785759100000,
+    syncRunRecordsWritten: 0,
+    syncRunUpdatedAt: 1785766564114,
     d1PhaseComplete: true,
-    d1PhaseUpdatedAt: 1785759099000,
-    coverageRunCount: 1,
-    coverageEntityCount: 4103,
+    d1PhaseUpdatedAt: 1785766558619,
+    coverageRunCount: 5,
+    coverageEntityCount: 4285,
     targetCounts: counts,
     operationCounts: { ...counts },
-    observedAt: 1785759496790,
+    observedAt: 1785769599090,
     ...overrides,
   });
 }
@@ -144,9 +144,9 @@ test('accepts only the exact stable 26-entity partial D1 resume boundary', () =>
   assert.equal(result.snapshot.targetCounts.adsDaily, 0);
 });
 
-test('accepts exact stable D1-complete Lark-pending boundary and skips D1', () => {
+test('accepts exact stable D1-complete Lark-pending facts without hardcoded entity count', () => {
   const before = d1CompleteSnapshot();
-  const after = d1CompleteSnapshot({ observedAt: before.observedAt + 22_991 });
+  const after = d1CompleteSnapshot({ observedAt: before.observedAt + 34_052 });
   const result = validateMetaK2ExactSourceCompleteFailureStability(before, after);
   assert.equal(result.accepted, true);
   assert.equal(result.boundary, 'd1_complete_lark_pending');
@@ -156,13 +156,15 @@ test('accepts exact stable D1-complete Lark-pending boundary and skips D1', () =
     result.decision,
     'META_K2_D1_COMPLETE_LARK_PENDING_STABLE_SAFE_TO_RESUME_EXACT_OPERATION',
   );
-  assert.equal(result.snapshot.targetCounts.adsEntities, 26);
+  assert.equal(result.snapshot.targetCounts.adsEntities, 182);
   assert.equal(result.snapshot.targetCounts.adsDaily, 4103);
+  assert.equal(result.snapshot.coverageRunCount, 5);
+  assert.equal(result.snapshot.coverageEntityCount, 4285);
   assert.equal(result.providerReplayAuthorized, false);
   assert.equal(result.queueSendAuthorized, false);
 });
 
-test('rejects exact-state drift, unsupported partial facts and a short stability window', () => {
+test('rejects exact-state drift, unsupported facts and a short stability window', () => {
   assert.throws(
     () => validateMetaK2ExactSourceCompleteFailureStability(
       exactSnapshot(),
@@ -188,14 +190,26 @@ test('rejects exact-state drift, unsupported partial facts and a short stability
     () => validateMetaK2ExactSourceCompleteFailureStability(
       d1CompleteSnapshot(),
       d1CompleteSnapshot({
-        observedAt: d1CompleteSnapshot().observedAt + 22_991,
+        observedAt: d1CompleteSnapshot().observedAt + 34_052,
         operationCounts: {
           ...d1CompleteSnapshot().operationCounts,
           adsDaily: 4102,
         },
       }),
     ),
-    (error) => error?.code === 'META_K2_SOURCE_COMPLETE_PROGRESS_OBSERVED',
+    (error) => error?.code === 'META_K2_SOURCE_COMPLETE_PROGRESS_OBSERVED'
+      && error?.details?.afterFailedChecks?.includes('operationTargetParity'),
+  );
+  assert.throws(
+    () => validateMetaK2ExactSourceCompleteFailureStability(
+      d1CompleteSnapshot(),
+      d1CompleteSnapshot({
+        observedAt: d1CompleteSnapshot().observedAt + 34_052,
+        coverageEntityCount: 4284,
+      }),
+    ),
+    (error) => error?.code === 'META_K2_SOURCE_COMPLETE_PROGRESS_OBSERVED'
+      && error?.details?.afterFailedChecks?.includes('coverageEntityParity'),
   );
   assert.throws(
     () => validateMetaK2ExactSourceCompleteFailureStability(
