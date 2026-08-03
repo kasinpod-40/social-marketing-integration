@@ -1,6 +1,7 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { auditOperatorTerminalChannels } from './lib/operator-terminal-channel-audit.js';
 
 // Root ของ Repository คำนวณจากตำแหน่ง Script เพื่อให้รันได้จาก Working directory ใดก็ได้
 const SCRIPT_FILE = fileURLToPath(import.meta.url);
@@ -18,6 +19,7 @@ const DYNAMIC_IMPORT_PATTERN = /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/gu;
  * - Relative import ต้องชี้ไปยังไฟล์จริง
  * - Shared/Domain/Config/Sync engine ห้ามย้อนกลับไปพึ่ง Layer ระดับสูงกว่า
  * - Dependency graph ต้องไม่มีวงจร
+ * - Operator/Terminal ที่ผู้ใช้อาจรันต้องผ่าน All-channel reliability policy
  */
 async function main() {
   const files = (await Promise.all(
@@ -47,6 +49,11 @@ async function main() {
     violations.push(`Circular dependency: ${cycle.map(relative).join(' -> ')}`);
   }
 
+  const terminalAudit = await auditOperatorTerminalChannels({ projectRoot: PROJECT_ROOT });
+  for (const violation of terminalAudit.violations) {
+    violations.push(`Operator terminal reliability: ${JSON.stringify(violation)}`);
+  }
+
   if (violations.length > 0) {
     console.error('Architecture audit failed:');
     for (const violation of violations) console.error(`- ${violation}`);
@@ -55,7 +62,10 @@ async function main() {
   }
 
   const edgeCount = [...graph.values()].reduce((total, dependencies) => total + dependencies.length, 0);
-  console.log(`Architecture audit passed: ${files.length} source files, ${edgeCount} local dependencies, 0 cycles`);
+  console.log(
+    `Architecture audit passed: ${files.length} source files, ${edgeCount} local dependencies, 0 cycles, `
+    + `${terminalAudit.candidateCount} operator entrypoints audited, 0 terminal policy violations`,
+  );
 }
 
 /** เดิน Directory แบบ Recursive และคืนเฉพาะไฟล์ JavaScript ที่เป็น Source code */
