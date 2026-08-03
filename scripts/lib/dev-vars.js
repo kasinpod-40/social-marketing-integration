@@ -3,10 +3,18 @@ import { readFile } from 'node:fs/promises';
 /**
  * อ่านไฟล์ .dev.vars ของ Cloudflare เป็น Plain object
  * รองรับบรรทัดว่าง, Comment, คำว่า export, ค่า quoted และ Inline comment หลัง quote
+ *
+ * ไฟล์นี้เป็นแหล่งเสริม: หากไม่มีไฟล์ ให้คืน Environment ว่างเพื่อให้ Process environment
+ * เป็น authority ได้ แต่ Error ชนิดอื่นยังต้อง fail closed ตามเดิม
  */
 export async function readDevVars(filePath = '.dev.vars') {
-  const text = await readFile(filePath, 'utf8');
-  return parseDevVars(text);
+  try {
+    const text = await readFile(filePath, 'utf8');
+    return parseDevVars(text);
+  } catch (error) {
+    if (error?.code === 'ENOENT') return Object.freeze({});
+    throw error;
+  }
 }
 
 /**
