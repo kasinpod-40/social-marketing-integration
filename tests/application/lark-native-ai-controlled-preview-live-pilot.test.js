@@ -15,6 +15,7 @@ class FakeLarkClient {
     this.records = structuredClone(options.records ?? []);
     this.createCalls = 0;
     this.updateCalls = 0;
+    this.listRecordCalls = 0;
     this.delayVisibilityAfterWrite = options.delayVisibilityAfterWrite === true;
     this.writesVisible = true;
   }
@@ -23,12 +24,10 @@ class FakeLarkClient {
     return [{ tableId: 'tbl_preview', name: this.tableName }];
   }
 
-  async searchRecordsByFieldValues({ fieldName, values }) {
+  async listRecords() {
+    this.listRecordCalls += 1;
     if (!this.writesVisible) return [];
-    const accepted = new Set(values);
-    return this.records
-      .filter(({ fields }) => accepted.has(fields[fieldName]))
-      .map((record) => structuredClone(record));
+    return this.records.map((record) => structuredClone(record));
   }
 
   async batchCreateRecords({ records }) {
@@ -72,6 +71,7 @@ test('applies forty Preview Records and verifies exact zero drift', async () => 
   assert.equal(client.records.every(({ fields }) => fields.sent_to_group === false), true);
   assert.equal(client.createCalls, 1);
   assert.equal(client.updateCalls, 0);
+  assert.equal(client.listRecordCalls, 2);
 });
 
 test('waits for delayed Lark read-after-write visibility before zero-drift verification', async () => {
@@ -94,18 +94,20 @@ test('waits for delayed Lark read-after-write visibility before zero-drift verif
   assert.equal(client.records.length, 40);
 });
 
-test('same-input replay performs zero writes', async () => {
+test('same-input replay performs zero writes from the actual Record inventory', async () => {
   const input = await buildControlledPreviewReadinessPlans();
   const client = new FakeLarkClient();
   await applyPilot(client, input);
   client.createCalls = 0;
   client.updateCalls = 0;
+  client.listRecordCalls = 0;
 
   const replay = await applyPilot(client, input);
   assert.equal(replay.mode, 'already_zero_drift');
   assert.deepEqual(replay.writes, { created: 0, updated: 0, total: 0 });
   assert.equal(client.createCalls, 0);
   assert.equal(client.updateCalls, 0);
+  assert.equal(client.listRecordCalls, 1);
 });
 
 test('partial resume creates only missing identities', async () => {
@@ -118,6 +120,30 @@ test('partial resume creates only missing identities', async () => {
   assert.deepEqual(result.writes, { created: 27, updated: 0, total: 27 });
   assert.equal(client.records.length, 40);
   assert.equal(result.verification.status, 'zero_drift');
+});
+
+test('blocks duplicate retained preview identities before any additional write', async () => {
+  const input = await buildControlledPreviewReadinessPlans();
+  const seeded = new FakeLarkClient();
+  await applyPilot(seeded, input);
+  const duplicated = seeded.records.flatMap((record, index) => [
+    structuredClone(record),
+    {
+      recordId: `dup_${String(index + 1).padStart(3, '0')}`,
+      fields: structuredClone(record.fields),
+    },
+  ]);
+  const client = new FakeLarkClient({ records: duplicated });
+
+  await assert.rejects(
+    () => applyPilot(client, input),
+    (error) => error.code === 'LARK_NATIVE_AI_CONTROLLED_PREVIEW_LIVE_PILOT_BLOCKED'
+      && error.details.blockers.some(({ code }) => code === 'EXISTING_AI_RUN_KEY_DUPLICATE'),
+  );
+  assert.equal(client.records.length, 80);
+  assert.equal(client.createCalls, 0);
+  assert.equal(client.updateCalls, 0);
+  assert.equal(client.listRecordCalls, 1);
 });
 
 test('blocks unsafe retained sent Records before any write', async () => {
