@@ -11,9 +11,7 @@ import {
   assertAllowedActions,
   assertRawStateMatchesInventory,
   buildCreateFieldMutation,
-  buildExpectedViewFilter,
   buildSelectOptionMutation,
-  buildViewPlans,
   canonicalSchemaValue,
   freezeSchemaValue,
   isEmptyFilter,
@@ -26,6 +24,10 @@ import {
   schemaViewConflict,
   wrapActionFailure,
 } from './lark-native-ai-schema-apply-model.js';
+import {
+  buildLarkNativeAiSchemaViewFilter,
+  buildLarkNativeAiSchemaViewPlans,
+} from './lark-native-ai-schema-view-filters.js';
 
 export { assertAcceptedLarkNativeAiSchemaApplyEvidence, calculateInventorySha256 };
 
@@ -43,7 +45,7 @@ export async function planLarkNativeAiSchemaAdditiveApply(input = {}) {
 
   const raw = await readRawTargetState(client);
   assertRawStateMatchesInventory(raw, live.inventory);
-  const viewPlans = await buildViewPlans(client, raw);
+  const viewPlans = await buildLarkNativeAiSchemaViewPlans(client, raw);
   const fieldActions = live.preview.actions.filter(({ action }) => action !== 'create_view');
   const remainingLogicalActionCount = fieldActions.length
     + viewPlans.filter(({ state }) => state !== 'complete').length;
@@ -123,7 +125,7 @@ export async function applyLarkNativeAiSchemaAdditive(input = {}) {
   }
 
   raw = await readRawTargetState(client);
-  for (const item of await buildViewPlans(client, raw)) {
+  for (const item of await buildLarkNativeAiSchemaViewPlans(client, raw)) {
     if (item.state === 'complete') continue;
     const action = { action: 'create_view', viewName: item.viewName };
     progress(safeProgress('schema_action_start', action));
@@ -135,7 +137,7 @@ export async function applyLarkNativeAiSchemaAdditive(input = {}) {
         viewType: 'grid',
       });
       const viewId = requireText(view?.viewId, `${item.viewName}.viewId`);
-      const expected = buildExpectedViewFilter(item.contract, raw.fields);
+      const expected = buildLarkNativeAiSchemaViewFilter(item.contract, raw.fields);
       const hydrated = await client.getView({ tableId: raw.table.tableId, viewId });
       const actual = normalizeComparableFilter(hydrated?.property?.filterInfo);
       if (expected === null) {
@@ -174,7 +176,7 @@ export async function applyLarkNativeAiSchemaAdditive(input = {}) {
   }
   assertAdditiveDescendant(plan.accepted.inventory, verification.inventory);
   raw = await readRawTargetState(client);
-  const finalViews = await buildViewPlans(client, raw);
+  const finalViews = await buildLarkNativeAiSchemaViewPlans(client, raw);
   const incomplete = finalViews.filter(({ state }) => state !== 'complete');
   if (incomplete.length > 0) throw schemaApplyFailure(
     'Required Views did not reach exact filter parity',
