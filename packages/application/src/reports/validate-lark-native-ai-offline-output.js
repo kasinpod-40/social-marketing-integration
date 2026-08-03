@@ -72,6 +72,12 @@ export function validateLarkNativeAiNumericTraces(bundle, output) {
   for (const item of collectItems(output)) {
     const text = requireText(item.text, 'output item.text');
     const claims = requireArray(item.claims, 'output item.claims');
+    const platform = optionalText(item.platform);
+    const channel = platform
+      ? bundle.channels.find((candidate) => candidate.platform === platform)
+      : null;
+    if (platform && !channel) fail('AI_OUTPUT_PLATFORM_UNKNOWN', `Unknown output platform: ${platform}`);
+
     const tokenCounts = countTokens(extractNumericTokens(text));
     const claimCounts = countTokens(claims.map((claim, index) => {
       const normalized = requireObject(claim, `claim[${index}]`);
@@ -96,17 +102,15 @@ export function validateLarkNativeAiNumericTraces(bundle, output) {
       fail('AI_MULTI_CURRENCY_AGGREGATION_FORBIDDEN', 'A numeric statement cannot combine different currencies');
     }
     if (TREND_LANGUAGE.test(text)) {
+      if (channel && (channel.availabilityStatus !== 'complete' || channel.coverageStatus !== 'complete')) {
+        fail('AI_TREND_INCOMPLETE_EVIDENCE', `${platform} trend language requires complete availability and coverage`);
+      }
       if (claims.length === 0 || claims.some(({ traceId }) => bundle.traceIndex[traceId]?.trendEligible !== true)) {
         fail('AI_TREND_WITHOUT_BASELINE', 'Trend language requires exact trend-eligible Report traces');
       }
     }
-    const platform = optionalText(item.platform);
-    if (platform) {
-      const channel = bundle.channels.find((candidate) => candidate.platform === platform);
-      if (!channel) fail('AI_OUTPUT_PLATFORM_UNKNOWN', `Unknown output platform: ${platform}`);
-      if (NON_NUMERIC_STATUSES.has(channel.availabilityStatus) && claims.length > 0) {
-        fail('AI_NUMERIC_CLAIM_AVAILABILITY_FORBIDDEN', `${platform} cannot expose numeric claims in ${channel.availabilityStatus}`);
-      }
+    if (channel && NON_NUMERIC_STATUSES.has(channel.availabilityStatus) && claims.length > 0) {
+      fail('AI_NUMERIC_CLAIM_AVAILABILITY_FORBIDDEN', `${platform} cannot expose numeric claims in ${channel.availabilityStatus}`);
     }
   }
   return true;
