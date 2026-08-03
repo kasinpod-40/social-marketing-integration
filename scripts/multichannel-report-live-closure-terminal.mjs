@@ -162,7 +162,7 @@ async function executeReviewedSharedOperator({ env }) {
     'MKT_MULTICHANNEL_REPORT_LIVE_CLOSURE_HANDOFF',
   );
   const result = await execFileAsync(process.execPath, [
-    'scripts/report-runtime-closeout-operator.mjs', '--execute',
+    'scripts/report-runtime-closeout-reviewed-multiwindow.mjs', '--execute',
   ], {
     cwd: process.cwd(),
     env: {
