@@ -12,6 +12,8 @@ const SELECT_OPTIONS = Object.freeze({
   adStatus: new Set(['active', 'paused', 'removed', 'unknown']),
 });
 
+const fetchedAt = Date.parse('2026-07-31T12:00:00Z');
+
 test('Meta curated Lark projection uses only applied SingleSelect options', async () => {
   const writeSet = await buildMetaAdsWriteSet({
     accountId: '987650001',
@@ -19,7 +21,7 @@ test('Meta curated Lark projection uses only applied SingleSelect options', asyn
     customerKey: 'chemistry_k2',
     syncRunId: 'meta:meta_ads:chemistry_k2:fixture',
     operationId: 'meta-chemistry_k2-fixture',
-    fetchedAt: Date.parse('2026-07-31T12:00:00Z'),
+    fetchedAt,
     accountTimezone: 'Asia/Bangkok',
     currency: 'THB',
     entityScopeMode: 'report_range',
@@ -66,7 +68,9 @@ test('Meta curated Lark projection uses only applied SingleSelect options', asyn
   assert.equal(SELECT_OPTIONS.accountStatus.has(account.status), true);
   assert.equal(SELECT_OPTIONS.accountLinkStatus.has(account.account_link_status), true);
   assert.equal(account.account_link_status, 'selectable');
+  assert.equal(Object.hasOwn(account, 'last_sync_at'), false);
   assert.equal(SELECT_OPTIONS.campaignStatus.has(campaign.status), true);
   assert.equal(SELECT_OPTIONS.adGroupStatus.has(adGroup.status), true);
   assert.equal(SELECT_OPTIONS.adStatus.has(ad.status), true);
+  assert.equal(ad.last_sync_at, fetchedAt);
 });
