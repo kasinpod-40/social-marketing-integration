@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import {
   YOUTUBE_REPORT_REMOTE_COLLECTOR_CONFIRMATION,
   YOUTUBE_REPORT_REMOTE_COLLECTOR_INTERNAL_HANDOFF,
@@ -93,6 +94,15 @@ test('keeps missing exact source watermark explicit instead of substituting wate
   const evidence = buildYouTubeRemoteReadinessEvidence(input);
   assert.equal(evidence.source.sourceWatermark, null);
   assert.equal(evidence.source.watermarkDate, '2026-07-31');
+});
+
+test('projects the already-read Coverage source watermark into collector evidence', async () => {
+  const source = await readFile(
+    new URL('../../scripts/youtube-report-remote-readiness-collector.mjs', import.meta.url),
+    'utf8',
+  );
+  assert.match(source, /const sourceWatermark = textOrNull\(sourceRuntime\.source_watermark\);/u);
+  assert.match(source, /source:\s*\{[\s\S]*?sourceWatermark,\s*watermarkDate: periodEnd,/u);
 });
 
 test('fails closed when execution flags are present', () => {
