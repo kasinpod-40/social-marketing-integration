@@ -175,7 +175,7 @@ test('reports every invalid field across all four Meta Ads Lark tables before pl
       assert.equal(error.code, 'LARK_PREFLIGHT_FAILED');
       assert.equal(error.details.tablesChecked, 4);
       assert.equal(error.details.rowsChecked, 4);
-      assert.equal(error.details.issueCount, 4);
+      assert.equal(error.details.issueCount, 5);
       assert.equal(error.details.issuesTruncated, false);
       assert.deepEqual(
         error.details.issues.map(({ tableKey, fieldName, reasonCode, destinationType, incomingType }) => ({
