@@ -42,13 +42,6 @@ const EXPECTED_ENTITY_ONLY_COUNTS = Object.freeze({
   adsEntities: 26,
   adsDaily: 0,
 });
-const EXPECTED_D1_COMPLETE_COUNTS = Object.freeze({
-  organicState: 0,
-  organicObservations: 0,
-  accountDaily: 0,
-  adsEntities: 26,
-  adsDaily: 4103,
-});
 const EXPECTED = Object.freeze({
   syncRunStatus: 'failed',
   syncRunStartedAt: 1785728496842,
@@ -225,16 +218,24 @@ function classifyExactSourceCompleteBoundary(snapshotInput) {
     operationCounts:
       stableJson(snapshot.operationCounts) === stableJson(EXPECTED_ENTITY_ONLY_COUNTS),
   };
+  const operationWriteCount = Object.values(snapshot.operationCounts)
+    .reduce((sum, value) => sum + Number(value ?? 0), 0);
   const d1CompleteChecks = {
     classifiedComplete: classifyMetaD1OnlyCompletion(snapshot).complete,
     d1PhaseComplete: snapshot.d1PhaseComplete === true,
     d1PhaseUpdatedAt: Number.isSafeInteger(snapshot.d1PhaseUpdatedAt),
     coverageRunCount: snapshot.coverageRunCount > 0,
     coverageEntityCount: snapshot.coverageEntityCount > 0,
-    targetCounts:
-      stableJson(snapshot.targetCounts) === stableJson(EXPECTED_D1_COMPLETE_COUNTS),
-    operationCounts:
-      stableJson(snapshot.operationCounts) === stableJson(EXPECTED_D1_COMPLETE_COUNTS),
+    operationTargetParity:
+      stableJson(snapshot.operationCounts) === stableJson(snapshot.targetCounts),
+    organicCountsZero: snapshot.operationCounts.organicState === 0
+      && snapshot.operationCounts.organicObservations === 0
+      && snapshot.operationCounts.accountDaily === 0,
+    adsEntitiesPresent: snapshot.operationCounts.adsEntities > 0,
+    adsDailyComplete:
+      snapshot.operationCounts.adsDaily === EXPECTED.sourceRowCount - 1,
+    coverageEntityParity:
+      snapshot.coverageEntityCount === operationWriteCount,
   };
   const commonAccepted = Object.values(commonChecks).every(Boolean);
   const originalAccepted = commonAccepted && Object.values(originalChecks).every(Boolean);
@@ -252,7 +253,7 @@ function classifyExactSourceCompleteBoundary(snapshotInput) {
     ? { ...commonChecks, ...originalChecks }
     : partialAccepted
       ? { ...commonChecks, ...partialChecks }
-      : d1CompleteAccepted
+      : d1CompleteAccepted || classifyMetaD1OnlyCompletion(snapshot).complete
         ? { ...commonChecks, ...d1CompleteChecks }
         : { ...commonChecks, ...originalChecks };
   const failedChecks = Object.entries(selectedChecks)
