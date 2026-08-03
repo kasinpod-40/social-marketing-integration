@@ -13,8 +13,44 @@ physical Tables                   72
 planner actions                   31
 planner blockers                  0
 status                            ready_to_apply
-Remote Lark write                 0
 ```
+
+## First Live Apply attempt — fail-closed
+
+The reviewed operator ran from clean exact `main@5bdad6d930751a9e91351433309e76f364be92c4` and stopped at the first filtered View:
+
+```text
+stage                       remote-additive-schema-apply
+action                      create_view
+subject                     📊 Executive Summaries
+causeCode                   LARK_PERMANENT_API_ERROR
+appliedLogicalActionCount   0
+```
+
+Sanitized Remote counters:
+
+```text
+token requests              1
+metadata reads             14
+field creates               0
+field updates               0
+view creates                0
+view updates                1
+blocked requests            0
+total writes                1
+```
+
+Record access, Table create/rename, Field delete, View delete, Automation, notification, AI, D1, Queue, Worker, Provider and Production actions remained zero.
+
+The attempt proves that the accepted Fields/options and all six required View objects were already present. The remaining work is View-filter configuration. The failed request did not confirm a root cause; the leading hypothesis is that Update View requires the retained `view_name` together with `property.filter_info`, while the Apply use case passed only the filter mutation.
+
+Repository hotfix scope is recorded in:
+
+```text
+docs/tasks/lark-native-ai-view-filter-patch-hotfix-v1.md
+```
+
+Live rerun is blocked until that hotfix is reviewed and merged.
 
 ## Apply boundary
 
@@ -52,8 +88,7 @@ requires both planner `zero_drift` and exact six-View filter parity.
 scripts/lark-native-ai-schema-apply-reviewed-terminal.mjs
 ```
 
-Default mode is plan-only. Remote Apply remains unperformed until the implementation PR is merged
-and the operator is run from exact clean reviewed `main` with explicit confirmation.
+Default mode is plan-only. Remote Apply requires exact clean reviewed `main`, retained evidence and explicit confirmation. The failed first Live attempt does not authorize a rerun on the unchanged operator.
 
 Full contract:
 
