@@ -32,6 +32,13 @@ const EXPECTED_ZERO_COUNTS = Object.freeze({
   adsEntities: 0,
   adsDaily: 0,
 });
+const EXPECTED_ENTITY_ONLY_COUNTS = Object.freeze({
+  organicState: 0,
+  organicObservations: 0,
+  accountDaily: 0,
+  adsEntities: 26,
+  adsDaily: 0,
+});
 const EXPECTED = Object.freeze({
   syncRunStatus: 'failed',
   syncRunStartedAt: 1785728496842,
@@ -61,6 +68,7 @@ const EXPECTED = Object.freeze({
   coverageEntityCount: 0,
   invalidCoverageCount: 0,
 });
+const MINIMUM_STABLE_WINDOW_MS = 20_000;
 
 export function assertMetaK2SourceCompletePreviewConfirmation(env = {}) {
   const expected = META_K2_SOURCE_COMPLETE_PREVIEW_CONFIRMATION;
@@ -77,33 +85,45 @@ export function validateMetaK2ExactSourceCompleteFailureStability(
   beforeInput = {},
   afterInput = {},
 ) {
-  const before = classifyExactSourceCompleteFailure(beforeInput);
-  const after = classifyExactSourceCompleteFailure(afterInput);
+  const before = classifyExactSourceCompleteBoundary(beforeInput);
+  const after = classifyExactSourceCompleteBoundary(afterInput);
   const elapsedMs = after.snapshot.observedAt - before.snapshot.observedAt;
   const stableBefore = { ...before.snapshot, observedAt: 0 };
   const stableAfter = { ...after.snapshot, observedAt: 0 };
   const stable = stableJson(stableBefore) === stableJson(stableAfter);
-  if (!before.accepted || !after.accepted || elapsedMs < 30_000 || !stable) {
+  const sameBoundary = before.boundary !== null && before.boundary === after.boundary;
+  if (!before.accepted
+    || !after.accepted
+    || !sameBoundary
+    || elapsedMs < MINIMUM_STABLE_WINDOW_MS
+    || !stable) {
     throw recoveryError(
-      'Meta K2 exact source-complete failure changed during the stability window',
+      'Meta K2 exact source-complete boundary changed during the stability window',
       'META_K2_SOURCE_COMPLETE_PROGRESS_OBSERVED',
       {
         elapsedMs,
+        minimumStableWindowMs: MINIMUM_STABLE_WINDOW_MS,
+        beforeBoundary: before.boundary,
+        afterBoundary: after.boundary,
         beforeFailedChecks: before.failedChecks,
         afterFailedChecks: after.failedChecks,
         stable,
       },
     );
   }
+  const partialResume = after.boundary === 'd1_partial_entities_complete';
   return deepFreeze({
     accepted: true,
-    decision: 'META_K2_SOURCE_COMPLETE_FAILED_STABLE_SAFE_TO_PREPARE_PREVIEW_RECOVERY',
+    decision: partialResume
+      ? 'META_K2_D1_PARTIAL_ENTITIES_STABLE_SAFE_TO_RESUME_EXACT_OPERATION'
+      : 'META_K2_SOURCE_COMPLETE_FAILED_STABLE_SAFE_TO_PREPARE_PREVIEW_RECOVERY',
     contractVersion: META_K2_SOURCE_COMPLETE_RECOVERY_CONTRACT_VERSION,
-    boundary: 'source_complete_pre_d1_failed',
+    boundary: after.boundary,
     elapsedMs,
     providerReplayAuthorized: false,
     queueSendAuthorized: false,
     lifecycleSqlRepairAuthorized: false,
+    existingBusinessFactsRetained: partialResume,
     snapshot: after.snapshot,
   });
 }
@@ -134,16 +154,9 @@ export function transformMetaK2SourceCompleteController(url, sourceInput) {
   });
 }
 
-function classifyExactSourceCompleteFailure(snapshotInput) {
+function classifyExactSourceCompleteBoundary(snapshotInput) {
   const snapshot = normalizeMetaD1OnlySnapshot(snapshotInput);
-  const checks = {
-    syncRunStatus: snapshot.syncRunStatus === EXPECTED.syncRunStatus,
-    syncRunStartedAt: snapshot.syncRunStartedAt === EXPECTED.syncRunStartedAt,
-    syncRunFinishedAt: snapshot.syncRunFinishedAt === EXPECTED.syncRunFinishedAt,
-    syncRunErrorCode: snapshot.syncRunErrorCode === EXPECTED.syncRunErrorCode,
-    syncRunRecordsWritten:
-      snapshot.syncRunRecordsWritten === EXPECTED.syncRunRecordsWritten,
-    syncRunUpdatedAt: snapshot.syncRunUpdatedAt === EXPECTED.syncRunUpdatedAt,
+  const commonChecks = {
     workStatus: snapshot.workStatus === EXPECTED.workStatus,
     workLifecycleStatus:
       snapshot.workLifecycleStatus === EXPECTED.workLifecycleStatus,
@@ -172,17 +185,52 @@ function classifyExactSourceCompleteFailure(snapshotInput) {
       snapshot.coverageEntityCount === EXPECTED.coverageEntityCount,
     invalidCoverageCount:
       snapshot.invalidCoverageCount === EXPECTED.invalidCoverageCount,
-    targetCounts: stableJson(snapshot.targetCounts) === stableJson(EXPECTED_ZERO_COUNTS),
-    operationCounts:
-      stableJson(snapshot.operationCounts) === stableJson(EXPECTED_ZERO_COUNTS),
     sourceStale:
       snapshot.observedAt - (snapshot.sourceStaging.updatedAt ?? 0) >= 16 * 60 * 1000,
   };
-  const failedChecks = Object.entries(checks)
+  const originalChecks = {
+    syncRunStatus: snapshot.syncRunStatus === EXPECTED.syncRunStatus,
+    syncRunStartedAt: snapshot.syncRunStartedAt === EXPECTED.syncRunStartedAt,
+    syncRunFinishedAt: snapshot.syncRunFinishedAt === EXPECTED.syncRunFinishedAt,
+    syncRunErrorCode: snapshot.syncRunErrorCode === EXPECTED.syncRunErrorCode,
+    syncRunRecordsWritten:
+      snapshot.syncRunRecordsWritten === EXPECTED.syncRunRecordsWritten,
+    syncRunUpdatedAt: snapshot.syncRunUpdatedAt === EXPECTED.syncRunUpdatedAt,
+    targetCounts: stableJson(snapshot.targetCounts) === stableJson(EXPECTED_ZERO_COUNTS),
+    operationCounts:
+      stableJson(snapshot.operationCounts) === stableJson(EXPECTED_ZERO_COUNTS),
+  };
+  const partialChecks = {
+    syncRunStatus: snapshot.syncRunStatus === 'running',
+    syncRunStartedAt: Number.isSafeInteger(snapshot.syncRunStartedAt),
+    syncRunFinishedAt: snapshot.syncRunFinishedAt === null,
+    syncRunErrorCode: snapshot.syncRunErrorCode === null,
+    syncRunRecordsWritten: snapshot.syncRunRecordsWritten === 0,
+    syncRunUpdatedAt: Number.isSafeInteger(snapshot.syncRunUpdatedAt),
+    targetCounts:
+      stableJson(snapshot.targetCounts) === stableJson(EXPECTED_ENTITY_ONLY_COUNTS),
+    operationCounts:
+      stableJson(snapshot.operationCounts) === stableJson(EXPECTED_ENTITY_ONLY_COUNTS),
+  };
+  const commonAccepted = Object.values(commonChecks).every(Boolean);
+  const originalAccepted = commonAccepted && Object.values(originalChecks).every(Boolean);
+  const partialAccepted = commonAccepted && Object.values(partialChecks).every(Boolean);
+  const boundary = originalAccepted
+    ? 'source_complete_pre_d1_failed'
+    : partialAccepted
+      ? 'd1_partial_entities_complete'
+      : null;
+  const selectedChecks = originalAccepted
+    ? { ...commonChecks, ...originalChecks }
+    : partialAccepted
+      ? { ...commonChecks, ...partialChecks }
+      : { ...commonChecks, ...originalChecks };
+  const failedChecks = Object.entries(selectedChecks)
     .filter(([, accepted]) => !accepted)
     .map(([name]) => name);
   return deepFreeze({
-    accepted: failedChecks.length === 0,
+    accepted: boundary !== null,
+    boundary,
     failedChecks,
     snapshot,
   });
@@ -216,7 +264,7 @@ function transformOuter(sourceInput) {
     '  process.stdout.write(`${JSON.stringify({',
     '    ok: true,',
     "    stage: 'source-complete-recovery-boundary',",
-    "    boundary: 'source_complete_pre_d1_failed',",
+    "    boundary: 'source_complete_or_exact_d1_partial',",
     '    archived: false,',
     '    retainedWithoutDeletion: true,',
     '    remoteMutationCount: 0,',
