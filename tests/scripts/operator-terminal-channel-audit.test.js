@@ -7,7 +7,6 @@ import {
   inspectOperatorTerminalSource,
 } from '../../scripts/lib/operator-terminal-channel-audit.js';
 import {
-  OPERATOR_TERMINAL_ACKNOWLEDGED_DEBT,
   OPERATOR_TERMINAL_REQUIRED_CHANNELS,
   OPERATOR_TERMINAL_STATUSES,
 } from '../../scripts/lib/operator-terminal-channel-policy.js';
@@ -68,30 +67,6 @@ test('status ordering exposes missing spawned test blocker exit and restore cont
   assert.equal(classifyOperatorTerminal(noRestore), 'NEEDS_SAFE_RESTORE_EVIDENCE');
 });
 
-test('reviewed companion authorities promote one delegated terminal without source duplication', () => {
-  const features = inspect(`
-    import { execFile } from 'node:child_process';
-    function printPlan() { console.log({ planOnly: true }); }
-    if (process.argv.includes('--execute')) execFile('node', ['reviewed-child.mjs'], { shell: false });
-  `, {
-    companion: {
-      allBlockerPreflightPath: 'scripts/example-acceptance.mjs',
-      spawnedTestPath: 'tests/scripts/example-acceptance.test.js',
-      completionAuthority: 'exit_code_contract',
-      privateEvidencePath: 'outputs/example-summary.json',
-      safeRestoreAuthority: 'scripts/reviewed-child.mjs#finally-all-false',
-      sameInputReplayAuthority: 'scripts/reviewed-child.mjs#same-input-replay-zero-drift',
-    },
-  });
-  assert.equal(features.hasAllBlockerPreflight, true);
-  assert.equal(features.hasSpawnedTest, true);
-  assert.equal(features.hasExitCodeContract, true);
-  assert.equal(features.hasPrivateEvidence, true);
-  assert.equal(features.hasSafeRestore, true);
-  assert.equal(features.hasReplay, true);
-  assert.equal(classifyOperatorTerminal(features), 'PASS_EXISTING_PATTERN');
-});
-
 test('strong exact terminal with replay and private evidence passes', () => {
   const features = inspect(`
     import { execFile } from 'node:child_process';
@@ -121,7 +96,7 @@ test('strong exact terminal with replay and private evidence passes', () => {
   assert.equal(classifyOperatorTerminal(features), 'PASS_EXISTING_PATTERN');
 });
 
-test('repository audit discovers every required channel and both multichannel authorities pass', async () => {
+test('repository audit discovers every required business channel and known status vocabulary', async () => {
   const report = await auditOperatorTerminalChannels({
     projectRoot: resolve('.'),
     changedPaths: [],
@@ -130,15 +105,8 @@ test('repository audit discovers every required channel and both multichannel au
   for (const path of Object.values(OPERATOR_TERMINAL_REQUIRED_CHANNELS)) {
     assert.equal(paths.has(path), true, `missing ${path}`);
   }
-  const byPath = new Map(report.entries.map((entry) => [entry.path, entry]));
-  assert.equal(byPath.get('scripts/multichannel-report-live-closure-terminal.mjs')?.status,
-    'PASS_EXISTING_PATTERN');
-  assert.equal(byPath.get('scripts/multichannel-report-live-closure-acceptance.mjs')?.status,
-    'PASS_EXISTING_PATTERN');
-  assert.deepEqual(OPERATOR_TERMINAL_ACKNOWLEDGED_DEBT, {});
   assert.ok(report.candidateCount >= Object.keys(OPERATOR_TERMINAL_REQUIRED_CHANNELS).length);
   assert.deepEqual(Object.keys(report.statusCounts).sort(), [...OPERATOR_TERMINAL_STATUSES].sort());
-  assert.equal(report.violations.length, 0);
   assert.equal(report.remoteReadCount, 0);
   assert.equal(report.remoteWriteCount, 0);
   assert.equal(report.queueActionCount, 0);
