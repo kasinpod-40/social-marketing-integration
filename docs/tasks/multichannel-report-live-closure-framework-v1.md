@@ -8,7 +8,7 @@ FIRST_ADOPTER=youtube
 CHANNEL_DESCRIPTORS=ALL_SUPPORTED
 YOUTUBE_STATUS=READY_FOR_LIVE_AUDIT
 SHARED_OPERATOR_REVIEW=OPERATOR_EXTENSION_REQUIRED
-EXACT_SOURCE_WATERMARK=REQUIRED
+EXACT_SOURCE_WATERMARK=BOUND_AND_REQUIRED
 REMOTE_READ_EXECUTED=0
 REMOTE_WRITE_COUNT=0
 QUEUE_ACTION_COUNT=0
@@ -17,13 +17,13 @@ SCHEDULE_ENABLED=false
 PRODUCTION=BLOCKED
 ```
 
-The repository framework, plan-only Terminal, exact-source-watermark contract and zero-Remote shared-operator compatibility review are implemented.
+The repository framework, plan-only Terminal, exact-source-watermark collector binding and zero-Remote shared-operator compatibility review are implemented.
 
 `READY_FOR_LIVE_AUDIT` is intentionally narrower than `READY_FOR_LIVE`:
 
 - Meta PR #421 still owns the Remote lock;
 - the authorized read-only YouTube assessment has not been executed in this workstream;
-- the existing executable shared Report closeout operator still requires bounded YouTube extensions;
+- the existing executable shared Report closeout operator still requires four bounded YouTube extensions;
 - no retained Audit handoff exists yet for the current exact reviewed `main` Head.
 
 ## Ownership and overlap gate
@@ -140,17 +140,17 @@ Missing-value semantics remain:
 - `watermarkDate` is the maximum observed business date;
 - `sourceWatermark` is the exact Coverage lineage used by deterministic candidate/job/replay authority.
 
-The Terminal and shared-operator review now reject readiness evidence that lacks exact `sourceWatermark`. They never substitute `watermarkDate`.
+The Terminal and shared-operator review reject readiness evidence that lacks exact `sourceWatermark`. They never substitute `watermarkDate`.
 
-The reviewed collector evidence schema now retains `sourceWatermark` when supplied and regression coverage proves that a missing value remains explicit `null`.
+The reviewed collector now:
 
-The current executable collector caller still needs a bounded reviewed projection of its already-read `source_watermark` into `buildYouTubeRemoteReadinessEvidence`. Until that caller binding exists, a new Audit handoff remains fail-closed with:
+1. reads `source_watermark` from the exact latest completed YouTube content Coverage row;
+2. normalizes it once as `sourceWatermark`;
+3. uses it to build deterministic existing Report candidates;
+4. projects that same value into `buildYouTubeRemoteReadinessEvidence`;
+5. retains it separately from `watermarkDate` in sanitized reviewed evidence.
 
-```text
-REPORT_RUNTIME_CLOSEOUT_REVIEWED_SOURCE_WATERMARK_MISSING
-```
-
-No caller-controlled watermark is accepted.
+Regression coverage checks both the evidence shape and executable collector wiring. A missing value remains explicit `null`; no caller-controlled or date-derived watermark is accepted.
 
 ## Shared operator compatibility review
 
@@ -165,12 +165,12 @@ The review reuses the retained handoff, existing candidate builder, exact four w
 Result:
 
 ```text
-CONTRACT_COMPATIBLE=true     # when exact retained sourceWatermark is present
+CONTRACT_COMPATIBLE=true     # when retained exact sourceWatermark is present
 EXECUTABLE_READY=false
 REVIEW_STATUS=OPERATOR_EXTENSION_REQUIRED
 ```
 
-The executable shared operator has these bounded blockers:
+The executable shared operator has four bounded blockers:
 
 1. `REPORT_RUNTIME_CLOSEOUT_YOUTUBE_TARGET_SELECTOR_UNBOUND`
    - target selector currently accepts TikTok and WooCommerce only.
@@ -180,8 +180,6 @@ The executable shared operator has these bounded blockers:
    - executable operator does not yet consume retained exact-head lock/readiness handoff.
 4. `REPORT_RUNTIME_CLOSEOUT_MULTIWINDOW_EXECUTION_UNBOUND`
    - executable operator selects one window while closure requires a bounded reviewed `1/3/7/30` action plan.
-5. `REPORT_RUNTIME_CLOSEOUT_REVIEWED_SOURCE_WATERMARK_MISSING`
-   - applies when retained collector evidence lacks exact Coverage lineage.
 
 These findings prove that direct execution must remain blocked. They do not justify a YouTube-only D1 writer, Lark writer, Queue framework or finalizer.
 
@@ -214,7 +212,7 @@ node scripts/multichannel-report-live-closure-terminal.mjs \
   --execute
 ```
 
-Even with a syntactically valid retained handoff, the Terminal remains blocked until exact source watermark and all shared-operator extensions are reviewed.
+Even with a syntactically valid retained handoff, the Terminal remains blocked until all four shared-operator extensions are implemented and reviewed.
 
 ## Sanitized evidence
 
@@ -237,22 +235,23 @@ The prior `CHANGES_REQUIRED` review was addressed by:
 9. keeping direct Live blocked until the shared operator is extended for YouTube;
 10. adding recursive sanitizer and every-active-stage failure coverage;
 11. adding zero-Remote shared-operator compatibility review;
-12. separating exact source watermark from watermark date.
+12. separating exact source watermark from watermark date;
+13. binding the executable reviewed collector to retain exact Coverage source lineage.
 
 ## Verification
 
 Reviewed code Head before this documentation evidence commit:
 
 ```text
-b01248c3b371e35c54cc819839d949d6afcd8fda
+73d374a51ce9074c76a0447b87243fcd2dd7548f
 ```
 
 Branch Verification:
 
 ```text
 workflow       Branch Verification
-run number     1850
-run ID         30787151139
+run number     1857
+run ID         30787440146
 conclusion     success
 ```
 
@@ -284,6 +283,6 @@ Focused framework coverage includes:
 - recursive nested sanitizer;
 - retained handoff validation and direct-Live blocking;
 - shared operator compatibility/blocker detection;
-- exact source-watermark retention and no date substitution.
+- exact source-watermark retention, executable projection and no date substitution.
 
 Repository and CI execution preserved zero Provider, Remote readiness, Queue, Remote D1, Remote Lark, Worker upload/deployment, Schedule and Production actions.
