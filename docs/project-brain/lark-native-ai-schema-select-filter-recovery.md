@@ -85,7 +85,17 @@ The next Repository change is diagnostic-only. On a conflict it may retain only 
 
 It must not retain Table/Field/View/option IDs or raw filter values.
 
-The next exact-main execution must remain metadata-read-only and is authorized only to collect this sanitized conflict evidence. No View repair is authorized from an unproven hypothesis.
+## Hard read-only diagnostic authority
+
+The next exact-main execution must set:
+
+```text
+MKT_LARK_NATIVE_AI_SCHEMA_APPLY_DIAGNOSTIC_ONLY=true
+```
+
+This mode calls the planner only and configures the network guard as read-only. Tenant token and Table/Field/View metadata reads are allowed. Every Field or View write is blocked before `fetch`, and successful completion requires both `totalWriteCount=0` and `blockedRequestCount=0`.
+
+If pending accepted actions are discovered, the diagnostic fails closed and does not Apply them. No View repair is authorized from an unproven hypothesis.
 
 ## Safety
 
