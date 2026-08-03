@@ -117,7 +117,7 @@ export async function applyLarkNativeAiSchemaAdditive(input = {}) {
         { action: action.action },
       );
     } catch (error) {
-      throw wrapActionFailure(error, action, appliedActions.length);
+      throw wrapSchemaActionFailure(error, action, appliedActions.length);
     }
     progress(safeProgress('schema_action_complete', action));
   }
@@ -145,6 +145,7 @@ export async function applyLarkNativeAiSchemaAdditive(input = {}) {
         await client.updateView({
           tableId: raw.table.tableId,
           viewId,
+          viewName: item.viewName,
           filterInfo: expected.mutation,
         });
       }
@@ -154,7 +155,7 @@ export async function applyLarkNativeAiSchemaAdditive(input = {}) {
         status: item.state === 'create' ? 'created_and_configured' : 'configured_existing',
       }));
     } catch (error) {
-      throw wrapActionFailure(error, action, appliedActions.length);
+      throw wrapSchemaActionFailure(error, action, appliedActions.length);
     }
     progress(safeProgress('schema_action_complete', action));
     raw = await readRawTargetState(client);
@@ -196,6 +197,48 @@ export async function applyLarkNativeAiSchemaAdditive(input = {}) {
       exactViewFilterCount: finalViews.length,
     },
   });
+}
+
+function wrapSchemaActionFailure(error, action, appliedLogicalActionCount) {
+  const wrapped = wrapActionFailure(error, action, appliedLogicalActionCount);
+  if (wrapped?.code !== 'LARK_NATIVE_AI_SCHEMA_APPLY_REMOTE_ACTION_FAILED') return wrapped;
+  return schemaApplyFailure(
+    wrapped.message,
+    wrapped.code,
+    {
+      ...(wrapped.details ?? {}),
+      ...safeRemoteActionDiagnostics(error),
+    },
+    wrapped,
+  );
+}
+
+function safeRemoteActionDiagnostics(error) {
+  const details = error?.details && typeof error.details === 'object'
+    ? error.details
+    : {};
+  const diagnostics = {};
+  const status = Number(details.status);
+  const larkCode = Number(details.larkCode);
+  if (Number.isInteger(status) && status > 0) diagnostics.causeStatus = status;
+  if (Number.isInteger(larkCode)) diagnostics.causeLarkCode = larkCode;
+
+  const body = details.viewMutationBody;
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return diagnostics;
+  const property = body.property && typeof body.property === 'object' ? body.property : {};
+  const filterInfo = property.filter_info ?? property.filterInfo;
+  const conditions = Array.isArray(filterInfo?.conditions) ? filterInfo.conditions : [];
+  diagnostics.viewMutation = freezeSchemaValue({
+    hasViewName: typeof (body.view_name ?? body.viewName) === 'string'
+      && String(body.view_name ?? body.viewName).trim() !== '',
+    hasFilterInfo: Boolean(filterInfo && typeof filterInfo === 'object'),
+    conjunction: filterInfo?.conjunction === 'or' ? 'or' : 'and',
+    conditionCount: conditions.length,
+    operators: [...new Set(conditions
+      .map((condition) => condition?.operator)
+      .filter((operator) => typeof operator === 'string' && operator.trim() !== ''))].sort(),
+  });
+  return diagnostics;
 }
 
 function requireClient(value, apply) {
