@@ -214,8 +214,7 @@ function executiveReadiness(channels, operations) {
     ['complete', 'no_data_confirmed'].includes(availabilityStatus)).length;
   const reportBacked = all.filter(({ availabilityStatus }) =>
     ['complete', 'partial', 'coverage_incomplete', 'no_data_confirmed'].includes(availabilityStatus)).length;
-  const rates = channels.map(inferCoverageRate).filter((value) => value !== null);
-  const coverageRate = rates.length ? rates.reduce((sum, value) => sum + value, 0) / rates.length : null;
+  const coverageRate = completeLike === all.length ? 1 : null;
   if (completeLike === all.length) return Object.freeze({
     dataStatus: 'complete', readinessStatus: 'report_available', severity: 'info', generationStatus: 'pending',
     coverageRate, message: 'All-channel validated evidence is ready for controlled Preview.',
@@ -231,10 +230,7 @@ function executiveReadiness(channels, operations) {
 }
 
 function inferCoverageRate(channel) {
-  if (['complete', 'no_data_confirmed'].includes(channel.availabilityStatus)) return 1;
-  if (channel.coverageStatus === 'partial') return 0.5;
-  if (channel.coverageStatus === 'incomplete') return 0;
-  return null;
+  return ['complete', 'no_data_confirmed'].includes(channel.availabilityStatus) ? 1 : null;
 }
 
 async function sha256Hex(value) {
