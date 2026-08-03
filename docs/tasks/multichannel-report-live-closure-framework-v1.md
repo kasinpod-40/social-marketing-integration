@@ -9,6 +9,7 @@ CHANNEL_DESCRIPTORS=ALL_SUPPORTED
 YOUTUBE_STATUS=READY_FOR_LIVE_AUDIT
 SHARED_OPERATOR_REVIEW=REVIEWED_EXTENSION_BOUND
 EXACT_SOURCE_WATERMARK=BOUND_AND_REQUIRED
+META_REMOTE_LOCK_GATE=RETAINED_EVIDENCE_REQUIRED
 REMOTE_READ_EXECUTED=0
 REMOTE_WRITE_COUNT=0
 QUEUE_ACTION_COUNT=0
@@ -21,7 +22,9 @@ The repository framework, plan-only Terminal, exact-source-watermark collector b
 
 `READY_FOR_LIVE_AUDIT` is intentionally narrower than `READY_FOR_LIVE`:
 
-- the authorized read-only YouTube Remote readiness assessment has not run in this workstream;
+- the reviewed YouTube Remote readiness assessment has not run;
+- PR #421 still owns Meta Live/Remote mutation;
+- no retained Meta lock-release evidence exists yet;
 - no retained Audit handoff exists for the current exact reviewed `main` Head;
 - no Live execution authorization has been supplied;
 - no Provider, Queue, Remote D1, Remote Lark, Worker deployment, Schedule or Production action has occurred.
@@ -29,13 +32,13 @@ The repository framework, plan-only Terminal, exact-source-watermark collector b
 ## Ownership and overlap gate
 
 ```text
-main       b22ffd4c54075fc8e434b85a4c1d43be200094d9
+main       48cb63c70b95f306a5a101a68a4706d010762e68
 behind_by  0
 ```
 
-Latest `main` includes the all-channel Lark Native AI controlled-preview readiness work from PR #448. Its seven added files have zero path overlap with this workstream. A two-parent combined-tree merge preserved both workstreams.
+Latest `main` includes the all-channel Lark Native AI controlled-preview executor from PR #449. Its seven files have zero path overlap with this workstream and are preserved in the combined tree.
 
-PR #421 changed-file inventory was inspected before implementation and rechecked during the operator binding work. This workstream does not modify:
+PR #421 changed-file inventory was inspected before implementation and rechecked during the operator and lock-gate work. This workstream does not modify:
 
 - PR #421 files;
 - Meta connectors, use cases, operators or retained evidence;
@@ -138,7 +141,7 @@ The reviewed collector reads `source_watermark` from the exact latest completed 
 
 ## Reviewed shared-operator bindings
 
-The four bounded blockers identified by the zero-Remote compatibility review are now implemented repository-side:
+The four bounded blockers identified by the zero-Remote compatibility review are implemented repository-side:
 
 1. **YouTube target selector**
    - resolves the exact reviewed Chemistry K YouTube identity;
@@ -170,6 +173,29 @@ scripts/report-runtime-closeout-reviewed-multiwindow.mjs
 
 The Multichannel Terminal delegates YouTube only to that reviewed entrypoint. It does not route YouTube through or alter the canonical TikTok/WooCommerce operator.
 
+## Retained Meta Remote lock-release gate
+
+The public YouTube readiness terminal now requires a private retained file through:
+
+```text
+MKT_YOUTUBE_REPORT_REMOTE_LOCK_RELEASE_EVIDENCE
+```
+
+The exact execution order is:
+
+```text
+explicit confirmation
+→ clean exact-main repository preflight
+→ retained Meta lock-release evidence preflight
+→ internal SELECT-only YouTube collector
+→ reviewed readiness assessment
+→ private mode-0600 readiness evidence
+```
+
+The retained file must prove contract `meta_remote_lock_release_audit_v1`, exact audited Head, sanitized evidence, all execution flags false, Preview URLs disabled, Schedule disabled, Production blocked and zero active Work/Lock/uncertain Queue state.
+
+A caller-controlled Boolean such as `MKT_META_REMOTE_LOCK_RELEASED=true` is ignored and cannot authorize Remote read. Missing or invalid retained evidence stops before the internal collector process is spawned.
+
 ## YouTube first adopter commands
 
 ### Default zero-Remote plan
@@ -178,15 +204,16 @@ The Multichannel Terminal delegates YouTube only to that reviewed entrypoint. It
 node scripts/multichannel-report-live-closure-terminal.mjs
 ```
 
-### Separately authorized read-only assessment
+### Future separately authorized read-only assessment
 
 ```bash
 CONFIRM_YOUTUBE_REPORT_REMOTE_READINESS_COLLECTOR=RUN_YOUTUBE_REPORT_REMOTE_READINESS_COLLECTOR \
 MKT_YOUTUBE_REPORT_REMOTE_REVIEWED_HEAD=<exact-reviewed-main-sha> \
+MKT_YOUTUBE_REPORT_REMOTE_LOCK_RELEASE_EVIDENCE=<retained-lock-release-evidence.json> \
 node scripts/youtube-report-remote-readiness-reviewed-terminal.mjs --execute
 ```
 
-This command was not executed in this workstream.
+This command has not been executed in this workstream.
 
 ### Future retained-handoff execution
 
@@ -205,22 +232,22 @@ The Terminal remains fail-closed without an exact reviewed retained handoff and 
 
 The evidence sanitizer recursively traverses nested objects and arrays and removes credential or infrastructure-identity shaped fields, including authorization, token, secret, cookie, password, database/table/queue/version identifiers and raw payload fields.
 
-Retained handoff loading rejects the whole handoff when recursive sanitization would change it.
+Retained handoff and lock-release loading reject the whole evidence object when recursive sanitization would change it.
 
 ## Verification
 
-Reviewed combined implementation Head before this documentation evidence commit:
+Exact repository Head:
 
 ```text
-25dbf682f987ae1a8c53629e6e6d9b1bf969c76a
+eed6bef4dd32aa8838de324cc9b0022b96b18c6d
 ```
 
 Branch Verification:
 
 ```text
 workflow       Branch Verification
-run number     1890
-run ID         30791913825
+run number     1905
+run ID         30795487643
 conclusion     success
 ```
 
@@ -252,6 +279,9 @@ Focused framework coverage includes:
 - recursive nested sanitizer;
 - canonical TikTok/WooCommerce source-contract preservation;
 - separate YouTube reviewed-entrypoint delegation;
-- merged latest-main Lark Native AI controlled-preview regressions.
+- retained Meta lock-release evidence admission;
+- caller Boolean bypass rejection;
+- pre-spawn lock-gate ordering;
+- merged latest-main Lark Native AI controlled-preview executor regressions.
 
 Repository and CI execution preserved zero Provider, Remote readiness, Queue, Remote D1, Remote Lark, Worker upload/deployment, Schedule and Production actions.
