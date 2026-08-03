@@ -30,12 +30,15 @@ Operator หรือคำสั่งที่มีโอกาสส่ง�
 12. ต้องมี spawned-process regression ที่รัน entrypoint จริง ไม่ใช่ทดสอบ function ภายในอย่างเดียว
 13. Evidence ห้ามพิมพ์ Token, Secret, raw customer payload หรือ infrastructure identity
 14. ก่อนส่งคำสั่ง ต้องมี exact command spec, required env names, expected JSON, blocked JSON และ tests ที่ผ่าน
+15. หากจำเป็นต้องใช้ Shell strict mode ให้เปิดภายใน subshell เท่านั้น ห้ามเปลี่ยน `set -u/-e`, trap, cwd
+    หรือ session state ของ Terminal หลักที่ผู้ใช้กำลังใช้งาน
 
 ## Failure and resolution ledger
 
 | Incident / symptom | Proven cause | Passing implementation pattern | Permanent regression / authority |
 |---|---|---|---|
 | Shell รายงาน `command not found: #` หรือ quote/heredoc แตก | ส่ง multi-line shell fragment ที่มี literal comment/quoting | ใช้ `spawnSync`/`execFile` พร้อม argument array, environment object และ `shell:false` | `scripts/lib/operator-terminal-reliability.js`; `tests/scripts/youtube-report-terminal-acceptance.test.js` |
+| หลัง command จบมี `parameter not set` จาก host session saver | `set -u` จากคำสั่งรั่วออกไปเปลี่ยน shell session หลัก | จำกัด strict mode และ temporary variables ใน subshell; wrapper แบบ Node/argv เป็นค่าเริ่มต้น | Meta v3 latest-main drift admission; mandatory rule 15 |
 | Runtime expected version ไม่ตรง observed version | Probe ทำหลัง deployment identity เปลี่ยนหรือใช้ static expected ID | อ่าน exact active identity ก่อน probe และ bind evidence กับ exact Head/runtime identity | exact repository/runtime gates ในทุก reviewed terminal |
 | `.dev.vars` ถูกปฏิเสธเพราะ permission กว้าง | Secret file ไม่ใช่ private mode | ตรวจ regular file + mode `0600`; ไม่พิมพ์ค่า | Lark Live Pilot pattern; YouTube acceptance `local-secret-source` |
 | `.dev.vars` ไม่มีแล้ว child ล้ม `ENOENT` แม้ environment ครบ | Child อ่าน optional file แบบ mandatory | สร้าง empty private file สำหรับ child หรือใช้ optional-file fallback แล้ว merge process env | `resolveChildDevVarsPath()` ใน reviewed YouTube terminal |
@@ -74,6 +77,11 @@ allowlist/counters ก่อนเปิด write window จากนั้น�
 
 การแก้ timestamp, normalized snapshot และ recovery flags ทำตรงจุดแปลง contract เพียงจุดเดียว ไม่ทำ global
 coercion ที่อาจซ่อน invalid input หรือเปลี่ยน Business facts
+
+### Strict shell state is isolated
+
+Meta latest-main guard พิสูจน์ว่าคำสั่งอาจจบถูกต้องแต่ `set -u` ยังทำให้ host session saver ล้มภายหลังได้
+รูปแบบที่ผ่านคือ strict shell ใน subshell และไม่ให้ operator เปลี่ยน state ของ Terminal หลัก
 
 ### Safe state is verified, not assumed
 
