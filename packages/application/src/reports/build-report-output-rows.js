@@ -31,6 +31,7 @@ export function buildReportMetricValueRows(input = {}) {
       const dimensionValue = optionalText(metric.dimensionValue ?? metric.dimension_value) ?? 'all';
       const rank = positiveInteger(metric.rank ?? index + 1, 'metric.rank');
       const metricKey = requireText(metric.metricKey, 'metricKey');
+      const stableMetricKey = optionalText(metric.stableMetricKey ?? metric.stable_metric_key) ?? metricKey;
       const currentValue = optionalFinite(metric.current);
       const metricScope = normalizeDashboardMetricScope(metric.metricScope);
       const availabilityStatus = normalizeDashboardMetricAvailability({
@@ -49,7 +50,7 @@ export function buildReportMetricValueRows(input = {}) {
       return freezeWithSharedDimensions({
         report_metric_key: [
           reportId,
-          escapeReportIdentityPart(metricKey),
+          escapeReportIdentityPart(stableMetricKey),
           escapeReportIdentityPart(dimensionType),
           escapeReportIdentityPart(dimensionValue),
         ].join('::'),

@@ -222,22 +222,44 @@ function classifyWindow({ windowDays, state, globalBlocked }) {
     state.larkTopContentCount,
     `windows.${windowDays}.larkTopContentCount`,
   );
+  const absentMaterialization = d1MaterializationCount === 0
+    && larkSnapshotCount === 0
+    && d1MetricCount === 0
+    && larkMetricCount === 0
+    && d1TopContentCount === 0
+    && larkTopContentCount === 0;
 
   if (d1MaterializationCount > 1 || larkSnapshotCount > 1) localBlockers.push(blocker(
     'window_identity_duplicate',
     { windowDays, d1MaterializationCount, larkSnapshotCount },
     'window',
   ));
-  if (d1MaterializationCount === 0 && larkSnapshotCount > 0) localBlockers.push(blocker(
-    'orphan_lark_report_rows',
+  if (d1MaterializationCount === 0
+    && (larkSnapshotCount > 0 || larkMetricCount > 0 || larkTopContentCount > 0)) {
+    localBlockers.push(blocker(
+      'orphan_lark_report_rows',
+      { windowDays, larkSnapshotCount, larkMetricCount, larkTopContentCount },
+      'window',
+    ));
+  }
+  if (d1MaterializationCount === 0 && (d1MetricCount > 0 || d1TopContentCount > 0)) {
+    localBlockers.push(blocker(
+      'orphan_d1_report_rows',
+      { windowDays, d1MetricCount, d1TopContentCount },
+      'window',
+    ));
+  }
+  // A missing materialization has no payload to validate. Require a valid payload only when
+  // one exact D1 materialization exists; otherwise the legitimate first action is CREATE.
+  if (d1MaterializationCount === 1 && state.payloadValid !== true) localBlockers.push(blocker(
+    'materialization_payload_invalid',
     { windowDays },
     'window',
   ));
-  if (state.payloadValid === false) localBlockers.push(blocker('materialization_payload_invalid', { windowDays }, 'window'));
 
   let action;
   if (globalBlocked || localBlockers.length > 0) action = YOUTUBE_REPORT_WINDOW_ACTIONS.BLOCKED;
-  else if (d1MaterializationCount === 0 && larkSnapshotCount === 0) action = YOUTUBE_REPORT_WINDOW_ACTIONS.CREATE;
+  else if (absentMaterialization) action = YOUTUBE_REPORT_WINDOW_ACTIONS.CREATE;
   else if (
     d1MaterializationCount === 1
     && larkSnapshotCount === 1
