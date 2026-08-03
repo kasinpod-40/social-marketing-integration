@@ -75,8 +75,17 @@ test('resume Apply sends live Select option IDs and never repeats completed Fiel
   assert.equal(missing.filterInfo.conjunction, 'or');
   assert.equal(missing.filterInfo.conditions.length, 6);
   assert.ok(missing.filterInfo.conditions.every(({ value }) => value.length === 1));
-  assert.equal(new Set(missing.filterInfo.conditions.map(({ value }) => value[0])).size, 6);
-  assert.equal(JSON.stringify(missing.filterInfo).includes('report_partial'), false);
+  const missingOptionIds = missing.filterInfo.conditions.map(({ value }) => value[0]);
+  assert.equal(new Set(missingOptionIds).size, 6);
+  const logicalNames = new Set([
+    'report_partial',
+    'report_missing',
+    'configuration_missing',
+    'source_unavailable',
+    'not_observed',
+    'validation_failed',
+  ]);
+  assert.ok(missingOptionIds.every((value) => !logicalNames.has(value)));
 
   const notification = client.viewPatchBodies.find(({ viewName }) => viewName === '✅ Notification Eligible');
   const checkboxValues = notification.filterInfo.conditions.map(({ value }) => value[0]);
