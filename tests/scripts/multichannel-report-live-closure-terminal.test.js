@@ -15,6 +15,7 @@ const REQUESTED_AT = Date.parse('2026-08-02T12:00:00Z');
 function reviewedReadiness() {
   return Object.freeze({
     contractVersion: 'youtube_report_remote_readiness_reviewed_terminal_v1',
+    ok: true,
     evidence: Object.freeze({
       target: Object.freeze({
         environment: 'development',
