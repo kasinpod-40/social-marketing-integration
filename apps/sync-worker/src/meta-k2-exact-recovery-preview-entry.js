@@ -1,7 +1,8 @@
-import worker from './index.js';
 import {
   META_K2_EXACT_RECOVERY_PATH,
 } from '../../../packages/config/src/meta-k2-exact-recovery-contract.js';
+
+let workerPromise = null;
 
 function json(status, body) {
   return new Response(JSON.stringify(body), {
@@ -11,6 +12,17 @@ function json(status, body) {
       'cache-control': 'no-store',
     },
   });
+}
+
+async function loadRecoveryWorker() {
+  workerPromise ??= import('./index.js').then((module) => {
+    const worker = module.default;
+    if (!worker || typeof worker.fetch !== 'function') {
+      throw new TypeError('Meta K2 Preview recovery delegate has no fetch handler');
+    }
+    return worker;
+  });
+  return workerPromise;
 }
 
 export default {
@@ -25,6 +37,7 @@ export default {
         production: false,
       });
     }
+    const worker = await loadRecoveryWorker();
     return worker.fetch(request, env, context);
   },
 
