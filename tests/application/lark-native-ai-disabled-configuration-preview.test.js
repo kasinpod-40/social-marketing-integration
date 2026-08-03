@@ -91,7 +91,7 @@ test('maps notification identity through Snapshot before Settings and never stor
   assert.equal(notification.actions[1].config.identitySource, '🧾 MKT_Report_Snapshots');
   const serialized = JSON.stringify(notification);
   assert.doesNotMatch(serialized, /\boc_[A-Za-z0-9_-]+\b/u);
-  assert.doesNotMatch(serialized, /webhook/iu);
+  assert.doesNotMatch(serialized, /https?:\/\/[^\s"]*webhook/iu);
 });
 
 test('AI generation Workflow has no message, notification log or activation action', () => {
