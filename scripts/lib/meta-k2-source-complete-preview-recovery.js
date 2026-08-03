@@ -1,7 +1,10 @@
 import { createHash } from 'node:crypto';
 import { basename } from 'node:path';
 
-import { normalizeMetaD1OnlySnapshot } from './meta-d1-only-rollout-operator.js';
+import {
+  classifyMetaD1OnlyCompletion,
+  normalizeMetaD1OnlySnapshot,
+} from './meta-d1-only-rollout-operator.js';
 import { permanentError } from '../../packages/shared/src/errors/runtime-error.js';
 
 export const META_K2_SOURCE_COMPLETE_PREVIEW_MODE_ENV =
@@ -39,6 +42,13 @@ const EXPECTED_ENTITY_ONLY_COUNTS = Object.freeze({
   adsEntities: 26,
   adsDaily: 0,
 });
+const EXPECTED_D1_COMPLETE_COUNTS = Object.freeze({
+  organicState: 0,
+  organicObservations: 0,
+  accountDaily: 0,
+  adsEntities: 26,
+  adsDaily: 4103,
+});
 const EXPECTED = Object.freeze({
   syncRunStatus: 'failed',
   syncRunStartedAt: 1785728496842,
@@ -56,16 +66,12 @@ const EXPECTED = Object.freeze({
   sourceRowCount: 4104,
   sourcePageNumber: 0,
   sourceContentIndex: 0,
-  d1PhaseComplete: false,
-  d1PhaseUpdatedAt: null,
   larkPhaseCount: 0,
   completionPhaseCount: 0,
   activeLockCount: 0,
   queueOperationAttempts: 1,
   mainQueueAttempts: 29,
   queueOperationUpdatedAt: 1785667099928,
-  coverageRunCount: 0,
-  coverageEntityCount: 0,
   invalidCoverageCount: 0,
 });
 const MINIMUM_STABLE_WINDOW_MS = 20_000;
@@ -112,18 +118,22 @@ export function validateMetaK2ExactSourceCompleteFailureStability(
     );
   }
   const partialResume = after.boundary === 'd1_partial_entities_complete';
+  const d1CompleteResume = after.boundary === 'd1_complete_lark_pending';
   return deepFreeze({
     accepted: true,
-    decision: partialResume
-      ? 'META_K2_D1_PARTIAL_ENTITIES_STABLE_SAFE_TO_RESUME_EXACT_OPERATION'
-      : 'META_K2_SOURCE_COMPLETE_FAILED_STABLE_SAFE_TO_PREPARE_PREVIEW_RECOVERY',
+    decision: d1CompleteResume
+      ? 'META_K2_D1_COMPLETE_LARK_PENDING_STABLE_SAFE_TO_RESUME_EXACT_OPERATION'
+      : partialResume
+        ? 'META_K2_D1_PARTIAL_ENTITIES_STABLE_SAFE_TO_RESUME_EXACT_OPERATION'
+        : 'META_K2_SOURCE_COMPLETE_FAILED_STABLE_SAFE_TO_PREPARE_PREVIEW_RECOVERY',
     contractVersion: META_K2_SOURCE_COMPLETE_RECOVERY_CONTRACT_VERSION,
     boundary: after.boundary,
     elapsedMs,
     providerReplayAuthorized: false,
     queueSendAuthorized: false,
     lifecycleSqlRepairAuthorized: false,
-    existingBusinessFactsRetained: partialResume,
+    existingBusinessFactsRetained: partialResume || d1CompleteResume,
+    d1AlreadyComplete: d1CompleteResume,
     snapshot: after.snapshot,
   });
 }
@@ -169,8 +179,6 @@ function classifyExactSourceCompleteBoundary(snapshotInput) {
     sourcePageNumber: snapshot.sourceStaging.pageNumber === EXPECTED.sourcePageNumber,
     sourceContentIndex:
       snapshot.sourceStaging.contentIndex === EXPECTED.sourceContentIndex,
-    d1PhaseComplete: snapshot.d1PhaseComplete === EXPECTED.d1PhaseComplete,
-    d1PhaseUpdatedAt: snapshot.d1PhaseUpdatedAt === EXPECTED.d1PhaseUpdatedAt,
     larkPhaseCount: snapshot.larkPhaseCount === EXPECTED.larkPhaseCount,
     completionPhaseCount:
       snapshot.completionPhaseCount === EXPECTED.completionPhaseCount,
@@ -180,15 +188,19 @@ function classifyExactSourceCompleteBoundary(snapshotInput) {
     mainQueueAttempts: snapshot.mainQueueAttempts === EXPECTED.mainQueueAttempts,
     queueOperationUpdatedAt:
       snapshot.queueOperationUpdatedAt === EXPECTED.queueOperationUpdatedAt,
-    coverageRunCount: snapshot.coverageRunCount === EXPECTED.coverageRunCount,
-    coverageEntityCount:
-      snapshot.coverageEntityCount === EXPECTED.coverageEntityCount,
     invalidCoverageCount:
       snapshot.invalidCoverageCount === EXPECTED.invalidCoverageCount,
     sourceStale:
       snapshot.observedAt - (snapshot.sourceStaging.updatedAt ?? 0) >= 16 * 60 * 1000,
   };
+  const preD1Checks = {
+    d1PhaseComplete: snapshot.d1PhaseComplete === false,
+    d1PhaseUpdatedAt: snapshot.d1PhaseUpdatedAt === null,
+    coverageRunCount: snapshot.coverageRunCount === 0,
+    coverageEntityCount: snapshot.coverageEntityCount === 0,
+  };
   const originalChecks = {
+    ...preD1Checks,
     syncRunStatus: snapshot.syncRunStatus === EXPECTED.syncRunStatus,
     syncRunStartedAt: snapshot.syncRunStartedAt === EXPECTED.syncRunStartedAt,
     syncRunFinishedAt: snapshot.syncRunFinishedAt === EXPECTED.syncRunFinishedAt,
@@ -201,6 +213,7 @@ function classifyExactSourceCompleteBoundary(snapshotInput) {
       stableJson(snapshot.operationCounts) === stableJson(EXPECTED_ZERO_COUNTS),
   };
   const partialChecks = {
+    ...preD1Checks,
     syncRunStatus: snapshot.syncRunStatus === 'running',
     syncRunStartedAt: Number.isSafeInteger(snapshot.syncRunStartedAt),
     syncRunFinishedAt: snapshot.syncRunFinishedAt === null,
@@ -212,19 +225,36 @@ function classifyExactSourceCompleteBoundary(snapshotInput) {
     operationCounts:
       stableJson(snapshot.operationCounts) === stableJson(EXPECTED_ENTITY_ONLY_COUNTS),
   };
+  const d1CompleteChecks = {
+    classifiedComplete: classifyMetaD1OnlyCompletion(snapshot).complete,
+    d1PhaseComplete: snapshot.d1PhaseComplete === true,
+    d1PhaseUpdatedAt: Number.isSafeInteger(snapshot.d1PhaseUpdatedAt),
+    coverageRunCount: snapshot.coverageRunCount > 0,
+    coverageEntityCount: snapshot.coverageEntityCount > 0,
+    targetCounts:
+      stableJson(snapshot.targetCounts) === stableJson(EXPECTED_D1_COMPLETE_COUNTS),
+    operationCounts:
+      stableJson(snapshot.operationCounts) === stableJson(EXPECTED_D1_COMPLETE_COUNTS),
+  };
   const commonAccepted = Object.values(commonChecks).every(Boolean);
   const originalAccepted = commonAccepted && Object.values(originalChecks).every(Boolean);
   const partialAccepted = commonAccepted && Object.values(partialChecks).every(Boolean);
+  const d1CompleteAccepted = commonAccepted
+    && Object.values(d1CompleteChecks).every(Boolean);
   const boundary = originalAccepted
     ? 'source_complete_pre_d1_failed'
     : partialAccepted
       ? 'd1_partial_entities_complete'
-      : null;
+      : d1CompleteAccepted
+        ? 'd1_complete_lark_pending'
+        : null;
   const selectedChecks = originalAccepted
     ? { ...commonChecks, ...originalChecks }
     : partialAccepted
       ? { ...commonChecks, ...partialChecks }
-      : { ...commonChecks, ...originalChecks };
+      : d1CompleteAccepted
+        ? { ...commonChecks, ...d1CompleteChecks }
+        : { ...commonChecks, ...originalChecks };
   const failedChecks = Object.entries(selectedChecks)
     .filter(([, accepted]) => !accepted)
     .map(([name]) => name);
@@ -264,7 +294,7 @@ function transformOuter(sourceInput) {
     '  process.stdout.write(`${JSON.stringify({',
     '    ok: true,',
     "    stage: 'source-complete-recovery-boundary',",
-    "    boundary: 'source_complete_or_exact_d1_partial',",
+    "    boundary: 'source_complete_exact_d1_partial_or_d1_complete_lark_pending',",
     '    archived: false,',
     '    retainedWithoutDeletion: true,',
     '    remoteMutationCount: 0,',
