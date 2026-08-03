@@ -17,13 +17,25 @@ Schedule                 disabled
 Production               blocked
 ```
 
-Live evidence:
+Live Notification Log evidence:
 
 ```text
 outputs/lark-notification-log-schema/20260803T171919260Z-e37a98b24bc1-79714
 ```
 
-The next phase is not Workflow activation. It is destination binding and disabled Workflow preparation after exact readiness passes.
+Latest Workflow Readiness evidence resolved the exact group but found the Settings destination empty:
+
+```text
+attempt                  outputs/lark-native-ai-workflow-readiness/20260803T180814616Z-eb6aab4735b3-81569
+status                   blocked
+exactNameMatchCount      1
+resolved                 true
+integrationRowCount      66
+distinctDestinationCount 0
+blocker                   SETTINGS_GROUP_ID_MISSING
+workflow inventory       0
+planned disabled creates 2
+```
 
 ## Target workflows
 
@@ -32,7 +44,7 @@ AI Materialization → MKT_AI_Report_Runs
 Eligible AI Run → Lark Group Notification
 ```
 
-Neither workflow may be enabled until exact live Table/Field/Notification Log metadata, existing Workflow inventory and destination identity have been inspected together.
+Neither workflow may be created until destination binding and a fresh Workflow Readiness pass complete. Neither workflow may be enabled without separate authorization.
 
 ## Destination authority
 
@@ -42,23 +54,28 @@ User-approved exact group name:
 Social MKT Executive Reports
 ```
 
-`Social MKT Sync` is already present as a Group Bot in this group. The previous longer proposed name is no longer authoritative.
+`Social MKT Sync` is already present as a Group Bot. The previous longer proposed name is no longer authoritative.
 
-A rotated Incoming Webhook is not a `group_id` and is never stored in Base or evidence. Readiness resolves the exact Lark Chat visible to the App and compares only its SHA-256 identity with the Settings destination. Raw Chat IDs and webhook URLs are excluded from output.
+The exact Chat ID is resolved from the live chat inventory and belongs in the existing `group_id` Field of `⚙️ MKT_Report_Settings`. A rotated Incoming Webhook is not a `group_id` and is never stored in Base or evidence.
+
+Destination binding may write only empty `group_id` values for exact `integration_workspace` rows. Raw Chat ID and Record IDs remain excluded from local output; verification uses SHA-256 only. Existing non-empty conflicting destinations fail closed and are never overwritten.
 
 ## Safety boundary
 
-The readiness terminal permits only metadata, bounded Settings Record, Workflow list/get and Chat list reads. It cannot create/update/delete a Workflow, change status, write Records, send a message, call a webhook, alter D1/Queue/Worker/Provider or enable Schedule/Production.
+During binding:
 
-`ai_enabled`, `notification_enabled`, `notification_eligible`, `preview_mode` and `sent_to_group` remain unchanged.
+- every `MKT_*_ENABLED` flag remains false;
+- `ai_enabled` and `notification_enabled` remain false;
+- no Workflow is created, updated or enabled;
+- no message or Webhook is sent;
+- no D1, Queue, Worker, Provider, Schedule or Production action occurs.
 
-## Failure semantics
-
-A completed audit may return `status=blocked`. This is expected when Settings lacks a verified destination, permissions are missing, an existing target Workflow conflicts or schema has drifted. The next workstream fixes only the exact observed blocker; it does not add a parallel notification engine or bypass Lark Native Workflow.
+After binding, the existing Workflow Readiness must be rerun. Only an exact zero-blocker result may authorize a separate disabled-Workflow creation phase.
 
 Full contracts:
 
 ```text
 docs/tasks/lark-native-ai-workflow-readiness-v1.md
 docs/tasks/lark-native-ai-target-group-name-v1.md
+docs/tasks/lark-native-ai-destination-binding-v1.md
 ```
