@@ -1,9 +1,11 @@
 import {
   LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTION_PLAN_SCHEMA_VERSION,
   LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_AI_OUTPUT_FIELDS,
+  LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_CHANNEL_KEYS,
   LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_CONTRACT_VERSION,
   LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_LIMITS,
   LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_MANAGED_FIELDS,
+  LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_OUTPUT_INVALIDATING_FIELDS,
   LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_REQUIRED_FIELDS,
   LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_SAFETY_FIELDS,
   LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_TARGET_TABLE,
@@ -21,6 +23,9 @@ const IDENTITY_FIELDS = Object.freeze([
   'capability',
   'window_days',
 ]);
+const OUTPUT_INVALIDATING_FIELDS = new Set(
+  LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_OUTPUT_INVALIDATING_FIELDS,
+);
 
 export async function buildLarkNativeAiControlledPreviewExecutionPlan(input = {}) {
   const repository = normalizeRepository(input.repository);
@@ -29,6 +34,7 @@ export async function buildLarkNativeAiControlledPreviewExecutionPlan(input = {}
     : [];
   const existingRecords = normalizeExistingRecords(input.existingRecords ?? input.existing_records ?? []);
   const blockers = [];
+  await inspectReadinessPlanIntegrity(readinessPlans, blockers);
   const desiredRows = inspectReadinessPlans(readinessPlans, repository, blockers);
   inspectExistingInventory(existingRecords, desiredRows, blockers);
 
@@ -143,6 +149,30 @@ export function simulateLarkNativeAiControlledPreviewExecution(plan, existingRec
       .localeCompare(String(right.fields.ai_run_key ?? right.recordId))));
 }
 
+async function inspectReadinessPlanIntegrity(plans, blockers) {
+  for (let index = 0; index < plans.length; index += 1) {
+    const plan = plans[index];
+    if (!isObject(plan)) continue;
+    const label = `readinessPlans[${index}]`;
+    if (!isObject(plan.promptPackage)) {
+      blockers.push(blocker('READINESS_PLAN_INTEGRITY_INVALID', `${label}.promptPackage`));
+      continue;
+    }
+    const { planId, ...planCore } = structuredClone(plan);
+    const expectedPlanId = await sha256Hex(stableStringify({
+      ...planCore,
+      promptPackage: {
+        ...planCore.promptPackage,
+        prompt: null,
+        referenceOutput: null,
+      },
+    }));
+    if (planId !== expectedPlanId) {
+      blockers.push(blocker('READINESS_PLAN_INTEGRITY_INVALID', `${label}.planId`));
+    }
+  }
+}
+
 function inspectReadinessPlans(plans, repository, blockers) {
   const desiredRows = [];
   const windows = new Set();
@@ -175,6 +205,7 @@ function inspectReadinessPlans(plans, repository, blockers) {
       blockers.push(blocker('READINESS_PLAN_LARK_ROWS_INVALID', `${label}.larkPlan`));
       continue;
     }
+    inspectRowTopology(rows, label, blockers);
 
     for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
       const row = rows[rowIndex];
@@ -302,6 +333,48 @@ function inspectReadinessAuthority(plan, label, blockers) {
   ]) {
     if (!SHA256.test(value ?? '')) {
       blockers.push(blocker('READINESS_PLAN_HASH_INVALID', `${label}.${field}`));
+    }
+  }
+}
+
+function inspectRowTopology(rows, label, blockers) {
+  const actual = rows.map((row) => text(row?.channelKey));
+  const counts = new Map();
+  for (const channelKey of actual) counts.set(channelKey, (counts.get(channelKey) ?? 0) + 1);
+  for (const expected of LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_CHANNEL_KEYS) {
+    if (counts.get(expected) !== 1) {
+      blockers.push(blocker('READINESS_ROW_TOPOLOGY_INVALID', `${label}.larkPlan.rows`, {
+        channelKey: expected,
+        count: counts.get(expected) ?? 0,
+      }));
+    }
+  }
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index];
+    if (!isObject(row) || !isObject(row.fields)) continue;
+    const rowLabel = `${label}.larkPlan.rows[${index}]`;
+    const channelKey = text(row.channelKey);
+    if (!LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_CHANNEL_KEYS.includes(channelKey)) {
+      blockers.push(blocker('READINESS_ROW_CHANNEL_UNSUPPORTED', rowLabel, { channelKey }));
+      continue;
+    }
+    if (row.fields.channel_key !== channelKey) {
+      blockers.push(blocker('READINESS_ROW_CHANNEL_MISMATCH', rowLabel));
+    }
+    const executive = channelKey === 'executive';
+    if (row.rowType !== (executive ? 'executive' : 'channel')
+      || row.fields.scope_type !== (executive ? 'executive' : 'channel')
+      || row.fields.report_type !== (executive
+        ? 'dashboard_executive_summary'
+        : 'dashboard_channel_status')) {
+      blockers.push(blocker('READINESS_ROW_SCOPE_MISMATCH', rowLabel));
+    }
+    if (executive) {
+      if (row.platform !== 'executive') {
+        blockers.push(blocker('READINESS_ROW_PLATFORM_MISMATCH', rowLabel));
+      }
+    } else if (row.platform !== row.fields.platforms?.[0]) {
+      blockers.push(blocker('READINESS_ROW_PLATFORM_MISMATCH', rowLabel));
     }
   }
 }
@@ -464,18 +537,23 @@ function buildActions(desiredRows, existingRecords, blockers) {
       continue;
     }
 
+    const invalidatingDrift = sameEvidence
+      && Object.keys(managedPatch).some((field) => OUTPUT_INVALIDATING_FIELDS.has(field));
+    const clearsAiOutput = !sameEvidence || invalidatingDrift;
     actions.push(deepFreeze({
       action: 'update',
-      reason: sameEvidence ? 'managed_field_drift' : 'evidence_revision',
+      reason: !sameEvidence
+        ? 'evidence_revision'
+        : (invalidatingDrift ? 'retained_evidence_drift' : 'managed_field_drift'),
       recordId: existing.recordId,
       aiRunKey,
       dedupeKey: desired.fields.dedupe_key,
       windowDays: desired.windowDays,
       channelKey: desired.channelKey,
-      clearsAiOutput: !sameEvidence,
-      fieldsPatch: sameEvidence
-        ? managedPatch
-        : buildEvidenceRevisionPatch(existing.fields, desired.fields),
+      clearsAiOutput,
+      fieldsPatch: clearsAiOutput
+        ? buildEvidenceRevisionPatch(existing.fields, desired.fields)
+        : managedPatch,
     }));
   }
   return actions;
