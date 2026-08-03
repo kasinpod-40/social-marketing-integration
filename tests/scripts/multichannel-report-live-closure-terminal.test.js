@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import {
   MULTICHANNEL_REPORT_LIVE_CLOSURE_CONFIRMATION,
   buildYouTubeFirstAdopterPlan,
@@ -11,6 +12,7 @@ import {
 
 const HEAD = 'b'.repeat(40);
 const REQUESTED_AT = Date.parse('2026-08-02T12:00:00Z');
+const TERMINAL_PATH = resolve('scripts/multichannel-report-live-closure-terminal.mjs');
 
 function reviewedReadiness({ includeSourceWatermark = true } = {}) {
   return Object.freeze({
@@ -68,6 +70,23 @@ function reviewedHandoff({ includeSourceWatermark = true } = {}) {
     }),
   });
 }
+
+test('spawned terminal defaults to JSON plan-only with zero Remote actions', () => {
+  const result = spawnSync(process.execPath, [TERMINAL_PATH], {
+    encoding: 'utf8',
+    shell: false,
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const plan = JSON.parse(result.stdout);
+  assert.equal(plan.mode, 'PLAN_ONLY');
+  assert.equal(plan.frameworkStatus, 'READY');
+  assert.equal(plan.reviewedReadinessRequired, true);
+  assert.equal(plan.remoteWriteCount, 0);
+  assert.equal(plan.queueActionCount, 0);
+  assert.equal(plan.workerDeploymentCount, 0);
+  assert.equal(plan.scheduleEnabled, false);
+  assert.equal(plan.production, 'BLOCKED');
+});
 
 test('default plan performs zero reads and exposes reviewed prerequisites', async () => {
   const plan = await buildYouTubeFirstAdopterPlan({ env: {}, argv: [] });
