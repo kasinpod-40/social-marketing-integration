@@ -22,8 +22,8 @@ import {
 
 const SHA256 = /^[a-f0-9]{64}$/u;
 const GIT_SHA = /^[a-f0-9]{40}$/u;
-const TIKTOK_BASELINE_ONLY_PARTIAL_MIN_COVERAGE_RATE = 0.99;
-const TIKTOK_BASELINE_ONLY_PARTIAL_RATE_TOLERANCE = 0.0001;
+const TIKTOK_HIGH_COVERAGE_PARTIAL_MIN_RATE = 0.99;
+const TIKTOK_PARTIAL_RATE_TOLERANCE = 0.0001;
 const TIKTOK_CURRENT_TOTAL_METRIC_KEYS = Object.freeze([
   'tiktok:latest_total_views',
   'tiktok:latest_total_likes',
@@ -76,11 +76,12 @@ export async function buildLarkNativeAiControlledPreviewReadiness(input = {}) {
   });
   const previewRunKey = await sha256Hex(stableStringify(runIdentity));
   const rows = await buildLarkNativeAiControlledPreviewRows(bundle, previewRunKey);
+  const goldenDataset = inspectGoldenDataset(bundle);
   const blockers = [
     ...inspectRepository(repository),
     ...inspectSchema(schemaAuthority),
     ...inspectRemote(remoteAuthority),
-    ...inspectGoldenDataset(bundle),
+    ...goldenDataset.blockers,
     ...inspectPrompt(prompt, promptBytes),
     ...inspectReferenceOutput(validation, referenceOutputBytes),
     ...validateLarkNativeAiControlledPreviewRows(rows),
@@ -92,6 +93,7 @@ export async function buildLarkNativeAiControlledPreviewReadiness(input = {}) {
     referenceOutputSha256,
     schemaEvidenceSha256: schemaAuthority.evidenceSha256,
     remoteEvidenceSha256: remoteAuthority.evidenceSha256,
+    goldenDatasetAuthority: goldenDataset.authority,
   }));
   const dedupeKey = await sha256Hex(stableStringify({ previewRunKey, evidenceChecksum }));
   const status = resolveStatus(blockers, remoteAuthority, approval);
@@ -110,6 +112,7 @@ export async function buildLarkNativeAiControlledPreviewReadiness(input = {}) {
     bundleId: bundle.bundleId,
     evidenceChecksum,
     dedupeKey,
+    goldenDatasetAuthority: goldenDataset.authority,
     promptPackage: Object.freeze({
       promptVersion: LARK_NATIVE_AI_CONTROLLED_PREVIEW_PROMPT_VERSION,
       promptSha256,
@@ -194,13 +197,14 @@ function inspectRemote(value) {
 
 function inspectGoldenDataset(bundle) {
   const tiktok = bundle.channels.find(({ platform }) => platform === 'tiktok');
-  if (!tiktok) return [blocker('GOLDEN_DATASET_TIKTOK_MISSING', 'tiktok')];
+  if (!tiktok) return Object.freeze({
+    blockers: Object.freeze([blocker('GOLDEN_DATASET_TIKTOK_MISSING', 'tiktok')]),
+    authority: emptyGoldenDatasetAuthority('missing'),
+  });
+
+  const authority = classifyTikTokGoldenDataset(tiktok);
   const blockers = [];
-  const complete = tiktok.availabilityStatus === 'complete'
-    && tiktok.coverageStatus === 'complete'
-    && tiktok.freshness.status === 'fresh';
-  const verifiedBaselineOnlyPartial = isVerifiedTikTokBaselineOnlyPartial(tiktok);
-  if (!complete && !verifiedBaselineOnlyPartial) {
+  if (!authority.previewEligible) {
     blockers.push(blocker('GOLDEN_DATASET_TIKTOK_NOT_COMPLETE', 'tiktok'));
   }
   if (!tiktok.summaryMetrics.some((metric) => metric.observed
@@ -208,41 +212,55 @@ function inspectGoldenDataset(bundle) {
     && metric.currentValue !== null)) {
     blockers.push(blocker('GOLDEN_DATASET_TIKTOK_METRIC_MISSING', 'tiktok.summaryMetrics'));
   }
-  return blockers;
+  return Object.freeze({
+    blockers: Object.freeze(blockers),
+    authority,
+  });
 }
 
-function isVerifiedTikTokBaselineOnlyPartial(tiktok) {
+function classifyTikTokGoldenDataset(tiktok) {
+  const complete = tiktok.availabilityStatus === 'complete'
+    && tiktok.coverageStatus === 'complete'
+    && tiktok.freshness.status === 'fresh';
+  if (complete) return goldenDatasetAuthority({
+    admissionClass: 'complete',
+    previewEligible: true,
+    currentTotalsReady: true,
+    comparisonReady: true,
+    periodDeltasSuppressed: false,
+  });
+
   if (tiktok.availabilityStatus !== 'partial'
     || tiktok.coverageStatus !== 'partial'
     || tiktok.freshness.status !== 'fresh'
     || tiktok.dataQualityIssues.some(({ severity }) => severity === 'critical')) {
-    return false;
+    return emptyGoldenDatasetAuthority('blocked');
   }
 
   const byKey = new Map(tiktok.summaryMetrics.map((metric) => [metric.metricKey, metric]));
   const currentTotals = exactMetrics(byKey, TIKTOK_CURRENT_TOTAL_METRIC_KEYS);
   const periodDeltas = exactMetrics(byKey, TIKTOK_PERIOD_DELTA_METRIC_KEYS);
   const dataQuality = exactMetrics(byKey, TIKTOK_DATA_QUALITY_METRIC_KEYS);
-  if (!currentTotals || !periodDeltas || !dataQuality) return false;
+  if (!currentTotals || !periodDeltas || !dataQuality) return emptyGoldenDatasetAuthority('blocked');
 
-  if (!currentTotals.every(isAvailableObservedMetric)) return false;
-  if (!dataQuality.every(isAvailableObservedMetric)) return false;
+  if (!currentTotals.every(isAvailableObservedMetric)) return emptyGoldenDatasetAuthority('blocked');
+  if (!dataQuality.every(isAvailableObservedMetric)) return emptyGoldenDatasetAuthority('blocked');
   if (!periodDeltas.every((metric) => metric.availabilityStatus === 'baseline_incomplete'
     && metric.currentValue === null
     && metric.observed === false)) {
-    return false;
+    return emptyGoldenDatasetAuthority('blocked');
   }
 
   for (const metric of tiktok.summaryMetrics) {
     if (metric.availabilityStatus === 'available') {
-      if (!isAvailableObservedMetric(metric)) return false;
+      if (!isAvailableObservedMetric(metric)) return emptyGoldenDatasetAuthority('blocked');
       continue;
     }
     if (!TIKTOK_PERIOD_DELTA_METRIC_KEY_SET.has(metric.metricKey)
       || metric.availabilityStatus !== 'baseline_incomplete'
       || metric.currentValue !== null
       || metric.observed !== false) {
-      return false;
+      return emptyGoldenDatasetAuthority('blocked');
     }
   }
 
@@ -255,13 +273,54 @@ function isVerifiedTikTokBaselineOnlyPartial(tiktok) {
     || tracked <= 0
     || missing <= 0
     || tracked !== covered + missing
-    || coverageRate < TIKTOK_BASELINE_ONLY_PARTIAL_MIN_COVERAGE_RATE
+    || !Number.isFinite(coverageRate)
+    || coverageRate <= 0
     || coverageRate >= 1) {
-    return false;
+    return emptyGoldenDatasetAuthority('blocked');
   }
   const reconciledRate = covered / tracked;
-  return Math.abs(coverageRate - reconciledRate)
-    <= TIKTOK_BASELINE_ONLY_PARTIAL_RATE_TOLERANCE;
+  if (Math.abs(coverageRate - reconciledRate) > TIKTOK_PARTIAL_RATE_TOLERANCE) {
+    return emptyGoldenDatasetAuthority('blocked');
+  }
+
+  const highCoverage = coverageRate >= TIKTOK_HIGH_COVERAGE_PARTIAL_MIN_RATE;
+  const currentTotalsOnly = !highCoverage && newContent > 0 && covered > 0;
+  if (!highCoverage && !currentTotalsOnly) return emptyGoldenDatasetAuthority('blocked');
+
+  return goldenDatasetAuthority({
+    admissionClass: highCoverage
+      ? 'baseline_partial_high_coverage'
+      : 'current_totals_only_low_baseline',
+    previewEligible: true,
+    currentTotalsReady: true,
+    comparisonReady: false,
+    periodDeltasSuppressed: true,
+    baselineCoverageRate: coverageRate,
+    trackedContentCount: tracked,
+    coveredContentCount: covered,
+    missingContentCount: missing,
+    newContentCount: newContent,
+  });
+}
+
+function goldenDatasetAuthority(input = {}) {
+  return Object.freeze({
+    platform: 'tiktok',
+    admissionClass: input.admissionClass ?? 'blocked',
+    previewEligible: input.previewEligible === true,
+    currentTotalsReady: input.currentTotalsReady === true,
+    comparisonReady: input.comparisonReady === true,
+    periodDeltasSuppressed: input.periodDeltasSuppressed === true,
+    baselineCoverageRate: finiteOrNull(input.baselineCoverageRate),
+    trackedContentCount: integer(input.trackedContentCount),
+    coveredContentCount: integer(input.coveredContentCount),
+    missingContentCount: integer(input.missingContentCount),
+    newContentCount: integer(input.newContentCount),
+  });
+}
+
+function emptyGoldenDatasetAuthority(admissionClass) {
+  return goldenDatasetAuthority({ admissionClass });
 }
 
 function exactMetrics(byKey, keys) {
@@ -282,6 +341,11 @@ function metricValue(byKey, key) {
 
 function isNonNegativeInteger(value) {
   return Number.isSafeInteger(value) && value >= 0;
+}
+
+function finiteOrNull(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 
 function inspectPrompt(prompt, promptBytes) {
