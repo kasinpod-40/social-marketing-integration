@@ -8,6 +8,7 @@ import {
   assertLarkNativeAiSchemaApplyConfirmation,
   assertLarkNativeAiSchemaApplyRemoteCounters,
   assertLarkNativeAiSchemaApplyRepository,
+  assertLarkNativeAiSchemaDiagnosticRemoteCounters,
   createLarkNativeAiSchemaApplyFetchGuard,
   parseLarkNativeAiSchemaApplyArgs,
 } from '../../scripts/lib/lark-native-ai-schema-apply.js';
@@ -27,6 +28,8 @@ test('reviewed schema Apply terminal is plan-only by default', () => {
   assert.equal(plan.planOnly, true);
   assert.equal(plan.acceptedLogicalActions.total, 31);
   assert.equal(plan.maximumRemoteWriteRequests, 36);
+  assert.match(plan.diagnosticCommand, /MKT_LARK_NATIVE_AI_SCHEMA_APPLY_DIAGNOSTIC_ONLY=true/u);
+  assert.equal(plan.diagnosticBoundary, 'token_and_metadata_reads_only_writes_blocked_before_fetch');
   assert.equal(plan.applyExecuted, false);
   assert.equal(plan.recordReadCount, 0);
   assert.equal(plan.production, 'BLOCKED');
@@ -107,11 +110,53 @@ test('network guard permits only exact additive metadata and schema requests', a
   assert.equal(observed.length, 8);
 });
 
+test('diagnostic network guard blocks every schema write before fetch', async () => {
+  const observed = [];
+  const guard = createLarkNativeAiSchemaApplyFetchGuard(async (input, init) => {
+    observed.push({ input: String(input), method: init?.method ?? 'GET' });
+    return { ok: true };
+  }, { readOnly: true });
+  const base = 'https://open.larksuite.com/open-apis/bitable/v1/apps/app/tables/tbl';
+
+  await guard.fetchImpl(
+    'https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal',
+    { method: 'POST' },
+  );
+  await guard.fetchImpl(`${base}/fields`, { method: 'GET' });
+  await guard.fetchImpl(`${base}/views/vew`, { method: 'GET' });
+
+  await assert.rejects(
+    guard.fetchImpl(`${base}/views/vew`, { method: 'PATCH' }),
+    (error) => error?.code === 'LARK_NATIVE_AI_SCHEMA_APPLY_DIAGNOSTIC_WRITE_BLOCKED',
+  );
+  await assert.rejects(
+    guard.fetchImpl(`${base}/fields`, { method: 'POST' }),
+    (error) => error?.code === 'LARK_NATIVE_AI_SCHEMA_APPLY_DIAGNOSTIC_WRITE_BLOCKED',
+  );
+
+  const counters = guard.snapshot();
+  assert.equal(guard.readOnly, true);
+  assert.equal(counters.tokenRequestCount, 1);
+  assert.equal(counters.metadataReadCount, 2);
+  assert.equal(counters.totalWriteCount, 0);
+  assert.equal(counters.blockedRequestCount, 2);
+  assert.throws(() => assertLarkNativeAiSchemaDiagnosticRemoteCounters(counters));
+  assert.equal(observed.length, 3);
+
+  assert.equal(assertLarkNativeAiSchemaDiagnosticRemoteCounters({
+    ...counters,
+    blockedRequestCount: 0,
+  }), true);
+});
+
 test('source contains no table mutation, delete, record, Automation, notification or AI path', () => {
   assert.doesNotMatch(source, /\.createTable\(|\.renameTable\(|\.deleteField\(|\.deleteView\(/u);
   assert.doesNotMatch(source, /records\/search|batch_create|batch_update|batch_delete/u);
   assert.doesNotMatch(source, /\.createAutomation\(|\.sendNotification\(|\.generateAi\(/u);
   assert.match(source, /applyLarkNativeAiSchemaAdditive/u);
+  assert.match(source, /planLarkNativeAiSchemaAdditiveApply/u);
+  assert.match(source, /MKT_LARK_NATIVE_AI_SCHEMA_APPLY_DIAGNOSTIC_ONLY/u);
+  assert.match(source, /readOnly: diagnosticOnly/u);
   assert.match(source, /assertRetainedHeadIsAncestor/u);
   assert.match(source, /zero_drift/u);
 });

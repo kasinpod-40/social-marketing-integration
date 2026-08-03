@@ -13,6 +13,7 @@ import { dirname, resolve } from 'node:path';
 import {
   applyLarkNativeAiSchemaAdditive,
   assertAcceptedLarkNativeAiSchemaApplyEvidence,
+  planLarkNativeAiSchemaAdditiveApply,
 } from '../packages/application/src/reports/apply-lark-native-ai-schema.js';
 import { createLarkBitableClientFromEnv } from '../packages/connectors/src/lark/lark-bitable.client.js';
 import { parseJsoncObject } from './lib/chatwoot-safe-wrangler-config.js';
@@ -26,6 +27,7 @@ import {
   assertLarkNativeAiSchemaApplyConfirmation,
   assertLarkNativeAiSchemaApplyRemoteCounters,
   assertLarkNativeAiSchemaApplyRepository,
+  assertLarkNativeAiSchemaDiagnosticRemoteCounters,
   createLarkNativeAiSchemaApplyFetchGuard,
   parseLarkNativeAiSchemaApplyArgs,
   requireLarkNativeAiSchemaApplyReviewedHead,
@@ -48,6 +50,7 @@ const applyEvidencePath = resolve(
   process.env.MKT_LARK_NATIVE_AI_SCHEMA_APPLY_EVIDENCE
     ?? 'outputs/lark-native-ai-schema-apply/apply-summary.json',
 );
+const diagnosticOnly = process.env.MKT_LARK_NATIVE_AI_SCHEMA_APPLY_DIAGNOSTIC_ONLY === 'true';
 
 let stage = 'init';
 let fetchGuard = null;
@@ -75,6 +78,7 @@ try {
   const failure = Object.freeze({
     ok: false,
     contractVersion: LARK_NATIVE_AI_SCHEMA_APPLY_CONTRACT_VERSION,
+    diagnosticOnly,
     stage,
     code: error?.code ?? 'LARK_NATIVE_AI_SCHEMA_APPLY_FAILED',
     message: sanitizeLarkNativeAiSchemaApplyMessage(error),
@@ -118,6 +122,13 @@ function printPlan() {
       'MKT_LARK_NATIVE_AI_SCHEMA_APPLY_REVIEWED_HEAD=<exact-reviewed-main-sha>',
       'node scripts/lark-native-ai-schema-apply-reviewed-terminal.mjs --execute',
     ].join(' '),
+    diagnosticCommand: [
+      `CONFIRM_LARK_NATIVE_AI_SCHEMA_APPLY=${LARK_NATIVE_AI_SCHEMA_APPLY_CONFIRMATION}`,
+      'MKT_LARK_NATIVE_AI_SCHEMA_APPLY_DIAGNOSTIC_ONLY=true',
+      'MKT_LARK_NATIVE_AI_SCHEMA_APPLY_REVIEWED_HEAD=<exact-reviewed-main-sha>',
+      'node scripts/lark-native-ai-schema-apply-reviewed-terminal.mjs --execute',
+    ].join(' '),
+    diagnosticBoundary: 'token_and_metadata_reads_only_writes_blocked_before_fetch',
     retainedEvidence: {
       defaultPath: 'outputs/lark-native-ai-remote-inventory/inventory-summary.json',
       acceptedHead: LARK_NATIVE_AI_SCHEMA_APPLY_ACCEPTED_INVENTORY_HEAD,
@@ -206,9 +217,12 @@ async function executeReviewedApply() {
     );
   }
 
-  stage = 'remote-additive-schema-apply';
+  stage = diagnosticOnly
+    ? 'remote-read-only-view-diagnostics'
+    : 'remote-additive-schema-apply';
   fetchGuard = createLarkNativeAiSchemaApplyFetchGuard(
     globalThis.fetch?.bind(globalThis),
+    { readOnly: diagnosticOnly },
   );
   const client = createLarkBitableClientFromEnv(env, {
     fetchImpl: fetchGuard.fetchImpl,
@@ -218,30 +232,38 @@ async function executeReviewedApply() {
       )}\n`)
       : undefined,
   });
-  const result = await applyLarkNativeAiSchemaAdditive({
-    client,
-    retainedEvidence,
-    baseName: null,
-    onProgress: process.env.MKT_LARK_NATIVE_AI_SCHEMA_APPLY_VERBOSE === 'true'
-      ? (event) => process.stderr.write(`${JSON.stringify(event)}\n`)
-      : undefined,
-  });
+
+  const result = diagnosticOnly
+    ? await executeReadOnlyDiagnostic({ client, retainedEvidence })
+    : await applyLarkNativeAiSchemaAdditive({
+      client,
+      retainedEvidence,
+      baseName: null,
+      onProgress: process.env.MKT_LARK_NATIVE_AI_SCHEMA_APPLY_VERBOSE === 'true'
+        ? (event) => process.stderr.write(`${JSON.stringify(event)}\n`)
+        : undefined,
+    });
 
   stage = 'verify-remote-request-boundary';
   const remote = fetchGuard.snapshot();
-  assertLarkNativeAiSchemaApplyRemoteCounters(remote);
-  if (result.verification?.status !== 'zero_drift'
-    || Number(result.verification?.remainingLogicalActionCount) !== 0) {
-    throw schemaApplyError(
-      'Schema Apply result did not prove final zero drift',
-      'LARK_NATIVE_AI_SCHEMA_APPLY_VERIFICATION_FAILED',
-    );
+  if (diagnosticOnly) {
+    assertLarkNativeAiSchemaDiagnosticRemoteCounters(remote);
+  } else {
+    assertLarkNativeAiSchemaApplyRemoteCounters(remote);
+    if (result.verification?.status !== 'zero_drift'
+      || Number(result.verification?.remainingLogicalActionCount) !== 0) {
+      throw schemaApplyError(
+        'Schema Apply result did not prove final zero drift',
+        'LARK_NATIVE_AI_SCHEMA_APPLY_VERIFICATION_FAILED',
+      );
+    }
   }
 
   stage = 'write-private-sanitized-evidence';
   const summary = Object.freeze({
     ok: true,
     contractVersion: LARK_NATIVE_AI_SCHEMA_APPLY_CONTRACT_VERSION,
+    diagnosticOnly,
     repository,
     retainedAuthority: {
       head: accepted.retainedHead,
@@ -269,6 +291,34 @@ async function executeReviewedApply() {
     ...summary,
     evidencePath: applyEvidencePath,
   }, null, 2)}\n`);
+}
+
+async function executeReadOnlyDiagnostic(input) {
+  const plan = await planLarkNativeAiSchemaAdditiveApply({
+    client: input.client,
+    retainedEvidence: input.retainedEvidence,
+    baseName: null,
+  });
+  if (Number(plan.remainingLogicalActionCount) !== 0) {
+    throw schemaApplyError(
+      'Read-only schema diagnostic found pending accepted actions and refused to Apply them',
+      'LARK_NATIVE_AI_SCHEMA_APPLY_DIAGNOSTIC_PENDING_ACTIONS',
+      {
+        remainingLogicalActionCount: Number(plan.remainingLogicalActionCount),
+        fieldActionCount: plan.fieldActions.length,
+        incompleteViewCount: plan.viewPlans.filter(({ state }) => state !== 'complete').length,
+      },
+    );
+  }
+  return Object.freeze({
+    ok: true,
+    mode: 'diagnostic_zero_drift',
+    status: plan.status,
+    remainingLogicalActionCount: 0,
+    fieldActionCount: plan.fieldActions.length,
+    requiredViewCount: plan.viewPlans.length,
+    exactViewFilterCount: plan.viewPlans.filter(({ state }) => state === 'complete').length,
+  });
 }
 
 function collectRepositoryState(reviewedHead) {

@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   buildLarkNativeAiSchemaViewFilter,
+  buildLarkNativeAiSchemaViewFilterConflictDetails,
   buildLarkNativeAiSchemaViewPlans,
   normalizeLarkNativeAiSchemaComparableViewFilter,
 } from '../../packages/application/src/reports/lark-native-ai-schema-view-filters.js';
@@ -203,6 +204,40 @@ test('normalizes only semantically irrelevant presentation differences', () => {
   assert.equal(multiple.conjunction, 'or');
 });
 
+test('emits structural conflict diagnostics without raw IDs or values', () => {
+  const fields = rawFields();
+  const expected = buildLarkNativeAiSchemaViewFilter(missingContract, fields).comparable;
+  const values = expected.conditions[0].values;
+  const actual = normalizeLarkNativeAiSchemaComparableViewFilter({
+    conjunction: 'or',
+    conditions: values.map((value) => ({
+      fieldId: 'fld_readiness',
+      fieldType: 3,
+      operator: 'is',
+      values: [value],
+    })),
+  });
+
+  const details = buildLarkNativeAiSchemaViewFilterConflictDetails(actual, expected, fields);
+
+  assert.equal(details.actual.conditionCount, 6);
+  assert.equal(details.actual.totalValueCount, 6);
+  assert.equal(details.expected.conditionCount, 1);
+  assert.equal(details.expected.totalValueCount, 6);
+  assert.equal(details.actual.conditions[0].fieldName, 'readiness_status');
+  assert.equal(details.comparison.fieldSetMatches, true);
+  assert.equal(details.comparison.conditionCountMatches, false);
+  assert.equal(details.comparison.conditionFieldMultiplicityMatches, false);
+  assert.equal(details.comparison.totalValueCountMatches, true);
+  assert.equal(details.comparison.flattenedValueMembershipMatches, true);
+  assert.equal(details.comparison.conditionGroupingMatches, false);
+
+  const serialized = JSON.stringify(details);
+  assert.equal(serialized.includes('fld_readiness'), false);
+  assert.equal(serialized.includes('opt_partial'), false);
+  assert.equal(serialized.includes('opt_missing'), false);
+});
+
 test('keeps conjunction strict when multiple conditions are present', async () => {
   const fields = rawFields();
   const expected = buildLarkNativeAiSchemaViewFilter(notificationContract, fields);
@@ -232,7 +267,8 @@ test('keeps conjunction strict when multiple conditions are present', async () =
       views: [view],
     }),
     (error) => error?.code === 'LARK_NATIVE_AI_SCHEMA_APPLY_VIEW_FILTER_CONFLICT'
-      && error.details?.viewName === notificationContract.viewName,
+      && error.details?.viewName === notificationContract.viewName
+      && error.details?.readback?.comparison?.conjunctionMatches === false,
   );
 });
 

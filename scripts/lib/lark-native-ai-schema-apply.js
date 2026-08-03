@@ -95,10 +95,12 @@ export function assertLarkNativeAiSchemaApplyRepository(repository) {
  * - POST View create;
  * - PATCH View update.
  *
- * Table writes, Field/View delete, Record access, Automation, notification and AI are blocked.
+ * When options.readOnly=true, every Field/View write is blocked before fetch.
+ * Table writes, Field/View delete, Record access, Automation, notification and AI are always blocked.
  */
-export function createLarkNativeAiSchemaApplyFetchGuard(fetchImpl) {
+export function createLarkNativeAiSchemaApplyFetchGuard(fetchImpl, options = {}) {
   if (typeof fetchImpl !== 'function') throw new TypeError('fetchImpl is required');
+  const readOnly = options?.readOnly === true;
   const counters = {
     tokenRequestCount: 0,
     metadataReadCount: 0,
@@ -136,8 +138,16 @@ export function createLarkNativeAiSchemaApplyFetchGuard(fetchImpl) {
       );
     }
 
-    if (counter.endsWith('Count') && counter !== 'metadataReadCount'
-      && counter !== 'tokenRequestCount' && counter !== 'blockedRequestCount') {
+    if (readOnly && isWriteCounter(counter)) {
+      counters.blockedRequestCount += 1;
+      throw schemaApplyError(
+        'Lark Native AI schema diagnostic mode blocked a schema write before fetch',
+        'LARK_NATIVE_AI_SCHEMA_APPLY_DIAGNOSTIC_WRITE_BLOCKED',
+        { method, requestClass: classifyRequest(path) },
+      );
+    }
+
+    if (isWriteCounter(counter)) {
       const nextWrites = totalWriteCount(counters) + 1;
       if (nextWrites > LARK_NATIVE_AI_SCHEMA_APPLY_MAX_REMOTE_WRITE_REQUESTS) {
         counters.blockedRequestCount += 1;
@@ -158,6 +168,7 @@ export function createLarkNativeAiSchemaApplyFetchGuard(fetchImpl) {
 
   return Object.freeze({
     fetchImpl: guardedFetch,
+    readOnly,
     snapshot: () => {
       const snapshot = {
         ...counters,
@@ -208,6 +219,21 @@ export function assertLarkNativeAiSchemaApplyRemoteCounters(value) {
   return true;
 }
 
+export function assertLarkNativeAiSchemaDiagnosticRemoteCounters(value) {
+  const counters = requireObject(value, 'remoteCounters');
+  if (Number(counters.blockedRequestCount) !== 0 || Number(counters.totalWriteCount) !== 0) {
+    throw schemaApplyError(
+      'Schema diagnostic mode did not remain read-only',
+      'LARK_NATIVE_AI_SCHEMA_APPLY_DIAGNOSTIC_BOUNDARY_VIOLATION',
+      {
+        blockedRequestCount: Number(counters.blockedRequestCount),
+        totalWriteCount: Number(counters.totalWriteCount),
+      },
+    );
+  }
+  return true;
+}
+
 export function sanitizeLarkNativeAiSchemaApplyValue(value) {
   if (Array.isArray(value)) return value.map(sanitizeLarkNativeAiSchemaApplyValue);
   if (!value || typeof value !== 'object') {
@@ -241,6 +267,15 @@ function totalWriteCount(counters) {
     + Number(counters.fieldUpdateCount)
     + Number(counters.viewCreateCount)
     + Number(counters.viewUpdateCount);
+}
+
+function isWriteCounter(counter) {
+  return new Set([
+    'fieldCreateCount',
+    'fieldUpdateCount',
+    'viewCreateCount',
+    'viewUpdateCount',
+  ]).has(counter);
 }
 
 function resolveRequestUrl(input) {
