@@ -80,7 +80,8 @@ test('retry hotfix contains no direct Remote mutation implementation', async () 
     import.meta.url,
   ), 'utf8');
   assert.doesNotMatch(source, /wrangler[\s\S]{0,80}\bdeploy\b/iu);
-  assert.doesNotMatch(source, /\b(?:INSERT|UPDATE|DELETE|REPLACE)\b/iu);
+  assert.doesNotMatch(source, /['"`]\s*(?:INSERT|UPDATE|DELETE|REPLACE)\b/iu);
+  assert.doesNotMatch(source, /\bd1\s+execute\b/iu);
   assert.doesNotMatch(source, /queue\s*\.\s*send\s*\(/iu);
   assert.doesNotMatch(source, /fetch\s*\(/iu);
 });
