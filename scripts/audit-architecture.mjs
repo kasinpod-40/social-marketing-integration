@@ -62,10 +62,24 @@ async function main() {
   }
 
   const edgeCount = [...graph.values()].reduce((total, dependencies) => total + dependencies.length, 0);
+  const entryByPath = new Map(terminalAudit.entries.map((entry) => [entry.path, entry]));
+  const requiredChannelStatuses = Object.fromEntries(
+    Object.entries(terminalAudit.requiredChannels).map(([channel, entrypoint]) => [channel, {
+      entrypoint,
+      status: entryByPath.get(entrypoint)?.status ?? 'MISSING',
+    }]),
+  );
+  const changedEntrypoints = terminalAudit.entries
+    .filter((entry) => entry.changedInBranch)
+    .map((entry) => ({ path: entry.path, status: entry.status }));
+
   console.log(
     `Architecture audit passed: ${files.length} source files, ${edgeCount} local dependencies, 0 cycles, `
     + `${terminalAudit.candidateCount} operator entrypoints audited, 0 terminal policy violations`,
   );
+  console.log(`Operator terminal audit status counts: ${JSON.stringify(terminalAudit.statusCounts)}`);
+  console.log(`Operator terminal required channels: ${JSON.stringify(requiredChannelStatuses)}`);
+  console.log(`Operator terminal changed entrypoints: ${JSON.stringify(changedEntrypoints)}`);
 }
 
 /** เดิน Directory แบบ Recursive และคืนเฉพาะไฟล์ JavaScript ที่เป็น Source code */
