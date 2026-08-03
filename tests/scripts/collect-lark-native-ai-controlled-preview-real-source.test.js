@@ -16,6 +16,9 @@ import {
   buildLarkNativeAiSchemaViewFilter,
 } from '../../packages/application/src/reports/lark-native-ai-schema-view-filters.js';
 import {
+  adaptLarkNativeAiControlledPreviewReportSource,
+} from '../../scripts/lib/adapt-lark-native-ai-controlled-preview-report-source.js';
+import {
   collectLarkNativeAiControlledPreviewRealSource,
   createLarkNativeAiControlledPreviewSourceReadGuard,
 } from '../../scripts/lib/collect-lark-native-ai-controlled-preview-real-source.js';
@@ -30,7 +33,7 @@ const AI_TABLE_ID = 'tbl_ai_report_runs';
 const SNAPSHOT_TABLE_ID = 'tbl_report_snapshots';
 const METRIC_TABLE_ID = 'tbl_report_metrics';
 
-test('collector output passes the real four-window readiness stack', async () => {
+test('collector and taxonomy adapter pass the real four-window readiness stack', async () => {
   const client = buildClient();
   const sourceGuard = Object.freeze({
     snapshot: () => Object.freeze({
@@ -45,7 +48,7 @@ test('collector output passes the real four-window readiness stack', async () =>
     }),
   });
   const repository = { branch: 'main', clean: true, exactHeadSha: HEAD };
-  const collected = await collectLarkNativeAiControlledPreviewRealSource({
+  const collectedReportSource = await collectLarkNativeAiControlledPreviewRealSource({
     client,
     sourceGuard,
     repository,
@@ -59,9 +62,24 @@ test('collector output passes the real four-window readiness stack', async () =>
     },
     generatedAt: NOW,
   });
+  const rawTikTokMetric = collectedReportSource.offlineInputs[0].channels
+    .find(({ platform }) => platform === 'tiktok').report.metricValues[0];
+  assert.equal(rawTikTokMetric.metric_scope, 'current');
+  assert.equal(rawTikTokMetric.source_metric_scope, undefined);
+
+  const collected = await adaptLarkNativeAiControlledPreviewReportSource(
+    collectedReportSource,
+  );
+  const adaptedTikTokMetric = collected.offlineInputs[0].channels
+    .find(({ platform }) => platform === 'tiktok').report.metricValues[0];
+  assert.equal(adaptedTikTokMetric.metric_scope, 'summary');
+  assert.equal(adaptedTikTokMetric.source_metric_scope, 'current');
+  assert.equal(adaptedTikTokMetric.current_value, rawTikTokMetric.current_value);
+  assert.equal(adaptedTikTokMetric.observed, true);
 
   assert.equal(collected.repositoryHead, HEAD);
   assert.match(collected.packageSha256, /^[a-f0-9]{64}$/u);
+  assert.notEqual(collected.packageSha256, collectedReportSource.packageSha256);
   assert.equal(collected.provenance.source, 'live_lark_report_outputs');
   assert.equal(collected.provenance.fixtureData, false);
   assert.equal(collected.schemaAuthority.status, 'zero_drift');
@@ -281,9 +299,9 @@ function metric(reportId, snapshotIndex, rank, metricKey, current, compare) {
       change_value: current - compare,
       change_percent: ((current - compare) / compare) * 100,
       unit: 'count',
+      metric_scope: 'current',
       availability_status: 'available',
       availability_message: 'Available',
-      metric_scope: 'current',
       dimension_type: 'summary',
       dimension_value: 'all',
       rank,
