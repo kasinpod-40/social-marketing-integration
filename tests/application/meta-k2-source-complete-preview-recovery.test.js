@@ -137,12 +137,9 @@ test('hash-pinned transform reuses existing controllers without changing disk so
     readFile(finalizerUrl, 'utf8'),
   ]);
 
-  const outer = transformMetaK2SourceCompleteController(
-    `${outerUrl.href}?source-complete-v1`,
-    outerBefore,
-  );
+  const outer = transformMetaK2SourceCompleteController(outerUrl.href, outerBefore);
   const finalizer = transformMetaK2SourceCompleteController(
-    `${finalizerUrl.href}?source-complete-v1`,
+    finalizerUrl.href,
     finalizerBefore,
   );
 
@@ -199,12 +196,12 @@ test('new wiring uses a module loader and contains no Remote mutation implementa
   assert.match(wrapper, /register\(/u);
   assert.match(
     wrapper,
-    /import\('\.\/meta-k2-partial-staging-preview-recovery\.mjs\?source-complete-v1'\)/u,
+    /import\('\.\/meta-k2-partial-staging-preview-recovery\.mjs'\)/u,
   );
   assert.match(bootstrap, /register\(/u);
   assert.match(
     bootstrap,
-    /import\('\.\/meta-k2-partial-staging-preview-finalizer\.mjs\?source-complete-v1'\)/u,
+    /import\('\.\/meta-k2-partial-staging-preview-finalizer\.mjs'\)/u,
   );
   assert.match(loader, /transformMetaK2SourceCompleteController/u);
   for (const source of sources) {
