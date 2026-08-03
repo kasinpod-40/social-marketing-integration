@@ -6,6 +6,8 @@ import {
   buildLarkNativeAiControlledPreviewExecutionPlan,
 } from './build-lark-native-ai-controlled-preview-execution-plan.js';
 
+const READ_AFTER_WRITE_DELAY_MS = 10_000;
+
 export async function planLarkNativeAiControlledPreviewLivePilot(input = {}) {
   const client = requireClient(input.client);
   const repository = requireObject(input.repository, 'repository');
@@ -28,6 +30,7 @@ export async function applyLarkNativeAiControlledPreviewLivePilot(input = {}) {
   const repository = requireObject(input.repository, 'repository');
   const readinessPlans = requireArray(input.readinessPlans ?? input.readiness_plans, 'readinessPlans');
   const onProgress = typeof input.onProgress === 'function' ? input.onProgress : () => undefined;
+  const sleep = typeof input.sleep === 'function' ? input.sleep : wait;
   const table = await resolveTargetTable(client);
   const initial = await buildPlanForTable({ client, repository, readinessPlans, table });
   const executionPlan = initial.plan;
@@ -91,6 +94,14 @@ export async function applyLarkNativeAiControlledPreviewLivePilot(input = {}) {
         observedUpdated: updated,
       },
     );
+  }
+
+  if (created + updated > 0) {
+    onProgress(safeProgress('record_readback_wait', {
+      delayMs: READ_AFTER_WRITE_DELAY_MS,
+      rows: created + updated,
+    }));
+    await sleep(READ_AFTER_WRITE_DELAY_MS);
   }
 
   const verification = await buildPlanForTable({ client, repository, readinessPlans, table });
@@ -263,6 +274,9 @@ function requireObject(value, fieldName) {
 function requireText(value, fieldName) {
   if (typeof value !== 'string' || value.trim() === '') throw new TypeError(`${fieldName} is required`);
   return value.trim();
+}
+function wait(delayMs) {
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
 }
 function deepFreeze(value, seen = new WeakSet()) {
   if (value && typeof value === 'object') {
