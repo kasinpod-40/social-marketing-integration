@@ -56,7 +56,8 @@ test('status ordering exposes missing spawned test blocker exit and restore cont
     import { spawnSync } from 'node:child_process';
     const blockers = [];
     const blockerCount = blockers.length;
-    function printPlan() { console.log({ planOnly: true }); }
+    const exitCodeContract = { 0: 'success', 1: 'failed', 2: 'blocked' };
+    function printPlan() { console.log({ planOnly: true, exitCodeContract }); }
     if (process.argv.includes('--execute')) {
       spawnSync('wrangler', ['deploy'], { shell: false });
       process.exitCode = blockerCount > 0 ? 2 : 0;
