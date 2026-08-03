@@ -86,7 +86,20 @@ test('collector output passes the real four-window readiness stack', async () =>
   const plans = await buildLarkNativeAiControlledPreviewExactTerminalReadiness({
     sourcePackage: validated,
     repository,
-    buildReadiness: buildLarkNativeAiControlledPreviewReadiness,
+    buildReadiness: async (input) => {
+      const plan = await buildLarkNativeAiControlledPreviewReadiness(input);
+      assert.equal(
+        plan.status,
+        'ready_for_controlled_preview',
+        `window=${input.offlineInput.window.windowDays} blockers=${JSON.stringify(plan.blockers)}`,
+      );
+      assert.equal(
+        plan.blockers.length,
+        0,
+        `window=${input.offlineInput.window.windowDays} blockers=${JSON.stringify(plan.blockers)}`,
+      );
+      return plan;
+    },
   });
   assert.equal(plans.length, 4);
   assert.deepEqual(plans.map(({ status }) => status), [
