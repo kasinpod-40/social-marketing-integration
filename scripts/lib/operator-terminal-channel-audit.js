@@ -10,10 +10,11 @@ import {
   OPERATOR_TERMINAL_STRICT_PASS_PATHS,
 } from './operator-terminal-channel-policy.js';
 
-const ENTRYPOINT_NAME_PATTERN = /(?:terminal|operator|preflight)[^/]*\.mjs$/u;
+const ENTRYPOINT_NAME_PATTERN = /(?:terminal|operator|preflight|closeout)[^/]*\.mjs$/u;
 const PACKAGE_SCRIPT_PATTERN = /\bnode\s+(scripts\/[A-Za-z0-9_./-]+\.mjs)\b/gu;
 const SOURCE_EXTENSIONS = new Set(['.js', '.mjs']);
 const TEST_PROCESS_PATTERN = /\b(?:spawnSync|spawn|execFile|execFileSync)\s*\(/u;
+const TEST_ENTRYPOINT_REFERENCE_PATTERN = /(?:^|[/\\])([A-Za-z0-9_.-]+\.mjs)\b/gu;
 const UNSAFE_SHELL_PATTERN = /\bshell\s*:\s*true\b/u;
 const CHILD_PROCESS_IMPORT_PATTERN = /import\s*\{([\s\S]*?)\}\s*from\s*['"]node:child_process['"]/gu;
 
@@ -182,7 +183,8 @@ async function buildSpawnedTestIndex(projectRoot) {
   for (const file of files) {
     const source = await readFile(file, 'utf8');
     if (!TEST_PROCESS_PATTERN.test(source)) continue;
-    const referenced = [...source.matchAll(/scripts\/([A-Za-z0-9_.-]+\.mjs)/gu)]
+    TEST_ENTRYPOINT_REFERENCE_PATTERN.lastIndex = 0;
+    const referenced = [...source.matchAll(TEST_ENTRYPOINT_REFERENCE_PATTERN)]
       .map((match) => match[1]);
     for (const name of referenced) {
       const list = index.get(name) ?? [];
@@ -205,7 +207,7 @@ async function collectSourceFiles(directory) {
   return nested.flat();
 }
 
-function validateAuditPolicy(entries, input = {}) {
+function validateAuditPolicy(entries) {
   const violations = [];
   const byPath = new Map(entries.map((entry) => [entry.path, entry]));
 
@@ -271,9 +273,14 @@ function validateAuditPolicy(entries, input = {}) {
 
 function collectChangedPaths(projectRoot) {
   const mergeBase = gitText(projectRoot, ['merge-base', 'HEAD', 'origin/main'], false);
-  if (!mergeBase) return [];
-  const output = gitText(projectRoot, ['diff', '--name-only', `${mergeBase}..HEAD`], false);
-  return output.split(/\r?\n/u).filter(Boolean).sort();
+  if (mergeBase) {
+    const output = gitText(projectRoot, ['diff', '--name-only', `${mergeBase}..HEAD`], false);
+    return output.split(/\r?\n/u).filter(Boolean).sort();
+  }
+  const shallowMerge = gitText(projectRoot, [
+    'diff-tree', '--no-commit-id', '--name-only', '-r', '-m', 'HEAD',
+  ], false);
+  return [...new Set(shallowMerge.split(/\r?\n/u).filter(Boolean))].sort();
 }
 
 function gitText(cwd, args, required = true) {
@@ -305,9 +312,12 @@ function readChildProcessImports(source) {
 }
 
 function inferRemoteMutation(path, source) {
-  if (/(?:read-only|readiness|preflight|validate)/iu.test(path)
-    && !/\b(?:deploy|batch_create|batch_update|queue send|remote write)\b/iu.test(source)) return false;
-  return /\b(?:deploy|version-upload|versions upload|batch_create|batch_update|queueActionCount|remoteMutationCount|workerDeploymentCount|send-one|migrate|backup)\b/iu.test(source);
+  if (/(?:acceptance|read-only|readiness|preflight|validate)/iu.test(path)
+    && !/\b(?:spawnSync|execFile|runText)\s*\([^)]*['"](?:wrangler|npx)['"]/iu.test(source)
+    && !/\b(?:batch_create|batch_update|queue send|remote write)\b/iu.test(source)) return false;
+  return /\b(?:deploy|version-upload|versions upload|batch_create|batch_update|send-one|migrate|backup)\b/iu.test(source)
+    || (/\b(?:queueActionCount|remoteMutationCount|workerDeploymentCount)\b/u.test(source)
+      && !/\b(?:LOCAL_ACCEPTANCE_ONLY|local acceptance only)\b/iu.test(source));
 }
 
 function classifyChannel(path) {
