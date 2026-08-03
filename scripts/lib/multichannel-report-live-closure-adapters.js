@@ -1,5 +1,8 @@
 import { getReportPlatformContract } from '../../packages/application/src/reports/report-platform-adapter-registry.js';
 import {
+  REPORT_LIVE_CLOSURE_WINDOWS,
+} from '../../packages/application/src/report-live-closure/channel-descriptors.js';
+import {
   REPORT_LIVE_CLOSURE_ADAPTER_AUTHORITIES,
 } from '../../packages/application/src/report-live-closure/report-live-closure-framework.js';
 import {
@@ -73,15 +76,18 @@ export function createReportLiveClosurePlanAdapters(input = {}) {
     })),
     identityPlanning: binding('identityPlanning', async () => Object.freeze({
       ok: true,
-      candidates: buildReportRuntimeCloseoutCandidates(candidateInput),
+      candidates: Object.freeze(buildReportRuntimeCloseoutCandidates(candidateInput)
+        .filter((candidate) => REPORT_LIVE_CLOSURE_WINDOWS.includes(candidate.windowDays))),
       authority: 'buildReportRuntimeCloseoutCandidates',
     })),
     materializationPlan: binding('materializationPlan', async () => Object.freeze({
       ok: true,
-      windows: Object.freeze((assessment.windows ?? []).map((window) => Object.freeze({
-        windowDays: Number(window.windowDays),
-        action: window.action,
-      }))),
+      windows: Object.freeze((assessment.windows ?? [])
+        .filter((window) => REPORT_LIVE_CLOSURE_WINDOWS.includes(Number(window.windowDays)))
+        .map((window) => Object.freeze({
+          windowDays: Number(window.windowDays),
+          action: window.action,
+        }))),
       authority: 'report_materializations',
     })),
     sanitize: safeReportRuntimeCloseoutEvidence,
