@@ -10,12 +10,19 @@ import {
   LARK_NATIVE_AI_REUSED_FIELDS,
 } from '../../packages/config/src/lark-native-ai-schema-preview.js';
 import {
+  buildLarkNativeAiControlledPreviewReadiness,
+} from '../../packages/application/src/reports/build-lark-native-ai-controlled-preview-readiness.js';
+import {
   buildLarkNativeAiSchemaViewFilter,
 } from '../../packages/application/src/reports/lark-native-ai-schema-view-filters.js';
 import {
   collectLarkNativeAiControlledPreviewRealSource,
   createLarkNativeAiControlledPreviewSourceReadGuard,
 } from '../../scripts/lib/collect-lark-native-ai-controlled-preview-real-source.js';
+import {
+  buildLarkNativeAiControlledPreviewExactTerminalReadiness,
+  validateLarkNativeAiControlledPreviewSourcePackage,
+} from '../../scripts/lib/lark-native-ai-controlled-preview-exact-terminal.js';
 
 const HEAD = 'a'.repeat(40);
 const NOW = Date.parse('2026-08-03T08:00:00Z');
@@ -23,24 +30,25 @@ const AI_TABLE_ID = 'tbl_ai_report_runs';
 const SNAPSHOT_TABLE_ID = 'tbl_report_snapshots';
 const METRIC_TABLE_ID = 'tbl_report_metrics';
 
-test('collector builds a checksummed four-window real Report source package', async () => {
+test('collector output passes the real four-window readiness stack', async () => {
   const client = buildClient();
   const sourceGuard = Object.freeze({
     snapshot: () => Object.freeze({
       tokenRequestCount: 1,
-      tableReadRequestCount: 2,
+      tableReadRequestCount: 1,
       fieldReadRequestCount: 2,
       viewListRequestCount: 2,
       viewReadRequestCount: 6,
       recordSearchRequestCount: 2,
       blockedRequestCount: 0,
-      totalRequests: 15,
+      totalRequests: 14,
     }),
   });
-  const result = await collectLarkNativeAiControlledPreviewRealSource({
+  const repository = { branch: 'main', clean: true, exactHeadSha: HEAD };
+  const collected = await collectLarkNativeAiControlledPreviewRealSource({
     client,
     sourceGuard,
-    repository: { branch: 'main', clean: true, exactHeadSha: HEAD },
+    repository,
     env: {
       MKT_ENV: 'development',
       MKT_CUSTOMER_PROFILE: 'integration_workspace',
@@ -52,15 +60,15 @@ test('collector builds a checksummed four-window real Report source package', as
     generatedAt: NOW,
   });
 
-  assert.equal(result.repositoryHead, HEAD);
-  assert.match(result.packageSha256, /^[a-f0-9]{64}$/u);
-  assert.equal(result.provenance.source, 'live_lark_report_outputs');
-  assert.equal(result.provenance.fixtureData, false);
-  assert.equal(result.schemaAuthority.status, 'zero_drift');
-  assert.equal(result.schemaAuthority.exactViewFilterCount, 6);
-  assert.equal(result.remoteAuthority.authorityMode, 'isolated_lark_ai_table_only');
-  assert.deepEqual(result.offlineInputs.map(({ window }) => window.windowDays), [1, 3, 7, 30]);
-  for (const offlineInput of result.offlineInputs) {
+  assert.equal(collected.repositoryHead, HEAD);
+  assert.match(collected.packageSha256, /^[a-f0-9]{64}$/u);
+  assert.equal(collected.provenance.source, 'live_lark_report_outputs');
+  assert.equal(collected.provenance.fixtureData, false);
+  assert.equal(collected.schemaAuthority.status, 'zero_drift');
+  assert.equal(collected.schemaAuthority.exactViewFilterCount, 6);
+  assert.equal(collected.remoteAuthority.authorityMode, 'isolated_lark_ai_table_only');
+  assert.deepEqual(collected.offlineInputs.map(({ window }) => window.windowDays), [1, 3, 7, 30]);
+  for (const offlineInput of collected.offlineInputs) {
     assert.equal(offlineInput.channels.length, 10);
     const tiktok = offlineInput.channels.find(({ platform }) => platform === 'tiktok');
     assert.equal(tiktok.availabilityStatus, 'complete');
@@ -69,6 +77,32 @@ test('collector builds a checksummed four-window real Report source package', as
     assert.equal(tiktok.report.freshness.status, 'fresh');
     const tiktokAds = offlineInput.channels.find(({ platform }) => platform === 'tiktok_ads');
     assert.equal(tiktokAds.availabilityStatus, 'unavailable');
+  }
+
+  const validated = await validateLarkNativeAiControlledPreviewSourcePackage(
+    collected,
+    repository,
+  );
+  const plans = await buildLarkNativeAiControlledPreviewExactTerminalReadiness({
+    sourcePackage: validated,
+    repository,
+    buildReadiness: buildLarkNativeAiControlledPreviewReadiness,
+  });
+  assert.equal(plans.length, 4);
+  assert.deepEqual(plans.map(({ status }) => status), [
+    'ready_for_controlled_preview',
+    'ready_for_controlled_preview',
+    'ready_for_controlled_preview',
+    'ready_for_controlled_preview',
+  ]);
+  assert.deepEqual(plans.map(({ runIdentity }) => runIdentity.windowDays), [1, 3, 7, 30]);
+  for (const plan of plans) {
+    assert.equal(plan.blockers.length, 0);
+    assert.equal(plan.schemaAuthority.status, 'zero_drift');
+    assert.equal(plan.remoteAuthority.metaRemoteLockReleased, true);
+    assert.equal(plan.goldenDataset.platform, 'tiktok');
+    assert.equal(plan.goldenDataset.complete, true);
+    assert.equal(plan.goldenDataset.fresh, true);
   }
 });
 
