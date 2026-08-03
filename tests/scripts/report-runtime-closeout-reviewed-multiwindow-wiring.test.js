@@ -2,17 +2,24 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const ROUTER = new URL('../../scripts/report-runtime-closeout-operator.mjs', import.meta.url);
-const LEGACY = new URL('../../scripts/report-runtime-closeout-legacy.mjs', import.meta.url);
+const OPERATOR = new URL('../../scripts/report-runtime-closeout-operator.mjs', import.meta.url);
+const TERMINAL = new URL('../../scripts/multichannel-report-live-closure-terminal.mjs', import.meta.url);
 const EXECUTOR = new URL('../../scripts/report-runtime-closeout-reviewed-multiwindow.mjs', import.meta.url);
 
-test('shared operator router preserves legacy TikTok/Woo path and routes YouTube only', async () => {
-  const [router, legacy] = await Promise.all([readFile(ROUTER, 'utf8'), readFile(LEGACY, 'utf8')]);
-  assert.match(router, /platformScope === 'youtube'/u);
-  assert.match(router, /report-runtime-closeout-reviewed-multiwindow\.mjs/u);
-  assert.match(router, /report-runtime-closeout-legacy\.mjs/u);
-  assert.match(legacy, /executeNormalCloseout/u);
-  assert.match(legacy, /assertWooCommerceReportRuntimeCloseoutPreflight/u);
+test('canonical shared operator preserves legacy TikTok and WooCommerce source contracts', async () => {
+  const source = await readFile(OPERATOR, 'utf8');
+  assert.match(source, /executeNormalCloseout/u);
+  assert.match(source, /assertWooCommerceReportRuntimeCloseoutPreflight/u);
+  assert.match(source, /mktSyncLog:\s*'sync_id'/u);
+  assert.match(source, /pollReportRuntimeLarkIntegrity/u);
+  assert.doesNotMatch(source, /report-runtime-closeout-legacy\.mjs/u);
+  assert.doesNotMatch(source, /platformScope === 'youtube'/u);
+});
+
+test('YouTube terminal delegates only to the separate reviewed multiwindow entrypoint', async () => {
+  const source = await readFile(TERMINAL, 'utf8');
+  assert.match(source, /report-runtime-closeout-reviewed-multiwindow\.mjs/u);
+  assert.doesNotMatch(source, /execFileAsync\(process\.execPath, \[\s*'scripts\/report-runtime-closeout-operator\.mjs'/u);
 });
 
 test('reviewed executor binds handoff, preflight, multiwindow replay and finally restore', async () => {
