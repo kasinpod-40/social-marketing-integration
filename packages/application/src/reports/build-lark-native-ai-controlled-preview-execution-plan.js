@@ -14,7 +14,13 @@ import { stableStringify } from '../use-cases/build-report-snapshot.js';
 
 const SHA256 = /^[a-f0-9]{64}$/u;
 const GIT_SHA = /^[a-f0-9]{40}$/u;
-const IDENTITY_FIELDS = Object.freeze(['ai_run_key', 'scope_type', 'channel_key', 'capability', 'window_days']);
+const IDENTITY_FIELDS = Object.freeze([
+  'ai_run_key',
+  'scope_type',
+  'channel_key',
+  'capability',
+  'window_days',
+]);
 
 export async function buildLarkNativeAiControlledPreviewExecutionPlan(input = {}) {
   const repository = normalizeRepository(input.repository);
@@ -26,8 +32,7 @@ export async function buildLarkNativeAiControlledPreviewExecutionPlan(input = {}
   const desiredRows = inspectReadinessPlans(readinessPlans, repository, blockers);
   inspectExistingInventory(existingRecords, desiredRows, blockers);
 
-  let actions = [];
-  if (blockers.length === 0) actions = buildActions(desiredRows, existingRecords, blockers);
+  let actions = blockers.length === 0 ? buildActions(desiredRows, existingRecords, blockers) : [];
   const boundedBlockers = boundBlockers(blockers);
   if (boundedBlockers.length > 0) actions = [];
 
@@ -35,7 +40,6 @@ export async function buildLarkNativeAiControlledPreviewExecutionPlan(input = {}
   const status = boundedBlockers.length > 0
     ? 'blocked'
     : (counts.write === 0 ? 'zero_drift' : 'ready_to_apply');
-  const authority = buildAuthority(readinessPlans, repository);
   const planCore = {
     schemaVersion: LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTION_PLAN_SCHEMA_VERSION,
     contractVersion: LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_CONTRACT_VERSION,
@@ -43,7 +47,7 @@ export async function buildLarkNativeAiControlledPreviewExecutionPlan(input = {}
     status,
     nextAction: resolveNextAction(status),
     repository,
-    authority,
+    authority: buildAuthority(readinessPlans, repository),
     targetTable: LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_TARGET_TABLE,
     windows: LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_WINDOWS,
     expectedRowCount: LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_LIMITS.expectedTotalRows,
@@ -82,11 +86,18 @@ export async function buildLarkNativeAiControlledPreviewExecutionPlan(input = {}
 
 export function simulateLarkNativeAiControlledPreviewExecution(plan, existingRecordsInput = []) {
   if (!isObject(plan) || !['ready_to_apply', 'zero_drift'].includes(plan.status)) {
-    throw codedError('LARK_NATIVE_AI_EXECUTION_PLAN_NOT_APPLICABLE', 'Execution plan must be ready_to_apply or zero_drift.');
+    throw codedError(
+      'LARK_NATIVE_AI_EXECUTION_PLAN_NOT_APPLICABLE',
+      'Execution plan must be ready_to_apply or zero_drift.',
+    );
   }
   if (plan.safety?.executionAuthorized !== false || plan.safety?.deleteActionCount !== 0) {
-    throw codedError('LARK_NATIVE_AI_EXECUTION_PLAN_SAFETY_INVALID', 'Execution plan safety contract is invalid.');
+    throw codedError(
+      'LARK_NATIVE_AI_EXECUTION_PLAN_SAFETY_INVALID',
+      'Execution plan safety contract is invalid.',
+    );
   }
+
   const records = normalizeExistingRecords(existingRecordsInput).map(cloneRecord);
   const byRecordId = new Map(records.map((record) => [record.recordId, record]));
   const byAiRunKey = new Map(records
@@ -97,7 +108,10 @@ export function simulateLarkNativeAiControlledPreviewExecution(plan, existingRec
     if (action.action === 'no_op') continue;
     if (action.action === 'create') {
       if (byAiRunKey.has(action.aiRunKey)) {
-        throw codedError('LARK_NATIVE_AI_SIMULATION_CREATE_CONFLICT', `Duplicate ai_run_key: ${action.aiRunKey}`);
+        throw codedError(
+          'LARK_NATIVE_AI_SIMULATION_CREATE_CONFLICT',
+          `Duplicate ai_run_key: ${action.aiRunKey}`,
+        );
       }
       const recordId = uniqueSimulationRecordId(action.aiRunKey, byRecordId);
       const record = { recordId, fields: structuredClone(action.fields) };
@@ -109,13 +123,20 @@ export function simulateLarkNativeAiControlledPreviewExecution(plan, existingRec
     if (action.action === 'update') {
       const record = byRecordId.get(action.recordId);
       if (!record || record.fields.ai_run_key !== action.aiRunKey) {
-        throw codedError('LARK_NATIVE_AI_SIMULATION_UPDATE_TARGET_MISSING', `Missing update target: ${action.aiRunKey}`);
+        throw codedError(
+          'LARK_NATIVE_AI_SIMULATION_UPDATE_TARGET_MISSING',
+          `Missing update target: ${action.aiRunKey}`,
+        );
       }
       Object.assign(record.fields, structuredClone(action.fieldsPatch));
       continue;
     }
-    throw codedError('LARK_NATIVE_AI_SIMULATION_ACTION_UNSUPPORTED', `Unsupported action: ${action.action}`);
+    throw codedError(
+      'LARK_NATIVE_AI_SIMULATION_ACTION_UNSUPPORTED',
+      `Unsupported action: ${action.action}`,
+    );
   }
+
   return deepFreeze(records
     .map(cloneRecord)
     .sort((left, right) => String(left.fields.ai_run_key ?? left.recordId)
@@ -124,14 +145,16 @@ export function simulateLarkNativeAiControlledPreviewExecution(plan, existingRec
 
 function inspectReadinessPlans(plans, repository, blockers) {
   const desiredRows = [];
+  const windows = new Set();
+  const authorityVectors = [];
+
   if (plans.length !== LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_LIMITS.expectedWindows) {
     blockers.push(blocker('READINESS_PLAN_COUNT_INVALID', 'readinessPlans', {
       expected: LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_LIMITS.expectedWindows,
       actual: plans.length,
     }));
   }
-  const windows = new Set();
-  const authorityVectors = [];
+
   for (let index = 0; index < plans.length; index += 1) {
     const plan = plans[index];
     const label = `readinessPlans[${index}]`;
@@ -139,25 +162,12 @@ function inspectReadinessPlans(plans, repository, blockers) {
       blockers.push(blocker('READINESS_PLAN_INVALID', label));
       continue;
     }
-    if (plan.schemaVersion !== LARK_NATIVE_AI_CONTROLLED_PREVIEW_READINESS_PLAN_SCHEMA_VERSION
-      || plan.mode !== 'controlled_preview_readiness') {
-      blockers.push(blocker('READINESS_PLAN_CONTRACT_INVALID', label));
-    }
-    if (plan.status !== 'ready_for_controlled_preview'
-      || !Array.isArray(plan.blockers)
-      || plan.blockers.length !== 0) {
-      blockers.push(blocker('READINESS_PLAN_NOT_READY', label, { status: plan.status ?? null }));
-    }
-    const windowDays = positiveInteger(plan.runIdentity?.windowDays);
-    if (!LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_WINDOWS.includes(windowDays)) {
-      blockers.push(blocker('READINESS_PLAN_WINDOW_UNSUPPORTED', `${label}.runIdentity.windowDays`, { windowDays }));
-    } else if (windows.has(windowDays)) {
-      blockers.push(blocker('READINESS_PLAN_WINDOW_DUPLICATE', `${label}.runIdentity.windowDays`, { windowDays }));
-    } else {
-      windows.add(windowDays);
-    }
+
+    inspectReadinessContract(plan, label, blockers);
+    const windowDays = inspectWindow(plan, label, windows, blockers);
     inspectReadinessRepository(plan, repository, label, blockers);
     inspectReadinessAuthority(plan, label, blockers);
+
     const rows = plan.larkPlan?.rows;
     if (plan.larkPlan?.targetTable !== LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_TARGET_TABLE
       || !Array.isArray(rows)
@@ -165,6 +175,7 @@ function inspectReadinessPlans(plans, repository, blockers) {
       blockers.push(blocker('READINESS_PLAN_LARK_ROWS_INVALID', `${label}.larkPlan`));
       continue;
     }
+
     for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
       const row = rows[rowIndex];
       const rowLabel = `${label}.larkPlan.rows[${rowIndex}]`;
@@ -185,9 +196,12 @@ function inspectReadinessPlans(plans, repository, blockers) {
     }
     authorityVectors.push(readinessAuthorityVector(plan));
   }
+
   for (const expectedWindow of LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_WINDOWS) {
     if (!windows.has(expectedWindow)) {
-      blockers.push(blocker('READINESS_PLAN_WINDOW_MISSING', 'readinessPlans', { windowDays: expectedWindow }));
+      blockers.push(blocker('READINESS_PLAN_WINDOW_MISSING', 'readinessPlans', {
+        windowDays: expectedWindow,
+      }));
     }
   }
   inspectAuthorityConsistency(authorityVectors, blockers);
@@ -200,6 +214,38 @@ function inspectReadinessPlans(plans, repository, blockers) {
   }
   inspectDesiredIdentityUniqueness(desiredRows, blockers);
   return desiredRows;
+}
+
+function inspectReadinessContract(plan, label, blockers) {
+  if (plan.schemaVersion !== LARK_NATIVE_AI_CONTROLLED_PREVIEW_READINESS_PLAN_SCHEMA_VERSION
+    || plan.mode !== 'controlled_preview_readiness') {
+    blockers.push(blocker('READINESS_PLAN_CONTRACT_INVALID', label));
+  }
+  if (plan.status !== 'ready_for_controlled_preview'
+    || !Array.isArray(plan.blockers)
+    || plan.blockers.length !== 0) {
+    blockers.push(blocker('READINESS_PLAN_NOT_READY', label, { status: plan.status ?? null }));
+  }
+}
+
+function inspectWindow(plan, label, windows, blockers) {
+  const windowDays = positiveInteger(plan.runIdentity?.windowDays);
+  if (!LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_WINDOWS.includes(windowDays)) {
+    blockers.push(blocker(
+      'READINESS_PLAN_WINDOW_UNSUPPORTED',
+      `${label}.runIdentity.windowDays`,
+      { windowDays },
+    ));
+  } else if (windows.has(windowDays)) {
+    blockers.push(blocker(
+      'READINESS_PLAN_WINDOW_DUPLICATE',
+      `${label}.runIdentity.windowDays`,
+      { windowDays },
+    ));
+  } else {
+    windows.add(windowDays);
+  }
+  return windowDays;
 }
 
 function inspectReadinessRepository(plan, repository, label, blockers) {
@@ -254,7 +300,9 @@ function inspectReadinessAuthority(plan, label, blockers) {
     ['promptSha256', plan.promptPackage?.promptSha256],
     ['referenceOutputSha256', plan.promptPackage?.referenceOutputSha256],
   ]) {
-    if (!SHA256.test(value ?? '')) blockers.push(blocker('READINESS_PLAN_HASH_INVALID', `${label}.${field}`));
+    if (!SHA256.test(value ?? '')) {
+      blockers.push(blocker('READINESS_PLAN_HASH_INVALID', `${label}.${field}`));
+    }
   }
 }
 
@@ -262,14 +310,23 @@ function inspectDesiredFields(fields, windowDays, label, blockers) {
   const keys = Object.keys(fields);
   const missing = LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_REQUIRED_FIELDS
     .filter((field) => !Object.prototype.hasOwnProperty.call(fields, field));
-  const unexpected = keys.filter((field) => !LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_REQUIRED_FIELDS.includes(field));
-  if (missing.length > 0) blockers.push(blocker('DESIRED_ROW_FIELD_MISSING', label, { fields: missing }));
-  if (unexpected.length > 0) blockers.push(blocker('DESIRED_ROW_FIELD_UNEXPECTED', label, { fields: unexpected }));
+  const unexpected = keys
+    .filter((field) => !LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_REQUIRED_FIELDS.includes(field));
+  if (missing.length > 0) {
+    blockers.push(blocker('DESIRED_ROW_FIELD_MISSING', label, { fields: missing }));
+  }
+  if (unexpected.length > 0) {
+    blockers.push(blocker('DESIRED_ROW_FIELD_UNEXPECTED', label, { fields: unexpected }));
+  }
   if (String(fields.window_days) !== String(windowDays)) {
     blockers.push(blocker('DESIRED_ROW_WINDOW_MISMATCH', label));
   }
-  for (const [field, expected] of Object.entries(LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_SAFETY_FIELDS)) {
-    if (!same(fields[field], expected)) blockers.push(blocker('DESIRED_ROW_SAFETY_INVALID', `${label}.${field}`));
+  for (const [field, expected] of Object.entries(
+    LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_SAFETY_FIELDS,
+  )) {
+    if (!same(fields[field], expected)) {
+      blockers.push(blocker('DESIRED_ROW_SAFETY_INVALID', `${label}.${field}`));
+    }
   }
   if (!identity(fields.ai_run_key) || !SHA256.test(fields.dedupe_key ?? '')) {
     blockers.push(blocker('DESIRED_ROW_IDENTITY_INVALID', label));
@@ -315,11 +372,14 @@ function readinessAuthorityVector(plan) {
 
 function inspectExistingInventory(records, desiredRows, blockers) {
   if (records.length > LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_LIMITS.maximumExistingRecords) {
-    blockers.push(blocker('EXISTING_RECORD_LIMIT_EXCEEDED', 'existingRecords', { count: records.length }));
+    blockers.push(blocker('EXISTING_RECORD_LIMIT_EXCEEDED', 'existingRecords', {
+      count: records.length,
+    }));
   }
   const desiredAiRunKeys = new Set(desiredRows.map(({ fields }) => fields.ai_run_key));
   const aiRunKeyCounts = new Map();
   const dedupeOwners = new Map();
+
   for (const record of records) {
     const aiRunKey = text(record.fields.ai_run_key);
     const dedupeKey = text(record.fields.dedupe_key);
@@ -330,6 +390,7 @@ function inspectExistingInventory(records, desiredRows, blockers) {
       dedupeOwners.set(dedupeKey, owners);
     }
   }
+
   for (const [aiRunKey, count] of aiRunKeyCounts.entries()) {
     if (desiredAiRunKeys.has(aiRunKey) && count !== 1) {
       blockers.push(blocker('EXISTING_AI_RUN_KEY_DUPLICATE', aiRunKey, { count }));
@@ -348,10 +409,11 @@ function buildActions(desiredRows, existingRecords, blockers) {
   for (const record of existingRecords) {
     const aiRunKey = text(record.fields.ai_run_key);
     if (!aiRunKey) continue;
-    const items = byAiRunKey.get(aiRunKey) ?? [];
-    items.push(record);
-    byAiRunKey.set(aiRunKey, items);
+    const matches = byAiRunKey.get(aiRunKey) ?? [];
+    matches.push(record);
+    byAiRunKey.set(aiRunKey, matches);
   }
+
   const actions = [];
   for (const desired of desiredRows) {
     const aiRunKey = desired.fields.ai_run_key;
@@ -372,6 +434,7 @@ function buildActions(desiredRows, existingRecords, blockers) {
       blockers.push(blocker('EXISTING_AI_RUN_KEY_DUPLICATE', aiRunKey, { count: matches.length }));
       continue;
     }
+
     const existing = matches[0];
     if (!isSafeExistingPreview(existing.fields)) {
       blockers.push(blocker('EXISTING_RECORD_NOT_SAFE_PREVIEW', aiRunKey));
@@ -381,8 +444,13 @@ function buildActions(desiredRows, existingRecords, blockers) {
       blockers.push(blocker('EXISTING_RECORD_IDENTITY_CONFLICT', aiRunKey));
       continue;
     }
+
     const sameEvidence = existing.fields.dedupe_key === desired.fields.dedupe_key;
-    const managedPatch = diffFields(existing.fields, desired.fields, LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_MANAGED_FIELDS);
+    const managedPatch = diffFields(
+      existing.fields,
+      desired.fields,
+      LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_MANAGED_FIELDS,
+    );
     if (sameEvidence && Object.keys(managedPatch).length === 0) {
       actions.push(deepFreeze({
         action: 'no_op',
@@ -395,9 +463,7 @@ function buildActions(desiredRows, existingRecords, blockers) {
       }));
       continue;
     }
-    const fieldsPatch = sameEvidence
-      ? managedPatch
-      : buildEvidenceRevisionPatch(existing.fields, desired.fields);
+
     actions.push(deepFreeze({
       action: 'update',
       reason: sameEvidence ? 'managed_field_drift' : 'evidence_revision',
@@ -407,15 +473,23 @@ function buildActions(desiredRows, existingRecords, blockers) {
       windowDays: desired.windowDays,
       channelKey: desired.channelKey,
       clearsAiOutput: !sameEvidence,
-      fieldsPatch,
+      fieldsPatch: sameEvidence
+        ? managedPatch
+        : buildEvidenceRevisionPatch(existing.fields, desired.fields),
     }));
   }
   return actions;
 }
 
 function buildEvidenceRevisionPatch(existing, desired) {
-  const patch = diffFields(existing, desired, LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_MANAGED_FIELDS);
-  for (const field of LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_AI_OUTPUT_FIELDS) patch[field] = null;
+  const patch = { ...diffFields(
+    existing,
+    desired,
+    LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_MANAGED_FIELDS,
+  ) };
+  for (const field of LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_AI_OUTPUT_FIELDS) {
+    patch[field] = null;
+  }
   patch.generation_status = desired.generation_status;
   patch.failure_code = null;
   return deepFreeze(patch);
@@ -424,7 +498,9 @@ function buildEvidenceRevisionPatch(existing, desired) {
 function diffFields(existing, desired, fields) {
   const patch = {};
   for (const field of fields) {
-    if (!same(existing[field], desired[field])) patch[field] = structuredClone(desired[field]);
+    if (!same(existing[field], desired[field])) {
+      patch[field] = structuredClone(desired[field]);
+    }
   }
   return deepFreeze(patch);
 }
@@ -476,7 +552,7 @@ function normalizeRepository(value = {}) {
   return Object.freeze({
     branch: text(value.branch),
     clean: value.clean === true,
-    exactHeadSha: SHA40(value.exactHeadSha ?? value.exact_head_sha),
+    exactHeadSha: sha40(value.exactHeadSha ?? value.exact_head_sha),
   });
 }
 
@@ -484,11 +560,17 @@ function normalizeExistingRecords(value) {
   if (!Array.isArray(value)) return [];
   return value.map((item, index) => {
     if (!isObject(item) || !isObject(item.fields)) {
-      throw codedError('LARK_NATIVE_AI_EXISTING_RECORD_INVALID', `existingRecords[${index}] must include fields.`);
+      throw codedError(
+        'LARK_NATIVE_AI_EXISTING_RECORD_INVALID',
+        `existingRecords[${index}] must include fields.`,
+      );
     }
     const recordId = text(item.recordId ?? item.record_id);
     if (!recordId) {
-      throw codedError('LARK_NATIVE_AI_EXISTING_RECORD_ID_REQUIRED', `existingRecords[${index}].recordId is required.`);
+      throw codedError(
+        'LARK_NATIVE_AI_EXISTING_RECORD_ID_REQUIRED',
+        `existingRecords[${index}].recordId is required.`,
+      );
     }
     return deepFreeze({ recordId, fields: structuredClone(item.fields) });
   });
@@ -497,8 +579,11 @@ function normalizeExistingRecords(value) {
 function boundBlockers(blockers) {
   const sorted = blockers
     .map((item) => deepFreeze(structuredClone(item)))
-    .sort((left, right) => left.code.localeCompare(right.code) || left.subject.localeCompare(right.subject));
-  if (sorted.length <= LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_LIMITS.maximumBlockers) return sorted;
+    .sort((left, right) => left.code.localeCompare(right.code)
+      || left.subject.localeCompare(right.subject));
+  if (sorted.length <= LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_LIMITS.maximumBlockers) {
+    return sorted;
+  }
   return [
     ...sorted.slice(0, LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXECUTOR_LIMITS.maximumBlockers - 1),
     blocker('BLOCKER_LIMIT_REACHED', 'blockers', { count: sorted.length }),
@@ -509,6 +594,7 @@ function sanitizeActionForIdentity(action) {
   return {
     action: action.action,
     reason: action.reason,
+    recordId: action.recordId ?? null,
     aiRunKey: action.aiRunKey,
     dedupeKey: action.dedupeKey,
     windowDays: action.windowDays,
@@ -531,18 +617,48 @@ function cloneRecord(record) {
 }
 
 function blocker(code, subject, details = null) {
-  return Object.freeze({ code, subject, details: details ? Object.freeze(structuredClone(details)) : null });
+  return Object.freeze({
+    code,
+    subject,
+    details: details ? Object.freeze(structuredClone(details)) : null,
+  });
 }
-function same(left, right) { return stableStringify(left) === stableStringify(right); }
-function isObject(value) { return Boolean(value) && typeof value === 'object' && !Array.isArray(value); }
-function text(value) { return typeof value === 'string' && value.trim() ? value.trim() : null; }
-function identity(value) { const item = text(value); return item && item.length <= 512 ? item : null; }
-function positiveInteger(value) { const number = Number(value); return Number.isSafeInteger(number) && number > 0 ? number : null; }
-function SHA40(value) { const item = text(value); return item && GIT_SHA.test(item) ? item : null; }
-function codedError(code, message) { const error = new Error(message); error.code = code; return error; }
+
+function same(left, right) {
+  if (left === undefined || right === undefined) return left === right;
+  return stableStringify(left) === stableStringify(right);
+}
+function isObject(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+function text(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+function identity(value) {
+  const item = text(value);
+  return item && item.length <= 512 ? item : null;
+}
+function positiveInteger(value) {
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number > 0 ? number : null;
+}
+function sha40(value) {
+  const item = text(value);
+  return item && GIT_SHA.test(item) ? item : null;
+}
+function codedError(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
 async function sha256Hex(value) {
-  const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+  const digest = await globalThis.crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(value),
+  );
+  return [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
 }
 function deepFreeze(value, seen = new WeakSet()) {
   if (value && typeof value === 'object') {
