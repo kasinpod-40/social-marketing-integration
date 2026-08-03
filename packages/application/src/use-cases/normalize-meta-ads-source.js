@@ -28,6 +28,13 @@ const PUBLISHER_PLATFORM_AD_CHANNELS = Object.freeze({
   unknown: null,
   whatsapp: 'whatsapp_ads',
 });
+const CANONICAL_STATUS_OPTIONS = Object.freeze({
+  account: Object.freeze(new Set(['active', 'paused', 'removed', 'unknown'])),
+  campaign: Object.freeze(new Set(['active', 'paused', 'removed', 'deleted', 'ended', 'unknown'])),
+  ad_group: Object.freeze(new Set(['active', 'paused', 'removed', 'deleted', 'unknown'])),
+  ad: Object.freeze(new Set(['active', 'paused', 'removed', 'unknown'])),
+  creative: Object.freeze(new Set(['active', 'paused', 'removed', 'unknown'])),
+});
 
 /** แปลง Marketing API entity เป็น Shared Raw entity + D1 candidate โดยไม่เขียน */
 export function normalizeMetaAdsEntityFixture(input = {}) {
@@ -86,7 +93,7 @@ export function normalizeMetaAdsEntityFixture(input = {}) {
       parentAdGroupId,
       externalCreativeId: creativeId,
       entityName: rawRow.entity_name,
-      status: rawRow.status,
+      status: normalizeCanonicalEntityStatus(entityType, rawRow.status),
       objective: rawRow.objective,
       currency: rawRow.currency,
       timezone: rawRow.timezone,
@@ -210,6 +217,40 @@ export function normalizeMetaAdsDailyFixture(input = {}) {
       fetchedAt,
     },
   });
+}
+
+function normalizeCanonicalEntityStatus(entityType, value) {
+  const text = optionalMetaText(value, 'status');
+  if (!text) return null;
+  const normalized = text.trim().toUpperCase();
+  let status = 'unknown';
+
+  if (normalized === '1' || normalized === 'ACTIVE' || normalized === 'ANY_ACTIVE') {
+    status = 'active';
+  } else if ([
+    '2',
+    'DISABLED',
+    'PAUSED',
+    'CAMPAIGN_PAUSED',
+    'ADSET_PAUSED',
+  ].includes(normalized)) {
+    status = 'paused';
+  } else if ([
+    '100',
+    '101',
+    'ARCHIVED',
+    'CLOSED',
+    'REMOVED',
+    'ANY_CLOSED',
+  ].includes(normalized)) {
+    status = 'removed';
+  } else if (normalized === 'DELETED') {
+    status = ['campaign', 'ad_group'].includes(entityType) ? 'deleted' : 'removed';
+  } else if (['COMPLETED', 'ENDED'].includes(normalized) && entityType === 'campaign') {
+    status = 'ended';
+  }
+
+  return CANONICAL_STATUS_OPTIONS[entityType].has(status) ? status : 'unknown';
 }
 
 function optionalIdentity(value, fieldName) {
