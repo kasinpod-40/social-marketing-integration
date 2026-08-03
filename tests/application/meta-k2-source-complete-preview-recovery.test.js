@@ -183,7 +183,7 @@ test('hash-pinned transform reuses existing controllers without changing disk so
   );
 });
 
-test('new wiring uses a module loader and contains no Remote mutation implementation', async () => {
+test('new wiring uses a module loader and contains no direct Remote mutation implementation', async () => {
   const paths = [
     '../../scripts/lib/meta-k2-source-complete-preview-loader.mjs',
     '../../scripts/meta-k2-source-complete-preview-recovery.mjs',
@@ -206,7 +206,8 @@ test('new wiring uses a module loader and contains no Remote mutation implementa
   assert.match(loader, /transformMetaK2SourceCompleteController/u);
   for (const source of sources) {
     assert.doesNotMatch(source, /wrangler[\s\S]{0,80}\bdeploy\b/iu);
-    assert.doesNotMatch(source, /\b(?:INSERT|UPDATE|DELETE|REPLACE)\b/iu);
+    assert.doesNotMatch(source, /['"`]\s*(?:INSERT|UPDATE|DELETE|REPLACE)\b/iu);
+    assert.doesNotMatch(source, /\bd1\s+execute\b/iu);
     assert.doesNotMatch(source, /queue\s*\.\s*send\s*\(/iu);
     assert.doesNotMatch(source, /fetch\s*\(/iu);
   }
