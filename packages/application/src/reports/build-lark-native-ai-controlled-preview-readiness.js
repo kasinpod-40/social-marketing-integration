@@ -22,6 +22,32 @@ import {
 
 const SHA256 = /^[a-f0-9]{64}$/u;
 const GIT_SHA = /^[a-f0-9]{40}$/u;
+const TIKTOK_BASELINE_ONLY_PARTIAL_MIN_COVERAGE_RATE = 0.99;
+const TIKTOK_BASELINE_ONLY_PARTIAL_RATE_TOLERANCE = 0.0001;
+const TIKTOK_CURRENT_TOTAL_METRIC_KEYS = Object.freeze([
+  'tiktok:latest_total_views',
+  'tiktok:latest_total_likes',
+  'tiktok:latest_total_comments',
+  'tiktok:latest_total_shares',
+  'tiktok:latest_total_engagement',
+  'tiktok:latest_engagement_rate',
+]);
+const TIKTOK_PERIOD_DELTA_METRIC_KEYS = Object.freeze([
+  'tiktok:period_views',
+  'tiktok:period_likes',
+  'tiktok:period_comments',
+  'tiktok:period_shares',
+  'tiktok:period_engagement',
+  'tiktok:period_engagement_rate',
+]);
+const TIKTOK_DATA_QUALITY_METRIC_KEYS = Object.freeze([
+  'tiktok:new_content_count',
+  'tiktok:tracked_content_count',
+  'tiktok:baseline_covered_content_count',
+  'tiktok:baseline_missing_content_count',
+  'tiktok:baseline_coverage_rate',
+]);
+const TIKTOK_PERIOD_DELTA_METRIC_KEY_SET = new Set(TIKTOK_PERIOD_DELTA_METRIC_KEYS);
 
 export async function buildLarkNativeAiControlledPreviewReadiness(input = {}) {
   const offlineInput = requireObject(input.offlineInput ?? input.offline_input, 'offlineInput');
@@ -170,9 +196,11 @@ function inspectGoldenDataset(bundle) {
   const tiktok = bundle.channels.find(({ platform }) => platform === 'tiktok');
   if (!tiktok) return [blocker('GOLDEN_DATASET_TIKTOK_MISSING', 'tiktok')];
   const blockers = [];
-  if (tiktok.availabilityStatus !== 'complete'
-    || tiktok.coverageStatus !== 'complete'
-    || tiktok.freshness.status !== 'fresh') {
+  const complete = tiktok.availabilityStatus === 'complete'
+    && tiktok.coverageStatus === 'complete'
+    && tiktok.freshness.status === 'fresh';
+  const verifiedBaselineOnlyPartial = isVerifiedTikTokBaselineOnlyPartial(tiktok);
+  if (!complete && !verifiedBaselineOnlyPartial) {
     blockers.push(blocker('GOLDEN_DATASET_TIKTOK_NOT_COMPLETE', 'tiktok'));
   }
   if (!tiktok.summaryMetrics.some((metric) => metric.observed
@@ -181,6 +209,79 @@ function inspectGoldenDataset(bundle) {
     blockers.push(blocker('GOLDEN_DATASET_TIKTOK_METRIC_MISSING', 'tiktok.summaryMetrics'));
   }
   return blockers;
+}
+
+function isVerifiedTikTokBaselineOnlyPartial(tiktok) {
+  if (tiktok.availabilityStatus !== 'partial'
+    || tiktok.coverageStatus !== 'partial'
+    || tiktok.freshness.status !== 'fresh'
+    || tiktok.dataQualityIssues.some(({ severity }) => severity === 'critical')) {
+    return false;
+  }
+
+  const byKey = new Map(tiktok.summaryMetrics.map((metric) => [metric.metricKey, metric]));
+  const currentTotals = exactMetrics(byKey, TIKTOK_CURRENT_TOTAL_METRIC_KEYS);
+  const periodDeltas = exactMetrics(byKey, TIKTOK_PERIOD_DELTA_METRIC_KEYS);
+  const dataQuality = exactMetrics(byKey, TIKTOK_DATA_QUALITY_METRIC_KEYS);
+  if (!currentTotals || !periodDeltas || !dataQuality) return false;
+
+  if (!currentTotals.every(isAvailableObservedMetric)) return false;
+  if (!dataQuality.every(isAvailableObservedMetric)) return false;
+  if (!periodDeltas.every((metric) => metric.availabilityStatus === 'baseline_incomplete'
+    && metric.currentValue === null
+    && metric.observed === false)) {
+    return false;
+  }
+
+  for (const metric of tiktok.summaryMetrics) {
+    if (metric.availabilityStatus === 'available') {
+      if (!isAvailableObservedMetric(metric)) return false;
+      continue;
+    }
+    if (!TIKTOK_PERIOD_DELTA_METRIC_KEY_SET.has(metric.metricKey)
+      || metric.availabilityStatus !== 'baseline_incomplete'
+      || metric.currentValue !== null
+      || metric.observed !== false) {
+      return false;
+    }
+  }
+
+  const newContent = metricValue(byKey, 'tiktok:new_content_count');
+  const tracked = metricValue(byKey, 'tiktok:tracked_content_count');
+  const covered = metricValue(byKey, 'tiktok:baseline_covered_content_count');
+  const missing = metricValue(byKey, 'tiktok:baseline_missing_content_count');
+  const coverageRate = metricValue(byKey, 'tiktok:baseline_coverage_rate');
+  if (![newContent, tracked, covered, missing].every(isNonNegativeInteger)
+    || tracked <= 0
+    || missing <= 0
+    || tracked !== covered + missing
+    || coverageRate < TIKTOK_BASELINE_ONLY_PARTIAL_MIN_COVERAGE_RATE
+    || coverageRate >= 1) {
+    return false;
+  }
+  const reconciledRate = covered / tracked;
+  return Math.abs(coverageRate - reconciledRate)
+    <= TIKTOK_BASELINE_ONLY_PARTIAL_RATE_TOLERANCE;
+}
+
+function exactMetrics(byKey, keys) {
+  const metrics = keys.map((key) => byKey.get(key));
+  return metrics.every(Boolean) ? metrics : null;
+}
+
+function isAvailableObservedMetric(metric) {
+  return metric.availabilityStatus === 'available'
+    && metric.observed === true
+    && metric.currentValue !== null
+    && Number.isFinite(metric.currentValue);
+}
+
+function metricValue(byKey, key) {
+  return byKey.get(key)?.currentValue ?? null;
+}
+
+function isNonNegativeInteger(value) {
+  return Number.isSafeInteger(value) && value >= 0;
 }
 
 function inspectPrompt(prompt, promptBytes) {
