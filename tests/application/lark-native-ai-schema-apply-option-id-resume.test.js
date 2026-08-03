@@ -68,7 +68,7 @@ test('resume Apply sends live Select option IDs and never repeats completed Fiel
   });
 
   const executive = client.viewPatchBodies.find(({ viewName }) => viewName === '📊 Executive Summaries');
-  assert.deepEqual(executive.filterInfo.conditions[0].value, ['opt_scope_executive']);
+  assert.deepEqual(executive.filterInfo.conditions[0].value, ['opt_scope_type_executive']);
   assert.equal(executive.filterInfo.conditions[0].value.includes('executive'), false);
 
   const notification = client.viewPatchBodies.find(({ viewName }) => viewName === '✅ Notification Eligible');
