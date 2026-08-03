@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 
 import {
   describeMetaK2PersistedError,
+  replayMetaK2CompleteLarkPayloadPreflight,
   replayMetaK2SourceCompleteValidation,
   selectMetaK2AuditColumn,
   summarizeMetaK2StagedUnits,
@@ -19,6 +20,13 @@ const identity = Object.freeze({
   syncRunId: 'meta:meta_ads:chemistry_k2:meta-operation-fixture',
   periodStart: '2026-07-01',
   periodEnd: '2026-07-31',
+});
+
+const larkTables = Object.freeze({
+  mktAdsAccounts: 'tbl_accounts',
+  mktAdsCampaigns: 'tbl_campaigns',
+  mktAdsAdGroups: 'tbl_ad_groups',
+  mktAdsAds: 'tbl_ads',
 });
 
 function accountPayload() {
@@ -78,6 +86,36 @@ function completeState(unitCount, rowCount) {
     unitCount,
     rowCount,
     sourceWatermark: '2026-07-31T00:00:00Z',
+  };
+}
+
+function larkRepositoryWithIssues() {
+  return {
+    async getTableFields() {
+      return [];
+    },
+    async prepareRows(_tableId, rows, context) {
+      const row = rows[0];
+      const fieldName = Object.keys(row).find((name) => name !== context.keyField);
+      if (fieldName === 'last_sync_at' || fieldName === 'account_link_status') {
+        const error = new Error(`Lark preflight failed: field=${fieldName}`);
+        error.code = 'LARK_PREFLIGHT_FAILED';
+        error.details = { fieldName };
+        throw error;
+      }
+      return rows;
+    },
+  };
+}
+
+function larkRepositoryAccepted() {
+  return {
+    async getTableFields() {
+      return [];
+    },
+    async prepareRows(_tableId, rows) {
+      return rows;
+    },
   };
 }
 
@@ -157,6 +195,58 @@ test('replays the complete retained publisher-platform footprint to the local wr
   assert.equal(result.replayError, null);
 });
 
+test('read-only retained Lark preflight returns every payload issue before D1 or Lark write', async () => {
+  const payloads = [accountPayload(), dailyPayload()];
+  const result = await replayMetaK2CompleteLarkPayloadPreflight({
+    payloads,
+    sourceState: completeState(2, 2),
+    identity,
+    generation: Date.parse('2026-07-31T10:00:00Z'),
+    originalRequestedAt: Date.parse('2026-07-31T10:00:00Z'),
+    repository: larkRepositoryWithIssues(),
+    tables: larkTables,
+  });
+
+  assert.equal(result.accepted, false);
+  assert.equal(result.tablesChecked, 4);
+  assert.equal(result.issueCount, 2);
+  assert.deepEqual(
+    result.issues.map(({ tableKey, fieldName }) => ({ tableKey, fieldName })),
+    [
+      { tableKey: 'mktAdsAccounts', fieldName: 'account_link_status' },
+      { tableKey: 'mktAdsAccounts', fieldName: 'last_sync_at' },
+    ],
+  );
+  assert.equal(result.providerRequestCount, 0);
+  assert.equal(result.localWriteSentinelCount, 0);
+  assert.equal(result.d1WriteCount, 0);
+  assert.equal(result.larkWriteCount, 0);
+  assert.equal(result.remoteMutationCount, 0);
+});
+
+test('read-only retained Lark preflight stops at planning sentinel when every field passes', async () => {
+  const payloads = [accountPayload(), dailyPayload()];
+  const result = await replayMetaK2CompleteLarkPayloadPreflight({
+    payloads,
+    sourceState: completeState(2, 2),
+    identity,
+    generation: Date.parse('2026-07-31T10:00:00Z'),
+    originalRequestedAt: Date.parse('2026-07-31T10:00:00Z'),
+    repository: larkRepositoryAccepted(),
+    tables: larkTables,
+  });
+
+  assert.equal(result.accepted, true);
+  assert.equal(result.tablesChecked, 4);
+  assert.equal(result.issueCount, 0);
+  assert.deepEqual(result.issues, []);
+  assert.equal(result.providerRequestCount, 0);
+  assert.equal(result.localWriteSentinelCount, 1);
+  assert.equal(result.d1WriteCount, 0);
+  assert.equal(result.larkWriteCount, 0);
+  assert.equal(result.remoteMutationCount, 0);
+});
+
 test('replay surfaces exact activity hierarchy drift before any remote write', async () => {
   const payloads = [
     accountPayload(),
@@ -193,6 +283,10 @@ test('operator is read-only and never contains Worker or Queue mutation commands
   assert.match(source, /\bSELECT\b/u);
   assert.doesNotMatch(source, /[`'"]\s*(?:INSERT|UPDATE|DELETE|REPLACE)\b/iu);
   assert.match(source, /d1ReadCount: 8/u);
+  assert.match(source, /larkSchemaReadCount/u);
+  assert.match(source, /larkRecordReadCount: larkAudit\.recordReadCount/u);
+  assert.match(source, /larkWriteCount: larkAudit\.writeCount/u);
+  assert.match(source, /workerVersionUploadCount: 0/u);
   assert.match(source, /recoveryAuthorized: false/u);
   assert.match(source, /rawPayloadPrinted: false/u);
 });
