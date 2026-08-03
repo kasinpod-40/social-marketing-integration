@@ -209,12 +209,13 @@ test('read-only retained Lark preflight returns every payload issue before D1 or
 
   assert.equal(result.accepted, false);
   assert.equal(result.tablesChecked, 4);
-  assert.equal(result.issueCount, 2);
+  assert.equal(result.issueCount, 3);
   assert.deepEqual(
     result.issues.map(({ tableKey, fieldName }) => ({ tableKey, fieldName })),
     [
       { tableKey: 'mktAdsAccounts', fieldName: 'account_link_status' },
       { tableKey: 'mktAdsAccounts', fieldName: 'last_sync_at' },
+      { tableKey: 'mktAdsAds', fieldName: 'last_sync_at' },
     ],
   );
   assert.equal(result.providerRequestCount, 0);
