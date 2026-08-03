@@ -124,11 +124,27 @@ test('column selection accepts only an available reviewed candidate', () => {
   );
 });
 
-test('replays complete staged source through the real write-set builder without remote writes', async () => {
-  const payloads = [accountPayload(), dailyPayload()];
+test('replays the complete retained publisher-platform footprint to the local write boundary', async () => {
+  const platforms = [
+    'audience_network',
+    'facebook',
+    'instagram',
+    'messenger',
+    'threads',
+    'unknown',
+    'whatsapp',
+  ];
+  const payloads = [
+    accountPayload(),
+    ...platforms.map((publisherPlatform, index) => dailyPayload({
+      publisher_platform: publisherPlatform,
+      ad_id: `ad_${index + 1}`,
+      ad_name: `Ad ${index + 1}`,
+    })),
+  ];
   const result = await replayMetaK2SourceCompleteValidation({
     payloads,
-    sourceState: completeState(2, 2),
+    sourceState: completeState(payloads.length, payloads.length),
     identity,
     generation: Date.parse('2026-07-31T10:00:00Z'),
     originalRequestedAt: Date.parse('2026-07-31T10:00:00Z'),
