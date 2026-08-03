@@ -23,6 +23,8 @@ export const OPERATOR_TERMINAL_REQUIRED_CHANNELS = Object.freeze({
 export const OPERATOR_TERMINAL_STRICT_PASS_PATHS = Object.freeze([
   'scripts/youtube-report-remote-readiness-reviewed-terminal.mjs',
   'scripts/youtube-report-terminal-acceptance.mjs',
+  'scripts/multichannel-report-live-closure-terminal.mjs',
+  'scripts/multichannel-report-live-closure-acceptance.mjs',
   'scripts/lark-native-ai-controlled-preview-exact-terminal.mjs',
 ]);
 
@@ -32,6 +34,14 @@ export const OPERATOR_TERMINAL_COMPANION_CONTROLS = Object.freeze({
     spawnedTestPath: 'tests/scripts/youtube-report-terminal-acceptance.test.js',
     completionAuthority: 'exit_code_contract',
   }),
+  'scripts/multichannel-report-live-closure-terminal.mjs': Object.freeze({
+    allBlockerPreflightPath: 'scripts/multichannel-report-live-closure-acceptance.mjs',
+    spawnedTestPath: 'tests/scripts/multichannel-report-live-closure-acceptance.test.js',
+    completionAuthority: 'exit_code_contract',
+    privateEvidencePath: 'outputs/multichannel-report-live-closure/terminal-acceptance-summary.json',
+    safeRestoreAuthority: 'scripts/report-runtime-closeout-reviewed-multiwindow.mjs#finally-all-false',
+    sameInputReplayAuthority: 'scripts/report-runtime-closeout-reviewed-multiwindow.mjs#same-input-replay-zero-drift',
+  }),
 });
 
 /**
@@ -39,16 +49,7 @@ export const OPERATOR_TERMINAL_COMPANION_CONTROLS = Object.freeze({
  * otherwise the architecture gate fails. Once an entry reaches PASS the stale debt entry also fails and must
  * be removed, so this cannot become a permanent blanket allowlist.
  */
-export const OPERATOR_TERMINAL_ACKNOWLEDGED_DEBT = Object.freeze({
-  'scripts/multichannel-report-live-closure-terminal.mjs': Object.freeze({
-    allowedStatuses: Object.freeze([
-      'NEEDS_ALL_BLOCKER_PREFLIGHT',
-      'NEEDS_EXIT_CODE_CONTRACT',
-    ]),
-    reason: 'Execution is exact retained-handoff driven, but a one-command aggregate local acceptance wrapper is not yet the public authority.',
-    owner: 'multichannel-report-live-closure',
-  }),
-});
+export const OPERATOR_TERMINAL_ACKNOWLEDGED_DEBT = Object.freeze({});
 
 export const OPERATOR_TERMINAL_RECOMMENDED_CONTROLS = Object.freeze([
   'plan_only_default',
