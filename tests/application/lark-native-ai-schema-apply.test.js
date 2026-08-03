@@ -192,6 +192,67 @@ test('blocks a conflicting existing required View before any remote write', asyn
   });
 });
 
+test('includes View name in filter PATCH and retains only sanitized remote diagnostics', async () => {
+  const client = new FakeLarkClient(inventory);
+  await applyLarkNativeAiSchemaAdditive({
+    client,
+    retainedEvidence: acceptedEvidence(),
+    baseName: null,
+  });
+
+  const view = client.views.find(({ viewName }) => viewName === '📊 Executive Summaries');
+  view.property.filterInfo = null;
+  client.updateView = async ({ tableId, viewId, viewName, filterInfo }) => {
+    assert.equal(tableId, client.tableId);
+    assert.equal(viewId, view.viewId);
+    assert.equal(viewName, view.viewName);
+    assert.equal(filterInfo.conditions.length, 1);
+    const error = new Error('Lark API error 1254001: WrongRequestBody');
+    error.code = 'LARK_PERMANENT_API_ERROR';
+    error.details = {
+      status: 400,
+      larkCode: 1254001,
+      viewMutationBody: {
+        view_name: viewName,
+        property: {
+          filter_info: {
+            conjunction: filterInfo.conjunction,
+            conditions: [{
+              field_id: 'fld_sensitive_identity',
+              operator: 'is',
+              value: JSON.stringify(['executive']),
+            }],
+          },
+        },
+      },
+    };
+    throw error;
+  };
+
+  await assert.rejects(
+    applyLarkNativeAiSchemaAdditive({
+      client,
+      retainedEvidence: acceptedEvidence(),
+      baseName: null,
+    }),
+    (error) => {
+      assert.equal(error?.code, 'LARK_NATIVE_AI_SCHEMA_APPLY_REMOTE_ACTION_FAILED');
+      assert.equal(error.details.causeStatus, 400);
+      assert.equal(error.details.causeLarkCode, 1254001);
+      assert.deepEqual(error.details.viewMutation, {
+        hasViewName: true,
+        hasFilterInfo: true,
+        conjunction: 'and',
+        conditionCount: 1,
+        operators: ['is'],
+      });
+      const serialized = JSON.stringify(error.details);
+      assert.doesNotMatch(serialized, /fld_sensitive_identity|executive|viewMutationBody/u);
+      return true;
+    },
+  );
+});
+
 test('blocks option drift outside the accepted additive authority', async () => {
   const client = new FakeLarkClient(inventory);
   client.fields
@@ -219,7 +280,7 @@ class FakeLarkClient {
       revision: table.tableName === LARK_NATIVE_AI_TARGET_TABLE ? 0 : null,
     }));
     const target = sourceInventory.tables.find(
-      ({ tableName }) => tableName === LARK_NATIVE_AI_TARGET_TABLE,
+      ({ tableName }) => table.tableName === LARK_NATIVE_AI_TARGET_TABLE,
     );
     this.fields = target.fields.map((field, index) => toRawField(field, index));
     this.views = target.views.map((view, index) => ({
@@ -303,11 +364,12 @@ class FakeLarkClient {
     return structuredClone(created);
   }
 
-  async updateView({ tableId, viewId, filterInfo }) {
+  async updateView({ tableId, viewId, viewName, filterInfo }) {
     assert.equal(tableId, this.tableId);
     this.writeCounts.viewUpdate += 1;
     const view = this.views.find((entry) => entry.viewId === viewId);
     assert.ok(view);
+    assert.equal(viewName, view.viewName);
     view.property.filterInfo = {
       conjunction: filterInfo.conjunction,
       conditions: filterInfo.conditions.map((condition) => ({
