@@ -29,15 +29,17 @@ The repository framework, plan-only Terminal, exact-source-watermark collector b
 ## Ownership and overlap gate
 
 ```text
-main       fac11f0f95b56ab0944da02dcb0360d2f5c43710
+main       db7a09e6d5b2a78f4e7e25bd0a7822cbef85bdeb
 behind_by  0
 ```
+
+Latest `main` includes the all-channel Lark Native AI offline preview from PR #446. Its eleven added files have zero path overlap with this workstream. A two-parent combined-tree merge preserved both workstreams, and the PR diff remains limited to the Report closure files below.
 
 PR #421 changed-file inventory was inspected before implementation and rechecked after the operator review. This workstream does not modify:
 
 - PR #421 files;
 - Meta connectors, use cases, operators or tests;
-- Lark Native AI implementation;
+- Lark Native AI offline preview files;
 - `docs/current-task.md`;
 - retained Meta evidence;
 - README, CHANGELOG or PROJECT_BRAIN;
@@ -236,22 +238,23 @@ The prior `CHANGES_REQUIRED` review was addressed by:
 10. adding recursive sanitizer and every-active-stage failure coverage;
 11. adding zero-Remote shared-operator compatibility review;
 12. separating exact source watermark from watermark date;
-13. binding the executable reviewed collector to retain exact Coverage source lineage.
+13. binding the executable reviewed collector to retain exact Coverage source lineage;
+14. integrating latest `main` without overlap or regression.
 
 ## Verification
 
-Reviewed code Head before this documentation evidence commit:
+Reviewed combined code Head before this documentation evidence commit:
 
 ```text
-73d374a51ce9074c76a0447b87243fcd2dd7548f
+95c6c63d07676b263fc838f9a2bbbf9093100842
 ```
 
 Branch Verification:
 
 ```text
 workflow       Branch Verification
-run number     1857
-run ID         30787440146
+run number     1860
+run ID         30787733776
 conclusion     success
 ```
 
@@ -263,7 +266,7 @@ Successful steps:
 - focused Woo completed-state race recovery regression;
 - focused Chatwoot final UAT regression;
 - focused staged TikTok regression;
-- Unit and Workers runtime tests;
+- Unit and Workers runtime tests, including merged Lark Native AI offline preview tests;
 - Report reliability regression;
 - dependency audit;
 - Wrangler dry run;
