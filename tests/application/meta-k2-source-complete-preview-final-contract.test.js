@@ -22,14 +22,14 @@ const ATTESTATION = 'a'.repeat(64);
 const VERSION_ID = '33333333-3333-4333-8333-333333333333';
 const ORIGINAL_REQUESTED_AT = 1785728496842;
 
-function routeEnv() {
+function routeEnv(phase = 'd1') {
   return {
     MKT_ENV: EXACT.environment,
     MKT_CUSTOMER_PROFILE: EXACT.customerProfile,
     MKT_CONNECTION_CUSTOMER_KEY: EXACT.customerKey,
     MKT_META_D1_ONLY_PARTIAL_STAGING_RECOVERY: 'RECOVER_EXACT_PARTIAL_META_ADS_STAGING',
     MKT_META_D1_ONLY_TERMINAL_RECOVERY: 'RECOVER_EXACT_FAILED_META_OPERATION',
-    MKT_META_K2_EXACT_CONTINUATION_PHASE: 'd1',
+    MKT_META_K2_EXACT_CONTINUATION_PHASE: phase,
     MKT_META_D1_ONLY_PARTIAL_STAGING_RECOVERY_TOKEN_SHA256: TOKEN_SHA256,
     MKT_META_D1_ONLY_PARTIAL_STAGING_RECOVERY_ATTESTATION: ATTESTATION,
     MKT_META_D1_ONLY_TARGET: EXACT.targetKey,
@@ -44,12 +44,37 @@ function routeEnv() {
     MKT_CONNECTOR_META_ADS_ENABLED: 'true',
     MKT_META_D1_WRITE_ENABLED: 'true',
     MKT_META_SOURCE_READ_ENABLED: 'true',
-    MKT_META_LARK_WRITE_ENABLED: 'false',
+    MKT_META_LARK_WRITE_ENABLED: phase === 'lark' ? 'true' : 'false',
     MKT_META_REPORT_READ_ENABLED: 'false',
   };
 }
 
-test('source-complete Preview route isolates route admission from terminal use-case recovery', async () => {
+function continuationRequest() {
+  return new Request(
+    'https://preview.example.test/operator/meta/d1-only-partial-staging-continuation',
+    {
+      method: 'POST',
+      headers: { authorization: `Bearer ${TOKEN}` },
+    },
+  );
+}
+
+function assertIsolatedUseCaseInput(input, phase) {
+  assert.equal(input.env.MKT_META_D1_ONLY_PARTIAL_STAGING_RECOVERY, 'false');
+  assert.equal(
+    input.env.MKT_META_D1_ONLY_TERMINAL_RECOVERY,
+    'RECOVER_EXACT_FAILED_META_OPERATION',
+  );
+  assert.equal(input.env.MKT_META_LARK_WRITE_ENABLED, phase === 'lark' ? 'true' : 'false');
+  assert.equal(input.operation.operationId, EXACT.operationId);
+  assert.equal(input.operation.workKey, EXACT.workKey);
+  assert.equal(input.job.body.operationId, EXACT.operationId);
+  assert.equal(input.job.body.workKey, EXACT.workKey);
+  assert.equal(input.job.body.d1Only, phase === 'd1');
+  assert.equal(typeof input.env.MKT_SYNC_QUEUE?.send, 'function');
+}
+
+test('source-complete D1 Preview route isolates route admission from terminal use-case recovery', async () => {
   let processCalls = 0;
   let runtimeLoads = 0;
   let infrastructureLoads = 0;
@@ -58,10 +83,6 @@ test('source-complete Preview route isolates route admission from terminal use-c
     loadRuntimeConfig(env) {
       runtimeLoads += 1;
       assert.equal(env.MKT_META_D1_ONLY_PARTIAL_STAGING_RECOVERY, 'false');
-      assert.equal(
-        env.MKT_META_D1_ONLY_TERMINAL_RECOVERY,
-        'RECOVER_EXACT_FAILED_META_OPERATION',
-      );
       return { isolated: true };
     },
     createInfrastructure(env) {
@@ -72,43 +93,64 @@ test('source-complete Preview route isolates route admission from terminal use-c
     },
     async processJob(input) {
       processCalls += 1;
-      assert.equal(input.env.MKT_META_D1_ONLY_PARTIAL_STAGING_RECOVERY, 'false');
-      assert.equal(
-        input.env.MKT_META_D1_ONLY_TERMINAL_RECOVERY,
-        'RECOVER_EXACT_FAILED_META_OPERATION',
-      );
-      assert.equal(input.operation.operationId, EXACT.operationId);
-      assert.equal(input.operation.workKey, EXACT.workKey);
-      assert.equal(input.job.body.operationId, EXACT.operationId);
-      assert.equal(input.job.body.workKey, EXACT.workKey);
-      assert.equal(typeof input.env.MKT_SYNC_QUEUE?.send, 'function');
+      assertIsolatedUseCaseInput(input, 'd1');
       assert.deepEqual(input.getRuntimeConfig(), { isolated: true });
       assert.deepEqual(input.getInfrastructure(), { isolated: true });
       return { status: 'lark_gate_disabled' };
     },
   });
 
-  const response = await worker.fetch(new Request(
-    'https://preview.example.test/operator/meta/d1-only-partial-staging-continuation',
-    {
-      method: 'POST',
-      headers: { authorization: `Bearer ${TOKEN}` },
-    },
-  ), routeEnv());
+  const response = await worker.fetch(continuationRequest(), routeEnv('d1'));
   const body = await response.json();
 
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('x-mkt-worker-version-id'), VERSION_ID);
   assert.equal(response.headers.get('x-mkt-meta-partial-staging-attestation'), ATTESTATION);
   assert.equal(body.ok, true);
+  assert.equal(body.phase, 'd1');
   assert.equal(body.operationId, EXACT.operationId);
   assert.equal(body.workKey, EXACT.workKey);
   assert.equal(body.syncRunId, EXACT.syncRunId);
+  assert.equal(body.d1WriteEnabled, true);
+  assert.equal(body.larkWriteEnabled, false);
   assert.equal(body.directUseCaseInvocationCount, 1);
   assert.equal(body.queueMessageCount, 0);
   assert.equal(processCalls, 1);
   assert.equal(runtimeLoads, 1);
   assert.equal(infrastructureLoads, 1);
+});
+
+test('source-complete Lark Preview route preserves the same operation and zero-Queue isolation', async () => {
+  let processCalls = 0;
+  const worker = createMetaK2SourceCompleteRecoveryPreviewWorker({
+    readRuntimeVersionId: () => VERSION_ID,
+    loadRuntimeConfig: () => ({ isolated: true }),
+    createInfrastructure: () => ({ isolated: true }),
+    async processJob(input) {
+      processCalls += 1;
+      assertIsolatedUseCaseInput(input, 'lark');
+      assert.deepEqual(input.getRuntimeConfig(), { isolated: true });
+      assert.deepEqual(input.getInfrastructure(), { isolated: true });
+      return { status: 'completed' };
+    },
+  });
+
+  const response = await worker.fetch(continuationRequest(), routeEnv('lark'));
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+  assert.equal(body.phase, 'lark');
+  assert.equal(body.operationId, EXACT.operationId);
+  assert.equal(body.workKey, EXACT.workKey);
+  assert.equal(body.syncRunId, EXACT.syncRunId);
+  assert.equal(body.d1WriteEnabled, true);
+  assert.equal(body.larkWriteEnabled, true);
+  assert.equal(body.continuationSuppressed, false);
+  assert.equal(body.directUseCaseInvocationCount, 1);
+  assert.equal(body.queueMessageCount, 0);
+  assert.equal(body.queueOperationAttemptMutationCount, 0);
+  assert.equal(processCalls, 1);
 });
 
 test('loader pins the source-complete entrypoint, v3 evidence root and sanitized HTTP code', async () => {
