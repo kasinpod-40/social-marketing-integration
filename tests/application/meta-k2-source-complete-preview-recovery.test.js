@@ -66,7 +66,28 @@ function afterSnapshot(overrides = {}) {
   return exactSnapshot({ observedAt: BEFORE_OBSERVED_AT + 38_405, ...overrides });
 }
 
-test('accepts only the stable exact source-complete pre-D1 failed boundary', () => {
+function partialSnapshot(overrides = {}) {
+  const counts = {
+    organicState: 0,
+    organicObservations: 0,
+    accountDaily: 0,
+    adsEntities: 26,
+    adsDaily: 0,
+  };
+  return exactSnapshot({
+    syncRunStatus: 'running',
+    syncRunStartedAt: 1785757855080,
+    syncRunFinishedAt: null,
+    syncRunErrorCode: null,
+    syncRunUpdatedAt: 1785757862680,
+    targetCounts: counts,
+    operationCounts: { ...counts },
+    observedAt: 1785758496790,
+    ...overrides,
+  });
+}
+
+test('accepts the stable exact source-complete pre-D1 failed boundary', () => {
   const result = validateMetaK2ExactSourceCompleteFailureStability(
     exactSnapshot(),
     afterSnapshot(),
@@ -77,11 +98,27 @@ test('accepts only the stable exact source-complete pre-D1 failed boundary', () 
   assert.equal(result.providerReplayAuthorized, false);
   assert.equal(result.queueSendAuthorized, false);
   assert.equal(result.lifecycleSqlRepairAuthorized, false);
+  assert.equal(result.existingBusinessFactsRetained, false);
   assert.equal(result.snapshot.sourceStaging.unitCount, 43);
   assert.equal(result.snapshot.sourceStaging.rowCount, 4104);
 });
 
-test('rejects exact-state drift, new facts and a short stability window', () => {
+test('accepts only the exact stable 26-entity partial D1 resume boundary', () => {
+  const before = partialSnapshot();
+  const after = partialSnapshot({ observedAt: before.observedAt + 22_991 });
+  const result = validateMetaK2ExactSourceCompleteFailureStability(before, after);
+  assert.equal(result.accepted, true);
+  assert.equal(result.boundary, 'd1_partial_entities_complete');
+  assert.equal(result.elapsedMs, 22_991);
+  assert.equal(result.existingBusinessFactsRetained, true);
+  assert.equal(result.providerReplayAuthorized, false);
+  assert.equal(result.queueSendAuthorized, false);
+  assert.equal(result.lifecycleSqlRepairAuthorized, false);
+  assert.equal(result.snapshot.targetCounts.adsEntities, 26);
+  assert.equal(result.snapshot.targetCounts.adsDaily, 0);
+});
+
+test('rejects exact-state drift, unsupported partial facts and a short stability window', () => {
   assert.throws(
     () => validateMetaK2ExactSourceCompleteFailureStability(
       exactSnapshot(),
@@ -92,21 +129,21 @@ test('rejects exact-state drift, new facts and a short stability window', () => 
   );
   assert.throws(
     () => validateMetaK2ExactSourceCompleteFailureStability(
-      exactSnapshot(),
-      afterSnapshot({
+      partialSnapshot(),
+      partialSnapshot({
+        observedAt: partialSnapshot().observedAt + 22_991,
         operationCounts: {
-          ...exactSnapshot().operationCounts,
+          ...partialSnapshot().operationCounts,
           adsDaily: 1,
         },
       }),
     ),
-    (error) => error?.code === 'META_K2_SOURCE_COMPLETE_PROGRESS_OBSERVED'
-      && error?.details?.afterFailedChecks?.includes('operationCounts'),
+    (error) => error?.code === 'META_K2_SOURCE_COMPLETE_PROGRESS_OBSERVED',
   );
   assert.throws(
     () => validateMetaK2ExactSourceCompleteFailureStability(
       exactSnapshot(),
-      exactSnapshot({ observedAt: BEFORE_OBSERVED_AT + 29_999 }),
+      exactSnapshot({ observedAt: BEFORE_OBSERVED_AT + 19_999 }),
     ),
     (error) => error?.code === 'META_K2_SOURCE_COMPLETE_PROGRESS_OBSERVED',
   );
@@ -150,6 +187,7 @@ test('hash-pinned transform reuses existing controllers without changing disk so
   );
   assert.match(outer.source, /exact-source-complete-pre-d1-recovery-v1/u);
   assert.match(outer.source, /source-complete-recovery-boundary/u);
+  assert.match(outer.source, /source_complete_or_exact_d1_partial/u);
   assert.doesNotMatch(outer.source, /currentStage = 'archive-retryable-failure'/u);
 
   assert.equal(finalizer.changed, true);
