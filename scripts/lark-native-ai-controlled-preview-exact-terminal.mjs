@@ -118,13 +118,18 @@ function printPlan() {
     objective: 'collect_real_lark_report_outputs_then_apply_and_replay_exact_40_preview_rows',
     exactCommand: [
       'cd /Users/wasanjantawong/Git/social-marketing-integration &&',
+      'git fetch --quiet origin main &&',
+      'git switch main &&',
+      'git pull --ff-only origin main &&',
       `CONFIRM_LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXACT_TERMINAL=${LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXACT_TERMINAL_CONFIRMATION}`,
       'node scripts/lark-native-ai-controlled-preview-exact-terminal.mjs --execute',
     ].join(' '),
     hiddenPrerequisiteFiles: 0,
     executionSequence: [
-      'fetch origin/main and require clean exact local main',
+      'refresh local main by fast-forward only before starting the installed operator',
+      'fetch origin/main again and require a clean exact local main',
       'validate all local config, credentials and mappings before Remote read',
+      'harden regular .dev.vars permissions to 0600 before reading secrets',
       'acquire one local exact-terminal lock',
       'read one cached Lark table inventory plus AI schema and TikTok 1D/3D/7D/30D Report outputs',
       'adapt Shared Report metric taxonomy without changing numeric values',
@@ -359,10 +364,7 @@ async function readOptionalPrivateDevVars(path, blockers) {
       blockers.push({ code: 'DEV_VARS_FILE_TYPE_INVALID', field: '.dev.vars' });
       return {};
     }
-    if ((metadata.mode & 0o077) !== 0) blockers.push({
-      code: 'DEV_VARS_MODE_INVALID', field: '.dev.vars',
-      observedMode: (metadata.mode & 0o777).toString(8),
-    });
+    if ((metadata.mode & 0o077) !== 0) await chmod(path, 0o600);
     return await readDevVars(path);
   } catch (error) {
     if (error?.code === 'ENOENT') return {};
