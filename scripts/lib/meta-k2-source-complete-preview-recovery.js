@@ -268,7 +268,7 @@ function classifyExactSourceCompleteBoundary(snapshotInput) {
     ? { ...commonChecks, ...originalChecks }
     : partialAccepted
       ? { ...commonChecks, ...partialChecks }
-      : d1CompleteAccepted || normalD1Complete || terminalLarkPreflightFailure
+      : snapshot.d1PhaseComplete === true
         ? { ...commonChecks, ...d1CompleteChecks }
         : { ...commonChecks, ...originalChecks };
   const failedChecks = Object.entries(selectedChecks)
