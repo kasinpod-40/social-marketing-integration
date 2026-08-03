@@ -66,7 +66,10 @@ test('same-input replay converges to forty no-op actions and zero writes', async
   assert.equal(replay.counts.update, 0);
   assert.equal(replay.counts.noOp, 40);
   assert.equal(replay.counts.write, 0);
-  assert.equal(replay.planId, (await buildLarkNativeAiControlledPreviewExecutionPlan({ ...input, existingRecords: records })).planId);
+  assert.equal(
+    replay.planId,
+    (await buildLarkNativeAiControlledPreviewExecutionPlan({ ...input, existingRecords: records })).planId,
+  );
 });
 
 test('partial resume creates only missing rows without deleting retained rows', async () => {
@@ -88,7 +91,7 @@ test('partial resume creates only missing rows without deleting retained rows', 
   assert.equal(completed.length, 41);
 });
 
-test('repairs managed-field drift while preserving generated AI output for identical evidence', async () => {
+test('repairs display-only managed drift while preserving generated AI output', async () => {
   const input = await buildInput();
   const first = await buildLarkNativeAiControlledPreviewExecutionPlan({ ...input, existingRecords: [] });
   const records = structuredClone(simulateLarkNativeAiControlledPreviewExecution(first, []));
@@ -111,6 +114,31 @@ test('repairs managed-field drift while preserving generated AI output for ident
   assert.equal(repaired.fields.insight_summary, 'Validated generated insight');
   assert.equal(repaired.fields.generation_status, 'generated');
   assert.notEqual(repaired.fields.readiness_message, 'manual drift');
+});
+
+test('retained evidence drift clears generated output even when dedupe_key was not updated', async () => {
+  const input = await buildInput();
+  const first = await buildLarkNativeAiControlledPreviewExecutionPlan({ ...input, existingRecords: [] });
+  const records = structuredClone(simulateLarkNativeAiControlledPreviewExecution(first, []));
+  const target = records.find(({ fields }) => fields.channel_key === 'tiktok_organic'
+    && fields.window_days === '30');
+  target.fields.metric_summary_json = '{"tampered":true}';
+  target.fields.insight_summary = 'Output tied to corrupted retained evidence';
+  target.fields.generation_status = 'generated';
+
+  const repair = await buildLarkNativeAiControlledPreviewExecutionPlan({ ...input, existingRecords: records });
+  const action = repair.actions.find(({ aiRunKey }) => aiRunKey === target.fields.ai_run_key);
+  assert.equal(action.action, 'update');
+  assert.equal(action.reason, 'retained_evidence_drift');
+  assert.equal(action.clearsAiOutput, true);
+  assert.equal(action.fieldsPatch.insight_summary, null);
+  assert.equal(action.fieldsPatch.generation_status, 'pending');
+
+  const completed = simulateLarkNativeAiControlledPreviewExecution(repair, records);
+  const repaired = completed.find(({ fields }) => fields.ai_run_key === target.fields.ai_run_key);
+  assert.equal(repaired.fields.insight_summary, null);
+  assert.equal(repaired.fields.generation_status, 'pending');
+  assert.notEqual(repaired.fields.metric_summary_json, '{"tampered":true}');
 });
 
 test('evidence revision updates the same identities and clears stale AI output', async () => {
@@ -139,6 +167,20 @@ test('evidence revision updates the same identities and clears stale AI output',
     assert.equal(record.fields.insight_summary, null);
     assert.equal(record.fields.generation_status, 'pending');
   }
+});
+
+test('blocks a tampered readiness payload whose retained planId no longer matches', async () => {
+  const original = await buildInput();
+  const input = structuredClone(original);
+  input.readinessPlans[0].larkPlan.rows[0].fields.readiness_message = 'tampered after approval';
+
+  const blocked = await buildLarkNativeAiControlledPreviewExecutionPlan({ ...input, existingRecords: [] });
+  assert.equal(blocked.status, 'blocked');
+  assert.equal(blocked.actions.length, 0);
+  assert.equal(
+    blocked.blockers.some(({ code }) => code === 'READINESS_PLAN_INTEGRITY_INVALID'),
+    true,
+  );
 });
 
 test('blocks unsafe existing rows instead of overwriting sent or non-preview records', async () => {
@@ -191,11 +233,14 @@ test('blocks a readiness set bound to a different exact repository Head', async 
     existingRecords: [],
   });
   assert.equal(blocked.status, 'blocked');
-  assert.equal(blocked.blockers.some(({ code }) => code === 'READINESS_PLAN_REPOSITORY_MISMATCH'), true);
+  assert.equal(
+    blocked.blockers.some(({ code }) => code === 'READINESS_PLAN_REPOSITORY_MISMATCH'),
+    true,
+  );
   assert.equal(blocked.safety.executionAuthorized, false);
 });
 
-test('plan identity is deterministic and contains no delete authority', async () => {
+test('plan identity is deterministic, target-bound and contains no delete authority', async () => {
   const input = await buildInput({ headSha: CONTROLLED_PREVIEW_TEST_HEAD });
   const left = await buildLarkNativeAiControlledPreviewExecutionPlan({ ...input, existingRecords: [] });
   const right = await buildLarkNativeAiControlledPreviewExecutionPlan({
@@ -205,4 +250,14 @@ test('plan identity is deterministic and contains no delete authority', async ()
   assert.equal(left.planId, right.planId);
   assert.equal(left.counts.delete, 0);
   assert.equal(left.actions.some(({ action }) => action === 'delete'), false);
+
+  const records = simulateLarkNativeAiControlledPreviewExecution(left, []);
+  const replay = await buildLarkNativeAiControlledPreviewExecutionPlan({ ...input, existingRecords: records });
+  const changedTarget = structuredClone(records);
+  changedTarget[0].recordId = 'different-record-id';
+  const retargeted = await buildLarkNativeAiControlledPreviewExecutionPlan({
+    ...input,
+    existingRecords: changedTarget,
+  });
+  assert.notEqual(replay.planId, retargeted.planId);
 });
