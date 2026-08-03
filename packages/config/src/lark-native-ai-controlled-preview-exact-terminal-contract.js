@@ -20,9 +20,6 @@ export const LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXACT_TERMINAL_EVIDENCE_SCHEMA_VE
 export const LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXACT_TERMINAL_CONFIRMATION =
   'RUN_LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXACT_TERMINAL';
 
-export const LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXACT_TERMINAL_DEFAULT_SOURCE_PATH =
-  'outputs/lark-native-ai-controlled-preview/retained-real-report-source.json';
-
 export const LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXACT_TERMINAL_OUTPUT_ROOT =
   'outputs/lark-native-ai-controlled-preview/exact-terminal';
 
@@ -43,7 +40,6 @@ export const LARK_NATIVE_AI_CONTROLLED_PREVIEW_EXACT_TERMINAL_LIMITS = Object.fr
   expectedWindows: 4,
   expectedRows: 40,
   maximumFirstPassWrites: 40,
-  maximumSourcePackageBytes: 16 * 1024 * 1024,
   childTimeoutMs: 5 * 60 * 1000,
   childMaxBufferBytes: 64 * 1024 * 1024,
 });
