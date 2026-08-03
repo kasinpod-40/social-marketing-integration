@@ -10,7 +10,7 @@ import {
   OPERATOR_TERMINAL_STRICT_PASS_PATHS,
 } from './operator-terminal-channel-policy.js';
 
-const ENTRYPOINT_NAME_PATTERN = /(?:terminal|operator|preflight|closeout)[^/]*\.mjs$/u;
+const ENTRYPOINT_NAME_PATTERN = /(?:terminal|operator|preflight|closeout|acceptance)[^/]*\.mjs$/u;
 const PACKAGE_SCRIPT_PATTERN = /\bnode\s+(scripts\/[A-Za-z0-9_./-]+\.mjs)\b/gu;
 const SOURCE_EXTENSIONS = new Set(['.js', '.mjs']);
 const TEST_PROCESS_PATTERN = /\b(?:spawnSync|spawn|execFile|execFileSync)\s*\(/u;
