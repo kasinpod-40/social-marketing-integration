@@ -149,7 +149,8 @@
     "setup:google-ads-view-filters:apply": "node scripts/setup-google-ads-view-filters.mjs --apply"
   },
   "overrides": {
-    "sharp": "0.35.3"
+    "sharp": "0.35.3",
+    "undici": "7.29.0"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.18.4",
