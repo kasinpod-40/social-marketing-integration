@@ -71,7 +71,7 @@ test('an expired pre-send claim can be reclaimed, but sending can never be recla
   }
 });
 
-test('sent delivery is terminal and every replay is a no-send dedupe', async () => {
+test('sent delivery is terminal and each replay records one no-send D1 observation', async () => {
   const { db, store } = setup();
   try {
     await store.claim(claimInput());
@@ -87,10 +87,21 @@ test('sent delivery is terminal and every replay is a no-send dedupe', async () 
       messageIdHash: hashA,
     });
     assert.equal(sent.status, 'sent');
+    assert.equal(sent.claimCount, 1);
+
     const replay = await store.claim(claimInput({ ownerId: 'owner:2', claimedAt: 9_000 }));
     assert.equal(replay.acquired, false);
     assert.equal(replay.disposition, 'already_sent');
     assert.equal(replay.delivery.sentAt, 1_200);
+    assert.equal(replay.delivery.messageIdHash, hashA);
+    assert.equal(replay.delivery.claimCount, 2);
+
+    const secondReplay = await store.claim(claimInput({ ownerId: 'owner:3', claimedAt: 10_000 }));
+    assert.equal(secondReplay.acquired, false);
+    assert.equal(secondReplay.disposition, 'already_sent');
+    assert.equal(secondReplay.delivery.claimCount, 3);
+    assert.equal(secondReplay.delivery.sentAt, 1_200);
+    assert.equal(secondReplay.delivery.messageIdHash, hashA);
   } finally {
     db.close();
   }
@@ -114,6 +125,7 @@ test('unknown remote outcome becomes terminal and forbids automatic reclaim', as
     const replay = await store.claim(claimInput({ ownerId: 'owner:2', claimedAt: 9_000 }));
     assert.equal(replay.acquired, false);
     assert.equal(replay.disposition, 'blocked');
+    assert.equal(replay.delivery.claimCount, 1);
   } finally {
     db.close();
   }
