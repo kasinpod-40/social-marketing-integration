@@ -2,40 +2,51 @@
 
 ## Current verified baseline
 
-The Controlled Executive Notification UAT is closed as `PASS`:
+The Controlled Executive Notification UAT and Runtime Activation are both closed as `PASS`.
 
 ```text
-retained real messages     1
-additional recovery sends  0
-D1 delivery                sent
-Lark mirror                mirrored
-Notification Log rows      1
-AI Run sent marker         true
-Worker flags               all false after closeout
-Report Settings            false after closeout
-Automation / Schedule      0 / 0
-Production                 BLOCKED
+main SHA                    5833c558d70efcfca08d476a30449b72d8555213
+active Worker version       958e183e-fb0d-4795-a547-d805111ca6fc
+Worker traffic              100%
+runtime enabled             true
+send enabled                true
+mirror enabled              true
+runtime mode                runtime
+active Report Settings      4
+retained real messages      1
+additional delivery rows    0
+additional message sends    0
+D1 delivery rows            1
+Notification Log rows       1
+controlled UAT stable       true
+Queue admission             0
+notification producer       false
+Automation / Schedule       0 / 0
+rollback                    available
+Production                  BLOCKED
 ```
 
-Both the original UAT command and its Mirror Recovery command are permanently closed.
+The original Controlled UAT, Mirror Recovery and Runtime Activation commands are permanently closed and
+must not be rerun.
 
-## Approved next boundary
+## Active boundary
 
-The user approved `LARK_NOTIFICATION_RUNTIME_ACTIVATION_V1`.
-
-Approval means Worker-side delivery readiness only:
+The Integration Workspace now has Worker-side delivery readiness only:
 
 ```text
-D1 exact-once consumer     approved
-Lark chat transport        approved
-Lark delivery mirror       approved
-Exact source Settings      approved
+D1 exact-once consumer     active
+Lark chat transport        active
+Lark delivery mirror       active
+Exact Executive Settings   active for 1D/3D/7D/30D
 Queue producer/admission   not approved
 Lark Automation            not approved
 Notification Schedule      not approved
 Webhook                    not approved
 Production                 blocked
 ```
+
+The next gate is `notification_admission_requires_separate_approval`. Runtime Activation does not imply or
+authorize Queue admission, producer, Automation, Schedule, Webhook or Production.
 
 ## Permanent mode rule
 
@@ -50,38 +61,40 @@ runtime
 `controlled_uat` accepts only the controlled-UAT trigger and `notification-uat:*` identities.
 `runtime` accepts only the reviewed runtime trigger and rejects every `notification-uat:*` identity.
 
-Do not leave a permanently active Worker in Controlled UAT mode.
+The active Worker is in `runtime` mode. Do not switch it back to Controlled UAT mode.
 
-## Activation authority
+## Active Settings authority
 
-The source Settings scope comes from the latest exact Executive Preview rows for:
+The active Settings scope comes from the latest exact Executive Preview rows for:
 
 ```text
 1D / 3D / 7D / 30D
 ```
 
-The activation resolves their exact source Report IDs, Report Snapshots and Report Setting keys. It may toggle
-only `ai_enabled` and `notification_enabled` for those exact enabled Settings, and every row must resolve to the
-reviewed destination hash.
+Exactly four source Report Settings have `ai_enabled` and `notification_enabled` active. Every row resolves
+to the reviewed destination hash. No other Report Setting is authorized by this activation.
 
 ## No-admission proof
 
-Runtime activation itself sends no Queue message and contains no direct Lark message call. The existing Worker
-crons remain unchanged and `scheduled-jobs.js` must contain no notification producer.
+Runtime activation sent no Queue message and contains no direct Lark message call. The existing Worker crons
+remain unchanged and `scheduled-jobs.js` contains no notification producer.
 
-Successful activation therefore requires a bounded observation proving:
+The bounded live observation proved:
 
 ```text
-delivery rows unchanged
-Notification Log rows unchanged
-retained message count unchanged
-additional message sends 0
+delivery rows unchanged          1 -> 1
+Notification Log rows unchanged  1 -> 1
+retained message count unchanged 1 -> 1
+additional delivery rows         0
+additional message sends         0
+Queue admission                  0
 ```
 
 ## Rollback
 
-Rollback first deploys the all-false Safe Worker, then restores the exact Report Settings false. It performs no
-Queue admission and must preserve all retained D1/Lark delivery evidence.
+Rollback authority remains available but requires explicit instruction. It first deploys the all-false Safe
+Worker, then restores the exact four Report Settings false. It performs no Queue admission and preserves all
+retained D1/Lark delivery evidence.
 
 Authoritative task:
 

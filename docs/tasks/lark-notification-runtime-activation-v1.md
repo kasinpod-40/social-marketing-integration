@@ -1,6 +1,7 @@
 # Lark Notification Runtime Activation v1
 
 Date: 2026-08-05
+Status: `CLOSED_PASS`
 
 ## Approval and prerequisite
 
@@ -32,7 +33,7 @@ The original Controlled UAT and retained Mirror Recovery commands remain permane
 Make the reviewed Executive notification delivery consumer permanently ready in the Integration Workspace
 without yet creating an automatic admission path.
 
-This activation opens:
+This activation opened:
 
 ```text
 MKT_NOTIFICATION_RUNTIME_ENABLED      true
@@ -41,7 +42,7 @@ MKT_NOTIFICATION_LARK_MIRROR_ENABLED  true
 MKT_NOTIFICATION_RUNTIME_MODE         runtime
 ```
 
-It also enables `ai_enabled` and `notification_enabled` only for the exact Report Settings referenced by
+It also enabled `ai_enabled` and `notification_enabled` only for the exact Report Settings referenced by
 the latest Executive Preview authority for all four windows:
 
 ```text
@@ -59,13 +60,12 @@ Webhook/HTTP admission           0
 Production                       BLOCKED
 ```
 
-The existing Worker cron definitions remain byte-equivalent. The current `scheduled-jobs.js` must not
-contain `LARK_NOTIFICATION_SEND`; the operator fails closed if a notification producer is introduced
-before its own separate approval.
+The existing Worker cron definitions remain unchanged. The current `scheduled-jobs.js` does not contain
+`LARK_NOTIFICATION_SEND`. Notification producer/admission remains behind its own separate approval.
 
 ## Runtime-mode separation
 
-The central runtime config now has three modes:
+The central runtime config has three modes:
 
 ```text
 disabled
@@ -85,38 +85,68 @@ runtime mode
   rejects ai_run_key prefix notification-uat:
 ```
 
-This prevents a permanently active Runtime Worker from reopening the completed UAT identity class.
+This prevents the active Runtime Worker from reopening the completed UAT identity class.
 
-## Exact activation sequence
+## Exact activation sequence completed
 
-1. Require clean exact current `main`.
-2. Require exact Integration Workspace environment.
-3. Run focused tests and repository checks.
-4. Prove `scheduled-jobs.js` has no notification producer.
-5. Resolve exact Lark AI Runs, Report Snapshots, Report Settings and Notification Log tables.
-6. Select exactly one latest sendable Executive Preview for each 1D/3D/7D/30D window.
-7. Resolve every source Report Snapshot and exact Report Setting.
-8. Require Settings enabled, AI false, notification false and one reviewed destination hash.
-9. Require D1 notification schema, zero active locks and all delivery rows terminal `sent/mirrored`.
-10. Require one retained Controlled UAT D1 row, one Lark Log row and AI Run marked sent.
-11. Retain immutable private activation-attempt evidence before mutation.
-12. Dry-run active and safe Worker configs.
-13. Deploy Runtime-mode Worker at 100% traffic.
-14. Enable AI/notification on exact source Settings.
-15. Observe a bounded no-admission window.
-16. Require D1 delivery rows, Lark Log rows and retained message count unchanged.
-17. Leave Runtime active on success.
+1. Required clean exact current `main`.
+2. Required exact Integration Workspace environment.
+3. Ran focused tests and repository checks.
+4. Proved `scheduled-jobs.js` had no notification producer.
+5. Resolved exact Lark AI Runs, Report Snapshots, Report Settings and Notification Log tables.
+6. Selected exactly one latest sendable Executive Preview for each 1D/3D/7D/30D window.
+7. Resolved every source Report Snapshot and exact Report Setting.
+8. Required Settings enabled, AI false, notification false and one reviewed destination hash.
+9. Required D1 notification schema, zero active locks and terminal `sent/mirrored` delivery state.
+10. Required one retained Controlled UAT D1 row, one Lark Log row and AI Run marked sent.
+11. Retained immutable private activation-attempt evidence before mutation.
+12. Dry-ran active and safe Worker configs.
+13. Deployed Runtime-mode Worker at 100% traffic.
+14. Enabled AI/notification on exact source Settings.
+15. Observed a bounded no-admission window.
+16. Confirmed D1 delivery rows, Lark Log rows and retained message count unchanged.
+17. Left Runtime active on success.
 
-## Failure and rollback
+## Live activation evidence
 
-Any activation failure after a possible mutation automatically:
+```text
+contract_version                       lark_notification_runtime_activation_v1
+phase                                  active
+repository_head                        5833c558d70efcfca08d476a30449b72d8555213
+active_worker_version                  958e183e-fb0d-4795-a547-d805111ca6fc
+traffic_percentage                     100
+runtime_enabled                        true
+send_enabled                           true
+mirror_enabled                         true
+runtime_mode                           runtime
+activated_report_setting_count         4
+delivery_rows                          1
+retained_notification_message_count    1
+additional_delivery_rows               0
+additional_message_send_count          0
+notification_log_rows                  1
+controlled_uat_sent_stable             true
+queue_admission_count                  0
+notification_producer_enabled          false
+notification_flags_active              true
+report_settings_active                 true
+rollback_available                     true
+automation_activation_count            0
+schedule_activation_count              0
+production                             BLOCKED
+next_gate                              notification_admission_requires_separate_approval
+```
 
-1. restores exact Report Settings false;
-2. deploys the all-false Safe Worker;
+## Failure and rollback authority
+
+The successful activation remains reversible. The separately confirmed rollback:
+
+1. deploys the all-false Safe Worker;
+2. restores the exact Report Settings false;
 3. verifies both restorations;
-4. reports Queue admission and additional message sends as zero.
+4. sends no Queue job and preserves all retained D1/Lark delivery evidence.
 
-A separately confirmed manual rollback remains available after successful activation:
+Rollback command, to be used only after explicit rollback instruction:
 
 ```bash
 cd /Users/wasanjantawong/Git/social-marketing-integration-woo-diag && \
@@ -127,20 +157,7 @@ CONFIRM_LARK_NOTIFICATION_RUNTIME_ROLLBACK=RESTORE_NOTIFICATION_RUNTIME_ALL_FALS
 node scripts/lark-notification-runtime-activation-exact-terminal.mjs --rollback
 ```
 
-## Post-merge activation command
-
-Run once only after exact-head CI, review and merge:
-
-```bash
-cd /Users/wasanjantawong/Git/social-marketing-integration-woo-diag && \
-git fetch --quiet origin main && \
-git switch main && \
-git pull --ff-only origin main && \
-CONFIRM_LARK_NOTIFICATION_RUNTIME_ACTIVATION=ACTIVATE_REVIEWED_EXECUTIVE_NOTIFICATION_RUNTIME \
-node scripts/lark-notification-runtime-activation-exact-terminal.mjs --execute
-```
-
-## Acceptance
+## Acceptance result
 
 ```text
 runtime_enabled                       true
@@ -160,8 +177,5 @@ production                            BLOCKED
 rollback_available                    true
 ```
 
-## Implementation safety status
-
-Repository implementation and CI perform no Remote action. Live activation is a single post-merge exact-main
-Terminal action. No new Queue framework, D1 writer, Lark repository, message client, delivery engine,
-Scheduler or AI runtime is introduced.
+All acceptance conditions passed. Runtime Activation is closed. Do not rerun the activation, Controlled UAT
+or Mirror Recovery commands. Notification Admission is a separate future workstream and remains unapproved.
