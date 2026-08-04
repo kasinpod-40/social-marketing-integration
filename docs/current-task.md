@@ -142,3 +142,31 @@ production                          BLOCKED
 
 Runtime Activation is closed as `PASS`. Do not rerun the activation, Controlled UAT or Mirror Recovery
 commands. The next permitted workstream is Notification Admission, and it requires separate explicit approval.
+
+## Preserved parallel Report Finalizer hotfix
+
+The Report Runtime Finalizer must not reconcile the four active Executive Settings back to the static seed values
+`ai_enabled=false`, `notification_enabled=false`, `group_id=null`.
+
+Current hotfix authority:
+
+```text
+Branch                              hotfix/report-finalizer-preserve-notification-runtime-v1
+Base main                           3b02ac90b5912a8a1d2f4fd9b06a8ab1163ed7c4
+Notification Runtime state          active / exact 4 Settings
+Notification Admission              false
+Queue / Worker / Schedule action    0 / 0 / 0
+Production                          BLOCKED
+```
+
+The hotfix must reuse the existing Executive Preview → Report Snapshot → Report Setting → destination-hash
+contract, preserve only the exact authorized `1D/3D/7D/30D` Settings, keep all other canonical Settings
+AI/notification false, and fail closed on mixed flags, a fifth active Setting, ambiguous source identity or
+destination drift.
+
+Do not run the Report Runtime Finalizer, SELECT-only Report readiness or Run All until this hotfix passes exact-head
+verification and merges. Full contract:
+
+```text
+docs/tasks/report-finalizer-notification-runtime-preservation-v1.md
+```
