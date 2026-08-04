@@ -127,7 +127,7 @@ test('requires exact confirmation before any controlled UAT execution', () => {
   }), true);
 });
 
-test('proves one sent delivery and a stable exact replay', () => {
+test('proves one sent delivery and one exact no-send replay reached D1', () => {
   const first = {
     notificationTableCount: 1,
     notificationIndexCount: 3,
@@ -135,30 +135,41 @@ test('proves one sent delivery and a stable exact replay', () => {
     deliveryRows: 1,
     deliveryStatus: 'sent',
     mirrorStatus: 'mirrored',
+    claimCount: 1,
     sentAt: 1234,
     messageIdHash: 'b'.repeat(64),
   };
+  const replay = { ...first, claimCount: 2 };
   assert.equal(assertLarkNotificationControlledUatDelivered(first).deliveryRows, 1);
-  assert.deepEqual(assertLarkNotificationControlledUatReplayStable(first, first), {
+  assert.deepEqual(assertLarkNotificationControlledUatReplayStable(first, replay), {
     deliveryRows: 1,
     deliveryStatus: 'sent',
     mirrorStatus: 'mirrored',
+    firstClaimCount: 1,
+    replayClaimCount: 2,
+    replayObservedByD1: true,
     sentAtStable: true,
     messageIdHashStable: true,
     secondMessageSendBlockedByAtomicClaim: true,
   });
   assert.throws(
+    () => assertLarkNotificationControlledUatReplayStable(first, first),
+    (error) => error.code === 'LARK_NOTIFICATION_CONTROLLED_UAT_REPLAY_INVALID',
+  );
+  assert.throws(
     () => assertLarkNotificationControlledUatReplayStable(first, {
-      ...first,
+      ...replay,
       sentAt: 5678,
     }),
     (error) => error.code === 'LARK_NOTIFICATION_CONTROLLED_UAT_REPLAY_INVALID',
   );
 });
 
-test('readback SQL is SELECT-only and binds the exact AI identity', () => {
+test('readback SQL is SELECT-only and binds exact identity plus replay proof', () => {
   const sql = buildLarkNotificationControlledUatReadbackSql('notification-uat:key');
   assert.match(sql, /^SELECT /u);
   assert.match(sql, /ai_run_key = 'notification-uat:key'/u);
+  assert.match(sql, /claim_count/u);
+  assert.match(sql, /lark_message_id_hash/u);
   assert.doesNotMatch(sql, /\b(?:UPDATE|DELETE|INSERT|ALTER|DROP)\b/iu);
 });
