@@ -89,28 +89,53 @@ export async function loadLarkNotificationDeliveryRequest(input = {}) {
   });
 }
 
-export function createLarkNotificationLogMirror(input = {}) {
+/**
+ * Mirrors one confirmed D1 `sent` delivery into both customer-facing Lark states.
+ * Both plans are built before the first write. A replay repairs either partial mirror without
+ * resending the group message because D1 remains authoritative.
+ */
+export function createLarkNotificationStateMirror(input = {}) {
   const repository = requireRepository(input.repository);
   const syncEngine = input.syncEngine;
   if (typeof syncEngine?.planByKey !== 'function' || typeof syncEngine?.executePlan !== 'function') {
     throw new TypeError('Lark notification mirror requires TableSyncEngine');
   }
-  const tableId = requireText(input.tableId, 'tableId');
-  return async function mirrorNotificationLog(row) {
-    const plan = await syncEngine.planByKey({
+  const notificationLogTableId = requireText(
+    input.notificationLogTableId,
+    'notificationLogTableId',
+  );
+  const aiRunsTableId = requireText(input.aiRunsTableId, 'aiRunsTableId');
+
+  return async function mirrorNotificationState(row) {
+    const notificationLogPlan = await syncEngine.planByKey({
       repository,
-      tableId,
+      tableId: notificationLogTableId,
       keyField: 'notification_attempt_key',
       rows: [row],
     });
-    const result = await syncEngine.executePlan(plan);
-    if (result.created + result.updated + result.skipped !== 1) {
-      throw permanentError('Notification Log mirror did not reconcile exactly one row', {
-        code: 'LARK_NOTIFICATION_LOG_MIRROR_PARITY_FAILED',
-      });
-    }
-    return result;
+    const aiRunPlan = await syncEngine.planByKey({
+      repository,
+      tableId: aiRunsTableId,
+      keyField: 'ai_run_key',
+      rows: [Object.freeze({
+        ai_run_key: row.ai_run_key,
+        sent_to_group: true,
+        sent_at: row.sent_at,
+      })],
+    });
+
+    const notificationLog = await syncEngine.executePlan(notificationLogPlan);
+    assertExactlyOneMirror(notificationLog, 'LARK_NOTIFICATION_LOG_MIRROR_PARITY_FAILED');
+    const aiRun = await syncEngine.executePlan(aiRunPlan);
+    assertExactlyOneMirror(aiRun, 'LARK_NOTIFICATION_AI_RUN_MIRROR_PARITY_FAILED');
+    return Object.freeze({ notificationLog, aiRun });
   };
+}
+
+function assertExactlyOneMirror(result, code) {
+  if (result.created + result.updated + result.skipped !== 1) {
+    throw permanentError('Notification state mirror did not reconcile exactly one row', { code });
+  }
 }
 
 async function findExact(repository, tableId, fieldName, value, fieldNames) {
