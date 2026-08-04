@@ -13,10 +13,11 @@ The Lark Notification Runtime had already closed successfully with:
 ```text
 runtime mode                     runtime
 Worker traffic                   100%
+Worker runtime/send/mirror       true / true / true
 active Executive Report Settings 4
 ai_enabled                       true on exact four Settings
 notification_enabled             true on exact four Settings
-Queue admission                  0
+Automatic Queue admission        false
 Automation / Schedule            0 / 0
 Production                       BLOCKED
 ```
@@ -31,11 +32,15 @@ group_id              null
 
 The existing Report Runtime Finalizer reconciled that seed as a full canonical row. Running it after
 Notification Runtime activation would therefore plan four updates that disable the exact active Executive
-Settings and erase their destination value. This would silently violate the closed Notification Runtime
-baseline even though Report schema and materialization execution flags remained safe.
+Settings and erase their destination value.
 
-No Finalizer was run after this conflict was discovered. No Lark, D1, Queue, Worker, Schedule or Production
-action occurred from this incident.
+The existing Report readiness and closeout path also treated Safe Worker state as every execution flag false.
+The now-correct live baseline has three reviewed Notification Runtime flags true. Old readiness would block that
+Worker, and old closeout restoration would deploy an all-false Worker after Report materialization, silently
+turning off Notification Runtime.
+
+No Finalizer or Report closeout was run after these conflicts were discovered. No Lark, D1, Queue, Worker,
+Schedule or Production action occurred from this incident.
 
 ## Root cause
 
@@ -50,48 +55,67 @@ latest Executive Preview 1D/3D/7D/30D
 → one reviewed destination hash
 ```
 
-The Notification Runtime activation operator already used this chain, but the Finalizer did not reuse it.
+Report Worker windows separately assumed the pre-activation all-false Worker baseline and did not retain the
+exact Notification Runtime flags or its required Table mappings.
 
 ## Correction
+
+### Settings authority
 
 - inspect every canonical Integration Workspace Report Setting before planning reconciliation;
 - accept only one of two states:
   - every canonical AI/notification pair false (`inactive/0`), or
   - exactly four matching AI/notification pairs true (`active/4`);
 - for `active/4`, resolve authority through the existing Executive Preview → Snapshot → Setting chain;
-- require the active keys to equal the exact authority keys and the destination to match the reviewed hash;
-- overlay `ai_enabled=true`, `notification_enabled=true` and the existing destination only on those four canonical
-  rows before the shared `TableSyncEngine` plans changes;
+- require active keys, shared Table identities and destination to match the reviewed authority;
+- overlay `ai_enabled=true`, `notification_enabled=true` and the existing destination only on those four rows;
 - keep every other canonical row AI/notification false;
-- reject mixed flags, a fifth active row, duplicate keys, missing snapshots, ambiguous previews, table identity
-  drift or destination drift;
+- reject mixed flags, a fifth active row, duplicate keys, missing snapshots, ambiguous previews, Table drift or
+  destination drift;
 - verify preview, apply and readback retain the same `active/4` or `inactive/0` state;
-- expose only state/count in public Finalizer output; raw destination and Table IDs remain private;
-- preserve the private Finalizer Table environment contract from PR `#496`.
+- expose only state/count publicly; raw destination, Setting keys and Table IDs remain private.
+
+### Worker baseline authority
+
+- retain private exact-head Notification Runtime evidence beside the Finalizer summary;
+- active baseline contains only the exact three reviewed true flags:
+  - `MKT_NOTIFICATION_RUNTIME_ENABLED`;
+  - `MKT_NOTIFICATION_LARK_SEND_ENABLED`;
+  - `MKT_NOTIFICATION_LARK_MIRROR_ENABLED`;
+- retain mode `runtime` and exact AI Runs, Report Snapshots, Report Settings and Notification Log mappings;
+- require shared Report/Notification Table mappings to match;
+- Readiness verifies the current Worker against that retained baseline instead of requiring all-false;
+- Report Active config equals the retained Notification baseline plus only the channel’s approved Report flags;
+- success and failure paths restore the retained Notification baseline, not all-false;
+- inactive Finalizer state continues to use the prior all-false baseline;
+- Notification Admission, automatic producer, Automation, Schedule, Webhook and Production remain disabled.
 
 ## Safety boundary
 
 ```text
-Notification Runtime Worker deploy   0
+Implementation Worker deploy         0
 Notification Admission               false
-Queue producer/send                  0
+Automatic Queue producer/send        0
 Additional notification send         0
-Remote D1 mutation                   0
+Remote D1 mutation                    0
 Schedule / Automation / Webhook      0 / 0 / 0
-Production                           BLOCKED
+Production                            BLOCKED
 ```
 
-This hotfix does not rerun Notification Controlled UAT, Mirror Recovery or Runtime Activation. It does not add a
-new Report, Notification, Queue, Reliability or Lark writer. It extends the existing Settings reconciliation and
-reuses the existing Notification Runtime authority functions.
+This hotfix does not rerun Notification Controlled UAT, Mirror Recovery, Runtime Activation or Runtime Smoke
+Test. It does not add a Report, Notification, Queue, Reliability or Lark writer. It extends existing Settings
+reconciliation and wraps the existing reviewed Report config builder with retained baseline authority.
 
 ## Acceptance
 
 - active exact four Settings plan as skipped, not updated;
 - inactive canonical Settings retain the old all-false behavior;
-- unauthorized active scope fails closed;
+- unauthorized active Settings scope fails closed;
 - Finalizer summary records `notificationRuntimeState` and
   `preservedNotificationRuntimeSettingCount`;
+- Finalizer private evidence binds exact Worker baseline and mappings to the current repository Head;
 - Finalizer keeps `notificationAdmissionEnabled=false`;
-- post-merge Finalizer produces zero canonical Setting updates and private environment evidence for the exact
-  current `main` Head before SELECT-only readiness resumes.
+- active readiness accepts exactly three Notification true flags and rejects any drift;
+- Report Active windows contain baseline flags plus only Report flags;
+- every closeout restores the baseline and records `restoredBaseline=true`;
+- post-merge Finalizer produces zero canonical Setting updates before SELECT-only readiness resumes.
