@@ -11,8 +11,10 @@ import {
   REPORT_RUNTIME_CLOSEOUT_REQUIRED_TABLES,
   assertReportRuntimeFinalizerEvidence,
   buildReportRuntimeCloseoutCandidates,
-  buildReportRuntimeCloseoutConfigWindow,
 } from './lib/report-runtime-closeout-operator.js';
+import {
+  buildNotificationPreservingReportRuntimeConfigWindow,
+} from './lib/report-runtime-notification-preserving-config.js';
 import {
   REPORT_RUNTIME_REVIEWED_CHANNELS,
   REPORT_RUNTIME_REVIEWED_MULTIWINDOW_DAYS,
@@ -24,6 +26,7 @@ import {
   assertReviewedRepositoryState,
   createCommandRunner,
   sha256,
+  stableJson,
   writePrivateJson,
 } from './lib/report-runtime-closeout-reviewed-process.js';
 import {
@@ -107,13 +110,15 @@ function printPlan(target) {
     ].join(' \\\n'),
     stages: [
       'repository-and-finalizer',
-      'remote-worker-safe-read-only',
+      'remote-worker-preserved-baseline-read-only',
       'd1-source-and-runtime-select-only',
       'lark-schema-and-report-read-only',
       '1-3-7-30-action-assessment',
       'sanitized-readiness-evidence',
     ],
     windows: REPORT_RUNTIME_REVIEWED_MULTIWINDOW_DAYS,
+    notificationRuntimeBaselinePreserved: true,
+    notificationAdmissionEnabled: false,
     providerRequestCount: 0,
     queueActionCount: 0,
     remoteMutationCount: 0,
@@ -150,19 +155,28 @@ async function executeReadiness(target) {
   );
 
   const sourceText = await readFile(configPath, 'utf8');
-  const config = buildReportRuntimeCloseoutConfigWindow(sourceText, {
+  const config = buildNotificationPreservingReportRuntimeConfigWindow(sourceText, {
     activeTrueFlags: target.activeTrueFlags,
+    finalizerEvidencePath,
+    expectedRepositoryHead: repository.head,
   });
   await resolveReviewedCloudflareSession({ env, sourceText, runText: runner.runText });
+  const remoteTarget = Object.freeze({
+    ...target,
+    activeTrueFlags: config.safeTrueFlags,
+  });
   const remote = createReviewedRemoteRuntime({
     ...runner,
     configPath,
     repositoryRoot,
     env,
     repositoryHead: repository.head,
-    target,
-    requiredTables: REPORT_RUNTIME_CLOSEOUT_REQUIRED_TABLES,
-    config,
+    target: remoteTarget,
+    requiredTables: Object.freeze({
+      ...REPORT_RUNTIME_CLOSEOUT_REQUIRED_TABLES,
+      ...config.workerRequiredTables,
+    }),
+    config: Object.freeze({ ...config, tableIds: config.workerTableIds }),
   });
   const state = createReviewedStateRuntime({
     ...runner,
@@ -174,8 +188,10 @@ async function executeReadiness(target) {
     requiredLarkKeyFields: REQUIRED_LARK_KEY_FIELDS,
   });
 
-  stage = 'remote-worker-safe-read-only';
-  const remoteSafe = await remote.verifyDeployment('safe');
+  stage = 'remote-worker-preserved-baseline-read-only';
+  const remoteBaseline = await remote.verifyDeployment('active');
+  const executionBaselineVerified = stableJson(remoteBaseline.trueFlags)
+    === stableJson(config.safeTrueFlags);
 
   stage = 'd1-source-and-runtime-select-only';
   const d1Preflight = await state.readD1Row(buildReportRuntimePreflightSql({
@@ -232,7 +248,9 @@ async function executeReadiness(target) {
 
   stage = '1-3-7-30-action-assessment';
   const runtime = Object.freeze({
-    allExecutionFlagsFalse: remoteSafe.trueFlags.length === 0,
+    executionBaselineVerified,
+    notificationRuntimeState: config.notificationRuntime.state,
+    baselineTrueFlagCount: config.safeTrueFlags.length,
     pendingMigrationCount: pendingMigrations.length,
     activeReportWorkCount: Number(d1Preflight.active_report_work_count ?? 0),
     activeReportLockCount: Number(d1Preflight.active_report_locks ?? 0),
@@ -291,7 +309,9 @@ async function executeReadiness(target) {
       source,
       lark,
       windows,
-      remoteSafeFingerprint: sha256(`${repository.head}:${target.platformScope}:${remoteSafe.mode}`),
+      remoteBaselineFingerprint: sha256(
+        `${repository.head}:${target.platformScope}:${remoteBaseline.activeVersion}`,
+      ),
     },
     assessment,
     providerRequestCount: 0,
@@ -299,6 +319,7 @@ async function executeReadiness(target) {
     remoteMutationCount: 0,
     workerDeploymentCount: 0,
     liveMaterializationAuthorized: false,
+    notificationAdmissionEnabled: false,
     scheduleEnabled: false,
     production: 'BLOCKED',
   });
