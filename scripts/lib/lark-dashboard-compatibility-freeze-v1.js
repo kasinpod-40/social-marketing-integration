@@ -22,7 +22,7 @@ export const LARK_DASHBOARD_COMPATIBILITY_FIELD_IDENTITIES = deepFreeze({
     fieldId: 'fldGvd3tw8',
     fieldName: 'metric_key',
     type: 1,
-    isPrimary: true,
+    isPrimary: false,
   },
   displayName: {
     fieldId: 'fldE4Nezjd',
@@ -96,7 +96,8 @@ export function buildLarkDashboardCompatibilityReportSchema(schema, env = {}) {
 
 /**
  * Read-only exact-state admission for the permanent Dashboard Compatibility Freeze.
- * No semantic-name fallback is accepted: every reviewed physical Field ID/name/type/primary owner must match.
+ * No semantic-name fallback is accepted: every reviewed physical Field ID/name/type/primary flag must match.
+ * The canonical report_metric_key Primary ownership remains enforced by the shared Report schema planner.
  */
 export async function inspectLarkDashboardCompatibilityFreeze({ client, env = {} } = {}) {
   if (!isIntegrationWorkspace(env)) return deepFreeze({
