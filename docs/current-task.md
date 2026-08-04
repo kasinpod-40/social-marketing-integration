@@ -57,6 +57,18 @@ Lark Automation, Cron/Schedule admission, Webhook หรือ Production.
 - Connector, Report, Queue, D1 หรือ Lark engine ใหม่;
 - การรัน Controlled UAT หรือ Mirror Recovery เดิมซ้ำ.
 
+## Preserved parallel authority
+
+Meta retained recovery authority remains unchanged and is not transferred to this workstream. The only
+permitted Meta current-recovery entrypoint remains:
+
+```text
+scripts/meta-history-2026-exact-plan-continuation-terminal.mjs
+```
+
+This Notification Runtime task does not invoke, replace or authorize that Meta Terminal, Provider replay,
+D1 Queue resend, Lark mutation or Production action.
+
 ## Contract
 
 1. Runtime ใช้ `MKT_ENV=development`, `MKT_CUSTOMER_PROFILE=integration_workspace`,
