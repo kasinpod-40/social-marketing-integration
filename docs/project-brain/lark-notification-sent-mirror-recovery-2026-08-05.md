@@ -16,6 +16,31 @@ Keep Report periods as date-only in the domain. Convert them only in the Notific
 
 Recovery must reuse the existing D1 terminal-sent claim and `createLarkNotificationStateMirror` path. A sent replay may repair the mirror but may never call the message transport. Completion proof requires stable original `sent_at` and message hash, one additional claim observation, one Notification Log row, the AI Run sent marker, all notification flags restored false, Report Settings restored false, no Automation activation, no Schedule activation and Production blocked.
 
+## Verified live closeout
+
+```text
+contract_version                      lark_notification_controlled_uat_mirror_recovery_v1
+repository_head                       2a73de054b3918b32a2cfead772b726d10bff205
+retained_notification_message_count   1
+additional_message_send_count         0
+delivery_status                       sent
+mirror_status                         mirrored
+claim_count                           4 -> 5
+original_sent_at_stable               true
+original_message_id_hash_stable       true
+notification_log_rows                 1
+ai_run_marked_sent                     true
+notification_flags_after_closeout     all false
+report_settings_restored              true
+automation_activation_count           0
+schedule_activation_count             0
+production                            BLOCKED
+```
+
+The Controlled Executive Notification UAT is closed as `PASS`. Both the original UAT command and the retained mirror-recovery command are permanently closed for this identity.
+
+The next gate is not another UAT replay. It is a new, separately reviewed Runtime Activation workstream. Until that workstream is explicitly approved, Notification Runtime, Lark Automation, Cron/Schedule, Webhook and Production remain disabled or blocked.
+
 Authoritative task document:
 
 ```text

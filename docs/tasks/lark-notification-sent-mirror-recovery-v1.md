@@ -81,3 +81,33 @@ automation_activation_count          0
 schedule_activation_count            0
 production                           BLOCKED
 ```
+
+## Live closeout — PASS
+
+Executed on exact `main`:
+
+```text
+repository_head                       2a73de054b3918b32a2cfead772b726d10bff205
+active_worker_version                 3b6a9013-29aa-4e5f-b580-56c4fb667e11
+safe_worker_version                   a1b290e7-797f-4e01-a729-3b8a9428587d
+traffic_percentage                    100
+retained_notification_message_count   1
+additional_message_send_count         0
+delivery_rows                         1
+delivery_status                       sent
+mirror_status                         mirrored
+claim_count                           4 -> 5
+original_sent_at_stable               true
+original_message_id_hash_stable       true
+notification_log_rows                 1
+ai_run_marked_sent                     true
+notification_flags_after_closeout     all false
+report_settings_restored              true
+automation_activation_count           0
+schedule_activation_count             0
+production                            BLOCKED
+```
+
+Result: `CONTROLLED_EXECUTIVE_NOTIFICATION_UAT_CLOSED_PASS`.
+
+The original controlled-UAT command and the mirror-recovery command are both permanently closed for this retained identity. Any future notification runtime activation must be a separate reviewed workstream with separate approval; this closeout does not authorize Runtime, Automation, Schedule, Cron, Webhook or Production activation.
