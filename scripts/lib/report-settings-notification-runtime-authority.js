@@ -4,6 +4,7 @@ import { createReportSettingRowsForProfile } from '../../packages/config/src/rep
 import { LARK_EXECUTIVE_DESTINATION_KEY_HASH } from '../../packages/config/src/lark-notification-runtime-config.js';
 import { readLarkText } from '../../packages/connectors/src/shared/lark-cell-value.js';
 import {
+  LARK_NOTIFICATION_CONTROLLED_UAT_MAPPINGS,
   parseSourceReportIds,
   resolveLarkNotificationControlledUatTables,
 } from './lark-notification-controlled-uat.js';
@@ -48,6 +49,7 @@ export async function resolveReportSettingsNotificationRuntimeAuthority(input = 
       settingCount: 0,
       groupId: null,
       destinationKeyHash: null,
+      workerEnvironment: Object.freeze({}),
     });
   }
   if (activeRows.length !== LARK_NOTIFICATION_RUNTIME_WINDOWS.length) {
@@ -133,6 +135,11 @@ export async function resolveReportSettingsNotificationRuntimeAuthority(input = 
     );
   }
 
+  const workerEnvironment = Object.freeze(Object.fromEntries(
+    Object.entries(LARK_NOTIFICATION_CONTROLLED_UAT_MAPPINGS).map(
+      ([role, envName]) => [envName, requireText(tableIds[role], `tableIds.${role}`)],
+    ),
+  ));
   return Object.freeze({
     contractVersion: REPORT_SETTINGS_NOTIFICATION_RUNTIME_AUTHORITY_VERSION,
     state: 'active',
@@ -140,6 +147,7 @@ export async function resolveReportSettingsNotificationRuntimeAuthority(input = 
     settingCount: authority.settingKeys.length,
     groupId: groupIds[0],
     destinationKeyHash: authority.destinationKeyHash,
+    workerEnvironment,
   });
 }
 
