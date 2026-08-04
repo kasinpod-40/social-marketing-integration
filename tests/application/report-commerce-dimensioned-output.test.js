@@ -7,6 +7,7 @@ import { writeDashboardMaterializationToLark } from '../../packages/application/
 
 const GENERATED_AT = Date.parse('2026-07-28T00:00:00Z');
 const FORMULA_VERSION = 'woocommerce-commerce-v1';
+const LEGACY_WINDOW = '__mkt_legacy_window_days_single_select_v1';
 
 test('Commerce dimensions use bounded fixed ranks and null placeholders to clear stale rows', () => {
   const rows = buildCommerceDimensionMetricPayload({
@@ -202,7 +203,8 @@ test('Lark writer upserts 13 summary plus 45 dimension rows without ranking tabl
   assert.equal(firstProduct.dimension_value, 'rank:1');
   assert.equal(firstProduct.current_value, 0);
   assert.equal(firstProduct.client_visible, true);
-  assert.equal(firstProduct.window_days, '3');
+  assert.equal(firstProduct.window_days, 3);
+  assert.equal(firstProduct[LEGACY_WINDOW], '3');
 
   const clearedProduct = dimensionRows.find(
     (row) => row.dimension_type === 'product' && row.rank === 2,
@@ -211,6 +213,8 @@ test('Lark writer upserts 13 summary plus 45 dimension rows without ranking tabl
   assert.equal(clearedProduct.compare_value, null);
   assert.equal(clearedProduct.client_visible, false);
   assert.equal(clearedProduct.availability_status, 'not_observed');
+  assert.equal(clearedProduct.window_days, 3);
+  assert.equal(clearedProduct[LEGACY_WINDOW], '3');
 });
 
 function commerceSource(input = {}) {

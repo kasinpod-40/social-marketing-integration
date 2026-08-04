@@ -15,6 +15,7 @@ import { createStableFingerprint } from '../../packages/shared/src/hash/stable-f
 import { TableSyncEngine } from '../../packages/sync-engine/src/table-sync-engine.js';
 
 const GENERATED_AT = Date.parse('2026-07-28T00:00:00Z');
+const LEGACY_WINDOW = '__mkt_legacy_window_days_single_select_v1';
 const TABLES = Object.freeze({
   mktReportSnapshots: 'snapshots',
   mktReportMetricValues: 'metrics',
@@ -188,7 +189,7 @@ test('materialization writer maps Shared dimensions to Snapshot, Metric and Top 
   assert.equal(topContent.report_content_key, `${materialization.row.report_id}::rank:1`);
 });
 
-test('materialization writer maps Shared dimensions to Top Ads and uses select text only for Metric window', async () => {
+test('materialization writer maps Shared dimensions to Top Ads and mirrors the Integration Workspace Metric window', async () => {
   const materialization = paidAdsMaterialization();
   const captured = await captureWrite(materialization);
   const snapshot = captured.get('snapshots')[0];
@@ -202,7 +203,8 @@ test('materialization writer maps Shared dimensions to Top Ads and uses select t
     coverageRate: 0,
   });
   assert.equal(snapshot.window_days, 3);
-  assert.equal(metric.window_days, '3');
+  assert.equal(metric.window_days, 3);
+  assert.equal(metric[LEGACY_WINDOW], '3');
   assert.equal(topAd.window_days, 3);
   assert.deepEqual(snapshot.platform, ['meta_ads']);
   assert.equal(snapshot.baseline_coverage_rate, materialization.payload.coverageRate);
@@ -247,7 +249,8 @@ test('Commerce materialization writes only shared Snapshot and Metric tables', a
   const captured = await captureWrite(materialization);
   assert.deepEqual([...captured.keys()].sort(), ['metrics', 'snapshots']);
   assert.equal(captured.get('metrics')[0].capability, 'commerce');
-  assert.equal(captured.get('metrics')[0].window_days, '3');
+  assert.equal(captured.get('metrics')[0].window_days, 3);
+  assert.equal(captured.get('metrics')[0][LEGACY_WINDOW], '3');
   assert.equal(captured.get('metrics')[0].current_value, 1_000_000);
 });
 
@@ -354,10 +357,15 @@ function assertSharedDimensions(rows, expected) {
     assert.equal(row.report_setting_key, 'setting-new');
     assert.equal(row.report_type, 'dashboard_performance_report');
     assert.equal(row.period_kind, expected.windowDays === null ? 'custom_range' : 'rolling_days');
-    const expectedWindow = row.report_metric_key && expected.windowDays !== null
-      ? String(expected.windowDays)
-      : expected.windowDays;
-    assert.equal(row.window_days, expectedWindow);
+    assert.equal(row.window_days, expected.windowDays);
+    if (row.report_metric_key) {
+      assert.equal(
+        row[LEGACY_WINDOW],
+        expected.windowDays === null ? null : String(expected.windowDays),
+      );
+    } else {
+      assert.equal(Object.hasOwn(row, LEGACY_WINDOW), false);
+    }
     assert.equal(row.data_status, 'partial');
     assert.equal(row.coverage_rate, expected.coverageRate);
     assert.equal(row.generated_at, GENERATED_AT);
