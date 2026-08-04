@@ -8,6 +8,11 @@ import {
 import { readLarkText } from '../../packages/connectors/src/shared/lark-cell-value.js';
 import { permanentError } from '../../packages/shared/src/errors/runtime-error.js';
 import {
+  LARK_DASHBOARD_COMPATIBILITY_FREEZE_VERSION,
+  buildLarkDashboardCompatibilityReportSchema,
+  inspectLarkDashboardCompatibilityFreeze,
+} from './lark-dashboard-compatibility-freeze-v1.js';
+import {
   REPORT_METRIC_VALUE_FIELD_MIGRATION_CONFIRMATION,
   applyReportMetricValueFieldMigration as applyRecoveryV3,
   planReportMetricValueFieldMigration as planRecoveryV3,
@@ -28,24 +33,34 @@ const LEGACY_FIELD_NAMES = Object.freeze([
 ]);
 const CANONICAL_MISMATCH_CODE =
   'REPORT_METRIC_FIELD_MIGRATION_CANONICAL_VALUE_MISMATCH';
+const CANONICAL_WITHOUT_SOURCE_CODE =
+  'REPORT_METRIC_FIELD_MIGRATION_CANONICAL_WITHOUT_SOURCE';
 const LEGACY_SOURCE_CONFLICT_CODE =
   'REPORT_METRIC_FIELD_MIGRATION_RECOVERY_SOURCE_VALUE_CONFLICT';
 
 /**
- * หลัง migration สร้าง canonical Text สำเร็จแล้ว ค่าใน deterministic Legacy fields เป็น archive
- * เท่านั้น Report runtime จึงแก้ canonical display_name ได้โดยไม่ต้องแก้ค่า archive เดิม
+ * Canonical Text remains authoritative after deterministic Legacy archives exist. The permanent
+ * Integration Workspace Dashboard Compatibility Freeze is admitted only after exact physical Field
+ * identity and Number/Select record parity verification; no Field or Record mutation is inferred.
  */
 export async function planReportMetricValueFieldMigration(input = {}) {
-  const v3Plan = await planRecoveryV3(input);
-  if (!shouldUseCanonicalAuthorityRecovery(v3Plan)) return v3Plan;
+  const prepared = await prepareCompatibilityInput(input);
+  if (prepared.compatibility?.applicable && prepared.compatibility.compatible !== true) {
+    return blockedCompatibilityPlan(prepared.compatibility, prepared.schemaVersion);
+  }
 
-  const before = await inspectCanonicalAuthorityState(input);
+  const v3Plan = await planRecoveryV3(prepared.input);
+  if (!shouldUseCanonicalAuthorityRecovery(v3Plan)) {
+    return augmentCompatibilityResult(v3Plan, prepared.compatibility);
+  }
+
+  const before = await inspectCanonicalAuthorityState(prepared.input);
   if (before.blockers.length > 0) return blockedPlan(before);
   assertCanonicalAuthorityState(before);
 
-  const canonicalClient = createCanonicalAuthoritativeReadClient(input.client, before);
-  const recoveredPlan = await planRecoveryV3({ ...input, client: canonicalClient });
-  const after = await inspectCanonicalAuthorityState(input);
+  const canonicalClient = createCanonicalAuthoritativeReadClient(prepared.input.client, before);
+  const recoveredPlan = await planRecoveryV3({ ...prepared.input, client: canonicalClient });
+  const after = await inspectCanonicalAuthorityState(prepared.input);
   if (before.stateFingerprint !== after.stateFingerprint) return blockedPlan({
     ...after,
     blockers: Object.freeze([safeBlocker(
@@ -54,24 +69,39 @@ export async function planReportMetricValueFieldMigration(input = {}) {
     )]),
   });
   if (recoveredPlan.repairable !== true || Number(recoveredPlan.blockerCount) !== 0) {
-    return deepFreeze({
+    return augmentCompatibilityResult(deepFreeze({
       ...recoveredPlan,
       contractVersion: REPORT_METRIC_VALUE_FIELD_MIGRATION_RECOVERY_VERSION,
-    });
+    }), prepared.compatibility);
   }
-  return augmentResult(recoveredPlan, after);
+  return augmentCompatibilityResult(augmentResult(recoveredPlan, after), prepared.compatibility);
 }
 
 export async function applyReportMetricValueFieldMigration(input = {}) {
-  const v3Plan = await planRecoveryV3(input);
-  if (!shouldUseCanonicalAuthorityRecovery(v3Plan)) return applyRecoveryV3(input);
+  const prepared = await prepareCompatibilityInput(input);
+  if (prepared.compatibility?.applicable && prepared.compatibility.compatible !== true) {
+    throw recoveryError(
+      'Report Metric Dashboard Compatibility Freeze is outside the exact reviewed boundary',
+      'REPORT_METRIC_FIELD_MIGRATION_COMPATIBILITY_FREEZE_BLOCKED',
+      {
+        blockerCount: prepared.compatibility.blockerCount,
+        blockers: prepared.compatibility.blockers,
+      },
+    );
+  }
 
-  const before = await inspectCanonicalAuthorityState(input);
+  const v3Plan = await planRecoveryV3(prepared.input);
+  if (!shouldUseCanonicalAuthorityRecovery(v3Plan)) {
+    const result = await applyRecoveryV3(prepared.input);
+    return augmentCompatibilityResult(result, prepared.compatibility);
+  }
+
+  const before = await inspectCanonicalAuthorityState(prepared.input);
   assertCanonicalAuthorityState(before);
   const expectedLegacyFingerprints = new Map(before.legacyFieldFingerprints);
-  const canonicalClient = createCanonicalAuthoritativeReadClient(input.client, before);
-  const result = await applyRecoveryV3({ ...input, client: canonicalClient });
-  const after = await inspectCanonicalAuthorityState(input);
+  const canonicalClient = createCanonicalAuthoritativeReadClient(prepared.input.client, before);
+  const result = await applyRecoveryV3({ ...prepared.input, client: canonicalClient });
+  const after = await inspectCanonicalAuthorityState(prepared.input);
 
   if (after.blockers.length > 0 || after.recordCount !== before.recordCount) {
     throw recoveryError(
@@ -86,11 +116,30 @@ export async function applyReportMetricValueFieldMigration(input = {}) {
     );
   }
   assertLegacyFingerprintsUnchanged(expectedLegacyFingerprints, after.legacyFieldFingerprints);
-  return augmentResult(result, after);
+  return augmentCompatibilityResult(augmentResult(result, after), prepared.compatibility);
 }
 
 export function safeReportMetricValueFieldMigrationEvidence(value) {
   return safeRecoveryV3Evidence(value);
+}
+
+async function prepareCompatibilityInput(input) {
+  const env = input.env ?? {};
+  const sourceSchema = input.schema ?? LARK_REPORT_SCHEMA_V2;
+  const schema = buildLarkDashboardCompatibilityReportSchema(sourceSchema, env);
+  const schemaVersion = input.schemaVersion ?? LARK_REPORT_SCHEMA_V2_VERSION;
+  const preparedInput = Object.freeze({
+    ...input,
+    env,
+    schema,
+    schemaVersion,
+    validateSchema: input.validateSchema ?? validateReportSchemaV2,
+  });
+  const compatibility = await inspectLarkDashboardCompatibilityFreeze({
+    client: input.client,
+    env,
+  });
+  return Object.freeze({ input: preparedInput, compatibility, schemaVersion });
 }
 
 async function inspectCanonicalAuthorityState(input = {}) {
@@ -155,7 +204,7 @@ async function inspectCanonicalAuthorityState(input = {}) {
 
   const legacyRowsByFieldId = new Map(legacyFields.map((field) => [field.fieldId, []]));
   const stateRows = [];
-  const canonicalAuthoritativeRecordIds = [];
+  const canonicalAuthoritativeRows = [];
   let canonicalPopulatedCount = 0;
   let legacyPopulatedCount = 0;
   let canonicalOnlyRecordCount = 0;
@@ -187,18 +236,17 @@ async function inspectCanonicalAuthorityState(input = {}) {
     const uniqueLegacy = [...new Set(observedLegacy)];
     if (uniqueLegacy.length > 1 && canonicalValue === null) {
       return blockedInspection(schemaVersion, [safeBlocker(
-        'REPORT_METRIC_FIELD_MIGRATION_RECOVERY_SOURCE_VALUE_CONFLICT',
+        LEGACY_SOURCE_CONFLICT_CODE,
         { recordCount: records.length, sourceFieldCount: legacyFields.length },
       )]);
     }
     if (uniqueLegacy.length > 1) archivedConflictRecordCount += 1;
 
     const hasLegacyValue = uniqueLegacy.length > 0;
-    const legacyValue = uniqueLegacy.length === 1 ? uniqueLegacy[0] : null;
     if (hasLegacyValue) legacyPopulatedCount += 1;
     if (canonicalValue !== null) {
       canonicalPopulatedCount += 1;
-      canonicalAuthoritativeRecordIds.push(recordId);
+      canonicalAuthoritativeRows.push(Object.freeze([recordId, canonicalValue]));
     }
     if (!hasLegacyValue && canonicalValue !== null) canonicalOnlyRecordCount += 1;
     if (hasLegacyValue && canonicalValue === null) pendingBackfillCount += 1;
@@ -217,7 +265,7 @@ async function inspectCanonicalAuthorityState(input = {}) {
     canonicalField: clone(canonical.field),
     legacyFields: Object.freeze(legacyFields.map(clone)),
     canonicalPopulatedCount,
-    canonicalAuthoritativeRecordIds: Object.freeze(canonicalAuthoritativeRecordIds),
+    canonicalAuthoritativeRows: Object.freeze(canonicalAuthoritativeRows),
     legacyPopulatedCount,
     canonicalOnlyRecordCount,
     divergenceCount,
@@ -233,7 +281,7 @@ async function inspectCanonicalAuthorityState(input = {}) {
 
 function createCanonicalAuthoritativeReadClient(client, inspection) {
   const legacyNames = inspection.legacyFields.map((field) => field.fieldName);
-  const canonicalAuthoritativeRecordIds = new Set(inspection.canonicalAuthoritativeRecordIds);
+  const canonicalValues = new Map(inspection.canonicalAuthoritativeRows);
   return Object.freeze({
     async listTables(args) { return client.listTables(args); },
     async listFields(args) { return client.listFields(args); },
@@ -241,8 +289,9 @@ function createCanonicalAuthoritativeReadClient(client, inspection) {
       const records = await client.listRecords(args);
       return records.map((record) => {
         const output = clone(record);
-        if (canonicalAuthoritativeRecordIds.has(String(record?.recordId ?? ''))) {
-          for (const legacyName of legacyNames) setFieldValue(output.fields, legacyName, null);
+        const canonicalValue = canonicalValues.get(String(record?.recordId ?? ''));
+        if (canonicalValue !== undefined) {
+          for (const legacyName of legacyNames) setFieldValue(output.fields, legacyName, canonicalValue);
         }
         return output;
       });
@@ -259,16 +308,21 @@ function shouldUseCanonicalAuthorityRecovery(plan) {
     || !Array.isArray(plan?.blockers)) return false;
   const blocker = plan.blockers[0];
   return blocker?.fieldName === CANONICAL_FIELD_NAME
-    && [CANONICAL_MISMATCH_CODE, LEGACY_SOURCE_CONFLICT_CODE].includes(blocker?.code);
+    && [
+      CANONICAL_MISMATCH_CODE,
+      CANONICAL_WITHOUT_SOURCE_CODE,
+      LEGACY_SOURCE_CONFLICT_CODE,
+    ].includes(blocker?.code);
 }
 
 function assertCanonicalAuthorityState(inspection) {
-  if (inspection.blockers.length > 0 || inspection.divergenceCount <= 0) {
+  if (inspection.blockers.length > 0 || inspection.canonicalPopulatedCount <= 0) {
     throw recoveryError(
       'Report Metric canonical-authority state is outside the reviewed post-migration boundary',
       'REPORT_METRIC_FIELD_MIGRATION_CANONICAL_AUTHORITY_BLOCKED',
       {
         recordCount: inspection.recordCount,
+        canonicalPopulatedCount: inspection.canonicalPopulatedCount,
         divergenceCount: inspection.divergenceCount,
         archivedConflictRecordCount: inspection.archivedConflictRecordCount,
         blockerCount: inspection.blockers.length,
@@ -305,6 +359,46 @@ function augmentResult(result, inspection) {
   });
 }
 
+function augmentCompatibilityResult(result, compatibility) {
+  if (!compatibility?.applicable || compatibility.compatible !== true) return result;
+  return deepFreeze({
+    ...result,
+    contractVersion: REPORT_METRIC_VALUE_FIELD_MIGRATION_RECOVERY_VERSION,
+    compatibilityFreeze: true,
+    compatibilityFreezeContractVersion: LARK_DASHBOARD_COMPATIBILITY_FREEZE_VERSION,
+    compatibilityFreezeRecordCount: compatibility.recordCount,
+    compatibilityFreezeWindowParityCount: compatibility.windowParityCount,
+    compatibilityFreezeArchivedDisplayConflictCount:
+      compatibility.archivedDisplayConflictCount,
+    legacyValueMutationCount: 0,
+    deleteCount: 0,
+  });
+}
+
+function blockedCompatibilityPlan(compatibility, schemaVersion) {
+  return deepFreeze({
+    ok: true,
+    mode: 'preview',
+    contractVersion: REPORT_METRIC_VALUE_FIELD_MIGRATION_RECOVERY_VERSION,
+    schemaVersion,
+    migrationCount: 0,
+    pendingMigrationCount: 0,
+    convergedMigrationCount: 0,
+    notRequiredMigrationCount: 0,
+    blockerCount: compatibility.blockerCount,
+    repairable: false,
+    plannedFieldMutationCount: 0,
+    plannedCanonicalValueWriteCount: 0,
+    remoteMutationCount: 0,
+    legacyValueMutationCount: 0,
+    deleteCount: 0,
+    migrations: [],
+    blockers: compatibility.blockers,
+    compatibilityFreeze: true,
+    compatibilityFreezeContractVersion: LARK_DASHBOARD_COMPATIBILITY_FREEZE_VERSION,
+  });
+}
+
 function blockedPlan(inspection) {
   return deepFreeze({
     ok: true,
@@ -335,7 +429,7 @@ function blockedInspection(schemaVersion, blockers) {
     canonicalField: null,
     legacyFields: Object.freeze([]),
     canonicalPopulatedCount: 0,
-    canonicalAuthoritativeRecordIds: Object.freeze([]),
+    canonicalAuthoritativeRows: Object.freeze([]),
     legacyPopulatedCount: 0,
     canonicalOnlyRecordCount: 0,
     divergenceCount: 0,
