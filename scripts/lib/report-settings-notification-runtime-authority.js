@@ -27,6 +27,10 @@ export async function resolveReportSettingsNotificationRuntimeAuthority(input = 
     input.reportSettingsTableId,
     'reportSettingsTableId',
   );
+  const expectedDestinationKeyHash = requireHash(
+    input.expectedDestinationKeyHash ?? LARK_EXECUTIVE_DESTINATION_KEY_HASH,
+    'expectedDestinationKeyHash',
+  );
 
   const canonicalKeys = createReportSettingRowsForProfile('integration_workspace')
     .map((row) => row.report_setting_key);
@@ -102,7 +106,7 @@ export async function resolveReportSettingsNotificationRuntimeAuthority(input = 
     snapshots: snapshotRows,
     settings: settingRows,
     expectedState: 'active',
-    expectedDestinationKeyHash: LARK_EXECUTIVE_DESTINATION_KEY_HASH,
+    expectedDestinationKeyHash,
   });
 
   const observedActiveKeys = activeRows.map((row) => row.reportSettingKey).sort();
@@ -121,7 +125,7 @@ export async function resolveReportSettingsNotificationRuntimeAuthority(input = 
     readRequiredText(record?.fields?.group_id, 'group_id')
   )))];
   if (groupIds.length !== 1
-    || sha256(groupIds[0]) !== LARK_EXECUTIVE_DESTINATION_KEY_HASH) {
+    || sha256(groupIds[0]) !== expectedDestinationKeyHash) {
     throw authorityError(
       'Notification Runtime destination no longer matches the reviewed Executive destination',
       'REPORT_SETTINGS_NOTIFICATION_RUNTIME_DESTINATION_INVALID',
@@ -211,6 +215,13 @@ function requireText(value, fieldName) {
     throw new TypeError(`${fieldName} is required`);
   }
   return value.trim();
+}
+function requireHash(value, fieldName) {
+  const text = requireText(value, fieldName).toLowerCase();
+  if (!/^[0-9a-f]{64}$/u.test(text)) {
+    throw new TypeError(`${fieldName} must be SHA-256 hex`);
+  }
+  return text;
 }
 function stableJson(value) { return JSON.stringify(value); }
 function sha256(value) { return createHash('sha256').update(value).digest('hex'); }
