@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 
 import { execFile } from 'node:child_process';
+import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { promisify } from 'node:util';
 import {
   getReportPlatformContract,
@@ -19,6 +22,7 @@ import {
 import {
   REPORT_ALL_READY_CHANNELS_CONFIRMATION,
   REPORT_ALL_READY_CHANNELS_CONTRACT,
+  resolveRunAllChannelAuthority,
   selectAllReadyReportChannels,
 } from './lib/report-all-ready-channels.js';
 
@@ -56,7 +60,12 @@ export async function runAllReadyChannelReports(input = {}) {
   const executeChannel = input.executeChannel ?? executeReviewedChannel;
   const completed = [];
   for (const channel of selection.ready) {
-    const result = await executeChannel({ env, channel });
+    const result = await executeChannel({
+      env,
+      handoff,
+      channel,
+      authority: resolveRunAllChannelAuthority(handoff, channel.platformScope),
+    });
     if (!result || typeof result !== 'object' || result.ok !== true) throw terminalError(
       `Shared Report closeout failed for ${channel.platformScope}`,
       'REPORT_ALL_READY_CHANNELS_CHANNEL_FAILED',
@@ -118,24 +127,37 @@ function buildPlan() {
   });
 }
 
-async function executeReviewedChannel({ env, channel }) {
-  const result = await execFileAsync(process.execPath, [
-    'scripts/multichannel-report-live-closure-terminal.mjs',
-    `--platform=${channel.platformScope}`,
-    `--capability=${channel.capability}`,
-    '--execute',
-  ], {
-    cwd: process.cwd(),
-    env: {
-      ...process.env,
-      ...env,
-      MKT_REPORT_RUNTIME_CLOSEOUT_PLATFORM_SCOPE: channel.platformScope,
-      CONFIRM_MULTICHANNEL_REPORT_LIVE_CLOSURE:
-        MULTICHANNEL_REPORT_LIVE_CLOSURE_CONFIRMATION,
-    },
-    maxBuffer: 64 * 1024 * 1024,
-  });
-  return parseJson(result.stdout);
+async function executeReviewedChannel({ env, handoff, channel, authority }) {
+  const directory = await mkdtemp(join(tmpdir(), `report-run-all-${channel.platformScope}-`));
+  try {
+    const handoffPath = join(directory, 'handoff.json');
+    const channelHandoff = Object.freeze({
+      ...handoff,
+      closeoutAuthority: authority,
+    });
+    await writeFile(handoffPath, `${JSON.stringify(channelHandoff, null, 2)}\n`, { mode: 0o600 });
+    await chmod(handoffPath, 0o600);
+    const result = await execFileAsync(process.execPath, [
+      'scripts/multichannel-report-live-closure-terminal.mjs',
+      `--platform=${channel.platformScope}`,
+      `--capability=${channel.capability}`,
+      '--execute',
+    ], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        ...env,
+        MKT_REPORT_RUNTIME_CLOSEOUT_PLATFORM_SCOPE: channel.platformScope,
+        MKT_MULTICHANNEL_REPORT_LIVE_CLOSURE_HANDOFF: handoffPath,
+        CONFIRM_MULTICHANNEL_REPORT_LIVE_CLOSURE:
+          MULTICHANNEL_REPORT_LIVE_CLOSURE_CONFIRMATION,
+      },
+      maxBuffer: 64 * 1024 * 1024,
+    });
+    return parseJson(result.stdout);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 }
 
 function parseJson(value) {
