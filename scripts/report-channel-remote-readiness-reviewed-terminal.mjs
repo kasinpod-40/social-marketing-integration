@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execFile } from 'node:child_process';
-import { mkdir, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { createLarkBitableClientFromEnv } from '../packages/connectors/src/lark/lark-bitable.client.js';
@@ -153,7 +153,7 @@ async function executeReadiness(target) {
   const config = buildReportRuntimeCloseoutConfigWindow(sourceText, {
     activeTrueFlags: target.activeTrueFlags,
   });
-  const auth = await resolveReviewedCloudflareSession({ env, sourceText, runText: runner.runText });
+  await resolveReviewedCloudflareSession({ env, sourceText, runText: runner.runText });
   const remote = createReviewedRemoteRuntime({
     ...runner,
     configPath,
@@ -234,7 +234,7 @@ async function executeReadiness(target) {
   const runtime = Object.freeze({
     allExecutionFlagsFalse: remoteSafe.trueFlags.length === 0,
     pendingMigrationCount: pendingMigrations.length,
-    activeReportWorkCount: 0,
+    activeReportWorkCount: Number(d1Preflight.active_report_work_count ?? 0),
     activeReportLockCount: Number(d1Preflight.active_report_locks ?? 0),
     openReportDlqCount: Number(d1Preflight.open_report_dlq ?? 0),
     openReportCriticalAlertCount: Number(d1Preflight.open_report_critical_alerts ?? 0),
@@ -278,6 +278,7 @@ async function executeReadiness(target) {
         environment: 'development',
         customerProfile: 'integration_workspace',
         accountKey: target.accountKey,
+        accountId: target.accountKey,
         platformScope: target.platformScope,
         capability: target.capability,
       },
@@ -302,7 +303,6 @@ async function executeReadiness(target) {
     production: 'BLOCKED',
   });
   const evidencePath = join(outputRoot, 'readiness-summary.json');
-  await mkdir(outputRoot, { recursive: true, mode: 0o700 });
   await writePrivateJson(evidencePath, summary);
   process.stdout.write(`${JSON.stringify({ ...summary, evidencePath }, null, 2)}\n`);
   if (!assessment.readyForLive) process.exitCode = 2;
