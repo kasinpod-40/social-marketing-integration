@@ -1,13 +1,24 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 
 const repositoryRoot = resolve(process.cwd());
 const launcherPath = resolve(
   repositoryRoot,
   'scripts/meta-k3-partial-staging-one-command.mjs',
+);
+const readinessHook = resolve(
+  repositoryRoot,
+  'scripts/meta-k3-preview-alias-readiness-hook.mjs',
 );
 
 test('K3 one-command plan is exact and mutation-free', () => {
@@ -40,6 +51,9 @@ test('K3 one-command plan is exact and mutation-free', () => {
   );
   assert.equal(plan.safePreviewBootstrapRequired, true);
   assert.equal(plan.safeRouteProbeRequiredBeforeFinalizer, true);
+  assert.equal(plan.readinessPreloadOwnedByLauncher, true);
+  assert.equal(plan.readinessPreloadAbsolute, true);
+  assert.equal(plan.userNodeOptionsRequired, false);
   assert.equal(plan.dedicatedFinalizer, true);
   assert.equal(plan.loaderUsed, false);
   assert.equal(plan.queueMessageCount, 0);
@@ -57,11 +71,19 @@ test('K3 one-command delegates to the proven Preview window before finalizer', (
   assert.match(source, /RUN_EXACT_META_K3_ONE_COMMAND/u);
   assert.match(source, /meta-chemistry_k3-history-20260701-20260731-d4824a9e2ba9/u);
   assert.match(source, /meta-k3-partial-staging-preview-recovery\.mjs/u);
+  assert.match(source, /meta-k3-preview-alias-readiness-hook\.mjs/u);
+  assert.match(source, /pathToFileURL\(readinessHook\)\.href/u);
+  assert.match(source, /NODE_OPTIONS:\s*readinessNodeOptions/u);
+  assert.match(source, /MKT_META_K3_PREVIEW_ALIAS_READINESS/u);
+  assert.match(source, /WAIT_FOR_ATTESTED_ACTIVE_PREVIEW/u);
   assert.match(source, /CONFIRM_META_K3_PREVIEW_RECOVERY/u);
   assert.match(source, /RUN_EXACT_META_K3_PREVIEW_RECOVERY/u);
   assert.match(source, /readAccountWorkersDevSubdomain/u);
   assert.match(source, /verify-restore\.json/u);
   assert.match(source, /safeRouteProbeRequiredBeforeFinalizer: true/u);
+  assert.match(source, /readinessPreloadOwnedByLauncher: true/u);
+  assert.match(source, /readinessPreloadAbsolute: true/u);
+  assert.match(source, /userNodeOptionsRequired: false/u);
   assert.match(source, /dedicatedFinalizer: true/u);
   assert.match(source, /loaderUsed: false/u);
   assert.match(source, /queueMessageCount:\s*0/u);
@@ -73,8 +95,31 @@ test('K3 one-command delegates to the proven Preview window before finalizer', (
   assert.doesNotMatch(source, /meta-k3-exact-recovery-loader/u);
   assert.doesNotMatch(
     source,
-    /meta-chemistry_k2-history-20260701-20260731-f741090d1d8a/u,
+    /meta-chemistry-k2-history-20260701-20260731-f741090d1d8a/u,
   );
   assert.doesNotMatch(source, /queue\.send\(/u);
   assert.doesNotMatch(source, /wrangler\s+deploy/u);
+});
+
+test('K3 readiness preload resolves from a nested package working directory', () => {
+  const root = mkdtempSync(resolve(tmpdir(), 'meta-k3-readiness-'));
+  const nested = resolve(root, 'node_modules', 'workerd');
+  mkdirSync(nested, { recursive: true });
+  try {
+    const result = spawnSync(process.execPath, ['-e', 'process.exit(0)'], {
+      cwd: nested,
+      env: {
+        ...process.env,
+        NODE_OPTIONS: `--import=${pathToFileURL(readinessHook).href}`,
+      },
+      encoding: 'utf8',
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.doesNotMatch(
+      result.stderr,
+      /node_modules\/workerd\/scripts\/meta-k3-preview-alias-readiness-hook\.mjs/u,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
