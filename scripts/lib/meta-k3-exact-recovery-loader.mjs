@@ -20,6 +20,8 @@ const RETAINED_K3_OPERATION_HEAD =
   '6d82a50bc6d051cc39307254543619fcd29211b4';
 const RETAINED_K2_OPERATION_HEAD =
   '340f461d4155e17d98781caef375a37620f08533';
+const READINESS_IMPORT =
+  "import { waitForMetaK3PreviewReadiness } from './lib/meta-k3-preview-readiness.js';\n";
 
 export async function resolve(specifier, context, nextResolve) {
   const resolved = await nextResolve(specifier, context);
@@ -43,12 +45,51 @@ export async function load(url, context, nextLoad) {
   let transformed = false;
 
   if (url.endsWith(K2_FINALIZER_SUFFIX)) {
-    source = source
+    source = `${READINESS_IMPORT}${source}`
       .replaceAll('MKT_META_K2_', 'MKT_META_K3_')
       .replaceAll(
         'meta-history-2026-chemistry_k2-summary.json',
         'meta-history-2026-chemistry_k3-summary.json',
+      )
+      .replace(
+        "\n\n    currentStage = 'continue-d1';",
+        [
+          '',
+          '',
+          '    const previewReadiness = await waitForMetaK3PreviewReadiness({',
+          '      url: recoveryUrl,',
+          '      token: credentials.token,',
+          '      attestation: credentials.attestation,',
+          '      activeVersion: deployed.activeVersion,',
+          '    });',
+          '',
+          "    currentStage = 'continue-d1';",
+        ].join('\n'),
+      )
+      .replace(
+        "    await evidence.write('continue-d1', {\n      invocationCount,",
+        "    await evidence.write('continue-d1', {\n      previewReadiness,\n      invocationCount,",
+      )
+      .replace(
+        "\n\n    currentStage = 'continue-lark';",
+        [
+          '',
+          '',
+          '    const previewReadiness = await waitForMetaK3PreviewReadiness({',
+          '      url: recoveryUrl,',
+          '      token: credentials.token,',
+          '      attestation: credentials.attestation,',
+          '      activeVersion: deployed.activeVersion,',
+          '    });',
+          '',
+          "    currentStage = 'continue-lark';",
+        ].join('\n'),
+      )
+      .replace(
+        "    await evidence.write('continue-lark', {\n      invocationCount,",
+        "    await evidence.write('continue-lark', {\n      previewReadiness,\n      invocationCount,",
       );
+    assertFinalizerReadinessTransform(source);
     transformed = true;
   } else if (url.endsWith(K2_FINALIZER_HELPER_SUFFIX)) {
     source = source
@@ -94,6 +135,16 @@ export async function load(url, context, nextLoad) {
     source,
     shortCircuit: true,
   };
+}
+
+function assertFinalizerReadinessTransform(source) {
+  const readinessCalls = source.match(/waitForMetaK3PreviewReadiness\(/gu) ?? [];
+  const readinessEvidence = source.match(/previewReadiness,/gu) ?? [];
+  if (readinessCalls.length !== 2 || readinessEvidence.length !== 2) {
+    throw new Error(
+      'K3 loader failed to inject both exact Preview readiness gates',
+    );
+  }
 }
 
 function sourceText(source) {
