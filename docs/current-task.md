@@ -3,7 +3,7 @@
 ## Status
 
 ```text
-TASK_STATUS                         = IMPLEMENTATION_AND_EXACT_HEAD_CI
+TASK_STATUS                         = PR_READY_FOR_FINAL_EXACT_HEAD_CI
 CURRENT_PROGRAM                     = LARK_NOTIFICATION_RUNTIME_ACTIVATION_V1
 BRANCH                              = feat/lark-notification-runtime-activation-v1
 BASE_MAIN_SHA                       = dd9c1f33be877e77b6e76c8b537ab916dc6a0b50
@@ -104,5 +104,50 @@ git diff --check
 
 ## Implementation result
 
-Repository implementation is in progress. No Remote Worker deployment, Lark Record write, Queue send,
-notification send, Automation, Schedule, Webhook or Production action has been performed from this branch.
+Repository implementation is complete on PR `#497`.
+
+Implemented:
+
+- explicit notification modes `disabled`, `controlled_uat`, and `runtime`;
+- fail-closed UAT/runtime trigger and AI identity separation;
+- reviewed `lark_notification_runtime` Job trigger while retaining `manualOnly` admission;
+- exact Executive `1D/3D/7D/30D` Settings authority and destination validation;
+- one exact activation Terminal with bounded zero-admission observation;
+- automatic failure restoration and separately confirmed manual rollback;
+- focused Runtime configuration, Router, Job catalog, activation and Terminal safety regressions;
+- current task, task contract and Project Brain authority documentation.
+
+Branch Verification `#2188` passed on implementation Head
+`2980993712958fcc8e03f5fa2cb7cce4ec1bf7a3`:
+
+```text
+Syntax / architecture / hygiene    PASS
+Focused Meta                       PASS
+Focused WooCommerce                PASS
+Focused Chatwoot                   PASS
+Focused TikTok                     PASS
+Full Unit and Workers runtime      PASS (2,640 tests)
+Report reliability                 PASS
+Dependency audit                   PASS
+Wrangler dry-run                   PASS
+```
+
+The earlier Full Unit failure was a Test-authority mismatch only: the exact activation confirmation literals
+belong to the shared activation contract, not the Terminal wrapper. The regression now validates the shared
+authority without duplicating constants.
+
+Remote actions from this implementation branch remain:
+
+```text
+Worker deployment                  0
+Remote Lark Record write           0
+Remote D1 write                    0
+Queue admission                    0
+Notification send                 0
+Lark Automation activation         0
+Schedule/Cron activation           0
+Webhook activation                 0
+Production action                  0
+```
+
+Live activation remains a single post-merge exact-main Terminal action.
