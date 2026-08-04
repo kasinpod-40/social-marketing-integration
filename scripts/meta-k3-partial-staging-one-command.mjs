@@ -20,9 +20,9 @@ const branch = 'integration/all-meta-end-to-end-completion-v1';
 const reviewBase = 'fac11f0f95b56ab0944da02dcb0360d2f5c43710';
 const operationId =
   'meta-chemistry_k3-history-20260701-20260731-d4824a9e2ba9';
-const finalizer = resolve(
+const previewRecovery = resolve(
   repositoryRoot,
-  'scripts/meta-k3-partial-staging-preview-finalizer.mjs',
+  'scripts/meta-k3-partial-staging-preview-recovery.mjs',
 );
 const d1Root = resolve(
   repositoryRoot,
@@ -58,11 +58,12 @@ if (!execute) {
     branch,
     approvedHeadEnv: 'MKT_META_K3_APPROVED_HEAD',
     confirmation,
-    cloudflareLookupMethod: 'GET',
     executionTransport: 'preview_version_upload',
+    previewWindow: 'same_proven_k2_enable_probe_finalize_restore_sequence',
+    safePreviewBootstrapRequired: true,
+    safeRouteProbeRequiredBeforeFinalizer: true,
     dedicatedFinalizer: true,
     loaderUsed: false,
-    previewUrlAuthority: 'wrangler_version_upload_record',
     queueMessageCount: 0,
     lifecycleSqlRepairCount: 0,
     workerDeploymentCount: 0,
@@ -73,7 +74,7 @@ if (!execute) {
 }
 
 let currentStage = 'init';
-let childFinalizerStarted = false;
+let childPreviewRecoveryStarted = false;
 
 try {
   requireExact(
@@ -187,7 +188,6 @@ try {
     accountId,
     bearerToken: auth.token,
   });
-  const previewAlias = 'meta-k3-recovery';
 
   process.stdout.write(`${JSON.stringify({
     ok: true,
@@ -199,9 +199,10 @@ try {
     workersDevAuthorityResolved: true,
     recoveryEvidencePresent: true,
     executionTransport: 'preview_version_upload',
+    previewWindowOwnedByChild: true,
+    safeRouteProbeRequiredBeforeFinalizer: true,
     dedicatedFinalizer: true,
     loaderUsed: false,
-    previewUrlAuthority: 'wrangler_version_upload_record',
     queueMessageCount: 0,
     lifecycleSqlRepairCount: 0,
     workerDeploymentCount: 0,
@@ -209,11 +210,11 @@ try {
     production: 'BLOCKED',
   }, null, 2)}\n`);
 
-  currentStage = 'run-exact-k3-finalizer';
-  childFinalizerStarted = true;
+  currentStage = 'run-k3-preview-recovery-window';
+  childPreviewRecoveryStarted = true;
   const child = spawnSync(
     process.execPath,
-    [finalizer, '--execute'],
+    [previewRecovery, '--execute'],
     {
       cwd: repositoryRoot,
       env: {
@@ -221,24 +222,16 @@ try {
         CLOUDFLARE_ACCOUNT_ID: accountId,
         CLOUDFLARE_API_TOKEN: auth.token,
         DEV_VARS_FILE: devVarsPath,
+        MKT_META_K3_APPROVED_HEAD: head,
         MKT_META_HISTORY_REVIEW_WRAPPER_HEAD: head,
         MKT_META_HISTORY_REVIEW_BASE_MAIN_HEAD: reviewBase,
         MKT_META_K3_RECOVERY_WRANGLER_CONFIG: configPath,
-        MKT_META_K3_PREVIEW_ALIAS: previewAlias,
         MKT_META_K3_PREVIEW_SUBDOMAIN: accountSubdomain,
         MKT_META_K3_PRODUCTION_BASELINE_VERSION:
           productionBaselineVersion,
-        MKT_META_K3_EXACT_HEAD_CI: 'PASS',
-        MKT_META_K3_EXACT_HEAD_CI_SHA: head,
         MKT_META_D1_ONLY_READ_ONLY_SUMMARY: readOnlySummary,
-        MKT_META_D1_ONLY_PARTIAL_STAGING_RECOVERY:
-          'RECOVER_EXACT_PARTIAL_META_ADS_STAGING',
-        MKT_META_K3_RESUME_PRE_MUTATION_CONFIG_FAILURE:
-          'RESUME_EXACT_K3_PRE_MUTATION_CONFIG_FAILURE',
-        CONFIRM_META_K3_PARTIAL_STAGING_RECOVERY:
-          'RECOVER_AND_COMPLETE_EXACT_META_K3_PARTIAL_STAGING',
-        MKT_META_K3_D1_MAX_DIRECT_INVOCATIONS: '100',
-        MKT_META_K3_LARK_MAX_DIRECT_INVOCATIONS: '20',
+        CONFIRM_META_K3_PREVIEW_RECOVERY:
+          'RUN_EXACT_META_K3_PREVIEW_RECOVERY',
       },
       stdio: 'inherit',
     },
@@ -246,8 +239,8 @@ try {
   if (child.error) throw child.error;
   if (child.status !== 0) {
     throw launcherError(
-      'Exact K3 finalizer failed; use the preceding child finalizer output as Remote truth',
-      'META_K3_ONE_COMMAND_FINALIZER_FAILED',
+      'K3 Preview recovery window failed; use preceding child output as Remote truth',
+      'META_K3_ONE_COMMAND_PREVIEW_RECOVERY_FAILED',
       { exitCode: child.status },
     );
   }
@@ -258,9 +251,9 @@ try {
     code: error?.code ?? 'META_K3_ONE_COMMAND_FAILED',
     message: error instanceof Error ? error.message : String(error),
     details: sanitize(error?.details ?? {}),
-    childFinalizerStarted,
-    childRemoteState: childFinalizerStarted
-      ? 'SEE_PRECEDING_CHILD_FINALIZER_OUTPUT'
+    childPreviewRecoveryStarted,
+    childRemoteState: childPreviewRecoveryStarted
+      ? 'SEE_PRECEDING_CHILD_OUTPUT'
       : 'NOT_STARTED',
     wrapperQueueMessageCount: 0,
     wrapperLifecycleSqlRepairCount: 0,
