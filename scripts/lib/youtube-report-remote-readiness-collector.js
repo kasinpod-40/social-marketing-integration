@@ -109,6 +109,7 @@ export function buildYouTubeRemoteReadinessEvidence(input = {}) {
       contentStateCount: nonNegativeInteger(source.contentStateCount, 'contentStateCount'),
       observationCount: nonNegativeInteger(source.observationCount, 'observationCount'),
       accountFactCount: nonNegativeInteger(source.accountFactCount, 'accountFactCount'),
+      sourceWatermark: optionalText(source.sourceWatermark),
       watermarkDate: optionalText(source.watermarkDate),
       reportingTimezone: optionalText(source.reportingTimezone),
     }),

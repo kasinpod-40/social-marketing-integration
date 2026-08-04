@@ -155,6 +155,7 @@ async function executeCollector() {
       contentStateCount: numberOrZero(sourceRuntime.content_state_count),
       observationCount: numberOrZero(sourceRuntime.observation_count),
       accountFactCount: numberOrZero(sourceRuntime.account_fact_count),
+      sourceWatermark,
       watermarkDate: periodEnd,
       reportingTimezone: sourceRuntime.reporting_timezone,
     },
