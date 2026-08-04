@@ -2,6 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
+  REPORT_RUNTIME_FINALIZER_ENVIRONMENT_CONTRACT,
+  REPORT_RUNTIME_FINALIZER_TABLE_ENV_NAMES,
+} from '../../scripts/lib/report-runtime-finalizer-environment.js';
+import {
   REPORT_RUNTIME_CLOSEOUT_ACTIVE_TRUE_FLAGS,
   REPORT_RUNTIME_CLOSEOUT_CANONICAL_SETTING_COUNT,
   REPORT_RUNTIME_CLOSEOUT_CONFIRMATION,
@@ -80,7 +84,12 @@ function validFinalizerEvidence() {
     contractVersion: 'report_runtime_finalize_v1',
     repository: { branch: 'main', head: 'a'.repeat(40), clean: true },
     gates: Array.from({ length: 6 }, (_, index) => ({ command: String(index), status: 'pass' })),
-    schema: { readbackActions: 0, conflicts: 0 },
+    schema: {
+      readbackActions: 0,
+      conflicts: 0,
+      privateEnvironmentContractVersion: REPORT_RUNTIME_FINALIZER_ENVIRONMENT_CONTRACT,
+      privateEnvironmentUpdateCount: REPORT_RUNTIME_FINALIZER_TABLE_ENV_NAMES.length,
+    },
     settings: {
       canonicalActive: REPORT_RUNTIME_CLOSEOUT_CANONICAL_SETTING_COUNT,
       activeLegacySettings: 0,
@@ -163,6 +172,48 @@ test('WooCommerce Report closeout config creates an exact three-flag report-only
   assert.equal(active.vars.MKT_REPORT_AI_SUMMARY_ENABLED, 'false');
   assert.equal(active.vars.MKT_SCHEDULE_DAILY_REPORT_ENABLED, 'false');
   assert.equal(active.vars.MKT_SCHEDULE_WEEKLY_REPORT_ENABLED, 'false');
+});
+
+test('Report closeout bridges Finalizer mappings and materializes the missing Woo flag safely', () => {
+  const source = JSON.parse(validConfig());
+  delete source.vars.LARK_TABLE_MKT_REPORT_TOP_ADS;
+  delete source.vars.MKT_WOOCOMMERCE_REPORT_READ_ENABLED;
+
+  const window = buildReportRuntimeCloseoutConfigWindow(JSON.stringify(source), {
+    activeTrueFlags: WOOCOMMERCE_REPORT_RUNTIME_CLOSEOUT_ACTIVE_TRUE_FLAGS,
+    finalizerEnvironment: {
+      LARK_TABLE_MKT_REPORT_SNAPSHOTS: 'tbl_final_snapshots',
+      LARK_TABLE_MKT_REPORT_METRIC_VALUES: 'tbl_final_metrics',
+      LARK_TABLE_MKT_REPORT_TOP_CONTENT: 'tbl_final_top_content',
+      LARK_TABLE_MKT_REPORT_TOP_ADS: 'tbl_final_top_ads',
+    },
+  });
+
+  assert.equal(window.tableIds.mktReportSnapshots, 'tbl_final_snapshots');
+  assert.equal(window.tableIds.mktReportMetricValues, 'tbl_final_metrics');
+  assert.equal(window.tableIds.mktReportTopContent, 'tbl_final_top_content');
+  assert.equal(window.tableIds.mktReportTopAds, 'tbl_final_top_ads');
+  const safe = JSON.parse(window.safeText);
+  const active = JSON.parse(window.activeText);
+  assert.equal(safe.vars.MKT_WOOCOMMERCE_REPORT_READ_ENABLED, 'false');
+  assert.equal(active.vars.MKT_WOOCOMMERCE_REPORT_READ_ENABLED, 'true');
+  assert.deepEqual(window.safeTrueFlags, []);
+  assert.deepEqual(
+    window.activeTrueFlags,
+    [...WOOCOMMERCE_REPORT_RUNTIME_CLOSEOUT_ACTIVE_TRUE_FLAGS].sort(),
+  );
+});
+
+test('Report closeout does not synthesize missing generic execution flags', () => {
+  const source = JSON.parse(validConfig());
+  delete source.vars.MKT_REPORT_D1_READ_ENABLED;
+  assert.throws(
+    () => buildReportRuntimeCloseoutConfigWindow(JSON.stringify(source)),
+    (error) => (
+      error.code === 'REPORT_RUNTIME_CLOSEOUT_CONFIG_FLAG_MISSING'
+      && error.details?.flag === 'MKT_REPORT_D1_READ_ENABLED'
+    ),
+  );
 });
 
 test('Report closeout selects a fresh deterministic preset identity', () => {
