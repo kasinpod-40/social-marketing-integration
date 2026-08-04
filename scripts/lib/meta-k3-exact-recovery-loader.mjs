@@ -45,7 +45,14 @@ export async function load(url, context, nextLoad) {
   let transformed = false;
 
   if (url.endsWith(K2_FINALIZER_SUFFIX)) {
-    source = `${READINESS_IMPORT}${source}`
+    if (!source.startsWith('#!/usr/bin/env node\n')) {
+      throw new Error('K3 loader requires the reviewed Finalizer shebang');
+    }
+    source = source
+      .replace(
+        '#!/usr/bin/env node\n',
+        `#!/usr/bin/env node\n${READINESS_IMPORT}`,
+      )
       .replaceAll('MKT_META_K2_', 'MKT_META_K3_')
       .replaceAll(
         'meta-history-2026-chemistry_k2-summary.json',
