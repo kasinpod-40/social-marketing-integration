@@ -77,3 +77,32 @@ node scripts/lark-notification-controlled-uat-exact-terminal.mjs --execute
 ```
 
 The exact terminal must run from clean exact current `main`. The child restores the Worker and Settings in `finally`; the exact terminal independently enforces the Settings false readback after child exit.
+
+## Live preflight incident and correction — 2026-08-05
+
+The first execution after the Queue-inventory hotfix stopped at `upsert-dedicated-uat-ai-run` with
+`LARK_PREFLIGHT_FAILED` on `channel_status_vector_json`. The dedicated UAT builder correctly preserved
+the reviewed Executive Preview evidence, but the Preview record had been read from Lark with Text cells in
+Rich-text response shape. Copying that response shape directly into a new Text write payload violated the
+existing serializer contract before any Record write, Worker deployment, Queue send or notification send.
+
+The failure path verified:
+
+```text
+Safe Worker restored           true
+Exact Report Settings restored true
+Automation activation          0
+Schedule activation            0
+Notification send              0
+Production                     BLOCKED
+```
+
+The correction reuses the existing `LarkRecordRepository`, `readLarkText` and standard Lark field serializer.
+Only object/array values that match a recognized Lark Text readback wrapper are converted to primitive Text
+before normal serialization. Arbitrary Business objects remain rejected, so this does not weaken JSON, URL,
+Number, Select or Checkbox contracts and does not introduce another writer, sync engine or UAT operator.
+
+A focused regression reproduces Rich-text values for `channel_status_vector_json` and the four Executive AI
+output fields, while separately proving that an arbitrary object still fails closed. Live execution remains a
+separate exact-main action after merge and passing CI. Because the evidence directory is bound to the main SHA,
+the corrected run has a fresh attempt identity; it must not be run more than once.
