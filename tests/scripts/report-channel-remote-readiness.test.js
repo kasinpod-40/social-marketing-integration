@@ -16,6 +16,7 @@ function readyWindow(windowDays) {
     larkSnapshotCount: 0,
     larkMetricCount: 0,
     larkTopContentCount: 0,
+    larkTopAdsCount: 0,
     duplicateMetricKeys: 0,
     integrityOk: false,
   });
@@ -51,32 +52,54 @@ test('readiness parser remains plan-only by default and requires an explicit pla
   assert.throws(() => parseReportChannelReadinessArgs(['--write']));
 });
 
-test('window assessment selects create, verify and repair without channel branches', () => {
+test('window assessment selects create, verify and repair for content and ads rows', () => {
   assert.equal(readyWindow(1).action, 'create_materialization');
-  assert.equal(buildReportChannelWindowAssessment({
+  const organic = buildReportChannelWindowAssessment({
     windowDays: 3,
     d1MaterializationCount: 1,
     larkSnapshotCount: 1,
     larkMetricCount: 12,
     larkTopContentCount: 3,
+    larkTopAdsCount: 0,
     duplicateMetricKeys: 0,
     integrityOk: true,
-  }).action, 'reuse_or_idempotent_verify');
-  assert.equal(buildReportChannelWindowAssessment({
+  });
+  assert.equal(organic.action, 'reuse_or_idempotent_verify');
+  assert.equal(organic.larkTopContentCount, 3);
+
+  const ads = buildReportChannelWindowAssessment({
     windowDays: 7,
+    d1MaterializationCount: 1,
+    larkSnapshotCount: 1,
+    larkMetricCount: 10,
+    larkTopContentCount: 0,
+    larkTopAdsCount: 5,
+    duplicateMetricKeys: 0,
+    integrityOk: true,
+  });
+  assert.equal(ads.action, 'reuse_or_idempotent_verify');
+  assert.equal(ads.larkTopAdsCount, 5);
+
+  assert.equal(buildReportChannelWindowAssessment({
+    windowDays: 30,
     d1MaterializationCount: 1,
     larkSnapshotCount: 0,
     larkMetricCount: 0,
     larkTopContentCount: 0,
+    larkTopAdsCount: 0,
     duplicateMetricKeys: 0,
     integrityOk: false,
   }).action, 'refresh_or_repair_materialization');
+});
+
+test('orphan top Ads rows block a fresh materialization', () => {
   const blocked = buildReportChannelWindowAssessment({
     windowDays: 30,
-    d1MaterializationCount: 2,
-    larkSnapshotCount: 1,
-    larkMetricCount: 10,
+    d1MaterializationCount: 0,
+    larkSnapshotCount: 0,
+    larkMetricCount: 0,
     larkTopContentCount: 0,
+    larkTopAdsCount: 2,
     duplicateMetricKeys: 0,
     integrityOk: false,
   });
