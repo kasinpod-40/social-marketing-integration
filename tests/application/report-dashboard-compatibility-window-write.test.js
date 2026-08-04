@@ -84,7 +84,7 @@ test('Integration Workspace Metric rows write Number authority and preserved Sel
   assert.equal(metricPlan.rows[0][LEGACY_WINDOW], '3');
 });
 
-test('non-Integration Workspace Metric rows do not emit the private Dashboard mirror', async () => {
+test('non-Integration Workspace Metric rows retain Select text and no private mirror', async () => {
   const captured = [];
   await writeDashboardMaterializationToLark({
     reader: { async readById() { return materialization(3); } },
@@ -107,5 +107,5 @@ test('non-Integration Workspace Metric rows do not emit the private Dashboard mi
 
   const metricPlan = captured.find((entry) => entry.tableId === 'tblMetrics');
   assert.equal(Object.hasOwn(metricPlan.rows[0], LEGACY_WINDOW), false);
-  assert.equal(metricPlan.rows[0].window_days, 3);
+  assert.equal(metricPlan.rows[0].window_days, '3');
 });
