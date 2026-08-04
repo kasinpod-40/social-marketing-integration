@@ -173,7 +173,7 @@ export function validateLarkNotificationRemoteWranglerConfig(configText) {
   requireConfigValue(text, 'database_name', 'social-mkt-state-dev');
 
   for (const flag of LARK_NOTIFICATION_REMOTE_REQUIRED_FALSE_FLAGS) {
-    requireConfigValue(text, flag, 'false');
+    requireConfigFalseOrMissing(text, flag);
   }
   for (const mapping of LARK_NOTIFICATION_REMOTE_REQUIRED_TABLE_MAPPINGS) {
     requireNonEmptyConfigValue(text, mapping);
@@ -199,6 +199,7 @@ export function validateLarkNotificationRemoteWranglerConfig(configText) {
     customerKey: 'chemistry_k',
     databaseName: 'social-mkt-state-dev',
     notificationFlagsAllFalse: true,
+    notificationFlagSourcePolicy: 'explicit_false_or_runtime_default_false',
     requiredTableMappingsPresent: true,
     d1BindingPresent: true,
     mainQueueBindingPresent: true,
@@ -468,6 +469,17 @@ function requireConfigValue(text, key, expected) {
       { fieldName: key },
     );
   }
+}
+
+function requireConfigFalseOrMissing(text, key) {
+  const pattern = new RegExp(`"${escapeRegExp(key)}"\\s*:\\s*"([^"\\s]+)"`, 'u');
+  const match = pattern.exec(text);
+  if (!match || match[1] === 'false') return;
+  throw operatorError(
+    `Lark notification rollout requires ${key}=false when configured`,
+    'LARK_NOTIFICATION_REMOTE_ROLLOUT_CONFIG_UNSAFE',
+    { fieldName: key, configuredValue: match[1] },
+  );
 }
 
 function requireNonEmptyConfigValue(text, key) {
