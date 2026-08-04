@@ -14,9 +14,6 @@ import {
 import {
   readAccountWorkersDevSubdomain,
 } from './woocommerce-worker-provider-diagnostics-preview-window.mjs';
-import {
-  META_K3_EXACT_RECOVERY_PATH,
-} from '../packages/config/src/meta-k3-exact-recovery-contract.js';
 
 const repositoryRoot = realpathSync.native(process.cwd());
 const branch = 'integration/all-meta-end-to-end-completion-v1';
@@ -63,6 +60,9 @@ if (!execute) {
     confirmation,
     cloudflareLookupMethod: 'GET',
     executionTransport: 'preview_version_upload',
+    dedicatedFinalizer: true,
+    loaderUsed: false,
+    previewUrlAuthority: 'wrangler_version_upload_record',
     queueMessageCount: 0,
     lifecycleSqlRepairCount: 0,
     workerDeploymentCount: 0,
@@ -188,9 +188,6 @@ try {
     bearerToken: auth.token,
   });
   const previewAlias = 'meta-k3-recovery';
-  const recoveryUrl =
-    `https://${previewAlias}-social-mkt-sync-worker.`
-    + `${accountSubdomain}.workers.dev${META_K3_EXACT_RECOVERY_PATH}`;
 
   process.stdout.write(`${JSON.stringify({
     ok: true,
@@ -202,6 +199,9 @@ try {
     workersDevAuthorityResolved: true,
     recoveryEvidencePresent: true,
     executionTransport: 'preview_version_upload',
+    dedicatedFinalizer: true,
+    loaderUsed: false,
+    previewUrlAuthority: 'wrangler_version_upload_record',
     queueMessageCount: 0,
     lifecycleSqlRepairCount: 0,
     workerDeploymentCount: 0,
@@ -226,7 +226,6 @@ try {
         MKT_META_K3_RECOVERY_WRANGLER_CONFIG: configPath,
         MKT_META_K3_PREVIEW_ALIAS: previewAlias,
         MKT_META_K3_PREVIEW_SUBDOMAIN: accountSubdomain,
-        MKT_META_K3_EXACT_RECOVERY_URL: recoveryUrl,
         MKT_META_K3_PRODUCTION_BASELINE_VERSION:
           productionBaselineVersion,
         MKT_META_K3_EXACT_HEAD_CI: 'PASS',
