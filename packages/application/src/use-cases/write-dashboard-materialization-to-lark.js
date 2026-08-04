@@ -76,7 +76,11 @@ export async function writeDashboardMaterializationToLark(input = {}) {
     ...metricInput,
     metrics: payload.collections?.dimension_metrics ?? [],
   });
-  const metricRows = Object.freeze([...summaryMetricRows, ...dimensionMetricRows]);
+  const metricRows = Object.freeze(
+    [...summaryMetricRows, ...dimensionMetricRows].map((metricRow) => {
+      return attachDashboardCompatibilityWindow(metricRow, metricInput.sharedDimensions);
+    }),
+  );
   const topContentRows = payload.capability === 'organic' ? buildReportTopContentRows({
     reportId: row.report_id,
     reportSettingKey: row.report_setting_key,
@@ -210,6 +214,15 @@ function buildMetricSharedDimensions(sharedDimensions) {
     ...sharedDimensions,
     window_days: Number(value),
     ...(compatibility ? { [DASHBOARD_COMPATIBILITY_WINDOW_FIELD]: value } : {}),
+  });
+}
+
+function attachDashboardCompatibilityWindow(metricRow, sharedDimensions) {
+  if (!Object.hasOwn(sharedDimensions, DASHBOARD_COMPATIBILITY_WINDOW_FIELD)) return metricRow;
+  return Object.freeze({
+    ...metricRow,
+    [DASHBOARD_COMPATIBILITY_WINDOW_FIELD]:
+      sharedDimensions[DASHBOARD_COMPATIBILITY_WINDOW_FIELD],
   });
 }
 
