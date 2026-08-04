@@ -159,6 +159,7 @@ async function inspectCanonicalAuthorityState(input = {}) {
   let canonicalOnlyRecordCount = 0;
   let divergenceCount = 0;
   let pendingBackfillCount = 0;
+  let archivedConflictRecordCount = 0;
 
   for (const record of sortedRecords(records)) {
     const recordId = requireText(record.recordId, 'recordId');
@@ -176,25 +177,30 @@ async function inspectCanonicalAuthorityState(input = {}) {
       legacyRowsByFieldId.get(field.fieldId).push([recordId, value]);
       if (value !== null) observedLegacy.push(value);
     }
-    const uniqueLegacy = [...new Set(observedLegacy)];
-    if (uniqueLegacy.length > 1) return blockedInspection(schemaVersion, [safeBlocker(
-      'REPORT_METRIC_FIELD_MIGRATION_RECOVERY_SOURCE_VALUE_CONFLICT',
-      { recordCount: records.length, sourceFieldCount: legacyFields.length },
-    )]);
 
-    const legacyValue = uniqueLegacy[0] ?? null;
     const canonicalValue = readLarkText(
       readFieldValue(record.fields, canonical.field.fieldName),
       { allowNull: true, label: CANONICAL_FIELD_NAME },
     );
-    if (legacyValue !== null) legacyPopulatedCount += 1;
+    const uniqueLegacy = [...new Set(observedLegacy)];
+    if (uniqueLegacy.length > 1 && canonicalValue === null) {
+      return blockedInspection(schemaVersion, [safeBlocker(
+        'REPORT_METRIC_FIELD_MIGRATION_RECOVERY_SOURCE_VALUE_CONFLICT',
+        { recordCount: records.length, sourceFieldCount: legacyFields.length },
+      )]);
+    }
+    if (uniqueLegacy.length > 1) archivedConflictRecordCount += 1;
+
+    const hasLegacyValue = uniqueLegacy.length > 0;
+    const legacyValue = uniqueLegacy.length === 1 ? uniqueLegacy[0] : null;
+    if (hasLegacyValue) legacyPopulatedCount += 1;
     if (canonicalValue !== null) {
       canonicalPopulatedCount += 1;
       canonicalAuthoritativeRecordIds.push(recordId);
     }
-    if (legacyValue === null && canonicalValue !== null) canonicalOnlyRecordCount += 1;
-    if (legacyValue !== null && canonicalValue === null) pendingBackfillCount += 1;
-    if (legacyValue !== null && canonicalValue !== null && legacyValue !== canonicalValue) {
+    if (!hasLegacyValue && canonicalValue !== null) canonicalOnlyRecordCount += 1;
+    if (hasLegacyValue && canonicalValue === null) pendingBackfillCount += 1;
+    if (canonicalValue !== null && uniqueLegacy.some((value) => value !== canonicalValue)) {
       divergenceCount += 1;
     }
     stateRows.push([recordId, canonicalValue, ...legacyFields.map(
@@ -214,6 +220,7 @@ async function inspectCanonicalAuthorityState(input = {}) {
     canonicalOnlyRecordCount,
     divergenceCount,
     pendingBackfillCount,
+    archivedConflictRecordCount,
     stateFingerprint: fingerprint(stateRows),
     legacyFieldFingerprints: Object.freeze(
       [...legacyRowsByFieldId.entries()].map(([fieldId, rows]) => [fieldId, fingerprint(rows)]),
@@ -260,6 +267,7 @@ function assertCanonicalAuthorityState(inspection) {
       {
         recordCount: inspection.recordCount,
         divergenceCount: inspection.divergenceCount,
+        archivedConflictRecordCount: inspection.archivedConflictRecordCount,
         blockerCount: inspection.blockers.length,
         blockers: inspection.blockers,
       },
@@ -286,6 +294,7 @@ function augmentResult(result, inspection) {
     contractVersion: REPORT_METRIC_VALUE_FIELD_MIGRATION_RECOVERY_VERSION,
     canonicalAuthority: 'display_name_text',
     canonicalAuthoritativeDivergenceCount: inspection.divergenceCount,
+    canonicalAuthoritativeArchivedConflictCount: inspection.archivedConflictRecordCount,
     canonicalOnlyRecordCount: inspection.canonicalOnlyRecordCount,
     legacyBackfillRecordCount: inspection.pendingBackfillCount,
     legacyValueMutationCount: 0,
@@ -328,6 +337,7 @@ function blockedInspection(schemaVersion, blockers) {
     canonicalOnlyRecordCount: 0,
     divergenceCount: 0,
     pendingBackfillCount: 0,
+    archivedConflictRecordCount: 0,
     stateFingerprint: null,
     legacyFieldFingerprints: Object.freeze([]),
     blockers: Object.freeze(blockers),
