@@ -1,9 +1,10 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 
 export const REPORT_RUNTIME_FINALIZER_ENVIRONMENT_CONTRACT =
-  'report_runtime_finalizer_environment_v1';
+  'report_runtime_finalizer_environment_v2';
 export const REPORT_RUNTIME_FINALIZER_ENVIRONMENT_FILENAME =
   'report-runtime-finalize-environment.json';
 
@@ -15,6 +16,17 @@ export const REPORT_RUNTIME_FINALIZER_TABLE_ENV_NAMES = Object.freeze([
   'LARK_TABLE_MKT_REPORT_TOP_ADS',
   'LARK_TABLE_MKT_REPORT_TOP_CONTENT',
 ]);
+export const REPORT_RUNTIME_NOTIFICATION_TABLE_ENV_NAMES = Object.freeze([
+  'LARK_TABLE_MKT_AI_REPORT_RUNS',
+  'LARK_TABLE_MKT_REPORT_SNAPSHOTS',
+  'LARK_TABLE_MKT_REPORT_SETTINGS',
+  'LARK_TABLE_MKT_NOTIFICATION_LOG',
+]);
+export const REPORT_RUNTIME_NOTIFICATION_TRUE_FLAGS = Object.freeze([
+  'MKT_NOTIFICATION_LARK_MIRROR_ENABLED',
+  'MKT_NOTIFICATION_LARK_SEND_ENABLED',
+  'MKT_NOTIFICATION_RUNTIME_ENABLED',
+]);
 
 export function buildReportRuntimeFinalizerEnvironment(input = {}) {
   const repositoryHead = requireCommitSha(input.repositoryHead, 'repositoryHead');
@@ -24,12 +36,16 @@ export function buildReportRuntimeFinalizerEnvironment(input = {}) {
   for (const envName of REPORT_RUNTIME_FINALIZER_TABLE_ENV_NAMES) {
     tableEnvironment[envName] = requireTableId(updates[envName], envName);
   }
+  const notificationRuntime = buildNotificationRuntimeEvidence(
+    input.notificationRuntimeAuthority,
+  );
 
   return Object.freeze({
     contractVersion: REPORT_RUNTIME_FINALIZER_ENVIRONMENT_CONTRACT,
     repositoryHead,
     tableEnvironment: Object.freeze(tableEnvironment),
     tableEnvironmentUpdateCount: REPORT_RUNTIME_FINALIZER_TABLE_ENV_NAMES.length,
+    notificationRuntime,
     remoteMutationCount: 0,
   });
 }
@@ -84,15 +100,31 @@ export function loadReportRuntimeFinalizerEnvironment(input = {}) {
   const normalized = buildReportRuntimeFinalizerEnvironment({
     repositoryHead: environment?.repositoryHead,
     environmentUpdates: environment?.tableEnvironment,
+    notificationRuntimeAuthority: restoreNotificationRuntimeAuthority(
+      environment?.notificationRuntime,
+    ),
   });
+  const summaryState = summary?.settings?.notificationRuntimeState;
+  const summaryCount = Number(
+    summary?.settings?.preservedNotificationRuntimeSettingCount ?? -1,
+  );
   if (environment?.contractVersion !== REPORT_RUNTIME_FINALIZER_ENVIRONMENT_CONTRACT
     || normalized.repositoryHead !== summary.repository.head
     || normalized.tableEnvironmentUpdateCount
-      !== Number(environment?.tableEnvironmentUpdateCount)) {
+      !== Number(environment?.tableEnvironmentUpdateCount)
+    || normalized.notificationRuntime.state !== summaryState
+    || normalized.notificationRuntime.settingCount !== summaryCount
+    || summary?.runtime?.notificationAdmissionEnabled !== false) {
     throw environmentError(
       'Report Runtime Finalizer private environment does not match its summary',
       'REPORT_RUNTIME_CLOSEOUT_FINALIZER_ENVIRONMENT_HEAD_MISMATCH',
-      { headMatched: normalized.repositoryHead === summary?.repository?.head },
+      {
+        headMatched: normalized.repositoryHead === summary?.repository?.head,
+        notificationRuntimeStateMatched:
+          normalized.notificationRuntime.state === summaryState,
+        notificationRuntimeSettingCountMatched:
+          normalized.notificationRuntime.settingCount === summaryCount,
+      },
     );
   }
 
@@ -116,10 +148,131 @@ export function loadReportRuntimeFinalizerEnvironment(input = {}) {
   });
 }
 
+function buildNotificationRuntimeEvidence(authority) {
+  if (authority === undefined || authority === null || authority.state === 'inactive') {
+    return Object.freeze({
+      state: 'inactive',
+      mode: 'disabled',
+      trueFlags: Object.freeze([]),
+      tableEnvironment: Object.freeze({}),
+      tableEnvironmentUpdateCount: 0,
+      settingCount: 0,
+      settingKeyFingerprint: null,
+      destinationKeyHash: null,
+    });
+  }
+  const value = requireObject(authority, 'notificationRuntimeAuthority');
+  if (value.state !== 'active') {
+    throw environmentError(
+      'notificationRuntimeAuthority.state must be active or inactive',
+      'REPORT_RUNTIME_FINALIZER_ENVIRONMENT_INVALID',
+    );
+  }
+  const settingKeys = [...new Set(requireArray(
+    value.settingKeys,
+    'notificationRuntimeAuthority.settingKeys',
+  ).map((item) => requireText(item, 'notificationRuntimeAuthority.settingKey')))].sort();
+  if (settingKeys.length !== 4) {
+    throw environmentError(
+      'Active Notification Runtime requires exactly four Setting keys',
+      'REPORT_RUNTIME_FINALIZER_ENVIRONMENT_INVALID',
+      { settingCount: settingKeys.length },
+    );
+  }
+  const workerEnvironment = requireObject(
+    value.workerEnvironment,
+    'notificationRuntimeAuthority.workerEnvironment',
+  );
+  const tableEnvironment = {};
+  for (const envName of REPORT_RUNTIME_NOTIFICATION_TABLE_ENV_NAMES) {
+    tableEnvironment[envName] = requireTableId(workerEnvironment[envName], envName);
+  }
+  return Object.freeze({
+    state: 'active',
+    mode: 'runtime',
+    trueFlags: Object.freeze([...REPORT_RUNTIME_NOTIFICATION_TRUE_FLAGS]),
+    tableEnvironment: Object.freeze(tableEnvironment),
+    tableEnvironmentUpdateCount: REPORT_RUNTIME_NOTIFICATION_TABLE_ENV_NAMES.length,
+    settingCount: settingKeys.length,
+    settingKeyFingerprint: sha256(JSON.stringify(settingKeys)),
+    destinationKeyHash: requireHash(
+      value.destinationKeyHash,
+      'notificationRuntimeAuthority.destinationKeyHash',
+    ),
+  });
+}
+
+function restoreNotificationRuntimeAuthority(value) {
+  const runtime = requireObject(value, 'notificationRuntime');
+  if (runtime.state === 'inactive') {
+    if (runtime.mode !== 'disabled'
+      || Number(runtime.settingCount ?? -1) !== 0
+      || Number(runtime.tableEnvironmentUpdateCount ?? -1) !== 0
+      || !Array.isArray(runtime.trueFlags)
+      || runtime.trueFlags.length !== 0
+      || runtime.settingKeyFingerprint !== null
+      || runtime.destinationKeyHash !== null) {
+      throw environmentError(
+        'Inactive Notification Runtime private evidence is invalid',
+        'REPORT_RUNTIME_FINALIZER_ENVIRONMENT_INVALID',
+      );
+    }
+    return Object.freeze({ state: 'inactive' });
+  }
+  if (runtime.state !== 'active'
+    || runtime.mode !== 'runtime'
+    || Number(runtime.settingCount ?? -1) !== 4
+    || Number(runtime.tableEnvironmentUpdateCount ?? -1)
+      !== REPORT_RUNTIME_NOTIFICATION_TABLE_ENV_NAMES.length
+    || JSON.stringify(runtime.trueFlags)
+      !== JSON.stringify(REPORT_RUNTIME_NOTIFICATION_TRUE_FLAGS)
+    || !/^[0-9a-f]{64}$/u.test(String(runtime.settingKeyFingerprint ?? ''))) {
+    throw environmentError(
+      'Active Notification Runtime private evidence is invalid',
+      'REPORT_RUNTIME_FINALIZER_ENVIRONMENT_INVALID',
+    );
+  }
+  const tableEnvironment = requireObject(
+    runtime.tableEnvironment,
+    'notificationRuntime.tableEnvironment',
+  );
+  const workerEnvironment = Object.fromEntries(
+    REPORT_RUNTIME_NOTIFICATION_TABLE_ENV_NAMES.map((envName) => [
+      envName,
+      requireTableId(tableEnvironment[envName], envName),
+    ]),
+  );
+  return Object.freeze({
+    state: 'active',
+    settingKeys: Object.freeze([
+      `fingerprint:${requireHash(runtime.settingKeyFingerprint, 'settingKeyFingerprint')}:1`,
+      `fingerprint:${runtime.settingKeyFingerprint}:2`,
+      `fingerprint:${runtime.settingKeyFingerprint}:3`,
+      `fingerprint:${runtime.settingKeyFingerprint}:4`,
+    ]),
+    workerEnvironment: Object.freeze(workerEnvironment),
+    destinationKeyHash: requireHash(
+      runtime.destinationKeyHash,
+      'notificationRuntime.destinationKeyHash',
+    ),
+  });
+}
+
 function requireObject(value, field) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw environmentError(
       `${field} must be an object`,
+      'REPORT_RUNTIME_FINALIZER_ENVIRONMENT_INVALID',
+      { field },
+    );
+  }
+  return value;
+}
+
+function requireArray(value, field) {
+  if (!Array.isArray(value)) {
+    throw environmentError(
+      `${field} must be an array`,
       'REPORT_RUNTIME_FINALIZER_ENVIRONMENT_INVALID',
       { field },
     );
@@ -136,6 +289,18 @@ function requireText(value, field) {
     );
   }
   return value.trim();
+}
+
+function requireHash(value, field) {
+  const text = requireText(value, field).toLowerCase();
+  if (!/^[0-9a-f]{64}$/u.test(text)) {
+    throw environmentError(
+      `${field} must be SHA-256 hex`,
+      'REPORT_RUNTIME_FINALIZER_ENVIRONMENT_INVALID',
+      { field },
+    );
+  }
+  return text;
 }
 
 function requireTableId(value, field) {
@@ -160,6 +325,10 @@ function requireCommitSha(value, field) {
     );
   }
   return text;
+}
+
+function sha256(value) {
+  return createHash('sha256').update(value).digest('hex');
 }
 
 function environmentError(message, code, details = {}) {
