@@ -47,7 +47,7 @@ function exactState() {
   return {
     tables: [{ tableId: TABLE_ID, name: 'MKT_Report_Metric_Values' }],
     fields: [
-      exactField(identities.metricKey, true),
+      exactField(identities.metricKey),
       exactField(identities.displayName),
       exactField(identities.numberWindow, false, { formatter: '0' }),
       exactField(identities.preservedWindowSelect, false, {
@@ -174,6 +174,24 @@ test('Dashboard Compatibility Freeze blocks stale physical Field identity', asyn
     compatibility.blockers[0].code,
     'REPORT_METRIC_COMPATIBILITY_FREEZE_FIELD_IDENTITY_MISMATCH',
   );
+});
+
+test('Dashboard Compatibility Freeze blocks metric_key promoted to Primary', async () => {
+  const state = exactState();
+  state.fields.find((field) => field.fieldName === 'metric_key').isPrimary = true;
+  const compatibility = await inspectLarkDashboardCompatibilityFreeze({
+    client: statefulClient(state),
+    env: ENV,
+  });
+  assert.equal(compatibility.compatible, false);
+  assert.equal(compatibility.blockers.length, 1);
+  assert.equal(
+    compatibility.blockers[0].code,
+    'REPORT_METRIC_COMPATIBILITY_FREEZE_FIELD_IDENTITY_MISMATCH',
+  );
+  assert.equal(compatibility.blockers[0].identityKey, 'metricKey');
+  assert.equal(compatibility.blockers[0].expectedPrimary, false);
+  assert.equal(compatibility.blockers[0].actualPrimary, true);
 });
 
 test('Dashboard Compatibility Freeze blocks missing canonical display even with one archive', async () => {
