@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -10,7 +10,6 @@ import {
 } from '../../scripts/lib/report-runtime-closeout-operator.js';
 import {
   REPORT_RUNTIME_NOTIFICATION_TRUE_FLAGS,
-  REPORT_RUNTIME_NOTIFICATION_TABLE_ENV_NAMES,
   REPORT_RUNTIME_FINALIZER_TABLE_ENV_NAMES,
   writeReportRuntimeFinalizerEnvironment,
 } from '../../scripts/lib/report-runtime-finalizer-environment.js';
@@ -72,25 +71,32 @@ function reportMappings() {
   ));
 }
 
-function activeAuthority() {
+function activeAuthority(overrides = {}) {
+  const report = reportMappings();
   return {
     state: 'active',
     settingKeys: [1, 3, 7, 30].map(
       (days) => `integration_workspace:facebook:rolling:${days}d`,
     ),
     destinationKeyHash: 'b'.repeat(64),
-    workerEnvironment: Object.fromEntries(
-      REPORT_RUNTIME_NOTIFICATION_TABLE_ENV_NAMES.map(
-        (envName, index) => [envName, `tbl-notification-${index + 1}`],
-      ),
-    ),
+    workerEnvironment: {
+      LARK_TABLE_MKT_AI_REPORT_RUNS: 'tbl-notification-ai-runs',
+      LARK_TABLE_MKT_REPORT_SNAPSHOTS:
+        report.LARK_TABLE_MKT_REPORT_SNAPSHOTS,
+      LARK_TABLE_MKT_REPORT_SETTINGS:
+        report.LARK_TABLE_MKT_REPORT_SETTINGS,
+      LARK_TABLE_MKT_NOTIFICATION_LOG: 'tbl-notification-log',
+      ...(overrides.workerEnvironment ?? {}),
+    },
   };
 }
 
-async function finalizerEvidence(state = 'active') {
+async function finalizerEvidence(state = 'active', authorityOverride = null) {
   const root = await mkdtemp(join(tmpdir(), 'report-notification-window-'));
   const summaryPath = join(root, 'report-runtime-finalize-summary.json');
-  const authority = state === 'active' ? activeAuthority() : { state: 'inactive' };
+  const authority = state === 'active'
+    ? authorityOverride ?? activeAuthority()
+    : { state: 'inactive' };
   await writeReportRuntimeFinalizerEnvironment({
     evidenceRoot: root,
     repositoryHead: HEAD,
@@ -176,6 +182,23 @@ test('inactive Finalizer retains the prior all-false baseline', async () => {
   assert.equal(window.notificationRuntime.state, 'inactive');
 });
 
+test('shared Report and Notification table drift fails before generated config use', async () => {
+  const authority = activeAuthority({
+    workerEnvironment: {
+      LARK_TABLE_MKT_REPORT_SNAPSHOTS: 'tbl-wrong-snapshots',
+    },
+  });
+  const finalizerEvidencePath = await finalizerEvidence('active', authority);
+  assert.throws(
+    () => buildNotificationPreservingReportRuntimeConfigWindow(config(), {
+      activeTrueFlags: REPORT_RUNTIME_CLOSEOUT_ACTIVE_TRUE_FLAGS,
+      finalizerEvidencePath,
+      expectedRepositoryHead: HEAD,
+    }),
+    (error) => error.code === 'REPORT_RUNTIME_NOTIFICATION_SHARED_TABLE_MISMATCH',
+  );
+});
+
 test('Head drift or Notification Admission summary drift fails closed', async () => {
   const finalizerEvidencePath = await finalizerEvidence('active');
   assert.throws(
@@ -186,10 +209,7 @@ test('Head drift or Notification Admission summary drift fails closed', async ()
     }),
     (error) => error.code === 'REPORT_RUNTIME_CLOSEOUT_FINALIZER_ENVIRONMENT_HEAD_MISMATCH',
   );
-  const summary = JSON.parse(await (await import('node:fs/promises')).readFile(
-    finalizerEvidencePath,
-    'utf8',
-  ));
+  const summary = JSON.parse(await readFile(finalizerEvidencePath, 'utf8'));
   summary.runtime.notificationAdmissionEnabled = true;
   await writeFile(finalizerEvidencePath, `${JSON.stringify(summary)}\n`, { mode: 0o600 });
   assert.throws(
