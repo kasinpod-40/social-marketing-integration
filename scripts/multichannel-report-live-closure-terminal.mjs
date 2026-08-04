@@ -13,7 +13,6 @@ import {
 import { REPORT_RUNTIME_CLOSEOUT_CONFIRMATION } from './lib/report-runtime-closeout-operator.js';
 import {
   REPORT_RUNTIME_REVIEWED_CHANNELS,
-  resolveReviewedReportRuntimeCloseoutTarget,
 } from './lib/report-runtime-closeout-channel-binding.js';
 import { createReportLiveClosurePlanAdapters } from './lib/multichannel-report-live-closure-adapters.js';
 
@@ -65,11 +64,13 @@ export async function buildReadyChannelPlan(input = {}) {
   const descriptor = getReportLiveClosureDescriptor(args.platformScope, args.capability);
   const reviewedReadiness = input.reviewedReadiness ?? null;
   const target = reviewedReadiness
-    ? resolveExactTarget(input, reviewedReadiness, descriptor)
+    ? resolveExactTarget(reviewedReadiness, descriptor)
     : Object.freeze({
       customerKey: 'chemistry_k',
       customerProfile: 'integration_workspace',
       accountKey: 'chemistry_k',
+      accountId: 'chemistry_k',
+      platformScope: args.platformScope,
     });
   let framework = null;
 
@@ -230,16 +231,22 @@ function parseOperatorJson(value) {
   );
 }
 
-function resolveExactTarget(input, readiness, descriptor) {
+function resolveExactTarget(readiness, descriptor) {
   const evidenceTarget = readiness.evidence?.target ?? {};
+  const accountKey = requireExact(evidenceTarget.accountKey, 'chemistry_k', 'accountKey');
   return Object.freeze({
-    customerKey: requireExact(evidenceTarget.accountKey, 'chemistry_k', 'accountKey'),
+    customerKey: accountKey,
     customerProfile: requireExact(
       evidenceTarget.customerProfile,
       'integration_workspace',
       'customerProfile',
     ),
-    accountKey: requireExact(evidenceTarget.accountKey, 'chemistry_k', 'accountKey'),
+    accountKey,
+    accountId: requireExact(
+      evidenceTarget.accountId ?? evidenceTarget.accountKey,
+      accountKey,
+      'accountId',
+    ),
     platformScope: requireExact(
       evidenceTarget.platformScope,
       descriptor.platform,
