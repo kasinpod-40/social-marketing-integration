@@ -3,19 +3,28 @@
 ## Status
 
 ```text
-TASK_STATUS                         = PR_READY_FOR_FINAL_EXACT_HEAD_CI
+TASK_STATUS                         = RUNTIME_ACTIVE_CLOSED_PASS
 CURRENT_PROGRAM                     = LARK_NOTIFICATION_RUNTIME_ACTIVATION_V1
-BRANCH                              = feat/lark-notification-runtime-activation-v1
-BASE_MAIN_SHA                       = dd9c1f33be877e77b6e76c8b537ab916dc6a0b50
+BRANCH                              = main
+ACTIVATION_MAIN_SHA                 = 5833c558d70efcfca08d476a30449b72d8555213
+ACTIVE_WORKER_VERSION               = 958e183e-fb0d-4795-a547-d805111ca6fc
 CONTROLLED_UAT                      = CLOSED_PASS
+RUNTIME_ACTIVATION                  = CLOSED_PASS
+RUNTIME_ENABLED                     = true
+SEND_ENABLED                        = true
+MIRROR_ENABLED                      = true
+RUNTIME_MODE                        = runtime
+WORKER_TRAFFIC_PERCENTAGE           = 100
+ACTIVATED_REPORT_SETTING_COUNT      = 4
 RETAINED_MESSAGE_COUNT              = 1
+ADDITIONAL_DELIVERY_ROW_COUNT       = 0
 ADDITIONAL_MESSAGE_SEND_COUNT       = 0
-RUNTIME_ACTIVATION_APPROVED         = true
 QUEUE_ADMISSION_APPROVED            = false
 AUTOMATION_ACTIVATION_APPROVED      = false
 SCHEDULE_ACTIVATION_APPROVED        = false
 WEBHOOK_ACTIVATION_APPROVED         = false
 PRODUCTION                          = BLOCKED
+NEXT_GATE                           = NOTIFICATION_ADMISSION_REQUIRES_SEPARATE_APPROVAL
 ```
 
 Full contract:
@@ -33,19 +42,18 @@ Settings สำหรับ Executive `1D/3D/7D/30D`.
 Activation นี้ต้องไม่ส่ง Queue job, ไม่ส่งข้อความใหม่, ไม่เพิ่ม Notification delivery row, ไม่เปิด
 Lark Automation, Cron/Schedule admission, Webhook หรือ Production.
 
-## In scope
+## Closed scope
 
-- แยก Runtime mode ออกจาก Controlled UAT mode;
-- รับเฉพาะ `lark_notification_runtime` trigger สำหรับ non-UAT AI identity;
-- ปฏิเสธ `notification-uat:*` เมื่อ Worker อยู่ใน Runtime mode;
-- deploy Notification-only Worker flags ที่ 100% traffic;
-- เปิด `ai_enabled` และ `notification_enabled` เฉพาะ Report Settings ที่อยู่ใน exact Executive
-  source chain ของ `1D/3D/7D/30D`;
-- ตรวจ retained D1 `sent/mirrored` และ Lark Notification Log ก่อน/หลัง Activation;
-- พิสูจน์ Queue admission = 0 และ additional message send = 0;
-- มี exact rollback ที่ deploy Safe Worker และคืน exact Report Settings false.
+- แยก Runtime mode ออกจาก Controlled UAT modeสำเร็จ;
+- Runtime รับเฉพาะ `lark_notification_runtime` สำหรับ non-UAT AI identity;
+- Runtime ปฏิเสธ `notification-uat:*`;
+- deploy Notification Runtime Worker ที่ traffic 100%;
+- เปิด `ai_enabled` และ `notification_enabled` เฉพาะ Report Settings ของ Executive `1D/3D/7D/30D` จำนวน 4 รายการ;
+- retained D1 delivery และ Lark Notification Log คงเดิม;
+- Queue admission = 0 และ additional message send = 0;
+- exact rollback ยังคงพร้อมใช้งาน.
 
-## Out of scope
+## Still out of scope
 
 - Notification discovery/dispatcher/producer;
 - Queue admission;
@@ -69,56 +77,25 @@ scripts/meta-history-2026-exact-plan-continuation-terminal.mjs
 This Notification Runtime task does not invoke, replace or authorize that Meta Terminal, Provider replay,
 D1 Queue resend, Lark mutation or Production action.
 
-## Contract
+## Runtime contract now active
 
 1. Runtime ใช้ `MKT_ENV=development`, `MKT_CUSTOMER_PROFILE=integration_workspace`,
    `MKT_CONNECTION_CUSTOMER_KEY=chemistry_k`.
-2. Worker mode ต้องเป็น `runtime`; `controlled_uat` และ `runtime` identities ห้ามข้ามกัน.
-3. ทุก execution flag อื่นต้องถูก materialize เป็น false.
-4. Wrangler triggers ต้องคงเดิม byte-equivalent ใน active/safe generated config.
-5. Source `scheduled-jobs.js` ต้องยังไม่มี `LARK_NOTIFICATION_SEND`.
-6. D1 ต้องมี applied notification schema, active lock = 0 และทุก delivery เป็น `sent/mirrored`.
-7. Controlled UAT retained row ต้องมี exactly one D1 row, one Lark Log row และ AI Run marked sent.
-8. Activation mutation อนุญาตเฉพาะ one Worker deploy และ exact Report Settings updates.
-9. Observation หลัง Activation ต้องเห็น delivery/log/message count ไม่เปลี่ยน.
-10. Failure หลัง mutation ใดต้อง restore Settings false และ Safe Worker.
+2. Worker mode เป็น `runtime`; `controlled_uat` และ `runtime` identities ห้ามข้ามกัน.
+3. ทุก execution flag อื่นคง false.
+4. Wrangler triggers คงเดิม.
+5. Source `scheduled-jobs.js` ยังไม่มี `LARK_NOTIFICATION_SEND`.
+6. Retained D1 delivery คง `sent/mirrored`; active lock เป็นศูนย์ ณ activation verification.
+7. Controlled UAT retained row คง exactly one D1 row, one Lark Log row และ AI Run marked sent.
+8. Runtime activation ทำ one Worker deploy และ exact Report Settings updates เท่านั้น.
+9. Observation หลัง Activation ยืนยัน delivery/log/message count ไม่เปลี่ยน.
+10. Rollback ยังคง deploy Safe Worker และคืน exact Report Settings false ได้.
 11. Production คง `BLOCKED`.
 
-## Required verification
+## Repository verification
 
-```bash
-npm ci
-npm run check
-node --test \
-  tests/application/job-catalog.test.js \
-  tests/application/lark-notification-active-job-router.test.js \
-  tests/application/lark-notification-runtime-activation.test.js \
-  tests/application/lark-notification-runtime-activation-exact-terminal.test.js \
-  tests/config/lark-notification-runtime-config.test.js
-npm test
-npm run test:report-reliability
-npm audit --audit-level=high
-npm run deploy:dry-run
-git diff --check
-```
-
-## Implementation result
-
-Repository implementation is complete on PR `#497`.
-
-Implemented:
-
-- explicit notification modes `disabled`, `controlled_uat`, and `runtime`;
-- fail-closed UAT/runtime trigger and AI identity separation;
-- reviewed `lark_notification_runtime` Job trigger while retaining `manualOnly` admission;
-- exact Executive `1D/3D/7D/30D` Settings authority and destination validation;
-- one exact activation Terminal with bounded zero-admission observation;
-- automatic failure restoration and separately confirmed manual rollback;
-- focused Runtime configuration, Router, Job catalog, activation and Terminal safety regressions;
-- current task, task contract and Project Brain authority documentation.
-
-Branch Verification `#2188` passed on implementation Head
-`2980993712958fcc8e03f5fa2cb7cce4ec1bf7a3`:
+PR `#497` merged to main SHA `5833c558d70efcfca08d476a30449b72d8555213` after Branch Verification `#2189` passed on exact Head
+`641b47ad01a50afe6a893703cf816cc85c7eb9d1`:
 
 ```text
 Syntax / architecture / hygiene    PASS
@@ -132,22 +109,36 @@ Dependency audit                   PASS
 Wrangler dry-run                   PASS
 ```
 
-The earlier Full Unit failure was a Test-authority mismatch only: the exact activation confirmation literals
-belong to the shared activation contract, not the Terminal wrapper. The regression now validates the shared
-authority without duplicating constants.
+## Live activation result
 
-Remote actions from this implementation branch remain:
+The exact post-merge activation Terminal completed successfully:
 
 ```text
-Worker deployment                  0
-Remote Lark Record write           0
-Remote D1 write                    0
-Queue admission                    0
-Notification send                 0
-Lark Automation activation         0
-Schedule/Cron activation           0
-Webhook activation                 0
-Production action                  0
+contract_version                    lark_notification_runtime_activation_v1
+phase                               active
+repository_head                     5833c558d70efcfca08d476a30449b72d8555213
+active_worker_version               958e183e-fb0d-4795-a547-d805111ca6fc
+traffic_percentage                  100
+runtime_enabled                     true
+send_enabled                        true
+mirror_enabled                      true
+runtime_mode                        runtime
+activated_report_setting_count      4
+delivery_rows                       1
+retained_notification_messages      1
+additional_delivery_rows            0
+additional_message_sends            0
+notification_log_rows               1
+controlled_uat_sent_stable          true
+queue_admission_count               0
+notification_producer_enabled       false
+notification_flags_active           true
+report_settings_active              true
+rollback_available                  true
+automation_activation_count         0
+schedule_activation_count           0
+production                          BLOCKED
 ```
 
-Live activation remains a single post-merge exact-main Terminal action.
+Runtime Activation is closed as `PASS`. Do not rerun the activation, Controlled UAT or Mirror Recovery
+commands. The next permitted workstream is Notification Admission, and it requires separate explicit approval.
