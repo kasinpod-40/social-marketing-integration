@@ -37,17 +37,22 @@ export function validateReusableReportFinalizerEvidence(value = {}, expectedHead
     repositoryHead: head,
     schemaVersion: value.schema?.version ?? null,
     canonicalSettingsActive: Number(value.settings?.canonicalActive ?? 0),
+    notificationRuntimeState: value.settings?.notificationRuntimeState ?? null,
+    preservedNotificationRuntimeSettingCount: Number(
+      value.settings?.preservedNotificationRuntimeSettingCount ?? 0,
+    ),
   });
 }
 
 /**
  * ตรวจ Summary ของ Window ที่จบแล้วก่อนข้ามการ Deploy/Queue ซ้ำ.
- * Summary ต้องพิสูจน์ D1 row เดียว, replay เดิม และ all-false restore แล้วเท่านั้น.
+ * Summary ต้องพิสูจน์ D1 row เดียว, replay เดิม และคืน Worker baseline เดิมแล้วเท่านั้น.
  */
 export function summarizeReusableReportWindow(value = {}, expected = {}) {
   const operation = requireOperation(expected.operation);
   const windowDays = requireWindowDays(expected.windowDays);
   const decision = DECISIONS[operation];
+  const baseline = readRestoredBaseline(value.runtime ?? {});
   if (value.ok !== true
     || value.decision !== decision
     || value.target?.operation !== operation
@@ -58,7 +63,7 @@ export function summarizeReusableReportWindow(value = {}, expected = {}) {
     || value.replay?.samePayloadChecksum !== true
     || value.replay?.larkRowsUnchanged !== true
     || value.replay?.integrityUnchanged !== true
-    || value.runtime?.restoredAllFalse !== true
+    || baseline.valid !== true
     || value.runtime?.connectorFlagsEnabled !== false
     || value.runtime?.aiSummaryEnabled !== false
     || value.runtime?.dailyScheduleEnabled !== false
@@ -71,7 +76,8 @@ export function summarizeReusableReportWindow(value = {}, expected = {}) {
         operation,
         windowDays,
         decision: value.decision ?? null,
-        restoredAllFalse: value.runtime?.restoredAllFalse === true,
+        restoredBaseline: baseline.valid,
+        notificationRuntimeState: baseline.state,
       },
     );
   }
@@ -83,7 +89,10 @@ export function summarizeReusableReportWindow(value = {}, expected = {}) {
     reportId: value.target?.reportId ?? null,
     dataStatus: value.materialization?.dataStatus ?? null,
     integrity: value.materialization?.integrity ?? null,
-    restoredAllFalse: true,
+    restoredBaseline: true,
+    restoredAllFalse: baseline.state === 'inactive',
+    notificationRuntimeState: baseline.state,
+    baselineTrueFlagCount: baseline.trueFlagCount,
     finalWorkerVersion: value.runtime?.finalWorkerVersion ?? null,
     reused: true,
   });
@@ -112,6 +121,26 @@ export function assertReportWindowDirectorySafeToStart(entries = [], expected = 
     );
   }
   return true;
+}
+
+function readRestoredBaseline(runtime) {
+  const legacyInactive = runtime.restoredAllFalse === true
+    && runtime.restoredBaseline !== false;
+  const restored = runtime.restoredBaseline === true || legacyInactive;
+  const state = runtime.notificationRuntimeState
+    ?? (legacyInactive ? 'inactive' : null);
+  const trueFlagCount = runtime.baselineTrueFlagCount === undefined
+    ? (state === 'inactive' ? 0 : Number.NaN)
+    : Number(runtime.baselineTrueFlagCount);
+  const expectedCount = state === 'active' ? 3 : state === 'inactive' ? 0 : -1;
+  return Object.freeze({
+    valid: restored
+      && expectedCount >= 0
+      && Number.isSafeInteger(trueFlagCount)
+      && trueFlagCount === expectedCount,
+    state,
+    trueFlagCount: Number.isSafeInteger(trueFlagCount) ? trueFlagCount : null,
+  });
 }
 
 function requireOperation(value) {
