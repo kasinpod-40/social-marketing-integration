@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   LARK_NATIVE_AI_AUTOMATION_OUTPUT_BINDING,
+  LARK_NATIVE_AI_AUTOMATION_PROMPTS,
+  LARK_NATIVE_AI_AUTOMATION_PROMPT_REFERENCE_SLOTS,
+  LARK_NATIVE_AI_AUTOMATION_PROMPT_VERSION,
   LARK_NATIVE_AI_CUSTOM_FIELD_AUTHORITY,
   LARK_NATIVE_AI_DISABLED_CONFIGURATION_PERMISSION_BUNDLE,
   LARK_NATIVE_AI_DISABLED_CONFIGURATION_WORKFLOWS,
@@ -48,29 +51,30 @@ function fixture() {
   };
 }
 
-test('builds exact repository-only Automation AI binding and payload preview', async () => {
+test('builds prompt-captured repository-only preview with one remaining blocker', async () => {
   const preview = await buildLarkNativeAiDisabledConfigurationPreview(fixture());
   assert.equal(preview.ok, true);
   assert.equal(
     preview.status,
-    'repository_preview_automation_ai_binding_verified_live_configuration_blocked',
+    'repository_preview_prompts_captured_live_configuration_blocked',
   );
+  assert.equal(preview.contractVersion, 'lark_native_ai_disabled_configuration_preview_v4');
   assert.equal(preview.mode, 'repository_only');
   assert.equal(preview.liveConfigurationAuthorized, false);
   assert.equal(preview.activationAuthorized, false);
   assert.equal(preview.workflows.length, 2);
-  assert.equal(preview.customAiFieldAuthority.fieldCount, 4);
-  assert.equal(preview.customAiFieldAuthority.usage, 'target_fields_and_prompt_reference');
-  assert.equal(preview.automationAiOutputBinding.exactCapabilityVerified, true);
-  assert.equal(
-    preview.automationAiOutputBinding.resultBinding,
-    'ai_action_output_to_update_record_field',
-  );
-  assert.equal(preview.automationAiOutputBinding.finalActionCount, 4);
+  assert.equal(preview.customAiFieldAuthority.promptCaptureComplete, true);
+  assert.equal(preview.automationAiOutputBinding.promptCaptureComplete, true);
+  assert.equal(preview.automationPromptVersion, LARK_NATIVE_AI_AUTOMATION_PROMPT_VERSION);
+  assert.deepEqual(Object.keys(preview.automationPrompts), [
+    'insight_summary',
+    'strengths',
+    'weaknesses',
+    'recommendations',
+  ]);
   assert.match(preview.notificationPayloadChecksum, /^[a-f0-9]{64}$/u);
-  assert.equal(preview.blockerCount, 2);
+  assert.equal(preview.blockerCount, 1);
   assert.deepEqual(preview.blockers.map(({ code }) => code), [
-    'LARK_NATIVE_AI_PROMPT_CAPTURE_INCOMPLETE',
     'LARK_NATIVE_PAYLOAD_SHA256_UNPROVEN',
   ]);
   assert.equal(preview.advisoryCount, 1);
@@ -86,8 +90,44 @@ test('builds exact repository-only Automation AI binding and payload preview', a
   assert.equal(preview.safety.production, 'BLOCKED');
 });
 
+test('captures four approved Thai prompts with exact shared reference slots', () => {
+  assert.equal(LARK_NATIVE_AI_AUTOMATION_PROMPT_VERSION, 'lark_native_ai_automation_prompts_v1');
+  assert.deepEqual(LARK_NATIVE_AI_AUTOMATION_PROMPT_REFERENCE_SLOTS, [
+    'scope_type',
+    'channel_key',
+    'window_days',
+    'data_status',
+    'readiness_status',
+    'readiness_message',
+    'severity',
+    'metric_summary_json',
+    'executive_channel_statuses',
+  ]);
+  assert.deepEqual(Object.keys(LARK_NATIVE_AI_AUTOMATION_PROMPTS), [
+    'insight_summary',
+    'strengths',
+    'weaknesses',
+    'recommendations',
+  ]);
+  for (const [fieldName, prompt] of Object.entries(LARK_NATIVE_AI_AUTOMATION_PROMPTS)) {
+    assert.equal(prompt.fieldName, fieldName);
+    assert.equal(prompt.language, 'th');
+    assert.equal(prompt.source, 'user_approved_prompt_capture_2026-08-04');
+    assert.deepEqual(prompt.referenceSlots, LARK_NATIVE_AI_AUTOMATION_PROMPT_REFERENCE_SLOTS);
+    assert.match(prompt.text, /Social MKT Data Hub/u);
+    assert.match(prompt.text, /ห้ามสร้างหรือคาดเดาตัวเลข/u);
+    assert.match(prompt.text, /\{\{metric_summary_json\}\}/u);
+    assert.match(prompt.text, /\{\{executive_channel_statuses\}\}/u);
+  }
+  assert.match(LARK_NATIVE_AI_AUTOMATION_PROMPTS.insight_summary.text, /2–4 ประโยค/u);
+  assert.match(LARK_NATIVE_AI_AUTOMATION_PROMPTS.strengths.text, /1–3 ข้อ/u);
+  assert.match(LARK_NATIVE_AI_AUTOMATION_PROMPTS.weaknesses.text, /report_missing/u);
+  assert.match(LARK_NATIVE_AI_AUTOMATION_PROMPTS.recommendations.text, /ตรวจ Coverage/u);
+});
+
 test('locks Custom AI target fields and verified Automation result binding', () => {
   assert.equal(LARK_NATIVE_AI_CUSTOM_FIELD_AUTHORITY.fieldCount, 4);
+  assert.equal(LARK_NATIVE_AI_CUSTOM_FIELD_AUTHORITY.promptCaptureComplete, true);
   assert.equal(
     LARK_NATIVE_AI_CUSTOM_FIELD_AUTHORITY.automaticGenerationPolicy,
     'not_required_by_selected_automation_path',
@@ -96,14 +136,14 @@ test('locks Custom AI target fields and verified Automation result binding', () 
   assert.equal(LARK_NATIVE_AI_AUTOMATION_OUTPUT_BINDING.targetAction, 'Update record');
   assert.equal(LARK_NATIVE_AI_AUTOMATION_OUTPUT_BINDING.targetTable, '🧠 MKT_AI_Report_Runs');
   assert.equal(LARK_NATIVE_AI_AUTOMATION_OUTPUT_BINDING.verifiedTargetField, 'insight_summary');
-  assert.equal(LARK_NATIVE_AI_AUTOMATION_OUTPUT_BINDING.promptCaptureComplete, false);
+  assert.equal(LARK_NATIVE_AI_AUTOMATION_OUTPUT_BINDING.promptCaptureComplete, true);
 });
 
-test('AI materialization Workflow uses four text actions then one state update', () => {
+test('AI materialization Workflow binds one approved prompt to each text action', () => {
   const ai = LARK_NATIVE_AI_DISABLED_CONFIGURATION_WORKFLOWS[0];
   assert.equal(ai.finalTrigger.table, '🧠 MKT_AI_Report_Runs');
   assert.equal(ai.generationAuthority.type, 'lark_automation_ai_generated_text_actions');
-  assert.equal(ai.generationAuthority.bindingStatus, 'verified_action_output_to_record_field');
+  assert.equal(ai.generationAuthority.promptCaptureComplete, true);
   assert.deepEqual(ai.actions.map(({ type }) => type), [
     'lark_ai_generated_text',
     'lark_ai_generated_text',
@@ -117,8 +157,11 @@ test('AI materialization Workflow uses four text actions then one state update',
     'weaknesses',
     'recommendations',
   ]);
+  for (const { config } of ai.actions.slice(0, 4)) {
+    assert.equal(config.promptStatus, 'captured_approved');
+    assert.equal(config.prompt, LARK_NATIVE_AI_AUTOMATION_PROMPTS[config.outputField].text);
+  }
   assert.equal(ai.actions.some(({ type }) => type === 'send_lark_message'), false);
-  assert.equal(ai.actions.some(({ type }) => type === 'add_notification_log_record'), false);
   assert.equal(ai.actions.some(({ type }) => type === 'enable_automation'), false);
 });
 
