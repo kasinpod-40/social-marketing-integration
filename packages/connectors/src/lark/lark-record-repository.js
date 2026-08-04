@@ -2,6 +2,10 @@ import {
   normalizeExistingRecordsForComparison,
   serializeRowsForLark,
 } from './lark-field-serializer.js';
+import { readLarkText } from '../shared/lark-cell-value.js';
+
+const LARK_TEXT_FIELD_TYPE = 1;
+const LARK_TEXT_WRAPPER_KEYS = Object.freeze(['text', 'name', 'value', 'option', 'label']);
 
 /**
  * Repository Adapter สำหรับ Lark Base
@@ -83,7 +87,8 @@ export class LarkRecordRepository {
   async prepareRows(tableId, rows, context = {}) {
     const normalizedTableId = requireText(tableId, 'tableId');
     const fields = await this.getTableFields(normalizedTableId);
-    return serializeRowsForLark(requireArray(rows, 'rows'), fields, {
+    const normalizedRows = normalizeLarkTextReadbackRows(requireArray(rows, 'rows'), fields);
+    return serializeRowsForLark(normalizedRows, fields, {
       tableId: normalizedTableId,
       keyField: context?.keyField,
     });
@@ -136,6 +141,56 @@ export class LarkRecordRepository {
     }
     return this.schemaCache.get(normalizedTableId);
   }
+}
+
+/**
+ * ค่า Text ที่อ่านกลับจาก Lark อาจเป็น Rich-text array/object ขณะที่ payload ฝั่งเขียนต้องเป็น String.
+ * Normalize เฉพาะ wrapper ที่พิสูจน์ได้ว่าเป็น Lark readback shape และปล่อย object อื่นให้ serializer
+ * ปฏิเสธตาม contract เดิม เพื่อไม่แปลง Business JSON object เป็นข้อความหรือค่าว่างโดยเงียบ ๆ.
+ */
+function normalizeLarkTextReadbackRows(rows, fields) {
+  const textFieldNames = new Set(requireArray(fields, 'fields')
+    .filter((field) => Number(field?.type) === LARK_TEXT_FIELD_TYPE)
+    .map((field) => requireText(
+      field?.fieldName ?? field?.field_name ?? field?.name,
+      'field name',
+    )));
+
+  return rows.map((row) => {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) return row;
+    let normalized = null;
+    for (const fieldName of textFieldNames) {
+      const value = row[fieldName];
+      if (!isLarkTextReadbackValue(value)) continue;
+      normalized ??= { ...row };
+      normalized[fieldName] = readLarkText(value, {
+        allowNull: true,
+        label: fieldName,
+      });
+    }
+    return normalized ?? row;
+  });
+}
+
+function isLarkTextReadbackValue(value) {
+  if (Array.isArray(value)) {
+    return value.every((item) => (
+      item === null
+      || item === undefined
+      || ['string', 'number', 'boolean'].includes(typeof item)
+      || isLarkTextWrapperObject(item)
+    ));
+  }
+  return isLarkTextWrapperObject(value);
+}
+
+function isLarkTextWrapperObject(value) {
+  return Boolean(
+    value
+    && typeof value === 'object'
+    && !Array.isArray(value)
+    && LARK_TEXT_WRAPPER_KEYS.some((key) => Object.hasOwn(value, key)),
+  );
 }
 
 /** ตรวจว่า Client มี Method ที่ Repository ใช้ครบ */
