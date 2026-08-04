@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   LARK_EXECUTIVE_DESTINATION_KEY_HASH,
+  LARK_NOTIFICATION_RUNTIME_MODES,
   readLarkNotificationRuntimeConfig,
 } from '../../packages/config/src/lark-notification-runtime-config.js';
 
@@ -12,6 +13,7 @@ test('all notification runtime gates are false by default', () => {
     sendEnabled: false,
     mirrorEnabled: false,
   });
+  assert.equal(config.mode, LARK_NOTIFICATION_RUNTIME_MODES.DISABLED);
   assert.equal(config.tables, null);
   assert.equal(config.destinationKeyHash, LARK_EXECUTIVE_DESTINATION_KEY_HASH);
   assert.equal(config.safety.scheduleEnabled, false);
@@ -27,7 +29,19 @@ test('send and mirror cannot enable without the D1 runtime gate', () => {
   }
 });
 
-test('enabled runtime requires exact existing Lark tables and keeps send separate', () => {
+test('disabled runtime rejects an active runtime mode', () => {
+  assert.throws(
+    () => readLarkNotificationRuntimeConfig({
+      MKT_NOTIFICATION_RUNTIME_MODE: LARK_NOTIFICATION_RUNTIME_MODES.RUNTIME,
+    }),
+    (error) => (
+      error.code === 'LARK_NOTIFICATION_RUNTIME_CONFIG_INVALID'
+      && error.details?.fieldName === 'MKT_NOTIFICATION_RUNTIME_MODE'
+    ),
+  );
+});
+
+test('enabled runtime defaults to controlled-UAT mode for retained operators', () => {
   const config = readLarkNotificationRuntimeConfig({
     MKT_NOTIFICATION_RUNTIME_ENABLED: 'true',
     MKT_NOTIFICATION_LARK_SEND_ENABLED: 'false',
@@ -38,7 +52,43 @@ test('enabled runtime requires exact existing Lark tables and keeps send separat
   });
   assert.equal(config.flags.runtimeEnabled, true);
   assert.equal(config.flags.sendEnabled, false);
+  assert.equal(config.mode, LARK_NOTIFICATION_RUNTIME_MODES.CONTROLLED_UAT);
   assert.equal(config.tables.notificationLog, null);
+});
+
+test('reviewed runtime mode is explicit and keeps schedule disabled', () => {
+  const config = readLarkNotificationRuntimeConfig({
+    MKT_NOTIFICATION_RUNTIME_ENABLED: 'true',
+    MKT_NOTIFICATION_LARK_SEND_ENABLED: 'true',
+    MKT_NOTIFICATION_LARK_MIRROR_ENABLED: 'true',
+    MKT_NOTIFICATION_RUNTIME_MODE: 'runtime',
+    LARK_TABLE_MKT_AI_REPORT_RUNS: 'tbl_ai',
+    LARK_TABLE_MKT_REPORT_SNAPSHOTS: 'tbl_snapshots',
+    LARK_TABLE_MKT_REPORT_SETTINGS: 'tbl_settings',
+    LARK_TABLE_MKT_NOTIFICATION_LOG: 'tbl_log',
+  });
+  assert.equal(config.mode, LARK_NOTIFICATION_RUNTIME_MODES.RUNTIME);
+  assert.deepEqual(config.flags, {
+    runtimeEnabled: true,
+    sendEnabled: true,
+    mirrorEnabled: true,
+  });
+  assert.equal(config.safety.scheduleEnabled, false);
+  assert.equal(config.safety.baseAutomationNotificationEnabled, false);
+  assert.equal(config.safety.production, 'BLOCKED');
+});
+
+test('unknown runtime modes fail closed', () => {
+  assert.throws(
+    () => readLarkNotificationRuntimeConfig({
+      MKT_NOTIFICATION_RUNTIME_ENABLED: 'true',
+      MKT_NOTIFICATION_RUNTIME_MODE: 'automatic',
+      LARK_TABLE_MKT_AI_REPORT_RUNS: 'tbl_ai',
+      LARK_TABLE_MKT_REPORT_SNAPSHOTS: 'tbl_snapshots',
+      LARK_TABLE_MKT_REPORT_SETTINGS: 'tbl_settings',
+    }),
+    (error) => error.code === 'LARK_NOTIFICATION_RUNTIME_CONFIG_INVALID',
+  );
 });
 
 test('mirror gate requires the existing Notification Log table mapping', () => {
