@@ -34,9 +34,14 @@ test('K3 one-command plan is exact and mutation-free', () => {
     envName: 'CONFIRM_META_K3_ONE_COMMAND',
     value: 'RUN_EXACT_META_K3_ONE_COMMAND',
   });
+  assert.equal(
+    plan.previewWindow,
+    'same_proven_k2_enable_probe_finalize_restore_sequence',
+  );
+  assert.equal(plan.safePreviewBootstrapRequired, true);
+  assert.equal(plan.safeRouteProbeRequiredBeforeFinalizer, true);
   assert.equal(plan.dedicatedFinalizer, true);
   assert.equal(plan.loaderUsed, false);
-  assert.equal(plan.previewUrlAuthority, 'wrangler_version_upload_record');
   assert.equal(plan.queueMessageCount, 0);
   assert.equal(plan.lifecycleSqlRepairCount, 0);
   assert.equal(plan.workerDeploymentCount, 0);
@@ -44,25 +49,26 @@ test('K3 one-command plan is exact and mutation-free', () => {
   assert.equal(plan.production, 'BLOCKED');
 });
 
-test('K3 one-command owns only the direct exact K3 boundary', () => {
+test('K3 one-command delegates to the proven Preview window before finalizer', () => {
   const source = readFileSync(launcherPath, 'utf8');
 
   assert.match(source, /MKT_META_K3_APPROVED_HEAD/u);
   assert.match(source, /CONFIRM_META_K3_ONE_COMMAND/u);
   assert.match(source, /RUN_EXACT_META_K3_ONE_COMMAND/u);
   assert.match(source, /meta-chemistry_k3-history-20260701-20260731-d4824a9e2ba9/u);
-  assert.match(source, /MKT_META_K3_RESUME_PRE_MUTATION_CONFIG_FAILURE/u);
-  assert.match(source, /RECOVER_AND_COMPLETE_EXACT_META_K3_PARTIAL_STAGING/u);
+  assert.match(source, /meta-k3-partial-staging-preview-recovery\.mjs/u);
+  assert.match(source, /CONFIRM_META_K3_PREVIEW_RECOVERY/u);
+  assert.match(source, /RUN_EXACT_META_K3_PREVIEW_RECOVERY/u);
   assert.match(source, /readAccountWorkersDevSubdomain/u);
   assert.match(source, /verify-restore\.json/u);
-  assert.match(source, /previewUrlAuthority: 'wrangler_version_upload_record'/u);
+  assert.match(source, /safeRouteProbeRequiredBeforeFinalizer: true/u);
   assert.match(source, /dedicatedFinalizer: true/u);
   assert.match(source, /loaderUsed: false/u);
   assert.match(source, /queueMessageCount:\s*0/u);
   assert.match(source, /lifecycleSqlRepairCount:\s*0/u);
   assert.match(source, /workerDeploymentCount:\s*0/u);
+  assert.doesNotMatch(source, /meta-k3-partial-staging-preview-finalizer\.mjs/u);
   assert.doesNotMatch(source, /MKT_META_K3_EXACT_RECOVERY_URL/u);
-  assert.doesNotMatch(source, /META_K3_EXACT_RECOVERY_PATH/u);
   assert.doesNotMatch(source, /experimental-loader/u);
   assert.doesNotMatch(source, /meta-k3-exact-recovery-loader/u);
   assert.doesNotMatch(
