@@ -65,12 +65,23 @@ export function buildReportChannelWindowAssessment(input = {}) {
 
   let action = null;
   let blocker = null;
-  if (d1MaterializationCount === 0 && larkRows === 0) {
+  const duplicateIdentity = d1MaterializationCount > 1
+    || larkSnapshotCount > 1
+    || duplicateMetricKeys > 0;
+  if (duplicateIdentity || (d1MaterializationCount === 0 && larkRows > 0)) {
+    blocker = Object.freeze({
+      code: 'REPORT_CHANNEL_REMOTE_READINESS_WINDOW_PRESTATE_INVALID',
+      windowDays,
+      d1MaterializationCount,
+      larkSnapshotCount,
+      duplicateMetricKeys,
+      larkRows,
+    });
+  } else if (d1MaterializationCount === 0 && larkRows === 0) {
     action = 'create_materialization';
   } else if (d1MaterializationCount === 1
     && larkSnapshotCount === 1
     && larkMetricCount > 0
-    && duplicateMetricKeys === 0
     && integrityOk) {
     action = 'reuse_or_idempotent_verify';
   } else if (d1MaterializationCount === 1) {
