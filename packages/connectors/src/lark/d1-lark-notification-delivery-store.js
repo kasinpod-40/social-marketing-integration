@@ -14,7 +14,8 @@ const TERMINAL_STATUSES = new Set(['sent', 'blocked', 'blocked_unknown']);
  * - one INSERT/UPSERT statement atomically claims a notification_attempt_key;
  * - only an expired `claimed` row may be reclaimed because no send has started yet;
  * - `sending` is never automatically reclaimed because the remote outcome may be unknown;
- * - `sent` is terminal and every replay becomes a no-send dedupe result.
+ * - `sent` is terminal and every replay becomes a no-send dedupe result;
+ * - a terminal `sent` replay increments claim_count only as durable proof that the replay reached D1.
  */
 export class D1LarkNotificationDeliveryStore {
   constructor(input = {}) {
@@ -68,11 +69,54 @@ export class D1LarkNotificationDeliveryStore {
       throw d1Transient('Failed to claim Lark notification delivery', 'D1_LARK_NOTIFICATION_CLAIM_FAILED', cause);
     }
 
-    const persisted = await this.read(row.notificationAttemptKey);
+    let persisted = await this.read(row.notificationAttemptKey);
     assertClaimIdentity(persisted, row);
     const acquired = readChanges(result) > 0
       && persisted.status === 'claimed'
       && persisted.claimOwner === row.ownerId;
+
+    // A sent replay must not acquire the claim or change send evidence. Increment only the
+    // durable observation counter so Controlled UAT can prove the exact replay reached D1.
+    if (!acquired && persisted.status === 'sent') {
+      let replayResult;
+      try {
+        replayResult = await this.db.prepare(`
+          UPDATE lark_notification_deliveries
+          SET claim_count = claim_count + 1, updated_at = ?
+          WHERE notification_attempt_key = ?
+            AND status = 'sent'
+            AND ai_run_key = ?
+            AND dedupe_key = ?
+            AND report_id = ?
+            AND report_setting_key = ?
+            AND customer_profile = ?
+            AND destination_key_hash = ?
+            AND template_version = ?
+            AND payload_checksum = ?
+        `).bind(
+          row.now,
+          row.notificationAttemptKey,
+          row.aiRunKey,
+          row.dedupeKey,
+          row.reportId,
+          row.reportSettingKey,
+          row.customerProfile,
+          row.destinationKeyHash,
+          row.templateVersion,
+          row.payloadChecksum,
+        ).run();
+      } catch (cause) {
+        throw d1Transient(
+          'Failed to record Lark notification replay observation',
+          'D1_LARK_NOTIFICATION_REPLAY_OBSERVATION_FAILED',
+          cause,
+        );
+      }
+      assertChanged(replayResult, 'LARK_NOTIFICATION_REPLAY_OBSERVATION_REJECTED');
+      persisted = await this.read(row.notificationAttemptKey);
+      assertClaimIdentity(persisted, row);
+    }
+
     return Object.freeze({
       acquired,
       disposition: acquired ? 'claimed' : dispositionFor(persisted),

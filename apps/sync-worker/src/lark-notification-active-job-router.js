@@ -6,7 +6,7 @@ import {
   loadLarkNotificationDeliveryRequest,
 } from '../../../packages/connectors/src/lark/lark-notification-delivery-source.js';
 import { permanentError } from '../../../packages/shared/src/errors/runtime-error.js';
-import { processJobWithWooCommerceEndToEnd } from './woocommerce-active-job-router.js';
+import { processJobWithChatwootEndToEnd } from './chatwoot-active-job-router.js';
 
 export function selectLarkNotificationRoute(input = {}) {
   return input.job?.body?.type === JOB_TYPES.LARK_NOTIFICATION_SEND
@@ -15,7 +15,7 @@ export function selectLarkNotificationRoute(input = {}) {
 }
 
 export function createLarkNotificationActiveJobRouter(input = {}) {
-  const processFallback = input.processFallback ?? processJobWithWooCommerceEndToEnd;
+  const processFallback = input.processFallback ?? processJobWithChatwootEndToEnd;
   const loadRequest = input.loadRequest ?? loadLarkNotificationDeliveryRequest;
   const deliver = input.deliver ?? deliverLarkExecutiveNotification;
   const readConfig = input.readConfig ?? readLarkNotificationRuntimeConfig;
