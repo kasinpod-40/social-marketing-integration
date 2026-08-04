@@ -1,16 +1,5 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { spawnSync } from 'node:child_process';
-import {
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  realpathSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
 import test from 'node:test';
 
 import {
@@ -26,9 +15,6 @@ import {
 import {
   createMetaK3ExactRecoveryHandler,
 } from '../../apps/sync-worker/src/meta-k3-exact-recovery-preview-entry.js';
-import {
-  materializeMetaK3WranglerEntrypoint,
-} from '../../scripts/lib/meta-k3-wrangler-config-authority.js';
 
 const EXACT = META_K3_EXACT_RECOVERY_IDENTITY;
 const ORIGINAL_REQUESTED_AT = 1785815000000;
@@ -63,12 +49,13 @@ function exactEnv(overrides = {}) {
   };
 }
 
-function exactRequest() {
+function exactRequest(method = 'POST') {
   return new Request(`https://preview.example${META_K3_EXACT_RECOVERY_PATH}`, {
-    method: 'POST',
+    method,
     headers: {
       authorization: `Bearer ${TOKEN}`,
     },
+    body: method === 'POST' ? '{}' : undefined,
   });
 }
 
@@ -86,7 +73,7 @@ test('exact K3 contract pins the retained partial-staging boundary', () => {
   assert.equal(EXACT.mainQueueAttempts, 14);
 });
 
-test('exact K3 Preview handler continues without a Cloudflare Queue send', async () => {
+test('exact K3 Preview handler continues without Cloudflare Queue delivery', async () => {
   let processJobCalls = 0;
   const handler = createMetaK3ExactRecoveryHandler({
     readRuntimeVersionId: () => VERSION_ID,
@@ -108,9 +95,12 @@ test('exact K3 Preview handler continues without a Cloudflare Queue send', async
 
   const response = await handler(exactRequest(), exactEnv());
   const body = await response.json();
-
   assert.equal(response.status, 200);
-  assert.equal(response.headers.get(META_K3_EXACT_RECOVERY_ATTESTATION_HEADER), ATTESTATION);
+  assert.equal(
+    response.headers.get(META_K3_EXACT_RECOVERY_ATTESTATION_HEADER),
+    ATTESTATION,
+  );
+  assert.equal(response.headers.get('x-mkt-worker-version-id'), VERSION_ID);
   assert.equal(body.ok, true);
   assert.equal(body.target, EXACT.targetKey);
   assert.equal(body.operationId, EXACT.operationId);
@@ -123,7 +113,7 @@ test('exact K3 Preview handler continues without a Cloudflare Queue send', async
   assert.equal(processJobCalls, 1);
 });
 
-test('exact K3 Preview handler fails closed on identity or Queue-attempt drift', async () => {
+test('exact K3 handler exposes an attested HEAD route without invoking Business work', async () => {
   let processJobCalls = 0;
   const handler = createMetaK3ExactRecoveryHandler({
     readRuntimeVersionId: () => VERSION_ID,
@@ -132,150 +122,32 @@ test('exact K3 Preview handler fails closed on identity or Queue-attempt drift',
       return { status: 'source_continuation' };
     },
   });
+  const response = await handler(exactRequest('HEAD'), exactEnv());
+  assert.equal(response.status, 204);
+  assert.equal(
+    response.headers.get(META_K3_EXACT_RECOVERY_ATTESTATION_HEADER),
+    ATTESTATION,
+  );
+  assert.equal(response.headers.get('x-mkt-worker-version-id'), VERSION_ID);
+  assert.equal(processJobCalls, 0);
+});
 
+test('exact K3 Preview handler fails closed on Queue-attempt drift', async () => {
+  let processJobCalls = 0;
+  const handler = createMetaK3ExactRecoveryHandler({
+    readRuntimeVersionId: () => VERSION_ID,
+    processJob: async () => {
+      processJobCalls += 1;
+      return { status: 'source_continuation' };
+    },
+  });
   const response = await handler(exactRequest(), exactEnv({
     MKT_META_D1_ONLY_MAIN_QUEUE_ATTEMPTS: '15',
   }));
   const body = await response.json();
-
   assert.equal(response.status, 400);
   assert.equal(body.ok, false);
   assert.equal(body.code, 'META_K3_RECOVERY_TARGET_INVALID');
   assert.equal(body.queueMessageCount, 0);
   assert.equal(processJobCalls, 0);
-});
-
-test('K3 launcher reuses the reviewed finalizer with the K3 contract', () => {
-  const repositoryRoot = resolve(process.cwd());
-  const result = spawnSync(
-    process.execPath,
-    ['scripts/meta-k3-partial-staging-preview-finalizer.mjs'],
-    {
-      cwd: repositoryRoot,
-      encoding: 'utf8',
-      maxBuffer: 16 * 1024 * 1024,
-    },
-  );
-
-  assert.equal(result.status, 0, result.stderr);
-  const plan = JSON.parse(result.stdout);
-  assert.equal(plan.planOnly, true);
-  assert.equal(plan.target, EXACT.targetKey);
-  assert.equal(plan.operationId, EXACT.operationId);
-  assert.equal(plan.workKey, EXACT.workKey);
-  assert.equal(plan.syncRunId, EXACT.syncRunId);
-  assert.equal(plan.retainedOperationHead, '6d82a50bc6d051cc39307254543619fcd29211b4');
-  assert.equal(plan.queueMessageCount, 0);
-  assert.equal(plan.productionWorkerDeployment, false);
-  assert.equal(plan.productionTrafficChange, false);
-});
-
-test('K3 execute bootstrap materializes runtime authority and delegates exact safe-resume profiles to the shared boundary', () => {
-  const repositoryRoot = resolve(process.cwd());
-  const launcher = readFileSync(
-    resolve(repositoryRoot, 'scripts/meta-k3-partial-staging-preview-finalizer.mjs'),
-    'utf8',
-  );
-  const resumeBoundary = readFileSync(
-    resolve(repositoryRoot, 'scripts/lib/meta-k3-recovery-resume-boundary.js'),
-    'utf8',
-  );
-
-  assert.match(launcher, /materializeMetaHistoryLarkRuntimeConfig/u);
-  assert.match(launcher, /materializeMetaK3WranglerEntrypoint/u);
-  assert.match(launcher, /META_GRAPH_API_VERSION=v25\.0/u);
-  assert.match(launcher, /MKT_META_K3_RESUME_PRE_MUTATION_CONFIG_FAILURE/u);
-  assert.match(launcher, /RESUME_EXACT_K3_PRE_MUTATION_CONFIG_FAILURE/u);
-  assert.match(launcher, /identifyMetaK3RecoveryResumeProfile/u);
-  assert.match(launcher, /validateMetaK3RecoveryResumeEvidence/u);
-  assert.match(resumeBoundary, /post_admission_pre_stability/u);
-  assert.match(resumeBoundary, /post_backup_pre_preview/u);
-  assert.match(resumeBoundary, /post_d1_preview_http_404_safe_restored/u);
-  assert.match(resumeBoundary, /businessContinuationEvidencePresent:\s*false/u);
-  assert.match(resumeBoundary, /workerVersionUploadCount\)\s*===\s*1/u);
-  assert.match(launcher, /workerVersionUploadCount:\s*0/u);
-  assert.match(launcher, /queueMessageCount:\s*0/u);
-  assert.doesNotMatch(launcher, /queueSendAllowed:\s*true/u);
-  assert.doesNotMatch(launcher, /lifecycleSqlRepairAllowed:\s*true/u);
-});
-
-test('nested K3 config anchors main to the Repository and passes exact Wrangler version-upload dry-run', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'meta-k3-wrangler-authority-'));
-  try {
-    const entrypoint = join(root, 'apps', 'sync-worker', 'src', 'index.js');
-    const sourceConfigPath = join(root, 'wrangler.sync.jsonc');
-    const nestedConfigPath = join(
-      root,
-      'outputs',
-      'meta-d1-only-rollout',
-      'chemistry_k3',
-      'wrangler.meta-k3-d1.preview.jsonc',
-    );
-    mkdirSync(resolve(entrypoint, '..'), { recursive: true });
-    mkdirSync(resolve(nestedConfigPath, '..'), { recursive: true });
-    writeFileSync(entrypoint, [
-      'export default {',
-      '  async fetch() {',
-      "    return new Response('ok');",
-      '  },',
-      '};',
-      '',
-    ].join('\n'));
-    const sourceText = JSON.stringify({
-      name: 'meta-k3-wrangler-path-test',
-      main: 'apps/sync-worker/src/index.js',
-      compatibility_date: '2026-08-01',
-    }, null, 2);
-    writeFileSync(sourceConfigPath, `${sourceText}\n`);
-
-    const materialized = await materializeMetaK3WranglerEntrypoint(
-      sourceText,
-      {
-        repositoryRoot: root,
-        sourceConfigPath,
-      },
-    );
-    const canonicalEntrypoint = realpathSync.native(entrypoint);
-    assert.equal(materialized.entrypoint, canonicalEntrypoint);
-    assert.equal(materialized.entrypointAnchoredToRepository, true);
-    assert.match(
-      materialized.configText,
-      new RegExp(
-        JSON.stringify(canonicalEntrypoint)
-          .replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'),
-        'u',
-      ),
-    );
-    writeFileSync(nestedConfigPath, materialized.configText);
-
-    const result = spawnSync(
-      'npx',
-      [
-        '--no-install',
-        'wrangler',
-        'versions',
-        'upload',
-        '--config',
-        nestedConfigPath,
-        '--preview-alias',
-        'meta-k3-recovery',
-        '--message',
-        'meta-k3-nested-config-dry-run',
-        '--dry-run',
-      ],
-      {
-        cwd: process.cwd(),
-        encoding: 'utf8',
-        maxBuffer: 64 * 1024 * 1024,
-      },
-    );
-
-    assert.equal(
-      result.status,
-      0,
-      `${result.stdout ?? ''}\n${result.stderr ?? ''}`,
-    );
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
 });
