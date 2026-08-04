@@ -14,6 +14,8 @@ const REPORT_METRIC_NULLABLE_FIELDS = Object.freeze([
   'change_percent',
 ]);
 const DASHBOARD_WINDOW_DAY_OPTIONS = new Set(['1', '3', '7', '30']);
+const DASHBOARD_COMPATIBILITY_WINDOW_FIELD =
+  '__mkt_legacy_window_days_single_select_v1';
 
 /** Dashboard/Lark binding that reads materializations only, never detailed historical facts. */
 export async function writeDashboardMaterializationToLark(input = {}) {
@@ -182,20 +184,33 @@ function buildSharedDimensions(input) {
   });
 }
 
-/** Metric table preserves the existing slicer-bound SingleSelect identity. */
+/**
+ * The frozen Integration Workspace keeps Number window_days as planning/write authority and mirrors the
+ * same preset into the immutable physical SingleSelect used by existing Dashboard slicers and charts.
+ */
 function buildMetricSharedDimensions(sharedDimensions) {
   const periodKind = requireText(sharedDimensions.period_kind, 'sharedDimensions.period_kind');
+  const compatibility = sharedDimensions.customer_profile === 'integration_workspace'
+    && sharedDimensions.account_id === 'chemistry_k';
   if (periodKind === 'custom_range') {
     if (sharedDimensions.window_days !== null) {
       throw new TypeError('custom_range metric dimensions must keep window_days null');
     }
-    return Object.freeze({ ...sharedDimensions, window_days: null });
+    return Object.freeze({
+      ...sharedDimensions,
+      window_days: null,
+      ...(compatibility ? { [DASHBOARD_COMPATIBILITY_WINDOW_FIELD]: null } : {}),
+    });
   }
   const value = String(sharedDimensions.window_days ?? '').trim();
   if (!DASHBOARD_WINDOW_DAY_OPTIONS.has(value)) {
     throw new TypeError('rolling_days metric window_days must be one of 1, 3, 7, 30');
   }
-  return Object.freeze({ ...sharedDimensions, window_days: value });
+  return Object.freeze({
+    ...sharedDimensions,
+    window_days: Number(value),
+    ...(compatibility ? { [DASHBOARD_COMPATIBILITY_WINDOW_FIELD]: value } : {}),
+  });
 }
 
 function requireReader(value) {
