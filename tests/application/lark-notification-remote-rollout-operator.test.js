@@ -72,6 +72,7 @@ test('target stays locked to the Integration Workspace and expected D1', () => {
   });
   const fingerprint = createLarkNotificationRemoteTargetFingerprint(target, {
     workerName: 'social-mkt-sync-worker',
+    tableMappingFingerprint: 'a'.repeat(64),
   });
   assert.match(fingerprint, /^[0-9a-f]{64}$/u);
   assert.throws(
@@ -83,13 +84,13 @@ test('target stays locked to the Integration Workspace and expected D1', () => {
   );
 });
 
-test('Wrangler config reuses Integration topology and accepts runtime default false flags', () => {
+test('Wrangler config reuses Integration topology and validates every effective flag source', () => {
   const config = createSafeWranglerConfig();
   const result = validateLarkNotificationRemoteWranglerConfig(config);
   assert.equal(result.notificationFlagsAllFalse, true);
   assert.equal(
     result.notificationFlagSourcePolicy,
-    'explicit_false_or_runtime_default_false',
+    'all_config_and_environment_sources_false_or_omitted',
   );
   assert.equal(result.requiredTableMappingsPresent, true);
   assert.equal(result.mainQueueBindingPresent, true);
@@ -97,16 +98,18 @@ test('Wrangler config reuses Integration topology and accepts runtime default fa
   const omittedFlagsConfig = createSafeWranglerConfig({ includeNotificationFlags: false });
   const omittedResult = validateLarkNotificationRemoteWranglerConfig(omittedFlagsConfig);
   assert.equal(omittedResult.notificationFlagsAllFalse, true);
-  assert.equal(
-    omittedResult.notificationFlagSourcePolicy,
-    'explicit_false_or_runtime_default_false',
-  );
 
   for (const flag of [
     'MKT_NOTIFICATION_RUNTIME_ENABLED',
     'MKT_NOTIFICATION_LARK_SEND_ENABLED',
     'MKT_NOTIFICATION_LARK_MIRROR_ENABLED',
   ]) {
+    assert.throws(
+      () => validateLarkNotificationRemoteWranglerConfig(config, { [flag]: 'true' }),
+      (error) => error.code === 'LARK_NOTIFICATION_REMOTE_ROLLOUT_CONFIG_UNSAFE'
+        && error.details.fieldName === flag
+        && error.details.invalidSources.includes('environment'),
+    );
     assert.throws(
       () => validateLarkNotificationRemoteWranglerConfig(config.replace(
         `"${flag}": "false"`,
@@ -116,13 +119,53 @@ test('Wrangler config reuses Integration topology and accepts runtime default fa
         && error.details.fieldName === flag,
     );
   }
+});
+
+test('table mappings resolve from merged environment, remain conflict-free and are fingerprint-bound', () => {
+  const configWithoutMappings = createSafeWranglerConfig({ includeTableMappings: false });
+  const envMappings = createTableMappingEnv();
+  const result = validateLarkNotificationRemoteWranglerConfig(
+    configWithoutMappings,
+    envMappings,
+  );
+  assert.equal(result.requiredTableMappingsPresent, true);
+  assert.equal(
+    result.tableMappingSourcePolicy,
+    'wrangler_or_merged_environment_exact_and_conflict_free',
+  );
+  assert.match(result.tableMappingFingerprint, /^[0-9a-f]{64}$/u);
+  assert.deepEqual(
+    new Set(Object.values(result.tableMappingSources)),
+    new Set(['environment']),
+  );
+
+  const target = loadLarkNotificationRemoteRolloutTarget(createTargetEnv());
+  const fingerprint = createLarkNotificationRemoteTargetFingerprint(target, result);
+  assert.match(fingerprint, /^[0-9a-f]{64}$/u);
 
   assert.throws(
-    () => validateLarkNotificationRemoteWranglerConfig(config.replace(
-      '"LARK_TABLE_MKT_NOTIFICATION_LOG": "tbl_notification_log"',
-      '"LARK_TABLE_MKT_NOTIFICATION_LOG": ""',
-    )),
-    (error) => error.code === 'LARK_NOTIFICATION_REMOTE_ROLLOUT_CONFIG_UNSAFE',
+    () => validateLarkNotificationRemoteWranglerConfig(configWithoutMappings, {
+      ...envMappings,
+      LARK_TABLE_MKT_AI_REPORT_RUNS: '',
+    }),
+    (error) => error.code === 'LARK_NOTIFICATION_REMOTE_ROLLOUT_CONFIG_UNSAFE'
+      && error.details.fieldName === 'LARK_TABLE_MKT_AI_REPORT_RUNS',
+  );
+  assert.throws(
+    () => validateLarkNotificationRemoteWranglerConfig(configWithoutMappings, {
+      ...envMappings,
+      LARK_TABLE_MKT_AI_REPORT_RUNS: 'todo',
+    }),
+    (error) => error.code === 'LARK_NOTIFICATION_REMOTE_ROLLOUT_CONFIG_UNSAFE'
+      && error.details.invalidSource === 'environment',
+  );
+  assert.throws(
+    () => validateLarkNotificationRemoteWranglerConfig(
+      createSafeWranglerConfig(),
+      { ...envMappings, LARK_TABLE_MKT_AI_REPORT_RUNS: 'tbl_conflict' },
+    ),
+    (error) => error.code === 'LARK_NOTIFICATION_REMOTE_ROLLOUT_CONFIG_UNSAFE'
+      && error.details.sourceConflict === true,
   );
 });
 
@@ -269,16 +312,24 @@ function createTargetEnv() {
   };
 }
 
-function createSafeWranglerConfig(input = {}) {
-  const vars = {
-    MKT_ENV: 'development',
-    MKT_CUSTOMER_PROFILE: 'integration_workspace',
-    MKT_CONNECTION_CUSTOMER_KEY: 'chemistry_k',
+function createTableMappingEnv() {
+  return {
     LARK_TABLE_MKT_AI_REPORT_RUNS: 'tbl_ai_runs',
     LARK_TABLE_MKT_REPORT_SNAPSHOTS: 'tbl_report_snapshots',
     LARK_TABLE_MKT_REPORT_SETTINGS: 'tbl_report_settings',
     LARK_TABLE_MKT_NOTIFICATION_LOG: 'tbl_notification_log',
   };
+}
+
+function createSafeWranglerConfig(input = {}) {
+  const vars = {
+    MKT_ENV: 'development',
+    MKT_CUSTOMER_PROFILE: 'integration_workspace',
+    MKT_CONNECTION_CUSTOMER_KEY: 'chemistry_k',
+  };
+  if (input.includeTableMappings !== false) {
+    Object.assign(vars, createTableMappingEnv());
+  }
   if (input.includeNotificationFlags !== false) {
     Object.assign(vars, {
       MKT_NOTIFICATION_RUNTIME_ENABLED: 'false',

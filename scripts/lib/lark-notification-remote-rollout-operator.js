@@ -160,11 +160,15 @@ export function createLarkNotificationRemoteTargetFingerprint(target = {}, confi
     ),
     workerName: requireExact(config.workerName, 'social-mkt-sync-worker', 'workerName'),
     destinationKeyHash: LARK_EXECUTIVE_DESTINATION_KEY_HASH,
+    tableMappingFingerprint: requireSha256(
+      config.tableMappingFingerprint,
+      'tableMappingFingerprint',
+    ),
   };
   return sha256Hex(JSON.stringify(payload));
 }
 
-export function validateLarkNotificationRemoteWranglerConfig(configText) {
+export function validateLarkNotificationRemoteWranglerConfig(configText, env = {}) {
   const text = requireText(configText, 'configText');
   requireConfigValue(text, 'name', 'social-mkt-sync-worker');
   requireConfigValue(text, 'MKT_ENV', 'development');
@@ -173,11 +177,17 @@ export function validateLarkNotificationRemoteWranglerConfig(configText) {
   requireConfigValue(text, 'database_name', 'social-mkt-state-dev');
 
   for (const flag of LARK_NOTIFICATION_REMOTE_REQUIRED_FALSE_FLAGS) {
-    requireConfigFalseOrMissing(text, flag);
+    requireFalseAcrossConfigAndEnvironment(text, env, flag);
   }
+
+  const tableMappings = {};
+  const tableMappingSources = {};
   for (const mapping of LARK_NOTIFICATION_REMOTE_REQUIRED_TABLE_MAPPINGS) {
-    requireNonEmptyConfigValue(text, mapping);
+    const resolved = resolveRequiredMapping(text, env, mapping);
+    tableMappings[mapping] = resolved.value;
+    tableMappingSources[mapping] = resolved.source;
   }
+
   for (const required of [
     /"binding"\s*:\s*"MKT_STATE_DB"/u,
     /"binding"\s*:\s*"MKT_SYNC_QUEUE"/u,
@@ -199,8 +209,11 @@ export function validateLarkNotificationRemoteWranglerConfig(configText) {
     customerKey: 'chemistry_k',
     databaseName: 'social-mkt-state-dev',
     notificationFlagsAllFalse: true,
-    notificationFlagSourcePolicy: 'explicit_false_or_runtime_default_false',
+    notificationFlagSourcePolicy: 'all_config_and_environment_sources_false_or_omitted',
     requiredTableMappingsPresent: true,
+    tableMappingSourcePolicy: 'wrangler_or_merged_environment_exact_and_conflict_free',
+    tableMappingSources: Object.freeze(tableMappingSources),
+    tableMappingFingerprint: sha256Hex(JSON.stringify(tableMappings)),
     d1BindingPresent: true,
     mainQueueBindingPresent: true,
     dlqPresent: true,
@@ -471,27 +484,84 @@ function requireConfigValue(text, key, expected) {
   }
 }
 
-function requireConfigFalseOrMissing(text, key) {
-  const pattern = new RegExp(`"${escapeRegExp(key)}"\\s*:\\s*"([^"\\s]+)"`, 'u');
-  const match = pattern.exec(text);
-  if (!match || match[1] === 'false') return;
-  throw operatorError(
-    `Lark notification rollout requires ${key}=false when configured`,
-    'LARK_NOTIFICATION_REMOTE_ROLLOUT_CONFIG_UNSAFE',
-    { fieldName: key, configuredValue: match[1] },
-  );
+function requireFalseAcrossConfigAndEnvironment(text, env, key) {
+  const configValues = extractConfigStringValues(text, key);
+  const envValue = normalizeOptionalScalar(env?.[key]);
+  const configuredValues = [
+    ...configValues.map((value) => ({ source: 'wrangler', value })),
+    ...(envValue === null ? [] : [{ source: 'environment', value: envValue }]),
+  ];
+  const invalidSources = configuredValues
+    .filter((entry) => entry.value !== 'false')
+    .map((entry) => entry.source);
+  if (invalidSources.length > 0) {
+    throw operatorError(
+      `Lark notification rollout requires ${key}=false when configured`,
+      'LARK_NOTIFICATION_REMOTE_ROLLOUT_CONFIG_UNSAFE',
+      { fieldName: key, invalidSources: [...new Set(invalidSources)] },
+    );
+  }
 }
 
-function requireNonEmptyConfigValue(text, key) {
-  const pattern = new RegExp(`"${escapeRegExp(key)}"\\s*:\\s*"([^"\\s]+)"`, 'u');
-  const match = pattern.exec(text);
-  if (!match || /^replace-|^<|^todo$/iu.test(match[1])) {
+function resolveRequiredMapping(text, env, key) {
+  const configValues = extractConfigStringValues(text, key);
+  const envValue = normalizeOptionalScalar(env?.[key]);
+  const sources = [];
+
+  for (const value of configValues) {
+    assertValidMappingValue(value, key, 'wrangler');
+    sources.push({ source: 'wrangler', value });
+  }
+  if (envValue !== null) {
+    assertValidMappingValue(envValue, key, 'environment');
+    sources.push({ source: 'environment', value: envValue });
+  }
+  if (sources.length === 0) {
     throw operatorError(
       `Lark notification rollout requires configured ${key}`,
       'LARK_NOTIFICATION_REMOTE_ROLLOUT_CONFIG_UNSAFE',
-      { fieldName: key },
+      { fieldName: key, acceptedSources: ['wrangler', 'environment'] },
     );
   }
+
+  const values = [...new Set(sources.map((entry) => entry.value))];
+  if (values.length !== 1) {
+    throw operatorError(
+      `Lark notification rollout found conflicting ${key} mappings`,
+      'LARK_NOTIFICATION_REMOTE_ROLLOUT_CONFIG_UNSAFE',
+      { fieldName: key, sourceConflict: true },
+    );
+  }
+  const sourceNames = [...new Set(sources.map((entry) => entry.source))].sort();
+  return Object.freeze({
+    value: values[0],
+    source: sourceNames.join('_and_'),
+  });
+}
+
+function assertValidMappingValue(value, key, source) {
+  if (value === '' || /^replace-|^<|^todo$/iu.test(value)) {
+    throw operatorError(
+      `Lark notification rollout requires configured ${key}`,
+      'LARK_NOTIFICATION_REMOTE_ROLLOUT_CONFIG_UNSAFE',
+      { fieldName: key, invalidSource: source },
+    );
+  }
+}
+
+function extractConfigStringValues(text, key) {
+  const pattern = new RegExp(
+    `"${escapeRegExp(key)}"\\s*:\\s*"([^"]*)"`,
+    'gu',
+  );
+  return [...text.matchAll(pattern)].map((match) => match[1].trim());
+}
+
+function normalizeOptionalScalar(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (value === false) return 'false';
+  if (value === true) return 'true';
+  return String(value).trim();
 }
 
 function normalizeCountRow(row, fields) {
@@ -543,6 +613,18 @@ function requireText(value, fieldName) {
     );
   }
   return value.trim();
+}
+
+function requireSha256(value, fieldName) {
+  const text = requireText(value, fieldName);
+  if (!/^[0-9a-f]{64}$/u.test(text)) {
+    throw operatorError(
+      `${fieldName} must be a SHA-256 fingerprint`,
+      'LARK_NOTIFICATION_REMOTE_ROLLOUT_TARGET_INVALID',
+      { fieldName },
+    );
+  }
+  return text;
 }
 
 function normalizeTimestamp(value, fieldName) {
