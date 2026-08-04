@@ -18,6 +18,9 @@ import { readDevVars } from './lib/dev-vars.js';
 import {
   materializeMetaHistoryLarkRuntimeConfig,
 } from './lib/meta-history-runtime-authority.js';
+import {
+  materializeMetaK3WranglerEntrypoint,
+} from './lib/meta-k3-wrangler-config-authority.js';
 
 const repositoryRoot = resolve(process.cwd());
 const loaderUrl = pathToFileURL(resolve(
@@ -136,10 +139,18 @@ async function prepareExecutionEnvironment(inputEnv) {
       ?? 'wrangler.sync.jsonc',
   );
   const sourceConfigText = await readFile(sourceConfigPath, 'utf8');
-  const materializedText = materializeMetaHistoryLarkRuntimeConfig(
+  const runtimeMaterializedText = materializeMetaHistoryLarkRuntimeConfig(
     sourceConfigText,
     authorityEnv,
   );
+  const anchored = await materializeMetaK3WranglerEntrypoint(
+    runtimeMaterializedText,
+    {
+      repositoryRoot,
+      sourceConfigPath,
+    },
+  );
+  const materializedText = anchored.configText;
   assertPinnedGraphVersion(materializedText);
 
   const reviewedHead = requireFullSha(
