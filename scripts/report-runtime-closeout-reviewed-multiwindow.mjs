@@ -20,12 +20,13 @@ import {
   parseReportRuntimeCloseoutArgs,
 } from './lib/report-runtime-closeout-operator.js';
 import {
+  REPORT_RUNTIME_REVIEWED_CHANNELS,
   REPORT_RUNTIME_REVIEWED_MULTIWINDOW_DAYS,
-  assertYouTubeReportRuntimeCloseoutPreflight,
+  assertReviewedReportRuntimeCloseoutPreflight,
   resolveReviewedReportRuntimeCloseoutTarget,
 } from './lib/report-runtime-closeout-channel-binding.js';
 import {
-  buildReportRuntimeOrganicPreflightSql,
+  buildReportRuntimePreflightSql,
   buildReviewedReportRuntimeMultiwindowPlan,
   loadReviewedReportRuntimeCloseoutHandoff,
 } from './lib/report-runtime-closeout-reviewed-binding.js';
@@ -81,9 +82,10 @@ let activeDeploymentAttempted = false;
 let safeRestoreVerified = false;
 
 try {
-  if (target.platformScope !== 'youtube' || target.capability !== 'organic') throw closeoutFailure(
-    'Reviewed multiwindow executor accepts YouTube Organic only',
+  if (!REPORT_RUNTIME_REVIEWED_CHANNELS.includes(target.platformScope)) throw closeoutFailure(
+    'Reviewed multiwindow executor target is unsupported',
     'REPORT_RUNTIME_CLOSEOUT_REVIEWED_TARGET_INVALID',
+    { platformScope: target.platformScope, supportedPlatforms: REPORT_RUNTIME_REVIEWED_CHANNELS },
   );
   const options = parseReportRuntimeCloseoutArgs(process.argv.slice(2));
   if (!options.execute) printPlan();
@@ -95,6 +97,7 @@ try {
     code: error?.code ?? 'REPORT_RUNTIME_CLOSEOUT_FAILED',
     message: error instanceof Error ? error.message : String(error),
     details: sanitizeReportLiveClosureEvidence(error?.details ?? {}),
+    platformScope: target.platformScope,
     activeDeploymentAttempted,
     safeRestoreVerified,
     providerRequestCount: 0,
@@ -108,14 +111,14 @@ function printPlan() {
     ok: true,
     planOnly: true,
     contractVersion: REPORT_RUNTIME_CLOSEOUT_CONTRACT_VERSION,
-    executionContract: 'report_runtime_reviewed_multiwindow_v1',
+    executionContract: 'report_runtime_reviewed_multiwindow_v2',
     command: [
-      'MKT_REPORT_RUNTIME_CLOSEOUT_PLATFORM_SCOPE=youtube',
+      `MKT_REPORT_RUNTIME_CLOSEOUT_PLATFORM_SCOPE=${target.platformScope}`,
       'MKT_MULTICHANNEL_REPORT_LIVE_CLOSURE_HANDOFF=<retained-sanitized-handoff.json>',
       `CONFIRM_REPORT_RUNTIME_CLOSEOUT=${REPORT_RUNTIME_CLOSEOUT_CONFIRMATION}`,
-      'node scripts/report-runtime-closeout-operator.mjs --execute',
+      'node scripts/report-runtime-closeout-reviewed-multiwindow.mjs --execute',
     ].join(' \\\n'),
-    scope: 'youtube organic exact 1/3/7/30 reviewed materialization from D1 to Lark',
+    scope: `${target.platformScope} ${target.capability} exact 1/3/7/30 reviewed materialization from D1 to Lark`,
     windows: REPORT_RUNTIME_REVIEWED_MULTIWINDOW_DAYS,
     reviewedHandoffRequired: true,
     providerRequests: false,
@@ -170,17 +173,17 @@ async function executeCloseout() {
     requiredLarkKeyFields: REQUIRED_LARK_KEY_FIELDS,
   });
 
-  currentStage = 'lark-and-youtube-d1-preflight';
+  currentStage = `lark-and-${target.platformScope}-d1-preflight`;
   const client = createLarkBitableClientFromEnv(env);
   const larkPreflight = await state.verifyLarkInventory(client, config.tableIds);
-  const d1Preflight = await state.readD1Row(buildReportRuntimeOrganicPreflightSql({
+  const d1Preflight = await state.readD1Row(buildReportRuntimePreflightSql({
     target: { ...target, customerKey: 'chemistry_k' },
   }));
-  assertYouTubeReportRuntimeCloseoutPreflight(d1Preflight);
+  assertReviewedReportRuntimeCloseoutPreflight(d1Preflight, target);
   if (d1Preflight.source_watermark !== reviewed.sourceWatermark) throw closeoutFailure(
-    'Current YouTube Coverage watermark differs from retained reviewed readiness evidence',
+    `Current ${target.platformScope} Coverage watermark differs from retained reviewed readiness evidence`,
     'REPORT_RUNTIME_CLOSEOUT_REVIEWED_WATERMARK_DRIFT',
-    { watermarkMatched: false },
+    { platformScope: target.platformScope, watermarkMatched: false },
   );
 
   currentStage = 'remote-safe-preflight-and-backup';
@@ -190,8 +193,8 @@ async function executeCloseout() {
     'REPORT_RUNTIME_CLOSEOUT_PENDING_MIGRATIONS',
     { pendingMigrationCount: pendingMigrations.length },
   );
-  const safeBundle = await remote.buildBundle(config.safeText, 'youtube-safe-preflight');
-  const activeBundle = await remote.buildBundle(config.activeText, 'youtube-active-preflight');
+  const safeBundle = await remote.buildBundle(config.safeText, `${target.platformScope}-safe-preflight`);
+  const activeBundle = await remote.buildBundle(config.activeText, `${target.platformScope}-active-preflight`);
   const remoteSafe = await remote.verifyDeployment('safe');
 
   const requestedAt = Date.now();
@@ -209,6 +212,7 @@ async function executeCloseout() {
     candidates,
     existingReportIds: existingIds,
     reviewedHandoff: reviewed.handoff,
+    platformScope: target.platformScope,
   });
   const prestates = [];
   for (const selected of plan) {
@@ -224,7 +228,7 @@ async function executeCloseout() {
     prestates.push(Object.freeze({ selected, d1, lark }));
   }
 
-  const backup = await state.createD1Backup();
+  const backup = await state.createD1Backup(`${target.platformScope}-before-multiwindow`);
   const results = [];
   let activeDeployment = null;
   let restoreDeployment = null;
@@ -233,21 +237,21 @@ async function executeCloseout() {
 
   try {
     currentStage = 'deploy-report-only-window-once';
-    await writeReviewedAttempt(outputRoot, 'youtube-deploy-active', {
+    await writeReviewedAttempt(outputRoot, `${target.platformScope}-deploy-active`, {
       repositoryHead: repository.head,
       configSha256: config.activeSha256,
       windows: plan.map((row) => row.windowDays),
     });
     activeDeployment = await remote.deployConfig(
       config.activeText,
-      'youtube-reviewed-multiwindow-active',
+      `${target.platformScope}-reviewed-multiwindow-active`,
       REPORT_RUNTIME_CLOSEOUT_CONTRACT_VERSION,
     );
     activeDeploymentAttempted = true;
     await remote.verifyDeployment('active', activeDeployment.versionId);
 
     for (const prestate of prestates) {
-      currentStage = `execute-${prestate.selected.windowDays}d`;
+      currentStage = `execute-${target.platformScope}-${prestate.selected.windowDays}d`;
       const result = await executeWindow({
         client,
         config,
@@ -269,21 +273,21 @@ async function executeCloseout() {
     if (activeDeploymentAttempted) {
       currentStage = 'restore-all-false';
       try {
-        await writeReviewedAttempt(outputRoot, 'youtube-restore-safe', {
+        await writeReviewedAttempt(outputRoot, `${target.platformScope}-restore-safe`, {
           repositoryHead: repository.head,
           configSha256: config.safeSha256,
           activeVersionFingerprint: activeDeployment ? sha256(activeDeployment.versionId) : null,
         });
         restoreDeployment = await remote.deployConfig(
           config.safeText,
-          'youtube-reviewed-multiwindow-safe-restore',
+          `${target.platformScope}-reviewed-multiwindow-safe-restore`,
           REPORT_RUNTIME_CLOSEOUT_CONTRACT_VERSION,
         );
         await remote.verifyDeployment('safe', restoreDeployment.versionId);
         safeRestoreVerified = true;
       } catch (restoreError) {
         if (primaryError) throw closeoutFailure(
-          'YouTube Report closeout failed and all-false restore also failed',
+          `${target.platformScope} Report closeout failed and all-false restore also failed`,
           'REPORT_RUNTIME_CLOSEOUT_RESTORE_FAILED_AFTER_PRIMARY_ERROR',
           {
             primaryCode: primaryError?.code ?? 'UNKNOWN',
@@ -297,11 +301,11 @@ async function executeCloseout() {
 
   if (primaryError) throw primaryError;
   if (!safeRestoreVerified) throw closeoutFailure(
-    'YouTube Report closeout requires verified all-false restore',
+    `${target.platformScope} Report closeout requires verified all-false restore`,
     'REPORT_RUNTIME_CLOSEOUT_RESTORE_NOT_VERIFIED',
   );
   if (results.length !== 4 || results.some((row) => row.zeroDrift !== true)) throw closeoutFailure(
-    'YouTube Report closeout did not verify all four windows with zero drift',
+    `${target.platformScope} Report closeout did not verify all four windows with zero drift`,
     'REPORT_RUNTIME_CLOSEOUT_MULTIWINDOW_INCOMPLETE',
     { completedWindowCount: results.length },
   );
@@ -310,8 +314,8 @@ async function executeCloseout() {
   const summary = sanitizeReportLiveClosureEvidence({
     ok: true,
     contractVersion: REPORT_RUNTIME_CLOSEOUT_CONTRACT_VERSION,
-    executionContract: 'report_runtime_reviewed_multiwindow_v1',
-    decision: 'YOUTUBE_REPORT_1_3_7_30_CLOSED',
+    executionContract: 'report_runtime_reviewed_multiwindow_v2',
+    decision: `${target.platformScope.toUpperCase()}_REPORT_1_3_7_30_CLOSED`,
     repository,
     target: {
       environment: 'development',
@@ -319,21 +323,25 @@ async function executeCloseout() {
       platform: target.platformScope,
       capability: target.capability,
       accountKey: target.accountKey,
-      accountId: reviewed.accountId,
       sourceWatermark: d1Preflight.source_watermark,
       periodEnd: d1Preflight.period_end,
     },
     reviewedHandoff: {
       contractVersion: reviewed.handoff.contractVersion,
       metaRemoteLockReleased: reviewed.handoff.metaRemoteLock.released,
-      readinessContractVersion: reviewed.handoff.youtubeReadiness.contractVersion,
-      readyForLive: reviewed.handoff.youtubeReadiness.assessment.readyForLive,
+      readinessContractVersion: reviewed.readiness.contractVersion,
+      readyForLive: reviewed.readiness.assessment.readyForLive,
     },
     preflight: {
       lark: larkPreflight,
       coverageStatus: d1Preflight.coverage_status,
-      contentStateCount: Number(d1Preflight.content_state_count),
-      observationCount: Number(d1Preflight.observation_count),
+      coverageScopeMode: d1Preflight.coverage_scope_mode ?? null,
+      contentStateCount: Number(d1Preflight.content_state_count ?? 0),
+      observationCount: Number(d1Preflight.observation_count ?? 0),
+      dailyFactCount: Number(d1Preflight.daily_fact_count ?? 0),
+      orderStateCount: Number(d1Preflight.order_state_count ?? 0),
+      conversationFactCount: Number(d1Preflight.conversation_fact_count ?? 0),
+      accountFactCount: Number(d1Preflight.account_fact_count ?? 0),
       pendingMigrations,
       safeBundleSha256: safeBundle.sha256,
       activeBundleSha256: activeBundle.sha256,
@@ -369,7 +377,7 @@ async function executeWindow(input) {
   let queueMessagesSent = 0;
 
   if (selected.operation !== 'verify') {
-    await writeReviewedAttempt(outputRoot, `youtube-${selected.windowDays}d-send-first`, {
+    await writeReviewedAttempt(outputRoot, `${target.platformScope}-${selected.windowDays}d-send-first`, {
       reportId: selected.reportId,
       action: selected.action,
       jobSha256: sha256(stableJson(selected.job)),
@@ -387,7 +395,7 @@ async function executeWindow(input) {
     firstPollAttempts = verified.attemptCount;
   }
 
-  await writeReviewedAttempt(outputRoot, `youtube-${selected.windowDays}d-send-replay`, {
+  await writeReviewedAttempt(outputRoot, `${target.platformScope}-${selected.windowDays}d-send-replay`, {
     reportId: selected.reportId,
     action: selected.action,
     jobSha256: sha256(stableJson(selected.job)),
@@ -402,7 +410,7 @@ async function executeWindow(input) {
   const replayVerified = await state.pollLarkIntegrity(client, config.tableIds, selected.reportId, replay);
   assertLarkReplay(firstLark, replayVerified.state);
   if (stableJson(firstIntegrity) !== stableJson(replayVerified.integrity)) throw closeoutFailure(
-    'YouTube Report replay changed D1/Lark integrity evidence',
+    `${target.platformScope} Report replay changed D1/Lark integrity evidence`,
     'REPORT_RUNTIME_CLOSEOUT_REPLAY_INTEGRITY_DRIFT',
     { windowDays: selected.windowDays },
   );
