@@ -46,12 +46,17 @@ const resumeConfirmation = Object.freeze({
   envName: 'MKT_META_K3_RESUME_PRE_MUTATION_CONFIG_FAILURE',
   value: 'RESUME_EXACT_K3_PRE_MUTATION_CONFIG_FAILURE',
 });
-const expectedPreMutationFiles = Object.freeze([
-  'backup.json',
-  'meta-k2-before-recovery.sql',
-  'read-only-stability.json',
-  'retained-evidence-admission.json',
-]);
+const acceptedPreMutationProfiles = Object.freeze({
+  post_admission_pre_stability: Object.freeze([
+    'retained-evidence-admission.json',
+  ]),
+  post_backup_pre_preview: Object.freeze([
+    'backup.json',
+    'meta-k2-before-recovery.sql',
+    'read-only-stability.json',
+    'retained-evidence-admission.json',
+  ]),
+});
 
 let generatedConfigPath = null;
 let archivedPreMutationRoot = null;
@@ -206,16 +211,20 @@ async function archiveAcceptedPreMutationFailure(env) {
     );
   }
 
-  const observedFiles = (await readdir(recoveryRoot, { withFileTypes: true }))
+  const entries = await readdir(recoveryRoot, { withFileTypes: true });
+  const observedFiles = entries
     .filter((entry) => entry.isFile())
     .map((entry) => entry.name)
     .sort();
-  const observedDirectories = (await readdir(recoveryRoot, { withFileTypes: true }))
+  const observedDirectories = entries
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
     .sort();
-  if (JSON.stringify(observedFiles) !== JSON.stringify(expectedPreMutationFiles)
-    || observedDirectories.length !== 0) {
+  const profile = Object.entries(acceptedPreMutationProfiles)
+    .find(([, expectedFiles]) => (
+      JSON.stringify(observedFiles) === JSON.stringify(expectedFiles)
+    ))?.[0] ?? null;
+  if (!profile || observedDirectories.length !== 0) {
     throw bootstrapError(
       'Existing K3 recovery evidence exceeds the accepted pre-mutation failure boundary',
       'META_K3_PRE_MUTATION_EVIDENCE_INVALID',
@@ -224,24 +233,31 @@ async function archiveAcceptedPreMutationFailure(env) {
   }
 
   const admission = await readJson('retained-evidence-admission.json');
-  const stability = await readJson('read-only-stability.json');
-  const backup = await readJson('backup.json');
-  const accepted = admission?.status === 'passed'
+  const admissionAccepted = admission?.status === 'passed'
     && admission?.operationId === operationId
     && Number(admission?.data?.queueMessageCount) === 0
     && Number(admission?.data?.workerDeploymentCount) === 0
-    && admission?.data?.productionTrafficChange === false
-    && stability?.status === 'passed'
-    && stability?.operationId === operationId
-    && stability?.data?.executionFlagsAllFalse === true
-    && stability?.data?.productionDeploymentUnchanged === true
-    && backup?.status === 'passed'
-    && backup?.operationId === operationId
-    && Number(backup?.data?.remoteMutationCount) === 0;
+    && admission?.data?.productionTrafficChange === false;
+  let accepted = admissionAccepted;
+
+  if (profile === 'post_backup_pre_preview') {
+    const stability = await readJson('read-only-stability.json');
+    const backup = await readJson('backup.json');
+    accepted = accepted
+      && stability?.status === 'passed'
+      && stability?.operationId === operationId
+      && stability?.data?.executionFlagsAllFalse === true
+      && stability?.data?.productionDeploymentUnchanged === true
+      && backup?.status === 'passed'
+      && backup?.operationId === operationId
+      && Number(backup?.data?.remoteMutationCount) === 0;
+  }
+
   if (!accepted) {
     throw bootstrapError(
       'Existing K3 evidence does not prove a zero-mutation pre-Preview failure',
       'META_K3_PRE_MUTATION_EVIDENCE_INVALID',
+      { profile },
     );
   }
 
@@ -249,7 +265,7 @@ async function archiveAcceptedPreMutationFailure(env) {
     .replaceAll('-', '')
     .replaceAll(':', '')
     .replace(/\.\d{3}Z$/u, 'Z');
-  let archivePath = `${recoveryRoot}-pre-mutation-config-failure-${stamp}`;
+  let archivePath = `${recoveryRoot}-${profile}-${stamp}`;
   let suffix = 0;
   for (;;) {
     try {
@@ -258,7 +274,7 @@ async function archiveAcceptedPreMutationFailure(env) {
     } catch (error) {
       if (error?.code !== 'EEXIST') throw error;
       suffix += 1;
-      archivePath = `${recoveryRoot}-pre-mutation-config-failure-${stamp}-${suffix}`;
+      archivePath = `${recoveryRoot}-${profile}-${stamp}-${suffix}`;
     }
   }
 }
