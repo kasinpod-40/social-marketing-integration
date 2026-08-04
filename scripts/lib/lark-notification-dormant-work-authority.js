@@ -52,14 +52,7 @@ export function validateLarkNotificationDormantWorkSchemaReadbackRow(
   baseline = {},
   expectedIndexCount = 3,
 ) {
-  const normalized = normalizeCountRow(row, [
-    'notification_table_count',
-    'notification_index_count',
-    'notification_delivery_rows',
-    'active_work',
-    'active_locks',
-    ...SHARED_COUNT_FIELDS,
-  ]);
+  const normalized = normalizeSchemaRow(row);
   const before = normalizeCountRow(baseline, [
     'notification_table_count',
     'notification_index_count',
@@ -67,13 +60,7 @@ export function validateLarkNotificationDormantWorkSchemaReadbackRow(
     'active_locks',
     ...SHARED_COUNT_FIELDS,
   ]);
-  const invalid = [];
-  if (normalized.notification_table_count !== 1) invalid.push('notification_table_count');
-  if (normalized.notification_index_count !== expectedIndexCount) {
-    invalid.push('notification_index_count');
-  }
-  if (normalized.notification_delivery_rows !== 0) invalid.push('notification_delivery_rows');
-  if (normalized.active_locks !== 0) invalid.push('active_locks');
+  const invalid = structuralSchemaInvalid(normalized, expectedIndexCount);
   if (normalized.active_work !== before.active_work) invalid.push('active_work');
   for (const field of SHARED_COUNT_FIELDS) {
     if (normalized[field] !== before[field]) invalid.push(field);
@@ -86,6 +73,74 @@ export function validateLarkNotificationDormantWorkSchemaReadbackRow(
     );
   }
   return normalized;
+}
+
+/**
+ * Safe Worker deploy runs later than Migration read-back. Unrelated Report and
+ * coverage work may legitimately advance between those events, so this gate
+ * validates only the current notification schema and the live execution lock.
+ */
+export function validateLarkNotificationCurrentSchemaState(
+  row = {},
+  expectedIndexCount = 3,
+) {
+  const normalized = normalizeSchemaRow(row);
+  const invalid = structuralSchemaInvalid(normalized, expectedIndexCount);
+  if (invalid.length > 0) {
+    throw authorityError(
+      'Lark notification safe Worker deploy requires the applied empty notification schema and no active lock',
+      'LARK_NOTIFICATION_SAFE_WORKER_DEPLOY_REMOTE_STATE_INVALID',
+      { invalid },
+    );
+  }
+  return normalized;
+}
+
+/**
+ * Compare only the short deploy window. Business-fact and retained-work count
+ * changes are recorded as concurrent external progress, not attributed to the
+ * all-false Worker deployment. Notification schema and active-lock invariants
+ * remain fail-closed in both snapshots.
+ */
+export function compareLarkNotificationSafeDeployWindow(
+  before = {},
+  after = {},
+  expectedIndexCount = 3,
+) {
+  const start = validateLarkNotificationCurrentSchemaState(before, expectedIndexCount);
+  const end = validateLarkNotificationCurrentSchemaState(after, expectedIndexCount);
+  const changedFields = [
+    'active_work',
+    ...SHARED_COUNT_FIELDS,
+  ].filter((field) => start[field] !== end[field]);
+  return Object.freeze({
+    before: start,
+    after: end,
+    externalStateChangeObserved: changedFields.length > 0,
+    externalStateChangedFields: Object.freeze(changedFields),
+  });
+}
+
+function normalizeSchemaRow(row) {
+  return normalizeCountRow(row, [
+    'notification_table_count',
+    'notification_index_count',
+    'notification_delivery_rows',
+    'active_work',
+    'active_locks',
+    ...SHARED_COUNT_FIELDS,
+  ]);
+}
+
+function structuralSchemaInvalid(normalized, expectedIndexCount) {
+  const invalid = [];
+  if (normalized.notification_table_count !== 1) invalid.push('notification_table_count');
+  if (normalized.notification_index_count !== expectedIndexCount) {
+    invalid.push('notification_index_count');
+  }
+  if (normalized.notification_delivery_rows !== 0) invalid.push('notification_delivery_rows');
+  if (normalized.active_locks !== 0) invalid.push('active_locks');
+  return invalid;
 }
 
 function normalizeCountRow(row, fields) {
