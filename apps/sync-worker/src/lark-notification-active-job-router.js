@@ -1,6 +1,12 @@
-import { JOB_TYPES } from '../../../packages/application/src/jobs/job-catalog.js';
+import {
+  JOB_TRIGGERS,
+  JOB_TYPES,
+} from '../../../packages/application/src/jobs/job-catalog.js';
 import { deliverLarkExecutiveNotification } from '../../../packages/application/src/notifications/deliver-lark-executive-notification.js';
-import { readLarkNotificationRuntimeConfig } from '../../../packages/config/src/lark-notification-runtime-config.js';
+import {
+  LARK_NOTIFICATION_RUNTIME_MODES,
+  readLarkNotificationRuntimeConfig,
+} from '../../../packages/config/src/lark-notification-runtime-config.js';
 import {
   loadLarkNotificationDeliveryRequest,
 } from '../../../packages/connectors/src/lark/lark-notification-delivery-source.js';
@@ -33,6 +39,11 @@ export function createLarkNotificationActiveJobRouter(input = {}) {
       });
     }
     const aiRunKey = requireText(jobInput.job?.body?.aiRunKey, 'job.aiRunKey');
+    assertNotificationAdmission({
+      mode: config.mode,
+      trigger: jobInput.job?.body?.trigger,
+      aiRunKey,
+    });
     const infrastructure = jobInput.getInfrastructure();
     const request = await loadRequest({
       repository: infrastructure.repository,
@@ -60,6 +71,32 @@ export function createLarkNotificationActiveJobRouter(input = {}) {
 }
 
 export const processJobWithLarkNotification = createLarkNotificationActiveJobRouter();
+
+function assertNotificationAdmission(input) {
+  const trigger = requireText(input.trigger, 'job.trigger');
+  if (input.mode === LARK_NOTIFICATION_RUNTIME_MODES.CONTROLLED_UAT) {
+    if (trigger !== JOB_TRIGGERS.LARK_NOTIFICATION_CONTROLLED_UAT
+        || !input.aiRunKey.startsWith('notification-uat:')) {
+      throwAdmissionError(input.mode);
+    }
+    return;
+  }
+  if (input.mode === LARK_NOTIFICATION_RUNTIME_MODES.RUNTIME) {
+    if (trigger !== JOB_TRIGGERS.LARK_NOTIFICATION_RUNTIME
+        || input.aiRunKey.startsWith('notification-uat:')) {
+      throwAdmissionError(input.mode);
+    }
+    return;
+  }
+  throwAdmissionError(input.mode);
+}
+
+function throwAdmissionError(mode) {
+  throw permanentError('Lark notification job is not admitted by the active runtime mode', {
+    code: 'LARK_NOTIFICATION_TRIGGER_FORBIDDEN',
+    details: { runtimeMode: mode ?? null },
+  });
+}
 
 function buildOwnerId(input) {
   const operationId = optionalText(input.operation?.operationId);

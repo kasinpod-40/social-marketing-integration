@@ -55,12 +55,15 @@ test('dead-letter redrive job is active but remains environment-gated', () => {
   assert.equal(assertJobImplemented(definition), definition);
 });
 
-test('Lark notification job reuses the shared Queue and remains controlled-UAT only', () => {
+test('Lark notification job admits controlled UAT and reviewed runtime without schedule admission', () => {
   const definition = getJobDefinition(JOB_TYPES.LARK_NOTIFICATION_SEND);
   assert.equal(definition.connectorKey, null);
   assert.equal(definition.implementationStatus, 'active');
   assert.equal(definition.manualOnly, true);
-  assert.deepEqual(definition.allowedTriggers, [JOB_TRIGGERS.LARK_NOTIFICATION_CONTROLLED_UAT]);
+  assert.deepEqual(definition.allowedTriggers, [
+    JOB_TRIGGERS.LARK_NOTIFICATION_CONTROLLED_UAT,
+    JOB_TRIGGERS.LARK_NOTIFICATION_RUNTIME,
+  ]);
   assert.equal(assertJobImplemented(definition), definition);
 });
 

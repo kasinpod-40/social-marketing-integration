@@ -3,6 +3,17 @@ import { permanentError } from '../../shared/src/errors/runtime-error.js';
 export const LARK_EXECUTIVE_DESTINATION_KEY_HASH =
   '7e69a1721915dfc52b4a3ed1ecf2569cdac63ffa63f6419959c35562ef5219b9';
 
+export const LARK_NOTIFICATION_RUNTIME_MODES = Object.freeze({
+  DISABLED: 'disabled',
+  CONTROLLED_UAT: 'controlled_uat',
+  RUNTIME: 'runtime',
+});
+
+const ENABLED_RUNTIME_MODES = new Set([
+  LARK_NOTIFICATION_RUNTIME_MODES.CONTROLLED_UAT,
+  LARK_NOTIFICATION_RUNTIME_MODES.RUNTIME,
+]);
+
 /** Notification claim, remote send and Lark log mirror are independent all-false gates. */
 export function readLarkNotificationRuntimeConfig(env = {}) {
   const runtimeEnabled = readBoolean(
@@ -23,6 +34,7 @@ export function readLarkNotificationRuntimeConfig(env = {}) {
   if (sendEnabled && !runtimeEnabled) fail('MKT_NOTIFICATION_LARK_SEND_ENABLED requires runtime');
   if (mirrorEnabled && !runtimeEnabled) fail('MKT_NOTIFICATION_LARK_MIRROR_ENABLED requires runtime');
 
+  const mode = readRuntimeMode(env.MKT_NOTIFICATION_RUNTIME_MODE, runtimeEnabled);
   const tables = runtimeEnabled
     ? Object.freeze({
       aiRuns: requireText(env.LARK_TABLE_MKT_AI_REPORT_RUNS, 'LARK_TABLE_MKT_AI_REPORT_RUNS'),
@@ -42,6 +54,7 @@ export function readLarkNotificationRuntimeConfig(env = {}) {
 
   return Object.freeze({
     flags: Object.freeze({ runtimeEnabled, sendEnabled, mirrorEnabled }),
+    mode,
     tables,
     destinationKeyHash: LARK_EXECUTIVE_DESTINATION_KEY_HASH,
     claimLeaseMs: readInteger(
@@ -57,6 +70,26 @@ export function readLarkNotificationRuntimeConfig(env = {}) {
       baseAutomationNotificationEnabled: false,
     }),
   });
+}
+
+function readRuntimeMode(value, runtimeEnabled) {
+  if (!runtimeEnabled) {
+    if (value === null || value === undefined || value === ''
+        || value === LARK_NOTIFICATION_RUNTIME_MODES.DISABLED) {
+      return LARK_NOTIFICATION_RUNTIME_MODES.DISABLED;
+    }
+    fail('MKT_NOTIFICATION_RUNTIME_MODE must be disabled while runtime is false',
+      'MKT_NOTIFICATION_RUNTIME_MODE');
+  }
+
+  const mode = value === null || value === undefined || value === ''
+    ? LARK_NOTIFICATION_RUNTIME_MODES.CONTROLLED_UAT
+    : String(value).trim().toLowerCase();
+  if (!ENABLED_RUNTIME_MODES.has(mode)) {
+    fail('MKT_NOTIFICATION_RUNTIME_MODE must be controlled_uat or runtime',
+      'MKT_NOTIFICATION_RUNTIME_MODE');
+  }
+  return mode;
 }
 
 function readBoolean(value, name, fallback) {
