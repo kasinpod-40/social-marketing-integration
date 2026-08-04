@@ -18,28 +18,47 @@ export const LARK_DASHBOARD_RETIRED_MUTATION_FLAGS = Object.freeze([
 ]);
 
 export const LARK_DASHBOARD_COMPATIBILITY_FIELD_IDENTITIES = deepFreeze({
-  metricKey: { fieldId: 'fldGvd3tw8', fieldName: 'metric_key', type: 1 },
-  displayName: { fieldId: 'fldE4Nezjd', fieldName: 'display_name', type: 1 },
-  numberWindow: { fieldId: 'fldbPCldTL', fieldName: 'window_days', type: 2 },
+  metricKey: {
+    fieldId: 'fldGvd3tw8',
+    fieldName: 'metric_key',
+    type: 1,
+    isPrimary: true,
+  },
+  displayName: {
+    fieldId: 'fldE4Nezjd',
+    fieldName: 'display_name',
+    type: 1,
+    isPrimary: false,
+  },
+  numberWindow: {
+    fieldId: 'fldbPCldTL',
+    fieldName: 'window_days',
+    type: 2,
+    isPrimary: false,
+  },
   preservedWindowSelect: {
     fieldId: 'fldMlTUP3Z',
     fieldName: '__mkt_legacy_window_days_single_select_v1',
     type: 3,
+    isPrimary: false,
   },
   windowSelectV2: {
     fieldId: 'fldraj0QP8',
     fieldName: '__mkt_legacy_window_days_single_select_v2',
     type: 3,
+    isPrimary: false,
   },
   displaySelectV1: {
     fieldId: 'fldZB452Z2',
     fieldName: '__mkt_legacy_display_name_single_select_v1',
     type: 3,
+    isPrimary: false,
   },
   displaySelectV2: {
     fieldId: 'fldHNUhCfl',
     fieldName: '__mkt_legacy_display_name_single_select_v2',
     type: 3,
+    isPrimary: false,
   },
 });
 
@@ -77,7 +96,7 @@ export function buildLarkDashboardCompatibilityReportSchema(schema, env = {}) {
 
 /**
  * Read-only exact-state admission for the permanent Dashboard Compatibility Freeze.
- * No semantic-name fallback is accepted: every reviewed physical Field ID/name/type must match.
+ * No semantic-name fallback is accepted: every reviewed physical Field ID/name/type/primary owner must match.
  */
 export async function inspectLarkDashboardCompatibilityFreeze({ client, env = {} } = {}) {
   if (!isIntegrationWorkspace(env)) return deepFreeze({
@@ -105,17 +124,21 @@ export async function inspectLarkDashboardCompatibilityFreeze({ client, env = {}
   for (const [key, expected] of Object.entries(LARK_DASHBOARD_COMPATIBILITY_FIELD_IDENTITIES)) {
     const matches = fields.filter((field) => String(field?.fieldId ?? '') === expected.fieldId);
     const actual = matches[0] ?? null;
+    const expectedPrimary = expected.isPrimary === true;
+    const actualPrimary = actual?.isPrimary === true;
     if (matches.length !== 1
       || normalizeName(actual?.fieldName) !== normalizeName(expected.fieldName)
       || Number(actual?.type) !== expected.type
-      || actual?.isPrimary === true) {
+      || actualPrimary !== expectedPrimary) {
       blockers.push(blocker('REPORT_METRIC_COMPATIBILITY_FREEZE_FIELD_IDENTITY_MISMATCH', {
         identityKey: key,
         expectedFieldName: expected.fieldName,
         expectedType: expected.type,
+        expectedPrimary,
         fieldCount: matches.length,
         actualFieldName: actual?.fieldName ?? null,
         actualType: actual?.type ?? null,
+        actualPrimary,
       }));
       continue;
     }
