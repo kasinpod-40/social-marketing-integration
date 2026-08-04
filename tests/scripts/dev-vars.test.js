@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseDevVars } from '../../scripts/lib/dev-vars.js';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { parseDevVars, readDevVars } from '../../scripts/lib/dev-vars.js';
 
 test('parses .dev.vars style values safely', () => {
   const result = parseDevVars(`
@@ -46,4 +48,11 @@ BACKSLASH="one\\two"
     REGEX: String.raw`\d+\s+items`,
     BACKSLASH: String.raw`one\two`,
   });
+});
+
+test('missing optional .dev.vars returns an empty frozen environment', async () => {
+  const missing = join(tmpdir(), `missing-dev-vars-${Date.now()}-${Math.random()}`);
+  const result = await readDevVars(missing);
+  assert.deepEqual(result, {});
+  assert.equal(Object.isFrozen(result), true);
 });
