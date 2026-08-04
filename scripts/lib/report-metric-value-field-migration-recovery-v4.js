@@ -28,6 +28,8 @@ const LEGACY_FIELD_NAMES = Object.freeze([
 ]);
 const CANONICAL_MISMATCH_CODE =
   'REPORT_METRIC_FIELD_MIGRATION_CANONICAL_VALUE_MISMATCH';
+const LEGACY_SOURCE_CONFLICT_CODE =
+  'REPORT_METRIC_FIELD_MIGRATION_RECOVERY_SOURCE_VALUE_CONFLICT';
 
 /**
  * หลัง migration สร้าง canonical Text สำเร็จแล้ว ค่าใน deterministic Legacy fields เป็น archive
@@ -35,7 +37,7 @@ const CANONICAL_MISMATCH_CODE =
  */
 export async function planReportMetricValueFieldMigration(input = {}) {
   const v3Plan = await planRecoveryV3(input);
-  if (!isExactPostMigrationCanonicalMismatch(v3Plan)) return v3Plan;
+  if (!shouldUseCanonicalAuthorityRecovery(v3Plan)) return v3Plan;
 
   const before = await inspectCanonicalAuthorityState(input);
   if (before.blockers.length > 0) return blockedPlan(before);
@@ -62,7 +64,7 @@ export async function planReportMetricValueFieldMigration(input = {}) {
 
 export async function applyReportMetricValueFieldMigration(input = {}) {
   const v3Plan = await planRecoveryV3(input);
-  if (!isExactPostMigrationCanonicalMismatch(v3Plan)) return applyRecoveryV3(input);
+  if (!shouldUseCanonicalAuthorityRecovery(v3Plan)) return applyRecoveryV3(input);
 
   const before = await inspectCanonicalAuthorityState(input);
   assertCanonicalAuthorityState(before);
@@ -251,12 +253,13 @@ function createCanonicalAuthoritativeReadClient(client, inspection) {
   });
 }
 
-function isExactPostMigrationCanonicalMismatch(plan) {
-  return plan?.repairable === false
-    && Number(plan?.blockerCount) === 1
-    && Array.isArray(plan?.blockers)
-    && plan.blockers[0]?.code === CANONICAL_MISMATCH_CODE
-    && plan.blockers[0]?.fieldName === CANONICAL_FIELD_NAME;
+function shouldUseCanonicalAuthorityRecovery(plan) {
+  if (plan?.repairable !== false
+    || Number(plan?.blockerCount) !== 1
+    || !Array.isArray(plan?.blockers)) return false;
+  const blocker = plan.blockers[0];
+  return blocker?.fieldName === CANONICAL_FIELD_NAME
+    && [CANONICAL_MISMATCH_CODE, LEGACY_SOURCE_CONFLICT_CODE].includes(blocker?.code);
 }
 
 function assertCanonicalAuthorityState(inspection) {
