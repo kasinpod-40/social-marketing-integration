@@ -16,6 +16,12 @@ const TABLES = Object.freeze({
   reportSettings: 'tbl-settings',
   notificationLog: 'tbl-log',
 });
+const WORKER_ENVIRONMENT = Object.freeze({
+  LARK_TABLE_MKT_AI_REPORT_RUNS: TABLES.aiRuns,
+  LARK_TABLE_MKT_REPORT_SNAPSHOTS: TABLES.reportSnapshots,
+  LARK_TABLE_MKT_REPORT_SETTINGS: TABLES.reportSettings,
+  LARK_TABLE_MKT_NOTIFICATION_LOG: TABLES.notificationLog,
+});
 const ACTIVE_WINDOWS = Object.freeze([1, 3, 7, 30]);
 
 function activeKeys() {
@@ -117,6 +123,7 @@ test('resolves exact active 1D/3D/7D/30D Notification Runtime authority', async 
     settingCount: 4,
     groupId: DESTINATION,
     destinationKeyHash: DESTINATION_HASH,
+    workerEnvironment: WORKER_ENVIRONMENT,
   });
 });
 
@@ -136,6 +143,7 @@ test('returns inactive only when every canonical AI and notification flag is fal
   assert.equal(authority.state, 'inactive');
   assert.equal(authority.settingCount, 0);
   assert.deepEqual(authority.settingKeys, []);
+  assert.deepEqual(authority.workerEnvironment, {});
 });
 
 test('fails closed for mixed flags or any fifth active canonical Setting', async () => {
