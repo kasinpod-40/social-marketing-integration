@@ -14,6 +14,7 @@ import { REPORT_METRIC_VALUE_FIELD_MIGRATION_CONFIRMATION } from './lib/report-m
 import {
   REPORT_RUNTIME_FINALIZE_CONFIRMATION,
   REPORT_RUNTIME_FINALIZE_CONTRACT_VERSION,
+  assertDashboardSettingsNotificationRuntimePreserved,
   assertDashboardSettingsPreviewSafe,
   assertReportMetricValueFieldMigrationApplySafe,
   assertReportMetricValueFieldMigrationPreviewSafe,
@@ -63,9 +64,10 @@ function printPlan() {
       'report-schema-preview',
       'bounded-empty-field-conflict-recovery-if-needed',
       'report-schema-apply',
-      'dashboard-settings-preview',
+      'dashboard-settings-preview-with-notification-runtime-authority',
       'dashboard-settings-apply',
       'schema-and-settings-readback',
+      'notification-runtime-preservation-verification',
       'private-runtime-environment-evidence',
       'sanitized-evidence',
     ],
@@ -76,11 +78,13 @@ function printPlan() {
       populatedFieldMigration: 'rename_legacy_create_canonical_lossless_copy',
       legacyValuesPreserved: true,
       conflictRecovery: 'empty_non_primary_fields_or_empty_tables_only',
+      notificationRuntimeSettings: 'preserve_exact_authorized_1d_3d_7d_30d_or_inactive',
+      notificationAdmission: false,
       workerDeploy: false,
       remoteD1Mutation: false,
       queueSend: false,
       scheduleActivation: false,
-      aiEnabled: false,
+      reportAiSummaryExecution: false,
       deleteBusinessFacts: false,
     },
   }, null, 2)}\n`);
@@ -222,6 +226,13 @@ async function executeFinalization() {
   const settingsReadback = await runJson('node', ['scripts/reconcile-dashboard-report-settings.mjs'], { env: postSchemaEnv });
   assertDashboardSettingsPreviewSafe(settingsReadback, { requireClean: true });
 
+  currentStage = 'notification-runtime-preservation-verification';
+  const notificationRuntime = assertDashboardSettingsNotificationRuntimePreserved(
+    settingsPreview,
+    settingsApply,
+    settingsReadback,
+  );
+
   currentStage = 'private-runtime-environment-evidence';
   const privateEnvironment = await writeReportRuntimeFinalizerEnvironment({
     evidenceRoot,
@@ -257,6 +268,9 @@ async function executeFinalization() {
       canonicalUpdated: settingsApply.canonicalUpdated ?? null,
       canonicalSkipped: settingsApply.canonicalSkipped ?? null,
       canonicalActive: settingsApply.canonicalActive ?? null,
+      notificationRuntimeState: notificationRuntime.state,
+      preservedNotificationRuntimeSettingCount:
+        notificationRuntime.preservedSettingCount,
       legacyDisabled: settingsApply.legacyDisabled ?? null,
       activeLegacySettings: settingsApply.activeLegacySettings ?? null,
       deleteCount: settingsApply.deleteCount ?? null,
@@ -267,12 +281,15 @@ async function executeFinalization() {
       reportD1ReadEnabled: false,
       presetMaterializationEnabled: false,
       aiSummaryEnabled: false,
+      notificationRuntimeSettingsPreserved:
+        notificationRuntime.state === 'active',
+      notificationAdmissionEnabled: false,
       schedulesEnabled: false,
       workerDeployed: false,
       queueMessageSent: false,
       remoteD1Mutated: false,
     },
-    nextStep: 'merge/deploy/runtime activation remain separately controlled; Lark Report schema and canonical settings are ready',
+    nextStep: 'Report schema/settings are ready; existing exact Notification Runtime Settings remain preserved and Notification Admission remains separately controlled',
   });
   const evidencePath = resolve(evidenceRoot, 'report-runtime-finalize-summary.json');
   await writeFile(evidencePath, `${JSON.stringify(summary, null, 2)}\n`, { mode: 0o600 });
