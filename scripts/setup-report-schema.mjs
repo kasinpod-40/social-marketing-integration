@@ -1,6 +1,10 @@
 import { readDevVars } from './lib/dev-vars.js';
 import { printJson } from './lib/lark-runtime.js';
 import { resolveReportSchemaInstallerMode } from './lib/report-schema-installer-mode.js';
+import {
+  buildLarkDashboardCompatibilityReportSchema,
+  inspectLarkDashboardCompatibilityFreeze,
+} from './lib/lark-dashboard-compatibility-freeze-v1.js';
 import { createLarkBitableClientFromEnv } from '../packages/connectors/src/lark/lark-bitable.client.js';
 import {
   applyLarkReportSchema,
@@ -36,10 +40,24 @@ async function main() {
       ? (event) => console.error(JSON.stringify(event))
       : undefined,
   });
+  const compatibility = await inspectLarkDashboardCompatibilityFreeze({ client, env });
+  if (compatibility.applicable && compatibility.compatible !== true) {
+    const error = new Error(
+      'Report schema is outside the exact Dashboard Compatibility Freeze boundary',
+    );
+    error.code = 'LARK_REPORT_SCHEMA_COMPATIBILITY_FREEZE_BLOCKED';
+    error.details = {
+      blockerCount: compatibility.blockerCount,
+      blockers: compatibility.blockers,
+      remoteMutationCount: 0,
+    };
+    throw error;
+  }
+  const schema = buildLarkDashboardCompatibilityReportSchema(LARK_REPORT_SCHEMA_V2, env);
   const schemaInput = {
     client,
     env,
-    schema: LARK_REPORT_SCHEMA_V2,
+    schema,
     schemaVersion: LARK_REPORT_SCHEMA_V2_VERSION,
     validateSchema: validateReportSchemaV2,
   };
@@ -48,6 +66,9 @@ async function main() {
     const preview = await planLarkReportSchema(schemaInput);
     printJson({
       ...preview,
+      dashboardCompatibilityFreeze: compatibility.compatible === true,
+      dashboardCompatibilityFreezeContractVersion:
+        compatibility.compatible === true ? compatibility.contractVersion : null,
       nextCommand: preview.readyToApply
         ? 'CONFIRM_WRITE=YES npm run setup:report-schema:apply'
         : null,
@@ -67,6 +88,9 @@ async function main() {
   });
   printJson({
     ...result,
+    dashboardCompatibilityFreeze: compatibility.compatible === true,
+    dashboardCompatibilityFreezeContractVersion:
+      compatibility.compatible === true ? compatibility.contractVersion : null,
     configNote: 'นำ environmentUpdates ไปแทน Table IDs ใน wrangler.sync.jsonc โดยไม่ Commit ไฟล์ Local config',
   });
 }
