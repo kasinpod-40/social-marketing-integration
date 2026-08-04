@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  LARK_NATIVE_AI_CUSTOM_FIELD_AUTHORITY,
   LARK_NATIVE_AI_DISABLED_CONFIGURATION_PERMISSION_BUNDLE,
   LARK_NATIVE_AI_DISABLED_CONFIGURATION_WORKFLOWS,
   LARK_NATIVE_AI_EXECUTIVE_DESTINATION_KEY_HASH,
@@ -46,10 +47,10 @@ function fixture() {
   };
 }
 
-test('builds exact repository-only disabled configuration and payload preview', async () => {
+test('builds exact repository-only field-authority and payload preview', async () => {
   const preview = await buildLarkNativeAiDisabledConfigurationPreview(fixture());
   assert.equal(preview.ok, true);
-  assert.equal(preview.status, 'repository_preview_ready_live_configuration_blocked');
+  assert.equal(preview.status, 'repository_preview_field_binding_verified_live_configuration_blocked');
   assert.equal(preview.mode, 'repository_only');
   assert.equal(preview.liveConfigurationAuthorized, false);
   assert.equal(preview.activationAuthorized, false);
@@ -57,6 +58,15 @@ test('builds exact repository-only disabled configuration and payload preview', 
   assert.deepEqual(preview.workflows.map(({ title }) => title), [
     'AI Materialization → MKT_AI_Report_Runs',
     'Eligible AI Run → Lark Group Notification',
+  ]);
+  assert.equal(preview.customAiFieldAuthority.fieldCount, 4);
+  assert.equal(preview.customAiFieldAuthority.outputBinding, 'field_self');
+  assert.equal(preview.customAiFieldAuthority.automaticGenerationPolicy, 'unproven');
+  assert.deepEqual(preview.customAiFieldAuthority.fields.map(({ fieldName }) => fieldName), [
+    'insight_summary',
+    'strengths',
+    'weaknesses',
+    'recommendations',
   ]);
   assert.match(preview.notificationPayloadChecksum, /^[a-f0-9]{64}$/u);
   assert.equal(
@@ -67,6 +77,13 @@ test('builds exact repository-only disabled configuration and payload preview', 
   assert.equal(preview.notificationLogRecordPreview.attempt_status, 'pending');
   assert.equal(preview.notificationLogRecordPreview.sent_at, null);
   assert.match(preview.notificationPayloadPreview.message.text, /ข้อเสนอแนะ/u);
+  assert.equal(preview.blockerCount, 2);
+  assert.deepEqual(preview.blockers.map(({ code }) => code), [
+    'LARK_CUSTOM_AI_AUTOGENERATION_POLICY_UNPROVEN',
+    'LARK_NATIVE_PAYLOAD_SHA256_UNPROVEN',
+  ]);
+  assert.equal(preview.advisoryCount, 1);
+  assert.equal(preview.advisories[0].code, 'UI_AUTOMATION_API_IDENTITY_NOT_EXPOSED');
   assert.equal(validateLarkNativeAiDisabledConfigurationPreview(preview).length, 0);
   assert.equal(preview.safety.remoteLarkRead, 0);
   assert.equal(preview.safety.remoteLarkWrite, 0);
@@ -76,6 +93,26 @@ test('builds exact repository-only disabled configuration and payload preview', 
   assert.equal(preview.safety.notificationSend, 0);
   assert.equal(preview.safety.scheduleEnabled, false);
   assert.equal(preview.safety.production, 'BLOCKED');
+});
+
+test('locks the four observed Custom AI fields and visible references', () => {
+  assert.equal(LARK_NATIVE_AI_CUSTOM_FIELD_AUTHORITY.source, 'user_confirmed_lark_base_ui');
+  assert.equal(LARK_NATIVE_AI_CUSTOM_FIELD_AUTHORITY.table, '🧠 MKT_AI_Report_Runs');
+  assert.equal(LARK_NATIVE_AI_CUSTOM_FIELD_AUTHORITY.fieldCount, 4);
+  assert.equal(LARK_NATIVE_AI_CUSTOM_FIELD_AUTHORITY.promptCaptureComplete, false);
+  assert.deepEqual(LARK_NATIVE_AI_CUSTOM_FIELD_AUTHORITY.sharedVisibleReferences, [
+    'scope_type',
+    'channel_key',
+    'window_days',
+    'data_status',
+    'readiness_status',
+    'readiness_message',
+  ]);
+  for (const field of LARK_NATIVE_AI_CUSTOM_FIELD_AUTHORITY.fields) {
+    assert.equal(field.fieldType, 'Custom AI field');
+    assert.equal(field.exportFieldType, 'Text');
+    assert.equal(field.outputBinding, 'field_self');
+  }
 });
 
 test('maps notification identity through Snapshot before Settings and never stores raw destination', () => {
@@ -94,13 +131,16 @@ test('maps notification identity through Snapshot before Settings and never stor
   assert.doesNotMatch(serialized, /https?:\/\/[^\s"]*webhook/iu);
 });
 
-test('AI generation Workflow has no message, notification log or activation action', () => {
+test('AI materialization Workflow waits for four populated Custom AI fields and only updates state', () => {
   const ai = LARK_NATIVE_AI_DISABLED_CONFIGURATION_WORKFLOWS[0];
   assert.equal(ai.finalTrigger.table, '🧠 MKT_AI_Report_Runs');
+  assert.equal(ai.generationAuthority.type, 'lark_custom_ai_fields');
+  assert.equal(ai.generationAuthority.bindingStatus, 'verified_field_self_binding');
   assert.deepEqual(ai.actions.map(({ type }) => type), [
-    'lark_native_ai_generate_structured_text',
     'update_current_record',
   ]);
+  assert.equal(ai.finalTrigger.conditions.filter(({ operator }) => operator === 'is_not_empty').length, 4);
+  assert.equal(ai.actions.some(({ type }) => type === 'lark_native_ai_generate_structured_text'), false);
   assert.equal(ai.actions.some(({ type }) => type === 'send_lark_message'), false);
   assert.equal(ai.actions.some(({ type }) => type === 'add_notification_log_record'), false);
   assert.equal(ai.actions.some(({ type }) => type === 'enable_automation'), false);
