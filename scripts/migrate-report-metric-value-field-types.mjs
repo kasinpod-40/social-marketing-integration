@@ -9,14 +9,19 @@ import {
 import { createLarkBitableClientFromEnv } from '../packages/connectors/src/lark/lark-bitable.client.js';
 import { createVerifiedFieldMutationClient } from './lib/lark-verified-field-mutation-client.js';
 import { createReportMetricLegacyReadNormalizer } from './lib/report-metric-legacy-read-normalizer.js';
+import { resolveReportMetricValueTableEnvironment } from './lib/report-metric-value-table-environment-resolver.js';
 import { assertReportRuntimeFinalizeEnvironment } from './lib/report-runtime-finalize-operator.js';
 import { readDevVars } from './lib/dev-vars.js';
 
 try {
   const apply = parseArgs(process.argv.slice(2));
-  const env = await readRuntimeEnvironment();
-  assertReportRuntimeFinalizeEnvironment(env);
-  const baseClient = createLarkBitableClientFromEnv(env);
+  const sourceEnv = await readRuntimeEnvironment();
+  assertReportRuntimeFinalizeEnvironment(sourceEnv);
+  const baseClient = createLarkBitableClientFromEnv(sourceEnv);
+  const env = await resolveReportMetricValueTableEnvironment({
+    client: baseClient,
+    env: sourceEnv,
+  });
   // Verify raw Field/Record parity inside the mutation wrapper first, then expose only a
   // lossless normalized read model to the migration planner.
   const mutationClient = apply ? createVerifiedFieldMutationClient(baseClient) : baseClient;
