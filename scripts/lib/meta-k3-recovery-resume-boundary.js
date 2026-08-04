@@ -11,14 +11,14 @@ export const META_K3_RECOVERY_RESUME_PROFILES = Object.freeze({
   ]),
   post_backup_pre_preview: Object.freeze([
     'backup.json',
-    'meta-k2-before-recovery.sql',
+    'meta-k3-before-recovery.sql',
     'read-only-stability.json',
     'retained-evidence-admission.json',
   ]),
   post_d1_preview_http_404_safe_restored: Object.freeze([
     'backup.json',
     'deploy-d1-continuation.json',
-    'meta-k2-before-recovery.sql',
+    'meta-k3-before-recovery.sql',
     'read-only-stability.json',
     'restore-after-d1.json',
     'retained-evidence-admission.json',
