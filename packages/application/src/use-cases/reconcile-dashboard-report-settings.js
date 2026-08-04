@@ -6,6 +6,8 @@ import { readLarkText } from '../../../connectors/src/shared/lark-cell-value.js'
 import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 
 const LEGACY_PROFILES = new Set(['dev_ft_pumkin', 'uat_chemistry_k']);
+const NOTIFICATION_RUNTIME_SETTING_COUNT = 4;
+const SHA256 = /^[0-9a-f]{64}$/u;
 
 /**
  * วางแผน Canonical upsert และ exact-key legacy retirement โดยไม่เขียน Lark
@@ -23,7 +25,13 @@ export async function planDashboardReportSettingsReconciliation(input = {}) {
     });
   }
 
-  const canonicalRows = createReportSettingRowsForProfile(profileKey);
+  const notificationRuntimeAuthority = normalizeNotificationRuntimeAuthority(
+    input.notificationRuntimeAuthority,
+  );
+  const canonicalRows = applyNotificationRuntimeAuthority(
+    createReportSettingRowsForProfile(profileKey),
+    notificationRuntimeAuthority,
+  );
   const canonicalPlan = await syncEngine.planByKey({
     repository,
     tableId,
@@ -41,12 +49,16 @@ export async function planDashboardReportSettingsReconciliation(input = {}) {
     tableId,
     canonicalRows,
     canonicalPlan,
+    notificationRuntimeAuthority,
     legacyRecords: legacy.records,
     summary: Object.freeze({
       canonicalExpected: canonicalRows.length,
       canonicalCreates: canonicalPlan.createRows.length,
       canonicalUpdates: canonicalPlan.updateRows.length,
       canonicalSkipped: canonicalPlan.skipped,
+      notificationRuntimeState: notificationRuntimeAuthority.state,
+      preservedNotificationRuntimeSettingCount:
+        notificationRuntimeAuthority.settingKeys.length,
       legacyFound: legacy.records.length,
       legacyEnabled: legacy.enabledRecords.length,
       legacyAlreadyDisabled: legacy.records.length - legacy.enabledRecords.length,
@@ -81,6 +93,7 @@ export async function applyDashboardReportSettingsReconciliation(input = {}) {
     repository,
     tableId: plan.tableId,
     canonicalRows: plan.canonicalRows,
+    notificationRuntimeAuthority: plan.notificationRuntimeAuthority,
   });
 
   return Object.freeze({
@@ -96,6 +109,10 @@ export async function verifyDashboardReportSettingsReconciliation(input = {}) {
   const repository = requireRepository(input.repository);
   const tableId = requireText(input.tableId, 'tableId');
   const canonicalRows = requireArray(input.canonicalRows, 'canonicalRows');
+  const notificationRuntimeAuthority = normalizeNotificationRuntimeAuthority(
+    input.notificationRuntimeAuthority,
+  );
+  const notificationRuntimeKeys = new Set(notificationRuntimeAuthority.settingKeys);
   const canonicalKeys = canonicalRows.map((row) => row.report_setting_key);
   const records = await repository.listByFieldValues(
     tableId,
@@ -130,6 +147,34 @@ export async function verifyDashboardReportSettingsReconciliation(input = {}) {
         details: { key: expected.report_setting_key },
       });
     }
+
+    const aiEnabled = readCheckbox(actual.fields?.ai_enabled);
+    const notificationEnabled = readCheckbox(actual.fields?.notification_enabled);
+    if (notificationRuntimeKeys.has(expected.report_setting_key)) {
+      const groupId = readLarkText(actual.fields?.group_id, {
+        allowNull: false,
+        label: 'group_id',
+      });
+      if (!aiEnabled
+        || !notificationEnabled
+        || groupId !== notificationRuntimeAuthority.groupId) {
+        throw permanentError(
+          `Notification Runtime report setting verification failed: ${expected.report_setting_key}`,
+          {
+            code: 'DASHBOARD_REPORT_NOTIFICATION_RUNTIME_VERIFICATION_FAILED',
+            details: { key: expected.report_setting_key },
+          },
+        );
+      }
+    } else if (aiEnabled || notificationEnabled) {
+      throw permanentError(
+        `Unauthorized canonical Report Setting remains notification-active: ${expected.report_setting_key}`,
+        {
+          code: 'DASHBOARD_REPORT_NOTIFICATION_RUNTIME_SCOPE_INVALID',
+          details: { key: expected.report_setting_key },
+        },
+      );
+    }
   }
 
   const activeLegacy = LEGACY_REPORT_SETTING_KEYS.filter((key) => {
@@ -145,9 +190,87 @@ export async function verifyDashboardReportSettingsReconciliation(input = {}) {
 
   return Object.freeze({
     canonicalActive: canonicalKeys.length,
+    notificationRuntimeState: notificationRuntimeAuthority.state,
+    preservedNotificationRuntimeSettingCount: notificationRuntimeAuthority.settingKeys.length,
     legacyActive: 0,
     legacyRetainedDisabled: LEGACY_REPORT_SETTING_KEYS.filter((key) => byKey.has(key)).length,
     deleteCount: 0,
+  });
+}
+
+function applyNotificationRuntimeAuthority(rows, authority) {
+  if (authority.state !== 'active') return rows;
+  const activeKeys = new Set(authority.settingKeys);
+  const canonicalKeys = new Set(rows.map((row) => row.report_setting_key));
+  const unknownKeys = authority.settingKeys.filter((key) => !canonicalKeys.has(key));
+  if (unknownKeys.length > 0) {
+    throw permanentError('Notification Runtime authority contains non-canonical Report Settings', {
+      code: 'DASHBOARD_REPORT_NOTIFICATION_RUNTIME_SCOPE_INVALID',
+      details: { unknownKeyCount: unknownKeys.length },
+    });
+  }
+  return Object.freeze(rows.map((row) => (
+    activeKeys.has(row.report_setting_key)
+      ? Object.freeze({
+        ...row,
+        ai_enabled: true,
+        notification_enabled: true,
+        group_id: authority.groupId,
+      })
+      : row
+  )));
+}
+
+function normalizeNotificationRuntimeAuthority(value) {
+  if (value === undefined || value === null) {
+    return Object.freeze({
+      state: 'inactive',
+      settingKeys: Object.freeze([]),
+      groupId: null,
+      destinationKeyHash: null,
+    });
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError('notificationRuntimeAuthority must be an object');
+  }
+  const state = requireText(value.state, 'notificationRuntimeAuthority.state');
+  if (!['inactive', 'active'].includes(state)) {
+    throw new TypeError('notificationRuntimeAuthority.state must be inactive or active');
+  }
+  const settingKeys = [...new Set(requireArray(
+    value.settingKeys ?? [],
+    'notificationRuntimeAuthority.settingKeys',
+  ).map((key) => requireText(key, 'notificationRuntimeAuthority.settingKey')))].sort();
+  if (state === 'inactive') {
+    if (settingKeys.length !== 0) {
+      throw new TypeError('Inactive Notification Runtime authority cannot contain setting keys');
+    }
+    return Object.freeze({
+      state,
+      settingKeys: Object.freeze([]),
+      groupId: null,
+      destinationKeyHash: null,
+    });
+  }
+  if (settingKeys.length !== NOTIFICATION_RUNTIME_SETTING_COUNT) {
+    throw permanentError('Active Notification Runtime authority requires exactly four Report Settings', {
+      code: 'DASHBOARD_REPORT_NOTIFICATION_RUNTIME_SCOPE_INVALID',
+      details: { settingCount: settingKeys.length },
+    });
+  }
+  const groupId = requireText(value.groupId, 'notificationRuntimeAuthority.groupId');
+  const destinationKeyHash = requireText(
+    value.destinationKeyHash,
+    'notificationRuntimeAuthority.destinationKeyHash',
+  ).toLowerCase();
+  if (!SHA256.test(destinationKeyHash)) {
+    throw new TypeError('notificationRuntimeAuthority.destinationKeyHash must be SHA-256 hex');
+  }
+  return Object.freeze({
+    state,
+    settingKeys: Object.freeze(settingKeys),
+    groupId,
+    destinationKeyHash,
   });
 }
 
