@@ -13,7 +13,13 @@ import { basename, join, resolve } from 'node:path';
 
 import { readDevVars } from './lib/dev-vars.js';
 import {
+  assertLarkNotificationDormantWorkStable,
+  validateLarkNotificationDormantWorkPreflightRow,
+  validateLarkNotificationDormantWorkSchemaReadbackRow,
+} from './lib/lark-notification-dormant-work-authority.js';
+import {
   LARK_NOTIFICATION_REMOTE_EXPECTED_MIGRATION,
+  LARK_NOTIFICATION_REMOTE_INDEXES,
   LARK_NOTIFICATION_REMOTE_ROLLOUT_CONFIRMATIONS,
   LARK_NOTIFICATION_REMOTE_ROLLOUT_CONTRACT_VERSION,
   LARK_NOTIFICATION_REMOTE_ROLLOUT_PHASES,
@@ -29,8 +35,6 @@ import {
   validateLarkNotificationBackupEvidence,
   validateLarkNotificationNoPendingMigrations,
   validateLarkNotificationPendingMigrations,
-  validateLarkNotificationRemotePreflightRow,
-  validateLarkNotificationRemoteSchemaReadbackRow,
   validateLarkNotificationRemoteWranglerConfig,
 } from './lib/lark-notification-remote-rollout-operator.js';
 
@@ -96,6 +100,7 @@ function printPlan(mode) {
       'existing Lark notification runtime contract',
       'existing stable Queue operation contract',
       'existing .dev.vars parser and merged environment precedence',
+      'existing sync_locks execution authority',
     ],
     safety: {
       defaultMode: 'plan_only',
@@ -155,6 +160,7 @@ async function runPreflight(target, env) {
   runCommand('node', [
     '--test',
     'tests/application/lark-notification-remote-rollout-operator.test.js',
+    'tests/application/lark-notification-dormant-work-authority.test.js',
     'tests/application/lark-notification-active-job-router.test.js',
     'tests/connectors/d1-lark-notification-delivery-store.test.js',
   ]);
@@ -173,7 +179,7 @@ async function runPreflight(target, env) {
   ]);
   const query = runD1Query(target, buildLarkNotificationRemotePreflightSql());
   const pendingMigrations = validateLarkNotificationPendingMigrations(migrations.stdout);
-  const remote = validateLarkNotificationRemotePreflightRow(
+  const remote = validateLarkNotificationDormantWorkPreflightRow(
     extractLarkNotificationWranglerD1Rows(query.stdout)[0],
   );
 
@@ -191,9 +197,10 @@ async function runPreflight(target, env) {
     migration: local.migration,
     pendingMigrations,
     remote,
-    remoteOwnerCheck: remote.active_work === 0 && remote.active_locks === 0
+    remoteOwnerCheck: remote.active_work === 0
       ? 'no_active_remote_work_or_lock'
-      : 'blocked',
+      : 'no_active_lock_dormant_work_preserved',
+    dormantWorkPolicy: 'preserve_exact_count_block_on_any_active_lock_or_count_drift',
     remoteMutationCount: 0,
     queueActionCount: 0,
     larkActionCount: 0,
@@ -206,6 +213,7 @@ async function runPreflight(target, env) {
     targetFingerprint: local.targetFingerprint,
     tableMappingSources: local.config.tableMappingSources,
     remote,
+    dormantWorkPolicy: evidence.dormantWorkPolicy,
   };
 }
 
@@ -221,6 +229,12 @@ async function runBackup(target, env) {
     '--config', target.wranglerConfig,
   ]);
   validateLarkNotificationPendingMigrations(migrations.stdout);
+  const current = validateLarkNotificationDormantWorkPreflightRow(
+    extractLarkNotificationWranglerD1Rows(
+      runD1Query(target, buildLarkNotificationRemotePreflightSql()).stdout,
+    )[0],
+  );
+  assertLarkNotificationDormantWorkStable(current, preflight.remote);
 
   const timestamp = new Date().toISOString().replaceAll(/[-:.]/gu, '');
   const backupFile = join(
@@ -258,10 +272,17 @@ async function runBackup(target, env) {
     backupFile,
     sizeBytes: contents.byteLength,
     sha256,
+    retainedActiveWorkCount: current.active_work,
+    activeLockCount: current.active_locks,
     remoteMutationCount: 0,
   };
   await saveEvidence('backup', evidence);
-  return { evidenceFile: evidencePath('backup'), backupFile, sha256 };
+  return {
+    evidenceFile: evidencePath('backup'),
+    backupFile,
+    sha256,
+    retainedActiveWorkCount: current.active_work,
+  };
 }
 
 async function runMigration(target, env) {
@@ -287,6 +308,12 @@ async function runMigration(target, env) {
     '--config', target.wranglerConfig,
   ]);
   validateLarkNotificationPendingMigrations(before.stdout);
+  const current = validateLarkNotificationDormantWorkPreflightRow(
+    extractLarkNotificationWranglerD1Rows(
+      runD1Query(target, buildLarkNotificationRemotePreflightSql()).stdout,
+    )[0],
+  );
+  assertLarkNotificationDormantWorkStable(current, preflight.remote);
   runCommand('npx', [
     'wrangler', 'd1', 'migrations', 'apply', target.databaseName,
     '--remote',
@@ -312,6 +339,8 @@ async function runMigration(target, env) {
       sizeBytes: backup.sizeBytes,
       sha256: backup.sha256,
     },
+    retainedActiveWorkCountBeforeApply: current.active_work,
+    activeLockCountBeforeApply: current.active_locks,
     pendingAfter: [],
     schemaReadbackRequired: true,
     providerRequestCount: 0,
@@ -323,6 +352,7 @@ async function runMigration(target, env) {
   return {
     evidenceFile: evidencePath('migrate'),
     migration: LARK_NOTIFICATION_REMOTE_EXPECTED_MIGRATION,
+    retainedActiveWorkCountBeforeApply: current.active_work,
     schemaReadbackRequired: true,
   };
 }
@@ -354,9 +384,10 @@ async function runSchemaReadback(target, env) {
   ]);
   validateLarkNotificationNoPendingMigrations(migrations.stdout);
   const query = runD1Query(target, buildLarkNotificationRemoteSchemaReadbackSql());
-  const remote = validateLarkNotificationRemoteSchemaReadbackRow(
+  const remote = validateLarkNotificationDormantWorkSchemaReadbackRow(
     extractLarkNotificationWranglerD1Rows(query.stdout)[0],
     preflight.remote,
+    LARK_NOTIFICATION_REMOTE_INDEXES.length,
   );
 
   const evidence = {
@@ -369,6 +400,7 @@ async function runSchemaReadback(target, env) {
     migrationSha256: local.migration.sha256,
     remote,
     businessFactDrift: false,
+    retainedActiveWorkDrift: false,
     notificationDeliveryRowCount: 0,
     providerRequestCount: 0,
     queueActionCount: 0,
@@ -380,6 +412,7 @@ async function runSchemaReadback(target, env) {
     evidenceFile: evidencePath('schema-readback'),
     remote,
     businessFactDrift: false,
+    retainedActiveWorkDrift: false,
     nextGate: 'safe_worker_deploy_requires_separate_approval',
   };
 }
@@ -411,10 +444,11 @@ function assertEvidenceBinding(preflight, local) {
       || preflight.migration?.sha256 !== local.migration.sha256
       || preflight.pendingMigrations?.length !== 1
       || preflight.pendingMigrations[0] !== LARK_NOTIFICATION_REMOTE_EXPECTED_MIGRATION
-      || preflight.remote?.active_work !== 0
+      || !Number.isSafeInteger(preflight.remote?.active_work)
+      || preflight.remote.active_work < 0
       || preflight.remote?.active_locks !== 0) {
     throw operatorError(
-      'Lark notification rollout evidence does not match the reviewed target, mappings, Migration and free Remote window',
+      'Lark notification rollout evidence does not match the reviewed target, Migration and lock-free Remote state',
       'LARK_NOTIFICATION_REMOTE_ROLLOUT_EVIDENCE_MISMATCH',
     );
   }
