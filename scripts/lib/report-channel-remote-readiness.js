@@ -56,11 +56,16 @@ export function buildReportChannelWindowAssessment(input = {}) {
     lark.topContent ?? input.larkTopContentCount ?? 0,
     'larkTopContentCount',
   );
+  const larkTopAdsCount = nonNegativeInteger(
+    lark.topAds ?? input.larkTopAdsCount ?? 0,
+    'larkTopAdsCount',
+  );
   const duplicateMetricKeys = nonNegativeInteger(
     lark.duplicateMetricKeys ?? input.duplicateMetricKeys ?? 0,
     'duplicateMetricKeys',
   );
-  const larkRows = larkSnapshotCount + larkMetricCount + larkTopContentCount;
+  const larkRows = larkSnapshotCount + larkMetricCount
+    + larkTopContentCount + larkTopAdsCount;
   const integrityOk = input.integrityOk === true;
 
   let action = null;
@@ -103,6 +108,7 @@ export function buildReportChannelWindowAssessment(input = {}) {
     larkSnapshotCount,
     larkMetricCount,
     larkTopContentCount,
+    larkTopAdsCount,
     duplicateMetricKeys,
     integrityOk,
     blocker,

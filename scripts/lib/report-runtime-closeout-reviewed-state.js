@@ -12,11 +12,24 @@ import {
   stableJson,
 } from './report-runtime-closeout-reviewed-process.js';
 
+const DEFAULT_LARK_KEY_FIELDS = Object.freeze({
+  mktReportSnapshots: 'report_id',
+  mktReportMetricValues: 'report_metric_key',
+  mktReportTopContent: 'report_content_key',
+  mktReportTopAds: 'report_ad_key',
+  mktSyncLog: 'sync_id',
+  mktSystemAlerts: 'alert_id',
+});
+
 export function createReviewedStateRuntime(input) {
   const {
     run, runText, repositoryRoot, outputRoot, configPath, env,
     target, requiredLarkKeyFields,
   } = input;
+  const keyFields = Object.freeze({
+    ...DEFAULT_LARK_KEY_FIELDS,
+    ...(requiredLarkKeyFields ?? {}),
+  });
 
   async function verifyLarkInventory(client, tableIds) {
     const remoteTables = await client.listTables();
@@ -32,12 +45,14 @@ export function createReviewedStateRuntime(input) {
       );
       const fields = await client.listFields({ tableId });
       fieldCounts[key] = fields.length;
-      const keyField = requiredLarkKeyFields[key];
-      if (!fields.some((field) => (field?.field_name ?? field?.fieldName ?? field?.name) === keyField)) {
+      const keyField = keyFields[key];
+      if (!keyField || !fields.some((field) => (
+        field?.field_name ?? field?.fieldName ?? field?.name
+      ) === keyField)) {
         throw closeoutFailure(
-          `Report closeout Lark key field is missing: ${key}.${keyField}`,
+          `Report closeout Lark key field is missing: ${key}.${keyField ?? 'unknown'}`,
           'REPORT_RUNTIME_CLOSEOUT_LARK_KEY_FIELD_MISSING',
-          { tableKey: key, fieldName: keyField },
+          { tableKey: key, fieldName: keyField ?? null },
         );
       }
     }
@@ -129,12 +144,14 @@ export function createReviewedStateRuntime(input) {
   }
 
   async function readLarkReportState(client, tableIds, reportId) {
-    const recordsByName = {};
-    for (const [name, key] of [
+    const targets = [
       ['snapshots', 'mktReportSnapshots'],
       ['metrics', 'mktReportMetricValues'],
       ['topContent', 'mktReportTopContent'],
-    ]) {
+      ['topAds', 'mktReportTopAds'],
+    ];
+    const recordsByName = {};
+    for (const [name, key] of targets) {
       recordsByName[name] = await client.searchRecords({
         tableId: tableIds[key],
         filter: {
@@ -160,6 +177,7 @@ export function createReviewedStateRuntime(input) {
       snapshots: recordsByName.snapshots.length,
       metrics: recordsByName.metrics.length,
       topContent: recordsByName.topContent.length,
+      topAds: recordsByName.topAds.length,
       duplicateMetricKeys,
       metricValues: Object.freeze(metricValues),
     });
@@ -232,7 +250,11 @@ export function assertD1LarkIntegrity(d1, lark) {
   return assertReportRuntimeMetricIntegrity({ payload, larkMetrics: lark.metricValues });
 }
 export function assertLarkCompletion(state) {
-  if (state.snapshots !== 1 || state.metrics <= 0 || state.topContent < 0 || state.duplicateMetricKeys !== 0) {
+  if (state.snapshots !== 1
+    || state.metrics <= 0
+    || state.topContent < 0
+    || state.topAds < 0
+    || state.duplicateMetricKeys !== 0) {
     throw closeoutFailure(
       'Report closeout Lark materialization is incomplete',
       'REPORT_RUNTIME_CLOSEOUT_LARK_INCOMPLETE',
@@ -252,6 +274,7 @@ export function summarizeLarkState(lark) {
     snapshots: lark.snapshots,
     metrics: lark.metrics,
     topContent: lark.topContent,
+    topAds: lark.topAds,
     duplicateMetricKeys: lark.duplicateMetricKeys,
   });
 }

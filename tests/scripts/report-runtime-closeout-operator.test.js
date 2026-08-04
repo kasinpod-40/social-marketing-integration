@@ -67,6 +67,7 @@ function validConfig() {
       LARK_TABLE_MKT_REPORT_SNAPSHOTS: 'tbl_snapshots',
       LARK_TABLE_MKT_REPORT_METRIC_VALUES: 'tbl_metrics',
       LARK_TABLE_MKT_REPORT_TOP_CONTENT: 'tbl_top_content',
+      LARK_TABLE_MKT_REPORT_TOP_ADS: 'tbl_top_ads',
       LARK_TABLE_MKT_SYNC_LOG: 'tbl_sync_log',
       LARK_TABLE_MKT_SYSTEM_ALERTS: 'tbl_alerts',
     },
@@ -132,6 +133,7 @@ test('Report closeout config creates an exact two-flag window and all-false rest
   const window = buildReportRuntimeCloseoutConfigWindow(validConfig());
   assert.deepEqual(window.safeTrueFlags, []);
   assert.deepEqual(window.activeTrueFlags, [...REPORT_RUNTIME_CLOSEOUT_ACTIVE_TRUE_FLAGS].sort());
+  assert.equal(window.tableIds.mktReportTopAds, 'tbl_top_ads');
   const safe = JSON.parse(window.safeText);
   const active = JSON.parse(window.activeText);
   assert.equal(safe.vars.MKT_CONNECTOR_TIKTOK_ENABLED, 'false');
@@ -152,6 +154,7 @@ test('WooCommerce Report closeout config creates an exact three-flag report-only
     window.activeTrueFlags,
     [...WOOCOMMERCE_REPORT_RUNTIME_CLOSEOUT_ACTIVE_TRUE_FLAGS].sort(),
   );
+  assert.equal(window.tableIds.mktReportTopAds, 'tbl_top_ads');
   const active = JSON.parse(window.activeText);
   assert.equal(active.vars.MKT_CONNECTOR_TIKTOK_ENABLED, 'false');
   assert.equal(active.vars.MKT_REPORT_D1_READ_ENABLED, 'true');

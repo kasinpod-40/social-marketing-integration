@@ -18,6 +18,9 @@ const CAPABILITIES = Object.freeze({
   facebook: 'organic',
   instagram: 'organic',
   youtube: 'organic',
+  meta_ads: 'paid_ads',
+  google_ads: 'paid_ads',
+  tiktok_ads: 'paid_ads',
   woocommerce: 'commerce',
   chatwoot: 'customer_service',
 });
@@ -34,6 +37,7 @@ function reviewedReadiness(platformScope = 'youtube', { includeSourceWatermark =
         customerProfile: 'integration_workspace',
         accountKey: 'chemistry_k',
         platformScope,
+        capability: CAPABILITIES[platformScope],
       }),
       repository: Object.freeze({ branch: 'main', clean: true, head: HEAD, reviewedHead: HEAD }),
       runtime: Object.freeze({
@@ -84,7 +88,7 @@ function reviewedHandoff(platformScope = 'youtube') {
   });
 }
 
-test('argument parser accepts exactly the five ready channels and their capabilities', () => {
+test('argument parser accepts the eight reviewed channels and their capabilities', () => {
   for (const [platformScope, capability] of Object.entries(CAPABILITIES)) {
     assert.deepEqual(parseReportLiveClosureArgs([
       `--platform=${platformScope}`,
@@ -92,7 +96,7 @@ test('argument parser accepts exactly the five ready channels and their capabili
     ]), { execute: false, platformScope, capability });
   }
   assert.throws(
-    () => parseReportLiveClosureArgs(['--platform=meta_ads']),
+    () => parseReportLiveClosureArgs(['--platform=unknown_ads']),
     (error) => error.code === 'REPORT_LIVE_CLOSURE_PLATFORM_INVALID',
   );
   assert.throws(
@@ -118,7 +122,7 @@ test('default plan performs zero reads and exposes reviewed prerequisites', asyn
   assert.equal(plan.production, 'BLOCKED');
 });
 
-test('reviewed readiness produces exact 1/3/7/30 identities for every ready channel', async () => {
+test('reviewed readiness produces exact 1/3/7/30 identities for every reviewed channel', async () => {
   for (const [platformScope, capability] of Object.entries(CAPABILITIES)) {
     const plan = await buildReadyChannelPlan({
       env: {},
