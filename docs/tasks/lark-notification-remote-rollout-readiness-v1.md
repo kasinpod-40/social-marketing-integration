@@ -36,17 +36,13 @@ AI Run / Snapshot / Settings exact reads
 
 The Lark Base notification Automation remains an inactive placeholder and is not part of delivery.
 
-## Repository authority discovered during preflight
+## Corrected Remote ownership rule
 
-`docs/current-task.md` currently owns an active Chatwoot recovery/hotfix program and records:
+Chatwoot data completion and Chatwoot Report readiness do not block this workstream. A stale or unrelated entry in `docs/current-task.md` is not sufficient evidence that Chatwoot owns the current Remote Worker/D1/Queue window.
 
-```text
-TASK_STATUS      = REPOSITORY_HOTFIX_IN_REVIEW
-CURRENT_PROGRAM  = CHATWOOT_PRIOR_SELECTION_HANDOFF_V1
-PRODUCTION       = BLOCKED
-```
+Before any Remote mutation, the operator must verify the actual current Remote owner from live retained lock/evidence and the exact active integration workstream. Repository preparation may continue independently.
 
-This notification workstream must not overwrite `docs/current-task.md`, reuse the Chatwoot branch, or execute overlapping Remote Worker/D1/Queue actions while that recovery authority is unresolved. The rollout therefore stays repository-only on its own branch until the active authority closes or explicitly hands off the Remote window.
+At the time this task was corrected, the open Meta integration workstream records that the Meta Remote lock remains held. Therefore only Remote mutation—not Repository implementation—is deferred until that exact lock is released or handed off.
 
 ## Required rollout phases
 
@@ -59,6 +55,7 @@ Each phase must be independently gated and evidence-bound:
    - current Worker version and all notification flags false;
    - exact Lark table mappings present;
    - Base Automations remain Active `0`;
+   - identify the actual Remote owner from current retained evidence;
    - zero Provider, Queue, D1 write, Lark write or message action.
 
 2. `backup`
@@ -99,7 +96,8 @@ Each phase must be independently gated and evidence-bound:
 - Never use the inactive Base notification Automation as a delivery fallback.
 - Never send a second Queue admission for the same `notification_attempt_key` during controlled UAT.
 - Never enable a Schedule in v1.
-- Stop before any Remote mutation when the active Chatwoot Remote window is not formally closed.
+- Do not infer Remote ownership from `docs/current-task.md` alone.
+- Stop before Remote mutation only when current retained evidence proves another workstream holds the exact Remote window.
 
 ## Current action result
 
@@ -119,4 +117,4 @@ Production                  BLOCKED
 
 ## Next repository implementation
 
-Add a plan-only-by-default operator that enforces the phases and exact confirmations above, reuses existing Wrangler/D1/Queue/Lark helpers, records sanitized evidence, and refuses execution while `docs/current-task.md` owns an unresolved Chatwoot Remote window.
+Add a plan-only-by-default operator that enforces the phases and exact confirmations above, reuses existing Wrangler/D1/Queue/Lark helpers, records sanitized evidence, and checks the actual current Remote lock instead of treating Chatwoot or `docs/current-task.md` as a blanket blocker.
