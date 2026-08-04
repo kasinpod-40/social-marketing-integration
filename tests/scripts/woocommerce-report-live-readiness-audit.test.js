@@ -13,6 +13,10 @@ import {
   REPORT_RUNTIME_CLOSEOUT_CANONICAL_SETTING_COUNT,
   WOOCOMMERCE_REPORT_RUNTIME_CLOSEOUT_ACTIVE_TRUE_FLAGS,
 } from '../../scripts/lib/report-runtime-closeout-operator.js';
+import {
+  REPORT_RUNTIME_FINALIZER_ENVIRONMENT_CONTRACT,
+  REPORT_RUNTIME_FINALIZER_TABLE_ENV_NAMES,
+} from '../../scripts/lib/report-runtime-finalizer-environment.js';
 
 function baseInput() {
   const head = 'a'.repeat(40);
@@ -23,7 +27,12 @@ function baseInput() {
       contractVersion: 'report_runtime_finalize_v1',
       repository: { branch: 'main', head, clean: true },
       gates: Array.from({ length: 6 }, (_, index) => ({ command: String(index), status: 'pass' })),
-      schema: { readbackActions: 0, conflicts: 0 },
+      schema: {
+        readbackActions: 0,
+        conflicts: 0,
+        privateEnvironmentContractVersion: REPORT_RUNTIME_FINALIZER_ENVIRONMENT_CONTRACT,
+        privateEnvironmentUpdateCount: REPORT_RUNTIME_FINALIZER_TABLE_ENV_NAMES.length,
+      },
       settings: {
         canonicalActive: REPORT_RUNTIME_CLOSEOUT_CANONICAL_SETTING_COUNT,
         activeLegacySettings: 0,

@@ -7,6 +7,11 @@ import {
   DASHBOARD_REPORT_PRESET_DAYS,
 } from '../../packages/config/src/report-settings.seed.js';
 import { parseJsoncObject } from './chatwoot-safe-wrangler-config.js';
+import {
+  REPORT_RUNTIME_FINALIZER_ENVIRONMENT_CONTRACT,
+  REPORT_RUNTIME_FINALIZER_TABLE_ENV_NAMES,
+  loadReportRuntimeFinalizerEnvironment,
+} from './report-runtime-finalizer-environment.js';
 
 export const REPORT_RUNTIME_CLOSEOUT_CONTRACT_VERSION = 'report_runtime_closeout_uat_v1';
 export const REPORT_RUNTIME_CLOSEOUT_CONFIRMATION = 'EXECUTE_REPORT_RUNTIME_CLOSEOUT';
@@ -37,6 +42,16 @@ const EXPECTED_DATABASE_NAME = 'social-mkt-state-dev';
 const EXPECTED_MAIN_QUEUE = 'social-mkt-sync-jobs';
 const EXPECTED_DLQ = 'social-mkt-sync-dlq';
 const EXPECTED_CRONS = Object.freeze(['*/5 * * * *', '50 0,6,12,18 * * *']);
+const GENERATED_FALSE_FLAG_NAMES = new Set([
+  'MKT_WOOCOMMERCE_REPORT_READ_ENABLED',
+]);
+const REQUIRED_FINALIZER_TABLE_ENV_NAMES = Object.freeze(
+  REPORT_RUNTIME_FINALIZER_TABLE_ENV_NAMES.filter((envName) => (
+    Object.values(REPORT_RUNTIME_CLOSEOUT_REQUIRED_TABLES).includes(envName)
+  )),
+);
+const DEFAULT_FINALIZER_EVIDENCE_PATH =
+  'outputs/report-runtime-finalize/report-runtime-finalize-summary.json';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 export function parseReportRuntimeCloseoutArgs(argv = []) {
@@ -107,6 +122,10 @@ export function assertReportRuntimeFinalizerEvidence(value = {}) {
     || !allGatesPassed
     || Number(value.schema?.readbackActions ?? -1) !== 0
     || Number(value.schema?.conflicts ?? -1) !== 0
+    || value.schema?.privateEnvironmentContractVersion
+      !== REPORT_RUNTIME_FINALIZER_ENVIRONMENT_CONTRACT
+    || Number(value.schema?.privateEnvironmentUpdateCount ?? -1)
+      !== REPORT_RUNTIME_FINALIZER_TABLE_ENV_NAMES.length
     || Number(value.settings?.canonicalActive ?? -1) !== REPORT_RUNTIME_CLOSEOUT_CANONICAL_SETTING_COUNT
     || Number(value.settings?.activeLegacySettings ?? -1) !== 0
     || Number(value.settings?.readbackCreates ?? -1) !== 0
@@ -125,9 +144,22 @@ export function assertReportRuntimeFinalizerEvidence(value = {}) {
 
 export function buildReportRuntimeCloseoutConfigWindow(sourceText, options = {}) {
   const source = parseJsoncObject(requireText(sourceText, 'sourceText'));
+  source.vars = { ...(source.vars ?? {}) };
   const reviewedActiveTrueFlags = normalizeActiveTrueFlags(
     options.activeTrueFlags ?? REPORT_RUNTIME_CLOSEOUT_ACTIVE_TRUE_FLAGS,
   );
+  const finalizerTableEnvironment = resolveFinalizerTableEnvironment(source, options);
+  for (const envName of REQUIRED_FINALIZER_TABLE_ENV_NAMES) {
+    if (hasText(finalizerTableEnvironment[envName])) {
+      source.vars[envName] = finalizerTableEnvironment[envName].trim();
+    }
+  }
+  for (const flagName of reviewedActiveTrueFlags) {
+    if (!Object.hasOwn(source.vars, flagName) && GENERATED_FALSE_FLAG_NAMES.has(flagName)) {
+      source.vars[flagName] = 'false';
+    }
+  }
+
   if (source.name !== EXPECTED_WORKER_NAME
     || source.workers_dev !== false
     || source.vars?.MKT_ENV !== 'development'
@@ -412,6 +444,34 @@ export function safeReportRuntimeCloseoutEvidence(value) {
   return output;
 }
 
+function resolveFinalizerTableEnvironment(source, options) {
+  if (options.finalizerEnvironment !== undefined) {
+    return normalizeFinalizerTableEnvironment(options.finalizerEnvironment);
+  }
+  const configuredEvidencePath = options.finalizerEvidencePath
+    ?? process.env.MKT_REPORT_RUNTIME_FINALIZER_EVIDENCE;
+  const missingMapping = REQUIRED_FINALIZER_TABLE_ENV_NAMES.some(
+    (envName) => !hasText(source.vars?.[envName]),
+  );
+  if (!configuredEvidencePath && !missingMapping) return Object.freeze({});
+  const loaded = loadReportRuntimeFinalizerEnvironment({
+    finalizerEvidencePath: configuredEvidencePath ?? DEFAULT_FINALIZER_EVIDENCE_PATH,
+  });
+  return loaded.tableEnvironment;
+}
+
+function normalizeFinalizerTableEnvironment(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw closeoutError(
+    'Report closeout finalizer environment must be an object',
+    'REPORT_RUNTIME_CLOSEOUT_FINALIZER_ENVIRONMENT_INVALID',
+  );
+  const normalized = {};
+  for (const envName of REQUIRED_FINALIZER_TABLE_ENV_NAMES) {
+    normalized[envName] = requireRealMapping(value[envName], envName);
+  }
+  return Object.freeze(normalized);
+}
+
 function optionalWindowDays(value) {
   if (value === undefined || value === null || String(value).trim() === '') return null;
   const number = Number(value);
@@ -518,6 +578,10 @@ function requireText(value, fieldName) {
     { fieldName },
   );
   return value.trim();
+}
+
+function hasText(value) {
+  return typeof value === 'string' && value.trim() !== '';
 }
 
 function readBoolean(value) {
