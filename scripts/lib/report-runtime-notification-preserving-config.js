@@ -13,6 +13,10 @@ export const REPORT_RUNTIME_NOTIFICATION_REQUIRED_TABLES = Object.freeze({
   mktReportSettings: 'LARK_TABLE_MKT_REPORT_SETTINGS',
   mktNotificationLog: 'LARK_TABLE_MKT_NOTIFICATION_LOG',
 });
+const SHARED_REPORT_NOTIFICATION_TABLES = Object.freeze([
+  'LARK_TABLE_MKT_REPORT_SNAPSHOTS',
+  'LARK_TABLE_MKT_REPORT_SETTINGS',
+]);
 
 export function buildNotificationPreservingReportRuntimeConfigWindow(
   sourceText,
@@ -54,6 +58,17 @@ export function buildNotificationPreservingReportRuntimeConfigWindow(
       workerTableIds: base.tableIds,
       workerRequiredTables: Object.freeze({}),
     });
+  }
+
+  for (const envName of SHARED_REPORT_NOTIFICATION_TABLES) {
+    if (finalizer.tableEnvironment[envName]
+      !== notification.tableEnvironment[envName]) {
+      throw configError(
+        'Report and Notification Runtime authorities disagree on a shared Lark table',
+        'REPORT_RUNTIME_NOTIFICATION_SHARED_TABLE_MISMATCH',
+        { envName },
+      );
+    }
   }
 
   const safe = parseConfig(base.safeText, 'safeText');
