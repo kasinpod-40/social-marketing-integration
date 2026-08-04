@@ -17,32 +17,32 @@ import {
 
 const REQUESTED_AT = Date.parse('2026-08-03T05:00:00Z');
 
-test('shared selector exposes the five ready Report channels through existing contracts', () => {
+test('shared selector exposes ready and waiting Report channels through existing contracts', () => {
   assert.deepEqual(REPORT_RUNTIME_REVIEWED_CHANNELS, [
-    'facebook', 'instagram', 'youtube', 'woocommerce', 'chatwoot',
+    'facebook', 'instagram', 'youtube',
+    'meta_ads', 'google_ads', 'tiktok_ads',
+    'woocommerce', 'chatwoot',
   ]);
   const expected = {
-    facebook: 'organic',
-    instagram: 'organic',
-    youtube: 'organic',
-    woocommerce: 'commerce',
-    chatwoot: 'customer_service',
+    facebook: ['organic', 'uat_pending'],
+    instagram: ['organic', 'uat_pending'],
+    youtube: ['organic', 'active'],
+    meta_ads: ['paid_ads', 'uat_pending'],
+    google_ads: ['paid_ads', 'uat_pending'],
+    tiktok_ads: ['paid_ads', 'planned'],
+    woocommerce: ['commerce', 'active'],
+    chatwoot: ['customer_service', 'uat_pending'],
   };
-  for (const [platformScope, capability] of Object.entries(expected)) {
+  for (const [platformScope, [capability, sourceStatus]] of Object.entries(expected)) {
     const target = resolveReviewedReportRuntimeCloseoutTarget({
       MKT_REPORT_RUNTIME_CLOSEOUT_PLATFORM_SCOPE: platformScope,
     });
     assert.equal(target.platformScope, platformScope);
     assert.equal(target.capability, capability);
+    assert.equal(target.sourceStatus, sourceStatus);
     assert.equal(target.reviewedHandoffRequired, true);
     assert.equal(target.multiwindowRequired, true);
   }
-  assert.throws(
-    () => resolveReviewedReportRuntimeCloseoutTarget({
-      MKT_REPORT_RUNTIME_CLOSEOUT_PLATFORM_SCOPE: 'meta_ads',
-    }),
-    (error) => error.code === 'REPORT_RUNTIME_CLOSEOUT_REVIEWED_PLATFORM_UNSUPPORTED',
-  );
 });
 
 test('Organic preflight binds Facebook, Instagram and YouTube without channel-specific SQL', () => {
@@ -76,6 +76,51 @@ test('Organic preflight binds Facebook, Instagram and YouTube without channel-sp
     open_report_dlq: 0,
     open_report_critical_alerts: 0,
   }), true);
+});
+
+test('Paid Ads preflight uses account and ad facts while planned TikTok Ads stays blocked', () => {
+  for (const platformScope of ['meta_ads', 'google_ads']) {
+    const target = resolveReviewedReportRuntimeCloseoutTarget({
+      MKT_REPORT_RUNTIME_CLOSEOUT_PLATFORM_SCOPE: platformScope,
+    });
+    const sql = buildReportRuntimePreflightSql({
+      target: { ...target, customerKey: 'chemistry_k' },
+    });
+    assert.match(sql, /FROM ads_daily_facts/u);
+    assert.match(sql, /report_level = 'account'/u);
+    assert.match(sql, /report_level = 'ad'/u);
+    assert.match(sql, /breakdown_key = 'none'/u);
+    assert.match(sql, /segment_key = 'none'/u);
+    assert.equal(assertReviewedReportRuntimeCloseoutPreflight({
+      coverage_status: 'complete',
+      source_watermark: `${platformScope}-watermark`,
+      period_end: '2026-08-01',
+      ads_summary_fact_count: 31,
+      ads_ranking_fact_count: 100,
+      ads_entity_count: 20,
+      active_report_locks: 0,
+      open_report_dlq: 0,
+      open_report_critical_alerts: 0,
+    }, target), true);
+  }
+
+  const tiktokAds = resolveReviewedReportRuntimeCloseoutTarget({
+    MKT_REPORT_RUNTIME_CLOSEOUT_PLATFORM_SCOPE: 'tiktok_ads',
+  });
+  assert.throws(() => assertReviewedReportRuntimeCloseoutPreflight({
+    coverage_status: 'complete',
+    source_watermark: 'tiktok-ads-watermark',
+    period_end: '2026-08-01',
+    ads_summary_fact_count: 31,
+    ads_ranking_fact_count: 100,
+    ads_entity_count: 20,
+    active_report_locks: 0,
+    open_report_dlq: 0,
+    open_report_critical_alerts: 0,
+  }, tiktokAds), (error) => (
+    error.code === 'REPORT_RUNTIME_CLOSEOUT_D1_PREFLIGHT_NOT_READY'
+      && error.details.sourceStatus === 'planned'
+  ));
 });
 
 test('Commerce and Customer Service preflight reuse shared closeout with capability facts', () => {
