@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   REPORT_RUNTIME_FINALIZE_CONFIRMATION,
+  assertDashboardSettingsNotificationRuntimePreserved,
   assertDashboardSettingsPreviewSafe,
   assertReportMetricValueFieldMigrationApplySafe,
   assertReportMetricValueFieldMigrationPreviewSafe,
@@ -48,6 +49,13 @@ function safeMetricMigrationPreview(overrides = {}) {
   };
 }
 
+function notificationState(state = 'active', count = state === 'active' ? 4 : 0) {
+  return {
+    notificationRuntimeState: state,
+    preservedNotificationRuntimeSettingCount: count,
+  };
+}
+
 test('final operator stays plan-only and requires exact execution confirmation', () => {
   assert.deepEqual(parseReportRuntimeFinalizeArgs([]), { execute: false });
   assert.deepEqual(parseReportRuntimeFinalizeArgs(['--execute']), { execute: true });
@@ -58,7 +66,7 @@ test('final operator stays plan-only and requires exact execution confirmation',
   }), true);
 });
 
-test('final operator accepts only Integration Workspace with every runtime flag closed', () => {
+test('final operator accepts only Integration Workspace with every Report execution flag closed', () => {
   assert.equal(assertReportRuntimeFinalizeEnvironment(safeEnv()), true);
   assert.throws(() => assertReportRuntimeFinalizeEnvironment(safeEnv({ MKT_ENV: 'production' })));
   assert.throws(() => assertReportRuntimeFinalizeEnvironment(safeEnv({ MKT_REPORT_D1_READ_ENABLED: 'true' })));
@@ -154,6 +162,35 @@ test('schema and settings previews fail closed on conflicts, mutations and dirty
   assert.throws(() => assertDashboardSettingsPreviewSafe({ ...settings, canonicalCreates: 1 }, { requireClean: true }));
 });
 
+test('Finalizer preserves the same active or inactive Notification Runtime state across all stages', () => {
+  assert.deepEqual(assertDashboardSettingsNotificationRuntimePreserved(
+    notificationState('active', 4),
+    notificationState('active', 4),
+    notificationState('active', 4),
+  ), { state: 'active', preservedSettingCount: 4 });
+  assert.deepEqual(assertDashboardSettingsNotificationRuntimePreserved(
+    notificationState('inactive', 0),
+    notificationState('inactive', 0),
+    notificationState('inactive', 0),
+  ), { state: 'inactive', preservedSettingCount: 0 });
+  assert.throws(
+    () => assertDashboardSettingsNotificationRuntimePreserved(
+      notificationState('active', 4),
+      notificationState('inactive', 0),
+      notificationState('inactive', 0),
+    ),
+    (error) => error.code === 'REPORT_RUNTIME_FINALIZE_NOTIFICATION_RUNTIME_DRIFT',
+  );
+  assert.throws(
+    () => assertDashboardSettingsNotificationRuntimePreserved(
+      notificationState('active', 3),
+      notificationState('active', 3),
+      notificationState('active', 3),
+    ),
+    (error) => error.code === 'REPORT_RUNTIME_FINALIZE_NOTIFICATION_RUNTIME_STATE_INVALID',
+  );
+});
+
 test('bounded conflict recovery requires complete preview scope and zero Business-value mutation', () => {
   const preview = {
     ok: true,
@@ -190,16 +227,18 @@ test('bounded conflict recovery apply must verify all conflicts removed without 
   assert.throws(() => assertReportSchemaConflictRepairApplySafe({ ...result, deleteCount: 1 }, 2));
 });
 
-test('finalizer runs value migration before schema preview and conflict recovery before schema apply', () => {
+test('finalizer runs value migration before schema and verifies Notification Runtime before evidence', () => {
   const source = readFileSync(
     new URL('../../scripts/report-runtime-finalize-operator.mjs', import.meta.url),
     'utf8',
   );
   assert.match(source, /migrate-report-metric-value-field-types\.mjs[\s\S]*report-schema-preview[\s\S]*repair-report-schema-conflicts\.mjs[\s\S]*report-schema-preview-after-conflict-recovery[\s\S]*report-schema-apply/u);
+  assert.match(source, /settingsPreview[\s\S]*settingsApply[\s\S]*settingsReadback[\s\S]*assertDashboardSettingsNotificationRuntimePreserved[\s\S]*writeReportRuntimeFinalizerEnvironment/u);
   assert.match(source, /CONFIRM_REPORT_METRIC_VALUE_FIELD_MIGRATION/u);
   assert.match(source, /CONFIRM_REPORT_SCHEMA_CONFLICT_REPAIR/u);
   assert.match(source, /legacyValueMutationCount/u);
   assert.match(source, /businessValueMutationCount/u);
+  assert.match(source, /notificationAdmissionEnabled: false/u);
   assert.match(source, /deleteCount/u);
 });
 
