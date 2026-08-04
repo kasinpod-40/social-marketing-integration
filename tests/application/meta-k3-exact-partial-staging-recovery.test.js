@@ -170,10 +170,14 @@ test('K3 launcher reuses the reviewed finalizer with the K3 contract', () => {
   assert.equal(plan.productionTrafficChange, false);
 });
 
-test('K3 execute bootstrap materializes runtime authority and only resumes exact zero-mutation evidence profiles', () => {
+test('K3 execute bootstrap materializes runtime authority and delegates exact safe-resume profiles to the shared boundary', () => {
   const repositoryRoot = resolve(process.cwd());
   const launcher = readFileSync(
     resolve(repositoryRoot, 'scripts/meta-k3-partial-staging-preview-finalizer.mjs'),
+    'utf8',
+  );
+  const resumeBoundary = readFileSync(
+    resolve(repositoryRoot, 'scripts/lib/meta-k3-recovery-resume-boundary.js'),
     'utf8',
   );
 
@@ -182,12 +186,15 @@ test('K3 execute bootstrap materializes runtime authority and only resumes exact
   assert.match(launcher, /META_GRAPH_API_VERSION=v25\.0/u);
   assert.match(launcher, /MKT_META_K3_RESUME_PRE_MUTATION_CONFIG_FAILURE/u);
   assert.match(launcher, /RESUME_EXACT_K3_PRE_MUTATION_CONFIG_FAILURE/u);
-  assert.match(launcher, /post_admission_pre_stability/u);
-  assert.match(launcher, /post_backup_pre_preview/u);
-  assert.match(launcher, /profile === 'post_backup_pre_preview'/u);
+  assert.match(launcher, /identifyMetaK3RecoveryResumeProfile/u);
+  assert.match(launcher, /validateMetaK3RecoveryResumeEvidence/u);
+  assert.match(resumeBoundary, /post_admission_pre_stability/u);
+  assert.match(resumeBoundary, /post_backup_pre_preview/u);
+  assert.match(resumeBoundary, /post_d1_preview_http_404_safe_restored/u);
+  assert.match(resumeBoundary, /businessContinuationEvidencePresent:\s*false/u);
+  assert.match(resumeBoundary, /workerVersionUploadCount\)\s*===\s*1/u);
   assert.match(launcher, /workerVersionUploadCount:\s*0/u);
   assert.match(launcher, /queueMessageCount:\s*0/u);
-  assert.match(launcher, /remoteMutationCount\)\s*===\s*0/u);
   assert.doesNotMatch(launcher, /queueSendAllowed:\s*true/u);
   assert.doesNotMatch(launcher, /lifecycleSqlRepairAllowed:\s*true/u);
 });
