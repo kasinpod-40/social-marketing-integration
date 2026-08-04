@@ -1,5 +1,5 @@
 export const LARK_NATIVE_AI_DISABLED_CONFIGURATION_PREVIEW_VERSION =
-  'lark_native_ai_disabled_configuration_preview_v1';
+  'lark_native_ai_disabled_configuration_preview_v2';
 export const LARK_NATIVE_AI_DISABLED_CONFIGURATION_PREVIEW_OUTPUT_ROOT =
   'outputs/lark-native-ai-disabled-configuration-preview';
 
@@ -27,6 +27,33 @@ const REPORT_SNAPSHOT_TABLE = '🧾 MKT_Report_Snapshots';
 const REPORT_SETTINGS_TABLE = '⚙️ MKT_Report_Settings';
 const NOTIFICATION_LOG_TABLE = '🔔 MKT_Notification_Log';
 
+const CUSTOM_AI_VISIBLE_REFERENCES = Object.freeze([
+  'scope_type',
+  'channel_key',
+  'window_days',
+  'data_status',
+  'readiness_status',
+  'readiness_message',
+]);
+
+export const LARK_NATIVE_AI_CUSTOM_FIELD_AUTHORITY = deepFreeze({
+  source: 'user_confirmed_lark_base_ui',
+  observedOn: '2026-08-04',
+  table: AI_RUN_TABLE,
+  fieldCount: 4,
+  exportFieldType: 'Text',
+  outputBinding: 'field_self',
+  promptCaptureComplete: false,
+  automaticGenerationPolicy: 'unproven',
+  sharedVisibleReferences: CUSTOM_AI_VISIBLE_REFERENCES,
+  fields: [
+    customAiField('insight_summary', 'Thai insight summary for the current record'),
+    customAiField('strengths', 'Thai strengths for the current record'),
+    customAiField('weaknesses', 'Thai weaknesses for the current record'),
+    customAiField('recommendations', 'Thai recommendations for the current record'),
+  ],
+});
+
 export const LARK_NATIVE_AI_DISABLED_CONFIGURATION_WORKFLOWS = Object.freeze([
   deepFreeze({
     title: 'AI Materialization → MKT_AI_Report_Runs',
@@ -37,13 +64,24 @@ export const LARK_NATIVE_AI_DISABLED_CONFIGURATION_WORKFLOWS = Object.freeze([
       action: 'delay',
       delayMinutes: 1,
     }),
+    generationAuthority: Object.freeze({
+      type: 'lark_custom_ai_fields',
+      table: AI_RUN_TABLE,
+      outputFields: Object.freeze([
+        'insight_summary',
+        'strengths',
+        'weaknesses',
+        'recommendations',
+      ]),
+      bindingStatus: 'verified_field_self_binding',
+      automaticGenerationPolicy: 'unproven',
+    }),
     finalTrigger: Object.freeze({
       type: 'new_or_updated_record_matches_conditions',
       table: AI_RUN_TABLE,
       watchedFields: Object.freeze([
         'generation_status',
         'readiness_status',
-        'metric_summary_json',
         'preview_mode',
         'insight_summary',
         'strengths',
@@ -56,33 +94,14 @@ export const LARK_NATIVE_AI_DISABLED_CONFIGURATION_WORKFLOWS = Object.freeze([
           'report_available',
           'report_partial',
         ])),
-        condition('metric_summary_json', 'is_not_empty', true),
         condition('preview_mode', 'equals', false),
-        condition('insight_summary', 'is_empty', true),
-        condition('strengths', 'is_empty', true),
-        condition('weaknesses', 'is_empty', true),
-        condition('recommendations', 'is_empty', true),
+        condition('insight_summary', 'is_not_empty', true),
+        condition('strengths', 'is_not_empty', true),
+        condition('weaknesses', 'is_not_empty', true),
+        condition('recommendations', 'is_not_empty', true),
       ]),
     }),
     actions: Object.freeze([
-      action('lark_native_ai_generate_structured_text', Object.freeze({
-        inputFields: Object.freeze([
-          'metric_summary_json',
-          'readiness_status',
-          'readiness_message',
-          'coverage_rate',
-          'channel_status_vector_json',
-          'window_days',
-        ]),
-        outputFields: Object.freeze([
-          'insight_summary',
-          'strengths',
-          'weaknesses',
-          'recommendations',
-        ]),
-        promptVersion: 'lark_native_ai_prompt_v1',
-        sourcePolicy: 'validated_shared_report_only',
-      })),
       action('update_current_record', Object.freeze({
         set: Object.freeze({
           generation_status: 'generated',
@@ -92,6 +111,7 @@ export const LARK_NATIVE_AI_DISABLED_CONFIGURATION_WORKFLOWS = Object.freeze([
       })),
     ]),
     forbiddenActionTypes: Object.freeze([
+      'lark_native_ai_generate_structured_text',
       'send_lark_message',
       'create_notification_log',
       'enable_automation',
@@ -220,6 +240,17 @@ export const LARK_NATIVE_AI_DISABLED_CONFIGURATION_SAFETY = Object.freeze({
   scheduleEnabled: false,
   production: 'BLOCKED',
 });
+
+function customAiField(fieldName, promptIntent) {
+  return Object.freeze({
+    fieldName,
+    fieldType: 'Custom AI field',
+    exportFieldType: 'Text',
+    outputBinding: 'field_self',
+    promptIntent,
+    visibleReferences: CUSTOM_AI_VISIBLE_REFERENCES,
+  });
+}
 
 function condition(field, operator, value) {
   return Object.freeze({ field, operator, value });

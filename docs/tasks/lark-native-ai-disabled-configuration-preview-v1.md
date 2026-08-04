@@ -1,10 +1,11 @@
-# Lark Native AI Disabled Configuration & Notification Payload Preview v1
+# Lark Native AI Disabled Configuration & Notification Payload Preview v2
 
 ## Status
 
 ```text
-WORKSTREAM                    = LARK_NATIVE_AI_DISABLED_CONFIGURATION_PREVIEW_V1
+WORKSTREAM                    = LARK_NATIVE_AI_DISABLED_CONFIGURATION_PREVIEW_V2
 MODE                          = REPOSITORY_ONLY
+CUSTOM_AI_FIELD_BINDING       = VERIFIED
 LIVE_CONFIGURATION            = BLOCKED
 AUTOMATION_ACTIVE             = 0
 NATIVE_AI_CALL                = 0
@@ -34,7 +35,7 @@ Schedule                      disabled
 Production                    blocked
 ```
 
-The two user-confirmed inactive placeholders are:
+The two user-confirmed inactive placeholders remain:
 
 ```text
 AI Materialization → MKT_AI_Report_Runs
@@ -46,26 +47,51 @@ Eligible AI Run → Lark Group Notification
 
 The placeholders remain unchanged throughout this Repository phase.
 
-## Architecture decision
+## Verified Custom AI field authority
 
-The final AI Automation must not recreate Central Report calculations or synthesize Stable keys from Raw data. The existing Shared Report and Controlled Preview path already materializes `🧠 MKT_AI_Report_Runs` rows with exact Report identity, source checksum, readiness and dedupe fields.
-
-The final AI generation Trigger therefore moves to:
+Four user-confirmed Lark Base screenshots on 2026-08-04 prove that the target outputs are already separate `Custom AI field` columns in:
 
 ```text
 🧠 MKT_AI_Report_Runs
 ```
 
-This preserves the locked architecture:
+Exact outputs:
 
 ```text
-Source / Connector
-→ Normalized + Daily
-→ Central Report Metrics
-→ MKT_AI_Report_Runs
-→ Lark Native AI
-→ Lark Automation
-→ Lark Group Notification
+insight_summary
+strengths
+weaknesses
+recommendations
+```
+
+Each field:
+
+- is configured as `Custom AI field`;
+- exports as `Text`;
+- writes its own field directly (`field_self` binding);
+- has a Thai prompt for the current record;
+- visibly references `scope_type`, `channel_key`, `window_days`, `data_status`, `readiness_status` and `readiness_message`.
+
+The screenshots did not expose the entire prompt tail or an explicit automatic-generation policy. Therefore the exact field-self output mapping is verified, but auto-generation for future new/updated rows remains unproven.
+
+## Corrected architecture decision
+
+The final Automation must not add a second Native AI generation action. AI generation belongs to the four Custom AI fields themselves.
+
+Corrected architecture:
+
+```text
+Central Report Metrics
+→ 🧠 MKT_AI_Report_Runs source fields
+→ four Lark Custom AI fields
+→ Automation verifies all four outputs are populated
+→ Automation marks generation_status=generated
+→ executive-only notification eligibility
+→ exact Snapshot
+→ exact enabled Report Settings destination
+→ Notification Log dedupe
+→ one Lark group message
+→ sent-state updates
 ```
 
 ## Workflow 1 — AI Materialization → MKT_AI_Report_Runs
@@ -82,34 +108,32 @@ Conditions:
 ```text
 generation_status = pending
 readiness_status IN report_available, report_partial
-metric_summary_json is not empty
 preview_mode = false
-insight_summary is empty
-strengths is empty
-weaknesses is empty
-recommendations is empty
+insight_summary is not empty
+strengths is not empty
+weaknesses is not empty
+recommendations is not empty
 ```
 
-### Final actions
+### Final action
 
-1. Lark Native AI reads only validated Shared Report fields:
-   - `metric_summary_json`
-   - `readiness_status`
-   - `readiness_message`
-   - `coverage_rate`
-   - `channel_status_vector_json`
-   - `window_days`
-2. It produces:
-   - `insight_summary`
-   - `strengths`
-   - `weaknesses`
-   - `recommendations`
-3. The current AI Run is updated:
-   - `generation_status=generated`
-   - `failure_code=null`
-   - `generated_at=automation_now`
+Update the current AI Run only:
 
-This Workflow has no Message or Notification Log action.
+```text
+generation_status = generated
+failure_code       = empty
+generated_at       = automation_now
+```
+
+This Workflow must not contain:
+
+```text
+Native AI generation action
+Message action
+Notification Log action
+HTTP/Webhook action
+Schedule or activation action
+```
 
 ## Workflow 2 — Eligible AI Run → Lark Group Notification
 
@@ -159,7 +183,7 @@ notification_attempt_key = ai_run_key + "::" + dedupe_key
 6. Update Notification Log to `sent` with `sent_at`.
 7. Update AI Run `sent_to_group=true` and `sent_at`.
 
-Missing or multiple Snapshot/Settings/Log identities fail closed. Automatic retry is disabled until the exact failure and dedupe semantics are proven.
+Missing or multiple Snapshot/Settings/Log identities fail closed. Automatic retry remains disabled until exact failure and dedupe semantics are proven.
 
 ## Notification payload preview
 
@@ -192,29 +216,33 @@ The preview computes a SHA-256 checksum over the canonical redacted payload and 
 7e69a1721915dfc52b4a3ed1ecf2569cdac63ffa63f6419959c35562ef5219b9
 ```
 
-Raw Chat ID, Webhook URL, token and App Secret are forbidden in payload/evidence.
+Raw Chat ID, Webhook URL, token and App Secret remain forbidden in payload/evidence.
 
 ## Current live-configuration blockers
 
-Repository Preview is complete, but Live configuration remains blocked by three exact unknowns:
+The previous output-binding blocker is resolved. Two exact blockers remain:
 
 ```text
-UI_AUTOMATION_API_IDENTITY_NOT_EXPOSED
-LARK_NATIVE_AI_OUTPUT_BINDING_UNPROVEN
+LARK_CUSTOM_AI_AUTOGENERATION_POLICY_UNPROVEN
 LARK_NATIVE_PAYLOAD_SHA256_UNPROVEN
 ```
 
 Meaning:
 
-1. The current Workflow List API does not expose the two Base UI Automations, so an API update identity is unavailable.
-2. The exact Lark UI binding from Native AI output into four destination fields has not been captured and verified.
-3. The exact Lark Automation capability for computing the canonical redacted payload SHA-256 has not been proven.
+1. The four field-self Custom AI output bindings are verified, but the exact automatic generation policy for future new/updated rows has not been captured.
+2. The exact Lark Automation capability for computing the canonical redacted payload SHA-256 has not been proven.
 
-No Live UI edit or API mutation is authorized until these are resolved together.
+The current empty Workflow List API inventory remains an advisory rather than a field-binding blocker:
+
+```text
+UI_AUTOMATION_API_IDENTITY_NOT_EXPOSED
+```
+
+Future edits must use the confirmed manual UI path unless exact API identity is proven.
 
 ## Complete remaining permission bundle
 
-The full later API bundle is disclosed at once:
+The full later API bundle remains disclosed together:
 
 ```text
 base:workflow:read
@@ -234,11 +262,12 @@ node scripts/lark-native-ai-disabled-configuration-preview.mjs
 Expected:
 
 ```text
-status                  repository_preview_ready_live_configuration_blocked
+status                  repository_preview_field_binding_verified_live_configuration_blocked
 mode                    repository_only
-workflow count          2
-payload checksum        SHA-256
-blocker count           3
+Custom AI fields        4
+field binding           field_self / verified
+blocker count           2
+advisory count          1
 remote action count     0
 notification send       0
 schedule                disabled
