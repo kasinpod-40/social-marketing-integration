@@ -30,6 +30,8 @@ function finalizerEvidence(head = 'abc123') {
     },
     settings: {
       canonicalActive: 74,
+      notificationRuntimeState: 'active',
+      preservedNotificationRuntimeSettingCount: 4,
       activeLegacySettings: 0,
       readbackCreates: 0,
       readbackUpdates: 0,
@@ -38,6 +40,7 @@ function finalizerEvidence(head = 'abc123') {
       reportD1ReadEnabled: false,
       presetMaterializationEnabled: false,
       aiSummaryEnabled: false,
+      notificationAdmissionEnabled: false,
       schedulesEnabled: false,
     },
   };
@@ -65,8 +68,11 @@ function windowEvidence(overrides = {}) {
       integrityUnchanged: true,
     },
     runtime: {
-      restoredAllFalse: true,
-      finalWorkerVersion: 'version-safe',
+      restoredBaseline: true,
+      restoredAllFalse: false,
+      notificationRuntimeState: 'active',
+      baselineTrueFlagCount: 3,
+      finalWorkerVersion: 'version-runtime-baseline',
       connectorFlagsEnabled: false,
       aiSummaryEnabled: false,
       dailyScheduleEnabled: false,
@@ -83,6 +89,8 @@ test('reuses only safe Finalizer evidence from the exact current repository Head
     repositoryHead: 'abc123',
     schemaVersion: 'report-materialization-schema-v3',
     canonicalSettingsActive: 74,
+    notificationRuntimeState: 'active',
+    preservedNotificationRuntimeSettingCount: 4,
   });
   assert.throws(
     () => validateReusableReportFinalizerEvidence(finalizerEvidence('old'), 'new'),
@@ -104,7 +112,7 @@ test('reuses only safe Finalizer evidence from the exact current repository Head
   );
 });
 
-test('reuses only complete window evidence with replay parity and all-false restore', () => {
+test('reuses only complete window evidence with replay parity and exact baseline restore', () => {
   assert.deepEqual(summarizeReusableReportWindow(windowEvidence(), {
     operation: 'refresh', windowDays: 3,
   }), {
@@ -114,13 +122,22 @@ test('reuses only complete window evidence with replay parity and all-false rest
     reportId: 'report-3',
     dataStatus: 'partial',
     integrity: { metricCount: 6, mismatchCount: 0 },
-    restoredAllFalse: true,
-    finalWorkerVersion: 'version-safe',
+    restoredBaseline: true,
+    restoredAllFalse: false,
+    notificationRuntimeState: 'active',
+    baselineTrueFlagCount: 3,
+    finalWorkerVersion: 'version-runtime-baseline',
     reused: true,
   });
   assert.throws(
     () => summarizeReusableReportWindow(windowEvidence({
-      runtime: { ...windowEvidence().runtime, restoredAllFalse: false },
+      runtime: { ...windowEvidence().runtime, restoredBaseline: false },
+    }), { operation: 'refresh', windowDays: 3 }),
+    (error) => error.code === 'REPORT_RUNTIME_WINDOW_REPAIR_WINDOW_EVIDENCE_INVALID',
+  );
+  assert.throws(
+    () => summarizeReusableReportWindow(windowEvidence({
+      runtime: { ...windowEvidence().runtime, baselineTrueFlagCount: 0 },
     }), { operation: 'refresh', windowDays: 3 }),
     (error) => error.code === 'REPORT_RUNTIME_WINDOW_REPAIR_WINDOW_EVIDENCE_INVALID',
   );
@@ -130,6 +147,26 @@ test('reuses only complete window evidence with replay parity and all-false rest
     }), { operation: 'refresh', windowDays: 3 }),
     (error) => error.code === 'REPORT_RUNTIME_WINDOW_REPAIR_WINDOW_EVIDENCE_INVALID',
   );
+});
+
+test('legacy all-false evidence remains reusable only as inactive baseline', () => {
+  const legacy = windowEvidence({
+    runtime: {
+      ...windowEvidence().runtime,
+      restoredBaseline: undefined,
+      restoredAllFalse: true,
+      notificationRuntimeState: undefined,
+      baselineTrueFlagCount: undefined,
+      finalWorkerVersion: 'version-all-false',
+    },
+  });
+  const result = summarizeReusableReportWindow(legacy, {
+    operation: 'refresh', windowDays: 3,
+  });
+  assert.equal(result.restoredBaseline, true);
+  assert.equal(result.restoredAllFalse, true);
+  assert.equal(result.notificationRuntimeState, 'inactive');
+  assert.equal(result.baselineTrueFlagCount, 0);
 });
 
 test('blocks automatic rerun when partial window evidence exists without a summary', () => {
