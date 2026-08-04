@@ -8,7 +8,9 @@ import { D1GoogleAdsManagerDeliveryStore } from '../../../packages/connectors/sr
 import { D1GoogleAdsLiveAdmissionStore } from '../../../packages/connectors/src/google-ads/d1-google-ads-live-admission-store.js';
 import { D1WooCommerceCommerceStore } from '../../../packages/connectors/src/woocommerce/d1-woocommerce-commerce-store.js';
 import { D1WooCommerceReportSource } from '../../../packages/connectors/src/woocommerce/d1-woocommerce-report-source.js';
+import { D1LarkNotificationDeliveryStore } from '../../../packages/connectors/src/lark/d1-lark-notification-delivery-store.js';
 import { createLarkBitableClientFromEnv } from '../../../packages/connectors/src/lark/lark-bitable.client.js';
+import { LarkMessageClient } from '../../../packages/connectors/src/lark/lark-message.client.js';
 import { LarkRecordRepository } from '../../../packages/connectors/src/lark/lark-record-repository.js';
 import { D1ReliabilityMirrorOutbox } from '../../../packages/reliability/src/d1-reliability-mirror-outbox.js';
 import { D1ReliabilityStore } from '../../../packages/reliability/src/d1-reliability-store.js';
@@ -36,17 +38,22 @@ export function createInfrastructure(env) {
   let googleAdsAdmissionStore = null;
   let wooCommerceStore = null;
   let wooCommerceReportSource = null;
+  let larkNotificationDeliveryStore = null;
+  let larkMessageClient = null;
   let mirrorOutbox = null;
   const larkReliabilityStores = new Map();
 
+  const getClient = () => {
+    client ??= createLarkBitableClientFromEnv(env);
+    return client;
+  };
   const getSyncEngine = () => {
     syncEngine ??= new TableSyncEngine();
     return syncEngine;
   };
   const getRepository = () => {
-    client ??= createLarkBitableClientFromEnv(env);
     if (!repository) {
-      const baseRepository = new LarkRecordRepository({ client });
+      const baseRepository = new LarkRecordRepository({ client: getClient() });
       repository = createOrganicContentOwnershipRoutingRepository({
         repository: baseRepository,
         mktContentTableId: env?.LARK_TABLE_MKT_CONTENT,
@@ -97,6 +104,20 @@ export function createInfrastructure(env) {
     getWooCommerceReportSource() {
       wooCommerceReportSource ??= new D1WooCommerceReportSource({ db: env?.MKT_STATE_DB });
       return wooCommerceReportSource;
+    },
+    getLarkNotificationDeliveryStore() {
+      larkNotificationDeliveryStore ??= new D1LarkNotificationDeliveryStore({
+        db: env?.MKT_STATE_DB,
+      });
+      return larkNotificationDeliveryStore;
+    },
+    getLarkMessageClient() {
+      larkMessageClient ??= new LarkMessageClient({
+        tokenProvider: () => getClient().getTenantAccessToken(),
+        fetchImpl: globalThis.fetch?.bind(globalThis),
+        timeoutMs: Number(env?.LARK_REQUEST_TIMEOUT_MS ?? 30_000),
+      });
+      return larkMessageClient;
     },
     getReliability() {
       reliability ??= createCloudflareReliabilityRuntime({
