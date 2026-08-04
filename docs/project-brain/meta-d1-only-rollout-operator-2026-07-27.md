@@ -136,3 +136,19 @@ REMOTE_ACTION_COUNT                 = 0
 8. after all four targets pass, open a separate Lark parity task
 
 This document authorizes none of the Remote phases above.
+
+## Meta Ads long-staging continuation — 2026-08-02
+
+Live `chemistry_k2` source staging proved that one bounded Provider unit per Queue invocation can outlive
+the original fixed controller window. The exact operation advanced to 66 units / 6,406 rows at Ads page 22,
+but the controller restored all-false before the source phase completed. The following continuation was then
+correctly rejected with disabled execution gates; D1/Coverage/Lark Business rows remained zero.
+
+The operator now records only sanitized source/D1 progress metadata and supports an explicit Meta Ads
+partial-staging recovery mode. Eligibility requires stale and stable zero-write durable state for the same
+operation. Verification may extend beyond its base window only while exact source/D1/Sync/Queue activity is
+fresh, under an explicit hard poll cap. Terminal errors, stale activity, invalid Coverage, Lark/full-completion
+phases and non-Ads targets cannot extend the window. Safe restore remains mandatory on every exit.
+
+Repository implementation passed focused tests and architecture/hygiene gates. It performs no Remote action
+and does not authorize a recovery until exact-head CI passes.

@@ -21,6 +21,8 @@ const DATASETS = Object.freeze([
   Object.freeze({ key: 'ads', entityType: 'ad', inputField: 'ads' }),
   Object.freeze({ key: 'creatives', entityType: 'creative', inputField: 'creatives' }),
 ]);
+const ENTITY_SCOPE_MODES = new Set(['full_inventory', 'report_range']);
+const LARK_PROJECTION_MODES = new Set(['detailed', 'curated_reports']);
 
 /** Build Shared RAW, Canonical Lark and D1 rows for one complete Meta Ads snapshot. */
 export async function buildMetaAdsWriteSet(input = {}) {
@@ -35,6 +37,24 @@ export async function buildMetaAdsWriteSet(input = {}) {
   const accountTimezone = requireText(input.accountTimezone, 'accountTimezone');
   const currency = requireCurrency(input.currency);
   const sourceWatermark = optionalText(input.sourceWatermark);
+  const entityScopeMode = requireChoice(
+    input.entityScopeMode ?? 'full_inventory',
+    'entityScopeMode',
+    ENTITY_SCOPE_MODES,
+  );
+  const larkProjectionMode = requireChoice(
+    input.larkProjectionMode ?? 'detailed',
+    'larkProjectionMode',
+    LARK_PROJECTION_MODES,
+  );
+  const curatedLark = larkProjectionMode === 'curated_reports';
+  const periodStart = entityScopeMode === 'report_range'
+    ? requireDate(input.periodStart, 'periodStart')
+    : null;
+  const periodEnd = entityScopeMode === 'report_range'
+    ? requireDate(input.periodEnd, 'periodEnd')
+    : null;
+  if (periodStart && periodStart > periodEnd) throw new TypeError('periodStart cannot be after periodEnd');
 
   const resourcesByDataset = {
     accountResource: [requireObject(input.accountResource, 'accountResource')],
@@ -57,7 +77,10 @@ export async function buildMetaAdsWriteSet(input = {}) {
     adsDaily: [],
   };
 
-  for (const dataset of DATASETS) {
+  const entityDatasets = entityScopeMode === 'report_range'
+    ? DATASETS.filter((dataset) => dataset.entityType !== 'creative')
+    : DATASETS;
+  for (const dataset of entityDatasets) {
     const resources = resourcesByDataset[dataset.inputField];
     const coverageRunId = `${operationId}:meta_ads:${accountId}:${dataset.key}`;
     for (const resource of resources) {
@@ -128,9 +151,13 @@ export async function buildMetaAdsWriteSet(input = {}) {
       syncRunId,
       customerKey,
       accountKey,
-      datasetKey: `meta_ads.${dataset.key}.inventory`,
+      datasetKey: dataset.entityType === 'account'
+        ? 'meta_ads.account.latest'
+        : `meta_ads.${dataset.key}.${entityScopeMode === 'report_range' ? 'activity' : 'inventory'}`,
       metricSemantics: 'snapshot',
-      scopeMode: 'full_inventory',
+      scopeMode: dataset.entityType === 'account' ? 'full_inventory' : entityScopeMode,
+      periodStart: dataset.entityType === 'account' ? null : periodStart,
+      periodEnd: dataset.entityType === 'account' ? null : periodEnd,
       sourceTimezone: accountTimezone,
       expected: resources.length,
       sourceWatermark,
@@ -218,19 +245,20 @@ export async function buildMetaAdsWriteSet(input = {}) {
     scopeMode: 'report_range',
     sourceTimezone: accountTimezone,
     expected: dailyInputs.length,
-    periodStart: minimum(d1DailyFacts.map((row) => row.metric_date)),
-    periodEnd: maximum(d1DailyFacts.map((row) => row.metric_date)),
+    periodStart: periodStart ?? minimum(d1DailyFacts.map((row) => row.metric_date)),
+    periodEnd: periodEnd ?? maximum(d1DailyFacts.map((row) => row.metric_date)),
     sourceWatermark,
     sourceRevision,
     startedAt: fetchedAt,
     completedAt,
   }));
-  canonical.adsDaily.push(...aggregateCanonicalDaily({
+  const canonicalDaily = aggregateCanonicalDaily({
     rawDaily,
     accountId,
     accountTimezone,
     currency,
-  }));
+  });
+  if (!curatedLark) canonical.adsDaily.push(...canonicalDaily);
 
   return deepFreeze({
     schemaVersion: 'meta_ads_write_set_v1',
@@ -251,7 +279,7 @@ export async function buildMetaAdsWriteSet(input = {}) {
       organicContent: [],
       organicMetrics: [],
       adsEntities: rawEntities,
-      adsDaily: rawDaily,
+      adsDaily: curatedLark ? [] : rawDaily,
     },
     canonical: {
       accounts: [],
@@ -269,16 +297,19 @@ export async function buildMetaAdsWriteSet(input = {}) {
       coverageEntities,
     },
     reconciliation: {
-      sourceEntityRows: DATASETS.reduce(
+      sourceEntityRows: entityDatasets.reduce(
         (total, dataset) => total + resourcesByDataset[dataset.inputField].length,
         0,
       ),
       rawEntityRows: rawEntities.length,
       d1EntityRows: d1Entities.length,
       sourceDailyRows: dailyInputs.length,
-      rawDailyRows: rawDaily.length,
+      rawDailyRows: curatedLark ? 0 : rawDaily.length,
       d1DailyRows: d1DailyFacts.length,
       canonicalDailyRows: canonical.adsDaily.length,
+      detailedDailyRows: d1DailyFacts.length,
+      entityScopeMode,
+      larkProjectionMode: curatedLark ? 'curated_reports' : 'detailed',
       campaignsStatus: resourcesByDataset.campaigns.length === 0 ? 'no_data_confirmed' : 'complete',
       spendStatus: dailyInputs.length === 0 ? 'no_data_confirmed' : 'revisable',
     },
@@ -304,8 +335,7 @@ function appendCanonicalEntity(canonical, input) {
       status: candidate.status,
       manager_account_id: null,
       is_test_account: null,
-      account_link_status: 'verified',
-      last_sync_at: fetchedAt,
+      account_link_status: 'selectable',
     }));
   } else if (dataset.entityType === 'campaign') {
     canonical.adsCampaigns.push(compact({
@@ -519,6 +549,20 @@ function requireTimestamp(value, fieldName) {
   const number = Number(value);
   if (!Number.isSafeInteger(number) || number < 0) throw new TypeError(`${fieldName} must be a timestamp`);
   return number;
+}
+
+function requireDate(value, fieldName) {
+  const text = requireText(value, fieldName);
+  if (!/^\d{4}-\d{2}-\d{2}$/u.test(text) || Number.isNaN(Date.parse(`${text}T00:00:00Z`))) {
+    throw new TypeError(`${fieldName} must be YYYY-MM-DD`);
+  }
+  return text;
+}
+
+function requireChoice(value, fieldName, choices) {
+  const text = requireText(value, fieldName);
+  if (!choices.has(text)) throw new TypeError(`${fieldName} is unsupported`);
+  return text;
 }
 
 function requireArray(value, fieldName) {

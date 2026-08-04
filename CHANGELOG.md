@@ -1,5 +1,52 @@
 # Changelog
 
+## Unreleased — Meta Ads July Activity Scope — 2026-08-02
+
+### Changed
+
+- Replaced the active Meta Ads full-inventory source plan with bounded account plus ad-level daily Insights for
+  one inclusive period of at most 31 days.
+- Derived Campaign, Ad Set and Ad identities only from activity observed in that report range; the active path no
+  longer enumerates full-history Campaign, Ad Set, Ad or Creative inventories.
+- Retained validated detailed daily facts in D1 while projecting only Account and activity entities to Lark.
+  Shared checksummed report materializations remain the customer-facing path for 1D/3D/7D/30D and Top Ads.
+- Added report-range Coverage for activity entities and daily facts while preserving full-inventory Coverage for
+  the exact Account identity.
+
+### Safety
+
+- Rejects Meta Ads periods longer than 31 inclusive days before Provider access and rejects hierarchy drift for
+  any repeated activity identity.
+- Uses a new operation fingerprint schema so prior full-inventory operations cannot be resumed under the new
+  source contract. The prior k2 page-limit operation remains an immutable forensic failure.
+- Updated the reviewed Meta history planner to emit only July operations and removed the conditional January–April
+  expansion path, so the operator contract cannot recreate the superseded full-history scope.
+- Added exact-reviewed-Head targeted execution for `chemistry_k2`/`chemistry_k3`. Target mode executes one July
+  operation only, records zero retained Facebook replay/resend, and permits only the exact retained k2 forensic
+  Work identity while still requiring zero active locks and no other active Reliability state.
+- Materialized the complete Shared all-false runtime authority before targeted Meta read-only validation, including
+  required flags absent from the caller's private Environment, so missing values cannot be mistaken for unsafe drift.
+- Makes no Provider, Queue, D1, Lark, deployment, Schedule or Production mutation during this implementation.
+
+## Unreleased — Meta Ads Active-progress D1 Verification — 2026-08-02
+
+### Reliability
+
+- Added an explicit same-operation recovery guard for stale, stable Meta Ads partial source staging with
+  zero D1/Coverage/Business/Lark writes and no active lock.
+- Added sanitized source/D1 phase progress metadata without persisting source cursors, content identities or
+  raw Provider payloads.
+- Extended the base D1 verifier only while exact durable activity remains fresh, with a configurable progress
+  lease and mandatory hard poll cap.
+- Kept recovery modes mutually exclusive and target-fingerprint-bound.
+
+### Safety
+
+- Stale progress, terminal errors, invalid Coverage, Lark/full-completion phases, non-Ads targets and the hard
+  cap all stop fail-closed through the existing all-false restore path.
+- Repository implementation makes no Remote call, deployment, Queue send, D1/Lark write, Schedule or Production
+  change; the current Worker remains verified all-false until exact-head CI passes.
+
 ## Unreleased — Chatwoot Initial Terminal Failure Recovery — 2026-08-01
 
 ### Reliability

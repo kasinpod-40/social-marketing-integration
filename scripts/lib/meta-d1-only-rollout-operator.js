@@ -105,8 +105,12 @@ const RESTORE_REUSE_PHASES = Object.freeze([
   'verify-restore',
 ]);
 const D1_PHASE = 'meta_end_to_end_d1_write_v1';
+const SOURCE_STAGING_PHASE = 'meta_end_to_end_source_staging_v1';
 const LARK_PHASE = 'meta_end_to_end_lark_write_v1';
 const COMPLETION_PHASE = 'meta_end_to_end_completion_v1';
+const META_ADS_SOURCE_STAGES = new Set([
+  'account', 'campaigns', 'ad_sets', 'ads', 'creatives', 'daily', 'complete',
+]);
 
 export function parseMetaD1OnlyOperatorArgs(args = []) {
   let phase = 'plan';
@@ -217,6 +221,55 @@ export function validateMetaD1OnlyReusableRestoreSequence(evidence = [], target 
   });
 }
 
+export function validateMetaD1OnlySummarySequence(evidence = [], target = {}) {
+  const expectedPhases = META_D1_ONLY_OPERATOR_PHASES.slice(0, -1);
+  const planlessExpectedPhases = expectedPhases.slice(1);
+  const observedPhases = Array.isArray(evidence)
+    ? evidence.map((item) => item?.phase ?? null)
+    : [];
+  const planEvidencePresent = JSON.stringify(observedPhases)
+    === JSON.stringify(expectedPhases);
+  const preflightAnchored = JSON.stringify(observedPhases)
+    === JSON.stringify(planlessExpectedPhases);
+  if (!planEvidencePresent && !preflightAnchored) {
+    throw operatorError(
+      'Meta D1-only summary evidence sequence is incomplete',
+      'META_D1_ONLY_SUMMARY_EVIDENCE_INCOMPLETE',
+      { expectedPhases, observedPhases },
+    );
+  }
+  if (preflightAnchored && evidence[0]?.previousEvidenceSha256 !== null) {
+    throw operatorError(
+      'Meta D1-only planless summary must start at an unlinked preflight',
+      'META_D1_ONLY_SUMMARY_PLAN_ANCHOR_MISSING',
+    );
+  }
+
+  const validated = validateMetaD1OnlyEvidenceSequence(evidence, target);
+  if (validated.some((item) => item?.status !== 'passed')) {
+    throw operatorError(
+      'Meta D1-only summary evidence contains a non-passed phase',
+      'META_D1_ONLY_SUMMARY_EVIDENCE_STATUS_INVALID',
+    );
+  }
+  const final = validated.at(-1);
+  if (final?.phase !== 'verify-restore'
+    || final?.data?.mode !== 'safe'
+    || !Array.isArray(final?.data?.expectedTrueFlags)
+    || final.data.expectedTrueFlags.length !== 0) {
+    throw operatorError(
+      'Meta D1-only summary requires a verified all-false restore',
+      'META_D1_ONLY_SUMMARY_RESTORE_INCOMPLETE',
+    );
+  }
+  return deepFreeze({
+    evidence: validated,
+    chainStartPhase: validated[0].phase,
+    planEvidencePresent,
+    final,
+  });
+}
+
 export function loadMetaD1OnlyTarget(env = {}) {
   const targetKey = requireTargetKey(env.MKT_META_D1_ONLY_TARGET);
   const definition = META_D1_ONLY_TARGETS[targetKey];
@@ -259,7 +312,24 @@ export function loadMetaD1OnlyTarget(env = {}) {
     syncRunId,
     accountId: optionalText(env.CLOUDFLARE_ACCOUNT_ID),
     queueId: optionalText(env.MKT_META_D1_ONLY_QUEUE_ID),
+    terminalRecovery: env.MKT_META_D1_ONLY_TERMINAL_RECOVERY
+      === 'RECOVER_EXACT_FAILED_META_OPERATION',
+    orphanedRunningRecovery: env.MKT_META_D1_ONLY_ORPHANED_RUNNING_RECOVERY === 'true',
+    partialStagingRecovery: env.MKT_META_D1_ONLY_PARTIAL_STAGING_RECOVERY
+      === 'RECOVER_EXACT_PARTIAL_META_ADS_STAGING',
   };
+  const recoveryModeCount = [
+    base.terminalRecovery,
+    base.orphanedRunningRecovery,
+    base.partialStagingRecovery,
+  ].filter(Boolean).length;
+  if (recoveryModeCount > 1
+    || (base.partialStagingRecovery && base.connectorKey !== 'meta_ads')) {
+    throw operatorError(
+      'Meta D1-only recovery mode is invalid for this target',
+      'META_D1_ONLY_RECOVERY_MODE_INVALID',
+    );
+  }
   return deepFreeze({ ...base, targetFingerprint: sha256(stableJson(safeTarget(base))) });
 }
 
@@ -350,18 +420,30 @@ export function buildMetaD1OnlySnapshotSql(target = {}) {
   return compactSql(`
     SELECT
       (SELECT status FROM sync_runs WHERE sync_run_id = ${syncRunId}) AS sync_run_status,
+      (SELECT started_at FROM sync_runs WHERE sync_run_id = ${syncRunId}) AS sync_run_started_at,
       (SELECT finished_at FROM sync_runs WHERE sync_run_id = ${syncRunId}) AS sync_run_finished_at,
       (SELECT error_code FROM sync_runs WHERE sync_run_id = ${syncRunId}) AS sync_run_error_code,
+      (SELECT records_written FROM sync_runs WHERE sync_run_id = ${syncRunId}) AS sync_run_records_written,
+      (SELECT updated_at FROM sync_runs WHERE sync_run_id = ${syncRunId}) AS sync_run_updated_at,
       (SELECT status FROM sync_work_runs WHERE work_key = ${workKey}) AS work_status,
       (SELECT lifecycle_status FROM sync_work_runs WHERE work_key = ${workKey}) AS work_lifecycle_status,
       (SELECT completed_at FROM sync_work_runs WHERE work_key = ${workKey}) AS work_completed_at,
       (SELECT complete FROM sync_work_phases WHERE work_key = ${workKey} AND phase = '${D1_PHASE}') AS d1_phase_complete,
       (SELECT state_json FROM sync_work_phases WHERE work_key = ${workKey} AND phase = '${D1_PHASE}') AS d1_state_json,
+      (SELECT updated_at FROM sync_work_phases WHERE work_key = ${workKey} AND phase = '${D1_PHASE}') AS d1_phase_updated_at,
+      (SELECT complete FROM sync_work_phases WHERE work_key = ${workKey} AND phase = '${SOURCE_STAGING_PHASE}') AS source_staging_complete,
+      (SELECT updated_at FROM sync_work_phases WHERE work_key = ${workKey} AND phase = '${SOURCE_STAGING_PHASE}') AS source_staging_updated_at,
+      (SELECT json_extract(state_json, '$.stage') FROM sync_work_phases WHERE work_key = ${workKey} AND phase = '${SOURCE_STAGING_PHASE}') AS source_staging_stage,
+      (SELECT json_extract(state_json, '$.unitCount') FROM sync_work_phases WHERE work_key = ${workKey} AND phase = '${SOURCE_STAGING_PHASE}') AS source_staging_unit_count,
+      (SELECT json_extract(state_json, '$.rowCount') FROM sync_work_phases WHERE work_key = ${workKey} AND phase = '${SOURCE_STAGING_PHASE}') AS source_staging_row_count,
+      (SELECT json_extract(state_json, '$.pageState.pageNumber') FROM sync_work_phases WHERE work_key = ${workKey} AND phase = '${SOURCE_STAGING_PHASE}') AS source_staging_page_number,
+      (SELECT json_extract(state_json, '$.contentIndex') FROM sync_work_phases WHERE work_key = ${workKey} AND phase = '${SOURCE_STAGING_PHASE}') AS source_staging_content_index,
       (SELECT COUNT(*) FROM sync_work_phases WHERE work_key = ${workKey} AND phase = '${LARK_PHASE}') AS lark_phase_count,
       (SELECT COUNT(*) FROM sync_work_phases WHERE work_key = ${workKey} AND phase = '${COMPLETION_PHASE}') AS completion_phase_count,
       (SELECT COUNT(*) FROM sync_locks WHERE owner_id = ${syncRunId} AND expires_at > (unixepoch() * 1000)) AS active_lock_count,
       (SELECT COUNT(*) FROM queue_operation_attempts WHERE operation_id = ${operationId} AND work_key = ${workKey}) AS queue_operation_attempts,
       (SELECT COALESCE(MAX(main_queue_attempts), 0) FROM queue_operation_attempts WHERE operation_id = ${operationId} AND work_key = ${workKey}) AS main_queue_attempts,
+      (SELECT MAX(updated_at) FROM queue_operation_attempts WHERE operation_id = ${operationId} AND work_key = ${workKey}) AS queue_operation_updated_at,
       (SELECT COUNT(*) FROM data_coverage_runs WHERE sync_run_id = ${syncRunId}) AS coverage_run_count,
       (SELECT COUNT(*) FROM data_coverage_runs WHERE sync_run_id = ${syncRunId} AND (failed_rows <> 0 OR status NOT IN ('complete', 'no_data_confirmed', 'revisable'))) AS invalid_coverage_count,
       (SELECT COUNT(*) FROM data_coverage_entities WHERE coverage_run_id IN (SELECT coverage_run_id FROM data_coverage_runs WHERE sync_run_id = ${syncRunId})) AS coverage_entity_count,
@@ -374,29 +456,52 @@ export function buildMetaD1OnlySnapshotSql(target = {}) {
       (SELECT COUNT(*) FROM organic_content_observations WHERE sync_run_id = ${syncRunId}) AS operation_organic_observation_count,
       (SELECT COUNT(*) FROM organic_account_daily_facts WHERE sync_run_id = ${syncRunId}) AS operation_account_daily_count,
       (SELECT COUNT(*) FROM ads_entity_state WHERE last_sync_run_id = ${syncRunId}) AS operation_ads_entity_count,
-      (SELECT COUNT(*) FROM ads_daily_facts WHERE sync_run_id = ${syncRunId}) AS operation_ads_daily_count;
+      (SELECT COUNT(*) FROM ads_daily_facts WHERE sync_run_id = ${syncRunId}) AS operation_ads_daily_count,
+      (unixepoch('subsec') * 1000) AS observed_at;
   `);
 }
 
 export function normalizeMetaD1OnlySnapshot(value = {}) {
   if (isNormalizedSnapshot(value)) {
-    return deepFreeze({ ...value, targetCounts: deepFreeze({ ...value.targetCounts }), operationCounts: deepFreeze({ ...value.operationCounts }) });
+    return deepFreeze({
+      ...value,
+      syncRunRecordsWritten: count(value.syncRunRecordsWritten),
+      d1PhaseUpdatedAt: nullableNumber(value.d1PhaseUpdatedAt),
+      sourceStaging: normalizeSourceStaging(value.sourceStaging),
+      targetCounts: deepFreeze({ ...value.targetCounts }),
+      operationCounts: deepFreeze({ ...value.operationCounts }),
+    });
   }
   const d1State = parseNullableJson(value.d1_state_json, 'd1_state_json');
   return deepFreeze({
     syncRunStatus: optionalText(value.sync_run_status),
+    syncRunStartedAt: nullableNumber(value.sync_run_started_at),
     syncRunFinishedAt: nullableNumber(value.sync_run_finished_at),
     syncRunErrorCode: optionalText(value.sync_run_error_code),
+    syncRunRecordsWritten: count(value.sync_run_records_written),
+    syncRunUpdatedAt: nullableNumber(value.sync_run_updated_at),
     workStatus: optionalText(value.work_status),
     workLifecycleStatus: optionalText(value.work_lifecycle_status),
     workCompletedAt: nullableNumber(value.work_completed_at),
     d1PhaseComplete: Number(value.d1_phase_complete ?? 0) === 1,
     d1State,
+    d1PhaseUpdatedAt: nullableNumber(value.d1_phase_updated_at),
+    sourceStaging: normalizeSourceStaging({
+      complete: Number(value.source_staging_complete ?? 0) === 1,
+      updatedAt: value.source_staging_updated_at,
+      stage: value.source_staging_stage,
+      unitCount: value.source_staging_unit_count,
+      rowCount: value.source_staging_row_count,
+      pageNumber: value.source_staging_page_number,
+      contentIndex: value.source_staging_content_index,
+    }),
     larkPhaseCount: count(value.lark_phase_count),
     completionPhaseCount: count(value.completion_phase_count),
     activeLockCount: count(value.active_lock_count),
     queueOperationAttempts: count(value.queue_operation_attempts),
     mainQueueAttempts: count(value.main_queue_attempts),
+    queueOperationUpdatedAt: nullableNumber(value.queue_operation_updated_at),
+    observedAt: nullableNumber(value.observed_at) ?? 0,
     coverageRunCount: count(value.coverage_run_count),
     invalidCoverageCount: count(value.invalid_coverage_count),
     coverageEntityCount: count(value.coverage_entity_count),
@@ -423,6 +528,54 @@ export function classifyMetaD1OnlyCompletion(snapshot = {}) {
   return deepFreeze({ complete, snapshot: value, reason: complete ? 'd1_complete_lark_gate_disabled' : 'incomplete_or_invalid' });
 }
 
+export function classifyMetaD1OnlyActiveProgressWindow(snapshotInput = {}, options = {}) {
+  const snapshot = normalizeMetaD1OnlySnapshot(snapshotInput);
+  const elapsedPolls = Number(options.elapsedPolls);
+  const hardMaxPolls = Number(options.hardMaxPolls);
+  const progressLeaseMs = Number(options.progressLeaseMs);
+  const latestActivityAt = Math.max(
+    snapshot.sourceStaging.updatedAt ?? 0,
+    snapshot.d1PhaseUpdatedAt ?? 0,
+    snapshot.syncRunUpdatedAt ?? 0,
+    snapshot.queueOperationUpdatedAt ?? 0,
+  );
+  const progressAgeMs = snapshot.observedAt - latestActivityAt;
+  const accepted = options.connectorKey === 'meta_ads'
+    && Number.isSafeInteger(elapsedPolls)
+    && Number.isSafeInteger(hardMaxPolls)
+    && Number.isSafeInteger(progressLeaseMs)
+    && elapsedPolls < hardMaxPolls
+    && progressLeaseMs > 0
+    && latestActivityAt > 0
+    && progressAgeMs >= 0
+    && progressAgeMs <= progressLeaseMs
+    && snapshot.sourceStaging.unitCount > 0
+    && META_ADS_SOURCE_STAGES.has(snapshot.sourceStaging.stage)
+    && ['running', 'success'].includes(snapshot.syncRunStatus)
+    && snapshot.syncRunErrorCode === null
+    && snapshot.workStatus === 'active'
+    && snapshot.workLifecycleStatus === 'active'
+    && snapshot.workCompletedAt === null
+    && snapshot.d1PhaseComplete === false
+    && snapshot.larkPhaseCount === 0
+    && snapshot.completionPhaseCount === 0
+    && snapshot.invalidCoverageCount === 0;
+  return deepFreeze({
+    accepted,
+    latestActivityAt: latestActivityAt || null,
+    progressAgeMs: latestActivityAt > 0 ? progressAgeMs : null,
+    remainingLeaseMs: accepted ? progressLeaseMs - progressAgeMs : 0,
+    snapshot,
+  });
+}
+
+export function isMetaRemoteReadTransientError(error = {}) {
+  const code = error?.code;
+  return (Number.isSafeInteger(code) && code > 0)
+    || ['ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN', 'ENETUNREACH'].includes(code)
+    || (typeof error?.signal === 'string' && error.signal !== '');
+}
+
 export function compareMetaD1OnlySnapshots(beforeInput, afterInput, options = {}) {
   const before = normalizeMetaD1OnlySnapshot(beforeInput);
   const after = normalizeMetaD1OnlySnapshot(afterInput);
@@ -431,7 +584,9 @@ export function compareMetaD1OnlySnapshots(beforeInput, afterInput, options = {}
   if (after.invalidCoverageCount !== 0) throw operatorError('Meta D1-only Coverage contains failed or unaccepted rows', 'META_D1_ONLY_COVERAGE_INVALID');
   if (!rerun) {
     if (!classifyMetaD1OnlyCompletion(after).complete) throw operatorError('Meta D1-only operation has not reached the accepted D1 boundary', 'META_D1_ONLY_COMPLETION_INVALID');
-    if (after.queueOperationAttempts < before.queueOperationAttempts + 1) throw operatorError('Meta D1-only initial Queue attempt was not observed', 'META_D1_ONLY_QUEUE_ATTEMPT_MISSING');
+    if (options.terminalRecovery === true) {
+      if (after.mainQueueAttempts < before.mainQueueAttempts + 1) throw operatorError('Meta D1-only recovery Queue attempt was not observed', 'META_D1_ONLY_RECOVERY_ATTEMPT_MISSING');
+    } else if (after.queueOperationAttempts < before.queueOperationAttempts + 1) throw operatorError('Meta D1-only initial Queue attempt was not observed', 'META_D1_ONLY_QUEUE_ATTEMPT_MISSING');
     return deepFreeze({ accepted: true, rerun: false, before, after, targetCountDelta: subtractCounts(after.targetCounts, before.targetCounts), operationCounts: after.operationCounts, coverageRunCount: after.coverageRunCount, coverageEntityCount: after.coverageEntityCount });
   }
   if (after.mainQueueAttempts < before.mainQueueAttempts + 1) throw operatorError('Meta D1-only rerun Queue attempt was not observed', 'META_D1_ONLY_RERUN_ATTEMPT_MISSING');
@@ -439,6 +594,148 @@ export function compareMetaD1OnlySnapshots(beforeInput, afterInput, options = {}
   for (const key of Object.keys(before.operationCounts)) if (after.operationCounts[key] !== before.operationCounts[key]) throw operatorError('Meta D1-only rerun changed operation-scoped Business counts', 'META_D1_ONLY_RERUN_COUNT_DRIFT', { field: key, before: before.operationCounts[key], after: after.operationCounts[key] });
   if (after.coverageRunCount !== before.coverageRunCount || after.coverageEntityCount !== before.coverageEntityCount) throw operatorError('Meta D1-only rerun changed Coverage counts', 'META_D1_ONLY_RERUN_COVERAGE_DRIFT');
   return deepFreeze({ accepted: true, rerun: true, before, after, businessCountDrift: false, coverageCountDrift: false });
+}
+
+export function validateMetaD1OnlyTerminalRecoveryBaseline(snapshotInput = {}) {
+  const snapshot = normalizeMetaD1OnlySnapshot(snapshotInput);
+  const noOperationWrites = Object.values(snapshot.operationCounts).every((count) => count === 0);
+  const acceptedPreWriteErrors = new Set([
+    'META_PERMANENT_API_ERROR',
+    'UNHANDLED_SYNC_ERROR',
+    'MKT_ORGANIC_HISTORY_INPUT_INVALID',
+  ]);
+  const valid = snapshot.syncRunStatus === 'failed'
+    && acceptedPreWriteErrors.has(snapshot.syncRunErrorCode)
+    && snapshot.workStatus === 'active'
+    && snapshot.workLifecycleStatus === 'active'
+    && snapshot.workCompletedAt === null
+    && snapshot.d1PhaseComplete === false
+    && snapshot.larkPhaseCount === 0
+    && snapshot.completionPhaseCount === 0
+    && snapshot.activeLockCount === 0
+    && snapshot.queueOperationAttempts === 1
+    && snapshot.mainQueueAttempts >= 3
+    && snapshot.coverageRunCount === 0
+    && snapshot.invalidCoverageCount === 0
+    && noOperationWrites;
+  if (!valid) {
+    throw operatorError(
+      'Meta D1-only terminal recovery baseline is not the exact failed pre-D1 boundary',
+      'META_D1_ONLY_TERMINAL_RECOVERY_BASELINE_INVALID',
+    );
+  }
+  return deepFreeze({ accepted: true, snapshot });
+}
+
+export function classifyMetaD1OnlyOrphanedRunningRecoveryBaseline(snapshotInput = {}) {
+  const snapshot = normalizeMetaD1OnlySnapshot(snapshotInput);
+  const noOperationWrites = Object.values(snapshot.operationCounts)
+    .every((value) => value === 0);
+  const latestActivityAt = Math.max(
+    snapshot.syncRunUpdatedAt ?? 0,
+    snapshot.queueOperationUpdatedAt ?? 0,
+  );
+  const accepted = snapshot.syncRunStatus === 'running'
+    && snapshot.syncRunStartedAt !== null
+    && snapshot.syncRunFinishedAt === null
+    && snapshot.syncRunErrorCode === null
+    && snapshot.workStatus === 'active'
+    && snapshot.workLifecycleStatus === 'active'
+    && snapshot.workCompletedAt === null
+    && snapshot.d1PhaseComplete === false
+    && snapshot.larkPhaseCount === 0
+    && snapshot.completionPhaseCount === 0
+    && snapshot.activeLockCount === 0
+    && snapshot.queueOperationAttempts === 1
+    && snapshot.mainQueueAttempts >= 1
+    && snapshot.coverageRunCount === 0
+    && snapshot.invalidCoverageCount === 0
+    && noOperationWrites
+    && latestActivityAt > 0
+    && snapshot.observedAt - latestActivityAt >= 16 * 60 * 1000;
+  return deepFreeze({ accepted, snapshot });
+}
+
+export function validateMetaD1OnlyOrphanedRunningStability(
+  beforeInput = {},
+  afterInput = {},
+) {
+  const before = classifyMetaD1OnlyOrphanedRunningRecoveryBaseline(beforeInput);
+  const after = classifyMetaD1OnlyOrphanedRunningRecoveryBaseline(afterInput);
+  const elapsedMs = after.snapshot.observedAt - before.snapshot.observedAt;
+  const stableBefore = { ...before.snapshot, observedAt: 0 };
+  const stableAfter = { ...after.snapshot, observedAt: 0 };
+  if (!before.accepted
+    || !after.accepted
+    || elapsedMs < 30_000
+    || stableJson(stableBefore) !== stableJson(stableAfter)) {
+    throw operatorError(
+      'Meta D1-only orphaned running state changed during the stability window',
+      'META_D1_ONLY_ORPHANED_RUNNING_PROGRESS_OBSERVED',
+      { elapsedMs },
+    );
+  }
+  return deepFreeze({ accepted: true, elapsedMs, snapshot: after.snapshot });
+}
+
+export function classifyMetaD1OnlyPartialStagingRecoveryBaseline(snapshotInput = {}) {
+  const snapshot = normalizeMetaD1OnlySnapshot(snapshotInput);
+  const noOperationWrites = Object.values(snapshot.operationCounts)
+    .every((value) => value === 0);
+  const latestActivityAt = Math.max(
+    snapshot.sourceStaging.updatedAt ?? 0,
+    snapshot.syncRunUpdatedAt ?? 0,
+    snapshot.queueOperationUpdatedAt ?? 0,
+  );
+  const accepted = snapshot.syncRunStatus === 'success'
+    && snapshot.syncRunStartedAt !== null
+    && snapshot.syncRunFinishedAt !== null
+    && snapshot.syncRunErrorCode === null
+    && snapshot.syncRunRecordsWritten === 0
+    && snapshot.workStatus === 'active'
+    && snapshot.workLifecycleStatus === 'active'
+    && snapshot.workCompletedAt === null
+    && snapshot.sourceStaging.complete === false
+    && META_ADS_SOURCE_STAGES.has(snapshot.sourceStaging.stage)
+    && snapshot.sourceStaging.stage !== 'complete'
+    && snapshot.sourceStaging.updatedAt !== null
+    && snapshot.sourceStaging.unitCount > 0
+    && snapshot.sourceStaging.rowCount > 0
+    && snapshot.d1PhaseComplete === false
+    && snapshot.d1PhaseUpdatedAt === null
+    && snapshot.larkPhaseCount === 0
+    && snapshot.completionPhaseCount === 0
+    && snapshot.activeLockCount === 0
+    && snapshot.queueOperationAttempts === 1
+    && snapshot.mainQueueAttempts >= 1
+    && snapshot.coverageRunCount === 0
+    && snapshot.invalidCoverageCount === 0
+    && noOperationWrites
+    && latestActivityAt > 0
+    && snapshot.observedAt - latestActivityAt >= 16 * 60 * 1000;
+  return deepFreeze({ accepted, latestActivityAt, snapshot });
+}
+
+export function validateMetaD1OnlyPartialStagingStability(
+  beforeInput = {},
+  afterInput = {},
+) {
+  const before = classifyMetaD1OnlyPartialStagingRecoveryBaseline(beforeInput);
+  const after = classifyMetaD1OnlyPartialStagingRecoveryBaseline(afterInput);
+  const elapsedMs = after.snapshot.observedAt - before.snapshot.observedAt;
+  const stableBefore = { ...before.snapshot, observedAt: 0 };
+  const stableAfter = { ...after.snapshot, observedAt: 0 };
+  if (!before.accepted
+    || !after.accepted
+    || elapsedMs < 30_000
+    || stableJson(stableBefore) !== stableJson(stableAfter)) {
+    throw operatorError(
+      'Meta D1-only partial staging changed during the stability window',
+      'META_D1_ONLY_PARTIAL_STAGING_PROGRESS_OBSERVED',
+      { elapsedMs },
+    );
+  }
+  return deepFreeze({ accepted: true, elapsedMs, snapshot: after.snapshot });
 }
 
 export function createMetaD1OnlyEvidence(input = {}) {
@@ -498,6 +795,9 @@ function safeTarget(target) {
     operationId: target.operationId, originalRequestedAt: target.originalRequestedAt,
     generation: target.generation, periodStart: target.periodStart, periodEnd: target.periodEnd,
     workKey: target.workKey, syncRunId: target.syncRunId,
+    terminalRecovery: target.terminalRecovery === true,
+    orphanedRunningRecovery: target.orphanedRunningRecovery === true,
+    ...(target.partialStagingRecovery === true ? { partialStagingRecovery: true } : {}),
   };
 }
 function confirmation(envName, value) { return Object.freeze({ envName, value }); }
@@ -627,6 +927,18 @@ function sanitizeEvidenceValue(value) {
 }
 function isNormalizedSnapshot(value) {
   return Boolean(value && typeof value === 'object' && typeof value.d1PhaseComplete === 'boolean' && value.targetCounts && typeof value.targetCounts === 'object' && value.operationCounts && typeof value.operationCounts === 'object');
+}
+function normalizeSourceStaging(value = {}) {
+  const source = value && typeof value === 'object' ? value : {};
+  return deepFreeze({
+    complete: source.complete === true || Number(source.complete ?? 0) === 1,
+    updatedAt: nullableNumber(source.updatedAt),
+    stage: optionalText(source.stage),
+    unitCount: count(source.unitCount),
+    rowCount: count(source.rowCount),
+    pageNumber: count(source.pageNumber),
+    contentIndex: count(source.contentIndex),
+  });
 }
 function subtractCounts(after, before) { return deepFreeze(Object.fromEntries(Object.keys(after).map((key) => [key, after[key] - before[key]]))); }
 function parseNullableJson(value, fieldName) {

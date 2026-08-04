@@ -25,10 +25,12 @@ import {
   buildMetaD1OnlyJob,
   buildMetaD1OnlySchemaSql,
   buildMetaD1OnlySnapshotSql,
+  classifyMetaD1OnlyActiveProgressWindow,
   classifyMetaD1OnlyCompletion,
   compareMetaD1OnlySnapshots,
   createMetaD1OnlyEvidence,
   evidenceFileForMetaD1OnlyPhase,
+  isMetaRemoteReadTransientError,
   loadMetaD1OnlyTarget,
   normalizeMetaD1OnlySnapshot,
   parseMetaD1OnlyOperatorArgs,
@@ -36,9 +38,14 @@ import {
   safeMetaD1OnlyTarget,
   validateMetaD1OnlyContinuationRepositoryState,
   validateMetaD1OnlyEvidenceSequence,
+  validateMetaD1OnlyOrphanedRunningStability,
+  validateMetaD1OnlyPartialStagingStability,
   validateMetaD1OnlyReusableRestoreSequence,
+  validateMetaD1OnlySummarySequence,
+  validateMetaD1OnlyTerminalRecoveryBaseline,
   validateMetaReadOnlySummary,
 } from './lib/meta-d1-only-rollout-operator.js';
+import { resolveCloudflareBearerAuth } from './lib/woocommerce-final-one-command.js';
 
 const execFileAsync = promisify(execFile);
 const repositoryRoot = resolve(process.cwd());
@@ -250,14 +257,38 @@ async function runPreflight(loaded) {
       'META_D1_ONLY_D1_SCHEMA_INCOMPLETE',
     );
   }
-  if (baseline.syncRunStatus !== null
-    || baseline.workStatus !== null
-    || baseline.activeLockCount !== 0
-    || baseline.queueOperationAttempts !== 0) {
-    throw operatorFailure(
-      'The proposed Meta operation identity already exists or is active',
-      'META_D1_ONLY_OPERATION_NOT_FRESH',
-    );
+  const terminalRecovery = target.terminalRecovery
+    ? validateMetaD1OnlyTerminalRecoveryBaseline(baseline)
+    : null;
+  const orphanedRunningRecovery = target.orphanedRunningRecovery
+    ? validateMetaD1OnlyOrphanedRunningStability(
+        baseline,
+        await (async () => {
+          await sleep(30_000);
+          return readSnapshot(loaded);
+        })(),
+      )
+    : null;
+  const partialStagingRecovery = target.partialStagingRecovery
+    ? validateMetaD1OnlyPartialStagingStability(
+        baseline,
+        await (async () => {
+          await sleep(30_000);
+          return readSnapshot(loaded);
+        })(),
+      )
+    : null;
+  if (!target.terminalRecovery
+    && !target.orphanedRunningRecovery
+    && !target.partialStagingRecovery
+    && (baseline.syncRunStatus !== null
+      || baseline.workStatus !== null
+      || baseline.activeLockCount !== 0
+      || baseline.queueOperationAttempts !== 0)) {
+      throw operatorFailure(
+        'The proposed Meta operation identity already exists or is active',
+        'META_D1_ONLY_OPERATION_NOT_FRESH',
+      );
   }
   return {
     target: safeMetaD1OnlyTarget(target),
@@ -269,7 +300,12 @@ async function runPreflight(loaded) {
     pendingMigrations,
     requiredSecretNamePresent: true,
     requiredTableCount: META_D1_ONLY_REQUIRED_TABLES.length,
-    baseline,
+    baseline: partialStagingRecovery?.snapshot
+      ?? orphanedRunningRecovery?.snapshot
+      ?? baseline,
+    terminalRecovery: terminalRecovery?.accepted === true,
+    orphanedRunningRecovery: orphanedRunningRecovery?.accepted === true,
+    partialStagingRecovery: partialStagingRecovery?.accepted === true,
     providerRequests: 0,
     remoteMutationCount: 0,
   };
@@ -440,7 +476,11 @@ async function verifyInitialD1Only(loaded) {
   const before = (await readEvidence(loaded, 'snapshot-before')).data?.snapshot;
   const after = await pollForD1Completion(loaded);
   return {
-    comparison: compareMetaD1OnlySnapshots(before, after),
+    comparison: compareMetaD1OnlySnapshots(before, after, {
+      terminalRecovery: loaded.target.terminalRecovery
+        || loaded.target.orphanedRunningRecovery
+        || loaded.target.partialStagingRecovery,
+    }),
     snapshotAfter: after,
     larkMutationCount: 0,
   };
@@ -459,12 +499,47 @@ async function verifyIdempotentRerun(loaded) {
 
 async function pollForD1Completion(loaded) {
   const maxPolls = positiveInteger(process.env.MKT_META_D1_ONLY_VERIFY_MAX_POLLS, 120);
+  const hardMaxPolls = positiveInteger(
+    process.env.MKT_META_D1_ONLY_VERIFY_ACTIVE_PROGRESS_HARD_MAX_POLLS,
+    maxPolls,
+  );
+  if (hardMaxPolls < maxPolls) {
+    throw operatorFailure(
+      'Meta D1-only active-progress hard polling limit is below the base limit',
+      'META_D1_ONLY_POLLING_LIMIT_INVALID',
+    );
+  }
+  const progressLeasePolls = positiveInteger(
+    process.env.MKT_META_D1_ONLY_VERIFY_ACTIVE_PROGRESS_LEASE_POLLS,
+    120,
+  );
   const intervalMs = positiveInteger(process.env.MKT_META_D1_ONLY_VERIFY_POLL_INTERVAL_MS, 5_000);
+  const progressLeaseMs = progressLeasePolls * intervalMs;
+  let extensionLeaseDeadline = 0;
   let snapshot;
-  for (let index = 0; index < maxPolls; index += 1) {
-    snapshot = await readSnapshot(loaded);
+  for (let index = 0; index < hardMaxPolls; index += 1) {
+    snapshot = await readPollingSnapshot(loaded);
+    if (!snapshot) {
+      const insideBaseWindow = index + 1 < maxPolls;
+      const insideActiveLease = Date.now() < extensionLeaseDeadline;
+      if (!insideBaseWindow && !insideActiveLease) break;
+      await sleep(intervalMs);
+      continue;
+    }
     if (classifyMetaD1OnlyCompletion(snapshot).complete) return snapshot;
-    if (index + 1 < maxPolls) await sleep(intervalMs);
+    const elapsedPolls = index + 1;
+    const activeProgress = classifyMetaD1OnlyActiveProgressWindow(snapshot, {
+      connectorKey: loaded.target.connectorKey,
+      elapsedPolls,
+      hardMaxPolls,
+      progressLeaseMs,
+    });
+    if (activeProgress.accepted) {
+      extensionLeaseDeadline = Date.now() + activeProgress.remainingLeaseMs;
+    }
+    const insideBaseWindow = elapsedPolls < maxPolls;
+    if (!insideBaseWindow && !activeProgress.accepted) break;
+    await sleep(intervalMs);
   }
   const error = operatorFailure(
     'Bounded verification did not observe the accepted Meta D1-only boundary',
@@ -479,7 +554,11 @@ async function pollForRerun(loaded, minimumAttempts) {
   const intervalMs = positiveInteger(process.env.MKT_META_D1_ONLY_VERIFY_POLL_INTERVAL_MS, 5_000);
   let snapshot;
   for (let index = 0; index < maxPolls; index += 1) {
-    snapshot = await readSnapshot(loaded);
+    snapshot = await readPollingSnapshot(loaded);
+    if (!snapshot) {
+      if (index + 1 < maxPolls) await sleep(intervalMs);
+      continue;
+    }
     const normalized = normalizeMetaD1OnlySnapshot(snapshot);
     if (normalized.mainQueueAttempts >= minimumAttempts
       && normalized.activeLockCount === 0
@@ -496,25 +575,33 @@ async function pollForRerun(loaded, minimumAttempts) {
   throw error;
 }
 
+async function readPollingSnapshot(loaded) {
+  try {
+    return await readSnapshot(loaded);
+  } catch (error) {
+    if (!isMetaRemoteReadTransientError(error)) throw error;
+    return null;
+  }
+}
+
 async function summarize(loaded) {
   const evidence = [];
   for (const phase of META_D1_ONLY_OPERATOR_PHASES.slice(0, -1)) {
-    evidence.push(await readEvidence(loaded, phase));
+    try {
+      evidence.push(await readEvidence(loaded, phase));
+    } catch (error) {
+      if (phase !== 'plan' || error?.code !== 'ENOENT') throw error;
+    }
   }
-  const validated = validateMetaD1OnlyEvidenceSequence(evidence, loaded.target);
-  const final = validated.at(-1);
-  if (final.phase !== 'verify-restore' || final.data?.mode !== 'safe') {
-    throw operatorFailure(
-      'Meta D1-only summary requires a verified all-false restore',
-      'META_D1_ONLY_SUMMARY_RESTORE_INCOMPLETE',
-    );
-  }
+  const validated = validateMetaD1OnlySummarySequence(evidence, loaded.target);
   return {
     accepted: true,
     targetKey: loaded.target.targetKey,
     operationId: loaded.target.operationId,
-    phaseCount: validated.length,
-    evidenceChainHeadSha256: final.evidenceSha256,
+    phaseCount: validated.evidence.length,
+    evidenceChainStartPhase: validated.chainStartPhase,
+    planEvidencePresent: validated.planEvidencePresent,
+    evidenceChainHeadSha256: validated.final.evidenceSha256,
     d1OnlyVerified: true,
     idempotentRerunVerified: true,
     restoredAllFalse: true,
@@ -790,7 +877,7 @@ function assertQueueConsumer(consumers, queueName, expected) {
 }
 
 async function sendQueueMessage(job, target) {
-  const token = requiredEnv('CLOUDFLARE_API_TOKEN');
+  const token = await resolveQueueBearerToken(target);
   const accountId = target.accountId ?? requiredEnv('CLOUDFLARE_ACCOUNT_ID');
   const queueId = target.queueId ?? requiredEnv('MKT_META_D1_ONLY_QUEUE_ID');
   const response = await fetch(
@@ -815,6 +902,15 @@ async function sendQueueMessage(job, target) {
     error.emergencyRestoreRequired = true;
     throw error;
   }
+}
+
+async function resolveQueueBearerToken(target) {
+  const explicit = process.env.CLOUDFLARE_API_TOKEN;
+  if (typeof explicit === 'string' && explicit.trim() !== '') return explicit.trim();
+  const auth = resolveCloudflareBearerAuth({
+    authOutput: await wranglerText(target, ['auth', 'token', '--json']),
+  });
+  return auth.token;
 }
 
 async function writeEvidence(loaded, phase, evidence) {

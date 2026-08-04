@@ -28,6 +28,7 @@ export const META_LARK_OPERATOR_PHASES = Object.freeze([
   'verify-idempotent-rerun',
   'restore-all-false',
   'verify-restore',
+  'verify-late-completion',
   'summary',
 ]);
 
@@ -45,6 +46,10 @@ export const META_LARK_CONFIRMATIONS = deepFreeze({
   'verify-idempotent-rerun': confirmation('CONFIRM_META_LARK_VERIFY_RERUN', 'VERIFY_META_LARK_IDEMPOTENT_RERUN'),
   'restore-all-false': confirmation('CONFIRM_META_LARK_RESTORE', 'RESTORE_META_LARK_ALL_FALSE'),
   'verify-restore': confirmation('CONFIRM_META_LARK_VERIFY_RESTORE', 'VERIFY_META_LARK_RESTORE'),
+  'verify-late-completion': confirmation(
+    'CONFIRM_META_LARK_VERIFY_LATE_COMPLETION',
+    'VERIFY_META_LARK_LATE_COMPLETION_AFTER_RESTORE',
+  ),
   summary: confirmation('CONFIRM_META_LARK_SUMMARY', 'SUMMARIZE_META_LARK_ROLLOUT'),
 });
 
@@ -103,12 +108,14 @@ export function loadMetaLarkTarget(env = {}) {
     MKT_META_D1_ONLY_WRANGLER_CONFIG: env.MKT_META_LARK_WRANGLER_CONFIG,
     MKT_META_D1_ONLY_READ_ONLY_SUMMARY: env.MKT_META_LARK_READ_ONLY_SUMMARY,
     MKT_META_D1_ONLY_QUEUE_ID: env.MKT_META_LARK_QUEUE_ID,
+    MKT_META_D1_ONLY_TERMINAL_RECOVERY: env.MKT_META_LARK_TERMINAL_RECOVERY,
   });
   const target = {
     ...base,
     contractVersion: META_LARK_OPERATOR_CONTRACT_VERSION,
     d1SummaryPath: requireText(env.MKT_META_LARK_D1_SUMMARY, 'MKT_META_LARK_D1_SUMMARY'),
     expectedLarkTableCount: expectedLarkContracts(base.connectorKey).length,
+    orphanedRunningRecovery: env.MKT_META_LARK_ORPHANED_RUNNING_RECOVERY === 'true',
   };
   return deepFreeze({
     ...target,
@@ -125,6 +132,7 @@ export function safeMetaLarkTarget(target = {}) {
     contractVersion: META_LARK_OPERATOR_CONTRACT_VERSION,
     d1SummaryPath: requireText(target.d1SummaryPath, 'd1SummaryPath'),
     expectedLarkTableCount: positiveInteger(target.expectedLarkTableCount, 'expectedLarkTableCount'),
+    orphanedRunningRecovery: target.orphanedRunningRecovery === true,
   });
 }
 
@@ -249,6 +257,79 @@ export function validateMetaD1OnlySummaryForLark(value = {}, target = {}) {
   });
 }
 
+export function validateMetaLarkD1ReadyBoundary(snapshotInput = {}, target = {}) {
+  const snapshot = normalizeMetaLarkSnapshot(snapshotInput);
+  const normalStatus = snapshot.syncRunStatus === 'success'
+    && snapshot.syncRunFinishedAt !== null
+    && snapshot.syncRunErrorCode === null;
+  const terminalRecovery = target.terminalRecovery === true
+    && snapshot.syncRunStatus === 'failed'
+    && snapshot.syncRunFinishedAt !== null
+    && snapshot.syncRunErrorCode === 'LARK_PREFLIGHT_FAILED';
+  const orphanedRunningRecovery = target.orphanedRunningRecovery === true
+    && snapshot.syncRunStatus === 'running'
+    && snapshot.syncRunStartedAt !== null
+    && snapshot.syncRunFinishedAt === null
+    && snapshot.syncRunErrorCode === null
+    && snapshot.observedAt - snapshot.syncRunStartedAt >= 16 * 60 * 1000
+    && snapshot.syncRunUpdatedAt !== null
+    && snapshot.observedAt - snapshot.syncRunUpdatedAt >= 16 * 60 * 1000
+    && snapshot.queueOperationAttempts === 1
+    && snapshot.mainQueueAttempts > 0
+    && snapshot.queueOperationUpdatedAt !== null
+    && snapshot.observedAt - snapshot.queueOperationUpdatedAt >= 16 * 60 * 1000;
+  const ready = (normalStatus || terminalRecovery || orphanedRunningRecovery)
+    && snapshot.d1PhaseComplete
+    && !snapshot.preflightPhaseComplete
+    && !snapshot.larkPhaseComplete
+    && !snapshot.completionPhaseComplete
+    && snapshot.activeLockCount === 0
+    && snapshot.coverageRunCount > 0
+    && snapshot.invalidCoverageCount === 0
+    && snapshot.workLifecycleStatus === 'active'
+    && snapshot.workCompletedAt === null;
+  if (!ready) {
+    throw operatorError(
+      'Meta target has not reached the accepted D1-only boundary',
+      'META_LARK_D1_BOUNDARY_INVALID',
+    );
+  }
+  return deepFreeze({
+    accepted: true,
+    terminalRecovery,
+    orphanedRunningRecovery,
+    snapshot,
+  });
+}
+
+export function validateMetaLarkOrphanedRunningStability(beforeInput = {}, afterInput = {}, target = {}) {
+  if (target.orphanedRunningRecovery !== true) {
+    throw operatorError(
+      'Meta orphaned-running recovery is not explicitly enabled',
+      'META_LARK_ORPHANED_RUNNING_RECOVERY_NOT_ENABLED',
+    );
+  }
+  const before = validateMetaLarkD1ReadyBoundary(beforeInput, target);
+  const after = validateMetaLarkD1ReadyBoundary(afterInput, target);
+  if (!before.orphanedRunningRecovery || !after.orphanedRunningRecovery) {
+    throw operatorError(
+      'Meta snapshots do not prove an orphaned running invocation',
+      'META_LARK_ORPHANED_RUNNING_RECOVERY_INVALID',
+    );
+  }
+  const elapsedMs = after.snapshot.observedAt - before.snapshot.observedAt;
+  const stableBefore = { ...before.snapshot, observedAt: 0 };
+  const stableAfter = { ...after.snapshot, observedAt: 0 };
+  if (elapsedMs < 30_000 || stableJson(stableBefore) !== stableJson(stableAfter)) {
+    throw operatorError(
+      'Meta orphaned running state changed during the stability window',
+      'META_LARK_ORPHANED_RUNNING_PROGRESS_OBSERVED',
+      { elapsedMs },
+    );
+  }
+  return deepFreeze({ accepted: true, elapsedMs, snapshot: after.snapshot });
+}
+
 export function buildMetaLarkSnapshotSql(target = {}) {
   const workKey = sqlText(requireText(target.workKey, 'workKey'));
   const syncRunId = sqlText(requireText(target.syncRunId, 'syncRunId'));
@@ -259,11 +340,14 @@ export function buildMetaLarkSnapshotSql(target = {}) {
   return compactSql(`
     SELECT
       (SELECT status FROM sync_runs WHERE sync_run_id = ${syncRunId}) AS sync_run_status,
+      (SELECT started_at FROM sync_runs WHERE sync_run_id = ${syncRunId}) AS sync_run_started_at,
       (SELECT finished_at FROM sync_runs WHERE sync_run_id = ${syncRunId}) AS sync_run_finished_at,
       (SELECT error_code FROM sync_runs WHERE sync_run_id = ${syncRunId}) AS sync_run_error_code,
+      (SELECT updated_at FROM sync_runs WHERE sync_run_id = ${syncRunId}) AS sync_run_updated_at,
       (SELECT status FROM sync_work_runs WHERE work_key = ${workKey}) AS work_status,
       (SELECT lifecycle_status FROM sync_work_runs WHERE work_key = ${workKey}) AS work_lifecycle_status,
       (SELECT completed_at FROM sync_work_runs WHERE work_key = ${workKey}) AS work_completed_at,
+      (SELECT completion_json FROM sync_work_runs WHERE work_key = ${workKey}) AS work_completion_json,
       (SELECT complete FROM sync_work_phases WHERE work_key = ${workKey} AND phase = '${D1_PHASE}') AS d1_phase_complete,
       (SELECT complete FROM sync_work_phases WHERE work_key = ${workKey} AND phase = '${PREFLIGHT_PHASE}') AS preflight_phase_complete,
       (SELECT state_json FROM sync_work_phases WHERE work_key = ${workKey} AND phase = '${PREFLIGHT_PHASE}') AS preflight_state_json,
@@ -274,6 +358,7 @@ export function buildMetaLarkSnapshotSql(target = {}) {
       (SELECT COUNT(*) FROM sync_locks WHERE owner_id = ${syncRunId} AND expires_at > (unixepoch() * 1000)) AS active_lock_count,
       (SELECT COUNT(*) FROM queue_operation_attempts WHERE operation_id = ${operationId} AND work_key = ${workKey}) AS queue_operation_attempts,
       (SELECT COALESCE(MAX(main_queue_attempts), 0) FROM queue_operation_attempts WHERE operation_id = ${operationId} AND work_key = ${workKey}) AS main_queue_attempts,
+      (SELECT MAX(updated_at) FROM queue_operation_attempts WHERE operation_id = ${operationId} AND work_key = ${workKey}) AS queue_operation_updated_at,
       (SELECT COUNT(*) FROM data_coverage_runs WHERE sync_run_id = ${syncRunId}) AS coverage_run_count,
       (SELECT COUNT(*) FROM data_coverage_runs WHERE sync_run_id = ${syncRunId} AND (failed_rows <> 0 OR status NOT IN ('complete', 'no_data_confirmed', 'revisable'))) AS invalid_coverage_count,
       (SELECT COUNT(*) FROM data_coverage_entities WHERE coverage_run_id IN (SELECT coverage_run_id FROM data_coverage_runs WHERE sync_run_id = ${syncRunId})) AS coverage_entity_count,
@@ -281,7 +366,8 @@ export function buildMetaLarkSnapshotSql(target = {}) {
       (SELECT COUNT(*) FROM organic_content_observations WHERE customer_key = ${customerKey} AND platform = ${platform} AND account_key = ${accountKey}) AS target_organic_observation_count,
       (SELECT COUNT(*) FROM organic_account_daily_facts WHERE customer_key = ${customerKey} AND platform = ${platform} AND account_key = ${accountKey}) AS target_account_daily_count,
       (SELECT COUNT(*) FROM ads_entity_state WHERE customer_key = ${customerKey} AND platform = ${platform} AND account_key = ${accountKey}) AS target_ads_entity_count,
-      (SELECT COUNT(*) FROM ads_daily_facts WHERE customer_key = ${customerKey} AND platform = ${platform} AND account_key = ${accountKey}) AS target_ads_daily_count;
+      (SELECT COUNT(*) FROM ads_daily_facts WHERE customer_key = ${customerKey} AND platform = ${platform} AND account_key = ${accountKey}) AS target_ads_daily_count,
+      (unixepoch('subsec') * 1000) AS observed_at;
   `);
 }
 
@@ -296,23 +382,52 @@ export function normalizeMetaLarkSnapshot(value = {}) {
   const preflightState = parseNullableJson(value.preflight_state_json, 'preflight_state_json');
   const larkState = parseNullableJson(value.lark_state_json, 'lark_state_json');
   const completionState = parseNullableJson(value.completion_state_json, 'completion_state_json');
+  const durableCompletion = parseNullableJson(
+    value.work_completion_json,
+    'work_completion_json',
+  );
+  const clearedPhaseCompletion = value.work_lifecycle_status === 'completed'
+    && durableCompletion?.schemaVersion === 'meta_end_to_end_reconciliation_v1'
+    && durableCompletion?.failed === 0
+    && Number(durableCompletion?.d1?.expectedOperations) >= 0
+    && Number(durableCompletion?.d1?.processedOperations)
+      === Number(durableCompletion?.d1?.expectedOperations)
+    && Array.isArray(durableCompletion?.preflight)
+    && Array.isArray(durableCompletion?.lark);
   return deepFreeze({
     syncRunStatus: optionalText(value.sync_run_status),
+    syncRunStartedAt: nullableNumber(value.sync_run_started_at),
     syncRunFinishedAt: nullableNumber(value.sync_run_finished_at),
     syncRunErrorCode: optionalText(value.sync_run_error_code),
+    syncRunUpdatedAt: nullableNumber(value.sync_run_updated_at),
     workStatus: optionalText(value.work_status),
     workLifecycleStatus: optionalText(value.work_lifecycle_status),
     workCompletedAt: nullableNumber(value.work_completed_at),
-    d1PhaseComplete: Number(value.d1_phase_complete ?? 0) === 1,
-    preflightPhaseComplete: Number(value.preflight_phase_complete ?? 0) === 1,
-    preflightSummaries: Array.isArray(preflightState?.summaries) ? preflightState.summaries : [],
-    larkPhaseComplete: Number(value.lark_phase_complete ?? 0) === 1,
-    larkResults: Array.isArray(larkState?.results) ? larkState.results : [],
-    completionPhaseComplete: Number(value.completion_phase_complete ?? 0) === 1,
-    completionReconciliation: completionState?.reconciliation ?? null,
+    d1PhaseComplete: Number(value.d1_phase_complete ?? 0) === 1 || clearedPhaseCompletion,
+    preflightPhaseComplete: Number(value.preflight_phase_complete ?? 0) === 1
+      || clearedPhaseCompletion,
+    preflightSummaries: Array.isArray(preflightState?.summaries)
+      ? preflightState.summaries
+      : (clearedPhaseCompletion ? durableCompletion.preflight : []),
+    larkPhaseComplete: Number(value.lark_phase_complete ?? 0) === 1
+      || clearedPhaseCompletion,
+    larkResults: Array.isArray(larkState?.results)
+      ? larkState.results
+      : (clearedPhaseCompletion ? durableCompletion.lark : []),
+    completionPhaseComplete: Number(value.completion_phase_complete ?? 0) === 1
+      || clearedPhaseCompletion,
+    completionReconciliation: completionState?.reconciliation
+      ?? (clearedPhaseCompletion ? durableCompletion : null),
+    clearedPhaseCompletion,
+    completionOperationId: clearedPhaseCompletion ? optionalText(durableCompletion.operationId) : null,
+    completionConnectorKey: clearedPhaseCompletion
+      ? optionalText(durableCompletion.connectorKey)
+      : null,
     activeLockCount: count(value.active_lock_count),
     queueOperationAttempts: count(value.queue_operation_attempts),
     mainQueueAttempts: count(value.main_queue_attempts),
+    queueOperationUpdatedAt: nullableNumber(value.queue_operation_updated_at),
+    observedAt: nullableNumber(value.observed_at) ?? 0,
     coverageRunCount: count(value.coverage_run_count),
     invalidCoverageCount: count(value.invalid_coverage_count),
     coverageEntityCount: count(value.coverage_entity_count),
@@ -335,10 +450,7 @@ export function classifyMetaLarkCompletion(snapshot = {}, target = {}) {
       return expected === count(result?.created) + count(result?.updated) + count(result?.skipped);
     });
   const reconciliationResults = value.completionReconciliation?.lark;
-  const complete = value.syncRunStatus === 'success'
-    && value.syncRunFinishedAt !== null
-    && value.syncRunErrorCode === null
-    && value.d1PhaseComplete
+  const durableComplete = value.d1PhaseComplete
     && value.preflightPhaseComplete
     && value.larkPhaseComplete
     && value.completionPhaseComplete
@@ -346,15 +458,119 @@ export function classifyMetaLarkCompletion(snapshot = {}, target = {}) {
     && value.invalidCoverageCount === 0
     && value.workLifecycleStatus === 'completed'
     && value.workCompletedAt !== null
+    && (!value.clearedPhaseCompletion
+      || (value.completionOperationId === target.operationId
+        && value.completionConnectorKey === target.connectorKey))
     && resultsValid
     && Array.isArray(reconciliationResults)
     && reconciliationResults.length === expectedCount;
+  const complete = value.syncRunStatus === 'success'
+    && value.syncRunFinishedAt !== null
+    && value.syncRunErrorCode === null
+    && durableComplete;
   return deepFreeze({
     complete,
+    durableComplete,
     reason: complete ? 'lark_complete_and_reconciled' : 'incomplete_or_invalid',
     expectedLarkTableCount: expectedCount,
     snapshot: value,
   });
+}
+
+export function validateMetaLarkCompletedStability(
+  beforeInput = {},
+  afterInput = {},
+  target = {},
+  minimumElapsedMs = 5_000,
+) {
+  const before = classifyMetaLarkCompletion(beforeInput, target);
+  const after = classifyMetaLarkCompletion(afterInput, target);
+  const elapsedMs = after.snapshot.observedAt - before.snapshot.observedAt;
+  const requiredElapsedMs = Math.max(0, Number(minimumElapsedMs) || 0);
+  const stableBefore = { ...before.snapshot, observedAt: 0 };
+  const stableAfter = { ...after.snapshot, observedAt: 0 };
+  if (!before.complete
+    || !after.complete
+    || elapsedMs < requiredElapsedMs
+    || stableJson(stableBefore) !== stableJson(stableAfter)) {
+    throw operatorError(
+      'Meta completed state changed during the stability window',
+      'META_LARK_COMPLETED_PROGRESS_OBSERVED',
+      { elapsedMs, requiredElapsedMs },
+    );
+  }
+  return deepFreeze({ accepted: true, elapsedMs, snapshot: after.snapshot });
+}
+
+export function classifyMetaLarkPostCompletionOrphan(snapshot = {}, target = {}) {
+  const value = normalizeMetaLarkSnapshot(snapshot);
+  const durable = classifyMetaLarkCompletion(value, target);
+  const latestActivityAt = Math.max(
+    value.syncRunUpdatedAt ?? 0,
+    value.queueOperationUpdatedAt ?? 0,
+  );
+  const accepted = target.orphanedRunningRecovery === true
+    && durable.durableComplete
+    && value.syncRunStatus === 'running'
+    && value.syncRunStartedAt !== null
+    && value.syncRunFinishedAt === null
+    && value.syncRunErrorCode === null
+    && value.workCompletedAt !== null
+    && value.syncRunStartedAt > value.workCompletedAt
+    && value.activeLockCount === 0
+    && latestActivityAt > 0
+    && value.observedAt - latestActivityAt >= 16 * 60 * 1000;
+  return deepFreeze({ accepted, snapshot: value });
+}
+
+export function validateMetaLarkPostCompletionOrphanStability(beforeInput = {}, afterInput = {}, target = {}) {
+  const before = classifyMetaLarkPostCompletionOrphan(beforeInput, target);
+  const after = classifyMetaLarkPostCompletionOrphan(afterInput, target);
+  const elapsedMs = after.snapshot.observedAt - before.snapshot.observedAt;
+  const stableBefore = { ...before.snapshot, observedAt: 0 };
+  const stableAfter = { ...after.snapshot, observedAt: 0 };
+  if (!before.accepted
+    || !after.accepted
+    || elapsedMs < 30_000
+    || stableJson(stableBefore) !== stableJson(stableAfter)) {
+    throw operatorError(
+      'Meta post-completion orphan changed during the stability window',
+      'META_LARK_POST_COMPLETION_ORPHAN_PROGRESS_OBSERVED',
+      { elapsedMs },
+    );
+  }
+  return deepFreeze({ accepted: true, elapsedMs, snapshot: after.snapshot });
+}
+
+export function classifyMetaLarkPollingSnapshot(
+  snapshot = {},
+  target = {},
+  minimumAttempts = 0,
+  previousFinishedAt = null,
+) {
+  const attempts = count(minimumAttempts);
+  const value = normalizeMetaLarkSnapshot(snapshot);
+  if (value.mainQueueAttempts < attempts) {
+    return deepFreeze({ state: 'pending', snapshot: value });
+  }
+  const newFinishedRunObserved = previousFinishedAt === null
+    || (value.syncRunFinishedAt !== null
+      && value.syncRunFinishedAt > Number(previousFinishedAt));
+  if (newFinishedRunObserved && classifyMetaLarkCompletion(value, target).complete) {
+    return deepFreeze({ state: 'complete', snapshot: value });
+  }
+  const terminalFailureObserved = value.syncRunStatus === 'failed'
+    && value.syncRunFinishedAt !== null
+    && (previousFinishedAt === null
+      || value.syncRunFinishedAt > Number(previousFinishedAt));
+  if (terminalFailureObserved) {
+    return deepFreeze({
+      state: 'terminal_failure',
+      errorCode: value.syncRunErrorCode,
+      snapshot: value,
+    });
+  }
+  return deepFreeze({ state: 'pending', snapshot: value });
 }
 
 export function compareMetaLarkSnapshots(beforeInput, afterInput, target = {}, options = {}) {
@@ -380,7 +596,9 @@ export function compareMetaLarkSnapshots(beforeInput, afterInput, target = {}, o
     throw operatorError('Meta Lark Queue attempt was not observed', 'META_LARK_QUEUE_ATTEMPT_MISSING');
   }
   const classified = classifyMetaLarkCompletion(after, target);
-  if (!classified.complete) {
+  const postCompletionOrphanAccepted = options.postCompletionOrphanVerified === true
+    && classifyMetaLarkPostCompletionOrphan(after, target).accepted;
+  if (!classified.complete && !postCompletionOrphanAccepted) {
     throw operatorError('Meta Lark continuation has not completed', 'META_LARK_COMPLETION_INVALID');
   }
   if (options.rerun === true) {
@@ -395,6 +613,7 @@ export function compareMetaLarkSnapshots(beforeInput, afterInput, target = {}, o
       larkReconciliationDrift: false,
       d1CountDrift: false,
       coverageCountDrift: false,
+      postCompletionOrphanAccepted,
     });
   }
   return deepFreeze({
@@ -404,6 +623,7 @@ export function compareMetaLarkSnapshots(beforeInput, afterInput, target = {}, o
     larkResults: after.larkResults,
     d1CountDrift: false,
     coverageCountDrift: false,
+    postCompletionOrphanAccepted,
   });
 }
 

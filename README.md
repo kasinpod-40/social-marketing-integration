@@ -372,13 +372,13 @@ Backfill requires D1 write. Retention requires the D1 Report reader. Enabling St
 | --- | --- | --- |
 | TikTok Organic | Draft PR #65 code complete and verified; protected Native RAW retained | Separate read-only-first rollout for Migration 0016, audit, one watermark admission and parity |
 | YouTube Organic | Runtime foundation exists on developer source | Separate parallel Workstream |
-| Facebook Organic | Token preflight implemented / Live UAT blocked | All Meta parallel Workstream |
-| Instagram Organic | Token preflight implemented / exact mapping pending | All Meta parallel Workstream |
-| Meta Ads | Token preflight implemented / Live UAT blocked | All Meta parallel Workstream; empty Ads data remains valid-no-data |
+| Facebook Organic | July D1/Lark parity accepted | All Meta completion Workstream; retained operation is replay-protected |
+| Instagram Organic | July D1/Lark parity accepted | All Meta completion Workstream; Worker restored all-false |
+| Meta Ads | July activity-scoped implementation under Gate | D1 keeps detail; Lark keeps activity entities and Shared Reports only |
 | Google Ads | Signed delivery and LIVE UAT completed / safely closed | No new implementation unless a separate incident or enhancement is approved |
 | TikTok Ads | Access/design preflight | Controlled API/Worker connector later |
 | WooCommerce | 2026-only Runtime verified; Live cleanup/reconciliation pending merged HEAD | Bounded Integration Workspace closeout; Schedule/Production remain closed |
-| Chatwoot | Planned | Separate parallel Workstream |
+| Chatwoot | Closed accepted Partial UAT | Not a Meta prerequisite; retained DLQ/Alerts remain forensic truth |
 
 Draft PR #11 is obsolete/superseded and must not be merged.
 

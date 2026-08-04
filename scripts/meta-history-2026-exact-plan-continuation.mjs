@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import {
   chmod,
@@ -8,6 +9,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  rename,
   rm,
   stat,
   symlink,
@@ -39,6 +41,8 @@ import {
   META_LARK_CONFIRMATIONS,
   META_LARK_OPERATOR_PHASES,
   buildMetaLarkSnapshotSql,
+  normalizeMetaLarkSnapshot,
+  validateMetaLarkCompletedStability,
   validateMetaD1OnlySummaryForLark,
 } from './lib/meta-lark-parity-rollout-operator.js';
 import {
@@ -52,6 +56,12 @@ import {
 import { discoverWooCommerceQueueId } from './lib/woocommerce-final-queue-discovery.js';
 
 const repositoryRoot = resolve(process.cwd());
+const larkLauncherPath = process.env.MKT_META_HISTORY_LARK_LAUNCHER_PATH
+  ? resolve(process.env.MKT_META_HISTORY_LARK_LAUNCHER_PATH)
+  : join(repositoryRoot, 'scripts', 'meta-lark-parity-rollout-launcher.mjs');
+const oneCommandPath = process.env.MKT_META_HISTORY_ONE_COMMAND_PATH
+  ? resolve(process.env.MKT_META_HISTORY_ONE_COMMAND_PATH)
+  : join(repositoryRoot, 'scripts', 'meta-history-2026-one-command.mjs');
 const workerName = 'social-mkt-sync-worker';
 const databaseName = 'social-mkt-state-dev';
 const mainQueueName = 'social-mkt-sync-jobs';
@@ -165,6 +175,8 @@ async function executeContinuation() {
   );
   await assertPrivateRegularFile(sourceConfigPath, 'Meta source Wrangler config');
   const safeConfigText = await readFile(safeConfigPath, 'utf8');
+  await assertRegularFile(larkLauncherPath, 'Meta Lark launcher');
+  await assertRegularFile(oneCommandPath, 'Meta history one-command closeout');
 
   stage = 'cloudflare-read-only-context';
   const cloudflare = await resolveCloudflareContext(baseEnv, safeConfigText);
@@ -194,7 +206,7 @@ async function executeContinuation() {
   const firstBoundary = readD1Row(baseEnv, safeConfigPath, snapshotSql);
   await sleep(5_000);
   const secondBoundary = readD1Row(baseEnv, safeConfigPath, snapshotSql);
-  const stableBoundary = validateStableMetaHistoryFacebookBoundary(
+  const stableBoundary = validatePendingOrLateFacebookBoundary(
     firstBoundary,
     secondBoundary,
   );
@@ -205,6 +217,9 @@ async function executeContinuation() {
     targetRoot,
   });
   isolatedRoot = isolated.root;
+
+  const restoredLateEvidence = await readRestoredLarkEvidenceTarget(larkRoot);
+  await quarantineMismatchedLateCompletionEvidence(larkRoot, restoredLateEvidence);
 
   const larkEnv = {
     ...baseEnv,
@@ -223,10 +238,12 @@ async function executeContinuation() {
     MKT_META_LARK_DATABASE_NAME: databaseName,
     MKT_META_LARK_MAIN_QUEUE: mainQueueName,
     MKT_META_LARK_DLQ: dlqName,
-    MKT_META_LARK_EXPECTED_ACTIVE_VERSION: activeVersion,
+    MKT_META_LARK_EXPECTED_ACTIVE_VERSION:
+      restoredLateEvidence?.expectedActiveVersion ?? activeVersion,
     MKT_META_LARK_WRANGLER_CONFIG: isolated.safeConfigRelativePath,
     MKT_META_LARK_READ_ONLY_SUMMARY: readOnlySummaryPath,
-    MKT_META_LARK_D1_SUMMARY: d1SummaryPath,
+    MKT_META_LARK_D1_SUMMARY:
+      restoredLateEvidence?.d1SummaryPath ?? d1SummaryPath,
     MKT_META_LARK_EVIDENCE_DIR: larkBaseRoot,
   };
 
@@ -261,7 +278,7 @@ async function executeContinuation() {
   };
   runVisible(
     process.execPath,
-    ['scripts/meta-history-2026-one-command.mjs', '--execute'],
+    [oneCommandPath, '--execute'],
     finalEnv,
     isolated.cloneRoot,
   );
@@ -304,13 +321,83 @@ async function executeContinuation() {
   process.stdout.write('META_HISTORY_2026_EXACT_PLAN_CONTINUATION_COMPLETED_SAFE\n');
 }
 
+async function readRestoredLarkEvidenceTarget(evidenceRoot) {
+  const restorePath = join(evidenceRoot, 'verify-restore.json');
+  const preflightPath = join(evidenceRoot, 'lark-preflight.json');
+  if (!(await fileExists(restorePath)) || !(await fileExists(preflightPath))) return null;
+  const [restore, preflight] = await Promise.all([
+    readFile(restorePath, 'utf8').then(JSON.parse),
+    readFile(preflightPath, 'utf8').then(JSON.parse),
+  ]);
+  const expectedActiveVersion = preflight?.data?.target?.expectedActiveVersion;
+  const originalD1SummaryPath = preflight?.data?.target?.d1SummaryPath;
+  if (typeof expectedActiveVersion !== 'string' || expectedActiveVersion.trim() === '') {
+    throw continuationError(
+      'Restored Meta Lark evidence lacks the original active-version identity',
+      'META_HISTORY_LATE_COMPLETION_TARGET_INVALID',
+    );
+  }
+  if (typeof originalD1SummaryPath !== 'string' || originalD1SummaryPath.trim() === '') {
+    throw continuationError(
+      'Restored Meta Lark evidence lacks the original D1 summary path identity',
+      'META_HISTORY_LATE_COMPLETION_TARGET_INVALID',
+    );
+  }
+  return Object.freeze({
+    targetFingerprint: restore.targetFingerprint,
+    expectedActiveVersion: expectedActiveVersion.trim(),
+    d1SummaryPath: originalD1SummaryPath.trim(),
+  });
+}
+
+async function quarantineMismatchedLateCompletionEvidence(evidenceRoot, restoredTarget) {
+  if (!restoredTarget) return;
+  const path = join(evidenceRoot, 'verify-late-completion.json');
+  if (!(await fileExists(path))) return;
+  const evidence = JSON.parse(await readFile(path, 'utf8'));
+  if (evidence?.targetFingerprint === restoredTarget.targetFingerprint) return;
+  const fingerprint = typeof evidence?.evidenceSha256 === 'string'
+    ? evidence.evidenceSha256.slice(0, 16)
+    : 'unknown';
+  const destination = join(
+    evidenceRoot,
+    `verify-late-completion.target-drift.${fingerprint}.json`,
+  );
+  if (await fileExists(destination)) {
+    throw continuationError(
+      'Late completion target-drift evidence was already quarantined',
+      'META_HISTORY_LATE_COMPLETION_EVIDENCE_CONFLICT',
+    );
+  }
+  await rename(path, destination);
+}
+
 async function runLarkPhaseChain({ cloneRoot, evidenceRoot, env }) {
   const restorePhase = 'restore-all-false';
   const verifyRestorePhase = 'verify-restore';
   const summaryPhase = 'summary';
+  const latePhase = 'verify-late-completion';
+  const restored = await fileExists(join(evidenceRoot, `${restorePhase}.json`))
+    && await fileExists(join(evidenceRoot, `${verifyRestorePhase}.json`));
+  const timedOutBeforeVerification = restored
+    && !(await fileExists(join(evidenceRoot, 'verify-lark.json')));
+  if (timedOutBeforeVerification) {
+    if (!(await fileExists(join(evidenceRoot, `${latePhase}.json`)))) {
+      runLarkPhase(cloneRoot, latePhase, env);
+    }
+    if (!(await fileExists(join(evidenceRoot, `${summaryPhase}.json`)))) {
+      runLarkPhase(cloneRoot, summaryPhase, env);
+    }
+    return;
+  }
   const executable = META_LARK_OPERATOR_PHASES
     .slice(1)
-    .filter((phase) => ![restorePhase, verifyRestorePhase, summaryPhase].includes(phase));
+    .filter((phase) => ![
+      restorePhase,
+      verifyRestorePhase,
+      latePhase,
+      summaryPhase,
+    ].includes(phase));
   let failureError = null;
   try {
     for (const phase of executable) {
@@ -345,6 +432,37 @@ async function runLarkPhaseChain({ cloneRoot, evidenceRoot, env }) {
   }
 }
 
+function validatePendingOrLateFacebookBoundary(first, second) {
+  try {
+    return validateStableMetaHistoryFacebookBoundary(first, second);
+  } catch (pendingError) {
+    const firstNormalized = normalizeMetaLarkSnapshot(first);
+    const secondNormalized = normalizeMetaLarkSnapshot(second);
+    const completionTarget = {
+      operationId: target.operationId,
+      connectorKey: 'facebook',
+    };
+    let stableCompletion;
+    try {
+      stableCompletion = validateMetaLarkCompletedStability(
+        firstNormalized,
+        secondNormalized,
+        completionTarget,
+      );
+    } catch {
+      throw pendingError;
+    }
+    const stableSnapshot = { ...stableCompletion.snapshot, observedAt: 0 };
+    return Object.freeze({
+      snapshot: stableCompletion.snapshot,
+      fingerprint: createHash('sha256')
+        .update(JSON.stringify(stableSnapshot))
+        .digest('hex'),
+      lateCompletionAfterRestore: true,
+    });
+  }
+}
+
 function runLarkPhase(cloneRoot, phase, env) {
   const confirmation = META_LARK_CONFIRMATIONS[phase];
   const phaseEnv = {
@@ -353,7 +471,7 @@ function runLarkPhase(cloneRoot, phase, env) {
   };
   runVisible(
     process.execPath,
-    ['scripts/meta-lark-parity-rollout-launcher.mjs', `--phase=${phase}`, '--execute'],
+    [larkLauncherPath, `--phase=${phase}`, '--execute'],
     phaseEnv,
     cloneRoot,
   );

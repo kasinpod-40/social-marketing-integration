@@ -16,7 +16,9 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 const REVIEWED_RELEASE_HEAD = '29de2303fa311c4a13fac4725699416cfdc04386';
+const REVIEWED_WRAPPER_BRANCH = 'integration/all-meta-end-to-end-completion-v1';
 const WRAPPER_HEAD_ENV = 'MKT_META_HISTORY_REVIEW_WRAPPER_HEAD';
+const ASSET_ROOT_ENV = 'MKT_META_HISTORY_REVIEW_ASSET_ROOT';
 const CONFIRMATION_ENV = 'CONFIRM_META_HISTORY_EXACT_CONTINUATION';
 const CONFIRMATION_VALUE = 'CONTINUE_META_HISTORY_FROM_FACEBOOK_LARK_BOUNDARY';
 const EXACT_TERMINAL = 'scripts/meta-history-2026-exact-plan-continuation-terminal.mjs';
@@ -50,12 +52,16 @@ try {
     stage = 'run-reviewed-release-continuation';
     const child = spawnSync(
       process.execPath,
-      [join(releaseCloneRoot, EXACT_TERMINAL), '--execute'],
+      [assets.exactTerminal, '--execute'],
       {
         cwd: releaseCloneRoot,
         env: {
           ...process.env,
           DEV_VARS_FILE: join(releaseCloneRoot, '.dev.vars'),
+          MKT_META_HISTORY_EXACT_CONTINUATION_CHILD: assets.exactContinuation,
+          MKT_META_HISTORY_ONE_COMMAND_PATH: assets.oneCommand,
+          MKT_META_HISTORY_LARK_LAUNCHER_PATH: assets.larkLauncher,
+          MKT_META_LARK_OPERATOR_PATH: assets.larkOperator,
         },
         encoding: 'utf8',
         maxBuffer: 512 * 1024 * 1024,
@@ -118,6 +124,8 @@ function printPlan() {
     contractVersion: 'meta_history_reviewed_release_wrapper_v1',
     reviewedReleaseHead: REVIEWED_RELEASE_HEAD,
     wrapperHeadEnv: WRAPPER_HEAD_ENV,
+    wrapperBranch: REVIEWED_WRAPPER_BRANCH,
+    assetRootEnv: ASSET_ROOT_ENV,
     confirmation: `${CONFIRMATION_ENV}=${CONFIRMATION_VALUE}`,
     child: EXACT_TERMINAL,
     providerReplayAllowed: false,
@@ -141,14 +149,21 @@ function verifyReviewedWrapperCheckout(env) {
   const expectedWrapperHead = requireSha(env[WRAPPER_HEAD_ENV], WRAPPER_HEAD_ENV);
   const currentHead = gitText(repositoryRoot, ['rev-parse', 'HEAD']);
   const originMain = gitText(repositoryRoot, ['rev-parse', 'origin/main']);
-  const branch = gitText(repositoryRoot, ['branch', '--show-current'], false);
+  const branch = gitText(repositoryRoot, ['branch', '--show-current']);
+  const originBranch = gitText(
+    repositoryRoot,
+    ['rev-parse', `origin/${REVIEWED_WRAPPER_BRANCH}`],
+  );
   const dirty = gitText(
     repositoryRoot,
     ['status', '--porcelain', '--untracked-files=all'],
     false,
   );
 
-  if (currentHead !== expectedWrapperHead || dirty.trim() !== '') {
+  if (currentHead !== expectedWrapperHead
+    || branch !== REVIEWED_WRAPPER_BRANCH
+    || originBranch !== currentHead
+    || dirty.trim() !== '') {
     throw wrapperError(
       'Reviewed release wrapper requires the exact clean reviewed wrapper commit',
       'META_HISTORY_REVIEWED_RELEASE_WRAPPER_CHECKOUT_INVALID',
@@ -156,17 +171,17 @@ function verifyReviewedWrapperCheckout(env) {
         expectedWrapperHead,
         currentHead,
         originMain,
-        branch: branch || '(detached)',
+        branch,
+        expectedBranch: REVIEWED_WRAPPER_BRANCH,
+        originBranchMatches: originBranch === currentHead,
         clean: dirty.trim() === '',
       },
     );
   }
 
-  if (!gitSuccess(repositoryRoot, [
-    'merge-base', '--is-ancestor', currentHead, originMain,
-  ])) {
+  if (!gitSuccess(repositoryRoot, ['merge-base', '--is-ancestor', originMain, currentHead])) {
     throw wrapperError(
-      'Reviewed wrapper commit is not contained in current origin/main history',
+      'Reviewed wrapper branch is not based on current origin/main',
       'META_HISTORY_REVIEWED_RELEASE_WRAPPER_ANCESTRY_INVALID',
       { currentHead, originMain },
     );
@@ -193,19 +208,69 @@ function verifyReviewedWrapperCheckout(env) {
     );
   }
 
-  return Object.freeze({ currentHead, originMain, branch: branch || '(detached)' });
+  return Object.freeze({ currentHead, originMain, branch });
 }
 
 async function verifyLocalAssets() {
-  const outputs = join(repositoryRoot, 'outputs');
-  const devVars = join(repositoryRoot, '.dev.vars');
-  const nodeModules = join(repositoryRoot, 'node_modules');
+  const assetRoot = process.env[ASSET_ROOT_ENV]
+    ? requireAbsolutePath(process.env[ASSET_ROOT_ENV], ASSET_ROOT_ENV)
+    : repositoryRoot;
+  const outputs = join(assetRoot, 'outputs');
+  const devVars = join(assetRoot, '.dev.vars');
+  const nodeModules = join(assetRoot, 'node_modules');
+  const exactTerminal = join(repositoryRoot, EXACT_TERMINAL);
+  const exactContinuation = join(
+    repositoryRoot,
+    'scripts',
+    'meta-history-2026-exact-plan-continuation.mjs',
+  );
+  const oneCommand = join(
+    repositoryRoot,
+    'scripts',
+    'meta-history-2026-one-command.mjs',
+  );
+  const larkLauncher = join(
+    repositoryRoot,
+    'scripts',
+    'meta-lark-parity-rollout-launcher.mjs',
+  );
+  const larkOperator = join(
+    repositoryRoot,
+    'scripts',
+    'meta-lark-parity-rollout-operator.mjs',
+  );
 
   await assertDirectory(outputs, 'outputs');
   await assertPrivateRegularFile(devVars, '.dev.vars');
   await assertDirectory(nodeModules, 'node_modules');
+  await assertRegularFile(exactTerminal, 'exact continuation Terminal');
+  await assertRegularFile(exactContinuation, 'exact continuation child');
+  await assertRegularFile(oneCommand, 'Meta history one-command closeout');
+  await assertRegularFile(larkLauncher, 'Meta Lark launcher');
+  await assertRegularFile(larkOperator, 'Meta Lark operator');
 
-  return Object.freeze({ outputs, devVars, nodeModules });
+  return Object.freeze({
+    outputs,
+    devVars,
+    nodeModules,
+    exactTerminal,
+    exactContinuation,
+    oneCommand,
+    larkLauncher,
+    larkOperator,
+  });
+}
+
+function requireAbsolutePath(value, field) {
+  const normalized = String(value ?? '').trim();
+  if (normalized === '' || resolve(normalized) !== normalized) {
+    throw wrapperError(
+      `${field} must be an absolute path`,
+      'META_HISTORY_REVIEWED_RELEASE_ASSET_ROOT_INVALID',
+      { field },
+    );
+  }
+  return normalized;
 }
 
 async function prepareReviewedReleaseClone(assets) {
@@ -304,6 +369,21 @@ async function assertPrivateRegularFile(path, field) {
   throw wrapperError(
     `Required local ${field} must be a private regular file`,
     'META_HISTORY_REVIEWED_RELEASE_LOCAL_PRIVATE_FILE_INVALID',
+    { field },
+  );
+}
+
+async function assertRegularFile(path, field) {
+  try {
+    const linkInfo = await lstat(path);
+    const info = await stat(path);
+    if (!linkInfo.isSymbolicLink() && info.isFile()) return;
+  } catch {
+    // normalized below
+  }
+  throw wrapperError(
+    `Required local ${field} must be a regular file`,
+    'META_HISTORY_REVIEWED_RELEASE_LOCAL_FILE_INVALID',
     { field },
   );
 }

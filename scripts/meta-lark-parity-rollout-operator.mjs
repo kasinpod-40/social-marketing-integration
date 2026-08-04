@@ -24,7 +24,9 @@ import {
   buildMetaLarkConfigWindow,
   buildMetaLarkContinuationJob,
   buildMetaLarkSnapshotSql,
+  classifyMetaLarkPostCompletionOrphan,
   classifyMetaLarkCompletion,
+  classifyMetaLarkPollingSnapshot,
   compareMetaLarkSnapshots,
   createMetaLarkEvidence,
   evidenceFileForMetaLarkPhase,
@@ -34,9 +36,14 @@ import {
   previousMetaLarkPhase,
   safeMetaLarkTarget,
   validateMetaD1OnlySummaryForLark,
+  validateMetaLarkD1ReadyBoundary,
+  validateMetaLarkOrphanedRunningStability,
+  validateMetaLarkPostCompletionOrphanStability,
   validateMetaLarkEvidenceSequence,
   validateMetaLarkInventory,
 } from './lib/meta-lark-parity-rollout-operator.js';
+import { resolveCloudflareBearerAuth } from './lib/woocommerce-final-one-command.js';
+import { isMetaRemoteReadTransientError } from './lib/meta-d1-only-rollout-operator.js';
 import {
   META_END_TO_END_REQUIRED_LARK_TABLE_KEYS,
 } from '../packages/config/src/meta-end-to-end-runtime-config.js';
@@ -82,7 +89,8 @@ async function main() {
   assertMetaLarkConfirmation(options.phase, env);
   const loaded = await loadReviewedTarget(env);
   const state = await repositoryState();
-  if (state.head !== loaded.target.repositoryHead || !state.clean) {
+  const expectedOperatorHead = resolveExpectedOperatorHead(options.phase, env, loaded.target);
+  if (state.head !== expectedOperatorHead || !state.clean) {
     throw failure(
       'Meta Lark rollout requires exact reviewed HEAD and a clean Working Tree',
       'META_LARK_REPOSITORY_STATE_INVALID',
@@ -148,6 +156,8 @@ async function runPhase(loaded, phase, env) {
       return deploy(loaded, phase, 'safe');
     case 'verify-restore':
       return verifyDeployment(loaded, phase, 'safe');
+    case 'verify-late-completion':
+      return verifyLateCompletion(loaded);
     case 'summary':
       return summarize(loaded);
     default:
@@ -214,8 +224,20 @@ async function runLarkPreflight(loaded, env) {
 async function runD1Ready(loaded) {
   const summary = JSON.parse(await readFile(loaded.target.d1SummaryPath, 'utf8'));
   const d1Summary = validateMetaD1OnlySummaryForLark(summary, loaded.target);
-  const snapshot = await readSnapshot(loaded);
-  assertD1Ready(snapshot);
+  let snapshot = await readSnapshot(loaded);
+  let boundary = validateMetaLarkD1ReadyBoundary(snapshot, loaded.target);
+  let orphanedRunningStability = null;
+  if (boundary.orphanedRunningRecovery) {
+    await sleep(30_000);
+    const stableSnapshot = await readSnapshot(loaded);
+    orphanedRunningStability = validateMetaLarkOrphanedRunningStability(
+      snapshot,
+      stableSnapshot,
+      loaded.target,
+    );
+    snapshot = stableSnapshot;
+    boundary = validateMetaLarkD1ReadyBoundary(snapshot, loaded.target);
+  }
 
   const secretNames = await readSecretNames(loaded.target);
   for (const name of [loaded.target.requiredSecretName, 'LARK_APP_SECRET']) {
@@ -226,32 +248,13 @@ async function runD1Ready(loaded) {
   return {
     d1Summary,
     snapshot,
+    terminalRecovery: boundary.terminalRecovery,
+    orphanedRunningRecovery: boundary.orphanedRunningRecovery,
+    orphanedRunningStability,
     requiredSecretNamesPresent: true,
     providerRequests: 0,
     larkMutationCount: 0,
   };
-}
-
-function assertD1Ready(snapshotInput) {
-  const snapshot = normalizeMetaLarkSnapshot(snapshotInput);
-  const ready = snapshot.syncRunStatus === 'success'
-    && snapshot.syncRunFinishedAt !== null
-    && snapshot.syncRunErrorCode === null
-    && snapshot.d1PhaseComplete
-    && !snapshot.preflightPhaseComplete
-    && !snapshot.larkPhaseComplete
-    && !snapshot.completionPhaseComplete
-    && snapshot.activeLockCount === 0
-    && snapshot.coverageRunCount > 0
-    && snapshot.invalidCoverageCount === 0
-    && snapshot.workLifecycleStatus === 'active'
-    && snapshot.workCompletedAt === null;
-  if (!ready) {
-    throw failure(
-      'Meta target has not reached the accepted D1-only boundary',
-      'META_LARK_D1_BOUNDARY_INVALID',
-    );
-  }
 }
 
 async function deploy(loaded, phase, mode) {
@@ -359,7 +362,13 @@ async function sendQueuePhase(loaded, phase) {
 
 async function verifyInitialLark(loaded) {
   const before = (await readEvidence(loaded, 'snapshot-before')).data?.snapshot;
-  const after = await pollForCompletion(loaded);
+  const normalizedBefore = normalizeMetaLarkSnapshot(before);
+  const minimumAttempts = normalizedBefore.mainQueueAttempts + 1;
+  const after = await pollForCompletion(
+    loaded,
+    minimumAttempts,
+    normalizedBefore.syncRunFinishedAt,
+  );
   return {
     comparison: compareMetaLarkSnapshots(before, after, loaded.target),
     snapshotAfter: after,
@@ -369,8 +378,13 @@ async function verifyInitialLark(loaded) {
 
 async function verifyLarkRerun(loaded) {
   const before = (await readEvidence(loaded, 'verify-lark')).data?.snapshotAfter;
-  const minimumAttempts = normalizeMetaLarkSnapshot(before).mainQueueAttempts + 1;
-  const after = await pollForRerun(loaded, minimumAttempts);
+  const normalizedBefore = normalizeMetaLarkSnapshot(before);
+  const minimumAttempts = normalizedBefore.mainQueueAttempts + 1;
+  const after = await pollForRerun(
+    loaded,
+    minimumAttempts,
+    normalizedBefore.syncRunFinishedAt,
+  );
   return {
     comparison: compareMetaLarkSnapshots(before, after, loaded.target, { rerun: true }),
     snapshotAfter: after,
@@ -378,12 +392,31 @@ async function verifyLarkRerun(loaded) {
   };
 }
 
-async function pollForCompletion(loaded) {
+async function pollForCompletion(loaded, minimumAttempts, previousFinishedAt) {
   const maxPolls = boundedInteger(process.env.MKT_META_LARK_VERIFY_MAX_POLLS, 120);
   const intervalMs = boundedInteger(process.env.MKT_META_LARK_VERIFY_POLL_INTERVAL_MS, 5_000);
   for (let index = 0; index < maxPolls; index += 1) {
-    const snapshot = await readSnapshot(loaded);
-    if (classifyMetaLarkCompletion(snapshot, loaded.target).complete) return snapshot;
+    const snapshot = await readPollingSnapshot(loaded);
+    if (!snapshot) {
+      if (index + 1 < maxPolls) await sleep(intervalMs);
+      continue;
+    }
+    const classified = classifyMetaLarkPollingSnapshot(
+      snapshot,
+      loaded.target,
+      minimumAttempts,
+      previousFinishedAt,
+    );
+    if (classified.state === 'complete') return classified.snapshot;
+    if (classified.state === 'terminal_failure') {
+      const error = failure(
+        'Meta Lark continuation reached a terminal failed sync run',
+        'META_LARK_TERMINAL_FAILURE',
+        { errorCode: classified.errorCode },
+      );
+      error.emergencyRestoreRequired = true;
+      throw error;
+    }
     if (index + 1 < maxPolls) await sleep(intervalMs);
   }
   const error = failure(
@@ -394,15 +427,32 @@ async function pollForCompletion(loaded) {
   throw error;
 }
 
-async function pollForRerun(loaded, minimumAttempts) {
+async function pollForRerun(loaded, minimumAttempts, previousFinishedAt) {
   const maxPolls = boundedInteger(process.env.MKT_META_LARK_RERUN_MAX_POLLS, 30);
   const intervalMs = boundedInteger(process.env.MKT_META_LARK_VERIFY_POLL_INTERVAL_MS, 5_000);
   for (let index = 0; index < maxPolls; index += 1) {
-    const snapshot = await readSnapshot(loaded);
-    const normalized = normalizeMetaLarkSnapshot(snapshot);
-    if (normalized.mainQueueAttempts >= minimumAttempts
-      && classifyMetaLarkCompletion(normalized, loaded.target).complete) {
-      return normalized;
+    const snapshot = await readPollingSnapshot(loaded);
+    if (!snapshot) {
+      if (index + 1 < maxPolls) await sleep(intervalMs);
+      continue;
+    }
+    const classified = classifyMetaLarkPollingSnapshot(
+      snapshot,
+      loaded.target,
+      minimumAttempts,
+      previousFinishedAt,
+    );
+    if (classified.state === 'complete') {
+      return classified.snapshot;
+    }
+    if (classified.state === 'terminal_failure') {
+      const error = failure(
+        'Meta Lark idempotent rerun reached a terminal failed sync run',
+        'META_LARK_TERMINAL_FAILURE',
+        { errorCode: classified.errorCode },
+      );
+      error.emergencyRestoreRequired = true;
+      throw error;
     }
     if (index + 1 < maxPolls) await sleep(intervalMs);
   }
@@ -414,14 +464,105 @@ async function pollForRerun(loaded, minimumAttempts) {
   throw error;
 }
 
+async function readPollingSnapshot(loaded) {
+  try {
+    return await readSnapshot(loaded);
+  } catch (error) {
+    if (!isMetaRemoteReadTransientError(error)) throw error;
+    return null;
+  }
+}
+
+async function verifyLateCompletion(loaded) {
+  const before = (await readEvidence(loaded, 'snapshot-before')).data?.snapshot;
+  let after = await readSnapshot(loaded);
+  let postCompletionOrphan = null;
+  if (classifyMetaLarkPostCompletionOrphan(after, loaded.target).accepted) {
+    await sleep(30_000);
+    const stableAfter = await readSnapshot(loaded);
+    postCompletionOrphan = validateMetaLarkPostCompletionOrphanStability(
+      after,
+      stableAfter,
+      loaded.target,
+    );
+    after = stableAfter;
+  }
+  const comparison = compareMetaLarkSnapshots(before, after, loaded.target, {
+    postCompletionOrphanVerified: postCompletionOrphan?.accepted === true,
+  });
+  const beforeAttempts = normalizeMetaLarkSnapshot(before).mainQueueAttempts;
+  const sameOperationAttemptsObserved = after.mainQueueAttempts - beforeAttempts;
+  if (!after.clearedPhaseCompletion || sameOperationAttemptsObserved < 2) {
+    throw failure(
+      'Late Meta completion lacks cleared-phase and repeated same-operation proof',
+      'META_LARK_LATE_COMPLETION_PROOF_INVALID',
+    );
+  }
+  return {
+    comparison,
+    snapshotAfter: after,
+    sameOperationAttemptsObserved,
+    clearedPhaseCompletionVerified: true,
+    postCompletionOrphan,
+    closeoutOperatorHead: process.env.MKT_META_LARK_CLOSEOUT_OPERATOR_HEAD
+      ?? loaded.target.repositoryHead,
+    providerRequestCount: 0,
+  };
+}
+
+function resolveExpectedOperatorHead(phase, env, target) {
+  const closeoutHead = env.MKT_META_LARK_CLOSEOUT_OPERATOR_HEAD;
+  if (closeoutHead === undefined || closeoutHead === '') return target.repositoryHead;
+  if (!['verify-late-completion', 'summary'].includes(phase)
+    || !/^[a-f0-9]{40}$/u.test(closeoutHead)) {
+    throw failure(
+      'Cross-head Meta Lark operator is allowed only for read-only late completion and summary',
+      'META_LARK_CLOSEOUT_OPERATOR_HEAD_INVALID',
+    );
+  }
+  return closeoutHead;
+}
+
 async function summarize(loaded) {
+  const late = await readEvidence(loaded, 'verify-late-completion').catch((error) => {
+    if (error?.code === 'ENOENT') return null;
+    throw error;
+  });
+  const idempotent = await readEvidence(loaded, 'verify-idempotent-rerun').catch((error) => {
+    if (error?.code === 'ENOENT') return null;
+    throw error;
+  });
+  const phases = late && idempotent
+    ? META_LARK_OPERATOR_PHASES.slice(1, -1)
+    : late
+    ? [
+        'lark-preflight',
+        'd1-ready',
+        'deploy-safe-baseline',
+        'verify-safe-baseline',
+        'deploy-lark-gates',
+        'verify-lark-deployment',
+        'snapshot-before',
+        'send-lark-continuation',
+        'restore-all-false',
+        'verify-restore',
+        'verify-late-completion',
+      ]
+    : META_LARK_OPERATOR_PHASES
+        .slice(1, -1)
+        .filter((phase) => phase !== 'verify-late-completion');
   const evidence = [];
-  for (const phase of META_LARK_OPERATOR_PHASES.slice(1, -1)) {
+  for (const phase of phases) {
     evidence.push(await readEvidence(loaded, phase));
   }
   const validated = validateMetaLarkEvidenceSequence(evidence, loaded.target);
   const final = validated.at(-1);
-  if (final.phase !== 'verify-restore' || final.data?.mode !== 'safe') {
+  const restore = validated.find((item) => item.phase === 'verify-restore');
+  const lateValid = final.phase === 'verify-late-completion'
+    && final.data?.clearedPhaseCompletionVerified === true
+    && Number(final.data?.sameOperationAttemptsObserved) >= 2;
+  if (restore?.data?.mode !== 'safe'
+    || (!lateValid && final.phase !== 'verify-restore')) {
     throw failure(
       'Meta Lark summary requires verified all-false restore',
       'META_LARK_SUMMARY_RESTORE_INCOMPLETE',
@@ -468,6 +609,14 @@ async function readPriorEvidence(loaded, phase) {
       'Guarded restore requires chain-bound active evidence',
       'META_LARK_RESTORE_EVIDENCE_MISSING',
     );
+  }
+  if (phase === 'summary') {
+    try {
+      return await readEvidence(loaded, 'verify-late-completion');
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
+      return readEvidence(loaded, 'verify-restore');
+    }
   }
   const previous = previousMetaLarkPhase(phase);
   return previous === 'plan' ? null : readEvidence(loaded, previous);
@@ -710,7 +859,7 @@ function assertQueueConsumer(consumers, queueName, expected) {
 }
 
 async function sendQueueMessage(job, target) {
-  const token = requiredEnv('CLOUDFLARE_API_TOKEN');
+  const token = await resolveQueueBearerToken(target);
   const accountId = target.accountId ?? requiredEnv('CLOUDFLARE_ACCOUNT_ID');
   const queueId = target.queueId ?? requiredEnv('MKT_META_LARK_QUEUE_ID');
   const response = await fetch(
@@ -735,6 +884,15 @@ async function sendQueueMessage(job, target) {
     error.emergencyRestoreRequired = true;
     throw error;
   }
+}
+
+async function resolveQueueBearerToken(target) {
+  const explicit = process.env.CLOUDFLARE_API_TOKEN;
+  if (typeof explicit === 'string' && explicit.trim() !== '') return explicit.trim();
+  const auth = resolveCloudflareBearerAuth({
+    authOutput: await wranglerText(target, ['auth', 'token', '--json']),
+  });
+  return auth.token;
 }
 
 async function writeEvidence(loaded, phase, evidence) {

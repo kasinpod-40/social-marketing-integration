@@ -27,8 +27,11 @@ test('Meta fast-track generator closes flags and synchronizes all required Lark 
     result.contractVersion,
     META_FASTTRACK_SAFE_CONFIG_CONTRACT_VERSION,
   );
-  assert.equal(result.tableMappingCount, 15);
-  assert.equal(result.changedTableMappingNames.length, 15);
+  assert.equal(result.tableMappingCount, META_END_TO_END_REQUIRED_LARK_TABLE_KEYS.length);
+  assert.equal(
+    result.changedTableMappingNames.length,
+    META_END_TO_END_REQUIRED_LARK_TABLE_KEYS.length,
+  );
   assert.deepEqual(result.sourceEnabledFlagNames, [
     'MKT_CONNECTOR_FACEBOOK_ENABLED',
     'MKT_SCHEDULE_WOOCOMMERCE_ENABLED',

@@ -6,6 +6,7 @@ import { permanentError, transientError } from '../../shared/src/errors/runtime-
 const MAX_OBSERVATION_QUERY_ROWS = 1_000;
 const MAX_FACT_QUERY_ROWS = 5_000;
 const MAX_REPORT_QUERY_ROWS = 500;
+const MAX_META_D1_BATCH_ROWS = 100;
 
 /**
  * D1 repository สำหรับ Storage Foundation v1
@@ -243,6 +244,69 @@ export class D1MarketingHistoryStore {
     return Object.freeze(results);
   }
 
+  /**
+   * Execute one bounded durable Meta write unit with D1 batch semantics. Statements are
+   * ordered exactly like the application write set and the whole unit is committed before
+   * the resumable-work checkpoint advances. Bindings without batch support retain the
+   * existing sequential behavior for tests and non-Cloudflare adapters.
+   */
+  async writeMetaD1Operations(operations) {
+    if (!Array.isArray(operations)
+      || operations.length < 1
+      || operations.length > MAX_META_D1_BATCH_ROWS) {
+      throw contractInputError(
+        `Meta D1 operations must contain 1 to ${MAX_META_D1_BATCH_ROWS} rows`,
+      );
+    }
+    if (typeof this.db.batch !== 'function') {
+      const results = [];
+      for (const operation of operations) {
+        results.push(await this.#writeMetaD1OperationSequential(operation));
+      }
+      return Object.freeze(results);
+    }
+
+    const prepared = operations.map((operation) => prepareMetaD1Operation(this.db, operation));
+    let rawResults;
+    try {
+      rawResults = await this.db.batch(prepared.map((entry) => entry.statement));
+    } catch (cause) {
+      throw d1WriteError('meta_history_batch', cause);
+    }
+    if (!Array.isArray(rawResults) || rawResults.length !== prepared.length) {
+      throw transientError('D1 Meta batch returned an unexpected result count', {
+        code: 'D1_MARKETING_STORAGE_BATCH_RESULT_INVALID',
+        details: {
+          expectedResults: prepared.length,
+          observedResults: Array.isArray(rawResults) ? rawResults.length : null,
+        },
+      });
+    }
+    return Object.freeze(prepared.map((entry, index) => {
+      const changes = readChanges(rawResults[index]);
+      return freezeWrite(
+        changes > 0 ? 'written' : 'skipped',
+        entry.table,
+        entry.key,
+        changes,
+      );
+    }));
+  }
+
+  async #writeMetaD1OperationSequential(operation) {
+    if (operation?.kind === 'account_daily') {
+      return this.upsertOrganicAccountDailyFact(operation.row);
+    }
+    if (operation?.kind === 'ads_entity') return this.upsertAdsEntityState(operation.row);
+    if (operation?.kind === 'ads_daily') return this.upsertAdsDailyFact(operation.row);
+    if (operation?.kind === 'coverage_run') return this.saveCoverageRun(operation.row);
+    if (operation?.kind === 'coverage_entity') {
+      const results = await this.saveCoverageEntities([operation.row]);
+      return results[0];
+    }
+    throw contractInputError(`Unsupported Meta D1 operation kind: ${operation?.kind ?? ''}`);
+  }
+
   async saveReportMaterialization(value) {
     const row = validateStorageRow('report_materializations', value);
     const columns = [
@@ -387,6 +451,140 @@ export class D1MarketingHistoryStore {
       throw d1ReadError(code, cause);
     }
   }
+}
+
+function prepareMetaD1Operation(db, operation) {
+  if (!operation || typeof operation !== 'object' || Array.isArray(operation)) {
+    throw contractInputError('Meta D1 operation must be an object');
+  }
+  if (operation.kind === 'account_daily') {
+    const row = validateStorageRow('organic_account_daily_facts', operation.row);
+    const columns = [
+      'account_daily_key', 'customer_key', 'platform', 'account_key', 'source_account_id',
+      'metric_date', 'account_timezone', 'followers', 'follows', 'profile_views', 'views',
+      'reach', 'accounts_engaged', 'total_interactions', 'net_follows', 'data_status',
+      'coverage_run_id', 'source_revision', 'fetched_at', 'sync_run_id', 'created_at', 'updated_at',
+    ];
+    return prepareGenericUpsert(db, {
+      table: 'organic_account_daily_facts', keyField: 'account_daily_key', row, columns,
+      updateColumns: columns.slice(1).filter((field) => field !== 'created_at'),
+      noOpHashFields: ['source_revision', 'data_status', 'fetched_at'],
+    });
+  }
+  if (operation.kind === 'ads_entity') return prepareAdsEntityUpsert(db, operation.row);
+  if (operation.kind === 'ads_daily') {
+    const row = validateStorageRow('ads_daily_facts', operation.row);
+    const columns = [
+      'ads_fact_key', 'customer_key', 'platform', 'account_key', 'source_account_id',
+      'report_level', 'entity_type', 'external_entity_id', 'external_campaign_id',
+      'external_ad_group_id', 'external_ad_id', 'external_creative_id', 'metric_date',
+      'account_timezone', 'breakdown_key', 'segment_key', 'ad_channel', 'currency',
+      'spend_micros', 'impressions', 'reach', 'clicks', 'conversions',
+      'conversion_value_micros', 'video_views', 'video_view_rate', 'average_cpv_micros',
+      'actions_json', 'breakdown_json', 'data_status', 'coverage_run_id', 'source_revision',
+      'source_payload_hash', 'fetched_at', 'sync_run_id', 'created_at', 'updated_at',
+    ];
+    return prepareGenericUpsert(db, {
+      table: 'ads_daily_facts', keyField: 'ads_fact_key', row, columns,
+      updateColumns: columns.slice(1).filter((field) => field !== 'created_at'),
+      noOpHashFields: ['source_payload_hash', 'source_revision', 'data_status'],
+    });
+  }
+  if (operation.kind === 'coverage_run') {
+    const row = validateStorageRow('data_coverage_runs', operation.row);
+    const columns = [
+      'coverage_run_id', 'sync_run_id', 'customer_key', 'platform', 'account_key',
+      'dataset_key', 'metric_semantics', 'scope_mode', 'period_start', 'period_end',
+      'source_timezone', 'status', 'expected_entities', 'observed_entities',
+      'expected_rows', 'observed_rows', 'written_rows', 'failed_rows', 'source_watermark',
+      'revisable_until', 'started_at', 'completed_at', 'error_code', 'created_at', 'updated_at',
+    ];
+    return prepareGenericUpsert(db, {
+      table: 'data_coverage_runs', keyField: 'coverage_run_id', row, columns,
+      updateColumns: columns.slice(1).filter((field) => field !== 'created_at'),
+      noOpHashFields: ['status', 'source_watermark', 'observed_rows', 'written_rows', 'failed_rows'],
+    });
+  }
+  if (operation.kind === 'coverage_entity') {
+    const row = validateStorageRow('data_coverage_entities', operation.row);
+    const columns = [
+      'coverage_entity_key', 'coverage_run_id', 'entity_type', 'external_entity_id',
+      'observation_status', 'source_revision', 'observed_at', 'created_at',
+    ];
+    return prepareGenericUpsert(db, {
+      table: 'data_coverage_entities', keyField: 'coverage_entity_key', row, columns,
+      updateColumns: ['observation_status', 'source_revision', 'observed_at'],
+      noOpHashFields: ['observation_status', 'source_revision', 'observed_at'],
+    });
+  }
+  throw contractInputError(`Unsupported Meta D1 operation kind: ${operation.kind ?? ''}`);
+}
+
+function prepareAdsEntityUpsert(db, value) {
+  const row = validateStorageRow('ads_entity_state', value);
+  const columns = [
+    'entity_key', 'customer_key', 'platform', 'account_key', 'source_account_id',
+    'entity_type', 'external_entity_id', 'parent_campaign_id', 'parent_ad_group_id',
+    'parent_ad_id', 'external_creative_id', 'entity_name', 'status', 'objective', 'currency',
+    'timezone', 'source_updated_at', 'first_seen_at', 'last_seen_at',
+    'source_availability_status', 'metadata_hash', 'last_coverage_run_id',
+    'last_sync_run_id', 'created_at', 'updated_at',
+  ];
+  const sql = `
+      INSERT INTO ads_entity_state (
+        ${columns.join(', ')}
+      ) VALUES (${placeholders(columns.length)})
+      ON CONFLICT(entity_key) DO UPDATE SET
+        customer_key = excluded.customer_key,
+        source_account_id = excluded.source_account_id,
+        parent_campaign_id = COALESCE(excluded.parent_campaign_id, ads_entity_state.parent_campaign_id),
+        parent_ad_group_id = COALESCE(excluded.parent_ad_group_id, ads_entity_state.parent_ad_group_id),
+        parent_ad_id = COALESCE(excluded.parent_ad_id, ads_entity_state.parent_ad_id),
+        external_creative_id = COALESCE(excluded.external_creative_id, ads_entity_state.external_creative_id),
+        entity_name = COALESCE(excluded.entity_name, ads_entity_state.entity_name),
+        status = COALESCE(excluded.status, ads_entity_state.status),
+        objective = COALESCE(excluded.objective, ads_entity_state.objective),
+        currency = COALESCE(excluded.currency, ads_entity_state.currency),
+        timezone = COALESCE(excluded.timezone, ads_entity_state.timezone),
+        source_updated_at = COALESCE(excluded.source_updated_at, ads_entity_state.source_updated_at),
+        first_seen_at = MIN(ads_entity_state.first_seen_at, excluded.first_seen_at),
+        last_seen_at = MAX(ads_entity_state.last_seen_at, excluded.last_seen_at),
+        source_availability_status = excluded.source_availability_status,
+        metadata_hash = excluded.metadata_hash,
+        last_coverage_run_id = excluded.last_coverage_run_id,
+        last_sync_run_id = excluded.last_sync_run_id,
+        updated_at = excluded.updated_at
+      WHERE excluded.platform = ads_entity_state.platform
+        AND excluded.account_key = ads_entity_state.account_key
+        AND excluded.entity_type = ads_entity_state.entity_type
+        AND excluded.external_entity_id = ads_entity_state.external_entity_id
+        AND excluded.last_seen_at >= ads_entity_state.last_seen_at
+    `;
+  return Object.freeze({
+    table: 'ads_entity_state',
+    key: row.entity_key,
+    statement: db.prepare(sql).bind(...bindColumns(row, columns)),
+  });
+}
+
+function prepareGenericUpsert(db, input) {
+  const { table, keyField, row, columns, updateColumns, noOpHashFields } = input;
+  const updateSql = updateColumns.map((field) => `${field} = excluded.${field}`).join(',\n        ');
+  const noOpSql = noOpHashFields.length === 0
+    ? '1 = 1'
+    : noOpHashFields.map((field) => `${table}.${field} IS NOT excluded.${field}`).join(' OR ');
+  const sql = `
+      INSERT INTO ${table} (${columns.join(', ')})
+      VALUES (${placeholders(columns.length)})
+      ON CONFLICT(${keyField}) DO UPDATE SET
+        ${updateSql}
+      WHERE ${noOpSql}
+    `;
+  return Object.freeze({
+    table,
+    key: row[keyField],
+    statement: db.prepare(sql).bind(...bindColumns(row, columns)),
+  });
 }
 
 function assertObservationRetryMatches(existing, incoming) {
