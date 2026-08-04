@@ -70,7 +70,7 @@ async function main() {
   const target = loadLarkNotificationRemoteRolloutTarget(env);
   assertLarkNotificationRemoteRolloutConfirmation(mode.phase, env);
   await mkdir(EVIDENCE_ROOT, { recursive: true, mode: 0o700 });
-  const result = await runPhase(mode.phase, target);
+  const result = await runPhase(mode.phase, target, env);
   process.stdout.write(`${JSON.stringify({
     ok: true,
     phase: mode.phase,
@@ -95,6 +95,7 @@ function printPlan(mode) {
       'existing Integration Workspace topology',
       'existing Lark notification runtime contract',
       'existing stable Queue operation contract',
+      'existing .dev.vars parser and merged environment precedence',
     ],
     safety: {
       defaultMode: 'plan_only',
@@ -113,12 +114,12 @@ function printPlan(mode) {
   }, null, 2)}\n`);
 }
 
-async function runPhase(phase, target) {
+async function runPhase(phase, target, env) {
   switch (phase) {
-    case 'preflight': return runPreflight(target);
-    case 'backup': return runBackup(target);
-    case 'migrate': return runMigration(target);
-    case 'schema-readback': return runSchemaReadback(target);
+    case 'preflight': return runPreflight(target, env);
+    case 'backup': return runBackup(target, env);
+    case 'migrate': return runMigration(target, env);
+    case 'schema-readback': return runSchemaReadback(target, env);
     default: throw operatorError(
       `Unsupported executable Lark notification rollout phase: ${phase}`,
       'LARK_NOTIFICATION_REMOTE_ROLLOUT_PHASE_INVALID',
@@ -126,7 +127,7 @@ async function runPhase(phase, target) {
   }
 }
 
-async function loadReviewedLocalState(target) {
+async function loadReviewedLocalState(target, env) {
   await Promise.all([
     requireReadableFile(target.wranglerConfig),
     requireReadableFile(MIGRATION_FILE),
@@ -135,7 +136,7 @@ async function loadReviewedLocalState(target) {
     readFile(target.wranglerConfig, 'utf8'),
     readFile(MIGRATION_FILE, 'utf8'),
   ]);
-  const config = validateLarkNotificationRemoteWranglerConfig(configText);
+  const config = validateLarkNotificationRemoteWranglerConfig(configText, env);
   const migration = auditLarkNotificationMigrationSource(migrationText);
   const targetFingerprint = createLarkNotificationRemoteTargetFingerprint(target, config);
   return Object.freeze({
@@ -146,9 +147,9 @@ async function loadReviewedLocalState(target) {
   });
 }
 
-async function runPreflight(target) {
+async function runPreflight(target, env) {
   assertRepositoryState();
-  const local = await loadReviewedLocalState(target);
+  const local = await loadReviewedLocalState(target, env);
 
   runCommand('npm', ['run', 'check']);
   runCommand('node', [
@@ -185,6 +186,8 @@ async function runPreflight(target) {
     requiredBaseline: REQUIRED_BASELINE,
     targetFingerprint: local.targetFingerprint,
     configSha256: local.configSha256,
+    tableMappingFingerprint: local.config.tableMappingFingerprint,
+    tableMappingSources: local.config.tableMappingSources,
     migration: local.migration,
     pendingMigrations,
     remote,
@@ -201,14 +204,15 @@ async function runPreflight(target) {
     evidenceFile: evidencePath('preflight'),
     pendingMigrations,
     targetFingerprint: local.targetFingerprint,
+    tableMappingSources: local.config.tableMappingSources,
     remote,
   };
 }
 
-async function runBackup(target) {
+async function runBackup(target, env) {
   assertRepositoryState();
   const preflight = await requirePassedEvidence('preflight');
-  const local = await loadReviewedLocalState(target);
+  const local = await loadReviewedLocalState(target, env);
   assertEvidenceBinding(preflight, local);
 
   const migrations = runCommand('npx', [
@@ -260,12 +264,12 @@ async function runBackup(target) {
   return { evidenceFile: evidencePath('backup'), backupFile, sha256 };
 }
 
-async function runMigration(target) {
+async function runMigration(target, env) {
   assertRepositoryState();
   const [preflight, backup, local] = await Promise.all([
     requirePassedEvidence('preflight'),
     requirePassedEvidence('backup'),
-    loadReviewedLocalState(target),
+    loadReviewedLocalState(target, env),
   ]);
   assertEvidenceBinding(preflight, local);
   if (backup.targetFingerprint !== local.targetFingerprint
@@ -323,13 +327,13 @@ async function runMigration(target) {
   };
 }
 
-async function runSchemaReadback(target) {
+async function runSchemaReadback(target, env) {
   assertRepositoryState();
   const [preflight, backup, migrate, local] = await Promise.all([
     requirePassedEvidence('preflight'),
     requirePassedEvidence('backup'),
     requirePassedEvidence('migrate'),
-    loadReviewedLocalState(target),
+    loadReviewedLocalState(target, env),
   ]);
   assertEvidenceBinding(preflight, local);
   if (backup.targetFingerprint !== local.targetFingerprint
@@ -403,13 +407,14 @@ function assertRepositoryState() {
 function assertEvidenceBinding(preflight, local) {
   if (preflight.contractVersion !== LARK_NOTIFICATION_REMOTE_ROLLOUT_CONTRACT_VERSION
       || preflight.targetFingerprint !== local.targetFingerprint
+      || preflight.tableMappingFingerprint !== local.config.tableMappingFingerprint
       || preflight.migration?.sha256 !== local.migration.sha256
       || preflight.pendingMigrations?.length !== 1
       || preflight.pendingMigrations[0] !== LARK_NOTIFICATION_REMOTE_EXPECTED_MIGRATION
       || preflight.remote?.active_work !== 0
       || preflight.remote?.active_locks !== 0) {
     throw operatorError(
-      'Lark notification rollout evidence does not match the reviewed target, Migration and free Remote window',
+      'Lark notification rollout evidence does not match the reviewed target, mappings, Migration and free Remote window',
       'LARK_NOTIFICATION_REMOTE_ROLLOUT_EVIDENCE_MISMATCH',
     );
   }
