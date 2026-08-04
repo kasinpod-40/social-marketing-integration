@@ -9,6 +9,9 @@ export const REPORT_RUNTIME_REVIEWED_CHANNELS = Object.freeze([
   'facebook',
   'instagram',
   'youtube',
+  'meta_ads',
+  'google_ads',
+  'tiktok_ads',
   'woocommerce',
   'chatwoot',
 ]);
@@ -38,6 +41,7 @@ export function resolveReviewedReportRuntimeCloseoutTarget(env = {}) {
     accountKey: 'chemistry_k',
     formulaVersion: contract.formulaVersion,
     capability: contract.capability,
+    sourceStatus: contract.sourceStatus,
     datasetKey: contract.datasetKey,
     activeTrueFlags: descriptor.safeRuntimeFlags,
     requiredLarkOutputs: descriptor.requiredLarkOutputs,
@@ -49,7 +53,8 @@ export function resolveReviewedReportRuntimeCloseoutTarget(env = {}) {
 
 export function assertReviewedReportRuntimeCloseoutPreflight(row = {}, target = {}) {
   const platformScope = requireReviewedPlatform(target.platformScope);
-  const capability = getReportPlatformContract(platformScope).capability;
+  const contract = getReportPlatformContract(platformScope);
+  const capability = contract.capability;
   const coverageStatus = String(row.coverage_status ?? '').trim().toLowerCase();
   const coveredEmpty = coverageStatus === 'no_data_confirmed';
   const commonReady = COVERAGE_STATUSES.has(coverageStatus)
@@ -67,6 +72,11 @@ export function assertReviewedReportRuntimeCloseoutPreflight(row = {}, target = 
       Number(row.content_state_count ?? 0) > 0
       && Number(row.observation_count ?? 0) > 0
     );
+  } else if (capability === 'paid_ads') {
+    sourceReady = contract.sourceStatus !== 'planned' && (coveredEmpty || (
+      Number(row.ads_summary_fact_count ?? 0) > 0
+      && Number(row.ads_ranking_fact_count ?? 0) > 0
+    ));
   } else if (capability === 'commerce') {
     sourceReady = COMMERCE_COVERAGE_SCOPES.has(String(row.coverage_scope_mode ?? ''))
       && (coveredEmpty || (
@@ -86,10 +96,14 @@ export function assertReviewedReportRuntimeCloseoutPreflight(row = {}, target = 
     {
       platformScope,
       capability,
+      sourceStatus: contract.sourceStatus,
       coverageStatus: coverageStatus || null,
       coverageScopeMode: row.coverage_scope_mode ?? null,
       contentStateCount: Number(row.content_state_count ?? 0),
       observationCount: Number(row.observation_count ?? 0),
+      adsSummaryFactCount: Number(row.ads_summary_fact_count ?? 0),
+      adsRankingFactCount: Number(row.ads_ranking_fact_count ?? 0),
+      adsEntityCount: Number(row.ads_entity_count ?? 0),
       dailyFactCount: Number(row.daily_fact_count ?? 0),
       orderStateCount: Number(row.order_state_count ?? 0),
       conversationFactCount: Number(row.conversation_fact_count ?? 0),

@@ -166,6 +166,48 @@ export function buildReportRuntimePreflightSql(input = {}) {
       (SELECT COUNT(*) FROM organic_content_observations
         WHERE customer_key = '${customerKey}' AND platform = '${platformScope}'
           AND account_key = '${accountKey}') AS observation_count,
+      0 AS ads_summary_fact_count,
+      0 AS ads_ranking_fact_count,
+      0 AS ads_entity_count,
+      0 AS daily_fact_count,
+      0 AS order_state_count,
+      0 AS conversation_fact_count,
+      0 AS account_fact_count,
+      ${runtimeSafetySql(platformScope, accountKey)};
+  `);
+
+  if (contract.capability === 'paid_ads') return compactSql(`
+    WITH coverage AS (
+      SELECT status, source_watermark, completed_at
+      FROM data_coverage_runs
+      WHERE customer_key = '${customerKey}'
+        AND platform = '${platformScope}'
+        AND account_key = '${accountKey}'
+        AND dataset_key = '${datasetKey}'
+        AND completed_at IS NOT NULL
+      ORDER BY completed_at DESC, updated_at DESC, coverage_run_id ASC LIMIT 1
+    )
+    SELECT
+      (SELECT status FROM coverage) AS coverage_status,
+      NULL AS coverage_scope_mode,
+      (SELECT source_watermark FROM coverage) AS source_watermark,
+      (SELECT MAX(metric_date) FROM ads_daily_facts
+        WHERE customer_key = '${customerKey}' AND platform = '${platformScope}'
+          AND account_key = '${accountKey}' AND report_level = 'account'
+          AND breakdown_key = 'none' AND segment_key = 'none') AS period_end,
+      0 AS content_state_count,
+      0 AS observation_count,
+      (SELECT COUNT(*) FROM ads_daily_facts
+        WHERE customer_key = '${customerKey}' AND platform = '${platformScope}'
+          AND account_key = '${accountKey}' AND report_level = 'account'
+          AND breakdown_key = 'none' AND segment_key = 'none') AS ads_summary_fact_count,
+      (SELECT COUNT(*) FROM ads_daily_facts
+        WHERE customer_key = '${customerKey}' AND platform = '${platformScope}'
+          AND account_key = '${accountKey}' AND report_level = 'ad'
+          AND breakdown_key = 'none' AND segment_key = 'none') AS ads_ranking_fact_count,
+      (SELECT COUNT(*) FROM ads_entity_state
+        WHERE customer_key = '${customerKey}' AND platform = '${platformScope}'
+          AND account_key = '${accountKey}' AND entity_type = 'ad') AS ads_entity_count,
       0 AS daily_fact_count,
       0 AS order_state_count,
       0 AS conversation_fact_count,
@@ -191,6 +233,9 @@ export function buildReportRuntimePreflightSql(input = {}) {
         WHERE account_key = '${accountKey}') AS period_end,
       0 AS content_state_count,
       0 AS observation_count,
+      0 AS ads_summary_fact_count,
+      0 AS ads_ranking_fact_count,
+      0 AS ads_entity_count,
       (SELECT COUNT(*) FROM commerce_daily_sales_facts
         WHERE account_key = '${accountKey}') AS daily_fact_count,
       (SELECT COUNT(*) FROM commerce_order_state
@@ -222,6 +267,9 @@ export function buildReportRuntimePreflightSql(input = {}) {
       ) AS period_end,
       0 AS content_state_count,
       0 AS observation_count,
+      0 AS ads_summary_fact_count,
+      0 AS ads_ranking_fact_count,
+      0 AS ads_entity_count,
       0 AS daily_fact_count,
       0 AS order_state_count,
       (SELECT COUNT(*) FROM chatwoot_conversation_daily_facts
@@ -234,7 +282,7 @@ export function buildReportRuntimePreflightSql(input = {}) {
   `);
 
   throw bindingError(
-    'Reviewed Report preflight supports Organic, Commerce and Customer Service only',
+    'Reviewed Report preflight supports Organic, Paid Ads, Commerce and Customer Service only',
     'REPORT_RUNTIME_CLOSEOUT_D1_PREFLIGHT_PLATFORM_INVALID',
     { platformScope: contract.platformScope, capability: contract.capability },
   );

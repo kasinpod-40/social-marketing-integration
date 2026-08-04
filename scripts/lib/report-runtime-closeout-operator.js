@@ -27,6 +27,7 @@ export const REPORT_RUNTIME_CLOSEOUT_REQUIRED_TABLES = Object.freeze({
   mktReportSnapshots: 'LARK_TABLE_MKT_REPORT_SNAPSHOTS',
   mktReportMetricValues: 'LARK_TABLE_MKT_REPORT_METRIC_VALUES',
   mktReportTopContent: 'LARK_TABLE_MKT_REPORT_TOP_CONTENT',
+  mktReportTopAds: 'LARK_TABLE_MKT_REPORT_TOP_ADS',
   mktSyncLog: 'LARK_TABLE_MKT_SYNC_LOG',
   mktSystemAlerts: 'LARK_TABLE_MKT_SYSTEM_ALERTS',
 });
