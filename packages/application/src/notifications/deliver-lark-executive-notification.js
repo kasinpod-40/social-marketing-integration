@@ -1,4 +1,4 @@
-import { permanentError, transientError } from '../../shared/src/errors/runtime-error.js';
+import { permanentError, transientError } from '../../../shared/src/errors/runtime-error.js';
 
 const SHA256_HEX = /^[a-f0-9]{64}$/u;
 const TEMPLATE_VERSION = 'executive_report_notification_v1';
