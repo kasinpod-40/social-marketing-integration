@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  JOB_TRIGGERS,
   JOB_TYPES,
   assertJobImplemented,
   getJobDefinition,
@@ -51,6 +52,15 @@ test('dead-letter redrive job is active but remains environment-gated', () => {
   const definition = getJobDefinition(JOB_TYPES.DEAD_LETTER_REDRIVE);
   assert.equal(definition.connectorKey, null);
   assert.equal(definition.implementationStatus, 'active');
+  assert.equal(assertJobImplemented(definition), definition);
+});
+
+test('Lark notification job reuses the shared Queue and remains controlled-UAT only', () => {
+  const definition = getJobDefinition(JOB_TYPES.LARK_NOTIFICATION_SEND);
+  assert.equal(definition.connectorKey, null);
+  assert.equal(definition.implementationStatus, 'active');
+  assert.equal(definition.manualOnly, true);
+  assert.deepEqual(definition.allowedTriggers, [JOB_TRIGGERS.LARK_NOTIFICATION_CONTROLLED_UAT]);
   assert.equal(assertJobImplemented(definition), definition);
 });
 
