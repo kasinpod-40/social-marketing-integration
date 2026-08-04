@@ -21,6 +21,10 @@ import {
 import {
   materializeMetaK3WranglerEntrypoint,
 } from './lib/meta-k3-wrangler-config-authority.js';
+import {
+  identifyMetaK3RecoveryResumeProfile,
+  validateMetaK3RecoveryResumeEvidence,
+} from './lib/meta-k3-recovery-resume-boundary.js';
 
 const repositoryRoot = resolve(process.cwd());
 const loaderUrl = pathToFileURL(resolve(
@@ -45,17 +49,6 @@ const recoveryRoot = resolve(
 const resumeConfirmation = Object.freeze({
   envName: 'MKT_META_K3_RESUME_PRE_MUTATION_CONFIG_FAILURE',
   value: 'RESUME_EXACT_K3_PRE_MUTATION_CONFIG_FAILURE',
-});
-const acceptedPreMutationProfiles = Object.freeze({
-  post_admission_pre_stability: Object.freeze([
-    'retained-evidence-admission.json',
-  ]),
-  post_backup_pre_preview: Object.freeze([
-    'backup.json',
-    'meta-k2-before-recovery.sql',
-    'read-only-stability.json',
-    'retained-evidence-admission.json',
-  ]),
 });
 
 let generatedConfigPath = null;
@@ -220,46 +213,25 @@ async function archiveAcceptedPreMutationFailure(env) {
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
     .sort();
-  const profile = Object.entries(acceptedPreMutationProfiles)
-    .find(([, expectedFiles]) => (
-      JSON.stringify(observedFiles) === JSON.stringify(expectedFiles)
-    ))?.[0] ?? null;
-  if (!profile || observedDirectories.length !== 0) {
-    throw bootstrapError(
-      'Existing K3 recovery evidence exceeds the accepted pre-mutation failure boundary',
-      'META_K3_PRE_MUTATION_EVIDENCE_INVALID',
-      { observedFiles, observedDirectories },
-    );
-  }
+  const profile = identifyMetaK3RecoveryResumeProfile(
+    observedFiles,
+    observedDirectories,
+  );
 
-  const admission = await readJson('retained-evidence-admission.json');
-  const admissionAccepted = admission?.status === 'passed'
-    && admission?.operationId === operationId
-    && Number(admission?.data?.queueMessageCount) === 0
-    && Number(admission?.data?.workerDeploymentCount) === 0
-    && admission?.data?.productionTrafficChange === false;
-  let accepted = admissionAccepted;
-
-  if (profile === 'post_backup_pre_preview') {
-    const stability = await readJson('read-only-stability.json');
-    const backup = await readJson('backup.json');
-    accepted = accepted
-      && stability?.status === 'passed'
-      && stability?.operationId === operationId
-      && stability?.data?.executionFlagsAllFalse === true
-      && stability?.data?.productionDeploymentUnchanged === true
-      && backup?.status === 'passed'
-      && backup?.operationId === operationId
-      && Number(backup?.data?.remoteMutationCount) === 0;
+  const evidence = {
+    admission: await readJson('retained-evidence-admission.json'),
+  };
+  if (profile !== 'post_admission_pre_stability') {
+    evidence.stability = await readJson('read-only-stability.json');
+    evidence.backup = await readJson('backup.json');
   }
-
-  if (!accepted) {
-    throw bootstrapError(
-      'Existing K3 evidence does not prove a zero-mutation pre-Preview failure',
-      'META_K3_PRE_MUTATION_EVIDENCE_INVALID',
-      { profile },
-    );
+  if (profile === 'post_d1_preview_http_404_safe_restored') {
+    evidence.deployD1 = await readJson('deploy-d1-continuation.json');
+    evidence.verifyD1 = await readJson('verify-d1-continuation.json');
+    evidence.restoreD1 = await readJson('restore-after-d1.json');
+    evidence.verifyRestoreD1 = await readJson('verify-restore-after-d1.json');
   }
+  validateMetaK3RecoveryResumeEvidence(profile, evidence);
 
   const stamp = new Date().toISOString()
     .replaceAll('-', '')
