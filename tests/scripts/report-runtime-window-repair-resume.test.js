@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  REPORT_RUNTIME_FINALIZER_ENVIRONMENT_CONTRACT,
+  REPORT_RUNTIME_FINALIZER_TABLE_ENV_NAMES,
+} from '../../scripts/lib/report-runtime-finalizer-environment.js';
+import {
   assertReportWindowDirectorySafeToStart,
   summarizeReusableReportWindow,
   validateReusableReportFinalizerEvidence,
@@ -16,6 +20,8 @@ function finalizerEvidence(head = 'abc123') {
       version: 'report-materialization-schema-v3',
       readbackActions: 0,
       conflicts: 0,
+      privateEnvironmentContractVersion: REPORT_RUNTIME_FINALIZER_ENVIRONMENT_CONTRACT,
+      privateEnvironmentUpdateCount: REPORT_RUNTIME_FINALIZER_TABLE_ENV_NAMES.length,
       metricFieldMigration: {
         pendingMigrationCount: 0,
         legacyValueMutationCount: 0,
