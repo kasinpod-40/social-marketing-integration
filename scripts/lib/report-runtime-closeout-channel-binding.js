@@ -56,6 +56,7 @@ export function assertReviewedReportRuntimeCloseoutPreflight(row = {}, target = 
     && typeof row.source_watermark === 'string'
     && row.source_watermark.trim() !== ''
     && /^\d{4}-\d{2}-\d{2}$/u.test(String(row.period_end ?? ''))
+    && Number(row.active_report_work_count ?? 0) === 0
     && Number(row.active_report_locks ?? 0) === 0
     && Number(row.open_report_dlq ?? 0) === 0
     && Number(row.open_report_critical_alerts ?? 0) === 0;
@@ -93,6 +94,7 @@ export function assertReviewedReportRuntimeCloseoutPreflight(row = {}, target = 
       orderStateCount: Number(row.order_state_count ?? 0),
       conversationFactCount: Number(row.conversation_fact_count ?? 0),
       accountFactCount: Number(row.account_fact_count ?? 0),
+      activeReportWorkCount: Number(row.active_report_work_count ?? 0),
       activeReportLocks: Number(row.active_report_locks ?? 0),
       openReportDlq: Number(row.open_report_dlq ?? 0),
       openReportCriticalAlerts: Number(row.open_report_critical_alerts ?? 0),
