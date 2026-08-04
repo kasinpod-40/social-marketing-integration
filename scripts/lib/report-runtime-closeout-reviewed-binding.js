@@ -1,9 +1,9 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { getReportPlatformContract } from '../../packages/application/src/reports/report-platform-adapter-registry.js';
-import { getReportLiveClosureDescriptor } from '../../packages/application/src/report-live-closure/channel-descriptors.js';
 import {
   REPORT_LIVE_CLOSURE_WINDOWS,
+  getReportLiveClosureDescriptor,
 } from '../../packages/application/src/report-live-closure/channel-descriptors.js';
 import {
   sanitizeReportLiveClosureEvidence,
@@ -267,6 +267,10 @@ export function buildReviewedReportRuntimeMultiwindowPlan(input = {}) {
 
 function runtimeSafetySql(platformScope, accountKey) {
   return `
+    (SELECT COUNT(*) FROM sync_runs
+      WHERE platform = '${platformScope}' AND account_key = '${accountKey}'
+        AND sync_type = 'dashboard_performance_report'
+        AND status IN ('pending', 'running')) AS active_report_work_count,
     (SELECT COUNT(*) FROM sync_locks l
       JOIN sync_runs r ON r.sync_run_id = l.owner_id
       WHERE r.platform = '${platformScope}' AND r.account_key = '${accountKey}'
