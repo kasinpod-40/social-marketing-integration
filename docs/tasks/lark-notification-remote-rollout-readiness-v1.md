@@ -5,7 +5,7 @@ Date: 2026-08-04
 ## Status
 
 ```text
-TASK_STATUS                         = REPOSITORY_ONLY_STAGED
+TASK_STATUS                         = REPOSITORY_IMPLEMENTED_CI_PENDING
 CURRENT_PROGRAM                     = LARK_NOTIFICATION_REMOTE_ROLLOUT_READINESS_V1
 BASE_AUTHORITY                      = PR_472_MERGED
 SAFE_DELIVERY_MAIN_COMMIT           = e1ebf03246ffdb09c9e70b78a01c350202127ce0
@@ -40,54 +40,74 @@ The Lark Base notification Automation remains an inactive placeholder and is not
 
 Chatwoot data completion and Chatwoot Report readiness do not block this workstream. A stale or unrelated entry in `docs/current-task.md` is not sufficient evidence that Chatwoot owns the current Remote Worker/D1/Queue window.
 
-Before any Remote mutation, the operator must verify the actual current Remote owner from live retained lock/evidence and the exact active integration workstream. Repository preparation may continue independently.
+Before any Remote mutation, the operator checks live D1 `sync_work_runs` and `sync_locks`. Repository preparation continues independently. Any active work or non-expired lock stops before backup or Migration.
 
-At the time this task was corrected, the open Meta integration workstream records that the Meta Remote lock remains held. Therefore only Remote mutation—not Repository implementation—is deferred until that exact lock is released or handed off.
+## Reused Shared Core
+
+- existing Migration `0019_lark_notification_delivery.sql`;
+- existing Wrangler/D1 migration and backup sequence used by the current Remote readiness operators;
+- existing Integration Workspace D1, Queue and DLQ topology;
+- existing Lark notification Runtime config and destination hash;
+- existing central `JOB_TYPES`, `JOB_TRIGGERS`, schema version and stable Queue operation builder;
+- existing `.dev.vars` parser.
+
+No second Queue framework, D1 writer, Lark client, delivery engine, Scheduler or generic operator framework was added.
+
+## Implemented operator
+
+```text
+scripts/lib/lark-notification-remote-rollout-operator.js
+scripts/lark-notification-remote-rollout-operator.mjs
+tests/application/lark-notification-remote-rollout-operator.test.js
+```
+
+Default execution is plan-only:
+
+```bash
+node scripts/lark-notification-remote-rollout-operator.mjs
+```
+
+Implemented executable phases use distinct exact confirmations:
+
+```text
+preflight
+backup
+migrate
+schema-readback
+```
+
+The operator intentionally has no Worker deploy, Queue send, Lark write, message send, Automation activation or Schedule path. Those remain separate post-Migration gates.
 
 ## Required rollout phases
 
-Each phase must be independently gated and evidence-bound:
-
-1. `read-only-preflight`
-   - exact clean merged `main`;
-   - Migration `0019_lark_notification_delivery.sql` source hash;
-   - current Remote D1 migration inventory;
-   - current Worker version and all notification flags false;
-   - exact Lark table mappings present;
-   - Base Automations remain Active `0`;
-   - identify the actual Remote owner from current retained evidence;
-   - zero Provider, Queue, D1 write, Lark write or message action.
+1. `preflight`
+   - clean merged `main` containing PR #472;
+   - exact Migration 0019 source audit;
+   - exact all-false notification flags and required Lark table mappings;
+   - current Remote migration inventory;
+   - live D1 active-work/active-lock check;
+   - zero Remote mutation.
 
 2. `backup`
    - fresh Remote D1 export and SHA-256;
-   - no Worker, Queue, Lark or message mutation.
+   - evidence bound to the exact target and Migration source.
 
-3. `migrate-0019`
+3. `migrate`
    - apply only Migration 0019;
-   - schema read-back for `lark_notification_deliveries`;
-   - all notification flags remain false.
+   - requires exact preflight and backup evidence.
 
-4. `deploy-safe`
-   - deploy reviewed Worker with all notification flags false;
-   - verify no automatic producer, Cron or Base Automation activation.
+4. `schema-readback`
+   - exact one table and three indexes;
+   - zero notification delivery rows;
+   - zero active work/locks;
+   - Shared Business fact counts unchanged.
 
-5. `controlled-uat`
-   - separately select exactly one eligible executive `ai_run_key`;
-   - enable only the minimum notification runtime/send/mirror window;
-   - submit exactly one manual `lark.notification.send` Queue job with trigger `lark_notification_controlled_uat`;
-   - expect one group message and one D1 attempt.
-
-6. `verify-and-replay`
-   - D1 status `sent`;
-   - exact Notification Log mirror;
-   - same-operation replay returns `messageSendCount=0`;
-   - no duplicate group message.
-
-7. `restore-all-false`
-   - all notification flags false;
-   - no Schedule or automatic producer;
-   - Base Automations Active `0`;
-   - Production remains blocked pending separate activation approval.
+5. Later separate approvals
+   - safe all-false Worker deploy;
+   - one controlled Queue admission and one group message;
+   - replay verification with `messageSendCount=0`;
+   - all-false restore;
+   - activation remains separate and no Schedule is part of v1.
 
 ## Fail-closed boundaries
 
@@ -97,11 +117,27 @@ Each phase must be independently gated and evidence-bound:
 - Never send a second Queue admission for the same `notification_attempt_key` during controlled UAT.
 - Never enable a Schedule in v1.
 - Do not infer Remote ownership from `docs/current-task.md` alone.
-- Stop before Remote mutation only when current retained evidence proves another workstream holds the exact Remote window.
+- Stop before Remote mutation when live D1 proves active work or a non-expired lock.
+- Require a clean `main` containing the merged safe-delivery baseline.
+
+## Verification
+
+```bash
+npm ci
+npm run check
+node --test tests/application/lark-notification-remote-rollout-operator.test.js
+node --test tests/application/lark-notification-active-job-router.test.js
+node --test tests/connectors/d1-lark-notification-delivery-store.test.js
+npm test
+npm run test:report-reliability
+npm audit --audit-level=high
+npm run deploy:dry-run
+git diff --check
+```
 
 ## Current action result
 
-This branch and task record were created only to stage the next safe workstream. No Remote command was executed.
+Repository implementation only. No Remote command was executed.
 
 ```text
 Remote D1 read/write       0 / 0
@@ -114,7 +150,3 @@ Automation status change   0
 Schedule                    disabled
 Production                  BLOCKED
 ```
-
-## Next repository implementation
-
-Add a plan-only-by-default operator that enforces the phases and exact confirmations above, reuses existing Wrangler/D1/Queue/Lark helpers, records sanitized evidence, and checks the actual current Remote lock instead of treating Chatwoot or `docs/current-task.md` as a blanket blocker.
