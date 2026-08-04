@@ -1,5 +1,6 @@
 import { stableStringify } from '../use-cases/build-report-snapshot.js';
 import {
+  LARK_NATIVE_AI_CUSTOM_FIELD_AUTHORITY,
   LARK_NATIVE_AI_DISABLED_CONFIGURATION_PERMISSION_BUNDLE,
   LARK_NATIVE_AI_DISABLED_CONFIGURATION_PREVIEW_VERSION,
   LARK_NATIVE_AI_DISABLED_CONFIGURATION_SAFETY,
@@ -73,28 +74,31 @@ export async function buildLarkNativeAiDisabledConfigurationPreview(input = {}) 
 
   const blockers = Object.freeze([
     Object.freeze({
-      code: 'UI_AUTOMATION_API_IDENTITY_NOT_EXPOSED',
-      reason: 'The current List Workflows API inventory is empty while the two Base UI Automations exist.',
-    }),
-    Object.freeze({
-      code: 'LARK_NATIVE_AI_OUTPUT_BINDING_UNPROVEN',
-      reason: 'The exact UI mapping from Native AI output to four target fields has not been captured and verified.',
+      code: 'LARK_CUSTOM_AI_AUTOGENERATION_POLICY_UNPROVEN',
+      reason: 'The four field-self output bindings are verified, but the exact automatic generation policy for new or updated rows has not been captured.',
     }),
     Object.freeze({
       code: 'LARK_NATIVE_PAYLOAD_SHA256_UNPROVEN',
       reason: 'The live Automation method for computing the exact redacted payload SHA-256 is not yet proven.',
     }),
   ]);
+  const advisories = Object.freeze([
+    Object.freeze({
+      code: 'UI_AUTOMATION_API_IDENTITY_NOT_EXPOSED',
+      reason: 'The current List Workflows API inventory is empty while the two Base UI Automations exist; future edits must use the confirmed manual UI path unless an exact API identity is proven.',
+    }),
+  ]);
 
   return deepFreeze({
     ok: true,
     contractVersion: LARK_NATIVE_AI_DISABLED_CONFIGURATION_PREVIEW_VERSION,
-    status: 'repository_preview_ready_live_configuration_blocked',
+    status: 'repository_preview_field_binding_verified_live_configuration_blocked',
     mode: 'repository_only',
     liveConfigurationAuthorized: false,
     activationAuthorized: false,
     targetGroupName: LARK_NATIVE_AI_EXECUTIVE_GROUP_NAME,
     destinationKeyHash: LARK_NATIVE_AI_EXECUTIVE_DESTINATION_KEY_HASH,
+    customAiFieldAuthority: LARK_NATIVE_AI_CUSTOM_FIELD_AUTHORITY,
     workflows: LARK_NATIVE_AI_DISABLED_CONFIGURATION_WORKFLOWS,
     notificationPayloadPreview: canonicalPayload,
     notificationPayloadBytes: payloadBytes,
@@ -111,6 +115,8 @@ export async function buildLarkNativeAiDisabledConfigurationPreview(input = {}) 
     requiredPermissionBundleForLaterMutation: LARK_NATIVE_AI_DISABLED_CONFIGURATION_PERMISSION_BUNDLE,
     blockerCount: blockers.length,
     blockers,
+    advisoryCount: advisories.length,
+    advisories,
     safety: LARK_NATIVE_AI_DISABLED_CONFIGURATION_SAFETY,
   });
 }
@@ -134,6 +140,11 @@ export function validateLarkNativeAiDisabledConfigurationPreview(preview) {
   if (preview.targetGroupName !== LARK_NATIVE_AI_EXECUTIVE_GROUP_NAME
     || preview.destinationKeyHash !== LARK_NATIVE_AI_EXECUTIVE_DESTINATION_KEY_HASH) {
     blockers.push({ code: 'DESTINATION_INVALID' });
+  }
+  if (preview.customAiFieldAuthority?.fieldCount !== 4
+    || preview.customAiFieldAuthority?.outputBinding !== 'field_self'
+    || preview.customAiFieldAuthority?.automaticGenerationPolicy !== 'unproven') {
+    blockers.push({ code: 'CUSTOM_AI_FIELD_AUTHORITY_INVALID' });
   }
   if (!SHA256_HEX.test(String(preview.notificationPayloadChecksum ?? ''))) {
     blockers.push({ code: 'PAYLOAD_CHECKSUM_INVALID' });
