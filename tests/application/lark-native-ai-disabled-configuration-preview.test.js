@@ -9,6 +9,7 @@ import {
   LARK_NATIVE_AI_DISABLED_CONFIGURATION_PERMISSION_BUNDLE,
   LARK_NATIVE_AI_DISABLED_CONFIGURATION_WORKFLOWS,
   LARK_NATIVE_AI_EXECUTIVE_DESTINATION_KEY_HASH,
+  LARK_NATIVE_AI_NOTIFICATION_CHECKSUM_POLICY,
 } from '../../packages/config/src/lark-native-ai-disabled-configuration-preview-contract.js';
 import {
   buildLarkNativeAiDisabledConfigurationPreview,
@@ -51,14 +52,14 @@ function fixture() {
   };
 }
 
-test('builds prompt-captured repository-only preview with one remaining blocker', async () => {
+test('builds repository-only preview ready for manual inactive configuration', async () => {
   const preview = await buildLarkNativeAiDisabledConfigurationPreview(fixture());
   assert.equal(preview.ok, true);
   assert.equal(
     preview.status,
-    'repository_preview_prompts_captured_live_configuration_blocked',
+    'repository_preview_ready_for_manual_inactive_configuration',
   );
-  assert.equal(preview.contractVersion, 'lark_native_ai_disabled_configuration_preview_v4');
+  assert.equal(preview.contractVersion, 'lark_native_ai_disabled_configuration_preview_v5');
   assert.equal(preview.mode, 'repository_only');
   assert.equal(preview.liveConfigurationAuthorized, false);
   assert.equal(preview.activationAuthorized, false);
@@ -73,12 +74,15 @@ test('builds prompt-captured repository-only preview with one remaining blocker'
     'recommendations',
   ]);
   assert.match(preview.notificationPayloadChecksum, /^[a-f0-9]{64}$/u);
-  assert.equal(preview.blockerCount, 1);
-  assert.deepEqual(preview.blockers.map(({ code }) => code), [
-    'LARK_NATIVE_PAYLOAD_SHA256_UNPROVEN',
+  assert.equal(preview.notificationPayloadChecksumAuthority, 'repository_preview_only');
+  assert.equal(preview.notificationLogRecordPreview.payload_checksum, null);
+  assert.equal(preview.blockerCount, 0);
+  assert.deepEqual(preview.blockers, []);
+  assert.equal(preview.advisoryCount, 2);
+  assert.deepEqual(preview.advisories.map(({ code }) => code), [
+    'LARK_NATIVE_PAYLOAD_SHA256_NOT_AVAILABLE_NON_BLOCKING',
+    'UI_AUTOMATION_API_IDENTITY_NOT_EXPOSED',
   ]);
-  assert.equal(preview.advisoryCount, 1);
-  assert.equal(preview.advisories[0].code, 'UI_AUTOMATION_API_IDENTITY_NOT_EXPOSED');
   assert.equal(validateLarkNativeAiDisabledConfigurationPreview(preview).length, 0);
   assert.equal(preview.safety.remoteLarkRead, 0);
   assert.equal(preview.safety.remoteLarkWrite, 0);
@@ -88,6 +92,23 @@ test('builds prompt-captured repository-only preview with one remaining blocker'
   assert.equal(preview.safety.notificationSend, 0);
   assert.equal(preview.safety.scheduleEnabled, false);
   assert.equal(preview.safety.production, 'BLOCKED');
+});
+
+test('uses nullable live checksum without weakening exact dedupe authority', () => {
+  assert.deepEqual(LARK_NATIVE_AI_NOTIFICATION_CHECKSUM_POLICY, {
+    repositoryPreviewAlgorithm: 'SHA-256',
+    repositoryPreviewEncoding: 'hex',
+    liveAutomationPayloadChecksum: null,
+    liveAutomationStatus: 'not_computed_in_lark_base_automation',
+    dedupeAuthority: 'notification_attempt_key_and_dedupe_key',
+    blocking: false,
+  });
+  const notification = LARK_NATIVE_AI_DISABLED_CONFIGURATION_WORKFLOWS[1];
+  const addLog = notification.actions.find(({ type }) => type === 'add_notification_log_record');
+  assert.equal(addLog.config.payloadChecksum, null);
+  assert.equal(addLog.config.payloadChecksumStatus, 'not_computed_in_lark_base_automation');
+  assert.equal(addLog.config.dedupeAuthority, 'notification_attempt_key_and_dedupe_key');
+  assert.equal(notification.actions[2].config.matchFields[0], 'notification_attempt_key');
 });
 
 test('captures four approved Thai prompts with exact shared reference slots', () => {
