@@ -4,13 +4,17 @@ import { execFile } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { promisify } from 'node:util';
+import { getReportPlatformContract } from '../packages/application/src/reports/report-platform-adapter-registry.js';
 import { getReportLiveClosureDescriptor } from '../packages/application/src/report-live-closure/channel-descriptors.js';
 import {
-  assertReviewedReportLiveClosureHandoff,
   runReportLiveClosureFramework,
   sanitizeReportLiveClosureEvidence,
 } from '../packages/application/src/report-live-closure/report-live-closure-framework.js';
 import { REPORT_RUNTIME_CLOSEOUT_CONFIRMATION } from './lib/report-runtime-closeout-operator.js';
+import {
+  REPORT_RUNTIME_REVIEWED_CHANNELS,
+  resolveReviewedReportRuntimeCloseoutTarget,
+} from './lib/report-runtime-closeout-channel-binding.js';
 import { createReportLiveClosurePlanAdapters } from './lib/multichannel-report-live-closure-adapters.js';
 
 const execFileAsync = promisify(execFile);
@@ -19,22 +23,54 @@ export const MULTICHANNEL_REPORT_LIVE_CLOSURE_HANDOFF_CONTRACT =
   'multichannel_report_live_closure_handoff_v1';
 
 export function parseReportLiveClosureArgs(argv = []) {
-  const allowed = new Set(['--execute', '--platform=youtube', '--capability=organic']);
-  const unknown = argv.filter((argument) => !allowed.has(argument));
-  if (unknown.length > 0) throw terminalError(
-    `Unsupported Multichannel Report Live Closure arguments: ${unknown.join(', ')}`,
-    'REPORT_LIVE_CLOSURE_ARGUMENT_INVALID',
-    { arguments: unknown },
+  let platformScope = 'youtube';
+  let capability = null;
+  let execute = false;
+  for (const argument of argv) {
+    if (argument === '--execute') {
+      execute = true;
+      continue;
+    }
+    if (argument.startsWith('--platform=')) {
+      platformScope = argument.slice('--platform='.length).trim().toLowerCase();
+      continue;
+    }
+    if (argument.startsWith('--capability=')) {
+      capability = argument.slice('--capability='.length).trim().toLowerCase();
+      continue;
+    }
+    throw terminalError(
+      `Unsupported Multichannel Report Live Closure argument: ${argument}`,
+      'REPORT_LIVE_CLOSURE_ARGUMENT_INVALID',
+      { argument },
+    );
+  }
+  if (!REPORT_RUNTIME_REVIEWED_CHANNELS.includes(platformScope)) throw terminalError(
+    `Unsupported ready Report channel: ${platformScope}`,
+    'REPORT_LIVE_CLOSURE_PLATFORM_INVALID',
+    { platformScope, supportedPlatforms: REPORT_RUNTIME_REVIEWED_CHANNELS },
   );
-  return Object.freeze({ execute: argv.includes('--execute') });
+  const contract = getReportPlatformContract(platformScope);
+  if (capability !== null && capability !== contract.capability) throw terminalError(
+    `Capability ${capability} does not match ${platformScope}`,
+    'REPORT_LIVE_CLOSURE_CAPABILITY_INVALID',
+    { platformScope, expected: contract.capability, observed: capability },
+  );
+  return Object.freeze({ execute, platformScope, capability: contract.capability });
 }
 
-export async function buildYouTubeFirstAdopterPlan(input = {}) {
+export async function buildReadyChannelPlan(input = {}) {
   const env = input.env ?? {};
   const args = parseReportLiveClosureArgs(input.argv ?? []);
-  const descriptor = getReportLiveClosureDescriptor('youtube', 'organic');
+  const descriptor = getReportLiveClosureDescriptor(args.platformScope, args.capability);
   const reviewedReadiness = input.reviewedReadiness ?? null;
-  const target = reviewedReadiness ? resolveExactTarget(input, reviewedReadiness) : null;
+  const target = reviewedReadiness
+    ? resolveExactTarget(input, reviewedReadiness, descriptor)
+    : Object.freeze({
+      customerKey: 'chemistry_k',
+      customerProfile: 'integration_workspace',
+      accountKey: 'chemistry_k',
+    });
   let framework = null;
 
   if (reviewedReadiness) {
@@ -55,7 +91,7 @@ export async function buildYouTubeFirstAdopterPlan(input = {}) {
       descriptor,
       target,
       adapters,
-      reviewedHandoff: input.reviewedHandoff ?? null,
+      reviewedHandoff: null,
       execute: false,
     });
   }
@@ -63,14 +99,12 @@ export async function buildYouTubeFirstAdopterPlan(input = {}) {
   if (args.execute) {
     assertExecutionConfirmation(env);
     const handoff = input.reviewedHandoff ?? await loadReviewedHandoff(env);
-    const repository = handoff.repository ?? {};
-    assertReviewedReportLiveClosureHandoff(handoff, { descriptor, repository });
-    requireText(
-      handoff.youtubeReadiness?.evidence?.source?.sourceWatermark,
-      'youtubeReadiness.evidence.source.sourceWatermark',
-    );
     const executeSharedOperator = input.executeSharedOperator ?? executeReviewedSharedOperator;
-    const execution = await executeSharedOperator({ env, handoff });
+    const execution = await executeSharedOperator({
+      env,
+      handoff,
+      platformScope: args.platformScope,
+    });
     if (!execution || typeof execution !== 'object' || execution.ok !== true) throw terminalError(
       'Shared Report closeout operator did not return successful reviewed evidence',
       'REPORT_LIVE_CLOSURE_SHARED_OPERATOR_FAILED',
@@ -84,7 +118,7 @@ export async function buildYouTubeFirstAdopterPlan(input = {}) {
         configurable: false,
       },
       sharedOperator: {
-        value: 'scripts/report-runtime-closeout-operator.mjs',
+        value: 'scripts/report-runtime-closeout-reviewed-multiwindow.mjs',
         enumerable: true,
         writable: false,
         configurable: false,
@@ -95,11 +129,12 @@ export async function buildYouTubeFirstAdopterPlan(input = {}) {
 
   return Object.freeze({
     ok: true,
-    contractVersion: 'multichannel_report_live_closure_terminal_v4',
+    contractVersion: 'multichannel_report_live_closure_terminal_v5',
     mode: 'PLAN_ONLY',
     frameworkStatus: 'READY',
-    firstAdopter: 'youtube',
-    youtubeStatus: framework?.status === 'READY_FOR_LIVE'
+    platformScope: args.platformScope,
+    capability: args.capability,
+    channelStatus: framework?.status === 'READY_FOR_LIVE'
       ? 'READY_FOR_RETAINED_HANDOFF_EXECUTION'
       : 'READY_FOR_LIVE_AUDIT',
     descriptor,
@@ -109,23 +144,27 @@ export async function buildYouTubeFirstAdopterPlan(input = {}) {
     reviewedReadinessRequired: reviewedReadiness === null,
     reviewedHandoffRequired: true,
     exactSourceWatermarkRequired: true,
-    readOnlyAssessmentCommand: [
-      'CONFIRM_YOUTUBE_REPORT_REMOTE_READINESS_COLLECTOR=RUN_YOUTUBE_REPORT_REMOTE_READINESS_COLLECTOR',
-      'MKT_YOUTUBE_REPORT_REMOTE_REVIEWED_HEAD=<exact-reviewed-main-sha>',
-      'node scripts/youtube-report-remote-readiness-reviewed-terminal.mjs --execute',
-    ].join(' \\\n'),
-    sharedOperatorReviewCommand: 'node scripts/youtube-shared-report-closeout-review.mjs',
     exactLiveCommand: [
-      'MKT_REPORT_RUNTIME_CLOSEOUT_PLATFORM_SCOPE=youtube',
+      `MKT_REPORT_RUNTIME_CLOSEOUT_PLATFORM_SCOPE=${args.platformScope}`,
       'MKT_MULTICHANNEL_REPORT_LIVE_CLOSURE_HANDOFF=<retained-sanitized-handoff.json>',
       `CONFIRM_MULTICHANNEL_REPORT_LIVE_CLOSURE=${MULTICHANNEL_REPORT_LIVE_CLOSURE_CONFIRMATION}`,
-      'node scripts/multichannel-report-live-closure-terminal.mjs --platform=youtube --capability=organic --execute',
+      `node scripts/multichannel-report-live-closure-terminal.mjs --platform=${args.platformScope} --capability=${args.capability} --execute`,
     ].join(' \\\n'),
     remoteWriteCount: 0,
     queueActionCount: 0,
     workerDeploymentCount: 0,
     scheduleEnabled: false,
     production: 'BLOCKED',
+  });
+}
+
+/** Backward-compatible export retained for the original first-adopter tests. */
+export async function buildYouTubeFirstAdopterPlan(input = {}) {
+  const argv = input.argv ?? [];
+  const hasPlatform = argv.some((argument) => argument.startsWith('--platform='));
+  return buildReadyChannelPlan({
+    ...input,
+    argv: hasPlatform ? argv : [...argv, '--platform=youtube', '--capability=organic'],
   });
 }
 
@@ -156,7 +195,7 @@ export async function loadReviewedHandoff(env = {}) {
   return Object.freeze(parsed);
 }
 
-async function executeReviewedSharedOperator({ env }) {
+async function executeReviewedSharedOperator({ env, platformScope }) {
   const handoffPath = requireText(
     env.MKT_MULTICHANNEL_REPORT_LIVE_CLOSURE_HANDOFF,
     'MKT_MULTICHANNEL_REPORT_LIVE_CLOSURE_HANDOFF',
@@ -168,7 +207,7 @@ async function executeReviewedSharedOperator({ env }) {
     env: {
       ...process.env,
       ...env,
-      MKT_REPORT_RUNTIME_CLOSEOUT_PLATFORM_SCOPE: 'youtube',
+      MKT_REPORT_RUNTIME_CLOSEOUT_PLATFORM_SCOPE: platformScope,
       MKT_MULTICHANNEL_REPORT_LIVE_CLOSURE_HANDOFF: handoffPath,
       CONFIRM_REPORT_RUNTIME_CLOSEOUT: REPORT_RUNTIME_CLOSEOUT_CONFIRMATION,
     },
@@ -191,7 +230,7 @@ function parseOperatorJson(value) {
   );
 }
 
-function resolveExactTarget(input, readiness) {
+function resolveExactTarget(input, readiness, descriptor) {
   const evidenceTarget = readiness.evidence?.target ?? {};
   return Object.freeze({
     customerKey: requireExact(evidenceTarget.accountKey, 'chemistry_k', 'accountKey'),
@@ -200,9 +239,11 @@ function resolveExactTarget(input, readiness) {
       'integration_workspace',
       'customerProfile',
     ),
-    accountId: requireText(
-      input.accountId ?? input.reviewedHandoff?.youtubeIdentity?.accountId,
-      'youtubeIdentity.accountId',
+    accountKey: requireExact(evidenceTarget.accountKey, 'chemistry_k', 'accountKey'),
+    platformScope: requireExact(
+      evidenceTarget.platformScope,
+      descriptor.platform,
+      'platformScope',
     ),
   });
 }
@@ -260,7 +301,7 @@ function terminalError(message, code, details = {}) {
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   try {
-    console.log(JSON.stringify(await buildYouTubeFirstAdopterPlan({
+    console.log(JSON.stringify(await buildReadyChannelPlan({
       env: process.env,
       argv: process.argv.slice(2),
     }), null, 2));
