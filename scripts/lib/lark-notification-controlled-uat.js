@@ -210,6 +210,8 @@ export function buildLarkNotificationControlledUatReadbackSql(aiRunKey) {
         WHERE ai_run_key = '${key}' LIMIT 1) AS delivery_status,
       (SELECT mirror_status FROM lark_notification_deliveries
         WHERE ai_run_key = '${key}' LIMIT 1) AS mirror_status,
+      (SELECT claim_count FROM lark_notification_deliveries
+        WHERE ai_run_key = '${key}' LIMIT 1) AS claim_count,
       (SELECT sent_at FROM lark_notification_deliveries
         WHERE ai_run_key = '${key}' LIMIT 1) AS sent_at,
       (SELECT lark_message_id_hash FROM lark_notification_deliveries
@@ -225,6 +227,9 @@ export function normalizeLarkNotificationControlledUatReadback(row = {}) {
     deliveryRows: count(row.delivery_rows),
     deliveryStatus: optionalText(row.delivery_status),
     mirrorStatus: optionalText(row.mirror_status),
+    claimCount: row.claim_count === null || row.claim_count === undefined
+      ? 0
+      : count(row.claim_count),
     sentAt: row.sent_at === null || row.sent_at === undefined ? null : Number(row.sent_at),
     messageIdHash: optionalText(row.message_id_hash),
   });
@@ -252,12 +257,14 @@ export function assertLarkNotificationControlledUatDelivered(readback = {}) {
     delivery_rows: readback.deliveryRows,
     delivery_status: readback.deliveryStatus,
     mirror_status: readback.mirrorStatus,
+    claim_count: readback.claimCount,
     sent_at: readback.sentAt,
     message_id_hash: readback.messageIdHash,
   });
   if (value.deliveryRows !== 1
       || value.deliveryStatus !== 'sent'
       || value.mirrorStatus !== 'mirrored'
+      || value.claimCount < 1
       || !Number.isFinite(value.sentAt)
       || !HASH.test(value.messageIdHash ?? '')) {
     throw error(
@@ -267,6 +274,7 @@ export function assertLarkNotificationControlledUatDelivered(readback = {}) {
         deliveryRows: value.deliveryRows,
         deliveryStatus: value.deliveryStatus,
         mirrorStatus: value.mirrorStatus,
+        claimCount: value.claimCount,
       },
     );
   }
@@ -278,16 +286,24 @@ export function assertLarkNotificationControlledUatReplayStable(before, after) {
   const replay = assertLarkNotificationControlledUatDelivered(after);
   if (first.deliveryRows !== replay.deliveryRows
       || first.sentAt !== replay.sentAt
-      || first.messageIdHash !== replay.messageIdHash) {
+      || first.messageIdHash !== replay.messageIdHash
+      || replay.claimCount !== first.claimCount + 1) {
     throw error(
-      'Controlled notification replay changed the authoritative sent delivery',
+      'Controlled notification replay did not reach D1 exactly once or changed sent evidence',
       'LARK_NOTIFICATION_CONTROLLED_UAT_REPLAY_INVALID',
+      {
+        firstClaimCount: first.claimCount,
+        replayClaimCount: replay.claimCount,
+      },
     );
   }
   return Object.freeze({
     deliveryRows: replay.deliveryRows,
     deliveryStatus: replay.deliveryStatus,
     mirrorStatus: replay.mirrorStatus,
+    firstClaimCount: first.claimCount,
+    replayClaimCount: replay.claimCount,
+    replayObservedByD1: true,
     sentAtStable: true,
     messageIdHashStable: true,
     secondMessageSendBlockedByAtomicClaim: true,
