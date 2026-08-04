@@ -77,7 +77,7 @@ async function main() {
       nextCommand: preview.readyToApply
         ? 'CONFIRM_WRITE=YES npm run setup:report-schema:apply'
         : null,
-      note: 'Preview modeเท่านั้น ยังไม่มีการสร้างหรือแก้ไข Table/Field',
+      note: 'Preview mode เท่านั้น ยังไม่มีการสร้างหรือแก้ไข Table/Field',
       warning: mode.ignoredAmbientConfirmation
         ? 'พบ CONFIRM_WRITE=YES ใน Shell แต่ Preview command จะไม่เขียนข้อมูล ต้องใช้ setup:report-schema:apply เท่านั้น'
         : null,
