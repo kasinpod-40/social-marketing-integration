@@ -2,9 +2,11 @@ import { JOB_TYPES } from '../../../packages/application/src/jobs/job-catalog.js
 import { deliverLarkExecutiveNotification } from '../../../packages/application/src/notifications/deliver-lark-executive-notification.js';
 import { readLarkNotificationRuntimeConfig } from '../../../packages/config/src/lark-notification-runtime-config.js';
 import {
-  createLarkNotificationStateMirror,
   loadLarkNotificationDeliveryRequest,
 } from '../../../packages/connectors/src/lark/lark-notification-delivery-source.js';
+import {
+  createLarkNotificationStateMirror,
+} from '../../../packages/connectors/src/lark/lark-notification-state-mirror.js';
 import { permanentError } from '../../../packages/shared/src/errors/runtime-error.js';
 import { processJobWithChatwootEndToEnd } from './chatwoot-active-job-router.js';
 
