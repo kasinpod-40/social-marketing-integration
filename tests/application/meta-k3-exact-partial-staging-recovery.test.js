@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import test from 'node:test';
 
@@ -156,4 +157,22 @@ test('K3 launcher reuses the reviewed finalizer with the K3 contract', () => {
   assert.equal(plan.queueMessageCount, 0);
   assert.equal(plan.productionWorkerDeployment, false);
   assert.equal(plan.productionTrafficChange, false);
+});
+
+test('K3 execute bootstrap materializes Meta runtime authority and only resumes zero-mutation local evidence', () => {
+  const repositoryRoot = resolve(process.cwd());
+  const launcher = readFileSync(
+    resolve(repositoryRoot, 'scripts/meta-k3-partial-staging-preview-finalizer.mjs'),
+    'utf8',
+  );
+
+  assert.match(launcher, /materializeMetaHistoryLarkRuntimeConfig/u);
+  assert.match(launcher, /META_GRAPH_API_VERSION=v25\.0/u);
+  assert.match(launcher, /MKT_META_K3_RESUME_PRE_MUTATION_CONFIG_FAILURE/u);
+  assert.match(launcher, /RESUME_EXACT_K3_PRE_MUTATION_CONFIG_FAILURE/u);
+  assert.match(launcher, /workerVersionUploadCount:\s*0/u);
+  assert.match(launcher, /queueMessageCount:\s*0/u);
+  assert.match(launcher, /remoteMutationCount\)\s*===\s*0/u);
+  assert.doesNotMatch(launcher, /queueSendAllowed:\s*true/u);
+  assert.doesNotMatch(launcher, /lifecycleSqlRepairAllowed:\s*true/u);
 });
