@@ -30,12 +30,7 @@ export const REPORT_RUNTIME_NOTIFICATION_TRUE_FLAGS = Object.freeze([
 
 export function buildReportRuntimeFinalizerEnvironment(input = {}) {
   const repositoryHead = requireCommitSha(input.repositoryHead, 'repositoryHead');
-  const updates = requireObject(input.environmentUpdates, 'environmentUpdates');
-  const tableEnvironment = {};
-
-  for (const envName of REPORT_RUNTIME_FINALIZER_TABLE_ENV_NAMES) {
-    tableEnvironment[envName] = requireTableId(updates[envName], envName);
-  }
+  const tableEnvironment = normalizeTableEnvironment(input.environmentUpdates);
   const notificationRuntime = buildNotificationRuntimeEvidence(
     input.notificationRuntimeAuthority,
   );
@@ -43,7 +38,7 @@ export function buildReportRuntimeFinalizerEnvironment(input = {}) {
   return Object.freeze({
     contractVersion: REPORT_RUNTIME_FINALIZER_ENVIRONMENT_CONTRACT,
     repositoryHead,
-    tableEnvironment: Object.freeze(tableEnvironment),
+    tableEnvironment,
     tableEnvironmentUpdateCount: REPORT_RUNTIME_FINALIZER_TABLE_ENV_NAMES.length,
     notificationRuntime,
     remoteMutationCount: 0,
@@ -58,10 +53,7 @@ export async function writeReportRuntimeFinalizerEnvironment(input = {}) {
     REPORT_RUNTIME_FINALIZER_ENVIRONMENT_FILENAME,
   );
   await writeFile(environmentPath, `${JSON.stringify(evidence, null, 2)}\n`, { mode: 0o600 });
-  return Object.freeze({
-    evidence,
-    environmentPath,
-  });
+  return Object.freeze({ evidence, environmentPath });
 }
 
 export function loadReportRuntimeFinalizerEnvironment(input = {}) {
@@ -97,12 +89,15 @@ export function loadReportRuntimeFinalizerEnvironment(input = {}) {
     );
   }
 
-  const normalized = buildReportRuntimeFinalizerEnvironment({
-    repositoryHead: environment?.repositoryHead,
-    environmentUpdates: environment?.tableEnvironment,
-    notificationRuntimeAuthority: restoreNotificationRuntimeAuthority(
+  const normalized = Object.freeze({
+    contractVersion: REPORT_RUNTIME_FINALIZER_ENVIRONMENT_CONTRACT,
+    repositoryHead: requireCommitSha(environment?.repositoryHead, 'repositoryHead'),
+    tableEnvironment: normalizeTableEnvironment(environment?.tableEnvironment),
+    tableEnvironmentUpdateCount: REPORT_RUNTIME_FINALIZER_TABLE_ENV_NAMES.length,
+    notificationRuntime: normalizeStoredNotificationRuntime(
       environment?.notificationRuntime,
     ),
+    remoteMutationCount: 0,
   });
   const summaryState = summary?.settings?.notificationRuntimeState;
   const summaryCount = Number(
@@ -112,6 +107,7 @@ export function loadReportRuntimeFinalizerEnvironment(input = {}) {
     || normalized.repositoryHead !== summary.repository.head
     || normalized.tableEnvironmentUpdateCount
       !== Number(environment?.tableEnvironmentUpdateCount)
+    || Number(environment?.remoteMutationCount ?? -1) !== 0
     || normalized.notificationRuntime.state !== summaryState
     || normalized.notificationRuntime.settingCount !== summaryCount
     || summary?.runtime?.notificationAdmissionEnabled !== false) {
@@ -148,18 +144,18 @@ export function loadReportRuntimeFinalizerEnvironment(input = {}) {
   });
 }
 
+function normalizeTableEnvironment(value) {
+  const updates = requireObject(value, 'environmentUpdates');
+  const tableEnvironment = {};
+  for (const envName of REPORT_RUNTIME_FINALIZER_TABLE_ENV_NAMES) {
+    tableEnvironment[envName] = requireTableId(updates[envName], envName);
+  }
+  return Object.freeze(tableEnvironment);
+}
+
 function buildNotificationRuntimeEvidence(authority) {
   if (authority === undefined || authority === null || authority.state === 'inactive') {
-    return Object.freeze({
-      state: 'inactive',
-      mode: 'disabled',
-      trueFlags: Object.freeze([]),
-      tableEnvironment: Object.freeze({}),
-      tableEnvironmentUpdateCount: 0,
-      settingCount: 0,
-      settingKeyFingerprint: null,
-      destinationKeyHash: null,
-    });
+    return inactiveNotificationRuntime();
   }
   const value = requireObject(authority, 'notificationRuntimeAuthority');
   if (value.state !== 'active') {
@@ -183,15 +179,17 @@ function buildNotificationRuntimeEvidence(authority) {
     value.workerEnvironment,
     'notificationRuntimeAuthority.workerEnvironment',
   );
-  const tableEnvironment = {};
-  for (const envName of REPORT_RUNTIME_NOTIFICATION_TABLE_ENV_NAMES) {
-    tableEnvironment[envName] = requireTableId(workerEnvironment[envName], envName);
-  }
+  const tableEnvironment = Object.freeze(Object.fromEntries(
+    REPORT_RUNTIME_NOTIFICATION_TABLE_ENV_NAMES.map((envName) => [
+      envName,
+      requireTableId(workerEnvironment[envName], envName),
+    ]),
+  ));
   return Object.freeze({
     state: 'active',
     mode: 'runtime',
     trueFlags: Object.freeze([...REPORT_RUNTIME_NOTIFICATION_TRUE_FLAGS]),
-    tableEnvironment: Object.freeze(tableEnvironment),
+    tableEnvironment,
     tableEnvironmentUpdateCount: REPORT_RUNTIME_NOTIFICATION_TABLE_ENV_NAMES.length,
     settingCount: settingKeys.length,
     settingKeyFingerprint: sha256(JSON.stringify(settingKeys)),
@@ -202,7 +200,7 @@ function buildNotificationRuntimeEvidence(authority) {
   });
 }
 
-function restoreNotificationRuntimeAuthority(value) {
+function normalizeStoredNotificationRuntime(value) {
   const runtime = requireObject(value, 'notificationRuntime');
   if (runtime.state === 'inactive') {
     if (runtime.mode !== 'disabled'
@@ -211,13 +209,15 @@ function restoreNotificationRuntimeAuthority(value) {
       || !Array.isArray(runtime.trueFlags)
       || runtime.trueFlags.length !== 0
       || runtime.settingKeyFingerprint !== null
-      || runtime.destinationKeyHash !== null) {
+      || runtime.destinationKeyHash !== null
+      || !runtime.tableEnvironment
+      || Object.keys(runtime.tableEnvironment).length !== 0) {
       throw environmentError(
         'Inactive Notification Runtime private evidence is invalid',
         'REPORT_RUNTIME_FINALIZER_ENVIRONMENT_INVALID',
       );
     }
-    return Object.freeze({ state: 'inactive' });
+    return inactiveNotificationRuntime();
   }
   if (runtime.state !== 'active'
     || runtime.mode !== 'runtime'
@@ -225,36 +225,50 @@ function restoreNotificationRuntimeAuthority(value) {
     || Number(runtime.tableEnvironmentUpdateCount ?? -1)
       !== REPORT_RUNTIME_NOTIFICATION_TABLE_ENV_NAMES.length
     || JSON.stringify(runtime.trueFlags)
-      !== JSON.stringify(REPORT_RUNTIME_NOTIFICATION_TRUE_FLAGS)
-    || !/^[0-9a-f]{64}$/u.test(String(runtime.settingKeyFingerprint ?? ''))) {
+      !== JSON.stringify(REPORT_RUNTIME_NOTIFICATION_TRUE_FLAGS)) {
     throw environmentError(
       'Active Notification Runtime private evidence is invalid',
       'REPORT_RUNTIME_FINALIZER_ENVIRONMENT_INVALID',
     );
   }
-  const tableEnvironment = requireObject(
+  const storedEnvironment = requireObject(
     runtime.tableEnvironment,
     'notificationRuntime.tableEnvironment',
   );
-  const workerEnvironment = Object.fromEntries(
+  const tableEnvironment = Object.freeze(Object.fromEntries(
     REPORT_RUNTIME_NOTIFICATION_TABLE_ENV_NAMES.map((envName) => [
       envName,
-      requireTableId(tableEnvironment[envName], envName),
+      requireTableId(storedEnvironment[envName], envName),
     ]),
-  );
+  ));
   return Object.freeze({
     state: 'active',
-    settingKeys: Object.freeze([
-      `fingerprint:${requireHash(runtime.settingKeyFingerprint, 'settingKeyFingerprint')}:1`,
-      `fingerprint:${runtime.settingKeyFingerprint}:2`,
-      `fingerprint:${runtime.settingKeyFingerprint}:3`,
-      `fingerprint:${runtime.settingKeyFingerprint}:4`,
-    ]),
-    workerEnvironment: Object.freeze(workerEnvironment),
+    mode: 'runtime',
+    trueFlags: Object.freeze([...REPORT_RUNTIME_NOTIFICATION_TRUE_FLAGS]),
+    tableEnvironment,
+    tableEnvironmentUpdateCount: REPORT_RUNTIME_NOTIFICATION_TABLE_ENV_NAMES.length,
+    settingCount: 4,
+    settingKeyFingerprint: requireHash(
+      runtime.settingKeyFingerprint,
+      'notificationRuntime.settingKeyFingerprint',
+    ),
     destinationKeyHash: requireHash(
       runtime.destinationKeyHash,
       'notificationRuntime.destinationKeyHash',
     ),
+  });
+}
+
+function inactiveNotificationRuntime() {
+  return Object.freeze({
+    state: 'inactive',
+    mode: 'disabled',
+    trueFlags: Object.freeze([]),
+    tableEnvironment: Object.freeze({}),
+    tableEnvironmentUpdateCount: 0,
+    settingCount: 0,
+    settingKeyFingerprint: null,
+    destinationKeyHash: null,
   });
 }
 
