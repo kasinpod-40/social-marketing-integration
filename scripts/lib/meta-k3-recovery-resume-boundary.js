@@ -27,6 +27,10 @@ export const META_K3_RECOVERY_RESUME_PROFILES = Object.freeze({
   ]),
 });
 
+export const META_K3_RECOVERY_RESUME_TRANSIENT_DIRECTORIES = Object.freeze([
+  '.wrangler',
+]);
+
 export function identifyMetaK3RecoveryResumeProfile(
   observedFiles = [],
   observedDirectories = [],
@@ -37,13 +41,22 @@ export function identifyMetaK3RecoveryResumeProfile(
       'META_K3_PRE_MUTATION_EVIDENCE_INVALID',
     );
   }
-  if (observedDirectories.length !== 0) {
+
+  const directories = [...observedDirectories].sort();
+  const unexpectedDirectories = directories.filter(
+    (name) => !META_K3_RECOVERY_RESUME_TRANSIENT_DIRECTORIES.includes(name),
+  );
+  if (unexpectedDirectories.length !== 0) {
     throw boundaryError(
-      'K3 recovery resume root must not contain directories',
+      'K3 recovery resume root contains unsupported directories',
       'META_K3_PRE_MUTATION_EVIDENCE_INVALID',
-      { observedDirectories: [...observedDirectories].sort() },
+      {
+        observedDirectories: directories,
+        unexpectedDirectories,
+      },
     );
   }
+
   const files = [...observedFiles].sort();
   const profile = Object.entries(META_K3_RECOVERY_RESUME_PROFILES)
     .find(([, expected]) => JSON.stringify(files) === JSON.stringify(expected))?.[0]
