@@ -74,6 +74,41 @@ The active Settings scope comes from the latest exact Executive Preview rows for
 Exactly four source Report Settings have `ai_enabled` and `notification_enabled` active. Every row resolves
 to the reviewed destination hash. No other Report Setting is authorized by this activation.
 
+## Report Finalizer preservation rule
+
+The canonical Report Settings seed remains all-false by design, but the Report Runtime Finalizer must not use that
+static seed to deactivate the live exact four Settings.
+
+Before any Settings reconciliation, the Finalizer must classify current canonical state as exactly one of:
+
+```text
+inactive / 0 active Settings
+active   / 4 exact Executive Settings
+```
+
+For `active/4`, it must resolve the same authority used by Runtime Activation:
+
+```text
+latest Executive Preview 1D/3D/7D/30D
+→ source Report IDs
+→ exact Report Snapshots
+→ exact Report Setting keys
+→ reviewed destination hash
+```
+
+Only those four rows may retain `ai_enabled=true`, `notification_enabled=true` and the reviewed destination.
+Every other canonical row must remain false. Mixed flags, a fifth active Setting, duplicates, ambiguous previews,
+missing Snapshots, table drift or destination drift must block the Finalizer before Settings mutation.
+
+The Finalizer public evidence may expose only state/count. The raw destination remains private. Notification
+Admission, Queue producer, Automation, Schedule, Webhook and Production remain unapproved.
+
+Contract:
+
+```text
+docs/tasks/report-finalizer-notification-runtime-preservation-v1.md
+```
+
 ## No-admission proof
 
 Runtime activation sent no Queue message and contains no direct Lark message call. The existing Worker crons
