@@ -141,7 +141,7 @@ test('K3 Active Preview readiness requires exact attestation and Worker version 
     attestationFingerprint:
       'ffe054fe7ae0cb6dc65c3af9b61d5209f439851db43d0ba5997337df154668eb',
     workerVersionFingerprint:
-      '986c0dc956dc822b5d8f698661b9eb1ef59bd0eb676c9ce9bd3f333a19cf8c81',
+      '320159ebe3219112484baaa0aa1164dd93b25e98f4a1c7bee7fd602bc2a614c0',
   });
 
   let callCount = 0;
