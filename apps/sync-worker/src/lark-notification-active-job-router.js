@@ -2,7 +2,7 @@ import { JOB_TYPES } from '../../../packages/application/src/jobs/job-catalog.js
 import { deliverLarkExecutiveNotification } from '../../../packages/application/src/notifications/deliver-lark-executive-notification.js';
 import { readLarkNotificationRuntimeConfig } from '../../../packages/config/src/lark-notification-runtime-config.js';
 import {
-  createLarkNotificationLogMirror,
+  createLarkNotificationStateMirror,
   loadLarkNotificationDeliveryRequest,
 } from '../../../packages/connectors/src/lark/lark-notification-delivery-source.js';
 import { permanentError } from '../../../packages/shared/src/errors/runtime-error.js';
@@ -39,10 +39,11 @@ export function createLarkNotificationActiveJobRouter(input = {}) {
       expectedDestinationKeyHash: config.destinationKeyHash,
     });
     const mirrorDelivery = config.flags.mirrorEnabled
-      ? createLarkNotificationLogMirror({
+      ? createLarkNotificationStateMirror({
         repository: infrastructure.repository,
         syncEngine: infrastructure.syncEngine,
-        tableId: config.tables.notificationLog,
+        notificationLogTableId: config.tables.notificationLog,
+        aiRunsTableId: config.tables.aiRuns,
       })
       : null;
     return deliver({
