@@ -12,6 +12,10 @@ import {
   LARK_NATIVE_AI_NOTIFICATION_CHECKSUM_POLICY,
 } from '../../packages/config/src/lark-native-ai-disabled-configuration-preview-contract.js';
 import {
+  LARK_NATIVE_AI_NOTIFICATION_DEDUPE_GATE_AUTHORITY,
+  LARK_NATIVE_AI_NOTIFICATION_DEDUPE_PREVIEW_VERSION,
+} from '../../packages/config/src/lark-native-ai-notification-dedupe-gate-contract.js';
+import {
   buildLarkNativeAiDisabledConfigurationPreview,
   validateLarkNativeAiDisabledConfigurationPreview,
 } from '../../packages/application/src/reports/build-lark-native-ai-disabled-configuration-preview.js';
@@ -52,18 +56,25 @@ function fixture() {
   };
 }
 
-test('builds repository-only preview ready for manual inactive configuration', async () => {
+test('builds v6 preview with configured AI materialization and blocked notification workflow', async () => {
   const preview = await buildLarkNativeAiDisabledConfigurationPreview(fixture());
   assert.equal(preview.ok, true);
   assert.equal(
     preview.status,
-    'repository_preview_ready_for_manual_inactive_configuration',
+    'repository_preview_ai_materialization_configured_notification_blocked',
   );
-  assert.equal(preview.contractVersion, 'lark_native_ai_disabled_configuration_preview_v5');
+  assert.equal(preview.contractVersion, LARK_NATIVE_AI_NOTIFICATION_DEDUPE_PREVIEW_VERSION);
+  assert.equal(preview.contractVersion, 'lark_native_ai_disabled_configuration_preview_v6');
   assert.equal(preview.mode, 'repository_only');
   assert.equal(preview.liveConfigurationAuthorized, false);
   assert.equal(preview.activationAuthorized, false);
+  assert.equal(preview.aiMaterializationConfigurationStatus, 'saved_inactive_user_confirmed');
+  assert.equal(preview.notificationAutomationConfigurationAuthorized, false);
   assert.equal(preview.workflows.length, 2);
+  assert.equal(preview.workflows[0].status, 'inactive_configured');
+  assert.equal(preview.workflows[1].status, 'inactive_placeholder');
+  assert.equal(preview.workflows[1].liveConfigurationSupported, false);
+  assert.deepEqual(preview.workflows[1].actions, []);
   assert.equal(preview.customAiFieldAuthority.promptCaptureComplete, true);
   assert.equal(preview.automationAiOutputBinding.promptCaptureComplete, true);
   assert.equal(preview.automationPromptVersion, LARK_NATIVE_AI_AUTOMATION_PROMPT_VERSION);
@@ -76,8 +87,10 @@ test('builds repository-only preview ready for manual inactive configuration', a
   assert.match(preview.notificationPayloadChecksum, /^[a-f0-9]{64}$/u);
   assert.equal(preview.notificationPayloadChecksumAuthority, 'repository_preview_only');
   assert.equal(preview.notificationLogRecordPreview.payload_checksum, null);
-  assert.equal(preview.blockerCount, 0);
-  assert.deepEqual(preview.blockers, []);
+  assert.equal(preview.blockerCount, 1);
+  assert.deepEqual(preview.blockers.map(({ code }) => code), [
+    'LARK_NATIVE_NOTIFICATION_DEDUPE_GATE_UNSUPPORTED',
+  ]);
   assert.equal(preview.advisoryCount, 2);
   assert.deepEqual(preview.advisories.map(({ code }) => code), [
     'LARK_NATIVE_PAYLOAD_SHA256_NOT_AVAILABLE_NON_BLOCKING',
@@ -94,7 +107,27 @@ test('builds repository-only preview ready for manual inactive configuration', a
   assert.equal(preview.safety.production, 'BLOCKED');
 });
 
-test('uses nullable live checksum without weakening exact dedupe authority', () => {
+test('captures unsupported inverse Find records gate and preserves inactive placeholder', async () => {
+  assert.equal(LARK_NATIVE_AI_NOTIFICATION_DEDUPE_GATE_AUTHORITY.source, 'user_confirmed_lark_base_ui');
+  assert.deepEqual(
+    LARK_NATIVE_AI_NOTIFICATION_DEDUPE_GATE_AUTHORITY.availableNoRecordPolicies,
+    ['continue', 'stop'],
+  );
+  assert.equal(
+    LARK_NATIVE_AI_NOTIFICATION_DEDUPE_GATE_AUTHORITY.requiredExistingRecordPolicy,
+    'stop_when_records_found',
+  );
+  assert.equal(LARK_NATIVE_AI_NOTIFICATION_DEDUPE_GATE_AUTHORITY.supported, false);
+  assert.equal(LARK_NATIVE_AI_NOTIFICATION_DEDUPE_GATE_AUTHORITY.safeState, 'inactive_placeholder');
+  const preview = await buildLarkNativeAiDisabledConfigurationPreview(fixture());
+  const notification = preview.workflows[1];
+  assert.equal(notification.safeStateReason, 'LARK_NATIVE_NOTIFICATION_DEDUPE_GATE_UNSUPPORTED');
+  assert.deepEqual(notification.actions, []);
+  assert.equal(notification.deferredActionCount, LARK_NATIVE_AI_DISABLED_CONFIGURATION_WORKFLOWS[1].actions.length);
+  assert.equal(notification.forbiddenActionTypes.includes('save_without_existing_record_stop_gate'), true);
+});
+
+test('uses nullable live checksum without pretending it solves notification dedupe', () => {
   assert.deepEqual(LARK_NATIVE_AI_NOTIFICATION_CHECKSUM_POLICY, {
     repositoryPreviewAlgorithm: 'SHA-256',
     repositoryPreviewEncoding: 'hex',
@@ -103,12 +136,7 @@ test('uses nullable live checksum without weakening exact dedupe authority', () 
     dedupeAuthority: 'notification_attempt_key_and_dedupe_key',
     blocking: false,
   });
-  const notification = LARK_NATIVE_AI_DISABLED_CONFIGURATION_WORKFLOWS[1];
-  const addLog = notification.actions.find(({ type }) => type === 'add_notification_log_record');
-  assert.equal(addLog.config.payloadChecksum, null);
-  assert.equal(addLog.config.payloadChecksumStatus, 'not_computed_in_lark_base_automation');
-  assert.equal(addLog.config.dedupeAuthority, 'notification_attempt_key_and_dedupe_key');
-  assert.equal(notification.actions[2].config.matchFields[0], 'notification_attempt_key');
+  assert.equal(LARK_NATIVE_AI_NOTIFICATION_DEDUPE_GATE_AUTHORITY.liveConfigurationSupported, false);
 });
 
 test('captures four approved Thai prompts with exact shared reference slots', () => {
@@ -186,11 +214,10 @@ test('AI materialization Workflow binds one approved prompt to each text action'
   assert.equal(ai.actions.some(({ type }) => type === 'enable_automation'), false);
 });
 
-test('maps notification identity through Snapshot before Settings and never stores raw destination', () => {
-  const notification = LARK_NATIVE_AI_DISABLED_CONFIGURATION_WORKFLOWS[1];
-  assert.equal(notification.actions[0].config.table, '🧾 MKT_Report_Snapshots');
-  assert.equal(notification.actions[1].config.table, '⚙️ MKT_Report_Settings');
-  const serialized = JSON.stringify(notification);
+test('never exposes raw destination or an executable notification chain in v6 preview', async () => {
+  const preview = await buildLarkNativeAiDisabledConfigurationPreview(fixture());
+  const serialized = JSON.stringify(preview.workflows[1]);
+  assert.deepEqual(preview.workflows[1].actions, []);
   assert.doesNotMatch(serialized, /\boc_[A-Za-z0-9_-]+\b/u);
   assert.doesNotMatch(serialized, /https?:\/\/[^\s"]*webhook/iu);
 });
