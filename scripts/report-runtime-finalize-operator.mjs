@@ -6,6 +6,10 @@ import { resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { REPORT_SCHEMA_CONFLICT_REPAIR_CONFIRMATION } from '../packages/application/src/use-cases/repair-lark-report-schema-conflicts.js';
 import { readDevVars } from './lib/dev-vars.js';
+import {
+  REPORT_RUNTIME_FINALIZER_ENVIRONMENT_CONTRACT,
+  writeReportRuntimeFinalizerEnvironment,
+} from './lib/report-runtime-finalizer-environment.js';
 import { REPORT_METRIC_VALUE_FIELD_MIGRATION_CONFIRMATION } from './lib/report-metric-value-field-migration.js';
 import {
   REPORT_RUNTIME_FINALIZE_CONFIRMATION,
@@ -62,6 +66,7 @@ function printPlan() {
       'dashboard-settings-preview',
       'dashboard-settings-apply',
       'schema-and-settings-readback',
+      'private-runtime-environment-evidence',
       'sanitized-evidence',
     ],
     safety: {
@@ -217,6 +222,13 @@ async function executeFinalization() {
   const settingsReadback = await runJson('node', ['scripts/reconcile-dashboard-report-settings.mjs'], { env: postSchemaEnv });
   assertDashboardSettingsPreviewSafe(settingsReadback, { requireClean: true });
 
+  currentStage = 'private-runtime-environment-evidence';
+  const privateEnvironment = await writeReportRuntimeFinalizerEnvironment({
+    evidenceRoot,
+    repositoryHead: repository.head,
+    environmentUpdates: schemaApply.environmentUpdates,
+  });
+
   currentStage = 'sanitized-evidence';
   const summary = safeReportRuntimeFinalizeEvidence({
     ok: true,
@@ -235,6 +247,9 @@ async function executeFinalization() {
       readbackActions: schemaReadback.actions?.length ?? null,
       conflicts: schemaReadback.conflicts?.length ?? null,
       environmentUpdateNames: Object.keys(schemaApply.environmentUpdates ?? {}).sort(),
+      privateEnvironmentContractVersion: REPORT_RUNTIME_FINALIZER_ENVIRONMENT_CONTRACT,
+      privateEnvironmentUpdateCount:
+        privateEnvironment.evidence.tableEnvironmentUpdateCount,
     },
     settings: {
       canonicalExpected: settingsPreview.canonicalExpected ?? null,
@@ -261,7 +276,11 @@ async function executeFinalization() {
   });
   const evidencePath = resolve(evidenceRoot, 'report-runtime-finalize-summary.json');
   await writeFile(evidencePath, `${JSON.stringify(summary, null, 2)}\n`, { mode: 0o600 });
-  process.stdout.write(`${JSON.stringify({ ...summary, evidencePath }, null, 2)}\n`);
+  process.stdout.write(`${JSON.stringify({
+    ...summary,
+    evidencePath,
+    environmentEvidencePath: privateEnvironment.environmentPath,
+  }, null, 2)}\n`);
 }
 
 async function loadEnvironment() {
