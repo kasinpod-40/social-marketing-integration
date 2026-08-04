@@ -78,15 +78,26 @@ export function validateLarkNotificationSafeWorkerDeployEvidence(evidence = {}) 
     evidence.deploymentVersionId,
     'deploymentVersionId',
   );
+  const changedFields = Array.isArray(evidence.externalStateChangedFields)
+    ? evidence.externalStateChangedFields
+    : null;
+  const changeEvidenceValid = changedFields !== null
+    && (
+      (evidence.externalStateChangeObserved === false && changedFields.length === 0)
+      || (evidence.externalStateChangeObserved === true && changedFields.length > 0)
+    );
   const valid = evidence.phase === 'deploy-safe'
     && evidence.status === 'passed'
     && evidence.activeVersionId === versionId
     && evidence.trafficPercentage === 100
     && evidence.notificationFlagsAllFalse === true
+    && evidence.remoteStateComparedTo === 'fresh_pre_deploy_snapshot'
     && evidence.activeLocksBefore === 0
     && evidence.activeLocksAfter === 0
-    && evidence.businessFactDrift === false
-    && evidence.retainedActiveWorkDrift === false
+    && evidence.notificationSchemaDrift === false
+    && nonNegativeInteger(evidence.retainedActiveWorkCountBefore)
+    && nonNegativeInteger(evidence.retainedActiveWorkCountAfter)
+    && changeEvidenceValid
     && evidence.queueSendCount === 0
     && evidence.larkWriteCount === 0
     && evidence.notificationSendCount === 0
@@ -149,6 +160,10 @@ function readPercentage(value) {
     if (Number.isFinite(number) && number >= 0 && number <= 100) return number;
   }
   return null;
+}
+
+function nonNegativeInteger(value) {
+  return Number.isSafeInteger(value) && value >= 0;
 }
 
 function isWorkerVersionId(value) {

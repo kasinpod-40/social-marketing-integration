@@ -15,6 +15,8 @@ import { join, resolve } from 'node:path';
 
 import { readDevVars } from './lib/dev-vars.js';
 import {
+  compareLarkNotificationSafeDeployWindow,
+  validateLarkNotificationCurrentSchemaState,
   validateLarkNotificationDormantWorkSchemaReadbackRow,
 } from './lib/lark-notification-dormant-work-authority.js';
 import {
@@ -112,7 +114,7 @@ function printPlan() {
       scheduleActivation: false,
       production: false,
     },
-    note: 'Plan only. The one-shot execution performs final read-only guards, one all-false Worker deploy, exact 100-percent deployment verification and final read-only D1 parity.',
+    note: 'Plan only. Execution validates the retained Migration evidence, snapshots current Remote state immediately before deployment, performs one all-false Worker deploy, verifies the exact version at 100 percent traffic, and validates notification invariants again.',
   }, null, 2)}\n`);
 }
 
@@ -150,7 +152,13 @@ async function deploySafeWorker(target, env) {
     '--config', target.wranglerConfig,
   ]);
   validateLarkNotificationNoPendingMigrations(migrations.stdout);
-  const before = readRemoteSchemaState(target, preflight.remote);
+
+  // Historical preflight counts are intentionally not reused here. Meta and
+  // Report closeout may legitimately advance Business facts after Migration
+  // read-back. The deploy gate uses a fresh lock-free snapshot immediately
+  // before deployment and validates notification-specific invariants again
+  // immediately afterwards.
+  const before = readCurrentRemoteSchemaState(target);
 
   const outputFile = join(
     tmpdir(),
@@ -179,7 +187,12 @@ async function deploySafeWorker(target, env) {
       deploymentVersionId,
     );
 
-    const after = readRemoteSchemaState(target, preflight.remote);
+    const after = readCurrentRemoteSchemaState(target);
+    const deployWindow = compareLarkNotificationSafeDeployWindow(
+      before,
+      after,
+      LARK_NOTIFICATION_REMOTE_INDEXES.length,
+    );
     const evidence = {
       contractVersion: LARK_NOTIFICATION_REMOTE_ROLLOUT_CONTRACT_VERSION,
       phase: 'deploy-safe',
@@ -197,12 +210,14 @@ async function deploySafeWorker(target, env) {
       trafficPercentage: active.trafficPercentage,
       notificationFlagsAllFalse: local.config.notificationFlagsAllFalse,
       notificationFlagSourcePolicy: local.config.notificationFlagSourcePolicy,
-      retainedActiveWorkCountBefore: before.active_work,
-      retainedActiveWorkCountAfter: after.active_work,
-      activeLocksBefore: before.active_locks,
-      activeLocksAfter: after.active_locks,
-      businessFactDrift: false,
-      retainedActiveWorkDrift: false,
+      remoteStateComparedTo: 'fresh_pre_deploy_snapshot',
+      retainedActiveWorkCountBefore: deployWindow.before.active_work,
+      retainedActiveWorkCountAfter: deployWindow.after.active_work,
+      activeLocksBefore: deployWindow.before.active_locks,
+      activeLocksAfter: deployWindow.after.active_locks,
+      notificationSchemaDrift: false,
+      externalStateChangeObserved: deployWindow.externalStateChangeObserved,
+      externalStateChangedFields: deployWindow.externalStateChangedFields,
       queueSendCount: 0,
       larkWriteCount: 0,
       notificationSendCount: 0,
@@ -217,10 +232,11 @@ async function deploySafeWorker(target, env) {
       deploymentVersionId,
       trafficPercentage: active.trafficPercentage,
       notificationFlagsAllFalse: true,
-      retainedActiveWorkCount: after.active_work,
-      activeLocks: after.active_locks,
-      businessFactDrift: false,
-      retainedActiveWorkDrift: false,
+      retainedActiveWorkCount: deployWindow.after.active_work,
+      activeLocks: deployWindow.after.active_locks,
+      notificationSchemaDrift: false,
+      externalStateChangeObserved: deployWindow.externalStateChangeObserved,
+      externalStateChangedFields: deployWindow.externalStateChangedFields,
       nextGate: 'controlled_uat_requires_separate_approval',
     };
   } catch (error) {
@@ -289,6 +305,9 @@ async function validateEvidenceChain(input) {
     backup,
     await readFile(backup.backupFile),
   );
+  // The retained evidence remains the authority that Migration 0019 was
+  // applied without drift at that moment. Current live counts are validated
+  // separately using a fresh snapshot immediately around deployment.
   validateLarkNotificationDormantWorkSchemaReadbackRow(
     schemaReadback.remote,
     preflight.remote,
@@ -296,11 +315,10 @@ async function validateEvidenceChain(input) {
   );
 }
 
-function readRemoteSchemaState(target, preflightRemote) {
+function readCurrentRemoteSchemaState(target) {
   const query = runD1Query(target, buildLarkNotificationRemoteSchemaReadbackSql());
-  return validateLarkNotificationDormantWorkSchemaReadbackRow(
+  return validateLarkNotificationCurrentSchemaState(
     extractLarkNotificationWranglerD1Rows(query.stdout)[0],
-    preflightRemote,
     LARK_NOTIFICATION_REMOTE_INDEXES.length,
   );
 }

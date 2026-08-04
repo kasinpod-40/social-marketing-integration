@@ -5,6 +5,10 @@ import { resolve } from 'node:path';
 import test from 'node:test';
 
 import {
+  compareLarkNotificationSafeDeployWindow,
+  validateLarkNotificationCurrentSchemaState,
+} from '../../scripts/lib/lark-notification-dormant-work-authority.js';
+import {
   LARK_NOTIFICATION_SAFE_WORKER_DEPLOY_CONFIRMATION,
   assertLarkNotificationSafeWorkerDeployConfirmation,
   parseLarkNotificationDeploymentStatus,
@@ -77,15 +81,69 @@ test('deployment status requires the exact deployed version at 100 percent traff
   );
 });
 
+test('current deploy gate accepts legitimate progress since historical Migration read-back', () => {
+  const current = createRemoteState({
+    active_work: 0,
+    coverage_runs: 157,
+    coverage_entities: 24512,
+  });
+  assert.deepEqual(validateLarkNotificationCurrentSchemaState(current), current);
+
+  assert.throws(
+    () => validateLarkNotificationCurrentSchemaState({ ...current, active_locks: 1 }),
+    (error) => error.code === 'LARK_NOTIFICATION_SAFE_WORKER_DEPLOY_REMOTE_STATE_INVALID'
+      && error.details.invalid.includes('active_locks'),
+  );
+  assert.throws(
+    () => validateLarkNotificationCurrentSchemaState({
+      ...current,
+      notification_delivery_rows: 1,
+    }),
+    (error) => error.code === 'LARK_NOTIFICATION_SAFE_WORKER_DEPLOY_REMOTE_STATE_INVALID'
+      && error.details.invalid.includes('notification_delivery_rows'),
+  );
+});
+
+test('safe deploy compares a fresh short window and records unrelated concurrent progress', () => {
+  const before = createRemoteState({
+    active_work: 0,
+    coverage_runs: 157,
+    coverage_entities: 24512,
+  });
+  const after = createRemoteState({
+    active_work: 1,
+    coverage_runs: 158,
+    coverage_entities: 24600,
+  });
+  const result = compareLarkNotificationSafeDeployWindow(before, after);
+  assert.equal(result.externalStateChangeObserved, true);
+  assert.deepEqual(result.externalStateChangedFields, [
+    'active_work',
+    'coverage_runs',
+    'coverage_entities',
+  ]);
+  assert.equal(result.before.notification_delivery_rows, 0);
+  assert.equal(result.after.notification_delivery_rows, 0);
+});
+
 test('safe deployment evidence proves all-false runtime and zero downstream actions', () => {
   const evidence = createEvidence();
   assert.equal(validateLarkNotificationSafeWorkerDeployEvidence(evidence), evidence);
 
+  const changedEvidence = {
+    ...evidence,
+    retainedActiveWorkCountAfter: 1,
+    externalStateChangeObserved: true,
+    externalStateChangedFields: ['active_work'],
+  };
+  assert.equal(validateLarkNotificationSafeWorkerDeployEvidence(changedEvidence), changedEvidence);
+
   for (const mutation of [
     { notificationFlagsAllFalse: false },
     { activeLocksAfter: 1 },
-    { businessFactDrift: true },
-    { retainedActiveWorkDrift: true },
+    { notificationSchemaDrift: true },
+    { remoteStateComparedTo: 'historical_preflight' },
+    { externalStateChangeObserved: true, externalStateChangedFields: [] },
     { queueSendCount: 1 },
     { larkWriteCount: 1 },
     { notificationSendCount: 1 },
@@ -119,6 +177,8 @@ test('operator is plan-only by default and has no Queue, Lark, notification or S
   const source = await readFile(script, 'utf8');
   assert.match(source, /wrangler', 'deploy', '--config'/u);
   assert.match(source, /wrangler', 'deployments', 'status'/u);
+  assert.match(source, /fresh_pre_deploy_snapshot/u);
+  assert.doesNotMatch(source, /readCurrentRemoteSchemaState\(target, preflight\.remote\)/u);
   assert.doesNotMatch(source, /queues['",\s]+send/iu);
   assert.doesNotMatch(source, /\bfetch\s*\(/u);
   assert.doesNotMatch(source, /LarkMessageClient|TableSyncEngine/u);
@@ -133,14 +193,35 @@ function createEvidence() {
     activeVersionId: VERSION_ID,
     trafficPercentage: 100,
     notificationFlagsAllFalse: true,
+    remoteStateComparedTo: 'fresh_pre_deploy_snapshot',
+    retainedActiveWorkCountBefore: 0,
+    retainedActiveWorkCountAfter: 0,
     activeLocksBefore: 0,
     activeLocksAfter: 0,
-    businessFactDrift: false,
-    retainedActiveWorkDrift: false,
+    notificationSchemaDrift: false,
+    externalStateChangeObserved: false,
+    externalStateChangedFields: [],
     queueSendCount: 0,
     larkWriteCount: 0,
     notificationSendCount: 0,
     automationActivationCount: 0,
     scheduleActivationCount: 0,
+  };
+}
+
+function createRemoteState(overrides = {}) {
+  return {
+    notification_table_count: 1,
+    notification_index_count: 3,
+    notification_delivery_rows: 0,
+    active_work: 0,
+    active_locks: 0,
+    sync_runs: 2573,
+    sync_jobs: 0,
+    coverage_runs: 151,
+    coverage_entities: 23482,
+    organic_content_state: 2889,
+    organic_content_observations: 4014,
+    ...overrides,
   };
 }
