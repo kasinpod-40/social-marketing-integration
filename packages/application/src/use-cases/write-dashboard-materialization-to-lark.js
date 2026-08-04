@@ -191,11 +191,11 @@ function buildSharedDimensions(input) {
 /**
  * The frozen Integration Workspace keeps Number window_days as planning/write authority and mirrors the
  * same preset into the immutable physical SingleSelect used by existing Dashboard slicers and charts.
+ * Other customer profiles retain the normal SingleSelect text contract.
  */
 function buildMetricSharedDimensions(sharedDimensions) {
   const periodKind = requireText(sharedDimensions.period_kind, 'sharedDimensions.period_kind');
-  const compatibility = sharedDimensions.customer_profile === 'integration_workspace'
-    && sharedDimensions.account_id === 'chemistry_k';
+  const compatibility = sharedDimensions.customer_profile === 'integration_workspace';
   if (periodKind === 'custom_range') {
     if (sharedDimensions.window_days !== null) {
       throw new TypeError('custom_range metric dimensions must keep window_days null');
@@ -212,7 +212,7 @@ function buildMetricSharedDimensions(sharedDimensions) {
   }
   return Object.freeze({
     ...sharedDimensions,
-    window_days: Number(value),
+    window_days: compatibility ? Number(value) : value,
     ...(compatibility ? { [DASHBOARD_COMPATIBILITY_WINDOW_FIELD]: value } : {}),
   });
 }
