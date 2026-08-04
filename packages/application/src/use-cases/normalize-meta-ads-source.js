@@ -19,6 +19,22 @@ import {
 } from '../../../connectors/src/meta/meta-business-normalization.helpers.js';
 
 const ENTITY_TYPES = new Set(['account', 'campaign', 'ad_group', 'ad', 'creative']);
+const PUBLISHER_PLATFORM_AD_CHANNELS = Object.freeze({
+  audience_network: 'audience_network_ads',
+  facebook: 'facebook_ads',
+  instagram: 'instagram_ads',
+  messenger: 'messenger_ads',
+  threads: 'threads_ads',
+  unknown: null,
+  whatsapp: 'whatsapp_ads',
+});
+const CANONICAL_STATUS_OPTIONS = Object.freeze({
+  account: Object.freeze(new Set(['active', 'paused', 'removed', 'unknown'])),
+  campaign: Object.freeze(new Set(['active', 'paused', 'removed', 'deleted', 'ended', 'unknown'])),
+  ad_group: Object.freeze(new Set(['active', 'paused', 'removed', 'deleted', 'unknown'])),
+  ad: Object.freeze(new Set(['active', 'paused', 'removed', 'unknown'])),
+  creative: Object.freeze(new Set(['active', 'paused', 'removed', 'unknown'])),
+});
 
 /** แปลง Marketing API entity เป็น Shared Raw entity + D1 candidate โดยไม่เขียน */
 export function normalizeMetaAdsEntityFixture(input = {}) {
@@ -77,7 +93,7 @@ export function normalizeMetaAdsEntityFixture(input = {}) {
       parentAdGroupId,
       externalCreativeId: creativeId,
       entityName: rawRow.entity_name,
-      status: rawRow.status,
+      status: normalizeCanonicalEntityStatus(entityType, rawRow.status),
       objective: rawRow.objective,
       currency: rawRow.currency,
       timezone: rawRow.timezone,
@@ -109,9 +125,7 @@ export function normalizeMetaAdsDailyFixture(input = {}) {
   const campaignId = optionalIdentity(resource.campaign_id, 'campaign_id');
   const adGroupId = optionalIdentity(resource.adset_id, 'adset_id');
   const publisherPlatform = requirePublisherPlatform(resource.publisher_platform);
-  const adChannel = publisherPlatform === 'facebook'
-    ? 'facebook_ads'
-    : 'instagram_ads';
+  const adChannel = PUBLISHER_PLATFORM_AD_CHANNELS[publisherPlatform];
   const breakdownKey = `publisher_platform=${publisherPlatform}`;
   const segmentKey = 'none';
   const fetchedAt = requireMetaTimestamp(input.fetchedAt, 'fetchedAt');
@@ -205,6 +219,40 @@ export function normalizeMetaAdsDailyFixture(input = {}) {
   });
 }
 
+function normalizeCanonicalEntityStatus(entityType, value) {
+  const text = optionalMetaText(value, 'status');
+  if (!text) return null;
+  const normalized = text.trim().toUpperCase();
+  let status = 'unknown';
+
+  if (normalized === '1' || normalized === 'ACTIVE' || normalized === 'ANY_ACTIVE') {
+    status = 'active';
+  } else if ([
+    '2',
+    'DISABLED',
+    'PAUSED',
+    'CAMPAIGN_PAUSED',
+    'ADSET_PAUSED',
+  ].includes(normalized)) {
+    status = 'paused';
+  } else if ([
+    '100',
+    '101',
+    'ARCHIVED',
+    'CLOSED',
+    'REMOVED',
+    'ANY_CLOSED',
+  ].includes(normalized)) {
+    status = 'removed';
+  } else if (normalized === 'DELETED') {
+    status = ['campaign', 'ad_group'].includes(entityType) ? 'deleted' : 'removed';
+  } else if (['COMPLETED', 'ENDED'].includes(normalized) && entityType === 'campaign') {
+    status = 'ended';
+  }
+
+  return CANONICAL_STATUS_OPTIONS[entityType].has(status) ? status : 'unknown';
+}
+
 function optionalIdentity(value, fieldName) {
   if (value === null || value === undefined || value === '') return null;
   return requireMetaExternalId(value, fieldName);
@@ -229,7 +277,7 @@ function optionalDatePrefix(value, fieldName) {
 
 function requirePublisherPlatform(value) {
   const platform = requireMetaText(value, 'publisher_platform').toLowerCase();
-  if (!['facebook', 'instagram'].includes(platform)) {
+  if (!Object.hasOwn(PUBLISHER_PLATFORM_AD_CHANNELS, platform)) {
     throw new TypeError('Meta Ads publisher_platform is unsupported');
   }
   return platform;

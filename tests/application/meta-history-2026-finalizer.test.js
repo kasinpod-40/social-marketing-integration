@@ -5,17 +5,50 @@ import {
   META_HISTORY_2026_DECISION,
   META_HISTORY_2026_LEGACY_SESSION,
   createMetaHistory2026Plan,
+  createMetaHistoryCloudflarePhaseEnvironment,
   createMetaHistoryPinnedContinuity,
   injectMetaHistoryConfig,
+  normalizeMetaHistoryExecutionTarget,
   readMetaLarkSummaryCompletion,
-  shouldExpandMetaAdsHistory,
   validateMetaHistory2026Summary,
   validateMetaHistoryPinnedContinuity,
 } from '../../scripts/lib/meta-history-2026-finalizer.js';
 
 const HEAD = 'a'.repeat(40);
 
-test('Meta history plan includes Facebook and Instagram July plus adaptive Ads windows', () => {
+test('Meta targeted execution accepts only the two July Ads accounts', () => {
+  assert.equal(normalizeMetaHistoryExecutionTarget('chemistry_k2'), 'chemistry_k2');
+  assert.equal(normalizeMetaHistoryExecutionTarget('chemistry_k3'), 'chemistry_k3');
+  assert.throws(
+    () => normalizeMetaHistoryExecutionTarget('facebook'),
+    (error) => error?.code === 'META_HISTORY_2026_EXECUTION_TARGET_INVALID',
+  );
+});
+
+test('Cloudflare phase environment keeps explicit tokens and preserves refreshable OAuth sessions', () => {
+  assert.deepEqual(createMetaHistoryCloudflarePhaseEnvironment({ KEEP: 'yes' }, {
+    accountId: 'account-1',
+    apiToken: 'explicit-token',
+    authSource: 'environment',
+  }), {
+    KEEP: 'yes',
+    CLOUDFLARE_ACCOUNT_ID: 'account-1',
+    CLOUDFLARE_API_TOKEN: 'explicit-token',
+  });
+  assert.deepEqual(createMetaHistoryCloudflarePhaseEnvironment({
+    KEEP: 'yes',
+    CLOUDFLARE_API_TOKEN: 'stale-oauth-token',
+  }, {
+    accountId: 'account-1',
+    apiToken: 'fresh-oauth-token',
+    authSource: 'wrangler_auth_session',
+  }), {
+    KEEP: 'yes',
+    CLOUDFLARE_ACCOUNT_ID: 'account-1',
+  });
+});
+
+test('Meta history plan limits Organic and Ads to July with no Ads expansion', () => {
   const plan = createMetaHistory2026Plan(HEAD);
   assert.equal(plan.facebook.existingOperationReplay, false);
   assert.equal(plan.facebook.replacementOperation, false);
@@ -27,12 +60,10 @@ test('Meta history plan includes Facebook and Instagram July plus adaptive Ads w
   assert.deepEqual(plan.operations.map((item) => [item.target, item.periodStart, item.periodEnd, item.mode]), [
     ['facebook', '2026-07-01', '2026-07-31', 'required'],
     ['instagram', '2026-07-01', '2026-07-31', 'required'],
-    ['chemistry_k2', '2026-05-01', '2026-07-31', 'required'],
-    ['chemistry_k3', '2026-05-01', '2026-07-31', 'required'],
-    ['chemistry_k2', '2026-01-01', '2026-04-30', 'conditional'],
-    ['chemistry_k3', '2026-01-01', '2026-04-30', 'conditional'],
+    ['chemistry_k2', '2026-07-01', '2026-07-31', 'required'],
+    ['chemistry_k3', '2026-07-01', '2026-07-31', 'required'],
   ]);
-  assert.equal(new Set(plan.operations.map((item) => item.operationId)).size, 6);
+  assert.equal(new Set(plan.operations.map((item) => item.operationId)).size, 4);
   assert.equal(
     plan.operations.some((item) => item.operationId === META_HISTORY_2026_LEGACY_SESSION.operationId),
     false,
@@ -85,7 +116,7 @@ test('Meta pinned continuity rejects invalid read-only evidence envelope', () =>
 
 test('Meta pinned continuity rejects drift in any current operation', () => {
   const plan = structuredClone(createMetaHistory2026Plan(HEAD));
-  plan.operations[4].periodStart = '2026-02-01';
+  plan.operations[2].periodStart = '2026-06-01';
   assert.throws(
     () => createMetaHistoryPinnedContinuity({
       repositoryHead: HEAD,
@@ -147,22 +178,6 @@ test('Meta history config injects inventory bounds and absolute runtime paths id
   assert.match(once, /"MKT_META_INSTAGRAM_CONTENT_UNTIL": "2026-07-31"/u);
 });
 
-test('Meta Ads expands to start of year only under bounded completed volume', () => {
-  const safe = [summary(4000, 1000, 6000), summary(5000, 1000, 7000)];
-  assert.equal(shouldExpandMetaAdsHistory(safe).allowed, true);
-  const large = [summary(9000, 3000, 12000), summary(9000, 3000, 12000)];
-  assert.equal(shouldExpandMetaAdsHistory(large).allowed, false);
-});
-
-test('Meta Ads expansion rejects incomplete or invalid Coverage summaries', () => {
-  const invalid = summary(0, 0, 0);
-  invalid.data.snapshotAfter.invalidCoverageCount = 1;
-  assert.throws(
-    () => shouldExpandMetaAdsHistory([invalid, summary(0, 0, 0)]),
-    (error) => error?.code === 'META_HISTORY_2026_ADS_BASELINE_INVALID',
-  );
-});
-
 test('Meta final summary accepts modern continuity and requires completed Facebook supplemental operation', () => {
   const continuity = createMetaHistoryPinnedContinuity({
     repositoryHead: HEAD,
@@ -174,7 +189,7 @@ test('Meta final summary accepts modern continuity and requires completed Facebo
     decision: META_HISTORY_2026_DECISION,
     facebook: { ...continuity, historyCompleted: true },
     instagram: { completed: true },
-    metaAds: { baselineCompleted: true },
+    metaAds: { julyCompleted: true },
     operations: [{
       target: 'facebook',
       operationId: continuity.supplementalOperationId,
@@ -243,20 +258,6 @@ function readOnlySummary() {
           requestAttempts: 1,
         },
       ],
-    },
-  };
-}
-
-function summary(adsDaily, adsEntities, coverageEntities) {
-  return {
-    data: {
-      snapshotAfter: {
-        syncRunStatus: 'success',
-        activeLockCount: 0,
-        invalidCoverageCount: 0,
-        coverageEntityCount: coverageEntities,
-        operationCounts: { adsDaily, adsEntities },
-      },
     },
   };
 }

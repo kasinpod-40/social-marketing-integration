@@ -73,12 +73,14 @@ export function buildMetaOrganicWriteSet(input = {}) {
       syncRunId,
       reportingTimezone: sourceTimezone,
     });
-    rawMetrics.push(...normalizedInsights.rawRows);
+    rawMetrics.push(...normalizedInsights.rawRows.map(
+      (row) => larkRawMetricRow(row, sourceTimezone),
+    ));
     const metrics = contentMetricSnapshot(normalizedInsights.metricCandidates);
     const hasObservedMetric = Object.values(metrics).some((value) => value !== null);
     const metricDate = latestMetricDate(normalizedInsights.metricCandidates)
       ?? dateOnlyInTimeZone(fetchedAt, sourceTimezone);
-    const rows = createOrganicContentRows({
+    const rowInput = {
       platform,
       accountId,
       externalContentId: normalized.contentCandidate.externalContentId,
@@ -92,12 +94,20 @@ export function buildMetaOrganicWriteSet(input = {}) {
       durationSeconds: null,
       classification: {},
       metrics,
-    });
-    canonicalContent.push(compact(rows.content, hasObservedMetric ? [] : LATEST_METRIC_FIELDS));
+    };
+    const rows = createOrganicContentRows(rowInput);
+    canonicalContent.push(compact({
+      ...rows.content,
+      content_type: canonicalContentType(rows.content.content_type),
+    }, hasObservedMetric ? [] : LATEST_METRIC_FIELDS));
     if (hasObservedMetric) {
       canonicalContentDaily.push(rows.dailySnapshot);
-      historyContent.push(rows.content);
-      historyDaily.push(rows.dailySnapshot);
+      // Canonical Lark rows retain the approved Provider account identity, while
+      // D1 history is keyed by the configured account_key and keeps the Provider
+      // identity separately as source_account_id in OrganicHistoryWriter.
+      const historyRows = createOrganicContentRows({ ...rowInput, accountId: accountKey });
+      historyContent.push(historyRows.content);
+      historyDaily.push(historyRows.dailySnapshot);
     }
   }
 
@@ -111,7 +121,9 @@ export function buildMetaOrganicWriteSet(input = {}) {
     syncRunId,
     reportingTimezone: sourceTimezone,
   });
-  rawMetrics.push(...normalizedAccountInsights.rawRows);
+  rawMetrics.push(...normalizedAccountInsights.rawRows.map(
+    (row) => larkRawMetricRow(row, sourceTimezone),
+  ));
 
   const accountDaily = buildAccountDailyRows({
     platform,
@@ -137,7 +149,7 @@ export function buildMetaOrganicWriteSet(input = {}) {
     platform,
     account_id: accountId,
     account_name: accountNormalized.accountCandidate.accountName,
-    account_type: accountNormalized.accountCandidate.accountType,
+    account_type: canonicalAccountType(platform, accountNormalized.accountCandidate.accountType),
     last_sync_at: completedAt,
   });
 
@@ -378,6 +390,31 @@ function normalizeInsightEntries(values, fieldName) {
 function latestMetricDate(candidates) {
   const dates = candidates.map((candidate) => candidate.metricDate).filter(Boolean).sort();
   return dates.at(-1) ?? null;
+}
+
+function larkRawMetricRow(row, sourceTimezone) {
+  return Object.freeze({
+    ...row,
+    // Provider descriptors without values are an explicit internal "unavailable"
+    // shape. The approved Shared RAW Lark select contract represents every
+    // non-values/total_value/scalar shape as "other" while the null value and
+    // original descriptor remain preserved in source_payload_json.
+    response_shape: row.response_shape === 'unavailable' ? 'other' : row.response_shape,
+    metric_date: dateOnlyToEpoch(row.metric_date, sourceTimezone),
+  });
+}
+
+function canonicalAccountType(platform, sourceAccountType) {
+  if (platform === 'facebook') return 'page';
+  if (sourceAccountType === 'business') return 'business_account';
+  if (sourceAccountType === 'creator') return 'profile';
+  return null;
+}
+
+function canonicalContentType(sourceContentType) {
+  if (['post', 'image', 'carousel', 'status', 'link'].includes(sourceContentType)) return 'post';
+  if (['video', 'reel', 'story', 'live'].includes(sourceContentType)) return sourceContentType;
+  return null;
 }
 
 function dateOnlyInTimeZone(epochMs, timeZone) {

@@ -8,6 +8,8 @@ const PREFLIGHT_PHASE = 'meta_end_to_end_destination_preflight_v1';
 const D1_PHASE = 'meta_end_to_end_d1_write_v1';
 const LARK_PHASE = 'meta_end_to_end_lark_write_v1';
 const COMPLETION_PHASE = 'meta_end_to_end_completion_v1';
+const D1_STORE_BATCH_ROWS = 100;
+const MAX_PREFLIGHT_DIAGNOSTIC_ISSUES = 100;
 
 /**
  * Durable business processor for an already authenticated/staged Meta generation.
@@ -125,22 +127,60 @@ export async function processMetaEndToEndGeneration(input = {}) {
 async function ensureDestinationPreflight(input) {
   const existing = await input.workStore.loadPhase({ workKey: input.workKey, phase: PREFLIGHT_PHASE });
   if (existing?.complete) return normalizePreflight(existing);
+
+  const payloadInspection = await inspectCompleteLarkPayload(input);
+  if (payloadInspection.issueCount > 0) {
+    throw permanentError('Meta Lark preflight found invalid fields across the complete payload', {
+      code: 'LARK_PREFLIGHT_FAILED',
+      details: {
+        fieldName: payloadInspection.issues[0]?.fieldName ?? null,
+        issueCount: payloadInspection.issueCount,
+        tablesChecked: payloadInspection.tablesChecked,
+        rowsChecked: payloadInspection.rowsChecked,
+        fieldsChecked: payloadInspection.fieldsChecked,
+        issues: payloadInspection.issues,
+        issuesTruncated: payloadInspection.issuesTruncated,
+      },
+    });
+  }
+
   const summaries = [];
+  const planningIssues = [];
   for (const contract of input.contracts) {
     await input.assertLockActive();
     const rows = readPath(input.writeSet, contract.path);
     const tableId = requireText(input.tables[contract.tableKey], `tables.${contract.tableKey}`);
-    const plan = await input.syncEngine.planByKey({
-      repository: input.repository,
-      tableId,
-      keyField: contract.keyField,
-      rows,
-    });
-    if (plan.duplicateInputRows !== 0) {
-      throw permanentError('Meta Lark preflight found duplicate stable keys', {
-        code: 'META_END_TO_END_LARK_PREFLIGHT_DUPLICATE',
-        details: { tableKey: contract.tableKey, duplicateInputRows: plan.duplicateInputRows },
+    let plan;
+    try {
+      plan = await input.syncEngine.planByKey({
+        repository: input.repository,
+        tableId,
+        keyField: contract.keyField,
+        rows,
       });
+    } catch (error) {
+      if (error?.code !== 'LARK_PREFLIGHT_FAILED') throw error;
+      addAggregatedPreflightIssue(planningIssues, {
+        tableKey: contract.tableKey,
+        fieldName: optionalText(error?.details?.fieldName) ?? 'unknown',
+        rowIndex: null,
+        reasonCode: classifyPreflightReason(error),
+        destinationType: null,
+        incomingType: 'existing_record',
+      });
+      continue;
+    }
+    if (plan.duplicateInputRows !== 0) {
+      planningIssues.push(Object.freeze({
+        tableKey: contract.tableKey,
+        fieldName: contract.keyField,
+        rowIndex: null,
+        reasonCode: 'DUPLICATE_STABLE_KEY',
+        destinationType: null,
+        incomingType: 'text',
+        affectedRows: plan.duplicateInputRows,
+      }));
+      continue;
     }
     summaries.push(Object.freeze({
       tableKey: contract.tableKey,
@@ -151,10 +191,35 @@ async function ensureDestinationPreflight(input) {
       skipped: plan.skipped,
     }));
   }
+
+  if (planningIssues.length > 0) {
+    const issues = sortAndLimitIssues(planningIssues);
+    throw permanentError('Meta Lark preflight planning failed after complete payload validation', {
+      code: 'LARK_PREFLIGHT_FAILED',
+      details: {
+        fieldName: issues.items[0]?.fieldName ?? null,
+        issueCount: planningIssues.length,
+        tablesChecked: input.contracts.length,
+        rowsChecked: payloadInspection.rowsChecked,
+        fieldsChecked: payloadInspection.fieldsChecked,
+        issues: issues.items,
+        issuesTruncated: issues.truncated,
+      },
+    });
+  }
+
   const saved = await input.workStore.savePhase({
     workKey: input.workKey,
     phase: PREFLIGHT_PHASE,
-    state: { summaries },
+    state: {
+      summaries,
+      diagnostics: {
+        tablesChecked: payloadInspection.tablesChecked,
+        rowsChecked: payloadInspection.rowsChecked,
+        fieldsChecked: payloadInspection.fieldsChecked,
+        issueCount: 0,
+      },
+    },
     expectedItems: input.contracts.length,
     processedItems: input.contracts.length,
     pagesProcessed: 0,
@@ -162,6 +227,175 @@ async function ensureDestinationPreflight(input) {
     complete: true,
   });
   return normalizePreflight(saved);
+}
+
+async function inspectCompleteLarkPayload(input) {
+  if (typeof input.repository?.prepareRows !== 'function'
+    || typeof input.repository?.getTableFields !== 'function') {
+    return Object.freeze({
+      supported: false,
+      tablesChecked: 0,
+      rowsChecked: 0,
+      fieldsChecked: 0,
+      issueCount: 0,
+      issues: Object.freeze([]),
+      issuesTruncated: false,
+    });
+  }
+
+  const issues = [];
+  let rowsChecked = 0;
+  let fieldsChecked = 0;
+
+  for (const contract of input.contracts) {
+    await input.assertLockActive();
+    const rows = readPath(input.writeSet, contract.path);
+    const tableId = requireText(input.tables[contract.tableKey], `tables.${contract.tableKey}`);
+    const fields = await input.repository.getTableFields(tableId);
+    const fieldTypes = new Map(fields.map((field) => [
+      requireText(field?.fieldName ?? field?.field_name ?? field?.name, 'field.name'),
+      Number.isInteger(Number(field?.type)) ? Number(field.type) : null,
+    ]));
+
+    for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+      const row = requireObject(rows[rowIndex], `${contract.path}[${rowIndex}]`);
+      rowsChecked += 1;
+      fieldsChecked += Object.keys(row).length;
+
+      const keyProbe = { [contract.keyField]: row[contract.keyField] };
+      const keyValid = await inspectLarkFieldProbe({
+        repository: input.repository,
+        tableId,
+        tableKey: contract.tableKey,
+        keyField: contract.keyField,
+        fieldName: contract.keyField,
+        value: row[contract.keyField],
+        rowIndex,
+        probe: keyProbe,
+        destinationType: fieldTypes.get(contract.keyField) ?? null,
+        issues,
+      });
+      if (!keyValid) continue;
+
+      for (const fieldName of Object.keys(row).sort()) {
+        if (fieldName === contract.keyField) continue;
+        await inspectLarkFieldProbe({
+          repository: input.repository,
+          tableId,
+          tableKey: contract.tableKey,
+          keyField: contract.keyField,
+          fieldName,
+          value: row[fieldName],
+          rowIndex,
+          probe: {
+            [contract.keyField]: row[contract.keyField],
+            [fieldName]: row[fieldName],
+          },
+          destinationType: fieldTypes.get(fieldName) ?? null,
+          issues,
+        });
+      }
+    }
+  }
+
+  const limited = sortAndLimitIssues(issues);
+  return Object.freeze({
+    supported: true,
+    tablesChecked: input.contracts.length,
+    rowsChecked,
+    fieldsChecked,
+    issueCount: issues.length,
+    issues: limited.items,
+    issuesTruncated: limited.truncated,
+  });
+}
+
+async function inspectLarkFieldProbe(input) {
+  try {
+    await input.repository.prepareRows(input.tableId, [input.probe], {
+      keyField: input.keyField,
+    });
+    return true;
+  } catch (error) {
+    if (error?.code !== 'LARK_PREFLIGHT_FAILED') throw error;
+    addAggregatedPreflightIssue(input.issues, {
+      tableKey: input.tableKey,
+      fieldName: optionalText(error?.details?.fieldName) ?? input.fieldName,
+      rowIndex: input.rowIndex,
+      reasonCode: classifyPreflightReason(error),
+      destinationType: input.destinationType,
+      incomingType: incomingValueType(input.value),
+    });
+    return false;
+  }
+}
+
+function addAggregatedPreflightIssue(issues, issue) {
+  const existing = issues.find((candidate) => (
+    candidate.tableKey === issue.tableKey
+    && candidate.fieldName === issue.fieldName
+    && candidate.reasonCode === issue.reasonCode
+    && candidate.destinationType === issue.destinationType
+    && candidate.incomingType === issue.incomingType
+  ));
+  if (existing) {
+    existing.affectedRows += 1;
+    return;
+  }
+  issues.push({
+    ...issue,
+    affectedRows: 1,
+  });
+}
+
+function sortAndLimitIssues(issues) {
+  const sorted = [...issues]
+    .sort((left, right) => [
+      left.tableKey,
+      left.fieldName,
+      left.reasonCode,
+      String(left.destinationType ?? ''),
+      left.incomingType,
+    ].join(':').localeCompare([
+      right.tableKey,
+      right.fieldName,
+      right.reasonCode,
+      String(right.destinationType ?? ''),
+      right.incomingType,
+    ].join(':')))
+    .map((issue) => Object.freeze({ ...issue }));
+  return Object.freeze({
+    items: Object.freeze(sorted.slice(0, MAX_PREFLIGHT_DIAGNOSTIC_ISSUES)),
+    truncated: sorted.length > MAX_PREFLIGHT_DIAGNOSTIC_ISSUES,
+  });
+}
+
+function classifyPreflightReason(error) {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  if (message.includes('field does not exist in destination schema')) return 'FIELD_MISSING';
+  if (message.includes('stable key is missing after serialization')) return 'STABLE_KEY_MISSING';
+  if (message.includes('not configured in destination select options')) return 'SELECT_OPTION_INVALID';
+  if (message.includes('unsupported writable Lark field type')) return 'DESTINATION_TYPE_UNSUPPORTED';
+  if (message.includes('date-time') || message.includes('supported range 2000-2100')) {
+    return 'DATE_TIME_INVALID';
+  }
+  if (message.includes('finite number') || message.includes('canonicalized to fixed precision')) {
+    return 'NUMBER_INVALID';
+  }
+  if (message.includes('boolean checkbox')) return 'CHECKBOX_INVALID';
+  if (message.includes('absolute http/https URL') || message.includes('non-empty URL')) {
+    return 'URL_INVALID';
+  }
+  if (message.includes('expected an array')) return 'MULTI_SELECT_INVALID';
+  if (message.includes('text-compatible value')) return 'TEXT_INVALID';
+  return 'SERIALIZATION_INVALID';
+}
+
+function incomingValueType(value) {
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return 'array';
+  if (value instanceof Date) return 'date';
+  return typeof value;
 }
 
 async function executeD1Phase(input) {
@@ -215,13 +449,26 @@ async function executeD1Phase(input) {
   }
 
   const operations = d1Operations(input.writeSet);
-  const stop = Math.min(operations.length, state.nextIndex + input.maxD1Rows);
-  while (state.nextIndex < stop) {
+  const start = state.nextIndex;
+  const stop = Math.min(operations.length, start + input.maxD1Rows);
+  const batch = operations.slice(start, stop);
+  if (batch.length > 0) {
     await input.assertLockActive();
-    const operation = operations[state.nextIndex];
-    const result = await executeD1Operation(input.historyStore, operation);
-    accumulateD1(state.counts, operation.kind, result);
-    state.nextIndex += 1;
+    const results = await executeD1Operations(input.historyStore, batch);
+    await input.assertLockActive();
+    if (!Array.isArray(results) || results.length !== batch.length) {
+      throw permanentError('Meta D1 batch result does not match the requested operation count', {
+        code: 'META_END_TO_END_D1_BATCH_RECONCILIATION_FAILED',
+        details: {
+          expectedResults: batch.length,
+          observedResults: Array.isArray(results) ? results.length : null,
+        },
+      });
+    }
+    for (let index = 0; index < batch.length; index += 1) {
+      accumulateD1(state.counts, batch[index].kind, results[index]);
+      state.nextIndex += 1;
+    }
   }
   const complete = state.nextIndex >= operations.length;
   const saved = await input.workStore.savePhase({
@@ -233,9 +480,9 @@ async function executeD1Phase(input) {
     pagesProcessed: 0,
     chunksProcessed: Math.ceil(Math.max(1, state.nextIndex) / input.maxD1Rows),
     complete,
-    unit: stop > 0 ? {
-      unitKey: `rows:${Math.max(0, stop - input.maxD1Rows)}-${stop}`,
-      sequence: Math.max(0, stop - 1),
+    unit: batch.length > 0 ? {
+      unitKey: `rows:${start}-${stop}`,
+      sequence: stop - 1,
       payload: { nextIndex: state.nextIndex, complete },
     } : undefined,
   });
@@ -312,6 +559,32 @@ function d1Operations(writeSet) {
   ]);
 }
 
+async function executeD1Operations(store, operations) {
+  if (typeof store.writeMetaD1Operations === 'function') {
+    const results = [];
+    for (let offset = 0; offset < operations.length; offset += D1_STORE_BATCH_ROWS) {
+      const batch = operations.slice(offset, offset + D1_STORE_BATCH_ROWS);
+      const batchResults = await store.writeMetaD1Operations(batch);
+      if (!Array.isArray(batchResults) || batchResults.length !== batch.length) {
+        throw permanentError('Meta D1 store batch returned an invalid result count', {
+          code: 'META_END_TO_END_D1_BATCH_RECONCILIATION_FAILED',
+          details: {
+            expectedResults: batch.length,
+            observedResults: Array.isArray(batchResults) ? batchResults.length : null,
+          },
+        });
+      }
+      results.push(...batchResults);
+    }
+    return results;
+  }
+  const results = [];
+  for (const operation of operations) {
+    results.push(await executeD1Operation(store, operation));
+  }
+  return results;
+}
+
 async function executeD1Operation(store, operation) {
   if (operation.kind === 'account_daily') return store.upsertOrganicAccountDailyFact(operation.row);
   if (operation.kind === 'ads_entity') return store.upsertAdsEntityState(operation.row);
@@ -379,6 +652,24 @@ function normalizePreflight(value) {
     complete: value?.complete === true,
     state: Object.freeze({
       summaries: Object.freeze(Array.isArray(value?.state?.summaries) ? value.state.summaries : []),
+      diagnostics: Object.freeze({
+        tablesChecked: nonNegativeInteger(
+          value?.state?.diagnostics?.tablesChecked ?? 0,
+          'preflight.diagnostics.tablesChecked',
+        ),
+        rowsChecked: nonNegativeInteger(
+          value?.state?.diagnostics?.rowsChecked ?? 0,
+          'preflight.diagnostics.rowsChecked',
+        ),
+        fieldsChecked: nonNegativeInteger(
+          value?.state?.diagnostics?.fieldsChecked ?? 0,
+          'preflight.diagnostics.fieldsChecked',
+        ),
+        issueCount: nonNegativeInteger(
+          value?.state?.diagnostics?.issueCount ?? 0,
+          'preflight.diagnostics.issueCount',
+        ),
+      }),
     }),
   });
 }
@@ -462,6 +753,12 @@ function requireObject(value, fieldName) {
 function requireText(value, fieldName) {
   if (typeof value !== 'string' || value.trim() === '') throw new TypeError(`${fieldName} is required`);
   return value.trim();
+}
+
+function optionalText(value) {
+  if (typeof value !== 'string') return null;
+  const text = value.trim();
+  return text === '' ? null : text;
 }
 
 function boundedInteger(value, fieldName, minimum, maximum) {

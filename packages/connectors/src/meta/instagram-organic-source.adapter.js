@@ -87,8 +87,14 @@ export class InstagramOrganicSourceAdapter {
 
   async #fetchInsightsPage({ input, dataset, accountId, sourceEntityId, pathValues }) {
     const range = normalizeMetaDateRange(input);
-    const metricType = optionalQueryToken(input.metricType, 'metricType');
-    const period = optionalQueryToken(input.period, 'period');
+    const metricType = optionalQueryToken(
+      input.metricType ?? dataset.queryContract?.metricType,
+      'metricType',
+    );
+    const period = optionalQueryToken(
+      input.period ?? dataset.queryContract?.period,
+      'period',
+    );
     const page = await this.client.getPage(
       buildMetaDatasetPath(dataset, pathValues),
       {

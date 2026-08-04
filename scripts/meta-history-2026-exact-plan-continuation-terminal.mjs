@@ -3,6 +3,7 @@
 import { spawnSync } from 'node:child_process';
 import {
   chmod,
+  lstat,
   mkdir,
   readFile,
   rename,
@@ -27,11 +28,9 @@ import {
 
 const repositoryRoot = resolve(process.cwd());
 const target = META_HISTORY_EXACT_CONTINUATION_TARGET;
-const childPath = join(
-  repositoryRoot,
-  'scripts',
-  'meta-history-2026-exact-plan-continuation.mjs',
-);
+const childPath = process.env.MKT_META_HISTORY_EXACT_CONTINUATION_CHILD
+  ? resolve(process.env.MKT_META_HISTORY_EXACT_CONTINUATION_CHILD)
+  : join(repositoryRoot, 'scripts', 'meta-history-2026-exact-plan-continuation.mjs');
 const retainedHistoryRoot = join(
   repositoryRoot,
   'outputs',
@@ -68,6 +67,8 @@ try {
     assertMetaHistoryExactContinuationConfirmation(process.env);
     stage = 'verify-current-main-before-local-summary';
     assertExactCurrentMain();
+    stage = 'verify-exact-continuation-child';
+    await assertRegularFile(childPath, 'exact continuation child');
     stage = 'materialize-retained-d1-summary';
     await ensureRetainedD1Summary();
     stage = 'prepare-isolated-clone-git-exclude';
@@ -274,6 +275,21 @@ async function regularFile(path) {
     if (error?.code === 'ENOENT') return false;
     throw error;
   }
+}
+
+async function assertRegularFile(path, fieldName) {
+  try {
+    const linkInfo = await lstat(path);
+    const info = await stat(path);
+    if (!linkInfo.isSymbolicLink() && info.isFile()) return;
+  } catch {
+    // normalized below
+  }
+  throw terminalError(
+    `${fieldName} must be a regular file`,
+    'META_HISTORY_EXACT_CONTINUATION_CHILD_INVALID',
+    { fieldName },
+  );
 }
 
 function gitText(args, trim = true) {

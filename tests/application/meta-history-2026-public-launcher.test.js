@@ -21,6 +21,13 @@ test('Meta history closeout child delegates to the guarded finalizer and exact e
   assert.match(source, /ensureRemoteAllFalse/u);
   assert.match(source, /META_HISTORY_2026_DECISION/u);
   assert.match(source, /process\.stdout\.write\(`\$\{META_HISTORY_2026_DECISION\}/u);
+  const cloudflareContext = source.slice(
+    source.indexOf('async function resolveCloudflareContext'),
+    source.indexOf('async function loadPrivateEnvironment'),
+  );
+  assert.match(cloudflareContext, /const explicitAccountId = optionalText\(env\.CLOUDFLARE_ACCOUNT_ID\)/u);
+  assert.match(cloudflareContext, /whoamiOutput: explicitAccountId[\s\S]+\? null[\s\S]+wrangler', 'whoami'/u);
+  assert.doesNotMatch(cloudflareContext, /const whoami = runText/u);
   assert.doesNotMatch(source, /larkSummary\.data\.larkVerified/u);
 });
 
@@ -73,6 +80,16 @@ test('Meta history Terminal materializes Shared required false flags and custome
   assert.match(safeEnvironment, /result\[key\] = 'false'/u);
 });
 
+test('Targeted Meta finalizer materializes the same all-false runtime authority before read-only preflight', async () => {
+  const finalizer = await readFile(finalizerChild, 'utf8');
+  assert.match(finalizer, /applyMetaHistoryCustomerRuntimeEnvironment/u);
+  assert.match(
+    finalizer,
+    /closeExecutionFlags\(applyMetaHistoryCustomerRuntimeEnvironment\(\{/u,
+  );
+  assert.match(finalizer, /fresh-read-only-validation/u);
+});
+
 test('Meta runtime authority materializes customer mappings and the complete Shared safe-config set', async () => {
   const source = await readFile(runtimeAuthority, 'utf8');
   assert.match(source, /META_D1_ONLY_REQUIRED_FALSE_FLAGS/u);
@@ -84,21 +101,27 @@ test('Meta runtime authority materializes customer mappings and the complete Sha
   assert.doesNotMatch(source, /MKT_WOOCOMMERCE_D1_WRITE_ENABLED:\s*'false'/u);
 });
 
-test('Meta D1 and Lark launchers materialize the same private reviewed runtime config', async () => {
+test('Meta D1 and Lark launchers materialize purpose-specific private reviewed runtime configs', async () => {
   const [d1, lark] = await Promise.all([
     readFile(d1Launcher, 'utf8'),
     readFile(larkLauncher, 'utf8'),
   ]);
   for (const source of [d1, lark]) {
-    assert.match(source, /materializeMetaHistoryCustomerRuntimeConfig/u);
     assert.match(source, /applyMetaHistoryCustomerRuntimeEnvironment\(process\.env\)/u);
     assert.match(source, /join\(dirname\(originalConfig\), 'wrangler\.meta-history\.runtime\.jsonc'\)/u);
-    assert.match(source, /writeFile\([\s\S]+runtimeConfig[\s\S]+materializeMetaHistoryCustomerRuntimeConfig\(sourceText\)/u);
     assert.match(source, /chmod\(runtimeConfig, 0o600\)/u);
     assert.match(source, /MKT_META_D1_ONLY_COMPAT_ORIGINAL_CONFIG: runtimeConfig/u);
     assert.doesNotMatch(source, /join\(tempDirectory, 'wrangler\.meta-history\.runtime/u);
   }
+  assert.match(d1, /materializeMetaHistoryCustomerRuntimeConfig/u);
+  assert.match(d1, /materializeMetaHistoryCustomerRuntimeConfig\(sourceText\)/u);
+  assert.match(lark, /materializeMetaHistoryLarkRuntimeConfig/u);
+  assert.match(
+    lark,
+    /materializeMetaHistoryLarkRuntimeConfig\(sourceText, runtimeEnvironment\)/u,
+  );
   assert.match(d1, /MKT_META_D1_ONLY_WRANGLER_CONFIG: runtimeConfig/u);
+  assert.match(d1, /MKT_META_D1_ONLY_OPERATOR_PATH/u);
   assert.match(lark, /MKT_META_LARK_WRANGLER_CONFIG: runtimeConfig/u);
 });
 

@@ -10,6 +10,10 @@ import {
   GOOGLE_ADS_CONNECTION_PATHS,
 } from './google-ads-customer-connection-http.js';
 import {
+  createMetaD1OnlyPartialStagingRecoveryHttpHandler,
+  META_D1_ONLY_PARTIAL_STAGING_RECOVERY_PATH,
+} from './meta-d1-only-partial-staging-recovery-http.js';
+import {
   createTikTokPostLarkAuditHttpHandler,
   TIKTOK_POST_LARK_AUDIT_PATH,
 } from './tiktok-post-lark-audit-http.js';
@@ -30,6 +34,7 @@ import {
 const INVITATION_PATH = '/operator/connection-invitations';
 const KNOWN_METHODS = new Map([[INVITATION_PATH, Object.freeze(['POST'])]]);
 KNOWN_METHODS.set(TIKTOK_POST_LARK_AUDIT_PATH, Object.freeze(['GET']));
+KNOWN_METHODS.set(META_D1_ONLY_PARTIAL_STAGING_RECOVERY_PATH, Object.freeze(['POST']));
 KNOWN_METHODS.set(WOOCOMMERCE_PROVIDER_DIAGNOSTICS_PATH, Object.freeze(['GET']));
 KNOWN_METHODS.set(GOOGLE_ADS_CONNECTION_PATHS.connect, Object.freeze(['GET', 'POST']));
 KNOWN_METHODS.set(GOOGLE_ADS_CONNECTION_PATHS.callback, Object.freeze(['GET']));
@@ -43,6 +48,9 @@ export function createCustomerConnectionHttpHandler(dependencies = {}) {
   const connectorHandler = dependencies.handleConnectorRequest
     ?? composeConnectorHandlers([
       createTikTokPostLarkAuditHttpHandler(dependencies.tiktokAuditDependencies),
+      createMetaD1OnlyPartialStagingRecoveryHttpHandler(
+        dependencies.metaPartialStagingRecoveryDependencies,
+      ),
       createWooCommerceProviderDiagnosticsHttpHandler(
         dependencies.woocommerceProviderDiagnosticsDependencies,
       ),

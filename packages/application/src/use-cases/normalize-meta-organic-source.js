@@ -258,6 +258,16 @@ function readInsightObservations(resource, fetchedAt) {
       responseShape: 'scalar',
     }];
   }
+  const unavailableDescriptor = ['name', 'period', 'id', 'title', 'description']
+    .every((field) => typeof resource[field] === 'string' && resource[field].trim() !== '');
+  if (unavailableDescriptor) {
+    return [{
+      value: null,
+      sourceTimeRaw: null,
+      instant: fetchedAt,
+      responseShape: 'unavailable',
+    }];
+  }
   throw new TypeError('Meta insight response shape is unsupported');
 }
 

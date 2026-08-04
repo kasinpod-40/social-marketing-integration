@@ -70,6 +70,13 @@ jobs:
             tests/application/meta-ads-write-set.test.js \
             tests/application/process-meta-end-to-end-generation.test.js \
             tests/application/meta-end-to-end-routing-and-report.test.js \
+            tests/application/meta-k3-exact-partial-staging-recovery.test.js \
+            tests/application/meta-k3-dedicated-finalizer.test.js \
+            tests/application/meta-k3-preview-recovery.test.js \
+            tests/application/meta-k3-preview-window.test.js \
+            tests/application/meta-k3-preview-recovery-window.test.js \
+            tests/application/meta-k3-one-command-launcher.test.js \
+            tests/application/meta-k3-recovery-resume-boundary.test.js \
             | tee meta-focused-test.log
 
       - name: Unit and Workers runtime tests

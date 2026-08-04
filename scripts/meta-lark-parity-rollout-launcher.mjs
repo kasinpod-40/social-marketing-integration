@@ -14,12 +14,14 @@ import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import {
   applyMetaHistoryCustomerRuntimeEnvironment,
-  materializeMetaHistoryCustomerRuntimeConfig,
+  materializeMetaHistoryLarkRuntimeConfig,
 } from './lib/meta-history-runtime-authority.js';
 
 const execFileAsync = promisify(execFile);
 const repositoryRoot = resolve(process.cwd());
-const operatorPath = join(repositoryRoot, 'scripts', 'meta-lark-parity-rollout-operator.mjs');
+const operatorPath = process.env.MKT_META_LARK_OPERATOR_PATH
+  ? resolve(process.env.MKT_META_LARK_OPERATOR_PATH)
+  : join(repositoryRoot, 'scripts', 'meta-lark-parity-rollout-operator.mjs');
 const shimModulePath = join(
   repositoryRoot,
   'scripts',
@@ -33,6 +35,7 @@ const generatedConfigClockPreloadPath = join(
 
 let tempDirectory = null;
 try {
+  const runtimeEnvironment = applyMetaHistoryCustomerRuntimeEnvironment(process.env);
   const realNpx = await resolveRealNpx();
   tempDirectory = await mkdtemp(join(tmpdir(), 'meta-lark-wrangler-compat-'));
   const shimExecutable = join(tempDirectory, 'npx');
@@ -53,14 +56,14 @@ try {
     const sourceText = await readFile(originalConfig, 'utf8');
     await writeFile(
       runtimeConfig,
-      materializeMetaHistoryCustomerRuntimeConfig(sourceText),
+      materializeMetaHistoryLarkRuntimeConfig(sourceText, runtimeEnvironment),
       { encoding: 'utf8', mode: 0o600 },
     );
     await chmod(runtimeConfig, 0o600);
   }
 
   const childEnv = {
-    ...applyMetaHistoryCustomerRuntimeEnvironment(process.env),
+    ...runtimeEnvironment,
     PATH: `${tempDirectory}${delimiter}${process.env.PATH ?? ''}`,
     MKT_META_D1_ONLY_REAL_NPX: realNpx,
     MKT_META_D1_ONLY_COMPAT_TEMP_DIR: tempDirectory,

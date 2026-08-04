@@ -20,6 +20,7 @@ const WRAPPER = new URL(
 );
 
 const REVIEWED_RELEASE_HEAD = '29de2303fa311c4a13fac4725699416cfdc04386';
+const REVIEWED_WRAPPER_BRANCH = 'integration/all-meta-end-to-end-completion-v1';
 const REVIEWED_CLONE_EXCLUDE = '/outputs\n/.dev.vars\n/node_modules\n';
 
 test('reviewed release wrapper plans the immutable approved Meta release', () => {
@@ -31,6 +32,8 @@ test('reviewed release wrapper plans the immutable approved Meta release', () =>
   const plan = JSON.parse(result.stdout);
   assert.equal(plan.planOnly, true);
   assert.equal(plan.reviewedReleaseHead, REVIEWED_RELEASE_HEAD);
+  assert.equal(plan.wrapperBranch, REVIEWED_WRAPPER_BRANCH);
+  assert.equal(plan.assetRootEnv, 'MKT_META_HISTORY_REVIEW_ASSET_ROOT');
   assert.equal(
     plan.child,
     'scripts/meta-history-2026-exact-plan-continuation-terminal.mjs',
@@ -46,7 +49,9 @@ test('reviewed release wrapper isolates the approved release from moving main', 
 
   assert.match(source, new RegExp(REVIEWED_RELEASE_HEAD, 'u'));
   assert.match(source, /MKT_META_HISTORY_REVIEW_WRAPPER_HEAD/u);
-  assert.match(source, /merge-base', '--is-ancestor', currentHead, originMain/u);
+  assert.match(source, /merge-base', '--is-ancestor', originMain, currentHead/u);
+  assert.match(source, new RegExp(REVIEWED_WRAPPER_BRANCH, 'u'));
+  assert.match(source, /originBranch !== currentHead/u);
   assert.match(source, /merge-base', '--is-ancestor', REVIEWED_RELEASE_HEAD, originMain/u);
   assert.match(source, /clone', '--no-hardlinks', '--no-checkout'/u);
   assert.match(source, /checkout', '-B', 'main', REVIEWED_RELEASE_HEAD/u);
@@ -64,6 +69,12 @@ test('reviewed release wrapper isolates the approved release from moving main', 
   assert.match(source, /mode & 0o077/u);
   assert.match(source, /dirtyPaths/u);
   assert.match(source, /meta-history-2026-exact-plan-continuation-terminal\.mjs/u);
+  assert.match(source, /MKT_META_HISTORY_EXACT_CONTINUATION_CHILD/u);
+  assert.match(source, /MKT_META_HISTORY_ONE_COMMAND_PATH/u);
+  assert.match(source, /MKT_META_HISTORY_LARK_LAUNCHER_PATH/u);
+  assert.match(source, /MKT_META_LARK_OPERATOR_PATH/u);
+  assert.match(source, /MKT_META_HISTORY_REVIEW_ASSET_ROOT/u);
+  assert.match(source, /assets\.exactTerminal/u);
   assert.match(source, /status', '--porcelain', '--untracked-files=all/u);
   assert.match(source, /GIT_CONFIG_/u);
   assert.match(source, /KEY_/u);

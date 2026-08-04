@@ -19,7 +19,12 @@ import {
 
 const execFileAsync = promisify(execFile);
 const repositoryRoot = resolve(process.cwd());
-const operatorPath = join(repositoryRoot, 'scripts', 'meta-d1-only-rollout-operator.mjs');
+const operatorPath = process.env.MKT_META_D1_ONLY_OPERATOR_PATH
+  ? requireAbsolutePath(
+      process.env.MKT_META_D1_ONLY_OPERATOR_PATH,
+      'MKT_META_D1_ONLY_OPERATOR_PATH',
+    )
+  : join(repositoryRoot, 'scripts', 'meta-d1-only-rollout-operator.mjs');
 const shimModulePath = join(
   repositoryRoot,
   'scripts',

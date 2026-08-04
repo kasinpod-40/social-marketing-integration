@@ -2,17 +2,25 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   META_LARK_OPERATOR_CONTRACT_VERSION,
+  META_LARK_OPERATOR_PHASES,
   assertMetaLarkConfirmation,
   buildMetaLarkConfigWindow,
   buildMetaLarkContinuationJob,
   buildMetaLarkSnapshotSql,
   classifyMetaLarkCompletion,
+  classifyMetaLarkPostCompletionOrphan,
+  classifyMetaLarkPollingSnapshot,
   compareMetaLarkSnapshots,
   createMetaLarkEvidence,
   expectedLarkContracts,
   loadMetaLarkTarget,
+  normalizeMetaLarkSnapshot,
   parseMetaLarkOperatorArgs,
   validateMetaD1OnlySummaryForLark,
+  validateMetaLarkCompletedStability,
+  validateMetaLarkD1ReadyBoundary,
+  validateMetaLarkOrphanedRunningStability,
+  validateMetaLarkPostCompletionOrphanStability,
   validateMetaLarkEvidenceSequence,
   validateMetaLarkInventory,
 } from '../../scripts/lib/meta-lark-parity-rollout-operator.js';
@@ -20,6 +28,7 @@ import {
   META_D1_ONLY_REQUIRED_FALSE_FLAGS,
 } from '../../scripts/lib/meta-d1-only-rollout-operator.js';
 import {
+  META_ADS_JULY_ACTIVITY_LARK_TABLE_KEYS,
   META_END_TO_END_LARK_TABLES,
 } from '../../packages/config/src/meta-end-to-end-runtime-config.js';
 
@@ -44,6 +53,11 @@ test('Meta Lark operator is plan-only by default and requires exact confirmation
   assert.equal(assertMetaLarkConfirmation('lark-preflight', {
     CONFIRM_META_LARK_PREFLIGHT: 'READ_ONLY_META_LARK_PREFLIGHT',
   }), true);
+  assert.equal(META_LARK_OPERATOR_PHASES.includes('verify-late-completion'), true);
+  assert.equal(assertMetaLarkConfirmation('verify-late-completion', {
+    CONFIRM_META_LARK_VERIFY_LATE_COMPLETION:
+      'VERIFY_META_LARK_LATE_COMPLETION_AFTER_RESTORE',
+  }), true);
 });
 
 test('target loader preserves the exact D1 operation identity for each target', () => {
@@ -58,11 +72,11 @@ test('target loader preserves the exact D1 operation identity for each target', 
 
   const k2 = target('chemistry_k2');
   assert.equal(k2.workKey, 'meta_ads:chemistry_k2:meta-lark-chemistry_k2');
-  assert.equal(k2.expectedLarkTableCount, 8);
+  assert.equal(k2.expectedLarkTableCount, 4);
 
   const k3 = target('chemistry_k3');
   assert.equal(k3.workKey, 'meta_ads:chemistry_k3:meta-lark-chemistry_k3');
-  assert.equal(k3.expectedLarkTableCount, 8);
+  assert.equal(k3.expectedLarkTableCount, 4);
   assert.notEqual(k2.targetFingerprint, k3.targetFingerprint);
 });
 
@@ -98,7 +112,7 @@ test('continuation job reuses the same stable operation without d1Only or a prov
   assert.equal(ads.workKey, 'meta_ads:chemistry_k3:meta-lark-chemistry_k3');
 });
 
-test('Lark inventory requires all 15 unique destinations and every stable key field', () => {
+test('Lark inventory requires all 11 unique destinations and every stable key field', () => {
   const tableIds = {};
   const remoteTables = [];
   const fieldsByKey = {};
@@ -109,7 +123,7 @@ test('Lark inventory requires all 15 unique destinations and every stable key fi
     fieldsByKey[contract.tableKey] = [{ fieldName: contract.keyField }];
   }
   const result = validateMetaLarkInventory({ tableIds, remoteTables, fieldsByKey });
-  assert.equal(result.tableCount, 15);
+  assert.equal(result.tableCount, 11);
   assert.equal(result.allTablesPresent, true);
   assert.equal(result.allStableKeyFieldsPresent, true);
 
@@ -141,13 +155,135 @@ test('D1 summary must prove accepted idempotent D1-only processing and all-false
   );
 });
 
+test('D1-ready recovery accepts only an exact failed Lark preflight boundary', () => {
+  const normalTarget = target('instagram');
+  const failed = {
+    ...d1ReadySnapshot(),
+    sync_run_status: 'failed',
+    sync_run_finished_at: 123,
+    sync_run_error_code: 'LARK_PREFLIGHT_FAILED',
+  };
+  assert.throws(
+    () => validateMetaLarkD1ReadyBoundary(failed, normalTarget),
+    (error) => error.code === 'META_LARK_D1_BOUNDARY_INVALID',
+  );
+  const recoveryTarget = { ...normalTarget, terminalRecovery: true };
+  const accepted = validateMetaLarkD1ReadyBoundary(failed, recoveryTarget);
+  assert.equal(accepted.terminalRecovery, true);
+  assert.throws(
+    () => validateMetaLarkD1ReadyBoundary({
+      ...failed,
+      sync_run_error_code: 'UNHANDLED_SYNC_ERROR',
+    }, recoveryTarget),
+    (error) => error.code === 'META_LARK_D1_BOUNDARY_INVALID',
+  );
+  assert.throws(
+    () => validateMetaLarkD1ReadyBoundary({
+      ...failed,
+      lark_phase_complete: 1,
+    }, recoveryTarget),
+    (error) => error.code === 'META_LARK_D1_BOUNDARY_INVALID',
+  );
+});
+
+test('D1-ready recovery accepts an orphaned running invocation only after a stable platform-limit window', () => {
+  const current = {
+    ...target('instagram'),
+    orphanedRunningRecovery: true,
+  };
+  const observedAt = 1785082800000;
+  const orphaned = {
+    ...d1ReadySnapshot(),
+    sync_run_status: 'running',
+    sync_run_started_at: observedAt - (17 * 60 * 1000),
+    sync_run_finished_at: null,
+    sync_run_error_code: null,
+    sync_run_updated_at: observedAt - (17 * 60 * 1000),
+    queue_operation_updated_at: observedAt - (16 * 60 * 1000),
+    observed_at: observedAt,
+  };
+  const boundary = validateMetaLarkD1ReadyBoundary(orphaned, current);
+  assert.equal(boundary.orphanedRunningRecovery, true);
+  const stable = validateMetaLarkOrphanedRunningStability(orphaned, {
+    ...orphaned,
+    observed_at: observedAt + 30_000,
+  }, current);
+  assert.equal(stable.accepted, true);
+  assert.equal(stable.elapsedMs, 30_000);
+
+  assert.throws(
+    () => validateMetaLarkD1ReadyBoundary(orphaned, {
+      ...current,
+      orphanedRunningRecovery: false,
+    }),
+    (error) => error.code === 'META_LARK_D1_BOUNDARY_INVALID',
+  );
+  assert.throws(
+    () => validateMetaLarkOrphanedRunningStability(orphaned, {
+      ...orphaned,
+      main_queue_attempts: 39,
+      observed_at: observedAt + 30_000,
+    }, current),
+    (error) => error.code === 'META_LARK_ORPHANED_RUNNING_PROGRESS_OBSERVED',
+  );
+  assert.throws(
+    () => validateMetaLarkD1ReadyBoundary({
+      ...orphaned,
+      queue_operation_updated_at: observedAt - (15 * 60 * 1000),
+    }, current),
+    (error) => error.code === 'META_LARK_D1_BOUNDARY_INVALID',
+  );
+});
+
 test('snapshot SQL binds the same operation and reads D1, preflight, Lark and completion phases', () => {
   const sql = buildMetaLarkSnapshotSql(target('chemistry_k2'));
   assert.match(sql, /meta_end_to_end_d1_write_v1/u);
   assert.match(sql, /meta_end_to_end_destination_preflight_v1/u);
   assert.match(sql, /meta_end_to_end_lark_write_v1/u);
   assert.match(sql, /meta_end_to_end_completion_v1/u);
+  assert.match(sql, /completion_json/u);
+  assert.match(sql, /sync_run_started_at/u);
+  assert.match(sql, /sync_run_updated_at/u);
+  assert.match(sql, /queue_operation_updated_at/u);
+  assert.match(sql, /observed_at/u);
   assert.match(sql, /meta:meta_ads:chemistry_k2:meta-lark-chemistry_k2/u);
+});
+
+test('completion survives durable phase cleanup without fabricating a different operation', () => {
+  const current = target('facebook');
+  const results = larkResults(current);
+  const cleared = {
+    ...larkCompleteSnapshot(current),
+    d1_phase_complete: null,
+    preflight_phase_complete: null,
+    preflight_state_json: null,
+    lark_phase_complete: null,
+    lark_state_json: null,
+    completion_phase_complete: null,
+    completion_state_json: null,
+    work_completion_json: JSON.stringify({
+      schemaVersion: 'meta_end_to_end_reconciliation_v1',
+      operationId: current.operationId,
+      connectorKey: current.connectorKey,
+      preflight: results,
+      d1: { expectedOperations: 2, processedOperations: 2 },
+      lark: results,
+      failed: 0,
+    }),
+  };
+
+  const normalized = normalizeMetaLarkSnapshot(cleared);
+  assert.equal(normalized.clearedPhaseCompletion, true);
+  assert.equal(classifyMetaLarkCompletion(normalized, current).complete, true);
+
+  const wrongOperation = {
+    ...cleared,
+    work_completion_json: cleared.work_completion_json.replace(
+      current.operationId,
+      'different-operation',
+    ),
+  };
+  assert.equal(classifyMetaLarkCompletion(wrongOperation, current).complete, false);
 });
 
 test('completion requires Lark parity, final reconciliation, completed work and no D1 drift', () => {
@@ -170,6 +306,112 @@ test('completion requires Lark parity, final reconciliation, completed work and 
     }, current),
     (error) => error.code === 'META_LARK_D1_COUNT_DRIFT',
   );
+});
+
+test('completed stability ignores only the observation timestamp', () => {
+  const current = target('facebook');
+  const before = {
+    ...larkCompleteSnapshot(current),
+    observed_at: 10_000,
+  };
+  const after = { ...before, observed_at: 15_000 };
+  assert.equal(
+    validateMetaLarkCompletedStability(before, after, current).accepted,
+    true,
+  );
+  assert.throws(
+    () => validateMetaLarkCompletedStability(before, {
+      ...after,
+      main_queue_attempts: Number(after.main_queue_attempts) + 1,
+    }, current),
+    (error) => error.code === 'META_LARK_COMPLETED_PROGRESS_OBSERVED',
+  );
+});
+
+test('late proof accepts a stable post-completion orphan without fabricating Sync success', () => {
+  const current = { ...target('instagram'), orphanedRunningRecovery: true };
+  const completed = larkCompleteSnapshot(current);
+  const observedAt = 1785082800000;
+  const orphaned = {
+    ...completed,
+    sync_run_status: 'running',
+    sync_run_started_at: observedAt - (17 * 60 * 1000),
+    sync_run_finished_at: null,
+    sync_run_error_code: null,
+    sync_run_updated_at: observedAt - (17 * 60 * 1000),
+    queue_operation_updated_at: observedAt - (16 * 60 * 1000),
+    observed_at: observedAt,
+  };
+  assert.equal(classifyMetaLarkCompletion(orphaned, current).complete, false);
+  assert.equal(classifyMetaLarkCompletion(orphaned, current).durableComplete, true);
+  assert.equal(classifyMetaLarkPostCompletionOrphan(orphaned, current).accepted, true);
+  const stableAfter = { ...orphaned, observed_at: observedAt + 30_000 };
+  assert.equal(
+    validateMetaLarkPostCompletionOrphanStability(orphaned, stableAfter, current).accepted,
+    true,
+  );
+  const compared = compareMetaLarkSnapshots(d1ReadySnapshot(), stableAfter, current, {
+    postCompletionOrphanVerified: true,
+  });
+  assert.equal(compared.accepted, true);
+  assert.equal(compared.postCompletionOrphanAccepted, true);
+  assert.equal(compared.snapshotAfter, undefined);
+
+  assert.equal(classifyMetaLarkPostCompletionOrphan({
+    ...orphaned,
+    active_lock_count: 1,
+  }, current).accepted, false);
+  assert.throws(
+    () => validateMetaLarkPostCompletionOrphanStability(orphaned, {
+      ...stableAfter,
+      main_queue_attempts: completed.main_queue_attempts + 2,
+    }, current),
+    (error) => error.code === 'META_LARK_POST_COMPLETION_ORPHAN_PROGRESS_OBSERVED',
+  );
+});
+
+test('polling waits for a new attempt and then surfaces terminal sync failure', () => {
+  const current = target('instagram');
+  const stale = {
+    ...larkCompleteSnapshot(current),
+    sync_run_finished_at: 123,
+    main_queue_attempts: 5,
+  };
+  assert.equal(
+    classifyMetaLarkPollingSnapshot(stale, current, 6).state,
+    'pending',
+  );
+  assert.equal(
+    classifyMetaLarkPollingSnapshot({ ...stale, main_queue_attempts: 6 }, current, 6, 123).state,
+    'pending',
+  );
+  assert.equal(
+    classifyMetaLarkPollingSnapshot({
+      ...stale,
+      sync_run_finished_at: 124,
+      main_queue_attempts: 6,
+    }, current, 6, 123).state,
+    'complete',
+  );
+  const failed = {
+    ...stale,
+    sync_run_status: 'failed',
+    sync_run_finished_at: 123,
+    sync_run_error_code: 'LARK_PREFLIGHT_FAILED',
+    main_queue_attempts: 6,
+  };
+  assert.equal(
+    classifyMetaLarkPollingSnapshot(failed, current, 6, 123).state,
+    'pending',
+  );
+  const classified = classifyMetaLarkPollingSnapshot(
+    { ...failed, sync_run_finished_at: 124 },
+    current,
+    6,
+    123,
+  );
+  assert.equal(classified.state, 'terminal_failure');
+  assert.equal(classified.errorCode, 'LARK_PREFLIGHT_FAILED');
 });
 
 test('same-operation rerun requires another Queue attempt and immutable reconciliation', () => {
@@ -227,11 +469,26 @@ test('evidence chain is target-bound, hash-bound and never authorizes Provider o
 });
 
 test('organic and Ads contracts remain isolated', () => {
-  assert.equal(expectedLarkContracts('facebook').length, 7);
-  assert.equal(expectedLarkContracts('instagram').length, 7);
-  assert.equal(expectedLarkContracts('meta_ads').length, 8);
-  assert.equal(expectedLarkContracts('facebook').every((entry) => !entry.path.startsWith('raw.ads')), true);
-  assert.equal(expectedLarkContracts('meta_ads').every((entry) => !entry.path.startsWith('raw.organic')), true);
+  const facebookContracts = expectedLarkContracts('facebook');
+  const instagramContracts = expectedLarkContracts('instagram');
+  const adsContracts = expectedLarkContracts('meta_ads');
+  assert.equal(facebookContracts.length, 7);
+  assert.equal(instagramContracts.length, 7);
+  assert.deepEqual(
+    adsContracts.map((entry) => entry.tableKey),
+    META_ADS_JULY_ACTIVITY_LARK_TABLE_KEYS,
+  );
+  assert.equal(
+    facebookContracts.every((entry) => !entry.path.startsWith('raw.ads')),
+    true,
+  );
+  assert.equal(
+    adsContracts.every((entry) => !entry.path.startsWith('raw.organic')),
+    true,
+  );
+  assert.equal(adsContracts.some((entry) => entry.path.startsWith('raw.ads')), false);
+  assert.equal(adsContracts.some((entry) => entry.path.endsWith('adsCreatives')), false);
+  assert.equal(adsContracts.some((entry) => entry.path.endsWith('adsDaily')), false);
 });
 
 function target(targetKey) {
@@ -328,8 +585,10 @@ function d1Summary(current) {
 function d1ReadySnapshot() {
   return {
     sync_run_status: 'success',
+    sync_run_started_at: 1785081500000,
     sync_run_finished_at: 1785081600000,
     sync_run_error_code: null,
+    sync_run_updated_at: 1785081600000,
     work_status: 'active',
     work_lifecycle_status: 'active',
     work_completed_at: null,
@@ -343,6 +602,8 @@ function d1ReadySnapshot() {
     active_lock_count: 0,
     queue_operation_attempts: 1,
     main_queue_attempts: 1,
+    queue_operation_updated_at: 1785081600000,
+    observed_at: 1785081700000,
     coverage_run_count: 2,
     invalid_coverage_count: 0,
     coverage_entity_count: 2,

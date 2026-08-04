@@ -54,9 +54,22 @@ test('builds Facebook Raw, Canonical, account daily and Organic history inputs w
     'facebook:page_fixture_001:post_fixture_001',
   );
   assert.equal(writeSet.raw.organicMetrics[0].value_number, 0);
+  assert.equal(
+    writeSet.raw.organicMetrics[0].metric_date,
+    Date.parse('2026-07-24T00:00:00+07:00'),
+  );
   assert.equal(writeSet.canonical.content[0].latest_views, 0);
+  assert.equal(writeSet.canonical.content[0].content_key, 'facebook:page_fixture_001:post_fixture_001');
   assert.equal(writeSet.canonical.contentDaily[0].views, 0);
   assert.equal(writeSet.d1.organicHistoryBatch.contentRows.length, 1);
+  assert.equal(
+    writeSet.d1.organicHistoryBatch.contentRows[0].content_key,
+    'facebook:chemistry_k_facebook:post_fixture_001',
+  );
+  assert.equal(
+    writeSet.d1.organicHistoryBatch.dailySnapshotRows[0].account_id,
+    'chemistry_k_facebook',
+  );
   assert.equal(writeSet.d1.accountDailyFacts[0].followers, 1250);
   assert.equal(writeSet.reconciliation.missingContentInsightRows, 0);
   assert.deepEqual(writeSet.canonical.accounts[0], {
@@ -143,8 +156,146 @@ test('does not overwrite Organic latest metrics with null when content insights 
     platform: 'instagram',
     account_id: 'ig_fixture_001',
     account_name: 'Fixture Instagram',
-    account_type: 'business',
+    account_type: 'business_account',
     last_sync_at: FETCHED_AT,
   });
   assert.equal(writeSet.raw.organicAccounts[0].username, 'fixture.instagram');
+});
+
+test('maps an unavailable Provider descriptor to the approved Lark other shape without inventing a value', () => {
+  const writeSet = buildMetaOrganicWriteSet({
+    connectorKey: 'instagram',
+    accountId: 'ig_fixture_001',
+    accountKey: 'chemistry_k_instagram',
+    customerProfile: 'chemistry_k',
+    customerKey: 'chemistry_k',
+    syncRunId: 'sync_meta_unavailable',
+    operationId: 'operation_meta_unavailable',
+    fetchedAt: FETCHED_AT,
+    accountResource: {
+      user_id: 'ig_fixture_001',
+      id: 'scoped_fixture_001',
+      username: 'fixture.instagram',
+      name: 'Fixture Instagram',
+      account_type: 'BUSINESS',
+    },
+    contentResources: [],
+    contentInsights: [],
+    accountInsights: [{
+      name: 'follows_and_unfollows',
+      period: 'day',
+      id: 'ig_fixture_001/insights/follows_and_unfollows/day',
+      title: 'Follows and unfollows',
+      description: 'Unavailable for the selected range',
+    }],
+  });
+
+  assert.equal(writeSet.raw.organicMetrics[0].response_shape, 'other');
+  assert.equal(writeSet.raw.organicMetrics[0].value_number, null);
+  assert.equal(writeSet.raw.organicMetrics[0].value_json, null);
+  assert.match(writeSet.raw.organicMetrics[0].source_payload_json, /Unavailable for the selected range/u);
+});
+
+test('keeps Instagram Provider identity in Canonical rows and account_key in D1 history', () => {
+  const writeSet = buildMetaOrganicWriteSet({
+    connectorKey: 'instagram',
+    accountId: 'ig_fixture_001',
+    accountKey: 'chemistry_k_instagram',
+    customerProfile: 'chemistry_k',
+    customerKey: 'chemistry_k',
+    syncRunId: 'sync_meta_identity',
+    operationId: 'operation_meta_identity',
+    fetchedAt: FETCHED_AT,
+    accountResource: {
+      user_id: 'ig_fixture_001',
+      id: 'scoped_fixture_001',
+      username: 'fixture.instagram',
+      name: 'Fixture Instagram',
+      account_type: 'BUSINESS',
+    },
+    contentResources: [{
+      id: 'media_fixture_001',
+      media_type: 'VIDEO',
+      timestamp: '2026-07-23T23:30:00+0000',
+    }],
+    contentInsights: [{
+      contentId: 'media_fixture_001',
+      insights: [{
+        name: 'views',
+        period: 'lifetime',
+        values: [{ value: 7, end_time: '2026-07-24T00:00:00+0000' }],
+      }],
+    }],
+    accountInsights: [],
+  });
+
+  assert.equal(
+    writeSet.canonical.content[0].content_key,
+    'instagram:ig_fixture_001:media_fixture_001',
+  );
+  assert.equal(
+    writeSet.d1.organicHistoryBatch.contentRows[0].content_key,
+    'instagram:chemistry_k_instagram:media_fixture_001',
+  );
+  assert.equal(
+    writeSet.d1.organicHistoryBatch.dailySnapshotRows[0].account_id,
+    'chemistry_k_instagram',
+  );
+});
+
+test('maps Instagram creator source classification to the shared canonical profile option', () => {
+  const writeSet = buildMetaOrganicWriteSet({
+    connectorKey: 'instagram',
+    accountId: 'ig_creator_001',
+    accountKey: 'chemistry_k_instagram',
+    customerProfile: 'chemistry_k',
+    customerKey: 'chemistry_k',
+    syncRunId: 'sync_meta_creator',
+    operationId: 'operation_meta_creator',
+    fetchedAt: FETCHED_AT,
+    accountResource: {
+      user_id: 'ig_creator_001',
+      id: 'scoped_creator_001',
+      username: 'fixture.creator',
+      name: 'Fixture Creator',
+      account_type: 'MEDIA_CREATOR',
+    },
+    contentResources: [],
+    contentInsights: [],
+    accountInsights: [],
+  });
+
+  assert.equal(writeSet.raw.organicAccounts[0].account_type, 'creator');
+  assert.equal(writeSet.canonical.accounts[0].account_type, 'profile');
+});
+
+test('keeps carousel in RAW and maps it to the shared canonical post taxonomy', () => {
+  const writeSet = buildMetaOrganicWriteSet({
+    connectorKey: 'instagram',
+    accountId: 'ig_fixture_001',
+    accountKey: 'chemistry_k_instagram',
+    customerProfile: 'chemistry_k',
+    customerKey: 'chemistry_k',
+    syncRunId: 'sync_meta_carousel',
+    operationId: 'operation_meta_carousel',
+    fetchedAt: FETCHED_AT,
+    accountResource: {
+      user_id: 'ig_fixture_001',
+      id: 'scoped_fixture_001',
+      username: 'fixture.instagram',
+      name: 'Fixture Instagram',
+      account_type: 'BUSINESS',
+    },
+    contentResources: [{
+      id: 'media_carousel_001',
+      media_type: 'CAROUSEL_ALBUM',
+      media_product_type: 'FEED',
+      timestamp: '2026-07-23T23:30:00+0000',
+    }],
+    contentInsights: [],
+    accountInsights: [],
+  });
+
+  assert.equal(writeSet.raw.organicContent[0].content_type, 'carousel');
+  assert.equal(writeSet.canonical.content[0].content_type, 'post');
 });

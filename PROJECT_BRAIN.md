@@ -555,6 +555,16 @@ Meta runtime contracts:
 - preflight output is sanitized;
 - the existing Reliability, Queue/DLQ, D1 history/Coverage and Lark `TableSyncEngine` are reused.
 
+Meta Ads active ingestion contract updated on 2026-08-02:
+
+- one operation accepts at most 31 inclusive days and reads Account plus ad-level Daily Insights;
+- Campaign, Ad Set and Ad state is derived only from identities active in that exact range;
+- the active path does not enumerate full-history Campaign, Ad Set, Ad or Creative inventories;
+- D1 retains validated activity entities and detailed daily facts as the historical authority;
+- Lark receives Account and activity entities only, without RAW Ads Daily or MKT Ads Daily detail mirrors;
+- Shared checksummed Report materializations provide 1D/3D/7D/30D and Top Ads display data;
+- prior full-inventory operation identities are fingerprint-incompatible and remain forensic truth.
+
 ## Merged Meta read-only validation operator
 
 PR `#82` added the separately confirmed operator:
