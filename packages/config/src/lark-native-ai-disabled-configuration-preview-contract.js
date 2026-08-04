@@ -11,7 +11,7 @@ export {
 };
 
 export const LARK_NATIVE_AI_DISABLED_CONFIGURATION_PREVIEW_VERSION =
-  'lark_native_ai_disabled_configuration_preview_v4';
+  'lark_native_ai_disabled_configuration_preview_v5';
 export const LARK_NATIVE_AI_DISABLED_CONFIGURATION_PREVIEW_OUTPUT_ROOT =
   'outputs/lark-native-ai-disabled-configuration-preview';
 
@@ -33,6 +33,14 @@ export const LARK_NATIVE_AI_NOTIFICATION_SEVERITIES = Object.freeze([
   'critical',
 ]);
 export const LARK_NATIVE_AI_NOTIFICATION_PAYLOAD_MAX_BYTES = 24_000;
+export const LARK_NATIVE_AI_NOTIFICATION_CHECKSUM_POLICY = Object.freeze({
+  repositoryPreviewAlgorithm: 'SHA-256',
+  repositoryPreviewEncoding: 'hex',
+  liveAutomationPayloadChecksum: null,
+  liveAutomationStatus: 'not_computed_in_lark_base_automation',
+  dedupeAuthority: 'notification_attempt_key_and_dedupe_key',
+  blocking: false,
+});
 
 const AI_RUN_TABLE = '🧠 MKT_AI_Report_Runs';
 const REPORT_SNAPSHOT_TABLE = '🧾 MKT_Report_Snapshots';
@@ -217,6 +225,9 @@ export const LARK_NATIVE_AI_DISABLED_CONFIGURATION_WORKFLOWS = Object.freeze([
         table: NOTIFICATION_LOG_TABLE,
         attemptStatus: 'pending',
         previewMode: false,
+        payloadChecksum: LARK_NATIVE_AI_NOTIFICATION_CHECKSUM_POLICY.liveAutomationPayloadChecksum,
+        payloadChecksumStatus: LARK_NATIVE_AI_NOTIFICATION_CHECKSUM_POLICY.liveAutomationStatus,
+        dedupeAuthority: LARK_NATIVE_AI_NOTIFICATION_CHECKSUM_POLICY.dedupeAuthority,
       })),
       action('send_lark_message', Object.freeze({
         destinationSource: `${REPORT_SETTINGS_TABLE}.group_id`,
@@ -243,6 +254,7 @@ export const LARK_NATIVE_AI_DISABLED_CONFIGURATION_WORKFLOWS = Object.freeze([
       'webhook',
       'http_request',
       'external_ai_provider',
+      'anycross',
     ]),
   }),
 ]);

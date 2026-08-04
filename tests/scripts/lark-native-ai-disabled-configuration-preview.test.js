@@ -4,30 +4,35 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import test from 'node:test';
 
-test('offline command emits prompt-captured v4 preview with zero remote action', () => {
+test('offline command emits blocker-free v5 preview with zero remote action', () => {
   const script = resolve('scripts/lark-native-ai-disabled-configuration-preview.mjs');
   const result = spawnSync(process.execPath, [script], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
   const output = JSON.parse(result.stdout);
   assert.equal(output.ok, true);
-  assert.equal(output.contractVersion, 'lark_native_ai_disabled_configuration_preview_v4');
+  assert.equal(output.contractVersion, 'lark_native_ai_disabled_configuration_preview_v5');
   assert.equal(
     output.status,
-    'repository_preview_prompts_captured_live_configuration_blocked',
+    'repository_preview_ready_for_manual_inactive_configuration',
   );
   assert.equal(output.mode, 'repository_only');
+  assert.equal(output.liveConfigurationAuthorized, false);
+  assert.equal(output.activationAuthorized, false);
   assert.equal(output.generatedLocally, true);
   assert.equal(output.remoteActionCount, 0);
   assert.equal(output.workflows.length, 2);
   assert.equal(output.customAiFieldAuthority.promptCaptureComplete, true);
   assert.equal(output.automationAiOutputBinding.promptCaptureComplete, true);
   assert.equal(Object.keys(output.automationPrompts).length, 4);
-  assert.equal(output.blockerCount, 1);
-  assert.deepEqual(output.blockers.map(({ code }) => code), [
-    'LARK_NATIVE_PAYLOAD_SHA256_UNPROVEN',
+  assert.equal(output.notificationPayloadChecksumAuthority, 'repository_preview_only');
+  assert.equal(output.notificationLogRecordPreview.payload_checksum, null);
+  assert.equal(output.blockerCount, 0);
+  assert.deepEqual(output.blockers, []);
+  assert.equal(output.advisoryCount, 2);
+  assert.deepEqual(output.advisories.map(({ code }) => code), [
+    'LARK_NATIVE_PAYLOAD_SHA256_NOT_AVAILABLE_NON_BLOCKING',
+    'UI_AUTOMATION_API_IDENTITY_NOT_EXPOSED',
   ]);
-  assert.equal(output.advisoryCount, 1);
-  assert.equal(output.advisories[0].code, 'UI_AUTOMATION_API_IDENTITY_NOT_EXPOSED');
   assert.equal(output.safety.remoteLarkRead, 0);
   assert.equal(output.safety.remoteLarkWrite, 0);
   assert.equal(output.safety.workflowCreate, 0);

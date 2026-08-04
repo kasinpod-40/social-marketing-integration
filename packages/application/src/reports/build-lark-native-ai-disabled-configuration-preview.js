@@ -10,6 +10,7 @@ import {
   LARK_NATIVE_AI_DISABLED_CONFIGURATION_WORKFLOWS,
   LARK_NATIVE_AI_EXECUTIVE_DESTINATION_KEY_HASH,
   LARK_NATIVE_AI_EXECUTIVE_GROUP_NAME,
+  LARK_NATIVE_AI_NOTIFICATION_CHECKSUM_POLICY,
   LARK_NATIVE_AI_NOTIFICATION_PAYLOAD_MAX_BYTES,
   LARK_NATIVE_AI_NOTIFICATION_SEVERITIES,
   LARK_NATIVE_AI_NOTIFICATION_WINDOWS,
@@ -55,7 +56,7 @@ export async function buildLarkNativeAiDisabledConfigurationPreview(input = {}) 
   if (UNSAFE_DESTINATION_OR_SECRET.test(payloadText)) {
     fail('LARK_NATIVE_AI_NOTIFICATION_PAYLOAD_UNSAFE', {});
   }
-  const payloadChecksum = await sha256Hex(payloadText);
+  const repositoryPayloadChecksum = await sha256Hex(payloadText);
   const notificationAttemptKey = `${aiRun.aiRunKey}::${aiRun.dedupeKey}`;
   const logPreview = deepFreeze({
     notification_attempt_key: notificationAttemptKey,
@@ -66,7 +67,7 @@ export async function buildLarkNativeAiDisabledConfigurationPreview(input = {}) 
     period_start: snapshot.periodStart,
     period_end: snapshot.periodEnd,
     severity: aiRun.severity,
-    payload_checksum: payloadChecksum,
+    payload_checksum: LARK_NATIVE_AI_NOTIFICATION_CHECKSUM_POLICY.liveAutomationPayloadChecksum,
     attempt_status: 'pending',
     attempted_at: 'automation_now',
     sent_at: null,
@@ -75,13 +76,12 @@ export async function buildLarkNativeAiDisabledConfigurationPreview(input = {}) 
     preview_mode: false,
   });
 
-  const blockers = Object.freeze([
-    Object.freeze({
-      code: 'LARK_NATIVE_PAYLOAD_SHA256_UNPROVEN',
-      reason: 'The live Automation method for computing the exact redacted payload SHA-256 is not yet proven.',
-    }),
-  ]);
+  const blockers = Object.freeze([]);
   const advisories = Object.freeze([
+    Object.freeze({
+      code: 'LARK_NATIVE_PAYLOAD_SHA256_NOT_AVAILABLE_NON_BLOCKING',
+      reason: 'Lark Base Automation has no proven native SHA-256 action. Live payload_checksum remains null; exact send dedupe continues through notification_attempt_key and dedupe_key.',
+    }),
     Object.freeze({
       code: 'UI_AUTOMATION_API_IDENTITY_NOT_EXPOSED',
       reason: 'The current List Workflows API inventory is empty while the two Base UI Automations exist; future edits must use the confirmed manual UI path unless an exact API identity is proven.',
@@ -91,7 +91,7 @@ export async function buildLarkNativeAiDisabledConfigurationPreview(input = {}) 
   return deepFreeze({
     ok: true,
     contractVersion: LARK_NATIVE_AI_DISABLED_CONFIGURATION_PREVIEW_VERSION,
-    status: 'repository_preview_prompts_captured_live_configuration_blocked',
+    status: 'repository_preview_ready_for_manual_inactive_configuration',
     mode: 'repository_only',
     liveConfigurationAuthorized: false,
     activationAuthorized: false,
@@ -104,7 +104,9 @@ export async function buildLarkNativeAiDisabledConfigurationPreview(input = {}) 
     workflows: LARK_NATIVE_AI_DISABLED_CONFIGURATION_WORKFLOWS,
     notificationPayloadPreview: canonicalPayload,
     notificationPayloadBytes: payloadBytes,
-    notificationPayloadChecksum: payloadChecksum,
+    notificationPayloadChecksum: repositoryPayloadChecksum,
+    notificationPayloadChecksumAuthority: 'repository_preview_only',
+    notificationChecksumPolicy: LARK_NATIVE_AI_NOTIFICATION_CHECKSUM_POLICY,
     notificationLogRecordPreview: logPreview,
     settingsReadiness: Object.freeze({
       reportSettingKey: settings.reportSettingKey,
@@ -131,7 +133,8 @@ export function validateLarkNativeAiDisabledConfigurationPreview(preview) {
   if (preview.contractVersion !== LARK_NATIVE_AI_DISABLED_CONFIGURATION_PREVIEW_VERSION) {
     blockers.push({ code: 'CONTRACT_VERSION_INVALID' });
   }
-  if (preview.mode !== 'repository_only'
+  if (preview.status !== 'repository_preview_ready_for_manual_inactive_configuration'
+    || preview.mode !== 'repository_only'
     || preview.liveConfigurationAuthorized !== false
     || preview.activationAuthorized !== false) {
     blockers.push({ code: 'REMOTE_AUTHORITY_INVALID' });
@@ -163,8 +166,22 @@ export function validateLarkNativeAiDisabledConfigurationPreview(preview) {
     || Object.values(prompts).some(({ text }) => typeof text !== 'string' || text.length < 200)) {
     blockers.push({ code: 'AUTOMATION_PROMPTS_INVALID' });
   }
-  if (!SHA256_HEX.test(String(preview.notificationPayloadChecksum ?? ''))) {
-    blockers.push({ code: 'PAYLOAD_CHECKSUM_INVALID' });
+  if (!SHA256_HEX.test(String(preview.notificationPayloadChecksum ?? ''))
+    || preview.notificationPayloadChecksumAuthority !== 'repository_preview_only') {
+    blockers.push({ code: 'PAYLOAD_PREVIEW_CHECKSUM_INVALID' });
+  }
+  if (preview.notificationChecksumPolicy?.liveAutomationPayloadChecksum !== null
+    || preview.notificationChecksumPolicy?.liveAutomationStatus
+      !== 'not_computed_in_lark_base_automation'
+    || preview.notificationChecksumPolicy?.dedupeAuthority
+      !== 'notification_attempt_key_and_dedupe_key'
+    || preview.notificationChecksumPolicy?.blocking !== false
+    || preview.notificationLogRecordPreview?.payload_checksum !== null) {
+    blockers.push({ code: 'LIVE_CHECKSUM_POLICY_INVALID' });
+  }
+  if (preview.blockerCount !== 0 || !Array.isArray(preview.blockers)
+    || preview.blockers.length !== 0) {
+    blockers.push({ code: 'BLOCKER_STATE_INVALID' });
   }
   const serialized = stableStringify(preview.notificationPayloadPreview ?? {});
   if (UNSAFE_DESTINATION_OR_SECRET.test(serialized)) blockers.push({ code: 'PAYLOAD_UNSAFE' });
