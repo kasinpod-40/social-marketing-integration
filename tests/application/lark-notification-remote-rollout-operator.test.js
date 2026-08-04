@@ -84,7 +84,7 @@ test('target stays locked to the Integration Workspace and expected D1', () => {
   );
 });
 
-test('Wrangler config reuses Integration topology and validates every effective flag source', () => {
+test('D1 rollout reuses the central all-false runtime and Integration topology', () => {
   const config = createSafeWranglerConfig();
   const result = validateLarkNotificationRemoteWranglerConfig(config);
   assert.equal(result.notificationFlagsAllFalse, true);
@@ -92,7 +92,13 @@ test('Wrangler config reuses Integration topology and validates every effective 
     result.notificationFlagSourcePolicy,
     'all_config_and_environment_sources_false_or_omitted',
   );
-  assert.equal(result.requiredTableMappingsPresent, true);
+  assert.equal(result.requiredTableMappingsPresent, false);
+  assert.equal(result.tableMappingSourcePolicy, 'not_required_for_d1_only_rollout_phases');
+  assert.match(result.tableMappingFingerprint, /^[0-9a-f]{64}$/u);
+  assert.deepEqual(
+    new Set(Object.values(result.tableMappingSources)),
+    new Set(['deferred_to_safe_worker_deploy_or_controlled_uat']),
+  );
   assert.equal(result.mainQueueBindingPresent, true);
 
   const omittedFlagsConfig = createSafeWranglerConfig({ includeNotificationFlags: false });
@@ -121,51 +127,31 @@ test('Wrangler config reuses Integration topology and validates every effective 
   }
 });
 
-test('table mappings resolve from merged environment, remain conflict-free and are fingerprint-bound', () => {
-  const configWithoutMappings = createSafeWranglerConfig({ includeTableMappings: false });
-  const envMappings = createTableMappingEnv();
-  const result = validateLarkNotificationRemoteWranglerConfig(
-    configWithoutMappings,
-    envMappings,
-  );
-  assert.equal(result.requiredTableMappingsPresent, true);
+test('D1-only phases do not require or pretend to validate Lark table mappings', () => {
+  const config = createSafeWranglerConfig();
+  const withoutMappings = validateLarkNotificationRemoteWranglerConfig(config, {});
+  const withUnrelatedMappingValues = validateLarkNotificationRemoteWranglerConfig(config, {
+    LARK_TABLE_MKT_AI_REPORT_RUNS: 'legacy_or_future_value',
+    LARK_TABLE_MKT_REPORT_SNAPSHOTS: 'another_value',
+    LARK_TABLE_MKT_REPORT_SETTINGS: 'third_value',
+    LARK_TABLE_MKT_NOTIFICATION_LOG: '',
+  });
+
+  assert.equal(withoutMappings.requiredTableMappingsPresent, false);
+  assert.equal(withUnrelatedMappingValues.requiredTableMappingsPresent, false);
   assert.equal(
-    result.tableMappingSourcePolicy,
-    'wrangler_or_merged_environment_exact_and_conflict_free',
+    withoutMappings.tableMappingFingerprint,
+    withUnrelatedMappingValues.tableMappingFingerprint,
   );
-  assert.match(result.tableMappingFingerprint, /^[0-9a-f]{64}$/u);
-  assert.deepEqual(
-    new Set(Object.values(result.tableMappingSources)),
-    new Set(['environment']),
+  assert.equal(
+    withoutMappings.tableMappingSourcePolicy,
+    'not_required_for_d1_only_rollout_phases',
   );
 
   const target = loadLarkNotificationRemoteRolloutTarget(createTargetEnv());
-  const fingerprint = createLarkNotificationRemoteTargetFingerprint(target, result);
-  assert.match(fingerprint, /^[0-9a-f]{64}$/u);
-
-  assert.throws(
-    () => validateLarkNotificationRemoteWranglerConfig(configWithoutMappings, {
-      ...envMappings,
-      LARK_TABLE_MKT_AI_REPORT_RUNS: '',
-    }),
-    (error) => error.code === 'LARK_NOTIFICATION_REMOTE_ROLLOUT_CONFIG_UNSAFE'
-      && error.details.fieldName === 'LARK_TABLE_MKT_AI_REPORT_RUNS',
-  );
-  assert.throws(
-    () => validateLarkNotificationRemoteWranglerConfig(configWithoutMappings, {
-      ...envMappings,
-      LARK_TABLE_MKT_AI_REPORT_RUNS: 'todo',
-    }),
-    (error) => error.code === 'LARK_NOTIFICATION_REMOTE_ROLLOUT_CONFIG_UNSAFE'
-      && error.details.invalidSource === 'environment',
-  );
-  assert.throws(
-    () => validateLarkNotificationRemoteWranglerConfig(
-      createSafeWranglerConfig(),
-      { ...envMappings, LARK_TABLE_MKT_AI_REPORT_RUNS: 'tbl_conflict' },
-    ),
-    (error) => error.code === 'LARK_NOTIFICATION_REMOTE_ROLLOUT_CONFIG_UNSAFE'
-      && error.details.sourceConflict === true,
+  assert.equal(
+    createLarkNotificationRemoteTargetFingerprint(target, withoutMappings),
+    createLarkNotificationRemoteTargetFingerprint(target, withUnrelatedMappingValues),
   );
 });
 
@@ -312,24 +298,12 @@ function createTargetEnv() {
   };
 }
 
-function createTableMappingEnv() {
-  return {
-    LARK_TABLE_MKT_AI_REPORT_RUNS: 'tbl_ai_runs',
-    LARK_TABLE_MKT_REPORT_SNAPSHOTS: 'tbl_report_snapshots',
-    LARK_TABLE_MKT_REPORT_SETTINGS: 'tbl_report_settings',
-    LARK_TABLE_MKT_NOTIFICATION_LOG: 'tbl_notification_log',
-  };
-}
-
 function createSafeWranglerConfig(input = {}) {
   const vars = {
     MKT_ENV: 'development',
     MKT_CUSTOMER_PROFILE: 'integration_workspace',
     MKT_CONNECTION_CUSTOMER_KEY: 'chemistry_k',
   };
-  if (input.includeTableMappings !== false) {
-    Object.assign(vars, createTableMappingEnv());
-  }
   if (input.includeNotificationFlags !== false) {
     Object.assign(vars, {
       MKT_NOTIFICATION_RUNTIME_ENABLED: 'false',
