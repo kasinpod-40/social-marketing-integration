@@ -28,74 +28,63 @@ export const LARK_NOTIFICATION_CONTROLLED_UAT_MAPPINGS = Object.freeze({
 
 const HASH = /^[a-f0-9]{64}$/u;
 const WINDOWS = new Set([1, 3, 7, 30]);
-const SENDABLE_READINESS = new Set(['report_available', 'report_partial']);
+const READINESS = new Set(['report_available', 'report_partial']);
 const UAT_TEMPLATE = 'executive_notification_controlled_uat_v1';
 
 export function assertLarkNotificationControlledUatConfirmation(env = {}) {
-  const confirmation = LARK_NOTIFICATION_CONTROLLED_UAT_CONFIRMATION;
-  if (env?.[confirmation.envName] !== confirmation.value) {
-    throw uatError(
-      `Controlled notification UAT requires ${confirmation.envName}=${confirmation.value}`,
+  const { envName, value } = LARK_NOTIFICATION_CONTROLLED_UAT_CONFIRMATION;
+  if (env?.[envName] !== value) {
+    throw error(
+      `Controlled notification UAT requires ${envName}=${value}`,
       'LARK_NOTIFICATION_CONTROLLED_UAT_CONFIRMATION_REQUIRED',
-      { envName: confirmation.envName },
+      { envName },
     );
   }
   return true;
 }
 
 export function selectLarkNotificationExecutivePreview(records = [], options = {}) {
-  if (!Array.isArray(records)) {
-    throw uatError(
-      'Executive Preview inventory must be an array',
-      'LARK_NOTIFICATION_CONTROLLED_UAT_SOURCE_INVALID',
-    );
-  }
+  if (!Array.isArray(records)) throw inputError('Executive Preview inventory must be an array');
   const windowDays = Number(options.windowDays ?? 1);
-  if (!WINDOWS.has(windowDays)) {
-    throw uatError(
-      'Controlled notification UAT window must be 1, 3, 7 or 30',
-      'LARK_NOTIFICATION_CONTROLLED_UAT_SOURCE_INVALID',
-    );
-  }
-  const candidates = records
-    .map(normalizeLarkRecord)
+  if (!WINDOWS.has(windowDays)) throw inputError('Controlled UAT window is unsupported');
+  const matches = records
+    .map(normalizeRecord)
     .filter(({ fields }) => (
       scalar(fields.scope_type) === 'executive'
       && Number(scalar(fields.window_days)) === windowDays
-      && readBoolean(fields.preview_mode, 'preview_mode') === true
-      && readBoolean(fields.sent_to_group, 'sent_to_group') === false
-      && SENDABLE_READINESS.has(String(scalar(fields.readiness_status) ?? ''))
+      && bool(fields.preview_mode, 'preview_mode')
+      && !bool(fields.sent_to_group, 'sent_to_group')
+      && READINESS.has(String(scalar(fields.readiness_status) ?? ''))
       && ['completed', 'generated'].includes(String(scalar(fields.generation_status) ?? ''))
     ))
     .map((record) => Object.freeze({
       ...record,
-      generatedAt: timestamp(record.fields.generated_at),
+      generatedAt: positiveNumber(scalar(record.fields.generated_at), 'generated_at'),
     }))
-    .sort((left, right) => right.generatedAt - left.generatedAt
-      || left.recordId.localeCompare(right.recordId));
-  if (candidates.length === 0) {
-    throw uatError(
+    .sort((a, b) => b.generatedAt - a.generatedAt || a.recordId.localeCompare(b.recordId));
+  if (matches.length === 0) {
+    throw error(
       'No sendable Executive Preview row is available',
       'LARK_NOTIFICATION_CONTROLLED_UAT_SOURCE_MISSING',
       { windowDays },
     );
   }
-  if (candidates.length > 1 && candidates[0].generatedAt === candidates[1].generatedAt) {
-    throw uatError(
+  if (matches.length > 1 && matches[0].generatedAt === matches[1].generatedAt) {
+    throw error(
       'Latest Executive Preview identity is ambiguous',
       'LARK_NOTIFICATION_CONTROLLED_UAT_SOURCE_AMBIGUOUS',
-      { latestGeneratedAt: candidates[0].generatedAt },
+      { latestGeneratedAt: matches[0].generatedAt },
     );
   }
-  validateExecutivePreviewFields(candidates[0].fields);
-  return candidates[0];
+  validatePreview(matches[0].fields);
+  return matches[0];
 }
 
 export function buildLarkNotificationControlledUatRow(sourceRecord) {
-  const source = normalizeLarkRecord(sourceRecord);
-  validateExecutivePreviewFields(source.fields);
-  const sourceAiRunKey = requireText(scalar(source.fields.ai_run_key), 'source.ai_run_key');
-  const sourceDedupeKey = requireHash(scalar(source.fields.dedupe_key), 'source.dedupe_key');
+  const source = normalizeRecord(sourceRecord);
+  validatePreview(source.fields);
+  const sourceAiRunKey = text(scalar(source.fields.ai_run_key), 'source.ai_run_key');
+  const sourceDedupeKey = hash(scalar(source.fields.dedupe_key), 'source.dedupe_key');
   const sourceReportIds = parseSourceReportIds(source.fields.source_report_ids_json);
   const identity = sha256(JSON.stringify({
     contractVersion: LARK_NOTIFICATION_CONTROLLED_UAT_CONTRACT_VERSION,
@@ -127,34 +116,31 @@ export function buildLarkNotificationControlledUatRow(sourceRecord) {
     sourceAiRunKey,
     aiRunKey: fields.ai_run_key,
     reportId: fields.report_id,
-    sourceReportIds: Object.freeze(sourceReportIds),
-    fields: deepFreeze(fields),
+    sourceReportIds,
+    fields: freeze(fields),
   });
 }
 
 export function resolveLarkNotificationControlledUatTables(tables = []) {
-  if (!Array.isArray(tables)) {
-    throw uatError(
-      'Lark Table inventory must be an array',
-      'LARK_NOTIFICATION_CONTROLLED_UAT_TABLE_INVENTORY_INVALID',
-    );
-  }
-  const result = {};
-  for (const [key, exactName] of Object.entries(LARK_NOTIFICATION_CONTROLLED_UAT_TABLES)) {
-    const matches = tables.filter((table) => tableName(table) === exactName);
+  if (!Array.isArray(tables)) throw inputError('Lark Table inventory must be an array');
+  const resolved = {};
+  for (const [role, exactName] of Object.entries(LARK_NOTIFICATION_CONTROLLED_UAT_TABLES)) {
+    const matches = tables.filter((table) => (
+      optionalText(table?.name ?? table?.tableName ?? table?.table_name) === exactName
+    ));
     if (matches.length !== 1) {
-      throw uatError(
-        'Controlled notification UAT requires one exact Lark Table per role',
+      throw error(
+        'Controlled UAT requires one exact Lark Table per role',
         'LARK_NOTIFICATION_CONTROLLED_UAT_TABLE_INVENTORY_INVALID',
-        { tableRole: key, matchCount: matches.length },
+        { tableRole: role, matchCount: matches.length },
       );
     }
-    result[key] = requireText(
+    resolved[role] = text(
       matches[0].tableId ?? matches[0].table_id ?? matches[0].id,
-      `table.${key}`,
+      `table.${role}`,
     );
   }
-  return Object.freeze(result);
+  return Object.freeze(resolved);
 }
 
 export function buildLarkNotificationControlledUatWranglerConfig(
@@ -163,28 +149,26 @@ export function buildLarkNotificationControlledUatWranglerConfig(
   options = {},
 ) {
   let config;
-  try {
-    config = parseJsoncObject(requireText(configText, 'configText'));
-  } catch (cause) {
-    throw uatError(
-      'Controlled notification UAT could not parse Wrangler config',
+  try { config = parseJsoncObject(text(configText, 'configText')); } catch (cause) {
+    throw error(
+      'Controlled UAT could not parse Wrangler config',
       'LARK_NOTIFICATION_CONTROLLED_UAT_CONFIG_INVALID',
       { cause: cause?.code ?? cause?.message ?? 'JSONC_PARSE_FAILED' },
     );
   }
   if (!config || typeof config !== 'object' || Array.isArray(config)) {
-    throw uatError(
-      'Controlled notification UAT Wrangler config must be an object',
+    throw error(
+      'Controlled UAT Wrangler config must be an object',
       'LARK_NOTIFICATION_CONTROLLED_UAT_CONFIG_INVALID',
     );
   }
-  const active = options.active === true;
   const output = structuredClone(config);
-  const varsBlocks = collectVarsBlocks(output);
+  const varsBlocks = collectVars(output);
   if (varsBlocks.length === 0) {
     output.vars = {};
     varsBlocks.push(output.vars);
   }
+  const active = options.active === true;
   for (const vars of varsBlocks) {
     for (const key of Object.keys(vars)) {
       if (/^MKT_[A-Z0-9_]+_ENABLED$/u.test(key)) vars[key] = 'false';
@@ -193,11 +177,11 @@ export function buildLarkNotificationControlledUatWranglerConfig(
       vars[flag] = active ? 'true' : 'false';
     }
     for (const [role, envName] of Object.entries(LARK_NOTIFICATION_CONTROLLED_UAT_MAPPINGS)) {
-      vars[envName] = requireText(tableIds?.[role], `tableIds.${role}`);
+      vars[envName] = text(tableIds?.[role], `tableIds.${role}`);
     }
   }
   return Object.freeze({
-    config: deepFreeze(output),
+    config: freeze(output),
     text: `${JSON.stringify(output, null, 2)}\n`,
     active,
     notificationFlags: Object.freeze(Object.fromEntries(
@@ -209,8 +193,8 @@ export function buildLarkNotificationControlledUatWranglerConfig(
 }
 
 export function buildLarkNotificationControlledUatReadbackSql(aiRunKey) {
-  const key = sqlText(requireText(aiRunKey, 'aiRunKey'));
-  return compactSql(`
+  const key = String(text(aiRunKey, 'aiRunKey')).replaceAll("'", "''");
+  return compact(`
     SELECT
       (SELECT COUNT(*) FROM sqlite_master
         WHERE type = 'table' AND name = 'lark_notification_deliveries')
@@ -228,36 +212,36 @@ export function buildLarkNotificationControlledUatReadbackSql(aiRunKey) {
         WHERE ai_run_key = '${key}' LIMIT 1) AS mirror_status,
       (SELECT sent_at FROM lark_notification_deliveries
         WHERE ai_run_key = '${key}' LIMIT 1) AS sent_at,
-      (SELECT message_id_hash FROM lark_notification_deliveries
+      (SELECT lark_message_id_hash FROM lark_notification_deliveries
         WHERE ai_run_key = '${key}' LIMIT 1) AS message_id_hash;
   `);
 }
 
 export function normalizeLarkNotificationControlledUatReadback(row = {}) {
-  const normalized = Object.freeze({
-    notificationTableCount: nonNegativeInteger(row.notification_table_count),
-    notificationIndexCount: nonNegativeInteger(row.notification_index_count),
-    activeLocks: nonNegativeInteger(row.active_locks),
-    deliveryRows: nonNegativeInteger(row.delivery_rows),
+  const value = Object.freeze({
+    notificationTableCount: count(row.notification_table_count),
+    notificationIndexCount: count(row.notification_index_count),
+    activeLocks: count(row.active_locks),
+    deliveryRows: count(row.delivery_rows),
     deliveryStatus: optionalText(row.delivery_status),
     mirrorStatus: optionalText(row.mirror_status),
     sentAt: row.sent_at === null || row.sent_at === undefined ? null : Number(row.sent_at),
     messageIdHash: optionalText(row.message_id_hash),
   });
-  if (normalized.notificationTableCount !== 1
-      || normalized.notificationIndexCount !== 3
-      || normalized.activeLocks !== 0) {
-    throw uatError(
-      'Controlled notification UAT requires the applied schema and no active lock',
+  if (value.notificationTableCount !== 1
+      || value.notificationIndexCount !== 3
+      || value.activeLocks !== 0) {
+    throw error(
+      'Controlled UAT requires the applied notification schema and no active lock',
       'LARK_NOTIFICATION_CONTROLLED_UAT_REMOTE_STATE_INVALID',
       {
-        notificationTableCount: normalized.notificationTableCount,
-        notificationIndexCount: normalized.notificationIndexCount,
-        activeLocks: normalized.activeLocks,
+        notificationTableCount: value.notificationTableCount,
+        notificationIndexCount: value.notificationIndexCount,
+        activeLocks: value.activeLocks,
       },
     );
   }
-  return normalized;
+  return value;
 }
 
 export function assertLarkNotificationControlledUatDelivered(readback = {}) {
@@ -276,8 +260,8 @@ export function assertLarkNotificationControlledUatDelivered(readback = {}) {
       || value.mirrorStatus !== 'mirrored'
       || !Number.isFinite(value.sentAt)
       || !HASH.test(value.messageIdHash ?? '')) {
-    throw uatError(
-      'Controlled notification UAT delivery is not confirmed and mirrored',
+    throw error(
+      'Controlled UAT delivery is not confirmed and mirrored',
       'LARK_NOTIFICATION_CONTROLLED_UAT_DELIVERY_NOT_CONFIRMED',
       {
         deliveryRows: value.deliveryRows,
@@ -292,11 +276,10 @@ export function assertLarkNotificationControlledUatDelivered(readback = {}) {
 export function assertLarkNotificationControlledUatReplayStable(before, after) {
   const first = assertLarkNotificationControlledUatDelivered(before);
   const replay = assertLarkNotificationControlledUatDelivered(after);
-  const stable = first.deliveryRows === replay.deliveryRows
-    && first.sentAt === replay.sentAt
-    && first.messageIdHash === replay.messageIdHash;
-  if (!stable) {
-    throw uatError(
+  if (first.deliveryRows !== replay.deliveryRows
+      || first.sentAt !== replay.sentAt
+      || first.messageIdHash !== replay.messageIdHash) {
+    throw error(
       'Controlled notification replay changed the authoritative sent delivery',
       'LARK_NOTIFICATION_CONTROLLED_UAT_REPLAY_INVALID',
     );
@@ -312,102 +295,58 @@ export function assertLarkNotificationControlledUatReplayStable(before, after) {
 }
 
 export function parseSourceReportIds(value) {
-  const raw = requireText(scalar(value), 'source_report_ids_json');
+  const raw = text(scalar(value), 'source_report_ids_json');
   let parsed;
   try { parsed = JSON.parse(raw); } catch {
-    throw uatError(
-      'Executive Preview source_report_ids_json is invalid',
-      'LARK_NOTIFICATION_CONTROLLED_UAT_SOURCE_INVALID',
-    );
+    throw inputError('Executive Preview source_report_ids_json is invalid');
   }
   if (!Array.isArray(parsed) || parsed.length === 0 || parsed.length > 32) {
-    throw uatError(
-      'Executive Preview requires a bounded source Report list',
-      'LARK_NOTIFICATION_CONTROLLED_UAT_SOURCE_INVALID',
-    );
+    throw inputError('Executive Preview requires a bounded source Report list');
   }
-  const values = parsed.map((item) => requireText(item, 'source_report_id'));
+  const values = parsed.map((item) => text(item, 'source_report_id'));
   if (new Set(values).size !== values.length) {
-    throw uatError(
-      'Executive Preview source Report identities must be unique',
-      'LARK_NOTIFICATION_CONTROLLED_UAT_SOURCE_INVALID',
-    );
+    throw inputError('Executive Preview source Report identities must be unique');
   }
   return Object.freeze([...values].sort());
 }
 
-function validateExecutivePreviewFields(fields) {
+function validatePreview(fields) {
   for (const field of [
     'ai_run_key', 'report_id', 'dedupe_key', 'source_report_ids_json',
     'insight_summary', 'strengths', 'weaknesses', 'recommendations',
-  ]) requireText(scalar(fields[field]), field);
-  requireHash(scalar(fields.dedupe_key), 'dedupe_key');
+  ]) text(scalar(fields[field]), field);
+  hash(scalar(fields.dedupe_key), 'dedupe_key');
   parseSourceReportIds(fields.source_report_ids_json);
-  const windowDays = Number(scalar(fields.window_days));
-  if (!WINDOWS.has(windowDays)) {
-    throw uatError(
-      'Executive Preview window is unsupported',
-      'LARK_NOTIFICATION_CONTROLLED_UAT_SOURCE_INVALID',
-    );
+  if (!WINDOWS.has(Number(scalar(fields.window_days)))) {
+    throw inputError('Executive Preview window is unsupported');
   }
 }
 
-function normalizeLarkRecord(value) {
+function normalizeRecord(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw uatError(
-      'Lark record must be an object',
-      'LARK_NOTIFICATION_CONTROLLED_UAT_SOURCE_INVALID',
-    );
+    throw inputError('Lark record must be an object');
   }
-  const recordId = requireText(value.recordId ?? value.record_id, 'recordId');
   if (!value.fields || typeof value.fields !== 'object' || Array.isArray(value.fields)) {
-    throw uatError(
-      'Lark record fields are required',
-      'LARK_NOTIFICATION_CONTROLLED_UAT_SOURCE_INVALID',
-    );
+    throw inputError('Lark record fields are required');
   }
-  return Object.freeze({ recordId, fields: deepFreeze(structuredClone(value.fields)) });
+  return Object.freeze({
+    recordId: text(value.recordId ?? value.record_id, 'recordId'),
+    fields: freeze(structuredClone(value.fields)),
+  });
 }
 
-function collectVarsBlocks(config) {
+function collectVars(config) {
   const blocks = [];
   if (config.vars && typeof config.vars === 'object' && !Array.isArray(config.vars)) {
     blocks.push(config.vars);
   }
-  if (config.env && typeof config.env === 'object' && !Array.isArray(config.env)) {
-    for (const environment of Object.values(config.env)) {
-      if (environment?.vars && typeof environment.vars === 'object' && !Array.isArray(environment.vars)) {
-        blocks.push(environment.vars);
-      }
-    }
+  for (const environment of Object.values(config.env ?? {})) {
+    if (environment?.vars && typeof environment.vars === 'object'
+        && !Array.isArray(environment.vars)) blocks.push(environment.vars);
   }
   return blocks;
 }
 
-function tableName(table) {
-  return optionalText(table?.name ?? table?.tableName ?? table?.table_name);
-}
-function timestamp(value) {
-  const number = Number(scalar(value));
-  if (!Number.isFinite(number) || number <= 0) {
-    throw uatError(
-      'Executive Preview generated_at is invalid',
-      'LARK_NOTIFICATION_CONTROLLED_UAT_SOURCE_INVALID',
-    );
-  }
-  return number;
-}
-function readBoolean(value, fieldName) {
-  const resolved = scalar(value);
-  if (resolved === true || resolved === false) return resolved;
-  if (resolved === 1 || resolved === '1' || String(resolved).toLowerCase() === 'true') return true;
-  if (resolved === 0 || resolved === '0' || String(resolved).toLowerCase() === 'false') return false;
-  throw uatError(
-    `${fieldName} must be Boolean`,
-    'LARK_NOTIFICATION_CONTROLLED_UAT_SOURCE_INVALID',
-    { fieldName },
-  );
-}
 function scalar(value) {
   if (value === null || value === undefined) return null;
   if (Array.isArray(value)) {
@@ -422,44 +361,36 @@ function scalar(value) {
   }
   return value;
 }
-function nonNegativeInteger(value) {
+function bool(value, fieldName) {
+  const item = scalar(value);
+  if (item === true || item === false) return item;
+  if (item === 1 || item === '1' || String(item).toLowerCase() === 'true') return true;
+  if (item === 0 || item === '0' || String(item).toLowerCase() === 'false') return false;
+  throw inputError(`${fieldName} must be Boolean`, { fieldName });
+}
+function count(value) {
   const number = Number(value);
   if (!Number.isSafeInteger(number) || number < 0) {
-    throw uatError(
-      'Controlled notification D1 count is invalid',
+    throw error(
+      'Controlled UAT D1 count is invalid',
       'LARK_NOTIFICATION_CONTROLLED_UAT_D1_RESPONSE_INVALID',
     );
   }
   return number;
 }
-function sqlText(value) {
-  return String(value).replaceAll("'", "''");
+function positiveNumber(value, fieldName) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) throw inputError(`${fieldName} is invalid`);
+  return number;
 }
-function compactSql(value) {
-  return value.replaceAll(/\s+/gu, ' ').trim();
+function hash(value, fieldName) {
+  const item = text(value, fieldName);
+  if (!HASH.test(item)) throw inputError(`${fieldName} must be lowercase SHA-256`);
+  return item;
 }
-function sha256(value) {
-  return createHash('sha256').update(value).digest('hex');
-}
-function optionalText(value) {
-  if (value === null || value === undefined) return null;
-  const text = String(value).trim();
-  return text || null;
-}
-function requireHash(value, fieldName) {
-  const text = requireText(value, fieldName);
-  if (!HASH.test(text)) {
-    throw uatError(
-      `${fieldName} must be lowercase SHA-256`,
-      'LARK_NOTIFICATION_CONTROLLED_UAT_SOURCE_INVALID',
-      { fieldName },
-    );
-  }
-  return text;
-}
-function requireText(value, fieldName) {
+function text(value, fieldName) {
   if (typeof value !== 'string' || value.trim() === '') {
-    throw uatError(
+    throw error(
       `${fieldName} is required`,
       'LARK_NOTIFICATION_CONTROLLED_UAT_INPUT_REQUIRED',
       { fieldName },
@@ -467,19 +398,33 @@ function requireText(value, fieldName) {
   }
   return value.trim();
 }
-function deepFreeze(value, seen = new WeakSet()) {
+function optionalText(value) {
+  if (value === null || value === undefined) return null;
+  const item = String(value).trim();
+  return item || null;
+}
+function compact(value) {
+  return value.replaceAll(/\s+/gu, ' ').trim();
+}
+function sha256(value) {
+  return createHash('sha256').update(value).digest('hex');
+}
+function freeze(value, seen = new WeakSet()) {
   if (value && typeof value === 'object') {
     if (seen.has(value)) return value;
     seen.add(value);
-    for (const nested of Object.values(value)) deepFreeze(nested, seen);
+    for (const nested of Object.values(value)) freeze(nested, seen);
     Object.freeze(value);
   }
   return value;
 }
-function uatError(message, code, details = {}) {
-  const error = new Error(message);
-  error.name = 'LarkNotificationControlledUatError';
-  error.code = code;
-  error.details = Object.freeze({ ...details });
-  return error;
+function inputError(message, details = {}) {
+  return error(message, 'LARK_NOTIFICATION_CONTROLLED_UAT_SOURCE_INVALID', details);
+}
+function error(message, code, details = {}) {
+  const value = new Error(message);
+  value.name = 'LarkNotificationControlledUatError';
+  value.code = code;
+  value.details = Object.freeze({ ...details });
+  return value;
 }
