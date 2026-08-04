@@ -1,6 +1,8 @@
 import { permanentError } from '../../../shared/src/errors/runtime-error.js';
 
-/** Loads one exact AI Run → Snapshot → Settings chain without persisting raw destination identity. */
+const MAX_EXECUTIVE_SOURCE_REPORTS = 32;
+
+/** Loads one exact AI Run → source Snapshots → Settings chain without persisting raw destination identity. */
 export async function loadLarkNotificationDeliveryRequest(input = {}) {
   const repository = requireRepository(input.repository);
   const tables = requireTables(input.tables);
@@ -14,38 +16,50 @@ export async function loadLarkNotificationDeliveryRequest(input = {}) {
     'ai_run_key', 'report_id', 'scope_type', 'generation_status', 'notification_eligible',
     'preview_mode', 'sent_to_group', 'dedupe_key', 'window_days', 'readiness_status',
     'severity', 'insight_summary', 'strengths', 'weaknesses', 'recommendations',
+    'source_report_ids_json',
   ]);
   const ai = aiRecord.fields;
   const reportId = requireText(readScalar(ai.report_id), 'report_id');
-
-  const snapshotRecord = await findExact(
+  const sourceReportIds = parseSourceReportIds(ai.source_report_ids_json, reportId);
+  const snapshots = await findExactMany(
     repository,
     tables.reportSnapshots,
     'report_id',
-    reportId,
+    sourceReportIds,
     ['report_id', 'report_setting_key', 'customer_profile', 'period_start', 'period_end'],
   );
-  const snapshot = snapshotRecord.fields;
-  const reportSettingKey = requireText(readScalar(snapshot.report_setting_key), 'report_setting_key');
-  const customerProfile = requireText(readScalar(snapshot.customer_profile), 'customer_profile');
+  const source = normalizeSnapshotAuthority(snapshots, ai.window_days);
 
   const settingCandidates = await repository.listByFieldValues(
     tables.reportSettings,
     'report_setting_key',
-    [reportSettingKey],
+    source.reportSettingKeys,
   );
-  const settingsMatches = settingCandidates.filter((record) => (
-    String(readScalar(record?.fields?.report_setting_key) ?? '') === reportSettingKey
-      && String(readScalar(record?.fields?.customer_profile) ?? '') === customerProfile
-  ));
-  if (settingsMatches.length !== 1) {
-    throw permanentError('Notification Settings identity must resolve to exactly one record', {
-      code: 'LARK_NOTIFICATION_SETTINGS_EXACT_MATCH_REQUIRED',
-      details: { matchCount: settingsMatches.length },
+  const settings = source.reportSettingKeys.map((reportSettingKey) => {
+    const matches = settingCandidates.filter((record) => (
+      String(readScalar(record?.fields?.report_setting_key) ?? '') === reportSettingKey
+        && String(readScalar(record?.fields?.customer_profile) ?? '') === source.customerProfile
+    ));
+    if (matches.length !== 1) {
+      throw permanentError('Notification Settings identity must resolve to exactly one record', {
+        code: 'LARK_NOTIFICATION_SETTINGS_EXACT_MATCH_REQUIRED',
+        details: { matchCount: matches.length },
+      });
+    }
+    return matches[0].fields;
+  });
+
+  const groupIds = [...new Set(settings.map((row) => requireText(
+    String(readScalar(row.group_id) ?? ''),
+    'group_id',
+  )))];
+  if (groupIds.length !== 1) {
+    throw permanentError('Executive source Settings must resolve to one exact destination', {
+      code: 'LARK_NOTIFICATION_DESTINATION_MISMATCH',
+      details: { destinationRedacted: true, destinationCount: groupIds.length },
     });
   }
-  const settings = settingsMatches[0].fields;
-  const groupId = requireText(readScalar(settings.group_id), 'group_id');
+  const groupId = groupIds[0];
   const observedDestinationKeyHash = await sha256Hex(groupId);
   if (observedDestinationKeyHash !== expectedDestinationKeyHash) {
     throw permanentError('Notification destination does not match the reviewed executive group', {
@@ -73,16 +87,22 @@ export async function loadLarkNotificationDeliveryRequest(input = {}) {
       recommendations: readScalar(ai.recommendations),
     }),
     snapshot: Object.freeze({
+      // The AI report keeps its own identity. sourceReportIds are the exact Shared Report evidence.
       reportId,
-      reportSettingKey,
-      customerProfile,
-      periodStart: normalizeDateOnly(snapshot.period_start, 'period_start'),
-      periodEnd: normalizeDateOnly(snapshot.period_end, 'period_end'),
+      reportSettingKey: source.reportSettingKeys[0],
+      sourceReportIds: Object.freeze(sourceReportIds),
+      sourceReportSettingKeys: Object.freeze(source.reportSettingKeys),
+      customerProfile: source.customerProfile,
+      periodStart: source.periodStart,
+      periodEnd: source.periodEnd,
     }),
     settings: Object.freeze({
-      enabled: readBoolean(settings.enabled, 'enabled'),
-      aiEnabled: readBoolean(settings.ai_enabled, 'ai_enabled'),
-      notificationEnabled: readBoolean(settings.notification_enabled, 'notification_enabled'),
+      enabled: settings.every((row) => readBoolean(row.enabled, 'enabled')),
+      aiEnabled: settings.every((row) => readBoolean(row.ai_enabled, 'ai_enabled')),
+      notificationEnabled: settings.every((row) => readBoolean(
+        row.notification_enabled,
+        'notification_enabled',
+      )),
       groupId,
       destinationKeyHash: observedDestinationKeyHash,
     }),
@@ -151,6 +171,106 @@ async function findExact(repository, tableId, fieldName, value, fieldNames) {
   for (const name of fieldNames) fields[name] = matches[0]?.fields?.[name];
   return Object.freeze({ recordId: matches[0].recordId ?? null, fields: Object.freeze(fields) });
 }
+
+async function findExactMany(repository, tableId, fieldName, values, fieldNames) {
+  const records = await repository.listByFieldValues(tableId, fieldName, values);
+  const byIdentity = new Map();
+  for (const record of records) {
+    const identity = String(readScalar(record?.fields?.[fieldName]) ?? '');
+    if (!values.includes(identity)) continue;
+    const matches = byIdentity.get(identity) ?? [];
+    matches.push(record);
+    byIdentity.set(identity, matches);
+  }
+  return Object.freeze(values.map((value) => {
+    const matches = byIdentity.get(value) ?? [];
+    if (matches.length !== 1) {
+      throw permanentError(`${fieldName} must resolve to exactly one Lark record`, {
+        code: 'LARK_NOTIFICATION_EXACT_RECORD_REQUIRED',
+        details: { fieldName, matchCount: matches.length },
+      });
+    }
+    const fields = {};
+    for (const name of fieldNames) fields[name] = matches[0]?.fields?.[name];
+    return Object.freeze({ recordId: matches[0].recordId ?? null, fields: Object.freeze(fields) });
+  }));
+}
+
+function parseSourceReportIds(value, fallbackReportId) {
+  const scalar = readScalar(value);
+  if (scalar === null || scalar === '') return Object.freeze([fallbackReportId]);
+  let parsed;
+  try {
+    parsed = JSON.parse(String(scalar));
+  } catch {
+    throw permanentError('source_report_ids_json must be valid JSON', {
+      code: 'LARK_NOTIFICATION_SOURCE_REPORTS_INVALID',
+    });
+  }
+  if (!Array.isArray(parsed)
+      || parsed.length === 0
+      || parsed.length > MAX_EXECUTIVE_SOURCE_REPORTS) {
+    throw permanentError('Executive notification requires a bounded source Report list', {
+      code: 'LARK_NOTIFICATION_SOURCE_REPORTS_INVALID',
+      details: { sourceReportCount: Array.isArray(parsed) ? parsed.length : null },
+    });
+  }
+  const normalized = parsed.map((item) => requireText(item, 'source_report_id'));
+  if (new Set(normalized).size !== normalized.length) {
+    throw permanentError('Executive source Report identities must be unique', {
+      code: 'LARK_NOTIFICATION_SOURCE_REPORTS_INVALID',
+    });
+  }
+  return Object.freeze([...normalized].sort());
+}
+
+function normalizeSnapshotAuthority(records, windowValue) {
+  const rows = records.map(({ fields }) => Object.freeze({
+    reportId: requireText(String(readScalar(fields.report_id) ?? ''), 'report_id'),
+    reportSettingKey: requireText(
+      String(readScalar(fields.report_setting_key) ?? ''),
+      'report_setting_key',
+    ),
+    customerProfile: requireText(
+      String(readScalar(fields.customer_profile) ?? ''),
+      'customer_profile',
+    ),
+    periodStart: normalizeDateOnly(fields.period_start, 'period_start'),
+    periodEnd: normalizeDateOnly(fields.period_end, 'period_end'),
+  }));
+  const customerProfiles = [...new Set(rows.map((row) => row.customerProfile))];
+  const periodStarts = [...new Set(rows.map((row) => row.periodStart))];
+  const periodEnds = [...new Set(rows.map((row) => row.periodEnd))];
+  if (customerProfiles.length !== 1 || periodStarts.length !== 1 || periodEnds.length !== 1) {
+    throw permanentError('Executive source Reports must share one profile and period', {
+      code: 'LARK_NOTIFICATION_SOURCE_REPORTS_MISMATCH',
+      details: {
+        customerProfileCount: customerProfiles.length,
+        periodStartCount: periodStarts.length,
+        periodEndCount: periodEnds.length,
+      },
+    });
+  }
+  const windowDays = Number(readScalar(windowValue));
+  if (!Number.isSafeInteger(windowDays) || inclusiveDays(periodStarts[0], periodEnds[0]) !== windowDays) {
+    throw permanentError('Executive source Report period does not match window_days', {
+      code: 'LARK_NOTIFICATION_SOURCE_REPORTS_MISMATCH',
+    });
+  }
+  return Object.freeze({
+    customerProfile: customerProfiles[0],
+    periodStart: periodStarts[0],
+    periodEnd: periodEnds[0],
+    reportSettingKeys: Object.freeze([...new Set(rows.map((row) => row.reportSettingKey))].sort()),
+  });
+}
+
+function inclusiveDays(start, end) {
+  const startMs = Date.parse(`${start}T00:00:00.000Z`);
+  const endMs = Date.parse(`${end}T00:00:00.000Z`);
+  return Math.floor((endMs - startMs) / 86_400_000) + 1;
+}
+
 function requireRepository(repository) {
   for (const method of ['listByFieldValues', 'prepareRows', 'prepareExistingRecords', 'createMany', 'updateMany']) {
     if (typeof repository?.[method] !== 'function') {
