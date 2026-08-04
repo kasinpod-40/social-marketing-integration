@@ -16,9 +16,11 @@ import {
   assertReportRuntimeCloseoutReplay,
   assertReportRuntimeFinalizerEvidence,
   buildReportRuntimeCloseoutCandidates,
-  buildReportRuntimeCloseoutConfigWindow,
   parseReportRuntimeCloseoutArgs,
 } from './lib/report-runtime-closeout-operator.js';
+import {
+  buildNotificationPreservingReportRuntimeConfigWindow,
+} from './lib/report-runtime-notification-preserving-config.js';
 import {
   REPORT_RUNTIME_REVIEWED_CHANNELS,
   REPORT_RUNTIME_REVIEWED_MULTIWINDOW_DAYS,
@@ -99,7 +101,7 @@ try {
     details: sanitizeReportLiveClosureEvidence(error?.details ?? {}),
     platformScope: target.platformScope,
     activeDeploymentAttempted,
-    safeRestoreVerified,
+    baselineRestoreVerified: safeRestoreVerified,
     providerRequestCount: 0,
     production: 'BLOCKED',
   }, null, 2)}\n`);
@@ -121,6 +123,8 @@ function printPlan() {
     scope: `${target.platformScope} ${target.capability} exact 1/3/7/30 reviewed materialization from D1 to Lark`,
     windows: REPORT_RUNTIME_REVIEWED_MULTIWINDOW_DAYS,
     reviewedHandoffRequired: true,
+    notificationRuntimeBaselinePreserved: true,
+    notificationAdmissionEnabled: false,
     providerRequests: false,
     schedulesEnabled: false,
     production: 'BLOCKED',
@@ -146,22 +150,34 @@ async function executeCloseout() {
   const reviewed = await loadReviewedReportRuntimeCloseoutHandoff({ env, target, repository });
 
   const sourceText = await readFile(configPath, 'utf8');
-  const config = buildReportRuntimeCloseoutConfigWindow(sourceText, {
+  const config = buildNotificationPreservingReportRuntimeConfigWindow(sourceText, {
     activeTrueFlags: target.activeTrueFlags,
+    finalizerEvidencePath,
+    expectedRepositoryHead: repository.head,
   });
   const auth = await resolveReviewedCloudflareSession({ env, sourceText, runText: runner.runText });
   const queue = await resolveReviewedQueue({
     accountId: auth.accountId, token: auth.token, expectedName: config.mainQueueName,
   });
-  const remote = createReviewedRemoteRuntime({
+  const remoteInput = {
     ...runner,
     configPath,
     repositoryRoot,
     env,
     repositoryHead: repository.head,
-    target,
-    requiredTables: REPORT_RUNTIME_CLOSEOUT_REQUIRED_TABLES,
-    config,
+    requiredTables: Object.freeze({
+      ...REPORT_RUNTIME_CLOSEOUT_REQUIRED_TABLES,
+      ...config.workerRequiredTables,
+    }),
+    config: Object.freeze({ ...config, tableIds: config.workerTableIds }),
+  };
+  const baselineRemote = createReviewedRemoteRuntime({
+    ...remoteInput,
+    target: Object.freeze({ ...target, activeTrueFlags: config.safeTrueFlags }),
+  });
+  const activeRemote = createReviewedRemoteRuntime({
+    ...remoteInput,
+    target: Object.freeze({ ...target, activeTrueFlags: config.activeTrueFlags }),
   });
   const state = createReviewedStateRuntime({
     ...runner,
@@ -186,16 +202,22 @@ async function executeCloseout() {
     { platformScope: target.platformScope, watermarkMatched: false },
   );
 
-  currentStage = 'remote-safe-preflight-and-backup';
+  currentStage = 'remote-baseline-preflight-and-backup';
   const pendingMigrations = await state.readPendingMigrations();
   if (pendingMigrations.length > 0) throw closeoutFailure(
     'Pending migrations block Report closeout',
     'REPORT_RUNTIME_CLOSEOUT_PENDING_MIGRATIONS',
     { pendingMigrationCount: pendingMigrations.length },
   );
-  const safeBundle = await remote.buildBundle(config.safeText, `${target.platformScope}-safe-preflight`);
-  const activeBundle = await remote.buildBundle(config.activeText, `${target.platformScope}-active-preflight`);
-  const remoteSafe = await remote.verifyDeployment('safe');
+  const safeBundle = await baselineRemote.buildBundle(
+    config.safeText,
+    `${target.platformScope}-baseline-preflight`,
+  );
+  const activeBundle = await activeRemote.buildBundle(
+    config.activeText,
+    `${target.platformScope}-active-preflight`,
+  );
+  const remoteBaseline = await baselineRemote.verifyDeployment('active');
 
   const requestedAt = Date.now();
   const candidates = buildReportRuntimeCloseoutCandidates({
@@ -220,17 +242,11 @@ async function executeCloseout() {
     const lark = await state.readLarkReportState(client, config.tableIds, selected.reportId);
     if (selected.operation === 'fresh') {
       assertReportRuntimeWindowTargetPrestate({
-        operation: 'fresh',
-        reportId: selected.reportId,
-        d1,
-        lark,
+        operation: 'fresh', reportId: selected.reportId, d1, lark,
       });
     } else if (selected.operation === 'verify') {
       assertReportRuntimeWindowTargetPrestate({
-        operation: 'refresh',
-        reportId: selected.reportId,
-        d1,
-        lark,
+        operation: 'refresh', reportId: selected.reportId, d1, lark,
       });
       assertD1LarkIntegrity(d1, lark);
     } else {
@@ -247,19 +263,20 @@ async function executeCloseout() {
   let successfulRunFloor = 0;
 
   try {
-    currentStage = 'deploy-report-only-window-once';
+    currentStage = 'deploy-report-window-once';
     await writeReviewedAttempt(outputRoot, `${target.platformScope}-deploy-active`, {
       repositoryHead: repository.head,
       configSha256: config.activeSha256,
+      baselineTrueFlagCount: config.safeTrueFlags.length,
       windows: plan.map((row) => row.windowDays),
     });
-    activeDeployment = await remote.deployConfig(
+    activeDeployment = await activeRemote.deployConfig(
       config.activeText,
       `${target.platformScope}-reviewed-multiwindow-active`,
       REPORT_RUNTIME_CLOSEOUT_CONTRACT_VERSION,
     );
     activeDeploymentAttempted = true;
-    await remote.verifyDeployment('active', activeDeployment.versionId);
+    await activeRemote.verifyDeployment('active', activeDeployment.versionId);
 
     for (const prestate of prestates) {
       currentStage = `execute-${target.platformScope}-${prestate.selected.windowDays}d`;
@@ -282,23 +299,24 @@ async function executeCloseout() {
     primaryError = error;
   } finally {
     if (activeDeploymentAttempted) {
-      currentStage = 'restore-all-false';
+      currentStage = 'restore-preserved-worker-baseline';
       try {
-        await writeReviewedAttempt(outputRoot, `${target.platformScope}-restore-safe`, {
+        await writeReviewedAttempt(outputRoot, `${target.platformScope}-restore-baseline`, {
           repositoryHead: repository.head,
           configSha256: config.safeSha256,
+          notificationRuntimeState: config.notificationRuntime.state,
           activeVersionFingerprint: activeDeployment ? sha256(activeDeployment.versionId) : null,
         });
-        restoreDeployment = await remote.deployConfig(
+        restoreDeployment = await baselineRemote.deployConfig(
           config.safeText,
-          `${target.platformScope}-reviewed-multiwindow-safe-restore`,
+          `${target.platformScope}-reviewed-multiwindow-baseline-restore`,
           REPORT_RUNTIME_CLOSEOUT_CONTRACT_VERSION,
         );
-        await remote.verifyDeployment('safe', restoreDeployment.versionId);
+        await baselineRemote.verifyDeployment('active', restoreDeployment.versionId);
         safeRestoreVerified = true;
       } catch (restoreError) {
         if (primaryError) throw closeoutFailure(
-          `${target.platformScope} Report closeout failed and all-false restore also failed`,
+          `${target.platformScope} Report closeout failed and preserved baseline restore also failed`,
           'REPORT_RUNTIME_CLOSEOUT_RESTORE_FAILED_AFTER_PRIMARY_ERROR',
           {
             primaryCode: primaryError?.code ?? 'UNKNOWN',
@@ -312,7 +330,7 @@ async function executeCloseout() {
 
   if (primaryError) throw primaryError;
   if (!safeRestoreVerified) throw closeoutFailure(
-    `${target.platformScope} Report closeout requires verified all-false restore`,
+    `${target.platformScope} Report closeout requires verified Worker baseline restore`,
     'REPORT_RUNTIME_CLOSEOUT_RESTORE_NOT_VERIFIED',
   );
   if (results.length !== 4 || results.some((row) => row.zeroDrift !== true)) throw closeoutFailure(
@@ -354,15 +372,20 @@ async function executeCloseout() {
       conversationFactCount: Number(d1Preflight.conversation_fact_count ?? 0),
       accountFactCount: Number(d1Preflight.account_fact_count ?? 0),
       pendingMigrations,
-      safeBundleSha256: safeBundle.sha256,
+      baselineBundleSha256: safeBundle.sha256,
       activeBundleSha256: activeBundle.sha256,
       backup,
-      remoteSafeVersionFingerprint: sha256(remoteSafe.activeVersion),
+      remoteBaselineVersionFingerprint: sha256(remoteBaseline.activeVersion),
     },
     windows: results,
     runtime: {
-      activeTrueFlags: target.activeTrueFlags,
-      restoredAllFalse: true,
+      reportActiveTrueFlags: target.activeTrueFlags,
+      baselineTrueFlags: config.safeTrueFlags,
+      activeTrueFlags: config.activeTrueFlags,
+      notificationRuntimeState: config.notificationRuntime.state,
+      notificationAdmissionEnabled: false,
+      restoredBaseline: true,
+      restoredAllFalse: config.safeTrueFlags.length === 0,
       finalWorkerVersionFingerprint: sha256(restoreDeployment.versionId),
       queueMessagesSent: results.reduce((total, row) => total + row.queueMessagesSent, 0),
       providerRequestCount: 0,
