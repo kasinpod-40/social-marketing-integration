@@ -1,6 +1,8 @@
 import { stableStringify } from '../use-cases/build-report-snapshot.js';
 import {
   LARK_NATIVE_AI_AUTOMATION_OUTPUT_BINDING,
+  LARK_NATIVE_AI_AUTOMATION_PROMPTS,
+  LARK_NATIVE_AI_AUTOMATION_PROMPT_VERSION,
   LARK_NATIVE_AI_CUSTOM_FIELD_AUTHORITY,
   LARK_NATIVE_AI_DISABLED_CONFIGURATION_PERMISSION_BUNDLE,
   LARK_NATIVE_AI_DISABLED_CONFIGURATION_PREVIEW_VERSION,
@@ -75,10 +77,6 @@ export async function buildLarkNativeAiDisabledConfigurationPreview(input = {}) 
 
   const blockers = Object.freeze([
     Object.freeze({
-      code: 'LARK_NATIVE_AI_PROMPT_CAPTURE_INCOMPLETE',
-      reason: 'The Automation AI text result can be bound into the target record field, but the complete approved prompt for each of the four actions has not yet been captured.',
-    }),
-    Object.freeze({
       code: 'LARK_NATIVE_PAYLOAD_SHA256_UNPROVEN',
       reason: 'The live Automation method for computing the exact redacted payload SHA-256 is not yet proven.',
     }),
@@ -93,7 +91,7 @@ export async function buildLarkNativeAiDisabledConfigurationPreview(input = {}) 
   return deepFreeze({
     ok: true,
     contractVersion: LARK_NATIVE_AI_DISABLED_CONFIGURATION_PREVIEW_VERSION,
-    status: 'repository_preview_automation_ai_binding_verified_live_configuration_blocked',
+    status: 'repository_preview_prompts_captured_live_configuration_blocked',
     mode: 'repository_only',
     liveConfigurationAuthorized: false,
     activationAuthorized: false,
@@ -101,6 +99,8 @@ export async function buildLarkNativeAiDisabledConfigurationPreview(input = {}) 
     destinationKeyHash: LARK_NATIVE_AI_EXECUTIVE_DESTINATION_KEY_HASH,
     customAiFieldAuthority: LARK_NATIVE_AI_CUSTOM_FIELD_AUTHORITY,
     automationAiOutputBinding: LARK_NATIVE_AI_AUTOMATION_OUTPUT_BINDING,
+    automationPromptVersion: LARK_NATIVE_AI_AUTOMATION_PROMPT_VERSION,
+    automationPrompts: LARK_NATIVE_AI_AUTOMATION_PROMPTS,
     workflows: LARK_NATIVE_AI_DISABLED_CONFIGURATION_WORKFLOWS,
     notificationPayloadPreview: canonicalPayload,
     notificationPayloadBytes: payloadBytes,
@@ -144,14 +144,24 @@ export function validateLarkNativeAiDisabledConfigurationPreview(preview) {
     blockers.push({ code: 'DESTINATION_INVALID' });
   }
   if (preview.customAiFieldAuthority?.fieldCount !== 4
-    || preview.customAiFieldAuthority?.usage !== 'target_fields_and_prompt_reference') {
+    || preview.customAiFieldAuthority?.usage !== 'target_fields_and_prompt_reference'
+    || preview.customAiFieldAuthority?.promptCaptureComplete !== true) {
     blockers.push({ code: 'CUSTOM_AI_FIELD_AUTHORITY_INVALID' });
   }
   if (preview.automationAiOutputBinding?.exactCapabilityVerified !== true
     || preview.automationAiOutputBinding?.resultBinding
       !== 'ai_action_output_to_update_record_field'
-    || preview.automationAiOutputBinding?.finalActionCount !== 4) {
+    || preview.automationAiOutputBinding?.finalActionCount !== 4
+    || preview.automationAiOutputBinding?.promptCaptureComplete !== true) {
     blockers.push({ code: 'AUTOMATION_AI_OUTPUT_BINDING_INVALID' });
+  }
+  const prompts = preview.automationPrompts;
+  if (preview.automationPromptVersion !== LARK_NATIVE_AI_AUTOMATION_PROMPT_VERSION
+    || !prompts || typeof prompts !== 'object'
+    || Object.keys(prompts).sort().join(',')
+      !== 'insight_summary,recommendations,strengths,weaknesses'
+    || Object.values(prompts).some(({ text }) => typeof text !== 'string' || text.length < 200)) {
+    blockers.push({ code: 'AUTOMATION_PROMPTS_INVALID' });
   }
   if (!SHA256_HEX.test(String(preview.notificationPayloadChecksum ?? ''))) {
     blockers.push({ code: 'PAYLOAD_CHECKSUM_INVALID' });

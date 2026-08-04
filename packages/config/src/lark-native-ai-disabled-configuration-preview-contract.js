@@ -1,5 +1,17 @@
+import {
+  LARK_NATIVE_AI_AUTOMATION_PROMPTS,
+  LARK_NATIVE_AI_AUTOMATION_PROMPT_REFERENCE_SLOTS,
+  LARK_NATIVE_AI_AUTOMATION_PROMPT_VERSION,
+} from './lark-native-ai-automation-prompt-contract.js';
+
+export {
+  LARK_NATIVE_AI_AUTOMATION_PROMPTS,
+  LARK_NATIVE_AI_AUTOMATION_PROMPT_REFERENCE_SLOTS,
+  LARK_NATIVE_AI_AUTOMATION_PROMPT_VERSION,
+};
+
 export const LARK_NATIVE_AI_DISABLED_CONFIGURATION_PREVIEW_VERSION =
-  'lark_native_ai_disabled_configuration_preview_v3';
+  'lark_native_ai_disabled_configuration_preview_v4';
 export const LARK_NATIVE_AI_DISABLED_CONFIGURATION_PREVIEW_OUTPUT_ROOT =
   'outputs/lark-native-ai-disabled-configuration-preview';
 
@@ -32,32 +44,29 @@ const OUTPUT_FIELDS = Object.freeze([
   'weaknesses',
   'recommendations',
 ]);
-const CUSTOM_AI_VISIBLE_REFERENCES = Object.freeze([
-  'scope_type',
-  'channel_key',
-  'window_days',
-  'data_status',
-  'readiness_status',
-  'readiness_message',
-]);
 
 export const LARK_NATIVE_AI_CUSTOM_FIELD_AUTHORITY = deepFreeze({
   source: 'user_confirmed_lark_base_ui',
   observedOn: '2026-08-04',
   table: AI_RUN_TABLE,
-  fieldCount: 4,
+  fieldCount: OUTPUT_FIELDS.length,
   exportFieldType: 'Text',
   outputBinding: 'field_self',
-  promptCaptureComplete: false,
+  promptCaptureComplete: true,
+  promptVersion: LARK_NATIVE_AI_AUTOMATION_PROMPT_VERSION,
   automaticGenerationPolicy: 'not_required_by_selected_automation_path',
   usage: 'target_fields_and_prompt_reference',
-  sharedVisibleReferences: CUSTOM_AI_VISIBLE_REFERENCES,
-  fields: [
-    customAiField('insight_summary', 'Thai insight summary for the current record'),
-    customAiField('strengths', 'Thai strengths for the current record'),
-    customAiField('weaknesses', 'Thai weaknesses for the current record'),
-    customAiField('recommendations', 'Thai recommendations for the current record'),
-  ],
+  sharedVisibleReferences: LARK_NATIVE_AI_AUTOMATION_PROMPT_REFERENCE_SLOTS,
+  fields: OUTPUT_FIELDS.map((fieldName) => Object.freeze({
+    fieldName,
+    fieldType: 'Custom AI field',
+    exportFieldType: 'Text',
+    outputBinding: 'field_self',
+    promptIntent: promptIntent(fieldName),
+    promptCaptured: true,
+    promptVersion: LARK_NATIVE_AI_AUTOMATION_PROMPT_VERSION,
+    visibleReferences: LARK_NATIVE_AI_AUTOMATION_PROMPT_REFERENCE_SLOTS,
+  })),
 });
 
 export const LARK_NATIVE_AI_AUTOMATION_OUTPUT_BINDING = deepFreeze({
@@ -71,8 +80,10 @@ export const LARK_NATIVE_AI_AUTOMATION_OUTPUT_BINDING = deepFreeze({
   verifiedTargetField: 'insight_summary',
   resultBinding: 'ai_action_output_to_update_record_field',
   exactCapabilityVerified: true,
-  finalActionCount: 4,
-  promptCaptureComplete: false,
+  finalActionCount: OUTPUT_FIELDS.length,
+  promptCaptureComplete: true,
+  promptVersion: LARK_NATIVE_AI_AUTOMATION_PROMPT_VERSION,
+  promptFields: OUTPUT_FIELDS,
 });
 
 export const LARK_NATIVE_AI_DISABLED_CONFIGURATION_WORKFLOWS = Object.freeze([
@@ -89,10 +100,11 @@ export const LARK_NATIVE_AI_DISABLED_CONFIGURATION_WORKFLOWS = Object.freeze([
       type: 'lark_automation_ai_generated_text_actions',
       table: AI_RUN_TABLE,
       outputFields: OUTPUT_FIELDS,
-      actionCount: 4,
+      actionCount: OUTPUT_FIELDS.length,
       outputShape: 'single_text_value_per_action',
       bindingStatus: 'verified_action_output_to_record_field',
-      promptCaptureComplete: false,
+      promptCaptureComplete: true,
+      promptVersion: LARK_NATIVE_AI_AUTOMATION_PROMPT_VERSION,
     }),
     finalTrigger: Object.freeze({
       type: 'new_or_updated_record_matches_conditions',
@@ -117,7 +129,10 @@ export const LARK_NATIVE_AI_DISABLED_CONFIGURATION_WORKFLOWS = Object.freeze([
       ...OUTPUT_FIELDS.map((fieldName) => action('lark_ai_generated_text', Object.freeze({
         outputField: fieldName,
         resultBinding: `action_output → ${fieldName}`,
-        promptStatus: 'capture_incomplete',
+        promptStatus: 'captured_approved',
+        promptVersion: LARK_NATIVE_AI_AUTOMATION_PROMPT_VERSION,
+        prompt: LARK_NATIVE_AI_AUTOMATION_PROMPTS[fieldName].text,
+        referenceSlots: LARK_NATIVE_AI_AUTOMATION_PROMPTS[fieldName].referenceSlots,
       }))),
       action('update_current_record', Object.freeze({
         setFromActionOutputs: OUTPUT_FIELDS,
@@ -252,15 +267,13 @@ export const LARK_NATIVE_AI_DISABLED_CONFIGURATION_SAFETY = Object.freeze({
   production: 'BLOCKED',
 });
 
-function customAiField(fieldName, promptIntent) {
+function promptIntent(fieldName) {
   return Object.freeze({
-    fieldName,
-    fieldType: 'Custom AI field',
-    exportFieldType: 'Text',
-    outputBinding: 'field_self',
-    promptIntent,
-    visibleReferences: CUSTOM_AI_VISIBLE_REFERENCES,
-  });
+    insight_summary: 'Thai insight summary for the current record',
+    strengths: 'Thai strengths for the current record',
+    weaknesses: 'Thai weaknesses for the current record',
+    recommendations: 'Thai recommendations for the current record',
+  })[fieldName];
 }
 function condition(field, operator, value) {
   return Object.freeze({ field, operator, value });
