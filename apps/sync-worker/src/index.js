@@ -1,8 +1,8 @@
 import { createSyncWorker } from './sync-worker.js';
 
 export {
-  processJobWithWooCommerceEndToEnd as processJob,
-} from './woocommerce-active-job-router.js';
+  processJobWithLarkNotification as processJob,
+} from './lark-notification-active-job-router.js';
 export {
   QUEUE_ROLES,
   classifyQueueBatch,
