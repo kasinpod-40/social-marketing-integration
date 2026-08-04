@@ -10,12 +10,7 @@ import {
   safeReportRuntimeCloseoutEvidence,
 } from './report-runtime-closeout-operator.js';
 
-/**
- * Bind the generic planning framework to the merged reviewed authorities. This adapter does not
- * perform Provider, Queue, D1, Lark or Worker mutation. The public YouTube collector remains the
- * only source of Remote readiness evidence and the existing closeout candidate builder remains the
- * only Report identity authority.
- */
+/** Bind plan-only closure checks to the existing shared Report authorities. */
 export function createReportLiveClosurePlanAdapters(input = {}) {
   const descriptor = requireObject(input.descriptor, 'descriptor');
   const target = requireObject(input.target, 'target');
@@ -27,9 +22,10 @@ export function createReportLiveClosurePlanAdapters(input = {}) {
     'Descriptor capability diverges from the shared Report platform registry',
     'REPORT_LIVE_CLOSURE_PLATFORM_CONTRACT_DRIFT',
   );
+  const expectedAccountKey = target.accountKey ?? target.customerKey;
   if (evidence.target?.platformScope !== descriptor.platform
     || evidence.target?.customerProfile !== target.customerProfile
-    || evidence.target?.accountKey !== target.customerKey) throw bindingError(
+    || evidence.target?.accountKey !== expectedAccountKey) throw bindingError(
     'Reviewed readiness evidence target does not match the closure target',
     'REPORT_LIVE_CLOSURE_READINESS_TARGET_MISMATCH',
   );
@@ -39,9 +35,21 @@ export function createReportLiveClosurePlanAdapters(input = {}) {
     sourceWatermark: requireText(input.sourceWatermark, 'sourceWatermark'),
     timeZone: requireText(input.timeZone ?? 'Asia/Bangkok', 'timeZone'),
     platformScope: descriptor.platform,
-    accountKey: target.customerKey,
+    accountKey: expectedAccountKey,
     formulaVersion: descriptor.formulaVersion,
   });
+  const source = evidence.source ?? {};
+  const sourceEntityCount = firstFinite([
+    source.entityCount,
+    source.contentEntityCount,
+    source.contentStateCount,
+    source.dailyFactCount,
+    source.conversationFactCount,
+    source.accountFactCount,
+  ]);
+  const coverageStatus = normalizeCoverageStatus(
+    source.coverageStatus ?? source.contentCoverageStatus,
+  );
 
   return Object.freeze({
     repositoryGate: binding('repositoryGate', async () => Object.freeze({
@@ -65,13 +73,13 @@ export function createReportLiveClosurePlanAdapters(input = {}) {
       platform: descriptor.platform,
       capability: descriptor.capability,
       sourceStatus: sourceContract?.sourceStatus ?? descriptor.sourceStatus,
-      sourceEntityCount: Number(evidence.source?.contentEntityCount ?? 0),
-      watermarkDate: evidence.source?.watermarkDate ?? null,
+      sourceEntityCount,
+      watermarkDate: source.watermarkDate ?? null,
     })),
     coverageValidation: binding('coverageValidation', async () => Object.freeze({
       ok: true,
-      status: normalizeCoverageStatus(evidence.source?.contentCoverageStatus),
-      failureCount: Number(evidence.source?.failureCount ?? -1),
+      status: coverageStatus,
+      failureCount: Number(source.failureCount ?? -1),
       authority: descriptor.coverageAuthority,
     })),
     identityPlanning: binding('identityPlanning', async () => Object.freeze({
@@ -105,7 +113,13 @@ function normalizeCoverageStatus(value) {
   const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
   return normalized === 'completed' ? 'complete' : normalized;
 }
-
+function firstFinite(values) {
+  for (const value of values) {
+    const number = Number(value);
+    if (Number.isFinite(number) && number >= 0) return number;
+  }
+  return 0;
+}
 function requireObject(value, field) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw bindingError(
     `${field} must be an object`,
