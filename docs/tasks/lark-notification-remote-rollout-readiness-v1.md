@@ -5,15 +5,18 @@ Date: 2026-08-04
 ## Status
 
 ```text
-TASK_STATUS                         = REPOSITORY_IMPLEMENTED_CI_PENDING
+TASK_STATUS                         = SAFE_WORKER_DEPLOY_REPOSITORY_GATE_IN_REVIEW
 CURRENT_PROGRAM                     = LARK_NOTIFICATION_REMOTE_ROLLOUT_READINESS_V1
-BASE_AUTHORITY                      = PR_472_MERGED
 SAFE_DELIVERY_MAIN_COMMIT           = e1ebf03246ffdb09c9e70b78a01c350202127ce0
-REMOTE_D1_MIGRATION                 = NOT_RUN
+REMOTE_D1_MIGRATION_0019            = APPLIED_AND_VERIFIED
+NOTIFICATION_DELIVERY_TABLES        = 1_TABLE_3_INDEXES_0_ROWS
+RETAINED_ACTIVE_WORK                = 2_PRESERVED
+ACTIVE_LOCKS                        = 0
+BUSINESS_FACT_DRIFT                 = FALSE
 WORKER_DEPLOYMENT                   = NOT_RUN
-QUEUE_SEND                          = NOT_RUN
-LARK_WRITE                          = NOT_RUN
-NOTIFICATION_SEND                   = NOT_RUN
+QUEUE_SEND                          = 0
+LARK_WRITE                          = 0
+NOTIFICATION_SEND                   = 0
 AUTOMATION_ACTIVE                   = 0
 SCHEDULE                            = DISABLED
 PRODUCTION                          = BLOCKED
@@ -21,111 +24,123 @@ PRODUCTION                          = BLOCKED
 
 ## Objective
 
-Prepare the separately approved Remote rollout for the merged atomic Lark executive notification delivery while preserving every existing safety boundary.
+Roll out the merged atomic Lark executive notification delivery through the existing Integration Workspace Worker without enabling notification execution yet.
 
 Reviewed delivery path:
 
 ```text
 AI Run / Snapshot / Settings exact reads
-→ D1 atomic notification_attempt_key claim
 → existing shared Queue job
+→ D1 atomic notification_attempt_key claim
 → one Lark group message
 → D1 sent or blocked_unknown terminal state
 → idempotent Lark Notification Log mirror
 ```
 
-The Lark Base notification Automation remains an inactive placeholder and is not part of delivery.
+The Lark Base notification Automation remains an inactive placeholder and is not used for delivery.
 
-## Corrected Remote ownership rule
+## Completed Remote D1 rollout
 
-Chatwoot data completion and Chatwoot Report readiness do not block this workstream. A stale or unrelated entry in `docs/current-task.md` is not sufficient evidence that Chatwoot owns the current Remote Worker/D1/Queue window.
+The guarded D1 sequence completed through the existing rollout operator:
 
-Before any Remote mutation, the operator checks live D1 `sync_work_runs` and `sync_locks`. Repository preparation continues independently. Any active work or non-expired lock stops before backup or Migration.
+```text
+preflight        PASS
+backup           PASS
+Migration 0019   APPLIED
+schema read-back PASS
+```
+
+Verified Remote state after Migration:
+
+```text
+notification table         1
+notification indexes       3
+notification delivery rows 0
+retained active Work       2
+non-expired active locks   0
+Shared Business fact drift false
+```
+
+The two retained Meta Ads Work rows are durable forensic/recovery state. They remain unchanged. A non-expired `sync_locks` row is the concurrent-execution authority; any active lock blocks deployment.
 
 ## Reused Shared Core
 
 - existing Migration `0019_lark_notification_delivery.sql`;
-- existing Wrangler/D1 migration and backup sequence used by the current Remote readiness operators;
-- existing Integration Workspace D1, Queue and DLQ topology;
-- existing Lark notification Runtime config and destination hash;
-- existing central `JOB_TYPES`, `JOB_TRIGGERS`, schema version and stable Queue operation builder;
-- existing `.dev.vars` parser.
+- existing D1 backup, migration, evidence and schema read-back chain;
+- existing Integration Workspace Worker, D1, Queue and DLQ topology;
+- existing notification Runtime config and destination hash;
+- existing Wrangler structured deploy-output parser;
+- existing Worker deployment-status command;
+- existing dormant-Work and Shared Business-fact parity authority;
+- existing `.dev.vars` parser and merged Environment precedence.
 
-No second Queue framework, D1 writer, Lark client, delivery engine, Scheduler or generic operator framework was added.
+No second Queue framework, D1 writer, Lark client, delivery engine, Scheduler or deployment framework was created.
 
-## Implemented operator
+## Safe Worker deploy gate
+
+Repository files:
 
 ```text
-scripts/lib/lark-notification-remote-rollout-operator.js
-scripts/lark-notification-remote-rollout-operator.mjs
-tests/application/lark-notification-remote-rollout-operator.test.js
+scripts/lib/lark-notification-safe-worker-deploy.js
+scripts/lark-notification-safe-worker-deploy.mjs
+tests/application/lark-notification-safe-worker-deploy.test.js
 ```
 
 Default execution is plan-only:
 
 ```bash
-node scripts/lark-notification-remote-rollout-operator.mjs
+node scripts/lark-notification-safe-worker-deploy.mjs
 ```
 
-Implemented executable phases use distinct exact confirmations:
+One separately approved execution uses:
 
 ```text
-preflight
-backup
-migrate
-schema-readback
+CONFIRM_LARK_NOTIFICATION_SAFE_WORKER_DEPLOY
+= DEPLOY_LARK_NOTIFICATION_ALL_FLAGS_FALSE
 ```
 
-The operator intentionally has no Worker deploy, Queue send, Lark write, message send, Automation activation or Schedule path. Those remain separate post-Migration gates.
+The one-shot operator performs:
 
-## Required rollout phases
+1. validate the retained preflight/backup/migrate/schema-readback evidence chain;
+2. verify Migration 0019 has no pending migration;
+3. verify notification Runtime/send/mirror flags are all false;
+4. verify the retained Work count, active-lock count and Shared Business facts before deployment;
+5. run one Worker dry-run;
+6. deploy the existing Integration Workspace Worker once;
+7. verify the exact deployed Worker version serves 100% of traffic;
+8. read back D1 state and require zero drift after deployment;
+9. stop before controlled UAT.
 
-1. `preflight`
-   - clean merged `main` containing PR #472;
-   - exact Migration 0019 source audit;
-   - exact all-false notification flags and required Lark table mappings;
-   - current Remote migration inventory;
-   - live D1 active-work/active-lock check;
-   - zero Remote mutation.
+## Explicitly absent from this gate
 
-2. `backup`
-   - fresh Remote D1 export and SHA-256;
-   - evidence bound to the exact target and Migration source.
+```text
+Queue admission            none
+Lark read/write            none
+Notification send          none
+Automation activation      none
+Schedule activation        none
+Production cutover         none
+```
 
-3. `migrate`
-   - apply only Migration 0019;
-   - requires exact preflight and backup evidence.
-
-4. `schema-readback`
-   - exact one table and three indexes;
-   - zero notification delivery rows;
-   - zero active work/locks;
-   - Shared Business fact counts unchanged.
-
-5. Later separate approvals
-   - safe all-false Worker deploy;
-   - one controlled Queue admission and one group message;
-   - replay verification with `messageSendCount=0`;
-   - all-false restore;
-   - activation remains separate and no Schedule is part of v1.
+The next gate after a passed Safe Worker deployment is one controlled UAT. It requires separate approval and is not callable from this operator.
 
 ## Fail-closed boundaries
 
-- Never auto-retry `sending` or `blocked_unknown`.
-- Never persist raw Lark group ID or raw message ID in evidence/logs.
-- Never use the inactive Base notification Automation as a delivery fallback.
-- Never send a second Queue admission for the same `notification_attempt_key` during controlled UAT.
-- Never enable a Schedule in v1.
-- Do not infer Remote ownership from `docs/current-task.md` alone.
-- Stop before Remote mutation when live D1 proves active work or a non-expired lock.
-- Require a clean `main` containing the merged safe-delivery baseline.
+- Never deploy when any notification flag is true.
+- Never deploy when a non-expired D1 lock exists.
+- Never alter, close, delete, relabel or redrive retained Meta Work.
+- Never accept split Worker traffic or a different active Worker version.
+- Never auto-retry a failed deployment attempt.
+- Never send Queue, Lark or notification traffic from the Safe deploy operator.
+- Never activate Base Automation or Schedule in v1.
+- Never persist raw Lark destination identity in evidence.
 
 ## Verification
 
 ```bash
 npm ci
 npm run check
-node --test tests/application/lark-notification-remote-rollout-operator.test.js
+node --test tests/application/lark-notification-safe-worker-deploy.test.js
 node --test tests/application/lark-notification-active-job-router.test.js
 node --test tests/connectors/d1-lark-notification-delivery-store.test.js
 npm test
@@ -137,14 +152,13 @@ git diff --check
 
 ## Current action result
 
-Repository implementation only. No Remote command was executed.
+Repository implementation only. The Safe Worker deployment has not yet been executed.
 
 ```text
-Remote D1 read/write       0 / 0
-Migration apply            0
+Remote D1 read/write       0 / 0 during repository implementation
 Worker deployment          0
 Queue send                 0
-Lark read/write            0 / 0
+Lark write                 0
 Notification send          0
 Automation status change   0
 Schedule                    disabled
