@@ -61,5 +61,8 @@ test('K3 Active finalizer is ordered after enable, Safe upload and route probe',
   assert.match(source, /assertWooCommercePreviewUrlRestored/u);
   assert.match(source, /automatic-preview-safe-close/u);
   assert.doesNotMatch(source, /queue\.send\(/u);
-  assert.doesNotMatch(source, /wrangler["']?,\s*["']deploy/u);
+  assert.doesNotMatch(
+    source,
+    /["']wrangler["']\s*,\s*["']deploy["']/u,
+  );
 });
