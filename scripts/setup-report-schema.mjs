@@ -1,6 +1,7 @@
 import { readDevVars } from './lib/dev-vars.js';
 import { printJson } from './lib/lark-runtime.js';
 import { resolveReportSchemaInstallerMode } from './lib/report-schema-installer-mode.js';
+import { resolveReportMetricValueTableEnvironment } from './lib/report-metric-value-table-environment-resolver.js';
 import {
   buildLarkDashboardCompatibilityReportSchema,
   inspectLarkDashboardCompatibilityFreeze,
@@ -33,12 +34,16 @@ try {
 async function main() {
   const devVarsFile = process.env.DEV_VARS_FILE ?? '.dev.vars';
   const fileEnv = await readDevVars(devVarsFile);
-  const env = normalizeEnvAliases({ ...fileEnv, ...process.env });
+  const sourceEnv = normalizeEnvAliases({ ...fileEnv, ...process.env });
   const mode = resolveReportSchemaInstallerMode({ argv: process.argv.slice(2), env: process.env });
-  const client = createLarkBitableClientFromEnv(env, {
+  const client = createLarkBitableClientFromEnv(sourceEnv, {
     onRequest: process.env.MKT_SCHEMA_VERBOSE === 'true'
       ? (event) => console.error(JSON.stringify(event))
       : undefined,
+  });
+  const env = await resolveReportMetricValueTableEnvironment({
+    client,
+    env: sourceEnv,
   });
   const compatibility = await inspectLarkDashboardCompatibilityFreeze({ client, env });
   if (compatibility.applicable && compatibility.compatible !== true) {
@@ -72,7 +77,7 @@ async function main() {
       nextCommand: preview.readyToApply
         ? 'CONFIRM_WRITE=YES npm run setup:report-schema:apply'
         : null,
-      note: 'Preview mode เท่านั้น ยังไม่มีการสร้างหรือแก้ไข Table/Field',
+      note: 'Preview modeเท่านั้น ยังไม่มีการสร้างหรือแก้ไข Table/Field',
       warning: mode.ignoredAmbientConfirmation
         ? 'พบ CONFIRM_WRITE=YES ใน Shell แต่ Preview command จะไม่เขียนข้อมูล ต้องใช้ setup:report-schema:apply เท่านั้น'
         : null,
