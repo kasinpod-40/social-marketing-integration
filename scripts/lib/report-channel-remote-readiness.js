@@ -129,7 +129,10 @@ export function assessReportChannelRemoteReadiness(input = {}) {
     && repository.head === repository.reviewedHead;
   if (!repositoryReady) blockers.push(blocker('REPORT_CHANNEL_REMOTE_READINESS_REPOSITORY_INVALID'));
 
-  const runtimeReady = runtime.allExecutionFlagsFalse === true
+  const runtimeReady = runtime.executionBaselineVerified === true
+    && ['inactive', 'active'].includes(runtime.notificationRuntimeState)
+    && Number.isSafeInteger(Number(runtime.baselineTrueFlagCount))
+    && Number(runtime.baselineTrueFlagCount) >= 0
     && Number(runtime.pendingMigrationCount ?? -1) === 0
     && Number(runtime.activeReportWorkCount ?? -1) === 0
     && Number(runtime.activeReportLockCount ?? -1) === 0
