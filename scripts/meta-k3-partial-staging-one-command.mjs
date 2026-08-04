@@ -2,11 +2,7 @@
 
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import {
-  readFile,
-  realpath,
-  stat,
-} from 'node:fs/promises';
+import { readFile, realpath, stat } from 'node:fs/promises';
 import { realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -77,6 +73,8 @@ if (!execute) {
 }
 
 let currentStage = 'init';
+let childFinalizerStarted = false;
+
 try {
   requireExact(
     process.env[confirmation.envName],
@@ -104,13 +102,9 @@ try {
       'META_K3_ONE_COMMAND_REPOSITORY_INVALID',
     );
   }
+  const originMain = gitText(['rev-parse', 'origin/main']);
   if (!gitSucceeds(['merge-base', '--is-ancestor', reviewBase, head])
-    || !gitSucceeds([
-      'merge-base',
-      '--is-ancestor',
-      reviewBase,
-      gitText(['rev-parse', 'origin/main']),
-    ])) {
+    || !gitSucceeds(['merge-base', '--is-ancestor', reviewBase, originMain])) {
     throw launcherError(
       'K3 reviewed ancestry is invalid',
       'META_K3_ONE_COMMAND_REPOSITORY_INVALID',
@@ -216,6 +210,7 @@ try {
   }, null, 2)}\n`);
 
   currentStage = 'run-exact-k3-finalizer';
+  childFinalizerStarted = true;
   const child = spawnSync(
     process.execPath,
     [finalizer, '--execute'],
@@ -252,7 +247,7 @@ try {
   if (child.error) throw child.error;
   if (child.status !== 0) {
     throw launcherError(
-      'Exact K3 finalizer failed',
+      'Exact K3 finalizer failed; use the preceding child finalizer output as Remote truth',
       'META_K3_ONE_COMMAND_FINALIZER_FAILED',
       { exitCode: child.status },
     );
@@ -264,9 +259,13 @@ try {
     code: error?.code ?? 'META_K3_ONE_COMMAND_FAILED',
     message: error instanceof Error ? error.message : String(error),
     details: sanitize(error?.details ?? {}),
-    queueMessageCount: 0,
-    lifecycleSqlRepairCount: 0,
-    workerDeploymentCount: 0,
+    childFinalizerStarted,
+    childRemoteState: childFinalizerStarted
+      ? 'SEE_PRECEDING_CHILD_FINALIZER_OUTPUT'
+      : 'NOT_STARTED',
+    wrapperQueueMessageCount: 0,
+    wrapperLifecycleSqlRepairCount: 0,
+    wrapperWorkerDeploymentCount: 0,
     scheduleEnabled: false,
     production: 'BLOCKED',
   }, null, 2)}\n`);
