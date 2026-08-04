@@ -5,7 +5,6 @@ import {
   LARK_NATIVE_AI_AUTOMATION_PROMPT_VERSION,
   LARK_NATIVE_AI_CUSTOM_FIELD_AUTHORITY,
   LARK_NATIVE_AI_DISABLED_CONFIGURATION_PERMISSION_BUNDLE,
-  LARK_NATIVE_AI_DISABLED_CONFIGURATION_PREVIEW_VERSION,
   LARK_NATIVE_AI_DISABLED_CONFIGURATION_SAFETY,
   LARK_NATIVE_AI_DISABLED_CONFIGURATION_WORKFLOWS,
   LARK_NATIVE_AI_EXECUTIVE_DESTINATION_KEY_HASH,
@@ -15,6 +14,10 @@ import {
   LARK_NATIVE_AI_NOTIFICATION_SEVERITIES,
   LARK_NATIVE_AI_NOTIFICATION_WINDOWS,
 } from '../../../config/src/lark-native-ai-disabled-configuration-preview-contract.js';
+import {
+  LARK_NATIVE_AI_NOTIFICATION_DEDUPE_GATE_AUTHORITY,
+  LARK_NATIVE_AI_NOTIFICATION_DEDUPE_PREVIEW_VERSION,
+} from '../../../config/src/lark-native-ai-notification-dedupe-gate-contract.js';
 
 const SHA256_HEX = /^[a-f0-9]{64}$/u;
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/u;
@@ -75,12 +78,18 @@ export async function buildLarkNativeAiDisabledConfigurationPreview(input = {}) 
     redacted_failure_message: null,
     preview_mode: false,
   });
+  const workflows = buildSafeWorkflowPreview();
 
-  const blockers = Object.freeze([]);
+  const blockers = Object.freeze([
+    Object.freeze({
+      code: LARK_NATIVE_AI_NOTIFICATION_DEDUPE_GATE_AUTHORITY.blockerCode,
+      reason: LARK_NATIVE_AI_NOTIFICATION_DEDUPE_GATE_AUTHORITY.reason,
+    }),
+  ]);
   const advisories = Object.freeze([
     Object.freeze({
       code: 'LARK_NATIVE_PAYLOAD_SHA256_NOT_AVAILABLE_NON_BLOCKING',
-      reason: 'Lark Base Automation has no proven native SHA-256 action. Live payload_checksum remains null; exact send dedupe continues through notification_attempt_key and dedupe_key.',
+      reason: 'Lark Base Automation has no proven native SHA-256 action. Live payload_checksum remains null; exact send dedupe remains a required capability but is blocked separately because the tenant cannot stop when a matching attempt record exists.',
     }),
     Object.freeze({
       code: 'UI_AUTOMATION_API_IDENTITY_NOT_EXPOSED',
@@ -90,18 +99,21 @@ export async function buildLarkNativeAiDisabledConfigurationPreview(input = {}) 
 
   return deepFreeze({
     ok: true,
-    contractVersion: LARK_NATIVE_AI_DISABLED_CONFIGURATION_PREVIEW_VERSION,
-    status: 'repository_preview_ready_for_manual_inactive_configuration',
+    contractVersion: LARK_NATIVE_AI_NOTIFICATION_DEDUPE_PREVIEW_VERSION,
+    status: 'repository_preview_ai_materialization_configured_notification_blocked',
     mode: 'repository_only',
     liveConfigurationAuthorized: false,
     activationAuthorized: false,
+    aiMaterializationConfigurationStatus: 'saved_inactive_user_confirmed',
+    notificationAutomationConfigurationAuthorized: false,
+    notificationDedupeGateAuthority: LARK_NATIVE_AI_NOTIFICATION_DEDUPE_GATE_AUTHORITY,
     targetGroupName: LARK_NATIVE_AI_EXECUTIVE_GROUP_NAME,
     destinationKeyHash: LARK_NATIVE_AI_EXECUTIVE_DESTINATION_KEY_HASH,
     customAiFieldAuthority: LARK_NATIVE_AI_CUSTOM_FIELD_AUTHORITY,
     automationAiOutputBinding: LARK_NATIVE_AI_AUTOMATION_OUTPUT_BINDING,
     automationPromptVersion: LARK_NATIVE_AI_AUTOMATION_PROMPT_VERSION,
     automationPrompts: LARK_NATIVE_AI_AUTOMATION_PROMPTS,
-    workflows: LARK_NATIVE_AI_DISABLED_CONFIGURATION_WORKFLOWS,
+    workflows,
     notificationPayloadPreview: canonicalPayload,
     notificationPayloadBytes: payloadBytes,
     notificationPayloadChecksum: repositoryPayloadChecksum,
@@ -130,17 +142,35 @@ export function validateLarkNativeAiDisabledConfigurationPreview(preview) {
   if (!preview || typeof preview !== 'object' || Array.isArray(preview)) {
     return Object.freeze([Object.freeze({ code: 'PREVIEW_INVALID' })]);
   }
-  if (preview.contractVersion !== LARK_NATIVE_AI_DISABLED_CONFIGURATION_PREVIEW_VERSION) {
+  if (preview.contractVersion !== LARK_NATIVE_AI_NOTIFICATION_DEDUPE_PREVIEW_VERSION) {
     blockers.push({ code: 'CONTRACT_VERSION_INVALID' });
   }
-  if (preview.status !== 'repository_preview_ready_for_manual_inactive_configuration'
+  if (preview.status !== 'repository_preview_ai_materialization_configured_notification_blocked'
     || preview.mode !== 'repository_only'
     || preview.liveConfigurationAuthorized !== false
-    || preview.activationAuthorized !== false) {
+    || preview.activationAuthorized !== false
+    || preview.notificationAutomationConfigurationAuthorized !== false) {
     blockers.push({ code: 'REMOTE_AUTHORITY_INVALID' });
+  }
+  if (preview.aiMaterializationConfigurationStatus !== 'saved_inactive_user_confirmed') {
+    blockers.push({ code: 'AI_MATERIALIZATION_STATE_INVALID' });
   }
   if (!Array.isArray(preview.workflows) || preview.workflows.length !== 2) {
     blockers.push({ code: 'WORKFLOW_COUNT_INVALID' });
+  }
+  const notificationWorkflow = preview.workflows?.[1];
+  if (notificationWorkflow?.status !== 'inactive_placeholder'
+    || notificationWorkflow?.liveConfigurationSupported !== false
+    || !Array.isArray(notificationWorkflow?.actions)
+    || notificationWorkflow.actions.length !== 0) {
+    blockers.push({ code: 'NOTIFICATION_WORKFLOW_SAFE_STATE_INVALID' });
+  }
+  if (preview.notificationDedupeGateAuthority?.supported !== false
+    || preview.notificationDedupeGateAuthority?.liveConfigurationSupported !== false
+    || preview.notificationDedupeGateAuthority?.requiredExistingRecordPolicy
+      !== 'stop_when_records_found'
+    || preview.notificationDedupeGateAuthority?.safeState !== 'inactive_placeholder') {
+    blockers.push({ code: 'NOTIFICATION_DEDUPE_GATE_AUTHORITY_INVALID' });
   }
   if (preview.targetGroupName !== LARK_NATIVE_AI_EXECUTIVE_GROUP_NAME
     || preview.destinationKeyHash !== LARK_NATIVE_AI_EXECUTIVE_DESTINATION_KEY_HASH) {
@@ -179,8 +209,9 @@ export function validateLarkNativeAiDisabledConfigurationPreview(preview) {
     || preview.notificationLogRecordPreview?.payload_checksum !== null) {
     blockers.push({ code: 'LIVE_CHECKSUM_POLICY_INVALID' });
   }
-  if (preview.blockerCount !== 0 || !Array.isArray(preview.blockers)
-    || preview.blockers.length !== 0) {
+  if (preview.blockerCount !== 1 || !Array.isArray(preview.blockers)
+    || preview.blockers.length !== 1
+    || preview.blockers[0]?.code !== 'LARK_NATIVE_NOTIFICATION_DEDUPE_GATE_UNSUPPORTED') {
     blockers.push({ code: 'BLOCKER_STATE_INVALID' });
   }
   const serialized = stableStringify(preview.notificationPayloadPreview ?? {});
@@ -198,6 +229,33 @@ export function validateLarkNativeAiDisabledConfigurationPreview(preview) {
     blockers.push({ code: 'SAFETY_BOUNDARY_INVALID' });
   }
   return Object.freeze(blockers.map(Object.freeze));
+}
+
+function buildSafeWorkflowPreview() {
+  return Object.freeze(LARK_NATIVE_AI_DISABLED_CONFIGURATION_WORKFLOWS.map((workflow, index) => {
+    if (index === 0) {
+      return deepFreeze({
+        ...workflow,
+        status: 'inactive_configured',
+        liveConfigurationSupported: true,
+      });
+    }
+    return deepFreeze({
+      title: workflow.title,
+      status: 'inactive_placeholder',
+      liveConfigurationSupported: false,
+      safeStateReason: LARK_NATIVE_AI_NOTIFICATION_DEDUPE_GATE_AUTHORITY.blockerCode,
+      replacesPlaceholder: workflow.replacesPlaceholder,
+      finalTrigger: workflow.finalTrigger,
+      actions: Object.freeze([]),
+      deferredActionCount: workflow.actions.length,
+      failurePolicy: workflow.failurePolicy,
+      forbiddenActionTypes: Object.freeze([
+        ...workflow.forbiddenActionTypes,
+        'save_without_existing_record_stop_gate',
+      ]),
+    });
+  }));
 }
 
 function normalizeAiRun(value) {
