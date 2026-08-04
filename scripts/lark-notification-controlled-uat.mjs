@@ -13,6 +13,7 @@ import {
 import { dirname, join, relative, resolve } from 'node:path';
 
 import { buildWranglerOAuthEnvironment } from './lib/cloudflare-auth-environment.js';
+import { listCloudflareQueuesViaApi } from './lib/cloudflare-queue-list-rest.js';
 import { parseJsoncObject } from './lib/chatwoot-safe-wrangler-config.js';
 import { readDevVars } from './lib/dev-vars.js';
 import {
@@ -144,6 +145,7 @@ async function main() {
 
   stage = 'local-focused-gates';
   run('node', ['--test',
+    'tests/application/cloudflare-queue-list-rest.test.js',
     'tests/application/lark-notification-controlled-uat.test.js',
     'tests/application/deliver-lark-executive-notification.test.js',
     'tests/application/lark-notification-active-job-router.test.js',
@@ -194,9 +196,10 @@ async function main() {
   const databaseName = resolveDatabaseName(sourceConfig);
   const queueName = resolveQueueName(sourceConfig);
   const queueId = resolveWooCommerceQueueId(
-    text('npx', ['wrangler', 'queues', 'list', '--json'], {
-      env: queueAuthEnvironment(cloudflare),
-    }),
+    JSON.stringify(await listCloudflareQueuesViaApi({
+      accountId: cloudflare.accountId,
+      bearerToken: queueAuthEnvironment(cloudflare).CLOUDFLARE_API_TOKEN,
+    })),
     queueName,
   );
 
