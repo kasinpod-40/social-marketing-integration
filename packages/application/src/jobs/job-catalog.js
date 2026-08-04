@@ -39,6 +39,7 @@ export const JOB_TRIGGERS = Object.freeze({
   CHATWOOT_INITIAL_30_DAY_UAT: 'chatwoot_initial_30_day_uat',
   CHATWOOT_DAILY_INCREMENTAL: 'chatwoot_daily_incremental',
   LARK_NOTIFICATION_CONTROLLED_UAT: 'lark_notification_controlled_uat',
+  LARK_NOTIFICATION_RUNTIME: 'lark_notification_runtime',
 });
 
 /** Schema version ของ Job payload ที่มี Contract เฉพาะ Connector */
@@ -171,7 +172,10 @@ const JOB_CATALOG = Object.freeze({
     implementationStatus: JOB_IMPLEMENTATION_STATUS.ACTIVE,
     connectorKey: null,
     manualOnly: true,
-    allowedTriggers: [JOB_TRIGGERS.LARK_NOTIFICATION_CONTROLLED_UAT],
+    allowedTriggers: [
+      JOB_TRIGGERS.LARK_NOTIFICATION_CONTROLLED_UAT,
+      JOB_TRIGGERS.LARK_NOTIFICATION_RUNTIME,
+    ],
   }),
   [JOB_TYPES.DEAD_LETTER_REDRIVE]: freezeJob({
     type: JOB_TYPES.DEAD_LETTER_REDRIVE,
