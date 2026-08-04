@@ -218,13 +218,24 @@ async function executeCloseout() {
   for (const selected of plan) {
     const d1 = await state.readD1Snapshot(selected, requestedAt);
     const lark = await state.readLarkReportState(client, config.tableIds, selected.reportId);
-    assertReportRuntimeWindowTargetPrestate({
-      operation: selected.operation === 'verify' ? 'refresh' : selected.operation,
-      reportId: selected.reportId,
-      d1,
-      lark,
-    });
-    if (selected.operation === 'verify') assertD1LarkIntegrity(d1, lark);
+    if (selected.operation === 'fresh') {
+      assertReportRuntimeWindowTargetPrestate({
+        operation: 'fresh',
+        reportId: selected.reportId,
+        d1,
+        lark,
+      });
+    } else if (selected.operation === 'verify') {
+      assertReportRuntimeWindowTargetPrestate({
+        operation: 'refresh',
+        reportId: selected.reportId,
+        d1,
+        lark,
+      });
+      assertD1LarkIntegrity(d1, lark);
+    } else {
+      assertRepairableWindowPrestate({ reportId: selected.reportId, d1, lark });
+    }
     prestates.push(Object.freeze({ selected, d1, lark }));
   }
 
@@ -388,7 +399,11 @@ async function executeWindow(input) {
     successfulRunFloor += 1;
     first = await state.pollD1Completion(selected, requestedAt, successfulRunFloor);
     assertReportRuntimeCloseoutCompletion(first, { reportId: selected.reportId });
-    assertReportRuntimeWindowChanged({ operation: selected.operation, before, after: first });
+    if (selected.operation === 'fresh') {
+      assertReportRuntimeWindowChanged({ operation: 'fresh', before, after: first });
+    } else {
+      assertRepairTransition({ reportId: selected.reportId, before, after: first });
+    }
     const verified = await state.pollLarkIntegrity(client, config.tableIds, selected.reportId, first);
     firstLark = verified.state;
     firstIntegrity = verified.integrity;
@@ -437,4 +452,35 @@ async function executeWindow(input) {
       queueMessagesSent,
     }),
   });
+}
+
+function assertRepairableWindowPrestate({ reportId, d1, lark }) {
+  if (Number(d1.materialization_count ?? 0) !== 1
+    || d1.report_id !== reportId
+    || typeof d1.payload_checksum !== 'string'
+    || d1.payload_checksum.trim() === ''
+    || Number(lark.snapshots ?? 0) > 1
+    || Number(lark.duplicateMetricKeys ?? 0) !== 0) throw closeoutFailure(
+    'Report repair target has duplicate or incomplete D1 identity',
+    'REPORT_RUNTIME_CLOSEOUT_REPAIR_PRESTATE_INVALID',
+    {
+      reportIdMatched: d1.report_id === reportId,
+      materializationCount: Number(d1.materialization_count ?? 0),
+      larkSnapshots: Number(lark.snapshots ?? 0),
+      duplicateMetricKeys: Number(lark.duplicateMetricKeys ?? 0),
+    },
+  );
+}
+
+function assertRepairTransition({ reportId, before, after }) {
+  if (Number(before.materialization_count ?? 0) !== 1
+    || Number(after.materialization_count ?? 0) !== 1
+    || before.report_id !== reportId
+    || after.report_id !== reportId
+    || typeof after.payload_checksum !== 'string'
+    || after.payload_checksum.trim() === '') throw closeoutFailure(
+    'Report repair did not preserve one Stable D1 materialization identity',
+    'REPORT_RUNTIME_CLOSEOUT_REPAIR_TRANSITION_INVALID',
+    { reportIdMatched: after.report_id === reportId },
+  );
 }
