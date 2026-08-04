@@ -170,7 +170,7 @@ test('K3 launcher reuses the reviewed finalizer with the K3 contract', () => {
   assert.equal(plan.productionTrafficChange, false);
 });
 
-test('K3 execute bootstrap materializes Meta runtime authority and only resumes zero-mutation local evidence', () => {
+test('K3 execute bootstrap materializes runtime authority and only resumes exact zero-mutation evidence profiles', () => {
   const repositoryRoot = resolve(process.cwd());
   const launcher = readFileSync(
     resolve(repositoryRoot, 'scripts/meta-k3-partial-staging-preview-finalizer.mjs'),
@@ -182,6 +182,9 @@ test('K3 execute bootstrap materializes Meta runtime authority and only resumes 
   assert.match(launcher, /META_GRAPH_API_VERSION=v25\.0/u);
   assert.match(launcher, /MKT_META_K3_RESUME_PRE_MUTATION_CONFIG_FAILURE/u);
   assert.match(launcher, /RESUME_EXACT_K3_PRE_MUTATION_CONFIG_FAILURE/u);
+  assert.match(launcher, /post_admission_pre_stability/u);
+  assert.match(launcher, /post_backup_pre_preview/u);
+  assert.match(launcher, /profile === 'post_backup_pre_preview'/u);
   assert.match(launcher, /workerVersionUploadCount:\s*0/u);
   assert.match(launcher, /queueMessageCount:\s*0/u);
   assert.match(launcher, /remoteMutationCount\)\s*===\s*0/u);
