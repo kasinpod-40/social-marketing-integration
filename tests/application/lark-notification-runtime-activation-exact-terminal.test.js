@@ -6,12 +6,18 @@ const source = readFileSync(
   'scripts/lark-notification-runtime-activation-exact-terminal.mjs',
   'utf8',
 );
+const contractSource = readFileSync(
+  'scripts/lib/lark-notification-runtime-activation.js',
+  'utf8',
+);
 
 test('runtime activation terminal exposes one activation and one rollback path', () => {
   assert.match(source, /--execute/u);
   assert.match(source, /--rollback/u);
-  assert.match(source, /ACTIVATE_REVIEWED_EXECUTIVE_NOTIFICATION_RUNTIME/u);
-  assert.match(source, /RESTORE_NOTIFICATION_RUNTIME_ALL_FALSE/u);
+  assert.match(source, /LARK_NOTIFICATION_RUNTIME_ACTIVATION_CONFIRMATION/u);
+  assert.match(source, /LARK_NOTIFICATION_RUNTIME_ROLLBACK_CONFIRMATION/u);
+  assert.match(contractSource, /ACTIVATE_REVIEWED_EXECUTIVE_NOTIFICATION_RUNTIME/u);
+  assert.match(contractSource, /RESTORE_NOTIFICATION_RUNTIME_ALL_FALSE/u);
   assert.match(source, /activation-summary\.json/u);
   assert.match(source, /rollback-summary\.json/u);
 });
