@@ -241,204 +241,293 @@ export function buildReportRuntimeCloseoutConfigWindow(sourceText, options = {})
 }
 
 export function buildReportRuntimeCloseoutCandidates(input = {}) {
-  const requestedAt = requireTimestamp(input.requestedAt, 'requestedAt');
   const periodEnd = requireDate(input.periodEnd, 'periodEnd');
+  const requestedAt = requireTimestamp(input.requestedAt, 'requestedAt');
   const sourceWatermark = requireText(input.sourceWatermark, 'sourceWatermark');
-  const timeZone = requireText(input.timeZone ?? 'Asia/Bangkok', 'timeZone');
-  const platformScope = requireDashboardPlatformScope(input.platformScope ?? 'tiktok');
+  const timeZone = requireExact(input.timeZone ?? 'Asia/Bangkok', 'Asia/Bangkok', 'timeZone');
+  const platformScope = requireText(input.platformScope ?? 'tiktok', 'platformScope');
   const accountKey = requireText(input.accountKey ?? 'chemistry_k', 'accountKey');
-  const formulaVersion = requireText(input.formulaVersion ?? formulaVersionFor(platformScope), 'formulaVersion');
-  const days = DASHBOARD_REPORT_PRESET_DAYS;
-  const candidates = days.map((windowDays) => {
+  const formulaVersion = requireText(input.formulaVersion ?? 'tiktok-organic-v1', 'formulaVersion');
+  return Object.freeze(REPORT_RUNTIME_CLOSEOUT_WINDOW_DAYS.map((windowDays) => {
     const period = resolveReportPeriod({
       periodKind: 'rolling_days',
       windowDays,
       periodEnd,
       comparisonMode: 'previous_period',
       timeZone,
+      now: new Date(requestedAt),
     });
     const reportSettingKey = `integration_workspace:${platformScope}:rolling:${windowDays}d`;
-    return Object.freeze({
-      windowDays,
+    const job = buildDashboardPresetJob({
+      requestedAt,
       reportSettingKey,
-      reportId: createReportId({
-        customerKey: 'chemistry_k',
-        accountKey,
-        platformScope,
-        reportSettingKey,
-        periodStart: period.periodStart,
-        periodEnd: period.periodEnd,
-        formulaVersion,
-        sourceWatermark,
-      }),
-      period,
-      job: buildDashboardPresetJob({
-        requestedAt,
-        customerKey: 'chemistry_k',
-        accountKey,
-        platformScope,
-        reportSettingKey,
-        windowDays,
-        periodEnd,
-        sourceWatermark,
-        timeZone,
-      }),
+      platformScope,
+      windowDays,
+      periodEnd,
+      comparisonMode: 'previous_period',
+      timeZone,
+      sourceWatermark,
     });
-  });
-  return Object.freeze(candidates);
+    const reportId = createReportId({
+      report_setting_key: reportSettingKey,
+      account_key: accountKey,
+      period_kind: 'rolling_days',
+      period_start: period.periodStart,
+      period_end: period.periodEnd,
+      formula_version: formulaVersion,
+    });
+    return Object.freeze({ windowDays, reportSettingKey, reportId, period, job });
+  }));
 }
 
-export function assertReportRuntimeCloseoutCompletion(value = {}, expected = {}) {
-  if (value.reportId !== expected.reportId
-    || value.dataStatus === 'source_unavailable'
-    || value.dataStatus === 'partial'
-    || !isSha256(value.payloadChecksum)
-    || Number(value.materializationCount ?? 0) !== 1
-    || value.syncStatus !== 'success'
-    || Number(value.activeLockCount ?? -1) !== 0
-    || Number(value.newDlqCount ?? -1) !== 0) throw closeoutError(
-    'Report closeout did not complete with one eligible materialization',
-    'REPORT_RUNTIME_CLOSEOUT_COMPLETION_INVALID',
-    { expectedReportId: expected.reportId, observedReportId: value.reportId ?? null },
+export function selectFreshReportRuntimeCloseoutCandidate(candidates, existingReportIds = [], env = process.env) {
+  if (!Array.isArray(candidates) || candidates.length === 0) throw closeoutError(
+    'Report closeout candidate list is empty',
+    'REPORT_RUNTIME_CLOSEOUT_CANDIDATE_INVALID',
   );
+  const existing = new Set(existingReportIds.map(String));
+  const preferred = optionalWindowDays(env.MKT_REPORT_RUNTIME_CLOSEOUT_WINDOW_DAYS);
+  if (preferred !== null) {
+    const selected = candidates.find((candidate) => candidate.windowDays === preferred);
+    if (!selected) throw closeoutError(
+      `Requested Report closeout window is not available: ${preferred}D`,
+      'REPORT_RUNTIME_CLOSEOUT_WINDOW_UNAVAILABLE',
+      { windowDays: preferred },
+    );
+    if (existing.has(selected.reportId)) throw closeoutError(
+      `Requested Report closeout window already exists for the selected period: ${preferred}D`,
+      'REPORT_RUNTIME_CLOSEOUT_FRESH_PRESET_UNAVAILABLE',
+      { windowDays: preferred },
+    );
+    return selected;
+  }
+  const selected = candidates.find((candidate) => !existing.has(candidate.reportId));
+  if (!selected) throw closeoutError(
+    'Every reviewed Report closeout preset already has a materialization for the selected period',
+    'REPORT_RUNTIME_CLOSEOUT_FRESH_PRESET_UNAVAILABLE',
+    { candidateCount: candidates.length },
+  );
+  return selected;
+}
+
+export function assertReportRuntimeCloseoutPreflight(row = {}) {
+  if (row.coverage_status === null
+    || !['complete', 'partial', 'revisable', 'no_data_confirmed'].includes(String(row.coverage_status))
+    || typeof row.source_watermark !== 'string'
+    || row.source_watermark.trim() === ''
+    || !/^\d{4}-\d{2}-\d{2}$/u.test(String(row.period_end ?? ''))
+    || Number(row.content_state_count ?? 0) <= 0
+    || Number(row.observation_count ?? 0) <= 0
+    || Number(row.active_report_locks ?? 0) !== 0
+    || Number(row.open_report_dlq ?? 0) !== 0) {
+    throw closeoutError(
+      'TikTok D1 historical facts are not ready for Report closeout materialization',
+      'REPORT_RUNTIME_CLOSEOUT_D1_PREFLIGHT_NOT_READY',
+      {
+        coverageStatus: row.coverage_status ?? null,
+        contentStateCount: Number(row.content_state_count ?? 0),
+        observationCount: Number(row.observation_count ?? 0),
+        activeReportLocks: Number(row.active_report_locks ?? 0),
+        openReportDlq: Number(row.open_report_dlq ?? 0),
+      },
+    );
+  }
+  return true;
+}
+
+export function assertWooCommerceReportRuntimeCloseoutPreflight(row = {}) {
+  if (!['complete', 'partial', 'revisable', 'no_data_confirmed'].includes(String(row.coverage_status))
+    || !['full_inventory', 'recent_window', 'report_range'].includes(String(row.coverage_scope_mode))
+    || typeof row.source_watermark !== 'string'
+    || row.source_watermark.trim() === ''
+    || !/^\d{4}-\d{2}-\d{2}$/u.test(String(row.period_end ?? ''))
+    || Number(row.daily_fact_count ?? 0) <= 0
+    || Number(row.order_state_count ?? 0) <= 0
+    || Number(row.active_report_locks ?? 0) !== 0
+    || Number(row.open_report_dlq ?? 0) !== 0) {
+    throw closeoutError(
+      'WooCommerce D1 Commerce facts are not ready for Report closeout materialization',
+      'WOOCOMMERCE_REPORT_RUNTIME_CLOSEOUT_D1_PREFLIGHT_NOT_READY',
+      {
+        coverageStatus: row.coverage_status ?? null,
+        coverageScopeMode: row.coverage_scope_mode ?? null,
+        dailyFactCount: Number(row.daily_fact_count ?? 0),
+        orderStateCount: Number(row.order_state_count ?? 0),
+        activeReportLocks: Number(row.active_report_locks ?? 0),
+        openReportDlq: Number(row.open_report_dlq ?? 0),
+      },
+    );
+  }
+  return true;
+}
+
+export function assertReportRuntimeCloseoutCompletion(row = {}, expected = {}) {
+  const status = String(row.data_status ?? '');
+  if (row.report_id !== expected.reportId
+    || !['complete', 'partial', 'revisable', 'no_data_confirmed'].includes(status)
+    || typeof row.payload_checksum !== 'string'
+    || row.payload_checksum.trim() === ''
+    || Number(row.materialization_count ?? 0) !== 1
+    || String(row.sync_status ?? '') !== 'success'
+    || Number(row.active_lock_count ?? 0) !== 0
+    || Number(row.new_dlq_count ?? 0) !== 0) {
+    throw closeoutError(
+      'Report closeout did not reach a completed D1 materialization state',
+      'REPORT_RUNTIME_CLOSEOUT_COMPLETION_INCOMPLETE',
+      {
+        reportIdMatched: row.report_id === expected.reportId,
+        dataStatus: status || null,
+        materializationCount: Number(row.materialization_count ?? 0),
+        syncStatus: row.sync_status ?? null,
+        activeLockCount: Number(row.active_lock_count ?? 0),
+        newDlqCount: Number(row.new_dlq_count ?? 0),
+      },
+    );
+  }
   return true;
 }
 
 export function assertReportRuntimeCloseoutReplay(before = {}, after = {}) {
-  if (before.reportId !== after.reportId
-    || before.payloadChecksum !== after.payloadChecksum
-    || before.dataStatus !== after.dataStatus
-    || Number(after.materializationCount ?? 0) !== 1
-    || Number(after.activeLockCount ?? -1) !== 0
-    || Number(after.newDlqCount ?? -1) !== 0) throw closeoutError(
-    'Report closeout replay changed the existing materialization or runtime safety',
-    'REPORT_RUNTIME_CLOSEOUT_REPLAY_DRIFT',
-  );
+  if (before.report_id !== after.report_id
+    || before.payload_checksum !== after.payload_checksum
+    || Number(after.materialization_count ?? 0) !== 1
+    || Number(after.active_lock_count ?? 0) !== 0
+    || Number(after.new_dlq_count ?? 0) !== 0) {
+    throw closeoutError(
+      'Report closeout replay changed Stable materialization identity or payload',
+      'REPORT_RUNTIME_CLOSEOUT_REPLAY_DRIFT',
+    );
+  }
   return true;
 }
 
-function formulaVersionFor(platformScope) {
-  return ({
-    facebook: 'facebook-organic-v1',
-    instagram: 'instagram-organic-v1',
-    tiktok: 'tiktok-organic-v1',
-    youtube: 'youtube-organic-v1',
-    meta_ads: 'meta-ads-v1',
-    google_ads: 'google-ads-v1',
-    tiktok_ads: 'tiktok-ads-v1',
-    woocommerce: 'woocommerce-commerce-v1',
-    chatwoot: 'chatwoot-customer-service-v1',
-  })[platformScope];
+export function safeReportRuntimeCloseoutEvidence(value) {
+  if (Array.isArray(value)) return value.map(safeReportRuntimeCloseoutEvidence);
+  if (!value || typeof value !== 'object') return value;
+  const output = {};
+  for (const [key, nested] of Object.entries(value)) {
+    if (/(?:token|secret|authorization|cookie|password|consumer_key|consumer_secret)/iu.test(key)) continue;
+    output[key] = safeReportRuntimeCloseoutEvidence(nested);
+  }
+  return output;
+}
+
+function optionalWindowDays(value) {
+  if (value === undefined || value === null || String(value).trim() === '') return null;
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || !REPORT_RUNTIME_CLOSEOUT_WINDOW_DAYS.includes(number)) throw closeoutError(
+    `MKT_REPORT_RUNTIME_CLOSEOUT_WINDOW_DAYS must be one of ${REPORT_RUNTIME_CLOSEOUT_WINDOW_DAYS.join(', ')}`,
+    'REPORT_RUNTIME_CLOSEOUT_WINDOW_INVALID',
+    { windowDays: value },
+  );
+  return number;
 }
 
 function normalizeActiveTrueFlags(value) {
   if (!Array.isArray(value) || value.length === 0) throw closeoutError(
-    'Report closeout Active flags must be a non-empty array',
+    'Report closeout requires at least one reviewed active execution flag',
     'REPORT_RUNTIME_CLOSEOUT_ACTIVE_FLAG_INVALID',
   );
-  const flags = [...new Set(value.map((item) => requireText(item, 'activeTrueFlag')))];
-  if (flags.length !== value.length || flags.some((name) => !/^MKT_[A-Z0-9_]+_ENABLED$/u.test(name))) {
-    throw closeoutError(
-      'Report closeout Active flags are invalid',
-      'REPORT_RUNTIME_CLOSEOUT_ACTIVE_FLAG_INVALID',
-    );
-  }
-  return Object.freeze(flags.sort());
+  const normalized = [...new Set(value.map((name) => requireText(name, 'activeTrueFlag')))].sort();
+  if (normalized.some((name) => !/^MKT_[A-Z0-9_]+_ENABLED$/u.test(name))) throw closeoutError(
+    'Report closeout active execution flag name is invalid',
+    'REPORT_RUNTIME_CLOSEOUT_ACTIVE_FLAG_INVALID',
+    { activeTrueFlags: normalized },
+  );
+  return normalized;
 }
-function readTrueFlags(value) {
-  return Object.entries(value?.vars ?? {})
-    .filter(([name, enabled]) => /^MKT_[A-Z0-9_]+_ENABLED$/u.test(name) && enabled === 'true')
+
+function assertQueueSettings(actual, expected) {
+  const observed = Object.fromEntries(Object.keys(expected).map((key) => [key, actual?.[key] ?? null]));
+  if (stableJson(observed) !== stableJson(expected)) throw closeoutError(
+    'Report closeout Queue topology differs from the reviewed shared Queue contract',
+    'REPORT_RUNTIME_CLOSEOUT_QUEUE_TOPOLOGY_INVALID',
+    { queue: actual?.queue ?? null },
+  );
+}
+
+function readTrueFlags(config) {
+  return Object.entries(config.vars ?? {})
+    .filter(([name, value]) => /^MKT_[A-Z0-9_]+_ENABLED$/u.test(name) && readBoolean(value) === true)
     .map(([name]) => name)
     .sort();
 }
-function requireDashboardPlatformScope(value) {
-  const platformScope = requireText(value, 'platformScope');
-  if (!DASHBOARD_REPORT_PLATFORM_SCOPES.includes(platformScope)) throw closeoutError(
-    `Unsupported Dashboard report platform scope: ${platformScope}`,
-    'REPORT_RUNTIME_CLOSEOUT_PLATFORM_UNSUPPORTED',
-  );
-  return platformScope;
-}
-function assertQueueSettings(value, expected) {
-  for (const [key, required] of Object.entries(expected)) {
-    if (value?.[key] !== required) throw closeoutError(
-      `Report closeout Queue setting ${key} differs from the reviewed contract`,
-      'REPORT_RUNTIME_CLOSEOUT_QUEUE_TOPOLOGY_INVALID',
-      { key, expected: required, observed: value?.[key] ?? null },
-    );
-  }
-}
+
 function exactlyOne(values, predicate, label) {
   const matches = Array.isArray(values) ? values.filter(predicate) : [];
   if (matches.length !== 1) throw closeoutError(
     `Report closeout requires exactly one ${label}`,
-    'REPORT_RUNTIME_CLOSEOUT_CONFIG_TARGET_INVALID',
-    { label, matches: matches.length },
+    'REPORT_RUNTIME_CLOSEOUT_CONFIG_BINDING_INVALID',
+    { label, matchCount: matches.length },
   );
   return matches[0];
 }
-function requireRealMapping(value, field) {
-  const text = requireText(value, field);
-  if (/replace|placeholder|example|todo|changeme/iu.test(text)) throw closeoutError(
-    `Report closeout requires a real ${field} mapping`,
-    'REPORT_RUNTIME_CLOSEOUT_CONFIG_MAPPING_PLACEHOLDER',
-    { field },
+
+function requireRealMapping(value, fieldName) {
+  const text = requireText(value, fieldName);
+  if (/^replace-with-/u.test(text)) throw closeoutError(
+    `${fieldName} is still a placeholder`,
+    'REPORT_RUNTIME_CLOSEOUT_TABLE_MAPPING_INVALID',
+    { fieldName },
   );
   return text;
 }
-function requireExact(value, expected, field) {
-  if (value !== expected) throw closeoutError(
-    `Report closeout ${field} must equal ${expected}`,
-    'REPORT_RUNTIME_CLOSEOUT_CONFIG_TARGET_INVALID',
-    { field, expected, observed: value ?? null },
-  );
-  return value;
-}
-function requireUuid(value, field) {
-  const text = requireText(value, field);
+
+function requireUuid(value, fieldName) {
+  const text = requireText(value, fieldName);
   if (!UUID.test(text)) throw closeoutError(
-    `Report closeout ${field} must be a UUID`,
-    'REPORT_RUNTIME_CLOSEOUT_CONFIG_TARGET_INVALID',
-    { field },
+    `${fieldName} must be a UUID`,
+    'REPORT_RUNTIME_CLOSEOUT_CONFIG_UUID_INVALID',
+    { fieldName },
   );
   return text.toLowerCase();
 }
-function requireDate(value, field) {
-  const text = requireText(value, field);
+
+function requireExact(value, expected, fieldName) {
+  const text = requireText(value, fieldName);
+  if (text !== expected) throw closeoutError(
+    `${fieldName} must equal ${expected}`,
+    'REPORT_RUNTIME_CLOSEOUT_TARGET_INVALID',
+    { fieldName, expected, actual: text },
+  );
+  return text;
+}
+
+function requireDate(value, fieldName) {
+  const text = requireText(value, fieldName);
   if (!/^\d{4}-\d{2}-\d{2}$/u.test(text) || Number.isNaN(Date.parse(`${text}T00:00:00Z`))) {
-    throw closeoutError(
-      `Report closeout ${field} must be YYYY-MM-DD`,
-      'REPORT_RUNTIME_CLOSEOUT_INPUT_INVALID',
-      { field },
-    );
+    throw closeoutError(`${fieldName} must be YYYY-MM-DD`, 'REPORT_RUNTIME_CLOSEOUT_VALUE_INVALID', { fieldName });
   }
   return text;
 }
-function requireTimestamp(value, field) {
+
+function requireTimestamp(value, fieldName) {
   const number = Number(value);
-  if (!Number.isSafeInteger(number) || number <= 0) throw closeoutError(
-    `Report closeout ${field} must be epoch milliseconds`,
-    'REPORT_RUNTIME_CLOSEOUT_INPUT_INVALID',
-    { field },
+  if (!Number.isSafeInteger(number) || number < 0) throw closeoutError(
+    `${fieldName} must be an epoch millisecond`,
+    'REPORT_RUNTIME_CLOSEOUT_VALUE_INVALID',
+    { fieldName },
   );
   return number;
 }
-function requireText(value, field) {
+
+function requireText(value, fieldName) {
   if (typeof value !== 'string' || value.trim() === '') throw closeoutError(
-    `Report closeout ${field} is required`,
-    'REPORT_RUNTIME_CLOSEOUT_INPUT_INVALID',
-    { field },
+    `${fieldName} is required`,
+    'REPORT_RUNTIME_CLOSEOUT_VALUE_INVALID',
+    { fieldName },
   );
   return value.trim();
 }
-function isSha256(value) { return typeof value === 'string' && /^[0-9a-f]{64}$/u.test(value); }
-function sha256(value) { return createHash('sha256').update(value).digest('hex'); }
-function stableJson(value) {
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
-  if (value && typeof value === 'object') return `{${Object.keys(value).sort()
-    .map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(',')}}`;
-  return JSON.stringify(value);
+
+function readBoolean(value) {
+  if (value === true || value === 'true') return true;
+  if (value === false || value === 'false') return false;
+  return null;
 }
+
+function stableJson(value) { return JSON.stringify(value); }
+function sha256(value) { return createHash('sha256').update(value).digest('hex'); }
 function closeoutError(message, code, details = {}) {
   const error = new Error(message);
   error.name = 'ReportRuntimeCloseoutError';
