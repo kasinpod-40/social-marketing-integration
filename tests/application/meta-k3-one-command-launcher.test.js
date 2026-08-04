@@ -95,7 +95,7 @@ test('K3 one-command delegates to the proven Preview window before finalizer', (
   assert.doesNotMatch(source, /meta-k3-exact-recovery-loader/u);
   assert.doesNotMatch(
     source,
-    /meta-chemistry-k2-history-20260701-20260731-f741090d1d8a/u,
+    /meta-chemistry_k2-history-20260701-20260731-f741090d1d8a/u,
   );
   assert.doesNotMatch(source, /queue\.send\(/u);
   assert.doesNotMatch(source, /wrangler\s+deploy/u);
@@ -111,6 +111,8 @@ test('K3 readiness preload resolves from a nested package working directory', ()
       env: {
         ...process.env,
         NODE_OPTIONS: `--import=${pathToFileURL(readinessHook).href}`,
+        MKT_META_K3_PREVIEW_ALIAS_READINESS:
+          'WAIT_FOR_ATTESTED_ACTIVE_PREVIEW',
       },
       encoding: 'utf8',
     });
