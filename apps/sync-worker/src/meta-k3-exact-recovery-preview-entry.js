@@ -45,7 +45,9 @@ export function createMetaK3ExactRecoveryHandler(dependencies = {}) {
 
   return async function handleMetaK3ExactRecovery(request, env) {
     const url = new URL(request.url);
-    if (request.method !== 'POST' || url.pathname !== META_K3_EXACT_RECOVERY_PATH) {
+    const readinessProbe = request.method === 'HEAD';
+    if ((!readinessProbe && request.method !== 'POST')
+      || url.pathname !== META_K3_EXACT_RECOVERY_PATH) {
       return json({
         ok: false,
         code: 'META_K3_PREVIEW_ROUTE_NOT_FOUND',
@@ -82,6 +84,13 @@ export function createMetaK3ExactRecoveryHandler(dependencies = {}) {
       );
       const target = assertExactTarget(env);
       assertExactExecutionFlags(env, continuationPhase);
+
+      if (readinessProbe) {
+        return attested(new Response(null, {
+          status: 204,
+          headers: noStoreHeaders(),
+        }), deploymentAttestation, runtimeVersionId);
+      }
 
       let continuationSuppressedCount = 0;
       const continuationQueue = Object.freeze({
