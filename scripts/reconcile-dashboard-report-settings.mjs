@@ -21,6 +21,8 @@ import {
 } from './lib/report-settings-notification-runtime-authority.js';
 
 const CONFIRMATION = 'RECONCILE_INTEGRATION_WORKSPACE_REPORT_SETTINGS';
+const PRIVATE_AUTHORITY_CONFIRMATION =
+  'EMIT_REPORT_FINALIZER_NOTIFICATION_RUNTIME_AUTHORITY';
 const ALLOWED_SCHEMA_ACTIONS = new Set([
   'update_field:mktReportSettings:period_type',
   'create_field:mktReportSettings:period_kind',
@@ -120,6 +122,7 @@ async function main() {
       notificationRuntimeState: notificationRuntimeAuthority.state,
       preservedNotificationRuntimeSettingCount:
         notificationRuntimeAuthority.settingCount,
+      ...privateAuthorityOutput(notificationRuntimeAuthority),
       legacySettingsFound: preAudit.legacySettingsFound,
       activeLegacySettings: preAudit.activeLegacySettings,
       historicalReferenceCount: preAudit.historicalReferenceCount,
@@ -162,6 +165,7 @@ async function main() {
     notificationRuntimeState: records.verification.notificationRuntimeState,
     preservedNotificationRuntimeSettingCount:
       records.verification.preservedNotificationRuntimeSettingCount,
+    ...privateAuthorityOutput(notificationRuntimeAuthority),
     legacyDisabled: records.legacyDisabled,
     activeLegacySettings: postAudit.activeLegacySettings,
     legacyRetainedDisabled: records.verification.legacyRetainedDisabled,
@@ -172,6 +176,14 @@ async function main() {
       + records.canonical.updated
       + records.legacyDisabled,
   });
+}
+
+function privateAuthorityOutput(authority) {
+  if (process.env.MKT_REPORT_FINALIZER_PRIVATE_AUTHORITY
+    !== PRIVATE_AUTHORITY_CONFIRMATION) return {};
+  return {
+    privateNotificationRuntimeAuthority: authority,
+  };
 }
 
 function assertExpectedSchemaPlan(preview) {
