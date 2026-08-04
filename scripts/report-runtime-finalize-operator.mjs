@@ -31,15 +31,14 @@ import {
 const execFileAsync = promisify(execFile);
 const repositoryRoot = resolve(process.cwd());
 const evidenceRoot = resolve(process.env.MKT_REPORT_RUNTIME_FINALIZE_EVIDENCE_DIR ?? 'outputs/report-runtime-finalize');
+const PRIVATE_AUTHORITY_CONFIRMATION =
+  'EMIT_REPORT_FINALIZER_NOTIFICATION_RUNTIME_AUTHORITY';
 let currentStage = 'init';
 
 try {
   const options = parseReportRuntimeFinalizeArgs(process.argv.slice(2));
-  if (!options.execute) {
-    printPlan();
-  } else {
-    await executeFinalization();
-  }
+  if (!options.execute) printPlan();
+  else await executeFinalization();
 } catch (error) {
   process.stderr.write(`${JSON.stringify({
     ok: false,
@@ -79,6 +78,7 @@ function printPlan() {
       legacyValuesPreserved: true,
       conflictRecovery: 'empty_non_primary_fields_or_empty_tables_only',
       notificationRuntimeSettings: 'preserve_exact_authorized_1d_3d_7d_30d_or_inactive',
+      notificationRuntimeWorker: 'preserve_exact_active_baseline_or_all_false_inactive',
       notificationAdmission: false,
       workerDeploy: false,
       remoteD1Mutation: false,
@@ -115,9 +115,7 @@ async function executeFinalization() {
 
   currentStage = 'report-metric-value-field-migration-preview';
   const metricFieldMigrationPreview = await runJson(
-    'node',
-    ['scripts/migrate-report-metric-value-field-types.mjs'],
-    { env },
+    'node', ['scripts/migrate-report-metric-value-field-types.mjs'], { env },
   );
   assertReportMetricValueFieldMigrationPreviewSafe(metricFieldMigrationPreview);
   let metricFieldMigration = {
@@ -135,9 +133,7 @@ async function executeFinalization() {
   if (Number(metricFieldMigrationPreview.pendingMigrationCount) > 0) {
     currentStage = 'report-metric-value-field-migration-apply';
     const metricFieldMigrationApply = await runJson(
-      'node',
-      ['scripts/migrate-report-metric-value-field-types.mjs', '--apply'],
-      {
+      'node', ['scripts/migrate-report-metric-value-field-types.mjs', '--apply'], {
         env: {
           ...env,
           CONFIRM_REPORT_METRIC_VALUE_FIELD_MIGRATION:
@@ -202,28 +198,40 @@ async function executeFinalization() {
     env: { ...env, CONFIRM_WRITE: 'YES' },
   });
   const postSchemaEnv = mergeReportSchemaEnvironment(env, schemaApply);
+  const settingsEnv = Object.freeze({
+    ...postSchemaEnv,
+    MKT_REPORT_FINALIZER_PRIVATE_AUTHORITY: PRIVATE_AUTHORITY_CONFIRMATION,
+  });
 
   currentStage = 'dashboard-settings-preview';
-  const settingsPreview = await runJson('node', ['scripts/reconcile-dashboard-report-settings.mjs'], {
-    env: postSchemaEnv,
-  });
+  const settingsPreview = await runJson(
+    'node', ['scripts/reconcile-dashboard-report-settings.mjs'], { env: settingsEnv },
+  );
   assertDashboardSettingsPreviewSafe(settingsPreview);
 
   currentStage = 'dashboard-settings-apply';
-  const settingsApply = await runJson('node', ['scripts/reconcile-dashboard-report-settings.mjs', '--apply'], {
-    env: {
-      ...postSchemaEnv,
-      CONFIRM_DASHBOARD_REPORT_SETTINGS: 'RECONCILE_INTEGRATION_WORKSPACE_REPORT_SETTINGS',
+  const settingsApply = await runJson(
+    'node', ['scripts/reconcile-dashboard-report-settings.mjs', '--apply'], {
+      env: {
+        ...settingsEnv,
+        CONFIRM_DASHBOARD_REPORT_SETTINGS: 'RECONCILE_INTEGRATION_WORKSPACE_REPORT_SETTINGS',
+      },
     },
-  });
-  if (settingsApply?.ok !== true || settingsApply?.mode !== 'apply' || Number(settingsApply?.deleteCount ?? 0) !== 0) {
+  );
+  if (settingsApply?.ok !== true
+    || settingsApply?.mode !== 'apply'
+    || Number(settingsApply?.deleteCount ?? 0) !== 0) {
     throw new Error('Dashboard settings apply result is invalid');
   }
 
   currentStage = 'schema-and-settings-readback';
-  const schemaReadback = await runJson('node', ['scripts/setup-report-schema.mjs'], { env: postSchemaEnv });
+  const schemaReadback = await runJson(
+    'node', ['scripts/setup-report-schema.mjs'], { env: postSchemaEnv },
+  );
   assertReportSchemaPreviewSafe(schemaReadback, { requireClean: true });
-  const settingsReadback = await runJson('node', ['scripts/reconcile-dashboard-report-settings.mjs'], { env: postSchemaEnv });
+  const settingsReadback = await runJson(
+    'node', ['scripts/reconcile-dashboard-report-settings.mjs'], { env: settingsEnv },
+  );
   assertDashboardSettingsPreviewSafe(settingsReadback, { requireClean: true });
 
   currentStage = 'notification-runtime-preservation-verification';
@@ -232,12 +240,19 @@ async function executeFinalization() {
     settingsApply,
     settingsReadback,
   );
+  const privateNotificationRuntimeAuthority = assertPrivateAuthorityStable(
+    settingsPreview.privateNotificationRuntimeAuthority,
+    settingsApply.privateNotificationRuntimeAuthority,
+    settingsReadback.privateNotificationRuntimeAuthority,
+    notificationRuntime,
+  );
 
   currentStage = 'private-runtime-environment-evidence';
   const privateEnvironment = await writeReportRuntimeFinalizerEnvironment({
     evidenceRoot,
     repositoryHead: repository.head,
     environmentUpdates: schemaApply.environmentUpdates,
+    notificationRuntimeAuthority: privateNotificationRuntimeAuthority,
   });
 
   currentStage = 'sanitized-evidence';
@@ -283,13 +298,15 @@ async function executeFinalization() {
       aiSummaryEnabled: false,
       notificationRuntimeSettingsPreserved:
         notificationRuntime.state === 'active',
+      notificationRuntimeWorkerBaselinePreserved:
+        privateEnvironment.evidence.notificationRuntime.state === 'active',
       notificationAdmissionEnabled: false,
       schedulesEnabled: false,
       workerDeployed: false,
       queueMessageSent: false,
       remoteD1Mutated: false,
     },
-    nextStep: 'Report schema/settings are ready; existing exact Notification Runtime Settings remain preserved and Notification Admission remains separately controlled',
+    nextStep: 'Report schema/settings are ready; exact Notification Runtime Settings and Worker baseline remain preserved while Notification Admission stays separately controlled',
   });
   const evidencePath = resolve(evidenceRoot, 'report-runtime-finalize-summary.json');
   await writeFile(evidencePath, `${JSON.stringify(summary, null, 2)}\n`, { mode: 0o600 });
@@ -298,6 +315,20 @@ async function executeFinalization() {
     evidencePath,
     environmentEvidencePath: privateEnvironment.environmentPath,
   }, null, 2)}\n`);
+}
+
+function assertPrivateAuthorityStable(preview, apply, readback, publicState) {
+  const authorities = [preview, apply, readback];
+  if (authorities.some((value) => !value || typeof value !== 'object')) {
+    throw new Error('Finalizer did not receive private Notification Runtime authority');
+  }
+  const fingerprints = authorities.map((value) => JSON.stringify(value));
+  if (new Set(fingerprints).size !== 1
+    || preview.state !== publicState.state
+    || Number(preview.settingCount ?? -1) !== publicState.preservedSettingCount) {
+    throw new Error('Private Notification Runtime authority changed during Finalizer execution');
+  }
+  return preview;
 }
 
 async function loadEnvironment() {
