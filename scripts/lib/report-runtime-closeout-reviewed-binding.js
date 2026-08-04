@@ -3,7 +3,9 @@ import { resolve } from 'node:path';
 import { getReportPlatformContract } from '../../packages/application/src/reports/report-platform-adapter-registry.js';
 import { getReportLiveClosureDescriptor } from '../../packages/application/src/report-live-closure/channel-descriptors.js';
 import {
-  assertReviewedReportLiveClosureHandoff,
+  REPORT_LIVE_CLOSURE_WINDOWS,
+} from '../../packages/application/src/report-live-closure/channel-descriptors.js';
+import {
   sanitizeReportLiveClosureEvidence,
 } from '../../packages/application/src/report-live-closure/report-live-closure-framework.js';
 import {
@@ -15,6 +17,11 @@ export const REPORT_RUNTIME_REVIEWED_HANDOFF_ENV =
   'MKT_MULTICHANNEL_REPORT_LIVE_CLOSURE_HANDOFF';
 export const REPORT_RUNTIME_REVIEWED_HANDOFF_CONTRACT =
   'multichannel_report_live_closure_handoff_v1';
+
+const REVIEWED_OPERATOR_PATHS = new Set([
+  'scripts/report-runtime-closeout-reviewed-multiwindow.mjs',
+  'scripts/report-runtime-closeout-operator.mjs',
+]);
 
 export async function loadReviewedReportRuntimeCloseoutHandoff(input = {}) {
   const env = input.env ?? {};
@@ -49,7 +56,7 @@ export async function loadReviewedReportRuntimeCloseoutHandoff(input = {}) {
     'REPORT_RUNTIME_CLOSEOUT_REVIEWED_HANDOFF_NOT_SANITIZED',
   );
   const descriptor = getReportLiveClosureDescriptor(target.platformScope, target.capability);
-  assertReviewedReportLiveClosureHandoff(handoff, { descriptor, repository });
+  assertReviewedChannelCloseoutHandoff(handoff, { descriptor, repository });
   const readiness = resolveReviewedChannelReadiness(handoff, target.platformScope);
   const sourceWatermark = requireText(
     readiness.evidence?.source?.sourceWatermark,
@@ -65,6 +72,48 @@ export async function loadReviewedReportRuntimeCloseoutHandoff(input = {}) {
       action: row.action,
     }))),
   });
+}
+
+export function assertReviewedChannelCloseoutHandoff(handoff, { descriptor, repository }) {
+  const value = requireObject(handoff, 'handoff');
+  const readiness = resolveReviewedChannelReadiness(value, descriptor.platform);
+  const evidenceTarget = readiness.evidence?.target ?? {};
+  const windows = readiness.assessment?.windows;
+  const exactWindows = Array.isArray(windows)
+    ? windows.map((entry) => Number(entry.windowDays)).sort((a, b) => a - b)
+    : [];
+  const readinessContract = String(readiness.contractVersion ?? '');
+  const contractAccepted = readinessContract === 'report_channel_remote_readiness_reviewed_terminal_v1'
+    || (descriptor.platform === 'youtube'
+      && readinessContract === 'youtube_report_remote_readiness_reviewed_terminal_v1');
+  const operator = value.closeoutAuthority?.operator;
+
+  if (value.contractVersion !== REPORT_RUNTIME_REVIEWED_HANDOFF_CONTRACT
+    || value.liveMaterializationAuthorized !== true
+    || value.metaRemoteLock?.released !== true
+    || !isCommitSha(value.metaRemoteLock?.auditHead)
+    || value.repository?.branch !== 'main'
+    || value.repository?.clean !== true
+    || value.repository?.head !== repository.head
+    || value.repository?.reviewedHead !== repository.head
+    || !contractAccepted
+    || readiness.ok !== true
+    || readiness.assessment?.readyForLive !== true
+    || readiness.assessment?.repositoryReady !== true
+    || readiness.assessment?.sourceReady !== true
+    || evidenceTarget.platformScope !== descriptor.platform
+    || evidenceTarget.customerProfile !== 'integration_workspace'
+    || evidenceTarget.accountKey !== 'chemistry_k'
+    || JSON.stringify(exactWindows) !== JSON.stringify(REPORT_LIVE_CLOSURE_WINDOWS)
+    || !REVIEWED_OPERATOR_PATHS.has(operator)
+    || value.closeoutAuthority?.contractVersion !== 'report_runtime_closeout_uat_v1'
+    || value.closeoutAuthority?.platformScope !== descriptor.platform
+    || value.closeoutAuthority?.capability !== descriptor.capability) throw bindingError(
+    'Reviewed handoff does not prove exact-head lock release and selected-channel readiness',
+    'REPORT_RUNTIME_CLOSEOUT_REVIEWED_HANDOFF_INVALID',
+    { platformScope: descriptor.platform, capability: descriptor.capability },
+  );
+  return true;
 }
 
 export function resolveReviewedChannelReadiness(handoff, platformScope) {
@@ -233,6 +282,7 @@ function runtimeSafetySql(platformScope, accountKey) {
 }
 function compactSql(value) { return String(value).replace(/\s+/gu, ' ').trim(); }
 function sqlText(value) { return String(value).replaceAll("'", "''"); }
+function isCommitSha(value) { return typeof value === 'string' && /^[0-9a-f]{40}$/u.test(value); }
 function requireObject(value, field) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw bindingError(
     `${field} must be an object`,
