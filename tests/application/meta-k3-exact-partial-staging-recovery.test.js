@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -224,11 +225,16 @@ test('nested K3 config anchors main to the Repository and passes exact Wrangler 
         sourceConfigPath,
       },
     );
-    assert.equal(materialized.entrypoint, entrypoint);
+    const canonicalEntrypoint = realpathSync.native(entrypoint);
+    assert.equal(materialized.entrypoint, canonicalEntrypoint);
     assert.equal(materialized.entrypointAnchoredToRepository, true);
     assert.match(
       materialized.configText,
-      new RegExp(JSON.stringify(entrypoint).replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'), 'u'),
+      new RegExp(
+        JSON.stringify(canonicalEntrypoint)
+          .replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'),
+        'u',
+      ),
     );
     writeFileSync(nestedConfigPath, materialized.configText);
 
