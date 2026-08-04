@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { JOB_TYPES } from '../../packages/application/src/jobs/job-catalog.js';
 import {
@@ -80,8 +81,23 @@ test('enabled route loads exact Lark inputs and delegates to safe delivery', asy
   assert.equal(observed.mirrorDelivery, null);
 });
 
-test('non-notification jobs preserve the existing fallback chain', async () => {
+test('non-notification jobs preserve the existing Chatwoot-first fallback chain', async () => {
   const router = createLarkNotificationActiveJobRouter({ processFallback: async () => 'fallback-ok' });
   const result = await router({ job: { body: { type: JOB_TYPES.WOOCOMMERCE_COMMERCE_SYNC } } });
   assert.equal(result, 'fallback-ok');
+});
+
+test('deployed Worker default enters through the Lark notification router', () => {
+  const syncWorkerSource = readFileSync('apps/sync-worker/src/sync-worker.js', 'utf8');
+  const notificationRouterSource = readFileSync(
+    'apps/sync-worker/src/lark-notification-active-job-router.js',
+    'utf8',
+  );
+  assert.match(syncWorkerSource, /import \{ processJobWithLarkNotification \}/u);
+  assert.match(
+    syncWorkerSource,
+    /dependencies\.processJob \?\? processJobWithLarkNotification/u,
+  );
+  assert.match(notificationRouterSource, /processJobWithChatwootEndToEnd/u);
+  assert.doesNotMatch(notificationRouterSource, /processJobWithWooCommerceEndToEnd/u);
 });
