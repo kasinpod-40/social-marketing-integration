@@ -149,11 +149,12 @@ test('canonical-authority recovery backfills only missing canonical values', asy
   assert.deepEqual(state.records.map((item) => item.fields[LEGACY_DISPLAY_V1]), beforeLegacy);
 });
 
-test('conflicting archived Legacy sources remain blocked before mutation', async () => {
+test('conflicting archived Legacy sources without canonical remain blocked before mutation', async () => {
   const state = convergedRuntimeState();
   state.fields.push(field('fldDisplayLegacyV2', LEGACY_DISPLAY_V2, 3, 'SingleSelect'));
   for (const item of state.records) item.fields[LEGACY_DISPLAY_V2] = item.fields[LEGACY_DISPLAY_V1];
   state.records[0].fields[LEGACY_DISPLAY_V2] = 'ค่าขัดแย้ง';
+  state.records[0].fields.display_name = null;
   const client = statefulClient(state);
 
   const preview = await planReportMetricValueFieldMigration(options(client));
