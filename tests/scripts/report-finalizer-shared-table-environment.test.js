@@ -53,12 +53,18 @@ test('schema setup resolves the Metric table before Compatibility inspection', (
   );
 });
 
-test('Dashboard settings preflight consumes the effective mapping helper', () => {
+test('Dashboard settings preflight consumes mappings and exact Notification Runtime authority', () => {
   const source = readFileSync(
     new URL('../../scripts/reconcile-dashboard-report-settings.mjs', import.meta.url),
     'utf8',
   );
   assert.match(source, /resolveDashboardReportSettingsTableEnvironment/u);
   assert.match(source, /runtimeEnv: process\.env/u);
+  assert.match(source, /resolveReportSettingsNotificationRuntimeAuthority/u);
+  assert.match(
+    source,
+    /resolveReportSettingsNotificationRuntimeAuthority[\s\S]*planDashboardReportSettingsReconciliation/u,
+  );
+  assert.match(source, /notificationRuntimeAuthority/u);
   assert.doesNotMatch(source, /missingTableIds = REQUIRED_TABLE_ENV_NAMES/u);
 });
