@@ -3,9 +3,17 @@ import {
   DASHBOARD_METRIC_SCOPE_OPTIONS,
 } from './dashboard-metric-readiness.js';
 
+const ORGANIC_PLATFORM_OPTIONS = Object.freeze([
+  'facebook', 'instagram', 'tiktok', 'youtube',
+]);
+const PAID_ADS_PLATFORM_OPTIONS = Object.freeze([
+  'meta_ads', 'google_ads', 'tiktok_ads',
+]);
 const PLATFORM_OPTIONS = Object.freeze([
-  'facebook', 'instagram', 'tiktok', 'youtube', 'meta_ads', 'google_ads', 'tiktok_ads',
+  ...ORGANIC_PLATFORM_OPTIONS,
+  ...PAID_ADS_PLATFORM_OPTIONS,
   'woocommerce',
+  'chatwoot',
 ]);
 const DATA_STATUS_OPTIONS = Object.freeze([
   'complete', 'partial', 'no_data', 'no_data_confirmed',
@@ -58,7 +66,12 @@ export const LARK_REPORT_MATERIALIZATION_SCHEMA = deepFreeze({
     mktReportTopContent: {
       keyField: 'report_content_key',
       additiveFields: sharedRowAdditiveFields(),
-      platformField: { fieldName: 'platform', type: 3, uiType: 'SingleSelect', options: PLATFORM_OPTIONS.slice(0, 4) },
+      platformField: {
+        fieldName: 'platform',
+        type: 3,
+        uiType: 'SingleSelect',
+        options: ORGANIC_PLATFORM_OPTIONS,
+      },
       dataStatusField: { fieldName: 'data_status', type: 3, uiType: 'SingleSelect', options: DATA_STATUS_OPTIONS },
       sourceContract: 'validated materialization.topContent',
     },
@@ -73,7 +86,7 @@ export const LARK_REPORT_MATERIALIZATION_SCHEMA = deepFreeze({
         text('report_ad_key', true), text('report_id'), text('report_setting_key'),
         text('customer_key'), text('customer_profile'), text('capability'),
         select('report_type', ['dashboard_performance_report']),
-        select('platform', ['meta_ads', 'google_ads', 'tiktok_ads']), text('account_id'),
+        select('platform', PAID_ADS_PLATFORM_OPTIONS), text('account_id'),
         select('period_kind', PERIOD_KIND_OPTIONS), number('window_days', '0'),
         number('rank'), text('external_ad_id'), text('external_campaign_id'),
         text('external_ad_group_id'), text('external_creative_id'), text('ad_name'),
