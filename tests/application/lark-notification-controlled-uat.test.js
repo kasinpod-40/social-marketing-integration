@@ -12,6 +12,7 @@ import {
   resolveLarkNotificationControlledUatTables,
   selectLarkNotificationExecutivePreview,
 } from '../../scripts/lib/lark-notification-controlled-uat.js';
+import { LarkRecordRepository } from '../../packages/connectors/src/lark/lark-record-repository.js';
 
 function preview(overrides = {}) {
   return {
@@ -62,6 +63,50 @@ test('selects the latest exact 1D Executive Preview and creates a separate live 
   assert.deepEqual(uat.sourceReportIds, ['source-report-1']);
   assert.equal(source.fields.preview_mode, true);
   assert.equal(source.fields.notification_eligible, false);
+});
+
+test('normalizes Lark rich-text Preview fields before dedicated UAT write preflight', async () => {
+  const source = selectLarkNotificationExecutivePreview([preview({
+    channel_status_vector_json: [{ text: '{"tiktok_organic":"report_partial"}' }],
+    insight_summary: [{ text: 'สรุป' }, { text: 'ภาพรวม' }],
+    strengths: [{ text: 'จุดแข็ง' }],
+    weaknesses: [{ text: 'จุดที่ต้องระวัง' }],
+    recommendations: [{ text: 'ข้อเสนอแนะ' }],
+  })]);
+  const uat = buildLarkNotificationControlledUatRow(source);
+  const schema = Object.entries(uat.fields).map(([fieldName, value]) => ({
+    fieldName,
+    type: typeof value === 'boolean' ? 7 : (typeof value === 'number' ? 2 : 1),
+  }));
+  const repository = new LarkRecordRepository({
+    client: {
+      async listFields() { return schema; },
+      async listRecords() { return []; },
+      async batchCreateRecords() { return { created: 0 }; },
+      async batchUpdateRecords() { return { updated: 0 }; },
+    },
+  });
+
+  const [prepared] = await repository.prepareRows('table-ai-runs', [uat.fields], {
+    keyField: 'ai_run_key',
+  });
+  assert.equal(prepared.channel_status_vector_json, '{"tiktok_organic":"report_partial"}');
+  assert.equal(prepared.insight_summary, 'สรุปภาพรวม');
+  assert.equal(prepared.strengths, 'จุดแข็ง');
+  assert.equal(prepared.weaknesses, 'จุดที่ต้องระวัง');
+  assert.equal(prepared.recommendations, 'ข้อเสนอแนะ');
+  assert.match(prepared.ai_run_key, /^notification-uat:[a-f0-9]{64}$/u);
+
+  await assert.rejects(
+    repository.prepareRows('table-ai-runs', [{
+      ...uat.fields,
+      channel_status_vector_json: { tiktok_organic: 'report_partial' },
+    }], { keyField: 'ai_run_key' }),
+    (error) => (
+      error.code === 'LARK_PREFLIGHT_FAILED'
+      && error.details?.fieldName === 'channel_status_vector_json'
+    ),
+  );
 });
 
 test('rejects an ambiguous latest Executive Preview identity', () => {
