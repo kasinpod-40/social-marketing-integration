@@ -11,6 +11,8 @@ export const REPORT_RUNTIME_FINALIZE_FALSE_FLAGS = Object.freeze([
   'MKT_SCHEDULE_WEEKLY_REPORT_ENABLED',
 ]);
 
+const NOTIFICATION_RUNTIME_ACTIVE_SETTING_COUNT = 4;
+
 export function parseReportRuntimeFinalizeArgs(argv = []) {
   const unknown = argv.filter((arg) => arg !== '--execute');
   if (unknown.length > 0) {
@@ -250,6 +252,51 @@ export function assertDashboardSettingsPreviewSafe(preview, options = {}) {
     }
   }
   return true;
+}
+
+export function assertDashboardSettingsNotificationRuntimePreserved(
+  preview = {},
+  apply = {},
+  readback = {},
+) {
+  const stages = [
+    ['preview', preview],
+    ['apply', apply],
+    ['readback', readback],
+  ];
+  const normalized = stages.map(([stage, value]) => {
+    const state = value?.notificationRuntimeState;
+    const count = Number(value?.preservedNotificationRuntimeSettingCount ?? -1);
+    if (!['inactive', 'active'].includes(state)
+      || !Number.isSafeInteger(count)
+      || count !== (state === 'active' ? NOTIFICATION_RUNTIME_ACTIVE_SETTING_COUNT : 0)) {
+      throw failure(
+        'Dashboard settings did not report a valid Notification Runtime preservation state',
+        'REPORT_RUNTIME_FINALIZE_NOTIFICATION_RUNTIME_STATE_INVALID',
+        { stage, state: state ?? null, settingCount: Number.isFinite(count) ? count : null },
+      );
+    }
+    return Object.freeze({ stage, state, count });
+  });
+  const first = normalized[0];
+  if (normalized.some((entry) => entry.state !== first.state || entry.count !== first.count)) {
+    throw failure(
+      'Notification Runtime Report Settings changed during Report finalization',
+      'REPORT_RUNTIME_FINALIZE_NOTIFICATION_RUNTIME_DRIFT',
+      {
+        previewState: normalized[0].state,
+        previewSettingCount: normalized[0].count,
+        applyState: normalized[1].state,
+        applySettingCount: normalized[1].count,
+        readbackState: normalized[2].state,
+        readbackSettingCount: normalized[2].count,
+      },
+    );
+  }
+  return Object.freeze({
+    state: first.state,
+    preservedSettingCount: first.count,
+  });
 }
 
 export function mergeReportSchemaEnvironment(baseEnv = {}, applyResult = {}) {
