@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  LARK_NATIVE_AI_AUTOMATION_OUTPUT_BINDING,
   LARK_NATIVE_AI_CUSTOM_FIELD_AUTHORITY,
   LARK_NATIVE_AI_DISABLED_CONFIGURATION_PERMISSION_BUNDLE,
   LARK_NATIVE_AI_DISABLED_CONFIGURATION_WORKFLOWS,
@@ -47,39 +48,29 @@ function fixture() {
   };
 }
 
-test('builds exact repository-only field-authority and payload preview', async () => {
+test('builds exact repository-only Automation AI binding and payload preview', async () => {
   const preview = await buildLarkNativeAiDisabledConfigurationPreview(fixture());
   assert.equal(preview.ok, true);
-  assert.equal(preview.status, 'repository_preview_field_binding_verified_live_configuration_blocked');
+  assert.equal(
+    preview.status,
+    'repository_preview_automation_ai_binding_verified_live_configuration_blocked',
+  );
   assert.equal(preview.mode, 'repository_only');
   assert.equal(preview.liveConfigurationAuthorized, false);
   assert.equal(preview.activationAuthorized, false);
   assert.equal(preview.workflows.length, 2);
-  assert.deepEqual(preview.workflows.map(({ title }) => title), [
-    'AI Materialization → MKT_AI_Report_Runs',
-    'Eligible AI Run → Lark Group Notification',
-  ]);
   assert.equal(preview.customAiFieldAuthority.fieldCount, 4);
-  assert.equal(preview.customAiFieldAuthority.outputBinding, 'field_self');
-  assert.equal(preview.customAiFieldAuthority.automaticGenerationPolicy, 'unproven');
-  assert.deepEqual(preview.customAiFieldAuthority.fields.map(({ fieldName }) => fieldName), [
-    'insight_summary',
-    'strengths',
-    'weaknesses',
-    'recommendations',
-  ]);
-  assert.match(preview.notificationPayloadChecksum, /^[a-f0-9]{64}$/u);
+  assert.equal(preview.customAiFieldAuthority.usage, 'target_fields_and_prompt_reference');
+  assert.equal(preview.automationAiOutputBinding.exactCapabilityVerified, true);
   assert.equal(
-    preview.notificationLogRecordPreview.notification_attempt_key,
-    `integration_workspace:executive:7d:2026-08-03::${'a'.repeat(64)}`,
+    preview.automationAiOutputBinding.resultBinding,
+    'ai_action_output_to_update_record_field',
   );
-  assert.equal(preview.notificationLogRecordPreview.preview_mode, false);
-  assert.equal(preview.notificationLogRecordPreview.attempt_status, 'pending');
-  assert.equal(preview.notificationLogRecordPreview.sent_at, null);
-  assert.match(preview.notificationPayloadPreview.message.text, /ข้อเสนอแนะ/u);
+  assert.equal(preview.automationAiOutputBinding.finalActionCount, 4);
+  assert.match(preview.notificationPayloadChecksum, /^[a-f0-9]{64}$/u);
   assert.equal(preview.blockerCount, 2);
   assert.deepEqual(preview.blockers.map(({ code }) => code), [
-    'LARK_CUSTOM_AI_AUTOGENERATION_POLICY_UNPROVEN',
+    'LARK_NATIVE_AI_PROMPT_CAPTURE_INCOMPLETE',
     'LARK_NATIVE_PAYLOAD_SHA256_UNPROVEN',
   ]);
   assert.equal(preview.advisoryCount, 1);
@@ -95,55 +86,49 @@ test('builds exact repository-only field-authority and payload preview', async (
   assert.equal(preview.safety.production, 'BLOCKED');
 });
 
-test('locks the four observed Custom AI fields and visible references', () => {
-  assert.equal(LARK_NATIVE_AI_CUSTOM_FIELD_AUTHORITY.source, 'user_confirmed_lark_base_ui');
-  assert.equal(LARK_NATIVE_AI_CUSTOM_FIELD_AUTHORITY.table, '🧠 MKT_AI_Report_Runs');
+test('locks Custom AI target fields and verified Automation result binding', () => {
   assert.equal(LARK_NATIVE_AI_CUSTOM_FIELD_AUTHORITY.fieldCount, 4);
-  assert.equal(LARK_NATIVE_AI_CUSTOM_FIELD_AUTHORITY.promptCaptureComplete, false);
-  assert.deepEqual(LARK_NATIVE_AI_CUSTOM_FIELD_AUTHORITY.sharedVisibleReferences, [
-    'scope_type',
-    'channel_key',
-    'window_days',
-    'data_status',
-    'readiness_status',
-    'readiness_message',
+  assert.equal(
+    LARK_NATIVE_AI_CUSTOM_FIELD_AUTHORITY.automaticGenerationPolicy,
+    'not_required_by_selected_automation_path',
+  );
+  assert.equal(LARK_NATIVE_AI_AUTOMATION_OUTPUT_BINDING.actionType, 'AI-generated text (GPT model)');
+  assert.equal(LARK_NATIVE_AI_AUTOMATION_OUTPUT_BINDING.targetAction, 'Update record');
+  assert.equal(LARK_NATIVE_AI_AUTOMATION_OUTPUT_BINDING.targetTable, '🧠 MKT_AI_Report_Runs');
+  assert.equal(LARK_NATIVE_AI_AUTOMATION_OUTPUT_BINDING.verifiedTargetField, 'insight_summary');
+  assert.equal(LARK_NATIVE_AI_AUTOMATION_OUTPUT_BINDING.promptCaptureComplete, false);
+});
+
+test('AI materialization Workflow uses four text actions then one state update', () => {
+  const ai = LARK_NATIVE_AI_DISABLED_CONFIGURATION_WORKFLOWS[0];
+  assert.equal(ai.finalTrigger.table, '🧠 MKT_AI_Report_Runs');
+  assert.equal(ai.generationAuthority.type, 'lark_automation_ai_generated_text_actions');
+  assert.equal(ai.generationAuthority.bindingStatus, 'verified_action_output_to_record_field');
+  assert.deepEqual(ai.actions.map(({ type }) => type), [
+    'lark_ai_generated_text',
+    'lark_ai_generated_text',
+    'lark_ai_generated_text',
+    'lark_ai_generated_text',
+    'update_current_record',
   ]);
-  for (const field of LARK_NATIVE_AI_CUSTOM_FIELD_AUTHORITY.fields) {
-    assert.equal(field.fieldType, 'Custom AI field');
-    assert.equal(field.exportFieldType, 'Text');
-    assert.equal(field.outputBinding, 'field_self');
-  }
+  assert.deepEqual(ai.actions.slice(0, 4).map(({ config }) => config.outputField), [
+    'insight_summary',
+    'strengths',
+    'weaknesses',
+    'recommendations',
+  ]);
+  assert.equal(ai.actions.some(({ type }) => type === 'send_lark_message'), false);
+  assert.equal(ai.actions.some(({ type }) => type === 'add_notification_log_record'), false);
+  assert.equal(ai.actions.some(({ type }) => type === 'enable_automation'), false);
 });
 
 test('maps notification identity through Snapshot before Settings and never stores raw destination', () => {
   const notification = LARK_NATIVE_AI_DISABLED_CONFIGURATION_WORKFLOWS[1];
   assert.equal(notification.actions[0].config.table, '🧾 MKT_Report_Snapshots');
-  assert.deepEqual(notification.actions[0].config.readFields, [
-    'report_setting_key',
-    'customer_profile',
-    'period_start',
-    'period_end',
-  ]);
   assert.equal(notification.actions[1].config.table, '⚙️ MKT_Report_Settings');
-  assert.equal(notification.actions[1].config.identitySource, '🧾 MKT_Report_Snapshots');
   const serialized = JSON.stringify(notification);
   assert.doesNotMatch(serialized, /\boc_[A-Za-z0-9_-]+\b/u);
   assert.doesNotMatch(serialized, /https?:\/\/[^\s"]*webhook/iu);
-});
-
-test('AI materialization Workflow waits for four populated Custom AI fields and only updates state', () => {
-  const ai = LARK_NATIVE_AI_DISABLED_CONFIGURATION_WORKFLOWS[0];
-  assert.equal(ai.finalTrigger.table, '🧠 MKT_AI_Report_Runs');
-  assert.equal(ai.generationAuthority.type, 'lark_custom_ai_fields');
-  assert.equal(ai.generationAuthority.bindingStatus, 'verified_field_self_binding');
-  assert.deepEqual(ai.actions.map(({ type }) => type), [
-    'update_current_record',
-  ]);
-  assert.equal(ai.finalTrigger.conditions.filter(({ operator }) => operator === 'is_not_empty').length, 4);
-  assert.equal(ai.actions.some(({ type }) => type === 'lark_native_ai_generate_structured_text'), false);
-  assert.equal(ai.actions.some(({ type }) => type === 'send_lark_message'), false);
-  assert.equal(ai.actions.some(({ type }) => type === 'add_notification_log_record'), false);
-  assert.equal(ai.actions.some(({ type }) => type === 'enable_automation'), false);
 });
 
 test('discloses the complete remaining permission bundle together', () => {

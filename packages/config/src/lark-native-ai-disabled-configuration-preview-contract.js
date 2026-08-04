@@ -1,5 +1,5 @@
 export const LARK_NATIVE_AI_DISABLED_CONFIGURATION_PREVIEW_VERSION =
-  'lark_native_ai_disabled_configuration_preview_v2';
+  'lark_native_ai_disabled_configuration_preview_v3';
 export const LARK_NATIVE_AI_DISABLED_CONFIGURATION_PREVIEW_OUTPUT_ROOT =
   'outputs/lark-native-ai-disabled-configuration-preview';
 
@@ -26,7 +26,12 @@ const AI_RUN_TABLE = '🧠 MKT_AI_Report_Runs';
 const REPORT_SNAPSHOT_TABLE = '🧾 MKT_Report_Snapshots';
 const REPORT_SETTINGS_TABLE = '⚙️ MKT_Report_Settings';
 const NOTIFICATION_LOG_TABLE = '🔔 MKT_Notification_Log';
-
+const OUTPUT_FIELDS = Object.freeze([
+  'insight_summary',
+  'strengths',
+  'weaknesses',
+  'recommendations',
+]);
 const CUSTOM_AI_VISIBLE_REFERENCES = Object.freeze([
   'scope_type',
   'channel_key',
@@ -44,7 +49,8 @@ export const LARK_NATIVE_AI_CUSTOM_FIELD_AUTHORITY = deepFreeze({
   exportFieldType: 'Text',
   outputBinding: 'field_self',
   promptCaptureComplete: false,
-  automaticGenerationPolicy: 'unproven',
+  automaticGenerationPolicy: 'not_required_by_selected_automation_path',
+  usage: 'target_fields_and_prompt_reference',
   sharedVisibleReferences: CUSTOM_AI_VISIBLE_REFERENCES,
   fields: [
     customAiField('insight_summary', 'Thai insight summary for the current record'),
@@ -52,6 +58,21 @@ export const LARK_NATIVE_AI_CUSTOM_FIELD_AUTHORITY = deepFreeze({
     customAiField('weaknesses', 'Thai weaknesses for the current record'),
     customAiField('recommendations', 'Thai recommendations for the current record'),
   ],
+});
+
+export const LARK_NATIVE_AI_AUTOMATION_OUTPUT_BINDING = deepFreeze({
+  source: 'user_confirmed_lark_base_ui',
+  observedOn: '2026-08-04',
+  actionType: 'AI-generated text (GPT model)',
+  outputShape: 'single_text_value_per_action',
+  targetAction: 'Update record',
+  targetTable: AI_RUN_TABLE,
+  recordMatch: 'report_id equals trigger report_id',
+  verifiedTargetField: 'insight_summary',
+  resultBinding: 'ai_action_output_to_update_record_field',
+  exactCapabilityVerified: true,
+  finalActionCount: 4,
+  promptCaptureComplete: false,
 });
 
 export const LARK_NATIVE_AI_DISABLED_CONFIGURATION_WORKFLOWS = Object.freeze([
@@ -65,16 +86,13 @@ export const LARK_NATIVE_AI_DISABLED_CONFIGURATION_WORKFLOWS = Object.freeze([
       delayMinutes: 1,
     }),
     generationAuthority: Object.freeze({
-      type: 'lark_custom_ai_fields',
+      type: 'lark_automation_ai_generated_text_actions',
       table: AI_RUN_TABLE,
-      outputFields: Object.freeze([
-        'insight_summary',
-        'strengths',
-        'weaknesses',
-        'recommendations',
-      ]),
-      bindingStatus: 'verified_field_self_binding',
-      automaticGenerationPolicy: 'unproven',
+      outputFields: OUTPUT_FIELDS,
+      actionCount: 4,
+      outputShape: 'single_text_value_per_action',
+      bindingStatus: 'verified_action_output_to_record_field',
+      promptCaptureComplete: false,
     }),
     finalTrigger: Object.freeze({
       type: 'new_or_updated_record_matches_conditions',
@@ -82,11 +100,8 @@ export const LARK_NATIVE_AI_DISABLED_CONFIGURATION_WORKFLOWS = Object.freeze([
       watchedFields: Object.freeze([
         'generation_status',
         'readiness_status',
+        'metric_summary_json',
         'preview_mode',
-        'insight_summary',
-        'strengths',
-        'weaknesses',
-        'recommendations',
       ]),
       conditions: Object.freeze([
         condition('generation_status', 'equals', 'pending'),
@@ -94,15 +109,18 @@ export const LARK_NATIVE_AI_DISABLED_CONFIGURATION_WORKFLOWS = Object.freeze([
           'report_available',
           'report_partial',
         ])),
+        condition('metric_summary_json', 'is_not_empty', true),
         condition('preview_mode', 'equals', false),
-        condition('insight_summary', 'is_not_empty', true),
-        condition('strengths', 'is_not_empty', true),
-        condition('weaknesses', 'is_not_empty', true),
-        condition('recommendations', 'is_not_empty', true),
       ]),
     }),
     actions: Object.freeze([
+      ...OUTPUT_FIELDS.map((fieldName) => action('lark_ai_generated_text', Object.freeze({
+        outputField: fieldName,
+        resultBinding: `action_output → ${fieldName}`,
+        promptStatus: 'capture_incomplete',
+      }))),
       action('update_current_record', Object.freeze({
+        setFromActionOutputs: OUTPUT_FIELDS,
         set: Object.freeze({
           generation_status: 'generated',
           failure_code: null,
@@ -111,7 +129,6 @@ export const LARK_NATIVE_AI_DISABLED_CONFIGURATION_WORKFLOWS = Object.freeze([
       })),
     ]),
     forbiddenActionTypes: Object.freeze([
-      'lark_native_ai_generate_structured_text',
       'send_lark_message',
       'create_notification_log',
       'enable_automation',
@@ -193,16 +210,10 @@ export const LARK_NATIVE_AI_DISABLED_CONFIGURATION_WORKFLOWS = Object.freeze([
         messageTemplateVersion: 'executive_report_notification_v1',
       })),
       action('update_notification_log_record', Object.freeze({
-        set: Object.freeze({
-          attempt_status: 'sent',
-          sent_at: 'automation_now',
-        }),
+        set: Object.freeze({ attempt_status: 'sent', sent_at: 'automation_now' }),
       })),
       action('update_current_record', Object.freeze({
-        set: Object.freeze({
-          sent_to_group: true,
-          sent_at: 'automation_now',
-        }),
+        set: Object.freeze({ sent_to_group: true, sent_at: 'automation_now' }),
       })),
     ]),
     failurePolicy: Object.freeze({
@@ -251,15 +262,12 @@ function customAiField(fieldName, promptIntent) {
     visibleReferences: CUSTOM_AI_VISIBLE_REFERENCES,
   });
 }
-
 function condition(field, operator, value) {
   return Object.freeze({ field, operator, value });
 }
-
 function action(type, config) {
   return Object.freeze({ type, config });
 }
-
 function deepFreeze(value, seen = new WeakSet()) {
   if (value && typeof value === 'object') {
     if (seen.has(value)) return value;
