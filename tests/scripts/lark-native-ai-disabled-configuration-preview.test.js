@@ -4,23 +4,26 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import test from 'node:test';
 
-test('offline command emits complete blocked-for-live preview with zero remote action', () => {
+test('offline command emits field-binding-verified preview with zero remote action', () => {
   const script = resolve('scripts/lark-native-ai-disabled-configuration-preview.mjs');
   const result = spawnSync(process.execPath, [script], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
   const output = JSON.parse(result.stdout);
   assert.equal(output.ok, true);
-  assert.equal(output.status, 'repository_preview_ready_live_configuration_blocked');
+  assert.equal(output.status, 'repository_preview_field_binding_verified_live_configuration_blocked');
   assert.equal(output.mode, 'repository_only');
   assert.equal(output.generatedLocally, true);
   assert.equal(output.remoteActionCount, 0);
   assert.equal(output.workflows.length, 2);
-  assert.equal(output.blockerCount, 3);
+  assert.equal(output.customAiFieldAuthority.fieldCount, 4);
+  assert.equal(output.customAiFieldAuthority.outputBinding, 'field_self');
+  assert.equal(output.blockerCount, 2);
   assert.deepEqual(output.blockers.map(({ code }) => code), [
-    'UI_AUTOMATION_API_IDENTITY_NOT_EXPOSED',
-    'LARK_NATIVE_AI_OUTPUT_BINDING_UNPROVEN',
+    'LARK_CUSTOM_AI_AUTOGENERATION_POLICY_UNPROVEN',
     'LARK_NATIVE_PAYLOAD_SHA256_UNPROVEN',
   ]);
+  assert.equal(output.advisoryCount, 1);
+  assert.equal(output.advisories[0].code, 'UI_AUTOMATION_API_IDENTITY_NOT_EXPOSED');
   assert.equal(output.safety.remoteLarkRead, 0);
   assert.equal(output.safety.remoteLarkWrite, 0);
   assert.equal(output.safety.workflowCreate, 0);
