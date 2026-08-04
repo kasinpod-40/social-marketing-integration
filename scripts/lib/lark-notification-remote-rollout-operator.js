@@ -10,6 +10,7 @@ import {
 } from '../../packages/application/src/jobs/queue-operation.js';
 import {
   LARK_EXECUTIVE_DESTINATION_KEY_HASH,
+  readLarkNotificationRuntimeConfig,
 } from '../../packages/config/src/lark-notification-runtime-config.js';
 
 export const LARK_NOTIFICATION_REMOTE_ROLLOUT_CONTRACT_VERSION =
@@ -78,6 +79,13 @@ const SHARED_COUNT_FIELDS = Object.freeze([
   'organic_content_state',
   'organic_content_observations',
 ]);
+
+const DEFERRED_TABLE_MAPPING_POLICY = Object.freeze(
+  Object.fromEntries(LARK_NOTIFICATION_REMOTE_REQUIRED_TABLE_MAPPINGS.map((fieldName) => [
+    fieldName,
+    'deferred_to_safe_worker_deploy_or_controlled_uat',
+  ])),
+);
 
 export function parseLarkNotificationRemoteRolloutArgs(args = []) {
   let phase = 'plan';
@@ -180,12 +188,19 @@ export function validateLarkNotificationRemoteWranglerConfig(configText, env = {
     requireFalseAcrossConfigAndEnvironment(text, env, flag);
   }
 
-  const tableMappings = {};
-  const tableMappingSources = {};
-  for (const mapping of LARK_NOTIFICATION_REMOTE_REQUIRED_TABLE_MAPPINGS) {
-    const resolved = resolveRequiredMapping(text, env, mapping);
-    tableMappings[mapping] = resolved.value;
-    tableMappingSources[mapping] = resolved.source;
+  const runtime = readLarkNotificationRuntimeConfig({
+    MKT_NOTIFICATION_RUNTIME_ENABLED: 'false',
+    MKT_NOTIFICATION_LARK_SEND_ENABLED: 'false',
+    MKT_NOTIFICATION_LARK_MIRROR_ENABLED: 'false',
+  });
+  if (runtime.flags.runtimeEnabled
+      || runtime.flags.sendEnabled
+      || runtime.flags.mirrorEnabled
+      || runtime.tables !== null) {
+    throw operatorError(
+      'Lark notification D1 rollout requires the central Runtime to remain fully disabled',
+      'LARK_NOTIFICATION_REMOTE_ROLLOUT_CONFIG_UNSAFE',
+    );
   }
 
   for (const required of [
@@ -210,10 +225,13 @@ export function validateLarkNotificationRemoteWranglerConfig(configText, env = {
     databaseName: 'social-mkt-state-dev',
     notificationFlagsAllFalse: true,
     notificationFlagSourcePolicy: 'all_config_and_environment_sources_false_or_omitted',
-    requiredTableMappingsPresent: true,
-    tableMappingSourcePolicy: 'wrangler_or_merged_environment_exact_and_conflict_free',
-    tableMappingSources: Object.freeze(tableMappingSources),
-    tableMappingFingerprint: sha256Hex(JSON.stringify(tableMappings)),
+    requiredTableMappingsPresent: false,
+    tableMappingSourcePolicy: 'not_required_for_d1_only_rollout_phases',
+    tableMappingSources: DEFERRED_TABLE_MAPPING_POLICY,
+    tableMappingFingerprint: sha256Hex(JSON.stringify({
+      policy: 'not_required_for_d1_only_rollout_phases',
+      deferredMappings: DEFERRED_TABLE_MAPPING_POLICY,
+    })),
     d1BindingPresent: true,
     mainQueueBindingPresent: true,
     dlqPresent: true,
@@ -499,52 +517,6 @@ function requireFalseAcrossConfigAndEnvironment(text, env, key) {
       `Lark notification rollout requires ${key}=false when configured`,
       'LARK_NOTIFICATION_REMOTE_ROLLOUT_CONFIG_UNSAFE',
       { fieldName: key, invalidSources: [...new Set(invalidSources)] },
-    );
-  }
-}
-
-function resolveRequiredMapping(text, env, key) {
-  const configValues = extractConfigStringValues(text, key);
-  const envValue = normalizeOptionalScalar(env?.[key]);
-  const sources = [];
-
-  for (const value of configValues) {
-    assertValidMappingValue(value, key, 'wrangler');
-    sources.push({ source: 'wrangler', value });
-  }
-  if (envValue !== null) {
-    assertValidMappingValue(envValue, key, 'environment');
-    sources.push({ source: 'environment', value: envValue });
-  }
-  if (sources.length === 0) {
-    throw operatorError(
-      `Lark notification rollout requires configured ${key}`,
-      'LARK_NOTIFICATION_REMOTE_ROLLOUT_CONFIG_UNSAFE',
-      { fieldName: key, acceptedSources: ['wrangler', 'environment'] },
-    );
-  }
-
-  const values = [...new Set(sources.map((entry) => entry.value))];
-  if (values.length !== 1) {
-    throw operatorError(
-      `Lark notification rollout found conflicting ${key} mappings`,
-      'LARK_NOTIFICATION_REMOTE_ROLLOUT_CONFIG_UNSAFE',
-      { fieldName: key, sourceConflict: true },
-    );
-  }
-  const sourceNames = [...new Set(sources.map((entry) => entry.source))].sort();
-  return Object.freeze({
-    value: values[0],
-    source: sourceNames.join('_and_'),
-  });
-}
-
-function assertValidMappingValue(value, key, source) {
-  if (value === '' || /^replace-|^<|^todo$/iu.test(value)) {
-    throw operatorError(
-      `Lark notification rollout requires configured ${key}`,
-      'LARK_NOTIFICATION_REMOTE_ROLLOUT_CONFIG_UNSAFE',
-      { fieldName: key, invalidSource: source },
     );
   }
 }
