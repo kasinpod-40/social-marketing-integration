@@ -18,6 +18,10 @@ const STABLE_OPERATION_CONTRACTS = new Map([
     prefix: 'chatwoot',
     scopeField: 'accountKey',
   })],
+  [JOB_TYPES.LARK_NOTIFICATION_SEND, Object.freeze({
+    prefix: 'lark_notification',
+    operationIdPattern: SAFE_OPERATION_ID,
+  })],
 ]);
 
 function resolveStableOperationContract(type, body) {
