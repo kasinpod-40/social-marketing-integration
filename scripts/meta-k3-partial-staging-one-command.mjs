@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { readFile, realpath, stat } from 'node:fs/promises';
 import { realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { readDevVars } from './lib/dev-vars.js';
 import {
@@ -24,6 +25,11 @@ const previewRecovery = resolve(
   repositoryRoot,
   'scripts/meta-k3-partial-staging-preview-recovery.mjs',
 );
+const readinessHook = resolve(
+  repositoryRoot,
+  'scripts/meta-k3-preview-alias-readiness-hook.mjs',
+);
+const readinessNodeOptions = `--import=${pathToFileURL(readinessHook).href}`;
 const d1Root = resolve(
   repositoryRoot,
   'outputs',
@@ -62,6 +68,9 @@ if (!execute) {
     previewWindow: 'same_proven_k2_enable_probe_finalize_restore_sequence',
     safePreviewBootstrapRequired: true,
     safeRouteProbeRequiredBeforeFinalizer: true,
+    readinessPreloadOwnedByLauncher: true,
+    readinessPreloadAbsolute: true,
+    userNodeOptionsRequired: false,
     dedicatedFinalizer: true,
     loaderUsed: false,
     queueMessageCount: 0,
@@ -128,6 +137,7 @@ try {
   const configText = await readFile(configPath, 'utf8');
   await resolveRepositoryFile(readOnlySummary, 'K3_READ_ONLY_SUMMARY');
   await resolveRepositoryDirectory(recoveryRoot, 'K3_RECOVERY_ROOT');
+  await resolveRepositoryFile(readinessHook, 'K3_READINESS_HOOK');
 
   currentStage = 'safe-version-authority';
   const verifyRestore = JSON.parse(
@@ -201,6 +211,9 @@ try {
     executionTransport: 'preview_version_upload',
     previewWindowOwnedByChild: true,
     safeRouteProbeRequiredBeforeFinalizer: true,
+    readinessPreloadOwnedByLauncher: true,
+    readinessPreloadAbsolute: true,
+    userNodeOptionsRequired: false,
     dedicatedFinalizer: true,
     loaderUsed: false,
     queueMessageCount: 0,
@@ -219,6 +232,9 @@ try {
       cwd: repositoryRoot,
       env: {
         ...mergedEnv,
+        NODE_OPTIONS: readinessNodeOptions,
+        MKT_META_K3_PREVIEW_ALIAS_READINESS:
+          'WAIT_FOR_ATTESTED_ACTIVE_PREVIEW',
         CLOUDFLARE_ACCOUNT_ID: accountId,
         CLOUDFLARE_API_TOKEN: auth.token,
         DEV_VARS_FILE: devVarsPath,
