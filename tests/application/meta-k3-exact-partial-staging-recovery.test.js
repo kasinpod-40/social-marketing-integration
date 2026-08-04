@@ -1,8 +1,15 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import test from 'node:test';
 
 import {
@@ -18,6 +25,9 @@ import {
 import {
   createMetaK3ExactRecoveryHandler,
 } from '../../apps/sync-worker/src/meta-k3-exact-recovery-preview-entry.js';
+import {
+  materializeMetaK3WranglerEntrypoint,
+} from '../../scripts/lib/meta-k3-wrangler-config-authority.js';
 
 const EXACT = META_K3_EXACT_RECOVERY_IDENTITY;
 const ORIGINAL_REQUESTED_AT = 1785815000000;
@@ -167,6 +177,7 @@ test('K3 execute bootstrap materializes Meta runtime authority and only resumes 
   );
 
   assert.match(launcher, /materializeMetaHistoryLarkRuntimeConfig/u);
+  assert.match(launcher, /materializeMetaK3WranglerEntrypoint/u);
   assert.match(launcher, /META_GRAPH_API_VERSION=v25\.0/u);
   assert.match(launcher, /MKT_META_K3_RESUME_PRE_MUTATION_CONFIG_FAILURE/u);
   assert.match(launcher, /RESUME_EXACT_K3_PRE_MUTATION_CONFIG_FAILURE/u);
@@ -175,4 +186,80 @@ test('K3 execute bootstrap materializes Meta runtime authority and only resumes 
   assert.match(launcher, /remoteMutationCount\)\s*===\s*0/u);
   assert.doesNotMatch(launcher, /queueSendAllowed:\s*true/u);
   assert.doesNotMatch(launcher, /lifecycleSqlRepairAllowed:\s*true/u);
+});
+
+test('nested K3 config anchors main to the Repository and passes exact Wrangler version-upload dry-run', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'meta-k3-wrangler-authority-'));
+  try {
+    const entrypoint = join(root, 'apps', 'sync-worker', 'src', 'index.js');
+    const sourceConfigPath = join(root, 'wrangler.sync.jsonc');
+    const nestedConfigPath = join(
+      root,
+      'outputs',
+      'meta-d1-only-rollout',
+      'chemistry_k3',
+      'wrangler.meta-k3-d1.preview.jsonc',
+    );
+    mkdirSync(resolve(entrypoint, '..'), { recursive: true });
+    mkdirSync(resolve(nestedConfigPath, '..'), { recursive: true });
+    writeFileSync(entrypoint, [
+      'export default {',
+      '  async fetch() {',
+      "    return new Response('ok');",
+      '  },',
+      '};',
+      '',
+    ].join('\n'));
+    const sourceText = JSON.stringify({
+      name: 'meta-k3-wrangler-path-test',
+      main: 'apps/sync-worker/src/index.js',
+      compatibility_date: '2026-08-01',
+    }, null, 2);
+    writeFileSync(sourceConfigPath, `${sourceText}\n`);
+
+    const materialized = await materializeMetaK3WranglerEntrypoint(
+      sourceText,
+      {
+        repositoryRoot: root,
+        sourceConfigPath,
+      },
+    );
+    assert.equal(materialized.entrypoint, entrypoint);
+    assert.equal(materialized.entrypointAnchoredToRepository, true);
+    assert.match(
+      materialized.configText,
+      new RegExp(JSON.stringify(entrypoint).replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'), 'u'),
+    );
+    writeFileSync(nestedConfigPath, materialized.configText);
+
+    const result = spawnSync(
+      'npx',
+      [
+        '--no-install',
+        'wrangler',
+        'versions',
+        'upload',
+        '--config',
+        nestedConfigPath,
+        '--preview-alias',
+        'meta-k3-recovery',
+        '--message',
+        'meta-k3-nested-config-dry-run',
+        '--dry-run',
+      ],
+      {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+        maxBuffer: 64 * 1024 * 1024,
+      },
+    );
+
+    assert.equal(
+      result.status,
+      0,
+      `${result.stdout ?? ''}\n${result.stderr ?? ''}`,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
