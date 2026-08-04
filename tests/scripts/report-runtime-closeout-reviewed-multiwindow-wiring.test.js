@@ -16,21 +16,25 @@ test('canonical shared operator preserves legacy TikTok and WooCommerce source c
   assert.doesNotMatch(source, /platformScope === 'youtube'/u);
 });
 
-test('YouTube terminal delegates only to the separate reviewed multiwindow entrypoint', async () => {
+test('multichannel terminal delegates only to the reviewed multiwindow entrypoint', async () => {
   const source = await readFile(TERMINAL, 'utf8');
+  assert.match(source, /REPORT_RUNTIME_REVIEWED_CHANNELS/u);
   assert.match(source, /report-runtime-closeout-reviewed-multiwindow\.mjs/u);
   assert.doesNotMatch(source, /execFileAsync\(process\.execPath, \[\s*'scripts\/report-runtime-closeout-operator\.mjs'/u);
 });
 
-test('reviewed executor binds handoff, preflight, multiwindow replay and finally restore', async () => {
+test('reviewed executor binds generic preflight, multiwindow replay and finally restore', async () => {
   const source = await readFile(EXECUTOR, 'utf8');
+  assert.match(source, /REPORT_RUNTIME_REVIEWED_CHANNELS/u);
   assert.match(source, /loadReviewedReportRuntimeCloseoutHandoff/u);
-  assert.match(source, /buildReportRuntimeOrganicPreflightSql/u);
+  assert.match(source, /buildReportRuntimePreflightSql/u);
+  assert.match(source, /assertReviewedReportRuntimeCloseoutPreflight/u);
   assert.match(source, /buildReviewedReportRuntimeMultiwindowPlan/u);
   assert.match(source, /for \(const prestate of prestates\)/u);
   assert.match(source, /send-replay/u);
   assert.match(source, /finally \{/u);
   assert.match(source, /restore-all-false/u);
   assert.match(source, /sanitizeReportLiveClosureEvidence/u);
+  assert.doesNotMatch(source, /accepts YouTube Organic only/u);
   assert.doesNotMatch(source, /youtube\.googleapis\.com|YouTube Data API/u);
 });
