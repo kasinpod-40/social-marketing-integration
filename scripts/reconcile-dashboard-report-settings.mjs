@@ -12,6 +12,10 @@ import {
 } from '../packages/config/src/report-settings.seed.js';
 import { createLocalLarkRuntime, printJson } from './lib/lark-runtime.js';
 import { readWranglerStringVars } from './lib/wrangler-sync-config.js';
+import {
+  DASHBOARD_REPORT_SETTINGS_REQUIRED_TABLE_ENV_NAMES,
+  resolveDashboardReportSettingsTableEnvironment,
+} from './lib/dashboard-report-settings-table-environment.js';
 
 const CONFIRMATION = 'RECONCILE_INTEGRATION_WORKSPACE_REPORT_SETTINGS';
 const ALLOWED_SCHEMA_ACTIONS = new Set([
@@ -29,12 +33,6 @@ const REFERENCE_TABLE_KEYS = Object.freeze([
   'mktReportSnapshots',
   'mktReportMetricValues',
   'mktReportTopContent',
-]);
-const REQUIRED_TABLE_ENV_NAMES = Object.freeze([
-  'LARK_TABLE_MKT_REPORT_SETTINGS',
-  'LARK_TABLE_MKT_REPORT_SNAPSHOTS',
-  'LARK_TABLE_MKT_REPORT_METRIC_VALUES',
-  'LARK_TABLE_MKT_REPORT_TOP_CONTENT',
 ]);
 
 try {
@@ -58,16 +56,24 @@ async function main() {
 
   const wranglerConfigPath = process.env.MKT_DASHBOARD_REPORT_SETTINGS_WRANGLER_CONFIG
     ?? 'wrangler.sync.jsonc';
-  const wrangler = await readWranglerStringVars(wranglerConfigPath, REQUIRED_TABLE_ENV_NAMES);
-  const missingTableIds = REQUIRED_TABLE_ENV_NAMES.filter((key) => !wrangler.values[key]);
-  if (missingTableIds.length > 0) {
-    throw new Error(`Dashboard report settings config is missing ${missingTableIds.join(', ')}`);
+  const wrangler = await readWranglerStringVars(
+    wranglerConfigPath,
+    DASHBOARD_REPORT_SETTINGS_REQUIRED_TABLE_ENV_NAMES,
+  );
+  const tableEnvironment = resolveDashboardReportSettingsTableEnvironment({
+    wranglerEnv: wrangler.values,
+    runtimeEnv: process.env,
+  });
+  if (tableEnvironment.missingTableEnvNames.length > 0) {
+    throw new Error(
+      `Dashboard report settings config is missing ${tableEnvironment.missingTableEnvNames.join(', ')}`,
+    );
   }
   const runtime = await createLocalLarkRuntime([
     'mktReportSettings',
     ...REFERENCE_TABLE_KEYS,
   ], {
-    env: wrangler.values,
+    env: tableEnvironment.env,
     runtimeConfigScope: 'administrative',
   });
   if (runtime.runtimeConfig.environment !== 'development'
