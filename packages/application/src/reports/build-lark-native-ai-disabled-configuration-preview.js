@@ -1,5 +1,6 @@
 import { stableStringify } from '../use-cases/build-report-snapshot.js';
 import {
+  LARK_NATIVE_AI_AUTOMATION_OUTPUT_BINDING,
   LARK_NATIVE_AI_CUSTOM_FIELD_AUTHORITY,
   LARK_NATIVE_AI_DISABLED_CONFIGURATION_PERMISSION_BUNDLE,
   LARK_NATIVE_AI_DISABLED_CONFIGURATION_PREVIEW_VERSION,
@@ -74,8 +75,8 @@ export async function buildLarkNativeAiDisabledConfigurationPreview(input = {}) 
 
   const blockers = Object.freeze([
     Object.freeze({
-      code: 'LARK_CUSTOM_AI_AUTOGENERATION_POLICY_UNPROVEN',
-      reason: 'The four field-self output bindings are verified, but the exact automatic generation policy for new or updated rows has not been captured.',
+      code: 'LARK_NATIVE_AI_PROMPT_CAPTURE_INCOMPLETE',
+      reason: 'The Automation AI text result can be bound into the target record field, but the complete approved prompt for each of the four actions has not yet been captured.',
     }),
     Object.freeze({
       code: 'LARK_NATIVE_PAYLOAD_SHA256_UNPROVEN',
@@ -92,13 +93,14 @@ export async function buildLarkNativeAiDisabledConfigurationPreview(input = {}) 
   return deepFreeze({
     ok: true,
     contractVersion: LARK_NATIVE_AI_DISABLED_CONFIGURATION_PREVIEW_VERSION,
-    status: 'repository_preview_field_binding_verified_live_configuration_blocked',
+    status: 'repository_preview_automation_ai_binding_verified_live_configuration_blocked',
     mode: 'repository_only',
     liveConfigurationAuthorized: false,
     activationAuthorized: false,
     targetGroupName: LARK_NATIVE_AI_EXECUTIVE_GROUP_NAME,
     destinationKeyHash: LARK_NATIVE_AI_EXECUTIVE_DESTINATION_KEY_HASH,
     customAiFieldAuthority: LARK_NATIVE_AI_CUSTOM_FIELD_AUTHORITY,
+    automationAiOutputBinding: LARK_NATIVE_AI_AUTOMATION_OUTPUT_BINDING,
     workflows: LARK_NATIVE_AI_DISABLED_CONFIGURATION_WORKFLOWS,
     notificationPayloadPreview: canonicalPayload,
     notificationPayloadBytes: payloadBytes,
@@ -142,9 +144,14 @@ export function validateLarkNativeAiDisabledConfigurationPreview(preview) {
     blockers.push({ code: 'DESTINATION_INVALID' });
   }
   if (preview.customAiFieldAuthority?.fieldCount !== 4
-    || preview.customAiFieldAuthority?.outputBinding !== 'field_self'
-    || preview.customAiFieldAuthority?.automaticGenerationPolicy !== 'unproven') {
+    || preview.customAiFieldAuthority?.usage !== 'target_fields_and_prompt_reference') {
     blockers.push({ code: 'CUSTOM_AI_FIELD_AUTHORITY_INVALID' });
+  }
+  if (preview.automationAiOutputBinding?.exactCapabilityVerified !== true
+    || preview.automationAiOutputBinding?.resultBinding
+      !== 'ai_action_output_to_update_record_field'
+    || preview.automationAiOutputBinding?.finalActionCount !== 4) {
+    blockers.push({ code: 'AUTOMATION_AI_OUTPUT_BINDING_INVALID' });
   }
   if (!SHA256_HEX.test(String(preview.notificationPayloadChecksum ?? ''))) {
     blockers.push({ code: 'PAYLOAD_CHECKSUM_INVALID' });
