@@ -69,6 +69,9 @@ export async function resolveReviewedQueue({ accountId, token, expectedName }) {
       if (name === expectedName) matches.push({
         queueId: String(item.queue_id ?? item.id ?? '').trim(),
         queueName: name,
+        embeddedConsumers: Array.isArray(item.consumers)
+          ? item.consumers.map((consumer) => Object.freeze({ ...consumer }))
+          : [],
       });
     }
     totalPages = Number(body.result_info?.total_pages ?? 1);
@@ -86,12 +89,22 @@ export async function resolveReviewedQueue({ accountId, token, expectedName }) {
     token,
     queueId: selected.queueId,
   });
+  const listedConsumerId = readSingleConsumerId(consumers, 'list');
+  const detail = await readReviewedQueueConsumer({
+    accountId,
+    token,
+    queueId: selected.queueId,
+    consumerId: listedConsumerId,
+  });
   const consumer = assertReviewedQueueConsumer({
     consumers,
+    embeddedConsumers: selected.embeddedConsumers,
+    detail,
     expectedQueueName: expectedName,
   });
   return Object.freeze({
-    ...selected,
+    queueId: selected.queueId,
+    queueName: selected.queueName,
     consumerIdFingerprint: sha256(consumer.consumerId),
     consumerScriptName: consumer.scriptName,
     consumerSettingsFingerprint: sha256(stableJson(consumer.settings)),
@@ -115,27 +128,91 @@ export async function readReviewedQueueConsumers({ accountId, token, queueId }) 
   return Object.freeze(body.result.map((item) => Object.freeze({ ...item })));
 }
 
-export function assertReviewedQueueConsumer({ consumers, expectedQueueName = EXPECTED_MAIN_QUEUE }) {
-  const matches = Array.isArray(consumers)
-    ? consumers.filter((item) => (
-      String(item?.type ?? '').trim().toLowerCase() === 'worker'
-      && String(item?.queue_name ?? item?.queueName ?? '').trim() === expectedQueueName
-      && String(item?.script_name ?? item?.scriptName ?? '').trim() === EXPECTED_WORKER_NAME
-    ))
-    : [];
-  if (matches.length !== 1 || consumers.length !== 1) throw closeoutFailure(
+export async function readReviewedQueueConsumer({ accountId, token, queueId, consumerId }) {
+  const response = await fetch(
+    `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/queues/${encodeURIComponent(queueId)}/consumers/${encodeURIComponent(consumerId)}`,
+    {
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(30_000),
+    },
+  );
+  const body = await response.json().catch(() => null);
+  if (!response.ok || body?.success !== true || !body.result || typeof body.result !== 'object'
+    || Array.isArray(body.result)) throw closeoutFailure(
+    `Cloudflare Queue consumer detail read failed (HTTP ${response.status})`,
+    'REPORT_RUNTIME_CLOSEOUT_QUEUE_CONSUMER_READ_FAILED',
+    { status: response.status },
+  );
+  return Object.freeze({ ...body.result });
+}
+
+export function assertReviewedQueueConsumer({
+  consumers,
+  embeddedConsumers = [],
+  detail = null,
+  expectedQueueName = EXPECTED_MAIN_QUEUE,
+}) {
+  const listed = Array.isArray(consumers) ? consumers : [];
+  if (listed.length !== 1) throw closeoutFailure(
     'Report Queue requires exactly one reviewed Worker consumer',
     'REPORT_RUNTIME_CLOSEOUT_QUEUE_CONSUMER_INVALID',
-    { consumerCount: Array.isArray(consumers) ? consumers.length : 0, reviewedMatchCount: matches.length },
+    { consumerCount: listed.length, reviewedMatchCount: 0 },
   );
-  const item = matches[0];
-  const settings = item.settings ?? {};
+  const consumerId = readSingleConsumerId(listed, 'list');
+  const embedded = Array.isArray(embeddedConsumers) ? embeddedConsumers : [];
+  if (embedded.length > 1) throw closeoutFailure(
+    'Report Queue inventory contains ambiguous embedded consumers',
+    'REPORT_RUNTIME_CLOSEOUT_QUEUE_CONSUMER_INVALID',
+    { consumerCount: listed.length, embeddedConsumerCount: embedded.length },
+  );
+
+  const sources = [detail, listed[0], embedded[0]].filter((value) => (
+    value && typeof value === 'object' && !Array.isArray(value)
+  ));
+  const observedIds = sources.map(readConsumerId).filter(Boolean);
+  if (observedIds.some((value) => value !== consumerId)) throw closeoutFailure(
+    'Report Queue consumer identity changed across Cloudflare inventory reads',
+    'REPORT_RUNTIME_CLOSEOUT_QUEUE_CONSUMER_INVALID',
+    { consumerCount: listed.length, consumerIdentityMatched: false },
+  );
+
+  const explicitTypes = sources.map((item) => optionalText(item.type)).filter(Boolean);
+  const explicitQueueNames = sources.map((item) => optionalText(
+    item.queue_name ?? item.queueName,
+  )).filter(Boolean);
+  const scriptName = firstText(sources, (item) => item.script_name ?? item.scriptName);
+  const typeMatched = explicitTypes.every((value) => value.toLowerCase() === 'worker');
+  const queueNameMatched = explicitQueueNames.every((value) => value === expectedQueueName);
+  const scriptNameMatched = scriptName === EXPECTED_WORKER_NAME;
+  if (!typeMatched || !queueNameMatched || !scriptNameMatched) throw closeoutFailure(
+    'Report Queue requires exactly one reviewed Worker consumer',
+    'REPORT_RUNTIME_CLOSEOUT_QUEUE_CONSUMER_INVALID',
+    {
+      consumerCount: listed.length,
+      reviewedMatchCount: 0,
+      consumerIdentityMatched: true,
+      explicitTypeCount: explicitTypes.length,
+      typeMatched,
+      explicitQueueNameCount: explicitQueueNames.length,
+      queueNameMatched,
+      scriptNamePresent: Boolean(scriptName),
+      scriptNameMatched,
+      detailHydrated: Boolean(detail),
+    },
+  );
+
   const normalized = Object.freeze({
-    batchSize: Number(settings.batch_size ?? settings.batchSize),
-    maxConcurrency: Number(settings.max_concurrency ?? settings.maxConcurrency),
-    maxRetries: Number(settings.max_retries ?? settings.maxRetries),
-    maxWaitTimeMs: Number(settings.max_wait_time_ms ?? settings.maxWaitTimeMs),
-    deadLetterQueue: String(item.dead_letter_queue ?? item.deadLetterQueue ?? '').trim(),
+    batchSize: firstNumber(sources, (item) => item.settings?.batch_size ?? item.settings?.batchSize),
+    maxConcurrency: firstNumber(
+      sources,
+      (item) => item.settings?.max_concurrency ?? item.settings?.maxConcurrency,
+    ),
+    maxRetries: firstNumber(sources, (item) => item.settings?.max_retries ?? item.settings?.maxRetries),
+    maxWaitTimeMs: firstNumber(
+      sources,
+      (item) => item.settings?.max_wait_time_ms ?? item.settings?.maxWaitTimeMs,
+    ),
+    deadLetterQueue: firstText(sources, (item) => item.dead_letter_queue ?? item.deadLetterQueue),
   });
   if (normalized.batchSize !== EXPECTED_MAIN_CONSUMER_SETTINGS.batchSize
     || normalized.maxConcurrency !== EXPECTED_MAIN_CONSUMER_SETTINGS.maxConcurrency
@@ -150,16 +227,12 @@ export function assertReviewedQueueConsumer({ consumers, expectedQueueName = EXP
       maxRetries: normalized.maxRetries,
       maxWaitTimeMs: normalized.maxWaitTimeMs,
       deadLetterQueueMatched: normalized.deadLetterQueue === EXPECTED_DLQ,
+      detailHydrated: Boolean(detail),
     },
-  );
-  const consumerId = String(item.consumer_id ?? item.consumerId ?? '').trim();
-  if (!consumerId) throw closeoutFailure(
-    'Report Queue consumer identity is missing',
-    'REPORT_RUNTIME_CLOSEOUT_QUEUE_CONSUMER_INVALID',
   );
   return Object.freeze({
     consumerId,
-    scriptName: EXPECTED_WORKER_NAME,
+    scriptName,
     settings: normalized,
   });
 }
@@ -460,6 +533,43 @@ function zeroOrOne(values, predicate, label) {
   return matches[0] ?? null;
 }
 
+function readSingleConsumerId(consumers, source) {
+  if (!Array.isArray(consumers) || consumers.length !== 1) throw closeoutFailure(
+    'Report Queue requires exactly one reviewed Worker consumer',
+    'REPORT_RUNTIME_CLOSEOUT_QUEUE_CONSUMER_INVALID',
+    { source, consumerCount: Array.isArray(consumers) ? consumers.length : 0 },
+  );
+  const consumerId = readConsumerId(consumers[0]);
+  if (!consumerId) throw closeoutFailure(
+    'Report Queue consumer identity is missing',
+    'REPORT_RUNTIME_CLOSEOUT_QUEUE_CONSUMER_INVALID',
+    { source, consumerCount: consumers.length },
+  );
+  return consumerId;
+}
+
+function readConsumerId(value) {
+  return optionalText(value?.consumer_id ?? value?.consumerId);
+}
+function firstText(sources, select) {
+  for (const source of sources) {
+    const value = optionalText(select(source));
+    if (value) return value;
+  }
+  return null;
+}
+function firstNumber(sources, select) {
+  for (const source of sources) {
+    const value = select(source);
+    if (value !== undefined && value !== null && value !== '') return Number(value);
+  }
+  return Number.NaN;
+}
+function optionalText(value) {
+  if (value === undefined || value === null) return null;
+  const text = String(value).trim();
+  return text || null;
+}
 function readBindingName(binding) { return String(binding?.name ?? binding?.binding ?? '').trim() || null; }
 function normalizeBindingType(value) { return String(value ?? '').trim().toLowerCase().replaceAll('-', '_'); }
 function readRemoteBoolean(value) {
