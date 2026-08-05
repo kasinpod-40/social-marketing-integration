@@ -16,17 +16,27 @@ import { generateReportAiSummary } from '../../packages/application/src/use-case
 
 const GENERATED_AT = Date.parse('2026-07-28T00:00:00Z');
 
-test('registry covers every Organic, Paid Ads, Commerce and Customer Service platform without pretending non-active sources are active', () => {
+test('registry covers every Report platform and keeps only TikTok Ads planned', () => {
   const contracts = listReportPlatformContracts();
   assert.deepEqual(contracts.map((item) => item.platformScope), [
     'facebook', 'instagram', 'tiktok', 'youtube', 'meta_ads', 'google_ads', 'tiktok_ads',
     'woocommerce', 'chatwoot',
   ]);
   assert.equal(contracts.find((item) => item.platformScope === 'tiktok_ads').sourceStatus, REPORT_SOURCE_STATUS.PLANNED);
-  assert.equal(contracts.find((item) => item.platformScope === 'tiktok').sourceStatus, REPORT_SOURCE_STATUS.ACTIVE);
+  for (const platformScope of [
+    'facebook', 'instagram', 'tiktok', 'youtube', 'meta_ads', 'google_ads', 'woocommerce', 'chatwoot',
+  ]) {
+    assert.equal(
+      contracts.find((item) => item.platformScope === platformScope).sourceStatus,
+      REPORT_SOURCE_STATUS.ACTIVE,
+    );
+  }
   assert.equal(contracts.find((item) => item.platformScope === 'woocommerce').capability, 'commerce');
-  assert.equal(contracts.find((item) => item.platformScope === 'chatwoot').sourceStatus, REPORT_SOURCE_STATUS.UAT_PENDING);
   assert.equal(contracts.find((item) => item.platformScope === 'chatwoot').capability, 'customer_service');
+  assert.deepEqual(
+    contracts.find((item) => item.platformScope === 'google_ads').rankingReportLevels,
+    [],
+  );
 });
 
 test('Organic cumulative calculation preserves new-content zero baseline and nulls uncovered partial deltas', () => {
@@ -98,19 +108,19 @@ test('complete cumulative observations keep 1D, 3D, 7D and 30D totals monotonic'
   assert.deepEqual(values, [20, 50, 100, 190]);
 });
 
-test('source-unavailable platform materializes honestly without calling its adapter', async () => {
+test('planned TikTok Ads materializes honestly without calling its adapter', async () => {
   let called = 0;
   const writes = [];
   const registry = createReportPlatformAdapterRegistry({
-    adapters: { facebook: { async load() { called += 1; return {}; } } },
+    adapters: { tiktok_ads: { async load() { called += 1; return {}; } } },
   });
   const result = await generateDashboardReportMaterialization({
     registry,
     materializationStore: { async saveReportMaterialization(row) { writes.push(row); return { status: 'written' }; } },
     customerKey: 'chemistry_k',
     accountKey: 'chemistry_k',
-    platformScope: 'facebook',
-    reportSettingKey: 'integration_workspace:facebook:rolling:3d',
+    platformScope: 'tiktok_ads',
+    reportSettingKey: 'integration_workspace:tiktok_ads:rolling:3d',
     periodKind: 'rolling_days',
     windowDays: 3,
     periodEnd: '2026-07-27',
@@ -119,7 +129,7 @@ test('source-unavailable platform materializes honestly without calling its adap
   });
   assert.equal(called, 0);
   assert.equal(result.dataStatus, 'source_unavailable');
-  assert.equal(result.warnings[0].code, 'REPORT_SOURCE_UAT_PENDING');
+  assert.equal(result.warnings[0].code, 'REPORT_SOURCE_PLANNED');
   assert.equal(writes.length, 1);
   assert.equal(JSON.parse(writes[0].payload_json).dataStatus, 'source_unavailable');
 });
@@ -137,7 +147,13 @@ test('active Organic adapter produces current and previous equal-length values f
               observation('video-1', '2026-07-09', 20),
               observation('video-1', '2026-07-12', 50),
             ],
-            readSummary: { coverageStatus: 'complete', sourceWatermark: 'wm-1' },
+            accountDailyFacts: [],
+            readSummary: {
+              sourceScope: 'content',
+              coverageStatus: 'complete',
+              accountCoverageStatus: 'not_observed',
+              sourceWatermark: 'wm-1',
+            },
           };
         },
       },
@@ -164,6 +180,80 @@ test('active Organic adapter produces current and previous equal-length values f
   assert.equal(writes[0].window_days, null);
 });
 
+test('Facebook Account scope preserves Content metrics as N/A without fabricated observations', async () => {
+  const writes = [];
+  const registry = createReportPlatformAdapterRegistry({
+    adapters: {
+      facebook: {
+        async load() {
+          return {
+            contents: [],
+            observations: [],
+            accountDailyFacts: [
+              {
+                metric_date: '2026-07-25',
+                data_status: 'complete',
+                views: 10,
+                reach: 8,
+                profile_views: null,
+                accounts_engaged: 3,
+                total_interactions: 4,
+                net_follows: 1,
+                followers: 100,
+                follows: 20,
+              },
+              {
+                metric_date: '2026-07-26',
+                data_status: 'complete',
+                views: 5,
+                reach: 4,
+                profile_views: null,
+                accounts_engaged: 1,
+                total_interactions: 2,
+                net_follows: 0,
+                followers: 101,
+                follows: 20,
+              },
+            ],
+            readSummary: {
+              sourceScope: 'account',
+              coverageStatus: 'complete',
+              contentCoverageStatus: 'complete',
+              accountCoverageStatus: 'complete',
+              sourceWatermark: 'facebook-account-watermark',
+              accountFactRecords: 2,
+            },
+          };
+        },
+      },
+    },
+  });
+  const result = await generateDashboardReportMaterialization({
+    registry,
+    materializationStore: { async saveReportMaterialization(row) { writes.push(row); return { status: 'written' }; } },
+    customerKey: 'chemistry_k',
+    accountKey: 'chemistry_k',
+    platformScope: 'facebook',
+    reportSettingKey: 'integration_workspace:facebook:custom_range',
+    periodKind: 'custom_range',
+    periodStart: '2026-07-25',
+    periodEnd: '2026-07-26',
+    comparisonMode: 'none',
+    sourceWatermark: 'facebook-account-watermark',
+    generatedAt: GENERATED_AT,
+  });
+  assert.equal(result.dataStatus, 'complete');
+  assert.equal(result.sourceRead.sourceScope, 'account');
+  assert.equal(result.metricPayload['facebook:account_views'].current, 15);
+  assert.equal(result.metricPayload['facebook:account_reach'].current, 12);
+  assert.equal(result.metricPayload['facebook:account_followers'].current, 101);
+  assert.equal(result.metricPayload['facebook:account_profile_views'].current, null);
+  assert.equal(result.metricPayload['facebook:period_views'].current, null);
+  assert.equal(result.metricPayload['facebook:period_views'].availabilityStatus, 'not_observed');
+  assert.deepEqual(result.topContent, []);
+  assert.equal(JSON.parse(writes[0].payload_json).topContent.length, 0);
+});
+
 test('active Commerce adapter materializes neutral metrics and discovered collections', async () => {
   const writes = [];
   const registry = createReportPlatformAdapterRegistry({
@@ -181,7 +271,7 @@ test('active Commerce adapter materializes neutral metrics and discovered collec
               gross_sales_micros: current ? 10_000_000 : 5_000_000,
               recognized_revenue_micros: current ? 9_000_000 : 4_000_000,
               refund_micros: 0,
-              discount_micros: current ? 1_000_000 : 1_000_000,
+              discount_micros: 1_000_000,
               shipping_micros: 0,
               tax_micros: 0,
               recognized_orders: current ? 3 : 2,
