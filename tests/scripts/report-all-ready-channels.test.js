@@ -113,14 +113,17 @@ test('one execution invokes each ready channel sequentially and retains waiting 
   assert.equal(result.ok, true);
   assert.equal(result.completedCount, 2);
   assert.equal(result.waitingCount, 6);
+  assert.equal(result.completionMaxPolls, 120);
   assert.deepEqual(result.completed.map((row) => row.platformScope), ['facebook', 'meta_ads']);
 });
 
-test('plan lists all reviewed channels without remote action', async () => {
+test('plan lists all reviewed channels and the bounded queue completion barrier without remote action', async () => {
   const plan = await runAllReadyChannelReports({ argv: [], env: {} });
   assert.equal(plan.planOnly, true);
   assert.equal(plan.reviewedChannels.length, 8);
   assert.deepEqual(plan.windows, WINDOWS);
+  assert.equal(plan.behavior.queueCompletionBarrier,
+    'hold_reviewed_active_worker_for_up_to_120_polls');
   assert.equal(plan.remoteWriteCount, 0);
   assert.equal(plan.queueActionCount, 0);
   assert.equal(plan.workerDeploymentCount, 0);
