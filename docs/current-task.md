@@ -1,27 +1,27 @@
-# Current Task — Meta Ads Report Entity Bind Chunk Hotfix v1
+# Current Task — Meta Ads 3D D1 Bind Exact Continuation v1
 
 ## Status
 
 ```text
-TASK_STATUS                         = IMPLEMENTATION_COMPLETE_CI_PASS
-CURRENT_PROGRAM                     = META_ADS_REPORT_ENTITY_BIND_CHUNK_V1
-BRANCH                              = hotfix/meta-ads-report-entity-bind-chunk-v1
-EXACT_BASE                          = 56f7354ab9077e045318148cc5d8b76030a987a6
-VERIFIED_IMPLEMENTATION_HEAD        = be42c135b9cd4a31e96853dfee8a6480a261b2ec
-PR                                  = 513
-BRANCH_VERIFICATION_RUN             = 31017237500
-BRANCH_VERIFICATION_NUMBER          = 2238
-META_END_TO_END_RUN                 = 31017236669
-META_END_TO_END_NUMBER              = 445
-PRIOR_PROJECTION_FIX                = MERGED_PR_512
+TASK_STATUS                         = IMPLEMENTATION_IN_PROGRESS
+CURRENT_PROGRAM                     = META_ADS_3D_D1_BIND_CONTINUATION_V1
+BRANCH                              = hotfix/meta-ads-3d-d1-bind-continuation-v1
+EXACT_BASE                          = 2f87f7f342847a5dcd0cf794cd0a74e55ab76068
 PLATFORM                            = meta_ads
 WINDOW                              = 3D
 REPORT_ID                           = integration_workspace:meta_ads:rolling:3d:chemistry_k:rolling_days:2026-07-29:2026-07-31:meta-ads-v1
-RECOVERY_REQUESTED_AT               = 1785938483493
-FAILED_SYNC_RUN_COUNT               = 6
-FAILED_SYNC_CODE                    = D1_ADS_REPORT_READ_FAILED
+ORIGINAL_REQUESTED_AT               = 1785934718928
+FAILED_RECOVERY_REQUESTED_AT        = 1785938483493
+ROOT_CAUSE                          = ENTITY_BIND_LIMIT_CONFIRMED
+UNIQUE_ADS_1D                       = 77
+UNIQUE_ADS_3D                       = 102
+PRE_FIX_BINDINGS_1D                 = 80
+PRE_FIX_BINDINGS_3D                 = 105
+D1_BINDING_CEILING                  = 100
+PRIOR_SUCCESSFUL_SYNC_RUNS          = 2
+FAILED_RECOVERY_SYNC_RUNS           = 6
 ORIGINAL_DLQ                        = terminal:e408707c9c2d383e04a3e213a7be45a0
-NEW_DLQ                             = dlq:2f292f08f5bdc4f12c91b68ceff71e1b
+RETRY_EXHAUSTED_DLQ                 = dlq:2f292f08f5bdc4f12c91b68ceff71e1b
 TARGET_MATERIALIZATION_COUNT        = 0
 ACTIVE_REPORT_WORK                  = 0
 ACTIVE_REPORT_LOCK                  = 0
@@ -34,108 +34,99 @@ PRODUCTION                          = BLOCKED
 Full contract:
 
 ```text
-docs/tasks/meta-ads-report-entity-bind-chunk-v1.md
+docs/tasks/meta-ads-3d-d1-bind-continuation-v1.md
 ```
 
 ## Goal
 
-Fix the existing Shared Paid Ads reader so Top Ads entity hydration never exceeds the reviewed D1 maximum of 100
-bound parameters. Preserve the merged explicit scalar projections from PR #512 and all Report aggregation,
-Coverage, Stable-key and null/zero semantics.
+Continue the exact retained Meta Ads 3D Report job after live SELECT-only evidence proved that the old entity lookup
+used 105 total D1 bindings and exceeded the reviewed ceiling of 100. Do not rerun the failed Recovery evidence root
+or the prior Run All handoff.
 
-## Confirmed repository defect
+## Proven root cause
 
-After selecting the reviewed ranking facts, `D1AdsReportSource` creates one unique Ad ID list and previously sent
-all IDs through one statement:
+The Shared Paid Ads reader reserved three fixed bindings and appended every unique ranking Ad ID:
 
 ```text
-customer_key + platform + account_key + every external Ad ID
+1D  77 Ads + 3 = 80 bindings   PASS
+3D 102 Ads + 3 = 105 bindings  FAIL
 ```
 
-Three bindings are fixed. Therefore a single statement can safely contain at most 97 Ad IDs under the existing
-100-bound D1 contract. The prior code had no chunking and could exceed that boundary for a larger Meta Ads period.
-The six retained 3D failures are consistent with this defect, but the exact live unique-Ad count still requires one
-post-merge SELECT-only inspector before calling it the proven runtime root cause.
+PR #513 merged deterministic 97-ID entity chunks into exact base `2f87f7f342847a5dcd0cf794cd0a74e55ab76068`.
+PR #512 had already removed broad unneeded Paid Ads projections. The exact runtime root is now proven rather than a
+hypothesis.
 
-## Root correction
+## Exact retained boundary
 
-- retain the explicit fact/entity/Coverage projections merged in PR #512;
-- split sorted unique Ad IDs into deterministic chunks of at most 97;
-- execute entity reads sequentially with three fixed bindings per query;
-- preserve one entity row map and identical Top Ads output;
-- expose additive sanitized `entityQueryCount` and `entityQueryMaxIds` read evidence;
-- add a 98-Ad regression proving two calls with 100 and 4 total bindings;
-- keep Google Ads no-Top-Ads behavior at zero entity queries.
+- the original Report ID, requested-at, period, source watermark and job hash remain unchanged;
+- the first failed recovery produced six failed Sync Runs and zero D1/Lark target rows;
+- the original configuration DLQ and the retry-exhaustion DLQ are both open;
+- no Report Work or lock is active;
+- Notification Runtime baseline is restored;
+- Notification Admission, Schedule and Production remain disabled.
 
-## Exact recovery boundary
+## Implementation
 
-No Queue action is authorized by this implementation. Both retained DLQs remain open. The failed recovery root and
-Run All handoff must not be rerun. After merge, one SELECT-only inspector must bind the new DLQ identity and count
-1D/3D unique Ads. Only then may a separate exact continuation submit the original Meta Ads 3D job once.
+Add one exact incident continuation operator that reuses the existing Shared:
+
+- Report Finalizer and candidate builder;
+- Notification-preserving Active/Safe Worker window;
+- reviewed Cloudflare and Queue sender;
+- D1/Lark state and integrity checks;
+- Stable Report ID/checksum replay checks;
+- D1 backup and exact DLQ metadata closure.
+
+The operator must:
+
+1. require exact clean merged Head and exact-head Finalizer evidence;
+2. bind the retained failed-recovery attempt and both inspector files;
+3. bind both exact DLQs and operation metadata;
+4. require two prior successes, six failed recovery runs and an empty D1/Lark target;
+5. send the original Meta Ads 3D job once;
+6. verify one materialization and D1/Lark integrity;
+7. send one exact replay and prove no drift;
+8. restore and stabilize Notification Runtime;
+9. close both DLQs only after all prior proof passes;
+10. emit a private sanitized summary.
+
+Polling may report failed-attempt progress but must not restore the Worker while a Queue retry remains in flight. It
+must stop immediately after an exact new DLQ is observed.
 
 ## Out of scope
 
-- Queue send/redrive or DLQ closure;
-- Worker deployment or Remote D1/Lark mutation;
-- Provider/source refresh;
+- rerun of `outputs/meta-ads-3d-exact-recovery-5b35861553d2`;
+- rerun of the previous all-channel Run All root or handoff;
+- generic Queue resend/redrive or DLQ deletion;
 - replacement Report identity or requested-at;
-- manual materialization repair;
-- polling fail-fast changes;
-- Dashboard legacy display-name backfill;
-- Notification Admission, Schedule or Production activation.
+- Provider/source refresh;
+- manual D1/Lark materialization repair;
+- remaining Meta Ads 7D/30D or later channels;
+- `__mkt_legacy_display_name_single_select_v2` Dashboard backfill;
+- Notification Admission, AI, Schedule or Production activation.
 
 ## Acceptance criteria
 
-1. Every entity lookup uses at most 100 total bindings.
-2. A 98-Ad input becomes two deterministic queries containing 97 and 1 IDs.
-3. Entity hydration and Top Ads output remain complete and deterministic.
-4. Meta Ads aggregation and projection regressions remain passing.
-5. Google Ads continues to issue zero entity queries and no fabricated Top Ads.
-6. Full Unit/Workers and Report reliability gates pass.
-7. Repository implementation performs zero Remote action.
-8. Notification Admission, Schedule and Production remain disabled.
+1. Exact fixed Head `2f87f7f342847a5dcd0cf794cd0a74e55ab76068` is required.
+2. Retained evidence proves `102 Ads / 105 bindings` for 3D and `77 Ads / 80 bindings` for 1D.
+3. Both exact DLQ rows and metadata match the original Queue job.
+4. Exactly one first Queue send and one replay send are possible.
+5. Materialization count remains one and payload checksum remains stable.
+6. D1/Lark integrity and Lark Stable rows remain unchanged on replay.
+7. Preserved Notification Runtime baseline is restored with three stable samples.
+8. Both DLQs close only after materialization, replay and restore proof.
+9. Provider requests remain zero.
+10. Notification Admission, Schedule and Production remain disabled.
 
 ## Implementation result
 
-Implemented on Draft PR #513 without Remote execution:
-
-- deterministic 97-ID sequential entity chunks;
-- additive entity-query evidence;
-- focused 98-Ad/100-bound regression;
-- no Remote action performed.
-
-Exact implementation Head `be42c135b9cd4a31e96853dfee8a6480a261b2ec` passed:
-
-```text
-Branch Verification #2238 / run 31017237500
-Install locked dependencies                 PASS
-Syntax architecture and hygiene             PASS
-Focused Report source readiness tests       PASS
-Focused Meta history finalizer tests         PASS
-Focused Woo completed-state race tests       PASS
-Focused Chatwoot final UAT tests              PASS
-Focused staged TikTok tests                  PASS
-Unit and Workers runtime tests               PASS
-Report reliability regression               PASS
-Dependency audit                             PASS
-Wrangler dry run                             PASS
-Diff whitespace check                        PASS
-
-Meta End-to-End #445 / run 31017236669
-Diff hygiene                                 PASS
-Syntax architecture and repository hygiene  PASS
-Focused Meta workstream tests                PASS
-Unit and Workers runtime tests               PASS
-Report reliability regression               PASS
-Dependency audit                             PASS
-Wrangler dry run                             PASS
-```
+Implementation is in progress on the branch above. Repository implementation performs no Remote action.
 
 ## Required verification
 
 ```bash
 npm ci
 npm run check
+node --test tests/scripts/report-runtime-meta-ads-3d-d1-bind-continuation.test.js
 node --test tests/connectors/d1-ads-report-source.test.js
 npm test
 npm run test:report-reliability
@@ -147,9 +138,9 @@ git diff --check
 ## Post-merge sequence
 
 1. synchronize clean exact merged `main`;
-2. run one SELECT-only unique-Ad/new-DLQ inspector;
-3. classify the exact D1 read root cause;
-4. create/use an exact recovery continuation without repeating either old evidence root;
-5. submit only the original Meta Ads 3D job once, then verify/replay/restore/close under separate evidence gates;
-6. resume only remaining Report windows;
-7. repair `__mkt_legacy_display_name_single_select_v2` after 28-window closure.
+2. run exact-head Report Finalizer;
+3. execute the new Meta Ads 3D continuation once;
+4. never repeat its evidence root after any Queue attempt;
+5. run fresh SELECT-only readiness;
+6. continue only the remaining windows under a new exact handoff;
+7. repair the legacy Dashboard display field after all 28 windows close.
