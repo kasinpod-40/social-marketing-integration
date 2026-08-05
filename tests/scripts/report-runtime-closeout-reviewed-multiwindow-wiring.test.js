@@ -45,9 +45,14 @@ test('reviewed executor binds generic preflight, multiwindow replay and preserve
 
 test('reviewed reuse windows return verified evidence before any Queue resend', async () => {
   const source = await readFile(EXECUTOR, 'utf8');
-  const verifyStart = source.indexOf("if (selected.operation === 'verify')");
-  const replayStart = source.indexOf('d-send-replay');
-  assert.ok(verifyStart >= 0, 'verify branch is required');
+  const executeWindowStart = source.indexOf('async function executeWindow');
+  const verifyStart = source.indexOf(
+    "if (selected.operation === 'verify')",
+    executeWindowStart,
+  );
+  const replayStart = source.indexOf('d-send-replay', verifyStart);
+  assert.ok(executeWindowStart >= 0, 'executeWindow function is required');
+  assert.ok(verifyStart > executeWindowStart, 'executeWindow verify branch is required');
   assert.ok(replayStart > verifyStart, 'replay path must remain after the verify branch');
 
   const verifyBranch = source.slice(verifyStart, replayStart);
