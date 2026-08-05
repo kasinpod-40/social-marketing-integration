@@ -48,7 +48,9 @@ export const META_ADS_3D_D1_BIND_CONTINUATION = Object.freeze({
   decision: 'META_ADS_REPORT_3D_D1_BIND_CONTINUATION_COMPLETED',
   confirmation: 'CONTINUE_EXACT_META_ADS_3D_D1_BIND_RECOVERY',
   evidenceDirectory: 'outputs/meta-ads-3d-d1-bind-continuation',
-  requiredRepositoryHead: '2f87f7f342847a5dcd0cf794cd0a74e55ab76068',
+  requiredRepositoryHead:
+    process.env.MKT_REPORT_RUNTIME_META_ADS_3D_EXPECTED_HEAD
+      ?? '2f87f7f342847a5dcd0cf794cd0a74e55ab76068',
   finalizerDefault:
     'outputs/report-runtime-finalize/report-runtime-finalize-summary.json',
   retainedAttemptPath:
