@@ -10,6 +10,7 @@ import {
 
 export const REPORT_RUNTIME_NOTIFICATION_REQUIRED_TABLES = Object.freeze({
   mktAiReportRuns: 'LARK_TABLE_MKT_AI_REPORT_RUNS',
+  mktReportSnapshots: 'LARK_TABLE_MKT_REPORT_SNAPSHOTS',
   mktReportSettings: 'LARK_TABLE_MKT_REPORT_SETTINGS',
   mktNotificationLog: 'LARK_TABLE_MKT_NOTIFICATION_LOG',
 });
