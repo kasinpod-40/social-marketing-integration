@@ -21,22 +21,22 @@ const workerRouterSource = readFileSync(new URL(
   import.meta.url,
 ), 'utf8');
 
-test('Chatwoot Report remains UAT pending while the shared capability is implemented', () => {
+test('Chatwoot Report is active after shared D1 and Coverage readiness is implemented', () => {
   const contract = getReportPlatformContract('chatwoot');
   assert.equal(contract.capability, REPORT_PLATFORM_CAPABILITY.CUSTOMER_SERVICE);
-  assert.equal(contract.sourceStatus, REPORT_SOURCE_STATUS.UAT_PENDING);
+  assert.equal(contract.sourceStatus, REPORT_SOURCE_STATUS.ACTIVE);
   assert.equal(contract.formulaVersion, 'chatwoot-customer-service-v1');
   assert.match(generatorSource, /REPORT_PLATFORM_CAPABILITY\.CUSTOMER_SERVICE/u);
   assert.match(generatorSource, /buildCustomerServiceResult/u);
 });
 
-test('Chatwoot settings use the shared Dashboard report identity and cannot bypass the source-status gate', () => {
+test('Chatwoot settings use the shared Dashboard report identity and active source-status gate', () => {
   const rows = createReportSettingRowsForProfile('integration_workspace')
     .filter((row) => row.platforms?.[0] === 'chatwoot');
   assert.deepEqual(rows.map((row) => row.window_days), [1, 3, 7, 9, 15, 30, 90, null]);
   assert.equal(rows.every((row) => row.enabled === true), true);
   assert.equal(rows.every((row) => row.report_type === 'dashboard_performance_report'), true);
-  assert.equal(getReportPlatformContract('chatwoot').sourceStatus, 'uat_pending');
+  assert.equal(getReportPlatformContract('chatwoot').sourceStatus, REPORT_SOURCE_STATUS.ACTIVE);
 });
 
 test('Chatwoot D1 Report reader selects only PII-minimized fact fields', () => {
@@ -47,10 +47,10 @@ test('Chatwoot D1 Report reader selects only PII-minimized fact fields', () => {
   assert.doesNotMatch(d1Source, /\bINSERT\b|\bUPDATE\b|\bDELETE\b/iu);
 });
 
-test('Chatwoot D1 Report reader is wired into the shared Worker registry without promoting Catalog state', () => {
+test('Chatwoot D1 Report reader is wired into the shared Worker registry with active Catalog state', () => {
   assert.match(workerRouterSource, /import \{ D1ChatwootReportSource \}/u);
   assert.match(workerRouterSource, /chatwoot:\s*new D1ChatwootReportSource\(\{ db \}\)/u);
-  assert.equal(getReportPlatformContract('chatwoot').sourceStatus, REPORT_SOURCE_STATUS.UAT_PENDING);
+  assert.equal(getReportPlatformContract('chatwoot').sourceStatus, REPORT_SOURCE_STATUS.ACTIVE);
 });
 
 test('runtime wiring does not invent Chatwoot-specific report ID aliases', () => {

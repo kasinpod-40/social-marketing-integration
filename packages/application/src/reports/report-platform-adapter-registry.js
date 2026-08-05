@@ -13,19 +13,30 @@ export const REPORT_SOURCE_STATUS = Object.freeze({
   PLANNED: 'planned',
 });
 
+export const ORGANIC_READINESS_MODE = Object.freeze({
+  CONTENT: 'content',
+  ACCOUNT_OR_CONTENT: 'account_or_content',
+});
+
 const PLATFORM_CONTRACTS = Object.freeze({
   facebook: freezeContract({
     platformScope: 'facebook',
     capability: REPORT_PLATFORM_CAPABILITY.ORGANIC,
-    sourceStatus: REPORT_SOURCE_STATUS.UAT_PENDING,
-    datasetKey: 'organic_content_cumulative',
+    sourceStatus: REPORT_SOURCE_STATUS.ACTIVE,
+    datasetKey: 'facebook.content.cumulative',
+    coverageDatasetKeys: ['facebook.content.cumulative'],
+    accountDailyDatasetKey: 'facebook.account.daily',
+    organicReadinessMode: ORGANIC_READINESS_MODE.ACCOUNT_OR_CONTENT,
     formulaVersion: 'facebook-organic-v1',
   }),
   instagram: freezeContract({
     platformScope: 'instagram',
     capability: REPORT_PLATFORM_CAPABILITY.ORGANIC,
-    sourceStatus: REPORT_SOURCE_STATUS.UAT_PENDING,
-    datasetKey: 'organic_content_cumulative',
+    sourceStatus: REPORT_SOURCE_STATUS.ACTIVE,
+    datasetKey: 'instagram.content.cumulative',
+    coverageDatasetKeys: ['instagram.content.cumulative'],
+    accountDailyDatasetKey: 'instagram.account.daily',
+    organicReadinessMode: ORGANIC_READINESS_MODE.CONTENT,
     formulaVersion: 'instagram-organic-v1',
   }),
   tiktok: freezeContract({
@@ -33,6 +44,8 @@ const PLATFORM_CONTRACTS = Object.freeze({
     capability: REPORT_PLATFORM_CAPABILITY.ORGANIC,
     sourceStatus: REPORT_SOURCE_STATUS.ACTIVE,
     datasetKey: 'organic_content_cumulative',
+    coverageDatasetKeys: ['organic_content_cumulative'],
+    organicReadinessMode: ORGANIC_READINESS_MODE.CONTENT,
     formulaVersion: 'tiktok-organic-v1',
   }),
   youtube: freezeContract({
@@ -40,24 +53,38 @@ const PLATFORM_CONTRACTS = Object.freeze({
     capability: REPORT_PLATFORM_CAPABILITY.ORGANIC,
     sourceStatus: REPORT_SOURCE_STATUS.ACTIVE,
     datasetKey: 'organic_content_cumulative',
+    coverageDatasetKeys: ['organic_content_cumulative'],
+    organicReadinessMode: ORGANIC_READINESS_MODE.CONTENT,
     formulaVersion: 'youtube-organic-v1',
   }),
   meta_ads: freezeContract({
     platformScope: 'meta_ads',
     capability: REPORT_PLATFORM_CAPABILITY.PAID_ADS,
-    sourceStatus: REPORT_SOURCE_STATUS.UAT_PENDING,
-    datasetKey: 'ads_daily_facts',
-    summaryReportLevel: 'account',
-    rankingReportLevel: 'ad',
+    sourceStatus: REPORT_SOURCE_STATUS.ACTIVE,
+    datasetKey: 'meta_ads.performance.daily',
+    coverageDatasetKeys: ['meta_ads.performance.daily'],
+    summaryReportLevels: ['ad'],
+    rankingReportLevels: ['ad'],
+    summaryBreakdownFamily: 'publisher_platform',
+    summarySegmentFamily: 'none',
+    rankingBreakdownFamily: 'publisher_platform',
+    rankingSegmentFamily: 'none',
+    topAdsRequired: true,
     formulaVersion: 'meta-ads-v1',
   }),
   google_ads: freezeContract({
     platformScope: 'google_ads',
     capability: REPORT_PLATFORM_CAPABILITY.PAID_ADS,
-    sourceStatus: REPORT_SOURCE_STATUS.UAT_PENDING,
-    datasetKey: 'ads_daily_facts',
-    summaryReportLevel: 'account',
-    rankingReportLevel: 'ad',
+    sourceStatus: REPORT_SOURCE_STATUS.ACTIVE,
+    datasetKey: 'campaignDailyMetrics',
+    coverageDatasetKeys: ['campaignDailyMetrics'],
+    summaryReportLevels: ['campaign'],
+    rankingReportLevels: [],
+    summaryBreakdownFamily: 'all',
+    summarySegmentFamily: 'all',
+    rankingBreakdownFamily: null,
+    rankingSegmentFamily: null,
+    topAdsRequired: false,
     formulaVersion: 'google-ads-v1',
   }),
   tiktok_ads: freezeContract({
@@ -65,8 +92,14 @@ const PLATFORM_CONTRACTS = Object.freeze({
     capability: REPORT_PLATFORM_CAPABILITY.PAID_ADS,
     sourceStatus: REPORT_SOURCE_STATUS.PLANNED,
     datasetKey: 'ads_daily_facts',
-    summaryReportLevel: 'account',
-    rankingReportLevel: 'ad',
+    coverageDatasetKeys: ['ads_daily_facts'],
+    summaryReportLevels: ['account'],
+    rankingReportLevels: ['ad'],
+    summaryBreakdownFamily: 'none',
+    summarySegmentFamily: 'none',
+    rankingBreakdownFamily: 'none',
+    rankingSegmentFamily: 'none',
+    topAdsRequired: true,
     formulaVersion: 'tiktok-ads-v1',
   }),
   woocommerce: freezeContract({
@@ -74,13 +107,16 @@ const PLATFORM_CONTRACTS = Object.freeze({
     capability: REPORT_PLATFORM_CAPABILITY.COMMERCE,
     sourceStatus: REPORT_SOURCE_STATUS.ACTIVE,
     datasetKey: 'commerce_daily_sales_facts',
+    coverageDatasetKeys: ['woocommerce_orders'],
     formulaVersion: 'woocommerce-commerce-v1',
   }),
   chatwoot: freezeContract({
     platformScope: 'chatwoot',
     capability: REPORT_PLATFORM_CAPABILITY.CUSTOMER_SERVICE,
-    sourceStatus: REPORT_SOURCE_STATUS.UAT_PENDING,
-    datasetKey: 'chatwoot_conversation_daily_facts',
+    sourceStatus: REPORT_SOURCE_STATUS.ACTIVE,
+    datasetKey: 'chatwoot.conversation_daily',
+    coverageDatasetKeys: ['chatwoot.conversation_daily', 'chatwoot.account_daily'],
+    requiredCoverageDatasetKeys: ['chatwoot.conversation_daily', 'chatwoot.account_daily'],
     formulaVersion: 'chatwoot-customer-service-v1',
   }),
 });
@@ -153,9 +189,60 @@ function normalizePlatformScope(value) {
 }
 
 function freezeContract(value) {
+  const coverageDatasetKeys = freezeTextList(
+    value.coverageDatasetKeys ?? [value.datasetKey],
+    'coverageDatasetKeys',
+  );
+  const requiredCoverageDatasetKeys = freezeTextList(
+    value.requiredCoverageDatasetKeys ?? coverageDatasetKeys,
+    'requiredCoverageDatasetKeys',
+  );
+  const summaryReportLevels = freezeTextList(
+    value.summaryReportLevels
+      ?? (value.summaryReportLevel ? [value.summaryReportLevel] : []),
+    'summaryReportLevels',
+  );
+  const rankingReportLevels = freezeTextList(
+    value.rankingReportLevels
+      ?? (value.rankingReportLevel ? [value.rankingReportLevel] : []),
+    'rankingReportLevels',
+  );
   return Object.freeze({
     ...value,
+    coverageDatasetKeys,
+    requiredCoverageDatasetKeys,
+    summaryReportLevels,
+    rankingReportLevels,
+    summaryReportLevel: summaryReportLevels[0] ?? null,
+    rankingReportLevel: rankingReportLevels[0] ?? null,
+    organicReadinessMode: value.organicReadinessMode ?? ORGANIC_READINESS_MODE.CONTENT,
+    accountDailyDatasetKey: value.accountDailyDatasetKey ?? null,
+    summaryBreakdownFamily: value.summaryBreakdownFamily ?? value.breakdownKey ?? 'none',
+    summarySegmentFamily: value.summarySegmentFamily ?? value.segmentKey ?? 'none',
+    rankingBreakdownFamily: value.rankingBreakdownFamily
+      ?? value.summaryBreakdownFamily
+      ?? value.breakdownKey
+      ?? 'none',
+    rankingSegmentFamily: value.rankingSegmentFamily
+      ?? value.summarySegmentFamily
+      ?? value.segmentKey
+      ?? 'none',
     breakdownKey: value.breakdownKey ?? 'none',
     segmentKey: value.segmentKey ?? 'none',
+    topAdsRequired: value.topAdsRequired === true,
   });
+}
+
+function freezeTextList(value, fieldName) {
+  if (!Array.isArray(value)) throw new TypeError(`${fieldName} must be an array`);
+  const normalized = value.map((item) => {
+    if (typeof item !== 'string' || item.trim() === '') {
+      throw new TypeError(`${fieldName} must contain non-empty strings`);
+    }
+    return item.trim();
+  });
+  if (new Set(normalized).size !== normalized.length) {
+    throw new TypeError(`${fieldName} must not contain duplicates`);
+  }
+  return Object.freeze(normalized);
 }

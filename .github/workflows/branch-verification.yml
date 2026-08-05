@@ -18,13 +18,16 @@ concurrency:
 
 jobs:
   verify:
-    # This recovery PR uses the hosted runner because no repository-scoped mkt-ci runner is registered.
+    # Repository-only verification for this Report readiness repair uses a hosted runner because
+    # the repository-scoped mkt-ci runner is not accepting queued jobs. No Secret or Remote action is used.
     # Other integration hotfixes retain the existing repository-scoped Mac runner routing.
-    runs-on: ${{ (github.head_ref != 'hotfix/chatwoot-final-source-config-recovery' && (github.event.pull_request.number == 308 || startsWith(github.head_ref, 'hotfix/chatwoot-final-') || startsWith(github.head_ref, 'hotfix/woocommerce-completed-state-incremental-admission-race') || startsWith(github.head_ref, 'hotfix/report-') || startsWith(github.head_ref, 'hotfix/meta-history-2026-'))) && 'mkt-ci' || 'ubuntu-latest' }}
+    runs-on: ${{ (github.head_ref != 'hotfix/chatwoot-final-source-config-recovery' && github.head_ref != 'hotfix/report-source-readiness-contract-v1' && (github.event.pull_request.number == 308 || startsWith(github.head_ref, 'hotfix/chatwoot-final-') || startsWith(github.head_ref, 'hotfix/woocommerce-completed-state-incremental-admission-race') || startsWith(github.head_ref, 'hotfix/report-') || startsWith(github.head_ref, 'hotfix/meta-history-2026-'))) && 'mkt-ci' || 'ubuntu-latest' }}
     timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -37,6 +40,19 @@ jobs:
 
       - name: Syntax architecture and hygiene
         run: npm run check
+
+      - name: Focused Report source readiness tests
+        shell: bash
+        run: |
+          set -o pipefail
+          node --test \
+            tests/scripts/report-channel-remote-readiness.test.js \
+            tests/scripts/report-runtime-closeout-reviewed-binding.test.js \
+            tests/connectors/d1-organic-report-source.test.js \
+            tests/connectors/d1-ads-report-source.test.js \
+            tests/connectors/d1-chatwoot-report-source.test.js \
+            tests/application/multichannel-report-runtime.test.js \
+            2>&1 | tee focused-report-readiness-test.log
 
       - name: Focused Meta history finalizer tests
         shell: bash
@@ -111,6 +127,12 @@ jobs:
       - name: Wrangler dry run
         run: npm run deploy:dry-run
 
+      - name: Diff whitespace check
+        shell: bash
+        run: |
+          set -o pipefail
+          git diff --check origin/${{ github.base_ref }}...HEAD 2>&1 | tee diff-check.log
+
       - name: Upload verification diagnostics
         if: always()
         uses: actions/upload-artifact@v4
@@ -119,5 +141,6 @@ jobs:
           path: |
             *-test.log
             audit.log
+            diff-check.log
           if-no-files-found: ignore
           retention-days: 7

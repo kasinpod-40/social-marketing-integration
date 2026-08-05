@@ -2,36 +2,53 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { D1AdsReportSource } from '../../packages/connectors/src/d1-ads-report-source.js';
 
-test('Ads adapter queries one report level and no-breakdown segment before deriving ratios', async () => {
+test('Meta Ads aggregates reviewed publisher partitions once and builds Top Ads from D1', async () => {
   const calls = [];
-  const db = createD1((sql, bindings, method) => {
-    calls.push({ sql, bindings, method });
+  const db = createD1((sql, bindings) => {
+    calls.push({ sql, bindings });
     if (sql.includes('data_coverage_runs')) {
       return {
-        coverage_run_id: 'coverage-1', status: 'complete', expected_rows: 2, observed_rows: 2,
-        source_watermark: 'wm-1', failed_rows: 0,
+        coverage_run_id: 'coverage-meta',
+        dataset_key: 'meta_ads.performance.daily',
+        status: 'complete',
+        expected_rows: 2,
+        observed_rows: 2,
+        source_watermark: 'wm-meta',
+        failed_rows: 0,
       };
     }
-    if (sql.includes('ads_entity_state')) return [{ external_entity_id: 'ad-1', entity_name: 'Ad One' }];
-    const reportLevel = bindings[3];
-    if (reportLevel === 'account') return [
-      fact({ key: 'account-1', level: 'account', spend: 100, impressions: 100, clicks: 10, conversions: 1, value: 300 }),
-      fact({ key: 'account-2', level: 'account', spend: 100, impressions: 0, clicks: 0, conversions: 0, value: 0 }),
+    if (sql.includes('ads_entity_state')) {
+      return [{ external_entity_id: 'ad-1', entity_name: 'Ad One', currency: 'THB' }];
+    }
+    return [
+      fact({
+        key: 'ad-1-facebook', level: 'ad', adId: 'ad-1',
+        breakdown: 'publisher_platform=facebook', segment: 'none',
+        spend: 100, impressions: 100, clicks: 10, conversions: 1, value: 300,
+      }),
+      fact({
+        key: 'ad-1-instagram', level: 'ad', adId: 'ad-1',
+        breakdown: 'publisher_platform=instagram', segment: 'none',
+        spend: 100, impressions: 0, clicks: 0, conversions: 0, value: 0,
+      }),
+      fact({
+        key: 'ad-1-age', level: 'ad', adId: 'ad-1',
+        breakdown: 'age=18-24', segment: 'none',
+        spend: 999, impressions: 999, clicks: 999, conversions: 99, value: 999,
+      }),
     ];
-    return [fact({ key: 'ad-1-day', level: 'ad', adId: 'ad-1', spend: 200, impressions: 100, clicks: 10, conversions: 1, value: 400 })];
   });
-  const source = new D1AdsReportSource({ db, platform: 'meta_ads' });
-  const result = await source.load({
-    customerKey: 'chemistry_k', accountKey: 'chemistry_k',
-    periodStart: '2026-07-01', periodEnd: '2026-07-03', topAdsLimit: 5,
+  const result = await new D1AdsReportSource({ db, platform: 'meta_ads' }).load({
+    customerKey: 'chemistry_k',
+    accountKey: 'chemistry_k',
+    periodStart: '2026-07-01',
+    periodEnd: '2026-07-03',
+    topAdsLimit: 5,
   });
 
   const factCalls = calls.filter((call) => call.sql.includes('FROM ads_daily_facts'));
-  assert.equal(factCalls.length, 2);
-  assert.deepEqual(factCalls.map((call) => call.bindings.slice(3, 6)), [
-    ['account', 'none', 'none'],
-    ['ad', 'none', 'none'],
-  ]);
+  assert.equal(factCalls.length, 1);
+  assert.deepEqual(factCalls[0].bindings.slice(3, 4), ['ad']);
   assert.equal(result.metrics.spend_micros, 200);
   assert.equal(result.metrics.ctr, 0.1);
   assert.equal(result.metrics.cpc_micros, 20);
@@ -40,36 +57,102 @@ test('Ads adapter queries one report level and no-breakdown segment before deriv
   assert.equal(result.metrics.roas, 1.5);
   assert.equal(result.topAds[0].external_ad_id, 'ad-1');
   assert.equal(result.topAds[0].ad_name, 'Ad One');
-  assert.equal(result.readSummary.sourceWatermark, 'wm-1');
+  assert.equal(result.readSummary.coverageDatasetKey, 'meta_ads.performance.daily');
+  assert.equal(result.readSummary.summaryBreakdownFamily, 'publisher_platform');
+  assert.equal(result.readSummary.discardedFactRows, 1);
+  assert.equal(result.readSummary.sourceWatermark, 'wm-meta');
 });
 
-test('Top Ads order is deterministic for equal spend and impressions', async () => {
-  const db = createD1((sql, bindings) => {
-    if (sql.includes('data_coverage_runs')) return { status: 'complete', expected_rows: 2, observed_rows: 2 };
+test('Meta Ads Top Ads order is deterministic for equal detailed totals', async () => {
+  const db = createD1((sql) => {
+    if (sql.includes('data_coverage_runs')) {
+      return { dataset_key: 'meta_ads.performance.daily', status: 'complete', expected_rows: 2, observed_rows: 2 };
+    }
     if (sql.includes('ads_entity_state')) return [];
-    if (bindings[3] === 'account') return [fact({ key: 'account', level: 'account', spend: 0, impressions: 0, clicks: 0, conversions: 0, value: 0 })];
     return [
-      fact({ key: 'b', level: 'ad', adId: 'b', spend: 10, impressions: 10, clicks: 1, conversions: 0, value: 0 }),
-      fact({ key: 'a', level: 'ad', adId: 'a', spend: 10, impressions: 10, clicks: 1, conversions: 0, value: 0 }),
+      fact({
+        key: 'b', level: 'ad', adId: 'b', breakdown: 'publisher_platform=facebook', segment: 'none',
+        spend: 10, impressions: 10, clicks: 1, conversions: 0, value: 0,
+      }),
+      fact({
+        key: 'a', level: 'ad', adId: 'a', breakdown: 'publisher_platform=facebook', segment: 'none',
+        spend: 10, impressions: 10, clicks: 1, conversions: 0, value: 0,
+      }),
     ];
   });
-  const result = await new D1AdsReportSource({ db, platform: 'google_ads' }).load({
-    customerKey: 'chemistry_k', accountKey: 'chemistry_k',
-    periodStart: '2026-07-01', periodEnd: '2026-07-03',
+  const result = await new D1AdsReportSource({ db, platform: 'meta_ads' }).load({
+    customerKey: 'chemistry_k',
+    accountKey: 'chemistry_k',
+    periodStart: '2026-07-01',
+    periodEnd: '2026-07-03',
   });
   assert.deepEqual(result.topAds.map((row) => row.external_ad_id), ['a', 'b']);
   assert.deepEqual(result.topAds.map((row) => row.rank), [1, 2]);
+});
+
+test('Google Ads aggregates campaign all/all facts without fabricating Top Ads', async () => {
+  const calls = [];
+  const db = createD1((sql, bindings) => {
+    calls.push({ sql, bindings });
+    if (sql.includes('data_coverage_runs')) {
+      return {
+        coverage_run_id: 'coverage-google',
+        dataset_key: 'campaignDailyMetrics',
+        status: 'complete',
+        expected_rows: 2,
+        observed_rows: 2,
+        source_watermark: 'wm-google',
+        failed_rows: 0,
+      };
+    }
+    if (sql.includes('ads_entity_state')) throw new Error('Google campaign facts must not query ad entities');
+    return [
+      fact({
+        key: 'campaign-1-day-1', level: 'campaign', campaignId: 'campaign-1',
+        breakdown: 'all', segment: 'all', metricDate: '2026-07-01',
+        spend: 100, impressions: 100, clicks: 10, conversions: 1, value: 300,
+      }),
+      fact({
+        key: 'campaign-1-day-2', level: 'campaign', campaignId: 'campaign-1',
+        breakdown: 'all', segment: 'all', metricDate: '2026-07-02',
+        spend: 50, impressions: 50, clicks: 5, conversions: 0, value: 0,
+      }),
+      fact({
+        key: 'campaign-1-device', level: 'campaign', campaignId: 'campaign-1',
+        breakdown: 'device=mobile', segment: 'all', metricDate: '2026-07-02',
+        spend: 1_000, impressions: 1_000, clicks: 1_000, conversions: 10, value: 1_000,
+      }),
+    ];
+  });
+  const result = await new D1AdsReportSource({ db, platform: 'google_ads' }).load({
+    customerKey: 'chemistry_k',
+    accountKey: 'chemistry_k',
+    periodStart: '2026-07-01',
+    periodEnd: '2026-07-03',
+  });
+  const factCall = calls.find((call) => call.sql.includes('FROM ads_daily_facts'));
+  assert.deepEqual(factCall.bindings.slice(3, 4), ['campaign']);
+  assert.equal(result.metrics.spend_micros, 150);
+  assert.equal(result.metrics.impressions, 150);
+  assert.deepEqual(result.topAds, []);
+  assert.equal(result.readSummary.rankingReportLevel, null);
+  assert.equal(result.readSummary.topAdsAvailability, 'not_observed');
+  assert.equal(result.readSummary.discardedFactRows, 1);
+  assert.equal(result.readSummary.sourceWatermark, 'wm-google');
 });
 
 function fact(input) {
   return Object.freeze({
     ads_fact_key: input.key,
     report_level: input.level,
-    external_entity_id: input.adId ?? 'account',
+    external_entity_id: input.adId ?? input.campaignId ?? 'account',
     external_ad_id: input.adId ?? null,
-    external_campaign_id: null,
+    external_campaign_id: input.campaignId ?? null,
     external_ad_group_id: null,
     external_creative_id: null,
+    metric_date: input.metricDate ?? '2026-07-01',
+    breakdown_key: input.breakdown,
+    segment_key: input.segment,
     currency: 'THB',
     spend_micros: input.spend,
     impressions: input.impressions,
