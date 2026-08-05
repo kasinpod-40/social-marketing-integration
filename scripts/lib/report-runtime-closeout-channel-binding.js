@@ -1,4 +1,7 @@
-import { getReportPlatformContract } from '../../packages/application/src/reports/report-platform-adapter-registry.js';
+import {
+  ORGANIC_READINESS_MODE,
+  getReportPlatformContract,
+} from '../../packages/application/src/reports/report-platform-adapter-registry.js';
 import { getReportLiveClosureDescriptor } from '../../packages/application/src/report-live-closure/channel-descriptors.js';
 import {
   resolveReportRuntimeCloseoutTarget as resolveLegacyTarget,
@@ -43,6 +46,8 @@ export function resolveReviewedReportRuntimeCloseoutTarget(env = {}) {
     capability: contract.capability,
     sourceStatus: contract.sourceStatus,
     datasetKey: contract.datasetKey,
+    coverageDatasetKeys: contract.coverageDatasetKeys,
+    requiredCoverageDatasetKeys: contract.requiredCoverageDatasetKeys,
     activeTrueFlags: descriptor.safeRuntimeFlags,
     requiredLarkOutputs: descriptor.requiredLarkOutputs,
     outputDirectory: `outputs/${contract.platformScope}-report-runtime-closeout`,
@@ -57,7 +62,12 @@ export function assertReviewedReportRuntimeCloseoutPreflight(row = {}, target = 
   const capability = contract.capability;
   const coverageStatus = String(row.coverage_status ?? '').trim().toLowerCase();
   const coveredEmpty = coverageStatus === 'no_data_confirmed';
+  const expectedCoverageCount = contract.requiredCoverageDatasetKeys.length;
+  const coverageRequiredCount = Number(row.coverage_required_count ?? 0);
+  const coverageWatermarkCount = Number(row.coverage_watermark_count ?? 0);
   const commonReady = COVERAGE_STATUSES.has(coverageStatus)
+    && coverageRequiredCount === expectedCoverageCount
+    && coverageWatermarkCount === expectedCoverageCount
     && typeof row.source_watermark === 'string'
     && row.source_watermark.trim() !== ''
     && /^\d{4}-\d{2}-\d{2}$/u.test(String(row.period_end ?? ''))
@@ -68,14 +78,19 @@ export function assertReviewedReportRuntimeCloseoutPreflight(row = {}, target = 
 
   let sourceReady = false;
   if (capability === 'organic') {
-    sourceReady = coveredEmpty || (
-      Number(row.content_state_count ?? 0) > 0
-      && Number(row.observation_count ?? 0) > 0
+    const contentReady = Number(row.content_state_count ?? 0) > 0
+      && Number(row.observation_count ?? 0) > 0;
+    const accountReady = String(row.source_scope ?? '') === 'account'
+      && Number(row.account_fact_count ?? 0) > 0;
+    sourceReady = coveredEmpty || contentReady || (
+      contract.organicReadinessMode === ORGANIC_READINESS_MODE.ACCOUNT_OR_CONTENT
+      && accountReady
     );
   } else if (capability === 'paid_ads') {
+    const rankingRequired = Number(row.ads_ranking_required ?? (contract.topAdsRequired ? 1 : 0)) === 1;
     sourceReady = contract.sourceStatus !== 'planned' && (coveredEmpty || (
       Number(row.ads_summary_fact_count ?? 0) > 0
-      && Number(row.ads_ranking_fact_count ?? 0) > 0
+      && (!rankingRequired || Number(row.ads_ranking_fact_count ?? 0) > 0)
     ));
   } else if (capability === 'commerce') {
     sourceReady = COMMERCE_COVERAGE_SCOPES.has(String(row.coverage_scope_mode ?? ''))
@@ -97,13 +112,19 @@ export function assertReviewedReportRuntimeCloseoutPreflight(row = {}, target = 
       platformScope,
       capability,
       sourceStatus: contract.sourceStatus,
+      sourceScope: row.source_scope ?? null,
       coverageStatus: coverageStatus || null,
+      coverageDatasetKey: row.coverage_dataset_key ?? null,
       coverageScopeMode: row.coverage_scope_mode ?? null,
+      coverageRequiredCount,
+      coverageWatermarkCount,
+      expectedCoverageCount,
       contentStateCount: Number(row.content_state_count ?? 0),
       observationCount: Number(row.observation_count ?? 0),
       adsSummaryFactCount: Number(row.ads_summary_fact_count ?? 0),
       adsRankingFactCount: Number(row.ads_ranking_fact_count ?? 0),
       adsEntityCount: Number(row.ads_entity_count ?? 0),
+      adsRankingRequired: Number(row.ads_ranking_required ?? 0),
       dailyFactCount: Number(row.daily_fact_count ?? 0),
       orderStateCount: Number(row.order_state_count ?? 0),
       conversationFactCount: Number(row.conversation_fact_count ?? 0),
@@ -112,6 +133,7 @@ export function assertReviewedReportRuntimeCloseoutPreflight(row = {}, target = 
       activeReportLocks: Number(row.active_report_locks ?? 0),
       openReportDlq: Number(row.open_report_dlq ?? 0),
       openReportCriticalAlerts: Number(row.open_report_critical_alerts ?? 0),
+      historicalConnectorCriticalAlerts: Number(row.historical_connector_critical_alerts ?? 0),
     },
   );
   return true;
