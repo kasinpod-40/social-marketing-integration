@@ -64,7 +64,9 @@ export const LARK_DASHBOARD_COMPATIBILITY_FIELD_IDENTITIES = deepFreeze({
 
 const REPORT_METRIC_TABLE_KEY = 'mktReportMetricValues';
 const REPORT_METRIC_TABLE_ENV = 'LARK_TABLE_MKT_REPORT_METRIC_VALUES';
-const MAX_REPORT_METRIC_RECORDS = 500;
+// Bounded for the complete reviewed 1/3/7/30 multichannel footprint, including
+// fixed-rank WooCommerce and Chatwoot dimensions, while still failing closed.
+const MAX_REPORT_METRIC_RECORDS = 2_000;
 const WINDOW_PRESETS = Object.freeze([1, 3, 7, 30]);
 const WINDOW_PRESET_TEXT = Object.freeze(WINDOW_PRESETS.map(String));
 
