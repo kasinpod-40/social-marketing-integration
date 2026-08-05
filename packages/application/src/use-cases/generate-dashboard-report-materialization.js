@@ -1,4 +1,8 @@
 import { buildAdsMetricPayload } from '../reports/calculate-ads-period-metrics.js';
+import {
+  buildOrganicAccountMetricPayload,
+  calculateOrganicAccountPeriodMetrics,
+} from '../reports/calculate-organic-account-period-metrics.js';
 import { buildChatwootDimensionMetricPayload } from '../reports/build-chatwoot-dimension-metric-payload.js';
 import {
   buildChatwootMetricPayload,
@@ -293,13 +297,19 @@ async function buildOrganicResult(input) {
     maxContentRecords: input.maxContentRecords,
   });
   assertWatermark(input.sourceWatermark, source.readSummary?.sourceWatermark, input.contract.platformScope);
+  const sourceScope = source.readSummary?.sourceScope ?? 'content';
+  const contentCoverageStatus = sourceScope === 'account'
+    ? 'not_observed'
+    : source.readSummary?.coverageStatus;
+  const accountCoverageStatus = source.readSummary?.accountCoverageStatus
+    ?? (sourceScope === 'account' ? source.readSummary?.coverageStatus : 'not_observed');
   const current = calculateOrganicPeriodMetrics({
     platform: input.contract.platformScope,
     contents: source.contents,
     observations: source.observations ?? source.dailySnapshots,
     periodStart: input.period.periodStart,
     periodEnd: input.period.periodEnd,
-    coverageStatus: source.readSummary?.coverageStatus,
+    coverageStatus: contentCoverageStatus,
   });
   const compare = input.period.comparisonMode === 'none' ? null : calculateOrganicPeriodMetrics({
     platform: input.contract.platformScope,
@@ -307,7 +317,19 @@ async function buildOrganicResult(input) {
     observations: source.observations ?? source.dailySnapshots,
     periodStart: input.period.compareStart,
     periodEnd: input.period.compareEnd,
-    coverageStatus: source.readSummary?.coverageStatus,
+    coverageStatus: contentCoverageStatus,
+  });
+  const currentAccount = calculateOrganicAccountPeriodMetrics({
+    rows: source.accountDailyFacts ?? [],
+    periodStart: input.period.periodStart,
+    periodEnd: input.period.periodEnd,
+    coverageStatus: accountCoverageStatus,
+  });
+  const compareAccount = input.period.comparisonMode === 'none' ? null : calculateOrganicAccountPeriodMetrics({
+    rows: source.accountDailyFacts ?? [],
+    periodStart: input.period.compareStart,
+    periodEnd: input.period.compareEnd,
+    coverageStatus: accountCoverageStatus,
   });
   const topContent = buildOrganicTopContentPayload(current.contentRows, input.topContentLimit ?? 5);
   return Object.freeze({
@@ -316,16 +338,26 @@ async function buildOrganicResult(input) {
     reportSettingKey: input.reportSettingKey,
     reportType: REPORT_TYPE,
     period: input.period,
-    dataStatus: current.dataStatus,
-    baselineCoverageRate: current.baselineCoverageRate,
+    dataStatus: sourceScope === 'account' ? currentAccount.dataStatus : current.dataStatus,
+    baselineCoverageRate: sourceScope === 'account' ? null : current.baselineCoverageRate,
     sourceWatermark: source.readSummary?.sourceWatermark ?? null,
     sourceRead: source.readSummary,
-    source: 'd1_organic_observations',
-    metricPayload: buildOrganicMetricPayload({
-      platform: input.contract.platformScope,
-      formulaVersion: input.contract.formulaVersion,
-      current,
-      compare,
+    source: sourceScope === 'account'
+      ? 'd1_organic_account_daily_facts'
+      : 'd1_organic_observations_and_account_daily',
+    metricPayload: Object.freeze({
+      ...buildOrganicMetricPayload({
+        platform: input.contract.platformScope,
+        formulaVersion: input.contract.formulaVersion,
+        current,
+        compare,
+      }),
+      ...buildOrganicAccountMetricPayload({
+        platform: input.contract.platformScope,
+        formulaVersion: input.contract.formulaVersion,
+        current: currentAccount,
+        compare: compareAccount,
+      }),
     }),
     topContent,
     topAds: Object.freeze([]),
