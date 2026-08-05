@@ -6,10 +6,17 @@ import {
 } from '../../packages/config/src/lark-report-schema-v2.js';
 import {
   LARK_REPORT_MATERIALIZATION_SCHEMA,
+  REPORT_METRIC_DIMENSION_TYPE_OPTIONS,
 } from '../../packages/config/src/lark-report-materialization-schema.js';
 import {
   DASHBOARD_REPORT_PLATFORM_SCOPES,
 } from '../../packages/config/src/report-settings.seed.js';
+import {
+  CHATWOOT_REPORT_CONTRACT,
+} from '../../packages/config/src/chatwoot-report-contract.js';
+import {
+  buildCommerceDimensionMetricPayload,
+} from '../../packages/application/src/reports/build-commerce-dimension-metric-payload.js';
 import {
   listReportPlatformContracts,
 } from '../../packages/application/src/reports/report-platform-adapter-registry.js';
@@ -70,6 +77,30 @@ test('Report platform registry, Settings seed and Lark schema remain aligned', (
   );
   const statusField = metricTable.fields.find((field) => field.fieldName === 'data_status');
   assert.equal(statusField.property.options.some((option) => option.name === 'source_unavailable'), true);
+
+  const commerceDimensionTypes = [...new Set(buildCommerceDimensionMetricPayload({
+    formulaVersion: 'schema-contract-test',
+    collections: {},
+  }).map((row) => row.dimensionType))];
+  const chatwootDimensionTypes = [...new Set(
+    CHATWOOT_REPORT_CONTRACT.dimensions.map((dimension) => dimension.dimensionType),
+  )];
+  const expectedDimensionTypes = [
+    'summary',
+    ...commerceDimensionTypes,
+    ...chatwootDimensionTypes,
+  ];
+  const dimensionTypeField = metricTable.fields.find((field) => field.fieldName === 'dimension_type');
+  assert.ok(dimensionTypeField);
+  assert.deepEqual(REPORT_METRIC_DIMENSION_TYPE_OPTIONS, expectedDimensionTypes);
+  assert.deepEqual(
+    LARK_REPORT_MATERIALIZATION_SCHEMA.sharedOptionExtensions.metricDimensionTypes,
+    expectedDimensionTypes,
+  );
+  assert.deepEqual(
+    dimensionTypeField.property.options.map((option) => option.name),
+    expectedDimensionTypes,
+  );
 
   const topContent = LARK_REPORT_SCHEMA_V2.find((table) => table.key === 'mktReportTopContent');
   const topContentPlatform = topContent.fields.find((field) => field.fieldName === 'platform');

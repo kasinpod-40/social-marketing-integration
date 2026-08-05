@@ -11,6 +11,8 @@ const PLATFORM_OPTIONS = LARK_REPORT_MATERIALIZATION_SCHEMA.sharedOptionExtensio
 const ORGANIC_OPTIONS =
   LARK_REPORT_MATERIALIZATION_SCHEMA.tables.mktReportTopContent.platformField.options;
 const DATA_STATUS_OPTIONS = LARK_REPORT_MATERIALIZATION_SCHEMA.sharedOptionExtensions.dataStatuses;
+const DIMENSION_TYPE_OPTIONS =
+  LARK_REPORT_MATERIALIZATION_SCHEMA.sharedOptionExtensions.metricDimensionTypes;
 const EXTENDED_TABLE_KEYS = new Set([
   'mktReportSettings',
   'mktReportSnapshots',
@@ -45,6 +47,9 @@ function extendExistingTable(table) {
       );
     }
     if (field.fieldName === 'data_status') return withSelectOptions(field, DATA_STATUS_OPTIONS);
+    if (table.key === 'mktReportMetricValues' && field.fieldName === 'dimension_type') {
+      return withSelectOptions(field, DIMENSION_TYPE_OPTIONS);
+    }
     return clone(field);
   });
   const materializationContract = LARK_REPORT_MATERIALIZATION_SCHEMA.tables[table.key];
