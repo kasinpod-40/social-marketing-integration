@@ -5,19 +5,21 @@ import { D1ChatwootReportSource } from '../../packages/connectors/src/d1-chatwoo
 function createDb(input = {}) {
   const facts = input.facts ?? [];
   const snapshot = input.snapshot ?? null;
-  const coverage = input.coverage ?? null;
+  const coverageRows = input.coverageRows ?? [];
+  const calls = input.calls ?? [];
   return {
     prepare(sql) {
       return {
-        bind() {
+        bind(...bindings) {
+          calls.push({ sql, bindings });
           return {
             async all() {
               if (sql.includes('chatwoot_conversation_daily_facts')) return { results: facts };
+              if (sql.includes('data_coverage_runs')) return { results: coverageRows };
               return { results: [] };
             },
             async first() {
               if (sql.includes('chatwoot_account_daily_facts')) return snapshot;
-              if (sql.includes('data_coverage_runs')) return coverage;
               return null;
             },
           };
@@ -44,7 +46,7 @@ const fact = Object.freeze({
   first_response_seconds: 20,
   resolution_seconds: 120,
   reply_seconds: 10,
-  coverage_run_id: 'coverage-redacted',
+  coverage_run_id: 'coverage-conversation',
   source_revision: 'watermark-1',
   fetched_at: 1,
 });
@@ -59,23 +61,40 @@ const snapshot = Object.freeze({
   snoozed_conversation_count: 2,
   active_agent_count: 4,
   active_inbox_count: 2,
-  coverage_run_id: 'coverage-redacted',
+  coverage_run_id: 'coverage-account',
   source_revision: 'watermark-1',
   fetched_at: 1,
 });
 
-const coverage = Object.freeze({
-  status: 'completed',
-  failed_rows: 0,
-  expected_entities: 65,
-  observed_entities: 65,
-  coverage_run_id: 'coverage-redacted',
-  source_watermark: 'watermark-1',
-});
+const coverageRows = Object.freeze([
+  Object.freeze({
+    dataset_key: 'chatwoot.account_daily',
+    status: 'completed',
+    failed_rows: 0,
+    expected_entities: 42,
+    observed_entities: 42,
+    coverage_run_id: 'coverage-account',
+    source_watermark: 'watermark-1',
+    completed_at: 100,
+    updated_at: 100,
+  }),
+  Object.freeze({
+    dataset_key: 'chatwoot.conversation_daily',
+    status: 'completed',
+    failed_rows: 0,
+    expected_entities: 65,
+    observed_entities: 65,
+    coverage_run_id: 'coverage-conversation',
+    source_watermark: 'watermark-1',
+    completed_at: 100,
+    updated_at: 100,
+  }),
+]);
 
-test('reads bounded Chatwoot facts, period-end snapshot and completed Coverage', async () => {
+test('selects same-timestamp Chatwoot conversation/account daily Coverage with watermarks', async () => {
+  const calls = [];
   const source = new D1ChatwootReportSource({
-    db: createDb({ facts: [fact], snapshot, coverage }),
+    db: createDb({ facts: [fact], snapshot, coverageRows, calls }),
   });
   const result = await source.load({
     customerKey: 'chemistry_k',
@@ -83,10 +102,20 @@ test('reads bounded Chatwoot facts, period-end snapshot and completed Coverage',
     periodStart: '2026-07-01',
     periodEnd: '2026-07-31',
   });
+  const coverageSql = calls.find((call) => call.sql.includes('data_coverage_runs')).sql;
+  assert.match(coverageSql, /PARTITION BY dataset_key/u);
+  assert.match(coverageSql, /dataset_key IN \(\?, \?\)/u);
+  assert.deepEqual(
+    calls.find((call) => call.sql.includes('data_coverage_runs')).bindings.slice(2, 4),
+    ['chatwoot.conversation_daily', 'chatwoot.account_daily'],
+  );
+  assert.doesNotMatch(coverageSql, /chatwoot\.accounts/u);
   assert.equal(result.facts.length, 1);
   assert.equal(result.periodEndSnapshot.conversation_count, 65);
   assert.equal(result.coverage.status, 'complete');
   assert.equal(result.coverage.complete, true);
+  assert.equal(result.coverage.selectedDatasetCount, 2);
+  assert.equal(result.coverage.watermarkDatasetCount, 2);
   assert.equal(result.readSummary.reportingTimezone, 'Asia/Bangkok');
   assert.equal(result.readSummary.sourceWatermark, 'watermark-1');
   assert.equal(Object.hasOwn(result.facts[0], 'message_body'), false);
@@ -95,7 +124,11 @@ test('reads bounded Chatwoot facts, period-end snapshot and completed Coverage',
 
 test('fails closed when fact rows exceed the configured bound', async () => {
   const source = new D1ChatwootReportSource({
-    db: createDb({ facts: [fact, { ...fact, external_conversation_id: 11 }], snapshot, coverage }),
+    db: createDb({
+      facts: [fact, { ...fact, external_conversation_id: 11 }],
+      snapshot,
+      coverageRows,
+    }),
   });
   await assert.rejects(() => source.load({
     customerKey: 'chemistry_k',
@@ -111,7 +144,7 @@ test('fails closed on reporting timezone drift', async () => {
     db: createDb({
       facts: [fact, { ...fact, external_conversation_id: 11, reporting_timezone: 'UTC' }],
       snapshot,
-      coverage,
+      coverageRows,
     }),
   });
   await assert.rejects(() => source.load({
