@@ -1,7 +1,7 @@
 import { closeoutFailure, compactSql, sha256, sqlText, stableJson } from './report-runtime-closeout-reviewed-process.js';
 
 export const REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_RECOVERY_CONTRACT =
-  'report_runtime_reviewed_config_dlq_recovery_v2';
+  'report_runtime_reviewed_config_dlq_recovery_v1';
 
 const FACEBOOK_1D_INCIDENT = Object.freeze({
   key: 'facebook_1d_20260731',
@@ -40,7 +40,7 @@ const FACEBOOK_1D_INCIDENT = Object.freeze({
   sourceFactField: 'account_fact_count',
   successfulSyncCountBeforeRecovery: 0,
   closureReference:
-    'report-runtime-reviewed-config-dlq-recovery-v2:terminal:4c366c2b02ad5162c6e4035899d67abc',
+    'report-runtime-reviewed-config-dlq-recovery-v1:terminal:4c366c2b02ad5162c6e4035899d67abc',
 });
 
 const META_ADS_3D_INCIDENT = Object.freeze({
@@ -80,7 +80,7 @@ const META_ADS_3D_INCIDENT = Object.freeze({
   sourceFactField: 'ads_summary_fact_count',
   successfulSyncCountBeforeRecovery: 2,
   closureReference:
-    'report-runtime-reviewed-config-dlq-recovery-v2:terminal:e408707c9c2d383e04a3e213a7be45a0',
+    'report-runtime-reviewed-config-dlq-recovery-v1:terminal:e408707c9c2d383e04a3e213a7be45a0',
 });
 
 export const REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_INCIDENTS = Object.freeze({
