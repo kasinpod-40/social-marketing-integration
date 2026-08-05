@@ -6,12 +6,12 @@ import {
 } from '../../../config/src/dashboard-metric-readiness.js';
 
 const SUM_DEFINITIONS = Object.freeze([
-  metric('account_views', 'Account views', 'count', 'account_daily', 'views'),
-  metric('account_reach', 'Account reach', 'count', 'account_daily', 'reach'),
-  metric('account_profile_views', 'Profile views', 'count', 'account_daily', 'profile_views'),
-  metric('account_engaged', 'Accounts engaged', 'count', 'account_daily', 'accounts_engaged'),
-  metric('account_interactions', 'Account interactions', 'count', 'account_daily', 'total_interactions'),
-  metric('account_net_follows', 'Net follows', 'count', 'account_daily', 'net_follows'),
+  metric('account_views', 'Account views', 'count', 'period_delta', 'views'),
+  metric('account_reach', 'Account reach', 'count', 'period_delta', 'reach'),
+  metric('account_profile_views', 'Profile views', 'count', 'period_delta', 'profile_views'),
+  metric('account_engaged', 'Accounts engaged', 'count', 'period_delta', 'accounts_engaged'),
+  metric('account_interactions', 'Account interactions', 'count', 'period_delta', 'total_interactions'),
+  metric('account_net_follows', 'Net follows', 'count', 'period_delta', 'net_follows'),
 ]);
 const SNAPSHOT_DEFINITIONS = Object.freeze([
   metric('account_followers', 'Followers', 'count', 'current_total', 'followers'),
