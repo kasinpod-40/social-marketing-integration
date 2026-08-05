@@ -50,12 +50,14 @@ test('reviewed reuse windows return verified evidence before any Queue resend', 
     "if (selected.operation === 'verify')",
     executeWindowStart,
   );
-  const replayStart = source.indexOf('d-send-replay', verifyStart);
+  const mutatingStart = source.indexOf('d-send-first', verifyStart);
+  const replayStart = source.indexOf('d-send-replay', mutatingStart);
   assert.ok(executeWindowStart >= 0, 'executeWindow function is required');
   assert.ok(verifyStart > executeWindowStart, 'executeWindow verify branch is required');
-  assert.ok(replayStart > verifyStart, 'replay path must remain after the verify branch');
+  assert.ok(mutatingStart > verifyStart, 'mutating path must remain after the verify branch');
+  assert.ok(replayStart > mutatingStart, 'replay path must remain after the first-send path');
 
-  const verifyBranch = source.slice(verifyStart, replayStart);
+  const verifyBranch = source.slice(verifyStart, mutatingStart);
   assert.match(verifyBranch, /return Object\.freeze/u);
   assert.match(verifyBranch, /executionMode:\s*'reuse_verified_materialization'/u);
   assert.match(verifyBranch, /reusedExisting:\s*true/u);
@@ -63,6 +65,9 @@ test('reviewed reuse windows return verified evidence before any Queue resend', 
   assert.match(verifyBranch, /sameInput:\s*null/u);
   assert.match(verifyBranch, /queueMessagesSent:\s*0/u);
   assert.doesNotMatch(verifyBranch, /sendReviewedQueueMessage/u);
+
+  const mutatingBranch = source.slice(mutatingStart, replayStart);
+  assert.match(mutatingBranch, /sendReviewedQueueMessage/u);
 
   const replayBranch = source.slice(replayStart);
   assert.match(replayBranch, /executionMode:\s*'materialize_and_replay'/u);
