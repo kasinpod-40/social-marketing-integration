@@ -3,10 +3,16 @@
 ## Status
 
 ```text
-TASK_STATUS                         = IMPLEMENTATION_IN_PROGRESS
+TASK_STATUS                         = IMPLEMENTATION_COMPLETE_CI_PASS
 CURRENT_PROGRAM                     = META_ADS_D1_REPORT_PROJECTION_RECOVERY_V1
 BRANCH                              = hotfix/meta-ads-d1-report-projection-v1
 EXACT_BASE                          = 5b35861553d2a3074409635458d323b33641d994
+VERIFIED_IMPLEMENTATION_HEAD        = 9091d681a3df9fbe7480a10af0dfad12fb7ea897
+PR                                  = 512
+BRANCH_VERIFICATION_RUN             = 31016060506
+BRANCH_VERIFICATION_NUMBER          = 2236
+META_END_TO_END_RUN                 = 31016058772
+META_END_TO_END_NUMBER              = 443
 PLATFORM                            = meta_ads
 WINDOW                              = 3D
 REPORT_ID                           = integration_workspace:meta_ads:rolling:3d:chemistry_k:rolling_days:2026-07-29:2026-07-31:meta-ads-v1
@@ -119,12 +125,39 @@ remain separate, evidence-gated stages.
 
 ## Implementation result
 
-Implemented on the branch above:
+Implemented on Draft PR #512 without Remote execution:
 
 - explicit scalar fact projection for `ads_daily_facts`;
 - explicit minimal entity and Coverage projections;
 - focused regressions forbidding broad projections and retained large JSON columns;
 - no Remote action performed.
+
+Exact implementation Head `9091d681a3df9fbe7480a10af0dfad12fb7ea897` passed:
+
+```text
+Branch Verification #2236 / run 31016060506
+Install locked dependencies                 PASS
+Syntax architecture and hygiene             PASS
+Focused Report source readiness tests       PASS
+Focused Meta history finalizer tests         PASS
+Focused Woo completed-state race tests       PASS
+Focused Chatwoot final UAT tests              PASS
+Focused staged TikTok tests                  PASS
+Unit and Workers runtime tests               PASS
+Report reliability regression               PASS
+Dependency audit                             PASS
+Wrangler dry run                             PASS
+Diff whitespace check                        PASS
+
+Meta End-to-End #443 / run 31016058772
+Diff hygiene                                 PASS
+Syntax architecture and repository hygiene  PASS
+Focused Meta workstream tests                PASS
+Unit and Workers runtime tests               PASS
+Report reliability regression               PASS
+Dependency audit                             PASS
+Wrangler dry run                             PASS
+```
 
 ## Required verification
 
