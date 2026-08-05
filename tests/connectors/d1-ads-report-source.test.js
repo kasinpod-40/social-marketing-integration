@@ -49,6 +49,12 @@ test('Meta Ads aggregates reviewed publisher partitions once and builds Top Ads 
   const factCalls = calls.filter((call) => call.sql.includes('FROM ads_daily_facts'));
   assert.equal(factCalls.length, 1);
   assert.deepEqual(factCalls[0].bindings.slice(3, 4), ['ad']);
+  assert.doesNotMatch(factCalls[0].sql, /SELECT\s+\*/u);
+  assert.doesNotMatch(factCalls[0].sql, /actions_json|breakdown_json|source_payload_hash/u);
+  const coverageCall = calls.find((call) => call.sql.includes('FROM data_coverage_runs'));
+  const entityCall = calls.find((call) => call.sql.includes('FROM ads_entity_state'));
+  assert.doesNotMatch(coverageCall.sql, /SELECT\s+\*/u);
+  assert.doesNotMatch(entityCall.sql, /SELECT\s+\*/u);
   assert.equal(result.metrics.spend_micros, 200);
   assert.equal(result.metrics.ctr, 0.1);
   assert.equal(result.metrics.cpc_micros, 20);
@@ -61,6 +67,43 @@ test('Meta Ads aggregates reviewed publisher partitions once and builds Top Ads 
   assert.equal(result.readSummary.summaryBreakdownFamily, 'publisher_platform');
   assert.equal(result.readSummary.discardedFactRows, 1);
   assert.equal(result.readSummary.sourceWatermark, 'wm-meta');
+});
+
+test('Meta Ads reviewed projections exclude large retained JSON columns from D1 result rows', async () => {
+  const calls = [];
+  const db = createD1((sql) => {
+    calls.push(sql);
+    if (/SELECT\s+\*/u.test(sql)) throw new Error('unbounded projection forbidden');
+    if (sql.includes('data_coverage_runs')) {
+      return {
+        coverage_run_id: 'coverage-meta',
+        dataset_key: 'meta_ads.performance.daily',
+        status: 'complete',
+        expected_rows: 1,
+        observed_rows: 1,
+        source_watermark: '2026-07-31',
+        failed_rows: 0,
+      };
+    }
+    if (sql.includes('ads_entity_state')) {
+      return [{ external_entity_id: 'ad-1', entity_name: 'Ad One', currency: 'THB' }];
+    }
+    return [fact({
+      key: 'ad-1', level: 'ad', adId: 'ad-1',
+      breakdown: 'publisher_platform=facebook', segment: 'none',
+      spend: 100, impressions: 100, clicks: 10, conversions: 1, value: 300,
+    })];
+  });
+
+  const result = await new D1AdsReportSource({ db, platform: 'meta_ads' }).load({
+    customerKey: 'chemistry_k',
+    accountKey: 'chemistry_k',
+    periodStart: '2026-07-29',
+    periodEnd: '2026-07-31',
+  });
+
+  assert.equal(result.metrics.spend_micros, 100);
+  assert.equal(calls.some((sql) => /actions_json|breakdown_json|source_payload_hash/u.test(sql)), false);
 });
 
 test('Meta Ads Top Ads order is deterministic for equal detailed totals', async () => {
