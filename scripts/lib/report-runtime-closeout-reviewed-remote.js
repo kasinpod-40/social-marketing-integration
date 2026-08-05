@@ -67,9 +67,17 @@ export async function resolveReviewedQueue({ accountId, token, expectedName }) {
 
 export function createReviewedRemoteRuntime(input) {
   const {
-    runCapture, runText, configPath, repositoryRoot, env, repositoryHead,
+    runCapture, runText, configPath, env, repositoryHead,
     target, requiredTables, config,
   } = input;
+  const fullRequiredTables = freezeTableContract(requiredTables);
+  const baselineRequiredTables = isTableContract(config?.workerRequiredTables)
+    ? freezeTableContract(config.workerRequiredTables)
+    : fullRequiredTables;
+  const bootstrapOptionalTables = Object.freeze(Object.fromEntries(
+    Object.entries(fullRequiredTables)
+      .filter(([key]) => !Object.hasOwn(baselineRequiredTables, key)),
+  ));
 
   async function buildBundle(configText, label) {
     const outdir = await mkdtemp(join(tmpdir(), `report-closeout-${label}-`));
@@ -136,17 +144,21 @@ export function createReviewedRemoteRuntime(input) {
         'REPORT_RUNTIME_CLOSEOUT_REMOTE_QUEUE_MISMATCH',
       );
     }
-    for (const [key, envName] of Object.entries(requiredTables)) {
-      const mapping = exactlyOne(bindings, (binding) => (
-        readBindingName(binding) === envName && normalizeBindingType(binding?.type) === 'plain_text'
-      ), envName);
-      if (String(mapping.text ?? mapping.value ?? '').trim() !== config.tableIds[key]) throw closeoutFailure(
-        `Remote Worker Lark mapping differs for ${envName}`,
-        'REPORT_RUNTIME_CLOSEOUT_REMOTE_TABLE_MAPPING_MISMATCH',
-        { envName },
-      );
-    }
-    return Object.freeze({ activeVersion, trueFlags: Object.freeze(trueFlags), mode });
+
+    const bootstrapVerification = expectedVersionId === null;
+    const requiredNow = bootstrapVerification ? baselineRequiredTables : fullRequiredTables;
+    const optionalNow = bootstrapVerification ? bootstrapOptionalTables : Object.freeze({});
+    verifyRequiredTableBindings(bindings, requiredNow, config.tableIds);
+    verifyOptionalTableBindings(bindings, optionalNow, config.tableIds);
+
+    return Object.freeze({
+      activeVersion,
+      trueFlags: Object.freeze(trueFlags),
+      mode,
+      bindingContract: bootstrapVerification ? 'bootstrap_baseline' : 'deployed_exact',
+      requiredTableBindingCount: Object.keys(requiredNow).length,
+      optionalTableBindingCount: Object.keys(optionalNow).length,
+    });
   }
 
   async function withGeneratedConfig(configText, operation) {
@@ -185,6 +197,44 @@ export async function sendReviewedQueueMessage({ auth, queueId, job }) {
   );
 }
 
+function verifyRequiredTableBindings(bindings, contract, tableIds) {
+  for (const [key, envName] of Object.entries(contract)) {
+    const mapping = exactlyOne(bindings, (binding) => (
+      readBindingName(binding) === envName && normalizeBindingType(binding?.type) === 'plain_text'
+    ), envName);
+    assertTableMapping(mapping, envName, tableIds[key]);
+  }
+}
+
+function verifyOptionalTableBindings(bindings, contract, tableIds) {
+  for (const [key, envName] of Object.entries(contract)) {
+    const mapping = zeroOrOne(bindings, (binding) => (
+      readBindingName(binding) === envName && normalizeBindingType(binding?.type) === 'plain_text'
+    ), envName);
+    if (mapping) assertTableMapping(mapping, envName, tableIds[key]);
+  }
+}
+
+function assertTableMapping(mapping, envName, expectedTableId) {
+  if (String(mapping.text ?? mapping.value ?? '').trim() !== expectedTableId) throw closeoutFailure(
+    `Remote Worker Lark mapping differs for ${envName}`,
+    'REPORT_RUNTIME_CLOSEOUT_REMOTE_TABLE_MAPPING_MISMATCH',
+    { envName },
+  );
+}
+
+function freezeTableContract(value) {
+  return Object.freeze(Object.fromEntries(
+    Object.entries(isTableContract(value) ? value : {})
+      .map(([key, envName]) => [key, String(envName).trim()])
+      .filter(([, envName]) => envName),
+  ));
+}
+
+function isTableContract(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
 async function collectFiles(root) {
   const files = [];
   async function walk(path) {
@@ -197,6 +247,7 @@ async function collectFiles(root) {
   await walk(root);
   return files.sort();
 }
+
 function resolveActiveVersion(value, expectedVersionId) {
   const candidates = [];
   visit(value);
@@ -221,6 +272,7 @@ function resolveActiveVersion(value, expectedVersionId) {
     Object.values(nested).forEach(visit);
   }
 }
+
 function collectBindings(value) {
   const arrays = [];
   visit(value);
@@ -232,6 +284,7 @@ function collectBindings(value) {
     Object.values(nested).forEach(visit);
   }
 }
+
 function extractVersionId(stdout) {
   const labeled = String(stdout).match(/Version ID:\s*([0-9a-f-]{36})/iu)?.[1];
   if (labeled) return labeled;
@@ -245,6 +298,7 @@ function extractVersionId(stdout) {
   );
   return unique[0];
 }
+
 function exactlyOne(values, predicate, label) {
   const matches = Array.isArray(values) ? values.filter(predicate) : [];
   if (matches.length !== 1) throw closeoutFailure(
@@ -254,6 +308,17 @@ function exactlyOne(values, predicate, label) {
   );
   return matches[0];
 }
+
+function zeroOrOne(values, predicate, label) {
+  const matches = Array.isArray(values) ? values.filter(predicate) : [];
+  if (matches.length > 1) throw closeoutFailure(
+    `Remote Worker permits at most one ${label} binding before Report activation`,
+    'REPORT_RUNTIME_CLOSEOUT_REMOTE_BINDING_INVALID',
+    { label, matchCount: matches.length },
+  );
+  return matches[0] ?? null;
+}
+
 function readBindingName(binding) { return String(binding?.name ?? binding?.binding ?? '').trim() || null; }
 function normalizeBindingType(value) { return String(value ?? '').trim().toLowerCase().replaceAll('-', '_'); }
 function readRemoteBoolean(value) {
