@@ -15,7 +15,7 @@ import {
 } from './report-runtime-closeout-reviewed-process.js';
 
 const DEPLOYMENT_STABILITY_DELAYS_MS = Object.freeze([0, 10_000, 20_000]);
-const QUEUE_ACTIVATION_STABILITY_DELAYS_MS = Object.freeze([0, 30_000, 30_000, 60_000]);
+const QUEUE_ACTIVATION_STABILITY_DELAYS_MS = Object.freeze([0, 60_000, 60_000]);
 const EXPECTED_WORKER_NAME = 'social-mkt-sync-worker';
 const EXPECTED_MAIN_QUEUE = 'social-mkt-sync-jobs';
 const EXPECTED_DLQ = 'social-mkt-sync-dlq';
