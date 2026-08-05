@@ -63,7 +63,7 @@ test('optional List fields are hydrated from exact Consumer detail without weake
   assert.equal(value.settings.maxRetries, 5);
 });
 
-test('optional script_name may be absent when exact deployed Worker authority remains reviewed', () => {
+test('optional script_name may be absent while the reviewed Worker contract remains exact', () => {
   const consumerId = consumer().consumer_id;
   const topology = {
     consumer_id: consumerId,
@@ -78,7 +78,7 @@ test('optional script_name may be absent when exact deployed Worker authority re
   });
   assert.equal(value.consumerId, consumerId);
   assert.equal(value.scriptName, 'social-mkt-sync-worker');
-  assert.equal(value.scriptNameAuthority, 'reviewed_worker_deployment');
+  assert.equal(value.scriptNameAuthority, 'reviewed_worker_contract');
   assert.equal(value.settings.maxConcurrency, 1);
 
   assert.throws(
