@@ -26,6 +26,7 @@ function consumer(overrides = {}) {
 test('reviewed Queue requires exactly one matching Worker consumer and exact settings', () => {
   const value = assertReviewedQueueConsumer({ consumers: [consumer()] });
   assert.equal(value.scriptName, 'social-mkt-sync-worker');
+  assert.equal(value.scriptNameAuthority, 'cloudflare_consumer_response');
   assert.equal(value.settings.batchSize, 10);
   assert.equal(value.settings.maxWaitTimeMs, 30_000);
 
@@ -58,7 +59,35 @@ test('optional List fields are hydrated from exact Consumer detail without weake
   });
   assert.equal(value.consumerId, consumerId);
   assert.equal(value.scriptName, 'social-mkt-sync-worker');
+  assert.equal(value.scriptNameAuthority, 'cloudflare_consumer_response');
   assert.equal(value.settings.maxRetries, 5);
+});
+
+test('optional script_name may be absent when exact deployed Worker authority remains reviewed', () => {
+  const consumerId = consumer().consumer_id;
+  const topology = {
+    consumer_id: consumerId,
+    type: 'worker',
+    queue_name: 'social-mkt-sync-jobs',
+    dead_letter_queue: 'social-mkt-sync-dlq',
+    settings: consumer().settings,
+  };
+  const value = assertReviewedQueueConsumer({
+    consumers: [topology],
+    detail: { ...topology },
+  });
+  assert.equal(value.consumerId, consumerId);
+  assert.equal(value.scriptName, 'social-mkt-sync-worker');
+  assert.equal(value.scriptNameAuthority, 'reviewed_worker_deployment');
+  assert.equal(value.settings.maxConcurrency, 1);
+
+  assert.throws(
+    () => assertReviewedQueueConsumer({
+      consumers: [topology],
+      detail: { ...topology, script_name: 'other-worker' },
+    }),
+    (error) => error.code === 'REPORT_RUNTIME_CLOSEOUT_QUEUE_CONSUMER_INVALID',
+  );
 });
 
 test('Queue-scoped optional fields may be absent but explicit identity drift remains rejected', () => {
@@ -112,4 +141,5 @@ test('Report execution uses three samples across a 120-second Queue activation b
     /\/consumers\/\$\{encodeURIComponent\(consumerId\)\}/u,
   );
   assert.match(source, /const listedConsumerId = readSingleConsumerId\(consumers, 'list'\)/u);
+  assert.match(source, /scriptNameAuthority: explicitScriptNames\.length/u);
 });
