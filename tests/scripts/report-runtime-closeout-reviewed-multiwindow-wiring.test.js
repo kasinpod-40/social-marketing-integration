@@ -42,3 +42,35 @@ test('reviewed executor binds generic preflight, multiwindow replay and preserve
   assert.doesNotMatch(source, /accepts YouTube Organic only/u);
   assert.doesNotMatch(source, /youtube\.googleapis\.com|YouTube Data API/u);
 });
+
+test('reviewed reuse windows return verified evidence before any Queue resend', async () => {
+  const source = await readFile(EXECUTOR, 'utf8');
+  const executeWindowStart = source.indexOf('async function executeWindow');
+  const verifyStart = source.indexOf(
+    "if (selected.operation === 'verify')",
+    executeWindowStart,
+  );
+  const mutatingStart = source.indexOf('d-send-first', verifyStart);
+  const replayStart = source.indexOf('d-send-replay', mutatingStart);
+  assert.ok(executeWindowStart >= 0, 'executeWindow function is required');
+  assert.ok(verifyStart > executeWindowStart, 'executeWindow verify branch is required');
+  assert.ok(mutatingStart > verifyStart, 'mutating path must remain after the verify branch');
+  assert.ok(replayStart > mutatingStart, 'replay path must remain after the first-send path');
+
+  const verifyBranch = source.slice(verifyStart, mutatingStart);
+  assert.match(verifyBranch, /return Object\.freeze/u);
+  assert.match(verifyBranch, /executionMode:\s*'reuse_verified_materialization'/u);
+  assert.match(verifyBranch, /reusedExisting:\s*true/u);
+  assert.match(verifyBranch, /replayExecuted:\s*false/u);
+  assert.match(verifyBranch, /sameInput:\s*null/u);
+  assert.match(verifyBranch, /queueMessagesSent:\s*0/u);
+  assert.doesNotMatch(verifyBranch, /sendReviewedQueueMessage/u);
+
+  const mutatingBranch = source.slice(mutatingStart, replayStart);
+  assert.match(mutatingBranch, /sendReviewedQueueMessage/u);
+
+  const replayBranch = source.slice(replayStart);
+  assert.match(replayBranch, /executionMode:\s*'materialize_and_replay'/u);
+  assert.match(replayBranch, /replayExecuted:\s*true/u);
+  assert.match(replayBranch, /sameInput:\s*true/u);
+});
