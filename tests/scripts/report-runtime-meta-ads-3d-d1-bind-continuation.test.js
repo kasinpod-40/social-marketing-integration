@@ -96,35 +96,35 @@ function preflight(overrides = {}) {
     [incident.sourceFactField]: 630,
     active_report_work_count: 0,
     active_report_locks: 0,
-    open_report_dlq: 2,
+    open_report_dlq: 3,
     open_report_critical_alerts: 0,
     ...overrides,
   };
 }
 
-test('exact continuation contract binds merged fix and retained failed attempt', () => {
+test('exact continuation v2 binds current main and retained Queue-activation attempt', () => {
   assert.equal(
     META_ADS_3D_D1_BIND_CONTINUATION_CONTRACT,
-    'report_runtime_meta_ads_3d_d1_bind_continuation_v1',
+    'report_runtime_meta_ads_3d_queue_activation_continuation_v2',
   );
-  assert.equal(incident.requiredRepositoryHead, '2f87f7f342847a5dcd0cf794cd0a74e55ab76068');
+  assert.equal(incident.requiredRepositoryHead, 'd3bbaa33fb51874609dae2abd04ab0cd25f36ea9');
   assert.equal(incident.rootCause.uniqueAds3d, 102);
   assert.equal(incident.rootCause.preFixBindings3d, 105);
-  assert.equal(incident.dlqs.length, 2);
+  assert.equal(incident.dlqs.length, 3);
   assert.equal(assertMetaAds3dRetainedAttempt({
-    incidentKey: 'meta_ads_3d_20260731',
+    incidentKey: 'meta_ads_3d_d1_bind_20260731',
     reportId: incident.reportId,
     jobSha256: incident.jobSha256,
-    retryRequestedAt: incident.failedRecoveryRequestedAt,
-    originalDlqId: incident.dlqs[0].dlqId,
+    continuationRequestedAt: incident.failedContinuationRequestedAt,
+    retainedDlqIds: incident.dlqs.slice(0, 2).map((binding) => binding.dlqId),
   }), true);
   assert.throws(
     () => assertMetaAds3dRetainedAttempt({
-      incidentKey: 'meta_ads_3d_20260731',
+      incidentKey: 'meta_ads_3d_d1_bind_20260731',
       reportId: incident.reportId,
       jobSha256: incident.jobSha256,
-      retryRequestedAt: incident.failedRecoveryRequestedAt + 1,
-      originalDlqId: incident.dlqs[0].dlqId,
+      continuationRequestedAt: incident.failedContinuationRequestedAt + 1,
+      retainedDlqIds: incident.dlqs.slice(0, 2).map((binding) => binding.dlqId),
     }),
     (error) => error.code === 'REPORT_RUNTIME_META_ADS_3D_CONTINUATION_ATTEMPT_MISMATCH',
   );
@@ -178,10 +178,10 @@ test('root-cause evidence proves 1D below and 3D above the D1 binding ceiling', 
   }), true);
 });
 
-test('preflight requires both exact open DLQs and zero active Report runtime', () => {
+test('preflight requires all three exact open DLQs and zero active Report runtime', () => {
   assert.equal(assertMetaAds3dContinuationPreflight(preflight()), true);
   assert.throws(
-    () => assertMetaAds3dContinuationPreflight(preflight({ open_report_dlq: 1 })),
+    () => assertMetaAds3dContinuationPreflight(preflight({ open_report_dlq: 2 })),
     (error) => error.code === 'REPORT_RUNTIME_META_ADS_3D_CONTINUATION_PREFLIGHT_MISMATCH',
   );
   assert.throws(
@@ -202,7 +202,7 @@ for (const binding of incident.dlqs) {
       (error) => error.code === 'REPORT_RUNTIME_META_ADS_3D_CONTINUATION_DLQ_MISMATCH',
     );
 
-    const statements = buildMetaAds3dClosureStatements(binding, 1785940000000);
+    const statements = buildMetaAds3dClosureStatements(binding, 1785945000000);
     assert.equal(statements.length, 2);
     assert.match(statements[0], /status = 'redriven'/u);
     assert.equal(statements[0].includes(binding.closureReference), true);
@@ -250,18 +250,18 @@ test('initial state binds six failed attempts, two prior successes and empty D1/
   );
 });
 
-test('poll and retained-state SQL are exact to the failed recovery and new continuation window', () => {
+test('poll and retained-state SQL are exact to the failed recovery and next continuation window', () => {
   const failedSql = buildMetaAds3dFailedRecoveryStateSql();
   assert.equal(failedSql.includes(String(incident.failedRecoveryRequestedAt)), true);
   assert.equal(failedSql.includes(incident.dlqs[1].dlqId), true);
-  const pollSql = buildMetaAds3dContinuationPollSql(1785941000000);
-  assert.equal(pollSql.includes('1785941000000'), true);
+  const pollSql = buildMetaAds3dContinuationPollSql(1785945000000);
+  assert.equal(pollSql.includes('1785945000000'), true);
   assert.equal(pollSql.includes(incident.reportSettingKey), true);
   assert.equal(pollSql.includes(new Date(incident.requestedAt).toISOString()), true);
   assert.match(pollSql, /exact_new_dlq_count/u);
 });
 
-test('operator uses one first send, one replay, exact-head Finalizer and closes two DLQs after restore', () => {
+test('operator sends one first job and one replay, then closes all incident DLQs after restore', () => {
   const source = readFileSync(
     new URL('../../scripts/report-runtime-meta-ads-3d-d1-bind-continuation.mjs', import.meta.url),
     'utf8',
@@ -269,7 +269,7 @@ test('operator uses one first send, one replay, exact-head Finalizer and closes 
   assert.match(source, /repository\.head !== incident\.requiredRepositoryHead/u);
   assert.match(source, /send-exact-meta-ads-3d-continuation-once/u);
   assert.match(source, /send-exact-meta-ads-3d-replay-once/u);
-  assert.match(source, /close-both-exact-retained-dlqs/u);
+  assert.match(source, /for \(const binding of incident\.dlqs\)/u);
   assert.equal((source.match(/sendReviewedQueueMessage\(/gu) ?? []).length, 2);
   assert.equal(source.indexOf("currentStage = 'close-both-exact-retained-dlqs'")
     > source.indexOf("currentStage = 'restore-preserved-notification-worker-baseline'"), true);
