@@ -18,6 +18,8 @@ const REQUIRED_TABLES = Object.freeze({
   mktReportMetricValues: 'LARK_TABLE_MKT_REPORT_METRIC_VALUES',
   mktReportTopContent: 'LARK_TABLE_MKT_REPORT_TOP_CONTENT',
   mktReportTopAds: 'LARK_TABLE_MKT_REPORT_TOP_ADS',
+  mktSyncLog: 'LARK_TABLE_MKT_SYNC_LOG',
+  mktSystemAlerts: 'LARK_TABLE_MKT_SYSTEM_ALERTS',
   mktAiReportRuns: 'LARK_TABLE_MKT_AI_REPORT_RUNS',
   mktReportSettings: 'LARK_TABLE_MKT_REPORT_SETTINGS',
   mktNotificationLog: 'LARK_TABLE_MKT_NOTIFICATION_LOG',
@@ -27,12 +29,16 @@ const BASELINE_REQUIRED_TABLES = Object.freeze({
   mktReportSnapshots: 'LARK_TABLE_MKT_REPORT_SNAPSHOTS',
   mktReportSettings: 'LARK_TABLE_MKT_REPORT_SETTINGS',
   mktNotificationLog: 'LARK_TABLE_MKT_NOTIFICATION_LOG',
+  mktSyncLog: 'LARK_TABLE_MKT_SYNC_LOG',
+  mktSystemAlerts: 'LARK_TABLE_MKT_SYSTEM_ALERTS',
 });
 const TABLE_IDS = Object.freeze({
   mktReportSnapshots: 'tbl-report-snapshots',
   mktReportMetricValues: 'tbl-report-metrics',
   mktReportTopContent: 'tbl-report-top-content',
   mktReportTopAds: 'tbl-report-top-ads',
+  mktSyncLog: 'tbl-sync-log',
+  mktSystemAlerts: 'tbl-system-alerts',
   mktAiReportRuns: 'tbl-ai-runs',
   mktReportSettings: 'tbl-report-settings',
   mktNotificationLog: 'tbl-notification-log',
@@ -55,6 +61,8 @@ function remoteBindings(overrides = {}) {
     binding('LARK_TABLE_MKT_AI_REPORT_RUNS', TABLE_IDS.mktAiReportRuns),
     binding('LARK_TABLE_MKT_REPORT_SETTINGS', TABLE_IDS.mktReportSettings),
     binding('LARK_TABLE_MKT_NOTIFICATION_LOG', TABLE_IDS.mktNotificationLog),
+    binding('LARK_TABLE_MKT_SYNC_LOG', TABLE_IDS.mktSyncLog),
+    binding('LARK_TABLE_MKT_SYSTEM_ALERTS', TABLE_IDS.mktSystemAlerts),
     ...reportBindings,
   ];
 }
@@ -87,10 +95,10 @@ function runtime(bindings) {
   });
 }
 
-test('bootstrap baseline permits absent Report-only bindings while requiring Notification bindings', async () => {
+test('bootstrap baseline permits absent Report-only bindings while requiring Notification and operational bindings', async () => {
   const result = await runtime(remoteBindings()).verifyDeployment('active');
   assert.equal(result.bindingContract, 'bootstrap_baseline');
-  assert.equal(result.requiredTableBindingCount, 4);
+  assert.equal(result.requiredTableBindingCount, 6);
   assert.equal(result.optionalTableBindingCount, 3);
 });
 
@@ -126,6 +134,6 @@ test('exact deployed verification still requires every Report and Notification b
   });
   const result = await runtime(complete).verifyDeployment('active', VERSION_ID);
   assert.equal(result.bindingContract, 'deployed_exact');
-  assert.equal(result.requiredTableBindingCount, 7);
+  assert.equal(result.requiredTableBindingCount, 9);
   assert.equal(result.optionalTableBindingCount, 0);
 });
