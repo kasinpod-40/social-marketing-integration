@@ -14,6 +14,11 @@ export const REPORT_RUNTIME_NOTIFICATION_REQUIRED_TABLES = Object.freeze({
   mktReportSettings: 'LARK_TABLE_MKT_REPORT_SETTINGS',
   mktNotificationLog: 'LARK_TABLE_MKT_NOTIFICATION_LOG',
 });
+export const REPORT_RUNTIME_PRESERVED_BASELINE_REQUIRED_TABLES = Object.freeze({
+  ...REPORT_RUNTIME_NOTIFICATION_REQUIRED_TABLES,
+  mktSyncLog: 'LARK_TABLE_MKT_SYNC_LOG',
+  mktSystemAlerts: 'LARK_TABLE_MKT_SYSTEM_ALERTS',
+});
 const SHARED_REPORT_NOTIFICATION_TABLES = Object.freeze([
   'LARK_TABLE_MKT_REPORT_SNAPSHOTS',
   'LARK_TABLE_MKT_REPORT_SETTINGS',
@@ -145,7 +150,7 @@ export function buildNotificationPreservingReportRuntimeConfigWindow(
       settingKeyFingerprint: notification.settingKeyFingerprint,
     }),
     workerTableIds,
-    workerRequiredTables: REPORT_RUNTIME_NOTIFICATION_REQUIRED_TABLES,
+    workerRequiredTables: REPORT_RUNTIME_PRESERVED_BASELINE_REQUIRED_TABLES,
   });
 }
 
