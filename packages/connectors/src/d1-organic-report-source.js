@@ -95,9 +95,12 @@ export class D1OrganicReportSource {
       [accountDailyFacts.length, 'account daily fact rows'],
     ]) assertWithinLimit(count, limit, label, this.platform);
 
+    const currentAccountFacts = accountDailyFacts.filter((row) => (
+      row.metric_date >= periodStart && row.metric_date <= periodEnd
+    ));
     const sourceScope = currentRows.length > 0
       ? 'content'
-      : (this.allowAccountFallback && accountDailyFacts.length > 0 ? 'account' : 'content');
+      : (this.allowAccountFallback && currentAccountFacts.length > 0 ? 'account' : 'content');
     const selectedCoverage = sourceScope === 'account' ? accountCoverage : contentCoverage;
     const coverageEntities = sourceScope === 'content' && contentCoverage
       ? await this.#all(`
@@ -145,6 +148,7 @@ export class D1OrganicReportSource {
         contentRecords: contents.length,
         observationRecords: observations.length,
         accountFactRecords: accountDailyFacts.length,
+        currentAccountFactRecords: currentAccountFacts.length,
         coverageDatasetKey: selectedCoverage?.dataset_key ?? null,
         coverageStatus: normalizeCoverageStatus(selectedCoverage?.status),
         contentCoverageStatus: normalizeCoverageStatus(contentCoverage?.status),
@@ -156,7 +160,7 @@ export class D1OrganicReportSource {
         coverageEntities: coverageEntities.length,
         uncoveredContentCount: uncoveredContentIds.length,
         uncoveredContentIds: Object.freeze(uncoveredContentIds.slice(0, 100)),
-        sourceWatermark: selectedCoverage?.source_watermark ?? latestRevision(accountDailyFacts),
+        sourceWatermark: selectedCoverage?.source_watermark ?? null,
         coverageCompletedAt: nullableInteger(selectedCoverage?.completed_at),
         rowsFetched: states.length + currentRows.length + compareRows.length
           + baselineRows.length + accountDailyFacts.length + coverageEntities.length
@@ -284,10 +288,6 @@ function boundedPositiveInteger(value, fieldName, maximum) {
 function normalizeCoverageStatus(value) {
   const status = optionalText(value)?.toLowerCase() ?? 'not_observed';
   return status === 'completed' ? 'complete' : status;
-}
-function latestRevision(rows) {
-  const values = rows.map((row) => optionalText(row.source_revision)).filter(Boolean).sort();
-  return values.at(-1) ?? null;
 }
 function requireD1(value) {
   if (typeof value?.prepare !== 'function') throw new TypeError('D1OrganicReportSource requires a D1 binding');
