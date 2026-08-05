@@ -154,7 +154,7 @@ test('closure SQL is exact, guarded and readback requires both DLQ and metadata 
   const statements = buildReviewedConfigDlqClosureStatements(1785920000000);
   assert.equal(statements.length, 2);
   assert.match(statements[0], /status = 'redriven'/u);
-  assert.match(statements[0], new RegExp(incident.closureReference.replaceAll(':', '\\:'), 'u'));
+  assert.equal(statements[0].includes(incident.closureReference), true);
   assert.match(statements[1], /recovery_status = 'completed'/u);
 
   assert.equal(assertReviewedConfigDlqClosed({
