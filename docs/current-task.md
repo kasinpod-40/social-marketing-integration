@@ -1,19 +1,24 @@
-# Current Task — Report D1 Read Retry & Diagnostics Hotfix v1
+# Current Task — Meta Ads 3D Report DLQ Recovery & Queue Completion Barrier v1
 
 ## Status
 
 ```text
 TASK_STATUS                         = IMPLEMENTATION_IN_PROGRESS
-CURRENT_PROGRAM                     = REPORT_D1_READ_RETRY_DIAGNOSTICS_V1
-BRANCH                              = hotfix/d1-read-retry-diagnostics-v1
-EXACT_BASE                          = 392673893e390019019f04b299185782214d965d
-PRIOR_FACEBOOK_REUSE_FIX            = MERGED
-LATEST_RUN_ALL_RESULT               = FACEBOOK_COMPLETED_THEN_STOPPED_BEFORE_INSTAGRAM_DEPLOY
-INSTAGRAM_FAILURE_STAGE             = lark-and-instagram-d1-preflight
-INSTAGRAM_ACTIVE_DEPLOYMENT         = false
-INSTAGRAM_QUEUE_ACTION              = 0
-INSTAGRAM_REMOTE_WRITE              = 0
-PROVIDER_REQUEST_COUNT              = 0
+CURRENT_PROGRAM                     = META_ADS_3D_REPORT_DLQ_RECOVERY_V1
+BRANCH                              = fix/meta-ads-3d-dlq-recovery-v1
+EXACT_BASE                          = 0db4c297d25678b8996033e2b0fdc29aae886c03
+FAILED_PLATFORM                     = meta_ads
+FAILED_WINDOW                       = 3D
+FAILED_REPORT_ID                    = integration_workspace:meta_ads:rolling:3d:chemistry_k:rolling_days:2026-07-29:2026-07-31:meta-ads-v1
+EXACT_OPEN_REPORT_DLQ               = terminal:e408707c9c2d383e04a3e213a7be45a0
+DLQ_ERROR_CODE                      = DASHBOARD_REPORT_CONFIGURATION_INVALID
+DLQ_RETRY_COUNT                     = 4
+TARGET_MATERIALIZATION_COUNT        = 0
+PRIOR_META_ADS_SUCCESSFUL_RUNS      = 2
+ACTIVE_REPORT_WORK                  = 0
+ACTIVE_REPORT_LOCK                  = 0
+WORKER_BASELINE_RESTORED            = true
+NOTIFICATION_RUNTIME_STATE          = active
 NOTIFICATION_ADMISSION_ENABLED      = false
 SCHEDULE_ACTIVATION_APPROVED        = false
 PRODUCTION                          = BLOCKED
@@ -22,75 +27,103 @@ PRODUCTION                          = BLOCKED
 Full contract:
 
 ```text
-docs/tasks/report-d1-read-retry-diagnostics-v1.md
+docs/tasks/meta-ads-3d-report-dlq-recovery-v1.md
 ```
 
 ## Goal
 
-Make the existing shared Report D1 read path resilient to bounded transient `wrangler d1 execute --remote --json`
-failures while preserving the exact final command diagnostics needed to distinguish Cloudflare/CLI failures from
-SQL defects. No Queue, Worker, D1 write, Lark write, Provider or Schedule action is part of this Repository hotfix.
+Recover only the exact Meta Ads 3D Report job that was admitted during the reviewed Run All but remained queued
+past the prior two-minute success-only polling window, was then consumed under the restored baseline configuration
+and reached the DLQ after four attempts. Extend the existing exact configuration-DLQ recovery authority to this
+incident and keep future Run All Active Report windows open for a bounded 120 polls before restoration.
 
 ## Confirmed incident
 
-The exact-head Run All on `main@392673893e390019019f04b299185782214d965d` passed the pre-Run readiness gates.
-Facebook executed first. Run All then stopped before Instagram deployment while executing the same Instagram
-SELECT-only D1 preflight query that had passed during readiness.
+Exact SELECT-only evidence proves:
 
 ```text
-stage                       lark-and-instagram-d1-preflight
-activeDeploymentAttempted   false
-baselineRestoreVerified     false
-remoteWriteCount            0
-queueActionCount             0
-workerDeploymentCount       0
-providerRequestCount        0
-production                  BLOCKED
+requestedAt                 1785934718928
+reportId                    integration_workspace:meta_ads:rolling:3d:chemistry_k:rolling_days:2026-07-29:2026-07-31:meta-ads-v1
+DLQ                         terminal:e408707c9c2d383e04a3e213a7be45a0
+messageId                   e408707c9c2d383e04a3e213a7be45a0
+job SHA-256                 cb25578b3e5f6034425ae10772adf1a85efc20634dcdc7470377bf143340102d
+retry/main attempts         4 / 4
+error                       DASHBOARD_REPORT_CONFIGURATION_INVALID
+materialization             0
+successful Meta Ads runs    2
+active Work/Lock            0 / 0
+open Report DLQ             1
+Worker baseline             restored active Notification Runtime
 ```
 
-The shared command runner surfaced only the generated command and numeric exit code. It discarded `stderr`, so the
-result cannot yet distinguish a transient Cloudflare/CLI failure from a persistent SQL error. The correct response
-is not to rerun the old Run All block and not to add an Instagram-specific wrapper.
+The two successful Meta Ads runs are the completed 1D first delivery and exact replay. The 3D first-attempt local
+evidence exists, while the 3D target remains empty in D1 and Lark. Generic Run All repetition is forbidden.
+
+## Root cause
+
+`pollD1Completion()` waited a default 24 polls at five seconds each. The third Meta Ads Queue delivery was not
+observed within that two-minute window. The executor then entered `finally` and restored the preserved Worker
+baseline. The still-queued 3D job subsequently reached a Worker without the reviewed D1-primary Report flags and
+was retried four times into the DLQ.
+
+This is a Queue completion-window race, not a source, Report identity, D1/Lark writer or Provider defect.
 
 ## Root correction
 
-Update only `createReviewedStateRuntime().readD1Rows()`:
+- reuse and generalize the existing exact configuration-DLQ recovery contract;
+- retain the completed Facebook 1D incident as the backward-compatible default;
+- add one immutable Meta Ads 3D incident authority bound to exact local attempt, Queue payload hash, DLQ,
+  operation metadata, source Coverage and empty D1/Lark target;
+- run the exact original job once and the exact same job once for replay;
+- use the existing stable Active deployment barrier, D1/Lark integrity proof and preserved baseline restore;
+- close only the exact Meta Ads 3D DLQ and metadata after complete success;
+- extend Run All child completion polling to 120 polls unless an explicit reviewed override exists.
 
-- retry failed SELECT-only D1 command execution up to three bounded attempts;
-- use a fixed short delay between attempts;
-- do not retry after a successful command returns invalid JSON;
-- after the final failed attempt, throw `REPORT_RUNTIME_CLOSEOUT_D1_READ_FAILED`;
-- retain only bounded `sourceCode`, `sourceSignal`, `stderr` and `stdout` diagnostics;
-- never include the SQL command text or environment secrets in the new error details;
-- keep all D1 writes, backups and migrations outside this retry path.
+## Out of scope
+
+- rerunning the failed Run All block or reusing its handoff;
+- redriving the DLQ generically;
+- replacing requested-at, Report ID or Queue payload;
+- modifying Meta Ads 1D or any Facebook/Instagram/YouTube materialization;
+- Provider/source refresh;
+- manual D1/Lark repair;
+- Dashboard legacy-display backfill;
+- Notification Admission, Schedule or Production activation.
 
 ## Acceptance criteria
 
-1. Two transient command failures followed by success return the exact D1 row.
-2. Permanent command failure stops after the configured bounded attempt count.
-3. Final failure exposes compact command diagnostics without propagating SQL text.
-4. Invalid JSON after a successful command fails immediately as
-   `REPORT_RUNTIME_CLOSEOUT_D1_RESPONSE_INVALID`.
-5. Existing Report readiness, closeout, recovery and reliability tests continue to pass.
-6. Post-merge resume begins with a new exact-head Finalizer and SELECT-only readiness for Facebook and Instagram.
-7. Existing materializations are reused; no old handoff or old evidence directory is reused.
-8. Notification Admission, Schedule and Production remain blocked.
+1. The exact Meta Ads 3D incident resolves from a fixed incident key and rejects every identity/hash/count drift.
+2. The preflight requires complete Meta Ads Coverage, D1 Ads facts, zero Work/Lock, one exact open Report DLQ and
+   an empty 3D D1/Lark target.
+3. Prior successful Meta Ads run floor is exactly two before recovery.
+4. Recovery deploys the reviewed Active Report window and verifies three stable deployment samples.
+5. Recovery submits the exact retained job once, proves one materialization and D1/Lark integrity, then submits the
+   exact same job once and proves Stable ID/checksum/Lark/integrity replay.
+6. Preserved Notification Runtime baseline is restored and verified before exact DLQ closure.
+7. Run All propagates a bounded 120-poll completion barrier to each shared channel child.
+8. Existing Facebook recovery and all shared Report regressions remain passing.
+9. Provider requests remain zero; Notification Admission, Schedule and Production remain disabled.
 
 ## Implementation result
 
 Implemented on the branch above:
 
-- added three-attempt bounded retry to the shared D1 SELECT reader;
-- added sanitized final `stderr/stdout` diagnostics;
-- added regression tests for transient success, permanent failure and invalid JSON;
-- no Remote action was performed.
+- generalized the existing configuration-DLQ incident validators without adding a second recovery engine;
+- added the exact Meta Ads 3D incident authority and recovery routing;
+- retained the original Facebook recovery as the default incident;
+- extended the shared Run All child polling budget from 24 to 120 polls;
+- added focused multi-incident and Run All barrier regressions;
+- no Remote action was performed by Repository implementation.
 
 ## Required verification
 
 ```bash
 npm ci
 npm run check
-node --test tests/scripts/report-runtime-closeout-reviewed-state.test.js
+node --test \
+  tests/scripts/report-runtime-reviewed-config-dlq-recovery.test.js \
+  tests/scripts/report-all-ready-channels.test.js \
+  tests/scripts/report-runtime-closeout-reviewed-state.test.js
 npm test
 npm run test:report-reliability
 npm audit --audit-level=high
@@ -100,10 +133,11 @@ git diff --check
 
 ## Post-merge boundary
 
-1. synchronize clean exact `main`;
-2. rerun Report Runtime Finalizer for the new Head;
-3. run Facebook and Instagram SELECT-only readiness first;
-4. require zero Work/Lock/DLQ and exact D1/Lark integrity for all existing windows;
-5. run readiness for the remaining channels and build a new exact-head retained handoff;
-6. resume Run All once under a new evidence root;
-7. never rerun `outputs/report-live-resume-392673893e39`.
+1. synchronize clean exact merged `main`;
+2. rerun exact-head Report Runtime Finalizer;
+3. run the exact Meta Ads 3D configuration-DLQ recovery once;
+4. never repeat it after any recovery attempt evidence exists;
+5. run SELECT-only readiness for all seven ready channels;
+6. build a fresh exact-head retained handoff and resume only the remaining windows;
+7. after all 28 windows pass, repair the Dashboard legacy display-name compatibility field through the Shared Lark
+   writer/backfill workstream.
