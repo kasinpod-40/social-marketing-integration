@@ -1,26 +1,24 @@
-# Current Task — Report Queue Consumer Hydration Hotfix v1
+# Current Task — Queue Consumer Optional Script Identity Hotfix v1
 
 ## Status
 
 ```text
-TASK_STATUS                         = IMPLEMENTATION_COMPLETE_CI_PASS
-CURRENT_PROGRAM                     = REPORT_QUEUE_CONSUMER_HYDRATION_V1
-BRANCH                              = hotfix/queue-consumer-hydration-v1
-EXACT_BASE                          = 3d28aebd228446dcbd780006f337c0b3a4ca4be5
-VERIFIED_IMPLEMENTATION_HEAD        = 4743e864da2f5a05af946929dc802f9bcc392dc0
-PR                                  = 517
-BRANCH_VERIFICATION_RUN             = 31025681936
-BRANCH_VERIFICATION_NUMBER          = 2247
-META_END_TO_END_RUN                 = 31025683031
-META_END_TO_END_NUMBER              = 452
+TASK_STATUS                         = IMPLEMENTATION_IN_PROGRESS
+CURRENT_PROGRAM                     = QUEUE_CONSUMER_OPTIONAL_SCRIPT_IDENTITY_V1
+BRANCH                              = hotfix/queue-consumer-script-name-optional-v1
+EXACT_BASE                          = 7a05c64f1ea98ce672fda7a79ad356875c0841b2
 PLATFORM                            = meta_ads
 WINDOW                              = 3D
 REPORT_ID                           = integration_workspace:meta_ads:rolling:3d:chemistry_k:rolling_days:2026-07-29:2026-07-31:meta-ads-v1
-FAILED_PREFLIGHT_ROOT               = outputs/meta-ads-3d-queue-activation-continuation-3d28aebd2284
-FAILED_PREFLIGHT_STAGE              = repository-finalizer-and-retained-evidence
+FAILED_PREFLIGHT_ROOT               = outputs/meta-ads-3d-queue-consumer-hydration-7a05c64f1ea9
+FAILED_PREFLIGHT_STAGE              = GET-only Queue Consumer hydration
 FAILED_PREFLIGHT_CODE               = REPORT_RUNTIME_CLOSEOUT_QUEUE_CONSUMER_INVALID
 CONSUMER_COUNT                      = 1
-REVIEWED_MATCH_COUNT                = 0
+CONSUMER_IDENTITY_MATCHED           = true
+TYPE_MATCHED                        = true
+QUEUE_NAME_MATCHED                  = true
+SCRIPT_NAME_PRESENT                 = false
+DETAIL_HYDRATED                     = true
 ACTIVE_DEPLOYMENT_ATTEMPTED         = false
 QUEUE_MESSAGE_SENT                  = false
 REMOTE_MUTATION_COUNT               = 0
@@ -35,97 +33,50 @@ PRODUCTION                          = BLOCKED
 Full contract:
 
 ```text
-docs/tasks/report-queue-consumer-hydration-v1.md
+docs/tasks/queue-consumer-optional-script-identity-v1.md
 ```
 
 ## Goal
 
-Correct the Shared Cloudflare Queue-consumer verifier after the first Queue-activation continuation v2 root stopped
-before any deployment or Queue send. The API returned exactly one Consumer, but the verifier required optional fields
-to be present in the List response and therefore produced zero reviewed matches.
+Correct the Shared Queue-consumer verifier after Cloudflare returned one exact Worker Consumer with matching ID, type,
+queue and settings but omitted optional `script_name` from both List and exact GET responses. The stopped preflight ran
+before Evidence-root creation, Worker deployment, Queue send or Remote mutation.
 
-## Verified boundary
+## Source authority
 
-The stopped root proves:
+Cloudflare's current Queue Consumer response schema marks `consumer_id`, `type`, `queue_name`, `script_name`, settings
+and DLQ fields as optional. Therefore absence of `script_name` cannot be treated as an identity mismatch. Explicit values
+must still agree with `social-mkt-sync-worker`; the exact deployed Worker version, flags and bindings remain mandatory
+before Queue send.
 
-```text
-consumerCount                1
-reviewedMatchCount           0
-activeDeploymentAttempted    false
-baselineRestoreVerified      false
-providerRequestCount         0
-scheduleEnabled              false
-notificationAdmissionEnabled false
-production                   BLOCKED
-```
+## Implementation
 
-No Worker deployment, Queue message, D1/Lark mutation or Provider request occurred. The existing three DLQs and empty
-Meta Ads 3D materialization target remain unchanged.
-
-## Root cause
-
-Cloudflare documents `type`, `queue_name`, `script_name` and `settings` on Queue Consumer responses as optional. The
-PR #515 verifier required all three identity fields in the List response itself. A valid one-consumer inventory can
-therefore fail before the exact Consumer detail is read.
-
-## Implementation result
-
-Implemented on Draft PR #517 without Remote execution:
-
-- retained the existing Queue inventory, Worker-version barrier, Report Finalizer and continuation operator;
-- List Queue Consumers now requires exactly one non-empty `consumer_id` rather than mandatory optional fields;
-- added exact GET Queue Consumer hydration for optional identity/settings fields;
-- retained Queue-list embedded Consumer data as an additional exact source;
-- rejects any explicit Consumer ID, type, queue name, script name, settings or DLQ disagreement;
-- diagnostics expose only booleans/counts and never credentials or unrestricted API bodies;
-- preserved the Report 120-second activation barrier and Notification 30-second restore barrier;
-- preserved the existing Meta Ads job identity and exact three-DLQ continuation contract;
-- added regression coverage for sparse List response, exact detail hydration, explicit drift and identity mismatch;
-- Repository Remote actions: zero.
-
-Exact implementation Head `4743e864da2f5a05af946929dc802f9bcc392dc0` passed:
-
-```text
-Branch Verification #2247 / run 31025681936
-Install locked dependencies                 PASS
-Syntax architecture and hygiene             PASS
-Focused Report source readiness tests       PASS
-Focused Meta history finalizer tests         PASS
-Focused Woo completed-state race tests       PASS
-Focused Chatwoot final UAT tests              PASS
-Focused staged TikTok tests                  PASS
-Unit and Workers runtime tests               PASS
-Report reliability regression               PASS
-Dependency audit                             PASS
-Wrangler dry run                             PASS
-Diff whitespace check                        PASS
-
-Meta End-to-End #452 / run 31025683031
-Diff hygiene                                 PASS
-Syntax architecture and repository hygiene  PASS
-Focused Meta workstream tests                PASS
-Unit and Workers runtime tests               PASS
-Report reliability regression               PASS
-Dependency audit                             PASS
-Wrangler dry run                             PASS
-```
+- retain the existing Queue inventory, exact Consumer GET, deployment verifier and 120-second activation barrier;
+- collect every explicit `script_name` across Cloudflare response sources;
+- reject any explicit value other than `social-mkt-sync-worker`;
+- when all API sources omit the optional field, preserve the reviewed Worker contract name and expose authority as
+  `reviewed_worker_contract`;
+- return `cloudflare_consumer_response` authority when at least one exact response includes the matching name;
+- preserve exact one-Consumer, ID, type, queue, batch, concurrency, retry, wait and DLQ checks;
+- preserve the exact Meta Ads job and three-DLQ continuation contract;
+- perform zero Remote action during implementation.
 
 ## Prohibited actions
 
-- rerun `outputs/meta-ads-3d-queue-activation-continuation-3d28aebd2284`;
-- send or redrive a Queue message during implementation;
-- deploy a Worker or mutate D1/Lark;
-- change the Meta Ads Report identity, requested-at or retained three-DLQ contract;
+- rerun any stopped evidence root;
+- send/redrive Queue messages during implementation;
+- deploy Worker or mutate D1/Lark;
+- change Report identity, requested-at or three-DLQ contract;
 - enable Notification Admission, AI, Schedule or Production;
-- start Dashboard display-name backfill.
+- start Dashboard legacy display-name backfill.
 
 ## Acceptance criteria
 
-1. Exactly one listed Consumer with a non-empty ID is required.
-2. Optional List fields may be hydrated from exact Consumer detail or Queue-list embedded data.
-3. Explicit type, queue, script, ID, settings or DLQ drift remains fail-closed.
-4. The existing 120-second Report Queue activation barrier remains unchanged.
-5. Existing three-DLQ Meta Ads continuation tests continue to pass.
+1. Missing `script_name` alone is accepted only when all other exact Consumer topology checks pass.
+2. Any explicit conflicting script name remains fail-closed.
+3. Explicit script names from multiple response sources must all match.
+4. Exact Worker deployment/version/flags/bindings remain mandatory before Queue send.
+5. Existing 120-second Report activation and 30-second Notification restore barriers remain unchanged.
 6. Full Unit/Workers, Report reliability, Meta End-to-End, audit and Wrangler dry-run gates pass.
 7. Repository implementation performs zero Remote action.
 
@@ -147,8 +98,8 @@ git diff --check
 ## Post-merge sequence
 
 1. synchronize clean exact merged `main`;
-2. create a completely new Finalizer/continuation evidence root;
-3. run the exact Meta Ads 3D continuation once;
-4. never repeat that new root after its first Queue send;
-5. run fresh SELECT-only readiness;
-6. continue only remaining windows through a new exact handoff.
+2. run GET-only Queue Consumer preflight under a new non-persistent preflight path;
+3. create a new Finalizer/continuation evidence root only after preflight passes;
+4. run exact Meta Ads 3D continuation once;
+5. never repeat that root after its first Queue send;
+6. run fresh SELECT-only readiness.
