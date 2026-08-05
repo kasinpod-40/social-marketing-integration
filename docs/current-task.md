@@ -1,20 +1,17 @@
-# Current Task — Multichannel Report Active Stability & Facebook DLQ Recovery v1
+# Current Task — Multichannel Report Verified-Reuse No-Resend Hotfix v1
 
 ## Status
 
 ```text
-TASK_STATUS                         = IMPLEMENTATION_COMPLETE_CI_PASS
-CURRENT_PROGRAM                     = MULTICHANNEL_REPORT_ACTIVE_STABILITY_DLQ_RECOVERY_V1
-BRANCH                              = hotfix/multichannel-report-active-stability-dlq-recovery-v1
-EXACT_BASE                          = 158f881a61b3a41bb219b8990c59099777fb68f4
-VERIFIED_CODE_HEAD                  = d0fb181e9a83942ff1d928c2d7215c3ec7dd55c6
-PR                                  = 508
-BRANCH_VERIFICATION_RUN             = 30994252381
-BRANCH_VERIFICATION_NUMBER          = 2225
-LIVE_RUN_ALL_RESULT                 = STOPPED_SAFE_ON_FACEBOOK_1D
-FACEBOOK_1D_MATERIALIZATION         = NOT_CREATED
-FACEBOOK_REPORT_SYNC_RUN            = NOT_CREATED
-EXACT_OPEN_REPORT_DLQ               = 1
+TASK_STATUS                         = IMPLEMENTATION_IN_PROGRESS
+CURRENT_PROGRAM                     = MULTICHANNEL_REPORT_VERIFIED_REUSE_NO_RESEND_V1
+BRANCH                              = hotfix/report-reuse-verification-no-resend-v1
+EXACT_BASE                          = bae7eec0d3845eb1094140f6e16bd0b6677b4223
+PRIOR_FACEBOOK_DLQ_RECOVERY         = PASS
+SECOND_RUN_ALL_RESULT               = STOPPED_SAFE_ON_FACEBOOK_1D_REUSE
+FACEBOOK_1D_MATERIALIZATION_COUNT   = 1
+FACEBOOK_1D_SYNC_COMPLETION         = PASS
+NEW_REPORT_DLQ_COUNT                = 0
 WORKER_BASELINE_RESTORED            = true
 NOTIFICATION_RUNTIME_STATE          = active
 NOTIFICATION_ADMISSION_ENABLED      = false
@@ -25,129 +22,105 @@ PRODUCTION                          = BLOCKED
 Full contract:
 
 ```text
-docs/tasks/multichannel-report-active-stability-dlq-recovery-v1.md
+docs/tasks/multichannel-report-verified-reuse-no-resend-v1.md
 ```
 
 ## Goal
 
-Correct the shared reviewed Report closeout path so every newly deployed Active or restored Worker version is
-stable across three exact version/traffic/flag/binding observations before any Queue send or successful restore
-claim. Recover only the retained Facebook Organic 1D configuration DLQ created by the interrupted Run All, prove
-first materialization plus same-job replay and D1/Lark parity, restore the preserved Notification Runtime baseline,
-then close only that exact DLQ incident.
+Correct the shared reviewed multiwindow executor so a readiness action of
+`reuse_or_idempotent_verify` reuses the already verified D1/Lark materialization without submitting a newly
+constructed Queue job. Fresh and repair windows continue to use the existing first-send plus exact same-job replay
+path. Resume remains blocked until the hotfix is merged, exact-main Finalizer/readiness pass and the current
+Facebook 1D D1/Lark state is reverified read-only.
 
-## Confirmed incident evidence
+## Confirmed second incident
 
-The first Run All channel stopped on Facebook Organic 1D after the original Queue send. Read-only Remote evidence
-proves:
+After exact Facebook 1D configuration-DLQ recovery completed, all-channel readiness classified Facebook 1D as:
 
-- retained attempt report ID:
-  `integration_workspace:facebook:rolling:1d:chemistry_k:rolling_days:2026-07-31:2026-07-31:facebook-organic-v1`;
-- requested-at `1785918760577`;
-- exact job SHA-256 `cee6c82f7732ab99d5f81d8e70c6108a33bed95b1b685d007c50d3f6122bd298`;
-- exact DLQ `terminal:4c366c2b02ad5162c6e4035899d67abc`;
-- error `DASHBOARD_REPORT_CONFIGURATION_INVALID` with message
-  `Dashboard report requires a reviewed D1-primary job contract`;
-- zero Facebook Report Sync Runs and zero target materializations;
-- zero active Work/Lock and exactly one open Report DLQ;
-- Facebook Account Daily source facts remain valid with two account facts;
-- Worker returned to the preserved active Notification Runtime baseline;
-- Provider, Schedule, Notification Admission and Production actions remain zero/disabled.
+```text
+reuse_or_idempotent_verify
+```
 
-The retained replay payload hash equals the reviewed local job hash. The Worker rejected the job before
-`runReliableSync`, so this is not a source-data, adapter, Stable-key or Report-identity defect. The shared operator
-verified the newly deployed Active version only once before sending. The existing exact TikTok configuration-DLQ
-recovery already requires three stable Active deployment samples. This work extends that existing reliability
-barrier to the shared reviewed remote verifier.
+The reviewed executor then:
+
+1. loaded the recovered D1/Lark row as `before`;
+2. generated a new candidate job using a new `requestedAt = Date.now()`;
+3. unconditionally sent that new job through the code path named `send-replay`;
+4. observed a successful Report Sync completion with one Stable materialization, zero active lock and zero new DLQ;
+5. stopped at `REPORT_RUNTIME_CLOSEOUT_REPLAY_DRIFT` because the newly submitted job was not the same input as the
+   retained recovered materialization;
+6. restored the preserved Notification Runtime Worker baseline successfully.
+
+The ordering of assertions proves the second Queue delivery reached a valid completed D1 state before the drift
+assertion. Facebook 3D/7D/30D and every later channel were not started. Lark post-delivery parity remains unclaimed
+until the next SELECT-only readiness pass.
+
+## Root cause
+
+`executeWindow()` treated all operations as requiring a Queue replay. For `verify`, its `first` value is an existing
+materialization created by an earlier job, while `selected.job` is regenerated with a new requested-at value. The
+operator nevertheless labelled the delivery `sameInput: true` and compared the new result to the older checksum.
+That is a shared execution-policy defect, not a Facebook source, Report ID, D1 row-count or deployment-stability
+defect.
 
 ## In scope
 
-- extend the existing reviewed Worker verifier with three exact deployment samples at `0 / 10 / 20` seconds;
-- require the same stability barrier for Active Report windows and preserved baseline restore;
-- exact immutable Facebook 1D incident contract;
-- exact same-job first-materialization retry once;
-- exact same-job replay once;
-- D1 materialization, successful Sync Run, Lark stable rows and metric integrity verification;
-- preserved Notification Runtime baseline restore in `finally`;
-- exact DLQ and operation-metadata closure only after complete success;
-- private sanitized evidence and regressions.
+- change only the existing shared reviewed multiwindow executor;
+- make `verify` a read-only reuse result with zero Queue messages;
+- persist a private local `reuse-verified` attempt record;
+- retain D1/Lark integrity validation before the reuse result;
+- keep first-send plus exact same-job replay unchanged for `fresh` and `refresh`;
+- preserve successful-run floors for later mutating windows;
+- expose truthful summary fields: `reusedExisting`, `replayExecuted`, `executionMode` and `queueMessagesSent`;
+- focused regression, full Repository gates and updated handoff documentation.
 
 ## Out of scope
 
-- blind Run All rerun;
-- replacement Report ID, requested-at or Queue payload;
-- generic DLQ redrive;
-- deleting forensic DLQ evidence;
-- Provider request;
-- Source/Coverage/Business-fact mutation;
-- Lark manual editing;
-- Report Schedule, Notification Admission or Production activation;
-- new Report, Queue, Reliability, D1 or Lark framework.
+- another Queue message for Facebook 1D;
+- generic rerun or DLQ redrive;
+- replacing the Facebook Report ID;
+- restoring an older payload checksum by manual D1/Lark writes;
+- Provider request or source ingestion;
+- new Report/Queue/Reliability/D1/Lark framework;
+- Schedule, Notification Admission or Production activation.
 
 ## Acceptance criteria
 
-1. Exact deployed Worker verification requires three identical samples of version, 100% traffic, true flags,
-   D1/Queue bindings and required Lark table mappings before returning success.
-2. Bootstrap baseline readiness remains one read and does not delay SELECT-only audits.
-3. The recovery terminal requires clean current `main == origin/main`, current-head Finalizer evidence and ancestry
-   of the original incident Head.
-4. Retained attempt, regenerated candidate, replay payload, Report identity, requested-at, source watermark,
-   DLQ identity, error and operation metadata must all match exactly.
-5. Recovery starts only while target D1/Lark materialization state is completely empty and the exact one DLQ is
-   the only Report blocker.
-6. Before first retry, create a fresh private Remote D1 backup and verify three stable Active Worker samples.
-7. Send the exact first-materialization job once, then verify one D1 materialization, one successful Sync Run and
-   exact D1/Lark integrity.
-8. Send the exact same job once for replay and verify one Stable Report identity, equal checksum and unchanged
-   D1/Lark rows and integrity.
-9. Restore and verify the preserved Notification Runtime baseline in `finally` with three stable samples.
-10. Close only the exact retained DLQ and metadata after recovery and restore pass; interrupted attempts remain
-    non-repeatable and fail closed.
-11. Provider calls, Schedule, Notification Admission and Production remain disabled.
+1. `verify` returns only after one D1 materialization, one Lark Snapshot set, no duplicate metric keys and exact
+   D1/Lark metric integrity have already passed.
+2. `verify` writes local sanitized evidence and performs zero Queue send.
+3. `verify` does not increment the current-run successful Sync floor.
+4. `verify` reports `executionMode=reuse_verified_materialization`, `reusedExisting=true`,
+   `replayExecuted=false`, `sameInput=null`, `queueMessagesSent=0` and `zeroDrift=true`.
+5. `fresh` and `refresh` still submit one first job plus one byte-identical replay and retain all existing completion,
+   Stable-ID, checksum, Lark and integrity assertions.
+6. Active deployment stability and preserved Notification Runtime restore remain unchanged.
+7. Post-merge execution starts with SELECT-only readiness; any D1/Lark mismatch, Work/Lock/DLQ or source drift stops
+   before another Queue message.
+8. Provider, Schedule, Notification Admission and Production remain disabled.
 
 ## Implementation result
 
-Implemented on PR #508 without Remote execution:
+In progress on the branch above:
 
-- shared exact deployment verification now samples the same newly deployed Worker three times before Queue work;
-- bootstrap/current-baseline readiness remains a single read;
-- the same stable barrier protects preserved Notification Runtime baseline restore;
-- exact Facebook 1D DLQ, retained attempt, job payload, Report identity and operation-metadata validators were added;
-- exact recovery creates a fresh backup, retries the original job once, performs one same-job replay, verifies
-  D1/Lark integrity, restores the preserved baseline and only then closes the retained forensic DLQ;
-- every mutation is attempt-recorded and partial repetition is blocked;
-- Provider, Schedule, Notification Admission and Production paths remain disabled.
+- added an early verified-reuse return before the shared Queue send path;
+- recorded a private `*-reuse-verified.attempt.json` evidence file;
+- made reuse summary semantics explicit and truthful;
+- retained the existing materialize-and-replay path for fresh/repair windows;
+- strengthened the existing executor wiring regression so the verify branch must return before any
+  `sendReviewedQueueMessage` call.
 
-Branch Verification #2225 / run `30994252381` passed on code Head
-`d0fb181e9a83942ff1d928c2d7215c3ec7dd55c6`:
-
-```text
-Install locked dependencies                 PASS
-Syntax architecture and hygiene             PASS
-Focused Report source readiness tests       PASS
-Focused Meta history finalizer tests        PASS
-Focused Woo race recovery tests             PASS
-Focused Chatwoot Final UAT tests             PASS
-Focused staged TikTok tests                 PASS
-Unit and Workers runtime tests              PASS
-Report reliability regression               PASS
-Dependency audit                            PASS
-Wrangler dry run                            PASS
-Diff whitespace check                       PASS
-```
-
-Repository implementation Remote counts remain zero.
+No Remote action was performed by this Repository implementation.
 
 ## Required verification
 
 ```bash
 npm ci
 npm run check
+node --test tests/scripts/report-runtime-closeout-reviewed-multiwindow-wiring.test.js
 node --test \
   tests/scripts/report-runtime-closeout-reviewed-remote.test.js \
-  tests/scripts/report-runtime-reviewed-config-dlq-recovery.test.js
-node --test \
-  tests/scripts/report-runtime-closeout-reviewed-multiwindow-wiring.test.js \
+  tests/scripts/report-runtime-reviewed-config-dlq-recovery.test.js \
   tests/scripts/report-all-ready-channels.test.js \
   tests/scripts/retained-multichannel-report-handoff.test.js
 npm test
@@ -159,13 +132,13 @@ git diff --check
 
 ## Post-merge boundary
 
-This branch performs no Remote action. After exact-head CI, review and merge:
-
-1. synchronize clean `main`;
-2. rerun the existing Report Runtime Finalizer for the new exact Head;
-3. run the exact Facebook configuration-DLQ recovery terminal once;
-4. inspect its final JSON and do not repeat a partial attempt;
-5. after successful recovery, rerun SELECT-only readiness for all channels and rebuild the retained handoff;
-6. only then resume the existing Run All path, which will inherit the stable deployment barrier.
+1. synchronize clean exact `main`;
+2. rerun Report Runtime Finalizer for the new exact Head;
+3. rerun SELECT-only readiness for Facebook first;
+4. require one materialization, D1/Lark integrity, zero Work/Lock/DLQ and action
+   `reuse_or_idempotent_verify` for Facebook 1D;
+5. rerun SELECT-only readiness for the remaining channels and rebuild the exact-head retained handoff;
+6. resume Run All once under the corrected shared executor;
+7. never repeat the failed `bae7eec...` Run All command or its generated handoff.
 
 Schedules, Notification Admission and Production remain blocked after Report materialization.
