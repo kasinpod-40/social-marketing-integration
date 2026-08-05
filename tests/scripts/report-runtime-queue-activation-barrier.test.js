@@ -141,5 +141,5 @@ test('Report execution uses three samples across a 120-second Queue activation b
     /\/consumers\/\$\{encodeURIComponent\(consumerId\)\}/u,
   );
   assert.match(source, /const listedConsumerId = readSingleConsumerId\(consumers, 'list'\)/u);
-  assert.match(source, /scriptNameAuthority: explicitScriptNames\.length/u);
+  assert.match(source, /const scriptNameAuthority = explicitScriptNames\.length > 0/u);
 });
