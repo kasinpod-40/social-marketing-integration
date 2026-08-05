@@ -1,3 +1,7 @@
+import {
+  ORGANIC_READINESS_MODE,
+  getReportPlatformContract,
+} from '../../application/src/reports/report-platform-adapter-registry.js';
 import { permanentError, transientError } from '../../shared/src/errors/runtime-error.js';
 
 const DEFAULT_MAX_CONTENT = 10_000;
@@ -8,7 +12,19 @@ export class D1OrganicReportSource {
   constructor(input = {}) {
     this.db = requireD1(input.db);
     this.platform = requireText(input.platform, 'platform');
-    this.datasetKey = requireText(input.datasetKey ?? 'organic_content_cumulative', 'datasetKey');
+    const contract = getReportPlatformContract(this.platform);
+    if (contract.capability !== 'organic') {
+      throw invalidQuery(`${this.platform} is not an Organic Report platform`);
+    }
+    this.datasetKey = requireText(
+      input.datasetKey ?? contract.coverageDatasetKeys[0],
+      'datasetKey',
+    );
+    this.accountDailyDatasetKey = optionalText(
+      input.accountDailyDatasetKey ?? contract.accountDailyDatasetKey,
+    );
+    this.allowAccountFallback = input.allowAccountFallback === true
+      || contract.organicReadinessMode === ORGANIC_READINESS_MODE.ACCOUNT_OR_CONTENT;
   }
 
   async load(input = {}) {
@@ -28,7 +44,23 @@ export class D1OrganicReportSource {
     const comparePromise = compareEnd
       ? this.#all(latestObservationSql('<='), [customerKey, this.platform, accountKey, compareEnd, limit + 1])
       : Promise.resolve([]);
-    const [states, currentRows, compareRows, baselineRows, coverage] = await Promise.all([
+    const accountCoveragePromise = this.accountDailyDatasetKey
+      ? this.#first(`
+        SELECT * FROM data_coverage_runs
+        WHERE customer_key = ? AND platform = ? AND account_key = ?
+          AND dataset_key = ? AND completed_at IS NOT NULL
+        ORDER BY completed_at DESC, updated_at DESC, coverage_run_id ASC LIMIT 1
+      `, [customerKey, this.platform, accountKey, this.accountDailyDatasetKey])
+      : Promise.resolve(null);
+    const [
+      states,
+      currentRows,
+      compareRows,
+      baselineRows,
+      contentCoverage,
+      accountDailyFacts,
+      accountCoverage,
+    ] = await Promise.all([
       this.#all(`
         SELECT s.* FROM organic_content_state s
         WHERE s.customer_key = ? AND s.platform = ? AND s.account_key = ?
@@ -45,23 +77,35 @@ export class D1OrganicReportSource {
         SELECT * FROM data_coverage_runs
         WHERE customer_key = ? AND platform = ? AND account_key = ?
           AND dataset_key = ? AND completed_at IS NOT NULL
-        ORDER BY completed_at DESC, coverage_run_id ASC LIMIT 1
+        ORDER BY completed_at DESC, updated_at DESC, coverage_run_id ASC LIMIT 1
       `, [customerKey, this.platform, accountKey, this.datasetKey]),
+      this.#all(`
+        SELECT * FROM organic_account_daily_facts
+        WHERE customer_key = ? AND platform = ? AND account_key = ?
+          AND metric_date >= ? AND metric_date <= ?
+        ORDER BY metric_date ASC, account_daily_key ASC LIMIT ?
+      `, [customerKey, this.platform, accountKey, earliestStart, periodEnd, limit + 1]),
+      accountCoveragePromise,
     ]);
     for (const [count, label] of [
       [states.length, 'content state rows'],
       [currentRows.length, 'current observation rows'],
       [compareRows.length, 'comparison observation rows'],
       [baselineRows.length, 'baseline observation rows'],
+      [accountDailyFacts.length, 'account daily fact rows'],
     ]) assertWithinLimit(count, limit, label, this.platform);
 
-    const coverageEntities = coverage
+    const sourceScope = currentRows.length > 0
+      ? 'content'
+      : (this.allowAccountFallback && accountDailyFacts.length > 0 ? 'account' : 'content');
+    const selectedCoverage = sourceScope === 'account' ? accountCoverage : contentCoverage;
+    const coverageEntities = sourceScope === 'content' && contentCoverage
       ? await this.#all(`
         SELECT external_entity_id, observation_status, source_revision, observed_at
         FROM data_coverage_entities
         WHERE coverage_run_id = ? AND entity_type = 'content'
         ORDER BY external_entity_id ASC LIMIT ?
-      `, [coverage.coverage_run_id, limit + 1])
+      `, [contentCoverage.coverage_run_id, limit + 1])
       : [];
     assertWithinLimit(coverageEntities.length, limit, 'coverage entity rows', this.platform);
 
@@ -91,23 +135,32 @@ export class D1OrganicReportSource {
       contents: Object.freeze(contents),
       observations: Object.freeze(observations),
       dailySnapshots: Object.freeze(observations),
+      accountDailyFacts: Object.freeze(accountDailyFacts),
       readSummary: Object.freeze({
-        strategy: 'd1_organic_observation_range',
+        strategy: sourceScope === 'account'
+          ? 'd1_organic_account_daily_range'
+          : 'd1_organic_observation_range',
         bounded: true,
+        sourceScope,
         contentRecords: contents.length,
         observationRecords: observations.length,
-        coverageStatus: coverage?.status ?? 'not_observed',
-        coverageRunId: coverage?.coverage_run_id ?? null,
-        expectedEntities: nullableInteger(coverage?.expected_entities),
-        observedEntities: nullableInteger(coverage?.observed_entities),
-        failedRows: nullableInteger(coverage?.failed_rows) ?? 0,
+        accountFactRecords: accountDailyFacts.length,
+        coverageDatasetKey: selectedCoverage?.dataset_key ?? null,
+        coverageStatus: normalizeCoverageStatus(selectedCoverage?.status),
+        contentCoverageStatus: normalizeCoverageStatus(contentCoverage?.status),
+        accountCoverageStatus: normalizeCoverageStatus(accountCoverage?.status),
+        coverageRunId: selectedCoverage?.coverage_run_id ?? null,
+        expectedEntities: nullableInteger(selectedCoverage?.expected_entities),
+        observedEntities: nullableInteger(selectedCoverage?.observed_entities),
+        failedRows: nullableInteger(selectedCoverage?.failed_rows) ?? 0,
         coverageEntities: coverageEntities.length,
         uncoveredContentCount: uncoveredContentIds.length,
         uncoveredContentIds: Object.freeze(uncoveredContentIds.slice(0, 100)),
-        sourceWatermark: coverage?.source_watermark ?? null,
-        coverageCompletedAt: nullableInteger(coverage?.completed_at),
+        sourceWatermark: selectedCoverage?.source_watermark ?? latestRevision(accountDailyFacts),
+        coverageCompletedAt: nullableInteger(selectedCoverage?.completed_at),
         rowsFetched: states.length + currentRows.length + compareRows.length
-          + baselineRows.length + coverageEntities.length + (coverage ? 1 : 0),
+          + baselineRows.length + accountDailyFacts.length + coverageEntities.length
+          + (contentCoverage ? 1 : 0) + (accountCoverage ? 1 : 0),
       }),
     });
   }
@@ -208,6 +261,9 @@ function requireText(value, fieldName) {
   if (typeof value !== 'string' || value.trim() === '') throw invalidQuery(`${fieldName} is required`);
   return value.trim();
 }
+function optionalText(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
 function nullableInteger(value) {
   if (value === null || value === undefined || value === '') return null;
   const number = Number(value);
@@ -224,6 +280,14 @@ function boundedPositiveInteger(value, fieldName, maximum) {
     throw invalidQuery(`${fieldName} must be from 1 to ${maximum}`);
   }
   return number;
+}
+function normalizeCoverageStatus(value) {
+  const status = optionalText(value)?.toLowerCase() ?? 'not_observed';
+  return status === 'completed' ? 'complete' : status;
+}
+function latestRevision(rows) {
+  const values = rows.map((row) => optionalText(row.source_revision)).filter(Boolean).sort();
+  return values.at(-1) ?? null;
 }
 function requireD1(value) {
   if (typeof value?.prepare !== 'function') throw new TypeError('D1OrganicReportSource requires a D1 binding');
