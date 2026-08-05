@@ -2,7 +2,13 @@ import { permanentError, transientError } from '../../shared/src/errors/runtime-
 
 const DEFAULT_MAX_FACT_ROWS = 10_000;
 const MAX_FACT_ROWS = 50_000;
+const REQUIRED_COVERAGE_DATASETS = Object.freeze([
+  'chatwoot.conversation_daily',
+  'chatwoot.account_daily',
+]);
+const PRIMARY_COVERAGE_DATASET = REQUIRED_COVERAGE_DATASETS[0];
 const ACCEPTED_DATA_STATUS = new Set(['complete', 'completed', 'no_data_confirmed']);
+const ACCEPTED_COVERAGE_STATUS = new Set(['complete', 'no_data_confirmed', 'revisable']);
 
 /** Bounded PII-minimized D1 source for the generic Chatwoot Customer Service Report. */
 export class D1ChatwootReportSource {
@@ -22,7 +28,7 @@ export class D1ChatwootReportSource {
       MAX_FACT_ROWS,
     );
 
-    const [facts, snapshot, coverage] = await Promise.all([
+    const [facts, snapshot, coverageRows] = await Promise.all([
       this.#all(`
         SELECT
           metric_date, reporting_timezone, external_conversation_id,
@@ -51,15 +57,27 @@ export class D1ChatwootReportSource {
         ORDER BY metric_date DESC, updated_at DESC, account_daily_key ASC
         LIMIT 1
       `, [customerKey, accountKey, periodStart, periodEnd]),
-      this.#first(`
-        SELECT *
-        FROM data_coverage_runs
-        WHERE customer_key = ? AND platform = 'chatwoot' AND account_key = ?
-          AND completed_at IS NOT NULL
-          AND period_start <= ? AND period_end >= ?
-        ORDER BY completed_at DESC, updated_at DESC, coverage_run_id ASC
-        LIMIT 1
-      `, [customerKey, accountKey, periodStart, periodEnd]),
+      this.#all(`
+        SELECT * FROM (
+          SELECT *, ROW_NUMBER() OVER (
+            PARTITION BY dataset_key
+            ORDER BY completed_at DESC, updated_at DESC, coverage_run_id ASC
+          ) AS dataset_rank
+          FROM data_coverage_runs
+          WHERE customer_key = ? AND platform = 'chatwoot' AND account_key = ?
+            AND dataset_key IN (?, ?)
+            AND completed_at IS NOT NULL
+            AND period_start <= ? AND period_end >= ?
+        ) ranked
+        WHERE dataset_rank = 1
+        ORDER BY dataset_key ASC
+      `, [
+        customerKey,
+        accountKey,
+        ...REQUIRED_COVERAGE_DATASETS,
+        periodStart,
+        periodEnd,
+      ]),
     ]);
 
     if (facts.length > limit) throw permanentError('Chatwoot D1 Report facts exceeded limit', {
@@ -67,6 +85,12 @@ export class D1ChatwootReportSource {
       details: { observed: facts.length, limit },
     });
 
+    const coverageByDataset = new Map(coverageRows.map((row) => [row.dataset_key, row]));
+    const primaryCoverage = coverageByDataset.get(PRIMARY_COVERAGE_DATASET) ?? null;
+    const requiredCoveragePresent = REQUIRED_COVERAGE_DATASETS.every((key) => coverageByDataset.has(key));
+    const coverageWatermarksPresent = REQUIRED_COVERAGE_DATASETS.every((key) => (
+      optionalText(coverageByDataset.get(key)?.source_watermark) !== null
+    ));
     const reportingTimezones = new Set([
       ...facts.map((row) => optionalText(row.reporting_timezone)),
       optionalText(snapshot?.reporting_timezone),
@@ -79,10 +103,15 @@ export class D1ChatwootReportSource {
     const rowsComplete = facts.every((row) => ACCEPTED_DATA_STATUS.has(String(row.data_status ?? '').trim()));
     const snapshotComplete = !snapshot
       || ACCEPTED_DATA_STATUS.has(String(snapshot.data_status ?? '').trim());
-    const coverageStatus = normalizeCoverageStatus(coverage?.status);
-    const coverageComplete = ['complete', 'no_data_confirmed'].includes(coverageStatus)
-      && Number(coverage?.failed_rows ?? 0) === 0;
-    const watermark = optionalText(coverage?.source_watermark)
+    const coverageStatus = normalizeCoverageStatus(primaryCoverage?.status);
+    const coverageComplete = requiredCoveragePresent
+      && coverageWatermarksPresent
+      && REQUIRED_COVERAGE_DATASETS.every((key) => {
+        const coverage = coverageByDataset.get(key);
+        return ACCEPTED_COVERAGE_STATUS.has(normalizeCoverageStatus(coverage?.status))
+          && Number(coverage?.failed_rows ?? 0) === 0;
+      });
+    const watermark = optionalText(primaryCoverage?.source_watermark)
       ?? optionalText(snapshot?.source_revision)
       ?? optionalText(facts.at(-1)?.source_revision);
 
@@ -92,11 +121,19 @@ export class D1ChatwootReportSource {
       coverage: Object.freeze({
         status: coverageStatus,
         complete: coverageComplete && rowsComplete && snapshotComplete,
-        failedRows: nonNegativeIntegerOrZero(coverage?.failed_rows),
-        expectedEntities: nullableInteger(coverage?.expected_entities),
-        observedEntities: nullableInteger(coverage?.observed_entities),
-        coverageRunId: optionalText(coverage?.coverage_run_id),
+        failedRows: REQUIRED_COVERAGE_DATASETS.reduce(
+          (total, key) => total + nonNegativeIntegerOrZero(coverageByDataset.get(key)?.failed_rows),
+          0,
+        ),
+        expectedEntities: nullableInteger(primaryCoverage?.expected_entities),
+        observedEntities: nullableInteger(primaryCoverage?.observed_entities),
+        coverageRunId: optionalText(primaryCoverage?.coverage_run_id),
         sourceWatermark: watermark,
+        requiredDatasetCount: REQUIRED_COVERAGE_DATASETS.length,
+        selectedDatasetCount: coverageRows.length,
+        watermarkDatasetCount: REQUIRED_COVERAGE_DATASETS.filter((key) => (
+          optionalText(coverageByDataset.get(key)?.source_watermark) !== null
+        )).length,
       }),
       readSummary: Object.freeze({
         strategy: 'd1_chatwoot_customer_service_period',
@@ -105,6 +142,8 @@ export class D1ChatwootReportSource {
         snapshotRows: snapshot ? 1 : 0,
         coverageStatus,
         coverageComplete: coverageComplete && rowsComplete && snapshotComplete,
+        coverageDatasetKeys: REQUIRED_COVERAGE_DATASETS,
+        selectedCoverageDatasetCount: coverageRows.length,
         sourceWatermark: watermark,
         reportingTimezone: [...reportingTimezones][0] ?? null,
       }),
