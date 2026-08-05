@@ -107,6 +107,7 @@ export async function resolveReviewedQueue({ accountId, token, expectedName }) {
     queueName: selected.queueName,
     consumerIdFingerprint: sha256(consumer.consumerId),
     consumerScriptName: consumer.scriptName,
+    consumerScriptNameAuthority: consumer.scriptNameAuthority,
     consumerSettingsFingerprint: sha256(stableJson(consumer.settings)),
   });
 }
@@ -180,10 +181,15 @@ export function assertReviewedQueueConsumer({
   const explicitQueueNames = sources.map((item) => optionalText(
     item.queue_name ?? item.queueName,
   )).filter(Boolean);
-  const scriptName = firstText(sources, (item) => item.script_name ?? item.scriptName);
+  const explicitScriptNames = sources.map((item) => optionalText(
+    item.script_name ?? item.scriptName,
+  )).filter(Boolean);
   const typeMatched = explicitTypes.every((value) => value.toLowerCase() === 'worker');
   const queueNameMatched = explicitQueueNames.every((value) => value === expectedQueueName);
-  const scriptNameMatched = scriptName === EXPECTED_WORKER_NAME;
+  const scriptNameMatched = explicitScriptNames.every((value) => value === EXPECTED_WORKER_NAME);
+  const scriptNameAuthority = explicitScriptNames.length > 0
+    ? 'cloudflare_consumer_response'
+    : 'reviewed_worker_contract';
   if (!typeMatched || !queueNameMatched || !scriptNameMatched) throw closeoutFailure(
     'Report Queue requires exactly one reviewed Worker consumer',
     'REPORT_RUNTIME_CLOSEOUT_QUEUE_CONSUMER_INVALID',
@@ -195,8 +201,10 @@ export function assertReviewedQueueConsumer({
       typeMatched,
       explicitQueueNameCount: explicitQueueNames.length,
       queueNameMatched,
-      scriptNamePresent: Boolean(scriptName),
+      explicitScriptNameCount: explicitScriptNames.length,
+      scriptNamePresent: explicitScriptNames.length > 0,
       scriptNameMatched,
+      scriptNameAuthority,
       detailHydrated: Boolean(detail),
     },
   );
@@ -232,7 +240,8 @@ export function assertReviewedQueueConsumer({
   );
   return Object.freeze({
     consumerId,
-    scriptName,
+    scriptName: EXPECTED_WORKER_NAME,
+    scriptNameAuthority,
     settings: normalized,
   });
 }
