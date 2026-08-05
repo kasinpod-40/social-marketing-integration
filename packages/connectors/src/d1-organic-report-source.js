@@ -44,6 +44,14 @@ export class D1OrganicReportSource {
     const comparePromise = compareEnd
       ? this.#all(latestObservationSql('<='), [customerKey, this.platform, accountKey, compareEnd, limit + 1])
       : Promise.resolve([]);
+    const accountDailyFactsPromise = this.accountDailyDatasetKey
+      ? this.#all(`
+        SELECT * FROM organic_account_daily_facts
+        WHERE customer_key = ? AND platform = ? AND account_key = ?
+          AND metric_date >= ? AND metric_date <= ?
+        ORDER BY metric_date ASC, account_daily_key ASC LIMIT ?
+      `, [customerKey, this.platform, accountKey, earliestStart, periodEnd, limit + 1])
+      : Promise.resolve([]);
     const accountCoveragePromise = this.accountDailyDatasetKey
       ? this.#first(`
         SELECT * FROM data_coverage_runs
@@ -79,12 +87,7 @@ export class D1OrganicReportSource {
           AND dataset_key = ? AND completed_at IS NOT NULL
         ORDER BY completed_at DESC, updated_at DESC, coverage_run_id ASC LIMIT 1
       `, [customerKey, this.platform, accountKey, this.datasetKey]),
-      this.#all(`
-        SELECT * FROM organic_account_daily_facts
-        WHERE customer_key = ? AND platform = ? AND account_key = ?
-          AND metric_date >= ? AND metric_date <= ?
-        ORDER BY metric_date ASC, account_daily_key ASC LIMIT ?
-      `, [customerKey, this.platform, accountKey, earliestStart, periodEnd, limit + 1]),
+      accountDailyFactsPromise,
       accountCoveragePromise,
     ]);
     for (const [count, label] of [
