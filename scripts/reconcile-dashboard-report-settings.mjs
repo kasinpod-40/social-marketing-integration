@@ -16,8 +16,13 @@ import {
   DASHBOARD_REPORT_SETTINGS_REQUIRED_TABLE_ENV_NAMES,
   resolveDashboardReportSettingsTableEnvironment,
 } from './lib/dashboard-report-settings-table-environment.js';
+import {
+  resolveReportSettingsNotificationRuntimeAuthority,
+} from './lib/report-settings-notification-runtime-authority.js';
 
 const CONFIRMATION = 'RECONCILE_INTEGRATION_WORKSPACE_REPORT_SETTINGS';
+const PRIVATE_AUTHORITY_CONFIRMATION =
+  'EMIT_REPORT_FINALIZER_NOTIFICATION_RUNTIME_AUTHORITY';
 const ALLOWED_SCHEMA_ACTIONS = new Set([
   'update_field:mktReportSettings:period_type',
   'create_field:mktReportSettings:period_kind',
@@ -81,6 +86,12 @@ async function main() {
     throw new Error('Dashboard report settings reconciliation requires development/integration_workspace');
   }
 
+  const notificationRuntimeAuthority =
+    await resolveReportSettingsNotificationRuntimeAuthority({
+      client: runtime.client,
+      repository: runtime.repository,
+      reportSettingsTableId: runtime.tables.mktReportSettings,
+    });
   const schemaPreview = await planLarkReportSchema({
     client: runtime.client,
     env: runtime.env,
@@ -93,6 +104,7 @@ async function main() {
       syncEngine: runtime.syncEngine,
       tableId: runtime.tables.mktReportSettings,
       profileKey: runtime.runtimeConfig.profileKey,
+      notificationRuntimeAuthority,
     })
     : null;
 
@@ -107,6 +119,10 @@ async function main() {
       canonicalCreates: recordPreview?.summary.canonicalCreates ?? null,
       canonicalUpdates: recordPreview?.summary.canonicalUpdates ?? null,
       canonicalSkipped: recordPreview?.summary.canonicalSkipped ?? null,
+      notificationRuntimeState: notificationRuntimeAuthority.state,
+      preservedNotificationRuntimeSettingCount:
+        notificationRuntimeAuthority.settingCount,
+      ...privateAuthorityOutput(notificationRuntimeAuthority),
       legacySettingsFound: preAudit.legacySettingsFound,
       activeLegacySettings: preAudit.activeLegacySettings,
       historicalReferenceCount: preAudit.historicalReferenceCount,
@@ -126,6 +142,7 @@ async function main() {
     syncEngine: runtime.syncEngine,
     tableId: runtime.tables.mktReportSettings,
     profileKey: runtime.runtimeConfig.profileKey,
+    notificationRuntimeAuthority,
   });
   const records = await applyDashboardReportSettingsReconciliation({
     repository: runtime.repository,
@@ -145,6 +162,10 @@ async function main() {
     canonicalUpdated: records.canonical.updated,
     canonicalSkipped: records.canonical.skipped,
     canonicalActive: records.verification.canonicalActive,
+    notificationRuntimeState: records.verification.notificationRuntimeState,
+    preservedNotificationRuntimeSettingCount:
+      records.verification.preservedNotificationRuntimeSettingCount,
+    ...privateAuthorityOutput(notificationRuntimeAuthority),
     legacyDisabled: records.legacyDisabled,
     activeLegacySettings: postAudit.activeLegacySettings,
     legacyRetainedDisabled: records.verification.legacyRetainedDisabled,
@@ -155,6 +176,14 @@ async function main() {
       + records.canonical.updated
       + records.legacyDisabled,
   });
+}
+
+function privateAuthorityOutput(authority) {
+  if (process.env.MKT_REPORT_FINALIZER_PRIVATE_AUTHORITY
+    !== PRIVATE_AUTHORITY_CONFIRMATION) return {};
+  return {
+    privateNotificationRuntimeAuthority: authority,
+  };
 }
 
 function assertExpectedSchemaPlan(preview) {
@@ -218,7 +247,17 @@ function readEnabled(value) {
 function sanitizeDetails(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   const allowed = {};
-  for (const key of ['expected', 'actual', 'key', 'profile', 'platforms']) {
+  for (const key of [
+    'expected',
+    'actual',
+    'key',
+    'profile',
+    'platforms',
+    'activeSettingCount',
+    'authoritySettingCount',
+    'matchCount',
+    'destinationCount',
+  ]) {
     if (Object.hasOwn(value, key)) allowed[key] = value[key];
   }
   return allowed;

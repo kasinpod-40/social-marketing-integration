@@ -129,7 +129,15 @@ export function assessReportChannelRemoteReadiness(input = {}) {
     && repository.head === repository.reviewedHead;
   if (!repositoryReady) blockers.push(blocker('REPORT_CHANNEL_REMOTE_READINESS_REPOSITORY_INVALID'));
 
-  const runtimeReady = runtime.allExecutionFlagsFalse === true
+  const expectedBaselineFlagCount = runtime.notificationRuntimeState === 'active'
+    ? 3
+    : runtime.notificationRuntimeState === 'inactive'
+      ? 0
+      : -1;
+  const runtimeReady = runtime.executionBaselineVerified === true
+    && expectedBaselineFlagCount >= 0
+    && Number.isSafeInteger(Number(runtime.baselineTrueFlagCount))
+    && Number(runtime.baselineTrueFlagCount) === expectedBaselineFlagCount
     && Number(runtime.pendingMigrationCount ?? -1) === 0
     && Number(runtime.activeReportWorkCount ?? -1) === 0
     && Number(runtime.activeReportLockCount ?? -1) === 0
@@ -183,7 +191,7 @@ export function assessReportChannelRemoteReadiness(input = {}) {
 }
 
 function blocker(code, details = {}) { return Object.freeze({ code, ...details }); }
-function isCommitSha(value) { return typeof value === 'string' && /^[0-9a-f]{40}$/u.test(value); }
+function isCommitSha(value) { return typeof value === 'string' && /^[0-9a-f]{40}$/iu.test(value); }
 function nonNegativeInteger(value, field) {
   const number = Number(value);
   if (!Number.isSafeInteger(number) || number < 0) throw readinessError(

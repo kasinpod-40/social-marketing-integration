@@ -23,17 +23,21 @@ test('multichannel terminal delegates only to the reviewed multiwindow entrypoin
   assert.doesNotMatch(source, /execFileAsync\(process\.execPath, \[\s*'scripts\/report-runtime-closeout-operator\.mjs'/u);
 });
 
-test('reviewed executor binds generic preflight, multiwindow replay and finally restore', async () => {
+test('reviewed executor binds generic preflight, multiwindow replay and preserved baseline restore', async () => {
   const source = await readFile(EXECUTOR, 'utf8');
   assert.match(source, /REPORT_RUNTIME_REVIEWED_CHANNELS/u);
   assert.match(source, /loadReviewedReportRuntimeCloseoutHandoff/u);
   assert.match(source, /buildReportRuntimePreflightSql/u);
   assert.match(source, /assertReviewedReportRuntimeCloseoutPreflight/u);
   assert.match(source, /buildReviewedReportRuntimeMultiwindowPlan/u);
+  assert.match(source, /buildNotificationPreservingReportRuntimeConfigWindow/u);
   assert.match(source, /for \(const prestate of prestates\)/u);
   assert.match(source, /send-replay/u);
   assert.match(source, /finally \{/u);
-  assert.match(source, /restore-all-false/u);
+  assert.match(source, /restore-preserved-worker-baseline/u);
+  assert.match(source, /restoredBaseline:\s*true/u);
+  assert.match(source, /notificationAdmissionEnabled:\s*false/u);
+  assert.doesNotMatch(source, /restore-all-false/u);
   assert.match(source, /sanitizeReportLiveClosureEvidence/u);
   assert.doesNotMatch(source, /accepts YouTube Organic only/u);
   assert.doesNotMatch(source, /youtube\.googleapis\.com|YouTube Data API/u);

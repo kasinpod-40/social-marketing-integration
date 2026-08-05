@@ -70,6 +70,10 @@ const MATERIALIZATION_ACTIONS = new Set([
   'refresh_or_repair_materialization',
   'reuse_or_idempotent_verify',
 ]);
+const NOTIFICATION_RUNTIME_BASELINE_TRUE_FLAG_COUNTS = Object.freeze({
+  inactive: 0,
+  active: 3,
+});
 const BLOCKED_EVIDENCE_KEY = /(?:token|secret|authorization|cookie|password|consumer[_-]?key|consumer[_-]?secret|table.?id|database.?id|queue.?id|version.?id|uuid|raw)/iu;
 
 export function resolveReportMissingValue(kind, partialMetadata = null) {
@@ -246,7 +250,7 @@ export async function runReportLiveClosureFramework({
   }
 
   if (primaryError && restoreError) throw frameworkError(
-    'Report closure failed and verified all-false restore also failed',
+    'Report closure failed and verified baseline restore also failed',
     'REPORT_LIVE_CLOSURE_RESTORE_FAILED_AFTER_PRIMARY_ERROR',
     {
       primaryCode: primaryError?.code ?? 'UNKNOWN',
@@ -257,8 +261,8 @@ export async function runReportLiveClosureFramework({
   if (restoreError) throw restoreError;
   if (primaryError) throw primaryError;
   if (evidenceError) throw evidenceError;
-  if (restore?.allExecutionFlagsFalse !== true) throw frameworkError(
-    'Report closure requires verified all-false restore',
+  if (!isVerifiedExecutionBaseline(restore)) throw frameworkError(
+    'Report closure requires a verified preserved execution baseline restore',
     'REPORT_LIVE_CLOSURE_RESTORE_NOT_VERIFIED',
   );
 
@@ -342,7 +346,7 @@ function validateGateResult(stage, result) {
     || result.head !== result.reviewedHead
   )) throw gateEvidenceError(stage);
   if (stage === 'runtime_safe_state_gate' && (
-    result.allExecutionFlagsFalse !== true
+    !isVerifiedExecutionBaseline(result)
     || Number(result.activeReportWorkCount ?? -1) !== 0
     || Number(result.activeReportLockCount ?? -1) !== 0
     || Number(result.openReportDlqCount ?? -1) !== 0
@@ -369,8 +373,31 @@ function validateGateResult(stage, result) {
     || result.samePayloadChecksums !== true
   )) throw gateEvidenceError(stage);
   if (stage === 'zero_drift_verification' && Number(result.driftCount ?? -1) !== 0) throw gateEvidenceError(stage);
-  if (stage === 'safe_restore' && result.allExecutionFlagsFalse !== true) throw gateEvidenceError(stage);
+  if (stage === 'safe_restore' && !isVerifiedExecutionBaseline(result)) throw gateEvidenceError(stage);
   if (stage === 'sanitized_evidence' && result.sanitized !== true) throw gateEvidenceError(stage);
+}
+
+function isVerifiedExecutionBaseline(result = {}) {
+  const legacyAllFalse = result.allExecutionFlagsFalse === true
+    && result.executionBaselineVerified !== true
+    && (result.notificationRuntimeState === undefined || result.notificationRuntimeState === null)
+    && (result.baselineTrueFlagCount === undefined || result.baselineTrueFlagCount === null)
+    && result.notificationAdmissionEnabled !== true;
+  if (legacyAllFalse) return true;
+
+  const state = typeof result.notificationRuntimeState === 'string'
+    ? result.notificationRuntimeState.trim().toLowerCase()
+    : '';
+  const expectedTrueFlagCount = NOTIFICATION_RUNTIME_BASELINE_TRUE_FLAG_COUNTS[state];
+  const observedTrueFlagCount = Number(result.baselineTrueFlagCount);
+  const baselineVerified = result.executionBaselineVerified === true
+    || result.restoredBaseline === true;
+  return baselineVerified
+    && Number.isSafeInteger(expectedTrueFlagCount)
+    && Number.isSafeInteger(observedTrueFlagCount)
+    && observedTrueFlagCount === expectedTrueFlagCount
+    && result.notificationAdmissionEnabled === false
+    && !(state === 'active' && result.allExecutionFlagsFalse === true);
 }
 
 function validateMaterializationPlan(windows) {

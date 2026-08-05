@@ -38,6 +38,11 @@ export function createReportLiveClosurePlanAdapters(input = {}) {
     accountKey: expectedAccountKey,
     formulaVersion: descriptor.formulaVersion,
   });
+  const runtime = requireObject(evidence.runtime, 'reviewedReadiness.evidence.runtime');
+  const runtimeBaseline = buildRuntimeGateEvidence(
+    runtime,
+    reviewedReadiness.notificationAdmissionEnabled,
+  );
   const source = evidence.source ?? {};
   const sourceEntityCount = firstFinite([
     source.entityCount,
@@ -61,11 +66,11 @@ export function createReportLiveClosurePlanAdapters(input = {}) {
     })),
     runtimeGate: binding('runtimeGate', async () => Object.freeze({
       ok: true,
-      allExecutionFlagsFalse: evidence.runtime?.allExecutionFlagsFalse === true,
-      activeReportWorkCount: Number(evidence.runtime?.activeReportWorkCount ?? -1),
-      activeReportLockCount: Number(evidence.runtime?.activeReportLockCount ?? -1),
-      openReportDlqCount: Number(evidence.runtime?.openReportDlqCount ?? -1),
-      openReportCriticalAlertCount: Number(evidence.runtime?.openReportCriticalAlertCount ?? -1),
+      ...runtimeBaseline,
+      activeReportWorkCount: Number(runtime.activeReportWorkCount ?? -1),
+      activeReportLockCount: Number(runtime.activeReportLockCount ?? -1),
+      openReportDlqCount: Number(runtime.openReportDlqCount ?? -1),
+      openReportCriticalAlertCount: Number(runtime.openReportCriticalAlertCount ?? -1),
     })),
     sourceReadiness: binding('sourceReadiness', async () => Object.freeze({
       ok: true,
@@ -102,6 +107,20 @@ export function createReportLiveClosurePlanAdapters(input = {}) {
   });
 }
 
+function buildRuntimeGateEvidence(runtime, notificationAdmissionEnabled) {
+  if (runtime.allExecutionFlagsFalse === true
+    && runtime.executionBaselineVerified !== true) {
+    return Object.freeze({ allExecutionFlagsFalse: true });
+  }
+  return Object.freeze({
+    allExecutionFlagsFalse: false,
+    executionBaselineVerified: runtime.executionBaselineVerified === true,
+    notificationRuntimeState: normalizeRuntimeState(runtime.notificationRuntimeState),
+    baselineTrueFlagCount: Number(runtime.baselineTrueFlagCount ?? -1),
+    notificationAdmissionEnabled: notificationAdmissionEnabled === false ? false : null,
+  });
+}
+
 function binding(key, run) {
   return Object.freeze({
     authority: REPORT_LIVE_CLOSURE_ADAPTER_AUTHORITIES[key],
@@ -109,6 +128,11 @@ function binding(key, run) {
   });
 }
 
+function normalizeRuntimeState(value) {
+  return typeof value === 'string' && value.trim() !== ''
+    ? value.trim().toLowerCase()
+    : null;
+}
 function normalizeCoverageStatus(value) {
   const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
   return normalized === 'completed' ? 'complete' : normalized;

@@ -26,7 +26,9 @@ function readyInput() {
   return {
     repository: { branch: 'main', clean: true, head: HEAD, reviewedHead: HEAD },
     runtime: {
-      allExecutionFlagsFalse: true,
+      executionBaselineVerified: true,
+      notificationRuntimeState: 'active',
+      baselineTrueFlagCount: 3,
       pendingMigrationCount: 0,
       activeReportWorkCount: 0,
       activeReportLockCount: 0,
@@ -107,7 +109,7 @@ test('orphan top Ads rows block a fresh materialization', () => {
   assert.equal(blocked.blocker.code, 'REPORT_CHANNEL_REMOTE_READINESS_WINDOW_PRESTATE_INVALID');
 });
 
-test('ready assessment requires repository, safe runtime, source, Lark and exact 1/3/7/30', () => {
+test('ready assessment accepts the exact preserved Notification Runtime baseline', () => {
   const ready = assessReportChannelRemoteReadiness(readyInput());
   assert.equal(ready.readyForLive, true);
   assert.deepEqual(ready.windows.map((row) => row.windowDays), [1, 3, 7, 30]);
@@ -120,11 +122,29 @@ test('ready assessment requires repository, safe runtime, source, Lark and exact
 
   const blocked = assessReportChannelRemoteReadiness({
     ...readyInput(),
-    runtime: { ...readyInput().runtime, activeReportWorkCount: 1 },
+    runtime: { ...readyInput().runtime, executionBaselineVerified: false },
   });
   assert.equal(blocked.readyForLive, false);
   assert.equal(blocked.runtimeReady, false);
   assert.equal(blocked.blockers.some(
     (row) => row.code === 'REPORT_CHANNEL_REMOTE_READINESS_RUNTIME_NOT_SAFE',
   ), true);
+});
+
+test('inactive all-false baseline remains supported while unknown Runtime state is rejected', () => {
+  assert.equal(assessReportChannelRemoteReadiness({
+    ...readyInput(),
+    runtime: {
+      ...readyInput().runtime,
+      notificationRuntimeState: 'inactive',
+      baselineTrueFlagCount: 0,
+    },
+  }).readyForLive, true);
+  assert.equal(assessReportChannelRemoteReadiness({
+    ...readyInput(),
+    runtime: {
+      ...readyInput().runtime,
+      notificationRuntimeState: 'unknown',
+    },
+  }).runtimeReady, false);
 });

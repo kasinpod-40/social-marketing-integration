@@ -116,3 +116,47 @@ scripts/lark-notification-runtime-smoke-recovery-exact-terminal.mjs --recover
 ```
 
 It contains no Queue endpoint, no HTTP POST admission, no Worker deploy and no Report Settings writer.
+
+## Preserved parallel Report Finalizer hotfix
+
+The Report Runtime Finalizer and Report Run All must preserve both currently active Notification authorities:
+
+```text
+Executive Report Settings        exact 4 active rows
+Notification Worker baseline     runtime/send/mirror true
+Notification Runtime mode        runtime
+Automatic Notification Admission false
+Automation / Schedule / Webhook  false / false / false
+Production                       BLOCKED
+```
+
+Current Report hotfix authority:
+
+```text
+Branch                            hotfix/report-finalizer-preserve-notification-runtime-v1
+Original base                     3b02ac90b5912a8a1d2f4fd9b06a8ab1163ed7c4
+Latest main reviewed              7de26241288a6708fa7f3f53d0cfa21dd5f327c3
+Remote action                     0
+```
+
+The hotfix must reuse the existing Executive Preview → Report Snapshot → Report Setting → destination-hash
+contract, preserve only the exact authorized `1D/3D/7D/30D` Settings, and fail closed on mixed flags, a fifth
+active Setting, ambiguous identity, shared-table mismatch or destination drift.
+
+Readiness must verify the exact Notification Worker baseline rather than require every execution flag false.
+Each Report Active window may enable only the Report flags on top of that baseline, and every success/failure path
+must restore the same Notification baseline rather than disable it. Notification Admission remains separately
+controlled; the Report path must not create Notification jobs.
+
+The Report hotfix does not invoke or replace the poll-only Smoke Recovery Terminal and must not create another
+Queue admission, notification message, Worker deployment or Report Settings mutation outside the Finalizer's
+reviewed canonical reconciliation.
+
+Do not run the Report Runtime Finalizer, SELECT-only Report readiness or Run All until this hotfix passes exact
+merge-result verification against current `main` and merges.
+
+Full contract:
+
+```text
+docs/tasks/report-finalizer-notification-runtime-preservation-v1.md
+```

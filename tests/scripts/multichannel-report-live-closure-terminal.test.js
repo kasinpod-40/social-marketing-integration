@@ -41,7 +41,9 @@ function reviewedReadiness(platformScope = 'youtube', { includeSourceWatermark =
       }),
       repository: Object.freeze({ branch: 'main', clean: true, head: HEAD, reviewedHead: HEAD }),
       runtime: Object.freeze({
-        allExecutionFlagsFalse: true,
+        executionBaselineVerified: true,
+        notificationRuntimeState: 'active',
+        baselineTrueFlagCount: 3,
         activeReportWorkCount: 0,
         activeReportLockCount: 0,
         openReportDlqCount: 0,
@@ -61,12 +63,14 @@ function reviewedReadiness(platformScope = 'youtube', { includeSourceWatermark =
     assessment: Object.freeze({
       readyForLive: true,
       repositoryReady: true,
+      runtimeReady: true,
       sourceReady: true,
       windows: Object.freeze([1, 3, 7, 30].map((windowDays) => Object.freeze({
         windowDays,
         action: 'create_materialization',
       }))),
     }),
+    notificationAdmissionEnabled: false,
   });
 }
 
