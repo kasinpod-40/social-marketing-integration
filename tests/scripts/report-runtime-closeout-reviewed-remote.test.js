@@ -24,6 +24,7 @@ const REQUIRED_TABLES = Object.freeze({
 });
 const BASELINE_REQUIRED_TABLES = Object.freeze({
   mktAiReportRuns: 'LARK_TABLE_MKT_AI_REPORT_RUNS',
+  mktReportSnapshots: 'LARK_TABLE_MKT_REPORT_SNAPSHOTS',
   mktReportSettings: 'LARK_TABLE_MKT_REPORT_SETTINGS',
   mktNotificationLog: 'LARK_TABLE_MKT_NOTIFICATION_LOG',
 });
@@ -89,13 +90,14 @@ function runtime(bindings) {
 test('bootstrap baseline permits absent Report-only bindings while requiring Notification bindings', async () => {
   const result = await runtime(remoteBindings()).verifyDeployment('active');
   assert.equal(result.bindingContract, 'bootstrap_baseline');
-  assert.equal(result.requiredTableBindingCount, 3);
-  assert.equal(result.optionalTableBindingCount, 4);
+  assert.equal(result.requiredTableBindingCount, 4);
+  assert.equal(result.optionalTableBindingCount, 3);
 });
 
 test('bootstrap baseline rejects a present Report-only binding with the wrong identity', async () => {
   const bindings = remoteBindings({
     reportBindings: [
+      binding('LARK_TABLE_MKT_REPORT_SNAPSHOTS', TABLE_IDS.mktReportSnapshots),
       binding('LARK_TABLE_MKT_REPORT_TOP_ADS', 'tbl-wrong-top-ads'),
     ],
   });
