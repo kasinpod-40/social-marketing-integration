@@ -4,6 +4,7 @@ import {
   normalizeDashboardMetricAvailability,
   normalizeDashboardMetricScope,
 } from '../../../config/src/dashboard-metric-readiness.js';
+import { getReportPlatformContract } from './report-platform-adapter-registry.js';
 
 const SUM_DEFINITIONS = Object.freeze([
   metric('account_views', 'Account views', 'count', 'period_delta', 'views'),
@@ -51,6 +52,8 @@ export function calculateOrganicAccountPeriodMetrics(input = {}) {
 
 export function buildOrganicAccountMetricPayload(input = {}) {
   const platform = requireText(input.platform, 'platform');
+  const contract = getReportPlatformContract(platform);
+  if (!contract.accountDailyDatasetKey) return Object.freeze({});
   const formulaVersion = requireText(input.formulaVersion, 'formulaVersion');
   const current = requireObject(input.current, 'current');
   const compare = input.compare == null ? null : requireObject(input.compare, 'compare');
