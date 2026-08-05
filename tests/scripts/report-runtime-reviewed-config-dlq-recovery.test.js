@@ -7,6 +7,7 @@ import { resolveReportPeriod } from '../../packages/application/src/reports/repo
 import {
   REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_INCIDENT,
   REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_INCIDENTS,
+  REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_RECOVERY_CONTRACT,
   assertReviewedConfigDlqAttempt,
   assertReviewedConfigDlqCandidate,
   assertReviewedConfigDlqClosed,
@@ -179,8 +180,16 @@ for (const incident of Object.values(REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_INCIDENT
   });
 }
 
-test('incident resolver preserves the Facebook default and exposes exact Meta Ads 3D authority', () => {
+test('incident resolver preserves the completed Facebook v1 authority and exposes exact Meta Ads 3D authority', () => {
+  assert.equal(
+    REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_RECOVERY_CONTRACT,
+    'report_runtime_reviewed_config_dlq_recovery_v1',
+  );
   assert.equal(REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_INCIDENT.key, 'facebook_1d_20260731');
+  assert.equal(
+    REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_INCIDENT.closureReference,
+    'report-runtime-reviewed-config-dlq-recovery-v1:terminal:4c366c2b02ad5162c6e4035899d67abc',
+  );
   assert.equal(resolveReviewedConfigDlqIncident().key, 'facebook_1d_20260731');
   const meta = resolveReviewedConfigDlqIncident('meta_ads_3d_20260731');
   assert.equal(meta.platformScope, 'meta_ads');
@@ -188,6 +197,10 @@ test('incident resolver preserves the Facebook default and exposes exact Meta Ad
   assert.equal(meta.retryCount, 4);
   assert.equal(meta.mainQueueAttempts, 4);
   assert.equal(meta.successfulSyncCountBeforeRecovery, 2);
+  assert.equal(
+    meta.closureReference,
+    'report-runtime-reviewed-config-dlq-recovery-v1:terminal:e408707c9c2d383e04a3e213a7be45a0',
+  );
   assert.throws(
     () => resolveReviewedConfigDlqIncident('unknown'),
     (error) => error.code === 'REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_INCIDENT_KEY_INVALID',
