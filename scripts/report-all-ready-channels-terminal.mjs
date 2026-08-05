@@ -27,6 +27,7 @@ import {
 } from './lib/report-all-ready-channels.js';
 
 const execFileAsync = promisify(execFile);
+const RUN_ALL_COMPLETION_MAX_POLLS = 120;
 
 export function parseReportAllReadyArgs(argv = []) {
   const unknown = argv.filter((argument) => argument !== '--execute');
@@ -87,6 +88,7 @@ export async function runAllReadyChannelReports(input = {}) {
     completedCount: completed.length,
     waitingCount: selection.waitingCount,
     windows: REPORT_RUNTIME_REVIEWED_MULTIWINDOW_DAYS,
+    completionMaxPolls: RUN_ALL_COMPLETION_MAX_POLLS,
     providerRequestCount: 0,
     scheduleEnabled: false,
     production: 'BLOCKED',
@@ -111,6 +113,7 @@ function buildPlan() {
       notReady: 'skip_with_reason',
       planned: 'skip_without_fabricating_report',
       failure: 'stop_after_existing_channel_safe_restore',
+      queueCompletionBarrier: 'hold_reviewed_active_worker_for_up_to_120_polls',
     }),
     windows: REPORT_RUNTIME_REVIEWED_MULTIWINDOW_DAYS,
     exactCommand: [
@@ -147,6 +150,9 @@ async function executeReviewedChannel({ env, handoff, channel, authority }) {
       env: {
         ...process.env,
         ...env,
+        MKT_REPORT_RUNTIME_CLOSEOUT_MAX_POLLS:
+          env.MKT_REPORT_RUNTIME_CLOSEOUT_MAX_POLLS
+            ?? String(RUN_ALL_COMPLETION_MAX_POLLS),
         MKT_REPORT_RUNTIME_CLOSEOUT_PLATFORM_SCOPE: channel.platformScope,
         MKT_MULTICHANNEL_REPORT_LIVE_CLOSURE_HANDOFF: handoffPath,
         CONFIRM_MULTICHANNEL_REPORT_LIVE_CLOSURE:

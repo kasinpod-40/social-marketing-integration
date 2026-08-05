@@ -6,6 +6,8 @@ import { createReportId } from '../../packages/application/src/storage/marketing
 import { resolveReportPeriod } from '../../packages/application/src/reports/report-period.js';
 import {
   REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_INCIDENT,
+  REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_INCIDENTS,
+  REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_RECOVERY_CONTRACT,
   assertReviewedConfigDlqAttempt,
   assertReviewedConfigDlqCandidate,
   assertReviewedConfigDlqClosed,
@@ -14,11 +16,10 @@ import {
   assertReviewedConfigDlqPreflight,
   buildReviewedConfigDlqClosureStatements,
   buildReviewedConfigDlqIncidentSql,
+  resolveReviewedConfigDlqIncident,
 } from '../../scripts/lib/report-runtime-reviewed-config-dlq-recovery.js';
 
-const incident = REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_INCIDENT;
-
-function candidate() {
+function candidate(incident) {
   const period = resolveReportPeriod({
     periodKind: 'rolling_days',
     windowDays: incident.windowDays,
@@ -48,8 +49,8 @@ function candidate() {
   return { windowDays: incident.windowDays, reportSettingKey: incident.reportSettingKey, reportId, period, job };
 }
 
-function dlqRow(overrides = {}) {
-  const replay = candidate().job;
+function dlqRow(incident, overrides = {}) {
+  const replay = candidate(incident).job;
   return {
     dlq_id: incident.dlqId,
     message_id: incident.messageId,
@@ -64,11 +65,11 @@ function dlqRow(overrides = {}) {
     status: 'open',
     metadata_dlq_id: incident.dlqId,
     operation_id: null,
-    original_work_key: `facebook:${incident.messageId}`,
+    original_work_key: incident.originalWorkKey,
     generation: incident.requestedAt,
     original_requested_at: incident.requestedAt,
-    main_queue_attempts: 1,
-    dlq_delivery_attempts: 0,
+    main_queue_attempts: incident.mainQueueAttempts,
+    dlq_delivery_attempts: incident.dlqDeliveryAttempts,
     recovery_status: 'not_started',
     recovery_reference: null,
     audit_reference: null,
@@ -76,93 +77,132 @@ function dlqRow(overrides = {}) {
   };
 }
 
-test('exact retained attempt and regenerated candidate match the Facebook 1D incident', () => {
-  assert.equal(assertReviewedConfigDlqAttempt({
-    reportId: incident.reportId,
-    action: 'create_materialization',
-    requestedAt: incident.requestedAt,
-    jobSha256: incident.jobSha256,
-  }), true);
-  assert.equal(assertReviewedConfigDlqCandidate(candidate()), true);
-  assert.throws(
-    () => assertReviewedConfigDlqCandidate({ ...candidate(), reportId: 'wrong' }),
-    (error) => error.code === 'REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_CANDIDATE_MISMATCH',
-  );
-});
-
-test('preflight allows only the exact bound open DLQ with account-daily Facebook facts', () => {
-  const preflight = {
+function preflight(incident) {
+  return {
     coverage_status: 'complete',
-    coverage_dataset_key: 'facebook.account.daily',
-    source_scope: 'account',
+    coverage_dataset_key: incident.coverageDatasetKey,
+    source_scope: incident.sourceScope,
     source_watermark: incident.sourceWatermark,
     period_end: incident.periodEnd,
-    account_fact_count: 2,
+    [incident.sourceFactField]: 2,
     active_report_work_count: 0,
     active_report_locks: 0,
     open_report_dlq: 1,
     open_report_critical_alerts: 0,
   };
-  assert.equal(assertReviewedConfigDlqPreflight(preflight), true);
-  assert.throws(
-    () => assertReviewedConfigDlqPreflight({ ...preflight, open_report_dlq: 2 }),
-    (error) => error.code === 'REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_PREFLIGHT_MISMATCH',
+}
+
+for (const incident of Object.values(REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_INCIDENTS)) {
+  test(`${incident.key} binds the exact retained attempt and regenerated candidate`, () => {
+    assert.equal(assertReviewedConfigDlqAttempt({
+      reportId: incident.reportId,
+      action: 'create_materialization',
+      requestedAt: incident.requestedAt,
+      jobSha256: incident.jobSha256,
+    }, incident), true);
+    assert.equal(assertReviewedConfigDlqCandidate(candidate(incident), incident), true);
+    assert.throws(
+      () => assertReviewedConfigDlqCandidate({ ...candidate(incident), reportId: 'wrong' }, incident),
+      (error) => error.code === 'REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_CANDIDATE_MISMATCH',
+    );
+  });
+
+  test(`${incident.key} preflight allows only the exact bound open DLQ and source facts`, () => {
+    assert.equal(assertReviewedConfigDlqPreflight(preflight(incident), incident), true);
+    assert.throws(
+      () => assertReviewedConfigDlqPreflight({ ...preflight(incident), open_report_dlq: 2 }, incident),
+      (error) => error.code === 'REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_PREFLIGHT_MISMATCH',
+    );
+  });
+
+  test(`${incident.key} validator binds exact DLQ payload and operation metadata`, () => {
+    const result = assertReviewedConfigDlqIncident(dlqRow(incident), incident);
+    assert.equal(result.replayPayload.reportSettingKey, incident.reportSettingKey);
+    assert.equal(result.originalWorkKey, incident.originalWorkKey);
+    assert.throws(
+      () => assertReviewedConfigDlqIncident(dlqRow(incident, { retry_count: incident.retryCount + 1 }), incident),
+      (error) => error.code === 'REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_INCIDENT_MISMATCH',
+    );
+  });
+
+  test(`${incident.key} initial state retains the exact prior successful-run floor`, () => {
+    assert.equal(assertReviewedConfigDlqInitialState({
+      d1: {
+        report_id: null,
+        materialization_count: 0,
+        successful_sync_count: incident.successfulSyncCountBeforeRecovery,
+        active_lock_count: 0,
+      },
+      lark: {
+        snapshots: 0,
+        metrics: 0,
+        topContent: 0,
+        topAds: 0,
+        duplicateMetricKeys: 0,
+      },
+    }, incident), true);
+    assert.throws(
+      () => assertReviewedConfigDlqInitialState({
+        d1: {
+          report_id: null,
+          materialization_count: 0,
+          successful_sync_count: incident.successfulSyncCountBeforeRecovery + 1,
+          active_lock_count: 0,
+        },
+        lark: {},
+      }, incident),
+      (error) => error.code === 'REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_INITIAL_STATE_MISMATCH',
+    );
+  });
+
+  test(`${incident.key} closure SQL is exact and readback requires both closures`, () => {
+    const sql = buildReviewedConfigDlqIncidentSql(incident);
+    assert.match(sql, /dead_letter_jobs/u);
+    assert.match(sql, /dead_letter_operation_metadata/u);
+    assert.match(sql, new RegExp(incident.messageId, 'u'));
+
+    const statements = buildReviewedConfigDlqClosureStatements(1785920000000, incident);
+    assert.equal(statements.length, 2);
+    assert.match(statements[0], /status = 'redriven'/u);
+    assert.equal(statements[0].includes(incident.closureReference), true);
+    assert.match(statements[1], /recovery_status = 'completed'/u);
+    assert.equal(statements[1].includes(`main_queue_attempts = ${incident.mainQueueAttempts}`), true);
+    assert.equal(statements[1].includes(incident.originalWorkKey), true);
+
+    assert.equal(assertReviewedConfigDlqClosed({
+      dlq_id: incident.dlqId,
+      status: 'redriven',
+      redrive_reference: incident.closureReference,
+      recovery_status: 'completed',
+      recovery_reference: incident.closureReference,
+      audit_reference: incident.closureReference,
+    }, incident), true);
+  });
+}
+
+test('incident resolver preserves the completed Facebook v1 authority and exposes exact Meta Ads 3D authority', () => {
+  assert.equal(
+    REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_RECOVERY_CONTRACT,
+    'report_runtime_reviewed_config_dlq_recovery_v1',
   );
-});
-
-test('incident validator binds exact DLQ identity, payload hash and operation metadata', () => {
-  const result = assertReviewedConfigDlqIncident(dlqRow());
-  assert.equal(result.replayPayload.reportSettingKey, incident.reportSettingKey);
-  assert.equal(result.originalWorkKey, `facebook:${incident.messageId}`);
-  assert.throws(
-    () => assertReviewedConfigDlqIncident(dlqRow({ retry_count: 2 })),
-    (error) => error.code === 'REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_INCIDENT_MISMATCH',
+  assert.equal(REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_INCIDENT.key, 'facebook_1d_20260731');
+  assert.equal(
+    REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_INCIDENT.closureReference,
+    'report-runtime-reviewed-config-dlq-recovery-v1:terminal:4c366c2b02ad5162c6e4035899d67abc',
   );
-});
-
-test('initial state requires zero D1 and Lark materialization identity', () => {
-  assert.equal(assertReviewedConfigDlqInitialState({
-    d1: {
-      report_id: null,
-      materialization_count: 0,
-      successful_sync_count: 0,
-      active_lock_count: 0,
-    },
-    lark: {
-      snapshots: 0,
-      metrics: 0,
-      topContent: 0,
-      topAds: 0,
-      duplicateMetricKeys: 0,
-    },
-  }), true);
-  assert.throws(
-    () => assertReviewedConfigDlqInitialState({
-      d1: { report_id: incident.reportId, materialization_count: 1 },
-      lark: {},
-    }),
-    (error) => error.code === 'REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_INITIAL_STATE_MISMATCH',
+  assert.equal(resolveReviewedConfigDlqIncident().key, 'facebook_1d_20260731');
+  const meta = resolveReviewedConfigDlqIncident('meta_ads_3d_20260731');
+  assert.equal(meta.platformScope, 'meta_ads');
+  assert.equal(meta.windowDays, 3);
+  assert.equal(meta.retryCount, 4);
+  assert.equal(meta.mainQueueAttempts, 4);
+  assert.equal(meta.successfulSyncCountBeforeRecovery, 2);
+  assert.equal(
+    meta.closureReference,
+    'report-runtime-reviewed-config-dlq-recovery-v1:terminal:e408707c9c2d383e04a3e213a7be45a0',
   );
-});
-
-test('closure SQL is exact, guarded and readback requires both DLQ and metadata closure', () => {
-  const sql = buildReviewedConfigDlqIncidentSql();
-  assert.match(sql, /dead_letter_jobs/u);
-  assert.match(sql, /dead_letter_operation_metadata/u);
-  assert.match(sql, new RegExp(incident.messageId, 'u'));
-
-  const statements = buildReviewedConfigDlqClosureStatements(1785920000000);
-  assert.equal(statements.length, 2);
-  assert.match(statements[0], /status = 'redriven'/u);
-  assert.equal(statements[0].includes(incident.closureReference), true);
-  assert.match(statements[1], /recovery_status = 'completed'/u);
-
-  assert.equal(assertReviewedConfigDlqClosed({
-    dlq_id: incident.dlqId,
-    status: 'redriven',
-    redrive_reference: incident.closureReference,
-    recovery_status: 'completed',
-    recovery_reference: incident.closureReference,
-    audit_reference: incident.closureReference,
-  }), true);
+  assert.throws(
+    () => resolveReviewedConfigDlqIncident('unknown'),
+    (error) => error.code === 'REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_INCIDENT_KEY_INVALID',
+  );
 });

@@ -3,7 +3,14 @@ import { closeoutFailure, compactSql, sha256, sqlText, stableJson } from './repo
 export const REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_RECOVERY_CONTRACT =
   'report_runtime_reviewed_config_dlq_recovery_v1';
 
-export const REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_INCIDENT = Object.freeze({
+const FACEBOOK_1D_INCIDENT = Object.freeze({
+  key: 'facebook_1d_20260731',
+  label: 'Facebook 1D',
+  decision: 'FACEBOOK_REPORT_1D_CONFIG_DLQ_RECOVERED',
+  confirmation: 'RECOVER_EXACT_FACEBOOK_REPORT_CONFIG_DLQ',
+  evidenceDirectory: 'outputs/facebook-report-config-dlq-recovery',
+  originalOutputRoot: 'outputs/facebook-report-runtime-closeout',
+  originalAttemptFile: 'facebook-1d-send-first.attempt.json',
   originalRepositoryHead: '158f881a61b3a41bb219b8990c59099777fb68f4',
   platformScope: 'facebook',
   capability: 'organic',
@@ -24,20 +31,84 @@ export const REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_INCIDENT = Object.freeze({
   errorCode: 'DASHBOARD_REPORT_CONFIGURATION_INVALID',
   errorMessage: 'Dashboard report requires a reviewed D1-primary job contract',
   retryCount: 1,
+  mainQueueAttempts: 1,
+  dlqDeliveryAttempts: 0,
+  originalWorkKey: 'facebook:4c366c2b02ad5162c6e4035899d67abc',
   replayPayloadSha256: 'cee6c82f7732ab99d5f81d8e70c6108a33bed95b1b685d007c50d3f6122bd298',
+  coverageDatasetKey: 'facebook.account.daily',
+  sourceScope: 'account',
+  sourceFactField: 'account_fact_count',
+  successfulSyncCountBeforeRecovery: 0,
   closureReference:
     'report-runtime-reviewed-config-dlq-recovery-v1:terminal:4c366c2b02ad5162c6e4035899d67abc',
 });
 
-export function assertReviewedConfigDlqAttempt(value = {}) {
-  const incident = REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_INCIDENT;
+const META_ADS_3D_INCIDENT = Object.freeze({
+  key: 'meta_ads_3d_20260731',
+  label: 'Meta Ads 3D',
+  decision: 'META_ADS_REPORT_3D_CONFIG_DLQ_RECOVERED',
+  confirmation: 'RECOVER_EXACT_META_ADS_3D_REPORT_CONFIG_DLQ',
+  evidenceDirectory: 'outputs/meta-ads-3d-report-config-dlq-recovery',
+  originalOutputRoot: 'outputs/report-live-resume-0db4c297d256/materialization',
+  originalAttemptFile: 'meta_ads-3d-send-first.attempt.json',
+  originalRepositoryHead: '0db4c297d25678b8996033e2b0fdc29aae886c03',
+  platformScope: 'meta_ads',
+  capability: 'paid_ads',
+  accountKey: 'chemistry_k',
+  formulaVersion: 'meta-ads-v1',
+  windowDays: 3,
+  periodEnd: '2026-07-31',
+  sourceWatermark: '2026-07-31',
+  requestedAt: 1785934718928,
+  reportSettingKey: 'integration_workspace:meta_ads:rolling:3d',
+  reportId:
+    'integration_workspace:meta_ads:rolling:3d:chemistry_k:rolling_days:2026-07-29:2026-07-31:meta-ads-v1',
+  jobSha256: 'cb25578b3e5f6034425ae10772adf1a85efc20634dcdc7470377bf143340102d',
+  dlqId: 'terminal:e408707c9c2d383e04a3e213a7be45a0',
+  messageId: 'e408707c9c2d383e04a3e213a7be45a0',
+  queueName: 'social-mkt-sync-jobs',
+  jobType: 'report.materialization.generate',
+  errorCode: 'DASHBOARD_REPORT_CONFIGURATION_INVALID',
+  errorMessage: 'Dashboard report requires a reviewed D1-primary job contract',
+  retryCount: 4,
+  mainQueueAttempts: 4,
+  dlqDeliveryAttempts: 0,
+  originalWorkKey: 'tiktok:e408707c9c2d383e04a3e213a7be45a0',
+  replayPayloadSha256: 'cb25578b3e5f6034425ae10772adf1a85efc20634dcdc7470377bf143340102d',
+  coverageDatasetKey: 'meta_ads.performance.daily',
+  sourceScope: 'account_summary',
+  sourceFactField: 'ads_summary_fact_count',
+  successfulSyncCountBeforeRecovery: 2,
+  closureReference:
+    'report-runtime-reviewed-config-dlq-recovery-v1:terminal:e408707c9c2d383e04a3e213a7be45a0',
+});
+
+export const REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_INCIDENTS = Object.freeze({
+  [FACEBOOK_1D_INCIDENT.key]: FACEBOOK_1D_INCIDENT,
+  [META_ADS_3D_INCIDENT.key]: META_ADS_3D_INCIDENT,
+});
+
+export const REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_INCIDENT = FACEBOOK_1D_INCIDENT;
+
+export function resolveReviewedConfigDlqIncident(key = FACEBOOK_1D_INCIDENT.key) {
+  const incident = REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_INCIDENTS[String(key).trim()];
+  if (!incident) throw recoveryFailure(
+    'Reviewed Report configuration-DLQ incident key is unsupported',
+    'REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_INCIDENT_KEY_INVALID',
+    { incidentKey: String(key ?? '') },
+  );
+  return incident;
+}
+
+export function assertReviewedConfigDlqAttempt(value = {}, incident = REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_INCIDENT) {
   if (value.reportId !== incident.reportId
     || value.action !== 'create_materialization'
     || Number(value.requestedAt) !== incident.requestedAt
     || value.jobSha256 !== incident.jobSha256) throw recoveryFailure(
-    'Retained Facebook 1D Queue attempt differs from the exact configuration-DLQ incident',
+    `Retained ${incident.label} Queue attempt differs from the exact configuration-DLQ incident`,
     'REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_ATTEMPT_MISMATCH',
     {
+      incidentKey: incident.key,
       reportIdMatched: value.reportId === incident.reportId,
       action: value.action ?? null,
       requestedAt: Number(value.requestedAt ?? 0),
@@ -47,8 +118,7 @@ export function assertReviewedConfigDlqAttempt(value = {}) {
   return true;
 }
 
-export function assertReviewedConfigDlqCandidate(candidate = {}) {
-  const incident = REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_INCIDENT;
+export function assertReviewedConfigDlqCandidate(candidate = {}, incident = REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_INCIDENT) {
   const job = candidate.job ?? {};
   if (candidate.reportId !== incident.reportId
     || candidate.reportSettingKey !== incident.reportSettingKey
@@ -63,9 +133,10 @@ export function assertReviewedConfigDlqCandidate(candidate = {}) {
     || job.sourceWatermark !== incident.sourceWatermark
     || Date.parse(job.requestedAt) !== incident.requestedAt
     || sha256(stableJson(job)) !== incident.jobSha256) throw recoveryFailure(
-    'Regenerated Facebook 1D job differs from the exact retained DLQ payload',
+    `Regenerated ${incident.label} job differs from the exact retained DLQ payload`,
     'REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_CANDIDATE_MISMATCH',
     {
+      incidentKey: incident.key,
       reportIdMatched: candidate.reportId === incident.reportId,
       reportSettingKeyMatched: candidate.reportSettingKey === incident.reportSettingKey,
       windowDays: Number(candidate.windowDays ?? 0),
@@ -75,27 +146,27 @@ export function assertReviewedConfigDlqCandidate(candidate = {}) {
   return true;
 }
 
-export function assertReviewedConfigDlqPreflight(row = {}) {
-  const incident = REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_INCIDENT;
+export function assertReviewedConfigDlqPreflight(row = {}, incident = REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_INCIDENT) {
   if (row.coverage_status !== 'complete'
-    || row.coverage_dataset_key !== 'facebook.account.daily'
-    || row.source_scope !== 'account'
+    || row.coverage_dataset_key !== incident.coverageDatasetKey
+    || row.source_scope !== incident.sourceScope
     || row.source_watermark !== incident.sourceWatermark
     || row.period_end !== incident.periodEnd
-    || Number(row.account_fact_count ?? 0) <= 0
+    || Number(row[incident.sourceFactField] ?? 0) <= 0
     || Number(row.active_report_work_count ?? 0) !== 0
     || Number(row.active_report_locks ?? 0) !== 0
     || Number(row.open_report_dlq ?? 0) !== 1
     || Number(row.open_report_critical_alerts ?? 0) !== 0) throw recoveryFailure(
-    'Current Facebook Report preflight differs from the exact configuration-DLQ incident',
+    `Current ${incident.label} preflight differs from the exact configuration-DLQ incident`,
     'REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_PREFLIGHT_MISMATCH',
     {
+      incidentKey: incident.key,
       coverageStatus: row.coverage_status ?? null,
       coverageDatasetKey: row.coverage_dataset_key ?? null,
       sourceScope: row.source_scope ?? null,
       sourceWatermarkMatched: row.source_watermark === incident.sourceWatermark,
       periodEndMatched: row.period_end === incident.periodEnd,
-      accountFactCount: Number(row.account_fact_count ?? 0),
+      sourceFactCount: Number(row[incident.sourceFactField] ?? 0),
       activeReportWorkCount: Number(row.active_report_work_count ?? 0),
       activeReportLocks: Number(row.active_report_locks ?? 0),
       openReportDlq: Number(row.open_report_dlq ?? 0),
@@ -105,8 +176,7 @@ export function assertReviewedConfigDlqPreflight(row = {}) {
   return true;
 }
 
-export function assertReviewedConfigDlqIncident(row = {}) {
-  const incident = REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_INCIDENT;
+export function assertReviewedConfigDlqIncident(row = {}, incident = REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_INCIDENT) {
   let replayPayload = null;
   try { replayPayload = JSON.parse(String(row.replay_payload_json ?? '')); } catch { /* invalid below */ }
   if (row.dlq_id !== incident.dlqId
@@ -130,13 +200,15 @@ export function assertReviewedConfigDlqIncident(row = {}) {
     || Date.parse(replayPayload?.requestedAt) !== incident.requestedAt
     || row.metadata_dlq_id !== incident.dlqId
     || row.operation_id !== null
+    || String(row.original_work_key ?? '') !== incident.originalWorkKey
     || Number(row.original_requested_at) !== incident.requestedAt
-    || Number(row.main_queue_attempts) !== 1
-    || Number(row.dlq_delivery_attempts) !== 0
+    || Number(row.main_queue_attempts) !== incident.mainQueueAttempts
+    || Number(row.dlq_delivery_attempts) !== incident.dlqDeliveryAttempts
     || !['not_started', 'completed'].includes(String(row.recovery_status ?? ''))) throw recoveryFailure(
-    'Remote DLQ state differs from the exact Facebook 1D configuration incident',
+    `Remote DLQ state differs from the exact ${incident.label} configuration incident`,
     'REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_INCIDENT_MISMATCH',
     {
+      incidentKey: incident.key,
       dlqIdMatched: row.dlq_id === incident.dlqId,
       messageIdMatched: row.message_id === incident.messageId,
       status: row.status ?? null,
@@ -145,7 +217,9 @@ export function assertReviewedConfigDlqIncident(row = {}) {
       replayPayloadSha256Matched:
         sha256(String(row.replay_payload_json ?? '')) === incident.replayPayloadSha256,
       metadataPresent: row.metadata_dlq_id === incident.dlqId,
+      originalWorkKeyMatched: String(row.original_work_key ?? '') === incident.originalWorkKey,
       originalRequestedAt: Number(row.original_requested_at ?? 0),
+      mainQueueAttempts: Number(row.main_queue_attempts ?? 0),
     },
   );
   return Object.freeze({
@@ -155,24 +229,29 @@ export function assertReviewedConfigDlqIncident(row = {}) {
   });
 }
 
-export function assertReviewedConfigDlqInitialState(input = {}) {
+export function assertReviewedConfigDlqInitialState(
+  input = {},
+  incident = REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_INCIDENT,
+) {
   const d1 = input.d1 ?? {};
   const lark = input.lark ?? {};
   if (d1.report_id !== null
     || Number(d1.materialization_count ?? 0) !== 0
-    || Number(d1.successful_sync_count ?? 0) !== 0
+    || Number(d1.successful_sync_count ?? 0) !== incident.successfulSyncCountBeforeRecovery
     || Number(d1.active_lock_count ?? 0) !== 0
     || Number(lark.snapshots ?? 0) !== 0
     || Number(lark.metrics ?? 0) !== 0
     || Number(lark.topContent ?? 0) !== 0
     || Number(lark.topAds ?? 0) !== 0
     || Number(lark.duplicateMetricKeys ?? 0) !== 0) throw recoveryFailure(
-    'Facebook 1D target is no longer the exact unmaterialized incident state',
+    `${incident.label} target is no longer the exact unmaterialized incident state`,
     'REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_INITIAL_STATE_MISMATCH',
     {
+      incidentKey: incident.key,
       reportId: d1.report_id ?? null,
       materializationCount: Number(d1.materialization_count ?? 0),
       successfulSyncCount: Number(d1.successful_sync_count ?? 0),
+      expectedSuccessfulSyncCount: incident.successfulSyncCountBeforeRecovery,
       activeLockCount: Number(d1.active_lock_count ?? 0),
       larkSnapshots: Number(lark.snapshots ?? 0),
       larkMetrics: Number(lark.metrics ?? 0),
@@ -184,8 +263,7 @@ export function assertReviewedConfigDlqInitialState(input = {}) {
   return true;
 }
 
-export function buildReviewedConfigDlqIncidentSql() {
-  const incident = REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_INCIDENT;
+export function buildReviewedConfigDlqIncidentSql(incident = REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_INCIDENT) {
   return compactSql(`
     SELECT
       d.dlq_id, d.message_id, d.queue_name, d.job_type, d.schema_version,
@@ -202,8 +280,10 @@ export function buildReviewedConfigDlqIncidentSql() {
   `);
 }
 
-export function buildReviewedConfigDlqClosureStatements(now = Date.now()) {
-  const incident = REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_INCIDENT;
+export function buildReviewedConfigDlqClosureStatements(
+  now = Date.now(),
+  incident = REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_INCIDENT,
+) {
   const repairedAt = Number(now);
   if (!Number.isSafeInteger(repairedAt) || repairedAt <= 0) throw recoveryFailure(
     'DLQ closure timestamp must be a positive epoch millisecond',
@@ -235,9 +315,10 @@ export function buildReviewedConfigDlqClosureStatements(now = Date.now()) {
           audit_reference = COALESCE(audit_reference, '${reference}')
       WHERE dlq_id = '${sqlText(incident.dlqId)}'
         AND operation_id IS NULL
+        AND original_work_key = '${sqlText(incident.originalWorkKey)}'
         AND original_requested_at = ${incident.requestedAt}
-        AND main_queue_attempts = 1
-        AND dlq_delivery_attempts = 0
+        AND main_queue_attempts = ${incident.mainQueueAttempts}
+        AND dlq_delivery_attempts = ${incident.dlqDeliveryAttempts}
         AND recovery_status IN ('not_started', 'completed')
         AND (recovery_reference IS NULL OR recovery_reference = '${reference}')
         AND (audit_reference IS NULL OR audit_reference = '${reference}');
@@ -245,17 +326,20 @@ export function buildReviewedConfigDlqClosureStatements(now = Date.now()) {
   ]);
 }
 
-export function assertReviewedConfigDlqClosed(row = {}) {
-  const incident = REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_INCIDENT;
+export function assertReviewedConfigDlqClosed(
+  row = {},
+  incident = REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_INCIDENT,
+) {
   if (row.dlq_id !== incident.dlqId
     || row.status !== 'redriven'
     || row.redrive_reference !== incident.closureReference
     || row.recovery_status !== 'completed'
     || row.recovery_reference !== incident.closureReference
     || row.audit_reference !== incident.closureReference) throw recoveryFailure(
-    'Exact Facebook Report DLQ closure readback is incomplete',
+    `Exact ${incident.label} Report DLQ closure readback is incomplete`,
     'REPORT_RUNTIME_REVIEWED_CONFIG_DLQ_CLOSURE_INCOMPLETE',
     {
+      incidentKey: incident.key,
       status: row.status ?? null,
       redriveReference: row.redrive_reference ?? null,
       recoveryStatus: row.recovery_status ?? null,
