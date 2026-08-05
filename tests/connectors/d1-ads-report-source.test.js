@@ -67,6 +67,8 @@ test('Meta Ads aggregates reviewed publisher partitions once and builds Top Ads 
   assert.equal(result.readSummary.summaryBreakdownFamily, 'publisher_platform');
   assert.equal(result.readSummary.discardedFactRows, 1);
   assert.equal(result.readSummary.sourceWatermark, 'wm-meta');
+  assert.equal(result.readSummary.entityQueryCount, 1);
+  assert.equal(result.readSummary.entityQueryMaxIds, 97);
 });
 
 test('Meta Ads reviewed projections exclude large retained JSON columns from D1 result rows', async () => {
@@ -104,6 +106,62 @@ test('Meta Ads reviewed projections exclude large retained JSON columns from D1 
 
   assert.equal(result.metrics.spend_micros, 100);
   assert.equal(calls.some((sql) => /actions_json|breakdown_json|source_payload_hash/u.test(sql)), false);
+});
+
+test('Meta Ads chunks entity lookups to stay within the 100-bound D1 contract', async () => {
+  const calls = [];
+  const facts = Array.from({ length: 98 }, (_, index) => fact({
+    key: `fact-${index + 1}`,
+    level: 'ad',
+    adId: `ad-${String(index + 1).padStart(3, '0')}`,
+    breakdown: 'publisher_platform=facebook',
+    segment: 'none',
+    spend: index + 1,
+    impressions: index + 10,
+    clicks: 1,
+    conversions: 0,
+    value: 0,
+  }));
+  const db = createD1((sql, bindings) => {
+    calls.push({ sql, bindings });
+    if (sql.includes('data_coverage_runs')) {
+      return {
+        coverage_run_id: 'coverage-meta',
+        dataset_key: 'meta_ads.performance.daily',
+        status: 'complete',
+        expected_rows: 98,
+        observed_rows: 98,
+        source_watermark: '2026-07-31',
+        failed_rows: 0,
+      };
+    }
+    if (sql.includes('ads_entity_state')) {
+      return bindings.slice(3).map((externalEntityId) => ({
+        external_entity_id: externalEntityId,
+        entity_name: `Name ${externalEntityId}`,
+        currency: 'THB',
+      }));
+    }
+    return facts;
+  });
+
+  const result = await new D1AdsReportSource({ db, platform: 'meta_ads' }).load({
+    customerKey: 'chemistry_k',
+    accountKey: 'chemistry_k',
+    periodStart: '2026-07-29',
+    periodEnd: '2026-07-31',
+    topAdsLimit: 100,
+  });
+
+  const entityCalls = calls.filter((call) => call.sql.includes('FROM ads_entity_state'));
+  assert.equal(entityCalls.length, 2);
+  assert.deepEqual(entityCalls.map((call) => call.bindings.length), [100, 4]);
+  assert.equal(entityCalls.every((call) => call.bindings.length <= 100), true);
+  assert.equal(result.readSummary.entityQueryCount, 2);
+  assert.equal(result.readSummary.entityQueryMaxIds, 97);
+  assert.equal(result.readSummary.entityRows, 98);
+  assert.equal(result.topAds.length, 98);
+  assert.equal(result.topAds.every((row) => row.ad_name === `Name ${row.external_ad_id}`), true);
 });
 
 test('Meta Ads Top Ads order is deterministic for equal detailed totals', async () => {
@@ -182,6 +240,7 @@ test('Google Ads aggregates campaign all/all facts without fabricating Top Ads',
   assert.equal(result.readSummary.topAdsAvailability, 'not_observed');
   assert.equal(result.readSummary.discardedFactRows, 1);
   assert.equal(result.readSummary.sourceWatermark, 'wm-google');
+  assert.equal(result.readSummary.entityQueryCount, 0);
 });
 
 function fact(input) {
