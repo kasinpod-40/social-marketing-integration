@@ -1,4 +1,5 @@
 import { calculateAdsPeriodMetrics } from '../../application/src/reports/calculate-ads-period-metrics.js';
+import { getReportPlatformContract } from '../../application/src/reports/report-platform-adapter-registry.js';
 import { permanentError, transientError } from '../../shared/src/errors/runtime-error.js';
 
 const DEFAULT_MAX_FACTS = 10_000;
@@ -13,41 +14,45 @@ export class D1AdsReportSource {
   constructor(input = {}) {
     this.db = requireD1(input.db);
     this.platform = requireText(input.platform, 'platform');
+    const contract = getReportPlatformContract(this.platform);
+    if (contract.capability !== 'paid_ads') {
+      throw invalidQuery(`${this.platform} is not a Paid Ads Report platform`);
+    }
     this.coverageDatasetKeys = requireTextList(
-      input.coverageDatasetKeys ?? [input.datasetKey ?? 'ads_daily_facts'],
+      input.coverageDatasetKeys ?? contract.coverageDatasetKeys,
       'coverageDatasetKeys',
       { allowEmpty: false },
     );
     this.summaryReportLevels = requireTextList(
       input.summaryReportLevels
-        ?? (input.summaryReportLevel ? [input.summaryReportLevel] : ['account']),
+        ?? (input.summaryReportLevel ? [input.summaryReportLevel] : contract.summaryReportLevels),
       'summaryReportLevels',
       { allowEmpty: false },
     );
     this.rankingReportLevels = requireTextList(
       input.rankingReportLevels
-        ?? (input.rankingReportLevel ? [input.rankingReportLevel] : ['ad']),
+        ?? (input.rankingReportLevel ? [input.rankingReportLevel] : contract.rankingReportLevels),
       'rankingReportLevels',
       { allowEmpty: true },
     );
     this.summaryBreakdownFamily = requireText(
-      input.summaryBreakdownFamily ?? input.breakdownKey ?? 'none',
+      input.summaryBreakdownFamily ?? input.breakdownKey ?? contract.summaryBreakdownFamily,
       'summaryBreakdownFamily',
     );
     this.summarySegmentFamily = requireText(
-      input.summarySegmentFamily ?? input.segmentKey ?? 'none',
+      input.summarySegmentFamily ?? input.segmentKey ?? contract.summarySegmentFamily,
       'summarySegmentFamily',
     );
     this.rankingBreakdownFamily = this.rankingReportLevels.length === 0
       ? null
       : requireText(
-        input.rankingBreakdownFamily ?? this.summaryBreakdownFamily,
+        input.rankingBreakdownFamily ?? contract.rankingBreakdownFamily,
         'rankingBreakdownFamily',
       );
     this.rankingSegmentFamily = this.rankingReportLevels.length === 0
       ? null
       : requireText(
-        input.rankingSegmentFamily ?? this.summarySegmentFamily,
+        input.rankingSegmentFamily ?? contract.rankingSegmentFamily,
         'rankingSegmentFamily',
       );
   }
