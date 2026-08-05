@@ -126,7 +126,10 @@ jobs:
         run: npm run deploy:dry-run
 
       - name: Diff whitespace check
-        run: git diff --check origin/${{ github.base_ref }}...HEAD
+        shell: bash
+        run: |
+          set -o pipefail
+          git diff --check origin/${{ github.base_ref }}...HEAD 2>&1 | tee diff-check.log
 
       - name: Upload verification diagnostics
         if: always()
@@ -136,5 +139,6 @@ jobs:
           path: |
             *-test.log
             audit.log
+            diff-check.log
           if-no-files-found: ignore
           retention-days: 7
