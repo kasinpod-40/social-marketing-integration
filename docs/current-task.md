@@ -1,14 +1,16 @@
-# Current Task — Report Source Readiness Contract Repair v1
+# Current Task — Retained Multichannel Report Handoff Builder v1
 
 ## Status
 
 ```text
-TASK_STATUS                         = DRAFT_PR_EXACT_HEAD_VERIFICATION
-CURRENT_PROGRAM                     = REPORT_SOURCE_READINESS_CONTRACT_REPAIR_V1
-BRANCH                              = hotfix/report-source-readiness-contract-v1
-EXACT_BASE                          = 6b88fd9eb05b25a7e3a3e7de9930193bab6c1ace
-DRAFT_PR                            = 505
-SOURCE_RECONCILIATION               = COMPLETE_READ_ONLY
+TASK_STATUS                         = IMPLEMENTATION_IN_PROGRESS
+CURRENT_PROGRAM                     = RETAINED_MULTICHANNEL_REPORT_HANDOFF_BUILDER_V1
+BRANCH                              = hotfix/retained-multichannel-report-handoff-builder-v1
+EXACT_BASE                          = 79ca79c0def08a4fdcc298ea1a75a530b442868e
+FINALIZER                           = PASS_EXACT_MAIN
+READY_CHANNEL_COUNT                 = 7
+WAITING_PLANNED_COUNT               = 1
+MATERIALIZATION_EXECUTED            = false
 PROVIDER_REQUEST_APPROVED           = false
 QUEUE_ACTION_APPROVED               = false
 REMOTE_D1_MUTATION_APPROVED         = false
@@ -19,128 +21,90 @@ NOTIFICATION_ADMISSION_ENABLED      = false
 PRODUCTION                          = BLOCKED
 ```
 
-Full decision record:
+Full contract:
 
 ```text
-docs/project-brain/report-source-readiness-contract-repair-v1.md
+docs/tasks/retained-multichannel-report-handoff-builder-v1.md
 ```
 
 ## Goal
 
-Repair the existing Shared Report source-readiness and D1 reader contracts so completed validated facts can be
-materialized without deleting forensic alerts, replaying Providers, copying Lark rows into D1, or creating a
-second Report/Reliability/Queue/Coverage stack.
+Add the missing reviewed builder between exact-head SELECT-only readiness and the existing Run All Report
+materialization terminal. The builder must create the retained sanitized all-channel handoff from existing
+Finalizer, readiness, Meta Remote lock release and shared closeout authorities. Hand-written handoff JSON remains
+forbidden.
 
-The business sequence after this repository hotfix is:
+## Confirmed exact-main evidence
 
-```text
-Source readiness repair
-→ existing-data Report materialization (1D / 3D / 7D / 30D)
-→ incremental catch-up from confirmed watermarks
-→ approved Integration Workspace daily schedule activation
-```
+User-run evidence on `main@79ca79c0def08a4fdcc298ea1a75a530b442868e` proves:
 
-## Confirmed root causes
-
-1. Historical Connector critical alerts were counted as current Report incidents.
-2. Coverage selection used the latest arbitrary row instead of the dataset required by each Report contract.
-3. Paid Ads readiness and the Shared D1 reader required `account/ad + none/none` even though:
-   - Meta Ads stores validated `ad` facts partitioned by `publisher_platform=*`;
-   - Google Ads stores validated `campaign` facts at `all/all`.
-4. Facebook Organic has Account Daily authority but no proven Content observations in canonical D1; missing
-   Content metrics must remain N/A and Top Content must remain empty.
-5. TikTok Ads is still planned and must remain skipped.
-
-## Required shared changes
-
-- scope blocking alerts to active/current `dashboard_performance_report` execution authority;
-- retain historical Connector alerts in readiness evidence without deleting or resolving them;
-- select Coverage by exact platform Report datasets;
-- aggregate one validated Paid Ads source grain without double counting partitions;
-- allow Google Ads Account summary from Campaign facts while keeping Top Ads not observed;
-- allow Facebook Account-scope readiness while Content performance remains N/A;
-- preserve exact Notification Runtime baseline and keep Notification Admission false.
-
-## Implementation boundaries
-
-Use the existing implementations only:
-
-- Report platform adapter registry;
-- reviewed Report readiness/closeout binding;
-- `D1OrganicReportSource`;
-- `D1AdsReportSource`;
-- `D1ChatwootReportSource`;
-- existing Report materialization, Reliability, Queue, lock, DLQ and Coverage contracts.
-
-Do not create a new Report engine, Reliability framework, Queue framework, D1 writer, Lark sync engine, Coverage
-engine, wrapper chain, source-loader monkey patch, manual retained handoff, fabricated metric, or replacement
-operation.
-
-## Required regressions
-
-- Instagram and WooCommerce remain ready with completed facts plus historical Connector alerts.
-- Chatwoot selects `chatwoot.conversation_daily` / `chatwoot.account_daily`, not an arbitrary recent-window row.
-- Meta Ads aggregates detailed `publisher_platform=*` D1 facts and can produce Top Ads from D1.
-- Google Ads aggregates Campaign daily facts without double counting and does not fabricate Top Ads.
-- Current Report work/lock/DLQ/critical incident still blocks.
-- Historical Connector alerts remain visible but do not block.
-- Facebook Account scope is allowed while Content metrics/Top Content remain N/A.
-- TikTok Ads remains planned/skipped.
-- Notification Runtime flags remain true and Notification Admission remains false.
-
-## Implementation result
-
-Repository implementation is complete on Draft PR #505 and awaits exact-current-Head Branch Verification.
-The PR check is the only authority for the final Head because any documentation or review fix creates a new Head
-and invalidates older CI evidence.
-
-Implemented through the existing Shared code paths:
-
-- platform-specific Coverage datasets and validated source grains are centralized in the Report adapter registry;
-- current Report incidents remain blocking while historical Connector critical alerts remain visible evidence only;
-- Chatwoot selects one deterministic latest row for each required daily Coverage dataset and requires both
-  watermarks;
-- Meta Ads aggregates reviewed `ad / publisher_platform=* / none` partitions once and builds Top Ads from D1;
-- Google Ads aggregates `campaign / all / all` facts and leaves Top Ads `not_observed` because Ad-level performance
-  facts are not proven;
-- Facebook can materialize exact Account Daily metrics while Content metrics remain null/N/A and Top Content stays
-  empty;
+- Report Finalizer passes all Repository gates;
+- Report Schema/Settings are converged with zero drift;
+- Notification Runtime Settings and Worker baseline are preserved;
+- Notification Admission remains false;
+- Facebook, Instagram, YouTube, Meta Ads, Google Ads, WooCommerce and Chatwoot are all ready for exact
+  `1D / 3D / 7D / 30D` `create_materialization`;
 - TikTok Ads remains planned/skipped;
-- SELECT-only readiness evidence records exact source scope, Coverage datasets, fact counts and retained historical
-  alert counts;
-- Notification Runtime baseline and disabled Notification Admission contracts are unchanged.
+- Provider request, Remote mutation, Queue action and Worker deployment counts remain zero;
+- Materialization has not executed.
 
-Repository change scope at Draft PR creation:
+## Confirmed implementation gap
 
-```text
-changed_files                     = 16
-migration_files_changed           = 0
-worker_config_files_changed       = 0
-queue_framework_files_changed     = 0
-provider_request_count            = 0
-queue_action_count                = 0
-remote_d1_mutation_count          = 0
-remote_lark_mutation_count        = 0
-worker_deployment_count           = 0
-schedule_activation_count         = 0
-production_action_count           = 0
-```
+The exact main tree contains:
 
-No Local/Remote business gate is claimed as passed before exact-current-Head CI and readback. The original
-Notification smoke execution remains forbidden from blind rerun.
+- `scripts/report-channel-remote-readiness-reviewed-terminal.mjs`;
+- `scripts/report-runtime-closeout-reviewed-multiwindow.mjs`;
+- `scripts/report-all-ready-channels-terminal.mjs`;
+- retained handoff validators.
 
-## Repository verification
+It does not contain the retained all-channel handoff builder required by the prior Post-merge boundary. The earlier
+handoff name `scripts/build-retained-multichannel-report-handoff.mjs` was not present and must not be treated as an
+existing executable authority until this PR is reviewed and merged.
+
+## In scope
+
+- pure retained handoff builder using existing validators;
+- guarded terminal with plan-only default;
+- exact clean `main == origin/main` gate;
+- exact Finalizer Head gate;
+- immutable merged Meta PR #421 ancestry gate;
+- exact readiness for every reviewed non-planned channel;
+- per-channel existing shared closeout authority;
+- private mode-0600 sanitized output;
+- focused regression tests and task documentation.
+
+## Out of scope
+
+- Provider request;
+- Queue send;
+- Remote D1/Lark mutation;
+- Worker deployment;
+- Report materialization execution;
+- Schedule or Notification Admission activation;
+- Production;
+- new Report, Reliability, Queue, D1, Lark or Coverage framework.
+
+## Acceptance criteria
+
+1. Plan-only performs zero external/Remote action.
+2. Execute requires exact confirmation.
+3. Dirty, detached, stale or non-main Repository state fails closed.
+4. Finalizer evidence must match current exact main Head.
+5. Meta Remote lock authority must equal merged PR #421 commit and be an ancestor of current main.
+6. Seven non-planned channel readiness summaries must pass existing reviewed validators at exact Head.
+7. TikTok Ads must be skipped only because its source status remains `planned`.
+8. Output must pass existing Run All selection and retained handoff validators.
+9. Output must be sanitized and written privately.
+10. Builder performs zero Provider, Queue, Remote D1/Lark, deployment, Schedule and Production action.
+
+## Required verification
 
 ```bash
 npm ci
 npm run check
-node --test \
-  tests/scripts/report-channel-remote-readiness.test.js \
-  tests/scripts/report-runtime-closeout-reviewed-binding.test.js \
-  tests/connectors/d1-organic-report-source.test.js \
-  tests/connectors/d1-ads-report-source.test.js \
-  tests/connectors/d1-chatwoot-report-source.test.js \
-  tests/application/multichannel-report-runtime.test.js
+node --test tests/scripts/retained-multichannel-report-handoff.test.js
+node --test tests/scripts/report-all-ready-channels.test.js
+node --test tests/scripts/report-runtime-closeout-reviewed-binding.test.js
 npm test
 npm run test:report-reliability
 npm audit --audit-level=high
@@ -150,14 +114,6 @@ git diff --check
 
 ## Post-merge boundary
 
-Repository merge alone authorizes no Provider, Queue, D1, Lark, Worker, Schedule or Production mutation.
-
-Post-merge execution must use exact merged-main Finalizer and SELECT-only readiness evidence, then the existing
-reviewed retained-handoff builder. The original notification smoke test remains permanently forbidden from blind
-rerun:
-
-```text
-scripts/lark-notification-runtime-smoke-test-exact-terminal.mjs --execute
-```
-
-Poll-only notification recovery remains a separate authority and is not invoked by this task.
+Builder merge alone authorizes no Remote materialization. After exact merged-main CI and a successful retained
+handoff build, the existing `report-all-ready-channels-terminal.mjs --execute` remains the separately guarded
+Remote mutation authority. Schedules, Notification Admission and Production remain blocked.
