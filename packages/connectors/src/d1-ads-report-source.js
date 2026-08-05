@@ -99,7 +99,8 @@ export class D1AdsReportSource {
 
     const entityIds = [...new Set(rankingRows.map(entityIdentity).filter(Boolean))].sort();
     const entityRows = entityIds.length === 0 ? [] : await this.#all(
-      `SELECT * FROM ads_entity_state
+      `SELECT external_entity_id, external_creative_id, entity_name, currency
+       FROM ads_entity_state
        WHERE customer_key = ? AND platform = ? AND account_key = ?
          AND entity_type = 'ad' AND external_entity_id IN (${placeholders(entityIds.length)})
        ORDER BY external_entity_id ASC`,
@@ -178,7 +179,28 @@ export class D1AdsReportSource {
 
 function factSql(levelCount) {
   return `
-    SELECT * FROM ads_daily_facts
+    SELECT
+      ads_fact_key,
+      report_level,
+      external_entity_id,
+      external_campaign_id,
+      external_ad_group_id,
+      external_ad_id,
+      external_creative_id,
+      metric_date,
+      breakdown_key,
+      segment_key,
+      currency,
+      spend_micros,
+      impressions,
+      reach,
+      clicks,
+      conversions,
+      conversion_value_micros,
+      video_views,
+      data_status,
+      source_revision
+    FROM ads_daily_facts
     WHERE customer_key = ? AND platform = ? AND account_key = ?
       AND report_level IN (${placeholders(levelCount)})
       AND metric_date >= ? AND metric_date <= ?
@@ -188,7 +210,18 @@ function factSql(levelCount) {
 
 function coverageSql(datasetCount) {
   return `
-    SELECT * FROM data_coverage_runs
+    SELECT
+      coverage_run_id,
+      dataset_key,
+      status,
+      expected_entities,
+      observed_entities,
+      expected_rows,
+      observed_rows,
+      failed_rows,
+      source_watermark,
+      revisable_until
+    FROM data_coverage_runs
     WHERE customer_key = ? AND platform = ? AND account_key = ?
       AND dataset_key IN (${placeholders(datasetCount)}) AND completed_at IS NOT NULL
     ORDER BY completed_at DESC, updated_at DESC, coverage_run_id ASC LIMIT 1
