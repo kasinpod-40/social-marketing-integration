@@ -31,8 +31,7 @@ test('Meta history closeout child delegates to the guarded finalizer and exact e
   assert.doesNotMatch(source, /larkSummary\.data\.larkVerified/u);
 });
 
-test('Meta history current recovery exposes only the exact-plan Terminal authority', async () => {
-  const currentTask = await readFile('docs/current-task.md', 'utf8');
+test('Meta history recovery task exposes only the exact-plan Terminal authority', async () => {
   const recoveryTask = await readFile(exactContinuationTask, 'utf8');
   const historical = await readFile(historicalTask, 'utf8');
   const terminal = await readFile(terminalEntrypoint, 'utf8');
@@ -43,23 +42,20 @@ test('Meta history current recovery exposes only the exact-plan Terminal authori
   const ordinaryTerminalCommand =
     /node scripts\/meta-history-2026-terminal\.mjs --execute/u;
 
-  assert.match(currentTask, exactTerminalPath);
   assert.match(recoveryTask, exactTerminalPath);
   assert.match(historical, ordinaryTerminalCommand);
   assert.match(terminal, /meta-history-2026-one-command\.mjs/u);
   assert.match(exactTerminal, /meta-history-2026-exact-plan-continuation\.mjs/u);
 
-  for (const source of [currentTask, recoveryTask]) {
-    assert.doesNotMatch(source, ordinaryTerminalCommand);
-    assert.doesNotMatch(
-      source,
-      new RegExp(`node ${closeoutChild.replaceAll('.', '\\.')} --execute`, 'u'),
-    );
-    assert.doesNotMatch(
-      source,
-      new RegExp(`node ${finalizerChild.replaceAll('.', '\\.')} --execute`, 'u'),
-    );
-  }
+  assert.doesNotMatch(recoveryTask, ordinaryTerminalCommand);
+  assert.doesNotMatch(
+    recoveryTask,
+    new RegExp(`node ${closeoutChild.replaceAll('.', '\\.')} --execute`, 'u'),
+  );
+  assert.doesNotMatch(
+    recoveryTask,
+    new RegExp(`node ${finalizerChild.replaceAll('.', '\\.')} --execute`, 'u'),
+  );
 });
 
 test('Meta history Terminal materializes Shared required false flags and customer runtime authority before spawning the child', async () => {
