@@ -15,6 +15,16 @@ import {
 } from './report-runtime-closeout-reviewed-process.js';
 
 const DEPLOYMENT_STABILITY_DELAYS_MS = Object.freeze([0, 10_000, 20_000]);
+const QUEUE_ACTIVATION_STABILITY_DELAYS_MS = Object.freeze([0, 60_000, 60_000]);
+const EXPECTED_WORKER_NAME = 'social-mkt-sync-worker';
+const EXPECTED_MAIN_QUEUE = 'social-mkt-sync-jobs';
+const EXPECTED_DLQ = 'social-mkt-sync-dlq';
+const EXPECTED_MAIN_CONSUMER_SETTINGS = Object.freeze({
+  batchSize: 10,
+  maxConcurrency: 1,
+  maxRetries: 5,
+  maxWaitTimeMs: 30_000,
+});
 
 export async function resolveReviewedCloudflareSession({ env, sourceText, runText }) {
   const cleanEnv = { ...env };
@@ -69,7 +79,89 @@ export async function resolveReviewedQueue({ accountId, token, expectedName }) {
     'REPORT_RUNTIME_CLOSEOUT_QUEUE_TARGET_INVALID',
     { matchCount: matches.length },
   );
-  return Object.freeze(matches[0]);
+
+  const selected = matches[0];
+  const consumers = await readReviewedQueueConsumers({
+    accountId,
+    token,
+    queueId: selected.queueId,
+  });
+  const consumer = assertReviewedQueueConsumer({
+    consumers,
+    expectedQueueName: expectedName,
+  });
+  return Object.freeze({
+    ...selected,
+    consumerIdFingerprint: sha256(consumer.consumerId),
+    consumerScriptName: consumer.scriptName,
+    consumerSettingsFingerprint: sha256(stableJson(consumer.settings)),
+  });
+}
+
+export async function readReviewedQueueConsumers({ accountId, token, queueId }) {
+  const response = await fetch(
+    `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/queues/${encodeURIComponent(queueId)}/consumers`,
+    {
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(30_000),
+    },
+  );
+  const body = await response.json().catch(() => null);
+  if (!response.ok || body?.success !== true || !Array.isArray(body.result)) throw closeoutFailure(
+    `Cloudflare Queue consumer inventory read failed (HTTP ${response.status})`,
+    'REPORT_RUNTIME_CLOSEOUT_QUEUE_CONSUMER_READ_FAILED',
+    { status: response.status },
+  );
+  return Object.freeze(body.result.map((item) => Object.freeze({ ...item })));
+}
+
+export function assertReviewedQueueConsumer({ consumers, expectedQueueName = EXPECTED_MAIN_QUEUE }) {
+  const matches = Array.isArray(consumers)
+    ? consumers.filter((item) => (
+      String(item?.type ?? '').trim().toLowerCase() === 'worker'
+      && String(item?.queue_name ?? item?.queueName ?? '').trim() === expectedQueueName
+      && String(item?.script_name ?? item?.scriptName ?? '').trim() === EXPECTED_WORKER_NAME
+    ))
+    : [];
+  if (matches.length !== 1 || consumers.length !== 1) throw closeoutFailure(
+    'Report Queue requires exactly one reviewed Worker consumer',
+    'REPORT_RUNTIME_CLOSEOUT_QUEUE_CONSUMER_INVALID',
+    { consumerCount: Array.isArray(consumers) ? consumers.length : 0, reviewedMatchCount: matches.length },
+  );
+  const item = matches[0];
+  const settings = item.settings ?? {};
+  const normalized = Object.freeze({
+    batchSize: Number(settings.batch_size ?? settings.batchSize),
+    maxConcurrency: Number(settings.max_concurrency ?? settings.maxConcurrency),
+    maxRetries: Number(settings.max_retries ?? settings.maxRetries),
+    maxWaitTimeMs: Number(settings.max_wait_time_ms ?? settings.maxWaitTimeMs),
+    deadLetterQueue: String(item.dead_letter_queue ?? item.deadLetterQueue ?? '').trim(),
+  });
+  if (normalized.batchSize !== EXPECTED_MAIN_CONSUMER_SETTINGS.batchSize
+    || normalized.maxConcurrency !== EXPECTED_MAIN_CONSUMER_SETTINGS.maxConcurrency
+    || normalized.maxRetries !== EXPECTED_MAIN_CONSUMER_SETTINGS.maxRetries
+    || normalized.maxWaitTimeMs !== EXPECTED_MAIN_CONSUMER_SETTINGS.maxWaitTimeMs
+    || normalized.deadLetterQueue !== EXPECTED_DLQ) throw closeoutFailure(
+    'Report Queue consumer settings differ from the reviewed Worker topology',
+    'REPORT_RUNTIME_CLOSEOUT_QUEUE_CONSUMER_INVALID',
+    {
+      batchSize: normalized.batchSize,
+      maxConcurrency: normalized.maxConcurrency,
+      maxRetries: normalized.maxRetries,
+      maxWaitTimeMs: normalized.maxWaitTimeMs,
+      deadLetterQueueMatched: normalized.deadLetterQueue === EXPECTED_DLQ,
+    },
+  );
+  const consumerId = String(item.consumer_id ?? item.consumerId ?? '').trim();
+  if (!consumerId) throw closeoutFailure(
+    'Report Queue consumer identity is missing',
+    'REPORT_RUNTIME_CLOSEOUT_QUEUE_CONSUMER_INVALID',
+  );
+  return Object.freeze({
+    consumerId,
+    scriptName: EXPECTED_WORKER_NAME,
+    settings: normalized,
+  });
 }
 
 export function createReviewedRemoteRuntime(input) {
@@ -85,6 +177,8 @@ export function createReviewedRemoteRuntime(input) {
     Object.entries(fullRequiredTables)
       .filter(([key]) => !Object.hasOwn(baselineRequiredTables, key)),
   ));
+  const reportExecutionWindow = Array.isArray(target?.activeTrueFlags)
+    && target.activeTrueFlags.includes('MKT_REPORT_D1_READ_ENABLED');
 
   async function buildBundle(configText, label) {
     const outdir = await mkdtemp(join(tmpdir(), `report-closeout-${label}-`));
@@ -116,8 +210,11 @@ export function createReviewedRemoteRuntime(input) {
   async function verifyDeployment(mode, expectedVersionId = null) {
     if (expectedVersionId === null) return verifyDeploymentOnce(mode, null);
 
+    const delays = reportExecutionWindow
+      ? QUEUE_ACTIVATION_STABILITY_DELAYS_MS
+      : DEPLOYMENT_STABILITY_DELAYS_MS;
     const samples = [];
-    for (const delayMs of DEPLOYMENT_STABILITY_DELAYS_MS) {
+    for (const delayMs of delays) {
       if (delayMs > 0) await sleep(delayMs);
       samples.push(await verifyDeploymentOnce(mode, expectedVersionId));
     }
@@ -145,17 +242,18 @@ export function createReviewedRemoteRuntime(input) {
     return Object.freeze({
       ...samples.at(-1),
       stabilitySampleCount: samples.length,
-      stabilityWindowMs: DEPLOYMENT_STABILITY_DELAYS_MS.reduce((total, value) => total + value, 0),
+      stabilityWindowMs: delays.reduce((total, value) => total + value, 0),
+      queueActivationBarrier: reportExecutionWindow,
     });
   }
 
   async function verifyDeploymentOnce(mode, expectedVersionId) {
     const status = JSON.parse(await runText('npx', [
-      'wrangler', 'deployments', 'status', '--name', 'social-mkt-sync-worker', '--config', configPath, '--json',
+      'wrangler', 'deployments', 'status', '--name', EXPECTED_WORKER_NAME, '--config', configPath, '--json',
     ], { env }));
     const activeVersion = resolveActiveVersion(status, expectedVersionId);
     const versionView = JSON.parse(await runText('npx', [
-      'wrangler', 'versions', 'view', activeVersion, '--name', 'social-mkt-sync-worker', '--config', configPath, '--json',
+      'wrangler', 'versions', 'view', activeVersion, '--name', EXPECTED_WORKER_NAME, '--config', configPath, '--json',
     ], { env }));
     const bindings = collectBindings(versionView);
     const trueFlags = bindings

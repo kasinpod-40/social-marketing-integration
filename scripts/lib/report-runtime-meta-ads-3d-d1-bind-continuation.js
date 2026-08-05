@@ -7,7 +7,7 @@ import {
 } from './report-runtime-closeout-reviewed-process.js';
 
 export const META_ADS_3D_D1_BIND_CONTINUATION_CONTRACT =
-  'report_runtime_meta_ads_3d_d1_bind_continuation_v1';
+  'report_runtime_meta_ads_3d_queue_activation_continuation_v2';
 
 const ORIGINAL_DLQ = Object.freeze({
   role: 'configuration_incident',
@@ -22,7 +22,7 @@ const ORIGINAL_DLQ = Object.freeze({
   dlqDeliveryAttempts: 0,
   replayPayloadRawSha256: 'cb25578b3e5f6034425ae10772adf1a85efc20634dcdc7470377bf143340102d',
   closureReference:
-    'report-runtime-meta-ads-3d-d1-bind-continuation-v1:terminal:e408707c9c2d383e04a3e213a7be45a0',
+    'report-runtime-meta-ads-3d-queue-activation-continuation-v2:terminal:e408707c9c2d383e04a3e213a7be45a0',
 });
 
 const RETRY_EXHAUSTED_DLQ = Object.freeze({
@@ -39,22 +39,38 @@ const RETRY_EXHAUSTED_DLQ = Object.freeze({
   replayPayloadBytes: 354,
   createdAt: 1785939099176,
   closureReference:
-    'report-runtime-meta-ads-3d-d1-bind-continuation-v1:dlq:2f292f08f5bdc4f12c91b68ceff71e1b',
+    'report-runtime-meta-ads-3d-queue-activation-continuation-v2:dlq:2f292f08f5bdc4f12c91b68ceff71e1b',
+});
+
+const QUEUE_ACTIVATION_DLQ = Object.freeze({
+  role: 'queue_activation_configuration_rejection',
+  dlqId: 'terminal:228fecb8afc03a3339313a85fbb5c45c',
+  messageId: '228fecb8afc03a3339313a85fbb5c45c',
+  queueName: 'social-mkt-sync-jobs',
+  errorCode: 'DASHBOARD_REPORT_CONFIGURATION_INVALID',
+  errorMessage: 'Dashboard report requires a reviewed D1-primary job contract',
+  retryCount: 1,
+  originalWorkKey: 'tiktok:228fecb8afc03a3339313a85fbb5c45c',
+  mainQueueAttempts: 1,
+  dlqDeliveryAttempts: 0,
+  createdAt: 1785943972738,
+  closureReference:
+    'report-runtime-meta-ads-3d-queue-activation-continuation-v2:terminal:228fecb8afc03a3339313a85fbb5c45c',
 });
 
 export const META_ADS_3D_D1_BIND_CONTINUATION = Object.freeze({
-  key: 'meta_ads_3d_d1_bind_20260731',
-  label: 'Meta Ads 3D D1-bind continuation',
-  decision: 'META_ADS_REPORT_3D_D1_BIND_CONTINUATION_COMPLETED',
-  confirmation: 'CONTINUE_EXACT_META_ADS_3D_D1_BIND_RECOVERY',
-  evidenceDirectory: 'outputs/meta-ads-3d-d1-bind-continuation',
+  key: 'meta_ads_3d_queue_activation_20260731',
+  label: 'Meta Ads 3D Queue-activation continuation',
+  decision: 'META_ADS_REPORT_3D_QUEUE_ACTIVATION_CONTINUATION_COMPLETED',
+  confirmation: 'CONTINUE_EXACT_META_ADS_3D_QUEUE_ACTIVATION_RECOVERY',
+  evidenceDirectory: 'outputs/meta-ads-3d-queue-activation-continuation-v2',
   requiredRepositoryHead:
     process.env.MKT_REPORT_RUNTIME_META_ADS_3D_EXPECTED_HEAD
-      ?? '2f87f7f342847a5dcd0cf794cd0a74e55ab76068',
+      ?? 'd3bbaa33fb51874609dae2abd04ab0cd25f36ea9',
   finalizerDefault:
     'outputs/report-runtime-finalize/report-runtime-finalize-summary.json',
   retainedAttemptPath:
-    'outputs/meta-ads-3d-exact-recovery-5b35861553d2/recovery/meta_ads-3d-config-dlq-send-first-retry.attempt.json',
+    'outputs/meta-ads-3d-d1-bind-continuation-d3bbaa33fb51/continuation/meta_ads-3d-d1-bind-continuation-send-first.attempt.json',
   inspectorEntityPath:
     'outputs/meta-ads-3d-root-cause-inspector-2f87f7f34284/entity-bind-count.json',
   inspectorDlqPath:
@@ -69,6 +85,7 @@ export const META_ADS_3D_D1_BIND_CONTINUATION = Object.freeze({
   sourceWatermark: '2026-07-31',
   requestedAt: 1785934718928,
   failedRecoveryRequestedAt: 1785938483493,
+  failedContinuationRequestedAt: 1785943887248,
   reportSettingKey: 'integration_workspace:meta_ads:rolling:3d',
   reportId:
     'integration_workspace:meta_ads:rolling:3d:chemistry_k:rolling_days:2026-07-29:2026-07-31:meta-ads-v1',
@@ -79,7 +96,7 @@ export const META_ADS_3D_D1_BIND_CONTINUATION = Object.freeze({
   sourceFactField: 'ads_summary_fact_count',
   successfulSyncCountBeforeContinuation: 2,
   failedSyncCountBeforeContinuation: 6,
-  openReportDlqCountBeforeContinuation: 2,
+  openReportDlqCountBeforeContinuation: 3,
   rootCause: Object.freeze({
     rankingRows3d: 630,
     rankingRows1d: 210,
@@ -89,26 +106,30 @@ export const META_ADS_3D_D1_BIND_CONTINUATION = Object.freeze({
     preFixBindings1d: 80,
     classification: 'ENTITY_BIND_LIMIT_CONFIRMED',
   }),
-  dlqs: Object.freeze([ORIGINAL_DLQ, RETRY_EXHAUSTED_DLQ]),
+  dlqs: Object.freeze([ORIGINAL_DLQ, RETRY_EXHAUSTED_DLQ, QUEUE_ACTIVATION_DLQ]),
 });
 
 export function assertMetaAds3dRetainedAttempt(
   value = {},
   incident = META_ADS_3D_D1_BIND_CONTINUATION,
 ) {
-  if (value.incidentKey !== 'meta_ads_3d_20260731'
+  const retainedDlqIds = Array.isArray(value.retainedDlqIds)
+    ? value.retainedDlqIds.map(String).sort()
+    : [];
+  const expectedDlqIds = incident.dlqs.slice(0, 2).map((binding) => binding.dlqId).sort();
+  if (value.incidentKey !== 'meta_ads_3d_d1_bind_20260731'
     || value.reportId !== incident.reportId
     || value.jobSha256 !== incident.jobSha256
-    || Number(value.retryRequestedAt) !== incident.failedRecoveryRequestedAt
-    || value.originalDlqId !== incident.dlqs[0].dlqId) throw continuationFailure(
-    'Retained Meta Ads 3D failed-recovery attempt differs from the exact continuation incident',
+    || Number(value.continuationRequestedAt) !== incident.failedContinuationRequestedAt
+    || stableJson(retainedDlqIds) !== stableJson(expectedDlqIds)) throw continuationFailure(
+    'Retained Meta Ads 3D Queue-activation attempt differs from the exact continuation incident',
     'REPORT_RUNTIME_META_ADS_3D_CONTINUATION_ATTEMPT_MISMATCH',
     {
       incidentKey: value.incidentKey ?? null,
       reportIdMatched: value.reportId === incident.reportId,
       jobSha256Matched: value.jobSha256 === incident.jobSha256,
-      retryRequestedAt: Number(value.retryRequestedAt ?? 0),
-      originalDlqMatched: value.originalDlqId === incident.dlqs[0].dlqId,
+      continuationRequestedAt: Number(value.continuationRequestedAt ?? 0),
+      retainedDlqIdsMatched: stableJson(retainedDlqIds) === stableJson(expectedDlqIds),
     },
   );
   return true;
