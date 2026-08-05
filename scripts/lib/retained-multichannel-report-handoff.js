@@ -31,6 +31,7 @@ export const RETAINED_MULTICHANNEL_REPORT_HANDOFF_OUTPUT =
 
 const CLOSEOUT_OPERATOR = 'scripts/report-runtime-closeout-reviewed-multiwindow.mjs';
 const COMMIT_SHA = /^[0-9a-f]{40}$/iu;
+const NOTIFICATION_BASELINE_TRUE_FLAG_COUNTS = Object.freeze({ inactive: 0, active: 3 });
 
 export function buildRetainedMultichannelReportHandoff(input = {}) {
   const repository = normalizeRepository(input.repository);
@@ -41,6 +42,7 @@ export function buildRetainedMultichannelReportHandoff(input = {}) {
     'RETAINED_REPORT_HANDOFF_FINALIZER_HEAD_MISMATCH',
     { finalizerHead: finalizer.repository?.head ?? null, repositoryHead: repository.head },
   );
+  const notificationRuntime = normalizeNotificationRuntime(finalizer);
 
   const metaAuditHead = requireCommitSha(input.metaAuditHead, 'metaAuditHead');
   if (metaAuditHead !== META_REMOTE_LOCK_RELEASE_AUDIT_HEAD) throw builderError(
@@ -59,6 +61,7 @@ export function buildRetainedMultichannelReportHandoff(input = {}) {
       readinessByPlatform[platformScope],
       `readinessByPlatform.${platformScope}`,
     );
+    assertNotificationReadinessBaseline(readiness, notificationRuntime, platformScope);
     channelReadiness[platformScope] = readiness;
     closeoutAuthorities[platformScope] = Object.freeze({
       operator: CLOSEOUT_OPERATOR,
@@ -80,13 +83,10 @@ export function buildRetainedMultichannelReportHandoff(input = {}) {
     finalizer: {
       contractVersion: finalizer.contractVersion,
       repositoryHead: finalizer.repository.head,
-      notificationRuntimeState: finalizer.settings?.notificationRuntimeState ?? null,
-      notificationRuntimeSettingsPreserved:
-        finalizer.runtime?.notificationRuntimeSettingsPreserved === true,
-      notificationRuntimeWorkerBaselinePreserved:
-        finalizer.runtime?.notificationRuntimeWorkerBaselinePreserved === true,
-      notificationAdmissionEnabled:
-        finalizer.runtime?.notificationAdmissionEnabled === true,
+      notificationRuntimeState: notificationRuntime.state,
+      notificationRuntimeSettingsPreserved: true,
+      notificationRuntimeWorkerBaselinePreserved: true,
+      notificationAdmissionEnabled: false,
     },
     channelReadiness,
     closeoutAuthorities,
@@ -131,6 +131,47 @@ export function buildRetainedMultichannelReportHandoff(input = {}) {
     handoff: Object.freeze(handoff),
     selection,
   });
+}
+
+function normalizeNotificationRuntime(finalizer) {
+  const state = finalizer.settings?.notificationRuntimeState;
+  const expectedTrueFlagCount = NOTIFICATION_BASELINE_TRUE_FLAG_COUNTS[state];
+  if (expectedTrueFlagCount === undefined
+    || finalizer.runtime?.notificationRuntimeSettingsPreserved !== true
+    || finalizer.runtime?.notificationRuntimeWorkerBaselinePreserved !== true
+    || finalizer.runtime?.notificationAdmissionEnabled !== false) throw builderError(
+    'Finalizer must preserve the exact Notification Runtime baseline with Admission disabled',
+    'RETAINED_REPORT_HANDOFF_NOTIFICATION_FINALIZER_INVALID',
+    {
+      state: state ?? null,
+      settingsPreserved: finalizer.runtime?.notificationRuntimeSettingsPreserved === true,
+      workerBaselinePreserved:
+        finalizer.runtime?.notificationRuntimeWorkerBaselinePreserved === true,
+      notificationAdmissionEnabled:
+        finalizer.runtime?.notificationAdmissionEnabled ?? null,
+    },
+  );
+  return Object.freeze({ state, expectedTrueFlagCount });
+}
+
+function assertNotificationReadinessBaseline(readiness, notificationRuntime, platformScope) {
+  const runtime = readiness.evidence?.runtime ?? {};
+  if (runtime.executionBaselineVerified !== true
+    || runtime.notificationRuntimeState !== notificationRuntime.state
+    || Number(runtime.baselineTrueFlagCount) !== notificationRuntime.expectedTrueFlagCount) {
+    throw builderError(
+      `Readiness for ${platformScope} does not match the preserved Notification Runtime baseline`,
+      'RETAINED_REPORT_HANDOFF_NOTIFICATION_READINESS_INVALID',
+      {
+        platformScope,
+        executionBaselineVerified: runtime.executionBaselineVerified === true,
+        expectedState: notificationRuntime.state,
+        observedState: runtime.notificationRuntimeState ?? null,
+        expectedTrueFlagCount: notificationRuntime.expectedTrueFlagCount,
+        observedTrueFlagCount: Number(runtime.baselineTrueFlagCount ?? -1),
+      },
+    );
+  }
 }
 
 function normalizeRepository(value) {
