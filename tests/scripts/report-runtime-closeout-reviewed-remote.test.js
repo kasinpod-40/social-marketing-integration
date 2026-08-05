@@ -100,6 +100,7 @@ test('bootstrap baseline permits absent Report-only bindings while requiring Not
   assert.equal(result.bindingContract, 'bootstrap_baseline');
   assert.equal(result.requiredTableBindingCount, 6);
   assert.equal(result.optionalTableBindingCount, 3);
+  assert.equal(result.stabilitySampleCount, undefined);
 });
 
 test('bootstrap baseline rejects a present Report-only binding with the wrong identity', async () => {
@@ -136,4 +137,6 @@ test('exact deployed verification still requires every Report and Notification b
   assert.equal(result.bindingContract, 'deployed_exact');
   assert.equal(result.requiredTableBindingCount, 9);
   assert.equal(result.optionalTableBindingCount, 0);
+  assert.equal(result.stabilitySampleCount, 3);
+  assert.equal(result.stabilityWindowMs, 30_000);
 });
