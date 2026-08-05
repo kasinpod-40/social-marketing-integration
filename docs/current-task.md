@@ -1,34 +1,26 @@
-# Current Task — Meta Ads 3D Queue Activation Continuation v2
+# Current Task — Report Queue Consumer Hydration Hotfix v1
 
 ## Status
 
 ```text
-TASK_STATUS                         = IMPLEMENTATION_COMPLETE_CI_PASS
-CURRENT_PROGRAM                     = META_ADS_3D_QUEUE_ACTIVATION_CONTINUATION_V2
-BRANCH                              = hotfix/meta-ads-queue-activation-continuation-v2
-EXACT_BASE                          = d3bbaa33fb51874609dae2abd04ab0cd25f36ea9
-VERIFIED_IMPLEMENTATION_HEAD        = 6de4d7a3590116e04af4564bae859988161d8fbf
-PR                                  = 515
-BRANCH_VERIFICATION_RUN             = 31023528258
-BRANCH_VERIFICATION_NUMBER          = 2243
-META_END_TO_END_RUN                 = 31023529837
-META_END_TO_END_NUMBER              = 450
+TASK_STATUS                         = IMPLEMENTATION_IN_PROGRESS
+CURRENT_PROGRAM                     = REPORT_QUEUE_CONSUMER_HYDRATION_V1
+BRANCH                              = hotfix/report-queue-consumer-hydration-v1
+EXACT_BASE                          = 3d28aebd228446dcbd780006f337c0b3a4ca4be5
 PLATFORM                            = meta_ads
 WINDOW                              = 3D
 REPORT_ID                           = integration_workspace:meta_ads:rolling:3d:chemistry_k:rolling_days:2026-07-29:2026-07-31:meta-ads-v1
-ORIGINAL_REQUESTED_AT               = 1785934718928
-FAILED_RECOVERY_REQUESTED_AT        = 1785938483493
-FAILED_CONTINUATION_REQUESTED_AT    = 1785943887248
-D1_ROOT_CAUSE                       = ENTITY_BIND_LIMIT_CONFIRMED
-QUEUE_ACTIVATION_FAILURE            = DASHBOARD_REPORT_CONFIGURATION_INVALID
-PRIOR_SUCCESSFUL_SYNC_RUNS          = 2
-FAILED_D1_SYNC_RUNS                 = 6
-LATEST_ATTEMPT_SYNC_RUNS            = 0
-TARGET_MATERIALIZATION_COUNT        = 0
+FAILED_PREFLIGHT_ROOT               = outputs/meta-ads-3d-queue-activation-continuation-3d28aebd2284
+FAILED_PREFLIGHT_STAGE              = repository-finalizer-and-retained-evidence
+FAILED_PREFLIGHT_CODE               = REPORT_RUNTIME_CLOSEOUT_QUEUE_CONSUMER_INVALID
+CONSUMER_COUNT                      = 1
+REVIEWED_MATCH_COUNT                = 0
+ACTIVE_DEPLOYMENT_ATTEMPTED         = false
+QUEUE_MESSAGE_SENT                  = false
+REMOTE_MUTATION_COUNT               = 0
+PROVIDER_REQUEST_COUNT              = 0
 OPEN_REPORT_DLQ                     = 3
-ACTIVE_REPORT_WORK                  = 0
-ACTIVE_REPORT_LOCK                  = 0
-WORKER_BASELINE_RESTORED            = true
+TARGET_MATERIALIZATION_COUNT        = 0
 NOTIFICATION_ADMISSION_ENABLED      = false
 SCHEDULE_ACTIVATION_APPROVED        = false
 PRODUCTION                          = BLOCKED
@@ -37,110 +29,72 @@ PRODUCTION                          = BLOCKED
 Full contract:
 
 ```text
-docs/tasks/meta-ads-3d-queue-activation-continuation-v2.md
+docs/tasks/report-queue-consumer-hydration-v1.md
 ```
 
 ## Goal
 
-Continue the exact retained Meta Ads 3D Report only after correcting the Shared Queue activation barrier. The latest
-attempt used the original byte-stable job but was rejected before `sync_runs` with
-`DASHBOARD_REPORT_CONFIGURATION_INVALID`; Notification Runtime was restored and no materialization, Work or lock was
-created.
+Correct the Shared Cloudflare Queue-consumer verifier after the first Queue-activation continuation v2 root stopped
+before any deployment or Queue send. The API returned exactly one Consumer, but the verifier required optional fields
+to be present in the List response and therefore produced zero reviewed matches.
 
-## Proven boundaries
+## Verified boundary
 
-### D1 reader defect — fixed
-
-```text
-1D  77 Ads + 3 = 80 bindings   PASS
-3D 102 Ads + 3 = 105 bindings  FAIL
-```
-
-PR #512 removed broad Paid Ads projections and PR #513 added deterministic 97-ID chunks.
-
-### Queue activation defect — corrected in PR #515
-
-The active Worker version and Report flags passed the previous deployment verifier, but the exact Queue job was
-terminalized before `runReliableSync`. The previous verifier checked Worker version/bindings only and used a 30-second
-barrier; it did not inspect the actual Queue consumer inventory. The main Queue permits a 30-second batch wait.
-
-Exact retained third DLQ:
+The stopped root proves:
 
 ```text
-terminal:228fecb8afc03a3339313a85fbb5c45c
-queue=social-mkt-sync-jobs
-error=DASHBOARD_REPORT_CONFIGURATION_INVALID
-main_queue_attempts=1
-sync_runs=0
-materialization=0
+consumerCount                1
+reviewedMatchCount           0
+activeDeploymentAttempted    false
+baselineRestoreVerified      false
+providerRequestCount         0
+scheduleEnabled              false
+notificationAdmissionEnabled false
+production                   BLOCKED
 ```
 
-## Implementation result
+No Worker deployment, Queue message, D1/Lark mutation or Provider request occurred. The existing three DLQs and empty
+Meta Ads 3D materialization target remain unchanged.
 
-Implemented on Draft PR #515 without Remote execution:
+## Root cause
 
-- retained the existing Report Finalizer, config window, deployment runtime, Queue sender, D1/Lark integrity and
-  closure helpers;
-- added GET-only Cloudflare Queue consumer inventory verification before Report send;
-- requires exactly one `social-mkt-sync-worker` consumer with reviewed batch, concurrency, retry, wait and DLQ
-  settings;
-- changed only Report execution windows to three exact Worker-version samples over 120 seconds;
-- preserved the Notification baseline restore barrier at three samples over 30 seconds;
-- bound all three exact DLQs and the retained failed continuation attempt;
-- retained exactly one original Queue send and one exact replay;
-- closes all three DLQs only after D1/Lark integrity, replay stability and baseline restore;
-- added focused Queue-consumer/barrier and three-DLQ continuation regressions;
-- Repository Remote actions: zero.
+Cloudflare documents `type`, `queue_name`, `script_name` and `settings` on Queue Consumer responses as optional. The
+PR #515 verifier required all three identity fields in the List response itself. A valid one-consumer inventory can
+therefore fail before the exact Consumer detail is read.
 
-Exact implementation Head `6de4d7a3590116e04af4564bae859988161d8fbf` passed:
+## Implementation
 
-```text
-Branch Verification #2243 / run 31023528258
-Install locked dependencies                 PASS
-Syntax architecture and hygiene             PASS
-Focused Report source readiness tests       PASS
-Focused Meta history finalizer tests         PASS
-Focused Woo completed-state race tests       PASS
-Focused Chatwoot final UAT tests              PASS
-Focused staged TikTok tests                  PASS
-Unit and Workers runtime tests               PASS
-Report reliability regression               PASS
-Dependency audit                             PASS
-Wrangler dry run                             PASS
-Diff whitespace check                        PASS
-
-Meta End-to-End #450 / run 31023529837
-Diff hygiene                                 PASS
-Syntax architecture and repository hygiene  PASS
-Focused Meta workstream tests                PASS
-Unit and Workers runtime tests               PASS
-Report reliability regression               PASS
-Dependency audit                             PASS
-Wrangler dry run                             PASS
-```
-
-## Acceptance criteria
-
-1. Queue inventory contains exactly one reviewed Worker consumer and exact settings.
-2. Active Report deployment remains the same exact version with exact bindings/flags for three samples across 120s.
-3. Safe Notification restore retains three samples across 30s.
-4. Current live state must contain exactly three bound open DLQs, six historical D1 failures, zero latest Sync Runs
-   and an empty D1/Lark target before continuation.
-5. The original Meta Ads 3D job is sent once; replay is sent only after first materialization succeeds.
-6. D1 materialization count remains one; Report ID and payload checksum remain stable.
-7. Lark snapshot/metrics/Top Ads integrity is unchanged on replay.
-8. Notification Runtime is restored before all three DLQs close.
-9. Provider requests remain zero; Notification Admission, Schedule and Production remain disabled.
-10. Full Unit/Workers, Report reliability, Meta End-to-End, audit and Wrangler dry-run gates pass.
+- retain the existing Queue inventory, Worker-version barrier, Report Finalizer and continuation operator;
+- use the Queue Consumer List only to require exactly one non-empty `consumer_id`;
+- call the exact GET Consumer endpoint with that ID to hydrate optional identity and settings fields;
+- also retain the exact Queue-list embedded Consumer as a fallback source;
+- require all non-empty IDs, types and queue names returned by any source to agree;
+- still require exact Worker script name, batch size, concurrency, retries, wait time and DLQ;
+- emit only sanitized mismatch booleans/counts;
+- keep the 120-second Report activation barrier and 30-second Notification restore barrier unchanged.
 
 ## Prohibited actions
 
-- rerun any prior Run All, Recovery or continuation evidence root;
-- generic Queue redrive/resend;
-- manual D1/Lark materialization repair;
-- Provider refresh;
-- Notification Admission, AI, Schedule or Production activation;
-- Dashboard legacy display-name backfill before 28-window closure.
+- rerun `outputs/meta-ads-3d-queue-activation-continuation-3d28aebd2284`;
+- send or redrive a Queue message during implementation;
+- deploy a Worker or mutate D1/Lark;
+- change the Meta Ads Report identity, requested-at or retained three-DLQ contract;
+- enable Notification Admission, AI, Schedule or Production;
+- start Dashboard display-name backfill.
+
+## Acceptance criteria
+
+1. Exactly one listed Consumer with a non-empty ID is required.
+2. Optional List fields may be hydrated from exact Consumer detail or Queue-list embedded data.
+3. Explicit type, queue, script, ID, settings or DLQ drift remains fail-closed.
+4. The existing 120-second Report Queue activation barrier remains unchanged.
+5. Existing three-DLQ Meta Ads continuation tests continue to pass.
+6. Full Unit/Workers, Report reliability, Meta End-to-End, audit and Wrangler dry-run gates pass.
+7. Repository implementation performs zero Remote action.
+
+## Implementation result
+
+Repository implementation is in progress. No Remote action has been performed by this branch.
 
 ## Required verification
 
@@ -160,9 +114,8 @@ git diff --check
 ## Post-merge sequence
 
 1. synchronize clean exact merged `main`;
-2. run exact-head Report Finalizer;
-3. execute one new evidence root for Queue-activation continuation v2;
-4. never repeat that root after a Queue send;
+2. create a completely new Finalizer/continuation evidence root;
+3. run the exact Meta Ads 3D continuation once;
+4. never repeat that new root after its first Queue send;
 5. run fresh SELECT-only readiness;
-6. continue only remaining windows through a new exact handoff;
-7. repair `__mkt_legacy_display_name_single_select_v2` after all 28 windows close.
+6. continue only remaining windows through a new exact handoff.
