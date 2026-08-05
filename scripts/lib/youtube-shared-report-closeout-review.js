@@ -73,14 +73,26 @@ export function reviewYouTubeSharedReportCloseoutOperator(input = {}) {
     'The shared Organic preflight is not bound to YouTube Coverage and facts.',
   ));
 
+  const expectedCoverageCount = target.requiredCoverageDatasetKeys.length;
   const preflight = Object.freeze({
     coverage_status: normalizeCoverageStatus(source.contentCoverageStatus),
+    coverage_required_count: expectedCoverageCount,
+    coverage_watermark_count: sourceWatermark ? expectedCoverageCount : 0,
+    source_scope: 'content',
     source_watermark: sourceWatermark ?? '',
     period_end: periodEnd,
     content_state_count: nonNegativeInteger(source.contentStateCount, 'source.contentStateCount'),
     observation_count: nonNegativeInteger(source.observationCount, 'source.observationCount'),
+    active_report_work_count: nonNegativeInteger(
+      runtime.activeReportWorkCount,
+      'runtime.activeReportWorkCount',
+    ),
     active_report_locks: nonNegativeInteger(runtime.activeReportLockCount, 'runtime.activeReportLockCount'),
     open_report_dlq: nonNegativeInteger(runtime.openReportDlqCount, 'runtime.openReportDlqCount'),
+    open_report_critical_alerts: nonNegativeInteger(
+      runtime.openReportCriticalAlertCount,
+      'runtime.openReportCriticalAlertCount',
+    ),
   });
   if (sourceWatermark) assertYouTubeReportRuntimeCloseoutPreflight(preflight);
 
