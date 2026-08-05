@@ -38,6 +38,19 @@ jobs:
       - name: Syntax architecture and hygiene
         run: npm run check
 
+      - name: Focused Report source readiness tests
+        shell: bash
+        run: |
+          set -o pipefail
+          node --test \
+            tests/scripts/report-channel-remote-readiness.test.js \
+            tests/scripts/report-runtime-closeout-reviewed-binding.test.js \
+            tests/connectors/d1-organic-report-source.test.js \
+            tests/connectors/d1-ads-report-source.test.js \
+            tests/connectors/d1-chatwoot-report-source.test.js \
+            tests/application/multichannel-report-runtime.test.js \
+            2>&1 | tee focused-report-readiness-test.log
+
       - name: Focused Meta history finalizer tests
         shell: bash
         run: |
@@ -110,6 +123,9 @@ jobs:
 
       - name: Wrangler dry run
         run: npm run deploy:dry-run
+
+      - name: Diff whitespace check
+        run: git diff --check origin/${{ github.base_ref }}...HEAD
 
       - name: Upload verification diagnostics
         if: always()
