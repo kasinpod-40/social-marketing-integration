@@ -140,146 +140,30 @@ export function buildReportRuntimePreflightSql(input = {}) {
   const customerKey = sqlText(target.customerKey ?? 'chemistry_k');
   const accountKey = sqlText(target.accountKey);
   const platformScope = sqlText(contract.platformScope);
-  const datasetKey = sqlText(contract.datasetKey);
 
-  if (contract.capability === 'organic') return compactSql(`
-    WITH coverage AS (
-      SELECT status, source_watermark, completed_at
-      FROM data_coverage_runs
-      WHERE customer_key = '${customerKey}'
-        AND platform = '${platformScope}'
-        AND account_key = '${accountKey}'
-        AND dataset_key = '${datasetKey}'
-        AND completed_at IS NOT NULL
-      ORDER BY completed_at DESC, updated_at DESC, coverage_run_id ASC LIMIT 1
-    )
-    SELECT
-      (SELECT status FROM coverage) AS coverage_status,
-      NULL AS coverage_scope_mode,
-      (SELECT source_watermark FROM coverage) AS source_watermark,
-      (SELECT MAX(metric_date) FROM organic_content_observations
-        WHERE customer_key = '${customerKey}' AND platform = '${platformScope}'
-          AND account_key = '${accountKey}') AS period_end,
-      (SELECT COUNT(*) FROM organic_content_state
-        WHERE customer_key = '${customerKey}' AND platform = '${platformScope}'
-          AND account_key = '${accountKey}') AS content_state_count,
-      (SELECT COUNT(*) FROM organic_content_observations
-        WHERE customer_key = '${customerKey}' AND platform = '${platformScope}'
-          AND account_key = '${accountKey}') AS observation_count,
-      0 AS ads_summary_fact_count,
-      0 AS ads_ranking_fact_count,
-      0 AS ads_entity_count,
-      0 AS daily_fact_count,
-      0 AS order_state_count,
-      0 AS conversation_fact_count,
-      0 AS account_fact_count,
-      ${runtimeSafetySql(platformScope, accountKey)};
-  `);
-
-  if (contract.capability === 'paid_ads') return compactSql(`
-    WITH coverage AS (
-      SELECT status, source_watermark, completed_at
-      FROM data_coverage_runs
-      WHERE customer_key = '${customerKey}'
-        AND platform = '${platformScope}'
-        AND account_key = '${accountKey}'
-        AND dataset_key = '${datasetKey}'
-        AND completed_at IS NOT NULL
-      ORDER BY completed_at DESC, updated_at DESC, coverage_run_id ASC LIMIT 1
-    )
-    SELECT
-      (SELECT status FROM coverage) AS coverage_status,
-      NULL AS coverage_scope_mode,
-      (SELECT source_watermark FROM coverage) AS source_watermark,
-      (SELECT MAX(metric_date) FROM ads_daily_facts
-        WHERE customer_key = '${customerKey}' AND platform = '${platformScope}'
-          AND account_key = '${accountKey}' AND report_level = 'account'
-          AND breakdown_key = 'none' AND segment_key = 'none') AS period_end,
-      0 AS content_state_count,
-      0 AS observation_count,
-      (SELECT COUNT(*) FROM ads_daily_facts
-        WHERE customer_key = '${customerKey}' AND platform = '${platformScope}'
-          AND account_key = '${accountKey}' AND report_level = 'account'
-          AND breakdown_key = 'none' AND segment_key = 'none') AS ads_summary_fact_count,
-      (SELECT COUNT(*) FROM ads_daily_facts
-        WHERE customer_key = '${customerKey}' AND platform = '${platformScope}'
-          AND account_key = '${accountKey}' AND report_level = 'ad'
-          AND breakdown_key = 'none' AND segment_key = 'none') AS ads_ranking_fact_count,
-      (SELECT COUNT(*) FROM ads_entity_state
-        WHERE customer_key = '${customerKey}' AND platform = '${platformScope}'
-          AND account_key = '${accountKey}' AND entity_type = 'ad') AS ads_entity_count,
-      0 AS daily_fact_count,
-      0 AS order_state_count,
-      0 AS conversation_fact_count,
-      0 AS account_fact_count,
-      ${runtimeSafetySql(platformScope, accountKey)};
-  `);
-
-  if (contract.capability === 'commerce') return compactSql(`
-    WITH coverage AS (
-      SELECT status, scope_mode, source_watermark, completed_at
-      FROM data_coverage_runs
-      WHERE account_key = '${accountKey}'
-        AND platform = '${platformScope}'
-        AND dataset_key = 'woocommerce_orders'
-        AND completed_at IS NOT NULL
-      ORDER BY completed_at DESC, updated_at DESC, coverage_run_id ASC LIMIT 1
-    )
-    SELECT
-      (SELECT status FROM coverage) AS coverage_status,
-      (SELECT scope_mode FROM coverage) AS coverage_scope_mode,
-      (SELECT source_watermark FROM coverage) AS source_watermark,
-      (SELECT MAX(metric_date) FROM commerce_daily_sales_facts
-        WHERE account_key = '${accountKey}') AS period_end,
-      0 AS content_state_count,
-      0 AS observation_count,
-      0 AS ads_summary_fact_count,
-      0 AS ads_ranking_fact_count,
-      0 AS ads_entity_count,
-      (SELECT COUNT(*) FROM commerce_daily_sales_facts
-        WHERE account_key = '${accountKey}') AS daily_fact_count,
-      (SELECT COUNT(*) FROM commerce_order_state
-        WHERE account_key = '${accountKey}') AS order_state_count,
-      0 AS conversation_fact_count,
-      0 AS account_fact_count,
-      ${runtimeSafetySql(platformScope, accountKey)};
-  `);
-
-  if (contract.capability === 'customer_service') return compactSql(`
-    WITH coverage AS (
-      SELECT status, source_watermark, completed_at
-      FROM data_coverage_runs
-      WHERE customer_key = '${customerKey}'
-        AND platform = '${platformScope}'
-        AND account_key = '${accountKey}'
-        AND completed_at IS NOT NULL
-      ORDER BY completed_at DESC, updated_at DESC, coverage_run_id ASC LIMIT 1
-    )
-    SELECT
-      (SELECT status FROM coverage) AS coverage_status,
-      NULL AS coverage_scope_mode,
-      (SELECT source_watermark FROM coverage) AS source_watermark,
-      COALESCE(
-        (SELECT MAX(metric_date) FROM chatwoot_conversation_daily_facts
-          WHERE customer_key = '${customerKey}' AND account_key = '${accountKey}'),
-        (SELECT MAX(metric_date) FROM chatwoot_account_daily_facts
-          WHERE customer_key = '${customerKey}' AND account_key = '${accountKey}')
-      ) AS period_end,
-      0 AS content_state_count,
-      0 AS observation_count,
-      0 AS ads_summary_fact_count,
-      0 AS ads_ranking_fact_count,
-      0 AS ads_entity_count,
-      0 AS daily_fact_count,
-      0 AS order_state_count,
-      (SELECT COUNT(*) FROM chatwoot_conversation_daily_facts
-        WHERE customer_key = '${customerKey}' AND account_key = '${accountKey}')
-        AS conversation_fact_count,
-      (SELECT COUNT(*) FROM chatwoot_account_daily_facts
-        WHERE customer_key = '${customerKey}' AND account_key = '${accountKey}')
-        AS account_fact_count,
-      ${runtimeSafetySql(platformScope, accountKey)};
-  `);
+  if (contract.capability === 'organic') return buildOrganicPreflightSql({
+    contract,
+    customerKey,
+    accountKey,
+    platformScope,
+  });
+  if (contract.capability === 'paid_ads') return buildPaidAdsPreflightSql({
+    contract,
+    customerKey,
+    accountKey,
+    platformScope,
+  });
+  if (contract.capability === 'commerce') return buildCommercePreflightSql({
+    customerKey,
+    accountKey,
+    platformScope,
+  });
+  if (contract.capability === 'customer_service') return buildCustomerServicePreflightSql({
+    contract,
+    customerKey,
+    accountKey,
+    platformScope,
+  });
 
   throw bindingError(
     'Reviewed Report preflight supports Organic, Paid Ads, Commerce and Customer Service only',
@@ -313,6 +197,248 @@ export function buildReviewedReportRuntimeMultiwindowPlan(input = {}) {
   );
 }
 
+function buildOrganicPreflightSql({ contract, customerKey, accountKey, platformScope }) {
+  const contentDatasetKey = sqlText(contract.coverageDatasetKeys[0]);
+  const accountDatasetKey = contract.accountDailyDatasetKey
+    ? sqlText(contract.accountDailyDatasetKey)
+    : null;
+  const accountFallback = contract.organicReadinessMode === 'account_or_content' && accountDatasetKey;
+  const useAccountSql = accountFallback
+    ? `(SELECT COUNT(*) FROM organic_content_observations
+         WHERE customer_key = '${customerKey}' AND platform = '${platformScope}'
+           AND account_key = '${accountKey}') = 0`
+    : '0';
+  const coverageStatusSql = accountFallback
+    ? `CASE WHEN ${useAccountSql}
+        THEN (SELECT status FROM account_coverage)
+        ELSE (SELECT status FROM content_coverage) END`
+    : '(SELECT status FROM content_coverage)';
+  const coverageDatasetSql = accountFallback
+    ? `CASE WHEN ${useAccountSql}
+        THEN (SELECT dataset_key FROM account_coverage)
+        ELSE (SELECT dataset_key FROM content_coverage) END`
+    : '(SELECT dataset_key FROM content_coverage)';
+  const watermarkSql = accountFallback
+    ? `CASE WHEN ${useAccountSql}
+        THEN (SELECT source_watermark FROM account_coverage)
+        ELSE (SELECT source_watermark FROM content_coverage) END`
+    : '(SELECT source_watermark FROM content_coverage)';
+  const periodEndSql = accountFallback
+    ? `CASE WHEN ${useAccountSql}
+        THEN (SELECT MAX(metric_date) FROM organic_account_daily_facts
+          WHERE customer_key = '${customerKey}' AND platform = '${platformScope}'
+            AND account_key = '${accountKey}')
+        ELSE (SELECT MAX(metric_date) FROM organic_content_observations
+          WHERE customer_key = '${customerKey}' AND platform = '${platformScope}'
+            AND account_key = '${accountKey}') END`
+    : `(SELECT MAX(metric_date) FROM organic_content_observations
+        WHERE customer_key = '${customerKey}' AND platform = '${platformScope}'
+          AND account_key = '${accountKey}')`;
+  const accountCoverageCte = accountDatasetKey
+    ? `, account_coverage AS (
+        SELECT dataset_key, status, source_watermark, completed_at
+        FROM data_coverage_runs
+        WHERE customer_key = '${customerKey}' AND platform = '${platformScope}'
+          AND account_key = '${accountKey}' AND dataset_key = '${accountDatasetKey}'
+          AND completed_at IS NOT NULL
+        ORDER BY completed_at DESC, updated_at DESC, coverage_run_id ASC LIMIT 1
+      )`
+    : '';
+
+  return compactSql(`
+    WITH content_coverage AS (
+      SELECT dataset_key, status, source_watermark, completed_at
+      FROM data_coverage_runs
+      WHERE customer_key = '${customerKey}' AND platform = '${platformScope}'
+        AND account_key = '${accountKey}' AND dataset_key = '${contentDatasetKey}'
+        AND completed_at IS NOT NULL
+      ORDER BY completed_at DESC, updated_at DESC, coverage_run_id ASC LIMIT 1
+    )${accountCoverageCte}
+    SELECT
+      ${coverageStatusSql} AS coverage_status,
+      ${coverageDatasetSql} AS coverage_dataset_key,
+      NULL AS coverage_scope_mode,
+      ${watermarkSql} AS source_watermark,
+      ${periodEndSql} AS period_end,
+      CASE WHEN ${useAccountSql} THEN 'account' ELSE 'content' END AS source_scope,
+      CASE WHEN ${coverageDatasetSql} IS NULL THEN 0 ELSE 1 END AS coverage_required_count,
+      CASE WHEN ${watermarkSql} IS NULL OR ${watermarkSql} = '' THEN 0 ELSE 1 END
+        AS coverage_watermark_count,
+      (SELECT COUNT(*) FROM organic_content_state
+        WHERE customer_key = '${customerKey}' AND platform = '${platformScope}'
+          AND account_key = '${accountKey}') AS content_state_count,
+      (SELECT COUNT(*) FROM organic_content_observations
+        WHERE customer_key = '${customerKey}' AND platform = '${platformScope}'
+          AND account_key = '${accountKey}') AS observation_count,
+      0 AS ads_summary_fact_count,
+      0 AS ads_ranking_fact_count,
+      0 AS ads_entity_count,
+      0 AS ads_ranking_required,
+      0 AS daily_fact_count,
+      0 AS order_state_count,
+      0 AS conversation_fact_count,
+      (SELECT COUNT(*) FROM organic_account_daily_facts
+        WHERE customer_key = '${customerKey}' AND platform = '${platformScope}'
+          AND account_key = '${accountKey}') AS account_fact_count,
+      ${runtimeSafetySql(platformScope, accountKey)};
+  `);
+}
+
+function buildPaidAdsPreflightSql({ contract, customerKey, accountKey, platformScope }) {
+  const coverageDatasets = sqlList(contract.coverageDatasetKeys);
+  const summaryCondition = adsFactCondition(contract.summaryReportLevels, {
+    breakdownFamily: contract.summaryBreakdownFamily,
+    segmentFamily: contract.summarySegmentFamily,
+  });
+  const rankingCondition = contract.rankingReportLevels.length === 0
+    ? '0 = 1'
+    : adsFactCondition(contract.rankingReportLevels, {
+      breakdownFamily: contract.rankingBreakdownFamily,
+      segmentFamily: contract.rankingSegmentFamily,
+    });
+
+  return compactSql(`
+    WITH coverage AS (
+      SELECT dataset_key, status, source_watermark, completed_at
+      FROM data_coverage_runs
+      WHERE customer_key = '${customerKey}' AND platform = '${platformScope}'
+        AND account_key = '${accountKey}' AND dataset_key IN (${coverageDatasets})
+        AND completed_at IS NOT NULL
+      ORDER BY completed_at DESC, updated_at DESC, coverage_run_id ASC LIMIT 1
+    )
+    SELECT
+      (SELECT status FROM coverage) AS coverage_status,
+      (SELECT dataset_key FROM coverage) AS coverage_dataset_key,
+      NULL AS coverage_scope_mode,
+      (SELECT source_watermark FROM coverage) AS source_watermark,
+      (SELECT MAX(metric_date) FROM ads_daily_facts
+        WHERE customer_key = '${customerKey}' AND platform = '${platformScope}'
+          AND account_key = '${accountKey}' AND ${summaryCondition}) AS period_end,
+      'account_summary' AS source_scope,
+      (SELECT COUNT(*) FROM coverage) AS coverage_required_count,
+      (SELECT COUNT(*) FROM coverage WHERE source_watermark IS NOT NULL AND source_watermark <> '')
+        AS coverage_watermark_count,
+      0 AS content_state_count,
+      0 AS observation_count,
+      (SELECT COUNT(*) FROM ads_daily_facts
+        WHERE customer_key = '${customerKey}' AND platform = '${platformScope}'
+          AND account_key = '${accountKey}' AND ${summaryCondition}) AS ads_summary_fact_count,
+      (SELECT COUNT(*) FROM ads_daily_facts
+        WHERE customer_key = '${customerKey}' AND platform = '${platformScope}'
+          AND account_key = '${accountKey}' AND ${rankingCondition}) AS ads_ranking_fact_count,
+      (SELECT COUNT(*) FROM ads_entity_state
+        WHERE customer_key = '${customerKey}' AND platform = '${platformScope}'
+          AND account_key = '${accountKey}' AND entity_type = 'ad') AS ads_entity_count,
+      ${contract.topAdsRequired ? 1 : 0} AS ads_ranking_required,
+      0 AS daily_fact_count,
+      0 AS order_state_count,
+      0 AS conversation_fact_count,
+      0 AS account_fact_count,
+      ${runtimeSafetySql(platformScope, accountKey)};
+  `);
+}
+
+function buildCommercePreflightSql({ accountKey, platformScope }) {
+  return compactSql(`
+    WITH coverage AS (
+      SELECT dataset_key, status, scope_mode, source_watermark, completed_at
+      FROM data_coverage_runs
+      WHERE account_key = '${accountKey}' AND platform = '${platformScope}'
+        AND dataset_key = 'woocommerce_orders' AND completed_at IS NOT NULL
+      ORDER BY completed_at DESC, updated_at DESC, coverage_run_id ASC LIMIT 1
+    )
+    SELECT
+      (SELECT status FROM coverage) AS coverage_status,
+      (SELECT dataset_key FROM coverage) AS coverage_dataset_key,
+      (SELECT scope_mode FROM coverage) AS coverage_scope_mode,
+      (SELECT source_watermark FROM coverage) AS source_watermark,
+      (SELECT MAX(metric_date) FROM commerce_daily_sales_facts
+        WHERE account_key = '${accountKey}') AS period_end,
+      'commerce_daily' AS source_scope,
+      (SELECT COUNT(*) FROM coverage) AS coverage_required_count,
+      (SELECT COUNT(*) FROM coverage WHERE source_watermark IS NOT NULL AND source_watermark <> '')
+        AS coverage_watermark_count,
+      0 AS content_state_count,
+      0 AS observation_count,
+      0 AS ads_summary_fact_count,
+      0 AS ads_ranking_fact_count,
+      0 AS ads_entity_count,
+      0 AS ads_ranking_required,
+      (SELECT COUNT(*) FROM commerce_daily_sales_facts
+        WHERE account_key = '${accountKey}') AS daily_fact_count,
+      (SELECT COUNT(*) FROM commerce_order_state
+        WHERE account_key = '${accountKey}') AS order_state_count,
+      0 AS conversation_fact_count,
+      0 AS account_fact_count,
+      ${runtimeSafetySql(platformScope, accountKey)};
+  `);
+}
+
+function buildCustomerServicePreflightSql({ contract, customerKey, accountKey, platformScope }) {
+  const requiredDatasets = sqlList(contract.requiredCoverageDatasetKeys);
+  const primaryDataset = sqlText(contract.datasetKey);
+  return compactSql(`
+    WITH required_coverage AS (
+      SELECT dataset_key, status, source_watermark, completed_at,
+        ROW_NUMBER() OVER (
+          PARTITION BY dataset_key
+          ORDER BY completed_at DESC, updated_at DESC, coverage_run_id ASC
+        ) AS dataset_rank
+      FROM data_coverage_runs
+      WHERE customer_key = '${customerKey}' AND platform = '${platformScope}'
+        AND account_key = '${accountKey}' AND dataset_key IN (${requiredDatasets})
+        AND completed_at IS NOT NULL
+    ), selected_coverage AS (
+      SELECT * FROM required_coverage WHERE dataset_rank = 1
+    )
+    SELECT
+      (SELECT status FROM selected_coverage WHERE dataset_key = '${primaryDataset}')
+        AS coverage_status,
+      '${primaryDataset}' AS coverage_dataset_key,
+      NULL AS coverage_scope_mode,
+      (SELECT source_watermark FROM selected_coverage WHERE dataset_key = '${primaryDataset}')
+        AS source_watermark,
+      COALESCE(
+        (SELECT MAX(metric_date) FROM chatwoot_conversation_daily_facts
+          WHERE customer_key = '${customerKey}' AND account_key = '${accountKey}'),
+        (SELECT MAX(metric_date) FROM chatwoot_account_daily_facts
+          WHERE customer_key = '${customerKey}' AND account_key = '${accountKey}')
+      ) AS period_end,
+      'customer_service_daily' AS source_scope,
+      (SELECT COUNT(*) FROM selected_coverage) AS coverage_required_count,
+      (SELECT COUNT(*) FROM selected_coverage
+        WHERE source_watermark IS NOT NULL AND source_watermark <> '') AS coverage_watermark_count,
+      0 AS content_state_count,
+      0 AS observation_count,
+      0 AS ads_summary_fact_count,
+      0 AS ads_ranking_fact_count,
+      0 AS ads_entity_count,
+      0 AS ads_ranking_required,
+      0 AS daily_fact_count,
+      0 AS order_state_count,
+      (SELECT COUNT(*) FROM chatwoot_conversation_daily_facts
+        WHERE customer_key = '${customerKey}' AND account_key = '${accountKey}')
+        AS conversation_fact_count,
+      (SELECT COUNT(*) FROM chatwoot_account_daily_facts
+        WHERE customer_key = '${customerKey}' AND account_key = '${accountKey}')
+        AS account_fact_count,
+      ${runtimeSafetySql(platformScope, accountKey)};
+  `);
+}
+
+function adsFactCondition(reportLevels, options) {
+  return [
+    `report_level IN (${sqlList(reportLevels)})`,
+    familyCondition('breakdown_key', options.breakdownFamily),
+    familyCondition('segment_key', options.segmentFamily),
+  ].join(' AND ');
+}
+
+function familyCondition(column, value) {
+  const family = sqlText(value);
+  return `(${column} = '${family}' OR ${column} LIKE '${family}=%')`;
+}
+
 function runtimeSafetySql(platformScope, accountKey) {
   return `
     (SELECT COUNT(*) FROM sync_runs
@@ -327,11 +453,21 @@ function runtimeSafetySql(platformScope, accountKey) {
     (SELECT COUNT(*) FROM dead_letter_jobs
       WHERE job_type = 'report.materialization.generate'
         AND status IN ('open', 'redrive_pending')) AS open_report_dlq,
-    (SELECT COUNT(*) FROM system_alerts
-      WHERE platform = '${platformScope}' AND severity = 'critical' AND status = 'open')
-      AS open_report_critical_alerts
+    (SELECT COUNT(*) FROM system_alerts a
+      JOIN sync_runs r ON r.sync_run_id = a.sync_run_id
+      WHERE a.platform = '${platformScope}' AND a.severity = 'critical' AND a.status = 'open'
+        AND r.platform = '${platformScope}' AND r.account_key = '${accountKey}'
+        AND r.sync_type = 'dashboard_performance_report'
+        AND r.status IN ('pending', 'running', 'failed')) AS open_report_critical_alerts,
+    (SELECT COUNT(*) FROM system_alerts a
+      LEFT JOIN sync_runs r ON r.sync_run_id = a.sync_run_id
+      WHERE a.platform = '${platformScope}' AND a.severity = 'critical' AND a.status = 'open'
+        AND (r.sync_run_id IS NULL OR r.sync_type <> 'dashboard_performance_report'
+          OR COALESCE(r.account_key, '') <> '${accountKey}'))
+      AS historical_connector_critical_alerts
   `;
 }
+function sqlList(values) { return values.map((value) => `'${sqlText(value)}'`).join(', '); }
 function compactSql(value) { return String(value).replace(/\s+/gu, ' ').trim(); }
 function sqlText(value) { return String(value).replaceAll("'", "''"); }
 function isCommitSha(value) { return typeof value === 'string' && /^[0-9a-f]{40}$/u.test(value); }
