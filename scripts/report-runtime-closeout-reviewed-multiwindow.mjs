@@ -410,28 +410,62 @@ async function executeWindow(input) {
   let firstPollAttempts = 0;
   let queueMessagesSent = 0;
 
-  if (selected.operation !== 'verify') {
-    await writeReviewedAttempt(outputRoot, `${target.platformScope}-${selected.windowDays}d-send-first`, {
+  if (selected.operation === 'verify') {
+    await writeReviewedAttempt(outputRoot, `${target.platformScope}-${selected.windowDays}d-reuse-verified`, {
       reportId: selected.reportId,
       action: selected.action,
-      jobSha256: sha256(stableJson(selected.job)),
+      operation: selected.operation,
+      payloadChecksum: first.payload_checksum,
       requestedAt,
+      queueMessagesSent: 0,
+      replayExecuted: false,
     });
-    await sendReviewedQueueMessage({ auth, queueId: queue.queueId, job: selected.job });
-    queueMessagesSent += 1;
-    successfulRunFloor += 1;
-    first = await state.pollD1Completion(selected, requestedAt, successfulRunFloor);
-    assertReportRuntimeCloseoutCompletion(first, { reportId: selected.reportId });
-    if (selected.operation === 'fresh') {
-      assertReportRuntimeWindowChanged({ operation: 'fresh', before, after: first });
-    } else {
-      assertRepairTransition({ reportId: selected.reportId, before, after: first });
-    }
-    const verified = await state.pollLarkIntegrity(client, config.tableIds, selected.reportId, first);
-    firstLark = verified.state;
-    firstIntegrity = verified.integrity;
-    firstPollAttempts = verified.attemptCount;
+    return Object.freeze({
+      successfulRunFloor,
+      summary: Object.freeze({
+        windowDays: selected.windowDays,
+        action: selected.action,
+        operation: selected.operation,
+        executionMode: 'reuse_verified_materialization',
+        reportSettingKey: selected.reportSettingKey,
+        reportId: selected.reportId,
+        dataStatus: first.data_status,
+        payloadChecksum: first.payload_checksum,
+        d1MaterializationCount: Number(first.materialization_count),
+        larkRows: summarizeLarkState(firstLark),
+        firstLarkIntegrityPollAttempts: 0,
+        replayLarkIntegrityPollAttempts: 0,
+        reusedExisting: true,
+        replayExecuted: false,
+        sameInput: null,
+        sameReportId: true,
+        samePayloadChecksum: true,
+        zeroDrift: true,
+        queueMessagesSent: 0,
+      }),
+    });
   }
+
+  await writeReviewedAttempt(outputRoot, `${target.platformScope}-${selected.windowDays}d-send-first`, {
+    reportId: selected.reportId,
+    action: selected.action,
+    jobSha256: sha256(stableJson(selected.job)),
+    requestedAt,
+  });
+  await sendReviewedQueueMessage({ auth, queueId: queue.queueId, job: selected.job });
+  queueMessagesSent += 1;
+  successfulRunFloor += 1;
+  first = await state.pollD1Completion(selected, requestedAt, successfulRunFloor);
+  assertReportRuntimeCloseoutCompletion(first, { reportId: selected.reportId });
+  if (selected.operation === 'fresh') {
+    assertReportRuntimeWindowChanged({ operation: 'fresh', before, after: first });
+  } else {
+    assertRepairTransition({ reportId: selected.reportId, before, after: first });
+  }
+  const verified = await state.pollLarkIntegrity(client, config.tableIds, selected.reportId, first);
+  firstLark = verified.state;
+  firstIntegrity = verified.integrity;
+  firstPollAttempts = verified.attemptCount;
 
   await writeReviewedAttempt(outputRoot, `${target.platformScope}-${selected.windowDays}d-send-replay`, {
     reportId: selected.reportId,
@@ -459,6 +493,7 @@ async function executeWindow(input) {
       windowDays: selected.windowDays,
       action: selected.action,
       operation: selected.operation,
+      executionMode: 'materialize_and_replay',
       reportSettingKey: selected.reportSettingKey,
       reportId: selected.reportId,
       dataStatus: replay.data_status,
@@ -467,6 +502,8 @@ async function executeWindow(input) {
       larkRows: summarizeLarkState(replayVerified.state),
       firstLarkIntegrityPollAttempts: firstPollAttempts,
       replayLarkIntegrityPollAttempts: replayVerified.attemptCount,
+      reusedExisting: false,
+      replayExecuted: true,
       sameInput: true,
       sameReportId: first.report_id === replay.report_id,
       samePayloadChecksum: first.payload_checksum === replay.payload_checksum,
