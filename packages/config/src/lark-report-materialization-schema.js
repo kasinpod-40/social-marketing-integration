@@ -21,18 +21,25 @@ const DATA_STATUS_OPTIONS = Object.freeze([
 ]);
 const PERIOD_KIND_OPTIONS = Object.freeze(['rolling_days', 'custom_range']);
 export const DASHBOARD_WINDOW_DAY_OPTIONS = Object.freeze(['1', '3', '7', '30']);
+export const REPORT_METRIC_DIMENSION_TYPE_OPTIONS = Object.freeze([
+  'summary',
+  'product',
+  'payment_method',
+  'shipping_method',
+]);
 
 /**
  * Additive repository contract for the materialization consumer tables.
  * It is intentionally plan-only; applying it to a Live Base requires a separate authorization.
  */
-export const LARK_REPORT_MATERIALIZATION_SCHEMA_VERSION = 'report-materialization-schema-v4';
+export const LARK_REPORT_MATERIALIZATION_SCHEMA_VERSION = 'report-materialization-schema-v5';
 export const LARK_REPORT_MATERIALIZATION_SCHEMA = deepFreeze({
   sharedOptionExtensions: {
     platforms: PLATFORM_OPTIONS,
     dataStatuses: DATA_STATUS_OPTIONS,
     periodKinds: PERIOD_KIND_OPTIONS,
     dashboardWindowDays: DASHBOARD_WINDOW_DAY_OPTIONS,
+    metricDimensionTypes: REPORT_METRIC_DIMENSION_TYPE_OPTIONS,
     metricScopes: DASHBOARD_METRIC_SCOPE_OPTIONS,
     metricAvailabilityStatuses: DASHBOARD_METRIC_AVAILABILITY_OPTIONS,
     reportTypes: ['daily_organic_report', 'weekly_organic_report', 'dashboard_performance_report'],
