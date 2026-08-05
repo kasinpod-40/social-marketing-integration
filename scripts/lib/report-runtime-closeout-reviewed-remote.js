@@ -7,7 +7,14 @@ import {
   resolveCloudflareAccountId,
   resolveCloudflareBearerAuth,
 } from './woocommerce-final-one-command.js';
-import { closeoutFailure, sha256, stableJson } from './report-runtime-closeout-reviewed-process.js';
+import {
+  closeoutFailure,
+  sha256,
+  sleep,
+  stableJson,
+} from './report-runtime-closeout-reviewed-process.js';
+
+const DEPLOYMENT_STABILITY_DELAYS_MS = Object.freeze([0, 10_000, 20_000]);
 
 export async function resolveReviewedCloudflareSession({ env, sourceText, runText }) {
   const cleanEnv = { ...env };
@@ -107,6 +114,42 @@ export function createReviewedRemoteRuntime(input) {
   }
 
   async function verifyDeployment(mode, expectedVersionId = null) {
+    if (expectedVersionId === null) return verifyDeploymentOnce(mode, null);
+
+    const samples = [];
+    for (const delayMs of DEPLOYMENT_STABILITY_DELAYS_MS) {
+      if (delayMs > 0) await sleep(delayMs);
+      samples.push(await verifyDeploymentOnce(mode, expectedVersionId));
+    }
+    const first = samples[0];
+    const fingerprint = stableJson({
+      activeVersion: first.activeVersion,
+      trueFlags: first.trueFlags,
+      mode: first.mode,
+      bindingContract: first.bindingContract,
+      requiredTableBindingCount: first.requiredTableBindingCount,
+      optionalTableBindingCount: first.optionalTableBindingCount,
+    });
+    if (samples.some((sample) => stableJson({
+      activeVersion: sample.activeVersion,
+      trueFlags: sample.trueFlags,
+      mode: sample.mode,
+      bindingContract: sample.bindingContract,
+      requiredTableBindingCount: sample.requiredTableBindingCount,
+      optionalTableBindingCount: sample.optionalTableBindingCount,
+    }) !== fingerprint)) throw closeoutFailure(
+      'Remote Worker deployment changed during the reviewed stability barrier',
+      'REPORT_RUNTIME_CLOSEOUT_DEPLOYMENT_NOT_STABLE',
+      { expectedVersionId, sampleCount: samples.length },
+    );
+    return Object.freeze({
+      ...samples.at(-1),
+      stabilitySampleCount: samples.length,
+      stabilityWindowMs: DEPLOYMENT_STABILITY_DELAYS_MS.reduce((total, value) => total + value, 0),
+    });
+  }
+
+  async function verifyDeploymentOnce(mode, expectedVersionId) {
     const status = JSON.parse(await runText('npx', [
       'wrangler', 'deployments', 'status', '--name', 'social-mkt-sync-worker', '--config', configPath, '--json',
     ], { env }));
