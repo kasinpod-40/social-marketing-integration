@@ -26,6 +26,8 @@ export const REPORT_METRIC_DIMENSION_TYPE_OPTIONS = Object.freeze([
   'product',
   'payment_method',
   'shipping_method',
+  'inbox',
+  'agent',
 ]);
 
 /**
