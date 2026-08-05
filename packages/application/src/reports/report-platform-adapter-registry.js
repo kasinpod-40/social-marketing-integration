@@ -113,7 +113,7 @@ const PLATFORM_CONTRACTS = Object.freeze({
   chatwoot: freezeContract({
     platformScope: 'chatwoot',
     capability: REPORT_PLATFORM_CAPABILITY.CUSTOMER_SERVICE,
-    sourceStatus: REPORT_SOURCE_STATUS.ACTIVE,
+    sourceStatus: REPORT_SOURCE_STATUS.UAT_PENDING,
     datasetKey: 'chatwoot.conversation_daily',
     coverageDatasetKeys: ['chatwoot.conversation_daily', 'chatwoot.account_daily'],
     requiredCoverageDatasetKeys: ['chatwoot.conversation_daily', 'chatwoot.account_daily'],
@@ -246,3 +246,4 @@ function freezeTextList(value, fieldName) {
   }
   return Object.freeze(normalized);
 }
+
