@@ -5,6 +5,9 @@ import { permanentError, transientError } from '../../shared/src/errors/runtime-
 const DEFAULT_MAX_FACTS = 10_000;
 const MAX_FACTS = 50_000;
 const DEFAULT_TOP_ADS_LIMIT = 5;
+const D1_MAX_BOUND_PARAMETERS = 100;
+const ENTITY_QUERY_FIXED_BINDINGS = 3;
+const MAX_ENTITY_IDS_PER_QUERY = D1_MAX_BOUND_PARAMETERS - ENTITY_QUERY_FIXED_BINDINGS;
 
 /**
  * Bounded D1 Ads reader that selects one reviewed source grain and aggregates its partitions.
@@ -98,14 +101,14 @@ export class D1AdsReportSource {
     const rankingRows = rankingSelection.rows;
 
     const entityIds = [...new Set(rankingRows.map(entityIdentity).filter(Boolean))].sort();
-    const entityRows = entityIds.length === 0 ? [] : await this.#all(
-      `SELECT external_entity_id, external_creative_id, entity_name, currency
-       FROM ads_entity_state
-       WHERE customer_key = ? AND platform = ? AND account_key = ?
-         AND entity_type = 'ad' AND external_entity_id IN (${placeholders(entityIds.length)})
-       ORDER BY external_entity_id ASC`,
-      [customerKey, this.platform, accountKey, ...entityIds],
-    );
+    const entityIdChunks = chunkValues(entityIds, MAX_ENTITY_IDS_PER_QUERY);
+    const entityRows = [];
+    for (const entityIdChunk of entityIdChunks) {
+      entityRows.push(...await this.#all(
+        entitySql(entityIdChunk.length),
+        [customerKey, this.platform, accountKey, ...entityIdChunk],
+      ));
+    }
     const entityById = new Map(entityRows.map((row) => [row.external_entity_id, row]));
     const coverageStatus = normalizeCoverageStatus(coverage?.status);
     const coverageRate = calculateCoverageRate(coverage);
@@ -146,6 +149,8 @@ export class D1AdsReportSource {
         rankingFactRows: rankingRows.length,
         discardedFactRows: factRows.length - new Set([...summaryRows, ...rankingRows]).size,
         entityRows: entityRows.length,
+        entityQueryCount: entityIdChunks.length,
+        entityQueryMaxIds: MAX_ENTITY_IDS_PER_QUERY,
         topAdsAvailability: this.rankingReportLevels.length === 0 ? 'not_observed' : 'available',
         coverageStatus,
         coverageRate,
@@ -228,6 +233,14 @@ function coverageSql(datasetCount) {
   `;
 }
 
+function entitySql(entityIdCount) {
+  return `SELECT external_entity_id, external_creative_id, entity_name, currency
+    FROM ads_entity_state
+    WHERE customer_key = ? AND platform = ? AND account_key = ?
+      AND entity_type = 'ad' AND external_entity_id IN (${placeholders(entityIdCount)})
+    ORDER BY external_entity_id ASC`;
+}
+
 function selectAggregationRows(input) {
   for (const reportLevel of input.reportLevels) {
     const rows = input.rows.filter((row) => (
@@ -302,6 +315,13 @@ function buildTopAds(input) {
     .map((row, index) => Object.freeze({ rank: index + 1, ...row })));
 }
 
+function chunkValues(values, size) {
+  const chunks = [];
+  for (let offset = 0; offset < values.length; offset += size) {
+    chunks.push(Object.freeze(values.slice(offset, offset + size)));
+  }
+  return Object.freeze(chunks);
+}
 function entityIdentity(row) { return optionalText(row?.external_ad_id) ?? optionalText(row?.external_entity_id); }
 function firstKnown(rows, field) { return rows.find((row) => row?.[field] !== null && row?.[field] !== undefined)?.[field] ?? null; }
 function compareDesc(left, right) { return (normalizeNumber(right) ?? -Infinity) - (normalizeNumber(left) ?? -Infinity); }
