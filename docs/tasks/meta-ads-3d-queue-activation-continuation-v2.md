@@ -49,7 +49,9 @@ Before any Report Queue send, read the Cloudflare Queue consumer inventory and r
 - exactly one consumer identity;
 - explicit type, when present, is `worker`;
 - explicit queue name, when present, is `social-mkt-sync-jobs`;
-- resolved script is `social-mkt-sync-worker`;
+- every explicit script name, when present, is `social-mkt-sync-worker`;
+- when all Cloudflare responses omit optional `script_name`, retain the reviewed Worker contract name and record
+  authority as `reviewed_worker_contract`;
 - batch size `10`;
 - max concurrency `1`;
 - max retries `5`;
@@ -58,8 +60,9 @@ Before any Report Queue send, read the Cloudflare Queue consumer inventory and r
 
 The List response locks the one non-empty `consumer_id`. The exact GET Consumer response and Queue-list embedded
 Consumer may hydrate Cloudflare fields documented as optional. Every explicit identity returned by any source must
-agree; missing fields alone are not treated as drift. Persist only consumer identity/settings fingerprints, never raw
-auth or account identifiers.
+agree; missing fields alone are not treated as drift. Before Queue send, the exact deployed
+`social-mkt-sync-worker` version, flags, D1/Queue bindings and Lark mappings remain mandatory. Persist only consumer
+identity/settings fingerprints and authority labels, never raw auth or account identifiers.
 
 ### Activation barrier
 
@@ -91,10 +94,9 @@ The existing Meta Ads continuation operator is extended rather than replaced. It
 10. restore Notification Runtime;
 11. close all three exact DLQs only after every prior proof passes.
 
-## Pre-send Consumer-hydration incident
+## Pre-send Consumer incidents
 
-The first post-PR #515 v2 root stopped before any deployment because one valid Consumer was returned but optional List
-fields were absent:
+The first post-PR #515 v2 root stopped before deployment because optional List fields were absent:
 
 ```text
 root                       outputs/meta-ads-3d-queue-activation-continuation-3d28aebd2284
@@ -103,16 +105,32 @@ reviewedMatchCount         0
 activeDeploymentAttempted  false
 Queue send                 0
 Remote mutation            0
-Provider request           0
 ```
 
-That root is immutable and cannot be rerun. It created no new DLQ or Report runtime state, so the exact retained
-three-DLQ continuation contract remains unchanged.
+After exact Consumer hydration was added, the next GET-only preflight proved ID/type/queue/settings but Cloudflare
+still omitted optional `script_name` from every response source:
+
+```text
+root                       outputs/meta-ads-3d-queue-consumer-hydration-7a05c64f1ea9
+consumerIdentityMatched    true
+typeMatched                true
+queueNameMatched           true
+scriptNamePresent          false
+detailHydrated             true
+activeDeploymentAttempted  false
+Queue send                 0
+Remote mutation            0
+```
+
+Both roots are immutable and created no new DLQ or Report runtime state. The exact retained three-DLQ continuation
+contract remains unchanged.
 
 ## Failure semantics
 
 - Before Queue send: safe to correct Repository/config and start a new evidence root.
 - After Queue send: the evidence root is immutable and must not be repeated.
+- Missing optional identity metadata is tolerated only when every explicit value and exact topology agree.
+- Any explicit script/type/queue/ID disagreement remains fail-closed.
 - A new exact DLQ terminates polling immediately.
 - A retryable Sync failure remains in the bounded poll window until success or exact DLQ.
 - Baseline restore runs in `finally` after any active deployment attempt.
