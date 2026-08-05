@@ -3,10 +3,16 @@
 ## Status
 
 ```text
-TASK_STATUS                         = IMPLEMENTATION_IN_PROGRESS
+TASK_STATUS                         = IMPLEMENTATION_COMPLETE_CI_PASS
 CURRENT_PROGRAM                     = META_ADS_3D_D1_BIND_CONTINUATION_V1
 BRANCH                              = hotfix/meta-ads-3d-d1-bind-continuation-v1
 EXACT_BASE                          = 2f87f7f342847a5dcd0cf794cd0a74e55ab76068
+VERIFIED_IMPLEMENTATION_HEAD        = 8f3ff8c425ce871f3d19ce70188e0c3e01a46c0a
+PR                                  = 514
+BRANCH_VERIFICATION_RUN             = 31019421705
+BRANCH_VERIFICATION_NUMBER          = 2241
+META_END_TO_END_RUN                 = 31019419506
+META_END_TO_END_NUMBER              = 448
 PLATFORM                            = meta_ads
 WINDOW                              = 3D
 REPORT_ID                           = integration_workspace:meta_ads:rolling:3d:chemistry_k:rolling_days:2026-07-29:2026-07-31:meta-ads-v1
@@ -45,52 +51,43 @@ or the prior Run All handoff.
 
 ## Proven root cause
 
-The Shared Paid Ads reader reserved three fixed bindings and appended every unique ranking Ad ID:
-
 ```text
 1D  77 Ads + 3 = 80 bindings   PASS
 3D 102 Ads + 3 = 105 bindings  FAIL
 ```
 
-PR #513 merged deterministic 97-ID entity chunks into exact base `2f87f7f342847a5dcd0cf794cd0a74e55ab76068`.
-PR #512 had already removed broad unneeded Paid Ads projections. The exact runtime root is now proven rather than a
-hypothesis.
+PR #512 removed broad unneeded Paid Ads projections. PR #513 merged deterministic 97-ID entity chunks into
+`main@2f87f7f342847a5dcd0cf794cd0a74e55ab76068`. The exact live root cause is proven.
 
 ## Exact retained boundary
 
-- the original Report ID, requested-at, period, source watermark and job hash remain unchanged;
-- the first failed recovery produced six failed Sync Runs and zero D1/Lark target rows;
-- the original configuration DLQ and the retry-exhaustion DLQ are both open;
+- original Report ID, requested-at, period, source watermark and job hash remain unchanged;
+- failed recovery produced six failed Sync Runs and zero D1/Lark target rows;
+- original configuration DLQ and retry-exhaustion DLQ remain open;
 - no Report Work or lock is active;
 - Notification Runtime baseline is restored;
 - Notification Admission, Schedule and Production remain disabled.
 
 ## Implementation
 
-Add one exact incident continuation operator that reuses the existing Shared:
+One exact incident continuation operator reuses the existing Shared Finalizer, Notification-preserving Worker window,
+Queue sender, D1/Lark state and integrity checks, Stable replay checks, D1 backup and exact DLQ closure pattern.
 
-- Report Finalizer and candidate builder;
-- Notification-preserving Active/Safe Worker window;
-- reviewed Cloudflare and Queue sender;
-- D1/Lark state and integrity checks;
-- Stable Report ID/checksum replay checks;
-- D1 backup and exact DLQ metadata closure.
+The operator:
 
-The operator must:
+1. requires clean `main`, an operator-supplied exact merged Head and exact-head Finalizer evidence;
+2. binds the retained failed-recovery attempt and both inspector files;
+3. binds both exact DLQs and operation metadata;
+4. requires two prior successes, six failed recovery runs and an empty D1/Lark target;
+5. sends the original Meta Ads 3D job once;
+6. verifies one materialization and D1/Lark integrity;
+7. sends one exact replay and proves no drift;
+8. restores and stabilizes Notification Runtime;
+9. closes both DLQs only after all prior proof passes;
+10. emits a private sanitized summary.
 
-1. require exact clean merged Head and exact-head Finalizer evidence;
-2. bind the retained failed-recovery attempt and both inspector files;
-3. bind both exact DLQs and operation metadata;
-4. require two prior successes, six failed recovery runs and an empty D1/Lark target;
-5. send the original Meta Ads 3D job once;
-6. verify one materialization and D1/Lark integrity;
-7. send one exact replay and prove no drift;
-8. restore and stabilize Notification Runtime;
-9. close both DLQs only after all prior proof passes;
-10. emit a private sanitized summary.
-
-Polling may report failed-attempt progress but must not restore the Worker while a Queue retry remains in flight. It
-must stop immediately after an exact new DLQ is observed.
+Polling reports failed-attempt progress and stops after an exact new DLQ appears. It does not restore the Worker while
+a Queue retry is merely between attempts.
 
 ## Out of scope
 
@@ -106,7 +103,7 @@ must stop immediately after an exact new DLQ is observed.
 
 ## Acceptance criteria
 
-1. Exact fixed Head `2f87f7f342847a5dcd0cf794cd0a74e55ab76068` is required.
+1. PR #513 fixed Head is an ancestor and the live command supplies the exact merged continuation Head.
 2. Retained evidence proves `102 Ads / 105 bindings` for 3D and `77 Ads / 80 bindings` for 1D.
 3. Both exact DLQ rows and metadata match the original Queue job.
 4. Exactly one first Queue send and one replay send are possible.
@@ -119,7 +116,43 @@ must stop immediately after an exact new DLQ is observed.
 
 ## Implementation result
 
-Implementation is in progress on the branch above. Repository implementation performs no Remote action.
+Implemented on Draft PR #514 without Remote execution:
+
+- exact two-DLQ continuation contract and immutable root-cause evidence;
+- one first send plus one exact replay only;
+- exact-head environment guard for the post-merge Head;
+- D1/Lark materialization, replay and baseline-restore gates;
+- progress diagnostics and exact-new-DLQ termination;
+- closure of both retained DLQs only after full success;
+- focused pure-contract and source-wiring regressions;
+- repository implementation Remote actions: zero.
+
+Exact implementation Head `8f3ff8c425ce871f3d19ce70188e0c3e01a46c0a` passed:
+
+```text
+Branch Verification #2241 / run 31019421705
+Install locked dependencies                 PASS
+Syntax architecture and hygiene             PASS
+Focused Report source readiness tests       PASS
+Focused Meta history finalizer tests         PASS
+Focused Woo completed-state race tests       PASS
+Focused Chatwoot final UAT tests              PASS
+Focused staged TikTok tests                  PASS
+Unit and Workers runtime tests               PASS
+Report reliability regression               PASS
+Dependency audit                             PASS
+Wrangler dry run                             PASS
+Diff whitespace check                        PASS
+
+Meta End-to-End #448 / run 31019419506
+Diff hygiene                                 PASS
+Syntax architecture and repository hygiene  PASS
+Focused Meta workstream tests                PASS
+Unit and Workers runtime tests               PASS
+Report reliability regression               PASS
+Dependency audit                             PASS
+Wrangler dry run                             PASS
+```
 
 ## Required verification
 
