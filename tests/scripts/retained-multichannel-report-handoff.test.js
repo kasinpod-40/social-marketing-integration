@@ -85,6 +85,11 @@ function readiness(platformScope, ready = true) {
         capability: contract.capability,
       },
       repository: repository(),
+      runtime: {
+        executionBaselineVerified: true,
+        notificationRuntimeState: 'active',
+        baselineTrueFlagCount: 3,
+      },
       source: {
         sourceWatermark: `${platformScope}-watermark`,
       },
@@ -120,6 +125,9 @@ test('builder creates one sanitized exact-head handoff for every non-planned cha
   assert.equal(result.handoff.liveMaterializationAuthorized, true);
   assert.equal(result.handoff.metaRemoteLock.released, true);
   assert.equal(result.handoff.repository.head, HEAD);
+  assert.equal(result.handoff.finalizer.notificationRuntimeState, 'active');
+  assert.equal(result.handoff.finalizer.notificationRuntimeSettingsPreserved, true);
+  assert.equal(result.handoff.finalizer.notificationRuntimeWorkerBaselinePreserved, true);
   assert.equal(result.handoff.notificationAdmissionEnabled, false);
   assert.equal(result.handoff.schedulesEnabled, false);
   assert.deepEqual(result.selection.ready.map((row) => row.platformScope), [
@@ -161,6 +169,32 @@ test('builder rejects stale Finalizer and not-ready channel evidence', () => {
       readinessByPlatform: channelEvidence,
       metaAuditHead: META_REMOTE_LOCK_RELEASE_AUDIT_HEAD,
     }),
+  );
+});
+
+test('builder rejects Notification Runtime preservation or readiness drift', () => {
+  const unsafeFinalizer = finalizer();
+  unsafeFinalizer.runtime.notificationRuntimeWorkerBaselinePreserved = false;
+  assert.throws(
+    () => buildRetainedMultichannelReportHandoff({
+      repository: repository(),
+      finalizer: unsafeFinalizer,
+      readinessByPlatform: readinessByPlatform(),
+      metaAuditHead: META_REMOTE_LOCK_RELEASE_AUDIT_HEAD,
+    }),
+    { code: 'RETAINED_REPORT_HANDOFF_NOTIFICATION_FINALIZER_INVALID' },
+  );
+
+  const channelEvidence = readinessByPlatform();
+  channelEvidence.facebook.evidence.runtime.baselineTrueFlagCount = 0;
+  assert.throws(
+    () => buildRetainedMultichannelReportHandoff({
+      repository: repository(),
+      finalizer: finalizer(),
+      readinessByPlatform: channelEvidence,
+      metaAuditHead: META_REMOTE_LOCK_RELEASE_AUDIT_HEAD,
+    }),
+    { code: 'RETAINED_REPORT_HANDOFF_NOTIFICATION_READINESS_INVALID' },
   );
 });
 
