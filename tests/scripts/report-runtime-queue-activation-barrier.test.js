@@ -45,6 +45,53 @@ test('reviewed Queue requires exactly one matching Worker consumer and exact set
   );
 });
 
+test('optional List fields are hydrated from exact Consumer detail without weakening topology checks', () => {
+  const consumerId = consumer().consumer_id;
+  const value = assertReviewedQueueConsumer({
+    consumers: [{ consumer_id: consumerId }],
+    detail: {
+      consumer_id: consumerId,
+      script_name: 'social-mkt-sync-worker',
+      dead_letter_queue: 'social-mkt-sync-dlq',
+      settings: consumer().settings,
+    },
+  });
+  assert.equal(value.consumerId, consumerId);
+  assert.equal(value.scriptName, 'social-mkt-sync-worker');
+  assert.equal(value.settings.maxRetries, 5);
+});
+
+test('Queue-scoped optional fields may be absent but explicit identity drift remains rejected', () => {
+  const consumerId = consumer().consumer_id;
+  assert.equal(assertReviewedQueueConsumer({
+    consumers: [{ consumer_id: consumerId }],
+    embeddedConsumers: [consumer({ type: undefined, queue_name: undefined })],
+    detail: { consumer_id: consumerId },
+  }).consumerId, consumerId);
+
+  assert.throws(
+    () => assertReviewedQueueConsumer({
+      consumers: [{ consumer_id: consumerId }],
+      detail: consumer({ type: 'http_pull' }),
+    }),
+    (error) => error.code === 'REPORT_RUNTIME_CLOSEOUT_QUEUE_CONSUMER_INVALID',
+  );
+  assert.throws(
+    () => assertReviewedQueueConsumer({
+      consumers: [{ consumer_id: consumerId }],
+      detail: consumer({ queue_name: 'other-queue' }),
+    }),
+    (error) => error.code === 'REPORT_RUNTIME_CLOSEOUT_QUEUE_CONSUMER_INVALID',
+  );
+  assert.throws(
+    () => assertReviewedQueueConsumer({
+      consumers: [{ consumer_id: consumerId }],
+      detail: consumer({ consumer_id: 'different-consumer' }),
+    }),
+    (error) => error.code === 'REPORT_RUNTIME_CLOSEOUT_QUEUE_CONSUMER_INVALID',
+  );
+});
+
 test('Report execution uses three samples across a 120-second Queue activation barrier', () => {
   const source = readFileSync(
     new URL('../../scripts/lib/report-runtime-closeout-reviewed-remote.js', import.meta.url),
@@ -60,4 +107,9 @@ test('Report execution uses three samples across a 120-second Queue activation b
   );
   assert.match(source, /queueActivationBarrier: reportExecutionWindow/u);
   assert.match(source, /\/queues\/\$\{encodeURIComponent\(queueId\)\}\/consumers/u);
+  assert.match(
+    source,
+    /\/consumers\/\$\{encodeURIComponent\(consumerId\)\}/u,
+  );
+  assert.match(source, /const listedConsumerId = readSingleConsumerId\(consumers, 'list'\)/u);
 });
