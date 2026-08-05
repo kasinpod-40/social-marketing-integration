@@ -1,19 +1,19 @@
-# Current Task — Multichannel Report Verified-Reuse No-Resend Hotfix v1
+# Current Task — Report D1 Read Retry & Diagnostics Hotfix v1
 
 ## Status
 
 ```text
 TASK_STATUS                         = IMPLEMENTATION_IN_PROGRESS
-CURRENT_PROGRAM                     = MULTICHANNEL_REPORT_VERIFIED_REUSE_NO_RESEND_V1
-BRANCH                              = hotfix/report-reuse-verification-no-resend-v1
-EXACT_BASE                          = bae7eec0d3845eb1094140f6e16bd0b6677b4223
-PRIOR_FACEBOOK_DLQ_RECOVERY         = PASS
-SECOND_RUN_ALL_RESULT               = STOPPED_SAFE_ON_FACEBOOK_1D_REUSE
-FACEBOOK_1D_MATERIALIZATION_COUNT   = 1
-FACEBOOK_1D_SYNC_COMPLETION         = PASS
-NEW_REPORT_DLQ_COUNT                = 0
-WORKER_BASELINE_RESTORED            = true
-NOTIFICATION_RUNTIME_STATE          = active
+CURRENT_PROGRAM                     = REPORT_D1_READ_RETRY_DIAGNOSTICS_V1
+BRANCH                              = hotfix/d1-read-retry-diagnostics-v1
+EXACT_BASE                          = 392673893e390019019f04b299185782214d965d
+PRIOR_FACEBOOK_REUSE_FIX            = MERGED
+LATEST_RUN_ALL_RESULT               = FACEBOOK_COMPLETED_THEN_STOPPED_BEFORE_INSTAGRAM_DEPLOY
+INSTAGRAM_FAILURE_STAGE             = lark-and-instagram-d1-preflight
+INSTAGRAM_ACTIVE_DEPLOYMENT         = false
+INSTAGRAM_QUEUE_ACTION              = 0
+INSTAGRAM_REMOTE_WRITE              = 0
+PROVIDER_REQUEST_COUNT              = 0
 NOTIFICATION_ADMISSION_ENABLED      = false
 SCHEDULE_ACTIVATION_APPROVED        = false
 PRODUCTION                          = BLOCKED
@@ -22,107 +22,75 @@ PRODUCTION                          = BLOCKED
 Full contract:
 
 ```text
-docs/tasks/multichannel-report-verified-reuse-no-resend-v1.md
+docs/tasks/report-d1-read-retry-diagnostics-v1.md
 ```
 
 ## Goal
 
-Correct the shared reviewed multiwindow executor so a readiness action of
-`reuse_or_idempotent_verify` reuses the already verified D1/Lark materialization without submitting a newly
-constructed Queue job. Fresh and repair windows continue to use the existing first-send plus exact same-job replay
-path. Resume remains blocked until the hotfix is merged, exact-main Finalizer/readiness pass and the current
-Facebook 1D D1/Lark state is reverified read-only.
+Make the existing shared Report D1 read path resilient to bounded transient `wrangler d1 execute --remote --json`
+failures while preserving the exact final command diagnostics needed to distinguish Cloudflare/CLI failures from
+SQL defects. No Queue, Worker, D1 write, Lark write, Provider or Schedule action is part of this Repository hotfix.
 
-## Confirmed second incident
+## Confirmed incident
 
-After exact Facebook 1D configuration-DLQ recovery completed, all-channel readiness classified Facebook 1D as:
+The exact-head Run All on `main@392673893e390019019f04b299185782214d965d` passed the pre-Run readiness gates.
+Facebook executed first. Run All then stopped before Instagram deployment while executing the same Instagram
+SELECT-only D1 preflight query that had passed during readiness.
 
 ```text
-reuse_or_idempotent_verify
+stage                       lark-and-instagram-d1-preflight
+activeDeploymentAttempted   false
+baselineRestoreVerified     false
+remoteWriteCount            0
+queueActionCount             0
+workerDeploymentCount       0
+providerRequestCount        0
+production                  BLOCKED
 ```
 
-The reviewed executor then:
+The shared command runner surfaced only the generated command and numeric exit code. It discarded `stderr`, so the
+result cannot yet distinguish a transient Cloudflare/CLI failure from a persistent SQL error. The correct response
+is not to rerun the old Run All block and not to add an Instagram-specific wrapper.
 
-1. loaded the recovered D1/Lark row as `before`;
-2. generated a new candidate job using a new `requestedAt = Date.now()`;
-3. unconditionally sent that new job through the code path named `send-replay`;
-4. observed a successful Report Sync completion with one Stable materialization, zero active lock and zero new DLQ;
-5. stopped at `REPORT_RUNTIME_CLOSEOUT_REPLAY_DRIFT` because the newly submitted job was not the same input as the
-   retained recovered materialization;
-6. restored the preserved Notification Runtime Worker baseline successfully.
+## Root correction
 
-The ordering of assertions proves the second Queue delivery reached a valid completed D1 state before the drift
-assertion. Facebook 3D/7D/30D and every later channel were not started. Lark post-delivery parity remains unclaimed
-until the next SELECT-only readiness pass.
+Update only `createReviewedStateRuntime().readD1Rows()`:
 
-## Root cause
-
-`executeWindow()` treated all operations as requiring a Queue replay. For `verify`, its `first` value is an existing
-materialization created by an earlier job, while `selected.job` is regenerated with a new requested-at value. The
-operator nevertheless labelled the delivery `sameInput: true` and compared the new result to the older checksum.
-That is a shared execution-policy defect, not a Facebook source, Report ID, D1 row-count or deployment-stability
-defect.
-
-## In scope
-
-- change only the existing shared reviewed multiwindow executor;
-- make `verify` a read-only reuse result with zero Queue messages;
-- persist a private local `reuse-verified` attempt record;
-- retain D1/Lark integrity validation before the reuse result;
-- keep first-send plus exact same-job replay unchanged for `fresh` and `refresh`;
-- preserve successful-run floors for later mutating windows;
-- expose truthful summary fields: `reusedExisting`, `replayExecuted`, `executionMode` and `queueMessagesSent`;
-- focused regression, full Repository gates and updated handoff documentation.
-
-## Out of scope
-
-- another Queue message for Facebook 1D;
-- generic rerun or DLQ redrive;
-- replacing the Facebook Report ID;
-- restoring an older payload checksum by manual D1/Lark writes;
-- Provider request or source ingestion;
-- new Report/Queue/Reliability/D1/Lark framework;
-- Schedule, Notification Admission or Production activation.
+- retry failed SELECT-only D1 command execution up to three bounded attempts;
+- use a fixed short delay between attempts;
+- do not retry after a successful command returns invalid JSON;
+- after the final failed attempt, throw `REPORT_RUNTIME_CLOSEOUT_D1_READ_FAILED`;
+- retain only bounded `sourceCode`, `sourceSignal`, `stderr` and `stdout` diagnostics;
+- never include the SQL command text or environment secrets in the new error details;
+- keep all D1 writes, backups and migrations outside this retry path.
 
 ## Acceptance criteria
 
-1. `verify` returns only after one D1 materialization, one Lark Snapshot set, no duplicate metric keys and exact
-   D1/Lark metric integrity have already passed.
-2. `verify` writes local sanitized evidence and performs zero Queue send.
-3. `verify` does not increment the current-run successful Sync floor.
-4. `verify` reports `executionMode=reuse_verified_materialization`, `reusedExisting=true`,
-   `replayExecuted=false`, `sameInput=null`, `queueMessagesSent=0` and `zeroDrift=true`.
-5. `fresh` and `refresh` still submit one first job plus one byte-identical replay and retain all existing completion,
-   Stable-ID, checksum, Lark and integrity assertions.
-6. Active deployment stability and preserved Notification Runtime restore remain unchanged.
-7. Post-merge execution starts with SELECT-only readiness; any D1/Lark mismatch, Work/Lock/DLQ or source drift stops
-   before another Queue message.
-8. Provider, Schedule, Notification Admission and Production remain disabled.
+1. Two transient command failures followed by success return the exact D1 row.
+2. Permanent command failure stops after the configured bounded attempt count.
+3. Final failure exposes compact command diagnostics without propagating SQL text.
+4. Invalid JSON after a successful command fails immediately as
+   `REPORT_RUNTIME_CLOSEOUT_D1_RESPONSE_INVALID`.
+5. Existing Report readiness, closeout, recovery and reliability tests continue to pass.
+6. Post-merge resume begins with a new exact-head Finalizer and SELECT-only readiness for Facebook and Instagram.
+7. Existing materializations are reused; no old handoff or old evidence directory is reused.
+8. Notification Admission, Schedule and Production remain blocked.
 
 ## Implementation result
 
-In progress on the branch above:
+Implemented on the branch above:
 
-- added an early verified-reuse return before the shared Queue send path;
-- recorded a private `*-reuse-verified.attempt.json` evidence file;
-- made reuse summary semantics explicit and truthful;
-- retained the existing materialize-and-replay path for fresh/repair windows;
-- strengthened the existing executor wiring regression so the verify branch must return before any
-  `sendReviewedQueueMessage` call.
-
-No Remote action was performed by this Repository implementation.
+- added three-attempt bounded retry to the shared D1 SELECT reader;
+- added sanitized final `stderr/stdout` diagnostics;
+- added regression tests for transient success, permanent failure and invalid JSON;
+- no Remote action was performed.
 
 ## Required verification
 
 ```bash
 npm ci
 npm run check
-node --test tests/scripts/report-runtime-closeout-reviewed-multiwindow-wiring.test.js
-node --test \
-  tests/scripts/report-runtime-closeout-reviewed-remote.test.js \
-  tests/scripts/report-runtime-reviewed-config-dlq-recovery.test.js \
-  tests/scripts/report-all-ready-channels.test.js \
-  tests/scripts/retained-multichannel-report-handoff.test.js
+node --test tests/scripts/report-runtime-closeout-reviewed-state.test.js
 npm test
 npm run test:report-reliability
 npm audit --audit-level=high
@@ -133,12 +101,9 @@ git diff --check
 ## Post-merge boundary
 
 1. synchronize clean exact `main`;
-2. rerun Report Runtime Finalizer for the new exact Head;
-3. rerun SELECT-only readiness for Facebook first;
-4. require one materialization, D1/Lark integrity, zero Work/Lock/DLQ and action
-   `reuse_or_idempotent_verify` for Facebook 1D;
-5. rerun SELECT-only readiness for the remaining channels and rebuild the exact-head retained handoff;
-6. resume Run All once under the corrected shared executor;
-7. never repeat the failed `bae7eec...` Run All command or its generated handoff.
-
-Schedules, Notification Admission and Production remain blocked after Report materialization.
+2. rerun Report Runtime Finalizer for the new Head;
+3. run Facebook and Instagram SELECT-only readiness first;
+4. require zero Work/Lock/DLQ and exact D1/Lark integrity for all existing windows;
+5. run readiness for the remaining channels and build a new exact-head retained handoff;
+6. resume Run All once under a new evidence root;
+7. never rerun `outputs/report-live-resume-392673893e39`.
