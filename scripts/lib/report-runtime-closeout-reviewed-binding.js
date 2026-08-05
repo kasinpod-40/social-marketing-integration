@@ -398,14 +398,17 @@ function buildCustomerServicePreflightSql({ contract, customerKey, accountKey, p
       NULL AS coverage_scope_mode,
       (SELECT source_watermark FROM selected_coverage WHERE dataset_key = '${primaryDataset}')
         AS source_watermark,
-      COALESCE(
-        (SELECT MAX(metric_date) FROM chatwoot_conversation_daily_facts
-          WHERE customer_key = '${customerKey}' AND account_key = '${accountKey}'),
-        (SELECT MAX(metric_date) FROM chatwoot_account_daily_facts
-          WHERE customer_key = '${customerKey}' AND account_key = '${accountKey}')
-      ) AS period_end,
+      (SELECT MAX(metric_date) FROM (
+        SELECT metric_date FROM chatwoot_conversation_daily_facts
+          WHERE customer_key = '${customerKey}' AND account_key = '${accountKey}'
+        UNION ALL
+        SELECT metric_date FROM chatwoot_account_daily_facts
+          WHERE customer_key = '${customerKey}' AND account_key = '${accountKey}'
+      )) AS period_end,
       'customer_service_daily' AS source_scope,
-      (SELECT COUNT(*) FROM selected_coverage) AS coverage_required_count,
+      (SELECT COUNT(*) FROM selected_coverage
+        WHERE LOWER(status) IN ('complete', 'completed', 'partial', 'revisable', 'no_data_confirmed'))
+        AS coverage_required_count,
       (SELECT COUNT(*) FROM selected_coverage
         WHERE source_watermark IS NOT NULL AND source_watermark <> '') AS coverage_watermark_count,
       0 AS content_state_count,
@@ -440,6 +443,14 @@ function familyCondition(column, value) {
 }
 
 function runtimeSafetySql(platformScope, accountKey) {
+  const currentReportIncidentSql = `
+    SELECT 1 FROM sync_runs current_report
+    WHERE current_report.sync_run_id = a.sync_run_id
+      AND current_report.platform = '${platformScope}'
+      AND current_report.account_key = '${accountKey}'
+      AND current_report.sync_type = 'dashboard_performance_report'
+      AND current_report.status IN ('pending', 'running', 'failed')
+  `;
   return `
     (SELECT COUNT(*) FROM sync_runs
       WHERE platform = '${platformScope}' AND account_key = '${accountKey}'
@@ -454,17 +465,11 @@ function runtimeSafetySql(platformScope, accountKey) {
       WHERE job_type = 'report.materialization.generate'
         AND status IN ('open', 'redrive_pending')) AS open_report_dlq,
     (SELECT COUNT(*) FROM system_alerts a
-      JOIN sync_runs r ON r.sync_run_id = a.sync_run_id
       WHERE a.platform = '${platformScope}' AND a.severity = 'critical' AND a.status = 'open'
-        AND r.platform = '${platformScope}' AND r.account_key = '${accountKey}'
-        AND r.sync_type = 'dashboard_performance_report'
-        AND r.status IN ('pending', 'running', 'failed')) AS open_report_critical_alerts,
+        AND EXISTS (${currentReportIncidentSql})) AS open_report_critical_alerts,
     (SELECT COUNT(*) FROM system_alerts a
-      LEFT JOIN sync_runs r ON r.sync_run_id = a.sync_run_id
       WHERE a.platform = '${platformScope}' AND a.severity = 'critical' AND a.status = 'open'
-        AND (r.sync_run_id IS NULL OR r.sync_type <> 'dashboard_performance_report'
-          OR COALESCE(r.account_key, '') <> '${accountKey}'))
-      AS historical_connector_critical_alerts
+        AND NOT EXISTS (${currentReportIncidentSql})) AS historical_connector_critical_alerts
   `;
 }
 function sqlList(values) { return values.map((value) => `'${sqlText(value)}'`).join(', '); }
