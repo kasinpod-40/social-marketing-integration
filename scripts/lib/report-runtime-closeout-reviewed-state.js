@@ -64,11 +64,53 @@ export function createReviewedStateRuntime(input) {
   }
 
   async function readD1Rows(sql) {
-    const output = await runText('npx', [
-      'wrangler', 'd1', 'execute', 'MKT_STATE_DB', '--remote', '--json',
-      '--config', configPath, '--command', sql,
-    ], { env });
-    const parsed = JSON.parse(output);
+    const maxAttempts = positiveInteger(
+      env.MKT_REPORT_RUNTIME_CLOSEOUT_D1_READ_MAX_ATTEMPTS ?? 3,
+      'd1ReadMaxAttempts',
+    );
+    const retryIntervalMs = positiveInteger(
+      env.MKT_REPORT_RUNTIME_CLOSEOUT_D1_READ_RETRY_INTERVAL_MS ?? 2_000,
+      'd1ReadRetryIntervalMs',
+    );
+    let output = null;
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        output = await runText('npx', [
+          'wrangler', 'd1', 'execute', 'MKT_STATE_DB', '--remote', '--json',
+          '--config', configPath, '--command', sql,
+        ], { env });
+        lastError = null;
+        break;
+      } catch (error) {
+        lastError = error;
+        if (attempt < maxAttempts) await sleep(retryIntervalMs);
+      }
+    }
+
+    if (lastError) throw closeoutFailure(
+      'Report closeout D1 read failed after bounded retries',
+      'REPORT_RUNTIME_CLOSEOUT_D1_READ_FAILED',
+      {
+        attemptCount: maxAttempts,
+        sourceCode: normalizeCommandCode(lastError?.code),
+        sourceSignal: normalizeCommandCode(lastError?.signal),
+        stderr: normalizeCommandDiagnostic(lastError?.stderr),
+        stdout: normalizeCommandDiagnostic(lastError?.stdout),
+      },
+    );
+
+    let parsed;
+    try {
+      parsed = JSON.parse(output);
+    } catch {
+      throw closeoutFailure(
+        'Report closeout D1 read returned invalid JSON',
+        'REPORT_RUNTIME_CLOSEOUT_D1_RESPONSE_INVALID',
+        { responseBytes: Buffer.byteLength(String(output ?? '')) },
+      );
+    }
     return Array.isArray(parsed)
       ? parsed.flatMap((item) => item?.results ?? [])
       : (parsed?.results ?? []);
@@ -295,4 +337,12 @@ function normalizeLarkNumber(value) {
     'REPORT_RUNTIME_CLOSEOUT_LARK_METRIC_VALUE_INVALID',
   );
   return number;
+}
+function normalizeCommandCode(value) {
+  if (value === null || value === undefined || value === '') return null;
+  return String(value).slice(0, 128);
+}
+function normalizeCommandDiagnostic(value) {
+  const text = String(value ?? '').replace(/\s+/gu, ' ').trim();
+  return text === '' ? null : text.slice(0, 2_000);
 }
