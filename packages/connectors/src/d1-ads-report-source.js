@@ -5,16 +5,51 @@ const DEFAULT_MAX_FACTS = 10_000;
 const MAX_FACTS = 50_000;
 const DEFAULT_TOP_ADS_LIMIT = 5;
 
-/** D1 Ads reader with explicit report-level and no-breakdown fences to prevent double counting. */
+/**
+ * Bounded D1 Ads reader that selects one reviewed source grain and aggregates its partitions.
+ * It never combines unrelated breakdown families, so detailed Provider rows cannot be double counted.
+ */
 export class D1AdsReportSource {
   constructor(input = {}) {
     this.db = requireD1(input.db);
     this.platform = requireText(input.platform, 'platform');
-    this.datasetKey = requireText(input.datasetKey ?? 'ads_daily_facts', 'datasetKey');
-    this.summaryReportLevel = requireText(input.summaryReportLevel ?? 'account', 'summaryReportLevel');
-    this.rankingReportLevel = requireText(input.rankingReportLevel ?? 'ad', 'rankingReportLevel');
-    this.breakdownKey = requireText(input.breakdownKey ?? 'none', 'breakdownKey');
-    this.segmentKey = requireText(input.segmentKey ?? 'none', 'segmentKey');
+    this.coverageDatasetKeys = requireTextList(
+      input.coverageDatasetKeys ?? [input.datasetKey ?? 'ads_daily_facts'],
+      'coverageDatasetKeys',
+      { allowEmpty: false },
+    );
+    this.summaryReportLevels = requireTextList(
+      input.summaryReportLevels
+        ?? (input.summaryReportLevel ? [input.summaryReportLevel] : ['account']),
+      'summaryReportLevels',
+      { allowEmpty: false },
+    );
+    this.rankingReportLevels = requireTextList(
+      input.rankingReportLevels
+        ?? (input.rankingReportLevel ? [input.rankingReportLevel] : ['ad']),
+      'rankingReportLevels',
+      { allowEmpty: true },
+    );
+    this.summaryBreakdownFamily = requireText(
+      input.summaryBreakdownFamily ?? input.breakdownKey ?? 'none',
+      'summaryBreakdownFamily',
+    );
+    this.summarySegmentFamily = requireText(
+      input.summarySegmentFamily ?? input.segmentKey ?? 'none',
+      'summarySegmentFamily',
+    );
+    this.rankingBreakdownFamily = this.rankingReportLevels.length === 0
+      ? null
+      : requireText(
+        input.rankingBreakdownFamily ?? this.summaryBreakdownFamily,
+        'rankingBreakdownFamily',
+      );
+    this.rankingSegmentFamily = this.rankingReportLevels.length === 0
+      ? null
+      : requireText(
+        input.rankingSegmentFamily ?? this.summarySegmentFamily,
+        'rankingSegmentFamily',
+      );
   }
 
   async load(input = {}) {
@@ -25,25 +60,37 @@ export class D1AdsReportSource {
     if (periodStart > periodEnd) throw invalidQuery('periodStart cannot be after periodEnd');
     const factLimit = boundedPositiveInteger(input.maxFactRows ?? DEFAULT_MAX_FACTS, 'maxFactRows', MAX_FACTS);
     const topAdsLimit = boundedPositiveInteger(input.topAdsLimit ?? DEFAULT_TOP_ADS_LIMIT, 'topAdsLimit', 100);
+    const queryLevels = [...new Set([...this.summaryReportLevels, ...this.rankingReportLevels])];
 
-    const [summaryRows, rankingRows, coverage] = await Promise.all([
-      this.#all(factSql(), [
-        customerKey, this.platform, accountKey, this.summaryReportLevel,
-        this.breakdownKey, this.segmentKey, periodStart, periodEnd, factLimit + 1,
-      ]),
-      this.#all(factSql(), [
-        customerKey, this.platform, accountKey, this.rankingReportLevel,
-        this.breakdownKey, this.segmentKey, periodStart, periodEnd, factLimit + 1,
-      ]),
-      this.#first(`
-        SELECT * FROM data_coverage_runs
-        WHERE customer_key = ? AND platform = ? AND account_key = ?
-          AND dataset_key = ? AND completed_at IS NOT NULL
-        ORDER BY completed_at DESC, coverage_run_id ASC LIMIT 1
-      `, [customerKey, this.platform, accountKey, this.datasetKey]),
+    const [factRows, coverage] = await Promise.all([
+      queryLevels.length === 0 ? Promise.resolve([]) : this.#all(
+        factSql(queryLevels.length),
+        [customerKey, this.platform, accountKey, ...queryLevels, periodStart, periodEnd, factLimit + 1],
+      ),
+      this.#first(
+        coverageSql(this.coverageDatasetKeys.length),
+        [customerKey, this.platform, accountKey, ...this.coverageDatasetKeys],
+      ),
     ]);
-    assertWithinLimit(summaryRows.length, factLimit, 'summary facts', this.platform);
-    assertWithinLimit(rankingRows.length, factLimit, 'ranking facts', this.platform);
+    assertWithinLimit(factRows.length, factLimit, 'facts', this.platform);
+    assertUniqueFacts(factRows, this.platform);
+
+    const summarySelection = selectAggregationRows({
+      rows: factRows,
+      reportLevels: this.summaryReportLevels,
+      breakdownFamily: this.summaryBreakdownFamily,
+      segmentFamily: this.summarySegmentFamily,
+    });
+    const rankingSelection = this.rankingReportLevels.length === 0
+      ? emptySelection()
+      : selectAggregationRows({
+        rows: factRows,
+        reportLevels: this.rankingReportLevels,
+        breakdownFamily: this.rankingBreakdownFamily,
+        segmentFamily: this.rankingSegmentFamily,
+      });
+    const summaryRows = summarySelection.rows;
+    const rankingRows = rankingSelection.rows;
 
     const entityIds = [...new Set(rankingRows.map(entityIdentity).filter(Boolean))].sort();
     const entityRows = entityIds.length === 0 ? [] : await this.#all(
@@ -54,38 +101,46 @@ export class D1AdsReportSource {
       [customerKey, this.platform, accountKey, ...entityIds],
     );
     const entityById = new Map(entityRows.map((row) => [row.external_entity_id, row]));
-    const coverageStatus = coverage?.status ?? 'not_observed';
+    const coverageStatus = normalizeCoverageStatus(coverage?.status);
     const coverageRate = calculateCoverageRate(coverage);
+    const summaryReportLevel = summarySelection.reportLevel ?? this.summaryReportLevels[0];
     const metrics = calculateAdsPeriodMetrics({
       rows: summaryRows,
-      reportLevel: this.summaryReportLevel,
+      reportLevel: summaryReportLevel,
       coverageStatus,
       coverageRate,
     });
-    const topAds = buildTopAds({
-      rows: rankingRows,
-      entityById,
-      platform: this.platform,
-      reportLevel: this.rankingReportLevel,
-      coverageStatus,
-      coverageRate,
-      limit: topAdsLimit,
-    });
+    const topAds = this.rankingReportLevels.length === 0
+      ? Object.freeze([])
+      : buildTopAds({
+        rows: rankingRows,
+        entityById,
+        platform: this.platform,
+        reportLevel: rankingSelection.reportLevel ?? this.rankingReportLevels[0],
+        coverageStatus,
+        coverageRate,
+        limit: topAdsLimit,
+      });
 
     return Object.freeze({
       platform: this.platform,
       metrics,
       topAds,
       readSummary: Object.freeze({
-        strategy: 'd1_ads_daily_facts',
+        strategy: 'd1_ads_daily_facts_reviewed_grain',
         bounded: true,
-        summaryReportLevel: this.summaryReportLevel,
-        rankingReportLevel: this.rankingReportLevel,
-        breakdownKey: this.breakdownKey,
-        segmentKey: this.segmentKey,
+        coverageDatasetKey: coverage?.dataset_key ?? null,
+        summaryReportLevel,
+        rankingReportLevel: rankingSelection.reportLevel ?? null,
+        summaryBreakdownFamily: this.summaryBreakdownFamily,
+        summarySegmentFamily: this.summarySegmentFamily,
+        rankingBreakdownFamily: this.rankingBreakdownFamily,
+        rankingSegmentFamily: this.rankingSegmentFamily,
         summaryFactRows: summaryRows.length,
         rankingFactRows: rankingRows.length,
+        discardedFactRows: factRows.length - new Set([...summaryRows, ...rankingRows]).size,
         entityRows: entityRows.length,
+        topAdsAvailability: this.rankingReportLevels.length === 0 ? 'not_observed' : 'available',
         coverageStatus,
         coverageRate,
         coverageRunId: coverage?.coverage_run_id ?? null,
@@ -116,14 +171,63 @@ export class D1AdsReportSource {
   }
 }
 
-function factSql() {
+function factSql(levelCount) {
   return `
     SELECT * FROM ads_daily_facts
     WHERE customer_key = ? AND platform = ? AND account_key = ?
-      AND report_level = ? AND breakdown_key = ? AND segment_key = ?
+      AND report_level IN (${placeholders(levelCount)})
       AND metric_date >= ? AND metric_date <= ?
-    ORDER BY metric_date ASC, ads_fact_key ASC LIMIT ?
+    ORDER BY metric_date ASC, report_level ASC, ads_fact_key ASC LIMIT ?
   `;
+}
+
+function coverageSql(datasetCount) {
+  return `
+    SELECT * FROM data_coverage_runs
+    WHERE customer_key = ? AND platform = ? AND account_key = ?
+      AND dataset_key IN (${placeholders(datasetCount)}) AND completed_at IS NOT NULL
+    ORDER BY completed_at DESC, updated_at DESC, coverage_run_id ASC LIMIT 1
+  `;
+}
+
+function selectAggregationRows(input) {
+  for (const reportLevel of input.reportLevels) {
+    const rows = input.rows.filter((row) => (
+      optionalText(row.report_level) === reportLevel
+      && factFamily(row.breakdown_key) === input.breakdownFamily
+      && factFamily(row.segment_key) === input.segmentFamily
+    ));
+    if (rows.length > 0) return Object.freeze({ reportLevel, rows: Object.freeze(rows) });
+  }
+  return Object.freeze({ reportLevel: input.reportLevels[0] ?? null, rows: Object.freeze([]) });
+}
+
+function emptySelection() {
+  return Object.freeze({ reportLevel: null, rows: Object.freeze([]) });
+}
+
+function factFamily(value) {
+  const text = optionalText(value) ?? 'none';
+  const separator = text.indexOf('=');
+  return separator > 0 ? text.slice(0, separator) : text;
+}
+
+function assertUniqueFacts(rows, platform) {
+  const identities = new Set();
+  for (const row of rows) {
+    const identity = optionalText(row.ads_fact_key) ?? [
+      row.report_level,
+      row.external_entity_id,
+      row.metric_date,
+      row.breakdown_key,
+      row.segment_key,
+    ].join(':');
+    if (identities.has(identity)) throw permanentError(`${platform} D1 Ads facts contain duplicate identity`, {
+      code: 'REPORT_D1_ADS_FACT_DUPLICATE',
+      details: { platform },
+    });
+    identities.add(identity);
+  }
 }
 
 function buildTopAds(input) {
@@ -174,6 +278,10 @@ function calculateCoverageRate(row) {
   if (expected === null || observed === null || expected <= 0) return null;
   return Math.min(1, observed / expected);
 }
+function normalizeCoverageStatus(value) {
+  const status = optionalText(value)?.toLowerCase() ?? 'not_observed';
+  return status === 'completed' ? 'complete' : status;
+}
 function latestRevision(rows) {
   const values = rows.map((row) => optionalText(row.source_revision)).filter(Boolean).sort();
   return values.at(-1) ?? null;
@@ -207,6 +315,14 @@ function optionalText(value) { return typeof value === 'string' && value.trim() 
 function requireText(value, fieldName) {
   if (typeof value !== 'string' || value.trim() === '') throw invalidQuery(`${fieldName} is required`);
   return value.trim();
+}
+function requireTextList(value, fieldName, options = {}) {
+  if (!Array.isArray(value) || (!options.allowEmpty && value.length === 0)) {
+    throw invalidQuery(`${fieldName} must be ${options.allowEmpty ? 'an array' : 'a non-empty array'}`);
+  }
+  const normalized = value.map((item) => requireText(item, fieldName));
+  if (new Set(normalized).size !== normalized.length) throw invalidQuery(`${fieldName} contains duplicates`);
+  return Object.freeze(normalized);
 }
 function requireD1(value) {
   if (typeof value?.prepare !== 'function') throw new TypeError('D1AdsReportSource requires a D1 binding');
