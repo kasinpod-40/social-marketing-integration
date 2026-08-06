@@ -160,6 +160,7 @@ export function buildChatwoot1dExactIncidentSql(
         AND a.status = '${sqlText(incident.alert.status)}'
         AND a.error_code = '${sqlText(incident.alert.errorCode)}'
         AND a.created_at = ${incident.alert.createdAt}
+        AND a.updated_at = ${incident.alert.updatedAt}
     ),
     exact_dlq AS (
       SELECT
@@ -249,6 +250,7 @@ export function assertChatwoot1dExactIncident(
     || row.alert_status !== incident.alert.status
     || row.alert_error_code !== incident.alert.errorCode
     || Number(row.alert_created_at ?? 0) !== incident.alert.createdAt
+    || Number(row.alert_updated_at ?? 0) !== incident.alert.updatedAt
     || !alertMessage.includes(incident.failedSync.errorMessage)
     || Number(row.exact_dlq_count ?? 0) !== 1
     || !hasText(row.dlq_id)
@@ -257,7 +259,7 @@ export function assertChatwoot1dExactIncident(
     || Number(row.schema_version ?? 0) !== 1
     || row.dlq_status !== 'open'
     || !hasText(row.dlq_error_code)
-    || !String(row.dlq_error_message ?? '').includes(incident.failedSync.errorMessage)
+    || !hasText(row.dlq_error_message)
     || replaySha256 !== jobSha256
     || replayPayload?.type !== incident.jobType
     || replayPayload?.platformScope !== incident.platformScope
@@ -285,6 +287,7 @@ export function assertChatwoot1dExactIncident(
       exactDlqCount: Number(row.exact_dlq_count ?? 0),
       dlqStatus: row.dlq_status ?? null,
       dlqErrorCode: row.dlq_error_code ?? null,
+      dlqErrorMessagePresent: hasText(row.dlq_error_message),
       replaySha256Matched: replaySha256 === jobSha256,
       generation: Number(row.generation ?? 0),
       originalRequestedAt: Number(row.original_requested_at ?? 0),
@@ -299,6 +302,7 @@ export function assertChatwoot1dExactIncident(
     queueName: row.queue_name,
     originalWorkKey: row.original_work_key,
     errorCode: row.dlq_error_code,
+    errorMessageFingerprint: sha256(row.dlq_error_message),
     mainQueueAttempts: Number(row.main_queue_attempts),
     dlqDeliveryAttempts: Number(row.dlq_delivery_attempts),
     jobSha256,
