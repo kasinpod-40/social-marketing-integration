@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { buildReportMetricValueRows } from '../../packages/application/src/reports/build-report-output-rows.js';
 import {
   buildChatwootMetricPayload,
   calculateChatwootPeriodMetrics,
@@ -96,4 +97,50 @@ test('builds comparison payload without inventing a percentage for a zero baseli
   assert.equal(payload['chatwoot:new_conversations'].changePercent, null);
   assert.equal(payload['chatwoot:conversation_count_end'].compare, 60);
   assert.equal(payload['chatwoot:conversation_count_end'].change, 5);
+});
+
+test('maps Chatwoot period-end snapshots to the canonical current_total Dashboard scope', () => {
+  const current = calculateChatwootPeriodMetrics(completeSource());
+  const payload = buildChatwootMetricPayload({
+    platform: 'chatwoot',
+    formulaVersion: 'chatwoot-customer-service-v1',
+    current,
+  });
+
+  assert.equal(payload['chatwoot:new_conversations'].metricScope, 'period_delta');
+  assert.equal(payload['chatwoot:conversation_count_end'].metricScope, 'current_total');
+  assert.equal(
+    Object.values(payload).some((metric) => metric.metricScope === 'period_end_snapshot'),
+    false,
+  );
+
+  const rows = buildReportMetricValueRows({
+    reportId: 'integration_workspace:chatwoot:rolling:1d:chemistry_k:rolling_days:2026-08-01:2026-08-01:chatwoot-customer-service-v1',
+    reportSettingKey: 'integration_workspace:chatwoot:rolling:1d',
+    customerProfile: 'integration_workspace',
+    accountId: 'chemistry_k',
+    reportType: 'dashboard_performance_report',
+    platform: 'chatwoot',
+    dataStatus: 'complete',
+    metrics: payload,
+    period: {
+      periodStart: '2026-08-01',
+      periodEnd: '2026-08-01',
+      compareStart: null,
+      compareEnd: null,
+    },
+    generatedAt: Date.parse('2026-08-02T00:00:00.000Z'),
+    utcOffset: '+07:00',
+    sourceSnapshotCount: 2,
+  });
+
+  assert.equal(rows.length, 19);
+  assert.equal(
+    rows.find((row) => row.metric_key === 'chatwoot:new_conversations')?.metric_scope,
+    'period_delta',
+  );
+  assert.equal(
+    rows.find((row) => row.metric_key === 'chatwoot:conversation_count_end')?.metric_scope,
+    'current_total',
+  );
 });
