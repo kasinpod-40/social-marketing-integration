@@ -87,7 +87,7 @@ export function buildChatwootMetricPayload(input = {}) {
       sortOrder: index + 1,
       formulaVersion,
       metricScope: definition.aggregation === 'latest_completed_day_value'
-        ? 'period_end_snapshot'
+        ? 'current_total'
         : 'period_delta',
       availabilityStatus: currentValue === null
         ? (current.dataStatus === 'complete' ? 'not_observed' : 'source_unavailable')
