@@ -1,5 +1,5 @@
 export const LARK_DASHBOARD_DISPLAY_V2_COMPATIBILITY_VERSION =
-  'lark_dashboard_display_v2_compatibility_v1';
+  'lark_dashboard_display_v2_compatibility_v2';
 
 export const LARK_DASHBOARD_DISPLAY_V2_FIELD = Object.freeze({
   fieldId: 'fldHNUhCfl',
@@ -7,60 +7,108 @@ export const LARK_DASHBOARD_DISPLAY_V2_FIELD = Object.freeze({
   type: 3,
 });
 
-export const TIKTOK_ORGANIC_DASHBOARD_WINDOWS = Object.freeze([1, 3, 7, 30]);
+export const ORGANIC_DASHBOARD_WINDOWS = Object.freeze([1, 3, 7, 30]);
+export const ORGANIC_DASHBOARD_PLATFORMS = Object.freeze([
+  'facebook',
+  'instagram',
+  'tiktok',
+  'youtube',
+]);
 
-export const TIKTOK_ORGANIC_DASHBOARD_DISPLAY_V2_BY_METRIC_KEY = deepFreeze({
-  'tiktok:period_views': 'Views',
-  'tiktok:period_likes': 'Likes',
-  'tiktok:period_comments': 'Comments',
-  'tiktok:period_shares': 'Shares',
-  'tiktok:period_engagement': 'Engagement',
-  'tiktok:period_engagement_rate': 'Engagement rate',
-  'tiktok:latest_total_views': 'Latest total views',
-  'tiktok:latest_total_likes': 'Latest total likes',
-  'tiktok:latest_total_comments': 'Latest total comments',
-  'tiktok:latest_total_shares': 'Latest total shares',
-  'tiktok:latest_total_engagement': 'Latest total engagement',
-  'tiktok:latest_engagement_rate': 'Latest engagement rate',
-  'tiktok:new_content_count': 'New content',
-  'tiktok:tracked_content_count': 'Tracked content',
-  'tiktok:baseline_covered_content_count': 'Baseline coverage',
-  'tiktok:baseline_missing_content_count': 'Baseline Missing Content',
-  'tiktok:baseline_coverage_rate': 'Baseline Coverage Rate',
+export const ORGANIC_DASHBOARD_DISPLAY_V2_BY_METRIC_SUFFIX = deepFreeze({
+  period_views: 'Views',
+  period_likes: 'Likes',
+  period_comments: 'Comments',
+  period_shares: 'Shares',
+  period_engagement: 'Engagement',
+  period_engagement_rate: 'Engagement rate',
+  latest_total_views: 'Latest total views',
+  latest_total_likes: 'Latest total likes',
+  latest_total_comments: 'Latest total comments',
+  latest_total_shares: 'Latest total shares',
+  latest_total_engagement: 'Latest total engagement',
+  latest_engagement_rate: 'Latest engagement rate',
+  new_content_count: 'New content',
+  tracked_content_count: 'Tracked content',
+  baseline_covered_content_count: 'Baseline coverage',
+  baseline_missing_content_count: 'Baseline Missing Content',
+  baseline_coverage_rate: 'Baseline Coverage Rate',
 });
 
-export const TIKTOK_ORGANIC_DASHBOARD_DISPLAY_V2_REVIEWED_ALIASES = deepFreeze({
+export const ORGANIC_DASHBOARD_METRIC_SUFFIXES = Object.freeze(
+  Object.keys(ORGANIC_DASHBOARD_DISPLAY_V2_BY_METRIC_SUFFIX),
+);
+
+export const ORGANIC_DASHBOARD_DISPLAY_V2_OPTIONS = Object.freeze(
+  [...new Set(Object.values(ORGANIC_DASHBOARD_DISPLAY_V2_BY_METRIC_SUFFIX))],
+);
+
+export const ORGANIC_DASHBOARD_DISPLAY_V2_BY_METRIC_KEY = deepFreeze(
+  Object.fromEntries(ORGANIC_DASHBOARD_PLATFORMS.flatMap((platform) => (
+    ORGANIC_DASHBOARD_METRIC_SUFFIXES.map((suffix) => [
+      `${platform}:${suffix}`,
+      ORGANIC_DASHBOARD_DISPLAY_V2_BY_METRIC_SUFFIX[suffix],
+    ])
+  ))),
+);
+
+const REVIEWED_DISPLAY_V2_ALIASES = deepFreeze({
   'tiktok:baseline_coverage_rate': Object.freeze(['Baseline coverage']),
 });
 
+export function resolveOrganicDashboardDisplayV2(input = {}) {
+  const platform = normalizeText(input.platform);
+  if (normalizeText(input.customerProfile) !== 'integration_workspace') return null;
+  if (normalizeText(input.accountId) !== 'chemistry_k') return null;
+  if (!ORGANIC_DASHBOARD_PLATFORMS.includes(platform)) return null;
+  if (normalizeText(input.capability) !== 'organic') return null;
+  if (normalizeText(input.reportType) !== 'dashboard_performance_report') return null;
+  return resolveOrganicDashboardDisplayV2ByMetricKey(input.metricKey, platform);
+}
+
+export function resolveOrganicDashboardDisplayV2ByMetricKey(metricKey, expectedPlatform = null) {
+  const normalizedMetricKey = normalizeText(metricKey);
+  const splitAt = normalizedMetricKey.indexOf(':');
+  if (splitAt <= 0) return null;
+  const platform = normalizedMetricKey.slice(0, splitAt);
+  const suffix = normalizedMetricKey.slice(splitAt + 1);
+  if (!ORGANIC_DASHBOARD_PLATFORMS.includes(platform)) return null;
+  if (expectedPlatform !== null && normalizeText(expectedPlatform) !== platform) return null;
+  return ORGANIC_DASHBOARD_DISPLAY_V2_BY_METRIC_SUFFIX[suffix] ?? null;
+}
+
+export function isReviewedOrganicDashboardDisplayV2Alias(input = {}) {
+  const aliases = REVIEWED_DISPLAY_V2_ALIASES[normalizeText(input.metricKey)] ?? [];
+  return aliases.includes(normalizeText(input.value));
+}
+
+// Backward-compatible exports retained for the historical TikTok-only contract and tests.
+export const TIKTOK_ORGANIC_DASHBOARD_WINDOWS = ORGANIC_DASHBOARD_WINDOWS;
+export const TIKTOK_ORGANIC_DASHBOARD_DISPLAY_V2_BY_METRIC_KEY = deepFreeze(
+  Object.fromEntries(ORGANIC_DASHBOARD_METRIC_SUFFIXES.map((suffix) => [
+    `tiktok:${suffix}`,
+    ORGANIC_DASHBOARD_DISPLAY_V2_BY_METRIC_SUFFIX[suffix],
+  ])),
+);
+export const TIKTOK_ORGANIC_DASHBOARD_DISPLAY_V2_REVIEWED_ALIASES = deepFreeze({
+  'tiktok:baseline_coverage_rate': Object.freeze(['Baseline coverage']),
+});
 export const TIKTOK_ORGANIC_DASHBOARD_METRIC_KEYS = Object.freeze(
   Object.keys(TIKTOK_ORGANIC_DASHBOARD_DISPLAY_V2_BY_METRIC_KEY),
 );
-
-export const TIKTOK_ORGANIC_DASHBOARD_DISPLAY_V2_OPTIONS = Object.freeze(
-  [...new Set(Object.values(TIKTOK_ORGANIC_DASHBOARD_DISPLAY_V2_BY_METRIC_KEY))],
-);
+export const TIKTOK_ORGANIC_DASHBOARD_DISPLAY_V2_OPTIONS = ORGANIC_DASHBOARD_DISPLAY_V2_OPTIONS;
 
 export function resolveTikTokOrganicDashboardDisplayV2(input = {}) {
-  if (normalizeText(input.customerProfile) !== 'integration_workspace') return null;
-  if (normalizeText(input.accountId) !== 'chemistry_k') return null;
   if (normalizeText(input.platform) !== 'tiktok') return null;
-  if (normalizeText(input.capability) !== 'organic') return null;
-  if (normalizeText(input.reportType) !== 'dashboard_performance_report') return null;
-  return resolveTikTokOrganicDashboardDisplayV2ByMetricKey(input.metricKey);
+  return resolveOrganicDashboardDisplayV2(input);
 }
 
 export function resolveTikTokOrganicDashboardDisplayV2ByMetricKey(metricKey) {
-  return TIKTOK_ORGANIC_DASHBOARD_DISPLAY_V2_BY_METRIC_KEY[
-    normalizeText(metricKey)
-  ] ?? null;
+  return resolveOrganicDashboardDisplayV2ByMetricKey(metricKey, 'tiktok');
 }
 
 export function isReviewedTikTokOrganicDashboardDisplayV2Alias(input = {}) {
-  const aliases = TIKTOK_ORGANIC_DASHBOARD_DISPLAY_V2_REVIEWED_ALIASES[
-    normalizeText(input.metricKey)
-  ] ?? [];
-  return aliases.includes(normalizeText(input.value));
+  return isReviewedOrganicDashboardDisplayV2Alias(input);
 }
 
 function normalizeText(value) {

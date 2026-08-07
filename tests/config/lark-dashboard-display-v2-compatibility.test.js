@@ -2,62 +2,78 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   LARK_DASHBOARD_DISPLAY_V2_FIELD,
-  TIKTOK_ORGANIC_DASHBOARD_DISPLAY_V2_BY_METRIC_KEY,
-  TIKTOK_ORGANIC_DASHBOARD_DISPLAY_V2_OPTIONS,
-  TIKTOK_ORGANIC_DASHBOARD_METRIC_KEYS,
-  TIKTOK_ORGANIC_DASHBOARD_WINDOWS,
-  isReviewedTikTokOrganicDashboardDisplayV2Alias,
+  ORGANIC_DASHBOARD_DISPLAY_V2_BY_METRIC_KEY,
+  ORGANIC_DASHBOARD_DISPLAY_V2_BY_METRIC_SUFFIX,
+  ORGANIC_DASHBOARD_DISPLAY_V2_OPTIONS,
+  ORGANIC_DASHBOARD_METRIC_SUFFIXES,
+  ORGANIC_DASHBOARD_PLATFORMS,
+  ORGANIC_DASHBOARD_WINDOWS,
+  isReviewedOrganicDashboardDisplayV2Alias,
+  resolveOrganicDashboardDisplayV2,
+  resolveOrganicDashboardDisplayV2ByMetricKey,
   resolveTikTokOrganicDashboardDisplayV2,
-  resolveTikTokOrganicDashboardDisplayV2ByMetricKey,
 } from '../../packages/config/src/lark-dashboard-display-v2-compatibility.js';
 
-test('display v2 compatibility locks the audited physical field and 17 x 4 dashboard matrix', () => {
+test('display v2 compatibility locks one 17 x 4 x 4 Organic Dashboard matrix', () => {
   assert.deepEqual(LARK_DASHBOARD_DISPLAY_V2_FIELD, {
     fieldId: 'fldHNUhCfl',
     fieldName: '__mkt_legacy_display_name_single_select_v2',
     type: 3,
   });
-  assert.deepEqual(TIKTOK_ORGANIC_DASHBOARD_WINDOWS, [1, 3, 7, 30]);
-  assert.equal(TIKTOK_ORGANIC_DASHBOARD_METRIC_KEYS.length, 17);
-  assert.equal(new Set(TIKTOK_ORGANIC_DASHBOARD_METRIC_KEYS).size, 17);
-  assert.equal(TIKTOK_ORGANIC_DASHBOARD_DISPLAY_V2_OPTIONS.length, 17);
-  assert.equal(new Set(TIKTOK_ORGANIC_DASHBOARD_DISPLAY_V2_OPTIONS).size, 17);
+  assert.deepEqual(ORGANIC_DASHBOARD_WINDOWS, [1, 3, 7, 30]);
+  assert.deepEqual(ORGANIC_DASHBOARD_PLATFORMS, [
+    'facebook',
+    'instagram',
+    'tiktok',
+    'youtube',
+  ]);
+  assert.equal(ORGANIC_DASHBOARD_METRIC_SUFFIXES.length, 17);
+  assert.equal(new Set(ORGANIC_DASHBOARD_METRIC_SUFFIXES).size, 17);
+  assert.equal(ORGANIC_DASHBOARD_DISPLAY_V2_OPTIONS.length, 17);
+  assert.equal(Object.keys(ORGANIC_DASHBOARD_DISPLAY_V2_BY_METRIC_KEY).length, 68);
+});
+
+test('all four Organic platforms resolve the same reviewed KPI labels from platform-local metric keys', () => {
+  for (const platform of ORGANIC_DASHBOARD_PLATFORMS) {
+    assert.equal(
+      resolveOrganicDashboardDisplayV2ByMetricKey(`${platform}:period_views`, platform),
+      'Views',
+    );
+    assert.equal(
+      resolveOrganicDashboardDisplayV2ByMetricKey(
+        `${platform}:baseline_covered_content_count`,
+        platform,
+      ),
+      'Baseline coverage',
+    );
+    assert.equal(
+      resolveOrganicDashboardDisplayV2ByMetricKey(
+        `${platform}:baseline_coverage_rate`,
+        platform,
+      ),
+      'Baseline Coverage Rate',
+    );
+  }
+  assert.equal(ORGANIC_DASHBOARD_DISPLAY_V2_BY_METRIC_SUFFIX.period_views, 'Views');
   assert.equal(
-    Object.keys(TIKTOK_ORGANIC_DASHBOARD_DISPLAY_V2_BY_METRIC_KEY).length,
-    17,
+    resolveOrganicDashboardDisplayV2ByMetricKey('facebook:period_views', 'instagram'),
+    null,
   );
 });
 
-test('baseline covered count and baseline coverage rate keep distinct audited Dashboard labels', () => {
-  assert.equal(
-    resolveTikTokOrganicDashboardDisplayV2ByMetricKey(
-      'tiktok:baseline_covered_content_count',
-    ),
-    'Baseline coverage',
-  );
-  assert.equal(
-    resolveTikTokOrganicDashboardDisplayV2ByMetricKey(
-      'tiktok:baseline_coverage_rate',
-    ),
-    'Baseline Coverage Rate',
-  );
-  assert.equal(
-    isReviewedTikTokOrganicDashboardDisplayV2Alias({
-      metricKey: 'tiktok:baseline_coverage_rate',
-      value: 'Baseline coverage',
-    }),
-    true,
-  );
-  assert.equal(
-    isReviewedTikTokOrganicDashboardDisplayV2Alias({
-      metricKey: 'tiktok:baseline_covered_content_count',
-      value: 'Baseline Coverage Rate',
-    }),
-    false,
-  );
-});
+test('permanent writer compatibility is restricted to exact Integration Workspace Organic dashboard scope', () => {
+  for (const platform of ORGANIC_DASHBOARD_PLATFORMS) {
+    const target = {
+      customerProfile: 'integration_workspace',
+      accountId: 'chemistry_k',
+      platform,
+      capability: 'organic',
+      reportType: 'dashboard_performance_report',
+      metricKey: `${platform}:period_views`,
+    };
+    assert.equal(resolveOrganicDashboardDisplayV2(target), 'Views');
+  }
 
-test('permanent writer compatibility is restricted to the exact Integration Workspace scope', () => {
   const target = {
     customerProfile: 'integration_workspace',
     accountId: 'chemistry_k',
@@ -67,28 +83,27 @@ test('permanent writer compatibility is restricted to the exact Integration Work
     metricKey: 'tiktok:period_views',
   };
   assert.equal(resolveTikTokOrganicDashboardDisplayV2(target), 'Views');
+  assert.equal(resolveOrganicDashboardDisplayV2({ ...target, customerProfile: 'chemistry_k' }), null);
+  assert.equal(resolveOrganicDashboardDisplayV2({ ...target, accountId: 'other_account' }), null);
+  assert.equal(resolveOrganicDashboardDisplayV2({ ...target, platform: 'meta_ads' }), null);
+  assert.equal(resolveOrganicDashboardDisplayV2({ ...target, capability: 'paid_ads' }), null);
+  assert.equal(resolveOrganicDashboardDisplayV2({ ...target, reportType: 'daily_organic_report' }), null);
+  assert.equal(resolveOrganicDashboardDisplayV2({ ...target, metricKey: 'tiktok:unknown' }), null);
+});
+
+test('only the historical TikTok baseline-rate alias remains reviewed', () => {
   assert.equal(
-    resolveTikTokOrganicDashboardDisplayV2({ ...target, customerProfile: 'chemistry_k' }),
-    null,
+    isReviewedOrganicDashboardDisplayV2Alias({
+      metricKey: 'tiktok:baseline_coverage_rate',
+      value: 'Baseline coverage',
+    }),
+    true,
   );
   assert.equal(
-    resolveTikTokOrganicDashboardDisplayV2({ ...target, accountId: 'other_account' }),
-    null,
-  );
-  assert.equal(
-    resolveTikTokOrganicDashboardDisplayV2({ ...target, platform: 'youtube' }),
-    null,
-  );
-  assert.equal(
-    resolveTikTokOrganicDashboardDisplayV2({ ...target, capability: 'paid_ads' }),
-    null,
-  );
-  assert.equal(
-    resolveTikTokOrganicDashboardDisplayV2({ ...target, reportType: 'daily_organic_report' }),
-    null,
-  );
-  assert.equal(
-    resolveTikTokOrganicDashboardDisplayV2({ ...target, metricKey: 'tiktok:unknown' }),
-    null,
+    isReviewedOrganicDashboardDisplayV2Alias({
+      metricKey: 'facebook:baseline_coverage_rate',
+      value: 'Baseline coverage',
+    }),
+    false,
   );
 });

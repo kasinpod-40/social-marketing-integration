@@ -1,10 +1,11 @@
 import {
   LARK_DASHBOARD_DISPLAY_V2_COMPATIBILITY_VERSION,
-  TIKTOK_ORGANIC_DASHBOARD_DISPLAY_V2_OPTIONS,
-  TIKTOK_ORGANIC_DASHBOARD_METRIC_KEYS,
-  TIKTOK_ORGANIC_DASHBOARD_WINDOWS,
-  isReviewedTikTokOrganicDashboardDisplayV2Alias,
-  resolveTikTokOrganicDashboardDisplayV2ByMetricKey,
+  ORGANIC_DASHBOARD_DISPLAY_V2_OPTIONS,
+  ORGANIC_DASHBOARD_METRIC_SUFFIXES,
+  ORGANIC_DASHBOARD_PLATFORMS,
+  ORGANIC_DASHBOARD_WINDOWS,
+  isReviewedOrganicDashboardDisplayV2Alias,
+  resolveOrganicDashboardDisplayV2ByMetricKey,
 } from '../../packages/config/src/lark-dashboard-display-v2-compatibility.js';
 import {
   readWindowNumber,
@@ -17,22 +18,22 @@ export const LARK_DASHBOARD_DISPLAY_V2_BACKFILL_VERSION =
 export const LARK_DASHBOARD_DISPLAY_V2_BACKFILL_CONFIRMATION =
   'BACKFILL_DISPLAY_V2_WITHOUT_DASHBOARD_FIELD_OR_VALUE_MUTATION';
 
-export const EXPECTED_REPORT_RECORD_COUNT = 86;
-export const EXPECTED_DASHBOARD_RECORD_COUNT = 68;
-export const EXPECTED_BASELINE_INCOMPLETE_NULL_COUNT = 24;
-export const EXPECTED_PENDING_DISPLAY_V2_UPDATE_COUNT = 50;
-export const EXPECTED_MISSING_DISPLAY_V2_UPDATE_COUNT = 48;
-export const EXPECTED_REVIEWED_ALIAS_CORRECTION_COUNT = 2;
+export const EXPECTED_DASHBOARD_RECORD_COUNT = 272;
+export const EXPECTED_BASELINE_INCOMPLETE_NULL_COUNT = 140;
+export const EXPECTED_PENDING_DISPLAY_V2_UPDATE_COUNT = 204;
+export const EXPECTED_MISSING_DISPLAY_V2_UPDATE_COUNT = 204;
+export const EXPECTED_REVIEWED_ALIAS_CORRECTION_COUNT = 0;
+export const EXPECTED_INITIAL_CONVERGED_DISPLAY_V2_COUNT = 68;
 
 const TARGET_REPORT_TYPE = 'dashboard_performance_report';
-const TARGET_PLATFORM = 'tiktok';
 const TARGET_CAPABILITY = 'organic';
 const TARGET_PERIOD_KIND = 'rolling_days';
 const TARGET_CUSTOMER_PROFILE = 'integration_workspace';
 const TARGET_CUSTOMER_KEY = 'chemistry_k';
 const TARGET_ACCOUNT_ID = 'chemistry_k';
-const WINDOW_SET = new Set(TIKTOK_ORGANIC_DASHBOARD_WINDOWS);
-const METRIC_KEY_SET = new Set(TIKTOK_ORGANIC_DASHBOARD_METRIC_KEYS);
+const WINDOW_SET = new Set(ORGANIC_DASHBOARD_WINDOWS);
+const PLATFORM_SET = new Set(ORGANIC_DASHBOARD_PLATFORMS);
+const METRIC_SUFFIX_SET = new Set(ORGANIC_DASHBOARD_METRIC_SUFFIXES);
 
 export function assertLarkDashboardDisplayV2BackfillConfirmation(value) {
   if (value !== LARK_DASHBOARD_DISPLAY_V2_BACKFILL_CONFIRMATION) {
@@ -59,7 +60,7 @@ export function assertLarkDashboardDisplayV2Options(field) {
     .map((option) => normalizeText(option?.name))
     .filter(Boolean);
   const duplicates = optionNames.filter((name, index) => optionNames.indexOf(name) !== index);
-  const missing = TIKTOK_ORGANIC_DASHBOARD_DISPLAY_V2_OPTIONS
+  const missing = ORGANIC_DASHBOARD_DISPLAY_V2_OPTIONS
     .filter((name) => !optionNames.includes(name));
   if (duplicates.length > 0 || missing.length > 0) {
     throw compatibilityError(
@@ -82,6 +83,10 @@ export function planLarkDashboardDisplayV2Backfill(input = {}) {
   const expectedByRecord = [];
   const conflicts = [];
   const matrix = new Map();
+  const platformCounts = Object.fromEntries(ORGANIC_DASHBOARD_PLATFORMS.map((platform) => [
+    platform,
+    { target: 0, populated: 0, converged: 0, pending: 0, currentValueNull: 0 },
+  ]));
   let targetRecordCount = 0;
   let populatedDisplayV2Count = 0;
   let convergedDisplayV2Count = 0;
@@ -92,36 +97,42 @@ export function planLarkDashboardDisplayV2Backfill(input = {}) {
   for (const record of [...records].sort(compareRecordId)) {
     const recordId = requireText(record?.recordId ?? record?.record_id, 'recordId');
     const fields = record?.fields ?? {};
-    if (!isTargetScope(fields, fieldNames)) continue;
+    if (!isOrganicReportScope(fields, fieldNames)) continue;
+
+    const platform = readText(fields[fieldNames.platform]);
+    const metricKey = readText(fields[fieldNames.metricKey]);
+    const metricSuffix = metricSuffixForPlatform(metricKey, platform);
+    if (!metricSuffix || !METRIC_SUFFIX_SET.has(metricSuffix)) continue;
+
+    const windowDays = readWindowNumber(fields[fieldNames.numberWindow]);
+    if (!WINDOW_SET.has(windowDays)) continue;
 
     targetRecordCount += 1;
-    const metricKey = readText(fields[fieldNames.metricKey]);
-    const windowDays = readWindowNumber(fields[fieldNames.numberWindow]);
+    platformCounts[platform].target += 1;
     const preservedWindow = readWindowSelect(fields[fieldNames.preservedWindowSelect]);
     const currentDisplayV2 = readSingleSelect(fields[fieldNames.displaySelectV2]);
     const currentValue = readNumberOrNull(fields[fieldNames.currentValue]);
-    if (currentValue === null) targetCurrentValueNullCount += 1;
-    if (currentDisplayV2 !== null) populatedDisplayV2Count += 1;
+    if (currentValue === null) {
+      targetCurrentValueNullCount += 1;
+      platformCounts[platform].currentValueNull += 1;
+    }
+    if (currentDisplayV2 !== null) {
+      populatedDisplayV2Count += 1;
+      platformCounts[platform].populated += 1;
+    }
 
-    if (!METRIC_KEY_SET.has(metricKey)) {
-      conflicts.push(Object.freeze({ recordId, reason: 'unexpected_dashboard_metric_key', metricKey }));
-      continue;
-    }
-    if (!WINDOW_SET.has(windowDays)) {
-      conflicts.push(Object.freeze({ recordId, reason: 'unexpected_dashboard_window', windowDays }));
-      continue;
-    }
     if (preservedWindow !== String(windowDays)) {
       conflicts.push(Object.freeze({
         recordId,
         reason: 'preserved_window_select_not_converged',
+        platform,
         windowDays,
         preservedWindow,
       }));
       continue;
     }
 
-    const matrixKey = `${windowDays}:${metricKey}`;
+    const matrixKey = `${platform}:${windowDays}:${metricSuffix}`;
     if (matrix.has(matrixKey)) {
       conflicts.push(Object.freeze({
         recordId,
@@ -134,25 +145,28 @@ export function planLarkDashboardDisplayV2Backfill(input = {}) {
     matrix.set(matrixKey, recordId);
 
     const desiredDisplayV2 = requireText(
-      resolveTikTokOrganicDashboardDisplayV2ByMetricKey(metricKey),
+      resolveOrganicDashboardDisplayV2ByMetricKey(metricKey, platform),
       'desiredDisplayV2',
     );
     expectedByRecord.push(Object.freeze({
       recordId,
+      platform,
       metricKey,
+      metricSuffix,
       windowDays,
       desiredDisplayV2,
     }));
 
     if (currentDisplayV2 === desiredDisplayV2) {
       convergedDisplayV2Count += 1;
+      platformCounts[platform].converged += 1;
       continue;
     }
 
     let reason = 'missing_display_v2';
     if (currentDisplayV2 === null) {
       missingValueUpdateCount += 1;
-    } else if (isReviewedTikTokOrganicDashboardDisplayV2Alias({
+    } else if (isReviewedOrganicDashboardDisplayV2Alias({
       metricKey,
       value: currentDisplayV2,
     })) {
@@ -162,6 +176,7 @@ export function planLarkDashboardDisplayV2Backfill(input = {}) {
       conflicts.push(Object.freeze({
         recordId,
         reason: 'unexpected_populated_display_v2',
+        platform,
         metricKey,
         windowDays,
         currentDisplayV2,
@@ -170,29 +185,35 @@ export function planLarkDashboardDisplayV2Backfill(input = {}) {
       continue;
     }
 
+    platformCounts[platform].pending += 1;
     updates.push(Object.freeze({
       recordId,
       fields: Object.freeze({
         [fieldNames.displaySelectV2]: desiredDisplayV2,
       }),
       reason,
+      platform,
       metricKey,
+      metricSuffix,
       windowDays,
       previousDisplayV2: currentDisplayV2,
       desiredDisplayV2,
     }));
   }
 
-  for (const windowDays of TIKTOK_ORGANIC_DASHBOARD_WINDOWS) {
-    for (const metricKey of TIKTOK_ORGANIC_DASHBOARD_METRIC_KEYS) {
-      const matrixKey = `${windowDays}:${metricKey}`;
-      if (!matrix.has(matrixKey)) {
-        conflicts.push(Object.freeze({
-          reason: 'missing_dashboard_metric_window',
-          matrixKey,
-          metricKey,
-          windowDays,
-        }));
+  for (const platform of ORGANIC_DASHBOARD_PLATFORMS) {
+    for (const windowDays of ORGANIC_DASHBOARD_WINDOWS) {
+      for (const metricSuffix of ORGANIC_DASHBOARD_METRIC_SUFFIXES) {
+        const matrixKey = `${platform}:${windowDays}:${metricSuffix}`;
+        if (!matrix.has(matrixKey)) {
+          conflicts.push(Object.freeze({
+            reason: 'missing_dashboard_metric_window',
+            matrixKey,
+            platform,
+            metricSuffix,
+            windowDays,
+          }));
+        }
       }
     }
   }
@@ -207,20 +228,28 @@ export function planLarkDashboardDisplayV2Backfill(input = {}) {
     reviewedAliasCorrectionCount,
     pendingUpdateCount: updates.length,
     conflictCount: conflicts.length,
+    platformCounts,
     updates,
     expectedByRecord,
     conflicts,
   });
 }
 
-function isTargetScope(fields, fieldNames) {
+function isOrganicReportScope(fields, fieldNames) {
+  const platform = readText(fields[fieldNames.platform]);
   return readText(fields[fieldNames.reportType]) === TARGET_REPORT_TYPE
-    && readText(fields[fieldNames.platform]) === TARGET_PLATFORM
+    && PLATFORM_SET.has(platform)
     && readText(fields[fieldNames.capability]) === TARGET_CAPABILITY
     && readText(fields[fieldNames.periodKind]) === TARGET_PERIOD_KIND
     && readText(fields[fieldNames.customerProfile]) === TARGET_CUSTOMER_PROFILE
     && readText(fields[fieldNames.customerKey]) === TARGET_CUSTOMER_KEY
     && readText(fields[fieldNames.accountId]) === TARGET_ACCOUNT_ID;
+}
+
+function metricSuffixForPlatform(metricKey, platform) {
+  if (!metricKey || !platform) return null;
+  const prefix = `${platform}:`;
+  return metricKey.startsWith(prefix) ? metricKey.slice(prefix.length) : null;
 }
 
 function normalizeFieldNames(value) {
