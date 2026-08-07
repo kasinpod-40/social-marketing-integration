@@ -25,7 +25,6 @@ export const REPORT_METRIC_VALUE_FIELD_MIGRATION_RECOVERY_VERSION =
   'report_metric_value_field_migration_recovery_v4';
 
 const TABLE_KEY = 'mktReportMetricValues';
-const MAX_RECORDS = 500;
 const CANONICAL_FIELD_NAME = 'display_name';
 const LEGACY_FIELD_NAMES = Object.freeze([
   '__mkt_legacy_display_name_single_select_v1',
@@ -42,6 +41,7 @@ const LEGACY_SOURCE_CONFLICT_CODE =
  * Canonical Text remains authoritative after deterministic Legacy archives exist. The permanent
  * Integration Workspace Dashboard Compatibility Freeze is admitted only after exact physical Field
  * identity and Number/Select record parity verification; no Field or Record mutation is inferred.
+ * Customer/business table growth is not an admission blocker; the shared Lark client owns pagination.
  */
 export async function planReportMetricValueFieldMigration(input = {}) {
   const prepared = await prepareCompatibilityInput(input);
@@ -166,12 +166,6 @@ async function inspectCanonicalAuthorityState(input = {}) {
     tableId: resolution.tableId,
     includeRecordMetadata: false,
   });
-  if (records.length > MAX_RECORDS) return blockedInspection(schemaVersion, [
-    safeBlocker('REPORT_METRIC_FIELD_MIGRATION_RECORD_BOUND_EXCEEDED', {
-      recordCount: records.length,
-      maxRecords: MAX_RECORDS,
-    }),
-  ]);
 
   const canonical = uniqueField(fields, CANONICAL_FIELD_NAME);
   if (canonical.blocker) return blockedInspection(schemaVersion, [canonical.blocker]);

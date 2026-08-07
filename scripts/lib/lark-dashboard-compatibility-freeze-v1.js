@@ -64,9 +64,6 @@ export const LARK_DASHBOARD_COMPATIBILITY_FIELD_IDENTITIES = deepFreeze({
 
 const REPORT_METRIC_TABLE_KEY = 'mktReportMetricValues';
 const REPORT_METRIC_TABLE_ENV = 'LARK_TABLE_MKT_REPORT_METRIC_VALUES';
-// Bounded for the complete reviewed 1/3/7/30 multichannel footprint, including
-// fixed-rank WooCommerce and Chatwoot dimensions, while still failing closed.
-const MAX_REPORT_METRIC_RECORDS = 2_000;
 const WINDOW_PRESETS = Object.freeze([1, 3, 7, 30]);
 const WINDOW_PRESET_TEXT = Object.freeze(WINDOW_PRESETS.map(String));
 
@@ -100,6 +97,7 @@ export function buildLarkDashboardCompatibilityReportSchema(schema, env = {}) {
  * Read-only exact-state admission for the permanent Dashboard Compatibility Freeze.
  * No semantic-name fallback is accepted: every reviewed physical Field ID/name/type/primary flag must match.
  * The canonical report_metric_key Primary ownership remains enforced by the shared Report schema planner.
+ * Customer/business table growth is not an admission blocker; listRecords pagination is the read boundary.
  */
 export async function inspectLarkDashboardCompatibilityFreeze({ client, env = {} } = {}) {
   if (!isIntegrationWorkspace(env)) return deepFreeze({
@@ -117,11 +115,6 @@ export async function inspectLarkDashboardCompatibilityFreeze({ client, env = {}
     includeRecordMetadata: false,
   });
   const blockers = [];
-
-  if (records.length > MAX_REPORT_METRIC_RECORDS) blockers.push(blocker(
-    'REPORT_METRIC_COMPATIBILITY_FREEZE_RECORD_BOUND_EXCEEDED',
-    { recordCount: records.length, maxRecords: MAX_REPORT_METRIC_RECORDS },
-  ));
 
   const resolved = {};
   for (const [key, expected] of Object.entries(LARK_DASHBOARD_COMPATIBILITY_FIELD_IDENTITIES)) {

@@ -25,20 +25,18 @@ test('Dashboard Compatibility Freeze admits the reviewed multichannel record foo
   assert.equal(compatibility.blockerCount, 0);
 });
 
-test('Dashboard Compatibility Freeze remains bounded above 2000 records', async () => {
+test('Dashboard Compatibility Freeze does not fail solely because customer records grow beyond 2000', async () => {
   const compatibility = await inspectLarkDashboardCompatibilityFreeze({
-    client: clientWithRecords(2_001),
+    client: clientWithRecords(2_501),
     env: ENV,
   });
 
-  assert.equal(compatibility.compatible, false);
-  assert.equal(compatibility.recordCount, 2_001);
-  assert.equal(compatibility.blockerCount, 1);
-  assert.equal(
-    compatibility.blockers[0].code,
-    'REPORT_METRIC_COMPATIBILITY_FREEZE_RECORD_BOUND_EXCEEDED',
-  );
-  assert.equal(compatibility.blockers[0].maxRecords, 2_000);
+  assert.equal(compatibility.compatible, true);
+  assert.equal(compatibility.recordCount, 2_501);
+  assert.equal(compatibility.windowParityCount, 2_501);
+  assert.equal(compatibility.canonicalDisplayCount, 2_501);
+  assert.equal(compatibility.blockerCount, 0);
+  assert.deepEqual(compatibility.blockers, []);
 });
 
 function clientWithRecords(recordCount) {
