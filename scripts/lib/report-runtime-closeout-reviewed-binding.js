@@ -86,7 +86,8 @@ export function assertReviewedChannelCloseoutHandoff(handoff, { descriptor, repo
   const contractAccepted = readinessContract === 'report_channel_remote_readiness_reviewed_terminal_v1'
     || (descriptor.platform === 'youtube'
       && readinessContract === 'youtube_report_remote_readiness_reviewed_terminal_v1');
-  const operator = value.closeoutAuthority?.operator;
+  const authority = value.closeoutAuthorities?.[descriptor.platform] ?? value.closeoutAuthority;
+  const operator = authority?.operator;
 
   if (value.contractVersion !== REPORT_RUNTIME_REVIEWED_HANDOFF_CONTRACT
     || value.liveMaterializationAuthorized !== true
@@ -106,9 +107,9 @@ export function assertReviewedChannelCloseoutHandoff(handoff, { descriptor, repo
     || evidenceTarget.accountKey !== 'chemistry_k'
     || JSON.stringify(exactWindows) !== JSON.stringify(REPORT_LIVE_CLOSURE_WINDOWS)
     || !REVIEWED_OPERATOR_PATHS.has(operator)
-    || value.closeoutAuthority?.contractVersion !== 'report_runtime_closeout_uat_v1'
-    || value.closeoutAuthority?.platformScope !== descriptor.platform
-    || value.closeoutAuthority?.capability !== descriptor.capability) throw bindingError(
+    || authority?.contractVersion !== 'report_runtime_closeout_uat_v1'
+    || authority?.platformScope !== descriptor.platform
+    || authority?.capability !== descriptor.capability) throw bindingError(
     'Reviewed handoff does not prove exact-head lock release and selected-channel readiness',
     'REPORT_RUNTIME_CLOSEOUT_REVIEWED_HANDOFF_INVALID',
     { platformScope: descriptor.platform, capability: descriptor.capability },
