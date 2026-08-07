@@ -1,7 +1,7 @@
 import { chmod, mkdir, readFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
+import { escapeReportIdentityPart } from '../../packages/application/src/use-cases/build-report-snapshot.js';
 import { pollReportRuntimeLarkIntegrity } from './report-runtime-lark-integrity-recovery.js';
-import { assertReportRuntimeMetricIntegrity } from './report-runtime-window-repair.js';
 import {
   closeoutFailure,
   compactSql,
@@ -20,6 +20,7 @@ const DEFAULT_LARK_KEY_FIELDS = Object.freeze({
   mktSyncLog: 'sync_id',
   mktSystemAlerts: 'alert_id',
 });
+const LARK_REPORT_METRIC_DECIMAL_PLACES = 4;
 
 export function createReviewedStateRuntime(input) {
   const {
@@ -207,13 +208,13 @@ export function createReviewedStateRuntime(input) {
     const metricValues = {};
     let duplicateMetricKeys = 0;
     for (const record of recordsByName.metrics) {
-      const metricKey = normalizeLarkText(record?.fields?.metric_key);
-      if (!metricKey) throw closeoutFailure(
-        'Lark Report metric row lacks metric_key',
+      const reportMetricKey = normalizeLarkText(record?.fields?.report_metric_key);
+      if (!reportMetricKey) throw closeoutFailure(
+        'Lark Report metric row lacks report_metric_key',
         'REPORT_RUNTIME_CLOSEOUT_LARK_METRIC_KEY_MISSING',
       );
-      if (Object.hasOwn(metricValues, metricKey)) duplicateMetricKeys += 1;
-      metricValues[metricKey] = normalizeLarkNumber(record?.fields?.current_value);
+      if (Object.hasOwn(metricValues, reportMetricKey)) duplicateMetricKeys += 1;
+      metricValues[reportMetricKey] = normalizeLarkNumber(record?.fields?.current_value);
     }
     return Object.freeze({
       snapshots: recordsByName.snapshots.length,
@@ -285,11 +286,15 @@ export function assertD1LarkIntegrity(d1, lark) {
     );
   }
   if (lark.duplicateMetricKeys !== 0) throw closeoutFailure(
-    'Lark Report metric rows contain duplicate metric_key values',
+    'Lark Report metric rows contain duplicate report_metric_key values',
     'REPORT_RUNTIME_CLOSEOUT_LARK_METRIC_DUPLICATE',
     { duplicateMetricKeys: lark.duplicateMetricKeys },
   );
-  return assertReportRuntimeMetricIntegrity({ payload, larkMetrics: lark.metricValues });
+  return assertStableReportMetricIntegrity({
+    reportId: d1.report_id,
+    payload,
+    larkMetrics: lark.metricValues,
+  });
 }
 export function assertLarkCompletion(state) {
   if (state.snapshots !== 1
@@ -319,6 +324,140 @@ export function summarizeLarkState(lark) {
     topAds: lark.topAds,
     duplicateMetricKeys: lark.duplicateMetricKeys,
   });
+}
+
+function assertStableReportMetricIntegrity(input) {
+  const reportId = requireMetricText(input.reportId, 'reportId');
+  const payload = requireMetricObject(input.payload, 'payload');
+  const larkMetrics = requireMetricObject(input.larkMetrics, 'larkMetrics');
+  const expected = collectExpectedStableMetricValues(reportId, payload);
+  const expectedKeys = Object.keys(expected.values).sort();
+  const observedKeys = Object.keys(larkMetrics).sort();
+  if (JSON.stringify(expectedKeys) !== JSON.stringify(observedKeys)) throw closeoutFailure(
+    'D1 and Lark Report stable metric key sets differ',
+    'REPORT_RUNTIME_CLOSEOUT_LARK_METRIC_KEY_DRIFT',
+    {
+      expectedCount: expectedKeys.length,
+      observedCount: observedKeys.length,
+      summaryMetricCount: expected.summaryMetricCount,
+      dimensionMetricCount: expected.dimensionMetricCount,
+    },
+  );
+
+  let mismatchCount = 0;
+  for (const key of expectedKeys) {
+    if (canonicalizeMetricValue(expected.values[key]) !== canonicalizeMetricValue(larkMetrics[key])) {
+      mismatchCount += 1;
+    }
+  }
+  if (mismatchCount !== 0) throw closeoutFailure(
+    'D1 and Lark Report stable metric values differ',
+    'REPORT_RUNTIME_CLOSEOUT_LARK_METRIC_VALUE_DRIFT',
+    {
+      metricCount: expectedKeys.length,
+      mismatchCount,
+      summaryMetricCount: expected.summaryMetricCount,
+      dimensionMetricCount: expected.dimensionMetricCount,
+    },
+  );
+  return Object.freeze({
+    metricCount: expectedKeys.length,
+    summaryMetricCount: expected.summaryMetricCount,
+    dimensionMetricCount: expected.dimensionMetricCount,
+    mismatchCount,
+  });
+}
+
+function collectExpectedStableMetricValues(reportId, payload) {
+  const metricPayload = requireMetricObject(payload.metricPayload, 'payload.metricPayload');
+  const values = {};
+  let summaryMetricCount = 0;
+  let dimensionMetricCount = 0;
+
+  for (const [fallbackKey, value] of Object.entries(metricPayload)) {
+    const metric = requireMetricObject(value, `payload.metricPayload.${fallbackKey}`);
+    const metricKey = optionalMetricText(metric.metricKey) ?? requireMetricText(fallbackKey, 'summary metric key');
+    const reportMetricKey = buildStableReportMetricKey(reportId, metric, metricKey);
+    addExpectedStableMetric(values, reportMetricKey, metric.current);
+    summaryMetricCount += 1;
+  }
+
+  const dimensionMetrics = payload.collections?.dimension_metrics ?? [];
+  if (!Array.isArray(dimensionMetrics)) throw closeoutFailure(
+    'payload.collections.dimension_metrics must be an array',
+    'REPORT_RUNTIME_CLOSEOUT_DIMENSION_METRICS_INVALID',
+  );
+  for (const value of dimensionMetrics) {
+    const metric = requireMetricObject(value, 'payload.collections.dimension_metrics row');
+    const metricKey = requireMetricText(metric.metricKey, 'dimension metric key');
+    const reportMetricKey = buildStableReportMetricKey(reportId, metric, metricKey);
+    addExpectedStableMetric(values, reportMetricKey, metric.current);
+    dimensionMetricCount += 1;
+  }
+
+  return Object.freeze({
+    values: Object.freeze(values),
+    summaryMetricCount,
+    dimensionMetricCount,
+  });
+}
+
+function buildStableReportMetricKey(reportId, metric, metricKey) {
+  const stableMetricKey = optionalMetricText(metric.stableMetricKey ?? metric.stable_metric_key) ?? metricKey;
+  const dimensionType = optionalMetricText(metric.dimensionType ?? metric.dimension_type) ?? 'summary';
+  const dimensionValue = optionalMetricText(metric.dimensionValue ?? metric.dimension_value) ?? 'all';
+  return [
+    reportId,
+    escapeReportIdentityPart(stableMetricKey),
+    escapeReportIdentityPart(dimensionType),
+    escapeReportIdentityPart(dimensionValue),
+  ].join('::');
+}
+
+function addExpectedStableMetric(values, reportMetricKey, current) {
+  if (Object.hasOwn(values, reportMetricKey)) throw closeoutFailure(
+    'Report payload contains duplicate stable report metric identities',
+    'REPORT_RUNTIME_CLOSEOUT_PAYLOAD_METRIC_DUPLICATE',
+    { reportMetricKey },
+  );
+  values[reportMetricKey] = normalizeExpectedMetricNumber(current);
+}
+
+function canonicalizeMetricValue(value) {
+  const number = normalizeExpectedMetricNumber(value);
+  if (number === null) return null;
+  const canonical = Number(number.toFixed(LARK_REPORT_METRIC_DECIMAL_PLACES));
+  return Object.is(canonical, -0) ? 0 : canonical;
+}
+
+function normalizeExpectedMetricNumber(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const number = Number(value);
+  if (!Number.isFinite(number)) throw closeoutFailure(
+    'Report metric must be finite or null',
+    'REPORT_RUNTIME_CLOSEOUT_METRIC_VALUE_INVALID',
+  );
+  return number;
+}
+
+function optionalMetricText(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+function requireMetricText(value, fieldName) {
+  if (typeof value !== 'string' || value.trim() === '') throw closeoutFailure(
+    `${fieldName} is required`,
+    'REPORT_RUNTIME_CLOSEOUT_METRIC_IDENTITY_INVALID',
+    { fieldName },
+  );
+  return value.trim();
+}
+function requireMetricObject(value, fieldName) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw closeoutFailure(
+    `${fieldName} is required`,
+    'REPORT_RUNTIME_CLOSEOUT_METRIC_IDENTITY_INVALID',
+    { fieldName },
+  );
+  return value;
 }
 function normalizeLarkText(value) {
   if (typeof value === 'string') return value.trim() || null;
