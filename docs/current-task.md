@@ -3,10 +3,13 @@
 ## Status
 
 ```text
-TASK_STATUS                         = IMPLEMENTATION_COMPLETE_CI_PENDING
+TASK_STATUS                         = IMPLEMENTATION_COMPLETE_CI_PASS
 CURRENT_PROGRAM                     = REPORT_METRIC_STABLE_KEY_INTEGRITY_V1
 BRANCH                              = hotfix/report-metric-stable-key-integrity-v1
 EXACT_BASE                          = bc7a5375fecb279f1d9a4fc89b7c2d7ee081c84c
+VERIFIED_CODE_HEAD                  = 918d63ec912804333a4533386eeaf654989f615d
+BRANCH_VERIFICATION_RUN             = 31149710109
+BRANCH_VERIFICATION_NUMBER          = 2277
 FAILED_RECOVERY_STAGE               = verify-d1-lark-integrity
 FAILED_RECOVERY_CODE                = REPORT_RUNTIME_CLOSEOUT_LARK_INTEGRITY_NOT_CONVERGED
 D1_MATERIALIZATION_COUNT            = 1
@@ -94,6 +97,33 @@ Change only the shared Report closeout/readback verifier:
 - missing/extra stable rows or value drift remain hard blockers.
 
 No Report formula, Lark writer, TableSyncEngine, Report ID, materialization payload or business metric semantics are changed.
+
+## Verification result
+
+Verification-only PR #530 pointed to the exact code Head `918d63ec912804333a4533386eeaf654989f615d` without a new commit. Branch Verification #2277 / run `31149710109` passed every gate and PR #530 was closed unmerged.
+
+```text
+Install locked dependencies                 PASS
+Syntax architecture and hygiene             PASS
+Focused Report source readiness tests       PASS
+Focused Meta history finalizer tests         PASS
+Focused Woo completed-state race tests       PASS
+Focused Chatwoot final UAT tests              PASS
+Focused staged TikTok tests                  PASS
+Unit and Workers runtime tests               PASS
+Report reliability regression               PASS
+Dependency audit                             PASS
+Wrangler dry run                             PASS
+Diff whitespace check                        PASS
+```
+
+Regression coverage proves:
+
+- repeated business `metric_key` values across distinct dimensions do not count as duplicate rows;
+- duplicate `report_metric_key` identities still fail closed;
+- D1/Lark value parity checks every stable dimensional row individually;
+- a value mismatch under one stable dimension identity fails closed;
+- no Queue/Worker/Provider path was added.
 
 ## Required recovery boundary
 
