@@ -3,12 +3,15 @@
 ## Status
 
 ```text
-TASK_STATUS                   = IMPLEMENTATION_COMPLETE_CI_PENDING
+TASK_STATUS                   = IMPLEMENTATION_COMPLETE_CI_PASS
 CURRENT_PROGRAM               = REPORT_METRIC_MIGRATION_GROWTH_SAFE_BOUNDARY_V1
 BRANCH                        = fix/metric-migration-record-bound-v1
 EXACT_BASE                    = 33bbb142b5a74584628e5236bc9b838d662b6003
-CODE_HEAD                     = 093959198db19f4b285c91d7ad67fbbccd3bd5be
+VERIFIED_CODE_HEAD            = 093959198db19f4b285c91d7ad67fbbccd3bd5be
+VERIFIED_DOC_HEAD             = b7304ba7cb8a29376cd71419568e7e3a607d55e6
 PR                            = 525
+BRANCH_VERIFICATION_RUN       = 31141011519
+BRANCH_VERIFICATION_NUMBER    = 2267
 FAILED_STAGE                  = report-metric-value-field-migration-preview
 FAILED_CODE                   = REPORT_RUNTIME_FINALIZE_METRIC_FIELD_MIGRATION_UNSAFE
 LIVE_RECORD_COUNT             = 642
@@ -54,6 +57,23 @@ PR #525 changes the existing migration implementation only:
 - preserves every legacy value and performs zero delete;
 - adds regression proving 2,501 already-converged rows are admitted;
 - adds regression proving a 1,201-row real backfill executes as `500 + 500 + 201` rather than failing on table size.
+
+Branch Verification #2267 / run `31141011519` passed on exact Head `b7304ba7cb8a29376cd71419568e7e3a607d55e6`:
+
+```text
+Install locked dependencies                 PASS
+Syntax architecture and hygiene             PASS
+Focused Report source readiness tests       PASS
+Focused Meta history finalizer tests         PASS
+Focused Woo completed-state race tests       PASS
+Focused Chatwoot final UAT tests              PASS
+Focused staged TikTok tests                  PASS
+Unit and Workers runtime tests               PASS
+Report reliability regression               PASS
+Dependency audit                             PASS
+Wrangler dry run                             PASS
+Diff whitespace check                        PASS
+```
 
 ## Permanent architecture rule
 
