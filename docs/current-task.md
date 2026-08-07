@@ -3,10 +3,13 @@
 ## Status
 
 ```text
-TASK_STATUS                         = IMPLEMENTATION_COMPLETE_CI_PENDING
+TASK_STATUS                         = IMPLEMENTATION_COMPLETE_CI_PASS
 CURRENT_PROGRAM                     = CHATWOOT_RETAINED_METRIC_SCOPE_PROJECTION_COMPATIBILITY_V1
 BRANCH                              = hotfix/retained-report-metric-scope-projection-v1
 EXACT_BASE                          = 6fca9034d30b3e30aaf66c4d108e046d6dc531bb
+VERIFIED_CODE_HEAD                  = 460d639cfec8149cab208a4424806b712a9183c0
+BRANCH_VERIFICATION_RUN             = 31147750000
+BRANCH_VERIFICATION_NUMBER          = 2274
 FAILED_RECOVERY_STAGE               = write-existing-d1-materialization-through-shared-lark-writer
 FAILED_RECOVERY_CODE                = REPORT_RUNTIME_CHATWOOT_1D_D1_LARK_RECOVERY_FAILED
 FAILED_RECOVERY_MESSAGE             = Unsupported Dashboard metric scope: period_end_snapshot
@@ -61,6 +64,35 @@ Rules:
 - dimension metrics already using canonical `period_delta` remain unchanged;
 - after Lark projection, reread D1 and require byte-identical payload/checksum and identical retained runtime state before integrity verification;
 - exact DLQ/Critical Alert closure remains after D1 immutability + D1/Lark integrity verification only.
+
+## Verification result
+
+Branch Verification #2274 / run `31147750000` passed on exact code Head `460d639cfec8149cab208a4424806b712a9183c0`:
+
+```text
+Install locked dependencies                 PASS
+Syntax architecture and hygiene             PASS
+Focused Report source readiness tests       PASS
+Focused Meta history finalizer tests         PASS
+Focused Woo completed-state race tests       PASS
+Focused Chatwoot final UAT tests              PASS
+Focused staged TikTok tests                  PASS
+Unit and Workers runtime tests               PASS
+Report reliability regression               PASS
+Dependency audit                             PASS
+Wrangler dry run                             PASS
+Diff whitespace check                        PASS
+```
+
+Regression coverage proves:
+
+- retained `period_end_snapshot` becomes `current_total` only in the exact recovery projection copy;
+- canonical `normalizeDashboardMetricScope('period_end_snapshot')` still throws;
+- unknown retained scopes fail closed;
+- the original retained materialization object is not mutated;
+- D1 payload/checksum drift after projection fails closed;
+- Queue and Worker paths remain absent;
+- D1 immutability verification and Lark integrity both precede exact incident closure.
 
 ## Required recovered state
 
