@@ -3,10 +3,13 @@
 ## Status
 
 ```text
-TASK_STATUS                         = IMPLEMENTATION_IN_PROGRESS
+TASK_STATUS                         = IMPLEMENTATION_COMPLETE_CODE_CI_PASS
 CURRENT_PROGRAM                     = REVIEWED_HANDOFF_MAPPED_AUTHORITY_COMPATIBILITY_V1
 BRANCH                              = hotfix/reviewed-handoff-mapped-authority-v1
 EXACT_BASE                          = 0acb252be84a739f5b0e1aa15d4999b70d9ae950
+VERIFIED_CODE_HEAD                  = 491bd1f3f315c654f761199490ea37f928490c54
+BRANCH_VERIFICATION_RUN             = 31158078780
+BRANCH_VERIFICATION_NUMBER          = 2282
 CHATWOOT_1D_RECOVERY                = CLOSED
 CHATWOOT_1D_D1_MATERIALIZATION      = 1
 CHATWOOT_1D_LARK_SNAPSHOT           = 1
@@ -52,7 +55,7 @@ The failed closeout evidence root is immutable. Do not rerun, delete, reset or c
 
 Keep one shared reviewed handoff contract and one shared runtime validator.
 
-`assertReviewedChannelCloseoutHandoff()` must resolve authority in this order:
+`assertReviewedChannelCloseoutHandoff()` resolves authority in this order:
 
 ```text
 1. closeoutAuthorities[descriptor.platform]
@@ -67,13 +70,34 @@ All existing authority validation remains strict:
 - capability must equal the selected descriptor capability;
 - exact repository Head, readiness, source and window checks remain unchanged.
 
-Do not add a new handoff format, wrapper, execution engine or hand-written JSON workaround.
+No new handoff format, wrapper, execution engine or hand-written JSON workaround was added.
 
-## Regression requirement
+## Regression result
 
-Build the retained multichannel handoff using `buildRetainedMultichannelReportHandoff()` and validate the returned handoff object directly, without injecting `closeoutAuthority`, for every non-planned reviewed channel.
+The regression builds the retained multichannel handoff using `buildRetainedMultichannelReportHandoff()` and validates the returned handoff object directly, without injecting `closeoutAuthority`, for every non-planned reviewed channel.
 
-Also preserve acceptance of the existing legacy single-channel `closeoutAuthority` fallback.
+It also proves that the legacy single-channel `closeoutAuthority` fallback remains accepted.
+
+## Verification result
+
+Branch Verification #2282 / run `31158078780` passed on exact code Head `491bd1f3f315c654f761199490ea37f928490c54`:
+
+```text
+Install locked dependencies                 PASS
+Syntax architecture and hygiene             PASS
+Focused Report source readiness tests       PASS
+Focused Meta history finalizer tests         PASS
+Focused Woo completed-state race tests       PASS
+Focused Chatwoot final UAT tests              PASS
+Focused staged TikTok tests                  PASS
+Unit and Workers runtime tests               PASS
+Report reliability regression               PASS
+Dependency audit                             PASS
+Wrangler dry run                             PASS
+Diff whitespace check                        PASS
+```
+
+No Remote runtime action occurred during implementation or CI.
 
 ## Required verification
 
