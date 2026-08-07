@@ -16,9 +16,9 @@ export const REPORT_METRIC_VALUE_FIELD_MIGRATION_VERSION =
   'report_metric_value_field_migration_v2';
 export const REPORT_METRIC_VALUE_FIELD_MIGRATION_CONFIRMATION =
   'MIGRATE_REPORT_METRIC_VALUES_PRESERVE_LEGACY';
+export const REPORT_METRIC_VALUE_FIELD_WRITE_BATCH_SIZE = 500;
 
 const TABLE_KEY = 'mktReportMetricValues';
-const MAX_RECORDS = 500;
 const VERIFY_DELAYS_MS = Object.freeze([0, 1_000, 2_000, 4_000, 8_000]);
 const MIGRATION_IDENTITIES = Object.freeze([
   Object.freeze({
@@ -37,6 +37,9 @@ const MIGRATION_IDENTITIES = Object.freeze([
  *   performs a read-only ownership assertion;
  * - historical recovery schemas that explicitly require Number retain the previous
  *   lossless Select -> Number conversion for deterministic resume/rollback coverage.
+ *
+ * Table growth is not an admission blocker. Safety is enforced on the exact migration
+ * identity/fingerprint and by bounded record-write batches only when a real backfill exists.
  */
 function resolveMigrationContract(identity, desired) {
   if (identity.fieldName === 'display_name' && Number(desired?.type) === 1) {
@@ -106,16 +109,6 @@ export async function planReportMetricValueFieldMigration(input = {}) {
     tableId: resolution.tableId,
     includeRecordMetadata: false,
   });
-  if (records.length > MAX_RECORDS) {
-    return freezePlan({
-      schemaVersion,
-      migrations: [],
-      blockers: [safeBlocker('REPORT_METRIC_FIELD_MIGRATION_RECORD_BOUND_EXCEEDED', {
-        recordCount: records.length,
-        maxRecords: MAX_RECORDS,
-      })],
-    });
-  }
 
   const migrations = [];
   const blockers = [];
@@ -255,29 +248,47 @@ async function applyOneMigration(input) {
       });
       fieldMutationCount += 1;
     } else if (latest.nextStep === 'backfill_canonical') {
-      const updates = latest.pendingUpdates.map((update) => ({
-        recordId: update.recordId,
-        fields: { [latest.fieldName]: update.value },
-      }));
-      const result = await input.client.batchUpdateRecords({
-        tableId: latest.tableId,
-        records: updates,
-      });
-      if (Number(result?.updated) !== updates.length) {
-        throw migrationError(
-          'Lark did not confirm every canonical Report Metric value write',
-          'REPORT_METRIC_FIELD_MIGRATION_BATCH_COUNT_MISMATCH',
-          {
-            fieldName: latest.fieldName,
-            expectedRows: updates.length,
-            actualRows: result?.updated ?? null,
-          },
-        );
+      while (latest.nextStep === 'backfill_canonical') {
+        assertStableSource(latest, input);
+        const pendingBefore = Number(latest.pendingRecordCount ?? 0);
+        const selected = latest.pendingUpdates.slice(0, REPORT_METRIC_VALUE_FIELD_WRITE_BATCH_SIZE);
+        if (selected.length === 0 || pendingBefore < selected.length) {
+          throw migrationError(
+            'Report Metric Values migration produced an invalid write batch',
+            'REPORT_METRIC_FIELD_MIGRATION_WRITE_BATCH_INVALID',
+            {
+              fieldName: latest.fieldName,
+              pendingRecordCount: pendingBefore,
+              batchSize: selected.length,
+            },
+          );
+        }
+        const updates = selected.map((update) => ({
+          recordId: update.recordId,
+          fields: { [latest.fieldName]: update.value },
+        }));
+        const result = await input.client.batchUpdateRecords({
+          tableId: latest.tableId,
+          records: updates,
+        });
+        if (Number(result?.updated) !== updates.length) {
+          throw migrationError(
+            'Lark did not confirm every canonical Report Metric value write',
+            'REPORT_METRIC_FIELD_MIGRATION_BATCH_COUNT_MISMATCH',
+            {
+              fieldName: latest.fieldName,
+              expectedRows: updates.length,
+              actualRows: result?.updated ?? null,
+            },
+          );
+        }
+        canonicalValueWriteCount += updates.length;
+        recordBatchWriteCount += 1;
+        latest = await verifyMigrationAfterBatch(input, latest.fieldName, input.sleep, {
+          expectedPendingRecordCount: pendingBefore - updates.length,
+        });
+        assertStableSource(latest, input);
       }
-      canonicalValueWriteCount += updates.length;
-      recordBatchWriteCount += updates.length > 0 ? 1 : 0;
-      latest = await verifyMigrationAfterWrite(input, latest.fieldName, input.sleep);
-      assertStableSource(latest, input);
       break;
     } else {
       throw migrationError(
@@ -307,17 +318,29 @@ async function applyOneMigration(input) {
   });
 }
 
-async function verifyMigrationAfterWrite(input, fieldName, sleep) {
+async function verifyMigrationAfterBatch(input, fieldName, sleep, expected = {}) {
   let latest = null;
   for (const delayMs of VERIFY_DELAYS_MS) {
     if (delayMs > 0) await sleep(delayMs);
     latest = await readMigration(input, fieldName);
-    if (latest.state === 'converged') return latest;
+    const pendingRecordCount = Number(latest.pendingRecordCount ?? 0);
+    const expectedPendingRecordCount = Number(expected.expectedPendingRecordCount ?? 0);
+    if (pendingRecordCount === expectedPendingRecordCount
+      && ((expectedPendingRecordCount === 0 && latest.state === 'converged')
+        || (expectedPendingRecordCount > 0 && latest.state === 'needs_backfill'))) {
+      return latest;
+    }
   }
   throw migrationError(
-    'Canonical Report Metric values did not converge after one write',
+    'Canonical Report Metric values did not converge after bounded write batch',
     'REPORT_METRIC_FIELD_MIGRATION_VALUE_VERIFY_FAILED',
-    latest ? safeMigration(latest) : { fieldName },
+    latest ? {
+      ...safeMigration(latest),
+      expectedPendingRecordCount: Number(expected.expectedPendingRecordCount ?? 0),
+    } : {
+      fieldName,
+      expectedPendingRecordCount: Number(expected.expectedPendingRecordCount ?? 0),
+    },
   );
 }
 
