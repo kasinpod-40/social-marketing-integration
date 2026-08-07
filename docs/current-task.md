@@ -3,10 +3,13 @@
 ## Status
 
 ```text
-TASK_STATUS                  = IMPLEMENTATION_COMPLETE_CI_PENDING
+TASK_STATUS                  = IMPLEMENTATION_COMPLETE_CI_PASS
 CURRENT_PROGRAM              = CHATWOOT_1D_D1_COMPLETE_LARK_INCOMPLETE_RECOVERY_V1
 BRANCH                       = hotfix/chatwoot-1d-d1-complete-lark-recovery-v1
 EXACT_BASE                   = 7db5470ac9db48e6e46b8629d34e7d1f04e60804
+VERIFIED_CODE_HEAD           = 633c8b54f390dcb5a7a5342852f84bfc94459e53
+BRANCH_VERIFICATION_RUN      = 31146309447
+BRANCH_VERIFICATION_NUMBER   = 2272
 FAILED_CONTINUATION_STAGE    = exact-incident-read-only-preflight
 FAILED_CONTINUATION_CODE     = REPORT_RUNTIME_CHATWOOT_1D_CONTINUATION_INITIAL_STATE_MISMATCH
 D1_MATERIALIZATION_COUNT     = 1
@@ -60,6 +63,25 @@ existing exact report_materializations row
 ```
 
 The recovery operator contains no Queue send or Worker deployment path.
+
+Branch Verification #2272 / run `31146309447` passed on exact code Head `633c8b54f390dcb5a7a5342852f84bfc94459e53`:
+
+```text
+Install locked dependencies                 PASS
+Syntax architecture and hygiene             PASS
+Focused Report source readiness tests       PASS
+Focused Meta history finalizer tests         PASS
+Focused Woo completed-state race tests       PASS
+Focused Chatwoot final UAT tests              PASS
+Focused staged TikTok tests                  PASS
+Unit and Workers runtime tests               PASS
+Report reliability regression               PASS
+Dependency audit                             PASS
+Wrangler dry run                             PASS
+Diff whitespace check                        PASS
+```
+
+Focused Chatwoot coverage includes the new D1-complete/Lark-incomplete state contract and a source assertion that the recovery operator has no Queue resolution/send or Worker deploy path.
 
 ## Admission boundary
 
