@@ -107,16 +107,20 @@ unless the block intentionally displays a ranked dimension collection.
 
 ## Executive Marketing Overview
 
+A live UI check after the Display V2 closeout proved that Lark Statistics renders an unavailable/null strict `period_views` result as visible numeric `0`. The repository already has a separate `current_total` Organic metric family specifically so the Dashboard remains truthful while historical baselines accumulate. Therefore the Executive headline is a current-total KPI, while the by-window chart remains a strict period-delta KPI. See `docs/tasks/executive-organic-current-total-binding-v1.md`.
+
 | Block | Current filter | Required binding |
 |---|---|---|
-| Organic Views by Window | `metric_key contains period_spend` | `metric_key contains period_views` + summary |
+| Organic Views by Window | `metric_key contains period_spend` | `metric_key contains period_views` + `metric_scope = period_delta` + summary |
 | Orders | Woo + `order_count` | `metric_key = woocommerce:recognized_orders` + summary |
 | Net Sales by Window | Woo + `net_sales` | `metric_key = woocommerce:net_sales_micros` + summary |
 | Ad Spend by Window | `metric_key contains period_views` | `metric_key contains :spend_micros` + summary |
 | Ad Spend | `metric_key contains period_spend` | `metric_key contains :spend_micros` + summary |
-| Organic Views | `metric_key contains period_views` | keep `period_views` + summary |
+| Organic Total Views | legacy `period_views` headline | `metric_key contains :latest_total_views` + `metric_scope = current_total` + `availability_status = available` + summary |
 | Net Sales | Woo + `net_sales` | `metric_key = woocommerce:net_sales_micros` + summary |
 | New Leads | `metric_key = new_leads` | **No canonical Lead metric; keep unavailable until a Lead business contract exists** |
+
+Do not substitute current totals into `Organic Views by Window`. An incomplete reviewed baseline may leave that chart with no available period values; this is truthful N/A behavior and must not be repaired with zero or synthetic history.
 
 ## Organic Performance
 
