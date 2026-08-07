@@ -105,6 +105,7 @@ test('builds one isolated 7D Executive UAT row with business-first TikTok eviden
   const result = await buildLarkNativeAiWeekly7dControlledUat(input());
   assert.equal(result.ok, true);
   assert.equal(result.contractVersion, 'lark_native_ai_weekly_7d_controlled_uat_v1');
+  assert.equal(result.targetPeriod.periodKind, 'rolling_days');
   assert.equal(result.executiveRow.scope_type, 'executive');
   assert.equal(result.executiveRow.window_days, '7');
   assert.equal(result.executiveRow.template_version, 'weekly_executive_quality_v2_uat');
@@ -112,6 +113,13 @@ test('builds one isolated 7D Executive UAT row with business-first TikTok eviden
   assert.equal(result.executiveRow.notification_eligible, false);
   assert.equal(result.executiveRow.sent_to_group, false);
   assert.equal(result.executiveRow.generation_status, 'pending');
+  assert.equal(result.executiveRow.insight_summary, null);
+  assert.equal(result.executiveRow.strengths, null);
+  assert.equal(result.executiveRow.weaknesses, null);
+  assert.equal(result.executiveRow.recommendations, null);
+  assert.equal(result.executiveRow.failure_code, null);
+  assert.equal(result.executiveRow.generated_at, null);
+  assert.equal(result.executiveRow.sent_at, null);
   assert.equal(result.uiConfiguration.promptVersion, 'lark_native_ai_automation_prompts_v2');
   assert.equal(result.uiConfiguration.actionCount, 4);
 
@@ -124,6 +132,16 @@ test('builds one isolated 7D Executive UAT row with business-first TikTok eviden
   assert.equal(tiktok.topContent[0].caption, 'คลิปตัวอย่างยอดวิวสูง');
   assert.equal(tiktok.topContent[0].period_views, 38000);
   assert.equal(summary.channelBusinessEvidence.find(({ channelKey }) => channelKey === 'facebook_organic').readinessStatus, 'configuration_missing');
+});
+
+test('rejects a non-rolling 7D target period before building any AI row', async () => {
+  await assert.rejects(
+    () => buildLarkNativeAiWeekly7dControlledUat({
+      ...input(),
+      targetPeriod: { ...TARGET_PERIOD, periodKind: 'calendar_week' },
+    }),
+    (error) => error.code === 'LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_PERIOD_KIND_INVALID',
+  );
 });
 
 test('plans create, safe update, zero drift and blocks an unsafe retained row', async () => {
@@ -144,6 +162,11 @@ test('plans create, safe update, zero drift and blocks an unsafe retained row', 
   const update = planLarkNativeAiWeekly7dControlledUatWrite({ desiredRow: executiveRow, existingRecords: [drifted] });
   assert.equal(update.status, 'update');
   assert.equal(update.writeCount, 1);
+  assert.equal(update.action.fields.insight_summary, null);
+  assert.equal(update.action.fields.strengths, null);
+  assert.equal(update.action.fields.weaknesses, null);
+  assert.equal(update.action.fields.recommendations, null);
+  assert.equal(update.action.fields.generation_status, 'pending');
 
   const unsafe = structuredClone(existing);
   unsafe.fields.sent_to_group = true;
