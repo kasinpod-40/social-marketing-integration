@@ -17,6 +17,9 @@ const EXECUTIVE_COVERAGE_MESSAGES = Object.freeze({
 });
 const BUSINESS_AI_READY = new Set(['report_available', 'report_partial']);
 const VALIDATED_REPORT_STATES = new Set(['report_available', 'report_partial', 'no_data_confirmed']);
+const EXECUTIVE_METRIC_LIMIT = 24;
+const EXECUTIVE_RANKING_LIMIT = 3;
+const EXECUTIVE_COLLECTION_LIMIT = 8;
 
 /**
  * Build Lark-ready Preview rows for every expected channel plus one Executive row per 1/3/7/30 window.
@@ -291,18 +294,24 @@ async function buildExecutivePreviewRow(context) {
   const { customerKey, templateVersion, generatedAt, utcOffset, period, channelRows } = context;
   const statusVector = channelRows.map((row) => Object.freeze({
     channelKey: row.channel_key,
+    displayName: resolveChannelDisplayName(row.channel_key),
     readinessStatus: row.readiness_status,
     readinessMessage: row.readiness_message,
     severity: row.severity,
     sourceReportChecksum: row.source_report_checksum,
     availableMetricCount: countAvailableMetrics(row.metric_summary_json),
   }));
+  const channelBusinessEvidence = Object.freeze(channelRows.map(buildExecutiveChannelBusinessEvidence));
   const counts = countReadiness(statusVector);
   const overallCoverageState = resolveOverallCoverageState(statusVector);
   const readinessStatus = executiveReadinessStatus(overallCoverageState);
   const readiness = resolveLarkNativeAiReadiness(readinessStatus);
   const sourceReportIds = [...new Set(channelRows.flatMap((row) => JSON.parse(row.source_report_ids_json)))].sort();
-  const evidenceChecksum = await sha256Hex(stableStringify({ statusVector, sourceReportIds }));
+  const evidenceChecksum = await sha256Hex(stableStringify({
+    statusVector,
+    channelBusinessEvidence,
+    sourceReportIds,
+  }));
   const aiRunKey = createAiRunKey({
     customerKey,
     scopeType: 'executive',
@@ -337,18 +346,20 @@ async function buildExecutivePreviewRow(context) {
       : null,
     comparison_mode: period.comparisonMode,
     metric_summary_json: stableStringify({
+      evidenceShape: 'executive_business_first_v2',
       overallCoverageState,
       counts,
       channelStatuses: statusVector,
+      channelBusinessEvidence,
       sourceReportIds,
     }),
     insight_summary: canGenerate ? null : coverageMessage,
     strengths: null,
     weaknesses: statusVector
       .filter(({ readinessStatus: status }) => !VALIDATED_REPORT_STATES.has(status))
-      .map(({ channelKey, readinessMessage }) => `${channelKey}: ${readinessMessage}`)
+      .map(({ displayName, readinessMessage }) => `${displayName}: ${readinessMessage}`)
       .join('\n') || null,
-    recommendations: canGenerate ? null : 'ทำให้ validated Report อย่างน้อยหนึ่งช่องทางพร้อมก่อนสร้าง Executive Insight',
+    recommendations: canGenerate ? null : 'รอให้มีข้อมูลธุรกิจอย่างน้อยหนึ่งช่องทางก่อนสร้าง Executive Insight',
     course_filter: null,
     sent_to_group: false,
     sent_at: null,
@@ -402,6 +413,55 @@ function buildMetricSummary(bundle, readinessStatus) {
 function countAvailableMetrics(metricSummaryJson) {
   const parsed = JSON.parse(metricSummaryJson);
   return Array.isArray(parsed.availableMetrics) ? parsed.availableMetrics.length : 0;
+}
+
+function buildExecutiveChannelBusinessEvidence(row) {
+  const summary = JSON.parse(row.metric_summary_json);
+  const availableMetrics = Array.isArray(summary.availableMetrics)
+    ? summary.availableMetrics.filter(isExecutiveSummaryMetric).slice(0, EXECUTIVE_METRIC_LIMIT)
+    : [];
+  const unavailableMetrics = Array.isArray(summary.unavailableMetrics) ? summary.unavailableMetrics : [];
+  const topContent = Array.isArray(summary.topContent)
+    ? summary.topContent.slice(0, EXECUTIVE_RANKING_LIMIT)
+    : [];
+  const topAds = Array.isArray(summary.topAds)
+    ? summary.topAds.slice(0, EXECUTIVE_RANKING_LIMIT)
+    : [];
+
+  return Object.freeze({
+    channelKey: row.channel_key,
+    displayName: resolveChannelDisplayName(row.channel_key),
+    capability: row.capability,
+    readinessStatus: row.readiness_status,
+    readinessMessage: row.readiness_message,
+    sourceReportId: optionalText(summary.sourceReportId),
+    sourceWatermark: optionalText(summary.sourceWatermark),
+    availableMetrics: Object.freeze(availableMetrics),
+    unavailableMetricCount: unavailableMetrics.length,
+    topContent: Object.freeze(topContent),
+    topAds: Object.freeze(topAds),
+    collections: buildExecutiveCollections(summary.collections),
+  });
+}
+
+function isExecutiveSummaryMetric(metric) {
+  return metric
+    && typeof metric === 'object'
+    && (metric.metric_scope ?? 'summary') === 'summary'
+    && (metric.dimension_type ?? 'summary') === 'summary';
+}
+
+function buildExecutiveCollections(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return Object.freeze({});
+  const entries = Object.entries(value)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .slice(0, EXECUTIVE_COLLECTION_LIMIT)
+    .map(([key, item]) => [key, Array.isArray(item) ? item.slice(0, EXECUTIVE_RANKING_LIMIT) : item]);
+  return Object.freeze(Object.fromEntries(entries));
+}
+
+function resolveChannelDisplayName(channelKey) {
+  return LARK_NATIVE_AI_CHANNELS.find((channel) => channel.channelKey === channelKey)?.displayName ?? channelKey;
 }
 
 function countReadiness(statusVector) {
