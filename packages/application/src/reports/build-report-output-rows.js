@@ -9,6 +9,7 @@ import {
   resolveOrganicDashboardDisplayV2,
 } from '../../../config/src/lark-dashboard-display-v2-compatibility.js';
 import { escapeReportIdentityPart } from '../use-cases/build-report-snapshot.js';
+import { resolveReportMetricDisplayValue } from './report-metric-display-value.js';
 
 const MAX_RANK_LIMIT = 100;
 const GENERIC_NO_DATA_URL = 'https://invalid.example/';
@@ -33,6 +34,12 @@ export function buildReportMetricValueRows(input = {}) {
       const metricKey = requireText(metric.metricKey, 'metricKey');
       const stableMetricKey = optionalText(metric.stableMetricKey ?? metric.stable_metric_key) ?? metricKey;
       const currentValue = optionalFinite(metric.current);
+      const unit = requireText(metric.unit, 'unit');
+      const displayValue = resolveReportMetricDisplayValue({
+        metricKey,
+        unit,
+        currentValue,
+      });
       const metricScope = normalizeDashboardMetricScope(metric.metricScope);
       const availabilityStatus = normalizeDashboardMetricAvailability({
         status: metric.availabilityStatus,
@@ -66,10 +73,11 @@ export function buildReportMetricValueRows(input = {}) {
           [LARK_DASHBOARD_DISPLAY_V2_FIELD.fieldName]: displayV2Compatibility,
         } : {}),
         current_value: currentValue,
+        display_value: displayValue,
         compare_value: optionalFinite(metric.compare),
         change_value: optionalFinite(metric.change),
         change_percent: optionalFinite(metric.changePercent),
-        unit: requireText(metric.unit, 'unit'),
+        unit,
         metric_scope: metricScope,
         availability_status: availabilityStatus,
         availability_message: optionalText(metric.availabilityMessage)

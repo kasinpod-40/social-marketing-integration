@@ -34,7 +34,7 @@ export const REPORT_METRIC_DIMENSION_TYPE_OPTIONS = Object.freeze([
  * Additive repository contract for the materialization consumer tables.
  * It is intentionally plan-only; applying it to a Live Base requires a separate authorization.
  */
-export const LARK_REPORT_MATERIALIZATION_SCHEMA_VERSION = 'report-materialization-schema-v5';
+export const LARK_REPORT_MATERIALIZATION_SCHEMA_VERSION = 'report-materialization-schema-v6';
 export const LARK_REPORT_MATERIALIZATION_SCHEMA = deepFreeze({
   sharedOptionExtensions: {
     platforms: PLATFORM_OPTIONS,
@@ -64,6 +64,7 @@ export const LARK_REPORT_MATERIALIZATION_SCHEMA = deepFreeze({
         ...sharedRowAdditiveFields({
           windowDaysField: select('window_days', DASHBOARD_WINDOW_DAY_OPTIONS),
         }),
+        number('display_value', '1,000.0000'),
         select('metric_scope', DASHBOARD_METRIC_SCOPE_OPTIONS),
         select('availability_status', DASHBOARD_METRIC_AVAILABILITY_OPTIONS),
         text('availability_message'),
