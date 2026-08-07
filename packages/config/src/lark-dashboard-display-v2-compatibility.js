@@ -99,6 +99,7 @@ export const TIKTOK_ORGANIC_DASHBOARD_METRIC_KEYS = Object.freeze(
 export const TIKTOK_ORGANIC_DASHBOARD_DISPLAY_V2_OPTIONS = ORGANIC_DASHBOARD_DISPLAY_V2_OPTIONS;
 
 export function resolveTikTokOrganicDashboardDisplayV2(input = {}) {
+  if (normalizeText(input.platform) !== 'tiktok') return null;
   return resolveOrganicDashboardDisplayV2(input);
 }
 
