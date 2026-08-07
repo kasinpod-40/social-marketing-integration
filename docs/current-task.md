@@ -1,140 +1,127 @@
-# Current Task — Report Metric Total-Row Ceiling Eradication v2
+# Current Task — Chatwoot 1D D1-Complete / Lark-Incomplete Recovery v1
 
 ## Status
 
 ```text
-TASK_STATUS                    = IMPLEMENTATION_COMPLETE_CI_PASS
-CURRENT_PROGRAM                = REPORT_METRIC_TOTAL_ROW_CEILING_ERADICATION_V2
-BRANCH                         = fix/report-metric-total-row-ceilings-v2
-EXACT_BASE                     = 91792d0d2e31af1774746ad24c58f1462fa2672e
-VERIFIED_CODE_HEAD             = da642ba24add3246b7a3efd961e78ffdc2d9593f
-PR                             = 526
-BRANCH_VERIFICATION_RUN        = 31143871367
-BRANCH_VERIFICATION_NUMBER     = 2270
-FAILED_STAGE                   = report-metric-value-field-migration-preview
-FAILED_CODE                    = REPORT_RUNTIME_FINALIZE_METRIC_FIELD_MIGRATION_UNSAFE
-LIVE_RECORD_COUNT              = 642
-LIVE_FIELD                     = display_name
-OBSOLETE_TOTAL_RECORD_BOUND    = 500
-LIVE_MIGRATION_COUNT           = 0
-LIVE_PENDING_MIGRATION_COUNT   = 0
-REMOTE_ACTION_AFTER_FAILURE    = 0
-NOTIFICATION_ADMISSION         = false
-SCHEDULE_ENABLED               = false
-PRODUCTION                     = BLOCKED
+TASK_STATUS                  = IMPLEMENTATION_COMPLETE_CI_PENDING
+CURRENT_PROGRAM              = CHATWOOT_1D_D1_COMPLETE_LARK_INCOMPLETE_RECOVERY_V1
+BRANCH                       = hotfix/chatwoot-1d-d1-complete-lark-recovery-v1
+EXACT_BASE                   = 7db5470ac9db48e6e46b8629d34e7d1f04e60804
+FAILED_CONTINUATION_STAGE    = exact-incident-read-only-preflight
+FAILED_CONTINUATION_CODE     = REPORT_RUNTIME_CHATWOOT_1D_CONTINUATION_INITIAL_STATE_MISMATCH
+D1_MATERIALIZATION_COUNT     = 1
+RETAINED_SYNC_STATUS         = failed
+SUCCESSFUL_SYNC_COUNT        = 0
+ACTIVE_LOCK_COUNT            = 0
+EXACT_RETAINED_DLQ_COUNT     = 1
+LARK_SNAPSHOT_COUNT          = 0
+LARK_METRIC_COUNT            = 0
+ACTIVE_DEPLOYMENT_ATTEMPTED  = false
+QUEUE_ACTION_FROM_FAILED_RUN = 0
+PRODUCTION                   = BLOCKED
 ```
 
 Full contract:
 
 ```text
-docs/tasks/report-metric-total-row-ceiling-eradication-v2.md
+docs/tasks/chatwoot-1d-d1-complete-lark-incomplete-recovery-v1.md
 ```
 
 ## Goal
 
-Remove total customer/business row-count ceilings from the complete executable Report Metric Finalizer chain and Dashboard Compatibility Freeze. Table growth itself must never make migration/readiness fail.
+Recover the exact retained Chatwoot 1D Report materialization from the current D1-complete / Lark-incomplete state without resending Queue work or deploying a Worker.
 
-## Root cause
+## Exact state interpretation
 
-PR #525 fixed the base migration module, but the real Finalizer entrypoint imports `report-metric-value-field-migration-recovery-v4.js`, which delegates through recovery v3 and v2 before the base migration.
+The post-PR #526 Finalizer passed on `main@7db5470ac9db48e6e46b8629d34e7d1f04e60804`. The next Chatwoot continuation then stopped before any active Worker deployment because its old admission contract expected `materialization_count=0`, while the exact report now exists once in D1 and remains absent from Lark.
 
-Historical guards remained in all three recovery layers:
+`new_dlq_count=1` is the retained exact DLQ expected by the original continuation contract; it is not a second additional DLQ.
+
+The failed continuation evidence is immutable:
 
 ```text
-recovery-v2  MAX_RECORDS=500
-recovery-v3  MAX_RECORDS=500
-recovery-v4  MAX_RECORDS=500
+outputs/chatwoot-post-526-7db5470a/chatwoot-1d-exact-continuation
 ```
 
-Dashboard Compatibility Freeze independently retained a 2,000-row total-table ceiling. The second exact-main Finalizer therefore stopped at 642 rows from recovery v4 despite zero pending migration.
+Do not rerun or delete it.
 
 ## Implementation result
 
-Draft PR #526 changes the existing chain in place:
-
-- removes total-row admission from recovery v2;
-- removes total-row admission from recovery v3;
-- removes total-row admission from recovery v4;
-- removes the 2,000-row total-table ceiling from Dashboard Compatibility Freeze;
-- keeps the base growth-safe migration from PR #525;
-- reuses `LarkBitableClient.listRecords()` pagination;
-- reuses `LarkBitableClient.batchUpdateRecords()` request chunking and partial-write progress handling;
-- adds no migration engine, batching engine, writer or wrapper;
-- retains exact Field identity, Number/Select parity, canonical/Legacy value checks, source fingerprints and record-count drift checks;
-- preserves legacy values and deletes nothing.
-
-Branch Verification #2270 / run `31143871367` passed on exact code Head `da642ba24add3246b7a3efd961e78ffdc2d9593f`:
+This workstream adds a narrow exact recovery operator that reuses the existing shared components:
 
 ```text
-Install locked dependencies                 PASS
-Syntax architecture and hygiene             PASS
-Focused Report source readiness tests       PASS
-Focused Meta history finalizer tests         PASS
-Focused Woo completed-state race tests       PASS
-Focused Chatwoot final UAT tests              PASS
-Focused staged TikTok tests                  PASS
-Unit and Workers runtime tests               PASS
-Report reliability regression               PASS
-Dependency audit                             PASS
-Wrangler dry run                             PASS
-Diff whitespace check                        PASS
+existing exact report_materializations row
+→ D1ReportMaterializationReader
+→ writeDashboardMaterializationToLark
+→ LarkRecordRepository
+→ TableSyncEngine
+→ D1/Lark integrity verification
+→ exact retained DLQ + Critical Alert closure
 ```
 
-## Regression
+The recovery operator contains no Queue send or Worker deployment path.
 
-- Compatibility Freeze accepts 2,501 exact compatible rows with full parity.
-- Exact recovery-v4 path used by the Finalizer accepts 2,501 exact compatible rows with pending migration 0 and Remote mutation 0.
-- Static source audit rejects reintroduction of:
-  - `MAX_RECORDS`;
-  - `MAX_REPORT_METRIC_RECORDS`;
-  - `REPORT_METRIC_FIELD_MIGRATION_RECORD_BOUND_EXCEEDED`;
-  - `REPORT_METRIC_COMPATIBILITY_FREEZE_RECORD_BOUND_EXCEEDED`.
-- Existing v2/v3/v4 migration, conflict, archive, parity and value-preservation regressions remain required.
+## Admission boundary
 
-## Permanent architecture rule
+Before mutation it requires:
 
-Total customer/business table size is not a migration, Finalizer or Dashboard compatibility admission contract.
+- clean current `main`;
+- exact current-head Finalizer evidence;
+- pending D1 migrations = 0;
+- source/runtime preflight unchanged and complete;
+- exact retained Sync Run, DLQ replay payload and Critical Alert binding;
+- exact report ID in D1 once;
+- retained sync status `failed` and successful sync count 0;
+- active Report lock count 0;
+- exact retained DLQ count 1;
+- non-empty payload checksum;
+- Lark Snapshot/Metric/Top rows all 0;
+- duplicate metric keys 0.
 
-Safety is attached to the operation:
+Any drift fails closed before mutation.
 
-- full reads: shared pagination;
-- writes: shared bounded request chunks;
-- partial writes: shared progress handling;
-- migration identity: exact Field/source fingerprints;
-- source drift: fail closed;
-- Business/Legacy delete: forbidden.
-
-Do not replace the removed ceilings with a larger number.
-
-## Immutable failed evidence
-
-Never rerun or delete:
+## Required recovered state
 
 ```text
-outputs/chatwoot-post-523-33bbb142
-outputs/chatwoot-post-525-91792d0d
+D1 materialization       1
+Retained Sync status     failed (historical evidence preserved)
+Lark Snapshot            1
+Lark Metrics             139
+Lark Top Content         0
+Lark Top Ads             0
+Duplicate metric keys    0
+D1/Lark integrity        PASS
+Retained DLQ             closed/completed
+Retained Critical Alert  resolved
+Open Report DLQ          0
+Open Report Critical     0
+Queue sends              0
+Worker deployments       0
+Provider requests        0
+Notification Admission   false
+Schedule                 disabled
+Production               BLOCKED
 ```
 
 ## Prohibited actions
 
-- run another Finalizer before PR #526 is merged;
-- run Chatwoot 1D continuation before a new exact-main Finalizer succeeds;
-- close/redrive the retained Chatwoot DLQ/Alert;
-- add another migration/batching framework;
-- delete Report Metric rows to reduce table size;
-- weaken identity, parity, fingerprint or source-drift checks;
-- mutate Remote D1/Lark, send Queue, deploy Worker or enable Schedule/Production during Repository implementation.
+- rerun the failed continuation root;
+- resend the Chatwoot 1D Queue job;
+- deploy an active Report Worker for this recovery;
+- create a replacement Report ID;
+- rewrite the retained failed Sync Run to success;
+- close DLQ/Alert before D1/Lark integrity passes;
+- delete Business facts or legacy evidence;
+- enable Notification Admission, Schedule or Production.
 
 ## Required verification
 
 ```bash
 npm ci
 npm run check
-node --test tests/scripts/report-metric-total-row-ceiling-regression.test.js
-node --test tests/scripts/report-metric-dashboard-compatibility-record-bound.test.js
-node --test tests/scripts/report-metric-dashboard-compatibility-freeze.test.js
-node --test tests/scripts/report-metric-value-field-migration-recovery.test.js
-node --test tests/scripts/report-metric-value-field-migration-recovery-v3.test.js
+node --test tests/scripts/report-runtime-chatwoot-1d-d1-lark-recovery.test.js
+node --test tests/scripts/report-runtime-chatwoot-1d-d1-lark-recovery-source.test.js
+node --test tests/scripts/report-runtime-chatwoot-1d-incident-continuation.test.js
 npm test
 npm run test:report-reliability
 npm audit
@@ -145,11 +132,10 @@ git diff --check
 ## Post-merge sequence
 
 1. synchronize clean exact merged `main`;
-2. create a brand-new Finalizer evidence root;
-3. run current-head Report Runtime Finalizer;
-4. require zero migration blockers and zero schema/settings drift;
-5. run the exact Chatwoot 1D incident continuation once under a brand-new immutable root;
-6. require D1 `1`, Lark Snapshot `1`, Metrics `139`, duplicate `0`, exact integrity and exact DLQ/Alert closure;
-7. run fresh SELECT-only Chatwoot readiness;
-8. continue only remaining 3D/7D/30D under a separate reviewed root;
-9. keep Notification Admission/Schedule disabled and Production blocked.
+2. run a current-head Finalizer under a brand-new evidence root because merge changes the main SHA;
+3. run the D1-complete / Lark-incomplete recovery once under a brand-new immutable root;
+4. require D1 `1`, Lark `1/139`, duplicate `0`, integrity PASS, Queue `0`, Worker deployment `0`, exact DLQ/Alert closure;
+5. run fresh SELECT-only Chatwoot readiness;
+6. require 1D reuse/idempotent verify and derive current state of 3D/7D/30D from readback;
+7. generate a new Chatwoot channel handoff; never reuse the stale handoff from before this incident;
+8. close only remaining windows under a new reviewed root.
