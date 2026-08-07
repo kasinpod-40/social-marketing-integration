@@ -124,13 +124,15 @@ async function execute() {
   const aiRunKey = requireText(fields.ai_run_key, 'ai_run_key');
 
   stage = 'compact-business-evidence';
+  const originalMetricSummaryJson = requireText(fields.metric_summary_json, 'metric_summary_json');
+  const originalChannelStatusVectorJson = optionalText(fields.channel_status_vector_json) ?? '';
   const compact = compactLarkNativeAiWeeklyEvidence({
-    metricSummaryJson: requireText(fields.metric_summary_json, 'metric_summary_json'),
-    channelStatusVectorJson: optionalText(fields.channel_status_vector_json),
+    metricSummaryJson: originalMetricSummaryJson,
+    channelStatusVectorJson: originalChannelStatusVectorJson,
   });
   const before = Object.freeze({
-    metricSummaryChars: String(fields.metric_summary_json).length,
-    channelStatusVectorChars: String(fields.channel_status_vector_json ?? '').length,
+    metricSummaryChars: originalMetricSummaryJson.length,
+    channelStatusVectorChars: originalChannelStatusVectorJson.length,
   });
   if (compact.metricSummaryChars >= before.metricSummaryChars) {
     throw failure('Compaction did not reduce the Executive metric summary', 'LARK_AI_INPUT_LENGTH_REPAIR_NOT_SMALLER', {
