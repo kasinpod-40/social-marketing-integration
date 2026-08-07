@@ -6,7 +6,7 @@ import {
 } from '../../../config/src/dashboard-metric-readiness.js';
 import {
   LARK_DASHBOARD_DISPLAY_V2_FIELD,
-  resolveTikTokOrganicDashboardDisplayV2,
+  resolveOrganicDashboardDisplayV2,
 } from '../../../config/src/lark-dashboard-display-v2-compatibility.js';
 import { escapeReportIdentityPart } from '../use-cases/build-report-snapshot.js';
 
@@ -39,7 +39,7 @@ export function buildReportMetricValueRows(input = {}) {
         currentValue,
         dataStatus: input.dataStatus,
       });
-      const displayV2Compatibility = resolveTikTokOrganicDashboardDisplayV2({
+      const displayV2Compatibility = resolveOrganicDashboardDisplayV2({
         metricKey,
         customerProfile,
         accountId,
