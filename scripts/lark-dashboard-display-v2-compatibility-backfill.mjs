@@ -12,9 +12,9 @@ import { LARK_DASHBOARD_COMPATIBILITY_FIELD_IDENTITIES } from './lib/lark-dashbo
 import {
   EXPECTED_BASELINE_INCOMPLETE_NULL_COUNT,
   EXPECTED_DASHBOARD_RECORD_COUNT,
+  EXPECTED_INITIAL_CONVERGED_DISPLAY_V2_COUNT,
   EXPECTED_MISSING_DISPLAY_V2_UPDATE_COUNT,
   EXPECTED_PENDING_DISPLAY_V2_UPDATE_COUNT,
-  EXPECTED_REPORT_RECORD_COUNT,
   EXPECTED_REVIEWED_ALIAS_CORRECTION_COUNT,
   LARK_DASHBOARD_DISPLAY_V2_BACKFILL_VERSION,
   assertLarkDashboardDisplayV2BackfillConfirmation,
@@ -46,7 +46,7 @@ try {
   const repositoryRoot = await resolveRepositoryRoot();
   const evidenceRoot = resolve(
     process.env.MKT_LARK_DASHBOARD_DISPLAY_V2_EVIDENCE_DIR
-      ?? join(repositoryRoot, 'outputs', 'lark-dashboard-display-v2-compatibility-v1'),
+      ?? join(repositoryRoot, 'outputs', 'lark-dashboard-display-v2-compatibility-v2'),
   );
   attemptRoot = join(
     evidenceRoot,
@@ -82,13 +82,13 @@ try {
     tableId,
     includeRecordMetadata: false,
   });
+  const initialRecordCount = records.length;
   const plan = buildPlan(records, fieldState);
-  const nullCount = countNullRows(records, fieldState.currentValue.fieldName);
   const immutableFingerprint = fingerprintRecordsExcludingField(
     records,
     fieldState.displaySelectV2.fieldName,
   );
-  assertReviewedBoundary({ execute, records, plan, nullCount });
+  assertReviewedBoundary({ execute, plan });
 
   const preview = Object.freeze({
     ok: true,
@@ -99,15 +99,16 @@ try {
       : 'LARK_DASHBOARD_DISPLAY_V2_COMPATIBILITY_PREVIEW_READY',
     tableName: REPORT_TABLE_NAME,
     tableId,
-    recordCount: records.length,
+    recordCount: initialRecordCount,
     dashboardRecordCount: plan.targetRecordCount,
-    baselineIncompleteNullRecordCount: nullCount,
+    baselineIncompleteNullRecordCount: plan.targetCurrentValueNullCount,
     populatedDisplayV2Count: plan.populatedDisplayV2Count,
     convergedDisplayV2Count: plan.convergedDisplayV2Count,
     missingValueUpdateCount: plan.missingValueUpdateCount,
     reviewedAliasCorrectionCount: plan.reviewedAliasCorrectionCount,
     pendingRecordUpdateCount: plan.pendingUpdateCount,
     displayV2ConflictCount: plan.conflictCount,
+    platformCounts: plan.platformCounts,
     maximumReviewedRecordUpdateCount: EXPECTED_PENDING_DISPLAY_V2_UPDATE_COUNT,
     updatedFieldId: fieldState.displaySelectV2.fieldId,
     updatedFieldName: fieldState.displaySelectV2.fieldName,
@@ -125,6 +126,7 @@ try {
     ...preview,
     updates: plan.updates.map((update) => ({
       recordId: update.recordId,
+      platform: update.platform,
       metricKey: update.metricKey,
       windowDays: update.windowDays,
       reason: update.reason,
@@ -140,9 +142,9 @@ try {
   await writePrivateJson(join(attemptRoot, 'display-v2-backfill-before.json'), {
     contractVersion: LARK_DASHBOARD_DISPLAY_V2_BACKFILL_VERSION,
     tableId,
-    recordCount: records.length,
+    recordCount: initialRecordCount,
     dashboardRecordCount: plan.targetRecordCount,
-    baselineIncompleteNullRecordCount: nullCount,
+    baselineIncompleteNullRecordCount: plan.targetCurrentValueNullCount,
     immutableRecordFingerprint: immutableFingerprint,
     rows: plan.expectedByRecord.map((expected) => {
       const record = recordsById.get(expected.recordId);
@@ -189,7 +191,7 @@ try {
 
   if (confirmedRecordUpdates !== EXPECTED_PENDING_DISPLAY_V2_UPDATE_COUNT) {
     throw operatorError(
-      'Display v2 backfill response count did not match the reviewed 50-row plan',
+      'Display v2 backfill response count did not match the reviewed 204-row plan',
       'LARK_DASHBOARD_DISPLAY_V2_BACKFILL_COUNT_MISMATCH',
       {
         plannedRecordUpdates: EXPECTED_PENDING_DISPLAY_V2_UPDATE_COUNT,
@@ -204,15 +206,14 @@ try {
     includeRecordMetadata: false,
   });
   const finalPlan = buildPlan(recordsAfter, fieldState);
-  const finalNullCount = countNullRows(recordsAfter, fieldState.currentValue.fieldName);
   const finalImmutableFingerprint = fingerprintRecordsExcludingField(
     recordsAfter,
     fieldState.displaySelectV2.fieldName,
   );
   assertConvergedBoundary({
+    initialRecordCount,
     recordsAfter,
     finalPlan,
-    finalNullCount,
     immutableFingerprint,
     finalImmutableFingerprint,
   });
@@ -224,11 +225,12 @@ try {
     tableName: REPORT_TABLE_NAME,
     recordCount: recordsAfter.length,
     dashboardRecordCount: finalPlan.targetRecordCount,
-    baselineIncompleteNullRecordCount: finalNullCount,
+    baselineIncompleteNullRecordCount: finalPlan.targetCurrentValueNullCount,
     confirmedRecordUpdateCount: confirmedRecordUpdates,
     pendingRecordUpdateCount: finalPlan.pendingUpdateCount,
     displayV2ConflictCount: finalPlan.conflictCount,
     convergedDisplayV2Count: finalPlan.convergedDisplayV2Count,
+    platformCounts: finalPlan.platformCounts,
     immutableRecordFingerprint: finalImmutableFingerprint,
     updatedFieldId: fieldState.displaySelectV2.fieldId,
     dashboardPatchCount: 0,
@@ -330,19 +332,16 @@ function buildPlan(records, fields) {
   });
 }
 
-function assertReviewedBoundary({ execute: executing, records, plan, nullCount }) {
-  if (records.length !== EXPECTED_REPORT_RECORD_COUNT
-    || plan.targetRecordCount !== EXPECTED_DASHBOARD_RECORD_COUNT
-    || nullCount !== EXPECTED_BASELINE_INCOMPLETE_NULL_COUNT
+function assertReviewedBoundary({ execute: executing, plan }) {
+  if (plan.targetRecordCount !== EXPECTED_DASHBOARD_RECORD_COUNT
     || plan.targetCurrentValueNullCount !== EXPECTED_BASELINE_INCOMPLETE_NULL_COUNT
     || plan.conflictCount !== 0) {
     throw operatorError(
-      'Live Report Metric state changed from the reviewed 86/68/24 boundary',
+      'Live Organic Dashboard target state changed from the reviewed 272-row boundary',
       'LARK_DASHBOARD_DISPLAY_V2_LIVE_BOUNDARY_DRIFT',
       {
-        recordCount: records.length,
+        recordCount: plan.recordCount,
         dashboardRecordCount: plan.targetRecordCount,
-        baselineIncompleteNullRecordCount: nullCount,
         targetCurrentValueNullCount: plan.targetCurrentValueNullCount,
         displayV2ConflictCount: plan.conflictCount,
         conflicts: plan.conflicts,
@@ -352,8 +351,8 @@ function assertReviewedBoundary({ execute: executing, records, plan, nullCount }
   const initialState = plan.pendingUpdateCount === EXPECTED_PENDING_DISPLAY_V2_UPDATE_COUNT
     && plan.missingValueUpdateCount === EXPECTED_MISSING_DISPLAY_V2_UPDATE_COUNT
     && plan.reviewedAliasCorrectionCount === EXPECTED_REVIEWED_ALIAS_CORRECTION_COUNT
-    && plan.convergedDisplayV2Count === 18
-    && plan.populatedDisplayV2Count === 20;
+    && plan.convergedDisplayV2Count === EXPECTED_INITIAL_CONVERGED_DISPLAY_V2_COUNT
+    && plan.populatedDisplayV2Count === EXPECTED_INITIAL_CONVERGED_DISPLAY_V2_COUNT;
   const convergedState = plan.pendingUpdateCount === 0
     && plan.missingValueUpdateCount === 0
     && plan.reviewedAliasCorrectionCount === 0
@@ -361,7 +360,7 @@ function assertReviewedBoundary({ execute: executing, records, plan, nullCount }
     && plan.populatedDisplayV2Count === EXPECTED_DASHBOARD_RECORD_COUNT;
   if (!initialState && !convergedState) {
     throw operatorError(
-      'Display v2 state is neither the reviewed pre-apply state nor the converged state',
+      'Display v2 state is neither the reviewed multichannel pre-apply state nor the converged state',
       'LARK_DASHBOARD_DISPLAY_V2_STATE_DRIFT',
       {
         pendingRecordUpdateCount: plan.pendingUpdateCount,
@@ -374,7 +373,7 @@ function assertReviewedBoundary({ execute: executing, records, plan, nullCount }
   }
   if (executing && !initialState) {
     throw operatorError(
-      'Live execution requires the exact reviewed 50-row pre-apply state',
+      'Live execution requires the exact reviewed 204-row pre-apply state',
       'LARK_DASHBOARD_DISPLAY_V2_EXECUTION_STATE_INVALID',
       { pendingRecordUpdateCount: plan.pendingUpdateCount },
     );
@@ -383,21 +382,24 @@ function assertReviewedBoundary({ execute: executing, records, plan, nullCount }
 
 function assertConvergedBoundary(input) {
   const fingerprintMatches = input.finalImmutableFingerprint === input.immutableFingerprint;
-  if (input.recordsAfter.length !== EXPECTED_REPORT_RECORD_COUNT
+  const recordCountStable = input.recordsAfter.length === input.initialRecordCount;
+  if (!recordCountStable
     || input.finalPlan.targetRecordCount !== EXPECTED_DASHBOARD_RECORD_COUNT
-    || input.finalNullCount !== EXPECTED_BASELINE_INCOMPLETE_NULL_COUNT
     || input.finalPlan.targetCurrentValueNullCount !== EXPECTED_BASELINE_INCOMPLETE_NULL_COUNT
     || input.finalPlan.conflictCount !== 0
     || input.finalPlan.pendingUpdateCount !== 0
     || input.finalPlan.convergedDisplayV2Count !== EXPECTED_DASHBOARD_RECORD_COUNT
+    || input.finalPlan.populatedDisplayV2Count !== EXPECTED_DASHBOARD_RECORD_COUNT
     || !fingerprintMatches) {
     throw operatorError(
       'Display v2 backfill did not converge without unrelated Record drift',
       'LARK_DASHBOARD_DISPLAY_V2_BACKFILL_NOT_CONVERGED',
       {
-        recordCount: input.recordsAfter.length,
+        initialRecordCount: input.initialRecordCount,
+        finalRecordCount: input.recordsAfter.length,
+        recordCountStable,
         dashboardRecordCount: input.finalPlan.targetRecordCount,
-        baselineIncompleteNullRecordCount: input.finalNullCount,
+        targetCurrentValueNullCount: input.finalPlan.targetCurrentValueNullCount,
         pendingRecordUpdateCount: input.finalPlan.pendingUpdateCount,
         displayV2ConflictCount: input.finalPlan.conflictCount,
         convergedDisplayV2Count: input.finalPlan.convergedDisplayV2Count,
@@ -405,13 +407,6 @@ function assertConvergedBoundary(input) {
       },
     );
   }
-}
-
-function countNullRows(records, fieldName) {
-  return records.filter((record) => {
-    const value = record.fields?.[fieldName];
-    return value === null || value === undefined || value === '';
-  }).length;
 }
 
 function fingerprintRecordsExcludingField(records, excludedFieldName) {
