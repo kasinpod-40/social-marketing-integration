@@ -3,10 +3,13 @@
 ## Status
 
 ```text
-TASK_STATUS                         = IMPLEMENTATION_COMPLETE_CI_PENDING
+TASK_STATUS                         = IMPLEMENTATION_COMPLETE_CI_PASS
 CURRENT_PROGRAM                     = CHATWOOT_1D_POST_PROJECTION_RESUME_V1
 BRANCH                              = hotfix/chatwoot-1d-post-projection-resume-v1
 EXACT_BASE                          = e4bf6353d2e095662d00ae1f1149977200ff6579
+VERIFIED_CODE_HEAD                  = 5021eec0c7404391785ccafad803106e3c6790f0
+BRANCH_VERIFICATION_RUN             = 31150997179
+BRANCH_VERIFICATION_NUMBER          = 2280
 D1_MATERIALIZATION_COUNT            = 1
 LARK_SNAPSHOT_COUNT                 = 1
 LARK_METRIC_COUNT                   = 139
@@ -59,6 +62,35 @@ skipped = 0
 ```
 
 Any partial create, any update, missing row or duplicate stable key blocks incident closure.
+
+## Verification result
+
+Branch Verification #2280 / run `31150997179` passed on exact code Head `5021eec0c7404391785ccafad803106e3c6790f0`:
+
+```text
+Install locked dependencies                 PASS
+Syntax architecture and hygiene             PASS
+Focused Report source readiness tests       PASS
+Focused Meta history finalizer tests         PASS
+Focused Woo completed-state race tests       PASS
+Focused Chatwoot final UAT tests              PASS
+Focused staged TikTok tests                  PASS
+Unit and Workers runtime tests               PASS
+Report reliability regression               PASS
+Dependency audit                             PASS
+Wrangler dry run                             PASS
+Diff whitespace check                        PASS
+```
+
+Regression coverage proves:
+
+- exact Lark-empty state remains `needs_projection`;
+- exact Lark 1/139 with zero stable duplicates is `already_projected`;
+- partial Lark states still fail closed;
+- first projection accepts only `created=140 / updated=0 / skipped=0`;
+- post-projection resume accepts only `created=0 / updated=0 / skipped=140`;
+- any update or partial create fails before incident closure;
+- no Queue, Worker, Provider or Production path was added.
 
 ## Required result
 
