@@ -4,10 +4,12 @@ import assert from 'node:assert/strict';
 import { normalizeDashboardMetricScope } from '../../packages/config/src/dashboard-metric-readiness.js';
 import { CHATWOOT_1D_EXACT_INCIDENT } from '../../scripts/lib/report-runtime-chatwoot-1d-incident-continuation.js';
 import {
+  CHATWOOT_1D_D1_LARK_RECOVERY_PRESTATE,
   assertChatwoot1dD1LarkRecoveredState,
   assertChatwoot1dD1LarkRecoveryPrestate,
   assertChatwoot1dD1LarkRecoveryWriteResult,
   assertChatwoot1dD1MaterializationUnchanged,
+  classifyChatwoot1dD1LarkRecoveryPrestate,
   normalizeChatwoot1dRetainedMaterializationForProjection,
 } from '../../scripts/lib/report-runtime-chatwoot-1d-d1-lark-recovery.js';
 
@@ -82,10 +84,28 @@ function retainedMaterialization(overrides = {}) {
   };
 }
 
-test('admits only exact D1-complete / Lark-empty retained incident state', () => {
+function writerResult(snapshot, metrics) {
+  return {
+    rows: { snapshots: 1, metrics: 139, topContent: 0, topAds: 0 },
+    results: {
+      reportSnapshot: snapshot,
+      reportMetricValues: metrics,
+    },
+  };
+}
+
+test('classifies exact empty and already-projected Chatwoot recovery states', () => {
+  assert.equal(
+    classifyChatwoot1dD1LarkRecoveryPrestate({ d1: d1(), lark: emptyLark() }, incident),
+    CHATWOOT_1D_D1_LARK_RECOVERY_PRESTATE.NEEDS_PROJECTION,
+  );
+  assert.equal(
+    classifyChatwoot1dD1LarkRecoveryPrestate({ d1: d1(), lark: completeLark() }, incident),
+    CHATWOOT_1D_D1_LARK_RECOVERY_PRESTATE.ALREADY_PROJECTED,
+  );
   assert.equal(assertChatwoot1dD1LarkRecoveryPrestate({
     d1: d1(),
-    lark: emptyLark(),
+    lark: completeLark(),
   }, incident), true);
 
   for (const invalid of [
@@ -96,9 +116,11 @@ test('admits only exact D1-complete / Lark-empty retained incident state', () =>
     { d1: d1({ new_dlq_count: 2 }), lark: emptyLark() },
     { d1: d1(), lark: emptyLark({ snapshots: 1 }) },
     { d1: d1(), lark: emptyLark({ metrics: 1 }) },
+    { d1: d1(), lark: completeLark({ metrics: 138 }) },
+    { d1: d1(), lark: completeLark({ duplicateMetricKeys: 1 }) },
   ]) {
     assert.throws(
-      () => assertChatwoot1dD1LarkRecoveryPrestate(invalid, incident),
+      () => classifyChatwoot1dD1LarkRecoveryPrestate(invalid, incident),
       (error) => error?.code === 'REPORT_RUNTIME_CHATWOOT_1D_D1_LARK_RECOVERY_PRESTATE_MISMATCH',
     );
   }
@@ -177,17 +199,39 @@ test('requires retained D1 materialization to remain byte-identical across Lark 
   );
 });
 
-test('requires shared writer to emit exactly one snapshot and 139 metrics', () => {
-  assert.equal(assertChatwoot1dD1LarkRecoveryWriteResult({
-    rows: { snapshots: 1, metrics: 139, topContent: 0, topAds: 0 },
-  }, incident), true);
+test('accepts only full first projection or zero-mutation 140-row resume', () => {
+  assert.equal(assertChatwoot1dD1LarkRecoveryWriteResult(writerResult(
+    { created: 1, updated: 0, skipped: 0 },
+    { created: 139, updated: 0, skipped: 0 },
+  ), incident), true);
 
-  assert.throws(
-    () => assertChatwoot1dD1LarkRecoveryWriteResult({
+  assert.equal(assertChatwoot1dD1LarkRecoveryWriteResult(writerResult(
+    { created: 0, updated: 0, skipped: 1 },
+    { created: 0, updated: 0, skipped: 139 },
+  ), incident), true);
+
+  for (const invalid of [
+    writerResult(
+      { created: 0, updated: 1, skipped: 0 },
+      { created: 0, updated: 0, skipped: 139 },
+    ),
+    writerResult(
+      { created: 0, updated: 0, skipped: 1 },
+      { created: 1, updated: 0, skipped: 138 },
+    ),
+    {
+      ...writerResult(
+        { created: 0, updated: 0, skipped: 1 },
+        { created: 0, updated: 0, skipped: 138 },
+      ),
       rows: { snapshots: 1, metrics: 138, topContent: 0, topAds: 0 },
-    }, incident),
-    (error) => error?.code === 'REPORT_RUNTIME_CHATWOOT_1D_D1_LARK_RECOVERY_WRITE_RESULT_INVALID',
-  );
+    },
+  ]) {
+    assert.throws(
+      () => assertChatwoot1dD1LarkRecoveryWriteResult(invalid, incident),
+      (error) => error?.code === 'REPORT_RUNTIME_CHATWOOT_1D_D1_LARK_RECOVERY_WRITE_RESULT_INVALID',
+    );
+  }
 });
 
 test('retains failed sync history while requiring exact recovered D1/Lark integrity shape', () => {
