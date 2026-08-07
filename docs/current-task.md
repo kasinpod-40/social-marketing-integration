@@ -1,25 +1,27 @@
-# Current Task — Reviewed Handoff Mapped Authority Compatibility v1
+# Current Task — Chatwoot Daily Partial Report Coverage v1
 
 ## Status
 
 ```text
 TASK_STATUS                         = IMPLEMENTATION_COMPLETE_CODE_CI_PASS
-CURRENT_PROGRAM                     = REVIEWED_HANDOFF_MAPPED_AUTHORITY_COMPATIBILITY_V1
-BRANCH                              = hotfix/reviewed-handoff-mapped-authority-v1
-EXACT_BASE                          = 0acb252be84a739f5b0e1aa15d4999b70d9ae950
-VERIFIED_CODE_HEAD                  = 491bd1f3f315c654f761199490ea37f928490c54
-BRANCH_VERIFICATION_RUN             = 31158078780
-BRANCH_VERIFICATION_NUMBER          = 2282
-CHATWOOT_1D_RECOVERY                = CLOSED
-CHATWOOT_1D_D1_MATERIALIZATION      = 1
-CHATWOOT_1D_LARK_SNAPSHOT           = 1
-CHATWOOT_1D_LARK_METRICS            = 139
-CHATWOOT_OPEN_REPORT_DLQ            = 0
-CHATWOOT_OPEN_REPORT_CRITICAL_ALERT = 0
-FAILED_FINAL_CLOSEOUT_ROOT          = outputs/chatwoot-post-532-0acb252b/chatwoot-1d-3d-7d-30d-final-closeout
-ACTIVE_DEPLOYMENT_ATTEMPTED         = false
-QUEUE_ACTION_COUNT                  = 0
-WORKER_DEPLOYMENT_COUNT             = 0
+CURRENT_PROGRAM                     = CHATWOOT_DAILY_PARTIAL_REPORT_COVERAGE_V1
+BRANCH                              = hotfix/chatwoot-daily-partial-report-coverage-v1
+EXACT_BASE                          = 7a64a84654f0e106c89ca44d2904edf7d354e98c
+VERIFIED_CODE_HEAD                  = d4fe34da5f652feb85cadbd80f4d82a77ec464f1
+BRANCH_VERIFICATION_RUN             = 31163304903
+BRANCH_VERIFICATION_NUMBER          = 2285
+FAILED_CLOSEOUT_ROOT                = outputs/chatwoot-post-533-3720f3a1/chatwoot-1d-3d-7d-30d-final-closeout
+CHATWOOT_1D_REUSE_VERIFIED          = true
+CHATWOOT_3D_FIRST_QUEUE_SENT        = true
+CHATWOOT_3D_REPLAY_SENT             = false
+CHATWOOT_7D_STARTED                 = false
+CHATWOOT_30D_STARTED                = false
+CHATWOOT_3D_D1_MATERIALIZATION      = 1
+CHATWOOT_3D_DATA_STATUS             = source_unavailable
+CHATWOOT_3D_SYNC_STATUS             = success
+CHATWOOT_3D_ACTIVE_LOCK             = 0
+CHATWOOT_3D_NEW_DLQ                 = 0
+BASELINE_RESTORE_VERIFIED           = true
 PROVIDER_REQUEST_COUNT              = 0
 NOTIFICATION_ADMISSION              = false
 SCHEDULE_ENABLED                    = false
@@ -28,59 +30,103 @@ PRODUCTION                          = BLOCKED
 
 ## Incident
 
-The current-head retained multichannel handoff builder completed successfully and wrote the canonical per-channel authority map:
+After PR #533 fixed mapped handoff authority consumption, the reviewed Chatwoot multiwindow closeout reached real execution.
+
+The retained attempt proved:
 
 ```text
-closeoutAuthorities.<platformScope>
+1D                           reuse verified / Queue 0
+3D first Queue               sent exactly once
+3D Report ID                 retained / one D1 materialization
+3D Sync                      success
+3D active lock               0
+3D new DLQ                   0
+3D data_status               source_unavailable
+3D replay                    not sent
+7D / 30D                     not started
+Worker baseline restore      verified
 ```
 
-The Chatwoot reviewed multiwindow closeout then stopped before any Remote deployment or Queue action at:
+The closeout correctly stopped with:
 
 ```text
-stage = repository-finalizer-and-reviewed-handoff
-code  = REPORT_RUNTIME_CLOSEOUT_REVIEWED_HANDOFF_INVALID
+REPORT_RUNTIME_CLOSEOUT_COMPLETION_INCOMPLETE
 ```
 
-The runtime validator still read only the legacy single-channel field:
+Do not rerun, delete, reset or clean the failed evidence root. Do not blindly resend the retained 3D first job.
+
+## Confirmed root cause
+
+The Chatwoot ingestion writer and Report reader disagreed about daily fact state.
+
+`prepareChatwootAnalyticsSync()` intentionally persists Conversation/Agent/Inbox/Account Daily rows as:
 
 ```text
-closeoutAuthority
+data_status = partial
 ```
 
-This created a builder/consumer contract mismatch: the builder's own handoff could not be consumed by the current reviewed runtime loader.
+After all required sinks succeed, `finalizeChatwootCoverageRuns()` finalizes Coverage runs to `complete`; it does not rewrite the daily fact rows.
 
-The failed closeout evidence root is immutable. Do not rerun, delete, reset or clean it.
+`D1ChatwootReportSource` previously accepted only:
+
+```text
+complete
+completed
+no_data_confirmed
+```
+
+for daily rows. Therefore finalized required Coverage plus valid writer-native `partial` facts still produced `coverage.complete=false`. `calculateChatwootPeriodMetrics()` then emitted `source_unavailable` with null Business metrics.
+
+The shared closeout completion gate is correct and must not be weakened to accept `source_unavailable`.
 
 ## Correction
 
-Keep one shared reviewed handoff contract and one shared runtime validator.
+Reuse the existing Chatwoot D1 source, Coverage contract, readiness classifier and reviewed multiwindow closeout.
 
-`assertReviewedChannelCloseoutHandoff()` resolves authority in this order:
+### Chatwoot D1 source
+
+Admit writer-native `partial` daily fact/snapshot rows while retaining every existing finalized-Coverage requirement:
+
+- exact required datasets `chatwoot.conversation_daily` and `chatwoot.account_daily`;
+- both required Coverage rows selected;
+- both watermarks present;
+- accepted finalized Coverage status;
+- `failed_rows=0`;
+- existing bounded read and timezone guards.
+
+`partial` row state alone must never make a period complete.
+
+### Readiness
+
+When current source readiness is valid, an existing D1 materialization with:
 
 ```text
-1. closeoutAuthorities[descriptor.platform]
-2. closeoutAuthority legacy fallback
+data_status = source_unavailable
 ```
 
-All existing authority validation remains strict:
+must classify as:
 
-- operator must be an allowed reviewed operator;
-- contractVersion must equal `report_runtime_closeout_uat_v1`;
-- platformScope must equal the selected descriptor platform;
-- capability must equal the selected descriptor capability;
-- exact repository Head, readiness, source and window checks remain unchanged.
+```text
+refresh_or_repair_materialization
+```
 
-No new handoff format, wrapper, execution engine or hand-written JSON workaround was added.
+not `reuse_or_idempotent_verify`, even when the retained D1/Lark projection is internally stable.
 
-## Regression result
+No replacement Report ID, new recovery engine, new Coverage writer, new Queue framework or global status alias is allowed.
 
-The regression builds the retained multichannel handoff using `buildRetainedMultichannelReportHandoff()` and validates the returned handoff object directly, without injecting `closeoutAuthority`, for every non-planned reviewed channel.
+## Regression requirements
 
-It also proves that the legacy single-channel `closeoutAuthority` fallback remains accepted.
+- writer-native `partial` Conversation/Account Daily rows plus both finalized Coverage datasets => source `coverage.complete=true`;
+- missing required Coverage dataset => incomplete;
+- any required Coverage `failed_rows>0` => incomplete;
+- existing `source_unavailable` materialization + stable D1/Lark parity => repair;
+- existing `complete` materialization + same stable D1/Lark parity => reuse;
+- global closeout completion continues rejecting `source_unavailable`;
+- existing Chatwoot, WooCommerce, Meta, TikTok and shared Report regressions remain green.
 
 ## Verification result
 
-Branch Verification #2282 / run `31158078780` passed on exact code Head `491bd1f3f315c654f761199490ea37f928490c54`:
+Branch Verification #2285 / run `31163304903` passed on exact code Head `d4fe34da5f652feb85cadbd80f4d82a77ec464f1`:
 
 ```text
 Install locked dependencies                 PASS
@@ -97,16 +143,19 @@ Wrangler dry run                             PASS
 Diff whitespace check                        PASS
 ```
 
-No Remote runtime action occurred during implementation or CI.
+Repository implementation and CI performed no Remote runtime action.
 
 ## Required verification
 
 ```bash
 npm ci
 npm run check
-node --test tests/scripts/reviewed-handoff-mapped-authority.test.js
-node --test tests/scripts/retained-multichannel-report-handoff.test.js
-node --test tests/scripts/report-runtime-closeout-reviewed-binding.test.js
+node --test tests/connectors/d1-chatwoot-report-partial-daily-coverage.test.js
+node --test tests/connectors/d1-chatwoot-report-source.test.js
+node --test tests/scripts/report-channel-remote-readiness-materialization-status.test.js
+node --test tests/scripts/report-channel-remote-readiness.test.js
+node --test tests/application/chatwoot-report-materialization.test.js
+node --test tests/application/chatwoot-report-materialization-source.test.js
 npm test
 npm run test:report-reliability
 npm audit
@@ -117,12 +166,12 @@ git diff --check
 ## Post-merge sequence
 
 1. synchronize clean exact merged `main`;
-2. run current-head Finalizer under a new evidence root;
+2. run current-head Finalizer under a brand-new evidence root;
 3. run fresh SELECT-only readiness for all reviewed non-planned channels;
-4. build a brand-new retained multichannel handoff from those exact-head readiness files;
-5. run Chatwoot reviewed multiwindow closeout under a brand-new immutable root;
-6. require 1D reuse with Queue 0;
-7. require fresh 3D/7D/30D materialization + replay with stable D1/Lark integrity;
-8. require Worker baseline restore;
-9. run fresh Chatwoot readiness and require all 1/3/7/30 windows to become `reuse_or_idempotent_verify`;
+4. require Chatwoot readiness to derive actions from current retained D1/Lark state, expected `1D repair / 3D repair / 7D create / 30D create`;
+5. build a brand-new retained multichannel handoff from those exact-head readiness files;
+6. run the existing reviewed Chatwoot multiwindow closeout under a brand-new immutable root;
+7. preserve the exact existing Report IDs; do not manually delete or replace 1D/3D materializations;
+8. require successful repair/fresh materialization, replay, stable D1/Lark integrity and verified Worker baseline restore;
+9. run fresh Chatwoot readiness and require all `1D/3D/7D/30D` to become `reuse_or_idempotent_verify`;
 10. keep Notification Admission and Schedule disabled and Production blocked.

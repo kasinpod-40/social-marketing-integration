@@ -67,6 +67,11 @@ export function buildReportChannelWindowAssessment(input = {}) {
   const larkRows = larkSnapshotCount + larkMetricCount
     + larkTopContentCount + larkTopAdsCount;
   const integrityOk = input.integrityOk === true;
+  const materializationDataStatus = String(
+    d1.data_status ?? input.materializationDataStatus ?? '',
+  ).trim();
+  const sourceUnavailableMaterialization = d1MaterializationCount === 1
+    && materializationDataStatus === 'source_unavailable';
 
   let action = null;
   let blocker = null;
@@ -85,6 +90,7 @@ export function buildReportChannelWindowAssessment(input = {}) {
   } else if (d1MaterializationCount === 0 && larkRows === 0) {
     action = 'create_materialization';
   } else if (d1MaterializationCount === 1
+    && !sourceUnavailableMaterialization
     && larkSnapshotCount === 1
     && larkMetricCount > 0
     && integrityOk) {
