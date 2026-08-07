@@ -14,9 +14,10 @@ const PREFERRED_PRIMITIVE_KEYS = Object.freeze([
 ]);
 
 const COMPACTION_TIERS = Object.freeze([
-  Object.freeze({ metrics: 4, ranked: 1, collections: 2, collectionItems: 1, fields: 7, text: 120 }),
-  Object.freeze({ metrics: 2, ranked: 1, collections: 1, collectionItems: 1, fields: 6, text: 100 }),
-  Object.freeze({ metrics: 1, ranked: 1, collections: 0, collectionItems: 0, fields: 5, text: 80 }),
+  Object.freeze({ metrics: 4, ranked: 1, collections: 2, collectionItems: 1, fields: 7, text: 120, semantic: false }),
+  Object.freeze({ metrics: 2, ranked: 1, collections: 1, collectionItems: 1, fields: 6, text: 100, semantic: false }),
+  Object.freeze({ metrics: 1, ranked: 1, collections: 0, collectionItems: 0, fields: 5, text: 80, semantic: false }),
+  Object.freeze({ metrics: 1, ranked: 1, collections: 1, collectionItems: 1, fields: 0, text: 60, semantic: true }),
 ]);
 
 export function compactLarkNativeAiWeeklyEvidence(input = {}) {
@@ -74,17 +75,19 @@ export function compactLarkNativeAiWeeklyEvidence(input = {}) {
 }
 
 function buildCompactSummary(summary, tier) {
-  return {
+  const output = {
     evidenceShape: 'executive_business_first_v2',
     promptShape: 'lark_ai_compact_v1',
     overallCoverageState: textOrNull(summary.overallCoverageState),
-    counts: compactCounts(summary.counts),
     channelBusinessEvidence: summary.channelBusinessEvidence.map((channel) => compactChannel(channel, tier)),
   };
+  if (!tier.semantic) output.counts = compactCounts(summary.counts);
+  return output;
 }
 
 function compactChannel(channel, tier) {
   const source = objectOrEmpty(channel);
+  if (tier.semantic) return compactSemanticChannel(source, tier);
   const output = {
     channelKey: textOrNull(source.channelKey),
     displayName: textOrNull(source.displayName),
@@ -104,6 +107,83 @@ function compactChannel(channel, tier) {
   if (topContent.length > 0) output.topContent = topContent;
   if (topAds.length > 0) output.topAds = topAds;
   if (Object.keys(collections).length > 0) output.collections = collections;
+  return output;
+}
+
+function compactSemanticChannel(source, tier) {
+  const availableMetrics = arrayOrEmpty(source.availableMetrics)
+    .slice(0, tier.metrics)
+    .map((item) => compactMetric(item, tier.text));
+  const topContent = arrayOrEmpty(source.topContent)
+    .slice(0, tier.ranked)
+    .map((item) => compactTopContent(item, tier.text));
+  const topAds = arrayOrEmpty(source.topAds)
+    .slice(0, tier.ranked)
+    .map((item) => compactTopAd(item, tier.text));
+  const collections = compactSemanticCollections(source.collections, tier);
+  const hasBusinessEvidence = availableMetrics.length > 0
+    || topContent.length > 0
+    || topAds.length > 0
+    || Object.keys(collections).length > 0;
+  const output = {
+    channelKey: textOrNull(source.channelKey),
+    readinessStatus: textOrNull(source.readinessStatus),
+  };
+  if (hasBusinessEvidence && textOrNull(source.displayName)) output.displayName = textOrNull(source.displayName);
+  if (availableMetrics.length > 0) output.availableMetrics = availableMetrics;
+  if (topContent.length > 0) output.topContent = topContent;
+  if (topAds.length > 0) output.topAds = topAds;
+  if (Object.keys(collections).length > 0) output.collections = collections;
+  return output;
+}
+
+function compactMetric(value, maxText) {
+  const source = objectOrEmpty(value);
+  return omitNulls({
+    metric_key: firstText(source.metric_key, source.metricKey, source.display_name, source.displayName),
+    current_value: firstDefined(source.current_value, source.currentValue, source.value),
+    previous_value: firstDefined(source.previous_value, source.previousValue),
+    change_percent: firstDefined(source.change_percent, source.changePercent),
+    unit: compactPrimitive(firstText(source.unit, source.currency), maxText),
+  });
+}
+
+function compactTopContent(value, maxText) {
+  const source = objectOrEmpty(value);
+  return omitNulls({
+    title: compactPrimitive(firstText(source.title, source.name), maxText),
+    views: firstDefined(source.views, source.view_count, source.viewCount),
+    likes: firstDefined(source.likes, source.like_count, source.likeCount),
+    engagement: firstDefined(source.engagement, source.engagement_rate, source.engagementRate),
+  });
+}
+
+function compactTopAd(value, maxText) {
+  const source = objectOrEmpty(value);
+  return omitNulls({
+    ad_name: compactPrimitive(firstText(source.ad_name, source.adName, source.campaign_name, source.campaignName, source.title, source.name), maxText),
+    spend_micros: firstDefined(source.spend_micros, source.spendMicros),
+    impressions: firstDefined(source.impressions),
+    clicks: firstDefined(source.clicks),
+  });
+}
+
+function compactSemanticCollections(value, tier) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || tier.collections === 0) return {};
+  const output = {};
+  for (const key of Object.keys(value).sort().slice(0, tier.collections)) {
+    const item = value[key];
+    const entry = Array.isArray(item) ? item[0] : item;
+    if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
+      const source = objectOrEmpty(entry);
+      output[key] = omitNulls({
+        name: compactPrimitive(firstText(source.name, source.title, source.label, source.key), tier.text),
+        value: firstDefined(source.value, source.count, source.orders, source.current_value, source.currentValue),
+      });
+    } else if (entry !== undefined) {
+      output[key] = compactPrimitive(entry, tier.text);
+    }
+  }
   return output;
 }
 
@@ -159,9 +239,7 @@ function compactStatusVector(value) {
     const source = objectOrEmpty(item);
     return {
       channelKey: textOrNull(source.channelKey),
-      displayName: textOrNull(source.displayName),
       readinessStatus: textOrNull(source.readinessStatus),
-      availableMetricCount: finiteNumberOrNull(source.availableMetricCount),
     };
   });
 }
@@ -173,6 +251,22 @@ function compactPrimitive(value, maxText) {
   return `${normalized.slice(0, Math.max(0, maxText - 1))}…`;
 }
 
+function omitNulls(value) {
+  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== null && item !== undefined && item !== ''));
+}
+function firstText(...values) {
+  for (const value of values) {
+    const text = textOrNull(value);
+    if (text) return text;
+  }
+  return null;
+}
+function firstDefined(...values) {
+  for (const value of values) {
+    if (value !== null && value !== undefined && value !== '') return value;
+  }
+  return null;
+}
 function parseJsonObject(value, label) {
   try {
     const parsed = JSON.parse(String(value));
@@ -182,7 +276,6 @@ function parseJsonObject(value, label) {
     throw evidenceError(`${label} must be a JSON object`, 'LARK_AI_EVIDENCE_JSON_INVALID', { label });
   }
 }
-
 function parseJsonArray(value) {
   if (value === null || value === undefined || String(value).trim() === '') return [];
   try {
@@ -192,7 +285,6 @@ function parseJsonArray(value) {
     return [];
   }
 }
-
 function positiveInteger(value, label) {
   const number = Number(value);
   if (!Number.isInteger(number) || number <= 0) throw new TypeError(`${label} must be a positive integer`);
@@ -208,10 +300,6 @@ function textOrNull(value) {
   if (value === null || value === undefined) return null;
   const text = String(value).trim();
   return text || null;
-}
-function finiteNumberOrNull(value) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : null;
 }
 function stableStringify(value) {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
