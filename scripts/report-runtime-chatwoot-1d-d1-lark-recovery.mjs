@@ -56,6 +56,8 @@ import {
   assertChatwoot1dD1LarkRecoveredState,
   assertChatwoot1dD1LarkRecoveryPrestate,
   assertChatwoot1dD1LarkRecoveryWriteResult,
+  assertChatwoot1dD1MaterializationUnchanged,
+  normalizeChatwoot1dRetainedMaterializationForProjection,
 } from './lib/report-runtime-chatwoot-1d-d1-lark-recovery.js';
 
 const execFileAsync = promisify(execFile);
@@ -254,15 +256,32 @@ async function main() {
     expectedMetricCount: incident.expectedMetricCount,
     retainedDlqFingerprint: sha256(incidentBinding.dlqId),
     retainedAlertFingerprint: sha256(incidentBinding.alertId),
+    retainedScopeCompatibility: 'period_end_snapshot_to_current_total_in_memory_only',
     queueActionCount: 0,
     workerDeploymentCount: 0,
     backup,
   });
   larkWriteAttempted = true;
+
+  const retainedReader = new D1ReportMaterializationReader({
+    db: createExactMaterializationD1Binding(state, incident.reportId),
+  });
+  let projectionCompatibility = null;
+  const projectionReader = Object.freeze({
+    async readById(reportId) {
+      const retained = await retainedReader.readById(reportId);
+      if (!retained) return null;
+      const normalized = normalizeChatwoot1dRetainedMaterializationForProjection(
+        retained,
+        incident,
+      );
+      projectionCompatibility = normalized.compatibility;
+      return normalized.materialization;
+    },
+  });
+
   const writeResult = await writeDashboardMaterializationToLark({
-    reader: new D1ReportMaterializationReader({
-      db: createExactMaterializationD1Binding(state, incident.reportId),
-    }),
+    reader: projectionReader,
     repository: new LarkRecordRepository({ client }),
     syncEngine: new TableSyncEngine(),
     reportId: incident.reportId,
@@ -274,17 +293,27 @@ async function main() {
     },
   });
   assertChatwoot1dD1LarkRecoveryWriteResult(writeResult, incident);
+  if (!projectionCompatibility || Number(projectionCompatibility.legacyScopeRewriteCount ?? 0) <= 0) {
+    throw closeoutFailure(
+      'Chatwoot D1/Lark recovery did not prove retained metric-scope compatibility projection',
+      'REPORT_RUNTIME_CHATWOOT_1D_D1_LARK_RECOVERY_SCOPE_PROJECTION_NOT_PROVED',
+    );
+  }
+
+  currentStage = 'verify-retained-d1-unchanged';
+  const d1AfterProjection = await state.readD1Snapshot(selected, incident.requestedAt);
+  assertChatwoot1dD1MaterializationUnchanged(d1Before, d1AfterProjection);
 
   currentStage = 'verify-d1-lark-integrity';
   const verified = await state.pollLarkIntegrity(
     client,
     tableIds,
     incident.reportId,
-    d1Before,
+    d1AfterProjection,
   );
   const larkAfter = verified.state;
-  const integrity = verified.integrity ?? assertD1LarkIntegrity(d1Before, larkAfter);
-  assertChatwoot1dD1LarkRecoveredState({ d1: d1Before, lark: larkAfter }, incident);
+  const integrity = verified.integrity ?? assertD1LarkIntegrity(d1AfterProjection, larkAfter);
+  assertChatwoot1dD1LarkRecoveredState({ d1: d1AfterProjection, lark: larkAfter }, incident);
   const stableReadback = await state.readLarkReportState(client, tableIds, incident.reportId);
   if (stableJson(larkAfter) !== stableJson(stableReadback)) {
     throw closeoutFailure(
@@ -299,11 +328,13 @@ async function main() {
     repositoryHead: repository.head,
     incidentKey: incident.key,
     reportId: incident.reportId,
-    payloadChecksum: d1Before.payload_checksum,
+    payloadChecksum: d1AfterProjection.payload_checksum,
     dlqFingerprint: sha256(incidentBinding.dlqId),
     alertFingerprint: sha256(incidentBinding.alertId),
     closureReference: incidentBinding.closureReference,
     d1LarkIntegrityVerified: true,
+    d1MaterializationUnchanged: true,
+    legacyScopeRewriteCount: projectionCompatibility.legacyScopeRewriteCount,
     queueActionCount: 0,
     workerDeploymentCount: 0,
   });
@@ -357,15 +388,17 @@ async function main() {
       larkPrestate: summarizeLarkState(larkBefore),
     },
     materialization: {
-      reportId: d1Before.report_id,
-      payloadChecksum: d1Before.payload_checksum,
-      dataStatus: d1Before.data_status,
-      d1MaterializationCount: Number(d1Before.materialization_count),
-      retainedSyncStatus: d1Before.sync_status,
-      successfulSyncRunCount: Number(d1Before.successful_sync_count ?? 0),
+      reportId: d1AfterProjection.report_id,
+      payloadChecksum: d1AfterProjection.payload_checksum,
+      dataStatus: d1AfterProjection.data_status,
+      d1MaterializationCount: Number(d1AfterProjection.materialization_count),
+      retainedSyncStatus: d1AfterProjection.sync_status,
+      successfulSyncRunCount: Number(d1AfterProjection.successful_sync_count ?? 0),
+      persistedMaterializationUnchanged: true,
+      projectionCompatibility,
       larkRows: summarizeLarkState(larkAfter),
       integrity,
-      executionMode: 'direct_shared_lark_projection_from_existing_d1',
+      executionMode: 'direct_shared_lark_projection_from_existing_d1_with_in_memory_scope_compatibility',
       writeResultRows: writeResult.rows ?? null,
     },
     closure: {
@@ -425,6 +458,8 @@ function assertCompletedSummary(value) {
     || Number(value.incident?.closedDlqCount ?? 0) !== 1
     || Number(value.incident?.resolvedAlertCount ?? 0) !== 1
     || Number(value.materialization?.d1MaterializationCount ?? 0) !== 1
+    || value.materialization?.persistedMaterializationUnchanged !== true
+    || Number(value.materialization?.projectionCompatibility?.legacyScopeRewriteCount ?? 0) <= 0
     || Number(value.materialization?.larkRows?.snapshots ?? 0) !== 1
     || Number(value.materialization?.larkRows?.metrics ?? 0) !== incident.expectedMetricCount
     || Number(value.materialization?.larkRows?.duplicateMetricKeys ?? -1) !== 0
