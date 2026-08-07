@@ -23,7 +23,6 @@ export const REPORT_METRIC_VALUE_FIELD_MIGRATION_RECOVERY_VERSION =
   'report_metric_value_field_migration_recovery_v3';
 
 const TABLE_KEY = 'mktReportMetricValues';
-const MAX_RECORDS = 500;
 const VERIFY_DELAYS_MS = Object.freeze([0, 1_000, 2_000, 4_000, 8_000]);
 const DISPLAY_FIELD = Object.freeze({
   fieldName: 'display_name',
@@ -273,12 +272,6 @@ async function inspectDisplayRecovery(input = {}) {
     tableId: resolution.tableId,
     includeRecordMetadata: false,
   });
-  if (records.length > MAX_RECORDS) return blockedInspection(schemaVersion, [
-    safeBlocker('REPORT_METRIC_FIELD_MIGRATION_RECORD_BOUND_EXCEEDED', {
-      recordCount: records.length,
-      maxRecords: MAX_RECORDS,
-    }),
-  ]);
 
   const display = inspectDisplayFields({ fields, records, desired });
   return deepFreeze({
