@@ -9,6 +9,7 @@ import { stableStringify } from './build-report-snapshot.js';
 
 const REPORT_METRIC_NULLABLE_FIELDS = Object.freeze([
   'current_value',
+  'display_value',
   'compare_value',
   'change_value',
   'change_percent',
