@@ -67,6 +67,45 @@ test('resolves the two existing inactive Base UI Automations without creating re
   assert.equal(result.safety.scheduleEnabled, false);
 });
 
+test('accepts official Bitable v1 decimal Automation workflow IDs without unsafe v3 hydration', async () => {
+  let getCount = 0;
+  const result = await inspectLarkNativeAiAutomationIdentity({
+    client: {
+      async listAutomations() {
+        return [
+          workflow('7293459700009998484', AI_TITLE),
+          workflow('7293459700009998485', NOTIFICATION_TITLE),
+        ];
+      },
+      async getWorkflow() {
+        getCount += 1;
+        throw new Error('decimal v1 Automation identity must not be forced through legacy v3 hydration');
+      },
+    },
+  });
+  assert.equal(result.status, 'ready_for_inactive_configuration_review');
+  assert.equal(result.blockerCount, 0);
+  assert.equal(result.resolvedTargetCount, 2);
+  assert.equal(result.inactiveTargetCount, 2);
+  assert.equal(getCount, 0);
+  assert.deepEqual(result.items.map(({ workflowIdFormat, definitionSource, topology }) => ({
+    workflowIdFormat,
+    definitionSource,
+    topology,
+  })), [
+    {
+      workflowIdFormat: 'bitable_v1_decimal',
+      definitionSource: 'bitable_v1_list_automations',
+      topology: null,
+    },
+    {
+      workflowIdFormat: 'bitable_v1_decimal',
+      definitionSource: 'bitable_v1_list_automations',
+      topology: null,
+    },
+  ]);
+});
+
 test('blocks a duplicate target title before any ambiguous definition is trusted', async () => {
   let getCount = 0;
   const result = await inspectLarkNativeAiAutomationIdentity({
