@@ -20,6 +20,37 @@ Latest exported Integration Workspace Base proves two independent gaps:
 - require `dimension_type=summary` for summary KPI blocks to prevent dimension-rank double counting;
 - do not invent `average_order_value`, `new_customer` or `new_leads` metrics because no canonical materialized metric currently exists for those labels.
 
+## Executive Organic headline supersession
+
+The later live UI check exposed one presentation-only contradiction in the original compatibility checklist. The Executive headline `Organic Views` Statistic was bound to strict `period_views`. When that reviewed period metric is legitimately `null` because baseline coverage is incomplete, Lark Statistics renders the empty result as visible `0`. That violates the existing Native Dashboard null/N/A invariant and hides the already-materialized current-total Organic value.
+
+The locked correction is:
+
+```text
+Executive headline label: Organic Total Views
+Matching: All
+metric_key contains :latest_total_views
+metric_scope is current_total
+availability_status is available
+dimension_type is summary
+Value: current_value -> Sum
+```
+
+`Organic Views by Window` does **not** use this fallback. It remains strict period performance:
+
+```text
+Matching: All
+metric_key contains period_views
+metric_scope is period_delta
+dimension_type is summary
+X = window_days
+Y = current_value -> Sum
+```
+
+An incomplete period baseline may therefore leave the by-window chart empty/N/A. Do not fabricate zero, synthesize history, mutate `current_value` or rerun reviewed Report windows to force a chart value.
+
+The detailed authority is `docs/tasks/executive-organic-current-total-binding-v1.md`. This supersedes only the Executive headline Organic-view binding; all other Multichannel Dashboard Compatibility v2 corrections remain unchanged.
+
 ## Safety
 
 Repository implementation performs no Remote action. Post-merge Record-only Apply remains separately authorized and must stop after the 204 Display V2 cells. No Report window rerun, D1 mutation, Queue send, Worker deployment, Provider request, Schedule activation or Production action is part of this workstream.
