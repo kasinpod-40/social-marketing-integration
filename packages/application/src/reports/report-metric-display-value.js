@@ -5,15 +5,18 @@ const LARK_DISPLAY_SCALE = 10 ** LARK_DISPLAY_DECIMALS;
 /**
  * Derive a presentation-safe numeric value without changing canonical Business facts.
  * Monetary Report metrics remain integer micros in current_value; display_value is scaled
- * to account currency units for Lark Dashboard rendering. All other numeric metrics pass through.
+ * to account currency units for Lark Dashboard rendering. All display values are rounded only
+ * at the dedicated four-decimal presentation precision; canonical current_value is untouched.
  */
 export function resolveReportMetricDisplayValue(input = {}) {
   const metricKey = requireText(input.metricKey, 'metricKey');
   const unit = requireText(input.unit, 'unit');
   const currentValue = optionalFinite(input.currentValue);
   if (currentValue === null) return null;
-  if (unit !== 'currency' || !metricKey.endsWith('_micros')) return currentValue;
-  return roundToLarkDisplayPrecision(currentValue / MICROS_PER_UNIT);
+  const displayValue = unit === 'currency' && metricKey.endsWith('_micros')
+    ? currentValue / MICROS_PER_UNIT
+    : currentValue;
+  return roundToLarkDisplayPrecision(displayValue);
 }
 
 export function isReportMetricMicrosCurrency(input = {}) {
