@@ -20,10 +20,20 @@ test('Chatwoot D1/Lark recovery reuses shared writer without Queue or Worker dep
   assert.doesNotMatch(source, /DELETE\s+FROM/iu);
 });
 
-test('Chatwoot D1/Lark recovery closes the exact retained incident only after integrity verification', () => {
+test('Chatwoot recovery applies retained metric-scope compatibility only in memory', () => {
+  assert.match(source, /normalizeChatwoot1dRetainedMaterializationForProjection/u);
+  assert.match(source, /period_end_snapshot_to_current_total_in_memory_only/u);
+  assert.match(source, /projectionCompatibility/u);
+  assert.match(source, /persistedMaterializationUnchanged:\s*true/u);
+  assert.match(source, /assertChatwoot1dD1MaterializationUnchanged/u);
+});
+
+test('Chatwoot D1/Lark recovery proves D1 immutability and integrity before exact incident closure', () => {
+  const d1UnchangedIndex = source.indexOf("currentStage = 'verify-retained-d1-unchanged'");
   const integrityIndex = source.indexOf("currentStage = 'verify-d1-lark-integrity'");
   const closureIndex = source.indexOf("currentStage = 'close-exact-retained-chatwoot-dlq-and-alert'");
-  assert.ok(integrityIndex >= 0);
+  assert.ok(d1UnchangedIndex >= 0);
+  assert.ok(integrityIndex > d1UnchangedIndex);
   assert.ok(closureIndex > integrityIndex);
   assert.match(source, /assertChatwoot1dIncidentClosed/u);
   assert.match(source, /buildChatwoot1dClosureStatements/u);
