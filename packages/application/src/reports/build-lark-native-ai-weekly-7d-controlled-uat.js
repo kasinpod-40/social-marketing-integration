@@ -41,35 +41,19 @@ export async function buildLarkNativeAiWeekly7dControlledUat(input = {}) {
     settings,
     reportBundles,
   });
-  const matches = rows.filter((row) => (
-    row.scope_type === 'executive'
-    && Number(row.window_days) === LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_WINDOW_DAYS
+  const matches = rows.filter((candidate) => (
+    candidate.scope_type === 'executive'
+    && Number(candidate.window_days) === LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_WINDOW_DAYS
   ));
   if (matches.length !== 1) throw uatError(
     'Weekly 7D controlled UAT must produce exactly one Executive row',
     'LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_EXECUTIVE_ROW_INVALID',
     { matchCount: matches.length },
   );
-  const row = matches[0];
-  if (row.preview_mode !== true
-    || row.notification_eligible !== false
-    || row.sent_to_group !== false
-    || row.generation_status !== 'pending'
-    || row.template_version !== LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_TEMPLATE_VERSION) {
-    throw uatError(
-      'Weekly 7D Executive UAT row is outside the controlled Preview boundary',
-      'LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_ROW_UNSAFE',
-      {
-        previewMode: row.preview_mode,
-        notificationEligible: row.notification_eligible,
-        sentToGroup: row.sent_to_group,
-        generationStatus: row.generation_status,
-        templateVersion: row.template_version,
-      },
-    );
-  }
 
-  const parsedSummary = parseJsonObject(row.metric_summary_json, 'metric_summary_json');
+  const executiveRow = resetExecutiveRowForFreshUat(matches[0]);
+  assertDesiredUatRow(executiveRow);
+  const parsedSummary = parseJsonObject(executiveRow.metric_summary_json, 'metric_summary_json');
   if (parsedSummary.evidenceShape !== 'executive_business_first_v2'
     || !Array.isArray(parsedSummary.channelBusinessEvidence)
     || parsedSummary.channelBusinessEvidence.length !== 9) {
@@ -83,7 +67,7 @@ export async function buildLarkNativeAiWeekly7dControlledUat(input = {}) {
     ok: true,
     contractVersion: LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_VERSION,
     targetPeriod,
-    executiveRow: structuredClone(row),
+    executiveRow,
     businessEvidenceSummary: summarizeBusinessEvidence(parsedSummary.channelBusinessEvidence),
     uiConfiguration: buildUiConfiguration(),
     safety: LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_SAFETY,
@@ -149,6 +133,21 @@ export function assertLarkNativeAiWeekly7dControlledUatReadback(input = {}) {
   });
 }
 
+function resetExecutiveRowForFreshUat(sourceRow) {
+  const row = structuredClone(requireObject(sourceRow, 'executiveRow'));
+  for (const field of UAT_OUTPUT_FIELDS) row[field] = null;
+  row.generation_status = 'pending';
+  row.failure_code = null;
+  row.generated_at = null;
+  row.notification_eligible = false;
+  row.notification_reason = 'controlled_preview';
+  row.sent_to_group = false;
+  row.sent_at = null;
+  row.preview_mode = true;
+  row.template_version = LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_TEMPLATE_VERSION;
+  return deepFreeze(row);
+}
+
 function buildUiConfiguration() {
   const actions = Object.values(LARK_NATIVE_AI_AUTOMATION_PROMPTS).map((prompt) => ({
     actionType: 'AI-generated text (GPT model)',
@@ -200,12 +199,15 @@ function summarizeBusinessEvidence(channels) {
 
 function buildFourWindowPeriods(target) {
   return deepFreeze(REQUIRED_WINDOWS.map((windowDays) => {
-    if (windowDays === 7) return { ...target };
+    if (windowDays === LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_WINDOW_DAYS) {
+      return { ...target };
+    }
     const periodEnd = target.periodEnd;
     const periodStart = addDays(periodEnd, -(windowDays - 1));
     const compareEnd = addDays(periodStart, -1);
     const compareStart = addDays(compareEnd, -(windowDays - 1));
     return {
+      periodKind: 'rolling_days',
       windowDays,
       periodStart,
       periodEnd,
@@ -218,8 +220,14 @@ function buildFourWindowPeriods(target) {
 
 function normalizeTargetPeriod(value) {
   const period = requireObject(value, 'targetPeriod');
+  const periodKind = optionalText(period.periodKind ?? period.period_kind) ?? 'rolling_days';
+  if (periodKind !== 'rolling_days') throw uatError(
+    'Weekly controlled UAT requires a rolling_days period',
+    'LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_PERIOD_KIND_INVALID',
+    { periodKind },
+  );
   const windowDays = Number(period.windowDays ?? period.window_days);
-  if (windowDays !== 7) throw uatError(
+  if (windowDays !== LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_WINDOW_DAYS) throw uatError(
     'Weekly controlled UAT requires a 7D target period',
     'LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_WINDOW_INVALID',
     { windowDays },
@@ -231,13 +239,48 @@ function normalizeTargetPeriod(value) {
   const compareStart = optionalDateOnly(period.compareStart ?? period.compare_start);
   const compareEnd = optionalDateOnly(period.compareEnd ?? period.compare_end);
   if (comparisonMode === 'none') {
-    return deepFreeze({ windowDays: 7, periodStart, periodEnd, comparisonMode, compareStart: null, compareEnd: null });
+    return deepFreeze({
+      periodKind,
+      windowDays: 7,
+      periodStart,
+      periodEnd,
+      comparisonMode,
+      compareStart: null,
+      compareEnd: null,
+    });
   }
   if (!compareStart || !compareEnd) throw uatError(
     '7D trend language requires an exact previous-period date range',
     'LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_COMPARISON_INVALID',
   );
-  return deepFreeze({ windowDays: 7, periodStart, periodEnd, comparisonMode, compareStart, compareEnd });
+  return deepFreeze({
+    periodKind,
+    windowDays: 7,
+    periodStart,
+    periodEnd,
+    comparisonMode,
+    compareStart,
+    compareEnd,
+  });
+}
+
+function assertDesiredUatRow(row) {
+  if (row.scope_type !== 'executive'
+    || Number(row.window_days) !== LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_WINDOW_DAYS
+    || row.preview_mode !== true
+    || row.notification_eligible !== false
+    || row.sent_to_group !== false
+    || row.generation_status !== 'pending'
+    || row.template_version !== LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_TEMPLATE_VERSION
+    || UAT_OUTPUT_FIELDS.some((field) => row[field] !== null)
+    || row.failure_code !== null
+    || row.generated_at !== null
+    || row.sent_at !== null) {
+    throw uatError(
+      'Weekly 7D Executive UAT row is outside the fresh controlled Preview boundary',
+      'LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_ROW_UNSAFE',
+    );
+  }
 }
 
 function assertSafeExistingUatRow(fields, desired) {
@@ -249,7 +292,7 @@ function assertSafeExistingUatRow(fields, desired) {
   if (templateVersion !== LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_TEMPLATE_VERSION
     || scopeType !== 'executive'
     || channelKey !== 'executive'
-    || windowDays !== 7
+    || windowDays !== LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_WINDOW_DAYS
     || normalizeBoolean(fields.preview_mode) !== true
     || normalizeBoolean(fields.notification_eligible) !== false
     || normalizeBoolean(fields.sent_to_group) !== false
@@ -285,8 +328,12 @@ function managedStateSignature(fields) {
     template_version: normalizeTextField(fields.template_version),
     preview_mode: normalizeBoolean(fields.preview_mode),
     notification_eligible: normalizeBoolean(fields.notification_eligible),
+    notification_reason: normalizeTextField(fields.notification_reason),
     sent_to_group: normalizeBoolean(fields.sent_to_group),
+    sent_at: normalizeNumber(fields.sent_at),
     generation_status: normalizeTextField(fields.generation_status),
+    failure_code: normalizeNullableText(fields.failure_code),
+    generated_at: normalizeNumber(fields.generated_at),
     insight_summary: normalizeNullableText(fields.insight_summary),
     strengths: normalizeNullableText(fields.strengths),
     weaknesses: normalizeNullableText(fields.weaknesses),
@@ -295,19 +342,9 @@ function managedStateSignature(fields) {
 }
 
 function normalizeDesiredRow(value) {
-  const row = requireObject(value, 'desiredRow');
-  if (row.scope_type !== 'executive'
-    || Number(row.window_days) !== 7
-    || row.preview_mode !== true
-    || row.notification_eligible !== false
-    || row.sent_to_group !== false
-    || row.template_version !== LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_TEMPLATE_VERSION) {
-    throw uatError(
-      'Desired weekly Executive row is unsafe',
-      'LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_DESIRED_ROW_UNSAFE',
-    );
-  }
-  return deepFreeze(structuredClone(row));
+  const row = deepFreeze(structuredClone(requireObject(value, 'desiredRow')));
+  assertDesiredUatRow(row);
+  return row;
 }
 function normalizeExistingRecord(value) {
   const record = requireObject(value, 'existingRecord');
