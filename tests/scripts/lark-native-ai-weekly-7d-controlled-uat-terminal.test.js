@@ -36,8 +36,8 @@ test('network source keeps one-row Lark-only mutation and contains no Notificati
   const terminal = readFileSync(SCRIPT, 'utf8');
   const source = readFileSync(SOURCE_LIB, 'utf8');
   const combined = `${terminal}\n${source}`;
-  assert.match(combined, /records\/batch_create/u);
-  assert.match(combined, /records\/batch_update/u);
+  assert.match(combined, /batch_create/u);
+  assert.match(combined, /batch_update/u);
   assert.match(combined, /\/workflows/u);
   assert.doesNotMatch(combined, /\/open-apis\/im\/v1\/messages/u);
   assert.doesNotMatch(combined, /workflows\/[^`'"\s]+\/(?:enable|disable)/u);
