@@ -3,10 +3,13 @@
 ## Status
 
 ```text
-TASK_STATUS                         = IMPLEMENTATION_IN_PROGRESS
+TASK_STATUS                         = IMPLEMENTATION_COMPLETE_CODE_CI_PASS
 CURRENT_PROGRAM                     = CHATWOOT_DAILY_PARTIAL_REPORT_COVERAGE_V1
 BRANCH                              = hotfix/chatwoot-daily-partial-report-coverage-v1
 EXACT_BASE                          = 7a64a84654f0e106c89ca44d2904edf7d354e98c
+VERIFIED_CODE_HEAD                  = d4fe34da5f652feb85cadbd80f4d82a77ec464f1
+BRANCH_VERIFICATION_RUN             = 31163304903
+BRANCH_VERIFICATION_NUMBER          = 2285
 FAILED_CLOSEOUT_ROOT                = outputs/chatwoot-post-533-3720f3a1/chatwoot-1d-3d-7d-30d-final-closeout
 CHATWOOT_1D_REUSE_VERIFIED          = true
 CHATWOOT_3D_FIRST_QUEUE_SENT        = true
@@ -120,6 +123,27 @@ No replacement Report ID, new recovery engine, new Coverage writer, new Queue fr
 - existing `complete` materialization + same stable D1/Lark parity => reuse;
 - global closeout completion continues rejecting `source_unavailable`;
 - existing Chatwoot, WooCommerce, Meta, TikTok and shared Report regressions remain green.
+
+## Verification result
+
+Branch Verification #2285 / run `31163304903` passed on exact code Head `d4fe34da5f652feb85cadbd80f4d82a77ec464f1`:
+
+```text
+Install locked dependencies                 PASS
+Syntax architecture and hygiene             PASS
+Focused Report source readiness tests       PASS
+Focused Meta history finalizer tests         PASS
+Focused Woo completed-state race tests       PASS
+Focused Chatwoot final UAT tests              PASS
+Focused staged TikTok tests                  PASS
+Unit and Workers runtime tests               PASS
+Report reliability regression               PASS
+Dependency audit                             PASS
+Wrangler dry run                             PASS
+Diff whitespace check                        PASS
+```
+
+Repository implementation and CI performed no Remote runtime action.
 
 ## Required verification
 
