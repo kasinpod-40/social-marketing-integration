@@ -1,30 +1,21 @@
-# Current Task — Chatwoot 1D Exact Report Incident Continuation v1
+# Current Task — Report Metric Migration Growth-Safe Boundary v1
 
 ## Status
 
 ```text
-TASK_STATUS                   = IMPLEMENTATION_COMPLETE_CI_PASS
-CURRENT_PROGRAM               = CHATWOOT_1D_EXACT_INCIDENT_CONTINUATION_V1
-BRANCH                        = hotfix/chatwoot-1d-exact-incident-continuation-v1
-EXACT_BASE                    = 50d32078f767b2acf779425e91efa9b2d606f322
-VERIFIED_CODE_HEAD            = 1fec400642b6b3e06e638893ce8ea875db5915a5
-PR                            = 523
-BRANCH_VERIFICATION_RUN       = 31123060791
-BRANCH_VERIFICATION_NUMBER    = 2263
-FAILED_PLATFORM               = chatwoot
-FAILED_WINDOW                 = 1D
-REPORT_ID                     = integration_workspace:chatwoot:rolling:1d:chemistry_k:rolling_days:2026-08-01:2026-08-01:chatwoot-customer-service-v1
-ORIGINAL_REQUESTED_AT         = 1786016588074
-FAILED_SYNC_RUN               = 1c7a20b3-5bb7-45a3-b591-b71e392a02b6
-FAILED_CODE                   = UNHANDLED_SYNC_ERROR
-FAILED_MESSAGE                = Unsupported Dashboard metric scope: period_end_snapshot
-MATERIALIZATION_COUNT         = 0
-LARK_SNAPSHOT_METRIC_COUNT    = 0 / 0
-OPEN_REPORT_DLQ_ALERT         = 1 / 1
-ACTIVE_REPORT_WORK_LOCK       = 0 / 0
-WORKER_BASELINE_VERIFIED      = true
-EXPECTED_CONTINUATION_QUEUE   = 1
-REMOTE_IMPLEMENTATION_ACTION  = 0
+TASK_STATUS                   = IMPLEMENTATION_COMPLETE_CI_PENDING
+CURRENT_PROGRAM               = REPORT_METRIC_MIGRATION_GROWTH_SAFE_BOUNDARY_V1
+BRANCH                        = fix/metric-migration-record-bound-v1
+EXACT_BASE                    = 33bbb142b5a74584628e5236bc9b838d662b6003
+CODE_HEAD                     = 093959198db19f4b285c91d7ad67fbbccd3bd5be
+PR                            = 525
+FAILED_STAGE                  = report-metric-value-field-migration-preview
+FAILED_CODE                   = REPORT_RUNTIME_FINALIZE_METRIC_FIELD_MIGRATION_UNSAFE
+LIVE_RECORD_COUNT             = 642
+OBSOLETE_TOTAL_RECORD_BOUND   = 500
+LIVE_MIGRATION_COUNT          = 0
+LIVE_PENDING_MIGRATION_COUNT  = 0
+REMOTE_ACTION_AFTER_FAILURE   = 0
 NOTIFICATION_ADMISSION        = false
 SCHEDULE_ENABLED              = false
 PRODUCTION                    = BLOCKED
@@ -33,83 +24,79 @@ PRODUCTION                    = BLOCKED
 Full contract:
 
 ```text
-docs/tasks/chatwoot-1d-exact-incident-continuation-v1.md
+docs/tasks/report-metric-migration-growth-safe-boundary-v1.md
 ```
 
 ## Goal
 
-Continue only the exact retained Chatwoot 1D failed-before-write incident after PR #522, verify the complete D1/Lark materialization, restore the notification-only Worker baseline, then close only the bound DLQ and Critical Alert.
+Remove total Report Metric table size from migration admission. Customer data growth must not make the Finalizer fail merely because the table contains more rows.
+
+## Root cause
+
+`report-metric-value-field-migration.js` contained a hard-coded `MAX_RECORDS = 500` guard before migration state analysis. The post-PR #523 Finalizer therefore rejected a 642-row table even though the live plan had `migrationCount=0` and `pendingMigrationCount=0`.
+
+This guard conflated two different concerns:
+
+- total business table size;
+- bounded mutation size for a real value-preserving migration.
+
+The former must not be a release/runtime admission limit.
 
 ## Implementation result
 
-Implemented on Draft PR #523 without Remote execution:
+PR #525 changes the existing migration implementation only:
 
-- reused the current-head Report Finalizer, reviewed Chatwoot runtime flags, Notification-preserving Worker window, Queue sender, D1/Lark state and integrity verifiers, D1 backup and exact metadata closure pattern;
-- bound the exact original requested-at, Report ID, failed Sync Run, replay-payload-identical DLQ envelope and Critical Alert;
-- separated exact Sync/Alert root-cause binding from the Queue terminal envelope so both original-error and `QUEUE_RETRY_EXHAUSTED` DLQs remain admissible only when payload and operation metadata match exactly;
-- required Source facts `200/42`, Work/Lock `0/0`, open Report DLQ/Alert `1/1`, empty exact D1/Lark target and safe Worker baseline before deployment;
-- limited the continuation to one exact Queue message;
-- emitted progress approximately every 30 seconds and stopped immediately on a new failed Sync Run or exact new DLQ;
-- required D1 materialization `1`, Lark Snapshot `1`, Metrics `139`, Top Content/Ads `0/0`, duplicate `0` and exact D1/Lark integrity;
-- required verified notification-only Worker baseline restore before exact incident closure;
-- closed only the bound DLQ and Alert after every integrity gate passes;
-- rejected any started evidence root without a valid final summary;
-- Repository Remote actions: zero.
+- removes the total-table record-count ceiling;
+- retains complete source/canonical value analysis and SHA-256 fingerprints;
+- retains exact record-count/source-fingerprint drift checks during a real migration;
+- performs actual canonical backfill writes in deterministic batches of at most 500 records;
+- re-reads migration state after every batch and requires the pending count to decrease exactly by that batch size;
+- preserves every legacy value and performs zero delete;
+- adds regression proving 2,501 already-converged rows are admitted;
+- adds regression proving a 1,201-row real backfill executes as `500 + 500 + 201` rather than failing on table size.
 
-Exact code Head `1fec400642b6b3e06e638893ce8ea875db5915a5` passed Branch Verification #2263 / run `31123060791`:
+## Permanent architecture rule
 
-```text
-Install locked dependencies                 PASS
-Syntax architecture and hygiene             PASS
-Focused Report source readiness tests       PASS
-Focused Meta history finalizer tests         PASS
-Focused Woo completed-state race tests       PASS
-Focused Chatwoot final UAT tests              PASS
-Focused staged TikTok tests                  PASS
-Unit and Workers runtime tests               PASS
-Report reliability regression               PASS
-Dependency audit                             PASS
-Wrangler dry run                             PASS
-Diff whitespace check                        PASS
-```
+Do not reintroduce `MAX_RECORDS`, `maxRecords`, row-count ceilings or equivalent total-table admission gates for Report Metric field migration.
+
+Safety must be attached to the action being performed:
+
+- read/verify paths scale with the complete paginated table;
+- mutations are bounded per request/batch;
+- source identity and fingerprints are revalidated between mutation batches;
+- partial migration remains resumable and value-preserving;
+- business table growth is not an error condition.
+
+A transport/API batch-size constant is allowed because it limits one write request, not the number of records a customer may own.
 
 ## Prohibited actions
 
-- rerun `outputs/final-woo-chatwoot-closeout-e9ab36e88526/closeout/chatwoot-1d-3d-7d-30d`;
-- use generic DLQ redrive or generic Alert closure;
-- close the retained DLQ/Alert before D1/Lark integrity and Worker restore;
-- send more than one Queue message in the exact incident continuation;
-- touch WooCommerce Report materializations;
-- add `period_end_snapshot` as a Dashboard/Lark option;
-- enable Notification Admission, AI, Schedule or Production;
-- perform Remote execution during implementation or CI.
+- rerun the failed Finalizer evidence root;
+- run Chatwoot 1D continuation before a new exact-main Finalizer passes;
+- use a larger total-table hard limit such as 2,000 as the fix;
+- delete Report Metric business rows to get below a limit;
+- disable legacy-value, source-fingerprint or drift checks;
+- mutate Remote D1/Lark, send Queue, deploy Worker or close the Chatwoot incident during Repository implementation.
 
 ## Acceptance criteria
 
-1. Repository and Finalizer are bound to the exact merged main Head.
-2. The original exact Chatwoot 1D Queue job is regenerated and matched to the retained DLQ replay payload.
-3. Exactly one retained failed Sync Run, DLQ and Critical Alert are admitted.
-4. Any Source/runtime/incident drift fails closed before deployment or Queue send.
-5. A started evidence root cannot be rerun automatically.
-6. New failure evidence terminates polling immediately; progress is visible while waiting.
-7. Incident closure is impossible before D1 `1`, Lark `1/139`, duplicate `0`, exact integrity and Worker baseline restore.
-8. Focused, full Unit/Workers, Report reliability, audit and Wrangler dry-run gates pass on the exact PR Head.
-9. Repository implementation performs zero Remote action.
+1. A converged Report Metric table with more than 500 and more than 2,000 rows has zero migration size blocker.
+2. A real migration with more than 500 pending rows is processed in bounded write batches and converges without deleting legacy values.
+3. Exact source fingerprint and record count remain stable across each real migration batch.
+4. Existing partial-resume/conflict/window-ownership behavior remains fail closed.
+5. Focused tests, full Unit/Workers, Report reliability, dependency audit, Wrangler dry-run and diff hygiene pass on the exact PR Head.
+6. Repository implementation performs zero Remote action.
 
 ## Required verification
 
 ```bash
 npm ci
 npm run check
-node --test tests/scripts/report-runtime-chatwoot-1d-incident-continuation.test.js
-node --test tests/scripts/report-runtime-chatwoot-1d-dlq-envelope.test.js
-node --test tests/application/chatwoot-report-materialization.test.js
-node --test tests/application/chatwoot-report-dimension-metrics.test.js
-node --test tests/connectors/d1-chatwoot-report-source.test.js
-node --test tests/application/multichannel-report-runtime.test.js
+node --test tests/scripts/report-metric-value-field-migration.test.js
+node --test tests/scripts/report-metric-dashboard-compatibility-record-bound.test.js
 npm test
 npm run test:report-reliability
-npm audit --audit-level=high
+npm audit
 npm run deploy:dry-run
 git diff --check
 ```
@@ -117,10 +104,10 @@ git diff --check
 ## Post-merge sequence
 
 1. synchronize clean exact merged `main`;
-2. run the current-head Finalizer under a new evidence directory;
-3. run the exact Chatwoot 1D continuation once under a new immutable root;
-4. require final D1/Lark/closure/baseline evidence to pass;
-5. run fresh SELECT-only Chatwoot readiness;
-6. continue Chatwoot 3D/7D/30D under a separate reviewed root;
-7. run final Chatwoot readiness and Dashboard compatibility readback;
+2. create a new Finalizer evidence root; never reuse `outputs/chatwoot-post-523-33bbb142`;
+3. run the current-head Report Runtime Finalizer;
+4. require zero migration blockers and zero schema/settings drift;
+5. only then create a new immutable Chatwoot 1D exact-continuation evidence root and run the incident continuation once;
+6. run fresh SELECT-only Chatwoot readiness;
+7. continue only remaining 3D/7D/30D under a separate reviewed root;
 8. keep Notification Admission/Schedule disabled and Production blocked.
