@@ -42,7 +42,6 @@ const WINDOW_FIELD = Object.freeze({
   targetType: 2,
   conversion: 'single_select_to_preset_number',
 });
-const MAX_RECORDS = 500;
 const VERIFY_DELAYS_MS = Object.freeze([0, 1_000, 2_000, 4_000, 8_000]);
 const RECOVERABLE_BLOCKERS = Object.freeze(new Set([
   'REPORT_METRIC_FIELD_MIGRATION_CANONICAL_WITHOUT_SOURCE',
@@ -52,7 +51,8 @@ const RECOVERABLE_BLOCKERS = Object.freeze(new Set([
 /**
  * Preserve the unchanged v1 migration for normal states. Recovery remains authoritative after its
  * deterministic v2 marker exists, so an interrupted phase can never fall back to a single-source
- * v1 read and silently ignore the retained secondary legacy field.
+ * v1 read and silently ignore the retained secondary legacy field. Total business table growth is
+ * not an admission blocker; the shared Lark client owns pagination and request-level write batching.
  */
 export async function planReportMetricValueFieldMigration(input = {}) {
   const base = await planBaseMigration(input);
@@ -226,12 +226,6 @@ async function inspectTransitionalState(input = {}) {
     tableId: resolution.tableId,
     includeRecordMetadata: false,
   });
-  if (records.length > MAX_RECORDS) return blockedInspection(schemaVersion, [
-    safeBlocker('REPORT_METRIC_FIELD_MIGRATION_RECORD_BOUND_EXCEEDED', {
-      recordCount: records.length,
-      maxRecords: MAX_RECORDS,
-    }),
-  ]);
 
   const desiredDisplay = requireDesiredField(tableContract, DISPLAY_FIELD);
   const desiredWindow = requireDesiredField(tableContract, WINDOW_FIELD);
