@@ -1,139 +1,101 @@
-# Current Task — Chatwoot 1D D1-Complete / Lark-Incomplete Recovery v1
+# Current Task — Chatwoot Retained Metric Scope Projection Compatibility v1
 
 ## Status
 
 ```text
-TASK_STATUS                  = IMPLEMENTATION_COMPLETE_CI_PASS
-CURRENT_PROGRAM              = CHATWOOT_1D_D1_COMPLETE_LARK_INCOMPLETE_RECOVERY_V1
-BRANCH                       = hotfix/chatwoot-1d-d1-complete-lark-recovery-v1
-EXACT_BASE                   = 7db5470ac9db48e6e46b8629d34e7d1f04e60804
-VERIFIED_CODE_HEAD           = 633c8b54f390dcb5a7a5342852f84bfc94459e53
-BRANCH_VERIFICATION_RUN      = 31146309447
-BRANCH_VERIFICATION_NUMBER   = 2272
-FAILED_CONTINUATION_STAGE    = exact-incident-read-only-preflight
-FAILED_CONTINUATION_CODE     = REPORT_RUNTIME_CHATWOOT_1D_CONTINUATION_INITIAL_STATE_MISMATCH
-D1_MATERIALIZATION_COUNT     = 1
-RETAINED_SYNC_STATUS         = failed
-SUCCESSFUL_SYNC_COUNT        = 0
-ACTIVE_LOCK_COUNT            = 0
-EXACT_RETAINED_DLQ_COUNT     = 1
-LARK_SNAPSHOT_COUNT          = 0
-LARK_METRIC_COUNT            = 0
-ACTIVE_DEPLOYMENT_ATTEMPTED  = false
-QUEUE_ACTION_FROM_FAILED_RUN = 0
-PRODUCTION                   = BLOCKED
-```
-
-Full contract:
-
-```text
-docs/tasks/chatwoot-1d-d1-complete-lark-incomplete-recovery-v1.md
+TASK_STATUS                         = IMPLEMENTATION_COMPLETE_CI_PENDING
+CURRENT_PROGRAM                     = CHATWOOT_RETAINED_METRIC_SCOPE_PROJECTION_COMPATIBILITY_V1
+BRANCH                              = hotfix/retained-report-metric-scope-projection-v1
+EXACT_BASE                          = 6fca9034d30b3e30aaf66c4d108e046d6dc531bb
+FAILED_RECOVERY_STAGE               = write-existing-d1-materialization-through-shared-lark-writer
+FAILED_RECOVERY_CODE                = REPORT_RUNTIME_CHATWOOT_1D_D1_LARK_RECOVERY_FAILED
+FAILED_RECOVERY_MESSAGE             = Unsupported Dashboard metric scope: period_end_snapshot
+D1_MATERIALIZATION_COUNT            = 1
+LARK_SNAPSHOT_COUNT                 = 0
+LARK_METRIC_COUNT                   = 0
+LARK_WRITE_ATTEMPTED_FLAG           = true
+INCIDENT_CLOSURE_ATTEMPTED          = false
+QUEUE_ACTION_COUNT                  = 0
+WORKER_DEPLOYMENT_COUNT             = 0
+PROVIDER_REQUEST_COUNT              = 0
+NOTIFICATION_ADMISSION              = false
+SCHEDULE_ENABLED                    = false
+PRODUCTION                          = BLOCKED
 ```
 
 ## Goal
 
-Recover the exact retained Chatwoot 1D Report materialization from the current D1-complete / Lark-incomplete state without resending Queue work or deploying a Worker.
+Recover the exact retained Chatwoot 1D D1 materialization whose persisted payload predates the canonical Chatwoot metric-scope correction, without rewriting that retained D1 payload/checksum and without weakening the canonical Dashboard metric-scope contract for new payloads.
 
-## Exact state interpretation
+## Root cause
 
-The post-PR #526 Finalizer passed on `main@7db5470ac9db48e6e46b8629d34e7d1f04e60804`. The next Chatwoot continuation then stopped before any active Worker deployment because its old admission contract expected `materialization_count=0`, while the exact report now exists once in D1 and remains absent from Lark.
+The exact D1 materialization was created before PR #522 corrected Chatwoot period-end account metrics from legacy `period_end_snapshot` to canonical `current_total`.
 
-`new_dlq_count=1` is the retained exact DLQ expected by the original continuation contract; it is not a second additional DLQ.
+The retained D1 row is valid historical evidence and its checksum protects the exact old JSON. `D1ReportMaterializationReader` intentionally validates that checksum before parsing. During direct Lark recovery, `writeDashboardMaterializationToLark()` then forwards the retained metric definitions to `buildReportMetricValueRows()`, whose canonical `normalizeDashboardMetricScope()` correctly rejects `period_end_snapshot`.
 
-The failed continuation evidence is immutable:
+The latest recovery therefore failed before `TableSyncEngine.executePlan()` and before incident closure. It must not be rerun under the same evidence root.
 
-```text
-outputs/chatwoot-post-526-7db5470a/chatwoot-1d-exact-continuation
-```
-
-Do not rerun or delete it.
-
-## Implementation result
-
-This workstream adds a narrow exact recovery operator that reuses the existing shared components:
+Immutable failed evidence:
 
 ```text
-existing exact report_materializations row
-→ D1ReportMaterializationReader
-→ writeDashboardMaterializationToLark
-→ LarkRecordRepository
-→ TableSyncEngine
-→ D1/Lark integrity verification
-→ exact retained DLQ + Critical Alert closure
+outputs/chatwoot-post-527-6fca9034/chatwoot-1d-d1-lark-recovery
 ```
 
-The recovery operator contains no Queue send or Worker deployment path.
+## Correction
 
-Branch Verification #2272 / run `31146309447` passed on exact code Head `633c8b54f390dcb5a7a5342852f84bfc94459e53`:
+Extend the existing exact Chatwoot D1/Lark recovery in place.
+
+Immediately after the retained materialization is checksum-validated and read, create an in-memory projection copy with this exact compatibility mapping:
 
 ```text
-Install locked dependencies                 PASS
-Syntax architecture and hygiene             PASS
-Focused Report source readiness tests       PASS
-Focused Meta history finalizer tests         PASS
-Focused Woo completed-state race tests       PASS
-Focused Chatwoot final UAT tests              PASS
-Focused staged TikTok tests                  PASS
-Unit and Workers runtime tests               PASS
-Report reliability regression               PASS
-Dependency audit                             PASS
-Wrangler dry run                             PASS
-Diff whitespace check                        PASS
+period_end_snapshot -> current_total
 ```
 
-Focused Chatwoot coverage includes the new D1-complete/Lark-incomplete state contract and a source assertion that the recovery operator has no Queue resolution/send or Worker deploy path.
+Rules:
 
-## Admission boundary
-
-Before mutation it requires:
-
-- clean current `main`;
-- exact current-head Finalizer evidence;
-- pending D1 migrations = 0;
-- source/runtime preflight unchanged and complete;
-- exact retained Sync Run, DLQ replay payload and Critical Alert binding;
-- exact report ID in D1 once;
-- retained sync status `failed` and successful sync count 0;
-- active Report lock count 0;
-- exact retained DLQ count 1;
-- non-empty payload checksum;
-- Lark Snapshot/Metric/Top rows all 0;
-- duplicate metric keys 0.
-
-Any drift fails closed before mutation.
+- mapping applies only inside the exact Chatwoot retained-materialization recovery operator;
+- original D1 `payload_json`, `payload_checksum`, row identity and Sync history are not modified;
+- canonical `normalizeDashboardMetricScope()` is still the final validator;
+- unknown scopes still fail closed;
+- the compatibility path requires at least one proved legacy-scope rewrite, otherwise recovery fails;
+- dimension metrics already using canonical `period_delta` remain unchanged;
+- after Lark projection, reread D1 and require byte-identical payload/checksum and identical retained runtime state before integrity verification;
+- exact DLQ/Critical Alert closure remains after D1 immutability + D1/Lark integrity verification only.
 
 ## Required recovered state
 
 ```text
-D1 materialization       1
-Retained Sync status     failed (historical evidence preserved)
-Lark Snapshot            1
-Lark Metrics             139
-Lark Top Content         0
-Lark Top Ads             0
-Duplicate metric keys    0
-D1/Lark integrity        PASS
-Retained DLQ             closed/completed
-Retained Critical Alert  resolved
-Open Report DLQ          0
-Open Report Critical     0
-Queue sends              0
-Worker deployments       0
-Provider requests        0
-Notification Admission   false
-Schedule                 disabled
-Production               BLOCKED
+D1 materialization                  1
+D1 payload/checksum                 unchanged
+Retained Sync status                failed
+Successful Sync count               0
+Lark Snapshot                       1
+Lark Metrics                        139
+Lark Top Content                    0
+Lark Top Ads                        0
+Duplicate metric keys               0
+Projected legacy scope              current_total
+Canonical global alias relaxation   none
+Retained DLQ                        closed/completed after integrity
+Retained Critical Alert             resolved after integrity
+Queue sends                         0
+Worker deployments                  0
+Provider requests                   0
+Notification Admission              false
+Schedule                            disabled
+Production                          BLOCKED
 ```
 
 ## Prohibited actions
 
-- rerun the failed continuation root;
-- resend the Chatwoot 1D Queue job;
-- deploy an active Report Worker for this recovery;
-- create a replacement Report ID;
-- rewrite the retained failed Sync Run to success;
-- close DLQ/Alert before D1/Lark integrity passes;
-- delete Business facts or legacy evidence;
+- rerun any failed recovery evidence root;
+- rewrite the retained D1 payload or checksum;
+- regenerate/replacement-write the Report materialization;
+- globally accept `period_end_snapshot` as a canonical Dashboard scope;
+- resend Queue work;
+- deploy a Report Worker;
+- rewrite the historical failed Sync Run;
+- close DLQ/Alert before D1 immutability and Lark integrity pass;
 - enable Notification Admission, Schedule or Production.
 
 ## Required verification
@@ -154,10 +116,10 @@ git diff --check
 ## Post-merge sequence
 
 1. synchronize clean exact merged `main`;
-2. run a current-head Finalizer under a brand-new evidence root because merge changes the main SHA;
-3. run the D1-complete / Lark-incomplete recovery once under a brand-new immutable root;
-4. require D1 `1`, Lark `1/139`, duplicate `0`, integrity PASS, Queue `0`, Worker deployment `0`, exact DLQ/Alert closure;
-5. run fresh SELECT-only Chatwoot readiness;
-6. require 1D reuse/idempotent verify and derive current state of 3D/7D/30D from readback;
-7. generate a new Chatwoot channel handoff; never reuse the stale handoff from before this incident;
-8. close only remaining windows under a new reviewed root.
+2. run a current-head Finalizer under a brand-new evidence root;
+3. run the corrected exact Chatwoot D1/Lark recovery once under a brand-new immutable root;
+4. require in-memory legacy rewrite count > 0 and persisted materialization unchanged;
+5. require D1 `1`, Lark `1/139`, duplicate `0`, integrity PASS, Queue `0`, Worker deployment `0`;
+6. close/read back exact retained DLQ + Critical Alert;
+7. run fresh SELECT-only Chatwoot readiness;
+8. derive 1D/3D/7D/30D actions from fresh readback only.
