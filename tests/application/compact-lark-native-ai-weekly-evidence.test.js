@@ -3,14 +3,15 @@ import test from 'node:test';
 import { compactLarkNativeAiWeeklyEvidence } from '../../packages/application/src/reports/compact-lark-native-ai-weekly-evidence.js';
 
 function buildChannel(index, readinessStatus = 'report_partial') {
+  const hasBusinessEvidence = readinessStatus === 'report_partial' || readinessStatus === 'report_available';
   return {
     channelKey: `channel_${index}`,
     displayName: `Channel ${index}`,
     readinessStatus,
     readinessMessage: 'internal readiness prose that should not be repeated into compact AI evidence',
-    sourceReportId: `report-${index}`,
-    sourceWatermark: `watermark-${index}`,
-    availableMetrics: Array.from({ length: 12 }, (_, metricIndex) => ({
+    sourceReportId: hasBusinessEvidence ? `report-${index}` : null,
+    sourceWatermark: hasBusinessEvidence ? `watermark-${index}` : null,
+    availableMetrics: hasBusinessEvidence ? Array.from({ length: 12 }, (_, metricIndex) => ({
       metric_key: `metric_${metricIndex}`,
       display_name: `Metric ${metricIndex}`,
       current_value: 100 + metricIndex,
@@ -18,26 +19,26 @@ function buildChannel(index, readinessStatus = 'report_partial') {
       change_percent: 11.111,
       availability_status: 'available',
       long_internal_note: 'x'.repeat(500),
-    })),
-    topContent: Array.from({ length: 3 }, (_, rank) => ({
+    })) : [],
+    topContent: hasBusinessEvidence ? Array.from({ length: 3 }, (_, rank) => ({
       rank: rank + 1,
       title: `Top content ${rank + 1} ${'y'.repeat(300)}`,
       views: 1000 - rank,
       permalink: `https://example.invalid/content/${rank + 1}`,
       raw_payload: 'z'.repeat(800),
-    })),
-    topAds: Array.from({ length: 3 }, (_, rank) => ({
+    })) : [],
+    topAds: hasBusinessEvidence ? Array.from({ length: 3 }, (_, rank) => ({
       rank: rank + 1,
       ad_name: `Ad ${rank + 1}`,
       spend_micros: 123456,
       impressions: 999,
       raw_payload: 'z'.repeat(800),
-    })),
-    collections: {
+    })) : [],
+    collections: hasBusinessEvidence ? {
       payment_method: Array.from({ length: 4 }, (_, rank) => ({ rank: rank + 1, name: `Method ${rank + 1}`, value: 100 - rank, raw: 'q'.repeat(400) })),
       product: Array.from({ length: 4 }, (_, rank) => ({ rank: rank + 1, name: `Product ${rank + 1}`, value: 100 - rank, raw: 'q'.repeat(400) })),
       shipping_method: Array.from({ length: 4 }, (_, rank) => ({ rank: rank + 1, name: `Shipping ${rank + 1}`, value: 100 - rank, raw: 'q'.repeat(400) })),
-    },
+    } : {},
   };
 }
 
@@ -79,6 +80,7 @@ test('compacts weekly Executive evidence below reviewed input budgets while reta
   assert.ok(parsed.channelBusinessEvidence[0].topContent.length >= 1);
   assert.ok(parsed.channelBusinessEvidence[0].topAds.length >= 1);
   assert.equal(Object.hasOwn(parsed.channelBusinessEvidence[0], 'sourceWatermark'), false);
+  assert.equal(Object.hasOwn(parsed.channelBusinessEvidence[8], 'availableMetrics'), false);
 });
 
 test('rejects non Executive business-first evidence', () => {
