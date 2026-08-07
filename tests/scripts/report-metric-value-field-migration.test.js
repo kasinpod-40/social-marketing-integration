@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   REPORT_METRIC_VALUE_FIELD_MIGRATION_CONFIRMATION,
   REPORT_METRIC_VALUE_FIELD_MIGRATION_VERSION,
+  REPORT_METRIC_VALUE_FIELD_WRITE_BATCH_SIZE,
   applyReportMetricValueFieldMigration,
   planReportMetricValueFieldMigration,
   safeReportMetricValueFieldMigrationEvidence,
@@ -168,6 +169,72 @@ test('v2 migrates display_name while window_days remains a read-only ownership a
   assert.equal(readback.notRequiredMigrationCount, 1);
 });
 
+test('table growth is not a migration blocker when canonical fields are already converged', async () => {
+  const state = initialState();
+  state.fields[1] = {
+    fieldId: 'fldDisplayText',
+    fieldName: 'display_name',
+    type: 1,
+    uiType: 'Text',
+    isPrimary: false,
+    property: null,
+  };
+  state.records = Array.from({ length: 2_501 }, (_, index) => ({
+    recordId: `rec${index + 1}`,
+    fields: {
+      report_metric_key: `metric-${index + 1}`,
+      display_name: `Metric ${index + 1}`,
+      window_days: String([1, 3, 7, 30][index % 4]),
+    },
+  }));
+
+  const preview = await planReportMetricValueFieldMigration(
+    migrationOptions(statefulClient(state)),
+  );
+
+  assert.equal(preview.repairable, true);
+  assert.equal(preview.blockerCount, 0);
+  assert.equal(preview.pendingMigrationCount, 0);
+  assert.equal(preview.notRequiredMigrationCount, 2);
+  assert.deepEqual(preview.migrations.map((item) => item.recordCount), [2_501, 2_501]);
+});
+
+test('large pending backfill is bounded by write batch size instead of total table size', async () => {
+  const state = initialState();
+  state.records = Array.from({ length: 1_201 }, (_, index) => ({
+    recordId: `rec${index + 1}`,
+    fields: {
+      report_metric_key: `metric-${index + 1}`,
+      display_name: `Metric ${index + 1}`,
+      window_days: String([1, 3, 7, 30][index % 4]),
+    },
+  }));
+  const client = statefulClient(state, {
+    maxBatchSize: REPORT_METRIC_VALUE_FIELD_WRITE_BATCH_SIZE,
+  });
+
+  const result = await applyReportMetricValueFieldMigration(migrationOptions(client, {
+    env: CONFIRMED_ENV,
+    sleepImpl: async () => undefined,
+  }));
+
+  assert.equal(result.pendingMigrationCount, 0);
+  assert.equal(result.canonicalValueWriteCount, 1_201);
+  assert.equal(result.recordBatchWriteCount, 3);
+  assert.equal(state.recordBatches.length, 3);
+  assert.deepEqual(state.recordBatches.map((batch) => batch.length), [500, 500, 201]);
+  assert.equal(
+    state.records.every((record, index) => record.fields.display_name === `Metric ${index + 1}`),
+    true,
+  );
+  assert.equal(
+    state.records.every((record, index) => (
+      record.fields.__mkt_legacy_display_name_single_select_v1 === `Metric ${index + 1}`
+    )),
+    true,
+  );
+});
+
 test('resumes from renamed/canonical display partial state and writes only missing text values', async () => {
   const state = initialState();
   state.fields = [
@@ -301,7 +368,7 @@ test('safe evidence removes physical IDs and row payloads while retaining counts
   assert.equal(safe.migrations[1].sourceFingerprint, null);
 });
 
-function statefulClient(state) {
+function statefulClient(state, { maxBatchSize = Number.POSITIVE_INFINITY } = {}) {
   return {
     async listTables() {
       return state.tables.map((table) => structuredClone(table));
@@ -348,6 +415,7 @@ function statefulClient(state) {
       return structuredClone(created);
     },
     async batchUpdateRecords({ records }) {
+      assert.equal(records.length <= maxBatchSize, true);
       for (const update of records) {
         const record = state.records.find((candidate) => candidate.recordId === update.recordId);
         assert.ok(record);
