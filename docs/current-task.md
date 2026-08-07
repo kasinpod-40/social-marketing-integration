@@ -3,11 +3,14 @@
 ## Status
 
 ```text
-TASK_STATUS                    = IMPLEMENTATION_COMPLETE_CI_PENDING
+TASK_STATUS                    = IMPLEMENTATION_COMPLETE_CI_PASS
 CURRENT_PROGRAM                = REPORT_METRIC_TOTAL_ROW_CEILING_ERADICATION_V2
 BRANCH                         = fix/report-metric-total-row-ceilings-v2
 EXACT_BASE                     = 91792d0d2e31af1774746ad24c58f1462fa2672e
+VERIFIED_CODE_HEAD             = da642ba24add3246b7a3efd961e78ffdc2d9593f
 PR                             = 526
+BRANCH_VERIFICATION_RUN        = 31143871367
+BRANCH_VERIFICATION_NUMBER     = 2270
 FAILED_STAGE                   = report-metric-value-field-migration-preview
 FAILED_CODE                    = REPORT_RUNTIME_FINALIZE_METRIC_FIELD_MIGRATION_UNSAFE
 LIVE_RECORD_COUNT              = 642
@@ -59,6 +62,23 @@ Draft PR #526 changes the existing chain in place:
 - adds no migration engine, batching engine, writer or wrapper;
 - retains exact Field identity, Number/Select parity, canonical/Legacy value checks, source fingerprints and record-count drift checks;
 - preserves legacy values and deletes nothing.
+
+Branch Verification #2270 / run `31143871367` passed on exact code Head `da642ba24add3246b7a3efd961e78ffdc2d9593f`:
+
+```text
+Install locked dependencies                 PASS
+Syntax architecture and hygiene             PASS
+Focused Report source readiness tests       PASS
+Focused Meta history finalizer tests         PASS
+Focused Woo completed-state race tests       PASS
+Focused Chatwoot final UAT tests              PASS
+Focused staged TikTok tests                  PASS
+Unit and Workers runtime tests               PASS
+Report reliability regression               PASS
+Dependency audit                             PASS
+Wrangler dry run                             PASS
+Diff whitespace check                        PASS
+```
 
 ## Regression
 
