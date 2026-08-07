@@ -1,21 +1,20 @@
-# Current Task — Chatwoot 1D Post-Projection Resume v1
+# Current Task — Reviewed Handoff Mapped Authority Compatibility v1
 
 ## Status
 
 ```text
-TASK_STATUS                         = IMPLEMENTATION_COMPLETE_CI_PASS
-CURRENT_PROGRAM                     = CHATWOOT_1D_POST_PROJECTION_RESUME_V1
-BRANCH                              = hotfix/chatwoot-1d-post-projection-resume-v1
-EXACT_BASE                          = e4bf6353d2e095662d00ae1f1149977200ff6579
-VERIFIED_CODE_HEAD                  = 5021eec0c7404391785ccafad803106e3c6790f0
-BRANCH_VERIFICATION_RUN             = 31150997179
-BRANCH_VERIFICATION_NUMBER          = 2280
-D1_MATERIALIZATION_COUNT            = 1
-LARK_SNAPSHOT_COUNT                 = 1
-LARK_METRIC_COUNT                   = 139
-LARK_TOP_CONTENT_COUNT              = 0
-LARK_TOP_ADS_COUNT                  = 0
-INCIDENT_CLOSURE_ATTEMPTED          = false
+TASK_STATUS                         = IMPLEMENTATION_IN_PROGRESS
+CURRENT_PROGRAM                     = REVIEWED_HANDOFF_MAPPED_AUTHORITY_COMPATIBILITY_V1
+BRANCH                              = hotfix/reviewed-handoff-mapped-authority-v1
+EXACT_BASE                          = 0acb252be84a739f5b0e1aa15d4999b70d9ae950
+CHATWOOT_1D_RECOVERY                = CLOSED
+CHATWOOT_1D_D1_MATERIALIZATION      = 1
+CHATWOOT_1D_LARK_SNAPSHOT           = 1
+CHATWOOT_1D_LARK_METRICS            = 139
+CHATWOOT_OPEN_REPORT_DLQ            = 0
+CHATWOOT_OPEN_REPORT_CRITICAL_ALERT = 0
+FAILED_FINAL_CLOSEOUT_ROOT          = outputs/chatwoot-post-532-0acb252b/chatwoot-1d-3d-7d-30d-final-closeout
+ACTIVE_DEPLOYMENT_ATTEMPTED         = false
 QUEUE_ACTION_COUNT                  = 0
 WORKER_DEPLOYMENT_COUNT             = 0
 PROVIDER_REQUEST_COUNT              = 0
@@ -24,116 +23,66 @@ SCHEDULE_ENABLED                    = false
 PRODUCTION                          = BLOCKED
 ```
 
-## Goal
+## Incident
 
-Resume the exact Chatwoot 1D incident after the retained D1 materialization has already been projected to Lark successfully. The prior failure was verifier-only: the old verifier misclassified valid dimensional rows because it used business `metric_key` instead of stable `report_metric_key`.
-
-Immutable failed evidence:
+The current-head retained multichannel handoff builder completed successfully and wrote the canonical per-channel authority map:
 
 ```text
-outputs/chatwoot-post-528-bc7a5375/chatwoot-1d-d1-lark-recovery
+closeoutAuthorities.<platformScope>
 ```
 
-Do not rerun, delete, reset or clean that root. The existing 1 Snapshot + 139 Metric rows are retained valid projection evidence and must not be manually deleted or deduplicated.
+The Chatwoot reviewed multiwindow closeout then stopped before any Remote deployment or Queue action at:
+
+```text
+stage = repository-finalizer-and-reviewed-handoff
+code  = REPORT_RUNTIME_CLOSEOUT_REVIEWED_HANDOFF_INVALID
+```
+
+The runtime validator still read only the legacy single-channel field:
+
+```text
+closeoutAuthority
+```
+
+This created a builder/consumer contract mismatch: the builder's own handoff could not be consumed by the current reviewed runtime loader.
+
+The failed closeout evidence root is immutable. Do not rerun, delete, reset or clean it.
 
 ## Correction
 
-Keep the existing recovery operator and shared writer. Extend only its exact prestate/write-result contract:
+Keep one shared reviewed handoff contract and one shared runtime validator.
+
+`assertReviewedChannelCloseoutHandoff()` must resolve authority in this order:
 
 ```text
-needs_projection   = D1 1 / Lark 0 + 0
-already_projected  = D1 1 / Lark 1 + 139 / duplicate report_metric_key 0
+1. closeoutAuthorities[descriptor.platform]
+2. closeoutAuthority legacy fallback
 ```
 
-The shared `TableSyncEngine` already plans by stable key and skips unchanged rows. For the already-projected resume, the writer result must be exactly:
+All existing authority validation remains strict:
 
-```text
-created = 0
-updated = 0
-skipped = 140
-```
+- operator must be an allowed reviewed operator;
+- contractVersion must equal `report_runtime_closeout_uat_v1`;
+- platformScope must equal the selected descriptor platform;
+- capability must equal the selected descriptor capability;
+- exact repository Head, readiness, source and window checks remain unchanged.
 
-The only other allowed write shape remains the original first projection:
+Do not add a new handoff format, wrapper, execution engine or hand-written JSON workaround.
 
-```text
-created = 140
-updated = 0
-skipped = 0
-```
+## Regression requirement
 
-Any partial create, any update, missing row or duplicate stable key blocks incident closure.
+Build the retained multichannel handoff using `buildRetainedMultichannelReportHandoff()` and validate the returned handoff object directly, without injecting `closeoutAuthority`, for every non-planned reviewed channel.
 
-## Verification result
-
-Branch Verification #2280 / run `31150997179` passed on exact code Head `5021eec0c7404391785ccafad803106e3c6790f0`:
-
-```text
-Install locked dependencies                 PASS
-Syntax architecture and hygiene             PASS
-Focused Report source readiness tests       PASS
-Focused Meta history finalizer tests         PASS
-Focused Woo completed-state race tests       PASS
-Focused Chatwoot final UAT tests              PASS
-Focused staged TikTok tests                  PASS
-Unit and Workers runtime tests               PASS
-Report reliability regression               PASS
-Dependency audit                             PASS
-Wrangler dry run                             PASS
-Diff whitespace check                        PASS
-```
-
-Regression coverage proves:
-
-- exact Lark-empty state remains `needs_projection`;
-- exact Lark 1/139 with zero stable duplicates is `already_projected`;
-- partial Lark states still fail closed;
-- first projection accepts only `created=140 / updated=0 / skipped=0`;
-- post-projection resume accepts only `created=0 / updated=0 / skipped=140`;
-- any update or partial create fails before incident closure;
-- no Queue, Worker, Provider or Production path was added.
-
-## Required result
-
-```text
-D1 materialization                  1
-D1 payload/checksum                 unchanged
-Retained Sync status                failed
-Lark Snapshot                       1
-Lark Metrics                        139
-Duplicate report_metric_key         0
-Resume Lark mutation                0
-D1/Lark stable-key integrity        PASS
-Retained DLQ                        closed/completed after integrity
-Retained Critical Alert             resolved after integrity
-Queue sends                         0
-Worker deployments                  0
-Provider requests                   0
-Notification Admission              false
-Schedule                            disabled
-Production                          BLOCKED
-```
-
-## Prohibited actions
-
-- rerun any failed evidence root;
-- delete or manually deduplicate the existing 139 Lark rows;
-- resend Queue work;
-- deploy a Report Worker;
-- mutate the retained D1 payload/checksum;
-- create a replacement Report ID;
-- accept partial create/update during resume;
-- close DLQ/Alert before D1/Lark stable-key integrity passes;
-- enable Notification Admission, Schedule or Production.
+Also preserve acceptance of the existing legacy single-channel `closeoutAuthority` fallback.
 
 ## Required verification
 
 ```bash
 npm ci
 npm run check
-node --test tests/scripts/report-runtime-chatwoot-1d-d1-lark-recovery.test.js
-node --test tests/scripts/report-runtime-chatwoot-1d-d1-lark-recovery-source.test.js
-node --test tests/scripts/report-runtime-closeout-stable-metric-integrity.test.js
-node --test tests/scripts/report-runtime-closeout-reviewed-state.test.js
+node --test tests/scripts/reviewed-handoff-mapped-authority.test.js
+node --test tests/scripts/retained-multichannel-report-handoff.test.js
+node --test tests/scripts/report-runtime-closeout-reviewed-binding.test.js
 npm test
 npm run test:report-reliability
 npm audit
@@ -145,9 +94,11 @@ git diff --check
 
 1. synchronize clean exact merged `main`;
 2. run current-head Finalizer under a new evidence root;
-3. run the existing exact Chatwoot D1/Lark recovery under a new immutable root;
-4. require writer result `created=0 / updated=0 / skipped=140`;
-5. require D1 unchanged and Lark stable-key integrity PASS;
-6. close/read back only the exact retained DLQ + Critical Alert;
-7. run fresh SELECT-only Chatwoot readiness;
-8. derive remaining 3D/7D/30D actions from fresh state only.
+3. run fresh SELECT-only readiness for all reviewed non-planned channels;
+4. build a brand-new retained multichannel handoff from those exact-head readiness files;
+5. run Chatwoot reviewed multiwindow closeout under a brand-new immutable root;
+6. require 1D reuse with Queue 0;
+7. require fresh 3D/7D/30D materialization + replay with stable D1/Lark integrity;
+8. require Worker baseline restore;
+9. run fresh Chatwoot readiness and require all 1/3/7/30 windows to become `reuse_or_idempotent_verify`;
+10. keep Notification Admission and Schedule disabled and Production blocked.
