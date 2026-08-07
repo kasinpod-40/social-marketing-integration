@@ -203,18 +203,32 @@ export function assertChatwoot1dD1LarkRecoveryWriteResult(
   incident = CHATWOOT_1D_EXACT_INCIDENT,
 ) {
   const rows = result.rows ?? {};
+  const snapshotResult = result.results?.reportSnapshot ?? {};
+  const metricResult = result.results?.reportMetricValues ?? {};
+  const created = Number(snapshotResult.created ?? 0) + Number(metricResult.created ?? 0);
+  const updated = Number(snapshotResult.updated ?? 0) + Number(metricResult.updated ?? 0);
+  const skipped = Number(snapshotResult.skipped ?? 0) + Number(metricResult.skipped ?? 0);
+  const expectedRows = 1 + incident.expectedMetricCount;
+  const initialProjection = created === expectedRows && updated === 0 && skipped === 0;
+  const idempotentResume = created === 0 && updated === 0 && skipped === expectedRows;
+
   if (Number(rows.snapshots ?? -1) !== 1
     || Number(rows.metrics ?? -1) !== incident.expectedMetricCount
     || Number(rows.topContent ?? -1) !== 0
-    || Number(rows.topAds ?? -1) !== 0) {
+    || Number(rows.topAds ?? -1) !== 0
+    || (!initialProjection && !idempotentResume)) {
     throw recoveryFailure(
-      'Shared Lark writer did not emit the exact Chatwoot 1D row contract',
+      'Shared Lark writer did not emit an exact initial projection or zero-mutation resume',
       'REPORT_RUNTIME_CHATWOOT_1D_D1_LARK_RECOVERY_WRITE_RESULT_INVALID',
       {
         snapshots: Number(rows.snapshots ?? -1),
         metrics: Number(rows.metrics ?? -1),
         topContent: Number(rows.topContent ?? -1),
         topAds: Number(rows.topAds ?? -1),
+        created,
+        updated,
+        skipped,
+        expectedRows,
       },
     );
   }
