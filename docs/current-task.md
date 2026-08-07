@@ -1,22 +1,22 @@
-# Current Task — Chatwoot Retained Metric Scope Projection Compatibility v1
+# Current Task — Report Metric Stable-Key Integrity v1
 
 ## Status
 
 ```text
 TASK_STATUS                         = IMPLEMENTATION_COMPLETE_CI_PASS
-CURRENT_PROGRAM                     = CHATWOOT_RETAINED_METRIC_SCOPE_PROJECTION_COMPATIBILITY_V1
-BRANCH                              = hotfix/retained-report-metric-scope-projection-v1
-EXACT_BASE                          = 6fca9034d30b3e30aaf66c4d108e046d6dc531bb
-VERIFIED_CODE_HEAD                  = 460d639cfec8149cab208a4424806b712a9183c0
-BRANCH_VERIFICATION_RUN             = 31147750000
-BRANCH_VERIFICATION_NUMBER          = 2274
-FAILED_RECOVERY_STAGE               = write-existing-d1-materialization-through-shared-lark-writer
-FAILED_RECOVERY_CODE                = REPORT_RUNTIME_CHATWOOT_1D_D1_LARK_RECOVERY_FAILED
-FAILED_RECOVERY_MESSAGE             = Unsupported Dashboard metric scope: period_end_snapshot
+CURRENT_PROGRAM                     = REPORT_METRIC_STABLE_KEY_INTEGRITY_V1
+BRANCH                              = hotfix/report-metric-stable-key-integrity-v1
+EXACT_BASE                          = bc7a5375fecb279f1d9a4fc89b7c2d7ee081c84c
+VERIFIED_CODE_HEAD                  = 918d63ec912804333a4533386eeaf654989f615d
+BRANCH_VERIFICATION_RUN             = 31149710109
+BRANCH_VERIFICATION_NUMBER          = 2277
+FAILED_RECOVERY_STAGE               = verify-d1-lark-integrity
+FAILED_RECOVERY_CODE                = REPORT_RUNTIME_CLOSEOUT_LARK_INTEGRITY_NOT_CONVERGED
 D1_MATERIALIZATION_COUNT            = 1
-LARK_SNAPSHOT_COUNT                 = 0
-LARK_METRIC_COUNT                   = 0
-LARK_WRITE_ATTEMPTED_FLAG           = true
+LARK_SNAPSHOT_COUNT                 = 1
+LARK_METRIC_COUNT                   = 139
+LARK_TOP_CONTENT_COUNT              = 0
+REPORTED_DUPLICATE_METRIC_KEYS      = 114
 INCIDENT_CLOSURE_ATTEMPTED          = false
 QUEUE_ACTION_COUNT                  = 0
 WORKER_DEPLOYMENT_COUNT             = 0
@@ -28,46 +28,79 @@ PRODUCTION                          = BLOCKED
 
 ## Goal
 
-Recover the exact retained Chatwoot 1D D1 materialization whose persisted payload predates the canonical Chatwoot metric-scope correction, without rewriting that retained D1 payload/checksum and without weakening the canonical Dashboard metric-scope contract for new payloads.
+Correct the shared Report D1/Lark integrity verifier so dimensional Report rows are identified by the same stable `report_metric_key` used by the Lark writer and `TableSyncEngine`, rather than treating repeated business `metric_key` values across dimensions as duplicate Lark rows.
+
+## Current incident
+
+The post-PR #528 Chatwoot 1D direct recovery successfully wrote the retained D1 materialization to Lark before verification stopped:
+
+```text
+Snapshot rows             1
+Metric rows               139
+Top Content               0
+Top Ads                   0
+reported duplicate keys   114
+Queue sends               0
+Worker deployments        0
+incident closure          not attempted
+```
+
+The failed evidence root is immutable:
+
+```text
+outputs/chatwoot-post-528-bc7a5375/chatwoot-1d-d1-lark-recovery
+```
+
+Do not rerun, delete, reset or clean this root.
+
+The 139 Lark rows are retained evidence and must not be manually deleted, deduplicated or regenerated through Queue work.
 
 ## Root cause
 
-The exact D1 materialization was created before PR #522 corrected Chatwoot period-end account metrics from legacy `period_end_snapshot` to canonical `current_total`.
-
-The retained D1 row is valid historical evidence and its checksum protects the exact old JSON. `D1ReportMaterializationReader` intentionally validates that checksum before parsing. During direct Lark recovery, `writeDashboardMaterializationToLark()` then forwards the retained metric definitions to `buildReportMetricValueRows()`, whose canonical `normalizeDashboardMetricScope()` correctly rejects `period_end_snapshot`.
-
-The latest recovery therefore failed before `TableSyncEngine.executePlan()` and before incident closure. It must not be rerun under the same evidence root.
-
-Immutable failed evidence:
+`MKT_Report_Metric_Values` has two different identities with different jobs:
 
 ```text
-outputs/chatwoot-post-527-6fca9034/chatwoot-1d-d1-lark-recovery
+metric_key          = business metric definition
+report_metric_key   = stable physical Report row identity
+```
+
+Dimensional reports intentionally repeat one `metric_key` for different `dimension_type` / `dimension_value` rows. Chatwoot Inbox/Agent rows therefore repeat business metric names while remaining distinct stable rows.
+
+The shared reviewed-state verifier incorrectly built its duplicate set and value map from `metric_key`:
+
+```text
+metric_key -> current_value
+```
+
+That collapsed valid dimensional rows and reported 114 false duplicates.
+
+The writer already uses the correct stable identity:
+
+```text
+report_id
++ stableMetricKey
++ dimensionType
++ dimensionValue
+= report_metric_key
 ```
 
 ## Correction
 
-Extend the existing exact Chatwoot D1/Lark recovery in place.
+Change only the shared Report closeout/readback verifier:
 
-Immediately after the retained materialization is checksum-validated and read, create an in-memory projection copy with this exact compatibility mapping:
+- read `report_metric_key` from every Lark Metric row;
+- duplicate detection applies to `report_metric_key`, not business `metric_key`;
+- reconstruct expected stable row identities from the persisted D1 materialization using the same escaping and dimension defaults as `buildReportMetricValueRows()`;
+- compare every stable row's current value with Lark using four-decimal Lark canonicalization already required by Report integrity;
+- repeated business `metric_key` values across distinct dimensions are valid;
+- duplicate `report_metric_key` remains a hard blocker;
+- missing/extra stable rows or value drift remain hard blockers.
 
-```text
-period_end_snapshot -> current_total
-```
-
-Rules:
-
-- mapping applies only inside the exact Chatwoot retained-materialization recovery operator;
-- original D1 `payload_json`, `payload_checksum`, row identity and Sync history are not modified;
-- canonical `normalizeDashboardMetricScope()` is still the final validator;
-- unknown scopes still fail closed;
-- the compatibility path requires at least one proved legacy-scope rewrite, otherwise recovery fails;
-- dimension metrics already using canonical `period_delta` remain unchanged;
-- after Lark projection, reread D1 and require byte-identical payload/checksum and identical retained runtime state before integrity verification;
-- exact DLQ/Critical Alert closure remains after D1 immutability + D1/Lark integrity verification only.
+No Report formula, Lark writer, TableSyncEngine, Report ID, materialization payload or business metric semantics are changed.
 
 ## Verification result
 
-Branch Verification #2274 / run `31147750000` passed on exact code Head `460d639cfec8149cab208a4424806b712a9183c0`:
+Verification-only PR #530 pointed to the exact code Head `918d63ec912804333a4533386eeaf654989f615d` without a new commit. Branch Verification #2277 / run `31149710109` passed every gate and PR #530 was closed unmerged.
 
 ```text
 Install locked dependencies                 PASS
@@ -86,28 +119,26 @@ Diff whitespace check                        PASS
 
 Regression coverage proves:
 
-- retained `period_end_snapshot` becomes `current_total` only in the exact recovery projection copy;
-- canonical `normalizeDashboardMetricScope('period_end_snapshot')` still throws;
-- unknown retained scopes fail closed;
-- the original retained materialization object is not mutated;
-- D1 payload/checksum drift after projection fails closed;
-- Queue and Worker paths remain absent;
-- D1 immutability verification and Lark integrity both precede exact incident closure.
+- repeated business `metric_key` values across distinct dimensions do not count as duplicate rows;
+- duplicate `report_metric_key` identities still fail closed;
+- D1/Lark value parity checks every stable dimensional row individually;
+- a value mismatch under one stable dimension identity fails closed;
+- no Queue/Worker/Provider path was added.
 
-## Required recovered state
+## Required recovery boundary
+
+After merge, use the existing exact Chatwoot D1/Lark recovery operator under a brand-new evidence root. Because Lark already contains the 139 stable rows, shared `TableSyncEngine.planByKey()` must converge by stable key and must not create duplicate business rows.
+
+Required result:
 
 ```text
 D1 materialization                  1
 D1 payload/checksum                 unchanged
 Retained Sync status                failed
-Successful Sync count               0
 Lark Snapshot                       1
 Lark Metrics                        139
-Lark Top Content                    0
-Lark Top Ads                        0
-Duplicate metric keys               0
-Projected legacy scope              current_total
-Canonical global alias relaxation   none
+Duplicate report_metric_key         0
+D1/Lark stable-key integrity        PASS
 Retained DLQ                        closed/completed after integrity
 Retained Critical Alert             resolved after integrity
 Queue sends                         0
@@ -120,14 +151,14 @@ Production                          BLOCKED
 
 ## Prohibited actions
 
-- rerun any failed recovery evidence root;
-- rewrite the retained D1 payload or checksum;
-- regenerate/replacement-write the Report materialization;
-- globally accept `period_end_snapshot` as a canonical Dashboard scope;
-- resend Queue work;
+- rerun any failed evidence root;
+- delete or manually deduplicate the existing 139 Lark rows;
+- resend Chatwoot 1D Queue work;
 - deploy a Report Worker;
-- rewrite the historical failed Sync Run;
-- close DLQ/Alert before D1 immutability and Lark integrity pass;
+- mutate the retained D1 materialization payload/checksum;
+- create a replacement Report ID;
+- close DLQ/Alert before stable-key D1/Lark integrity passes;
+- change canonical Dashboard metric scopes;
 - enable Notification Admission, Schedule or Production.
 
 ## Required verification
@@ -135,9 +166,10 @@ Production                          BLOCKED
 ```bash
 npm ci
 npm run check
+node --test tests/scripts/report-runtime-closeout-stable-metric-integrity.test.js
+node --test tests/scripts/report-runtime-closeout-reviewed-state.test.js
 node --test tests/scripts/report-runtime-chatwoot-1d-d1-lark-recovery.test.js
 node --test tests/scripts/report-runtime-chatwoot-1d-d1-lark-recovery-source.test.js
-node --test tests/scripts/report-runtime-chatwoot-1d-incident-continuation.test.js
 npm test
 npm run test:report-reliability
 npm audit
@@ -148,10 +180,10 @@ git diff --check
 ## Post-merge sequence
 
 1. synchronize clean exact merged `main`;
-2. run a current-head Finalizer under a brand-new evidence root;
-3. run the corrected exact Chatwoot D1/Lark recovery once under a brand-new immutable root;
-4. require in-memory legacy rewrite count > 0 and persisted materialization unchanged;
-5. require D1 `1`, Lark `1/139`, duplicate `0`, integrity PASS, Queue `0`, Worker deployment `0`;
-6. close/read back exact retained DLQ + Critical Alert;
+2. run current-head Finalizer under a brand-new evidence root;
+3. run exact Chatwoot D1/Lark recovery under a brand-new immutable root;
+4. require retained D1 payload/checksum unchanged;
+5. require Lark Snapshot `1`, Metrics `139`, duplicate stable key `0` and exact value parity;
+6. close/read back only the exact retained DLQ + Critical Alert;
 7. run fresh SELECT-only Chatwoot readiness;
-8. derive 1D/3D/7D/30D actions from fresh readback only.
+8. derive 1D/3D/7D/30D continuation from fresh readback only.
