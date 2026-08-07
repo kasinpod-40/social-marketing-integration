@@ -6,47 +6,68 @@ export const CHATWOOT_1D_D1_LARK_RECOVERY_CONTRACT =
   'report_runtime_chatwoot_1d_d1_complete_lark_incomplete_recovery_v1';
 export const CHATWOOT_1D_D1_LARK_RECOVERY_CONFIRMATION =
   'RECOVER_EXACT_CHATWOOT_1D_D1_COMPLETE_LARK_INCOMPLETE';
+export const CHATWOOT_1D_D1_LARK_RECOVERY_PRESTATE = Object.freeze({
+  NEEDS_PROJECTION: 'needs_projection',
+  ALREADY_PROJECTED: 'already_projected',
+});
 
 const RETAINED_CHATWOOT_LEGACY_SCOPE = 'period_end_snapshot';
 const RETAINED_CHATWOOT_CANONICAL_SCOPE = 'current_total';
 
-export function assertChatwoot1dD1LarkRecoveryPrestate(
+export function classifyChatwoot1dD1LarkRecoveryPrestate(
   input = {},
   incident = CHATWOOT_1D_EXACT_INCIDENT,
 ) {
   const d1 = input.d1 ?? {};
   const lark = input.lark ?? {};
-  if (d1.report_id !== incident.reportId
-    || Number(d1.materialization_count ?? 0) !== 1
-    || d1.sync_status !== incident.failedSync.status
-    || Number(d1.successful_sync_count ?? 0) !== 0
-    || Number(d1.active_lock_count ?? 0) !== 0
-    || Number(d1.new_dlq_count ?? 0) !== 1
-    || !hasText(d1.payload_checksum)
-    || Number(lark.snapshots ?? 0) !== 0
-    || Number(lark.metrics ?? 0) !== 0
-    || Number(lark.topContent ?? 0) !== 0
-    || Number(lark.topAds ?? 0) !== 0
-    || Number(lark.duplicateMetricKeys ?? 0) !== 0) {
-    throw recoveryFailure(
-      'Chatwoot 1D target is not the exact D1-complete / Lark-incomplete incident state',
-      'REPORT_RUNTIME_CHATWOOT_1D_D1_LARK_RECOVERY_PRESTATE_MISMATCH',
-      {
-        reportIdMatched: d1.report_id === incident.reportId,
-        materializationCount: Number(d1.materialization_count ?? 0),
-        syncStatus: d1.sync_status ?? null,
-        successfulSyncCount: Number(d1.successful_sync_count ?? 0),
-        activeLockCount: Number(d1.active_lock_count ?? 0),
-        newDlqCount: Number(d1.new_dlq_count ?? 0),
-        payloadChecksumPresent: hasText(d1.payload_checksum),
-        larkSnapshots: Number(lark.snapshots ?? 0),
-        larkMetrics: Number(lark.metrics ?? 0),
-        larkTopContent: Number(lark.topContent ?? 0),
-        larkTopAds: Number(lark.topAds ?? 0),
-        duplicateMetricKeys: Number(lark.duplicateMetricKeys ?? 0),
-      },
-    );
+  const commonValid = d1.report_id === incident.reportId
+    && Number(d1.materialization_count ?? 0) === 1
+    && d1.sync_status === incident.failedSync.status
+    && Number(d1.successful_sync_count ?? 0) === 0
+    && Number(d1.active_lock_count ?? 0) === 0
+    && Number(d1.new_dlq_count ?? 0) === 1
+    && hasText(d1.payload_checksum)
+    && Number(lark.topContent ?? 0) === 0
+    && Number(lark.topAds ?? 0) === 0
+    && Number(lark.duplicateMetricKeys ?? 0) === 0;
+
+  if (commonValid
+    && Number(lark.snapshots ?? 0) === 0
+    && Number(lark.metrics ?? 0) === 0) {
+    return CHATWOOT_1D_D1_LARK_RECOVERY_PRESTATE.NEEDS_PROJECTION;
   }
+
+  if (commonValid
+    && Number(lark.snapshots ?? 0) === 1
+    && Number(lark.metrics ?? 0) === incident.expectedMetricCount) {
+    return CHATWOOT_1D_D1_LARK_RECOVERY_PRESTATE.ALREADY_PROJECTED;
+  }
+
+  throw recoveryFailure(
+    'Chatwoot 1D target is not an exact recoverable D1/Lark incident state',
+    'REPORT_RUNTIME_CHATWOOT_1D_D1_LARK_RECOVERY_PRESTATE_MISMATCH',
+    {
+      reportIdMatched: d1.report_id === incident.reportId,
+      materializationCount: Number(d1.materialization_count ?? 0),
+      syncStatus: d1.sync_status ?? null,
+      successfulSyncCount: Number(d1.successful_sync_count ?? 0),
+      activeLockCount: Number(d1.active_lock_count ?? 0),
+      newDlqCount: Number(d1.new_dlq_count ?? 0),
+      payloadChecksumPresent: hasText(d1.payload_checksum),
+      larkSnapshots: Number(lark.snapshots ?? 0),
+      larkMetrics: Number(lark.metrics ?? 0),
+      larkTopContent: Number(lark.topContent ?? 0),
+      larkTopAds: Number(lark.topAds ?? 0),
+      duplicateMetricKeys: Number(lark.duplicateMetricKeys ?? 0),
+    },
+  );
+}
+
+export function assertChatwoot1dD1LarkRecoveryPrestate(
+  input = {},
+  incident = CHATWOOT_1D_EXACT_INCIDENT,
+) {
+  classifyChatwoot1dD1LarkRecoveryPrestate(input, incident);
   return true;
 }
 
