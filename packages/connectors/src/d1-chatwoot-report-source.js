@@ -7,7 +7,7 @@ const REQUIRED_COVERAGE_DATASETS = Object.freeze([
   'chatwoot.account_daily',
 ]);
 const PRIMARY_COVERAGE_DATASET = REQUIRED_COVERAGE_DATASETS[0];
-const ACCEPTED_DATA_STATUS = new Set(['complete', 'completed', 'no_data_confirmed']);
+const ACCEPTED_DATA_STATUS = new Set(['complete', 'completed', 'no_data_confirmed', 'partial']);
 const ACCEPTED_COVERAGE_STATUS = new Set(['complete', 'no_data_confirmed', 'revisable']);
 
 /** Bounded PII-minimized D1 source for the generic Chatwoot Customer Service Report. */
