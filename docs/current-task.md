@@ -1,22 +1,20 @@
-# Current Task — Report Metric Stable-Key Integrity v1
+# Current Task — Chatwoot 1D Post-Projection Resume v1
 
 ## Status
 
 ```text
 TASK_STATUS                         = IMPLEMENTATION_COMPLETE_CI_PASS
-CURRENT_PROGRAM                     = REPORT_METRIC_STABLE_KEY_INTEGRITY_V1
-BRANCH                              = hotfix/report-metric-stable-key-integrity-v1
-EXACT_BASE                          = bc7a5375fecb279f1d9a4fc89b7c2d7ee081c84c
-VERIFIED_CODE_HEAD                  = 918d63ec912804333a4533386eeaf654989f615d
-BRANCH_VERIFICATION_RUN             = 31149710109
-BRANCH_VERIFICATION_NUMBER          = 2277
-FAILED_RECOVERY_STAGE               = verify-d1-lark-integrity
-FAILED_RECOVERY_CODE                = REPORT_RUNTIME_CLOSEOUT_LARK_INTEGRITY_NOT_CONVERGED
+CURRENT_PROGRAM                     = CHATWOOT_1D_POST_PROJECTION_RESUME_V1
+BRANCH                              = hotfix/chatwoot-1d-post-projection-resume-v1
+EXACT_BASE                          = e4bf6353d2e095662d00ae1f1149977200ff6579
+VERIFIED_CODE_HEAD                  = 5021eec0c7404391785ccafad803106e3c6790f0
+BRANCH_VERIFICATION_RUN             = 31150997179
+BRANCH_VERIFICATION_NUMBER          = 2280
 D1_MATERIALIZATION_COUNT            = 1
 LARK_SNAPSHOT_COUNT                 = 1
 LARK_METRIC_COUNT                   = 139
 LARK_TOP_CONTENT_COUNT              = 0
-REPORTED_DUPLICATE_METRIC_KEYS      = 114
+LARK_TOP_ADS_COUNT                  = 0
 INCIDENT_CLOSURE_ATTEMPTED          = false
 QUEUE_ACTION_COUNT                  = 0
 WORKER_DEPLOYMENT_COUNT             = 0
@@ -28,79 +26,46 @@ PRODUCTION                          = BLOCKED
 
 ## Goal
 
-Correct the shared Report D1/Lark integrity verifier so dimensional Report rows are identified by the same stable `report_metric_key` used by the Lark writer and `TableSyncEngine`, rather than treating repeated business `metric_key` values across dimensions as duplicate Lark rows.
+Resume the exact Chatwoot 1D incident after the retained D1 materialization has already been projected to Lark successfully. The prior failure was verifier-only: the old verifier misclassified valid dimensional rows because it used business `metric_key` instead of stable `report_metric_key`.
 
-## Current incident
-
-The post-PR #528 Chatwoot 1D direct recovery successfully wrote the retained D1 materialization to Lark before verification stopped:
-
-```text
-Snapshot rows             1
-Metric rows               139
-Top Content               0
-Top Ads                   0
-reported duplicate keys   114
-Queue sends               0
-Worker deployments        0
-incident closure          not attempted
-```
-
-The failed evidence root is immutable:
+Immutable failed evidence:
 
 ```text
 outputs/chatwoot-post-528-bc7a5375/chatwoot-1d-d1-lark-recovery
 ```
 
-Do not rerun, delete, reset or clean this root.
-
-The 139 Lark rows are retained evidence and must not be manually deleted, deduplicated or regenerated through Queue work.
-
-## Root cause
-
-`MKT_Report_Metric_Values` has two different identities with different jobs:
-
-```text
-metric_key          = business metric definition
-report_metric_key   = stable physical Report row identity
-```
-
-Dimensional reports intentionally repeat one `metric_key` for different `dimension_type` / `dimension_value` rows. Chatwoot Inbox/Agent rows therefore repeat business metric names while remaining distinct stable rows.
-
-The shared reviewed-state verifier incorrectly built its duplicate set and value map from `metric_key`:
-
-```text
-metric_key -> current_value
-```
-
-That collapsed valid dimensional rows and reported 114 false duplicates.
-
-The writer already uses the correct stable identity:
-
-```text
-report_id
-+ stableMetricKey
-+ dimensionType
-+ dimensionValue
-= report_metric_key
-```
+Do not rerun, delete, reset or clean that root. The existing 1 Snapshot + 139 Metric rows are retained valid projection evidence and must not be manually deleted or deduplicated.
 
 ## Correction
 
-Change only the shared Report closeout/readback verifier:
+Keep the existing recovery operator and shared writer. Extend only its exact prestate/write-result contract:
 
-- read `report_metric_key` from every Lark Metric row;
-- duplicate detection applies to `report_metric_key`, not business `metric_key`;
-- reconstruct expected stable row identities from the persisted D1 materialization using the same escaping and dimension defaults as `buildReportMetricValueRows()`;
-- compare every stable row's current value with Lark using four-decimal Lark canonicalization already required by Report integrity;
-- repeated business `metric_key` values across distinct dimensions are valid;
-- duplicate `report_metric_key` remains a hard blocker;
-- missing/extra stable rows or value drift remain hard blockers.
+```text
+needs_projection   = D1 1 / Lark 0 + 0
+already_projected  = D1 1 / Lark 1 + 139 / duplicate report_metric_key 0
+```
 
-No Report formula, Lark writer, TableSyncEngine, Report ID, materialization payload or business metric semantics are changed.
+The shared `TableSyncEngine` already plans by stable key and skips unchanged rows. For the already-projected resume, the writer result must be exactly:
+
+```text
+created = 0
+updated = 0
+skipped = 140
+```
+
+The only other allowed write shape remains the original first projection:
+
+```text
+created = 140
+updated = 0
+skipped = 0
+```
+
+Any partial create, any update, missing row or duplicate stable key blocks incident closure.
 
 ## Verification result
 
-Verification-only PR #530 pointed to the exact code Head `918d63ec912804333a4533386eeaf654989f615d` without a new commit. Branch Verification #2277 / run `31149710109` passed every gate and PR #530 was closed unmerged.
+Branch Verification #2280 / run `31150997179` passed on exact code Head `5021eec0c7404391785ccafad803106e3c6790f0`:
 
 ```text
 Install locked dependencies                 PASS
@@ -119,17 +84,15 @@ Diff whitespace check                        PASS
 
 Regression coverage proves:
 
-- repeated business `metric_key` values across distinct dimensions do not count as duplicate rows;
-- duplicate `report_metric_key` identities still fail closed;
-- D1/Lark value parity checks every stable dimensional row individually;
-- a value mismatch under one stable dimension identity fails closed;
-- no Queue/Worker/Provider path was added.
+- exact Lark-empty state remains `needs_projection`;
+- exact Lark 1/139 with zero stable duplicates is `already_projected`;
+- partial Lark states still fail closed;
+- first projection accepts only `created=140 / updated=0 / skipped=0`;
+- post-projection resume accepts only `created=0 / updated=0 / skipped=140`;
+- any update or partial create fails before incident closure;
+- no Queue, Worker, Provider or Production path was added.
 
-## Required recovery boundary
-
-After merge, use the existing exact Chatwoot D1/Lark recovery operator under a brand-new evidence root. Because Lark already contains the 139 stable rows, shared `TableSyncEngine.planByKey()` must converge by stable key and must not create duplicate business rows.
-
-Required result:
+## Required result
 
 ```text
 D1 materialization                  1
@@ -138,6 +101,7 @@ Retained Sync status                failed
 Lark Snapshot                       1
 Lark Metrics                        139
 Duplicate report_metric_key         0
+Resume Lark mutation                0
 D1/Lark stable-key integrity        PASS
 Retained DLQ                        closed/completed after integrity
 Retained Critical Alert             resolved after integrity
@@ -153,12 +117,12 @@ Production                          BLOCKED
 
 - rerun any failed evidence root;
 - delete or manually deduplicate the existing 139 Lark rows;
-- resend Chatwoot 1D Queue work;
+- resend Queue work;
 - deploy a Report Worker;
-- mutate the retained D1 materialization payload/checksum;
+- mutate the retained D1 payload/checksum;
 - create a replacement Report ID;
-- close DLQ/Alert before stable-key D1/Lark integrity passes;
-- change canonical Dashboard metric scopes;
+- accept partial create/update during resume;
+- close DLQ/Alert before D1/Lark stable-key integrity passes;
 - enable Notification Admission, Schedule or Production.
 
 ## Required verification
@@ -166,10 +130,10 @@ Production                          BLOCKED
 ```bash
 npm ci
 npm run check
-node --test tests/scripts/report-runtime-closeout-stable-metric-integrity.test.js
-node --test tests/scripts/report-runtime-closeout-reviewed-state.test.js
 node --test tests/scripts/report-runtime-chatwoot-1d-d1-lark-recovery.test.js
 node --test tests/scripts/report-runtime-chatwoot-1d-d1-lark-recovery-source.test.js
+node --test tests/scripts/report-runtime-closeout-stable-metric-integrity.test.js
+node --test tests/scripts/report-runtime-closeout-reviewed-state.test.js
 npm test
 npm run test:report-reliability
 npm audit
@@ -180,10 +144,10 @@ git diff --check
 ## Post-merge sequence
 
 1. synchronize clean exact merged `main`;
-2. run current-head Finalizer under a brand-new evidence root;
-3. run exact Chatwoot D1/Lark recovery under a brand-new immutable root;
-4. require retained D1 payload/checksum unchanged;
-5. require Lark Snapshot `1`, Metrics `139`, duplicate stable key `0` and exact value parity;
+2. run current-head Finalizer under a new evidence root;
+3. run the existing exact Chatwoot D1/Lark recovery under a new immutable root;
+4. require writer result `created=0 / updated=0 / skipped=140`;
+5. require D1 unchanged and Lark stable-key integrity PASS;
 6. close/read back only the exact retained DLQ + Critical Alert;
 7. run fresh SELECT-only Chatwoot readiness;
-8. derive 1D/3D/7D/30D continuation from fresh readback only.
+8. derive remaining 3D/7D/30D actions from fresh state only.

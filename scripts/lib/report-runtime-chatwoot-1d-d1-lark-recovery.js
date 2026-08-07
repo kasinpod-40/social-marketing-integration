@@ -6,47 +6,68 @@ export const CHATWOOT_1D_D1_LARK_RECOVERY_CONTRACT =
   'report_runtime_chatwoot_1d_d1_complete_lark_incomplete_recovery_v1';
 export const CHATWOOT_1D_D1_LARK_RECOVERY_CONFIRMATION =
   'RECOVER_EXACT_CHATWOOT_1D_D1_COMPLETE_LARK_INCOMPLETE';
+export const CHATWOOT_1D_D1_LARK_RECOVERY_PRESTATE = Object.freeze({
+  NEEDS_PROJECTION: 'needs_projection',
+  ALREADY_PROJECTED: 'already_projected',
+});
 
 const RETAINED_CHATWOOT_LEGACY_SCOPE = 'period_end_snapshot';
 const RETAINED_CHATWOOT_CANONICAL_SCOPE = 'current_total';
 
-export function assertChatwoot1dD1LarkRecoveryPrestate(
+export function classifyChatwoot1dD1LarkRecoveryPrestate(
   input = {},
   incident = CHATWOOT_1D_EXACT_INCIDENT,
 ) {
   const d1 = input.d1 ?? {};
   const lark = input.lark ?? {};
-  if (d1.report_id !== incident.reportId
-    || Number(d1.materialization_count ?? 0) !== 1
-    || d1.sync_status !== incident.failedSync.status
-    || Number(d1.successful_sync_count ?? 0) !== 0
-    || Number(d1.active_lock_count ?? 0) !== 0
-    || Number(d1.new_dlq_count ?? 0) !== 1
-    || !hasText(d1.payload_checksum)
-    || Number(lark.snapshots ?? 0) !== 0
-    || Number(lark.metrics ?? 0) !== 0
-    || Number(lark.topContent ?? 0) !== 0
-    || Number(lark.topAds ?? 0) !== 0
-    || Number(lark.duplicateMetricKeys ?? 0) !== 0) {
-    throw recoveryFailure(
-      'Chatwoot 1D target is not the exact D1-complete / Lark-incomplete incident state',
-      'REPORT_RUNTIME_CHATWOOT_1D_D1_LARK_RECOVERY_PRESTATE_MISMATCH',
-      {
-        reportIdMatched: d1.report_id === incident.reportId,
-        materializationCount: Number(d1.materialization_count ?? 0),
-        syncStatus: d1.sync_status ?? null,
-        successfulSyncCount: Number(d1.successful_sync_count ?? 0),
-        activeLockCount: Number(d1.active_lock_count ?? 0),
-        newDlqCount: Number(d1.new_dlq_count ?? 0),
-        payloadChecksumPresent: hasText(d1.payload_checksum),
-        larkSnapshots: Number(lark.snapshots ?? 0),
-        larkMetrics: Number(lark.metrics ?? 0),
-        larkTopContent: Number(lark.topContent ?? 0),
-        larkTopAds: Number(lark.topAds ?? 0),
-        duplicateMetricKeys: Number(lark.duplicateMetricKeys ?? 0),
-      },
-    );
+  const commonValid = d1.report_id === incident.reportId
+    && Number(d1.materialization_count ?? 0) === 1
+    && d1.sync_status === incident.failedSync.status
+    && Number(d1.successful_sync_count ?? 0) === 0
+    && Number(d1.active_lock_count ?? 0) === 0
+    && Number(d1.new_dlq_count ?? 0) === 1
+    && hasText(d1.payload_checksum)
+    && Number(lark.topContent ?? 0) === 0
+    && Number(lark.topAds ?? 0) === 0
+    && Number(lark.duplicateMetricKeys ?? 0) === 0;
+
+  if (commonValid
+    && Number(lark.snapshots ?? 0) === 0
+    && Number(lark.metrics ?? 0) === 0) {
+    return CHATWOOT_1D_D1_LARK_RECOVERY_PRESTATE.NEEDS_PROJECTION;
   }
+
+  if (commonValid
+    && Number(lark.snapshots ?? 0) === 1
+    && Number(lark.metrics ?? 0) === incident.expectedMetricCount) {
+    return CHATWOOT_1D_D1_LARK_RECOVERY_PRESTATE.ALREADY_PROJECTED;
+  }
+
+  throw recoveryFailure(
+    'Chatwoot 1D target is not an exact recoverable D1/Lark incident state',
+    'REPORT_RUNTIME_CHATWOOT_1D_D1_LARK_RECOVERY_PRESTATE_MISMATCH',
+    {
+      reportIdMatched: d1.report_id === incident.reportId,
+      materializationCount: Number(d1.materialization_count ?? 0),
+      syncStatus: d1.sync_status ?? null,
+      successfulSyncCount: Number(d1.successful_sync_count ?? 0),
+      activeLockCount: Number(d1.active_lock_count ?? 0),
+      newDlqCount: Number(d1.new_dlq_count ?? 0),
+      payloadChecksumPresent: hasText(d1.payload_checksum),
+      larkSnapshots: Number(lark.snapshots ?? 0),
+      larkMetrics: Number(lark.metrics ?? 0),
+      larkTopContent: Number(lark.topContent ?? 0),
+      larkTopAds: Number(lark.topAds ?? 0),
+      duplicateMetricKeys: Number(lark.duplicateMetricKeys ?? 0),
+    },
+  );
+}
+
+export function assertChatwoot1dD1LarkRecoveryPrestate(
+  input = {},
+  incident = CHATWOOT_1D_EXACT_INCIDENT,
+) {
+  classifyChatwoot1dD1LarkRecoveryPrestate(input, incident);
   return true;
 }
 
@@ -182,18 +203,32 @@ export function assertChatwoot1dD1LarkRecoveryWriteResult(
   incident = CHATWOOT_1D_EXACT_INCIDENT,
 ) {
   const rows = result.rows ?? {};
+  const snapshotResult = result.results?.reportSnapshot ?? {};
+  const metricResult = result.results?.reportMetricValues ?? {};
+  const created = Number(snapshotResult.created ?? 0) + Number(metricResult.created ?? 0);
+  const updated = Number(snapshotResult.updated ?? 0) + Number(metricResult.updated ?? 0);
+  const skipped = Number(snapshotResult.skipped ?? 0) + Number(metricResult.skipped ?? 0);
+  const expectedRows = 1 + incident.expectedMetricCount;
+  const initialProjection = created === expectedRows && updated === 0 && skipped === 0;
+  const idempotentResume = created === 0 && updated === 0 && skipped === expectedRows;
+
   if (Number(rows.snapshots ?? -1) !== 1
     || Number(rows.metrics ?? -1) !== incident.expectedMetricCount
     || Number(rows.topContent ?? -1) !== 0
-    || Number(rows.topAds ?? -1) !== 0) {
+    || Number(rows.topAds ?? -1) !== 0
+    || (!initialProjection && !idempotentResume)) {
     throw recoveryFailure(
-      'Shared Lark writer did not emit the exact Chatwoot 1D row contract',
+      'Shared Lark writer did not emit an exact initial projection or zero-mutation resume',
       'REPORT_RUNTIME_CHATWOOT_1D_D1_LARK_RECOVERY_WRITE_RESULT_INVALID',
       {
         snapshots: Number(rows.snapshots ?? -1),
         metrics: Number(rows.metrics ?? -1),
         topContent: Number(rows.topContent ?? -1),
         topAds: Number(rows.topAds ?? -1),
+        created,
+        updated,
+        skipped,
+        expectedRows,
       },
     );
   }
