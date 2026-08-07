@@ -39,26 +39,36 @@ export async function inspectLarkNativeAiAutomationIdentity(input = {}) {
       { title, status },
     ));
 
-    const hydrated = normalizeHydratedWorkflow(
-      await client.getWorkflow({ workflowId: summary.workflowId }),
-      title,
-    );
-    if (hydrated.workflowId && hydrated.workflowId !== summary.workflowId) blockers.push(blocker(
-      'TARGET_AUTOMATION_IDENTITY_MISMATCH',
-      { title },
-    ));
-    if (hydrated.title && hydrated.title !== title) blockers.push(blocker(
-      'TARGET_AUTOMATION_TITLE_MISMATCH',
-      { title, observedTitle: hydrated.title },
-    ));
+    let topology = null;
+    let definitionSource = 'bitable_v1_list_automations';
+    if (isLegacyV3WorkflowId(summary.workflowId)) {
+      const hydrated = normalizeHydratedWorkflow(
+        await client.getWorkflow({ workflowId: summary.workflowId }),
+        title,
+      );
+      if (hydrated.workflowId && hydrated.workflowId !== summary.workflowId) blockers.push(blocker(
+        'TARGET_AUTOMATION_IDENTITY_MISMATCH',
+        { title },
+      ));
+      if (hydrated.title && hydrated.title !== title) blockers.push(blocker(
+        'TARGET_AUTOMATION_TITLE_MISMATCH',
+        { title, observedTitle: hydrated.title },
+      ));
+      topology = summarizeWorkflowTopology(hydrated.definition);
+      definitionSource = 'base_v3_exact_workflow';
+    }
 
     items.push(freeze({
       title,
       state: INACTIVE_STATUSES.has(status) ? 'existing_inactive' : 'existing_unsafe',
       count: 1,
       workflowId: summary.workflowId,
+      workflowIdFormat: isAutomationV1WorkflowId(summary.workflowId)
+        ? 'bitable_v1_decimal'
+        : 'base_v3_prefixed',
       status,
-      topology: summarizeWorkflowTopology(hydrated.definition),
+      definitionSource,
+      topology,
     }));
   }
 
@@ -133,7 +143,7 @@ function normalizeHydratedWorkflow(value, expectedTitle) {
   const nested = source.workflow && typeof source.workflow === 'object' ? source.workflow : source;
   const workflowId = optionalText(nested.workflow_id ?? nested.workflowId ?? nested.id);
   const title = optionalText(nested.title ?? nested.name);
-  if (workflowId && !isWorkflowId(workflowId)) throw probeError(
+  if (workflowId && !isSupportedWorkflowId(workflowId)) throw probeError(
     'Hydrated workflow returned an unsupported identity',
     'LARK_NATIVE_AI_AUTOMATION_WORKFLOW_ID_INVALID',
     { title: expectedTitle },
@@ -175,14 +185,20 @@ function normalizeStepType(value) {
 }
 function requireWorkflowId(value, field) {
   const text = requireText(value, field);
-  if (!isWorkflowId(text)) throw probeError(
+  if (!isSupportedWorkflowId(text)) throw probeError(
     'Automation identity is not a supported Lark workflow ID',
     'LARK_NATIVE_AI_AUTOMATION_WORKFLOW_ID_INVALID',
     { field },
   );
   return text;
 }
-function isWorkflowId(value) {
+function isSupportedWorkflowId(value) {
+  return isAutomationV1WorkflowId(value) || isLegacyV3WorkflowId(value);
+}
+function isAutomationV1WorkflowId(value) {
+  return typeof value === 'string' && /^[0-9]{10,30}$/u.test(value);
+}
+function isLegacyV3WorkflowId(value) {
   return typeof value === 'string' && /^wkf[A-Za-z0-9_-]{4,}$/u.test(value);
 }
 function blocker(code, details = {}) {
