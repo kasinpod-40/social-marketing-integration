@@ -15,28 +15,29 @@ AI Materialization → MKT_AI_Report_Runs
 Eligible AI Run → Lark Group Notification
 ```
 
-The probe uses two existing Lark read surfaces together:
+Primary identity authority:
 
 ```text
 GET /open-apis/bitable/v1/apps/{app_token}/workflows
 → resolve Base UI Automation workflow_id/title/status
-
-GET /open-apis/base/v3/bases/{app_token}/workflows/{workflow_id}
-→ hydrate the exact workflow definition for topology review
 ```
 
-The first endpoint is deliberately different from the prior Base v3 Workflow List endpoint. No missing Automation is interpreted as authority to create a replacement.
+The first live probe on `main@98eb16d55ebccb4a353050562482cd2abfbf3d55` proved this endpoint succeeds and returns the target title, but the local validator rejected its `workflow_id` before any definition read. Official Lark documentation shows Bitable v1 List automations returns `workflow_id` as a decimal string, not a required `wkf...` prefix.
+
+The correction therefore accepts the documented decimal Bitable v1 Automation identity. Legacy prefixed workflow IDs remain supported only for the existing Base v3 exact-definition read path. A decimal Bitable v1 Automation identity is not forced through that legacy hydration path during the identity probe.
+
+No missing Automation is interpreted as authority to create a replacement.
 
 ## Fail-closed rules
 
 - exact clean current `main` only;
 - Integration Workspace only;
 - exactly one Automation per approved title;
-- workflow identity must be a Lark `wkf...` identity;
+- Bitable v1 Automation workflow identity must be a bounded decimal string;
+- legacy `wkf...` IDs are accepted only for the pre-existing v3 definition-read compatibility path;
 - both targets must be inactive/disabled/draft/off;
 - any active target blocks later configuration;
-- duplicate, missing, unsupported status or identity mismatch blocks;
-- failure to hydrate the exact workflow blocks;
+- duplicate, missing, unsupported status or unsupported identity blocks;
 - no automatic create/update/enable/disable fallback exists.
 
 ## Evidence
@@ -47,7 +48,8 @@ Public stdout and summary retain only:
 - title;
 - normalized status;
 - SHA-256 of workflow identity;
-- bounded topology: step count/types and AI/message/delay/trigger presence;
+- workflow ID format and definition source;
+- bounded topology only when an exact v3 definition is actually read;
 - request counters and blockers.
 
 The private mode-0600 authority file may retain the raw workflow ID so a separately reviewed later operator can bind the exact existing object. It does not retain full step configuration, prompts, Group IDs, Table IDs or message payloads.
@@ -59,10 +61,26 @@ Allowed:
 ```text
 POST tenant_access_token
 GET  bitable v1 List automations
-GET  base v3 exact workflow definition (maximum two)
+GET  base v3 exact workflow definition only for a compatible legacy prefixed identity
 ```
 
 Everything else is blocked before fetch.
+
+## Retained failed read-only attempt
+
+```text
+Head                       98eb16d55ebccb4a353050562482cd2abfbf3d55
+List automations           HTTP 200
+Automation list reads      1
+Workflow definition reads  0
+Writes                     0
+AI calls                   0
+Notifications              0
+Schedule                   disabled
+Failure                    local workflow_id format validator
+```
+
+The failed evidence directory is retained. A post-hotfix run uses a brand-new immutable attempt directory.
 
 ## Safety
 
@@ -93,10 +111,10 @@ node scripts/lark-native-ai-automation-identity-probe-terminal.mjs --execute
 
 ## Next gate
 
-If and only if both exact targets resolve inactive and their v3 definitions hydrate successfully:
+If and only if both exact targets resolve inactive:
 
-1. review the current AI Materialization definition;
-2. prepare an exact inactive-only Prompt v2 configuration update against that same workflow identity;
+1. retain their exact Bitable v1 Automation identities;
+2. review the exact inactive AI Materialization update/read contract separately;
 3. never modify the Notification Automation in the AI configuration phase;
 4. run one 7D Executive AI controlled UAT from the latest available validated Base Report evidence;
 5. inspect generated Thai text before any Notification admission/send.
