@@ -119,6 +119,10 @@ jobs:
           set -o pipefail
           npm run test:report-reliability 2>&1 | tee report-test.log
 
+      - name: Temporary compatible audit lock refresh
+        shell: bash
+        run: npm audit fix --package-lock-only --ignore-scripts
+
       - name: Dependency audit
         shell: bash
         run: |
@@ -143,5 +147,6 @@ jobs:
             *-test.log
             audit.log
             diff-check.log
+            package-lock.json
           if-no-files-found: ignore
           retention-days: 7
