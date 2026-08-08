@@ -9,10 +9,10 @@ function statusVector() {
   }));
 }
 
-function compactSummary() {
+function compactSummary(promptShape = 'lark_ai_compact_v1') {
   return {
     evidenceShape: 'executive_business_first_v2',
-    promptShape: 'lark_ai_compact_v1',
+    promptShape,
     overallCoverageState: 'partial_coverage',
     channelBusinessEvidence: [
       {
@@ -56,30 +56,55 @@ function compactSummary() {
   };
 }
 
-test('removes no-data placeholders and adds conservative interpretation policy', () => {
+test('removes no-data placeholders and adds deterministic quality-v3 interpretation context', () => {
   const hardened = hardenLarkNativeAiWeeklyEvidence({
     metricSummaryJson: JSON.stringify(compactSummary()),
     channelStatusVectorJson: JSON.stringify(statusVector()),
   });
   const parsed = JSON.parse(hardened.metricSummaryJson);
 
-  assert.equal(parsed.promptShape, 'lark_ai_compact_quality_v2');
+  assert.equal(parsed.promptShape, 'lark_ai_compact_quality_v3');
   assert.equal(parsed.channelBusinessEvidence.length, 9);
   assert.equal(parsed.channelBusinessEvidence[0].businessEvidencePresent, false);
+  assert.equal(parsed.channelBusinessEvidence[0].observationMode, 'no_business_evidence');
   assert.equal(Object.hasOwn(parsed.channelBusinessEvidence[0], 'topContent'), false);
   assert.equal(parsed.channelBusinessEvidence[1].topContent[0].views, 120);
+  assert.equal(parsed.channelBusinessEvidence[1].observationMode, 'observed_only');
   assert.equal(parsed.channelBusinessEvidence[2].topAds[0].clicks, 40);
   assert.equal(parsed.channelBusinessEvidence[2].topAds[0].spend_micros, 2500000);
   assert.equal(parsed.channelBusinessEvidence[2].comparisonEvidencePresent, false);
-  assert.equal(parsed.interpretationPolicy.absoluteMagnitude, 'require_comparison_or_benchmark');
-  assert.equal(parsed.interpretationPolicy.spend, 'observed_value_never_implies_planning_intent');
-  assert.equal(parsed.interpretationPolicy.consistency, 'same_fact_interpretation_across_all_four_outputs');
+  assert.equal(parsed.qualityContext.businessEvidenceChannelCount, 3);
+  assert.equal(parsed.qualityContext.comparisonEvidenceChannelCount, 0);
+  assert.equal(parsed.qualityContext.strengthsFallbackRequired, true);
+  assert.equal(parsed.qualityContext.recommendationMode, 'observed_only_followup');
+  assert.match(parsed.interpretationPolicy.absoluteMagnitude, /ห้ามใช้คำว่า มาก น้อย สูง ต่ำ เด่น ดี แย่/u);
+  assert.match(parsed.interpretationPolicy.strengths, /ยังไม่มีข้อมูลเปรียบเทียบเพียงพอสำหรับระบุจุดแข็งด้านผลงาน/u);
+  assert.match(parsed.interpretationPolicy.recommendations, /ห้ามแนะนำเติมข้อมูลหรือแก้ระบบ/u);
+  assert.match(parsed.interpretationPolicy.wording, /ความรู้สึกเบื้องหลังผลลัพธ์/u);
   assert.ok(hardened.metricSummaryChars <= 2800);
   assert.ok(hardened.channelStatusVectorChars <= 700);
 });
 
-test('preserves comparison evidence without inventing a baseline', () => {
-  const summary = compactSummary();
+test('accepts the retained quality-v2 evidence shape and upgrades it to quality v3', () => {
+  const summary = compactSummary('lark_ai_compact_quality_v2');
+  summary.interpretationPolicy = { absoluteMagnitude: 'require_comparison_or_benchmark' };
+  summary.channelBusinessEvidence[2].businessEvidencePresent = true;
+  summary.channelBusinessEvidence[2].comparisonEvidencePresent = false;
+
+  const hardened = hardenLarkNativeAiWeeklyEvidence({
+    metricSummaryJson: JSON.stringify(summary),
+    channelStatusVectorJson: JSON.stringify(statusVector()),
+  });
+  const parsed = JSON.parse(hardened.metricSummaryJson);
+
+  assert.equal(hardened.promptShape, 'lark_ai_compact_quality_v3');
+  assert.equal(parsed.promptShape, 'lark_ai_compact_quality_v3');
+  assert.equal(parsed.channelBusinessEvidence[2].observationMode, 'observed_only');
+  assert.equal(parsed.qualityContext.strengthsFallbackRequired, true);
+});
+
+test('preserves comparison evidence and enables comparison-supported actions', () => {
+  const summary = compactSummary('lark_ai_compact_quality_v2');
   summary.channelBusinessEvidence[1].availableMetrics = [{
     metric_key: 'reach',
     current_value: 120,
@@ -94,21 +119,27 @@ test('preserves comparison evidence without inventing a baseline', () => {
   const instagram = parsed.channelBusinessEvidence[1];
 
   assert.equal(instagram.comparisonEvidencePresent, true);
+  assert.equal(instagram.observationMode, 'comparison_supported');
   assert.equal(instagram.availableMetrics[0].current_value, 120);
   assert.equal(instagram.availableMetrics[0].previous_value, 100);
   assert.equal(instagram.availableMetrics[0].change_percent, 20);
+  assert.equal(parsed.qualityContext.comparisonEvidenceChannelCount, 1);
+  assert.equal(parsed.qualityContext.strengthsFallbackRequired, false);
+  assert.equal(parsed.qualityContext.recommendationMode, 'comparison_supported_action');
 });
 
-test('rejects a non-compact source shape', () => {
-  assert.throws(
-    () => hardenLarkNativeAiWeeklyEvidence({
-      metricSummaryJson: JSON.stringify({
-        evidenceShape: 'executive_business_first_v2',
-        promptShape: 'legacy',
-        channelBusinessEvidence: Array.from({ length: 9 }, () => ({})),
+test('rejects an unsupported or already-consumed source shape', () => {
+  for (const promptShape of ['legacy', 'lark_ai_compact_quality_v3']) {
+    assert.throws(
+      () => hardenLarkNativeAiWeeklyEvidence({
+        metricSummaryJson: JSON.stringify({
+          evidenceShape: 'executive_business_first_v2',
+          promptShape,
+          channelBusinessEvidence: Array.from({ length: 9 }, () => ({})),
+        }),
+        channelStatusVectorJson: JSON.stringify(statusVector()),
       }),
-      channelStatusVectorJson: JSON.stringify(statusVector()),
-    }),
-    (error) => error?.code === 'LARK_AI_QUALITY_EVIDENCE_SHAPE_INVALID',
-  );
+      (error) => error?.code === 'LARK_AI_QUALITY_EVIDENCE_SHAPE_INVALID',
+    );
+  }
 });
