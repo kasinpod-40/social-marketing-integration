@@ -34,8 +34,8 @@ The resulting `lark_ai_compact_quality_v2` evidence generated successfully throu
 Do not edit the Lark Automation UI again. Strengthen the existing evidence contract instead.
 
 - Upgrade only retained `lark_ai_compact_quality_v2` or original compact-v1 evidence to `lark_ai_compact_quality_v3`.
-- Add top-level `qualityContext` with business-evidence count, comparison-evidence count, deterministic Strengths fallback requirement and recommendation mode.
-- Add per-channel `observationMode` so an observed-only channel cannot be treated as comparison-supported performance.
+- Add compact top-level `qualityContext` with business-evidence count, comparison-evidence count, deterministic Strengths fallback requirement and recommendation mode.
+- Reuse each channel's existing `comparisonEvidencePresent` instead of adding another repeated per-channel policy field, preserving the reviewed `metric_summary_json <= 2800` budget.
 - If a channel has no comparison evidence, prohibit magnitude/performance adjectives such as `มาก`, `น้อย`, `สูง`, `ต่ำ`, `เด่น`, `ดี`, `แย่` from current values alone.
 - If no channel has comparison evidence, Strengths must use the reviewed fallback: `ยังไม่มีข้อมูลเปรียบเทียบเพียงพอสำหรับระบุจุดแข็งด้านผลงาน`.
 - Observed spend remains a factual value only and never implies planning intent, investment quality or efficiency.
