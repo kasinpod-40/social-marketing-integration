@@ -172,7 +172,7 @@ test('keeps the legacy direct Report identity path when source_report_ids_json i
     aiRunKey: 'uat:executive:3d',
     expectedDestinationKeyHash: DESTINATION_HASH,
   });
-  assert.equal(request.aiRun.templateVersion, undefined);
+  assert.equal(request.aiRun.templateVersion, null);
   assert.deepEqual(request.snapshot.sourceReportIds, ['source-report-a']);
 });
 
