@@ -1,9 +1,10 @@
 const DEFAULT_METRIC_SUMMARY_LIMIT = 2800;
 const DEFAULT_STATUS_VECTOR_LIMIT = 700;
-const QUALITY_PROMPT_SHAPE = 'lark_ai_compact_quality_v3';
+const QUALITY_PROMPT_SHAPE = 'lark_ai_compact_quality_v4';
 const ACCEPTED_SOURCE_PROMPT_SHAPES = new Set([
   'lark_ai_compact_v1',
   'lark_ai_compact_quality_v2',
+  'lark_ai_compact_quality_v3',
 ]);
 
 const PLACEHOLDER_TOKENS = Object.freeze([
@@ -16,15 +17,13 @@ const PLACEHOLDER_TOKENS = Object.freeze([
   'invalid.example',
 ]);
 
-const POLICY = Object.freeze({
-  absoluteMagnitude: 'comparisonEvidencePresent=false: ห้ามใช้ มาก น้อย สูง ต่ำ เด่น ดี แย่ จากค่าปัจจุบันล้วน',
-  strengths: 'strengthsFallbackRequired=true: ตอบ “ยังไม่มีข้อมูลเปรียบเทียบเพียงพอสำหรับระบุจุดแข็งด้านผลงาน”',
-  spend: 'spend เป็นค่าที่สังเกต ห้ามสรุปเจตนาวางแผน ลงทุน หรือความคุ้มค่า',
-  missingData: 'ข้อมูลที่ขาดไม่ใช่ performance weakness',
-  recommendations: 'มี business evidence แต่ไม่มี comparison: แนะนำติดตาม/เปรียบเทียบ metric หรือ creative ที่มีจริง ห้ามเติมข้อมูลหรือแก้ระบบ',
-  wording: 'ใช้คำตรง วัดผลได้ ห้ามคำกำกวม/อุปมา เช่น “ความรู้สึกเบื้องหลังผลลัพธ์”',
-  consistency: 'ข้อเท็จจริงเดียวกันต้องตรงกันทั้ง 4 outputs',
-  output: 'ห้ามศัพท์สถานะภายในหรือเชิงอรรถหลักฐาน',
+const WRITER_CONTRACT = Object.freeze({
+  role: 'weekly_executive_marketer',
+  overview: 'สรุป business facts 2-4 ประโยคก่อน; ค่าปัจจุบันบอกตัวเลขได้แต่ห้ามเรียก มาก สูง ต่ำ เด่น ดี แย่ หากไม่มี comparison; ช่องทางไม่มีข้อมูลรวมสั้นๆ ท้ายสรุป',
+  strengths: 'ถ้า strengthsMode=fallback_no_comparison ให้ตอบ exactly “ยังไม่มีข้อมูลเปรียบเทียบเพียงพอสำหรับระบุจุดแข็งด้านผลงาน”',
+  weaknesses: 'performance-only; ห้าม recommendation/คำว่า แนะนำ ควร ติดตาม ตรวจสอบ ทดลอง; ถ้าไม่มีสัญญาณลบให้ใช้ fallback เดิม และกล่าว missing channels ได้ไม่เกิน 1 ข้อ',
+  recommendations: 'business-action-only จาก evidence ที่มี; ห้ามเติม/รอ/ตรวจข้อมูลหรือระบบ; observed-only ads ที่มี clicks+impressions+spend ให้เสนอคำนวณ CTR/CPC และใช้เป็น baseline เทียบสัปดาห์ถัดไป',
+  output: 'ไม่ใส่ Markdown heading, เชิงอรรถ, วงเล็บหลักฐาน, JSON, field name หรือศัพท์สถานะภายใน',
 });
 
 export function hardenLarkNativeAiWeeklyEvidence(input = {}) {
@@ -44,7 +43,10 @@ export function hardenLarkNativeAiWeeklyEvidence(input = {}) {
     || !Array.isArray(summary.channelBusinessEvidence)
     || summary.channelBusinessEvidence.length !== 9
     || statusVector.length !== 9) {
-    throw evidenceError('Weekly Executive quality hardening requires compact v1 or quality v2 evidence for nine channels', 'LARK_AI_QUALITY_EVIDENCE_SHAPE_INVALID');
+    throw evidenceError(
+      'Weekly Executive quality hardening requires reviewed compact evidence for nine channels',
+      'LARK_AI_QUALITY_EVIDENCE_SHAPE_INVALID',
+    );
   }
 
   const channelBusinessEvidence = summary.channelBusinessEvidence.map(hardenChannel);
@@ -55,19 +57,20 @@ export function hardenLarkNativeAiWeeklyEvidence(input = {}) {
   const qualityContext = Object.freeze({
     businessEvidenceChannelCount,
     comparisonEvidenceChannelCount,
-    strengthsFallbackRequired: comparisonEvidenceChannelCount === 0,
+    strengthsMode: comparisonEvidenceChannelCount === 0
+      ? 'fallback_no_comparison'
+      : 'comparison_supported',
     recommendationMode: businessEvidenceChannelCount === 0
-      ? 'wait_for_business_evidence'
+      ? 'no_business_action'
       : comparisonEvidenceChannelCount === 0
-        ? 'observed_only_followup'
+        ? 'observed_only_business_followup'
         : 'comparison_supported_action',
   });
   const hardenedSummary = {
     evidenceShape: 'executive_business_first_v2',
     promptShape: QUALITY_PROMPT_SHAPE,
-    overallCoverageState: textOrNull(summary.overallCoverageState),
     qualityContext,
-    interpretationPolicy: POLICY,
+    writerContract: WRITER_CONTRACT,
     channelBusinessEvidence,
   };
   const metricSummaryJson = stableStringify(hardenedSummary);
@@ -97,6 +100,8 @@ export function hardenLarkNativeAiWeeklyEvidence(input = {}) {
     promptShape: QUALITY_PROMPT_SHAPE,
     businessEvidenceChannelCount,
     comparisonEvidenceChannelCount,
+    strengthsMode: qualityContext.strengthsMode,
+    recommendationMode: qualityContext.recommendationMode,
   });
 }
 
@@ -124,11 +129,11 @@ function hardenChannel(value) {
   ));
   const output = {
     channelKey: textOrNull(source.channelKey),
-    displayName: textOrNull(source.displayName),
-    readinessStatus: textOrNull(source.readinessStatus),
     businessEvidencePresent,
     comparisonEvidencePresent,
   };
+  const displayName = textOrNull(source.displayName);
+  if (businessEvidencePresent && displayName) output.displayName = displayName;
   if (availableMetrics.length > 0) output.availableMetrics = availableMetrics;
   if (topContent.length > 0) output.topContent = topContent;
   if (topAds.length > 0) output.topAds = topAds;
