@@ -189,15 +189,22 @@ function normalizeFactualMetric(raw) {
   const metric = requireObject(raw, 'metric');
   const metricKey = requireText(metric.metricKey ?? metric.metric_key, 'metric.metricKey');
   const currentValue = requireFinite(metric.currentValue ?? metric.current_value, 'metric.currentValue');
+  const unit = optionalText(metric.unit) ?? 'count';
+  const microsCurrency = unit === 'currency' && metricKey.endsWith('_micros');
+  const explicitDisplayValue = finiteOrNull(metric.displayValue ?? metric.display_value);
+  const compareValue = finiteOrNull(metric.compareValue ?? metric.compare_value);
   return deepFreeze({
     metricKey,
     displayName: optionalText(metric.displayName ?? metric.display_name) ?? metricKey,
     currentValue,
-    displayValue: finiteOrNull(metric.displayValue ?? metric.display_value),
-    compareValue: finiteOrNull(metric.compareValue ?? metric.compare_value),
+    displayValue: explicitDisplayValue
+      ?? (microsCurrency ? round(currentValue / 1_000_000, 4) : currentValue),
+    compareValue: compareValue === null
+      ? null
+      : (microsCurrency ? round(compareValue / 1_000_000, 4) : compareValue),
     changeValue: finiteOrNull(metric.changeValue ?? metric.change_value),
     changePercent: finiteOrNull(metric.changePercent ?? metric.change_percent),
-    unit: optionalText(metric.unit) ?? 'count',
+    unit,
     rank: normalizeRank(metric.rank),
   });
 }
