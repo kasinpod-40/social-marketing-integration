@@ -139,8 +139,8 @@ test('uses nullable live checksum without pretending it solves notification dedu
   assert.equal(LARK_NATIVE_AI_NOTIFICATION_DEDUPE_GATE_AUTHORITY.liveConfigurationSupported, false);
 });
 
-test('captures business-first Thai prompt v2 with exact shared reference slots', () => {
-  assert.equal(LARK_NATIVE_AI_AUTOMATION_PROMPT_VERSION, 'lark_native_ai_automation_prompts_v2');
+test('captures field-isolated Thai prompt v3 with exact shared reference slots', () => {
+  assert.equal(LARK_NATIVE_AI_AUTOMATION_PROMPT_VERSION, 'lark_native_ai_automation_prompts_v3');
   assert.deepEqual(LARK_NATIVE_AI_AUTOMATION_PROMPT_REFERENCE_SLOTS, [
     'scope_type',
     'channel_key',
@@ -161,20 +161,23 @@ test('captures business-first Thai prompt v2 with exact shared reference slots',
   for (const [fieldName, prompt] of Object.entries(LARK_NATIVE_AI_AUTOMATION_PROMPTS)) {
     assert.equal(prompt.fieldName, fieldName);
     assert.equal(prompt.language, 'th');
-    assert.equal(prompt.source, 'user_approved_weekly_executive_quality_2026-08-07');
+    assert.equal(prompt.source, 'user_approved_weekly_executive_writer_2026-08-08');
     assert.deepEqual(prompt.referenceSlots, LARK_NATIVE_AI_AUTOMATION_PROMPT_REFERENCE_SLOTS);
     assert.match(prompt.text, /นักวิเคราะห์การตลาด/u);
-    assert.match(prompt.text, /ยังไม่พบข้อมูลสำหรับช่วงนี้/u);
     assert.match(prompt.text, /ห้ามสร้างหรือคาดเดาตัวเลข/u);
     assert.match(prompt.text, /\{\{metric_summary_json\}\}/u);
     assert.match(prompt.text, /\{\{executive_channel_statuses\}\}/u);
+    assert.match(prompt.text, /แต่ละฟิลด์มีหน้าที่ของตัวเอง/u);
   }
-  assert.match(LARK_NATIVE_AI_AUTOMATION_PROMPTS.insight_summary.text, /ผลงานของช่องทาง/u);
-  assert.match(LARK_NATIVE_AI_AUTOMATION_PROMPTS.insight_summary.text, /Content\/Ad\/สินค้า\/การสนทนา/u);
-  assert.match(LARK_NATIVE_AI_AUTOMATION_PROMPTS.strengths.text, /ห้ามใช้ “ข้อมูลพร้อม”/u);
-  assert.match(LARK_NATIVE_AI_AUTOMATION_PROMPTS.weaknesses.text, /การไม่มีข้อมูลไม่ใช่ผลงานแย่/u);
-  assert.match(LARK_NATIVE_AI_AUTOMATION_PROMPTS.recommendations.text, /สิ่งที่ควรทำสัปดาห์หน้า/u);
-  assert.match(LARK_NATIVE_AI_AUTOMATION_PROMPTS.recommendations.text, /ห้ามใช้ศัพท์ระบบ/u);
+  assert.match(LARK_NATIVE_AI_AUTOMATION_PROMPTS.insight_summary.text, /ห้ามเขียนสิ่งที่ทีมควรทำต่อ/u);
+  assert.match(LARK_NATIVE_AI_AUTOMATION_PROMPTS.insight_summary.text, /ห้ามใช้คำเชิง action/u);
+  assert.match(LARK_NATIVE_AI_AUTOMATION_PROMPTS.strengths.text, /ยังไม่มีข้อมูลเปรียบเทียบเพียงพอสำหรับระบุจุดแข็งด้านผลงาน/u);
+  assert.match(LARK_NATIVE_AI_AUTOMATION_PROMPTS.strengths.text, /ห้ามกล่าวถึงช่องทางที่ไม่มีข้อมูล/u);
+  assert.match(LARK_NATIVE_AI_AUTOMATION_PROMPTS.weaknesses.text, /ห้ามเอาการไม่มีข้อมูล ข้อมูลไม่ครบ/u);
+  assert.match(LARK_NATIVE_AI_AUTOMATION_PROMPTS.weaknesses.text, /ห้ามเขียน action หรือ recommendation/u);
+  assert.match(LARK_NATIVE_AI_AUTOMATION_PROMPTS.recommendations.text, /คำนวณ CTR และ CPC/u);
+  assert.match(LARK_NATIVE_AI_AUTOMATION_PROMPTS.recommendations.text, /ห้ามเขียนเรื่องเติมข้อมูล ตรวจข้อมูล แก้ระบบ/u);
+  assert.match(LARK_NATIVE_AI_AUTOMATION_PROMPTS.recommendations.text, /ห้ามคัดลอกประโยค fallback/u);
 });
 
 test('locks Custom AI target fields and verified Automation result binding', () => {

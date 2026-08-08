@@ -120,7 +120,7 @@ test('builds one isolated 7D Executive UAT row with business-first TikTok eviden
   assert.equal(result.executiveRow.failure_code, null);
   assert.equal(result.executiveRow.generated_at, null);
   assert.equal(result.executiveRow.sent_at, null);
-  assert.equal(result.uiConfiguration.promptVersion, 'lark_native_ai_automation_prompts_v2');
+  assert.equal(result.uiConfiguration.promptVersion, 'lark_native_ai_automation_prompts_v3');
   assert.equal(result.uiConfiguration.actionCount, 4);
 
   const summary = JSON.parse(result.executiveRow.metric_summary_json);
