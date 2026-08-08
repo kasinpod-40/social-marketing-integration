@@ -25,7 +25,6 @@ const CONFIRMATION = 'RETRY_WEEKLY_7D_NATIVE_AI_QUALITY_GATE_V8';
 const EXPECTED_PROMPT_VERSION = 'lark_native_ai_automation_prompts_v3';
 const SOURCE_PROMPT_SHAPE = 'lark_ai_compact_quality_v4';
 const TARGET_PROMPT_SHAPE = 'lark_ai_compact_quality_v5';
-const PRIOR_TRIGGER_MARKER = 'CONTROLLED_UAT_NATIVE_AI_PROMPT_V3_TRIGGER_V7';
 const TRIGGER_MARKER = 'CONTROLLED_UAT_NATIVE_AI_QUALITY_GATE_TRIGGER_V8';
 const AI_TITLE = 'AI Materialization → MKT_AI_Report_Runs';
 const NOTIFICATION_TITLE = 'Eligible AI Run → Lark Group Notification';
@@ -86,7 +85,7 @@ function printPlan() {
     sourcePromptShape: SOURCE_PROMPT_SHAPE,
     targetPromptShape: TARGET_PROMPT_SHAPE,
     expectedPromptVersion: EXPECTED_PROMPT_VERSION,
-    requiredPriorTriggerMarker: PRIOR_TRIGGER_MARKER,
+    requiredSourceFailureCode: null,
     confirmation: CONFIRMATION,
     maximumOperatorRecordWrites: 2,
     evidenceRewriteCount: 1,
@@ -152,9 +151,10 @@ async function execute() {
   });
   const matches = candidates.filter((record) => isExactV7GeneratedRow(record?.fields));
   if (matches.length !== 1) {
-    throw failure('Expected exactly one generated V7 Executive UAT row', 'LARK_NATIVE_AI_QUALITY_GATE_V8_SOURCE_ROW_INVALID', {
+    throw failure('Expected exactly one finalized generated V7 Executive UAT row', 'LARK_NATIVE_AI_QUALITY_GATE_V8_SOURCE_ROW_INVALID', {
       candidates: candidates.length,
       exactMatches: matches.length,
+      candidateStates: candidates.map((record) => summarizeCandidateState(record?.fields)),
     });
   }
 
@@ -326,7 +326,7 @@ function isExactV7GeneratedRow(fields) {
     && Number(optionalText(fields.window_days)) === LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_WINDOW_DAYS
     && optionalText(fields.readiness_status) === 'report_partial'
     && optionalText(fields.generation_status) === 'generated'
-    && optionalText(fields.failure_code) === PRIOR_TRIGGER_MARKER
+    && optionalText(fields.failure_code) === null
     && readPromptShape(fields.metric_summary_json) === SOURCE_PROMPT_SHAPE
     && booleanValue(fields.preview_mode) === true
     && booleanValue(fields.notification_eligible) === false
@@ -336,13 +336,30 @@ function isExactV7GeneratedRow(fields) {
 
 function isExactPreparedV8Row(fields, metricSummaryText, channelStatusVectorText) {
   return optionalText(fields.generation_status) === 'pending'
-    && optionalText(fields.failure_code) === PRIOR_TRIGGER_MARKER
+    && optionalText(fields.failure_code) === null
     && optionalText(fields.metric_summary_json) === metricSummaryText
     && optionalText(fields.channel_status_vector_json) === channelStatusVectorText
     && readPromptShape(fields.metric_summary_json) === TARGET_PROMPT_SHAPE
     && Object.values(outputPresence(fields)).every((present) => present === false)
     && booleanValue(fields.notification_eligible) === false
     && booleanValue(fields.sent_to_group) === false;
+}
+
+function summarizeCandidateState(fields) {
+  if (!fields || typeof fields !== 'object') return null;
+  return Object.freeze({
+    scopeType: optionalText(fields.scope_type),
+    channelKey: optionalText(fields.channel_key),
+    windowDays: Number(optionalText(fields.window_days)),
+    readinessStatus: optionalText(fields.readiness_status),
+    generationStatus: optionalText(fields.generation_status),
+    failureCode: optionalText(fields.failure_code),
+    promptShape: readPromptShape(fields.metric_summary_json),
+    previewMode: booleanValue(fields.preview_mode),
+    notificationEligible: booleanValue(fields.notification_eligible),
+    sentToGroup: booleanValue(fields.sent_to_group),
+    outputsPresent: outputPresence(fields),
+  });
 }
 
 function readOutputs(fields) {
