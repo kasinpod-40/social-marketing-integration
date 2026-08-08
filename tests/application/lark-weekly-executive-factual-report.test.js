@@ -81,7 +81,7 @@ test('channel rendering formats real facts and explicitly renders missing channe
   assert.equal(meta.lines.some((line) => line.includes('Hidden')), false);
 });
 
-test('currency micros are presentation-scaled without changing canonical current value', () => {
+test('currency micros are presentation-scaled without changing canonical current or compare values', () => {
   const bundle = metaBundle();
   bundle.metricValues = [{
     metric_key: 'spend_micros', display_name: 'Spend', current_value: 807690000000,
@@ -92,10 +92,11 @@ test('currency micros are presentation-scaled without changing canonical current
   const meta = report.channels.find(({ channelKey }) => channelKey === 'meta_ads');
   assert.equal(meta.metrics[0].currentValue, 807690000000);
   assert.equal(meta.metrics[0].displayValue, 807690);
-  assert.equal(meta.metrics[0].compareValue, 700000);
+  assert.equal(meta.metrics[0].compareValue, 700000000000);
   const rendered = renderLarkWeeklyExecutiveChannelSections(report)
     .find(({ channelKey }) => channelKey === 'meta_ads');
   assert.ok(rendered.lines.some((line) => line.includes('807,690')));
+  assert.ok(rendered.lines.some((line) => line.includes('ช่วงก่อน 700,000')));
   assert.equal(rendered.lines.some((line) => line.includes('807,690,000,000')), false);
 });
 
