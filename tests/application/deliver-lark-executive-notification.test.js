@@ -12,11 +12,12 @@ const migration = readFileSync('migrations/0019_lark_notification_delivery.sql',
 const destinationHash = '7e69a1721915dfc52b4a3ed1ecf2569cdac63ffa63f6419959c35562ef5219b9';
 const dedupeKey = 'a'.repeat(64);
 
-function request() {
+function request(overrides = {}) {
   return {
     aiRun: {
       aiRunKey: 'integration_workspace:executive:7d:2026-08-03',
       reportId: 'integration_workspace:executive:7d:2026-08-03',
+      templateVersion: 'executive_weekly_7d_notification_v1',
       scopeType: 'executive', generationStatus: 'generated', notificationEligible: true,
       previewMode: false, sentToGroup: false, dedupeKey, windowDays: 7,
       readinessStatus: 'report_partial', severity: 'warning',
@@ -24,15 +25,18 @@ function request() {
       strengths: 'ยังไม่มีข้อมูลเปรียบเทียบเพียงพอสำหรับระบุจุดแข็งด้านผลงาน',
       weaknesses: 'ยังไม่พบสัญญาณด้านผลงานที่ควรระวังจากข้อมูลที่มี',
       recommendations: '- คำนวณ CTR และ CPC จากข้อมูลโฆษณาที่มี แล้วใช้เป็น baseline เทียบกับสัปดาห์ถัดไป',
+      ...(overrides.aiRun ?? {}),
     },
     snapshot: {
       reportId: 'integration_workspace:executive:7d:2026-08-03',
       reportSettingKey: 'integration_workspace:executive:rolling:7',
       customerProfile: 'integration_workspace', periodStart: '2026-07-28', periodEnd: '2026-08-03',
+      ...(overrides.snapshot ?? {}),
     },
     settings: {
       enabled: true, aiEnabled: true, notificationEnabled: true,
       groupId: 'runtime-destination', destinationKeyHash: destinationHash,
+      ...(overrides.settings ?? {}),
     },
   };
 }
@@ -57,6 +61,16 @@ test('builds a business-first weekly message without internal readiness or sever
   assert.doesNotMatch(message.text, /report_partial|readiness_status|สถานะข้อมูล|ระดับ:\s*warning/iu);
   assert.match(message.text, /4553/u);
   assert.match(message.text, /582054/u);
+});
+
+test('keeps legacy notification identities on the v1 renderer semantics', () => {
+  const message = buildLarkExecutiveNotificationMessage(request({
+    aiRun: { templateVersion: 'notification_runtime_smoke_v1' },
+  }));
+  assert.equal(message.title, '📊 Social MKT Executive Report — 7D');
+  assert.match(message.text, /ระดับ: warning/u);
+  assert.match(message.text, /สถานะข้อมูล: report_partial/u);
+  assert.doesNotMatch(message.text, /ภาพรวมสัปดาห์นี้/u);
 });
 
 test('sends and mirrors once while exact replay never sends again', async () => {
