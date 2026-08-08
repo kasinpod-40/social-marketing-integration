@@ -31,6 +31,7 @@ const ADMISSION_PREFIX = 'notification-weekly-7d:';
 const HASH = /^[a-f0-9]{64}$/u;
 const SOURCE_SCOPE = 'executive';
 const SOURCE_CHANNEL = 'executive';
+const PROVEN_NOTIFICATION_REASON = 'controlled_uat';
 
 export function assertLarkWeekly7dNotificationAdmissionConfirmation(env = {}) {
   const confirmation = LARK_WEEKLY_7D_NOTIFICATION_ADMISSION_CONFIRMATION;
@@ -84,7 +85,7 @@ export function buildLarkWeekly7dNotificationAdmissionRow(sourceRecord) {
     channel_key: SOURCE_CHANNEL,
     capability: 'cross_channel',
     notification_eligible: true,
-    notification_reason: 'weekly_7d_quality_accepted',
+    notification_reason: PROVEN_NOTIFICATION_REASON,
     preview_mode: false,
     generation_status: 'generated',
     sent_to_group: false,
@@ -211,6 +212,14 @@ export function normalizeLarkWeekly7dNotificationAdmissionReadback(row = {}) {
   }
   if (value.admissionDeliveryRows > 1) invalid.push('admissionDeliveryRows');
   if (value.totalDeliveryRows < value.sentMirroredRows) invalid.push('deliveryCounts');
+  if (value.admissionDeliveryRows === 1
+      && !['claimed', 'sending', 'sent'].includes(value.admissionDeliveryStatus ?? '')) {
+    invalid.push('admissionDeliveryStatus');
+  }
+  if (value.admissionDeliveryRows === 1
+      && !['pending', 'failed', 'mirrored'].includes(value.admissionMirrorStatus ?? '')) {
+    invalid.push('admissionMirrorStatus');
+  }
   if (invalid.length > 0) {
     throw admissionError(
       'Weekly Notification Admission requires the reviewed terminal runtime baseline',
