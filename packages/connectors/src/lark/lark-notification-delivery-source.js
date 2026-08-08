@@ -13,10 +13,10 @@ export async function loadLarkNotificationDeliveryRequest(input = {}) {
   );
 
   const aiRecord = await findExact(repository, tables.aiRuns, 'ai_run_key', aiRunKey, [
-    'ai_run_key', 'report_id', 'scope_type', 'generation_status', 'notification_eligible',
-    'preview_mode', 'sent_to_group', 'dedupe_key', 'window_days', 'readiness_status',
-    'severity', 'insight_summary', 'strengths', 'weaknesses', 'recommendations',
-    'source_report_ids_json',
+    'ai_run_key', 'report_id', 'template_version', 'scope_type', 'generation_status',
+    'notification_eligible', 'preview_mode', 'sent_to_group', 'dedupe_key', 'window_days',
+    'readiness_status', 'severity', 'insight_summary', 'strengths', 'weaknesses',
+    'recommendations', 'source_report_ids_json',
   ]);
   const ai = aiRecord.fields;
   const reportId = requireText(readScalar(ai.report_id), 'report_id');
@@ -72,6 +72,7 @@ export async function loadLarkNotificationDeliveryRequest(input = {}) {
     aiRun: Object.freeze({
       aiRunKey,
       reportId,
+      templateVersion: readScalar(ai.template_version),
       scopeType: readScalar(ai.scope_type),
       generationStatus: readScalar(ai.generation_status),
       notificationEligible: readBoolean(ai.notification_eligible, 'notification_eligible'),
