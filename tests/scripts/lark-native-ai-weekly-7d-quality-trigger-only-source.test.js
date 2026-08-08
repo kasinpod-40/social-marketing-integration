@@ -9,6 +9,7 @@ test('weekly AI quality trigger mutates failure_code only', () => {
   assert.match(source, /CONTROLLED_UAT_NATIVE_AI_QUALITY_RETRY_V3/u);
   assert.match(source, /CONTROLLED_UAT_NATIVE_AI_QUALITY_TRIGGER_V4/u);
   assert.match(source, /PROMPT_SHAPE = 'lark_ai_compact_quality_v2'/u);
+  assert.match(source, /allowedWriteFields: \['failure_code'\]/u);
   assert.match(source, /const updateFields = \{ failure_code: TRIGGER_MARKER \}/u);
   assert.match(source, /writtenFields: \['failure_code'\]/u);
   assert.match(source, /recordWriteCount: 1/u);
