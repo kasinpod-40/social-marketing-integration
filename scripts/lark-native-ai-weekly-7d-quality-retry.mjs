@@ -4,31 +4,32 @@ import { execFile } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { promisify } from 'node:util';
-import { hardenLarkNativeAiWeeklyEvidence } from '../packages/application/src/reports/harden-lark-native-ai-weekly-evidence.js';
 import {
   LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_AUTOMATIONS,
   LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_TABLES,
   LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_TEMPLATE_VERSION,
   LARK_NATIVE_AI_WEEKLY_7D_CONTROLLED_UAT_WINDOW_DAYS,
 } from '../packages/config/src/lark-native-ai-weekly-7d-controlled-uat-contract.js';
+import { LARK_NATIVE_AI_AUTOMATION_PROMPT_VERSION } from '../packages/config/src/lark-native-ai-automation-prompt-contract.js';
 import { createLarkBitableClientFromEnv } from '../packages/connectors/src/lark/lark-bitable.client.js';
 import { parseJsoncObject } from './lib/chatwoot-safe-wrangler-config.js';
 import { readDevVars } from './lib/dev-vars.js';
 
 const execFileAsync = promisify(execFile);
-const CONTRACT_VERSION = 'lark_native_ai_weekly_7d_quality_retry_v3';
-const CONFIRMATION = 'RETRY_WEEKLY_7D_NATIVE_AI_QUALITY_V4';
-const SOURCE_PROMPT_SHAPE = 'lark_ai_compact_quality_v3';
-const TARGET_PROMPT_SHAPE = 'lark_ai_compact_quality_v4';
-const TRIGGER_MARKER = 'CONTROLLED_UAT_NATIVE_AI_QUALITY_TRIGGER_V6';
+const CONTRACT_VERSION = 'lark_native_ai_weekly_7d_quality_retry_v4';
+const CONFIRMATION = 'RETRY_WEEKLY_7D_NATIVE_AI_PROMPT_V3';
+const PROMPT_APPLIED_CONFIRMATION = 'LARK_NATIVE_AI_AUTOMATION_PROMPTS_V3_APPLIED';
+const SOURCE_PROMPT_SHAPE = 'lark_ai_compact_quality_v4';
+const TARGET_PROMPT_SHAPE = SOURCE_PROMPT_SHAPE;
+const EXPECTED_PROMPT_VERSION = 'lark_native_ai_automation_prompts_v3';
+const TRIGGER_MARKER = 'CONTROLLED_UAT_NATIVE_AI_PROMPT_V3_TRIGGER_V7';
 const AI_TITLE = 'AI Materialization → MKT_AI_Report_Runs';
 const NOTIFICATION_TITLE = 'Eligible AI Run → Lark Group Notification';
 const ACTIVE = new Set(['enable', 'enabled', 'active', 'on']);
 const INACTIVE = new Set(['disable', 'disabled', 'inactive', 'off', 'draft']);
 const STRENGTHS_FALLBACK = 'ยังไม่มีข้อมูลเปรียบเทียบเพียงพอสำหรับระบุจุดแข็งด้านผลงาน';
+const WEAKNESSES_FALLBACK = 'ยังไม่พบสัญญาณด้านผลงานที่ควรระวังจากข้อมูลที่มี';
 const PREPARATION_FIELDS = Object.freeze([
-  'metric_summary_json',
-  'channel_status_vector_json',
   'insight_summary',
   'strengths',
   'weaknesses',
@@ -62,7 +63,7 @@ try {
     ok: false,
     contractVersion: CONTRACT_VERSION,
     stage,
-    code: error?.code ?? 'LARK_NATIVE_AI_QUALITY_RETRY_FAILED',
+    code: error?.code ?? 'LARK_NATIVE_AI_PROMPT_V3_RETRY_FAILED',
     message: sanitize(error?.message ?? String(error)),
     details: sanitizeValue(error?.details ?? {}),
     repository,
@@ -78,11 +79,14 @@ function printPlan() {
     ok: true,
     planOnly: true,
     contractVersion: CONTRACT_VERSION,
-    objective: 'upgrade_generated_quality_v3_evidence_to_executive_writer_quality_v4_then_validate_native_lark_ai_output',
+    objective: 'reuse_quality_v4_evidence_after_manual_prompt_v3_refresh_then_validate_field_isolated_native_lark_ai_output',
     sourcePromptShape: SOURCE_PROMPT_SHAPE,
     targetPromptShape: TARGET_PROMPT_SHAPE,
+    expectedPromptVersion: EXPECTED_PROMPT_VERSION,
     confirmation: CONFIRMATION,
+    promptAppliedConfirmation: PROMPT_APPLIED_CONFIRMATION,
     maximumOperatorRecordWrites: 2,
+    evidenceRewriteCount: 0,
     preparationTouchesFailureCode: false,
     triggerWrittenFields: ['failure_code'],
     localQualityGate: true,
@@ -95,7 +99,16 @@ function printPlan() {
 async function execute() {
   stage = 'confirmation';
   if (process.env.CONFIRM_LARK_NATIVE_AI_WEEKLY_7D_QUALITY_RETRY !== CONFIRMATION) {
-    throw failure('Exact weekly AI quality v4 retry confirmation is missing', 'LARK_NATIVE_AI_QUALITY_RETRY_CONFIRMATION_INVALID');
+    throw failure('Exact weekly AI Prompt v3 retry confirmation is missing', 'LARK_NATIVE_AI_PROMPT_V3_RETRY_CONFIRMATION_INVALID');
+  }
+  if (process.env.CONFIRM_LARK_NATIVE_AI_PROMPTS_V3_APPLIED !== PROMPT_APPLIED_CONFIRMATION) {
+    throw failure('Manual Lark Prompt v3 application confirmation is missing', 'LARK_NATIVE_AI_PROMPT_V3_NOT_CONFIRMED');
+  }
+  if (LARK_NATIVE_AI_AUTOMATION_PROMPT_VERSION !== EXPECTED_PROMPT_VERSION) {
+    throw failure('Repository Prompt contract is not Prompt v3', 'LARK_NATIVE_AI_PROMPT_V3_REPOSITORY_CONTRACT_INVALID', {
+      observedPromptVersion: LARK_NATIVE_AI_AUTOMATION_PROMPT_VERSION,
+      expectedPromptVersion: EXPECTED_PROMPT_VERSION,
+    });
   }
 
   stage = 'repository-preflight';
@@ -107,7 +120,7 @@ async function execute() {
     clean: (await gitText(['status', '--porcelain'])) === '',
   });
   if (repository.branch !== 'main' || repository.clean !== true || repository.head !== repository.originMain) {
-    throw failure('Weekly AI quality retry requires clean exact current main', 'LARK_NATIVE_AI_QUALITY_RETRY_REPOSITORY_INVALID', repository);
+    throw failure('Weekly AI Prompt v3 retry requires clean exact current main', 'LARK_NATIVE_AI_PROMPT_V3_REPOSITORY_INVALID', repository);
   }
 
   stage = 'runtime-preflight';
@@ -132,7 +145,7 @@ async function execute() {
   const workflows = workflowResponse?.data?.workflows ?? workflowResponse?.data?.items ?? workflowResponse?.workflows ?? [];
   const automationState = await verifyAutomationState(workflows);
 
-  stage = 'load-generated-quality-v3-row';
+  stage = 'load-generated-quality-v4-row';
   const candidates = await client.searchRecordsByFieldValues({
     tableId: aiTableId,
     fieldName: 'template_version',
@@ -140,7 +153,7 @@ async function execute() {
   });
   const matches = candidates.filter((record) => isExactGeneratedUatRow(record?.fields));
   if (matches.length !== 1) {
-    throw failure('Expected exactly one generated weekly Executive UAT row for quality v4 repair', 'LARK_NATIVE_AI_QUALITY_RETRY_UAT_ROW_INVALID', {
+    throw failure('Expected exactly one generated weekly Executive UAT row for Prompt v3 retry', 'LARK_NATIVE_AI_PROMPT_V3_UAT_ROW_INVALID', {
       candidates: candidates.length,
       exactMatches: matches.length,
     });
@@ -152,34 +165,14 @@ async function execute() {
   const aiRunKey = requireText(fields.ai_run_key, 'ai_run_key');
   const metricSummaryText = requireText(fields.metric_summary_json, 'metric_summary_json');
   const channelStatusVectorText = requireText(fields.channel_status_vector_json, 'channel_status_vector_json');
-  const sourcePromptShape = readPromptShape(metricSummaryText);
-  if (sourcePromptShape !== SOURCE_PROMPT_SHAPE) {
-    throw failure('Weekly Executive UAT row must contain retained quality v3 evidence before v4 repair', 'LARK_NATIVE_AI_QUALITY_RETRY_SOURCE_SHAPE_INVALID', {
-      observedPromptShape: sourcePromptShape,
-      expectedPromptShape: SOURCE_PROMPT_SHAPE,
-    });
-  }
+  const evidence = readQualityV4Evidence(metricSummaryText, channelStatusVectorText);
 
-  stage = 'harden-business-evidence-v4';
-  const hardened = hardenLarkNativeAiWeeklyEvidence({
-    metricSummaryJson: metricSummaryText,
-    channelStatusVectorJson: channelStatusVectorText,
-  });
-  if (hardened.promptShape !== TARGET_PROMPT_SHAPE) {
-    throw failure('Weekly Executive quality hardener did not produce the reviewed v4 prompt shape', 'LARK_NATIVE_AI_QUALITY_RETRY_TARGET_SHAPE_INVALID', {
-      observedPromptShape: hardened.promptShape,
-      expectedPromptShape: TARGET_PROMPT_SHAPE,
-    });
-  }
-
-  stage = 'prepare-quality-v4-without-trigger-field';
+  stage = 'prepare-prompt-v3-retry-without-evidence-rewrite';
   const preparationUpdate = await client.batchUpdateRecords({
     tableId: aiTableId,
     records: [{
       recordId,
       fields: {
-        metric_summary_json: hardened.metricSummaryJson,
-        channel_status_vector_json: hardened.channelStatusVectorJson,
         insight_summary: null,
         strengths: null,
         weaknesses: null,
@@ -192,25 +185,25 @@ async function execute() {
     }],
   });
   if (preparationUpdate.updated !== 1) {
-    throw failure('Expected exactly one weekly AI quality v4 preparation write', 'LARK_NATIVE_AI_QUALITY_RETRY_PREPARATION_WRITE_COUNT_INVALID', {
+    throw failure('Expected exactly one Prompt v3 preparation write', 'LARK_NATIVE_AI_PROMPT_V3_PREPARATION_WRITE_COUNT_INVALID', {
       updated: preparationUpdate.updated,
     });
   }
 
-  stage = 'verify-prepared-quality-v4-row';
+  stage = 'verify-prepared-prompt-v3-row';
   const preparedRows = await client.searchRecordsByFieldValues({
     tableId: aiTableId,
     fieldName: 'ai_run_key',
     values: [aiRunKey],
   });
   if (preparedRows.length !== 1) {
-    throw failure('Prepared UAT row identity drifted before the one-field trigger', 'LARK_NATIVE_AI_QUALITY_RETRY_PREPARED_READBACK_INVALID', {
+    throw failure('Prepared UAT row identity drifted before Prompt v3 trigger', 'LARK_NATIVE_AI_PROMPT_V3_PREPARED_READBACK_INVALID', {
       count: preparedRows.length,
     });
   }
   const prepared = requireObject(preparedRows[0].fields, 'prepared.fields');
-  if (!isPreparedQualityV4Row(prepared, hardened)) {
-    throw failure('Weekly Executive UAT row did not converge to the exact prepared quality v4 state', 'LARK_NATIVE_AI_QUALITY_RETRY_PREPARED_STATE_INVALID', {
+  if (!isPreparedPromptV3Row(prepared, metricSummaryText, channelStatusVectorText)) {
+    throw failure('Weekly Executive UAT row did not converge to exact Prompt v3 prepared state', 'LARK_NATIVE_AI_PROMPT_V3_PREPARED_STATE_INVALID', {
       generationStatus: optionalText(prepared.generation_status),
       promptShape: readPromptShape(optionalText(prepared.metric_summary_json)),
       outputsPresent: outputPresence(prepared),
@@ -219,7 +212,7 @@ async function execute() {
     });
   }
 
-  stage = 'trigger-quality-v6-failure-code-only';
+  stage = 'trigger-prompt-v3-v7-failure-code-only';
   const triggerUpdate = await client.batchUpdateRecords({
     tableId: aiTableId,
     records: [{
@@ -228,7 +221,7 @@ async function execute() {
     }],
   });
   if (triggerUpdate.updated !== 1) {
-    throw failure('Expected exactly one failure_code-only weekly AI quality v6 trigger write', 'LARK_NATIVE_AI_QUALITY_RETRY_TRIGGER_WRITE_COUNT_INVALID', {
+    throw failure('Expected exactly one failure_code-only Prompt v3 trigger write', 'LARK_NATIVE_AI_PROMPT_V3_TRIGGER_WRITE_COUNT_INVALID', {
       updated: triggerUpdate.updated,
     });
   }
@@ -243,7 +236,7 @@ async function execute() {
       values: [aiRunKey],
     });
     if (rows.length !== 1) {
-      throw failure('UAT row identity drifted while observing weekly AI quality v4 retry', 'LARK_NATIVE_AI_QUALITY_RETRY_READBACK_INVALID', { count: rows.length });
+      throw failure('UAT row identity drifted while observing Prompt v3 retry', 'LARK_NATIVE_AI_PROMPT_V3_READBACK_INVALID', { count: rows.length });
     }
     observed = requireObject(rows[0].fields, 'readback.fields');
     const generationStatus = optionalText(observed.generation_status);
@@ -253,7 +246,7 @@ async function execute() {
   const generated = optionalText(observed?.generation_status) === 'generated' && fourOutputsPresent(observed);
   const outputs = generated ? readOutputs(observed) : null;
   const qualityGate = generated
-    ? validateExecutiveWriterOutputs(outputs, hardened)
+    ? validateExecutiveWriterOutputs(outputs, evidence)
     : Object.freeze({ passed: false, violations: ['generation_not_completed'] });
   const passed = generated && qualityGate.passed;
   const result = Object.freeze({
@@ -261,26 +254,34 @@ async function execute() {
     contractVersion: CONTRACT_VERSION,
     stage: 'complete',
     status: passed
-      ? 'weekly_7d_native_ai_executive_writer_quality_passed'
+      ? 'weekly_7d_native_ai_prompt_v3_quality_passed'
       : generated
-        ? 'weekly_7d_native_ai_executive_writer_quality_failed'
-        : 'weekly_7d_native_ai_quality_v4_retry_not_completed',
+        ? 'weekly_7d_native_ai_prompt_v3_quality_failed'
+        : 'weekly_7d_native_ai_prompt_v3_retry_not_completed',
     repository,
     automationState,
+    promptContract: {
+      version: EXPECTED_PROMPT_VERSION,
+      manuallyAppliedConfirmed: true,
+      livePromptContentReadbackSupported: false,
+    },
     evidence: {
-      beforeMetricSummaryChars: metricSummaryText.length,
-      afterMetricSummaryChars: hardened.metricSummaryChars,
-      channelStatusVectorChars: hardened.channelStatusVectorChars,
-      sourcePromptShape,
-      promptShape: hardened.promptShape,
-      businessEvidenceChannelCount: hardened.businessEvidenceChannelCount,
-      comparisonEvidenceChannelCount: hardened.comparisonEvidenceChannelCount,
-      strengthsMode: hardened.strengthsMode,
-      recommendationMode: hardened.recommendationMode,
+      metricSummaryChars: metricSummaryText.length,
+      channelStatusVectorChars: channelStatusVectorText.length,
+      sourcePromptShape: evidence.promptShape,
+      promptShape: evidence.promptShape,
+      evidenceRewriteCount: 0,
+      businessEvidenceChannelCount: evidence.businessEvidenceChannelCount,
+      comparisonEvidenceChannelCount: evidence.comparisonEvidenceChannelCount,
+      strengthsMode: evidence.strengthsMode,
+      recommendationMode: evidence.recommendationMode,
+      businessEvidenceChannelNames: evidence.businessEvidenceChannelNames,
+      hasNumericBusinessEvidence: evidence.hasNumericBusinessEvidence,
     },
     recordWriteCount: 2,
     preparationWriteCount: 1,
     preparationWrittenFields: PREPARATION_FIELDS,
+    preparationTouchesEvidence: false,
     preparationTouchesFailureCode: false,
     triggerWriteCount: 1,
     triggerWrittenFields: ['failure_code'],
@@ -300,7 +301,61 @@ async function execute() {
   if (!result.ok) process.exitCode = 2;
 }
 
-function validateExecutiveWriterOutputs(outputs, hardened) {
+function readQualityV4Evidence(metricSummaryText, channelStatusVectorText) {
+  let summary;
+  let statusVector;
+  try { summary = JSON.parse(metricSummaryText); } catch {
+    throw failure('metric_summary_json must be valid JSON', 'LARK_NATIVE_AI_PROMPT_V3_EVIDENCE_JSON_INVALID');
+  }
+  try { statusVector = JSON.parse(channelStatusVectorText); } catch {
+    throw failure('channel_status_vector_json must be valid JSON', 'LARK_NATIVE_AI_PROMPT_V3_STATUS_VECTOR_JSON_INVALID');
+  }
+  if (!summary || typeof summary !== 'object' || Array.isArray(summary)
+    || summary.promptShape !== SOURCE_PROMPT_SHAPE
+    || !Array.isArray(summary.channelBusinessEvidence)
+    || summary.channelBusinessEvidence.length !== 9
+    || !Array.isArray(statusVector)
+    || statusVector.length !== 9) {
+    throw failure('Prompt v3 retry requires retained quality-v4 evidence for nine channels', 'LARK_NATIVE_AI_PROMPT_V3_EVIDENCE_SHAPE_INVALID', {
+      promptShape: optionalText(summary?.promptShape),
+      channelEvidenceCount: Array.isArray(summary?.channelBusinessEvidence) ? summary.channelBusinessEvidence.length : null,
+      statusVectorCount: Array.isArray(statusVector) ? statusVector.length : null,
+    });
+  }
+  if (metricSummaryText.length > 2800 || channelStatusVectorText.length > 700) {
+    throw failure('Retained Prompt v3 evidence exceeds reviewed input budget', 'LARK_NATIVE_AI_PROMPT_V3_EVIDENCE_LIMIT_EXCEEDED', {
+      metricSummaryChars: metricSummaryText.length,
+      channelStatusVectorChars: channelStatusVectorText.length,
+    });
+  }
+  const qualityContext = summary.qualityContext && typeof summary.qualityContext === 'object'
+    ? summary.qualityContext
+    : {};
+  const businessChannels = summary.channelBusinessEvidence.filter((item) => item?.businessEvidencePresent === true);
+  return Object.freeze({
+    promptShape: summary.promptShape,
+    businessEvidenceChannelCount: Number(qualityContext.businessEvidenceChannelCount ?? businessChannels.length),
+    comparisonEvidenceChannelCount: Number(qualityContext.comparisonEvidenceChannelCount ?? 0),
+    strengthsMode: optionalText(qualityContext.strengthsMode),
+    recommendationMode: optionalText(qualityContext.recommendationMode),
+    businessEvidenceChannelNames: Object.freeze(businessChannels
+      .map((item) => optionalText(item?.displayName))
+      .filter(Boolean)),
+    hasNumericBusinessEvidence: businessChannels.some(hasNumericEvidence),
+  });
+}
+
+function hasNumericEvidence(channel) {
+  const candidates = [
+    ...(Array.isArray(channel?.availableMetrics) ? channel.availableMetrics : []),
+    ...(Array.isArray(channel?.topContent) ? channel.topContent : []),
+    ...(Array.isArray(channel?.topAds) ? channel.topAds : []),
+  ];
+  return candidates.some((item) => item && typeof item === 'object'
+    && Object.values(item).some((value) => typeof value === 'number' && Number.isFinite(value)));
+}
+
+function validateExecutiveWriterOutputs(outputs, evidence) {
   const violations = [];
   const allText = OUTPUT_FIELDS.map((field) => outputs[field] ?? '').join('\n');
   if (/\breport_partial\b|\breport_missing\b|\bsource_pending\b|\bsource_unavailable\b|\breadiness_status\b|\bdata_status\b|\bCoverage\b/iu.test(allText)) {
@@ -309,21 +364,44 @@ function validateExecutiveWriterOutputs(outputs, hardened) {
   if (/^#{1,6}\s/mu.test(allText)) violations.push('markdown_heading');
   if (/หลักฐาน\s*[:：]|\([^\n)]*หลักฐาน[^\n)]*\)/u.test(allText)) violations.push('evidence_footnote');
 
-  if (hardened.comparisonEvidenceChannelCount === 0) {
+  if (/แนะนำ|ควร|ติดตาม|ตรวจสอบ|ทดลอง|ต่อยอด|คำนวณ|ใช้เป็น\s*(?:benchmark|baseline)|สิ่งที่ควรทำ/iu.test(outputs.insight_summary)) {
+    violations.push('insight_contains_action');
+  }
+  if (outputs.insight_summary.includes(STRENGTHS_FALLBACK)) violations.push('insight_contains_strengths_fallback');
+  if (outputs.insight_summary.includes(WEAKNESSES_FALLBACK)) violations.push('insight_contains_weaknesses_fallback');
+  if (evidence.businessEvidenceChannelCount > 0
+    && evidence.businessEvidenceChannelNames.length > 0
+    && !evidence.businessEvidenceChannelNames.some((name) => outputs.insight_summary.includes(name))) {
+    violations.push('insight_missing_business_channel_name');
+  }
+  if (evidence.hasNumericBusinessEvidence && !/\d/u.test(outputs.insight_summary)) {
+    violations.push('insight_missing_business_number');
+  }
+
+  if (evidence.comparisonEvidenceChannelCount === 0) {
     if (outputs.strengths !== STRENGTHS_FALLBACK) violations.push('strengths_without_comparison_fallback');
-    if (/จำนวนมาก|สูงสุด|ต่ำสุด|เด่นที่สุด|โดดเด่น|ทำผลงานดี|ดีที่สุด|คุ้มที่สุด|ดีขึ้น|แย่ลง/u.test(`${outputs.insight_summary}\n${outputs.strengths}\n${outputs.weaknesses}`)) {
+    if (/จำนวนมาก|จำนวนสูง|จำนวนต่ำ|สูงสุด|ต่ำสุด|เด่นที่สุด|โดดเด่น|ทำผลงานดี|ดีที่สุด|คุ้มที่สุด|ดีขึ้น|แย่ลง|เติบโต/u.test(`${outputs.insight_summary}\n${outputs.strengths}\n${outputs.weaknesses}`)) {
       violations.push('unsupported_performance_magnitude');
     }
   }
 
-  if (/แนะนำ|ควร|ติดตาม|ตรวจสอบ|ทดลอง|ต่อยอด/u.test(outputs.weaknesses)) {
+  if (/แนะนำ|ควร|ติดตาม|ตรวจสอบ|ทดลอง|ต่อยอด|คำนวณ|รอ|เติม|ใช้เป็น/iu.test(outputs.weaknesses)) {
     violations.push('weaknesses_contains_action');
   }
-  if (/เติมข้อมูล|รอข้อมูล|ข้อมูลเต็มรูปแบบ|ตรวจสอบข้อมูล|ตรวจสอบและรอข้อมูล|ตรวจระบบ|แก้ระบบ|source readiness|coverage/iu.test(outputs.recommendations)) {
+  if (/ยังไม่พบข้อมูล|ไม่มีข้อมูล|ข้อมูลไม่ครบ|ข้อมูลไม่เพียงพอ|ข้อมูลเต็ม|ความพร้อม|ช่องทางอื่น|รอข้อมูล|coverage/iu.test(outputs.weaknesses)) {
+    violations.push('weaknesses_contains_data_quality');
+  }
+
+  if (outputs.recommendations.includes(STRENGTHS_FALLBACK)) violations.push('recommendations_repeats_strengths_fallback');
+  if (outputs.recommendations.includes(WEAKNESSES_FALLBACK)) violations.push('recommendations_repeats_weaknesses_fallback');
+  if (/สิ่งที่ควรทำสัปดาห์หน้า\s*[:：]?/u.test(outputs.recommendations)) {
+    violations.push('recommendations_contains_heading');
+  }
+  if (/เติมข้อมูล|รอข้อมูล|ยังไม่มีข้อมูล|ยังไม่พบข้อมูล|ข้อมูลไม่เพียงพอ|ข้อมูลไม่ครบ|ข้อมูลเต็ม|ตรวจสอบข้อมูล|ตรวจข้อมูล|ตรวจระบบ|แก้ระบบ|connection|source readiness|coverage|ช่องทางอื่น/iu.test(outputs.recommendations)) {
     violations.push('recommendations_contains_data_ops');
   }
-  if (hardened.businessEvidenceChannelCount > 0
-    && hardened.recommendationMode === 'observed_only_business_followup'
+  if (evidence.businessEvidenceChannelCount > 0
+    && evidence.recommendationMode === 'observed_only_business_followup'
     && !/(CTR|CPC|อัตราการคลิก|ต้นทุนต่อคลิก|โฆษณา|creative|baseline|เปรียบเทียบ)/iu.test(outputs.recommendations)) {
     violations.push('recommendations_missing_business_action');
   }
@@ -344,13 +422,13 @@ async function verifyAutomationState(workflows) {
   const aiStatus = requireText(ai.status ?? ai.state, 'AI automation status').toLowerCase();
   const notificationStatus = requireText(notification.status ?? notification.state, 'Notification automation status').toLowerCase();
   if (aiHash !== expectedAi?.workflowIdSha256 || !ACTIVE.has(aiStatus)) {
-    throw failure('Exact AI Materialization automation must be active', 'LARK_NATIVE_AI_QUALITY_RETRY_AI_AUTOMATION_NOT_ACTIVE', {
+    throw failure('Exact AI Materialization automation must be active', 'LARK_NATIVE_AI_PROMPT_V3_AI_AUTOMATION_NOT_ACTIVE', {
       identityMatches: aiHash === expectedAi?.workflowIdSha256,
       status: aiStatus,
     });
   }
   if (notificationHash !== expectedNotification?.workflowIdSha256 || !INACTIVE.has(notificationStatus)) {
-    throw failure('Exact Notification automation must remain inactive', 'LARK_NATIVE_AI_QUALITY_RETRY_NOTIFICATION_NOT_SAFE', {
+    throw failure('Exact Notification automation must remain inactive', 'LARK_NATIVE_AI_PROMPT_V3_NOTIFICATION_NOT_SAFE', {
       identityMatches: notificationHash === expectedNotification?.workflowIdSha256,
       status: notificationStatus,
     });
@@ -375,10 +453,10 @@ function isExactGeneratedUatRow(fields) {
     && fourOutputsPresent(fields);
 }
 
-function isPreparedQualityV4Row(fields, hardened) {
+function isPreparedPromptV3Row(fields, metricSummaryText, channelStatusVectorText) {
   return optionalText(fields.generation_status) === 'pending'
-    && optionalText(fields.metric_summary_json) === hardened.metricSummaryJson
-    && optionalText(fields.channel_status_vector_json) === hardened.channelStatusVectorJson
+    && optionalText(fields.metric_summary_json) === metricSummaryText
+    && optionalText(fields.channel_status_vector_json) === channelStatusVectorText
     && readPromptShape(optionalText(fields.metric_summary_json)) === TARGET_PROMPT_SHAPE
     && Object.values(outputPresence(fields)).every((present) => present === false)
     && booleanValue(fields.notification_eligible) === false
@@ -401,7 +479,7 @@ function readOutputs(fields) {
 }
 function exactWorkflow(workflows, title) {
   const matches = workflows.filter((item) => optionalText(item?.title ?? item?.name) === title);
-  if (matches.length !== 1) throw failure(`Expected one exact Automation: ${title}`, 'LARK_NATIVE_AI_QUALITY_RETRY_AUTOMATION_IDENTITY_INVALID', { title, count: matches.length });
+  if (matches.length !== 1) throw failure(`Expected one exact Automation: ${title}`, 'LARK_NATIVE_AI_PROMPT_V3_AUTOMATION_IDENTITY_INVALID', { title, count: matches.length });
   return matches[0];
 }
 function workflowId(workflow) {
@@ -409,7 +487,7 @@ function workflowId(workflow) {
 }
 function exactTableId(tables, name) {
   const matches = tables.filter((table) => table.name === name && table.tableId);
-  if (matches.length !== 1) throw failure(`Expected one exact Lark table: ${name}`, 'LARK_NATIVE_AI_QUALITY_RETRY_TABLE_INVALID', { name, count: matches.length });
+  if (matches.length !== 1) throw failure(`Expected one exact Lark table: ${name}`, 'LARK_NATIVE_AI_PROMPT_V3_TABLE_INVALID', { name, count: matches.length });
   return matches[0].tableId;
 }
 async function loadRuntime() {
@@ -425,7 +503,7 @@ async function loadRuntime() {
     || !optionalText(env.LARK_APP_ID)
     || !optionalText(env.LARK_APP_SECRET)
     || !optionalText(env.LARK_APP_TOKEN ?? env.LARK_BASE_APP_TOKEN)) {
-    throw failure('Reviewed Integration Workspace Lark runtime is incomplete', 'LARK_NATIVE_AI_QUALITY_RETRY_RUNTIME_INVALID');
+    throw failure('Reviewed Integration Workspace Lark runtime is incomplete', 'LARK_NATIVE_AI_PROMPT_V3_RUNTIME_INVALID');
   }
   return env;
 }
