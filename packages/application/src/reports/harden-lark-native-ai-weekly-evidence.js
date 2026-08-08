@@ -17,14 +17,14 @@ const PLACEHOLDER_TOKENS = Object.freeze([
 ]);
 
 const POLICY = Object.freeze({
-  absoluteMagnitude: 'ถ้า channel.comparisonEvidencePresent=false ห้ามใช้คำว่า มาก น้อย สูง ต่ำ เด่น ดี แย่ หรือสรุป performance จากค่าปัจจุบันล้วน',
-  strengths: 'ถ้า qualityContext.strengthsFallbackRequired=true ให้ตอบ “ยังไม่มีข้อมูลเปรียบเทียบเพียงพอสำหรับระบุจุดแข็งด้านผลงาน”',
-  spend: 'spend เป็นค่าที่สังเกต ห้ามตีความเป็นเจตนาวางแผน ลงทุน หรือความคุ้มค่า',
+  absoluteMagnitude: 'comparisonEvidencePresent=false: ห้ามใช้ มาก น้อย สูง ต่ำ เด่น ดี แย่ จากค่าปัจจุบันล้วน',
+  strengths: 'strengthsFallbackRequired=true: ตอบ “ยังไม่มีข้อมูลเปรียบเทียบเพียงพอสำหรับระบุจุดแข็งด้านผลงาน”',
+  spend: 'spend เป็นค่าที่สังเกต ห้ามสรุปเจตนาวางแผน ลงทุน หรือความคุ้มค่า',
   missingData: 'ข้อมูลที่ขาดไม่ใช่ performance weakness',
-  recommendations: 'ถ้ามี business evidence แต่ไม่มี comparison ให้แนะนำติดตามหรือเปรียบเทียบ metric/creative ที่มีจริงในรอบถัดไป ห้ามแนะนำเติมข้อมูลหรือแก้ระบบ',
-  wording: 'ใช้คำตรงและวัดผลได้ ห้ามคำกำกวมหรืออุปมา เช่น “ความรู้สึกเบื้องหลังผลลัพธ์”',
-  consistency: 'ข้อเท็จจริงเดียวกันต้องตีความเหมือนกันทั้ง 4 outputs',
-  output: 'ห้ามศัพท์สถานะภายในและห้ามวงเล็บหรือเชิงอรรถหลักฐาน',
+  recommendations: 'มี business evidence แต่ไม่มี comparison: แนะนำติดตาม/เปรียบเทียบ metric หรือ creative ที่มีจริง ห้ามเติมข้อมูลหรือแก้ระบบ',
+  wording: 'ใช้คำตรง วัดผลได้ ห้ามคำกำกวม/อุปมา เช่น “ความรู้สึกเบื้องหลังผลลัพธ์”',
+  consistency: 'ข้อเท็จจริงเดียวกันต้องตรงกันทั้ง 4 outputs',
+  output: 'ห้ามศัพท์สถานะภายในหรือเชิงอรรถหลักฐาน',
 });
 
 export function hardenLarkNativeAiWeeklyEvidence(input = {}) {
@@ -128,11 +128,6 @@ function hardenChannel(value) {
     readinessStatus: textOrNull(source.readinessStatus),
     businessEvidencePresent,
     comparisonEvidencePresent,
-    observationMode: !businessEvidencePresent
-      ? 'no_business_evidence'
-      : comparisonEvidencePresent
-        ? 'comparison_supported'
-        : 'observed_only',
   };
   if (availableMetrics.length > 0) output.availableMetrics = availableMetrics;
   if (topContent.length > 0) output.topContent = topContent;
