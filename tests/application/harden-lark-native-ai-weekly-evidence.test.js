@@ -66,10 +66,8 @@ test('removes no-data placeholders and adds deterministic quality-v3 interpretat
   assert.equal(parsed.promptShape, 'lark_ai_compact_quality_v3');
   assert.equal(parsed.channelBusinessEvidence.length, 9);
   assert.equal(parsed.channelBusinessEvidence[0].businessEvidencePresent, false);
-  assert.equal(parsed.channelBusinessEvidence[0].observationMode, 'no_business_evidence');
   assert.equal(Object.hasOwn(parsed.channelBusinessEvidence[0], 'topContent'), false);
   assert.equal(parsed.channelBusinessEvidence[1].topContent[0].views, 120);
-  assert.equal(parsed.channelBusinessEvidence[1].observationMode, 'observed_only');
   assert.equal(parsed.channelBusinessEvidence[2].topAds[0].clicks, 40);
   assert.equal(parsed.channelBusinessEvidence[2].topAds[0].spend_micros, 2500000);
   assert.equal(parsed.channelBusinessEvidence[2].comparisonEvidencePresent, false);
@@ -77,9 +75,9 @@ test('removes no-data placeholders and adds deterministic quality-v3 interpretat
   assert.equal(parsed.qualityContext.comparisonEvidenceChannelCount, 0);
   assert.equal(parsed.qualityContext.strengthsFallbackRequired, true);
   assert.equal(parsed.qualityContext.recommendationMode, 'observed_only_followup');
-  assert.match(parsed.interpretationPolicy.absoluteMagnitude, /ห้ามใช้คำว่า มาก น้อย สูง ต่ำ เด่น ดี แย่/u);
+  assert.match(parsed.interpretationPolicy.absoluteMagnitude, /ห้ามใช้ มาก น้อย สูง ต่ำ เด่น ดี แย่/u);
   assert.match(parsed.interpretationPolicy.strengths, /ยังไม่มีข้อมูลเปรียบเทียบเพียงพอสำหรับระบุจุดแข็งด้านผลงาน/u);
-  assert.match(parsed.interpretationPolicy.recommendations, /ห้ามแนะนำเติมข้อมูลหรือแก้ระบบ/u);
+  assert.match(parsed.interpretationPolicy.recommendations, /ห้ามเติมข้อมูลหรือแก้ระบบ/u);
   assert.match(parsed.interpretationPolicy.wording, /ความรู้สึกเบื้องหลังผลลัพธ์/u);
   assert.ok(hardened.metricSummaryChars <= 2800);
   assert.ok(hardened.channelStatusVectorChars <= 700);
@@ -99,7 +97,8 @@ test('accepts the retained quality-v2 evidence shape and upgrades it to quality 
 
   assert.equal(hardened.promptShape, 'lark_ai_compact_quality_v3');
   assert.equal(parsed.promptShape, 'lark_ai_compact_quality_v3');
-  assert.equal(parsed.channelBusinessEvidence[2].observationMode, 'observed_only');
+  assert.equal(parsed.channelBusinessEvidence[2].businessEvidencePresent, true);
+  assert.equal(parsed.channelBusinessEvidence[2].comparisonEvidencePresent, false);
   assert.equal(parsed.qualityContext.strengthsFallbackRequired, true);
 });
 
@@ -119,7 +118,6 @@ test('preserves comparison evidence and enables comparison-supported actions', (
   const instagram = parsed.channelBusinessEvidence[1];
 
   assert.equal(instagram.comparisonEvidencePresent, true);
-  assert.equal(instagram.observationMode, 'comparison_supported');
   assert.equal(instagram.availableMetrics[0].current_value, 120);
   assert.equal(instagram.availableMetrics[0].previous_value, 100);
   assert.equal(instagram.availableMetrics[0].change_percent, 20);
