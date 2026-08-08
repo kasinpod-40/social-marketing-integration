@@ -1,7 +1,9 @@
 import { permanentError, transientError } from '../../../shared/src/errors/runtime-error.js';
 
 const SHA256_HEX = /^[a-f0-9]{64}$/u;
-const TEMPLATE_VERSION = 'executive_report_notification_v1';
+const LEGACY_TEMPLATE_VERSION = 'executive_report_notification_v1';
+const BUSINESS_FIRST_TEMPLATE_VERSION = 'executive_report_notification_v2';
+const WEEKLY_7D_AI_TEMPLATE_VERSION = 'executive_weekly_7d_notification_v1';
 const MAX_MESSAGE_BYTES = 24_000;
 
 /**
@@ -20,10 +22,11 @@ export async function deliverLarkExecutiveNotification(input = {}) {
   const request = normalizeRequest(input.request);
   const ownerId = requireText(input.ownerId, 'ownerId');
   const now = typeof input.now === 'function' ? input.now : () => Date.now();
+  const templateVersion = resolveDeliveryTemplateVersion(request);
 
-  const message = buildExecutiveMessage(request);
+  const message = buildExecutiveMessage(request, templateVersion);
   const payload = Object.freeze({
-    templateVersion: TEMPLATE_VERSION,
+    templateVersion,
     destination: Object.freeze({
       destinationKeyHash: request.settings.destinationKeyHash,
       rawDestinationPersisted: false,
@@ -60,7 +63,7 @@ export async function deliverLarkExecutiveNotification(input = {}) {
     reportSettingKey: request.snapshot.reportSettingKey,
     customerProfile: request.snapshot.customerProfile,
     destinationKeyHash: request.settings.destinationKeyHash,
-    templateVersion: TEMPLATE_VERSION,
+    templateVersion,
     payloadChecksum,
     ownerId,
     leaseMs: input.claimLeaseMs ?? 60_000,
@@ -150,6 +153,11 @@ export async function deliverLarkExecutiveNotification(input = {}) {
   });
 }
 
+export function buildLarkExecutiveNotificationMessage(input = {}) {
+  const request = normalizeRequest(input);
+  return buildExecutiveMessage(request, resolveDeliveryTemplateVersion(request));
+}
+
 async function repairMirror(input) {
   if (!input.mirrorDelivery) {
     return Object.freeze({
@@ -234,6 +242,7 @@ function normalizeRequest(value) {
     aiRun: Object.freeze({
       aiRunKey: requireIdentity(aiRun.aiRunKey ?? aiRun.ai_run_key, 'aiRunKey'),
       reportId: requireIdentity(aiRun.reportId ?? aiRun.report_id, 'reportId'),
+      templateVersion: optionalText(aiRun.templateVersion ?? aiRun.template_version),
       scopeType: requireText(aiRun.scopeType ?? aiRun.scope_type, 'scopeType'),
       generationStatus: requireText(aiRun.generationStatus ?? aiRun.generation_status, 'generationStatus'),
       notificationEligible: requireBoolean(aiRun.notificationEligible ?? aiRun.notification_eligible, 'notificationEligible'),
@@ -287,7 +296,49 @@ function normalizeRequest(value) {
   return normalized;
 }
 
-function buildExecutiveMessage(request) {
+function resolveDeliveryTemplateVersion(request) {
+  return request.aiRun.templateVersion === WEEKLY_7D_AI_TEMPLATE_VERSION
+    ? BUSINESS_FIRST_TEMPLATE_VERSION
+    : LEGACY_TEMPLATE_VERSION;
+}
+
+function buildExecutiveMessage(request, templateVersion) {
+  if (templateVersion === BUSINESS_FIRST_TEMPLATE_VERSION) {
+    return buildBusinessFirstExecutiveMessage(request);
+  }
+  return buildLegacyExecutiveMessage(request);
+}
+
+function buildBusinessFirstExecutiveMessage(request) {
+  const weekly = request.aiRun.windowDays === 7;
+  const title = weekly
+    ? '📊 Social MKT Weekly Executive Report — 7D'
+    : `📊 Social MKT Executive Report — ${request.aiRun.windowDays}D`;
+  const text = [
+    title,
+    `ช่วง ${request.snapshot.periodStart} ถึง ${request.snapshot.periodEnd}`,
+    '',
+    weekly ? 'ภาพรวมสัปดาห์นี้' : 'ภาพรวม',
+    request.aiRun.insightSummary,
+    '',
+    weekly ? '🏆 สิ่งที่เด่นที่สุดประจำสัปดาห์' : '🏆 สิ่งที่เด่นที่สุด',
+    request.aiRun.strengths,
+    '',
+    '⚠️ สิ่งที่ต้องจับตา',
+    request.aiRun.weaknesses,
+    '',
+    weekly ? '🎯 สิ่งที่ควรทำสัปดาห์หน้า' : '🎯 สิ่งที่ควรทำต่อ',
+    request.aiRun.recommendations,
+  ].join('\n');
+  return Object.freeze({
+    format: 'plain_text',
+    language: 'th',
+    title,
+    text,
+  });
+}
+
+function buildLegacyExecutiveMessage(request) {
   const text = [
     `📊 Social MKT Executive Report — ${request.aiRun.windowDays}D`,
     `ช่วง: ${request.snapshot.periodStart} ถึง ${request.snapshot.periodEnd}`,
@@ -333,6 +384,11 @@ function requireMethod(value, method, name) {
 function requireObject(value, name) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError(`${name} must be an object`);
   return value;
+}
+function optionalText(value) {
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim();
+  return text || null;
 }
 function requireText(value, name) {
   if (typeof value !== 'string' || value.trim() === '') throw new TypeError(`${name} is required`);

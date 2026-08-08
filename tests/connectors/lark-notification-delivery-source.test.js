@@ -21,6 +21,7 @@ function repositoryFixture(overrides = {}) {
       fields: {
         ai_run_key: 'uat:executive:3d',
         report_id: 'ai-preview:executive:3d',
+        template_version: 'executive_weekly_7d_notification_v1',
         scope_type: 'executive',
         generation_status: 'generated',
         notification_eligible: true,
@@ -108,6 +109,7 @@ test('resolves an executive AI identity through its exact source Report set', as
   });
 
   assert.equal(request.aiRun.reportId, 'ai-preview:executive:3d');
+  assert.equal(request.aiRun.templateVersion, 'executive_weekly_7d_notification_v1');
   assert.equal(request.snapshot.reportId, 'ai-preview:executive:3d');
   assert.deepEqual(request.snapshot.sourceReportIds, ['source-report-a', 'source-report-b']);
   assert.deepEqual(request.snapshot.sourceReportSettingKeys, ['setting-a', 'setting-b']);
@@ -170,6 +172,7 @@ test('keeps the legacy direct Report identity path when source_report_ids_json i
     aiRunKey: 'uat:executive:3d',
     expectedDestinationKeyHash: DESTINATION_HASH,
   });
+  assert.equal(request.aiRun.templateVersion, null);
   assert.deepEqual(request.snapshot.sourceReportIds, ['source-report-a']);
 });
 

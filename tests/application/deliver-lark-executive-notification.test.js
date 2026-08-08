@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { deliverLarkExecutiveNotification } from '../../packages/application/src/notifications/deliver-lark-executive-notification.js';
+import {
+  buildLarkExecutiveNotificationMessage,
+  deliverLarkExecutiveNotification,
+} from '../../packages/application/src/notifications/deliver-lark-executive-notification.js';
 import { D1LarkNotificationDeliveryStore } from '../../packages/connectors/src/lark/d1-lark-notification-delivery-store.js';
 import { createSqliteD1 } from '../helpers/sqlite-d1.js';
 
@@ -9,27 +12,31 @@ const migration = readFileSync('migrations/0019_lark_notification_delivery.sql',
 const destinationHash = '7e69a1721915dfc52b4a3ed1ecf2569cdac63ffa63f6419959c35562ef5219b9';
 const dedupeKey = 'a'.repeat(64);
 
-function request() {
+function request(overrides = {}) {
   return {
     aiRun: {
       aiRunKey: 'integration_workspace:executive:7d:2026-08-03',
       reportId: 'integration_workspace:executive:7d:2026-08-03',
+      templateVersion: 'executive_weekly_7d_notification_v1',
       scopeType: 'executive', generationStatus: 'generated', notificationEligible: true,
       previewMode: false, sentToGroup: false, dedupeKey, windowDays: 7,
       readinessStatus: 'report_partial', severity: 'warning',
-      insightSummary: 'ภาพรวมมีข้อมูลพร้อมใช้งานบางส่วน',
-      strengths: 'มีข้อมูลที่ผ่านการตรวจสอบแล้ว',
-      weaknesses: 'บางช่องทางยังไม่มีข้อมูลครบ',
-      recommendations: 'รอข้อมูลครบก่อนตัดสินใจ',
+      insightSummary: 'Meta Ads มีจำนวนการคลิก 4553 ครั้ง และการแสดงผล 582054 ครั้ง',
+      strengths: 'ยังไม่มีข้อมูลเปรียบเทียบเพียงพอสำหรับระบุจุดแข็งด้านผลงาน',
+      weaknesses: 'ยังไม่พบสัญญาณด้านผลงานที่ควรระวังจากข้อมูลที่มี',
+      recommendations: '- คำนวณ CTR และ CPC จากข้อมูลโฆษณาที่มี แล้วใช้เป็น baseline เทียบกับสัปดาห์ถัดไป',
+      ...(overrides.aiRun ?? {}),
     },
     snapshot: {
       reportId: 'integration_workspace:executive:7d:2026-08-03',
       reportSettingKey: 'integration_workspace:executive:rolling:7',
       customerProfile: 'integration_workspace', periodStart: '2026-07-28', periodEnd: '2026-08-03',
+      ...(overrides.snapshot ?? {}),
     },
     settings: {
       enabled: true, aiEnabled: true, notificationEnabled: true,
       groupId: 'runtime-destination', destinationKeyHash: destinationHash,
+      ...(overrides.settings ?? {}),
     },
   };
 }
@@ -44,14 +51,43 @@ function setup() {
   };
 }
 
+test('builds a business-first weekly message without internal readiness or severity labels', () => {
+  const message = buildLarkExecutiveNotificationMessage(request());
+  assert.equal(message.title, '📊 Social MKT Weekly Executive Report — 7D');
+  assert.match(message.text, /ภาพรวมสัปดาห์นี้/u);
+  assert.match(message.text, /🏆 สิ่งที่เด่นที่สุดประจำสัปดาห์/u);
+  assert.match(message.text, /⚠️ สิ่งที่ต้องจับตา/u);
+  assert.match(message.text, /🎯 สิ่งที่ควรทำสัปดาห์หน้า/u);
+  assert.doesNotMatch(message.text, /report_partial|readiness_status|สถานะข้อมูล|ระดับ:\s*warning/iu);
+  assert.match(message.text, /4553/u);
+  assert.match(message.text, /582054/u);
+});
+
+test('keeps legacy notification identities on the v1 renderer semantics', () => {
+  const message = buildLarkExecutiveNotificationMessage(request({
+    aiRun: { templateVersion: 'notification_runtime_smoke_v1' },
+  }));
+  assert.equal(message.title, '📊 Social MKT Executive Report — 7D');
+  assert.match(message.text, /ระดับ: warning/u);
+  assert.match(message.text, /สถานะข้อมูล: report_partial/u);
+  assert.doesNotMatch(message.text, /ภาพรวมสัปดาห์นี้/u);
+});
+
 test('sends and mirrors once while exact replay never sends again', async () => {
   const state = setup();
   let sends = 0;
   let mirrors = 0;
+  let deliveredText = null;
   try {
     const base = {
       request: request(), store: state.store, now: state.now,
-      transport: { async sendTextToChat() { sends += 1; return { messageId: 'message-1' }; } },
+      transport: {
+        async sendTextToChat(input) {
+          sends += 1;
+          deliveredText = input.text;
+          return { messageId: 'message-1' };
+        },
+      },
       async mirrorDelivery(row) {
         mirrors += 1;
         assert.equal(row.attempt_status, 'sent');
@@ -64,6 +100,8 @@ test('sends and mirrors once while exact replay never sends again', async () => 
     assert.equal(replay.status, 'deduped_sent');
     assert.equal(sends, 1);
     assert.equal(mirrors, 1);
+    assert.match(deliveredText, /Social MKT Weekly Executive Report/u);
+    assert.doesNotMatch(deliveredText, /report_partial|สถานะข้อมูล/u);
   } finally { state.db.close(); }
 });
 
