@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { deliverLarkExecutiveNotification } from '../../packages/application/src/notifications/deliver-lark-executive-notification.js';
+import {
+  buildLarkExecutiveNotificationMessage,
+  deliverLarkExecutiveNotification,
+} from '../../packages/application/src/notifications/deliver-lark-executive-notification.js';
 import { D1LarkNotificationDeliveryStore } from '../../packages/connectors/src/lark/d1-lark-notification-delivery-store.js';
 import { createSqliteD1 } from '../helpers/sqlite-d1.js';
 
@@ -17,10 +20,10 @@ function request() {
       scopeType: 'executive', generationStatus: 'generated', notificationEligible: true,
       previewMode: false, sentToGroup: false, dedupeKey, windowDays: 7,
       readinessStatus: 'report_partial', severity: 'warning',
-      insightSummary: 'ภาพรวมมีข้อมูลพร้อมใช้งานบางส่วน',
-      strengths: 'มีข้อมูลที่ผ่านการตรวจสอบแล้ว',
-      weaknesses: 'บางช่องทางยังไม่มีข้อมูลครบ',
-      recommendations: 'รอข้อมูลครบก่อนตัดสินใจ',
+      insightSummary: 'Meta Ads มีจำนวนการคลิก 4553 ครั้ง และการแสดงผล 582054 ครั้ง',
+      strengths: 'ยังไม่มีข้อมูลเปรียบเทียบเพียงพอสำหรับระบุจุดแข็งด้านผลงาน',
+      weaknesses: 'ยังไม่พบสัญญาณด้านผลงานที่ควรระวังจากข้อมูลที่มี',
+      recommendations: '- คำนวณ CTR และ CPC จากข้อมูลโฆษณาที่มี แล้วใช้เป็น baseline เทียบกับสัปดาห์ถัดไป',
     },
     snapshot: {
       reportId: 'integration_workspace:executive:7d:2026-08-03',
@@ -44,14 +47,33 @@ function setup() {
   };
 }
 
+test('builds a business-first weekly message without internal readiness or severity labels', () => {
+  const message = buildLarkExecutiveNotificationMessage(request());
+  assert.equal(message.title, '📊 Social MKT Weekly Executive Report — 7D');
+  assert.match(message.text, /ภาพรวมสัปดาห์นี้/u);
+  assert.match(message.text, /🏆 สิ่งที่เด่นที่สุดประจำสัปดาห์/u);
+  assert.match(message.text, /⚠️ สิ่งที่ต้องจับตา/u);
+  assert.match(message.text, /🎯 สิ่งที่ควรทำสัปดาห์หน้า/u);
+  assert.doesNotMatch(message.text, /report_partial|readiness_status|สถานะข้อมูล|ระดับ:\s*warning/iu);
+  assert.match(message.text, /4553/u);
+  assert.match(message.text, /582054/u);
+});
+
 test('sends and mirrors once while exact replay never sends again', async () => {
   const state = setup();
   let sends = 0;
   let mirrors = 0;
+  let deliveredText = null;
   try {
     const base = {
       request: request(), store: state.store, now: state.now,
-      transport: { async sendTextToChat() { sends += 1; return { messageId: 'message-1' }; } },
+      transport: {
+        async sendTextToChat(input) {
+          sends += 1;
+          deliveredText = input.text;
+          return { messageId: 'message-1' };
+        },
+      },
       async mirrorDelivery(row) {
         mirrors += 1;
         assert.equal(row.attempt_status, 'sent');
@@ -64,6 +86,8 @@ test('sends and mirrors once while exact replay never sends again', async () => 
     assert.equal(replay.status, 'deduped_sent');
     assert.equal(sends, 1);
     assert.equal(mirrors, 1);
+    assert.match(deliveredText, /Social MKT Weekly Executive Report/u);
+    assert.doesNotMatch(deliveredText, /report_partial|สถานะข้อมูล/u);
   } finally { state.db.close(); }
 });
 
