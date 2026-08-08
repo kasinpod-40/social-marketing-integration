@@ -16,15 +16,16 @@ import { parseJsoncObject } from './lib/chatwoot-safe-wrangler-config.js';
 import { readDevVars } from './lib/dev-vars.js';
 
 const execFileAsync = promisify(execFile);
-const CONTRACT_VERSION = 'lark_native_ai_weekly_7d_quality_retry_v2';
-const CONFIRMATION = 'RETRY_WEEKLY_7D_NATIVE_AI_QUALITY_V3';
-const SOURCE_PROMPT_SHAPE = 'lark_ai_compact_quality_v2';
-const TARGET_PROMPT_SHAPE = 'lark_ai_compact_quality_v3';
-const TRIGGER_MARKER = 'CONTROLLED_UAT_NATIVE_AI_QUALITY_TRIGGER_V5';
+const CONTRACT_VERSION = 'lark_native_ai_weekly_7d_quality_retry_v3';
+const CONFIRMATION = 'RETRY_WEEKLY_7D_NATIVE_AI_QUALITY_V4';
+const SOURCE_PROMPT_SHAPE = 'lark_ai_compact_quality_v3';
+const TARGET_PROMPT_SHAPE = 'lark_ai_compact_quality_v4';
+const TRIGGER_MARKER = 'CONTROLLED_UAT_NATIVE_AI_QUALITY_TRIGGER_V6';
 const AI_TITLE = 'AI Materialization → MKT_AI_Report_Runs';
 const NOTIFICATION_TITLE = 'Eligible AI Run → Lark Group Notification';
 const ACTIVE = new Set(['enable', 'enabled', 'active', 'on']);
 const INACTIVE = new Set(['disable', 'disabled', 'inactive', 'off', 'draft']);
+const STRENGTHS_FALLBACK = 'ยังไม่มีข้อมูลเปรียบเทียบเพียงพอสำหรับระบุจุดแข็งด้านผลงาน';
 const PREPARATION_FIELDS = Object.freeze([
   'metric_summary_json',
   'channel_status_vector_json',
@@ -36,6 +37,12 @@ const PREPARATION_FIELDS = Object.freeze([
   'generated_at',
   'notification_eligible',
   'sent_to_group',
+]);
+const OUTPUT_FIELDS = Object.freeze([
+  'insight_summary',
+  'strengths',
+  'weaknesses',
+  'recommendations',
 ]);
 const POLL_MS = 5000;
 const POLL_ATTEMPTS = 36;
@@ -71,13 +78,14 @@ function printPlan() {
     ok: true,
     planOnly: true,
     contractVersion: CONTRACT_VERSION,
-    objective: 'upgrade_generated_quality_v2_evidence_to_quality_v3_then_wake_native_lark_ai_with_failure_code_only',
+    objective: 'upgrade_generated_quality_v3_evidence_to_executive_writer_quality_v4_then_validate_native_lark_ai_output',
     sourcePromptShape: SOURCE_PROMPT_SHAPE,
     targetPromptShape: TARGET_PROMPT_SHAPE,
     confirmation: CONFIRMATION,
     maximumOperatorRecordWrites: 2,
     preparationTouchesFailureCode: false,
     triggerWrittenFields: ['failure_code'],
+    localQualityGate: true,
     notificationCount: 0,
     scheduleEnabled: false,
     production: 'BLOCKED',
@@ -87,7 +95,7 @@ function printPlan() {
 async function execute() {
   stage = 'confirmation';
   if (process.env.CONFIRM_LARK_NATIVE_AI_WEEKLY_7D_QUALITY_RETRY !== CONFIRMATION) {
-    throw failure('Exact weekly AI quality v3 retry confirmation is missing', 'LARK_NATIVE_AI_QUALITY_RETRY_CONFIRMATION_INVALID');
+    throw failure('Exact weekly AI quality v4 retry confirmation is missing', 'LARK_NATIVE_AI_QUALITY_RETRY_CONFIRMATION_INVALID');
   }
 
   stage = 'repository-preflight';
@@ -124,7 +132,7 @@ async function execute() {
   const workflows = workflowResponse?.data?.workflows ?? workflowResponse?.data?.items ?? workflowResponse?.workflows ?? [];
   const automationState = await verifyAutomationState(workflows);
 
-  stage = 'load-generated-quality-v2-row';
+  stage = 'load-generated-quality-v3-row';
   const candidates = await client.searchRecordsByFieldValues({
     tableId: aiTableId,
     fieldName: 'template_version',
@@ -132,7 +140,7 @@ async function execute() {
   });
   const matches = candidates.filter((record) => isExactGeneratedUatRow(record?.fields));
   if (matches.length !== 1) {
-    throw failure('Expected exactly one generated weekly Executive UAT row for quality v3 repair', 'LARK_NATIVE_AI_QUALITY_RETRY_UAT_ROW_INVALID', {
+    throw failure('Expected exactly one generated weekly Executive UAT row for quality v4 repair', 'LARK_NATIVE_AI_QUALITY_RETRY_UAT_ROW_INVALID', {
       candidates: candidates.length,
       exactMatches: matches.length,
     });
@@ -146,25 +154,25 @@ async function execute() {
   const channelStatusVectorText = requireText(fields.channel_status_vector_json, 'channel_status_vector_json');
   const sourcePromptShape = readPromptShape(metricSummaryText);
   if (sourcePromptShape !== SOURCE_PROMPT_SHAPE) {
-    throw failure('Weekly Executive UAT row must still contain the retained quality v2 evidence before v3 repair', 'LARK_NATIVE_AI_QUALITY_RETRY_SOURCE_SHAPE_INVALID', {
+    throw failure('Weekly Executive UAT row must contain retained quality v3 evidence before v4 repair', 'LARK_NATIVE_AI_QUALITY_RETRY_SOURCE_SHAPE_INVALID', {
       observedPromptShape: sourcePromptShape,
       expectedPromptShape: SOURCE_PROMPT_SHAPE,
     });
   }
 
-  stage = 'harden-business-evidence-v3';
+  stage = 'harden-business-evidence-v4';
   const hardened = hardenLarkNativeAiWeeklyEvidence({
     metricSummaryJson: metricSummaryText,
     channelStatusVectorJson: channelStatusVectorText,
   });
   if (hardened.promptShape !== TARGET_PROMPT_SHAPE) {
-    throw failure('Weekly Executive quality hardener did not produce the reviewed v3 prompt shape', 'LARK_NATIVE_AI_QUALITY_RETRY_TARGET_SHAPE_INVALID', {
+    throw failure('Weekly Executive quality hardener did not produce the reviewed v4 prompt shape', 'LARK_NATIVE_AI_QUALITY_RETRY_TARGET_SHAPE_INVALID', {
       observedPromptShape: hardened.promptShape,
       expectedPromptShape: TARGET_PROMPT_SHAPE,
     });
   }
 
-  stage = 'prepare-quality-v3-without-trigger-field';
+  stage = 'prepare-quality-v4-without-trigger-field';
   const preparationUpdate = await client.batchUpdateRecords({
     tableId: aiTableId,
     records: [{
@@ -184,12 +192,12 @@ async function execute() {
     }],
   });
   if (preparationUpdate.updated !== 1) {
-    throw failure('Expected exactly one weekly AI quality v3 preparation write', 'LARK_NATIVE_AI_QUALITY_RETRY_PREPARATION_WRITE_COUNT_INVALID', {
+    throw failure('Expected exactly one weekly AI quality v4 preparation write', 'LARK_NATIVE_AI_QUALITY_RETRY_PREPARATION_WRITE_COUNT_INVALID', {
       updated: preparationUpdate.updated,
     });
   }
 
-  stage = 'verify-prepared-quality-v3-row';
+  stage = 'verify-prepared-quality-v4-row';
   const preparedRows = await client.searchRecordsByFieldValues({
     tableId: aiTableId,
     fieldName: 'ai_run_key',
@@ -201,8 +209,8 @@ async function execute() {
     });
   }
   const prepared = requireObject(preparedRows[0].fields, 'prepared.fields');
-  if (!isPreparedQualityV3Row(prepared, hardened)) {
-    throw failure('Weekly Executive UAT row did not converge to the exact prepared quality v3 state', 'LARK_NATIVE_AI_QUALITY_RETRY_PREPARED_STATE_INVALID', {
+  if (!isPreparedQualityV4Row(prepared, hardened)) {
+    throw failure('Weekly Executive UAT row did not converge to the exact prepared quality v4 state', 'LARK_NATIVE_AI_QUALITY_RETRY_PREPARED_STATE_INVALID', {
       generationStatus: optionalText(prepared.generation_status),
       promptShape: readPromptShape(optionalText(prepared.metric_summary_json)),
       outputsPresent: outputPresence(prepared),
@@ -211,7 +219,7 @@ async function execute() {
     });
   }
 
-  stage = 'trigger-quality-v5-failure-code-only';
+  stage = 'trigger-quality-v6-failure-code-only';
   const triggerUpdate = await client.batchUpdateRecords({
     tableId: aiTableId,
     records: [{
@@ -220,7 +228,7 @@ async function execute() {
     }],
   });
   if (triggerUpdate.updated !== 1) {
-    throw failure('Expected exactly one failure_code-only weekly AI quality v5 trigger write', 'LARK_NATIVE_AI_QUALITY_RETRY_TRIGGER_WRITE_COUNT_INVALID', {
+    throw failure('Expected exactly one failure_code-only weekly AI quality v6 trigger write', 'LARK_NATIVE_AI_QUALITY_RETRY_TRIGGER_WRITE_COUNT_INVALID', {
       updated: triggerUpdate.updated,
     });
   }
@@ -235,7 +243,7 @@ async function execute() {
       values: [aiRunKey],
     });
     if (rows.length !== 1) {
-      throw failure('UAT row identity drifted while observing weekly AI quality v3 retry', 'LARK_NATIVE_AI_QUALITY_RETRY_READBACK_INVALID', { count: rows.length });
+      throw failure('UAT row identity drifted while observing weekly AI quality v4 retry', 'LARK_NATIVE_AI_QUALITY_RETRY_READBACK_INVALID', { count: rows.length });
     }
     observed = requireObject(rows[0].fields, 'readback.fields');
     const generationStatus = optionalText(observed.generation_status);
@@ -243,11 +251,20 @@ async function execute() {
   }
 
   const generated = optionalText(observed?.generation_status) === 'generated' && fourOutputsPresent(observed);
+  const outputs = generated ? readOutputs(observed) : null;
+  const qualityGate = generated
+    ? validateExecutiveWriterOutputs(outputs, hardened)
+    : Object.freeze({ passed: false, violations: ['generation_not_completed'] });
+  const passed = generated && qualityGate.passed;
   const result = Object.freeze({
-    ok: generated,
+    ok: passed,
     contractVersion: CONTRACT_VERSION,
     stage: 'complete',
-    status: generated ? 'weekly_7d_native_ai_quality_v3_generated' : 'weekly_7d_native_ai_quality_v3_retry_not_completed',
+    status: passed
+      ? 'weekly_7d_native_ai_executive_writer_quality_passed'
+      : generated
+        ? 'weekly_7d_native_ai_executive_writer_quality_failed'
+        : 'weekly_7d_native_ai_quality_v4_retry_not_completed',
     repository,
     automationState,
     evidence: {
@@ -258,6 +275,8 @@ async function execute() {
       promptShape: hardened.promptShape,
       businessEvidenceChannelCount: hardened.businessEvidenceChannelCount,
       comparisonEvidenceChannelCount: hardened.comparisonEvidenceChannelCount,
+      strengthsMode: hardened.strengthsMode,
+      recommendationMode: hardened.recommendationMode,
     },
     recordWriteCount: 2,
     preparationWriteCount: 1,
@@ -268,12 +287,8 @@ async function execute() {
     triggerMarker: TRIGGER_MARKER,
     generationStatus: optionalText(observed?.generation_status),
     outputsPresent: outputPresence(observed),
-    outputs: generated ? {
-      insight_summary: optionalText(observed.insight_summary),
-      strengths: optionalText(observed.strengths),
-      weaknesses: optionalText(observed.weaknesses),
-      recommendations: optionalText(observed.recommendations),
-    } : null,
+    outputs,
+    qualityGate,
     notificationEligible: booleanValue(observed?.notification_eligible),
     sentToGroup: booleanValue(observed?.sent_to_group),
     aiCallsByOperator: 0,
@@ -283,6 +298,40 @@ async function execute() {
   });
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   if (!result.ok) process.exitCode = 2;
+}
+
+function validateExecutiveWriterOutputs(outputs, hardened) {
+  const violations = [];
+  const allText = OUTPUT_FIELDS.map((field) => outputs[field] ?? '').join('\n');
+  if (/\breport_partial\b|\breport_missing\b|\bsource_pending\b|\bsource_unavailable\b|\breadiness_status\b|\bdata_status\b|\bCoverage\b/iu.test(allText)) {
+    violations.push('internal_status_language');
+  }
+  if (/^#{1,6}\s/mu.test(allText)) violations.push('markdown_heading');
+  if (/หลักฐาน\s*[:：]|\([^\n)]*หลักฐาน[^\n)]*\)/u.test(allText)) violations.push('evidence_footnote');
+
+  if (hardened.comparisonEvidenceChannelCount === 0) {
+    if (outputs.strengths !== STRENGTHS_FALLBACK) violations.push('strengths_without_comparison_fallback');
+    if (/จำนวนมาก|สูงสุด|ต่ำสุด|เด่นที่สุด|โดดเด่น|ทำผลงานดี|ดีที่สุด|คุ้มที่สุด|ดีขึ้น|แย่ลง/u.test(`${outputs.insight_summary}\n${outputs.strengths}\n${outputs.weaknesses}`)) {
+      violations.push('unsupported_performance_magnitude');
+    }
+  }
+
+  if (/แนะนำ|ควร|ติดตาม|ตรวจสอบ|ทดลอง|ต่อยอด/u.test(outputs.weaknesses)) {
+    violations.push('weaknesses_contains_action');
+  }
+  if (/เติมข้อมูล|รอข้อมูล|ข้อมูลเต็มรูปแบบ|ตรวจสอบข้อมูล|ตรวจสอบและรอข้อมูล|ตรวจระบบ|แก้ระบบ|source readiness|coverage/iu.test(outputs.recommendations)) {
+    violations.push('recommendations_contains_data_ops');
+  }
+  if (hardened.businessEvidenceChannelCount > 0
+    && hardened.recommendationMode === 'observed_only_business_followup'
+    && !/(CTR|CPC|อัตราการคลิก|ต้นทุนต่อคลิก|โฆษณา|creative|baseline|เปรียบเทียบ)/iu.test(outputs.recommendations)) {
+    violations.push('recommendations_missing_business_action');
+  }
+
+  return Object.freeze({
+    passed: violations.length === 0,
+    violations: Object.freeze(violations),
+  });
 }
 
 async function verifyAutomationState(workflows) {
@@ -326,12 +375,11 @@ function isExactGeneratedUatRow(fields) {
     && fourOutputsPresent(fields);
 }
 
-function isPreparedQualityV3Row(fields, hardened) {
+function isPreparedQualityV4Row(fields, hardened) {
   return optionalText(fields.generation_status) === 'pending'
     && optionalText(fields.metric_summary_json) === hardened.metricSummaryJson
     && optionalText(fields.channel_status_vector_json) === hardened.channelStatusVectorJson
     && readPromptShape(optionalText(fields.metric_summary_json)) === TARGET_PROMPT_SHAPE
-    && !fourOutputsPresent(fields)
     && Object.values(outputPresence(fields)).every((present) => present === false)
     && booleanValue(fields.notification_eligible) === false
     && booleanValue(fields.sent_to_group) === false;
@@ -348,6 +396,9 @@ function readPromptShape(value) {
   }
 }
 
+function readOutputs(fields) {
+  return Object.freeze(Object.fromEntries(OUTPUT_FIELDS.map((field) => [field, optionalText(fields?.[field])])));
+}
 function exactWorkflow(workflows, title) {
   const matches = workflows.filter((item) => optionalText(item?.title ?? item?.name) === title);
   if (matches.length !== 1) throw failure(`Expected one exact Automation: ${title}`, 'LARK_NATIVE_AI_QUALITY_RETRY_AUTOMATION_IDENTITY_INVALID', { title, count: matches.length });
@@ -379,12 +430,10 @@ async function loadRuntime() {
   return env;
 }
 function fourOutputsPresent(fields) {
-  return ['insight_summary', 'strengths', 'weaknesses', 'recommendations']
-    .every((field) => Boolean(optionalText(fields?.[field])));
+  return OUTPUT_FIELDS.every((field) => Boolean(optionalText(fields?.[field])));
 }
 function outputPresence(fields) {
-  return Object.fromEntries(['insight_summary', 'strengths', 'weaknesses', 'recommendations']
-    .map((field) => [field, Boolean(optionalText(fields?.[field]))]));
+  return Object.fromEntries(OUTPUT_FIELDS.map((field) => [field, Boolean(optionalText(fields?.[field]))]));
 }
 function booleanValue(value) {
   if (value === true || value === false) return value;

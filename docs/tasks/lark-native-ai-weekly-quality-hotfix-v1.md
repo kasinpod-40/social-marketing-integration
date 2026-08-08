@@ -33,24 +33,52 @@ The resulting `lark_ai_compact_quality_v2` evidence generated successfully throu
 
 Do not edit the Lark Automation UI again. Strengthen the existing evidence contract instead.
 
-- Upgrade only retained `lark_ai_compact_quality_v2` or original compact-v1 evidence to `lark_ai_compact_quality_v3`.
+- Upgrade retained compact evidence to `lark_ai_compact_quality_v3`.
 - Add compact top-level `qualityContext` with business-evidence count, comparison-evidence count, deterministic Strengths fallback requirement and recommendation mode.
 - Reuse each channel's existing `comparisonEvidencePresent` instead of adding another repeated per-channel policy field, preserving the reviewed `metric_summary_json <= 2800` budget.
-- If a channel has no comparison evidence, prohibit magnitude/performance adjectives such as `มาก`, `น้อย`, `สูง`, `ต่ำ`, `เด่น`, `ดี`, `แย่` from current values alone.
+- If a channel has no comparison evidence, prohibit magnitude/performance adjectives from current values alone.
 - If no channel has comparison evidence, Strengths must use the reviewed fallback: `ยังไม่มีข้อมูลเปรียบเทียบเพียงพอสำหรับระบุจุดแข็งด้านผลงาน`.
 - Observed spend remains a factual value only and never implies planning intent, investment quality or efficiency.
-- When business evidence exists but comparison does not, Recommendations must stay on neutral business follow-up using the actual metric/creative evidence; they must not recommend filling data or repairing systems.
-- Require direct measurable language and prohibit ambiguous/metaphorical wording such as `ความรู้สึกเบื้องหลังผลลัพธ์`.
+- When business evidence exists but comparison does not, Recommendations must stay on neutral business follow-up using actual metric/creative evidence; they must not recommend filling data or repairing systems.
 
-## Controlled v3 retry
+Quality v3 generated technically, and Strengths converged to the exact fallback, but the output still behaved too much like a Data Quality report: Weaknesses included an action, Recommendations still included wait/data-completion instructions and an evidence footnote, and field-level Markdown headings remained possible.
 
-Reuse `scripts/lark-native-ai-weekly-7d-quality-retry.mjs` as a two-stage guarded operator:
+## Quality v4 — Executive Writer Contract
 
-1. Require clean exact `main`, exact generated 7D Executive UAT row, source `promptShape=lark_ai_compact_quality_v2`, AI Automation active and Notification Automation inactive.
-2. Preparation write upgrades evidence to quality v3, clears the four prior AI outputs, returns `generation_status=pending`, clears `generated_at`, keeps notification flags false, and **does not write `failure_code`**.
-3. Read back and require exact quality-v3 evidence, pending state, empty outputs and safe notification flags.
-4. Trigger with a second write whose only field is `failure_code=CONTROLLED_UAT_NATIVE_AI_QUALITY_TRIGGER_V5`.
-5. Observe the same row for up to 180 seconds and print all four generated outputs for final quality review.
+The target is the approved business-facing weekly-report style: business overview first, concise highlights, performance-only watchouts and next-week marketing actions. Missing-data language must remain secondary and must never dominate the report.
+
+Reuse the same evidence hardener and native AI Automation. Do not add another AI engine or edit the Lark Automation UI.
+
+- Upgrade retained `lark_ai_compact_quality_v3` evidence to `lark_ai_compact_quality_v4`.
+- Remove `readinessStatus` from `channelBusinessEvidence`; readiness already exists in the separate status vector and must not compete with Business evidence for attention.
+- For channels without Business evidence, omit `displayName` and retain only compact channel identity/status-vector handling.
+- Replace the previous policy-enum block with one compact `writerContract`:
+  - Overview: 2–4 business-first sentences; current-only values may be stated but not called large/small/good/bad without comparison.
+  - Strengths: with zero comparison evidence, return the exact reviewed fallback.
+  - Weaknesses: performance-only; no recommendation/action verbs. Missing channels may appear in at most one concise item.
+  - Recommendations: business-action-only from existing evidence. Never recommend filling/waiting/checking data or systems when Business evidence exists. For observed-only Ads with clicks/impressions/spend, recommend deriving CTR/CPC and using them as the next comparison baseline.
+  - Output: no Markdown heading, evidence footnote, JSON/field name or internal status term.
+- Preserve the reviewed input budgets: `metric_summary_json <= 2800`, status vector `<=700`.
+
+## Controlled v4 retry and deterministic local quality gate
+
+Reuse `scripts/lark-native-ai-weekly-7d-quality-retry.mjs` as the existing two-stage guarded operator:
+
+1. Require clean exact `main`, one generated 7D Executive UAT row with source `promptShape=lark_ai_compact_quality_v3`, AI Automation active and Notification Automation inactive.
+2. Preparation write upgrades evidence to quality v4, clears prior outputs, returns `generation_status=pending`, keeps notification flags false and does **not** touch `failure_code`.
+3. Read back the exact prepared quality-v4 state.
+4. Wake the existing Automation using a second write containing only `failure_code=CONTROLLED_UAT_NATIVE_AI_QUALITY_TRIGGER_V6`.
+5. Observe the same row and read all four generated outputs.
+6. Apply a deterministic local Quality Gate. The operator returns `ok=true` only when generation succeeds **and** all checks pass:
+   - no internal-status language;
+   - no Markdown heading/evidence footnote;
+   - exact Strengths fallback when comparison evidence count is zero;
+   - no unsupported performance-magnitude language without comparison;
+   - no action/recommendation language in Weaknesses;
+   - no Data Ops/wait-data recommendation;
+   - observed-only Business evidence still produces at least one measurable marketing follow-up.
+
+A generated result that fails this local gate is not retried automatically and must not enable Notification.
 
 ## Safety
 
@@ -62,6 +90,6 @@ Reuse `scripts/lark-native-ai-weekly-7d-quality-retry.mjs` as a two-stage guarde
 - Queue / Worker: 0
 - Schedule: disabled
 - Production: BLOCKED
-- quality-v3 preparation write: exactly 1
-- failure-code-only trigger write: exactly 1
+- quality-v4 preparation write after merge: exactly 1
+- failure-code-only V6 trigger write after merge: exactly 1
 - Notification send: 0
