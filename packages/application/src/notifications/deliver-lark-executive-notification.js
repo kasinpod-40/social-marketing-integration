@@ -1,7 +1,7 @@
 import { permanentError, transientError } from '../../../shared/src/errors/runtime-error.js';
 
 const SHA256_HEX = /^[a-f0-9]{64}$/u;
-const TEMPLATE_VERSION = 'executive_report_notification_v1';
+const TEMPLATE_VERSION = 'executive_report_notification_v2';
 const MAX_MESSAGE_BYTES = 24_000;
 
 /**
@@ -150,6 +150,10 @@ export async function deliverLarkExecutiveNotification(input = {}) {
   });
 }
 
+export function buildLarkExecutiveNotificationMessage(input = {}) {
+  return buildExecutiveMessage(normalizeRequest(input));
+}
+
 async function repairMirror(input) {
   if (!input.mirrorDelivery) {
     return Object.freeze({
@@ -288,30 +292,30 @@ function normalizeRequest(value) {
 }
 
 function buildExecutiveMessage(request) {
+  const weekly = request.aiRun.windowDays === 7;
+  const title = weekly
+    ? '📊 Social MKT Weekly Executive Report — 7D'
+    : `📊 Social MKT Executive Report — ${request.aiRun.windowDays}D`;
   const text = [
-    `📊 Social MKT Executive Report — ${request.aiRun.windowDays}D`,
-    `ช่วง: ${request.snapshot.periodStart} ถึง ${request.snapshot.periodEnd}`,
-    `ระดับ: ${request.aiRun.severity}`,
-    `สถานะข้อมูล: ${request.aiRun.readinessStatus}`,
+    title,
+    `ช่วง ${request.snapshot.periodStart} ถึง ${request.snapshot.periodEnd}`,
     '',
-    'สรุป',
+    weekly ? 'ภาพรวมสัปดาห์นี้' : 'ภาพรวม',
     request.aiRun.insightSummary,
     '',
-    'จุดแข็ง',
+    weekly ? '🏆 สิ่งที่เด่นที่สุดประจำสัปดาห์' : '🏆 สิ่งที่เด่นที่สุด',
     request.aiRun.strengths,
     '',
-    'จุดที่ต้องระวัง',
+    '⚠️ สิ่งที่ต้องจับตา',
     request.aiRun.weaknesses,
     '',
-    'ข้อเสนอแนะ',
+    weekly ? '🎯 สิ่งที่ควรทำสัปดาห์หน้า' : '🎯 สิ่งที่ควรทำต่อ',
     request.aiRun.recommendations,
-    '',
-    'สร้างจาก Central Report Metrics ที่ผ่านการตรวจสอบ',
   ].join('\n');
   return Object.freeze({
     format: 'plain_text',
     language: 'th',
-    title: `📊 Social MKT Executive Report — ${request.aiRun.windowDays}D`,
+    title,
     text,
   });
 }
