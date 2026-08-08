@@ -4,11 +4,13 @@ import test from 'node:test';
 
 const source = await readFile(new URL('../../scripts/lark-native-ai-weekly-7d-quality-gate-v8.mjs', import.meta.url), 'utf8');
 
-test('V8 requires exact prior V7 state and exact confirmation', () => {
+test('V8 requires the finalized generated V7 state and exact confirmation', () => {
   assert.match(source, /RETRY_WEEKLY_7D_NATIVE_AI_QUALITY_GATE_V8/);
-  assert.match(source, /CONTROLLED_UAT_NATIVE_AI_PROMPT_V3_TRIGGER_V7/);
   assert.match(source, /lark_ai_compact_quality_v4/);
-  assert.match(source, /failure_code\) === PRIOR_TRIGGER_MARKER/);
+  assert.match(source, /generation_status\) === 'generated'/);
+  assert.match(source, /failure_code\) === null/);
+  assert.match(source, /candidateStates: candidates\.map/);
+  assert.doesNotMatch(source, /CONTROLLED_UAT_NATIVE_AI_PROMPT_V3_TRIGGER_V7/);
 });
 
 test('V8 upgrades only the retained evidence and then triggers through failure_code only', () => {
