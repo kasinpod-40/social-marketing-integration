@@ -192,16 +192,13 @@ function normalizeFactualMetric(raw) {
   const unit = optionalText(metric.unit) ?? 'count';
   const microsCurrency = unit === 'currency' && metricKey.endsWith('_micros');
   const explicitDisplayValue = finiteOrNull(metric.displayValue ?? metric.display_value);
-  const compareValue = finiteOrNull(metric.compareValue ?? metric.compare_value);
   return deepFreeze({
     metricKey,
     displayName: optionalText(metric.displayName ?? metric.display_name) ?? metricKey,
     currentValue,
     displayValue: explicitDisplayValue
       ?? (microsCurrency ? round(currentValue / 1_000_000, 4) : currentValue),
-    compareValue: compareValue === null
-      ? null
-      : (microsCurrency ? round(compareValue / 1_000_000, 4) : compareValue),
+    compareValue: finiteOrNull(metric.compareValue ?? metric.compare_value),
     changeValue: finiteOrNull(metric.changeValue ?? metric.change_value),
     changePercent: finiteOrNull(metric.changePercent ?? metric.change_percent),
     unit,
@@ -280,7 +277,12 @@ function formatComparison(metric) {
     const prefix = metric.changePercent > 0 ? '+' : '';
     return ` (${prefix}${formatNumber(metric.changePercent, 2)}% เทียบช่วงก่อน)`;
   }
-  if (metric.compareValue !== null) return ` (ช่วงก่อน ${formatNumber(metric.compareValue, 2)})`;
+  if (metric.compareValue !== null) {
+    const compare = metric.unit === 'currency' && metric.metricKey.endsWith('_micros')
+      ? metric.compareValue / 1_000_000
+      : metric.compareValue;
+    return ` (ช่วงก่อน ${formatNumber(compare, 2)})`;
+  }
   return '';
 }
 
