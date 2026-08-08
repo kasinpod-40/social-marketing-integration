@@ -75,6 +75,11 @@ test('Report platform registry, Settings seed and Lark schema remain aligned', (
     metricPlatform.property.options.map((option) => option.name),
     canonicalPlatforms,
   );
+  const displayValueField = metricTable.fields.find((field) => field.fieldName === 'display_value');
+  assert.ok(displayValueField);
+  assert.equal(displayValueField.type, 2);
+  assert.equal(displayValueField.property?.formatter, '0.0000');
+  assert.notEqual(displayValueField.property?.formatter, '1,000.0000');
   const statusField = metricTable.fields.find((field) => field.fieldName === 'data_status');
   assert.equal(statusField.property.options.some((option) => option.name === 'source_unavailable'), true);
 
