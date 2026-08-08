@@ -186,6 +186,42 @@ export function hardenLarkNativeAiExecutiveBusinessMetricConsistency(input = {})
   });
 }
 
+export function readLarkNativeAiExecutiveBusinessMetricEvidence(input = {}) {
+  const summary = parseObject(input.metricSummaryJson, 'metricSummaryJson');
+  const statusVector = parseArray(input.channelStatusVectorJson, 'channelStatusVectorJson');
+
+  if (summary.promptShape !== BUSINESS_METRIC_TARGET_PROMPT_SHAPE
+    || summary.evidenceShape !== 'executive_business_first_v2'
+    || !Array.isArray(summary.channelBusinessEvidence)
+    || summary.channelBusinessEvidence.length !== 9
+    || statusVector.length !== 9) {
+    throw qualityError(
+      'Executive Writer V9 acceptance requires retained quality-v6 evidence for exactly nine channels',
+      'LARK_AI_EXECUTIVE_WRITER_V9_ACCEPTANCE_SOURCE_INVALID',
+    );
+  }
+
+  const businessChannels = summary.channelBusinessEvidence
+    .filter((item) => item?.businessEvidencePresent === true);
+  const qualityContext = objectOrEmpty(summary.qualityContext);
+  const summaryRequiredFacts = collectRequiredFacts(businessChannels).slice(0, 3);
+  if (businessChannels.length > 0 && summaryRequiredFacts.length === 0) {
+    throw qualityError(
+      'Retained quality-v6 evidence has no usable Summary business fact',
+      'LARK_AI_EXECUTIVE_WRITER_V9_ACCEPTANCE_REQUIRED_FACT_MISSING',
+    );
+  }
+  const derivedCtrFacts = collectAndValidateDerivedCtrFacts(businessChannels);
+
+  return deepFreeze(buildEvidence({
+    promptShape: BUSINESS_METRIC_TARGET_PROMPT_SHAPE,
+    businessChannels,
+    qualityContext,
+    summaryRequiredFacts,
+    derivedCtrFacts,
+  }));
+}
+
 export function validateLarkNativeAiExecutiveWriterOutputs(outputs = {}, evidence = {}) {
   const normalized = Object.fromEntries([
     'insight_summary',
@@ -202,7 +238,7 @@ export function validateLarkNativeAiExecutiveWriterOutputs(outputs = {}, evidenc
   if (/^#{1,6}\s/mu.test(allText)) violations.push('markdown_heading');
   if (/หลักฐาน\s*[:：]|\([^\n)]*หลักฐาน[^\n)]*\)/u.test(allText)) violations.push('evidence_footnote');
 
-  if (/แนะนำ|ควร|ติดตาม|ตรวจสอบ(?!แล้ว)|ทดลอง|ต่อยอด|คำนวณ|ใช้เป็น\s*(?:benchmark|baseline)|สิ่งที่ควรทำ/iu.test(normalized.insight_summary)) {
+  if (/แนะนำ|ควร|ติดตาม|ตรวจสอบ(?!แล้ว)|ทดลอง|ต่อยอด|คำนวณ(?!ได้)|ใช้เป็น\s*(?:benchmark|baseline)|สิ่งที่ควรทำ/iu.test(normalized.insight_summary)) {
     violations.push('insight_contains_action');
   }
   if (normalized.insight_summary.includes(LARK_NATIVE_AI_EXECUTIVE_STRENGTHS_FALLBACK)) {
@@ -238,7 +274,7 @@ export function validateLarkNativeAiExecutiveWriterOutputs(outputs = {}, evidenc
   }
 
   if (normalized.weaknesses !== LARK_NATIVE_AI_EXECUTIVE_WEAKNESSES_FALLBACK) {
-    if (/แนะนำ|ควร(?!ระวัง)|ติดตาม|ตรวจสอบ(?!แล้ว)|ทดลอง|ต่อยอด|คำนวณ|รอ|เติม|ใช้เป็น/iu.test(normalized.weaknesses)) {
+    if (/แนะนำ|ควร(?!ระวัง)|ติดตาม|ตรวจสอบ(?!แล้ว)|ทดลอง|ต่อยอด|คำนวณ(?!ได้)|รอ|เติม|ใช้เป็น/iu.test(normalized.weaknesses)) {
       violations.push('weaknesses_contains_action');
     }
     if (/ยังไม่พบข้อมูล|ไม่มีข้อมูล|ข้อมูลไม่ครบ|ข้อมูลไม่เพียงพอ|ข้อมูลเต็ม|ความพร้อม|ช่องทางอื่น|รอข้อมูล|coverage/iu.test(normalized.weaknesses)) {
@@ -300,6 +336,43 @@ function normalizeAdEvidence(ad, channel, derivedCtrFacts) {
     ...rest,
     derived_ctr_percent: derivedCtrPercent,
   };
+}
+
+function collectAndValidateDerivedCtrFacts(channels) {
+  const facts = [];
+  for (const channel of channels) {
+    const channelName = textOrNull(channel?.displayName) ?? textOrNull(channel?.channelKey) ?? 'unknown';
+    const ads = Array.isArray(channel?.topAds) ? channel.topAds : [];
+    for (const ad of ads) {
+      if (!ad || typeof ad !== 'object' || Array.isArray(ad)) continue;
+      const clicks = finiteNumber(ad.clicks);
+      const impressions = finiteNumber(ad.impressions);
+      if (clicks === null || impressions === null || clicks < 0 || impressions <= 0) continue;
+      if (Object.prototype.hasOwnProperty.call(ad, 'ctr')) {
+        throw qualityError(
+          'Retained quality-v6 Ad evidence must not retain raw CTR when clicks/impressions are available',
+          'LARK_AI_EXECUTIVE_WRITER_V9_ACCEPTANCE_RAW_CTR_PRESENT',
+        );
+      }
+      const derivedCtrPercent = finiteNumber(ad.derived_ctr_percent);
+      const expectedCtrPercent = roundDecimal((clicks / impressions) * 100, 6);
+      if (derivedCtrPercent === null || !numericEquivalent(derivedCtrPercent, expectedCtrPercent)) {
+        throw qualityError(
+          'Retained quality-v6 derived CTR is inconsistent with clicks/impressions',
+          'LARK_AI_EXECUTIVE_WRITER_V9_ACCEPTANCE_DERIVED_CTR_INVALID',
+          { channel: channelName, clicks, impressions, derivedCtrPercent, expectedCtrPercent },
+        );
+      }
+      facts.push(Object.freeze({
+        channel: channelName,
+        adName: textOrNull(ad.ad_name),
+        clicks,
+        impressions,
+        derivedCtrPercent,
+      }));
+    }
+  }
+  return facts;
 }
 
 function buildEvidence({
@@ -364,10 +437,18 @@ function containsInconsistentCtrClaim(text, facts) {
 
 function extractCtrClaims(text) {
   const source = String(text ?? '');
-  const matches = [...source.matchAll(/CTR[^\d-]{0,80}(-?\d[\d,]*(?:\.\d+)?)/giu)];
-  return matches
-    .map((match) => Number(match[1].replace(/,/g, '')))
-    .filter((value) => Number.isFinite(value));
+  const patterns = [
+    /CTR[^\d-]{0,80}(-?\d[\d,]*(?:\.\d+)?)/giu,
+    /(?:อัตราการคลิก|ค่าดัชนีการคลิก)[^\d-]{0,80}(-?\d[\d,]*(?:\.\d+)?)/giu,
+  ];
+  const values = [];
+  for (const pattern of patterns) {
+    for (const match of source.matchAll(pattern)) {
+      const value = Number(match[1].replace(/,/g, ''));
+      if (Number.isFinite(value)) values.push(value);
+    }
+  }
+  return values;
 }
 
 function extractNumbers(text) {
