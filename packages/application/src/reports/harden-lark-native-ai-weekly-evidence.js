@@ -1,6 +1,10 @@
 const DEFAULT_METRIC_SUMMARY_LIMIT = 2800;
 const DEFAULT_STATUS_VECTOR_LIMIT = 700;
-const QUALITY_PROMPT_SHAPE = 'lark_ai_compact_quality_v2';
+const QUALITY_PROMPT_SHAPE = 'lark_ai_compact_quality_v3';
+const ACCEPTED_SOURCE_PROMPT_SHAPES = new Set([
+  'lark_ai_compact_v1',
+  'lark_ai_compact_quality_v2',
+]);
 
 const PLACEHOLDER_TOKENS = Object.freeze([
   'no_data',
@@ -13,13 +17,14 @@ const PLACEHOLDER_TOKENS = Object.freeze([
 ]);
 
 const POLICY = Object.freeze({
-  absoluteMagnitude: 'require_comparison_or_benchmark',
-  ranking: 'rank_supports_relative_position_not_absolute_magnitude',
-  spend: 'observed_value_never_implies_planning_intent',
-  missingData: 'not_a_marketing_performance_failure',
-  recommendations: 'marketing_action_only_when_business_evidence_supports_it',
-  consistency: 'same_fact_interpretation_across_all_four_outputs',
-  output: 'no_internal_status_terms_or_evidence_footnotes',
+  absoluteMagnitude: 'comparisonEvidencePresent=false: ห้ามใช้ มาก น้อย สูง ต่ำ เด่น ดี แย่ จากค่าปัจจุบันล้วน',
+  strengths: 'strengthsFallbackRequired=true: ตอบ “ยังไม่มีข้อมูลเปรียบเทียบเพียงพอสำหรับระบุจุดแข็งด้านผลงาน”',
+  spend: 'spend เป็นค่าที่สังเกต ห้ามสรุปเจตนาวางแผน ลงทุน หรือความคุ้มค่า',
+  missingData: 'ข้อมูลที่ขาดไม่ใช่ performance weakness',
+  recommendations: 'มี business evidence แต่ไม่มี comparison: แนะนำติดตาม/เปรียบเทียบ metric หรือ creative ที่มีจริง ห้ามเติมข้อมูลหรือแก้ระบบ',
+  wording: 'ใช้คำตรง วัดผลได้ ห้ามคำกำกวม/อุปมา เช่น “ความรู้สึกเบื้องหลังผลลัพธ์”',
+  consistency: 'ข้อเท็จจริงเดียวกันต้องตรงกันทั้ง 4 outputs',
+  output: 'ห้ามศัพท์สถานะภายในหรือเชิงอรรถหลักฐาน',
 });
 
 export function hardenLarkNativeAiWeeklyEvidence(input = {}) {
@@ -35,18 +40,33 @@ export function hardenLarkNativeAiWeeklyEvidence(input = {}) {
   const statusVector = parseJsonArray(input.channelStatusVectorJson, 'channelStatusVectorJson');
 
   if (summary.evidenceShape !== 'executive_business_first_v2'
-    || summary.promptShape !== 'lark_ai_compact_v1'
+    || !ACCEPTED_SOURCE_PROMPT_SHAPES.has(summary.promptShape)
     || !Array.isArray(summary.channelBusinessEvidence)
     || summary.channelBusinessEvidence.length !== 9
     || statusVector.length !== 9) {
-    throw evidenceError('Weekly Executive quality hardening requires compact v1 evidence for nine channels', 'LARK_AI_QUALITY_EVIDENCE_SHAPE_INVALID');
+    throw evidenceError('Weekly Executive quality hardening requires compact v1 or quality v2 evidence for nine channels', 'LARK_AI_QUALITY_EVIDENCE_SHAPE_INVALID');
   }
 
   const channelBusinessEvidence = summary.channelBusinessEvidence.map(hardenChannel);
+  const businessEvidenceChannelCount = channelBusinessEvidence
+    .filter((item) => item.businessEvidencePresent).length;
+  const comparisonEvidenceChannelCount = channelBusinessEvidence
+    .filter((item) => item.comparisonEvidencePresent).length;
+  const qualityContext = Object.freeze({
+    businessEvidenceChannelCount,
+    comparisonEvidenceChannelCount,
+    strengthsFallbackRequired: comparisonEvidenceChannelCount === 0,
+    recommendationMode: businessEvidenceChannelCount === 0
+      ? 'wait_for_business_evidence'
+      : comparisonEvidenceChannelCount === 0
+        ? 'observed_only_followup'
+        : 'comparison_supported_action',
+  });
   const hardenedSummary = {
     evidenceShape: 'executive_business_first_v2',
     promptShape: QUALITY_PROMPT_SHAPE,
     overallCoverageState: textOrNull(summary.overallCoverageState),
+    qualityContext,
     interpretationPolicy: POLICY,
     channelBusinessEvidence,
   };
@@ -75,8 +95,8 @@ export function hardenLarkNativeAiWeeklyEvidence(input = {}) {
     metricSummaryChars: metricSummaryJson.length,
     channelStatusVectorChars: channelStatusVectorJson.length,
     promptShape: QUALITY_PROMPT_SHAPE,
-    businessEvidenceChannelCount: channelBusinessEvidence.filter((item) => item.businessEvidencePresent).length,
-    comparisonEvidenceChannelCount: channelBusinessEvidence.filter((item) => item.comparisonEvidencePresent).length,
+    businessEvidenceChannelCount,
+    comparisonEvidenceChannelCount,
   });
 }
 
