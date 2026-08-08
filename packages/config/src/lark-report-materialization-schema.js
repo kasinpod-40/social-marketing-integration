@@ -64,7 +64,7 @@ export const LARK_REPORT_MATERIALIZATION_SCHEMA = deepFreeze({
         ...sharedRowAdditiveFields({
           windowDaysField: select('window_days', DASHBOARD_WINDOW_DAY_OPTIONS),
         }),
-        number('display_value', '1,000.0000'),
+        number('display_value', '0.0000'),
         select('metric_scope', DASHBOARD_METRIC_SCOPE_OPTIONS),
         select('availability_status', DASHBOARD_METRIC_AVAILABILITY_OPTIONS),
         text('availability_message'),
