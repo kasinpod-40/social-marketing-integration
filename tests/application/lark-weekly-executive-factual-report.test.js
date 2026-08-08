@@ -81,6 +81,24 @@ test('channel rendering formats real facts and explicitly renders missing channe
   assert.equal(meta.lines.some((line) => line.includes('Hidden')), false);
 });
 
+test('currency micros are presentation-scaled without changing canonical current value', () => {
+  const bundle = metaBundle();
+  bundle.metricValues = [{
+    metric_key: 'spend_micros', display_name: 'Spend', current_value: 807690000000,
+    compare_value: 700000000000, change_percent: null, unit: 'currency',
+    availability_status: 'available', metric_scope: 'summary', dimension_type: 'summary', rank: 1,
+  }];
+  const report = buildLarkWeeklyExecutiveFactualReport({ targetPeriod: PERIOD, reportBundles: [bundle] });
+  const meta = report.channels.find(({ channelKey }) => channelKey === 'meta_ads');
+  assert.equal(meta.metrics[0].currentValue, 807690000000);
+  assert.equal(meta.metrics[0].displayValue, 807690);
+  assert.equal(meta.metrics[0].compareValue, 700000);
+  const rendered = renderLarkWeeklyExecutiveChannelSections(report)
+    .find(({ channelKey }) => channelKey === 'meta_ads');
+  assert.ok(rendered.lines.some((line) => line.includes('807,690')));
+  assert.equal(rendered.lines.some((line) => line.includes('807,690,000,000')), false);
+});
+
 test('raw contradictory ad CTR is ignored in favor of clicks/impressions derived CTR', () => {
   const report = buildLarkWeeklyExecutiveFactualReport({
     targetPeriod: PERIOD,
