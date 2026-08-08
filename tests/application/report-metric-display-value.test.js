@@ -103,5 +103,6 @@ test('report schema v6 adds display_value as an additive Number field', () => {
   const displayField = table.fields.find((field) => field.fieldName === 'display_value');
   assert.equal(displayField.type, 2);
   assert.equal(displayField.uiType, 'Number');
-  assert.equal(displayField.property?.formatter, '1,000.0000');
+  assert.equal(displayField.property?.formatter, '0.0000');
+  assert.notEqual(displayField.property?.formatter, '1,000.0000');
 });
