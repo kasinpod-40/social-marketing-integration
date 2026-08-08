@@ -56,11 +56,14 @@ ai_run_key            notification-weekly-7d:<sha256>
 report_id             same dedicated identity
 template_version      executive_weekly_7d_notification_v1
 notification_eligible true
-notification_reason   weekly_7d_quality_accepted
+notification_reason   controlled_uat
 preview_mode          false
 generation_status     generated
 sent_to_group         false before delivery
 ```
+
+`notification_reason=controlled_uat` deliberately reuses the value already proven by the prior Live Controlled UAT;
+this workstream does not invent a new Lark option/value contract.
 
 The identity is bound to source AI identity, source dedupe key, exact source Report IDs, retained business-evidence
 checksum and four accepted output checksums. It intentionally does not depend on repository Head so a later code
@@ -68,7 +71,11 @@ revision cannot create a second notification identity for the same accepted week
 
 ## Business-first message contract
 
-The shared renderer is upgraded to `executive_report_notification_v2`. For `7D`, the group message is:
+The dedicated `executive_weekly_7d_notification_v1` identity selects delivery renderer
+`executive_report_notification_v2`. Existing Controlled UAT / Runtime Smoke identities retain legacy renderer v1
+semantics so their persisted D1 template/checksum authority remains replay-compatible.
+
+For the new Weekly `7D` identity, the group message is:
 
 ```text
 📊 Social MKT Weekly Executive Report — 7D
@@ -89,7 +96,7 @@ The shared renderer is upgraded to `executive_report_notification_v2`. For `7D`,
 
 User-facing text must not include internal `report_partial`, `report_available`, `readiness_status`, `data_status`,
 `สถานะข้อมูล` or severity labels. Internal readiness/severity may remain inside the checksummed delivery payload for
-audit authority but are not rendered into chat text.
+audit authority but are not rendered into the new Weekly chat text.
 
 ## Current-main Runtime refresh
 
