@@ -16,14 +16,29 @@ import { parseJsoncObject } from './lib/chatwoot-safe-wrangler-config.js';
 import { readDevVars } from './lib/dev-vars.js';
 
 const execFileAsync = promisify(execFile);
-const CONFIRMATION = 'RETRY_WEEKLY_7D_NATIVE_AI_QUALITY_V1';
-const RETRY_MARKER = 'CONTROLLED_UAT_NATIVE_AI_QUALITY_RETRY_V3';
+const CONTRACT_VERSION = 'lark_native_ai_weekly_7d_quality_retry_v2';
+const CONFIRMATION = 'RETRY_WEEKLY_7D_NATIVE_AI_QUALITY_V3';
+const SOURCE_PROMPT_SHAPE = 'lark_ai_compact_quality_v2';
+const TARGET_PROMPT_SHAPE = 'lark_ai_compact_quality_v3';
+const TRIGGER_MARKER = 'CONTROLLED_UAT_NATIVE_AI_QUALITY_TRIGGER_V5';
 const AI_TITLE = 'AI Materialization → MKT_AI_Report_Runs';
 const NOTIFICATION_TITLE = 'Eligible AI Run → Lark Group Notification';
 const ACTIVE = new Set(['enable', 'enabled', 'active', 'on']);
 const INACTIVE = new Set(['disable', 'disabled', 'inactive', 'off', 'draft']);
+const PREPARATION_FIELDS = Object.freeze([
+  'metric_summary_json',
+  'channel_status_vector_json',
+  'insight_summary',
+  'strengths',
+  'weaknesses',
+  'recommendations',
+  'generation_status',
+  'generated_at',
+  'notification_eligible',
+  'sent_to_group',
+]);
 const POLL_MS = 5000;
-const POLL_ATTEMPTS = 24;
+const POLL_ATTEMPTS = 36;
 const repositoryRoot = resolve(process.cwd());
 
 let stage = 'init';
@@ -38,7 +53,7 @@ try {
 } catch (error) {
   process.stderr.write(`${JSON.stringify({
     ok: false,
-    contractVersion: 'lark_native_ai_weekly_7d_quality_retry_v1',
+    contractVersion: CONTRACT_VERSION,
     stage,
     code: error?.code ?? 'LARK_NATIVE_AI_QUALITY_RETRY_FAILED',
     message: sanitize(error?.message ?? String(error)),
@@ -55,10 +70,14 @@ function printPlan() {
   process.stdout.write(`${JSON.stringify({
     ok: true,
     planOnly: true,
-    contractVersion: 'lark_native_ai_weekly_7d_quality_retry_v1',
-    objective: 'harden_existing_compact_weekly_evidence_and_retry_native_lark_ai_once_for_quality',
+    contractVersion: CONTRACT_VERSION,
+    objective: 'upgrade_generated_quality_v2_evidence_to_quality_v3_then_wake_native_lark_ai_with_failure_code_only',
+    sourcePromptShape: SOURCE_PROMPT_SHAPE,
+    targetPromptShape: TARGET_PROMPT_SHAPE,
     confirmation: CONFIRMATION,
-    maximumOperatorRecordWrites: 1,
+    maximumOperatorRecordWrites: 2,
+    preparationTouchesFailureCode: false,
+    triggerWrittenFields: ['failure_code'],
     notificationCount: 0,
     scheduleEnabled: false,
     production: 'BLOCKED',
@@ -68,7 +87,7 @@ function printPlan() {
 async function execute() {
   stage = 'confirmation';
   if (process.env.CONFIRM_LARK_NATIVE_AI_WEEKLY_7D_QUALITY_RETRY !== CONFIRMATION) {
-    throw failure('Exact weekly AI quality retry confirmation is missing', 'LARK_NATIVE_AI_QUALITY_RETRY_CONFIRMATION_INVALID');
+    throw failure('Exact weekly AI quality v3 retry confirmation is missing', 'LARK_NATIVE_AI_QUALITY_RETRY_CONFIRMATION_INVALID');
   }
 
   stage = 'repository-preflight';
@@ -105,7 +124,7 @@ async function execute() {
   const workflows = workflowResponse?.data?.workflows ?? workflowResponse?.data?.items ?? workflowResponse?.workflows ?? [];
   const automationState = await verifyAutomationState(workflows);
 
-  stage = 'load-generated-uat-row';
+  stage = 'load-generated-quality-v2-row';
   const candidates = await client.searchRecordsByFieldValues({
     tableId: aiTableId,
     fieldName: 'template_version',
@@ -113,7 +132,7 @@ async function execute() {
   });
   const matches = candidates.filter((record) => isExactGeneratedUatRow(record?.fields));
   if (matches.length !== 1) {
-    throw failure('Expected exactly one generated weekly Executive UAT row for quality repair', 'LARK_NATIVE_AI_QUALITY_RETRY_UAT_ROW_INVALID', {
+    throw failure('Expected exactly one generated weekly Executive UAT row for quality v3 repair', 'LARK_NATIVE_AI_QUALITY_RETRY_UAT_ROW_INVALID', {
       candidates: candidates.length,
       exactMatches: matches.length,
     });
@@ -125,15 +144,28 @@ async function execute() {
   const aiRunKey = requireText(fields.ai_run_key, 'ai_run_key');
   const metricSummaryText = requireText(fields.metric_summary_json, 'metric_summary_json');
   const channelStatusVectorText = requireText(fields.channel_status_vector_json, 'channel_status_vector_json');
+  const sourcePromptShape = readPromptShape(metricSummaryText);
+  if (sourcePromptShape !== SOURCE_PROMPT_SHAPE) {
+    throw failure('Weekly Executive UAT row must still contain the retained quality v2 evidence before v3 repair', 'LARK_NATIVE_AI_QUALITY_RETRY_SOURCE_SHAPE_INVALID', {
+      observedPromptShape: sourcePromptShape,
+      expectedPromptShape: SOURCE_PROMPT_SHAPE,
+    });
+  }
 
-  stage = 'harden-business-evidence';
+  stage = 'harden-business-evidence-v3';
   const hardened = hardenLarkNativeAiWeeklyEvidence({
     metricSummaryJson: metricSummaryText,
     channelStatusVectorJson: channelStatusVectorText,
   });
+  if (hardened.promptShape !== TARGET_PROMPT_SHAPE) {
+    throw failure('Weekly Executive quality hardener did not produce the reviewed v3 prompt shape', 'LARK_NATIVE_AI_QUALITY_RETRY_TARGET_SHAPE_INVALID', {
+      observedPromptShape: hardened.promptShape,
+      expectedPromptShape: TARGET_PROMPT_SHAPE,
+    });
+  }
 
-  stage = 'quality-repair-and-trigger-once';
-  const update = await client.batchUpdateRecords({
+  stage = 'prepare-quality-v3-without-trigger-field';
+  const preparationUpdate = await client.batchUpdateRecords({
     tableId: aiTableId,
     records: [{
       recordId,
@@ -145,19 +177,56 @@ async function execute() {
         weaknesses: null,
         recommendations: null,
         generation_status: 'pending',
-        failure_code: RETRY_MARKER,
         generated_at: null,
         notification_eligible: false,
         sent_to_group: false,
       },
     }],
   });
-  if (update.updated !== 1) {
-    throw failure('Expected exactly one weekly AI quality repair write', 'LARK_NATIVE_AI_QUALITY_RETRY_WRITE_COUNT_INVALID', { updated: update.updated });
+  if (preparationUpdate.updated !== 1) {
+    throw failure('Expected exactly one weekly AI quality v3 preparation write', 'LARK_NATIVE_AI_QUALITY_RETRY_PREPARATION_WRITE_COUNT_INVALID', {
+      updated: preparationUpdate.updated,
+    });
+  }
+
+  stage = 'verify-prepared-quality-v3-row';
+  const preparedRows = await client.searchRecordsByFieldValues({
+    tableId: aiTableId,
+    fieldName: 'ai_run_key',
+    values: [aiRunKey],
+  });
+  if (preparedRows.length !== 1) {
+    throw failure('Prepared UAT row identity drifted before the one-field trigger', 'LARK_NATIVE_AI_QUALITY_RETRY_PREPARED_READBACK_INVALID', {
+      count: preparedRows.length,
+    });
+  }
+  const prepared = requireObject(preparedRows[0].fields, 'prepared.fields');
+  if (!isPreparedQualityV3Row(prepared, hardened)) {
+    throw failure('Weekly Executive UAT row did not converge to the exact prepared quality v3 state', 'LARK_NATIVE_AI_QUALITY_RETRY_PREPARED_STATE_INVALID', {
+      generationStatus: optionalText(prepared.generation_status),
+      promptShape: readPromptShape(optionalText(prepared.metric_summary_json)),
+      outputsPresent: outputPresence(prepared),
+      notificationEligible: booleanValue(prepared.notification_eligible),
+      sentToGroup: booleanValue(prepared.sent_to_group),
+    });
+  }
+
+  stage = 'trigger-quality-v5-failure-code-only';
+  const triggerUpdate = await client.batchUpdateRecords({
+    tableId: aiTableId,
+    records: [{
+      recordId,
+      fields: { failure_code: TRIGGER_MARKER },
+    }],
+  });
+  if (triggerUpdate.updated !== 1) {
+    throw failure('Expected exactly one failure_code-only weekly AI quality v5 trigger write', 'LARK_NATIVE_AI_QUALITY_RETRY_TRIGGER_WRITE_COUNT_INVALID', {
+      updated: triggerUpdate.updated,
+    });
   }
 
   stage = 'observe-ai-result';
-  let observed = null;
+  let observed = prepared;
   for (let attempt = 1; attempt <= POLL_ATTEMPTS; attempt += 1) {
     await wait(POLL_MS);
     const rows = await client.searchRecordsByFieldValues({
@@ -166,7 +235,7 @@ async function execute() {
       values: [aiRunKey],
     });
     if (rows.length !== 1) {
-      throw failure('UAT row identity drifted while observing weekly AI quality retry', 'LARK_NATIVE_AI_QUALITY_RETRY_READBACK_INVALID', { count: rows.length });
+      throw failure('UAT row identity drifted while observing weekly AI quality v3 retry', 'LARK_NATIVE_AI_QUALITY_RETRY_READBACK_INVALID', { count: rows.length });
     }
     observed = requireObject(rows[0].fields, 'readback.fields');
     const generationStatus = optionalText(observed.generation_status);
@@ -176,21 +245,27 @@ async function execute() {
   const generated = optionalText(observed?.generation_status) === 'generated' && fourOutputsPresent(observed);
   const result = Object.freeze({
     ok: generated,
-    contractVersion: 'lark_native_ai_weekly_7d_quality_retry_v1',
+    contractVersion: CONTRACT_VERSION,
     stage: 'complete',
-    status: generated ? 'weekly_7d_native_ai_quality_generated' : 'weekly_7d_native_ai_quality_retry_not_completed',
+    status: generated ? 'weekly_7d_native_ai_quality_v3_generated' : 'weekly_7d_native_ai_quality_v3_retry_not_completed',
     repository,
     automationState,
     evidence: {
       beforeMetricSummaryChars: metricSummaryText.length,
       afterMetricSummaryChars: hardened.metricSummaryChars,
       channelStatusVectorChars: hardened.channelStatusVectorChars,
+      sourcePromptShape,
       promptShape: hardened.promptShape,
       businessEvidenceChannelCount: hardened.businessEvidenceChannelCount,
       comparisonEvidenceChannelCount: hardened.comparisonEvidenceChannelCount,
     },
-    recordWriteCount: 1,
-    retryMarker: RETRY_MARKER,
+    recordWriteCount: 2,
+    preparationWriteCount: 1,
+    preparationWrittenFields: PREPARATION_FIELDS,
+    preparationTouchesFailureCode: false,
+    triggerWriteCount: 1,
+    triggerWrittenFields: ['failure_code'],
+    triggerMarker: TRIGGER_MARKER,
     generationStatus: optionalText(observed?.generation_status),
     outputsPresent: outputPresence(observed),
     outputs: generated ? {
@@ -201,6 +276,7 @@ async function execute() {
     } : null,
     notificationEligible: booleanValue(observed?.notification_eligible),
     sentToGroup: booleanValue(observed?.sent_to_group),
+    aiCallsByOperator: 0,
     notificationCount: 0,
     scheduleEnabled: false,
     production: 'BLOCKED',
@@ -248,6 +324,28 @@ function isExactGeneratedUatRow(fields) {
     && booleanValue(fields.notification_eligible) === false
     && booleanValue(fields.sent_to_group) === false
     && fourOutputsPresent(fields);
+}
+
+function isPreparedQualityV3Row(fields, hardened) {
+  return optionalText(fields.generation_status) === 'pending'
+    && optionalText(fields.metric_summary_json) === hardened.metricSummaryJson
+    && optionalText(fields.channel_status_vector_json) === hardened.channelStatusVectorJson
+    && readPromptShape(optionalText(fields.metric_summary_json)) === TARGET_PROMPT_SHAPE
+    && !fourOutputsPresent(fields)
+    && Object.values(outputPresence(fields)).every((present) => present === false)
+    && booleanValue(fields.notification_eligible) === false
+    && booleanValue(fields.sent_to_group) === false;
+}
+
+function readPromptShape(value) {
+  const text = optionalText(value);
+  if (!text) return null;
+  try {
+    const parsed = JSON.parse(text);
+    return optionalText(parsed?.promptShape);
+  } catch {
+    return null;
+  }
 }
 
 function exactWorkflow(workflows, title) {
