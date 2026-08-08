@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   LARK_NATIVE_AI_EXECUTIVE_STRENGTHS_FALLBACK,
   LARK_NATIVE_AI_EXECUTIVE_WEAKNESSES_FALLBACK,
+  hardenLarkNativeAiExecutiveBusinessMetricConsistency,
   upgradeLarkNativeAiExecutiveWriterEvidence,
   validateLarkNativeAiExecutiveWriterOutputs,
 } from '../../packages/application/src/reports/lark-native-ai-executive-writer-quality.js';
@@ -21,6 +22,7 @@ function sourceEvidence() {
         clicks: 4553,
         impressions: 582054,
         spend_micros: 807690000000,
+        ctr: 0,
       }],
     },
     'tiktok_organic',
@@ -57,8 +59,23 @@ function sourceEvidence() {
   };
 }
 
+function v5Evidence() {
+  const upgraded = upgradeLarkNativeAiExecutiveWriterEvidence(sourceEvidence());
+  return {
+    metricSummaryJson: upgraded.metricSummaryJson,
+    channelStatusVectorJson: upgraded.channelStatusVectorJson,
+  };
+}
+
 const V7_OUTPUTS = Object.freeze({
   insight_summary: 'มีข้อมูลจากช่องทาง Meta Ads สำหรับสัปดาห์นี้ แคมเปญโฆษณา (01-12) โปรโหมด เคมีรู้กันวันเดียว - สำเนา เป็นอันดับ 1 ในรายการที่มีข้อมูล ยังสรุปแนวโน้มไม่ได้ ช่องทางอื่นๆ หลายแห่งยังไม่มีข้อมูลที่ตรวจสอบแล้วสำหรับการรายงานระดับผู้บริหาร',
+  strengths: LARK_NATIVE_AI_EXECUTIVE_STRENGTHS_FALLBACK,
+  weaknesses: LARK_NATIVE_AI_EXECUTIVE_WEAKNESSES_FALLBACK,
+  recommendations: '- คำนวณ CTR และ CPC จากข้อมูลโฆษณาที่มี แล้วใช้เป็น baseline เทียบกับสัปดาห์ถัดไป',
+});
+
+const V8_OUTPUTS = Object.freeze({
+  insight_summary: 'ช่องทาง Meta Ads มีโฆษณาสำเร็จรูปจำนวนคลิก 4553 ครั้ง และจำนวนการแสดงผล 582054 ครั้ง ค่า CTR ของโฆษณานี้เป็น 0 ค่าโฆษณานี้อยู่ในอันดับ 1 ในรายการที่มีข้อมูล ยังไม่มีข้อมูลเพียงพอสำหรับสรุปแนวโน้มของการดำเนินงานในช่วงเวลานี้ มีช่องทางอื่นๆ ที่ข้อมูลยังไม่ครบถ้วน',
   strengths: LARK_NATIVE_AI_EXECUTIVE_STRENGTHS_FALLBACK,
   weaknesses: LARK_NATIVE_AI_EXECUTIVE_WEAKNESSES_FALLBACK,
   recommendations: '- คำนวณ CTR และ CPC จากข้อมูลโฆษณาที่มี แล้วใช้เป็น baseline เทียบกับสัปดาห์ถัดไป',
@@ -119,4 +136,40 @@ test('still rejects genuine action leakage outside Recommendations', () => {
     weaknesses: 'ควรติดตามผลของโฆษณานี้ต่อ',
   }, upgraded.evidence);
   assert.ok(weaknessAction.violations.includes('weaknesses_contains_action'));
+});
+
+test('V9 removes raw CTR and derives a consistent percent from clicks and impressions', () => {
+  const hardened = hardenLarkNativeAiExecutiveBusinessMetricConsistency(v5Evidence());
+  assert.equal(hardened.evidence.promptShape, 'lark_ai_compact_quality_v6');
+  assert.equal(hardened.evidence.derivedCtrFacts.length, 1);
+  assert.equal(hardened.evidence.derivedCtrFacts[0].clicks, 4553);
+  assert.equal(hardened.evidence.derivedCtrFacts[0].impressions, 582054);
+  assert.equal(hardened.evidence.derivedCtrFacts[0].derivedCtrPercent, 0.78223);
+  assert.deepEqual(
+    hardened.evidence.summaryRequiredFacts.map(({ metric, value }) => [metric, value]),
+    [['clicks', 4553], ['impressions', 582054], ['derived_ctr_percent', 0.78223]],
+  );
+  const parsed = JSON.parse(hardened.metricSummaryJson);
+  const meta = parsed.channelBusinessEvidence.find((item) => item.channelKey === 'meta_ads');
+  assert.equal(meta.topAds[0].ctr, undefined);
+  assert.equal(meta.topAds[0].derived_ctr_percent, 0.78223);
+  assert.ok(hardened.metricSummaryChars <= 2800);
+});
+
+test('V9 rejects the retained V8 summary because CTR zero contradicts observed components', () => {
+  const hardened = hardenLarkNativeAiExecutiveBusinessMetricConsistency(v5Evidence());
+  const gate = validateLarkNativeAiExecutiveWriterOutputs(V8_OUTPUTS, hardened.evidence);
+  assert.equal(gate.passed, false);
+  assert.deepEqual(gate.violations, ['insight_ctr_inconsistent_with_components']);
+});
+
+test('V9 accepts a Summary using the derived CTR percent and observed facts', () => {
+  const hardened = hardenLarkNativeAiExecutiveBusinessMetricConsistency(v5Evidence());
+  const outputs = {
+    ...V8_OUTPUTS,
+    insight_summary: 'Meta Ads บันทึก 4,553 clicks จาก 582,054 impressions คิดเป็น CTR 0.78223% และยังไม่มีข้อมูลเปรียบเทียบสำหรับสรุปแนวโน้ม',
+  };
+  const gate = validateLarkNativeAiExecutiveWriterOutputs(outputs, hardened.evidence);
+  assert.equal(gate.passed, true);
+  assert.deepEqual(gate.violations, []);
 });
