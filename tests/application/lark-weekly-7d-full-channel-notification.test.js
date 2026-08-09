@@ -128,6 +128,10 @@ function generatedSynthesis(source, factual) {
     sourceRecord: source,
     factualReport: factual,
   });
+  const meta = factual.channels.find(({ channelKey }) => channelKey === 'meta_ads');
+  const clicks = meta.metrics.find(({ metricKey }) => metricKey === 'clicks')?.currentValue ?? meta.topAd?.clicks;
+  const impressions = meta.metrics.find(({ metricKey }) => metricKey === 'impressions')?.currentValue ?? meta.topAd?.impressions;
+  const ctr = ((clicks / impressions) * 100).toFixed(5);
   return {
     recordId: 'rec-full-channel-synthesis',
     fields: {
@@ -135,7 +139,7 @@ function generatedSynthesis(source, factual) {
       generation_status: 'generated',
       failure_code: null,
       generated_at: Date.parse('2026-08-09T10:00:00+07:00'),
-      insight_summary: source.fields.insight_summary,
+      insight_summary: `Meta Ads มีจำนวนการคลิก ${clicks} ครั้ง และการแสดงผล ${impressions} ครั้ง ค่าดัชนีการคลิกที่คำนวณได้เป็น ${ctr} เปอร์เซ็นต์`,
       strengths: source.fields.strengths,
       weaknesses: source.fields.weaknesses,
       recommendations: source.fields.recommendations,
