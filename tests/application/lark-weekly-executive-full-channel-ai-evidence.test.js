@@ -58,7 +58,8 @@ function factualReport() {
       bundle('meta_ads', [
         metric('meta_ads:spend_micros', 'Spend', 17742800000, 16582000000, 'currency', 1, 0.0007),
         metric('meta_ads:impressions', 'Impressions', 3025762, 2909329, 'count', 2, 999),
-        metric('meta_ads:clicks', 'Clicks', 38627, 43401, 'count', 3, -0.11),
+        metric('meta_ads:reach', 'Reach', 2640585, 2543100, 'count', 3, 999),
+        metric('meta_ads:clicks', 'Clicks', 38627, 43401, 'count', 4, -0.11),
       ], {
         topAds: [{
           rank: 1,
@@ -84,6 +85,7 @@ test('weekly factual rendering derives percentage points from canonical current 
   const woo = sections.find(({ channelKey }) => channelKey === 'woocommerce');
   assert.ok(meta.lines.some((line) => line.includes('Spend: 17,742.8 (+7% เทียบช่วงก่อน)')));
   assert.ok(meta.lines.some((line) => line.includes('Impressions: 3,025,762 (+4% เทียบช่วงก่อน)')));
+  assert.ok(meta.lines.some((line) => line.includes('Clicks: 38,627 (-11% เทียบช่วงก่อน)')));
   assert.ok(woo.lines.some((line) => line.includes('Net sales: 168,010 (-33% เทียบช่วงก่อน)')));
   assert.equal(meta.lines.some((line) => line.includes('+0.07%')), false);
   assert.equal(woo.lines.some((line) => line.includes('-0.33%')), false);
@@ -102,7 +104,7 @@ test('zero comparison never produces infinity or a fabricated percentage', () =>
   assert.doesNotMatch(line, /Infinity|NaN|123%/u);
 });
 
-test('full-channel AI evidence is compact, cross-channel and uses canonical Thai business labels', () => {
+test('full-channel AI evidence keeps neutral context plus strongest positive and negative signals', () => {
   const report = factualReport();
   const statusVector = JSON.stringify(report.channels.map(({ channelKey }) => ({ channelKey })));
   const built = buildLarkWeeklyExecutiveFullChannelAiEvidence({
@@ -114,8 +116,13 @@ test('full-channel AI evidence is compact, cross-channel and uses canonical Thai
   assert.equal(built.evidence.businessEvidenceChannelCount, 4);
   assert.equal(built.evidence.comparisonEvidenceChannelCount, 2);
   assert.ok(built.evidence.positiveComparisonChannelNames.includes('Meta Ads'));
+  assert.ok(built.evidence.negativeComparisonChannelNames.includes('Meta Ads'));
   assert.ok(built.evidence.negativeComparisonChannelNames.includes('WooCommerce'));
-  assert.ok(built.metricSummaryChars <= 3400);
+  assert.ok(built.evidence.positiveComparisonMetricNames.includes('การแสดงผล'));
+  assert.ok(built.evidence.negativeComparisonMetricNames.includes('การคลิก'));
+  assert.ok(built.evidence.neutralComparisonMetricNames.includes('ค่าใช้จ่าย'));
+  assert.ok(built.metricSummaryChars <= 4000);
+
   const facebook = summary.channelBusinessEvidence.find(({ channelKey }) => channelKey === 'facebook_organic');
   const instagram = summary.channelBusinessEvidence.find(({ channelKey }) => channelKey === 'instagram_organic');
   const meta = summary.channelBusinessEvidence.find(({ channelKey }) => channelKey === 'meta_ads');
@@ -123,31 +130,51 @@ test('full-channel AI evidence is compact, cross-channel and uses canonical Thai
   assert.equal(facebook.availableMetrics[0].display_name, 'ผู้ติดตาม');
   assert.equal(instagram.availableMetrics[0].display_name, 'ยอดดู');
   assert.equal(instagram.availableMetrics[1].display_name, 'การเข้าถึง');
-  assert.equal(meta.availableMetrics[0].display_name, 'ค่าใช้จ่าย');
-  assert.equal(meta.availableMetrics[1].display_name, 'การแสดงผล');
+  assert.deepEqual(
+    meta.availableMetrics.map(({ metric_key }) => metric_key),
+    ['meta_ads:spend_micros', 'meta_ads:impressions', 'meta_ads:clicks'],
+  );
+  assert.deepEqual(
+    meta.availableMetrics.map(({ signal }) => signal),
+    ['neutral', 'positive', 'negative'],
+  );
   assert.equal(meta.availableMetrics[0].current_value, 17742.8);
   assert.ok(Math.abs(meta.availableMetrics[0].change_percent - 7) < 0.01);
+  assert.equal(meta.availableMetrics[2].display_name, 'การคลิก');
+  assert.ok(Math.abs(meta.availableMetrics[2].change_percent + 11) < 0.1);
   assert.equal(woo.availableMetrics[0].display_name, 'ยอดขายสุทธิ');
   assert.equal(woo.availableMetrics[1].display_name, 'ยอดขายรวม');
   assert.equal(woo.availableMetrics[0].current_value, 168010);
   assert.ok(Math.abs(woo.availableMetrics[0].change_percent + 33) < 0.01);
   assert.equal(meta.topAds[0].derived_ctr_percent, 0.78223);
   assert.match(summary.writerContract.language, /display_name/u);
+  assert.match(summary.writerContract.strengths, /signal=positive/u);
+  assert.match(summary.writerContract.comparison, /เทียบช่วงก่อน/u);
 });
 
-test('full-channel AI quality requires cross-channel overview and observed comparison interpretation', () => {
+test('full-channel AI quality requires positive metric strength and negative metric weakness', () => {
   const report = factualReport();
   const built = buildLarkWeeklyExecutiveFullChannelAiEvidence({
     factualReport: report,
     channelStatusVectorJson: JSON.stringify(report.channels.map(({ channelKey }) => ({ channelKey }))),
   });
   const accepted = validateLarkWeeklyExecutiveFullChannelAiOutputs({
-    insight_summary: 'Meta Ads มีค่าใช้จ่าย 17,742.8 และ WooCommerce มียอดขายสุทธิ 168,010 ในสัปดาห์นี้ โดยผลเปรียบเทียบของสองช่องทางเคลื่อนไหวต่างทิศทางกัน',
+    insight_summary: 'Meta Ads มีค่าใช้จ่าย 17,742.8 และ WooCommerce มียอดขายสุทธิ 168,010 ในสัปดาห์นี้ โดยผลของสองช่องทางเคลื่อนไหวต่างทิศทางกัน',
     strengths: 'Meta Ads มีการแสดงผลเพิ่มขึ้นเมื่อเทียบกับช่วงก่อน',
-    weaknesses: 'WooCommerce มียอดขายสุทธิลดลงเมื่อเทียบกับช่วงก่อน',
+    weaknesses: 'WooCommerce มียอดขายสุทธิลดลงเมื่อเทียบกับช่วงก่อน และ Meta Ads มีการคลิกลดลงเมื่อเทียบกับช่วงก่อน',
     recommendations: '- ทบทวนครีเอทีฟและเส้นทางโฆษณาที่ทำให้จำนวนคลิกอ่อนลง พร้อมวางแผนกิจกรรมการขายเพื่อฟื้นยอด WooCommerce สัปดาห์ถัดไป',
   }, built.evidence);
   assert.deepEqual(accepted, { passed: true, violations: [] });
+
+  const neutralStrength = validateLarkWeeklyExecutiveFullChannelAiOutputs({
+    insight_summary: 'Meta Ads มีค่าใช้จ่าย 17,742.8 และ WooCommerce มียอดขายสุทธิ 168,010 ในสัปดาห์นี้',
+    strengths: 'Meta Ads มีค่าใช้จ่ายเพิ่มขึ้นเมื่อเทียบกับช่วงก่อน',
+    weaknesses: 'WooCommerce มียอดขายสุทธิลดลงเมื่อเทียบกับช่วงก่อน',
+    recommendations: '- ทบทวนครีเอทีฟและยอดขาย WooCommerce สัปดาห์ถัดไป',
+  }, built.evidence);
+  assert.equal(neutralStrength.passed, false);
+  assert.ok(neutralStrength.violations.includes('strengths_missing_positive_metric'));
+  assert.ok(neutralStrength.violations.includes('strengths_contains_neutral_metric'));
 
   const stale = validateLarkWeeklyExecutiveFullChannelAiOutputs({
     insight_summary: 'Meta Ads ใช้งบ 17,742.8 ในสัปดาห์นี้',
@@ -161,7 +188,7 @@ test('full-channel AI quality requires cross-channel overview and observed compa
   assert.ok(stale.violations.includes('weaknesses_ignored_negative_comparison'));
 });
 
-test('full-channel AI quality rejects internal evidence fields and proven non-business metric wording', () => {
+test('full-channel AI quality rejects internal fields and non-executive comparison wording', () => {
   const report = factualReport();
   const built = buildLarkWeeklyExecutiveFullChannelAiEvidence({
     factualReport: report,
@@ -177,11 +204,12 @@ test('full-channel AI quality rejects internal evidence fields and proven non-bu
   assert.ok(internalFields.violations.includes('internal_metric_field_language'));
 
   const awkwardWording = validateLarkWeeklyExecutiveFullChannelAiOutputs({
-    insight_summary: 'Meta Ads มีความทบทวนหน้า 3,025,762 ครั้ง และ WooCommerce มียอดขายสุทธิ 168,010',
+    insight_summary: 'Meta Ads มีความทบทวนหน้า 3,025,762 ครั้ง และ WooCommerce มียอดขายสุทธิ 168,010 พร้อมการเปรียบเทียบ',
     strengths: 'Meta Ads มีการแสดงผลเพิ่มขึ้นเมื่อเทียบกับช่วงก่อน',
-    weaknesses: 'WooCommerce มียอดขายสุทธิลดลงเมื่อเทียบกับช่วงก่อน',
-    recommendations: '- ทบทวนครีเอทีฟและยอดขาย WooCommerce สัปดาห์ถัดไป',
+    weaknesses: 'WooCommerce มียอดขายสุทธิลดลงเมื่อเปรียบเทียบกับค่าเปรียบเทียบ',
+    recommendations: '- ติดตามยอดขายตามข้อมูลการเปรียบเทียบที่มี',
   }, built.evidence);
   assert.equal(awkwardWording.passed, false);
   assert.ok(awkwardWording.violations.includes('non_business_metric_language'));
+  assert.ok(awkwardWording.violations.includes('non_executive_comparison_language'));
 });
