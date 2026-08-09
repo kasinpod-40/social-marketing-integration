@@ -102,11 +102,13 @@ fix: preserve Bangkok dates in weekly notification delivery
 
 The regression suite includes Bangkok-midnight epochs that would have produced the previous UTC date under the old implementation. Branch Verification #2369 passed all repository gates before merge.
 
+The active Worker at this closeout remains the reviewed repair deployment from the successful one-shot flow. No additional Worker deployment is performed solely for this repository-only date correction because the automatic Notification producer and Schedule remain disabled. Every future approved Full-channel send must use the Safe Terminal, which refreshes exact current main before Queue admission; bypassing that pre-send runtime refresh is not allowed.
+
 ## Historical delivery rule
 
 The already-sent group message is retained as historical delivery evidence and is not resent, edited, replaced, or assigned a new Notification identity solely to correct its date header.
 
-The associated completed delivery remains terminal and deduplicated. Future Notification deliveries use the corrected Bangkok date normalization from `main@943c0a9f1e01dd13fe7d2b6437d78f69265edc22` or later.
+The associated completed delivery remains terminal and deduplicated. Future Notification deliveries must first refresh current main through the Safe Terminal and then use the corrected Bangkok date normalization from `main@943c0a9f1e01dd13fe7d2b6437d78f69265edc22` or later.
 
 ## Safety state
 
