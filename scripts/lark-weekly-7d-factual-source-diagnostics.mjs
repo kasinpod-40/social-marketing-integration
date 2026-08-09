@@ -155,7 +155,6 @@ function resolveUrl(input) {
 function classify(path) {
   if (path.includes('/records')) return 'records';
   if (path.includes('/tables')) return 'tables';
-  if (path.includes('/workflows')) return 'automation';
   return 'other';
 }
 function fail(message, code, details = {}) {
