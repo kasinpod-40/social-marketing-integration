@@ -43,6 +43,8 @@ function baseEnv() {
     MKT_LARK_DAILY_RETENTION_ENABLED: 'false',
     MKT_DLQ_REDRIVE_ENABLED: 'false',
     MKT_SCHEDULE_TIKTOK_ENABLED: 'false',
+    MKT_SCHEDULE_FACEBOOK_ENABLED: 'false',
+    MKT_SCHEDULE_INSTAGRAM_ENABLED: 'false',
     MKT_SCHEDULE_YOUTUBE_ENABLED: 'false',
     MKT_SCHEDULE_GOOGLE_ADS_ENABLED: 'false',
     MKT_SCHEDULE_DAILY_REPORT_ENABLED: 'false',
@@ -124,6 +126,20 @@ test('target locks exact Chemistry K mappings, requires credentials and keeps al
     () => loadMetaReadOnlyValidationTarget({
       ...baseEnv(),
       MKT_META_D1_WRITE_ENABLED: 'true',
+    }),
+    (error) => error.code === 'META_READ_ONLY_VALIDATION_UNSAFE_FLAGS',
+  );
+  assert.throws(
+    () => loadMetaReadOnlyValidationTarget({
+      ...baseEnv(),
+      MKT_SCHEDULE_FACEBOOK_ENABLED: 'true',
+    }),
+    (error) => error.code === 'META_READ_ONLY_VALIDATION_UNSAFE_FLAGS',
+  );
+  assert.throws(
+    () => loadMetaReadOnlyValidationTarget({
+      ...baseEnv(),
+      MKT_SCHEDULE_INSTAGRAM_ENABLED: 'true',
     }),
     (error) => error.code === 'META_READ_ONLY_VALIDATION_UNSAFE_FLAGS',
   );
