@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   JOB_IMPLEMENTATION_STATUS,
+  JOB_TRIGGERS,
   JOB_TYPES,
   getJobDefinition,
 } from '../../packages/application/src/jobs/job-catalog.js';
@@ -140,20 +141,19 @@ function baseInput(overrides = {}) {
   };
 }
 
-test('registers all Meta jobs as protected manual UAT and stable Queue operations', () => {
-  for (const type of [
-    JOB_TYPES.FACEBOOK_ORGANIC_SYNC,
-    JOB_TYPES.INSTAGRAM_ORGANIC_SYNC,
-    JOB_TYPES.META_ADS_SYNC,
-  ]) {
+test('registers reviewed Meta Organic jobs as active while Meta Ads remains protected manual UAT', () => {
+  for (const type of [JOB_TYPES.FACEBOOK_ORGANIC_SYNC, JOB_TYPES.INSTAGRAM_ORGANIC_SYNC]) {
     const definition = getJobDefinition(type);
-    assert.equal(definition.implementationStatus, JOB_IMPLEMENTATION_STATUS.UAT_PENDING);
-    assert.equal(definition.manualOnly, true);
+    assert.equal(definition.implementationStatus, JOB_IMPLEMENTATION_STATUS.ACTIVE);
+    assert.notEqual(definition.manualOnly, true);
+    assert.deepEqual(definition.allowedTriggers, [
+      JOB_TRIGGERS.META_MANUAL_UAT,
+      JOB_TRIGGERS.META_ORGANIC_SCHEDULED,
+    ]);
     const operation = resolveQueueOperation({
       job: {
         body: {
           type,
-          ...(type === JOB_TYPES.META_ADS_SYNC ? { sourceAccountKey: 'chemistry_k2' } : {}),
           operationId: 'operation-1',
           requestedAt: '2026-07-26T00:00:00.000Z',
           generation: REQUESTED_AT,
@@ -161,10 +161,25 @@ test('registers all Meta jobs as protected manual UAT and stable Queue operation
       },
     });
     assert.equal(operation.stable, true);
-    assert.equal(operation.workKey, type === JOB_TYPES.META_ADS_SYNC
-      ? 'meta_ads:chemistry_k2:operation-1'
-      : `${type.startsWith('facebook.') ? 'facebook' : 'instagram'}:operation-1`);
+    assert.equal(operation.workKey, `${type.startsWith('facebook.') ? 'facebook' : 'instagram'}:operation-1`);
   }
+
+  const ads = getJobDefinition(JOB_TYPES.META_ADS_SYNC);
+  assert.equal(ads.implementationStatus, JOB_IMPLEMENTATION_STATUS.UAT_PENDING);
+  assert.equal(ads.manualOnly, true);
+  const adsOperation = resolveQueueOperation({
+    job: {
+      body: {
+        type: JOB_TYPES.META_ADS_SYNC,
+        sourceAccountKey: 'chemistry_k2',
+        operationId: 'operation-1',
+        requestedAt: '2026-07-26T00:00:00.000Z',
+        generation: REQUESTED_AT,
+      },
+    },
+  });
+  assert.equal(adsOperation.stable, true);
+  assert.equal(adsOperation.workKey, 'meta_ads:chemistry_k2:operation-1');
 });
 
 test('durably stages one Meta page per invocation, completes D1-only, then resumes Lark', async () => {
