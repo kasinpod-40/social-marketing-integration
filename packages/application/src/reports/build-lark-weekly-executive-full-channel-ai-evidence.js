@@ -9,16 +9,23 @@ import {
 import { stableStringify } from '../use-cases/build-report-snapshot.js';
 
 export const LARK_WEEKLY_EXECUTIVE_FULL_CHANNEL_AI_PROMPT_SHAPE =
-  'lark_ai_full_channel_synthesis_v2';
+  'lark_ai_executive_decision_v1';
 
 const MAX_AI_METRICS_PER_CHANNEL = 3;
-const MAX_METRIC_SUMMARY_CHARS = 4_000;
+const MAX_AI_CONTENT_CANDIDATES_PER_CHANNEL = 3;
+const MAX_AI_AD_CANDIDATES_PER_CHANNEL = 3;
+const MAX_METRIC_SUMMARY_CHARS = 8_000;
 const MAX_STATUS_VECTOR_CHARS = 700;
 const LOWER_IS_BETTER = /(?:cpc|cpm|cpa|cost_per|refund)/iu;
 const NEUTRAL_DIRECTION = /(?:spend|budget|ค่าใช้จ่าย|งบ)/iu;
 const INTERNAL_METRIC_LANGUAGE = /\b(?:metric_key|change_percent|compare_value|current_value|derived_ctr_percent)\b/iu;
 const NON_BUSINESS_METRIC_LANGUAGE = /ความทบทวนหน้า/u;
 const NON_EXECUTIVE_COMPARISON_LANGUAGE = /ค่าเปรียบเทียบ|พร้อมการเปรียบเทียบ|ข้อมูลการเปรียบเทียบที่มี/u;
+const AWARENESS_METRIC = /การแสดงผล|การเข้าถึง|ยอดดู|impressions?|reach|views?/iu;
+const ACTION_OR_COMMERCE_METRIC = /การคลิก|คลิก|conversions?|conversion|ยอดขายสุทธิ|ยอดขายรวม|รายได้|clicks?/iu;
+const SCALE_LANGUAGE = /\[SCALE\]/iu;
+const DECISION_LABEL = /\[(?:CONTENT|SCALE|TEST|KEEP|REDUCE|STOP|NO-SCALE)\]/giu;
+const DIRECT_LINKAGE_CLAIM = /(?:คอนเทนต์|โพสต์|organic).{0,50}(?:เดียวกัน|ตัวเดียวกัน|ชิ้นเดียวกัน).{0,50}(?:ad|ads|โฆษณา|creative)/iu;
 
 export function buildLarkWeeklyExecutiveFullChannelAiEvidence(input = {}) {
   const factual = parseLarkWeeklyExecutiveFactualReport(input.factualReport);
@@ -47,33 +54,60 @@ export function buildLarkWeeklyExecutiveFullChannelAiEvidence(input = {}) {
   const neutralComparisonFacts = comparisonFacts.filter(({ signal }) => signal === 'neutral');
   const positiveComparisonChannelNames = unique(positiveComparisonFacts.map(({ channel }) => channel));
   const negativeComparisonChannelNames = unique(negativeComparisonFacts.map(({ channel }) => channel));
-  const summaryRequiredFacts = collectCrossChannelRequiredFacts(businessChannels);
-  const derivedCtrFacts = businessChannels.flatMap((channel) => (channel.topAds ?? []).map((ad) => Object.freeze({
+  const contentCandidates = businessChannels.flatMap((channel) => (channel.contentCandidates ?? []).map((content) => Object.freeze({
     channel: channel.displayName,
-    adName: ad.ad_name,
-    clicks: ad.clicks,
-    impressions: ad.impressions,
-    derivedCtrPercent: ad.derived_ctr_percent,
+    ...content,
   })));
+  const adCandidates = businessChannels.flatMap((channel) => (channel.adCandidates ?? []).map((ad) => Object.freeze({
+    channel: channel.displayName,
+    ...ad,
+  })));
+  const scaleEvidenceAdNames = unique(adCandidates.filter(hasScaleEvidence).map(({ ad_name }) => ad_name));
+  const funnelDivergences = collectFunnelDivergences(positiveComparisonFacts, negativeComparisonFacts);
+  const summaryRequiredFacts = collectCrossChannelRequiredFacts(businessChannels);
+  const derivedCtrFacts = adCandidates
+    .filter((ad) => Number.isFinite(ad.clicks) && Number.isFinite(ad.impressions) && ad.impressions > 0)
+    .map((ad) => Object.freeze({
+      channel: ad.channel,
+      adName: ad.ad_name,
+      clicks: ad.clicks,
+      impressions: ad.impressions,
+      derivedCtrPercent: ad.derived_ctr_percent,
+    }));
 
   const qualityContext = Object.freeze({
     businessEvidenceChannelCount: businessChannels.length,
     comparisonEvidenceChannelCount: comparisonChannels.length,
     strengthsMode: positiveComparisonFacts.length > 0 ? 'evidence_only' : 'fallback_no_positive_comparison',
-    recommendationMode: 'cross_channel_business_followup',
+    recommendationMode: 'executive_decision_actions',
     summaryRequiredFacts,
+    contentCandidateCount: contentCandidates.length,
+    adCandidateCount: adCandidates.length,
+    scaleEvidenceAdCount: scaleEvidenceAdNames.length,
+    funnelDivergenceCount: funnelDivergences.length,
+    organicPaidMappingAvailable: false,
   });
   const metricSummary = Object.freeze({
-    evidenceShape: 'executive_business_first_v2',
+    evidenceShape: 'executive_decision_v1',
     promptShape: LARK_WEEKLY_EXECUTIVE_FULL_CHANNEL_AI_PROMPT_SHAPE,
     qualityContext,
     writerContract: Object.freeze({
-      overview: 'สรุป 2+ ช่องที่มี facts; ใช้ค่าจริง/comparison เท่านั้น',
+      overview: 'สรุปสถานการณ์ธุรกิจ 2-4 ประโยคจาก facts จริงอย่างน้อย 2 ช่องทางเมื่อมีข้อมูล; ชี้ให้เห็นว่าผลต้น Funnel กับปลาย Funnel ไปทางเดียวกันหรือสวนทางกัน',
       strengths: 'ใช้เฉพาะ metric ที่ signal=positive; signal=neutral เช่น ค่าใช้จ่าย/spend/budget ห้ามเป็น strength',
-      weaknesses: 'ใช้เฉพาะ metric ที่ signal=negative; missing data ไม่ใช่ weakness',
-      recommendations: 'business action จาก facts; ห้าม Data Ops',
+      weaknesses: 'ใช้เฉพาะ metric ที่ signal=negative; missing data ไม่ใช่ weakness; ถ้า awareness โตแต่ click/sales ลดให้ระบุ divergence เป็นความเสี่ยง',
+      recommendations: 'ให้ 2-5 decision bullets และขึ้นต้นแต่ละข้อด้วย [CONTENT], [SCALE], [TEST], [KEEP], [REDUCE], [STOP] หรือ [NO-SCALE]; ระบุชื่อ Content/Ad จริงเมื่อมี candidate; ทุกข้อผูกกับ fact/metric ที่สังเกตได้; ห้าม [SCALE]/เพิ่มงบถ้า scaleEvidenceAdNames ว่าง; Organic winner ที่ยังไม่มี paid result ให้ใช้ [TEST] ไม่ใช่ [SCALE]; ถ้าไม่มี exact Organic↔Paid mapping ห้ามกล่าวว่าเป็น creative/โพสต์เดียวกัน',
+      contentDecision: 'Content candidate ใช้ views/engagement/ER/likes/comments/shares และ rank เพื่อแนะนำทำซ้ำ/ต่อยอดหรือ Paid test; ห้ามถือว่า Organic ดี = Paid จะดีแน่นอน',
+      paidDecision: 'Paid candidate ใช้ CTR/CPC/CPA/Conversions/Conversion value/ROAS เมื่อมี; upper-funnel อย่าง CTR อย่างเดียวใช้ [TEST]/[KEEP] ได้แต่ห้ามเพิ่มงบแบบ Scale',
+      funnelDecision: 'เมื่อ impressions/reach/views เพิ่มแต่ clicks/conversions/sales/revenue ลด ต้องบอกว่าสัญญาณสวนทางและห้ามแนะนำเพิ่มงบรวมจนกว่าจะเห็นปลาย Funnel ดีขึ้น',
       language: 'ใช้ display_name เป็นชื่อ metric ที่แสดงต่อผู้บริหารเท่านั้น; ห้ามชื่อ field ภายในและคำว่า ความทบทวนหน้า',
       comparison: 'ใช้คำว่า เทียบช่วงก่อน หรือ เมื่อเทียบกับช่วงก่อน; ห้ามคำว่า ค่าเปรียบเทียบ, พร้อมการเปรียบเทียบ หรือ ข้อมูลการเปรียบเทียบที่มี',
+    }),
+    decisionEvidence: Object.freeze({
+      contentCandidates,
+      adCandidates,
+      scaleEvidenceAdNames,
+      funnelDivergences,
+      organicPaidMappingAvailable: false,
     }),
     channelBusinessEvidence: channels,
   });
@@ -110,6 +144,11 @@ export function buildLarkWeeklyExecutiveFullChannelAiEvidence(input = {}) {
     positiveComparisonFacts,
     negativeComparisonFacts,
     neutralComparisonFacts,
+    contentCandidateNames: unique(contentCandidates.map(({ caption }) => caption)),
+    adCandidateNames: unique(adCandidates.map(({ ad_name }) => ad_name)),
+    scaleEvidenceAdNames,
+    funnelDivergences,
+    organicPaidMappingAvailable: false,
     summaryRequiredFacts,
     derivedCtrFacts,
   });
@@ -129,7 +168,8 @@ export function validateLarkWeeklyExecutiveFullChannelAiOutputs(outputs = {}, ev
   const insight = text(outputs.insight_summary);
   const strengths = text(outputs.strengths);
   const weaknesses = text(outputs.weaknesses);
-  const allText = [insight, strengths, weaknesses, text(outputs.recommendations)].join('\n');
+  const recommendations = text(outputs.recommendations);
+  const allText = [insight, strengths, weaknesses, recommendations].join('\n');
 
   if (INTERNAL_METRIC_LANGUAGE.test(allText)) violations.push('internal_metric_field_language');
   if (NON_BUSINESS_METRIC_LANGUAGE.test(allText)) violations.push('non_business_metric_language');
@@ -187,6 +227,60 @@ export function validateLarkWeeklyExecutiveFullChannelAiOutputs(outputs = {}, ev
     }
   }
 
+  const decisionLabels = recommendations.match(DECISION_LABEL) ?? [];
+  if (Number(evidence.businessEvidenceChannelCount ?? 0) > 0 && decisionLabels.length < 2) {
+    violations.push('recommendations_missing_decision_actions');
+  }
+
+  const contentCandidateNames = Array.isArray(evidence.contentCandidateNames)
+    ? evidence.contentCandidateNames
+    : [];
+  if (contentCandidateNames.length > 0) {
+    if (!/\[CONTENT\]|\[TEST\]/iu.test(recommendations)) {
+      violations.push('recommendations_missing_content_action');
+    }
+    if (!contentCandidateNames.some((name) => mentionsCandidate(recommendations, name))) {
+      violations.push('recommendations_missing_content_candidate');
+    }
+  }
+
+  const adCandidateNames = Array.isArray(evidence.adCandidateNames)
+    ? evidence.adCandidateNames
+    : [];
+  if (adCandidateNames.length > 0) {
+    if (!/\[(?:SCALE|TEST|KEEP|REDUCE|STOP|NO-SCALE)\]/iu.test(recommendations)) {
+      violations.push('recommendations_missing_paid_action');
+    }
+    if (!adCandidateNames.some((name) => mentionsCandidate(recommendations, name))) {
+      violations.push('recommendations_missing_ad_candidate');
+    }
+  }
+
+  const scaleEvidenceAdNames = Array.isArray(evidence.scaleEvidenceAdNames)
+    ? evidence.scaleEvidenceAdNames
+    : [];
+  if (SCALE_LANGUAGE.test(recommendations)) {
+    if (scaleEvidenceAdNames.length === 0) {
+      violations.push('recommendations_unsupported_scale');
+    } else if (!scaleEvidenceAdNames.some((name) => mentionsCandidate(recommendations, name))) {
+      violations.push('recommendations_scale_candidate_unsupported');
+    }
+  }
+
+  const divergences = Array.isArray(evidence.funnelDivergences) ? evidence.funnelDivergences : [];
+  if (divergences.length > 0) {
+    const positiveMetrics = unique(divergences.flatMap(({ positiveFacts }) => positiveFacts?.map(({ metric }) => metric) ?? []));
+    const negativeMetrics = unique(divergences.flatMap(({ negativeFacts }) => negativeFacts?.map(({ metric }) => metric) ?? []));
+    if (!positiveMetrics.some((metric) => recommendations.includes(metric))
+        || !negativeMetrics.some((metric) => recommendations.includes(metric))) {
+      violations.push('recommendations_missing_funnel_divergence');
+    }
+  }
+
+  if (evidence.organicPaidMappingAvailable === false && DIRECT_LINKAGE_CLAIM.test(recommendations)) {
+    violations.push('recommendations_fabricated_organic_paid_linkage');
+  }
+
   return Object.freeze({
     passed: violations.length === 0,
     violations: Object.freeze([...new Set(violations)]),
@@ -201,17 +295,12 @@ function toAiChannelEvidence(channel) {
     });
   }
   const metrics = selectAiMetrics(channel.metrics.map(toAiMetric));
-  const topContent = channel.topContent ? [Object.freeze({
-    caption: channel.topContent.caption,
-    views: channel.topContent.periodViews ?? channel.topContent.latestTotalViews,
-    engagement: channel.topContent.periodEngagement,
-  })] : [];
-  const topAds = channel.topAd ? [Object.freeze({
-    ad_name: channel.topAd.adName,
-    clicks: channel.topAd.clicks,
-    impressions: channel.topAd.impressions,
-    derived_ctr_percent: channel.topAd.derivedCtrPercent,
-  })] : [];
+  const contentCandidates = (channel.contentCandidates ?? [])
+    .slice(0, MAX_AI_CONTENT_CANDIDATES_PER_CHANNEL)
+    .map(toAiContentCandidate);
+  const adCandidates = (channel.adCandidates ?? [])
+    .slice(0, MAX_AI_AD_CANDIDATES_PER_CHANNEL)
+    .map(toAiAdCandidate);
   const comparisonEvidencePresent = metrics.some(({ compare_value }) => compare_value !== null);
   return deepFreeze({
     channelKey: channel.channelKey,
@@ -219,8 +308,39 @@ function toAiChannelEvidence(channel) {
     businessEvidencePresent: true,
     comparisonEvidencePresent,
     availableMetrics: metrics,
-    ...(topContent.length ? { topContent } : {}),
-    ...(topAds.length ? { topAds } : {}),
+    ...(contentCandidates.length ? { contentCandidates, topContent: [contentCandidates[0]] } : {}),
+    ...(adCandidates.length ? { adCandidates, topAds: [adCandidates[0]] } : {}),
+  });
+}
+
+function toAiContentCandidate(item) {
+  return Object.freeze({
+    rank: item.rank,
+    caption: item.caption,
+    views: item.periodViews ?? item.latestTotalViews,
+    likes: item.periodLikes,
+    comments: item.periodComments,
+    shares: item.periodShares,
+    engagement: item.periodEngagement,
+    engagement_rate: item.periodEngagementRate,
+    performance_status: item.performanceStatus,
+  });
+}
+
+function toAiAdCandidate(item) {
+  return Object.freeze({
+    rank: item.rank,
+    ad_name: item.adName,
+    spend: microsToUnit(item.spendMicros),
+    impressions: item.impressions,
+    reach: item.reach,
+    clicks: item.clicks,
+    derived_ctr_percent: item.derivedCtrPercent,
+    conversions: item.conversions,
+    conversion_value: microsToUnit(item.conversionValueMicros),
+    cpc: microsToUnit(item.cpcMicros),
+    cpa: microsToUnit(item.cpaMicros),
+    roas: item.roas,
   });
 }
 
@@ -277,12 +397,43 @@ function collectCrossChannelRequiredFacts(channels) {
         metric: metric.metric_key,
         value: metric.current_value,
       }));
-    } else if (channel.topAds?.[0]?.clicks !== null && Number.isFinite(channel.topAds?.[0]?.clicks)) {
-      facts.push(Object.freeze({ channel: channel.displayName, metric: 'clicks', value: channel.topAds[0].clicks }));
+    } else if (channel.adCandidates?.[0]?.clicks !== null && Number.isFinite(channel.adCandidates?.[0]?.clicks)) {
+      facts.push(Object.freeze({ channel: channel.displayName, metric: 'clicks', value: channel.adCandidates[0].clicks }));
+    } else if (channel.contentCandidates?.[0]?.views !== null && Number.isFinite(channel.contentCandidates?.[0]?.views)) {
+      facts.push(Object.freeze({ channel: channel.displayName, metric: 'views', value: channel.contentCandidates[0].views }));
     }
     if (facts.length >= 3) break;
   }
   return Object.freeze(facts);
+}
+
+function collectFunnelDivergences(positiveFacts, negativeFacts) {
+  const positiveAwareness = positiveFacts.filter(({ metric }) => AWARENESS_METRIC.test(metric));
+  const negativeAction = negativeFacts.filter(({ metric }) => ACTION_OR_COMMERCE_METRIC.test(metric));
+  if (positiveAwareness.length === 0 || negativeAction.length === 0) return Object.freeze([]);
+  return Object.freeze([Object.freeze({
+    type: 'awareness_up_outcome_down',
+    positiveFacts: Object.freeze(positiveAwareness.slice(0, 2)),
+    negativeFacts: Object.freeze(negativeAction.slice(0, 3)),
+    decisionRule: 'do_not_broadly_scale_until_lower_funnel_recovers',
+  })]);
+}
+
+function hasScaleEvidence(ad) {
+  if (!Number.isFinite(ad?.conversions) || ad.conversions <= 0) return false;
+  if (Number.isFinite(ad?.roas) && ad.roas > 0) return true;
+  return Number.isFinite(ad?.conversion_value)
+    && ad.conversion_value > 0
+    && Number.isFinite(ad?.spend)
+    && ad.spend > 0;
+}
+
+function mentionsCandidate(source, candidate) {
+  const name = text(candidate);
+  if (!name) return false;
+  if (source.includes(name)) return true;
+  const token = name.replace(/\s+/gu, ' ').slice(0, 28).trim();
+  return token.length >= 8 && source.includes(token);
 }
 
 function metricSignal(metric) {
@@ -304,6 +455,7 @@ function thaiBusinessMetricLabel(metricKey, fallback) {
   if (/(?:^|:)account_reach$|(?:^|:)reach$/u.test(key)) return 'การเข้าถึง';
   if (/(?:^|:)impressions?$/u.test(key)) return 'การแสดงผล';
   if (/(?:^|:)clicks?$/u.test(key)) return 'การคลิก';
+  if (/(?:^|:)conversions?$/u.test(key)) return 'คอนเวอร์ชัน';
   if (/spend(?:_micros)?$/u.test(key)) return 'ค่าใช้จ่าย';
   if (/net_sales(?:_micros)?$/u.test(key)) return 'ยอดขายสุทธิ';
   if (/gross_sales(?:_micros)?$/u.test(key)) return 'ยอดขายรวม';
@@ -322,6 +474,10 @@ function presentationValue(value, metricKey, unit) {
   return unit === 'currency' && metricKey.endsWith('_micros')
     ? round(value / 1_000_000, 4)
     : value;
+}
+
+function microsToUnit(value) {
+  return Number.isFinite(value) ? round(value / 1_000_000, 4) : null;
 }
 
 function parseStatusVector(value) {

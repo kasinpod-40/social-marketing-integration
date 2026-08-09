@@ -50,7 +50,29 @@ function factualReport() {
   return buildLarkWeeklyExecutiveFactualReport({
     targetPeriod: PERIOD,
     reportBundles: [
-      bundle('facebook_organic', [metric('facebook:account_followers', 'Followers', 181083, null)]),
+      bundle('facebook_organic', [metric('facebook:account_followers', 'Followers', 181083, null)], {
+        topContent: [{
+          rank: 1,
+          external_content_id: 'fb-post-1',
+          caption: 'สูตรแก้โจทย์เคมีใน 30 วิ',
+          period_views: 150000,
+          period_likes: 8000,
+          period_comments: 300,
+          period_shares: 1200,
+          period_engagement: 9500,
+          period_engagement_rate: 6.33,
+          performance_status: 'winner',
+          data_status: 'complete',
+        }, {
+          rank: 2,
+          external_content_id: 'fb-post-2',
+          caption: 'ก่อนสอบต้องรู้ 5 ข้อนี้',
+          period_views: 120000,
+          period_engagement: 7100,
+          period_engagement_rate: 5.92,
+          data_status: 'complete',
+        }],
+      }),
       bundle('instagram_organic', [
         metric('instagram:account_views', 'Account views', 8789578, null, 'count', 1),
         metric('instagram:account_reach', 'Account reach', 2074657, null, 'count', 2),
@@ -64,9 +86,28 @@ function factualReport() {
         topAds: [{
           rank: 1,
           external_ad_id: 'ad-1',
-          ad_name: 'Campaign X',
+          ad_name: '(01-12) โปรโหมด เคมีรู้กันวันเดียว - สำเนา',
+          spend_micros: 1200000000,
           clicks: 4553,
           impressions: 582054,
+          conversions: 42,
+          conversion_value_micros: 4800000000,
+          cpc_micros: 263562,
+          cpa_micros: 28571429,
+          roas: 4,
+          data_status: 'complete',
+        }, {
+          rank: 2,
+          external_ad_id: 'ad-2',
+          ad_name: 'Creative B',
+          spend_micros: 900000000,
+          clicks: 1400,
+          impressions: 260000,
+          conversions: 5,
+          conversion_value_micros: 700000000,
+          cpc_micros: 642857,
+          cpa_micros: 180000000,
+          roas: 0.78,
           data_status: 'complete',
         }],
       }),
@@ -104,7 +145,7 @@ test('zero comparison never produces infinity or a fabricated percentage', () =>
   assert.doesNotMatch(line, /Infinity|NaN|123%/u);
 });
 
-test('full-channel AI evidence keeps neutral context plus strongest positive and negative signals', () => {
+test('full-channel AI evidence keeps signals plus multiple content and paid decision candidates', () => {
   const report = factualReport();
   const statusVector = JSON.stringify(report.channels.map(({ channelKey }) => ({ channelKey })));
   const built = buildLarkWeeklyExecutiveFullChannelAiEvidence({
@@ -113,6 +154,8 @@ test('full-channel AI evidence keeps neutral context plus strongest positive and
   });
   const summary = JSON.parse(built.metricSummaryJson);
   assert.equal(summary.promptShape, LARK_WEEKLY_EXECUTIVE_FULL_CHANNEL_AI_PROMPT_SHAPE);
+  assert.equal(summary.promptShape, 'lark_ai_executive_decision_v1');
+  assert.equal(summary.evidenceShape, 'executive_decision_v1');
   assert.equal(built.evidence.businessEvidenceChannelCount, 4);
   assert.equal(built.evidence.comparisonEvidenceChannelCount, 2);
   assert.ok(built.evidence.positiveComparisonChannelNames.includes('Meta Ads'));
@@ -121,13 +164,21 @@ test('full-channel AI evidence keeps neutral context plus strongest positive and
   assert.ok(built.evidence.positiveComparisonMetricNames.includes('การแสดงผล'));
   assert.ok(built.evidence.negativeComparisonMetricNames.includes('การคลิก'));
   assert.ok(built.evidence.neutralComparisonMetricNames.includes('ค่าใช้จ่าย'));
-  assert.ok(built.metricSummaryChars <= 4000);
+  assert.ok(built.evidence.contentCandidateNames.includes('สูตรแก้โจทย์เคมีใน 30 วิ'));
+  assert.ok(built.evidence.adCandidateNames.includes('(01-12) โปรโหมด เคมีรู้กันวันเดียว - สำเนา'));
+  assert.ok(built.evidence.scaleEvidenceAdNames.includes('(01-12) โปรโหมด เคมีรู้กันวันเดียว - สำเนา'));
+  assert.equal(built.evidence.funnelDivergences[0].type, 'awareness_up_outcome_down');
+  assert.equal(built.evidence.organicPaidMappingAvailable, false);
+  assert.ok(built.metricSummaryChars <= 8000);
 
   const facebook = summary.channelBusinessEvidence.find(({ channelKey }) => channelKey === 'facebook_organic');
   const instagram = summary.channelBusinessEvidence.find(({ channelKey }) => channelKey === 'instagram_organic');
   const meta = summary.channelBusinessEvidence.find(({ channelKey }) => channelKey === 'meta_ads');
   const woo = summary.channelBusinessEvidence.find(({ channelKey }) => channelKey === 'woocommerce');
   assert.equal(facebook.availableMetrics[0].display_name, 'ผู้ติดตาม');
+  assert.equal(facebook.contentCandidates.length, 2);
+  assert.equal(facebook.contentCandidates[0].shares, 1200);
+  assert.equal(facebook.contentCandidates[0].engagement_rate, 6.33);
   assert.equal(instagram.availableMetrics[0].display_name, 'ยอดดู');
   assert.equal(instagram.availableMetrics[1].display_name, 'การเข้าถึง');
   assert.deepEqual(
@@ -142,35 +193,84 @@ test('full-channel AI evidence keeps neutral context plus strongest positive and
   assert.ok(Math.abs(meta.availableMetrics[0].change_percent - 7) < 0.01);
   assert.equal(meta.availableMetrics[2].display_name, 'การคลิก');
   assert.ok(Math.abs(meta.availableMetrics[2].change_percent + 11) < 0.1);
+  assert.equal(meta.adCandidates.length, 2);
+  assert.equal(meta.adCandidates[0].derived_ctr_percent, 0.78223);
+  assert.equal(meta.adCandidates[0].conversion_value, 4800);
+  assert.equal(meta.adCandidates[0].cpa, 28.5714);
+  assert.equal(meta.adCandidates[0].roas, 4);
   assert.equal(woo.availableMetrics[0].display_name, 'ยอดขายสุทธิ');
   assert.equal(woo.availableMetrics[1].display_name, 'ยอดขายรวม');
   assert.equal(woo.availableMetrics[0].current_value, 168010);
   assert.ok(Math.abs(woo.availableMetrics[0].change_percent + 33) < 0.01);
-  assert.equal(meta.topAds[0].derived_ctr_percent, 0.78223);
-  assert.match(summary.writerContract.language, /display_name/u);
-  assert.match(summary.writerContract.strengths, /signal=positive/u);
-  assert.match(summary.writerContract.comparison, /เทียบช่วงก่อน/u);
+  assert.match(summary.writerContract.recommendations, /\[SCALE\]/u);
+  assert.match(summary.writerContract.recommendations, /ห้าม \[SCALE\]/u);
+  assert.match(summary.writerContract.funnelDecision, /สวนทาง/u);
 });
 
-test('full-channel AI quality requires positive metric strength and negative metric weakness', () => {
+test('executive decision quality requires named content, named paid action and funnel divergence', () => {
   const report = factualReport();
   const built = buildLarkWeeklyExecutiveFullChannelAiEvidence({
     factualReport: report,
     channelStatusVectorJson: JSON.stringify(report.channels.map(({ channelKey }) => ({ channelKey }))),
   });
   const accepted = validateLarkWeeklyExecutiveFullChannelAiOutputs({
-    insight_summary: 'Meta Ads มีค่าใช้จ่าย 17,742.8 และ WooCommerce มียอดขายสุทธิ 168,010 ในสัปดาห์นี้ โดยผลของสองช่องทางเคลื่อนไหวต่างทิศทางกัน',
+    insight_summary: 'Meta Ads มีค่าใช้จ่าย 17,742.8 และ WooCommerce มียอดขายสุทธิ 168,010 ในสัปดาห์นี้ โดยการมองเห็นโตแต่ผลปลาย Funnel อ่อนลง',
     strengths: 'Meta Ads มีการแสดงผลเพิ่มขึ้นเมื่อเทียบกับช่วงก่อน',
     weaknesses: 'WooCommerce มียอดขายสุทธิลดลงเมื่อเทียบกับช่วงก่อน และ Meta Ads มีการคลิกลดลงเมื่อเทียบกับช่วงก่อน',
-    recommendations: '- ทบทวนครีเอทีฟและเส้นทางโฆษณาที่ทำให้จำนวนคลิกอ่อนลง พร้อมวางแผนกิจกรรมการขายเพื่อฟื้นยอด WooCommerce สัปดาห์ถัดไป',
+    recommendations: '[CONTENT] สูตรแก้โจทย์เคมีใน 30 วิ เป็น Organic winner ให้ทำคอนเทนต์แนวเดียวกันเพิ่มและใช้ [TEST] ทดสอบ Paid แบบจำกัดงบจาก Views 150,000 และ ER 6.33%\n[SCALE] (01-12) โปรโหมด เคมีรู้กันวันเดียว - สำเนา เพิ่มงบแบบควบคุมเฉพาะตัวจาก Conversions 42 และ ROAS 4\n[NO-SCALE] ภาพรวมการแสดงผลเพิ่มแต่การคลิกและยอดขายสุทธิลดลง จึงยังไม่เพิ่มงบรวมจนกว่าปลาย Funnel ฟื้น',
   }, built.evidence);
   assert.deepEqual(accepted, { passed: true, violations: [] });
 
+  const vague = validateLarkWeeklyExecutiveFullChannelAiOutputs({
+    insight_summary: 'Meta Ads มีค่าใช้จ่าย 17,742.8 และ WooCommerce มียอดขายสุทธิ 168,010 ในสัปดาห์นี้',
+    strengths: 'Meta Ads มีการแสดงผลเพิ่มขึ้นเมื่อเทียบกับช่วงก่อน',
+    weaknesses: 'WooCommerce มียอดขายสุทธิลดลงเมื่อเทียบกับช่วงก่อน และ Meta Ads มีการคลิกลดลงเมื่อเทียบกับช่วงก่อน',
+    recommendations: 'ทบทวนครีเอทีฟและติดตามยอดขายในสัปดาห์หน้า',
+  }, built.evidence);
+  assert.equal(vague.passed, false);
+  assert.ok(vague.violations.includes('recommendations_missing_decision_actions'));
+  assert.ok(vague.violations.includes('recommendations_missing_content_action'));
+  assert.ok(vague.violations.includes('recommendations_missing_paid_action'));
+  assert.ok(vague.violations.includes('recommendations_missing_funnel_divergence'));
+});
+
+test('quality blocks unsupported scale and fabricated Organic-to-Paid identity claims', () => {
+  const report = factualReport();
+  const built = buildLarkWeeklyExecutiveFullChannelAiEvidence({
+    factualReport: report,
+    channelStatusVectorJson: JSON.stringify(report.channels.map(({ channelKey }) => ({ channelKey }))),
+  });
+  const evidenceWithoutScale = Object.freeze({ ...built.evidence, scaleEvidenceAdNames: Object.freeze([]) });
+  const unsupportedScale = validateLarkWeeklyExecutiveFullChannelAiOutputs({
+    insight_summary: 'Meta Ads มีค่าใช้จ่าย 17,742.8 และ WooCommerce มียอดขายสุทธิ 168,010',
+    strengths: 'Meta Ads มีการแสดงผลเพิ่มขึ้นเมื่อเทียบกับช่วงก่อน',
+    weaknesses: 'WooCommerce มียอดขายสุทธิลดลงเมื่อเทียบกับช่วงก่อน และ Meta Ads มีการคลิกลดลงเมื่อเทียบกับช่วงก่อน',
+    recommendations: '[CONTENT] สูตรแก้โจทย์เคมีใน 30 วิ ใช้ [TEST] ทดลอง Paid\n[SCALE] Creative B เพิ่มงบทันที\n[NO-SCALE] การแสดงผลเพิ่มแต่การคลิกและยอดขายสุทธิลดลง',
+  }, evidenceWithoutScale);
+  assert.equal(unsupportedScale.passed, false);
+  assert.ok(unsupportedScale.violations.includes('recommendations_unsupported_scale'));
+
+  const fabricatedLinkage = validateLarkWeeklyExecutiveFullChannelAiOutputs({
+    insight_summary: 'Meta Ads มีค่าใช้จ่าย 17,742.8 และ WooCommerce มียอดขายสุทธิ 168,010',
+    strengths: 'Meta Ads มีการแสดงผลเพิ่มขึ้นเมื่อเทียบกับช่วงก่อน',
+    weaknesses: 'WooCommerce มียอดขายสุทธิลดลงเมื่อเทียบกับช่วงก่อน และ Meta Ads มีการคลิกลดลงเมื่อเทียบกับช่วงก่อน',
+    recommendations: '[CONTENT] สูตรแก้โจทย์เคมีใน 30 วิ คือโพสต์เดียวกันกับโฆษณา (01-12) โปรโหมด เคมีรู้กันวันเดียว - สำเนา ให้ [TEST] ต่อ\n[NO-SCALE] การแสดงผลเพิ่มแต่การคลิกและยอดขายสุทธิลดลง',
+  }, built.evidence);
+  assert.equal(fabricatedLinkage.passed, false);
+  assert.ok(fabricatedLinkage.violations.includes('recommendations_fabricated_organic_paid_linkage'));
+});
+
+test('full-channel AI quality still requires positive metric strength and negative metric weakness', () => {
+  const report = factualReport();
+  const built = buildLarkWeeklyExecutiveFullChannelAiEvidence({
+    factualReport: report,
+    channelStatusVectorJson: JSON.stringify(report.channels.map(({ channelKey }) => ({ channelKey }))),
+  });
   const neutralStrength = validateLarkWeeklyExecutiveFullChannelAiOutputs({
     insight_summary: 'Meta Ads มีค่าใช้จ่าย 17,742.8 และ WooCommerce มียอดขายสุทธิ 168,010 ในสัปดาห์นี้',
     strengths: 'Meta Ads มีค่าใช้จ่ายเพิ่มขึ้นเมื่อเทียบกับช่วงก่อน',
     weaknesses: 'WooCommerce มียอดขายสุทธิลดลงเมื่อเทียบกับช่วงก่อน',
-    recommendations: '- ทบทวนครีเอทีฟและยอดขาย WooCommerce สัปดาห์ถัดไป',
+    recommendations: '[CONTENT] สูตรแก้โจทย์เคมีใน 30 วิ ใช้ [TEST] ทดลอง Paid\n[KEEP] Creative B คงไว้ดูผล\n[NO-SCALE] การแสดงผลเพิ่มแต่การคลิกและยอดขายสุทธิลดลง',
   }, built.evidence);
   assert.equal(neutralStrength.passed, false);
   assert.ok(neutralStrength.violations.includes('strengths_missing_positive_metric'));
@@ -180,7 +280,7 @@ test('full-channel AI quality requires positive metric strength and negative met
     insight_summary: 'Meta Ads ใช้งบ 17,742.8 ในสัปดาห์นี้',
     strengths: 'ยังไม่มีข้อมูลเปรียบเทียบเพียงพอสำหรับระบุจุดแข็งด้านผลงาน',
     weaknesses: 'ยังไม่พบสัญญาณด้านผลงานที่ควรระวังจากข้อมูลที่มี',
-    recommendations: '- คำนวณ CTR และ CPC จากข้อมูลโฆษณาที่มี แล้วใช้เป็น baseline เทียบกับสัปดาห์ถัดไป',
+    recommendations: '[CONTENT] สูตรแก้โจทย์เคมีใน 30 วิ ใช้ [TEST] ทดลอง Paid\n[KEEP] Creative B คงไว้\n[NO-SCALE] การแสดงผลเพิ่มแต่การคลิกและยอดขายสุทธิลดลง',
   }, built.evidence);
   assert.equal(stale.passed, false);
   assert.ok(stale.violations.includes('insight_missing_cross_channel_coverage'));
@@ -198,7 +298,7 @@ test('full-channel AI quality rejects internal fields and non-executive comparis
     insight_summary: 'Meta Ads มีค่าใช้จ่าย 17,742.8 และ WooCommerce มียอดขายสุทธิ 168,010',
     strengths: 'Meta Ads มีการแสดงผลเพิ่มขึ้นเมื่อเทียบกับช่วงก่อน',
     weaknesses: 'WooCommerce มี change_percent ลดลงจาก compare_value 250310',
-    recommendations: '- ทบทวนครีเอทีฟและยอดขาย WooCommerce สัปดาห์ถัดไป',
+    recommendations: '[CONTENT] สูตรแก้โจทย์เคมีใน 30 วิ ใช้ [TEST] ทดลอง Paid\n[KEEP] Creative B คงไว้\n[NO-SCALE] การแสดงผลเพิ่มแต่การคลิกและยอดขายสุทธิลดลง',
   }, built.evidence);
   assert.equal(internalFields.passed, false);
   assert.ok(internalFields.violations.includes('internal_metric_field_language'));
@@ -207,7 +307,7 @@ test('full-channel AI quality rejects internal fields and non-executive comparis
     insight_summary: 'Meta Ads มีความทบทวนหน้า 3,025,762 ครั้ง และ WooCommerce มียอดขายสุทธิ 168,010 พร้อมการเปรียบเทียบ',
     strengths: 'Meta Ads มีการแสดงผลเพิ่มขึ้นเมื่อเทียบกับช่วงก่อน',
     weaknesses: 'WooCommerce มียอดขายสุทธิลดลงเมื่อเปรียบเทียบกับค่าเปรียบเทียบ',
-    recommendations: '- ติดตามยอดขายตามข้อมูลการเปรียบเทียบที่มี',
+    recommendations: '[CONTENT] สูตรแก้โจทย์เคมีใน 30 วิ ใช้ [TEST] ตามข้อมูลการเปรียบเทียบที่มี\n[KEEP] Creative B คงไว้\n[NO-SCALE] การแสดงผลเพิ่มแต่การคลิกและยอดขายสุทธิลดลง',
   }, built.evidence);
   assert.equal(awkwardWording.passed, false);
   assert.ok(awkwardWording.violations.includes('non_business_metric_language'));

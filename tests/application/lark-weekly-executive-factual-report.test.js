@@ -43,9 +43,30 @@ function metaBundle() {
       rank: 1,
       external_ad_id: 'ad-1',
       ad_name: '(01-12) โปรโหมด เคมีรู้กันวันเดียว - สำเนา',
+      currency: 'THB',
+      spend_micros: 1200000000,
       clicks: 4553,
       impressions: 582054,
+      conversions: 42,
+      conversion_value_micros: 4800000000,
+      cpc_micros: 263562,
+      cpa_micros: 28571429,
+      roas: 4,
       ctr: 0,
+      data_status: 'complete',
+    }, {
+      rank: 2,
+      external_ad_id: 'ad-2',
+      ad_name: 'Creative B',
+      currency: 'THB',
+      spend_micros: 900000000,
+      clicks: 1400,
+      impressions: 260000,
+      conversions: 5,
+      conversion_value_micros: 700000000,
+      cpc_micros: 642857,
+      cpa_micros: 180000000,
+      roas: 0.78,
       data_status: 'complete',
     }],
   };
@@ -105,7 +126,7 @@ function wooBundle() {
 test('full-channel factual report always preserves all nine channels in reviewed order', () => {
   const report = buildLarkWeeklyExecutiveFactualReport({ targetPeriod: PERIOD, reportBundles: [metaBundle()] });
   assert.equal(report.evidenceShape, LARK_WEEKLY_EXECUTIVE_FACTUAL_REPORT_SHAPE);
-  assert.equal(report.evidenceShape, 'executive_notification_full_channel_v3');
+  assert.equal(report.evidenceShape, 'executive_notification_full_channel_v4');
   assert.equal(report.channelCount, 9);
   assert.equal(report.businessFactChannelCount, 1);
   assert.deepEqual(report.channels.map(({ channelKey }) => channelKey), [
@@ -151,7 +172,29 @@ test('channel rendering formats real facts and explicitly renders missing channe
   assert.ok(meta.lines.some((line) => line.includes('4,553')));
   assert.ok(meta.lines.some((line) => line.includes('582,054')));
   assert.ok(meta.lines.some((line) => line.includes('CTR 0.78%')));
+  assert.ok(meta.lines.some((line) => line.includes('ROAS 4')));
+  assert.ok(meta.lines.some((line) => line.includes('Ad #2: Creative B')));
   assert.equal(meta.lines.some((line) => line.includes('Hidden')), false);
+});
+
+test('factual report preserves multiple organic candidates and decision metrics', () => {
+  const bundle = organicBundle('facebook_organic');
+  bundle.topContent = [
+    { rank: 1, external_content_id: 'post-1', caption: 'สูตรแก้โจทย์เคมีใน 30 วิ', period_views: 150000, period_likes: 8000, period_comments: 300, period_shares: 1200, period_engagement: 9500, period_engagement_rate: 6.33, performance_status: 'winner', data_status: 'complete' },
+    { rank: 2, external_content_id: 'post-2', caption: 'ก่อนสอบต้องรู้ 5 ข้อนี้', period_views: 120000, period_likes: 6000, period_comments: 220, period_shares: 900, period_engagement: 7120, period_engagement_rate: 5.93, data_status: 'complete' },
+    { rank: 3, external_content_id: 'post-3', caption: 'สรุปกรดเบสในหนึ่งนาที', period_views: 90000, period_engagement: 4800, period_engagement_rate: 5.33, data_status: 'complete' },
+    { rank: 4, external_content_id: 'post-4', caption: 'โจทย์ท้ายบท', period_views: 60000, period_engagement: 2100, period_engagement_rate: 3.5, data_status: 'complete' },
+  ];
+  const report = buildLarkWeeklyExecutiveFactualReport({ targetPeriod: PERIOD, reportBundles: [bundle] });
+  const facebook = report.channels.find(({ channelKey }) => channelKey === 'facebook_organic');
+  assert.equal(facebook.contentCandidates.length, 4);
+  assert.equal(facebook.topContent.caption, 'สูตรแก้โจทย์เคมีใน 30 วิ');
+  assert.equal(facebook.contentCandidates[0].periodShares, 1200);
+  assert.equal(facebook.contentCandidates[0].performanceStatus, 'winner');
+  const rendered = renderLarkWeeklyExecutiveChannelSections(report).find(({ channelKey }) => channelKey === 'facebook_organic');
+  assert.ok(rendered.lines.some((line) => line.includes('Content #1: สูตรแก้โจทย์เคมีใน 30 วิ')));
+  assert.ok(rendered.lines.some((line) => line.includes('Shares 1,200')));
+  assert.equal(rendered.lines.some((line) => line.includes('Content #4')), false);
 });
 
 test('currency micros are presentation-scaled without changing canonical current or compare values', () => {
@@ -172,10 +215,15 @@ test('currency micros are presentation-scaled without changing canonical current
   assert.equal(rendered.lines.some((line) => line.includes('807,690,000,000')), false);
 });
 
-test('raw contradictory ad CTR is ignored in favor of clicks/impressions derived CTR', () => {
+test('raw contradictory ad CTR is ignored and full paid decision metrics are preserved', () => {
   const report = buildLarkWeeklyExecutiveFactualReport({ targetPeriod: PERIOD, reportBundles: [metaBundle()] });
   const meta = report.channels.find(({ channelKey }) => channelKey === 'meta_ads');
   assert.equal(meta.topAd.derivedCtrPercent, 0.78223);
+  assert.equal(meta.adCandidates.length, 2);
+  assert.equal(meta.topAd.conversions, 42);
+  assert.equal(meta.topAd.conversionValueMicros, 4800000000);
+  assert.equal(meta.topAd.cpaMicros, 28571429);
+  assert.equal(meta.topAd.roas, 4);
 });
 
 test('serialization round-trips exact bounded factual report', () => {
@@ -188,6 +236,7 @@ test('serialization round-trips exact bounded factual report', () => {
   assert.equal(parsed.channelCount, 9);
   assert.equal(parsed.businessFactChannelCount, 3);
   assert.deepEqual(parsed.sourceReportIds, ['report-facebook-7d', 'report-meta-7d', 'report-woo-7d']);
+  assert.equal(parsed.channels.find(({ channelKey }) => channelKey === 'meta_ads').adCandidates.length, 2);
 });
 
 test('placeholder Top Content and Top Ads never become business facts', () => {

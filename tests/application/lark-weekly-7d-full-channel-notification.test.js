@@ -123,6 +123,10 @@ function factualReport(clicks = 4553) {
   });
 }
 
+function decisionRecommendations() {
+  return '[TEST] Campaign X มี CTR 0.78223% แต่ยังไม่มี Conversion/ROAS จึงทดลองครีเอทีฟต่อด้วยงบจำกัด\n[NO-SCALE] Campaign X ยังไม่มีหลักฐานปลาย Funnel จึงไม่เพิ่มงบในรอบนี้';
+}
+
 function generatedSynthesis(source, factual) {
   const expected = buildLarkWeekly7dFullChannelAiSynthesis({
     sourceRecord: source,
@@ -142,7 +146,7 @@ function generatedSynthesis(source, factual) {
       insight_summary: `Meta Ads มีจำนวนการคลิก ${clicks} ครั้ง และการแสดงผล ${impressions} ครั้ง ค่าดัชนีการคลิกที่คำนวณได้เป็น ${ctr} เปอร์เซ็นต์`,
       strengths: source.fields.strengths,
       weaknesses: source.fields.weaknesses,
-      recommendations: source.fields.recommendations,
+      recommendations: decisionRecommendations(),
     },
   };
 }
@@ -191,9 +195,10 @@ test('requires generated full-channel synthesis and builds a new immutable notif
   assert.match(corrected.composedInsight, /4,553/u);
   assert.match(corrected.composedInsight, /582,054/u);
   assert.match(corrected.composedInsight, /CTR 0\.78%/u);
+  assert.match(corrected.composedInsight, /Ad #1: Campaign X/u);
   assert.equal(corrected.fields.strengths, source.fields.strengths);
   assert.equal(corrected.fields.weaknesses, source.fields.weaknesses);
-  assert.equal(corrected.fields.recommendations, source.fields.recommendations);
+  assert.equal(corrected.fields.recommendations, decisionRecommendations());
   assert.equal(corrected.qualityGate.passed, true);
 });
 
@@ -227,7 +232,7 @@ test('requires exact factual source Report and period alignment with accepted V9
   );
 });
 
-test('message acceptance requires all nine factual headings and generated synthesis outputs', () => {
+test('message acceptance requires all nine factual headings and generated decision outputs', () => {
   const corrected = correctedNotification();
   const message = [
     '📊 Social MKT Weekly Executive Report — 7D',
@@ -242,6 +247,8 @@ test('message acceptance requires all nine factual headings and generated synthe
   ].join('\n');
   const accepted = assertFullChannelMessage({ admission: corrected, messageText: message });
   assert.equal(accepted.channelSectionCount, 9);
+  assert.match(message, /\[TEST\] Campaign X/u);
+  assert.match(message, /\[NO-SCALE\] Campaign X/u);
   const broken = message.replace('💬 Chatwoot', 'Chatwoot omitted');
   assert.throws(
     () => assertFullChannelMessage({ admission: corrected, messageText: broken }),
