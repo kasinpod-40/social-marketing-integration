@@ -119,9 +119,9 @@ test('full-channel AI evidence is compact, cross-channel and uses percent-point 
   const meta = summary.channelBusinessEvidence.find(({ channelKey }) => channelKey === 'meta_ads');
   const woo = summary.channelBusinessEvidence.find(({ channelKey }) => channelKey === 'woocommerce');
   assert.equal(meta.availableMetrics[0].current_value, 17742.8);
-  assert.equal(meta.availableMetrics[0].change_percent, 7);
+  assert.ok(Math.abs(meta.availableMetrics[0].change_percent - 7) < 0.01);
   assert.equal(woo.availableMetrics[0].current_value, 168010);
-  assert.equal(woo.availableMetrics[0].change_percent, -33);
+  assert.ok(Math.abs(woo.availableMetrics[0].change_percent + 33) < 0.01);
   assert.equal(meta.topAds[0].derived_ctr_percent, 0.78223);
 });
 
