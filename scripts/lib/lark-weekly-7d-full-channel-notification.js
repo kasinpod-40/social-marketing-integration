@@ -7,12 +7,17 @@ import {
   serializeLarkWeeklyExecutiveFactualReport,
 } from '../../packages/application/src/notifications/build-lark-weekly-executive-factual-report.js';
 import {
+  assertLarkWeekly7dFullChannelAiGenerated,
+  buildLarkWeekly7dFullChannelAiSynthesis,
+  isLarkWeekly7dFullChannelAiIdentity,
+} from './lark-weekly-7d-full-channel-ai-synthesis.js';
+import {
   LARK_WEEKLY_7D_NOTIFICATION_TEMPLATE_VERSION,
   buildLarkWeekly7dNotificationAdmissionRow,
 } from './lark-weekly-7d-notification-admission.js';
 
 export const LARK_WEEKLY_7D_FULL_CHANNEL_NOTIFICATION_CONTRACT_VERSION =
-  'lark_weekly_7d_full_channel_notification_v1';
+  'lark_weekly_7d_full_channel_notification_v2';
 export const LARK_WEEKLY_7D_FULL_CHANNEL_NOTIFICATION_CONFIRMATION = Object.freeze({
   envName: 'CONFIRM_LARK_WEEKLY_7D_FULL_CHANNEL_NOTIFICATION',
   value: 'SEND_ONE_CORRECTED_FULL_CHANNEL_WEEKLY_7D',
@@ -81,31 +86,42 @@ export function buildLarkWeekly7dFullChannelNotificationRow(input = {}) {
     );
   }
 
+  const expectedSynthesis = buildLarkWeekly7dFullChannelAiSynthesis({
+    sourceRecord: input.sourceRecord,
+    factualReport: factual,
+  });
+  const synthesisRecord = requireObject(input.synthesisRecord, 'synthesisRecord');
+  const synthesisFields = requireObject(synthesisRecord.fields, 'synthesisRecord.fields');
+  if (readScalar(synthesisFields.ai_run_key) !== expectedSynthesis.aiRunKey
+      || !isLarkWeekly7dFullChannelAiIdentity(readScalar(synthesisFields.ai_run_key))) {
+    throw fullChannelError(
+      'Corrected Weekly notification requires the exact generated full-channel AI synthesis identity',
+      'LARK_WEEKLY_7D_FULL_CHANNEL_SYNTHESIS_IDENTITY_INVALID',
+    );
+  }
+  const acceptedSynthesis = assertLarkWeekly7dFullChannelAiGenerated(
+    synthesisFields,
+    expectedSynthesis,
+  );
+
   const factualJson = serializeLarkWeeklyExecutiveFactualReport(factual);
   const sections = renderLarkWeeklyExecutiveChannelSections(factual);
-  const sourceInsight = requireText(readScalar(input.sourceRecord?.fields?.insight_summary), 'source.insight_summary');
+  const sourceInsight = acceptedSynthesis.outputs.insight_summary;
+  const strengths = acceptedSynthesis.outputs.strengths;
+  const weaknesses = acceptedSynthesis.outputs.weaknesses;
+  const recommendations = acceptedSynthesis.outputs.recommendations;
   const composedInsight = [
     sourceInsight,
     '',
     ...sections.flatMap((section) => [section.heading, ...section.lines, '']),
   ].join('\n').trim();
-  const strengths = requireText(readScalar(input.sourceRecord?.fields?.strengths), 'source.strengths');
-  const weaknesses = requireText(readScalar(input.sourceRecord?.fields?.weaknesses), 'source.weaknesses');
-  const recommendations = requireText(
-    readScalar(input.sourceRecord?.fields?.recommendations),
-    'source.recommendations',
-  );
   const factualSha256 = sha256(factualJson);
-  const outputsSha256 = sha256(JSON.stringify({
-    insight_summary: sourceInsight,
-    strengths,
-    weaknesses,
-    recommendations,
-  }));
+  const outputsSha256 = sha256(JSON.stringify(acceptedSynthesis.outputs));
   const identity = sha256(JSON.stringify({
     contractVersion: LARK_WEEKLY_7D_FULL_CHANNEL_NOTIFICATION_CONTRACT_VERSION,
     sourceAiRunKey: base.sourceAiRunKey,
     sourceDedupeKey: base.sourceDedupeKey,
+    synthesisAiRunKey: expectedSynthesis.aiRunKey,
     sourceReportIds: base.sourceReportIds,
     factualSha256,
     outputsSha256,
@@ -114,6 +130,7 @@ export function buildLarkWeekly7dFullChannelNotificationRow(input = {}) {
   const dedupeKey = sha256([
     base.sourceDedupeKey,
     LARK_WEEKLY_7D_FULL_CHANNEL_NOTIFICATION_CONTRACT_VERSION,
+    expectedSynthesis.aiRunKey,
     factualSha256,
     identity,
   ].join(':'));
@@ -142,6 +159,7 @@ export function buildLarkWeekly7dFullChannelNotificationRow(input = {}) {
     sourceRecordId: base.sourceRecordId,
     sourceAiRunKey: base.sourceAiRunKey,
     sourceDedupeKey: base.sourceDedupeKey,
+    synthesisAiRunKey: expectedSynthesis.aiRunKey,
     aiRunKey,
     reportId: aiRunKey,
     dedupeKey,
@@ -154,8 +172,8 @@ export function buildLarkWeekly7dFullChannelNotificationRow(input = {}) {
     businessFactChannelCount: factual.businessFactChannelCount,
     composedInsight,
     originalAiOutputs: Object.freeze({ sourceInsight, strengths, weaknesses, recommendations }),
-    qualityGate: base.qualityGate,
-    evidence: base.evidence,
+    qualityGate: acceptedSynthesis.qualityGate,
+    evidence: expectedSynthesis.evidence.evidence,
     fields,
   });
 }
