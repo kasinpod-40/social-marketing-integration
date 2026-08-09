@@ -238,7 +238,7 @@ export function validateLarkNativeAiExecutiveWriterOutputs(outputs = {}, evidenc
   if (/^#{1,6}\s/mu.test(allText)) violations.push('markdown_heading');
   if (/หลักฐาน\s*[:：]|\([^\n)]*หลักฐาน[^\n)]*\)/u.test(allText)) violations.push('evidence_footnote');
 
-  if (/แนะนำ|ควร|ติดตาม|ตรวจสอบ(?!แล้ว)|ทดลอง|ต่อยอด|คำนวณ(?!ได้)|ใช้เป็น\s*(?:benchmark|baseline)|สิ่งที่ควรทำ/iu.test(normalized.insight_summary)) {
+  if (/แนะนำ|ควร|(?<!ผู้)ติดตาม|ตรวจสอบ(?!แล้ว)|ทดลอง|ต่อยอด|คำนวณ(?!ได้)|ใช้เป็น\s*(?:benchmark|baseline)|สิ่งที่ควรทำ/iu.test(normalized.insight_summary)) {
     violations.push('insight_contains_action');
   }
   if (normalized.insight_summary.includes(LARK_NATIVE_AI_EXECUTIVE_STRENGTHS_FALLBACK)) {
@@ -274,7 +274,7 @@ export function validateLarkNativeAiExecutiveWriterOutputs(outputs = {}, evidenc
   }
 
   if (normalized.weaknesses !== LARK_NATIVE_AI_EXECUTIVE_WEAKNESSES_FALLBACK) {
-    if (/แนะนำ|ควร(?!ระวัง)|ติดตาม|ตรวจสอบ(?!แล้ว)|ทดลอง|ต่อยอด|คำนวณ(?!ได้)|รอ|เติม|ใช้เป็น/iu.test(normalized.weaknesses)) {
+    if (/แนะนำ|ควร(?!ระวัง)|(?<!ผู้)ติดตาม|ตรวจสอบ(?!แล้ว)|ทดลอง|ต่อยอด|คำนวณ(?!ได้)|รอ|เติม|ใช้เป็น/iu.test(normalized.weaknesses)) {
       violations.push('weaknesses_contains_action');
     }
     if (/ยังไม่พบข้อมูล|ไม่มีข้อมูล|ข้อมูลไม่ครบ|ข้อมูลไม่เพียงพอ|ข้อมูลเต็ม|ความพร้อม|ช่องทางอื่น|รอข้อมูล|coverage/iu.test(normalized.weaknesses)) {
