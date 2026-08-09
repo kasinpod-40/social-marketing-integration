@@ -14,6 +14,7 @@ import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import {
   applyMetaHistoryCustomerRuntimeEnvironment,
+  applyMetaHistoryLarkRuntimeEnvironment,
   materializeMetaHistoryLarkRuntimeConfig,
 } from './lib/meta-history-runtime-authority.js';
 
@@ -35,7 +36,7 @@ const generatedConfigClockPreloadPath = join(
 
 let tempDirectory = null;
 try {
-  const runtimeEnvironment = applyMetaHistoryCustomerRuntimeEnvironment(process.env);
+  let runtimeEnvironment = applyMetaHistoryCustomerRuntimeEnvironment(process.env);
   const realNpx = await resolveRealNpx();
   tempDirectory = await mkdtemp(join(tmpdir(), 'meta-lark-wrangler-compat-'));
   const shimExecutable = join(tempDirectory, 'npx');
@@ -54,6 +55,10 @@ try {
     : null;
   if (originalConfig && runtimeConfig) {
     const sourceText = await readFile(originalConfig, 'utf8');
+    runtimeEnvironment = applyMetaHistoryLarkRuntimeEnvironment(
+      sourceText,
+      runtimeEnvironment,
+    );
     await writeFile(
       runtimeConfig,
       materializeMetaHistoryLarkRuntimeConfig(sourceText, runtimeEnvironment),
