@@ -12,8 +12,10 @@ export const LARK_WEEKLY_EXECUTIVE_FULL_CHANNEL_AI_PROMPT_SHAPE =
   'lark_ai_full_channel_synthesis_v1';
 
 const MAX_AI_METRICS_PER_CHANNEL = 2;
-const MAX_METRIC_SUMMARY_CHARS = 3_200;
+const MAX_METRIC_SUMMARY_CHARS = 2_800;
 const MAX_STATUS_VECTOR_CHARS = 700;
+const LOWER_IS_BETTER = /(?:cpc|cpm|cpa|cost_per|refund)/iu;
+const NEUTRAL_DIRECTION = /(?:spend|budget)/iu;
 
 export function buildLarkWeeklyExecutiveFullChannelAiEvidence(input = {}) {
   const factual = parseLarkWeeklyExecutiveFactualReport(input.factualReport);
@@ -30,13 +32,13 @@ export function buildLarkWeeklyExecutiveFullChannelAiEvidence(input = {}) {
   const businessChannels = channels.filter(({ businessEvidencePresent }) => businessEvidencePresent);
   const comparisonChannels = businessChannels.filter(({ comparisonEvidencePresent }) => comparisonEvidencePresent);
   const positiveComparisonChannelNames = comparisonChannels
-    .filter((channel) => channel.availableMetrics.some(({ change_percent }) => change_percent !== null && change_percent > 0))
+    .filter((channel) => channel.availableMetrics.some((metric) => metricSignal(metric) === 'positive'))
     .map(({ displayName }) => displayName);
   const negativeComparisonChannelNames = comparisonChannels
-    .filter((channel) => channel.availableMetrics.some(({ change_percent }) => change_percent !== null && change_percent < 0))
+    .filter((channel) => channel.availableMetrics.some((metric) => metricSignal(metric) === 'negative'))
     .map(({ displayName }) => displayName);
   const summaryRequiredFacts = collectCrossChannelRequiredFacts(businessChannels);
-  const derivedCtrFacts = businessChannels.flatMap((channel) => channel.topAds.map((ad) => Object.freeze({
+  const derivedCtrFacts = businessChannels.flatMap((channel) => (channel.topAds ?? []).map((ad) => Object.freeze({
     channel: channel.displayName,
     adName: ad.ad_name,
     clicks: ad.clicks,
@@ -47,7 +49,7 @@ export function buildLarkWeeklyExecutiveFullChannelAiEvidence(input = {}) {
   const qualityContext = Object.freeze({
     businessEvidenceChannelCount: businessChannels.length,
     comparisonEvidenceChannelCount: comparisonChannels.length,
-    strengthsMode: comparisonChannels.length > 0 ? 'evidence_only' : 'fallback_no_comparison',
+    strengthsMode: positiveComparisonChannelNames.length > 0 ? 'evidence_only' : 'fallback_no_positive_comparison',
     recommendationMode: 'cross_channel_business_followup',
     summaryRequiredFacts,
   });
@@ -57,7 +59,7 @@ export function buildLarkWeeklyExecutiveFullChannelAiEvidence(input = {}) {
     qualityContext,
     writerContract: Object.freeze({
       overview: 'สรุปข้ามช่องทางจาก business facts จริง; เมื่อมีหลายช่องทางให้กล่าวอย่างน้อยสองช่องทาง; ใช้ค่าจริงและ comparison ที่ให้มาเท่านั้น',
-      strengths: 'ใช้เฉพาะ comparison/rank ที่รองรับจริง',
+      strengths: 'ใช้เฉพาะ comparison/rank ที่รองรับจริง; spend/budget ที่เพิ่มขึ้นไม่ใช่ strength โดยตัวมันเอง',
       weaknesses: 'ใช้เฉพาะสัญญาณเชิงลบจาก comparison จริง; ห้ามใช้การไม่มีข้อมูลเป็น weakness',
       recommendations: 'ให้ action ทางการตลาดจาก facts จริง; ห้าม Data Ops และห้ามสรุปช่องทางที่ไม่มีข้อมูลเป็นปัญหา',
     }),
@@ -147,6 +149,14 @@ export function validateLarkWeeklyExecutiveFullChannelAiOutputs(outputs = {}, ev
 }
 
 function toAiChannelEvidence(channel) {
+  if (!channel.hasBusinessFacts) {
+    return deepFreeze({
+      channelKey: channel.channelKey,
+      displayName: channel.displayName,
+      businessEvidencePresent: false,
+      comparisonEvidencePresent: false,
+    });
+  }
   const metrics = channel.metrics.slice(0, MAX_AI_METRICS_PER_CHANNEL).map((metric) => {
     const currentValue = presentationValue(metric.currentValue, metric.metricKey, metric.unit);
     const compareValue = metric.compareValue === null
@@ -176,11 +186,11 @@ function toAiChannelEvidence(channel) {
   return deepFreeze({
     channelKey: channel.channelKey,
     displayName: channel.displayName,
-    businessEvidencePresent: channel.hasBusinessFacts,
+    businessEvidencePresent: true,
     comparisonEvidencePresent,
     availableMetrics: metrics,
-    topContent,
-    topAds,
+    ...(topContent.length ? { topContent } : {}),
+    ...(topAds.length ? { topAds } : {}),
   });
 }
 
@@ -191,19 +201,28 @@ function collectCrossChannelRequiredFacts(channels) {
   ));
   const facts = [];
   for (const channel of ordered) {
-    const metric = channel.availableMetrics[0];
+    const metric = channel.availableMetrics?.[0];
     if (metric && Number.isFinite(metric.current_value)) {
       facts.push(Object.freeze({
         channel: channel.displayName,
         metric: metric.metric_key,
         value: metric.current_value,
       }));
-    } else if (channel.topAds[0]?.clicks !== null && Number.isFinite(channel.topAds[0]?.clicks)) {
+    } else if (channel.topAds?.[0]?.clicks !== null && Number.isFinite(channel.topAds?.[0]?.clicks)) {
       facts.push(Object.freeze({ channel: channel.displayName, metric: 'clicks', value: channel.topAds[0].clicks }));
     }
     if (facts.length >= 3) break;
   }
   return Object.freeze(facts);
+}
+
+function metricSignal(metric) {
+  const change = metric?.change_percent;
+  if (!Number.isFinite(change) || change === 0) return 'neutral';
+  const key = `${metric.metric_key ?? ''} ${metric.display_name ?? ''}`;
+  if (NEUTRAL_DIRECTION.test(key)) return 'neutral';
+  if (LOWER_IS_BETTER.test(key)) return change < 0 ? 'positive' : 'negative';
+  return change > 0 ? 'positive' : 'negative';
 }
 
 function deriveChangePercent(currentValue, compareValue) {
