@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased — Weekly Executive Decision Report v1 — 2026-08-10
+
+### Changed
+
+- Upgraded the existing Weekly 7D Full-channel Native AI path from descriptive summary to executive decision support without adding a new Report, AI or Notification engine.
+- Preserved bounded ranked Organic Content and Paid Ad candidates through the factual and AI evidence boundaries instead of collapsing each channel to rank 1.
+- Retained Organic Views/Likes/Comments/Shares/Engagement/Engagement Rate and Paid Spend/CTR/Conversions/Conversion Value/CPC/CPA/ROAS when the Shared Report source provides them.
+- Added explicit `[CONTENT]`, `[TEST]`, `[SCALE]`, `[KEEP]`, `[REDUCE]`, `[STOP]` and `[NO-SCALE]` decision actions, named-candidate requirements and deterministic awareness-up/outcome-down Funnel divergence evidence.
+- Added Scale safety so upper-funnel evidence alone cannot justify `[SCALE]`, and blocked fabricated Organic↔Paid identity claims until an exact mapping contract exists.
+
+### Safety
+
+- Historical Weekly delivery and AI identities remain terminal and are not rerun, resent, replaced or mutated.
+- No Native AI trigger, Lark record/group write, Queue send, Worker deployment, Automation activation, Schedule activation or Production action occurred.
+- Automatic Weekly Notification remains blocked until a fresh future-period Executive Decision preview passes the new Quality Gate.
+
 ## Unreleased — Multichannel Report & Schedule Final Closure — 2026-08-09
 
 ### Changed
