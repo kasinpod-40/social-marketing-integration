@@ -12,6 +12,7 @@ import { delimiter, dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
+import { readDevVars } from './lib/dev-vars.js';
 import {
   applyMetaHistoryCustomerRuntimeEnvironment,
   applyMetaHistoryLarkRuntimeEnvironment,
@@ -36,7 +37,13 @@ const generatedConfigClockPreloadPath = join(
 
 let tempDirectory = null;
 try {
-  let runtimeEnvironment = applyMetaHistoryCustomerRuntimeEnvironment(process.env);
+  const fileEnvironment = await readDevVars(
+    resolve(repositoryRoot, process.env.DEV_VARS_FILE ?? '.dev.vars'),
+  );
+  let runtimeEnvironment = applyMetaHistoryCustomerRuntimeEnvironment({
+    ...fileEnvironment,
+    ...process.env,
+  });
   const realNpx = await resolveRealNpx();
   tempDirectory = await mkdtemp(join(tmpdir(), 'meta-lark-wrangler-compat-'));
   const shimExecutable = join(tempDirectory, 'npx');
