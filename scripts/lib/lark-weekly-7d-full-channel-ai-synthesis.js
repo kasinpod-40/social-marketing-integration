@@ -160,7 +160,7 @@ export function assertLarkWeekly7dFullChannelAiGenerated(fields = {}, expected =
     throw synthesisError(
       'Full-channel AI synthesis failed the cross-channel quality gate',
       'LARK_WEEKLY_7D_FULL_CHANNEL_AI_QUALITY_FAILED',
-      { violations: qualityGate.violations },
+      { violations: qualityGate.violations, outputs },
     );
   }
   return deepFreeze({ outputs, qualityGate });
