@@ -76,6 +76,15 @@ function factualReport() {
   });
 }
 
+function decisionReadyOutputs(source) {
+  return {
+    insight_summary: source.fields.insight_summary,
+    strengths: source.fields.strengths,
+    weaknesses: source.fields.weaknesses,
+    recommendations: '[TEST] Campaign X มี CTR 0.78223% แต่ยังไม่มี Conversion/ROAS จึงทดลองครีเอทีฟต่อด้วยงบจำกัด\n[NO-SCALE] Campaign X ยังไม่มีหลักฐานปลาย Funnel จึงไม่เพิ่มงบในรอบนี้',
+  };
+}
+
 test('builds stable new synthesis identity without mutating accepted V9 fields', () => {
   const source = sourceRecord();
   const before = structuredClone(source.fields);
@@ -104,7 +113,7 @@ test('prepared synthesis rejects trigger marker until Native AI completion', () 
   );
 });
 
-test('generated synthesis requires quality-passed outputs and remains notification-ineligible', () => {
+test('generated synthesis requires decision-ready quality-passed outputs and remains notification-ineligible', () => {
   const source = sourceRecord();
   const synthesis = buildLarkWeekly7dFullChannelAiSynthesis({ sourceRecord: source, factualReport: factualReport() });
   const generated = {
@@ -112,10 +121,7 @@ test('generated synthesis requires quality-passed outputs and remains notificati
     generation_status: 'generated',
     failure_code: null,
     generated_at: Date.now(),
-    insight_summary: source.fields.insight_summary,
-    strengths: source.fields.strengths,
-    weaknesses: source.fields.weaknesses,
-    recommendations: source.fields.recommendations,
+    ...decisionReadyOutputs(source),
   };
   const accepted = assertLarkWeekly7dFullChannelAiGenerated(generated, synthesis);
   assert.equal(accepted.qualityGate.passed, true);
@@ -125,5 +131,24 @@ test('generated synthesis requires quality-passed outputs and remains notificati
   assert.throws(
     () => assertLarkWeekly7dFullChannelAiGenerated({ ...generated, notification_eligible: true }, synthesis),
     (error) => error?.code === 'LARK_WEEKLY_7D_FULL_CHANNEL_AI_GENERATED_INVALID',
+  );
+});
+
+test('generated synthesis blocks the old generic follow-up recommendation', () => {
+  const source = sourceRecord();
+  const synthesis = buildLarkWeekly7dFullChannelAiSynthesis({ sourceRecord: source, factualReport: factualReport() });
+  assert.throws(
+    () => assertLarkWeekly7dFullChannelAiGenerated({
+      ...synthesis.fields,
+      generation_status: 'generated',
+      failure_code: null,
+      generated_at: Date.now(),
+      insight_summary: source.fields.insight_summary,
+      strengths: source.fields.strengths,
+      weaknesses: source.fields.weaknesses,
+      recommendations: '- คำนวณ CTR และ CPC จากข้อมูลโฆษณาที่มี แล้วใช้เป็น baseline เทียบกับสัปดาห์ถัดไป',
+    }, synthesis),
+    (error) => error?.code === 'LARK_WEEKLY_7D_FULL_CHANNEL_AI_QUALITY_FAILED'
+      && error?.details?.violations?.includes('recommendations_missing_decision_actions'),
   );
 });
