@@ -12,10 +12,12 @@ export const LARK_WEEKLY_EXECUTIVE_FULL_CHANNEL_AI_PROMPT_SHAPE =
   'lark_ai_full_channel_synthesis_v1';
 
 const MAX_AI_METRICS_PER_CHANNEL = 2;
-const MAX_METRIC_SUMMARY_CHARS = 3_200;
+const MAX_METRIC_SUMMARY_CHARS = 3_400;
 const MAX_STATUS_VECTOR_CHARS = 700;
 const LOWER_IS_BETTER = /(?:cpc|cpm|cpa|cost_per|refund)/iu;
 const NEUTRAL_DIRECTION = /(?:spend|budget)/iu;
+const INTERNAL_METRIC_LANGUAGE = /\b(?:metric_key|change_percent|compare_value|current_value|derived_ctr_percent)\b/iu;
+const NON_BUSINESS_METRIC_LANGUAGE = /ความทบทวนหน้า/u;
 
 export function buildLarkWeeklyExecutiveFullChannelAiEvidence(input = {}) {
   const factual = parseLarkWeeklyExecutiveFactualReport(input.factualReport);
@@ -62,6 +64,7 @@ export function buildLarkWeeklyExecutiveFullChannelAiEvidence(input = {}) {
       strengths: 'ใช้ comparison/rank จริง; spend/budget เพิ่มไม่ใช่ strength',
       weaknesses: 'ใช้ negative comparison จริง; missing data ไม่ใช่ weakness',
       recommendations: 'business action จาก facts; ห้าม Data Ops',
+      language: 'ใช้ display_name เป็นชื่อ metric ที่แสดงต่อผู้บริหารเท่านั้น; ห้ามชื่อ field ภายในและคำว่า ความทบทวนหน้า',
     }),
     channelBusinessEvidence: channels,
   });
@@ -111,6 +114,10 @@ export function validateLarkWeeklyExecutiveFullChannelAiOutputs(outputs = {}, ev
   const insight = text(outputs.insight_summary);
   const strengths = text(outputs.strengths);
   const weaknesses = text(outputs.weaknesses);
+  const allText = [insight, strengths, weaknesses, text(outputs.recommendations)].join('\n');
+
+  if (INTERNAL_METRIC_LANGUAGE.test(allText)) violations.push('internal_metric_field_language');
+  if (NON_BUSINESS_METRIC_LANGUAGE.test(allText)) violations.push('non_business_metric_language');
 
   const businessNames = Array.isArray(evidence.businessEvidenceChannelNames)
     ? evidence.businessEvidenceChannelNames
@@ -162,7 +169,7 @@ function toAiChannelEvidence(channel) {
       : presentationValue(metric.compareValue, metric.metricKey, metric.unit);
     return Object.freeze({
       metric_key: metric.metricKey,
-      display_name: metric.displayName,
+      display_name: thaiBusinessMetricLabel(metric.metricKey, metric.displayName),
       current_value: currentValue,
       compare_value: compareValue,
       change_percent: deriveChangePercent(metric.currentValue, metric.compareValue),
@@ -221,6 +228,21 @@ function metricSignal(metric) {
   if (NEUTRAL_DIRECTION.test(key)) return 'neutral';
   if (LOWER_IS_BETTER.test(key)) return change < 0 ? 'positive' : 'negative';
   return change > 0 ? 'positive' : 'negative';
+}
+
+function thaiBusinessMetricLabel(metricKey, fallback) {
+  const key = String(metricKey ?? '').toLowerCase();
+  if (/(?:^|:)account_followers$|followers?$/u.test(key)) return 'ผู้ติดตาม';
+  if (/(?:^|:)account_views$|(?:^|:)views?$/u.test(key)) return 'ยอดดู';
+  if (/(?:^|:)account_reach$|(?:^|:)reach$/u.test(key)) return 'การเข้าถึง';
+  if (/(?:^|:)impressions?$/u.test(key)) return 'การแสดงผล';
+  if (/(?:^|:)clicks?$/u.test(key)) return 'การคลิก';
+  if (/spend(?:_micros)?$/u.test(key)) return 'ค่าใช้จ่าย';
+  if (/net_sales(?:_micros)?$/u.test(key)) return 'ยอดขายสุทธิ';
+  if (/gross_sales(?:_micros)?$/u.test(key)) return 'ยอดขายรวม';
+  if (/recognized_revenue(?:_micros)?$/u.test(key)) return 'รายได้ที่รับรู้';
+  if (/refunds?(?:_micros)?$/u.test(key)) return 'ยอดคืนเงิน';
+  return String(fallback ?? metricKey ?? 'Metric').trim();
 }
 
 function deriveChangePercent(currentValue, compareValue) {
