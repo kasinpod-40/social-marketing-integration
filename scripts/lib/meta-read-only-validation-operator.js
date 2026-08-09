@@ -71,6 +71,8 @@ const REQUIRED_FALSE_FLAGS = Object.freeze([
   'MKT_LARK_DAILY_RETENTION_ENABLED',
   'MKT_DLQ_REDRIVE_ENABLED',
   'MKT_SCHEDULE_TIKTOK_ENABLED',
+  'MKT_SCHEDULE_FACEBOOK_ENABLED',
+  'MKT_SCHEDULE_INSTAGRAM_ENABLED',
   'MKT_SCHEDULE_YOUTUBE_ENABLED',
   'MKT_SCHEDULE_GOOGLE_ADS_ENABLED',
   'MKT_SCHEDULE_DAILY_REPORT_ENABLED',
@@ -127,6 +129,7 @@ export function parseMetaReadOnlyValidationArgs(args = []) {
     throw operatorError(
       `Unsupported Meta read-only validation phase: ${phase}`,
       'META_READ_ONLY_VALIDATION_PHASE_INVALID',
+      { phase },
     );
   }
   return Object.freeze({ phase, execute });
