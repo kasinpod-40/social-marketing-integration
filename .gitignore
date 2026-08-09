@@ -37,6 +37,7 @@ jspm_packages/
 __MACOSX/
 /.idea/
 wrangler.sync.jsonc
+/wrangler.meta-history.runtime.jsonc
 /.wrangler/
 /coverage/
 *.log
