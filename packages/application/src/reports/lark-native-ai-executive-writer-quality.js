@@ -291,7 +291,7 @@ export function validateLarkNativeAiExecutiveWriterOutputs(outputs = {}, evidenc
   if (/สิ่งที่ควรทำสัปดาห์หน้า\s*[:：]?/u.test(normalized.recommendations)) {
     violations.push('recommendations_contains_heading');
   }
-  if (/เติมข้อมูล|รอข้อมูล|ยังไม่มีข้อมูล|ยังไม่พบข้อมูล|ข้อมูลไม่เพียงพอ|ข้อมูลไม่ครบ|ข้อมูลเต็ม|ตรวจสอบข้อมูล|ตรวจข้อมูล|ตรวจระบบ|แก้ระบบ|connection|source readiness|coverage|ช่องทางอื่น/iu.test(normalized.recommendations)) {
+  if (/เติมข้อมูล|รอข้อมูล|ยังไม่มีข้อมูล|ยังไม่พบข้อมูล|ข้อมูลไม่เพียงพอ|ข้อมูลไม่ครบ|ข้อมูลเต็ม|ตรวจสอบข้อมูล|ตรวจข้อมูล|ตรวจระบบ|แก้ระบบ|connection|source readiness|coverage/iu.test(normalized.recommendations)) {
     violations.push('recommendations_contains_data_ops');
   }
   if (Number(evidence.businessEvidenceChannelCount ?? 0) > 0
